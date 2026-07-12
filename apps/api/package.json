@@ -20,6 +20,8 @@
     "@tekirextra/shared": "workspace:*",
     "argon2": "^0.44.0",
     "cookie-parser": "^1.4.7",
+    "exceljs": "^4.4.0",
+    "multer": "^2.2.0",
     "nodemailer": "^9.0.3",
     "otplib": "^13.4.1",
     "reflect-metadata": "^0.2.2",
@@ -29,6 +31,7 @@
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",
+    "@types/multer": "^2.2.0",
     "@types/node": "^22.0.0",
     "@types/nodemailer": "^8.0.1",
     "prisma": "^6.8.0",

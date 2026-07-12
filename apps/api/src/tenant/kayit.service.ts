@@ -57,6 +57,7 @@ export class KayitService {
           parolaHash,
           adSoyad: girdi.yoneticiAdSoyad,
           rol: "yonetici",
+          epostaDogrulandi: true,
         },
       });
       await tx.auditLog.create({

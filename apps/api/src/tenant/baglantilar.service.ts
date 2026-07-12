@@ -70,12 +70,13 @@ export class BaglantilarService {
         "v1.0'da yalnızca e-belge bağlantıları desteklenir (ENT-02..08 sonraki sürümde)",
       );
     }
-    // e-belge ailesinde firma başına tek aktif bağlantı (MIMARI §5)
     const kayit = await this.prisma.tenantIslem(tenantId, async (tx) => {
-      const mevcut = await tx.baglanti.findFirst({ where: { aile: "ebelge" } });
+      const mevcut = await tx.baglanti.findFirst({
+        where: { aile: "ebelge", saglayici: girdi.saglayici },
+      });
       if (mevcut) {
         throw new BadRequestException(
-          "e-Belge bağlantısı zaten tanımlı; önce mevcut bağlantıyı silin",
+          `'${girdi.saglayici}' entegratörü zaten tanımlı; güncellemek için düzenleyin.`,
         );
       }
       return tx.baglanti.create({
@@ -87,6 +88,49 @@ export class BaglantilarService {
             JSON.stringify({ saglayici: girdi.saglayici, ...girdi.config }),
           ),
         },
+      });
+    });
+    return this.gorunum(kayit);
+  }
+
+  async guncelle(
+    id: string,
+    girdi: { config: z.infer<typeof baglantiOlusturSemasi>["config"] },
+  ): Promise<BaglantiGorunumu> {
+    const { tenantId } = aktifBaglam();
+    const kayit = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const mevcut = await tx.baglanti.findUnique({ where: { id } });
+      if (!mevcut) throw new NotFoundException("Bağlantı bulunamadı");
+
+      return tx.baglanti.update({
+        where: { id },
+        data: {
+          sifreliConfig: sifrele(
+            JSON.stringify({ saglayici: mevcut.saglayici, ...girdi.config }),
+          ),
+          durum: "pasif",
+        },
+      });
+    });
+    return this.gorunum(kayit);
+  }
+
+  async aktifEt(id: string): Promise<BaglantiGorunumu> {
+    const { tenantId } = aktifBaglam();
+    const kayit = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const hedef = await tx.baglanti.findUnique({ where: { id } });
+      if (!hedef) throw new NotFoundException("Bağlantı bulunamadı");
+
+      // Aynı ailedeki diğer e-belge bağlantılarını pasife çek
+      await tx.baglanti.updateMany({
+        where: { tenantId, aile: "ebelge", id: { not: id } },
+        data: { durum: "pasif" },
+      });
+
+      // Hedef bağlantıyı aktif yap
+      return tx.baglanti.update({
+        where: { id },
+        data: { durum: "aktif" },
       });
     });
     return this.gorunum(kayit);

@@ -1,8 +1,10 @@
 # TekirExtra — Yazılım İster Dokümanı (SRS)
 
-**Sürüm:** 0.5
+**Sürüm:** 0.6
 **Tarih:** 2026-07-12
-**Durum:** 2. aşama S-01 onayı alındı: TOTP (KLN-05) zorunluya çekildi, e-posta doğrulaması (KLN-09) eklendi
+**Durum:** 3. aşama S-01 onayı alındı: CARI-05/06/07/08/10, STK-05/06/08/09/10/11
+dahil tam kapsam onaylandı. Not: CARI-04'ün PDF çıktısı, PDF şablon altyapısıyla
+birlikte 4. aşamada (T-02); bu aşamada Excel dışa aktarım gelir.
 
 ---
 

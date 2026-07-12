@@ -1,0 +1,185 @@
+import * as ExcelJS from "exceljs";
+
+// ─── CARİ EXCEL OKUYUCU (CARI-07) ──────────────────────────────────────────
+
+export async function cariExcelOku(buffer: Buffer) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer as any);
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) throw new Error("Çalışma sayfası bulunamadı");
+
+  const cariler: any[] = [];
+  worksheet.eachRow((row, rowNumber) => {
+    // Başlık satırını atla
+    if (rowNumber === 1) return;
+
+    const kod = row.getCell(1).value?.toString()?.trim();
+    const unvan = row.getCell(2).value?.toString()?.trim();
+    const tipRaw = row.getCell(3).value?.toString()?.trim()?.toLowerCase();
+    const vknTckn = row.getCell(4).value?.toString()?.trim();
+    const eposta = row.getCell(5).value?.toString()?.trim();
+    const telefon = row.getCell(6).value?.toString()?.trim();
+
+    if (unvan) {
+      let tip = "musteri";
+      if (tipRaw === "tedarikci" || tipRaw === "tedarikçi") tip = "tedarikci";
+      else if (tipRaw === "diger" || tipRaw === "diğer") tip = "diger";
+
+      cariler.push({
+        kod: kod || `CARİ-${Date.now()}-${rowNumber}`,
+        unvan,
+        tip,
+        vknTckn: vknTckn || null,
+        eposta: eposta || null,
+        telefon: telefon || null,
+      });
+    }
+  });
+
+  return cariler;
+}
+
+// ─── STOK EXCEL OKUYUCU (STK-05) ───────────────────────────────────────────
+
+export async function stokExcelOku(buffer: Buffer) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer as any);
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) throw new Error("Çalışma sayfası bulunamadı");
+
+  const urunler: any[] = [];
+  worksheet.eachRow((row, rowNumber) => {
+    // Başlık satırını atla
+    if (rowNumber === 1) return;
+
+    const kod = row.getCell(1).value?.toString()?.trim();
+    const ad = row.getCell(2).value?.toString()?.trim();
+    const tipRaw = row.getCell(3).value?.toString()?.trim()?.toLowerCase();
+    const barkod = row.getCell(4).value?.toString()?.trim();
+    const kdvOraniRaw = row.getCell(5).value;
+    const alisFiyatiRaw = row.getCell(6).value;
+    const satisFiyatiRaw = row.getCell(7).value;
+
+    if (ad) {
+      let tip = "urun";
+      if (tipRaw === "hizmet") tip = "hizmet";
+
+      const kdvOrani = kdvOraniRaw ? Number(kdvOraniRaw) : 20;
+      const alisFiyati = alisFiyatiRaw ? Number(alisFiyatiRaw) : null;
+      const satisFiyati = satisFiyatiRaw ? Number(satisFiyatiRaw) : null;
+
+      urunler.push({
+        kod: kod || `STK-${Date.now()}-${rowNumber}`,
+        ad,
+        tip,
+        barkod: barkod || null,
+        kdvOrani,
+        alisFiyati,
+        satisFiyati,
+      });
+    }
+  });
+
+  return urunler;
+}
+
+// ─── CARİ EKSTRE EXCEL YAZICI (CARI-04) ────────────────────────────────────
+
+export async function cariEkstreExcelYaz(
+  cari: { unvan: string; kod: string },
+  hareketler: {
+    tarih: Date;
+    aciklama: string;
+    borc: string;
+    alacak: string;
+    bakiye: string;
+  }[],
+): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet("Cari Ekstre");
+
+  // Stil ayarları
+  worksheet.views = [{ showGridLines: true }];
+
+  // Üst Başlıklar
+  worksheet.mergeCells("A1:E1");
+  const titleCell = worksheet.getCell("A1");
+  titleCell.value = "TEKİREXTRA CARİ HESAP EKSTRESİ";
+  titleCell.font = { name: "Arial", size: 16, bold: true, color: { argb: "FFFFFF" } };
+  titleCell.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "6D28D9" }, // Violet primary color
+  };
+  titleCell.alignment = { horizontal: "center", vertical: "middle" };
+  worksheet.getRow(1).height = 40;
+
+  // Cari Bilgileri
+  worksheet.getCell("A3").value = "Cari Kod:";
+  worksheet.getCell("A3").font = { bold: true };
+  worksheet.getCell("B3").value = cari.kod;
+
+  worksheet.getCell("A4").value = "Cari Ünvan:";
+  worksheet.getCell("A4").font = { bold: true };
+  worksheet.getCell("B4").value = cari.unvan;
+
+  worksheet.getCell("D3").value = "Rapor Tarihi:";
+  worksheet.getCell("D3").font = { bold: true };
+  worksheet.getCell("E3").value = new Date().toLocaleDateString("tr-TR");
+
+  // Tablo Başlıkları
+  const headers = ["Tarih", "Açıklama", "Borç (Giriş)", "Alacak (Çıkış)", "Bakiye"];
+  worksheet.getRow(6).values = headers;
+  worksheet.getRow(6).font = { bold: true, color: { argb: "FFFFFF" } };
+  worksheet.getRow(6).height = 25;
+  
+  for (let col = 1; col <= 5; col++) {
+    const cell = worksheet.getCell(6, col);
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "1E1B4B" }, // dark indigo header
+    };
+    cell.alignment = { vertical: "middle", horizontal: col === 1 ? "center" : "left" };
+  }
+
+  // Veri satırları
+  let rowIdx = 7;
+  hareketler.forEach((h) => {
+    const row = worksheet.getRow(rowIdx);
+    row.getCell(1).value = h.tarih;
+    row.getCell(1).numFmt = "yyyy-mm-dd";
+    row.getCell(2).value = h.aciklama;
+    
+    row.getCell(3).value = h.borc !== "" ? Number(h.borc) : null;
+    row.getCell(3).numFmt = "#,##0.00";
+    
+    row.getCell(4).value = h.alacak !== "" ? Number(h.alacak) : null;
+    row.getCell(4).numFmt = "#,##0.00";
+    
+    row.getCell(5).value = Number(h.bakiye);
+    row.getCell(5).numFmt = "#,##0.00";
+
+    // Hizalama
+    row.getCell(1).alignment = { horizontal: "center" };
+    row.getCell(3).alignment = { horizontal: "right" };
+    row.getCell(4).alignment = { horizontal: "right" };
+    row.getCell(5).alignment = { horizontal: "right" };
+
+    rowIdx++;
+  });
+
+  // Otomatik sütun genişliği ayarlama
+  worksheet.columns.forEach((column) => {
+    let maxLength = 12;
+    column.eachCell?.({ includeEmpty: true }, (cell) => {
+      const columnLength = cell.value ? cell.value.toString().length : 0;
+      if (columnLength > maxLength) {
+        maxLength = columnLength;
+      }
+    });
+    column.width = Math.min(maxLength + 3, 50);
+  });
+
+  return (await workbook.xlsx.writeBuffer()) as any;
+}

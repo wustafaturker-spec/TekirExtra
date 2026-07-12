@@ -101,6 +101,22 @@ export class TenantController {
     return this.baglantilar.test(id);
   }
 
+  @Patch("baglantilar/:id")
+  @Roller("yonetici")
+  baglantiGuncelle(@Param("id") id: string, @Body() govde: unknown) {
+    const ayristirma = z.object({ config: baglantiOlusturSemasi.shape.config }).safeParse(govde);
+    if (!ayristirma.success) {
+      throw new BadRequestException("Geçersiz bağlantı bilgisi");
+    }
+    return this.baglantilar.guncelle(id, ayristirma.data);
+  }
+
+  @Post("baglantilar/:id/aktif-et")
+  @Roller("yonetici")
+  baglantiAktifEt(@Param("id") id: string) {
+    return this.baglantilar.aktifEt(id);
+  }
+
   @Delete("baglantilar/:id")
   @Roller("yonetici")
   async baglantiSil(@Param("id") id: string) {
