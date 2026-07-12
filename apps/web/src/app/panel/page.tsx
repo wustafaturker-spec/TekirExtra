@@ -18,34 +18,31 @@ interface FinansOzet {
   netVarlikDegeri: string;
 }
 
-interface KarZararRapor {
-  genelCiro: string;
-  genelMaliyet: string;
-  genelKar: string;
-  genelKarlilikYuzdesi: string;
-  urunAnalizleri: {
-    kod: string;
-    ad: string;
-    satilanMiktar: number;
-    toplamCiro: string;
-    toplamMaliyet: string;
-    kar: string;
-    karlilikYuzdesi: string;
-  }[];
+interface KarMarjiSatiri {
+  grup: string;
+  ciro: string;
+  maliyet: string;
+  kar: string;
+  marj: number | null;
 }
 
 export default function PanelSayfasi() {
   const yonlendir = useRouter();
   const [firma, setFirma] = useState<Firma | null>(null);
   const [ozet, setOzet] = useState<FinansOzet | null>(null);
-  const [rapor, setRapor] = useState<KarZararRapor | null>(null);
+  const [rapor, setRapor] = useState<KarMarjiSatiri[] | null>(null);
   const [hata, setHata] = useState("");
 
   const yukle = useCallback(async () => {
     try {
       setFirma(await api<Firma>("/firma"));
       setOzet(await api<FinansOzet>("/rapor/ozet"));
-      setRapor(await api<KarZararRapor>("/rapor/kar-zarar"));
+      // Kâr marjı raporu RPR-06 araç setinden (fatura.kar-marji, ürün kırılımı)
+      const karMarji = await api<{ satirlar: KarMarjiSatiri[] }>(
+        "/raporlar/fatura.kar-marji/calistir",
+        { method: "POST", body: JSON.stringify({ gruplama: "urun" }) },
+      );
+      setRapor(karMarji.satirlar);
     } catch (h) {
       if (h instanceof ApiHata && h.durum === 401) {
         tokenYaz(null);
@@ -120,81 +117,88 @@ export default function PanelSayfasi() {
         </section>
       )}
 
-      {rapor && (
-        <section style={stil.genisKart}>
-          <h2 style={{ fontSize: "1.2rem", fontWeight: "600", marginBottom: "1rem" }}>
-            📈 Satış Kârlılık ve Kar/Zarar Analizi
-          </h2>
-          <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap", marginBottom: "2rem", borderBottom: "1px solid #27272a", paddingBottom: "1.5rem" }}>
-            <div>
-              <div style={{ color: "#a1a1aa", fontSize: "0.8rem" }}>Toplam Ciro</div>
-              <div style={{ fontSize: "1.5rem", fontWeight: "bold", marginTop: "0.25rem" }}>
-                {Number(rapor.genelCiro).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
+      {rapor && (() => {
+        const toplam = rapor.reduce(
+          (t, u) => ({
+            ciro: t.ciro + Number(u.ciro),
+            maliyet: t.maliyet + Number(u.maliyet),
+            kar: t.kar + Number(u.kar),
+          }),
+          { ciro: 0, maliyet: 0, kar: 0 },
+        );
+        const marj = toplam.ciro > 0 ? (toplam.kar / toplam.ciro) * 100 : 0;
+        return (
+          <section style={stil.genisKart}>
+            <h2 style={{ fontSize: "1.2rem", fontWeight: "600", marginBottom: "1rem" }}>
+              📈 Satış Kârlılık ve Kar/Zarar Analizi
+            </h2>
+            <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap", marginBottom: "2rem", borderBottom: "1px solid #27272a", paddingBottom: "1.5rem" }}>
+              <div>
+                <div style={{ color: "#a1a1aa", fontSize: "0.8rem" }}>Toplam Ciro</div>
+                <div style={{ fontSize: "1.5rem", fontWeight: "bold", marginTop: "0.25rem" }}>
+                  {toplam.ciro.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
+                </div>
+              </div>
+              <div>
+                <div style={{ color: "#a1a1aa", fontSize: "0.8rem" }}>Toplam Maliyet</div>
+                <div style={{ fontSize: "1.5rem", fontWeight: "bold", marginTop: "0.25rem", color: "#a1a1aa" }}>
+                  {toplam.maliyet.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
+                </div>
+              </div>
+              <div>
+                <div style={{ color: "#a1a1aa", fontSize: "0.8rem" }}>Net Satış Kârı</div>
+                <div style={{ fontSize: "1.5rem", fontWeight: "bold", marginTop: "0.25rem", color: "#22c55e" }}>
+                  {toplam.kar.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
+                </div>
+              </div>
+              <div>
+                <div style={{ color: "#a1a1aa", fontSize: "0.8rem" }}>Kârlılık Oranı</div>
+                <div style={{ fontSize: "1.5rem", fontWeight: "bold", marginTop: "0.25rem", color: "#7c3aed" }}>
+                  %{marj.toFixed(2)}
+                </div>
               </div>
             </div>
-            <div>
-              <div style={{ color: "#a1a1aa", fontSize: "0.8rem" }}>Toplam Maliyet</div>
-              <div style={{ fontSize: "1.5rem", fontWeight: "bold", marginTop: "0.25rem", color: "#a1a1aa" }}>
-                {Number(rapor.genelMaliyet).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
-              </div>
-            </div>
-            <div>
-              <div style={{ color: "#a1a1aa", fontSize: "0.8rem" }}>Net Satış Kârı</div>
-              <div style={{ fontSize: "1.5rem", fontWeight: "bold", marginTop: "0.25rem", color: "#22c55e" }}>
-                {Number(rapor.genelKar).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
-              </div>
-            </div>
-            <div>
-              <div style={{ color: "#a1a1aa", fontSize: "0.8rem" }}>Kârlılık Oranı</div>
-              <div style={{ fontSize: "1.5rem", fontWeight: "bold", marginTop: "0.25rem", color: "#7c3aed" }}>
-                %{Number(rapor.genelKarlilikYuzdesi).toFixed(2)}
-              </div>
-            </div>
-          </div>
 
-          <h3 style={{ fontSize: "1rem", fontWeight: "600", marginBottom: "1rem", color: "#a1a1aa" }}>
-            Ürün Bazlı Kârlılık Kırılımı
-          </h3>
-          <table style={stil.tablo}>
-            <thead>
-              <tr>
-                <th style={stil.tabloBaslik}>Ürün Kodu</th>
-                <th style={stil.tabloBaslik}>Ürün Adı</th>
-                <th style={stil.tabloBaslik}>Satılan Adet</th>
-                <th style={stil.tabloBaslik}>Toplam Ciro</th>
-                <th style={stil.tabloBaslik}>Maliyet</th>
-                <th style={stil.tabloBaslik}>Kâr/Zarar</th>
-                <th style={stil.tabloBaslik}>Kârlılık Oranı</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rapor.urunAnalizleri.length === 0 ? (
+            <h3 style={{ fontSize: "1rem", fontWeight: "600", marginBottom: "1rem", color: "#a1a1aa" }}>
+              Ürün Bazlı Kârlılık Kırılımı
+            </h3>
+            <table style={stil.tablo}>
+              <thead>
                 <tr>
-                  <td colSpan={7} style={{ ...stil.tabloHucre, textAlign: "center", color: "#a1a1aa" }}>
-                    Henüz kesinleşmiş satış faturası bulunmuyor.
-                  </td>
+                  <th style={stil.tabloBaslik}>Ürün</th>
+                  <th style={stil.tabloBaslik}>Toplam Ciro</th>
+                  <th style={stil.tabloBaslik}>Maliyet</th>
+                  <th style={stil.tabloBaslik}>Kâr/Zarar</th>
+                  <th style={stil.tabloBaslik}>Kârlılık Oranı</th>
                 </tr>
-              ) : (
-                rapor.urunAnalizleri.map((u) => (
-                  <tr key={u.kod}>
-                    <td style={stil.tabloHucre}>{u.kod}</td>
-                    <td style={stil.tabloHucre}>{u.ad}</td>
-                    <td style={stil.tabloHucre}>{u.satilanMiktar}</td>
-                    <td style={stil.tabloHucre}>{Number(u.toplamCiro).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL</td>
-                    <td style={stil.tabloHucre}>{Number(u.toplamMaliyet).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL</td>
-                    <td style={{ ...stil.tabloHucre, color: Number(u.kar) >= 0 ? "#22c55e" : "#ef4444", fontWeight: "bold" }}>
-                      {Number(u.kar).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
-                    </td>
-                    <td style={{ ...stil.tabloHucre, color: "#7c3aed", fontWeight: "bold" }}>
-                      %{Number(u.karlilikYuzdesi).toFixed(2)}
+              </thead>
+              <tbody>
+                {rapor.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} style={{ ...stil.tabloHucre, textAlign: "center", color: "#a1a1aa" }}>
+                      Henüz kesinleşmiş satış faturası bulunmuyor.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </section>
-      )}
+                ) : (
+                  rapor.map((u) => (
+                    <tr key={u.grup}>
+                      <td style={stil.tabloHucre}>{u.grup}</td>
+                      <td style={stil.tabloHucre}>{Number(u.ciro).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL</td>
+                      <td style={stil.tabloHucre}>{Number(u.maliyet).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL</td>
+                      <td style={{ ...stil.tabloHucre, color: Number(u.kar) >= 0 ? "#22c55e" : "#ef4444", fontWeight: "bold" }}>
+                        {Number(u.kar).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
+                      </td>
+                      <td style={{ ...stil.tabloHucre, color: "#7c3aed", fontWeight: "bold" }}>
+                        {u.marj === null ? "—" : `%${u.marj.toFixed(2)}`}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </section>
+        );
+      })()}
     </div>
   );
 }

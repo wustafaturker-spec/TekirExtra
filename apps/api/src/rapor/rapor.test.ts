@@ -17,37 +17,6 @@ describe("RaporService (RPR-04..05)", () => {
 
   const service = new RaporService(mockPrisma);
 
-  it("karZararRaporu satis faturalarindan kar ve maliyet analizi cikarir (RPR-05)", async () => {
-    const mockTx = {
-      faturaSatir: {
-        findMany: vi.fn().mockResolvedValue([
-          {
-            stokId: "stok-1",
-            miktar: new Prisma.Decimal(2),
-            matrah: new Prisma.Decimal(100.0), // 2 adet satıldı, toplam 100 TL matrah
-            stok: {
-              kod: "STK01",
-              ad: "Ürün A",
-              ortalamaMaliyet: new Prisma.Decimal(30.0), // maliyeti 30 TL
-            },
-          },
-        ]),
-      },
-    };
-    mockTenantIslem.mockImplementation((tenantId, cb) => cb(mockTx));
-
-    const sonuc = await service.karZararRaporu();
-
-    // 2 adet * 30 TL = 60 TL maliyet
-    // Ciro = 100 TL
-    // Kar = 40 TL, Karlılık = 40%
-    expect(sonuc.genelCiro).toBe("100.00");
-    expect(sonuc.genelMaliyet).toBe("60.00");
-    expect(sonuc.genelKar).toBe("40.00");
-    expect(sonuc.genelKarlilikYuzdesi).toBe("40.00");
-    expect(sonuc.urunAnalizleri[0].kar).toBe("40.00");
-  });
-
   it("finansalOzet sirket genel finansal durumunu listeler (RPR-04)", async () => {
     const mockTx = {
       kasaBankaHareket: {

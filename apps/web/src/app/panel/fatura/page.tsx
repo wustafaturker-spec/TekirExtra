@@ -209,9 +209,14 @@ export default function FaturaSayfasi() {
             Alış ve satış faturalarınızı oluşturun, kesinleştirin ve GİB entegratör kuyruk durumlarını takip edin.
           </p>
         </div>
-        <button onClick={() => setFormAcik(!formAcik)} style={{ ...stil.dugme, width: "auto", padding: "0.5rem 1.25rem" }}>
-          {formAcik ? "Vazgeç" : "➕ Yeni Fatura"}
-        </button>
+        <div style={{ display: "flex", gap: "1rem" }}>
+          <a href="/panel/fatura/raporlar" style={{ ...stil.dugmeMuted, display: "flex", alignItems: "center", gap: "0.5rem", textDecoration: "none" }}>
+            📈 Raporlar
+          </a>
+          <button onClick={() => setFormAcik(!formAcik)} style={{ ...stil.dugme, width: "auto", padding: "0.5rem 1.25rem" }}>
+            {formAcik ? "Vazgeç" : "➕ Yeni Fatura"}
+          </button>
+        </div>
       </div>
 
       {hata && <p style={stil.hata}>{hata}</p>}

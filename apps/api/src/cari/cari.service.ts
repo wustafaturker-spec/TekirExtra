@@ -19,7 +19,7 @@ import type {
   etiketSemasi,
   kisiSemasi,
 } from "./cari.semalar";
-import { yaslandir, type YaslandirmaSonucu } from "./yaslandirma";
+import { yaslandir } from "./yaslandirma";
 import { cariExcelOku, cariEkstreExcelYaz } from "../core/excel-yardimci";
 
 const D = (deger: string | number): Prisma.Decimal => new Prisma.Decimal(deger);
@@ -403,40 +403,7 @@ export class CariService {
     return { cari: { id: cari.id, kod: cari.kod, unvan: cari.unvan }, satirlar };
   }
 
-  async yaslandirmaRaporu(): Promise<
-    { cari: { id: string; kod: string; unvan: string }; yaslandirma: YaslandirmaSonucu }[]
-  > {
-    const { tenantId } = aktifBaglam();
-    const cariler = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.cariHesap.findMany({
-        where: { aktif: true },
-        select: {
-          id: true,
-          kod: true,
-          unvan: true,
-          hareketler: {
-            select: { tip: true, tutarTry: true, vadeTarihi: true, tarih: true },
-          },
-        },
-        orderBy: { kod: "asc" },
-      }),
-    );
-    const bugun = new Date();
-    return cariler
-      .map((c) => ({
-        cari: { id: c.id, kod: c.kod, unvan: c.unvan },
-        yaslandirma: yaslandir(
-          c.hareketler.map((h) => ({
-            tip: h.tip,
-            tutarTry: Number(h.tutarTry),
-            vadeTarihi: h.vadeTarihi,
-            tarih: h.tarih,
-          })),
-          bugun,
-        ),
-      }))
-      .filter((s) => s.yaslandirma.toplam > 0);
-  }
+  // Yaşlandırma raporu RPR-06 araç setine taşındı: cari.yaslandirma (CARI-12).
 
   private async bakiyeleriGetir(
     cariIdler: string[],

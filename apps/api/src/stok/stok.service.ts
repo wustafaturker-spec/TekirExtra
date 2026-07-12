@@ -474,45 +474,7 @@ export class StokService {
     };
   }
 
-  // ─── RAPORLAR (STK-03/13) ────────────────────────────────────────────────
-
-  async envanterRaporu() {
-    const { tenantId } = aktifBaglam();
-    const urunler = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.stokKart.findMany({
-        where: { aktif: true, tip: "urun" },
-        select: {
-          id: true,
-          kod: true,
-          ad: true,
-          anaBirim: true,
-          mevcutMiktar: true,
-          ortalamaMaliyet: true,
-          kritikSeviye: true,
-        },
-        orderBy: { kod: "asc" },
-      }),
-    );
-
-    return urunler.map((u) => {
-      const mevcutVal = D(u.mevcutMiktar);
-      const maliyetVal = D(u.ortalamaMaliyet);
-      const envanterDegeri = mevcutVal.mul(maliyetVal);
-      const kritikAşımı = u.kritikSeviye !== null && mevcutVal.lt(D(u.kritikSeviye));
-
-      return {
-        id: u.id,
-        kod: u.kod,
-        ad: u.ad,
-        anaBirim: u.anaBirim,
-        mevcutMiktar: mevcutVal.toFixed(3),
-        ortalamaMaliyet: maliyetVal.toFixed(4),
-        envanterDegeri: envanterDegeri.toFixed(2),
-        kritikSeviye: u.kritikSeviye ? D(u.kritikSeviye).toFixed(3) : null,
-        kritikAsimi: kritikAşımı,
-      };
-    });
-  }
+  // Envanter raporu RPR-06 araç setine taşındı: stok.envanter (STK-13).
 
   // ─── PRIVATE YARDIMCILAR ──────────────────────────────────────────────────
 

@@ -62,12 +62,7 @@ export class StokController {
     await this.stokService.kategoriSil(id);
   }
 
-  // ─── RAPOR UÇLARI ────────────────────────────────────────────────────────
-
-  @Get("rapor/envanter")
-  async envanterRaporu() {
-    return this.stokService.envanterRaporu();
-  }
+  // Envanter raporu RPR-06 araç setine taşındı: stok.envanter (STK-13).
 
   // ─── SAYIM UÇLARI ────────────────────────────────────────────────────────
 

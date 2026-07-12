@@ -9,93 +9,9 @@ const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal => new Prism
 export class RaporService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ─── SATIŞ / KAR-ZARAR ANALİZİ (RPR-05) ───────────────────────────────────
+  // Kar-zarar analizi RPR-06 araç setine taşındı: fatura.kar-marji (FTR-15).
 
-  async karZararRaporu() {
-    const { tenantId } = aktifBaglam();
-
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
-      // Kesinleşmiş satış faturalarının satırlarını ve ürün ortalama maliyetlerini çek
-      const satirlar = await tx.faturaSatir.findMany({
-        where: {
-          tenantId,
-          fatura: { tip: "satis", durum: "kesin" },
-        },
-        include: {
-          stok: { select: { kod: true, ad: true, ortalamaMaliyet: true } },
-        },
-      });
-
-      const urunMap = new Map<
-        string,
-        {
-          kod: string;
-          ad: string;
-          satilanMiktar: number;
-          toplamCiro: number;
-          toplamMaliyet: number;
-          kar: number;
-        }
-      >();
-
-      let genelCiro = D(0);
-      let genelMaliyet = D(0);
-
-      satirlar.forEach((s) => {
-        const miktar = Number(s.miktar);
-        const ciro = s.matrah; // fatura satır net matrahı
-        const maliyetBirim = s.stok.ortalamaMaliyet;
-        const maliyet = maliyetBirim.mul(s.miktar).toDecimalPlaces(2);
-
-        genelCiro = genelCiro.add(ciro);
-        genelMaliyet = genelMaliyet.add(maliyet);
-
-        const mevcut = urunMap.get(s.stokId) ?? {
-          kod: s.stok.kod,
-          ad: s.stok.ad,
-          satilanMiktar: 0,
-          toplamCiro: 0,
-          toplamMaliyet: 0,
-          kar: 0,
-        };
-
-        mevcut.satilanMiktar += miktar;
-        mevcut.toplamCiro = D(mevcut.toplamCiro).add(ciro).toNumber();
-        mevcut.toplamMaliyet = D(mevcut.toplamMaliyet).add(maliyet).toNumber();
-        mevcut.kar = D(mevcut.toplamCiro).sub(mevcut.toplamMaliyet).toNumber();
-
-        urunMap.set(s.stokId, mevcut);
-      });
-
-      const urunKarlar = [...urunMap.values()].map((u) => {
-        const karlilikYuzdesi =
-          u.toplamCiro > 0 ? (u.kar / u.toplamCiro) * 100 : 0;
-        return {
-          ...u,
-          toplamCiro: u.toplamCiro.toFixed(2),
-          toplamMaliyet: u.toplamMaliyet.toFixed(2),
-          kar: u.kar.toFixed(2),
-          karlilikYuzdesi: karlilikYuzdesi.toFixed(2),
-        };
-      });
-
-      const genelKar = genelCiro.sub(genelMaliyet);
-      const genelKarlilikYuzdesi =
-        genelCiro.greaterThan(0)
-          ? genelKar.div(genelCiro).mul(100).toNumber()
-          : 0;
-
-      return {
-        genelCiro: genelCiro.toFixed(2),
-        genelMaliyet: genelMaliyet.toFixed(2),
-        genelKar: genelKar.toFixed(2),
-        genelKarlilikYuzdesi: genelKarlilikYuzdesi.toFixed(2),
-        urunAnalizleri: urunKarlar,
-      };
-    });
-  }
-
-  // ─── FİNANSAL DURUM ÖZETİ (RPR-04) ────────────────────────────────────────
+  // ─── FİNANSAL DURUM ÖZETİ (RPR-01/04) ─────────────────────────────────────
 
   async finansalOzet() {
     const { tenantId } = aktifBaglam();

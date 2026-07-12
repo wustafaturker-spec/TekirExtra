@@ -125,6 +125,9 @@ export default function StokSayfasi() {
           </p>
         </div>
         <div style={{ display: "flex", gap: "1rem" }}>
+          <a href="/panel/stok/raporlar" style={{ ...stil.dugmeMuted, display: "flex", alignItems: "center", gap: "0.5rem", textDecoration: "none" }}>
+            📈 Raporlar
+          </a>
           <label style={{ ...stil.dugmeMuted, display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
             📥 Excel&apos;den İçe Aktar
             <input type="file" accept=".xlsx" onChange={excelYukle} style={{ display: "none" }} />

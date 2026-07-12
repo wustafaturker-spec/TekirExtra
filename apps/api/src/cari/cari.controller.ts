@@ -41,11 +41,6 @@ export class CariController {
     return this.cariService.listele(arama, imlec, adetSayi);
   }
 
-  @Get("rapor/yaslandirma")
-  async yaslandirmaRaporu() {
-    return this.cariService.yaslandirmaRaporu();
-  }
-
   @Get("etiketler")
   async etiketleriListele() {
     return this.cariService.etiketleriListele();

@@ -1,3 +1,4 @@
+import "./stok.raporlar";
 import { Module, OnModuleInit } from "@nestjs/common";
 import { registerEylemPolitikasi } from "../core/eylemler/eylem-kayit";
 import { StokController } from "./stok.controller";
