@@ -1,20 +1,19 @@
 # TekirExtra — Yazılım İster Dokümanı (SRS)
 
-**Sürüm:** 0.8
-**Tarih:** 2026-07-12
-**Durum:** Cari Genişletme Paketi S-01 onayı alındı (2026-07-12): CARI-13…18
-(kimlik/vergi/iletişim genişletme, çoklu banka hesabı, kara liste/blokaj + risk
-özeti, hesaplanan finansal özet) + CARI-11 etiketler, **rapor aşamasından önce**
-tam kapsamla geliştirilir. Belge/dosya ekleri ortak altyapı olarak 4. aşamada
-(T-02 ile) gelir. CRM (CARI-19) ve AI destekli analizler (CARI-20) [G] olarak
-eklendi. Entegrasyon bilgileri cari kartında tutulmaz; firma düzeyi bağlantı
-modeline (ENT-01) aittir.
-Önceki kapılar: Rapor aşaması onayı — RPR-06 araç seti + tüm [Z] modül raporları
-(CARI-12, STK-13, FTR-15; KDV dökümü RPR-02'yi karşılar); dışa aktarım bu aşamada
-Excel, PDF 4. aşamada (T-02); kayıtlı görünümler kişisel + "firma geneli"
-paylaşım işareti; RPR-07 (Metabase) ertelendi. 3. aşama onayı —
-CARI-05/06/07/08/10, STK-05/06/08/09/10/11 dahil tam kapsam; CARI-04 PDF çıktısı
-4. aşamada (T-02).
+**Sürüm:** 0.9
+**Tarih:** 2026-07-13
+**Durum:** Stok Genişletme Paketi S-01 onayı alındı (2026-07-13): STK-14…20
+(kart genişletme+GTİP, çoklu barkod, min/maks + sipariş önerisi, eksi stok
+politikası, tedarikçi ilişkisi, yeni hareket türleri, sayım onay akışı) tam
+kapsamla, **4. aşamadan önce** geliştirilir. Seri no/lot/SKT takibi STK-21 [G]
+olarak eklendi; stok rezervasyonu ve rezerve/yoldaki stok göstergeleri FTR-12
+belge zinciri kapsamına not düşüldü. Barkod etiket basımı T-02 (PDF) sonrası.
+Önceki kapılar: Cari Genişletme Paketi — CARI-13…18 + CARI-11, tamamlandı;
+belge/dosya ekleri 4. aşamada (T-02); CRM (CARI-19) ve AI (CARI-20) [G].
+Rapor aşaması — RPR-06 araç seti + tüm [Z] modül raporları, tamamlandı; dışa
+aktarım Excel (PDF 4. aşamada); kayıtlı görünümler kişisel + "firma geneli";
+RPR-07 (Metabase) ertelendi. 3. aşama — CARI-05/06/07/08/10,
+STK-05/06/08/09/10/11 dahil tam kapsam; CARI-04 PDF çıktısı 4. aşamada (T-02).
 
 ---
 
@@ -120,7 +119,7 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | FTR-09 | Proforma fatura oluşturulabilmeli ve tek tıkla satış faturasına dönüştürülebilmelidir. | İ |
 | FTR-10 | Tekrarlayan (abonelik tipi) faturalar tanımlanabilmelidir. | G |
 | FTR-11 | Tevkifatlı ve istisnalı fatura senaryoları desteklenmelidir. | İ |
-| FTR-12 | Belge zinciri desteklenmelidir: teklif → sipariş → irsaliye → fatura; her adım bir sonrakine tek tıkla dönüştürülebilmeli, zincir izlenebilmelidir (e-İrsaliye kapsam dışı; kağıt/PDF irsaliye). | İ |
+| FTR-12 | Belge zinciri desteklenmelidir: teklif → sipariş → irsaliye → fatura; her adım bir sonrakine tek tıkla dönüştürülebilmeli, zincir izlenebilmelidir (e-İrsaliye kapsam dışı; kağıt/PDF irsaliye). Not (2026-07-13): sipariş aşamasında stok rezervasyonu ile rezerve/yoldaki stok göstergeleri bu kapsamda ele alınır. | İ |
 | FTR-13 | Bekleyen siparişler/irsaliyeler toplu seçilip tek faturada birleştirilebilmelidir (toplu faturalama). | İ |
 | FTR-14 | Fatura kaleminde carinin fiyat listesi ve özel iskontosu otomatik önerilmeli (CARI-10, STK-11); satıcı kullanıcı bazında maksimum iskonto yetkisi tanımlanabilmelidir. | İ |
 | FTR-15 | **Modül içi raporlar:** dönemsel satış/alış özeti, kâr marjı analizi (satış - ağırlıklı ortalama maliyet), iskonto analizi, KDV dökümü, iade oranları, taslakta bekleyen belgeler. Tümü RPR-06 rapor araç setini kullanır. | Z |
@@ -157,7 +156,15 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | STK-10 | Çoklu birim desteği: ürün için ana birim + çevrim katsayılı ek birimler (ör. adet/koli/palet); alış-satış farklı birimle yapılabilmelidir. | İ |
 | STK-11 | Çoklu fiyat listesi tanımlanabilmelidir (ör. perakende, bayi, ihracat); fatura kesilirken carinin fiyat listesi otomatik uygulanmalıdır (CARI-10 ile birlikte). | İ |
 | STK-12 | Ürün varyantları (renk/beden gibi nitelik kombinasyonları) tanımlanabilmeli, stok varyant bazında izlenebilmelidir. | G |
-| STK-13 | **Modül içi raporlar:** envanter değeri, stok hareket özeti, en çok/en az satanlar, stok devir hızı, ürün bazlı kârlılık (ağırlıklı ortalama maliyete göre), kritik stok listesi. Tümü RPR-06 rapor araç setini kullanır. | Z |
+| STK-13 | **Modül içi raporlar:** envanter değeri, stok hareket özeti, en çok/en az satanlar, stok devir hızı, ürün bazlı kârlılık (ağırlıklı ortalama maliyete göre), kritik stok listesi; ayrıca sipariş önerisi (STK-16), fire/zayi, hareketsiz stok ve eksi stok raporları. Tümü RPR-06 rapor araç setini kullanır. | Z |
+| STK-14 | Kart genişletme: kısa ad, açıklama, marka, model, menşei, GTİP kodu, üretici ürün kodu; stok tipine **sarf** eklenir. | Z |
+| STK-15 | Ürün başına birden çok barkod tutulabilmelidir; barkod bir birime ve birime özgü satış fiyatına bağlanabilmeli, barkodla ürün bulunabilmelidir. | Z |
+| STK-16 | Minimum/maksimum stok, güvenlik stoğu ve tedarik süresi tanımlanabilmeli; yeniden sipariş noktası (ort. günlük satış × tedarik süresi + güvenlik stoğu) ile otomatik sipariş önerisi raporu sunulmalıdır. | Z |
+| STK-17 | Eksi stok politikası modül ayarı olarak yönetilmelidir (izin ver / uyar / engelle) ve satış kesinleştirmede uygulanmalıdır. | Z |
+| STK-18 | Ürün-tedarikçi ilişkisi: tedarikçi carisi, tedarikçi ürün kodu, alış fiyatı, tedarik süresi, varsayılan tedarikçi; sipariş önerisinde kullanılır. | Z |
+| STK-19 | Stok hareket türleri genişletilmelidir: fire, zayi, numune, promosyon, açılış fişi; fire/zayi raporlanabilmelidir. | Z |
+| STK-20 | Sayım farkları doğrudan stoğa işlenmemeli; taslak → onay → düzeltme hareketi akışıyla, onay yetkisine bağlı işlenmelidir. | Z |
+| STK-21 | Seri numarası ve lot/parti + son kullanma tarihi takibi (FEFO çıkış desteğiyle). | G |
 
 ### 3.5 Kasa ve Banka (KSB)
 
