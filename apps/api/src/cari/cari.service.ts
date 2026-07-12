@@ -12,9 +12,11 @@ import { izinliEylemler } from "../core/eylemler/eylem-kayit";
 import { PrismaService } from "../core/prisma.service";
 import type {
   adresSemasi,
+  bankaHesapSemasi,
   cariGuncelleSemasi,
   CariHareketGirdisi,
   CariOlusturGirdisi,
+  etiketSemasi,
   kisiSemasi,
 } from "./cari.semalar";
 import { yaslandir, type YaslandirmaSonucu } from "./yaslandirma";
@@ -74,6 +76,9 @@ export class CariService {
         include: {
           adresler: true,
           kisiler: true,
+          bankaHesaplari: true,
+          etiketler: { include: { etiket: true } },
+          temsilci: { select: { id: true, adSoyad: true } },
           fiyatListesi: { select: { id: true, ad: true } },
           _count: { select: { hareketler: true } },
         },
@@ -84,16 +89,94 @@ export class CariService {
     const tryBakiye = Number(
       bakiyeler.find((b) => b.dovizCinsi === "TRY")?.bakiye ?? 0,
     );
+    const risk = await this.riskOzeti(id, tryBakiye, kayit.riskLimiti);
     return {
       ...this.gorunum(kayit),
       adresler: kayit.adresler,
       kisiler: kayit.kisiler,
+      bankaHesaplari: kayit.bankaHesaplari,
+      etiketler: kayit.etiketler.map((a) => a.etiket),
+      temsilci: kayit.temsilci,
       fiyatListesi: kayit.fiyatListesi,
       bakiyeler,
-      riskAsimi:
-        kayit.riskLimiti !== null && tryBakiye > Number(kayit.riskLimiti),
+      risk,
+      riskAsimi: risk.asim,
+      finansalOzet: await this.finansalOzet(id),
       izinliEylemler: this.eylemler(kayit, ctx.rol, kayit._count.hareketler),
     };
+  }
+
+  /**
+   * Risk özeti (CARI-17): mevcut risk = açık TRY bakiye + portföydeki/cirolu
+   * çek-senet tutarı. Limit tanımlıysa kalan limit ve aşım bilgisi döner.
+   */
+  private async riskOzeti(
+    cariId: string,
+    tryBakiye: number,
+    riskLimiti: Prisma.Decimal | null,
+  ) {
+    const { tenantId } = aktifBaglam();
+    const cekSenet = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.cekSenet.aggregate({
+        where: { cariId, durum: { in: ["portfoyde", "ciro_edildi"] } },
+        _sum: { tutarTry: true },
+      }),
+    );
+    const cekSenetRiski = D(cekSenet._sum.tutarTry?.toString() ?? 0);
+    const mevcutRisk = D(Math.max(tryBakiye, 0)).add(cekSenetRiski);
+    const limit = riskLimiti ? D(riskLimiti.toString()) : null;
+    return {
+      cekSenetRiski: cekSenetRiski.toFixed(2),
+      mevcutRisk: mevcutRisk.toFixed(2),
+      limit: limit?.toFixed(2) ?? null,
+      kalanLimit: limit ? limit.sub(mevcutRisk).toFixed(2) : null,
+      asim: limit !== null && mevcutRisk.greaterThan(limit),
+    };
+  }
+
+  /** Hesaplanan finansal özet (CARI-18). */
+  private async finansalOzet(cariId: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const [sonIslem, sonTahsilat, sonOdeme, hareketler] = await Promise.all([
+        tx.cariHareket.findFirst({
+          where: { cariId },
+          orderBy: { tarih: "desc" },
+          select: { tarih: true },
+        }),
+        tx.kasaBankaHareket.findFirst({
+          where: { cariId, tip: "tahsilat" },
+          orderBy: { tarih: "desc" },
+          select: { tarih: true },
+        }),
+        tx.kasaBankaHareket.findFirst({
+          where: { cariId, tip: "tediye" },
+          orderBy: { tarih: "desc" },
+          select: { tarih: true },
+        }),
+        tx.cariHareket.findMany({
+          where: { cariId },
+          select: { tip: true, tutarTry: true, vadeTarihi: true, tarih: true },
+        }),
+      ]);
+      const y = yaslandir(
+        hareketler.map((h) => ({
+          tip: h.tip,
+          tutarTry: Number(h.tutarTry),
+          vadeTarihi: h.vadeTarihi,
+          tarih: h.tarih,
+        })),
+        new Date(),
+      );
+      const gun = (t?: Date | null): string | null =>
+        t ? t.toISOString().slice(0, 10) : null;
+      return {
+        sonIslemTarihi: gun(sonIslem?.tarih),
+        sonTahsilatTarihi: gun(sonTahsilat?.tarih),
+        sonOdemeTarihi: gun(sonOdeme?.tarih),
+        vadesiGecmisBakiye: (y.toplam - y.guncel).toFixed(2),
+      };
+    });
   }
 
   async olustur(girdi: CariOlusturGirdisi) {
@@ -104,6 +187,9 @@ export class CariService {
           data: {
             tenantId,
             ...girdi,
+            kvkkOnayTarihi: girdi.kvkkOnayTarihi
+              ? new Date(girdi.kvkkOnayTarihi)
+              : undefined,
             varsayilanIskonto: girdi.varsayilanIskonto
               ? D(girdi.varsayilanIskonto)
               : undefined,
@@ -131,6 +217,9 @@ export class CariService {
         where: { id },
         data: {
           ...girdi,
+          kvkkOnayTarihi: girdi.kvkkOnayTarihi
+            ? new Date(girdi.kvkkOnayTarihi)
+            : undefined,
           varsayilanIskonto: girdi.varsayilanIskonto
             ? D(girdi.varsayilanIskonto)
             : undefined,
@@ -171,6 +260,89 @@ export class CariService {
     return this.prisma.tenantIslem(tenantId, (tx) =>
       tx.cariKisi.create({ data: { tenantId, cariId, ...girdi } }),
     );
+  }
+
+  // ─── BANKA HESAPLARI (CARI-16) ─────────────────────────────────────────
+
+  async bankaHesapEkle(cariId: string, girdi: z.infer<typeof bankaHesapSemasi>) {
+    const { tenantId } = aktifBaglam();
+    await this.varlikKontrol(cariId);
+    return this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.cariBankaHesap.create({ data: { tenantId, cariId, ...girdi } }),
+    );
+  }
+
+  async bankaHesapSil(cariId: string, hesapId: string) {
+    const { tenantId } = aktifBaglam();
+    const silinen = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.cariBankaHesap.deleteMany({ where: { id: hesapId, cariId } }),
+    );
+    if (silinen.count === 0) throw new NotFoundException("Banka hesabı bulunamadı");
+  }
+
+  // ─── ETİKETLER (CARI-11) ───────────────────────────────────────────────
+
+  async etiketleriListele() {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.cariEtiket.findMany({
+        orderBy: { ad: "asc" },
+        include: { _count: { select: { atamalar: true } } },
+      }),
+    );
+  }
+
+  async etiketOlustur(girdi: z.infer<typeof etiketSemasi>) {
+    const { tenantId } = aktifBaglam();
+    try {
+      return await this.prisma.tenantIslem(tenantId, (tx) =>
+        tx.cariEtiket.create({ data: { tenantId, ...girdi } }),
+      );
+    } catch (hata) {
+      if (
+        hata instanceof Prisma.PrismaClientKnownRequestError &&
+        hata.code === "P2002"
+      ) {
+        throw new ConflictException(`'${girdi.ad}' etiketi zaten var`);
+      }
+      throw hata;
+    }
+  }
+
+  async etiketSil(etiketId: string) {
+    const { tenantId } = aktifBaglam();
+    const silinen = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.cariEtiket.deleteMany({ where: { id: etiketId } }),
+    );
+    if (silinen.count === 0) throw new NotFoundException("Etiket bulunamadı");
+  }
+
+  async etiketAta(cariId: string, etiketId: string) {
+    const { tenantId } = aktifBaglam();
+    await this.varlikKontrol(cariId);
+    return this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.cariEtiketAtama.upsert({
+        where: { tenantId_cariId_etiketId: { tenantId, cariId, etiketId } },
+        create: { tenantId, cariId, etiketId },
+        update: {},
+      }),
+    );
+  }
+
+  async etiketKaldir(cariId: string, etiketId: string) {
+    const { tenantId } = aktifBaglam();
+    await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.cariEtiketAtama.deleteMany({ where: { cariId, etiketId } }),
+    );
+  }
+
+  /** Detay görünümü hesaplamadan yalnız kayıt varlığını doğrular. */
+  private async varlikKontrol(cariId: string) {
+    const { tenantId } = aktifBaglam();
+    const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.cariHesap.findUnique({ where: { id: cariId }, select: { id: true } }),
+    );
+    if (!kayit) throw new NotFoundException("Cari bulunamadı");
   }
 
   async hareketEkle(cariId: string, girdi: CariHareketGirdisi) {
@@ -321,12 +493,23 @@ export class CariService {
     id: string;
     kod: string;
     unvan: string;
+    kisaAd: string | null;
     tip: string;
+    kisiTipi: string;
+    sektor: string | null;
+    temsilciUserId: string | null;
     vknTckn: string | null;
     vergiDairesi: string | null;
+    mersisNo: string | null;
+    ticaretSicilNo: string | null;
+    kvkkOnayTarihi: Date | null;
     eposta: string | null;
     telefon: string | null;
+    webSitesi: string | null;
+    faks: string | null;
     iban: string | null;
+    karaListe: boolean;
+    karaListeNotu: string | null;
     dovizCinsi: string;
     fiyatListesiId: string | null;
     varsayilanIskonto: Prisma.Decimal | null;
@@ -340,12 +523,23 @@ export class CariService {
       id: k.id,
       kod: k.kod,
       unvan: k.unvan,
+      kisaAd: k.kisaAd,
       tip: k.tip,
+      kisiTipi: k.kisiTipi,
+      sektor: k.sektor,
+      temsilciUserId: k.temsilciUserId,
       vknTckn: k.vknTckn,
       vergiDairesi: k.vergiDairesi,
+      mersisNo: k.mersisNo,
+      ticaretSicilNo: k.ticaretSicilNo,
+      kvkkOnayTarihi: k.kvkkOnayTarihi?.toISOString().slice(0, 10) ?? null,
       eposta: k.eposta,
       telefon: k.telefon,
+      webSitesi: k.webSitesi,
+      faks: k.faks,
       iban: k.iban,
+      karaListe: k.karaListe,
+      karaListeNotu: k.karaListeNotu,
       dovizCinsi: k.dovizCinsi,
       fiyatListesiId: k.fiyatListesiId,
       varsayilanIskonto: k.varsayilanIskonto?.toFixed(2) ?? null,

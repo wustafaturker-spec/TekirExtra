@@ -21,6 +21,8 @@ import {
   cariOlusturSemasi,
   cariGuncelleSemasi,
   adresSemasi,
+  bankaHesapSemasi,
+  etiketSemasi,
   kisiSemasi,
   cariHareketSemasi,
 } from "./cari.semalar";
@@ -42,6 +44,30 @@ export class CariController {
   @Get("rapor/yaslandirma")
   async yaslandirmaRaporu() {
     return this.cariService.yaslandirmaRaporu();
+  }
+
+  @Get("etiketler")
+  async etiketleriListele() {
+    return this.cariService.etiketleriListele();
+  }
+
+  @Post("etiketler")
+  @Roller("muhasebe")
+  async etiketOlustur(@Body() govde: unknown) {
+    const ayristirma = etiketSemasi.safeParse(govde);
+    if (!ayristirma.success) {
+      throw new BadRequestException(
+        ayristirma.error.issues.map((s) => s.message).join("; "),
+      );
+    }
+    return this.cariService.etiketOlustur(ayristirma.data);
+  }
+
+  @Delete("etiketler/:etiketId")
+  @Roller("muhasebe")
+  @HttpCode(204)
+  async etiketSil(@Param("etiketId") etiketId: string) {
+    await this.cariService.etiketSil(etiketId);
   }
 
   @Get(":id")
@@ -102,6 +128,47 @@ export class CariController {
       );
     }
     return this.cariService.kisiEkle(id, ayristirma.data);
+  }
+
+  @Post(":id/banka-hesaplari")
+  @Roller("muhasebe")
+  async bankaHesapEkle(@Param("id") id: string, @Body() govde: unknown) {
+    const ayristirma = bankaHesapSemasi.safeParse(govde);
+    if (!ayristirma.success) {
+      throw new BadRequestException(
+        ayristirma.error.issues.map((s) => s.message).join("; "),
+      );
+    }
+    return this.cariService.bankaHesapEkle(id, ayristirma.data);
+  }
+
+  @Delete(":id/banka-hesaplari/:hesapId")
+  @Roller("muhasebe")
+  @HttpCode(204)
+  async bankaHesapSil(
+    @Param("id") id: string,
+    @Param("hesapId") hesapId: string,
+  ) {
+    await this.cariService.bankaHesapSil(id, hesapId);
+  }
+
+  @Post(":id/etiketler/:etiketId")
+  @Roller("muhasebe")
+  async etiketAta(
+    @Param("id") id: string,
+    @Param("etiketId") etiketId: string,
+  ) {
+    return this.cariService.etiketAta(id, etiketId);
+  }
+
+  @Delete(":id/etiketler/:etiketId")
+  @Roller("muhasebe")
+  @HttpCode(204)
+  async etiketKaldir(
+    @Param("id") id: string,
+    @Param("etiketId") etiketId: string,
+  ) {
+    await this.cariService.etiketKaldir(id, etiketId);
   }
 
   @Post(":id/hareketler")

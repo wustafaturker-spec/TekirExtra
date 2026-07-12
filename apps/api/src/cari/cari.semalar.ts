@@ -1,6 +1,15 @@
+import { vknTcknGecerliMi } from "@tekirextra/shared";
 import { z } from "zod";
 
-export const CARI_TIPLERI = ["musteri", "tedarikci", "her_ikisi"] as const;
+export const CARI_TIPLERI = [
+  "musteri",
+  "tedarikci",
+  "her_ikisi",
+  "personel",
+  "ortak",
+  "diger",
+] as const;
+export const KISI_TIPLERI = ["gercek", "tuzel"] as const;
 export const DOVIZLER = ["TRY", "USD", "EUR"] as const;
 
 /** Ondalık girdiler API'de string taşınır (hassasiyet korunur, NFR-10). */
@@ -14,12 +23,27 @@ const pozitifOndalik = z
 export const cariOlusturSemasi = z.object({
   kod: z.string().min(1).max(32),
   unvan: z.string().min(2).max(255),
+  kisaAd: z.string().max(80).optional(),
   tip: z.enum(CARI_TIPLERI),
-  vknTckn: z.string().regex(/^\d{10,11}$/).optional(),
+  kisiTipi: z.enum(KISI_TIPLERI).default("tuzel"),
+  sektor: z.string().max(120).optional(),
+  temsilciUserId: z.uuid().optional(),
+  vknTckn: z
+    .string()
+    .regex(/^\d{10,11}$/)
+    .refine(vknTcknGecerliMi, "Geçersiz VKN/TCKN (kontrol hanesi tutmuyor)")
+    .optional(),
   vergiDairesi: z.string().max(120).optional(),
+  mersisNo: z.string().regex(/^\d{16}$/, "MERSİS no 16 haneli olmalıdır").optional(),
+  ticaretSicilNo: z.string().max(32).optional(),
+  kvkkOnayTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)").optional(),
   eposta: z.email().optional(),
   telefon: z.string().max(32).optional(),
+  webSitesi: z.url().optional(),
+  faks: z.string().max(32).optional(),
   iban: z.string().max(34).optional(),
+  karaListe: z.boolean().default(false),
+  karaListeNotu: z.string().max(500).optional(),
   dovizCinsi: z.enum(DOVIZLER).default("TRY"),
   fiyatListesiId: z.uuid().optional(),
   varsayilanIskonto: pozitifOndalik.optional(),
@@ -32,12 +56,33 @@ export const cariGuncelleSemasi = cariOlusturSemasi.partial().extend({
 });
 
 export const adresSemasi = z.object({
-  tip: z.enum(["fatura", "sevk"]),
+  tip: z.enum(["fatura", "sevk", "merkez", "sube", "depo"]),
   baslik: z.string().min(1).max(80),
   adres: z.string().min(2).max(500),
   il: z.string().max(60).optional(),
   ilce: z.string().max(60).optional(),
+  postaKodu: z.string().max(10).optional(),
   ulke: z.string().length(2).default("TR"),
+});
+
+export const bankaHesapSemasi = z.object({
+  bankaAdi: z.string().min(2).max(120),
+  subeAdi: z.string().max(120).optional(),
+  hesapSahibi: z.string().max(160).optional(),
+  iban: z
+    .string()
+    .regex(/^TR\d{24}$/i, "IBAN 'TR' + 24 rakam olmalıdır")
+    .transform((v) => v.toUpperCase()),
+  swift: z.string().max(11).optional(),
+  paraBirimi: z.enum(DOVIZLER).default("TRY"),
+});
+
+export const etiketSemasi = z.object({
+  ad: z.string().min(1).max(40),
+  renk: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, "Renk #RRGGBB biçiminde olmalıdır")
+    .optional(),
 });
 
 export const kisiSemasi = z.object({

@@ -67,7 +67,8 @@ model User {
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
-  tenant Tenant @relation(fields: [tenantId], references: [id])
+  tenant         Tenant      @relation(fields: [tenantId], references: [id])
+  temsilciCariler CariHesap[] @relation("CariTemsilci")
 
   @@unique([tenantId, eposta])
   @@index([tenantId])
@@ -171,6 +172,15 @@ enum CariTip {
   musteri
   tedarikci
   her_ikisi
+  personel
+  ortak
+  diger
+}
+
+/// Gerçek/tüzel kişi ayrımı (CARI-13)
+enum KisiTip {
+  gercek
+  tuzel
 }
 
 enum DovizCinsi {
@@ -187,6 +197,9 @@ enum CariHareketTip {
 enum AdresTip {
   fatura
   sevk
+  merkez
+  sube
+  depo
 }
 
 enum StokTip {
@@ -205,12 +218,23 @@ model CariHesap {
   tenantId                String     @map("tenant_id") @db.Uuid
   kod                     String
   unvan                   String
+  kisaAd                  String?    @map("kisa_ad")
   tip                     CariTip
+  kisiTipi                KisiTip    @default(tuzel) @map("kisi_tipi")
+  sektor                  String?
+  temsilciUserId          String?    @map("temsilci_user_id") @db.Uuid
   vknTckn                 String?    @map("vkn_tckn")
   vergiDairesi            String?    @map("vergi_dairesi")
+  mersisNo                String?    @map("mersis_no")
+  ticaretSicilNo          String?    @map("ticaret_sicil_no")
+  kvkkOnayTarihi          DateTime?  @map("kvkk_onay_tarihi") @db.Date
   eposta                  String?
   telefon                 String?
+  webSitesi               String?    @map("web_sitesi")
+  faks                    String?
   iban                    String?
+  karaListe               Boolean    @default(false) @map("kara_liste")
+  karaListeNotu           String?    @map("kara_liste_notu")
   dovizCinsi              DovizCinsi @default(TRY) @map("doviz_cinsi")
   fiyatListesiId          String?    @map("fiyat_listesi_id") @db.Uuid
   varsayilanIskonto       Decimal?   @map("varsayilan_iskonto") @db.Decimal(5, 2)
@@ -224,8 +248,11 @@ model CariHesap {
   updatedAt               DateTime   @updatedAt @map("updated_at")
 
   fiyatListesi         FiyatListesi?      @relation(fields: [fiyatListesiId], references: [id])
+  temsilci             User?              @relation("CariTemsilci", fields: [temsilciUserId], references: [id])
   adresler             CariAdres[]
   kisiler              CariKisi[]
+  bankaHesaplari       CariBankaHesap[]
+  etiketler            CariEtiketAtama[]
   hareketler           CariHareket[]
   faturas              Fatura[]
   ceklerAlinan         CekSenet[]         @relation("CekSenetCari")
@@ -241,12 +268,13 @@ model CariAdres {
   id       String   @id @default(uuid()) @db.Uuid
   tenantId String   @map("tenant_id") @db.Uuid
   cariId   String   @map("cari_id") @db.Uuid
-  tip      AdresTip
-  baslik   String
-  adres    String
-  il       String?
-  ilce     String?
-  ulke     String   @default("TR")
+  tip       AdresTip
+  baslik    String
+  adres     String
+  il        String?
+  ilce      String?
+  postaKodu String?  @map("posta_kodu")
+  ulke      String   @default("TR")
 
   cari CariHesap @relation(fields: [cariId], references: [id], onDelete: Cascade)
 
@@ -267,6 +295,50 @@ model CariKisi {
 
   @@index([tenantId, cariId])
   @@map("cari_kisiler")
+}
+
+/// Cari başına birden çok banka hesabı (CARI-16)
+model CariBankaHesap {
+  id          String     @id @default(uuid()) @db.Uuid
+  tenantId    String     @map("tenant_id") @db.Uuid
+  cariId      String     @map("cari_id") @db.Uuid
+  bankaAdi    String     @map("banka_adi")
+  subeAdi     String?    @map("sube_adi")
+  hesapSahibi String?    @map("hesap_sahibi")
+  iban        String
+  swift       String?
+  paraBirimi  DovizCinsi @default(TRY) @map("para_birimi")
+
+  cari CariHesap @relation(fields: [cariId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, cariId])
+  @@map("cari_banka_hesaplari")
+}
+
+/// Cari etiketleri (CARI-11): bayi, perakende, VIP vb.
+model CariEtiket {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  ad       String
+  renk     String?
+
+  atamalar CariEtiketAtama[]
+
+  @@unique([tenantId, ad])
+  @@map("cari_etiketleri")
+}
+
+model CariEtiketAtama {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  cariId   String @map("cari_id") @db.Uuid
+  etiketId String @map("etiket_id") @db.Uuid
+
+  cari   CariHesap  @relation(fields: [cariId], references: [id], onDelete: Cascade)
+  etiket CariEtiket @relation(fields: [etiketId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, cariId, etiketId])
+  @@map("cari_etiket_atamalari")
 }
 
 /// Bakiye her zaman hareketlerden türetilir (MIMARI §7). Kaynak belge

@@ -352,6 +352,14 @@ export class FaturaService {
         throw new BadRequestException("Fatura zaten kesinleştirilmiş veya iptal edilmiş");
       }
 
+      // İşlem blokajı (CARI-17): kara listedeki cariye belge kesilemez.
+      if (fatura.cari.karaListe) {
+        throw new BadRequestException(
+          `'${fatura.cari.unvan}' işlem blokajında (kara liste); fatura kesinleştirilemez` +
+            (fatura.cari.karaListeNotu ? ` — ${fatura.cari.karaListeNotu}` : ""),
+        );
+      }
+
       let seriKod = veri?.seri ?? "TKR";
       let faturaNo = veri?.no ?? null;
 
@@ -434,6 +442,24 @@ export class FaturaService {
         });
       }
 
+      // Risk limiti kontrolü (CARI-08): kesinleştirmeyi engellemez, uyarı döner.
+      let riskUyari: string | null = null;
+      if (fatura.tip === "satis" && fatura.cari.riskLimiti !== null) {
+        const gruplar = await tx.cariHareket.groupBy({
+          by: ["tip"],
+          where: { cariId: fatura.cariId },
+          _sum: { tutarTry: true },
+        });
+        let bakiye = new Prisma.Decimal(0);
+        for (const g of gruplar) {
+          const t = g._sum.tutarTry ?? new Prisma.Decimal(0);
+          bakiye = g.tip === "borc" ? bakiye.add(t) : bakiye.sub(t);
+        }
+        if (bakiye.greaterThan(fatura.cari.riskLimiti)) {
+          riskUyari = `Risk limiti aşıldı: bakiye ${bakiye.toFixed(2)} TL, limit ${fatura.cari.riskLimiti.toFixed(2)} TL`;
+        }
+      }
+
       // 4. e-Belge Gönderim Tetikleyicisi
       let ebelgeGerekli = false;
       if (fatura.tip === "satis" || fatura.tip === "satis_iade") {
@@ -461,7 +487,10 @@ export class FaturaService {
         },
       });
 
-      return { kesinFatura: this.gorunum(kesinFatura), ebelgeGerekli };
+      return {
+        kesinFatura: { ...this.gorunum(kesinFatura), riskUyari },
+        ebelgeGerekli,
+      };
     });
 
     if (sonuc.ebelgeGerekli) {
