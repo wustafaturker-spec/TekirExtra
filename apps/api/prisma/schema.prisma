@@ -1,0 +1,113 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_MIGRATE")
+}
+
+enum Rol {
+  yonetici
+  muhasebe
+  satis
+  salt_okunur
+}
+
+enum BaglantiAile {
+  ebelge
+  pazaryeri
+  pos
+  banka
+}
+
+enum BaglantiDurumu {
+  pasif
+  aktif
+  hata
+}
+
+model Tenant {
+  id           String   @id @default(uuid()) @db.Uuid
+  unvan        String
+  vkn          String   @unique
+  vergiDairesi String?  @map("vergi_dairesi")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  users       User[]
+  modulAyarlari ModulAyar[]
+  baglantilar Baglanti[]
+  auditLoglar AuditLog[]
+
+  @@map("tenants")
+}
+
+model User {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  eposta     String
+  parolaHash String   @map("parola_hash")
+  adSoyad    String   @map("ad_soyad")
+  rol        Rol
+  aktif      Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, eposta])
+  @@index([tenantId])
+  @@map("users")
+}
+
+/// Modül başına ayarlar; zod şemasıyla doğrulanır (AYR-01/03, MIMARI §4.2).
+model ModulAyar {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  modul     String
+  ayarlar   Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, modul])
+  @@map("modul_ayarlari")
+}
+
+/// Dış bağlantılar: e-belge/pazaryeri/POS/banka (ENT-01, MIMARI §5).
+/// sifreliConfig: AES-256-GCM ile şifrelenmiş erişim bilgileri (EBLG-01b).
+model Baglanti {
+  id            String         @id @default(uuid()) @db.Uuid
+  tenantId      String         @map("tenant_id") @db.Uuid
+  aile          BaglantiAile
+  saglayici     String
+  sifreliConfig String         @map("sifreli_config")
+  durum         BaglantiDurumu @default(pasif)
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, aile])
+  @@map("baglantilar")
+}
+
+/// Denetim izi (KLN-04) — uygulamadan salt-ekleme; güncelleme/silme yok.
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  islem     String
+  varlik    String
+  varlikId  String?  @map("varlik_id")
+  detay     Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@map("audit_log")
+}
