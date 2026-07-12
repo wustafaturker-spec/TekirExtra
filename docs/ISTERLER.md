@@ -1,10 +1,15 @@
 # TekirExtra — Yazılım İster Dokümanı (SRS)
 
-**Sürüm:** 0.6
+**Sürüm:** 0.7
 **Tarih:** 2026-07-12
-**Durum:** 3. aşama S-01 onayı alındı: CARI-05/06/07/08/10, STK-05/06/08/09/10/11
-dahil tam kapsam onaylandı. Not: CARI-04'ün PDF çıktısı, PDF şablon altyapısıyla
-birlikte 4. aşamada (T-02); bu aşamada Excel dışa aktarım gelir.
+**Durum:** Rapor aşaması S-01 onayı alındı (2026-07-12): RPR-06 ortak rapor araç
+seti + tüm [Z] modül raporları (CARI-12, STK-13, FTR-15; KDV dökümü RPR-02'yi de
+karşılar) bu aşamada geliştirilir; mevcut tekil raporlar araç setine taşınır.
+Dışa aktarım bu aşamada Excel; PDF, şablon altyapısıyla (T-02) 4. aşamada tüm
+raporlara gelir. Kayıtlı görünümler kişiseldir, kullanıcı isterse "firma geneli"
+işaretiyle paylaşır. RPR-07 (Metabase) ertelendi, ayrı aşamada ele alınacak.
+Önceki kapı: 3. aşama onayı — CARI-05/06/07/08/10, STK-05/06/08/09/10/11 dahil
+tam kapsam; CARI-04 PDF çıktısı 4. aşamada (T-02).
 
 ---
 
