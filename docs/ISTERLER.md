@@ -1,15 +1,20 @@
 # TekirExtra — Yazılım İster Dokümanı (SRS)
 
-**Sürüm:** 0.7
+**Sürüm:** 0.8
 **Tarih:** 2026-07-12
-**Durum:** Rapor aşaması S-01 onayı alındı (2026-07-12): RPR-06 ortak rapor araç
-seti + tüm [Z] modül raporları (CARI-12, STK-13, FTR-15; KDV dökümü RPR-02'yi de
-karşılar) bu aşamada geliştirilir; mevcut tekil raporlar araç setine taşınır.
-Dışa aktarım bu aşamada Excel; PDF, şablon altyapısıyla (T-02) 4. aşamada tüm
-raporlara gelir. Kayıtlı görünümler kişiseldir, kullanıcı isterse "firma geneli"
-işaretiyle paylaşır. RPR-07 (Metabase) ertelendi, ayrı aşamada ele alınacak.
-Önceki kapı: 3. aşama onayı — CARI-05/06/07/08/10, STK-05/06/08/09/10/11 dahil
-tam kapsam; CARI-04 PDF çıktısı 4. aşamada (T-02).
+**Durum:** Cari Genişletme Paketi S-01 onayı alındı (2026-07-12): CARI-13…18
+(kimlik/vergi/iletişim genişletme, çoklu banka hesabı, kara liste/blokaj + risk
+özeti, hesaplanan finansal özet) + CARI-11 etiketler, **rapor aşamasından önce**
+tam kapsamla geliştirilir. Belge/dosya ekleri ortak altyapı olarak 4. aşamada
+(T-02 ile) gelir. CRM (CARI-19) ve AI destekli analizler (CARI-20) [G] olarak
+eklendi. Entegrasyon bilgileri cari kartında tutulmaz; firma düzeyi bağlantı
+modeline (ENT-01) aittir.
+Önceki kapılar: Rapor aşaması onayı — RPR-06 araç seti + tüm [Z] modül raporları
+(CARI-12, STK-13, FTR-15; KDV dökümü RPR-02'yi karşılar); dışa aktarım bu aşamada
+Excel, PDF 4. aşamada (T-02); kayıtlı görünümler kişisel + "firma geneli"
+paylaşım işareti; RPR-07 (Metabase) ertelendi. 3. aşama onayı —
+CARI-05/06/07/08/10, STK-05/06/08/09/10/11 dahil tam kapsam; CARI-04 PDF çıktısı
+4. aşamada (T-02).
 
 ---
 
@@ -91,6 +96,14 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | CARI-10 | Cari bazında özel satış koşulları tanımlanabilmelidir: özel fiyat listesi, varsayılan iskonto oranı, varsayılan vade (gün). | İ |
 | CARI-11 | Cariler kategori/etiketlerle gruplanabilmeli (ör. bayi, perakende, VIP); listeler ve raporlar bu kırılımla filtrelenebilmelidir. | İ |
 | CARI-12 | **Modül içi raporlar:** ekstre, yaşlandırma, cari bazlı satış/alış özeti, tahsilat performansı (ortalama tahsilat süresi), en yüksek bakiyeli cariler. Tümü RPR-06 rapor araç setini kullanır. | Z |
+| CARI-13 | Kimlik genişletme: kısa ad, gerçek/tüzel kişi ayrımı, sektör, cari temsilcisi (kullanıcı); cari tipine **personel** ve **ortak** eklenir. | Z |
+| CARI-14 | Resmi bilgiler: MERSİS no, ticaret sicil no, KVKK onay tarihi; VKN/TCKN format ve checksum doğrulaması yapılmalıdır. | Z |
+| CARI-15 | İletişim/adres genişletme: web sitesi, faks; adres tipleri merkez/şube/depo ile genişler, posta kodu eklenir. | Z |
+| CARI-16 | Cari başına birden çok banka hesabı tutulabilmelidir (banka, şube, hesap sahibi, IBAN, SWIFT, para birimi). | Z |
+| CARI-17 | Kara liste / işlem blokajı: blokajlı cariye belge kesimi AYR-04 kural altyapısıyla engellenir. Kart üzerinde risk özeti gösterilir: risk limiti, mevcut risk (bakiye + çek/senet riski), kalan limit. | Z |
+| CARI-18 | Kart detayında hesaplanan finansal özet sunulmalıdır: son işlem/tahsilat/ödeme tarihi, vadesi geçmiş bakiye. | Z |
+| CARI-19 | CRM özellikleri: görüşme kayıtları, görevler, hatırlatmalar, teklif geçmişi. | G |
+| CARI-20 | AI destekli analizler: tahsilat gecikme tahmini, risk skorlama, ödeme davranışı analizi, otomatik limit önerisi. | G |
 
 ### 3.2 Fatura Yönetimi (FTR)
 
