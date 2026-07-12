@@ -8,6 +8,9 @@
     "typecheck": {
       "dependsOn": ["^build"]
     },
+    "@tekirextra/web#typecheck": {
+      "dependsOn": ["@tekirextra/web#build"]
+    },
     "test": {
       "dependsOn": ["^build"]
     },

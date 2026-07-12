@@ -278,6 +278,9 @@ Tüm kiracıya ait tablolarda: `id UUID PK`, `tenant_id UUID` (RLS), `created_at
 | `kasa_banka_hareketleri` | Tahsilat/tediye/virman; cari hareketle eşleşir (KSB-02, KSB-07) |
 | `cek_senetler` | Portföy/ciro/tahsil/karşılıksız durum makinesi (KSB-05) |
 | `audit_log` | KLN-04; RLS'li ama uygulamadan salt-ekleme (append-only) |
+| `auth_kimlikler` | e-posta → (tenant, user) rehberi; **bilinçli olarak RLS'siz** — oturum açarken kiracı bağlamı henüz yoktur. Parola içermez, e-posta sistem genelinde tekildir |
+| `oturumlar` | Refresh token'lar (hash); RLS'siz — token yenileme ön-kimlik aşamasında yapılır |
+| `eposta_dogrulamalar` | Kayıt doğrulama token'ları (hash, süreli — KLN-09); RLS'siz, aynı gerekçe |
 
 v1.1+ entegrasyon aileleri için tablolar (`pazaryeri_siparisleri`,
 `pos_tahsilatlari`, `banka_hareket_havuzu`, `odeme_talimatlari`) v1.0'da

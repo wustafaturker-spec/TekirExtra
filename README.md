@@ -34,7 +34,7 @@ pnpm build && pnpm test
 # API'yi çalıştır
 node apps/api/dist/main.js        # http://localhost:3001/health
 # Web'i çalıştır
-pnpm --filter @tekirextra/web dev # http://localhost:3000
+pnpm --filter @tekirextra/web dev # http://localhost:3100
 ```
 
 ## Kiracı yalıtımı (RLS)

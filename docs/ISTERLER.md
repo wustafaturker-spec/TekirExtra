@@ -1,8 +1,8 @@
 # TekirExtra — Yazılım İster Dokümanı (SRS)
 
-**Sürüm:** 0.4
+**Sürüm:** 0.5
 **Tarih:** 2026-07-12
-**Durum:** Süreç kuralı (S-01), gelişmiş cari/stok/satış-alış isterleri, modül içi raporlama (RPR-06) ve Metabase (RPR-07) eklendi
+**Durum:** 2. aşama S-01 onayı alındı: TOTP (KLN-05) zorunluya çekildi, e-posta doğrulaması (KLN-09) eklendi
 
 ---
 
@@ -171,7 +171,8 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | KLN-02 | Bölüm 2.2'deki roller atanabilmeli; yetkisiz modüller arayüzde ve API'de erişime kapalı olmalıdır. | Z |
 | KLN-03 | Firma bilgileri (unvan, VKN, vergi dairesi, logo, e-imza/mali mühür entegratör bilgileri) yönetilebilmelidir. | Z |
 | KLN-04 | Tüm kritik işlemler (fatura kesme/iptal, kayıt silme, yetki değişikliği) denetim izine (audit log) yazılmalıdır: kim, ne zaman, ne yaptı. | Z |
-| KLN-05 | İki adımlı doğrulama (TOTP) desteklenmelidir. | İ |
+| KLN-05 | İki adımlı doğrulama (TOTP) desteklenmelidir. | Z |
+| KLN-09 | Firma kaydında e-posta doğrulaması yapılmalıdır: kayıtta doğrulama linki gönderilir, link tıklanmadan oturum açılamaz. | Z |
 | KLN-06 | Sistem çok kiracılı (multi-tenant) çalışmalıdır: her firma bağımsız kaydolur, firmalar arası veri yalıtımı hem uygulama hem veri katmanında garanti edilmelidir. | Z |
 | KLN-07 | Firma kaydı (onboarding) self-servis olmalıdır: firma bilgileri, ilk yönetici kullanıcı ve entegratör bağlantısı sihirbazla kurulabilmelidir. | Z |
 | KLN-08 | Firma hesabı modeli, ileride abonelik planı/faturalandırma bilgisi taşıyacak şekilde genişletilebilir olmalıdır; v1.0'da fiyatlandırma uygulanmaz. | G |

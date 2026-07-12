@@ -45,21 +45,66 @@ model Tenant {
 }
 
 model User {
-  id         String   @id @default(uuid()) @db.Uuid
-  tenantId   String   @map("tenant_id") @db.Uuid
-  eposta     String
-  parolaHash String   @map("parola_hash")
-  adSoyad    String   @map("ad_soyad")
-  rol        Rol
-  aktif      Boolean  @default(true)
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  eposta           String
+  parolaHash       String   @map("parola_hash")
+  adSoyad          String   @map("ad_soyad")
+  rol              Rol
+  aktif            Boolean  @default(true)
+  epostaDogrulandi Boolean  @default(false) @map("eposta_dogrulandi")
+  /// TOTP gizli anahtarı AES-256-GCM ile şifreli saklanır (KLN-05)
+  totpSecretSifreli String? @map("totp_secret_sifreli")
+  totpAktif        Boolean  @default(false) @map("totp_aktif")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 
   @@unique([tenantId, eposta])
   @@index([tenantId])
   @@map("users")
+}
+
+/// e-posta → (tenant, user) rehberi. BİLİNÇLİ OLARAK RLS'SİZ: oturum açma
+/// anında kiracı bağlamı henüz yoktur. Parola içermez; e-posta sistem
+/// genelinde tekildir (MIMARI §7).
+model AuthKimlik {
+  id        String   @id @default(uuid()) @db.Uuid
+  eposta    String   @unique
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @unique @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("auth_kimlikler")
+}
+
+/// Refresh token oturumları (hash saklanır). RLS'siz: token yenileme
+/// ön-kimlik aşamasında yapılır (MIMARI §7).
+model Oturum {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  refreshTokenHash String   @unique @map("refresh_token_hash")
+  gecerlilikSonu   DateTime @map("gecerlilik_sonu")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("oturumlar")
+}
+
+/// e-posta doğrulama token'ları (KLN-09; hash saklanır, süreli). RLS'siz:
+/// doğrulama linki oturum açılmadan tıklanır (MIMARI §7).
+model EpostaDogrulama {
+  id             String    @id @default(uuid()) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  tokenHash      String    @unique @map("token_hash")
+  gecerlilikSonu DateTime  @map("gecerlilik_sonu")
+  kullanildi     Boolean   @default(false)
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@map("eposta_dogrulamalar")
 }
 
 /// Modül başına ayarlar; zod şemasıyla doğrulanır (AYR-01/03, MIMARI §4.2).
