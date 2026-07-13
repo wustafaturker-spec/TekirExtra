@@ -1,18 +1,22 @@
 # TekirExtra — Yazılım İster Dokümanı (SRS)
 
-**Sürüm:** 0.11
+**Sürüm:** 0.12
 **Tarih:** 2026-07-13
-**Durum:** Belge Zinciri Paketi S-01 onayı alındı (2026-07-13): **FTR-12 tam
-kapsam** (teklif → sipariş → irsaliye → fatura; satış VE alış yönü) + FTR-13
-toplu faturalama + FTR-09 proforma dönüştürme + belge PDF çıktıları (T-02).
-Kararlar: stok düşümü **her zaman faturada** (irsaliye yalnız sevk belgesidir,
-stok hareketi üretmez); satış siparişi onayında **otomatik rezervasyon**,
-açık alış siparişi **yoldaki stok** göstergesini besler; kullanılabilir stok =
-mevcut − rezerve; **STK-17 eksi stok politikası kullanılabilir stok üzerinden**
-çalışır. Rezerv, zincirli fatura kesinleşince veya sipariş iptalinde çözülür.
-Önceki kapı: 4. aşama — T-02 Playwright/Chromium PDF altyapısı, FTR-07,
-CARI-04/RPR-04 PDF, barkod etiket basımı, ekler ortak altyapısı (MinIO);
-tamamlandı.
+**Durum:** Tamamlama Paketi S-01 onayı alındı (2026-07-13): kalan tüm [Z] ve
+[İ] maddeler tek pakette kapatılır — **AYR-07** kopyalama uçları (fatura, cari,
+stok, belge; izinliEylemler "kopyala" diyordu ama uç yoktu), **KLN-03** firma
+logosu (ekler altyapısıyla), **FTR-14** fiyat listesi/iskonto önerisi +
+**kullanıcı bazlı maksimum iskonto yetkisi** (User.maksIskontoYuzdesi; boşsa
+sınırsız), **FTR-11** istisna senaryosu **satır bazında GİB istisna koduyla**
+(tevkifat zaten mevcut), **RPR-05** kâr/zarar özeti (satış matrahı − alış
+matrahı − kasa/banka tediye giderleri). Bu paketten sonra v1.0 kapsamında
+yalnız [G] maddeler kalır.
+Önceki kapılar: Belge Zinciri Paketi — FTR-12 tam kapsam (satış+alış), FTR-13,
+FTR-09, belge PDF'leri; stok düşümü her zaman faturada, satış siparişinde
+otomatik rezervasyon, alış siparişinde yoldaki stok, STK-17 kullanılabilir stok
+(mevcut − rezerve) üzerinden; tamamlandı. 4. aşama — T-02 Playwright/Chromium
+PDF altyapısı, FTR-07, CARI-04/RPR-04 PDF, barkod etiket basımı, ekler ortak
+altyapısı (MinIO); tamamlandı.
 Önceki kapılar: Stok Genişletme Paketi — STK-14…20, tamamlandı; STK-21 [G].
 Cari Genişletme Paketi — CARI-13…18 + CARI-11, tamamlandı; CRM (CARI-19) ve
 AI (CARI-20) [G]. Rapor aşaması — RPR-06 araç seti + tüm [Z] modül raporları,
