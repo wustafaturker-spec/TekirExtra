@@ -3,6 +3,7 @@ import { Module } from "@nestjs/common";
 import { APP_INTERCEPTOR } from "@nestjs/core";
 import { ConfigModule } from "@nestjs/config";
 import { AuthModule } from "./auth/auth.module";
+import { BelgelerModule } from "./belgeler/belgeler.module";
 import { CariModule } from "./cari/cari.module";
 import { StokModule } from "./stok/stok.module";
 import { FaturaModule } from "./fatura/fatura.module";
@@ -21,6 +22,7 @@ import { TenantModule } from "./tenant/tenant.module";
     CoreModule,
     AuthModule,
     TenantModule,
+    BelgelerModule,
     CariModule,
     StokModule,
     FaturaModule,

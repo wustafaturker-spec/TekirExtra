@@ -290,6 +290,7 @@ model CariHesap {
   ceklerCiro           CekSenet[]         @relation("CekSenetCiro")
   kasaBankaHareketleri KasaBankaHareket[]
   stokTedarikcilikleri StokTedarikci[]
+  belgeler             Belge[]
 
   @@unique([tenantId, kod])
   @@index([tenantId, unvan])
@@ -439,6 +440,10 @@ model StokKart {
   tedarikSuresiGun Int?     @map("tedarik_suresi_gun")
   gorselUrl        String?  @map("gorsel_url")
   mevcutMiktar     Decimal  @default(0) @map("mevcut_miktar") @db.Decimal(15, 3)
+  /// FTR-12: açık satış siparişlerinin rezervi; kullanılabilir = mevcut − rezerve
+  rezerveMiktar    Decimal  @default(0) @map("rezerve_miktar") @db.Decimal(15, 3)
+  /// FTR-12: açık alış siparişlerinden beklenen (yoldaki) miktar
+  yoldakiMiktar    Decimal  @default(0) @map("yoldaki_miktar") @db.Decimal(15, 3)
   ortalamaMaliyet  Decimal  @default(0) @map("ortalama_maliyet") @db.Decimal(15, 4)
   aktif            Boolean  @default(true)
   createdAt        DateTime @default(now()) @map("created_at")
@@ -451,6 +456,7 @@ model StokKart {
   hareketler   StokHareket[]
   fiyatlar     FiyatListesiKalem[]
   faturaSatirs FaturaSatir[]
+  belgeSatirlari BelgeSatir[]
 
   @@unique([tenantId, kod])
   @@index([tenantId, ad])
@@ -641,6 +647,7 @@ model Fatura {
   satirlar          FaturaSatir[]
   ebelge            EbelgeKayit?
   kasaBankaHarekets KasaBankaHareket[]
+  zincirBelgeleri   Belge[]
 
   @@unique([tenantId, seri, sira])
   @@index([tenantId, tarih])
@@ -849,4 +856,107 @@ model Ek {
 
   @@index([tenantId, sahipTur, sahipId])
   @@map("ekler")
+}
+
+// ─── Belge Zinciri (FTR-12): teklif → sipariş → irsaliye → fatura ──────────
+
+enum BelgeTur {
+  teklif
+  siparis
+  irsaliye
+}
+
+enum BelgeYon {
+  satis
+  alis
+}
+
+/// kapandi = zincirde sonraki belgeye/faturaya dönüştü
+enum ZincirBelgeDurum {
+  taslak
+  onaylandi
+  kapandi
+  iptal
+}
+
+/// Stok düşümü HER ZAMAN faturada (S-01 2026-07-13); irsaliye yalnız sevk
+/// belgesidir. Satış siparişi onayı rezerv, alış siparişi yoldaki üretir.
+model Belge {
+  id                   String           @id @default(uuid()) @db.Uuid
+  tenantId             String           @map("tenant_id") @db.Uuid
+  tur                  BelgeTur
+  yon                  BelgeYon
+  durum                ZincirBelgeDurum @default(taslak)
+  no                   String?
+  tarih                DateTime         @db.Date
+  gecerlilikTarihi     DateTime?        @map("gecerlilik_tarihi") @db.Date
+  cariId               String           @map("cari_id") @db.Uuid
+  dovizCinsi           DovizCinsi       @default(TRY) @map("doviz_cinsi")
+  kur                  Decimal          @default(1) @db.Decimal(15, 6)
+  genelIskontoYuzdesi  Decimal          @default(0) @map("genel_iskonto_yuzdesi") @db.Decimal(5, 2)
+  genelIskontoTutari   Decimal          @default(0) @map("genel_iskonto_tutari") @db.Decimal(15, 2)
+  toplamBrut           Decimal          @map("toplam_brut") @db.Decimal(15, 2)
+  toplamSatirIskontosu Decimal          @map("toplam_satir_iskontosu") @db.Decimal(15, 2)
+  genelIskontoToplam   Decimal          @map("genel_iskonto_toplam") @db.Decimal(15, 2)
+  toplamMatrah         Decimal          @map("toplam_matrah") @db.Decimal(15, 2)
+  toplamKdv            Decimal          @map("toplam_kdv") @db.Decimal(15, 2)
+  toplamTevkifat       Decimal          @default(0) @map("toplam_tevkifat") @db.Decimal(15, 2)
+  toplamNetKdv         Decimal          @map("toplam_net_kdv") @db.Decimal(15, 2)
+  genelToplam          Decimal          @map("genel_toplam") @db.Decimal(15, 2)
+  aciklama             String?
+  notlar               String?
+  kaynakBelgeId        String?          @map("kaynak_belge_id") @db.Uuid
+  faturaId             String?          @map("fatura_id") @db.Uuid
+  createdAt            DateTime         @default(now()) @map("created_at")
+  updatedAt            DateTime         @updatedAt @map("updated_at")
+
+  cari         CariHesap    @relation(fields: [cariId], references: [id])
+  kaynakBelge  Belge?       @relation("BelgeZinciri", fields: [kaynakBelgeId], references: [id])
+  turetilenler Belge[]      @relation("BelgeZinciri")
+  fatura       Fatura?      @relation(fields: [faturaId], references: [id])
+  satirlar     BelgeSatir[]
+
+  @@unique([tenantId, no])
+  @@index([tenantId, tur, durum])
+  @@index([tenantId, cariId])
+  @@map("belgeler")
+}
+
+model BelgeSatir {
+  id               String  @id @default(uuid()) @db.Uuid
+  tenantId         String  @map("tenant_id") @db.Uuid
+  belgeId          String  @map("belge_id") @db.Uuid
+  stokId           String  @map("stok_id") @db.Uuid
+  miktar           Decimal @db.Decimal(15, 3)
+  birim            String  @default("adet")
+  birimFiyat       Decimal @map("birim_fiyat") @db.Decimal(15, 4)
+  iskontoOrani     Decimal @default(0) @map("iskonto_orani") @db.Decimal(5, 2)
+  iskontoTutari    Decimal @default(0) @map("iskonto_tutari") @db.Decimal(15, 2)
+  genelIskontoPayi Decimal @default(0) @map("genel_iskonto_payi") @db.Decimal(15, 2)
+  matrah           Decimal @db.Decimal(15, 2)
+  kdvOrani         Decimal @default(20) @map("kdv_orani") @db.Decimal(5, 2)
+  kdvTutari        Decimal @map("kdv_tutari") @db.Decimal(15, 2)
+  tevkifatPay      Int?    @map("tevkifat_pay")
+  tevkifatPayda    Int?    @map("tevkifat_payda")
+  tevkifatTutari   Decimal @default(0) @map("tevkifat_tutari") @db.Decimal(15, 2)
+  netKdvTutari     Decimal @map("net_kdv_tutari") @db.Decimal(15, 2)
+  toplamTutar      Decimal @map("toplam_tutar") @db.Decimal(15, 2)
+
+  belge Belge    @relation(fields: [belgeId], references: [id], onDelete: Cascade)
+  stok  StokKart @relation(fields: [stokId], references: [id])
+
+  @@index([tenantId, belgeId])
+  @@map("belge_satirlari")
+}
+
+/// Belge numaralama sayacı (tur + yıl bazında; yasal kesintisizlik gerekmez).
+model BelgeSayac {
+  id       String   @id @default(uuid()) @db.Uuid
+  tenantId String   @map("tenant_id") @db.Uuid
+  tur      BelgeTur
+  yil      Int
+  sonSira  Int      @default(0) @map("son_sira")
+
+  @@unique([tenantId, tur, yil])
+  @@map("belge_sayaclari")
 }

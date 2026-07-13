@@ -68,6 +68,9 @@ registerRapor({
     { alan: "ad", baslik: "Ürün", tip: "metin" },
     { alan: "birim", baslik: "Birim", tip: "metin" },
     { alan: "miktar", baslik: "Miktar", tip: "sayi" },
+    { alan: "rezerve", baslik: "Rezerve", tip: "sayi" },
+    { alan: "kullanilabilir", baslik: "Kullanılabilir", tip: "sayi" },
+    { alan: "yoldaki", baslik: "Yoldaki", tip: "sayi" },
     { alan: "ortalamaMaliyet", baslik: "Ort. Maliyet", tip: "para" },
     { alan: "envanterDegeri", baslik: "Envanter Değeri", tip: "para" },
   ],
@@ -87,6 +90,9 @@ registerRapor({
         ad: k.ad,
         birim: k.anaBirim,
         miktar: Number(k.mevcutMiktar),
+        rezerve: Number(k.rezerveMiktar),
+        kullanilabilir: Number(k.mevcutMiktar.sub(k.rezerveMiktar)),
+        yoldaki: Number(k.yoldakiMiktar),
         ortalamaMaliyet: k.ortalamaMaliyet.toFixed(2),
         envanterDegeri: k.mevcutMiktar.mul(k.ortalamaMaliyet).toFixed(2),
       }));
@@ -394,7 +400,12 @@ registerRapor({
       // Sipariş noktası; minimum stok tanımlıysa alt sınır olarak uygulanır
       let nokta = gunlukSatis.mul(tedarikSuresi).add(guvenlik);
       if (k.minStok && nokta.lt(k.minStok)) nokta = D(k.minStok);
-      if (nokta.lte(0) || k.mevcutMiktar.gt(nokta)) continue;
+      // FTR-12: karşılaştırma eldeki tahmini üzerinden — rezerve düşülür,
+      // açık alış siparişlerinden gelecek (yoldaki) miktar eklenir
+      const eldeki = k.mevcutMiktar
+        .sub(k.rezerveMiktar)
+        .add(k.yoldakiMiktar);
+      if (nokta.lte(0) || eldeki.gt(nokta)) continue;
 
       // Hedef: maksimum stok tanımlıysa oraya, değilse sipariş noktasına tamamla
       const hedef =
@@ -406,7 +417,7 @@ registerRapor({
         gunlukSatis: gunlukSatis.toDecimalPlaces(3).toNumber(),
         tedarikSuresi,
         siparisNoktasi: nokta.toDecimalPlaces(3).toNumber(),
-        oneriMiktar: hedef.sub(k.mevcutMiktar).toDecimalPlaces(3).toNumber(),
+        oneriMiktar: hedef.sub(eldeki).toDecimalPlaces(3).toNumber(),
         tedarikci: tedarikci?.cari.unvan ?? null,
         alisFiyati:
           (tedarikci?.alisFiyati ?? k.alisFiyati)?.toFixed(2) ?? null,

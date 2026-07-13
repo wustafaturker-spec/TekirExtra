@@ -102,6 +102,13 @@ export class FaturaController {
     return this.faturaService.kesinlestir(id, govde);
   }
 
+  /** FTR-09: proforma → satış faturası (taslak) dönüşümü. */
+  @Post(":id/satisa-donustur")
+  @Roller("muhasebe")
+  async satisaDonustur(@Param("id") id: string) {
+    return this.faturaService.satisaDonustur(id);
+  }
+
   @Get(":id/pdf")
   async pdfUret(@Param("id") id: string, @Res() res: Response) {
     const pdf = await this.faturaService.pdfUret(id);

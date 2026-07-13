@@ -16,6 +16,7 @@ import { PdfService } from "../core/pdf/pdf.service";
 import { StokService } from "../stok/stok.service";
 import { EbelgeKuyrukService } from "../ebelge/ebelge-kuyruk.service";
 import { EpostaService } from "../tenant/eposta.service";
+import { BelgelerService } from "../belgeler/belgeler.service";
 import { faturaPdfHtml } from "./fatura-pdf";
 import type {
   faturaOlusturSemasi,
@@ -32,6 +33,7 @@ export class FaturaService {
     private readonly stokService: StokService,
     private readonly pdf: PdfService,
     private readonly eposta: EpostaService,
+    private readonly belgelerService: BelgelerService,
     @Inject(forwardRef(() => EbelgeKuyrukService))
     private readonly ebelgeKuyrukService: EbelgeKuyrukService,
   ) {}
@@ -337,9 +339,80 @@ export class FaturaService {
       throw new BadRequestException("Yalnızca taslak faturalar silinebilir");
     }
 
-    await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.fatura.delete({ where: { id } }),
-    );
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      // FTR-12: taslak zincir faturası siliniyorsa bağlı belgeler yeniden
+      // dönüştürülebilir olsun diye onaylı durumuna döner (rezerv zaten
+      // fatura kesinleşmediği için çözülmemişti).
+      await tx.belge.updateMany({
+        where: { faturaId: id },
+        data: { faturaId: null, durum: "onaylandi" },
+      });
+      await tx.fatura.delete({ where: { id } });
+    });
+  }
+
+  /** FTR-09: proforma faturayı tek tıkla satış faturası taslağına dönüştürür. */
+  async satisaDonustur(id: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const proforma = await tx.fatura.findUnique({
+        where: { id },
+        include: { satirlar: true },
+      });
+      if (!proforma) throw new NotFoundException("Fatura bulunamadı");
+      if (proforma.tip !== "proforma") {
+        throw new BadRequestException("Yalnızca proforma faturalar dönüştürülebilir");
+      }
+
+      const yeni = await tx.fatura.create({
+        data: {
+          tenantId,
+          tip: "satis",
+          durum: "taslak",
+          tarih: new Date(),
+          vadeTarihi: proforma.vadeTarihi,
+          cariId: proforma.cariId,
+          dovizCinsi: proforma.dovizCinsi,
+          kur: proforma.kur,
+          genelIskontoYuzdesi: proforma.genelIskontoYuzdesi,
+          genelIskontoTutari: proforma.genelIskontoTutari,
+          toplamBrut: proforma.toplamBrut,
+          toplamSatirIskontosu: proforma.toplamSatirIskontosu,
+          genelIskontoToplam: proforma.genelIskontoToplam,
+          toplamMatrah: proforma.toplamMatrah,
+          toplamKdv: proforma.toplamKdv,
+          toplamTevkifat: proforma.toplamTevkifat,
+          toplamNetKdv: proforma.toplamNetKdv,
+          genelToplam: proforma.genelToplam,
+          aciklama: `${proforma.no ?? "Proforma"} kaynaklı satış faturası`,
+          notlar: proforma.notlar,
+        },
+      });
+      for (const s of proforma.satirlar) {
+        await tx.faturaSatir.create({
+          data: {
+            tenantId,
+            faturaId: yeni.id,
+            stokId: s.stokId,
+            miktar: s.miktar,
+            birim: s.birim,
+            birimFiyat: s.birimFiyat,
+            iskontoOrani: s.iskontoOrani,
+            iskontoTutari: s.iskontoTutari,
+            genelIskontoPayi: s.genelIskontoPayi,
+            matrah: s.matrah,
+            kdvOrani: s.kdvOrani,
+            kdvTutari: s.kdvTutari,
+            tevkifatPay: s.tevkifatPay,
+            tevkifatPayda: s.tevkifatPayda,
+            tevkifatTutari: s.tevkifatTutari,
+            netKdvTutari: s.netKdvTutari,
+            toplamTutar: s.toplamTutar,
+          },
+        });
+      }
+      return this.gorunum(yeni);
+    });
   }
 
   // ─── FATURA KESİNLEŞTİRME VE ENTEGRASYONLAR (FTR-03/05/06) ───────────────
@@ -398,6 +471,49 @@ export class FaturaService {
         // Alış faturası ise el ile girilen numara zorunlu olmalı
         if (!faturaNo) {
           throw new BadRequestException("Alış faturaları için belge numarası girmelisiniz");
+        }
+      }
+
+      // 1b. Belge zinciri çözümü (FTR-12): zincirden gelen faturada bağlı
+      // belgeler ve kaynakları yürünür; siparişlerin rezervi (satış) veya
+      // yoldakisi (alış) çözülür. Stok hareketlerinden ÖNCE yapılır ki
+      // kullanılabilir stok kontrolü (STK-17) rezervi çifte saymasın.
+      const bagliBelgeler = await tx.belge.findMany({
+        where: { faturaId: id },
+        select: {
+          id: true,
+          tur: true,
+          yon: true,
+          kaynakBelgeId: true,
+          satirlar: { select: { stokId: true, miktar: true } },
+        },
+      });
+      const gorulen = new Set<string>();
+      const kuyruk = [...bagliBelgeler];
+      while (kuyruk.length > 0) {
+        const b = kuyruk.pop();
+        if (!b || gorulen.has(b.id)) continue;
+        gorulen.add(b.id);
+        if (b.tur === "siparis") {
+          await this.belgelerService.siparisEtkisiUygula(
+            tx,
+            b.yon,
+            b.satirlar,
+            -1,
+          );
+        }
+        if (b.kaynakBelgeId && !gorulen.has(b.kaynakBelgeId)) {
+          const kaynak = await tx.belge.findUnique({
+            where: { id: b.kaynakBelgeId },
+            select: {
+              id: true,
+              tur: true,
+              yon: true,
+              kaynakBelgeId: true,
+              satirlar: { select: { stokId: true, miktar: true } },
+            },
+          });
+          if (kaynak) kuyruk.push(kaynak);
         }
       }
 

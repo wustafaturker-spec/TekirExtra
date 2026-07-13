@@ -376,10 +376,15 @@ export class StokService {
       // Çıkış hareketinde maliyet, mevcut ortalama maliyettir ve ortalama maliyet DEĞİŞMEZ.
       birimMaliyet = D(urun.ortalamaMaliyet);
 
-      // Eksi stok politikası (STK-17) — yalnız stoklu ürünlerde (hizmet hariç)
-      if (urun.tip === "urun" && yeniMevcut.lt(0)) {
+      // Eksi stok politikası (STK-17) — yalnız stoklu ürünlerde (hizmet hariç).
+      // Kontrol KULLANILABİLİR stok üzerinden yapılır (FTR-12 S-01 kararı):
+      // kullanılabilir = mevcut − rezerve; rezerve mal başka çıkışa verilemez.
+      const yeniKullanilabilir = yeniMevcut.sub(D(urun.rezerveMiktar));
+      if (urun.tip === "urun" && yeniKullanilabilir.lt(0)) {
         const politika = await this.eksiStokPolitikasi(tx, tenantId);
-        const mesaj = `'${urun.ad}' stoğu eksiye düşüyor (mevcut ${D(urun.mevcutMiktar).toFixed(3)}, çıkış ${miktar.toFixed(3)})`;
+        const mesaj =
+          `'${urun.ad}' kullanılabilir stoğu eksiye düşüyor ` +
+          `(mevcut ${D(urun.mevcutMiktar).toFixed(3)}, rezerve ${D(urun.rezerveMiktar).toFixed(3)}, çıkış ${miktar.toFixed(3)})`;
         if (politika === "engelle") {
           throw new BadRequestException(`${mesaj} — eksi stok politikası çıkışı engelliyor`);
         }
@@ -810,6 +815,8 @@ export class StokService {
     tedarikSuresiGun: number | null;
     gorselUrl: string | null;
     mevcutMiktar: Prisma.Decimal;
+    rezerveMiktar: Prisma.Decimal;
+    yoldakiMiktar: Prisma.Decimal;
     ortalamaMaliyet: Prisma.Decimal;
     aktif: boolean;
   }) {
@@ -838,6 +845,11 @@ export class StokService {
       tedarikSuresiGun: k.tedarikSuresiGun,
       gorselUrl: k.gorselUrl,
       mevcutMiktar: D(k.mevcutMiktar).toFixed(3),
+      // FTR-12 göstergeleri: rezerve (açık satış siparişi), yoldaki (açık
+      // alış siparişi) ve kullanılabilir = mevcut − rezerve
+      rezerveMiktar: D(k.rezerveMiktar).toFixed(3),
+      yoldakiMiktar: D(k.yoldakiMiktar).toFixed(3),
+      kullanilabilirMiktar: D(k.mevcutMiktar).sub(D(k.rezerveMiktar)).toFixed(3),
       ortalamaMaliyet: D(k.ortalamaMaliyet).toFixed(4),
       aktif: k.aktif,
     };

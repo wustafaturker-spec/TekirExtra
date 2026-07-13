@@ -2,13 +2,19 @@ import "./fatura.raporlar";
 import { Module, OnModuleInit, forwardRef } from "@nestjs/common";
 import { registerEylemPolitikasi } from "../core/eylemler/eylem-kayit";
 import { StokModule } from "../stok/stok.module";
+import { BelgelerModule } from "../belgeler/belgeler.module";
 import { EbelgeModule } from "../ebelge/ebelge.module";
 import { TenantModule } from "../tenant/tenant.module";
 import { FaturaController } from "./fatura.controller";
 import { FaturaService } from "./fatura.service";
 
 @Module({
-  imports: [StokModule, TenantModule, forwardRef(() => EbelgeModule)],
+  imports: [
+    StokModule,
+    TenantModule,
+    BelgelerModule,
+    forwardRef(() => EbelgeModule),
+  ],
   controllers: [FaturaController],
   providers: [FaturaService],
   exports: [FaturaService],
