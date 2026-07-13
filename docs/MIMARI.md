@@ -407,6 +407,6 @@ halinde planlanmalıdır (arayüzüyle birlikte biten modül).
 | No | Konu | Not |
 |---|---|---|
 | T-01 | Entegratör API'lerinin gerçek sözleşme detayları | Her sağlayıcıdan geliştirici hesabı + dokümantasyon edinilmeli; adaptörler mock ile başlar |
-| T-02 | PDF üretim kütüphanesi | Aday: Playwright/Chromium tabanlı HTML→PDF (fatura şablonu = HTML); alternatif pdfmake |
+| T-02 | PDF üretim kütüphanesi | **Karar (2026-07-13, 4. aşama S-01):** Playwright/Chromium tabanlı HTML→PDF (fatura şablonu = HTML). Dosya ekleri depolaması MinIO (S3 uyumlu) |
 | T-03 | Excel dışa aktarım | Aday: exceljs |
 | T-04 | e-Arşiv günlük raporlama sorumluluğu | Entegratörlerin hangileri otomatik yapıyor doğrulanmalı (EBLG-07) |
