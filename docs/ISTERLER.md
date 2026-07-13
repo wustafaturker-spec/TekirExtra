@@ -1,14 +1,18 @@
 # TekirExtra — Yazılım İster Dokümanı (SRS)
 
-**Sürüm:** 0.10
+**Sürüm:** 0.11
 **Tarih:** 2026-07-13
-**Durum:** 4. aşama S-01 onayı alındı (2026-07-13): **T-02 PDF altyapısı
-Playwright/Chromium tabanlı HTML→PDF** olarak kurulur; üzerine FTR-07 (fatura
-PDF + e-posta), CARI-04 PDF ekstre, RPR-04 rapor PDF dışa aktarımı ve **barkod
-etiket basımı** bu aşamada geliştirilir. **Belge/dosya ekleri ortak altyapısı**
-MinIO (S3 uyumlu) depolama ile gelir; ekler cari kartı, stok kartı, fatura ve
-kasa/banka hareketine bağlanabilir. FTR-12 belge zinciri (+ stok rezervasyonu)
-bu aşamaya dahil değildir; ayrı paket olarak ele alınacaktır.
+**Durum:** Belge Zinciri Paketi S-01 onayı alındı (2026-07-13): **FTR-12 tam
+kapsam** (teklif → sipariş → irsaliye → fatura; satış VE alış yönü) + FTR-13
+toplu faturalama + FTR-09 proforma dönüştürme + belge PDF çıktıları (T-02).
+Kararlar: stok düşümü **her zaman faturada** (irsaliye yalnız sevk belgesidir,
+stok hareketi üretmez); satış siparişi onayında **otomatik rezervasyon**,
+açık alış siparişi **yoldaki stok** göstergesini besler; kullanılabilir stok =
+mevcut − rezerve; **STK-17 eksi stok politikası kullanılabilir stok üzerinden**
+çalışır. Rezerv, zincirli fatura kesinleşince veya sipariş iptalinde çözülür.
+Önceki kapı: 4. aşama — T-02 Playwright/Chromium PDF altyapısı, FTR-07,
+CARI-04/RPR-04 PDF, barkod etiket basımı, ekler ortak altyapısı (MinIO);
+tamamlandı.
 Önceki kapılar: Stok Genişletme Paketi — STK-14…20, tamamlandı; STK-21 [G].
 Cari Genişletme Paketi — CARI-13…18 + CARI-11, tamamlandı; CRM (CARI-19) ve
 AI (CARI-20) [G]. Rapor aşaması — RPR-06 araç seti + tüm [Z] modül raporları,
