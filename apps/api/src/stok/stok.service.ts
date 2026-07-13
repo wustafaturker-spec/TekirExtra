@@ -1,21 +1,25 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { Prisma, type StokHareketTip } from "@prisma/client";
 import type { KayitEylem } from "@tekirextra/shared";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
+import { ayarTanimiAl } from "../core/ayarlar/ayar-kayit";
 import { izinliEylemler } from "../core/eylemler/eylem-kayit";
 import { PrismaService } from "../core/prisma.service";
 import type {
   kategoriSemasi,
   sayimOlusturSemasi,
+  stokBarkodSemasi,
   stokBirimSemasi,
   stokKartGuncelleSemasi,
   stokKartOlusturSemasi,
+  stokTedarikciSemasi,
 } from "./stok.semalar";
 
 import { stokExcelOku } from "../core/excel-yardimci";
@@ -40,6 +44,8 @@ export class StokService {
               { ad: { contains: arama, mode: "insensitive" } },
               { kod: { contains: arama, mode: "insensitive" } },
               { barkod: { contains: arama, mode: "insensitive" } },
+              // STK-15: barkod tablosundan da bul
+              { barkodlar: { some: { barkod: { contains: arama } } } },
             ],
           }
         : {}),
@@ -79,6 +85,10 @@ export class StokService {
         include: {
           kategori: true,
           birimler: true,
+          barkodlar: true,
+          tedarikciler: {
+            include: { cari: { select: { id: true, kod: true, unvan: true } } },
+          },
           _count: { select: { hareketler: true } },
         },
       }),
@@ -90,6 +100,8 @@ export class StokService {
       ...this.gorunum(kayit),
       kategori: kayit.kategori,
       birimler: kayit.birimler,
+      barkodlar: kayit.barkodlar,
+      tedarikciler: kayit.tedarikciler,
       izinliEylemler: this.eylemler(kayit, ctx.rol, kayit._count.hareketler),
     };
   }
@@ -103,7 +115,14 @@ export class StokService {
             tenantId,
             kod: girdi.kod,
             ad: girdi.ad,
+            kisaAd: girdi.kisaAd,
+            aciklama: girdi.aciklama,
             tip: girdi.tip,
+            marka: girdi.marka,
+            model: girdi.model,
+            mensei: girdi.mensei,
+            gtipKodu: girdi.gtipKodu,
+            ureticiUrunKodu: girdi.ureticiUrunKodu,
             barkod: girdi.barkod,
             kategoriId: girdi.kategoriId,
             anaBirim: girdi.anaBirim,
@@ -111,6 +130,10 @@ export class StokService {
             alisFiyati: girdi.alisFiyati ? D(girdi.alisFiyati) : null,
             satisFiyati: girdi.satisFiyati ? D(girdi.satisFiyati) : null,
             kritikSeviye: girdi.kritikSeviye ? D(girdi.kritikSeviye) : null,
+            minStok: girdi.minStok ? D(girdi.minStok) : null,
+            maksStok: girdi.maksStok ? D(girdi.maksStok) : null,
+            guvenlikStogu: girdi.guvenlikStogu ? D(girdi.guvenlikStogu) : null,
+            tedarikSuresiGun: girdi.tedarikSuresiGun,
             gorselUrl: girdi.gorselUrl,
           },
         }),
@@ -137,7 +160,14 @@ export class StokService {
           data: {
             kod: girdi.kod,
             ad: girdi.ad,
+            kisaAd: girdi.kisaAd,
+            aciklama: girdi.aciklama,
             tip: girdi.tip,
+            marka: girdi.marka,
+            model: girdi.model,
+            mensei: girdi.mensei,
+            gtipKodu: girdi.gtipKodu,
+            ureticiUrunKodu: girdi.ureticiUrunKodu,
             barkod: girdi.barkod,
             kategoriId: girdi.kategoriId,
             anaBirim: girdi.anaBirim,
@@ -145,6 +175,10 @@ export class StokService {
             alisFiyati: girdi.alisFiyati !== undefined ? (girdi.alisFiyati ? D(girdi.alisFiyati) : null) : undefined,
             satisFiyati: girdi.satisFiyati !== undefined ? (girdi.satisFiyati ? D(girdi.satisFiyati) : null) : undefined,
             kritikSeviye: girdi.kritikSeviye !== undefined ? (girdi.kritikSeviye ? D(girdi.kritikSeviye) : null) : undefined,
+            minStok: girdi.minStok !== undefined ? (girdi.minStok ? D(girdi.minStok) : null) : undefined,
+            maksStok: girdi.maksStok !== undefined ? (girdi.maksStok ? D(girdi.maksStok) : null) : undefined,
+            guvenlikStogu: girdi.guvenlikStogu !== undefined ? (girdi.guvenlikStogu ? D(girdi.guvenlikStogu) : null) : undefined,
+            tedarikSuresiGun: girdi.tedarikSuresiGun,
             gorselUrl: girdi.gorselUrl,
             aktif: girdi.aktif,
           },
@@ -272,14 +306,26 @@ export class StokService {
     );
   }
 
+  /** Giriş gibi işlenen hareket türleri (STK-19). */
+  private static readonly GIRIS_TURLERI: StokHareketTip[] = ["giris", "acilis"];
+  /** Çıkış gibi işlenen hareket türleri (STK-19). */
+  private static readonly CIKIS_TURLERI: StokHareketTip[] = [
+    "cikis",
+    "fire",
+    "zayi",
+    "numune",
+    "promosyon",
+  ];
+
   /**
    * Stok hareketi ekler ve ürünün mevcut miktar & ortalama maliyet (AVCO)
-   * bilgisini transaction içinde günceller (STK-08).
+   * bilgisini transaction içinde günceller (STK-08). Çıkış türlerinde eksi
+   * stok politikasını uygular (STK-17); "uyar" modunda uyarı metni döner.
    */
   async hareketEkle(
     tx: Prisma.TransactionClient,
     stokId: string,
-    tip: "giris" | "cikis" | "sayim_duzeltme",
+    tip: StokHareketTip,
     miktar: Prisma.Decimal,
     girilenBirim: string,
     girilenMiktar: Prisma.Decimal,
@@ -288,9 +334,9 @@ export class StokService {
     aciklama?: string | null,
     kaynakTur = "manuel",
     kaynakRef?: string | null,
-  ) {
+  ): Promise<{ hareket: unknown; eksiStokUyarisi: string | null }> {
     const { tenantId } = aktifBaglam();
-    
+
     // Ürünü kilitleyerek getir (race condition engellemek için)
     const urun = await tx.stokKart.findUnique({
       where: { id: stokId },
@@ -300,8 +346,9 @@ export class StokService {
     let miktarDegisimi = D(0);
     let yeniMevcut = D(urun.mevcutMiktar);
     let yeniMaliyet = D(urun.ortalamaMaliyet);
+    let eksiStokUyarisi: string | null = null;
 
-    if (tip === "giris") {
+    if (StokService.GIRIS_TURLERI.includes(tip)) {
       miktarDegisimi = miktar;
       yeniMevcut = D(urun.mevcutMiktar).add(miktarDegisimi);
 
@@ -317,11 +364,21 @@ export class StokService {
           yeniMaliyet = eskiDeger.add(girenDeger).div(yeniMevcut).toDecimalPlaces(4);
         }
       }
-    } else if (tip === "cikis") {
+    } else if (StokService.CIKIS_TURLERI.includes(tip)) {
       miktarDegisimi = miktar.negated();
       yeniMevcut = D(urun.mevcutMiktar).add(miktarDegisimi);
       // Çıkış hareketinde maliyet, mevcut ortalama maliyettir ve ortalama maliyet DEĞİŞMEZ.
       birimMaliyet = D(urun.ortalamaMaliyet);
+
+      // Eksi stok politikası (STK-17) — yalnız stoklu ürünlerde (hizmet hariç)
+      if (urun.tip === "urun" && yeniMevcut.lt(0)) {
+        const politika = await this.eksiStokPolitikasi(tx, tenantId);
+        const mesaj = `'${urun.ad}' stoğu eksiye düşüyor (mevcut ${D(urun.mevcutMiktar).toFixed(3)}, çıkış ${miktar.toFixed(3)})`;
+        if (politika === "engelle") {
+          throw new BadRequestException(`${mesaj} — eksi stok politikası çıkışı engelliyor`);
+        }
+        if (politika === "uyar") eksiStokUyarisi = mesaj;
+      }
     } else if (tip === "sayim_duzeltme") {
       miktarDegisimi = miktar; // Sayım düzeltmesinde miktar pozitif veya negatif olabilir
       yeniMevcut = D(urun.mevcutMiktar).add(miktarDegisimi);
@@ -367,16 +424,159 @@ export class StokService {
       },
     });
 
-    return hareket;
+    return { hareket, eksiStokUyarisi };
   }
 
-  // ─── FİİLİ SAYIM (STK-06) ────────────────────────────────────────────────
+  /** Eksi stok politikasını mevcut transaction içinden okur (STK-17). */
+  private async eksiStokPolitikasi(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+  ): Promise<"izin" | "uyar" | "engelle"> {
+    const tanim = ayarTanimiAl("stok");
+    const kayit = await tx.modulAyar.findUnique({
+      where: { tenantId_modul: { tenantId, modul: "stok" } },
+    });
+    const ayarlar = {
+      ...tanim?.varsayilanlar,
+      ...((kayit?.ayarlar as Record<string, unknown>) ?? {}),
+    };
+    const politika = ayarlar.eksiStokPolitikasi;
+    return politika === "izin" || politika === "engelle" ? politika : "uyar";
+  }
+
+  // ─── BARKODLAR (STK-15) ──────────────────────────────────────────────────
+
+  async barkodEkle(stokId: string, girdi: z.infer<typeof stokBarkodSemasi>) {
+    const { tenantId } = aktifBaglam();
+    await this.getir(stokId);
+    if (girdi.birim) {
+      const birimVar = await this.prisma.tenantIslem(tenantId, (tx) =>
+        tx.stokBirim.findFirst({ where: { stokId, ad: girdi.birim! } }),
+      );
+      const kart = await this.prisma.tenantIslem(tenantId, (tx) =>
+        tx.stokKart.findUnique({ where: { id: stokId }, select: { anaBirim: true } }),
+      );
+      if (!birimVar && kart?.anaBirim !== girdi.birim) {
+        throw new BadRequestException(
+          `'${girdi.birim}' birimi bu ürün için tanımlı değil`,
+        );
+      }
+    }
+    try {
+      return await this.prisma.tenantIslem(tenantId, (tx) =>
+        tx.stokBarkod.create({
+          data: {
+            tenantId,
+            stokId,
+            barkod: girdi.barkod,
+            birim: girdi.birim,
+            satisFiyati: girdi.satisFiyati ? D(girdi.satisFiyati) : null,
+          },
+        }),
+      );
+    } catch (hata) {
+      if (
+        hata instanceof Prisma.PrismaClientKnownRequestError &&
+        hata.code === "P2002"
+      ) {
+        throw new ConflictException(`'${girdi.barkod}' barkodu zaten kayıtlı`);
+      }
+      throw hata;
+    }
+  }
+
+  async barkodSil(stokId: string, barkodId: string) {
+    const { tenantId } = aktifBaglam();
+    const silinen = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.stokBarkod.deleteMany({ where: { id: barkodId, stokId } }),
+    );
+    if (silinen.count === 0) throw new NotFoundException("Barkod bulunamadı");
+  }
+
+  /** Barkodla ürün bulma (STK-15): önce barkod tablosu, sonra karttaki alan. */
+  async barkodlaBul(barkod: string) {
+    const { tenantId } = aktifBaglam();
+    const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.stokBarkod.findUnique({
+        where: { tenantId_barkod: { tenantId, barkod } },
+        include: { stok: true },
+      }),
+    );
+    if (kayit) {
+      return {
+        ...this.gorunum(kayit.stok),
+        eslesenBarkod: {
+          barkod: kayit.barkod,
+          birim: kayit.birim ?? kayit.stok.anaBirim,
+          satisFiyati: kayit.satisFiyati?.toFixed(4) ?? null,
+        },
+      };
+    }
+    const kart = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.stokKart.findFirst({ where: { barkod } }),
+    );
+    if (!kart) throw new NotFoundException(`'${barkod}' barkoduna kayıtlı ürün yok`);
+    return {
+      ...this.gorunum(kart),
+      eslesenBarkod: {
+        barkod,
+        birim: kart.anaBirim,
+        satisFiyati: kart.satisFiyati?.toFixed(4) ?? null,
+      },
+    };
+  }
+
+  // ─── TEDARİKÇİLER (STK-18) ───────────────────────────────────────────────
+
+  async tedarikciEkle(stokId: string, girdi: z.infer<typeof stokTedarikciSemasi>) {
+    const { tenantId } = aktifBaglam();
+    await this.getir(stokId);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      // Tek varsayılan tedarikçi olur
+      if (girdi.varsayilan) {
+        await tx.stokTedarikci.updateMany({
+          where: { stokId },
+          data: { varsayilan: false },
+        });
+      }
+      return tx.stokTedarikci.upsert({
+        where: { tenantId_stokId_cariId: { tenantId, stokId, cariId: girdi.cariId } },
+        create: {
+          tenantId,
+          stokId,
+          cariId: girdi.cariId,
+          tedarikciUrunKodu: girdi.tedarikciUrunKodu,
+          alisFiyati: girdi.alisFiyati ? D(girdi.alisFiyati) : null,
+          dovizCinsi: girdi.dovizCinsi,
+          tedarikSuresiGun: girdi.tedarikSuresiGun,
+          varsayilan: girdi.varsayilan,
+        },
+        update: {
+          tedarikciUrunKodu: girdi.tedarikciUrunKodu,
+          alisFiyati: girdi.alisFiyati ? D(girdi.alisFiyati) : null,
+          dovizCinsi: girdi.dovizCinsi,
+          tedarikSuresiGun: girdi.tedarikSuresiGun,
+          varsayilan: girdi.varsayilan,
+        },
+      });
+    });
+  }
+
+  async tedarikciSil(stokId: string, tedarikciId: string) {
+    const { tenantId } = aktifBaglam();
+    const silinen = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.stokTedarikci.deleteMany({ where: { id: tedarikciId, stokId } }),
+    );
+    if (silinen.count === 0) throw new NotFoundException("Tedarikçi kaydı bulunamadı");
+  }
+
+  // ─── FİİLİ SAYIM (STK-06/20) ─────────────────────────────────────────────
+  // Sayım taslak olarak kaydedilir; farklar yalnız onayla stoğa işlenir.
 
   async sayimOlustur(girdi: z.infer<typeof sayimOlusturSemasi>) {
     const { tenantId } = aktifBaglam();
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      // 1. Sayım kaydını oluştur
       const sayim = await tx.sayim.create({
         data: {
           tenantId,
@@ -385,32 +585,63 @@ export class StokService {
         },
       });
 
-      // 2. Her bir sayım kalemi için stok kartını oku, farkı hesapla ve stok hareketi ekle
       for (const k of girdi.kalemler) {
         const urun = await tx.stokKart.findUnique({
           where: { id: k.stokId },
+          select: { mevcutMiktar: true },
         });
         if (!urun) throw new NotFoundException(`Sayılmak istenen '${k.stokId}' ürünü bulunamadı`);
 
-        const sistemMiktar = D(urun.mevcutMiktar);
-        const fiiliMiktar = D(k.fiiliMiktar);
-        const fark = fiiliMiktar.sub(sistemMiktar);
-
-        // Sayım kalem detayını kaydet
         await tx.sayimKalem.create({
           data: {
             tenantId,
             sayimId: sayim.id,
             stokId: k.stokId,
-            sistemMiktar,
-            fiiliMiktar,
+            sistemMiktar: D(urun.mevcutMiktar),
+            fiiliMiktar: D(k.fiiliMiktar),
           },
         });
+      }
 
-        // Fark varsa stok hareketini ve AVCO'yu tetikle
+      return sayim;
+    });
+  }
+
+  /**
+   * Sayım onayı (STK-20): farklar onay anındaki güncel sistem miktarına göre
+   * yeniden hesaplanır ve sayim_duzeltme hareketleri olarak işlenir.
+   */
+  async sayimOnayla(id: string) {
+    const { tenantId, userId, rol } = aktifBaglam();
+    if (!["muhasebe", "yonetici"].includes(rol)) {
+      throw new ForbiddenException("Sayım onayı için muhasebe veya yönetici rolü gerekir");
+    }
+
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const sayim = await tx.sayim.findUnique({
+        where: { id },
+        include: { kalemler: true },
+      });
+      if (!sayim) throw new NotFoundException("Sayım bulunamadı");
+      if (sayim.durum !== "taslak") {
+        throw new BadRequestException("Sayım zaten onaylanmış");
+      }
+
+      for (const k of sayim.kalemler) {
+        const urun = await tx.stokKart.findUnique({ where: { id: k.stokId } });
+        if (!urun) continue;
+
+        const guncelSistem = D(urun.mevcutMiktar);
+        const fark = D(k.fiiliMiktar).sub(guncelSistem);
+
+        // Onay anındaki sistem miktarını kayda geçir
+        await tx.sayimKalem.update({
+          where: { id: k.id },
+          data: { sistemMiktar: guncelSistem },
+        });
+
         if (!fark.isZero()) {
-          // Eğer fazlalık varsa, maliyetlendirme için mevcut ortalama maliyet veya alış fiyatını baz al
-          const birimMaliyet = sistemMiktar.gt(0)
+          const birimMaliyet = guncelSistem.gt(0)
             ? D(urun.ortalamaMaliyet)
             : D(urun.alisFiyati ?? 0);
 
@@ -422,7 +653,7 @@ export class StokService {
             urun.anaBirim,
             fark,
             birimMaliyet,
-            new Date(girdi.tarih),
+            new Date(sayim.tarih),
             `${sayim.id} nolu sayım düzeltmesi`,
             "sayim",
             sayim.id,
@@ -430,7 +661,14 @@ export class StokService {
         }
       }
 
-      return sayim;
+      return tx.sayim.update({
+        where: { id },
+        data: {
+          durum: "onaylandi",
+          onaylayanUserId: userId,
+          onayZamani: new Date(),
+        },
+      });
     });
   }
 
@@ -494,7 +732,14 @@ export class StokService {
     id: string;
     kod: string;
     ad: string;
+    kisaAd: string | null;
+    aciklama: string | null;
     tip: string;
+    marka: string | null;
+    model: string | null;
+    mensei: string | null;
+    gtipKodu: string | null;
+    ureticiUrunKodu: string | null;
     barkod: string | null;
     kategoriId: string | null;
     anaBirim: string;
@@ -502,6 +747,10 @@ export class StokService {
     alisFiyati: Prisma.Decimal | null;
     satisFiyati: Prisma.Decimal | null;
     kritikSeviye: Prisma.Decimal | null;
+    minStok: Prisma.Decimal | null;
+    maksStok: Prisma.Decimal | null;
+    guvenlikStogu: Prisma.Decimal | null;
+    tedarikSuresiGun: number | null;
     gorselUrl: string | null;
     mevcutMiktar: Prisma.Decimal;
     ortalamaMaliyet: Prisma.Decimal;
@@ -511,7 +760,14 @@ export class StokService {
       id: k.id,
       kod: k.kod,
       ad: k.ad,
+      kisaAd: k.kisaAd,
+      aciklama: k.aciklama,
       tip: k.tip,
+      marka: k.marka,
+      model: k.model,
+      mensei: k.mensei,
+      gtipKodu: k.gtipKodu,
+      ureticiUrunKodu: k.ureticiUrunKodu,
       barkod: k.barkod,
       kategoriId: k.kategoriId,
       anaBirim: k.anaBirim,
@@ -519,6 +775,10 @@ export class StokService {
       alisFiyati: k.alisFiyati ? D(k.alisFiyati).toFixed(4) : null,
       satisFiyati: k.satisFiyati ? D(k.satisFiyati).toFixed(4) : null,
       kritikSeviye: k.kritikSeviye ? D(k.kritikSeviye).toFixed(3) : null,
+      minStok: k.minStok ? D(k.minStok).toFixed(3) : null,
+      maksStok: k.maksStok ? D(k.maksStok).toFixed(3) : null,
+      guvenlikStogu: k.guvenlikStogu ? D(k.guvenlikStogu).toFixed(3) : null,
+      tedarikSuresiGun: k.tedarikSuresiGun,
       gorselUrl: k.gorselUrl,
       mevcutMiktar: D(k.mevcutMiktar).toFixed(3),
       ortalamaMaliyet: D(k.ortalamaMaliyet).toFixed(4),

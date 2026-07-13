@@ -398,12 +398,13 @@ export class FaturaService {
       // Satış/Alış_İade -> Çıkış hareketi (Stok azalır).
       // Alış/Satış_İade -> Giriş hareketi (Stok artar).
       // Proforma fatura stoğu etkilemez.
+      const stokUyarilari: string[] = [];
       if (fatura.tip !== "proforma") {
         for (const s of fatura.satirlar) {
           const tip =
             fatura.tip === "satis" || fatura.tip === "alis_iade" ? "cikis" : "giris";
 
-          await this.stokService.hareketEkle(
+          const hareketSonucu = await this.stokService.hareketEkle(
             tx,
             s.stokId,
             tip,
@@ -416,6 +417,10 @@ export class FaturaService {
             "fatura",
             fatura.id,
           );
+          // Eksi stok politikası "uyar" ise kesinleştirme sürer, uyarı döner (STK-17)
+          if (hareketSonucu.eksiStokUyarisi) {
+            stokUyarilari.push(hareketSonucu.eksiStokUyarisi);
+          }
         }
 
         // 3. Cari Hesap Hareketinin Tetiklenmesi (FTR-03):
@@ -488,7 +493,7 @@ export class FaturaService {
       });
 
       return {
-        kesinFatura: { ...this.gorunum(kesinFatura), riskUyari },
+        kesinFatura: { ...this.gorunum(kesinFatura), riskUyari, stokUyarilari },
         ebelgeGerekli,
       };
     });

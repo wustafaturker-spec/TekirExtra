@@ -223,12 +223,25 @@ enum AdresTip {
 enum StokTip {
   urun
   hizmet
+  sarf
 }
 
+/// fire/zayi/numune/promosyon çıkış gibi, acilis giriş gibi işlenir (STK-19)
 enum StokHareketTip {
   giris
   cikis
   sayim_duzeltme
+  fire
+  zayi
+  numune
+  promosyon
+  acilis
+}
+
+/// Sayım farkları yalnız onayla stoğa işlenir (STK-20)
+enum SayimDurum {
+  taslak
+  onaylandi
 }
 
 model CariHesap {
@@ -276,6 +289,7 @@ model CariHesap {
   ceklerAlinan         CekSenet[]         @relation("CekSenetCari")
   ceklerCiro           CekSenet[]         @relation("CekSenetCiro")
   kasaBankaHareketleri KasaBankaHareket[]
+  stokTedarikcilikleri StokTedarikci[]
 
   @@unique([tenantId, kod])
   @@index([tenantId, unvan])
@@ -400,27 +414,40 @@ model StokKategori {
 /// mevcutMiktar/ortalamaMaliyet hareket servisinde transaction içinde
 /// güncellenir (STK-08 ağırlıklı ortalama); hareketler değişmez kayıttır.
 model StokKart {
-  id              String   @id @default(uuid()) @db.Uuid
-  tenantId        String   @map("tenant_id") @db.Uuid
-  kod             String
-  ad              String
-  tip             StokTip  @default(urun)
-  barkod          String?
-  kategoriId      String?  @map("kategori_id") @db.Uuid
-  anaBirim        String   @default("adet") @map("ana_birim")
-  kdvOrani        Decimal  @default(20) @map("kdv_orani") @db.Decimal(5, 2)
-  alisFiyati      Decimal? @map("alis_fiyati") @db.Decimal(15, 4)
-  satisFiyati     Decimal? @map("satis_fiyati") @db.Decimal(15, 4)
-  kritikSeviye    Decimal? @map("kritik_seviye") @db.Decimal(15, 3)
-  gorselUrl       String?  @map("gorsel_url")
-  mevcutMiktar    Decimal  @default(0) @map("mevcut_miktar") @db.Decimal(15, 3)
-  ortalamaMaliyet Decimal  @default(0) @map("ortalama_maliyet") @db.Decimal(15, 4)
-  aktif           Boolean  @default(true)
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  kod              String
+  ad               String
+  kisaAd           String?  @map("kisa_ad")
+  aciklama         String?
+  tip              StokTip  @default(urun)
+  marka            String?
+  model            String?
+  mensei           String?
+  gtipKodu         String?  @map("gtip_kodu")
+  ureticiUrunKodu  String?  @map("uretici_urun_kodu")
+  barkod           String?
+  kategoriId       String?  @map("kategori_id") @db.Uuid
+  anaBirim         String   @default("adet") @map("ana_birim")
+  kdvOrani         Decimal  @default(20) @map("kdv_orani") @db.Decimal(5, 2)
+  alisFiyati       Decimal? @map("alis_fiyati") @db.Decimal(15, 4)
+  satisFiyati      Decimal? @map("satis_fiyati") @db.Decimal(15, 4)
+  kritikSeviye     Decimal? @map("kritik_seviye") @db.Decimal(15, 3)
+  minStok          Decimal? @map("min_stok") @db.Decimal(15, 3)
+  maksStok         Decimal? @map("maks_stok") @db.Decimal(15, 3)
+  guvenlikStogu    Decimal? @map("guvenlik_stogu") @db.Decimal(15, 3)
+  tedarikSuresiGun Int?     @map("tedarik_suresi_gun")
+  gorselUrl        String?  @map("gorsel_url")
+  mevcutMiktar     Decimal  @default(0) @map("mevcut_miktar") @db.Decimal(15, 3)
+  ortalamaMaliyet  Decimal  @default(0) @map("ortalama_maliyet") @db.Decimal(15, 4)
+  aktif            Boolean  @default(true)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   kategori     StokKategori?       @relation(fields: [kategoriId], references: [id])
   birimler     StokBirim[]
+  barkodlar    StokBarkod[]
+  tedarikciler StokTedarikci[]
   hareketler   StokHareket[]
   fiyatlar     FiyatListesiKalem[]
   faturaSatirs FaturaSatir[]
@@ -428,6 +455,43 @@ model StokKart {
   @@unique([tenantId, kod])
   @@index([tenantId, ad])
   @@map("stok_kartlari")
+}
+
+/// Çoklu barkod (STK-15): birim ve birime özgü satış fiyatı taşıyabilir.
+model StokBarkod {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  stokId      String   @map("stok_id") @db.Uuid
+  barkod      String
+  /// null = ana birim; dolu ise StokBirim adlarından biri
+  birim       String?
+  satisFiyati Decimal? @map("satis_fiyati") @db.Decimal(15, 4)
+
+  stok StokKart @relation(fields: [stokId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, barkod])
+  @@index([tenantId, stokId])
+  @@map("stok_barkodlari")
+}
+
+/// Ürün-tedarikçi ilişkisi (STK-18); sipariş önerisini besler (STK-16).
+model StokTedarikci {
+  id                String     @id @default(uuid()) @db.Uuid
+  tenantId          String     @map("tenant_id") @db.Uuid
+  stokId            String     @map("stok_id") @db.Uuid
+  cariId            String     @map("cari_id") @db.Uuid
+  tedarikciUrunKodu String?    @map("tedarikci_urun_kodu")
+  alisFiyati        Decimal?   @map("alis_fiyati") @db.Decimal(15, 4)
+  dovizCinsi        DovizCinsi @default(TRY) @map("doviz_cinsi")
+  tedarikSuresiGun  Int?       @map("tedarik_suresi_gun")
+  varsayilan        Boolean    @default(false)
+
+  stok StokKart  @relation(fields: [stokId], references: [id], onDelete: Cascade)
+  cari CariHesap @relation(fields: [cariId], references: [id])
+
+  @@unique([tenantId, stokId, cariId])
+  @@index([tenantId, cariId])
+  @@map("stok_tedarikcileri")
 }
 
 /// Ek birimler (STK-10): 1 <ad> = <katsayi> ana birim (ör. 1 koli = 12 adet).
@@ -496,13 +560,17 @@ model StokHareket {
   @@map("stok_hareketleri")
 }
 
-/// Stok sayımı (STK-06): kalem farkları sayim_duzeltme hareketi üretir.
+/// Stok sayımı (STK-06/20): taslak oluşturulur, onayda farklar
+/// sayim_duzeltme hareketi olarak işlenir.
 model Sayim {
-  id        String   @id @default(uuid()) @db.Uuid
-  tenantId  String   @map("tenant_id") @db.Uuid
-  tarih     DateTime @db.Date
-  aciklama  String?
-  createdAt DateTime @default(now()) @map("created_at")
+  id              String     @id @default(uuid()) @db.Uuid
+  tenantId        String     @map("tenant_id") @db.Uuid
+  tarih           DateTime   @db.Date
+  aciklama        String?
+  durum           SayimDurum @default(taslak)
+  onaylayanUserId String?    @map("onaylayan_user_id") @db.Uuid
+  onayZamani      DateTime?  @map("onay_zamani")
+  createdAt       DateTime   @default(now()) @map("created_at")
 
   kalemler SayimKalem[]
 

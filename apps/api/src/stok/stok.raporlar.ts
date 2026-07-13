@@ -16,6 +16,14 @@ const TARIH_FILTRELERI = [
   { alan: "bitis", ad: "Bitiş", tip: "tarih" as const },
 ];
 
+/** Hareket türlerinin giriş/çıkış kovaları (STK-19, StokService ile uyumlu). */
+const GIRIS_TURLERI = new Set(["giris", "acilis"]);
+const CIKIS_TURLERI = new Set(["cikis", "fire", "zayi", "numune", "promosyon"]);
+
+/** Bugünden `gun` gün öncesinin YYYY-MM-DD karşılığı. */
+const gunOnce = (gun: number): string =>
+  new Date(Date.now() - gun * 86_400_000).toISOString().slice(0, 10);
+
 /** Tarih aralığındaki kesin satış satırlarını stok bilgisiyle çeker. */
 async function satisSatirlari(
   tx: Prisma.TransactionClient,
@@ -91,7 +99,8 @@ registerRapor({
   kod: "stok.hareket-ozeti",
   modul: "stok",
   ad: "Stok Hareket Özeti",
-  aciklama: "Tarih aralığında giriş/çıkış/sayım düzeltme toplamları (ana birim)",
+  aciklama:
+    "Tarih aralığında giriş (açılış dahil) / çıkış (fire, zayi, numune, promosyon dahil) / sayım düzeltme toplamları (ana birim)",
   filtreler: [...TARIH_FILTRELERI, { alan: "stok", ad: "Ürün", tip: "stok" }],
   kolonlar: [
     { alan: "kod", baslik: "Kod", tip: "metin" },
@@ -127,9 +136,10 @@ registerRapor({
         cikis: 0,
         duzeltme: 0,
       };
+      // miktar imzalı saklanır (çıkış türleri negatif); kovalar mutlak değerle
       const m = Number(h.miktar);
-      if (h.tip === "giris") g.giris += m;
-      else if (h.tip === "cikis") g.cikis += m;
+      if (GIRIS_TURLERI.has(h.tip)) g.giris += Math.abs(m);
+      else if (CIKIS_TURLERI.has(h.tip)) g.cikis += Math.abs(m);
       else g.duzeltme += m;
       gruplar.set(h.stokId, g);
     }
@@ -328,5 +338,242 @@ registerRapor({
         kritikSeviye: Number(k.kritikSeviye),
         eksik: Number(D(k.kritikSeviye ?? 0).sub(k.mevcutMiktar)),
       }));
+  },
+});
+
+// ─── Sipariş önerisi (STK-16, STK-18) ───────────────────────────────────────
+
+registerRapor({
+  kod: "stok.siparis-onerisi",
+  modul: "stok",
+  ad: "Sipariş Önerisi",
+  aciklama:
+    "Yeniden sipariş noktası (ort. günlük satış × tedarik süresi + güvenlik stoğu) " +
+    "altına düşen ürünler; varsayılan tedarikçi bilgisiyle",
+  filtreler: [{ alan: "gun", ad: "Satış Ortalaması Dönemi (gün)", tip: "sayi" }],
+  kolonlar: [
+    { alan: "kod", baslik: "Kod", tip: "metin" },
+    { alan: "ad", baslik: "Ürün", tip: "metin" },
+    { alan: "mevcut", baslik: "Mevcut", tip: "sayi" },
+    { alan: "gunlukSatis", baslik: "Ort. Günlük Satış", tip: "sayi" },
+    { alan: "tedarikSuresi", baslik: "Tedarik Süresi (gün)", tip: "sayi" },
+    { alan: "siparisNoktasi", baslik: "Sipariş Noktası", tip: "sayi" },
+    { alan: "oneriMiktar", baslik: "Önerilen Miktar", tip: "sayi" },
+    { alan: "tedarikci", baslik: "Varsayılan Tedarikçi", tip: "metin" },
+    { alan: "alisFiyati", baslik: "Alış Fiyatı", tip: "para" },
+  ],
+  async calistir(girdi, { tx }) {
+    const f = girdi.filtreler ?? {};
+    const gun = typeof f.gun === "number" && f.gun > 0 ? f.gun : 90;
+
+    const satirlar = await satisSatirlari(tx, gunOnce(gun));
+    const satislar = new Map<string, Prisma.Decimal>();
+    for (const s of satirlar) {
+      satislar.set(s.stokId, (satislar.get(s.stokId) ?? D(0)).add(s.miktar));
+    }
+
+    const kartlar = await tx.stokKart.findMany({
+      where: { aktif: true, tip: { in: ["urun", "sarf"] } },
+      include: {
+        tedarikciler: {
+          where: { varsayilan: true },
+          take: 1,
+          include: { cari: { select: { unvan: true } } },
+        },
+      },
+      orderBy: { kod: "asc" },
+    });
+
+    const sonuc = [];
+    for (const k of kartlar) {
+      const tedarikci = k.tedarikciler[0];
+      const gunlukSatis = (satislar.get(k.id) ?? D(0)).div(gun);
+      const tedarikSuresi =
+        k.tedarikSuresiGun ?? tedarikci?.tedarikSuresiGun ?? 0;
+      const guvenlik = D(k.guvenlikStogu ?? 0);
+      // Sipariş noktası; minimum stok tanımlıysa alt sınır olarak uygulanır
+      let nokta = gunlukSatis.mul(tedarikSuresi).add(guvenlik);
+      if (k.minStok && nokta.lt(k.minStok)) nokta = D(k.minStok);
+      if (nokta.lte(0) || k.mevcutMiktar.gt(nokta)) continue;
+
+      // Hedef: maksimum stok tanımlıysa oraya, değilse sipariş noktasına tamamla
+      const hedef =
+        k.maksStok && D(k.maksStok).gt(nokta) ? D(k.maksStok) : nokta;
+      sonuc.push({
+        kod: k.kod,
+        ad: k.ad,
+        mevcut: Number(k.mevcutMiktar),
+        gunlukSatis: gunlukSatis.toDecimalPlaces(3).toNumber(),
+        tedarikSuresi,
+        siparisNoktasi: nokta.toDecimalPlaces(3).toNumber(),
+        oneriMiktar: hedef.sub(k.mevcutMiktar).toDecimalPlaces(3).toNumber(),
+        tedarikci: tedarikci?.cari.unvan ?? null,
+        alisFiyati:
+          (tedarikci?.alisFiyati ?? k.alisFiyati)?.toFixed(2) ?? null,
+      });
+    }
+    return sonuc;
+  },
+});
+
+// ─── Fire / zayi (STK-19) ───────────────────────────────────────────────────
+
+registerRapor({
+  kod: "stok.fire-zayi",
+  modul: "stok",
+  ad: "Fire / Zayi",
+  aciklama:
+    "Tarih aralığındaki fire ve zayi çıkışları; hareket anındaki ortalama maliyetle tutar",
+  filtreler: [
+    ...TARIH_FILTRELERI,
+    {
+      alan: "tur",
+      ad: "Tür",
+      tip: "secim",
+      secenekler: [
+        { deger: "fire", ad: "Fire" },
+        { deger: "zayi", ad: "Zayi" },
+      ],
+    },
+  ],
+  kolonlar: [
+    { alan: "kod", baslik: "Kod", tip: "metin" },
+    { alan: "ad", baslik: "Ürün", tip: "metin" },
+    { alan: "tur", baslik: "Tür", tip: "metin" },
+    { alan: "miktar", baslik: "Miktar", tip: "sayi" },
+    { alan: "tutar", baslik: "Tutar (TL)", tip: "para" },
+  ],
+  async calistir(girdi, { tx }) {
+    const f = girdi.filtreler ?? {};
+    const hareketler = await tx.stokHareket.findMany({
+      where: {
+        tip: f.tur ? (f.tur as "fire" | "zayi") : { in: ["fire", "zayi"] },
+        tarih: tarihAraligi(f.baslangic, f.bitis),
+      },
+      select: {
+        stokId: true,
+        tip: true,
+        miktar: true,
+        maliyet: true,
+        stok: { select: { kod: true, ad: true } },
+      },
+    });
+    const gruplar = new Map<
+      string,
+      { kod: string; ad: string; tur: string; miktar: Prisma.Decimal; tutar: Prisma.Decimal }
+    >();
+    for (const h of hareketler) {
+      const anahtar = `${h.stokId}:${h.tip}`;
+      const g = gruplar.get(anahtar) ?? {
+        kod: h.stok.kod,
+        ad: h.stok.ad,
+        tur: h.tip === "fire" ? "Fire" : "Zayi",
+        miktar: D(0),
+        tutar: D(0),
+      };
+      const miktar = h.miktar.abs(); // çıkış türleri negatif saklanır
+      g.miktar = g.miktar.add(miktar);
+      g.tutar = g.tutar.add(miktar.mul(h.maliyet));
+      gruplar.set(anahtar, g);
+    }
+    return [...gruplar.values()]
+      .sort(
+        (a, b) => a.kod.localeCompare(b.kod, "tr") || a.tur.localeCompare(b.tur, "tr"),
+      )
+      .map((g) => ({
+        kod: g.kod,
+        ad: g.ad,
+        tur: g.tur,
+        miktar: Number(g.miktar),
+        tutar: g.tutar.toFixed(2),
+      }));
+  },
+});
+
+// ─── Hareketsiz stok ────────────────────────────────────────────────────────
+
+registerRapor({
+  kod: "stok.hareketsiz",
+  modul: "stok",
+  ad: "Hareketsiz Stok",
+  aciklama:
+    "Belirtilen gün sayısı boyunca hiç hareket görmemiş, stoğu bulunan ürünler",
+  filtreler: [{ alan: "gun", ad: "Gün", tip: "sayi" }],
+  kolonlar: [
+    { alan: "kod", baslik: "Kod", tip: "metin" },
+    { alan: "ad", baslik: "Ürün", tip: "metin" },
+    { alan: "mevcut", baslik: "Mevcut", tip: "sayi" },
+    { alan: "envanterDegeri", baslik: "Envanter Değeri", tip: "para" },
+    { alan: "sonHareket", baslik: "Son Hareket", tip: "tarih" },
+  ],
+  async calistir(girdi, { tx }) {
+    const f = girdi.filtreler ?? {};
+    const gun = typeof f.gun === "number" && f.gun > 0 ? f.gun : 90;
+    const sinir = new Date(gunOnce(gun));
+
+    const sonHareketler = await tx.stokHareket.groupBy({
+      by: ["stokId"],
+      _max: { tarih: true },
+    });
+    const sonTarih = new Map(
+      sonHareketler.map((h) => [h.stokId, h._max.tarih]),
+    );
+
+    const kartlar = await tx.stokKart.findMany({
+      where: { aktif: true, tip: { in: ["urun", "sarf"] }, mevcutMiktar: { gt: 0 } },
+      orderBy: { kod: "asc" },
+    });
+    return kartlar
+      .filter((k) => {
+        const son = sonTarih.get(k.id);
+        return !son || son < sinir;
+      })
+      .map((k) => ({
+        kod: k.kod,
+        ad: k.ad,
+        mevcut: Number(k.mevcutMiktar),
+        envanterDegeri: k.mevcutMiktar.mul(k.ortalamaMaliyet).toFixed(2),
+        sonHareket:
+          sonTarih.get(k.id)?.toISOString().slice(0, 10) ?? null,
+      }));
+  },
+});
+
+// ─── Eksi stok (STK-17) ─────────────────────────────────────────────────────
+
+registerRapor({
+  kod: "stok.eksi-stok",
+  modul: "stok",
+  ad: "Eksi Stok",
+  aciklama: "Mevcut miktarı eksiye düşmüş ürünler (eksi stok politikası takibi)",
+  filtreler: [],
+  kolonlar: [
+    { alan: "kod", baslik: "Kod", tip: "metin" },
+    { alan: "ad", baslik: "Ürün", tip: "metin" },
+    { alan: "birim", baslik: "Birim", tip: "metin" },
+    { alan: "mevcut", baslik: "Mevcut", tip: "sayi" },
+    { alan: "sonHareket", baslik: "Son Hareket", tip: "tarih" },
+  ],
+  async calistir(_girdi, { tx }) {
+    const kartlar = await tx.stokKart.findMany({
+      where: { mevcutMiktar: { lt: 0 } },
+      orderBy: { kod: "asc" },
+    });
+    if (kartlar.length === 0) return [];
+    const sonHareketler = await tx.stokHareket.groupBy({
+      by: ["stokId"],
+      where: { stokId: { in: kartlar.map((k) => k.id) } },
+      _max: { tarih: true },
+    });
+    const sonTarih = new Map(
+      sonHareketler.map((h) => [h.stokId, h._max.tarih]),
+    );
+    return kartlar.map((k) => ({
+      kod: k.kod,
+      ad: k.ad,
+      birim: k.anaBirim,
+      mevcut: Number(k.mevcutMiktar),
+      sonHareket: sonTarih.get(k.id)?.toISOString().slice(0, 10) ?? null,
+    }));
   },
 });

@@ -21,10 +21,12 @@ import { StokService } from "./stok.service";
 import {
   kategoriSemasi,
   sayimOlusturSemasi,
+  stokBarkodSemasi,
   stokBirimSemasi,
   stokHareketOlusturSemasi,
   stokKartGuncelleSemasi,
   stokKartOlusturSemasi,
+  stokTedarikciSemasi,
 } from "./stok.semalar";
 
 const D = (deger: string | number): Prisma.Decimal => new Prisma.Decimal(deger);
@@ -86,6 +88,19 @@ export class StokController {
       );
     }
     return this.stokService.sayimOlustur(ayristirma.data);
+  }
+
+  @Post("sayimlar/:id/onayla")
+  @Roller("muhasebe")
+  async sayimOnayla(@Param("id") id: string) {
+    return this.stokService.sayimOnayla(id);
+  }
+
+  // ─── BARKOD ARAMA (STK-15) ───────────────────────────────────────────────
+
+  @Get("barkod/:barkod")
+  async barkodlaBul(@Param("barkod") barkod: string) {
+    return this.stokService.barkodlaBul(barkod);
   }
 
   // ─── STOK KART UÇLARI ────────────────────────────────────────────────────
@@ -159,6 +174,54 @@ export class StokController {
     @Param("birimId") birimId: string,
   ) {
     await this.stokService.birimSil(id, birimId);
+  }
+
+  // ─── BARKOD UÇLARI (STK-15) ──────────────────────────────────────────────
+
+  @Post(":id/barkodlar")
+  @Roller("muhasebe")
+  async barkodEkle(@Param("id") id: string, @Body() govde: unknown) {
+    const ayristirma = stokBarkodSemasi.safeParse(govde);
+    if (!ayristirma.success) {
+      throw new BadRequestException(
+        ayristirma.error.issues.map((s) => s.message).join("; "),
+      );
+    }
+    return this.stokService.barkodEkle(id, ayristirma.data);
+  }
+
+  @Delete(":id/barkodlar/:barkodId")
+  @Roller("muhasebe")
+  @HttpCode(204)
+  async barkodSil(
+    @Param("id") id: string,
+    @Param("barkodId") barkodId: string,
+  ) {
+    await this.stokService.barkodSil(id, barkodId);
+  }
+
+  // ─── TEDARİKÇİ UÇLARI (STK-18) ───────────────────────────────────────────
+
+  @Post(":id/tedarikciler")
+  @Roller("muhasebe")
+  async tedarikciEkle(@Param("id") id: string, @Body() govde: unknown) {
+    const ayristirma = stokTedarikciSemasi.safeParse(govde);
+    if (!ayristirma.success) {
+      throw new BadRequestException(
+        ayristirma.error.issues.map((s) => s.message).join("; "),
+      );
+    }
+    return this.stokService.tedarikciEkle(id, ayristirma.data);
+  }
+
+  @Delete(":id/tedarikciler/:tedarikciId")
+  @Roller("muhasebe")
+  @HttpCode(204)
+  async tedarikciSil(
+    @Param("id") id: string,
+    @Param("tedarikciId") tedarikciId: string,
+  ) {
+    await this.stokService.tedarikciSil(id, tedarikciId);
   }
 
   // ─── STOK HAREKET UÇLARI ─────────────────────────────────────────────────

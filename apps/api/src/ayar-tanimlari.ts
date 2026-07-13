@@ -28,8 +28,14 @@ registerModulAyar(
   z.object({
     varsayilanBirim: z.string().min(1).max(20),
     kritikSeviyeUyarisi: z.boolean(),
+    /// STK-17: eksi stok politikası — çıkışta stok eksiye düşerse
+    eksiStokPolitikasi: z.enum(["izin", "uyar", "engelle"]),
   }),
-  { varsayilanBirim: "adet", kritikSeviyeUyarisi: true },
+  {
+    varsayilanBirim: "adet",
+    kritikSeviyeUyarisi: true,
+    eksiStokPolitikasi: "uyar",
+  },
 );
 
 registerModulAyar(
