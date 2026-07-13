@@ -21,6 +21,13 @@ import type {
 } from "./cari.semalar";
 import { yaslandir } from "./yaslandirma";
 import { cariExcelOku, cariEkstreExcelYaz } from "../core/excel-yardimci";
+import { PdfService } from "../core/pdf/pdf.service";
+import {
+  kacis,
+  paraBicim,
+  sayfaSablonu,
+  tarihBicim,
+} from "../core/pdf/pdf-sablon";
 
 const D = (deger: string | number): Prisma.Decimal => new Prisma.Decimal(deger);
 
@@ -33,7 +40,10 @@ export interface DovizBakiye {
 
 @Injectable()
 export class CariService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pdf: PdfService,
+  ) {}
 
   async listele(arama?: string, imlec?: string, adet = 50) {
     const { tenantId } = aktifBaglam();
@@ -560,5 +570,53 @@ export class CariService {
     }));
 
     return cariEkstreExcelYaz(data.cari, mapped);
+  }
+
+  /** Ekstre PDF çıktısı (CARI-04, T-02 altyapısıyla). */
+  async ekstrePdf(
+    cariId: string,
+    baslangic?: string,
+    bitis?: string,
+  ): Promise<Buffer> {
+    const data = await this.ekstre(cariId, baslangic, bitis);
+    const aralik =
+      baslangic || bitis
+        ? ` — dönem: ${baslangic ? tarihBicim(baslangic) : "…"} – ${bitis ? tarihBicim(bitis) : "…"}`
+        : "";
+    const satirlar = data.satirlar
+      .map(
+        (s) => `<tr>
+  <td class="orta">${tarihBicim(s.tarih)}</td>
+  <td>${kacis(s.aciklama ?? "")}</td>
+  <td class="sag">${s.tip === "borc" ? paraBicim(s.tutarTry) : ""}</td>
+  <td class="sag">${s.tip === "alacak" ? paraBicim(s.tutarTry) : ""}</td>
+  <td class="sag">${paraBicim(s.yuruyenBakiye)}</td>
+</tr>`,
+      )
+      .join("\n");
+    const sonBakiye =
+      data.satirlar.length > 0
+        ? data.satirlar[data.satirlar.length - 1].yuruyenBakiye
+        : "0";
+    const icerik = `<table class="veri">
+  <thead><tr>
+    <th>Tarih</th><th>Açıklama</th>
+    <th class="sag">Borç</th><th class="sag">Alacak</th><th class="sag">Bakiye</th>
+  </tr></thead>
+  <tbody>${
+    satirlar ||
+    `<tr><td class="orta" colspan="5">Dönemde hareket bulunamadı</td></tr>`
+  }</tbody>
+</table>
+<p style="margin-top:10px;text-align:right;font-weight:bold">
+  Dönem sonu bakiyesi: ${paraBicim(sonBakiye)} TL
+</p>`;
+    return this.pdf.htmlToPdf(
+      sayfaSablonu({
+        baslik: "CARİ HESAP EKSTRESİ",
+        altBaslik: `${data.cari.kod} — ${data.cari.unvan}${aralik}`,
+        icerik,
+      }),
+    );
   }
 }

@@ -8,6 +8,6 @@ import { TenantController } from "./tenant.controller";
 @Module({
   controllers: [TenantController, KullanicilarController],
   providers: [KayitService, EpostaService, BaglantilarService],
-  exports: [BaglantilarService],
+  exports: [BaglantilarService, EpostaService],
 })
 export class TenantModule {}

@@ -12,7 +12,10 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { ayarTanimiAl } from "../core/ayarlar/ayar-kayit";
 import { izinliEylemler } from "../core/eylemler/eylem-kayit";
 import { PrismaService } from "../core/prisma.service";
+import { PdfService } from "../core/pdf/pdf.service";
+import { etiketPdfHtml, type EtiketVerisi } from "./etiket-pdf";
 import type {
+  etiketBasSemasi,
   kategoriSemasi,
   sayimOlusturSemasi,
   stokBarkodSemasi,
@@ -28,7 +31,10 @@ const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal => new Prism
 
 @Injectable()
 export class StokService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pdf: PdfService,
+  ) {}
 
   // ─── STOK KART YÖNETİMİ (STK-01) ───────────────────────────────────────────
 
@@ -524,6 +530,57 @@ export class StokService {
         satisFiyati: kart.satisFiyati?.toFixed(4) ?? null,
       },
     };
+  }
+
+  /**
+   * Barkod etiket PDF'i (STK-15 devamı): seçilen ürünler için 3×8 etiket
+   * ızgarası. Barkod belirtilmezse ürünün ilk barkodu (yoksa karttaki
+   * barkod alanı) kullanılır.
+   */
+  async etiketPdf(girdi: z.infer<typeof etiketBasSemasi>): Promise<Buffer> {
+    const { tenantId } = aktifBaglam();
+    const etiketler = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const sonuc: EtiketVerisi[] = [];
+      for (const kalem of girdi.kalemler) {
+        const kart = await tx.stokKart.findUnique({
+          where: { id: kalem.stokId },
+          include: { barkodlar: true },
+        });
+        if (!kart) throw new NotFoundException("Stok kartı bulunamadı");
+
+        let barkod: string | undefined;
+        let satisFiyati: Prisma.Decimal | null = kart.satisFiyati;
+        if (kalem.barkod) {
+          const kayit = kart.barkodlar.find((b) => b.barkod === kalem.barkod);
+          if (!kayit && kart.barkod !== kalem.barkod) {
+            throw new BadRequestException(
+              `'${kart.ad}' ürününde '${kalem.barkod}' barkodu tanımlı değil`,
+            );
+          }
+          barkod = kalem.barkod;
+          if (kayit?.satisFiyati) satisFiyati = kayit.satisFiyati;
+        } else {
+          const ilk = kart.barkodlar[0];
+          barkod = ilk?.barkod ?? kart.barkod ?? undefined;
+          if (ilk?.satisFiyati) satisFiyati = ilk.satisFiyati;
+        }
+        if (!barkod) {
+          throw new BadRequestException(
+            `'${kart.ad}' için tanımlı barkod yok; önce barkod ekleyin`,
+          );
+        }
+        for (let i = 0; i < kalem.adet; i++) {
+          sonuc.push({
+            urunAd: kart.ad,
+            urunKod: kart.kod,
+            barkod,
+            satisFiyati: satisFiyati?.toFixed(2) ?? null,
+          });
+        }
+      }
+      return sonuc;
+    });
+    return this.pdf.htmlToPdf(etiketPdfHtml(etiketler));
   }
 
   // ─── TEDARİKÇİLER (STK-18) ───────────────────────────────────────────────

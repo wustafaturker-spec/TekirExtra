@@ -75,6 +75,24 @@ export class RaporlarController {
     res.send(buffer);
   }
 
+  @Post(":kod/pdf")
+  async pdf(
+    @Param("kod") kod: string,
+    @Body() govde: unknown,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.raporlarService.pdfUret(
+      kod,
+      ayristir(girdiSemasi, govde ?? {}),
+    );
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=rapor-${kod.replace(/\./g, "-")}.pdf`,
+    );
+    res.send(buffer);
+  }
+
   @Get(":kod/gorunumler")
   gorunumler(@Param("kod") kod: string) {
     return this.raporlarService.gorunumleriListele(kod);

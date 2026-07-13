@@ -1,0 +1,145 @@
+import {
+  kacis,
+  paraBicim,
+  sayfaSablonu,
+  sayiBicim,
+  tarihBicim,
+} from "../core/pdf/pdf-sablon";
+
+/** Fatura PDF şablonu (FTR-07, T-02 altyapısı). */
+
+const TIP_BASLIKLARI: Record<string, string> = {
+  satis: "SATIŞ FATURASI",
+  alis: "ALIŞ FATURASI",
+  satis_iade: "SATIŞ İADE FATURASI",
+  alis_iade: "ALIŞ İADE FATURASI",
+  proforma: "PROFORMA FATURA",
+};
+
+export interface FaturaPdfSatiri {
+  stokKod: string;
+  stokAd: string;
+  miktar: string;
+  birim: string;
+  birimFiyat: string;
+  iskontoOrani: string;
+  matrah: string;
+  kdvOrani: string;
+  kdvTutari: string;
+  toplamTutar: string;
+}
+
+export interface FaturaPdfVerisi {
+  tip: string;
+  durum: string;
+  no: string | null;
+  tarih: string | Date;
+  vadeTarihi: string | Date | null;
+  dovizCinsi: string;
+  kur: string;
+  toplamBrut: string;
+  toplamSatirIskontosu: string;
+  genelIskontoToplam: string;
+  toplamMatrah: string;
+  toplamKdv: string;
+  toplamTevkifat: string;
+  genelToplam: string;
+  aciklama: string | null;
+  cari: { kod: string; unvan: string; vknTckn: string | null };
+  satirlar: FaturaPdfSatiri[];
+}
+
+export interface FirmaBilgisi {
+  unvan: string;
+  vkn: string;
+  vergiDairesi: string | null;
+}
+
+export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
+  const baslik = TIP_BASLIKLARI[f.tip] ?? "FATURA";
+  const paraBirimi = f.dovizCinsi === "TRY" ? "TL" : f.dovizCinsi;
+
+  const satirlar = f.satirlar
+    .map(
+      (s, i) => `<tr>
+  <td class="orta">${i + 1}</td>
+  <td>${kacis(s.stokKod)}</td>
+  <td>${kacis(s.stokAd)}</td>
+  <td class="sag">${sayiBicim(s.miktar)} ${kacis(s.birim)}</td>
+  <td class="sag">${paraBicim(s.birimFiyat)}</td>
+  <td class="sag">${Number(s.iskontoOrani) > 0 ? `%${sayiBicim(s.iskontoOrani)}` : ""}</td>
+  <td class="sag">${paraBicim(s.matrah)}</td>
+  <td class="sag">%${sayiBicim(s.kdvOrani)}</td>
+  <td class="sag">${paraBicim(s.kdvTutari)}</td>
+  <td class="sag">${paraBicim(s.toplamTutar)}</td>
+</tr>`,
+    )
+    .join("\n");
+
+  const toplamSatiri = (etiket: string, deger: string, kalin = false) =>
+    `<tr${kalin ? ' style="font-weight:bold"' : ""}>
+      <td style="padding:3px 8px">${etiket}</td>
+      <td class="sag" style="padding:3px 8px">${paraBicim(deger)} ${paraBirimi}</td>
+    </tr>`;
+
+  const toplamlar = [
+    toplamSatiri("Brüt Toplam", f.toplamBrut),
+    Number(f.toplamSatirIskontosu) > 0
+      ? toplamSatiri("Satır İskontoları", `-${f.toplamSatirIskontosu}`)
+      : "",
+    Number(f.genelIskontoToplam) > 0
+      ? toplamSatiri("Genel İskonto", `-${f.genelIskontoToplam}`)
+      : "",
+    toplamSatiri("KDV Matrahı", f.toplamMatrah),
+    toplamSatiri("Hesaplanan KDV", f.toplamKdv),
+    Number(f.toplamTevkifat) > 0
+      ? toplamSatiri("KDV Tevkifatı", `-${f.toplamTevkifat}`)
+      : "",
+    toplamSatiri("Genel Toplam", f.genelToplam, true),
+  ].join("");
+
+  const icerik = `
+<table style="width:100%;margin-bottom:12px;font-size:9pt">
+  <tr>
+    <td style="vertical-align:top;width:50%">
+      <div class="kutu">
+        <strong>${kacis(firma.unvan)}</strong><br>
+        VKN: ${kacis(firma.vkn)}${firma.vergiDairesi ? ` — ${kacis(firma.vergiDairesi)}` : ""}
+      </div>
+    </td>
+    <td style="width:4%"></td>
+    <td style="vertical-align:top;width:46%">
+      <div class="kutu">
+        <strong>Sayın ${kacis(f.cari.unvan)}</strong> (${kacis(f.cari.kod)})<br>
+        ${f.cari.vknTckn ? `VKN/TCKN: ${kacis(f.cari.vknTckn)}<br>` : ""}
+        Fatura No: <strong>${kacis(f.no ?? "— TASLAK —")}</strong><br>
+        Tarih: ${tarihBicim(f.tarih)}${
+          f.vadeTarihi ? ` &nbsp;•&nbsp; Vade: ${tarihBicim(f.vadeTarihi)}` : ""
+        }${
+          f.dovizCinsi !== "TRY"
+            ? `<br>Döviz: ${kacis(f.dovizCinsi)} (kur ${sayiBicim(f.kur)})`
+            : ""
+        }
+      </div>
+    </td>
+  </tr>
+</table>
+<table class="veri">
+  <thead><tr>
+    <th>#</th><th>Kod</th><th>Ürün / Hizmet</th>
+    <th class="sag">Miktar</th><th class="sag">Birim Fiyat</th>
+    <th class="sag">İsk.</th><th class="sag">Matrah</th>
+    <th class="sag">KDV %</th><th class="sag">KDV</th><th class="sag">Tutar</th>
+  </tr></thead>
+  <tbody>${satirlar}</tbody>
+</table>
+<table style="margin-top:12px;margin-left:auto;border:1px solid #e5e7eb;border-radius:4px;font-size:9pt">
+  ${toplamlar}
+</table>
+${f.aciklama ? `<p style="margin-top:10px;color:#6b7280">${kacis(f.aciklama)}</p>` : ""}`;
+
+  return sayfaSablonu({
+    baslik: f.durum === "taslak" ? `${baslik} (TASLAK)` : baslik,
+    icerik,
+  });
+}

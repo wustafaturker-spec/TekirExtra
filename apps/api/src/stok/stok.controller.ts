@@ -9,16 +9,19 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseInterceptors,
   UploadedFile,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { Response } from "express";
 import { Prisma } from "@prisma/client";
 import { Roller } from "../auth/roller.decorator";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { StokService } from "./stok.service";
 import {
+  etiketBasSemasi,
   kategoriSemasi,
   sayimOlusturSemasi,
   stokBarkodSemasi,
@@ -101,6 +104,25 @@ export class StokController {
   @Get("barkod/:barkod")
   async barkodlaBul(@Param("barkod") barkod: string) {
     return this.stokService.barkodlaBul(barkod);
+  }
+
+  // ─── BARKOD ETİKET BASIMI (STK-15 devamı, T-02) ──────────────────────────
+
+  @Post("etiketler")
+  async etiketBas(@Body() govde: unknown, @Res() res: Response) {
+    const ayristirma = etiketBasSemasi.safeParse(govde);
+    if (!ayristirma.success) {
+      throw new BadRequestException(
+        ayristirma.error.issues.map((s) => s.message).join("; "),
+      );
+    }
+    const buffer = await this.stokService.etiketPdf(ayristirma.data);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="stok-etiketler.pdf"',
+    );
+    res.send(buffer);
   }
 
   // ─── STOK KART UÇLARI ────────────────────────────────────────────────────

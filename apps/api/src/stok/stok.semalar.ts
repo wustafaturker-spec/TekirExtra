@@ -83,6 +83,20 @@ export const stokTedarikciSemasi = z.object({
   varsayilan: z.boolean().default(false),
 });
 
+/** Barkod etiket basımı (STK-15 devamı, 4. aşama). */
+export const etiketBasSemasi = z.object({
+  kalemler: z
+    .array(
+      z.object({
+        stokId: z.string().uuid(),
+        adet: z.number().int().min(1).max(500).default(1),
+        /** Belirli bir barkod seçimi; boşsa ürünün ilk barkodu kullanılır. */
+        barkod: z.string().max(120).optional(),
+      }),
+    )
+    .min(1, "En az bir etiket kalemi gerekli"),
+});
+
 export const sayimKalemSemasi = z.object({
   stokId: z.string().uuid(),
   fiiliMiktar: pozitifOndalik,

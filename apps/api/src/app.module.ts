@@ -8,6 +8,7 @@ import { StokModule } from "./stok/stok.module";
 import { FaturaModule } from "./fatura/fatura.module";
 import { KasaBankaModule } from "./kasa-banka/kasa-banka.module";
 import { EbelgeModule } from "./ebelge/ebelge.module";
+import { EklerModule } from "./ekler/ekler.module";
 import { RaporModule } from "./rapor/rapor.module";
 import { AuditInterceptor } from "./core/audit.interceptor";
 import { CoreModule } from "./core/core.module";
@@ -25,6 +26,7 @@ import { TenantModule } from "./tenant/tenant.module";
     FaturaModule,
     KasaBankaModule,
     EbelgeModule,
+    EklerModule,
     RaporModule,
     HealthModule,
   ],

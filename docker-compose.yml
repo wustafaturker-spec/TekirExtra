@@ -34,6 +34,23 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: tekir
+      MINIO_ROOT_PASSWORD: tekir-minio-dev
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   metabase:
     image: metabase/metabase:latest
     ports:
@@ -93,3 +110,4 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  minio-data:

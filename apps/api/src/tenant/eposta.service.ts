@@ -28,4 +28,25 @@ export class EpostaService {
     });
     this.logger.log(`Doğrulama e-postası gönderildi: ${eposta}`);
   }
+
+  /** Ekli genel ileti gönderimi (FTR-07 fatura PDF vb.). */
+  async ekliIletiGonder(girdi: {
+    alici: string;
+    konu: string;
+    metin: string;
+    ekler: { dosyaAdi: string; icerik: Buffer; mime: string }[];
+  }): Promise<void> {
+    await this.transport.sendMail({
+      from: process.env.MAIL_FROM ?? "TekirExtra <no-reply@tekirextra.local>",
+      to: girdi.alici,
+      subject: girdi.konu,
+      text: girdi.metin,
+      attachments: girdi.ekler.map((e) => ({
+        filename: e.dosyaAdi,
+        content: e.icerik,
+        contentType: e.mime,
+      })),
+    });
+    this.logger.log(`Ekli ileti gönderildi: ${girdi.alici} (${girdi.konu})`);
+  }
 }

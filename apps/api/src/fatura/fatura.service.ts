@@ -12,8 +12,11 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler } from "../core/eylemler/eylem-kayit";
 import { PrismaService } from "../core/prisma.service";
+import { PdfService } from "../core/pdf/pdf.service";
 import { StokService } from "../stok/stok.service";
 import { EbelgeKuyrukService } from "../ebelge/ebelge-kuyruk.service";
+import { EpostaService } from "../tenant/eposta.service";
+import { faturaPdfHtml } from "./fatura-pdf";
 import type {
   faturaOlusturSemasi,
   faturaGuncelleSemasi,
@@ -27,6 +30,8 @@ export class FaturaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly stokService: StokService,
+    private readonly pdf: PdfService,
+    private readonly eposta: EpostaService,
     @Inject(forwardRef(() => EbelgeKuyrukService))
     private readonly ebelgeKuyrukService: EbelgeKuyrukService,
   ) {}
@@ -199,8 +204,9 @@ export class FaturaService {
         },
       });
 
-      // Satırları oluştur
-      hesaplanan.satirlar.forEach(async (s, index) => {
+      // Satırları oluştur (sıralı await: async forEach transaction
+      // kapandıktan sonra çalışıp P2028 ile süreci düşürüyordu)
+      for (const [index, s] of hesaplanan.satirlar.entries()) {
         const orijinalSatir = girdi.satirlar[index];
         await tx.faturaSatir.create({
           data: {
@@ -223,7 +229,7 @@ export class FaturaService {
             toplamTutar: D(s.toplamTutar),
           },
         });
-      });
+      }
 
       return this.gorunum(fatura);
     });
@@ -269,7 +275,8 @@ export class FaturaService {
       // Satırları sil ve yeniden ekle
       await tx.faturaSatir.deleteMany({ where: { faturaId: id } });
 
-      hesaplanan.satirlar.forEach(async (s, index) => {
+      // Sıralı await (async forEach P2028 hatası — olustur ile aynı düzeltme)
+      for (const [index, s] of hesaplanan.satirlar.entries()) {
         const orijinalSatir = birlesikGirdi.satirlar[index];
         await tx.faturaSatir.create({
           data: {
@@ -292,7 +299,7 @@ export class FaturaService {
             toplamTutar: D(s.toplamTutar),
           },
         });
-      });
+      }
 
       const guncellenen = await tx.fatura.update({
         where: { id },
@@ -505,98 +512,60 @@ export class FaturaService {
     return sonuc.kesinFatura;
   }
 
-  // ─── PDF ÜRETİMİ (FTR-07) ────────────────────────────────────────────────
+  // ─── PDF ÜRETİMİ (FTR-07, T-02 altyapısı) ───────────────────────────────
 
-  async pdfUret(id: string) {
+  async pdfUret(id: string): Promise<{ buffer: Buffer; dosyaAdi: string }> {
     const fatura = await this.getir(id);
-
-    // FTR-07: Gerçek PDF kütüphaneleri (Playwright vb.) gelene kadar,
-    // yazdırılabilir bir HTML şablonu/akışı dönüyoruz (T-02 Kararı).
-    const html = `
-      <html>
-        <head>
-          <meta charset="utf-8">
-          <title>Fatura ${fatura.no || "Taslak"}</title>
-          <style>
-            body { font-family: sans-serif; padding: 2rem; color: #1c1917; }
-            .header { display: flex; justify-content: space-between; border-bottom: 2px solid #1c1917; padding-bottom: 1rem; }
-            .details { margin: 2rem 0; display: flex; justify-content: space-between; }
-            table { width: 100%; border-collapse: collapse; margin-top: 2rem; }
-            th, td { border: 1px solid #e7e5e4; padding: 0.75rem; text-align: left; }
-            th { background: #fafaf9; }
-            .totals { margin-top: 2rem; display: flex; flex-direction: column; align-items: flex-end; }
-            .total-row { display: flex; justify-content: space-between; width: 250px; padding: 0.35rem 0; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div>
-              <h2>TEKİREXTRA SAAS</h2>
-              <p>Örnek Mahallesi, No: 123, İstanbul</p>
-            </div>
-            <div>
-              <h1>FATURA</h1>
-              <p><strong>Fatura No:</strong> ${fatura.no || "TASLAK"}</p>
-              <p><strong>Tarih:</strong> ${fatura.tarih}</p>
-            </div>
-          </div>
-          <div class="details">
-            <div>
-              <h3>Müşteri/Cari:</h3>
-              <p><strong>${fatura.cari.unvan}</strong></p>
-              <p>VKN/TCKN: ${fatura.cari.vknTckn || "-"}</p>
-            </div>
-            <div>
-              <p><strong>Döviz:</strong> ${fatura.dovizCinsi}</p>
-              <p><strong>Kur:</strong> ${fatura.kur}</p>
-            </div>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Ürün/Hizmet</th>
-                <th>Miktar</th>
-                <th>Birim Fiyat</th>
-                <th>İskonto</th>
-                <th>KDV</th>
-                <th>Toplam</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${fatura.satirlar
-                .map(
-                  (s) => `
-                <tr>
-                  <td>${s.stokAd}</td>
-                  <td>${s.miktar} ${s.birim}</td>
-                  <td>${s.birimFiyat}</td>
-                  <td>%${s.iskontoOrani}</td>
-                  <td>%${s.kdvOrani}</td>
-                  <td>${s.toplamTutar}</td>
-                </tr>
-              `,
-                )
-                .join("")}
-            </tbody>
-          </table>
-          <div class="totals">
-            <div class="total-row"><span>Brüt Toplam:</span> <strong>${fatura.toplamBrut}</strong></div>
-            <div class="total-row"><span>İskonto Toplam:</span> <strong>${Number(fatura.toplamSatirIskontosu) + Number(fatura.genelIskontoToplam)}</strong></div>
-            <div class="total-row"><span>KDV Matrahı:</span> <strong>${fatura.toplamMatrah}</strong></div>
-            <div class="total-row"><span>Hesaplanan KDV:</span> <strong>${fatura.toplamKdv}</strong></div>
-            ${Number(fatura.toplamTevkifat) > 0 ? `<div class="total-row"><span>Tevkif Edilen KDV:</span> <strong>${fatura.toplamTevkifat}</strong></div>` : ""}
-            <div class="total-row" style="border-top: 2px double #1c1917; padding-top: 0.5rem; font-size: 1.2rem;">
-              <span>Genel Toplam:</span> <strong>${fatura.genelToplam} ${fatura.dovizCinsi}</strong>
-            </div>
-          </div>
-        </body>
-      </html>
-    `;
-
+    const { tenantId } = aktifBaglam();
+    const firma = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.tenant.findUnique({
+        where: { id: tenantId },
+        select: { unvan: true, vkn: true, vergiDairesi: true },
+      }),
+    );
+    if (!firma) throw new NotFoundException("Firma bulunamadı");
+    const buffer = await this.pdf.htmlToPdf(faturaPdfHtml(fatura, firma));
     return {
-      stream: Buffer.from(html, "utf-8"),
-      filename: `fatura-${fatura.no || "taslak"}.html`,
+      buffer,
+      dosyaAdi: `fatura-${fatura.no ?? "taslak"}.pdf`,
     };
+  }
+
+  /**
+   * Fatura PDF'ini cariye e-posta ile gönderir (FTR-07). Alıcı verilmezse
+   * cari kartındaki e-posta kullanılır; taslak fatura gönderilemez.
+   */
+  async pdfGonder(id: string, aliciEposta?: string) {
+    const fatura = await this.getir(id);
+    if (fatura.durum === "taslak") {
+      throw new BadRequestException(
+        "Taslak fatura gönderilemez; önce kesinleştirin",
+      );
+    }
+    let alici = aliciEposta;
+    if (!alici) {
+      const { tenantId } = aktifBaglam();
+      const cari = await this.prisma.tenantIslem(tenantId, (tx) =>
+        tx.cariHesap.findUnique({
+          where: { id: fatura.cariId },
+          select: { eposta: true },
+        }),
+      );
+      alici = cari?.eposta ?? undefined;
+    }
+    if (!alici) {
+      throw new BadRequestException(
+        "Alıcı e-postası yok: cari kartına e-posta ekleyin veya adres belirtin",
+      );
+    }
+    const { buffer, dosyaAdi } = await this.pdfUret(id);
+    await this.eposta.ekliIletiGonder({
+      alici,
+      konu: `Fatura ${fatura.no}`,
+      metin: `Sayın ${fatura.cari.unvan},\n\n${fatura.no} numaralı faturanız ekte yer almaktadır.\n\nİyi çalışmalar dileriz.`,
+      ekler: [{ dosyaAdi, icerik: buffer, mime: "application/pdf" }],
+    });
+    return { gonderildi: true, alici };
   }
 
   // ─── PRIVATE YARDIMCILAR ──────────────────────────────────────────────────

@@ -195,6 +195,22 @@ export class CariController {
     return this.cariService.excelImport(file.buffer);
   }
 
+  @Get(":id/ekstre/pdf")
+  async ekstrePdf(
+    @Param("id") id: string,
+    @Res() res: Response,
+    @Query("baslangic") baslangic?: string,
+    @Query("bitis") bitis?: string,
+  ) {
+    const buffer = await this.cariService.ekstrePdf(id, baslangic, bitis);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=ekstre-${id}.pdf`,
+    );
+    res.send(buffer);
+  }
+
   @Get(":id/ekstre/excel")
   async ekstreExcel(
     @Param("id") id: string,

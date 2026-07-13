@@ -105,8 +105,24 @@ export class FaturaController {
   @Get(":id/pdf")
   async pdfUret(@Param("id") id: string, @Res() res: Response) {
     const pdf = await this.faturaService.pdfUret(id);
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.setHeader("Content-Disposition", `inline; filename="${pdf.filename}"`);
-    res.send(pdf.stream.toString());
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${pdf.dosyaAdi}"`,
+    );
+    res.send(pdf.buffer);
+  }
+
+  @Post(":id/pdf-gonder")
+  @Roller("muhasebe")
+  async pdfGonder(
+    @Param("id") id: string,
+    @Body() govde: { eposta?: string },
+  ) {
+    const eposta = govde?.eposta;
+    if (eposta !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(eposta)) {
+      throw new BadRequestException("Geçersiz e-posta adresi");
+    }
+    return this.faturaService.pdfGonder(id, eposta);
   }
 }

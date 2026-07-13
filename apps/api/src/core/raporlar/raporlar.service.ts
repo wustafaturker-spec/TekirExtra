@@ -6,8 +6,10 @@ import {
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { aktifBaglam } from "../istek-baglami";
+import { PdfService } from "../pdf/pdf.service";
 import { PrismaService } from "../prisma.service";
 import { raporExcelYaz } from "./rapor-excel";
+import { raporPdfHtml, raporYatayMi } from "./rapor-pdf";
 import {
   girdiDogrula,
   raporTanimiAl,
@@ -18,7 +20,10 @@ import {
 
 @Injectable()
 export class RaporlarService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pdf: PdfService,
+  ) {}
 
   /** Rapor kataloğu: arayüz filtre/gruplama/kolon meta verisinden çizilir. */
   listele(modul?: string) {
@@ -57,6 +62,16 @@ export class RaporlarService {
     if (!tanim) throw new NotFoundException(`'${kod}' raporu bulunamadı`);
     const sonuc = await this.calistir(kod, girdi);
     return raporExcelYaz(tanim, sonuc.satirlar);
+  }
+
+  /** RPR-04: rapor PDF dışa aktarımı (T-02 altyapısı üzerinden). */
+  async pdfUret(kod: string, girdi: RaporGirdisi): Promise<Buffer> {
+    const tanim = raporTanimiAl(kod);
+    if (!tanim) throw new NotFoundException(`'${kod}' raporu bulunamadı`);
+    const sonuc = await this.calistir(kod, girdi);
+    return this.pdf.htmlToPdf(raporPdfHtml(tanim, sonuc.satirlar), {
+      yatay: raporYatayMi(tanim),
+    });
   }
 
   // ─── KAYITLI GÖRÜNÜMLER (RPR-06) ─────────────────────────────────────────

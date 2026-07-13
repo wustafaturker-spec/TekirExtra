@@ -825,3 +825,28 @@ model CekSenet {
   @@unique([tenantId, portfoyNo])
   @@map("cek_senetler")
 }
+
+/// Belge/dosya ekleri ortak altyapısı (4. aşama S-01): dosya gövdesi
+/// S3 uyumlu depoda (MinIO), meta veri burada; RLS ile kiracıya kilitli.
+enum EkSahipTur {
+  cari
+  stok
+  fatura
+  kasa_banka
+}
+
+model Ek {
+  id             String     @id @default(uuid()) @db.Uuid
+  tenantId       String     @map("tenant_id") @db.Uuid
+  sahipTur       EkSahipTur @map("sahip_tur")
+  sahipId        String     @map("sahip_id") @db.Uuid
+  dosyaAdi       String     @map("dosya_adi")
+  mimeTip        String     @map("mime_tip")
+  boyut          Int
+  depoAnahtari   String     @unique @map("depo_anahtari")
+  yukleyenUserId String?    @map("yukleyen_user_id") @db.Uuid
+  createdAt      DateTime   @default(now()) @map("created_at")
+
+  @@index([tenantId, sahipTur, sahipId])
+  @@map("ekler")
+}
