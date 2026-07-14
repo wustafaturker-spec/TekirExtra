@@ -115,6 +115,18 @@ export default function StokSayfasi() {
     }
   }
 
+  async function kopyala(id: string) {
+    setHata("");
+    setBasari("");
+    try {
+      await api(`/stok/${id}/kopyala`, { method: "POST" });
+      setBasari("Stok kartı başarıyla kopyalandı.");
+      void yukle();
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Kopyalama hatası");
+    }
+  }
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
@@ -210,12 +222,13 @@ export default function StokSayfasi() {
               <th style={{ ...stil.tabloBaslik, textAlign: "right" }}>Ort. Maliyet</th>
               <th style={{ ...stil.tabloBaslik, textAlign: "right" }}>Alış Fiyatı</th>
               <th style={{ ...stil.tabloBaslik, textAlign: "right" }}>Satış Fiyatı</th>
+              <th style={{ ...stil.tabloBaslik, textAlign: "center" }}>Eylemler</th>
             </tr>
           </thead>
           <tbody>
             {stoklar.length === 0 ? (
               <tr>
-                <td colSpan={8} style={{ ...stil.tabloHucre, textAlign: "center", color: "#a1a1aa" }}>
+                <td colSpan={9} style={{ ...stil.tabloHucre, textAlign: "center", color: "#a1a1aa" }}>
                   Arama kriterlerinize uygun stok kartı bulunamadı.
                 </td>
               </tr>
@@ -244,6 +257,11 @@ export default function StokSayfasi() {
                     </td>
                     <td style={{ ...stil.tabloHucre, textAlign: "right", fontWeight: "600" }}>
                       {s.satisFiyati ? `${Number(s.satisFiyati).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL` : "-"}
+                    </td>
+                    <td style={{ ...stil.tabloHucre, textAlign: "center", whiteSpace: "nowrap" }}>
+                      <button onClick={() => kopyala(s.id)} style={{ ...stil.dugmeMuted, padding: "0.35rem 0.65rem", fontSize: "0.8rem" }}>
+                        📋 Kopyala
+                      </button>
                     </td>
                   </tr>
                 );

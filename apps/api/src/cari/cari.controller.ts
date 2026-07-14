@@ -82,6 +82,12 @@ export class CariController {
     return this.cariService.olustur(ayristirma.data);
   }
 
+  @Post(":id/kopyala")
+  @Roller("muhasebe", "satis")
+  async kopyala(@Param("id") id: string) {
+    return this.cariService.kopyala(id);
+  }
+
   @Patch(":id")
   @Roller("muhasebe")
   async guncelle(@Param("id") id: string, @Body() govde: unknown) {

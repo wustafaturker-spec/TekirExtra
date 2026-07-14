@@ -426,3 +426,106 @@ registerRapor({
     }));
   },
 });
+
+// ─── Kâr/Zarar Özeti (RPR-05) ───────────────────────────────────────────────
+
+registerRapor({
+  kod: "genel.kar-zarar-ozeti",
+  modul: "genel" as any,
+  ad: "Kâr/Zarar Özeti",
+  aciklama: "Satış Matrahı − Alış Matrahı − Kasa/Banka Tediye Giderleri formülüyle kâr/zarar özeti",
+  filtreler: TARIH_FILTRELERI,
+  gruplamalar: [
+    { deger: "ay", ad: "Ay" },
+    { deger: "yok", ad: "Genel Toplam" },
+  ],
+  kolonlar: [
+    { alan: "grup", baslik: "Dönem", tip: "metin" },
+    { alan: "satisMatrah", baslik: "Satış Matrahı (TL)", tip: "para" },
+    { alan: "alisMatrah", baslik: "Alış Matrahı (TL)", tip: "para" },
+    { alan: "tediyeGiderleri", baslik: "Tediye Giderleri (TL)", tip: "para" },
+    { alan: "netKarZarar", baslik: "Net Kâr/Zarar (TL)", tip: "para" },
+  ],
+  async calistir(girdi, { tx }) {
+    const f = girdi.filtreler ?? {};
+
+    // 1. Kesinleşmiş satış ve alış faturalarının matrahlarını çekelim
+    const faturalar = await tx.fatura.findMany({
+      where: {
+        durum: "kesin",
+        tip: { not: "proforma" },
+        tarih: tarihAraligi(f.baslangic, f.bitis),
+      },
+      select: {
+        tip: true,
+        tarih: true,
+        toplamMatrah: true,
+        kur: true,
+      },
+    });
+
+    // 2. Kasa/banka tediye giderlerini çekelim
+    const tediyeler = await tx.kasaBankaHareket.findMany({
+      where: {
+        tip: "tediye",
+        tarih: tarihAraligi(f.baslangic, f.bitis),
+      },
+      select: {
+        tarih: true,
+        tutarTry: true,
+      },
+    });
+
+    const gruplama = girdi.gruplama ?? "ay";
+    const gruplar = new Map<
+      string,
+      { satis: Prisma.Decimal; alis: Prisma.Decimal; tediye: Prisma.Decimal }
+    >();
+
+    const getGrupAnahtari = (tarih: Date) => {
+      if (gruplama === "yok") return "Toplam";
+      return ay(tarih);
+    };
+
+    // Faturaları işle
+    for (const ft of faturalar) {
+      const anahtar = getGrupAnahtari(ft.tarih);
+      const g = gruplar.get(anahtar) ?? { satis: D(0), alis: D(0), tediye: D(0) };
+      const tutar = ft.toplamMatrah.mul(ft.kur);
+
+      if (ft.tip === "satis") {
+        g.satis = g.satis.add(tutar);
+      } else if (ft.tip === "satis_iade") {
+        g.satis = g.satis.sub(tutar);
+      } else if (ft.tip === "alis") {
+        g.alis = g.alis.add(tutar);
+      } else if (ft.tip === "alis_iade") {
+        g.alis = g.alis.sub(tutar);
+      }
+
+      gruplar.set(anahtar, g);
+    }
+
+    // Tediyeleri işle
+    for (const td of tediyeler) {
+      const anahtar = getGrupAnahtari(td.tarih);
+      const g = gruplar.get(anahtar) ?? { satis: D(0), alis: D(0), tediye: D(0) };
+      g.tediye = g.tediye.add(td.tutarTry);
+      gruplar.set(anahtar, g);
+    }
+
+    return [...gruplar.entries()]
+      .sort(([a], [b]) => a.localeCompare(b, "tr"))
+      .map(([grup, g]) => {
+        const net = g.satis.sub(g.alis).sub(g.tediye);
+        return {
+          grup,
+          satisMatrah: g.satis.toFixed(2),
+          alisMatrah: g.alis.toFixed(2),
+          tediyeGiderleri: g.tediye.toFixed(2),
+          netKarZarar: net.toFixed(2),
+        };
+      });
+  },
+});
+

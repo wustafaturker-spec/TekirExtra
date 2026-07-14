@@ -33,6 +33,8 @@ export interface SayfaSecenekleri {
   altBaslik?: string;
   /** Gövde HTML'i. */
   icerik: string;
+  /** KLN-03: firma logosu; yoksa üst şeritte TekirExtra markası kalır. */
+  logoDataUri?: string;
 }
 
 /** Tüm PDF'lerin ortak iskeleti: üst şerit, içerik, tarihli alt bilgi. */
@@ -54,6 +56,7 @@ export function sayfaSablonu(s: SayfaSecenekleri): string {
   }
   .ust-serit h1 { font-size: 13pt; letter-spacing: 0.5px; }
   .ust-serit .marka { font-size: 9pt; opacity: 0.85; }
+  .ust-serit .logo { max-height: 28px; max-width: 120px; align-self: center; }
   .alt-baslik { color: #6b7280; font-size: 8.5pt; margin: 2px 2px 12px; }
   table.veri { width: 100%; border-collapse: collapse; margin-top: 6px; }
   table.veri th {
@@ -77,7 +80,11 @@ export function sayfaSablonu(s: SayfaSecenekleri): string {
 <body>
   <div class="ust-serit">
     <h1>${kacis(s.baslik)}</h1>
-    <span class="marka">TekirExtra</span>
+    ${
+      s.logoDataUri
+        ? `<img class="logo" src="${kacis(s.logoDataUri)}" alt="">`
+        : `<span class="marka">TekirExtra</span>`
+    }
   </div>
   ${s.altBaslik ? `<div class="alt-baslik">${kacis(s.altBaslik)}</div>` : ""}
   ${s.icerik}

@@ -1,16 +1,17 @@
 # TekirExtra — Yazılım İster Dokümanı (SRS)
 
-**Sürüm:** 0.12
-**Tarih:** 2026-07-13
-**Durum:** Tamamlama Paketi S-01 onayı alındı (2026-07-13): kalan tüm [Z] ve
-[İ] maddeler tek pakette kapatılır — **AYR-07** kopyalama uçları (fatura, cari,
-stok, belge; izinliEylemler "kopyala" diyordu ama uç yoktu), **KLN-03** firma
-logosu (ekler altyapısıyla), **FTR-14** fiyat listesi/iskonto önerisi +
-**kullanıcı bazlı maksimum iskonto yetkisi** (User.maksIskontoYuzdesi; boşsa
-sınırsız), **FTR-11** istisna senaryosu **satır bazında GİB istisna koduyla**
-(tevkifat zaten mevcut), **RPR-05** kâr/zarar özeti (satış matrahı − alış
-matrahı − kasa/banka tediye giderleri). Bu paketten sonra v1.0 kapsamında
-yalnız [G] maddeler kalır.
+**Sürüm:** 0.13
+**Tarih:** 2026-07-14
+**Durum:** Tamamlama Paketi **tamamlandı** (2026-07-14): kalan tüm [Z] ve
+[İ] maddeler kapatıldı — **AYR-07** kopyalama uçları (fatura, cari, stok,
+belge; izinliEylemler "kopyala" diyordu ama uç yoktu), **KLN-03** firma logosu
+(ekler altyapısıyla; tüm PDF'lere data URI ile gömülür), **FTR-14** fiyat
+listesi/iskonto önerisi (GET /stok/:id/tavsiye-fiyat) + **kullanıcı bazlı
+maksimum iskonto yetkisi** (User.maksIskontoYuzdesi; boşsa sınırsız),
+**FTR-11** istisna senaryosu **satır bazında GİB istisna koduyla** (PDF ve
+UBL-TR'ye yansır; tevkifat zaten mevcut), **RPR-05** kâr/zarar özeti (satış
+matrahı − alış matrahı − kasa/banka tediye giderleri). v1.0 kapsamında artık
+yalnız [G] maddeler kalıyor.
 Önceki kapılar: Belge Zinciri Paketi — FTR-12 tam kapsam (satış+alış), FTR-13,
 FTR-09, belge PDF'leri; stok düşümü her zaman faturada, satış siparişinde
 otomatik rezervasyon, alış siparişinde yoldaki stok, STK-17 kullanılabilir stok

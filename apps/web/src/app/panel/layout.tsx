@@ -22,7 +22,8 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
     { href: "/panel/fatura", baslik: "📄 Faturalar", aktif: pathname.startsWith("/panel/fatura") },
     { href: "/panel/kasa-banka", baslik: "🏦 Kasa & Banka", aktif: pathname.startsWith("/panel/kasa-banka") },
     { href: "/panel/raporlar", baslik: "📈 Raporlar & Analiz", aktif: pathname.startsWith("/panel/raporlar") },
-    { href: "/panel/ayarlar/entegratorler", baslik: "🔌 e-Belge Ayarları", aktif: pathname.startsWith("/panel/ayarlar") },
+    { href: "/panel/ayarlar/firma", baslik: "🏢 Firma Ayarları", aktif: pathname === "/panel/ayarlar/firma" },
+    { href: "/panel/ayarlar/entegratorler", baslik: "🔌 e-Belge Ayarları", aktif: pathname === "/panel/ayarlar/entegratorler" },
   ];
 
   return (

@@ -12,6 +12,7 @@ import {
 import { randomUUID } from "node:crypto";
 import * as argon2 from "argon2";
 import { ROLLER } from "@tekirextra/shared";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { Roller } from "../auth/roller.decorator";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -26,11 +27,13 @@ const kullaniciOlusturSemasi = z.object({
     .min(10, "Parola en az 10 karakter olmalıdır")
     .regex(/[a-zA-Z]/, "Parola harf içermelidir")
     .regex(/\d/, "Parola rakam içermelidir"),
+  maksIskontoYuzdesi: z.number().min(0).max(100).nullable().optional(),
 });
 
 const kullaniciGuncelleSemasi = z.object({
   rol: z.enum(ROLLER).optional(),
   aktif: z.boolean().optional(),
+  maksIskontoYuzdesi: z.number().min(0).max(100).nullable().optional(),
 });
 
 const KULLANICI_SECIMI = {
@@ -41,6 +44,7 @@ const KULLANICI_SECIMI = {
   aktif: true,
   epostaDogrulandi: true,
   totpAktif: true,
+  maksIskontoYuzdesi: true,
 } as const;
 
 /** Firma içi kullanıcı yönetimi (KLN-02) — yalnızca yönetici. */
@@ -89,6 +93,9 @@ export class KullanicilarController {
           rol: girdi.rol,
           parolaHash,
           epostaDogrulandi: true,
+          maksIskontoYuzdesi: girdi.maksIskontoYuzdesi !== undefined && girdi.maksIskontoYuzdesi !== null
+            ? new Prisma.Decimal(girdi.maksIskontoYuzdesi)
+            : null,
         },
         select: KULLANICI_SECIMI,
       }),
@@ -113,7 +120,12 @@ export class KullanicilarController {
       return await this.prisma.tenantIslem(tenantId, (tx) =>
         tx.user.update({
           where: { id },
-          data: ayristirma.data,
+          data: {
+            ...ayristirma.data,
+            maksIskontoYuzdesi: ayristirma.data.maksIskontoYuzdesi !== undefined
+              ? (ayristirma.data.maksIskontoYuzdesi !== null ? new Prisma.Decimal(ayristirma.data.maksIskontoYuzdesi) : null)
+              : undefined,
+          },
           select: KULLANICI_SECIMI,
         }),
       );

@@ -25,6 +25,7 @@ interface FaturaSatir {
   birimFiyat: number;
   iskontoOrani: number;
   kdvOrani: number;
+  gibIstisnaKodu?: string;
 }
 
 interface Fatura {
@@ -54,7 +55,7 @@ export default function FaturaSayfasi() {
   const [tip, setTip] = useState("satis");
   const [tarih, setTarih] = useState(new Date().toISOString().substring(0, 10));
   const [satirlar, setSatirlar] = useState<FaturaSatir[]>([
-    { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 },
+    { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" },
   ]);
 
   // Önizleme hesaplamaları
@@ -89,7 +90,7 @@ export default function FaturaSayfasi() {
   }, [yukle]);
 
   function satirEkle() {
-    setSatirlar([...satirlar, { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 }]);
+    setSatirlar([...satirlar, { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" }]);
   }
 
   function satirSil(index: number) {
@@ -97,7 +98,7 @@ export default function FaturaSayfasi() {
     setSatirlar(satirlar.filter((_, i) => i !== index));
   }
 
-  function satirGuncelle(index: number, alan: keyof FaturaSatir, deger: any) {
+  async function satirGuncelle(index: number, alan: keyof FaturaSatir, deger: any) {
     const yeni = [...satirlar];
     yeni[index] = { ...yeni[index], [alan]: deger };
 
@@ -105,12 +106,45 @@ export default function FaturaSayfasi() {
     if (alan === "stokId") {
       const stok = stoklar.find((s) => s.id === deger);
       if (stok) {
-        yeni[index].birimFiyat = Number(tip === "satis" ? stok.satisFiyati ?? 0 : stok.alisFiyati ?? 0);
         yeni[index].kdvOrani = Number(stok.kdvOrani || 20);
+      }
+      if (deger) {
+        try {
+          const tavsiye = await api<{ birimFiyat: number; iskontoOrani: number }>(
+            `/stok/${deger}/tavsiye-fiyat?cariId=${cariId}&tip=${tip}`
+          );
+          yeni[index].birimFiyat = tavsiye.birimFiyat;
+          yeni[index].iskontoOrani = tavsiye.iskontoOrani;
+        } catch (err) {
+          console.error("Tavsiye fiyat alınamadı", err);
+        }
       }
     }
     setSatirlar(yeni);
   }
+
+  useEffect(() => {
+    if (cariId && satirlar.some((s) => s.stokId)) {
+      const guncelleFiyatlar = async () => {
+        const yeni = [...satirlar];
+        for (let i = 0; i < yeni.length; i++) {
+          if (yeni[i].stokId) {
+            try {
+              const tavsiye = await api<{ birimFiyat: number; iskontoOrani: number }>(
+                `/stok/${yeni[i].stokId}/tavsiye-fiyat?cariId=${cariId}&tip=${tip}`
+              );
+              yeni[i].birimFiyat = tavsiye.birimFiyat;
+              yeni[i].iskontoOrani = tavsiye.iskontoOrani;
+            } catch (err) {
+              console.error(err);
+            }
+          }
+        }
+        setSatirlar(yeni);
+      };
+      void guncelleFiyatlar();
+    }
+  }, [cariId, tip]);
 
   async function kaydet(e: React.FormEvent) {
     e.preventDefault();
@@ -142,6 +176,7 @@ export default function FaturaSayfasi() {
             birimFiyat: String(s.birimFiyat),
             iskontoOrani: String(s.iskontoOrani),
             kdvOrani: String(s.kdvOrani),
+            gibIstisnaKodu: s.gibIstisnaKodu || undefined,
           })),
         }),
       });
@@ -149,7 +184,7 @@ export default function FaturaSayfasi() {
       setBasari("Fatura taslağı başarıyla oluşturuldu.");
       setFormAcik(false);
       setCariId("");
-      setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 }]);
+      setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" }]);
       void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Fatura oluşturulamadı");
@@ -179,6 +214,18 @@ export default function FaturaSayfasi() {
       void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Silme hatası");
+    }
+  }
+
+  async function kopyala(id: string) {
+    setHata("");
+    setBasari("");
+    try {
+      await api(`/fatura/${id}/kopyala`, { method: "POST" });
+      setBasari("Fatura başarıyla kopyalandı ve taslak olarak kaydedildi.");
+      void yukle();
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Kopyalama hatası");
     }
   }
 
@@ -258,6 +305,7 @@ export default function FaturaSayfasi() {
                 <th style={{ ...stil.tabloBaslik, width: "120px" }}>Birim Fiyat</th>
                 <th style={{ ...stil.tabloBaslik, width: "90px" }}>İskonto %</th>
                 <th style={{ ...stil.tabloBaslik, width: "90px" }}>KDV %</th>
+                <th style={{ ...stil.tabloBaslik, width: "110px" }}>GİB İstisna</th>
                 <th style={{ ...stil.tabloBaslik, textAlign: "right" }}>Satır Toplamı</th>
                 <th style={{ ...stil.tabloBaslik, textAlign: "center", width: "50px" }}></th>
               </tr>
@@ -286,6 +334,9 @@ export default function FaturaSayfasi() {
                     </td>
                     <td style={stil.tabloHucre}>
                       <input type="number" min="0" max="100" value={s.kdvOrani} onChange={(e) => satirGuncelle(index, "kdvOrani", Number(e.target.value))} style={{ ...stil.girdi, margin: 0 }} required />
+                    </td>
+                    <td style={stil.tabloHucre}>
+                      <input type="text" placeholder="351 vb." value={s.gibIstisnaKodu || ""} onChange={(e) => satirGuncelle(index, "gibIstisnaKodu", e.target.value)} style={{ ...stil.girdi, margin: 0 }} />
                     </td>
                     <td style={{ ...stil.tabloHucre, textAlign: "right", fontWeight: "bold" }}>
                       {satirSonuc ? `${satirSonuc.toplamTutar.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL` : "0.00 TL"}
@@ -409,6 +460,9 @@ export default function FaturaSayfasi() {
                           )}
                         </>
                       )}
+                      <button onClick={() => kopyala(f.id)} style={{ ...stil.dugmeMuted, padding: "0.35rem 0.65rem", fontSize: "0.8rem" }}>
+                        📋 Kopyala
+                      </button>
                     </div>
                   </td>
                 </tr>

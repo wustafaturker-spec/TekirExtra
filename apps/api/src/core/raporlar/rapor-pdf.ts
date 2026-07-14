@@ -14,6 +14,7 @@ import type { RaporSatiri, RaporTanimi } from "./rapor-kayit";
 export function raporPdfHtml(
   tanim: RaporTanimi,
   satirlar: RaporSatiri[],
+  logoDataUri?: string,
 ): string {
   const hucre = (satir: RaporSatiri, kolon: RaporTanimi["kolonlar"][number]) => {
     const deger = satir[kolon.alan];
@@ -52,6 +53,7 @@ export function raporPdfHtml(
     baslik: tanim.ad,
     altBaslik: tanim.aciklama,
     icerik,
+    logoDataUri,
   });
 }
 

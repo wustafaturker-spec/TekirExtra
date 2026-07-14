@@ -74,6 +74,12 @@ export class BelgelerController {
     await this.belgelerService.sil(id);
   }
 
+  @Post(":id/kopyala")
+  @Roller("muhasebe", "satis")
+  async kopyala(@Param("id") id: string) {
+    return this.belgelerService.kopyala(id);
+  }
+
   @Post(":id/onayla")
   @Roller("muhasebe", "satis")
   async onayla(@Param("id") id: string) {

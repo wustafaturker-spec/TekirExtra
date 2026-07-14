@@ -54,6 +54,7 @@ export class EklerService {
       fatura: () => tx.fatura.findUnique({ where: { id: sahipId } }),
       kasa_banka: () =>
         tx.kasaBankaHareket.findUnique({ where: { id: sahipId } }),
+      firma: () => tx.tenant.findUnique({ where: { id: sahipId } }),
     }[sahipTur];
     if (!(await sorgu())) {
       throw new NotFoundException("Ekin bağlanacağı kayıt bulunamadı");

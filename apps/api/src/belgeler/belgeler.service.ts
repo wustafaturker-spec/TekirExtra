@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -11,7 +12,7 @@ import {
 } from "@tekirextra/shared";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
-import { izinliEylemler } from "../core/eylemler/eylem-kayit";
+import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PdfService } from "../core/pdf/pdf.service";
 import { PrismaService } from "../core/prisma.service";
 import { belgePdfHtml } from "./belge-pdf";
@@ -150,7 +151,28 @@ export class BelgelerService {
   }
 
   async olustur(girdi: z.infer<typeof belgeOlusturSemasi>) {
-    const { tenantId } = aktifBaglam();
+    const { tenantId, userId } = aktifBaglam();
+
+    // FTR-14: satıcı kullanıcı bazında maksimum iskonto yetkisi kontrolü
+    const user = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.user.findUnique({ where: { id: userId } }),
+    );
+    if (user && user.maksIskontoYuzdesi !== null) {
+      const maks = Number(user.maksIskontoYuzdesi);
+      if (Number(girdi.genelIskontoYuzdesi ?? 0) > maks) {
+        throw new BadRequestException(
+          `Maksimum iskonto yetkiniz (%${maks}) aşılmıştır.`
+        );
+      }
+      for (const [index, s] of girdi.satirlar.entries()) {
+        if (Number(s.iskontoOrani ?? 0) > maks) {
+          throw new BadRequestException(
+            `Satır ${index + 1} için maksimum iskonto yetkiniz (%${maks}) aşılmıştır.`
+          );
+        }
+      }
+    }
+
     const hesap = this.hesapla(girdi);
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const belge = await tx.belge.create({
@@ -207,6 +229,28 @@ export class BelgelerService {
           tevkifatPayda: null,
         })),
     };
+
+    // FTR-14: satıcı kullanıcı bazında maksimum iskonto yetkisi kontrolü
+    const { userId } = aktifBaglam();
+    const user = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.user.findUnique({ where: { id: userId } }),
+    );
+    if (user && user.maksIskontoYuzdesi !== null) {
+      const maks = Number(user.maksIskontoYuzdesi);
+      if (Number(birlesik.genelIskontoYuzdesi ?? 0) > maks) {
+        throw new BadRequestException(
+          `Maksimum iskonto yetkiniz (%${maks}) aşılmıştır.`
+        );
+      }
+      for (const [index, s] of birlesik.satirlar.entries()) {
+        if (Number(s.iskontoOrani ?? 0) > maks) {
+          throw new BadRequestException(
+            `Satır ${index + 1} için maksimum iskonto yetkiniz (%${maks}) aşılmıştır.`
+          );
+        }
+      }
+    }
+
     const hesap = this.hesapla(birlesik);
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       await tx.belgeSatir.deleteMany({ where: { belgeId: id } });
@@ -241,6 +285,82 @@ export class BelgelerService {
     await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.belge.delete({ where: { id } }),
     );
+  }
+
+  async kopyala(id: string) {
+    const { tenantId } = aktifBaglam();
+    const belge = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.belge.findUnique({
+        where: { id },
+        include: { satirlar: true },
+      }),
+    );
+
+    if (!belge) throw new NotFoundException("Belge bulunamadı");
+
+    const ctx = aktifBaglam();
+    if (!eylemIzinli("belge", "kopyala", { durum: belge.durum }, ctx)) {
+      throw new ForbiddenException("Bu belge kopyalanamaz veya bu işlem için yetkiniz yok");
+    }
+
+    const yeni = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kopya = await tx.belge.create({
+        data: {
+          tenantId,
+          tur: belge.tur,
+          yon: belge.yon,
+          durum: "taslak",
+          no: null,
+          tarih: new Date(),
+          gecerlilikTarihi: null,
+          cariId: belge.cariId,
+          dovizCinsi: belge.dovizCinsi,
+          kur: belge.kur,
+          genelIskontoYuzdesi: belge.genelIskontoYuzdesi,
+          genelIskontoTutari: belge.genelIskontoTutari,
+          toplamBrut: belge.toplamBrut,
+          toplamSatirIskontosu: belge.toplamSatirIskontosu,
+          genelIskontoToplam: belge.genelIskontoToplam,
+          toplamMatrah: belge.toplamMatrah,
+          toplamKdv: belge.toplamKdv,
+          toplamTevkifat: belge.toplamTevkifat,
+          toplamNetKdv: belge.toplamNetKdv,
+          genelToplam: belge.genelToplam,
+          aciklama: belge.aciklama ? `${belge.aciklama} (Kopya)` : "Kopya",
+          notlar: belge.notlar,
+          kaynakBelgeId: null,
+          faturaId: null,
+        },
+      });
+
+      for (const s of belge.satirlar) {
+        await tx.belgeSatir.create({
+          data: {
+            tenantId,
+            belgeId: kopya.id,
+            stokId: s.stokId,
+            miktar: s.miktar,
+            birim: s.birim,
+            birimFiyat: s.birimFiyat,
+            iskontoOrani: s.iskontoOrani,
+            iskontoTutari: s.iskontoTutari,
+            genelIskontoPayi: s.genelIskontoPayi,
+            matrah: s.matrah,
+            kdvOrani: s.kdvOrani,
+            kdvTutari: s.kdvTutari,
+            tevkifatPay: s.tevkifatPay,
+            tevkifatPayda: s.tevkifatPayda,
+            tevkifatTutari: s.tevkifatTutari,
+            netKdvTutari: s.netKdvTutari,
+            toplamTutar: s.toplamTutar,
+          },
+        });
+      }
+
+      return kopya;
+    });
+
+    return this.getir(yeni.id);
   }
 
   // ─── ONAY / İPTAL (rezervasyon ve yoldaki stok burada) ───────────────────
@@ -450,7 +570,10 @@ export class BelgelerService {
       }),
     );
     if (!firma) throw new NotFoundException("Firma bulunamadı");
-    const buffer = await this.pdf.htmlToPdf(belgePdfHtml(belge, firma));
+    const logoDataUri = await this.pdf.firmaLogoDataUri();
+    const buffer = await this.pdf.htmlToPdf(
+      belgePdfHtml(belge, { ...firma, logoDataUri }),
+    );
     return { buffer, dosyaAdi: `belge-${belge.no ?? "taslak"}.pdf` };
   }
 

@@ -69,7 +69,8 @@ export class RaporlarService {
     const tanim = raporTanimiAl(kod);
     if (!tanim) throw new NotFoundException(`'${kod}' raporu bulunamadı`);
     const sonuc = await this.calistir(kod, girdi);
-    return this.pdf.htmlToPdf(raporPdfHtml(tanim, sonuc.satirlar), {
+    const logoDataUri = await this.pdf.firmaLogoDataUri();
+    return this.pdf.htmlToPdf(raporPdfHtml(tanim, sonuc.satirlar, logoDataUri), {
       yatay: raporYatayMi(tanim),
     });
   }

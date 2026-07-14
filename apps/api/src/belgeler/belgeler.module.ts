@@ -17,6 +17,7 @@ export class BelgelerModule implements OnModuleInit {
       sil: (b, ctx) => b.durum === "taslak" && yetkili(ctx.rol),
       iptal: (b, ctx) =>
         ["taslak", "onaylandi"].includes(b.durum) && yetkili(ctx.rol),
+      kopyala: (b, ctx) => ctx.rol !== "salt_okunur",
     });
   }
 }

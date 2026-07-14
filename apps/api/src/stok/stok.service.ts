@@ -10,7 +10,7 @@ import type { KayitEylem } from "@tekirextra/shared";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { ayarTanimiAl } from "../core/ayarlar/ayar-kayit";
-import { izinliEylemler } from "../core/eylemler/eylem-kayit";
+import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
 import { etiketPdfHtml, type EtiketVerisi } from "./etiket-pdf";
@@ -154,6 +154,151 @@ export class StokService {
       }
       throw hata;
     }
+  }
+
+  async tavsiyeFiyat(stokId: string, cariId?: string, tip = "satis") {
+    const { tenantId } = aktifBaglam();
+
+    let birimFiyat = 0;
+    let iskontoOrani = 0;
+
+    const stok = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.stokKart.findUnique({ where: { id: stokId } }),
+    );
+    if (!stok) throw new NotFoundException("Stok kartı bulunamadı");
+
+    birimFiyat = Number(tip === "satis" ? stok.satisFiyati ?? 0 : stok.alisFiyati ?? 0);
+
+    if (cariId) {
+      const cari = await this.prisma.tenantIslem(tenantId, (tx) =>
+        tx.cariHesap.findUnique({ where: { id: cariId } }),
+      );
+
+      if (cari) {
+        iskontoOrani = Number(cari.varsayilanIskonto ?? 0);
+
+        if (tip === "satis" && cari.fiyatListesiId) {
+          const listeKalemi = await this.prisma.tenantIslem(tenantId, (tx) =>
+            tx.fiyatListesiKalem.findUnique({
+              where: {
+                tenantId_listeId_stokId: {
+                  tenantId,
+                  listeId: cari.fiyatListesiId!,
+                  stokId,
+                },
+              },
+            }),
+          );
+          if (listeKalemi) {
+            birimFiyat = Number(listeKalemi.fiyat);
+          }
+        }
+      }
+    }
+
+    return {
+      birimFiyat,
+      iskontoOrani,
+    };
+  }
+
+  async kopyala(id: string) {
+    const { tenantId } = aktifBaglam();
+    const stok = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.stokKart.findUnique({
+        where: { id },
+        include: {
+          birimler: true,
+          tedarikciler: true,
+        },
+      }),
+    );
+
+    if (!stok) throw new NotFoundException("Stok kartı bulunamadı");
+
+    const hareketSayisi = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.stokHareket.count({ where: { stokId: id } }),
+    );
+    const ctx = aktifBaglam();
+    if (!eylemIzinli("stok", "kopyala", { aktif: stok.aktif, hareketSayisi }, ctx)) {
+      throw new ForbiddenException("Bu stok kartı kopyalanamaz veya bu işlem için yetkiniz yok");
+    }
+
+    let yeniKod = `${stok.kod}-KOPYA`;
+    let sayac = 1;
+    while (true) {
+      const varMi = await this.prisma.tenantIslem(tenantId, (tx) =>
+        tx.stokKart.findUnique({ where: { tenantId_kod: { tenantId, kod: yeniKod } } }),
+      );
+      if (!varMi) break;
+      yeniKod = `${stok.kod}-KOPYA-${sayac}`;
+      sayac++;
+    }
+
+    const kopyaStok = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kopya = await tx.stokKart.create({
+        data: {
+          tenantId,
+          kod: yeniKod,
+          ad: `${stok.ad} (Kopya)`,
+          kisaAd: stok.kisaAd ? `${stok.kisaAd} (Kopya)` : null,
+          aciklama: stok.aciklama,
+          tip: stok.tip,
+          marka: stok.marka,
+          model: stok.model,
+          mensei: stok.mensei,
+          gtipKodu: stok.gtipKodu,
+          ureticiUrunKodu: stok.ureticiUrunKodu,
+          barkod: null, // clear barcode to avoid unique constraint
+          kategoriId: stok.kategoriId,
+          anaBirim: stok.anaBirim,
+          kdvOrani: stok.kdvOrani,
+          alisFiyati: stok.alisFiyati,
+          satisFiyati: stok.satisFiyati,
+          kritikSeviye: stok.kritikSeviye,
+          minStok: stok.minStok,
+          maksStok: stok.maksStok,
+          guvenlikStogu: stok.guvenlikStogu,
+          tedarikSuresiGun: stok.tedarikSuresiGun,
+          gorselUrl: stok.gorselUrl,
+          mevcutMiktar: 0,
+          rezerveMiktar: 0,
+          yoldakiMiktar: 0,
+          ortalamaMaliyet: 0,
+          aktif: true,
+        },
+      });
+
+      for (const b of stok.birimler) {
+        await tx.stokBirim.create({
+          data: {
+            tenantId,
+            stokId: kopya.id,
+            ad: b.ad,
+            katsayi: b.katsayi,
+          },
+        });
+      }
+
+      for (const t of stok.tedarikciler) {
+        await tx.stokTedarikci.create({
+          data: {
+            tenantId,
+            stokId: kopya.id,
+            cariId: t.cariId,
+            tedarikciUrunKodu: t.tedarikciUrunKodu,
+            alisFiyati: t.alisFiyati,
+            dovizCinsi: t.dovizCinsi,
+            tedarikSuresiGun: t.tedarikSuresiGun,
+            varsayilan: t.varsayilan,
+          },
+        });
+      }
+
+      return kopya;
+    });
+
+    return this.getir(kopyaStok.id);
   }
 
   async guncelle(id: string, girdi: z.infer<typeof stokKartGuncelleSemasi>) {

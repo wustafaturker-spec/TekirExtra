@@ -27,6 +27,8 @@ export interface FaturaPdfSatiri {
   kdvOrani: string;
   kdvTutari: string;
   toplamTutar: string;
+  /** FTR-11: satır bazlı GİB istisna kodu (ör. 301). */
+  gibIstisnaKodu?: string | null;
 }
 
 export interface FaturaPdfVerisi {
@@ -53,6 +55,8 @@ export interface FirmaBilgisi {
   unvan: string;
   vkn: string;
   vergiDairesi: string | null;
+  /** KLN-03: firma logosu, data URI olarak gömülür. */
+  logoDataUri?: string;
 }
 
 export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
@@ -64,7 +68,11 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
       (s, i) => `<tr>
   <td class="orta">${i + 1}</td>
   <td>${kacis(s.stokKod)}</td>
-  <td>${kacis(s.stokAd)}</td>
+  <td>${kacis(s.stokAd)}${
+    s.gibIstisnaKodu
+      ? `<br><span style="color:#6b7280;font-size:8pt">KDV istisna kodu: ${kacis(s.gibIstisnaKodu)}</span>`
+      : ""
+  }</td>
   <td class="sag">${sayiBicim(s.miktar)} ${kacis(s.birim)}</td>
   <td class="sag">${paraBicim(s.birimFiyat)}</td>
   <td class="sag">${Number(s.iskontoOrani) > 0 ? `%${sayiBicim(s.iskontoOrani)}` : ""}</td>
@@ -141,5 +149,6 @@ ${f.aciklama ? `<p style="margin-top:10px;color:#6b7280">${kacis(f.aciklama)}</p
   return sayfaSablonu({
     baslik: f.durum === "taslak" ? `${baslik} (TASLAK)` : baslik,
     icerik,
+    logoDataUri: firma.logoDataUri,
   });
 }

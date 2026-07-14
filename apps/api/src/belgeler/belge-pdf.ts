@@ -45,7 +45,13 @@ export interface BelgePdfVerisi {
 
 export function belgePdfHtml(
   b: BelgePdfVerisi,
-  firma: { unvan: string; vkn: string; vergiDairesi: string | null },
+  firma: {
+    unvan: string;
+    vkn: string;
+    vergiDairesi: string | null;
+    /** KLN-03: firma logosu, data URI olarak gömülür. */
+    logoDataUri?: string;
+  },
 ): string {
   const baslik = BASLIKLAR[b.tur]?.[b.yon] ?? "BELGE";
   const paraBirimi = b.dovizCinsi === "TRY" ? "TL" : b.dovizCinsi;
@@ -120,5 +126,6 @@ ${b.aciklama ? `<p style="margin-top:10px;color:#6b7280">${kacis(b.aciklama)}</p
   return sayfaSablonu({
     baslik: b.durum === "taslak" ? `${baslik} (TASLAK)` : baslik,
     icerik,
+    logoDataUri: firma.logoDataUri,
   });
 }

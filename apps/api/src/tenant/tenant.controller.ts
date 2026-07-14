@@ -53,12 +53,24 @@ export class TenantController {
   @Get("firma")
   async firma() {
     const { tenantId } = aktifBaglam();
-    return this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.tenant.findUnique({
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const tenant = await tx.tenant.findUnique({
         where: { id: tenantId },
         select: { id: true, unvan: true, vkn: true, vergiDairesi: true },
-      }),
-    );
+      });
+      if (!tenant) return null;
+
+      const logo = await tx.ek.findFirst({
+        where: { sahipTur: "firma", sahipId: tenantId },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, dosyaAdi: true, mimeTip: true, boyut: true },
+      });
+
+      return {
+        ...tenant,
+        logo,
+      };
+    });
   }
 
   @Patch("firma")
@@ -69,13 +81,24 @@ export class TenantController {
       throw new BadRequestException("Geçersiz firma bilgisi");
     }
     const { tenantId } = aktifBaglam();
-    return this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.tenant.update({
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const tenant = await tx.tenant.update({
         where: { id: tenantId },
         data: ayristirma.data,
         select: { id: true, unvan: true, vkn: true, vergiDairesi: true },
-      }),
-    );
+      });
+
+      const logo = await tx.ek.findFirst({
+        where: { sahipTur: "firma", sahipId: tenantId },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, dosyaAdi: true, mimeTip: true, boyut: true },
+      });
+
+      return {
+        ...tenant,
+        logo,
+      };
+    });
   }
 
   @Get("baglantilar")

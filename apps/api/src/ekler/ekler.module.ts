@@ -7,6 +7,6 @@ import { EklerService } from "./ekler.service";
 @Module({
   controllers: [EklerController],
   providers: [EklerService, DepoService],
-  exports: [EklerService],
+  exports: [EklerService, DepoService],
 })
 export class EklerModule {}

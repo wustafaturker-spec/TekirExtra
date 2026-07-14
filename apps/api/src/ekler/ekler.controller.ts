@@ -18,7 +18,7 @@ import { Roller } from "../auth/roller.decorator";
 import { EklerService, type YuklenenDosya } from "./ekler.service";
 
 const sahipSemasi = z.object({
-  sahipTur: z.enum(["cari", "stok", "fatura", "kasa_banka"]),
+  sahipTur: z.enum(["cari", "stok", "fatura", "kasa_banka", "firma"]),
   sahipId: z.string().uuid(),
 });
 
@@ -26,7 +26,7 @@ function sahipAyristir(girdi: unknown) {
   const sonuc = sahipSemasi.safeParse(girdi);
   if (!sonuc.success) {
     throw new BadRequestException(
-      "Geçerli sahipTur (cari|stok|fatura|kasa_banka) ve sahipId (UUID) gerekli",
+      "Geçerli sahipTur (cari|stok|fatura|kasa_banka|firma) ve sahipId (UUID) gerekli",
     );
   }
   return sonuc.data;

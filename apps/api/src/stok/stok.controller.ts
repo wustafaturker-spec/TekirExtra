@@ -143,6 +143,15 @@ export class StokController {
     return this.stokService.getir(id);
   }
 
+  @Get(":id/tavsiye-fiyat")
+  async tavsiyeFiyat(
+    @Param("id") id: string,
+    @Query("cariId") cariId?: string,
+    @Query("tip") tip = "satis",
+  ) {
+    return this.stokService.tavsiyeFiyat(id, cariId, tip);
+  }
+
   @Post()
   @Roller("muhasebe")
   async olustur(@Body() govde: unknown) {
@@ -153,6 +162,12 @@ export class StokController {
       );
     }
     return this.stokService.olustur(ayristirma.data);
+  }
+
+  @Post(":id/kopyala")
+  @Roller("muhasebe", "satis")
+  async kopyala(@Param("id") id: string) {
+    return this.stokService.kopyala(id);
   }
 
   @Patch(":id")

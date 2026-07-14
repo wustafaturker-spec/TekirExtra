@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -8,7 +9,7 @@ import { Prisma } from "@prisma/client";
 import type { KayitEylem } from "@tekirextra/shared";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
-import { izinliEylemler } from "../core/eylemler/eylem-kayit";
+import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PrismaService } from "../core/prisma.service";
 import type {
   adresSemasi,
@@ -217,6 +218,136 @@ export class CariService {
       }
       throw hata;
     }
+  }
+
+  async kopyala(id: string) {
+    const { tenantId } = aktifBaglam();
+    const cari = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.cariHesap.findUnique({
+        where: { id },
+        include: {
+          adresler: true,
+          kisiler: true,
+          bankaHesaplari: true,
+          etiketler: true,
+        },
+      }),
+    );
+
+    if (!cari) throw new NotFoundException("Cari bulunamadı");
+
+    const hareketSayisi = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.cariHareket.count({ where: { cariId: id } }),
+    );
+    const ctx = aktifBaglam();
+    if (!eylemIzinli("cari", "kopyala", { aktif: cari.aktif, hareketSayisi }, ctx)) {
+      throw new ForbiddenException("Bu cari kopyalanamaz veya bu işlem için yetkiniz yok");
+    }
+
+    let yeniKod = `${cari.kod}-KOPYA`;
+    let sayac = 1;
+    while (true) {
+      const varMi = await this.prisma.tenantIslem(tenantId, (tx) =>
+        tx.cariHesap.findUnique({ where: { tenantId_kod: { tenantId, kod: yeniKod } } }),
+      );
+      if (!varMi) break;
+      yeniKod = `${cari.kod}-KOPYA-${sayac}`;
+      sayac++;
+    }
+
+    const kopyaCari = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kopya = await tx.cariHesap.create({
+        data: {
+          tenantId,
+          kod: yeniKod,
+          unvan: `${cari.unvan} (Kopya)`,
+          kisaAd: cari.kisaAd ? `${cari.kisaAd} (Kopya)` : null,
+          tip: cari.tip,
+          kisiTipi: cari.kisiTipi,
+          sektor: cari.sektor,
+          temsilciUserId: cari.temsilciUserId,
+          vknTckn: cari.vknTckn,
+          vergiDairesi: cari.vergiDairesi,
+          mersisNo: cari.mersisNo,
+          ticaretSicilNo: cari.ticaretSicilNo,
+          kvkkOnayTarihi: cari.kvkkOnayTarihi,
+          eposta: cari.eposta,
+          telefon: cari.telefon,
+          webSitesi: cari.webSitesi,
+          faks: cari.faks,
+          iban: cari.iban,
+          karaListe: false,
+          karaListeNotu: null,
+          dovizCinsi: cari.dovizCinsi,
+          fiyatListesiId: cari.fiyatListesiId,
+          varsayilanIskonto: cari.varsayilanIskonto,
+          varsayilanVadeGun: cari.varsayilanVadeGun,
+          riskLimiti: cari.riskLimiti,
+          eFaturaMukellefi: cari.eFaturaMukellefi,
+          mukellefiyetSorguZamani: cari.mukellefiyetSorguZamani,
+          notlar: cari.notlar,
+          aktif: true,
+        },
+      });
+
+      for (const a of cari.adresler) {
+        await tx.cariAdres.create({
+          data: {
+            tenantId,
+            cariId: kopya.id,
+            tip: a.tip,
+            baslik: a.baslik,
+            adres: a.adres,
+            il: a.il,
+            ilce: a.ilce,
+            postaKodu: a.postaKodu,
+            ulke: a.ulke,
+          },
+        });
+      }
+
+      for (const k of cari.kisiler) {
+        await tx.cariKisi.create({
+          data: {
+            tenantId,
+            cariId: kopya.id,
+            adSoyad: k.adSoyad,
+            gorev: k.gorev,
+            telefon: k.telefon,
+            eposta: k.eposta,
+          },
+        });
+      }
+
+      for (const b of cari.bankaHesaplari) {
+        await tx.cariBankaHesap.create({
+          data: {
+            tenantId,
+            cariId: kopya.id,
+            bankaAdi: b.bankaAdi,
+            subeAdi: b.subeAdi,
+            hesapSahibi: b.hesapSahibi,
+            iban: b.iban,
+            swift: b.swift,
+            paraBirimi: b.paraBirimi,
+          },
+        });
+      }
+
+      for (const e of cari.etiketler) {
+        await tx.cariEtiketAtama.create({
+          data: {
+            tenantId,
+            cariId: kopya.id,
+            etiketId: e.etiketId,
+          },
+        });
+      }
+
+      return kopya;
+    });
+
+    return this.getir(kopyaCari.id);
   }
 
   async guncelle(id: string, girdi: z.infer<typeof cariGuncelleSemasi>) {
@@ -611,11 +742,13 @@ export class CariService {
 <p style="margin-top:10px;text-align:right;font-weight:bold">
   Dönem sonu bakiyesi: ${paraBicim(sonBakiye)} TL
 </p>`;
+    const logoDataUri = await this.pdf.firmaLogoDataUri();
     return this.pdf.htmlToPdf(
       sayfaSablonu({
         baslik: "CARİ HESAP EKSTRESİ",
         altBaslik: `${data.cari.kod} — ${data.cari.unvan}${aralik}`,
         icerik,
+        logoDataUri,
       }),
     );
   }

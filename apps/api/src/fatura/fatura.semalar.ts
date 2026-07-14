@@ -13,6 +13,7 @@ export const faturaSatirSemasi = z.object({
   kdvOrani: pozitifOndalik.default("20"),
   tevkifatPay: z.number().int().min(1).max(10).optional().nullable(),
   tevkifatPayda: z.number().int().min(1).max(10).optional().nullable(),
+  gibIstisnaKodu: z.string().max(20).optional().nullable(),
 });
 
 export const faturaOlusturSemasi = z.object({

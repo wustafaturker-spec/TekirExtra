@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   Inject,
@@ -10,7 +11,7 @@ import { Prisma, FaturaTip, FaturaDurum } from "@prisma/client";
 import { faturaHesapla, type FaturaHesaplaSatirGirdi, type KayitEylem } from "@tekirextra/shared";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
-import { izinliEylemler } from "../core/eylemler/eylem-kayit";
+import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
 import { StokService } from "../stok/stok.service";
@@ -167,6 +168,7 @@ export class FaturaService {
         tevkifatTutari: s.tevkifatTutari.toFixed(2),
         netKdvTutari: s.netKdvTutari.toFixed(2),
         toplamTutar: s.toplamTutar.toFixed(2),
+        gibIstisnaKodu: s.gibIstisnaKodu,
       })),
       ebelge: kayit.ebelge,
       izinliEylemler: this.eylemler(kayit, ctx.rol),
@@ -174,7 +176,27 @@ export class FaturaService {
   }
 
   async olustur(girdi: z.infer<typeof faturaOlusturSemasi>) {
-    const { tenantId } = aktifBaglam();
+    const { tenantId, userId } = aktifBaglam();
+
+    // FTR-14: satıcı kullanıcı bazında maksimum iskonto yetkisi kontrolü
+    const user = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.user.findUnique({ where: { id: userId } }),
+    );
+    if (user && user.maksIskontoYuzdesi !== null) {
+      const maks = Number(user.maksIskontoYuzdesi);
+      if (Number(girdi.genelIskontoYuzdesi ?? 0) > maks) {
+        throw new BadRequestException(
+          `Maksimum iskonto yetkiniz (%${maks}) aşılmıştır.`
+        );
+      }
+      for (const [index, s] of girdi.satirlar.entries()) {
+        if (Number(s.iskontoOrani ?? 0) > maks) {
+          throw new BadRequestException(
+            `Satır ${index + 1} için maksimum iskonto yetkiniz (%${maks}) aşılmıştır.`
+          );
+        }
+      }
+    }
 
     // Fatura hesaplamalarını shared engine üzerinden yapalım (FTR-04)
     const hesaplanan = this.hesaplaFatura(girdi);
@@ -229,6 +251,7 @@ export class FaturaService {
             tevkifatTutari: D(s.tevkifatTutari),
             netKdvTutari: D(s.netKdvTutari),
             toplamTutar: D(s.toplamTutar),
+            gibIstisnaKodu: orijinalSatir.gibIstisnaKodu,
           },
         });
       }
@@ -238,7 +261,7 @@ export class FaturaService {
   }
 
   async guncelle(id: string, girdi: z.infer<typeof faturaGuncelleSemasi>) {
-    const { tenantId } = aktifBaglam();
+    const { tenantId, userId } = aktifBaglam();
     const fatura = await this.getir(id);
 
     if (fatura.durum !== "taslak") {
@@ -268,8 +291,29 @@ export class FaturaService {
           kdvOrani: s.kdvOrani,
           tevkifatPay: s.tevkifatPay,
           tevkifatPayda: s.tevkifatPayda,
+          gibIstisnaKodu: s.gibIstisnaKodu,
         })),
     };
+
+    // FTR-14: satıcı kullanıcı bazında maksimum iskonto yetkisi kontrolü
+    const user = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.user.findUnique({ where: { id: userId } }),
+    );
+    if (user && user.maksIskontoYuzdesi !== null) {
+      const maks = Number(user.maksIskontoYuzdesi);
+      if (Number(birlesikGirdi.genelIskontoYuzdesi ?? 0) > maks) {
+        throw new BadRequestException(
+          `Maksimum iskonto yetkiniz (%${maks}) aşılmıştır.`
+        );
+      }
+      for (const [index, s] of birlesikGirdi.satirlar.entries()) {
+        if (Number(s.iskontoOrani ?? 0) > maks) {
+          throw new BadRequestException(
+            `Satır ${index + 1} için maksimum iskonto yetkiniz (%${maks}) aşılmıştır.`
+          );
+        }
+      }
+    }
 
     const hesaplanan = this.hesaplaFatura(birlesikGirdi);
 
@@ -299,6 +343,7 @@ export class FaturaService {
             tevkifatTutari: D(s.tevkifatTutari),
             netKdvTutari: D(s.netKdvTutari),
             toplamTutar: D(s.toplamTutar),
+            gibIstisnaKodu: orijinalSatir.gibIstisnaKodu,
           },
         });
       }
@@ -413,6 +458,81 @@ export class FaturaService {
       }
       return this.gorunum(yeni);
     });
+  }
+
+  async kopyala(id: string) {
+    const { tenantId } = aktifBaglam();
+    const fatura = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.fatura.findUnique({
+        where: { id },
+        include: {
+          satirlar: true,
+        },
+      }),
+    );
+
+    if (!fatura) throw new NotFoundException("Fatura bulunamadı");
+
+    const ctx = aktifBaglam();
+    if (!eylemIzinli("fatura", "kopyala", { durum: fatura.durum }, ctx)) {
+      throw new ForbiddenException("Bu fatura kopyalanamaz veya bu işlem için yetkiniz yok");
+    }
+
+    const yeni = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kopya = await tx.fatura.create({
+        data: {
+          tenantId,
+          tip: fatura.tip,
+          durum: "taslak",
+          tarih: new Date(),
+          vadeTarihi: null,
+          cariId: fatura.cariId,
+          dovizCinsi: fatura.dovizCinsi,
+          kur: fatura.kur,
+          genelIskontoYuzdesi: fatura.genelIskontoYuzdesi,
+          genelIskontoTutari: fatura.genelIskontoTutari,
+          toplamBrut: fatura.toplamBrut,
+          toplamSatirIskontosu: fatura.toplamSatirIskontosu,
+          genelIskontoToplam: fatura.genelIskontoToplam,
+          toplamMatrah: fatura.toplamMatrah,
+          toplamKdv: fatura.toplamKdv,
+          toplamTevkifat: fatura.toplamTevkifat,
+          toplamNetKdv: fatura.toplamNetKdv,
+          genelToplam: fatura.genelToplam,
+          aciklama: fatura.aciklama ? `${fatura.aciklama} (Kopya)` : "Kopya",
+          notlar: fatura.notlar,
+        },
+      });
+
+      for (const s of fatura.satirlar) {
+        await tx.faturaSatir.create({
+          data: {
+            tenantId,
+            faturaId: kopya.id,
+            stokId: s.stokId,
+            miktar: s.miktar,
+            birim: s.birim,
+            birimFiyat: s.birimFiyat,
+            iskontoOrani: s.iskontoOrani,
+            iskontoTutari: s.iskontoTutari,
+            genelIskontoPayi: s.genelIskontoPayi,
+            matrah: s.matrah,
+            kdvOrani: s.kdvOrani,
+            kdvTutari: s.kdvTutari,
+            tevkifatPay: s.tevkifatPay,
+            tevkifatPayda: s.tevkifatPayda,
+            tevkifatTutari: s.tevkifatTutari,
+            netKdvTutari: s.netKdvTutari,
+            toplamTutar: s.toplamTutar,
+            gibIstisnaKodu: s.gibIstisnaKodu,
+          },
+        });
+      }
+
+      return kopya;
+    });
+
+    return this.getir(yeni.id);
   }
 
   // ─── FATURA KESİNLEŞTİRME VE ENTEGRASYONLAR (FTR-03/05/06) ───────────────
@@ -640,7 +760,10 @@ export class FaturaService {
       }),
     );
     if (!firma) throw new NotFoundException("Firma bulunamadı");
-    const buffer = await this.pdf.htmlToPdf(faturaPdfHtml(fatura, firma));
+    const logoDataUri = await this.pdf.firmaLogoDataUri();
+    const buffer = await this.pdf.htmlToPdf(
+      faturaPdfHtml(fatura, { ...firma, logoDataUri }),
+    );
     return {
       buffer,
       dosyaAdi: `fatura-${fatura.no ?? "taslak"}.pdf`,

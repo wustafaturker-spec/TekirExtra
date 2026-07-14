@@ -109,6 +109,12 @@ export class FaturaController {
     return this.faturaService.satisaDonustur(id);
   }
 
+  @Post(":id/kopyala")
+  @Roller("muhasebe", "satis")
+  async kopyala(@Param("id") id: string) {
+    return this.faturaService.kopyala(id);
+  }
+
   @Get(":id/pdf")
   async pdfUret(@Param("id") id: string, @Res() res: Response) {
     const pdf = await this.faturaService.pdfUret(id);

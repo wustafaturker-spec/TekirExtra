@@ -138,6 +138,7 @@ export function faturaUblUret(
         <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${s.kdvTutari.toFixed(2)}</cbc:TaxAmount>
         <cbc:Percent>${s.kdvOrani.toFixed(2)}</cbc:Percent>
         <cac:TaxCategory>
+          ${s.gibIstisnaKodu ? `<cbc:TaxExemptionReasonCode>${escape(s.gibIstisnaKodu)}</cbc:TaxExemptionReasonCode>` : ""}
           <cac:TaxScheme>
             <cbc:Name>KDV</cbc:Name>
             <cbc:TaxTypeCode>0015</cbc:TaxTypeCode>

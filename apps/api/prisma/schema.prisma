@@ -64,6 +64,7 @@ model User {
   /// TOTP gizli anahtarı AES-256-GCM ile şifreli saklanır (KLN-05)
   totpSecretSifreli String?  @map("totp_secret_sifreli")
   totpAktif         Boolean  @default(false) @map("totp_aktif")
+  maksIskontoYuzdesi Decimal? @map("maks_iskonto_yuzdesi") @db.Decimal(5, 2)
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
@@ -673,6 +674,7 @@ model FaturaSatir {
   tevkifatTutari   Decimal @default(0) @map("tevkifat_tutari") @db.Decimal(15, 2)
   netKdvTutari     Decimal @map("net_kdv_tutari") @db.Decimal(15, 2)
   toplamTutar      Decimal @map("toplam_tutar") @db.Decimal(15, 2)
+  gibIstisnaKodu   String? @map("gib_istisna_kodu")
 
   fatura Fatura   @relation(fields: [faturaId], references: [id], onDelete: Cascade)
   stok   StokKart @relation(fields: [stokId], references: [id])
@@ -833,13 +835,12 @@ model CekSenet {
   @@map("cek_senetler")
 }
 
-/// Belge/dosya ekleri ortak altyapısı (4. aşama S-01): dosya gövdesi
-/// S3 uyumlu depoda (MinIO), meta veri burada; RLS ile kiracıya kilitli.
 enum EkSahipTur {
   cari
   stok
   fatura
   kasa_banka
+  firma
 }
 
 model Ek {
