@@ -24,6 +24,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
     { href: "/panel/raporlar", baslik: "📈 Raporlar & Analiz", aktif: pathname.startsWith("/panel/raporlar") },
     { href: "/panel/ayarlar/firma", baslik: "🏢 Firma Ayarları", aktif: pathname === "/panel/ayarlar/firma" },
     { href: "/panel/ayarlar/entegratorler", baslik: "🔌 e-Belge Ayarları", aktif: pathname === "/panel/ayarlar/entegratorler" },
+    { href: "/panel/ayarlar/denetim", baslik: "🛡️ Denetim İzi", aktif: pathname === "/panel/ayarlar/denetim" },
   ];
 
   return (

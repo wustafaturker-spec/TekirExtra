@@ -503,6 +503,50 @@ describe("Kabul Ölçütü 5 — rol kısıtı ve denetim izi", () => {
     });
     expect(hareket.durum).toBe(403);
   });
+
+  it("kritik işlemler denetim izinde görünür; izi yalnızca yönetici okuyabilir", async () => {
+    const { jeton } = await firmaAc("s5b", vknUret(true));
+    const stokId = await stokAc(jeton, "KBL-5B");
+    await stokGirisi(jeton, stokId, "10");
+    const cariId = await cariAc(jeton, "MUS-5B", vknUret(true));
+    const fatura = await faturaKes(jeton, {
+      tip: "satis",
+      tarih: "2026-05-02",
+      cariId,
+      satirlar: [{ stokId, miktar: "1", birim: "adet", birimFiyat: "100", kdvOrani: "20" }],
+    });
+
+    const iz = await istek<{
+      kayitlar: Array<{ islem: string; varlik: string; varlikId: string | null; kullanici: { eposta: string } | null }>;
+    }>("/denetim?adet=200", { jeton });
+    expect(iz.durum, JSON.stringify(iz.veri)).toBe(200);
+
+    // KLN-04: fatura kesme izde, kim yaptığıyla birlikte
+    const kesme = iz.veri.kayitlar.find(
+      (k) => k.varlik === "fatura" && k.islem.includes("kesinlestir") && k.varlikId === fatura.id,
+    );
+    expect(kesme, "fatura kesinleştirme denetim izinde yok").toBeDefined();
+    expect(kesme?.kullanici?.eposta).toContain("kabul-s5b");
+
+    // Cari ve stok oluşturma da ize düşer
+    expect(iz.veri.kayitlar.some((k) => k.varlik === "cari")).toBe(true);
+    expect(iz.veri.kayitlar.some((k) => k.varlik === "stok")).toBe(true);
+
+    // KLN-04a: satış rolü denetim izini okuyamaz
+    const satisEposta = `kabul-s5b-satis-${Date.now()}@deneme.local`;
+    const satisParola = "SatisKabul2026x";
+    await istek("/kullanicilar", {
+      method: "POST",
+      jeton,
+      body: { eposta: satisEposta, adSoyad: "Satış", rol: "satis", parola: satisParola },
+    });
+    const giris = await istek<{ accessToken: string }>("/auth/giris", {
+      method: "POST",
+      body: { eposta: satisEposta, parola: satisParola },
+    });
+    const yasak = await istek("/denetim", { jeton: giris.veri.accessToken });
+    expect(yasak.durum).toBe(403);
+  });
 });
 
 describe("Kabul Ölçütü 6 — çok kiracılı yalıtım", () => {

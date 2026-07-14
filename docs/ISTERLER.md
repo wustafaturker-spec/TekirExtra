@@ -217,6 +217,7 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | KLN-02 | Bölüm 2.2'deki roller atanabilmeli; yetkisiz modüller arayüzde ve API'de erişime kapalı olmalıdır. | Z |
 | KLN-03 | Firma bilgileri (unvan, VKN, vergi dairesi, logo, e-imza/mali mühür entegratör bilgileri) yönetilebilmelidir. | Z |
 | KLN-04 | Tüm kritik işlemler (fatura kesme/iptal, kayıt silme, yetki değişikliği) denetim izine (audit log) yazılmalıdır: kim, ne zaman, ne yaptı. | Z |
+| KLN-04a | Denetim izi yönetici rolüne görüntülenebilmelidir: tarih aralığı, kullanıcı ve varlık türüne göre filtrelenebilen, sayfalanan bir liste (API + Ayarlar ekranı). Kayıtlar salt-okunurdur; hiçbir rol silemez/değiştiremez. | Z |
 | KLN-05 | İki adımlı doğrulama (TOTP) desteklenmelidir. | Z |
 | KLN-09 | Firma kaydında e-posta doğrulaması yapılmalıdır: kayıtta doğrulama linki gönderilir, link tıklanmadan oturum açılamaz. | Z |
 | KLN-06 | Sistem çok kiracılı (multi-tenant) çalışmalıdır: her firma bağımsız kaydolur, firmalar arası veri yalıtımı hem uygulama hem veri katmanında garanti edilmelidir. | Z |
