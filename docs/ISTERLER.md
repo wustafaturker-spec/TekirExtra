@@ -12,6 +12,16 @@ maksimum iskonto yetkisi** (User.maksIskontoYuzdesi; boşsa sınırsız),
 UBL-TR'ye yansır; tevkifat zaten mevcut), **RPR-05** kâr/zarar özeti (satış
 matrahı − alış matrahı − kasa/banka tediye giderleri). v1.0 kapsamında artık
 yalnız [G] maddeler kalıyor.
+**Sıradaki paket — Entegratör Paketi (S-01 kapısı kısmen alındı, 2026-07-14):**
+e-belge adaptörleri bugüne dek yalnızca mock; gerçek adaptörler yazılacak.
+Kararlar: **İzibiz ile başlanır** (diğerleri aynı sözleşmeyi izleyerek eklenir),
+sandbox erişimi henüz yok → adaptör kamuya açık dokümana göre yazılıp birim
+testler ve kaydedilmiş örnek yanıtlarla doğrulanır, canlı doğrulama sandbox
+gelince yapılır. **EBLG-07 pakete dahil**, ancak İzibiz e-Arşiv dokümanı
+olmadan kapsamı netleşmiyor → paket A-06 kapanana kadar başlatılmıyor.
+İzibiz servis yapısı (kamuya açık kılavuz): AuthenticationWS (Login/Logout,
+8 saatlik SESSION_ID), EInvoiceWS (SendInvoice, GetInvoice, GetInvoiceStatus,
+CheckUser, SendInvoiceResponseWithServerSign).
 Önceki kapılar: Belge Zinciri Paketi — FTR-12 tam kapsam (satış+alış), FTR-13,
 FTR-09, belge PDF'leri; stok düşümü her zaman faturada, satış siparişinde
 otomatik rezervasyon, alış siparişinde yoldaki stok, STK-17 kullanılabilir stok
@@ -307,6 +317,7 @@ v1.0 aşağıdaki uçtan uca senaryolar hatasız çalıştığında kabul edilir
 | A-03 | Dağıtım modeli | **Karar verildi:** SaaS, çok kiracılı; her firma entegratörünü bağımsız seçer (2026-07-12) |
 | A-04 | Fiyatlandırma/lisanslama modeli | **Ertelendi:** Pazara çıkmadan önce karar verilecek. Mimari, abonelik/faturalandırma altyapısı eklenmesine engel olmamalıdır (bkz. KLN-08). (2026-07-12) |
 | A-05 | Gömülü analitik aracı | **Karar verildi:** Metabase (AGPL, ayrı servis olarak). Ücretsiz OSS sürümle başlanır; gelişmiş white-label/interaktif gömme gerekirse Pro lisansı değerlendirilir (bkz. MIMARI §10). (2026-07-12) |
+| A-06 | İzibiz e-Arşiv servis dokümanı | **Beklemede (2026-07-14):** İzibiz'in kamuya açık kılavuzu yalnızca AuthenticationWS ve EInvoiceWS metotlarını belgeliyor; EIArchiveWS metot adları/parametreleri ve **e-Arşiv günlük GİB raporlaması (EBLG-07)** belgesiz. Ürün sahibi dokümanı entegratörden temin edecek; **Entegratör Paketi bu doküman gelene kadar başlatılmayacak.** |
 
 ---
 
