@@ -23,7 +23,13 @@ import {
   virmanOlusturSemasi,
 } from "./kasa-banka.semalar";
 
+/**
+ * KLN-02: satış rolü kasa/banka modülüne hiç erişemez (Kabul Ölçütü 5).
+ * Sınıf düzeyi kısıt okuma uçlarını da kapsar; yazma uçlarındaki metot düzeyi
+ * @Roller("muhasebe") bunu daraltarak salt-okunur rolü yazmaktan alıkoyar.
+ */
 @Controller("kasa-banka")
+@Roller("muhasebe", "salt_okunur")
 export class KasaBankaController {
   constructor(private readonly service: KasaBankaService) {}
 

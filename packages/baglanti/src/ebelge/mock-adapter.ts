@@ -59,8 +59,28 @@ export class MockEntegratorAdapter implements EntegratorAdapter {
     return { belgeRef, durum: durumlar[Math.min(sorguSayisi, 2)] };
   }
 
+  /**
+   * Deterministik tek bir gelen e-Fatura döner; belge numarası sabit olduğu
+   * için ebelge servisi tekrarlı çekimlerde onu yinelemez (EBLG-05).
+   */
   async gelenBelgeleriCek(_cfg: EntegratorConfig, _sonrasi: Date): Promise<GelenBelge[]> {
-    return [];
+    const belgeNo = "MCK2026000000001";
+    const gonderenVkn = "4840847211";
+    return [
+      {
+        uuid: "00000000-0000-4000-8000-000000000001",
+        belgeNo,
+        gonderenVkn,
+        gonderenUnvan: "Mock Tedarik A.Ş.",
+        tarih: new Date("2026-01-15T00:00:00Z"),
+        xml: `<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
+  <ID>${belgeNo}</ID>
+  <IssueDate>2026-01-15</IssueDate>
+  <AccountingSupplierParty><Party><PartyIdentification><ID schemeID="VKN">${gonderenVkn}</ID></PartyIdentification></Party></AccountingSupplierParty>
+</Invoice>`,
+      },
+    ];
   }
 
   async yanitGonder(

@@ -46,13 +46,23 @@ function maskele(deger: string): string {
  */
 @Injectable()
 export class BaglantilarService {
+  /** Adaptörler durumsuzdur; sağlayıcı başına tek örnek yeter. Mock adaptör
+   * gönderim durumunu bellekte tuttuğu için tekil örnek ayrıca şarttır:
+   * her istekte yeni örnek üretilirse belge durumu (EBLG-04) izlenemez. */
+  private readonly adapterler = new Map<string, EntegratorAdapter>();
+
   constructor(private readonly prisma: PrismaService) {}
 
   adapterCoz(saglayici: string): EntegratorAdapter {
     // T-01: gerçek adaptörler geldikçe burada sağlayıcıya göre dallanılır
-    return new MockEntegratorAdapter(
-      saglayici as EntegratorConfig["saglayici"],
-    );
+    let adapter = this.adapterler.get(saglayici);
+    if (!adapter) {
+      adapter = new MockEntegratorAdapter(
+        saglayici as EntegratorConfig["saglayici"],
+      );
+      this.adapterler.set(saglayici, adapter);
+    }
+    return adapter;
   }
 
   async listele(): Promise<BaglantiGorunumu[]> {
