@@ -2,7 +2,25 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
-import { stil } from "@/lib/stil";
+import {
+  Alert,
+  Avatar,
+  Badge,
+  Button,
+  ButtonLabel,
+  Card,
+  Field,
+  Input,
+  PageHeader,
+  SearchInput,
+  Segmented,
+  Select,
+  Stat,
+  StatGrid,
+  Status,
+  TableWrap,
+  Tabs,
+} from "@/components/ui";
 
 const TIP_ETIKETLERI: Record<string, string> = {
   musteri: "👤 Müşteri",
@@ -109,6 +127,11 @@ interface EkstreVeri {
 const tl = (deger: string | number): string =>
   Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL";
 
+const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
+
+type Sekme = "genel" | "ekstre" | "adresler" | "kisiler" | "bankalar";
+type FiltreTip = "tumu" | "musteri" | "tedarikci" | "bloke";
+
 export default function CariSayfasi() {
   const [cariler, setCariler] = useState<Cari[]>([]);
   const [arama, setArama] = useState("");
@@ -118,8 +141,8 @@ export default function CariSayfasi() {
   const [detay, setDetay] = useState<CariDetay | null>(null);
   const [ekstre, setEkstre] = useState<EkstreVeri | null>(null);
   const [etiketler, setEtiketler] = useState<Etiket[]>([]);
-  const [aktifSekme, setAktifSekme] = useState<"genel" | "ekstre" | "adresler" | "kisiler" | "bankalar">("genel");
-  const [filtreTip, setFiltreTip] = useState<"tumu" | "musteri" | "tedarikci" | "bloke">("tumu");
+  const [aktifSekme, setAktifSekme] = useState<Sekme>("genel");
+  const [filtreTip, setFiltreTip] = useState<FiltreTip>("tumu");
 
   // Form alanları — kimlik
   const [kod, setKod] = useState("");
@@ -138,8 +161,12 @@ export default function CariSayfasi() {
   const [telefon, setTelefon] = useState("");
   const [webSitesi, setWebSitesi] = useState("");
   const [faks, setFaks] = useState("");
-  // Finans
+  // Finans (CARI-10: özel satış koşulları)
   const [riskLimiti, setRiskLimiti] = useState("");
+  const [fiyatListesiId, setFiyatListesiId] = useState("");
+  const [varsayilanIskonto, setVarsayilanIskonto] = useState("");
+  const [varsayilanVadeGun, setVarsayilanVadeGun] = useState("");
+  const [fiyatListeleri, setFiyatListeleri] = useState<{ id: string; ad: string; dovizCinsi: string }[]>([]);
   // Detay panel alt formları
   const [bankaAdi, setBankaAdi] = useState("");
   const [iban, setIban] = useState("");
@@ -169,6 +196,9 @@ export default function CariSayfasi() {
     if (tokenAl()) {
       void yukle();
       void etiketleriYukle();
+      api<{ id: string; ad: string; dovizCinsi: string }[]>("/fiyat-listeleri")
+        .then(setFiyatListeleri)
+        .catch(() => undefined);
     }
   }, [yukle, etiketleriYukle]);
 
@@ -181,6 +211,7 @@ export default function CariSayfasi() {
       ]);
       setDetay(cDetay);
       setEkstre(cEkstre);
+      setAktifSekme("genel");
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Detay veya ekstre yüklenemedi");
     }
@@ -194,7 +225,7 @@ export default function CariSayfasi() {
       await api("/cari", {
         method: "POST",
         body: JSON.stringify({
-          kod: kod || undefined,
+          kod,
           unvan,
           kisaAd: kisaAd || undefined,
           tip,
@@ -209,6 +240,9 @@ export default function CariSayfasi() {
           webSitesi: webSitesi || undefined,
           faks: faks || undefined,
           riskLimiti: riskLimiti || undefined,
+          fiyatListesiId: fiyatListesiId || undefined,
+          varsayilanIskonto: varsayilanIskonto || undefined,
+          varsayilanVadeGun: varsayilanVadeGun ? Number(varsayilanVadeGun) : undefined,
         }),
       });
       setBasari("Cari kart başarıyla oluşturuldu.");
@@ -226,6 +260,9 @@ export default function CariSayfasi() {
       setWebSitesi("");
       setFaks("");
       setRiskLimiti("");
+      setFiyatListesiId("");
+      setVarsayilanIskonto("");
+      setVarsayilanVadeGun("");
       void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Kayıt hatası");
@@ -325,11 +362,9 @@ export default function CariSayfasi() {
 
     try {
       const token = tokenAl();
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1"}/cari/excel-aktar`, {
+      const res = await fetch(`${apiBase()}/cari/excel-aktar`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
 
@@ -346,14 +381,12 @@ export default function CariSayfasi() {
     }
   }
 
-  async function ekstreIndir(id: string, unvan: string) {
+  async function ekstreIndir(id: string, unvanAd: string) {
     try {
       const token = tokenAl();
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1"}/cari/${id}/ekstre/excel`, {
+      const res = await fetch(`${apiBase()}/cari/${id}/ekstre/excel`, {
         method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (!res.ok) throw new Error("Ekstre indirilemedi");
@@ -362,7 +395,7 @@ export default function CariSayfasi() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `ekstre-${unvan.replace(/\s+/g, "-")}.xlsx`;
+      a.download = `ekstre-${unvanAd.replace(/\s+/g, "-")}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -384,14 +417,6 @@ export default function CariSayfasi() {
     }
   }
 
-  const alanEtiketi = { fontSize: "0.85rem", color: "#a1a1aa" } as const;
-  const bolumBaslik = {
-    margin: "1.25rem 0 0.5rem",
-    fontSize: "0.9rem",
-    fontWeight: "bold",
-    color: "#a78bfa",
-  } as const;
-
   const filtrelenmisCariler = cariler.filter((c) => {
     if (filtreTip === "musteri") return c.tip === "musteri" || c.tip === "hepsi";
     if (filtreTip === "tedarikci") return c.tip === "tedarikci" || c.tip === "hepsi";
@@ -399,598 +424,426 @@ export default function CariSayfasi() {
     return true;
   });
 
+  const musteriSayisi = cariler.filter((c) => c.tip === "musteri" || c.tip === "hepsi").length;
+  const tedarikciSayisi = cariler.filter((c) => c.tip === "tedarikci" || c.tip === "hepsi").length;
+  const blokeSayisi = cariler.filter((c) => c.karaListe === true).length;
+
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
-        <div>
-          <h1 style={{ fontSize: "2rem", fontWeight: "bold", margin: 0 }}>👥 Cari Hesaplar</h1>
-          <p style={{ color: "#a1a1aa", fontSize: "0.9rem", margin: "0.25rem 0 0" }}>
-            Müşterileriniz, tedarikçileriniz ve diğer cari ortaklarınızı buradan yönetin.
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: "1rem" }}>
-          <a href="/panel/cari/raporlar" style={{ ...stil.dugmeMuted, display: "flex", alignItems: "center", gap: "0.5rem", textDecoration: "none" }}>
-            📈 Raporlar
-          </a>
-          <label style={{ ...stil.dugmeMuted, display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
-            📥 Excel&apos;den İçe Aktar
-            <input type="file" accept=".xlsx" onChange={excelYukle} style={{ display: "none" }} />
-          </label>
-          <button onClick={() => setFormAcik(!formAcik)} style={{ ...stil.dugme, width: "auto", padding: "0.5rem 1.25rem" }}>
-            {formAcik ? "Vazgeç" : "➕ Yeni Cari"}
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Cari Hesaplar"
+        subtitle="Müşterileriniz, tedarikçileriniz ve diğer cari ortaklarınızı buradan yönetin."
+        actions={
+          <>
+            <ButtonLabel as="a" href="/panel/cari/raporlar">📈 Raporlar</ButtonLabel>
+            <ButtonLabel>
+              📥 Excel&apos;den İçe Aktar
+              <input type="file" accept=".xlsx" onChange={excelYukle} style={{ display: "none" }} />
+            </ButtonLabel>
+            <Button variant="primary" onClick={() => setFormAcik(!formAcik)}>
+              {formAcik ? "Vazgeç" : "➕ Yeni Cari"}
+            </Button>
+          </>
+        }
+      />
 
-      {hata && <p style={stil.hata}>{hata}</p>}
-      {basari && <p style={stil.basari}>{basari}</p>}
+      <Alert tone="error">{hata}</Alert>
+      <Alert tone="success">{basari}</Alert>
 
       {formAcik && (
-        <form onSubmit={kaydet} style={{ ...stil.genisKart, marginBottom: "2rem", maxWidth: "760px" }}>
-          <h3 style={{ margin: "0 0 0.5rem", fontSize: "1.1rem", fontWeight: "bold" }}>Yeni Cari Kartı Oluştur</h3>
+        <Card className="stack" style={{ marginBottom: "1.5rem", maxWidth: 820 }}>
+          <h3 style={{ fontSize: "1.05rem" }}>Yeni Cari Kartı Oluştur</h3>
 
-          <p style={bolumBaslik}>Kimlik</p>
-          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-            <div style={{ flex: 1, minWidth: "180px" }}>
-              <label style={alanEtiketi}>Cari Kodu</label>
-              <input type="text" value={kod} onChange={(e) => setKod(e.target.value)} style={stil.girdi} placeholder="CARI-001" />
-            </div>
-            <div style={{ flex: 2, minWidth: "240px" }}>
-              <label style={alanEtiketi}>Ünvan / Ad Soyad</label>
-              <input type="text" value={unvan} onChange={(e) => setUnvan(e.target.value)} style={stil.girdi} required placeholder="Teknoloji A.Ş." />
-            </div>
-            <div style={{ flex: 1, minWidth: "160px" }}>
-              <label style={alanEtiketi}>Kısa Ad</label>
-              <input type="text" value={kisaAd} onChange={(e) => setKisaAd(e.target.value)} style={stil.girdi} placeholder="Teknoloji" />
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-            <div style={{ flex: 1, minWidth: "180px" }}>
-              <label style={alanEtiketi}>Cari Tipi</label>
-              <select value={tip} onChange={(e) => setTip(e.target.value)} style={stil.girdi}>
-                {Object.entries(TIP_ETIKETLERI).map(([deger, ad]) => (
-                  <option key={deger} value={deger}>{ad}</option>
-                ))}
-              </select>
-            </div>
-            <div style={{ flex: 1, minWidth: "180px" }}>
-              <label style={alanEtiketi}>Kişi Tipi</label>
-              <select value={kisiTipi} onChange={(e) => setKisiTipi(e.target.value)} style={stil.girdi}>
-                <option value="tuzel">Tüzel Kişi</option>
-                <option value="gercek">Gerçek Kişi</option>
-              </select>
-            </div>
-            <div style={{ flex: 1, minWidth: "180px" }}>
-              <label style={alanEtiketi}>Sektör</label>
-              <input type="text" value={sektor} onChange={(e) => setSektor(e.target.value)} style={stil.girdi} placeholder="Perakende" />
-            </div>
-          </div>
+          <FormBolum baslik="Kimlik">
+            <FormAlan flex={1} min={180}><Field label="Cari Kodu *"><Input value={kod} onChange={(e) => setKod(e.target.value)} required placeholder="CARI-001" /></Field></FormAlan>
+            <FormAlan flex={2} min={240}><Field label="Ünvan / Ad Soyad"><Input value={unvan} onChange={(e) => setUnvan(e.target.value)} required placeholder="Teknoloji A.Ş." /></Field></FormAlan>
+            <FormAlan flex={1} min={160}><Field label="Kısa Ad"><Input value={kisaAd} onChange={(e) => setKisaAd(e.target.value)} placeholder="Teknoloji" /></Field></FormAlan>
+          </FormBolum>
+          <FormBolum>
+            <FormAlan flex={1} min={180}><Field label="Cari Tipi"><Select value={tip} onChange={(e) => setTip(e.target.value)}>{Object.entries(TIP_ETIKETLERI).map(([deger, ad]) => (<option key={deger} value={deger}>{ad}</option>))}</Select></Field></FormAlan>
+            <FormAlan flex={1} min={180}><Field label="Kişi Tipi"><Select value={kisiTipi} onChange={(e) => setKisiTipi(e.target.value)}><option value="tuzel">Tüzel Kişi</option><option value="gercek">Gerçek Kişi</option></Select></Field></FormAlan>
+            <FormAlan flex={1} min={180}><Field label="Sektör"><Input value={sektor} onChange={(e) => setSektor(e.target.value)} placeholder="Perakende" /></Field></FormAlan>
+          </FormBolum>
 
-          <p style={bolumBaslik}>Vergi ve Resmi Bilgiler</p>
-          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-            <div style={{ flex: 1, minWidth: "180px" }}>
-              <label style={alanEtiketi}>VKN / TCKN</label>
-              <input type="text" value={vknTckn} onChange={(e) => setVknTckn(e.target.value)} style={stil.girdi} placeholder="10-11 hane" />
-            </div>
-            <div style={{ flex: 1, minWidth: "180px" }}>
-              <label style={alanEtiketi}>Vergi Dairesi</label>
-              <input type="text" value={vergiDairesi} onChange={(e) => setVergiDairesi(e.target.value)} style={stil.girdi} />
-            </div>
-            <div style={{ flex: 1, minWidth: "180px" }}>
-              <label style={alanEtiketi}>MERSİS No</label>
-              <input type="text" value={mersisNo} onChange={(e) => setMersisNo(e.target.value)} style={stil.girdi} placeholder="16 hane" />
-            </div>
-            <div style={{ flex: 1, minWidth: "180px" }}>
-              <label style={alanEtiketi}>Ticaret Sicil No</label>
-              <input type="text" value={ticaretSicilNo} onChange={(e) => setTicaretSicilNo(e.target.value)} style={stil.girdi} />
-            </div>
-          </div>
+          <FormBolum baslik="Vergi ve Resmi Bilgiler">
+            <FormAlan flex={1} min={180}><Field label="VKN / TCKN"><Input value={vknTckn} onChange={(e) => setVknTckn(e.target.value)} placeholder="10-11 hane" /></Field></FormAlan>
+            <FormAlan flex={1} min={180}><Field label="Vergi Dairesi"><Input value={vergiDairesi} onChange={(e) => setVergiDairesi(e.target.value)} /></Field></FormAlan>
+            <FormAlan flex={1} min={180}><Field label="MERSİS No"><Input value={mersisNo} onChange={(e) => setMersisNo(e.target.value)} placeholder="16 hane" /></Field></FormAlan>
+            <FormAlan flex={1} min={180}><Field label="Ticaret Sicil No"><Input value={ticaretSicilNo} onChange={(e) => setTicaretSicilNo(e.target.value)} /></Field></FormAlan>
+          </FormBolum>
 
-          <p style={bolumBaslik}>İletişim</p>
-          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-            <div style={{ flex: 1, minWidth: "180px" }}>
-              <label style={alanEtiketi}>E-posta</label>
-              <input type="email" value={eposta} onChange={(e) => setEposta(e.target.value)} style={stil.girdi} />
-            </div>
-            <div style={{ flex: 1, minWidth: "160px" }}>
-              <label style={alanEtiketi}>Telefon</label>
-              <input type="text" value={telefon} onChange={(e) => setTelefon(e.target.value)} style={stil.girdi} />
-            </div>
-            <div style={{ flex: 1, minWidth: "160px" }}>
-              <label style={alanEtiketi}>Web Sitesi</label>
-              <input type="text" value={webSitesi} onChange={(e) => setWebSitesi(e.target.value)} style={stil.girdi} placeholder="https://..." />
-            </div>
-            <div style={{ flex: 1, minWidth: "140px" }}>
-              <label style={alanEtiketi}>Faks</label>
-              <input type="text" value={faks} onChange={(e) => setFaks(e.target.value)} style={stil.girdi} />
-            </div>
-          </div>
+          <FormBolum baslik="İletişim">
+            <FormAlan flex={1} min={180}><Field label="E-posta"><Input type="email" value={eposta} onChange={(e) => setEposta(e.target.value)} /></Field></FormAlan>
+            <FormAlan flex={1} min={160}><Field label="Telefon"><Input value={telefon} onChange={(e) => setTelefon(e.target.value)} /></Field></FormAlan>
+            <FormAlan flex={1} min={160}><Field label="Web Sitesi"><Input value={webSitesi} onChange={(e) => setWebSitesi(e.target.value)} placeholder="https://..." /></Field></FormAlan>
+            <FormAlan flex={1} min={140}><Field label="Faks"><Input value={faks} onChange={(e) => setFaks(e.target.value)} /></Field></FormAlan>
+          </FormBolum>
 
-          <p style={bolumBaslik}>Finans</p>
-          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-            <div style={{ flex: 1, minWidth: "180px", maxWidth: "260px" }}>
-              <label style={alanEtiketi}>Risk Limiti (TL)</label>
-              <input type="text" value={riskLimiti} onChange={(e) => setRiskLimiti(e.target.value)} style={stil.girdi} placeholder="1000000" />
-            </div>
-          </div>
+          <FormBolum baslik="Finans ve Satış Koşulları">
+            <FormAlan flex={1} min={200}><Field label="Fiyat Listesi"><Select value={fiyatListesiId} onChange={(e) => setFiyatListesiId(e.target.value)}><option value="">— Yok (stok satış fiyatı) —</option>{fiyatListeleri.map((l) => (<option key={l.id} value={l.id}>{l.ad} ({l.dovizCinsi})</option>))}</Select></Field></FormAlan>
+            <FormAlan flex={1} min={160}><Field label="Varsayılan İskonto (%)"><Input type="number" step="0.01" min="0" max="100" value={varsayilanIskonto} onChange={(e) => setVarsayilanIskonto(e.target.value)} placeholder="0" /></Field></FormAlan>
+            <FormAlan flex={1} min={160}><Field label="Varsayılan Vade (gün)"><Input type="number" min="0" max="365" value={varsayilanVadeGun} onChange={(e) => setVarsayilanVadeGun(e.target.value)} placeholder="0" /></Field></FormAlan>
+            <FormAlan flex={1} min={180}><Field label="Risk Limiti (TL)"><Input value={riskLimiti} onChange={(e) => setRiskLimiti(e.target.value)} placeholder="1000000" /></Field></FormAlan>
+          </FormBolum>
 
-          <button type="submit" style={stil.dugme}>Cari Kartı Kaydet</button>
-        </form>
+          <div><Button variant="primary" onClick={kaydet}>Cari Kartı Kaydet</Button></div>
+        </Card>
       )}
 
       {detay && (
-        <div style={{ ...stil.genisKart, marginBottom: "2rem", border: "1px solid #6d28d9" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <Card style={{ marginBottom: "1.5rem", borderColor: "var(--accent)" }}>
+          <div className="between" style={{ alignItems: "flex-start" }}>
             <div>
-              <h3 style={{ margin: 0, fontSize: "1.2rem", fontWeight: "bold" }}>
-                {detay.unvan} {detay.karaListe && <span style={{ color: "#ef4444" }}>🚫 Kara Liste</span>}
+              <h3 style={{ fontSize: "1.15rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                {detay.unvan}
+                {detay.karaListe && <Badge variant="danger">🚫 Kara Liste</Badge>}
               </h3>
-              <p style={{ color: "#a1a1aa", fontSize: "0.85rem", margin: "0.25rem 0 0" }}>
+              <p className="muted" style={{ fontSize: "0.85rem", margin: "0.3rem 0 0" }}>
                 {detay.kod} · {TIP_ETIKETLERI[detay.tip] ?? detay.tip} · {detay.kisiTipi === "gercek" ? "Gerçek Kişi" : "Tüzel Kişi"}
                 {detay.sektor ? ` · ${detay.sektor}` : ""}
               </p>
               {detay.karaListe && detay.karaListeNotu && (
-                <p style={{ color: "#ef4444", fontSize: "0.85rem", margin: "0.25rem 0 0" }}>Blokaj nedeni: {detay.karaListeNotu}</p>
+                <p style={{ color: "var(--danger)", fontSize: "0.85rem", margin: "0.3rem 0 0" }}>Blokaj nedeni: {detay.karaListeNotu}</p>
               )}
             </div>
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button onClick={karaListeDegistir} style={{ ...stil.dugmeMuted, padding: "0.35rem 0.75rem", fontSize: "0.8rem" }}>
-                {detay.karaListe ? "✅ Blokajı Kaldır" : "🚫 Kara Listeye Al"}
-              </button>
-              <button onClick={() => { setDetay(null); setEkstre(null); }} style={{ ...stil.dugmeMuted, padding: "0.35rem 0.75rem", fontSize: "0.8rem" }}>
-                ✖ Kapat
-              </button>
+            <div className="row-tight">
+              <Button size="sm" onClick={karaListeDegistir}>{detay.karaListe ? "✅ Blokajı Kaldır" : "🚫 Kara Listeye Al"}</Button>
+              <Button size="sm" onClick={() => { setDetay(null); setEkstre(null); }}>✖ Kapat</Button>
             </div>
           </div>
 
-          {/* Tab Bar (Sekmeler) */}
-          <div style={{ display: "flex", borderBottom: "1px solid #27272a", marginBottom: "1.25rem", marginTop: "1rem", gap: "1rem" }}>
-            {(["genel", "ekstre", "adresler", "kisiler", "bankalar"] as const).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setAktifSekme(tab)}
-                style={{
-                  background: "none",
-                  border: "none",
-                  borderBottom: aktifSekme === tab ? "2px solid #ea580c" : "2px solid transparent",
-                  color: aktifSekme === tab ? "#fafaf9" : "#a1a1aa",
-                  padding: "0.5rem 0.25rem",
-                  cursor: "pointer",
-                  fontSize: "0.9rem",
-                  fontWeight: aktifSekme === tab ? "600" : "normal",
-                  transition: "all 0.2s"
-                }}
-              >
-                {tab === "genel" ? "Genel Bakış" : tab === "ekstre" ? "Ekstre" : tab === "adresler" ? "Adresler" : tab === "kisiler" ? "İlgili Kişiler" : "Banka Hesapları"}
-              </button>
-            ))}
+          <div style={{ marginTop: "1.25rem" }}>
+            <Tabs<Sekme>
+              value={aktifSekme}
+              onChange={setAktifSekme}
+              items={[
+                { deger: "genel", baslik: "Genel Bakış" },
+                { deger: "ekstre", baslik: "Ekstre" },
+                { deger: "adresler", baslik: "Adresler" },
+                { deger: "kisiler", baslik: "İlgili Kişiler" },
+                { deger: "bankalar", baslik: "Banka Hesapları" },
+              ]}
+            />
           </div>
 
-          {/* Tab Content (Sekme İçeriği) */}
           {aktifSekme === "genel" && (
             <div>
-              {/* Summary Cards */}
-              <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "1.25rem" }}>
-                {/* Kart 1: Toplam Bakiye */}
+              <StatGrid>
                 {(() => {
-                  const tryBakiye = detay.bakiyeler.find((b) => b.dovizCinsi === "TRY")?.bakiye ?? "0.00";
-                  const bakiyeNum = Number(tryBakiye);
+                  const bakiyeNum = Number(detay.bakiyeler.find((b) => b.dovizCinsi === "TRY")?.bakiye ?? "0.00");
                   return (
-                    <div style={{ flex: 1, minWidth: "180px", background: "#1c1917", border: "1px solid #27272a", borderRadius: "8px", padding: "1rem" }}>
-                      <p style={{ fontSize: "0.75rem", color: "#a1a1aa", textTransform: "uppercase", margin: 0 }}>Toplam Bakiye</p>
-                      <p style={{ fontSize: "1.5rem", fontWeight: "bold", margin: "0.25rem 0 0", color: bakiyeNum > 0 ? "#22c55e" : bakiyeNum < 0 ? "#ef4444" : "#fafaf9" }}>
-                        {bakiyeNum.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
-                      </p>
-                      <p style={{ fontSize: "0.75rem", color: "#a1a1aa", margin: "0.25rem 0 0" }}>{bakiyeNum > 0 ? "Alacaklıyız" : bakiyeNum < 0 ? "Borçluyuz" : "Bakiye Sıfır"}</p>
-                    </div>
+                    <Stat
+                      label="Toplam Bakiye"
+                      value={tl(bakiyeNum)}
+                      tone={bakiyeNum > 0 ? "success" : bakiyeNum < 0 ? "danger" : "default"}
+                      hint={bakiyeNum > 0 ? "Alacaklıyız" : bakiyeNum < 0 ? "Borçluyuz" : "Bakiye Sıfır"}
+                    />
                   );
                 })()}
+                <Stat
+                  label="Vadesi Geçmiş"
+                  value={tl(detay.finansalOzet.vadesiGecmisBakiye)}
+                  tone={Number(detay.finansalOzet.vadesiGecmisBakiye) > 0 ? "danger" : "default"}
+                  hint="Açık kalemler"
+                />
+                <Stat
+                  label="Vade Süresi"
+                  value={detay.varsayilanVadeGun ? `${detay.varsayilanVadeGun} Gün` : "—"}
+                  hint="Varsayılan vade"
+                />
+                <Stat
+                  label="Risk Durumu"
+                  value={detay.risk.asim ? "Limit Aşımı" : "Normal"}
+                  tone={detay.risk.asim ? "danger" : "accent"}
+                  hint={detay.risk.limit ? `Limit: ${tl(detay.risk.limit)}` : "Limit Tanımsız"}
+                />
+              </StatGrid>
 
-                {/* Kart 2: Vadesi Geçmiş */}
-                <div style={{ flex: 1, minWidth: "180px", background: "#1c1917", border: "1px solid #27272a", borderRadius: "8px", padding: "1rem" }}>
-                  <p style={{ fontSize: "0.75rem", color: "#a1a1aa", textTransform: "uppercase", margin: 0 }}>Vadesi Geçmiş</p>
-                  <p style={{ fontSize: "1.5rem", fontWeight: "bold", margin: "0.25rem 0 0", color: Number(detay.finansalOzet.vadesiGecmisBakiye) > 0 ? "#ef4444" : "#fafaf9" }}>
-                    {Number(detay.finansalOzet.vadesiGecmisBakiye).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
-                  </p>
-                  <p style={{ fontSize: "0.75rem", color: "#a1a1aa", margin: "0.25rem 0 0" }}>Açık kalemler</p>
-                </div>
-
-                {/* Kart 3: Vade Süresi */}
-                <div style={{ flex: 1, minWidth: "180px", background: "#1c1917", border: "1px solid #27272a", borderRadius: "8px", padding: "1rem" }}>
-                  <p style={{ fontSize: "0.75rem", color: "#a1a1aa", textTransform: "uppercase", margin: 0 }}>Vade Süresi</p>
-                  <p style={{ fontSize: "1.5rem", fontWeight: "bold", margin: "0.25rem 0 0", color: "#fafaf9" }}>
-                    {detay.varsayilanVadeGun ? `${detay.varsayilanVadeGun} Gün` : "Belirtilmemiş"}
-                  </p>
-                  <p style={{ fontSize: "0.75rem", color: "#a1a1aa", margin: "0.25rem 0 0" }}>Varsayılan vade</p>
-                </div>
-
-                {/* Kart 4: Risk Durumu */}
-                <div style={{ flex: 1, minWidth: "180px", background: "#1c1917", border: "1px solid #27272a", borderRadius: "8px", padding: "1rem" }}>
-                  <p style={{ fontSize: "0.75rem", color: "#a1a1aa", textTransform: "uppercase", margin: 0 }}>Risk Durumu</p>
-                  <p style={{ fontSize: "1.5rem", fontWeight: "bold", margin: "0.25rem 0 0", color: detay.risk.asim ? "#ef4444" : "#ea580c" }}>
-                    {detay.risk.asim ? "Limit Aşımı" : "Normal"}
-                  </p>
-                  <p style={{ fontSize: "0.75rem", color: "#a1a1aa", margin: "0.25rem 0 0" }}>
-                    {detay.risk.limit ? `Limit: ${tl(detay.risk.limit)}` : "Limit Tanımsız"}
-                  </p>
-                </div>
-              </div>
-
-              {/* Grid content */}
-              <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-                {/* Risk ve Finansal Detaylar Tablosu */}
-                <div style={{ flex: 2, minWidth: "280px", background: "#1c1917", borderRadius: "8px", padding: "1rem" }}>
-                  <p style={{ ...bolumBaslik, margin: "0 0 0.75rem", color: "#fafaf9" }}>⚖️ Risk & Finans Bilgileri</p>
+              <div className="row">
+                <Card className="grow" style={{ flex: 2, minWidth: 280 }}>
+                  <div className="card__title">⚖️ Risk &amp; Finans Bilgileri</div>
                   <table style={{ width: "100%", fontSize: "0.9rem" }}>
                     <tbody>
-                      <tr><td style={{ color: "#a1a1aa", padding: "0.35rem 0" }}>Mevcut Risk</td><td style={{ textAlign: "right", color: "#fafaf9" }}>{tl(detay.risk.mevcutRisk)}</td></tr>
-                      <tr><td style={{ color: "#a1a1aa", padding: "0.35rem 0" }}>Çek/Senet Riski</td><td style={{ textAlign: "right", color: "#fafaf9" }}>{tl(detay.risk.cekSenetRiski)}</td></tr>
+                      <SatirCift ad="Mevcut Risk" deger={tl(detay.risk.mevcutRisk)} />
+                      <SatirCift ad="Çek/Senet Riski" deger={tl(detay.risk.cekSenetRiski)} />
                       {detay.risk.kalanLimit !== null && (
                         <tr>
-                          <td style={{ color: "#a1a1aa", padding: "0.35rem 0" }}>Kalan Risk Limiti</td>
-                          <td style={{ textAlign: "right", fontWeight: "bold", color: detay.risk.asim ? "#ef4444" : "#22c55e" }}>{tl(detay.risk.kalanLimit)}</td>
+                          <td className="muted" style={{ padding: "0.4rem 0" }}>Kalan Risk Limiti</td>
+                          <td className="num" style={{ fontWeight: 700, color: detay.risk.asim ? "var(--danger)" : "var(--success)" }}>{tl(detay.risk.kalanLimit)}</td>
                         </tr>
                       )}
-                      <tr><td style={{ color: "#a1a1aa", padding: "0.35rem 0" }}>Son İşlem Tarihi</td><td style={{ textAlign: "right", color: "#fafaf9" }}>{detay.finansalOzet.sonIslemTarihi ?? "—"}</td></tr>
-                      <tr><td style={{ color: "#a1a1aa", padding: "0.35rem 0" }}>Son Tahsilat Tarihi</td><td style={{ textAlign: "right", color: "#fafaf9" }}>{detay.finansalOzet.sonTahsilatTarihi ?? "—"}</td></tr>
-                      <tr><td style={{ color: "#a1a1aa", padding: "0.35rem 0" }}>Son Ödeme Tarihi</td><td style={{ textAlign: "right", color: "#fafaf9" }}>{detay.finansalOzet.sonOdemeTarihi ?? "—"}</td></tr>
+                      <SatirCift ad="Son İşlem Tarihi" deger={detay.finansalOzet.sonIslemTarihi ?? "—"} />
+                      <SatirCift ad="Son Tahsilat Tarihi" deger={detay.finansalOzet.sonTahsilatTarihi ?? "—"} />
+                      <SatirCift ad="Son Ödeme Tarihi" deger={detay.finansalOzet.sonOdemeTarihi ?? "—"} />
                     </tbody>
                   </table>
-                  {detay.risk.asim && <p style={{ color: "#ef4444", fontSize: "0.85rem", margin: "0.75rem 0 0" }}>⚠️ Risk limiti aşılmış durumda.</p>}
-                </div>
+                  {detay.risk.asim && <p style={{ color: "var(--danger)", fontSize: "0.85rem", marginTop: "0.75rem" }}>⚠️ Risk limiti aşılmış durumda.</p>}
+                </Card>
 
-                {/* Etiketler Bölümü */}
-                <div style={{ flex: 1, minWidth: "220px", background: "#1c1917", borderRadius: "8px", padding: "1rem" }}>
-                  <p style={{ ...bolumBaslik, margin: "0 0 0.75rem", color: "#fafaf9" }}>🏷️ Etiket Yönetimi</p>
-                  <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.75rem" }}>
-                    {detay.etiketler.length === 0 && <span style={{ color: "#a1a1aa", fontSize: "0.85rem" }}>Etiket yok</span>}
+                <Card className="grow" style={{ flex: 1, minWidth: 220 }}>
+                  <div className="card__title">🏷️ Etiket Yönetimi</div>
+                  <div className="row-tight" style={{ marginBottom: "0.75rem" }}>
+                    {detay.etiketler.length === 0 && <span className="subtle" style={{ fontSize: "0.85rem" }}>Etiket yok</span>}
                     {detay.etiketler.map((e) => (
-                      <span key={e.id} style={{ background: e.renk ?? "#ea580c", borderRadius: "999px", padding: "0.15rem 0.6rem", fontSize: "0.8rem", display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
+                      <span key={e.id} className="chip">
                         {e.ad}
-                        <button onClick={() => etiketKaldir(e.id)} style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", padding: 0 }}>✕</button>
+                        <button onClick={() => etiketKaldir(e.id)}>✕</button>
                       </span>
                     ))}
                   </div>
-                  <div style={{ display: "flex", gap: "0.4rem", marginBottom: "0.5rem" }}>
-                    <select value={secilenEtiketId} onChange={(e) => setSecilenEtiketId(e.target.value)} style={{ ...stil.girdi, margin: 0, flex: 1 }}>
+                  <div className="row-tight" style={{ marginBottom: "0.5rem", flexWrap: "nowrap" }}>
+                    <Select className="grow" value={secilenEtiketId} onChange={(e) => setSecilenEtiketId(e.target.value)}>
                       <option value="">Seç...</option>
-                      {etiketler
-                        .filter((e) => !detay.etiketler.some((d) => d.id === e.id))
-                        .map((e) => (
-                          <option key={e.id} value={e.id}>{e.ad}</option>
-                        ))}
-                    </select>
-                    <button onClick={etiketAta} style={{ ...stil.dugmeMuted, padding: "0.35rem 0.75rem", fontSize: "0.8rem" }}>Ata</button>
+                      {etiketler.filter((e) => !detay.etiketler.some((d) => d.id === e.id)).map((e) => (
+                        <option key={e.id} value={e.id}>{e.ad}</option>
+                      ))}
+                    </Select>
+                    <Button size="sm" onClick={etiketAta}>Ata</Button>
                   </div>
-                  <form onSubmit={etiketOlusturVeAta} style={{ display: "flex", gap: "0.4rem" }}>
-                    <input type="text" value={yeniEtiket} onChange={(e) => setYeniEtiket(e.target.value)} placeholder="Yeni etiket..." style={{ ...stil.girdi, margin: 0, flex: 1 }} />
-                    <button type="submit" style={{ ...stil.dugmeMuted, padding: "0.35rem 0.75rem", fontSize: "0.8rem" }}>➕</button>
+                  <form onSubmit={etiketOlusturVeAta} className="row-tight" style={{ flexWrap: "nowrap" }}>
+                    <Input className="grow" value={yeniEtiket} onChange={(e) => setYeniEtiket(e.target.value)} placeholder="Yeni etiket..." />
+                    <Button size="sm" type="submit">➕</Button>
                   </form>
-                </div>
+                </Card>
               </div>
             </div>
           )}
 
           {aktifSekme === "ekstre" && (
-            <div style={{ background: "#1c1917", borderRadius: "8px", padding: "1rem" }}>
-              <p style={{ ...bolumBaslik, margin: "0 0 0.75rem", color: "#fafaf9" }}>📊 Cari Hesap Ekstresi</p>
+            <Card>
+              <div className="card__title">📊 Cari Hesap Ekstresi</div>
               {!ekstre ? (
-                <p style={{ color: "#a1a1aa", fontSize: "0.85rem" }}>Ekstre yükleniyor...</p>
+                <p className="subtle" style={{ fontSize: "0.85rem" }}>Ekstre yükleniyor...</p>
               ) : ekstre.satirlar.length === 0 ? (
-                <p style={{ color: "#a1a1aa", fontSize: "0.85rem" }}>Cari hesaba ait herhangi bir hareket bulunmuyor.</p>
+                <p className="subtle" style={{ fontSize: "0.85rem" }}>Cari hesaba ait herhangi bir hareket bulunmuyor.</p>
               ) : (
-                <div style={{ overflowX: "auto" }}>
-                  <table style={stil.tablo}>
-                    <thead>
-                      <tr>
-                        <th style={stil.tabloBaslik}>Tarih</th>
-                        <th style={stil.tabloBaslik}>Vade Tarihi</th>
-                        <th style={stil.tabloBaslik}>Açıklama</th>
-                        <th style={{ ...stil.tabloBaslik, textAlign: "right" }}>Borç (TL)</th>
-                        <th style={{ ...stil.tabloBaslik, textAlign: "right" }}>Alacak (TL)</th>
-                        <th style={{ ...stil.tabloBaslik, textAlign: "right" }}>Bakiye (TL)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ekstre.satirlar.map((row, idx) => {
-                        const borcVal = row.tip === "borc" ? Number(row.tutarTry) : 0;
-                        const alacakVal = row.tip === "alacak" ? Number(row.tutarTry) : 0;
-                        const bakiyeNum = Number(row.yuruyenBakiye);
-
-                        return (
-                          <tr key={idx}>
-                            <td style={stil.tabloHucre}>{row.tarih}</td>
-                            <td style={stil.tabloHucre}>{row.vadeTarihi || "—"}</td>
-                            <td style={stil.tabloHucre}>{row.aciklama || "—"}</td>
-                            <td style={{ ...stil.tabloHucre, textAlign: "right", color: borcVal > 0 ? "#ef4444" : undefined }}>
-                              {borcVal > 0 ? borcVal.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL" : "—"}
-                            </td>
-                            <td style={{ ...stil.tabloHucre, textAlign: "right", color: alacakVal > 0 ? "#22c55e" : undefined }}>
-                              {alacakVal > 0 ? alacakVal.toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL" : "—"}
-                            </td>
-                            <td style={{ ...stil.tabloHucre, textAlign: "right", fontWeight: "bold", color: bakiyeNum > 0 ? "#22c55e" : bakiyeNum < 0 ? "#ef4444" : "#fafaf9" }}>
-                              {bakiyeNum.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <TableWrap>
+                  <thead>
+                    <tr>
+                      <th>Tarih</th>
+                      <th>Vade Tarihi</th>
+                      <th>Açıklama</th>
+                      <th className="num">Borç (TL)</th>
+                      <th className="num">Alacak (TL)</th>
+                      <th className="num">Bakiye (TL)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ekstre.satirlar.map((row, idx) => {
+                      const borcVal = row.tip === "borc" ? Number(row.tutarTry) : 0;
+                      const alacakVal = row.tip === "alacak" ? Number(row.tutarTry) : 0;
+                      const bakiyeNum = Number(row.yuruyenBakiye);
+                      return (
+                        <tr key={idx}>
+                          <td>{row.tarih}</td>
+                          <td>{row.vadeTarihi || "—"}</td>
+                          <td>{row.aciklama || "—"}</td>
+                          <td className="num" style={{ color: borcVal > 0 ? "var(--danger)" : undefined }}>{borcVal > 0 ? tl(borcVal) : "—"}</td>
+                          <td className="num" style={{ color: alacakVal > 0 ? "var(--success)" : undefined }}>{alacakVal > 0 ? tl(alacakVal) : "—"}</td>
+                          <td className={`num money ${bakiyeNum > 0 ? "pos" : bakiyeNum < 0 ? "neg" : ""}`}>{tl(bakiyeNum)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </TableWrap>
               )}
-            </div>
+            </Card>
           )}
 
           {aktifSekme === "adresler" && (
-            <div style={{ background: "#1c1917", borderRadius: "8px", padding: "1rem" }}>
-              <p style={{ ...bolumBaslik, margin: "0 0 0.75rem", color: "#fafaf9" }}>🏢 Adres Bilgileri</p>
+            <Card>
+              <div className="card__title">🏢 Adres Bilgileri</div>
               {detay.adresler && detay.adresler.length === 0 ? (
-                <p style={{ color: "#a1a1aa", fontSize: "0.85rem" }}>Kayıtlı adres bilgisi yok.</p>
+                <p className="subtle" style={{ fontSize: "0.85rem" }}>Kayıtlı adres bilgisi yok.</p>
               ) : (
-                <div style={{ overflowX: "auto" }}>
-                  <table style={stil.tablo}>
-                    <thead>
-                      <tr>
-                        <th style={stil.tabloBaslik}>Başlık</th>
-                        <th style={stil.tabloBaslik}>Tip</th>
-                        <th style={stil.tabloBaslik}>Adres</th>
-                        <th style={stil.tabloBaslik}>İl / İlçe</th>
+                <TableWrap>
+                  <thead>
+                    <tr><th>Başlık</th><th>Tip</th><th>Adres</th><th>İl / İlçe</th></tr>
+                  </thead>
+                  <tbody>
+                    {detay.adresler?.map((a) => (
+                      <tr key={a.id}>
+                        <td>{a.baslik}</td>
+                        <td>{a.tip === "fatura" ? "📄 Fatura Adresi" : a.tip === "sevk" ? "🚚 Sevk Adresi" : "🏢 Merkez/Şube"}</td>
+                        <td>{a.adres}</td>
+                        <td>{a.ilce ? `${a.ilce} / ` : ""}{a.il}</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {detay.adresler?.map((a) => (
-                        <tr key={a.id}>
-                          <td style={stil.tabloHucre}>{a.baslik}</td>
-                          <td style={stil.tabloHucre}>
-                            {a.tip === "fatura" ? "📄 Fatura Adresi" : a.tip === "sevk" ? "🚚 Sevk Adresi" : "🏢 Merkez/Şube"}
-                          </td>
-                          <td style={stil.tabloHucre}>{a.adres}</td>
-                          <td style={stil.tabloHucre}>{a.ilce ? `${a.ilce} / ` : ""}{a.il}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                    ))}
+                  </tbody>
+                </TableWrap>
               )}
-            </div>
+            </Card>
           )}
 
           {aktifSekme === "kisiler" && (
-            <div style={{ background: "#1c1917", borderRadius: "8px", padding: "1rem" }}>
-              <p style={{ ...bolumBaslik, margin: "0 0 0.75rem", color: "#fafaf9" }}>👥 İlgili Kişiler</p>
+            <Card>
+              <div className="card__title">👥 İlgili Kişiler</div>
               {detay.kisiler && detay.kisiler.length === 0 ? (
-                <p style={{ color: "#a1a1aa", fontSize: "0.85rem" }}>Kayıtlı ilgili kişi yok.</p>
+                <p className="subtle" style={{ fontSize: "0.85rem" }}>Kayıtlı ilgili kişi yok.</p>
               ) : (
-                <div style={{ overflowX: "auto" }}>
-                  <table style={stil.tablo}>
-                    <thead>
-                      <tr>
-                        <th style={stil.tabloBaslik}>Ad Soyad</th>
-                        <th style={stil.tabloBaslik}>Görev</th>
-                        <th style={stil.tabloBaslik}>Telefon</th>
-                        <th style={stil.tabloBaslik}>E-posta</th>
+                <TableWrap>
+                  <thead>
+                    <tr><th>Ad Soyad</th><th>Görev</th><th>Telefon</th><th>E-posta</th></tr>
+                  </thead>
+                  <tbody>
+                    {detay.kisiler?.map((k) => (
+                      <tr key={k.id}>
+                        <td>{k.adSoyad}</td>
+                        <td>{k.gorev || "—"}</td>
+                        <td>{k.telefon || "—"}</td>
+                        <td>{k.eposta || "—"}</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {detay.kisiler?.map((k) => (
-                        <tr key={k.id}>
-                          <td style={stil.tabloHucre}>{k.adSoyad}</td>
-                          <td style={stil.tabloHucre}>{k.gorev || "—"}</td>
-                          <td style={stil.tabloHucre}>{k.telefon || "—"}</td>
-                          <td style={stil.tabloHucre}>{k.eposta || "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                    ))}
+                  </tbody>
+                </TableWrap>
               )}
-            </div>
+            </Card>
           )}
 
           {aktifSekme === "bankalar" && (
-            <div style={{ background: "#1c1917", borderRadius: "8px", padding: "1rem" }}>
-              <p style={{ ...bolumBaslik, margin: "0 0 0.75rem", color: "#fafaf9" }}>🏦 Banka Hesapları</p>
+            <Card className="stack">
+              <div className="card__title" style={{ margin: 0 }}>🏦 Banka Hesapları</div>
               {detay.bankaHesaplari.length === 0 ? (
-                <p style={{ color: "#a1a1aa", fontSize: "0.85rem", margin: "0 0 0.75rem" }}>Kayıtlı banka hesabı yok.</p>
+                <p className="subtle" style={{ fontSize: "0.85rem", margin: 0 }}>Kayıtlı banka hesabı yok.</p>
               ) : (
-                <div style={{ overflowX: "auto", marginBottom: "1rem" }}>
-                  <table style={{ width: "100%", fontSize: "0.9rem" }}>
-                    <thead>
-                      <tr>
-                        <th style={{ ...stil.tabloBaslik, textAlign: "left" }}>Banka Adı</th>
-                        <th style={{ ...stil.tabloBaslik, textAlign: "left" }}>IBAN</th>
-                        <th style={{ ...stil.tabloBaslik, textAlign: "left" }}>Döviz</th>
-                        <th style={{ ...stil.tabloBaslik, textAlign: "center", width: "80px" }}>İşlem</th>
+                <TableWrap>
+                  <thead>
+                    <tr><th>Banka Adı</th><th>IBAN</th><th>Döviz</th><th className="center">İşlem</th></tr>
+                  </thead>
+                  <tbody>
+                    {detay.bankaHesaplari.map((b) => (
+                      <tr key={b.id}>
+                        <td>{b.bankaAdi}{b.subeAdi ? ` / ${b.subeAdi}` : ""}</td>
+                        <td className="mono">{b.iban}</td>
+                        <td>{b.paraBirimi}</td>
+                        <td className="center"><button className="btn-link" style={{ color: "var(--danger)" }} onClick={() => bankaHesabiSil(b.id)}>Sil</button></td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {detay.bankaHesaplari.map((b) => (
-                        <tr key={b.id}>
-                          <td style={stil.tabloHucre}>{b.bankaAdi}{b.subeAdi ? ` / ${b.subeAdi}` : ""}</td>
-                          <td style={{ ...stil.tabloHucre, fontFamily: "monospace" }}>{b.iban}</td>
-                          <td style={stil.tabloHucre}>{b.paraBirimi}</td>
-                          <td style={{ ...stil.tabloHucre, textAlign: "center" }}>
-                            <button onClick={() => bankaHesabiSil(b.id)} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: "0.85rem" }}>Sil</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                    ))}
+                  </tbody>
+                </TableWrap>
               )}
-              <form onSubmit={bankaHesabiEkle} style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", borderTop: "1px solid #27272a", paddingTop: "1rem" }}>
-                <input type="text" value={bankaAdi} onChange={(e) => setBankaAdi(e.target.value)} placeholder="Banka adı" required style={{ ...stil.girdi, margin: 0, flex: 1, minWidth: "140px" }} />
-                <input type="text" value={iban} onChange={(e) => setIban(e.target.value)} placeholder="TR + 24 rakam" required style={{ ...stil.girdi, margin: 0, flex: 2, minWidth: "220px" }} />
-                <select value={paraBirimi} onChange={(e) => setParaBirimi(e.target.value)} style={{ ...stil.girdi, margin: 0, width: "90px" }}>
-                  <option>TRY</option>
-                  <option>USD</option>
-                  <option>EUR</option>
-                </select>
-                <button type="submit" style={{ ...stil.dugmeMuted, padding: "0.35rem 0.75rem" }}>➕ Ekle</button>
+              <form onSubmit={bankaHesabiEkle} className="row-tight" style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem", flexWrap: "nowrap" }}>
+                <Input className="grow" value={bankaAdi} onChange={(e) => setBankaAdi(e.target.value)} placeholder="Banka adı" required style={{ minWidth: 140 }} />
+                <Input value={iban} onChange={(e) => setIban(e.target.value)} placeholder="TR + 24 rakam" required style={{ flex: 2, minWidth: 220 }} />
+                <Select value={paraBirimi} onChange={(e) => setParaBirimi(e.target.value)} style={{ width: 90 }}>
+                  <option>TRY</option><option>USD</option><option>EUR</option>
+                </Select>
+                <Button size="sm" type="submit">➕ Ekle</Button>
               </form>
-            </div>
+            </Card>
           )}
-        </div>
+        </Card>
       )}
 
-      {/* İstatistik Özet Kartları (Toplam, Müşteri, Tedarikçi, Bloke) */}
-      <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "1.5rem" }}>
-        <div style={{ flex: 1, minWidth: "160px", background: "#1c1917", border: "1px solid #27272a", borderRadius: "8px", padding: "1rem" }}>
-          <p style={{ fontSize: "0.75rem", color: "#a1a1aa", textTransform: "uppercase", margin: 0 }}>Toplam Cari</p>
-          <p style={{ fontSize: "1.75rem", fontWeight: "bold", margin: "0.25rem 0 0", color: "#fafaf9" }}>{cariler.length}</p>
-        </div>
-        <div style={{ flex: 1, minWidth: "160px", background: "#1c1917", border: "1px solid #27272a", borderRadius: "8px", padding: "1rem" }}>
-          <p style={{ fontSize: "0.75rem", color: "#a1a1aa", textTransform: "uppercase", margin: 0 }}>Müşteri</p>
-          <p style={{ fontSize: "1.75rem", fontWeight: "bold", margin: "0.25rem 0 0", color: "#ea580c" }}>{cariler.filter(c => c.tip === "musteri" || c.tip === "hepsi").length}</p>
-        </div>
-        <div style={{ flex: 1, minWidth: "160px", background: "#1c1917", border: "1px solid #27272a", borderRadius: "8px", padding: "1rem" }}>
-          <p style={{ fontSize: "0.75rem", color: "#a1a1aa", textTransform: "uppercase", margin: 0 }}>Tedarikçi</p>
-          <p style={{ fontSize: "1.75rem", fontWeight: "bold", margin: "0.25rem 0 0", color: "#3b82f6" }}>{cariler.filter(c => c.tip === "tedarikci" || c.tip === "hepsi").length}</p>
-        </div>
-        <div style={{ flex: 1, minWidth: "160px", background: "#1c1917", border: "1px solid #27272a", borderRadius: "8px", padding: "1rem" }}>
-          <p style={{ fontSize: "0.75rem", color: "#a1a1aa", textTransform: "uppercase", margin: 0 }}>Bloke</p>
-          <p style={{ fontSize: "1.75rem", fontWeight: "bold", margin: "0.25rem 0 0", color: "#ef4444" }}>{cariler.filter(c => c.karaListe === true).length}</p>
-        </div>
-      </div>
+      <StatGrid>
+        <Stat label="Toplam Cari" value={cariler.length} />
+        <Stat label="Müşteri" value={musteriSayisi} tone="accent" />
+        <Stat label="Tedarikçi" value={tedarikciSayisi} tone="info" />
+        <Stat label="Bloke" value={blokeSayisi} tone={blokeSayisi > 0 ? "danger" : "default"} />
+      </StatGrid>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem", marginBottom: "1.5rem" }}>
-        <input
-          type="text"
+      <div className="toolbar">
+        <SearchInput
+          className="grow"
           value={arama}
           onChange={(e) => setArama(e.target.value)}
           placeholder="Cari adı, kodu veya VKN ile ara..."
-          style={{ ...stil.girdi, margin: 0, maxWidth: "400px", flex: 1 }}
         />
-
-        {/* Segmented Control */}
-        <div style={{ display: "flex", background: "#1c1917", borderRadius: "8px", border: "1px solid #27272a", padding: "2px" }}>
-          {(["tumu", "musteri", "tedarikci", "bloke"] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setFiltreTip(t)}
-              style={{
-                background: filtreTip === t ? "#ea580c" : "transparent",
-                color: filtreTip === t ? "#ffffff" : "#a1a1aa",
-                border: "none",
-                borderRadius: "6px",
-                padding: "0.35rem 0.85rem",
-                fontSize: "0.85rem",
-                cursor: "pointer",
-                fontWeight: filtreTip === t ? "600" : "normal",
-                transition: "all 0.2s"
-              }}
-            >
-              {t === "tumu" ? "Tümü" : t === "musteri" ? "Müşteri" : t === "tedarikci" ? "Tedarikçi" : "Bloke"}
-            </button>
-          ))}
-        </div>
+        <Segmented<FiltreTip>
+          value={filtreTip}
+          onChange={setFiltreTip}
+          items={[
+            { deger: "tumu", baslik: "Tümü" },
+            { deger: "musteri", baslik: "Müşteri" },
+            { deger: "tedarikci", baslik: "Tedarikçi" },
+            { deger: "bloke", baslik: "Bloke" },
+          ]}
+        />
       </div>
 
-      <div style={stil.genisKart}>
-        <table style={stil.tablo}>
+      <Card pad={false}>
+        <TableWrap>
           <thead>
             <tr>
-              <th style={stil.tabloBaslik}>Cari Adı</th>
-              <th style={stil.tabloBaslik}>Tür</th>
-              <th style={stil.tabloBaslik}>Sektör</th>
-              <th style={stil.tabloBaslik}>VKN / TCKN</th>
-              <th style={{ ...stil.tabloBaslik, textAlign: "right" }}>Bakiye</th>
-              <th style={stil.tabloBaslik}>Risk</th>
-              <th style={{ ...stil.tabloBaslik, textAlign: "center" }}>Eylemler</th>
+              <th>Cari Adı</th>
+              <th>Tür</th>
+              <th>Sektör</th>
+              <th>VKN / TCKN</th>
+              <th className="num">Bakiye</th>
+              <th>Risk</th>
+              <th className="center">Eylemler</th>
             </tr>
           </thead>
           <tbody>
             {filtrelenmisCariler.length === 0 ? (
               <tr>
-                <td colSpan={7} style={{ ...stil.tabloHucre, textAlign: "center", color: "#a1a1aa" }}>
-                  Arama kriterlerinize uygun cari hesap kaydı bulunamadı.
-                </td>
+                <td colSpan={7} className="empty">Arama kriterlerinize uygun cari hesap kaydı bulunamadı.</td>
               </tr>
             ) : (
               filtrelenmisCariler.map((c) => {
-                const tryBakiye = c.bakiyeler.find((b) => b.dovizCinsi === "TRY")?.bakiye ?? "0.00";
-                const bakiyeNum = Number(tryBakiye);
-
-                const ilkHarf = c.unvan.trim().charAt(0).toUpperCase();
-                const renkler = ["#7c3aed", "#2563eb", "#db2777", "#059669", "#d97706", "#dc2626"];
-                const renk = renkler[ilkHarf.charCodeAt(0) % renkler.length];
-
+                const bakiyeNum = Number(c.bakiyeler.find((b) => b.dovizCinsi === "TRY")?.bakiye ?? "0.00");
                 return (
                   <tr key={c.id}>
-                    <td style={stil.tabloHucre}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                        <div style={{
-                          width: "32px",
-                          height: "32px",
-                          borderRadius: "50%",
-                          backgroundColor: renk,
-                          color: "#ffffff",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontWeight: "bold",
-                          fontSize: "0.9rem"
-                        }}>
-                          {ilkHarf}
-                        </div>
+                    <td>
+                      <div className="cell-entity">
+                        <Avatar isim={c.unvan} />
                         <div>
-                          <div style={{ fontWeight: "600", color: "#fafaf9" }}>
+                          <div className="cell-entity__name">
                             {c.karaListe && <span title="Kara liste / işlem blokajı">🚫 </span>}
                             {c.unvan}
                           </div>
-                          <div style={{ fontSize: "0.75rem", color: "#a1a1aa" }}>{c.kod}</div>
+                          <div className="cell-entity__meta">{c.kod}</div>
                         </div>
                       </div>
                     </td>
-                    <td style={stil.tabloHucre}>
-                      <span style={{
-                        background: c.tip === "musteri" ? "rgba(5, 150, 105, 0.15)" : c.tip === "tedarikci" ? "rgba(37, 99, 235, 0.15)" : "rgba(124, 58, 237, 0.15)",
-                        color: c.tip === "musteri" ? "#34d399" : c.tip === "tedarikci" ? "#60a5fa" : "#c084fc",
-                        borderRadius: "999px",
-                        padding: "0.15rem 0.5rem",
-                        fontSize: "0.8rem",
-                        fontWeight: "600"
-                      }}>
+                    <td>
+                      <Badge variant={c.tip === "musteri" ? "success" : c.tip === "tedarikci" ? "info" : "accent"}>
                         {c.tip === "musteri" ? "Müşteri" : c.tip === "tedarikci" ? "Tedarikçi" : "İkisi de"}
-                      </span>
+                      </Badge>
                     </td>
-                    <td style={stil.tabloHucre}>{c.sektor || "—"}</td>
-                    <td style={stil.tabloHucre}>{c.vknTckn || "—"}</td>
-                    <td style={{ ...stil.tabloHucre, textAlign: "right", color: bakiyeNum > 0 ? "#22c55e" : bakiyeNum < 0 ? "#ef4444" : "#fafaf9", fontWeight: "bold" }}>
-                      {bakiyeNum.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
+                    <td>{c.sektor || "—"}</td>
+                    <td>{c.vknTckn || "—"}</td>
+                    <td className={`num money ${bakiyeNum > 0 ? "pos" : bakiyeNum < 0 ? "neg" : ""}`}>{tl(bakiyeNum)}</td>
+                    <td>
+                      <Status tone={c.karaListe ? "danger" : "ok"}>{c.karaListe ? "Bloke" : "Normal"}</Status>
                     </td>
-                    <td style={stil.tabloHucre}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                        <span style={{
-                          width: "8px",
-                          height: "8px",
-                          borderRadius: "50%",
-                          backgroundColor: c.karaListe ? "#ef4444" : "#ea580c",
-                          display: "inline-block"
-                        }} />
-                        <span style={{ fontSize: "0.85rem", color: "#fafaf9" }}>{c.karaListe ? "Bloke" : "Normal"}</span>
+                    <td className="center">
+                      <div className="row-tight" style={{ flexWrap: "nowrap", justifyContent: "center" }}>
+                        <Button size="sm" onClick={() => detayAc(c.id)}>🔍 Detay</Button>
+                        <Button size="sm" onClick={() => ekstreIndir(c.id, c.unvan)}>📊 Ekstre</Button>
+                        <Button size="sm" onClick={() => kopyala(c.id)}>📋 Kopyala</Button>
                       </div>
-                    </td>
-                    <td style={{ ...stil.tabloHucre, textAlign: "center", whiteSpace: "nowrap" }}>
-                      <button onClick={() => detayAc(c.id)} style={{ ...stil.dugmeMuted, padding: "0.35rem 0.65rem", fontSize: "0.8rem", marginRight: "0.4rem" }}>
-                        🔍 Detay
-                      </button>
-                      <button onClick={() => ekstreIndir(c.id, c.unvan)} style={{ ...stil.dugmeMuted, padding: "0.35rem 0.65rem", fontSize: "0.8rem", marginRight: "0.4rem" }}>
-                        📊 Ekstre
-                      </button>
-                      <button onClick={() => kopyala(c.id)} style={{ ...stil.dugmeMuted, padding: "0.35rem 0.65rem", fontSize: "0.8rem" }}>
-                        📋 Kopyala
-                      </button>
                     </td>
                   </tr>
                 );
               })
             )}
           </tbody>
-        </table>
-      </div>
+        </TableWrap>
+      </Card>
     </div>
+  );
+}
+
+/* ─── Sayfaya özel küçük yardımcılar ─────────────────────────────────────── */
+function FormBolum({ baslik, children }: { baslik?: string; children: React.ReactNode }) {
+  return (
+    <div>
+      {baslik && <p style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--accent-text)", margin: "0 0 0.5rem" }}>{baslik}</p>}
+      <div className="row">{children}</div>
+    </div>
+  );
+}
+
+function FormAlan({ flex, min, children }: { flex: number; min: number; children: React.ReactNode }) {
+  return <div style={{ flex: flex === 0 ? `0 1 ${min}px` : flex, minWidth: min }}>{children}</div>;
+}
+
+function SatirCift({ ad, deger }: { ad: string; deger: string }) {
+  return (
+    <tr>
+      <td className="muted" style={{ padding: "0.4rem 0" }}>{ad}</td>
+      <td className="num" style={{ color: "var(--text)" }}>{deger}</td>
+    </tr>
   );
 }

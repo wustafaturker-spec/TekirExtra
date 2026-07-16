@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiHata, tokenAl, tokenYaz } from "@/lib/api";
-import { stil } from "@/lib/stil";
+import { Alert, Card, PageHeader, Stat, StatGrid, TableWrap } from "@/components/ui";
 
 interface Firma {
   unvan: string;
@@ -25,6 +25,9 @@ interface KarMarjiSatiri {
   kar: string;
   marj: number | null;
 }
+
+const tl = (deger: string | number): string =>
+  Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL";
 
 export default function PanelSayfasi() {
   const yonlendir = useRouter();
@@ -63,57 +66,28 @@ export default function PanelSayfasi() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
-        <div>
-          <h1 style={{ fontSize: "2rem", fontWeight: "bold", margin: 0 }}>
-            {firma?.unvan ?? "Yükleniyor…"}
-          </h1>
-          <p style={{ color: "#a1a1aa", fontSize: "0.9rem", margin: "0.25rem 0 0" }}>
-            Hoş geldiniz. Şirketinizin anlık finansal durum özeti aşağıdadır.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title={firma?.unvan ?? "Yükleniyor…"}
+        subtitle="Hoş geldiniz. Şirketinizin anlık finansal durum özeti aşağıdadır."
+      />
 
-      {hata && <p style={stil.hata}>{hata}</p>}
+      <Alert tone="error">{hata}</Alert>
 
       {ozet && (
-        <section style={{ marginBottom: "3rem" }}>
-          <h2 style={{ fontSize: "1.2rem", fontWeight: "600", marginBottom: "1rem", color: "#a1a1aa" }}>
-            💰 Finansal Durum Özeti
-          </h2>
-          <div style={stil.grid}>
-            <div style={stil.ozetKart}>
-              <div style={{ color: "#a1a1aa", fontSize: "0.85rem" }}>Nakit Varlıklar (Kasa/Banka)</div>
-              <div style={{ fontSize: "1.75rem", fontWeight: "bold", color: "#22c55e", marginTop: "0.5rem" }}>
-                {Number(ozet.nakitVarliklar).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
-              </div>
+        <section style={{ marginBottom: "2rem" }}>
+          <StatGrid>
+            <Stat label="Nakit Varlıklar (Kasa/Banka)" value={tl(ozet.nakitVarliklar)} tone="success" />
+            <Stat label="Stok Envanter Değeri" value={tl(ozet.envanterDegeri)} tone="info" />
+            <Stat label="Toplam Müşteri Alacakları" value={tl(ozet.toplamAlacaklar)} tone="info" />
+            <Stat label="Toplam Tedarikçi Borçları" value={tl(ozet.toplamBorclar)} tone="danger" />
+          </StatGrid>
+
+          <Card style={{ background: "var(--accent-soft)", borderColor: "var(--accent)" }}>
+            <div className="stat__label">Konsolide Net Varlık Değeri</div>
+            <div className="stat__value" style={{ fontSize: "2.1rem", color: "var(--accent-text)" }}>
+              {tl(ozet.netVarlikDegeri)}
             </div>
-            <div style={stil.ozetKart}>
-              <div style={{ color: "#a1a1aa", fontSize: "0.85rem" }}>Stok Envanter Değeri</div>
-              <div style={{ fontSize: "1.75rem", fontWeight: "bold", color: "#6366f1", marginTop: "0.5rem" }}>
-                {Number(ozet.envanterDegeri).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
-              </div>
-            </div>
-            <div style={stil.ozetKart}>
-              <div style={{ color: "#a1a1aa", fontSize: "0.85rem" }}>Toplam Müşteri Alacakları</div>
-              <div style={{ fontSize: "1.75rem", fontWeight: "bold", color: "#3b82f6", marginTop: "0.5rem" }}>
-                {Number(ozet.toplamAlacaklar).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
-              </div>
-            </div>
-            <div style={stil.ozetKart}>
-              <div style={{ color: "#a1a1aa", fontSize: "0.85rem" }}>Toplam Tedarikçi Borçları</div>
-              <div style={{ fontSize: "1.75rem", fontWeight: "bold", color: "#ef4444", marginTop: "0.5rem" }}>
-                {Number(ozet.toplamBorclar).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
-              </div>
-            </div>
-          </div>
-          
-          <div style={{ ...stil.ozetKart, marginTop: "1.5rem", background: "linear-gradient(90deg, rgba(124, 58, 237, 0.2) 0%, rgba(79, 70, 229, 0.2) 100%)", border: "1px solid rgba(124, 58, 237, 0.4)" }}>
-            <div style={{ color: "#a1a1aa", fontSize: "0.85rem" }}>Konsolide Net Varlık Değeri</div>
-            <div style={{ fontSize: "2rem", fontWeight: "bold", color: "#fafaf9", marginTop: "0.5rem" }}>
-              {Number(ozet.netVarlikDegeri).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
-            </div>
-          </div>
+          </Card>
         </section>
       )}
 
@@ -128,75 +102,48 @@ export default function PanelSayfasi() {
         );
         const marj = toplam.ciro > 0 ? (toplam.kar / toplam.ciro) * 100 : 0;
         return (
-          <section style={stil.genisKart}>
-            <h2 style={{ fontSize: "1.2rem", fontWeight: "600", marginBottom: "1rem" }}>
-              📈 Satış Kârlılık ve Kar/Zarar Analizi
-            </h2>
-            <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap", marginBottom: "2rem", borderBottom: "1px solid #27272a", paddingBottom: "1.5rem" }}>
-              <div>
-                <div style={{ color: "#a1a1aa", fontSize: "0.8rem" }}>Toplam Ciro</div>
-                <div style={{ fontSize: "1.5rem", fontWeight: "bold", marginTop: "0.25rem" }}>
-                  {toplam.ciro.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
-                </div>
-              </div>
-              <div>
-                <div style={{ color: "#a1a1aa", fontSize: "0.8rem" }}>Toplam Maliyet</div>
-                <div style={{ fontSize: "1.5rem", fontWeight: "bold", marginTop: "0.25rem", color: "#a1a1aa" }}>
-                  {toplam.maliyet.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
-                </div>
-              </div>
-              <div>
-                <div style={{ color: "#a1a1aa", fontSize: "0.8rem" }}>Net Satış Kârı</div>
-                <div style={{ fontSize: "1.5rem", fontWeight: "bold", marginTop: "0.25rem", color: "#22c55e" }}>
-                  {toplam.kar.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
-                </div>
-              </div>
-              <div>
-                <div style={{ color: "#a1a1aa", fontSize: "0.8rem" }}>Kârlılık Oranı</div>
-                <div style={{ fontSize: "1.5rem", fontWeight: "bold", marginTop: "0.25rem", color: "#7c3aed" }}>
-                  %{marj.toFixed(2)}
-                </div>
-              </div>
-            </div>
+          <Card>
+            <h2 className="card__title" style={{ fontSize: "1.15rem" }}>📈 Satış Kârlılık ve Kâr/Zarar Analizi</h2>
 
-            <h3 style={{ fontSize: "1rem", fontWeight: "600", marginBottom: "1rem", color: "#a1a1aa" }}>
-              Ürün Bazlı Kârlılık Kırılımı
-            </h3>
-            <table style={stil.tablo}>
+            <StatGrid>
+              <Stat label="Toplam Ciro" value={tl(toplam.ciro)} />
+              <Stat label="Toplam Maliyet" value={tl(toplam.maliyet)} />
+              <Stat label="Net Satış Kârı" value={tl(toplam.kar)} tone={toplam.kar >= 0 ? "success" : "danger"} />
+              <Stat label="Kârlılık Oranı" value={`%${marj.toFixed(2)}`} tone="accent" />
+            </StatGrid>
+
+            <h3 className="card__title" style={{ fontSize: "0.95rem" }}>Ürün Bazlı Kârlılık Kırılımı</h3>
+            <TableWrap>
               <thead>
                 <tr>
-                  <th style={stil.tabloBaslik}>Ürün</th>
-                  <th style={stil.tabloBaslik}>Toplam Ciro</th>
-                  <th style={stil.tabloBaslik}>Maliyet</th>
-                  <th style={stil.tabloBaslik}>Kâr/Zarar</th>
-                  <th style={stil.tabloBaslik}>Kârlılık Oranı</th>
+                  <th>Ürün</th>
+                  <th className="num">Toplam Ciro</th>
+                  <th className="num">Maliyet</th>
+                  <th className="num">Kâr/Zarar</th>
+                  <th className="num">Kârlılık Oranı</th>
                 </tr>
               </thead>
               <tbody>
                 {rapor.length === 0 ? (
                   <tr>
-                    <td colSpan={5} style={{ ...stil.tabloHucre, textAlign: "center", color: "#a1a1aa" }}>
-                      Henüz kesinleşmiş satış faturası bulunmuyor.
-                    </td>
+                    <td colSpan={5} className="empty">Henüz kesinleşmiş satış faturası bulunmuyor.</td>
                   </tr>
                 ) : (
                   rapor.map((u) => (
                     <tr key={u.grup}>
-                      <td style={stil.tabloHucre}>{u.grup}</td>
-                      <td style={stil.tabloHucre}>{Number(u.ciro).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL</td>
-                      <td style={stil.tabloHucre}>{Number(u.maliyet).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL</td>
-                      <td style={{ ...stil.tabloHucre, color: Number(u.kar) >= 0 ? "#22c55e" : "#ef4444", fontWeight: "bold" }}>
-                        {Number(u.kar).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
-                      </td>
-                      <td style={{ ...stil.tabloHucre, color: "#7c3aed", fontWeight: "bold" }}>
+                      <td>{u.grup}</td>
+                      <td className="num">{tl(u.ciro)}</td>
+                      <td className="num muted">{tl(u.maliyet)}</td>
+                      <td className={`num money ${Number(u.kar) >= 0 ? "pos" : "neg"}`}>{tl(u.kar)}</td>
+                      <td className="num" style={{ color: "var(--accent-text)", fontWeight: 700 }}>
                         {u.marj === null ? "—" : `%${u.marj.toFixed(2)}`}
                       </td>
                     </tr>
                   ))
                 )}
               </tbody>
-            </table>
-          </section>
+            </TableWrap>
+          </Card>
         );
       })()}
     </div>

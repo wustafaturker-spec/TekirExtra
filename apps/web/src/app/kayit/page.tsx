@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { api, ApiHata } from "@/lib/api";
-import { stil } from "@/lib/stil";
+import { Alert, Button, Field, Input } from "@/components/ui";
 
 export default function KayitSayfasi() {
   const [hata, setHata] = useState("");
@@ -35,46 +35,29 @@ export default function KayitSayfasi() {
   }
 
   return (
-    <main style={stil.sayfa}>
-      <div style={stil.kart}>
-        <h1>🐈 TekirExtra — Firma Kaydı</h1>
+    <main className="auth-wrap">
+      <div className="auth-card card card--pad">
+        <div className="auth-brand"><span className="sidebar__brand-mark">🐈</span>Tekir<b>Extra</b></div>
+        <p className="auth-title">Firma kaydı oluşturun</p>
         {mesaj ? (
-          <p style={stil.basari}>{mesaj}</p>
+          <Alert tone="success">{mesaj}</Alert>
         ) : (
-          <form onSubmit={gonder}>
-            <label>
-              Firma unvanı
-              <input name="unvan" required style={stil.girdi} />
-            </label>
-            <label>
-              VKN / TCKN
-              <input name="vkn" required pattern="\d{10,11}" style={stil.girdi} />
-            </label>
-            <label>
-              Vergi dairesi
-              <input name="vergiDairesi" style={stil.girdi} />
-            </label>
-            <label>
-              Yönetici ad soyad
-              <input name="adSoyad" required style={stil.girdi} />
-            </label>
-            <label>
-              E-posta
-              <input name="eposta" type="email" required style={stil.girdi} />
-            </label>
-            <label>
-              Parola (en az 10 karakter, harf + rakam)
-              <input name="parola" type="password" required minLength={10} style={stil.girdi} />
-            </label>
-            {hata && <p style={stil.hata}>{hata}</p>}
-            <button disabled={gonderiliyor} style={stil.dugme}>
+          <form onSubmit={gonder} className="stack">
+            <Field label="Firma unvanı"><Input name="unvan" required /></Field>
+            <Field label="VKN / TCKN"><Input name="vkn" required pattern="\d{10,11}" /></Field>
+            <Field label="Vergi dairesi"><Input name="vergiDairesi" /></Field>
+            <Field label="Yönetici ad soyad"><Input name="adSoyad" required /></Field>
+            <Field label="E-posta"><Input name="eposta" type="email" required /></Field>
+            <Field label="Parola (en az 10 karakter, harf + rakam)">
+              <Input name="parola" type="password" required minLength={10} />
+            </Field>
+            <Alert tone="error">{hata}</Alert>
+            <Button variant="primary" block type="submit" disabled={gonderiliyor}>
               {gonderiliyor ? "Gönderiliyor…" : "Kaydol"}
-            </button>
+            </Button>
           </form>
         )}
-        <p style={{ marginTop: "1rem", fontSize: ".9rem" }}>
-          Hesabınız var mı? <a href="/giris">Giriş yapın</a>
-        </p>
+        <p className="auth-alt">Hesabınız var mı? <a href="/giris">Giriş yapın</a></p>
       </div>
     </main>
   );

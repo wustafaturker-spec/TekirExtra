@@ -1,8 +1,16 @@
 # TekirExtra — Yazılım İster Dokümanı (SRS)
 
-**Sürüm:** 0.13
-**Tarih:** 2026-07-14
-**Durum:** Tamamlama Paketi **tamamlandı** (2026-07-14): kalan tüm [Z] ve
+**Sürüm:** 0.14
+**Tarih:** 2026-07-15
+**Durum (2026-07-15):** **Fiyat Listeleri modülü tamamlandı** — STK-11'in eksik
+kalan *tanımlama* tarafı kapatıldı: `FiyatListesi`/kalem CRUD uçları
+(`/fiyat-listeleri`), yönetim ekranı (Stok altında) ve **CARI-10** için cari
+formuna fiyat listesi + varsayılan iskonto/vade seçicileri eklendi. Fatura
+önerisi (FTR-14, `tavsiye-fiyat`) artık listeleri uçtan uca kullanıyor: cariye
+atanan liste fiyatı, stok satış fiyatını override ediyor (doğrulandı). Ayrıca
+web UI baştan aşağı açık+turuncu tasarım sistemine geçirildi ve stok/cari kayıt
+formundaki iki hata (fiyat sayı→string; kod zorunlu) düzeltildi.
+**Durum (Tamamlama Paketi, 2026-07-14):** **tamamlandı**: kalan tüm [Z] ve
 [İ] maddeler kapatıldı — **AYR-07** kopyalama uçları (fatura, cari, stok,
 belge; izinliEylemler "kopyala" diyordu ama uç yoktu), **KLN-03** firma logosu
 (ekler altyapısıyla; tüm PDF'lere data URI ile gömülür), **FTR-14** fiyat

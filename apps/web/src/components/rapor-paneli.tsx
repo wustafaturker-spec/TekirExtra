@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
-import { stil } from "@/lib/stil";
+import { Alert, Button, Card, Input } from "@/components/ui";
 
 /**
  * Ortak rapor paneli (RPR-06): rapor kataloğunu API meta verisinden çizer —
@@ -62,6 +62,8 @@ const MODUL_ADLARI: Record<string, string> = {
   fatura: "Fatura",
   genel: "Genel",
 };
+
+const SAYISAL = ["para", "sayi", "yuzde"];
 
 function hucreBicimle(
   kolon: RaporKolon,
@@ -260,39 +262,16 @@ export function RaporPaneli({ modul }: { modul?: string }) {
 
     switch (f.tip) {
       case "tarih":
-        return (
-          <input
-            type="date"
-            value={String(deger)}
-            onChange={(e) => guncelle(e.target.value)}
-            style={{ ...stil.girdi, margin: 0 }}
-          />
-        );
+        return <input className="input" type="date" value={String(deger)} onChange={(e) => guncelle(e.target.value)} />;
       case "sayi":
-        return (
-          <input
-            type="number"
-            value={deger === "" ? "" : Number(deger)}
-            onChange={(e) => guncelle(e.target.value === "" ? "" : Number(e.target.value))}
-            style={{ ...stil.girdi, margin: 0 }}
-          />
-        );
+        return <input className="input" type="number" value={deger === "" ? "" : Number(deger)} onChange={(e) => guncelle(e.target.value === "" ? "" : Number(e.target.value))} />;
       case "onay":
-        return (
-          <input
-            type="checkbox"
-            checked={deger === true}
-            onChange={(e) => guncelle(e.target.checked)}
-            style={{ width: "1.1rem", height: "1.1rem", marginTop: "0.6rem" }}
-          />
-        );
+        return <input type="checkbox" checked={deger === true} onChange={(e) => guncelle(e.target.checked)} style={{ width: "1.1rem", height: "1.1rem", marginTop: "0.6rem" }} />;
       case "secim":
         return (
-          <select value={String(deger)} onChange={(e) => guncelle(e.target.value)} style={{ ...stil.girdi, margin: 0 }}>
+          <select className="select" value={String(deger)} onChange={(e) => guncelle(e.target.value)}>
             <option value="">Tümü</option>
-            {f.secenekler?.map((s) => (
-              <option key={s.deger} value={s.deger}>{s.ad}</option>
-            ))}
+            {f.secenekler?.map((s) => (<option key={s.deger} value={s.deger}>{s.ad}</option>))}
           </select>
         );
       case "cari":
@@ -300,124 +279,91 @@ export function RaporPaneli({ modul }: { modul?: string }) {
       case "etiket": {
         const kaynak = f.tip === "cari" ? cariler : f.tip === "stok" ? stoklar : etiketler;
         return (
-          <select value={String(deger)} onChange={(e) => guncelle(e.target.value)} style={{ ...stil.girdi, margin: 0 }}>
+          <select className="select" value={String(deger)} onChange={(e) => guncelle(e.target.value)}>
             <option value="">{f.zorunlu ? "Seçiniz..." : "Tümü"}</option>
-            {kaynak.map((k) => (
-              <option key={k.id} value={k.id}>
-                {k.unvan ?? k.ad ?? k.kod ?? k.id}
-              </option>
-            ))}
+            {kaynak.map((k) => (<option key={k.id} value={k.id}>{k.unvan ?? k.ad ?? k.kod ?? k.id}</option>))}
           </select>
         );
       }
       default:
-        return (
-          <input
-            type="text"
-            value={String(deger)}
-            onChange={(e) => guncelle(e.target.value)}
-            style={{ ...stil.girdi, margin: 0 }}
-          />
-        );
+        return <input className="input" type="text" value={String(deger)} onChange={(e) => guncelle(e.target.value)} />;
     }
   }
 
   return (
     <div>
-      {hata && <p style={stil.hata}>{hata}</p>}
+      <Alert tone="error">{hata}</Alert>
 
-      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1.5rem" }}>
+      <div className="row-tight" style={{ marginBottom: "1.5rem" }}>
         {raporlar.map((r) => (
-          <button
+          <Button
             key={r.kod}
+            variant={r.kod === secilenKod ? "primary" : "ghost"}
+            size="sm"
             onClick={() => setSecilenKod(r.kod)}
-            style={{
-              ...stil.dugmeMuted,
-              padding: "0.4rem 0.9rem",
-              fontSize: "0.85rem",
-              ...(r.kod === secilenKod
-                ? { background: "rgba(124, 58, 237, 0.2)", borderColor: "#7c3aed", color: "#fafaf9" }
-                : {}),
-            }}
           >
             {modul ? r.ad : `${MODUL_ADLARI[r.modul] ?? r.modul} · ${r.ad}`}
-          </button>
+          </Button>
         ))}
       </div>
 
       {secilen && (
-        <div style={{ ...stil.genisKart, marginBottom: "1.5rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem" }}>
+        <Card style={{ marginBottom: "1.5rem" }}>
+          <div className="between" style={{ alignItems: "flex-start" }}>
             <div>
-              <h3 style={{ margin: 0, fontSize: "1.05rem", fontWeight: "bold" }}>{secilen.ad}</h3>
-              {secilen.aciklama && (
-                <p style={{ color: "#a1a1aa", fontSize: "0.85rem", margin: "0.25rem 0 0" }}>{secilen.aciklama}</p>
-              )}
+              <h3 style={{ fontSize: "1.05rem", margin: 0 }}>{secilen.ad}</h3>
+              {secilen.aciklama && <p className="muted" style={{ fontSize: "0.85rem", margin: "0.25rem 0 0" }}>{secilen.aciklama}</p>}
             </div>
             {gorunumler.length > 0 && (
-              <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", alignItems: "flex-start" }}>
+              <div className="row-tight" style={{ justifyContent: "flex-end" }}>
                 {gorunumler.map((g) => (
-                  <span key={g.id} style={{ background: "#27272a", borderRadius: "999px", padding: "0.2rem 0.35rem 0.2rem 0.7rem", fontSize: "0.8rem", display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
-                    <button onClick={() => gorunumUygula(g)} title="Görünümü uygula" style={{ background: "none", border: "none", color: "#fafaf9", cursor: "pointer", padding: 0 }}>
+                  <span key={g.id} className="chip">
+                    <button onClick={() => gorunumUygula(g)} title="Görünümü uygula" style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, fontWeight: 600 }}>
                       {g.firmaGeneli ? "🏢" : "⭐"} {g.ad}
                     </button>
-                    <button onClick={() => gorunumSil(g.id)} title="Sil" style={{ background: "none", border: "none", color: "#a1a1aa", cursor: "pointer", padding: 0 }}>✕</button>
+                    <button onClick={() => gorunumSil(g.id)} title="Sil">✕</button>
                   </span>
                 ))}
               </div>
             )}
           </div>
 
-          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginTop: "1rem", alignItems: "flex-end" }}>
+          <div className="row" style={{ marginTop: "1rem", alignItems: "flex-end", gap: "1rem" }}>
             {secilen.filtreler.map((f) => (
-              <div key={f.alan} style={{ minWidth: f.tip === "onay" ? "auto" : "170px" }}>
-                <label style={{ fontSize: "0.8rem", color: "#a1a1aa", display: "block" }}>
-                  {f.ad}{f.zorunlu ? " *" : ""}
-                </label>
+              <div key={f.alan} style={{ minWidth: f.tip === "onay" ? "auto" : 170 }}>
+                <label className="field-label" style={{ display: "block", marginBottom: "0.3rem" }}>{f.ad}{f.zorunlu ? " *" : ""}</label>
                 {filtreGirdisi(f)}
               </div>
             ))}
             {secilen.gruplamalar.length > 0 && (
-              <div style={{ minWidth: "150px" }}>
-                <label style={{ fontSize: "0.8rem", color: "#a1a1aa", display: "block" }}>Kırılım</label>
-                <select value={gruplama} onChange={(e) => setGruplama(e.target.value)} style={{ ...stil.girdi, margin: 0 }}>
-                  {secilen.gruplamalar.map((g) => (
-                    <option key={g.deger} value={g.deger}>{g.ad}</option>
-                  ))}
+              <div style={{ minWidth: 150 }}>
+                <label className="field-label" style={{ display: "block", marginBottom: "0.3rem" }}>Kırılım</label>
+                <select className="select" value={gruplama} onChange={(e) => setGruplama(e.target.value)}>
+                  {secilen.gruplamalar.map((g) => (<option key={g.deger} value={g.deger}>{g.ad}</option>))}
                 </select>
               </div>
             )}
-            <button onClick={() => void calistir()} disabled={yukleniyor} style={{ ...stil.dugme, width: "auto", padding: "0.55rem 1.5rem" }}>
+            <Button variant="primary" onClick={() => void calistir()} disabled={yukleniyor}>
               {yukleniyor ? "Çalışıyor..." : "▶ Raporu Çalıştır"}
-            </button>
-            <button onClick={() => void excelIndir()} style={{ ...stil.dugmeMuted, padding: "0.55rem 1rem" }}>
-              📊 Excel
-            </button>
+            </Button>
+            <Button onClick={() => void excelIndir()}>📊 Excel</Button>
           </div>
 
-          <form onSubmit={gorunumKaydet} style={{ display: "flex", gap: "0.5rem", marginTop: "1rem", alignItems: "center", flexWrap: "wrap" }}>
-            <input
-              type="text"
-              value={gorunumAdi}
-              onChange={(e) => setGorunumAdi(e.target.value)}
-              placeholder="Bu filtre setini görünüm olarak kaydet..."
-              style={{ ...stil.girdi, margin: 0, maxWidth: "280px" }}
-            />
-            <label style={{ fontSize: "0.8rem", color: "#a1a1aa", display: "flex", alignItems: "center", gap: "0.35rem" }}>
+          <form onSubmit={gorunumKaydet} className="row-tight" style={{ marginTop: "1rem" }}>
+            <Input value={gorunumAdi} onChange={(e) => setGorunumAdi(e.target.value)} placeholder="Bu filtre setini görünüm olarak kaydet..." style={{ maxWidth: 280 }} />
+            <label className="field-label" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
               <input type="checkbox" checked={firmaGeneli} onChange={(e) => setFirmaGeneli(e.target.checked)} />
               Firma geneli
             </label>
-            <button type="submit" style={{ ...stil.dugmeMuted, padding: "0.4rem 0.9rem", fontSize: "0.85rem" }}>
-              💾 Kaydet
-            </button>
+            <Button type="submit" size="sm">💾 Kaydet</Button>
           </form>
-        </div>
+        </Card>
       )}
 
       {sonuc && (
-        <div style={stil.genisKart}>
-          <div style={{ overflowX: "auto" }}>
-            <table style={stil.tablo}>
+        <Card pad={false}>
+          <div className="table-wrap">
+            <table className="table">
               <thead>
                 <tr>
                   {sonuc.kolonlar.map((k) => (
@@ -425,12 +371,8 @@ export function RaporPaneli({ modul }: { modul?: string }) {
                       key={k.alan}
                       onClick={() => basligaTiklandi(k.alan)}
                       title="Sıralamak için tıklayın"
-                      style={{
-                        ...stil.tabloBaslik,
-                        cursor: "pointer",
-                        whiteSpace: "nowrap",
-                        textAlign: ["para", "sayi", "yuzde"].includes(k.tip) ? "right" : "left",
-                      }}
+                      className={SAYISAL.includes(k.tip) ? "num" : undefined}
+                      style={{ cursor: "pointer" }}
                     >
                       {k.baslik}
                       {siralama?.alan === k.alan ? (siralama.yon === "desc" ? " ▼" : " ▲") : ""}
@@ -441,22 +383,13 @@ export function RaporPaneli({ modul }: { modul?: string }) {
               <tbody>
                 {sonuc.satirlar.length === 0 ? (
                   <tr>
-                    <td colSpan={sonuc.kolonlar.length} style={{ ...stil.tabloHucre, textAlign: "center", color: "#a1a1aa" }}>
-                      Seçilen filtrelerle kayıt bulunamadı.
-                    </td>
+                    <td colSpan={sonuc.kolonlar.length} className="empty">Seçilen filtrelerle kayıt bulunamadı.</td>
                   </tr>
                 ) : (
                   sonuc.satirlar.map((satir, i) => (
                     <tr key={i}>
                       {sonuc.kolonlar.map((k) => (
-                        <td
-                          key={k.alan}
-                          style={{
-                            ...stil.tabloHucre,
-                            textAlign: ["para", "sayi", "yuzde"].includes(k.tip) ? "right" : "left",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
+                        <td key={k.alan} className={SAYISAL.includes(k.tip) ? "num" : undefined} style={{ whiteSpace: "nowrap" }}>
                           {hucreBicimle(k, satir[k.alan] ?? null)}
                         </td>
                       ))}
@@ -466,10 +399,8 @@ export function RaporPaneli({ modul }: { modul?: string }) {
               </tbody>
             </table>
           </div>
-          <p style={{ color: "#a1a1aa", fontSize: "0.8rem", margin: "0.75rem 0 0" }}>
-            {sonuc.satirlar.length} satır
-          </p>
-        </div>
+          <p className="subtle" style={{ fontSize: "0.8rem", margin: "0.75rem 1rem" }}>{sonuc.satirlar.length} satır</p>
+        </Card>
       )}
     </div>
   );

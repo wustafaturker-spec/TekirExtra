@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { api, ApiHata, tokenYaz } from "@/lib/api";
-import { stil } from "@/lib/stil";
+import { Alert, Button, Field, Input } from "@/components/ui";
 
 export default function GirisSayfasi() {
   const yonlendir = useRouter();
@@ -33,30 +33,20 @@ export default function GirisSayfasi() {
   }
 
   return (
-    <main style={stil.sayfa}>
-      <div style={stil.kart}>
-        <h1>🐈 TekirExtra — Giriş</h1>
-        <form onSubmit={gonder}>
-          <label>
-            E-posta
-            <input name="eposta" type="email" required style={stil.girdi} />
-          </label>
-          <label>
-            Parola
-            <input name="parola" type="password" required style={stil.girdi} />
-          </label>
+    <main className="auth-wrap">
+      <div className="auth-card card card--pad">
+        <div className="auth-brand"><span className="sidebar__brand-mark">🐈</span>Tekir<b>Extra</b></div>
+        <p className="auth-title">Hesabınıza giriş yapın</p>
+        <form onSubmit={gonder} className="stack">
+          <Field label="E-posta"><Input name="eposta" type="email" required /></Field>
+          <Field label="Parola"><Input name="parola" type="password" required /></Field>
           {totpGerekli && (
-            <label>
-              TOTP kodu
-              <input name="totpKodu" inputMode="numeric" pattern="\d{6}" style={stil.girdi} />
-            </label>
+            <Field label="TOTP kodu"><Input name="totpKodu" inputMode="numeric" pattern="\d{6}" /></Field>
           )}
-          {hata && <p style={stil.hata}>{hata}</p>}
-          <button style={stil.dugme}>Giriş yap</button>
+          <Alert tone="error">{hata}</Alert>
+          <Button variant="primary" block type="submit">Giriş yap</Button>
         </form>
-        <p style={{ marginTop: "1rem", fontSize: ".9rem" }}>
-          Hesabınız yok mu? <a href="/kayit">Firma kaydı oluşturun</a>
-        </p>
+        <p className="auth-alt">Hesabınız yok mu? <a href="/kayit">Firma kaydı oluşturun</a></p>
       </div>
     </main>
   );

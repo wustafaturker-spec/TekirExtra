@@ -3,7 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { api, ApiHata } from "@/lib/api";
-import { stil } from "@/lib/stil";
+import { Alert } from "@/components/ui";
 
 function DogrulaIcerik() {
   const parametreler = useSearchParams();
@@ -29,24 +29,25 @@ function DogrulaIcerik() {
   }, [parametreler]);
 
   return (
-    <div style={stil.kart}>
-      <h1>🐈 TekirExtra — E-posta Doğrulama</h1>
-      {durum === "bekliyor" && <p>Doğrulanıyor…</p>}
+    <div className="auth-card card card--pad">
+      <div className="auth-brand"><span className="sidebar__brand-mark">🐈</span>Tekir<b>Extra</b></div>
+      <p className="auth-title">E-posta doğrulama</p>
+      {durum === "bekliyor" && <p className="muted">Doğrulanıyor…</p>}
       {durum === "tamam" && (
         <>
-          <p style={stil.basari}>{mesaj}</p>
-          <a href="/giris">Girişe git</a>
+          <Alert tone="success">{mesaj}</Alert>
+          <p className="auth-alt"><a href="/giris">Girişe git</a></p>
         </>
       )}
-      {durum === "hata" && <p style={stil.hata}>{mesaj}</p>}
+      {durum === "hata" && <Alert tone="error">{mesaj}</Alert>}
     </div>
   );
 }
 
 export default function DogrulaSayfasi() {
   return (
-    <main style={stil.sayfa}>
-      <Suspense fallback={<p>Yükleniyor…</p>}>
+    <main className="auth-wrap">
+      <Suspense fallback={<p className="muted">Yükleniyor…</p>}>
         <DogrulaIcerik />
       </Suspense>
     </main>

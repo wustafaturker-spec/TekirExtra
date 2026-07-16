@@ -2,7 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
-import { stil } from "@/lib/stil";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Field,
+  Input,
+  PageHeader,
+  Select,
+  TableWrap,
+} from "@/components/ui";
 
 interface Kasa {
   id: string;
@@ -37,6 +47,9 @@ interface Hareket {
   bankaHesap?: { ad: string } | null;
   cari?: { unvan: string } | null;
 }
+
+const para = (deger: string | number, doviz: string): string =>
+  Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " " + doviz;
 
 export default function KasaBankaSayfasi() {
   const [kasalar, setKasalar] = useState<Kasa[]>([]);
@@ -80,15 +93,9 @@ export default function KasaBankaSayfasi() {
 
   const yukle = useCallback(async () => {
     try {
-      const kVeri = await api<Kasa[]>("/kasa-banka/kasalar");
-      setKasalar(kVeri);
-
-      const bVeri = await api<Banka[]>("/kasa-banka/bankalar");
-      setBankalar(bVeri);
-
-      const hVeri = await api<Hareket[]>("/kasa-banka/hareketler");
-      setHareketler(hVeri);
-
+      setKasalar(await api<Kasa[]>("/kasa-banka/kasalar"));
+      setBankalar(await api<Banka[]>("/kasa-banka/bankalar"));
+      setHareketler(await api<Hareket[]>("/kasa-banka/hareketler"));
       const cVeri = await api<{ kayitlar: Cari[] }>("/cari?adet=100");
       setCariler(cVeri.kayitlar);
     } catch (h) {
@@ -253,311 +260,239 @@ export default function KasaBankaSayfasi() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
-        <div>
-          <h1 style={{ fontSize: "2rem", fontWeight: "bold", margin: 0 }}>🏦 Kasa & Banka Yönetimi</h1>
-          <p style={{ color: "#a1a1aa", fontSize: "0.9rem", margin: "0.25rem 0 0" }}>
-            Nakit kasalarınızı, banka hesaplarınızı yönetin, fiş girişleri ve virman işlemlerini yapın.
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: "1rem" }}>
-          <button onClick={() => { setVirmanFormAcik(false); setKasaFormAcik(false); setBankaFormAcik(false); setHareketFormAcik(!hareketFormAcik); }} style={{ ...stil.dugme, width: "auto", padding: "0.5rem 1.25rem" }}>
-            {hareketFormAcik ? "Vazgeç" : "💵 Fiş Girişi (Gelir/Gider)"}
-          </button>
-          <button onClick={() => { setHareketFormAcik(false); setKasaFormAcik(false); setBankaFormAcik(false); setVirmanFormAcik(!virmanFormAcik); }} style={{ ...stil.dugme, width: "auto", padding: "0.5rem 1.25rem", background: "#7c3aed" }}>
-            {virmanFormAcik ? "Vazgeç" : "🔄 Virman (Para Transferi)"}
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Kasa & Banka Yönetimi"
+        subtitle="Nakit kasalarınızı, banka hesaplarınızı yönetin, fiş girişleri ve virman işlemlerini yapın."
+        actions={
+          <>
+            <Button variant="primary" onClick={() => { setVirmanFormAcik(false); setKasaFormAcik(false); setBankaFormAcik(false); setHareketFormAcik(!hareketFormAcik); }}>
+              {hareketFormAcik ? "Vazgeç" : "💵 Fiş Girişi"}
+            </Button>
+            <Button onClick={() => { setHareketFormAcik(false); setKasaFormAcik(false); setBankaFormAcik(false); setVirmanFormAcik(!virmanFormAcik); }}>
+              {virmanFormAcik ? "Vazgeç" : "🔄 Virman"}
+            </Button>
+          </>
+        }
+      />
 
-      {hata && <p style={stil.hata}>{hata}</p>}
-      {basari && <p style={stil.basari}>{basari}</p>}
+      <Alert tone="error">{hata}</Alert>
+      <Alert tone="success">{basari}</Alert>
 
       {/* ─── YENİ KASA HESABI FORMU ────────────────────────────────────────── */}
       {kasaFormAcik && (
-        <form onSubmit={kasaKaydet} style={{ ...stil.genisKart, marginBottom: "2rem", maxWidth: "500px" }}>
-          <h3 style={{ margin: "0 0 1.25rem", fontSize: "1.05rem", fontWeight: "bold" }}>Yeni Nakit Kasa Hesabı Aç</h3>
-          <label style={{ fontSize: "0.85rem", color: "#a1a1aa" }}>Kasa Adı</label>
-          <input type="text" value={kasaAd} onChange={(e) => setKasaAd(e.target.value)} style={stil.girdi} required placeholder="Örn. Merkez Kasa, TL Kasası" />
-          
-          <label style={{ fontSize: "0.85rem", color: "#a1a1aa" }}>Döviz Cinsi</label>
-          <select value={kasaDoviz} onChange={(e) => setKasaDoviz(e.target.value)} style={stil.girdi}>
-            <option value="TRY">TRY - Türk Lirası</option>
-            <option value="USD">USD - Amerikan Doları</option>
-            <option value="EUR">EUR - Euro</option>
-          </select>
-          <button type="submit" style={stil.dugme}>Kasa Oluştur</button>
-        </form>
+        <Card className="stack" style={{ marginBottom: "1.5rem", maxWidth: 500 }}>
+          <h3 style={{ fontSize: "1.05rem" }}>Yeni Nakit Kasa Hesabı Aç</h3>
+          <Field label="Kasa Adı"><Input value={kasaAd} onChange={(e) => setKasaAd(e.target.value)} required placeholder="Örn. Merkez Kasa, TL Kasası" /></Field>
+          <Field label="Döviz Cinsi">
+            <Select value={kasaDoviz} onChange={(e) => setKasaDoviz(e.target.value)}>
+              <option value="TRY">TRY - Türk Lirası</option>
+              <option value="USD">USD - Amerikan Doları</option>
+              <option value="EUR">EUR - Euro</option>
+            </Select>
+          </Field>
+          <div><Button variant="primary" onClick={kasaKaydet}>Kasa Oluştur</Button></div>
+        </Card>
       )}
 
       {/* ─── YENİ BANKA HESABI FORMU ────────────────────────────────────────── */}
       {bankaFormAcik && (
-        <form onSubmit={bankaKaydet} style={{ ...stil.genisKart, marginBottom: "2rem", maxWidth: "500px" }}>
-          <h3 style={{ margin: "0 0 1.25rem", fontSize: "1.05rem", fontWeight: "bold" }}>Yeni Banka Hesabı Tanımla</h3>
-          <label style={{ fontSize: "0.85rem", color: "#a1a1aa" }}>Hesap Adı</label>
-          <input type="text" value={bankaAd} onChange={(e) => setBankaAd(e.target.value)} style={stil.girdi} required placeholder="Örn. Garanti Ticari, Akbank USD" />
-
-          <label style={{ fontSize: "0.85rem", color: "#a1a1aa" }}>Banka İsmi</label>
-          <input type="text" value={bankaIsim} onChange={(e) => setBankaIsim(e.target.value)} style={stil.girdi} required placeholder="Örn. Garanti BBVA" />
-
-          <div style={{ display: "flex", gap: "1rem" }}>
-            <div style={{ flex: 1 }}>
-              <label style={{ fontSize: "0.85rem", color: "#a1a1aa" }}>Hesap No</label>
-              <input type="text" value={bankaHesapNo} onChange={(e) => setBankaHesapNo(e.target.value)} style={stil.girdi} placeholder="1234-56789" />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label style={{ fontSize: "0.85rem", color: "#a1a1aa" }}>Döviz Cinsi</label>
-              <select value={bankaDoviz} onChange={(e) => setBankaDoviz(e.target.value)} style={stil.girdi}>
-                <option value="TRY">TRY</option>
-                <option value="USD">USD</option>
-                <option value="EUR">EUR</option>
-              </select>
-            </div>
+        <Card className="stack" style={{ marginBottom: "1.5rem", maxWidth: 500 }}>
+          <h3 style={{ fontSize: "1.05rem" }}>Yeni Banka Hesabı Tanımla</h3>
+          <Field label="Hesap Adı"><Input value={bankaAd} onChange={(e) => setBankaAd(e.target.value)} required placeholder="Örn. Garanti Ticari, Akbank USD" /></Field>
+          <Field label="Banka İsmi"><Input value={bankaIsim} onChange={(e) => setBankaIsim(e.target.value)} required placeholder="Örn. Garanti BBVA" /></Field>
+          <div className="row">
+            <div style={{ flex: 1, minWidth: 160 }}><Field label="Hesap No"><Input value={bankaHesapNo} onChange={(e) => setBankaHesapNo(e.target.value)} placeholder="1234-56789" /></Field></div>
+            <div style={{ flex: 1, minWidth: 160 }}><Field label="Döviz Cinsi"><Select value={bankaDoviz} onChange={(e) => setBankaDoviz(e.target.value)}><option value="TRY">TRY</option><option value="USD">USD</option><option value="EUR">EUR</option></Select></Field></div>
           </div>
-
-          <label style={{ fontSize: "0.85rem", color: "#a1a1aa" }}>IBAN</label>
-          <input type="text" value={bankaIban} onChange={(e) => setBankaIban(e.target.value)} style={stil.girdi} placeholder="TR00..." />
-
-          <button type="submit" style={stil.dugme}>Banka Hesabı Kaydet</button>
-        </form>
+          <Field label="IBAN"><Input value={bankaIban} onChange={(e) => setBankaIban(e.target.value)} placeholder="TR00..." /></Field>
+          <div><Button variant="primary" onClick={bankaKaydet}>Banka Hesabı Kaydet</Button></div>
+        </Card>
       )}
 
       {/* ─── TAHSİLAT / TEDİYE (FİŞ) FORMU ──────────────────────────────────── */}
       {hareketFormAcik && (
-        <form onSubmit={hareketKaydet} style={{ ...stil.genisKart, marginBottom: "2rem", maxWidth: "600px" }}>
-          <h3 style={{ margin: "0 0 1.25rem", fontSize: "1.1rem", fontWeight: "bold" }}>Tahsilat / Ödeme Fişi Düzenle</h3>
-          
-          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-            <div style={{ flex: 1, minWidth: "200px" }}>
-              <label style={{ fontSize: "0.85rem", color: "#a1a1aa" }}>Kasa / Banka Seçimi</label>
-              <select value={hareketHesapSecimi} onChange={(e) => setHareketHesapSecimi(e.target.value)} style={stil.girdi} required>
-                <option value="">-- Hesap Seçiniz --</option>
-                <optgroup label="💵 Nakit Kasalar">
-                  {kasalar.map((k) => (
-                    <option key={k.id} value={`kasa:${k.id}`}>{k.ad} ({k.dovizCinsi}) - Bakiye: {Number(k.bakiye).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {k.dovizCinsi}</option>
-                  ))}
-                </optgroup>
-                <optgroup label="🏦 Banka Hesapları">
-                  {bankalar.map((b) => (
-                    <option key={b.id} value={`banka:${b.id}`}>{b.ad} - {b.bankaAdi} ({b.dovizCinsi}) - Bakiye: {Number(b.bakiye).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {b.dovizCinsi}</option>
-                  ))}
-                </optgroup>
-              </select>
+        <Card className="stack" style={{ marginBottom: "1.5rem", maxWidth: 620 }}>
+          <h3 style={{ fontSize: "1.05rem" }}>Tahsilat / Ödeme Fişi Düzenle</h3>
+          <div className="row">
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <Field label="Kasa / Banka Seçimi">
+                <Select value={hareketHesapSecimi} onChange={(e) => setHareketHesapSecimi(e.target.value)} required>
+                  <option value="">-- Hesap Seçiniz --</option>
+                  <optgroup label="💵 Nakit Kasalar">
+                    {kasalar.map((k) => (<option key={k.id} value={`kasa:${k.id}`}>{k.ad} ({k.dovizCinsi}) - Bakiye: {para(k.bakiye, k.dovizCinsi)}</option>))}
+                  </optgroup>
+                  <optgroup label="🏦 Banka Hesapları">
+                    {bankalar.map((b) => (<option key={b.id} value={`banka:${b.id}`}>{b.ad} - {b.bankaAdi} ({b.dovizCinsi}) - Bakiye: {para(b.bakiye, b.dovizCinsi)}</option>))}
+                  </optgroup>
+                </Select>
+              </Field>
             </div>
-            <div style={{ flex: 1, minWidth: "200px" }}>
-              <label style={{ fontSize: "0.85rem", color: "#a1a1aa" }}>İşlem Tipi</label>
-              <select value={hareketTip} onChange={(e) => setHareketTip(e.target.value)} style={stil.girdi}>
-                <option value="tahsilat">Tahsilat (Para Girişi)</option>
-                <option value="tediye">Tediye / Ödeme (Para Çıkışı)</option>
-              </select>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <Field label="İşlem Tipi">
+                <Select value={hareketTip} onChange={(e) => setHareketTip(e.target.value)}>
+                  <option value="tahsilat">Tahsilat (Para Girişi)</option>
+                  <option value="tediye">Tediye / Ödeme (Para Çıkışı)</option>
+                </Select>
+              </Field>
             </div>
           </div>
-
-          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-            <div style={{ flex: 1, minWidth: "200px" }}>
-              <label style={{ fontSize: "0.85rem", color: "#a1a1aa" }}>Cari Hesap İlişkisi</label>
-              <select value={hareketCariId} onChange={(e) => setHareketCariId(e.target.value)} style={stil.girdi}>
-                <option value="">-- Cari Seçilmeyebilir (Genel Fiş) --</option>
-                {cariler.map((c) => (
-                  <option key={c.id} value={c.id}>{c.unvan}</option>
-                ))}
-              </select>
+          <div className="row">
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <Field label="Cari Hesap İlişkisi">
+                <Select value={hareketCariId} onChange={(e) => setHareketCariId(e.target.value)}>
+                  <option value="">-- Cari Seçilmeyebilir (Genel Fiş) --</option>
+                  {cariler.map((c) => (<option key={c.id} value={c.id}>{c.unvan}</option>))}
+                </Select>
+              </Field>
             </div>
-            <div style={{ flex: 1, minWidth: "200px" }}>
-              <label style={{ fontSize: "0.85rem", color: "#a1a1aa" }}>Tutar</label>
-              <input type="number" step="0.01" min="0.01" value={hareketTutar} onChange={(e) => setHareketTutar(e.target.value)} style={stil.girdi} required placeholder="0.00" />
-            </div>
-            <div style={{ flex: 1, minWidth: "200px" }}>
-              <label style={{ fontSize: "0.85rem", color: "#a1a1aa" }}>Tarih</label>
-              <input type="date" value={hareketTarih} onChange={(e) => setHareketTarih(e.target.value)} style={stil.girdi} required />
-            </div>
+            <div style={{ flex: 1, minWidth: 200 }}><Field label="Tutar"><Input type="number" step="0.01" min="0.01" value={hareketTutar} onChange={(e) => setHareketTutar(e.target.value)} required placeholder="0.00" /></Field></div>
+            <div style={{ flex: 1, minWidth: 200 }}><Field label="Tarih"><Input type="date" value={hareketTarih} onChange={(e) => setHareketTarih(e.target.value)} required /></Field></div>
           </div>
-
-          <label style={{ fontSize: "0.85rem", color: "#a1a1aa" }}>Açıklama</label>
-          <input type="text" value={hareketAciklama} onChange={(e) => setHareketAciklama(e.target.value)} style={stil.girdi} placeholder="Örn. Tahsilat makbuzu 123 veya Ofis gideri" />
-
-          <button type="submit" style={stil.dugme}>Fişi Kaydet</button>
-        </form>
+          <Field label="Açıklama"><Input value={hareketAciklama} onChange={(e) => setHareketAciklama(e.target.value)} placeholder="Örn. Tahsilat makbuzu 123 veya Ofis gideri" /></Field>
+          <div><Button variant="primary" onClick={hareketKaydet}>Fişi Kaydet</Button></div>
+        </Card>
       )}
 
       {/* ─── VİRMAN (TRANSFER) FORMU ────────────────────────────────────────── */}
       {virmanFormAcik && (
-        <form onSubmit={virmanKaydet} style={{ ...stil.genisKart, marginBottom: "2rem", maxWidth: "600px" }}>
-          <h3 style={{ margin: "0 0 1.25rem", fontSize: "1.1rem", fontWeight: "bold" }}>Hesaplar Arası Virman (Para Transferi)</h3>
-          
-          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-            <div style={{ flex: 1, minWidth: "200px" }}>
-              <label style={{ fontSize: "0.85rem", color: "#a1a1aa" }}>Kaynak Hesap (Çıkış yapılacak)</label>
-              <select value={virmanKaynakSecimi} onChange={(e) => setVirmanKaynakSecimi(e.target.value)} style={stil.girdi} required>
-                <option value="">-- Çıkış Hesabı --</option>
-                <optgroup label="💵 Nakit Kasalar">
-                  {kasalar.map((k) => (
-                    <option key={k.id} value={`kasa:${k.id}`}>{k.ad} ({k.dovizCinsi})</option>
-                  ))}
-                </optgroup>
-                <optgroup label="🏦 Banka Hesapları">
-                  {bankalar.map((b) => (
-                    <option key={b.id} value={`banka:${b.id}`}>{b.ad} - {b.bankaAdi} ({b.dovizCinsi})</option>
-                  ))}
-                </optgroup>
-              </select>
+        <Card className="stack" style={{ marginBottom: "1.5rem", maxWidth: 620 }}>
+          <h3 style={{ fontSize: "1.05rem" }}>Hesaplar Arası Virman (Para Transferi)</h3>
+          <div className="row">
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <Field label="Kaynak Hesap (Çıkış)">
+                <Select value={virmanKaynakSecimi} onChange={(e) => setVirmanKaynakSecimi(e.target.value)} required>
+                  <option value="">-- Çıkış Hesabı --</option>
+                  <optgroup label="💵 Nakit Kasalar">
+                    {kasalar.map((k) => (<option key={k.id} value={`kasa:${k.id}`}>{k.ad} ({k.dovizCinsi})</option>))}
+                  </optgroup>
+                  <optgroup label="🏦 Banka Hesapları">
+                    {bankalar.map((b) => (<option key={b.id} value={`banka:${b.id}`}>{b.ad} - {b.bankaAdi} ({b.dovizCinsi})</option>))}
+                  </optgroup>
+                </Select>
+              </Field>
             </div>
-            <div style={{ flex: 1, minWidth: "200px" }}>
-              <label style={{ fontSize: "0.85rem", color: "#a1a1aa" }}>Hedef Hesap (Giriş yapılacak)</label>
-              <select value={virmanHedefSecimi} onChange={(e) => setVirmanHedefSecimi(e.target.value)} style={stil.girdi} required>
-                <option value="">-- Giriş Hesabı --</option>
-                <optgroup label="💵 Nakit Kasalar">
-                  {kasalar.map((k) => (
-                    <option key={k.id} value={`kasa:${k.id}`}>{k.ad} ({k.dovizCinsi})</option>
-                  ))}
-                </optgroup>
-                <optgroup label="🏦 Banka Hesapları">
-                  {bankalar.map((b) => (
-                    <option key={b.id} value={`banka:${b.id}`}>{b.ad} - {b.bankaAdi} ({b.dovizCinsi})</option>
-                  ))}
-                </optgroup>
-              </select>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <Field label="Hedef Hesap (Giriş)">
+                <Select value={virmanHedefSecimi} onChange={(e) => setVirmanHedefSecimi(e.target.value)} required>
+                  <option value="">-- Giriş Hesabı --</option>
+                  <optgroup label="💵 Nakit Kasalar">
+                    {kasalar.map((k) => (<option key={k.id} value={`kasa:${k.id}`}>{k.ad} ({k.dovizCinsi})</option>))}
+                  </optgroup>
+                  <optgroup label="🏦 Banka Hesapları">
+                    {bankalar.map((b) => (<option key={b.id} value={`banka:${b.id}`}>{b.ad} - {b.bankaAdi} ({b.dovizCinsi})</option>))}
+                  </optgroup>
+                </Select>
+              </Field>
             </div>
           </div>
-
-          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-            <div style={{ flex: 1, minWidth: "200px" }}>
-              <label style={{ fontSize: "0.85rem", color: "#a1a1aa" }}>Transfer Tutarı</label>
-              <input type="number" step="0.01" min="0.01" value={virmanTutar} onChange={(e) => setVirmanTutar(e.target.value)} style={stil.girdi} required placeholder="0.00" />
-            </div>
-            <div style={{ flex: 1, minWidth: "200px" }}>
-              <label style={{ fontSize: "0.85rem", color: "#a1a1aa" }}>Tarih</label>
-              <input type="date" value={virmanTarih} onChange={(e) => setVirmanTarih(e.target.value)} style={stil.girdi} required />
-            </div>
+          <div className="row">
+            <div style={{ flex: 1, minWidth: 200 }}><Field label="Transfer Tutarı"><Input type="number" step="0.01" min="0.01" value={virmanTutar} onChange={(e) => setVirmanTutar(e.target.value)} required placeholder="0.00" /></Field></div>
+            <div style={{ flex: 1, minWidth: 200 }}><Field label="Tarih"><Input type="date" value={virmanTarih} onChange={(e) => setVirmanTarih(e.target.value)} required /></Field></div>
           </div>
-
-          <label style={{ fontSize: "0.85rem", color: "#a1a1aa" }}>Açıklama</label>
-          <input type="text" value={virmanAciklama} onChange={(e) => setVirmanAciklama(e.target.value)} style={stil.girdi} placeholder="Örn. Bankadan kasaya nakit çekim" />
-
-          <button type="submit" style={{ ...stil.dugme, background: "#7c3aed" }}>Virman İşlemini Gerçekleştir</button>
-        </form>
+          <Field label="Açıklama"><Input value={virmanAciklama} onChange={(e) => setVirmanAciklama(e.target.value)} placeholder="Örn. Bankadan kasaya nakit çekim" /></Field>
+          <div><Button variant="primary" onClick={virmanKaydet}>Virman İşlemini Gerçekleştir</Button></div>
+        </Card>
       )}
 
       {/* ─── HESAP BAKİYELERİ GRİDİ ─────────────────────────────────────────── */}
-      <section style={{ marginBottom: "2.5rem" }}>
-        <h2 style={{ fontSize: "1.2rem", fontWeight: "600", marginBottom: "1rem", color: "#a1a1aa" }}>💼 Hesap Bakiyeleri</h2>
-        <div style={stil.grid}>
-          <div style={{ ...stil.genisKart, flex: 1, minWidth: "300px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <h3 style={{ margin: 0, fontSize: "1.1rem" }}>💵 Nakit Kasalar</h3>
-              <button onClick={() => { setBankaFormAcik(false); setKasaFormAcik(!kasaFormAcik); }} style={stil.dugmeMuted}>+ Kasa Ekle</button>
+      <section style={{ marginBottom: "2rem" }}>
+        <div className="row">
+          <Card className="grow" style={{ flex: 1, minWidth: 300 }}>
+            <div className="between" style={{ marginBottom: "1rem" }}>
+              <h3 style={{ fontSize: "1.05rem", margin: 0 }}>💵 Nakit Kasalar</h3>
+              <Button size="sm" onClick={() => { setBankaFormAcik(false); setKasaFormAcik(!kasaFormAcik); }}>+ Kasa Ekle</Button>
             </div>
-            <table style={stil.tablo}>
+            <TableWrap>
               <thead>
-                <tr>
-                  <th style={stil.tabloBaslik}>Kasa Adı</th>
-                  <th style={{ ...stil.tabloBaslik, textAlign: "right" }}>Mevcut Bakiye</th>
-                </tr>
+                <tr><th>Kasa Adı</th><th className="num">Mevcut Bakiye</th></tr>
               </thead>
               <tbody>
                 {kasalar.length === 0 ? (
-                  <tr>
-                    <td colSpan={2} style={{ ...stil.tabloHucre, textAlign: "center", color: "#a1a1aa" }}>Nakit kasa hesabı bulunmuyor.</td>
-                  </tr>
+                  <tr><td colSpan={2} className="empty">Nakit kasa hesabı bulunmuyor.</td></tr>
                 ) : (
                   kasalar.map((k) => (
                     <tr key={k.id}>
-                      <td style={{ ...stil.tabloHucre, fontWeight: "bold" }}>{k.ad}</td>
-                      <td style={{ ...stil.tabloHucre, textAlign: "right", color: "#22c55e", fontWeight: "bold" }}>
-                        {Number(k.bakiye).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {k.dovizCinsi}
-                      </td>
+                      <td style={{ fontWeight: 600 }}>{k.ad}</td>
+                      <td className="num money pos">{para(k.bakiye, k.dovizCinsi)}</td>
                     </tr>
                   ))
                 )}
               </tbody>
-            </table>
-          </div>
+            </TableWrap>
+          </Card>
 
-          <div style={{ ...stil.genisKart, flex: 1, minWidth: "300px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <h3 style={{ margin: 0, fontSize: "1.1rem" }}>🏦 Banka Hesapları</h3>
-              <button onClick={() => { setKasaFormAcik(false); setBankaFormAcik(!bankaFormAcik); }} style={stil.dugmeMuted}>+ Banka Ekle</button>
+          <Card className="grow" style={{ flex: 1, minWidth: 300 }}>
+            <div className="between" style={{ marginBottom: "1rem" }}>
+              <h3 style={{ fontSize: "1.05rem", margin: 0 }}>🏦 Banka Hesapları</h3>
+              <Button size="sm" onClick={() => { setKasaFormAcik(false); setBankaFormAcik(!bankaFormAcik); }}>+ Banka Ekle</Button>
             </div>
-            <table style={stil.tablo}>
+            <TableWrap>
               <thead>
-                <tr>
-                  <th style={stil.tabloBaslik}>Hesap / Banka</th>
-                  <th style={stil.tabloBaslik}>IBAN</th>
-                  <th style={{ ...stil.tabloBaslik, textAlign: "right" }}>Mevcut Bakiye</th>
-                </tr>
+                <tr><th>Hesap / Banka</th><th>IBAN</th><th className="num">Mevcut Bakiye</th></tr>
               </thead>
               <tbody>
                 {bankalar.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} style={{ ...stil.tabloHucre, textAlign: "center", color: "#a1a1aa" }}>Banka hesabı bulunmuyor.</td>
-                  </tr>
+                  <tr><td colSpan={3} className="empty">Banka hesabı bulunmuyor.</td></tr>
                 ) : (
                   bankalar.map((b) => (
                     <tr key={b.id}>
-                      <td style={stil.tabloHucre}>
-                        <span style={{ fontWeight: "bold", display: "block" }}>{b.ad}</span>
-                        <span style={{ fontSize: "0.8rem", color: "#a1a1aa" }}>{b.bankaAdi} {b.hesapNo ? `· No: ${b.hesapNo}` : ""}</span>
+                      <td>
+                        <div className="cell-entity__name">{b.ad}</div>
+                        <div className="cell-entity__meta">{b.bankaAdi}{b.hesapNo ? ` · No: ${b.hesapNo}` : ""}</div>
                       </td>
-                      <td style={stil.tabloHucre}>{b.iban || "-"}</td>
-                      <td style={{ ...stil.tabloHucre, textAlign: "right", color: "#22c55e", fontWeight: "bold" }}>
-                        {Number(b.bakiye).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {b.dovizCinsi}
-                      </td>
+                      <td className="mono">{b.iban || "—"}</td>
+                      <td className="num money pos">{para(b.bakiye, b.dovizCinsi)}</td>
                     </tr>
                   ))
                 )}
               </tbody>
-            </table>
-          </div>
+            </TableWrap>
+          </Card>
         </div>
       </section>
 
       {/* ─── SON HAREKETLER ─────────────────────────────────────────────────── */}
-      <section style={stil.genisKart}>
-        <h2 style={{ fontSize: "1.1rem", fontWeight: "600", marginBottom: "1rem" }}>🔄 Son Kasa & Banka Fişleri</h2>
-        <table style={stil.tablo}>
+      <Card>
+        <h2 className="card__title" style={{ fontSize: "1.05rem" }}>🔄 Son Kasa & Banka Fişleri</h2>
+        <TableWrap>
           <thead>
             <tr>
-              <th style={stil.tabloBaslik}>Tarih</th>
-              <th style={stil.tabloBaslik}>Hesap</th>
-              <th style={stil.tabloBaslik}>İşlem Tipi</th>
-              <th style={stil.tabloBaslik}>Cari Muhatap</th>
-              <th style={stil.tabloBaslik}>Açıklama</th>
-              <th style={{ ...stil.tabloBaslik, textAlign: "right" }}>Tutar</th>
+              <th>Tarih</th>
+              <th>Hesap</th>
+              <th>İşlem Tipi</th>
+              <th>Cari Muhatap</th>
+              <th>Açıklama</th>
+              <th className="num">Tutar</th>
             </tr>
           </thead>
           <tbody>
             {hareketler.length === 0 ? (
-              <tr>
-                <td colSpan={6} style={{ ...stil.tabloHucre, textAlign: "center", color: "#a1a1aa" }}>Henüz bir kasa/banka hareketi girilmemiş.</td>
-              </tr>
+              <tr><td colSpan={6} className="empty">Henüz bir kasa/banka hareketi girilmemiş.</td></tr>
             ) : (
               hareketler.map((h) => {
-                const hesapAd = h.kasa?.ad ?? h.bankaHesap?.ad ?? "-";
+                const hesapAd = h.kasa?.ad ?? h.bankaHesap?.ad ?? "—";
                 const isTahsilat = h.tip === "tahsilat";
-
                 return (
                   <tr key={h.id}>
-                    <td style={stil.tabloHucre}>{h.tarih}</td>
-                    <td style={{ ...stil.tabloHucre, fontWeight: "500" }}>{hesapAd}</td>
-                    <td style={stil.tabloHucre}>
-                      {isTahsilat ? (
-                        <span style={{ color: "#22c55e", fontWeight: "bold" }}>📥 Gelir / Tahsilat</span>
-                      ) : (
-                        <span style={{ color: "#ef4444", fontWeight: "bold" }}>📤 Gider / Tediye</span>
-                      )}
+                    <td>{h.tarih}</td>
+                    <td style={{ fontWeight: 500 }}>{hesapAd}</td>
+                    <td>
+                      {isTahsilat
+                        ? <Badge variant="success">📥 Tahsilat</Badge>
+                        : <Badge variant="danger">📤 Tediye</Badge>}
                     </td>
-                    <td style={stil.tabloHucre}>{h.cari?.unvan ?? "(Cari Yok)"}</td>
-                    <td style={stil.tabloHucre}>{h.aciklama || "-"}</td>
-                    <td style={{ ...stil.tabloHucre, textAlign: "right", color: isTahsilat ? "#22c55e" : "#ef4444", fontWeight: "bold" }}>
-                      {isTahsilat ? "+" : "-"}{Number(h.tutar).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {h.dovizCinsi}
+                    <td>{h.cari?.unvan ?? <span className="subtle">(Cari Yok)</span>}</td>
+                    <td>{h.aciklama || "—"}</td>
+                    <td className={`num money ${isTahsilat ? "pos" : "neg"}`}>
+                      {isTahsilat ? "+" : "-"}{para(h.tutar, h.dovizCinsi)}
                     </td>
                   </tr>
                 );
               })
             )}
           </tbody>
-        </table>
-      </section>
+        </TableWrap>
+      </Card>
     </div>
   );
 }

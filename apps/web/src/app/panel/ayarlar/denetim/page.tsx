@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiHata } from "@/lib/api";
-import { stil } from "@/lib/stil";
+import { Alert, Button, Card, Field, PageHeader, Select, TableWrap } from "@/components/ui";
 
 interface DenetimKullanicisi {
   id: string;
@@ -19,7 +19,7 @@ interface DenetimKaydi {
   kullanici: DenetimKullanicisi | null;
 }
 
-interface DenetimSayfasi {
+interface DenetimSayfasiVeri {
   kayitlar: DenetimKaydi[];
   sonrakiImlec: string | null;
 }
@@ -52,7 +52,7 @@ export default function DenetimIziSayfasi() {
     setYukleniyor(true);
     setHata("");
     try {
-      const veri = await api<DenetimSayfasi>(sorgu());
+      const veri = await api<DenetimSayfasiVeri>(sorgu());
       setKayitlar(veri.kayitlar);
       setSonrakiImlec(veri.sonrakiImlec);
     } catch (e) {
@@ -76,7 +76,7 @@ export default function DenetimIziSayfasi() {
     if (!sonrakiImlec) return;
     setYukleniyor(true);
     try {
-      const veri = await api<DenetimSayfasi>(sorgu(sonrakiImlec));
+      const veri = await api<DenetimSayfasiVeri>(sorgu(sonrakiImlec));
       setKayitlar((mevcut) => [...mevcut, ...veri.kayitlar]);
       setSonrakiImlec(veri.sonrakiImlec);
     } catch (e) {
@@ -87,84 +87,70 @@ export default function DenetimIziSayfasi() {
   }
 
   return (
-    <div style={stil.genisKart}>
-      <h1 style={{ marginBottom: ".25rem" }}>🛡️ Denetim İzi</h1>
-      <p style={{ color: "#6b7280", marginBottom: "1rem" }}>
-        Kritik işlemlerin kim tarafından, ne zaman yapıldığını gösterir (KLN-04). Kayıtlar
-        salt-okunurdur; silinemez veya değiştirilemez.
-      </p>
+    <div>
+      <PageHeader
+        title="🛡️ Denetim İzi"
+        subtitle="Kritik işlemlerin kim tarafından, ne zaman yapıldığını gösterir (KLN-04). Kayıtlar salt-okunurdur; silinemez veya değiştirilemez."
+      />
 
-      <div style={{ display: "flex", gap: ".75rem", flexWrap: "wrap", alignItems: "flex-end" }}>
-        <label style={{ display: "flex", flexDirection: "column", fontSize: ".85rem" }}>
-          Varlık
-          <select value={varlik} onChange={(e) => setVarlik(e.target.value)} style={stil.girdi}>
-            <option value="">Tümü</option>
-            {varliklar.map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label style={{ display: "flex", flexDirection: "column", fontSize: ".85rem" }}>
-          Başlangıç
-          <input
-            type="date"
-            value={baslangic}
-            onChange={(e) => setBaslangic(e.target.value)}
-            style={stil.girdi}
-          />
-        </label>
-        <label style={{ display: "flex", flexDirection: "column", fontSize: ".85rem" }}>
-          Bitiş
-          <input
-            type="date"
-            value={bitis}
-            onChange={(e) => setBitis(e.target.value)}
-            style={stil.girdi}
-          />
-        </label>
-      </div>
+      <Card className="stack">
+        <div className="row" style={{ alignItems: "flex-end" }}>
+          <div style={{ minWidth: 180 }}>
+            <Field label="Varlık">
+              <Select value={varlik} onChange={(e) => setVarlik(e.target.value)}>
+                <option value="">Tümü</option>
+                {varliklar.map((v) => (<option key={v} value={v}>{v}</option>))}
+              </Select>
+            </Field>
+          </div>
+          <div style={{ minWidth: 160 }}>
+            <Field label="Başlangıç">
+              <input className="input" type="date" value={baslangic} onChange={(e) => setBaslangic(e.target.value)} />
+            </Field>
+          </div>
+          <div style={{ minWidth: 160 }}>
+            <Field label="Bitiş">
+              <input className="input" type="date" value={bitis} onChange={(e) => setBitis(e.target.value)} />
+            </Field>
+          </div>
+        </div>
 
-      {hata && <p style={stil.hata}>{hata}</p>}
+        <Alert tone="error">{hata}</Alert>
 
-      <table style={stil.tablo}>
-        <thead>
-          <tr>
-            <th style={stil.tabloBaslik}>Zaman</th>
-            <th style={stil.tabloBaslik}>Kullanıcı</th>
-            <th style={stil.tabloBaslik}>Varlık</th>
-            <th style={stil.tabloBaslik}>İşlem</th>
-            <th style={stil.tabloBaslik}>Kayıt</th>
-          </tr>
-        </thead>
-        <tbody>
-          {kayitlar.map((k) => (
-            <tr key={k.id}>
-              <td style={stil.tabloHucre}>{new Date(k.zaman).toLocaleString("tr-TR")}</td>
-              <td style={stil.tabloHucre}>{k.kullanici?.adSoyad ?? "—"}</td>
-              <td style={stil.tabloHucre}>{k.varlik}</td>
-              <td style={stil.tabloHucre}>{k.islem}</td>
-              <td style={{ ...stil.tabloHucre, color: "#6b7280", fontSize: ".8rem" }}>
-                {k.varlikId ?? "—"}
-              </td>
-            </tr>
-          ))}
-          {kayitlar.length === 0 && !yukleniyor && (
+        <TableWrap>
+          <thead>
             <tr>
-              <td style={{ ...stil.tabloHucre, textAlign: "center" }} colSpan={5}>
-                Kayıt bulunamadı
-              </td>
+              <th>Zaman</th>
+              <th>Kullanıcı</th>
+              <th>Varlık</th>
+              <th>İşlem</th>
+              <th>Kayıt</th>
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {kayitlar.map((k) => (
+              <tr key={k.id}>
+                <td>{new Date(k.zaman).toLocaleString("tr-TR")}</td>
+                <td>{k.kullanici?.adSoyad ?? "—"}</td>
+                <td>{k.varlik}</td>
+                <td>{k.islem}</td>
+                <td className="subtle mono" style={{ fontSize: "0.8rem" }}>{k.varlikId ?? "—"}</td>
+              </tr>
+            ))}
+            {kayitlar.length === 0 && !yukleniyor && (
+              <tr><td className="empty" colSpan={5}>Kayıt bulunamadı</td></tr>
+            )}
+          </tbody>
+        </TableWrap>
 
-      {sonrakiImlec && (
-        <button type="button" onClick={dahaGetir} disabled={yukleniyor} style={stil.dugmeMuted}>
-          {yukleniyor ? "Yükleniyor…" : "Daha fazla getir"}
-        </button>
-      )}
+        {sonrakiImlec && (
+          <div>
+            <Button type="button" onClick={dahaGetir} disabled={yukleniyor}>
+              {yukleniyor ? "Yükleniyor…" : "Daha fazla getir"}
+            </Button>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

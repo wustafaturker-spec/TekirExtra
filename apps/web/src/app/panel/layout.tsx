@@ -2,12 +2,77 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { api, tokenYaz } from "@/lib/api";
-import { stil } from "@/lib/stil";
+import { useEffect, useState } from "react";
+import { api, tokenAl, tokenYaz } from "@/lib/api";
+
+const ROL_ADI: Record<string, string> = {
+  yonetici: "Yönetici",
+  muhasebe: "Muhasebe",
+  satis: "Satış",
+  salt_okunur: "Salt Okunur",
+};
+
+interface MenuOge {
+  href: string;
+  ikon: string;
+  baslik: string;
+  eslesme?: "tam" | "onek";
+}
+interface MenuGrup {
+  baslik: string;
+  ogeler: MenuOge[];
+}
+
+const MENU: MenuGrup[] = [
+  {
+    baslik: "Genel",
+    ogeler: [{ href: "/panel", ikon: "📊", baslik: "Finansal Özet", eslesme: "tam" }],
+  },
+  {
+    baslik: "Finansal İşlemler",
+    ogeler: [
+      { href: "/panel/cari", ikon: "👥", baslik: "Cari Hesaplar" },
+      { href: "/panel/belgeler", ikon: "🧾", baslik: "Belgeler", eslesme: "tam" },
+      { href: "/panel/fatura", ikon: "📄", baslik: "Faturalar" },
+      { href: "/panel/kasa-banka", ikon: "🏦", baslik: "Kasa & Banka" },
+    ],
+  },
+  {
+    baslik: "Ürün & Stok",
+    ogeler: [
+      { href: "/panel/stok", ikon: "📦", baslik: "Stok Kartları", eslesme: "tam" },
+      { href: "/panel/stok/fiyat-listeleri", ikon: "🏷️", baslik: "Fiyat Listeleri", eslesme: "tam" },
+    ],
+  },
+  {
+    baslik: "Raporlar",
+    ogeler: [{ href: "/panel/raporlar", ikon: "📈", baslik: "Raporlar & Analiz" }],
+  },
+  {
+    baslik: "Ayarlar",
+    ogeler: [
+      { href: "/panel/ayarlar/firma", ikon: "🏢", baslik: "Firma Ayarları", eslesme: "tam" },
+      { href: "/panel/ayarlar/moduller", ikon: "⚙️", baslik: "Modül Ayarları", eslesme: "tam" },
+      { href: "/panel/ayarlar/kullanicilar", ikon: "👤", baslik: "Kullanıcılar", eslesme: "tam" },
+      { href: "/panel/ayarlar/entegratorler", ikon: "🔌", baslik: "e-Belge Ayarları", eslesme: "tam" },
+      { href: "/panel/ayarlar/denetim", ikon: "🛡️", baslik: "Denetim İzi", eslesme: "tam" },
+      { href: "/panel/ayarlar/hesap", ikon: "🔐", baslik: "Hesap Güvenliği", eslesme: "tam" },
+    ],
+  },
+];
 
 export default function PanelLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [rol, setRol] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (tokenAl()) {
+      api<{ rol: string }>("/auth/ben")
+        .then((b) => setRol(b.rol))
+        .catch(() => setRol(null));
+    }
+  }, []);
 
   async function cikis() {
     await api("/auth/cikis", { method: "POST" }).catch(() => undefined);
@@ -15,51 +80,49 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
     router.push("/giris");
   }
 
-  const linkler = [
-    { href: "/panel", baslik: "📊 Finansal Özet", aktif: pathname === "/panel" },
-    { href: "/panel/cari", baslik: "👥 Cari Hesaplar", aktif: pathname.startsWith("/panel/cari") },
-    { href: "/panel/stok", baslik: "📦 Stok Kartları", aktif: pathname.startsWith("/panel/stok") },
-    { href: "/panel/fatura", baslik: "📄 Faturalar", aktif: pathname.startsWith("/panel/fatura") },
-    { href: "/panel/kasa-banka", baslik: "🏦 Kasa & Banka", aktif: pathname.startsWith("/panel/kasa-banka") },
-    { href: "/panel/raporlar", baslik: "📈 Raporlar & Analiz", aktif: pathname.startsWith("/panel/raporlar") },
-    { href: "/panel/ayarlar/firma", baslik: "🏢 Firma Ayarları", aktif: pathname === "/panel/ayarlar/firma" },
-    { href: "/panel/ayarlar/entegratorler", baslik: "🔌 e-Belge Ayarları", aktif: pathname === "/panel/ayarlar/entegratorler" },
-    { href: "/panel/ayarlar/denetim", baslik: "🛡️ Denetim İzi", aktif: pathname === "/panel/ayarlar/denetim" },
-  ];
+  function aktifMi(oge: MenuOge): boolean {
+    return oge.eslesme === "tam" ? pathname === oge.href : pathname.startsWith(oge.href);
+  }
 
   return (
-    <div style={stil.sayfa}>
-      <aside style={stil.sidebar}>
-        <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#7c3aed" }}>
-          🐈 TekirExtra
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="sidebar__brand">
+          <span className="sidebar__brand-mark">🐈</span>
+          <span>Tekir<b>Extra</b></span>
         </div>
-        <nav style={{ display: "flex", flexDirection: "column", gap: "0.5rem", flex: 1 }}>
-          {linkler.map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              style={{
-                ...stil.sidebarLink,
-                ...(l.aktif ? stil.sidebarLinkAktif : {}),
-              }}
-            >
-              {l.baslik}
-            </Link>
+
+        <nav className="nav">
+          {MENU.map((grup) => (
+            <div className="nav__group" key={grup.baslik}>
+              <div className="nav__label">{grup.baslik}</div>
+              {grup.ogeler.map((oge) => (
+                <Link
+                  key={oge.href}
+                  href={oge.href}
+                  className={`nav__link${aktifMi(oge) ? " is-active" : ""}`}
+                >
+                  <span className="nav__link-icon">{oge.ikon}</span>
+                  <span>{oge.baslik}</span>
+                </Link>
+              ))}
+            </div>
           ))}
         </nav>
-        <button
-          onClick={() => void cikis()}
-          style={{
-            ...stil.dugmeMuted,
-            width: "100%",
-            textAlign: "center",
-          }}
-        >
-          🚪 Güvenli Çıkış
-        </button>
+
+        <div className="sidebar__user">
+          <div className="grow sidebar__user-info">
+            <div className="sidebar__user-name">{rol ? ROL_ADI[rol] ?? "Hesabım" : "Hesabım"}</div>
+            <div className="sidebar__user-role">Aktif oturum</div>
+          </div>
+          <button className="btn btn--ghost btn--icon" onClick={() => void cikis()} title="Güvenli çıkış">
+            🚪
+          </button>
+        </div>
       </aside>
-      <main style={{ flex: 1, padding: "2.5rem", boxSizing: "border-box", overflowY: "auto", maxHeight: "100vh" }}>
-        {children}
+
+      <main className="app-main">
+        <div className="app-content">{children}</div>
       </main>
     </div>
   );

@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiHata, tokenAl, tokenYaz } from "@/lib/api";
-import { stil } from "@/lib/stil";
+import { Alert, Badge, Button, ButtonLabel, Card, Field, Input, PageHeader } from "@/components/ui";
 
 interface Baglanti {
   id: string;
@@ -18,6 +18,12 @@ const SAGLAYICILAR = [
   { id: "elogo", ad: "eLogo", aciklama: "Logo Yazılım (eLogo) e-Belge Özel Entegratör Bağlantısı" },
   { id: "uyumsoft", ad: "Uyumsoft", aciklama: "Uyumsoft e-Belge Özel Entegratör Bağlantısı" },
 ] as const;
+
+function durumRozet(durum: string) {
+  if (durum === "aktif") return <Badge variant="success">AKTİF</Badge>;
+  if (durum === "hata") return <Badge variant="danger">HATA</Badge>;
+  return <Badge variant="neutral">{durum.toUpperCase()}</Badge>;
+}
 
 export default function EntegratorAyarlariSayfasi() {
   const yonlendir = useRouter();
@@ -64,21 +70,15 @@ export default function EntegratorAyarlariSayfasi() {
 
     try {
       if (duzenleId) {
-        // Güncelleme işlemi
         await api(`/baglantilar/${duzenleId}`, {
           method: "PATCH",
           body: JSON.stringify({ config }),
         });
         setBasari(`${saglayici.toUpperCase()} entegratör ayarları güncellendi.`);
       } else {
-        // Yeni kayıt işlemi
         await api("/baglantilar", {
           method: "POST",
-          body: JSON.stringify({
-            aile: "ebelge",
-            saglayici,
-            config,
-          }),
+          body: JSON.stringify({ aile: "ebelge", saglayici, config }),
         });
         setBasari(`${saglayici.toUpperCase()} entegratör bağlantısı başarıyla eklendi.`);
       }
@@ -148,235 +148,85 @@ export default function EntegratorAyarlariSayfasi() {
   }
 
   return (
-    <main style={{ ...stil.sayfa, alignItems: "flex-start", paddingTop: "3rem", paddingBottom: "3rem" }}>
-      <div style={{ ...stil.kart, maxWidth: 800, width: "90%", margin: "0 auto" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
-          <div>
-            <h1 style={{ fontSize: "1.8rem", margin: 0 }}>⚙️ Entegratör Ayarları</h1>
-            <p style={{ color: "#78716c", fontSize: "0.9rem", marginTop: "0.25rem" }}>
-              Şirketinizin e-Belge (e-Fatura / e-Arşiv) entegrasyon ayarlarını buradan yönetebilirsiniz.
-            </p>
-          </div>
-          <button
-            onClick={() => yonlendir.push("/panel")}
-            style={{
-              ...stil.dugme,
-              width: "auto",
-              padding: ".5rem 1rem",
-              background: "#78716c",
-            }}
-          >
-            Geri Dön
-          </button>
-        </div>
+    <div style={{ maxWidth: 900, margin: "0 auto" }}>
+      <PageHeader
+        title="⚙️ Entegratör Ayarları"
+        subtitle="Şirketinizin e-Belge (e-Fatura / e-Arşiv) entegrasyon ayarlarını buradan yönetebilirsiniz."
+        actions={<ButtonLabel as="a" href="/panel">← Panele Dön</ButtonLabel>}
+      />
 
-        {hata && <div style={{ ...stil.hata, padding: "0.75rem", background: "#fef2f2", borderRadius: "8px", marginBottom: "1rem" }}>{hata}</div>}
-        {basari && <div style={{ ...stil.basari, padding: "0.75rem", background: "#f0fdf4", borderRadius: "8px", marginBottom: "1rem" }}>{basari}</div>}
+      <Alert tone="error">{hata}</Alert>
+      <Alert tone="success">{basari}</Alert>
 
-        <div style={{ display: "grid", gap: "1.5rem" }}>
-          {SAGLAYICILAR.map((s) => {
-            const baglanti = baglantilar.find((b) => b.saglayici === s.id);
-            const formAcik = aktifForm === s.id;
+      <div className="stack">
+        {SAGLAYICILAR.map((s) => {
+          const baglanti = baglantilar.find((b) => b.saglayici === s.id);
+          const formAcik = aktifForm === s.id;
+          const aktif = baglanti?.durum === "aktif";
 
-            return (
-              <div
-                key={s.id}
-                style={{
-                  border: "1px solid #e7e5e4",
-                  borderRadius: "12px",
-                  padding: "1.5rem",
-                  background: baglanti?.durum === "aktif" ? "#fafaf9" : "#fff",
-                  boxShadow: baglanti?.durum === "aktif" ? "0 0 0 2px #1c1917" : "none",
-                  transition: "all 0.2s",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem" }}>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                      <h3 style={{ margin: 0, fontSize: "1.2rem" }}>{s.ad}</h3>
-                      {baglanti && (
-                        <span
-                          style={{
-                            padding: "0.2rem 0.6rem",
-                            borderRadius: "9999px",
-                            fontSize: "0.75rem",
-                            fontWeight: "bold",
-                            background:
-                              baglanti.durum === "aktif"
-                                ? "#dcfce7"
-                                : baglanti.durum === "hata"
-                                ? "#fee2e2"
-                                : "#f5f5f4",
-                            color:
-                              baglanti.durum === "aktif"
-                                ? "#15803d"
-                                : baglanti.durum === "hata"
-                                ? "#b91c1c"
-                                : "#57534e",
-                          }}
-                        >
-                          {baglanti.durum.toUpperCase()}
-                        </span>
-                      )}
-                    </div>
-                    <p style={{ color: "#78716c", fontSize: "0.85rem", margin: "0.3rem 0" }}>{s.aciklama}</p>
-                    {baglanti && (
-                      <div style={{ fontSize: "0.85rem", color: "#444", marginTop: "0.5rem" }}>
-                        <strong>Kullanıcı Adı:</strong> <code>{baglanti.kullaniciAdiMaskeli}</code>
-                      </div>
-                    )}
+          return (
+            <Card key={s.id} style={aktif ? { borderColor: "var(--accent)", boxShadow: "0 0 0 1px var(--accent)" } : undefined}>
+              <div className="between" style={{ alignItems: "flex-start" }}>
+                <div>
+                  <div className="row-tight">
+                    <h3 style={{ fontSize: "1.15rem", margin: 0 }}>{s.ad}</h3>
+                    {baglanti && durumRozet(baglanti.durum)}
                   </div>
-
-                  {!formAcik && (
-                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                      {baglanti ? (
-                        <>
-                          {baglanti.durum !== "aktif" && (
-                            <button
-                              onClick={() => void aktifEt(baglanti.id, s.id)}
-                              disabled={islemde !== null}
-                              style={{
-                                ...stil.dugme,
-                                width: "auto",
-                                padding: "0.45rem 0.9rem",
-                                background: "#15803d",
-                                fontSize: "0.85rem",
-                              }}
-                            >
-                              Aktif Et
-                            </button>
-                          )}
-                          <button
-                            onClick={() => void testEt(baglanti.id, s.id)}
-                            disabled={islemde !== null}
-                            style={{
-                              ...stil.dugme,
-                              width: "auto",
-                              padding: "0.45rem 0.9rem",
-                              background: "#0284c7",
-                              fontSize: "0.85rem",
-                            }}
-                          >
-                            {islemde === `test-${baglanti.id}` ? "Test ediliyor..." : "Bağlantı Testi"}
-                          </button>
-                          <button
-                            onClick={() => {
-                              setDuzenleId(baglanti.id);
-                              setAktifForm(s.id);
-                            }}
-                            disabled={islemde !== null}
-                            style={{
-                              ...stil.dugme,
-                              width: "auto",
-                              padding: "0.45rem 0.9rem",
-                              background: "#78716c",
-                              fontSize: "0.85rem",
-                            }}
-                          >
-                            Düzenle
-                          </button>
-                          <button
-                            onClick={() => void sil(baglanti.id, s.id)}
-                            disabled={islemde !== null}
-                            style={{
-                              ...stil.dugme,
-                              width: "auto",
-                              padding: "0.45rem 0.9rem",
-                              background: "#b91c1c",
-                              fontSize: "0.85rem",
-                            }}
-                          >
-                            Sil
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setDuzenleId(null);
-                            setAktifForm(s.id);
-                          }}
-                          disabled={islemde !== null}
-                          style={{
-                            ...stil.dugme,
-                            width: "auto",
-                            padding: "0.45rem 0.9rem",
-                            fontSize: "0.85rem",
-                          }}
-                        >
-                          Bağlantıyı Kur
-                        </button>
-                      )}
+                  <p className="muted" style={{ fontSize: "0.85rem", margin: "0.35rem 0" }}>{s.aciklama}</p>
+                  {baglanti && (
+                    <div style={{ fontSize: "0.85rem", marginTop: "0.5rem" }}>
+                      <span className="muted">Kullanıcı Adı: </span>
+                      <code className="mono">{baglanti.kullaniciAdiMaskeli}</code>
                     </div>
                   )}
                 </div>
 
-                {formAcik && (
-                  <form
-                    onSubmit={(e) => void baglantiKaydet(e, s.id)}
-                    style={{
-                      marginTop: "1.25rem",
-                      paddingTop: "1.25rem",
-                      borderTop: "1px dashed #e7e5e4",
-                    }}
-                  >
-                    <h4 style={{ margin: "0 0 1rem 0" }}>
-                      {duzenleId ? `${s.ad} Bilgilerini Güncelle` : `${s.ad} Bağlantı Bilgileri`}
-                    </h4>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
-                      <label style={{ fontSize: "0.85rem", fontWeight: "bold" }}>
-                        Kullanıcı Adı *
-                        <input name="kullaniciAdi" required style={stil.girdi} placeholder="entegrator_kullanici_adi" />
-                      </label>
-                      <label style={{ fontSize: "0.85rem", fontWeight: "bold" }}>
-                        Parola / Şifre
-                        <input name="parola" type="password" style={stil.girdi} placeholder="••••••••" />
-                      </label>
-                      <label style={{ fontSize: "0.85rem", fontWeight: "bold" }}>
-                        API Anahtarı (Opsiyonel)
-                        <input name="apiAnahtari" style={stil.girdi} placeholder="api_key_xyz" />
-                      </label>
-                      <label style={{ fontSize: "0.85rem", fontWeight: "bold" }}>
-                        Servis URL (Opsiyonel)
-                        <input name="servisAdresi" style={stil.girdi} placeholder="https://api.entegrator.com" />
-                      </label>
-                    </div>
-
-                    <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAktifForm(null);
-                          setDuzenleId(null);
-                        }}
-                        style={{
-                          ...stil.dugme,
-                          width: "auto",
-                          padding: "0.5rem 1rem",
-                          background: "#e7e5e4",
-                          color: "#1c1917",
-                        }}
-                      >
-                        İptal
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={islemde !== null}
-                        style={{
-                          ...stil.dugme,
-                          width: "auto",
-                          padding: "0.5rem 1rem",
-                        }}
-                      >
-                        {islemde === s.id ? "Kaydediliyor..." : "Bağlantıyı Kaydet"}
-                      </button>
-                    </div>
-                  </form>
+                {!formAcik && (
+                  <div className="row-tight" style={{ justifyContent: "flex-end" }}>
+                    {baglanti ? (
+                      <>
+                        {baglanti.durum !== "aktif" && (
+                          <Button variant="primary" size="sm" onClick={() => void aktifEt(baglanti.id, s.id)} disabled={islemde !== null}>Aktif Et</Button>
+                        )}
+                        <Button size="sm" onClick={() => void testEt(baglanti.id, s.id)} disabled={islemde !== null}>
+                          {islemde === `test-${baglanti.id}` ? "Test ediliyor..." : "Bağlantı Testi"}
+                        </Button>
+                        <Button size="sm" onClick={() => { setDuzenleId(baglanti.id); setAktifForm(s.id); }} disabled={islemde !== null}>Düzenle</Button>
+                        <Button variant="danger" size="sm" onClick={() => void sil(baglanti.id, s.id)} disabled={islemde !== null}>Sil</Button>
+                      </>
+                    ) : (
+                      <Button variant="primary" size="sm" onClick={() => { setDuzenleId(null); setAktifForm(s.id); }} disabled={islemde !== null}>Bağlantıyı Kur</Button>
+                    )}
+                  </div>
                 )}
               </div>
-            );
-          })}
-        </div>
+
+              {formAcik && (
+                <form
+                  onSubmit={(e) => void baglantiKaydet(e, s.id)}
+                  style={{ marginTop: "1.25rem", paddingTop: "1.25rem", borderTop: "1px dashed var(--border-strong)" }}
+                >
+                  <h4 className="card__title" style={{ fontSize: "0.95rem" }}>
+                    {duzenleId ? `${s.ad} Bilgilerini Güncelle` : `${s.ad} Bağlantı Bilgileri`}
+                  </h4>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
+                    <Field label="Kullanıcı Adı *"><Input name="kullaniciAdi" required placeholder="entegrator_kullanici_adi" /></Field>
+                    <Field label="Parola / Şifre"><Input name="parola" type="password" placeholder="••••••••" /></Field>
+                    <Field label="API Anahtarı (Opsiyonel)"><Input name="apiAnahtari" placeholder="api_key_xyz" /></Field>
+                    <Field label="Servis URL (Opsiyonel)"><Input name="servisAdresi" placeholder="https://api.entegrator.com" /></Field>
+                  </div>
+                  <div className="row-tight" style={{ justifyContent: "flex-end", marginTop: "1rem" }}>
+                    <Button type="button" onClick={() => { setAktifForm(null); setDuzenleId(null); }}>İptal</Button>
+                    <Button variant="primary" type="submit" disabled={islemde !== null}>
+                      {islemde === s.id ? "Kaydediliyor..." : "Bağlantıyı Kaydet"}
+                    </Button>
+                  </div>
+                </form>
+              )}
+            </Card>
+          );
+        })}
       </div>
-    </main>
+    </div>
   );
 }

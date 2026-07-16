@@ -6,6 +6,7 @@ import { AuthModule } from "./auth/auth.module";
 import { BelgelerModule } from "./belgeler/belgeler.module";
 import { CariModule } from "./cari/cari.module";
 import { StokModule } from "./stok/stok.module";
+import { FiyatListeleriModule } from "./fiyat-listeleri/fiyat-listeleri.module";
 import { FaturaModule } from "./fatura/fatura.module";
 import { KasaBankaModule } from "./kasa-banka/kasa-banka.module";
 import { EbelgeModule } from "./ebelge/ebelge.module";
@@ -25,6 +26,7 @@ import { TenantModule } from "./tenant/tenant.module";
     BelgelerModule,
     CariModule,
     StokModule,
+    FiyatListeleriModule,
     FaturaModule,
     KasaBankaModule,
     EbelgeModule,
