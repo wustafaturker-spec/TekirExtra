@@ -41,6 +41,8 @@ const MENU: MenuGrup[] = [
     baslik: "Ürün & Stok",
     ogeler: [
       { href: "/panel/stok", ikon: "📦", baslik: "Stok Kartları", eslesme: "tam" },
+      { href: "/panel/stok/kategoriler", ikon: "🗂️", baslik: "Kategoriler", eslesme: "tam" },
+      { href: "/panel/stok/sayim", ikon: "📋", baslik: "Stok Sayımı", eslesme: "tam" },
       { href: "/panel/stok/fiyat-listeleri", ikon: "🏷️", baslik: "Fiyat Listeleri", eslesme: "tam" },
     ],
   },
