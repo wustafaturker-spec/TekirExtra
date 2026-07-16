@@ -287,7 +287,7 @@ model CariHesap {
   etiketler            CariEtiketAtama[]
   hareketler           CariHareket[]
   faturas              Fatura[]
-  ceklerAlinan         CekSenet[]         @relation("CekSenetCari")
+  cekSenetleri         CekSenet[]         @relation("CekSenetCari")
   ceklerCiro           CekSenet[]         @relation("CekSenetCiro")
   kasaBankaHareketleri KasaBankaHareket[]
   stokTedarikcilikleri StokTedarikci[]
@@ -736,12 +736,23 @@ enum CekSenetTur {
   senet
 }
 
+/// Alınan = müşteri çeki (portföyümüzde, varlık); verilen = kendi kestiğimiz
+/// çek (borcumuz). Cari ve para etkileri ters yönlüdür (KSB-05).
+enum CekSenetYon {
+  alinan
+  verilen
+}
+
+/// portfoyde/ciro_edildi/tahsil_edildi yalnız ALINAN, verildi/odendi yalnız
+/// VERİLEN yönünde kullanılır; karsiliksiz ve iade_edildi ortaktır.
 enum CekSenetDurum {
   portfoyde
   ciro_edildi
   tahsil_edildi
   karsiliksiz
   iade_edildi
+  verildi
+  odendi
 }
 
 model Kasa {
@@ -806,10 +817,13 @@ model KasaBankaHareket {
   @@map("kasa_banka_hareketleri")
 }
 
+/// cari: alınanda çeki veren müşteri, verilende lehtar (çeki verdiğimiz taraf).
+/// borclu: alınanda keşideci, verilende kendi firmamız.
 model CekSenet {
   id         String        @id @default(uuid()) @db.Uuid
   tenantId   String        @map("tenant_id") @db.Uuid
   tur        CekSenetTur
+  yon        CekSenetYon   @default(alinan)
   portfoyNo  String        @map("portfoy_no")
   vadeTarihi DateTime      @map("vade_tarihi") @db.Date
   tutar      Decimal       @db.Decimal(15, 2)

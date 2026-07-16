@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { Prisma, CekSenetDurum, DovizCinsi } from "@prisma/client";
+import { Prisma, CekSenetDurum, CekSenetYon, DovizCinsi } from "@prisma/client";
 import type { KayitEylem } from "@tekirextra/shared";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -369,13 +369,14 @@ export class KasaBankaService {
 
   // ─── ÇEK VE SENET TAKİBİ (KSB-05) ─────────────────────────────────────────
 
-  async cekSenetListele(tur?: "cek" | "senet", durum?: string) {
+  async cekSenetListele(tur?: "cek" | "senet", durum?: string, yon?: string) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, (tx) =>
       tx.cekSenet.findMany({
         where: {
           tur: tur || undefined,
           durum: durum ? (durum as CekSenetDurum) : undefined,
+          yon: yon ? (yon as CekSenetYon) : undefined,
         },
         orderBy: { vadeTarihi: "asc" },
         include: {
@@ -423,25 +424,28 @@ export class KasaBankaService {
           banka: girdi.banka,
           sube: girdi.sube,
           hesapNo: girdi.hesapNo,
-          durum: "portfoyde",
+          yon: girdi.yon,
+          durum: girdi.yon === "verilen" ? "verildi" : "portfoyde",
           cariId: girdi.cariId,
           aciklama: girdi.aciklama,
         },
       });
 
-      // Çek/Senet aldığımızda cari hesap alacaklanır (borcu azalır)
+      // Alınan çek/senet: müşteri alacaklanır (bize olan borcu azalır).
+      // Verilen çek/senet: lehtar borçlanır (bizim ona olan borcumuz azalır).
       if (girdi.cariId) {
+        const verilen = girdi.yon === "verilen";
         await tx.cariHareket.create({
           data: {
             tenantId,
             cariId: girdi.cariId,
-            tip: "alacak",
+            tip: verilen ? "borc" : "alacak",
             tutar,
             dovizCinsi: girdi.dovizCinsi,
             kur,
             tutarTry,
             tarih: new Date(),
-            aciklama: `${girdi.tur.toUpperCase()} alımı (Portföy No: ${girdi.portfoyNo})`,
+            aciklama: `${girdi.tur.toUpperCase()} ${verilen ? "verildi" : "alımı"} (Portföy No: ${girdi.portfoyNo})`,
             kaynakTur: "cek_senet",
             kaynakRef: CS.id,
           },
@@ -456,9 +460,17 @@ export class KasaBankaService {
     const { tenantId } = aktifBaglam();
     const CS = await this.cekSenetGetir(id);
 
-    // Tahsil hesabının para birimi çek/senetle uyuşmalı (KSB-05)
-    if (girdi.durum === "tahsil_edildi" && CS.durum !== "tahsil_edildi") {
-      await this.tahsilHesabiniDenetle(girdi, CS.dovizCinsi);
+    // Durum, çek/senetin yönüyle tutarlı olmalı (KSB-05)
+    this.cekSenetDurumunuDenetle(CS.yon, girdi.durum);
+
+    // Para hareketi doğuran geçiş mi? (alınanda tahsil, verilende ödeme)
+    // Aynı duruma ikinci kez geçişte tekrar fiş yazılmaz.
+    const paraDurumu =
+      girdi.durum === "tahsil_edildi" || girdi.durum === "odendi";
+    const fisYazilacak = paraDurumu && CS.durum !== girdi.durum;
+
+    if (fisYazilacak) {
+      await this.islemHesabiniDenetle(girdi, CS.dovizCinsi);
     }
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
@@ -471,23 +483,25 @@ export class KasaBankaService {
         },
       });
 
-      // Tahsil edilince para seçilen kasa/bankaya girer (KSB-05).
-      // Cari, çek alımında zaten alacaklandığı için burada cari hareketi
-      // YAZILMAZ (çift kayıt olur); bu yüzden fişte cariId boş bırakılır.
-      // Koşul, durum zaten tahsil ise ikinci fişi engeller.
-      if (girdi.durum === "tahsil_edildi" && CS.durum !== "tahsil_edildi") {
+      // Alınan tahsil edilince para hesaba girer, verilen ödenince çıkar.
+      // Cari, çek alımında/verilişinde zaten kaydedildiği için burada cari
+      // hareketi YAZILMAZ (çift kayıt olur); fişte cariId boş bırakılır.
+      if (fisYazilacak) {
+        const odeme = girdi.durum === "odendi";
         await tx.kasaBankaHareket.create({
           data: {
             tenantId,
-            kasaId: girdi.tahsilKasaId ?? null,
-            bankaHesapId: girdi.tahsilBankaHesapId ?? null,
-            tip: "tahsilat",
+            kasaId: girdi.hesapKasaId ?? null,
+            bankaHesapId: girdi.hesapBankaHesapId ?? null,
+            tip: odeme ? "tediye" : "tahsilat",
             tutar: CS.tutar,
             dovizCinsi: CS.dovizCinsi,
             kur: CS.kur,
             tutarTry: D(CS.tutar).mul(D(CS.kur)).toDecimalPlaces(2),
-            tarih: girdi.tahsilTarihi ? new Date(girdi.tahsilTarihi) : new Date(),
-            aciklama: `${CS.tur.toUpperCase()} tahsili (Portföy No: ${CS.portfoyNo}, Borçlu: ${CS.borclu})`,
+            tarih: girdi.islemTarihi ? new Date(girdi.islemTarihi) : new Date(),
+            aciklama: odeme
+              ? `${CS.tur.toUpperCase()} ödemesi (Portföy No: ${CS.portfoyNo}, Lehtar: ${CS.cari?.unvan ?? "—"})`
+              : `${CS.tur.toUpperCase()} tahsili (Portföy No: ${CS.portfoyNo}, Borçlu: ${CS.borclu})`,
             kaynakTur: "cek_senet",
             kaynakRef: CS.id,
           },
@@ -590,34 +604,66 @@ export class KasaBankaService {
     return sonuc;
   }
 
+  /** Yönüne göre bir çek/senetin alabileceği durumlar (KSB-05). */
+  private static readonly ALINAN_DURUMLARI: CekSenetDurum[] = [
+    "portfoyde",
+    "ciro_edildi",
+    "tahsil_edildi",
+    "karsiliksiz",
+    "iade_edildi",
+  ];
+  private static readonly VERILEN_DURUMLARI: CekSenetDurum[] = [
+    "verildi",
+    "odendi",
+    "karsiliksiz",
+    "iade_edildi",
+  ];
+
   /**
-   * Tahsil hesabının var olduğunu ve para biriminin çek/senetle uyuştuğunu
-   * doğrular; uyuşmazsa hesabın bakiyesi karışık para birimine düşerdi.
+   * Alınan bir çek "ödendi", verilen bir çek "tahsil edildi" olamaz; aksi
+   * hâlde para ters yöne akar (alınana tediye, verilene tahsilat fişi).
    */
-  private async tahsilHesabiniDenetle(
+  private cekSenetDurumunuDenetle(yon: CekSenetYon, durum: CekSenetDurum): void {
+    const izinli =
+      yon === "verilen"
+        ? KasaBankaService.VERILEN_DURUMLARI
+        : KasaBankaService.ALINAN_DURUMLARI;
+    if (!izinli.includes(durum)) {
+      throw new BadRequestException(
+        `'${durum}' durumu ${yon === "verilen" ? "verilen" : "alınan"} çek/senet için geçersiz`,
+      );
+    }
+  }
+
+  /**
+   * Tahsil/ödeme hesabının var olduğunu ve para biriminin çek/senetle
+   * uyuştuğunu doğrular; uyuşmazsa hesabın bakiyesi karışık para birimine
+   * düşerdi.
+   */
+  private async islemHesabiniDenetle(
     girdi: z.infer<typeof cekSenetGuncelleSemasi>,
     cekDovizCinsi: DovizCinsi,
   ): Promise<void> {
     const { tenantId } = aktifBaglam();
 
-    const hesapDovizi = girdi.tahsilKasaId
+    const hesapDovizi = girdi.hesapKasaId
       ? (
           await this.prisma.tenantIslem(tenantId, (tx) =>
-            tx.kasa.findUnique({ where: { id: girdi.tahsilKasaId! } }),
+            tx.kasa.findUnique({ where: { id: girdi.hesapKasaId! } }),
           )
         )?.dovizCinsi
       : (
           await this.prisma.tenantIslem(tenantId, (tx) =>
-            tx.bankaHesap.findUnique({ where: { id: girdi.tahsilBankaHesapId! } }),
+            tx.bankaHesap.findUnique({ where: { id: girdi.hesapBankaHesapId! } }),
           )
         )?.dovizCinsi;
 
     if (!hesapDovizi) {
-      throw new BadRequestException("Tahsil için seçilen kasa/banka hesabı bulunamadı");
+      throw new BadRequestException("Seçilen kasa/banka hesabı bulunamadı");
     }
     if (hesapDovizi !== cekDovizCinsi) {
       throw new BadRequestException(
-        `Çek/senet ${cekDovizCinsi} cinsinden; ${hesapDovizi} hesabına tahsil edilemez`,
+        `Çek/senet ${cekDovizCinsi} cinsinden; ${hesapDovizi} hesabıyla işlem yapılamaz`,
       );
     }
   }

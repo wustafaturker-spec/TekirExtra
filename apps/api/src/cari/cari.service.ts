@@ -127,9 +127,11 @@ export class CariService {
     riskLimiti: Prisma.Decimal | null,
   ) {
     const { tenantId } = aktifBaglam();
+    // Yalnız ALINAN çekler cari riskidir; verilen çek bizim borcumuzdur ve
+    // carinin riskini artırmaz (KSB-05).
     const cekSenet = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.cekSenet.aggregate({
-        where: { cariId, durum: { in: ["portfoyde", "ciro_edildi"] } },
+        where: { cariId, yon: "alinan", durum: { in: ["portfoyde", "ciro_edildi"] } },
         _sum: { tutarTry: true },
       }),
     );

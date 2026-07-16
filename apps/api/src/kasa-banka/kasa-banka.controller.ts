@@ -159,8 +159,9 @@ export class KasaBankaController {
   async cekSenetListele(
     @Query("tur") tur?: "cek" | "senet",
     @Query("durum") durum?: string,
+    @Query("yon") yon?: string,
   ) {
-    return this.service.cekSenetListele(tur, durum);
+    return this.service.cekSenetListele(tur, durum, yon);
   }
 
   @Get("cek-senet/:id")

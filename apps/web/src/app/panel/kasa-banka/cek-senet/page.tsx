@@ -35,6 +35,7 @@ interface Hesap {
 interface CekSenet {
   id: string;
   tur: "cek" | "senet";
+  yon: "alinan" | "verilen";
   portfoyNo: string;
   vadeTarihi: string;
   tutar: string;
@@ -53,6 +54,7 @@ interface CekSenet {
 }
 
 type TurFiltre = "hepsi" | "cek" | "senet";
+type Yon = "alinan" | "verilen";
 
 /* ─── Sabitler ───────────────────────────────────────────────────────────── */
 
@@ -62,6 +64,31 @@ const DURUMLAR: Record<string, { baslik: string; renk: "warning" | "success" | "
   tahsil_edildi: { baslik: "✅ Tahsil Edildi", renk: "success" },
   karsiliksiz: { baslik: "⛔ Karşılıksız", renk: "danger" },
   iade_edildi: { baslik: "↩️ İade Edildi", renk: "neutral" },
+  verildi: { baslik: "📤 Verildi", renk: "warning" },
+  odendi: { baslik: "✅ Ödendi", renk: "success" },
+};
+
+/** Yönüne göre açık (henüz sonuçlanmamış) durum ve seçilebilir eylemler. */
+const YON_AKISI: Record<Yon, { acikDurum: string; durumlar: string[]; eylemler: { durum: string; baslik: string; vurgu?: "primary" | "danger" }[] }> = {
+  alinan: {
+    acikDurum: "portfoyde",
+    durumlar: ["portfoyde", "ciro_edildi", "tahsil_edildi", "karsiliksiz", "iade_edildi"],
+    eylemler: [
+      { durum: "tahsil_edildi", baslik: "Tahsil Et", vurgu: "primary" },
+      { durum: "ciro_edildi", baslik: "Ciro Et" },
+      { durum: "karsiliksiz", baslik: "Karşılıksız", vurgu: "danger" },
+      { durum: "iade_edildi", baslik: "İade Et" },
+    ],
+  },
+  verilen: {
+    acikDurum: "verildi",
+    durumlar: ["verildi", "odendi", "karsiliksiz", "iade_edildi"],
+    eylemler: [
+      { durum: "odendi", baslik: "Ödendi", vurgu: "primary" },
+      { durum: "karsiliksiz", baslik: "Karşılıksız", vurgu: "danger" },
+      { durum: "iade_edildi", baslik: "Geri Alındı" },
+    ],
+  },
 };
 
 const para = (deger: string | number, doviz = "TRY"): string =>
@@ -83,6 +110,7 @@ export default function CekSenetSayfasi() {
   const [cariler, setCariler] = useState<CariOzet[]>([]);
   const [kasalar, setKasalar] = useState<Hesap[]>([]);
   const [bankalar, setBankalar] = useState<Hesap[]>([]);
+  const [yon, setYon] = useState<Yon>("alinan");
   const [tur, setTur] = useState<TurFiltre>("hepsi");
   const [durumFiltre, setDurumFiltre] = useState("");
   const [formAcik, setFormAcik] = useState(false);
@@ -90,17 +118,18 @@ export default function CekSenetSayfasi() {
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
 
+  const akis = YON_AKISI[yon];
+
   const yukle = useCallback(async () => {
     try {
-      const qs = new URLSearchParams();
+      const qs = new URLSearchParams({ yon });
       if (tur !== "hepsi") qs.set("tur", tur);
       if (durumFiltre) qs.set("durum", durumFiltre);
-      const ek = qs.toString() ? `?${qs}` : "";
-      setKayitlar(await api<CekSenet[]>(`/kasa-banka/cek-senet${ek}`));
+      setKayitlar(await api<CekSenet[]>(`/kasa-banka/cek-senet?${qs}`));
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Çek/senet listesi yüklenemedi");
     }
-  }, [tur, durumFiltre]);
+  }, [tur, durumFiltre, yon]);
 
   useEffect(() => {
     if (!tokenAl()) return;
@@ -115,22 +144,22 @@ export default function CekSenetSayfasi() {
   }, []);
 
   const ozet = useMemo(() => {
-    const portfoy = kayitlar.filter((k) => k.durum === "portfoyde");
-    const toplam = portfoy.reduce((t, k) => t + Number(k.tutarTry), 0);
-    const geciken = portfoy.filter((k) => vadeyeKalanGun(k.vadeTarihi) < 0);
-    const yaklasan = portfoy.filter((k) => {
+    const acik = kayitlar.filter((k) => k.durum === akis.acikDurum);
+    const toplam = acik.reduce((t, k) => t + Number(k.tutarTry), 0);
+    const geciken = acik.filter((k) => vadeyeKalanGun(k.vadeTarihi) < 0);
+    const yaklasan = acik.filter((k) => {
       const g = vadeyeKalanGun(k.vadeTarihi);
       return g >= 0 && g <= 30;
     });
     return {
-      adet: portfoy.length,
+      adet: acik.length,
       toplam,
       geciken: geciken.reduce((t, k) => t + Number(k.tutarTry), 0),
       gecikenAdet: geciken.length,
       yaklasan: yaklasan.reduce((t, k) => t + Number(k.tutarTry), 0),
       yaklasanAdet: yaklasan.length,
     };
-  }, [kayitlar]);
+  }, [kayitlar, akis.acikDurum]);
 
   async function durumGuncelle(govde: Record<string, unknown>) {
     if (!islemYapilan) return;
@@ -156,24 +185,49 @@ export default function CekSenetSayfasi() {
     <div>
       <PageHeader
         title="Çek & Senet"
-        subtitle="Portföyünüzdeki çek ve senetleri takip edin; ciro, tahsil, karşılıksız ve iade işlemlerini kaydedin."
+        subtitle={
+          yon === "alinan"
+            ? "Portföyünüzdeki müşteri çek ve senetleri; ciro, tahsil, karşılıksız ve iade işlemleri."
+            : "Kendi kestiğiniz çek ve senetler (borcunuz); ödeme, karşılıksız ve geri alma işlemleri."
+        }
         actions={
           <>
             <ButtonLabel as="a" href="/panel/kasa-banka">
               ← Kasa & Banka
             </ButtonLabel>
             <Button variant="primary" onClick={() => setFormAcik(!formAcik)}>
-              {formAcik ? "Vazgeç" : "➕ Yeni Çek/Senet"}
+              {formAcik ? "Vazgeç" : yon === "alinan" ? "➕ Çek/Senet Al" : "➕ Çek/Senet Ver"}
             </Button>
           </>
         }
       />
 
+      <div style={{ marginBottom: "1.25rem" }}>
+        <Segmented<Yon>
+          value={yon}
+          onChange={(y) => {
+            setYon(y);
+            setDurumFiltre("");
+            setFormAcik(false);
+            setIslemYapilan(null);
+          }}
+          items={[
+            { deger: "alinan", baslik: "📥 Alınan (Müşteri Çeki)" },
+            { deger: "verilen", baslik: "📤 Verilen (Kendi Çekimiz)" },
+          ]}
+        />
+      </div>
+
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
 
       <StatGrid>
-        <Stat label="Portföydeki" value={para(ozet.toplam)} tone="accent" hint={`${ozet.adet} adet`} />
+        <Stat
+          label={yon === "alinan" ? "Portföydeki" : "Tedavüldeki Borç"}
+          value={para(ozet.toplam)}
+          tone="accent"
+          hint={`${ozet.adet} adet`}
+        />
         <Stat
           label="Vadesi Geçmiş"
           value={para(ozet.geciken)}
@@ -184,19 +238,21 @@ export default function CekSenetSayfasi() {
           label="30 Gün İçinde"
           value={para(ozet.yaklasan)}
           tone={ozet.yaklasanAdet > 0 ? "info" : "default"}
-          hint={`${ozet.yaklasanAdet} adet vadesi yaklaşan`}
+          hint={yon === "alinan" ? `${ozet.yaklasanAdet} adet vadesi yaklaşan` : `${ozet.yaklasanAdet} adet ödenecek`}
         />
       </StatGrid>
 
       {formAcik && (
         <CekSenetFormu
+          key={yon}
+          yon={yon}
           cariler={cariler}
           onKaydet={async (govde) => {
             setHata("");
             setBasari("");
             try {
-              await api("/kasa-banka/cek-senet", { method: "POST", body: JSON.stringify(govde) });
-              setBasari("Çek/senet portföye eklendi.");
+              await api("/kasa-banka/cek-senet", { method: "POST", body: JSON.stringify({ ...govde, yon }) });
+              setBasari(yon === "alinan" ? "Çek/senet portföye eklendi." : "Verilen çek/senet kaydedildi.");
               setFormAcik(false);
               await yukle();
               return true;
@@ -220,9 +276,9 @@ export default function CekSenetSayfasi() {
         />
         <Select value={durumFiltre} onChange={(e) => setDurumFiltre(e.target.value)} style={{ maxWidth: 220 }}>
           <option value="">Tüm durumlar</option>
-          {Object.entries(DURUMLAR).map(([deger, d]) => (
+          {akis.durumlar.map((deger) => (
             <option key={deger} value={deger}>
-              {d.baslik}
+              {DURUMLAR[deger]?.baslik ?? deger}
             </option>
           ))}
         </Select>
@@ -234,7 +290,7 @@ export default function CekSenetSayfasi() {
             <tr>
               <th>Portföy No</th>
               <th>Tür</th>
-              <th>Borçlu</th>
+              <th>{yon === "alinan" ? "Borçlu" : "Lehtar"}</th>
               <th>Vade</th>
               <th className="num">Tutar</th>
               <th>Durum</th>
@@ -251,8 +307,8 @@ export default function CekSenetSayfasi() {
             ) : (
               kayitlar.map((k) => {
                 const kalan = vadeyeKalanGun(k.vadeTarihi);
-                const portfoyde = k.durum === "portfoyde";
-                const gecikti = portfoyde && kalan < 0;
+                const acik = k.durum === akis.acikDurum;
+                const gecikti = acik && kalan < 0;
                 return (
                   <tr key={k.id}>
                     <td className="mono">{k.portfoyNo}</td>
@@ -262,13 +318,22 @@ export default function CekSenetSayfasi() {
                       </Badge>
                     </td>
                     <td>
-                      <div className="cell-entity__name">{k.borclu}</div>
-                      {k.cari && <div className="cell-entity__meta">{k.cari.unvan}</div>}
-                      {k.ciroCari && <div className="cell-entity__meta">Ciro: {k.ciroCari.unvan}</div>}
+                      {yon === "alinan" ? (
+                        <>
+                          <div className="cell-entity__name">{k.borclu}</div>
+                          {k.cari && <div className="cell-entity__meta">{k.cari.unvan}</div>}
+                          {k.ciroCari && <div className="cell-entity__meta">Ciro: {k.ciroCari.unvan}</div>}
+                        </>
+                      ) : (
+                        <>
+                          <div className="cell-entity__name">{k.cari?.unvan ?? "—"}</div>
+                          <div className="cell-entity__meta">Keşideci: {k.borclu}</div>
+                        </>
+                      )}
                     </td>
                     <td>
                       <div className="mono">{k.vadeTarihi.slice(0, 10)}</div>
-                      {portfoyde && (
+                      {acik && (
                         <div
                           className="cell-entity__meta"
                           style={{ color: gecikti ? "var(--danger)" : undefined }}
@@ -293,20 +358,18 @@ export default function CekSenetSayfasi() {
                       </Badge>
                     </td>
                     <td className="center">
-                      {portfoyde ? (
+                      {acik ? (
                         <div className="row-tight" style={{ justifyContent: "center", flexWrap: "wrap" }}>
-                          <Button size="sm" variant="primary" onClick={() => setIslemYapilan({ kayit: k, durum: "tahsil_edildi" })}>
-                            Tahsil Et
-                          </Button>
-                          <Button size="sm" onClick={() => setIslemYapilan({ kayit: k, durum: "ciro_edildi" })}>
-                            Ciro Et
-                          </Button>
-                          <Button size="sm" variant="danger" onClick={() => setIslemYapilan({ kayit: k, durum: "karsiliksiz" })}>
-                            Karşılıksız
-                          </Button>
-                          <Button size="sm" onClick={() => setIslemYapilan({ kayit: k, durum: "iade_edildi" })}>
-                            İade Et
-                          </Button>
+                          {akis.eylemler.map((e) => (
+                            <Button
+                              key={e.durum}
+                              size="sm"
+                              variant={e.vurgu}
+                              onClick={() => setIslemYapilan({ kayit: k, durum: e.durum })}
+                            >
+                              {e.baslik}
+                            </Button>
+                          ))}
                         </div>
                       ) : (
                         <span className="muted" style={{ fontSize: "0.85rem" }}>
@@ -340,12 +403,15 @@ export default function CekSenetSayfasi() {
 /* ─── Giriş formu ────────────────────────────────────────────────────────── */
 
 function CekSenetFormu({
+  yon,
   cariler,
   onKaydet,
 }: {
+  yon: Yon;
   cariler: CariOzet[];
   onKaydet: (govde: Record<string, unknown>) => Promise<boolean>;
 }) {
+  const verilen = yon === "verilen";
   const [tur, setTur] = useState<"cek" | "senet">("cek");
   const [portfoyNo, setPortfoyNo] = useState("");
   const [vadeTarihi, setVadeTarihi] = useState(bugun());
@@ -393,7 +459,7 @@ function CekSenetFormu({
 
   return (
     <Card className="stack" style={{ marginTop: "1.25rem" }}>
-      <div className="card__title">Yeni Çek/Senet</div>
+      <div className="card__title">{verilen ? "Verilen Çek/Senet" : "Alınan Çek/Senet"}</div>
 
       <div className="row">
         <div style={{ flex: 1, minWidth: 150 }}>
@@ -446,14 +512,18 @@ function CekSenetFormu({
 
       <div className="row">
         <div style={{ flex: 2, minWidth: 220 }}>
-          <Field label="Borçlu (keşideci) *">
-            <Input value={borclu} onChange={(e) => setBorclu(e.target.value)} placeholder="Çeki keşide eden kişi/firma" />
+          <Field label={verilen ? "Keşideci *" : "Borçlu (keşideci) *"}>
+            <Input
+              value={borclu}
+              onChange={(e) => setBorclu(e.target.value)}
+              placeholder={verilen ? "Kendi firmanız" : "Çeki keşide eden kişi/firma"}
+            />
           </Field>
         </div>
         <div style={{ flex: 2, minWidth: 220 }}>
-          <Field label="İlgili Cari">
+          <Field label={verilen ? "Lehtar (kime verildi) *" : "İlgili Cari"}>
             <Select value={cariId} onChange={(e) => setCariId(e.target.value)}>
-              <option value="">— Cari bağlantısı yok —</option>
+              <option value="">{verilen ? "— Cari seçin —" : "— Cari bağlantısı yok —"}</option>
               {cariler.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.kod} · {c.unvan}
@@ -471,7 +541,16 @@ function CekSenetFormu({
 
       {cariId && (
         <p className="muted" style={{ fontSize: "0.85rem", margin: 0 }}>
-          Seçili cariye çek/senet tutarı kadar <strong>alacak</strong> kaydı yazılır (borcu azalır).
+          {verilen ? (
+            <>
+              Lehtara çek/senet tutarı kadar <strong>borç</strong> kaydı yazılır (ona olan borcunuz azalır).
+              Para, çek ödendiğinde hesabınızdan çıkar.
+            </>
+          ) : (
+            <>
+              Seçili cariye çek/senet tutarı kadar <strong>alacak</strong> kaydı yazılır (borcu azalır).
+            </>
+          )}
         </p>
       )}
 
@@ -503,9 +582,15 @@ function CekSenetFormu({
         <Button
           variant="primary"
           onClick={kaydet}
-          disabled={portfoyNo.trim() === "" || borclu.trim().length < 2 || !tutar || Number(tutar) <= 0}
+          disabled={
+            portfoyNo.trim() === "" ||
+            borclu.trim().length < 2 ||
+            !tutar ||
+            Number(tutar) <= 0 ||
+            (verilen && cariId === "")
+          }
         >
-          Portföye Ekle
+          {verilen ? "Kaydet" : "Portföye Ekle"}
         </Button>
       </div>
     </Card>
@@ -533,10 +618,12 @@ function DurumKarti({
 }) {
   const [ciroCariId, setCiroCariId] = useState("");
   const [hesap, setHesap] = useState("");
-  const [tahsilTarihi, setTahsilTarihi] = useState(bugun());
+  const [islemTarihi, setIslemTarihi] = useState(bugun());
   const [aciklama, setAciklama] = useState("");
 
   const tahsil = durum === "tahsil_edildi";
+  const odeme = durum === "odendi";
+  const paraHareketi = tahsil || odeme;
   const ciro = durum === "ciro_edildi";
 
   // Karışık para birimi engellendiği için yalnız aynı dövizli hesaplar seçilebilir
@@ -547,16 +634,16 @@ function DurumKarti({
     const govde: Record<string, unknown> = { durum };
     if (aciklama.trim() !== "") govde.aciklama = aciklama.trim();
     if (ciro) govde.ciroCariId = ciroCariId;
-    if (tahsil) {
+    if (paraHareketi) {
       const [tip, id] = hesap.split(":");
-      if (tip === "kasa") govde.tahsilKasaId = id;
-      else govde.tahsilBankaHesapId = id;
-      govde.tahsilTarihi = tahsilTarihi;
+      if (tip === "kasa") govde.hesapKasaId = id;
+      else govde.hesapBankaHesapId = id;
+      govde.islemTarihi = islemTarihi;
     }
     onOnayla(govde);
   }
 
-  const gecerli = ciro ? ciroCariId !== "" : tahsil ? hesap !== "" : true;
+  const gecerli = ciro ? ciroCariId !== "" : paraHareketi ? hesap !== "" : true;
 
   return (
     <Card className="stack" style={{ marginTop: "1.5rem", borderColor: "var(--accent)" }}>
@@ -591,11 +678,11 @@ function DurumKarti({
         </>
       )}
 
-      {tahsil && (
+      {paraHareketi && (
         <>
           <div className="row">
             <div style={{ flex: 2, minWidth: 220 }}>
-              <Field label="Paranın Gireceği Hesap *">
+              <Field label={odeme ? "Paranın Çıkacağı Hesap *" : "Paranın Gireceği Hesap *"}>
                 <Select value={hesap} onChange={(e) => setHesap(e.target.value)}>
                   <option value="">— Kasa ya da banka seçin —</option>
                   {uygunKasalar.map((k) => (
@@ -612,36 +699,55 @@ function DurumKarti({
               </Field>
             </div>
             <div style={{ flex: 1, minWidth: 160 }}>
-              <Field label="Tahsil Tarihi">
-                <Input type="date" value={tahsilTarihi} onChange={(e) => setTahsilTarihi(e.target.value)} />
+              <Field label={odeme ? "Ödeme Tarihi" : "Tahsil Tarihi"}>
+                <Input type="date" value={islemTarihi} onChange={(e) => setIslemTarihi(e.target.value)} />
               </Field>
             </div>
           </div>
           {uygunKasalar.length + uygunBankalar.length === 0 && (
             <Alert tone="error">
-              {kayit.dovizCinsi} cinsinden tanımlı kasa/banka hesabı yok. Tahsil için önce Kasa &amp; Banka
+              {kayit.dovizCinsi} cinsinden tanımlı kasa/banka hesabı yok. İşlem için önce Kasa &amp; Banka
               ekranından {kayit.dovizCinsi} hesabı açmalısınız.
             </Alert>
           )}
           <p className="muted" style={{ fontSize: "0.85rem", margin: 0 }}>
-            Seçilen hesaba <strong>{para(kayit.tutar, kayit.dovizCinsi)}</strong> tutarında tahsilat fişi yazılır.
-            {kayit.cari
-              ? " Cari, çek alımında zaten alacaklandırıldığı için yeniden cari hareketi oluşturulmaz."
-              : ""}
+            {odeme ? (
+              <>
+                Seçilen hesaptan <strong>{para(kayit.tutar, kayit.dovizCinsi)}</strong> tutarında tediye fişi
+                çıkar. Lehtar, çek verilirken zaten borçlandırıldığı için yeniden cari hareketi oluşturulmaz.
+              </>
+            ) : (
+              <>
+                Seçilen hesaba <strong>{para(kayit.tutar, kayit.dovizCinsi)}</strong> tutarında tahsilat fişi
+                yazılır.
+                {kayit.cari ? " Cari, çek alımında zaten alacaklandırıldığı için yeniden cari hareketi oluşturulmaz." : ""}
+              </>
+            )}
           </p>
         </>
       )}
 
       {durum === "karsiliksiz" && (
         <p className="muted" style={{ fontSize: "0.85rem", margin: 0 }}>
-          Karşılıksız işaretlenen çek/senet portföyden düşer; para hareketi oluşmaz. Borçludan tahsilat için
-          cari hareketi elle girilmelidir.
+          {kayit.yon === "verilen" ? (
+            <>
+              Karşılıksız kalan kendi çekiniz takipten düşer; para hareketi oluşmaz. Borcunuz devam ediyorsa
+              cari hareketi elle girilmelidir.
+            </>
+          ) : (
+            <>
+              Karşılıksız işaretlenen çek/senet portföyden düşer; para hareketi oluşmaz. Borçludan tahsilat için
+              cari hareketi elle girilmelidir.
+            </>
+          )}
         </p>
       )}
 
       {durum === "iade_edildi" && (
         <p className="muted" style={{ fontSize: "0.85rem", margin: 0 }}>
-          İade edilen çek/senet portföyden düşer; para hareketi oluşmaz.
+          {kayit.yon === "verilen"
+            ? "Geri alınan çek/senet takipten düşer; para hareketi oluşmaz."
+            : "İade edilen çek/senet portföyden düşer; para hareketi oluşmaz."}
         </p>
       )}
 

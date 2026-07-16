@@ -85,21 +85,42 @@ v1.0 kapsam modülü; kullanıcı davet/rol atama ve iki adımlı doğrulama kur
 
 ## 3. Çek & Senet — ✅ TAMAM (2026-07-16) · Efor: Orta
 
-> Eklendi: `/panel/kasa-banka/cek-senet` — KPI'lar (portföydeki, vadesi geçmiş,
-> 30 gün içinde), tür + durum filtresi, giriş formu (döviz/kur, cari bağlantısı),
-> **güdümlü durum akışı**: yalnız portföydeki kayıtta Tahsil/Ciro/Karşılıksız/
-> İade; sonuçlanmış kayıt salt-okur. Menüde Kasa & Banka altında.
+> Eklendi: `/panel/kasa-banka/cek-senet` — **Alınan / Verilen** yön segmenti,
+> KPI'lar (portföydeki ya da tedavüldeki borç, vadesi geçmiş, 30 gün içinde),
+> tür + durum filtresi, yöne göre giriş formu (alınanda Borçlu, verilende
+> Keşideci + zorunlu Lehtar), **güdümlü durum akışı**: alınanda Tahsil/Ciro/
+> Karşılıksız/İade, verilende Ödendi/Karşılıksız/Geri Alındı; sonuçlanmış kayıt
+> salt-okur. Her işlemin para ve cari etkisi onay kartında yazılı. Menüde
+> Kasa & Banka altında.
 >
-> **Backend genişletildi (S-01 kararı):** tahsil yalnız durumu değiştiriyordu,
-> para hiçbir yere girmiyordu. Artık `PATCH .../cek-senet/:id` `tahsilKasaId` /
-> `tahsilBankaHesapId` / `tahsilTarihi` alıyor ve seçilen hesaba **tahsilat
-> fişi** yazıyor (`kaynakTur=cek_senet`). Sunucu tarafında: tahsilde hesap ve
-> ciroda ciro carisi zorunlu, hesap para birimi çek/senetle uyuşmalı, durum
-> zaten tahsil ise ikinci fiş yazılmaz. Fişte `cariId` **boş bırakılır** — cari,
-> çek alımında zaten alacaklandırıldığı için aksi hâlde çift kayıt olurdu.
-> Doğrulandı: 5.000 TL çek → kasa 0 → 5.000, cari bakiyesi değişmedi.
+> **Backend iki kez genişletildi (S-01 kararları):**
 >
-> Kapsam dışı kalan: karşılıksız/iade para hareketi üretmez (ekranda belirtilir).
+> **(a) Tahsil → para hareketi.** Tahsil yalnız durumu değiştiriyordu, para
+> hiçbir yere girmiyordu. Artık `PATCH .../cek-senet/:id` `hesapKasaId` /
+> `hesapBankaHesapId` / `islemTarihi` alıyor ve hesaba **tahsilat fişi** yazıyor
+> (`kaynakTur=cek_senet`). Doğrulandı: 5.000 TL çek → kasa 0 → 5.000.
+>
+> **(b) Verilen (kendi kestiğimiz) çek — Paket 3b.** Model yalnız alınan çeki
+> varsayıyordu (`CariHesap.ceklerAlinan`, `borclu` = karşı taraf). Kendi çekimiz
+> girilseydi üç şey yanlış olurdu: cari ters yönde işlenirdi, ödeme parayı
+> hesaba *sokardı*, müşterinin risk limiti bizim borcumuz kadar şişerdi.
+> Eklenen: `CekSenet.yon` (`alinan` | `verilen`) + `verildi`/`odendi` durumları
+> (migration `20260716203342_cek_senet_yon`; mevcut kayıtlar `alinan`),
+> `GET .../cek-senet?yon=`, yön/durum uyumu denetimi, `cari.service` risk
+> sorgusuna `yon: "alinan"` filtresi.
+> Yön etkileri: **alınan** → cariye alacak, tahsilde **tahsilat** fişi;
+> **verilen** → lehtara borç (zorunlu), ödemede **tediye** fişi.
+> Doğrulandı: 3.000 TL kendi çekimiz → cari bakiye +3.000 (borç azaldı), çek
+> riski 0'da kaldı, ödemede kasa 5.000 → 2.000, cari değişmedi, tek tediye fişi.
+> Sunucu reddediyor: verilene `tahsil_edildi`, alınana `odendi`, lehtarsız
+> verilen çek (üçü de 400).
+>
+> Ortak kurallar: hesap para birimi çek/senetle uyuşmalı; aynı duruma ikinci
+> geçişte tekrar fiş yazılmaz; fişte `cariId` **boş bırakılır** (cari, çek
+> alınırken/verilirken zaten işlendi).
+>
+> Kapsam dışı kalan: karşılıksız/iade/geri alma para hareketi üretmez (ekranda
+> belirtilir).
 
 ## 4. Stok Detay & Alt-yapıları — ✅ TAMAM (2026-07-16) · Efor: Büyük
 

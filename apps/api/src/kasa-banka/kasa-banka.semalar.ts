@@ -58,44 +58,71 @@ export const virmanOlusturSemasi = z.object({
   path: ["hedefKasaId"],
 });
 
-export const cekSenetOlusturSemasi = z.object({
-  tur: z.enum(["cek", "senet"]),
-  portfoyNo: z.string().min(1).max(50),
-  vadeTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)"),
-  tutar: pozitifOndalik,
-  dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
-  kur: pozitifOndalik.default("1"),
-  borclu: z.string().min(2).max(255),
-  kesideYeri: z.string().max(100).optional().nullable(),
-  banka: z.string().max(100).optional().nullable(),
-  sube: z.string().max(100).optional().nullable(),
-  hesapNo: z.string().max(50).optional().nullable(),
-  cariId: z.string().uuid().optional().nullable(),
-  aciklama: z.string().max(500).optional().nullable(),
-});
+/** Paranın gireceği/çıkacağı durumlar: alınanda tahsil, verilende ödeme. */
+export const CEK_SENET_PARA_DURUMLARI = ["tahsil_edildi", "odendi"] as const;
+
+export const cekSenetOlusturSemasi = z
+  .object({
+    tur: z.enum(["cek", "senet"]),
+    /** alinan = müşteri çeki (varlık); verilen = kendi çekimiz (borç). */
+    yon: z.enum(["alinan", "verilen"]).default("alinan"),
+    portfoyNo: z.string().min(1).max(50),
+    vadeTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)"),
+    tutar: pozitifOndalik,
+    dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+    kur: pozitifOndalik.default("1"),
+    /** Alınanda keşideci, verilende kendi firmamız. */
+    borclu: z.string().min(2).max(255),
+    kesideYeri: z.string().max(100).optional().nullable(),
+    banka: z.string().max(100).optional().nullable(),
+    sube: z.string().max(100).optional().nullable(),
+    hesapNo: z.string().max(50).optional().nullable(),
+    /** Alınanda çeki veren müşteri, verilende lehtar. */
+    cariId: z.string().uuid().optional().nullable(),
+    aciklama: z.string().max(500).optional().nullable(),
+  })
+  // Verilen çekte borç azalışı bir cariye yazılmalı, aksi hâlde kayıt eksik kalır
+  .refine((d) => d.yon !== "verilen" || !!d.cariId, {
+    message: "Verilen çek/senet için lehtar cari seçilmelidir",
+    path: ["cariId"],
+  });
 
 export const cekSenetGuncelleSemasi = z
   .object({
-    durum: z.enum(["portfoyde", "ciro_edildi", "tahsil_edildi", "karsiliksiz", "iade_edildi"]),
+    durum: z.enum([
+      "portfoyde",
+      "ciro_edildi",
+      "tahsil_edildi",
+      "karsiliksiz",
+      "iade_edildi",
+      "verildi",
+      "odendi",
+    ]),
     ciroCariId: z.string().uuid().optional().nullable(),
     aciklama: z.string().max(500).optional().nullable(),
-    /** Tahsilde paranın gireceği hesap; kasa ya da bankadan biri (KSB-05). */
-    tahsilKasaId: z.string().uuid().optional().nullable(),
-    tahsilBankaHesapId: z.string().uuid().optional().nullable(),
-    tahsilTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)").optional(),
+    /**
+     * Paranın gireceği (tahsil) ya da çıkacağı (ödeme) hesap; kasa ya da
+     * bankadan biri (KSB-05).
+     */
+    hesapKasaId: z.string().uuid().optional().nullable(),
+    hesapBankaHesapId: z.string().uuid().optional().nullable(),
+    islemTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)").optional(),
   })
   .refine((d) => d.durum !== "ciro_edildi" || !!d.ciroCariId, {
     message: "Ciro için ciro edilen cari seçilmelidir",
     path: ["ciroCariId"],
   })
   .refine(
-    (d) => d.durum !== "tahsil_edildi" || !!d.tahsilKasaId || !!d.tahsilBankaHesapId,
+    (d) =>
+      !CEK_SENET_PARA_DURUMLARI.includes(d.durum as (typeof CEK_SENET_PARA_DURUMLARI)[number]) ||
+      !!d.hesapKasaId ||
+      !!d.hesapBankaHesapId,
     {
-      message: "Tahsil için kasa veya banka hesabından biri seçilmelidir",
-      path: ["tahsilKasaId"],
+      message: "Tahsil/ödeme için kasa veya banka hesabından biri seçilmelidir",
+      path: ["hesapKasaId"],
     },
   )
-  .refine((d) => !(d.tahsilKasaId && d.tahsilBankaHesapId), {
-    message: "Tahsil için yalnız bir hesap seçilebilir (kasa ya da banka)",
-    path: ["tahsilKasaId"],
+  .refine((d) => !(d.hesapKasaId && d.hesapBankaHesapId), {
+    message: "Yalnız bir hesap seçilebilir (kasa ya da banka)",
+    path: ["hesapKasaId"],
   });

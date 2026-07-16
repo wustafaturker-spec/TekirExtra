@@ -1,14 +1,22 @@
 # TekirExtra — Yazılım İster Dokümanı (SRS)
 
-**Sürüm:** 0.15
+**Sürüm:** 0.16
 **Tarih:** 2026-07-16
 **Durum (2026-07-16):** **UI Tamamlama** sürüyor (plan: `docs/UI-TAMAMLAMA.md`);
-Paket 1/2/4/7 bitti, Paket 3 (Çek & Senet) ile birlikte **KSB-05 genişletildi**:
-tahsil artık yalnız durum değiştirmiyor, seçilen kasa/banka hesabına tahsilat
-fişi yazıyor (`PATCH /kasa-banka/cek-senet/:id` → `tahsilKasaId` /
-`tahsilBankaHesapId` / `tahsilTarihi`; tahsilde hesap, ciroda ciro carisi
-sunucuda zorunlu). Çek alımında cari zaten alacaklandığı için tahsil fişinde
-cari hareketi yazılmaz (çift kayıt olurdu).
+Paket 1/2/3/4/7 bitti. Paket 3 ile **KSB-05 iki kez genişletildi**:
+1. **Tahsil artık para hareketi doğuruyor** — yalnız durum değişiyordu.
+   `PATCH /kasa-banka/cek-senet/:id` → `hesapKasaId` / `hesapBankaHesapId` /
+   `islemTarihi`; seçilen hesaba tahsilat fişi yazılır.
+2. **Verilen (kendi kestiğimiz) çek/senet eklendi** — model yalnız alınan çeki
+   varsayıyordu; kendi çekimiz kaydedilseydi cari ters yönde işlenir, ödeme
+   parayı hesaba *sokar* ve müşterinin risk limitini şişirirdi. `CekSenet.yon`
+   (`alinan` | `verilen`) + `verildi`/`odendi` durumları eklendi (migration
+   `20260716203342_cek_senet_yon`; mevcut kayıtlar `alinan`).
+Kurallar: tahsilde/ödemede hesap, ciroda ciro carisi, verilende lehtar cari
+sunucuda zorunlu; hesap para birimi çek/senetle uyuşmalı; durum yönle tutarlı
+olmalı; aynı duruma ikinci geçişte tekrar fiş yazılmaz. Cari, çek alınırken/
+verilirken zaten işlendiği için fişte cari hareketi yazılmaz (çift kayıt olurdu).
+Cari riskine (CARI-17) yalnız `yon=alinan` çekler sayılır.
 **Durum (2026-07-15):** **Fiyat Listeleri modülü tamamlandı** — STK-11'in eksik
 kalan *tanımlama* tarafı kapatıldı: `FiyatListesi`/kalem CRUD uçları
 (`/fiyat-listeleri`), yönetim ekranı (Stok altında) ve **CARI-10** için cari
@@ -208,7 +216,7 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | KSB-02 | Tahsilat ve ödeme (tediye) fişleri kesilebilmeli, ilgili cari bakiyesine yansımalıdır. | Z |
 | KSB-03 | Kasalar/hesaplar arası virman yapılabilmelidir. | Z |
 | KSB-04 | Kasa ve banka hesap hareketleri tarih aralığıyla listelenebilmeli, anlık bakiye görülebilmelidir. | Z |
-| KSB-05 | Çek ve senet takibi yapılabilmelidir: portföy, ciro, tahsil, karşılıksız durumları. Tahsilde tutar, seçilen kasa/banka hesabına tahsilat fişi olarak girer. | İ |
+| KSB-05 | Çek ve senet takibi yapılabilmelidir. **Alınan** (müşteri çeki, varlık): portföy → tahsil / ciro / karşılıksız / iade; tahsilde tutar seçilen kasa/banka hesabına **tahsilat** fişi olarak girer. **Verilen** (kendi kestiğimiz çek, borç): verildi → ödendi / karşılıksız / geri alındı; lehtar cari zorunludur, verilişte lehtara borç yazılır, ödemede tutar seçilen hesaptan **tediye** fişi olarak çıkar. Yalnız alınan çekler cari riskine sayılır. | İ |
 | KSB-06 | Banka ekstresi (CSV/OFX) içe aktarılıp hareketlerle eşleştirilebilmelidir (otomatik banka bağlantısı için bkz. ENT-06). | G |
 | KSB-07 | Fatura üzerinden doğrudan tahsilat/ödeme kaydı oluşturulabilmelidir (kapama). | Z |
 
