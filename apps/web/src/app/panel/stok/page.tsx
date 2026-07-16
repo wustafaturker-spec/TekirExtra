@@ -236,7 +236,10 @@ export default function StokSayfasi() {
                     <td className="num">{s.alisFiyati ? tl(s.alisFiyati) : "—"}</td>
                     <td className="num" style={{ fontWeight: 600 }}>{s.satisFiyati ? tl(s.satisFiyati) : "—"}</td>
                     <td className="center">
-                      <Button size="sm" onClick={() => kopyala(s.id)}>📋 Kopyala</Button>
+                      <div className="row-tight" style={{ justifyContent: "center" }}>
+                        <ButtonLabel as="a" size="sm" href={`/panel/stok/${s.id}`}>🔍 Detay</ButtonLabel>
+                        <Button size="sm" onClick={() => kopyala(s.id)}>📋 Kopyala</Button>
+                      </div>
                     </td>
                   </tr>
                 );
