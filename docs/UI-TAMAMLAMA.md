@@ -17,15 +17,13 @@ envanteri. Kaynak: çalışan API'nin map ettiği 132 rota ile `apps/web`'in
 **Bitti:** Paket **2** (Kullanıcı & 2FA), **7** (Modül Ayarları), **1** (Belge
 Zinciri) — hepsi uçtan uca doğrulandı. Ayrıca öncesinde UI redesign, 2 hata
 düzeltmesi ve Fiyat Listeleri modülü.
-**Sürüyor — Paket 4 (Stok Detay).** S-01 kararları: önce detay, sonra kategori
-ve sayım; sayımda tüm stok listelenip fiili miktar girilir (boşlar gönderilmez);
-etiket basımı yalnız kart detayından.
-- **4a ✅** `/panel/stok/[id]` 5 sekmeli kart detayı + liste "Detay" linki (2026-07-16).
-- **4b ⏳** `/panel/stok/kategoriler` (STK-09) — sıradaki.
-- **4c ⏳** `/panel/stok/sayim` (STK-06/20).
+**Paket 4 (Stok Detay) tamamlandı (2026-07-16)** — 4a kart detayı, 4b kategoriler,
+4c sayım; hepsi tarayıcıdan uçtan uca doğrulandı. S-01 kararları: sayımda tüm stok
+listelenip fiili miktar girilir (boşlar gönderilmez); etiket basımı yalnız kart
+detayından (liste toplu basım yok).
 
-**Sonra:** **3** (Çek & Senet) → **6** (Fatura/e-Belge tamamlama) → **5** (Cari
-detay ekleme formları).
+**Sıradaki (başlanmadı):** **3** (Çek & Senet) → **6** (Fatura/e-Belge tamamlama)
+→ **5** (Cari detay ekleme formları). Bunlar bittiğinde UI Tamamlama kapsamı biter.
 
 ## Özet tablo
 
@@ -34,7 +32,7 @@ detay ekleme formları).
 | 1 | Belge Zinciri | FTR-12, FTR-13 | ✅ | ✅ **Tamam (2026-07-15)** | **Büyük** |
 | 2 | Kullanıcı & Yetki + 2FA | KLN-01/02/05 | ✅ | ✅ **Tamam (2026-07-15)** | Orta |
 | 3 | Çek & Senet | KSB-05 | ✅ | ❌ Yok | Orta |
-| 4 | Stok Detay & Alt-yapılar | STK-02/06/09/10/15/18/20 | ✅ | ⏳ Sürüyor (4a tamam) | **Büyük** |
+| 4 | Stok Detay & Alt-yapılar | STK-02/06/09/10/15/18/20 | ✅ | ✅ **Tamam (2026-07-16)** | **Büyük** |
 | 5 | Cari Detay Tamamlama | CARI-09/15 | ✅ | ⚠️ Kısmi (salt-okur) | Küçük |
 | 6 | Fatura & e-Belge Tamamlama | FTR-06, EBLG-05 | ✅ | ⚠️ Kısmi | Orta |
 | 7 | Ayarlar Altyapısı | AYR-01/02/03, STK-17 | ✅ | ✅ **Tamam (2026-07-15)** | Orta |
@@ -94,14 +92,22 @@ Portföy/ciro/tahsil/karşılıksız takibi (KSB-05). Backend hazır.
 çek/senet listesi (durum rozetleriyle), giriş formu, durum güncelleme
 (tahsil/ciro/karşılıksız).
 
-## 4. Stok Detay & Alt-yapıları — *sürüyor (4a tamam)* · Efor: Büyük
+## 4. Stok Detay & Alt-yapıları — ✅ TAMAM (2026-07-16) · Efor: Büyük
 
-> **4a eklendi (2026-07-16):** `/panel/stok/[id]` — Genel (tüm kart alanları,
-> kategori, aktif/pasif; eylemler `izinliEylemler`'e bağlı), Hareketler (8 tip,
-> girilen birim → ana birim çevrimi ve önizlemesi, `eksiStokUyarisi` gösterimi),
-> Birimler, Barkodlar (+ tek ürün etiket PDF'i), Tedarikçiler. Stok listesine
-> "Detay" linki. Tarayıcıdan doğrulandı (5 koli girişi → 60 adet).
-> Not: `StokHareket.miktar` API'de işaretli saklanır; UI ayrıca işaret koymaz.
+> **4a:** `/panel/stok/[id]` — Genel (tüm kart alanları, kategori, aktif/pasif;
+> eylemler `izinliEylemler`'e bağlı), Hareketler (8 tip, girilen birim → ana
+> birim çevrimi ve önizlemesi, `eksiStokUyarisi` gösterimi), Birimler, Barkodlar
+> (+ tek ürün etiket PDF'i), Tedarikçiler. Stok listesine "Detay" linki.
+> Doğrulandı: 5 koli girişi → 60 adet.
+> **4b:** `/panel/stok/kategoriler` — girintili ağaç, üst seçerek ekleme; silme
+> kuralları (alt kategori / ürün) butona yansır.
+> **4c:** `/panel/stok/sayim` — taslakta tüm ürünler listelenir, yalnız fiili
+> girilenler kalem olur; liste + detay (fark tablosu) + onayla.
+> Doğrulandı: 100 → fiili 93 → onayda `sayim_duzeltme -7`, mevcut 93.
+>
+> Notlar: `StokHareket.miktar` API'de **işaretli** saklanır (çıkışta eksi); UI
+> ayrıca işaret koymaz. Sayım onayında farklar **onay anındaki** güncel miktara
+> göre yeniden hesaplanır (STK-20) — taslaktaki fark bilgi amaçlıdır.
 
 Stok kartı ekranı şu an yalnız **liste + oluştur + kopyala**. Backend'de zengin
 alt-yapılar var, kart **detay** ekranı hiç yok.
