@@ -41,17 +41,35 @@ interface FaturaSatir {
 
 interface Fatura {
   id: string;
-  faturaNo: string | null;
+  no: string | null;
   tip: string;
   tarih: string;
   durum: string;
-  netTutar: string;
-  kdvTutari: string;
+  toplamMatrah: string;
+  toplamKdv: string;
   genelToplam: string;
   cari: { unvan: string };
-  ebelgeGonderimDurumu?: string;
-  ebelgeHataMesaji?: string;
+  /** API iç içe döner; gönderilmemiş faturada null. */
+  ebelge?: { id: string; durum: string; tur: string } | null;
 }
+
+/** FaturaTip enum'u; iade ve proforma da listede ayırt edilmeli. */
+const TIP_ETIKETLERI: Record<string, string> = {
+  satis: "📤 Satış",
+  alis: "📥 Alış",
+  satis_iade: "↩️ Satış İade",
+  alis_iade: "↪️ Alış İade",
+  proforma: "📄 Proforma",
+};
+
+/** BelgeDurum enum'u (EBLG-04). */
+const EBELGE_DURUMLARI: Record<string, { baslik: string; renk: "info" | "success" | "danger" | "neutral" }> = {
+  kuyrukta: { baslik: "⚙ Kuyrukta", renk: "info" },
+  iletildi: { baslik: "📨 İletildi", renk: "info" },
+  kabul: { baslik: "✓ Kabul", renk: "success" },
+  ret: { baslik: "⛔ Ret", renk: "danger" },
+  hata: { baslik: "⚠ Hata", renk: "danger" },
+};
 
 const tl = (deger: string | number): string =>
   Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL";
@@ -64,6 +82,8 @@ export default function FaturaSayfasi() {
   const [stoklar, setStoklar] = useState<Stok[]>([]);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
+  const [epostaGonderilen, setEpostaGonderilen] = useState<Fatura | null>(null);
+  const [epostaAdresi, setEpostaAdresi] = useState("");
   const [formAcik, setFormAcik] = useState(false);
 
   // Form alanları
@@ -258,6 +278,35 @@ export default function FaturaSayfasi() {
     }
   }
 
+  /** FTR-09: proformadan yeni taslak satış faturası üretir. */
+  async function satisaDonustur(id: string) {
+    setHata("");
+    setBasari("");
+    try {
+      await api(`/fatura/${id}/satisa-donustur`, { method: "POST" });
+      setBasari("Proforma, taslak satış faturasına dönüştürüldü.");
+      void yukle();
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Dönüştürme hatası");
+    }
+  }
+
+  /** Boş bırakılırsa API carinin kayıtlı e-postasına gönderir. */
+  async function epostaGonder(id: string, eposta: string) {
+    setHata("");
+    setBasari("");
+    try {
+      const yanit = await api<{ alici: string }>(`/fatura/${id}/pdf-gonder`, {
+        method: "POST",
+        body: JSON.stringify(eposta.trim() === "" ? {} : { eposta: eposta.trim() }),
+      });
+      setBasari(`Fatura PDF'i ${yanit.alici} adresine gönderildi.`);
+      setEpostaGonderilen(null);
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "E-posta gönderilemedi");
+    }
+  }
+
   function pdfAc(id: string) {
     const token = tokenAl();
     const url = `${apiBase()}/fatura/${id}/pdf?token=${token ?? ""}`;
@@ -282,6 +331,33 @@ export default function FaturaSayfasi() {
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
 
+      {epostaGonderilen && (
+        <Card className="stack" style={{ marginBottom: "1.5rem", borderColor: "var(--accent)", maxWidth: 620 }}>
+          <div className="between">
+            <div className="card__title" style={{ margin: 0 }}>
+              ✉️ Fatura PDF&apos;ini E-posta ile Gönder
+            </div>
+            <Button size="sm" onClick={() => { setEpostaGonderilen(null); setEpostaAdresi(""); }}>✖ Vazgeç</Button>
+          </div>
+          <p className="muted" style={{ fontSize: "0.9rem", margin: 0 }}>
+            {epostaGonderilen.no} · {epostaGonderilen.cari.unvan} · {tl(epostaGonderilen.genelToplam)}
+          </p>
+          <Field label="Alıcı E-posta">
+            <Input
+              type="email"
+              value={epostaAdresi}
+              onChange={(e) => setEpostaAdresi(e.target.value)}
+              placeholder="Boş bırakılırsa cari kartındaki adres kullanılır"
+            />
+          </Field>
+          <div>
+            <Button variant="primary" onClick={() => epostaGonder(epostaGonderilen.id, epostaAdresi)}>
+              Gönder
+            </Button>
+          </div>
+        </Card>
+      )}
+
       {formAcik && (
         <Card style={{ marginBottom: "1.5rem" }}>
           <h3 style={{ fontSize: "1.05rem", marginBottom: "1.25rem" }}>Yeni Fatura Düzenle</h3>
@@ -300,6 +376,8 @@ export default function FaturaSayfasi() {
                 <Select value={tip} onChange={(e) => { setTip(e.target.value); setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 }]); }}>
                   <option value="satis">Satış Faturası</option>
                   <option value="alis">Alış Faturası</option>
+                  {/* FTR-09: proforma; kesinleştirilmeden satışa dönüştürülür */}
+                  <option value="proforma">Proforma</option>
                 </Select>
               </Field>
             </div>
@@ -393,11 +471,11 @@ export default function FaturaSayfasi() {
             ) : (
               faturalar.map((f) => (
                 <tr key={f.id}>
-                  <td style={{ fontWeight: 700 }}>{f.faturaNo || "(Taslak)"}</td>
+                  <td style={{ fontWeight: 700 }} className="mono">{f.no || "(Taslak)"}</td>
                   <td>{f.cari.unvan}</td>
                   <td>{f.tarih}</td>
-                  <td>{f.tip === "satis" ? "📤 Satış" : "📥 Alış"}</td>
-                  <td className="num">{tl(f.netTutar)}</td>
+                  <td>{TIP_ETIKETLERI[f.tip] ?? f.tip}</td>
+                  <td className="num">{tl(f.toplamMatrah)}</td>
                   <td className="num" style={{ fontWeight: 700 }}>{tl(f.genelToplam)}</td>
                   <td>
                     {f.durum === "taslak"
@@ -405,12 +483,13 @@ export default function FaturaSayfasi() {
                       : <Badge variant="success">🔒 Kesinleşti</Badge>}
                   </td>
                   <td>
-                    {f.durum === "taslak" ? <span className="subtle">—</span> : (
-                      <>
-                        {f.ebelgeGonderimDurumu === "basarili" && <Badge variant="success">✓ Tamamlandı</Badge>}
-                        {f.ebelgeGonderimDurumu === "kuyrukta" && <Badge variant="info">⚙ Kuyrukta</Badge>}
-                        {f.ebelgeGonderimDurumu === "hatali" && <Badge variant="danger">⚠ {f.ebelgeHataMesaji || "Gönderilemedi"}</Badge>}
-                      </>
+                    {f.ebelge ? (
+                      <Badge variant={EBELGE_DURUMLARI[f.ebelge.durum]?.renk ?? "neutral"}>
+                        {EBELGE_DURUMLARI[f.ebelge.durum]?.baslik ?? f.ebelge.durum}
+                        {f.ebelge.tur === "efatura" ? " · e-Fatura" : " · e-Arşiv"}
+                      </Badge>
+                    ) : (
+                      <span className="subtle">—</span>
                     )}
                   </td>
                   <td className="center">
@@ -423,10 +502,15 @@ export default function FaturaSayfasi() {
                       ) : (
                         <>
                           <Button size="sm" onClick={() => pdfAc(f.id)}>🖨 PDF</Button>
-                          {f.ebelgeGonderimDurumu !== "basarili" && (
+                          <Button size="sm" onClick={() => setEpostaGonderilen(f)}>✉️ E-posta</Button>
+                          {f.ebelge && !["kabul", "iletildi"].includes(f.ebelge.durum) && (
                             <Button size="sm" onClick={() => ebelgeSorgula(f.id)}>Sorgula</Button>
                           )}
                         </>
+                      )}
+                      {/* FTR-09: yalnız proforma satışa dönüştürülebilir */}
+                      {f.tip === "proforma" && (
+                        <Button size="sm" onClick={() => satisaDonustur(f.id)}>➡️ Satışa Dönüştür</Button>
                       )}
                       <Button size="sm" onClick={() => kopyala(f.id)}>📋 Kopyala</Button>
                     </div>

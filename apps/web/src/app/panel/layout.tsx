@@ -55,6 +55,7 @@ const MENU: MenuGrup[] = [
     baslik: "Ayarlar",
     ogeler: [
       { href: "/panel/ayarlar/firma", ikon: "🏢", baslik: "Firma Ayarları", eslesme: "tam" },
+      { href: "/panel/ayarlar/fatura-serileri", ikon: "🔢", baslik: "Fatura Serileri", eslesme: "tam" },
       { href: "/panel/ayarlar/moduller", ikon: "⚙️", baslik: "Modül Ayarları", eslesme: "tam" },
       { href: "/panel/ayarlar/kullanicilar", ikon: "👤", baslik: "Kullanıcılar", eslesme: "tam" },
       { href: "/panel/ayarlar/entegratorler", ikon: "🔌", baslik: "e-Belge Ayarları", eslesme: "tam" },
