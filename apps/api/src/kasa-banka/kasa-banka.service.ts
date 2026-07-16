@@ -456,6 +456,11 @@ export class KasaBankaService {
     const { tenantId } = aktifBaglam();
     const CS = await this.cekSenetGetir(id);
 
+    // Tahsil hesabının para birimi çek/senetle uyuşmalı (KSB-05)
+    if (girdi.durum === "tahsil_edildi" && CS.durum !== "tahsil_edildi") {
+      await this.tahsilHesabiniDenetle(girdi, CS.dovizCinsi);
+    }
+
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const guncel = await tx.cekSenet.update({
         where: { id },
@@ -465,6 +470,29 @@ export class KasaBankaService {
           aciklama: girdi.aciklama ?? CS.aciklama,
         },
       });
+
+      // Tahsil edilince para seçilen kasa/bankaya girer (KSB-05).
+      // Cari, çek alımında zaten alacaklandığı için burada cari hareketi
+      // YAZILMAZ (çift kayıt olur); bu yüzden fişte cariId boş bırakılır.
+      // Koşul, durum zaten tahsil ise ikinci fişi engeller.
+      if (girdi.durum === "tahsil_edildi" && CS.durum !== "tahsil_edildi") {
+        await tx.kasaBankaHareket.create({
+          data: {
+            tenantId,
+            kasaId: girdi.tahsilKasaId ?? null,
+            bankaHesapId: girdi.tahsilBankaHesapId ?? null,
+            tip: "tahsilat",
+            tutar: CS.tutar,
+            dovizCinsi: CS.dovizCinsi,
+            kur: CS.kur,
+            tutarTry: D(CS.tutar).mul(D(CS.kur)).toDecimalPlaces(2),
+            tarih: girdi.tahsilTarihi ? new Date(girdi.tahsilTarihi) : new Date(),
+            aciklama: `${CS.tur.toUpperCase()} tahsili (Portföy No: ${CS.portfoyNo}, Borçlu: ${CS.borclu})`,
+            kaynakTur: "cek_senet",
+            kaynakRef: CS.id,
+          },
+        });
+      }
 
       // Ciro edilirse ciro edilen cariye alacak (borcumuz azalır) yazarız
       if (girdi.durum === "ciro_edildi" && girdi.ciroCariId) {
@@ -560,6 +588,38 @@ export class KasaBankaService {
     }
 
     return sonuc;
+  }
+
+  /**
+   * Tahsil hesabının var olduğunu ve para biriminin çek/senetle uyuştuğunu
+   * doğrular; uyuşmazsa hesabın bakiyesi karışık para birimine düşerdi.
+   */
+  private async tahsilHesabiniDenetle(
+    girdi: z.infer<typeof cekSenetGuncelleSemasi>,
+    cekDovizCinsi: DovizCinsi,
+  ): Promise<void> {
+    const { tenantId } = aktifBaglam();
+
+    const hesapDovizi = girdi.tahsilKasaId
+      ? (
+          await this.prisma.tenantIslem(tenantId, (tx) =>
+            tx.kasa.findUnique({ where: { id: girdi.tahsilKasaId! } }),
+          )
+        )?.dovizCinsi
+      : (
+          await this.prisma.tenantIslem(tenantId, (tx) =>
+            tx.bankaHesap.findUnique({ where: { id: girdi.tahsilBankaHesapId! } }),
+          )
+        )?.dovizCinsi;
+
+    if (!hesapDovizi) {
+      throw new BadRequestException("Tahsil için seçilen kasa/banka hesabı bulunamadı");
+    }
+    if (hesapDovizi !== cekDovizCinsi) {
+      throw new BadRequestException(
+        `Çek/senet ${cekDovizCinsi} cinsinden; ${hesapDovizi} hesabına tahsil edilemez`,
+      );
+    }
   }
 
   private async virmanKurallariniDenetle(girdi: z.infer<typeof virmanOlusturSemasi>): Promise<DovizCinsi> {

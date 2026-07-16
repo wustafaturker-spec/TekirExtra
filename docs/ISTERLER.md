@@ -1,7 +1,14 @@
 # TekirExtra — Yazılım İster Dokümanı (SRS)
 
-**Sürüm:** 0.14
-**Tarih:** 2026-07-15
+**Sürüm:** 0.15
+**Tarih:** 2026-07-16
+**Durum (2026-07-16):** **UI Tamamlama** sürüyor (plan: `docs/UI-TAMAMLAMA.md`);
+Paket 1/2/4/7 bitti, Paket 3 (Çek & Senet) ile birlikte **KSB-05 genişletildi**:
+tahsil artık yalnız durum değiştirmiyor, seçilen kasa/banka hesabına tahsilat
+fişi yazıyor (`PATCH /kasa-banka/cek-senet/:id` → `tahsilKasaId` /
+`tahsilBankaHesapId` / `tahsilTarihi`; tahsilde hesap, ciroda ciro carisi
+sunucuda zorunlu). Çek alımında cari zaten alacaklandığı için tahsil fişinde
+cari hareketi yazılmaz (çift kayıt olurdu).
 **Durum (2026-07-15):** **Fiyat Listeleri modülü tamamlandı** — STK-11'in eksik
 kalan *tanımlama* tarafı kapatıldı: `FiyatListesi`/kalem CRUD uçları
 (`/fiyat-listeleri`), yönetim ekranı (Stok altında) ve **CARI-10** için cari
@@ -201,7 +208,7 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | KSB-02 | Tahsilat ve ödeme (tediye) fişleri kesilebilmeli, ilgili cari bakiyesine yansımalıdır. | Z |
 | KSB-03 | Kasalar/hesaplar arası virman yapılabilmelidir. | Z |
 | KSB-04 | Kasa ve banka hesap hareketleri tarih aralığıyla listelenebilmeli, anlık bakiye görülebilmelidir. | Z |
-| KSB-05 | Çek ve senet takibi yapılabilmelidir: portföy, ciro, tahsil, karşılıksız durumları. | İ |
+| KSB-05 | Çek ve senet takibi yapılabilmelidir: portföy, ciro, tahsil, karşılıksız durumları. Tahsilde tutar, seçilen kasa/banka hesabına tahsilat fişi olarak girer. | İ |
 | KSB-06 | Banka ekstresi (CSV/OFX) içe aktarılıp hareketlerle eşleştirilebilmelidir (otomatik banka bağlantısı için bkz. ENT-06). | G |
 | KSB-07 | Fatura üzerinden doğrudan tahsilat/ödeme kaydı oluşturulabilmelidir (kapama). | Z |
 

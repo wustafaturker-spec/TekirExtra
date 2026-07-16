@@ -17,13 +17,14 @@ envanteri. Kaynak: çalışan API'nin map ettiği 132 rota ile `apps/web`'in
 **Bitti:** Paket **2** (Kullanıcı & 2FA), **7** (Modül Ayarları), **1** (Belge
 Zinciri) — hepsi uçtan uca doğrulandı. Ayrıca öncesinde UI redesign, 2 hata
 düzeltmesi ve Fiyat Listeleri modülü.
-**Paket 4 (Stok Detay) tamamlandı (2026-07-16)** — 4a kart detayı, 4b kategoriler,
-4c sayım; hepsi tarayıcıdan uçtan uca doğrulandı. S-01 kararları: sayımda tüm stok
+**Paket 4 (Stok Detay)** ve **Paket 3 (Çek & Senet)** tamamlandı (2026-07-16) —
+hepsi tarayıcıdan uçtan uca doğrulandı. Paket 3'te KSB-05 backend'i de genişletildi
+(tahsil → kasa/banka fişi; bkz. §3). S-01 kararları: sayımda tüm stok
 listelenip fiili miktar girilir (boşlar gönderilmez); etiket basımı yalnız kart
 detayından (liste toplu basım yok).
 
-**Sıradaki (başlanmadı):** **3** (Çek & Senet) → **6** (Fatura/e-Belge tamamlama)
-→ **5** (Cari detay ekleme formları). Bunlar bittiğinde UI Tamamlama kapsamı biter.
+**Sıradaki (başlanmadı):** **6** (Fatura/e-Belge tamamlama) → **5** (Cari detay
+ekleme formları). Bunlar bittiğinde UI Tamamlama kapsamı biter.
 
 ## Özet tablo
 
@@ -31,7 +32,7 @@ detayından (liste toplu basım yok).
 |---|---|---|---|---|---|
 | 1 | Belge Zinciri | FTR-12, FTR-13 | ✅ | ✅ **Tamam (2026-07-15)** | **Büyük** |
 | 2 | Kullanıcı & Yetki + 2FA | KLN-01/02/05 | ✅ | ✅ **Tamam (2026-07-15)** | Orta |
-| 3 | Çek & Senet | KSB-05 | ✅ | ❌ Yok | Orta |
+| 3 | Çek & Senet | KSB-05 | ✅ | ✅ **Tamam (2026-07-16)** | Orta |
 | 4 | Stok Detay & Alt-yapılar | STK-02/06/09/10/15/18/20 | ✅ | ✅ **Tamam (2026-07-16)** | **Büyük** |
 | 5 | Cari Detay Tamamlama | CARI-09/15 | ✅ | ⚠️ Kısmi (salt-okur) | Küçük |
 | 6 | Fatura & e-Belge Tamamlama | FTR-06, EBLG-05 | ✅ | ⚠️ Kısmi | Orta |
@@ -82,15 +83,23 @@ v1.0 kapsam modülü; kullanıcı davet/rol atama ve iki adımlı doğrulama kur
 - `GET /auth/ben` → yan menüde giriş yapan kullanıcının adı/rolü (şu an sabit
   "TekirExtra" yazıyor).
 
-## 3. Çek & Senet — *ekran yok* · Efor: Orta
+## 3. Çek & Senet — ✅ TAMAM (2026-07-16) · Efor: Orta
 
-Portföy/ciro/tahsil/karşılıksız takibi (KSB-05). Backend hazır.
-
-**Uçlar:** `GET/POST /kasa-banka/cek-senet` · `GET/PATCH /kasa-banka/cek-senet/:id`
-
-**Yapılacak UI:** Kasa & Banka altında "Çek & Senet" sekmesi ya da ayrı sayfa —
-çek/senet listesi (durum rozetleriyle), giriş formu, durum güncelleme
-(tahsil/ciro/karşılıksız).
+> Eklendi: `/panel/kasa-banka/cek-senet` — KPI'lar (portföydeki, vadesi geçmiş,
+> 30 gün içinde), tür + durum filtresi, giriş formu (döviz/kur, cari bağlantısı),
+> **güdümlü durum akışı**: yalnız portföydeki kayıtta Tahsil/Ciro/Karşılıksız/
+> İade; sonuçlanmış kayıt salt-okur. Menüde Kasa & Banka altında.
+>
+> **Backend genişletildi (S-01 kararı):** tahsil yalnız durumu değiştiriyordu,
+> para hiçbir yere girmiyordu. Artık `PATCH .../cek-senet/:id` `tahsilKasaId` /
+> `tahsilBankaHesapId` / `tahsilTarihi` alıyor ve seçilen hesaba **tahsilat
+> fişi** yazıyor (`kaynakTur=cek_senet`). Sunucu tarafında: tahsilde hesap ve
+> ciroda ciro carisi zorunlu, hesap para birimi çek/senetle uyuşmalı, durum
+> zaten tahsil ise ikinci fiş yazılmaz. Fişte `cariId` **boş bırakılır** — cari,
+> çek alımında zaten alacaklandırıldığı için aksi hâlde çift kayıt olurdu.
+> Doğrulandı: 5.000 TL çek → kasa 0 → 5.000, cari bakiyesi değişmedi.
+>
+> Kapsam dışı kalan: karşılıksız/iade para hareketi üretmez (ekranda belirtilir).
 
 ## 4. Stok Detay & Alt-yapıları — ✅ TAMAM (2026-07-16) · Efor: Büyük
 

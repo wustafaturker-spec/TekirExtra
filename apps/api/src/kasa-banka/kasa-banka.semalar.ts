@@ -74,8 +74,28 @@ export const cekSenetOlusturSemasi = z.object({
   aciklama: z.string().max(500).optional().nullable(),
 });
 
-export const cekSenetGuncelleSemasi = z.object({
-  durum: z.enum(["portfoyde", "ciro_edildi", "tahsil_edildi", "karsiliksiz", "iade_edildi"]),
-  ciroCariId: z.string().uuid().optional().nullable(),
-  aciklama: z.string().max(500).optional().nullable(),
-});
+export const cekSenetGuncelleSemasi = z
+  .object({
+    durum: z.enum(["portfoyde", "ciro_edildi", "tahsil_edildi", "karsiliksiz", "iade_edildi"]),
+    ciroCariId: z.string().uuid().optional().nullable(),
+    aciklama: z.string().max(500).optional().nullable(),
+    /** Tahsilde paranın gireceği hesap; kasa ya da bankadan biri (KSB-05). */
+    tahsilKasaId: z.string().uuid().optional().nullable(),
+    tahsilBankaHesapId: z.string().uuid().optional().nullable(),
+    tahsilTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)").optional(),
+  })
+  .refine((d) => d.durum !== "ciro_edildi" || !!d.ciroCariId, {
+    message: "Ciro için ciro edilen cari seçilmelidir",
+    path: ["ciroCariId"],
+  })
+  .refine(
+    (d) => d.durum !== "tahsil_edildi" || !!d.tahsilKasaId || !!d.tahsilBankaHesapId,
+    {
+      message: "Tahsil için kasa veya banka hesabından biri seçilmelidir",
+      path: ["tahsilKasaId"],
+    },
+  )
+  .refine((d) => !(d.tahsilKasaId && d.tahsilBankaHesapId), {
+    message: "Tahsil için yalnız bir hesap seçilebilir (kasa ya da banka)",
+    path: ["tahsilKasaId"],
+  });
