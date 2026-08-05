@@ -119,6 +119,13 @@ export class CariController {
     return this.cariService.adresEkle(id, ayristirma.data);
   }
 
+  @Delete(":id/adresler/:adresId")
+  @Roller("muhasebe")
+  @HttpCode(204)
+  async adresSil(@Param("id") id: string, @Param("adresId") adresId: string) {
+    await this.cariService.adresSil(id, adresId);
+  }
+
   @Post(":id/kisiler")
   @Roller("muhasebe")
   async kisiEkle(@Param("id") id: string, @Body() govde: unknown) {
@@ -129,6 +136,13 @@ export class CariController {
       );
     }
     return this.cariService.kisiEkle(id, ayristirma.data);
+  }
+
+  @Delete(":id/kisiler/:kisiId")
+  @Roller("muhasebe")
+  @HttpCode(204)
+  async kisiSil(@Param("id") id: string, @Param("kisiId") kisiId: string) {
+    await this.cariService.kisiSil(id, kisiId);
   }
 
   @Post(":id/banka-hesaplari")

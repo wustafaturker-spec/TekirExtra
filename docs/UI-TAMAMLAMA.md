@@ -14,18 +14,21 @@ envanteri. Kaynak: çalışan API'nin map ettiği 132 rota ile `apps/web`'in
 
 ## Son durum (2026-08-05)
 
-**Bitti:** Paket **1** (Belge Zinciri), **2** (Kullanıcı & 2FA), **3** (Çek &
-Senet), **4** (Stok Detay), **6a** + **6b** (Fatura & e-Belge), **7** (Modül
-Ayarları) — hepsi tarayıcıdan uçtan uca doğrulandı. Ayrıca öncesinde UI
-redesign, 2 hata düzeltmesi ve Fiyat Listeleri modülü.
+## ✅ KAPSAM TAMAMLANDI (2026-08-05)
 
-**Paket 6b (2026-08-05)** yalnız arayüz değil, backend geliştirmesiydi: gelen
-belgeler artık `GelenEbelge` kutusuna düşüyor, UBL-TR ayrıştırılıyor, satırlar
-stok kartlarıyla eşleştirilip kullanıcı onayıyla taslak alış faturasına
-dönüşüyor, EBLG-06 kabul/ret eklendi (bkz. §6b).
+**7 paketin tamamı bitti** — 1 (Belge Zinciri), 2 (Kullanıcı & 2FA), 3 (Çek &
+Senet), 4 (Stok Detay), 5 (Cari Detay), 6a+6b (Fatura & e-Belge), 7 (Modül
+Ayarları); hepsi tarayıcıdan uçtan uca doğrulandı. Ayrıca öncesinde UI redesign,
+2 hata düzeltmesi ve Fiyat Listeleri modülü.
 
-**Sıradaki: Paket 5** (cari adres/kişi ekleme formları, CARI-09/15, efor küçük)
-→ UI Tamamlama kapsamı biter.
+Son iki paket yalnız arayüz değildi, backend de genişledi:
+- **6b:** gelen belgeler `GelenEbelge` kutusuna düşüyor, UBL-TR ayrıştırılıyor,
+  satırlar stok kartlarıyla eşleştirilip kullanıcı onayıyla taslak alış
+  faturasına dönüşüyor, EBLG-06 kabul/ret eklendi (bkz. §6b).
+- **5:** adres/kişi silme uçları yoktu, eklendi (bkz. §5).
+
+**Sırada bu doküman yok** — devamı Entegratör Paketi (İzibiz e-Arşiv dokümanı
+A-06 bekleniyor) ve v1.0'da kalan [G] maddeler.
 
 ## Özet tablo
 
@@ -35,7 +38,7 @@ dönüşüyor, EBLG-06 kabul/ret eklendi (bkz. §6b).
 | 2 | Kullanıcı & Yetki + 2FA | KLN-01/02/05 | ✅ | ✅ **Tamam (2026-07-15)** | Orta |
 | 3 | Çek & Senet | KSB-05 | ✅ | ✅ **Tamam (2026-07-16)** | Orta |
 | 4 | Stok Detay & Alt-yapılar | STK-02/06/09/10/15/18/20 | ✅ | ✅ **Tamam (2026-07-16)** | **Büyük** |
-| 5 | Cari Detay Tamamlama | CARI-09/15 | ✅ | ⚠️ Kısmi (salt-okur) | Küçük |
+| 5 | Cari Detay Tamamlama | CARI-09/15 | ✅ (silme uçları eklendi) | ✅ **Tamam (2026-08-05)** | Küçük |
 | 6 | Fatura & e-Belge Tamamlama | FTR-06, FTR-09, EBLG-05/06 | ✅ (6b'de genişletildi) | ✅ **Tamam (6a 07-16, 6b 08-05)** | Orta→**Büyük** |
 | 7 | Ayarlar Altyapısı | AYR-01/02/03, STK-17 | ✅ | ✅ **Tamam (2026-07-15)** | Orta |
 
@@ -157,16 +160,44 @@ Hareketler, Birimler, Barkodlar, Tedarikçiler) + `/panel/stok/kategoriler`
 (kategori ağacı) + `/panel/stok/sayim` (taslak→onay→düzeltme akışı) + barkod
 etiket basımı butonu.
 
-## 5. Cari Detay Tamamlama — *kısmi (salt-okur)* · Efor: Küçük
+## 5. Cari Detay Tamamlama — ✅ TAMAM (2026-08-05) · Efor: Küçük
 
-Cari detayda **Adresler** ve **İlgili Kişiler** sekmeleri var ama yalnız
-**okuyor** — ekleme/silme formu yok. Banka hesabı ve etiket eklemede zaten var.
-
-**Uçlar:** `POST /cari/:id/adresler` · `POST /cari/:id/kisiler` ·
-`POST /cari/:id/hareketler` (manuel cari hareket)
-
-**Yapılacak UI:** Adresler ve İlgili Kişiler sekmelerine **ekleme/silme formu**
-(CARI-09/15); istenirse manuel cari hareket girişi.
+> **Eklendi — backend:** `DELETE /cari/:id/adresler/:adresId` ve
+> `DELETE /cari/:id/kisiler/:kisiId` (+ servis `adresSil`/`kisiSil`). Ekleme
+> uçları zaten vardı; silme yalnız banka hesabında vardı, adres/kişide yoktu.
+> `deleteMany({ id, cariId })` deseni banka hesabıyla aynı — başka cariye ait
+> id ile silme denemesi 404 döner.
+>
+> **Eklendi — UI (`/panel/cari` detay paneli):** Adresler ve İlgili Kişiler
+> sekmeleri artık salt-okur değil; her ikisinde satır başına **Sil** ve altta
+> **ekleme formu** var (banka hesapları sekmesindeki desenle aynı).
+> - Adres formu CARI-15 alanlarının tamamını taşıyor: tip (fatura/sevk/merkez/
+>   şube/depo), başlık, açık adres, il, ilçe, **posta kodu**.
+> - Adres tablosuna posta kodu sütunu eklendi ve tip etiketleri düzeltildi —
+>   `merkez`/`sube`/`depo` üçü birden "🏢 Merkez/Şube" görünüyordu, artık
+>   `ADRES_TIP_ETIKETI` ile ayrı ayrı gösteriliyor.
+> - Boş bırakılan opsiyonel alanlar gövdeye **hiç konmuyor** (boş string zod'un
+>   `max`/`email` kontrollerine takılıyordu).
+>
+> **Yol üstünde düzeltilen UX hatası:** `detayAc` her tazelemede
+> `setAktifSekme("genel")` yapıyordu — alt formdan kayıt eklenince kullanıcı
+> Genel Bakış'a fırlıyor, eklediğini göremiyordu (banka hesaplarında da
+> vardı). Artık `detayAc(id, sekmeyiKoru)`; alt form çağrıları sekmeyi korur,
+> listeden açış eskisi gibi Genel Bakış'a döner.
+>
+> **Uçtan uca doğrulandı (2026-08-05, tarayıcı + API):** adres ekleme (depo/şube
+> tipleri, posta kodu), kişi ekleme, her ikisinin silinmesi (DELETE → 204, tablo
+> anında güncelleniyor), sekmenin korunması; başka cariye ait id ile silme 404,
+> silinmiş kaydı tekrar silme 404.
+>
+> **S-01 kararları (2026-08-05, kullanıcı onayladı):**
+> - Kapsam **Ekle + Sil**; düzenleme (PATCH) yok — cari modülünde başka hiçbir
+>   alt kayıtta (banka, etiket) düzenleme yok, desen bozulmasın. Yanlış kayıt
+>   silinip yeniden eklenir.
+> - **Manuel cari hareket girişi kapsam dışı** (`POST /cari/:id/hareketler`
+>   backend'de duruyor ama UI'ı yok): ekstre salt-okur kalır, hareketleri
+>   fatura/tahsilat üretir; elle borç/alacak girişi muhasebeyi bozma riski
+>   taşıyor ve hiçbir İSTER maddesi talep etmiyor.
 
 ## 6. Fatura & e-Belge Tamamlama — ✅ TAMAM (6a 2026-07-16, 6b 2026-08-05) · Efor: Orta→Büyük
 

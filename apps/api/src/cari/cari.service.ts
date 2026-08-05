@@ -397,12 +397,28 @@ export class CariService {
     );
   }
 
+  async adresSil(cariId: string, adresId: string) {
+    const { tenantId } = aktifBaglam();
+    const silinen = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.cariAdres.deleteMany({ where: { id: adresId, cariId } }),
+    );
+    if (silinen.count === 0) throw new NotFoundException("Adres bulunamadı");
+  }
+
   async kisiEkle(cariId: string, girdi: z.infer<typeof kisiSemasi>) {
     const { tenantId } = aktifBaglam();
     await this.getir(cariId);
     return this.prisma.tenantIslem(tenantId, (tx) =>
       tx.cariKisi.create({ data: { tenantId, cariId, ...girdi } }),
     );
+  }
+
+  async kisiSil(cariId: string, kisiId: string) {
+    const { tenantId } = aktifBaglam();
+    const silinen = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.cariKisi.deleteMany({ where: { id: kisiId, cariId } }),
+    );
+    if (silinen.count === 0) throw new NotFoundException("İlgili kişi bulunamadı");
   }
 
   // ─── BANKA HESAPLARI (CARI-16) ─────────────────────────────────────────

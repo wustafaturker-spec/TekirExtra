@@ -67,6 +67,8 @@ interface CariAdres {
   adres: string;
   il: string;
   ilce: string | null;
+  postaKodu: string | null;
+  ulke: string;
 }
 
 interface CariKisi {
@@ -129,6 +131,15 @@ const tl = (deger: string | number): string =>
 
 const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
 
+/** AdresTip enum'unun ekran karşılıkları (CARI-15: merkez/şube/depo). */
+const ADRES_TIP_ETIKETI: Record<string, string> = {
+  fatura: "📄 Fatura Adresi",
+  sevk: "🚚 Sevk Adresi",
+  merkez: "🏢 Merkez",
+  sube: "🏬 Şube",
+  depo: "📦 Depo",
+};
+
 type Sekme = "genel" | "ekstre" | "adresler" | "kisiler" | "bankalar";
 type FiltreTip = "tumu" | "musteri" | "tedarikci" | "bloke";
 
@@ -171,6 +182,18 @@ export default function CariSayfasi() {
   const [bankaAdi, setBankaAdi] = useState("");
   const [iban, setIban] = useState("");
   const [paraBirimi, setParaBirimi] = useState("TRY");
+  // Adres formu (CARI-09/15)
+  const [adresTip, setAdresTip] = useState("fatura");
+  const [adresBaslik, setAdresBaslik] = useState("");
+  const [adresMetin, setAdresMetin] = useState("");
+  const [adresIl, setAdresIl] = useState("");
+  const [adresIlce, setAdresIlce] = useState("");
+  const [adresPostaKodu, setAdresPostaKodu] = useState("");
+  // İlgili kişi formu (CARI-09)
+  const [kisiAdSoyad, setKisiAdSoyad] = useState("");
+  const [kisiGorev, setKisiGorev] = useState("");
+  const [kisiTelefon, setKisiTelefon] = useState("");
+  const [kisiEposta, setKisiEposta] = useState("");
   const [yeniEtiket, setYeniEtiket] = useState("");
   const [secilenEtiketId, setSecilenEtiketId] = useState("");
 
@@ -202,7 +225,12 @@ export default function CariSayfasi() {
     }
   }, [yukle, etiketleriYukle]);
 
-  async function detayAc(id: string) {
+  /**
+   * @param sekmeyiKoru Alt formlardan (adres/kişi/banka/etiket) sonraki
+   *   tazelemelerde açık sekme korunur; aksi hâlde kullanıcı eklediği kaydı
+   *   göremeden Genel Bakış'a düşüyordu. Listeden açarken false kalır.
+   */
+  async function detayAc(id: string, sekmeyiKoru = false) {
     setHata("");
     try {
       const [cDetay, cEkstre] = await Promise.all([
@@ -211,7 +239,7 @@ export default function CariSayfasi() {
       ]);
       setDetay(cDetay);
       setEkstre(cEkstre);
-      setAktifSekme("genel");
+      if (!sekmeyiKoru) setAktifSekme("genel");
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Detay veya ekstre yüklenemedi");
     }
@@ -280,7 +308,7 @@ export default function CariSayfasi() {
         method: "PATCH",
         body: JSON.stringify({ karaListe: yeniDurum, karaListeNotu: not }),
       });
-      await detayAc(detay.id);
+      await detayAc(detay.id, true);
       void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Güncelleme hatası");
@@ -297,7 +325,7 @@ export default function CariSayfasi() {
       });
       setBankaAdi("");
       setIban("");
-      await detayAc(detay.id);
+      await detayAc(detay.id, true);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Banka hesabı eklenemedi");
     }
@@ -307,9 +335,80 @@ export default function CariSayfasi() {
     if (!detay) return;
     try {
       await api(`/cari/${detay.id}/banka-hesaplari/${hesapId}`, { method: "DELETE" });
-      await detayAc(detay.id);
+      await detayAc(detay.id, true);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Banka hesabı silinemedi");
+    }
+  }
+
+  async function adresEkle(e: React.FormEvent) {
+    e.preventDefault();
+    if (!detay) return;
+    try {
+      await api(`/cari/${detay.id}/adresler`, {
+        method: "POST",
+        body: JSON.stringify({
+          tip: adresTip,
+          baslik: adresBaslik.trim(),
+          adres: adresMetin.trim(),
+          // Boş metinler şemadaki min/max kontrollerine takılmasın diye
+          // gönderilmez (alanlar opsiyonel).
+          ...(adresIl.trim() ? { il: adresIl.trim() } : {}),
+          ...(adresIlce.trim() ? { ilce: adresIlce.trim() } : {}),
+          ...(adresPostaKodu.trim() ? { postaKodu: adresPostaKodu.trim() } : {}),
+        }),
+      });
+      setAdresBaslik("");
+      setAdresMetin("");
+      setAdresIl("");
+      setAdresIlce("");
+      setAdresPostaKodu("");
+      await detayAc(detay.id, true);
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Adres eklenemedi");
+    }
+  }
+
+  async function adresSil(adresId: string) {
+    if (!detay) return;
+    try {
+      await api(`/cari/${detay.id}/adresler/${adresId}`, { method: "DELETE" });
+      await detayAc(detay.id, true);
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Adres silinemedi");
+    }
+  }
+
+  async function kisiEkle(e: React.FormEvent) {
+    e.preventDefault();
+    if (!detay) return;
+    try {
+      await api(`/cari/${detay.id}/kisiler`, {
+        method: "POST",
+        body: JSON.stringify({
+          adSoyad: kisiAdSoyad.trim(),
+          ...(kisiGorev.trim() ? { gorev: kisiGorev.trim() } : {}),
+          ...(kisiTelefon.trim() ? { telefon: kisiTelefon.trim() } : {}),
+          ...(kisiEposta.trim() ? { eposta: kisiEposta.trim() } : {}),
+        }),
+      });
+      setKisiAdSoyad("");
+      setKisiGorev("");
+      setKisiTelefon("");
+      setKisiEposta("");
+      await detayAc(detay.id, true);
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "İlgili kişi eklenemedi");
+    }
+  }
+
+  async function kisiSil(kisiId: string) {
+    if (!detay) return;
+    try {
+      await api(`/cari/${detay.id}/kisiler/${kisiId}`, { method: "DELETE" });
+      await detayAc(detay.id, true);
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "İlgili kişi silinemedi");
     }
   }
 
@@ -323,7 +422,7 @@ export default function CariSayfasi() {
       });
       await api(`/cari/${detay.id}/etiketler/${etiket.id}`, { method: "POST" });
       setYeniEtiket("");
-      await Promise.all([detayAc(detay.id), etiketleriYukle()]);
+      await Promise.all([detayAc(detay.id, true), etiketleriYukle()]);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Etiket eklenemedi");
     }
@@ -334,7 +433,7 @@ export default function CariSayfasi() {
     try {
       await api(`/cari/${detay.id}/etiketler/${secilenEtiketId}`, { method: "POST" });
       setSecilenEtiketId("");
-      await detayAc(detay.id);
+      await detayAc(detay.id, true);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Etiket atanamadı");
     }
@@ -344,7 +443,7 @@ export default function CariSayfasi() {
     if (!detay) return;
     try {
       await api(`/cari/${detay.id}/etiketler/${etiketId}`, { method: "DELETE" });
-      await detayAc(detay.id);
+      await detayAc(detay.id, true);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Etiket kaldırılamadı");
     }
@@ -651,39 +750,93 @@ export default function CariSayfasi() {
           )}
 
           {aktifSekme === "adresler" && (
-            <Card>
-              <div className="card__title">🏢 Adres Bilgileri</div>
+            <Card className="stack">
+              <div className="card__title" style={{ margin: 0 }}>🏢 Adres Bilgileri</div>
               {detay.adresler && detay.adresler.length === 0 ? (
-                <p className="subtle" style={{ fontSize: "0.85rem" }}>Kayıtlı adres bilgisi yok.</p>
+                <p className="subtle" style={{ fontSize: "0.85rem", margin: 0 }}>Kayıtlı adres bilgisi yok.</p>
               ) : (
                 <TableWrap>
                   <thead>
-                    <tr><th>Başlık</th><th>Tip</th><th>Adres</th><th>İl / İlçe</th></tr>
+                    <tr>
+                      <th>Başlık</th><th>Tip</th><th>Adres</th><th>İl / İlçe</th>
+                      <th>Posta Kodu</th><th className="center">İşlem</th>
+                    </tr>
                   </thead>
                   <tbody>
                     {detay.adresler?.map((a) => (
                       <tr key={a.id}>
                         <td>{a.baslik}</td>
-                        <td>{a.tip === "fatura" ? "📄 Fatura Adresi" : a.tip === "sevk" ? "🚚 Sevk Adresi" : "🏢 Merkez/Şube"}</td>
+                        <td>{ADRES_TIP_ETIKETI[a.tip] ?? a.tip}</td>
                         <td>{a.adres}</td>
-                        <td>{a.ilce ? `${a.ilce} / ` : ""}{a.il}</td>
+                        <td>{a.ilce ? `${a.ilce} / ` : ""}{a.il || "—"}</td>
+                        <td className="mono">{a.postaKodu || "—"}</td>
+                        <td className="center">
+                          <button className="btn-link" style={{ color: "var(--danger)" }} onClick={() => adresSil(a.id)}>Sil</button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </TableWrap>
               )}
+              <form onSubmit={adresEkle} className="stack" style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
+                <div className="row">
+                  <FormAlan flex={1} min={150}>
+                    <Field label="Adres Tipi">
+                      <Select value={adresTip} onChange={(e) => setAdresTip(e.target.value)}>
+                        <option value="fatura">Fatura Adresi</option>
+                        <option value="sevk">Sevk Adresi</option>
+                        <option value="merkez">Merkez</option>
+                        <option value="sube">Şube</option>
+                        <option value="depo">Depo</option>
+                      </Select>
+                    </Field>
+                  </FormAlan>
+                  <FormAlan flex={2} min={180}>
+                    <Field label="Başlık *">
+                      <Input value={adresBaslik} onChange={(e) => setAdresBaslik(e.target.value)} placeholder="Örn. Merkez Ofis" required />
+                    </Field>
+                  </FormAlan>
+                  <FormAlan flex={1} min={120}>
+                    <Field label="İl">
+                      <Input value={adresIl} onChange={(e) => setAdresIl(e.target.value)} placeholder="İstanbul" />
+                    </Field>
+                  </FormAlan>
+                  <FormAlan flex={1} min={120}>
+                    <Field label="İlçe">
+                      <Input value={adresIlce} onChange={(e) => setAdresIlce(e.target.value)} placeholder="Kadıköy" />
+                    </Field>
+                  </FormAlan>
+                  <FormAlan flex={1} min={110}>
+                    <Field label="Posta Kodu">
+                      <Input value={adresPostaKodu} onChange={(e) => setAdresPostaKodu(e.target.value)} placeholder="34000" maxLength={10} />
+                    </Field>
+                  </FormAlan>
+                </div>
+                <div className="row-tight" style={{ flexWrap: "nowrap" }}>
+                  <Input
+                    className="grow"
+                    value={adresMetin}
+                    onChange={(e) => setAdresMetin(e.target.value)}
+                    placeholder="Açık adres *"
+                    required
+                    minLength={2}
+                    maxLength={500}
+                  />
+                  <Button size="sm" type="submit">➕ Ekle</Button>
+                </div>
+              </form>
             </Card>
           )}
 
           {aktifSekme === "kisiler" && (
-            <Card>
-              <div className="card__title">👥 İlgili Kişiler</div>
+            <Card className="stack">
+              <div className="card__title" style={{ margin: 0 }}>👥 İlgili Kişiler</div>
               {detay.kisiler && detay.kisiler.length === 0 ? (
-                <p className="subtle" style={{ fontSize: "0.85rem" }}>Kayıtlı ilgili kişi yok.</p>
+                <p className="subtle" style={{ fontSize: "0.85rem", margin: 0 }}>Kayıtlı ilgili kişi yok.</p>
               ) : (
                 <TableWrap>
                   <thead>
-                    <tr><th>Ad Soyad</th><th>Görev</th><th>Telefon</th><th>E-posta</th></tr>
+                    <tr><th>Ad Soyad</th><th>Görev</th><th>Telefon</th><th>E-posta</th><th className="center">İşlem</th></tr>
                   </thead>
                   <tbody>
                     {detay.kisiler?.map((k) => (
@@ -692,11 +845,29 @@ export default function CariSayfasi() {
                         <td>{k.gorev || "—"}</td>
                         <td>{k.telefon || "—"}</td>
                         <td>{k.eposta || "—"}</td>
+                        <td className="center">
+                          <button className="btn-link" style={{ color: "var(--danger)" }} onClick={() => kisiSil(k.id)}>Sil</button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </TableWrap>
               )}
+              <form onSubmit={kisiEkle} className="row-tight" style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem", flexWrap: "nowrap" }}>
+                <Input
+                  className="grow"
+                  value={kisiAdSoyad}
+                  onChange={(e) => setKisiAdSoyad(e.target.value)}
+                  placeholder="Ad Soyad *"
+                  required
+                  minLength={2}
+                  style={{ minWidth: 150 }}
+                />
+                <Input value={kisiGorev} onChange={(e) => setKisiGorev(e.target.value)} placeholder="Görev" style={{ minWidth: 120 }} />
+                <Input value={kisiTelefon} onChange={(e) => setKisiTelefon(e.target.value)} placeholder="Telefon" style={{ minWidth: 130 }} />
+                <Input type="email" value={kisiEposta} onChange={(e) => setKisiEposta(e.target.value)} placeholder="E-posta" style={{ flex: 2, minWidth: 170 }} />
+                <Button size="sm" type="submit">➕ Ekle</Button>
+              </form>
             </Card>
           )}
 
