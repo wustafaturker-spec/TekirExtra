@@ -33,7 +33,13 @@ const MENU: MenuGrup[] = [
     ogeler: [
       { href: "/panel/cari", ikon: "👥", baslik: "Cari Hesaplar" },
       { href: "/panel/belgeler", ikon: "🧾", baslik: "Belgeler", eslesme: "tam" },
-      { href: "/panel/fatura", ikon: "📄", baslik: "Faturalar" },
+      { href: "/panel/fatura", ikon: "📄", baslik: "Faturalar", eslesme: "tam" },
+      {
+        href: "/panel/fatura/gelen-kutusu",
+        ikon: "📥",
+        baslik: "Gelen e-Belgeler",
+        eslesme: "tam",
+      },
       { href: "/panel/kasa-banka", ikon: "🏦", baslik: "Kasa & Banka", eslesme: "tam" },
       { href: "/panel/kasa-banka/cek-senet", ikon: "🧾", baslik: "Çek & Senet", eslesme: "tam" },
     ],

@@ -12,21 +12,20 @@ envanteri. Kaynak: çalışan API'nin map ettiği 132 rota ile `apps/web`'in
 
 ---
 
-## Son durum (2026-07-16)
+## Son durum (2026-08-05)
 
-**Bitti:** Paket **2** (Kullanıcı & 2FA), **7** (Modül Ayarları), **1** (Belge
-Zinciri) — hepsi uçtan uca doğrulandı. Ayrıca öncesinde UI redesign, 2 hata
-düzeltmesi ve Fiyat Listeleri modülü.
-**Paket 4 (Stok Detay)** ve **Paket 3 (Çek & Senet)** tamamlandı (2026-07-16) —
-hepsi tarayıcıdan uçtan uca doğrulandı. Paket 3'te KSB-05 backend'i de genişletildi
-(tahsil → kasa/banka fişi; bkz. §3). S-01 kararları: sayımda tüm stok
-listelenip fiili miktar girilir (boşlar gönderilmez); etiket basımı yalnız kart
-detayından (liste toplu basım yok).
+**Bitti:** Paket **1** (Belge Zinciri), **2** (Kullanıcı & 2FA), **3** (Çek &
+Senet), **4** (Stok Detay), **6a** + **6b** (Fatura & e-Belge), **7** (Modül
+Ayarları) — hepsi tarayıcıdan uçtan uca doğrulandı. Ayrıca öncesinde UI
+redesign, 2 hata düzeltmesi ve Fiyat Listeleri modülü.
 
-**Sıradaki: Paket 6b — e-Belge gelen kutusu** (§6'da tam plan ve S-01 kararları).
-Backend isteri karşılamadığı için "UI eksik" değil, geliştirme işi: onay kapısı +
-UBL ayrıştırma + stok eşleştirme + EBLG-06 kabul/ret. Sonra **5** (cari detay
-ekleme formları) → UI Tamamlama kapsamı biter.
+**Paket 6b (2026-08-05)** yalnız arayüz değil, backend geliştirmesiydi: gelen
+belgeler artık `GelenEbelge` kutusuna düşüyor, UBL-TR ayrıştırılıyor, satırlar
+stok kartlarıyla eşleştirilip kullanıcı onayıyla taslak alış faturasına
+dönüşüyor, EBLG-06 kabul/ret eklendi (bkz. §6b).
+
+**Sıradaki: Paket 5** (cari adres/kişi ekleme formları, CARI-09/15, efor küçük)
+→ UI Tamamlama kapsamı biter.
 
 ## Özet tablo
 
@@ -37,7 +36,7 @@ ekleme formları) → UI Tamamlama kapsamı biter.
 | 3 | Çek & Senet | KSB-05 | ✅ | ✅ **Tamam (2026-07-16)** | Orta |
 | 4 | Stok Detay & Alt-yapılar | STK-02/06/09/10/15/18/20 | ✅ | ✅ **Tamam (2026-07-16)** | **Büyük** |
 | 5 | Cari Detay Tamamlama | CARI-09/15 | ✅ | ⚠️ Kısmi (salt-okur) | Küçük |
-| 6 | Fatura & e-Belge Tamamlama | FTR-06, FTR-09, EBLG-05/06 | ⚠️ 6b için eksik | ⏳ 6a tamam, 6b bekliyor | Orta→**Büyük** |
+| 6 | Fatura & e-Belge Tamamlama | FTR-06, FTR-09, EBLG-05/06 | ✅ (6b'de genişletildi) | ✅ **Tamam (6a 07-16, 6b 08-05)** | Orta→**Büyük** |
 | 7 | Ayarlar Altyapısı | AYR-01/02/03, STK-17 | ✅ | ✅ **Tamam (2026-07-15)** | Orta |
 
 ---
@@ -169,7 +168,7 @@ Cari detayda **Adresler** ve **İlgili Kişiler** sekmeleri var ama yalnız
 **Yapılacak UI:** Adresler ve İlgili Kişiler sekmelerine **ekleme/silme formu**
 (CARI-09/15); istenirse manuel cari hareket girişi.
 
-## 6. Fatura & e-Belge Tamamlama — *6a tamam, 6b başlanmadı* · Efor: Orta→Büyük
+## 6. Fatura & e-Belge Tamamlama — ✅ TAMAM (6a 2026-07-16, 6b 2026-08-05) · Efor: Orta→Büyük
 
 ### 6a — ✅ TAMAM (2026-07-16, `cfb6944`)
 
@@ -186,9 +185,58 @@ Cari detayda **Adresler** ve **İlgili Kişiler** sekmeleri var ama yalnız
 > `ebelgeGonderimDurumu`→iç içe `ebelge:{durum,tur}` + BelgeDurum enum'u (sütun
 > hep boştu), tip etiketi (proforma/iadeler "Alış" görünüyordu).
 
-### 6b — ⏳ BAŞLANMADI: e-Belge gelen kutusu (EBLG-05 + EBLG-06)
+### 6b — ✅ TAMAM (2026-08-05): e-Belge gelen kutusu (EBLG-05 + EBLG-06)
 
-**Neden büyük:** Bu bir "UI eksik" işi DEĞİL — backend isteri karşılamıyor.
+> **Eklendi — backend:**
+> - Şema `GelenEbelge` + `20260805182714_gelen_ebelge` migration (RLS politikası
+>   dahil). `[tenantId, uuid]` teklik → tekrar çekimde yinelenmez; `faturaId`
+>   unique ve FK `ON DELETE SET NULL`.
+> - `ubl-oku.ts` — UBL-TR 1.2 okuyucu (`fast-xml-parser`, yeni bağımlılık).
+>   Tolere edici: eksik alan varsayılana düşer, yalnız `Invoice` kökü yoksa
+>   hata. Çoklu `PartyIdentification` arasından schemeID=VKN/TCKN olanı seçer;
+>   UN/ECE birim kodlarını (C62→adet, KGM→kg…) sistem birimlerine çevirir;
+>   iskontoyu `MultiplierFactorNumeric`'ten, KDV oranını `TaxSubtotal/Percent`
+>   ya da `TaxCategory/Percent`'ten okur, yoksa tutardan türetir.
+> - `mock-adapter.ts` artık 2 gerçek UBL-TR belgesi döner (biri TİCARİ 3 satır +
+>   %10 satır iskontosu, biri TEMEL 1 satır); tarih `sonrasi`+1 gün — hem 30
+>   günlük pencereye düşer hem deterministik kalır.
+> - Servis: `gelenBelgeleriCek` **fatura üretmez**, kutuya yazar;
+>   `gelenListele(durum?)`, `gelenGetir(id)` (ayrıştırma + eşleştirme önerisi),
+>   `gelenOnayla(id, satirEslesmeleri)`, `gelenYanitGonder(id, kabul|ret,
+>   gerekce)`.
+> - Uçlar: `GET /ebelge/gelen[?durum=]` · `GET /ebelge/gelen/:id` ·
+>   `POST /ebelge/gelen/:id/onayla` · `POST /ebelge/gelen/:id/yanit`
+>   (`POST /ebelge/gelenleri-cek` davranışı değişti).
+>
+> **Eklendi — UI:** `/panel/fatura/gelen-kutusu` (menüde "📥 Gelen e-Belgeler").
+> Liste (Onay Bekleyen / İşlenmiş / Reddedilen / Tümü) + "Entegratörden Çek";
+> onay ekranında belge toplamları, cari kartı, EBLG-06 kabul/ret, satır
+> eşleştirme tablosu (oto-eşleşme rozeti, canlı aramalı stok seçici, "Yeni Kart"
+> formu). Yeni kart açılırken barkod ve tedarikçi ürün kodu da karta bağlanır ki
+> bir sonraki fatura otomatik eşleşsin.
+>
+> **Fatura üretimi `FaturaService.olustur` üzerinden** yapılır (tek hesaplama
+> yolu). Bunun için `EbelgeModule ↔ FaturaModule` çift yönlü `forwardRef`
+> oldu; `EbelgeKuyrukService`'in `EbelgeService` enjeksiyonu da `forwardRef`
+> istedi (üçlü require döngüsünde sınıf referansı tanımsız kalıyordu).
+>
+> **Kararlar/kurallar (koda yansıyan):**
+> - Onay öncesi tüm satırlar eşleşmeli; eşleşmeyen varsa uç 400 döner.
+> - Kabul/ret **yalnız TICARIFATURA** profilinde; ret gerekçe ister ve belgeyi
+>   `reddedildi` yapar (artık faturaya işlenemez). İşlenmiş belge reddedilemez.
+> - Cari yoksa onay anında `TED-<VKN>` kodlu tedarikçi carisi açılır.
+> - Oluşan taslak fatura sonradan silinirse (`faturaId` NULL'a düşer) belge
+>   **kendiliğinden onaya geri döner** — aksi hâlde kilitli kalıyordu.
+> - Onay yanıtında `toplamFarki`: belge toplamı ile bizim hesabımız uyuşmazsa
+>   kullanıcı uyarılır (mock belgelerde fark 0).
+>
+> **Uçtan uca doğrulandı (2026-08-05, tarayıcı + API):** çekim (2 belge) →
+> tekrar çekimde yinelenmeme → 3 eşleştirme kaynağının üçü de (barkod, tedarikçi
+> ürün kodu, ad) → eksik eşleşmeyle onay reddi → kabul yanıtı → faturaya işleme
+> (6.072,00 ₺, 3 satır, tutarlar birebir) → tekrar onay 409 → ret akışı ve
+> ret sonrası işleme reddi → fatura silinince belgenin onaya dönmesi.
+
+**Neden büyüktü:** Bu bir "UI eksik" işi DEĞİLDİ — backend isteri karşılamıyordu.
 1. **Onay kapısı yok.** `gelenBelgeleriCek` çektiği her belgeyi *anında* taslak
    alış faturasına çeviriyor; EBLG-05 "kullanıcı onayıyla işlenebilmelidir" der.
 2. **Tutarlar sıfır.** Oluşan taslakta tüm toplamlar 0 ve satır yok; UBL XML
@@ -207,24 +255,12 @@ Cari detayda **Adresler** ve **İlgili Kişiler** sekmeleri var ama yalnız
   `StokTedarikci.tedarikciUrunKodu` (STK-18) → ad); eşleşmeyenleri kullanıcı
   seçer ya da yeni kart açar. Hepsi eşleşmeden "Faturaya İşle" açılmaz.
 
-**Yapılacaklar:**
-1. Şema: `GelenEbelge` (uuid, belgeNo, gonderenVkn, gonderenUnvan, tarih,
-   xmlIcerik, durum: beklemede|islendi|reddedildi, faturaId?, yanit:
-   kabul|ret?, yanitGerekce?) + migration. `[tenantId, uuid]` unique (tekrar
-   çekimde yinelenmesin).
-2. `ubl-oku.ts`: UBL-TR faturadan satırlar (ad, miktar, birim, birim fiyat,
-   KDV oranı, iskonto) + toplamlar + ProfileID (TICARIFATURA/TEMELFATURA).
-   Not: `xml-uretec.ts` üretim tarafı, örnek olarak bakılabilir.
-3. `mock-adapter.ts` XML'i gerçekçi UBL-TR faturaya zenginleştir (şu an yalnız
-   ID/IssueDate/VKN var; ayrıştırmayı uçtan uca denemek için gerekli).
-4. Servis: `gelenBelgeleriCek` artık fatura ÜRETMEZ, `GelenEbelge` yazar;
-   `gelenListele(durum?)`, `gelenOnayla(id, satirEslesmeleri)` (XML→satır+
-   toplam, cari bul/oluştur, taslak alış faturası), `gelenYanitGonder(id,
-   kabul|ret, gerekce)` (EBLG-06, adapter.yanitGonder).
-   ⚠️ `ebelge.test.ts`'teki "gelenBelgeleriCek → fatura.create" testi bu
-   değişiklikle güncellenmeli (test EBLG-08 diye etiketli ama EBLG-05'i test
-   ediyor).
-5. Uçlar + ekran: gelen kutusu listesi, onay/eşleştirme ekranı, Kabul/Ret.
+**Açık kalan (v1.0 sonrası):** Satır birimi ile stok kartının ana birimi
+farklıysa miktar dönüştürülmez — `FaturaSatir.birim` etikettir, kesinleştirmede
+`miktar` doğrudan ana birim sayılır (mevcut fatura modülü semantiği). Onay
+ekranı farkı **rozetle uyarır**, kullanıcı düzeltir. Gerçek entegratöre
+geçildiğinde (Entegratör Paketi) UBL okuyucu gerçek belgelerle tekrar
+sınanmalı — mock belgeler bizim ürettiğimiz şemayı izliyor.
 
 ## 7. Ayarlar Altyapısı — ✅ TAMAM (2026-07-15) · Efor: Orta
 

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, forwardRef } from "@nestjs/common";
 import { EbelgeService } from "./ebelge.service";
 
 @Injectable()
@@ -7,7 +7,13 @@ export class EbelgeKuyrukService {
   private readonly maxRetries = 3;
   private readonly retryDelayMs = 5000; // 5 saniye
 
-  constructor(private readonly ebelgeService: EbelgeService) {}
+  // EbelgeService → FaturaService → EbelgeKuyrukService → EbelgeService
+  // döngüsünde sınıf referansı çözülme anında tanımsız kalıyor; forwardRef
+  // çözümü modül kurulumuna erteler.
+  constructor(
+    @Inject(forwardRef(() => EbelgeService))
+    private readonly ebelgeService: EbelgeService,
+  ) {}
 
   /**
    * e-Belge gönderimini asenkron olarak kuyruğa ekler ve arka planda çalıştırır (EBLG-03).

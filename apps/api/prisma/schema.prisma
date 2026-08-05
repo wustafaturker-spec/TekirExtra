@@ -647,6 +647,7 @@ model Fatura {
   cari              CariHesap          @relation(fields: [cariId], references: [id])
   satirlar          FaturaSatir[]
   ebelge            EbelgeKayit?
+  gelenEbelge       GelenEbelge?
   kasaBankaHarekets KasaBankaHareket[]
   zincirBelgeleri   Belge[]
 
@@ -722,6 +723,46 @@ model EbelgeArsiv {
   ebelge EbelgeKayit @relation(fields: [ebelgeId], references: [id], onDelete: Cascade)
 
   @@map("ebelge_arsiv")
+}
+
+enum GelenEbelgeDurum {
+  beklemede
+  islendi
+  reddedildi
+}
+
+enum GelenEbelgeYanit {
+  kabul
+  ret
+}
+
+/// EBLG-05: entegratörden çekilen gelen e-Faturalar. Çekim anında yalnızca
+/// burada durur; alış faturasına yalnızca kullanıcı onayıyla dönüşür.
+model GelenEbelge {
+  id            String            @id @default(uuid()) @db.Uuid
+  tenantId      String            @map("tenant_id") @db.Uuid
+  /// Entegratördeki belge UUID'si — tekrar çekimde yinelenmemesi için anahtar.
+  uuid          String
+  belgeNo       String            @map("belge_no")
+  gonderenVkn   String            @map("gonderen_vkn")
+  gonderenUnvan String            @map("gonderen_unvan")
+  tarih         DateTime          @db.Date
+  profilId      String?           @map("profil_id")
+  xmlIcerik     String            @map("xml_icerik")
+  durum         GelenEbelgeDurum  @default(beklemede)
+  faturaId      String?           @unique @map("fatura_id") @db.Uuid
+  /// EBLG-06: TICARIFATURA profilinde gönderilen kabul/ret yanıtı.
+  yanit         GelenEbelgeYanit?
+  yanitGerekce  String?           @map("yanit_gerekce")
+  yanitZamani   DateTime?         @map("yanit_zamani")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+
+  fatura Fatura? @relation(fields: [faturaId], references: [id])
+
+  @@unique([tenantId, uuid])
+  @@index([tenantId, durum])
+  @@map("gelen_ebelgeler")
 }
 
 enum KasaBankaHareketTip {
