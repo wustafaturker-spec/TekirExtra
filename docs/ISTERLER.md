@@ -35,6 +35,18 @@ maksimum iskonto yetkisi** (User.maksIskontoYuzdesi; boşsa sınırsız),
 UBL-TR'ye yansır; tevkifat zaten mevcut), **RPR-05** kâr/zarar özeti (satış
 matrahı − alış matrahı − kasa/banka tediye giderleri). v1.0 kapsamında artık
 yalnız [G] maddeler kalıyor.
+**Durum (UI Tamamlama, 2026-08-05):** 7 paketin tamamı bitti; ayrıntı
+`docs/UI-TAMAMLAMA.md`. Paket 6b'de backend de genişledi (gelen e-Belge kutusu:
+`GelenEbelge` + UBL-TR okuma + EBLG-06 kabul/ret), Paket 5'te cari adres/kişi
+silme uçları eklendi. **v1.0 kapsamı böylece doldu.**
+
+**Durum (KSB-06, 2026-08-05):** v1.0 sonrası ilk [G] maddesi kapatıldı —
+**banka ekstresi içe aktarma ve eşleştirme**. Kapsam CSV (+ sütun eşleme
+sihirbazı); **OFX kapsam dışı bırakıldı** (S-01: Türkiye'de bankaların çoğu
+OFX vermiyor). Satırlar önce kutuya düşer, sistem cari (IBAN → VKN → ünvan) ve
+açık fatura önerir, kullanıcı onayıyla tahsilat/tediye fişine dönüşür; yoksay
+ve geri al var. Ayrıntı §KSB-06 notu ve `apps/api/src/kasa-banka/ekstre*.ts`.
+
 **Sıradaki paket — Entegratör Paketi (S-01 kapısı kısmen alındı, 2026-07-14):**
 e-belge adaptörleri bugüne dek yalnızca mock; gerçek adaptörler yazılacak.
 Kararlar: **İzibiz ile başlanır** (diğerleri aynı sözleşmeyi izleyerek eklenir),
@@ -217,8 +229,30 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | KSB-03 | Kasalar/hesaplar arası virman yapılabilmelidir. | Z |
 | KSB-04 | Kasa ve banka hesap hareketleri tarih aralığıyla listelenebilmeli, anlık bakiye görülebilmelidir. | Z |
 | KSB-05 | Çek ve senet takibi yapılabilmelidir. **Alınan** (müşteri çeki, varlık): portföy → tahsil / ciro / karşılıksız / iade; tahsilde tutar seçilen kasa/banka hesabına **tahsilat** fişi olarak girer. **Verilen** (kendi kestiğimiz çek, borç): verildi → ödendi / karşılıksız / geri alındı; lehtar cari zorunludur, verilişte lehtara borç yazılır, ödemede tutar seçilen hesaptan **tediye** fişi olarak çıkar. Yalnız alınan çekler cari riskine sayılır. | İ |
-| KSB-06 | Banka ekstresi (CSV/OFX) içe aktarılıp hareketlerle eşleştirilebilmelidir (otomatik banka bağlantısı için bkz. ENT-06). | G |
+| KSB-06 | Banka ekstresi (CSV/OFX) içe aktarılıp hareketlerle eşleştirilebilmelidir (otomatik banka bağlantısı için bkz. ENT-06). | G — ✅ 2026-08-05 (CSV; OFX kapsam dışı) |
 | KSB-07 | Fatura üzerinden doğrudan tahsilat/ödeme kaydı oluşturulabilmelidir (kapama). | Z |
+
+> **KSB-06 uygulama notu (2026-08-05).** Ekran: `/panel/kasa-banka/ekstre`.
+> Akış gelen e-Belge kutusuyla aynı: satırlar önce **muhasebeye dokunmadan**
+> `BankaEkstreSatir` kutusuna düşer, onayla `KasaBankaHareket` üretilir.
+> - **Yalnız CSV.** Sütun düzeni bankadan bankaya değiştiği için kullanıcı ilk
+>   yüklemede sütunları eşler; eşleme `BankaHesap.ekstreEslemesi`'ne kaydedilir
+>   ve sonraki yüklemelerde sorulmaz. Başlıklardan otomatik tahmin yapılır.
+> - Tutar **işaretli** saklanır (artı = giriş → tahsilat, eksi = çıkış →
+>   tediye); banka ayrı borç/alacak sütunu veriyorsa ikisinden yön kurulur.
+> - Mükerrer koruması: `[tenantId, bankaHesapId, satirOzeti]` teklik. Özet
+>   tarih+tutar+açıklama+dekont özetine **tekrar sayacı** ekler, böylece aynı
+>   gün aynı tutarlı *gerçek* tekrarlar (iki kez EFT masrafı) ezilmez ama aynı
+>   dosyanın ikinci yüklemesi yeni satır üretmez.
+> - Cari önerisi sırası: karşı IBAN → açıklamadaki VKN/TCKN → ünvanın açıklamada
+>   geçmesi. Karşılaştırma ASCII'ye indirgenir (bankalar aksansız yazıyor).
+> - Cari bulunduysa **açık faturaları** (kesin, ödemesi eksik) önerilir; tutarı
+>   birebir tutan başa alınır. Fatura seçilmesi zorunlu değil — bağlanmazsa
+>   tutar yalnız cari bakiyesine işler.
+> - **Yoksay** (banka masrafı/faiz gibi cariyle ilgisiz satırlar) ve **geri al**
+>   (fişi *ve* onun cari hareketini siler) vardır.
+> - Kapsam dışı: **OFX** (Türkiye'de bankaların çoğu vermiyor) ve otomatik banka
+>   bağlantısı — o ENT-06.
 
 ### 3.6 Raporlama (RPR)
 

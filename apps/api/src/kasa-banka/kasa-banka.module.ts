@@ -1,12 +1,13 @@
 import { Module, OnModuleInit } from "@nestjs/common";
 import { registerEylemPolitikasi } from "../core/eylemler/eylem-kayit";
+import { EkstreService } from "./ekstre.service";
 import { KasaBankaController } from "./kasa-banka.controller";
 import { KasaBankaService } from "./kasa-banka.service";
 
 @Module({
   controllers: [KasaBankaController],
-  providers: [KasaBankaService],
-  exports: [KasaBankaService],
+  providers: [KasaBankaService, EkstreService],
+  exports: [KasaBankaService, EkstreService],
 })
 export class KasaBankaModule implements OnModuleInit {
   onModuleInit() {

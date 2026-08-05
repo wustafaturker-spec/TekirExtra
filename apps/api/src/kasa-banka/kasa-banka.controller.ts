@@ -9,19 +9,28 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
+  UseInterceptors,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { EkstreSatirDurum } from "@prisma/client";
 import { Roller } from "../auth/roller.decorator";
+import { EkstreService } from "./ekstre.service";
 import { KasaBankaService } from "./kasa-banka.service";
 import {
   bankaHesapGuncelleSemasi,
   bankaHesapOlusturSemasi,
   cekSenetGuncelleSemasi,
   cekSenetOlusturSemasi,
+  ekstreEslestirSemasi,
+  ekstreYukleSemasi,
   kasaBankaHareketOlusturSemasi,
   kasaGuncelleSemasi,
   kasaOlusturSemasi,
   virmanOlusturSemasi,
 } from "./kasa-banka.semalar";
+
+const EKSTRE_DURUMLARI: EkstreSatirDurum[] = ["beklemede", "eslesti", "yoksayildi"];
 
 /**
  * KLN-02: satış rolü kasa/banka modülüne hiç erişemez (Kabul Ölçütü 5).
@@ -31,7 +40,10 @@ import {
 @Controller("kasa-banka")
 @Roller("muhasebe", "salt_okunur")
 export class KasaBankaController {
-  constructor(private readonly service: KasaBankaService) {}
+  constructor(
+    private readonly service: KasaBankaService,
+    private readonly ekstre: EkstreService,
+  ) {}
 
   // ─── KASA ENDPOINTS ────────────────────────────────────────────────────────
 
@@ -191,5 +203,96 @@ export class KasaBankaController {
       );
     }
     return this.service.cekSenetGuncelle(id, ayristirma.data);
+  }
+
+  // ─── BANKA EKSTRESİ (KSB-06) ───────────────────────────────────────────────
+
+  /** Dosyayı ayrıştırıp önizleme + sütun eşlemesi tahminini döner; kaydetmez. */
+  @Post("ekstre/onizle")
+  @Roller("muhasebe")
+  @UseInterceptors(FileInterceptor("dosya"))
+  async ekstreOnizle(
+    @UploadedFile() dosya: { buffer: Buffer; originalname: string } | undefined,
+    @Body("bankaHesapId") bankaHesapId?: string,
+  ) {
+    if (!dosya) throw new BadRequestException("Lütfen bir ekstre dosyası yükleyin");
+    if (!bankaHesapId) throw new BadRequestException("Banka hesabı seçilmelidir");
+    return this.ekstre.onizle(bankaHesapId, dosya.buffer);
+  }
+
+  /**
+   * Eşleme çok parçalı gövdede JSON metni olarak gelir (dosyayla birlikte
+   * gönderildiği için `@Body()` nesneye çözülmüyor).
+   */
+  @Post("ekstre/yukle")
+  @Roller("muhasebe")
+  @UseInterceptors(FileInterceptor("dosya"))
+  async ekstreYukle(
+    @UploadedFile() dosya: { buffer: Buffer; originalname: string } | undefined,
+    @Body("veri") veri?: string,
+  ) {
+    if (!dosya) throw new BadRequestException("Lütfen bir ekstre dosyası yükleyin");
+
+    let govde: unknown;
+    try {
+      govde = JSON.parse(veri ?? "");
+    } catch {
+      throw new BadRequestException("Yükleme verisi okunamadı");
+    }
+
+    const ayristirma = ekstreYukleSemasi.safeParse(govde);
+    if (!ayristirma.success) {
+      throw new BadRequestException(
+        ayristirma.error.issues.map((i) => i.message).join("; "),
+      );
+    }
+
+    return this.ekstre.yukle(
+      ayristirma.data.bankaHesapId,
+      dosya.buffer,
+      dosya.originalname ?? "ekstre.csv",
+      ayristirma.data.esleme,
+      ayristirma.data.eslemeyiKaydet,
+    );
+  }
+
+  @Get("ekstre/satirlar")
+  async ekstreSatirListele(
+    @Query("durum") durum?: string,
+    @Query("bankaHesapId") bankaHesapId?: string,
+  ) {
+    if (durum && !EKSTRE_DURUMLARI.includes(durum as EkstreSatirDurum)) {
+      throw new BadRequestException(
+        `Geçersiz durum; beklenen: ${EKSTRE_DURUMLARI.join(", ")}`,
+      );
+    }
+    return this.ekstre.satirListele(
+      durum as EkstreSatirDurum | undefined,
+      bankaHesapId,
+    );
+  }
+
+  @Post("ekstre/satirlar/:id/eslestir")
+  @Roller("muhasebe")
+  async ekstreEslestir(@Param("id") id: string, @Body() govde: unknown) {
+    const ayristirma = ekstreEslestirSemasi.safeParse(govde);
+    if (!ayristirma.success) {
+      throw new BadRequestException(
+        ayristirma.error.issues.map((i) => i.message).join("; "),
+      );
+    }
+    return this.ekstre.eslestir(id, ayristirma.data);
+  }
+
+  @Post("ekstre/satirlar/:id/yoksay")
+  @Roller("muhasebe")
+  async ekstreYoksay(@Param("id") id: string) {
+    return this.ekstre.yoksay(id);
+  }
+
+  @Post("ekstre/satirlar/:id/geri-al")
+  @Roller("muhasebe")
+  async ekstreGeriAl(@Param("id") id: string) {
+    return this.ekstre.geriAl(id);
   }
 }

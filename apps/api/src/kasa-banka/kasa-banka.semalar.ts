@@ -58,6 +58,48 @@ export const virmanOlusturSemasi = z.object({
   path: ["hedefKasaId"],
 });
 
+/* ─── BANKA EKSTRESİ (KSB-06) ────────────────────────────────────────────── */
+
+/** Sütun indisleri; boş bırakılan alanlar dosyada yok demektir. */
+const sutunIndisi = z.number().int().min(0).max(200);
+
+export const ekstreSutunEslemesiSemasi = z
+  .object({
+    baslikSatiri: z.number().int().min(0).max(50).default(0),
+    tarih: sutunIndisi,
+    aciklama: sutunIndisi,
+    tutar: sutunIndisi.optional().nullable(),
+    borc: sutunIndisi.optional().nullable(),
+    alacak: sutunIndisi.optional().nullable(),
+    dekontNo: sutunIndisi.optional().nullable(),
+    karsiIban: sutunIndisi.optional().nullable(),
+    karsiUnvan: sutunIndisi.optional().nullable(),
+    bakiye: sutunIndisi.optional().nullable(),
+  })
+  // Tutar ya tek işaretli sütundan ya da borç/alacak ikilisinden okunur.
+  .refine(
+    (d) =>
+      (d.tutar !== undefined && d.tutar !== null) ||
+      ((d.borc !== undefined && d.borc !== null) &&
+        (d.alacak !== undefined && d.alacak !== null)),
+    {
+      message: "Tutar sütunu ya da borç+alacak sütunlarının ikisi de seçilmelidir",
+      path: ["tutar"],
+    },
+  );
+
+export const ekstreYukleSemasi = z.object({
+  bankaHesapId: z.string().uuid(),
+  esleme: ekstreSutunEslemesiSemasi,
+  /** Eşleme banka hesabına kaydedilsin mi (sonraki yüklemede sorulmaz). */
+  eslemeyiKaydet: z.boolean().default(true),
+});
+
+export const ekstreEslestirSemasi = z.object({
+  cariId: z.string().uuid(),
+  faturaId: z.string().uuid().optional().nullable(),
+});
+
 /** Paranın gireceği/çıkacağı durumlar: alınanda tahsil, verilende ödeme. */
 export const CEK_SENET_PARA_DURUMLARI = ["tahsil_edildi", "odendi"] as const;
 

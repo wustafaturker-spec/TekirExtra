@@ -42,6 +42,7 @@ const MENU: MenuGrup[] = [
       },
       { href: "/panel/kasa-banka", ikon: "🏦", baslik: "Kasa & Banka", eslesme: "tam" },
       { href: "/panel/kasa-banka/cek-senet", ikon: "🧾", baslik: "Çek & Senet", eslesme: "tam" },
+      { href: "/panel/kasa-banka/ekstre", ikon: "🏧", baslik: "Banka Ekstresi", eslesme: "tam" },
     ],
   },
   {
