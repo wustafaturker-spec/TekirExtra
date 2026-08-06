@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
+import { DepoSecici } from "@/components/depo-secici";
 import { faturaHesapla, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
@@ -88,6 +89,7 @@ export default function FaturaSayfasi() {
 
   // Form alanları
   const [cariId, setCariId] = useState("");
+  const [depoId, setDepoId] = useState("");
   const [tip, setTip] = useState("satis");
   const [tarih, setTarih] = useState(new Date().toISOString().substring(0, 10));
   const [satirlar, setSatirlar] = useState<FaturaSatir[]>([
@@ -204,6 +206,8 @@ export default function FaturaSayfasi() {
         method: "POST",
         body: JSON.stringify({
           cariId,
+          // STK-07: boş bırakılırsa sunucu varsayılan depoyu kullanır
+          depoId: depoId || null,
           tip,
           tarih,
           satirlar: satirlar.map((s) => ({
@@ -383,6 +387,9 @@ export default function FaturaSayfasi() {
             </div>
             <div style={{ flex: 1, minWidth: 150 }}>
               <Field label="Fatura Tarihi"><Input type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} required /></Field>
+            </div>
+            <div style={{ flex: 1, minWidth: 180 }}>
+              <DepoSecici deger={depoId} onChange={setDepoId} />
             </div>
           </div>
 

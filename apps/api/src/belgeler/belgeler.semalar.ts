@@ -29,6 +29,8 @@ export const belgeOlusturSemasi = z.object({
     .optional()
     .nullable(),
   cariId: z.string().uuid(),
+  /** STK-07: rezerv/yoldaki ve stok etkisinin işleneceği depo; boşsa varsayılan */
+  depoId: z.string().uuid().optional().nullable(),
   dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
   kur: pozitifOndalik.default("1"),
   genelIskontoYuzdesi: pozitifOndalik.default("0"),

@@ -59,6 +59,8 @@ export const stokBirimSemasi = z.object({
 
 export const stokHareketOlusturSemasi = z.object({
   stokId: z.string().uuid(),
+  /** STK-07: boşsa varsayılan depo kullanılır (tek depolu firmalarda arayüz sormaz) */
+  depoId: z.string().uuid().optional().nullable(),
   tip: z.enum(STOK_HAREKET_TIPLERI),
   miktar: pozitifOndalik,
   girilenBirim: z.string().min(1).max(20),
@@ -103,6 +105,8 @@ export const sayimKalemSemasi = z.object({
 });
 
 export const sayimOlusturSemasi = z.object({
+  /** STK-07: bir sayım tek depoyu kapsar; boşsa varsayılan depo */
+  depoId: z.string().uuid().optional().nullable(),
   tarih: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)"),
   aciklama: z.string().max(500).optional().nullable(),
   kalemler: z.array(sayimKalemSemasi).min(1, "En az bir sayım kalemi eklemelisiniz"),

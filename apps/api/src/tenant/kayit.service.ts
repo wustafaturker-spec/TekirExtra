@@ -60,6 +60,16 @@ export class KayitService {
           epostaDogrulandi: true,
         },
       });
+      // STK-07: her firmada en az bir depo bulunur. Tek depolu firmalarda
+      // arayüz depo seçimi göstermez; stok akışları bu varsayılana yazar.
+      await tx.depo.create({
+        data: {
+          tenantId,
+          kod: "MERKEZ",
+          ad: "Merkez Depo",
+          varsayilan: true,
+        },
+      });
       await tx.auditLog.create({
         data: {
           tenantId,

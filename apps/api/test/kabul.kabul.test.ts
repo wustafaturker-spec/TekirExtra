@@ -323,52 +323,71 @@ describe("Kabul Ölçütü 2 — gelen e-Fatura alış faturasına işlenir", ()
     await entegratorBagla(jeton);
     const stokId = await stokAc(jeton, "KBL-2");
 
-    const cek = await istek<{ toplamCekilen: number; yeniFaturaSayisi: number; eklenenFaturaIdler: string[] }>(
+    // Paket 6b (EBLG-05): çekilen belgeler doğrudan fatura üretmez, önce
+    // gelen kutusuna düşer; fatura yalnız kullanıcı onayıyla oluşur.
+    const cek = await istek<{ toplamCekilen: number; yeniBelgeSayisi: number }>(
       "/ebelge/gelenleri-cek",
       { method: "POST", jeton },
     );
     expect(cek.durum, JSON.stringify(cek.veri)).toBe(201);
     expect(cek.veri.toplamCekilen).toBeGreaterThan(0);
-    expect(cek.veri.yeniFaturaSayisi).toBe(1);
+    // Mock entegratör biri TİCARİ biri TEMEL iki belge döner
+    expect(cek.veri.yeniBelgeSayisi).toBe(2);
 
-    const faturaId = cek.veri.eklenenFaturaIdler[0];
+    // Aynı belge ikinci çekimde yinelenmez (EBLG-05)
+    const tekrar = await istek<{ yeniBelgeSayisi: number }>("/ebelge/gelenleri-cek", {
+      method: "POST",
+      jeton,
+    });
+    expect(tekrar.veri.yeniBelgeSayisi).toBe(0);
+
+    const kutu = await istek<Array<{ id: string; durum: string; belgeNo: string; satirSayisi: number }>>(
+      "/ebelge/gelen",
+      { jeton },
+    );
+    expect(kutu.durum, JSON.stringify(kutu.veri)).toBe(200);
+    expect(kutu.veri).toHaveLength(2);
+    const gelen = kutu.veri.find((k) => k.belgeNo === "MCK2026000000001")!;
+    expect(gelen.durum).toBe("beklemede");
+
+    // Onay ekranı satırları stok kartıyla eşleştirmeyi zorunlu kılar
+    const detay = await istek<{ satirlar: Array<{ siraNo: number }> }>(`/ebelge/gelen/${gelen.id}`, {
+      jeton,
+    });
+    expect(detay.durum, JSON.stringify(detay.veri)).toBe(200);
+
+    const onay = await istek<{ faturaId: string }>(`/ebelge/gelen/${gelen.id}/onayla`, {
+      method: "POST",
+      jeton,
+      body: {
+        satirEslesmeleri: detay.veri.satirlar.map((s) => ({ siraNo: s.siraNo, stokId })),
+      },
+    });
+    expect(onay.durum, JSON.stringify(onay.veri)).toBe(201);
+
+    const faturaId = onay.veri.faturaId;
     const taslak = await istek<{ tip: string; durum: string; cariId: string; no: string | null }>(
       `/fatura/${faturaId}`,
       { jeton },
     );
     expect(taslak.veri.tip).toBe("alis");
     expect(taslak.veri.durum).toBe("taslak");
-    expect(taslak.veri.no).toBe("MCK2026000000001");
 
-    // Aynı belge ikinci çekimde yinelenmez (EBLG-05)
-    const tekrar = await istek<{ yeniFaturaSayisi: number }>("/ebelge/gelenleri-cek", {
-      method: "POST",
-      jeton,
-    });
-    expect(tekrar.veri.yeniFaturaSayisi).toBe(0);
-
-    // Kullanıcı taslağı kalemlerle tamamlayıp kesinleştirir → stok artar
-    const guncelle = await istek(`/fatura/${faturaId}`, {
-      method: "PATCH",
-      jeton,
-      body: {
-        satirlar: [{ stokId, miktar: "20", birim: "adet", birimFiyat: "60", kdvOrani: "20" }],
-      },
-    });
-    expect(guncelle.durum, JSON.stringify(guncelle.veri)).toBe(200);
+    const oncekiMiktar = await stokMiktari(jeton, stokId);
 
     // Alış faturasında belge numarası tedarikçinin belgesinden gelir
     const kesin = await istek(`/fatura/${faturaId}/kesinlestir`, {
       method: "POST",
       jeton,
-      body: { no: taslak.veri.no },
+      body: { no: gelen.belgeNo },
     });
     expect(kesin.durum, JSON.stringify(kesin.veri)).toBe(201);
-    expect(await stokMiktari(jeton, stokId)).toBe(20);
+    expect(await stokMiktari(jeton, stokId)).toBeGreaterThan(oncekiMiktar);
 
     // Tedarikçiye ödeme (tediye) → bakiye kapanır
     const cariId = taslak.veri.cariId;
-    expect(await cariBakiyesi(jeton, cariId)).toBeCloseTo(-1440, 2);
+    const borc = -(await cariBakiyesi(jeton, cariId));
+    expect(borc).toBeGreaterThan(0);
 
     const kasa = await istek<{ id: string }>("/kasa-banka/kasalar", {
       method: "POST",
@@ -381,7 +400,7 @@ describe("Kabul Ölçütü 2 — gelen e-Fatura alış faturasına işlenir", ()
       body: {
         kasaId: kasa.veri.id,
         tip: "tediye",
-        tutar: "1440",
+        tutar: borc.toFixed(2),
         tarih: "2026-02-10",
         cariId,
         faturaId,
@@ -582,5 +601,121 @@ describe("Kabul Ölçütü 6 — çok kiracılı yalıtım", () => {
 
     const bBaglantilar = await istek<Array<{ saglayici: string }>>("/baglantilar", { jeton: b.jeton });
     expect(bBaglantilar.veri.map((k) => k.saglayici)).toEqual(["izibiz"]);
+  });
+});
+
+describe("STK-07 — çoklu depo: bakiyeler depo bazında ayrışır", () => {
+  it("kayıtla açılan varsayılan depo, transfer, depodan fatura ve depo bazlı eksi stok kontrolü", async () => {
+    const firma = await firmaAc("s7", vknUret(true));
+    const jeton = firma.jeton;
+
+    // Yeni firmada tek depo vardır: varsayılan Merkez Depo
+    const ilkListe = await istek<Array<{ id: string; kod: string; varsayilan: boolean }>>("/depo", { jeton });
+    expect(ilkListe.durum, JSON.stringify(ilkListe.veri)).toBe(200);
+    expect(ilkListe.veri).toHaveLength(1);
+    const merkez = ilkListe.veri[0];
+    expect(merkez.varsayilan).toBe(true);
+
+    // İkinci depo
+    const subeYanit = await istek<{ id: string }>("/depo", {
+      method: "POST",
+      jeton,
+      body: { kod: "SUBE", ad: "Şube Deposu" },
+    });
+    expect(subeYanit.durum, JSON.stringify(subeYanit.veri)).toBe(201);
+    const sube = subeYanit.veri.id;
+
+    // Depo verilmeyen giriş varsayılan depoya yazılır
+    const stokId = await stokAc(jeton, "KBL-7A");
+    await stokGirisi(jeton, stokId, "100");
+
+    const kirilim1 = await istek<Array<{ depoId: string; mevcutMiktar: string }>>(
+      `/stok/${stokId}/depo-bakiyeleri`,
+      { jeton },
+    );
+    expect(kirilim1.durum).toBe(200);
+    expect(kirilim1.veri).toHaveLength(1);
+    expect(Number(kirilim1.veri[0].mevcutMiktar)).toBe(100);
+    expect(kirilim1.veri[0].depoId).toBe(merkez.id);
+
+    // Transfer fişi: 30 adet şubeye
+    const transfer = await istek<{ id: string; no: string; durum: string }>("/depo/transferler", {
+      method: "POST",
+      jeton,
+      body: {
+        tarih: "2026-06-01",
+        kaynakDepoId: merkez.id,
+        hedefDepoId: sube,
+        kalemler: [{ stokId, girilenBirim: "adet", girilenMiktar: "30" }],
+      },
+    });
+    expect(transfer.durum, JSON.stringify(transfer.veri)).toBe(201);
+    expect(transfer.veri.durum).toBe("taslak");
+
+    // Taslak fiş stoğa dokunmaz
+    expect(await stokMiktari(jeton, stokId)).toBe(100);
+    expect((await istek<unknown[]>(`/stok/${stokId}/depo-bakiyeleri`, { jeton })).veri).toHaveLength(1);
+
+    const onay = await istek(`/depo/transferler/${transfer.veri.id}/onayla`, {
+      method: "POST",
+      jeton,
+    });
+    expect(onay.durum, JSON.stringify(onay.veri)).toBe(201);
+
+    // Firma toplamı değişmez, depo kırılımı ayrışır
+    expect(await stokMiktari(jeton, stokId)).toBe(100);
+    const kirilim2 = await istek<Array<{ depoId: string; mevcutMiktar: string }>>(
+      `/stok/${stokId}/depo-bakiyeleri`,
+      { jeton },
+    );
+    const bakiye = (depoId: string) =>
+      Number(kirilim2.veri.find((k) => k.depoId === depoId)?.mevcutMiktar ?? 0);
+    expect(bakiye(merkez.id)).toBe(70);
+    expect(bakiye(sube)).toBe(30);
+
+    // Şube deposundan kesilen fatura yalnız şubenin stoğunu düşürür
+    const cariId = await cariAc(jeton, "MUS-7", vknUret(true));
+    await faturaKes(jeton, {
+      tip: "satis",
+      tarih: "2026-06-02",
+      cariId,
+      depoId: sube,
+      satirlar: [{ stokId, miktar: "5", birim: "adet", birimFiyat: "100", kdvOrani: "20" }],
+    });
+    const kirilim3 = await istek<Array<{ depoId: string; mevcutMiktar: string }>>(
+      `/stok/${stokId}/depo-bakiyeleri`,
+      { jeton },
+    );
+    const bakiye3 = (depoId: string) =>
+      Number(kirilim3.veri.find((k) => k.depoId === depoId)?.mevcutMiktar ?? 0);
+    expect(bakiye3(merkez.id)).toBe(70);
+    expect(bakiye3(sube)).toBe(25);
+    expect(await stokMiktari(jeton, stokId)).toBe(95);
+
+    // Eksi stok kontrolü depo bazındadır: şubede 25 varken 40 çıkış uyarı üretir
+    // (varsayılan politika "uyar"; firma genelinde 95 adet olsa da ölçüt depodur)
+    const fazlaCikis = await istek<{ eksiStokUyarisi: string | null }>(
+      `/stok/${stokId}/hareketler`,
+      {
+        method: "POST",
+        jeton,
+        body: {
+          stokId,
+          depoId: sube,
+          tip: "cikis",
+          miktar: "40",
+          girilenBirim: "adet",
+          girilenMiktar: "40",
+          maliyet: "0",
+          tarih: "2026-06-03",
+        },
+      },
+    );
+    expect(fazlaCikis.durum, JSON.stringify(fazlaCikis.veri)).toBe(201);
+    expect(fazlaCikis.veri.eksiStokUyarisi).toContain("Şube Deposu");
+
+    // Hareket görmüş depo silinemez; varsayılan depo hiç silinemez
+    expect((await istek(`/depo/${sube}`, { method: "DELETE", jeton })).durum).toBe(400);
+    expect((await istek(`/depo/${merkez.id}`, { method: "DELETE", jeton })).durum).toBe(400);
   });
 });

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
+import { DepoSecici } from "@/components/depo-secici";
 import { faturaHesapla, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
@@ -92,6 +93,7 @@ export default function BelgelerSayfasi() {
   const [tur, setTur] = useState<Tur>("teklif");
   const [yon, setYon] = useState<Yon>("satis");
   const [cariId, setCariId] = useState("");
+  const [depoId, setDepoId] = useState("");
   const [tarih, setTarih] = useState(new Date().toISOString().substring(0, 10));
   const [gecerlilik, setGecerlilik] = useState("");
   const [satirlar, setSatirlar] = useState<BelgeSatirForm[]>([
@@ -171,6 +173,8 @@ export default function BelgelerSayfasi() {
           tarih,
           gecerlilikTarihi: tur === "teklif" && gecerlilik ? gecerlilik : undefined,
           cariId,
+          // STK-07: rezerv ve stok etkisi bu depoya işlenir
+          depoId: depoId || null,
           satirlar: satirlar.map((s) => ({
             stokId: s.stokId,
             miktar: String(s.miktar),
@@ -316,6 +320,9 @@ export default function BelgelerSayfasi() {
             </div>
             <div style={{ flex: 1, minWidth: 150 }}>
               <Field label="Tarih"><Input type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} required /></Field>
+            </div>
+            <div style={{ flex: 1, minWidth: 180 }}>
+              <DepoSecici deger={depoId} onChange={setDepoId} />
             </div>
             {tur === "teklif" && (
               <div style={{ flex: 1, minWidth: 150 }}>

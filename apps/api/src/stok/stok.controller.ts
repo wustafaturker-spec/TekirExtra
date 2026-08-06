@@ -19,6 +19,7 @@ import { Prisma } from "@prisma/client";
 import { Roller } from "../auth/roller.decorator";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
+import { DepoService } from "./depo.service";
 import { StokService } from "./stok.service";
 import {
   etiketBasSemasi,
@@ -38,6 +39,7 @@ const D = (deger: string | number): Prisma.Decimal => new Prisma.Decimal(deger);
 export class StokController {
   constructor(
     private readonly stokService: StokService,
+    private readonly depoService: DepoService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -264,8 +266,17 @@ export class StokController {
   // ─── STOK HAREKET UÇLARI ─────────────────────────────────────────────────
 
   @Get(":id/hareketler")
-  async hareketListele(@Param("id") id: string) {
-    return this.stokService.hareketListele(id);
+  async hareketListele(
+    @Param("id") id: string,
+    @Query("depoId") depoId?: string,
+  ) {
+    return this.stokService.hareketListele(id, depoId);
+  }
+
+  /** Depo bazlı bakiye kırılımı (STK-07). */
+  @Get(":id/depo-bakiyeleri")
+  async depoKirilimi(@Param("id") id: string) {
+    return this.stokService.depoKirilimi(id);
   }
 
   @Post(":id/hareketler")
@@ -284,18 +295,18 @@ export class StokController {
 
     const { tenantId } = aktifBaglam();
 
-    return this.prisma.tenantIslem(tenantId, (tx) =>
-      this.stokService.hareketEkle(
-        tx,
-        id,
-        girdi.tip,
-        D(girdi.miktar),
-        girdi.girilenBirim,
-        D(girdi.girilenMiktar),
-        D(girdi.maliyet),
-        new Date(girdi.tarih),
-        girdi.aciklama,
-      ),
+    return this.prisma.tenantIslem(tenantId, async (tx) =>
+      this.stokService.hareketEkle(tx, {
+        stokId: id,
+        depoId: await this.depoService.depoCozumle(tx, girdi.depoId),
+        tip: girdi.tip,
+        miktar: D(girdi.miktar),
+        girilenBirim: girdi.girilenBirim,
+        girilenMiktar: D(girdi.girilenMiktar),
+        birimMaliyet: D(girdi.maliyet),
+        tarih: new Date(girdi.tarih),
+        aciklama: girdi.aciklama,
+      }),
     );
   }
 

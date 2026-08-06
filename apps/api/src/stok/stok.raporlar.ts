@@ -16,9 +16,14 @@ const TARIH_FILTRELERI = [
   { alan: "bitis", ad: "Bitiş", tip: "tarih" as const },
 ];
 
-/** Hareket türlerinin giriş/çıkış kovaları (STK-19, StokService ile uyumlu). */
+/**
+ * Hareket türlerinin giriş/çıkış kovaları (STK-19, StokService ile uyumlu).
+ * Depolar arası transfer (STK-07) ayrı kovadadır: firma toplamında alım/satım
+ * gibi görünmemesi için giriş/çıkışa karışmaz.
+ */
 const GIRIS_TURLERI = new Set(["giris", "acilis"]);
 const CIKIS_TURLERI = new Set(["cikis", "fire", "zayi", "numune", "promosyon"]);
+const TRANSFER_TURLERI = new Set(["transfer_giris", "transfer_cikis"]);
 
 /** Bugünden `gun` gün öncesinin YYYY-MM-DD karşılığı. */
 const gunOnce = (gun: number): string =>
@@ -62,10 +67,14 @@ registerRapor({
   modul: "stok",
   ad: "Envanter Değeri",
   aciklama: "Anlık stok miktarı ve ağırlıklı ortalama maliyetle envanter değeri",
-  filtreler: [{ alan: "kritikAlti", ad: "Yalnız kritik altı", tip: "onay" }],
+  filtreler: [
+    { alan: "kritikAlti", ad: "Yalnız kritik altı", tip: "onay" },
+    { alan: "depo", ad: "Depo", tip: "depo" },
+  ],
   kolonlar: [
     { alan: "kod", baslik: "Kod", tip: "metin" },
     { alan: "ad", baslik: "Ürün", tip: "metin" },
+    { alan: "depo", baslik: "Depo", tip: "metin" },
     { alan: "birim", baslik: "Birim", tip: "metin" },
     { alan: "miktar", baslik: "Miktar", tip: "sayi" },
     { alan: "rezerve", baslik: "Rezerve", tip: "sayi" },
@@ -75,26 +84,50 @@ registerRapor({
     { alan: "envanterDegeri", baslik: "Envanter Değeri", tip: "para" },
   ],
   async calistir(girdi, { tx }) {
+    const depoId = girdi.filtreler?.depo ? String(girdi.filtreler.depo) : null;
     const kartlar = await tx.stokKart.findMany({
       where: { aktif: true, tip: "urun" },
       orderBy: { kod: "asc" },
     });
+
+    // Depo seçiliyse miktarlar o deponun bakiyesinden okunur (STK-07);
+    // seçili değilse kart üzerindeki firma toplamı kullanılır.
+    const bakiyeler = depoId
+      ? new Map(
+          (await tx.stokDepoBakiye.findMany({ where: { depoId } })).map((b) => [
+            b.stokId,
+            b,
+          ]),
+        )
+      : null;
+    const depoAd = depoId
+      ? ((await tx.depo.findUnique({ where: { id: depoId } }))?.ad ?? "")
+      : "Tüm depolar";
+
     return kartlar
+      .map((k) => {
+        const b = bakiyeler?.get(k.id);
+        const mevcut = bakiyeler ? D(b?.mevcutMiktar ?? 0) : k.mevcutMiktar;
+        const rezerve = bakiyeler ? D(b?.rezerveMiktar ?? 0) : k.rezerveMiktar;
+        const yoldaki = bakiyeler ? D(b?.yoldakiMiktar ?? 0) : k.yoldakiMiktar;
+        return { k, mevcut, rezerve, yoldaki };
+      })
       .filter(
-        (k) =>
+        ({ k, mevcut }) =>
           !girdi.filtreler?.kritikAlti ||
-          (k.kritikSeviye !== null && k.mevcutMiktar.lessThan(k.kritikSeviye)),
+          (k.kritikSeviye !== null && mevcut.lessThan(k.kritikSeviye)),
       )
-      .map((k) => ({
+      .map(({ k, mevcut, rezerve, yoldaki }) => ({
         kod: k.kod,
         ad: k.ad,
+        depo: depoAd,
         birim: k.anaBirim,
-        miktar: Number(k.mevcutMiktar),
-        rezerve: Number(k.rezerveMiktar),
-        kullanilabilir: Number(k.mevcutMiktar.sub(k.rezerveMiktar)),
-        yoldaki: Number(k.yoldakiMiktar),
+        miktar: Number(mevcut),
+        rezerve: Number(rezerve),
+        kullanilabilir: Number(mevcut.sub(rezerve)),
+        yoldaki: Number(yoldaki),
         ortalamaMaliyet: k.ortalamaMaliyet.toFixed(2),
-        envanterDegeri: k.mevcutMiktar.mul(k.ortalamaMaliyet).toFixed(2),
+        envanterDegeri: mevcut.mul(k.ortalamaMaliyet).toFixed(2),
       }));
   },
 });
@@ -106,14 +139,19 @@ registerRapor({
   modul: "stok",
   ad: "Stok Hareket Özeti",
   aciklama:
-    "Tarih aralığında giriş (açılış dahil) / çıkış (fire, zayi, numune, promosyon dahil) / sayım düzeltme toplamları (ana birim)",
-  filtreler: [...TARIH_FILTRELERI, { alan: "stok", ad: "Ürün", tip: "stok" }],
+    "Tarih aralığında giriş (açılış dahil) / çıkış (fire, zayi, numune, promosyon dahil) / sayım düzeltme / depo transferi toplamları (ana birim)",
+  filtreler: [
+    ...TARIH_FILTRELERI,
+    { alan: "stok", ad: "Ürün", tip: "stok" },
+    { alan: "depo", ad: "Depo", tip: "depo" },
+  ],
   kolonlar: [
     { alan: "kod", baslik: "Kod", tip: "metin" },
     { alan: "ad", baslik: "Ürün", tip: "metin" },
     { alan: "giris", baslik: "Giriş", tip: "sayi" },
     { alan: "cikis", baslik: "Çıkış", tip: "sayi" },
     { alan: "duzeltme", baslik: "Sayım Düzeltme", tip: "sayi" },
+    { alan: "transfer", baslik: "Depo Transferi", tip: "sayi" },
     { alan: "net", baslik: "Net Değişim", tip: "sayi" },
   ],
   async calistir(girdi, { tx }) {
@@ -122,6 +160,7 @@ registerRapor({
       where: {
         tarih: tarihAraligi(f.baslangic, f.bitis),
         ...(f.stok ? { stokId: String(f.stok) } : {}),
+        ...(f.depo ? { depoId: String(f.depo) } : {}),
       },
       select: {
         stokId: true,
@@ -132,7 +171,14 @@ registerRapor({
     });
     const gruplar = new Map<
       string,
-      { kod: string; ad: string; giris: number; cikis: number; duzeltme: number }
+      {
+        kod: string;
+        ad: string;
+        giris: number;
+        cikis: number;
+        duzeltme: number;
+        transfer: number;
+      }
     >();
     for (const h of hareketler) {
       const g = gruplar.get(h.stokId) ?? {
@@ -141,17 +187,23 @@ registerRapor({
         giris: 0,
         cikis: 0,
         duzeltme: 0,
+        transfer: 0,
       };
       // miktar imzalı saklanır (çıkış türleri negatif); kovalar mutlak değerle
       const m = Number(h.miktar);
       if (GIRIS_TURLERI.has(h.tip)) g.giris += Math.abs(m);
       else if (CIKIS_TURLERI.has(h.tip)) g.cikis += Math.abs(m);
+      // Transfer imzalı toplanır: depo süzgeci yoksa firma genelinde sıfırlanır
+      else if (TRANSFER_TURLERI.has(h.tip)) g.transfer += m;
       else g.duzeltme += m;
       gruplar.set(h.stokId, g);
     }
     return [...gruplar.values()]
       .sort((a, b) => a.kod.localeCompare(b.kod, "tr"))
-      .map((g) => ({ ...g, net: g.giris - g.cikis + g.duzeltme }));
+      .map((g) => ({
+        ...g,
+        net: g.giris - g.cikis + g.duzeltme + g.transfer,
+      }));
   },
 });
 

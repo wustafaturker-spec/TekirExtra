@@ -15,6 +15,7 @@ import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
 import { StokService } from "../stok/stok.service";
+import { DepoService } from "../stok/depo.service";
 import { EbelgeKuyrukService } from "../ebelge/ebelge-kuyruk.service";
 import { EpostaService } from "../tenant/eposta.service";
 import { BelgelerService } from "../belgeler/belgeler.service";
@@ -32,6 +33,7 @@ export class FaturaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly stokService: StokService,
+    private readonly depoService: DepoService,
     private readonly pdf: PdfService,
     private readonly eposta: EpostaService,
     private readonly belgelerService: BelgelerService,
@@ -211,6 +213,8 @@ export class FaturaService {
           tarih: new Date(girdi.tarih),
           vadeTarihi: girdi.vadeTarihi ? new Date(girdi.vadeTarihi) : null,
           cariId: girdi.cariId,
+          // STK-07: boş bırakılırsa depo kesinleştirmede varsayılana çözülür
+          depoId: girdi.depoId ?? null,
           dovizCinsi: girdi.dovizCinsi,
           kur: D(girdi.kur),
           genelIskontoYuzdesi: D(girdi.genelIskontoYuzdesi),
@@ -274,6 +278,7 @@ export class FaturaService {
       tarih: girdi.tarih ?? fatura.tarih,
       vadeTarihi: girdi.vadeTarihi !== undefined ? girdi.vadeTarihi : fatura.vadeTarihi,
       cariId: girdi.cariId ?? fatura.cariId,
+      depoId: girdi.depoId !== undefined ? girdi.depoId : fatura.depoId,
       dovizCinsi: girdi.dovizCinsi ?? (fatura.dovizCinsi as "TRY" | "USD" | "EUR"),
       kur: girdi.kur ?? fatura.kur,
       genelIskontoYuzdesi: girdi.genelIskontoYuzdesi ?? fatura.genelIskontoYuzdesi,
@@ -355,6 +360,7 @@ export class FaturaService {
           tarih: new Date(birlesikGirdi.tarih),
           vadeTarihi: birlesikGirdi.vadeTarihi ? new Date(birlesikGirdi.vadeTarihi) : null,
           cariId: birlesikGirdi.cariId,
+          depoId: birlesikGirdi.depoId ?? null,
           dovizCinsi: birlesikGirdi.dovizCinsi,
           kur: D(birlesikGirdi.kur),
           genelIskontoYuzdesi: D(birlesikGirdi.genelIskontoYuzdesi),
@@ -604,6 +610,7 @@ export class FaturaService {
           id: true,
           tur: true,
           yon: true,
+          depoId: true,
           kaynakBelgeId: true,
           satirlar: { select: { stokId: true, miktar: true } },
         },
@@ -615,11 +622,13 @@ export class FaturaService {
         if (!b || gorulen.has(b.id)) continue;
         gorulen.add(b.id);
         if (b.tur === "siparis") {
+          // Rezerv, siparişin kendi deposundan çözülür (STK-07)
           await this.belgelerService.siparisEtkisiUygula(
             tx,
             b.yon,
             b.satirlar,
             -1,
+            b.depoId,
           );
         }
         if (b.kaynakBelgeId && !gorulen.has(b.kaynakBelgeId)) {
@@ -629,6 +638,7 @@ export class FaturaService {
               id: true,
               tur: true,
               yon: true,
+              depoId: true,
               kaynakBelgeId: true,
               satirlar: { select: { stokId: true, miktar: true } },
             },
@@ -642,24 +652,29 @@ export class FaturaService {
       // Alış/Satış_İade -> Giriş hareketi (Stok artar).
       // Proforma fatura stoğu etkilemez.
       const stokUyarilari: string[] = [];
+      // Kesinleşen faturada hangi depodan çıkıldığı kayda geçer (STK-07)
+      let kullanilanDepoId: string | null = fatura.depoId;
       if (fatura.tip !== "proforma") {
+        // STK-07: fatura başlığındaki depo; seçilmemişse varsayılan depo
+        const depoId = await this.depoService.depoCozumle(tx, fatura.depoId);
+        kullanilanDepoId = depoId;
         for (const s of fatura.satirlar) {
           const tip =
             fatura.tip === "satis" || fatura.tip === "alis_iade" ? "cikis" : "giris";
 
-          const hareketSonucu = await this.stokService.hareketEkle(
-            tx,
-            s.stokId,
+          const hareketSonucu = await this.stokService.hareketEkle(tx, {
+            stokId: s.stokId,
+            depoId,
             tip,
-            s.miktar,
-            s.birim,
-            s.miktar,
-            s.birimFiyat,
-            new Date(fatura.tarih),
-            `${faturaNo || fatura.id} nolu fatura hareketi`,
-            "fatura",
-            fatura.id,
-          );
+            miktar: s.miktar,
+            girilenBirim: s.birim,
+            girilenMiktar: s.miktar,
+            birimMaliyet: s.birimFiyat,
+            tarih: new Date(fatura.tarih),
+            aciklama: `${faturaNo || fatura.id} nolu fatura hareketi`,
+            kaynakTur: "fatura",
+            kaynakRef: fatura.id,
+          });
           // Eksi stok politikası "uyar" ise kesinleştirme sürer, uyarı döner (STK-17)
           if (hareketSonucu.eksiStokUyarisi) {
             stokUyarilari.push(hareketSonucu.eksiStokUyarisi);
@@ -732,6 +747,7 @@ export class FaturaService {
           no: faturaNo,
           seri: fatura.seri,
           sira: fatura.sira,
+          depoId: kullanilanDepoId,
         },
       });
 
@@ -853,6 +869,7 @@ export class FaturaService {
     tarih: Date;
     vadeTarihi: Date | null;
     cariId: string;
+    depoId: string | null;
     dovizCinsi: string;
     kur: Prisma.Decimal;
     genelIskontoYuzdesi: Prisma.Decimal;
@@ -878,6 +895,7 @@ export class FaturaService {
       tarih: k.tarih.toISOString().slice(0, 10),
       vadeTarihi: k.vadeTarihi?.toISOString().slice(0, 10) ?? null,
       cariId: k.cariId,
+      depoId: k.depoId,
       dovizCinsi: k.dovizCinsi,
       kur: D(k.kur).toFixed(4),
       genelIskontoYuzdesi: D(k.genelIskontoYuzdesi).toFixed(2),

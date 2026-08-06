@@ -53,22 +53,22 @@ model Tenant {
 }
 
 model User {
-  id                String   @id @default(uuid()) @db.Uuid
-  tenantId          String   @map("tenant_id") @db.Uuid
-  eposta            String
-  parolaHash        String   @map("parola_hash")
-  adSoyad           String   @map("ad_soyad")
-  rol               Rol
-  aktif             Boolean  @default(true)
-  epostaDogrulandi  Boolean  @default(false) @map("eposta_dogrulandi")
+  id                 String   @id @default(uuid()) @db.Uuid
+  tenantId           String   @map("tenant_id") @db.Uuid
+  eposta             String
+  parolaHash         String   @map("parola_hash")
+  adSoyad            String   @map("ad_soyad")
+  rol                Rol
+  aktif              Boolean  @default(true)
+  epostaDogrulandi   Boolean  @default(false) @map("eposta_dogrulandi")
   /// TOTP gizli anahtarı AES-256-GCM ile şifreli saklanır (KLN-05)
-  totpSecretSifreli String?  @map("totp_secret_sifreli")
-  totpAktif         Boolean  @default(false) @map("totp_aktif")
+  totpSecretSifreli  String?  @map("totp_secret_sifreli")
+  totpAktif          Boolean  @default(false) @map("totp_aktif")
   maksIskontoYuzdesi Decimal? @map("maks_iskonto_yuzdesi") @db.Decimal(5, 2)
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
 
-  tenant         Tenant      @relation(fields: [tenantId], references: [id])
+  tenant          Tenant      @relation(fields: [tenantId], references: [id])
   temsilciCariler CariHesap[] @relation("CariTemsilci")
 
   @@unique([tenantId, eposta])
@@ -227,7 +227,8 @@ enum StokTip {
   sarf
 }
 
-/// fire/zayi/numune/promosyon çıkış gibi, acilis giriş gibi işlenir (STK-19)
+/// fire/zayi/numune/promosyon çıkış gibi, acilis giriş gibi işlenir (STK-19);
+/// transfer_cikis/transfer_giris depolar arası transferin iki ayağıdır (STK-07)
 enum StokHareketTip {
   giris
   cikis
@@ -237,10 +238,18 @@ enum StokHareketTip {
   numune
   promosyon
   acilis
+  transfer_cikis
+  transfer_giris
 }
 
 /// Sayım farkları yalnız onayla stoğa işlenir (STK-20)
 enum SayimDurum {
+  taslak
+  onaylandi
+}
+
+/// Depolar arası transfer yalnız onayla stoğa işlenir (STK-07)
+enum TransferDurum {
   taslak
   onaylandi
 }
@@ -300,9 +309,9 @@ model CariHesap {
 }
 
 model CariAdres {
-  id       String   @id @default(uuid()) @db.Uuid
-  tenantId String   @map("tenant_id") @db.Uuid
-  cariId   String   @map("cari_id") @db.Uuid
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  cariId    String   @map("cari_id") @db.Uuid
   tip       AdresTip
   baslik    String
   adres     String
@@ -352,8 +361,8 @@ model CariBankaHesap {
 
 /// Cari etiketleri (CARI-11): bayi, perakende, VIP vb.
 model CariEtiket {
-  id       String @id @default(uuid()) @db.Uuid
-  tenantId String @map("tenant_id") @db.Uuid
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String  @map("tenant_id") @db.Uuid
   ad       String
   renk     String?
 
@@ -451,14 +460,16 @@ model StokKart {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
-  kategori     StokKategori?       @relation(fields: [kategoriId], references: [id])
-  birimler     StokBirim[]
-  barkodlar    StokBarkod[]
-  tedarikciler StokTedarikci[]
-  hareketler   StokHareket[]
-  fiyatlar     FiyatListesiKalem[]
-  faturaSatirs FaturaSatir[]
-  belgeSatirlari BelgeSatir[]
+  kategori          StokKategori?       @relation(fields: [kategoriId], references: [id])
+  birimler          StokBirim[]
+  depoBakiyeleri    StokDepoBakiye[]
+  transferKalemleri DepoTransferKalem[]
+  barkodlar         StokBarkod[]
+  tedarikciler      StokTedarikci[]
+  hareketler        StokHareket[]
+  fiyatlar          FiyatListesiKalem[]
+  faturaSatirs      FaturaSatir[]
+  belgeSatirlari    BelgeSatir[]
 
   @@unique([tenantId, kod])
   @@index([tenantId, ad])
@@ -551,6 +562,8 @@ model StokHareket {
   id            String         @id @default(uuid()) @db.Uuid
   tenantId      String         @map("tenant_id") @db.Uuid
   stokId        String         @map("stok_id") @db.Uuid
+  /// STK-07: hareketin gerçekleştiği depo
+  depoId        String         @map("depo_id") @db.Uuid
   tip           StokHareketTip
   miktar        Decimal        @db.Decimal(15, 3)
   girilenBirim  String         @map("girilen_birim")
@@ -563,8 +576,10 @@ model StokHareket {
   createdAt     DateTime       @default(now()) @map("created_at")
 
   stok StokKart @relation(fields: [stokId], references: [id])
+  depo Depo     @relation(fields: [depoId], references: [id])
 
   @@index([tenantId, stokId, tarih])
+  @@index([tenantId, depoId, tarih])
   @@map("stok_hareketleri")
 }
 
@@ -573,6 +588,8 @@ model StokHareket {
 model Sayim {
   id              String     @id @default(uuid()) @db.Uuid
   tenantId        String     @map("tenant_id") @db.Uuid
+  /// STK-07: bir sayım tek depoyu kapsar
+  depoId          String     @map("depo_id") @db.Uuid
   tarih           DateTime   @db.Date
   aciklama        String?
   durum           SayimDurum @default(taslak)
@@ -580,8 +597,10 @@ model Sayim {
   onayZamani      DateTime?  @map("onay_zamani")
   createdAt       DateTime   @default(now()) @map("created_at")
 
+  depo     Depo         @relation(fields: [depoId], references: [id])
   kalemler SayimKalem[]
 
+  @@index([tenantId, depoId])
   @@map("sayimlar")
 }
 
@@ -596,6 +615,109 @@ model SayimKalem {
   sayim Sayim @relation(fields: [sayimId], references: [id], onDelete: Cascade)
 
   @@map("sayim_kalemleri")
+}
+
+// ─── Çoklu depo (STK-07) ────────────────────────────────────────────────────
+
+/// Kiracıda her zaman en az bir depo bulunur (göçte "Merkez Depo" açılır).
+/// Tek depo varsa arayüz depo seçimini göstermez, varsayılan depo kullanılır.
+model Depo {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  kod        String
+  ad         String
+  adres      String?
+  sorumlu    String?
+  /// Depo seçilmeyen akışların (ve arayüzün) kullandığı depo; kiracıda tek olur
+  varsayilan Boolean  @default(false)
+  aktif      Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  bakiyeler         StokDepoBakiye[]
+  hareketler        StokHareket[]
+  sayimlar          Sayim[]
+  faturalar         Fatura[]
+  belgeler          Belge[]
+  cikisTransferleri DepoTransfer[]   @relation("TransferKaynak")
+  girisTransferleri DepoTransfer[]   @relation("TransferHedef")
+
+  @@unique([tenantId, kod])
+  @@index([tenantId])
+  @@map("depolar")
+}
+
+/// Depo bazlı miktarlar (STK-07). StokKart üzerindeki mevcut/rezerve/yoldaki
+/// alanları bu satırların toplamıdır ve birlikte güncellenir.
+/// Ortalama maliyet firma genelinde tek tutulur (S-01) — burada yer almaz.
+model StokDepoBakiye {
+  id            String  @id @default(uuid()) @db.Uuid
+  tenantId      String  @map("tenant_id") @db.Uuid
+  stokId        String  @map("stok_id") @db.Uuid
+  depoId        String  @map("depo_id") @db.Uuid
+  mevcutMiktar  Decimal @default(0) @map("mevcut_miktar") @db.Decimal(15, 3)
+  rezerveMiktar Decimal @default(0) @map("rezerve_miktar") @db.Decimal(15, 3)
+  yoldakiMiktar Decimal @default(0) @map("yoldaki_miktar") @db.Decimal(15, 3)
+
+  stok StokKart @relation(fields: [stokId], references: [id], onDelete: Cascade)
+  depo Depo     @relation(fields: [depoId], references: [id])
+
+  @@unique([tenantId, stokId, depoId])
+  @@index([tenantId, depoId])
+  @@map("stok_depo_bakiyeleri")
+}
+
+/// Depolar arası transfer fişi (STK-07): onayda kaynak depoda transfer_cikis,
+/// hedef depoda transfer_giris hareketi yazılır. Ortalama maliyet değişmez.
+model DepoTransfer {
+  id              String        @id @default(uuid()) @db.Uuid
+  tenantId        String        @map("tenant_id") @db.Uuid
+  no              String
+  tarih           DateTime      @db.Date
+  kaynakDepoId    String        @map("kaynak_depo_id") @db.Uuid
+  hedefDepoId     String        @map("hedef_depo_id") @db.Uuid
+  aciklama        String?
+  durum           TransferDurum @default(taslak)
+  onaylayanUserId String?       @map("onaylayan_user_id") @db.Uuid
+  onayZamani      DateTime?     @map("onay_zamani")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  kaynakDepo Depo                @relation("TransferKaynak", fields: [kaynakDepoId], references: [id])
+  hedefDepo  Depo                @relation("TransferHedef", fields: [hedefDepoId], references: [id])
+  kalemler   DepoTransferKalem[]
+
+  @@unique([tenantId, no])
+  @@index([tenantId, durum])
+  @@map("depo_transferleri")
+}
+
+model DepoTransferKalem {
+  id            String  @id @default(uuid()) @db.Uuid
+  tenantId      String  @map("tenant_id") @db.Uuid
+  transferId    String  @map("transfer_id") @db.Uuid
+  stokId        String  @map("stok_id") @db.Uuid
+  /// ana birim cinsinden; girilen birim/miktar stok hareketindeki gibi ayrı saklanır
+  miktar        Decimal @db.Decimal(15, 3)
+  girilenBirim  String  @map("girilen_birim")
+  girilenMiktar Decimal @map("girilen_miktar") @db.Decimal(15, 3)
+
+  transfer DepoTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  stok     StokKart     @relation(fields: [stokId], references: [id])
+
+  @@index([tenantId, transferId])
+  @@map("depo_transfer_kalemleri")
+}
+
+/// Transfer fişi numarası sayacı (yıl bazlı, BelgeSayac deseniyle aynı)
+model TransferSayac {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  yil      Int
+  sonSira  Int    @default(0) @map("son_sira")
+
+  @@unique([tenantId, yil])
+  @@map("transfer_sayaclari")
 }
 
 enum FaturaTip {
@@ -628,6 +750,8 @@ model Fatura {
   tarih                DateTime    @db.Date
   vadeTarihi           DateTime?   @map("vade_tarihi") @db.Date
   cariId               String      @map("cari_id") @db.Uuid
+  /// STK-07: stok hareketlerinin işleneceği depo; boşsa varsayılan depo
+  depoId               String?     @map("depo_id") @db.Uuid
   dovizCinsi           DovizCinsi  @default(TRY) @map("doviz_cinsi")
   kur                  Decimal     @default(1) @db.Decimal(15, 6)
   genelIskontoYuzdesi  Decimal     @default(0) @map("genel_iskonto_yuzdesi") @db.Decimal(5, 2)
@@ -646,6 +770,7 @@ model Fatura {
   updatedAt            DateTime    @updatedAt @map("updated_at")
 
   cari              CariHesap          @relation(fields: [cariId], references: [id])
+  depo              Depo?              @relation(fields: [depoId], references: [id])
   satirlar          FaturaSatir[]
   ebelge            EbelgeKayit?
   gelenEbelge       GelenEbelge?
@@ -814,23 +939,23 @@ model Kasa {
 }
 
 model BankaHesap {
-  id         String     @id @default(uuid()) @db.Uuid
-  tenantId   String     @map("tenant_id") @db.Uuid
-  ad         String
-  bankaAdi   String     @map("banka_adi")
-  sube       String?
-  hesapNo    String?    @map("hesap_no")
-  iban       String?
-  dovizCinsi DovizCinsi @default(TRY) @map("doviz_cinsi")
-  aktif      Boolean    @default(true)
+  id             String     @id @default(uuid()) @db.Uuid
+  tenantId       String     @map("tenant_id") @db.Uuid
+  ad             String
+  bankaAdi       String     @map("banka_adi")
+  sube           String?
+  hesapNo        String?    @map("hesap_no")
+  iban           String?
+  dovizCinsi     DovizCinsi @default(TRY) @map("doviz_cinsi")
+  aktif          Boolean    @default(true)
   /// KSB-06: bu hesabın ekstre dosyasındaki sütun eşlemesi. Bir kez kurulur,
   /// sonraki yüklemelerde kullanıcıya sorulmaz. Bkz. EkstreSutunEslemesi.
-  ekstreEslemesi Json?   @map("ekstre_eslemesi")
-  createdAt  DateTime   @default(now()) @map("created_at")
-  updatedAt  DateTime   @updatedAt @map("updated_at")
+  ekstreEslemesi Json?      @map("ekstre_eslemesi")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
 
-  hareketler KasaBankaHareket[]
-  ekstreler  BankaEkstre[]
+  hareketler      KasaBankaHareket[]
+  ekstreler       BankaEkstre[]
   ekstreSatirlari BankaEkstreSatir[]
 
   @@unique([tenantId, ad])
@@ -846,14 +971,14 @@ enum EkstreSatirDurum {
 /// KSB-06: bir ekstre dosyası yüklemesi. Satırlar bu kayda bağlanır ki
 /// "hangi dosyadan geldi" izlenebilsin.
 model BankaEkstre {
-  id           String   @id @default(uuid()) @db.Uuid
-  tenantId     String   @map("tenant_id") @db.Uuid
-  bankaHesapId String   @map("banka_hesap_id") @db.Uuid
-  dosyaAdi     String   @map("dosya_adi")
-  satirSayisi  Int      @map("satir_sayisi")
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  bankaHesapId    String   @map("banka_hesap_id") @db.Uuid
+  dosyaAdi        String   @map("dosya_adi")
+  satirSayisi     Int      @map("satir_sayisi")
   /// Aynı dosya ikinci kez yüklendiğinde yinelenmeyen satır sayısı.
-  yeniSatirSayisi Int   @map("yeni_satir_sayisi")
-  createdAt    DateTime @default(now()) @map("created_at")
+  yeniSatirSayisi Int      @map("yeni_satir_sayisi")
+  createdAt       DateTime @default(now()) @map("created_at")
 
   bankaHesap BankaHesap         @relation(fields: [bankaHesapId], references: [id], onDelete: Cascade)
   satirlar   BankaEkstreSatir[]
@@ -1015,6 +1140,8 @@ model Belge {
   tarih                DateTime         @db.Date
   gecerlilikTarihi     DateTime?        @map("gecerlilik_tarihi") @db.Date
   cariId               String           @map("cari_id") @db.Uuid
+  /// STK-07: rezerv/yoldaki ve irsaliye stok etkisinin işleneceği depo
+  depoId               String?          @map("depo_id") @db.Uuid
   dovizCinsi           DovizCinsi       @default(TRY) @map("doviz_cinsi")
   kur                  Decimal          @default(1) @db.Decimal(15, 6)
   genelIskontoYuzdesi  Decimal          @default(0) @map("genel_iskonto_yuzdesi") @db.Decimal(5, 2)
@@ -1035,6 +1162,7 @@ model Belge {
   updatedAt            DateTime         @updatedAt @map("updated_at")
 
   cari         CariHesap    @relation(fields: [cariId], references: [id])
+  depo         Depo?        @relation(fields: [depoId], references: [id])
   kaynakBelge  Belge?       @relation("BelgeZinciri", fields: [kaynakBelgeId], references: [id])
   turetilenler Belge[]      @relation("BelgeZinciri")
   fatura       Fatura?      @relation(fields: [faturaId], references: [id])

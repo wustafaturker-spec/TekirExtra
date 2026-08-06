@@ -51,6 +51,7 @@ const MENU: MenuGrup[] = [
       { href: "/panel/stok", ikon: "📦", baslik: "Stok Kartları", eslesme: "tam" },
       { href: "/panel/stok/kategoriler", ikon: "🗂️", baslik: "Kategoriler", eslesme: "tam" },
       { href: "/panel/stok/sayim", ikon: "📋", baslik: "Stok Sayımı", eslesme: "tam" },
+      { href: "/panel/stok/transferler", ikon: "🔁", baslik: "Depo Transferi", eslesme: "tam" },
       { href: "/panel/stok/fiyat-listeleri", ikon: "🏷️", baslik: "Fiyat Listeleri", eslesme: "tam" },
     ],
   },
@@ -63,6 +64,7 @@ const MENU: MenuGrup[] = [
     ogeler: [
       { href: "/panel/ayarlar/firma", ikon: "🏢", baslik: "Firma Ayarları", eslesme: "tam" },
       { href: "/panel/ayarlar/fatura-serileri", ikon: "🔢", baslik: "Fatura Serileri", eslesme: "tam" },
+      { href: "/panel/ayarlar/depolar", ikon: "🏬", baslik: "Depolar", eslesme: "tam" },
       { href: "/panel/ayarlar/moduller", ikon: "⚙️", baslik: "Modül Ayarları", eslesme: "tam" },
       { href: "/panel/ayarlar/kullanicilar", ikon: "👤", baslik: "Kullanıcılar", eslesme: "tam" },
       { href: "/panel/ayarlar/entegratorler", ikon: "🔌", baslik: "e-Belge Ayarları", eslesme: "tam" },

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, tokenAl } from "@/lib/api";
+import { useDepolar } from "@/lib/depolar";
+import { DepoSecici } from "@/components/depo-secici";
 import {
   Alert,
   Badge,
@@ -62,6 +64,7 @@ interface Hareket {
   aciklama: string | null;
   kaynakTur: string;
   kaynakRef: string | null;
+  depo?: { id: string; kod: string; ad: string } | null;
 }
 
 interface StokDetay {
@@ -107,7 +110,19 @@ interface CariOzet {
   unvan: string;
 }
 
-type Sekme = "genel" | "hareketler" | "birimler" | "barkodlar" | "tedarikciler";
+type Sekme = "genel" | "hareketler" | "depolar" | "birimler" | "barkodlar" | "tedarikciler";
+
+/** Stok kartının depo bazlı kırılımı (STK-07). */
+interface DepoBakiyeSatiri {
+  depoId: string;
+  depoKod: string;
+  depoAd: string;
+  depoAktif: boolean;
+  mevcutMiktar: string;
+  rezerveMiktar: string;
+  yoldakiMiktar: string;
+  kullanilabilirMiktar: string;
+}
 
 /* ─── Sabitler ───────────────────────────────────────────────────────────── */
 
@@ -122,6 +137,17 @@ const HAREKET_TIPLERI: { deger: string; baslik: string; yon: "giris" | "cikis" |
   { deger: "promosyon", baslik: "Promosyon", yon: "cikis" },
   { deger: "sayim_duzeltme", baslik: "Sayım Düzeltme", yon: "duzeltme" },
 ];
+
+/**
+ * Elle girilemeyen, yalnız listede görünen türler (STK-07): depolar arası
+ * transferin iki ayağı — transfer fişi ekranından üretilir.
+ */
+const TUREYEN_HAREKET_TIPLERI: { deger: string; baslik: string; yon: "giris" | "cikis" }[] = [
+  { deger: "transfer_giris", baslik: "Transfer Girişi", yon: "giris" },
+  { deger: "transfer_cikis", baslik: "Transfer Çıkışı", yon: "cikis" },
+];
+
+const TUM_HAREKET_TIPLERI = [...HAREKET_TIPLERI, ...TUREYEN_HAREKET_TIPLERI];
 
 const TIP_ETIKETLERI: Record<string, string> = {
   urun: "📦 Ürün",
@@ -147,9 +173,11 @@ export default function StokDetaySayfasi() {
 
   const [detay, setDetay] = useState<StokDetay | null>(null);
   const [hareketler, setHareketler] = useState<Hareket[]>([]);
+  const [depoBakiyeleri, setDepoBakiyeleri] = useState<DepoBakiyeSatiri[]>([]);
   const [kategoriler, setKategoriler] = useState<Kategori[]>([]);
   const [cariler, setCariler] = useState<CariOzet[]>([]);
   const [aktifSekme, setAktifSekme] = useState<Sekme>("genel");
+  const { cokluDepo } = useDepolar();
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [uyari, setUyari] = useState("");
@@ -171,15 +199,24 @@ export default function StokDetaySayfasi() {
     }
   }, [id]);
 
+  const depoBakiyeleriYukle = useCallback(async () => {
+    try {
+      setDepoBakiyeleri(await api<DepoBakiyeSatiri[]>(`/stok/${id}/depo-bakiyeleri`));
+    } catch {
+      setDepoBakiyeleri([]);
+    }
+  }, [id]);
+
   useEffect(() => {
     if (!tokenAl()) return;
     void yukle();
     void hareketleriYukle();
+    void depoBakiyeleriYukle();
     void api<Kategori[]>("/stok/kategoriler").then(setKategoriler).catch(() => {});
     void api<{ kayitlar: CariOzet[] }>("/cari")
       .then((v) => setCariler(v.kayitlar))
       .catch(() => {});
-  }, [yukle, hareketleriYukle]);
+  }, [yukle, hareketleriYukle, depoBakiyeleriYukle]);
 
   /** Alt kayıt ekleme/silme sonrası ortak akış. */
   async function islem(calistir: () => Promise<unknown>, basariMesaji: string) {
@@ -267,6 +304,9 @@ export default function StokDetaySayfasi() {
           items={[
             { deger: "genel", baslik: "Genel" },
             { deger: "hareketler", baslik: `Hareketler (${hareketler.length})` },
+            ...(cokluDepo
+              ? [{ deger: "depolar" as Sekme, baslik: `Depolar (${depoBakiyeleri.length})` }]
+              : []),
             { deger: "birimler", baslik: `Birimler (${detay.birimler.length})` },
             { deger: "barkodlar", baslik: `Barkodlar (${detay.barkodlar.length})` },
             { deger: "tedarikciler", baslik: `Tedarikçiler (${detay.tedarikciler.length})` },
@@ -312,6 +352,7 @@ export default function StokDetaySayfasi() {
               if (yanit.eksiStokUyarisi) setUyari(yanit.eksiStokUyarisi);
               await yukle();
               await hareketleriYukle();
+              await depoBakiyeleriYukle();
               return true;
             } catch (h) {
               setHata(h instanceof Error ? h.message : "Hareket işlenemedi");
@@ -319,6 +360,10 @@ export default function StokDetaySayfasi() {
             }
           }}
         />
+      )}
+
+      {aktifSekme === "depolar" && (
+        <DepolarSekmesi detay={detay} satirlar={depoBakiyeleri} />
       )}
 
       {aktifSekme === "birimler" && (
@@ -579,6 +624,75 @@ function GenelSekmesi({
 
 /* ─── Hareketler sekmesi (STK-02) ────────────────────────────────────────── */
 
+/* ─── Depolar sekmesi (STK-07) ───────────────────────────────────────────── */
+
+function DepolarSekmesi({
+  detay,
+  satirlar,
+}: {
+  detay: StokDetay;
+  satirlar: DepoBakiyeSatiri[];
+}) {
+  return (
+    <Card pad={false}>
+      <TableWrap>
+        <thead>
+          <tr>
+            <th>Depo</th>
+            <th className="num">Mevcut</th>
+            <th className="num">Rezerve</th>
+            <th className="num">Kullanılabilir</th>
+            <th className="num">Yoldaki</th>
+          </tr>
+        </thead>
+        <tbody>
+          {satirlar.length === 0 ? (
+            <tr>
+              <td colSpan={5} className="empty">
+                Bu ürünün henüz hiçbir depoda bakiyesi yok.
+              </td>
+            </tr>
+          ) : (
+            <>
+              {satirlar.map((s) => (
+                <tr key={s.depoId}>
+                  <td>
+                    <span className="mono">{s.depoKod}</span> · {s.depoAd}
+                    {!s.depoAktif && " (pasif)"}
+                  </td>
+                  <td className="num">
+                    {adet(s.mevcutMiktar)} {detay.anaBirim}
+                  </td>
+                  <td className="num">{adet(s.rezerveMiktar)}</td>
+                  <td className="num" style={{ fontWeight: 700 }}>
+                    {adet(s.kullanilabilirMiktar)}
+                  </td>
+                  <td className="num">{adet(s.yoldakiMiktar)}</td>
+                </tr>
+              ))}
+              <tr>
+                <td style={{ fontWeight: 700 }}>Toplam</td>
+                <td className="num" style={{ fontWeight: 700 }}>
+                  {adet(detay.mevcutMiktar)} {detay.anaBirim}
+                </td>
+                <td className="num" style={{ fontWeight: 700 }}>
+                  {adet(detay.rezerveMiktar)}
+                </td>
+                <td className="num" style={{ fontWeight: 700 }}>
+                  {adet(detay.kullanilabilirMiktar)}
+                </td>
+                <td className="num" style={{ fontWeight: 700 }}>
+                  {adet(detay.yoldakiMiktar)}
+                </td>
+              </tr>
+            </>
+          )}
+        </tbody>
+      </TableWrap>
+    </Card>
+  );
+}
+
 function HareketlerSekmesi({
   detay,
   hareketler,
@@ -588,6 +702,7 @@ function HareketlerSekmesi({
   hareketler: Hareket[];
   onEkle: (govde: Record<string, unknown>) => Promise<boolean>;
 }) {
+  const { cokluDepo } = useDepolar();
   const [formAcik, setFormAcik] = useState(false);
   const [tip, setTip] = useState("giris");
   const [girilenMiktar, setGirilenMiktar] = useState("");
@@ -595,6 +710,7 @@ function HareketlerSekmesi({
   const [maliyet, setMaliyet] = useState("0");
   const [tarih, setTarih] = useState(bugun());
   const [aciklama, setAciklama] = useState("");
+  const [depoId, setDepoId] = useState("");
 
   /** Seçili birimin ana birim karşılığı; ana birim için katsayı 1. */
   const katsayi =
@@ -606,6 +722,7 @@ function HareketlerSekmesi({
   async function kaydet() {
     const eklendi = await onEkle({
       stokId: detay.id,
+      depoId: depoId || null,
       tip,
       // Ana birim cinsinden miktar; API girilen değeri kendi çevirmez.
       miktar: anaBirimMiktar.toFixed(3),
@@ -622,8 +739,8 @@ function HareketlerSekmesi({
     }
   }
 
-  const yon = (t: string) => HAREKET_TIPLERI.find((h) => h.deger === t)?.yon ?? "duzeltme";
-  const baslik = (t: string) => HAREKET_TIPLERI.find((h) => h.deger === t)?.baslik ?? t;
+  const yon = (t: string) => TUM_HAREKET_TIPLERI.find((h) => h.deger === t)?.yon ?? "duzeltme";
+  const baslik = (t: string) => TUM_HAREKET_TIPLERI.find((h) => h.deger === t)?.baslik ?? t;
 
   return (
     <div className="stack">
@@ -691,6 +808,9 @@ function HareketlerSekmesi({
                   <Input type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} />
                 </Field>
               </div>
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <DepoSecici deger={depoId} onChange={setDepoId} />
+              </div>
             </div>
 
             <Field label="Açıklama">
@@ -721,6 +841,7 @@ function HareketlerSekmesi({
           <thead>
             <tr>
               <th>Tarih</th>
+              {cokluDepo && <th>Depo</th>}
               <th>Tip</th>
               <th className="num">Girilen</th>
               <th className="num">Ana Birim</th>
@@ -732,7 +853,7 @@ function HareketlerSekmesi({
           <tbody>
             {hareketler.length === 0 ? (
               <tr>
-                <td colSpan={7} className="empty">
+                <td colSpan={cokluDepo ? 8 : 7} className="empty">
                   Bu ürün için henüz stok hareketi yok.
                 </td>
               </tr>
@@ -744,6 +865,7 @@ function HareketlerSekmesi({
                 return (
                   <tr key={h.id}>
                     <td className="mono">{h.tarih.slice(0, 10)}</td>
+                    {cokluDepo && <td>{h.depo?.ad ?? "—"}</td>}
                     <td>
                       <Badge variant={y === "giris" ? "success" : y === "cikis" ? "danger" : "info"}>
                         {baslik(h.tip)}

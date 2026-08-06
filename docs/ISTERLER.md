@@ -47,6 +47,19 @@ OFX vermiyor). Satırlar önce kutuya düşer, sistem cari (IBAN → VKN → ün
 açık fatura önerir, kullanıcı onayıyla tahsilat/tediye fişine dönüşür; yoksay
 ve geri al var. Ayrıntı §KSB-06 notu ve `apps/api/src/kasa-banka/ekstre*.ts`.
 
+**Durum (STK-07, 2026-08-06):** **çoklu depo** açıldı. Kiracıda her zaman bir
+varsayılan depo bulunur (göçte "Merkez Depo"; yeni kayıtta otomatik açılır) ve
+**tek depolu firmalarda arayüz depo seçimi göstermez** — davranış değişmez.
+Miktarlar `StokDepoBakiye` (stok × depo) satırlarında tutulur; stok kartındaki
+mevcut/rezerve/yoldaki alanları bunların **toplamı** olarak korunur, böylece
+mevcut rapor ve göstergeler bozulmadan çalışır. S-01 kararları: **ortalama
+maliyet firma genelinde tektir** (depo bazlı maliyet yok → transfer maliyeti
+değiştirmez), **depo belge başlığında seçilir** (satır bazlı değil), depolar
+arası taşıma **transfer fişiyle** yapılır (sevk irsaliyesi üretilmez),
+**kullanıcı-depo yetkisi kapsam dışı**. Eksi stok kontrolü (STK-17) artık
+hareketin yapıldığı **deponun** kullanılabilir stoğuna bakar. Ayrıntı
+`apps/api/src/stok/depo.*`, `transfer.service.ts` ve §STK-07 kabul senaryosu.
+
 **Sıradaki paket — Entegratör Paketi (S-01 kapısı kısmen alındı, 2026-07-14):**
 e-belge adaptörleri bugüne dek yalnızca mock; gerçek adaptörler yazılacak.
 Kararlar: **İzibiz ile başlanır** (diğerleri aynı sözleşmeyi izleyerek eklenir),
@@ -204,7 +217,7 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | STK-04 | Kritik stok seviyesi tanımlanabilmeli, altına düşünce panelde uyarı gösterilmelidir. | Z |
 | STK-05 | Ürünler Excel'den toplu içe aktarılabilmelidir. | İ |
 | STK-06 | Stok sayımı (fiili envanter) girilebilmeli, farklar düzeltme hareketi olarak işlenmelidir. | İ |
-| STK-07 | Çoklu depo desteği sağlanmalıdır. | G |
+| STK-07 | Çoklu depo desteği sağlanmalıdır. **(2026-08-06'da yapıldı — §STK-07 notu)** | G |
 | STK-08 | Maliyetlendirme ilk sürümde ağırlıklı ortalama yöntemiyle yapılmalıdır. | İ |
 | STK-09 | Ürünler hiyerarşik kategori ağacıyla sınıflandırılabilmeli; ürün görseli eklenebilmelidir. | İ |
 | STK-10 | Çoklu birim desteği: ürün için ana birim + çevrim katsayılı ek birimler (ör. adet/koli/palet); alış-satış farklı birimle yapılabilmelidir. | İ |
@@ -347,7 +360,7 @@ mimarisi bu ailelere baştan hazır tasarlanır (bkz. MIMARI.md). Tümü **[G]**
 - **S-01 (Süreç kuralı):** Her modülün geliştirilmesine **başlanmadan önce**, o modülün ister bölümü ürün sahibiyle birlikte gözden geçirilir ve son hali onaylanır. Değişen kararlar bu kapıda dokümana işlenir; onaysız modül geliştirmesine başlanmaz.
 - **K-01:** e-Belge gönderimi yalnızca özel entegratörler üzerinden yapılır; doğrudan GİB portal entegrasyonu kapsam dışıdır. Entegratör sözleşmesi firma ile entegratör arasındadır; TekirExtra yalnızca teknik bağlantıyı sağlar.
 - **K-02:** Mevzuat referansı Türkiye'dir: VUK, KDV mevzuatı, e-Fatura/e-Arşiv tebliğleri (UBL-TR 1.2).
-- **K-03:** Sistem çok kiracılıdır; firma başına tek şube ve tek depo varsayımıyla başlanır, mimari çoklu şube/depoya engel olmamalıdır.
+- **K-03:** Sistem çok kiracılıdır; firma başına tek şube ve tek depo varsayımıyla başlanır, mimari çoklu şube/depoya engel olmamalıdır. *(Çoklu depo STK-07 ile 2026-08-06'da açıldı; çoklu şube hâlâ kapsam dışı.)*
 - **V-01:** Firmanın e-Fatura mükellefiyet başvurusu ve entegratör sözleşmesi uygulama dışında tamamlanmış kabul edilir; firma yalnızca erişim bilgilerini girer.
 - **V-02:** KDV oranları ve mevzuat parametreleri değişebilir; sistemde sabit kodlanmayıp yönetilebilir parametre olarak tutulmalıdır.
 

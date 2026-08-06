@@ -13,7 +13,7 @@ import { Alert, Button, Card, Input } from "@/components/ui";
 interface RaporFiltreTanimi {
   alan: string;
   ad: string;
-  tip: "tarih" | "metin" | "sayi" | "secim" | "onay" | "cari" | "stok" | "etiket";
+  tip: "tarih" | "metin" | "sayi" | "secim" | "onay" | "cari" | "stok" | "depo" | "etiket";
   zorunlu?: boolean;
   secenekler?: { deger: string; ad: string }[];
 }
@@ -95,6 +95,7 @@ export function RaporPaneli({ modul }: { modul?: string }) {
   const [cariler, setCariler] = useState<SecimKaydi[]>([]);
   const [stoklar, setStoklar] = useState<SecimKaydi[]>([]);
   const [etiketler, setEtiketler] = useState<SecimKaydi[]>([]);
+  const [depolar, setDepolar] = useState<SecimKaydi[]>([]);
   const [hata, setHata] = useState("");
   const [yukleniyor, setYukleniyor] = useState(false);
 
@@ -134,6 +135,11 @@ export function RaporPaneli({ modul }: { modul?: string }) {
     if (tipler.has("stok") && stoklar.length === 0) {
       void api<{ kayitlar: SecimKaydi[] }>("/stok?adet=200")
         .then((v) => setStoklar(v.kayitlar))
+        .catch(() => undefined);
+    }
+    if (tipler.has("depo") && depolar.length === 0) {
+      void api<SecimKaydi[]>("/depo?yalnizAktif=true")
+        .then(setDepolar)
         .catch(() => undefined);
     }
     if (tipler.has("etiket") && etiketler.length === 0) {
@@ -276,8 +282,16 @@ export function RaporPaneli({ modul }: { modul?: string }) {
         );
       case "cari":
       case "stok":
+      case "depo":
       case "etiket": {
-        const kaynak = f.tip === "cari" ? cariler : f.tip === "stok" ? stoklar : etiketler;
+        const kaynak =
+          f.tip === "cari"
+            ? cariler
+            : f.tip === "stok"
+              ? stoklar
+              : f.tip === "depo"
+                ? depolar
+                : etiketler;
         return (
           <select className="select" value={String(deger)} onChange={(e) => guncelle(e.target.value)}>
             <option value="">{f.zorunlu ? "Seçiniz..." : "Tümü"}</option>

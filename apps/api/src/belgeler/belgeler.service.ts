@@ -15,6 +15,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PdfService } from "../core/pdf/pdf.service";
 import { PrismaService } from "../core/prisma.service";
+import { DepoService } from "../stok/depo.service";
 import { belgePdfHtml } from "./belge-pdf";
 import type {
   belgeGuncelleSemasi,
@@ -63,6 +64,7 @@ export class BelgelerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pdf: PdfService,
+    private readonly depoService: DepoService,
   ) {}
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────
@@ -186,6 +188,7 @@ export class BelgelerService {
               ? new Date(girdi.gecerlilikTarihi)
               : null,
           cariId: girdi.cariId,
+          depoId: girdi.depoId ?? null,
           dovizCinsi: girdi.dovizCinsi,
           kur: D(girdi.kur),
           genelIskontoYuzdesi: D(girdi.genelIskontoYuzdesi),
@@ -210,6 +213,7 @@ export class BelgelerService {
       tarih: girdi.tarih ?? mevcut.tarih,
       gecerlilikTarihi: girdi.gecerlilikTarihi ?? mevcut.gecerlilikTarihi,
       cariId: girdi.cariId ?? mevcut.cariId,
+      depoId: girdi.depoId !== undefined ? girdi.depoId : mevcut.depoId,
       dovizCinsi: girdi.dovizCinsi ?? (mevcut.dovizCinsi as "TRY" | "USD" | "EUR"),
       kur: girdi.kur ?? mevcut.kur,
       genelIskontoYuzdesi: girdi.genelIskontoYuzdesi ?? mevcut.genelIskontoYuzdesi,
@@ -263,6 +267,7 @@ export class BelgelerService {
             ? new Date(birlesik.gecerlilikTarihi)
             : null,
           cariId: birlesik.cariId,
+          depoId: birlesik.depoId ?? null,
           dovizCinsi: birlesik.dovizCinsi,
           kur: D(birlesik.kur),
           genelIskontoYuzdesi: D(birlesik.genelIskontoYuzdesi),
@@ -314,6 +319,7 @@ export class BelgelerService {
           tarih: new Date(),
           gecerlilikTarihi: null,
           cariId: belge.cariId,
+          depoId: belge.depoId,
           dovizCinsi: belge.dovizCinsi,
           kur: belge.kur,
           genelIskontoYuzdesi: belge.genelIskontoYuzdesi,
@@ -387,7 +393,7 @@ export class BelgelerService {
 
       // Otomatik rezervasyon (S-01): satış siparişi rezerv, alış yoldaki üretir
       if (belge.tur === "siparis") {
-        await this.siparisEtkisiUygula(tx, belge.yon, belge.satirlar, +1);
+        await this.siparisEtkisiUygula(tx, belge.yon, belge.satirlar, +1, belge.depoId);
       }
 
       const guncel = await tx.belge.update({
@@ -413,7 +419,7 @@ export class BelgelerService {
       }
       // Onaylı siparişin rezervi/yoldakisi çözülür
       if (belge.durum === "onaylandi" && belge.tur === "siparis") {
-        await this.siparisEtkisiUygula(tx, belge.yon, belge.satirlar, -1);
+        await this.siparisEtkisiUygula(tx, belge.yon, belge.satirlar, -1, belge.depoId);
       }
       const guncel = await tx.belge.update({
         where: { id },
@@ -463,6 +469,8 @@ export class BelgelerService {
           yon: belge.yon,
           tarih: new Date(),
           cariId: belge.cariId,
+          // Zincir boyunca aynı depo taşınır (STK-07)
+          depoId: belge.depoId,
           dovizCinsi: belge.dovizCinsi,
           kur: belge.kur,
           genelIskontoYuzdesi: belge.genelIskontoYuzdesi,
@@ -541,11 +549,12 @@ export class BelgelerService {
           (b) =>
             b.cariId === ilk.cariId &&
             b.dovizCinsi === ilk.dovizCinsi &&
-            b.yon === ilk.yon,
+            b.yon === ilk.yon &&
+            b.depoId === ilk.depoId,
         )
       ) {
         throw new BadRequestException(
-          "Toplu faturalama için belgeler aynı cari, döviz ve yönde olmalıdır",
+          "Toplu faturalama için belgeler aynı cari, döviz, yön ve depoda olmalıdır",
         );
       }
 
@@ -582,15 +591,18 @@ export class BelgelerService {
   /**
    * Satış siparişi rezerv, alış siparişi yoldaki miktarını günceller.
    * isaret: +1 onay, -1 iptal/çözüm. Miktarlar fatura ile aynı kabulle
-   * satır miktarı üzerinden işlenir.
+   * satır miktarı üzerinden işlenir. Kart üzerindeki toplamla birlikte
+   * siparişin deposunun bakiyesi de güncellenir (STK-07).
    */
   async siparisEtkisiUygula(
     tx: Prisma.TransactionClient,
     yon: "satis" | "alis",
     satirlar: { stokId: string; miktar: Prisma.Decimal }[],
     isaret: 1 | -1,
+    depoId?: string | null,
   ): Promise<void> {
     const alan = yon === "satis" ? "rezerveMiktar" : "yoldakiMiktar";
+    const hedefDepoId = await this.depoService.depoCozumle(tx, depoId);
     for (const s of satirlar) {
       await tx.stokKart.update({
         where: { id: s.stokId },
@@ -599,6 +611,13 @@ export class BelgelerService {
             isaret > 0 ? { increment: s.miktar } : { decrement: s.miktar },
         },
       });
+      await this.depoService.bakiyeDegistir(
+        tx,
+        s.stokId,
+        hedefDepoId,
+        alan,
+        isaret > 0 ? s.miktar : s.miktar.negated(),
+      );
     }
   }
 
@@ -609,6 +628,7 @@ export class BelgelerService {
     belgeler: {
       yon: string;
       cariId: string;
+      depoId: string | null;
       dovizCinsi: "TRY" | "USD" | "EUR";
       kur: Prisma.Decimal;
       no: string | null;
@@ -641,6 +661,8 @@ export class BelgelerService {
         durum: "taslak",
         tarih: new Date(),
         cariId: ilk.cariId,
+        // Depo zincirden faturaya taşınır; boşsa kesinleştirmede varsayılana çözülür
+        depoId: ilk.depoId,
         dovizCinsi: ilk.dovizCinsi,
         kur: ilk.kur,
         genelIskontoYuzdesi: D(0),
@@ -766,6 +788,7 @@ export class BelgelerService {
     tarih: Date;
     gecerlilikTarihi: Date | null;
     cariId: string;
+    depoId: string | null;
     dovizCinsi: string;
     kur: Prisma.Decimal;
     genelIskontoYuzdesi: Prisma.Decimal;
@@ -792,6 +815,7 @@ export class BelgelerService {
       tarih: k.tarih.toISOString().slice(0, 10),
       gecerlilikTarihi: k.gecerlilikTarihi?.toISOString().slice(0, 10) ?? null,
       cariId: k.cariId,
+      depoId: k.depoId,
       dovizCinsi: k.dovizCinsi,
       kur: D(k.kur).toFixed(4),
       genelIskontoYuzdesi: D(k.genelIskontoYuzdesi).toFixed(2),

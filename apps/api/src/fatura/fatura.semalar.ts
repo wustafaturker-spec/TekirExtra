@@ -21,6 +21,8 @@ export const faturaOlusturSemasi = z.object({
   tarih: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)"),
   vadeTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)").optional().nullable(),
   cariId: z.string().uuid(),
+  /** STK-07: stok hareketlerinin işleneceği depo; boşsa varsayılan depo */
+  depoId: z.string().uuid().optional().nullable(),
   dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
   kur: pozitifOndalik.default("1"),
   genelIskontoYuzdesi: pozitifOndalik.default("0"),

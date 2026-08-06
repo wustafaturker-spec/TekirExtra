@@ -1,13 +1,16 @@
 import "./stok.raporlar";
 import { Module, OnModuleInit } from "@nestjs/common";
 import { registerEylemPolitikasi } from "../core/eylemler/eylem-kayit";
+import { DepoController } from "./depo.controller";
+import { DepoService } from "./depo.service";
 import { StokController } from "./stok.controller";
 import { StokService } from "./stok.service";
+import { TransferService } from "./transfer.service";
 
 @Module({
-  controllers: [StokController],
-  providers: [StokService],
-  exports: [StokService],
+  controllers: [StokController, DepoController],
+  providers: [StokService, DepoService, TransferService],
+  exports: [StokService, DepoService],
 })
 export class StokModule implements OnModuleInit {
   onModuleInit() {

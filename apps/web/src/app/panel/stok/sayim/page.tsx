@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
+import { useDepolar } from "@/lib/depolar";
+import { DepoSecici } from "@/components/depo-secici";
 import {
   Alert,
   Badge,
@@ -26,12 +28,24 @@ interface StokSatiri {
   mevcutMiktar: string;
 }
 
+interface DepoBilgi {
+  id: string;
+  kod: string;
+  ad: string;
+}
+
+interface DepoBakiye {
+  stokId: string;
+  mevcutMiktar: string;
+}
+
 interface SayimOzet {
   id: string;
   tarih: string;
   aciklama: string | null;
   durum: string;
   onayZamani: string | null;
+  depo: DepoBilgi | null;
   _count: { kalemler: number };
 }
 
@@ -62,10 +76,15 @@ export default function SayimSayfasi() {
 
   // Taslak formu
   const [tarih, setTarih] = useState(bugun());
+  const [depoId, setDepoId] = useState("");
   const [aciklama, setAciklama] = useState("");
   const [arama, setArama] = useState("");
   /** stokId → kullanıcının girdiği fiili miktar; boş bırakılanlar sayıma girmez. */
   const [fiili, setFiili] = useState<Record<string, string>>({});
+
+  const { cokluDepo } = useDepolar();
+  /** Seçili deponun ürün bazlı miktarları; tek depoda kart toplamı kullanılır. */
+  const [depoBakiyeleri, setDepoBakiyeleri] = useState<Record<string, string> | null>(null);
 
   const yukle = useCallback(async () => {
     try {
@@ -82,6 +101,27 @@ export default function SayimSayfasi() {
       .then((v) => setStoklar(v.kayitlar.filter((s) => s.tip !== "hizmet")))
       .catch(() => {});
   }, [yukle]);
+
+  // Depo seçilince sistem miktarı o deponun bakiyesinden okunur (STK-07)
+  useEffect(() => {
+    if (!depoId) {
+      setDepoBakiyeleri(null);
+      return;
+    }
+    void api<DepoBakiye[]>(`/depo/${depoId}/bakiyeler`)
+      .then((satirlar) =>
+        setDepoBakiyeleri(
+          Object.fromEntries(satirlar.map((b) => [b.stokId, b.mevcutMiktar])),
+        ),
+      )
+      .catch(() => setDepoBakiyeleri(null));
+  }, [depoId]);
+
+  /** Ürünün sayım ekranında gösterilecek sistem miktarı. */
+  const sistemMiktar = useCallback(
+    (s: StokSatiri) => (depoBakiyeleri ? (depoBakiyeleri[s.id] ?? "0") : s.mevcutMiktar),
+    [depoBakiyeleri],
+  );
 
   const suzulmus = useMemo(() => {
     const a = arama.trim().toLocaleLowerCase("tr");
@@ -108,6 +148,7 @@ export default function SayimSayfasi() {
         method: "POST",
         body: JSON.stringify({
           tarih,
+          depoId: depoId || null,
           aciklama: aciklama.trim() === "" ? null : aciklama.trim(),
           kalemler,
         }),
@@ -178,6 +219,9 @@ export default function SayimSayfasi() {
                 <Input type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} />
               </Field>
             </div>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <DepoSecici deger={depoId} onChange={setDepoId} label="Depo *" />
+            </div>
             <div style={{ flex: 3, minWidth: 240 }}>
               <Field label="Açıklama">
                 <Input
@@ -192,6 +236,7 @@ export default function SayimSayfasi() {
           <p className="muted" style={{ fontSize: "0.85rem" }}>
             Yalnız <strong>fiili miktar girdiğiniz</strong> ürünler sayıma dahil edilir; boş bıraktıklarınız
             etkilenmez. Farklar onay anındaki güncel stok miktarına göre yeniden hesaplanır.
+            {cokluDepo && " Bir sayım tek depoyu kapsar; sistem miktarı seçtiğiniz deponun bakiyesidir."}
           </p>
 
           <SearchInput
@@ -223,13 +268,14 @@ export default function SayimSayfasi() {
                 ) : (
                   suzulmus.map((s) => {
                     const girilen = fiili[s.id] ?? "";
-                    const fark = girilen.trim() === "" ? null : Number(girilen) - Number(s.mevcutMiktar);
+                    const sistem = sistemMiktar(s);
+                    const fark = girilen.trim() === "" ? null : Number(girilen) - Number(sistem);
                     return (
                       <tr key={s.id}>
                         <td className="mono">{s.kod}</td>
                         <td>{s.ad}</td>
                         <td className="num">
-                          {adet(s.mevcutMiktar)} {s.anaBirim}
+                          {adet(sistem)} {s.anaBirim}
                         </td>
                         <td className="num">
                           <Input
@@ -280,6 +326,7 @@ export default function SayimSayfasi() {
           <thead>
             <tr>
               <th>Tarih</th>
+              {cokluDepo && <th>Depo</th>}
               <th>Açıklama</th>
               <th>Durum</th>
               <th className="num">Kalem</th>
@@ -289,7 +336,7 @@ export default function SayimSayfasi() {
           <tbody>
             {sayimlar.length === 0 ? (
               <tr>
-                <td colSpan={5} className="empty">
+                <td colSpan={cokluDepo ? 6 : 5} className="empty">
                   Henüz sayım kaydı yok.
                 </td>
               </tr>
@@ -297,6 +344,7 @@ export default function SayimSayfasi() {
               sayimlar.map((s) => (
                 <tr key={s.id}>
                   <td className="mono">{s.tarih.slice(0, 10)}</td>
+                  {cokluDepo && <td>{s.depo?.ad ?? "—"}</td>}
                   <td>{s.aciklama ?? "—"}</td>
                   <td>
                     <Badge variant={s.durum === "onaylandi" ? "success" : "warning"}>
@@ -350,6 +398,7 @@ function SayimDetayKarti({
         <div>
           <h3 style={{ fontSize: "1.15rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
             {detay.tarih.slice(0, 10)} tarihli sayım
+            {detay.depo && <Badge variant="info">{detay.depo.ad}</Badge>}
             <Badge variant={taslak ? "warning" : "success"}>{taslak ? "📝 Taslak" : "✅ Onaylandı"}</Badge>
           </h3>
           <p className="muted" style={{ fontSize: "0.85rem", margin: "0.3rem 0 0" }}>

@@ -17,7 +17,7 @@ export interface RaporKolon {
   tip: RaporKolonTip;
 }
 
-/** cari/stok/etiket tipleri arayüzde ilgili kayıt listesinden seçim kutusu çizer. */
+/** cari/stok/depo/etiket tipleri arayüzde ilgili kayıt listesinden seçim kutusu çizer. */
 export type RaporFiltreTip =
   | "tarih"
   | "metin"
@@ -26,6 +26,7 @@ export type RaporFiltreTip =
   | "onay"
   | "cari"
   | "stok"
+  | "depo"
   | "etiket";
 
 export interface RaporFiltreTanimi {

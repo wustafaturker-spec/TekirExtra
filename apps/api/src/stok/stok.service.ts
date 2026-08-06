@@ -13,6 +13,7 @@ import { ayarTanimiAl } from "../core/ayarlar/ayar-kayit";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
+import { DepoService } from "./depo.service";
 import { etiketPdfHtml, type EtiketVerisi } from "./etiket-pdf";
 import type {
   etiketBasSemasi,
@@ -29,11 +30,29 @@ import { stokExcelOku } from "../core/excel-yardimci";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal => new Prisma.Decimal(deger);
 
+/** Stok hareketi girdisi (STK-07 ile depo zorunlu alan oldu). */
+export interface StokHareketGirdisi {
+  stokId: string;
+  depoId: string;
+  tip: StokHareketTip;
+  /** ana birim cinsinden; sayim_duzeltme dışında pozitif verilir */
+  miktar: Prisma.Decimal;
+  girilenBirim: string;
+  girilenMiktar: Prisma.Decimal;
+  /** girişte alış fiyatı, çıkışta göz ardı edilir (ortalama maliyet kullanılır) */
+  birimMaliyet: Prisma.Decimal;
+  tarih: Date;
+  aciklama?: string | null;
+  kaynakTur?: string;
+  kaynakRef?: string | null;
+}
+
 @Injectable()
 export class StokService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pdf: PdfService,
+    private readonly depoService: DepoService,
   ) {}
 
   // ─── STOK KART YÖNETİMİ (STK-01) ───────────────────────────────────────────
@@ -444,55 +463,104 @@ export class StokService {
     );
   }
 
+  /**
+   * Stok kartının depo bazlı kırılımı (STK-07). Kart üzerindeki toplamların
+   * depolara dağılımıdır; bakiye satırı olmayan depolar listelenmez.
+   */
+  async depoKirilimi(stokId: string) {
+    const { tenantId } = aktifBaglam();
+    await this.getir(stokId);
+    const satirlar = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.stokDepoBakiye.findMany({
+        where: { stokId },
+        include: { depo: { select: { id: true, kod: true, ad: true, aktif: true } } },
+      }),
+    );
+    return satirlar
+      .sort((a, b) => a.depo.kod.localeCompare(b.depo.kod, "tr"))
+      .map((s) => ({
+        depoId: s.depoId,
+        depoKod: s.depo.kod,
+        depoAd: s.depo.ad,
+        depoAktif: s.depo.aktif,
+        mevcutMiktar: D(s.mevcutMiktar).toFixed(3),
+        rezerveMiktar: D(s.rezerveMiktar).toFixed(3),
+        yoldakiMiktar: D(s.yoldakiMiktar).toFixed(3),
+        kullanilabilirMiktar: D(s.mevcutMiktar).sub(D(s.rezerveMiktar)).toFixed(3),
+      }));
+  }
+
   // ─── STOK HAREKETLERİ & AVCO HESAPLAMA (STK-02/08) ───────────────────────
 
-  async hareketListele(stokId: string) {
+  async hareketListele(stokId: string, depoId?: string) {
     const { tenantId } = aktifBaglam();
     await this.getir(stokId);
     return this.prisma.tenantIslem(tenantId, (tx) =>
       tx.stokHareket.findMany({
-        where: { stokId },
+        where: { stokId, ...(depoId ? { depoId } : {}) },
         orderBy: [{ tarih: "asc" }, { createdAt: "asc" }],
+        include: { depo: { select: { id: true, kod: true, ad: true } } },
       }),
     );
   }
 
-  /** Giriş gibi işlenen hareket türleri (STK-19). */
-  private static readonly GIRIS_TURLERI: StokHareketTip[] = ["giris", "acilis"];
-  /** Çıkış gibi işlenen hareket türleri (STK-19). */
+  /** Giriş gibi işlenen hareket türleri (STK-19, STK-07 transferi dahil). */
+  private static readonly GIRIS_TURLERI: StokHareketTip[] = [
+    "giris",
+    "acilis",
+    "transfer_giris",
+  ];
+  /** Çıkış gibi işlenen hareket türleri (STK-19, STK-07 transferi dahil). */
   private static readonly CIKIS_TURLERI: StokHareketTip[] = [
     "cikis",
     "fire",
     "zayi",
     "numune",
     "promosyon",
+    "transfer_cikis",
   ];
 
   /**
-   * Stok hareketi ekler ve ürünün mevcut miktar & ortalama maliyet (AVCO)
-   * bilgisini transaction içinde günceller (STK-08). Çıkış türlerinde eksi
-   * stok politikasını uygular (STK-17); "uyar" modunda uyarı metni döner.
+   * Stok hareketi ekler; ürünün toplam miktarı, hareketin geçtiği deponun
+   * bakiyesi ve ortalama maliyet (AVCO) aynı transaction içinde güncellenir
+   * (STK-08, STK-07). Ortalama maliyet firma genelinde tektir — depo bazında
+   * ayrışmaz (S-01), bu yüzden transfer maliyeti değiştirmez.
+   * Çıkış türlerinde eksi stok politikası uygulanır (STK-17); kontrol
+   * hareketin yapıldığı deponun kullanılabilir stoğu üzerinden yapılır ve
+   * "uyar" modunda uyarı metni döner.
    */
   async hareketEkle(
     tx: Prisma.TransactionClient,
-    stokId: string,
-    tip: StokHareketTip,
-    miktar: Prisma.Decimal,
-    girilenBirim: string,
-    girilenMiktar: Prisma.Decimal,
-    birimMaliyet: Prisma.Decimal,
-    tarih: Date,
-    aciklama?: string | null,
-    kaynakTur = "manuel",
-    kaynakRef?: string | null,
+    girdi: StokHareketGirdisi,
   ): Promise<{ hareket: unknown; eksiStokUyarisi: string | null }> {
     const { tenantId } = aktifBaglam();
+    const {
+      stokId,
+      depoId,
+      tip,
+      miktar,
+      girilenBirim,
+      girilenMiktar,
+      tarih,
+      aciklama,
+      kaynakTur = "manuel",
+      kaynakRef,
+    } = girdi;
+    let birimMaliyet = girdi.birimMaliyet;
 
     // Ürünü kilitleyerek getir (race condition engellemek için)
     const urun = await tx.stokKart.findUnique({
       where: { id: stokId },
     });
     if (!urun) throw new NotFoundException("Stok kartı bulunamadı");
+
+    const depo = await tx.depo.findUnique({ where: { id: depoId } });
+    if (!depo) throw new NotFoundException("Depo bulunamadı");
+    const depoBakiye = await tx.stokDepoBakiye.findUnique({
+      where: { tenantId_stokId_depoId: { tenantId, stokId, depoId } },
+    });
+    const depoMevcut = D(depoBakiye?.mevcutMiktar ?? 0);
+    const depoRezerve = D(depoBakiye?.rezerveMiktar ?? 0);
 
     let miktarDegisimi = D(0);
     let yeniMevcut = D(urun.mevcutMiktar);
@@ -524,12 +592,14 @@ export class StokService {
       // Eksi stok politikası (STK-17) — yalnız stoklu ürünlerde (hizmet hariç).
       // Kontrol KULLANILABİLİR stok üzerinden yapılır (FTR-12 S-01 kararı):
       // kullanılabilir = mevcut − rezerve; rezerve mal başka çıkışa verilemez.
-      const yeniKullanilabilir = yeniMevcut.sub(D(urun.rezerveMiktar));
+      // Çoklu depoda ölçüt deponun kendi stoğudur (STK-07): başka depodaki mal
+      // bu depodan yapılan çıkışı karşılamaz.
+      const yeniKullanilabilir = depoMevcut.add(miktarDegisimi).sub(depoRezerve);
       if (urun.tip === "urun" && yeniKullanilabilir.lt(0)) {
         const politika = await this.eksiStokPolitikasi(tx, tenantId);
         const mesaj =
-          `'${urun.ad}' kullanılabilir stoğu eksiye düşüyor ` +
-          `(mevcut ${D(urun.mevcutMiktar).toFixed(3)}, rezerve ${D(urun.rezerveMiktar).toFixed(3)}, çıkış ${miktar.toFixed(3)})`;
+          `'${urun.ad}' ürününün '${depo.ad}' deposundaki kullanılabilir stoğu eksiye düşüyor ` +
+          `(mevcut ${depoMevcut.toFixed(3)}, rezerve ${depoRezerve.toFixed(3)}, çıkış ${miktar.toFixed(3)})`;
         if (politika === "engelle") {
           throw new BadRequestException(`${mesaj} — eksi stok politikası çıkışı engelliyor`);
         }
@@ -559,6 +629,7 @@ export class StokService {
       data: {
         tenantId,
         stokId,
+        depoId,
         tip,
         miktar: miktarDegisimi,
         girilenBirim,
@@ -571,7 +642,7 @@ export class StokService {
       },
     });
 
-    // Stok kartını güncelle
+    // Stok kartındaki toplam ve depo bakiyesi birlikte güncellenir (STK-07)
     await tx.stokKart.update({
       where: { id: stokId },
       data: {
@@ -579,8 +650,37 @@ export class StokService {
         ortalamaMaliyet: yeniMaliyet,
       },
     });
+    await tx.stokDepoBakiye.upsert({
+      where: { tenantId_stokId_depoId: { tenantId, stokId, depoId } },
+      create: { tenantId, stokId, depoId, mevcutMiktar: miktarDegisimi },
+      update: { mevcutMiktar: { increment: miktarDegisimi } },
+    });
 
     return { hareket, eksiStokUyarisi };
+  }
+
+  /**
+   * Girilen birimi ana birime çeviren katsayı (STK-10):
+   * miktar (ana birim) = girilenMiktar × katsayı.
+   */
+  async birimKatsayisi(
+    tx: Prisma.TransactionClient,
+    stokId: string,
+    birim: string,
+  ): Promise<Prisma.Decimal> {
+    const kart = await tx.stokKart.findUnique({
+      where: { id: stokId },
+      select: { anaBirim: true, ad: true },
+    });
+    if (!kart) throw new NotFoundException("Stok kartı bulunamadı");
+    if (kart.anaBirim === birim) return D(1);
+    const ek = await tx.stokBirim.findFirst({ where: { stokId, ad: birim } });
+    if (!ek) {
+      throw new BadRequestException(
+        `'${kart.ad}' ürününde '${birim}' birimi tanımlı değil`,
+      );
+    }
+    return D(ek.katsayi);
   }
 
   /** Eksi stok politikasını mevcut transaction içinden okur (STK-17). */
@@ -784,9 +884,12 @@ export class StokService {
     const { tenantId } = aktifBaglam();
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      // Sayım tek depoyu kapsar (STK-07); depo verilmezse varsayılan depo
+      const depoId = await this.depoService.depoCozumle(tx, girdi.depoId);
       const sayim = await tx.sayim.create({
         data: {
           tenantId,
+          depoId,
           tarih: new Date(girdi.tarih),
           aciklama: girdi.aciklama,
         },
@@ -795,16 +898,21 @@ export class StokService {
       for (const k of girdi.kalemler) {
         const urun = await tx.stokKart.findUnique({
           where: { id: k.stokId },
-          select: { mevcutMiktar: true },
+          select: { id: true },
         });
         if (!urun) throw new NotFoundException(`Sayılmak istenen '${k.stokId}' ürünü bulunamadı`);
+
+        // Sistem miktarı sayılan deponun bakiyesidir
+        const bakiye = await tx.stokDepoBakiye.findUnique({
+          where: { tenantId_stokId_depoId: { tenantId, stokId: k.stokId, depoId } },
+        });
 
         await tx.sayimKalem.create({
           data: {
             tenantId,
             sayimId: sayim.id,
             stokId: k.stokId,
-            sistemMiktar: D(urun.mevcutMiktar),
+            sistemMiktar: D(bakiye?.mevcutMiktar ?? 0),
             fiiliMiktar: D(k.fiiliMiktar),
           },
         });
@@ -838,7 +946,13 @@ export class StokService {
         const urun = await tx.stokKart.findUnique({ where: { id: k.stokId } });
         if (!urun) continue;
 
-        const guncelSistem = D(urun.mevcutMiktar);
+        // Fark, sayılan deponun onay anındaki miktarına göre hesaplanır (STK-07/20)
+        const bakiye = await tx.stokDepoBakiye.findUnique({
+          where: {
+            tenantId_stokId_depoId: { tenantId, stokId: k.stokId, depoId: sayim.depoId },
+          },
+        });
+        const guncelSistem = D(bakiye?.mevcutMiktar ?? 0);
         const fark = D(k.fiiliMiktar).sub(guncelSistem);
 
         // Onay anındaki sistem miktarını kayda geçir
@@ -852,19 +966,19 @@ export class StokService {
             ? D(urun.ortalamaMaliyet)
             : D(urun.alisFiyati ?? 0);
 
-          await this.hareketEkle(
-            tx,
-            k.stokId,
-            "sayim_duzeltme",
-            fark,
-            urun.anaBirim,
-            fark,
+          await this.hareketEkle(tx, {
+            stokId: k.stokId,
+            depoId: sayim.depoId,
+            tip: "sayim_duzeltme",
+            miktar: fark,
+            girilenBirim: urun.anaBirim,
+            girilenMiktar: fark,
             birimMaliyet,
-            new Date(sayim.tarih),
-            `${sayim.id} nolu sayım düzeltmesi`,
-            "sayim",
-            sayim.id,
-          );
+            tarih: new Date(sayim.tarih),
+            aciklama: `${sayim.id} nolu sayım düzeltmesi`,
+            kaynakTur: "sayim",
+            kaynakRef: sayim.id,
+          });
         }
       }
 
@@ -884,7 +998,10 @@ export class StokService {
     return this.prisma.tenantIslem(tenantId, (tx) =>
       tx.sayim.findMany({
         orderBy: { tarih: "desc" },
-        include: { _count: { select: { kalemler: true } } },
+        include: {
+          depo: { select: { id: true, kod: true, ad: true } },
+          _count: { select: { kalemler: true } },
+        },
       }),
     );
   }
@@ -895,6 +1012,7 @@ export class StokService {
       tx.sayim.findUnique({
         where: { id },
         include: {
+          depo: { select: { id: true, kod: true, ad: true } },
           kalemler: true,
         },
       }),
