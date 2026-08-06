@@ -439,16 +439,26 @@ export default function FaturaSayfasi() {
           <div className="document-editor__section document-lines">
             <h4 className="document-editor__section-title">Fatura kalemleri</h4>
             <TableWrap>
+              <colgroup>
+                <col className="document-line-col--product" />
+                <col className="document-line-col--quantity" />
+                <col className="document-line-col--price" />
+                <col className="document-line-col--rate" />
+                <col className="document-line-col--rate" />
+                <col className="document-line-col--exception" />
+                <col className="document-line-col--total" />
+                <col className="document-line-col--action" />
+              </colgroup>
               <thead>
                 <tr>
                   <th>Ürün/Hizmet</th>
-                  <th style={{ width: 100 }}>Miktar</th>
-                  <th style={{ width: 130 }}>Birim Fiyat</th>
-                  <th style={{ width: 100 }}>İskonto %</th>
-                  <th style={{ width: 80 }}>KDV %</th>
-                  <th style={{ width: 110 }}>GİB İstisna</th>
-                  <th className="num" style={{ width: 140 }}>Tutar</th>
-                  <th style={{ width: 44 }}><span className="subtle">Sil</span></th>
+                  <th className="num">Miktar</th>
+                  <th className="num">Birim fiyat</th>
+                  <th className="num">İsk. %</th>
+                  <th className="num">KDV %</th>
+                  <th>İstisna</th>
+                  <th className="num">Tutar</th>
+                  <th><span className="sr-only">İşlem</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -476,12 +486,12 @@ export default function FaturaSayfasi() {
                           }))}
                         />
                       </td>
-                      <td><Input aria-label="Miktar" type="number" min="0.01" step="any" value={s.miktar} onChange={(e) => satirGuncelle(index, "miktar", Number(e.target.value))} required /></td>
-                      <td><Input aria-label="Birim fiyat" type="number" min="0" step="any" value={s.birimFiyat} onChange={(e) => satirGuncelle(index, "birimFiyat", Number(e.target.value))} required /></td>
-                      <td><Input aria-label="İskonto yüzdesi" type="number" min="0" max="100" value={s.iskontoOrani} onChange={(e) => satirGuncelle(index, "iskontoOrani", Number(e.target.value))} /></td>
-                      <td><Input aria-label="KDV yüzdesi" type="number" min="0" max="100" value={s.kdvOrani} onChange={(e) => satirGuncelle(index, "kdvOrani", Number(e.target.value))} required /></td>
-                      <td><Input aria-label="GİB istisna kodu" type="text" placeholder="351 vb." value={s.gibIstisnaKodu || ""} onChange={(e) => satirGuncelle(index, "gibIstisnaKodu", e.target.value)} /></td>
-                      <td className="num" style={{ fontWeight: 700 }}>{satirSonuc ? tl(satirSonuc.toplamTutar) : "0,00 TL"}</td>
+                      <td><Input className="document-line-number" aria-label="Miktar" type="number" min="0.01" step="any" inputMode="decimal" value={s.miktar} onChange={(e) => satirGuncelle(index, "miktar", Number(e.target.value))} required /></td>
+                      <td><Input className="document-line-number" aria-label="Birim fiyat" type="number" min="0" step="any" inputMode="decimal" value={s.birimFiyat} onChange={(e) => satirGuncelle(index, "birimFiyat", Number(e.target.value))} required /></td>
+                      <td><Input className="document-line-number" aria-label="İskonto yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.iskontoOrani} onChange={(e) => satirGuncelle(index, "iskontoOrani", Number(e.target.value))} /></td>
+                      <td><Input className="document-line-number" aria-label="KDV yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.kdvOrani} onChange={(e) => satirGuncelle(index, "kdvOrani", Number(e.target.value))} required /></td>
+                      <td><Input className="document-line-code" aria-label="GİB istisna kodu" type="text" placeholder="351" value={s.gibIstisnaKodu || ""} onChange={(e) => satirGuncelle(index, "gibIstisnaKodu", e.target.value)} /></td>
+                      <td className="num document-line-total">{satirSonuc ? tl(satirSonuc.toplamTutar) : "0,00 TL"}</td>
                       <td className="center">
                         <Button aria-label="Satırı sil" title="Satırı sil" variant="danger" size="sm" type="button" onClick={() => satirSil(index)}>×</Button>
                       </td>

@@ -586,9 +586,60 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; color: var(--text); }
   gap: 1rem;
   grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(150px, 1fr));
 }
-.document-lines .table-wrap { overflow: visible; }
-.document-lines .table td { vertical-align: top; }
-.document-lines .table .combobox { min-width: 230px; }
+.document-lines .table-wrap {
+  contain: inline-size paint;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.document-lines .table {
+  min-width: 820px;
+  table-layout: fixed;
+}
+.document-lines .table thead th {
+  padding: 0.55rem 0.4rem;
+  text-transform: none;
+}
+.document-lines .table tbody td {
+  padding: 0.45rem 0.4rem;
+  vertical-align: top;
+}
+.document-lines .table th:first-child,
+.document-lines .table td:first-child { padding-left: 0; }
+.document-lines .table th:last-child,
+.document-lines .table td:last-child { padding-right: 0; }
+.document-lines .table .combobox { min-width: 0; }
+.document-line-col--product { width: auto; }
+.document-line-col--quantity { width: 78px; }
+.document-line-col--price { width: 108px; }
+.document-line-col--rate { width: 70px; }
+.document-line-col--exception { width: 82px; }
+.document-line-col--total { width: 116px; }
+.document-line-col--action { width: 38px; }
+.document-line-number,
+.document-line-code {
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+  padding: 0.45rem 0.35rem;
+}
+.document-line-number { text-align: right; }
+.document-line-code { text-align: center; }
+.document-line-total {
+  font-size: 0.84rem !important;
+  font-weight: 700;
+  overflow: hidden;
+  padding-top: 0.65rem !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sr-only {
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
 .document-summary-row {
   align-items: flex-start;
   display: flex;
@@ -627,11 +678,41 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; color: var(--text); }
   justify-content: flex-end;
   padding: 0.85rem 1.25rem;
 }
+.record-editor--compact { max-width: 780px; }
+.record-editor--wide { max-width: 980px; }
+.record-fields {
+  display: grid;
+  gap: 0.85rem;
+}
+.record-fields--stock-main { grid-template-columns: 2fr 1fr 1fr; }
+.record-fields--stock-main > :first-child { grid-column: span 2; }
+.record-fields--stock-main > :last-child { grid-column: span 2; }
+.record-fields--stock-price { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.record-fields--cari-main { grid-template-columns: 2fr repeat(2, minmax(0, 1fr)); }
+.record-fields--cari-main > :first-child { grid-column: span 2; }
+.record-fields--four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.record-number {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.record-disclosure {
+  border-bottom: 1px solid var(--border);
+}
+.record-disclosure summary {
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  list-style-position: inside;
+  padding: 0.85rem 1.25rem;
+}
+.record-disclosure[open] summary { color: var(--text); }
+.record-disclosure .record-fields { padding: 0 1.25rem 1.1rem; }
 
 @media (max-width: 1100px) {
   .document-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .document-fields > :first-child { grid-column: 1 / -1; }
-  .document-lines .table-wrap { overflow-x: auto; }
+  .record-fields--four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .toolbar {
@@ -928,4 +1009,13 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; color: var(--text); }
   .document-summary-row .btn { justify-content: center; width: 100%; }
   .document-totals { min-width: 0; width: 100%; }
   .document-editor__actions .btn { justify-content: center; width: 100%; }
+  .record-fields--stock-main,
+  .record-fields--stock-price,
+  .record-fields--cari-main,
+  .record-fields--four { grid-template-columns: 1fr; }
+  .record-fields--stock-main > :first-child,
+  .record-fields--stock-main > :last-child,
+  .record-fields--cari-main > :first-child { grid-column: auto; }
+  .record-disclosure summary { padding-left: 0.85rem; padding-right: 0.85rem; }
+  .record-disclosure .record-fields { padding-left: 0.85rem; padding-right: 0.85rem; }
 }

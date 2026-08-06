@@ -164,23 +164,33 @@ export default function StokSayfasi() {
       <Alert tone="success">{basari}</Alert>
 
       {formAcik && (
-        <Card className="stack" style={{ marginBottom: "1.5rem", maxWidth: 620 }}>
-          <h3 style={{ fontSize: "1.05rem" }}>Yeni Stok Kartı Oluştur</h3>
-          <div className="row">
-            <div style={{ flex: 1, minWidth: 200 }}><Field label="Stok Kodu *"><Input value={kod} onChange={(e) => setKod(e.target.value)} required placeholder="STK-001" /></Field></div>
-            <div style={{ flex: 1, minWidth: 200 }}><Field label="Stok Tipi"><Select value={tip} onChange={(e) => setTip(e.target.value)}><option value="urun">Ürün (Envanter Takipli)</option><option value="hizmet">Hizmet (Envantersiz)</option></Select></Field></div>
+        <form className="document-editor record-editor--compact" onSubmit={kaydet}>
+          <div className="document-editor__head">
+            <h3>Yeni ürün veya hizmet</h3>
+            <span className="badge badge--warning">Yeni</span>
           </div>
-          <Field label="Ürün/Hizmet Adı"><Input value={ad} onChange={(e) => setAd(e.target.value)} required placeholder="Örn. 15.6 inç Taşınabilir Monitör" /></Field>
-          <div className="row">
-            <div style={{ flex: 1, minWidth: 200 }}><Field label="Barkod"><Input value={barkod} onChange={(e) => setBarkod(e.target.value)} placeholder="8690..." /></Field></div>
-            <div style={{ flex: 1, minWidth: 200 }}><Field label="KDV Oranı (%)"><Input type="number" value={kdvOrani} onChange={(e) => setKdvOrani(e.target.value)} required /></Field></div>
+
+          <div className="document-editor__section">
+            <h4 className="document-editor__section-title">Temel bilgiler</h4>
+            <div className="record-fields record-fields--stock-main">
+              <Field label="Ürün/Hizmet adı"><Input value={ad} onChange={(e) => setAd(e.target.value)} required placeholder="Örn. Taşınabilir monitör" /></Field>
+              <Field label="Stok kodu"><Input value={kod} onChange={(e) => setKod(e.target.value)} required placeholder="STK-001" /></Field>
+              <Field label="Tür"><Select value={tip} onChange={(e) => setTip(e.target.value)}><option value="urun">Ürün</option><option value="hizmet">Hizmet</option></Select></Field>
+              <Field label="Barkod"><Input value={barkod} onChange={(e) => setBarkod(e.target.value)} placeholder="8690..." /></Field>
+            </div>
           </div>
-          <div className="row">
-            <div style={{ flex: 1, minWidth: 200 }}><Field label="Alış Fiyatı (TRY)"><Input type="number" step="0.0001" value={alisFiyati} onChange={(e) => setAlisFiyati(e.target.value)} placeholder="0.0000" /></Field></div>
-            <div style={{ flex: 1, minWidth: 200 }}><Field label="Satış Fiyatı (TRY)"><Input type="number" step="0.0001" value={satisFiyati} onChange={(e) => setSatisFiyati(e.target.value)} placeholder="0.0000" /></Field></div>
+
+          <div className="document-editor__section">
+            <h4 className="document-editor__section-title">Fiyat ve vergi</h4>
+            <div className="record-fields record-fields--stock-price">
+              <Field label="Alış fiyatı (TRY)"><Input className="record-number" type="number" min="0" step="0.0001" inputMode="decimal" value={alisFiyati} onChange={(e) => setAlisFiyati(e.target.value)} placeholder="0,00" /></Field>
+              <Field label="Satış fiyatı (TRY)"><Input className="record-number" type="number" min="0" step="0.0001" inputMode="decimal" value={satisFiyati} onChange={(e) => setSatisFiyati(e.target.value)} placeholder="0,00" /></Field>
+              <Field label="KDV (%)"><Input className="record-number" type="number" min="0" max="100" inputMode="decimal" value={kdvOrani} onChange={(e) => setKdvOrani(e.target.value)} required /></Field>
+            </div>
           </div>
-          <div><Button variant="primary" onClick={kaydet}>Stok Kartını Kaydet</Button></div>
-        </Card>
+
+          <div className="document-editor__actions"><Button variant="primary" type="submit">Stok kartını kaydet</Button></div>
+        </form>
       )}
 
       <div className="toolbar">

@@ -550,43 +550,56 @@ export default function CariSayfasi() {
       <Alert tone="success">{basari}</Alert>
 
       {formAcik && (
-        <Card className="stack" style={{ marginBottom: "1.5rem", maxWidth: 820 }}>
-          <h3 style={{ fontSize: "1.05rem" }}>Yeni Cari Kartı Oluştur</h3>
+        <form className="document-editor record-editor--wide" onSubmit={kaydet}>
+          <div className="document-editor__head">
+            <h3>Yeni cari hesap</h3>
+            <span className="badge badge--warning">Yeni</span>
+          </div>
 
-          <FormBolum baslik="Kimlik">
-            <FormAlan flex={1} min={180}><Field label="Cari Kodu *"><Input value={kod} onChange={(e) => setKod(e.target.value)} required placeholder="CARI-001" /></Field></FormAlan>
-            <FormAlan flex={2} min={240}><Field label="Ünvan / Ad Soyad"><Input value={unvan} onChange={(e) => setUnvan(e.target.value)} required placeholder="Teknoloji A.Ş." /></Field></FormAlan>
-            <FormAlan flex={1} min={160}><Field label="Kısa Ad"><Input value={kisaAd} onChange={(e) => setKisaAd(e.target.value)} placeholder="Teknoloji" /></Field></FormAlan>
-          </FormBolum>
-          <FormBolum>
-            <FormAlan flex={1} min={180}><Field label="Cari Tipi"><Select value={tip} onChange={(e) => setTip(e.target.value)}>{Object.entries(TIP_ETIKETLERI).map(([deger, ad]) => (<option key={deger} value={deger}>{ad}</option>))}</Select></Field></FormAlan>
-            <FormAlan flex={1} min={180}><Field label="Kişi Tipi"><Select value={kisiTipi} onChange={(e) => setKisiTipi(e.target.value)}><option value="tuzel">Tüzel Kişi</option><option value="gercek">Gerçek Kişi</option></Select></Field></FormAlan>
-            <FormAlan flex={1} min={180}><Field label="Sektör"><Input value={sektor} onChange={(e) => setSektor(e.target.value)} placeholder="Perakende" /></Field></FormAlan>
-          </FormBolum>
+          <div className="document-editor__section">
+            <h4 className="document-editor__section-title">Temel bilgiler</h4>
+            <div className="record-fields record-fields--cari-main">
+              <Field label="Ünvan / Ad soyad"><Input value={unvan} onChange={(e) => setUnvan(e.target.value)} required placeholder="Teknoloji A.Ş." /></Field>
+              <Field label="Cari kodu"><Input value={kod} onChange={(e) => setKod(e.target.value)} required placeholder="CARI-001" /></Field>
+              <Field label="Cari tipi"><Select value={tip} onChange={(e) => setTip(e.target.value)}>{Object.entries(TIP_ETIKETLERI).map(([deger, ad]) => (<option key={deger} value={deger}>{ad}</option>))}</Select></Field>
+              <Field label="Kısa ad"><Input value={kisaAd} onChange={(e) => setKisaAd(e.target.value)} placeholder="Teknoloji" /></Field>
+              <Field label="Kişi tipi"><Select value={kisiTipi} onChange={(e) => setKisiTipi(e.target.value)}><option value="tuzel">Tüzel kişi</option><option value="gercek">Gerçek kişi</option></Select></Field>
+              <Field label="Sektör"><Input value={sektor} onChange={(e) => setSektor(e.target.value)} placeholder="Perakende" /></Field>
+            </div>
+          </div>
 
-          <FormBolum baslik="Vergi ve Resmi Bilgiler">
-            <FormAlan flex={1} min={180}><Field label="VKN / TCKN"><Input value={vknTckn} onChange={(e) => setVknTckn(e.target.value)} placeholder="10-11 hane" /></Field></FormAlan>
-            <FormAlan flex={1} min={180}><Field label="Vergi Dairesi"><Input value={vergiDairesi} onChange={(e) => setVergiDairesi(e.target.value)} /></Field></FormAlan>
-            <FormAlan flex={1} min={180}><Field label="MERSİS No"><Input value={mersisNo} onChange={(e) => setMersisNo(e.target.value)} placeholder="16 hane" /></Field></FormAlan>
-            <FormAlan flex={1} min={180}><Field label="Ticaret Sicil No"><Input value={ticaretSicilNo} onChange={(e) => setTicaretSicilNo(e.target.value)} /></Field></FormAlan>
-          </FormBolum>
+          <details className="record-disclosure">
+            <summary>Vergi ve resmi bilgiler</summary>
+            <div className="record-fields record-fields--four">
+              <Field label="VKN / TCKN"><Input value={vknTckn} onChange={(e) => setVknTckn(e.target.value)} placeholder="10-11 hane" /></Field>
+              <Field label="Vergi dairesi"><Input value={vergiDairesi} onChange={(e) => setVergiDairesi(e.target.value)} /></Field>
+              <Field label="MERSİS no"><Input value={mersisNo} onChange={(e) => setMersisNo(e.target.value)} placeholder="16 hane" /></Field>
+              <Field label="Ticaret sicil no"><Input value={ticaretSicilNo} onChange={(e) => setTicaretSicilNo(e.target.value)} /></Field>
+            </div>
+          </details>
 
-          <FormBolum baslik="İletişim">
-            <FormAlan flex={1} min={180}><Field label="E-posta"><Input type="email" value={eposta} onChange={(e) => setEposta(e.target.value)} /></Field></FormAlan>
-            <FormAlan flex={1} min={160}><Field label="Telefon"><Input value={telefon} onChange={(e) => setTelefon(e.target.value)} /></Field></FormAlan>
-            <FormAlan flex={1} min={160}><Field label="Web Sitesi"><Input value={webSitesi} onChange={(e) => setWebSitesi(e.target.value)} placeholder="https://..." /></Field></FormAlan>
-            <FormAlan flex={1} min={140}><Field label="Faks"><Input value={faks} onChange={(e) => setFaks(e.target.value)} /></Field></FormAlan>
-          </FormBolum>
+          <details className="record-disclosure">
+            <summary>İletişim bilgileri</summary>
+            <div className="record-fields record-fields--four">
+              <Field label="E-posta"><Input type="email" value={eposta} onChange={(e) => setEposta(e.target.value)} /></Field>
+              <Field label="Telefon"><Input value={telefon} onChange={(e) => setTelefon(e.target.value)} /></Field>
+              <Field label="Web sitesi"><Input value={webSitesi} onChange={(e) => setWebSitesi(e.target.value)} placeholder="https://..." /></Field>
+              <Field label="Faks"><Input value={faks} onChange={(e) => setFaks(e.target.value)} /></Field>
+            </div>
+          </details>
 
-          <FormBolum baslik="Finans ve Satış Koşulları">
-            <FormAlan flex={1} min={200}><Field label="Fiyat Listesi"><Select value={fiyatListesiId} onChange={(e) => setFiyatListesiId(e.target.value)}><option value="">— Yok (stok satış fiyatı) —</option>{fiyatListeleri.map((l) => (<option key={l.id} value={l.id}>{l.ad} ({l.dovizCinsi})</option>))}</Select></Field></FormAlan>
-            <FormAlan flex={1} min={160}><Field label="Varsayılan İskonto (%)"><Input type="number" step="0.01" min="0" max="100" value={varsayilanIskonto} onChange={(e) => setVarsayilanIskonto(e.target.value)} placeholder="0" /></Field></FormAlan>
-            <FormAlan flex={1} min={160}><Field label="Varsayılan Vade (gün)"><Input type="number" min="0" max="365" value={varsayilanVadeGun} onChange={(e) => setVarsayilanVadeGun(e.target.value)} placeholder="0" /></Field></FormAlan>
-            <FormAlan flex={1} min={180}><Field label="Risk Limiti (TL)"><Input value={riskLimiti} onChange={(e) => setRiskLimiti(e.target.value)} placeholder="1000000" /></Field></FormAlan>
-          </FormBolum>
+          <details className="record-disclosure">
+            <summary>Finans ve satış koşulları</summary>
+            <div className="record-fields record-fields--four">
+              <Field label="Fiyat listesi"><Select value={fiyatListesiId} onChange={(e) => setFiyatListesiId(e.target.value)}><option value="">Stok satış fiyatı</option>{fiyatListeleri.map((l) => (<option key={l.id} value={l.id}>{l.ad} ({l.dovizCinsi})</option>))}</Select></Field>
+              <Field label="Varsayılan iskonto (%)"><Input className="record-number" type="number" step="0.01" min="0" max="100" inputMode="decimal" value={varsayilanIskonto} onChange={(e) => setVarsayilanIskonto(e.target.value)} placeholder="0" /></Field>
+              <Field label="Varsayılan vade (gün)"><Input className="record-number" type="number" min="0" max="365" inputMode="numeric" value={varsayilanVadeGun} onChange={(e) => setVarsayilanVadeGun(e.target.value)} placeholder="0" /></Field>
+              <Field label="Risk limiti (TL)"><Input className="record-number" type="number" min="0" step="0.01" inputMode="decimal" value={riskLimiti} onChange={(e) => setRiskLimiti(e.target.value)} placeholder="0,00" /></Field>
+            </div>
+          </details>
 
-          <div><Button variant="primary" onClick={kaydet}>Cari Kartı Kaydet</Button></div>
-        </Card>
+          <div className="document-editor__actions"><Button variant="primary" type="submit">Cari hesabı kaydet</Button></div>
+        </form>
       )}
 
       {detay && (

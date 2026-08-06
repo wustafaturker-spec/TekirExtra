@@ -334,16 +334,16 @@ export default function BelgelerSayfasi() {
       <Alert tone="success">{basari}</Alert>
 
       {formAcik && (
-        <Card style={{ marginBottom: "1.5rem" }}>
-          <h3 style={{ fontSize: "1.05rem", marginBottom: "1.25rem" }}>Yeni Belge</h3>
-          <div className="row" style={{ marginBottom: "1.25rem" }}>
-            <div style={{ flex: 1, minWidth: 150 }}>
-              <Field label="Belge Türü"><Select value={tur} onChange={(e) => setTur(e.target.value as Tur)}><option value="teklif">Teklif</option><option value="siparis">Sipariş</option><option value="irsaliye">İrsaliye</option></Select></Field>
-            </div>
-            <div style={{ flex: 1, minWidth: 130 }}>
-              <Field label="Yön"><Select value={yon} onChange={(e) => setYon(e.target.value as Yon)}><option value="satis">Satış</option><option value="alis">Alış</option></Select></Field>
-            </div>
-            <div style={{ flex: 2, minWidth: 260 }}>
+        <div className="document-editor">
+          <div className="document-editor__head">
+            <h3>Yeni {TUR_ADI[tur].toLocaleLowerCase("tr")}</h3>
+            <span className="badge badge--warning">Taslak</span>
+          </div>
+
+          <div className="document-editor__section">
+            <h4 className="document-editor__section-title">Cari ve belge bilgileri</h4>
+            <div className="document-fields document-fields--belge">
+              <div>
               <Field label={yon === "satis" ? "Müşteri" : "Tedarikçi"}>
                 <AramaSecici
                   ariaLabel={yon === "satis" ? "Müşteri ara" : "Tedarikçi ara"}
@@ -358,31 +358,38 @@ export default function BelgelerSayfasi() {
                   }))}
                 />
               </Field>
-            </div>
-            <div style={{ flex: 1, minWidth: 150 }}>
-              <Field label="Tarih"><Input type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} required /></Field>
-            </div>
-            <div style={{ flex: 1, minWidth: 180 }}>
-              <DepoSecici deger={depoId} onChange={setDepoId} />
-            </div>
-            {tur === "teklif" && (
-              <div style={{ flex: 1, minWidth: 150 }}>
-                <Field label="Geçerlilik Tarihi"><Input type="date" value={gecerlilik} onChange={(e) => setGecerlilik(e.target.value)} /></Field>
               </div>
+              <Field label="Belge Türü"><Select value={tur} onChange={(e) => setTur(e.target.value as Tur)}><option value="teklif">Teklif</option><option value="siparis">Sipariş</option><option value="irsaliye">İrsaliye</option></Select></Field>
+              <Field label="Yön"><Select value={yon} onChange={(e) => setYon(e.target.value as Yon)}><option value="satis">Satış</option><option value="alis">Alış</option></Select></Field>
+              <Field label="Tarih"><Input type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} required /></Field>
+              <div><DepoSecici deger={depoId} onChange={setDepoId} /></div>
+            {tur === "teklif" && (
+                <Field label="Geçerlilik Tarihi"><Input type="date" value={gecerlilik} onChange={(e) => setGecerlilik(e.target.value)} /></Field>
             )}
+            </div>
           </div>
 
-          <h4 className="card__title" style={{ fontSize: "0.9rem" }}>Satırlar</h4>
-          <TableWrap>
+          <div className="document-editor__section document-lines">
+            <h4 className="document-editor__section-title">Belge kalemleri</h4>
+            <TableWrap>
+            <colgroup>
+              <col className="document-line-col--product" />
+              <col className="document-line-col--quantity" />
+              <col className="document-line-col--price" />
+              <col className="document-line-col--rate" />
+              <col className="document-line-col--rate" />
+              <col className="document-line-col--total" />
+              <col className="document-line-col--action" />
+            </colgroup>
             <thead>
               <tr>
                 <th>Ürün/Hizmet</th>
-                <th style={{ width: 90 }}>Miktar</th>
-                <th style={{ width: 120 }}>Birim Fiyat</th>
-                <th style={{ width: 90 }}>İskonto %</th>
-                <th style={{ width: 90 }}>KDV %</th>
-                <th className="num">Satır Toplamı</th>
-                <th style={{ width: 50 }}></th>
+                <th className="num">Miktar</th>
+                <th className="num">Birim fiyat</th>
+                <th className="num">İsk. %</th>
+                <th className="num">KDV %</th>
+                <th className="num">Tutar</th>
+                <th><span className="sr-only">İşlem</span></th>
               </tr>
             </thead>
             <tbody>
@@ -404,29 +411,30 @@ export default function BelgelerSayfasi() {
                         }))}
                       />
                     </td>
-                    <td><Input type="number" min="0.01" step="any" value={s.miktar} onChange={(e) => satirGuncelle(i, "miktar", Number(e.target.value))} required /></td>
-                    <td><Input type="number" min="0" step="any" value={s.birimFiyat} onChange={(e) => satirGuncelle(i, "birimFiyat", Number(e.target.value))} required /></td>
-                    <td><Input type="number" min="0" max="100" value={s.iskontoOrani} onChange={(e) => satirGuncelle(i, "iskontoOrani", Number(e.target.value))} /></td>
-                    <td><Input type="number" min="0" max="100" value={s.kdvOrani} onChange={(e) => satirGuncelle(i, "kdvOrani", Number(e.target.value))} required /></td>
-                    <td className="num" style={{ fontWeight: 700 }}>{ss ? tl(ss.toplamTutar) : "0,00 TL"}</td>
-                    <td className="center"><Button variant="danger" size="sm" type="button" onClick={() => satirSil(i)}>🗑️</Button></td>
+                    <td><Input className="document-line-number" aria-label="Miktar" type="number" min="0.01" step="any" inputMode="decimal" value={s.miktar} onChange={(e) => satirGuncelle(i, "miktar", Number(e.target.value))} required /></td>
+                    <td><Input className="document-line-number" aria-label="Birim fiyat" type="number" min="0" step="any" inputMode="decimal" value={s.birimFiyat} onChange={(e) => satirGuncelle(i, "birimFiyat", Number(e.target.value))} required /></td>
+                    <td><Input className="document-line-number" aria-label="İskonto yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.iskontoOrani} onChange={(e) => satirGuncelle(i, "iskontoOrani", Number(e.target.value))} /></td>
+                    <td><Input className="document-line-number" aria-label="KDV yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.kdvOrani} onChange={(e) => satirGuncelle(i, "kdvOrani", Number(e.target.value))} required /></td>
+                    <td className="num document-line-total">{ss ? tl(ss.toplamTutar) : "0,00 TL"}</td>
+                    <td className="center"><Button aria-label="Satırı sil" title="Satırı sil" variant="danger" size="sm" type="button" onClick={() => satirSil(i)}>×</Button></td>
                   </tr>
                 );
               })}
             </tbody>
-          </TableWrap>
+            </TableWrap>
 
-          <div className="between" style={{ marginTop: "1rem", alignItems: "flex-start" }}>
-            <Button type="button" onClick={satirEkle}>➕ Satır Ekle</Button>
-            <div style={{ width: 260, background: "var(--surface-2)", padding: "1rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>
-              <div className="between" style={{ fontSize: "0.9rem", marginBottom: "0.4rem" }}><span className="muted">Brüt</span><span>{tl(sonuc.toplamBrut)}</span></div>
-              <div className="between" style={{ fontSize: "0.9rem", marginBottom: "0.4rem", color: "var(--info)" }}><span>KDV</span><span>{tl(sonuc.toplamKdv)}</span></div>
-              <div className="between" style={{ fontWeight: 700, fontSize: "1.05rem", borderTop: "1px solid var(--border)", paddingTop: "0.5rem", marginTop: "0.5rem" }}><span>Genel Toplam</span><span>{tl(sonuc.genelToplam)}</span></div>
+            <div className="document-summary-row">
+              <Button type="button" onClick={satirEkle}>+ Satır ekle</Button>
+              <div className="document-totals">
+                <div className="document-total-line"><span>Brüt toplam</span><span>{tl(sonuc.toplamBrut)}</span></div>
+                <div className="document-total-line is-tax"><span>KDV toplamı</span><span>{tl(sonuc.toplamKdv)}</span></div>
+                <div className="document-total-line is-grand"><span>Genel toplam</span><span>{tl(sonuc.genelToplam)}</span></div>
+              </div>
             </div>
           </div>
 
-          <div style={{ marginTop: "1.5rem" }}><Button variant="primary" onClick={kaydet}>Taslak Belge Kaydet</Button></div>
-        </Card>
+          <div className="document-editor__actions"><Button variant="primary" onClick={kaydet}>Taslak belgeyi kaydet</Button></div>
+        </div>
       )}
 
       {detay && (
