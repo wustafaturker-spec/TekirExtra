@@ -673,6 +673,13 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 .approval-summary dt { color: var(--text-muted); font-size: 0.8rem; }
 .approval-summary dd { font-size: 0.82rem; font-variant-numeric: tabular-nums; font-weight: 700; margin: 0; }
 .approval-impact { background: var(--info-soft); border-left: 3px solid var(--info); font-size: 0.82rem; padding: 0.7rem; }
+.approval-impact.is-warning { background: var(--danger-soft); border-left-color: var(--danger); color: var(--danger); }
+.approval-effects { border: 1px solid var(--border); display: grid; grid-template-columns: 1fr 1fr; }
+.approval-effects > div { padding: 0.65rem; }
+.approval-effects > div:nth-child(odd) { border-right: 1px solid var(--border); }
+.approval-effects > div:nth-child(n + 3) { border-top: 1px solid var(--border); }
+.approval-effects span { color: var(--text-muted); display: block; font-size: 0.7rem; margin-bottom: 0.15rem; }
+.approval-effects strong { font-size: 0.78rem; }
 
 /* Fatura / belge form çalışma alanı */
 .document-editor {
@@ -1187,6 +1194,9 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
   .customer-context > div:last-of-type { grid-column: 1 / -1; }
   .quick-panel { border-left: 0; width: 100%; }
   .quick-panel__actions .btn { flex: 1; justify-content: center; }
+  .approval-effects { grid-template-columns: 1fr; }
+  .approval-effects > div:nth-child(odd) { border-right: 0; }
+  .approval-effects > div + div { border-top: 1px solid var(--border); }
   .invoice-lines .table-wrap { contain: none; overflow: visible; }
   .invoice-lines .table,
   .invoice-lines .table tbody { display: block; min-width: 0; width: 100%; }

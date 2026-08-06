@@ -68,6 +68,17 @@ interface Fatura {
   ebelge?: { id: string; durum: string; tur: string } | null;
 }
 
+interface FaturaDetay extends Fatura {
+  cari: { id: string; kod: string; unvan: string; vknTckn: string | null; eFaturaMukellefi: boolean | null };
+  dovizCinsi: string;
+  satirlar: { stokId: string; stokKod: string; stokAd: string; miktar: string; birim: string }[];
+}
+
+interface KesinlestirmeOzeti {
+  fatura: FaturaDetay;
+  risk: { mevcutRisk: string; limit: string | null; kalanLimit: string | null; asim: boolean } | null;
+}
+
 /** FaturaTip enum'u; iade ve proforma da listede ayırt edilmeli. */
 const TIP_ETIKETLERI: Record<string, string> = {
   satis: "📤 Satış",
@@ -115,6 +126,7 @@ export default function FaturaSayfasi() {
   const [yeniStokBarkod, setYeniStokBarkod] = useState("");
   const [yeniStokKdv, setYeniStokKdv] = useState("20");
   const [yeniStokFiyat, setYeniStokFiyat] = useState("");
+  const [kesinlestirmeOzeti, setKesinlestirmeOzeti] = useState<KesinlestirmeOzeti | null>(null);
 
   // Form alanları
   const [cariId, setCariId] = useState("");
@@ -372,15 +384,26 @@ export default function FaturaSayfasi() {
   }
 
   async function kesinlestir(id: string) {
-    if (!confirm("Bu faturayı kesinleştirmek istediğinize emin misiniz? Bu işlem geri alınamaz ve e-Belge kuyruğuna gönderilir.")) return;
     setHata("");
     setBasari("");
     try {
       await api(`/fatura/${id}/kesinlestir`, { method: "POST" });
+      setKesinlestirmeOzeti(null);
       setBasari("Fatura başarıyla kesinleştirildi ve e-Belge süreci başlatıldı.");
       void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Kesinleştirme hatası");
+    }
+  }
+
+  async function kesinlestirmeOzetiAc(id: string) {
+    setHata("");
+    try {
+      const fatura = await api<FaturaDetay>(`/fatura/${id}`);
+      const cari = await api<CariSecimOzeti>(`/cari/${fatura.cari.id}`);
+      setKesinlestirmeOzeti({ fatura, risk: cari.risk });
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Kesinleştirme özeti yüklenemedi");
     }
   }
 
@@ -734,6 +757,44 @@ export default function FaturaSayfasi() {
         </HizliKayitPaneli>
       )}
 
+      {kesinlestirmeOzeti && (() => {
+        const fatura = kesinlestirmeOzeti.fatura;
+        const toplamMiktar = fatura.satirlar.reduce((toplam, satir) => toplam + Number(satir.miktar), 0);
+        const satisYonlu = fatura.tip === "satis" || fatura.tip === "alis_iade";
+        const proforma = fatura.tip === "proforma";
+        const tahminiRisk = Number(kesinlestirmeOzeti.risk?.mevcutRisk ?? 0) + (fatura.tip === "satis" ? Number(fatura.genelToplam) : 0);
+        const riskLimiti = kesinlestirmeOzeti.risk?.limit === null ? null : Number(kesinlestirmeOzeti.risk?.limit ?? 0);
+        const riskAsimi = riskLimiti !== null && tahminiRisk > riskLimiti;
+        return (
+          <HizliKayitPaneli baslik="Faturayı kesinleştir" onKapat={() => setKesinlestirmeOzeti(null)}>
+            <div className="approval-summary">
+              <div className="approval-summary__identity">
+                <strong>{fatura.no || "Taslak fatura"} · {TIP_ETIKETLERI[fatura.tip] ?? fatura.tip}</strong>
+                <span>{fatura.cari.unvan}</span>
+              </div>
+              <dl>
+                <div><dt>Kalem</dt><dd>{fatura.satirlar.length}</dd></div>
+                <div><dt>Toplam miktar</dt><dd>{toplamMiktar.toLocaleString("tr-TR")}</dd></div>
+                <div><dt>Matrah</dt><dd>{tl(fatura.toplamMatrah)}</dd></div>
+                <div><dt>Genel toplam</dt><dd>{tl(fatura.genelToplam)}</dd></div>
+              </dl>
+              <div className="approval-effects">
+                <div><span>Stok</span><strong>{proforma ? "Değişmeyecek" : `${toplamMiktar.toLocaleString("tr-TR")} birim ${satisYonlu ? "azalacak" : "artacak"}`}</strong></div>
+                <div><span>Cari hesap</span><strong>{proforma ? "Değişmeyecek" : `${tl(fatura.genelToplam)} ${satisYonlu ? "borç" : "alacak"} yazılacak`}</strong></div>
+                <div><span>e-Belge</span><strong>{proforma ? "Oluşmayacak" : `${fatura.cari.eFaturaMukellefi ? "e-Fatura" : "e-Arşiv"} kuyruğa alınacak`}</strong></div>
+                <div><span>Tahmini risk</span><strong>{fatura.tip === "satis" ? tl(tahminiRisk) : "Değişmeyecek"}</strong></div>
+              </div>
+              {!fatura.cari.vknTckn && !proforma && <div className="approval-impact is-warning">Cari VKN/TCKN bilgisi eksik. e-Belge gönderiminden önce cari kartını tamamlayın.</div>}
+              {riskAsimi && <div className="approval-impact is-warning">Kesinleştirme sonrasında tahmini risk {tl(tahminiRisk)} ile {tl(riskLimiti)} limitini aşacak.</div>}
+              <div className="quick-panel__actions">
+                <Button type="button" onClick={() => setKesinlestirmeOzeti(null)}>Vazgeç</Button>
+                <Button type="button" variant="primary" onClick={() => void kesinlestir(fatura.id)}>Kesinleştir</Button>
+              </div>
+            </div>
+          </HizliKayitPaneli>
+        );
+      })()}
+
       <Card pad={false}>
         <TableWrap>
           <thead>
@@ -782,7 +843,7 @@ export default function FaturaSayfasi() {
                     <div className="row-tight" style={{ flexWrap: "nowrap", justifyContent: "center" }}>
                       {f.durum === "taslak" ? (
                         <>
-                          <Button variant="primary" size="sm" onClick={() => kesinlestir(f.id)}>🔒 Kesinleştir</Button>
+                          <Button variant="primary" size="sm" onClick={() => void kesinlestirmeOzetiAc(f.id)}>🔒 Kesinleştir</Button>
                           <Button variant="danger" size="sm" onClick={() => sil(f.id)}>Sil</Button>
                         </>
                       ) : (
