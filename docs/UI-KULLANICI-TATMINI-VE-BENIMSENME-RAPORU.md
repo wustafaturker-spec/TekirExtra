@@ -486,7 +486,7 @@ gelmedigi net olmalidir.
 | Paket 1 | Buyuk olcude tamamlandi | Satis/satin alma calisma alanlari, baglama gore filtrelenen fatura ve belge girisleri, Tum Belgeler ve Tum Faturalar erisimi | Liste durum eksenleri ve kaydedilmis is gorunumleri |
 | Paket 2 | Tamamlandi | Ortak aranabilir cari ve urun secici, kod/VKN/barkod aramasi, son/sik kullanilan siralamasi, cari bakiye/risk ozeti, fatura icinden hizli cari ve urun olusturma | Kullanici testi ve metrik takibi |
 | Paket 3 | Tamamlandi | Kompakt masaustu tablosu ve mobil kalem bloklari, otomatik fiyat/vergi altyapisi, anlik toplamlar, Enter ile yeni satir, odak aktarimi, satir kopyalama, satir ayrintisi, barkod tekrar okutma ve stok yeterlilik uyarisi | Kullanici testi ve metrik takibi |
-| Paket 4 | Baslanmadi | Mevcut belge donusum servisleri korunuyor | Zaman cizgisi, etki ozeti ve durum gecmisi |
+| Paket 4 | Kismen tamamlandi | Tiklanabilir belge zinciri zaman cizgisi, mevcut donusum komutlari ve belge onayi etki ozeti | Fatura kesinlestirme ozeti, e-Belge/odeme durum gecmisi ve yeniden deneme akislari |
 | Paket 5 | Kismen baslandi | Satis ve satin alma is kuyrugu ozetleri | Rol bazli ana sayfa, bildirimler ve kullanim metrikleri |
 
 Tamamlanan UI calismalari `2f7641c` ve `bfc93ad` commitlerinde izlenebilir.

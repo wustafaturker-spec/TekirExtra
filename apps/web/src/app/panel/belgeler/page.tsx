@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
 import { AramaSecici } from "@/components/arama-secici";
 import { DepoSecici } from "@/components/depo-secici";
+import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
 import { faturaHesapla, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
@@ -90,6 +91,7 @@ export default function BelgelerSayfasi() {
   const [detay, setDetay] = useState<BelgeDetay | null>(null);
   const [secili, setSecili] = useState<Set<string>>(new Set());
   const [yonBaglami, setYonBaglami] = useState<Yon | null>(null);
+  const [onayBekleyen, setOnayBekleyen] = useState<BelgeDetay | null>(null);
 
   // Form
   const [tur, setTur] = useState<Tur>("teklif");
@@ -224,6 +226,22 @@ export default function BelgelerSayfasi() {
     } catch (h) {
       setHata(h instanceof Error ? h.message : "İşlem başarısız");
     }
+  }
+
+  async function onayOzetiAc(id: string) {
+    setHata("");
+    try {
+      setOnayBekleyen(await api<BelgeDetay>(`/belgeler/${id}`));
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Onay özeti yüklenemedi");
+    }
+  }
+
+  async function onayiTamamla() {
+    if (!onayBekleyen) return;
+    const id = onayBekleyen.id;
+    setOnayBekleyen(null);
+    await eylem(id, "onayla", "Belge onaylandı.");
   }
 
   async function sil(id: string) {
@@ -447,13 +465,38 @@ export default function BelgelerSayfasi() {
               <p className="muted" style={{ fontSize: "0.85rem", margin: "0.3rem 0 0" }}>
                 {detay.cari.unvan} · {detay.tarih}{detay.gecerlilikTarihi ? ` · Geçerlilik: ${detay.gecerlilikTarihi}` : ""} · {tl(detay.genelToplam, detay.dovizCinsi)}
               </p>
-              <div className="row-tight" style={{ marginTop: "0.5rem" }}>
-                {detay.kaynakBelge && <Badge variant="neutral">← Kaynak: {TUR_ADI[detay.kaynakBelge.tur]} {detay.kaynakBelge.no ?? ""}</Badge>}
-                {detay.turetilenler.map((t) => <Badge key={t.id} variant="neutral">→ {TUR_ADI[t.tur]} {t.no ?? ""}</Badge>)}
-                {detay.fatura && <Badge variant="success">→ Fatura {detay.fatura.no ?? "(taslak)"}</Badge>}
-              </div>
             </div>
             <Button size="sm" onClick={() => setDetay(null)}>✖ Kapat</Button>
+          </div>
+          <div className="document-timeline" aria-label="Belge yaşam döngüsü">
+            {(["teklif", "siparis", "irsaliye"] as const).map((adim) => {
+              const kayit = detay.tur === adim
+                ? { id: detay.id, tur: detay.tur, no: detay.no, durum: detay.durum }
+                : detay.kaynakBelge?.tur === adim
+                  ? detay.kaynakBelge
+                  : detay.turetilenler.find((t) => t.tur === adim);
+              const mevcut = detay.tur === adim;
+              return (
+                <button
+                  className={`document-timeline__step${kayit ? " is-complete" : ""}${mevcut ? " is-current" : ""}`}
+                  disabled={!kayit || mevcut}
+                  key={adim}
+                  onClick={() => kayit && void detayAc(kayit.id)}
+                  type="button"
+                >
+                  <span>{kayit ? "✓" : ""}</span>
+                  <strong>{TUR_ADI[adim]}</strong>
+                  <small>{mevcut ? "Mevcut" : kayit?.no ?? (kayit ? "Taslak" : "Bekliyor")}</small>
+                </button>
+              );
+            })}
+            <a className={`document-timeline__step${detay.fatura ? " is-complete" : ""}`} href={detay.fatura ? "/panel/fatura" : undefined} aria-disabled={!detay.fatura}>
+              <span>{detay.fatura ? "✓" : ""}</span>
+              <strong>Fatura</strong>
+              <small>{detay.fatura?.no ?? (detay.fatura ? "Taslak" : "Bekliyor")}</small>
+            </a>
+            <div className="document-timeline__step" aria-disabled="true"><span /><strong>e-Belge</strong><small>Bekliyor</small></div>
+            <div className="document-timeline__step" aria-disabled="true"><span /><strong>Tahsilat/Ödeme</strong><small>Bekliyor</small></div>
           </div>
           <TableWrap>
             <thead>
@@ -475,6 +518,32 @@ export default function BelgelerSayfasi() {
             </tbody>
           </TableWrap>
         </Card>
+      )}
+
+      {onayBekleyen && (
+        <HizliKayitPaneli baslik="Belgeyi onayla" onKapat={() => setOnayBekleyen(null)}>
+          <div className="approval-summary">
+            <div className="approval-summary__identity">
+              <strong>{TUR_ADI[onayBekleyen.tur]} · {YON_ADI[onayBekleyen.yon]}</strong>
+              <span>{onayBekleyen.cari.unvan}</span>
+            </div>
+            <dl>
+              <div><dt>Kalem</dt><dd>{onayBekleyen.satirlar.length}</dd></div>
+              <div><dt>Toplam miktar</dt><dd>{onayBekleyen.satirlar.reduce((toplam, satir) => toplam + Number(satir.miktar), 0).toLocaleString("tr-TR")}</dd></div>
+              <div><dt>Genel toplam</dt><dd>{tl(onayBekleyen.genelToplam, onayBekleyen.dovizCinsi)}</dd></div>
+            </dl>
+            <div className="approval-impact">
+              {onayBekleyen.tur === "siparis" && onayBekleyen.yon === "satis" && "Onayla birlikte ürün miktarları seçilen depoda rezerve edilecek."}
+              {onayBekleyen.tur === "siparis" && onayBekleyen.yon === "alis" && "Onayla birlikte ürün miktarları seçilen depo için yoldaki stok olarak işaretlenecek."}
+              {onayBekleyen.tur === "teklif" && "Teklif numara alacak; stok ve cari bakiyesi değişmeyecek."}
+              {onayBekleyen.tur === "irsaliye" && "İrsaliye numara alacak; stok ve cari etkisi fatura kesinleştiğinde oluşacak."}
+            </div>
+            <div className="quick-panel__actions">
+              <Button type="button" onClick={() => setOnayBekleyen(null)}>Vazgeç</Button>
+              <Button type="button" variant="primary" onClick={() => void onayiTamamla()}>Onayla</Button>
+            </div>
+          </div>
+        </HizliKayitPaneli>
       )}
 
       <div className="toolbar">
@@ -527,7 +596,7 @@ export default function BelgelerSayfasi() {
                       <Button size="sm" onClick={() => detayAc(b.id)}>🔍</Button>
                       {b.durum === "taslak" && (
                         <>
-                          <Button variant="primary" size="sm" onClick={() => eylem(b.id, "onayla", "Belge onaylandı.")}>Onayla</Button>
+                          <Button variant="primary" size="sm" onClick={() => void onayOzetiAc(b.id)}>Onayla</Button>
                           <Button variant="danger" size="sm" onClick={() => sil(b.id)}>Sil</Button>
                         </>
                       )}

@@ -614,6 +614,65 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; color: var(--text); }
 .quick-panel__body { padding: 1.1rem; }
 .quick-panel__form { display: grid; gap: 0.9rem; }
 .quick-panel__actions { display: flex; gap: 0.6rem; justify-content: flex-end; padding-top: 0.3rem; }
+.document-timeline {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  margin: 1.1rem 0;
+  overflow-x: auto;
+}
+.document-timeline__step {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--text-subtle);
+  display: grid;
+  font: inherit;
+  gap: 0.2rem;
+  justify-items: center;
+  min-width: 105px;
+  padding: 0.4rem 0.25rem;
+  position: relative;
+  text-align: center;
+  text-decoration: none;
+}
+.document-timeline__step::before {
+  background: var(--border-strong);
+  content: "";
+  height: 2px;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 15px;
+}
+.document-timeline__step:first-child::before { left: 50%; }
+.document-timeline__step:last-child::before { right: 50%; }
+.document-timeline__step > span {
+  background: var(--surface);
+  border: 2px solid var(--border-strong);
+  border-radius: 50%;
+  height: 22px;
+  line-height: 18px;
+  position: relative;
+  width: 22px;
+  z-index: 1;
+}
+.document-timeline__step strong { color: inherit; font-size: 0.74rem; }
+.document-timeline__step small { font-size: 0.66rem; }
+button.document-timeline__step:not(:disabled),
+a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
+.document-timeline__step.is-complete { color: var(--success); }
+.document-timeline__step.is-complete > span { border-color: var(--success); }
+.document-timeline__step.is-current { color: var(--accent-text); }
+.document-timeline__step.is-current > span { border-color: var(--accent); box-shadow: var(--ring); }
+.approval-summary { display: grid; gap: 1rem; }
+.approval-summary__identity { display: grid; gap: 0.2rem; }
+.approval-summary__identity span { color: var(--text-muted); font-size: 0.84rem; }
+.approval-summary dl { border: 1px solid var(--border); margin: 0; }
+.approval-summary dl > div { display: flex; justify-content: space-between; padding: 0.55rem 0.65rem; }
+.approval-summary dl > div + div { border-top: 1px solid var(--border); }
+.approval-summary dt { color: var(--text-muted); font-size: 0.8rem; }
+.approval-summary dd { font-size: 0.82rem; font-variant-numeric: tabular-nums; font-weight: 700; margin: 0; }
+.approval-impact { background: var(--info-soft); border-left: 3px solid var(--info); font-size: 0.82rem; padding: 0.7rem; }
 
 /* Fatura / belge form çalışma alanı */
 .document-editor {
