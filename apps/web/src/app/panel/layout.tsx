@@ -29,17 +29,18 @@ const MENU: MenuGrup[] = [
     ogeler: [{ href: "/panel", ikon: "📊", baslik: "Finansal Özet", eslesme: "tam" }],
   },
   {
-    baslik: "Finansal İşlemler",
+    baslik: "Operasyon",
+    ogeler: [
+      { href: "/panel/satis", ikon: "S", baslik: "Satış", eslesme: "onek" },
+      { href: "/panel/satin-alma", ikon: "A", baslik: "Satın Alma", eslesme: "onek" },
+    ],
+  },
+  {
+    baslik: "Kayıtlar",
     ogeler: [
       { href: "/panel/cari", ikon: "👥", baslik: "Cari Hesaplar" },
-      { href: "/panel/belgeler", ikon: "🧾", baslik: "Belgeler", eslesme: "tam" },
-      { href: "/panel/fatura", ikon: "📄", baslik: "Faturalar", eslesme: "tam" },
-      {
-        href: "/panel/fatura/gelen-kutusu",
-        ikon: "📥",
-        baslik: "Gelen e-Belgeler",
-        eslesme: "tam",
-      },
+      { href: "/panel/belgeler", ikon: "B", baslik: "Tüm Belgeler", eslesme: "tam" },
+      { href: "/panel/fatura", ikon: "F", baslik: "Tüm Faturalar", eslesme: "tam" },
       { href: "/panel/kasa-banka", ikon: "🏦", baslik: "Kasa & Banka", eslesme: "tam" },
       { href: "/panel/kasa-banka/cek-senet", ikon: "🧾", baslik: "Çek & Senet", eslesme: "tam" },
       { href: "/panel/kasa-banka/ekstre", ikon: "🏧", baslik: "Banka Ekstresi", eslesme: "tam" },
@@ -78,6 +79,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const router = useRouter();
   const [rol, setRol] = useState<string | null>(null);
+  const [menuAcik, setMenuAcik] = useState(false);
 
   useEffect(() => {
     if (tokenAl()) {
@@ -99,7 +101,28 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <header className="mobile-topbar">
+        <button
+          aria-expanded={menuAcik}
+          aria-label="Ana menüyü aç"
+          className="mobile-menu-button"
+          onClick={() => setMenuAcik((acik) => !acik)}
+          type="button"
+        >
+          <span aria-hidden="true">☰</span>
+        </button>
+        <Link className="mobile-brand" href="/panel">Tekir<b>Extra</b></Link>
+        <span className="mobile-role">{rol ? ROL_ADI[rol] ?? "Hesabım" : ""}</span>
+      </header>
+      {menuAcik && (
+        <button
+          aria-label="Menüyü kapat"
+          className="sidebar-backdrop"
+          onClick={() => setMenuAcik(false)}
+          type="button"
+        />
+      )}
+      <aside className={`sidebar${menuAcik ? " is-open" : ""}`}>
         <div className="sidebar__brand">
           <span className="sidebar__brand-mark">🐈</span>
           <span>Tekir<b>Extra</b></span>
@@ -114,6 +137,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
                   key={oge.href}
                   href={oge.href}
                   className={`nav__link${aktifMi(oge) ? " is-active" : ""}`}
+                  onClick={() => setMenuAcik(false)}
                 >
                   <span className="nav__link-icon">{oge.ikon}</span>
                   <span>{oge.baslik}</span>

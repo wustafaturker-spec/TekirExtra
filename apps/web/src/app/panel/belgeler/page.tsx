@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
+import { AramaSecici } from "@/components/arama-secici";
 import { DepoSecici } from "@/components/depo-secici";
 import { faturaHesapla, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
@@ -31,7 +32,7 @@ type Tur = "teklif" | "siparis" | "irsaliye";
 type Yon = "satis" | "alis";
 type TurFiltre = "tumu" | Tur;
 
-interface Cari { id: string; unvan: string }
+interface Cari { id: string; kod?: string; unvan: string; vknTckn?: string | null }
 interface Stok { id: string; kod: string; ad: string }
 
 interface BelgeSatirForm {
@@ -88,6 +89,7 @@ export default function BelgelerSayfasi() {
   const [formAcik, setFormAcik] = useState(false);
   const [detay, setDetay] = useState<BelgeDetay | null>(null);
   const [secili, setSecili] = useState<Set<string>>(new Set());
+  const [yonBaglami, setYonBaglami] = useState<Yon | null>(null);
 
   // Form
   const [tur, setTur] = useState<Tur>("teklif");
@@ -130,6 +132,21 @@ export default function BelgelerSayfasi() {
     if (!tokenAl()) return;
     api<{ kayitlar: Cari[] }>("/cari?adet=200").then((v) => setCariler(v.kayitlar)).catch(() => undefined);
     api<{ kayitlar: Stok[] }>("/stok?adet=200").then((v) => setStoklar(v.kayitlar)).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    const parametreler = new URLSearchParams(window.location.search);
+    const yonParametresi = parametreler.get("yon");
+    const turParametresi = parametreler.get("tur");
+    if (yonParametresi === "satis" || yonParametresi === "alis") {
+      setYonBaglami(yonParametresi);
+      setYon(yonParametresi);
+    }
+    if (turParametresi === "teklif" || turParametresi === "siparis" || turParametresi === "irsaliye") {
+      setTur(turParametresi);
+      setTurFiltre(turParametresi);
+    }
+    if (parametreler.get("yeni") === "1") setFormAcik(true);
   }, []);
 
   function satirEkle() {
@@ -278,6 +295,7 @@ export default function BelgelerSayfasi() {
   }
 
   const gorunen = belgeler.filter((b) => {
+    if (yonBaglami && b.yon !== yonBaglami) return false;
     if (!arama) return true;
     const q = arama.toLocaleLowerCase("tr");
     return (b.no ?? "").toLocaleLowerCase("tr").includes(q) || b.cari.unvan.toLocaleLowerCase("tr").includes(q);
@@ -288,8 +306,18 @@ export default function BelgelerSayfasi() {
   return (
     <div>
       <PageHeader
-        title="Belgeler"
-        subtitle="Teklif → Sipariş → İrsaliye → Fatura zinciri. Belgeleri tek tıkla bir sonraki adıma dönüştürün (FTR-12/13)."
+        title={
+          yonBaglami === "satis"
+            ? "Satış Belgeleri"
+            : yonBaglami === "alis"
+              ? "Satın Alma Belgeleri"
+              : "Tüm Belgeler"
+        }
+        subtitle={
+          yonBaglami
+            ? "Teklif, sipariş ve irsaliyeleri iş akışına göre yönetin ve faturaya dönüştürün."
+            : "Satış ve satın alma belge zincirlerini tek görünümde inceleyin."
+        }
         actions={
           <>
             {secili.size > 0 && (
@@ -315,8 +343,21 @@ export default function BelgelerSayfasi() {
             <div style={{ flex: 1, minWidth: 130 }}>
               <Field label="Yön"><Select value={yon} onChange={(e) => setYon(e.target.value as Yon)}><option value="satis">Satış</option><option value="alis">Alış</option></Select></Field>
             </div>
-            <div style={{ flex: 2, minWidth: 220 }}>
-              <Field label="Cari Hesap"><Select value={cariId} onChange={(e) => setCariId(e.target.value)} required><option value="">-- Cari Seçiniz --</option>{cariler.map((c) => (<option key={c.id} value={c.id}>{c.unvan}</option>))}</Select></Field>
+            <div style={{ flex: 2, minWidth: 260 }}>
+              <Field label={yon === "satis" ? "Müşteri" : "Tedarikçi"}>
+                <AramaSecici
+                  ariaLabel={yon === "satis" ? "Müşteri ara" : "Tedarikçi ara"}
+                  deger={cariId}
+                  onChange={setCariId}
+                  placeholder="Ünvan, cari kodu veya VKN ile ara"
+                  secenekler={cariler.map((cari) => ({
+                    deger: cari.id,
+                    baslik: cari.unvan,
+                    aciklama: [cari.kod, cari.vknTckn].filter(Boolean).join(" · ") || "Cari hesap",
+                    aramaMetni: [cari.kod, cari.vknTckn].filter(Boolean).join(" "),
+                  }))}
+                />
+              </Field>
             </div>
             <div style={{ flex: 1, minWidth: 150 }}>
               <Field label="Tarih"><Input type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} required /></Field>
@@ -350,10 +391,18 @@ export default function BelgelerSayfasi() {
                 return (
                   <tr key={i}>
                     <td>
-                      <Select value={s.stokId} onChange={(e) => satirGuncelle(i, "stokId", e.target.value)} required>
-                        <option value="">-- Ürün/Hizmet Seçin --</option>
-                        {stoklar.map((st) => (<option key={st.id} value={st.id}>{st.ad} ({st.kod})</option>))}
-                      </Select>
+                      <AramaSecici
+                        ariaLabel={`${i + 1}. satır ürün veya hizmet seçimi`}
+                        deger={s.stokId}
+                        onChange={(deger) => void satirGuncelle(i, "stokId", deger)}
+                        placeholder="Kod veya ürün adıyla ara"
+                        secenekler={stoklar.map((stok) => ({
+                          deger: stok.id,
+                          baslik: stok.ad,
+                          aciklama: stok.kod,
+                          aramaMetni: stok.kod,
+                        }))}
+                      />
                     </td>
                     <td><Input type="number" min="0.01" step="any" value={s.miktar} onChange={(e) => satirGuncelle(i, "miktar", Number(e.target.value))} required /></td>
                     <td><Input type="number" min="0" step="any" value={s.birimFiyat} onChange={(e) => satirGuncelle(i, "birimFiyat", Number(e.target.value))} required /></td>
