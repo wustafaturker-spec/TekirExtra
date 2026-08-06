@@ -27,7 +27,7 @@ export class AuditInterceptor implements NestInterceptor {
     const istek = context.switchToHttp().getRequest<Request>();
     const baglam = baglamAl();
 
-    if (!baglam || !MUTASYON_METOTLARI.has(istek.method)) {
+    if (!baglam || !MUTASYON_METOTLARI.has(istek.method) || istek.path.endsWith("/kullanim/olay")) {
       return next.handle();
     }
 

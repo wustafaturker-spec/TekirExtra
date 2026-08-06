@@ -1,0 +1,53 @@
+import { BadRequestException, Body, Controller, Get, Post } from "@nestjs/common";
+import { z } from "zod";
+import { Roller } from "../auth/roller.decorator";
+import { aktifBaglam } from "../core/istek-baglami";
+import { PrismaService } from "../core/prisma.service";
+
+const olaySemasi = z.object({
+  olay: z.enum(["fatura_form_acildi", "fatura_tamamlandi", "fatura_dogrulama_hatasi", "fatura_form_terk", "gorunum_kaydedildi", "gorunum_kullanildi"]),
+  sureMs: z.number().int().min(0).max(86_400_000).optional(),
+});
+
+@Controller("kullanim")
+export class KullanimController {
+  constructor(private readonly prisma: PrismaService) {}
+
+  @Post("olay")
+  async olay(@Body() govde: unknown) {
+    const sonuc = olaySemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException("Geçersiz kullanım olayı");
+    const { tenantId, userId } = aktifBaglam();
+    await this.prisma.tenantIslem(tenantId, (tx) => tx.auditLog.create({ data: {
+      tenantId, userId, varlik: "kullanim", islem: sonuc.data.olay,
+      detay: sonuc.data.sureMs === undefined ? undefined : { sureMs: sonuc.data.sureMs },
+    } }));
+    return { kaydedildi: true };
+  }
+
+  @Get("ozet")
+  @Roller("yonetici")
+  async ozet() {
+    const { tenantId } = aktifBaglam();
+    const baslangic = new Date(Date.now() - 30 * 86_400_000);
+    const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) => tx.auditLog.findMany({
+      where: { varlik: "kullanim", createdAt: { gte: baslangic } }, select: { islem: true, userId: true, detay: true }, take: 20_000,
+    }));
+    const say = (olay: string) => kayitlar.filter((kayit) => kayit.islem === olay).length;
+    const sureler = kayitlar.filter((kayit) => kayit.islem === "fatura_tamamlandi").map((kayit) => {
+      const detay = kayit.detay as { sureMs?: unknown } | null;
+      return typeof detay?.sureMs === "number" ? detay.sureMs : null;
+    }).filter((sure): sure is number => sure !== null).sort((a, b) => a - b);
+    const orta = Math.floor(sureler.length / 2);
+    const ortancaSureMs = sureler.length ? (sureler.length % 2 ? sureler[orta] : (sureler[orta - 1] + sureler[orta]) / 2) : null;
+    const acilan = say("fatura_form_acildi"); const tamamlanan = say("fatura_tamamlandi");
+    const terk = say("fatura_form_terk");
+    return {
+      donemGun: 30,
+      aktifKullanici: new Set(kayitlar.map((kayit) => kayit.userId).filter(Boolean)).size,
+      toplamOlay: kayitlar.length,
+      fatura: { acilan, tamamlanan, ortancaSureMs, terkOrani: tamamlanan + terk ? terk / (tamamlanan + terk) : 0, dogrulamaHatasi: say("fatura_dogrulama_hatasi") },
+      gorunum: { kaydedilen: say("gorunum_kaydedildi"), kullanilan: say("gorunum_kullanildi") },
+    };
+  }
+}

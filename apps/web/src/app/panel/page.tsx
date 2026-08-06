@@ -2,150 +2,100 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { CalismaAlani, type HizliEylem, type IsKuyrugu } from "@/components/calisma-alani";
+import { Alert, Card, Stat, StatGrid } from "@/components/ui";
 import { api, ApiHata, tokenAl, tokenYaz } from "@/lib/api";
-import { Alert, Card, PageHeader, Stat, StatGrid, TableWrap } from "@/components/ui";
 
-interface Firma {
-  unvan: string;
-  vkn: string;
-}
+type Rol = "yonetici" | "muhasebe" | "satis" | "salt_okunur";
+interface FinansOzet { nakitVarliklar: string; envanterDegeri: string; toplamAlacaklar: string; toplamBorclar: string; netVarlikDegeri: string; }
+interface Fatura { tip: string; durum: string; ebelge?: { durum: string } | null; odemeOzeti?: { durum: string }; }
+interface Stok { kritikSeviye?: string | null; mevcutMiktar?: string; kullanilabilirMiktar?: string; }
 
-interface FinansOzet {
-  nakitVarliklar: string;
-  envanterDegeri: string;
-  toplamAlacaklar: string;
-  toplamBorclar: string;
-  netVarlikDegeri: string;
-}
-
-interface KarMarjiSatiri {
-  grup: string;
-  ciro: string;
-  maliyet: string;
-  kar: string;
-  marj: number | null;
-}
-
-const tl = (deger: string | number): string =>
-  Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL";
+const tl = (deger: string) => Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL";
+const rolAdi: Record<Rol, string> = { yonetici: "Yönetim", muhasebe: "Muhasebe", satis: "Satış", salt_okunur: "Genel görünüm" };
+const rolAciklama: Record<Rol, string> = {
+  yonetici: "Nakit, kârlılık ve kritik operasyonları birlikte izleyin.",
+  muhasebe: "e-Belge, ödeme ve banka eşleştirme işlerinizi tamamlayın.",
+  satis: "Satış belgeleri, müşteri riski ve tahsilat işlerinizi yönetin.",
+  salt_okunur: "Finansal durumu ve operasyon listelerini inceleyin.",
+};
 
 export default function PanelSayfasi() {
-  const yonlendir = useRouter();
-  const [firma, setFirma] = useState<Firma | null>(null);
+  const router = useRouter();
+  const [firma, setFirma] = useState("Yükleniyor…");
+  const [rol, setRol] = useState<Rol | null>(null);
   const [ozet, setOzet] = useState<FinansOzet | null>(null);
-  const [rapor, setRapor] = useState<KarMarjiSatiri[] | null>(null);
+  const [eylemler, setEylemler] = useState<HizliEylem[]>([]);
+  const [kuyruklar, setKuyruklar] = useState<IsKuyrugu[]>([]);
   const [hata, setHata] = useState("");
 
   const yukle = useCallback(async () => {
     try {
-      setFirma(await api<Firma>("/firma"));
-      setOzet(await api<FinansOzet>("/rapor/ozet"));
-      // Kâr marjı raporu RPR-06 araç setinden (fatura.kar-marji, ürün kırılımı)
-      const karMarji = await api<{ satirlar: KarMarjiSatiri[] }>(
-        "/raporlar/fatura.kar-marji/calistir",
-        { method: "POST", body: JSON.stringify({ gruplama: "urun" }) },
-      );
-      setRapor(karMarji.satirlar);
-    } catch (h) {
-      if (h instanceof ApiHata && h.durum === 401) {
-        tokenYaz(null);
-        yonlendir.push("/giris");
-      } else {
-        setHata(h instanceof Error ? h.message : "Yükleme hatası");
+      const [ben, firmaVeri, faturaVeri, stokVeri] = await Promise.all([
+        api<{ rol: Rol }>("/auth/ben"), api<{ unvan: string }>("/firma"),
+        api<{ kayitlar: Fatura[] }>("/fatura?adet=100"), api<{ kayitlar: Stok[] }>("/stok?adet=100"),
+      ]);
+      setRol(ben.rol); setFirma(firmaVeri.unvan);
+      const fs = faturaVeri.kayitlar;
+      const say = (test: (f: Fatura) => boolean) => fs.filter(test).length;
+      const taslakSatis = say((f) => f.durum === "taslak" && ["satis", "satis_iade", "proforma"].includes(f.tip));
+      const taslakAlis = say((f) => f.durum === "taslak" && ["alis", "alis_iade"].includes(f.tip));
+      const ebelgeHata = say((f) => ["hata", "ret"].includes(f.ebelge?.durum ?? ""));
+      const acikTahsilat = say((f) => ["satis", "alis_iade"].includes(f.tip) && ["odenmedi", "kismi"].includes(f.odemeOzeti?.durum ?? ""));
+      const acikOdeme = say((f) => ["alis", "satis_iade"].includes(f.tip) && ["odenmedi", "kismi"].includes(f.odemeOzeti?.durum ?? ""));
+      const kritik = stokVeri.kayitlar.filter((s) => s.kritikSeviye != null && Number(s.mevcutMiktar ?? s.kullanilabilirMiktar ?? 0) <= Number(s.kritikSeviye)).length;
+      let ekstre = 0; let gelen = 0;
+      if (["yonetici", "muhasebe"].includes(ben.rol)) {
+        const [e, g] = await Promise.all([api<unknown[]>("/kasa-banka/ekstre/satirlar?durum=beklemede"), api<unknown[]>("/ebelge/gelen?durum=beklemede")]);
+        ekstre = e.length; gelen = g.length;
       }
+      const stokKuyrugu: IsKuyrugu = { href: "/panel/stok?durum=kritik", baslik: "Kritik stoklar", aciklama: "Kritik seviyeye ulaşan ürünler", sayi: kritik, ton: kritik ? "danger" : "default" };
+      if (ben.rol === "satis") {
+        setEylemler([
+          { href: "/panel/fatura?yon=satis&yeni=1", baslik: "Satış faturası", aciklama: "Yeni müşteri faturası", ikon: "SF", vurgu: true },
+          { href: "/panel/belgeler?yon=satis&tur=teklif&yeni=1", baslik: "Teklif oluştur", aciklama: "Yeni satış teklifi", ikon: "TK" },
+          { href: "/panel/belgeler?yon=satis&tur=siparis&yeni=1", baslik: "Sipariş oluştur", aciklama: "Müşteri siparişi", ikon: "SP" },
+          { href: "/panel/fatura?yon=satis&odeme=acik", baslik: "Tahsilat takibi", aciklama: "Açık müşteri faturaları", ikon: "TH" },
+        ]);
+        setKuyruklar([
+          { href: "/panel/fatura?yon=satis&durum=taslak", baslik: "Taslak satış faturaları", aciklama: "Kesinleştirilmeyi bekleyen kayıtlar", sayi: taslakSatis, ton: "warning" },
+          { href: "/panel/fatura?yon=satis&odeme=acik", baslik: "Açık tahsilatlar", aciklama: "Tahsilatı tamamlanmamış faturalar", sayi: acikTahsilat, ton: acikTahsilat ? "danger" : "default" }, stokKuyrugu,
+        ]);
+      } else {
+        const salt = ben.rol === "salt_okunur";
+        setEylemler(salt ? [
+          { href: "/panel/fatura", baslik: "Faturalar", aciklama: "Fatura listesini incele", ikon: "FT" },
+          { href: "/panel/cari", baslik: "Cari hesaplar", aciklama: "Bakiye ve hareketler", ikon: "CR" },
+          { href: "/panel/stok", baslik: "Stoklar", aciklama: "Mevcut stok durumu", ikon: "ST" },
+          { href: "/panel/raporlar", baslik: "Raporlar", aciklama: "Analiz ve dökümler", ikon: "RP" },
+        ] : [
+          { href: "/panel/fatura?yon=alis&yeni=1", baslik: "Alış faturası", aciklama: "Tedarikçi faturası", ikon: "AF", vurgu: true },
+          { href: "/panel/fatura/gelen-kutusu", baslik: "Gelen e-Belgeler", aciklama: "Kontrol ve eşleştirme", ikon: "GB" },
+          { href: "/panel/kasa-banka?islem=tediye", baslik: "Ödeme yap", aciklama: "Tedarikçi ödemesi", ikon: "ÖD" },
+          { href: "/panel/kasa-banka/ekstre", baslik: "Banka ekstresi", aciklama: "Hareketleri eşleştir", ikon: "BK" },
+        ]);
+        setKuyruklar(salt ? [
+          { href: "/panel/fatura?durum=taslak", baslik: "Bekleyen fatura taslakları", aciklama: "Satış ve alış tarafındaki açık kayıtlar", sayi: taslakSatis + taslakAlis, ton: "warning" },
+          { href: "/panel/fatura?ebelge=hata", baslik: "e-Belge hataları", aciklama: "Operasyonu durduran kayıtlar", sayi: ebelgeHata, ton: ebelgeHata ? "danger" : "default" }, stokKuyrugu,
+        ] : [
+          { href: "/panel/fatura?ebelge=hata", baslik: "e-Belge hataları", aciklama: "Düzeltilip yeniden gönderilecek belgeler", sayi: ebelgeHata, ton: ebelgeHata ? "danger" : "default" },
+          { href: "/panel/fatura/gelen-kutusu?durum=beklemede", baslik: "Bekleyen alış e-Belgeleri", aciklama: "Kontrol ve eşleştirme bekleyen belgeler", sayi: gelen, ton: "warning" },
+          { href: "/panel/kasa-banka/ekstre?durum=beklemede", baslik: "Eşleşmemiş banka hareketleri", aciklama: "Cari veya faturayla ilişkilendirilecek satırlar", sayi: ekstre, ton: "warning" },
+          { href: "/panel/fatura?yon=alis&odeme=acik", baslik: "Açık ödemeler", aciklama: "Ödemesi tamamlanmamış alış faturaları", sayi: acikOdeme, ton: acikOdeme ? "danger" : "default" }, stokKuyrugu,
+        ]);
+        setOzet(await api<FinansOzet>("/rapor/ozet"));
+      }
+    } catch (h) {
+      if (h instanceof ApiHata && h.durum === 401) { tokenYaz(null); router.push("/giris"); }
+      else setHata(h instanceof Error ? h.message : "Çalışma özeti yüklenemedi");
     }
-  }, [yonlendir]);
+  }, [router]);
 
-  useEffect(() => {
-    if (!tokenAl()) {
-      yonlendir.push("/giris");
-      return;
-    }
-    void yukle();
-  }, [yonlendir, yukle]);
+  useEffect(() => { if (!tokenAl()) router.push("/giris"); else void yukle(); }, [router, yukle]);
 
-  return (
-    <div>
-      <PageHeader
-        title={firma?.unvan ?? "Yükleniyor…"}
-        subtitle="Hoş geldiniz. Şirketinizin anlık finansal durum özeti aşağıdadır."
-      />
-
-      <Alert tone="error">{hata}</Alert>
-
-      {ozet && (
-        <section style={{ marginBottom: "2rem" }}>
-          <StatGrid>
-            <Stat label="Nakit Varlıklar (Kasa/Banka)" value={tl(ozet.nakitVarliklar)} tone="success" />
-            <Stat label="Stok Envanter Değeri" value={tl(ozet.envanterDegeri)} tone="info" />
-            <Stat label="Toplam Müşteri Alacakları" value={tl(ozet.toplamAlacaklar)} tone="info" />
-            <Stat label="Toplam Tedarikçi Borçları" value={tl(ozet.toplamBorclar)} tone="danger" />
-          </StatGrid>
-
-          <Card style={{ background: "var(--accent-soft)", borderColor: "var(--accent)" }}>
-            <div className="stat__label">Konsolide Net Varlık Değeri</div>
-            <div className="stat__value" style={{ fontSize: "2.1rem", color: "var(--accent-text)" }}>
-              {tl(ozet.netVarlikDegeri)}
-            </div>
-          </Card>
-        </section>
-      )}
-
-      {rapor && (() => {
-        const toplam = rapor.reduce(
-          (t, u) => ({
-            ciro: t.ciro + Number(u.ciro),
-            maliyet: t.maliyet + Number(u.maliyet),
-            kar: t.kar + Number(u.kar),
-          }),
-          { ciro: 0, maliyet: 0, kar: 0 },
-        );
-        const marj = toplam.ciro > 0 ? (toplam.kar / toplam.ciro) * 100 : 0;
-        return (
-          <Card>
-            <h2 className="card__title" style={{ fontSize: "1.15rem" }}>📈 Satış Kârlılık ve Kâr/Zarar Analizi</h2>
-
-            <StatGrid>
-              <Stat label="Toplam Ciro" value={tl(toplam.ciro)} />
-              <Stat label="Toplam Maliyet" value={tl(toplam.maliyet)} />
-              <Stat label="Net Satış Kârı" value={tl(toplam.kar)} tone={toplam.kar >= 0 ? "success" : "danger"} />
-              <Stat label="Kârlılık Oranı" value={`%${marj.toFixed(2)}`} tone="accent" />
-            </StatGrid>
-
-            <h3 className="card__title" style={{ fontSize: "0.95rem" }}>Ürün Bazlı Kârlılık Kırılımı</h3>
-            <TableWrap>
-              <thead>
-                <tr>
-                  <th>Ürün</th>
-                  <th className="num">Toplam Ciro</th>
-                  <th className="num">Maliyet</th>
-                  <th className="num">Kâr/Zarar</th>
-                  <th className="num">Kârlılık Oranı</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rapor.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="empty">Henüz kesinleşmiş satış faturası bulunmuyor.</td>
-                  </tr>
-                ) : (
-                  rapor.map((u) => (
-                    <tr key={u.grup}>
-                      <td>{u.grup}</td>
-                      <td className="num">{tl(u.ciro)}</td>
-                      <td className="num muted">{tl(u.maliyet)}</td>
-                      <td className={`num money ${Number(u.kar) >= 0 ? "pos" : "neg"}`}>{tl(u.kar)}</td>
-                      <td className="num" style={{ color: "var(--accent-text)", fontWeight: 700 }}>
-                        {u.marj === null ? "—" : `%${u.marj.toFixed(2)}`}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </TableWrap>
-          </Card>
-        );
-      })()}
-    </div>
-  );
+  return <div className="stack">
+    <Alert tone="error">{hata}</Alert>
+    {rol && <CalismaAlani baslik={firma} aciklama={rolAdi[rol] + " · " + rolAciklama[rol]} anaEylem={{ href: eylemler[0]?.href ?? "/panel", baslik: eylemler[0]?.baslik ?? "Aç" }} hizliEylemler={eylemler} kuyruklar={kuyruklar} altBaslik="Bugün ilgilenilecekler" />}
+    {ozet && <section><h2 className="section-title">Finansal görünüm</h2><StatGrid><Stat label="Nakit varlıklar" value={tl(ozet.nakitVarliklar)} tone="success" /><Stat label="Stok değeri" value={tl(ozet.envanterDegeri)} tone="info" /><Stat label="Müşteri alacakları" value={tl(ozet.toplamAlacaklar)} tone="info" /><Stat label="Tedarikçi borçları" value={tl(ozet.toplamBorclar)} tone="danger" /></StatGrid><Card><div className="stat__label">Net varlık değeri</div><div className="stat__value">{tl(ozet.netVarlikDegeri)}</div></Card></section>}
+  </div>;
 }

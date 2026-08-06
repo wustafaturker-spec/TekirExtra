@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
+import { kullanimOlayi } from "@/lib/kullanim";
 import { AramaSecici } from "@/components/arama-secici";
 import { DepoSecici } from "@/components/depo-secici";
 import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
@@ -66,18 +67,45 @@ interface Fatura {
   cari: { unvan: string };
   /** API iç içe döner; gönderilmemiş faturada null. */
   ebelge?: { id: string; durum: string; tur: string } | null;
+  odemeOzeti?: { durum: "beklemede" | "odenmedi" | "kismi" | "odendi"; odenen: string; kalan: string };
 }
 
 interface FaturaDetay extends Fatura {
   cari: { id: string; kod: string; unvan: string; vknTckn: string | null; eFaturaMukellefi: boolean | null };
   dovizCinsi: string;
   satirlar: { stokId: string; stokKod: string; stokAd: string; miktar: string; birim: string }[];
+  ebelge?: {
+    id: string;
+    durum: string;
+    tur: string;
+    entegratorRef: string | null;
+    hataMesaji: string | null;
+    createdAt: string;
+    updatedAt: string;
+  } | null;
+  odemeOzeti: {
+    durum: "beklemede" | "odenmedi" | "kismi" | "odendi";
+    odenen: string;
+    kalan: string;
+    hareketler: {
+      id: string;
+      tip: string;
+      tutar: string;
+      dovizCinsi: string;
+      tarih: string;
+      aciklama: string | null;
+      hesap: string;
+      createdAt: string;
+    }[];
+  };
 }
 
 interface KesinlestirmeOzeti {
   fatura: FaturaDetay;
   risk: { mevcutRisk: string; limit: string | null; kalanLimit: string | null; asim: boolean } | null;
 }
+interface KayitliGorunum { id: string; ad: string; yon: "satis" | "alis" | null; durum: string | null; ebelge: string | null; odeme: string | null; }
+const GORUNUM_ANAHTARI = "tekir_fatura_gorunumleri";
 
 /** FaturaTip enum'u; iade ve proforma da listede ayırt edilmeli. */
 const TIP_ETIKETLERI: Record<string, string> = {
@@ -97,6 +125,13 @@ const EBELGE_DURUMLARI: Record<string, { baslik: string; renk: "info" | "success
   hata: { baslik: "⚠ Hata", renk: "danger" },
 };
 
+const ODEME_DURUMLARI: Record<string, { baslik: string; renk: "info" | "success" | "danger" | "neutral" }> = {
+  beklemede: { baslik: "Beklemede", renk: "neutral" },
+  odenmedi: { baslik: "Ödenmedi", renk: "danger" },
+  kismi: { baslik: "Kısmi ödendi", renk: "info" },
+  odendi: { baslik: "Ödendi", renk: "success" },
+};
+
 const tl = (deger: string | number): string =>
   Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL";
 
@@ -112,8 +147,15 @@ export default function FaturaSayfasi() {
   const [epostaAdresi, setEpostaAdresi] = useState("");
   const [formAcik, setFormAcik] = useState(false);
   const [yonBaglami, setYonBaglami] = useState<"satis" | "alis" | null>(null);
+  const [durumFiltresi, setDurumFiltresi] = useState<string | null>(null);
+  const [ebelgeFiltresi, setEbelgeFiltresi] = useState<string | null>(null);
+  const [odemeFiltresi, setOdemeFiltresi] = useState<string | null>(null);
+  const [kayitliGorunumler, setKayitliGorunumler] = useState<KayitliGorunum[]>([]);
+  const [gorunumFormuAcik, setGorunumFormuAcik] = useState(false);
+  const [gorunumAdi, setGorunumAdi] = useState("");
   const [acikSatir, setAcikSatir] = useState<number | null>(null);
   const urunRefleri = useRef<Array<HTMLInputElement | null>>([]);
+  const faturaBaslangicRef = useRef<number | null>(null);
   const miktarRefleri = useRef<Array<HTMLInputElement | null>>([]);
   const [hizliPanel, setHizliPanel] = useState<"cari" | "stok" | null>(null);
   const [hizliStokSatir, setHizliStokSatir] = useState(0);
@@ -127,6 +169,8 @@ export default function FaturaSayfasi() {
   const [yeniStokKdv, setYeniStokKdv] = useState("20");
   const [yeniStokFiyat, setYeniStokFiyat] = useState("");
   const [kesinlestirmeOzeti, setKesinlestirmeOzeti] = useState<KesinlestirmeOzeti | null>(null);
+  const [ebelgeDetayi, setEbelgeDetayi] = useState<FaturaDetay | null>(null);
+  const [odemeDetayi, setOdemeDetayi] = useState<FaturaDetay | null>(null);
 
   // Form alanları
   const [cariId, setCariId] = useState("");
@@ -176,8 +220,46 @@ export default function FaturaSayfasi() {
       setYonBaglami(yon);
       setTip(yon);
     }
-    if (parametreler.get("yeni") === "1") setFormAcik(true);
+    if (parametreler.get("yeni") === "1") { setFormAcik(true); faturaBaslangicRef.current = Date.now(); kullanimOlayi("fatura_form_acildi"); }
+    setDurumFiltresi(parametreler.get("durum"));
+    setEbelgeFiltresi(parametreler.get("ebelge"));
+    setOdemeFiltresi(parametreler.get("odeme"));
+    try { setKayitliGorunumler(JSON.parse(localStorage.getItem(GORUNUM_ANAHTARI) ?? "[]") as KayitliGorunum[]); }
+    catch { localStorage.removeItem(GORUNUM_ANAHTARI); }
   }, []);
+
+  function filtreleriUygula(filtreler: Omit<KayitliGorunum, "id" | "ad">) {
+    setYonBaglami(filtreler.yon); setDurumFiltresi(filtreler.durum); setEbelgeFiltresi(filtreler.ebelge); setOdemeFiltresi(filtreler.odeme);
+    const parametreler = new URLSearchParams();
+    if (filtreler.yon) parametreler.set("yon", filtreler.yon);
+    if (filtreler.durum) parametreler.set("durum", filtreler.durum);
+    if (filtreler.ebelge) parametreler.set("ebelge", filtreler.ebelge);
+    if (filtreler.odeme) parametreler.set("odeme", filtreler.odeme);
+    window.history.replaceState(null, "", "/panel/fatura" + (parametreler.size ? "?" + parametreler.toString() : ""));
+  }
+
+  function filtreDegistir(alan: "durum" | "ebelge" | "odeme", deger: string) {
+    filtreleriUygula({ yon: yonBaglami, durum: alan === "durum" ? deger || null : durumFiltresi, ebelge: alan === "ebelge" ? deger || null : ebelgeFiltresi, odeme: alan === "odeme" ? deger || null : odemeFiltresi });
+  }
+
+  function gorunumKaydet(event: React.FormEvent) {
+    event.preventDefault(); const ad = gorunumAdi.trim(); if (!ad) return;
+    const yeni: KayitliGorunum = { id: Date.now().toString(), ad, yon: yonBaglami, durum: durumFiltresi, ebelge: ebelgeFiltresi, odeme: odemeFiltresi };
+    const gorunumler = [...kayitliGorunumler.filter((g) => g.ad.toLocaleLowerCase("tr-TR") !== ad.toLocaleLowerCase("tr-TR")), yeni];
+    setKayitliGorunumler(gorunumler); localStorage.setItem(GORUNUM_ANAHTARI, JSON.stringify(gorunumler));
+    setGorunumAdi(""); setGorunumFormuAcik(false); setBasari("“" + ad + "” görünümü kaydedildi.");
+    kullanimOlayi("gorunum_kaydedildi");
+  }
+
+  function gorunumSil(id: string) {
+    const gorunumler = kayitliGorunumler.filter((gorunum) => gorunum.id !== id);
+    setKayitliGorunumler(gorunumler); localStorage.setItem(GORUNUM_ANAHTARI, JSON.stringify(gorunumler));
+  }
+  function gorunumUygula(gorunum: KayitliGorunum) { filtreleriUygula(gorunum); kullanimOlayi("gorunum_kullanildi"); }
+  function faturaFormunuAcKapat() {
+    if (formAcik) { if (faturaBaslangicRef.current !== null) kullanimOlayi("fatura_form_terk", Date.now() - faturaBaslangicRef.current); faturaBaslangicRef.current = null; setFormAcik(false); return; }
+    faturaBaslangicRef.current = Date.now(); kullanimOlayi("fatura_form_acildi"); setFormAcik(true);
+  }
 
   useEffect(() => {
     if (!cariId || !tokenAl()) {
@@ -343,12 +425,14 @@ export default function FaturaSayfasi() {
 
     if (!cariId) {
       setHata("Lütfen bir cari hesap seçin.");
+      kullanimOlayi("fatura_dogrulama_hatasi");
       return;
     }
 
     const eksikStok = satirlar.some((s) => !s.stokId);
     if (eksikStok) {
       setHata("Lütfen tüm satırlarda ürün/hizmet seçimi yapın.");
+      kullanimOlayi("fatura_dogrulama_hatasi");
       return;
     }
 
@@ -374,11 +458,14 @@ export default function FaturaSayfasi() {
       });
 
       setBasari("Fatura taslağı başarıyla oluşturuldu.");
+      kullanimOlayi("fatura_tamamlandi", faturaBaslangicRef.current === null ? undefined : Date.now() - faturaBaslangicRef.current);
+      faturaBaslangicRef.current = null;
       setFormAcik(false);
       setCariId("");
       setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" }]);
       void yukle();
     } catch (h) {
+      kullanimOlayi("fatura_dogrulama_hatasi");
       setHata(h instanceof Error ? h.message : "Fatura oluşturulamadı");
     }
   }
@@ -444,6 +531,49 @@ export default function FaturaSayfasi() {
     }
   }
 
+  async function ebelgeDetayAc(id: string) {
+    setHata("");
+    try {
+      setEbelgeDetayi(await api<FaturaDetay>(`/fatura/${id}`));
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "e-Belge ayrıntısı yüklenemedi");
+    }
+  }
+
+  async function odemeDetayAc(id: string) {
+    setHata("");
+    try {
+      setOdemeDetayi(await api<FaturaDetay>(`/fatura/${id}`));
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Ödeme ayrıntısı yüklenemedi");
+    }
+  }
+
+  function odemeKaydinaGit(fatura: FaturaDetay) {
+    const islem = ["satis", "alis_iade"].includes(fatura.tip) ? "tahsilat" : "tediye";
+    const parametreler = new URLSearchParams({
+      islem,
+      cariId: fatura.cari.id,
+      faturaId: fatura.id,
+      tutar: fatura.odemeOzeti.kalan,
+      aciklama: `${fatura.no ?? "Fatura"} ${islem === "tahsilat" ? "tahsilatı" : "ödemesi"}`,
+    });
+    window.location.href = `/panel/kasa-banka?${parametreler.toString()}`;
+  }
+
+  async function ebelgeYenidenGonder(id: string) {
+    setHata("");
+    setBasari("");
+    try {
+      await api(`/ebelge/gonder/${id}`, { method: "POST" });
+      setBasari("e-Belge yeniden gönderildi.");
+      setEbelgeDetayi(await api<FaturaDetay>(`/fatura/${id}`));
+      void yukle();
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "e-Belge yeniden gönderilemedi");
+    }
+  }
+
   /** FTR-09: proformadan yeni taslak satış faturası üretir. */
   async function satisaDonustur(id: string) {
     setHata("");
@@ -479,13 +609,14 @@ export default function FaturaSayfasi() {
     window.open(url, "_blank");
   }
 
-  const gorunenFaturalar = yonBaglami
-    ? faturalar.filter((f) =>
-        yonBaglami === "satis"
+  const gorunenFaturalar = faturalar.filter((f) =>
+      (!yonBaglami || (yonBaglami === "satis"
           ? ["satis", "satis_iade", "proforma"].includes(f.tip)
-          : ["alis", "alis_iade"].includes(f.tip),
-      )
-    : faturalar;
+          : ["alis", "alis_iade"].includes(f.tip))) &&
+      (!durumFiltresi || f.durum === durumFiltresi) &&
+      (!ebelgeFiltresi || (ebelgeFiltresi === "hata" ? ["hata", "ret"].includes(f.ebelge?.durum ?? "") : f.ebelge?.durum === ebelgeFiltresi)) &&
+      (!odemeFiltresi || (odemeFiltresi === "acik" && ["odenmedi", "kismi"].includes(f.odemeOzeti?.durum ?? ""))),
+    );
   const sayfaBasligi =
     yonBaglami === "satis"
       ? "Satış Faturaları"
@@ -507,7 +638,7 @@ export default function FaturaSayfasi() {
         actions={
           <>
             <ButtonLabel as="a" href="/panel/fatura/raporlar">📈 Raporlar</ButtonLabel>
-            <Button variant="primary" onClick={() => setFormAcik(!formAcik)}>
+            <Button variant="primary" onClick={faturaFormunuAcKapat}>
               {formAcik ? "Vazgeç" : "➕ Yeni Fatura"}
             </Button>
           </>
@@ -516,6 +647,21 @@ export default function FaturaSayfasi() {
 
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
+
+      <section className="saved-view-bar" aria-label="Fatura görünümü ve filtreleri">
+        <div className="saved-view-filters">
+          <Field label="Fatura durumu"><Select aria-label="Fatura durumu" value={durumFiltresi ?? ""} onChange={(e) => filtreDegistir("durum", e.target.value)}><option value="">Tümü</option><option value="taslak">Taslak</option><option value="kesin">Kesinleşmiş</option></Select></Field>
+          <Field label="e-Belge durumu"><Select aria-label="e-Belge durumu" value={ebelgeFiltresi ?? ""} onChange={(e) => filtreDegistir("ebelge", e.target.value)}><option value="">Tümü</option><option value="hata">Hata / Ret</option><option value="kuyrukta">Kuyrukta</option><option value="iletildi">İletildi</option><option value="kabul">Kabul</option></Select></Field>
+          <Field label="Ödeme durumu"><Select aria-label="Ödeme durumu" value={odemeFiltresi ?? ""} onChange={(e) => filtreDegistir("odeme", e.target.value)}><option value="">Tümü</option><option value="acik">Ödenmedi / Kısmi</option></Select></Field>
+          <Field label="Kaydedilmiş görünüm"><Select aria-label="Kaydedilmiş görünüm" value="" onChange={(e) => { const gorunum = kayitliGorunumler.find((g) => g.id === e.target.value); if (gorunum) gorunumUygula(gorunum); }}><option value="">Görünüm seçin</option>{kayitliGorunumler.map((g) => <option value={g.id} key={g.id}>{g.ad}</option>)}</Select></Field>
+        </div>
+        <div className="saved-view-actions">
+          {(durumFiltresi || ebelgeFiltresi || odemeFiltresi) && <Button size="sm" type="button" onClick={() => filtreleriUygula({ yon: yonBaglami, durum: null, ebelge: null, odeme: null })}>Filtreleri temizle</Button>}
+          <Button size="sm" type="button" onClick={() => setGorunumFormuAcik((acik) => !acik)}>Görünümü kaydet</Button>
+        </div>
+        {gorunumFormuAcik && <form className="saved-view-form" onSubmit={gorunumKaydet}><Input autoFocus aria-label="Görünüm adı" value={gorunumAdi} onChange={(e) => setGorunumAdi(e.target.value)} placeholder="Örn. Takip edilecek tahsilatlar" required /><Button size="sm" variant="primary" type="submit">Kaydet</Button><Button size="sm" type="button" onClick={() => setGorunumFormuAcik(false)}>Vazgeç</Button></form>}
+        {kayitliGorunumler.length > 0 && <div className="saved-view-list" aria-label="Kaydedilmiş görünümleri yönet">{kayitliGorunumler.map((g) => <span key={g.id}><button type="button" onClick={() => filtreleriUygula(g)}>{g.ad}</button><button aria-label={g.ad + " görünümünü sil"} title="Görünümü sil" type="button" onClick={() => gorunumSil(g.id)}>×</button></span>)}</div>}
+      </section>
 
       {epostaGonderilen && (
         <Card className="stack" style={{ marginBottom: "1.5rem", borderColor: "var(--accent)", maxWidth: 620 }}>
@@ -795,6 +941,82 @@ export default function FaturaSayfasi() {
         );
       })()}
 
+      {ebelgeDetayi?.ebelge && (
+        <HizliKayitPaneli baslik="e-Belge durumu" onKapat={() => setEbelgeDetayi(null)}>
+          <div className="approval-summary">
+            <div className="approval-summary__identity">
+              <strong>{ebelgeDetayi.no} · {ebelgeDetayi.ebelge.tur === "efatura" ? "e-Fatura" : "e-Arşiv"}</strong>
+              <span>{ebelgeDetayi.cari.unvan}</span>
+            </div>
+            <div className="status-history">
+              <div className="status-history__item is-complete">
+                <span />
+                <div><strong>e-Belge kaydı oluşturuldu</strong><small>{new Date(ebelgeDetayi.ebelge.createdAt).toLocaleString("tr-TR")}</small></div>
+              </div>
+              <div className={`status-history__item${ebelgeDetayi.ebelge.durum === "hata" || ebelgeDetayi.ebelge.durum === "ret" ? " is-error" : " is-complete"}`}>
+                <span />
+                <div><strong>{EBELGE_DURUMLARI[ebelgeDetayi.ebelge.durum]?.baslik ?? ebelgeDetayi.ebelge.durum}</strong><small>{new Date(ebelgeDetayi.ebelge.updatedAt).toLocaleString("tr-TR")}</small></div>
+              </div>
+            </div>
+            <dl>
+              <div><dt>Entegratör referansı</dt><dd>{ebelgeDetayi.ebelge.entegratorRef || "Henüz oluşmadı"}</dd></div>
+              <div><dt>Son güncelleme</dt><dd>{new Date(ebelgeDetayi.ebelge.updatedAt).toLocaleString("tr-TR")}</dd></div>
+            </dl>
+            {ebelgeDetayi.ebelge.hataMesaji && <div className="approval-impact is-warning">{ebelgeDetayi.ebelge.hataMesaji}</div>}
+            <div className="quick-panel__actions">
+              <Button type="button" onClick={() => setEbelgeDetayi(null)}>Kapat</Button>
+              {["kuyrukta", "iletildi"].includes(ebelgeDetayi.ebelge.durum) && <Button type="button" variant="primary" onClick={() => void ebelgeSorgula(ebelgeDetayi.id)}>Durumu sorgula</Button>}
+              {ebelgeDetayi.ebelge.durum === "hata" && <Button type="button" variant="primary" onClick={() => void ebelgeYenidenGonder(ebelgeDetayi.id)}>Yeniden gönder</Button>}
+            </div>
+          </div>
+        </HizliKayitPaneli>
+      )}
+
+      {odemeDetayi && (
+        <HizliKayitPaneli baslik="Ödeme durumu" onKapat={() => setOdemeDetayi(null)}>
+          <div className="approval-summary">
+            <div className="approval-summary__identity">
+              <strong>{odemeDetayi.no || "Taslak fatura"} · {odemeDetayi.cari.unvan}</strong>
+              <span>{TIP_ETIKETLERI[odemeDetayi.tip] ?? odemeDetayi.tip}</span>
+            </div>
+            <dl>
+              <div><dt>Fatura toplamı</dt><dd>{tl(odemeDetayi.genelToplam)}</dd></div>
+              <div><dt>Ödenen</dt><dd>{tl(odemeDetayi.odemeOzeti.odenen)}</dd></div>
+              <div><dt>Kalan</dt><dd>{tl(odemeDetayi.odemeOzeti.kalan)}</dd></div>
+            </dl>
+            <div className="status-history">
+              <div className="status-history__item is-complete">
+                <span />
+                <div><strong>Fatura {odemeDetayi.durum === "kesin" ? "kesinleşti" : "taslak olarak oluşturuldu"}</strong><small>{odemeDetayi.tarih}</small></div>
+              </div>
+              {odemeDetayi.odemeOzeti.hareketler.map((hareket) => (
+                <div className="status-history__item is-complete" key={hareket.id}>
+                  <span />
+                  <div>
+                    <strong>{hareket.tip === "tahsilat" ? "Tahsilat" : "Ödeme"} · {Number(hareket.tutar).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {hareket.dovizCinsi}</strong>
+                    <small>{hareket.tarih} · {hareket.hesap}{hareket.aciklama ? ` · ${hareket.aciklama}` : ""}</small>
+                  </div>
+                </div>
+              ))}
+              {odemeDetayi.odemeOzeti.hareketler.length === 0 && (
+                <div className="status-history__item">
+                  <span />
+                  <div><strong>Henüz ödeme eşleştirilmedi</strong><small>Kalan {tl(odemeDetayi.odemeOzeti.kalan)}</small></div>
+                </div>
+              )}
+            </div>
+            <div className="quick-panel__actions">
+              <Button type="button" onClick={() => setOdemeDetayi(null)}>Kapat</Button>
+              {odemeDetayi.durum === "kesin" && Number(odemeDetayi.odemeOzeti.kalan) > 0 && (
+                <Button type="button" variant="primary" onClick={() => odemeKaydinaGit(odemeDetayi)}>
+                  {["satis", "alis_iade"].includes(odemeDetayi.tip) ? "Tahsilat kaydet" : "Ödeme kaydet"}
+                </Button>
+              )}
+            </div>
+          </div>
+        </HizliKayitPaneli>
+      )}
+
       <Card pad={false}>
         <TableWrap>
           <thead>
@@ -807,13 +1029,14 @@ export default function FaturaSayfasi() {
               <th className="num">Genel Toplam</th>
               <th>Durum</th>
               <th>e-Belge</th>
+              <th>Ödeme</th>
               <th className="center">Eylemler</th>
             </tr>
           </thead>
           <tbody>
             {gorunenFaturalar.length === 0 ? (
               <tr>
-                <td colSpan={9} className="empty">Sistemde henüz kayıtlı fatura bulunmuyor.</td>
+                <td colSpan={10} className="empty">Sistemde henüz kayıtlı fatura bulunmuyor.</td>
               </tr>
             ) : (
               gorunenFaturalar.map((f) => (
@@ -831,13 +1054,22 @@ export default function FaturaSayfasi() {
                   </td>
                   <td>
                     {f.ebelge ? (
-                      <Badge variant={EBELGE_DURUMLARI[f.ebelge.durum]?.renk ?? "neutral"}>
-                        {EBELGE_DURUMLARI[f.ebelge.durum]?.baslik ?? f.ebelge.durum}
-                        {f.ebelge.tur === "efatura" ? " · e-Fatura" : " · e-Arşiv"}
-                      </Badge>
+                      <button className="status-trigger" onClick={() => void ebelgeDetayAc(f.id)} title="e-Belge ayrıntısını aç" type="button">
+                        <Badge variant={EBELGE_DURUMLARI[f.ebelge.durum]?.renk ?? "neutral"}>
+                          {EBELGE_DURUMLARI[f.ebelge.durum]?.baslik ?? f.ebelge.durum}
+                          {f.ebelge.tur === "efatura" ? " · e-Fatura" : " · e-Arşiv"}
+                        </Badge>
+                      </button>
                     ) : (
                       <span className="subtle">—</span>
                     )}
+                  </td>
+                  <td>
+                    <button className="status-trigger" onClick={() => void odemeDetayAc(f.id)} title="Ödeme ayrıntısını aç" type="button">
+                      <Badge variant={ODEME_DURUMLARI[f.odemeOzeti?.durum ?? "beklemede"].renk}>
+                        {ODEME_DURUMLARI[f.odemeOzeti?.durum ?? "beklemede"].baslik}
+                      </Badge>
+                    </button>
                   </td>
                   <td className="center">
                     <div className="row-tight" style={{ flexWrap: "nowrap", justifyContent: "center" }}>
@@ -850,9 +1082,10 @@ export default function FaturaSayfasi() {
                         <>
                           <Button size="sm" onClick={() => pdfAc(f.id)}>🖨 PDF</Button>
                           <Button size="sm" onClick={() => setEpostaGonderilen(f)}>✉️ E-posta</Button>
-                          {f.ebelge && !["kabul", "iletildi"].includes(f.ebelge.durum) && (
+                          {f.ebelge && ["kuyrukta", "iletildi"].includes(f.ebelge.durum) && (
                             <Button size="sm" onClick={() => ebelgeSorgula(f.id)}>Sorgula</Button>
                           )}
+                          {f.ebelge?.durum === "hata" && <Button size="sm" onClick={() => void ebelgeYenidenGonder(f.id)}>Yeniden gönder</Button>}
                         </>
                       )}
                       {/* FTR-09: yalnız proforma satışa dönüştürülebilir */}

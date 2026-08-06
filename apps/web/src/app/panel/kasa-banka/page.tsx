@@ -83,6 +83,7 @@ export default function KasaBankaSayfasi() {
   const [hareketCariId, setHareketCariId] = useState("");
   const [hareketTarih, setHareketTarih] = useState(new Date().toISOString().substring(0, 10));
   const [hareketAciklama, setHareketAciklama] = useState("");
+  const [hareketFaturaId, setHareketFaturaId] = useState<string | null>(null);
 
   // Virman Form Alanları
   const [virmanKaynakSecimi, setVirmanKaynakSecimi] = useState(""); // "kasa:id" veya "banka:id"
@@ -108,6 +109,18 @@ export default function KasaBankaSayfasi() {
       void yukle();
     }
   }, [yukle]);
+
+  useEffect(() => {
+    const parametreler = new URLSearchParams(window.location.search);
+    const islem = parametreler.get("islem");
+    if (islem !== "tahsilat" && islem !== "tediye") return;
+    setHareketTip(islem);
+    setHareketCariId(parametreler.get("cariId") ?? "");
+    setHareketFaturaId(parametreler.get("faturaId"));
+    setHareketTutar(parametreler.get("tutar") ?? "");
+    setHareketAciklama(parametreler.get("aciklama") ?? "");
+    setHareketFormAcik(true);
+  }, []);
 
   async function kasaKaydet(e: React.FormEvent) {
     e.preventDefault();
@@ -188,6 +201,7 @@ export default function KasaBankaSayfasi() {
           tarih: hareketTarih,
           aciklama: hareketAciklama || null,
           cariId: hareketCariId || null,
+          faturaId: hareketFaturaId,
         }),
       });
 
@@ -196,6 +210,7 @@ export default function KasaBankaSayfasi() {
       setHareketTutar("");
       setHareketAciklama("");
       setHareketCariId("");
+      setHareketFaturaId(null);
       void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "İşlem kaydedilemedi");
@@ -313,6 +328,7 @@ export default function KasaBankaSayfasi() {
       {hareketFormAcik && (
         <Card className="stack" style={{ marginBottom: "1.5rem", maxWidth: 620 }}>
           <h3 style={{ fontSize: "1.05rem" }}>Tahsilat / Ödeme Fişi Düzenle</h3>
+          {hareketFaturaId && <div className="approval-impact">Bu fiş seçili faturayla eşleştirilecek. Tutarı değiştirerek kısmi ödeme kaydedebilirsiniz.</div>}
           <div className="row">
             <div style={{ flex: 1, minWidth: 200 }}>
               <Field label="Kasa / Banka Seçimi">

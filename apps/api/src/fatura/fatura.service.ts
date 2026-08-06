@@ -111,6 +111,7 @@ export class FaturaService {
         include: {
           cari: { select: { id: true, kod: true, unvan: true } },
           ebelge: { select: { id: true, durum: true, tur: true } },
+          kasaBankaHarekets: { select: { tutar: true } },
         },
       }),
     );
@@ -119,12 +120,24 @@ export class FaturaService {
     const sayfa = kayitlar.slice(0, adet);
 
     return {
-      kayitlar: sayfa.map((k) => ({
-        ...this.gorunum(k),
-        cari: k.cari,
-        ebelge: k.ebelge,
-        izinliEylemler: this.eylemler(k, ctx.rol),
-      })),
+      kayitlar: sayfa.map((k) => {
+        const odenen = k.kasaBankaHarekets.reduce(
+          (toplam, hareket) => toplam.add(hareket.tutar),
+          D(0),
+        );
+        const kalan = Prisma.Decimal.max(k.genelToplam.sub(odenen), 0);
+        return {
+          ...this.gorunum(k),
+          cari: k.cari,
+          ebelge: k.ebelge,
+          odemeOzeti: {
+            durum: k.durum !== "kesin" ? "beklemede" : kalan.isZero() ? "odendi" : odenen.greaterThan(0) ? "kismi" : "odenmedi",
+            odenen: odenen.toFixed(2),
+            kalan: kalan.toFixed(2),
+          },
+          izinliEylemler: this.eylemler(k, ctx.rol),
+        };
+      }),
       sonrakiImlec,
     };
   }
@@ -142,11 +155,24 @@ export class FaturaService {
             },
           },
           ebelge: true,
+          kasaBankaHarekets: {
+            orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
+            include: {
+              kasa: { select: { ad: true } },
+              bankaHesap: { select: { ad: true } },
+            },
+          },
         },
       }),
     );
 
     if (!kayit) throw new NotFoundException("Fatura bulunamadı");
+
+    const odenen = kayit.kasaBankaHarekets.reduce(
+      (toplam, hareket) => toplam.add(hareket.tutar),
+      new Prisma.Decimal(0),
+    );
+    const kalan = Prisma.Decimal.max(kayit.genelToplam.sub(odenen), 0);
 
     return {
       ...this.gorunum(kayit),
@@ -173,6 +199,21 @@ export class FaturaService {
         gibIstisnaKodu: s.gibIstisnaKodu,
       })),
       ebelge: kayit.ebelge,
+      odemeOzeti: {
+        durum: kayit.durum !== "kesin" ? "beklemede" : kalan.isZero() ? "odendi" : odenen.greaterThan(0) ? "kismi" : "odenmedi",
+        odenen: odenen.toFixed(2),
+        kalan: kalan.toFixed(2),
+        hareketler: kayit.kasaBankaHarekets.map((hareket) => ({
+          id: hareket.id,
+          tip: hareket.tip,
+          tutar: hareket.tutar.toFixed(2),
+          dovizCinsi: hareket.dovizCinsi,
+          tarih: hareket.tarih.toISOString().slice(0, 10),
+          aciklama: hareket.aciklama,
+          hesap: hareket.kasa?.ad ?? hareket.bankaHesap?.ad ?? "Hesap belirtilmedi",
+          createdAt: hareket.createdAt.toISOString(),
+        })),
+      },
       izinliEylemler: this.eylemler(kayit, ctx.rol),
     };
   }

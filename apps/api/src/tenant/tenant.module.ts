@@ -4,10 +4,11 @@ import { DenetimController } from "./denetim.controller";
 import { EpostaService } from "./eposta.service";
 import { KayitService } from "./kayit.service";
 import { KullanicilarController } from "./kullanicilar.controller";
+import { KullanimController } from "./kullanim.controller";
 import { TenantController } from "./tenant.controller";
 
 @Module({
-  controllers: [TenantController, KullanicilarController, DenetimController],
+  controllers: [TenantController, KullanicilarController, DenetimController, KullanimController],
   providers: [KayitService, EpostaService, BaglantilarService],
   exports: [BaglantilarService, EpostaService],
 })
