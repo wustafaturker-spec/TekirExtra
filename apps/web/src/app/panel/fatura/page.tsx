@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
 import { AramaSecici } from "@/components/arama-secici";
 import { DepoSecici } from "@/components/depo-secici";
@@ -90,6 +90,9 @@ export default function FaturaSayfasi() {
   const [epostaAdresi, setEpostaAdresi] = useState("");
   const [formAcik, setFormAcik] = useState(false);
   const [yonBaglami, setYonBaglami] = useState<"satis" | "alis" | null>(null);
+  const [acikSatir, setAcikSatir] = useState<number | null>(null);
+  const urunRefleri = useRef<Array<HTMLInputElement | null>>([]);
+  const miktarRefleri = useRef<Array<HTMLInputElement | null>>([]);
 
   // Form alanları
   const [cariId, setCariId] = useState("");
@@ -142,12 +145,23 @@ export default function FaturaSayfasi() {
   }, []);
 
   function satirEkle() {
+    const yeniIndex = satirlar.length;
     setSatirlar([...satirlar, { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" }]);
+    requestAnimationFrame(() => urunRefleri.current[yeniIndex]?.focus());
+  }
+
+  function satirKopyala(index: number) {
+    const yeni = [...satirlar];
+    yeni.splice(index + 1, 0, { ...satirlar[index] });
+    setSatirlar(yeni);
+    setAcikSatir(null);
+    requestAnimationFrame(() => miktarRefleri.current[index + 1]?.focus());
   }
 
   function satirSil(index: number) {
     if (satirlar.length === 1) return;
     setSatirlar(satirlar.filter((_, i) => i !== index));
+    setAcikSatir(null);
   }
 
   async function satirGuncelle(index: number, alan: keyof FaturaSatir, deger: string | number) {
@@ -445,7 +459,6 @@ export default function FaturaSayfasi() {
                 <col className="document-line-col--price" />
                 <col className="document-line-col--rate" />
                 <col className="document-line-col--rate" />
-                <col className="document-line-col--exception" />
                 <col className="document-line-col--total" />
                 <col className="document-line-col--action" />
               </colgroup>
@@ -456,7 +469,6 @@ export default function FaturaSayfasi() {
                   <th className="num">Birim fiyat</th>
                   <th className="num">İsk. %</th>
                   <th className="num">KDV %</th>
-                  <th>İstisna</th>
                   <th className="num">Tutar</th>
                   <th><span className="sr-only">İşlem</span></th>
                 </tr>
@@ -465,12 +477,15 @@ export default function FaturaSayfasi() {
                 {satirlar.map((s, index) => {
                   const satirSonuc = sonuc.satirlar[index];
                   return (
-                    <tr key={index}>
+                    <Fragment key={index}>
+                    <tr>
                       <td>
                         <AramaSecici
                           ariaLabel={`${index + 1}. satır ürün veya hizmet seçimi`}
                           deger={s.stokId}
+                          inputRef={(eleman) => { urunRefleri.current[index] = eleman; }}
                           onChange={(deger) => void satirGuncelle(index, "stokId", deger)}
+                          onSecim={() => requestAnimationFrame(() => miktarRefleri.current[index]?.focus())}
                           placeholder="Kod, barkod veya ürün adıyla ara"
                           secenekler={stoklar.map((stok) => ({
                             deger: stok.id,
@@ -486,16 +501,31 @@ export default function FaturaSayfasi() {
                           }))}
                         />
                       </td>
-                      <td><Input className="document-line-number" aria-label="Miktar" type="number" min="0.01" step="any" inputMode="decimal" value={s.miktar} onChange={(e) => satirGuncelle(index, "miktar", Number(e.target.value))} required /></td>
+                      <td><Input className="document-line-number" aria-label="Miktar" type="number" min="0.01" step="any" inputMode="decimal" ref={(eleman) => { miktarRefleri.current[index] = eleman; }} value={s.miktar} onChange={(e) => satirGuncelle(index, "miktar", Number(e.target.value))} required /></td>
                       <td><Input className="document-line-number" aria-label="Birim fiyat" type="number" min="0" step="any" inputMode="decimal" value={s.birimFiyat} onChange={(e) => satirGuncelle(index, "birimFiyat", Number(e.target.value))} required /></td>
                       <td><Input className="document-line-number" aria-label="İskonto yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.iskontoOrani} onChange={(e) => satirGuncelle(index, "iskontoOrani", Number(e.target.value))} /></td>
-                      <td><Input className="document-line-number" aria-label="KDV yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.kdvOrani} onChange={(e) => satirGuncelle(index, "kdvOrani", Number(e.target.value))} required /></td>
-                      <td><Input className="document-line-code" aria-label="GİB istisna kodu" type="text" placeholder="351" value={s.gibIstisnaKodu || ""} onChange={(e) => satirGuncelle(index, "gibIstisnaKodu", e.target.value)} /></td>
+                      <td><Input className="document-line-number" aria-label="KDV yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.kdvOrani} onChange={(e) => satirGuncelle(index, "kdvOrani", Number(e.target.value))} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); satirEkle(); } }} required /></td>
                       <td className="num document-line-total">{satirSonuc ? tl(satirSonuc.toplamTutar) : "0,00 TL"}</td>
                       <td className="center">
-                        <Button aria-label="Satırı sil" title="Satırı sil" variant="danger" size="sm" type="button" onClick={() => satirSil(index)}>×</Button>
+                        <Button aria-expanded={acikSatir === index} aria-label="Satır ayrıntıları" title="Satır ayrıntıları" size="sm" type="button" onClick={() => setAcikSatir(acikSatir === index ? null : index)}>⋯</Button>
                       </td>
                     </tr>
+                    {acikSatir === index && (
+                      <tr className="document-line-detail">
+                        <td colSpan={7}>
+                          <div className="document-line-detail__content">
+                            <Field label="GİB istisna kodu">
+                              <Input className="document-line-code" aria-label="GİB istisna kodu" type="text" placeholder="351" value={s.gibIstisnaKodu || ""} onChange={(e) => satirGuncelle(index, "gibIstisnaKodu", e.target.value)} />
+                            </Field>
+                            <div className="document-line-detail__actions">
+                              <Button size="sm" type="button" onClick={() => satirKopyala(index)}>Satırı kopyala</Button>
+                              <Button aria-label="Satırı sil" variant="danger" size="sm" type="button" disabled={satirlar.length === 1} onClick={() => satirSil(index)}>Satırı sil</Button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>

@@ -479,6 +479,19 @@ gelmedigi net olmalidir.
 - Kaydedilmis gorunumler
 - Kullanim metrikleri ve geri bildirim dongusu
 
+### 11.1 Uygulama durumu - 6 Agustos 2026
+
+| Paket | Durum | Tamamlananlar | Siradaki is |
+|---|---|---|---|
+| Paket 1 | Buyuk olcude tamamlandi | Satis/satin alma calisma alanlari, baglama gore filtrelenen fatura ve belge girisleri, Tum Belgeler ve Tum Faturalar erisimi | Liste durum eksenleri ve kaydedilmis is gorunumleri |
+| Paket 2 | Kismen tamamlandi | Ortak aranabilir cari ve urun secici, kod/VKN/barkod aramasi | Son/sik kullanilanlar, cari risk ozeti, hizli cari ve urun olusturma |
+| Paket 3 | Devam ediyor | Kompakt kalem tablosu, otomatik fiyat/vergi altyapisi, anlik toplamlar, Enter ile yeni satir, odak aktarimi, satir kopyalama ve satir ayrintisi | Barkod tekrar okutma, stok uyarisi ve mobil kart tipi kalem duzenleme |
+| Paket 4 | Baslanmadi | Mevcut belge donusum servisleri korunuyor | Zaman cizgisi, etki ozeti ve durum gecmisi |
+| Paket 5 | Kismen baslandi | Satis ve satin alma is kuyrugu ozetleri | Rol bazli ana sayfa, bildirimler ve kullanim metrikleri |
+
+Tamamlanan UI calismalari `2f7641c` ve `bfc93ad` commitlerinde izlenebilir.
+Bu durum tablosu her uygulama paketinden sonra guncellenmelidir.
+
 ---
 
 ## 12. Basari Metrikleri

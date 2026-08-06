@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type Ref } from "react";
 
 export interface AramaSecenegi {
   deger: string;
@@ -24,6 +24,8 @@ export function AramaSecici({
   placeholder = "Arayın ve seçin",
   bosMesaj = "Eşleşen kayıt bulunamadı.",
   ariaLabel,
+  inputRef,
+  onSecim,
 }: {
   deger: string;
   onChange: (deger: string) => void;
@@ -31,6 +33,8 @@ export function AramaSecici({
   placeholder?: string;
   bosMesaj?: string;
   ariaLabel: string;
+  inputRef?: Ref<HTMLInputElement>;
+  onSecim?: (deger: string) => void;
 }) {
   const listeId = useId();
   const kokRef = useRef<HTMLDivElement>(null);
@@ -63,6 +67,7 @@ export function AramaSecici({
 
   function sec(secenek: AramaSecenegi) {
     onChange(secenek.deger);
+    onSecim?.(secenek.deger);
     setArama("");
     setAcik(false);
     setAktifIndex(0);
@@ -104,6 +109,7 @@ export function AramaSecici({
           onKeyDown={tus}
           placeholder={secili ? secili.baslik : placeholder}
           role="combobox"
+          ref={inputRef}
           value={arama}
         />
         {deger && (

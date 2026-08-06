@@ -3,12 +3,13 @@
  * globals.css'teki tasarım sistemi sınıflarını saran, tiplenmiş React bileşenleri.
  * Renk/ölçü bilgisi burada DEĞİL — hepsi CSS token'larından gelir.
  */
-import type {
-  ButtonHTMLAttributes,
-  CSSProperties,
-  InputHTMLAttributes,
-  ReactNode,
-  SelectHTMLAttributes,
+import {
+  forwardRef,
+  type ButtonHTMLAttributes,
+  type CSSProperties,
+  type InputHTMLAttributes,
+  type ReactNode,
+  type SelectHTMLAttributes,
 } from "react";
 
 /* ─── Sınıf birleştirici ─────────────────────────────────────────────────── */
@@ -223,9 +224,11 @@ export function Field({
   );
 }
 
-export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={cx("input", className)} {...rest} />;
-}
+export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
+  function Input({ className, ...rest }, ref) {
+    return <input className={cx("input", className)} ref={ref} {...rest} />;
+  },
+);
 
 export function Select({ className, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
   return <select className={cx("select", className)} {...rest} />;

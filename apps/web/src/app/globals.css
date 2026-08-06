@@ -592,7 +592,7 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; color: var(--text); }
   overflow-x: auto;
 }
 .document-lines .table {
-  min-width: 820px;
+  min-width: 740px;
   table-layout: fixed;
 }
 .document-lines .table thead th {
@@ -631,6 +631,18 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; color: var(--text); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.document-line-detail td {
+  background: var(--surface-2);
+  padding: 0.75rem !important;
+}
+.document-line-detail__content {
+  align-items: end;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+.document-line-detail__content .field { max-width: 220px; width: 100%; }
+.document-line-detail__actions { display: flex; gap: 0.5rem; }
 .sr-only {
   clip: rect(0, 0, 0, 0);
   clip-path: inset(50%);
@@ -1009,6 +1021,9 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; color: var(--text); }
   .document-summary-row .btn { justify-content: center; width: 100%; }
   .document-totals { min-width: 0; width: 100%; }
   .document-editor__actions .btn { justify-content: center; width: 100%; }
+  .document-line-detail__content { align-items: stretch; flex-direction: column; }
+  .document-line-detail__content .field { max-width: none; }
+  .document-line-detail__actions .btn { flex: 1; justify-content: center; }
   .record-fields--stock-main,
   .record-fields--stock-price,
   .record-fields--cari-main,
