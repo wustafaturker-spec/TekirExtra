@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
 import { AramaSecici } from "@/components/arama-secici";
 import { DepoSecici } from "@/components/depo-secici";
+import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
 import { faturaHesapla, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
@@ -25,10 +26,20 @@ interface Cari {
   vknTckn?: string | null;
 }
 
+interface CariSecimOzeti extends Cari {
+  bakiyeler: { dovizCinsi: string; bakiye: string }[];
+  risk: { mevcutRisk: string; limit: string | null; kalanLimit: string | null; asim: boolean };
+  varsayilanVadeGun?: number | null;
+  eFaturaMukellefi?: boolean | null;
+}
+
 interface Stok {
   id: string;
   kod: string;
   ad: string;
+  barkod?: string | null;
+  anaBirim?: string;
+  kullanilabilirMiktar?: string;
   alisFiyati: string | null;
   satisFiyati: string | null;
   kdvOrani: string;
@@ -93,9 +104,21 @@ export default function FaturaSayfasi() {
   const [acikSatir, setAcikSatir] = useState<number | null>(null);
   const urunRefleri = useRef<Array<HTMLInputElement | null>>([]);
   const miktarRefleri = useRef<Array<HTMLInputElement | null>>([]);
+  const [hizliPanel, setHizliPanel] = useState<"cari" | "stok" | null>(null);
+  const [hizliStokSatir, setHizliStokSatir] = useState(0);
+  const [hizliHata, setHizliHata] = useState("");
+  const [yeniCariKod, setYeniCariKod] = useState("");
+  const [yeniCariUnvan, setYeniCariUnvan] = useState("");
+  const [yeniCariVkn, setYeniCariVkn] = useState("");
+  const [yeniStokKod, setYeniStokKod] = useState("");
+  const [yeniStokAd, setYeniStokAd] = useState("");
+  const [yeniStokBarkod, setYeniStokBarkod] = useState("");
+  const [yeniStokKdv, setYeniStokKdv] = useState("20");
+  const [yeniStokFiyat, setYeniStokFiyat] = useState("");
 
   // Form alanları
   const [cariId, setCariId] = useState("");
+  const [cariOzeti, setCariOzeti] = useState<CariSecimOzeti | null>(null);
   const [depoId, setDepoId] = useState("");
   const [tip, setTip] = useState("satis");
   const [tarih, setTarih] = useState(new Date().toISOString().substring(0, 10));
@@ -144,6 +167,18 @@ export default function FaturaSayfasi() {
     if (parametreler.get("yeni") === "1") setFormAcik(true);
   }, []);
 
+  useEffect(() => {
+    if (!cariId || !tokenAl()) {
+      setCariOzeti(null);
+      return;
+    }
+    let gecerli = true;
+    api<CariSecimOzeti>(`/cari/${cariId}`)
+      .then((ozet) => { if (gecerli) setCariOzeti(ozet); })
+      .catch(() => { if (gecerli) setCariOzeti(null); });
+    return () => { gecerli = false; };
+  }, [cariId]);
+
   function satirEkle() {
     const yeniIndex = satirlar.length;
     setSatirlar([...satirlar, { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" }]);
@@ -187,6 +222,82 @@ export default function FaturaSayfasi() {
       }
     }
     setSatirlar(yeni);
+  }
+
+  function urunSec(index: number, deger: string) {
+    if (deger && satirlar[index].stokId === deger) {
+      setSatirlar((eskiler) => eskiler.map((satir, satirIndex) =>
+        satirIndex === index ? { ...satir, miktar: Number(satir.miktar) + 1 } : satir,
+      ));
+      return;
+    }
+    void satirGuncelle(index, "stokId", deger);
+  }
+
+  async function hizliCariOlustur(event: React.FormEvent) {
+    event.preventDefault();
+    setHizliHata("");
+    try {
+      const yeni = await api<Cari>("/cari", {
+        method: "POST",
+        body: JSON.stringify({
+          kod: yeniCariKod,
+          unvan: yeniCariUnvan,
+          tip: tip === "alis" ? "tedarikci" : "musteri",
+          kisiTipi: "tuzel",
+          vknTckn: yeniCariVkn || undefined,
+        }),
+      });
+      setCariler((eskiler) => [yeni, ...eskiler]);
+      setCariId(yeni.id);
+      setHizliPanel(null);
+      setYeniCariKod("");
+      setYeniCariUnvan("");
+      setYeniCariVkn("");
+      setBasari(`${yeni.unvan} oluşturuldu ve faturaya seçildi.`);
+    } catch (h) {
+      setHizliHata(h instanceof Error ? h.message : "Cari oluşturulamadı");
+    }
+  }
+
+  async function hizliStokOlustur(event: React.FormEvent) {
+    event.preventDefault();
+    setHizliHata("");
+    try {
+      const yeni = await api<Stok>("/stok", {
+        method: "POST",
+        body: JSON.stringify({
+          kod: yeniStokKod,
+          ad: yeniStokAd,
+          tip: "urun",
+          barkod: yeniStokBarkod || null,
+          kdvOrani: yeniStokKdv,
+          alisFiyati: tip === "alis" && yeniStokFiyat ? yeniStokFiyat : null,
+          satisFiyati: tip !== "alis" && yeniStokFiyat ? yeniStokFiyat : null,
+        }),
+      });
+      setStoklar((eskiler) => [yeni, ...eskiler]);
+      setSatirlar((eskiler) => eskiler.map((satir, index) =>
+        index === hizliStokSatir
+          ? {
+              ...satir,
+              stokId: yeni.id,
+              kdvOrani: Number(yeni.kdvOrani),
+              birimFiyat: Number(tip === "alis" ? yeni.alisFiyati ?? 0 : yeni.satisFiyati ?? 0),
+            }
+          : satir,
+      ));
+      setHizliPanel(null);
+      setYeniStokKod("");
+      setYeniStokAd("");
+      setYeniStokBarkod("");
+      setYeniStokKdv("20");
+      setYeniStokFiyat("");
+      setBasari(`${yeni.ad} oluşturuldu ve satıra seçildi.`);
+      requestAnimationFrame(() => miktarRefleri.current[hizliStokSatir]?.focus());
+    } catch (h) {
+      setHizliHata(h instanceof Error ? h.message : "Ürün oluşturulamadı");
+    }
   }
 
   useEffect(() => {
@@ -424,8 +535,13 @@ export default function FaturaSayfasi() {
                 <AramaSecici
                   ariaLabel={tip === "alis" ? "Tedarikçi ara" : "Müşteri ara"}
                   deger={cariId}
+                  kullanimAnahtari="tekir_son_cariler"
                   onChange={setCariId}
                   placeholder="Ünvan, cari kodu veya VKN ile ara"
+                  yeniKayit={{
+                    etiket: tip === "alis" ? "Yeni tedarikçi oluştur" : "Yeni müşteri oluştur",
+                    onClick: () => { setHizliHata(""); setHizliPanel("cari"); },
+                  }}
                   secenekler={cariler.map((cari) => ({
                     deger: cari.id,
                     baslik: cari.unvan,
@@ -448,9 +564,19 @@ export default function FaturaSayfasi() {
                 <DepoSecici deger={depoId} onChange={setDepoId} />
               </div>
             </div>
+            {cariOzeti && (
+              <div className={`customer-context${cariOzeti.risk.asim ? " is-warning" : ""}`}>
+                <div><span>TRY bakiye</span><strong>{tl(cariOzeti.bakiyeler.find((b) => b.dovizCinsi === "TRY")?.bakiye ?? 0)}</strong></div>
+                <div><span>Mevcut risk</span><strong>{tl(cariOzeti.risk.mevcutRisk)}</strong></div>
+                <div><span>Kullanılabilir limit</span><strong>{cariOzeti.risk.kalanLimit === null ? "Limit yok" : tl(cariOzeti.risk.kalanLimit)}</strong></div>
+                <div><span>Varsayılan vade</span><strong>{cariOzeti.varsayilanVadeGun ? `${cariOzeti.varsayilanVadeGun} gün` : "Tanımsız"}</strong></div>
+                <div><span>e-Belge</span><strong>{cariOzeti.eFaturaMukellefi ? "e-Fatura" : "e-Arşiv"}</strong></div>
+                {cariOzeti.risk.asim && <p>Risk limiti aşılmış. Kesinleştirmeden önce cari durumunu kontrol edin.</p>}
+              </div>
+            )}
           </div>
 
-          <div className="document-editor__section document-lines">
+          <div className="document-editor__section document-lines invoice-lines">
             <h4 className="document-editor__section-title">Fatura kalemleri</h4>
             <TableWrap>
               <colgroup>
@@ -476,37 +602,57 @@ export default function FaturaSayfasi() {
               <tbody>
                 {satirlar.map((s, index) => {
                   const satirSonuc = sonuc.satirlar[index];
+                  const seciliStok = stoklar.find((stok) => stok.id === s.stokId);
+                  const kullanilabilir = Number(seciliStok?.kullanilabilirMiktar ?? 0);
+                  const stokYetersiz = tip === "satis" && seciliStok?.kullanilabilirMiktar !== undefined && Number(s.miktar) > kullanilabilir;
                   return (
                     <Fragment key={index}>
                     <tr>
-                      <td>
+                      <td className="invoice-line__product">
                         <AramaSecici
                           ariaLabel={`${index + 1}. satır ürün veya hizmet seçimi`}
                           deger={s.stokId}
+                          kullanimAnahtari="tekir_son_urunler"
                           inputRef={(eleman) => { urunRefleri.current[index] = eleman; }}
-                          onChange={(deger) => void satirGuncelle(index, "stokId", deger)}
-                          onSecim={() => requestAnimationFrame(() => miktarRefleri.current[index]?.focus())}
+                          onChange={(deger) => urunSec(index, deger)}
+                          onSecim={(deger) => requestAnimationFrame(() => {
+                            if (s.stokId === deger) urunRefleri.current[index]?.focus();
+                            else miktarRefleri.current[index]?.focus();
+                          })}
                           placeholder="Kod, barkod veya ürün adıyla ara"
+                          yeniKayit={{
+                            etiket: "Yeni ürün oluştur",
+                            onClick: () => { setHizliHata(""); setHizliStokSatir(index); setHizliPanel("stok"); },
+                          }}
                           secenekler={stoklar.map((stok) => ({
                             deger: stok.id,
                             baslik: stok.ad,
                             aciklama: [
                               stok.kod,
+                              stok.barkod && `Barkod: ${stok.barkod}`,
+                              stok.kullanilabilirMiktar !== undefined && `Stok: ${Number(stok.kullanilabilirMiktar).toLocaleString("tr-TR")} ${stok.anaBirim ?? "adet"}`,
                               tip === "alis"
                                 ? stok.alisFiyati && `Alış: ${tl(stok.alisFiyati)}`
                                 : stok.satisFiyati && `Satış: ${tl(stok.satisFiyati)}`,
                               `KDV %${Number(stok.kdvOrani)}`,
                             ].filter(Boolean).join(" · "),
-                            aramaMetni: stok.kod,
+                            aramaMetni: [stok.kod, stok.barkod].filter(Boolean).join(" "),
                           }))}
                         />
+                        {seciliStok && (
+                          <span className={`document-line-stock${stokYetersiz ? " is-warning" : ""}`}>
+                            {stokYetersiz
+                              ? `Yetersiz stok: ${kullanilabilir.toLocaleString("tr-TR")} ${seciliStok.anaBirim ?? "adet"} kullanılabilir`
+                              : `Stok: ${kullanilabilir.toLocaleString("tr-TR")} ${seciliStok.anaBirim ?? "adet"}`}
+                          </span>
+                        )}
                       </td>
-                      <td><Input className="document-line-number" aria-label="Miktar" type="number" min="0.01" step="any" inputMode="decimal" ref={(eleman) => { miktarRefleri.current[index] = eleman; }} value={s.miktar} onChange={(e) => satirGuncelle(index, "miktar", Number(e.target.value))} required /></td>
-                      <td><Input className="document-line-number" aria-label="Birim fiyat" type="number" min="0" step="any" inputMode="decimal" value={s.birimFiyat} onChange={(e) => satirGuncelle(index, "birimFiyat", Number(e.target.value))} required /></td>
-                      <td><Input className="document-line-number" aria-label="İskonto yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.iskontoOrani} onChange={(e) => satirGuncelle(index, "iskontoOrani", Number(e.target.value))} /></td>
-                      <td><Input className="document-line-number" aria-label="KDV yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.kdvOrani} onChange={(e) => satirGuncelle(index, "kdvOrani", Number(e.target.value))} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); satirEkle(); } }} required /></td>
-                      <td className="num document-line-total">{satirSonuc ? tl(satirSonuc.toplamTutar) : "0,00 TL"}</td>
-                      <td className="center">
+                      <td className="invoice-line__field" data-label="Miktar"><Input className="document-line-number" aria-label="Miktar" type="number" min="0.01" step="any" inputMode="decimal" ref={(eleman) => { miktarRefleri.current[index] = eleman; }} value={s.miktar} onChange={(e) => satirGuncelle(index, "miktar", Number(e.target.value))} required /></td>
+                      <td className="invoice-line__field" data-label="Birim fiyat"><Input className="document-line-number" aria-label="Birim fiyat" type="number" min="0" step="any" inputMode="decimal" value={s.birimFiyat} onChange={(e) => satirGuncelle(index, "birimFiyat", Number(e.target.value))} required /></td>
+                      <td className="invoice-line__field" data-label="İskonto %"><Input className="document-line-number" aria-label="İskonto yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.iskontoOrani} onChange={(e) => satirGuncelle(index, "iskontoOrani", Number(e.target.value))} /></td>
+                      <td className="invoice-line__field" data-label="KDV %"><Input className="document-line-number" aria-label="KDV yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.kdvOrani} onChange={(e) => satirGuncelle(index, "kdvOrani", Number(e.target.value))} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); satirEkle(); } }} required /></td>
+                      <td className="num document-line-total invoice-line__total" data-label="Tutar">{satirSonuc ? tl(satirSonuc.toplamTutar) : "0,00 TL"}</td>
+                      <td className="center invoice-line__action">
                         <Button aria-expanded={acikSatir === index} aria-label="Satır ayrıntıları" title="Satır ayrıntıları" size="sm" type="button" onClick={() => setAcikSatir(acikSatir === index ? null : index)}>⋯</Button>
                       </td>
                     </tr>
@@ -554,6 +700,38 @@ export default function FaturaSayfasi() {
             <Button variant="primary" onClick={kaydet}>Taslak faturayı kaydet</Button>
           </div>
         </div>
+      )}
+
+      {hizliPanel === "cari" && (
+        <HizliKayitPaneli baslik={tip === "alis" ? "Yeni tedarikçi" : "Yeni müşteri"} onKapat={() => setHizliPanel(null)}>
+          <form className="quick-panel__form" onSubmit={hizliCariOlustur}>
+            <Alert tone="error">{hizliHata}</Alert>
+            <Field label="Ünvan / Ad soyad"><Input autoFocus value={yeniCariUnvan} onChange={(e) => setYeniCariUnvan(e.target.value)} required /></Field>
+            <Field label="Cari kodu"><Input value={yeniCariKod} onChange={(e) => setYeniCariKod(e.target.value)} required placeholder="CARI-001" /></Field>
+            <Field label="VKN / TCKN"><Input inputMode="numeric" value={yeniCariVkn} onChange={(e) => setYeniCariVkn(e.target.value)} placeholder="İsteğe bağlı" /></Field>
+            <div className="quick-panel__actions">
+              <Button type="button" onClick={() => setHizliPanel(null)}>Vazgeç</Button>
+              <Button type="submit" variant="primary">Oluştur ve seç</Button>
+            </div>
+          </form>
+        </HizliKayitPaneli>
+      )}
+
+      {hizliPanel === "stok" && (
+        <HizliKayitPaneli baslik="Yeni ürün" onKapat={() => setHizliPanel(null)}>
+          <form className="quick-panel__form" onSubmit={hizliStokOlustur}>
+            <Alert tone="error">{hizliHata}</Alert>
+            <Field label="Ürün adı"><Input autoFocus value={yeniStokAd} onChange={(e) => setYeniStokAd(e.target.value)} required /></Field>
+            <Field label="Stok kodu"><Input value={yeniStokKod} onChange={(e) => setYeniStokKod(e.target.value)} required placeholder="STK-001" /></Field>
+            <Field label="Barkod"><Input value={yeniStokBarkod} onChange={(e) => setYeniStokBarkod(e.target.value)} /></Field>
+            <Field label={tip === "alis" ? "Alış fiyatı (TRY)" : "Satış fiyatı (TRY)"}><Input className="record-number" type="number" min="0" step="0.0001" inputMode="decimal" value={yeniStokFiyat} onChange={(e) => setYeniStokFiyat(e.target.value)} placeholder="0,00" /></Field>
+            <Field label="KDV (%)"><Input className="record-number" type="number" min="0" max="100" inputMode="decimal" value={yeniStokKdv} onChange={(e) => setYeniStokKdv(e.target.value)} required /></Field>
+            <div className="quick-panel__actions">
+              <Button type="button" onClick={() => setHizliPanel(null)}>Vazgeç</Button>
+              <Button type="submit" variant="primary">Oluştur ve seç</Button>
+            </div>
+          </form>
+        </HizliKayitPaneli>
       )}
 
       <Card pad={false}>

@@ -484,8 +484,8 @@ gelmedigi net olmalidir.
 | Paket | Durum | Tamamlananlar | Siradaki is |
 |---|---|---|---|
 | Paket 1 | Buyuk olcude tamamlandi | Satis/satin alma calisma alanlari, baglama gore filtrelenen fatura ve belge girisleri, Tum Belgeler ve Tum Faturalar erisimi | Liste durum eksenleri ve kaydedilmis is gorunumleri |
-| Paket 2 | Kismen tamamlandi | Ortak aranabilir cari ve urun secici, kod/VKN/barkod aramasi | Son/sik kullanilanlar, cari risk ozeti, hizli cari ve urun olusturma |
-| Paket 3 | Devam ediyor | Kompakt kalem tablosu, otomatik fiyat/vergi altyapisi, anlik toplamlar, Enter ile yeni satir, odak aktarimi, satir kopyalama ve satir ayrintisi | Barkod tekrar okutma, stok uyarisi ve mobil kart tipi kalem duzenleme |
+| Paket 2 | Tamamlandi | Ortak aranabilir cari ve urun secici, kod/VKN/barkod aramasi, son/sik kullanilan siralamasi, cari bakiye/risk ozeti, fatura icinden hizli cari ve urun olusturma | Kullanici testi ve metrik takibi |
+| Paket 3 | Tamamlandi | Kompakt masaustu tablosu ve mobil kalem bloklari, otomatik fiyat/vergi altyapisi, anlik toplamlar, Enter ile yeni satir, odak aktarimi, satir kopyalama, satir ayrintisi, barkod tekrar okutma ve stok yeterlilik uyarisi | Kullanici testi ve metrik takibi |
 | Paket 4 | Baslanmadi | Mevcut belge donusum servisleri korunuyor | Zaman cizgisi, etki ozeti ve durum gecmisi |
 | Paket 5 | Kismen baslandi | Satis ve satin alma is kuyrugu ozetleri | Rol bazli ana sayfa, bildirimler ve kullanim metrikleri |
 

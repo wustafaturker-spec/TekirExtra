@@ -9,6 +9,12 @@ export interface AramaSecenegi {
   aramaMetni?: string;
 }
 
+interface KullanimKaydi {
+  deger: string;
+  sayac: number;
+  sonKullanim: number;
+}
+
 function normalize(metin: string): string {
   return metin
     .toLocaleLowerCase("tr")
@@ -26,6 +32,8 @@ export function AramaSecici({
   ariaLabel,
   inputRef,
   onSecim,
+  yeniKayit,
+  kullanimAnahtari,
 }: {
   deger: string;
   onChange: (deger: string) => void;
@@ -35,6 +43,8 @@ export function AramaSecici({
   ariaLabel: string;
   inputRef?: Ref<HTMLInputElement>;
   onSecim?: (deger: string) => void;
+  yeniKayit?: { etiket: string; onClick: () => void };
+  kullanimAnahtari?: string;
 }) {
   const listeId = useId();
   const kokRef = useRef<HTMLDivElement>(null);
@@ -42,10 +52,33 @@ export function AramaSecici({
   const [acik, setAcik] = useState(false);
   const [arama, setArama] = useState("");
   const [aktifIndex, setAktifIndex] = useState(0);
+  const [kullanim, setKullanim] = useState<KullanimKaydi[]>([]);
+
+  useEffect(() => {
+    if (!kullanimAnahtari) return;
+    try {
+      const kayitlar = JSON.parse(localStorage.getItem(kullanimAnahtari) ?? "[]") as KullanimKaydi[];
+      setKullanim(Array.isArray(kayitlar) ? kayitlar : []);
+    } catch {
+      setKullanim([]);
+    }
+  }, [kullanimAnahtari]);
 
   const gorunenler = useMemo(() => {
     const sorgu = normalize(arama);
-    if (!sorgu) return secenekler.slice(0, 50);
+    if (!sorgu) {
+      const puanlar = new Map(kullanim.map((kayit) => [kayit.deger, kayit]));
+      return [...secenekler]
+        .sort((a, b) => {
+          const aKayit = puanlar.get(a.deger);
+          const bKayit = puanlar.get(b.deger);
+          if (!aKayit && !bKayit) return 0;
+          if (!aKayit) return 1;
+          if (!bKayit) return -1;
+          return bKayit.sayac - aKayit.sayac || bKayit.sonKullanim - aKayit.sonKullanim;
+        })
+        .slice(0, 50);
+    }
     return secenekler
       .filter((secenek) =>
         normalize(
@@ -55,7 +88,7 @@ export function AramaSecici({
         ).includes(sorgu),
       )
       .slice(0, 50);
-  }, [arama, secenekler]);
+  }, [arama, kullanim, secenekler]);
 
   useEffect(() => {
     function disTiklama(event: MouseEvent) {
@@ -66,6 +99,15 @@ export function AramaSecici({
   }, []);
 
   function sec(secenek: AramaSecenegi) {
+    if (kullanimAnahtari) {
+      const mevcut = kullanim.find((kayit) => kayit.deger === secenek.deger);
+      const yeniKayitlar = [
+        { deger: secenek.deger, sayac: (mevcut?.sayac ?? 0) + 1, sonKullanim: Date.now() },
+        ...kullanim.filter((kayit) => kayit.deger !== secenek.deger),
+      ].slice(0, 25);
+      setKullanim(yeniKayitlar);
+      localStorage.setItem(kullanimAnahtari, JSON.stringify(yeniKayitlar));
+    }
     onChange(secenek.deger);
     onSecim?.(secenek.deger);
     setArama("");
@@ -152,6 +194,19 @@ export function AramaSecici({
                 {secenek.aciklama && <small>{secenek.aciklama}</small>}
               </button>
             ))
+          )}
+          {yeniKayit && (
+            <button
+              className="combobox__create"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                setAcik(false);
+                yeniKayit.onClick();
+              }}
+              type="button"
+            >
+              + {yeniKayit.etiket}
+            </button>
           )}
         </div>
       )}
