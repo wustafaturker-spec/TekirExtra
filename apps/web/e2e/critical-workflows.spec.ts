@@ -308,7 +308,7 @@ test("teklif, sipariş, irsaliye ve fatura zinciri bulunup gezilebilir", async (
     if (id === "b1") return route.fulfill({ json: {
       ...ortak, id: "b1", tur: "teklif", no: "TK-001", faturaId: "f1", kaynakBelge: null,
       turetilenler: [{ id: "b2", tur: "siparis", no: "SP-001", durum: "onaylandi" }],
-      fatura: { id: "f1", no: "SAT-001", durum: "kesin", ebelge: { tur: "efatura", durum: "kabul" }, odemeOzeti: { durum: "kismi", odenen: "400.00", kalan: "800.00" } },
+      fatura: { id: "f1", no: "SAT-001", durum: "kesin", ebelge: { tur: "efatura", durum: "hata" }, odemeOzeti: { durum: "kismi", odenen: "400.00", kalan: "800.00" } },
     } });
     return route.fulfill({ json: {
       ...ortak, id: "b2", tur: "siparis", no: "SP-001", faturaId: "f1",
@@ -326,10 +326,15 @@ test("teklif, sipariş, irsaliye ve fatura zinciri bulunup gezilebilir", async (
   await expect(zincir).toContainText("IRS-001");
   await expect(zincir).toContainText("SAT-001");
   await expect(zincir.getByRole("link", { name: /Fatura SAT-001/ })).toHaveAttribute("href", "/panel/fatura?faturaId=f1");
-  await expect(zincir.getByRole("link", { name: /e-Belge kabul/ })).toHaveAttribute("href", "/panel/fatura?faturaId=f1&panel=ebelge");
-  await expect(zincir.getByRole("link", { name: /Tahsilat\/Ödeme kismi/ })).toHaveAttribute("href", "/panel/fatura?faturaId=f1&panel=odeme");
+  const ebelgeAdimi = zincir.getByRole("link", { name: /e-Belge Kabul edildi/ });
+  await expect(ebelgeAdimi).toHaveAttribute("href", "/panel/fatura?faturaId=f1&panel=ebelge");
+  await expect(ebelgeAdimi).toHaveClass(/is-complete/);
+  const odemeAdimi = zincir.getByRole("link", { name: /Tahsilat\/Ödeme Kısmi ödendi/ });
+  await expect(odemeAdimi).toHaveAttribute("href", "/panel/fatura?faturaId=f1&panel=odeme");
+  await expect(odemeAdimi).toHaveClass(/is-current/);
 
   await zincir.getByRole("button", { name: /Teklif TK-001/ }).click();
   await expect(page.getByRole("heading", { level: 3, name: /Teklif TK-001/ })).toBeVisible();
   await expect(zincir.getByRole("button", { name: /Teklif Mevcut/ })).toBeDisabled();
+  await expect(zincir.getByRole("link", { name: /e-Belge Hata/ })).toHaveClass(/is-error/);
 });

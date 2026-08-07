@@ -685,6 +685,8 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 .document-timeline__step.is-complete > span { border-color: var(--success); }
 .document-timeline__step.is-current { color: var(--accent-text); }
 .document-timeline__step.is-current > span { border-color: var(--accent); box-shadow: var(--ring); }
+.document-timeline__step.is-error { color: var(--danger); }
+.document-timeline__step.is-error > span { border-color: var(--danger); }
 .approval-summary { display: grid; gap: 1rem; }
 .approval-summary__identity { display: grid; gap: 0.2rem; }
 .approval-summary__identity span { color: var(--text-muted); font-size: 0.84rem; }
