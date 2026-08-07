@@ -308,12 +308,22 @@ test("teklif, sipariş, irsaliye ve fatura zinciri bulunup gezilebilir", async (
     if (id === "b1") return route.fulfill({ json: {
       ...ortak, id: "b1", tur: "teklif", no: "TK-001", faturaId: "f1", kaynakBelge: null,
       turetilenler: [{ id: "b2", tur: "siparis", no: "SP-001", durum: "onaylandi" }],
+      zincirBelgeleri: [
+        { id: "b1", tur: "teklif", no: "TK-001", durum: "onaylandi" },
+        { id: "b2", tur: "siparis", no: "SP-001", durum: "onaylandi" },
+        { id: "b3", tur: "irsaliye", no: "IRS-001", durum: "onaylandi" },
+      ],
       fatura: { id: "f1", no: "SAT-001", durum: "kesin", ebelge: { tur: "efatura", durum: "hata" }, odemeOzeti: { durum: "kismi", odenen: "400.00", kalan: "800.00" } },
     } });
     return route.fulfill({ json: {
       ...ortak, id: "b2", tur: "siparis", no: "SP-001", faturaId: "f1",
       kaynakBelge: { id: "b1", tur: "teklif", no: "TK-001", durum: "onaylandi" },
       turetilenler: [{ id: "b3", tur: "irsaliye", no: "IRS-001", durum: "onaylandi" }],
+      zincirBelgeleri: [
+        { id: "b1", tur: "teklif", no: "TK-001", durum: "onaylandi" },
+        { id: "b2", tur: "siparis", no: "SP-001", durum: "onaylandi" },
+        { id: "b3", tur: "irsaliye", no: "IRS-001", durum: "onaylandi" },
+      ],
       fatura: { id: "f1", no: "SAT-001", durum: "kesin", ebelge: { tur: "efatura", durum: "kabul" }, odemeOzeti: { durum: "kismi", odenen: "400.00", kalan: "800.00" } },
     } });
   });
@@ -336,5 +346,6 @@ test("teklif, sipariş, irsaliye ve fatura zinciri bulunup gezilebilir", async (
   await zincir.getByRole("button", { name: /Teklif TK-001/ }).click();
   await expect(page.getByRole("heading", { level: 3, name: /Teklif TK-001/ })).toBeVisible();
   await expect(zincir.getByRole("button", { name: /Teklif Mevcut/ })).toBeDisabled();
+  await expect(zincir.getByRole("button", { name: /İrsaliye IRS-001/ })).toBeEnabled();
   await expect(zincir.getByRole("link", { name: /e-Belge Hata/ })).toHaveClass(/is-error/);
 });

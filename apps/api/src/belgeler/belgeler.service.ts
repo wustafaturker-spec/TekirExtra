@@ -120,8 +120,14 @@ export class BelgelerService {
         include: {
           cari: { select: { id: true, kod: true, unvan: true, vknTckn: true } },
           satirlar: { include: { stok: { select: { id: true, kod: true, ad: true } } } },
-          kaynakBelge: { select: { id: true, tur: true, no: true, durum: true } },
-          turetilenler: { select: { id: true, tur: true, no: true, durum: true } },
+          kaynakBelge: { select: {
+            id: true, tur: true, no: true, durum: true,
+            kaynakBelge: { select: { id: true, tur: true, no: true, durum: true } },
+          } },
+          turetilenler: { select: {
+            id: true, tur: true, no: true, durum: true,
+            turetilenler: { select: { id: true, tur: true, no: true, durum: true } },
+          } },
           fatura: {
             select: {
               id: true, no: true, durum: true, genelToplam: true,
@@ -133,6 +139,17 @@ export class BelgelerService {
       }),
     );
     if (!kayit) throw new NotFoundException("Belge bulunamadı");
+    const zincirBelgeleri = new Map<string, { id: string; tur: BelgeTur; no: string | null; durum: ZincirBelgeDurum }>();
+    const zincireEkle = (belge: { id: string; tur: BelgeTur; no: string | null; durum: ZincirBelgeDurum } | null | undefined) => {
+      if (belge) zincirBelgeleri.set(belge.id, { id: belge.id, tur: belge.tur, no: belge.no, durum: belge.durum });
+    };
+    zincireEkle(kayit.kaynakBelge?.kaynakBelge);
+    zincireEkle(kayit.kaynakBelge);
+    zincireEkle(kayit);
+    for (const turetilen of kayit.turetilenler) {
+      zincireEkle(turetilen);
+      for (const altBelge of turetilen.turetilenler) zincireEkle(altBelge);
+    }
     return {
       ...this.gorunum(kayit),
       cari: kayit.cari,
@@ -150,7 +167,8 @@ export class BelgelerService {
         kdvTutari: s.kdvTutari.toFixed(2),
         toplamTutar: s.toplamTutar.toFixed(2),
       })),
-      // Zincir izleme (FTR-12): önceki belge, türetilenler ve fatura bağı
+      // Zincir izleme (FTR-12): tüm teklif, sipariş ve irsaliye halkaları
+      zincirBelgeleri: [...zincirBelgeleri.values()],
       kaynakBelge: kayit.kaynakBelge,
       turetilenler: kayit.turetilenler,
       fatura: kayit.fatura ? (() => {

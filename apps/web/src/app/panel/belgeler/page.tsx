@@ -75,6 +75,7 @@ interface BelgeDetay extends Belge {
   notlar: string | null;
   kaynakBelge: ZincirRef | null;
   turetilenler: ZincirRef[];
+  zincirBelgeleri?: ZincirRef[];
   fatura: {
     id: string; no: string | null; durum: string;
     ebelge: { tur: string; durum: string } | null;
@@ -537,11 +538,12 @@ export default function BelgelerSayfasi() {
           </div>
           <div className="document-timeline" aria-label="Belge yaşam döngüsü">
             {(["teklif", "siparis", "irsaliye"] as const).map((adim) => {
-              const kayit = detay.tur === adim
+              const tamZincirKaydi = detay.zincirBelgeleri?.find((belge) => belge.tur === adim);
+              const kayit = tamZincirKaydi ?? (detay.tur === adim
                 ? { id: detay.id, tur: detay.tur, no: detay.no, durum: detay.durum }
                 : detay.kaynakBelge?.tur === adim
                   ? detay.kaynakBelge
-                  : detay.turetilenler.find((t) => t.tur === adim);
+                  : detay.turetilenler.find((t) => t.tur === adim));
               const mevcut = detay.tur === adim;
               const hedefAdim = adim === "teklif" ? null : adim;
               const olusturulabilir = detay.durum === "onaylandi" && !kayit && hedefAdim !== null && DONUSUM[detay.tur]?.includes(hedefAdim);
