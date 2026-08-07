@@ -924,6 +924,7 @@ export default function FaturaSayfasi() {
                 <div><dt>Kalem</dt><dd>{fatura.satirlar.length}</dd></div>
                 <div><dt>Toplam miktar</dt><dd>{toplamMiktar.toLocaleString("tr-TR")}</dd></div>
                 <div><dt>Matrah</dt><dd>{tl(fatura.toplamMatrah)}</dd></div>
+                <div><dt>KDV</dt><dd>{tl(fatura.toplamKdv)}</dd></div>
                 <div><dt>Genel toplam</dt><dd>{tl(fatura.genelToplam)}</dd></div>
               </dl>
               <div className="approval-effects">

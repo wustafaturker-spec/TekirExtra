@@ -135,3 +135,34 @@ test("ana sayfa role uygun iş kuyruklarını ve finansal görünürlüğü suna
   await expect(page.getByRole("heading", { name: "Finansal görünüm" })).toBeVisible();
   await expect(page.getByText("4.500,00 TL")).toBeVisible();
 });
+
+
+test("kesinleştirme öncesi stok, cari, vergi ve e-Belge etkisi gösterilir", async ({ page }) => {
+  await page.route("http://localhost:3001/api/v1/fatura", (route) => route.fulfill({ json: { kayitlar: [{
+    id: "f1", no: null, tip: "satis", tarih: "2026-08-07", durum: "taslak",
+    toplamMatrah: "1000.00", toplamKdv: "200.00", genelToplam: "1200.00",
+    cari: { unvan: "Örnek Müşteri AŞ" }, odemeOzeti: { durum: "beklemede", odenen: "0", kalan: "1200" },
+  }] } }));
+  await page.route("http://localhost:3001/api/v1/fatura/f1", (route) => route.fulfill({ json: {
+    id: "f1", no: null, tip: "satis", tarih: "2026-08-07", durum: "taslak", dovizCinsi: "TRY",
+    toplamMatrah: "1000.00", toplamKdv: "200.00", genelToplam: "1200.00",
+    cari: { id: "c1", kod: "C001", unvan: "Örnek Müşteri AŞ", vknTckn: "1234567890", eFaturaMukellefi: true },
+    satirlar: [{ stokId: "s1", stokKod: "S001", stokAd: "Ürün", miktar: "2", birim: "adet" }],
+    odemeOzeti: { durum: "beklemede", odenen: "0", kalan: "1200", hareketler: [] },
+  } }));
+  await page.route("http://localhost:3001/api/v1/cari/c1", (route) => route.fulfill({ json: {
+    id: "c1", unvan: "Örnek Müşteri AŞ", bakiyeler: [],
+    risk: { mevcutRisk: "300.00", limit: "5000.00", kalanLimit: "4700.00", asim: false },
+  } }));
+
+  await page.goto("/panel/fatura");
+  await page.getByRole("button", { name: /Kesinleştir/ }).click();
+  const panel = page.getByRole("dialog", { name: "Faturayı kesinleştir" });
+  await expect(panel).toBeVisible();
+  await expect(panel).toContainText("KDV");
+  await expect(panel).toContainText("200,00 TL");
+  await expect(panel).toContainText("2 birim azalacak");
+  await expect(panel).toContainText("1.200,00 TL borç yazılacak");
+  await expect(panel).toContainText("e-Fatura kuyruğa alınacak");
+  await expect(panel).toContainText("1.500,00 TL");
+});
