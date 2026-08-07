@@ -122,7 +122,13 @@ export class BelgelerService {
           satirlar: { include: { stok: { select: { id: true, kod: true, ad: true } } } },
           kaynakBelge: { select: { id: true, tur: true, no: true, durum: true } },
           turetilenler: { select: { id: true, tur: true, no: true, durum: true } },
-          fatura: { select: { id: true, no: true, durum: true } },
+          fatura: {
+            select: {
+              id: true, no: true, durum: true, genelToplam: true,
+              ebelge: { select: { tur: true, durum: true } },
+              kasaBankaHarekets: { select: { tutar: true } },
+            },
+          },
         },
       }),
     );
@@ -147,7 +153,21 @@ export class BelgelerService {
       // Zincir izleme (FTR-12): önceki belge, türetilenler ve fatura bağı
       kaynakBelge: kayit.kaynakBelge,
       turetilenler: kayit.turetilenler,
-      fatura: kayit.fatura,
+      fatura: kayit.fatura ? (() => {
+        const odenen = kayit.fatura.kasaBankaHarekets.reduce((toplam, hareket) => toplam.add(hareket.tutar), D(0));
+        const kalan = Prisma.Decimal.max(kayit.fatura.genelToplam.sub(odenen), 0);
+        return {
+          id: kayit.fatura.id,
+          no: kayit.fatura.no,
+          durum: kayit.fatura.durum,
+          ebelge: kayit.fatura.ebelge,
+          odemeOzeti: {
+            durum: kayit.fatura.durum !== "kesin" ? "beklemede" : kalan.isZero() ? "odendi" : odenen.greaterThan(0) ? "kismi" : "odenmedi",
+            odenen: odenen.toFixed(2),
+            kalan: kalan.toFixed(2),
+          },
+        };
+      })() : null,
       izinliEylemler: this.eylemler(kayit),
     };
   }

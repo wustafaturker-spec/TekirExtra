@@ -227,7 +227,10 @@ export default function FaturaSayfasi() {
     setDurumFiltresi(parametreler.get("durum"));
     setEbelgeFiltresi(parametreler.get("ebelge"));
     setOdemeFiltresi(parametreler.get("odeme"));
-    setOdakFaturaId(parametreler.get("faturaId"));
+    const faturaId = parametreler.get("faturaId");
+    setOdakFaturaId(faturaId);
+    if (faturaId && parametreler.get("panel") === "ebelge") void ebelgeDetayAc(faturaId);
+    if (faturaId && parametreler.get("panel") === "odeme") void odemeDetayAc(faturaId);
     try { setKayitliGorunumler(JSON.parse(localStorage.getItem(GORUNUM_ANAHTARI) ?? "[]") as KayitliGorunum[]); }
     catch { localStorage.removeItem(GORUNUM_ANAHTARI); }
   }, []);

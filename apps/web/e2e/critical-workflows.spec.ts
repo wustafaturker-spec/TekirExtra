@@ -275,16 +275,23 @@ test("belge zinciri bağlantısı ilgili faturayı doğrudan odaklar", async ({ 
     toplamKdv: "200.00", genelToplam: "1200.00", cari: { unvan }, ebelge: null,
     odemeOzeti: { durum: "odenmedi", odenen: "0", kalan: "1200" },
   });
+  const odak = fatura("f1", "SAT-001", "Zincir Müşterisi");
   await page.route("http://localhost:3001/api/v1/fatura", (route) => route.fulfill({ json: { kayitlar: [
-    fatura("f1", "SAT-001", "Zincir Müşterisi"), fatura("f2", "SAT-002", "Diğer Müşteri"),
+    odak, fatura("f2", "SAT-002", "Diğer Müşteri"),
   ] } }));
+  await page.route("http://localhost:3001/api/v1/fatura/f1", (route) => route.fulfill({ json: {
+    ...odak, dovizCinsi: "TRY", cari: { id: "c1", kod: "C001", unvan: "Zincir Müşterisi" }, satirlar: [],
+    odemeOzeti: { durum: "odenmedi", odenen: "0", kalan: "1200", hareketler: [] },
+  } }));
 
-  await page.goto("/panel/fatura?faturaId=f1");
+  await page.goto("/panel/fatura?faturaId=f1&panel=odeme");
   await expect(page.getByText("Belge zincirinden açılan fatura")).toBeVisible();
-  await expect(page.getByText("SAT-001 · Zincir Müşterisi")).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Ödeme durumu" })).toContainText("Kalan");
+  await expect(page.getByText("SAT-001 · Zincir Müşterisi").first()).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: "SAT-001" })).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: "SAT-002" })).not.toBeVisible();
 
+  await page.getByRole("dialog", { name: "Ödeme durumu" }).getByRole("button", { name: "Kapat" }).last().click();
   await page.getByRole("button", { name: "Tüm faturaları göster" }).click();
   await expect(page).toHaveURL("http://localhost:3100/panel/fatura");
   await expect(page.getByRole("row").filter({ hasText: "SAT-002" })).toBeVisible();
@@ -301,13 +308,13 @@ test("teklif, sipariş, irsaliye ve fatura zinciri bulunup gezilebilir", async (
     if (id === "b1") return route.fulfill({ json: {
       ...ortak, id: "b1", tur: "teklif", no: "TK-001", faturaId: "f1", kaynakBelge: null,
       turetilenler: [{ id: "b2", tur: "siparis", no: "SP-001", durum: "onaylandi" }],
-      fatura: { id: "f1", no: "SAT-001", durum: "kesin" },
+      fatura: { id: "f1", no: "SAT-001", durum: "kesin", ebelge: { tur: "efatura", durum: "kabul" }, odemeOzeti: { durum: "kismi", odenen: "400.00", kalan: "800.00" } },
     } });
     return route.fulfill({ json: {
       ...ortak, id: "b2", tur: "siparis", no: "SP-001", faturaId: "f1",
       kaynakBelge: { id: "b1", tur: "teklif", no: "TK-001", durum: "onaylandi" },
       turetilenler: [{ id: "b3", tur: "irsaliye", no: "IRS-001", durum: "onaylandi" }],
-      fatura: { id: "f1", no: "SAT-001", durum: "kesin" },
+      fatura: { id: "f1", no: "SAT-001", durum: "kesin", ebelge: { tur: "efatura", durum: "kabul" }, odemeOzeti: { durum: "kismi", odenen: "400.00", kalan: "800.00" } },
     } });
   });
 
@@ -319,6 +326,8 @@ test("teklif, sipariş, irsaliye ve fatura zinciri bulunup gezilebilir", async (
   await expect(zincir).toContainText("IRS-001");
   await expect(zincir).toContainText("SAT-001");
   await expect(zincir.getByRole("link", { name: /Fatura SAT-001/ })).toHaveAttribute("href", "/panel/fatura?faturaId=f1");
+  await expect(zincir.getByRole("link", { name: /e-Belge kabul/ })).toHaveAttribute("href", "/panel/fatura?faturaId=f1&panel=ebelge");
+  await expect(zincir.getByRole("link", { name: /Tahsilat\/Ödeme kismi/ })).toHaveAttribute("href", "/panel/fatura?faturaId=f1&panel=odeme");
 
   await zincir.getByRole("button", { name: /Teklif TK-001/ }).click();
   await expect(page.getByRole("heading", { level: 3, name: /Teklif TK-001/ })).toBeVisible();

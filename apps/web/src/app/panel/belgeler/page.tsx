@@ -71,7 +71,11 @@ interface BelgeDetay extends Belge {
   notlar: string | null;
   kaynakBelge: ZincirRef | null;
   turetilenler: ZincirRef[];
-  fatura: { id: string; no: string | null; durum: string } | null;
+  fatura: {
+    id: string; no: string | null; durum: string;
+    ebelge: { tur: string; durum: string } | null;
+    odemeOzeti: { durum: string; odenen: string; kalan: string };
+  } | null;
   satirlar: { stokId: string; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string }[];
 }
 
@@ -565,8 +569,20 @@ export default function BelgelerSayfasi() {
                 <span /><strong>Fatura</strong><small>{detay.durum === "onaylandi" && DONUSUM[detay.tur]?.includes("fatura") ? "Oluştur" : "Bekliyor"}</small>
               </button>
             )}
-            <div className="document-timeline__step" aria-disabled="true"><span /><strong>e-Belge</strong><small>Bekliyor</small></div>
-            <div className="document-timeline__step" aria-disabled="true"><span /><strong>Tahsilat/Ödeme</strong><small>Bekliyor</small></div>
+            {detay.fatura?.ebelge ? (
+              <a className="document-timeline__step is-complete" href={"/panel/fatura?faturaId=" + detay.fatura.id + "&panel=ebelge"}>
+                <span>✓</span><strong>e-Belge</strong><small>{detay.fatura.ebelge.durum}</small>
+              </a>
+            ) : (
+              <div className="document-timeline__step" aria-disabled="true"><span /><strong>e-Belge</strong><small>{detay.fatura ? "Hazırlanıyor" : "Bekliyor"}</small></div>
+            )}
+            {detay.fatura ? (
+              <a className={"document-timeline__step" + (detay.fatura.odemeOzeti.durum === "odendi" ? " is-complete" : "")} href={"/panel/fatura?faturaId=" + detay.fatura.id + "&panel=odeme"}>
+                <span>{detay.fatura.odemeOzeti.durum === "odendi" ? "✓" : ""}</span><strong>Tahsilat/Ödeme</strong><small>{detay.fatura.odemeOzeti.durum}</small>
+              </a>
+            ) : (
+              <div className="document-timeline__step" aria-disabled="true"><span /><strong>Tahsilat/Ödeme</strong><small>Bekliyor</small></div>
+            )}
           </div>
           <TableWrap>
             <thead>
