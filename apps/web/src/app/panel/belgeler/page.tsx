@@ -535,25 +535,36 @@ export default function BelgelerSayfasi() {
                   ? detay.kaynakBelge
                   : detay.turetilenler.find((t) => t.tur === adim);
               const mevcut = detay.tur === adim;
+              const hedefAdim = adim === "teklif" ? null : adim;
+              const olusturulabilir = detay.durum === "onaylandi" && !kayit && hedefAdim !== null && DONUSUM[detay.tur]?.includes(hedefAdim);
               return (
                 <button
                   className={`document-timeline__step${kayit ? " is-complete" : ""}${mevcut ? " is-current" : ""}`}
-                  disabled={!kayit || mevcut}
+                  disabled={(!kayit && !olusturulabilir) || mevcut}
                   key={adim}
-                  onClick={() => kayit && void detayAc(kayit.id)}
+                  onClick={() => kayit ? void detayAc(kayit.id) : olusturulabilir && hedefAdim && void donusumOzetiAc(detay.id, hedefAdim)}
                   type="button"
                 >
                   <span>{kayit ? "✓" : ""}</span>
                   <strong>{TUR_ADI[adim]}</strong>
-                  <small>{mevcut ? "Mevcut" : kayit?.no ?? (kayit ? "Taslak" : "Bekliyor")}</small>
+                  <small>{mevcut ? "Mevcut" : kayit?.no ?? (kayit ? "Taslak" : olusturulabilir ? "Oluştur" : "Bekliyor")}</small>
                 </button>
               );
             })}
-            <a className={`document-timeline__step${detay.fatura ? " is-complete" : ""}`} href={detay.fatura ? "/panel/fatura" : undefined} aria-disabled={!detay.fatura}>
-              <span>{detay.fatura ? "✓" : ""}</span>
-              <strong>Fatura</strong>
-              <small>{detay.fatura?.no ?? (detay.fatura ? "Taslak" : "Bekliyor")}</small>
-            </a>
+            {detay.fatura ? (
+              <a className="document-timeline__step is-complete" href="/panel/fatura">
+                <span>✓</span><strong>Fatura</strong><small>{detay.fatura.no ?? "Taslak"}</small>
+              </a>
+            ) : (
+              <button
+                className="document-timeline__step"
+                disabled={detay.durum !== "onaylandi" || !DONUSUM[detay.tur]?.includes("fatura")}
+                onClick={() => void donusumOzetiAc(detay.id, "fatura")}
+                type="button"
+              >
+                <span /><strong>Fatura</strong><small>{detay.durum === "onaylandi" && DONUSUM[detay.tur]?.includes("fatura") ? "Oluştur" : "Bekliyor"}</small>
+              </button>
+            )}
             <div className="document-timeline__step" aria-disabled="true"><span /><strong>e-Belge</strong><small>Bekliyor</small></div>
             <div className="document-timeline__step" aria-disabled="true"><span /><strong>Tahsilat/Ödeme</strong><small>Bekliyor</small></div>
           </div>

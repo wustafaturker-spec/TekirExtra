@@ -254,7 +254,11 @@ test("belge dönüşümünden önce aktarılacak içerik onaylanır", async ({ p
   });
 
   await page.goto("/panel/belgeler");
-  await page.getByRole("row").filter({ hasText: "TK-001" }).getByRole("button", { name: "→ Sipariş" }).click();
+  const satir = page.getByRole("row").filter({ hasText: "TK-001" });
+  await satir.getByRole("button", { name: "Belge detayını aç" }).click();
+  const zincir = page.getByLabel("Belge yaşam döngüsü");
+  await expect(zincir.getByRole("button", { name: /Teklif Mevcut/ })).toBeDisabled();
+  await zincir.getByRole("button", { name: /Sipariş Oluştur/ }).click();
   const panel = page.getByRole("dialog", { name: "Belgeyi dönüştür" });
   await expect(panel).toContainText("Teklif TK-001 → Sipariş");
   await expect(panel).toContainText("Örnek Müşteri AŞ");
