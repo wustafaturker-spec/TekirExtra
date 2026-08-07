@@ -29,3 +29,6 @@ jobs:
 
       - name: Testler
         run: pnpm turbo test
+
+      - name: Kritik web akışları
+        run: pnpm --filter /web test:e2e
