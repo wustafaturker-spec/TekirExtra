@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
+import { kullanimOlayi } from "@/lib/kullanim";
 import { AramaSecici } from "@/components/arama-secici";
 import { DepoSecici } from "@/components/depo-secici";
 import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
@@ -32,6 +33,12 @@ const DONUSUM: Record<string, ("siparis" | "irsaliye" | "fatura")[]> = {
 type Tur = "teklif" | "siparis" | "irsaliye";
 type Yon = "satis" | "alis";
 type TurFiltre = "tumu" | Tur;
+
+interface BelgeGorunumu {
+  id: string; ad: string; tur: TurFiltre; yon: Yon | null; durum: string | null;
+}
+
+const GORUNUM_ANAHTARI = "tekir_belge_gorunumleri";
 
 interface Cari { id: string; kod?: string; unvan: string; vknTckn?: string | null }
 interface Stok { id: string; kod: string; ad: string }
@@ -92,6 +99,10 @@ export default function BelgelerSayfasi() {
   const [secili, setSecili] = useState<Set<string>>(new Set());
   const [yonBaglami, setYonBaglami] = useState<Yon | null>(null);
   const [onayBekleyen, setOnayBekleyen] = useState<BelgeDetay | null>(null);
+  const [durumFiltresi, setDurumFiltresi] = useState<string | null>(null);
+  const [kayitliGorunumler, setKayitliGorunumler] = useState<BelgeGorunumu[]>([]);
+  const [gorunumFormuAcik, setGorunumFormuAcik] = useState(false);
+  const [gorunumAdi, setGorunumAdi] = useState("");
 
   // Form
   const [tur, setTur] = useState<Tur>("teklif");
@@ -149,7 +160,37 @@ export default function BelgelerSayfasi() {
       setTurFiltre(turParametresi);
     }
     if (parametreler.get("yeni") === "1") setFormAcik(true);
+    setDurumFiltresi(parametreler.get("durum"));
+    try { setKayitliGorunumler(JSON.parse(localStorage.getItem(GORUNUM_ANAHTARI) ?? "[]") as BelgeGorunumu[]); }
+    catch { localStorage.removeItem(GORUNUM_ANAHTARI); }
   }, []);
+
+  function gorunumuUygula(gorunum: Omit<BelgeGorunumu, "id" | "ad">) {
+    setTurFiltre(gorunum.tur); setYonBaglami(gorunum.yon); setDurumFiltresi(gorunum.durum);
+    const parametreler = new URLSearchParams();
+    if (gorunum.tur !== "tumu") parametreler.set("tur", gorunum.tur);
+    if (gorunum.yon) parametreler.set("yon", gorunum.yon);
+    if (gorunum.durum) parametreler.set("durum", gorunum.durum);
+    window.history.replaceState(null, "", "/panel/belgeler" + (parametreler.size ? "?" + parametreler.toString() : ""));
+  }
+
+  function gorunumKaydet(event: React.FormEvent) {
+    event.preventDefault(); const ad = gorunumAdi.trim(); if (!ad) return;
+    const yeni: BelgeGorunumu = { id: Date.now().toString(), ad, tur: turFiltre, yon: yonBaglami, durum: durumFiltresi };
+    const gorunumler = [...kayitliGorunumler.filter((g) => g.ad.toLocaleLowerCase("tr-TR") !== ad.toLocaleLowerCase("tr-TR")), yeni];
+    setKayitliGorunumler(gorunumler); localStorage.setItem(GORUNUM_ANAHTARI, JSON.stringify(gorunumler));
+    setGorunumAdi(""); setGorunumFormuAcik(false); setBasari("“" + ad + "” görünümü kaydedildi.");
+    kullanimOlayi("gorunum_kaydedildi");
+  }
+
+  function gorunumSil(id: string) {
+    const gorunumler = kayitliGorunumler.filter((gorunum) => gorunum.id !== id);
+    setKayitliGorunumler(gorunumler); localStorage.setItem(GORUNUM_ANAHTARI, JSON.stringify(gorunumler));
+  }
+
+  function kayitliGorunumuUygula(gorunum: BelgeGorunumu) {
+    gorunumuUygula(gorunum); kullanimOlayi("gorunum_kullanildi");
+  }
 
   function satirEkle() {
     setSatirlar([...satirlar, { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 }]);
@@ -314,6 +355,7 @@ export default function BelgelerSayfasi() {
 
   const gorunen = belgeler.filter((b) => {
     if (yonBaglami && b.yon !== yonBaglami) return false;
+    if (durumFiltresi && b.durum !== durumFiltresi) return false;
     if (!arama) return true;
     const q = arama.toLocaleLowerCase("tr");
     return (b.no ?? "").toLocaleLowerCase("tr").includes(q) || b.cari.unvan.toLocaleLowerCase("tr").includes(q);
@@ -545,6 +587,20 @@ export default function BelgelerSayfasi() {
           </div>
         </HizliKayitPaneli>
       )}
+
+      <section className="saved-view-bar" aria-label="Belge görünümü ve filtreleri">
+        <div className="saved-view-filters">
+          <Field label="Yön"><Select value={yonBaglami ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: (e.target.value || null) as Yon | null, durum: durumFiltresi })}><option value="">Tümü</option><option value="satis">Satış</option><option value="alis">Satın alma</option></Select></Field>
+          <Field label="Belge durumu"><Select value={durumFiltresi ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: yonBaglami, durum: e.target.value || null })}><option value="">Tümü</option><option value="taslak">Taslak</option><option value="onaylandi">Onaylı</option><option value="kapandi">Kapandı</option><option value="iptal">İptal</option></Select></Field>
+          <Field label="Kaydedilmiş görünüm"><Select value="" onChange={(e) => { const gorunum = kayitliGorunumler.find((g) => g.id === e.target.value); if (gorunum) kayitliGorunumuUygula(gorunum); }}><option value="">Görünüm seçin</option>{kayitliGorunumler.map((g) => <option value={g.id} key={g.id}>{g.ad}</option>)}</Select></Field>
+        </div>
+        <div className="saved-view-actions">
+          {(turFiltre !== "tumu" || yonBaglami || durumFiltresi) && <Button size="sm" type="button" onClick={() => gorunumuUygula({ tur: "tumu", yon: null, durum: null })}>Filtreleri temizle</Button>}
+          <Button size="sm" type="button" onClick={() => setGorunumFormuAcik((acik) => !acik)}>Görünümü kaydet</Button>
+        </div>
+        {gorunumFormuAcik && <form className="saved-view-form" onSubmit={gorunumKaydet}><Input autoFocus aria-label="Görünüm adı" value={gorunumAdi} onChange={(e) => setGorunumAdi(e.target.value)} placeholder="Örn. Onay bekleyen satış siparişleri" required /><Button size="sm" variant="primary" type="submit">Kaydet</Button><Button size="sm" type="button" onClick={() => setGorunumFormuAcik(false)}>Vazgeç</Button></form>}
+        {kayitliGorunumler.length > 0 && <div className="saved-view-list" aria-label="Kaydedilmiş görünümleri yönet">{kayitliGorunumler.map((g) => <span key={g.id}><button type="button" onClick={() => kayitliGorunumuUygula(g)}>{g.ad}</button><button aria-label={g.ad + " görünümünü sil"} title="Görünümü sil" type="button" onClick={() => gorunumSil(g.id)}>×</button></span>)}</div>}
+      </section>
 
       <div className="toolbar">
         <SearchInput className="grow" value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Belge no veya cari ile ara..." />

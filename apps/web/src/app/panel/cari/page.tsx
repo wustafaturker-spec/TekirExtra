@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
+import { kullanimOlayi } from "@/lib/kullanim";
 import {
   Alert,
   Avatar,
@@ -143,6 +144,9 @@ const ADRES_TIP_ETIKETI: Record<string, string> = {
 type Sekme = "genel" | "ekstre" | "adresler" | "kisiler" | "bankalar";
 type FiltreTip = "tumu" | "musteri" | "tedarikci" | "bloke";
 
+interface CariGorunumu { id: string; ad: string; filtreTip: FiltreTip; }
+const GORUNUM_ANAHTARI = "tekir_cari_gorunumleri";
+
 export default function CariSayfasi() {
   const [cariler, setCariler] = useState<Cari[]>([]);
   const [arama, setArama] = useState("");
@@ -154,6 +158,9 @@ export default function CariSayfasi() {
   const [etiketler, setEtiketler] = useState<Etiket[]>([]);
   const [aktifSekme, setAktifSekme] = useState<Sekme>("genel");
   const [filtreTip, setFiltreTip] = useState<FiltreTip>("tumu");
+  const [kayitliGorunumler, setKayitliGorunumler] = useState<CariGorunumu[]>([]);
+  const [gorunumFormuAcik, setGorunumFormuAcik] = useState(false);
+  const [gorunumAdi, setGorunumAdi] = useState("");
 
   // Form alanları — kimlik
   const [kod, setKod] = useState("");
@@ -224,6 +231,38 @@ export default function CariSayfasi() {
         .catch(() => undefined);
     }
   }, [yukle, etiketleriYukle]);
+
+  useEffect(() => {
+    const parametreler = new URLSearchParams(window.location.search);
+    const tipParametresi = parametreler.get("tip");
+    if (tipParametresi === "musteri" || tipParametresi === "tedarikci") setFiltreTip(tipParametresi);
+    try { setKayitliGorunumler(JSON.parse(localStorage.getItem(GORUNUM_ANAHTARI) ?? "[]") as CariGorunumu[]); }
+    catch { localStorage.removeItem(GORUNUM_ANAHTARI); }
+  }, []);
+
+  function filtreyiUygula(yeniFiltre: FiltreTip) {
+    setFiltreTip(yeniFiltre);
+    const parametreler = new URLSearchParams();
+    if (yeniFiltre === "musteri" || yeniFiltre === "tedarikci") parametreler.set("tip", yeniFiltre);
+    if (yeniFiltre === "bloke") parametreler.set("durum", "bloke");
+    window.history.replaceState(null, "", "/panel/cari" + (parametreler.size ? "?" + parametreler.toString() : ""));
+  }
+
+  function gorunumKaydet(event: React.FormEvent) {
+    event.preventDefault(); const ad = gorunumAdi.trim(); if (!ad) return;
+    const yeni: CariGorunumu = { id: Date.now().toString(), ad, filtreTip };
+    const gorunumler = [...kayitliGorunumler.filter((g) => g.ad.toLocaleLowerCase("tr-TR") !== ad.toLocaleLowerCase("tr-TR")), yeni];
+    setKayitliGorunumler(gorunumler); localStorage.setItem(GORUNUM_ANAHTARI, JSON.stringify(gorunumler));
+    setGorunumAdi(""); setGorunumFormuAcik(false); setBasari("“" + ad + "” görünümü kaydedildi.");
+    kullanimOlayi("gorunum_kaydedildi");
+  }
+
+  function gorunumSil(id: string) {
+    const gorunumler = kayitliGorunumler.filter((gorunum) => gorunum.id !== id);
+    setKayitliGorunumler(gorunumler); localStorage.setItem(GORUNUM_ANAHTARI, JSON.stringify(gorunumler));
+  }
+
+  function gorunumuUygula(gorunum: CariGorunumu) { filtreyiUygula(gorunum.filtreTip); kullanimOlayi("gorunum_kullanildi"); }
 
   /**
    * @param sekmeyiKoru Alt formlardan (adres/kişi/banka/etiket) sonraki
@@ -517,14 +556,14 @@ export default function CariSayfasi() {
   }
 
   const filtrelenmisCariler = cariler.filter((c) => {
-    if (filtreTip === "musteri") return c.tip === "musteri" || c.tip === "hepsi";
-    if (filtreTip === "tedarikci") return c.tip === "tedarikci" || c.tip === "hepsi";
+    if (filtreTip === "musteri") return c.tip === "musteri" || c.tip === "her_ikisi";
+    if (filtreTip === "tedarikci") return c.tip === "tedarikci" || c.tip === "her_ikisi";
     if (filtreTip === "bloke") return c.karaListe === true;
     return true;
   });
 
-  const musteriSayisi = cariler.filter((c) => c.tip === "musteri" || c.tip === "hepsi").length;
-  const tedarikciSayisi = cariler.filter((c) => c.tip === "tedarikci" || c.tip === "hepsi").length;
+  const musteriSayisi = cariler.filter((c) => c.tip === "musteri" || c.tip === "her_ikisi").length;
+  const tedarikciSayisi = cariler.filter((c) => c.tip === "tedarikci" || c.tip === "her_ikisi").length;
   const blokeSayisi = cariler.filter((c) => c.karaListe === true).length;
 
   return (
@@ -926,6 +965,19 @@ export default function CariSayfasi() {
         <Stat label="Bloke" value={blokeSayisi} tone={blokeSayisi > 0 ? "danger" : "default"} />
       </StatGrid>
 
+      <section className="saved-view-bar" aria-label="Cari görünümü ve filtreleri">
+        <div className="saved-view-filters">
+          <Field label="Cari türü"><Select value={filtreTip} onChange={(e) => filtreyiUygula(e.target.value as FiltreTip)}><option value="tumu">Tümü</option><option value="musteri">Müşteri</option><option value="tedarikci">Tedarikçi</option><option value="bloke">Bloke</option></Select></Field>
+          <Field label="Kaydedilmiş görünüm"><Select value="" onChange={(e) => { const gorunum = kayitliGorunumler.find((g) => g.id === e.target.value); if (gorunum) gorunumuUygula(gorunum); }}><option value="">Görünüm seçin</option>{kayitliGorunumler.map((g) => <option value={g.id} key={g.id}>{g.ad}</option>)}</Select></Field>
+        </div>
+        <div className="saved-view-actions">
+          {filtreTip !== "tumu" && <Button size="sm" type="button" onClick={() => filtreyiUygula("tumu")}>Filtreleri temizle</Button>}
+          <Button size="sm" type="button" onClick={() => setGorunumFormuAcik((acik) => !acik)}>Görünümü kaydet</Button>
+        </div>
+        {gorunumFormuAcik && <form className="saved-view-form" onSubmit={gorunumKaydet}><Input autoFocus aria-label="Görünüm adı" value={gorunumAdi} onChange={(e) => setGorunumAdi(e.target.value)} placeholder="Örn. Tahsilat yapılacak müşteriler" required /><Button size="sm" variant="primary" type="submit">Kaydet</Button><Button size="sm" type="button" onClick={() => setGorunumFormuAcik(false)}>Vazgeç</Button></form>}
+        {kayitliGorunumler.length > 0 && <div className="saved-view-list" aria-label="Kaydedilmiş görünümleri yönet">{kayitliGorunumler.map((g) => <span key={g.id}><button type="button" onClick={() => gorunumuUygula(g)}>{g.ad}</button><button aria-label={g.ad + " görünümünü sil"} title="Görünümü sil" type="button" onClick={() => gorunumSil(g.id)}>×</button></span>)}</div>}
+      </section>
+
       <div className="toolbar">
         <SearchInput
           className="grow"
@@ -935,7 +987,7 @@ export default function CariSayfasi() {
         />
         <Segmented<FiltreTip>
           value={filtreTip}
-          onChange={setFiltreTip}
+          onChange={filtreyiUygula}
           items={[
             { deger: "tumu", baslik: "Tümü" },
             { deger: "musteri", baslik: "Müşteri" },

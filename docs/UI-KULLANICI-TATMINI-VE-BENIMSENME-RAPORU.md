@@ -483,11 +483,11 @@ gelmedigi net olmalidir.
 
 | Paket | Durum | Tamamlananlar | Siradaki is |
 |---|---|---|---|
-| Paket 1 | Buyuk olcude tamamlandi | Satis/satin alma calisma alanlari, baglama gore filtrelenen fatura ve belge girisleri, Tum Belgeler ve Tum Faturalar erisimi, faturada belge/odeme durum eksenleri ve kullaniciya ait kaydedilmis gorunumler | Belge ve cari listelerine kaydedilmis gorunumlerin yayginlastirilmasi |
+| Paket 1 | Tamamlandi | Satis/satin alma calisma alanlari, baglama gore filtrelenen fatura ve belge girisleri, Tum Belgeler ve Tum Faturalar erisimi, belge/odeme durum eksenleri ve fatura, belge ve cari listelerinde kullaniciya ait kaydedilmis gorunumler | Kullanici testi ve metrik takibi |
 | Paket 2 | Tamamlandi | Ortak aranabilir cari ve urun secici, kod/VKN/barkod aramasi, son/sik kullanilan siralamasi, cari bakiye/risk ozeti, fatura icinden hizli cari ve urun olusturma | Kullanici testi ve metrik takibi |
 | Paket 3 | Tamamlandi | Kompakt masaustu tablosu ve mobil kalem bloklari, otomatik fiyat/vergi altyapisi, anlik toplamlar, Enter ile yeni satir, odak aktarimi, satir kopyalama, satir ayrintisi, barkod tekrar okutma ve stok yeterlilik uyarisi | Kullanici testi ve metrik takibi |
 | Paket 4 | Tamamlandi | Tiklanabilir belge zinciri, donusum komutlari, onay/kesinlestirme etki ozetleri, e-Belge durum ayrintisi ve hatali gonderimi yeniden deneme, odeme ozeti ve hareket gecmisi, faturadan baglamli tahsilat/odeme eslestirmesi | Kullanici testi ve metrik takibi |
-| Paket 5 | Buyuk olcude tamamlandi | Rol bazli hizli islemler ve gercek sayili is kuyruklari, filtreli liste gecisleri, role gore finansal gorunurluk, bildirim merkezi, faturada kaydedilmis gorunumler, fatura tamamlama/hata/terk ve gorunum benimsenme olaylari ile 30 gunluk yonetici metrik ekrani | Kaydedilmis gorunumleri diger listelere yayma, kullanici geri bildirimi ve metriklerin rol/firma kirilimlari |
+| Paket 5 | Buyuk olcude tamamlandi | Rol bazli hizli islemler ve gercek sayili is kuyruklari, filtreli liste gecisleri, role gore finansal gorunurluk, bildirim merkezi, fatura, belge ve cari listelerinde kaydedilmis gorunumler, fatura tamamlama/hata/terk ve gorunum benimsenme olaylari ile 30 gunluk yonetici metrik ekrani | Kaydedilmis gorunumleri diger listelere yayma, kullanici geri bildirimi ve metriklerin rol/firma kirilimlari |
 
 Tamamlanan UI calismalari `2f7641c` ve `bfc93ad` commitlerinde izlenebilir.
 Bu durum tablosu her uygulama paketinden sonra guncellenmelidir.
