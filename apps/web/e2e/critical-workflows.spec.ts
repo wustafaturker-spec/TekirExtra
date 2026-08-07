@@ -346,6 +346,36 @@ test("belgeler başlangıç ve bitiş tarihine göre filtrelenir", async ({ page
   await expect(page.getByRole("row").filter({ hasText: "SP-003" })).not.toBeVisible();
 });
 
+test("geç dönen eski belge araması güncel sonucu ezmez", async ({ page }) => {
+  const belge = (id: string, no: string, unvan: string) => ({
+    id, no, tur: "siparis", yon: "satis", durum: "onaylandi", tarih: "2026-08-07", genelToplam: "1200.00",
+    dovizCinsi: "TRY", faturaId: null, cari: { id: "c1", kod: "C001", unvan },
+  });
+  let yavasYanitla!: () => void; let yavasBasladi!: () => void; let yavasTamamlandi!: () => void;
+  const yavasBekleme = new Promise<void>((resolve) => { yavasYanitla = resolve; });
+  const yavasIstek = new Promise<void>((resolve) => { yavasBasladi = resolve; });
+  const yavasBitti = new Promise<void>((resolve) => { yavasTamamlandi = resolve; });
+  await page.route("http://localhost:3001/api/v1/belgeler**", async (route) => {
+    const arama = new URL(route.request().url()).searchParams.get("arama");
+    if (arama === "Yavaş Cari") {
+      yavasBasladi(); await yavasBekleme;
+      await route.fulfill({ json: { kayitlar: [belge("b1", "SP-YAVAS", "Yavaş Cari")], sonrakiImlec: null } });
+      yavasTamamlandi(); return;
+    }
+    if (arama === "Hızlı Cari") return route.fulfill({ json: { kayitlar: [belge("b2", "SP-HIZLI", "Hızlı Cari")], sonrakiImlec: null } });
+    return route.fulfill({ json: { kayitlar: [], sonrakiImlec: null } });
+  });
+
+  await page.goto("/panel/belgeler");
+  const arama = page.getByPlaceholder("Belge no veya cari ile ara...");
+  await arama.fill("Yavaş Cari"); await yavasIstek;
+  await arama.fill("Hızlı Cari");
+  await expect(page.getByRole("row").filter({ hasText: "SP-HIZLI" })).toBeVisible();
+  yavasYanitla(); await yavasBitti;
+  await expect(page.getByRole("row").filter({ hasText: "SP-HIZLI" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "SP-YAVAS" })).not.toBeVisible();
+});
+
 test("belge araması yüklenmemiş kayıtlarda sunucuda çalışır", async ({ page }) => {
   let aramaParametresi: string | null = null;
   await page.route("http://localhost:3001/api/v1/belgeler**", (route) => {

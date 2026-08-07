@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import { AramaSecici } from "@/components/arama-secici";
@@ -122,6 +122,7 @@ export default function BelgelerSayfasi() {
   const [gorunumAdi, setGorunumAdi] = useState("");
   const [sonrakiImlec, setSonrakiImlec] = useState<string | null>(null);
   const [listeYukleniyor, setListeYukleniyor] = useState(true);
+  const yuklemeSirasi = useRef(0);
 
   // Form
   const [tur, setTur] = useState<Tur>("teklif");
@@ -144,6 +145,7 @@ export default function BelgelerSayfasi() {
   const sonuc = faturaHesapla({ satirlar: girdiSatirlar });
 
   const yukle = useCallback(async (imlec?: string) => {
+    const istekSirasi = ++yuklemeSirasi.current;
     setHata(""); setListeYukleniyor(true);
     try {
       const parametreler = new URLSearchParams();
@@ -154,13 +156,14 @@ export default function BelgelerSayfasi() {
       if (tarihBitis) parametreler.set("bitis", tarihBitis);
       const sorgu = parametreler.size ? "?" + parametreler.toString() : "";
       const veri = await api<{ kayitlar: Belge[]; sonrakiImlec: string | null }>("/belgeler" + sorgu);
+      if (istekSirasi !== yuklemeSirasi.current) return;
       setBelgeler((eskiler) => imlec ? [...eskiler, ...veri.kayitlar] : veri.kayitlar);
       setSonrakiImlec(veri.sonrakiImlec);
       if (!imlec) setSecili(new Set());
     } catch (h) {
-      setHata(h instanceof Error ? h.message : "Belgeler yüklenemedi");
+      if (istekSirasi === yuklemeSirasi.current) setHata(h instanceof Error ? h.message : "Belgeler yüklenemedi");
     } finally {
-      setListeYukleniyor(false);
+      if (istekSirasi === yuklemeSirasi.current) setListeYukleniyor(false);
     }
   }, [turFiltre, aramaSorgusu, tarihBaslangic, tarihBitis]);
 
