@@ -198,3 +198,37 @@ test("fatura kalemleri yalnız klavyeyle kesintisiz girilebilir", async ({ page 
   await expect(page.getByLabel("Miktar")).toHaveCount(2);
   await expect(page.getByText("450,00 TL", { exact: true }).last()).toBeVisible();
 });
+
+
+test("hatalı e-Belge nedeni gösterilir ve yeniden gönderilebilir", async ({ page }) => {
+  let yenidenGonderildi = false;
+  const liste = {
+    id: "f1", no: "SAT2026000002", tip: "satis", tarih: "2026-08-07", durum: "kesin",
+    toplamMatrah: "1000.00", toplamKdv: "200.00", genelToplam: "1200.00",
+    cari: { unvan: "Örnek Müşteri AŞ" },
+    ebelge: { id: "e1", durum: "hata", tur: "efatura" },
+    odemeOzeti: { durum: "odenmedi", odenen: "0", kalan: "1200" },
+  };
+  await page.route("http://localhost:3001/api/v1/fatura", (route) => route.fulfill({ json: { kayitlar: [liste] } }));
+  await page.route("http://localhost:3001/api/v1/fatura/f1", (route) => route.fulfill({ json: {
+    ...liste, dovizCinsi: "TRY", cari: { id: "c1", kod: "C001", unvan: "Örnek Müşteri AŞ", vknTckn: "1234567890", eFaturaMukellefi: true },
+    satirlar: [], odemeOzeti: { ...liste.odemeOzeti, hareketler: [] },
+    ebelge: { id: "e1", durum: yenidenGonderildi ? "kuyrukta" : "hata", tur: "efatura", entegratorRef: null,
+      hataMesaji: yenidenGonderildi ? null : "Alıcı VKN bilgisi entegratör kaydıyla eşleşmiyor.",
+      createdAt: "2026-08-07T08:00:00.000Z", updatedAt: "2026-08-07T08:05:00.000Z" },
+  } }));
+  await page.route("http://localhost:3001/api/v1/ebelge/gonder/f1", (route) => {
+    yenidenGonderildi = true;
+    return route.fulfill({ json: { kuyrugaAlindi: true } });
+  });
+
+  await page.goto("/panel/fatura");
+  await page.getByTitle("e-Belge ayrıntısını aç").click();
+  const panel = page.getByRole("dialog", { name: "e-Belge durumu" });
+  await expect(panel).toContainText("Alıcı VKN bilgisi entegratör kaydıyla eşleşmiyor.");
+  await panel.getByRole("button", { name: "Yeniden gönder" }).click();
+  await expect(page.getByText("e-Belge yeniden gönderildi.")).toBeVisible();
+  await expect(panel).toContainText("Kuyrukta");
+  await expect(panel.getByRole("button", { name: "Yeniden gönder" })).not.toBeVisible();
+  expect(yenidenGonderildi).toBe(true);
+});
