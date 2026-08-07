@@ -99,3 +99,39 @@ test("fatura, e-Belge ve ödeme durumları bağımsız izlenebilir", async ({ pa
   await expect(page.getByLabel("Ödeme durumu")).toHaveValue("acik");
   await expect(satir).toBeVisible();
 });
+
+
+test("ana sayfa role uygun iş kuyruklarını ve finansal görünürlüğü sunar", async ({ page }) => {
+  let rol: "satis" | "yonetici" = "satis";
+  await page.route("http://localhost:3001/api/v1/**", async (route) => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith("/auth/ben")) return route.fulfill({ json: { rol } });
+    if (pathname.endsWith("/firma")) return route.fulfill({ json: { unvan: "Örnek Firma" } });
+    if (pathname.endsWith("/fatura")) return route.fulfill({ json: { kayitlar: [
+      { tip: "satis", durum: "taslak", ebelge: null, odemeOzeti: { durum: "odenmedi" } },
+      { tip: "alis", durum: "kesin", ebelge: { durum: "hata" }, odemeOzeti: { durum: "kismi" } },
+    ] } });
+    if (pathname.endsWith("/stok")) return route.fulfill({ json: { kayitlar: [] } });
+    if (pathname.endsWith("/kasa-banka/ekstre/satirlar")) return route.fulfill({ json: [{ id: "e1" }] });
+    if (pathname.endsWith("/ebelge/gelen")) return route.fulfill({ json: [{ id: "g1" }] });
+    if (pathname.endsWith("/rapor/ozet")) return route.fulfill({ json: {
+      nakitVarliklar: "1000", envanterDegeri: "2000", toplamAlacaklar: "3000",
+      toplamBorclar: "1500", netVarlikDegeri: "4500",
+    } });
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto("/panel");
+  await expect(page.getByText(/Satış · Satış belgeleri/)).toBeVisible();
+  await expect(page.getByText("Taslak satış faturaları")).toBeVisible();
+  await expect(page.getByText("Açık tahsilatlar")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Finansal görünüm" })).not.toBeVisible();
+
+  rol = "yonetici";
+  await page.reload();
+  await expect(page.getByText(/Yönetim · Nakit/)).toBeVisible();
+  await expect(page.getByText("e-Belge hataları")).toBeVisible();
+  await expect(page.getByText("Eşleşmemiş banka hareketleri")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Finansal görünüm" })).toBeVisible();
+  await expect(page.getByText("4.500,00 TL")).toBeVisible();
+});
