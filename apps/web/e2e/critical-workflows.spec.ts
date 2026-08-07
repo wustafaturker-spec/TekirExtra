@@ -269,6 +269,26 @@ test("belge dönüşümünden önce aktarılacak içerik onaylanır", async ({ p
   expect(donusumIstegi).toEqual({ hedef: "siparis" });
 });
 
+test("başarısız belge listesi yeniden yüklenebilir", async ({ page }) => {
+  let istekSayisi = 0;
+  await page.route("http://localhost:3001/api/v1/belgeler**", (route) => {
+    istekSayisi += 1;
+    if (istekSayisi === 1) return route.fulfill({ status: 500, json: { message: "Geçici servis hatası" } });
+    return route.fulfill({ json: { kayitlar: [{
+      id: "b1", no: "SP-001", tarih: "2026-08-07", tur: "siparis", yon: "satis", durum: "onaylandi",
+      genelToplam: "1200.00", dovizCinsi: "TRY", faturaId: null, cari: { id: "c1", kod: "C001", unvan: "Örnek Müşteri" },
+    }], sonrakiImlec: null } });
+  });
+
+  await page.goto("/panel/belgeler");
+  await expect(page.getByText("Belge listesi yüklenemedi.")).toBeVisible();
+  await expect(page.getByText("Kayıtlı belge bulunmuyor.")).not.toBeVisible();
+  await page.getByRole("button", { name: "Tekrar dene" }).click();
+  await expect(page.getByRole("row").filter({ hasText: "SP-001" })).toBeVisible();
+  await expect(page.getByText("Belge listesi yüklenemedi.")).not.toBeVisible();
+  expect(istekSayisi).toBe(2);
+});
+
 test("belge listesi yükleniyor ve filtrelenmiş boş durumlarını ayırır", async ({ page }) => {
   let yanitla!: () => void;
   const beklet = new Promise<void>((resolve) => { yanitla = resolve; });

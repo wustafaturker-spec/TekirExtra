@@ -769,6 +769,10 @@ export default function BelgelerSayfasi() {
           <tbody>
             {listeYukleniyor && belgeler.length === 0 ? (
               <tr><td colSpan={8} className="empty" role="status">Belgeler yükleniyor…</td></tr>
+            ) : hata && belgeler.length === 0 ? (
+              <tr><td colSpan={8} className="empty">
+                <div className="stack" role="alert"><span>Belge listesi yüklenemedi.</span><div><Button type="button" onClick={() => void yukle()}>Tekrar dene</Button></div></div>
+              </td></tr>
             ) : gorunen.length === 0 ? (
               <tr><td colSpan={8} className="empty">{arama || turFiltre !== "tumu" || yonBaglami || durumFiltresi || tarihBaslangic || tarihBitis ? "Filtrelere uygun belge bulunamadı." : "Kayıtlı belge bulunmuyor."}</td></tr>
             ) : (
