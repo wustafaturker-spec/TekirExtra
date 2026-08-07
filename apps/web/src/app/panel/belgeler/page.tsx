@@ -40,6 +40,7 @@ type TurFiltre = "tumu" | Tur;
 
 interface BelgeGorunumu {
   id: string; ad: string; tur: TurFiltre; yon: Yon | null; durum: string | null;
+  baslangic?: string; bitis?: string;
 }
 
 const GORUNUM_ANAHTARI = "tekir_belge_gorunumleri";
@@ -199,14 +200,18 @@ export default function BelgelerSayfasi() {
     catch { localStorage.removeItem(GORUNUM_ANAHTARI); }
   }, []);
 
-  function gorunumuUygula(gorunum: Omit<BelgeGorunumu, "id" | "ad">) {
+  function gorunumuUygula(
+    gorunum: Omit<BelgeGorunumu, "id" | "ad">,
+    tarihAraligi = { baslangic: tarihBaslangic, bitis: tarihBitis },
+  ) {
     setTurFiltre(gorunum.tur); setYonBaglami(gorunum.yon); setDurumFiltresi(gorunum.durum);
+    setTarihBaslangic(tarihAraligi.baslangic); setTarihBitis(tarihAraligi.bitis);
     const parametreler = new URLSearchParams();
     if (gorunum.tur !== "tumu") parametreler.set("tur", gorunum.tur);
     if (gorunum.yon) parametreler.set("yon", gorunum.yon);
     if (gorunum.durum) parametreler.set("durum", gorunum.durum);
-    if (tarihBaslangic) parametreler.set("baslangic", tarihBaslangic);
-    if (tarihBitis) parametreler.set("bitis", tarihBitis);
+    if (tarihAraligi.baslangic) parametreler.set("baslangic", tarihAraligi.baslangic);
+    if (tarihAraligi.bitis) parametreler.set("bitis", tarihAraligi.bitis);
     window.history.replaceState(null, "", "/panel/belgeler" + (parametreler.size ? "?" + parametreler.toString() : ""));
   }
 
@@ -219,13 +224,13 @@ export default function BelgelerSayfasi() {
 
   function tumFiltreleriTemizle() {
     setTarihBaslangic(""); setTarihBitis("");
-    gorunumuUygula({ tur: "tumu", yon: null, durum: null });
+    gorunumuUygula({ tur: "tumu", yon: null, durum: null }, { baslangic: "", bitis: "" });
     window.history.replaceState(null, "", "/panel/belgeler");
   }
 
   function gorunumKaydet(event: React.FormEvent) {
     event.preventDefault(); const ad = gorunumAdi.trim(); if (!ad) return;
-    const yeni: BelgeGorunumu = { id: Date.now().toString(), ad, tur: turFiltre, yon: yonBaglami, durum: durumFiltresi };
+    const yeni: BelgeGorunumu = { id: Date.now().toString(), ad, tur: turFiltre, yon: yonBaglami, durum: durumFiltresi, baslangic: tarihBaslangic, bitis: tarihBitis };
     const gorunumler = [...kayitliGorunumler.filter((g) => g.ad.toLocaleLowerCase("tr-TR") !== ad.toLocaleLowerCase("tr-TR")), yeni];
     setKayitliGorunumler(gorunumler); localStorage.setItem(GORUNUM_ANAHTARI, JSON.stringify(gorunumler));
     setGorunumAdi(""); setGorunumFormuAcik(false); setBasari("“" + ad + "” görünümü kaydedildi.");
@@ -238,7 +243,7 @@ export default function BelgelerSayfasi() {
   }
 
   function kayitliGorunumuUygula(gorunum: BelgeGorunumu) {
-    gorunumuUygula(gorunum); kullanimOlayi("gorunum_kullanildi");
+    gorunumuUygula(gorunum, { baslangic: gorunum.baslangic ?? "", bitis: gorunum.bitis ?? "" }); kullanimOlayi("gorunum_kullanildi");
   }
 
   function satirEkle() {
@@ -722,7 +727,7 @@ export default function BelgelerSayfasi() {
           <Field label="Belge durumu"><Select value={durumFiltresi ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: yonBaglami, durum: e.target.value || null })}><option value="">Tümü</option><option value="taslak">Taslak</option><option value="onaylandi">Onaylı</option><option value="kapandi">Kapandı</option><option value="iptal">İptal</option></Select></Field>
           <Field label="Başlangıç tarihi"><Input aria-label="Başlangıç tarihi" type="date" value={tarihBaslangic} onChange={(e) => tarihFiltresiDegistir("baslangic", e.target.value)} /></Field>
           <Field label="Bitiş tarihi"><Input aria-label="Bitiş tarihi" type="date" min={tarihBaslangic || undefined} value={tarihBitis} onChange={(e) => tarihFiltresiDegistir("bitis", e.target.value)} /></Field>
-          <Field label="Kaydedilmiş görünüm"><Select value="" onChange={(e) => { const gorunum = kayitliGorunumler.find((g) => g.id === e.target.value); if (gorunum) kayitliGorunumuUygula(gorunum); }}><option value="">Görünüm seçin</option>{kayitliGorunumler.map((g) => <option value={g.id} key={g.id}>{g.ad}</option>)}</Select></Field>
+          <Field label="Kaydedilmiş görünüm"><Select aria-label="Kaydedilmiş görünüm" value="" onChange={(e) => { const gorunum = kayitliGorunumler.find((g) => g.id === e.target.value); if (gorunum) kayitliGorunumuUygula(gorunum); }}><option value="">Görünüm seçin</option>{kayitliGorunumler.map((g) => <option value={g.id} key={g.id}>{g.ad}</option>)}</Select></Field>
         </div>
         <div className="saved-view-actions">
           {(turFiltre !== "tumu" || yonBaglami || durumFiltresi || tarihBaslangic || tarihBitis) && <Button size="sm" type="button" onClick={tumFiltreleriTemizle}>Filtreleri temizle</Button>}

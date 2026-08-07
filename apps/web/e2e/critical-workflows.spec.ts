@@ -294,9 +294,18 @@ test("belgeler başlangıç ve bitiş tarihine göre filtrelenir", async ({ page
   await expect(page).toHaveURL(/baslangic=2026-08-01/);
   await expect(page).toHaveURL(/bitis=2026-08-10/);
 
+  await page.getByRole("button", { name: "Görünümü kaydet" }).click();
+  await page.getByLabel("Görünüm adı").fill("Ağustos ilk hafta");
+  await page.getByRole("button", { name: "Kaydet", exact: true }).click();
   await page.getByRole("button", { name: "Filtreleri temizle" }).click();
   await expect(page.getByRole("row").filter({ hasText: "SP-001" })).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: "SP-003" })).toBeVisible();
+
+  await page.getByRole("combobox", { name: "Kaydedilmiş görünüm" }).selectOption({ label: "Ağustos ilk hafta" });
+  await expect(page.getByLabel("Başlangıç tarihi")).toHaveValue("2026-08-01");
+  await expect(page.getByLabel("Bitiş tarihi")).toHaveValue("2026-08-10");
+  await expect(page.getByRole("row").filter({ hasText: "SP-002" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "SP-003" })).not.toBeVisible();
 });
 
 test("belge araması yüklenmemiş kayıtlarda sunucuda çalışır", async ({ page }) => {
