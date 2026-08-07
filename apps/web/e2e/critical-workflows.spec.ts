@@ -234,6 +234,37 @@ test("hatalı e-Belge nedeni gösterilir ve yeniden gönderilebilir", async ({ p
 });
 
 
+test("belge dönüşümünden önce aktarılacak içerik onaylanır", async ({ page }) => {
+  let donusumIstegi: unknown = null;
+  const belge = {
+    id: "b1", tur: "teklif", yon: "satis", durum: "onaylandi", no: "TK-001", tarih: "2026-08-07",
+    genelToplam: "1200.00", dovizCinsi: "TRY", faturaId: null, gecerlilikTarihi: "2026-08-31",
+    aciklama: null, notlar: null, kaynakBelge: null, turetilenler: [], fatura: null,
+    cari: { id: "c1", kod: "C001", unvan: "Örnek Müşteri AŞ" },
+    satirlar: [
+      { stokId: "s1", miktar: "1", birim: "adet", birimFiyat: "500", iskontoOrani: "0", kdvOrani: "20" },
+      { stokId: "s2", miktar: "1", birim: "adet", birimFiyat: "500", iskontoOrani: "0", kdvOrani: "20" },
+    ],
+  };
+  await page.route("http://localhost:3001/api/v1/belgeler", (route) => route.fulfill({ json: { kayitlar: [belge] } }));
+  await page.route("http://localhost:3001/api/v1/belgeler/b1", (route) => route.fulfill({ json: belge }));
+  await page.route("http://localhost:3001/api/v1/belgeler/b1/donustur", async (route) => {
+    donusumIstegi = route.request().postDataJSON();
+    await route.fulfill({ json: { id: "b2" } });
+  });
+
+  await page.goto("/panel/belgeler");
+  await page.getByRole("row").filter({ hasText: "TK-001" }).getByRole("button", { name: "→ Sipariş" }).click();
+  const panel = page.getByRole("dialog", { name: "Belgeyi dönüştür" });
+  await expect(panel).toContainText("Teklif TK-001 → Sipariş");
+  await expect(panel).toContainText("Örnek Müşteri AŞ");
+  await expect(panel).toContainText("Aktarılacak kalem2");
+  await expect(panel).toContainText("Cari, belge kalemleri, fiyatlar, iskontolar, vergiler ve kaynak belge referansı");
+  await panel.getByRole("button", { name: "Dönüştür", exact: true }).click();
+  await expect(page.getByText("Belge Sipariş'e dönüştürüldü.")).toBeVisible();
+  expect(donusumIstegi).toEqual({ hedef: "siparis" });
+});
+
 test("teklif, sipariş, irsaliye ve fatura zinciri bulunup gezilebilir", async ({ page }) => {
   const ortak = { yon: "satis", durum: "onaylandi", tarih: "2026-08-07", genelToplam: "1200.00", dovizCinsi: "TRY",
     cari: { id: "c1", kod: "C001", unvan: "Örnek Müşteri AŞ" }, gecerlilikTarihi: null, aciklama: null, notlar: null, satirlar: [] };

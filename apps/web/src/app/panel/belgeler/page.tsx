@@ -99,6 +99,7 @@ export default function BelgelerSayfasi() {
   const [secili, setSecili] = useState<Set<string>>(new Set());
   const [yonBaglami, setYonBaglami] = useState<Yon | null>(null);
   const [onayBekleyen, setOnayBekleyen] = useState<BelgeDetay | null>(null);
+  const [donusumBekleyen, setDonusumBekleyen] = useState<{ belge: BelgeDetay; hedef: "siparis" | "irsaliye" | "fatura" } | null>(null);
   const [durumFiltresi, setDurumFiltresi] = useState<string | null>(null);
   const [kayitliGorunumler, setKayitliGorunumler] = useState<BelgeGorunumu[]>([]);
   const [gorunumFormuAcik, setGorunumFormuAcik] = useState(false);
@@ -308,6 +309,22 @@ export default function BelgelerSayfasi() {
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Dönüştürme hatası");
     }
+  }
+
+  async function donusumOzetiAc(id: string, hedef: "siparis" | "irsaliye" | "fatura") {
+    setHata("");
+    try {
+      setDonusumBekleyen({ belge: await api<BelgeDetay>(`/belgeler/${id}`), hedef });
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Dönüşüm özeti yüklenemedi");
+    }
+  }
+
+  async function donusumuTamamla() {
+    if (!donusumBekleyen) return;
+    const { belge, hedef } = donusumBekleyen;
+    setDonusumBekleyen(null);
+    await donustur(belge.id, hedef);
   }
 
   async function topluFatura() {
@@ -588,6 +605,29 @@ export default function BelgelerSayfasi() {
         </HizliKayitPaneli>
       )}
 
+      {donusumBekleyen && (
+        <HizliKayitPaneli baslik="Belgeyi dönüştür" onKapat={() => setDonusumBekleyen(null)}>
+          <div className="approval-summary">
+            <div className="approval-summary__identity">
+              <strong>{TUR_ADI[donusumBekleyen.belge.tur]} {donusumBekleyen.belge.no} → {donusumBekleyen.hedef === "fatura" ? "Fatura" : TUR_ADI[donusumBekleyen.hedef]}</strong>
+              <span>{donusumBekleyen.belge.cari.unvan}</span>
+            </div>
+            <dl>
+              <div><dt>Aktarılacak kalem</dt><dd>{donusumBekleyen.belge.satirlar.length}</dd></div>
+              <div><dt>Genel toplam</dt><dd>{tl(donusumBekleyen.belge.genelToplam, donusumBekleyen.belge.dovizCinsi)}</dd></div>
+              <div><dt>Kaynak referansı</dt><dd>{donusumBekleyen.belge.no ?? "Taslak belge"}</dd></div>
+            </dl>
+            <div className="approval-impact">
+              Cari, belge kalemleri, fiyatlar, iskontolar, vergiler ve kaynak belge referansı yeni taslağa aktarılacak. Kaynak belge kapatılacak.
+            </div>
+            <div className="quick-panel__actions">
+              <Button type="button" onClick={() => setDonusumBekleyen(null)}>Vazgeç</Button>
+              <Button type="button" variant="primary" onClick={() => void donusumuTamamla()}>Dönüştür</Button>
+            </div>
+          </div>
+        </HizliKayitPaneli>
+      )}
+
       <section className="saved-view-bar" aria-label="Belge görünümü ve filtreleri">
         <div className="saved-view-filters">
           <Field label="Yön"><Select value={yonBaglami ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: (e.target.value || null) as Yon | null, durum: durumFiltresi })}><option value="">Tümü</option><option value="satis">Satış</option><option value="alis">Satın alma</option></Select></Field>
@@ -659,7 +699,7 @@ export default function BelgelerSayfasi() {
                       {b.durum === "onaylandi" && (
                         <>
                           {DONUSUM[b.tur]?.map((h) => (
-                            <Button key={h} size="sm" onClick={() => donustur(b.id, h)}>→ {h === "fatura" ? "Fatura" : TUR_ADI[h]}</Button>
+                            <Button key={h} size="sm" onClick={() => void donusumOzetiAc(b.id, h)}>→ {h === "fatura" ? "Fatura" : TUR_ADI[h]}</Button>
                           ))}
                           <Button size="sm" onClick={() => eylem(b.id, "iptal", "Belge iptal edildi.")}>İptal</Button>
                         </>
