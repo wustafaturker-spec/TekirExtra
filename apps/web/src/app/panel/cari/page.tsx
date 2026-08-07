@@ -983,7 +983,7 @@ export default function CariSayfasi() {
           className="grow"
           value={arama}
           onChange={(e) => setArama(e.target.value)}
-          placeholder="Cari adı, kodu veya VKN ile ara..."
+          placeholder="Cari adı, kodu, VKN veya telefon ile ara..."
         />
         <Segmented<FiltreTip>
           value={filtreTip}

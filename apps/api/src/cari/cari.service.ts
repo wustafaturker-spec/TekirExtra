@@ -57,6 +57,7 @@ export class CariService {
                 { unvan: { contains: arama, mode: "insensitive" } },
                 { kod: { contains: arama, mode: "insensitive" } },
                 { vknTckn: { contains: arama } },
+                { telefon: { contains: arama } },
               ],
             }
           : undefined,

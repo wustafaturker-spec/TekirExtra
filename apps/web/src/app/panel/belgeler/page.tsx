@@ -40,7 +40,7 @@ interface BelgeGorunumu {
 
 const GORUNUM_ANAHTARI = "tekir_belge_gorunumleri";
 
-interface Cari { id: string; kod?: string; unvan: string; vknTckn?: string | null }
+interface Cari { id: string; kod?: string; unvan: string; vknTckn?: string | null; telefon?: string | null }
 interface Stok { id: string; kod: string; ad: string }
 
 interface BelgeSatirForm {
@@ -413,8 +413,8 @@ export default function BelgelerSayfasi() {
                   secenekler={cariler.map((cari) => ({
                     deger: cari.id,
                     baslik: cari.unvan,
-                    aciklama: [cari.kod, cari.vknTckn].filter(Boolean).join(" · ") || "Cari hesap",
-                    aramaMetni: [cari.kod, cari.vknTckn].filter(Boolean).join(" "),
+                    aciklama: [cari.kod, cari.vknTckn, cari.telefon].filter(Boolean).join(" · ") || "Cari hesap",
+                    aramaMetni: [cari.kod, cari.vknTckn, cari.telefon].filter(Boolean).join(" "),
                   }))}
                 />
               </Field>

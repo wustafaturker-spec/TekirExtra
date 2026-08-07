@@ -25,6 +25,7 @@ interface Cari {
   kod?: string;
   unvan: string;
   vknTckn?: string | null;
+  telefon?: string | null;
 }
 
 interface CariSecimOzeti extends Cari {
@@ -714,8 +715,8 @@ export default function FaturaSayfasi() {
                   secenekler={cariler.map((cari) => ({
                     deger: cari.id,
                     baslik: cari.unvan,
-                    aciklama: [cari.kod, cari.vknTckn].filter(Boolean).join(" · ") || "Cari hesap",
-                    aramaMetni: [cari.kod, cari.vknTckn].filter(Boolean).join(" "),
+                    aciklama: [cari.kod, cari.vknTckn, cari.telefon].filter(Boolean).join(" · ") || "Cari hesap",
+                    aramaMetni: [cari.kod, cari.vknTckn, cari.telefon].filter(Boolean).join(" "),
                   }))}
                 />
               </Field>
