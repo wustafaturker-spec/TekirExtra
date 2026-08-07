@@ -105,6 +105,8 @@ export default function BelgelerSayfasi() {
   const [turFiltre, setTurFiltre] = useState<TurFiltre>("tumu");
   const [arama, setArama] = useState("");
   const [aramaSorgusu, setAramaSorgusu] = useState("");
+  const [tarihBaslangic, setTarihBaslangic] = useState("");
+  const [tarihBitis, setTarihBitis] = useState("");
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [formAcik, setFormAcik] = useState(false);
@@ -147,6 +149,8 @@ export default function BelgelerSayfasi() {
       if (turFiltre !== "tumu") parametreler.set("tur", turFiltre);
       if (imlec) parametreler.set("imlec", imlec);
       if (aramaSorgusu) parametreler.set("arama", aramaSorgusu);
+      if (tarihBaslangic) parametreler.set("baslangic", tarihBaslangic);
+      if (tarihBitis) parametreler.set("bitis", tarihBitis);
       const sorgu = parametreler.size ? "?" + parametreler.toString() : "";
       const veri = await api<{ kayitlar: Belge[]; sonrakiImlec: string | null }>("/belgeler" + sorgu);
       setBelgeler((eskiler) => imlec ? [...eskiler, ...veri.kayitlar] : veri.kayitlar);
@@ -157,7 +161,7 @@ export default function BelgelerSayfasi() {
     } finally {
       setListeYukleniyor(false);
     }
-  }, [turFiltre, aramaSorgusu]);
+  }, [turFiltre, aramaSorgusu, tarihBaslangic, tarihBitis]);
 
   useEffect(() => {
     const zamanlayici = window.setTimeout(() => setAramaSorgusu(arama.trim()), 300);
@@ -188,6 +192,8 @@ export default function BelgelerSayfasi() {
       setTurFiltre(turParametresi);
     }
     if (parametreler.get("yeni") === "1") setFormAcik(true);
+    setTarihBaslangic(parametreler.get("baslangic") ?? "");
+    setTarihBitis(parametreler.get("bitis") ?? "");
     setDurumFiltresi(parametreler.get("durum"));
     try { setKayitliGorunumler(JSON.parse(localStorage.getItem(GORUNUM_ANAHTARI) ?? "[]") as BelgeGorunumu[]); }
     catch { localStorage.removeItem(GORUNUM_ANAHTARI); }
@@ -199,7 +205,22 @@ export default function BelgelerSayfasi() {
     if (gorunum.tur !== "tumu") parametreler.set("tur", gorunum.tur);
     if (gorunum.yon) parametreler.set("yon", gorunum.yon);
     if (gorunum.durum) parametreler.set("durum", gorunum.durum);
+    if (tarihBaslangic) parametreler.set("baslangic", tarihBaslangic);
+    if (tarihBitis) parametreler.set("bitis", tarihBitis);
     window.history.replaceState(null, "", "/panel/belgeler" + (parametreler.size ? "?" + parametreler.toString() : ""));
+  }
+
+  function tarihFiltresiDegistir(alan: "baslangic" | "bitis", deger: string) {
+    if (alan === "baslangic") setTarihBaslangic(deger); else setTarihBitis(deger);
+    const parametreler = new URLSearchParams(window.location.search);
+    if (deger) parametreler.set(alan, deger); else parametreler.delete(alan);
+    window.history.replaceState(null, "", "/panel/belgeler" + (parametreler.size ? "?" + parametreler.toString() : ""));
+  }
+
+  function tumFiltreleriTemizle() {
+    setTarihBaslangic(""); setTarihBitis("");
+    gorunumuUygula({ tur: "tumu", yon: null, durum: null });
+    window.history.replaceState(null, "", "/panel/belgeler");
   }
 
   function gorunumKaydet(event: React.FormEvent) {
@@ -400,6 +421,8 @@ export default function BelgelerSayfasi() {
   const gorunen = belgeler.filter((b) => {
     if (yonBaglami && b.yon !== yonBaglami) return false;
     if (durumFiltresi && b.durum !== durumFiltresi) return false;
+    if (tarihBaslangic && b.tarih < tarihBaslangic) return false;
+    if (tarihBitis && b.tarih > tarihBitis) return false;
     if (!arama) return true;
     const q = arama.toLocaleLowerCase("tr");
     return (b.no ?? "").toLocaleLowerCase("tr").includes(q) || b.cari.unvan.toLocaleLowerCase("tr").includes(q);
@@ -697,10 +720,12 @@ export default function BelgelerSayfasi() {
         <div className="saved-view-filters">
           <Field label="Yön"><Select value={yonBaglami ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: (e.target.value || null) as Yon | null, durum: durumFiltresi })}><option value="">Tümü</option><option value="satis">Satış</option><option value="alis">Satın alma</option></Select></Field>
           <Field label="Belge durumu"><Select value={durumFiltresi ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: yonBaglami, durum: e.target.value || null })}><option value="">Tümü</option><option value="taslak">Taslak</option><option value="onaylandi">Onaylı</option><option value="kapandi">Kapandı</option><option value="iptal">İptal</option></Select></Field>
+          <Field label="Başlangıç tarihi"><Input aria-label="Başlangıç tarihi" type="date" value={tarihBaslangic} onChange={(e) => tarihFiltresiDegistir("baslangic", e.target.value)} /></Field>
+          <Field label="Bitiş tarihi"><Input aria-label="Bitiş tarihi" type="date" min={tarihBaslangic || undefined} value={tarihBitis} onChange={(e) => tarihFiltresiDegistir("bitis", e.target.value)} /></Field>
           <Field label="Kaydedilmiş görünüm"><Select value="" onChange={(e) => { const gorunum = kayitliGorunumler.find((g) => g.id === e.target.value); if (gorunum) kayitliGorunumuUygula(gorunum); }}><option value="">Görünüm seçin</option>{kayitliGorunumler.map((g) => <option value={g.id} key={g.id}>{g.ad}</option>)}</Select></Field>
         </div>
         <div className="saved-view-actions">
-          {(turFiltre !== "tumu" || yonBaglami || durumFiltresi) && <Button size="sm" type="button" onClick={() => gorunumuUygula({ tur: "tumu", yon: null, durum: null })}>Filtreleri temizle</Button>}
+          {(turFiltre !== "tumu" || yonBaglami || durumFiltresi || tarihBaslangic || tarihBitis) && <Button size="sm" type="button" onClick={tumFiltreleriTemizle}>Filtreleri temizle</Button>}
           <Button size="sm" type="button" onClick={() => setGorunumFormuAcik((acik) => !acik)}>Görünümü kaydet</Button>
         </div>
         {gorunumFormuAcik && <form className="saved-view-form" onSubmit={gorunumKaydet}><Input autoFocus aria-label="Görünüm adı" value={gorunumAdi} onChange={(e) => setGorunumAdi(e.target.value)} placeholder="Örn. Onay bekleyen satış siparişleri" required /><Button size="sm" variant="primary" type="submit">Kaydet</Button><Button size="sm" type="button" onClick={() => setGorunumFormuAcik(false)}>Vazgeç</Button></form>}

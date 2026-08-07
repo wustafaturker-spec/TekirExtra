@@ -42,9 +42,11 @@ export class BelgelerController {
     @Query("yon") yon?: string,
     @Query("durum") durum?: string,
     @Query("arama") arama?: string,
+    @Query("baslangic") baslangic?: string,
+    @Query("bitis") bitis?: string,
     @Query("imlec") imlec?: string,
   ) {
-    return this.belgelerService.listele(tur, yon, durum, arama, imlec);
+    return this.belgelerService.listele(tur, yon, durum, arama, baslangic, bitis, imlec);
   }
 
   @Get(":id")

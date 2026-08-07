@@ -269,6 +269,36 @@ test("belge dönüşümünden önce aktarılacak içerik onaylanır", async ({ p
   expect(donusumIstegi).toEqual({ hedef: "siparis" });
 });
 
+test("belgeler başlangıç ve bitiş tarihine göre filtrelenir", async ({ page }) => {
+  const belge = (id: string, no: string, tarih: string) => ({
+    id, no, tarih, tur: "siparis", yon: "satis", durum: "onaylandi", genelToplam: "1200.00",
+    dovizCinsi: "TRY", faturaId: null, cari: { id: "c1", kod: "C001", unvan: "Örnek Müşteri" },
+  });
+  const tumu = [belge("b1", "SP-001", "2026-07-31"), belge("b2", "SP-002", "2026-08-05"), belge("b3", "SP-003", "2026-08-12")];
+  let sonParametreler = new URLSearchParams();
+  await page.route("http://localhost:3001/api/v1/belgeler**", (route) => {
+    sonParametreler = new URL(route.request().url()).searchParams;
+    const baslangic = sonParametreler.get("baslangic"); const bitis = sonParametreler.get("bitis");
+    const kayitlar = tumu.filter((kayit) => (!baslangic || kayit.tarih >= baslangic) && (!bitis || kayit.tarih <= bitis));
+    return route.fulfill({ json: { kayitlar, sonrakiImlec: null } });
+  });
+
+  await page.goto("/panel/belgeler");
+  await page.getByLabel("Başlangıç tarihi").fill("2026-08-01");
+  await page.getByLabel("Bitiş tarihi").fill("2026-08-10");
+  await expect(page.getByRole("row").filter({ hasText: "SP-002" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "SP-001" })).not.toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "SP-003" })).not.toBeVisible();
+  expect(sonParametreler.get("baslangic")).toBe("2026-08-01");
+  expect(sonParametreler.get("bitis")).toBe("2026-08-10");
+  await expect(page).toHaveURL(/baslangic=2026-08-01/);
+  await expect(page).toHaveURL(/bitis=2026-08-10/);
+
+  await page.getByRole("button", { name: "Filtreleri temizle" }).click();
+  await expect(page.getByRole("row").filter({ hasText: "SP-001" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "SP-003" })).toBeVisible();
+});
+
 test("belge araması yüklenmemiş kayıtlarda sunucuda çalışır", async ({ page }) => {
   let aramaParametresi: string | null = null;
   await page.route("http://localhost:3001/api/v1/belgeler**", (route) => {

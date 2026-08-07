@@ -74,14 +74,22 @@ export class BelgelerService {
     yon?: string,
     durum?: string,
     arama?: string,
+    baslangic?: string,
+    bitis?: string,
     imlec?: string,
     adet = 50,
   ) {
     const ctx = aktifBaglam();
+    const baslangicTarihi = baslangic ? new Date(baslangic) : null;
+    const bitisTarihi = bitis ? new Date(bitis) : null;
+    if (baslangicTarihi && Number.isNaN(baslangicTarihi.getTime())) throw new BadRequestException("Başlangıç tarihi geçersiz");
+    if (bitisTarihi && Number.isNaN(bitisTarihi.getTime())) throw new BadRequestException("Bitiş tarihi geçersiz");
+    if (baslangicTarihi && bitisTarihi && baslangicTarihi > bitisTarihi) throw new BadRequestException("Başlangıç tarihi bitiş tarihinden sonra olamaz");
     const where: Prisma.BelgeWhereInput = {
       ...(tur ? { tur: tur as BelgeTur } : {}),
       ...(yon ? { yon: yon as "satis" | "alis" } : {}),
       ...(durum ? { durum: durum as ZincirBelgeDurum } : {}),
+      ...(baslangicTarihi || bitisTarihi ? { tarih: { ...(baslangicTarihi ? { gte: baslangicTarihi } : {}), ...(bitisTarihi ? { lte: bitisTarihi } : {}) } } : {}),
       ...(arama
         ? {
             OR: [
