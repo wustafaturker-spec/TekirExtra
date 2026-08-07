@@ -925,9 +925,11 @@ Playwright ekran goruntuleriyle temel fatura, cari, stok, kasa/banka ve ekstre
 senaryolari icin gorsel regresyon kontrolleri CI surecine eklenmelidir.
 
 Uygulama notu (7 Agustos 2026): Playwright altyapisi ve CI adimi eklendi.
-Ilk kritik testler satis/satin alma baglam gecislerini ve panelden geri bildirim
-gonderme akisini dogrulamaktadir. Modul bazli gorsel regresyon kapsamasi
-kademeli olarak genisletilecektir.
+Kritik testler satis/satin alma baglam gecislerini ve panelden geri bildirim
+gonderme akisini dogrulamaktadir. Ayrica fatura, cari, stok, kasa/banka ve
+ekstre ekranlari 1440 x 900 masaustu ile 390 x 844 mobil gorunumde baslik
+gorunurlugu ve belge duzeyinde yatay tasma acisindan CI icinde denetlenmektedir.
+Piksel tabanli gorsel regresyon kapsamasi kademeli olarak genisletilecektir.
 
 ### 15.15 Yerlesim uygulama onceligi
 
