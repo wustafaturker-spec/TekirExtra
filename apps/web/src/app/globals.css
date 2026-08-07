@@ -1289,3 +1289,22 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
   .invoice-lines .document-line-detail { display: block; margin-top: -0.75rem; }
   .invoice-lines .document-line-detail td { display: block; }
 }
+
+.feedback-trigger { align-items: center; background: transparent; border: 0; border-top: 1px solid rgba(255,255,255,.1); color: var(--text-muted); cursor: pointer; display: flex; gap: .65rem; padding: .8rem 1rem; text-align: left; width: 100%; }
+.feedback-trigger:hover { background: rgba(255,255,255,.06); color: white; }
+.feedback-backdrop { align-items: center; background: rgba(15,23,42,.58); display: flex; inset: 0; justify-content: center; padding: 1rem; position: fixed; z-index: 1000; }
+.feedback-dialog { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-md); max-width: 520px; overflow: hidden; width: 100%; }
+.feedback-dialog__head { align-items: flex-start; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; padding: 1rem 1.25rem; }
+.feedback-dialog__head strong, .feedback-dialog__head small { display: block; }
+.feedback-dialog__head small { color: var(--text-muted); margin-top: .25rem; }
+.feedback-dialog__head button { background: transparent; border: 0; color: var(--text-muted); cursor: pointer; font-size: 1.4rem; }
+.feedback-form { display: grid; gap: .65rem; padding: 1.25rem; }
+.feedback-form > label { font-size: .8rem; font-weight: 700; margin-top: .25rem; }
+.feedback-form .textarea { min-height: 100px; resize: vertical; }
+.feedback-score { display: grid; gap: .4rem; grid-template-columns: repeat(5, 1fr); }
+.feedback-score button { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-muted); cursor: pointer; display: grid; min-height: 48px; place-content: center; }
+.feedback-score button span { color: var(--warning); }
+.feedback-score button.is-selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); color: var(--text); }
+.feedback-form__actions { display: flex; gap: .5rem; justify-content: flex-end; margin-top: .5rem; }
+.feedback-error { color: var(--danger); font-size: .8rem; margin: 0; }
+.feedback-success { padding: 1.5rem; text-align: center; }

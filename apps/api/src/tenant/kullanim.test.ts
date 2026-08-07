@@ -12,6 +12,9 @@ describe("KullanimController", () => {
     await expect(controller.olay({ olay: "fatura_tamamlandi", sureMs: 120000 })).resolves.toEqual({ kaydedildi: true });
     expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({ varlik: "kullanim", islem: "fatura_tamamlandi", detay: { sureMs: 120000 } }) });
     await expect(controller.olay({ olay: "serbest_metin" })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller.geriBildirim({ puan: 5, kategori: "kullanilabilirlik", mesaj: "Hızlı ve anlaşılır" })).resolves.toEqual({ kaydedildi: true });
+    expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({ varlik: "kullanim", islem: "geri_bildirim", detay: { puan: 5, kategori: "kullanilabilirlik", mesaj: "Hızlı ve anlaşılır" } }) });
+    await expect(controller.geriBildirim({ puan: 6, kategori: "genel" })).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it("30 gunluk tamamlama ve benimsenme ozetini hesaplar", async () => {
@@ -20,6 +23,8 @@ describe("KullanimController", () => {
       { islem: "fatura_tamamlandi", userId: "u1", detay: { sureMs: 60000 } }, { islem: "fatura_tamamlandi", userId: "u2", detay: { sureMs: 120000 } },
       { islem: "fatura_dogrulama_hatasi", userId: "u1", detay: null }, { islem: "gorunum_kaydedildi", userId: "u1", detay: null },
       { islem: "gorunum_kullanildi", userId: "u2", detay: null },
+      { islem: "geri_bildirim", userId: "u1", detay: { puan: 5, kategori: "genel" } },
+      { islem: "geri_bildirim", userId: "u2", detay: { puan: 3, kategori: "hata" } },
     ];
     const kullanicilar = [{ id: "u1", rol: "yonetici" }, { id: "u2", rol: "satis" }];
     const prisma = { tenantIslem: vi.fn((_tenant, cb) => cb({
@@ -28,12 +33,13 @@ describe("KullanimController", () => {
     })) } as any;
     const sonuc = await new KullanimController(prisma).ozet();
     expect(sonuc).toMatchObject({
-      aktifKullanici: 2, toplamOlay: 7,
+      aktifKullanici: 2, toplamOlay: 9,
       fatura: { acilan: 2, tamamlanan: 2, ortancaSureMs: 90000, terkOrani: 0, dogrulamaHatasi: 1 },
       gorunum: { kaydedilen: 1, kullanilan: 1 },
+      geriBildirim: { yanit: 2, ortalamaPuan: 4, kategoriler: { genel: 1, kullanilabilirlik: 0, hata: 1, oneri: 0 } },
       rolKirilimi: [
-        { rol: "yonetici", kullaniciSayisi: 1, aktifKullanici: 1, toplamOlay: 4, tamamlananFatura: 1, kullanilanGorunum: 0 },
-        { rol: "satis", kullaniciSayisi: 1, aktifKullanici: 1, toplamOlay: 3, tamamlananFatura: 1, kullanilanGorunum: 1 },
+        { rol: "yonetici", kullaniciSayisi: 1, aktifKullanici: 1, toplamOlay: 5, tamamlananFatura: 1, kullanilanGorunum: 0 },
+        { rol: "satis", kullaniciSayisi: 1, aktifKullanici: 1, toplamOlay: 4, tamamlananFatura: 1, kullanilanGorunum: 1 },
       ],
     });
   });

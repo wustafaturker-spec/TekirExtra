@@ -85,6 +85,11 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const [menuAcik, setMenuAcik] = useState(false);
   const [bildirimler, setBildirimler] = useState<Bildirim[]>([]);
   const [bildirimlerAcik, setBildirimlerAcik] = useState(false);
+  const [geriBildirimAcik, setGeriBildirimAcik] = useState(false);
+  const [geriBildirimPuan, setGeriBildirimPuan] = useState(5);
+  const [geriBildirimKategori, setGeriBildirimKategori] = useState("genel");
+  const [geriBildirimMesaj, setGeriBildirimMesaj] = useState("");
+  const [geriBildirimDurum, setGeriBildirimDurum] = useState<"" | "gonderiliyor" | "basarili" | "hata">("");
 
   useEffect(() => {
     if (tokenAl()) {
@@ -106,7 +111,13 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
     }
   }, []);
 
-  useEffect(() => { setBildirimlerAcik(false); }, [pathname]);
+  useEffect(() => { setBildirimlerAcik(false); setGeriBildirimAcik(false); }, [pathname]);
+  useEffect(() => {
+    if (!geriBildirimAcik) return;
+    const kapat = (event: KeyboardEvent) => { if (event.key === "Escape") setGeriBildirimAcik(false); };
+    window.addEventListener("keydown", kapat);
+    return () => window.removeEventListener("keydown", kapat);
+  }, [geriBildirimAcik]);
   useEffect(() => {
     if (!bildirimlerAcik) return;
     const kapat = (event: KeyboardEvent) => { if (event.key === "Escape") setBildirimlerAcik(false); };
@@ -114,6 +125,14 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
     return () => window.removeEventListener("keydown", kapat);
   }, [bildirimlerAcik]);
   const bildirimSayisi = bildirimler.reduce((toplam, bildirim) => toplam + bildirim.sayi, 0);
+
+  async function geriBildirimGonder(event: React.FormEvent) {
+    event.preventDefault(); setGeriBildirimDurum("gonderiliyor");
+    try {
+      await api("/kullanim/geri-bildirim", { method: "POST", body: JSON.stringify({ puan: geriBildirimPuan, kategori: geriBildirimKategori, mesaj: geriBildirimMesaj.trim() || undefined }) });
+      setGeriBildirimDurum("basarili"); setGeriBildirimMesaj("");
+    } catch { setGeriBildirimDurum("hata"); }
+  }
 
   async function cikis() {
     await api("/auth/cikis", { method: "POST" }).catch(() => undefined);
@@ -178,6 +197,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
           ))}
         </nav>
 
+        <button className="feedback-trigger" onClick={() => { setGeriBildirimAcik(true); setGeriBildirimDurum(""); }} type="button"><span aria-hidden="true">💬</span><span>Geri bildirim ver</span></button>
         <div className="sidebar__user">
           <div className="grow sidebar__user-info">
             <div className="sidebar__user-name">{rol ? ROL_ADI[rol] ?? "Hesabım" : "Hesabım"}</div>
@@ -188,6 +208,8 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
           </button>
         </div>
       </aside>
+
+      {geriBildirimAcik && <div className="feedback-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setGeriBildirimAcik(false); }}><section aria-labelledby="feedback-title" aria-modal="true" className="feedback-dialog" role="dialog"><div className="feedback-dialog__head"><div><strong id="feedback-title">Deneyiminizi paylaşın</strong><small>Geri bildiriminiz ürün geliştirme kararlarında kullanılır.</small></div><button aria-label="Geri bildirim formunu kapat" onClick={() => setGeriBildirimAcik(false)} type="button">×</button></div>{geriBildirimDurum === "basarili" ? <div className="feedback-success"><strong>Teşekkür ederiz.</strong><p>Geri bildiriminiz kaydedildi.</p><button className="btn btn--primary" onClick={() => setGeriBildirimAcik(false)} type="button">Kapat</button></div> : <form className="feedback-form" onSubmit={(e) => void geriBildirimGonder(e)}><label>Deneyiminizi puanlayın</label><div className="feedback-score" role="radiogroup" aria-label="Deneyim puanı">{[1, 2, 3, 4, 5].map((puan) => <button aria-checked={geriBildirimPuan === puan} autoFocus={puan === geriBildirimPuan} className={geriBildirimPuan === puan ? "is-selected" : ""} key={puan} onClick={() => setGeriBildirimPuan(puan)} role="radio" type="button">{puan}<span aria-hidden="true">★</span></button>)}</div><label htmlFor="feedback-category">Konu</label><select className="select" id="feedback-category" value={geriBildirimKategori} onChange={(e) => setGeriBildirimKategori(e.target.value)}><option value="genel">Genel deneyim</option><option value="kullanilabilirlik">Kullanılabilirlik</option><option value="hata">Hata</option><option value="oneri">Öneri</option></select><label htmlFor="feedback-message">Açıklama <small>(isteğe bağlı)</small></label><textarea className="textarea" id="feedback-message" maxLength={1000} onChange={(e) => setGeriBildirimMesaj(e.target.value)} placeholder="Neyi iyileştirebiliriz?" rows={4} value={geriBildirimMesaj} />{geriBildirimDurum === "hata" && <p className="feedback-error" role="alert">Geri bildirim gönderilemedi. Lütfen yeniden deneyin.</p>}<div className="feedback-form__actions"><button className="btn btn--ghost" onClick={() => setGeriBildirimAcik(false)} type="button">Vazgeç</button><button className="btn btn--primary" disabled={geriBildirimDurum === "gonderiliyor"} type="submit">{geriBildirimDurum === "gonderiliyor" ? "Gönderiliyor…" : "Gönder"}</button></div></form>}</section></div>}
 
       {bildirimlerAcik && (
         <aside className="notification-panel" aria-label="Bildirim merkezi">
