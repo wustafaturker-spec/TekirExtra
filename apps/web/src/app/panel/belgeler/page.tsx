@@ -123,6 +123,7 @@ export default function BelgelerSayfasi() {
   const [sonrakiImlec, setSonrakiImlec] = useState<string | null>(null);
   const [listeYukleniyor, setListeYukleniyor] = useState(true);
   const yuklemeSirasi = useRef(0);
+  const tumunuSecRef = useRef<HTMLInputElement | null>(null);
 
   // Form
   const [tur, setTur] = useState<Tur>("teklif");
@@ -454,6 +455,13 @@ export default function BelgelerSayfasi() {
   const gorunenFaturalanabilir = gorunen.filter(faturalanabilir);
   const gorunenlerinTumuSecili = gorunenFaturalanabilir.length > 0 && gorunenFaturalanabilir.every((belge) => secili.has(belge.id));
 
+  const gorunenlerdenSeciliVar = gorunenFaturalanabilir.some((belge) => secili.has(belge.id));
+  const gorunenSecimKismi = gorunenlerdenSeciliVar && !gorunenlerinTumuSecili;
+
+  useEffect(() => {
+    if (tumunuSecRef.current) tumunuSecRef.current.indeterminate = gorunenSecimKismi;
+  }, [gorunenSecimKismi]);
+
   function gorunenlerinSeciminiDegistir() {
     setSecili((eskiler) => {
       const yeni = new Set(eskiler);
@@ -771,7 +779,7 @@ export default function BelgelerSayfasi() {
         <TableWrap>
           <thead>
             <tr>
-              <th style={{ width: 36 }}><input aria-label="Faturalanabilir belgelerin tümünü seç" type="checkbox" checked={gorunenlerinTumuSecili} disabled={gorunenFaturalanabilir.length === 0} onChange={gorunenlerinSeciminiDegistir} /></th>
+              <th style={{ width: 36 }}><input aria-label="Faturalanabilir belgelerin tümünü seç" aria-checked={gorunenSecimKismi ? "mixed" : gorunenlerinTumuSecili} ref={tumunuSecRef} type="checkbox" checked={gorunenlerinTumuSecili} disabled={gorunenFaturalanabilir.length === 0} onChange={gorunenlerinSeciminiDegistir} /></th>
               <th>Belge No</th>
               <th>Tür / Yön</th>
               <th>Cari</th>

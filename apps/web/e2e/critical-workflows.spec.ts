@@ -286,8 +286,12 @@ test("görünür faturalanabilir belgeler topluca seçilir", async ({ page }) =>
 
   await page.goto("/panel/belgeler");
   const tumunuSec = page.getByRole("checkbox", { name: "Faturalanabilir belgelerin tümünü seç" });
-  await tumunuSec.check();
-  await expect(page.getByRole("checkbox", { name: "SP-001 belgesini seç" })).toBeChecked();
+  const ilkBelge = page.getByRole("checkbox", { name: "SP-001 belgesini seç" });
+  await ilkBelge.check();
+  await expect(tumunuSec).toHaveJSProperty("indeterminate", true);
+  await expect(tumunuSec).toHaveAttribute("aria-checked", "mixed");
+  await tumunuSec.click();
+  await expect(ilkBelge).toBeChecked();
   await expect(page.getByRole("checkbox", { name: "IRS-001 belgesini seç" })).toBeChecked();
   await expect(page.getByRole("row").filter({ hasText: "SP-TASLAK" }).getByRole("checkbox")).toHaveCount(0);
   await page.getByRole("button", { name: "🧾 Seçilenleri Faturala (2)" }).click();
