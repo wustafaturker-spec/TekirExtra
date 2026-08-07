@@ -121,7 +121,7 @@ export default function BelgelerSayfasi() {
   const [gorunumFormuAcik, setGorunumFormuAcik] = useState(false);
   const [gorunumAdi, setGorunumAdi] = useState("");
   const [sonrakiImlec, setSonrakiImlec] = useState<string | null>(null);
-  const [listeYukleniyor, setListeYukleniyor] = useState(false);
+  const [listeYukleniyor, setListeYukleniyor] = useState(true);
 
   // Form
   const [tur, setTur] = useState<Tur>("teklif");
@@ -767,8 +767,10 @@ export default function BelgelerSayfasi() {
             </tr>
           </thead>
           <tbody>
-            {gorunen.length === 0 ? (
-              <tr><td colSpan={8} className="empty">Kayıtlı belge bulunmuyor.</td></tr>
+            {listeYukleniyor && belgeler.length === 0 ? (
+              <tr><td colSpan={8} className="empty" role="status">Belgeler yükleniyor…</td></tr>
+            ) : gorunen.length === 0 ? (
+              <tr><td colSpan={8} className="empty">{arama || turFiltre !== "tumu" || yonBaglami || durumFiltresi || tarihBaslangic || tarihBitis ? "Filtrelere uygun belge bulunamadı." : "Kayıtlı belge bulunmuyor."}</td></tr>
             ) : (
               gorunen.map((b) => (
                 <tr key={b.id}>

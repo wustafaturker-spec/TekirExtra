@@ -269,6 +269,24 @@ test("belge dönüşümünden önce aktarılacak içerik onaylanır", async ({ p
   expect(donusumIstegi).toEqual({ hedef: "siparis" });
 });
 
+test("belge listesi yükleniyor ve filtrelenmiş boş durumlarını ayırır", async ({ page }) => {
+  let yanitla!: () => void;
+  const beklet = new Promise<void>((resolve) => { yanitla = resolve; });
+  await page.route("http://localhost:3001/api/v1/belgeler**", async (route) => {
+    await beklet;
+    await route.fulfill({ json: { kayitlar: [], sonrakiImlec: null } });
+  });
+
+  await page.goto("/panel/belgeler");
+  await expect(page.getByRole("status")).toHaveText("Belgeler yükleniyor…");
+  await expect(page.getByText("Kayıtlı belge bulunmuyor.")).not.toBeVisible();
+  yanitla();
+  await expect(page.getByText("Kayıtlı belge bulunmuyor.")).toBeVisible();
+
+  await page.getByPlaceholder("Belge no veya cari ile ara...").fill("bulunmayan");
+  await expect(page.getByText("Filtrelere uygun belge bulunamadı.")).toBeVisible();
+});
+
 test("belgeler başlangıç ve bitiş tarihine göre filtrelenir", async ({ page }) => {
   const belge = (id: string, no: string, tarih: string) => ({
     id, no, tarih, tur: "siparis", yon: "satis", durum: "onaylandi", genelToplam: "1200.00",
