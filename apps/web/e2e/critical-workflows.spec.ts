@@ -166,3 +166,35 @@ test("kesinleştirme öncesi stok, cari, vergi ve e-Belge etkisi gösterilir", a
   await expect(panel).toContainText("e-Fatura kuyruğa alınacak");
   await expect(panel).toContainText("1.500,00 TL");
 });
+
+
+test("fatura kalemleri yalnız klavyeyle kesintisiz girilebilir", async ({ page }) => {
+  await page.route("http://localhost:3001/api/v1/stok?adet=100", (route) => route.fulfill({ json: { kayitlar: [{
+    id: "s1", kod: "STK-001", ad: "Klavye Ürünü", barkod: "8690000000001", anaBirim: "adet",
+    kullanilabilirMiktar: "25", alisFiyati: "80.00", satisFiyati: "100.00", kdvOrani: "20",
+    tedarikciUrunKodlari: ["TED-42"],
+  }] } }));
+  await page.route("http://localhost:3001/api/v1/stok/s1/tavsiye-fiyat**", (route) => route.fulfill({ json: { birimFiyat: 100, iskontoOrani: 0 } }));
+
+  await page.goto("/panel/fatura?yon=satis&yeni=1");
+  const urun = page.getByRole("combobox", { name: "1. satır ürün veya hizmet seçimi" });
+  await urun.fill("TED-42");
+  await urun.press("Enter");
+
+  const miktar = page.getByLabel("Miktar").first();
+  await expect(miktar).toBeFocused();
+  await miktar.fill("3");
+  await miktar.press("Tab");
+  await expect(page.getByLabel("Birim fiyat").first()).toBeFocused();
+  await page.getByLabel("Birim fiyat").first().fill("125");
+  await page.getByLabel("Birim fiyat").first().press("Tab");
+  await expect(page.getByLabel("İskonto yüzdesi").first()).toBeFocused();
+  await page.getByLabel("İskonto yüzdesi").first().press("Tab");
+  const kdv = page.getByLabel("KDV yüzdesi").first();
+  await expect(kdv).toBeFocused();
+  await kdv.press("Enter");
+
+  await expect(page.getByRole("combobox", { name: "2. satır ürün veya hizmet seçimi" })).toBeFocused();
+  await expect(page.getByLabel("Miktar")).toHaveCount(2);
+  await expect(page.getByText("450,00 TL", { exact: true }).last()).toBeVisible();
+});
