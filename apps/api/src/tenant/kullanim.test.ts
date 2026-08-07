@@ -21,8 +21,20 @@ describe("KullanimController", () => {
       { islem: "fatura_dogrulama_hatasi", userId: "u1", detay: null }, { islem: "gorunum_kaydedildi", userId: "u1", detay: null },
       { islem: "gorunum_kullanildi", userId: "u2", detay: null },
     ];
-    const prisma = { tenantIslem: vi.fn((_tenant, cb) => cb({ auditLog: { findMany: vi.fn().mockResolvedValue(kayitlar) } })) } as any;
+    const kullanicilar = [{ id: "u1", rol: "yonetici" }, { id: "u2", rol: "satis" }];
+    const prisma = { tenantIslem: vi.fn((_tenant, cb) => cb({
+      auditLog: { findMany: vi.fn().mockResolvedValue(kayitlar) },
+      user: { findMany: vi.fn().mockResolvedValue(kullanicilar) },
+    })) } as any;
     const sonuc = await new KullanimController(prisma).ozet();
-    expect(sonuc).toMatchObject({ aktifKullanici: 2, toplamOlay: 7, fatura: { acilan: 2, tamamlanan: 2, ortancaSureMs: 90000, terkOrani: 0, dogrulamaHatasi: 1 }, gorunum: { kaydedilen: 1, kullanilan: 1 } });
+    expect(sonuc).toMatchObject({
+      aktifKullanici: 2, toplamOlay: 7,
+      fatura: { acilan: 2, tamamlanan: 2, ortancaSureMs: 90000, terkOrani: 0, dogrulamaHatasi: 1 },
+      gorunum: { kaydedilen: 1, kullanilan: 1 },
+      rolKirilimi: [
+        { rol: "yonetici", kullaniciSayisi: 1, aktifKullanici: 1, toplamOlay: 4, tamamlananFatura: 1, kullanilanGorunum: 0 },
+        { rol: "satis", kullaniciSayisi: 1, aktifKullanici: 1, toplamOlay: 3, tamamlananFatura: 1, kullanilanGorunum: 1 },
+      ],
+    });
   });
 });

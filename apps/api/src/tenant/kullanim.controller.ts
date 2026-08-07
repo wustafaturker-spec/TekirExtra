@@ -30,9 +30,17 @@ export class KullanimController {
   async ozet() {
     const { tenantId } = aktifBaglam();
     const baslangic = new Date(Date.now() - 30 * 86_400_000);
-    const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) => tx.auditLog.findMany({
-      where: { varlik: "kullanim", createdAt: { gte: baslangic } }, select: { islem: true, userId: true, detay: true }, take: 20_000,
-    }));
+    const { kayitlar, kullanicilar } = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const [kayitlar, kullanicilar] = await Promise.all([
+        tx.auditLog.findMany({
+          where: { varlik: "kullanim", createdAt: { gte: baslangic } },
+          select: { islem: true, userId: true, detay: true },
+          take: 20_000,
+        }),
+        tx.user.findMany({ select: { id: true, rol: true }, where: { aktif: true } }),
+      ]);
+      return { kayitlar, kullanicilar };
+    });
     const say = (olay: string) => kayitlar.filter((kayit) => kayit.islem === olay).length;
     const sureler = kayitlar.filter((kayit) => kayit.islem === "fatura_tamamlandi").map((kayit) => {
       const detay = kayit.detay as { sureMs?: unknown } | null;
@@ -42,10 +50,24 @@ export class KullanimController {
     const ortancaSureMs = sureler.length ? (sureler.length % 2 ? sureler[orta] : (sureler[orta - 1] + sureler[orta]) / 2) : null;
     const acilan = say("fatura_form_acildi"); const tamamlanan = say("fatura_tamamlandi");
     const terk = say("fatura_form_terk");
+    const rolKirilimi = (["yonetici", "muhasebe", "satis", "salt_okunur"] as const).map((rol) => {
+      const kullaniciIdleri = new Set(kullanicilar.filter((kullanici) => kullanici.rol === rol).map((kullanici) => kullanici.id));
+      const olaylar = kayitlar.filter((kayit) => kayit.userId && kullaniciIdleri.has(kayit.userId));
+      const rolSay = (olay: string) => olaylar.filter((kayit) => kayit.islem === olay).length;
+      return {
+        rol,
+        kullaniciSayisi: kullaniciIdleri.size,
+        aktifKullanici: new Set(olaylar.map((kayit) => kayit.userId)).size,
+        toplamOlay: olaylar.length,
+        tamamlananFatura: rolSay("fatura_tamamlandi"),
+        kullanilanGorunum: rolSay("gorunum_kullanildi"),
+      };
+    }).filter((satir) => satir.kullaniciSayisi > 0 || satir.toplamOlay > 0);
     return {
       donemGun: 30,
       aktifKullanici: new Set(kayitlar.map((kayit) => kayit.userId).filter(Boolean)).size,
       toplamOlay: kayitlar.length,
+      rolKirilimi,
       fatura: { acilan, tamamlanan, ortancaSureMs, terkOrani: tamamlanan + terk ? terk / (tamamlanan + terk) : 0, dogrulamaHatasi: say("fatura_dogrulama_hatasi") },
       gorunum: { kaydedilen: say("gorunum_kaydedildi"), kullanilan: say("gorunum_kullanildi") },
     };
