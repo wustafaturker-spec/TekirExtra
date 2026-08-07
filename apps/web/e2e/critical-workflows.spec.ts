@@ -269,6 +269,30 @@ test("belge dönüşümünden önce aktarılacak içerik onaylanır", async ({ p
   expect(donusumIstegi).toEqual({ hedef: "siparis" });
 });
 
+test("belge listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page }) => {
+  const belge = (id: string, no: string) => ({
+    id, no, tur: "siparis", yon: "satis", durum: "onaylandi", tarih: "2026-08-07",
+    genelToplam: "1200.00", dovizCinsi: "TRY", faturaId: null, cari: { id: "c1", kod: "C001", unvan: "Örnek Müşteri" },
+  });
+  let ikinciSayfaIstendi = false;
+  await page.route("http://localhost:3001/api/v1/belgeler**", (route) => {
+    const imlec = new URL(route.request().url()).searchParams.get("imlec");
+    if (imlec === "sonraki-1") {
+      ikinciSayfaIstendi = true;
+      return route.fulfill({ json: { kayitlar: [belge("b2", "SP-002")], sonrakiImlec: null } });
+    }
+    return route.fulfill({ json: { kayitlar: [belge("b1", "SP-001")], sonrakiImlec: "sonraki-1" } });
+  });
+
+  await page.goto("/panel/belgeler");
+  await expect(page.getByRole("row").filter({ hasText: "SP-001" })).toBeVisible();
+  await page.getByRole("button", { name: "Daha fazla yükle" }).click();
+  await expect(page.getByRole("row").filter({ hasText: "SP-002" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "SP-001" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Daha fazla yükle" })).not.toBeVisible();
+  expect(ikinciSayfaIstendi).toBe(true);
+});
+
 test("filtrelenmiş belgeler UTF-8 CSV olarak dışa aktarılır", async ({ page }) => {
   const belge = (id: string, no: string, unvan: string) => ({
     id, no, tur: "siparis", yon: "satis", durum: "onaylandi", tarih: "2026-08-07",

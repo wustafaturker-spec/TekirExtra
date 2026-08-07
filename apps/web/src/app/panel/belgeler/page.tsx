@@ -116,6 +116,8 @@ export default function BelgelerSayfasi() {
   const [kayitliGorunumler, setKayitliGorunumler] = useState<BelgeGorunumu[]>([]);
   const [gorunumFormuAcik, setGorunumFormuAcik] = useState(false);
   const [gorunumAdi, setGorunumAdi] = useState("");
+  const [sonrakiImlec, setSonrakiImlec] = useState<string | null>(null);
+  const [listeYukleniyor, setListeYukleniyor] = useState(false);
 
   // Form
   const [tur, setTur] = useState<Tur>("teklif");
@@ -137,15 +139,21 @@ export default function BelgelerSayfasi() {
   }));
   const sonuc = faturaHesapla({ satirlar: girdiSatirlar });
 
-  const yukle = useCallback(async () => {
-    setHata("");
+  const yukle = useCallback(async (imlec?: string) => {
+    setHata(""); setListeYukleniyor(true);
     try {
-      const qs = turFiltre === "tumu" ? "" : `?tur=${turFiltre}`;
-      const veri = await api<{ kayitlar: Belge[] }>(`/belgeler${qs}`);
-      setBelgeler(veri.kayitlar);
-      setSecili(new Set());
+      const parametreler = new URLSearchParams();
+      if (turFiltre !== "tumu") parametreler.set("tur", turFiltre);
+      if (imlec) parametreler.set("imlec", imlec);
+      const sorgu = parametreler.size ? "?" + parametreler.toString() : "";
+      const veri = await api<{ kayitlar: Belge[]; sonrakiImlec: string | null }>("/belgeler" + sorgu);
+      setBelgeler((eskiler) => imlec ? [...eskiler, ...veri.kayitlar] : veri.kayitlar);
+      setSonrakiImlec(veri.sonrakiImlec);
+      if (!imlec) setSecili(new Set());
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Belgeler yüklenemedi");
+    } finally {
+      setListeYukleniyor(false);
     }
   }, [turFiltre]);
 
@@ -764,6 +772,13 @@ export default function BelgelerSayfasi() {
             )}
           </tbody>
         </TableWrap>
+        {sonrakiImlec && (
+          <div style={{ padding: "1rem", textAlign: "center" }}>
+            <Button type="button" onClick={() => void yukle(sonrakiImlec)} disabled={listeYukleniyor}>
+              {listeYukleniyor ? "Yükleniyor…" : "Daha fazla yükle"}
+            </Button>
+          </div>
+        )}
       </Card>
     </div>
   );
