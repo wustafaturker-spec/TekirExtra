@@ -451,6 +451,18 @@ export default function BelgelerSayfasi() {
 
   // Toplu faturalanabilir: onaylı sipariş/irsaliye
   const faturalanabilir = (b: Belge) => b.durum === "onaylandi" && (b.tur === "siparis" || b.tur === "irsaliye");
+  const gorunenFaturalanabilir = gorunen.filter(faturalanabilir);
+  const gorunenlerinTumuSecili = gorunenFaturalanabilir.length > 0 && gorunenFaturalanabilir.every((belge) => secili.has(belge.id));
+
+  function gorunenlerinSeciminiDegistir() {
+    setSecili((eskiler) => {
+      const yeni = new Set(eskiler);
+      for (const belge of gorunenFaturalanabilir) {
+        if (gorunenlerinTumuSecili) yeni.delete(belge.id); else yeni.add(belge.id);
+      }
+      return yeni;
+    });
+  }
 
   return (
     <div>
@@ -759,7 +771,7 @@ export default function BelgelerSayfasi() {
         <TableWrap>
           <thead>
             <tr>
-              <th style={{ width: 36 }}></th>
+              <th style={{ width: 36 }}><input aria-label="Faturalanabilir belgelerin tümünü seç" type="checkbox" checked={gorunenlerinTumuSecili} disabled={gorunenFaturalanabilir.length === 0} onChange={gorunenlerinSeciminiDegistir} /></th>
               <th>Belge No</th>
               <th>Tür / Yön</th>
               <th>Cari</th>
@@ -783,7 +795,7 @@ export default function BelgelerSayfasi() {
                 <tr key={b.id}>
                   <td className="center">
                     {faturalanabilir(b) && (
-                      <input type="checkbox" checked={secili.has(b.id)} onChange={() => seciliDegistir(b.id)} title="Toplu faturalama için seç" />
+                      <input aria-label={(b.no ?? "Taslak") + " belgesini seç"} type="checkbox" checked={secili.has(b.id)} onChange={() => seciliDegistir(b.id)} title="Toplu faturalama için seç" />
                     )}
                   </td>
                   <td style={{ fontWeight: 700 }}>{b.no || "(Taslak)"}</td>
