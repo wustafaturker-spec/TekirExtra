@@ -232,3 +232,39 @@ test("hatalı e-Belge nedeni gösterilir ve yeniden gönderilebilir", async ({ p
   await expect(panel.getByRole("button", { name: "Yeniden gönder" })).not.toBeVisible();
   expect(yenidenGonderildi).toBe(true);
 });
+
+
+test("teklif, sipariş, irsaliye ve fatura zinciri bulunup gezilebilir", async ({ page }) => {
+  const ortak = { yon: "satis", durum: "onaylandi", tarih: "2026-08-07", genelToplam: "1200.00", dovizCinsi: "TRY",
+    cari: { id: "c1", kod: "C001", unvan: "Örnek Müşteri AŞ" }, gecerlilikTarihi: null, aciklama: null, notlar: null, satirlar: [] };
+  await page.route("http://localhost:3001/api/v1/belgeler", (route) => route.fulfill({ json: { kayitlar: [{
+    ...ortak, id: "b2", tur: "siparis", no: "SP-001", faturaId: "f1",
+  }] } }));
+  await page.route("http://localhost:3001/api/v1/belgeler/*", (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").pop();
+    if (id === "b1") return route.fulfill({ json: {
+      ...ortak, id: "b1", tur: "teklif", no: "TK-001", faturaId: "f1", kaynakBelge: null,
+      turetilenler: [{ id: "b2", tur: "siparis", no: "SP-001", durum: "onaylandi" }],
+      fatura: { id: "f1", no: "SAT-001", durum: "kesin" },
+    } });
+    return route.fulfill({ json: {
+      ...ortak, id: "b2", tur: "siparis", no: "SP-001", faturaId: "f1",
+      kaynakBelge: { id: "b1", tur: "teklif", no: "TK-001", durum: "onaylandi" },
+      turetilenler: [{ id: "b3", tur: "irsaliye", no: "IRS-001", durum: "onaylandi" }],
+      fatura: { id: "f1", no: "SAT-001", durum: "kesin" },
+    } });
+  });
+
+  await page.goto("/panel/belgeler");
+  await page.getByRole("row").filter({ hasText: "SP-001" }).getByRole("button", { name: "Belge detayını aç" }).click();
+  const zincir = page.getByLabel("Belge yaşam döngüsü");
+  await expect(zincir).toContainText("TK-001");
+  await expect(zincir.getByRole("button", { name: /Sipariş Mevcut/ })).toBeDisabled();
+  await expect(zincir).toContainText("IRS-001");
+  await expect(zincir).toContainText("SAT-001");
+  await expect(zincir.getByRole("link", { name: /Fatura SAT-001/ })).toHaveAttribute("href", "/panel/fatura");
+
+  await zincir.getByRole("button", { name: /Teklif TK-001/ }).click();
+  await expect(page.getByRole("heading", { level: 3, name: /Teklif TK-001/ })).toBeVisible();
+  await expect(zincir.getByRole("button", { name: /Teklif Mevcut/ })).toBeDisabled();
+});

@@ -649,7 +649,7 @@ export default function BelgelerSayfasi() {
                   <td>{durumRozet(b.durum)}</td>
                   <td className="center">
                     <div className="row-tight" style={{ flexWrap: "nowrap", justifyContent: "center" }}>
-                      <Button size="sm" onClick={() => detayAc(b.id)}>🔍</Button>
+                      <Button aria-label="Belge detayını aç" title="Belge detayını aç" size="sm" onClick={() => detayAc(b.id)}>🔍</Button>
                       {b.durum === "taslak" && (
                         <>
                           <Button variant="primary" size="sm" onClick={() => void onayOzetiAc(b.id)}>Onayla</Button>
