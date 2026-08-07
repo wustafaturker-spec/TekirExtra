@@ -12,6 +12,14 @@ test.beforeEach(async ({ page }) => {
       await route.fulfill({ json: { kayitlar: [] } });
       return;
     }
+    if (url.pathname.endsWith("/cari") || url.pathname.endsWith("/stok")) {
+      await route.fulfill({ json: { kayitlar: [] } });
+      return;
+    }
+    if (url.pathname.endsWith("/depo")) {
+      await route.fulfill({ json: [] });
+      return;
+    }
     await route.fulfill({ json: {} });
   });
 });
@@ -23,6 +31,9 @@ test("satış ve satın alma çalışma alanları doğru belge bağlamını taş
     "href",
     "/panel/fatura?yon=satis&yeni=1",
   );
+  await page.getByRole("link", { name: /Satış faturası/ }).first().click();
+  await expect(page.getByRole("heading", { level: 3, name: "Yeni satış faturası" })).toBeVisible();
+  await expect(page.getByLabel("Fatura Tipi")).toHaveValue("satis");
 
   await page.goto("/panel/satin-alma");
   await expect(page.getByRole("heading", { level: 1, name: "Satın Alma" })).toBeVisible();
@@ -30,6 +41,9 @@ test("satış ve satın alma çalışma alanları doğru belge bağlamını taş
     "href",
     "/panel/fatura?yon=alis&yeni=1",
   );
+  await page.getByRole("link", { name: /Alış faturası/ }).first().click();
+  await expect(page.getByRole("heading", { level: 3, name: "Yeni alış faturası" })).toBeVisible();
+  await expect(page.getByLabel("Fatura Tipi")).toHaveValue("alis");
 });
 
 test("kullanıcı panelden geri bildirim gönderebilir", async ({ page }) => {

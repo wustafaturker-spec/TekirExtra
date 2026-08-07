@@ -720,7 +720,7 @@ export default function FaturaSayfasi() {
                 />
               </Field>
               <Field label="Fatura Tipi">
-                <Select value={tip} onChange={(e) => { setTip(e.target.value); setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 }]); }}>
+                <Select aria-label="Fatura Tipi" value={tip} onChange={(e) => { setTip(e.target.value); setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 }]); }}>
                   <option value="satis">Satış Faturası</option>
                   <option value="alis">Alış Faturası</option>
                   <option value="proforma">Proforma</option>
