@@ -11,7 +11,7 @@ const geriBildirimSemasi = z.object({
 });
 
 const olaySemasi = z.object({
-  olay: z.enum(["fatura_form_acildi", "fatura_tamamlandi", "fatura_dogrulama_hatasi", "fatura_form_terk", "gorunum_kaydedildi", "gorunum_kullanildi"]),
+  olay: z.enum(["fatura_form_acildi", "fatura_tamamlandi", "fatura_dogrulama_hatasi", "fatura_form_terk", "gorunum_kaydedildi", "gorunum_kullanildi", "belgeler_csv_indirildi"]),
   sureMs: z.number().int().min(0).max(86_400_000).optional(),
 });
 

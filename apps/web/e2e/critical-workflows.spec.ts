@@ -269,6 +269,30 @@ test("belge dönüşümünden önce aktarılacak içerik onaylanır", async ({ p
   expect(donusumIstegi).toEqual({ hedef: "siparis" });
 });
 
+test("filtrelenmiş belgeler UTF-8 CSV olarak dışa aktarılır", async ({ page }) => {
+  const belge = (id: string, no: string, unvan: string) => ({
+    id, no, tur: "siparis", yon: "satis", durum: "onaylandi", tarih: "2026-08-07",
+    genelToplam: "1200.00", dovizCinsi: "TRY", faturaId: null, cari: { id: "c1", kod: "C001", unvan },
+  });
+  await page.route("http://localhost:3001/api/v1/belgeler", (route) => route.fulfill({ json: { kayitlar: [
+    belge("b1", "SP-001", "Alfa Müşteri"), belge("b2", "SP-002", "Beta Müşteri"),
+  ] } }));
+
+  await page.goto("/panel/belgeler");
+  await page.getByPlaceholder("Belge no veya cari ile ara...").fill("Alfa");
+  const indirmeSozu = page.waitForEvent("download");
+  await page.getByRole("button", { name: "CSV dışa aktar" }).click();
+  const indirme = await indirmeSozu;
+  expect(indirme.suggestedFilename()).toBe("belgeler.csv");
+  const akis = await indirme.createReadStream();
+  let icerik = "";
+  for await (const parca of akis) icerik += parca.toString("utf8");
+  expect(icerik).toContain("Belge No");
+  expect(icerik).toContain("SP-001");
+  expect(icerik).toContain("Alfa Müşteri");
+  expect(icerik).not.toContain("SP-002");
+});
+
 test("belge zinciri bağlantısı ilgili faturayı doğrudan odaklar", async ({ page }) => {
   const fatura = (id: string, no: string, unvan: string) => ({
     id, no, tip: "satis", tarih: "2026-08-07", durum: "kesin", toplamMatrah: "1000.00",

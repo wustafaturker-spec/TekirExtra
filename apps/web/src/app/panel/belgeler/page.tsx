@@ -87,6 +87,9 @@ interface BelgeDetay extends Belge {
 const tl = (d: string | number, doviz = "TL"): string =>
   Number(d).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " " + doviz;
 const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
+function csvHucre(deger: string | number | null): string {
+  return "\"" + String(deger ?? "").replaceAll("\"", "\"\"") + "\"";
+}
 
 function durumRozet(durum: string) {
   if (durum === "taslak") return <Badge variant="warning">📝 Taslak</Badge>;
@@ -386,6 +389,20 @@ export default function BelgelerSayfasi() {
     const q = arama.toLocaleLowerCase("tr");
     return (b.no ?? "").toLocaleLowerCase("tr").includes(q) || b.cari.unvan.toLocaleLowerCase("tr").includes(q);
   });
+  function csvIndir() {
+    const basliklar = ["Belge No", "Tür", "Yön", "Cari", "Tarih", "Genel Toplam", "Döviz", "Durum"];
+    const satirlar = gorunen.map((belge) => [
+      belge.no ?? "Taslak", TUR_ADI[belge.tur] ?? belge.tur, YON_ADI[belge.yon] ?? belge.yon,
+      belge.cari.unvan, belge.tarih, belge.genelToplam, belge.dovizCinsi, belge.durum,
+    ]);
+    const icerik = "\uFEFF" + [basliklar, ...satirlar].map((satir) => satir.map(csvHucre).join(";")).join("\n");
+    const url = URL.createObjectURL(new Blob([icerik], { type: "text/csv;charset=utf-8" }));
+    const baglanti = document.createElement("a");
+    baglanti.href = url; baglanti.download = "belgeler.csv"; baglanti.click();
+    URL.revokeObjectURL(url);
+    kullanimOlayi("belgeler_csv_indirildi");
+  }
+
   // Toplu faturalanabilir: onaylı sipariş/irsaliye
   const faturalanabilir = (b: Belge) => b.durum === "onaylandi" && (b.tur === "siparis" || b.tur === "irsaliye");
 
@@ -677,6 +694,7 @@ export default function BelgelerSayfasi() {
 
       <div className="toolbar">
         <SearchInput className="grow" value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Belge no veya cari ile ara..." />
+        <Button type="button" onClick={csvIndir} disabled={gorunen.length === 0}>CSV dışa aktar</Button>
         <Segmented<TurFiltre>
           value={turFiltre}
           onChange={setTurFiltre}
