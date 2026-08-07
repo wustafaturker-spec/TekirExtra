@@ -198,7 +198,7 @@ export default function StokSayfasi() {
           className="grow"
           value={arama}
           onChange={(e) => setArama(e.target.value)}
-          placeholder="Stok adına, koduna veya barkoduna göre ara..."
+          placeholder="Stok adına, koduna, barkoduna veya tedarikçi koduna göre ara..."
         />
       </div>
 

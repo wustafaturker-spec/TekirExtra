@@ -71,6 +71,8 @@ export class StokService {
               { barkod: { contains: arama, mode: "insensitive" } },
               // STK-15: barkod tablosundan da bul
               { barkodlar: { some: { barkod: { contains: arama } } } },
+              // STK-18: tedarikcinin urun koduyla da bul
+              { tedarikciler: { some: { tedarikciUrunKodu: { contains: arama, mode: "insensitive" } } } },
             ],
           }
         : {}),
@@ -84,6 +86,7 @@ export class StokService {
         ...(imlec ? { cursor: { id: imlec }, skip: 1 } : {}),
         include: {
           kategori: { select: { id: true, ad: true } },
+          tedarikciler: { select: { tedarikciUrunKodu: true } },
           _count: { select: { hareketler: true } },
         },
       }),
@@ -96,6 +99,7 @@ export class StokService {
       kayitlar: sayfa.map((k) => ({
         ...this.gorunum(k),
         kategori: k.kategori,
+        tedarikciUrunKodlari: k.tedarikciler.map((tedarikci) => tedarikci.tedarikciUrunKodu).filter((kod): kod is string => Boolean(kod)),
         izinliEylemler: this.eylemler(k, ctx.rol, k._count.hareketler),
       })),
       sonrakiImlec,

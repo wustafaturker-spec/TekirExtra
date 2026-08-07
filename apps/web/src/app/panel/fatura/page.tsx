@@ -40,6 +40,7 @@ interface Stok {
   kod: string;
   ad: string;
   barkod?: string | null;
+  tedarikciUrunKodlari?: string[];
   anaBirim?: string;
   kullanilabilirMiktar?: string;
   alisFiyati: string | null;
@@ -806,7 +807,7 @@ export default function FaturaSayfasi() {
                                 : stok.satisFiyati && `Satış: ${tl(stok.satisFiyati)}`,
                               `KDV %${Number(stok.kdvOrani)}`,
                             ].filter(Boolean).join(" · "),
-                            aramaMetni: [stok.kod, stok.barkod].filter(Boolean).join(" "),
+                            aramaMetni: [stok.kod, stok.barkod, ...(stok.tedarikciUrunKodlari ?? [])].filter(Boolean).join(" "),
                           }))}
                         />
                         {seciliStok && (

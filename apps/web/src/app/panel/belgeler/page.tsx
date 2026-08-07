@@ -41,7 +41,7 @@ interface BelgeGorunumu {
 const GORUNUM_ANAHTARI = "tekir_belge_gorunumleri";
 
 interface Cari { id: string; kod?: string; unvan: string; vknTckn?: string | null; telefon?: string | null }
-interface Stok { id: string; kod: string; ad: string }
+interface Stok { id: string; kod: string; ad: string; tedarikciUrunKodlari?: string[] }
 
 interface BelgeSatirForm {
   stokId: string;
@@ -467,7 +467,7 @@ export default function BelgelerSayfasi() {
                           deger: stok.id,
                           baslik: stok.ad,
                           aciklama: stok.kod,
-                          aramaMetni: stok.kod,
+                          aramaMetni: [stok.kod, ...(stok.tedarikciUrunKodlari ?? [])].join(" "),
                         }))}
                       />
                     </td>
