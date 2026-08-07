@@ -104,6 +104,7 @@ export default function BelgelerSayfasi() {
   const [stoklar, setStoklar] = useState<Stok[]>([]);
   const [turFiltre, setTurFiltre] = useState<TurFiltre>("tumu");
   const [arama, setArama] = useState("");
+  const [aramaSorgusu, setAramaSorgusu] = useState("");
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [formAcik, setFormAcik] = useState(false);
@@ -145,6 +146,7 @@ export default function BelgelerSayfasi() {
       const parametreler = new URLSearchParams();
       if (turFiltre !== "tumu") parametreler.set("tur", turFiltre);
       if (imlec) parametreler.set("imlec", imlec);
+      if (aramaSorgusu) parametreler.set("arama", aramaSorgusu);
       const sorgu = parametreler.size ? "?" + parametreler.toString() : "";
       const veri = await api<{ kayitlar: Belge[]; sonrakiImlec: string | null }>("/belgeler" + sorgu);
       setBelgeler((eskiler) => imlec ? [...eskiler, ...veri.kayitlar] : veri.kayitlar);
@@ -155,7 +157,12 @@ export default function BelgelerSayfasi() {
     } finally {
       setListeYukleniyor(false);
     }
-  }, [turFiltre]);
+  }, [turFiltre, aramaSorgusu]);
+
+  useEffect(() => {
+    const zamanlayici = window.setTimeout(() => setAramaSorgusu(arama.trim()), 300);
+    return () => window.clearTimeout(zamanlayici);
+  }, [arama]);
 
   useEffect(() => {
     if (!tokenAl()) return;

@@ -269,6 +269,25 @@ test("belge dönüşümünden önce aktarılacak içerik onaylanır", async ({ p
   expect(donusumIstegi).toEqual({ hedef: "siparis" });
 });
 
+test("belge araması yüklenmemiş kayıtlarda sunucuda çalışır", async ({ page }) => {
+  let aramaParametresi: string | null = null;
+  await page.route("http://localhost:3001/api/v1/belgeler**", (route) => {
+    const arama = new URL(route.request().url()).searchParams.get("arama");
+    aramaParametresi = arama;
+    if (arama === "Uzak Cari") return route.fulfill({ json: { kayitlar: [{
+      id: "b99", no: "SP-099", tur: "siparis", yon: "satis", durum: "onaylandi", tarih: "2026-08-07",
+      genelToplam: "1200.00", dovizCinsi: "TRY", faturaId: null,
+      cari: { id: "c99", kod: "C099", unvan: "Uzak Cari" },
+    }], sonrakiImlec: null } });
+    return route.fulfill({ json: { kayitlar: [], sonrakiImlec: null } });
+  });
+
+  await page.goto("/panel/belgeler");
+  await page.getByPlaceholder("Belge no veya cari ile ara...").fill("Uzak Cari");
+  await expect(page.getByRole("row").filter({ hasText: "SP-099" })).toBeVisible();
+  expect(aramaParametresi).toBe("Uzak Cari");
+});
+
 test("belge listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page }) => {
   const belge = (id: string, no: string) => ({
     id, no, tur: "siparis", yon: "satis", durum: "onaylandi", tarih: "2026-08-07",
