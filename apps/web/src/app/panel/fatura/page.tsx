@@ -152,6 +152,7 @@ export default function FaturaSayfasi() {
   const [durumFiltresi, setDurumFiltresi] = useState<string | null>(null);
   const [ebelgeFiltresi, setEbelgeFiltresi] = useState<string | null>(null);
   const [odemeFiltresi, setOdemeFiltresi] = useState<string | null>(null);
+  const [odakFaturaId, setOdakFaturaId] = useState<string | null>(null);
   const [kayitliGorunumler, setKayitliGorunumler] = useState<KayitliGorunum[]>([]);
   const [gorunumFormuAcik, setGorunumFormuAcik] = useState(false);
   const [gorunumAdi, setGorunumAdi] = useState("");
@@ -226,6 +227,7 @@ export default function FaturaSayfasi() {
     setDurumFiltresi(parametreler.get("durum"));
     setEbelgeFiltresi(parametreler.get("ebelge"));
     setOdemeFiltresi(parametreler.get("odeme"));
+    setOdakFaturaId(parametreler.get("faturaId"));
     try { setKayitliGorunumler(JSON.parse(localStorage.getItem(GORUNUM_ANAHTARI) ?? "[]") as KayitliGorunum[]); }
     catch { localStorage.removeItem(GORUNUM_ANAHTARI); }
   }, []);
@@ -617,8 +619,10 @@ export default function FaturaSayfasi() {
           : ["alis", "alis_iade"].includes(f.tip))) &&
       (!durumFiltresi || f.durum === durumFiltresi) &&
       (!ebelgeFiltresi || (ebelgeFiltresi === "hata" ? ["hata", "ret"].includes(f.ebelge?.durum ?? "") : f.ebelge?.durum === ebelgeFiltresi)) &&
-      (!odemeFiltresi || (odemeFiltresi === "acik" && ["odenmedi", "kismi"].includes(f.odemeOzeti?.durum ?? ""))),
+      (!odemeFiltresi || (odemeFiltresi === "acik" && ["odenmedi", "kismi"].includes(f.odemeOzeti?.durum ?? ""))) &&
+      (!odakFaturaId || f.id === odakFaturaId),
     );
+  const odakFatura = odakFaturaId ? faturalar.find((fatura) => fatura.id === odakFaturaId) : null;
   const sayfaBasligi =
     yonBaglami === "satis"
       ? "Satış Faturaları"
@@ -649,6 +653,13 @@ export default function FaturaSayfasi() {
 
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
+
+      {odakFaturaId && (
+        <Card className="between" style={{ marginBottom: "1rem", borderColor: "var(--accent)" }}>
+          <div><strong>Belge zincirinden açılan fatura</strong><div className="muted">{odakFatura?.no ?? odakFaturaId}{odakFatura ? " · " + odakFatura.cari.unvan : ""}</div></div>
+          <Button size="sm" type="button" onClick={() => { setOdakFaturaId(null); window.history.replaceState(null, "", "/panel/fatura"); }}>Tüm faturaları göster</Button>
+        </Card>
+      )}
 
       <section className="saved-view-bar" aria-label="Fatura görünümü ve filtreleri">
         <div className="saved-view-filters">

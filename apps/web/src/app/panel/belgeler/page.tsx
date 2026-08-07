@@ -552,7 +552,7 @@ export default function BelgelerSayfasi() {
               );
             })}
             {detay.fatura ? (
-              <a className="document-timeline__step is-complete" href="/panel/fatura">
+              <a className="document-timeline__step is-complete" href={"/panel/fatura?faturaId=" + detay.fatura.id}>
                 <span>✓</span><strong>Fatura</strong><small>{detay.fatura.no ?? "Taslak"}</small>
               </a>
             ) : (
