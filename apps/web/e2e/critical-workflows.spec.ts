@@ -68,3 +68,34 @@ test("kullanıcı panelden geri bildirim gönderebilir", async ({ page }) => {
     mesaj: "Kaydedilmiş görünümü ana sayfadan da açmak istiyorum.",
   });
 });
+
+
+test("fatura, e-Belge ve ödeme durumları bağımsız izlenebilir", async ({ page }) => {
+  await page.route("http://localhost:3001/api/v1/fatura", async (route) => {
+    await route.fulfill({ json: { kayitlar: [{
+      id: "f1", no: "SAT2026000001", tip: "satis", tarih: "2026-08-07", durum: "kesin",
+      toplamMatrah: "1000.00", toplamKdv: "200.00", genelToplam: "1200.00",
+      cari: { unvan: "Örnek Müşteri AŞ" },
+      ebelge: { id: "e1", durum: "hata", tur: "efatura" },
+      odemeOzeti: { durum: "kismi", odenen: "400.00", kalan: "800.00" },
+    }] } });
+  });
+
+  await page.goto("/panel/fatura");
+  await expect(page.getByRole("columnheader", { name: "Durum", exact: true })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "e-Belge", exact: true })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Ödeme", exact: true })).toBeVisible();
+
+  const satir = page.getByRole("row").filter({ hasText: "SAT2026000001" });
+  await expect(satir).toContainText("Kesinleşti");
+  await expect(satir).toContainText("Hata");
+  await expect(satir).toContainText("Kısmi ödendi");
+
+  await page.getByLabel("Fatura durumu").selectOption("kesin");
+  await page.getByLabel("e-Belge durumu").selectOption("hata");
+  await page.getByLabel("Ödeme durumu").selectOption("acik");
+  await expect(page.getByLabel("Fatura durumu")).toHaveValue("kesin");
+  await expect(page.getByLabel("e-Belge durumu")).toHaveValue("hata");
+  await expect(page.getByLabel("Ödeme durumu")).toHaveValue("acik");
+  await expect(satir).toBeVisible();
+});
