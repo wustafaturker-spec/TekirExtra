@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { api, tokenAl } from "@/lib/api";
+import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { useDepolar } from "@/lib/depolar";
 import { DepoSecici } from "@/components/depo-secici";
 import {
@@ -213,9 +213,7 @@ export default function StokDetaySayfasi() {
     void hareketleriYukle();
     void depoBakiyeleriYukle();
     void api<Kategori[]>("/stok/kategoriler").then(setKategoriler).catch(() => {});
-    void api<{ kayitlar: CariOzet[] }>("/cari")
-      .then((v) => setCariler(v.kayitlar))
-      .catch(() => {});
+    void tumSayfalariAl<CariOzet>("/cari").then(setCariler).catch(() => {});
   }, [yukle, hareketleriYukle, depoBakiyeleriYukle]);
 
   /** Alt kayıt ekleme/silme sonrası ortak akış. */
@@ -1222,7 +1220,7 @@ function TedarikcilerSekmesi({
         <div className="row">
           <div style={{ flex: 2, minWidth: 220 }}>
             <Field label="Cari *">
-              <Select value={cariId} onChange={(e) => setCariId(e.target.value)}>
+              <Select aria-label="Cari" value={cariId} onChange={(e) => setCariId(e.target.value)}>
                 <option value="">— Cari seçin —</option>
                 {cariler
                   .filter((c) => !bagliCariIdler.has(c.id))

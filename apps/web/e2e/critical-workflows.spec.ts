@@ -265,6 +265,38 @@ test("fatura formu tüm cari ve stok sayfalarını seçime yükler", async ({ pa
   expect(stokIstekleri).toEqual(["ilk", "stok-1"]);
 });
 
+test("stok tedarikçi seçimi tüm cari sayfalarını yükler", async ({ page }) => {
+  await page.route("http://localhost:3001/api/v1/stok/stok-1**", (route) => {
+    const yol = new URL(route.request().url()).pathname;
+    if (yol.endsWith("/hareketler") || yol.endsWith("/depo-bakiyeleri")) return route.fulfill({ json: [] });
+    return route.fulfill({ json: {
+      id: "stok-1", kod: "STK-001", ad: "Test Ürün", kisaAd: null, aciklama: null, tip: "urun", marka: null, model: null, mensei: null,
+      gtipKodu: null, ureticiUrunKodu: null, barkod: null, kategoriId: null, anaBirim: "adet", kdvOrani: "20",
+      alisFiyati: "80", satisFiyati: "100", kritikSeviye: null, minStok: null, maksStok: null, guvenlikStogu: null,
+      tedarikSuresiGun: null, gorselUrl: null, mevcutMiktar: "10", rezerveMiktar: "0", yoldakiMiktar: "0",
+      kullanilabilirMiktar: "10", ortalamaMaliyet: "75", aktif: true, kategori: null, birimler: [], barkodlar: [], tedarikciler: [], izinliEylemler: [],
+    } });
+  });
+  await page.route("http://localhost:3001/api/v1/stok/kategoriler", (route) => route.fulfill({ json: [] }));
+  const istekler: string[] = [];
+  await page.route("http://localhost:3001/api/v1/cari**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== "/api/v1/cari") return route.fallback();
+    const imlec = url.searchParams.get("imlec"); istekler.push(imlec ?? "ilk");
+    return route.fulfill({ json: imlec === "cari-1"
+      ? { kayitlar: [{ id: "cari-2", kod: "C002", unvan: "İkinci Sayfa Tedarikçi" }], sonrakiImlec: null }
+      : { kayitlar: [{ id: "cari-1", kod: "C001", unvan: "İlk Sayfa Tedarikçi" }], sonrakiImlec: "cari-1" }
+    });
+  });
+
+  await page.goto("/panel/stok/stok-1");
+  await page.getByRole("button", { name: /Tedarikçiler/ }).click();
+  const cariSecimi = page.getByLabel("Cari");
+  await expect(cariSecimi.locator("option", { hasText: "İkinci Sayfa Tedarikçi" })).toHaveCount(1);
+  await expect(cariSecimi.locator("option", { hasText: "İlk Sayfa Tedarikçi" })).toHaveCount(1);
+  expect(istekler).toEqual(["ilk", "cari-1"]);
+});
+
 test("fatura listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page }) => {
   const fatura = (id: string, no: string) => ({
     id, no, tip: "satis", tarih: "2026-08-07", durum: "kesin",
