@@ -70,6 +70,39 @@ test("kullanıcı panelden geri bildirim gönderebilir", async ({ page }) => {
 });
 
 
+test("ana panel kuyruk sayaçları tüm veri sayfalarını kapsar", async ({ page }) => {
+  await page.route("http://localhost:3001/api/v1/auth/ben", (route) =>
+    route.fulfill({ json: { userId: "u1", tenantId: "t1", rol: "satis" } }),
+  );
+  await page.route("http://localhost:3001/api/v1/firma", (route) => route.fulfill({ json: { unvan: "Test Firma" } }));
+  const faturaIstekleri: string[] = []; const stokIstekleri: string[] = [];
+  await page.route("http://localhost:3001/api/v1/fatura**", (route) => {
+    const url = new URL(route.request().url()); const imlec = url.searchParams.get("imlec");
+    if (url.searchParams.get("adet") === "200") faturaIstekleri.push(imlec ?? "ilk");
+    const fatura = { tip: "satis", durum: "taslak", odemeOzeti: { durum: "odenmedi" }, ebelge: null };
+    return route.fulfill({ json: imlec === "fatura-1"
+      ? { kayitlar: [fatura], sonrakiImlec: null }
+      : { kayitlar: [fatura], sonrakiImlec: "fatura-1" }
+    });
+  });
+  await page.route("http://localhost:3001/api/v1/stok**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== "/api/v1/stok") return route.fallback();
+    const imlec = url.searchParams.get("imlec"); stokIstekleri.push(imlec ?? "ilk");
+    const stok = { kritikSeviye: "5", mevcutMiktar: "3" };
+    return route.fulfill({ json: imlec === "stok-1"
+      ? { kayitlar: [stok], sonrakiImlec: null }
+      : { kayitlar: [stok], sonrakiImlec: "stok-1" }
+    });
+  });
+
+  await page.goto("/panel");
+  await expect(page.getByRole("link", { name: /Taslak satış faturaları/ }).locator(".queue-row__count")).toHaveText("2");
+  await expect(page.getByRole("link", { name: /Kritik stoklar/ }).locator(".queue-row__count")).toHaveText("2");
+  expect(faturaIstekleri).toEqual(["ilk", "fatura-1"]);
+  expect(stokIstekleri).toEqual(["ilk", "stok-1"]);
+});
+
 test("stok sayımı tüm stok sayfalarını forma yükler", async ({ page }) => {
   const stok = (id: string, kod: string, ad: string) => ({
     id, kod, ad, tip: "urun", anaBirim: "adet", mevcutMiktar: "10",

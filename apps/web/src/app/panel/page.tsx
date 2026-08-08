@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { CalismaAlani, type HizliEylem, type IsKuyrugu } from "@/components/calisma-alani";
 import { Alert, Card, Stat, StatGrid } from "@/components/ui";
-import { api, ApiHata, tokenAl, tokenYaz } from "@/lib/api";
+import { api, ApiHata, tokenAl, tokenYaz, tumSayfalariAl } from "@/lib/api";
 
 type Rol = "yonetici" | "muhasebe" | "satis" | "salt_okunur";
 interface FinansOzet { nakitVarliklar: string; envanterDegeri: string; toplamAlacaklar: string; toplamBorclar: string; netVarlikDegeri: string; }
@@ -31,19 +31,19 @@ export default function PanelSayfasi() {
 
   const yukle = useCallback(async () => {
     try {
-      const [ben, firmaVeri, faturaVeri, stokVeri] = await Promise.all([
+      const [ben, firmaVeri, faturalar, stoklar] = await Promise.all([
         api<{ rol: Rol }>("/auth/ben"), api<{ unvan: string }>("/firma"),
-        api<{ kayitlar: Fatura[] }>("/fatura?adet=100"), api<{ kayitlar: Stok[] }>("/stok?adet=100"),
+        tumSayfalariAl<Fatura>("/fatura"), tumSayfalariAl<Stok>("/stok"),
       ]);
       setRol(ben.rol); setFirma(firmaVeri.unvan);
-      const fs = faturaVeri.kayitlar;
+      const fs = faturalar;
       const say = (test: (f: Fatura) => boolean) => fs.filter(test).length;
       const taslakSatis = say((f) => f.durum === "taslak" && ["satis", "satis_iade", "proforma"].includes(f.tip));
       const taslakAlis = say((f) => f.durum === "taslak" && ["alis", "alis_iade"].includes(f.tip));
       const ebelgeHata = say((f) => ["hata", "ret"].includes(f.ebelge?.durum ?? ""));
       const acikTahsilat = say((f) => ["satis", "alis_iade"].includes(f.tip) && ["odenmedi", "kismi"].includes(f.odemeOzeti?.durum ?? ""));
       const acikOdeme = say((f) => ["alis", "satis_iade"].includes(f.tip) && ["odenmedi", "kismi"].includes(f.odemeOzeti?.durum ?? ""));
-      const kritik = stokVeri.kayitlar.filter((s) => s.kritikSeviye != null && Number(s.mevcutMiktar ?? s.kullanilabilirMiktar ?? 0) <= Number(s.kritikSeviye)).length;
+      const kritik = stoklar.filter((s) => s.kritikSeviye != null && Number(s.mevcutMiktar ?? s.kullanilabilirMiktar ?? 0) <= Number(s.kritikSeviye)).length;
       let ekstre = 0; let gelen = 0;
       if (["yonetici", "muhasebe"].includes(ben.rol)) {
         const [e, g] = await Promise.all([api<unknown[]>("/kasa-banka/ekstre/satirlar?durum=beklemede"), api<unknown[]>("/ebelge/gelen?durum=beklemede")]);
