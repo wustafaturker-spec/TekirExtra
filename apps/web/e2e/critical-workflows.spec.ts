@@ -202,6 +202,38 @@ test("stok listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page
   expect(istekler.filter((istek) => istek === "sonraki-1")).toHaveLength(1);
 });
 
+test("geç dönen eski stok araması güncel sonucu ezmez", async ({ page }) => {
+  const stok = (id: string, kod: string, ad: string) => ({
+    id, kod, ad, tip: "urun", barkod: null, anaBirim: "adet", kdvOrani: "20",
+    alisFiyati: "100.00", satisFiyati: "120.00", mevcutMiktar: "10", ortalamaMaliyet: "90.00",
+  });
+  let yavasYanitla!: () => void; let yavasBasladi!: () => void; let yavasTamamlandi!: () => void;
+  const yavasBekleme = new Promise<void>((resolve) => { yavasYanitla = resolve; });
+  const yavasIstek = new Promise<void>((resolve) => { yavasBasladi = resolve; });
+  const yavasBitti = new Promise<void>((resolve) => { yavasTamamlandi = resolve; });
+  await page.route("http://localhost:3001/api/v1/stok**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== "/api/v1/stok") return route.fallback();
+    const arama = url.searchParams.get("arama");
+    if (arama === "Yavaş Ürün") {
+      yavasBasladi(); await yavasBekleme;
+      await route.fulfill({ json: { kayitlar: [stok("s1", "YAVAS", "Yavaş Ürün")], sonrakiImlec: null } });
+      yavasTamamlandi(); return;
+    }
+    if (arama === "Hızlı Ürün") return route.fulfill({ json: { kayitlar: [stok("s2", "HIZLI", "Hızlı Ürün")], sonrakiImlec: null } });
+    return route.fulfill({ json: { kayitlar: [], sonrakiImlec: null } });
+  });
+
+  await page.goto("/panel/stok");
+  const arama = page.getByPlaceholder("Stok adına, koduna, barkoduna veya tedarikçi koduna göre ara...");
+  await arama.fill("Yavaş Ürün"); await yavasIstek;
+  await arama.fill("Hızlı Ürün");
+  await expect(page.getByRole("row").filter({ hasText: "Hızlı Ürün" })).toBeVisible();
+  yavasYanitla(); await yavasBitti;
+  await expect(page.getByRole("row").filter({ hasText: "Hızlı Ürün" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "Yavaş Ürün" })).not.toBeVisible();
+});
+
 test("fatura, e-Belge ve ödeme durumları bağımsız izlenebilir", async ({ page }) => {
   const faturaIstekleri: URL[] = [];
   await page.route("http://localhost:3001/api/v1/fatura**", async (route) => {

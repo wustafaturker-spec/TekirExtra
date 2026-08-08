@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
 import {
   Alert,
@@ -38,11 +38,13 @@ const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/
 export default function StokSayfasi() {
   const [stoklar, setStoklar] = useState<StokKart[]>([]);
   const [arama, setArama] = useState("");
+  const [aramaSorgusu, setAramaSorgusu] = useState("");
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [formAcik, setFormAcik] = useState(false);
   const [sonrakiStokImleci, setSonrakiStokImleci] = useState<string | null>(null);
   const [stokListesiYukleniyor, setStokListesiYukleniyor] = useState(false);
+  const stokYuklemeSirasi = useRef(0);
 
   // Form alanları
   const [kod, setKod] = useState("");
@@ -54,20 +56,27 @@ export default function StokSayfasi() {
   const [satisFiyati, setSatisFiyati] = useState("");
 
   const yukle = useCallback(async (imlec?: string) => {
+    const istekSirasi = ++stokYuklemeSirasi.current;
     setStokListesiYukleniyor(true);
     try {
       const parametreler = new URLSearchParams();
-      if (arama) parametreler.set("arama", arama);
+      if (aramaSorgusu) parametreler.set("arama", aramaSorgusu);
       if (imlec) parametreler.set("imlec", imlec);
       const qs = parametreler.size ? `?${parametreler.toString()}` : "";
       const veri = await api<{ kayitlar: StokKart[]; sonrakiImlec: string | null }>(`/stok${qs}`);
+      if (istekSirasi !== stokYuklemeSirasi.current) return;
       setStoklar((eskiler) => imlec ? [...eskiler, ...veri.kayitlar] : veri.kayitlar);
       setSonrakiStokImleci(veri.sonrakiImlec);
     } catch (h) {
-      setHata(h instanceof Error ? h.message : "Yükleme hatası");
+      if (istekSirasi === stokYuklemeSirasi.current) setHata(h instanceof Error ? h.message : "Yükleme hatası");
     } finally {
-      setStokListesiYukleniyor(false);
+      if (istekSirasi === stokYuklemeSirasi.current) setStokListesiYukleniyor(false);
     }
+  }, [aramaSorgusu]);
+
+  useEffect(() => {
+    const zamanlayici = window.setTimeout(() => setAramaSorgusu(arama.trim()), 300);
+    return () => window.clearTimeout(zamanlayici);
   }, [arama]);
 
   useEffect(() => {
