@@ -99,7 +99,9 @@ test("ana panel kuyruk sayaçları tüm veri sayfalarını kapsar", async ({ pag
   await page.goto("/panel");
   await expect(page.getByRole("link", { name: /Taslak satış faturaları/ }).locator(".queue-row__count")).toHaveText("2");
   await expect(page.getByRole("link", { name: /Kritik stoklar/ }).locator(".queue-row__count")).toHaveText("2");
-  expect(faturaIstekleri).toEqual(["ilk", "fatura-1"]);
+  await expect(page.getByRole("button", { name: "Bildirimler 4" })).toBeVisible();
+  expect(faturaIstekleri.filter((istek) => istek === "ilk")).toHaveLength(2);
+  expect(faturaIstekleri.filter((istek) => istek === "fatura-1")).toHaveLength(2);
   expect(stokIstekleri).toEqual(["ilk", "stok-1"]);
 });
 

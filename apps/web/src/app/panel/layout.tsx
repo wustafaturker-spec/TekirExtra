@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, tokenAl, tokenYaz } from "@/lib/api";
+import { api, tokenAl, tokenYaz, tumSayfalariAl } from "@/lib/api";
 
 const ROL_ADI: Record<string, string> = {
   yonetici: "Yönetici",
@@ -96,8 +96,8 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
       api<{ rol: string }>("/auth/ben")
         .then(async (b) => {
           setRol(b.rol);
-          const veri = await api<{ kayitlar: BildirimFaturasi[] }>("/fatura?adet=100");
-          const say = (test: (fatura: BildirimFaturasi) => boolean) => veri.kayitlar.filter(test).length;
+          const faturalar = await tumSayfalariAl<BildirimFaturasi>("/fatura");
+          const say = (test: (fatura: BildirimFaturasi) => boolean) => faturalar.filter(test).length;
           const yeni: Bildirim[] = [];
           const ebelgeHatasi = say((f) => ["hata", "ret"].includes(f.ebelge?.durum ?? ""));
           const taslak = say((f) => f.durum === "taslak" && (b.rol !== "satis" || ["satis", "satis_iade", "proforma"].includes(f.tip)));
