@@ -211,14 +211,16 @@ export function Field({
   label,
   children,
   className,
+  htmlFor,
 }: {
   label?: ReactNode;
   children: ReactNode;
   className?: string;
+  htmlFor?: string;
 }) {
   return (
     <div className={cx("field", className)}>
-      {label && <label className="field-label">{label}</label>}
+      {label && <label className="field-label" htmlFor={htmlFor}>{label}</label>}
       {children}
     </div>
   );

@@ -315,7 +315,7 @@ test("belge filtresi değiştiğinde gizli toplu seçimler temizlenir", async ({
   await page.goto("/panel/belgeler");
   await page.getByRole("checkbox", { name: "SP-SATIS belgesini seç" }).check();
   await expect(page.getByRole("button", { name: /Seçilenleri Faturala \(1\)/ })).toBeVisible();
-  await page.getByRole("region", { name: "Belge görünümü ve filtreleri" }).getByRole("combobox").first().selectOption("alis");
+  await page.getByLabel("Yön", { exact: true }).selectOption("alis");
   await expect(page.getByRole("button", { name: /Seçilenleri Faturala/ })).toHaveCount(0);
   await expect(page.getByRole("checkbox", { name: "SP-ALIS belgesini seç" })).not.toBeChecked();
 });
