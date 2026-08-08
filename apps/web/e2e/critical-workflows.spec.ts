@@ -114,6 +114,28 @@ test("kategori ürün sayıları tüm stok sayfalarını kapsar", async ({ page 
   await expect(kategori.getByRole("button", { name: "Sil" })).toBeDisabled();
 });
 
+test("kasa banka fişi tüm cari sayfalarını seçime yükler", async ({ page }) => {
+  await page.route("http://localhost:3001/api/v1/kasa-banka/**", (route) => route.fulfill({ json: [] }));
+  const istekler: string[] = [];
+  await page.route("http://localhost:3001/api/v1/cari**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== "/api/v1/cari") return route.fallback();
+    const imlec = url.searchParams.get("imlec");
+    istekler.push(imlec ?? "ilk");
+    return route.fulfill({ json: imlec === "cari-1"
+      ? { kayitlar: [{ id: "cari-2", unvan: "İkinci Sayfa Cari" }], sonrakiImlec: null }
+      : { kayitlar: [{ id: "cari-1", unvan: "İlk Sayfa Cari" }], sonrakiImlec: "cari-1" }
+    });
+  });
+
+  await page.goto("/panel/kasa-banka");
+  await page.getByRole("button", { name: /Fiş Girişi/ }).click();
+  const cariSecimi = page.getByLabel("Cari Hesap İlişkisi");
+  await expect(cariSecimi.locator("option", { hasText: "İkinci Sayfa Cari" })).toHaveCount(1);
+  await expect(cariSecimi.locator("option", { hasText: "İlk Sayfa Cari" })).toHaveCount(1);
+  expect(istekler).toEqual(["ilk", "cari-1"]);
+});
+
 test("fatura listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page }) => {
   const fatura = (id: string, no: string) => ({
     id, no, tip: "satis", tarih: "2026-08-07", durum: "kesin",

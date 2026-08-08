@@ -92,13 +92,27 @@ export default function KasaBankaSayfasi() {
   const [virmanTarih, setVirmanTarih] = useState(new Date().toISOString().substring(0, 10));
   const [virmanAciklama, setVirmanAciklama] = useState("");
 
+  const carileriYukle = useCallback(async () => {
+    const tumCariler: Cari[] = [];
+    const gorulenImlecler = new Set<string>();
+    let imlec: string | null = null;
+    do {
+      const sorgu = new URLSearchParams({ adet: "200" });
+      if (imlec) sorgu.set("imlec", imlec);
+      const veri: { kayitlar: Cari[]; sonrakiImlec: string | null } = await api("/cari?" + sorgu.toString());
+      tumCariler.push(...veri.kayitlar);
+      imlec = veri.sonrakiImlec;
+      if (imlec && gorulenImlecler.has(imlec)) break;
+      if (imlec) gorulenImlecler.add(imlec);
+    } while (imlec);
+    setCariler(tumCariler);
+  }, []);
+
   const yukle = useCallback(async () => {
     try {
       setKasalar(await api<Kasa[]>("/kasa-banka/kasalar"));
       setBankalar(await api<Banka[]>("/kasa-banka/bankalar"));
       setHareketler(await api<Hareket[]>("/kasa-banka/hareketler"));
-      const cVeri = await api<{ kayitlar: Cari[] }>("/cari?adet=100");
-      setCariler(cVeri.kayitlar);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Yükleme hatası");
     }
@@ -107,8 +121,9 @@ export default function KasaBankaSayfasi() {
   useEffect(() => {
     if (tokenAl()) {
       void yukle();
+      void carileriYukle().catch((h) => setHata(h instanceof Error ? h.message : "Cariler yüklenemedi"));
     }
-  }, [yukle]);
+  }, [carileriYukle, yukle]);
 
   useEffect(() => {
     const parametreler = new URLSearchParams(window.location.search);
@@ -355,7 +370,7 @@ export default function KasaBankaSayfasi() {
           <div className="row">
             <div style={{ flex: 1, minWidth: 200 }}>
               <Field label="Cari Hesap İlişkisi">
-                <Select value={hareketCariId} onChange={(e) => setHareketCariId(e.target.value)}>
+                <Select aria-label="Cari Hesap İlişkisi" value={hareketCariId} onChange={(e) => setHareketCariId(e.target.value)}>
                   <option value="">-- Cari Seçilmeyebilir (Genel Fiş) --</option>
                   {cariler.map((c) => (<option key={c.id} value={c.id}>{c.unvan}</option>))}
                 </Select>
