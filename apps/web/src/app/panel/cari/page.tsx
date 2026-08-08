@@ -161,6 +161,8 @@ export default function CariSayfasi() {
   const [kayitliGorunumler, setKayitliGorunumler] = useState<CariGorunumu[]>([]);
   const [gorunumFormuAcik, setGorunumFormuAcik] = useState(false);
   const [gorunumAdi, setGorunumAdi] = useState("");
+  const [sonrakiCariImleci, setSonrakiCariImleci] = useState<string | null>(null);
+  const [cariListesiYukleniyor, setCariListesiYukleniyor] = useState(false);
 
   // Form alanları — kimlik
   const [kod, setKod] = useState("");
@@ -204,13 +206,20 @@ export default function CariSayfasi() {
   const [yeniEtiket, setYeniEtiket] = useState("");
   const [secilenEtiketId, setSecilenEtiketId] = useState("");
 
-  const yukle = useCallback(async () => {
+  const yukle = useCallback(async (imlec?: string) => {
+    setCariListesiYukleniyor(true);
     try {
-      const qs = arama ? `?arama=${encodeURIComponent(arama)}` : "";
-      const veri = await api<{ kayitlar: Cari[] }>(`/cari${qs}`);
-      setCariler(veri.kayitlar);
+      const parametreler = new URLSearchParams();
+      if (arama) parametreler.set("arama", arama);
+      if (imlec) parametreler.set("imlec", imlec);
+      const qs = parametreler.size ? `?${parametreler.toString()}` : "";
+      const veri = await api<{ kayitlar: Cari[]; sonrakiImlec: string | null }>(`/cari${qs}`);
+      setCariler((eskiler) => imlec ? [...eskiler, ...veri.kayitlar] : veri.kayitlar);
+      setSonrakiCariImleci(veri.sonrakiImlec);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Yükleme hatası");
+    } finally {
+      setCariListesiYukleniyor(false);
     }
   }, [arama]);
 
@@ -1056,6 +1065,13 @@ export default function CariSayfasi() {
             )}
           </tbody>
         </TableWrap>
+        {sonrakiCariImleci && (
+          <div style={{ padding: "1rem", textAlign: "center" }}>
+            <Button type="button" onClick={() => void yukle(sonrakiCariImleci)} disabled={cariListesiYukleniyor}>
+              {cariListesiYukleniyor ? "Cariler yükleniyor…" : "Daha fazla cari yükle"}
+            </Button>
+          </div>
+        )}
       </Card>
     </div>
   );
