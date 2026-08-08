@@ -26,6 +26,7 @@ import {
   kisiSemasi,
   cariHareketSemasi,
 } from "./cari.semalar";
+import { sayfaAdedi } from "../core/sayfalama";
 
 @Controller("cari")
 export class CariController {
@@ -39,7 +40,7 @@ export class CariController {
     @Query("tip") tip?: string,
     @Query("durum") durum?: string,
   ) {
-    const adetSayi = adet ? parseInt(adet, 10) : undefined;
+    const adetSayi = sayfaAdedi(adet);
     return this.cariService.listele(arama, imlec, adetSayi, tip, durum);
   }
 

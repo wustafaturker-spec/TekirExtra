@@ -19,6 +19,7 @@ import { Prisma } from "@prisma/client";
 import { Roller } from "../auth/roller.decorator";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
+import { sayfaAdedi } from "../core/sayfalama";
 import { DepoService } from "./depo.service";
 import { StokService } from "./stok.service";
 import {
@@ -141,7 +142,7 @@ export class StokController {
     @Query("imlec") imlec?: string,
     @Query("adet") adet?: string,
   ) {
-    const adetSayi = adet ? parseInt(adet, 10) : undefined;
+    const adetSayi = sayfaAdedi(adet);
     return this.stokService.listele(arama, kategoriId, imlec, adetSayi);
   }
 

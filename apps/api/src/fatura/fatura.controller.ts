@@ -14,6 +14,7 @@ import {
 import type { Response } from "express";
 import { Roller } from "../auth/roller.decorator";
 import { FaturaService } from "./fatura.service";
+import { sayfaAdedi } from "../core/sayfalama";
 import {
   faturaGuncelleSemasi,
   faturaOlusturSemasi,
@@ -60,7 +61,7 @@ export class FaturaController {
     @Query("yon") yon?: string,
     @Query("ebelge") ebelge?: string,
   ) {
-    const adetSayi = adet ? parseInt(adet, 10) : undefined;
+    const adetSayi = sayfaAdedi(adet);
     return this.faturaService.listele(arama, tip, durum, imlec, adetSayi, yon, ebelge);
   }
 
