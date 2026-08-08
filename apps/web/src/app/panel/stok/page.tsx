@@ -41,6 +41,8 @@ export default function StokSayfasi() {
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [formAcik, setFormAcik] = useState(false);
+  const [sonrakiStokImleci, setSonrakiStokImleci] = useState<string | null>(null);
+  const [stokListesiYukleniyor, setStokListesiYukleniyor] = useState(false);
 
   // Form alanları
   const [kod, setKod] = useState("");
@@ -51,13 +53,20 @@ export default function StokSayfasi() {
   const [alisFiyati, setAlisFiyati] = useState("");
   const [satisFiyati, setSatisFiyati] = useState("");
 
-  const yukle = useCallback(async () => {
+  const yukle = useCallback(async (imlec?: string) => {
+    setStokListesiYukleniyor(true);
     try {
-      const qs = arama ? `?arama=${encodeURIComponent(arama)}` : "";
-      const veri = await api<{ kayitlar: StokKart[] }>(`/stok${qs}`);
-      setStoklar(veri.kayitlar);
+      const parametreler = new URLSearchParams();
+      if (arama) parametreler.set("arama", arama);
+      if (imlec) parametreler.set("imlec", imlec);
+      const qs = parametreler.size ? `?${parametreler.toString()}` : "";
+      const veri = await api<{ kayitlar: StokKart[]; sonrakiImlec: string | null }>(`/stok${qs}`);
+      setStoklar((eskiler) => imlec ? [...eskiler, ...veri.kayitlar] : veri.kayitlar);
+      setSonrakiStokImleci(veri.sonrakiImlec);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Yükleme hatası");
+    } finally {
+      setStokListesiYukleniyor(false);
     }
   }, [arama]);
 
@@ -257,6 +266,13 @@ export default function StokSayfasi() {
             )}
           </tbody>
         </TableWrap>
+        {sonrakiStokImleci && (
+          <div style={{ padding: "1rem", textAlign: "center" }}>
+            <Button type="button" onClick={() => void yukle(sonrakiStokImleci)} disabled={stokListesiYukleniyor}>
+              {stokListesiYukleniyor ? "Stoklar yükleniyor…" : "Daha fazla stok yükle"}
+            </Button>
+          </div>
+        )}
       </Card>
     </div>
   );

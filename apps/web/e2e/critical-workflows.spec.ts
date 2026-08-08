@@ -124,6 +124,33 @@ test("cari listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page
   expect(istekler.filter((istek) => istek === "sonraki-1")).toHaveLength(1);
 });
 
+test("stok listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page }) => {
+  const stok = (id: string, kod: string, ad: string) => ({
+    id, kod, ad, tip: "urun", barkod: null, anaBirim: "adet", kdvOrani: "20",
+    alisFiyati: "100.00", satisFiyati: "120.00", mevcutMiktar: "10", ortalamaMaliyet: "90.00",
+  });
+  const istekler: string[] = [];
+  await page.route("http://localhost:3001/api/v1/stok**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== "/api/v1/stok") return route.fallback();
+    const imlec = url.searchParams.get("imlec");
+    istekler.push(imlec ?? "ilk");
+    return route.fulfill({ json: imlec === "sonraki-1"
+      ? { kayitlar: [stok("s2", "STK-002", "İkinci Ürün")], sonrakiImlec: null }
+      : { kayitlar: [stok("s1", "STK-001", "İlk Ürün")], sonrakiImlec: "sonraki-1" }
+    });
+  });
+
+  await page.goto("/panel/stok");
+  await expect(page.getByRole("row").filter({ hasText: "İlk Ürün" })).toBeVisible();
+  await page.getByRole("button", { name: "Daha fazla stok yükle" }).click();
+  await expect(page.getByRole("row").filter({ hasText: "İkinci Ürün" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "İlk Ürün" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Daha fazla stok yükle" })).toHaveCount(0);
+  expect(istekler.at(-1)).toBe("sonraki-1");
+  expect(istekler.filter((istek) => istek === "sonraki-1")).toHaveLength(1);
+});
+
 test("fatura, e-Belge ve ödeme durumları bağımsız izlenebilir", async ({ page }) => {
   await page.route("http://localhost:3001/api/v1/fatura", async (route) => {
     await route.fulfill({ json: { kayitlar: [{
