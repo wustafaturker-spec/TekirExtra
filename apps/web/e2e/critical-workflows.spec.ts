@@ -355,7 +355,9 @@ test("fatura listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ pa
   });
   const istekler: string[] = [];
   await page.route("http://localhost:3001/api/v1/fatura**", (route) => {
-    const imlec = new URL(route.request().url()).searchParams.get("imlec");
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("adet") === "200") return route.fulfill({ json: { kayitlar: [], sonrakiImlec: null } });
+    const imlec = url.searchParams.get("imlec");
     istekler.push(imlec ?? "ilk");
     return route.fulfill({ json: imlec === "sonraki-1"
       ? { kayitlar: [fatura("f2", "SAT-002")], sonrakiImlec: null }
@@ -381,7 +383,9 @@ test("açık ödeme filtresi eşleşme için sonraki fatura sayfasını tarar", 
   });
   const istekler: string[] = [];
   await page.route("http://localhost:3001/api/v1/fatura**", (route) => {
-    const imlec = new URL(route.request().url()).searchParams.get("imlec");
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("adet") === "200") return route.fulfill({ json: { kayitlar: [], sonrakiImlec: null } });
+    const imlec = url.searchParams.get("imlec");
     istekler.push(imlec ?? "ilk");
     return route.fulfill({ json: imlec === "sonraki-1"
       ? { kayitlar: [fatura("f2", "SAT-ACIK", "odenmedi")], sonrakiImlec: null }
@@ -676,11 +680,11 @@ test("kesinleştirme öncesi stok, cari, vergi ve e-Belge etkisi gösterilir", a
 
 
 test("fatura kalemleri yalnız klavyeyle kesintisiz girilebilir", async ({ page }) => {
-  await page.route("http://localhost:3001/api/v1/stok?adet=100", (route) => route.fulfill({ json: { kayitlar: [{
+  await page.route("http://localhost:3001/api/v1/stok?adet=200", (route) => route.fulfill({ json: { kayitlar: [{
     id: "s1", kod: "STK-001", ad: "Klavye Ürünü", barkod: "8690000000001", anaBirim: "adet",
     kullanilabilirMiktar: "25", alisFiyati: "80.00", satisFiyati: "100.00", kdvOrani: "20",
     tedarikciUrunKodlari: ["TED-42"],
-  }] } }));
+  }], sonrakiImlec: null } }));
   await page.route("http://localhost:3001/api/v1/stok/s1/tavsiye-fiyat**", (route) => route.fulfill({ json: { birimFiyat: 100, iskontoOrani: 0 } }));
 
   await page.goto("/panel/fatura?yon=satis&yeni=1");
