@@ -86,6 +86,22 @@ export default function SayimSayfasi() {
   /** Seçili deponun ürün bazlı miktarları; tek depoda kart toplamı kullanılır. */
   const [depoBakiyeleri, setDepoBakiyeleri] = useState<Record<string, string> | null>(null);
 
+  const stoklariYukle = useCallback(async () => {
+    const tumStoklar: StokSatiri[] = [];
+    const gorulenImlecler = new Set<string>();
+    let imlec: string | null = null;
+    do {
+      const sorgu = new URLSearchParams({ adet: "200" });
+      if (imlec) sorgu.set("imlec", imlec);
+      const veri: { kayitlar: StokSatiri[]; sonrakiImlec: string | null } = await api("/stok?" + sorgu.toString());
+      tumStoklar.push(...veri.kayitlar.filter((stok) => stok.tip !== "hizmet"));
+      imlec = veri.sonrakiImlec;
+      if (imlec && gorulenImlecler.has(imlec)) break;
+      if (imlec) gorulenImlecler.add(imlec);
+    } while (imlec);
+    setStoklar(tumStoklar);
+  }, []);
+
   const yukle = useCallback(async () => {
     try {
       setSayimlar(await api<SayimOzet[]>("/stok/sayimlar"));
@@ -97,10 +113,8 @@ export default function SayimSayfasi() {
   useEffect(() => {
     if (!tokenAl()) return;
     void yukle();
-    void api<{ kayitlar: StokSatiri[] }>("/stok")
-      .then((v) => setStoklar(v.kayitlar.filter((s) => s.tip !== "hizmet")))
-      .catch(() => {});
-  }, [yukle]);
+    void stoklariYukle().catch(() => {});
+  }, [stoklariYukle, yukle]);
 
   // Depo seçilince sistem miktarı o deponun bakiyesinden okunur (STK-07)
   useEffect(() => {
@@ -182,9 +196,7 @@ export default function SayimSayfasi() {
       await yukle();
       await detayAc(id);
       // Miktarlar değişti; sonraki taslakta güncel sistem miktarı görünsün
-      void api<{ kayitlar: StokSatiri[] }>("/stok")
-        .then((v) => setStoklar(v.kayitlar.filter((s) => s.tip !== "hizmet")))
-        .catch(() => {});
+      void stoklariYukle().catch(() => {});
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Sayım onaylanamadı");
     }

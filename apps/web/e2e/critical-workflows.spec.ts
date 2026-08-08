@@ -70,6 +70,30 @@ test("kullanıcı panelden geri bildirim gönderebilir", async ({ page }) => {
 });
 
 
+test("stok sayımı tüm stok sayfalarını forma yükler", async ({ page }) => {
+  const stok = (id: string, kod: string, ad: string) => ({
+    id, kod, ad, tip: "urun", anaBirim: "adet", mevcutMiktar: "10",
+  });
+  const istekler: string[] = [];
+  await page.route("http://localhost:3001/api/v1/stok**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/stok/sayimlar") return route.fulfill({ json: [] });
+    if (url.pathname !== "/api/v1/stok") return route.fallback();
+    const imlec = url.searchParams.get("imlec");
+    istekler.push(imlec ?? "ilk");
+    return route.fulfill({ json: imlec === "stok-1"
+      ? { kayitlar: [stok("stok-2", "STK-002", "İkinci Sayfa Ürünü")], sonrakiImlec: null }
+      : { kayitlar: [stok("stok-1", "STK-001", "İlk Sayfa Ürünü")], sonrakiImlec: "stok-1" }
+    });
+  });
+
+  await page.goto("/panel/stok/sayim");
+  await page.getByRole("button", { name: /Yeni Sayım/ }).click();
+  await expect(page.getByRole("row").filter({ hasText: "İkinci Sayfa Ürünü" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "İlk Sayfa Ürünü" })).toBeVisible();
+  expect(istekler).toEqual(["ilk", "stok-1"]);
+});
+
 test("fatura listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page }) => {
   const fatura = (id: string, no: string) => ({
     id, no, tip: "satis", tarih: "2026-08-07", durum: "kesin",
