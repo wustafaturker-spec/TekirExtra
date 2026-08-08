@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiHata, tokenAl } from "@/lib/api";
+import { api, ApiHata, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import { AramaSecici } from "@/components/arama-secici";
 import { DepoSecici } from "@/components/depo-secici";
@@ -187,8 +187,8 @@ export default function BelgelerSayfasi() {
 
   useEffect(() => {
     if (!tokenAl()) return;
-    api<{ kayitlar: Cari[] }>("/cari?adet=200").then((v) => setCariler(v.kayitlar)).catch(() => undefined);
-    api<{ kayitlar: Stok[] }>("/stok?adet=200").then((v) => setStoklar(v.kayitlar)).catch(() => undefined);
+    tumSayfalariAl<Cari>("/cari").then(setCariler).catch(() => undefined);
+    tumSayfalariAl<Stok>("/stok").then(setStoklar).catch(() => undefined);
   }, []);
 
   useEffect(() => {
