@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, tokenAl } from "@/lib/api";
+import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { useDepolar } from "@/lib/depolar";
 import { DepoSecici } from "@/components/depo-secici";
 import {
@@ -87,19 +87,8 @@ export default function SayimSayfasi() {
   const [depoBakiyeleri, setDepoBakiyeleri] = useState<Record<string, string> | null>(null);
 
   const stoklariYukle = useCallback(async () => {
-    const tumStoklar: StokSatiri[] = [];
-    const gorulenImlecler = new Set<string>();
-    let imlec: string | null = null;
-    do {
-      const sorgu = new URLSearchParams({ adet: "200" });
-      if (imlec) sorgu.set("imlec", imlec);
-      const veri: { kayitlar: StokSatiri[]; sonrakiImlec: string | null } = await api("/stok?" + sorgu.toString());
-      tumStoklar.push(...veri.kayitlar.filter((stok) => stok.tip !== "hizmet"));
-      imlec = veri.sonrakiImlec;
-      if (imlec && gorulenImlecler.has(imlec)) break;
-      if (imlec) gorulenImlecler.add(imlec);
-    } while (imlec);
-    setStoklar(tumStoklar);
+    const tumStoklar = await tumSayfalariAl<StokSatiri>("/stok");
+    setStoklar(tumStoklar.filter((stok) => stok.tip !== "hizmet"));
   }, []);
 
   const yukle = useCallback(async () => {

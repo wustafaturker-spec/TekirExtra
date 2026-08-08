@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, tokenAl } from "@/lib/api";
+import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import {
   Alert,
   Badge,
@@ -69,19 +69,7 @@ export default function FiyatListeleriSayfasi() {
   const [kalemArama, setKalemArama] = useState("");
 
   const stoklariYukle = useCallback(async () => {
-    const tumStoklar: Stok[] = [];
-    const gorulenImlecler = new Set<string>();
-    let imlec: string | null = null;
-    do {
-      const sorgu = new URLSearchParams({ adet: "200" });
-      if (imlec) sorgu.set("imlec", imlec);
-      const veri: { kayitlar: Stok[]; sonrakiImlec: string | null } = await api("/stok?" + sorgu.toString());
-      tumStoklar.push(...veri.kayitlar);
-      imlec = veri.sonrakiImlec;
-      if (imlec && gorulenImlecler.has(imlec)) break;
-      if (imlec) gorulenImlecler.add(imlec);
-    } while (imlec);
-    setStoklar(tumStoklar);
+    setStoklar(await tumSayfalariAl<Stok>("/stok"));
   }, []);
 
   const yukle = useCallback(async () => {

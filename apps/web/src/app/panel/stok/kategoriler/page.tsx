@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, tokenAl } from "@/lib/api";
+import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import {
   Alert,
   Badge,
@@ -71,22 +71,14 @@ export default function KategorilerSayfasi() {
 
   const yukle = useCallback(async () => {
     try {
-      const kategoriler = await api<Kategori[]>("/stok/kategoriler");
+      const [kategoriler, stoklar] = await Promise.all([
+        api<Kategori[]>("/stok/kategoriler"),
+        tumSayfalariAl<{ kategoriId: string | null }>("/stok"),
+      ]);
       const sayac: Record<string, number> = {};
-      const gorulenImlecler = new Set<string>();
-      let imlec: string | null = null;
-      do {
-        const sorgu = new URLSearchParams({ adet: "200" });
-        if (imlec) sorgu.set("imlec", imlec);
-        const stoklar: { kayitlar: { kategoriId: string | null }[]; sonrakiImlec: string | null } =
-          await api("/stok?" + sorgu.toString());
-        for (const stok of stoklar.kayitlar) {
-          if (stok.kategoriId) sayac[stok.kategoriId] = (sayac[stok.kategoriId] ?? 0) + 1;
-        }
-        imlec = stoklar.sonrakiImlec;
-        if (imlec && gorulenImlecler.has(imlec)) break;
-        if (imlec) gorulenImlecler.add(imlec);
-      } while (imlec);
+      for (const stok of stoklar) {
+        if (stok.kategoriId) sayac[stok.kategoriId] = (sayac[stok.kategoriId] ?? 0) + 1;
+      }
       setKategoriler(kategoriler);
       setUrunSayilari(sayac);
     } catch (h) {

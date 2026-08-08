@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, tokenAl } from "@/lib/api";
+import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import {
   Alert,
   Badge,
@@ -93,19 +93,7 @@ export default function KasaBankaSayfasi() {
   const [virmanAciklama, setVirmanAciklama] = useState("");
 
   const carileriYukle = useCallback(async () => {
-    const tumCariler: Cari[] = [];
-    const gorulenImlecler = new Set<string>();
-    let imlec: string | null = null;
-    do {
-      const sorgu = new URLSearchParams({ adet: "200" });
-      if (imlec) sorgu.set("imlec", imlec);
-      const veri: { kayitlar: Cari[]; sonrakiImlec: string | null } = await api("/cari?" + sorgu.toString());
-      tumCariler.push(...veri.kayitlar);
-      imlec = veri.sonrakiImlec;
-      if (imlec && gorulenImlecler.has(imlec)) break;
-      if (imlec) gorulenImlecler.add(imlec);
-    } while (imlec);
-    setCariler(tumCariler);
+    setCariler(await tumSayfalariAl<Cari>("/cari"));
   }, []);
 
   const yukle = useCallback(async () => {
