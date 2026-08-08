@@ -65,6 +65,7 @@ interface Belge {
   tarih: string;
   genelToplam: string;
   dovizCinsi: string;
+  depoId?: string | null;
   cari: { id: string; kod: string; unvan: string };
   faturaId: string | null;
 }
@@ -459,7 +460,15 @@ export default function BelgelerSayfasi() {
 
   // Toplu faturalanabilir: onaylı sipariş/irsaliye
   const faturalanabilir = (b: Belge) => b.durum === "onaylandi" && (b.tur === "siparis" || b.tur === "irsaliye");
-  const gorunenFaturalanabilir = gorunen.filter(faturalanabilir);
+  const faturaUyumlulukAnahtari = (b: Belge) => [b.cari.id, b.dovizCinsi, b.yon, b.depoId ?? ""].join("|");
+  const seciliIlkBelge = belgeler.find((belge) => secili.has(belge.id));
+  const secimUyumlulukAnahtari = seciliIlkBelge ? faturaUyumlulukAnahtari(seciliIlkBelge) : null;
+  const gorunenFaturalanabilirlerinTumu = gorunen.filter(faturalanabilir);
+  const gorunenFaturaGruplari = new Set(gorunenFaturalanabilirlerinTumu.map(faturaUyumlulukAnahtari));
+  const gorunenTopluSecimeUygun = secimUyumlulukAnahtari !== null || gorunenFaturaGruplari.size <= 1;
+  const gorunenFaturalanabilir = gorunenFaturalanabilirlerinTumu.filter((belge) =>
+    !secimUyumlulukAnahtari || faturaUyumlulukAnahtari(belge) === secimUyumlulukAnahtari,
+  );
   const gorunenlerinTumuSecili = gorunenFaturalanabilir.length > 0 && gorunenFaturalanabilir.every((belge) => secili.has(belge.id));
 
   const gorunenlerdenSeciliVar = gorunenFaturalanabilir.some((belge) => secili.has(belge.id));
@@ -792,7 +801,7 @@ export default function BelgelerSayfasi() {
         <TableWrap>
           <thead>
             <tr>
-              <th style={{ width: 36 }}><input aria-label="Faturalanabilir belgelerin tümünü seç" aria-checked={gorunenSecimKismi ? "mixed" : gorunenlerinTumuSecili} ref={tumunuSecRef} type="checkbox" checked={gorunenlerinTumuSecili} disabled={gorunenFaturalanabilir.length === 0} onChange={gorunenlerinSeciminiDegistir} /></th>
+              <th style={{ width: 36 }}><input aria-label="Faturalanabilir belgelerin tümünü seç" aria-checked={gorunenSecimKismi ? "mixed" : gorunenlerinTumuSecili} ref={tumunuSecRef} type="checkbox" checked={gorunenlerinTumuSecili} disabled={topluFaturaYukleniyor || gorunenFaturalanabilir.length === 0 || !gorunenTopluSecimeUygun} title={!gorunenTopluSecimeUygun ? "Toplu seçim için cari, döviz, yön ve depo filtresini daraltın" : undefined} onChange={gorunenlerinSeciminiDegistir} /></th>
               <th>Belge No</th>
               <th>Tür / Yön</th>
               <th>Cari</th>
@@ -816,7 +825,7 @@ export default function BelgelerSayfasi() {
                 <tr key={b.id}>
                   <td className="center">
                     {faturalanabilir(b) && (
-                      <input aria-label={(b.no ?? "Taslak") + " belgesini seç"} type="checkbox" checked={secili.has(b.id)} onChange={() => seciliDegistir(b.id)} title="Toplu faturalama için seç" />
+                      <input aria-label={(b.no ?? "Taslak") + " belgesini seç"} type="checkbox" checked={secili.has(b.id)} disabled={topluFaturaYukleniyor || Boolean(secimUyumlulukAnahtari && faturaUyumlulukAnahtari(b) !== secimUyumlulukAnahtari)} onChange={() => seciliDegistir(b.id)} title={secimUyumlulukAnahtari && faturaUyumlulukAnahtari(b) !== secimUyumlulukAnahtari ? "Seçilen belgeler aynı cari, döviz, yön ve depoda olmalıdır" : "Toplu faturalama için seç"} />
                     )}
                   </td>
                   <td style={{ fontWeight: 700 }}>{b.no || "(Taslak)"}</td>
