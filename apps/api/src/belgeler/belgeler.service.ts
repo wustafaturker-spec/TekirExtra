@@ -595,12 +595,13 @@ export class BelgelerService {
           (b) =>
             b.cariId === ilk.cariId &&
             b.dovizCinsi === ilk.dovizCinsi &&
+            b.kur.equals(ilk.kur) &&
             b.yon === ilk.yon &&
             b.depoId === ilk.depoId,
         )
       ) {
         throw new BadRequestException(
-          "Toplu faturalama için belgeler aynı cari, döviz, yön ve depoda olmalıdır",
+          "Toplu faturalama için belgeler aynı cari, döviz, kur, yön ve depoda olmalıdır",
         );
       }
 

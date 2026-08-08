@@ -305,12 +305,12 @@ test("görünür faturalanabilir belgeler topluca seçilir", async ({ page }) =>
 });
 
 test("uyumsuz belgelerin birlikte faturalanması seçimde engellenir", async ({ page }) => {
-  const belge = (id: string, no: string, cariId: string, dovizCinsi = "TRY") => ({
+  const belge = (id: string, no: string, cariId: string, kur = "1.0000") => ({
     id, no, tur: "siparis", durum: "onaylandi", yon: "satis", tarih: "2026-08-07", genelToplam: "1200.00",
-    dovizCinsi, depoId: "d1", faturaId: null, cari: { id: cariId, kod: cariId, unvan: `Cari ${cariId}` },
+    dovizCinsi: "USD", kur, depoId: "d1", faturaId: null, cari: { id: cariId, kod: cariId, unvan: `Cari ${cariId}` },
   });
   await page.route("http://localhost:3001/api/v1/belgeler", (route) => route.fulfill({ json: {
-    kayitlar: [belge("b1", "SP-001", "c1"), belge("b2", "SP-002", "c2")], sonrakiImlec: null,
+    kayitlar: [belge("b1", "SP-001", "c1", "32.0000"), belge("b2", "SP-002", "c1", "33.0000")], sonrakiImlec: null,
   } }));
 
   await page.goto("/panel/belgeler");
@@ -321,7 +321,7 @@ test("uyumsuz belgelerin birlikte faturalanması seçimde engellenir", async ({ 
   await expect(tumunuSec).toHaveAttribute("title", /filtre/i);
   await ilkBelge.check();
   await expect(uyumsuzBelge).toBeDisabled();
-  await expect(uyumsuzBelge).toHaveAttribute("title", /aynı cari, döviz, yön ve depoda/i);
+  await expect(uyumsuzBelge).toHaveAttribute("title", /aynı cari, döviz, kur, yön ve depoda/i);
   await expect(page.getByRole("button", { name: /Seçilenleri Faturala \(1\)/ })).toBeVisible();
 });
 
