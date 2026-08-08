@@ -155,6 +155,8 @@ export default function BelgelerSayfasi() {
     try {
       const parametreler = new URLSearchParams();
       if (turFiltre !== "tumu") parametreler.set("tur", turFiltre);
+      if (yonBaglami) parametreler.set("yon", yonBaglami);
+      if (durumFiltresi) parametreler.set("durum", durumFiltresi);
       if (imlec) parametreler.set("imlec", imlec);
       if (aramaSorgusu) parametreler.set("arama", aramaSorgusu);
       if (tarihBaslangic) parametreler.set("baslangic", tarihBaslangic);
@@ -170,7 +172,7 @@ export default function BelgelerSayfasi() {
     } finally {
       if (istekSirasi === yuklemeSirasi.current) setListeYukleniyor(false);
     }
-  }, [turFiltre, aramaSorgusu, tarihBaslangic, tarihBitis]);
+  }, [turFiltre, yonBaglami, durumFiltresi, aramaSorgusu, tarihBaslangic, tarihBitis]);
 
   useEffect(() => {
     const zamanlayici = window.setTimeout(() => setAramaSorgusu(arama.trim()), 300);

@@ -381,16 +381,25 @@ test("belge filtresi değiştiğinde gizli toplu seçimler temizlenir", async ({
     id, no, tur: "siparis", durum: "onaylandi", yon, tarih: "2026-08-07", genelToplam: "1200.00",
     dovizCinsi: "TRY", faturaId: null, cari: { id: "c1", kod: "C001", unvan: "Örnek Müşteri" },
   });
-  await page.route("http://localhost:3001/api/v1/belgeler", (route) => route.fulfill({ json: {
-    kayitlar: [belge("b1", "SP-SATIS", "satis"), belge("b2", "SP-ALIS", "alis")], sonrakiImlec: null,
-  } }));
+  const listeIstekleri: string[] = [];
+  await page.route("http://localhost:3001/api/v1/belgeler**", (route) => {
+    const url = new URL(route.request().url());
+    listeIstekleri.push(url.toString());
+    const kayitlar = url.searchParams.get("yon") === "alis"
+      ? [belge("b2", "SP-ALIS", "alis")]
+      : [belge("b1", "SP-SATIS", "satis"), belge("b2", "SP-ALIS", "alis")];
+    return route.fulfill({ json: { kayitlar, sonrakiImlec: null } });
+  });
 
   await page.goto("/panel/belgeler");
   await page.getByRole("checkbox", { name: "SP-SATIS belgesini seç" }).check();
   await expect(page.getByRole("button", { name: /Seçilenleri Faturala \(1\)/ })).toBeVisible();
   await page.getByLabel("Yön", { exact: true }).selectOption("alis");
+  await page.getByLabel("Belge durumu", { exact: true }).selectOption("onaylandi");
   await expect(page.getByRole("button", { name: /Seçilenleri Faturala/ })).toHaveCount(0);
   await expect(page.getByRole("checkbox", { name: "SP-ALIS belgesini seç" })).not.toBeChecked();
+  await expect.poll(() => listeIstekleri.at(-1)).toContain("yon=alis");
+  expect(new URL(listeIstekleri.at(-1)!).searchParams.get("durum")).toBe("onaylandi");
 });
 
 test("başarısız belge listesi yeniden yüklenebilir", async ({ page }) => {
