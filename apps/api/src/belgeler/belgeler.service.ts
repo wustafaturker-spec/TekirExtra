@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -606,10 +607,19 @@ export class BelgelerService {
       }
 
       const fatura = await this.faturaTaslagiYaz(tx, tenantId, belgeler);
-      await tx.belge.updateMany({
-        where: { id: { in: girdi.belgeIds } },
+      const kapananlar = await tx.belge.updateMany({
+        where: {
+          id: { in: girdi.belgeIds },
+          durum: "onaylandi",
+          faturaId: null,
+        },
         data: { durum: "kapandi", faturaId: fatura.id },
       });
+      if (kapananlar.count !== belgeler.length) {
+        throw new ConflictException(
+          "Seçilen belgelerden biri başka bir işlemde faturalanmış; listeyi yenileyip tekrar deneyin",
+        );
+      }
       return { faturaId: fatura.id, birlesenBelge: belgeler.length };
     });
   }
