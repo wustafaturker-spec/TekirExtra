@@ -121,6 +121,37 @@ test("açık ödeme filtresi eşleşme için sonraki fatura sayfasını tarar", 
   expect(istekler.filter((istek) => istek === "sonraki-1")).toHaveLength(1);
 });
 
+test("geç dönen eski fatura filtresi güncel sonucu ezmez", async ({ page }) => {
+  const fatura = (id: string, no: string, durum: string) => ({
+    id, no, tip: "satis", tarih: "2026-08-07", durum,
+    toplamMatrah: "1000.00", toplamKdv: "200.00", genelToplam: "1200.00",
+    cari: { unvan: "Örnek Müşteri" }, ebelge: null,
+    odemeOzeti: { durum: "odenmedi", odenen: "0.00", kalan: "1200.00" },
+  });
+  let yavasYanitla!: () => void; let yavasBasladi!: () => void; let yavasTamamlandi!: () => void;
+  const yavasBekleme = new Promise<void>((resolve) => { yavasYanitla = resolve; });
+  const yavasIstek = new Promise<void>((resolve) => { yavasBasladi = resolve; });
+  const yavasBitti = new Promise<void>((resolve) => { yavasTamamlandi = resolve; });
+  await page.route("http://localhost:3001/api/v1/fatura**", async (route) => {
+    const durum = new URL(route.request().url()).searchParams.get("durum");
+    if (durum === "taslak") {
+      yavasBasladi(); await yavasBekleme;
+      await route.fulfill({ json: { kayitlar: [fatura("f1", "YAVAS-TASLAK", "taslak")], sonrakiImlec: null } });
+      yavasTamamlandi(); return;
+    }
+    if (durum === "kesin") return route.fulfill({ json: { kayitlar: [fatura("f2", "HIZLI-KESIN", "kesin")], sonrakiImlec: null } });
+    return route.fulfill({ json: { kayitlar: [], sonrakiImlec: null } });
+  });
+
+  await page.goto("/panel/fatura");
+  await page.getByLabel("Fatura durumu").selectOption("taslak"); await yavasIstek;
+  await page.getByLabel("Fatura durumu").selectOption("kesin");
+  await expect(page.getByRole("row").filter({ hasText: "HIZLI-KESIN" })).toBeVisible();
+  yavasYanitla(); await yavasBitti;
+  await expect(page.getByRole("row").filter({ hasText: "HIZLI-KESIN" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "YAVAS-TASLAK" })).not.toBeVisible();
+});
+
 test("cari listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page }) => {
   const cari = (id: string, kod: string, unvan: string) => ({
     id, kod, unvan, tip: "musteri", sektor: null, vknTckn: null, eposta: null, telefon: null,

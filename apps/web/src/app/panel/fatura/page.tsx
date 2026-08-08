@@ -160,6 +160,7 @@ export default function FaturaSayfasi() {
   const urunRefleri = useRef<Array<HTMLInputElement | null>>([]);
   const faturaBaslangicRef = useRef<number | null>(null);
   const istenenFaturaImlecleri = useRef(new Set<string>());
+  const faturaYuklemeSirasi = useRef(0);
   const miktarRefleri = useRef<Array<HTMLInputElement | null>>([]);
   const [hizliPanel, setHizliPanel] = useState<"cari" | "stok" | null>(null);
   const [hizliStokSatir, setHizliStokSatir] = useState(0);
@@ -202,6 +203,7 @@ export default function FaturaSayfasi() {
   const yukle = useCallback(async (imlec?: string) => {
     if (imlec && istenenFaturaImlecleri.current.has(imlec)) return;
     if (imlec) istenenFaturaImlecleri.current.add(imlec); else istenenFaturaImlecleri.current.clear();
+    const istekSirasi = ++faturaYuklemeSirasi.current;
     setHata(""); setFaturaListesiYukleniyor(true);
     try {
       const parametreler = new URLSearchParams();
@@ -211,23 +213,25 @@ export default function FaturaSayfasi() {
       if (imlec) parametreler.set("imlec", imlec);
       const sorgu = parametreler.size ? `?${parametreler.toString()}` : "";
       const fVeri = await api<{ kayitlar: Fatura[]; sonrakiImlec: string | null }>(`/fatura${sorgu}`);
+      if (istekSirasi !== faturaYuklemeSirasi.current) return;
       setFaturalar((eskiler) => imlec ? [...eskiler, ...fVeri.kayitlar] : fVeri.kayitlar);
       setSonrakiFaturaImleci(fVeri.sonrakiImlec);
-
-      if (!imlec) {
-        const cVeri = await api<{ kayitlar: Cari[] }>("/cari?adet=100");
-        setCariler(cVeri.kayitlar);
-
-        const sVeri = await api<{ kayitlar: Stok[] }>("/stok?adet=100");
-        setStoklar(sVeri.kayitlar);
-      }
     } catch (h) {
-      if (imlec) istenenFaturaImlecleri.current.delete(imlec);
-      setHata(h instanceof Error ? h.message : "Yükleme hatası");
+      if (istekSirasi === faturaYuklemeSirasi.current) {
+        if (imlec) istenenFaturaImlecleri.current.delete(imlec);
+        setHata(h instanceof Error ? h.message : "Yükleme hatası");
+      }
     } finally {
-      setFaturaListesiYukleniyor(false);
+      if (istekSirasi === faturaYuklemeSirasi.current) setFaturaListesiYukleniyor(false);
     }
   }, [yonBaglami, durumFiltresi, ebelgeFiltresi]);
+
+  useEffect(() => {
+    if (tokenAl()) {
+      api<{ kayitlar: Cari[] }>("/cari?adet=100").then((veri) => setCariler(veri.kayitlar)).catch(() => undefined);
+      api<{ kayitlar: Stok[] }>("/stok?adet=100").then((veri) => setStoklar(veri.kayitlar)).catch(() => undefined);
+    }
+  }, []);
 
   useEffect(() => {
     if (faturaFiltreleriHazir && tokenAl()) {
