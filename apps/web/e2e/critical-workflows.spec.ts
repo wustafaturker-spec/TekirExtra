@@ -94,6 +94,26 @@ test("stok sayımı tüm stok sayfalarını forma yükler", async ({ page }) => 
   expect(istekler).toEqual(["ilk", "stok-1"]);
 });
 
+test("kategori ürün sayıları tüm stok sayfalarını kapsar", async ({ page }) => {
+  await page.route("http://localhost:3001/api/v1/stok**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/stok/kategoriler") {
+      return route.fulfill({ json: [{ id: "kat-1", ad: "Elektronik", ustId: null, ust: null }] });
+    }
+    if (url.pathname !== "/api/v1/stok") return route.fallback();
+    const imlec = url.searchParams.get("imlec");
+    return route.fulfill({ json: imlec === "stok-1"
+      ? { kayitlar: [{ kategoriId: "kat-1" }], sonrakiImlec: null }
+      : { kayitlar: [{ kategoriId: "kat-1" }], sonrakiImlec: "stok-1" }
+    });
+  });
+
+  await page.goto("/panel/stok/kategoriler");
+  const kategori = page.getByRole("listitem").filter({ hasText: "Elektronik" });
+  await expect(kategori.getByText("2 ürün")).toBeVisible();
+  await expect(kategori.getByRole("button", { name: "Sil" })).toBeDisabled();
+});
+
 test("fatura listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page }) => {
   const fatura = (id: string, no: string) => ({
     id, no, tip: "satis", tarih: "2026-08-07", durum: "kesin",

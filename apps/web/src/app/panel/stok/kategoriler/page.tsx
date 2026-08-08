@@ -71,16 +71,23 @@ export default function KategorilerSayfasi() {
 
   const yukle = useCallback(async () => {
     try {
-      const [kats, stoklar] = await Promise.all([
-        api<Kategori[]>("/stok/kategoriler"),
-        api<{ kayitlar: { kategoriId: string | null }[] }>("/stok"),
-      ]);
-      setKategoriler(kats);
-      // Silinebilirliği önceden göstermek için kategori başına ürün sayısı
+      const kategoriler = await api<Kategori[]>("/stok/kategoriler");
       const sayac: Record<string, number> = {};
-      for (const s of stoklar.kayitlar) {
-        if (s.kategoriId) sayac[s.kategoriId] = (sayac[s.kategoriId] ?? 0) + 1;
-      }
+      const gorulenImlecler = new Set<string>();
+      let imlec: string | null = null;
+      do {
+        const sorgu = new URLSearchParams({ adet: "200" });
+        if (imlec) sorgu.set("imlec", imlec);
+        const stoklar: { kayitlar: { kategoriId: string | null }[]; sonrakiImlec: string | null } =
+          await api("/stok?" + sorgu.toString());
+        for (const stok of stoklar.kayitlar) {
+          if (stok.kategoriId) sayac[stok.kategoriId] = (sayac[stok.kategoriId] ?? 0) + 1;
+        }
+        imlec = stoklar.sonrakiImlec;
+        if (imlec && gorulenImlecler.has(imlec)) break;
+        if (imlec) gorulenImlecler.add(imlec);
+      } while (imlec);
+      setKategoriler(kategoriler);
       setUrunSayilari(sayac);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Kategoriler yüklenemedi");
