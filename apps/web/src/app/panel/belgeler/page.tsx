@@ -113,6 +113,7 @@ export default function BelgelerSayfasi() {
   const [formAcik, setFormAcik] = useState(false);
   const [detay, setDetay] = useState<BelgeDetay | null>(null);
   const [secili, setSecili] = useState<Set<string>>(new Set());
+  const [topluFaturaYukleniyor, setTopluFaturaYukleniyor] = useState(false);
   const [yonBaglami, setYonBaglami] = useState<Yon | null>(null);
   const [onayBekleyen, setOnayBekleyen] = useState<BelgeDetay | null>(null);
   const [donusumBekleyen, setDonusumBekleyen] = useState<{ belge: BelgeDetay; hedef: "siparis" | "irsaliye" | "fatura" } | null>(null);
@@ -387,14 +388,16 @@ export default function BelgelerSayfasi() {
   }
 
   async function topluFatura() {
-    if (secili.size === 0) return;
-    setHata(""); setBasari("");
+    if (secili.size === 0 || topluFaturaYukleniyor) return;
+    setHata(""); setBasari(""); setTopluFaturaYukleniyor(true);
     try {
       await api("/belgeler/toplu-fatura", { method: "POST", body: JSON.stringify({ belgeIds: [...secili] }) });
       setBasari(`${secili.size} belge tek taslak faturada birleştirildi.`);
       void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Toplu faturalama hatası");
+    } finally {
+      setTopluFaturaYukleniyor(false);
     }
   }
 
@@ -493,8 +496,8 @@ export default function BelgelerSayfasi() {
           <>
             {secili.size > 0 && (
               <>
-                <Button onClick={() => setSecili(new Set())}>Seçimi temizle</Button>
-                <Button variant="primary" onClick={topluFatura}>🧾 Seçilenleri Faturala ({secili.size})</Button>
+                <Button disabled={topluFaturaYukleniyor} onClick={() => setSecili(new Set())}>Seçimi temizle</Button>
+                <Button variant="primary" disabled={topluFaturaYukleniyor} onClick={topluFatura}>{topluFaturaYukleniyor ? "Fatura oluşturuluyor…" : `🧾 Seçilenleri Faturala (${secili.size})`}</Button>
               </>
             )}
             <Button variant={secili.size > 0 ? "ghost" : "primary"} onClick={() => setFormAcik(!formAcik)}>

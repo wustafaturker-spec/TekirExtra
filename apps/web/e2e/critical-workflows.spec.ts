@@ -303,6 +303,33 @@ test("görünür faturalanabilir belgeler topluca seçilir", async ({ page }) =>
   expect(gonderilen).toEqual({ belgeIds: ["b1", "b2"] });
 });
 
+test("toplu fatura oluşturulurken yinelenen gönderim engellenir", async ({ page }) => {
+  const belge = {
+    id: "b1", no: "SP-001", tur: "siparis", durum: "onaylandi", yon: "satis", tarih: "2026-08-07",
+    genelToplam: "1200.00", dovizCinsi: "TRY", faturaId: null,
+    cari: { id: "c1", kod: "C001", unvan: "Örnek Müşteri" },
+  };
+  let istekSayisi = 0;
+  let yanitla!: () => void;
+  const beklet = new Promise<void>((resolve) => { yanitla = resolve; });
+  await page.route("http://localhost:3001/api/v1/belgeler", (route) => route.fulfill({ json: { kayitlar: [belge], sonrakiImlec: null } }));
+  await page.route("http://localhost:3001/api/v1/belgeler/toplu-fatura", async (route) => {
+    istekSayisi += 1;
+    await beklet;
+    await route.fulfill({ json: { id: "f1" } });
+  });
+
+  await page.goto("/panel/belgeler");
+  await page.getByRole("checkbox", { name: "SP-001 belgesini seç" }).check();
+  await page.getByRole("button", { name: /Seçilenleri Faturala/ }).click();
+  const beklemeButonu = page.getByRole("button", { name: "Fatura oluşturuluyor…" });
+  await expect(beklemeButonu).toBeDisabled();
+  await beklemeButonu.click({ force: true });
+  expect(istekSayisi).toBe(1);
+  yanitla();
+  await expect(page.getByText("1 belge tek taslak faturada birleştirildi.")).toBeVisible();
+});
+
 test("belge filtresi değiştiğinde gizli toplu seçimler temizlenir", async ({ page }) => {
   const belge = (id: string, no: string, yon: string) => ({
     id, no, tur: "siparis", durum: "onaylandi", yon, tarih: "2026-08-07", genelToplam: "1200.00",
