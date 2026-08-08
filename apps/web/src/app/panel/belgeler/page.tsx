@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, tokenAl } from "@/lib/api";
+import { api, ApiHata, tokenAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import { AramaSecici } from "@/components/arama-secici";
 import { DepoSecici } from "@/components/depo-secici";
@@ -399,6 +399,9 @@ export default function BelgelerSayfasi() {
       setBasari(`${secili.size} belge tek taslak faturada birleştirildi.`);
       void yukle();
     } catch (h) {
+      if (h instanceof ApiHata && h.durum === 409) {
+        await yukle();
+      }
       setHata(h instanceof Error ? h.message : "Toplu faturalama hatası");
     } finally {
       setTopluFaturaYukleniyor(false);

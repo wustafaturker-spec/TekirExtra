@@ -352,6 +352,30 @@ test("toplu fatura oluşturulurken yinelenen gönderim engellenir", async ({ pag
   await expect(page.getByText("1 belge tek taslak faturada birleştirildi.")).toBeVisible();
 });
 
+test("toplu fatura yarışı sonrası belge listesi yenilenir", async ({ page }) => {
+  const belge = (durum: string) => ({
+    id: "b1", no: "SP-001", tur: "siparis", durum, yon: "satis", tarih: "2026-08-07",
+    genelToplam: "1200.00", dovizCinsi: "TRY", kur: "1.0000", depoId: "d1", faturaId: durum === "kapandi" ? "f1" : null,
+    cari: { id: "c1", kod: "C001", unvan: "Örnek Müşteri" },
+  });
+  let listeIstegi = 0;
+  await page.route("http://localhost:3001/api/v1/belgeler", (route) => {
+    listeIstegi += 1;
+    return route.fulfill({ json: { kayitlar: [belge(listeIstegi === 1 ? "onaylandi" : "kapandi")], sonrakiImlec: null } });
+  });
+  await page.route("http://localhost:3001/api/v1/belgeler/toplu-fatura", (route) => route.fulfill({
+    status: 409, json: { message: "Belge başka bir işlemde faturalanmış" },
+  }));
+
+  await page.goto("/panel/belgeler");
+  await page.getByRole("checkbox", { name: "SP-001 belgesini seç" }).check();
+  await page.getByRole("button", { name: /Seçilenleri Faturala/ }).click();
+  await expect(page.getByText("Belge başka bir işlemde faturalanmış")).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "SP-001" }).getByRole("checkbox")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Seçilenleri Faturala/ })).toHaveCount(0);
+  expect(listeIstegi).toBe(2);
+});
+
 test("belge filtresi değiştiğinde gizli toplu seçimler temizlenir", async ({ page }) => {
   const belge = (id: string, no: string, yon: string) => ({
     id, no, tur: "siparis", durum: "onaylandi", yon, tarih: "2026-08-07", genelToplam: "1200.00",
