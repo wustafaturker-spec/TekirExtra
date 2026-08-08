@@ -174,6 +174,9 @@ export default function FaturaSayfasi() {
   const [kesinlestirmeOzeti, setKesinlestirmeOzeti] = useState<KesinlestirmeOzeti | null>(null);
   const [ebelgeDetayi, setEbelgeDetayi] = useState<FaturaDetay | null>(null);
   const [odemeDetayi, setOdemeDetayi] = useState<FaturaDetay | null>(null);
+  const [sonrakiFaturaImleci, setSonrakiFaturaImleci] = useState<string | null>(null);
+  const [faturaListesiYukleniyor, setFaturaListesiYukleniyor] = useState(false);
+  const [faturaFiltreleriHazir, setFaturaFiltreleriHazir] = useState(false);
 
   // Form alanları
   const [cariId, setCariId] = useState("");
@@ -195,26 +198,33 @@ export default function FaturaSayfasi() {
   }));
   const sonuc = faturaHesapla({ satirlar: girdiSatirlar });
 
-  const yukle = useCallback(async () => {
+  const yukle = useCallback(async (imlec?: string) => {
+    setFaturaListesiYukleniyor(true);
     try {
-      const fVeri = await api<{ kayitlar: Fatura[] }>("/fatura");
-      setFaturalar(fVeri.kayitlar);
+      const sorgu = imlec ? `?imlec=${encodeURIComponent(imlec)}` : "";
+      const fVeri = await api<{ kayitlar: Fatura[]; sonrakiImlec: string | null }>(`/fatura${sorgu}`);
+      setFaturalar((eskiler) => imlec ? [...eskiler, ...fVeri.kayitlar] : fVeri.kayitlar);
+      setSonrakiFaturaImleci(fVeri.sonrakiImlec);
 
-      const cVeri = await api<{ kayitlar: Cari[] }>("/cari?adet=100");
-      setCariler(cVeri.kayitlar);
+      if (!imlec) {
+        const cVeri = await api<{ kayitlar: Cari[] }>("/cari?adet=100");
+        setCariler(cVeri.kayitlar);
 
-      const sVeri = await api<{ kayitlar: Stok[] }>("/stok?adet=100");
-      setStoklar(sVeri.kayitlar);
+        const sVeri = await api<{ kayitlar: Stok[] }>("/stok?adet=100");
+        setStoklar(sVeri.kayitlar);
+      }
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Yükleme hatası");
+    } finally {
+      setFaturaListesiYukleniyor(false);
     }
   }, []);
 
   useEffect(() => {
-    if (tokenAl()) {
+    if (faturaFiltreleriHazir && tokenAl()) {
       void yukle();
     }
-  }, [yukle]);
+  }, [faturaFiltreleriHazir, yukle]);
 
   useEffect(() => {
     const parametreler = new URLSearchParams(window.location.search);
@@ -233,6 +243,7 @@ export default function FaturaSayfasi() {
     if (faturaId && parametreler.get("panel") === "odeme") void odemeDetayAc(faturaId);
     try { setKayitliGorunumler(JSON.parse(localStorage.getItem(GORUNUM_ANAHTARI) ?? "[]") as KayitliGorunum[]); }
     catch { localStorage.removeItem(GORUNUM_ANAHTARI); }
+    setFaturaFiltreleriHazir(true);
   }, []);
 
   function filtreleriUygula(filtreler: Omit<KayitliGorunum, "id" | "ad">) {
@@ -1117,6 +1128,13 @@ export default function FaturaSayfasi() {
             )}
           </tbody>
         </TableWrap>
+        {sonrakiFaturaImleci && (
+          <div style={{ padding: "1rem", textAlign: "center" }}>
+            <Button type="button" onClick={() => void yukle(sonrakiFaturaImleci)} disabled={faturaListesiYukleniyor}>
+              {faturaListesiYukleniyor ? "Faturalar yükleniyor…" : "Daha fazla fatura yükle"}
+            </Button>
+          </div>
+        )}
       </Card>
     </div>
   );

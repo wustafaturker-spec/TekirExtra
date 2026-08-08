@@ -70,6 +70,33 @@ test("kullanıcı panelden geri bildirim gönderebilir", async ({ page }) => {
 });
 
 
+test("fatura listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page }) => {
+  const fatura = (id: string, no: string) => ({
+    id, no, tip: "satis", tarih: "2026-08-07", durum: "kesin",
+    toplamMatrah: "1000.00", toplamKdv: "200.00", genelToplam: "1200.00",
+    cari: { unvan: "Örnek Müşteri" }, ebelge: null,
+    odemeOzeti: { durum: "odenmedi", odenen: "0.00", kalan: "1200.00" },
+  });
+  const istekler: string[] = [];
+  await page.route("http://localhost:3001/api/v1/fatura**", (route) => {
+    const imlec = new URL(route.request().url()).searchParams.get("imlec");
+    istekler.push(imlec ?? "ilk");
+    return route.fulfill({ json: imlec === "sonraki-1"
+      ? { kayitlar: [fatura("f2", "SAT-002")], sonrakiImlec: null }
+      : { kayitlar: [fatura("f1", "SAT-001")], sonrakiImlec: "sonraki-1" }
+    });
+  });
+
+  await page.goto("/panel/fatura");
+  await expect(page.getByRole("row").filter({ hasText: "SAT-001" })).toBeVisible();
+  await page.getByRole("button", { name: "Daha fazla fatura yükle" }).click();
+  await expect(page.getByRole("row").filter({ hasText: "SAT-002" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "SAT-001" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Daha fazla fatura yükle" })).toHaveCount(0);
+  expect(istekler.at(-1)).toBe("sonraki-1");
+  expect(istekler.filter((istek) => istek === "sonraki-1")).toHaveLength(1);
+});
+
 test("fatura, e-Belge ve ödeme durumları bağımsız izlenebilir", async ({ page }) => {
   await page.route("http://localhost:3001/api/v1/fatura", async (route) => {
     await route.fulfill({ json: { kayitlar: [{
