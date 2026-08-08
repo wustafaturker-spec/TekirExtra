@@ -164,6 +164,38 @@ test("fiyat listesi tüm stok sayfalarını ürün seçimine yükler", async ({ 
   expect(istekler).toEqual(["ilk", "stok-1"]);
 });
 
+test("fatura formu tüm cari ve stok sayfalarını seçime yükler", async ({ page }) => {
+  const cariIstekleri: string[] = [];
+  const stokIstekleri: string[] = [];
+  await page.route("http://localhost:3001/api/v1/cari**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== "/api/v1/cari") return route.fallback();
+    const imlec = url.searchParams.get("imlec"); cariIstekleri.push(imlec ?? "ilk");
+    return route.fulfill({ json: imlec === "cari-1"
+      ? { kayitlar: [{ id: "cari-2", kod: "C002", unvan: "İkinci Sayfa Cari" }], sonrakiImlec: null }
+      : { kayitlar: [{ id: "cari-1", kod: "C001", unvan: "İlk Sayfa Cari" }], sonrakiImlec: "cari-1" }
+    });
+  });
+  await page.route("http://localhost:3001/api/v1/stok**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== "/api/v1/stok") return route.fallback();
+    const imlec = url.searchParams.get("imlec"); stokIstekleri.push(imlec ?? "ilk");
+    const stok = (id: string, kod: string, ad: string) => ({ id, kod, ad, kdvOrani: "20", satisFiyati: "100", alisFiyati: "80", kullanilabilirMiktar: "10" });
+    return route.fulfill({ json: imlec === "stok-1"
+      ? { kayitlar: [stok("stok-2", "STK-002", "İkinci Sayfa Ürünü")], sonrakiImlec: null }
+      : { kayitlar: [stok("stok-1", "STK-001", "İlk Sayfa Ürünü")], sonrakiImlec: "stok-1" }
+    });
+  });
+
+  await page.goto("/panel/fatura?yeni=1");
+  await page.getByLabel("Müşteri ara").fill("İkinci Sayfa Cari");
+  await expect(page.getByText("İkinci Sayfa Cari", { exact: true })).toBeVisible();
+  await page.getByLabel("1. satır ürün veya hizmet seçimi").fill("İkinci Sayfa Ürünü");
+  await expect(page.getByText("İkinci Sayfa Ürünü", { exact: true })).toBeVisible();
+  expect(cariIstekleri).toEqual(["ilk", "cari-1"]);
+  expect(stokIstekleri).toEqual(["ilk", "stok-1"]);
+});
+
 test("fatura listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page }) => {
   const fatura = (id: string, no: string) => ({
     id, no, tip: "satis", tarih: "2026-08-07", durum: "kesin",

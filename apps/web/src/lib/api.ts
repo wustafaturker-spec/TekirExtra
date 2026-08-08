@@ -46,3 +46,22 @@ export async function api<T>(
   }
   return govde as T;
 }
+
+export async function tumSayfalariAl<T>(yol: string, adet = 200): Promise<T[]> {
+  const kayitlar: T[] = [];
+  const gorulenImlecler = new Set<string>();
+  let imlec: string | null = null;
+  do {
+    const parametreler = new URLSearchParams({ adet: String(adet) });
+    if (imlec) parametreler.set("imlec", imlec);
+    const ayirici = yol.includes("?") ? "&" : "?";
+    const sayfa: { kayitlar: T[]; sonrakiImlec: string | null } = await api(
+      yol + ayirici + parametreler.toString(),
+    );
+    kayitlar.push(...sayfa.kayitlar);
+    imlec = sayfa.sonrakiImlec;
+    if (imlec && gorulenImlecler.has(imlec)) break;
+    if (imlec) gorulenImlecler.add(imlec);
+  } while (imlec);
+  return kayitlar;
+}

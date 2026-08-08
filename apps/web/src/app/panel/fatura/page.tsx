@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { api, tokenAl } from "@/lib/api";
+import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import { AramaSecici } from "@/components/arama-secici";
 import { DepoSecici } from "@/components/depo-secici";
@@ -228,8 +228,8 @@ export default function FaturaSayfasi() {
 
   useEffect(() => {
     if (tokenAl()) {
-      api<{ kayitlar: Cari[] }>("/cari?adet=100").then((veri) => setCariler(veri.kayitlar)).catch(() => undefined);
-      api<{ kayitlar: Stok[] }>("/stok?adet=100").then((veri) => setStoklar(veri.kayitlar)).catch(() => undefined);
+      tumSayfalariAl<Cari>("/cari").then(setCariler).catch(() => undefined);
+      tumSayfalariAl<Stok>("/stok").then(setStoklar).catch(() => undefined);
     }
   }, []);
 
