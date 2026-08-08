@@ -148,6 +148,33 @@ test("cari listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page
   expect(istekler.filter((istek) => istek === "sonraki-1")).toHaveLength(1);
 });
 
+test("cari türü ve bloke filtreleri sunucu sorgusuna uygulanır", async ({ page }) => {
+  const cari = (id: string, unvan: string, tip: string, karaListe: boolean) => ({
+    id, kod: id, unvan, tip, sektor: null, vknTckn: null, eposta: null, telefon: null, karaListe,
+    bakiyeler: [{ dovizCinsi: "TRY", bakiye: "0.00" }],
+  });
+  const istekler: URL[] = [];
+  await page.route("http://localhost:3001/api/v1/cari**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== "/api/v1/cari") return route.fallback();
+    istekler.push(url);
+    const kayitlar = url.searchParams.get("durum") === "bloke"
+      ? [cari("c3", "Bloke Cari", "musteri", true)]
+      : url.searchParams.get("tip") === "tedarikci"
+        ? [cari("c2", "Tedarikçi Cari", "tedarikci", false)]
+        : [cari("c1", "Müşteri Cari", "musteri", false), cari("c2", "Tedarikçi Cari", "tedarikci", false)];
+    return route.fulfill({ json: { kayitlar, sonrakiImlec: null } });
+  });
+
+  await page.goto("/panel/cari");
+  await page.getByLabel("Cari türü").selectOption("tedarikci");
+  await expect(page.getByRole("row").filter({ hasText: "Tedarikçi Cari" })).toBeVisible();
+  await expect.poll(() => istekler.at(-1)?.searchParams.get("tip")).toBe("tedarikci");
+  await page.getByLabel("Cari türü").selectOption("bloke");
+  await expect(page.getByRole("row").filter({ hasText: "Bloke Cari" })).toBeVisible();
+  await expect.poll(() => istekler.at(-1)?.searchParams.get("durum")).toBe("bloke");
+});
+
 test("stok listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page }) => {
   const stok = (id: string, kod: string, ad: string) => ({
     id, kod, ad, tip: "urun", barkod: null, anaBirim: "adet", kdvOrani: "20",

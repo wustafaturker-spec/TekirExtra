@@ -36,9 +36,11 @@ export class CariController {
     @Query("arama") arama?: string,
     @Query("imlec") imlec?: string,
     @Query("adet") adet?: string,
+    @Query("tip") tip?: string,
+    @Query("durum") durum?: string,
   ) {
     const adetSayi = adet ? parseInt(adet, 10) : undefined;
-    return this.cariService.listele(arama, imlec, adetSayi);
+    return this.cariService.listele(arama, imlec, adetSayi, tip, durum);
   }
 
   @Get("etiketler")

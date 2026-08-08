@@ -163,6 +163,7 @@ export default function CariSayfasi() {
   const [gorunumAdi, setGorunumAdi] = useState("");
   const [sonrakiCariImleci, setSonrakiCariImleci] = useState<string | null>(null);
   const [cariListesiYukleniyor, setCariListesiYukleniyor] = useState(false);
+  const [cariFiltreleriHazir, setCariFiltreleriHazir] = useState(false);
 
   // Form alanları — kimlik
   const [kod, setKod] = useState("");
@@ -211,6 +212,8 @@ export default function CariSayfasi() {
     try {
       const parametreler = new URLSearchParams();
       if (arama) parametreler.set("arama", arama);
+      if (filtreTip === "musteri" || filtreTip === "tedarikci") parametreler.set("tip", filtreTip);
+      if (filtreTip === "bloke") parametreler.set("durum", "bloke");
       if (imlec) parametreler.set("imlec", imlec);
       const qs = parametreler.size ? `?${parametreler.toString()}` : "";
       const veri = await api<{ kayitlar: Cari[]; sonrakiImlec: string | null }>(`/cari${qs}`);
@@ -221,7 +224,7 @@ export default function CariSayfasi() {
     } finally {
       setCariListesiYukleniyor(false);
     }
-  }, [arama]);
+  }, [arama, filtreTip]);
 
   const etiketleriYukle = useCallback(async () => {
     try {
@@ -232,21 +235,26 @@ export default function CariSayfasi() {
   }, []);
 
   useEffect(() => {
+    if (cariFiltreleriHazir && tokenAl()) void yukle();
+  }, [cariFiltreleriHazir, yukle]);
+
+  useEffect(() => {
     if (tokenAl()) {
-      void yukle();
       void etiketleriYukle();
       api<{ id: string; ad: string; dovizCinsi: string }[]>("/fiyat-listeleri")
         .then(setFiyatListeleri)
         .catch(() => undefined);
     }
-  }, [yukle, etiketleriYukle]);
+  }, [etiketleriYukle]);
 
   useEffect(() => {
     const parametreler = new URLSearchParams(window.location.search);
     const tipParametresi = parametreler.get("tip");
     if (tipParametresi === "musteri" || tipParametresi === "tedarikci") setFiltreTip(tipParametresi);
+    if (parametreler.get("durum") === "bloke") setFiltreTip("bloke");
     try { setKayitliGorunumler(JSON.parse(localStorage.getItem(GORUNUM_ANAHTARI) ?? "[]") as CariGorunumu[]); }
     catch { localStorage.removeItem(GORUNUM_ANAHTARI); }
+    setCariFiltreleriHazir(true);
   }, []);
 
   function filtreyiUygula(yeniFiltre: FiltreTip) {
@@ -976,7 +984,7 @@ export default function CariSayfasi() {
 
       <section className="saved-view-bar" aria-label="Cari görünümü ve filtreleri">
         <div className="saved-view-filters">
-          <Field label="Cari türü"><Select value={filtreTip} onChange={(e) => filtreyiUygula(e.target.value as FiltreTip)}><option value="tumu">Tümü</option><option value="musteri">Müşteri</option><option value="tedarikci">Tedarikçi</option><option value="bloke">Bloke</option></Select></Field>
+          <Field label="Cari türü"><Select aria-label="Cari türü" value={filtreTip} onChange={(e) => filtreyiUygula(e.target.value as FiltreTip)}><option value="tumu">Tümü</option><option value="musteri">Müşteri</option><option value="tedarikci">Tedarikçi</option><option value="bloke">Bloke</option></Select></Field>
           <Field label="Kaydedilmiş görünüm"><Select value="" onChange={(e) => { const gorunum = kayitliGorunumler.find((g) => g.id === e.target.value); if (gorunum) gorunumuUygula(gorunum); }}><option value="">Görünüm seçin</option>{kayitliGorunumler.map((g) => <option value={g.id} key={g.id}>{g.ad}</option>)}</Select></Field>
         </div>
         <div className="saved-view-actions">

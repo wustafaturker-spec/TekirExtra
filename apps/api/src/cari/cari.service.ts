@@ -46,21 +46,23 @@ export class CariService {
     private readonly pdf: PdfService,
   ) {}
 
-  async listele(arama?: string, imlec?: string, adet = 50) {
+  async listele(arama?: string, imlec?: string, adet = 50, tip?: string, durum?: string) {
     const { tenantId } = aktifBaglam();
     const ctx = aktifBaglam();
     const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.cariHesap.findMany({
-        where: arama
-          ? {
+        where: {
+          ...(tip === "musteri" ? { tip: { in: ["musteri", "her_ikisi"] } } : tip === "tedarikci" ? { tip: { in: ["tedarikci", "her_ikisi"] } } : {}),
+          ...(durum === "bloke" ? { karaListe: true } : {}),
+          ...(arama ? {
               OR: [
                 { unvan: { contains: arama, mode: "insensitive" } },
                 { kod: { contains: arama, mode: "insensitive" } },
                 { vknTckn: { contains: arama } },
                 { telefon: { contains: arama } },
               ],
-            }
-          : undefined,
+            } : {}),
+        },
         orderBy: { kod: "asc" },
         take: adet + 1,
         ...(imlec ? { cursor: { id: imlec }, skip: 1 } : {}),
