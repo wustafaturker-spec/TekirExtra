@@ -1136,6 +1136,35 @@ export class StokService {
     };
   }
 
+  async excelOnizle(buffer: Buffer) {
+    const { tenantId } = aktifBaglam();
+    const urunler = await stokExcelOku(buffer);
+    if (urunler.length === 0) {
+      throw new BadRequestException("Excel dosyasında aktarılabilir ürün bulunamadı");
+    }
+
+    const kodlar = [...new Set(urunler.map((urun) => urun.kod))];
+    const mevcutlar = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.stokKart.findMany({
+        where: { kod: { in: kodlar } },
+        select: { kod: true },
+      }),
+    );
+    const mevcutKodlar = new Set(mevcutlar.map((stok) => stok.kod));
+    const satirlar = urunler.map((urun) => ({
+      ...urun,
+      islem: mevcutKodlar.has(urun.kod) ? "guncelle" : "ekle",
+    }));
+
+    return {
+      toplam: satirlar.length,
+      eklenecek: satirlar.filter((satir) => satir.islem === "ekle").length,
+      guncellenecek: satirlar.filter((satir) => satir.islem === "guncelle").length,
+      satirlar: satirlar.slice(0, 20),
+      kirpildi: satirlar.length > 20,
+    };
+  }
+
   async excelImport(buffer: Buffer): Promise<{ eklenen: number }> {
     const { tenantId } = aktifBaglam();
     const urunler = await stokExcelOku(buffer);

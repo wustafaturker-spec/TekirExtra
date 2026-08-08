@@ -30,6 +30,11 @@ interface StokKart {
   ortalamaMaliyet: string;
 }
 
+interface ExcelOnizleme {
+  toplam: number; eklenecek: number; guncellenecek: number; kirpildi: boolean;
+  satirlar: Array<{ kod: string; ad: string; tip: string; barkod: string | null; kdvOrani: number; alisFiyati: number | null; satisFiyati: number | null; islem: "ekle" | "guncelle" }>;
+}
+
 const tl = (deger: string | number): string =>
   Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL";
 
@@ -45,6 +50,9 @@ export default function StokSayfasi() {
   const [sonrakiStokImleci, setSonrakiStokImleci] = useState<string | null>(null);
   const [stokListesiYukleniyor, setStokListesiYukleniyor] = useState(false);
   const stokYuklemeSirasi = useRef(0);
+  const [excelDosyasi, setExcelDosyasi] = useState<File | null>(null);
+  const [excelOnizleme, setExcelOnizleme] = useState<ExcelOnizleme | null>(null);
+  const [excelYukleniyor, setExcelYukleniyor] = useState(false);
 
   // Form alanları
   const [kod, setKod] = useState("");
@@ -117,34 +125,35 @@ export default function StokSayfasi() {
   }
 
   async function excelYukle(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+    const file = e.target.files?.[0]; e.target.value = "";
     if (!file) return;
-
-    setHata("");
-    setBasari("");
-
-    const formData = new FormData();
-    formData.append("file", file);
-
+    setHata(""); setBasari(""); setExcelYukleniyor(true);
     try {
-      const token = tokenAl();
-      const res = await fetch(`${apiBase()}/stok/excel-aktar`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
+      const formData = new FormData(); formData.append("file", file);
+      const res = await fetch(`${apiBase()}/stok/excel-onizle`, { method: "POST", headers: { Authorization: `Bearer ${tokenAl()}` }, body: formData });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || "Excel yükleme hatası"); }
+      setExcelDosyasi(file); setExcelOnizleme(await res.json());
+    } catch (h) { setHata(h instanceof Error ? h.message : "Excel yükleme hatası"); }
+    finally { setExcelYukleniyor(false); }
+  }
 
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.message || "Excel yükleme hatası");
-      }
+  async function excelAktar() {
+    if (!excelDosyasi) return; setExcelYukleniyor(true); setHata("");
+    try {
+      const formData = new FormData(); formData.append("file", excelDosyasi);
+      const res = await fetch(`${apiBase()}/stok/excel-aktar`, { method: "POST", headers: { Authorization: `Bearer ${tokenAl()}` }, body: formData });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || "Excel aktarma hatası"); }
+      const sonuc = await res.json(); setBasari(`${sonuc.eklenen} ürün başarıyla eklendi/güncellendi.`); setExcelDosyasi(null); setExcelOnizleme(null); void yukle();
+    } catch (h) { setHata(h instanceof Error ? h.message : "Excel aktarma hatası"); } finally { setExcelYukleniyor(false); }
+  }
 
-      const resData = await res.json();
-      setBasari(`Excel başarıyla aktarıldı. ${resData.eklenen} adet ürün eklendi/güncellendi.`);
-      void yukle();
-    } catch (h) {
-      setHata(h instanceof Error ? h.message : "Excel yükleme hatası");
-    }
+  async function excelSablonIndir() {
+    setHata("");
+    try {
+      const res = await fetch(`${apiBase()}/stok/excel-sablon`, { headers: { Authorization: `Bearer ${tokenAl()}` } });
+      if (!res.ok) throw new Error("Örnek şablon indirilemedi");
+      const url = URL.createObjectURL(await res.blob()); const baglanti = document.createElement("a"); baglanti.href = url; baglanti.download = "stok-ice-aktarma-sablonu.xlsx"; baglanti.click(); URL.revokeObjectURL(url);
+    } catch (h) { setHata(h instanceof Error ? h.message : "Şablon indirme hatası"); }
   }
 
   async function kopyala(id: string) {
@@ -167,9 +176,10 @@ export default function StokSayfasi() {
         actions={
           <>
             <ButtonLabel as="a" href="/panel/stok/raporlar">📈 Raporlar</ButtonLabel>
+            <Button onClick={() => void excelSablonIndir()}>📄 Örnek Şablon</Button>
             <ButtonLabel>
-              📥 Excel&apos;den İçe Aktar
-              <input type="file" accept=".xlsx" onChange={excelYukle} style={{ display: "none" }} />
+              {excelYukleniyor ? "İşleniyor..." : "📥 Excel’den İçe Aktar"}
+              <input aria-label="Stok Excel dosyası" type="file" accept=".xlsx" onChange={excelYukle} disabled={excelYukleniyor} style={{ display: "none" }} />
             </ButtonLabel>
             <Button variant="primary" onClick={() => setFormAcik(!formAcik)}>
               {formAcik ? "Vazgeç" : "➕ Yeni Ürün/Hizmet"}
@@ -180,6 +190,23 @@ export default function StokSayfasi() {
 
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
+
+      {excelOnizleme && (
+        <Card>
+          <div className="document-editor__head">
+            <div><h3>Excel önizleme</h3><p>{excelDosyasi?.name} · {excelOnizleme.toplam} satır</p></div>
+            <div><Badge variant="success">{excelOnizleme.eklenecek} yeni</Badge> <Badge variant="warning">{excelOnizleme.guncellenecek} güncelleme</Badge></div>
+          </div>
+          <TableWrap>
+            <thead><tr><th>İşlem</th><th>Kod</th><th>Ad</th><th>Tip</th><th>KDV</th><th className="num">Alış</th><th className="num">Satış</th></tr></thead>
+            <tbody>{excelOnizleme.satirlar.map((satir, index) => (
+              <tr key={`${satir.kod}-${index}`}><td><Badge variant={satir.islem === "ekle" ? "success" : "warning"}>{satir.islem === "ekle" ? "Yeni" : "Güncelle"}</Badge></td><td className="mono">{satir.kod}</td><td>{satir.ad}</td><td>{satir.tip}</td><td>%{satir.kdvOrani}</td><td className="num">{satir.alisFiyati == null ? "—" : tl(satir.alisFiyati)}</td><td className="num">{satir.satisFiyati == null ? "—" : tl(satir.satisFiyati)}</td></tr>
+            ))}</tbody>
+          </TableWrap>
+          {excelOnizleme.kirpildi && <p className="muted">İlk 20 satır gösteriliyor.</p>}
+          <div className="document-editor__actions"><Button onClick={() => { setExcelDosyasi(null); setExcelOnizleme(null); }}>Vazgeç</Button><Button variant="primary" disabled={excelYukleniyor} onClick={() => void excelAktar()}>{excelYukleniyor ? "Aktarılıyor..." : `${excelOnizleme.toplam} ürünü içe aktar`}</Button></div>
+        </Card>
+      )}
 
       {formAcik && (
         <form className="document-editor record-editor--compact" onSubmit={kaydet}>

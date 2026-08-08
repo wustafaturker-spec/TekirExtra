@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as ExcelJS from "exceljs";
-import { cariExcelOku, stokExcelOku, cariEkstreExcelYaz } from "./excel-yardimci";
+import { cariExcelOku, stokExcelOku, cariEkstreExcelYaz, stokExcelSablonYaz } from "./excel-yardimci";
 
 describe("ExcelYardimci (CARI-04/07, STK-05)", () => {
   it("cariExcelOku excel belgesindeki cari satirlarini okur (CARI-07)", async () => {
@@ -38,6 +38,15 @@ describe("ExcelYardimci (CARI-04/07, STK-05)", () => {
     expect(sonuc[0].tip).toBe("urun");
     expect(sonuc[1].tip).toBe("hizmet");
     expect(sonuc[1].kdvOrani).toBe(18);
+  });
+
+  it("stok icin indirilebilir ornek sablon olusturur", async () => {
+    const buffer = await stokExcelSablonYaz();
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as any);
+    expect(workbook.getWorksheet("Stok Şablonu")?.getCell("A1").value).toBe("Kod");
+    expect(workbook.getWorksheet("Stok Şablonu")?.getCell("A2").value).toBe("STK-001");
+    expect(workbook.getWorksheet("Açıklamalar")).toBeDefined();
   });
 
   it("cariEkstreExcelYaz cari ekstre verilerini excel tablosuna yazar (CARI-04)", async () => {

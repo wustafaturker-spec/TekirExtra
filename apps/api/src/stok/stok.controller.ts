@@ -20,6 +20,7 @@ import { Roller } from "../auth/roller.decorator";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { sayfaAdedi } from "../core/sayfalama";
+import { stokExcelSablonYaz } from "../core/excel-yardimci";
 import { DepoService } from "./depo.service";
 import { StokService } from "./stok.service";
 import {
@@ -133,6 +134,22 @@ export class StokController {
   @Get("kritik-ozeti")
   async kritikOzeti() {
     return this.stokService.kritikOzeti();
+  }
+
+  @Get("excel-sablon")
+  async excelSablon(@Res() res: Response) {
+    const buffer = await stokExcelSablonYaz();
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="stok-ice-aktarma-sablonu.xlsx"');
+    res.send(buffer);
+  }
+
+  @Post("excel-onizle")
+  @Roller("muhasebe")
+  @UseInterceptors(FileInterceptor("file"))
+  async excelOnizle(@UploadedFile() file: any) {
+    if (!file) throw new BadRequestException("Lütfen bir Excel dosyası yükleyin");
+    return this.stokService.excelOnizle(file.buffer);
   }
 
   @Get()

@@ -83,6 +83,26 @@ export async function stokExcelOku(buffer: Buffer) {
   return urunler;
 }
 
+export async function stokExcelSablonYaz(): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("Stok Şablonu");
+  sheet.columns = [
+    { header: "Kod", key: "kod", width: 18 }, { header: "Ad", key: "ad", width: 32 },
+    { header: "Tip", key: "tip", width: 14 }, { header: "Barkod", key: "barkod", width: 20 },
+    { header: "KDV Oranı", key: "kdv", width: 14 }, { header: "Alış Fiyatı", key: "alis", width: 16 },
+    { header: "Satış Fiyatı", key: "satis", width: 16 },
+  ];
+  sheet.addRow({ kod: "STK-001", ad: "Örnek Ürün", tip: "urun", barkod: "8690000000001", kdv: 20, alis: 100, satis: 150 });
+  sheet.addRow({ kod: "HIZ-001", ad: "Örnek Hizmet", tip: "hizmet", kdv: 20, satis: 500 });
+  sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+  sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4F46E5" } };
+  sheet.autoFilter = "A1:G1";
+  const bilgi = workbook.addWorksheet("Açıklamalar");
+  bilgi.addRows([["Alan", "Açıklama"], ["Kod", "Mevcut kod güncellenir."], ["Ad", "Zorunlu."], ["Tip", "urun veya hizmet"], ["KDV Oranı", "Boşsa 20."], ["Fiyatlar", "Boş bırakılabilir."]]);
+  bilgi.getRow(1).font = { bold: true }; bilgi.columns = [{ width: 18 }, { width: 60 }];
+  return (await workbook.xlsx.writeBuffer()) as any;
+}
+
 // ─── CARİ EKSTRE EXCEL YAZICI (CARI-04) ────────────────────────────────────
 
 export async function cariEkstreExcelYaz(
