@@ -97,6 +97,30 @@ test("fatura listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ pa
   expect(istekler.filter((istek) => istek === "sonraki-1")).toHaveLength(1);
 });
 
+test("açık ödeme filtresi eşleşme için sonraki fatura sayfasını tarar", async ({ page }) => {
+  const fatura = (id: string, no: string, odemeDurumu: "odendi" | "odenmedi") => ({
+    id, no, tip: "satis", tarih: "2026-08-07", durum: "kesin",
+    toplamMatrah: "1000.00", toplamKdv: "200.00", genelToplam: "1200.00", cari: { unvan: "Örnek Müşteri" },
+    ebelge: null, odemeOzeti: { durum: odemeDurumu, odenen: odemeDurumu === "odendi" ? "1200.00" : "0.00", kalan: odemeDurumu === "odendi" ? "0.00" : "1200.00" },
+  });
+  const istekler: string[] = [];
+  await page.route("http://localhost:3001/api/v1/fatura**", (route) => {
+    const imlec = new URL(route.request().url()).searchParams.get("imlec");
+    istekler.push(imlec ?? "ilk");
+    return route.fulfill({ json: imlec === "sonraki-1"
+      ? { kayitlar: [fatura("f2", "SAT-ACIK", "odenmedi")], sonrakiImlec: null }
+      : { kayitlar: [fatura("f1", "SAT-ODENDI", "odendi")], sonrakiImlec: "sonraki-1" }
+    });
+  });
+
+  await page.goto("/panel/fatura");
+  await expect(page.getByRole("row").filter({ hasText: "SAT-ODENDI" })).toBeVisible();
+  await page.getByLabel("Ödeme durumu").selectOption("acik");
+  await expect(page.getByRole("row").filter({ hasText: "SAT-ACIK" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "SAT-ODENDI" })).not.toBeVisible();
+  expect(istekler.filter((istek) => istek === "sonraki-1")).toHaveLength(1);
+});
+
 test("cari listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page }) => {
   const cari = (id: string, kod: string, unvan: string) => ({
     id, kod, unvan, tip: "musteri", sektor: null, vknTckn: null, eposta: null, telefon: null,

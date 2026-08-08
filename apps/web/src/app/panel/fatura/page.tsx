@@ -159,6 +159,7 @@ export default function FaturaSayfasi() {
   const [acikSatir, setAcikSatir] = useState<number | null>(null);
   const urunRefleri = useRef<Array<HTMLInputElement | null>>([]);
   const faturaBaslangicRef = useRef<number | null>(null);
+  const istenenFaturaImlecleri = useRef(new Set<string>());
   const miktarRefleri = useRef<Array<HTMLInputElement | null>>([]);
   const [hizliPanel, setHizliPanel] = useState<"cari" | "stok" | null>(null);
   const [hizliStokSatir, setHizliStokSatir] = useState(0);
@@ -199,7 +200,9 @@ export default function FaturaSayfasi() {
   const sonuc = faturaHesapla({ satirlar: girdiSatirlar });
 
   const yukle = useCallback(async (imlec?: string) => {
-    setFaturaListesiYukleniyor(true);
+    if (imlec && istenenFaturaImlecleri.current.has(imlec)) return;
+    if (imlec) istenenFaturaImlecleri.current.add(imlec); else istenenFaturaImlecleri.current.clear();
+    setHata(""); setFaturaListesiYukleniyor(true);
     try {
       const parametreler = new URLSearchParams();
       if (yonBaglami) parametreler.set("yon", yonBaglami);
@@ -219,6 +222,7 @@ export default function FaturaSayfasi() {
         setStoklar(sVeri.kayitlar);
       }
     } catch (h) {
+      if (imlec) istenenFaturaImlecleri.current.delete(imlec);
       setHata(h instanceof Error ? h.message : "Yükleme hatası");
     } finally {
       setFaturaListesiYukleniyor(false);
@@ -252,6 +256,7 @@ export default function FaturaSayfasi() {
   }, []);
 
   function filtreleriUygula(filtreler: Omit<KayitliGorunum, "id" | "ad">) {
+    setHata("");
     setYonBaglami(filtreler.yon); setDurumFiltresi(filtreler.durum); setEbelgeFiltresi(filtreler.ebelge); setOdemeFiltresi(filtreler.odeme);
     const parametreler = new URLSearchParams();
     if (filtreler.yon) parametreler.set("yon", filtreler.yon);
@@ -641,6 +646,12 @@ export default function FaturaSayfasi() {
       (!odemeFiltresi || (odemeFiltresi === "acik" && ["odenmedi", "kismi"].includes(f.odemeOzeti?.durum ?? ""))) &&
       (!odakFaturaId || f.id === odakFaturaId),
     );
+  useEffect(() => {
+    if (odemeFiltresi === "acik" && !odakFaturaId && gorunenFaturalar.length === 0 && sonrakiFaturaImleci && !faturaListesiYukleniyor && !hata) {
+      void yukle(sonrakiFaturaImleci);
+    }
+  }, [odemeFiltresi, odakFaturaId, gorunenFaturalar.length, sonrakiFaturaImleci, faturaListesiYukleniyor, hata, yukle]);
+
   const odakFatura = odakFaturaId ? faturalar.find((fatura) => fatura.id === odakFaturaId) : null;
   const sayfaBasligi =
     yonBaglami === "satis"
