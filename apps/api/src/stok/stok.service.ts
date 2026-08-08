@@ -57,6 +57,20 @@ export class StokService {
 
   // ─── STOK KART YÖNETİMİ (STK-01) ───────────────────────────────────────────
 
+  async kritikOzeti() {
+    const { tenantId } = aktifBaglam();
+    const satirlar = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.$queryRaw<{ sayi: number }[]>(Prisma.sql`
+        SELECT COUNT(*)::int AS sayi
+        FROM stok_kartlari
+        WHERE tenant_id = ${tenantId}::uuid
+          AND kritik_seviye IS NOT NULL
+          AND mevcut_miktar <= kritik_seviye
+      `),
+    );
+    return { kritikStok: satirlar[0]?.sayi ?? 0 };
+  }
+
   async listele(arama?: string, kategoriId?: string, imlec?: string, adet = 50) {
     const { tenantId } = aktifBaglam();
     const ctx = aktifBaglam();

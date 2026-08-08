@@ -129,6 +129,11 @@ export class StokController {
 
   // ─── STOK KART UÇLARI ────────────────────────────────────────────────────
 
+  @Get("kritik-ozeti")
+  async kritikOzeti() {
+    return this.stokService.kritikOzeti();
+  }
+
   @Get()
   async listele(
     @Query("arama") arama?: string,

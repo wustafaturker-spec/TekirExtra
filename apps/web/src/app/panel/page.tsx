@@ -4,12 +4,12 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { CalismaAlani, type HizliEylem, type IsKuyrugu } from "@/components/calisma-alani";
 import { Alert, Card, Stat, StatGrid } from "@/components/ui";
-import { api, ApiHata, tokenAl, tokenYaz, tumSayfalariAl } from "@/lib/api";
+import { api, ApiHata, tokenAl, tokenYaz } from "@/lib/api";
 
 type Rol = "yonetici" | "muhasebe" | "satis" | "salt_okunur";
 interface FinansOzet { nakitVarliklar: string; envanterDegeri: string; toplamAlacaklar: string; toplamBorclar: string; netVarlikDegeri: string; }
 interface FaturaKuyrukOzeti { taslakSatis: number; taslakAlis: number; ebelgeHata: number; acikTahsilat: number; acikOdeme: number; }
-interface Stok { kritikSeviye?: string | null; mevcutMiktar?: string; kullanilabilirMiktar?: string; }
+interface StokKritikOzeti { kritikStok: number; }
 
 const tl = (deger: string) => Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL";
 const rolAdi: Record<Rol, string> = { yonetici: "Yönetim", muhasebe: "Muhasebe", satis: "Satış", salt_okunur: "Genel görünüm" };
@@ -31,13 +31,13 @@ export default function PanelSayfasi() {
 
   const yukle = useCallback(async () => {
     try {
-      const [ben, firmaVeri, faturaOzeti, stoklar] = await Promise.all([
+      const [ben, firmaVeri, faturaOzeti, stokOzeti] = await Promise.all([
         api<{ rol: Rol }>("/auth/ben"), api<{ unvan: string }>("/firma"),
-        api<FaturaKuyrukOzeti>("/fatura/is-kuyrugu-ozeti"), tumSayfalariAl<Stok>("/stok"),
+        api<FaturaKuyrukOzeti>("/fatura/is-kuyrugu-ozeti"), api<StokKritikOzeti>("/stok/kritik-ozeti"),
       ]);
       setRol(ben.rol); setFirma(firmaVeri.unvan);
       const { taslakSatis, taslakAlis, ebelgeHata, acikTahsilat, acikOdeme } = faturaOzeti;
-      const kritik = stoklar.filter((s) => s.kritikSeviye != null && Number(s.mevcutMiktar ?? s.kullanilabilirMiktar ?? 0) <= Number(s.kritikSeviye)).length;
+      const kritik = stokOzeti.kritikStok;
       let ekstre = 0; let gelen = 0;
       if (["yonetici", "muhasebe"].includes(ben.rol)) {
         const [e, g] = await Promise.all([api<unknown[]>("/kasa-banka/ekstre/satirlar?durum=beklemede"), api<unknown[]>("/ebelge/gelen?durum=beklemede")]);

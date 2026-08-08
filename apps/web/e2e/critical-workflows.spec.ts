@@ -91,6 +91,7 @@ test("ana panel kuyruk sayaçları tüm veri sayfalarını kapsar", async ({ pag
   });
   await page.route("http://localhost:3001/api/v1/stok**", (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/stok/kritik-ozeti") return route.fulfill({ json: { kritikStok: 2 } });
     if (url.pathname !== "/api/v1/stok") return route.fallback();
     const imlec = url.searchParams.get("imlec"); stokIstekleri.push(imlec ?? "ilk");
     const stok = { kritikSeviye: "5", mevcutMiktar: "3" };
@@ -105,7 +106,7 @@ test("ana panel kuyruk sayaçları tüm veri sayfalarını kapsar", async ({ pag
   await expect(page.getByRole("link", { name: /Kritik stoklar/ }).locator(".queue-row__count")).toHaveText("2");
   await expect(page.getByRole("button", { name: "Bildirimler 4" })).toBeVisible();
   expect(faturaIstekleri).toEqual([]);
-  expect(stokIstekleri).toEqual(["ilk", "stok-1"]);
+  expect(stokIstekleri).toEqual([]);
 });
 
 test("stok sayımı tüm stok sayfalarını forma yükler", async ({ page }) => {

@@ -26,4 +26,15 @@ describe("StokService arama", () => {
       }),
     }));
   });
+
+  it("kritik stok sayısını veritabanında hesaplar", async () => {
+    const queryRaw = vi.fn().mockResolvedValue([{ sayi: 7 }]);
+    const prisma = {
+      tenantIslem: vi.fn((_tenantId, calistir) => calistir({ $queryRaw: queryRaw })),
+    } as any;
+    const servis = new StokService(prisma, {} as any, {} as any);
+
+    await expect(servis.kritikOzeti()).resolves.toEqual({ kritikStok: 7 });
+    expect(queryRaw).toHaveBeenCalledOnce();
+  });
 });
