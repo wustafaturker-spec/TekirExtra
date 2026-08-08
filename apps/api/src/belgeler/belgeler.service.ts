@@ -110,7 +110,7 @@ export class BelgelerService {
         include: { cari: { select: { id: true, kod: true, unvan: true } } },
       }),
     );
-    const sonrakiImlec = kayitlar.length > adet ? kayitlar[adet].id : null;
+    const sonrakiImlec = kayitlar.length > adet ? kayitlar[adet - 1].id : null;
     return {
       kayitlar: kayitlar.slice(0, adet).map((k) => ({
         ...this.gorunum(k),
