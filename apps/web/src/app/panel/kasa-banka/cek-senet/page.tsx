@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, tokenAl } from "@/lib/api";
+import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import {
   Alert,
   Badge,
@@ -138,7 +138,7 @@ export default function CekSenetSayfasi() {
 
   useEffect(() => {
     if (!tokenAl()) return;
-    void api<{ kayitlar: CariOzet[] }>("/cari").then((v) => setCariler(v.kayitlar)).catch(() => {});
+    void tumSayfalariAl<CariOzet>("/cari").then(setCariler).catch(() => {});
     void api<Hesap[]>("/kasa-banka/kasalar").then(setKasalar).catch(() => {});
     void api<Hesap[]>("/kasa-banka/bankalar").then(setBankalar).catch(() => {});
   }, []);
@@ -522,7 +522,7 @@ function CekSenetFormu({
         </div>
         <div style={{ flex: 2, minWidth: 220 }}>
           <Field label={verilen ? "Lehtar (kime verildi) *" : "İlgili Cari"}>
-            <Select value={cariId} onChange={(e) => setCariId(e.target.value)}>
+            <Select aria-label={verilen ? "Lehtar (kime verildi)" : "İlgili Cari"} value={cariId} onChange={(e) => setCariId(e.target.value)}>
               <option value="">{verilen ? "— Cari seçin —" : "— Cari bağlantısı yok —"}</option>
               {cariler.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -663,7 +663,7 @@ function DurumKarti({
       {ciro && (
         <>
           <Field label="Ciro Edilen Cari *">
-            <Select value={ciroCariId} onChange={(e) => setCiroCariId(e.target.value)}>
+            <Select aria-label="Ciro Edilen Cari" value={ciroCariId} onChange={(e) => setCiroCariId(e.target.value)}>
               <option value="">— Cari seçin —</option>
               {cariler.map((c) => (
                 <option key={c.id} value={c.id}>

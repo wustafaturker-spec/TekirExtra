@@ -297,6 +297,27 @@ test("stok tedarikçi seçimi tüm cari sayfalarını yükler", async ({ page })
   expect(istekler).toEqual(["ilk", "cari-1"]);
 });
 
+test("çek senet formu tüm cari sayfalarını seçime yükler", async ({ page }) => {
+  await page.route("http://localhost:3001/api/v1/kasa-banka/cek-senet**", (route) => route.fulfill({ json: [] }));
+  const istekler: string[] = [];
+  await page.route("http://localhost:3001/api/v1/cari**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== "/api/v1/cari") return route.fallback();
+    const imlec = url.searchParams.get("imlec"); istekler.push(imlec ?? "ilk");
+    return route.fulfill({ json: imlec === "cari-1"
+      ? { kayitlar: [{ id: "cari-2", kod: "C002", unvan: "İkinci Sayfa Çek Carisi" }], sonrakiImlec: null }
+      : { kayitlar: [{ id: "cari-1", kod: "C001", unvan: "İlk Sayfa Çek Carisi" }], sonrakiImlec: "cari-1" }
+    });
+  });
+
+  await page.goto("/panel/kasa-banka/cek-senet");
+  await page.getByRole("button", { name: "➕ Çek/Senet Al" }).click();
+  const cariSecimi = page.getByLabel("İlgili Cari");
+  await expect(cariSecimi.locator("option", { hasText: "İkinci Sayfa Çek Carisi" })).toHaveCount(1);
+  await expect(cariSecimi.locator("option", { hasText: "İlk Sayfa Çek Carisi" })).toHaveCount(1);
+  expect(istekler).toEqual(["ilk", "cari-1"]);
+});
+
 test("fatura listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page }) => {
   const fatura = (id: string, no: string) => ({
     id, no, tip: "satis", tarih: "2026-08-07", durum: "kesin",
