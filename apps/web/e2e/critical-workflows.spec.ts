@@ -281,7 +281,7 @@ test("görünür faturalanabilir belgeler topluca seçilir", async ({ page }) =>
   ], sonrakiImlec: null } }));
   await page.route("http://localhost:3001/api/v1/belgeler/toplu-fatura", (route) => {
     gonderilen = route.request().postDataJSON();
-    return route.fulfill({ json: { id: "f1" } });
+    return route.fulfill({ json: { faturaId: "f1" } });
   });
 
   await page.goto("/panel/belgeler");
@@ -301,6 +301,7 @@ test("görünür faturalanabilir belgeler topluca seçilir", async ({ page }) =>
   await page.getByRole("button", { name: "🧾 Seçilenleri Faturala (2)" }).click();
   await expect(page.getByText("2 belge tek taslak faturada birleştirildi.")).toBeVisible();
   expect(gonderilen).toEqual({ belgeIds: ["b1", "b2"] });
+  await expect(page.getByRole("link", { name: "Taslak faturayı aç" })).toHaveAttribute("href", "/panel/fatura?faturaId=f1");
 });
 
 test("toplu fatura oluşturulurken yinelenen gönderim engellenir", async ({ page }) => {
@@ -316,7 +317,7 @@ test("toplu fatura oluşturulurken yinelenen gönderim engellenir", async ({ pag
   await page.route("http://localhost:3001/api/v1/belgeler/toplu-fatura", async (route) => {
     istekSayisi += 1;
     await beklet;
-    await route.fulfill({ json: { id: "f1" } });
+    await route.fulfill({ json: { faturaId: "f1" } });
   });
 
   await page.goto("/panel/belgeler");

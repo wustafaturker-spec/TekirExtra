@@ -114,6 +114,7 @@ export default function BelgelerSayfasi() {
   const [detay, setDetay] = useState<BelgeDetay | null>(null);
   const [secili, setSecili] = useState<Set<string>>(new Set());
   const [topluFaturaYukleniyor, setTopluFaturaYukleniyor] = useState(false);
+  const [olusanFaturaId, setOlusanFaturaId] = useState<string | null>(null);
   const [yonBaglami, setYonBaglami] = useState<Yon | null>(null);
   const [onayBekleyen, setOnayBekleyen] = useState<BelgeDetay | null>(null);
   const [donusumBekleyen, setDonusumBekleyen] = useState<{ belge: BelgeDetay; hedef: "siparis" | "irsaliye" | "fatura" } | null>(null);
@@ -389,9 +390,10 @@ export default function BelgelerSayfasi() {
 
   async function topluFatura() {
     if (secili.size === 0 || topluFaturaYukleniyor) return;
-    setHata(""); setBasari(""); setTopluFaturaYukleniyor(true);
+    setHata(""); setBasari(""); setOlusanFaturaId(null); setTopluFaturaYukleniyor(true);
     try {
-      await api("/belgeler/toplu-fatura", { method: "POST", body: JSON.stringify({ belgeIds: [...secili] }) });
+      const sonuc = await api<{ faturaId: string }>("/belgeler/toplu-fatura", { method: "POST", body: JSON.stringify({ belgeIds: [...secili] }) });
+      setOlusanFaturaId(sonuc.faturaId);
       setBasari(`${secili.size} belge tek taslak faturada birleştirildi.`);
       void yukle();
     } catch (h) {
@@ -508,7 +510,10 @@ export default function BelgelerSayfasi() {
       />
 
       <Alert tone="error">{hata}</Alert>
-      <Alert tone="success">{basari}</Alert>
+      <Alert tone="success">{basari && <>
+        {basari}
+        {olusanFaturaId && <a className="btn btn--ghost btn--sm" href={`/panel/fatura?faturaId=${olusanFaturaId}`}>Taslak faturayı aç</a>}
+      </>}</Alert>
 
       {formAcik && (
         <div className="document-editor">
