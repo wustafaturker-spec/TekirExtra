@@ -145,6 +145,35 @@ export class FaturaService {
     };
   }
 
+  async isKuyruguOzeti() {
+    const { tenantId } = aktifBaglam();
+    const faturalar = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.fatura.findMany({
+        select: {
+          tip: true,
+          durum: true,
+          genelToplam: true,
+          ebelge: { select: { durum: true } },
+          kasaBankaHarekets: { select: { tutar: true } },
+        },
+      }),
+    );
+    const ozet = { taslakSatis: 0, taslakAlis: 0, ebelgeHata: 0, acikTahsilat: 0, acikOdeme: 0 };
+    for (const fatura of faturalar) {
+      if (fatura.durum === "taslak") {
+        if (["satis", "satis_iade", "proforma"].includes(fatura.tip)) ozet.taslakSatis += 1;
+        if (["alis", "alis_iade"].includes(fatura.tip)) ozet.taslakAlis += 1;
+      }
+      if (["hata", "ret"].includes(fatura.ebelge?.durum ?? "")) ozet.ebelgeHata += 1;
+      if (fatura.durum !== "kesin") continue;
+      const odenen = fatura.kasaBankaHarekets.reduce((toplam, hareket) => toplam.add(hareket.tutar), D(0));
+      if (odenen.greaterThanOrEqualTo(fatura.genelToplam)) continue;
+      if (["satis", "alis_iade"].includes(fatura.tip)) ozet.acikTahsilat += 1;
+      if (["alis", "satis_iade"].includes(fatura.tip)) ozet.acikOdeme += 1;
+    }
+    return ozet;
+  }
+
   async getir(id: string) {
     const ctx = aktifBaglam();
     const kayit = await this.prisma.tenantIslem(ctx.tenantId, (tx) =>

@@ -77,7 +77,11 @@ test("ana panel kuyruk sayaçları tüm veri sayfalarını kapsar", async ({ pag
   await page.route("http://localhost:3001/api/v1/firma", (route) => route.fulfill({ json: { unvan: "Test Firma" } }));
   const faturaIstekleri: string[] = []; const stokIstekleri: string[] = [];
   await page.route("http://localhost:3001/api/v1/fatura**", (route) => {
-    const url = new URL(route.request().url()); const imlec = url.searchParams.get("imlec");
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/fatura/is-kuyrugu-ozeti")) {
+      return route.fulfill({ json: { taslakSatis: 2, taslakAlis: 0, ebelgeHata: 0, acikTahsilat: 2, acikOdeme: 0 } });
+    }
+    const imlec = url.searchParams.get("imlec");
     if (url.searchParams.get("adet") === "200") faturaIstekleri.push(imlec ?? "ilk");
     const fatura = { tip: "satis", durum: "taslak", odemeOzeti: { durum: "odenmedi" }, ebelge: null };
     return route.fulfill({ json: imlec === "fatura-1"
@@ -100,8 +104,7 @@ test("ana panel kuyruk sayaçları tüm veri sayfalarını kapsar", async ({ pag
   await expect(page.getByRole("link", { name: /Taslak satış faturaları/ }).locator(".queue-row__count")).toHaveText("2");
   await expect(page.getByRole("link", { name: /Kritik stoklar/ }).locator(".queue-row__count")).toHaveText("2");
   await expect(page.getByRole("button", { name: "Bildirimler 4" })).toBeVisible();
-  expect(faturaIstekleri.filter((istek) => istek === "ilk")).toHaveLength(2);
-  expect(faturaIstekleri.filter((istek) => istek === "fatura-1")).toHaveLength(2);
+  expect(faturaIstekleri).toEqual([]);
   expect(stokIstekleri).toEqual(["ilk", "stok-1"]);
 });
 

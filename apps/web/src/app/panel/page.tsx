@@ -8,7 +8,7 @@ import { api, ApiHata, tokenAl, tokenYaz, tumSayfalariAl } from "@/lib/api";
 
 type Rol = "yonetici" | "muhasebe" | "satis" | "salt_okunur";
 interface FinansOzet { nakitVarliklar: string; envanterDegeri: string; toplamAlacaklar: string; toplamBorclar: string; netVarlikDegeri: string; }
-interface Fatura { tip: string; durum: string; ebelge?: { durum: string } | null; odemeOzeti?: { durum: string }; }
+interface FaturaKuyrukOzeti { taslakSatis: number; taslakAlis: number; ebelgeHata: number; acikTahsilat: number; acikOdeme: number; }
 interface Stok { kritikSeviye?: string | null; mevcutMiktar?: string; kullanilabilirMiktar?: string; }
 
 const tl = (deger: string) => Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL";
@@ -31,18 +31,12 @@ export default function PanelSayfasi() {
 
   const yukle = useCallback(async () => {
     try {
-      const [ben, firmaVeri, faturalar, stoklar] = await Promise.all([
+      const [ben, firmaVeri, faturaOzeti, stoklar] = await Promise.all([
         api<{ rol: Rol }>("/auth/ben"), api<{ unvan: string }>("/firma"),
-        tumSayfalariAl<Fatura>("/fatura"), tumSayfalariAl<Stok>("/stok"),
+        api<FaturaKuyrukOzeti>("/fatura/is-kuyrugu-ozeti"), tumSayfalariAl<Stok>("/stok"),
       ]);
       setRol(ben.rol); setFirma(firmaVeri.unvan);
-      const fs = faturalar;
-      const say = (test: (f: Fatura) => boolean) => fs.filter(test).length;
-      const taslakSatis = say((f) => f.durum === "taslak" && ["satis", "satis_iade", "proforma"].includes(f.tip));
-      const taslakAlis = say((f) => f.durum === "taslak" && ["alis", "alis_iade"].includes(f.tip));
-      const ebelgeHata = say((f) => ["hata", "ret"].includes(f.ebelge?.durum ?? ""));
-      const acikTahsilat = say((f) => ["satis", "alis_iade"].includes(f.tip) && ["odenmedi", "kismi"].includes(f.odemeOzeti?.durum ?? ""));
-      const acikOdeme = say((f) => ["alis", "satis_iade"].includes(f.tip) && ["odenmedi", "kismi"].includes(f.odemeOzeti?.durum ?? ""));
+      const { taslakSatis, taslakAlis, ebelgeHata, acikTahsilat, acikOdeme } = faturaOzeti;
       const kritik = stoklar.filter((s) => s.kritikSeviye != null && Number(s.mevcutMiktar ?? s.kullanilabilirMiktar ?? 0) <= Number(s.kritikSeviye)).length;
       let ekstre = 0; let gelen = 0;
       if (["yonetici", "muhasebe"].includes(ben.rol)) {

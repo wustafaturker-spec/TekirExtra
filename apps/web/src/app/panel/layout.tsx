@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, tokenAl, tokenYaz, tumSayfalariAl } from "@/lib/api";
+import { api, tokenAl, tokenYaz } from "@/lib/api";
 
 const ROL_ADI: Record<string, string> = {
   yonetici: "Yönetici",
@@ -23,7 +23,7 @@ interface MenuGrup {
   ogeler: MenuOge[];
 }
 interface Bildirim { href: string; baslik: string; aciklama: string; sayi: number; ton: "warning" | "danger"; }
-interface BildirimFaturasi { tip: string; durum: string; ebelge?: { durum: string } | null; odemeOzeti?: { durum: string }; }
+interface FaturaKuyrukOzeti { taslakSatis: number; taslakAlis: number; ebelgeHata: number; acikTahsilat: number; acikOdeme: number; }
 
 const MENU: MenuGrup[] = [
   {
@@ -96,12 +96,11 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
       api<{ rol: string }>("/auth/ben")
         .then(async (b) => {
           setRol(b.rol);
-          const faturalar = await tumSayfalariAl<BildirimFaturasi>("/fatura");
-          const say = (test: (fatura: BildirimFaturasi) => boolean) => faturalar.filter(test).length;
+          const ozet = await api<FaturaKuyrukOzeti>("/fatura/is-kuyrugu-ozeti");
           const yeni: Bildirim[] = [];
-          const ebelgeHatasi = say((f) => ["hata", "ret"].includes(f.ebelge?.durum ?? ""));
-          const taslak = say((f) => f.durum === "taslak" && (b.rol !== "satis" || ["satis", "satis_iade", "proforma"].includes(f.tip)));
-          const acikOdeme = say((f) => ["odenmedi", "kismi"].includes(f.odemeOzeti?.durum ?? "") && (b.rol !== "satis" || ["satis", "alis_iade"].includes(f.tip)));
+          const ebelgeHatasi = ozet.ebelgeHata;
+          const taslak = b.rol === "satis" ? ozet.taslakSatis : ozet.taslakSatis + ozet.taslakAlis;
+          const acikOdeme = b.rol === "satis" ? ozet.acikTahsilat : ozet.acikTahsilat + ozet.acikOdeme;
           if (ebelgeHatasi > 0 && b.rol !== "satis") yeni.push({ href: "/panel/fatura?ebelge=hata", baslik: "e-Belge müdahalesi gerekli", aciklama: "Hatalı veya reddedilen belgeleri inceleyin.", sayi: ebelgeHatasi, ton: "danger" });
           if (taslak > 0) yeni.push({ href: b.rol === "satis" ? "/panel/fatura?yon=satis&durum=taslak" : "/panel/fatura?durum=taslak", baslik: "Bekleyen fatura taslakları", aciklama: "Kontrol edilip kesinleştirilecek kayıtlar.", sayi: taslak, ton: "warning" });
           if (acikOdeme > 0) yeni.push({ href: b.rol === "satis" ? "/panel/fatura?yon=satis&odeme=acik" : "/panel/fatura?odeme=acik", baslik: b.rol === "satis" ? "Tahsilat takibi" : "Açık tahsilat ve ödemeler", aciklama: "Finansal kapanışı bekleyen faturalar.", sayi: acikOdeme, ton: "warning" });

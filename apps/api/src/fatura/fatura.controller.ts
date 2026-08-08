@@ -45,6 +45,11 @@ export class FaturaController {
 
   // ─── FATURA BELGE UÇLARI ──────────────────────────────────────────────────
 
+  @Get("is-kuyrugu-ozeti")
+  async isKuyruguOzeti() {
+    return this.faturaService.isKuyruguOzeti();
+  }
+
   @Get()
   async listele(
     @Query("arama") arama?: string,
