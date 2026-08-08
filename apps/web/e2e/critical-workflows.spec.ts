@@ -136,6 +136,34 @@ test("kasa banka fişi tüm cari sayfalarını seçime yükler", async ({ page }
   expect(istekler).toEqual(["ilk", "cari-1"]);
 });
 
+test("fiyat listesi tüm stok sayfalarını ürün seçimine yükler", async ({ page }) => {
+  await page.route("http://localhost:3001/api/v1/fiyat-listeleri**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/fiyat-listeleri/liste-1") {
+      return route.fulfill({ json: { id: "liste-1", ad: "Bayi", dovizCinsi: "TRY", aktif: true, cariSayisi: 0, kalemler: [] } });
+    }
+    return route.fulfill({ json: [{ id: "liste-1", ad: "Bayi", dovizCinsi: "TRY", aktif: true, kalemSayisi: 0, cariSayisi: 0 }] });
+  });
+  const istekler: string[] = [];
+  await page.route("http://localhost:3001/api/v1/stok**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== "/api/v1/stok") return route.fallback();
+    const imlec = url.searchParams.get("imlec");
+    istekler.push(imlec ?? "ilk");
+    return route.fulfill({ json: imlec === "stok-1"
+      ? { kayitlar: [{ id: "stok-2", kod: "STK-002", ad: "İkinci Sayfa Ürünü" }], sonrakiImlec: null }
+      : { kayitlar: [{ id: "stok-1", kod: "STK-001", ad: "İlk Sayfa Ürünü" }], sonrakiImlec: "stok-1" }
+    });
+  });
+
+  await page.goto("/panel/stok/fiyat-listeleri");
+  await page.getByRole("button", { name: /Kalemler/ }).click();
+  const urunSecimi = page.getByLabel("Ürün ekle / güncelle");
+  await expect(urunSecimi.locator("option", { hasText: "İkinci Sayfa Ürünü" })).toHaveCount(1);
+  await expect(urunSecimi.locator("option", { hasText: "İlk Sayfa Ürünü" })).toHaveCount(1);
+  expect(istekler).toEqual(["ilk", "stok-1"]);
+});
+
 test("fatura listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page }) => {
   const fatura = (id: string, no: string) => ({
     id, no, tip: "satis", tarih: "2026-08-07", durum: "kesin",

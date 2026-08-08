@@ -68,6 +68,22 @@ export default function FiyatListeleriSayfasi() {
   const [kalemFiyat, setKalemFiyat] = useState("");
   const [kalemArama, setKalemArama] = useState("");
 
+  const stoklariYukle = useCallback(async () => {
+    const tumStoklar: Stok[] = [];
+    const gorulenImlecler = new Set<string>();
+    let imlec: string | null = null;
+    do {
+      const sorgu = new URLSearchParams({ adet: "200" });
+      if (imlec) sorgu.set("imlec", imlec);
+      const veri: { kayitlar: Stok[]; sonrakiImlec: string | null } = await api("/stok?" + sorgu.toString());
+      tumStoklar.push(...veri.kayitlar);
+      imlec = veri.sonrakiImlec;
+      if (imlec && gorulenImlecler.has(imlec)) break;
+      if (imlec) gorulenImlecler.add(imlec);
+    } while (imlec);
+    setStoklar(tumStoklar);
+  }, []);
+
   const yukle = useCallback(async () => {
     try {
       setListeler(await api<FiyatListesi[]>("/fiyat-listeleri"));
@@ -79,11 +95,9 @@ export default function FiyatListeleriSayfasi() {
   useEffect(() => {
     if (tokenAl()) {
       void yukle();
-      api<{ kayitlar: Stok[] }>("/stok?adet=200")
-        .then((v) => setStoklar(v.kayitlar))
-        .catch(() => undefined);
+      void stoklariYukle().catch(() => undefined);
     }
-  }, [yukle]);
+  }, [stoklariYukle, yukle]);
 
   async function detayAc(id: string) {
     setHata("");
@@ -214,7 +228,7 @@ export default function FiyatListeleriSayfasi() {
           <form onSubmit={kalemKaydet} className="row-tight" style={{ flexWrap: "nowrap", alignItems: "flex-end" }}>
             <div className="grow" style={{ minWidth: 220 }}>
               <Field label="Ürün ekle / güncelle">
-                <Select value={kalemStokId} onChange={(e) => setKalemStokId(e.target.value)} required>
+                <Select aria-label="Ürün ekle / güncelle" value={kalemStokId} onChange={(e) => setKalemStokId(e.target.value)} required>
                   <option value="">-- Ürün seçin --</option>
                   {eklenebilirStoklar.map((s) => (<option key={s.id} value={s.id}>{s.ad} ({s.kod})</option>))}
                 </Select>
