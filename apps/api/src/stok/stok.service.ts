@@ -95,7 +95,7 @@ export class StokService {
     const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.stokKart.findMany({
         where,
-        orderBy: { kod: "asc" },
+        orderBy: [{ kod: "asc" }, { id: "asc" }],
         take: adet + 1,
         ...(imlec ? { cursor: { id: imlec }, skip: 1 } : {}),
         include: {

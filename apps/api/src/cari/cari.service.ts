@@ -63,7 +63,7 @@ export class CariService {
               ],
             } : {}),
         },
-        orderBy: { kod: "asc" },
+        orderBy: [{ kod: "asc" }, { id: "asc" }],
         take: adet + 1,
         ...(imlec ? { cursor: { id: imlec }, skip: 1 } : {}),
         include: { _count: { select: { hareketler: true } } },

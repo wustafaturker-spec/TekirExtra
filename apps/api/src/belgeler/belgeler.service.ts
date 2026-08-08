@@ -104,7 +104,7 @@ export class BelgelerService {
     const kayitlar = await this.prisma.tenantIslem(ctx.tenantId, (tx) =>
       tx.belge.findMany({
         where,
-        orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
+        orderBy: [{ tarih: "desc" }, { createdAt: "desc" }, { id: "desc" }],
         take: adet + 1,
         ...(imlec ? { cursor: { id: imlec }, skip: 1 } : {}),
         include: { cari: { select: { id: true, kod: true, unvan: true } } },

@@ -42,7 +42,7 @@ export class DenetimController {
     const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.auditLog.findMany({
         where: kosul,
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: sayfaAdedi + 1,
         ...(imlec ? { cursor: { id: imlec }, skip: 1 } : {}),
       }),

@@ -108,7 +108,7 @@ export class FaturaService {
     const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.fatura.findMany({
         where,
-        orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
+        orderBy: [{ tarih: "desc" }, { createdAt: "desc" }, { id: "desc" }],
         take: adet + 1,
         ...(imlec ? { cursor: { id: imlec }, skip: 1 } : {}),
         include: {
