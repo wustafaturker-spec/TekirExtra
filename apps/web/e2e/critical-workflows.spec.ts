@@ -152,7 +152,9 @@ test("stok listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page
 });
 
 test("fatura, e-Belge ve ödeme durumları bağımsız izlenebilir", async ({ page }) => {
-  await page.route("http://localhost:3001/api/v1/fatura", async (route) => {
+  const faturaIstekleri: URL[] = [];
+  await page.route("http://localhost:3001/api/v1/fatura**", async (route) => {
+    faturaIstekleri.push(new URL(route.request().url()));
     await route.fulfill({ json: { kayitlar: [{
       id: "f1", no: "SAT2026000001", tip: "satis", tarih: "2026-08-07", durum: "kesin",
       toplamMatrah: "1000.00", toplamKdv: "200.00", genelToplam: "1200.00",
@@ -179,6 +181,8 @@ test("fatura, e-Belge ve ödeme durumları bağımsız izlenebilir", async ({ pa
   await expect(page.getByLabel("e-Belge durumu")).toHaveValue("hata");
   await expect(page.getByLabel("Ödeme durumu")).toHaveValue("acik");
   await expect(satir).toBeVisible();
+  await expect.poll(() => faturaIstekleri.at(-1)?.searchParams.get("durum")).toBe("kesin");
+  expect(faturaIstekleri.at(-1)?.searchParams.get("ebelge")).toBe("hata");
 });
 
 

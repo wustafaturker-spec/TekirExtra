@@ -7,7 +7,7 @@ import {
   Inject,
   forwardRef,
 } from "@nestjs/common";
-import { Prisma, FaturaTip, FaturaDurum } from "@prisma/client";
+import { Prisma, FaturaTip, FaturaDurum, BelgeDurum } from "@prisma/client";
 import { faturaHesapla, type FaturaHesaplaSatirGirdi, type KayitEylem } from "@tekirextra/shared";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -84,13 +84,16 @@ export class FaturaService {
     durum?: string,
     imlec?: string,
     adet = 50,
+    yon?: string,
+    ebelge?: string,
   ) {
     const { tenantId } = aktifBaglam();
     const ctx = aktifBaglam();
 
     const where: Prisma.FaturaWhereInput = {
-      ...(tip ? { tip: tip as FaturaTip } : {}),
+      ...(tip ? { tip: tip as FaturaTip } : yon === "satis" ? { tip: { in: ["satis", "satis_iade", "proforma"] } } : yon === "alis" ? { tip: { in: ["alis", "alis_iade"] } } : {}),
       ...(durum ? { durum: durum as FaturaDurum } : {}),
+      ...(ebelge ? { ebelge: { is: { durum: ebelge === "hata" ? { in: ["hata", "ret"] } : ebelge as BelgeDurum } } } : {}),
       ...(arama
         ? {
             OR: [

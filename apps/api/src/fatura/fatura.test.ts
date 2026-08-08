@@ -73,4 +73,19 @@ describe("FaturaService (FTR-14 - maksIskontoYuzdesi)", () => {
       new BadRequestException("Maksimum iskonto yetkiniz (%10) aşılmıştır.")
     );
   });
+
+  it("yon, durum ve e-Belge filtrelerini veritabani sorgusuna uygular", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    mockTenantIslem.mockImplementation((_tenantId, cb) => cb({ fatura: { findMany } }));
+
+    await service.listele(undefined, undefined, "kesin", undefined, 50, "satis", "hata");
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        tip: { in: ["satis", "satis_iade", "proforma"] },
+        durum: "kesin",
+        ebelge: { is: { durum: { in: ["hata", "ret"] } } },
+      },
+    }));
+  });
 });

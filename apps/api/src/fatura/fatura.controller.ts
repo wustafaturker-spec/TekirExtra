@@ -52,9 +52,11 @@ export class FaturaController {
     @Query("durum") durum?: string,
     @Query("imlec") imlec?: string,
     @Query("adet") adet?: string,
+    @Query("yon") yon?: string,
+    @Query("ebelge") ebelge?: string,
   ) {
     const adetSayi = adet ? parseInt(adet, 10) : undefined;
-    return this.faturaService.listele(arama, tip, durum, imlec, adetSayi);
+    return this.faturaService.listele(arama, tip, durum, imlec, adetSayi, yon, ebelge);
   }
 
   @Get(":id")

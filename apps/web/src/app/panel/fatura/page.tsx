@@ -201,7 +201,12 @@ export default function FaturaSayfasi() {
   const yukle = useCallback(async (imlec?: string) => {
     setFaturaListesiYukleniyor(true);
     try {
-      const sorgu = imlec ? `?imlec=${encodeURIComponent(imlec)}` : "";
+      const parametreler = new URLSearchParams();
+      if (yonBaglami) parametreler.set("yon", yonBaglami);
+      if (durumFiltresi) parametreler.set("durum", durumFiltresi);
+      if (ebelgeFiltresi) parametreler.set("ebelge", ebelgeFiltresi);
+      if (imlec) parametreler.set("imlec", imlec);
+      const sorgu = parametreler.size ? `?${parametreler.toString()}` : "";
       const fVeri = await api<{ kayitlar: Fatura[]; sonrakiImlec: string | null }>(`/fatura${sorgu}`);
       setFaturalar((eskiler) => imlec ? [...eskiler, ...fVeri.kayitlar] : fVeri.kayitlar);
       setSonrakiFaturaImleci(fVeri.sonrakiImlec);
@@ -218,7 +223,7 @@ export default function FaturaSayfasi() {
     } finally {
       setFaturaListesiYukleniyor(false);
     }
-  }, []);
+  }, [yonBaglami, durumFiltresi, ebelgeFiltresi]);
 
   useEffect(() => {
     if (faturaFiltreleriHazir && tokenAl()) {
