@@ -208,6 +208,7 @@ export default function BelgelerSayfasi() {
     gorunum: Omit<BelgeGorunumu, "id" | "ad">,
     tarihAraligi = { baslangic: tarihBaslangic, bitis: tarihBitis },
   ) {
+    setSecili(new Set());
     setTurFiltre(gorunum.tur); setYonBaglami(gorunum.yon); setDurumFiltresi(gorunum.durum);
     setTarihBaslangic(tarihAraligi.baslangic); setTarihBitis(tarihAraligi.bitis);
     const parametreler = new URLSearchParams();
@@ -220,6 +221,7 @@ export default function BelgelerSayfasi() {
   }
 
   function tarihFiltresiDegistir(alan: "baslangic" | "bitis", deger: string) {
+    setSecili(new Set());
     if (alan === "baslangic") setTarihBaslangic(deger); else setTarihBitis(deger);
     const parametreler = new URLSearchParams(window.location.search);
     if (deger) parametreler.set(alan, deger); else parametreler.delete(alan);
@@ -490,7 +492,10 @@ export default function BelgelerSayfasi() {
         actions={
           <>
             {secili.size > 0 && (
-              <Button variant="primary" onClick={topluFatura}>🧾 Seçilenleri Faturala ({secili.size})</Button>
+              <>
+                <Button onClick={() => setSecili(new Set())}>Seçimi temizle</Button>
+                <Button variant="primary" onClick={topluFatura}>🧾 Seçilenleri Faturala ({secili.size})</Button>
+              </>
             )}
             <Button variant={secili.size > 0 ? "ghost" : "primary"} onClick={() => setFormAcik(!formAcik)}>
               {formAcik ? "Vazgeç" : "➕ Yeni Belge"}
@@ -761,11 +766,11 @@ export default function BelgelerSayfasi() {
       </section>
 
       <div className="toolbar">
-        <SearchInput className="grow" value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Belge no veya cari ile ara..." />
+        <SearchInput className="grow" value={arama} onChange={(e) => { setSecili(new Set()); setArama(e.target.value); }} placeholder="Belge no veya cari ile ara..." />
         <Button type="button" onClick={csvIndir} disabled={gorunen.length === 0}>CSV dışa aktar</Button>
         <Segmented<TurFiltre>
           value={turFiltre}
-          onChange={setTurFiltre}
+          onChange={(deger) => { setSecili(new Set()); setTurFiltre(deger); }}
           items={[
             { deger: "tumu", baslik: "Tümü" },
             { deger: "teklif", baslik: "Teklif" },

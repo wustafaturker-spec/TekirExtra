@@ -294,9 +294,30 @@ test("görünür faturalanabilir belgeler topluca seçilir", async ({ page }) =>
   await expect(ilkBelge).toBeChecked();
   await expect(page.getByRole("checkbox", { name: "IRS-001 belgesini seç" })).toBeChecked();
   await expect(page.getByRole("row").filter({ hasText: "SP-TASLAK" }).getByRole("checkbox")).toHaveCount(0);
+  await page.getByRole("button", { name: "Seçimi temizle" }).click();
+  await expect(ilkBelge).not.toBeChecked();
+  await expect(page.getByRole("button", { name: /Seçilenleri Faturala/ })).toHaveCount(0);
+  await tumunuSec.check();
   await page.getByRole("button", { name: "🧾 Seçilenleri Faturala (2)" }).click();
   await expect(page.getByText("2 belge tek taslak faturada birleştirildi.")).toBeVisible();
   expect(gonderilen).toEqual({ belgeIds: ["b1", "b2"] });
+});
+
+test("belge filtresi değiştiğinde gizli toplu seçimler temizlenir", async ({ page }) => {
+  const belge = (id: string, no: string, yon: string) => ({
+    id, no, tur: "siparis", durum: "onaylandi", yon, tarih: "2026-08-07", genelToplam: "1200.00",
+    dovizCinsi: "TRY", faturaId: null, cari: { id: "c1", kod: "C001", unvan: "Örnek Müşteri" },
+  });
+  await page.route("http://localhost:3001/api/v1/belgeler", (route) => route.fulfill({ json: {
+    kayitlar: [belge("b1", "SP-SATIS", "satis"), belge("b2", "SP-ALIS", "alis")], sonrakiImlec: null,
+  } }));
+
+  await page.goto("/panel/belgeler");
+  await page.getByRole("checkbox", { name: "SP-SATIS belgesini seç" }).check();
+  await expect(page.getByRole("button", { name: /Seçilenleri Faturala \(1\)/ })).toBeVisible();
+  await page.getByRole("region", { name: "Belge görünümü ve filtreleri" }).getByRole("combobox").first().selectOption("alis");
+  await expect(page.getByRole("button", { name: /Seçilenleri Faturala/ })).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: "SP-ALIS belgesini seç" })).not.toBeChecked();
 });
 
 test("başarısız belge listesi yeniden yüklenebilir", async ({ page }) => {
