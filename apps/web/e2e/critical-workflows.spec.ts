@@ -175,6 +175,38 @@ test("cari türü ve bloke filtreleri sunucu sorgusuna uygulanır", async ({ pag
   await expect.poll(() => istekler.at(-1)?.searchParams.get("durum")).toBe("bloke");
 });
 
+test("geç dönen eski cari araması güncel sonucu ezmez", async ({ page }) => {
+  const cari = (id: string, kod: string, unvan: string) => ({
+    id, kod, unvan, tip: "musteri", sektor: null, vknTckn: null, eposta: null, telefon: null,
+    karaListe: false, bakiyeler: [{ dovizCinsi: "TRY", bakiye: "0.00" }],
+  });
+  let yavasYanitla!: () => void; let yavasBasladi!: () => void; let yavasTamamlandi!: () => void;
+  const yavasBekleme = new Promise<void>((resolve) => { yavasYanitla = resolve; });
+  const yavasIstek = new Promise<void>((resolve) => { yavasBasladi = resolve; });
+  const yavasBitti = new Promise<void>((resolve) => { yavasTamamlandi = resolve; });
+  await page.route("http://localhost:3001/api/v1/cari**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== "/api/v1/cari") return route.fallback();
+    const arama = url.searchParams.get("arama");
+    if (arama === "Yavaş Cari") {
+      yavasBasladi(); await yavasBekleme;
+      await route.fulfill({ json: { kayitlar: [cari("c1", "YAVAS", "Yavaş Cari")], sonrakiImlec: null } });
+      yavasTamamlandi(); return;
+    }
+    if (arama === "Hızlı Cari") return route.fulfill({ json: { kayitlar: [cari("c2", "HIZLI", "Hızlı Cari")], sonrakiImlec: null } });
+    return route.fulfill({ json: { kayitlar: [], sonrakiImlec: null } });
+  });
+
+  await page.goto("/panel/cari");
+  const arama = page.getByPlaceholder("Cari adı, kodu, VKN veya telefon ile ara...");
+  await arama.fill("Yavaş Cari"); await yavasIstek;
+  await arama.fill("Hızlı Cari");
+  await expect(page.getByRole("row").filter({ hasText: "Hızlı Cari" })).toBeVisible();
+  yavasYanitla(); await yavasBitti;
+  await expect(page.getByRole("row").filter({ hasText: "Hızlı Cari" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "Yavaş Cari" })).not.toBeVisible();
+});
+
 test("stok listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page }) => {
   const stok = (id: string, kod: string, ad: string) => ({
     id, kod, ad, tip: "urun", barkod: null, anaBirim: "adet", kdvOrani: "20",

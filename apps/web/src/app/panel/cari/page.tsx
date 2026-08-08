@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import {
@@ -150,6 +150,7 @@ const GORUNUM_ANAHTARI = "tekir_cari_gorunumleri";
 export default function CariSayfasi() {
   const [cariler, setCariler] = useState<Cari[]>([]);
   const [arama, setArama] = useState("");
+  const [aramaSorgusu, setAramaSorgusu] = useState("");
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [formAcik, setFormAcik] = useState(false);
@@ -164,6 +165,7 @@ export default function CariSayfasi() {
   const [sonrakiCariImleci, setSonrakiCariImleci] = useState<string | null>(null);
   const [cariListesiYukleniyor, setCariListesiYukleniyor] = useState(false);
   const [cariFiltreleriHazir, setCariFiltreleriHazir] = useState(false);
+  const cariYuklemeSirasi = useRef(0);
 
   // Form alanları — kimlik
   const [kod, setKod] = useState("");
@@ -208,23 +210,27 @@ export default function CariSayfasi() {
   const [secilenEtiketId, setSecilenEtiketId] = useState("");
 
   const yukle = useCallback(async (imlec?: string) => {
+    const istekSirasi = ++cariYuklemeSirasi.current;
     setCariListesiYukleniyor(true);
     try {
       const parametreler = new URLSearchParams();
-      if (arama) parametreler.set("arama", arama);
+      if (aramaSorgusu) parametreler.set("arama", aramaSorgusu);
       if (filtreTip === "musteri" || filtreTip === "tedarikci") parametreler.set("tip", filtreTip);
       if (filtreTip === "bloke") parametreler.set("durum", "bloke");
       if (imlec) parametreler.set("imlec", imlec);
       const qs = parametreler.size ? `?${parametreler.toString()}` : "";
       const veri = await api<{ kayitlar: Cari[]; sonrakiImlec: string | null }>(`/cari${qs}`);
+      if (istekSirasi !== cariYuklemeSirasi.current) return;
       setCariler((eskiler) => imlec ? [...eskiler, ...veri.kayitlar] : veri.kayitlar);
       setSonrakiCariImleci(veri.sonrakiImlec);
     } catch (h) {
-      setHata(h instanceof Error ? h.message : "Yükleme hatası");
+      if (istekSirasi === cariYuklemeSirasi.current) {
+        setHata(h instanceof Error ? h.message : "Yükleme hatası");
+      }
     } finally {
-      setCariListesiYukleniyor(false);
+      if (istekSirasi === cariYuklemeSirasi.current) setCariListesiYukleniyor(false);
     }
-  }, [arama, filtreTip]);
+  }, [aramaSorgusu, filtreTip]);
 
   const etiketleriYukle = useCallback(async () => {
     try {
@@ -233,6 +239,11 @@ export default function CariSayfasi() {
       /* etiketler yüklenemezse liste boş kalır */
     }
   }, []);
+
+  useEffect(() => {
+    const zamanlayici = window.setTimeout(() => setAramaSorgusu(arama.trim()), 300);
+    return () => window.clearTimeout(zamanlayici);
+  }, [arama]);
 
   useEffect(() => {
     if (cariFiltreleriHazir && tokenAl()) void yukle();
