@@ -116,7 +116,7 @@ export class FaturaService {
       }),
     );
 
-    const sonrakiImlec = kayitlar.length > adet ? kayitlar[adet].id : null;
+    const sonrakiImlec = kayitlar.length > adet ? kayitlar[adet - 1].id : null;
     const sayfa = kayitlar.slice(0, adet);
 
     return {

@@ -48,7 +48,7 @@ export class DenetimController {
       }),
     );
 
-    const sonrakiImlec = kayitlar.length > sayfaAdedi ? kayitlar[sayfaAdedi].id : null;
+    const sonrakiImlec = kayitlar.length > sayfaAdedi ? kayitlar[sayfaAdedi - 1].id : null;
     const sayfa = kayitlar.slice(0, sayfaAdedi);
 
     const kullaniciIdler = [...new Set(sayfa.map((k) => k.userId).filter((k): k is string => !!k))];
