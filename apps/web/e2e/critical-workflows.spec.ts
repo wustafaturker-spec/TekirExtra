@@ -318,6 +318,34 @@ test("çek senet formu tüm cari sayfalarını seçime yükler", async ({ page }
   expect(istekler).toEqual(["ilk", "cari-1"]);
 });
 
+test("rapor filtreleri tüm cari ve stok sayfalarını yükler", async ({ page }) => {
+  await page.route("http://localhost:3001/api/v1/raporlar**", (route) => {
+    const yol = new URL(route.request().url()).pathname;
+    if (yol.endsWith("/gorunumler")) return route.fulfill({ json: [] });
+    return route.fulfill({ json: [{
+      kod: "test-raporu", modul: "genel", ad: "Test Raporu", aciklama: null, gruplamalar: [], kolonlar: [],
+      filtreler: [{ alan: "cariId", ad: "Cari", tip: "cari" }, { alan: "stokId", ad: "Stok", tip: "stok" }],
+    }] });
+  });
+  const sayfaliYanit = (url: URL, tur: "Cari" | "Stok") => {
+    const imlec = url.searchParams.get("imlec");
+    const onEk = tur === "Cari" ? "cari" : "stok";
+    return imlec === onEk + "-1"
+      ? { kayitlar: [{ id: onEk + "-2", ad: "İkinci Sayfa " + tur }], sonrakiImlec: null }
+      : { kayitlar: [{ id: onEk + "-1", ad: "İlk Sayfa " + tur }], sonrakiImlec: onEk + "-1" };
+  };
+  await page.route("http://localhost:3001/api/v1/cari**", (route) => route.fulfill({ json: sayfaliYanit(new URL(route.request().url()), "Cari") }));
+  await page.route("http://localhost:3001/api/v1/stok**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== "/api/v1/stok") return route.fallback();
+    return route.fulfill({ json: sayfaliYanit(url, "Stok") });
+  });
+
+  await page.goto("/panel/raporlar");
+  await expect(page.getByLabel("Cari").locator("option", { hasText: "İkinci Sayfa Cari" })).toHaveCount(1);
+  await expect(page.getByLabel("Stok").locator("option", { hasText: "İkinci Sayfa Stok" })).toHaveCount(1);
+});
+
 test("fatura listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page }) => {
   const fatura = (id: string, no: string) => ({
     id, no, tip: "satis", tarih: "2026-08-07", durum: "kesin",

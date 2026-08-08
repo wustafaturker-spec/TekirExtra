@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, tokenAl } from "@/lib/api";
+import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { Alert, Button, Card, Input } from "@/components/ui";
 
 /**
@@ -128,13 +128,13 @@ export function RaporPaneli({ modul }: { modul?: string }) {
       .catch(() => setGorunumler([]));
     const tipler = new Set(secilen.filtreler.map((f) => f.tip));
     if (tipler.has("cari") && cariler.length === 0) {
-      void api<{ kayitlar: SecimKaydi[] }>("/cari?adet=200")
-        .then((v) => setCariler(v.kayitlar))
+      void tumSayfalariAl<SecimKaydi>("/cari")
+        .then(setCariler)
         .catch(() => undefined);
     }
     if (tipler.has("stok") && stoklar.length === 0) {
-      void api<{ kayitlar: SecimKaydi[] }>("/stok?adet=200")
-        .then((v) => setStoklar(v.kayitlar))
+      void tumSayfalariAl<SecimKaydi>("/stok")
+        .then(setStoklar)
         .catch(() => undefined);
     }
     if (tipler.has("depo") && depolar.length === 0) {
@@ -293,7 +293,7 @@ export function RaporPaneli({ modul }: { modul?: string }) {
                 ? depolar
                 : etiketler;
         return (
-          <select className="select" value={String(deger)} onChange={(e) => guncelle(e.target.value)}>
+          <select aria-label={f.ad} className="select" value={String(deger)} onChange={(e) => guncelle(e.target.value)}>
             <option value="">{f.zorunlu ? "Seçiniz..." : "Tümü"}</option>
             {kaynak.map((k) => (<option key={k.id} value={k.id}>{k.unvan ?? k.ad ?? k.kod ?? k.id}</option>))}
           </select>
