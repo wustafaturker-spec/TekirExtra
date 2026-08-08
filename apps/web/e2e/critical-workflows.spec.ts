@@ -376,6 +376,26 @@ test("toplu fatura yarışı sonrası belge listesi yenilenir", async ({ page })
   expect(listeIstegi).toBe(2);
 });
 
+test("belge sayfası URL filtreleriyle tek sorguda açılır", async ({ page }) => {
+  const istekler: URL[] = [];
+  await page.route("http://localhost:3001/api/v1/belgeler**", (route) => {
+    istekler.push(new URL(route.request().url()));
+    return route.fulfill({ json: { kayitlar: [{
+      id: "b1", no: "SP-ALIS", tur: "siparis", durum: "onaylandi", yon: "alis", tarih: "2026-08-07",
+      genelToplam: "1200.00", dovizCinsi: "TRY", kur: "1.0000", depoId: "d1", faturaId: null,
+      cari: { id: "c1", kod: "C001", unvan: "Örnek Tedarikçi" },
+    }], sonrakiImlec: null } });
+  });
+
+  await page.goto("/panel/belgeler?tur=siparis&yon=alis&durum=onaylandi&baslangic=2026-08-01&bitis=2026-08-10");
+  await expect(page.getByRole("row").filter({ hasText: "SP-ALIS" })).toBeVisible();
+  await expect.poll(() => istekler.length).toBe(1);
+  const parametreler = istekler[0].searchParams;
+  expect(Object.fromEntries(parametreler)).toEqual({
+    tur: "siparis", yon: "alis", durum: "onaylandi", baslangic: "2026-08-01", bitis: "2026-08-10",
+  });
+});
+
 test("belge filtresi değiştiğinde gizli toplu seçimler temizlenir", async ({ page }) => {
   const belge = (id: string, no: string, yon: string) => ({
     id, no, tur: "siparis", durum: "onaylandi", yon, tarih: "2026-08-07", genelToplam: "1200.00",

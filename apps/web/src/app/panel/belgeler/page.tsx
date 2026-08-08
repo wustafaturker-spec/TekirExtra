@@ -126,6 +126,7 @@ export default function BelgelerSayfasi() {
   const [gorunumAdi, setGorunumAdi] = useState("");
   const [sonrakiImlec, setSonrakiImlec] = useState<string | null>(null);
   const [listeYukleniyor, setListeYukleniyor] = useState(true);
+  const [filtrelerHazir, setFiltrelerHazir] = useState(false);
   const yuklemeSirasi = useRef(0);
   const tumunuSecRef = useRef<HTMLInputElement | null>(null);
 
@@ -180,9 +181,9 @@ export default function BelgelerSayfasi() {
   }, [arama]);
 
   useEffect(() => {
-    if (!tokenAl()) return;
+    if (!filtrelerHazir || !tokenAl()) return;
     void yukle();
-  }, [yukle]);
+  }, [filtrelerHazir, yukle]);
 
   useEffect(() => {
     if (!tokenAl()) return;
@@ -208,6 +209,7 @@ export default function BelgelerSayfasi() {
     setDurumFiltresi(parametreler.get("durum"));
     try { setKayitliGorunumler(JSON.parse(localStorage.getItem(GORUNUM_ANAHTARI) ?? "[]") as BelgeGorunumu[]); }
     catch { localStorage.removeItem(GORUNUM_ANAHTARI); }
+    setFiltrelerHazir(true);
   }, []);
 
   function gorunumuUygula(
