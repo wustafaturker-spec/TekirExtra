@@ -16,7 +16,7 @@ test.beforeEach(async ({ page }) => {
       await route.fulfill({ json: { kayitlar: [] } });
       return;
     }
-    if (url.pathname.endsWith("/depo")) {
+    if (url.pathname.endsWith("/depo") || url.pathname.endsWith("/fiyat-listeleri") || url.pathname.includes("/kasa-banka/")) {
       await route.fulfill({ json: [] });
       return;
     }
@@ -46,6 +46,281 @@ test("satış ve satın alma çalışma alanları doğru belge bağlamını taş
   await expect(page.getByLabel("Fatura Tipi")).toHaveValue("alis");
 });
 
+test("standart form alanları görünür etiketleriyle programatik olarak ilişkilidir", async ({ page }) => {
+  const sayfaHatalari: string[] = [];
+  page.on("pageerror", (hata) => sayfaHatalari.push(hata.message));
+  await page.goto("/panel/fatura?yon=satis&yeni=1");
+  await expect(page.getByLabel("Fatura Tarihi")).toBeVisible();
+  await expect(page.getByLabel("Fatura Tipi")).toBeVisible();
+
+  await page.goto("/panel/cari");
+  await page.getByRole("button", { name: /Yeni Cari/ }).click();
+  expect(sayfaHatalari).toEqual([]);
+  await expect(page.getByLabel("Cari kodu")).toBeVisible();
+  await expect(page.getByLabel("Ünvan / Ad soyad")).toBeVisible();
+
+  await page.goto("/panel/kasa-banka");
+  await page.getByRole("button", { name: /Fiş Girişi/ }).click();
+  await expect(page.getByLabel("Kasa / Banka Seçimi")).toBeVisible();
+  await expect(page.getByLabel("İşlem Tipi")).toBeVisible();
+  await expect(page.getByLabel("Tutar")).toBeVisible();
+});
+
+test("işlem sonuçları ekran okuyucu canlı bölgeleriyle duyurulur", async ({ page }) => {
+  await page.goto("/dogrula");
+  const hata = page.getByRole("alert").filter({ hasText: "Doğrulama token'ı eksik" });
+  await expect(hata).toContainText("Doğrulama token'ı eksik");
+  await expect(hata).toHaveAttribute("aria-live", "assertive");
+  await expect(hata).toHaveAttribute("aria-atomic", "true");
+
+  await page.route("http://localhost:3001/api/v1/auth/eposta-dogrula**", (route) =>
+    route.fulfill({ json: { mesaj: "E-posta adresiniz doğrulandı." } }),
+  );
+  await page.goto("/dogrula?token=e2e-token");
+  const basari = page.getByRole("status");
+  await expect(basari).toContainText("E-posta adresiniz doğrulandı.");
+  await expect(basari).toHaveAttribute("aria-live", "polite");
+  await expect(basari).toHaveAttribute("aria-atomic", "true");
+});
+
+test("sekmeler rollerini bildirir ve ok tuşlarıyla gezilebilir", async ({ page }) => {
+  await page.route("http://localhost:3001/api/v1/cari**", (route) => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith("/cari/etiketler")) return route.fulfill({ json: [] });
+    if (pathname.endsWith("/cari/c1/ekstre")) {
+      return route.fulfill({ json: { cari: { id: "c1", kod: "C001", unvan: "Klavye Müşterisi" }, satirlar: [] } });
+    }
+    if (pathname.endsWith("/cari/c1")) {
+      return route.fulfill({ json: {
+        id: "c1", kod: "C001", unvan: "Klavye Müşterisi", tip: "musteri", sektor: null,
+        vknTckn: null, eposta: null, telefon: null, karaListe: false, bakiyeler: [],
+        kisaAd: null, kisiTipi: "tuzel", vergiDairesi: null, mersisNo: null,
+        ticaretSicilNo: null, webSitesi: null, faks: null, karaListeNotu: null,
+        riskLimiti: null, varsayilanVadeGun: null, bankaHesaplari: [], etiketler: [],
+        adresler: [], kisiler: [],
+        risk: { cekSenetRiski: "0", mevcutRisk: "0", limit: null, kalanLimit: null, asim: false },
+        finansalOzet: { sonIslemTarihi: null, sonTahsilatTarihi: null, sonOdemeTarihi: null, vadesiGecmisBakiye: "0" },
+      } });
+    }
+    return route.fulfill({ json: { kayitlar: [{
+      id: "c1", kod: "C001", unvan: "Klavye Müşterisi", tip: "musteri", sektor: null,
+      vknTckn: null, eposta: null, telefon: null, karaListe: false, bakiyeler: [],
+    }], sonrakiImlec: null } });
+  });
+  await page.goto("/panel/cari");
+
+  const filtreGrubu = page.getByRole("group", { name: "Görünüm seçenekleri" });
+  await expect(filtreGrubu.getByRole("button", { name: "Tümü" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: /Detay/ }).click();
+
+  const sekmeler = page.getByRole("tablist", { name: "Cari hesap bölümleri" });
+  const genel = sekmeler.getByRole("tab", { name: "Genel Bakış" });
+  const ekstre = sekmeler.getByRole("tab", { name: "Ekstre" });
+  await expect(genel).toHaveAttribute("aria-selected", "true");
+  await expect(genel).toHaveAttribute("aria-controls", "cari-detay-panel-genel");
+  await expect(page.getByRole("tabpanel", { name: "Genel Bakış" })).toBeVisible();
+  await genel.focus();
+  await genel.press("ArrowRight");
+  await expect(ekstre).toBeFocused();
+  await expect(ekstre).toHaveAttribute("aria-selected", "true");
+  await expect(ekstre).toHaveAttribute("aria-controls", "cari-detay-panel-ekstre");
+  await expect(page.getByRole("tabpanel", { name: "Ekstre" })).toBeVisible();
+  await expect(genel).toHaveAttribute("tabindex", "-1");
+});
+
+test("fatura doğrulama hataları ilgili seçiciye bağlanır ve ilk hataya odaklanır", async ({ page }) => {
+  await page.route("http://localhost:3001/api/v1/cari**", (route) => {
+    const { pathname } = new URL(route.request().url());
+    return route.fulfill({ json: pathname.endsWith("/cari/c1")
+      ? { id: "c1", kod: "C001", unvan: "Test Müşteri", bakiyeler: [], risk: { mevcutRisk: "0", limit: null, kalanLimit: null, asim: false } }
+      : { kayitlar: [{ id: "c1", kod: "C001", unvan: "Test Müşteri" }], sonrakiImlec: null }
+    });
+  });
+  await page.route("http://localhost:3001/api/v1/stok**", (route) => route.fulfill({ json: { kayitlar: [], sonrakiImlec: null } }));
+  await page.goto("/panel/fatura?yon=satis&yeni=1");
+
+  await page.getByRole("button", { name: "Taslak faturayı kaydet" }).click();
+  const cariSecici = page.getByRole("combobox", { name: "Müşteri ara" });
+  await expect(cariSecici).toBeFocused();
+  await expect(cariSecici).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByText("Faturayı kaydetmek için müşteri veya tedarikçi seçin.")).toBeVisible();
+
+  await cariSecici.click();
+  await page.getByRole("option", { name: /Test Müşteri/ }).click();
+  await page.getByRole("button", { name: "Taslak faturayı kaydet" }).click();
+  const urunSecici = page.getByRole("combobox", { name: "1. satır ürün veya hizmet seçimi" });
+  await expect(urunSecici).toBeFocused();
+  await expect(urunSecici).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByText("Bu satır için ürün veya hizmet seçin.")).toBeVisible();
+});
+
+test("hızlı panel odağı içine alır, sınırlar ve kapanınca tetikleyiciye döndürür", async ({ page }) => {
+  await page.goto("/panel/fatura?yon=satis&yeni=1");
+  const musteriSecici = page.getByRole("combobox", { name: "Müşteri ara" });
+  await musteriSecici.click();
+  await page.getByRole("button", { name: /Yeni müşteri oluştur/ }).click();
+
+  const panel = page.getByRole("dialog", { name: "Yeni müşteri" });
+  await expect(panel).toBeVisible();
+  await expect(page.getByLabel("Ünvan / Ad soyad")).toBeFocused();
+
+  await page.getByRole("button", { name: "Oluştur ve seç" }).focus();
+  await page.keyboard.press("Tab");
+  await expect(panel.getByRole("button", { name: "Kapat" })).toBeFocused();
+
+  await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+  await expect(musteriSecici).toBeFocused();
+});
+
+test("geri bildirim diyaloğu odağı sınırlar ve tetikleyiciye geri verir", async ({ page }) => {
+  await page.goto("/panel/satis");
+  const tetikleyici = page.getByRole("button", { name: "Geri bildirim ver" });
+  await tetikleyici.click();
+
+  const diyalog = page.getByRole("dialog", { name: "Deneyiminizi paylaşın" });
+  await expect(diyalog).toBeVisible();
+  await expect(diyalog.getByRole("button", { name: "Geri bildirim formunu kapat" })).toBeFocused();
+
+  const besPuan = diyalog.getByRole("radio", { name: "5", exact: true });
+  const dortPuan = diyalog.getByRole("radio", { name: "4", exact: true });
+  await besPuan.focus();
+  await besPuan.press("ArrowLeft");
+  await expect(dortPuan).toBeFocused();
+  await expect(dortPuan).toHaveAttribute("aria-checked", "true");
+  await expect(besPuan).toHaveAttribute("tabindex", "-1");
+  await dortPuan.press("Home");
+  await expect(diyalog.getByRole("radio", { name: "1", exact: true })).toBeFocused();
+
+  await diyalog.getByRole("button", { name: "Gönder" }).focus();
+  await page.keyboard.press("Tab");
+  await expect(diyalog.getByRole("button", { name: "Geri bildirim formunu kapat" })).toBeFocused();
+
+  await page.keyboard.press("Escape");
+  await expect(diyalog).toBeHidden();
+  await expect(tetikleyici).toBeFocused();
+});
+
+test("azaltılmış hareket tercihi uygulanır ve klavye odağı görünür kalır", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/panel/satis");
+
+  const gecisSuresi = await page.getByRole("link", { name: /Satış faturası/ }).first().evaluate((oge) =>
+    Number.parseFloat(getComputedStyle(oge).transitionDuration) || 0,
+  );
+  expect(gecisSuresi).toBeLessThanOrEqual(0.001);
+
+  await page.locator("body").press("Tab");
+  const odakGorunumu = await page.evaluate(() => {
+    const oge = document.activeElement;
+    if (!(oge instanceof HTMLElement)) return null;
+    const stil = getComputedStyle(oge);
+    return { etiket: oge.tagName, outline: stil.outlineStyle, golge: stil.boxShadow };
+  });
+  expect(odakGorunumu?.etiket).not.toBe("BODY");
+  expect(odakGorunumu?.outline !== "none" || odakGorunumu?.golge !== "none").toBe(true);
+});
+
+test("klavye kullanıcısı tekrarlanan menüyü atlayıp ana içeriğe geçebilir", async ({ page }) => {
+  await page.goto("/panel/satis");
+  await page.locator("body").press("Tab");
+
+  const atlamaBaglantisi = page.getByRole("link", { name: "Ana içeriğe geç" });
+  await expect(atlamaBaglantisi).toBeFocused();
+  await expect(atlamaBaglantisi).toBeInViewport();
+  await atlamaBaglantisi.press("Enter");
+
+  await expect(page.locator("#ana-icerik")).toBeFocused();
+  await expect(page).toHaveURL(/#ana-icerik$/);
+});
+
+test("dekoratif ikonlar kontrol ve bağlantı adlarını kirletmez", async ({ page }) => {
+  await page.goto("/panel/satis");
+
+  await expect(page.getByRole("link", { name: "Cari Hesaplar", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Kasa & Banka", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Güvenli çıkış", exact: true })).toBeVisible();
+});
+
+test("mobil menü ve bildirim düğmeleri kontrol ettikleri paneli bildirir", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/panel/satis");
+
+  const menu = page.getByRole("button", { name: "Ana menüyü aç" });
+  await expect(menu).toHaveAttribute("aria-controls", "ana-menu");
+  await expect(menu).toHaveAttribute("aria-expanded", "false");
+  await menu.click();
+  const menuKapat = page.getByRole("button", { name: "Ana menüyü kapat" });
+  await expect(menuKapat).toHaveAttribute("aria-expanded", "true");
+  const yanMenu = page.locator("#ana-menu");
+  const ilkMenuOgesi = yanMenu.getByRole("button", { name: /^Bildirimler/ });
+  await expect(ilkMenuOgesi).toBeFocused();
+  await yanMenu.getByRole("button", { name: "Güvenli çıkış" }).focus();
+  await page.keyboard.press("Tab");
+  await expect(ilkMenuOgesi).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Ana menüyü aç" })).toBeFocused();
+
+  const bildirimler = page.getByRole("button", { name: /^Bildirimler/ }).first();
+  await expect(bildirimler).toHaveAttribute("aria-controls", "bildirim-paneli");
+  await expect(bildirimler).toHaveAttribute("aria-expanded", "false");
+  await bildirimler.click();
+  await expect(bildirimler).toHaveAttribute("aria-expanded", "true");
+  const bildirimPaneli = page.getByRole("complementary", { name: "Bildirim merkezi" });
+  await expect(bildirimPaneli).toBeVisible();
+  await expect(bildirimPaneli.getByRole("button", { name: "Bildirimleri kapat" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(bildirimPaneli).toBeHidden();
+  await expect(bildirimler).toBeFocused();
+});
+
+test("mobil temel form kontrolleri en az 44 piksel dokunmatik hedef sunar", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/panel/fatura?yon=satis&yeni=1");
+  const kontroller = [
+    page.getByRole("combobox", { name: "Müşteri ara" }),
+    page.getByLabel("Fatura Tipi"),
+    page.getByLabel("Fatura Tarihi"),
+    page.getByRole("button", { name: "Taslak faturayı kaydet" }),
+  ];
+  for (const [index, kontrol] of kontroller.entries()) {
+    const kutu = await kontrol.boundingBox();
+    expect(kutu?.height, `${index + 1}. mobil kontrol en az 44 px olmalı`).toBeGreaterThanOrEqual(44);
+  }
+});
+
+test("değiştirilmiş fatura formu yanlışlıkla terk edilmez", async ({ page }) => {
+  await page.goto("/panel/fatura?yon=satis&yeni=1");
+  await page.getByLabel("Miktar").fill("3");
+
+  const ayrilmaEngellendi = await page.evaluate(() => !window.dispatchEvent(new Event("beforeunload", { cancelable: true })));
+  expect(ayrilmaEngellendi).toBe(true);
+
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("kaydedilmemiş değişiklikler silinecek");
+    await dialog.dismiss();
+  });
+  await page.getByRole("button", { name: "Vazgeç" }).click();
+  await expect(page.getByRole("heading", { level: 3, name: "Yeni satış faturası" })).toBeVisible();
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Vazgeç" }).click();
+  await expect(page.getByRole("heading", { level: 3, name: "Yeni satış faturası" })).toBeHidden();
+
+  await page.getByRole("button", { name: /Yeni Fatura/ }).click();
+  await expect(page.getByLabel("Miktar")).toHaveValue("1");
+
+  await page.getByLabel("Miktar").fill("2");
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.getByRole("link", { name: "Cari Hesaplar" }).click();
+  await expect(page).toHaveURL(/\/panel\/fatura/);
+  await expect(page.getByLabel("Miktar")).toHaveValue("2");
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("link", { name: "Cari Hesaplar" }).click();
+  await expect(page).toHaveURL(/\/panel\/cari/);
+});
+
 test("kullanıcı panelden geri bildirim gönderebilir", async ({ page }) => {
   let gonderilen: unknown;
   await page.route("http://localhost:3001/api/v1/kullanim/geri-bildirim", async (route) => {
@@ -61,12 +336,45 @@ test("kullanıcı panelden geri bildirim gönderebilir", async ({ page }) => {
   await page.getByLabel(/Açıklama/).fill("Kaydedilmiş görünümü ana sayfadan da açmak istiyorum.");
   await page.getByRole("button", { name: "Gönder", exact: true }).click();
 
-  await expect(page.getByText("Geri bildiriminiz kaydedildi.")).toBeVisible();
+  const basari = page.getByRole("status");
+  await expect(basari).toContainText("Geri bildiriminiz kaydedildi.");
+  await expect(basari).toHaveAttribute("aria-live", "polite");
+  await expect(basari.getByRole("button", { name: "Kapat" })).toBeFocused();
   expect(gonderilen).toEqual({
     puan: 4,
     kategori: "oneri",
     mesaj: "Kaydedilmiş görünümü ana sayfadan da açmak istiyorum.",
   });
+});
+
+test("başarısız geri bildirim formu veriyi korur ve yeniden gönderilebilir", async ({ page }) => {
+  let deneme = 0;
+  await page.route("http://localhost:3001/api/v1/kullanim/geri-bildirim", async (route) => {
+    deneme += 1;
+    if (deneme === 1) {
+      await route.fulfill({ status: 500, json: { mesaj: "Geçici sunucu hatası" } });
+      return;
+    }
+    await route.fulfill({ json: { kaydedildi: true } });
+  });
+
+  await page.goto("/panel/satis");
+  await page.getByRole("button", { name: "Geri bildirim ver" }).click();
+  await page.getByRole("radio", { name: "2", exact: true }).click();
+  await page.getByLabel("Konu").selectOption("hata");
+  const aciklama = page.getByLabel(/Açıklama/);
+  await aciklama.fill("Kaydetme sırasında bağlantı kesildi.");
+  await page.getByRole("button", { name: "Gönder", exact: true }).click();
+
+  const hata = page.getByRole("alert").filter({ hasText: "Geri bildirim gönderilemedi" });
+  await expect(hata).toBeVisible();
+  await expect(page.getByRole("radio", { name: "2", exact: true })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByLabel("Konu")).toHaveValue("hata");
+  await expect(aciklama).toHaveValue("Kaydetme sırasında bağlantı kesildi.");
+
+  await page.getByRole("button", { name: "Gönder", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Geri bildiriminiz kaydedildi.");
+  expect(deneme).toBe(2);
 });
 
 
@@ -294,7 +602,10 @@ test("stok tedarikçi seçimi tüm cari sayfalarını yükler", async ({ page })
   });
 
   await page.goto("/panel/stok/stok-1");
-  await page.getByRole("button", { name: /Tedarikçiler/ }).click();
+  const tedarikcilerSekmesi = page.getByRole("tab", { name: /Tedarikçiler/ });
+  await expect(tedarikcilerSekmesi).toHaveAttribute("aria-controls", "stok-detay-panel-tedarikciler");
+  await tedarikcilerSekmesi.click();
+  await expect(page.getByRole("tabpanel", { name: /Tedarikçiler/ })).toBeVisible();
   const cariSecimi = page.getByLabel("Cari");
   await expect(cariSecimi.locator("option", { hasText: "İkinci Sayfa Tedarikçi" })).toHaveCount(1);
   await expect(cariSecimi.locator("option", { hasText: "İlk Sayfa Tedarikçi" })).toHaveCount(1);

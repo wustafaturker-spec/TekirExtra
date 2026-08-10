@@ -410,17 +410,53 @@ Uzun formlardan ayrilirken kaydedilmemis degisiklik uyarisi verilmeli; otomatik
 taslak kaydi dusunulmelidir. Ancak otomatik kaydin kesinlestirme anlamina
 gelmedigi net olmalidir.
 
+Uygulama notu (9 Agustos 2026): Fatura formu yalniz gercek bir alan degisikligi
+varsa sayfa kapanisi, uygulama ici baglanti gecisi ve **Vazgec** eyleminde
+kayip uyarisi vermekte; reddedilen gecis formu korumakta, onayli vazgecme
+sonrasinda form varsayilan degerlerine temizlenmektedir.
+
 ---
 
 ## 10. Erisilebilirlik ve Cihaz Uyumu
 
 - Tum islemler klavyeyle tamamlanabilmelidir
+- Her sayfada tekrarlanan ana menu, klavyeyle gorunen bir **Ana icerige gec**
+  baglantisiyla atlanabilmelidir
 - Odak gostergeleri belirgin olmalidir
+- Isletim sisteminde azaltilmis hareket tercihi etkinse animasyon ve gecisler
+  kullaniciya zorlanmamalidir
 - Durumlar yalniz renkle anlatilmamalidir
+- Dekoratif ikon, avatar ve durum noktalari ekran okuyucudan gizlenmeli; yalniz
+  ikon kullanan kontroller acik bir erisilebilir ada sahip olmalidir
+- Acilir menu ve panel tetikleyicileri `aria-expanded` ile aciklik durumunu,
+  `aria-controls` ile kontrol ettikleri bolgeyi bildirmelidir
+- Mobil ana menu acildiginda odagi iceri almali, Tab odagini menu icinde
+  sinirlamali, Escape ile kapanmali ve odagi menu tetikleyicisine dondurmelidir
+- Bildirim paneli acildiginda odak panel icine alinmali; Escape ile kapandiginda
+  odak paneli acan masaustu veya mobil tetikleyiciye donmelidir
+- Radyo gruplari tek Tab duragi sunmali; ok, Home ve End tuslari secimle birlikte
+  odagi tasimalidir
 - Form alanlarinda kalici etiket bulunmalidir
+- Ortak form alanlarindaki gorunur etiketler programatik olarak input/select
+  kontrolleriyle iliskilendirilmelidir
+- Sekme gruplari `tablist`/`tab` rollerini ve secili durumu bildirmeli; sag-sol,
+  Home ve End tuslariyla gezilebilmelidir
+- Sekmeler `aria-controls` ile actiklari `tabpanel` bolgesine baglanmali; panel
+  de `aria-labelledby` ile sekme basligini erisilebilir ad olarak kullanmalidir
+- Bolumlu secim dugmeleri basili durumlarini `aria-pressed` ile bildirmelidir
+- Diyaloglar acildiginda odagi iceri almali, Tab odagini sinirlamali, Escape ile
+  kapanmali ve kapaninca odagi kendisini acan dugmeye geri vermelidir
 - Hata, ilgili alanin yaninda ve ekran okuyucuya uygun verilmelidir
+- Gecici gonderim hatalarinda kullanicinin girdigi veri korunmali ve ayni form
+  uzerinden yeniden denemeye izin verilmelidir
+- Islem hatalari kesintiye ugratan `alert`, basari bildirimleri ise nazik
+  `status` canli bolgesi olarak ekran okuyucuya duyurulmalidir
+- Fatura dogrulamasinda ilk hatali alana odaklanilmali; eksik cari ve urun
+  secimleri `aria-invalid` ve `aria-describedby` ile aciklanmalidir
 - Para ve tarih degerleri tutarli Turkce bicimde gosterilmelidir
 - Dokunmatik hedefler mobilde yeterli boyutta olmalidir
+- Temel mobil form kontrolleri ve eylemler en az 44 px dokunmatik hedef
+  yuksekligi sunmalidir
 - Fatura kalemleri, filtreler ve komut cubuklari dar ekranda birbirini
   ortmemelidir
 
@@ -899,6 +935,8 @@ uygulanmalidir.
 - Enter tusu uzun formu yanlislikla kesinlestirmemelidir.
 - Barkod okutma ve yeni satira gecme fare gerektirmemelidir.
 - Panel acildiginda odak iceri alinmali, kapaninca tetikleyiciye donmelidir.
+- Modal nitelikli hizli panellerde `Tab` ve `Shift+Tab` odagi panel sinirlari
+  icinde tutmali; `Escape` paneli kapatmalidir.
 - Ikon dugmelerinde tooltip ve erisilebilir ad bulunmalidir.
 
 ### 15.14 Yerlesim dogrulama yontemi
@@ -924,12 +962,37 @@ Her gorunumde su sorular yanitlanmalidir:
 Playwright ekran goruntuleriyle temel fatura, cari, stok, kasa/banka ve ekstre
 senaryolari icin gorsel regresyon kontrolleri CI surecine eklenmelidir.
 
-Uygulama notu (7 Agustos 2026): Playwright altyapisi ve CI adimi eklendi.
+Uygulama notu (9 Agustos 2026): Playwright altyapisi ve CI adimi eklendi.
 Kritik testler satis/satin alma baglam gecislerini ve panelden geri bildirim
 gonderme akisini dogrulamaktadir. Ayrica fatura, cari, stok, kasa/banka ve
 ekstre ekranlari 1440 x 900 masaustu ile 390 x 844 mobil gorunumde baslik
 gorunurlugu ve belge duzeyinde yatay tasma acisindan CI icinde denetlenmektedir.
-Piksel tabanli gorsel regresyon kapsamasi kademeli olarak genisletilecektir.
+Bu temel ekranlar ayrica 1280 x 720 kisa dizustu, 1024 x 768 tablet ve 360 x 800
+dar mobil boyutlarinda da ayni kontrollerden gecmektedir.
+Bu on kritik gorunum icin deterministik API verileriyle tam sayfa ekran
+goruntusu tabanlari da eklenmis; piksel farklari CI regresyonu olarak
+denetlenmeye baslanmistir. Buna ek olarak veri dolu satis faturasi listesi ile
+hatali e-Belge ayrinti paneli, banka ekstresi eslesme onerisi ve cari degistirme
+alani ile cari ve urun secilmis fatura formu ve acik satir ayrintisi masaustu
+ve mobil gorunumlerde kapsanmistir. Uzun unvan, bakiye, bloke cari, uzun urun
+adi, sifir stok ve fiyat degerleri iceren cari ve stok listeleri de ayni
+gorunumlerde denetlenmektedir. Kasa/banka hesap bakiyeleri, giris-cikis
+hareketleri ve doldurulmus tahsilat formu da masaustu ve mobil kapsamindadir.
+Yonetici ana panelindeki finansal ozet, gercek sayili is kuyruklari ve acik
+bildirim merkezi de masaustu ve mobil kapsamindadir. Diger veri dolu ve
+etkilesimli durumlarin piksel tabanli kapsamasi kademeli olarak
+genisletilecektir. Geri bildirim diyalogu da masaustu ve mobil referans
+goruntuleriyle form, gecici hata ve yeniden deneme sonrasi basarili gonderim
+durumlarinda korunmakta; mobil menuden acildiginda yan menu kapanmaktadir.
+
+Guncel otomasyon envanteri (9 Agustos 2026): 54 kritik is akisi senaryosu ile
+masaustu, mobil ve ara genisliklere acilan 19 responsive test calismaktadir.
+Gorsel regresyon paketi 55 deterministik PNG referansini guncellemesiz olarak
+karsilastirmaktadir. Tam kritik calismada 53 senaryo dogrudan gecmis, yeni
+`tab` semantigine uyarlanan son stok-tedarikci senaryosu da ayri tekrar
+calismasinda gecmistir; responsive pakette gizli atlama baglantisindan kaynakli
+iki gorsel fark duzeltildikten sonra ilgili dort masaustu/mobil kontrol de
+gecmistir.
 
 ### 15.15 Yerlesim uygulama onceligi
 

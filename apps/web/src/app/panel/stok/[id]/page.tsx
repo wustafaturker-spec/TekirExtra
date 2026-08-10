@@ -17,6 +17,7 @@ import {
   Select,
   Stat,
   StatGrid,
+  TabPanel,
   Tabs,
   TableWrap,
 } from "@/components/ui";
@@ -297,6 +298,8 @@ export default function StokDetaySayfasi() {
 
       <div style={{ margin: "1.25rem 0" }}>
         <Tabs<Sekme>
+          ariaLabel="Stok kartı bölümleri"
+          idPrefix="stok-detay"
           value={aktifSekme}
           onChange={setAktifSekme}
           items={[
@@ -313,28 +316,30 @@ export default function StokDetaySayfasi() {
       </div>
 
       {aktifSekme === "genel" && (
-        <GenelSekmesi
-          detay={detay}
-          kategoriler={kategoriler}
-          onKaydet={(govde) =>
-            islem(
-              () => api(`/stok/${id}`, { method: "PATCH", body: JSON.stringify(govde) }),
-              "Stok kartı güncellendi.",
-            )
-          }
-          onSil={
-            detay.izinliEylemler.includes("sil")
-              ? async () => {
-                  const ok = await islem(() => api(`/stok/${id}`, { method: "DELETE" }), "Stok kartı silindi.");
-                  if (ok) router.push("/panel/stok");
-                }
-              : undefined
-          }
-        />
+        <TabPanel idPrefix="stok-detay" value="genel">
+          <GenelSekmesi
+            detay={detay}
+            kategoriler={kategoriler}
+            onKaydet={(govde) =>
+              islem(
+                () => api(`/stok/${id}`, { method: "PATCH", body: JSON.stringify(govde) }),
+                "Stok kartı güncellendi.",
+              )
+            }
+            onSil={
+              detay.izinliEylemler.includes("sil")
+                ? async () => {
+                    const ok = await islem(() => api(`/stok/${id}`, { method: "DELETE" }), "Stok kartı silindi.");
+                    if (ok) router.push("/panel/stok");
+                  }
+                : undefined
+            }
+          />
+        </TabPanel>
       )}
 
       {aktifSekme === "hareketler" && (
-        <HareketlerSekmesi
+        <TabPanel idPrefix="stok-detay" value="hareketler"><HareketlerSekmesi
           detay={detay}
           hareketler={hareketler}
           onEkle={async (govde) => {
@@ -357,15 +362,15 @@ export default function StokDetaySayfasi() {
               return false;
             }
           }}
-        />
+        /></TabPanel>
       )}
 
       {aktifSekme === "depolar" && (
-        <DepolarSekmesi detay={detay} satirlar={depoBakiyeleri} />
+        <TabPanel idPrefix="stok-detay" value="depolar"><DepolarSekmesi detay={detay} satirlar={depoBakiyeleri} /></TabPanel>
       )}
 
       {aktifSekme === "birimler" && (
-        <BirimlerSekmesi
+        <TabPanel idPrefix="stok-detay" value="birimler"><BirimlerSekmesi
           detay={detay}
           onEkle={(govde) =>
             islem(
@@ -376,11 +381,11 @@ export default function StokDetaySayfasi() {
           onSil={(birimId) =>
             islem(() => api(`/stok/${id}/birimler/${birimId}`, { method: "DELETE" }), "Birim silindi.")
           }
-        />
+        /></TabPanel>
       )}
 
       {aktifSekme === "barkodlar" && (
-        <BarkodlarSekmesi
+        <TabPanel idPrefix="stok-detay" value="barkodlar"><BarkodlarSekmesi
           detay={detay}
           onEkle={(govde) =>
             islem(
@@ -392,11 +397,11 @@ export default function StokDetaySayfasi() {
             islem(() => api(`/stok/${id}/barkodlar/${barkodId}`, { method: "DELETE" }), "Barkod silindi.")
           }
           onHata={setHata}
-        />
+        /></TabPanel>
       )}
 
       {aktifSekme === "tedarikciler" && (
-        <TedarikcilerSekmesi
+        <TabPanel idPrefix="stok-detay" value="tedarikciler"><TedarikcilerSekmesi
           detay={detay}
           cariler={cariler}
           onEkle={(govde) =>
@@ -411,7 +416,7 @@ export default function StokDetaySayfasi() {
               "Tedarikçi bağlantısı silindi.",
             )
           }
-        />
+        /></TabPanel>
       )}
     </div>
   );

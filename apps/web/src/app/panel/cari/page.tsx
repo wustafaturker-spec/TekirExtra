@@ -693,6 +693,8 @@ export default function CariSayfasi() {
 
           <div style={{ marginTop: "1.25rem" }}>
             <Tabs<Sekme>
+              ariaLabel="Cari hesap bölümleri"
+              idPrefix="cari-detay"
               value={aktifSekme}
               onChange={setAktifSekme}
               items={[
@@ -706,7 +708,7 @@ export default function CariSayfasi() {
           </div>
 
           {aktifSekme === "genel" && (
-            <div>
+            <div aria-labelledby="cari-detay-tab-genel" id="cari-detay-panel-genel" role="tabpanel" tabIndex={0}>
               <StatGrid>
                 {(() => {
                   const bakiyeNum = Number(detay.bakiyeler.find((b) => b.dovizCinsi === "TRY")?.bakiye ?? "0.00");
@@ -789,7 +791,7 @@ export default function CariSayfasi() {
           )}
 
           {aktifSekme === "ekstre" && (
-            <Card>
+            <Card aria-labelledby="cari-detay-tab-ekstre" id="cari-detay-panel-ekstre" role="tabpanel" tabIndex={0}>
               <div className="card__title">📊 Cari Hesap Ekstresi</div>
               {!ekstre ? (
                 <p className="subtle" style={{ fontSize: "0.85rem" }}>Ekstre yükleniyor...</p>
@@ -830,7 +832,7 @@ export default function CariSayfasi() {
           )}
 
           {aktifSekme === "adresler" && (
-            <Card className="stack">
+            <Card aria-labelledby="cari-detay-tab-adresler" className="stack" id="cari-detay-panel-adresler" role="tabpanel" tabIndex={0}>
               <div className="card__title" style={{ margin: 0 }}>🏢 Adres Bilgileri</div>
               {detay.adresler && detay.adresler.length === 0 ? (
                 <p className="subtle" style={{ fontSize: "0.85rem", margin: 0 }}>Kayıtlı adres bilgisi yok.</p>
@@ -909,7 +911,7 @@ export default function CariSayfasi() {
           )}
 
           {aktifSekme === "kisiler" && (
-            <Card className="stack">
+            <Card aria-labelledby="cari-detay-tab-kisiler" className="stack" id="cari-detay-panel-kisiler" role="tabpanel" tabIndex={0}>
               <div className="card__title" style={{ margin: 0 }}>👥 İlgili Kişiler</div>
               {detay.kisiler && detay.kisiler.length === 0 ? (
                 <p className="subtle" style={{ fontSize: "0.85rem", margin: 0 }}>Kayıtlı ilgili kişi yok.</p>
@@ -952,7 +954,7 @@ export default function CariSayfasi() {
           )}
 
           {aktifSekme === "bankalar" && (
-            <Card className="stack">
+            <Card aria-labelledby="cari-detay-tab-bankalar" className="stack" id="cari-detay-panel-bankalar" role="tabpanel" tabIndex={0}>
               <div className="card__title" style={{ margin: 0 }}>🏦 Banka Hesapları</div>
               {detay.bankaHesaplari.length === 0 ? (
                 <p className="subtle" style={{ fontSize: "0.85rem", margin: 0 }}>Kayıtlı banka hesabı yok.</p>

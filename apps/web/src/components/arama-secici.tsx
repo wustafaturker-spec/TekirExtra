@@ -30,6 +30,8 @@ export function AramaSecici({
   placeholder = "Arayın ve seçin",
   bosMesaj = "Eşleşen kayıt bulunamadı.",
   ariaLabel,
+  ariaDescribedBy,
+  ariaInvalid,
   inputRef,
   onSecim,
   yeniKayit,
@@ -41,6 +43,8 @@ export function AramaSecici({
   placeholder?: string;
   bosMesaj?: string;
   ariaLabel: string;
+  ariaDescribedBy?: string;
+  ariaInvalid?: boolean;
   inputRef?: Ref<HTMLInputElement>;
   onSecim?: (deger: string) => void;
   yeniKayit?: { etiket: string; onClick: () => void };
@@ -133,13 +137,15 @@ export function AramaSecici({
 
   return (
     <div className="combobox" ref={kokRef}>
-      <div className={`combobox__control${acik ? " is-open" : ""}`}>
+      <div className={`combobox__control${acik ? " is-open" : ""}${ariaInvalid ? " is-invalid" : ""}`}>
         <span className="combobox__search" aria-hidden="true">⌕</span>
         <input
           aria-autocomplete="list"
           aria-controls={listeId}
           aria-expanded={acik}
           aria-label={ariaLabel}
+          aria-describedby={ariaDescribedBy}
+          aria-invalid={ariaInvalid || undefined}
           className="combobox__input"
           onChange={(event) => {
             setArama(event.target.value);

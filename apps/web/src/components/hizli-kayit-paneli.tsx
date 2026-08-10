@@ -12,15 +12,49 @@ export function HizliKayitPaneli({
   children: ReactNode;
 }) {
   const panelRef = useRef<HTMLElement>(null);
+  const onKapatRef = useRef(onKapat);
+  const oncekiOdakRef = useRef<HTMLElement | null>(
+    typeof document !== "undefined" && document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+  );
+  onKapatRef.current = onKapat;
 
   useEffect(() => {
-    panelRef.current?.querySelector<HTMLElement>("input, select, textarea")?.focus();
+    const odaklanabilirSecici = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const panel = panelRef.current;
+    (panel?.querySelector<HTMLElement>("input:not([disabled]), select:not([disabled]), textarea:not([disabled])") ?? panel)?.focus();
+
     function tus(event: KeyboardEvent) {
-      if (event.key === "Escape") onKapat();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onKapatRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !panel) return;
+      const odaklanabilirler = Array.from(panel.querySelectorAll<HTMLElement>(odaklanabilirSecici))
+        .filter((oge) => !oge.hasAttribute("hidden") && oge.getAttribute("aria-hidden") !== "true");
+      if (odaklanabilirler.length === 0) {
+        event.preventDefault();
+        panel.focus();
+        return;
+      }
+      const ilk = odaklanabilirler[0];
+      const son = odaklanabilirler[odaklanabilirler.length - 1];
+      if (event.shiftKey && (document.activeElement === ilk || !panel.contains(document.activeElement))) {
+        event.preventDefault();
+        son.focus();
+      } else if (!event.shiftKey && (document.activeElement === son || !panel.contains(document.activeElement))) {
+        event.preventDefault();
+        ilk.focus();
+      }
     }
     document.addEventListener("keydown", tus);
-    return () => document.removeEventListener("keydown", tus);
-  }, [onKapat]);
+    return () => {
+      document.removeEventListener("keydown", tus);
+      if (oncekiOdakRef.current?.isConnected) oncekiOdakRef.current.focus();
+    };
+  }, []);
 
   return (
     <div className="quick-panel-layer">

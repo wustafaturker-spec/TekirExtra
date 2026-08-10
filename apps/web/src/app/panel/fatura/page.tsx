@@ -138,6 +138,7 @@ const tl = (deger: string | number): string =>
   Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL";
 
 const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
+const KAYDEDILMEMIS_DEGISIKLIK_UYARISI = "Bu faturadaki kaydedilmemiş değişiklikler silinecek. Formdan ayrılmak istiyor musunuz?";
 
 export default function FaturaSayfasi() {
   const [faturalar, setFaturalar] = useState<Fatura[]>([]);
@@ -158,6 +159,7 @@ export default function FaturaSayfasi() {
   const [gorunumAdi, setGorunumAdi] = useState("");
   const [acikSatir, setAcikSatir] = useState<number | null>(null);
   const urunRefleri = useRef<Array<HTMLInputElement | null>>([]);
+  const cariRef = useRef<HTMLInputElement | null>(null);
   const faturaBaslangicRef = useRef<number | null>(null);
   const istenenFaturaImlecleri = useRef(new Set<string>());
   const faturaYuklemeSirasi = useRef(0);
@@ -177,6 +179,8 @@ export default function FaturaSayfasi() {
   const [ebelgeDetayi, setEbelgeDetayi] = useState<FaturaDetay | null>(null);
   const [odemeDetayi, setOdemeDetayi] = useState<FaturaDetay | null>(null);
   const [sonrakiFaturaImleci, setSonrakiFaturaImleci] = useState<string | null>(null);
+  const [cariDogrulamaHatasi, setCariDogrulamaHatasi] = useState("");
+  const [satirDogrulamaHatalari, setSatirDogrulamaHatalari] = useState<number[]>([]);
   const [faturaListesiYukleniyor, setFaturaListesiYukleniyor] = useState(false);
   const [faturaFiltreleriHazir, setFaturaFiltreleriHazir] = useState(false);
 
@@ -189,6 +193,37 @@ export default function FaturaSayfasi() {
   const [satirlar, setSatirlar] = useState<FaturaSatir[]>([
     { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" },
   ]);
+  const bugun = new Date().toISOString().substring(0, 10);
+  const formKirli = formAcik && (
+    cariId !== "" || depoId !== "" || tip !== (yonBaglami ?? "satis") || tarih !== bugun
+    || satirlar.length !== 1
+    || satirlar.some((satir) => satir.stokId !== "" || satir.miktar !== 1 || satir.birimFiyat !== 0 || satir.iskontoOrani !== 0 || satir.kdvOrani !== 20 || Boolean(satir.gibIstisnaKodu))
+  );
+
+  useEffect(() => {
+    if (!formKirli) return;
+    const ayrilmayiEngelle = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    const uygulamaIciGecisiKoru = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const baglanti = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+      if (!baglanti || baglanti.target === "_blank" || baglanti.hasAttribute("download")) return;
+      const hedef = new URL(baglanti.href, window.location.href);
+      if (hedef.origin !== window.location.origin || hedef.href === window.location.href) return;
+      if (!window.confirm(KAYDEDILMEMIS_DEGISIKLIK_UYARISI)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    window.addEventListener("beforeunload", ayrilmayiEngelle);
+    document.addEventListener("click", uygulamaIciGecisiKoru, true);
+    return () => {
+      window.removeEventListener("beforeunload", ayrilmayiEngelle);
+      document.removeEventListener("click", uygulamaIciGecisiKoru, true);
+    };
+  }, [formKirli]);
 
   // Önizleme hesaplamaları
   const girdiSatirlar: FaturaHesaplaSatirGirdi[] = satirlar.map((s) => ({
@@ -288,8 +323,18 @@ export default function FaturaSayfasi() {
     setKayitliGorunumler(gorunumler); localStorage.setItem(GORUNUM_ANAHTARI, JSON.stringify(gorunumler));
   }
   function gorunumUygula(gorunum: KayitliGorunum) { filtreleriUygula(gorunum); kullanimOlayi("gorunum_kullanildi"); }
+  function formuSifirla() {
+    setCariId(""); setCariOzeti(null); setDepoId(""); setTip(yonBaglami ?? "satis"); setTarih(new Date().toISOString().substring(0, 10));
+    setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" }]); setAcikSatir(null);
+    setCariDogrulamaHatasi(""); setSatirDogrulamaHatalari([]);
+  }
+
   function faturaFormunuAcKapat() {
-    if (formAcik) { if (faturaBaslangicRef.current !== null) kullanimOlayi("fatura_form_terk", Date.now() - faturaBaslangicRef.current); faturaBaslangicRef.current = null; setFormAcik(false); return; }
+    if (formAcik) {
+      if (formKirli && !window.confirm(KAYDEDILMEMIS_DEGISIKLIK_UYARISI)) return;
+      if (faturaBaslangicRef.current !== null) kullanimOlayi("fatura_form_terk", Date.now() - faturaBaslangicRef.current);
+      faturaBaslangicRef.current = null; setFormAcik(false); formuSifirla(); return;
+    }
     faturaBaslangicRef.current = Date.now(); kullanimOlayi("fatura_form_acildi"); setFormAcik(true);
   }
 
@@ -455,16 +500,13 @@ export default function FaturaSayfasi() {
     setHata("");
     setBasari("");
 
-    if (!cariId) {
-      setHata("Lütfen bir cari hesap seçin.");
+    const eksikSatirlar = satirlar.flatMap((satir, index) => satir.stokId ? [] : [index]);
+    setCariDogrulamaHatasi(cariId ? "" : "Faturayı kaydetmek için müşteri veya tedarikçi seçin.");
+    setSatirDogrulamaHatalari(eksikSatirlar);
+    if (!cariId || eksikSatirlar.length > 0) {
+      setHata(!cariId ? "Lütfen bir cari hesap seçin." : "Lütfen tüm satırlarda ürün/hizmet seçimi yapın.");
       kullanimOlayi("fatura_dogrulama_hatasi");
-      return;
-    }
-
-    const eksikStok = satirlar.some((s) => !s.stokId);
-    if (eksikStok) {
-      setHata("Lütfen tüm satırlarda ürün/hizmet seçimi yapın.");
-      kullanimOlayi("fatura_dogrulama_hatasi");
+      requestAnimationFrame(() => (!cariId ? cariRef.current : urunRefleri.current[eksikSatirlar[0]])?.focus());
       return;
     }
 
@@ -493,8 +535,7 @@ export default function FaturaSayfasi() {
       kullanimOlayi("fatura_tamamlandi", faturaBaslangicRef.current === null ? undefined : Date.now() - faturaBaslangicRef.current);
       faturaBaslangicRef.current = null;
       setFormAcik(false);
-      setCariId("");
-      setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" }]);
+      formuSifirla();
       void yukle();
     } catch (h) {
       kullanimOlayi("fatura_dogrulama_hatasi");
@@ -750,9 +791,12 @@ export default function FaturaSayfasi() {
               <Field label={tip === "alis" ? "Tedarikçi" : "Müşteri"}>
                 <AramaSecici
                   ariaLabel={tip === "alis" ? "Tedarikçi ara" : "Müşteri ara"}
+                  ariaDescribedBy={cariDogrulamaHatasi ? "fatura-cari-hatasi" : undefined}
+                  ariaInvalid={Boolean(cariDogrulamaHatasi)}
                   deger={cariId}
+                  inputRef={cariRef}
                   kullanimAnahtari="tekir_son_cariler"
-                  onChange={setCariId}
+                  onChange={(deger) => { setCariId(deger); if (deger) setCariDogrulamaHatasi(""); }}
                   placeholder="Ünvan, cari kodu veya VKN ile ara"
                   yeniKayit={{
                     etiket: tip === "alis" ? "Yeni tedarikçi oluştur" : "Yeni müşteri oluştur",
@@ -765,6 +809,7 @@ export default function FaturaSayfasi() {
                     aramaMetni: [cari.kod, cari.vknTckn, cari.telefon].filter(Boolean).join(" "),
                   }))}
                 />
+                {cariDogrulamaHatasi && <p className="field-error" id="fatura-cari-hatasi" role="alert">{cariDogrulamaHatasi}</p>}
               </Field>
               <Field label="Fatura Tipi">
                 <Select aria-label="Fatura Tipi" value={tip} onChange={(e) => { setTip(e.target.value); setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 }]); }}>
@@ -774,7 +819,7 @@ export default function FaturaSayfasi() {
                 </Select>
               </Field>
               <Field label="Fatura Tarihi">
-                <Input type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} required />
+                <Input aria-label="Fatura Tarihi" type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} required />
               </Field>
               <div>
                 <DepoSecici deger={depoId} onChange={setDepoId} />
@@ -827,10 +872,12 @@ export default function FaturaSayfasi() {
                       <td className="invoice-line__product">
                         <AramaSecici
                           ariaLabel={`${index + 1}. satır ürün veya hizmet seçimi`}
+                          ariaDescribedBy={satirDogrulamaHatalari.includes(index) ? `fatura-satir-${index}-hatasi` : undefined}
+                          ariaInvalid={satirDogrulamaHatalari.includes(index)}
                           deger={s.stokId}
                           kullanimAnahtari="tekir_son_urunler"
                           inputRef={(eleman) => { urunRefleri.current[index] = eleman; }}
-                          onChange={(deger) => urunSec(index, deger)}
+                          onChange={(deger) => { urunSec(index, deger); if (deger) setSatirDogrulamaHatalari((hatalar) => hatalar.filter((satirIndex) => satirIndex !== index)); }}
                           onSecim={(deger) => requestAnimationFrame(() => {
                             if (s.stokId === deger) urunRefleri.current[index]?.focus();
                             else miktarRefleri.current[index]?.focus();
@@ -855,6 +902,7 @@ export default function FaturaSayfasi() {
                             aramaMetni: [stok.kod, stok.barkod, ...(stok.tedarikciUrunKodlari ?? [])].filter(Boolean).join(" "),
                           }))}
                         />
+                        {satirDogrulamaHatalari.includes(index) && <p className="field-error" id={`fatura-satir-${index}-hatasi`} role="alert">Bu satır için ürün veya hizmet seçin.</p>}
                         {seciliStok && (
                           <span className={`document-line-stock${stokYetersiz ? " is-warning" : ""}`}>
                             {stokYetersiz

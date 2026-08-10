@@ -74,7 +74,7 @@ export function CalismaAlani({
         <div className="queue-list">
           {kuyruklar.map((kuyruk) => (
             <Link className="queue-row" href={kuyruk.href} key={kuyruk.baslik}>
-              <span className={`queue-row__status is-${kuyruk.ton ?? "default"}`} />
+              <span aria-hidden="true" className={`queue-row__status is-${kuyruk.ton ?? "default"}`} />
               <span className="queue-row__body">
                 <strong>{kuyruk.baslik}</strong>
                 <small>{kuyruk.aciklama}</small>

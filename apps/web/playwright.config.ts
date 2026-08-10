@@ -2,6 +2,9 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
+  expect: {
+    toHaveScreenshot: { maxDiffPixels: 100 },
+  },
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,
