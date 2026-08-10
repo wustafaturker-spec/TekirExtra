@@ -109,7 +109,7 @@ export class PazaryeriService {
   async stokFiyatSenkronizeEt(baglantiId?: string) {
     const { tenantId } = aktifBaglam();
     const baglantilar = await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.findMany({
-      where: { aile: "pazaryeri", durum: "aktif", saglayici: { in: ["trendyol", "hepsiburada"] }, ...(baglantiId ? { id: baglantiId } : {}) },
+      where: { aile: "pazaryeri", durum: "aktif", saglayici: { in: ["trendyol", "hepsiburada", "n11"] }, ...(baglantiId ? { id: baglantiId } : {}) },
     }));
     if (baglantiId && !baglantilar.length) throw new NotFoundException("Stok/fiyat destekli aktif pazaryeri bağlantısı bulunamadı");
     const stoklar = await this.prisma.tenantIslem(tenantId, (tx) => tx.stokKart.findMany({
@@ -125,7 +125,7 @@ export class PazaryeriService {
       try {
         const config = JSON.parse(coz(baglanti.sifreliConfig)) as PazaryeriConfig;
         const gecerli = kalemler.filter((k) => k.fiyat > 0 && (baglanti.saglayici !== "trendyol" || k.barkod));
-        const adapter = baglanti.saglayici === "trendyol" ? new TrendyolAdapter() : new HepsiburadaAdapter();
+        const adapter = baglanti.saglayici === "trendyol" ? new TrendyolAdapter() : baglanti.saglayici === "hepsiburada" ? new HepsiburadaAdapter() : new N11Adapter();
         const sonuc = await adapter.stokFiyatGonder(config, gecerli);
         sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, ...sonuc, atlanan: kalemler.length - gecerli.length });
       } catch (hata) {

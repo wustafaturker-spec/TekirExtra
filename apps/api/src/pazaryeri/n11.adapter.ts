@@ -1,6 +1,23 @@
-import type { NormalizeSiparis, PazaryeriConfig } from "./trendyol.adapter";
+import type { NormalizeSiparis, PazaryeriConfig, PazaryeriStokFiyat } from "./trendyol.adapter";
 
 export class N11Adapter {
+  async stokFiyatGonder(config: PazaryeriConfig, kalemler: PazaryeriStokFiyat[]): Promise<{ gonderilen: number; islemIdleri: string[] }> {
+    if (!config.parola) throw new Error("N11 app key ve app secret zorunludur");
+    const islemIdleri: string[] = [];
+    for (let baslangic = 0; baslangic < kalemler.length; baslangic += 1000) {
+      const parca = kalemler.slice(baslangic, baslangic + 1000);
+      const yanit = await fetch("https://api.n11.com/ms/product/tasks/price-stock-update", {
+        method: "POST", headers: { appkey: config.kullaniciAdi, appsecret: config.parola, "Content-Type": "application/json", Accept: "application/json", "User-Agent": "TekirExtra/1.0" },
+        body: JSON.stringify({ payload: { integrator: "TekirExtra", skus: parca.map((k) => ({ stockCode: k.sku, listPrice: Number(k.fiyat.toFixed(2)), salePrice: Number(k.fiyat.toFixed(2)), quantity: Math.max(0, Math.floor(k.miktar)), currencyType: "TL" })) } }),
+      });
+      if (!yanit.ok) throw new Error(`N11 stok/fiyat servisi HTTP ${yanit.status}`);
+      const veri = await yanit.json() as { id?: string | number; status?: string; reasons?: string[] };
+      if (!veri.id || veri.status === "REJECT") throw new Error(`N11 stok/fiyat işlemi reddedildi${veri.reasons?.length ? `: ${veri.reasons.join("; ")}` : ""}`);
+      islemIdleri.push(String(veri.id));
+    }
+    return { gonderilen: kalemler.length, islemIdleri };
+  }
+
   async siparisleriCek(config: PazaryeriConfig, imlec?: string | null): Promise<{ siparisler: NormalizeSiparis[]; sonrakiImlec: string | null }> {
     if (!config.kullaniciAdi || !config.parola) throw new Error("N11 appkey ve appsecret zorunludur");
     const page = Math.max(0, Number(imlec ?? 0) || 0);
