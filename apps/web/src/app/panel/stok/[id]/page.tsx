@@ -100,6 +100,7 @@ interface StokDetay {
   kullanilabilirMiktar: string;
   ortalamaMaliyet: string;
   aktif: boolean;
+  takipTipi?: "yok" | "lot" | "seri";
   kategori: Kategori | null;
   birimler: Birim[];
   barkodlar: Barkod[];
@@ -114,7 +115,9 @@ interface CariOzet {
   unvan: string;
 }
 
-type Sekme = "genel" | "hareketler" | "depolar" | "varyantlar" | "birimler" | "barkodlar" | "tedarikciler";
+type Sekme = "genel" | "hareketler" | "depolar" | "varyantlar" | "partiler" | "birimler" | "barkodlar" | "tedarikciler";
+
+interface Parti { id: string; lotNo: string; seriNo: string | null; sonKullanmaTarihi: string | null; uretimTarihi: string | null; ilkMiktar: string; kalanMiktar: string; depo: { ad: string }; varyant: { kod: string; ad: string } | null }
 
 /** Stok kartının depo bazlı kırılımı (STK-07). */
 interface DepoBakiyeSatiri {
@@ -178,6 +181,7 @@ export default function StokDetaySayfasi() {
   const [detay, setDetay] = useState<StokDetay | null>(null);
   const [hareketler, setHareketler] = useState<Hareket[]>([]);
   const [depoBakiyeleri, setDepoBakiyeleri] = useState<DepoBakiyeSatiri[]>([]);
+  const [partiler, setPartiler] = useState<Parti[]>([]);
   const [kategoriler, setKategoriler] = useState<Kategori[]>([]);
   const [cariler, setCariler] = useState<CariOzet[]>([]);
   const [aktifSekme, setAktifSekme] = useState<Sekme>("genel");
@@ -210,15 +214,17 @@ export default function StokDetaySayfasi() {
       setDepoBakiyeleri([]);
     }
   }, [id]);
+  const partileriYukle = useCallback(async () => { try { const veri = await api<Parti[]>(`/stok/${id}/partiler`); setPartiler(Array.isArray(veri) ? veri : []); } catch { setPartiler([]); } }, [id]);
 
   useEffect(() => {
     if (!tokenAl()) return;
     void yukle();
     void hareketleriYukle();
     void depoBakiyeleriYukle();
+    void partileriYukle();
     void api<Kategori[]>("/stok/kategoriler").then(setKategoriler).catch(() => {});
     void tumSayfalariAl<CariOzet>("/cari").then(setCariler).catch(() => {});
-  }, [yukle, hareketleriYukle, depoBakiyeleriYukle]);
+  }, [yukle, hareketleriYukle, depoBakiyeleriYukle, partileriYukle]);
 
   /** Alt kayıt ekleme/silme sonrası ortak akış. */
   async function islem(calistir: () => Promise<unknown>, basariMesaji: string) {
@@ -313,6 +319,7 @@ export default function StokDetaySayfasi() {
               : []),
             { deger: "birimler", baslik: `Birimler (${detay.birimler.length})` },
             { deger: "varyantlar", baslik: `Varyantlar (${detay.varyantlar?.length ?? 0})` },
+            ...((detay.takipTipi ?? "yok") !== "yok" ? [{ deger: "partiler" as Sekme, baslik: `Seri / Lot (${partiler.length})` }] : []),
             { deger: "barkodlar", baslik: `Barkodlar (${detay.barkodlar.length})` },
             { deger: "tedarikciler", baslik: `Tedarikçiler (${detay.tedarikciler.length})` },
           ]}
@@ -360,6 +367,7 @@ export default function StokDetaySayfasi() {
               await yukle();
               await hareketleriYukle();
               await depoBakiyeleriYukle();
+              await partileriYukle();
               return true;
             } catch (h) {
               setHata(h instanceof Error ? h.message : "Hareket işlenemedi");
@@ -391,6 +399,7 @@ export default function StokDetaySayfasi() {
       {aktifSekme === "varyantlar" && (
         <TabPanel idPrefix="stok-detay" value="varyantlar"><VaryantlarSekmesi detay={detay} onIslem={islem} /></TabPanel>
       )}
+      {aktifSekme === "partiler" && <TabPanel idPrefix="stok-detay" value="partiler"><PartilerSekmesi detay={detay} partiler={partiler} /></TabPanel>}
 
       {aktifSekme === "barkodlar" && (
         <TabPanel idPrefix="stok-detay" value="barkodlar"><BarkodlarSekmesi
@@ -463,6 +472,7 @@ function GenelSekmesi({
     guvenlikStogu: detay.guvenlikStogu ?? "",
     tedarikSuresiGun: detay.tedarikSuresiGun?.toString() ?? "",
     aktif: detay.aktif,
+    takipTipi: detay.takipTipi ?? "yok",
   });
 
   const alan = (k: keyof typeof form) => ({
@@ -493,6 +503,7 @@ function GenelSekmesi({
       guvenlikStogu: bosNull(form.guvenlikStogu),
       tedarikSuresiGun: form.tedarikSuresiGun.trim() === "" ? null : Number(form.tedarikSuresiGun),
       aktif: form.aktif,
+      takipTipi: form.takipTipi,
     });
   }
 
@@ -543,6 +554,10 @@ function GenelSekmesi({
 
       <Field label="Açıklama">
         <Input {...alan("aciklama")} placeholder="Serbest not" />
+      </Field>
+
+      <Field label="Seri / lot takibi">
+        <Select {...alan("takipTipi")}><option value="yok">Takip yok</option><option value="lot">Lot / parti ve son kullanma tarihi</option><option value="seri">Tekil seri numarası</option></Select>
       </Field>
 
       <div className="row">
@@ -704,6 +719,10 @@ function DepolarSekmesi({
   );
 }
 
+function PartilerSekmesi({ detay, partiler }: { detay: StokDetay; partiler: Parti[] }) {
+  return <Card title="Seri / Lot izlenebilirliği"><p className="muted">Çıkışlar son kullanma tarihi en yakın partiden (FEFO) otomatik karşılanır.</p><TableWrap><table><thead><tr><th>Lot / Seri</th><th>Varyant</th><th>Depo</th><th>Üretim</th><th>Son kullanma</th><th>Giren</th><th>Kalan</th></tr></thead><tbody>{partiler.map((p) => <tr key={p.id}><td><strong>{p.lotNo}</strong>{p.seriNo && <><br /><small>{p.seriNo}</small></>}</td><td>{p.varyant ? `${p.varyant.kod} — ${p.varyant.ad}` : "—"}</td><td>{p.depo.ad}</td><td>{p.uretimTarihi?.slice(0, 10) ?? "—"}</td><td>{p.sonKullanmaTarihi?.slice(0, 10) ?? "—"}</td><td>{adet(p.ilkMiktar)} {detay.anaBirim}</td><td><strong>{adet(p.kalanMiktar)} {detay.anaBirim}</strong></td></tr>)}{!partiler.length && <tr><td colSpan={7}>Henüz seri/lot girişi yok.</td></tr>}</tbody></table></TableWrap></Card>;
+}
+
 function VaryantlarSekmesi({ detay, onIslem }: { detay: StokDetay; onIslem: (islem: () => Promise<unknown>, mesaj: string) => Promise<boolean> }) {
   const [form, setForm] = useState({ kod: "", ad: "", nitelikler: "", barkod: "", alisFiyati: "", satisFiyati: "" });
   async function ekle(e: React.FormEvent) {
@@ -734,6 +753,10 @@ function HareketlerSekmesi({
   const [aciklama, setAciklama] = useState("");
   const [depoId, setDepoId] = useState("");
   const [varyantId, setVaryantId] = useState("");
+  const [lotNo, setLotNo] = useState("");
+  const [seriNolar, setSeriNolar] = useState("");
+  const [sonKullanmaTarihi, setSonKullanmaTarihi] = useState("");
+  const [uretimTarihi, setUretimTarihi] = useState("");
 
   /** Seçili birimin ana birim karşılığı; ana birim için katsayı 1. */
   const katsayi =
@@ -743,6 +766,11 @@ function HareketlerSekmesi({
   const anaBirimMiktar = girilenMiktar ? Number(girilenMiktar) * katsayi : 0;
 
   async function kaydet() {
+    const girisMi = HAREKET_TIPLERI.find((h) => h.deger === tip)?.yon === "giris";
+    const seriler = seriNolar.split(/[\n,;]/).map((s) => s.trim()).filter(Boolean);
+    const partiler = !girisMi || (detay.takipTipi ?? "yok") === "yok" ? [] : detay.takipTipi === "seri"
+      ? seriler.map((seriNo) => ({ lotNo: lotNo || seriNo, seriNo, sonKullanmaTarihi: sonKullanmaTarihi || null, uretimTarihi: uretimTarihi || null, miktar: "1" }))
+      : [{ lotNo, seriNo: null, sonKullanmaTarihi: sonKullanmaTarihi || null, uretimTarihi: uretimTarihi || null, miktar: anaBirimMiktar.toFixed(3) }];
     const eklendi = await onEkle({
       stokId: detay.id,
       varyantId: varyantId || null,
@@ -755,6 +783,7 @@ function HareketlerSekmesi({
       maliyet: (maliyet || "0").toString(),
       tarih,
       aciklama: aciklama.trim() === "" ? null : aciklama.trim(),
+      partiler,
     });
     if (eklendi) {
       setGirilenMiktar("");
@@ -780,6 +809,7 @@ function HareketlerSekmesi({
 
         {formAcik && (
           <div className="stack" style={{ marginTop: "1rem" }}>
+            {(detay.takipTipi ?? "yok") !== "yok" && HAREKET_TIPLERI.find((h) => h.deger === tip)?.yon === "giris" && <div className="row"><div style={{ flex: 1, minWidth: 160 }}><Field label="Lot / Parti No"><Input required value={lotNo} onChange={(e) => setLotNo(e.target.value)} /></Field></div>{detay.takipTipi === "seri" && <div style={{ flex: 2, minWidth: 240 }}><Field label="Seri numaraları (virgülle)"><Input required value={seriNolar} onChange={(e) => setSeriNolar(e.target.value)} placeholder="SN001, SN002" /></Field></div>}<div style={{ flex: 1, minWidth: 160 }}><Field label="Üretim tarihi"><Input type="date" value={uretimTarihi} onChange={(e) => setUretimTarihi(e.target.value)} /></Field></div><div style={{ flex: 1, minWidth: 160 }}><Field label="Son kullanma"><Input type="date" value={sonKullanmaTarihi} onChange={(e) => setSonKullanmaTarihi(e.target.value)} /></Field></div></div>}
             <div className="row">
               {(detay.varyantlar?.length ?? 0) > 0 && <div style={{ flex: 1, minWidth: 170 }}><Field label="Varyant"><Select required value={varyantId} onChange={(e) => setVaryantId(e.target.value)}><option value="">Seçin</option>{(detay.varyantlar ?? []).filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad}</option>)}</Select></Field></div>}
               <div style={{ flex: 1, minWidth: 170 }}>

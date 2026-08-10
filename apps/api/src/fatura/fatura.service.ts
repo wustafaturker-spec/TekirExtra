@@ -156,7 +156,7 @@ export class FaturaService {
             }});
             for (const satir of s.satirlar) {
               const { id: _id, faturaId: _faturaId, ...veri } = satir;
-              await tx.faturaSatir.create({ data: { ...veri, id: undefined, faturaId: yeni.id } });
+              await tx.faturaSatir.create({ data: { ...veri, partiBilgileri: veri.partiBilgileri === null ? Prisma.JsonNull : veri.partiBilgileri as Prisma.InputJsonValue, id: undefined, faturaId: yeni.id } });
             }
             uretilenIds.push(yeni.id);
             planUretimAdedi += 1;
@@ -330,6 +330,7 @@ export class FaturaService {
         stokId: s.stokId,
         varyantId: s.varyantId,
         varyant: s.varyant,
+        partiBilgileri: s.partiBilgileri,
         stokKod: s.stok.kod,
         stokAd: s.stok.ad,
         miktar: s.miktar.toFixed(3),
@@ -434,6 +435,7 @@ export class FaturaService {
             faturaId: fatura.id,
             stokId: s.stokId,
             varyantId: orijinalSatir.varyantId,
+            partiBilgileri: orijinalSatir.partiBilgileri,
             miktar: D(s.miktar),
             birim: orijinalSatir.birim ?? "adet",
             birimFiyat: D(s.birimFiyat),
@@ -483,6 +485,7 @@ export class FaturaService {
         fatura.satirlar.map((s) => ({
           stokId: s.stokId,
           varyantId: s.varyantId,
+          partiBilgileri: s.partiBilgileri as z.infer<typeof faturaOlusturSemasi>["satirlar"][number]["partiBilgileri"],
           miktar: s.miktar,
           birim: s.birim,
           birimFiyat: s.birimFiyat,
@@ -530,6 +533,7 @@ export class FaturaService {
             faturaId: id,
             stokId: s.stokId,
             varyantId: orijinalSatir.varyantId,
+            partiBilgileri: orijinalSatir.partiBilgileri,
             miktar: D(s.miktar),
             birim: orijinalSatir.birim ?? "adet",
             birimFiyat: D(s.birimFiyat),
@@ -642,6 +646,7 @@ export class FaturaService {
             faturaId: yeni.id,
             stokId: s.stokId,
             varyantId: s.varyantId,
+            partiBilgileri: s.partiBilgileri ?? Prisma.JsonNull,
             miktar: s.miktar,
             birim: s.birim,
             birimFiyat: s.birimFiyat,
@@ -714,6 +719,7 @@ export class FaturaService {
             faturaId: kopya.id,
             stokId: s.stokId,
             varyantId: s.varyantId,
+            partiBilgileri: s.partiBilgileri ?? Prisma.JsonNull,
             miktar: s.miktar,
             birim: s.birim,
             birimFiyat: s.birimFiyat,
@@ -873,6 +879,7 @@ export class FaturaService {
             aciklama: `${faturaNo || fatura.id} nolu fatura hareketi`,
             kaynakTur: "fatura",
             kaynakRef: fatura.id,
+            partiler: this.partiBilgileriniOku(s.partiBilgileri),
           });
           // Eksi stok politikası "uyar" ise kesinleştirme sürer, uyarı döner (STK-17)
           if (hareketSonucu.eksiStokUyarisi) {
@@ -1023,6 +1030,16 @@ export class FaturaService {
   }
 
   // ─── PRIVATE YARDIMCILAR ──────────────────────────────────────────────────
+
+  private partiBilgileriniOku(deger: Prisma.JsonValue | null) {
+    if (!Array.isArray(deger)) return [];
+    return deger.flatMap((p) => {
+      if (!p || typeof p !== "object" || Array.isArray(p)) return [];
+      const kayit = p as Record<string, Prisma.JsonValue>;
+      if (typeof kayit.lotNo !== "string" || typeof kayit.miktar !== "string") return [];
+      return [{ lotNo: kayit.lotNo, seriNo: typeof kayit.seriNo === "string" ? kayit.seriNo : null, sonKullanmaTarihi: typeof kayit.sonKullanmaTarihi === "string" ? kayit.sonKullanmaTarihi : null, uretimTarihi: typeof kayit.uretimTarihi === "string" ? kayit.uretimTarihi : null, miktar: D(kayit.miktar) }];
+    });
+  }
 
   private hesaplaFatura(girdi: {
     satirlar: {

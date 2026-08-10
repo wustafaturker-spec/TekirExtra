@@ -51,4 +51,22 @@ describe("StokService arama", () => {
       birimMaliyet: new Prisma.Decimal(10), tarih: new Date("2026-08-10"),
     })).rejects.toThrow("Varyant bu stok kartına ait değil");
   });
+
+  it("parti çıkışını FEFO sırasıyla tahsis eder", async () => {
+    const servis = new StokService({} as any, {} as any, {} as any);
+    const erken = { id: "p1", lotNo: "LOT-ERKEN", seriNo: null, sonKullanmaTarihi: new Date("2026-09-01"), uretimTarihi: null, kalanMiktar: new Prisma.Decimal(2), createdAt: new Date() };
+    const gec = { ...erken, id: "p2", lotNo: "LOT-GEC", sonKullanmaTarihi: new Date("2026-12-01"), kalanMiktar: new Prisma.Decimal(5) };
+    const update = vi.fn().mockResolvedValue({});
+    const create = vi.fn().mockResolvedValue({});
+    const tx = { stokParti: { findMany: vi.fn().mockResolvedValue([erken, gec]), update }, stokHareketParti: { create } } as any;
+
+    const sonuc = await (servis as any).partiTahsisEt(tx, "lot", "h1", {
+      stokId: "s1", varyantId: null, depoId: "d1", miktarDegisimi: new Prisma.Decimal(-3), partiler: [],
+    });
+
+    expect(sonuc.map((p: { lotNo: string; miktar: Prisma.Decimal }) => [p.lotNo, p.miktar.toString()])).toEqual([["LOT-ERKEN", "2"], ["LOT-GEC", "1"]]);
+    expect(update).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: { id: "p1" } }));
+    expect(update).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: { id: "p2" } }));
+    expect(create).toHaveBeenCalledTimes(2);
+  });
 });

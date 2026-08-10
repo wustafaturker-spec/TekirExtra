@@ -314,6 +314,11 @@ export class StokController {
     return this.stokService.hareketListele(id, depoId);
   }
 
+  @Get(":id/partiler")
+  async partiListele(@Param("id") id: string, @Query("varyantId") varyantId?: string, @Query("depoId") depoId?: string, @Query("stokta") stokta?: string) {
+    return this.stokService.partiListele(id, varyantId, depoId, stokta === "1" || stokta === "true");
+  }
+
   /** Depo bazlı bakiye kırılımı (STK-07). */
   @Get(":id/depo-bakiyeleri")
   async depoKirilimi(@Param("id") id: string) {
@@ -348,6 +353,7 @@ export class StokController {
         birimMaliyet: D(girdi.maliyet),
         tarih: new Date(girdi.tarih),
         aciklama: girdi.aciklama,
+        partiler: girdi.partiler.map((p) => ({ ...p, miktar: D(p.miktar) })),
       }),
     );
   }

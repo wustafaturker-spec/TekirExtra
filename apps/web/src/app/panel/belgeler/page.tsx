@@ -46,7 +46,7 @@ interface BelgeGorunumu {
 const GORUNUM_ANAHTARI = "tekir_belge_gorunumleri";
 
 interface Cari { id: string; kod?: string; unvan: string; vknTckn?: string | null; telefon?: string | null }
-interface Stok { id: string; kod: string; ad: string; tedarikciUrunKodlari?: string[] }
+interface Stok { id: string; kod: string; ad: string; tedarikciUrunKodlari?: string[]; takipTipi?: "yok" | "lot" | "seri" }
 interface StokVaryant { id: string; kod: string; ad: string; aktif: boolean; mevcutMiktar: string }
 
 interface BelgeSatirForm {
@@ -56,6 +56,7 @@ interface BelgeSatirForm {
   birimFiyat: number;
   iskontoOrani: number;
   kdvOrani: number;
+  lotNo?: string; seriNolar?: string; sonKullanmaTarihi?: string; uretimTarihi?: string;
 }
 
 interface Belge {
@@ -315,6 +316,7 @@ export default function BelgelerSayfasi() {
             birimFiyat: String(s.birimFiyat),
             iskontoOrani: String(s.iskontoOrani),
             kdvOrani: String(s.kdvOrani),
+            partiBilgileri: (() => { const stok = stoklar.find((x) => x.id === s.stokId); if (yon !== "alis" || !stok?.takipTipi || stok.takipTipi === "yok") return []; if (stok.takipTipi === "seri") return (s.seriNolar ?? "").split(/[\n,;]/).map((x) => x.trim()).filter(Boolean).map((seriNo) => ({ lotNo: s.lotNo || seriNo, seriNo, sonKullanmaTarihi: s.sonKullanmaTarihi || null, uretimTarihi: s.uretimTarihi || null, miktar: "1" })); return [{ lotNo: s.lotNo ?? "", seriNo: null, sonKullanmaTarihi: s.sonKullanmaTarihi || null, uretimTarihi: s.uretimTarihi || null, miktar: String(s.miktar) }]; })(),
           })),
         }),
       });
@@ -615,6 +617,7 @@ export default function BelgelerSayfasi() {
                         }))}
                       />
                       {(stokVaryantlari[s.stokId]?.length ?? 0) > 0 && <Select aria-label="Varyant" required value={s.varyantId ?? ""} onChange={(e) => { const yeni = [...satirlar]; yeni[i] = { ...s, varyantId: e.target.value }; setSatirlar(yeni); }}><option value="">Varyant seçin</option>{stokVaryantlari[s.stokId].filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad} · Stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")}</option>)}</Select>}
+                      {yon === "alis" && (() => { const takip = stoklar.find((x) => x.id === s.stokId)?.takipTipi; return takip && takip !== "yok" ? <div className="stack"><Input aria-label="Lot / Parti No" required placeholder="Lot / Parti No" value={s.lotNo ?? ""} onChange={(e) => void satirGuncelle(i, "lotNo", e.target.value)} />{takip === "seri" && <Input aria-label="Seri numaraları" required placeholder="Seri numaraları (virgülle)" value={s.seriNolar ?? ""} onChange={(e) => void satirGuncelle(i, "seriNolar", e.target.value)} />}<Input aria-label="Son kullanma tarihi" type="date" value={s.sonKullanmaTarihi ?? ""} onChange={(e) => void satirGuncelle(i, "sonKullanmaTarihi", e.target.value)} /></div> : null; })()}
                     </td>
                     <td><Input className="document-line-number" aria-label="Miktar" type="number" min="0.01" step="any" inputMode="decimal" value={s.miktar} onChange={(e) => satirGuncelle(i, "miktar", Number(e.target.value))} required /></td>
                     <td><Input className="document-line-number" aria-label="Birim fiyat" type="number" min="0" step="any" inputMode="decimal" value={s.birimFiyat} onChange={(e) => satirGuncelle(i, "birimFiyat", Number(e.target.value))} required /></td>

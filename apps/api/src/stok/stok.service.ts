@@ -48,6 +48,7 @@ export interface StokHareketGirdisi {
   aciklama?: string | null;
   kaynakTur?: string;
   kaynakRef?: string | null;
+  partiler?: { lotNo: string; seriNo?: string | null; sonKullanmaTarihi?: string | null; uretimTarihi?: string | null; miktar: Prisma.Decimal }[];
 }
 
 @Injectable()
@@ -208,6 +209,7 @@ export class StokService {
             guvenlikStogu: girdi.guvenlikStogu ? D(girdi.guvenlikStogu) : null,
             tedarikSuresiGun: girdi.tedarikSuresiGun,
             gorselUrl: girdi.gorselUrl,
+            takipTipi: girdi.takipTipi,
           },
         }),
       );
@@ -328,6 +330,7 @@ export class StokService {
           guvenlikStogu: stok.guvenlikStogu,
           tedarikSuresiGun: stok.tedarikSuresiGun,
           gorselUrl: stok.gorselUrl,
+          takipTipi: stok.takipTipi,
           mevcutMiktar: 0,
           rezerveMiktar: 0,
           yoldakiMiktar: 0,
@@ -370,7 +373,11 @@ export class StokService {
 
   async guncelle(id: string, girdi: z.infer<typeof stokKartGuncelleSemasi>) {
     const { tenantId } = aktifBaglam();
-    await this.getir(id);
+    const mevcut = await this.getir(id);
+    if (girdi.takipTipi && girdi.takipTipi !== mevcut.takipTipi) {
+      const partiSayisi = await this.prisma.tenantIslem(tenantId, (tx) => tx.stokParti.count({ where: { stokId: id } }));
+      if (partiSayisi > 0) throw new BadRequestException("Parti hareketi bulunan kartın takip tipi değiştirilemez");
+    }
     try {
       const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
         tx.stokKart.update({
@@ -398,6 +405,7 @@ export class StokService {
             guvenlikStogu: girdi.guvenlikStogu !== undefined ? (girdi.guvenlikStogu ? D(girdi.guvenlikStogu) : null) : undefined,
             tedarikSuresiGun: girdi.tedarikSuresiGun,
             gorselUrl: girdi.gorselUrl,
+            takipTipi: girdi.takipTipi,
             aktif: girdi.aktif,
           },
         }),
@@ -552,6 +560,16 @@ export class StokService {
     );
   }
 
+  async partiListele(stokId: string, varyantId?: string, depoId?: string, stokta = false) {
+    const { tenantId } = aktifBaglam();
+    await this.getir(stokId);
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.stokParti.findMany({
+      where: { stokId, ...(varyantId ? { varyantId } : {}), ...(depoId ? { depoId } : {}), ...(stokta ? { kalanMiktar: { gt: 0 } } : {}) },
+      orderBy: [{ sonKullanmaTarihi: { sort: "asc", nulls: "last" } }, { createdAt: "asc" }],
+      include: { depo: { select: { id: true, kod: true, ad: true } }, varyant: { select: { id: true, kod: true, ad: true } } },
+    }));
+  }
+
   /** Giriş gibi işlenen hareket türleri (STK-19, STK-07 transferi dahil). */
   private static readonly GIRIS_TURLERI: StokHareketTip[] = [
     "giris",
@@ -580,7 +598,7 @@ export class StokService {
   async hareketEkle(
     tx: Prisma.TransactionClient,
     girdi: StokHareketGirdisi,
-  ): Promise<{ hareket: unknown; eksiStokUyarisi: string | null }> {
+  ): Promise<{ hareket: unknown; eksiStokUyarisi: string | null; partiTahsisleri: { lotNo: string; seriNo: string | null; sonKullanmaTarihi: string | null; uretimTarihi: string | null; miktar: Prisma.Decimal }[] }> {
     const { tenantId } = aktifBaglam();
     const {
       stokId,
@@ -706,6 +724,9 @@ export class StokService {
         kaynakRef,
       },
     });
+    const partiTahsisleri = await this.partiTahsisEt(tx, urun.takipTipi, hareket.id, {
+      stokId, varyantId, depoId, miktarDegisimi, partiler: girdi.partiler ?? [],
+    });
 
     // Stok kartındaki toplam ve depo bakiyesi birlikte güncellenir (STK-07)
     await tx.stokKart.update({
@@ -729,7 +750,55 @@ export class StokService {
       });
     }
 
-    return { hareket, eksiStokUyarisi };
+    return { hareket, eksiStokUyarisi, partiTahsisleri };
+  }
+
+  private async partiTahsisEt(
+    tx: Prisma.TransactionClient,
+    takipTipi: "yok" | "lot" | "seri",
+    hareketId: string,
+    girdi: { stokId: string; varyantId?: string | null; depoId: string; miktarDegisimi: Prisma.Decimal; partiler: NonNullable<StokHareketGirdisi["partiler"]> },
+  ) {
+    const { tenantId } = aktifBaglam();
+    if (takipTipi === "yok") {
+      if (girdi.partiler.length) throw new BadRequestException("Bu stok kartında seri/lot takibi açık değil");
+      return [];
+    }
+    const giris = girdi.miktarDegisimi.gt(0);
+    const hedef = girdi.miktarDegisimi.abs();
+    const tahsisler: { lotNo: string; seriNo: string | null; sonKullanmaTarihi: string | null; uretimTarihi: string | null; miktar: Prisma.Decimal }[] = [];
+    if (giris) {
+      const toplam = girdi.partiler.reduce((t, p) => t.add(p.miktar), D(0));
+      if (!toplam.eq(hedef)) throw new BadRequestException("Parti miktarları hareket miktarına eşit olmalıdır");
+      if (takipTipi === "seri" && girdi.partiler.some((p) => !p.seriNo || !p.miktar.eq(1))) throw new BadRequestException("Seri takibinde her seri numarası 1 adet olmalıdır");
+      for (const p of girdi.partiler) {
+        const anahtar = [girdi.stokId, girdi.varyantId ?? "-", girdi.depoId, p.lotNo, p.seriNo ?? "-"].join(":");
+        const mevcutSeri = p.seriNo ? await tx.stokParti.findUnique({ where: { tenantId_seriNo: { tenantId, seriNo: p.seriNo } } }) : null;
+        if (mevcutSeri && mevcutSeri.kalanMiktar.gt(0)) throw new ConflictException(`'${p.seriNo}' seri numarası halen stokta`);
+        const parti = mevcutSeri
+          ? await tx.stokParti.update({ where: { id: mevcutSeri.id }, data: { depoId: girdi.depoId, anahtar, kalanMiktar: p.miktar } })
+          : await tx.stokParti.upsert({
+              where: { tenantId_anahtar: { tenantId, anahtar } },
+              create: { tenantId, stokId: girdi.stokId, varyantId: girdi.varyantId, depoId: girdi.depoId, lotNo: p.lotNo, seriNo: p.seriNo, sonKullanmaTarihi: p.sonKullanmaTarihi ? new Date(p.sonKullanmaTarihi) : null, uretimTarihi: p.uretimTarihi ? new Date(p.uretimTarihi) : null, ilkMiktar: p.miktar, kalanMiktar: p.miktar, anahtar },
+              update: { ilkMiktar: { increment: p.miktar }, kalanMiktar: { increment: p.miktar } },
+            });
+        await tx.stokHareketParti.create({ data: { tenantId, hareketId, partiId: parti.id, miktar: p.miktar } });
+        tahsisler.push({ ...p, seriNo: p.seriNo ?? null, sonKullanmaTarihi: p.sonKullanmaTarihi ?? null, uretimTarihi: p.uretimTarihi ?? null });
+      }
+      return tahsisler;
+    }
+    let kalan = hedef;
+    const partiler = await tx.stokParti.findMany({ where: { stokId: girdi.stokId, varyantId: girdi.varyantId ?? null, depoId: girdi.depoId, kalanMiktar: { gt: 0 } }, orderBy: [{ sonKullanmaTarihi: { sort: "asc", nulls: "last" } }, { createdAt: "asc" }] });
+    for (const p of partiler) {
+      if (kalan.lte(0)) break;
+      const miktar = Prisma.Decimal.min(kalan, p.kalanMiktar);
+      await tx.stokParti.update({ where: { id: p.id }, data: { kalanMiktar: { decrement: miktar } } });
+      await tx.stokHareketParti.create({ data: { tenantId, hareketId, partiId: p.id, miktar: miktar.negated() } });
+      tahsisler.push({ lotNo: p.lotNo, seriNo: p.seriNo, sonKullanmaTarihi: p.sonKullanmaTarihi?.toISOString().slice(0, 10) ?? null, uretimTarihi: p.uretimTarihi?.toISOString().slice(0, 10) ?? null, miktar });
+      kalan = kalan.sub(miktar);
+    }
+    if (kalan.gt(0)) throw new BadRequestException(`FEFO için yeterli parti stoğu yok; ${kalan.toFixed(3)} eksik`);
+    return tahsisler;
   }
 
   async varyantDogrula(tx: Prisma.TransactionClient, stokId: string, varyantId?: string | null) {
@@ -1162,6 +1231,7 @@ export class StokService {
     yoldakiMiktar: Prisma.Decimal;
     ortalamaMaliyet: Prisma.Decimal;
     aktif: boolean;
+    takipTipi: "yok" | "lot" | "seri";
   }) {
     return {
       id: k.id,
@@ -1195,6 +1265,7 @@ export class StokService {
       kullanilabilirMiktar: D(k.mevcutMiktar).sub(D(k.rezerveMiktar)).toFixed(3),
       ortalamaMaliyet: D(k.ortalamaMaliyet).toFixed(4),
       aktif: k.aktif,
+      takipTipi: k.takipTipi,
     };
   }
 

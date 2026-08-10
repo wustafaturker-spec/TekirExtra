@@ -4,9 +4,16 @@ const pozitifOndalik = z
   .string()
   .regex(/^\d{1,13}(\.\d{1,6})?$/, "Pozitif sayısal değer gerekli");
 
+const partiBilgisiSemasi = z.object({
+  lotNo: z.string().min(1).max(100), seriNo: z.string().min(1).max(160).optional().nullable(),
+  sonKullanmaTarihi: z.string().date().optional().nullable(), uretimTarihi: z.string().date().optional().nullable(),
+  miktar: pozitifOndalik,
+});
+
 export const faturaSatirSemasi = z.object({
   stokId: z.string().uuid(),
   varyantId: z.string().uuid().optional().nullable(),
+  partiBilgileri: z.array(partiBilgisiSemasi).optional(),
   miktar: pozitifOndalik,
   birim: z.string().min(1).max(20).default("adet"),
   birimFiyat: pozitifOndalik,

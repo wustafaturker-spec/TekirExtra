@@ -45,6 +45,7 @@ const DONUSUM_HEDEFLERI: Record<BelgeTur, ("siparis" | "irsaliye" | "fatura")[]>
 type BelgeSatirKaydi = {
   stokId: string;
   varyantId?: string | null;
+  partiBilgileri?: Prisma.JsonValue | null;
   miktar: Prisma.Decimal;
   birim: string;
   birimFiyat: Prisma.Decimal;
@@ -168,6 +169,7 @@ export class BelgelerService {
         stokId: s.stokId,
         varyantId: s.varyantId,
         varyant: s.varyant,
+        partiBilgileri: s.partiBilgileri,
         stokKod: s.stok.kod,
         stokAd: s.stok.ad,
         miktar: s.miktar.toFixed(3),
@@ -275,6 +277,7 @@ export class BelgelerService {
         mevcut.satirlar.map((s) => ({
           stokId: s.stokId,
           varyantId: s.varyantId,
+          partiBilgileri: s.partiBilgileri as z.infer<typeof belgeOlusturSemasi>["satirlar"][number]["partiBilgileri"],
           miktar: s.miktar,
           birim: s.birim,
           birimFiyat: s.birimFiyat,
@@ -397,6 +400,7 @@ export class BelgelerService {
             belgeId: kopya.id,
             stokId: s.stokId,
             varyantId: s.varyantId,
+            partiBilgileri: s.partiBilgileri ?? Prisma.JsonNull,
             miktar: s.miktar,
             birim: s.birim,
             birimFiyat: s.birimFiyat,
@@ -546,6 +550,7 @@ export class BelgelerService {
           belgeId: yeni.id,
           stokId: s.stokId,
           varyantId: s.varyantId,
+          partiBilgileri: s.partiBilgileri ?? Prisma.JsonNull,
           miktar: s.miktar,
           birim: s.birim,
           birimFiyat: s.birimFiyat,
@@ -749,6 +754,7 @@ export class BelgelerService {
           faturaId: fatura.id,
           stokId: s.stokId,
           varyantId: tumSatirlar[i].varyantId,
+          partiBilgileri: tumSatirlar[i].partiBilgileri ?? Prisma.JsonNull,
           miktar: D(s.miktar),
           birim: tumSatirlar[i].birim,
           birimFiyat: D(s.birimFiyat),
@@ -773,7 +779,7 @@ export class BelgelerService {
     tx: Prisma.TransactionClient,
     belgeId: string,
     hesapSatirlari: ReturnType<typeof faturaHesapla>["satirlar"],
-    girdiSatirlari: { birim?: string; varyantId?: string | null }[],
+    girdiSatirlari: { birim?: string; varyantId?: string | null; partiBilgileri?: unknown[] }[],
   ): Promise<void> {
     const { tenantId } = aktifBaglam();
     for (const [i, s] of hesapSatirlari.entries()) {
@@ -788,6 +794,7 @@ export class BelgelerService {
           belgeId,
           stokId: s.stokId,
           varyantId: girdiSatirlari[i]?.varyantId,
+          partiBilgileri: (girdiSatirlari[i]?.partiBilgileri ?? []) as Prisma.InputJsonValue,
           miktar: D(s.miktar),
           birim: girdiSatirlari[i]?.birim ?? "adet",
           birimFiyat: D(s.birimFiyat),

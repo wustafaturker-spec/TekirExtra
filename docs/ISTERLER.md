@@ -237,7 +237,7 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | STK-18 | Ürün-tedarikçi ilişkisi: tedarikçi carisi, tedarikçi ürün kodu, alış fiyatı, tedarik süresi, varsayılan tedarikçi; sipariş önerisinde kullanılır. | Z |
 | STK-19 | Stok hareket türleri genişletilmelidir: fire, zayi, numune, promosyon, açılış fişi; fire/zayi raporlanabilmelidir. | Z |
 | STK-20 | Sayım farkları doğrudan stoğa işlenmemeli; taslak → onay → düzeltme hareketi akışıyla, onay yetkisine bağlı işlenmelidir. | Z |
-| STK-21 | Seri numarası ve lot/parti + son kullanma tarihi takibi (FEFO çıkış desteğiyle). | G |
+| STK-21 | Seri numarası ve lot/parti + son kullanma tarihi takibi (FEFO çıkış desteğiyle). **(2026-08-10'da yapıldı — varyant/depo bazlı parti, tekil seri, hareket izi, transfer ve fatura/belge zinciri)** | G |
 
 ### 3.5 Kasa ve Banka (KSB)
 

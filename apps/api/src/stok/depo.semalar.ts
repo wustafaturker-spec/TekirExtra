@@ -20,6 +20,7 @@ export const depoGuncelleSemasi = depoOlusturSemasi.partial().extend({
 
 export const transferKalemSemasi = z.object({
   stokId: z.string().uuid(),
+  varyantId: z.string().uuid().optional().nullable(),
   girilenBirim: z.string().min(1).max(20),
   girilenMiktar: pozitifOndalik,
 });

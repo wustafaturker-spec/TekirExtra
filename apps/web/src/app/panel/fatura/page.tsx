@@ -46,6 +46,7 @@ interface Stok {
   alisFiyati: string | null;
   satisFiyati: string | null;
   kdvOrani: string;
+  takipTipi?: "yok" | "lot" | "seri";
 }
 interface StokVaryant { id: string; kod: string; ad: string; barkod: string | null; satisFiyati: string | null; alisFiyati: string | null; mevcutMiktar: string; aktif: boolean }
 
@@ -57,6 +58,7 @@ interface FaturaSatir {
   iskontoOrani: number;
   kdvOrani: number;
   gibIstisnaKodu?: string;
+  lotNo?: string; seriNolar?: string; sonKullanmaTarihi?: string; uretimTarihi?: string;
 }
 
 interface Fatura {
@@ -533,6 +535,12 @@ export default function FaturaSayfasi() {
             iskontoOrani: String(s.iskontoOrani),
             kdvOrani: String(s.kdvOrani),
             gibIstisnaKodu: s.gibIstisnaKodu || undefined,
+            partiBilgileri: (() => {
+              const stok = stoklar.find((x) => x.id === s.stokId);
+              if (!(["alis", "satis_iade"].includes(tip)) || !stok?.takipTipi || stok.takipTipi === "yok") return [];
+              if (stok.takipTipi === "seri") return (s.seriNolar ?? "").split(/[\n,;]/).map((x) => x.trim()).filter(Boolean).map((seriNo) => ({ lotNo: s.lotNo || seriNo, seriNo, sonKullanmaTarihi: s.sonKullanmaTarihi || null, uretimTarihi: s.uretimTarihi || null, miktar: "1" }));
+              return [{ lotNo: s.lotNo ?? "", seriNo: null, sonKullanmaTarihi: s.sonKullanmaTarihi || null, uretimTarihi: s.uretimTarihi || null, miktar: String(s.miktar) }];
+            })(),
           })),
         }),
       });
@@ -934,6 +942,7 @@ export default function FaturaSayfasi() {
                             <Field label="GİB istisna kodu">
                               <Input className="document-line-code" aria-label="GİB istisna kodu" type="text" placeholder="351" value={s.gibIstisnaKodu || ""} onChange={(e) => satirGuncelle(index, "gibIstisnaKodu", e.target.value)} />
                             </Field>
+                            {["alis", "satis_iade"].includes(tip) && seciliStok?.takipTipi && seciliStok.takipTipi !== "yok" && <><Field label="Lot / Parti No"><Input required value={s.lotNo ?? ""} onChange={(e) => satirGuncelle(index, "lotNo", e.target.value)} /></Field>{seciliStok.takipTipi === "seri" && <Field label="Seri numaraları (virgülle)"><Input required value={s.seriNolar ?? ""} onChange={(e) => satirGuncelle(index, "seriNolar", e.target.value)} /></Field>}<Field label="Üretim tarihi"><Input type="date" value={s.uretimTarihi ?? ""} onChange={(e) => satirGuncelle(index, "uretimTarihi", e.target.value)} /></Field><Field label="Son kullanma tarihi"><Input type="date" value={s.sonKullanmaTarihi ?? ""} onChange={(e) => satirGuncelle(index, "sonKullanmaTarihi", e.target.value)} /></Field></>}
                             <div className="document-line-detail__actions">
                               <Button size="sm" type="button" onClick={() => satirKopyala(index)}>Satırı kopyala</Button>
                               <Button aria-label="Satırı sil" variant="danger" size="sm" type="button" disabled={satirlar.length === 1} onClick={() => satirSil(index)}>Satırı sil</Button>

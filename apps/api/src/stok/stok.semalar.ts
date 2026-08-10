@@ -41,6 +41,7 @@ export const stokKartOlusturSemasi = z.object({
   guvenlikStogu: pozitifOndalik.optional().nullable(),
   tedarikSuresiGun: z.number().int().min(0).max(365).optional().nullable(),
   gorselUrl: z.string().url().max(500).optional().nullable(),
+  takipTipi: z.enum(["yok", "lot", "seri"]).default("yok"),
 });
 
 export const stokKartGuncelleSemasi = stokKartOlusturSemasi.partial().extend({
@@ -69,6 +70,13 @@ export const stokHareketOlusturSemasi = z.object({
   maliyet: pozitifOndalik.default("0"),
   tarih: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)"),
   aciklama: z.string().max(500).optional().nullable(),
+  partiler: z.array(z.object({
+    lotNo: z.string().min(1).max(100),
+    seriNo: z.string().min(1).max(160).optional().nullable(),
+    sonKullanmaTarihi: z.string().date().optional().nullable(),
+    uretimTarihi: z.string().date().optional().nullable(),
+    miktar: pozitifOndalik,
+  })).optional().default([]),
 });
 
 export const stokBarkodSemasi = z.object({

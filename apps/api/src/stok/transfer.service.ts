@@ -88,6 +88,7 @@ export class TransferService {
       });
 
       for (const k of girdi.kalemler) {
+        await this.stokService.varyantDogrula(tx, k.stokId, k.varyantId);
         const kart = await tx.stokKart.findUnique({
           where: { id: k.stokId },
           select: { id: true, ad: true, tip: true },
@@ -106,6 +107,7 @@ export class TransferService {
             tenantId,
             transferId: transfer.id,
             stokId: k.stokId,
+            varyantId: k.varyantId,
             miktar: D(k.girilenMiktar).mul(katsayi),
             girilenBirim: k.girilenBirim,
             girilenMiktar: D(k.girilenMiktar),
@@ -152,6 +154,7 @@ export class TransferService {
 
         const cikis = await this.stokService.hareketEkle(tx, {
           stokId: k.stokId,
+          varyantId: k.varyantId,
           depoId: transfer.kaynakDepoId,
           tip: "transfer_cikis",
           miktar: D(k.miktar),
@@ -167,6 +170,7 @@ export class TransferService {
 
         await this.stokService.hareketEkle(tx, {
           stokId: k.stokId,
+          varyantId: k.varyantId,
           depoId: transfer.hedefDepoId,
           tip: "transfer_giris",
           miktar: D(k.miktar),
@@ -177,6 +181,7 @@ export class TransferService {
           aciklama: `${transfer.no} nolu depo transferi`,
           kaynakTur: "transfer",
           kaynakRef: transfer.id,
+          partiler: cikis.partiTahsisleri,
         });
       }
 
