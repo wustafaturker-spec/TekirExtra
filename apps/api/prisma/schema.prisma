@@ -143,10 +143,10 @@ model PazaryeriSiparis {
   createdAt      DateTime               @default(now()) @map("created_at")
   updatedAt      DateTime               @updatedAt @map("updated_at")
 
-  tenant      Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  baglanti    Baglanti                 @relation(fields: [baglantiId], references: [id], onDelete: Cascade)
-  cari        CariHesap?               @relation(fields: [cariId], references: [id])
-  fatura      Fatura?                  @relation(fields: [faturaId], references: [id])
+  tenant   Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  baglanti Baglanti                 @relation(fields: [baglantiId], references: [id], onDelete: Cascade)
+  cari     CariHesap?               @relation(fields: [cariId], references: [id])
+  fatura   Fatura?                  @relation(fields: [faturaId], references: [id])
   satirlar PazaryeriSiparisSatiri[]
 
   @@unique([tenantId, baglantiId, hariciId])
@@ -238,14 +238,17 @@ model ModulAyar {
 /// Dış bağlantılar: e-belge/pazaryeri/POS/banka (ENT-01, MIMARI §5).
 /// sifreliConfig: AES-256-GCM ile şifrelenmiş erişim bilgileri (EBLG-01b).
 model Baglanti {
-  id            String         @id @default(uuid()) @db.Uuid
-  tenantId      String         @map("tenant_id") @db.Uuid
-  aile          BaglantiAile
-  saglayici     String
-  sifreliConfig String         @map("sifreli_config")
-  durum         BaglantiDurumu @default(pasif)
-  createdAt     DateTime       @default(now()) @map("created_at")
-  updatedAt     DateTime       @updatedAt @map("updated_at")
+  id               String         @id @default(uuid()) @db.Uuid
+  tenantId         String         @map("tenant_id") @db.Uuid
+  aile             BaglantiAile
+  saglayici        String
+  sifreliConfig    String         @map("sifreli_config")
+  durum            BaglantiDurumu @default(pasif)
+  senkronImleci    String?        @map("senkron_imleci")
+  sonSenkronTarihi DateTime?      @map("son_senkron_tarihi")
+  sonSenkronHatasi String?        @map("son_senkron_hatasi")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
 
   tenant             Tenant             @relation(fields: [tenantId], references: [id])
   pazaryeriSiparises PazaryeriSiparis[]

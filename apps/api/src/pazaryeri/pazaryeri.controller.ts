@@ -1,5 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Post, Query } from "@nestjs/common";
 import { Roller } from "../auth/roller.decorator";
+import { z } from "zod";
 import { pazaryeriFaturalastirSemasi, pazaryeriSiparisSemasi } from "./pazaryeri.semalar";
 import { PazaryeriService } from "./pazaryeri.service";
 
@@ -18,5 +19,11 @@ export class PazaryeriController {
     const sonuc = pazaryeriFaturalastirSemasi.safeParse(govde);
     if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
     return this.service.faturalastir(sonuc.data.siparisler);
+  }
+  @Post("senkronize") @Roller("yonetici", "muhasebe")
+  senkronize(@Body() govde: unknown) {
+    const sonuc = z.object({ baglantiId: z.string().uuid().optional() }).safeParse(govde ?? {});
+    if (!sonuc.success) throw new BadRequestException("Geçersiz bağlantı");
+    return this.service.senkronizeEt(sonuc.data.baglantiId);
   }
 }

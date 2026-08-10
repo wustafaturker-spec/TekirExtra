@@ -3,6 +3,8 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { FaturaService } from "../fatura/fatura.service";
+import { coz } from "../core/kripto";
+import { TrendyolAdapter, type PazaryeriConfig } from "./trendyol.adapter";
 import { pazaryeriSiparisSemasi } from "./pazaryeri.semalar";
 
 @Injectable()
@@ -70,5 +72,33 @@ export class PazaryeriService {
       }
     }
     return { sonuclar, basarili: sonuclar.filter((s) => s.faturaId).length, hatali: sonuclar.filter((s) => s.hata).length };
+  }
+
+  async senkronizeEt(baglantiId?: string) {
+    const { tenantId } = aktifBaglam();
+    const baglantilar = await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.findMany({
+      where: { aile: "pazaryeri", durum: "aktif", ...(baglantiId ? { id: baglantiId } : {}) },
+    }));
+    if (baglantiId && !baglantilar.length) throw new NotFoundException("Aktif pazaryeri bağlantısı bulunamadı");
+    const sonuclar = [];
+    for (const baglanti of baglantilar) {
+      try {
+        if (baglanti.saglayici !== "trendyol") throw new BadRequestException(`${baglanti.saglayici} canlı adaptörü henüz etkin değil`);
+        const config = JSON.parse(coz(baglanti.sifreliConfig)) as PazaryeriConfig;
+        const sayfa = await new TrendyolAdapter().siparisleriCek(config, baglanti.senkronImleci);
+        let eklenen = 0;
+        for (const siparis of sayfa.siparisler) {
+          const once = await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriSiparis.findUnique({ where: { tenantId_baglantiId_hariciId: { tenantId, baglantiId: baglanti.id, hariciId: siparis.hariciId } }, select: { id: true } }));
+          await this.iceAktar({ ...siparis, baglantiId: baglanti.id }); if (!once) eklenen += 1;
+        }
+        await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id: baglanti.id }, data: { senkronImleci: sayfa.sonrakiImlec, sonSenkronTarihi: new Date(), sonSenkronHatasi: null } }));
+        sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan: sayfa.siparisler.length, eklenen, devamImleci: Boolean(sayfa.sonrakiImlec) });
+      } catch (hata) {
+        const mesaj = hata instanceof Error ? hata.message : "Senkronizasyon hatası";
+        await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id: baglanti.id }, data: { sonSenkronTarihi: new Date(), sonSenkronHatasi: mesaj } }));
+        sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan: 0, eklenen: 0, hata: mesaj });
+      }
+    }
+    return { sonuclar };
   }
 }
