@@ -1,5 +1,5 @@
 export interface PazaryeriConfig {
-  kullaniciAdi: string; parola?: string; apiAnahtari?: string; saticiId?: string;
+  kullaniciAdi: string; parola?: string; apiAnahtari?: string; saticiId?: string; magazaId?: string; servisAdresi?: string;
 }
 export interface NormalizeSiparis {
   hariciId: string; siparisNo: string; hariciDurum?: string; siparisTarihi: string;

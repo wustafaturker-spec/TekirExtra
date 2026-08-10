@@ -5,6 +5,7 @@ import { PrismaService } from "../core/prisma.service";
 import { FaturaService } from "../fatura/fatura.service";
 import { coz } from "../core/kripto";
 import { TrendyolAdapter, type PazaryeriConfig } from "./trendyol.adapter";
+import { HepsiburadaAdapter } from "./hepsiburada.adapter";
 import { pazaryeriSiparisSemasi } from "./pazaryeri.semalar";
 
 @Injectable()
@@ -83,9 +84,10 @@ export class PazaryeriService {
     const sonuclar = [];
     for (const baglanti of baglantilar) {
       try {
-        if (baglanti.saglayici !== "trendyol") throw new BadRequestException(`${baglanti.saglayici} canlı adaptörü henüz etkin değil`);
         const config = JSON.parse(coz(baglanti.sifreliConfig)) as PazaryeriConfig;
-        const sayfa = await new TrendyolAdapter().siparisleriCek(config, baglanti.senkronImleci);
+        const adapter = baglanti.saglayici === "trendyol" ? new TrendyolAdapter() : baglanti.saglayici === "hepsiburada" ? new HepsiburadaAdapter() : null;
+        if (!adapter) throw new BadRequestException(`${baglanti.saglayici} canlı adaptörü henüz etkin değil`);
+        const sayfa = await adapter.siparisleriCek(config, baglanti.senkronImleci);
         let eklenen = 0;
         for (const siparis of sayfa.siparisler) {
           const once = await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriSiparis.findUnique({ where: { tenantId_baglantiId_hariciId: { tenantId, baglantiId: baglanti.id, hariciId: siparis.hariciId } }, select: { id: true } }));
