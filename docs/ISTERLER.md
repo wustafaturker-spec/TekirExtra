@@ -1,6 +1,6 @@
 # TekirExtra — Yazılım İster Dokümanı (SRS)
 
-**Sürüm:** 0.16
+**Sürüm:** 0.17
 **Tarih:** 2026-07-16
 **Durum (2026-07-16):** **UI Tamamlama** sürüyor (plan: `docs/UI-TAMAMLAMA.md`);
 Paket 1/2/3/4/7 bitti. Paket 3 ile **KSB-05 iki kez genişletildi**:
@@ -17,6 +17,12 @@ sunucuda zorunlu; hesap para birimi çek/senetle uyuşmalı; durum yönle tutarl
 olmalı; aynı duruma ikinci geçişte tekrar fiş yazılmaz. Cari, çek alınırken/
 verilirken zaten işlendiği için fişte cari hareketi yazılmaz (çift kayıt olurdu).
 Cari riskine (CARI-17) yalnız `yon=alinan` çekler sayılır.
+**Durum (FTR-10, 2026-08-10):** tekrarlayan faturalar eklendi. Mevcut bir
+fatura şablon seçilerek haftalık, aylık veya yıllık plan tanımlanabilir;
+aralık, ilk üretim ve isteğe bağlı bitiş tarihi izlenir. Vadesi gelen
+dönemler idempotent olarak **taslak** fatura üretir; cari, depo, kalem,
+fiyat/vergi bilgileri ve şablondaki vade günü korunur. Otomatik kesinleştirme
+yoktur; stok ve cari etkisi kullanıcı kontrolünden sonra doğar.
 **Durum (2026-07-15):** **Fiyat Listeleri modülü tamamlandı** — STK-11'in eksik
 kalan *tanımlama* tarafı kapatıldı: `FiyatListesi`/kalem CRUD uçları
 (`/fiyat-listeleri`), yönetim ekranı (Stok altında) ve **CARI-10** için cari

@@ -39,3 +39,19 @@ export const faturaSeriSemasi = z.object({
   yil: z.number().int().min(2000).max(2100),
   sonSira: z.number().int().min(0).optional().default(0),
 });
+
+export const tekrarlayanFaturaSemasi = z.object({
+  ad: z.string().trim().min(1).max(100),
+  sablonFaturaId: z.string().uuid(),
+  siklik: z.enum(["haftalik", "aylik", "yillik"]),
+  aralik: z.number().int().min(1).max(36).default(1),
+  sonrakiTarih: z.string().date(),
+  bitisTarihi: z.string().date().optional().nullable(),
+});
+
+export const tekrarlayanFaturaGuncelleSemasi = z.object({
+  ad: z.string().trim().min(1).max(100).optional(),
+  aktif: z.boolean().optional(),
+  sonrakiTarih: z.string().date().optional(),
+  bitisTarihi: z.string().date().optional().nullable(),
+});

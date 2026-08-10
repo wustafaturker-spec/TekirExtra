@@ -769,18 +769,50 @@ model Fatura {
   createdAt            DateTime    @default(now()) @map("created_at")
   updatedAt            DateTime    @updatedAt @map("updated_at")
 
-  cari              CariHesap          @relation(fields: [cariId], references: [id])
-  depo              Depo?              @relation(fields: [depoId], references: [id])
+  cari              CariHesap           @relation(fields: [cariId], references: [id])
+  depo              Depo?               @relation(fields: [depoId], references: [id])
   satirlar          FaturaSatir[]
   ebelge            EbelgeKayit?
   gelenEbelge       GelenEbelge?
   kasaBankaHarekets KasaBankaHareket[]
   zincirBelgeleri   Belge[]
   ekstreSatirlari   BankaEkstreSatir[]
+  tekrarlayanSablon TekrarlayanFatura[] @relation("TekrarlayanFaturaSablon")
+  tekrarlayanPlan   TekrarlayanFatura?  @relation("TekrarlayanFaturaUretim", fields: [tekrarlayanPlanId], references: [id])
+  tekrarlayanPlanId String?             @map("tekrarlayan_plan_id") @db.Uuid
+  planlananTarih    DateTime?           @map("planlanan_tarih") @db.Date
 
   @@unique([tenantId, seri, sira])
+  @@unique([tekrarlayanPlanId, planlananTarih])
   @@index([tenantId, tarih])
   @@map("faturalar")
+}
+
+enum TekrarSikligi {
+  haftalik
+  aylik
+  yillik
+}
+
+model TekrarlayanFatura {
+  id              String        @id @default(uuid()) @db.Uuid
+  tenantId        String        @map("tenant_id") @db.Uuid
+  ad              String
+  sablonFaturaId  String        @map("sablon_fatura_id") @db.Uuid
+  siklik          TekrarSikligi
+  aralik          Int           @default(1)
+  sonrakiTarih    DateTime      @map("sonraki_tarih") @db.Date
+  bitisTarihi     DateTime?     @map("bitis_tarihi") @db.Date
+  aktif           Boolean       @default(true)
+  sonUretimTarihi DateTime?     @map("son_uretim_tarihi") @db.Date
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  sablonFatura Fatura   @relation("TekrarlayanFaturaSablon", fields: [sablonFaturaId], references: [id], onDelete: Restrict)
+  uretilenler  Fatura[] @relation("TekrarlayanFaturaUretim")
+
+  @@index([tenantId, aktif, sonrakiTarih])
+  @@map("tekrarlayan_faturalar")
 }
 
 model FaturaSatir {

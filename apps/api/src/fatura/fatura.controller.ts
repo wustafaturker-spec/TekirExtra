@@ -19,6 +19,8 @@ import {
   faturaGuncelleSemasi,
   faturaOlusturSemasi,
   faturaSeriSemasi,
+  tekrarlayanFaturaGuncelleSemasi,
+  tekrarlayanFaturaSemasi,
 } from "./fatura.semalar";
 
 @Controller("fatura")
@@ -45,6 +47,29 @@ export class FaturaController {
   }
 
   // ─── FATURA BELGE UÇLARI ──────────────────────────────────────────────────
+
+  @Get("tekrarlayanlar")
+  async tekrarlayanListele() { return this.faturaService.tekrarlayanListele(); }
+
+  @Post("tekrarlayanlar")
+  @Roller("muhasebe")
+  async tekrarlayanOlustur(@Body() govde: unknown) {
+    const sonuc = tekrarlayanFaturaSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((s) => s.message).join("; "));
+    return this.faturaService.tekrarlayanOlustur(sonuc.data);
+  }
+
+  @Post("tekrarlayanlar/uret")
+  @Roller("muhasebe")
+  async tekrarlayanlariUret() { return this.faturaService.vadesiGelenleriUret(); }
+
+  @Patch("tekrarlayanlar/:id")
+  @Roller("muhasebe")
+  async tekrarlayanGuncelle(@Param("id") id: string, @Body() govde: unknown) {
+    const sonuc = tekrarlayanFaturaGuncelleSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((s) => s.message).join("; "));
+    return this.faturaService.tekrarlayanGuncelle(id, sonuc.data);
+  }
 
   @Get("is-kuyrugu-ozeti")
   async isKuyruguOzeti() {

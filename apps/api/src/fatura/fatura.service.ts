@@ -24,6 +24,8 @@ import type {
   faturaOlusturSemasi,
   faturaGuncelleSemasi,
   faturaSeriSemasi,
+  tekrarlayanFaturaGuncelleSemasi,
+  tekrarlayanFaturaSemasi,
 } from "./fatura.semalar";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal => new Prisma.Decimal(deger);
@@ -74,6 +76,119 @@ export class FaturaService {
       }
       throw hata;
     }
+  }
+
+  // ─── TEKRARLAYAN FATURALAR (FTR-10) ─────────────────────────────
+
+  async tekrarlayanListele() {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.tekrarlayanFatura.findMany({
+      orderBy: [{ aktif: "desc" }, { sonrakiTarih: "asc" }],
+      include: {
+        sablonFatura: { select: { id: true, tip: true, genelToplam: true, cari: { select: { unvan: true } } } },
+        _count: { select: { uretilenler: true } },
+      },
+    }));
+  }
+
+  async tekrarlayanOlustur(girdi: z.infer<typeof tekrarlayanFaturaSemasi>) {
+    const { tenantId } = aktifBaglam();
+    if (girdi.bitisTarihi && girdi.bitisTarihi < girdi.sonrakiTarih) {
+      throw new BadRequestException("Bitiş tarihi ilk üretim tarihinden önce olamaz");
+    }
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const sablon = await tx.fatura.findUnique({ where: { id: girdi.sablonFaturaId } });
+      if (!sablon) throw new NotFoundException("Şablon fatura bulunamadı");
+      return tx.tekrarlayanFatura.create({ data: {
+        tenantId, ad: girdi.ad, sablonFaturaId: girdi.sablonFaturaId,
+        siklik: girdi.siklik, aralik: girdi.aralik,
+        sonrakiTarih: new Date(girdi.sonrakiTarih),
+        bitisTarihi: girdi.bitisTarihi ? new Date(girdi.bitisTarihi) : null,
+      }});
+    });
+  }
+
+  async tekrarlayanGuncelle(id: string, girdi: z.infer<typeof tekrarlayanFaturaGuncelleSemasi>) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const plan = await tx.tekrarlayanFatura.findUnique({ where: { id } });
+      if (!plan) throw new NotFoundException("Tekrarlayan fatura planı bulunamadı");
+      const sonraki = girdi.sonrakiTarih ? new Date(girdi.sonrakiTarih) : plan.sonrakiTarih;
+      const bitis = girdi.bitisTarihi === undefined ? plan.bitisTarihi : girdi.bitisTarihi ? new Date(girdi.bitisTarihi) : null;
+      if (bitis && bitis < sonraki) throw new BadRequestException("Bitiş tarihi sıradaki tarihten önce olamaz");
+      return tx.tekrarlayanFatura.update({ where: { id }, data: {
+        ad: girdi.ad, aktif: girdi.aktif, sonrakiTarih: sonraki, bitisTarihi: bitis,
+      }});
+    });
+  }
+
+  async vadesiGelenleriUret() {
+    const { tenantId } = aktifBaglam();
+    const bugun = new Date(); bugun.setUTCHours(0, 0, 0, 0);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const planlar = await tx.tekrarlayanFatura.findMany({
+        where: { aktif: true, sonrakiTarih: { lte: bugun } },
+        include: { sablonFatura: { include: { satirlar: true } } },
+      });
+      const uretilenIds: string[] = [];
+      for (const plan of planlar) {
+        let planUretimAdedi = 0;
+        let sonUretimTarihi = plan.sonUretimTarihi;
+        let tarih = plan.sonrakiTarih;
+        let sayac = 0;
+        while (tarih <= bugun && (!plan.bitisTarihi || tarih <= plan.bitisTarihi) && sayac++ < 120) {
+          const mevcut = await tx.fatura.findFirst({ where: { tekrarlayanPlanId: plan.id, planlananTarih: tarih } });
+          if (!mevcut) {
+            const s = plan.sablonFatura;
+            const vadeGun = s.vadeTarihi
+              ? Math.round((s.vadeTarihi.getTime() - s.tarih.getTime()) / 86_400_000)
+              : null;
+            const vadeTarihi = vadeGun === null ? null : new Date(tarih.getTime() + vadeGun * 86_400_000);
+            const yeni = await tx.fatura.create({ data: {
+              tenantId, tip: s.tip, durum: "taslak", tarih, vadeTarihi,
+              cariId: s.cariId, depoId: s.depoId, dovizCinsi: s.dovizCinsi, kur: s.kur,
+              genelIskontoYuzdesi: s.genelIskontoYuzdesi, genelIskontoTutari: s.genelIskontoTutari,
+              toplamBrut: s.toplamBrut, toplamSatirIskontosu: s.toplamSatirIskontosu,
+              genelIskontoToplam: s.genelIskontoToplam, toplamMatrah: s.toplamMatrah,
+              toplamKdv: s.toplamKdv, toplamTevkifat: s.toplamTevkifat,
+              toplamNetKdv: s.toplamNetKdv, genelToplam: s.genelToplam,
+              aciklama: s.aciklama, notlar: s.notlar, tekrarlayanPlanId: plan.id, planlananTarih: tarih,
+            }});
+            for (const satir of s.satirlar) {
+              const { id: _id, faturaId: _faturaId, ...veri } = satir;
+              await tx.faturaSatir.create({ data: { ...veri, id: undefined, faturaId: yeni.id } });
+            }
+            uretilenIds.push(yeni.id);
+            planUretimAdedi += 1;
+            sonUretimTarihi = tarih;
+          }
+          tarih = this.sonrakiTekrarTarihi(tarih, plan.siklik, plan.aralik);
+        }
+        await tx.tekrarlayanFatura.update({ where: { id: plan.id }, data: {
+          sonrakiTarih: tarih, sonUretimTarihi: planUretimAdedi ? sonUretimTarihi : plan.sonUretimTarihi,
+          aktif: plan.bitisTarihi ? tarih <= plan.bitisTarihi : true,
+        }});
+      }
+      return { uretilenAdet: uretilenIds.length, faturaIds: uretilenIds };
+    });
+  }
+
+  private sonrakiTekrarTarihi(tarih: Date, siklik: "haftalik" | "aylik" | "yillik", aralik: number) {
+    const sonuc = new Date(tarih);
+    if (siklik === "haftalik") sonuc.setUTCDate(sonuc.getUTCDate() + 7 * aralik);
+    else if (siklik === "aylik") {
+      const gun = sonuc.getUTCDate();
+      sonuc.setUTCDate(1);
+      sonuc.setUTCMonth(sonuc.getUTCMonth() + aralik);
+      const sonGun = new Date(Date.UTC(sonuc.getUTCFullYear(), sonuc.getUTCMonth() + 1, 0)).getUTCDate();
+      sonuc.setUTCDate(Math.min(gun, sonGun));
+    } else {
+      const ay = sonuc.getUTCMonth();
+      sonuc.setUTCFullYear(sonuc.getUTCFullYear() + aralik, ay, 1);
+      const sonGun = new Date(Date.UTC(sonuc.getUTCFullYear(), ay + 1, 0)).getUTCDate();
+      sonuc.setUTCDate(Math.min(tarih.getUTCDate(), sonGun));
+    }
+    return sonuc;
   }
 
   // ─── FATURA CRUD İŞLEMLERİ ───────────────────────────────────────────────

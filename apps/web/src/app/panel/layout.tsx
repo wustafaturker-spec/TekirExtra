@@ -43,6 +43,7 @@ const MENU: MenuGrup[] = [
       { href: "/panel/cari", ikon: "👥", baslik: "Cari Hesaplar" },
       { href: "/panel/belgeler", ikon: "B", baslik: "Tüm Belgeler", eslesme: "tam" },
       { href: "/panel/fatura", ikon: "F", baslik: "Tüm Faturalar", eslesme: "tam" },
+      { href: "/panel/fatura/tekrarlayan", ikon: "↻", baslik: "Tekrarlayan Faturalar" },
       { href: "/panel/kasa-banka", ikon: "🏦", baslik: "Kasa & Banka", eslesme: "tam" },
       { href: "/panel/kasa-banka/cek-senet", ikon: "🧾", baslik: "Çek & Senet", eslesme: "tam" },
       { href: "/panel/kasa-banka/ekstre", ikon: "🏧", baslik: "Banka Ekstresi", eslesme: "tam" },
