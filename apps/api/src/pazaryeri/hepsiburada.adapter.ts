@@ -1,9 +1,29 @@
-import type { NormalizeSiparis, PazaryeriConfig } from "./trendyol.adapter";
+import type { NormalizeSiparis, PazaryeriConfig, PazaryeriStokFiyat } from "./trendyol.adapter";
 
 const para = (deger: any): number => Number(deger?.amount ?? deger ?? 0);
 const metin = (deger: unknown): string => deger === null || deger === undefined ? "" : String(deger);
+const xml = (deger: string): string => deger.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 
 export class HepsiburadaAdapter {
+  async stokFiyatGonder(config: PazaryeriConfig, kalemler: PazaryeriStokFiyat[]): Promise<{ gonderilen: number; islemIdleri: string[] }> {
+    if (!config.magazaId || !config.parola) throw new Error("Hepsiburada Merchant ID ve parola zorunludur");
+    const islemIdleri: string[] = [];
+    for (let baslangic = 0; baslangic < kalemler.length; baslangic += 4000) {
+      const parca = kalemler.slice(baslangic, baslangic + 4000);
+      const govde = `<?xml version="1.0" encoding="UTF-8"?><listings>${parca.map((k) => `<listing><MerchantSku>${xml(k.sku)}</MerchantSku><Price>${k.fiyat.toFixed(2)}</Price><AvailableStock>${Math.max(0, Math.floor(k.miktar))}</AvailableStock><MaximumPurchasableQuantity>${Math.max(1, Math.floor(k.miktar))}</MaximumPurchasableQuantity></listing>`).join("")}</listings>`;
+      const taban = (config.servisAdresi || "https://listing-external.hepsiburada.com").replace(/\/$/, "");
+      const yanit = await fetch(`${taban}/listings/merchantid/${encodeURIComponent(config.magazaId)}/inventory-uploads`, {
+        method: "POST", headers: { Authorization: `Basic ${Buffer.from(`${config.kullaniciAdi}:${config.parola}`).toString("base64")}`, "User-Agent": "TekirExtra/1.0", "Content-Type": "application/xml", Accept: "application/json" }, body: govde,
+      });
+      if (!yanit.ok) throw new Error(`Hepsiburada stok/fiyat servisi HTTP ${yanit.status}`);
+      const veri = await yanit.json() as { id?: string; inventoryUploadId?: string; uploadId?: string };
+      const islemId = veri.inventoryUploadId ?? veri.uploadId ?? veri.id;
+      if (!islemId) throw new Error("Hepsiburada stok/fiyat işlemi işlem kimliği dönmedi");
+      islemIdleri.push(String(islemId));
+    }
+    return { gonderilen: kalemler.length, islemIdleri };
+  }
+
   async siparisleriCek(config: PazaryeriConfig, imlec?: string | null): Promise<{ siparisler: NormalizeSiparis[]; sonrakiImlec: string | null }> {
     if (!config.magazaId || !config.parola) throw new Error("Hepsiburada Merchant ID ve parola zorunludur");
     const offset = Math.max(0, Number(imlec ?? 0) || 0); const limit = 100;
