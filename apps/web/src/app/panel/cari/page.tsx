@@ -127,6 +127,13 @@ interface EkstreVeri {
   satirlar: EkstreSatir[];
 }
 
+interface CrmVeri {
+  etkilesimler: { id: string; tip: string; konu: string; aciklama: string | null; tarih: string; user: { id: string; adSoyad: string } }[];
+  gorevler: { id: string; baslik: string; aciklama: string | null; sonTarih: string; hatirlatmaTarihi: string | null; oncelik: string; durum: string; tamamlanmaZamani: string | null; atanan: { id: string; adSoyad: string } }[];
+  teklifler: { id: string; no: string; tarih: string; gecerlilikTarihi: string | null; durum: string; genelToplam: string; dovizCinsi: string }[];
+  kullanicilar: { id: string; adSoyad: string; rol: string }[];
+}
+
 const tl = (deger: string | number): string =>
   Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL";
 
@@ -141,7 +148,7 @@ const ADRES_TIP_ETIKETI: Record<string, string> = {
   depo: "📦 Depo",
 };
 
-type Sekme = "genel" | "ekstre" | "adresler" | "kisiler" | "bankalar";
+type Sekme = "genel" | "crm" | "ekstre" | "adresler" | "kisiler" | "bankalar";
 type FiltreTip = "tumu" | "musteri" | "tedarikci" | "bloke";
 
 interface CariGorunumu { id: string; ad: string; filtreTip: FiltreTip; }
@@ -156,6 +163,7 @@ export default function CariSayfasi() {
   const [formAcik, setFormAcik] = useState(false);
   const [detay, setDetay] = useState<CariDetay | null>(null);
   const [ekstre, setEkstre] = useState<EkstreVeri | null>(null);
+  const [crm, setCrm] = useState<CrmVeri | null>(null);
   const [etiketler, setEtiketler] = useState<Etiket[]>([]);
   const [aktifSekme, setAktifSekme] = useState<Sekme>("genel");
   const [filtreTip, setFiltreTip] = useState<FiltreTip>("tumu");
@@ -208,6 +216,16 @@ export default function CariSayfasi() {
   const [kisiEposta, setKisiEposta] = useState("");
   const [yeniEtiket, setYeniEtiket] = useState("");
   const [secilenEtiketId, setSecilenEtiketId] = useState("");
+  const [etkilesimTipi, setEtkilesimTipi] = useState("gorusme");
+  const [etkilesimKonusu, setEtkilesimKonusu] = useState("");
+  const [etkilesimAciklamasi, setEtkilesimAciklamasi] = useState("");
+  const [etkilesimTarihi, setEtkilesimTarihi] = useState("");
+  const [gorevBasligi, setGorevBasligi] = useState("");
+  const [gorevAciklamasi, setGorevAciklamasi] = useState("");
+  const [gorevAtanan, setGorevAtanan] = useState("");
+  const [gorevOnceligi, setGorevOnceligi] = useState("normal");
+  const [gorevSonTarihi, setGorevSonTarihi] = useState("");
+  const [gorevHatirlatmaTarihi, setGorevHatirlatmaTarihi] = useState("");
 
   const yukle = useCallback(async (imlec?: string) => {
     const istekSirasi = ++cariYuklemeSirasi.current;
@@ -300,16 +318,55 @@ export default function CariSayfasi() {
   async function detayAc(id: string, sekmeyiKoru = false) {
     setHata("");
     try {
-      const [cDetay, cEkstre] = await Promise.all([
+      const [cDetay, cEkstre, cCrm] = await Promise.all([
         api<CariDetay>(`/cari/${id}`),
         api<EkstreVeri>(`/cari/${id}/ekstre`),
+        api<CrmVeri>(`/cari/${id}/crm`),
       ]);
       setDetay(cDetay);
       setEkstre(cEkstre);
+      setCrm(cCrm);
       if (!sekmeyiKoru) setAktifSekme("genel");
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Detay veya ekstre yüklenemedi");
     }
+  }
+
+  async function etkilesimEkle(e: React.FormEvent) {
+    e.preventDefault();
+    if (!detay) return;
+    setHata("");
+    try {
+      await api(`/cari/${detay.id}/crm/etkilesimler`, { method: "POST", body: JSON.stringify({
+        tip: etkilesimTipi, konu: etkilesimKonusu, aciklama: etkilesimAciklamasi || undefined,
+        tarih: etkilesimTarihi ? new Date(etkilesimTarihi).toISOString() : new Date().toISOString(),
+      }) });
+      setEtkilesimKonusu(""); setEtkilesimAciklamasi(""); setEtkilesimTarihi("");
+      await detayAc(detay.id, true); setBasari("Etkileşim kaydı eklendi.");
+    } catch (h) { setHata(h instanceof Error ? h.message : "Etkileşim eklenemedi"); }
+  }
+
+  async function crmGorevEkle(e: React.FormEvent) {
+    e.preventDefault();
+    if (!detay) return;
+    setHata("");
+    try {
+      await api(`/cari/${detay.id}/crm/gorevler`, { method: "POST", body: JSON.stringify({
+        baslik: gorevBasligi, aciklama: gorevAciklamasi || undefined, atananUserId: gorevAtanan || undefined,
+        oncelik: gorevOnceligi, sonTarih: new Date(gorevSonTarihi).toISOString(),
+        hatirlatmaTarihi: gorevHatirlatmaTarihi ? new Date(gorevHatirlatmaTarihi).toISOString() : undefined,
+      }) });
+      setGorevBasligi(""); setGorevAciklamasi(""); setGorevSonTarihi(""); setGorevHatirlatmaTarihi("");
+      await detayAc(detay.id, true); setBasari("CRM görevi oluşturuldu.");
+    } catch (h) { setHata(h instanceof Error ? h.message : "Görev oluşturulamadı"); }
+  }
+
+  async function crmGorevDurumu(gorevId: string, durum: "tamamlandi" | "iptal") {
+    if (!detay) return;
+    try {
+      await api(`/cari/${detay.id}/crm/gorevler/${gorevId}`, { method: "PATCH", body: JSON.stringify({ durum }) });
+      await detayAc(detay.id, true); setBasari(durum === "tamamlandi" ? "Görev tamamlandı." : "Görev iptal edildi.");
+    } catch (h) { setHata(h instanceof Error ? h.message : "Görev güncellenemedi"); }
   }
 
   async function kaydet(e: React.FormEvent) {
@@ -687,7 +744,7 @@ export default function CariSayfasi() {
             </div>
             <div className="row-tight">
               <Button size="sm" onClick={karaListeDegistir}>{detay.karaListe ? "✅ Blokajı Kaldır" : "🚫 Kara Listeye Al"}</Button>
-              <Button size="sm" onClick={() => { setDetay(null); setEkstre(null); }}>✖ Kapat</Button>
+              <Button size="sm" onClick={() => { setDetay(null); setEkstre(null); setCrm(null); }}>✖ Kapat</Button>
             </div>
           </div>
 
@@ -699,6 +756,7 @@ export default function CariSayfasi() {
               onChange={setAktifSekme}
               items={[
                 { deger: "genel", baslik: "Genel Bakış" },
+                { deger: "crm", baslik: "CRM" },
                 { deger: "ekstre", baslik: "Ekstre" },
                 { deger: "adresler", baslik: "Adresler" },
                 { deger: "kisiler", baslik: "İlgili Kişiler" },
@@ -787,6 +845,51 @@ export default function CariSayfasi() {
                   </form>
                 </Card>
               </div>
+            </div>
+          )}
+
+          {aktifSekme === "crm" && (
+            <div aria-labelledby="cari-detay-tab-crm" className="stack" id="cari-detay-panel-crm" role="tabpanel" tabIndex={0}>
+              {!crm ? <Card><p className="subtle">CRM bilgileri yükleniyor...</p></Card> : <>
+                <div className="row" style={{ alignItems: "flex-start" }}>
+                  <Card className="grow" style={{ minWidth: 300 }}>
+                    <div className="card__title">Yeni Etkileşim</div>
+                    <form className="stack" onSubmit={etkilesimEkle}>
+                      <div className="row">
+                        <Field label="Tür"><Select value={etkilesimTipi} onChange={(e) => setEtkilesimTipi(e.target.value)}><option value="gorusme">Görüşme</option><option value="telefon">Telefon</option><option value="eposta">E-posta</option><option value="ziyaret">Ziyaret</option><option value="not">Not</option></Select></Field>
+                        <Field label="Tarih"><Input type="datetime-local" value={etkilesimTarihi} onChange={(e) => setEtkilesimTarihi(e.target.value)} /></Field>
+                      </div>
+                      <Field label="Konu"><Input value={etkilesimKonusu} onChange={(e) => setEtkilesimKonusu(e.target.value)} required minLength={2} /></Field>
+                      <Field label="Açıklama"><Input value={etkilesimAciklamasi} onChange={(e) => setEtkilesimAciklamasi(e.target.value)} /></Field>
+                      <Button type="submit" size="sm" variant="primary">Etkileşimi kaydet</Button>
+                    </form>
+                  </Card>
+                  <Card className="grow" style={{ minWidth: 320 }}>
+                    <div className="card__title">Yeni Görev ve Hatırlatma</div>
+                    <form className="stack" onSubmit={crmGorevEkle}>
+                      <Field label="Başlık"><Input value={gorevBasligi} onChange={(e) => setGorevBasligi(e.target.value)} required minLength={2} /></Field>
+                      <Field label="Açıklama"><Input value={gorevAciklamasi} onChange={(e) => setGorevAciklamasi(e.target.value)} /></Field>
+                      <div className="row">
+                        <Field label="Atanan"><Select value={gorevAtanan} onChange={(e) => setGorevAtanan(e.target.value)}><option value="">Kendim</option>{crm.kullanicilar.map((k) => <option key={k.id} value={k.id}>{k.adSoyad}</option>)}</Select></Field>
+                        <Field label="Öncelik"><Select value={gorevOnceligi} onChange={(e) => setGorevOnceligi(e.target.value)}><option value="dusuk">Düşük</option><option value="normal">Normal</option><option value="yuksek">Yüksek</option></Select></Field>
+                      </div>
+                      <div className="row">
+                        <Field label="Son tarih"><Input type="datetime-local" value={gorevSonTarihi} onChange={(e) => setGorevSonTarihi(e.target.value)} required /></Field>
+                        <Field label="Hatırlatma"><Input type="datetime-local" value={gorevHatirlatmaTarihi} onChange={(e) => setGorevHatirlatmaTarihi(e.target.value)} /></Field>
+                      </div>
+                      <Button type="submit" size="sm" variant="primary">Görevi oluştur</Button>
+                    </form>
+                  </Card>
+                </div>
+                <Card>
+                  <div className="card__title">Açık Görevler</div>
+                  {crm.gorevler.filter((g) => g.durum === "acik").length === 0 ? <p className="subtle">Açık görev bulunmuyor.</p> : <TableWrap><thead><tr><th>Görev</th><th>Atanan</th><th>Öncelik</th><th>Son tarih</th><th>Hatırlatma</th><th className="center">İşlem</th></tr></thead><tbody>{crm.gorevler.filter((g) => g.durum === "acik").map((g) => <tr key={g.id}><td><strong>{g.baslik}</strong>{g.aciklama && <div className="muted">{g.aciklama}</div>}</td><td>{g.atanan.adSoyad}</td><td><Badge variant={g.oncelik === "yuksek" ? "danger" : "neutral"}>{g.oncelik}</Badge></td><td>{new Date(g.sonTarih).toLocaleString("tr-TR")}</td><td>{g.hatirlatmaTarihi ? new Date(g.hatirlatmaTarihi).toLocaleString("tr-TR") : "—"}</td><td className="center"><div className="row-tight"><Button size="sm" onClick={() => crmGorevDurumu(g.id, "tamamlandi")}>Tamamla</Button><Button size="sm" onClick={() => crmGorevDurumu(g.id, "iptal")}>İptal</Button></div></td></tr>)}</tbody></TableWrap>}
+                </Card>
+                <div className="row" style={{ alignItems: "flex-start" }}>
+                  <Card className="grow" style={{ minWidth: 320 }}><div className="card__title">Etkileşim Geçmişi</div>{crm.etkilesimler.length === 0 ? <p className="subtle">Henüz etkileşim kaydı yok.</p> : <div className="stack">{crm.etkilesimler.map((e) => <div key={e.id} style={{ borderBottom: "1px solid var(--border)", paddingBottom: ".75rem" }}><div className="between"><strong>{e.konu}</strong><Badge variant="neutral">{e.tip}</Badge></div><p className="muted" style={{ margin: ".25rem 0" }}>{e.aciklama || "Açıklama yok"}</p><small className="subtle">{new Date(e.tarih).toLocaleString("tr-TR")} · {e.user.adSoyad}</small></div>)}</div>}</Card>
+                  <Card className="grow" style={{ minWidth: 320 }}><div className="card__title">Teklif Geçmişi</div>{crm.teklifler.length === 0 ? <p className="subtle">Bu cariye ait teklif yok.</p> : <TableWrap><thead><tr><th>Teklif</th><th>Tarih</th><th>Durum</th><th className="num">Tutar</th></tr></thead><tbody>{crm.teklifler.map((t) => <tr key={t.id}><td><a className="btn-link" href={`/panel/belgeler?yon=satis&tur=teklif&odak=${t.id}`}>{t.no}</a></td><td>{new Date(t.tarih).toLocaleDateString("tr-TR")}</td><td><Status tone={t.durum === "onaylandi" ? "ok" : t.durum === "iptal" ? "danger" : "warn"}>{t.durum}</Status></td><td className="num">{Number(t.genelToplam).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {t.dovizCinsi}</td></tr>)}</tbody></TableWrap>}</Card>
+                </div>
+              </>}
             </div>
           )}
 

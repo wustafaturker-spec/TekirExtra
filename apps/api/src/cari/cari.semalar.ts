@@ -102,6 +102,24 @@ export const cariHareketSemasi = z.object({
   aciklama: z.string().max(500).optional(),
 });
 
+export const crmEtkilesimSemasi = z.object({
+  tip: z.enum(["gorusme", "telefon", "eposta", "ziyaret", "not"]),
+  konu: z.string().trim().min(2).max(160),
+  aciklama: z.string().trim().max(4000).optional().nullable(),
+  tarih: z.string().datetime({ offset: true }),
+});
+
+export const crmGorevSemasi = z.object({
+  baslik: z.string().trim().min(2).max(200),
+  aciklama: z.string().trim().max(4000).optional().nullable(),
+  atananUserId: z.string().uuid().optional(),
+  sonTarih: z.string().datetime({ offset: true }),
+  hatirlatmaTarihi: z.string().datetime({ offset: true }).optional().nullable(),
+  oncelik: z.enum(["dusuk", "normal", "yuksek"]).default("normal"),
+});
+
+export const crmGorevDurumSemasi = z.object({ durum: z.enum(["acik", "tamamlandi", "iptal"]) });
+
 export type CariOlusturGirdisi = z.infer<typeof cariOlusturSemasi>;
 export type CariHareketGirdisi = z.infer<typeof cariHareketSemasi>;
 export { ondalik, pozitifOndalik };

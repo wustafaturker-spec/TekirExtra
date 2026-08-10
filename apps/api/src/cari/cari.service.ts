@@ -19,6 +19,8 @@ import type {
   CariOlusturGirdisi,
   etiketSemasi,
   kisiSemasi,
+  crmEtkilesimSemasi,
+  crmGorevSemasi,
 } from "./cari.semalar";
 import { yaslandir } from "./yaslandirma";
 import { cariExcelOku, cariEkstreExcelYaz } from "../core/excel-yardimci";
@@ -505,6 +507,47 @@ export class CariService {
       tx.cariHesap.findUnique({ where: { id: cariId }, select: { id: true } }),
     );
     if (!kayit) throw new NotFoundException("Cari bulunamadı");
+  }
+
+  async crmGetir(cariId: string) {
+    const { tenantId } = aktifBaglam();
+    await this.getir(cariId);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const [etkilesimler, gorevler, teklifler, kullanicilar] = await Promise.all([
+        tx.crmEtkilesim.findMany({ where: { cariId }, orderBy: { tarih: "desc" }, include: { user: { select: { id: true, adSoyad: true } } } }),
+        tx.crmGorev.findMany({ where: { cariId }, orderBy: [{ durum: "asc" }, { sonTarih: "asc" }, { createdAt: "desc" }], include: { atanan: { select: { id: true, adSoyad: true } } } }),
+        tx.belge.findMany({ where: { cariId, tur: "teklif" }, orderBy: { tarih: "desc" }, select: { id: true, no: true, tarih: true, gecerlilikTarihi: true, durum: true, genelToplam: true, dovizCinsi: true } }),
+        tx.user.findMany({ where: { aktif: true }, orderBy: { adSoyad: "asc" }, select: { id: true, adSoyad: true, rol: true } }),
+      ]);
+      return { etkilesimler, gorevler, teklifler, kullanicilar };
+    });
+  }
+
+  async crmEtkilesimEkle(cariId: string, girdi: z.infer<typeof crmEtkilesimSemasi>) {
+    const { tenantId, userId } = aktifBaglam();
+    await this.getir(cariId);
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.crmEtkilesim.create({ data: { tenantId, cariId, userId, tip: girdi.tip, konu: girdi.konu, aciklama: girdi.aciklama, tarih: new Date(girdi.tarih) } }));
+  }
+
+  async crmGorevEkle(cariId: string, girdi: z.infer<typeof crmGorevSemasi>) {
+    const { tenantId, userId } = aktifBaglam();
+    await this.getir(cariId);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const atananUserId = girdi.atananUserId ?? userId;
+      const kullanici = await tx.user.findFirst({ where: { id: atananUserId, aktif: true } });
+      if (!kullanici) throw new BadRequestException("Atanacak aktif kullanıcı bulunamadı");
+      if (girdi.hatirlatmaTarihi && girdi.sonTarih && new Date(girdi.hatirlatmaTarihi) > new Date(girdi.sonTarih)) throw new BadRequestException("Hatırlatma tarihi son tarihten sonra olamaz");
+      return tx.crmGorev.create({ data: { tenantId, cariId, atananUserId, baslik: girdi.baslik, aciklama: girdi.aciklama, sonTarih: girdi.sonTarih ? new Date(girdi.sonTarih) : null, hatirlatmaTarihi: girdi.hatirlatmaTarihi ? new Date(girdi.hatirlatmaTarihi) : null, oncelik: girdi.oncelik } });
+    });
+  }
+
+  async crmGorevDurum(cariId: string, gorevId: string, durum: "acik" | "tamamlandi" | "iptal") {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const gorev = await tx.crmGorev.findFirst({ where: { id: gorevId, cariId } });
+      if (!gorev) throw new NotFoundException("CRM görevi bulunamadı");
+      return tx.crmGorev.update({ where: { id: gorevId }, data: { durum, tamamlanmaZamani: durum === "tamamlandi" ? new Date() : null } });
+    });
   }
 
   async hareketEkle(cariId: string, girdi: CariHareketGirdisi) {

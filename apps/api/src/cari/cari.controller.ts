@@ -25,6 +25,9 @@ import {
   etiketSemasi,
   kisiSemasi,
   cariHareketSemasi,
+  crmEtkilesimSemasi,
+  crmGorevDurumSemasi,
+  crmGorevSemasi,
 } from "./cari.semalar";
 import { sayfaAdedi } from "../core/sayfalama";
 
@@ -199,6 +202,33 @@ export class CariController {
       );
     }
     return this.cariService.hareketEkle(id, ayristirma.data);
+  }
+
+  @Get(":id/crm")
+  async crmGetir(@Param("id") id: string) { return this.cariService.crmGetir(id); }
+
+  @Post(":id/crm/etkilesimler")
+  @Roller("muhasebe", "satis")
+  async crmEtkilesimEkle(@Param("id") id: string, @Body() govde: unknown) {
+    const sonuc = crmEtkilesimSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((s) => s.message).join("; "));
+    return this.cariService.crmEtkilesimEkle(id, sonuc.data);
+  }
+
+  @Post(":id/crm/gorevler")
+  @Roller("muhasebe", "satis")
+  async crmGorevEkle(@Param("id") id: string, @Body() govde: unknown) {
+    const sonuc = crmGorevSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((s) => s.message).join("; "));
+    return this.cariService.crmGorevEkle(id, sonuc.data);
+  }
+
+  @Patch(":id/crm/gorevler/:gorevId")
+  @Roller("muhasebe", "satis")
+  async crmGorevDurum(@Param("id") id: string, @Param("gorevId") gorevId: string, @Body() govde: unknown) {
+    const sonuc = crmGorevDurumSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((s) => s.message).join("; "));
+    return this.cariService.crmGorevDurum(id, gorevId, sonuc.data.durum);
   }
 
   @Get(":id/ekstre")

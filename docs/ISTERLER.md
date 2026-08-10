@@ -82,9 +82,9 @@ otomatik rezervasyon, alış siparişinde yoldaki stok, STK-17 kullanılabilir s
 (mevcut − rezerve) üzerinden; tamamlandı. 4. aşama — T-02 Playwright/Chromium
 PDF altyapısı, FTR-07, CARI-04/RPR-04 PDF, barkod etiket basımı, ekler ortak
 altyapısı (MinIO); tamamlandı.
-Önceki kapılar: Stok Genişletme Paketi — STK-14…20, tamamlandı; STK-21 [G].
-Cari Genişletme Paketi — CARI-13…18 + CARI-11, tamamlandı; CRM (CARI-19) ve
-AI (CARI-20) [G]. Rapor aşaması — RPR-06 araç seti + tüm [Z] modül raporları,
+Önceki kapılar: Stok Genişletme Paketi — STK-14…21, tamamlandı.
+Cari Genişletme Paketi — CARI-13…19 + CARI-11, tamamlandı; AI (CARI-20) [G].
+Rapor aşaması — RPR-06 araç seti + tüm [Z] modül raporları,
 tamamlandı; RPR-07 (Metabase) ertelendi. 3. aşama — CARI-05/06/07/08/10,
 STK-05/06/08/09/10/11 dahil tam kapsam.
 
@@ -174,7 +174,7 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | CARI-16 | Cari başına birden çok banka hesabı tutulabilmelidir (banka, şube, hesap sahibi, IBAN, SWIFT, para birimi). | Z |
 | CARI-17 | Kara liste / işlem blokajı: blokajlı cariye belge kesimi AYR-04 kural altyapısıyla engellenir. Kart üzerinde risk özeti gösterilir: risk limiti, mevcut risk (bakiye + çek/senet riski), kalan limit. | Z |
 | CARI-18 | Kart detayında hesaplanan finansal özet sunulmalıdır: son işlem/tahsilat/ödeme tarihi, vadesi geçmiş bakiye. | Z |
-| CARI-19 | CRM özellikleri: görüşme kayıtları, görevler, hatırlatmalar, teklif geçmişi. | G |
+| CARI-19 | ✅ CRM özellikleri: tarihçeli görüşme/telefon/e-posta/ziyaret kayıtları, kullanıcıya atanabilen görev ve hatırlatmalar, görev durum takibi, cari teklif geçmişi. | G |
 | CARI-20 | AI destekli analizler: tahsilat gecikme tahmini, risk skorlama, ödeme davranışı analizi, otomatik limit önerisi. | G |
 
 ### 3.2 Fatura Yönetimi (FTR)

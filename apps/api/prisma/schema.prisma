@@ -68,8 +68,10 @@ model User {
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
-  tenant          Tenant      @relation(fields: [tenantId], references: [id])
-  temsilciCariler CariHesap[] @relation("CariTemsilci")
+  tenant          Tenant         @relation(fields: [tenantId], references: [id])
+  temsilciCariler CariHesap[]    @relation("CariTemsilci")
+  crmGorevleri    CrmGorev[]     @relation("CrmGorevAtanan")
+  crmKayitlari    CrmEtkilesim[]
 
   @@unique([tenantId, eposta])
   @@index([tenantId])
@@ -295,6 +297,8 @@ model CariHesap {
   bankaHesaplari       CariBankaHesap[]
   etiketler            CariEtiketAtama[]
   hareketler           CariHareket[]
+  crmEtkilesimleri     CrmEtkilesim[]
+  crmGorevleri         CrmGorev[]
   faturas              Fatura[]
   cekSenetleri         CekSenet[]         @relation("CekSenetCari")
   ceklerCiro           CekSenet[]         @relation("CekSenetCiro")
@@ -306,6 +310,67 @@ model CariHesap {
   @@unique([tenantId, kod])
   @@index([tenantId, unvan])
   @@map("cari_hesaplar")
+}
+
+enum CrmEtkilesimTipi {
+  gorusme
+  telefon
+  eposta
+  ziyaret
+  not
+}
+
+enum CrmGorevDurumu {
+  acik
+  tamamlandi
+  iptal
+}
+
+enum CrmOncelik {
+  dusuk
+  normal
+  yuksek
+}
+
+model CrmEtkilesim {
+  id        String           @id @default(uuid()) @db.Uuid
+  tenantId  String           @map("tenant_id") @db.Uuid
+  cariId    String           @map("cari_id") @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  tip       CrmEtkilesimTipi
+  konu      String
+  aciklama  String?
+  tarih     DateTime
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  cari CariHesap @relation(fields: [cariId], references: [id], onDelete: Cascade)
+  user User      @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, cariId, tarih])
+  @@map("crm_etkilesimleri")
+}
+
+model CrmGorev {
+  id               String         @id @default(uuid()) @db.Uuid
+  tenantId         String         @map("tenant_id") @db.Uuid
+  cariId           String         @map("cari_id") @db.Uuid
+  atananUserId     String         @map("atanan_user_id") @db.Uuid
+  baslik           String
+  aciklama         String?
+  sonTarih         DateTime?      @map("son_tarih")
+  hatirlatmaTarihi DateTime?      @map("hatirlatma_tarihi")
+  oncelik          CrmOncelik     @default(normal)
+  durum            CrmGorevDurumu @default(acik)
+  tamamlanmaZamani DateTime?      @map("tamamlanma_zamani")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  cari   CariHesap @relation(fields: [cariId], references: [id], onDelete: Cascade)
+  atanan User      @relation("CrmGorevAtanan", fields: [atananUserId], references: [id])
+
+  @@index([tenantId, cariId, durum, sonTarih])
+  @@index([tenantId, atananUserId, durum, hatirlatmaTarihi])
+  @@map("crm_gorevleri")
 }
 
 model CariAdres {
