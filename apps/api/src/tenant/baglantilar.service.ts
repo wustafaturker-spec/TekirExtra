@@ -154,7 +154,7 @@ export class BaglantilarService {
 
     const config = JSON.parse(coz(kayit.sifreliConfig)) as EntegratorConfig & { saticiId?: string; magazaId?: string; apiAnahtari?: string };
     const pazaryeriKimligiGecerli = kayit.saglayici === "amazon_tr"
-      ? Boolean(config.kullaniciAdi && config.parola && config.apiAnahtari && config.magazaId)
+      ? Boolean(config.kullaniciAdi && config.parola && config.apiAnahtari && config.saticiId && config.magazaId)
       : Boolean(config.kullaniciAdi && config.parola && (kayit.saglayici === "n11" || config.saticiId || config.magazaId));
     const sonuc = kayit.aile === "pazaryeri"
       ? { basarili: pazaryeriKimligiGecerli, mesaj: pazaryeriKimligiGecerli ? "Kimlik biçimi doğrulandı; canlı test senkronizasyon sırasında yapılacaktır" : "Sağlayıcı için zorunlu kimlik alanları eksik" }

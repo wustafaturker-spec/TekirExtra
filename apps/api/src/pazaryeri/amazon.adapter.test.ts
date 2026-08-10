@@ -3,6 +3,21 @@ import { AmazonAdapter } from "./amazon.adapter";
 
 afterEach(() => vi.unstubAllGlobals());
 describe("AmazonAdapter", () => {
+  it("stok ve fiyatı JSON_LISTINGS_FEED olarak yükler", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: "lwa-token" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ feedDocumentId: "doc-1", url: "https://upload.example/doc-1" }) })
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ feedId: "feed-1" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const sonuc = await new AmazonAdapter().stokFiyatGonder({ kullaniciAdi: "client", parola: "secret", apiAnahtari: "refresh", saticiId: "seller-1", magazaId: "market-1" }, [{ sku: "SKU-1", barkod: "8690", miktar: 6.8, fiyat: 225.456 }]);
+    expect(sonuc).toEqual({ gonderilen: 1, islemIdleri: ["feed-1"] });
+    const belge = JSON.parse(fetchMock.mock.calls[2][1].body);
+    expect(belge.header).toEqual(expect.objectContaining({ sellerId: "seller-1", version: "2.0" }));
+    expect(belge.messages[0].patches).toEqual(expect.arrayContaining([expect.objectContaining({ path: "/attributes/fulfillment_availability" }), expect.objectContaining({ path: "/attributes/purchasable_offer" })]));
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({ feedType: "JSON_LISTINGS_FEED", marketplaceIds: ["market-1"], inputFeedDocumentId: "doc-1" });
+  });
+
   it("LWA jetonu alır, siparişleri normalize eder ve sayfalama bağlamını korur", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: "lwa-token" }) })

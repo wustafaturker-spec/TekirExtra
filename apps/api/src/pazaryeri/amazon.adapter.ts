@@ -1,4 +1,4 @@
-import type { NormalizeSiparis, PazaryeriConfig } from "./trendyol.adapter";
+import type { NormalizeSiparis, PazaryeriConfig, PazaryeriStokFiyat } from "./trendyol.adapter";
 
 interface AmazonImlec { token?: string; lastUpdatedAfter: string }
 
@@ -19,22 +19,53 @@ function imleciCoz(imlec?: string | null): AmazonImlec {
 }
 
 export class AmazonAdapter {
+  private async erisimTokeniAl(config: PazaryeriConfig): Promise<string> {
+    if (!config.parola || !config.apiAnahtari) throw new Error("Amazon LWA client secret ve refresh token zorunludur");
+    const tokenYaniti = await fetch("https://api.amazon.com/auth/o2/token", {
+      method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: config.apiAnahtari, client_id: config.kullaniciAdi, client_secret: config.parola }),
+    });
+    if (!tokenYaniti.ok) throw new Error(`Amazon LWA jeton servisi HTTP ${tokenYaniti.status}`);
+    const tokenVerisi = await tokenYaniti.json() as { access_token?: string };
+    if (!tokenVerisi.access_token) throw new Error("Amazon LWA erişim jetonu dönmedi");
+    return tokenVerisi.access_token;
+  }
+
+  private spApiBasliklari(token: string): Record<string, string> {
+    return { "x-amz-access-token": token, "x-amz-date": new Date().toISOString().replace(/[:-]|\.\d{3}/g, ""), "User-Agent": "TekirExtra/1.0 (Language=TypeScript)", "Content-Type": "application/json", Accept: "application/json" };
+  }
+
+  async stokFiyatGonder(config: PazaryeriConfig, kalemler: PazaryeriStokFiyat[]): Promise<{ gonderilen: number; islemIdleri: string[] }> {
+    if (!config.saticiId || !config.magazaId) throw new Error("Amazon Seller ID ve marketplace ID zorunludur");
+    if (!kalemler.length) return { gonderilen: 0, islemIdleri: [] };
+    const token = await this.erisimTokeniAl(config);
+    const belge = JSON.stringify({
+      header: { sellerId: config.saticiId, version: "2.0", issueLocale: "tr_TR" },
+      messages: kalemler.map((k, i) => ({ messageId: i + 1, sku: k.sku, operationType: "PATCH", productType: "PRODUCT", patches: [
+        { op: "replace", path: "/attributes/fulfillment_availability", value: [{ fulfillment_channel_code: "DEFAULT", quantity: Math.max(0, Math.floor(k.miktar)) }] },
+        { op: "replace", path: "/attributes/purchasable_offer", value: [{ audience: "ALL", currency: "TRY", our_price: [{ schedule: [{ value_with_tax: Number(k.fiyat.toFixed(2)) }] }] }] },
+      ] })),
+    });
+    if (Buffer.byteLength(belge) > 10 * 1024 * 1024) throw new Error("Amazon stok/fiyat feed belgesi 10 MiB sınırını aşıyor");
+    const belgeYaniti = await fetch("https://sellingpartnerapi-eu.amazon.com/feeds/2021-06-30/documents", { method: "POST", headers: this.spApiBasliklari(token), body: JSON.stringify({ contentType: "application/json; charset=UTF-8" }) });
+    if (!belgeYaniti.ok) throw new Error(`Amazon feed belgesi servisi HTTP ${belgeYaniti.status}`);
+    const belgeVerisi = await belgeYaniti.json() as { feedDocumentId?: string; url?: string };
+    if (!belgeVerisi.feedDocumentId || !belgeVerisi.url) throw new Error("Amazon feed belgesi kimliği veya yükleme adresi dönmedi");
+    const yuklemeYaniti = await fetch(belgeVerisi.url, { method: "PUT", headers: { "Content-Type": "application/json; charset=UTF-8" }, body: belge });
+    if (!yuklemeYaniti.ok) throw new Error(`Amazon feed yükleme servisi HTTP ${yuklemeYaniti.status}`);
+    const feedYaniti = await fetch("https://sellingpartnerapi-eu.amazon.com/feeds/2021-06-30/feeds", { method: "POST", headers: this.spApiBasliklari(token), body: JSON.stringify({ feedType: "JSON_LISTINGS_FEED", marketplaceIds: [config.magazaId], inputFeedDocumentId: belgeVerisi.feedDocumentId }) });
+    if (!feedYaniti.ok) throw new Error(`Amazon feed oluşturma servisi HTTP ${feedYaniti.status}`);
+    const feedVerisi = await feedYaniti.json() as { feedId?: string };
+    if (!feedVerisi.feedId) throw new Error("Amazon stok/fiyat işlemi feedId dönmedi");
+    return { gonderilen: kalemler.length, islemIdleri: [String(feedVerisi.feedId)] };
+  }
+
   async siparisleriCek(config: PazaryeriConfig, imlec?: string | null): Promise<{ siparisler: NormalizeSiparis[]; sonrakiImlec: string | null }> {
     if (!config.parola || !config.apiAnahtari || !config.magazaId) {
       throw new Error("Amazon LWA client secret, refresh token ve marketplace ID zorunludur");
     }
 
-    const tokenYaniti = await fetch("https://api.amazon.com/auth/o2/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-      body: new URLSearchParams({
-        grant_type: "refresh_token", refresh_token: config.apiAnahtari,
-        client_id: config.kullaniciAdi, client_secret: config.parola,
-      }),
-    });
-    if (!tokenYaniti.ok) throw new Error(`Amazon LWA jeton servisi HTTP ${tokenYaniti.status}`);
-    const tokenVerisi = await tokenYaniti.json() as { access_token?: string };
-    if (!tokenVerisi.access_token) throw new Error("Amazon LWA erişim jetonu dönmedi");
+    const erisimTokeni = await this.erisimTokeniAl(config);
 
     const sayfaImleci = imleciCoz(imlec);
     const url = new URL("https://sellingpartnerapi-eu.amazon.com/orders/2026-01-01/orders");
@@ -45,7 +76,7 @@ export class AmazonAdapter {
     if (sayfaImleci.token) url.searchParams.set("paginationToken", sayfaImleci.token);
     const yanit = await fetch(url, {
       headers: {
-        "x-amz-access-token": tokenVerisi.access_token,
+        "x-amz-access-token": erisimTokeni,
         "x-amz-date": new Date().toISOString().replace(/[:-]|\.\d{3}/g, ""),
         "User-Agent": "TekirExtra/1.0 (Language=TypeScript)", Accept: "application/json",
       },
