@@ -321,7 +321,7 @@ mimarisi bu ailelere baştan hazır tasarlanır (bkz. MIMARI.md). Tümü **[G]**
 | No | İster | Öncelik |
 |---|---|---|
 | ENT-01 | Tüm dış bağlantılar (e-belge, pazaryeri, POS, banka) **ortak bağlantı modeli** üzerinden yönetilmelidir: firma, sağlayıcıyı seçer, erişim bilgilerini girer, bağlantıyı test eder (EBLG-01a/01b desenine uygun). Mimari v1.0'da bu genel modeli kurar. | Z |
-| ENT-02 | ⏳ Pazaryeri entegrasyonu: Trendyol, Hepsiburada, N11 ve Amazon TR'den siparişler otomatik çekilebilmeli, tek tıkla/toplu faturalaştırılabilmelidir. **Sipariş kutusu, idempotent içe aktarım, ürün eşleme, dört sağlayıcı için şifreli bağlantı, toplu fatura taslakları; cursor tabanlı Trendyol ve offset tabanlı Hepsiburada canlı adaptörleri tamamlandı. N11 ve Amazon TR sırada.** | G |
+| ENT-02 | ⏳ Pazaryeri entegrasyonu: Trendyol, Hepsiburada, N11 ve Amazon TR'den siparişler otomatik çekilebilmeli, tek tıkla/toplu faturalaştırılabilmelidir. **Sipariş kutusu, idempotent içe aktarım, ürün eşleme, şifreli bağlantı ve toplu fatura taslakları; Trendyol, Hepsiburada ve güncel REST tabanlı N11 canlı adaptörleri tamamlandı. Amazon TR sırada.** | G |
 | ENT-03 | Pazaryeri stok/fiyat senkronizasyonu: TekirExtra'daki stok miktarı ve fiyat, bağlı pazaryerlerine gönderilebilmelidir. | G |
 | ENT-04 | Sanal POS ile kredi kartı tahsilatı yapılabilmelidir: hem ödeme kuruluşları (iyzico, PayTR vb.) hem doğrudan banka sanal POS'ları adaptör olarak desteklenebilmelidir. Tahsilat, cari bakiyeye ve kasa/banka hesabına otomatik işlenir. | G |
 | ENT-05 | Cariye e-posta/SMS ile **ödeme linki** gönderilebilmeli; link üzerinden yapılan kart tahsilatı ilgili faturayı/bakiyeyi kapatmalıdır. | G |
