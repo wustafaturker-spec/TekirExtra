@@ -60,6 +60,15 @@ export class KayitService {
           epostaDogrulandi: true,
         },
       });
+      await tx.tenantAbonelik.create({
+        data: {
+          tenantId,
+          planKodu: "v1",
+          durum: "aktif",
+          faturaEpostasi: girdi.yoneticiEposta,
+          faturalandirmaUnvani: girdi.unvan,
+        },
+      });
       // STK-07: her firmada en az bir depo bulunur. Tek depolu firmalarda
       // arayüz depo seçimi göstermez; stok akışları bu varsayılana yazar.
       await tx.depo.create({

@@ -190,7 +190,7 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | FTR-07 | Fatura PDF çıktısı üretilebilmeli, e-posta ile gönderilebilmelidir. | Z |
 | FTR-08 | İade faturası (alış/satış) düzenlenebilmeli, stok ve cari hareketleri ters yönde işlenmelidir. | Z |
 | FTR-09 | Proforma fatura oluşturulabilmeli ve tek tıkla satış faturasına dönüştürülebilmelidir. | İ |
-| FTR-10 | Tekrarlayan (abonelik tipi) faturalar tanımlanabilmelidir. | G |
+| FTR-10 | ✅ Tekrarlayan (abonelik tipi) faturalar tanımlanabilmelidir. | G |
 | FTR-11 | Tevkifatlı ve istisnalı fatura senaryoları desteklenmelidir. | İ |
 | FTR-12 | Belge zinciri desteklenmelidir: teklif → sipariş → irsaliye → fatura; her adım bir sonrakine tek tıkla dönüştürülebilmeli, zincir izlenebilmelidir (e-İrsaliye kapsam dışı; kağıt/PDF irsaliye). Not (2026-07-13): sipariş aşamasında stok rezervasyonu ile rezerve/yoldaki stok göstergeleri bu kapsamda ele alınır. | İ |
 | FTR-13 | Bekleyen siparişler/irsaliyeler toplu seçilip tek faturada birleştirilebilmelidir (toplu faturalama). | İ |
@@ -223,12 +223,12 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | STK-04 | Kritik stok seviyesi tanımlanabilmeli, altına düşünce panelde uyarı gösterilmelidir. | Z |
 | STK-05 | Ürünler Excel'den toplu içe aktarılabilmelidir. | İ |
 | STK-06 | Stok sayımı (fiili envanter) girilebilmeli, farklar düzeltme hareketi olarak işlenmelidir. | İ |
-| STK-07 | Çoklu depo desteği sağlanmalıdır. **(2026-08-06'da yapıldı — §STK-07 notu)** | G |
+| STK-07 | ✅ Çoklu depo desteği sağlanmalıdır. **(2026-08-06'da yapıldı — §STK-07 notu)** | G |
 | STK-08 | Maliyetlendirme ilk sürümde ağırlıklı ortalama yöntemiyle yapılmalıdır. | İ |
 | STK-09 | Ürünler hiyerarşik kategori ağacıyla sınıflandırılabilmeli; ürün görseli eklenebilmelidir. | İ |
 | STK-10 | Çoklu birim desteği: ürün için ana birim + çevrim katsayılı ek birimler (ör. adet/koli/palet); alış-satış farklı birimle yapılabilmelidir. | İ |
 | STK-11 | Çoklu fiyat listesi tanımlanabilmelidir (ör. perakende, bayi, ihracat); fatura kesilirken carinin fiyat listesi otomatik uygulanmalıdır (CARI-10 ile birlikte). | İ |
-| STK-12 | Ürün varyantları (renk/beden gibi nitelik kombinasyonları) tanımlanabilmeli, stok varyant bazında izlenebilmelidir. **(2026-08-10'da yapıldı — varyant kodu/barkodu/fiyatı, depo bakiyesi, hareket, sipariş rezervi ve fatura zinciri)** | G |
+| STK-12 | ✅ Ürün varyantları (renk/beden gibi nitelik kombinasyonları) tanımlanabilmeli, stok varyant bazında izlenebilmelidir. **(2026-08-10'da yapıldı — varyant kodu/barkodu/fiyatı, depo bakiyesi, hareket, sipariş rezervi ve fatura zinciri)** | G |
 | STK-13 | **Modül içi raporlar:** envanter değeri, stok hareket özeti, en çok/en az satanlar, stok devir hızı, ürün bazlı kârlılık (ağırlıklı ortalama maliyete göre), kritik stok listesi; ayrıca sipariş önerisi (STK-16), fire/zayi, hareketsiz stok ve eksi stok raporları. Tümü RPR-06 rapor araç setini kullanır. | Z |
 | STK-14 | Kart genişletme: kısa ad, açıklama, marka, model, menşei, GTİP kodu, üretici ürün kodu; stok tipine **sarf** eklenir. | Z |
 | STK-15 | Ürün başına birden çok barkod tutulabilmelidir; barkod bir birime ve birime özgü satış fiyatına bağlanabilmeli, barkodla ürün bulunabilmelidir. | Z |
@@ -237,7 +237,7 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | STK-18 | Ürün-tedarikçi ilişkisi: tedarikçi carisi, tedarikçi ürün kodu, alış fiyatı, tedarik süresi, varsayılan tedarikçi; sipariş önerisinde kullanılır. | Z |
 | STK-19 | Stok hareket türleri genişletilmelidir: fire, zayi, numune, promosyon, açılış fişi; fire/zayi raporlanabilmelidir. | Z |
 | STK-20 | Sayım farkları doğrudan stoğa işlenmemeli; taslak → onay → düzeltme hareketi akışıyla, onay yetkisine bağlı işlenmelidir. | Z |
-| STK-21 | Seri numarası ve lot/parti + son kullanma tarihi takibi (FEFO çıkış desteğiyle). **(2026-08-10'da yapıldı — varyant/depo bazlı parti, tekil seri, hareket izi, transfer ve fatura/belge zinciri)** | G |
+| STK-21 | ✅ Seri numarası ve lot/parti + son kullanma tarihi takibi (FEFO çıkış desteğiyle). **(2026-08-10'da yapıldı — varyant/depo bazlı parti, tekil seri, hareket izi, transfer ve fatura/belge zinciri)** | G |
 
 ### 3.5 Kasa ve Banka (KSB)
 
@@ -298,7 +298,7 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | KLN-09 | Firma kaydında e-posta doğrulaması yapılmalıdır: kayıtta doğrulama linki gönderilir, link tıklanmadan oturum açılamaz. | Z |
 | KLN-06 | Sistem çok kiracılı (multi-tenant) çalışmalıdır: her firma bağımsız kaydolur, firmalar arası veri yalıtımı hem uygulama hem veri katmanında garanti edilmelidir. | Z |
 | KLN-07 | Firma kaydı (onboarding) self-servis olmalıdır: firma bilgileri, ilk yönetici kullanıcı ve entegratör bağlantısı sihirbazla kurulabilmelidir. | Z |
-| KLN-08 | Firma hesabı modeli, ileride abonelik planı/faturalandırma bilgisi taşıyacak şekilde genişletilebilir olmalıdır; v1.0'da fiyatlandırma uygulanmaz. | G |
+| KLN-08 | ✅ Firma hesabı modeli plan, durum, faturalama iletişimi, sağlayıcı referansı ve dönem bilgilerini ayrı abonelik profiliyle taşıyabilir; v1.0'da fiyatlandırma uygulanmaz. | G |
 
 ### 3.8 Ayarlar ve Kayıt İşlem Kuralları (AYR)
 

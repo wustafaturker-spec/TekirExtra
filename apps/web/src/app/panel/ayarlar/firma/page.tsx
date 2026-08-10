@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiHata, tokenAl, tokenYaz } from "@/lib/api";
-import { Alert, Button, ButtonLabel, Card, Field, Input, PageHeader } from "@/components/ui";
+import { Alert, Badge, Button, ButtonLabel, Card, Field, Input, PageHeader } from "@/components/ui";
 
 interface Logo {
   id: string;
@@ -18,6 +18,13 @@ interface Firma {
   vkn: string;
   vergiDairesi: string | null;
   logo: Logo | null;
+  abonelik: {
+    planKodu: string;
+    durum: "deneme" | "aktif" | "askida" | "iptal";
+    faturaEpostasi: string | null;
+    donemBaslangici: string | null;
+    donemSonu: string | null;
+  } | null;
 }
 
 const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
@@ -168,6 +175,21 @@ export default function FirmaAyarlariSayfasi() {
       <Alert tone="success">{basari}</Alert>
 
       <div className="stack">
+        <Card>
+          <div className="between">
+            <div>
+              <h2 className="card__title" style={{ fontSize: "1.1rem", margin: 0 }}>Hesap ve Abonelik Altyapısı</h2>
+              <p className="muted" style={{ margin: ".35rem 0 0" }}>v1.0 sürümünde fiyatlandırma ve ücret tahsilatı uygulanmaz.</p>
+            </div>
+            <Badge variant={firma?.abonelik?.durum === "aktif" ? "success" : "neutral"}>{firma?.abonelik?.durum ?? "Hazırlanıyor"}</Badge>
+          </div>
+          <div className="row" style={{ marginTop: "1rem" }}>
+            <div className="grow"><span className="subtle">Plan kodu</span><div><strong>{firma?.abonelik?.planKodu ?? "v1"}</strong></div></div>
+            <div className="grow"><span className="subtle">Fatura iletişimi</span><div><strong>{firma?.abonelik?.faturaEpostasi ?? "—"}</strong></div></div>
+            <div className="grow"><span className="subtle">Dönem</span><div><strong>{firma?.abonelik?.donemBaslangici && firma.abonelik.donemSonu ? `${new Date(firma.abonelik.donemBaslangici).toLocaleDateString("tr-TR")} – ${new Date(firma.abonelik.donemSonu).toLocaleDateString("tr-TR")}` : "Süresiz v1 erişimi"}</strong></div></div>
+          </div>
+        </Card>
+
         {/* LOGO GÜNCELLEME KARTI */}
         <Card>
           <h2 className="card__title" style={{ fontSize: "1.1rem" }}>🖼️ Firma Logosu</h2>

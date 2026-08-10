@@ -36,6 +36,13 @@ enum BelgeDurum {
   hata
 }
 
+enum AbonelikDurumu {
+  deneme
+  aktif
+  askida
+  iptal
+}
+
 model Tenant {
   id           String   @id @default(uuid()) @db.Uuid
   unvan        String
@@ -48,8 +55,33 @@ model Tenant {
   modulAyarlari ModulAyar[]
   baglantilar   Baglanti[]
   auditLoglar   AuditLog[]
+  abonelik      TenantAbonelik?
 
   @@map("tenants")
+}
+
+/// KLN-08: v1.0 fiyatlandırma uygulamaz. Sağlayıcı ve dönem alanları ileride
+/// ödeme altyapısı bağlanırken tenant tablosunu değiştirmeden kullanılacaktır.
+model TenantAbonelik {
+  id                    String          @id @default(uuid()) @db.Uuid
+  tenantId              String          @unique @map("tenant_id") @db.Uuid
+  planKodu              String          @default("v1") @map("plan_kodu")
+  durum                  AbonelikDurumu @default(aktif)
+  faturaEpostasi         String?         @map("fatura_epostasi")
+  faturalandirmaUnvani   String?         @map("faturalandirma_unvani")
+  saglayici              String?
+  saglayiciMusteriRef    String?         @map("saglayici_musteri_ref")
+  donemBaslangici        DateTime?       @map("donem_baslangici")
+  donemSonu              DateTime?       @map("donem_sonu")
+  iptalTarihi            DateTime?       @map("iptal_tarihi")
+  meta                   Json?
+  createdAt              DateTime        @default(now()) @map("created_at")
+  updatedAt              DateTime        @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([durum, donemSonu])
+  @@map("tenant_abonelikleri")
 }
 
 model User {

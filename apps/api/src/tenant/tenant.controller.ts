@@ -56,7 +56,7 @@ export class TenantController {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const tenant = await tx.tenant.findUnique({
         where: { id: tenantId },
-        select: { id: true, unvan: true, vkn: true, vergiDairesi: true },
+        select: { id: true, unvan: true, vkn: true, vergiDairesi: true, abonelik: { select: { planKodu: true, durum: true, faturaEpostasi: true, donemBaslangici: true, donemSonu: true } } },
       });
       if (!tenant) return null;
 
@@ -85,7 +85,7 @@ export class TenantController {
       const tenant = await tx.tenant.update({
         where: { id: tenantId },
         data: ayristirma.data,
-        select: { id: true, unvan: true, vkn: true, vergiDairesi: true },
+        select: { id: true, unvan: true, vkn: true, vergiDairesi: true, abonelik: { select: { planKodu: true, durum: true, faturaEpostasi: true, donemBaslangici: true, donemSonu: true } } },
       });
 
       const logo = await tx.ek.findFirst({
