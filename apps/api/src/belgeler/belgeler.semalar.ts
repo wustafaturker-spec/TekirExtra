@@ -9,6 +9,7 @@ export const BELGE_YONLERI = ["satis", "alis"] as const;
 
 export const belgeSatirSemasi = z.object({
   stokId: z.string().uuid(),
+  varyantId: z.string().uuid().optional().nullable(),
   miktar: pozitifOndalik,
   birim: z.string().min(1).max(20).default("adet"),
   birimFiyat: pozitifOndalik,

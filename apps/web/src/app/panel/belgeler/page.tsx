@@ -47,9 +47,11 @@ const GORUNUM_ANAHTARI = "tekir_belge_gorunumleri";
 
 interface Cari { id: string; kod?: string; unvan: string; vknTckn?: string | null; telefon?: string | null }
 interface Stok { id: string; kod: string; ad: string; tedarikciUrunKodlari?: string[] }
+interface StokVaryant { id: string; kod: string; ad: string; aktif: boolean; mevcutMiktar: string }
 
 interface BelgeSatirForm {
   stokId: string;
+  varyantId?: string;
   miktar: number;
   birimFiyat: number;
   iskontoOrani: number;
@@ -140,6 +142,7 @@ export default function BelgelerSayfasi() {
   const [satirlar, setSatirlar] = useState<BelgeSatirForm[]>([
     { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 },
   ]);
+  const [stokVaryantlari, setStokVaryantlari] = useState<Record<string, StokVaryant[]>>({});
 
   const girdiSatirlar: FaturaHesaplaSatirGirdi[] = satirlar.map((s) => ({
     stokId: s.stokId || "gecici-id",
@@ -270,6 +273,7 @@ export default function BelgelerSayfasi() {
   async function satirGuncelle(i: number, alan: keyof BelgeSatirForm, deger: string | number) {
     const yeni = [...satirlar];
     yeni[i] = { ...yeni[i], [alan]: deger };
+    if (alan === "stokId") yeni[i].varyantId = undefined;
     if (alan === "stokId" && deger) {
       const stok = stoklar.find((s) => s.id === deger);
       void stok;
@@ -305,6 +309,7 @@ export default function BelgelerSayfasi() {
           depoId: depoId || null,
           satirlar: satirlar.map((s) => ({
             stokId: s.stokId,
+            varyantId: s.varyantId || null,
             miktar: String(s.miktar),
             birim: "adet",
             birimFiyat: String(s.birimFiyat),
@@ -600,7 +605,7 @@ export default function BelgelerSayfasi() {
                       <AramaSecici
                         ariaLabel={`${i + 1}. satır ürün veya hizmet seçimi`}
                         deger={s.stokId}
-                        onChange={(deger) => void satirGuncelle(i, "stokId", deger)}
+                        onChange={(deger) => { void satirGuncelle(i, "stokId", deger); if (deger && !stokVaryantlari[deger]) void api<{ varyantlar: StokVaryant[] }>(`/stok/${deger}`).then((d) => setStokVaryantlari((e) => ({ ...e, [deger]: d.varyantlar }))); }}
                         placeholder="Kod veya ürün adıyla ara"
                         secenekler={stoklar.map((stok) => ({
                           deger: stok.id,
@@ -609,6 +614,7 @@ export default function BelgelerSayfasi() {
                           aramaMetni: [stok.kod, ...(stok.tedarikciUrunKodlari ?? [])].join(" "),
                         }))}
                       />
+                      {(stokVaryantlari[s.stokId]?.length ?? 0) > 0 && <Select aria-label="Varyant" required value={s.varyantId ?? ""} onChange={(e) => { const yeni = [...satirlar]; yeni[i] = { ...s, varyantId: e.target.value }; setSatirlar(yeni); }}><option value="">Varyant seçin</option>{stokVaryantlari[s.stokId].filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad} · Stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")}</option>)}</Select>}
                     </td>
                     <td><Input className="document-line-number" aria-label="Miktar" type="number" min="0.01" step="any" inputMode="decimal" value={s.miktar} onChange={(e) => satirGuncelle(i, "miktar", Number(e.target.value))} required /></td>
                     <td><Input className="document-line-number" aria-label="Birim fiyat" type="number" min="0" step="any" inputMode="decimal" value={s.birimFiyat} onChange={(e) => satirGuncelle(i, "birimFiyat", Number(e.target.value))} required /></td>

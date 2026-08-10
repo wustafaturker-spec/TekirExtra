@@ -228,7 +228,7 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | STK-09 | Ürünler hiyerarşik kategori ağacıyla sınıflandırılabilmeli; ürün görseli eklenebilmelidir. | İ |
 | STK-10 | Çoklu birim desteği: ürün için ana birim + çevrim katsayılı ek birimler (ör. adet/koli/palet); alış-satış farklı birimle yapılabilmelidir. | İ |
 | STK-11 | Çoklu fiyat listesi tanımlanabilmelidir (ör. perakende, bayi, ihracat); fatura kesilirken carinin fiyat listesi otomatik uygulanmalıdır (CARI-10 ile birlikte). | İ |
-| STK-12 | Ürün varyantları (renk/beden gibi nitelik kombinasyonları) tanımlanabilmeli, stok varyant bazında izlenebilmelidir. | G |
+| STK-12 | Ürün varyantları (renk/beden gibi nitelik kombinasyonları) tanımlanabilmeli, stok varyant bazında izlenebilmelidir. **(2026-08-10'da yapıldı — varyant kodu/barkodu/fiyatı, depo bakiyesi, hareket, sipariş rezervi ve fatura zinciri)** | G |
 | STK-13 | **Modül içi raporlar:** envanter değeri, stok hareket özeti, en çok/en az satanlar, stok devir hızı, ürün bazlı kârlılık (ağırlıklı ortalama maliyete göre), kritik stok listesi; ayrıca sipariş önerisi (STK-16), fire/zayi, hareketsiz stok ve eksi stok raporları. Tümü RPR-06 rapor araç setini kullanır. | Z |
 | STK-14 | Kart genişletme: kısa ad, açıklama, marka, model, menşei, GTİP kodu, üretici ürün kodu; stok tipine **sarf** eklenir. | Z |
 | STK-15 | Ürün başına birden çok barkod tutulabilmelidir; barkod bir birime ve birime özgü satış fiyatına bağlanabilmeli, barkodla ürün bulunabilmelidir. | Z |

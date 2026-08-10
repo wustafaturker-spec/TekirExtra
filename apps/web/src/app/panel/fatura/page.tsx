@@ -47,9 +47,11 @@ interface Stok {
   satisFiyati: string | null;
   kdvOrani: string;
 }
+interface StokVaryant { id: string; kod: string; ad: string; barkod: string | null; satisFiyati: string | null; alisFiyati: string | null; mevcutMiktar: string; aktif: boolean }
 
 interface FaturaSatir {
   stokId: string;
+  varyantId?: string;
   miktar: number;
   birimFiyat: number;
   iskontoOrani: number;
@@ -193,6 +195,7 @@ export default function FaturaSayfasi() {
   const [satirlar, setSatirlar] = useState<FaturaSatir[]>([
     { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" },
   ]);
+  const [stokVaryantlari, setStokVaryantlari] = useState<Record<string, StokVaryant[]>>({});
   const bugun = new Date().toISOString().substring(0, 10);
   const formKirli = formAcik && (
     cariId !== "" || depoId !== "" || tip !== (yonBaglami ?? "satis") || tarih !== bugun
@@ -376,6 +379,7 @@ export default function FaturaSayfasi() {
 
     // Eğer stok seçildiyse varsayılan fiyatları yükleyelim
     if (alan === "stokId") {
+      yeni[index].varyantId = undefined;
       const stok = stoklar.find((s) => s.id === deger);
       if (stok) {
         yeni[index].kdvOrani = Number(stok.kdvOrani || 20);
@@ -403,6 +407,7 @@ export default function FaturaSayfasi() {
       return;
     }
     void satirGuncelle(index, "stokId", deger);
+    if (deger && !stokVaryantlari[deger]) void api<{ varyantlar: StokVaryant[] }>(`/stok/${deger}`).then((detay) => setStokVaryantlari((eskiler) => ({ ...eskiler, [deger]: detay.varyantlar })));
   }
 
   async function hizliCariOlustur(event: React.FormEvent) {
@@ -521,6 +526,7 @@ export default function FaturaSayfasi() {
           tarih,
           satirlar: satirlar.map((s) => ({
             stokId: s.stokId,
+            varyantId: s.varyantId || null,
             miktar: String(s.miktar),
             birim: "adet",
             birimFiyat: String(s.birimFiyat),
@@ -902,6 +908,7 @@ export default function FaturaSayfasi() {
                             aramaMetni: [stok.kod, stok.barkod, ...(stok.tedarikciUrunKodlari ?? [])].filter(Boolean).join(" "),
                           }))}
                         />
+                        {(stokVaryantlari[s.stokId]?.length ?? 0) > 0 && <Select aria-label="Varyant" required value={s.varyantId ?? ""} onChange={(e) => { const varyant = stokVaryantlari[s.stokId].find((v) => v.id === e.target.value); const yeni = [...satirlar]; yeni[index] = { ...s, varyantId: e.target.value, ...(varyant ? { birimFiyat: Number(tip === "alis" ? varyant.alisFiyati ?? s.birimFiyat : varyant.satisFiyati ?? s.birimFiyat) } : {}) }; setSatirlar(yeni); }}><option value="">Varyant seçin</option>{stokVaryantlari[s.stokId].filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad} · Stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")}</option>)}</Select>}
                         {satirDogrulamaHatalari.includes(index) && <p className="field-error" id={`fatura-satir-${index}-hatasi`} role="alert">Bu satır için ürün veya hizmet seçin.</p>}
                         {seciliStok && (
                           <span className={`document-line-stock${stokYetersiz ? " is-warning" : ""}`}>

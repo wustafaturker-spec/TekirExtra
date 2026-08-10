@@ -59,6 +59,7 @@ export const stokBirimSemasi = z.object({
 
 export const stokHareketOlusturSemasi = z.object({
   stokId: z.string().uuid(),
+  varyantId: z.string().uuid().optional().nullable(),
   /** STK-07: boşsa varsayılan depo kullanılır (tek depolu firmalarda arayüz sormaz) */
   depoId: z.string().uuid().optional().nullable(),
   tip: z.enum(STOK_HAREKET_TIPLERI),
@@ -84,6 +85,17 @@ export const stokTedarikciSemasi = z.object({
   tedarikSuresiGun: z.number().int().min(0).max(365).optional().nullable(),
   varsayilan: z.boolean().default(false),
 });
+
+export const stokVaryantSemasi = z.object({
+  kod: z.string().min(1).max(64),
+  ad: z.string().min(1).max(160),
+  nitelikler: z.record(z.string(), z.string().min(1).max(80)).refine((v) => Object.keys(v).length > 0, "En az bir nitelik gerekli"),
+  barkod: z.string().min(3).max(120).optional().nullable(),
+  alisFiyati: pozitifOndalik.optional().nullable(),
+  satisFiyati: pozitifOndalik.optional().nullable(),
+});
+
+export const stokVaryantGuncelleSemasi = stokVaryantSemasi.partial().extend({ aktif: z.boolean().optional() });
 
 /** Barkod etiket basımı (STK-15 devamı, 4. aşama). */
 export const etiketBasSemasi = z.object({

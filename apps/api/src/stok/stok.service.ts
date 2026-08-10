@@ -24,6 +24,8 @@ import type {
   stokKartGuncelleSemasi,
   stokKartOlusturSemasi,
   stokTedarikciSemasi,
+  stokVaryantGuncelleSemasi,
+  stokVaryantSemasi,
 } from "./stok.semalar";
 
 import { stokExcelOku } from "../core/excel-yardimci";
@@ -33,6 +35,7 @@ const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal => new Prism
 /** Stok hareketi girdisi (STK-07 ile depo zorunlu alan oldu). */
 export interface StokHareketGirdisi {
   stokId: string;
+  varyantId?: string | null;
   depoId: string;
   tip: StokHareketTip;
   /** ana birim cinsinden; sayim_duzeltme dışında pozitif verilir */
@@ -132,6 +135,7 @@ export class StokService {
           tedarikciler: {
             include: { cari: { select: { id: true, kod: true, unvan: true } } },
           },
+          varyantlar: { orderBy: [{ aktif: "desc" }, { kod: "asc" }], include: { depoBakiyeleri: { include: { depo: { select: { id: true, kod: true, ad: true } } } } } },
           _count: { select: { hareketler: true } },
         },
       }),
@@ -145,8 +149,34 @@ export class StokService {
       birimler: kayit.birimler,
       barkodlar: kayit.barkodlar,
       tedarikciler: kayit.tedarikciler,
+      varyantlar: kayit.varyantlar,
       izinliEylemler: this.eylemler(kayit, ctx.rol, kayit._count.hareketler),
     };
+  }
+
+  async varyantEkle(stokId: string, girdi: z.infer<typeof stokVaryantSemasi>) {
+    const { tenantId } = aktifBaglam();
+    await this.getir(stokId);
+    try {
+      return await this.prisma.tenantIslem(tenantId, (tx) => tx.stokVaryant.create({ data: {
+        tenantId, stokId, kod: girdi.kod, ad: girdi.ad, nitelikler: girdi.nitelikler,
+        barkod: girdi.barkod, alisFiyati: girdi.alisFiyati ? D(girdi.alisFiyati) : null,
+        satisFiyati: girdi.satisFiyati ? D(girdi.satisFiyati) : null,
+      }}));
+    } catch (hata) {
+      if (hata instanceof Prisma.PrismaClientKnownRequestError && hata.code === "P2002") throw new ConflictException("Varyant kodu veya barkodu zaten kullanımda");
+      throw hata;
+    }
+  }
+
+  async varyantGuncelle(stokId: string, varyantId: string, girdi: z.infer<typeof stokVaryantGuncelleSemasi>) {
+    const { tenantId } = aktifBaglam();
+    const mevcut = await this.prisma.tenantIslem(tenantId, (tx) => tx.stokVaryant.findFirst({ where: { id: varyantId, stokId } }));
+    if (!mevcut) throw new NotFoundException("Varyant bulunamadı");
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.stokVaryant.update({ where: { id: varyantId }, data: {
+      ...girdi, alisFiyati: girdi.alisFiyati === undefined ? undefined : girdi.alisFiyati ? D(girdi.alisFiyati) : null,
+      satisFiyati: girdi.satisFiyati === undefined ? undefined : girdi.satisFiyati ? D(girdi.satisFiyati) : null,
+    }}));
   }
 
   async olustur(girdi: z.infer<typeof stokKartOlusturSemasi>) {
@@ -517,7 +547,7 @@ export class StokService {
       tx.stokHareket.findMany({
         where: { stokId, ...(depoId ? { depoId } : {}) },
         orderBy: [{ tarih: "asc" }, { createdAt: "asc" }],
-        include: { depo: { select: { id: true, kod: true, ad: true } } },
+        include: { depo: { select: { id: true, kod: true, ad: true } }, varyant: { select: { id: true, kod: true, ad: true } } },
       }),
     );
   }
@@ -554,6 +584,7 @@ export class StokService {
     const { tenantId } = aktifBaglam();
     const {
       stokId,
+      varyantId,
       depoId,
       tip,
       miktar,
@@ -571,6 +602,8 @@ export class StokService {
       where: { id: stokId },
     });
     if (!urun) throw new NotFoundException("Stok kartı bulunamadı");
+    const varyant = varyantId ? await tx.stokVaryant.findFirst({ where: { id: varyantId, stokId, aktif: true } }) : null;
+    if (varyantId && !varyant) throw new BadRequestException("Varyant bu stok kartına ait değil");
 
     const depo = await tx.depo.findUnique({ where: { id: depoId } });
     if (!depo) throw new NotFoundException("Depo bulunamadı");
@@ -579,6 +612,9 @@ export class StokService {
     });
     const depoMevcut = D(depoBakiye?.mevcutMiktar ?? 0);
     const depoRezerve = D(depoBakiye?.rezerveMiktar ?? 0);
+    const varyantDepoBakiye = varyant
+      ? await tx.stokVaryantDepoBakiye.findUnique({ where: { tenantId_varyantId_depoId: { tenantId, varyantId: varyant.id, depoId } } })
+      : null;
 
     let miktarDegisimi = D(0);
     let yeniMevcut = D(urun.mevcutMiktar);
@@ -623,6 +659,16 @@ export class StokService {
         }
         if (politika === "uyar") eksiStokUyarisi = mesaj;
       }
+      if (varyant) {
+        const varyantKullanilabilir = D(varyantDepoBakiye?.mevcutMiktar ?? 0)
+          .add(miktarDegisimi).sub(D(varyantDepoBakiye?.rezerveMiktar ?? 0));
+        if (varyantKullanilabilir.lt(0)) {
+          const politika = await this.eksiStokPolitikasi(tx, tenantId);
+          const mesaj = `'${varyant.ad}' varyantının '${depo.ad}' deposundaki kullanılabilir stoğu eksiye düşüyor`;
+          if (politika === "engelle") throw new BadRequestException(`${mesaj} — eksi stok politikası çıkışı engelliyor`);
+          if (politika === "uyar") eksiStokUyarisi = mesaj;
+        }
+      }
     } else if (tip === "sayim_duzeltme") {
       miktarDegisimi = miktar; // Sayım düzeltmesinde miktar pozitif veya negatif olabilir
       yeniMevcut = D(urun.mevcutMiktar).add(miktarDegisimi);
@@ -647,6 +693,7 @@ export class StokService {
       data: {
         tenantId,
         stokId,
+        varyantId,
         depoId,
         tip,
         miktar: miktarDegisimi,
@@ -673,8 +720,23 @@ export class StokService {
       create: { tenantId, stokId, depoId, mevcutMiktar: miktarDegisimi },
       update: { mevcutMiktar: { increment: miktarDegisimi } },
     });
+    if (varyant) {
+      await tx.stokVaryant.update({ where: { id: varyant.id }, data: { mevcutMiktar: { increment: miktarDegisimi } } });
+      await tx.stokVaryantDepoBakiye.upsert({
+        where: { tenantId_varyantId_depoId: { tenantId, varyantId: varyant.id, depoId } },
+        create: { tenantId, varyantId: varyant.id, depoId, mevcutMiktar: miktarDegisimi },
+        update: { mevcutMiktar: { increment: miktarDegisimi } },
+      });
+    }
 
     return { hareket, eksiStokUyarisi };
+  }
+
+  async varyantDogrula(tx: Prisma.TransactionClient, stokId: string, varyantId?: string | null) {
+    if (!varyantId) return null;
+    const varyant = await tx.stokVaryant.findFirst({ where: { id: varyantId, stokId, aktif: true } });
+    if (!varyant) throw new BadRequestException("Varyant bu stok kartına ait değil veya pasif");
+    return varyant;
   }
 
   /**

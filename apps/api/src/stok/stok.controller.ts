@@ -33,6 +33,8 @@ import {
   stokKartGuncelleSemasi,
   stokKartOlusturSemasi,
   stokTedarikciSemasi,
+  stokVaryantGuncelleSemasi,
+  stokVaryantSemasi,
 } from "./stok.semalar";
 
 const D = (deger: string | number): Prisma.Decimal => new Prisma.Decimal(deger);
@@ -288,6 +290,22 @@ export class StokController {
 
   // ─── STOK HAREKET UÇLARI ─────────────────────────────────────────────────
 
+  @Post(":id/varyantlar")
+  @Roller("muhasebe")
+  async varyantEkle(@Param("id") id: string, @Body() govde: unknown) {
+    const sonuc = stokVaryantSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((s) => s.message).join("; "));
+    return this.stokService.varyantEkle(id, sonuc.data);
+  }
+
+  @Patch(":id/varyantlar/:varyantId")
+  @Roller("muhasebe")
+  async varyantGuncelle(@Param("id") id: string, @Param("varyantId") varyantId: string, @Body() govde: unknown) {
+    const sonuc = stokVaryantGuncelleSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((s) => s.message).join("; "));
+    return this.stokService.varyantGuncelle(id, varyantId, sonuc.data);
+  }
+
   @Get(":id/hareketler")
   async hareketListele(
     @Param("id") id: string,
@@ -321,6 +339,7 @@ export class StokController {
     return this.prisma.tenantIslem(tenantId, async (tx) =>
       this.stokService.hareketEkle(tx, {
         stokId: id,
+        varyantId: girdi.varyantId,
         depoId: await this.depoService.depoCozumle(tx, girdi.depoId),
         tip: girdi.tip,
         miktar: D(girdi.miktar),

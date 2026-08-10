@@ -53,6 +53,7 @@ interface Tedarikci {
   varsayilan: boolean;
   cari: { id: string; kod: string; unvan: string };
 }
+interface Varyant { id: string; kod: string; ad: string; nitelikler: Record<string, string>; barkod: string | null; alisFiyati: string | null; satisFiyati: string | null; mevcutMiktar: string; aktif: boolean }
 
 interface Hareket {
   id: string;
@@ -66,6 +67,7 @@ interface Hareket {
   kaynakTur: string;
   kaynakRef: string | null;
   depo?: { id: string; kod: string; ad: string } | null;
+  varyant?: { id: string; kod: string; ad: string } | null;
 }
 
 interface StokDetay {
@@ -102,6 +104,7 @@ interface StokDetay {
   birimler: Birim[];
   barkodlar: Barkod[];
   tedarikciler: Tedarikci[];
+  varyantlar?: Varyant[];
   izinliEylemler: string[];
 }
 
@@ -111,7 +114,7 @@ interface CariOzet {
   unvan: string;
 }
 
-type Sekme = "genel" | "hareketler" | "depolar" | "birimler" | "barkodlar" | "tedarikciler";
+type Sekme = "genel" | "hareketler" | "depolar" | "varyantlar" | "birimler" | "barkodlar" | "tedarikciler";
 
 /** Stok kartının depo bazlı kırılımı (STK-07). */
 interface DepoBakiyeSatiri {
@@ -309,6 +312,7 @@ export default function StokDetaySayfasi() {
               ? [{ deger: "depolar" as Sekme, baslik: `Depolar (${depoBakiyeleri.length})` }]
               : []),
             { deger: "birimler", baslik: `Birimler (${detay.birimler.length})` },
+            { deger: "varyantlar", baslik: `Varyantlar (${detay.varyantlar?.length ?? 0})` },
             { deger: "barkodlar", baslik: `Barkodlar (${detay.barkodlar.length})` },
             { deger: "tedarikciler", baslik: `Tedarikçiler (${detay.tedarikciler.length})` },
           ]}
@@ -382,6 +386,10 @@ export default function StokDetaySayfasi() {
             islem(() => api(`/stok/${id}/birimler/${birimId}`, { method: "DELETE" }), "Birim silindi.")
           }
         /></TabPanel>
+      )}
+
+      {aktifSekme === "varyantlar" && (
+        <TabPanel idPrefix="stok-detay" value="varyantlar"><VaryantlarSekmesi detay={detay} onIslem={islem} /></TabPanel>
       )}
 
       {aktifSekme === "barkodlar" && (
@@ -696,6 +704,17 @@ function DepolarSekmesi({
   );
 }
 
+function VaryantlarSekmesi({ detay, onIslem }: { detay: StokDetay; onIslem: (islem: () => Promise<unknown>, mesaj: string) => Promise<boolean> }) {
+  const [form, setForm] = useState({ kod: "", ad: "", nitelikler: "", barkod: "", alisFiyati: "", satisFiyati: "" });
+  async function ekle(e: React.FormEvent) {
+    e.preventDefault();
+    const nitelikler = Object.fromEntries(form.nitelikler.split(",").map((x) => x.trim()).filter(Boolean).map((x) => { const [anahtar, ...deger] = x.split(":"); return [anahtar.trim(), deger.join(":").trim()]; }).filter(([, v]) => v));
+    const basarili = await onIslem(() => api(`/stok/${detay.id}/varyantlar`, { method: "POST", body: JSON.stringify({ kod: form.kod, ad: form.ad, nitelikler, barkod: form.barkod || null, alisFiyati: form.alisFiyati || null, satisFiyati: form.satisFiyati || null }) }), "Varyant eklendi.");
+    if (basarili) setForm({ kod: "", ad: "", nitelikler: "", barkod: "", alisFiyati: "", satisFiyati: "" });
+  }
+  return <div className="stack"><Card title="Yeni varyant"><form className="form-grid" onSubmit={ekle}><Field label="Varyant kodu"><Input required value={form.kod} onChange={(e) => setForm({ ...form, kod: e.target.value })} /></Field><Field label="Ad"><Input required value={form.ad} onChange={(e) => setForm({ ...form, ad: e.target.value })} /></Field><Field label="Nitelikler"><Input required placeholder="Renk: Siyah, Beden: M" value={form.nitelikler} onChange={(e) => setForm({ ...form, nitelikler: e.target.value })} /></Field><Field label="Barkod"><Input value={form.barkod} onChange={(e) => setForm({ ...form, barkod: e.target.value })} /></Field><Field label="Alış fiyatı"><Input type="number" min="0" step="0.0001" value={form.alisFiyati} onChange={(e) => setForm({ ...form, alisFiyati: e.target.value })} /></Field><Field label="Satış fiyatı"><Input type="number" min="0" step="0.0001" value={form.satisFiyati} onChange={(e) => setForm({ ...form, satisFiyati: e.target.value })} /></Field><div><Button type="submit">Varyant ekle</Button></div></form></Card><Card title="Varyantlar"><TableWrap><table><thead><tr><th>Kod</th><th>Ad / Nitelikler</th><th>Barkod</th><th>Stok</th><th>Satış</th><th>Durum</th></tr></thead><tbody>{(detay.varyantlar ?? []).map((v) => <tr key={v.id}><td>{v.kod}</td><td><strong>{v.ad}</strong><br /><small>{Object.entries(v.nitelikler).map(([k, d]) => `${k}: ${d}`).join(" · ")}</small></td><td>{v.barkod ?? "—"}</td><td>{adet(v.mevcutMiktar)} {detay.anaBirim}</td><td>{v.satisFiyati ? tl(v.satisFiyati) : "Kart fiyatı"}</td><td><Button variant="ghost" size="sm" onClick={() => void onIslem(() => api(`/stok/${detay.id}/varyantlar/${v.id}`, { method: "PATCH", body: JSON.stringify({ aktif: !v.aktif }) }), v.aktif ? "Varyant pasifleştirildi." : "Varyant etkinleştirildi.")}>{v.aktif ? "Aktif" : "Pasif"}</Button></td></tr>)}</tbody></table></TableWrap></Card></div>;
+}
+
 function HareketlerSekmesi({
   detay,
   hareketler,
@@ -714,6 +733,7 @@ function HareketlerSekmesi({
   const [tarih, setTarih] = useState(bugun());
   const [aciklama, setAciklama] = useState("");
   const [depoId, setDepoId] = useState("");
+  const [varyantId, setVaryantId] = useState("");
 
   /** Seçili birimin ana birim karşılığı; ana birim için katsayı 1. */
   const katsayi =
@@ -725,6 +745,7 @@ function HareketlerSekmesi({
   async function kaydet() {
     const eklendi = await onEkle({
       stokId: detay.id,
+      varyantId: varyantId || null,
       depoId: depoId || null,
       tip,
       // Ana birim cinsinden miktar; API girilen değeri kendi çevirmez.
@@ -760,6 +781,7 @@ function HareketlerSekmesi({
         {formAcik && (
           <div className="stack" style={{ marginTop: "1rem" }}>
             <div className="row">
+              {(detay.varyantlar?.length ?? 0) > 0 && <div style={{ flex: 1, minWidth: 170 }}><Field label="Varyant"><Select required value={varyantId} onChange={(e) => setVaryantId(e.target.value)}><option value="">Seçin</option>{(detay.varyantlar ?? []).filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad}</option>)}</Select></Field></div>}
               <div style={{ flex: 1, minWidth: 170 }}>
                 <Field label="Hareket Tipi">
                   <Select value={tip} onChange={(e) => setTip(e.target.value)}>
@@ -876,6 +898,7 @@ function HareketlerSekmesi({
                     </td>
                     <td className="num">
                       {adet(h.girilenMiktar)} {h.girilenBirim}
+                      {h.varyant && <><br /><small>{h.varyant.kod} — {h.varyant.ad}</small></>}
                     </td>
                     <td
                       className="num"

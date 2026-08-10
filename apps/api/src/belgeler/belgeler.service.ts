@@ -44,6 +44,7 @@ const DONUSUM_HEDEFLERI: Record<BelgeTur, ("siparis" | "irsaliye" | "fatura")[]>
 
 type BelgeSatirKaydi = {
   stokId: string;
+  varyantId?: string | null;
   miktar: Prisma.Decimal;
   birim: string;
   birimFiyat: Prisma.Decimal;
@@ -128,7 +129,7 @@ export class BelgelerService {
         where: { id },
         include: {
           cari: { select: { id: true, kod: true, unvan: true, vknTckn: true } },
-          satirlar: { include: { stok: { select: { id: true, kod: true, ad: true } } } },
+          satirlar: { include: { stok: { select: { id: true, kod: true, ad: true } }, varyant: { select: { id: true, kod: true, ad: true, nitelikler: true } } } },
           kaynakBelge: { select: {
             id: true, tur: true, no: true, durum: true,
             kaynakBelge: { select: { id: true, tur: true, no: true, durum: true } },
@@ -165,6 +166,8 @@ export class BelgelerService {
       satirlar: kayit.satirlar.map((s) => ({
         id: s.id,
         stokId: s.stokId,
+        varyantId: s.varyantId,
+        varyant: s.varyant,
         stokKod: s.stok.kod,
         stokAd: s.stok.ad,
         miktar: s.miktar.toFixed(3),
@@ -271,6 +274,7 @@ export class BelgelerService {
         girdi.satirlar ??
         mevcut.satirlar.map((s) => ({
           stokId: s.stokId,
+          varyantId: s.varyantId,
           miktar: s.miktar,
           birim: s.birim,
           birimFiyat: s.birimFiyat,
@@ -392,6 +396,7 @@ export class BelgelerService {
             tenantId,
             belgeId: kopya.id,
             stokId: s.stokId,
+            varyantId: s.varyantId,
             miktar: s.miktar,
             birim: s.birim,
             birimFiyat: s.birimFiyat,
@@ -540,6 +545,7 @@ export class BelgelerService {
           tenantId,
           belgeId: yeni.id,
           stokId: s.stokId,
+          varyantId: s.varyantId,
           miktar: s.miktar,
           birim: s.birim,
           birimFiyat: s.birimFiyat,
@@ -654,7 +660,7 @@ export class BelgelerService {
   async siparisEtkisiUygula(
     tx: Prisma.TransactionClient,
     yon: "satis" | "alis",
-    satirlar: { stokId: string; miktar: Prisma.Decimal }[],
+    satirlar: { stokId: string; varyantId?: string | null; miktar: Prisma.Decimal }[],
     isaret: 1 | -1,
     depoId?: string | null,
   ): Promise<void> {
@@ -675,6 +681,14 @@ export class BelgelerService {
         alan,
         isaret > 0 ? s.miktar : s.miktar.negated(),
       );
+      if (s.varyantId) {
+        await tx.stokVaryant.update({ where: { id: s.varyantId }, data: { [alan]: isaret > 0 ? { increment: s.miktar } : { decrement: s.miktar } } });
+        await tx.stokVaryantDepoBakiye.upsert({
+          where: { tenantId_varyantId_depoId: { tenantId: aktifBaglam().tenantId, varyantId: s.varyantId, depoId: hedefDepoId } },
+          create: { tenantId: aktifBaglam().tenantId, varyantId: s.varyantId, depoId: hedefDepoId, [alan]: isaret > 0 ? s.miktar : s.miktar.negated() },
+          update: { [alan]: isaret > 0 ? { increment: s.miktar } : { decrement: s.miktar } },
+        });
+      }
     }
   }
 
@@ -734,6 +748,7 @@ export class BelgelerService {
           tenantId,
           faturaId: fatura.id,
           stokId: s.stokId,
+          varyantId: tumSatirlar[i].varyantId,
           miktar: D(s.miktar),
           birim: tumSatirlar[i].birim,
           birimFiyat: D(s.birimFiyat),
@@ -758,15 +773,21 @@ export class BelgelerService {
     tx: Prisma.TransactionClient,
     belgeId: string,
     hesapSatirlari: ReturnType<typeof faturaHesapla>["satirlar"],
-    girdiSatirlari: { birim?: string }[],
+    girdiSatirlari: { birim?: string; varyantId?: string | null }[],
   ): Promise<void> {
     const { tenantId } = aktifBaglam();
     for (const [i, s] of hesapSatirlari.entries()) {
+      const varyantId = girdiSatirlari[i]?.varyantId;
+      if (varyantId) {
+        const varyant = await tx.stokVaryant.findFirst({ where: { id: varyantId, stokId: s.stokId, aktif: true } });
+        if (!varyant) throw new BadRequestException("Varyant bu stok kartına ait değil veya pasif");
+      }
       await tx.belgeSatir.create({
         data: {
           tenantId,
           belgeId,
           stokId: s.stokId,
+          varyantId: girdiSatirlari[i]?.varyantId,
           miktar: D(s.miktar),
           birim: girdiSatirlari[i]?.birim ?? "adet",
           birimFiyat: D(s.birimFiyat),

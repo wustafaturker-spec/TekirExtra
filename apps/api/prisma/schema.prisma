@@ -470,10 +470,57 @@ model StokKart {
   fiyatlar          FiyatListesiKalem[]
   faturaSatirs      FaturaSatir[]
   belgeSatirlari    BelgeSatir[]
+  varyantlar        StokVaryant[]
 
   @@unique([tenantId, kod])
   @@index([tenantId, ad])
   @@map("stok_kartlari")
+}
+
+model StokVaryant {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  stokId        String   @map("stok_id") @db.Uuid
+  kod           String
+  ad            String
+  nitelikler    Json
+  barkod        String?
+  alisFiyati    Decimal? @map("alis_fiyati") @db.Decimal(15, 4)
+  satisFiyati   Decimal? @map("satis_fiyati") @db.Decimal(15, 4)
+  mevcutMiktar  Decimal  @default(0) @map("mevcut_miktar") @db.Decimal(15, 3)
+  rezerveMiktar Decimal  @default(0) @map("rezerve_miktar") @db.Decimal(15, 3)
+  yoldakiMiktar Decimal  @default(0) @map("yoldaki_miktar") @db.Decimal(15, 3)
+  aktif         Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  stok            StokKart                @relation(fields: [stokId], references: [id], onDelete: Cascade)
+  depoBakiyeleri  StokVaryantDepoBakiye[]
+  hareketler      StokHareket[]
+  faturaSatirlari FaturaSatir[]
+  belgeSatirlari  BelgeSatir[]
+
+  @@unique([tenantId, kod])
+  @@unique([tenantId, barkod])
+  @@index([tenantId, stokId])
+  @@map("stok_varyantlari")
+}
+
+model StokVaryantDepoBakiye {
+  id            String  @id @default(uuid()) @db.Uuid
+  tenantId      String  @map("tenant_id") @db.Uuid
+  varyantId     String  @map("varyant_id") @db.Uuid
+  depoId        String  @map("depo_id") @db.Uuid
+  mevcutMiktar  Decimal @default(0) @map("mevcut_miktar") @db.Decimal(15, 3)
+  rezerveMiktar Decimal @default(0) @map("rezerve_miktar") @db.Decimal(15, 3)
+  yoldakiMiktar Decimal @default(0) @map("yoldaki_miktar") @db.Decimal(15, 3)
+
+  varyant StokVaryant @relation(fields: [varyantId], references: [id], onDelete: Cascade)
+  depo    Depo        @relation(fields: [depoId], references: [id])
+
+  @@unique([tenantId, varyantId, depoId])
+  @@index([tenantId, depoId])
+  @@map("stok_varyant_depo_bakiyeleri")
 }
 
 /// Çoklu barkod (STK-15): birim ve birime özgü satış fiyatı taşıyabilir.
@@ -562,6 +609,7 @@ model StokHareket {
   id            String         @id @default(uuid()) @db.Uuid
   tenantId      String         @map("tenant_id") @db.Uuid
   stokId        String         @map("stok_id") @db.Uuid
+  varyantId     String?        @map("varyant_id") @db.Uuid
   /// STK-07: hareketin gerçekleştiği depo
   depoId        String         @map("depo_id") @db.Uuid
   tip           StokHareketTip
@@ -575,8 +623,9 @@ model StokHareket {
   kaynakRef     String?        @map("kaynak_ref")
   createdAt     DateTime       @default(now()) @map("created_at")
 
-  stok StokKart @relation(fields: [stokId], references: [id])
-  depo Depo     @relation(fields: [depoId], references: [id])
+  stok    StokKart     @relation(fields: [stokId], references: [id])
+  depo    Depo         @relation(fields: [depoId], references: [id])
+  varyant StokVaryant? @relation(fields: [varyantId], references: [id])
 
   @@index([tenantId, stokId, tarih])
   @@index([tenantId, depoId, tarih])
@@ -635,12 +684,13 @@ model Depo {
   updatedAt  DateTime @updatedAt @map("updated_at")
 
   bakiyeler         StokDepoBakiye[]
+  varyantBakiyeleri StokVaryantDepoBakiye[]
   hareketler        StokHareket[]
   sayimlar          Sayim[]
   faturalar         Fatura[]
   belgeler          Belge[]
-  cikisTransferleri DepoTransfer[]   @relation("TransferKaynak")
-  girisTransferleri DepoTransfer[]   @relation("TransferHedef")
+  cikisTransferleri DepoTransfer[]          @relation("TransferKaynak")
+  girisTransferleri DepoTransfer[]          @relation("TransferHedef")
 
   @@unique([tenantId, kod])
   @@index([tenantId])
@@ -820,6 +870,7 @@ model FaturaSatir {
   tenantId         String  @map("tenant_id") @db.Uuid
   faturaId         String  @map("fatura_id") @db.Uuid
   stokId           String  @map("stok_id") @db.Uuid
+  varyantId        String? @map("varyant_id") @db.Uuid
   miktar           Decimal @db.Decimal(15, 3)
   birim            String  @default("adet")
   birimFiyat       Decimal @map("birim_fiyat") @db.Decimal(15, 4)
@@ -836,8 +887,9 @@ model FaturaSatir {
   toplamTutar      Decimal @map("toplam_tutar") @db.Decimal(15, 2)
   gibIstisnaKodu   String? @map("gib_istisna_kodu")
 
-  fatura Fatura   @relation(fields: [faturaId], references: [id], onDelete: Cascade)
-  stok   StokKart @relation(fields: [stokId], references: [id])
+  fatura  Fatura       @relation(fields: [faturaId], references: [id], onDelete: Cascade)
+  stok    StokKart     @relation(fields: [stokId], references: [id])
+  varyant StokVaryant? @relation(fields: [varyantId], references: [id])
 
   @@index([tenantId, faturaId])
   @@map("fatura_satirlari")
@@ -1211,6 +1263,7 @@ model BelgeSatir {
   tenantId         String  @map("tenant_id") @db.Uuid
   belgeId          String  @map("belge_id") @db.Uuid
   stokId           String  @map("stok_id") @db.Uuid
+  varyantId        String? @map("varyant_id") @db.Uuid
   miktar           Decimal @db.Decimal(15, 3)
   birim            String  @default("adet")
   birimFiyat       Decimal @map("birim_fiyat") @db.Decimal(15, 4)
@@ -1226,8 +1279,9 @@ model BelgeSatir {
   netKdvTutari     Decimal @map("net_kdv_tutari") @db.Decimal(15, 2)
   toplamTutar      Decimal @map("toplam_tutar") @db.Decimal(15, 2)
 
-  belge Belge    @relation(fields: [belgeId], references: [id], onDelete: Cascade)
-  stok  StokKart @relation(fields: [stokId], references: [id])
+  belge   Belge        @relation(fields: [belgeId], references: [id], onDelete: Cascade)
+  stok    StokKart     @relation(fields: [stokId], references: [id])
+  varyant StokVaryant? @relation(fields: [varyantId], references: [id])
 
   @@index([tenantId, belgeId])
   @@map("belge_satirlari")

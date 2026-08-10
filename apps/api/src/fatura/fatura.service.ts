@@ -299,6 +299,7 @@ export class FaturaService {
           satirlar: {
             include: {
               stok: { select: { id: true, kod: true, ad: true } },
+              varyant: { select: { id: true, kod: true, ad: true, nitelikler: true } },
             },
           },
           ebelge: true,
@@ -327,6 +328,8 @@ export class FaturaService {
       satirlar: kayit.satirlar.map((s) => ({
         id: s.id,
         stokId: s.stokId,
+        varyantId: s.varyantId,
+        varyant: s.varyant,
         stokKod: s.stok.kod,
         stokAd: s.stok.ad,
         miktar: s.miktar.toFixed(3),
@@ -424,11 +427,13 @@ export class FaturaService {
       // kapandıktan sonra çalışıp P2028 ile süreci düşürüyordu)
       for (const [index, s] of hesaplanan.satirlar.entries()) {
         const orijinalSatir = girdi.satirlar[index];
+        await this.stokService.varyantDogrula(tx, s.stokId, orijinalSatir.varyantId);
         await tx.faturaSatir.create({
           data: {
             tenantId,
             faturaId: fatura.id,
             stokId: s.stokId,
+            varyantId: orijinalSatir.varyantId,
             miktar: D(s.miktar),
             birim: orijinalSatir.birim ?? "adet",
             birimFiyat: D(s.birimFiyat),
@@ -477,6 +482,7 @@ export class FaturaService {
         girdi.satirlar ??
         fatura.satirlar.map((s) => ({
           stokId: s.stokId,
+          varyantId: s.varyantId,
           miktar: s.miktar,
           birim: s.birim,
           birimFiyat: s.birimFiyat,
@@ -517,11 +523,13 @@ export class FaturaService {
       // Sıralı await (async forEach P2028 hatası — olustur ile aynı düzeltme)
       for (const [index, s] of hesaplanan.satirlar.entries()) {
         const orijinalSatir = birlesikGirdi.satirlar[index];
+        await this.stokService.varyantDogrula(tx, s.stokId, orijinalSatir.varyantId);
         await tx.faturaSatir.create({
           data: {
             tenantId,
             faturaId: id,
             stokId: s.stokId,
+            varyantId: orijinalSatir.varyantId,
             miktar: D(s.miktar),
             birim: orijinalSatir.birim ?? "adet",
             birimFiyat: D(s.birimFiyat),
@@ -633,6 +641,7 @@ export class FaturaService {
             tenantId,
             faturaId: yeni.id,
             stokId: s.stokId,
+            varyantId: s.varyantId,
             miktar: s.miktar,
             birim: s.birim,
             birimFiyat: s.birimFiyat,
@@ -704,6 +713,7 @@ export class FaturaService {
             tenantId,
             faturaId: kopya.id,
             stokId: s.stokId,
+            varyantId: s.varyantId,
             miktar: s.miktar,
             birim: s.birim,
             birimFiyat: s.birimFiyat,
@@ -800,7 +810,7 @@ export class FaturaService {
           yon: true,
           depoId: true,
           kaynakBelgeId: true,
-          satirlar: { select: { stokId: true, miktar: true } },
+          satirlar: { select: { stokId: true, varyantId: true, miktar: true } },
         },
       });
       const gorulen = new Set<string>();
@@ -828,7 +838,7 @@ export class FaturaService {
               yon: true,
               depoId: true,
               kaynakBelgeId: true,
-              satirlar: { select: { stokId: true, miktar: true } },
+              satirlar: { select: { stokId: true, varyantId: true, miktar: true } },
             },
           });
           if (kaynak) kuyruk.push(kaynak);
@@ -852,6 +862,7 @@ export class FaturaService {
 
           const hareketSonucu = await this.stokService.hareketEkle(tx, {
             stokId: s.stokId,
+            varyantId: s.varyantId,
             depoId,
             tip,
             miktar: s.miktar,

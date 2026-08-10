@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { StokService } from "./stok.service";
+import { Prisma } from "@prisma/client";
 
 vi.mock("../core/istek-baglami", () => ({
   aktifBaglam: () => ({ tenantId: "t1", userId: "u1", rol: "yonetici" }),
@@ -36,5 +37,18 @@ describe("StokService arama", () => {
 
     await expect(servis.kritikOzeti()).resolves.toEqual({ kritikStok: 7 });
     expect(queryRaw).toHaveBeenCalledOnce();
+  });
+
+  it("başka stok kartına ait varyantla hareket yazılmasını engeller", async () => {
+    const servis = new StokService({} as any, {} as any, {} as any);
+    const tx = {
+      stokKart: { findUnique: vi.fn().mockResolvedValue({ id: "stok-1", tip: "urun", mevcutMiktar: new Prisma.Decimal(0), ortalamaMaliyet: new Prisma.Decimal(0) }) },
+      stokVaryant: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as any;
+    await expect(servis.hareketEkle(tx, {
+      stokId: "stok-1", varyantId: "varyant-baska", depoId: "depo-1", tip: "giris",
+      miktar: new Prisma.Decimal(1), girilenBirim: "adet", girilenMiktar: new Prisma.Decimal(1),
+      birimMaliyet: new Prisma.Decimal(10), tarih: new Date("2026-08-10"),
+    })).rejects.toThrow("Varyant bu stok kartına ait değil");
   });
 });
