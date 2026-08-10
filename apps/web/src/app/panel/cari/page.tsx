@@ -134,6 +134,17 @@ interface CrmVeri {
   kullanicilar: { id: string; adSoyad: string; rol: string }[];
 }
 
+interface CariAnalizi {
+  riskSkoru: number;
+  riskSeviyesi: "dusuk" | "orta" | "yuksek";
+  tahminiGecikmeGun: number | null;
+  odemeDavranisi: "veri_yetersiz" | "zamaninda" | "kismen_gec" | "gecikmeli";
+  onerilenRiskLimiti: string;
+  guven: "dusuk" | "orta" | "yuksek";
+  metrikler: { kapananBorcSayisi: number; ortalamaGecikmeGun: number | null; zamanindaOdemeOrani: number | null; acikBakiye: string; vadesiGecmisBakiye: string; limitKullanimOrani: number | null };
+  gerekceler: string[];
+}
+
 const tl = (deger: string | number): string =>
   Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL";
 
@@ -164,6 +175,7 @@ export default function CariSayfasi() {
   const [detay, setDetay] = useState<CariDetay | null>(null);
   const [ekstre, setEkstre] = useState<EkstreVeri | null>(null);
   const [crm, setCrm] = useState<CrmVeri | null>(null);
+  const [cariAnalizi, setCariAnalizi] = useState<CariAnalizi | null>(null);
   const [etiketler, setEtiketler] = useState<Etiket[]>([]);
   const [aktifSekme, setAktifSekme] = useState<Sekme>("genel");
   const [filtreTip, setFiltreTip] = useState<FiltreTip>("tumu");
@@ -318,14 +330,16 @@ export default function CariSayfasi() {
   async function detayAc(id: string, sekmeyiKoru = false) {
     setHata("");
     try {
-      const [cDetay, cEkstre, cCrm] = await Promise.all([
+      const [cDetay, cEkstre, cCrm, cAnaliz] = await Promise.all([
         api<CariDetay>(`/cari/${id}`),
         api<EkstreVeri>(`/cari/${id}/ekstre`),
         api<CrmVeri>(`/cari/${id}/crm`),
+        api<CariAnalizi>(`/cari/${id}/davranis-analizi`),
       ]);
       setDetay(cDetay);
       setEkstre(cEkstre);
       setCrm(cCrm);
+      setCariAnalizi(cAnaliz);
       if (!sekmeyiKoru) setAktifSekme("genel");
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Detay veya ekstre yüklenemedi");
@@ -744,7 +758,7 @@ export default function CariSayfasi() {
             </div>
             <div className="row-tight">
               <Button size="sm" onClick={karaListeDegistir}>{detay.karaListe ? "✅ Blokajı Kaldır" : "🚫 Kara Listeye Al"}</Button>
-              <Button size="sm" onClick={() => { setDetay(null); setEkstre(null); setCrm(null); }}>✖ Kapat</Button>
+              <Button size="sm" onClick={() => { setDetay(null); setEkstre(null); setCrm(null); setCariAnalizi(null); }}>✖ Kapat</Button>
             </div>
           </div>
 
@@ -851,6 +865,16 @@ export default function CariSayfasi() {
           {aktifSekme === "crm" && (
             <div aria-labelledby="cari-detay-tab-crm" className="stack" id="cari-detay-panel-crm" role="tabpanel" tabIndex={0}>
               {!crm ? <Card><p className="subtle">CRM bilgileri yükleniyor...</p></Card> : <>
+                {cariAnalizi && <Card>
+                  <div className="between"><div className="card__title" style={{ margin: 0 }}>Ödeme Davranışı Analizi</div><Badge variant={cariAnalizi.guven === "dusuk" ? "neutral" : "info"}>Güven: {cariAnalizi.guven}</Badge></div>
+                  <StatGrid>
+                    <Stat label="Risk Skoru" value={`${cariAnalizi.riskSkoru}/100`} tone={cariAnalizi.riskSeviyesi === "yuksek" ? "danger" : cariAnalizi.riskSeviyesi === "orta" ? "default" : "success"} hint={cariAnalizi.riskSeviyesi} />
+                    <Stat label="Tahmini Gecikme" value={cariAnalizi.tahminiGecikmeGun === null ? "—" : `${cariAnalizi.tahminiGecikmeGun} gün`} hint={cariAnalizi.odemeDavranisi.replaceAll("_", " ")} />
+                    <Stat label="Zamanında Ödeme" value={cariAnalizi.metrikler.zamanindaOdemeOrani === null ? "—" : `%${cariAnalizi.metrikler.zamanindaOdemeOrani}`} hint={`${cariAnalizi.metrikler.kapananBorcSayisi} kapanmış borç`} />
+                    <Stat label="Önerilen Risk Limiti" value={tl(cariAnalizi.onerilenRiskLimiti)} tone="accent" hint="Son 6 aylık davranışa göre" />
+                  </StatGrid>
+                  <details className="record-disclosure"><summary>Analiz gerekçeleri</summary><ul>{cariAnalizi.gerekceler.map((gerekce) => <li key={gerekce}>{gerekce}</li>)}</ul><p className="subtle">Bu sonuç istatistiksel bir karar desteğidir; finansal karar öncesinde kullanıcı değerlendirmesi gerekir.</p></details>
+                </Card>}
                 <div className="row" style={{ alignItems: "flex-start" }}>
                   <Card className="grow" style={{ minWidth: 300 }}>
                     <div className="card__title">Yeni Etkileşim</div>

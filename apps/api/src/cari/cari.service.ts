@@ -25,6 +25,7 @@ import type {
 import { yaslandir } from "./yaslandirma";
 import { cariExcelOku, cariEkstreExcelYaz } from "../core/excel-yardimci";
 import { PdfService } from "../core/pdf/pdf.service";
+import { cariDavranisAnalizi } from "./cari-analiz";
 import {
   kacis,
   paraBicim,
@@ -520,6 +521,27 @@ export class CariService {
         tx.user.findMany({ where: { aktif: true }, orderBy: { adSoyad: "asc" }, select: { id: true, adSoyad: true, rol: true } }),
       ]);
       return { etkilesimler, gorevler, teklifler, kullanicilar };
+    });
+  }
+
+  async davranisAnalizi(cariId: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const cari = await tx.cariHesap.findUnique({
+        where: { id: cariId },
+        select: {
+          riskLimiti: true,
+          hareketler: {
+            select: { tip: true, tutarTry: true, tarih: true, vadeTarihi: true },
+            orderBy: { tarih: "asc" },
+          },
+        },
+      });
+      if (!cari) throw new NotFoundException("Cari bulunamadı");
+      return cariDavranisAnalizi(
+        cari.hareketler.map((h) => ({ ...h, tutarTry: Number(h.tutarTry) })),
+        cari.riskLimiti === null ? null : Number(cari.riskLimiti),
+      );
     });
   }
 

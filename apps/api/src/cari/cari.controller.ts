@@ -207,6 +207,9 @@ export class CariController {
   @Get(":id/crm")
   async crmGetir(@Param("id") id: string) { return this.cariService.crmGetir(id); }
 
+  @Get(":id/davranis-analizi")
+  async davranisAnalizi(@Param("id") id: string) { return this.cariService.davranisAnalizi(id); }
+
   @Post(":id/crm/etkilesimler")
   @Roller("muhasebe", "satis")
   async crmEtkilesimEkle(@Param("id") id: string, @Body() govde: unknown) {
