@@ -43,6 +43,15 @@ enum AbonelikDurumu {
   iptal
 }
 
+enum PazaryeriSiparisDurumu {
+  yeni
+  esleme_bekliyor
+  faturalanmaya_hazir
+  faturalandi
+  iptal
+  hata
+}
+
 model Tenant {
   id           String   @id @default(uuid()) @db.Uuid
   unvan        String
@@ -51,11 +60,12 @@ model Tenant {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  users         User[]
-  modulAyarlari ModulAyar[]
-  baglantilar   Baglanti[]
-  auditLoglar   AuditLog[]
-  abonelik      TenantAbonelik?
+  users                User[]
+  modulAyarlari        ModulAyar[]
+  baglantilar          Baglanti[]
+  auditLoglar          AuditLog[]
+  abonelik             TenantAbonelik?
+  pazaryeriSiparisleri PazaryeriSiparis[]
 
   @@map("tenants")
 }
@@ -63,20 +73,20 @@ model Tenant {
 /// KLN-08: v1.0 fiyatlandırma uygulamaz. Sağlayıcı ve dönem alanları ileride
 /// ödeme altyapısı bağlanırken tenant tablosunu değiştirmeden kullanılacaktır.
 model TenantAbonelik {
-  id                    String          @id @default(uuid()) @db.Uuid
-  tenantId              String          @unique @map("tenant_id") @db.Uuid
-  planKodu              String          @default("v1") @map("plan_kodu")
-  durum                  AbonelikDurumu @default(aktif)
-  faturaEpostasi         String?         @map("fatura_epostasi")
-  faturalandirmaUnvani   String?         @map("faturalandirma_unvani")
-  saglayici              String?
-  saglayiciMusteriRef    String?         @map("saglayici_musteri_ref")
-  donemBaslangici        DateTime?       @map("donem_baslangici")
-  donemSonu              DateTime?       @map("donem_sonu")
-  iptalTarihi            DateTime?       @map("iptal_tarihi")
-  meta                   Json?
-  createdAt              DateTime        @default(now()) @map("created_at")
-  updatedAt              DateTime        @updatedAt @map("updated_at")
+  id                   String         @id @default(uuid()) @db.Uuid
+  tenantId             String         @unique @map("tenant_id") @db.Uuid
+  planKodu             String         @default("v1") @map("plan_kodu")
+  durum                AbonelikDurumu @default(aktif)
+  faturaEpostasi       String?        @map("fatura_epostasi")
+  faturalandirmaUnvani String?        @map("faturalandirma_unvani")
+  saglayici            String?
+  saglayiciMusteriRef  String?        @map("saglayici_musteri_ref")
+  donemBaslangici      DateTime?      @map("donem_baslangici")
+  donemSonu            DateTime?      @map("donem_sonu")
+  iptalTarihi          DateTime?      @map("iptal_tarihi")
+  meta                 Json?
+  createdAt            DateTime       @default(now()) @map("created_at")
+  updatedAt            DateTime       @updatedAt @map("updated_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -108,6 +118,65 @@ model User {
   @@unique([tenantId, eposta])
   @@index([tenantId])
   @@map("users")
+}
+
+model PazaryeriSiparis {
+  id             String                 @id @default(uuid()) @db.Uuid
+  tenantId       String                 @map("tenant_id") @db.Uuid
+  baglantiId     String                 @map("baglanti_id") @db.Uuid
+  hariciId       String                 @map("harici_id")
+  siparisNo      String                 @map("siparis_no")
+  durum          PazaryeriSiparisDurumu @default(yeni)
+  hariciDurum    String?                @map("harici_durum")
+  siparisTarihi  DateTime               @map("siparis_tarihi")
+  musteriUnvani  String                 @map("musteri_unvani")
+  musteriEposta  String?                @map("musteri_eposta")
+  musteriTelefon String?                @map("musteri_telefon")
+  vknTckn        String?                @map("vkn_tckn")
+  dovizCinsi     DovizCinsi             @default(TRY) @map("doviz_cinsi")
+  toplam         Decimal                @db.Decimal(15, 2)
+  teslimatAdresi Json?                  @map("teslimat_adresi")
+  hamVeri        Json?                  @map("ham_veri")
+  cariId         String?                @map("cari_id") @db.Uuid
+  faturaId       String?                @map("fatura_id") @db.Uuid
+  hataMesaji     String?                @map("hata_mesaji")
+  createdAt      DateTime               @default(now()) @map("created_at")
+  updatedAt      DateTime               @updatedAt @map("updated_at")
+
+  tenant      Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  baglanti    Baglanti                 @relation(fields: [baglantiId], references: [id], onDelete: Cascade)
+  cari        CariHesap?               @relation(fields: [cariId], references: [id])
+  fatura      Fatura?                  @relation(fields: [faturaId], references: [id])
+  satirlar PazaryeriSiparisSatiri[]
+
+  @@unique([tenantId, baglantiId, hariciId])
+  @@index([tenantId, durum, siparisTarihi])
+  @@map("pazaryeri_siparisleri")
+}
+
+model PazaryeriSiparisSatiri {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  siparisId     String   @map("siparis_id") @db.Uuid
+  hariciSatirId String   @map("harici_satir_id")
+  sku           String
+  barkod        String?
+  urunAdi       String   @map("urun_adi")
+  miktar        Decimal  @db.Decimal(15, 4)
+  birimFiyat    Decimal  @map("birim_fiyat") @db.Decimal(15, 6)
+  kdvOrani      Decimal  @default(20) @map("kdv_orani") @db.Decimal(5, 2)
+  stokId        String?  @map("stok_id") @db.Uuid
+  varyantId     String?  @map("varyant_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  siparis PazaryeriSiparis @relation(fields: [siparisId], references: [id], onDelete: Cascade)
+  stok    StokKart?        @relation(fields: [stokId], references: [id])
+  varyant StokVaryant?     @relation(fields: [varyantId], references: [id])
+
+  @@unique([siparisId, hariciSatirId])
+  @@index([tenantId, stokId])
+  @@map("pazaryeri_siparis_satirlari")
 }
 
 /// e-posta → (tenant, user) rehberi. BİLİNÇLİ OLARAK RLS'SİZ: oturum açma
@@ -178,7 +247,8 @@ model Baglanti {
   createdAt     DateTime       @default(now()) @map("created_at")
   updatedAt     DateTime       @updatedAt @map("updated_at")
 
-  tenant Tenant @relation(fields: [tenantId], references: [id])
+  tenant             Tenant             @relation(fields: [tenantId], references: [id])
+  pazaryeriSiparises PazaryeriSiparis[]
 
   @@index([tenantId, aile])
   @@map("baglantilar")
@@ -338,6 +408,7 @@ model CariHesap {
   stokTedarikcilikleri StokTedarikci[]
   belgeler             Belge[]
   ekstreSatirlari      BankaEkstreSatir[]
+  pazaryeriSiparisleri PazaryeriSiparis[]
 
   @@unique([tenantId, kod])
   @@index([tenantId, unvan])
@@ -558,18 +629,19 @@ model StokKart {
   createdAt        DateTime      @default(now()) @map("created_at")
   updatedAt        DateTime      @updatedAt @map("updated_at")
 
-  kategori          StokKategori?       @relation(fields: [kategoriId], references: [id])
-  birimler          StokBirim[]
-  depoBakiyeleri    StokDepoBakiye[]
-  transferKalemleri DepoTransferKalem[]
-  barkodlar         StokBarkod[]
-  tedarikciler      StokTedarikci[]
-  hareketler        StokHareket[]
-  fiyatlar          FiyatListesiKalem[]
-  faturaSatirs      FaturaSatir[]
-  belgeSatirlari    BelgeSatir[]
-  varyantlar        StokVaryant[]
-  partiler          StokParti[]
+  kategori           StokKategori?            @relation(fields: [kategoriId], references: [id])
+  birimler           StokBirim[]
+  depoBakiyeleri     StokDepoBakiye[]
+  transferKalemleri  DepoTransferKalem[]
+  barkodlar          StokBarkod[]
+  tedarikciler       StokTedarikci[]
+  hareketler         StokHareket[]
+  fiyatlar           FiyatListesiKalem[]
+  faturaSatirs       FaturaSatir[]
+  belgeSatirlari     BelgeSatir[]
+  varyantlar         StokVaryant[]
+  partiler           StokParti[]
+  pazaryeriSatirlari PazaryeriSiparisSatiri[]
 
   @@unique([tenantId, kod])
   @@index([tenantId, ad])
@@ -639,13 +711,14 @@ model StokVaryant {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  stok              StokKart                @relation(fields: [stokId], references: [id], onDelete: Cascade)
-  depoBakiyeleri    StokVaryantDepoBakiye[]
-  hareketler        StokHareket[]
-  faturaSatirlari   FaturaSatir[]
-  belgeSatirlari    BelgeSatir[]
-  partiler          StokParti[]
-  transferKalemleri DepoTransferKalem[]
+  stok               StokKart                 @relation(fields: [stokId], references: [id], onDelete: Cascade)
+  depoBakiyeleri     StokVaryantDepoBakiye[]
+  hareketler         StokHareket[]
+  faturaSatirlari    FaturaSatir[]
+  belgeSatirlari     BelgeSatir[]
+  partiler           StokParti[]
+  transferKalemleri  DepoTransferKalem[]
+  pazaryeriSatirlari PazaryeriSiparisSatiri[]
 
   @@unique([tenantId, kod])
   @@unique([tenantId, barkod])
@@ -970,18 +1043,19 @@ model Fatura {
   createdAt            DateTime    @default(now()) @map("created_at")
   updatedAt            DateTime    @updatedAt @map("updated_at")
 
-  cari              CariHesap           @relation(fields: [cariId], references: [id])
-  depo              Depo?               @relation(fields: [depoId], references: [id])
-  satirlar          FaturaSatir[]
-  ebelge            EbelgeKayit?
-  gelenEbelge       GelenEbelge?
-  kasaBankaHarekets KasaBankaHareket[]
-  zincirBelgeleri   Belge[]
-  ekstreSatirlari   BankaEkstreSatir[]
-  tekrarlayanSablon TekrarlayanFatura[] @relation("TekrarlayanFaturaSablon")
-  tekrarlayanPlan   TekrarlayanFatura?  @relation("TekrarlayanFaturaUretim", fields: [tekrarlayanPlanId], references: [id])
-  tekrarlayanPlanId String?             @map("tekrarlayan_plan_id") @db.Uuid
-  planlananTarih    DateTime?           @map("planlanan_tarih") @db.Date
+  cari                 CariHesap           @relation(fields: [cariId], references: [id])
+  depo                 Depo?               @relation(fields: [depoId], references: [id])
+  satirlar             FaturaSatir[]
+  ebelge               EbelgeKayit?
+  gelenEbelge          GelenEbelge?
+  kasaBankaHarekets    KasaBankaHareket[]
+  zincirBelgeleri      Belge[]
+  ekstreSatirlari      BankaEkstreSatir[]
+  tekrarlayanSablon    TekrarlayanFatura[] @relation("TekrarlayanFaturaSablon")
+  tekrarlayanPlan      TekrarlayanFatura?  @relation("TekrarlayanFaturaUretim", fields: [tekrarlayanPlanId], references: [id])
+  tekrarlayanPlanId    String?             @map("tekrarlayan_plan_id") @db.Uuid
+  planlananTarih       DateTime?           @map("planlanan_tarih") @db.Date
+  pazaryeriSiparisleri PazaryeriSiparis[]
 
   @@unique([tenantId, seri, sira])
   @@unique([tekrarlayanPlanId, planlananTarih])
