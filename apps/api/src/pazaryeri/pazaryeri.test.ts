@@ -35,4 +35,19 @@ describe("PazaryeriService", () => {
     expect(sonuc.durum).toBe("faturalanmaya_hazir");
     expect(sonuc.satirlar.create[0]).toEqual(expect.objectContaining({ stokId: "s1", varyantId: "v1" }));
   });
+
+  it("hazir siparisi taslak satis faturasina donusturur", async () => {
+    const update = vi.fn().mockResolvedValue({});
+    const tx = { pazaryeriSiparis: {
+      findUnique: vi.fn().mockResolvedValue({ id: "p1", siparisNo: "SP-42", siparisTarihi: new Date("2026-08-10"), dovizCinsi: "TRY", faturaId: null,
+        satirlar: [{ stokId: "s1", varyantId: null, miktar: { toString: () => "2" }, birimFiyat: { toString: () => "120" }, kdvOrani: { toString: () => "20" } }] }),
+      update, updateMany: vi.fn(),
+    } };
+    const faturaOlustur = vi.fn().mockResolvedValue({ id: "f1" });
+    const servis = new PazaryeriService({ tenantIslem: vi.fn((_id, fn) => fn(tx)) } as any, { olustur: faturaOlustur } as any);
+    const sonuc = await servis.faturalastir([{ siparisId: "p1", cariId: "c1" }]);
+    expect(sonuc).toEqual(expect.objectContaining({ basarili: 1, hatali: 0 }));
+    expect(faturaOlustur).toHaveBeenCalledWith(expect.objectContaining({ tip: "satis", cariId: "c1" }));
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ faturaId: "f1", durum: "faturalandi" }) }));
+  });
 });

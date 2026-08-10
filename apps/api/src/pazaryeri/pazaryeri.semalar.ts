@@ -14,3 +14,7 @@ export const pazaryeriSiparisSemasi = z.object({
   dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"), toplam: z.number().nonnegative(),
   teslimatAdresi: z.record(z.string(), z.unknown()).optional(), satirlar: z.array(satir).min(1),
 });
+
+export const pazaryeriFaturalastirSemasi = z.object({
+  siparisler: z.array(z.object({ siparisId: z.string().uuid(), cariId: z.string().uuid() })).min(1).max(100),
+});

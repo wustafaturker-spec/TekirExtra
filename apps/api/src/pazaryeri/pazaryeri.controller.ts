@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Post, Query } from "@nestjs/common";
 import { Roller } from "../auth/roller.decorator";
-import { pazaryeriSiparisSemasi } from "./pazaryeri.semalar";
+import { pazaryeriFaturalastirSemasi, pazaryeriSiparisSemasi } from "./pazaryeri.semalar";
 import { PazaryeriService } from "./pazaryeri.service";
 
 @Controller("pazaryeri")
@@ -12,5 +12,11 @@ export class PazaryeriController {
     const sonuc = pazaryeriSiparisSemasi.safeParse(govde);
     if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
     return this.service.iceAktar(sonuc.data);
+  }
+  @Post("siparisler/faturalastir") @Roller("yonetici", "muhasebe")
+  faturalastir(@Body() govde: unknown) {
+    const sonuc = pazaryeriFaturalastirSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
+    return this.service.faturalastir(sonuc.data.siparisler);
   }
 }

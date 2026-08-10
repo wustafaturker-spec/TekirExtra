@@ -1,12 +1,13 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
+import { FaturaService } from "../fatura/fatura.service";
 import { pazaryeriSiparisSemasi } from "./pazaryeri.semalar";
 
 @Injectable()
 export class PazaryeriService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly faturalar: FaturaService) {}
 
   async listele(durum?: string) {
     const { tenantId } = aktifBaglam();
@@ -41,5 +42,33 @@ export class PazaryeriService {
         satirlar: { create: eslenen.map((s) => ({ tenantId, hariciSatirId: s.hariciSatirId, sku: s.sku, barkod: s.barkod, urunAdi: s.urunAdi, miktar: s.miktar, birimFiyat: s.birimFiyat, kdvOrani: s.kdvOrani, stokId: s.stokId, varyantId: s.varyantId })) },
       }, include: { satirlar: true } });
     });
+  }
+
+  async faturalastir(siparisler: { siparisId: string; cariId: string }[]) {
+    const { tenantId } = aktifBaglam();
+    const sonuclar: { siparisId: string; faturaId?: string; hata?: string }[] = [];
+    for (const istek of siparisler) {
+      try {
+        const siparis = await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriSiparis.findUnique({
+          where: { id: istek.siparisId }, include: { satirlar: true },
+        }));
+        if (!siparis) throw new NotFoundException("Sipariş bulunamadı");
+        if (siparis.faturaId) { sonuclar.push({ siparisId: siparis.id, faturaId: siparis.faturaId }); continue; }
+        if (siparis.satirlar.some((s) => !s.stokId)) throw new BadRequestException("Eşleşmemiş ürün kalemi var");
+        const fatura = await this.faturalar.olustur({
+          tip: "satis", tarih: siparis.siparisTarihi.toISOString().slice(0, 10), cariId: istek.cariId,
+          dovizCinsi: siparis.dovizCinsi, kur: "1", genelIskontoYuzdesi: "0", genelIskontoTutari: "0",
+          aciklama: `Pazaryeri siparişi ${siparis.siparisNo}`,
+          satirlar: siparis.satirlar.map((s) => ({ stokId: s.stokId!, varyantId: s.varyantId, miktar: s.miktar.toString(), birim: "adet", birimFiyat: s.birimFiyat.toString(), iskontoOrani: "0", kdvOrani: s.kdvOrani.toString() })),
+        });
+        await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriSiparis.update({ where: { id: siparis.id }, data: { cariId: istek.cariId, faturaId: fatura.id, durum: "faturalandi", hataMesaji: null } }));
+        sonuclar.push({ siparisId: siparis.id, faturaId: fatura.id });
+      } catch (hata) {
+        const mesaj = hata instanceof Error ? hata.message : "Faturalaştırma hatası";
+        await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriSiparis.updateMany({ where: { id: istek.siparisId, faturaId: null }, data: { durum: "hata", hataMesaji: mesaj } }));
+        sonuclar.push({ siparisId: istek.siparisId, hata: mesaj });
+      }
+    }
+    return { sonuclar, basarili: sonuclar.filter((s) => s.faturaId).length, hatali: sonuclar.filter((s) => s.hata).length };
   }
 }

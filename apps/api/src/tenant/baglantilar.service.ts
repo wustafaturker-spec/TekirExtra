@@ -9,7 +9,7 @@ import {
   type EntegratorAdapter,
   type EntegratorConfig,
 } from "@tekirextra/baglanti";
-import { BAGLANTI_AILELERI, EBELGE_SAGLAYICILARI } from "@tekirextra/shared";
+import { BAGLANTI_AILELERI, EBELGE_SAGLAYICILARI, PAZARYERI_SAGLAYICILARI } from "@tekirextra/shared";
 import { z } from "zod";
 import { coz, sifrele } from "../core/kripto";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -17,13 +17,18 @@ import { PrismaService } from "../core/prisma.service";
 
 export const baglantiOlusturSemasi = z.object({
   aile: z.enum(BAGLANTI_AILELERI),
-  saglayici: z.enum(EBELGE_SAGLAYICILARI),
+  saglayici: z.string(),
   config: z.object({
     kullaniciAdi: z.string().min(1),
     parola: z.string().optional(),
     apiAnahtari: z.string().optional(),
     servisAdresi: z.string().optional(),
+    saticiId: z.string().optional(),
+    magazaId: z.string().optional(),
   }),
+}).superRefine((girdi, ctx) => {
+  const izinli = girdi.aile === "ebelge" ? EBELGE_SAGLAYICILARI : girdi.aile === "pazaryeri" ? PAZARYERI_SAGLAYICILARI : [];
+  if (!(izinli as readonly string[]).includes(girdi.saglayici)) ctx.addIssue({ code: "custom", path: ["saglayici"], message: "Sağlayıcı bağlantı ailesiyle uyumlu değil" });
 });
 
 export interface BaglantiGorunumu {
@@ -75,14 +80,9 @@ export class BaglantilarService {
 
   async olustur(girdi: z.infer<typeof baglantiOlusturSemasi>): Promise<BaglantiGorunumu> {
     const { tenantId } = aktifBaglam();
-    if (girdi.aile !== "ebelge") {
-      throw new BadRequestException(
-        "v1.0'da yalnızca e-belge bağlantıları desteklenir (ENT-02..08 sonraki sürümde)",
-      );
-    }
     const kayit = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const mevcut = await tx.baglanti.findFirst({
-        where: { aile: "ebelge", saglayici: girdi.saglayici },
+        where: { aile: girdi.aile, saglayici: girdi.saglayici },
       });
       if (mevcut) {
         throw new BadRequestException(
@@ -131,10 +131,9 @@ export class BaglantilarService {
       const hedef = await tx.baglanti.findUnique({ where: { id } });
       if (!hedef) throw new NotFoundException("Bağlantı bulunamadı");
 
-      // Aynı ailedeki diğer e-belge bağlantılarını pasife çek
-      await tx.baglanti.updateMany({
-        where: { tenantId, aile: "ebelge", id: { not: id } },
-        data: { durum: "pasif" },
+      // e-Belgede tek aktif sağlayıcı vardır; pazaryerlerinde mağazalar birlikte çalışabilir.
+      if (hedef.aile === "ebelge") await tx.baglanti.updateMany({
+        where: { tenantId, aile: "ebelge", id: { not: id } }, data: { durum: "pasif" },
       });
 
       // Hedef bağlantıyı aktif yap
@@ -153,8 +152,10 @@ export class BaglantilarService {
     );
     if (!kayit) throw new NotFoundException("Bağlantı bulunamadı");
 
-    const config = JSON.parse(coz(kayit.sifreliConfig)) as EntegratorConfig;
-    const sonuc = await this.adapterCoz(kayit.saglayici).baglantiTest(config);
+    const config = JSON.parse(coz(kayit.sifreliConfig)) as EntegratorConfig & { saticiId?: string; magazaId?: string };
+    const sonuc = kayit.aile === "pazaryeri"
+      ? { basarili: Boolean(config.kullaniciAdi && (config.saticiId || config.magazaId)), mesaj: "Kimlik biçimi doğrulandı; canlı test sağlayıcı hesabıyla yapılacaktır" }
+      : await this.adapterCoz(kayit.saglayici).baglantiTest(config);
 
     await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.baglanti.update({

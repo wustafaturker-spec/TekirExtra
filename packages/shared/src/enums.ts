@@ -14,6 +14,8 @@ export type BaglantiAile = (typeof BAGLANTI_AILELERI)[number];
 
 export const EBELGE_SAGLAYICILARI = ["izibiz", "foriba", "elogo", "uyumsoft"] as const;
 export type EbelgeSaglayici = (typeof EBELGE_SAGLAYICILARI)[number];
+export const PAZARYERI_SAGLAYICILARI = ["trendyol", "hepsiburada", "n11", "amazon_tr"] as const;
+export type PazaryeriSaglayici = (typeof PAZARYERI_SAGLAYICILARI)[number];
 
 /** Kayıt eylem kural motorunun eylem kümesi (AYR-04). */
 export const KAYIT_EYLEMLERI = ["duzenle", "sil", "kopyala", "iptal", "pasife_al"] as const;
