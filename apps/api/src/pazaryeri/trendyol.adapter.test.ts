@@ -4,6 +4,14 @@ import { TrendyolAdapter } from "./trendyol.adapter";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("TrendyolAdapter", () => {
+  it("stok ve fiyat kalemlerini Trendyol toplu servisine gönderir", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ batchRequestId: "batch-1" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const sonuc = await new TrendyolAdapter().stokFiyatGonder({ kullaniciAdi: "api-key", parola: "secret", saticiId: "123" }, [{ sku: "SKU-1", barkod: "8690001", miktar: 8.9, fiyat: 125.5 }]);
+    expect(sonuc).toEqual({ gonderilen: 1, islemIdleri: ["batch-1"] });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ items: [{ barcode: "8690001", quantity: 8, salePrice: 125.5, listPrice: 125.5 }] });
+  });
+
   it("stream cevabini ortak siparis bicimine ve cursor'a cevirir", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ hasMore: true, nextCursor: "cursor-2", content: [{
       shipmentPackageId: 42, orderNumber: "SP-42", orderDate: 1786363200000, customerFirstName: "Ada", customerLastName: "Yılmaz",

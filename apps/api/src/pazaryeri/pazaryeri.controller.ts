@@ -26,4 +26,10 @@ export class PazaryeriController {
     if (!sonuc.success) throw new BadRequestException("Geçersiz bağlantı");
     return this.service.senkronizeEt(sonuc.data.baglantiId);
   }
+  @Post("stok-fiyat/senkronize") @Roller("yonetici")
+  stokFiyatSenkronize(@Body() govde: unknown) {
+    const sonuc = z.object({ baglantiId: z.string().uuid().optional() }).safeParse(govde ?? {});
+    if (!sonuc.success) throw new BadRequestException("Geçersiz bağlantı");
+    return this.service.stokFiyatSenkronizeEt(sonuc.data.baglantiId);
+  }
 }

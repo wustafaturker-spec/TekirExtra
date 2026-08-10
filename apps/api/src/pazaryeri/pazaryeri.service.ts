@@ -105,4 +105,32 @@ export class PazaryeriService {
     }
     return { sonuclar };
   }
+
+  async stokFiyatSenkronizeEt(baglantiId?: string) {
+    const { tenantId } = aktifBaglam();
+    const baglantilar = await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.findMany({
+      where: { aile: "pazaryeri", durum: "aktif", saglayici: "trendyol", ...(baglantiId ? { id: baglantiId } : {}) },
+    }));
+    if (baglantiId && !baglantilar.length) throw new NotFoundException("Aktif Trendyol bağlantısı bulunamadı");
+    const stoklar = await this.prisma.tenantIslem(tenantId, (tx) => tx.stokKart.findMany({
+      where: { aktif: true, tip: "urun" },
+      select: { kod: true, barkod: true, satisFiyati: true, mevcutMiktar: true, rezerveMiktar: true, varyantlar: { where: { aktif: true }, select: { kod: true, barkod: true, satisFiyati: true, mevcutMiktar: true, rezerveMiktar: true } } },
+    }));
+    const kalemler = stoklar.flatMap((stok) => {
+      const kaynaklar = stok.varyantlar.length ? stok.varyantlar : [stok];
+      return kaynaklar.map((k) => ({ sku: k.kod, barkod: k.barkod ?? "", miktar: Math.max(0, Number(k.mevcutMiktar) - Number(k.rezerveMiktar)), fiyat: Number(k.satisFiyati ?? stok.satisFiyati ?? 0) }));
+    });
+    const gecerli = kalemler.filter((k) => k.barkod && k.fiyat > 0);
+    const sonuclar = [];
+    for (const baglanti of baglantilar) {
+      try {
+        const config = JSON.parse(coz(baglanti.sifreliConfig)) as PazaryeriConfig;
+        const sonuc = await new TrendyolAdapter().stokFiyatGonder(config, gecerli);
+        sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, ...sonuc, atlanan: kalemler.length - gecerli.length });
+      } catch (hata) {
+        sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, gonderilen: 0, islemIdleri: [], atlanan: kalemler.length - gecerli.length, hata: hata instanceof Error ? hata.message : "Stok/fiyat senkronizasyon hatası" });
+      }
+    }
+    return { sonuclar };
+  }
 }

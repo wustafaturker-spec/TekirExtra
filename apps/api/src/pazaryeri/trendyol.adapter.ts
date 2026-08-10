@@ -7,8 +7,30 @@ export interface NormalizeSiparis {
   dovizCinsi: "TRY" | "USD" | "EUR"; toplam: number; teslimatAdresi?: Record<string, unknown>;
   satirlar: { hariciSatirId: string; sku: string; barkod?: string; urunAdi: string; miktar: number; birimFiyat: number; kdvOrani: number }[];
 }
+export interface PazaryeriStokFiyat {
+  sku: string; barkod: string; miktar: number; fiyat: number;
+}
 
 export class TrendyolAdapter {
+  async stokFiyatGonder(config: PazaryeriConfig, kalemler: PazaryeriStokFiyat[]): Promise<{ gonderilen: number; islemIdleri: string[] }> {
+    if (!config.saticiId || !config.parola) throw new Error("Trendyol satıcı ID ve API secret zorunludur");
+    const islemIdleri: string[] = [];
+    for (let baslangic = 0; baslangic < kalemler.length; baslangic += 1000) {
+      const parca = kalemler.slice(baslangic, baslangic + 1000);
+      const url = `https://apigw.trendyol.com/integration/inventory/sellers/${encodeURIComponent(config.saticiId)}/products/price-and-inventory`;
+      const yanit = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: `Basic ${Buffer.from(`${config.kullaniciAdi}:${config.parola}`).toString("base64")}`, "User-Agent": `${config.saticiId} - TekirExtra`, "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ items: parca.map((k) => ({ barcode: k.barkod, quantity: Math.min(20000, Math.max(0, Math.floor(k.miktar))), salePrice: k.fiyat, listPrice: k.fiyat })) }),
+      });
+      if (!yanit.ok) throw new Error(`Trendyol stok/fiyat servisi HTTP ${yanit.status}`);
+      const veri = await yanit.json() as { batchRequestId?: string };
+      if (!veri.batchRequestId) throw new Error("Trendyol stok/fiyat işlemi batchRequestId dönmedi");
+      islemIdleri.push(veri.batchRequestId);
+    }
+    return { gonderilen: kalemler.length, islemIdleri };
+  }
+
   async siparisleriCek(config: PazaryeriConfig, imlec?: string | null): Promise<{ siparisler: NormalizeSiparis[]; sonrakiImlec: string | null }> {
     if (!config.saticiId || !config.parola) throw new Error("Trendyol satıcı ID ve API secret zorunludur");
     const url = new URL(`https://apigw.trendyol.com/integration/order/sellers/${encodeURIComponent(config.saticiId)}/orders/stream`);
