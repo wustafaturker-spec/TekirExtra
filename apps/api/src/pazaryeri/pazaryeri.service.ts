@@ -7,6 +7,7 @@ import { coz } from "../core/kripto";
 import { TrendyolAdapter, type PazaryeriConfig } from "./trendyol.adapter";
 import { HepsiburadaAdapter } from "./hepsiburada.adapter";
 import { N11Adapter } from "./n11.adapter";
+import { AmazonAdapter } from "./amazon.adapter";
 import { pazaryeriSiparisSemasi } from "./pazaryeri.semalar";
 
 @Injectable()
@@ -86,7 +87,7 @@ export class PazaryeriService {
     for (const baglanti of baglantilar) {
       try {
         const config = JSON.parse(coz(baglanti.sifreliConfig)) as PazaryeriConfig;
-        const adapter = baglanti.saglayici === "trendyol" ? new TrendyolAdapter() : baglanti.saglayici === "hepsiburada" ? new HepsiburadaAdapter() : baglanti.saglayici === "n11" ? new N11Adapter() : null;
+        const adapter = baglanti.saglayici === "trendyol" ? new TrendyolAdapter() : baglanti.saglayici === "hepsiburada" ? new HepsiburadaAdapter() : baglanti.saglayici === "n11" ? new N11Adapter() : baglanti.saglayici === "amazon_tr" ? new AmazonAdapter() : null;
         if (!adapter) throw new BadRequestException(`${baglanti.saglayici} canlı adaptörü henüz etkin değil`);
         const sayfa = await adapter.siparisleriCek(config, baglanti.senkronImleci);
         let eklenen = 0;

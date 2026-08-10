@@ -152,9 +152,12 @@ export class BaglantilarService {
     );
     if (!kayit) throw new NotFoundException("Bağlantı bulunamadı");
 
-    const config = JSON.parse(coz(kayit.sifreliConfig)) as EntegratorConfig & { saticiId?: string; magazaId?: string };
+    const config = JSON.parse(coz(kayit.sifreliConfig)) as EntegratorConfig & { saticiId?: string; magazaId?: string; apiAnahtari?: string };
+    const pazaryeriKimligiGecerli = kayit.saglayici === "amazon_tr"
+      ? Boolean(config.kullaniciAdi && config.parola && config.apiAnahtari && config.magazaId)
+      : Boolean(config.kullaniciAdi && config.parola && (kayit.saglayici === "n11" || config.saticiId || config.magazaId));
     const sonuc = kayit.aile === "pazaryeri"
-      ? { basarili: Boolean(config.kullaniciAdi && (config.saticiId || config.magazaId)), mesaj: "Kimlik biçimi doğrulandı; canlı test sağlayıcı hesabıyla yapılacaktır" }
+      ? { basarili: pazaryeriKimligiGecerli, mesaj: pazaryeriKimligiGecerli ? "Kimlik biçimi doğrulandı; canlı test senkronizasyon sırasında yapılacaktır" : "Sağlayıcı için zorunlu kimlik alanları eksik" }
       : await this.adapterCoz(kayit.saglayici).baglantiTest(config);
 
     await this.prisma.tenantIslem(tenantId, (tx) =>
