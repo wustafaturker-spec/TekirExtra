@@ -85,9 +85,10 @@ export class FaturaController {
     @Query("adet") adet?: string,
     @Query("yon") yon?: string,
     @Query("ebelge") ebelge?: string,
+    @Query("cariId") cariId?: string,
   ) {
     const adetSayi = sayfaAdedi(adet);
-    return this.faturaService.listele(arama, tip, durum, imlec, adetSayi, yon, ebelge);
+    return this.faturaService.listele(arama, tip, durum, imlec, adetSayi, yon, ebelge, cariId);
   }
 
   @Get(":id")

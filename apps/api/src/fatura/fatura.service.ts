@@ -201,11 +201,13 @@ export class FaturaService {
     adet = 50,
     yon?: string,
     ebelge?: string,
+    cariId?: string,
   ) {
     const { tenantId } = aktifBaglam();
     const ctx = aktifBaglam();
 
     const where: Prisma.FaturaWhereInput = {
+      ...(cariId ? { cariId } : {}),
       ...(tip ? { tip: tip as FaturaTip } : yon === "satis" ? { tip: { in: ["satis", "satis_iade", "proforma"] } } : yon === "alis" ? { tip: { in: ["alis", "alis_iade"] } } : {}),
       ...(durum ? { durum: durum as FaturaDurum } : {}),
       ...(ebelge ? { ebelge: { is: { durum: ebelge === "hata" ? { in: ["hata", "ret"] } : ebelge as BelgeDurum } } } : {}),

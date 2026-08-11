@@ -169,7 +169,7 @@ export class KasaBankaController {
   @Roller("muhasebe")
   async posHesapOlustur(@Body() govde: unknown) {
     const ayristirma = posHesapOlusturSemasi.safeParse(govde);
-    if (!ayristirma.success) throw new BadRequestException(ayristirma.error.issues.map((i) => i.message).join("; "));
+    if (!ayristirma.success) throw new BadRequestException(ayristirma.error.issues.map((i) => `${i.path.join(".") || "alan"}: ${i.message}`).join("; "));
     return this.service.posHesapOlustur(ayristirma.data);
   }
 

@@ -3,7 +3,7 @@ import { Roller } from "../auth/roller.decorator"; import { Public } from "../au
 import { posTahsilatBaslatSemasi } from "./pos.semalar"; import { PosService } from "./pos.service";
 @Controller("pos") export class PosController { constructor(private readonly service: PosService) {}
   @Get("tahsilatlar") @Roller("yonetici", "muhasebe") listele() { return this.service.listele(); }
-  @Post("tahsilatlar") @Roller("yonetici", "muhasebe") baslat(@Body() govde: unknown) { const s = posTahsilatBaslatSemasi.safeParse(govde); if (!s.success) throw new BadRequestException(s.error.issues.map((i) => i.message).join("; ")); return this.service.baslat(s.data); }
+  @Post("tahsilatlar") @Roller("yonetici", "muhasebe") baslat(@Body() govde: unknown) { const s = posTahsilatBaslatSemasi.safeParse(govde); if (!s.success) throw new BadRequestException(s.error.issues.map((i) => `${i.path.join(".") || "alan"}: ${i.message}`).join("; ")); return this.service.baslat(s.data); }
   @Post("tahsilatlar/:id/eposta") @Roller("yonetici", "muhasebe") epostaYenidenGonder(@Param("id") id: string) { return this.service.epostaYenidenGonder(id); }
   @Post("tahsilatlar/:id/sms") @Roller("yonetici", "muhasebe") smsYenidenGonder(@Param("id") id: string) { return this.service.smsYenidenGonder(id); }
   @Post("iyzico/callback/:tenantId/:tahsilatId") @Public() callback(@Param("tenantId") tenantId: string, @Param("tahsilatId") tahsilatId: string, @Body() govde: unknown) { const token = typeof (govde as any)?.token === "string" ? (govde as any).token : ""; if (!token) throw new BadRequestException("Callback tokenı eksik"); return this.service.callback(tenantId, tahsilatId, token); }
