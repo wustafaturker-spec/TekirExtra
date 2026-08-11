@@ -157,6 +157,20 @@ export class AuthService {
     );
   }
 
+  /** Para çıkışı gibi kritik işlemlerde oturumdan bağımsız yeniden TOTP doğrulaması. */
+  async kritikIslemTotpDogrula(kod: string): Promise<void> {
+    const { tenantId, userId } = aktifBaglam();
+    const kullanici = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.user.findUnique({ where: { id: userId }, select: { totpAktif: true, totpSecretSifreli: true } }),
+    );
+    if (!kullanici?.totpAktif || !kullanici.totpSecretSifreli) {
+      throw new BadRequestException("Ödeme talimatı onayı için TOTP etkin olmalıdır");
+    }
+    if (!verifySync({ secret: coz(kullanici.totpSecretSifreli), token: kod }).valid) {
+      throw new UnauthorizedException("TOTP kodu geçersiz");
+    }
+  }
+
   private async oturumAc(
     tenantId: string,
     userId: string,

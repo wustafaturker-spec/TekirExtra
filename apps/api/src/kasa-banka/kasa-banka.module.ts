@@ -5,10 +5,13 @@ import { KasaBankaController } from "./kasa-banka.controller";
 import { KasaBankaService } from "./kasa-banka.service";
 import { BankaWebhookController } from "./banka-webhook.controller";
 import { BankaEntegrasyonService } from "./banka-entegrasyon.service";
+import { AuthModule } from "../auth/auth.module";
+import { OdemeTalimatiService } from "./odeme-talimati.service";
 
 @Module({
+  imports: [AuthModule],
   controllers: [KasaBankaController, BankaWebhookController],
-  providers: [KasaBankaService, EkstreService, BankaEntegrasyonService],
+  providers: [KasaBankaService, EkstreService, BankaEntegrasyonService, OdemeTalimatiService],
   exports: [KasaBankaService, EkstreService],
 })
 export class KasaBankaModule implements OnModuleInit {

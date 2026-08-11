@@ -81,6 +81,7 @@ model Tenant {
   posTahsilatlari      PosTahsilat[]
   pazaryeriKesintileri PazaryeriKesinti[]
   bankaHesapEslemeleri BankaBaglantiHesap[]
+  bankaOdemeTalimatlari BankaOdemeTalimati[]
 
   @@map("tenants")
 }
@@ -129,6 +130,8 @@ model User {
   temsilciCariler CariHesap[]    @relation("CariTemsilci")
   crmGorevleri    CrmGorev[]     @relation("CrmGorevAtanan")
   crmKayitlari    CrmEtkilesim[]
+  olusturduguOdemeTalimatlari BankaOdemeTalimati[] @relation("TalimatOlusturan")
+  onayladigiOdemeTalimatlari  BankaOdemeTalimati[] @relation("TalimatOnaylayan")
 
   @@unique([tenantId, eposta])
   @@index([tenantId])
@@ -1319,9 +1322,45 @@ model BankaHesap {
   ekstreSatirlari BankaEkstreSatir[]
   posHesaplari    PosHesap[]          @relation("PosVarsayilanBanka")
   baglantiEslemeleri BankaBaglantiHesap[]
+  odemeTalimatlari BankaOdemeTalimati[]
 
   @@unique([tenantId, ad])
   @@map("banka_hesaplari")
+}
+
+enum BankaOdemeTalimatDurumu {
+  onay_bekliyor
+  onaylandi
+  gonderildi
+  basarisiz
+  iptal
+}
+
+model BankaOdemeTalimati {
+  id              String                  @id @default(uuid()) @db.Uuid
+  tenantId        String                  @map("tenant_id") @db.Uuid
+  bankaHesapId    String                  @map("banka_hesap_id") @db.Uuid
+  aliciUnvan      String                  @map("alici_unvan")
+  aliciIban       String                  @map("alici_iban")
+  tutar           Decimal                 @db.Decimal(15, 2)
+  dovizCinsi      DovizCinsi              @map("doviz_cinsi")
+  aciklama        String
+  durum           BankaOdemeTalimatDurumu @default(onay_bekliyor)
+  olusturanUserId String                  @map("olusturan_user_id") @db.Uuid
+  onaylayanUserId String?                 @map("onaylayan_user_id") @db.Uuid
+  onayZamani      DateTime?               @map("onay_zamani")
+  saglayiciRef    String?                 @map("saglayici_ref")
+  hataMesaji      String?                 @map("hata_mesaji")
+  createdAt       DateTime                @default(now()) @map("created_at")
+  updatedAt       DateTime                @updatedAt @map("updated_at")
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bankaHesap BankaHesap @relation(fields: [bankaHesapId], references: [id])
+  olusturan  User       @relation("TalimatOlusturan", fields: [olusturanUserId], references: [id])
+  onaylayan  User?      @relation("TalimatOnaylayan", fields: [onaylayanUserId], references: [id])
+
+  @@index([tenantId, durum, createdAt])
+  @@map("banka_odeme_talimatlari")
 }
 
 model BankaBaglantiHesap {

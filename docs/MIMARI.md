@@ -229,6 +229,11 @@ export interface EntegratorAdapter {
 | `banka` | `hareketleriAl`, `odemeTalimatiGonder` | Vomsis adaptörü App Key/Secret ile token alır, eşlenen hesapları `lastId` imleciyle artımlı çeker. Alternatif sağlayıcılar Bearer anahtarlı webhook kullanabilir. Hareketler idempotent biçimde ekstre kutusuna düşer; eşleştirme motoru öneri üretir, kullanıcı onaylar (ENT-06). Ödeme talimatı çift onay + zorunlu TOTP ile korunur (ENT-07) |
 | `sms` | `smsGonder` | Netgsm REST API ile ödeme bağlantısı gönderilir; sağlayıcı görev kimliği, gönderim zamanı ve hata ayrı izlenir. API alt kullanıcısı ve onaylı gönderici başlığı şifreli bağlantı yapılandırmasında tutulur (ENT-05). |
 
+Banka ödeme talimatı para çıkışından ayrı bir güvenlik durum makinesidir:
+`onay_bekliyor → onaylandi → gonderildi | basarisiz`. Talimatı oluşturan kullanıcı
+onaylayamaz; ikinci kullanıcı onay anında kendi TOTP kodunu yeniden doğrular.
+Sağlayıcıdan başarı alınmadan banka/muhasebe hareketi üretilmez (ENT-07).
+
 Bu ailelerin veri modeli yer tutucuları (§7) ve kuyruk isim alanları (§6)
 v1.0 şemasında ayrılmıştır; adaptör kodu v1.1'de yazılır.
 
