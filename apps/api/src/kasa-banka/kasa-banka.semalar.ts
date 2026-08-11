@@ -27,7 +27,7 @@ export const bankaHesapGuncelleSemasi = bankaHesapOlusturSemasi.partial().extend
 });
 
 export const posHesapOlusturSemasi = z.object({
-  ad: z.string().min(2).max(100), saglayici: z.string().min(2).max(50),
+  ad: z.string().min(2).max(100), saglayici: z.enum(["iyzico", "paytr"]),
   baglantiId: z.string().uuid().optional().nullable(), varsayilanBankaHesapId: z.string().uuid().optional().nullable(),
   dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
 });

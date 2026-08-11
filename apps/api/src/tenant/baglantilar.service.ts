@@ -165,7 +165,7 @@ export class BaglantilarService {
     const pazaryeriKimligiGecerli = kayit.saglayici === "amazon_tr"
       ? Boolean(config.kullaniciAdi && config.parola && config.apiAnahtari && config.saticiId && config.magazaId)
       : Boolean(config.kullaniciAdi && config.parola && (kayit.saglayici === "n11" || config.saticiId || config.magazaId));
-    const posKimligiGecerli = Boolean(config.kullaniciAdi && config.parola && (config.servisAdresi === "https://sandbox-api.iyzipay.com" || config.servisAdresi === "https://api.iyzipay.com"));
+    const posKimligiGecerli = kayit.saglayici === "paytr" ? Boolean(config.kullaniciAdi && config.parola && config.magazaId) : Boolean(config.kullaniciAdi && config.parola && (config.servisAdresi === "https://sandbox-api.iyzipay.com" || config.servisAdresi === "https://api.iyzipay.com"));
     const smsKimligiGecerli = Boolean(config.kullaniciAdi && config.parola && config.gondericiAdi);
     const bankaKimligiGecerli = kayit.saglayici === "vomsis" ? Boolean(config.kullaniciAdi && config.parola) : Boolean(config.kullaniciAdi && config.apiAnahtari && (config as any).bankaHesapId);
     const bicimGecerli = kayit.aile === "pos" ? posKimligiGecerli : kayit.aile === "sms" ? smsKimligiGecerli : kayit.aile === "banka" ? bankaKimligiGecerli : pazaryeriKimligiGecerli;
