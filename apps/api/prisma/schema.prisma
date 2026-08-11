@@ -20,6 +20,7 @@ enum BaglantiAile {
   pazaryeri
   pos
   banka
+  sms
 }
 
 enum BaglantiDurumu {
@@ -1358,6 +1359,9 @@ model PosTahsilat {
   hataMesaji        String?           @map("hata_mesaji")
   epostaGonderimTarihi DateTime?      @map("eposta_gonderim_tarihi")
   epostaHatasi      String?           @map("eposta_hatasi")
+  smsGonderimTarihi DateTime?         @map("sms_gonderim_tarihi")
+  smsGorevId        String?           @map("sms_gorev_id")
+  smsHatasi         String?           @map("sms_hatasi")
   createdAt         DateTime          @default(now()) @map("created_at")
   updatedAt         DateTime          @updatedAt @map("updated_at")
 

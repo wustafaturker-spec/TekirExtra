@@ -180,11 +180,11 @@ transaction'ları + client extension ile karşılanır (her tenant-scoped sorgu
 
 ## 5. Dış Bağlantı ve Adaptör Mimarisi (EBLG-01, ENT-01)
 
-Dört bağlantı ailesi aynı deseni paylaşır: **e-belge** (v1.0), **pazaryeri**,
-**sanal POS**, **banka** (v1.1+). Ortak model v1.0'da kurulur:
+Beş bağlantı ailesi aynı deseni paylaşır: **e-belge** (v1.0), **pazaryeri**,
+**sanal POS**, **banka** ve **SMS** (v1.1+). Ortak model v1.0'da kurulur:
 
 - Tek tablo: `baglantilar (tenant_id, aile, saglayici, sifreli_config, durum, ...)`
-  — aile: `ebelge | pazaryeri | pos | banka`. Firma her aileden bağımsız
+  — aile: `ebelge | pazaryeri | pos | banka | sms`. Firma her aileden bağımsız
   sağlayıcı(lar) seçer, erişim bilgilerini girer, bağlantıyı test eder.
   e-belge ailesinde firma başına tek aktif bağlantı; pazaryerinde birden çok
   bağlantı aynı anda aktif olabilir (Trendyol + Hepsiburada + ...).
@@ -227,6 +227,7 @@ export interface EntegratorAdapter {
 | `pazaryeri` | `siparisleriCek`, `stokFiyatGonder`, `komisyonKayitlariCek` | Sipariş → toplu faturalaştırma `fatura` modülü üzerinden; sağlayıcılar: Trendyol, Hepsiburada, N11, Amazon TR (ENT-02/03/08) |
 | `pos` | `tahsilatBaslat`, `odemeLinkiOlustur`, `durumSorgula`, `iadeEt` | Ödeme kuruluşları (iyzico, PayTR) + doğrudan banka sanal POS'ları aynı arayüzde. Tahsilat önce ayrı POS hesabına ve cariye, sağlayıcı ödemesi ise POS → banka virmanı olarak işlenir; brüt/net/komisyon ayrımı korunur (ENT-04/05). Kart verisi TekirExtra'ya **asla girmez** — yönlendirme/iframe ile sağlayıcıda kalır (PCI-DSS kapsamı dışında kalma ilkesi) |
 | `banka` | `hareketleriCek`, `odemeTalimatiGonder` | Hareket eşleştirme motoru öneri üretir, kullanıcı onaylar (ENT-06); ödeme talimatı çift onay + zorunlu TOTP (ENT-07) |
+| `sms` | `smsGonder` | Netgsm REST API ile ödeme bağlantısı gönderilir; sağlayıcı görev kimliği, gönderim zamanı ve hata ayrı izlenir. API alt kullanıcısı ve onaylı gönderici başlığı şifreli bağlantı yapılandırmasında tutulur (ENT-05). |
 
 Bu ailelerin veri modeli yer tutucuları (§7) ve kuyruk isim alanları (§6)
 v1.0 şemasında ayrılmıştır; adaptör kodu v1.1'de yazılır.

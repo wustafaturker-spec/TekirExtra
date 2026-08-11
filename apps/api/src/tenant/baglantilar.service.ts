@@ -9,7 +9,7 @@ import {
   type EntegratorAdapter,
   type EntegratorConfig,
 } from "@tekirextra/baglanti";
-import { BAGLANTI_AILELERI, EBELGE_SAGLAYICILARI, PAZARYERI_SAGLAYICILARI, POS_SAGLAYICILARI } from "@tekirextra/shared";
+import { BAGLANTI_AILELERI, EBELGE_SAGLAYICILARI, PAZARYERI_SAGLAYICILARI, POS_SAGLAYICILARI, SMS_SAGLAYICILARI } from "@tekirextra/shared";
 import { z } from "zod";
 import { coz, sifrele } from "../core/kripto";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -25,9 +25,10 @@ export const baglantiOlusturSemasi = z.object({
     servisAdresi: z.string().optional(),
     saticiId: z.string().optional(),
     magazaId: z.string().optional(),
+    gondericiAdi: z.string().optional(),
   }),
 }).superRefine((girdi, ctx) => {
-  const izinli = girdi.aile === "ebelge" ? EBELGE_SAGLAYICILARI : girdi.aile === "pazaryeri" ? PAZARYERI_SAGLAYICILARI : girdi.aile === "pos" ? POS_SAGLAYICILARI : [];
+  const izinli = girdi.aile === "ebelge" ? EBELGE_SAGLAYICILARI : girdi.aile === "pazaryeri" ? PAZARYERI_SAGLAYICILARI : girdi.aile === "pos" ? POS_SAGLAYICILARI : girdi.aile === "sms" ? SMS_SAGLAYICILARI : [];
   if (!(izinli as readonly string[]).includes(girdi.saglayici)) ctx.addIssue({ code: "custom", path: ["saglayici"], message: "Sağlayıcı bağlantı ailesiyle uyumlu değil" });
 });
 
@@ -152,13 +153,14 @@ export class BaglantilarService {
     );
     if (!kayit) throw new NotFoundException("Bağlantı bulunamadı");
 
-    const config = JSON.parse(coz(kayit.sifreliConfig)) as EntegratorConfig & { saticiId?: string; magazaId?: string; apiAnahtari?: string };
+    const config = JSON.parse(coz(kayit.sifreliConfig)) as EntegratorConfig & { saticiId?: string; magazaId?: string; apiAnahtari?: string; gondericiAdi?: string };
     const pazaryeriKimligiGecerli = kayit.saglayici === "amazon_tr"
       ? Boolean(config.kullaniciAdi && config.parola && config.apiAnahtari && config.saticiId && config.magazaId)
       : Boolean(config.kullaniciAdi && config.parola && (kayit.saglayici === "n11" || config.saticiId || config.magazaId));
     const posKimligiGecerli = Boolean(config.kullaniciAdi && config.parola && (config.servisAdresi === "https://sandbox-api.iyzipay.com" || config.servisAdresi === "https://api.iyzipay.com"));
-    const sonuc = kayit.aile === "pazaryeri" || kayit.aile === "pos"
-      ? { basarili: kayit.aile === "pos" ? posKimligiGecerli : pazaryeriKimligiGecerli, mesaj: (kayit.aile === "pos" ? posKimligiGecerli : pazaryeriKimligiGecerli) ? "Kimlik biçimi doğrulandı; canlı test ilk işlem sırasında yapılacaktır" : "Sağlayıcı için zorunlu kimlik alanları eksik" }
+    const smsKimligiGecerli = Boolean(config.kullaniciAdi && config.parola && config.gondericiAdi);
+    const sonuc = kayit.aile === "pazaryeri" || kayit.aile === "pos" || kayit.aile === "sms"
+      ? { basarili: kayit.aile === "pos" ? posKimligiGecerli : kayit.aile === "sms" ? smsKimligiGecerli : pazaryeriKimligiGecerli, mesaj: (kayit.aile === "pos" ? posKimligiGecerli : kayit.aile === "sms" ? smsKimligiGecerli : pazaryeriKimligiGecerli) ? "Kimlik biçimi doğrulandı; canlı test ilk işlem sırasında yapılacaktır" : "Sağlayıcı için zorunlu kimlik alanları eksik" }
       : await this.adapterCoz(kayit.saglayici).baglantiTest(config);
 
     await this.prisma.tenantIslem(tenantId, (tx) =>

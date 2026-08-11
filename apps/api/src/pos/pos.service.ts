@@ -5,11 +5,13 @@ import { PrismaService } from "../core/prisma.service";
 import { coz } from "../core/kripto";
 import { IyzicoAdapter, type IyzicoConfig } from "./iyzico.adapter";
 import { EpostaService } from "../tenant/eposta.service";
+import { NetgsmAdapter, type NetgsmConfig } from "./netgsm.adapter";
 
 @Injectable()
 export class PosService {
   constructor(private readonly prisma: PrismaService, private readonly eposta: EpostaService) {}
   private config(sifreli: string): IyzicoConfig { const c = JSON.parse(coz(sifreli)) as any; return { apiKey: c.kullaniciAdi, secretKey: c.parola, baseUrl: c.servisAdresi ?? "https://sandbox-api.iyzipay.com" }; }
+  private netgsmConfig(sifreli: string): NetgsmConfig { const c = JSON.parse(coz(sifreli)) as any; return { kullaniciAdi: c.kullaniciAdi, parola: c.parola, gondericiAdi: c.gondericiAdi, servisAdresi: c.servisAdresi }; }
 
   async listele() { const { tenantId } = aktifBaglam(); return this.prisma.tenantIslem(tenantId, (tx) => tx.posTahsilat.findMany({ orderBy: { createdAt: "desc" }, include: { posHesap: { select: { ad: true, saglayici: true } }, cari: { select: { kod: true, unvan: true } }, fatura: { select: { no: true } } } })); }
 
@@ -26,6 +28,7 @@ export class PosService {
       const sonuc = await new IyzicoAdapter().odemeBaslat(this.config(kaynak.baglanti.sifreliConfig), { locale: "tr", conversationId: kayit.id, price: Number(tutar), paidPrice: Number(tutar), currency: kaynak.dovizCinsi, basketId: girdi.faturaId ?? kayit.id, paymentGroup: "PRODUCT", callbackUrl: `${callbackKoku}/api/v1/pos/iyzico/callback/${tenantId}/${kayit.id}`, buyer: { id: cari.id, name: ad, surname: soyad, identityNumber: cari.vknTckn ?? "11111111111", email: cari.eposta, gsmNumber: cari.telefon ?? undefined, registrationAddress: adres.adres, city: adres.il ?? "İstanbul", country: adres.ulke ?? "Türkiye", zipCode: adres.postaKodu ?? undefined }, billingAddress: { contactName: cari.unvan, address: adres.adres, city: adres.il ?? "İstanbul", country: adres.ulke ?? "Türkiye", zipCode: adres.postaKodu ?? undefined }, basketItems: [{ id: girdi.faturaId ?? kayit.id, name: girdi.faturaId ? "Fatura tahsilatı" : "Cari hesap tahsilatı", category1: "Tahsilat", itemType: "VIRTUAL", price: Number(tutar) }] });
       const tamamlanan = await this.prisma.tenantIslem(tenantId, (tx) => tx.posTahsilat.update({ where: { id: kayit.id }, data: { saglayiciToken: sonuc.token, odemeSayfasiUrl: sonuc.odemeSayfasiUrl } }));
       await this.odemeLinkiEpostala(tenantId, tamamlanan.id, cari.eposta, cari.unvan, sonuc.odemeSayfasiUrl, girdi.faturaId).catch(() => undefined);
+      if (cari.telefon) await this.odemeLinkiSmsGonder(tenantId, tamamlanan.id, cari.telefon, cari.unvan, sonuc.odemeSayfasiUrl, girdi.faturaId).catch(() => undefined);
       return this.prisma.tenantIslem(tenantId, (tx) => tx.posTahsilat.findUniqueOrThrow({ where: { id: tamamlanan.id } }));
     } catch (hata) { await this.prisma.tenantIslem(tenantId, (tx) => tx.posTahsilat.update({ where: { id: kayit.id }, data: { durum: "basarisiz", hataMesaji: hata instanceof Error ? hata.message : "Ödeme başlatılamadı" } })); throw hata; }
   }
@@ -36,9 +39,29 @@ export class PosService {
     await this.odemeLinkiEpostala(tenantId, kayit.id, kayit.cari.eposta, kayit.cari.unvan, kayit.odemeSayfasiUrl, kayit.faturaId); return { basarili: true };
   }
 
+  async smsYenidenGonder(id: string) {
+    const { tenantId } = aktifBaglam(); const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.posTahsilat.findUnique({ where: { id }, include: { cari: { select: { telefon: true, unvan: true } } } }));
+    if (!kayit?.odemeSayfasiUrl || !kayit.cari.telefon || kayit.durum !== "baslatildi") throw new BadRequestException("Gönderilebilir ödeme bağlantısı veya cari telefonu bulunamadı");
+    await this.odemeLinkiSmsGonder(tenantId, kayit.id, kayit.cari.telefon, kayit.cari.unvan, kayit.odemeSayfasiUrl, kayit.faturaId); return { basarili: true };
+  }
+
   private async odemeLinkiEpostala(tenantId: string, id: string, alici: string, unvan: string, link: string, faturaId?: string | null) {
     try { await this.eposta.iletiGonder({ alici, konu: `TekirExtra — ${faturaId ? "fatura" : "cari hesap"} ödeme bağlantısı`, metin: `Merhaba ${unvan},\n\nGüvenli kart ödeme bağlantınız:\n${link}\n\nKart bilgileriniz TekirExtra tarafından görüntülenmez veya saklanmaz.` }); await this.prisma.tenantIslem(tenantId, (tx) => tx.posTahsilat.update({ where: { id }, data: { epostaGonderimTarihi: new Date(), epostaHatasi: null } })); }
     catch (hata) { const mesaj = hata instanceof Error ? hata.message : "E-posta gönderilemedi"; await this.prisma.tenantIslem(tenantId, (tx) => tx.posTahsilat.update({ where: { id }, data: { epostaHatasi: mesaj } })); throw hata; }
+  }
+
+  private async odemeLinkiSmsGonder(tenantId: string, id: string, telefon: string, unvan: string, link: string, faturaId?: string | null) {
+    try {
+      const baglanti = await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.findFirst({ where: { aile: "sms", saglayici: "netgsm", durum: "aktif" }, orderBy: { updatedAt: "desc" } }));
+      if (!baglanti) throw new Error("Aktif Netgsm SMS bağlantısı bulunamadı");
+      const mesaj = `Sayin ${unvan}, ${faturaId ? "fatura" : "cari hesap"} odeme baglantiniz: ${link}`;
+      const sonuc = await new NetgsmAdapter().smsGonder(this.netgsmConfig(baglanti.sifreliConfig), telefon, mesaj);
+      await this.prisma.tenantIslem(tenantId, (tx) => tx.posTahsilat.update({ where: { id }, data: { smsGonderimTarihi: new Date(), smsGorevId: sonuc.gorevId, smsHatasi: null } }));
+    } catch (hata) {
+      const mesaj = hata instanceof Error ? hata.message : "SMS gönderilemedi";
+      await this.prisma.tenantIslem(tenantId, (tx) => tx.posTahsilat.update({ where: { id }, data: { smsHatasi: mesaj } }));
+      throw hata;
+    }
   }
 
   async callback(tenantId: string, tahsilatId: string, token: string) {
