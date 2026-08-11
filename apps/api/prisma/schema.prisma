@@ -80,6 +80,7 @@ model Tenant {
   pazaryeriSiparisleri PazaryeriSiparis[]
   posTahsilatlari      PosTahsilat[]
   pazaryeriKesintileri PazaryeriKesinti[]
+  bankaHesapEslemeleri BankaBaglantiHesap[]
 
   @@map("tenants")
 }
@@ -295,6 +296,7 @@ model Baglanti {
   pazaryeriSiparises PazaryeriSiparis[]
   pazaryeriKesintileri PazaryeriKesinti[]
   posHesaplari         PosHesap[]
+  bankaHesapEslemeleri BankaBaglantiHesap[]
 
   @@index([tenantId, aile])
   @@map("baglantilar")
@@ -1316,9 +1318,31 @@ model BankaHesap {
   ekstreler       BankaEkstre[]
   ekstreSatirlari BankaEkstreSatir[]
   posHesaplari    PosHesap[]          @relation("PosVarsayilanBanka")
+  baglantiEslemeleri BankaBaglantiHesap[]
 
   @@unique([tenantId, ad])
   @@map("banka_hesaplari")
+}
+
+model BankaBaglantiHesap {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  baglantiId     String   @map("baglanti_id") @db.Uuid
+  bankaHesapId   String   @map("banka_hesap_id") @db.Uuid
+  disHesapId     String   @map("dis_hesap_id")
+  sonHareketId   String?  @map("son_hareket_id")
+  sonSenkronTarihi DateTime? @map("son_senkron_tarihi")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  baglanti    Baglanti    @relation(fields: [baglantiId], references: [id], onDelete: Cascade)
+  bankaHesap  BankaHesap @relation(fields: [bankaHesapId], references: [id], onDelete: Cascade)
+
+  @@unique([baglantiId, disHesapId])
+  @@unique([baglantiId, bankaHesapId])
+  @@index([tenantId, baglantiId])
+  @@map("banka_baglanti_hesaplari")
 }
 
 model PosHesap {

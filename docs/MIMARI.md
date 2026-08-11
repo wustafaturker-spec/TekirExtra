@@ -226,7 +226,7 @@ export interface EntegratorAdapter {
 |---|---|---|
 | `pazaryeri` | `siparisleriCek`, `stokFiyatGonder`, `komisyonKayitlariCek` | Sipariş → toplu faturalaştırma `fatura` modülü üzerinden; sağlayıcılar: Trendyol, Hepsiburada, N11, Amazon TR (ENT-02/03/08) |
 | `pos` | `tahsilatBaslat`, `odemeLinkiOlustur`, `durumSorgula`, `iadeEt` | Ödeme kuruluşları (iyzico, PayTR) + doğrudan banka sanal POS'ları aynı arayüzde. Tahsilat önce ayrı POS hesabına ve cariye, sağlayıcı ödemesi ise POS → banka virmanı olarak işlenir; brüt/net/komisyon ayrımı korunur (ENT-04/05). Kart verisi TekirExtra'ya **asla girmez** — yönlendirme/iframe ile sağlayıcıda kalır (PCI-DSS kapsamı dışında kalma ilkesi) |
-| `banka` | `hareketleriAl`, `odemeTalimatiGonder` | Yetkili banka/fintek sağlayıcısından Bearer anahtarlı webhook ile alınan hareketler idempotent biçimde ekstre kutusuna düşer; eşleştirme motoru öneri üretir, kullanıcı onaylar (ENT-06). Ödeme talimatı çift onay + zorunlu TOTP ile korunur (ENT-07) |
+| `banka` | `hareketleriAl`, `odemeTalimatiGonder` | Vomsis adaptörü App Key/Secret ile token alır, eşlenen hesapları `lastId` imleciyle artımlı çeker. Alternatif sağlayıcılar Bearer anahtarlı webhook kullanabilir. Hareketler idempotent biçimde ekstre kutusuna düşer; eşleştirme motoru öneri üretir, kullanıcı onaylar (ENT-06). Ödeme talimatı çift onay + zorunlu TOTP ile korunur (ENT-07) |
 | `sms` | `smsGonder` | Netgsm REST API ile ödeme bağlantısı gönderilir; sağlayıcı görev kimliği, gönderim zamanı ve hata ayrı izlenir. API alt kullanıcısı ve onaylı gönderici başlığı şifreli bağlantı yapılandırmasında tutulur (ENT-05). |
 
 Bu ailelerin veri modeli yer tutucuları (§7) ve kuyruk isim alanları (§6)

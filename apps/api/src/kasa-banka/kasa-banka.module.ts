@@ -4,10 +4,11 @@ import { EkstreService } from "./ekstre.service";
 import { KasaBankaController } from "./kasa-banka.controller";
 import { KasaBankaService } from "./kasa-banka.service";
 import { BankaWebhookController } from "./banka-webhook.controller";
+import { BankaEntegrasyonService } from "./banka-entegrasyon.service";
 
 @Module({
   controllers: [KasaBankaController, BankaWebhookController],
-  providers: [KasaBankaService, EkstreService],
+  providers: [KasaBankaService, EkstreService, BankaEntegrasyonService],
   exports: [KasaBankaService, EkstreService],
 })
 export class KasaBankaModule implements OnModuleInit {

@@ -17,6 +17,8 @@ import { EkstreSatirDurum } from "@prisma/client";
 import { Roller } from "../auth/roller.decorator";
 import { EkstreService } from "./ekstre.service";
 import { KasaBankaService } from "./kasa-banka.service";
+import { BankaEntegrasyonService } from "./banka-entegrasyon.service";
+import { z } from "zod";
 import {
   bankaHesapGuncelleSemasi,
   bankaHesapOlusturSemasi,
@@ -45,7 +47,20 @@ export class KasaBankaController {
   constructor(
     private readonly service: KasaBankaService,
     private readonly ekstre: EkstreService,
+    private readonly bankaEntegrasyon: BankaEntegrasyonService,
   ) {}
+
+  @Get("banka-baglantilari/eslemeler")
+  bankaEslemeleri() { return this.bankaEntegrasyon.eslemeleriListele(); }
+
+  @Post("banka-baglantilari/eslemeler") @Roller("muhasebe")
+  bankaEslemeEkle(@Body() govde: unknown) { const s = z.object({ baglantiId: z.uuid(), bankaHesapId: z.uuid(), disHesapId: z.string().min(1).max(100) }).safeParse(govde); if (!s.success) throw new BadRequestException(s.error.issues.map((i) => i.message).join("; ")); return this.bankaEntegrasyon.eslemeEkle(s.data); }
+
+  @Get("banka-baglantilari/:id/vomsis-hesaplari")
+  vomsisHesaplari(@Param("id") id: string) { return this.bankaEntegrasyon.vomsisHesaplari(id); }
+
+  @Post("banka-baglantilari/:id/senkronize") @Roller("muhasebe")
+  bankaSenkronize(@Param("id") id: string) { return this.bankaEntegrasyon.senkronize(id); }
 
   // ─── KASA ENDPOINTS ────────────────────────────────────────────────────────
 

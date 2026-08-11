@@ -31,8 +31,9 @@ export const baglantiOlusturSemasi = z.object({
 }).superRefine((girdi, ctx) => {
   const izinli = girdi.aile === "ebelge" ? EBELGE_SAGLAYICILARI : girdi.aile === "pazaryeri" ? PAZARYERI_SAGLAYICILARI : girdi.aile === "pos" ? POS_SAGLAYICILARI : girdi.aile === "sms" ? SMS_SAGLAYICILARI : girdi.aile === "banka" ? BANKA_SAGLAYICILARI : [];
   if (!(izinli as readonly string[]).includes(girdi.saglayici)) ctx.addIssue({ code: "custom", path: ["saglayici"], message: "Sağlayıcı bağlantı ailesiyle uyumlu değil" });
-  if (girdi.aile === "banka" && (!girdi.config.apiAnahtari || girdi.config.apiAnahtari.length < 24)) ctx.addIssue({ code: "custom", path: ["config", "apiAnahtari"], message: "Banka bağlantısı erişim anahtarı en az 24 karakter olmalıdır" });
-  if (girdi.aile === "banka" && !girdi.config.bankaHesapId) ctx.addIssue({ code: "custom", path: ["config", "bankaHesapId"], message: "Banka hesabı zorunludur" });
+  if (girdi.aile === "banka" && girdi.saglayici === "webhook" && (!girdi.config.apiAnahtari || girdi.config.apiAnahtari.length < 24)) ctx.addIssue({ code: "custom", path: ["config", "apiAnahtari"], message: "Banka bağlantısı erişim anahtarı en az 24 karakter olmalıdır" });
+  if (girdi.aile === "banka" && girdi.saglayici === "webhook" && !girdi.config.bankaHesapId) ctx.addIssue({ code: "custom", path: ["config", "bankaHesapId"], message: "Banka hesabı zorunludur" });
+  if (girdi.aile === "banka" && girdi.saglayici === "vomsis" && (!girdi.config.kullaniciAdi || !girdi.config.parola)) ctx.addIssue({ code: "custom", path: ["config"], message: "Vomsis App Key ve App Secret zorunludur" });
 });
 
 export interface BaglantiGorunumu {
@@ -85,7 +86,7 @@ export class BaglantilarService {
   async olustur(girdi: z.infer<typeof baglantiOlusturSemasi>): Promise<BaglantiGorunumu> {
     const { tenantId } = aktifBaglam();
     const kayit = await this.prisma.tenantIslem(tenantId, async (tx) => {
-      if (girdi.aile === "banka") {
+      if (girdi.aile === "banka" && girdi.saglayici === "webhook") {
         const hesap = await tx.bankaHesap.findUnique({ where: { id: girdi.config.bankaHesapId } });
         if (!hesap) throw new BadRequestException("Banka hesabı bulunamadı");
       }
@@ -166,7 +167,7 @@ export class BaglantilarService {
       : Boolean(config.kullaniciAdi && config.parola && (kayit.saglayici === "n11" || config.saticiId || config.magazaId));
     const posKimligiGecerli = Boolean(config.kullaniciAdi && config.parola && (config.servisAdresi === "https://sandbox-api.iyzipay.com" || config.servisAdresi === "https://api.iyzipay.com"));
     const smsKimligiGecerli = Boolean(config.kullaniciAdi && config.parola && config.gondericiAdi);
-    const bankaKimligiGecerli = Boolean(config.kullaniciAdi && config.apiAnahtari && (config as any).bankaHesapId);
+    const bankaKimligiGecerli = kayit.saglayici === "vomsis" ? Boolean(config.kullaniciAdi && config.parola) : Boolean(config.kullaniciAdi && config.apiAnahtari && (config as any).bankaHesapId);
     const bicimGecerli = kayit.aile === "pos" ? posKimligiGecerli : kayit.aile === "sms" ? smsKimligiGecerli : kayit.aile === "banka" ? bankaKimligiGecerli : pazaryeriKimligiGecerli;
     const sonuc = ["pazaryeri", "pos", "sms", "banka"].includes(kayit.aile)
       ? { basarili: bicimGecerli, mesaj: bicimGecerli ? "Kimlik biçimi doğrulandı; canlı test ilk işlem sırasında yapılacaktır" : "Sağlayıcı için zorunlu kimlik alanları eksik" }
