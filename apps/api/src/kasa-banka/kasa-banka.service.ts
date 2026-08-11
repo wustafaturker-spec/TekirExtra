@@ -399,6 +399,9 @@ export class KasaBankaService {
       if (!bankaId) throw new BadRequestException("Aktarım için banka hesabı seçilmelidir");
       const banka = await tx.bankaHesap.findUnique({ where: { id: bankaId } });
       if (!banka || !banka.aktif || banka.dovizCinsi !== pos.dovizCinsi) throw new BadRequestException("Aktif ve aynı döviz cinsinde banka hesabı seçilmelidir");
+      const ekstreSatir = girdi.ekstreSatirId ? await tx.bankaEkstreSatir.findUnique({ where: { id: girdi.ekstreSatirId } }) : null;
+      if (girdi.ekstreSatirId && (!ekstreSatir || ekstreSatir.durum !== "beklemede" || ekstreSatir.hareketId)) throw new BadRequestException("Onay bekleyen ekstre satırı bulunamadı");
+      if (ekstreSatir && (ekstreSatir.bankaHesapId !== bankaId || !ekstreSatir.tutar.isPositive() || !ekstreSatir.tutar.equals(net))) throw new BadRequestException("Ekstre satırı banka hesabı veya net aktarım tutarıyla uyuşmuyor");
       const bakiyeGruplari = await tx.kasaBankaHareket.groupBy({ by: ["tip"], where: { posHesapId: pos.id }, _sum: { tutar: true } });
       let kullanilabilir = D(0);
       for (const grup of bakiyeGruplari) kullanilabilir = grup.tip === "tahsilat" || grup.tip === "virman_gelis" ? kullanilabilir.add(grup._sum.tutar ?? 0) : kullanilabilir.sub(grup._sum.tutar ?? 0);
@@ -408,6 +411,7 @@ export class KasaBankaService {
       const gelis = await tx.kasaBankaHareket.create({ data: { ...ortak, bankaHesapId: bankaId, tip: "virman_gelis", tutar: net, tutarTry: net, karsiHareketId: gidis.id } });
       await tx.kasaBankaHareket.update({ where: { id: gidis.id }, data: { karsiHareketId: gelis.id } });
       const komisyonHareketi = komisyon.isPositive() ? await tx.kasaBankaHareket.create({ data: { ...ortak, posHesapId: pos.id, tip: "tediye", tutar: komisyon, tutarTry: komisyon, kaynakRef: gidis.id, aciklama: `${pos.ad} komisyon/kesinti` } }) : null;
+      if (ekstreSatir) await tx.bankaEkstreSatir.update({ where: { id: ekstreSatir.id }, data: { durum: "eslesti", hareketId: gelis.id } });
       return { gidis, gelis, komisyonHareketi, brutTutar: brut.toFixed(2), netTutar: net.toFixed(2), komisyonTutar: komisyon.toFixed(2) };
     });
   }

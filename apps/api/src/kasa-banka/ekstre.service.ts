@@ -379,6 +379,13 @@ export class EkstreService {
   /** Fişi ve onun ürettiği cari hareketini birlikte siler. */
   private async hareketGeriAl(tenantId: string, hareketId: string) {
     await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const hareket = await tx.kasaBankaHareket.findUnique({ where: { id: hareketId }, select: { id: true, kaynakTur: true, karsiHareketId: true } });
+      if (hareket?.kaynakTur === "pos_mutabakat") {
+        const gidisId = hareket.karsiHareketId;
+        if (gidisId) await tx.kasaBankaHareket.deleteMany({ where: { kaynakTur: "pos_mutabakat", kaynakRef: gidisId } });
+        await tx.kasaBankaHareket.deleteMany({ where: { id: { in: [hareket.id, ...(gidisId ? [gidisId] : [])] } } });
+        return;
+      }
       await tx.cariHareket.deleteMany({
         where: { kaynakTur: "kasa_banka", kaynakRef: hareketId },
       });

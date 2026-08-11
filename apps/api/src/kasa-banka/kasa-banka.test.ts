@@ -147,4 +147,18 @@ describe("KasaBankaService (KSB-01..07)", () => {
     expect(create).toHaveBeenNthCalledWith(2, { data: expect.objectContaining({ bankaHesapId: "banka-1", tip: "virman_gelis", tutar: new Prisma.Decimal(96), karsiHareketId: "gidis" }) });
     expect(create).toHaveBeenNthCalledWith(3, { data: expect.objectContaining({ posHesapId: "pos-1", tip: "tediye", tutar: new Prisma.Decimal(4), kaynakTur: "pos_mutabakat" }) });
   });
+
+  it("POS mutabakatini bekleyen banka ekstre satirina baglar", async () => {
+    const create = vi.fn().mockResolvedValueOnce({ id: "gidis" }).mockResolvedValueOnce({ id: "gelis" }).mockResolvedValueOnce({ id: "komisyon" });
+    const ekstreGuncelle = vi.fn().mockResolvedValue({});
+    const tx = {
+      posHesap: { findUnique: vi.fn().mockResolvedValue({ id: "pos-1", ad: "PayTR POS", aktif: true, dovizCinsi: "TRY", varsayilanBankaHesapId: "banka-1" }) },
+      bankaHesap: { findUnique: vi.fn().mockResolvedValue({ id: "banka-1", aktif: true, dovizCinsi: "TRY" }) },
+      bankaEkstreSatir: { findUnique: vi.fn().mockResolvedValue({ id: "ekstre-1", bankaHesapId: "banka-1", durum: "beklemede", hareketId: null, tutar: new Prisma.Decimal(96) }), update: ekstreGuncelle },
+      kasaBankaHareket: { groupBy: vi.fn().mockResolvedValue([{ tip: "tahsilat", _sum: { tutar: new Prisma.Decimal(100) } }]), create, update: vi.fn().mockResolvedValue({}) },
+    };
+    mockTenantIslem.mockImplementation((_tenantId, cb) => cb(tx));
+    await service.posBankayaAktar({ posHesapId: "11111111-1111-4111-8111-111111111111", ekstreSatirId: "22222222-2222-4222-8222-222222222222", brutTutar: "100.00", komisyonTutar: "4.00", tarih: "2026-08-11" });
+    expect(ekstreGuncelle).toHaveBeenCalledWith({ where: { id: "ekstre-1" }, data: { durum: "eslesti", hareketId: "gelis" } });
+  });
 });

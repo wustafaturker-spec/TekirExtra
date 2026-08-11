@@ -34,6 +34,7 @@ export const posHesapOlusturSemasi = z.object({
 
 export const posBankaAktarimSemasi = z.object({
   posHesapId: z.string().uuid(), bankaHesapId: z.string().uuid().optional(),
+  ekstreSatirId: z.string().uuid().optional(),
   brutTutar: pozitifOndalik, komisyonTutar: pozitifOndalik.or(z.literal("0")).default("0"),
   tarih: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)"), aciklama: z.string().max(500).optional().nullable(),
 }).refine((g) => Number(g.komisyonTutar) < Number(g.brutTutar), { message: "Komisyon brüt tutardan küçük olmalıdır", path: ["komisyonTutar"] });

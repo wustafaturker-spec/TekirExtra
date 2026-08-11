@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
 import {
   Alert,
@@ -26,6 +26,15 @@ interface BankaHesap {
   ad: string;
   bankaAdi: string;
   dovizCinsi: string;
+}
+
+interface PosHesap {
+  id: string;
+  ad: string;
+  saglayici: string;
+  dovizCinsi: string;
+  bakiye: string;
+  aktif: boolean;
 }
 
 interface SutunEslemesi {
@@ -118,6 +127,7 @@ const ESLEME_ALANLARI: { anahtar: keyof SutunEslemesi; baslik: string; zorunlu?:
 
 export default function EkstreSayfasi() {
   const [hesaplar, setHesaplar] = useState<BankaHesap[]>([]);
+  const [posHesaplar, setPosHesaplar] = useState<PosHesap[]>([]);
   const [satirlar, setSatirlar] = useState<EkstreSatir[]>([]);
   const [suzgec, setSuzgec] = useState<"beklemede" | "eslesti" | "yoksayildi" | "hepsi">(
     "beklemede",
@@ -140,6 +150,7 @@ export default function EkstreSayfasi() {
   const [cariSecici, setCariSecici] = useState<string | null>(null);
   const [cariArama, setCariArama] = useState("");
   const [cariSonuc, setCariSonuc] = useState<CariOzet[]>([]);
+  const [mutabakat, setMutabakat] = useState<EkstreSatir | null>(null);
 
   const listeYukle = useCallback(async () => {
     try {
@@ -160,8 +171,8 @@ export default function EkstreSayfasi() {
 
   useEffect(() => {
     if (!tokenAl()) return;
-    void api<BankaHesap[]>("/kasa-banka/bankalar")
-      .then(setHesaplar)
+    void Promise.all([api<BankaHesap[]>("/kasa-banka/bankalar"), api<PosHesap[]>("/kasa-banka/pos-hesaplari")])
+      .then(([bankalar, poslar]) => { setHesaplar(bankalar); setPosHesaplar(poslar); })
       .catch(() => undefined);
   }, []);
 
@@ -317,6 +328,17 @@ export default function EkstreSayfasi() {
     } finally {
       setIslemde(null);
     }
+  }
+
+  async function posMutabakatiYap(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault(); if (!mutabakat) return; const f = new FormData(e.currentTarget);
+    setHata(""); setBasari(""); setIslemde(`pos-${mutabakat.id}`);
+    try {
+      const sonuc = await api<{ netTutar: string; komisyonTutar: string }>("/kasa-banka/pos-hesaplari/bankaya-aktar", { method: "POST", body: JSON.stringify({ posHesapId: f.get("posHesapId"), bankaHesapId: mutabakat.bankaHesap.id, ekstreSatirId: mutabakat.id, brutTutar: f.get("brutTutar"), komisyonTutar: f.get("komisyonTutar") || "0", tarih: mutabakat.tarih.slice(0, 10), aciklama: mutabakat.aciklama }) });
+      setBasari(`${sonuc.netTutar} ${mutabakat.bankaHesap.dovizCinsi} sağlayıcı ödemesi POS hesabıyla mutabık hale getirildi; ${sonuc.komisyonTutar} komisyon işlendi.`);
+      setMutabakat(null); await listeYukle();
+    } catch (h) { setHata(h instanceof Error ? h.message : "POS mutabakatı yapılamadı"); }
+    finally { setIslemde(null); }
   }
 
   /* ─── Görünüm ──────────────────────────────────────────────────────────── */
@@ -526,6 +548,8 @@ export default function EkstreSayfasi() {
         />
       </div>
 
+      {mutabakat && <Card style={{ marginBottom: "1rem" }}><form className="stack" onSubmit={posMutabakatiYap}><div className="between"><div><h3 style={{ margin: 0 }}>POS sağlayıcı ödemesi</h3><p className="muted" style={{ marginBottom: 0 }}>Bankaya gelen net tutar: {para(mutabakat.tutar, mutabakat.bankaHesap.dovizCinsi)}. Brüt tahsilat eksi komisyon bu net tutara eşit olmalıdır.</p></div><Button onClick={() => setMutabakat(null)}>Vazgeç</Button></div><div className="row"><Field label="POS hesabı"><Select name="posHesapId" required><option value="">Hesap seçin</option>{posHesaplar.filter((p) => p.aktif && p.dovizCinsi === mutabakat.bankaHesap.dovizCinsi).map((p) => <option key={p.id} value={p.id}>{p.ad} · {p.saglayici} · bakiye {p.bakiye}</option>)}</Select></Field><Field label="Brüt sağlayıcı alacağı"><Input name="brutTutar" type="number" min="0.01" step="0.01" required defaultValue={mutabakat.tutar} /></Field><Field label="Komisyon / kesinti"><Input name="komisyonTutar" type="number" min="0" step="0.01" defaultValue="0" /></Field></div><Button type="submit" variant="primary" disabled={islemde !== null}>POS → banka mutabakatını işle</Button></form></Card>}
+
       <Card pad={false}>
         <TableWrap>
           <thead>
@@ -706,6 +730,7 @@ export default function EkstreSayfasi() {
                       <div className="row-tight" style={{ justifyContent: "flex-end" }}>
                         {bekliyor && (
                           <>
+                            {s.yon === "tahsilat" && <Button size="sm" onClick={() => setMutabakat(s)} disabled={islemde !== null}>POS ödemesi</Button>}
                             <Button
                               variant="primary"
                               size="sm"
