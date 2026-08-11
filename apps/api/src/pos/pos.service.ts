@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadGatewayException, BadRequestException, HttpException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
@@ -41,7 +41,16 @@ export class PosService {
       await this.odemeLinkiEpostala(tenantId, tamamlanan.id, cari.eposta, cari.unvan, sonuc.odemeSayfasiUrl, girdi.faturaId).catch(() => undefined);
       if (cari.telefon) await this.odemeLinkiSmsGonder(tenantId, tamamlanan.id, cari.telefon, cari.unvan, sonuc.odemeSayfasiUrl, girdi.faturaId).catch(() => undefined);
       return this.prisma.tenantIslem(tenantId, (tx) => tx.posTahsilat.findUniqueOrThrow({ where: { id: tamamlanan.id } }));
-    } catch (hata) { await this.prisma.tenantIslem(tenantId, (tx) => tx.posTahsilat.update({ where: { id: kayit.id }, data: { durum: "basarisiz", hataMesaji: hata instanceof Error ? hata.message : "Ödeme başlatılamadı" } })); throw hata; }
+    } catch (hata) {
+      const mesaj = hata instanceof Error ? hata.message : "Ödeme başlatılamadı";
+      const saglayiciHatasi = !(hata instanceof HttpException);
+      await this.prisma.tenantIslem(tenantId, async (tx) => {
+        await tx.posTahsilat.update({ where: { id: kayit.id }, data: { durum: "basarisiz", hataMesaji: mesaj } });
+        if (saglayiciHatasi) await tx.baglanti.update({ where: { id: kaynak.baglanti!.id }, data: { durum: "hata" } });
+      });
+      if (hata instanceof HttpException) throw hata;
+      throw new BadGatewayException(`${kaynak.saglayici} ödeme bağlantısı oluşturulamadı: ${mesaj}. POS bağlantı bilgilerini ve seçilen ortamı kontrol edin.`);
+    }
   }
 
   async paytrCallback(tenantId: string, tahsilatId: string, girdi: PaytrCallback) {
