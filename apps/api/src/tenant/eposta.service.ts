@@ -29,6 +29,11 @@ export class EpostaService {
     this.logger.log(`Doğrulama e-postası gönderildi: ${eposta}`);
   }
 
+  async iletiGonder(girdi: { alici: string; konu: string; metin: string; html?: string }): Promise<void> {
+    await this.transport.sendMail({ from: process.env.MAIL_FROM ?? "TekirExtra <no-reply@tekirextra.local>", to: girdi.alici, subject: girdi.konu, text: girdi.metin, html: girdi.html });
+    this.logger.log(`İleti gönderildi: ${girdi.alici} (${girdi.konu})`);
+  }
+
   /** Ekli genel ileti gönderimi (FTR-07 fatura PDF vb.). */
   async ekliIletiGonder(girdi: {
     alici: string;

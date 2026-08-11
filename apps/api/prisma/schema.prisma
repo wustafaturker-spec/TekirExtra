@@ -1356,6 +1356,8 @@ model PosTahsilat {
   odemeSayfasiUrl   String?           @map("odeme_sayfasi_url")
   hareketId         String?           @unique @map("hareket_id") @db.Uuid
   hataMesaji        String?           @map("hata_mesaji")
+  epostaGonderimTarihi DateTime?      @map("eposta_gonderim_tarihi")
+  epostaHatasi      String?           @map("eposta_hatasi")
   createdAt         DateTime          @default(now()) @map("created_at")
   updatedAt         DateTime          @updatedAt @map("updated_at")
 
