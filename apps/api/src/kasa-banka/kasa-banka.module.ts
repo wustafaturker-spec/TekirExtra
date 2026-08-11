@@ -3,9 +3,10 @@ import { registerEylemPolitikasi } from "../core/eylemler/eylem-kayit";
 import { EkstreService } from "./ekstre.service";
 import { KasaBankaController } from "./kasa-banka.controller";
 import { KasaBankaService } from "./kasa-banka.service";
+import { BankaWebhookController } from "./banka-webhook.controller";
 
 @Module({
-  controllers: [KasaBankaController],
+  controllers: [KasaBankaController, BankaWebhookController],
   providers: [KasaBankaService, EkstreService],
   exports: [KasaBankaService, EkstreService],
 })

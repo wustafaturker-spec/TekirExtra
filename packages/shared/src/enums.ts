@@ -22,6 +22,9 @@ export type PosSaglayici = (typeof POS_SAGLAYICILARI)[number];
 export const SMS_SAGLAYICILARI = ["netgsm"] as const;
 export type SmsSaglayici = (typeof SMS_SAGLAYICILARI)[number];
 
+export const BANKA_SAGLAYICILARI = ["webhook"] as const;
+export type BankaSaglayici = (typeof BANKA_SAGLAYICILARI)[number];
+
 /** Kayıt eylem kural motorunun eylem kümesi (AYR-04). */
 export const KAYIT_EYLEMLERI = ["duzenle", "sil", "kopyala", "iptal", "pasife_al"] as const;
 export type KayitEylem = (typeof KAYIT_EYLEMLERI)[number];

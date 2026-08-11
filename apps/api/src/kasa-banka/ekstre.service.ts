@@ -12,6 +12,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { EkstreSatirDurum, Prisma } from "@prisma/client";
+import { createHash } from "node:crypto";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { KasaBankaService } from "./kasa-banka.service";
@@ -36,6 +37,18 @@ export class EkstreService {
     private readonly prisma: PrismaService,
     private readonly kasaBanka: KasaBankaService,
   ) {}
+
+  async webhookHareketleriniAl(tenantId: string, bankaHesapId: string, baglantiId: string, hareketler: Array<{ id: string; tarih: string; tutar: number; aciklama: string; dekontNo?: string; karsiIban?: string; karsiUnvan?: string; bakiye?: number }>) {
+    await this.hesapGetir(tenantId, bankaHesapId);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const satirlar = hareketler.map((h) => ({ ...h, satirOzeti: createHash("sha256").update(`webhook:${baglantiId}:${h.id}`).digest("hex") }));
+      const mevcut = new Set((await tx.bankaEkstreSatir.findMany({ where: { bankaHesapId, satirOzeti: { in: satirlar.map((s) => s.satirOzeti) } }, select: { satirOzeti: true } })).map((s) => s.satirOzeti));
+      const yeniler = satirlar.filter((s) => !mevcut.has(s.satirOzeti));
+      const ekstre = await tx.bankaEkstre.create({ data: { tenantId, bankaHesapId, dosyaAdi: `API · ${baglantiId}`, satirSayisi: satirlar.length, yeniSatirSayisi: yeniler.length } });
+      for (const s of yeniler) await tx.bankaEkstreSatir.create({ data: { tenantId, ekstreId: ekstre.id, bankaHesapId, tarih: new Date(`${s.tarih}T00:00:00.000Z`), tutar: D(s.tutar), aciklama: s.aciklama, dekontNo: s.dekontNo, karsiIban: s.karsiIban, karsiUnvan: s.karsiUnvan, bakiye: s.bakiye === undefined ? null : D(s.bakiye), satirOzeti: s.satirOzeti } });
+      return { alinanSatir: satirlar.length, yeniSatir: yeniler.length, yinelenenSatir: satirlar.length - yeniler.length };
+    });
+  }
 
   // ─── YÜKLEME ───────────────────────────────────────────────────────────────
 
