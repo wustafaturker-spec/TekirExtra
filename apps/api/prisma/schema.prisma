@@ -57,6 +57,12 @@ enum PazaryeriKesintiDurumu {
   giderlesti
 }
 
+enum PosTahsilatDurumu {
+  baslatildi
+  odendi
+  basarisiz
+}
+
 model Tenant {
   id           String   @id @default(uuid()) @db.Uuid
   unvan        String
@@ -71,6 +77,7 @@ model Tenant {
   auditLoglar          AuditLog[]
   abonelik             TenantAbonelik?
   pazaryeriSiparisleri PazaryeriSiparis[]
+  posTahsilatlari      PosTahsilat[]
   pazaryeriKesintileri PazaryeriKesinti[]
 
   @@map("tenants")
@@ -286,6 +293,7 @@ model Baglanti {
   tenant             Tenant             @relation(fields: [tenantId], references: [id])
   pazaryeriSiparises PazaryeriSiparis[]
   pazaryeriKesintileri PazaryeriKesinti[]
+  posHesaplari         PosHesap[]
 
   @@index([tenantId, aile])
   @@map("baglantilar")
@@ -446,6 +454,7 @@ model CariHesap {
   belgeler             Belge[]
   ekstreSatirlari      BankaEkstreSatir[]
   pazaryeriSiparisleri PazaryeriSiparis[]
+  posTahsilatlari      PosTahsilat[]
 
   @@unique([tenantId, kod])
   @@index([tenantId, unvan])
@@ -1093,6 +1102,7 @@ model Fatura {
   tekrarlayanPlanId    String?             @map("tekrarlayan_plan_id") @db.Uuid
   planlananTarih       DateTime?           @map("planlanan_tarih") @db.Date
   pazaryeriSiparisleri PazaryeriSiparis[]
+  posTahsilatlari      PosTahsilat[]
 
   @@unique([tenantId, seri, sira])
   @@unique([tekrarlayanPlanId, planlananTarih])
@@ -1304,9 +1314,59 @@ model BankaHesap {
   hareketler      KasaBankaHareket[]
   ekstreler       BankaEkstre[]
   ekstreSatirlari BankaEkstreSatir[]
+  posHesaplari    PosHesap[]          @relation("PosVarsayilanBanka")
 
   @@unique([tenantId, ad])
   @@map("banka_hesaplari")
+}
+
+model PosHesap {
+  id             String     @id @default(uuid()) @db.Uuid
+  tenantId       String     @map("tenant_id") @db.Uuid
+  ad             String
+  saglayici      String
+  baglantiId     String?    @map("baglanti_id") @db.Uuid
+  varsayilanBankaHesapId String? @map("varsayilan_banka_hesap_id") @db.Uuid
+  dovizCinsi     DovizCinsi @default(TRY) @map("doviz_cinsi")
+  aktif          Boolean    @default(true)
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  baglanti       Baglanti?  @relation(fields: [baglantiId], references: [id])
+  varsayilanBankaHesap BankaHesap? @relation("PosVarsayilanBanka", fields: [varsayilanBankaHesapId], references: [id])
+  hareketler     KasaBankaHareket[]
+  tahsilatlar    PosTahsilat[]
+
+  @@unique([tenantId, ad])
+  @@index([tenantId, aktif])
+  @@map("pos_hesaplari")
+}
+
+model PosTahsilat {
+  id                String            @id @default(uuid()) @db.Uuid
+  tenantId          String            @map("tenant_id") @db.Uuid
+  posHesapId        String            @map("pos_hesap_id") @db.Uuid
+  cariId            String            @map("cari_id") @db.Uuid
+  faturaId          String?           @map("fatura_id") @db.Uuid
+  tutar             Decimal           @db.Decimal(15, 2)
+  dovizCinsi        DovizCinsi        @default(TRY) @map("doviz_cinsi")
+  durum             PosTahsilatDurumu @default(baslatildi)
+  saglayiciToken    String?           @unique @map("saglayici_token")
+  saglayiciOdemeId  String?           @map("saglayici_odeme_id")
+  odemeSayfasiUrl   String?           @map("odeme_sayfasi_url")
+  hareketId         String?           @unique @map("hareket_id") @db.Uuid
+  hataMesaji        String?           @map("hata_mesaji")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  posHesap PosHesap          @relation(fields: [posHesapId], references: [id])
+  cari     CariHesap         @relation(fields: [cariId], references: [id])
+  fatura   Fatura?           @relation(fields: [faturaId], references: [id])
+  hareket  KasaBankaHareket? @relation(fields: [hareketId], references: [id])
+
+  @@index([tenantId, durum, createdAt])
+  @@map("pos_tahsilatlari")
 }
 
 enum EkstreSatirDurum {
@@ -1374,6 +1434,7 @@ model KasaBankaHareket {
   tenantId       String              @map("tenant_id") @db.Uuid
   kasaId         String?             @map("kasa_id") @db.Uuid
   bankaHesapId   String?             @map("banka_hesap_id") @db.Uuid
+  posHesapId     String?             @map("pos_hesap_id") @db.Uuid
   tip            KasaBankaHareketTip
   tutar          Decimal             @db.Decimal(15, 2)
   dovizCinsi     DovizCinsi          @default(TRY) @map("doviz_cinsi")
@@ -1390,10 +1451,12 @@ model KasaBankaHareket {
 
   kasa        Kasa?             @relation(fields: [kasaId], references: [id])
   bankaHesap  BankaHesap?       @relation(fields: [bankaHesapId], references: [id])
+  posHesap    PosHesap?         @relation(fields: [posHesapId], references: [id])
   cari        CariHesap?        @relation(fields: [cariId], references: [id])
   fatura      Fatura?           @relation(fields: [faturaId], references: [id])
   ekstreSatir BankaEkstreSatir?
   pazaryeriKesinti PazaryeriKesinti?
+  posTahsilat       PosTahsilat?
 
   @@index([tenantId, tarih])
   @@map("kasa_banka_hareketleri")

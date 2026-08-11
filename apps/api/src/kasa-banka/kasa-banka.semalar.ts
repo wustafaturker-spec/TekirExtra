@@ -26,9 +26,22 @@ export const bankaHesapGuncelleSemasi = bankaHesapOlusturSemasi.partial().extend
   aktif: z.boolean().optional(),
 });
 
+export const posHesapOlusturSemasi = z.object({
+  ad: z.string().min(2).max(100), saglayici: z.string().min(2).max(50),
+  baglantiId: z.string().uuid().optional().nullable(), varsayilanBankaHesapId: z.string().uuid().optional().nullable(),
+  dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+});
+
+export const posBankaAktarimSemasi = z.object({
+  posHesapId: z.string().uuid(), bankaHesapId: z.string().uuid().optional(),
+  brutTutar: pozitifOndalik, komisyonTutar: pozitifOndalik.or(z.literal("0")).default("0"),
+  tarih: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)"), aciklama: z.string().max(500).optional().nullable(),
+}).refine((g) => Number(g.komisyonTutar) < Number(g.brutTutar), { message: "Komisyon brüt tutardan küçük olmalıdır", path: ["komisyonTutar"] });
+
 export const kasaBankaHareketOlusturSemasi = z.object({
   kasaId: z.string().uuid().optional().nullable(),
   bankaHesapId: z.string().uuid().optional().nullable(),
+  posHesapId: z.string().uuid().optional().nullable(),
   tip: z.enum(["tahsilat", "tediye"]),
   tutar: pozitifOndalik,
   dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
@@ -37,23 +50,25 @@ export const kasaBankaHareketOlusturSemasi = z.object({
   aciklama: z.string().max(500).optional().nullable(),
   cariId: z.string().uuid().optional().nullable(),
   faturaId: z.string().uuid().optional().nullable(), // fatura kapama için (KSB-07)
-}).refine((data) => data.kasaId || data.bankaHesapId, {
-  message: "Kasa veya Banka Hesabından en az biri seçilmelidir",
+}).refine((data) => [data.kasaId, data.bankaHesapId, data.posHesapId].filter(Boolean).length === 1, {
+  message: "Kasa, banka veya POS hesaplarından yalnızca biri seçilmelidir",
   path: ["kasaId"],
 });
 
 export const virmanOlusturSemasi = z.object({
   kaynakKasaId: z.string().uuid().optional().nullable(),
   kaynakBankaHesapId: z.string().uuid().optional().nullable(),
+  kaynakPosHesapId: z.string().uuid().optional().nullable(),
   hedefKasaId: z.string().uuid().optional().nullable(),
   hedefBankaHesapId: z.string().uuid().optional().nullable(),
+  hedefPosHesapId: z.string().uuid().optional().nullable(),
   tutar: pozitifOndalik,
   tarih: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)"),
   aciklama: z.string().max(500).optional().nullable(),
-}).refine((data) => data.kaynakKasaId || data.kaynakBankaHesapId, {
+}).refine((data) => [data.kaynakKasaId, data.kaynakBankaHesapId, data.kaynakPosHesapId].filter(Boolean).length === 1, {
   message: "Kaynak Kasa veya Banka Hesabından en az biri seçilmelidir",
   path: ["kaynakKasaId"],
-}).refine((data) => data.hedefKasaId || data.hedefBankaHesapId, {
+}).refine((data) => [data.hedefKasaId, data.hedefBankaHesapId, data.hedefPosHesapId].filter(Boolean).length === 1, {
   message: "Hedef Kasa veya Banka Hesabından en az biri seçilmelidir",
   path: ["hedefKasaId"],
 });

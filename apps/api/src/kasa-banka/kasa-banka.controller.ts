@@ -28,6 +28,8 @@ import {
   kasaGuncelleSemasi,
   kasaOlusturSemasi,
   virmanOlusturSemasi,
+  posHesapOlusturSemasi,
+  posBankaAktarimSemasi,
 } from "./kasa-banka.semalar";
 
 const EKSTRE_DURUMLARI: EkstreSatirDurum[] = ["beklemede", "eslesti", "yoksayildi"];
@@ -131,14 +133,34 @@ export class KasaBankaController {
     await this.service.bankaSil(id);
   }
 
+  @Get("pos-hesaplari")
+  async posHesapListele() { return this.service.posHesapListele(); }
+
+  @Post("pos-hesaplari")
+  @Roller("muhasebe")
+  async posHesapOlustur(@Body() govde: unknown) {
+    const ayristirma = posHesapOlusturSemasi.safeParse(govde);
+    if (!ayristirma.success) throw new BadRequestException(ayristirma.error.issues.map((i) => i.message).join("; "));
+    return this.service.posHesapOlustur(ayristirma.data);
+  }
+
+  @Post("pos-hesaplari/bankaya-aktar")
+  @Roller("muhasebe")
+  async posBankayaAktar(@Body() govde: unknown) {
+    const ayristirma = posBankaAktarimSemasi.safeParse(govde);
+    if (!ayristirma.success) throw new BadRequestException(ayristirma.error.issues.map((i) => i.message).join("; "));
+    return this.service.posBankayaAktar(ayristirma.data);
+  }
+
   // ─── HAREKET ENDPOINTS ─────────────────────────────────────────────────────
 
   @Get("hareketler")
   async hareketListele(
     @Query("kasaId") kasaId?: string,
     @Query("bankaHesapId") bankaHesapId?: string,
+    @Query("posHesapId") posHesapId?: string,
   ) {
-    return this.service.hareketListele(kasaId, bankaHesapId);
+    return this.service.hareketListele(kasaId, bankaHesapId, posHesapId);
   }
 
   @Post("hareketler")

@@ -17,6 +17,7 @@ import { CoreModule } from "./core/core.module";
 import { HealthModule } from "./health/health.module";
 import { TenantModule } from "./tenant/tenant.module";
 import { PazaryeriModule } from "./pazaryeri/pazaryeri.module";
+import { PosModule } from "./pos/pos.module";
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { PazaryeriModule } from "./pazaryeri/pazaryeri.module";
     RaporModule,
     HealthModule,
     PazaryeriModule,
+    PosModule,
   ],
   providers: [{ provide: APP_INTERCEPTOR, useClass: AuditInterceptor }],
 })

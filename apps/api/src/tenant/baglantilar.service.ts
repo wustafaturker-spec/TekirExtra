@@ -9,7 +9,7 @@ import {
   type EntegratorAdapter,
   type EntegratorConfig,
 } from "@tekirextra/baglanti";
-import { BAGLANTI_AILELERI, EBELGE_SAGLAYICILARI, PAZARYERI_SAGLAYICILARI } from "@tekirextra/shared";
+import { BAGLANTI_AILELERI, EBELGE_SAGLAYICILARI, PAZARYERI_SAGLAYICILARI, POS_SAGLAYICILARI } from "@tekirextra/shared";
 import { z } from "zod";
 import { coz, sifrele } from "../core/kripto";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -27,7 +27,7 @@ export const baglantiOlusturSemasi = z.object({
     magazaId: z.string().optional(),
   }),
 }).superRefine((girdi, ctx) => {
-  const izinli = girdi.aile === "ebelge" ? EBELGE_SAGLAYICILARI : girdi.aile === "pazaryeri" ? PAZARYERI_SAGLAYICILARI : [];
+  const izinli = girdi.aile === "ebelge" ? EBELGE_SAGLAYICILARI : girdi.aile === "pazaryeri" ? PAZARYERI_SAGLAYICILARI : girdi.aile === "pos" ? POS_SAGLAYICILARI : [];
   if (!(izinli as readonly string[]).includes(girdi.saglayici)) ctx.addIssue({ code: "custom", path: ["saglayici"], message: "Sağlayıcı bağlantı ailesiyle uyumlu değil" });
 });
 
@@ -156,8 +156,9 @@ export class BaglantilarService {
     const pazaryeriKimligiGecerli = kayit.saglayici === "amazon_tr"
       ? Boolean(config.kullaniciAdi && config.parola && config.apiAnahtari && config.saticiId && config.magazaId)
       : Boolean(config.kullaniciAdi && config.parola && (kayit.saglayici === "n11" || config.saticiId || config.magazaId));
-    const sonuc = kayit.aile === "pazaryeri"
-      ? { basarili: pazaryeriKimligiGecerli, mesaj: pazaryeriKimligiGecerli ? "Kimlik biçimi doğrulandı; canlı test senkronizasyon sırasında yapılacaktır" : "Sağlayıcı için zorunlu kimlik alanları eksik" }
+    const posKimligiGecerli = Boolean(config.kullaniciAdi && config.parola && (config.servisAdresi === "https://sandbox-api.iyzipay.com" || config.servisAdresi === "https://api.iyzipay.com"));
+    const sonuc = kayit.aile === "pazaryeri" || kayit.aile === "pos"
+      ? { basarili: kayit.aile === "pos" ? posKimligiGecerli : pazaryeriKimligiGecerli, mesaj: (kayit.aile === "pos" ? posKimligiGecerli : pazaryeriKimligiGecerli) ? "Kimlik biçimi doğrulandı; canlı test ilk işlem sırasında yapılacaktır" : "Sağlayıcı için zorunlu kimlik alanları eksik" }
       : await this.adapterCoz(kayit.saglayici).baglantiTest(config);
 
     await this.prisma.tenantIslem(tenantId, (tx) =>

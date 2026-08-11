@@ -18,6 +18,8 @@ import type {
   kasaGuncelleSemasi,
   kasaOlusturSemasi,
   virmanOlusturSemasi,
+  posHesapOlusturSemasi,
+  posBankaAktarimSemasi,
 } from "./kasa-banka.semalar";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal => new Prisma.Decimal(deger);
@@ -242,20 +244,38 @@ export class KasaBankaService {
     );
   }
 
+  async posHesapListele() {
+    const { tenantId } = aktifBaglam();
+    const hesaplar = await this.prisma.tenantIslem(tenantId, (tx) => tx.posHesap.findMany({ orderBy: { ad: "asc" }, include: { varsayilanBankaHesap: { select: { id: true, ad: true } } } }));
+    const gruplar = await this.prisma.tenantIslem(tenantId, (tx) => tx.kasaBankaHareket.groupBy({ by: ["posHesapId", "tip"], where: { posHesapId: { in: hesaplar.map((h) => h.id) } }, _sum: { tutar: true } }));
+    return hesaplar.map((h) => { let bakiye = D(0); for (const g of gruplar.filter((x) => x.posHesapId === h.id)) bakiye = g.tip === "tahsilat" || g.tip === "virman_gelis" ? bakiye.add(g._sum.tutar ?? 0) : bakiye.sub(g._sum.tutar ?? 0); return { ...h, bakiye: bakiye.toFixed(2) }; });
+  }
+
+  async posHesapOlustur(girdi: z.infer<typeof posHesapOlusturSemasi>) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      if (girdi.baglantiId) { const b = await tx.baglanti.findFirst({ where: { id: girdi.baglantiId, aile: "pos" } }); if (!b) throw new BadRequestException("POS bağlantısı bulunamadı"); }
+      if (girdi.varsayilanBankaHesapId) { const b = await tx.bankaHesap.findUnique({ where: { id: girdi.varsayilanBankaHesapId } }); if (!b || b.dovizCinsi !== girdi.dovizCinsi) throw new BadRequestException("Varsayılan banka hesabı aynı döviz cinsinde olmalıdır"); }
+      return tx.posHesap.create({ data: { tenantId, ...girdi } });
+    });
+  }
+
   // ─── HAREKET YÖNETİMİ & FATURA KAPAMA (KSB-02/07) ─────────────────────────
 
-  async hareketListele(kasaId?: string, bankaHesapId?: string) {
+  async hareketListele(kasaId?: string, bankaHesapId?: string, posHesapId?: string) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, (tx) =>
       tx.kasaBankaHareket.findMany({
         where: {
           kasaId: kasaId || undefined,
           bankaHesapId: bankaHesapId || undefined,
+          posHesapId: posHesapId || undefined,
         },
         orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
         include: {
           cari: { select: { id: true, kod: true, unvan: true } },
           fatura: { select: { id: true, no: true, genelToplam: true } },
+          posHesap: { select: { id: true, ad: true, saglayici: true } },
         },
       }),
     );
@@ -274,6 +294,7 @@ export class KasaBankaService {
           tenantId,
           kasaId: girdi.kasaId,
           bankaHesapId: girdi.bankaHesapId,
+          posHesapId: girdi.posHesapId,
           tip: girdi.tip,
           tutar,
           dovizCinsi: girdi.dovizCinsi,
@@ -330,6 +351,7 @@ export class KasaBankaService {
           tenantId,
           kasaId: girdi.kaynakKasaId || null,
           bankaHesapId: girdi.kaynakBankaHesapId || null,
+          posHesapId: girdi.kaynakPosHesapId || null,
           tip: "virman_gidis",
           tutar,
           dovizCinsi,
@@ -346,6 +368,7 @@ export class KasaBankaService {
           tenantId,
           kasaId: girdi.hedefKasaId || null,
           bankaHesapId: girdi.hedefBankaHesapId || null,
+          posHesapId: girdi.hedefPosHesapId || null,
           tip: "virman_gelis",
           tutar,
           dovizCinsi,
@@ -364,6 +387,28 @@ export class KasaBankaService {
       });
 
       return { gidis, gelis };
+    });
+  }
+
+  async posBankayaAktar(girdi: z.infer<typeof posBankaAktarimSemasi>) {
+    const { tenantId } = aktifBaglam(); const brut = D(girdi.brutTutar); const komisyon = D(girdi.komisyonTutar); const net = brut.sub(komisyon);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const pos = await tx.posHesap.findUnique({ where: { id: girdi.posHesapId } });
+      if (!pos || !pos.aktif) throw new NotFoundException("Aktif POS hesabı bulunamadı");
+      const bankaId = girdi.bankaHesapId ?? pos.varsayilanBankaHesapId;
+      if (!bankaId) throw new BadRequestException("Aktarım için banka hesabı seçilmelidir");
+      const banka = await tx.bankaHesap.findUnique({ where: { id: bankaId } });
+      if (!banka || !banka.aktif || banka.dovizCinsi !== pos.dovizCinsi) throw new BadRequestException("Aktif ve aynı döviz cinsinde banka hesabı seçilmelidir");
+      const bakiyeGruplari = await tx.kasaBankaHareket.groupBy({ by: ["tip"], where: { posHesapId: pos.id }, _sum: { tutar: true } });
+      let kullanilabilir = D(0);
+      for (const grup of bakiyeGruplari) kullanilabilir = grup.tip === "tahsilat" || grup.tip === "virman_gelis" ? kullanilabilir.add(grup._sum.tutar ?? 0) : kullanilabilir.sub(grup._sum.tutar ?? 0);
+      if (brut.greaterThan(kullanilabilir)) throw new BadRequestException(`Aktarım tutarı POS bakiyesini aşıyor (kullanılabilir: ${kullanilabilir.toFixed(2)} ${pos.dovizCinsi})`);
+      const ortak = { tenantId, dovizCinsi: pos.dovizCinsi, kur: D(1), tarih: new Date(girdi.tarih), kaynakTur: "pos_mutabakat", aciklama: girdi.aciklama ?? `${pos.ad} sağlayıcı ödemesi` };
+      const gidis = await tx.kasaBankaHareket.create({ data: { ...ortak, posHesapId: pos.id, tip: "virman_gidis", tutar: net, tutarTry: net } });
+      const gelis = await tx.kasaBankaHareket.create({ data: { ...ortak, bankaHesapId: bankaId, tip: "virman_gelis", tutar: net, tutarTry: net, karsiHareketId: gidis.id } });
+      await tx.kasaBankaHareket.update({ where: { id: gidis.id }, data: { karsiHareketId: gelis.id } });
+      const komisyonHareketi = komisyon.isPositive() ? await tx.kasaBankaHareket.create({ data: { ...ortak, posHesapId: pos.id, tip: "tediye", tutar: komisyon, tutarTry: komisyon, kaynakRef: gidis.id, aciklama: `${pos.ad} komisyon/kesinti` } }) : null;
+      return { gidis, gelis, komisyonHareketi, brutTutar: brut.toFixed(2), netTutar: net.toFixed(2), komisyonTutar: komisyon.toFixed(2) };
     });
   }
 
@@ -679,11 +724,13 @@ export class KasaBankaService {
         tx.kasa.findUnique({ where: { id: girdi.kaynakKasaId! } }),
       );
       kaynakDoviz = k?.dovizCinsi;
-    } else {
+    } else if (girdi.kaynakBankaHesapId) {
       const b = await this.prisma.tenantIslem(tenantId, (tx) =>
         tx.bankaHesap.findUnique({ where: { id: girdi.kaynakBankaHesapId! } }),
       );
       kaynakDoviz = b?.dovizCinsi;
+    } else {
+      const p = await this.prisma.tenantIslem(tenantId, (tx) => tx.posHesap.findUnique({ where: { id: girdi.kaynakPosHesapId! } })); kaynakDoviz = p?.dovizCinsi;
     }
 
     if (girdi.hedefKasaId) {
@@ -691,11 +738,13 @@ export class KasaBankaService {
         tx.kasa.findUnique({ where: { id: girdi.hedefKasaId! } }),
       );
       hedefDoviz = k?.dovizCinsi;
-    } else {
+    } else if (girdi.hedefBankaHesapId) {
       const b = await this.prisma.tenantIslem(tenantId, (tx) =>
         tx.bankaHesap.findUnique({ where: { id: girdi.hedefBankaHesapId! } }),
       );
       hedefDoviz = b?.dovizCinsi;
+    } else {
+      const p = await this.prisma.tenantIslem(tenantId, (tx) => tx.posHesap.findUnique({ where: { id: girdi.hedefPosHesapId! } })); hedefDoviz = p?.dovizCinsi;
     }
 
     if (!kaynakDoviz || !hedefDoviz) {

@@ -225,7 +225,7 @@ export interface EntegratorAdapter {
 | Aile | Arayüz özeti | Not |
 |---|---|---|
 | `pazaryeri` | `siparisleriCek`, `stokFiyatGonder`, `komisyonKayitlariCek` | Sipariş → toplu faturalaştırma `fatura` modülü üzerinden; sağlayıcılar: Trendyol, Hepsiburada, N11, Amazon TR (ENT-02/03/08) |
-| `pos` | `tahsilatBaslat`, `odemeLinkiOlustur`, `durumSorgula`, `iadeEt` | Ödeme kuruluşları (iyzico, PayTR) + doğrudan banka sanal POS'ları aynı arayüzde; tahsilat kasa/banka + cariye otomatik işlenir (ENT-04/05). Kart verisi TekirExtra'ya **asla girmez** — yönlendirme/iframe ile sağlayıcıda kalır (PCI-DSS kapsamı dışında kalma ilkesi) |
+| `pos` | `tahsilatBaslat`, `odemeLinkiOlustur`, `durumSorgula`, `iadeEt` | Ödeme kuruluşları (iyzico, PayTR) + doğrudan banka sanal POS'ları aynı arayüzde. Tahsilat önce ayrı POS hesabına ve cariye, sağlayıcı ödemesi ise POS → banka virmanı olarak işlenir; brüt/net/komisyon ayrımı korunur (ENT-04/05). Kart verisi TekirExtra'ya **asla girmez** — yönlendirme/iframe ile sağlayıcıda kalır (PCI-DSS kapsamı dışında kalma ilkesi) |
 | `banka` | `hareketleriCek`, `odemeTalimatiGonder` | Hareket eşleştirme motoru öneri üretir, kullanıcı onaylar (ENT-06); ödeme talimatı çift onay + zorunlu TOTP (ENT-07) |
 
 Bu ailelerin veri modeli yer tutucuları (§7) ve kuyruk isim alanları (§6)
@@ -275,7 +275,7 @@ Tüm kiracıya ait tablolarda: `id UUID PK`, `tenant_id UUID` (RLS), `created_at
 | `ebelge_kayitlari` | Faturaya 1-1; tür (efatura/earsiv), durum, entegratör referansı, hata mesajı |
 | `ebelge_arsiv` | Gönderilen/alınan XML + PDF; 10 yıl saklama (EBLG-09), soğuk depoya taşınabilir yapı |
 | `kasalar`, `banka_hesaplari` | Çoklu, dövizli (KSB-01) |
-| `kasa_banka_hareketleri` | Tahsilat/tediye/virman; cari hareketle eşleşir (KSB-02, KSB-07) |
+| `kasa_banka_hareketleri` | Kasa, banka ve POS hesabı tahsilat/tediye/virmanları; cari hareketle eşleşir (KSB-02, KSB-07, ENT-04) |
 | `cek_senetler` | Portföy/ciro/tahsil/karşılıksız durum makinesi (KSB-05) |
 | `audit_log` | KLN-04; RLS'li ama uygulamadan salt-ekleme (append-only) |
 | `auth_kimlikler` | e-posta → (tenant, user) rehberi; **bilinçli olarak RLS'siz** — oturum açarken kiracı bağlamı henüz yoktur. Parola içermez, e-posta sistem genelinde tekildir |
