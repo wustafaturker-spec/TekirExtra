@@ -2,6 +2,15 @@ import { createHmac, randomBytes } from "node:crypto";
 
 export interface IyzicoConfig { apiKey: string; secretKey: string; baseUrl: string }
 
+export function iyzicoTelefonuDuzenle(telefon?: string | null): string | undefined {
+  if (!telefon) return undefined;
+  let rakamlar = telefon.replace(/\D/g, "");
+  if (rakamlar.length === 11 && rakamlar.startsWith("0")) rakamlar = `90${rakamlar.slice(1)}`;
+  else if (rakamlar.length === 10) rakamlar = `90${rakamlar}`;
+  if (rakamlar.length < 10 || rakamlar.length > 15) return undefined;
+  return `+${rakamlar}`;
+}
+
 export class IyzicoAdapter {
   private async istek(config: IyzicoConfig, path: string, govde: Record<string, unknown>): Promise<any> {
     const body = JSON.stringify(govde); const randomKey = `${Date.now()}${randomBytes(8).toString("hex")}`;
