@@ -28,7 +28,7 @@ interface FaturaKuyrukOzeti { taslakSatis: number; taslakAlis: number; ebelgeHat
 const MENU: MenuGrup[] = [
   {
     baslik: "Genel",
-    ogeler: [{ href: "/panel", ikon: "📊", baslik: "Finansal Özet", eslesme: "tam" }],
+    ogeler: [{ href: "/panel", ikon: "ÖZ", baslik: "Finansal Özet", eslesme: "tam" }],
   },
   {
     baslik: "Operasyon",
@@ -40,49 +40,49 @@ const MENU: MenuGrup[] = [
   {
     baslik: "Kayıtlar",
     ogeler: [
-      { href: "/panel/cari", ikon: "👥", baslik: "Cari Hesaplar" },
+      { href: "/panel/cari", ikon: "CH", baslik: "Cari Hesaplar" },
       { href: "/panel/belgeler", ikon: "B", baslik: "Tüm Belgeler", eslesme: "tam" },
       { href: "/panel/fatura", ikon: "F", baslik: "Tüm Faturalar", eslesme: "tam" },
       { href: "/panel/fatura/tekrarlayan", ikon: "↻", baslik: "Tekrarlayan Faturalar" },
-      { href: "/panel/pazaryeri", ikon: "🛍️", baslik: "Pazaryeri Siparişleri", eslesme: "tam" },
-      { href: "/panel/pazaryeri/kesintiler", ikon: "🧾", baslik: "Pazaryeri Kesintileri", eslesme: "tam" },
-      { href: "/panel/kasa-banka", ikon: "🏦", baslik: "Kasa & Banka", eslesme: "tam" },
-      { href: "/panel/kasa-banka/pos", ikon: "💳", baslik: "POS Hesapları", eslesme: "tam" },
-      { href: "/panel/kasa-banka/cek-senet", ikon: "🧾", baslik: "Çek & Senet", eslesme: "tam" },
-      { href: "/panel/kasa-banka/ekstre", ikon: "🏧", baslik: "Banka Ekstresi", eslesme: "tam" },
+      { href: "/panel/pazaryeri", ikon: "PS", baslik: "Pazaryeri Siparişleri", eslesme: "tam" },
+      { href: "/panel/pazaryeri/kesintiler", ikon: "PK", baslik: "Pazaryeri Kesintileri", eslesme: "tam" },
+      { href: "/panel/kasa-banka", ikon: "KB", baslik: "Kasa & Banka", eslesme: "tam" },
+      { href: "/panel/kasa-banka/pos", ikon: "POS", baslik: "POS Hesapları", eslesme: "tam" },
+      { href: "/panel/kasa-banka/cek-senet", ikon: "ÇS", baslik: "Çek & Senet", eslesme: "tam" },
+      { href: "/panel/kasa-banka/ekstre", ikon: "BE", baslik: "Banka Ekstresi", eslesme: "tam" },
       { href: "/panel/kasa-banka/odeme-talimatlari", ikon: "↗", baslik: "Ödeme Talimatları", eslesme: "tam" },
     ],
   },
   {
     baslik: "Ürün & Stok",
     ogeler: [
-      { href: "/panel/stok", ikon: "📦", baslik: "Stok Kartları", eslesme: "tam" },
-      { href: "/panel/stok/kategoriler", ikon: "🗂️", baslik: "Kategoriler", eslesme: "tam" },
-      { href: "/panel/stok/sayim", ikon: "📋", baslik: "Stok Sayımı", eslesme: "tam" },
-      { href: "/panel/stok/transferler", ikon: "🔁", baslik: "Depo Transferi", eslesme: "tam" },
-      { href: "/panel/stok/fiyat-listeleri", ikon: "🏷️", baslik: "Fiyat Listeleri", eslesme: "tam" },
+      { href: "/panel/stok", ikon: "SK", baslik: "Stok Kartları", eslesme: "tam" },
+      { href: "/panel/stok/kategoriler", ikon: "KT", baslik: "Kategoriler", eslesme: "tam" },
+      { href: "/panel/stok/sayim", ikon: "SS", baslik: "Stok Sayımı", eslesme: "tam" },
+      { href: "/panel/stok/transferler", ikon: "DT", baslik: "Depo Transferi", eslesme: "tam" },
+      { href: "/panel/stok/fiyat-listeleri", ikon: "FL", baslik: "Fiyat Listeleri", eslesme: "tam" },
     ],
   },
   {
     baslik: "Raporlar",
-    ogeler: [{ href: "/panel/raporlar", ikon: "📈", baslik: "Raporlar & Analiz" }],
+    ogeler: [{ href: "/panel/raporlar", ikon: "RA", baslik: "Raporlar & Analiz" }],
   },
   {
     baslik: "Ayarlar",
     ogeler: [
-      { href: "/panel/ayarlar/firma", ikon: "🏢", baslik: "Firma Ayarları", eslesme: "tam" },
-      { href: "/panel/ayarlar/fatura-serileri", ikon: "🔢", baslik: "Fatura Serileri", eslesme: "tam" },
-      { href: "/panel/ayarlar/depolar", ikon: "🏬", baslik: "Depolar", eslesme: "tam" },
-      { href: "/panel/ayarlar/moduller", ikon: "⚙️", baslik: "Modül Ayarları", eslesme: "tam" },
-      { href: "/panel/ayarlar/kullanicilar", ikon: "👤", baslik: "Kullanıcılar", eslesme: "tam" },
-      { href: "/panel/ayarlar/entegratorler", ikon: "🔌", baslik: "e-Belge Ayarları", eslesme: "tam" },
-      { href: "/panel/ayarlar/pazaryerleri", ikon: "🛒", baslik: "Pazaryeri Ayarları", eslesme: "tam" },
-      { href: "/panel/ayarlar/pos", ikon: "💳", baslik: "Sanal POS Ayarları", eslesme: "tam" },
-      { href: "/panel/ayarlar/sms", ikon: "💬", baslik: "SMS Ayarları", eslesme: "tam" },
-      { href: "/panel/ayarlar/banka-baglantilari", ikon: "🏦", baslik: "Banka Bağlantıları", eslesme: "tam" },
-      { href: "/panel/ayarlar/denetim", ikon: "🛡️", baslik: "Denetim İzi", eslesme: "tam" },
+      { href: "/panel/ayarlar/firma", ikon: "FA", baslik: "Firma Ayarları", eslesme: "tam" },
+      { href: "/panel/ayarlar/fatura-serileri", ikon: "FS", baslik: "Fatura Serileri", eslesme: "tam" },
+      { href: "/panel/ayarlar/depolar", ikon: "DP", baslik: "Depolar", eslesme: "tam" },
+      { href: "/panel/ayarlar/moduller", ikon: "MA", baslik: "Modül Ayarları", eslesme: "tam" },
+      { href: "/panel/ayarlar/kullanicilar", ikon: "KU", baslik: "Kullanıcılar", eslesme: "tam" },
+      { href: "/panel/ayarlar/entegratorler", ikon: "EB", baslik: "e-Belge Ayarları", eslesme: "tam" },
+      { href: "/panel/ayarlar/pazaryerleri", ikon: "PA", baslik: "Pazaryeri Ayarları", eslesme: "tam" },
+      { href: "/panel/ayarlar/pos", ikon: "POS", baslik: "Sanal POS Ayarları", eslesme: "tam" },
+      { href: "/panel/ayarlar/sms", ikon: "SMS", baslik: "SMS Ayarları", eslesme: "tam" },
+      { href: "/panel/ayarlar/banka-baglantilari", ikon: "BB", baslik: "Banka Bağlantıları", eslesme: "tam" },
+      { href: "/panel/ayarlar/denetim", ikon: "Dİ", baslik: "Denetim İzi", eslesme: "tam" },
       { href: "/panel/ayarlar/kullanim", ikon: "KM", baslik: "Kullanım Metrikleri", eslesme: "tam" },
-      { href: "/panel/ayarlar/hesap", ikon: "🔐", baslik: "Hesap Güvenliği", eslesme: "tam" },
+      { href: "/panel/ayarlar/hesap", ikon: "HG", baslik: "Hesap Güvenliği", eslesme: "tam" },
     ],
   },
 ];
@@ -279,7 +279,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
       )}
       <aside className={`sidebar${menuAcik ? " is-open" : ""}`} id="ana-menu" ref={mobilMenuRef}>
         <div className="sidebar__brand">
-          <span aria-hidden="true" className="sidebar__brand-mark">🐈</span>
+          <span aria-hidden="true" className="sidebar__brand-mark">TE</span>
           <span>Tekir<b>Extra</b></span>
         </div>
 
@@ -305,14 +305,14 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
           ))}
         </nav>
 
-        <button className="feedback-trigger" onClick={() => { setMenuAcik(false); setGeriBildirimAcik(true); setGeriBildirimDurum(""); }} ref={geriBildirimTetikleyiciRef} type="button"><span aria-hidden="true">💬</span><span>Geri bildirim ver</span></button>
+        <button className="feedback-trigger" onClick={() => { setMenuAcik(false); setGeriBildirimAcik(true); setGeriBildirimDurum(""); }} ref={geriBildirimTetikleyiciRef} type="button"><span aria-hidden="true">?</span><span>Geri bildirim ver</span></button>
         <div className="sidebar__user">
           <div className="grow sidebar__user-info">
             <div className="sidebar__user-name">{rol ? ROL_ADI[rol] ?? "Hesabım" : "Hesabım"}</div>
             <div className="sidebar__user-role">Aktif oturum</div>
           </div>
           <button aria-label="Güvenli çıkış" className="btn btn--ghost btn--icon" onClick={() => void cikis()} title="Güvenli çıkış">
-            <span aria-hidden="true">🚪</span>
+            <span aria-hidden="true">↗</span>
           </button>
         </div>
       </aside>

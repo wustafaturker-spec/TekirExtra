@@ -37,7 +37,7 @@ export default function KayitSayfasi() {
   return (
     <main className="auth-wrap">
       <div className="auth-card card card--pad">
-        <div className="auth-brand"><span className="sidebar__brand-mark">🐈</span>Tekir<b>Extra</b></div>
+        <div className="auth-brand"><span className="sidebar__brand-mark">TE</span>Tekir<b>Extra</b></div>
         <p className="auth-title">Firma kaydı oluşturun</p>
         {mesaj ? (
           <Alert tone="success">{mesaj}</Alert>

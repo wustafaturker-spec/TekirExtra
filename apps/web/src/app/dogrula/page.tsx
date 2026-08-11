@@ -30,7 +30,7 @@ function DogrulaIcerik() {
 
   return (
     <div className="auth-card card card--pad">
-      <div className="auth-brand"><span className="sidebar__brand-mark">🐈</span>Tekir<b>Extra</b></div>
+      <div className="auth-brand"><span className="sidebar__brand-mark">TE</span>Tekir<b>Extra</b></div>
       <p className="auth-title">E-posta doğrulama</p>
       {durum === "bekliyor" && <p className="muted">Doğrulanıyor…</p>}
       {durum === "tamam" && (
