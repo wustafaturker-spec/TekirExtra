@@ -23,12 +23,40 @@ export class ApiHata extends Error {
   }
 }
 
-export async function api<T>(
-  yol: string,
-  secenekler: RequestInit = {},
-): Promise<T> {
-  const token = tokenAl();
-  const yanit = await fetch(`${API_URL}${yol}`, {
+let yenilemeIstegi: Promise<string | null> | null = null;
+
+async function accessTokenYenile(): Promise<string | null> {
+  if (!yenilemeIstegi) {
+    yenilemeIstegi = fetch(`${API_URL}/auth/yenile`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+    })
+      .then(async (yanit) => {
+        if (!yanit.ok) return null;
+        const govde = (await yanit.json()) as { accessToken?: string };
+        if (!govde.accessToken) return null;
+        tokenYaz(govde.accessToken);
+        return govde.accessToken;
+      })
+      .catch(() => null)
+      .finally(() => { yenilemeIstegi = null; });
+  }
+  return yenilemeIstegi;
+}
+
+function giriseYonlendir(): Promise<never> {
+  tokenYaz(null);
+  if (typeof window !== "undefined") {
+    const donus = `${window.location.pathname}${window.location.search}`;
+    window.location.replace(`/giris?oturum=sona-erdi&donus=${encodeURIComponent(donus)}`);
+  }
+  // Sayfa yönlendirilirken mevcut React effect'lerinin hata üretmesini önler.
+  return new Promise<never>(() => undefined);
+}
+
+async function istekYap(yol: string, secenekler: RequestInit, token: string | null): Promise<Response> {
+  return fetch(`${API_URL}${yol}`, {
     ...secenekler,
     credentials: "include",
     headers: {
@@ -37,6 +65,19 @@ export async function api<T>(
       ...secenekler.headers,
     },
   });
+}
+
+export async function api<T>(
+  yol: string,
+  secenekler: RequestInit = {},
+): Promise<T> {
+  let yanit = await istekYap(yol, secenekler, tokenAl());
+  if (yanit.status === 401 && !yol.startsWith("/auth/")) {
+    const yeniToken = await accessTokenYenile();
+    if (!yeniToken) return giriseYonlendir();
+    yanit = await istekYap(yol, secenekler, yeniToken);
+    if (yanit.status === 401) return giriseYonlendir();
+  }
   const govde = (await yanit.json().catch(() => ({}))) as Record<string, unknown>;
   if (!yanit.ok) {
     const mesaj = Array.isArray(govde.message)
