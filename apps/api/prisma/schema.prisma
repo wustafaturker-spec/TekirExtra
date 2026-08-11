@@ -52,6 +52,11 @@ enum PazaryeriSiparisDurumu {
   hata
 }
 
+enum PazaryeriKesintiDurumu {
+  bekliyor
+  giderlesti
+}
+
 model Tenant {
   id           String   @id @default(uuid()) @db.Uuid
   unvan        String
@@ -66,6 +71,7 @@ model Tenant {
   auditLoglar          AuditLog[]
   abonelik             TenantAbonelik?
   pazaryeriSiparisleri PazaryeriSiparis[]
+  pazaryeriKesintileri PazaryeriKesinti[]
 
   @@map("tenants")
 }
@@ -179,6 +185,32 @@ model PazaryeriSiparisSatiri {
   @@map("pazaryeri_siparis_satirlari")
 }
 
+model PazaryeriKesinti {
+  id          String                    @id @default(uuid()) @db.Uuid
+  tenantId    String                    @map("tenant_id") @db.Uuid
+  baglantiId  String                    @map("baglanti_id") @db.Uuid
+  hariciId    String                    @map("harici_id")
+  siparisNo   String?                   @map("siparis_no")
+  tur         String
+  aciklama    String?
+  tarih       DateTime                  @db.Date
+  tutar       Decimal                   @db.Decimal(15, 2)
+  dovizCinsi  DovizCinsi                @default(TRY) @map("doviz_cinsi")
+  durum       PazaryeriKesintiDurumu    @default(bekliyor)
+  hareketId   String?                   @unique @map("hareket_id") @db.Uuid
+  hamVeri     Json?                     @map("ham_veri")
+  createdAt   DateTime                  @default(now()) @map("created_at")
+  updatedAt   DateTime                  @updatedAt @map("updated_at")
+
+  tenant      Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  baglanti    Baglanti                  @relation(fields: [baglantiId], references: [id], onDelete: Cascade)
+  hareket     KasaBankaHareket?         @relation(fields: [hareketId], references: [id])
+
+  @@unique([tenantId, baglantiId, hariciId])
+  @@index([tenantId, durum, tarih])
+  @@map("pazaryeri_kesintileri")
+}
+
 /// e-posta → (tenant, user) rehberi. BİLİNÇLİ OLARAK RLS'SİZ: oturum açma
 /// anında kiracı bağlamı henüz yoktur. Parola içermez; e-posta sistem
 /// genelinde tekildir (MIMARI §7).
@@ -245,6 +277,7 @@ model Baglanti {
   sifreliConfig    String         @map("sifreli_config")
   durum            BaglantiDurumu @default(pasif)
   senkronImleci    String?        @map("senkron_imleci")
+  kesintiSenkronImleci String?    @map("kesinti_senkron_imleci")
   sonSenkronTarihi DateTime?      @map("son_senkron_tarihi")
   sonSenkronHatasi String?        @map("son_senkron_hatasi")
   createdAt        DateTime       @default(now()) @map("created_at")
@@ -252,6 +285,7 @@ model Baglanti {
 
   tenant             Tenant             @relation(fields: [tenantId], references: [id])
   pazaryeriSiparises PazaryeriSiparis[]
+  pazaryeriKesintileri PazaryeriKesinti[]
 
   @@index([tenantId, aile])
   @@map("baglantilar")
@@ -1359,6 +1393,7 @@ model KasaBankaHareket {
   cari        CariHesap?        @relation(fields: [cariId], references: [id])
   fatura      Fatura?           @relation(fields: [faturaId], references: [id])
   ekstreSatir BankaEkstreSatir?
+  pazaryeriKesinti PazaryeriKesinti?
 
   @@index([tenantId, tarih])
   @@map("kasa_banka_hareketleri")

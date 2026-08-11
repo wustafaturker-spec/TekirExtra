@@ -327,7 +327,7 @@ mimarisi bu ailelere baştan hazır tasarlanır (bkz. MIMARI.md). Tümü **[G]**
 | ENT-05 | Cariye e-posta/SMS ile **ödeme linki** gönderilebilmeli; link üzerinden yapılan kart tahsilatı ilgili faturayı/bakiyeyi kapatmalıdır. | G |
 | ENT-06 | Banka entegrasyonu: hesap hareketleri otomatik çekilmeli, gelen/giden tutarlar cari ve faturalarla eşleştirilebilmelidir (önerili otomatik eşleştirme + kullanıcı onayı). | G |
 | ENT-07 | Banka entegrasyonu üzerinden ödeme talimatı (EFT/havale) oluşturulabilmelidir; talimat gönderimi çift onay (oluşturan ≠ onaylayan) ve zorunlu TOTP ile korunmalıdır. | G |
-| ENT-08 | Pazaryeri komisyon/kesinti kayıtları gider olarak işlenebilmelidir. | G |
+| ENT-08 | Pazaryeri komisyon/kesinti kayıtları gider olarak işlenebilmelidir. **İdempotent kesinti kaydı, kasa/banka tediye giderine güvenli dönüştürme, yönetim ekranı ve Amazon Finances v2024-06-19 canlı çekimi tamamlandı. Trendyol, Hepsiburada ve N11 için kamuya açık resmî finans API dokümanı bekleniyor.** | G |
 
 ---
 

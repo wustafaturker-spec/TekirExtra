@@ -8,7 +8,8 @@ import { TrendyolAdapter, type PazaryeriConfig } from "./trendyol.adapter";
 import { HepsiburadaAdapter } from "./hepsiburada.adapter";
 import { N11Adapter } from "./n11.adapter";
 import { AmazonAdapter } from "./amazon.adapter";
-import { pazaryeriSiparisSemasi } from "./pazaryeri.semalar";
+import { Prisma } from "@prisma/client";
+import { pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi } from "./pazaryeri.semalar";
 
 @Injectable()
 export class PazaryeriService {
@@ -130,6 +131,80 @@ export class PazaryeriService {
         sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, ...sonuc, atlanan: kalemler.length - gecerli.length });
       } catch (hata) {
         sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, gonderilen: 0, islemIdleri: [], atlanan: kalemler.filter((k) => k.fiyat <= 0 || (baglanti.saglayici === "trendyol" && !k.barkod)).length, hata: hata instanceof Error ? hata.message : "Stok/fiyat senkronizasyon hatası" });
+      }
+    }
+    return { sonuclar };
+  }
+
+  async kesintileriListele(durum?: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriKesinti.findMany({
+      where: durum ? { durum: durum as never } : undefined,
+      orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
+      include: { baglanti: { select: { saglayici: true } }, hareket: { select: { id: true, kasaId: true, bankaHesapId: true } } },
+    }));
+  }
+
+  async kesintiIceAktar(girdi: z.infer<typeof pazaryeriKesintiSemasi>) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const baglanti = await tx.baglanti.findFirst({ where: { id: girdi.baglantiId, aile: "pazaryeri" }, select: { id: true } });
+      if (!baglanti) throw new NotFoundException("Pazaryeri bağlantısı bulunamadı");
+      return tx.pazaryeriKesinti.upsert({
+        where: { tenantId_baglantiId_hariciId: { tenantId, baglantiId: girdi.baglantiId, hariciId: girdi.hariciId } },
+        create: { ...girdi, tenantId, tarih: new Date(girdi.tarih), hamVeri: girdi.hamVeri as Prisma.InputJsonValue | undefined },
+        update: {},
+      });
+    });
+  }
+
+  async kesintileriGiderlestir(girdi: z.infer<typeof pazaryeriKesintiGiderlestirSemasi>) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const hesap = girdi.kasaId
+        ? await tx.kasa.findFirst({ where: { id: girdi.kasaId, aktif: true }, select: { dovizCinsi: true } })
+        : await tx.bankaHesap.findFirst({ where: { id: girdi.bankaHesapId, aktif: true }, select: { dovizCinsi: true } });
+      if (!hesap) throw new NotFoundException("Aktif kasa/banka hesabı bulunamadı");
+      const kesintiler = await tx.pazaryeriKesinti.findMany({ where: { id: { in: girdi.kesintiIds } } });
+      if (kesintiler.length !== girdi.kesintiIds.length) throw new NotFoundException("Kesinti kayıtlarından biri bulunamadı");
+      if (kesintiler.some((k) => k.durum === "giderlesti")) throw new BadRequestException("Seçilen kayıtlardan biri daha önce giderleştirilmiş");
+      if (kesintiler.some((k) => k.dovizCinsi !== hesap.dovizCinsi)) throw new BadRequestException("Kesinti dövizi ile hesap dövizi aynı olmalıdır");
+      const kur = new Prisma.Decimal(girdi.kur);
+      for (const kesinti of kesintiler) {
+        const hak = await tx.pazaryeriKesinti.updateMany({ where: { id: kesinti.id, durum: "bekliyor", hareketId: null }, data: { durum: "giderlesti" } });
+        if (hak.count !== 1) throw new BadRequestException("Kesinti başka bir işlem tarafından giderleştirildi");
+        const hareket = await tx.kasaBankaHareket.create({ data: {
+          tenantId, kasaId: girdi.kasaId, bankaHesapId: girdi.bankaHesapId, tip: "tediye",
+          tutar: kesinti.tutar, dovizCinsi: kesinti.dovizCinsi, kur,
+          tutarTry: kesinti.tutar.mul(kur).toDecimalPlaces(2), tarih: kesinti.tarih,
+          aciklama: `Pazaryeri ${kesinti.tur}${kesinti.siparisNo ? ` · ${kesinti.siparisNo}` : ""}${kesinti.aciklama ? ` · ${kesinti.aciklama}` : ""}`,
+          kaynakTur: "pazaryeri_kesinti", kaynakRef: kesinti.id,
+        } });
+        await tx.pazaryeriKesinti.update({ where: { id: kesinti.id }, data: { hareketId: hareket.id } });
+      }
+      return { giderlestirilen: kesintiler.length };
+    });
+  }
+
+  async kesintileriSenkronizeEt(baglantiId?: string) {
+    const { tenantId } = aktifBaglam();
+    const baglantilar = await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.findMany({ where: { aile: "pazaryeri", durum: "aktif", saglayici: "amazon_tr", ...(baglantiId ? { id: baglantiId } : {}) } }));
+    if (baglantiId && !baglantilar.length) throw new NotFoundException("Aktif Amazon TR bağlantısı bulunamadı");
+    const sonuclar = [];
+    for (const baglanti of baglantilar) {
+      try {
+        const config = JSON.parse(coz(baglanti.sifreliConfig)) as PazaryeriConfig;
+        const sayfa = await new AmazonAdapter().komisyonKayitlariCek(config, baglanti.kesintiSenkronImleci);
+        let eklenen = 0;
+        for (const kesinti of sayfa.kesintiler) {
+          const once = await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriKesinti.findUnique({ where: { tenantId_baglantiId_hariciId: { tenantId, baglantiId: baglanti.id, hariciId: kesinti.hariciId } }, select: { id: true } }));
+          await this.kesintiIceAktar({ ...kesinti, baglantiId: baglanti.id }); if (!once) eklenen += 1;
+        }
+        await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id: baglanti.id }, data: { kesintiSenkronImleci: sayfa.sonrakiImlec, sonSenkronTarihi: new Date(), sonSenkronHatasi: null } }));
+        sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan: sayfa.kesintiler.length, eklenen });
+      } catch (hata) {
+        const mesaj = hata instanceof Error ? hata.message : "Kesinti senkronizasyon hatası";
+        sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan: 0, eklenen: 0, hata: mesaj });
       }
     }
     return { sonuclar };

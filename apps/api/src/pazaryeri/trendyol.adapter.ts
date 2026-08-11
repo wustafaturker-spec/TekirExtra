@@ -10,6 +10,10 @@ export interface NormalizeSiparis {
 export interface PazaryeriStokFiyat {
   sku: string; barkod: string; miktar: number; fiyat: number;
 }
+export interface NormalizeKesinti {
+  hariciId: string; siparisNo?: string; tur: string; aciklama?: string; tarih: string;
+  tutar: number; dovizCinsi: "TRY" | "USD" | "EUR"; hamVeri?: Record<string, unknown>;
+}
 
 export class TrendyolAdapter {
   async stokFiyatGonder(config: PazaryeriConfig, kalemler: PazaryeriStokFiyat[]): Promise<{ gonderilen: number; islemIdleri: string[] }> {

@@ -34,4 +34,18 @@ describe("AmazonAdapter", () => {
     expect(String(fetchMock.mock.calls[1][0])).toContain("/orders/2026-01-01/orders");
     expect(fetchMock.mock.calls[1][1].headers["x-amz-access-token"]).toBe("lwa-token");
   });
+
+  it("yayimlanmis finans hareketlerindeki negatif yaprak kirilimlarini kesinti olarak normalize eder", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: "lwa-token" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ transactions: [{ transactionId: "txn-1", transactionStatus: "RELEASED", transactionType: "Shipment", description: "Order Payment", postedDate: "2026-08-10T09:00:00Z", totalAmount: { currencyAmount: 270, currencyCode: "TRY" }, relatedIdentifiers: [{ relatedIdentifierName: "ORDER_ID", relatedIdentifierValue: "AMZ-1" }], breakdowns: [{ breakdownType: "Sales", breakdownAmount: { currencyAmount: 300, currencyCode: "TRY" }, breakdowns: [] }, { breakdownType: "Expenses", breakdownAmount: { currencyAmount: -30, currencyCode: "TRY" }, breakdowns: [{ breakdownType: "Commission", breakdownAmount: { currencyAmount: -25, currencyCode: "TRY" }, breakdowns: [] }, { breakdownType: "Service Fee", breakdownAmount: { currencyAmount: -5, currencyCode: "TRY" }, breakdowns: [] }] }] }], nextToken: "finance-next" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const sonuc = await new AmazonAdapter().komisyonKayitlariCek({ kullaniciAdi: "client", parola: "secret", apiAnahtari: "refresh", magazaId: "A33AVAJ2PDY3EV" });
+    expect(sonuc.kesintiler).toHaveLength(2);
+    expect(sonuc.kesintiler[0]).toEqual(expect.objectContaining({ hariciId: "txn-1:Expenses/Commission/0", siparisNo: "AMZ-1", tur: "Commission", tutar: 25, dovizCinsi: "TRY", tarih: "2026-08-10" }));
+    expect(sonuc.kesintiler[1]).toEqual(expect.objectContaining({ tur: "Service Fee", tutar: 5 }));
+    expect(JSON.parse(sonuc.sonrakiImlec)).toEqual(expect.objectContaining({ token: "finance-next" }));
+    expect(String(fetchMock.mock.calls[1][0])).toContain("/finances/2024-06-19/transactions");
+    expect(String(fetchMock.mock.calls[1][0])).toContain("transactionStatus=RELEASED");
+  });
 });

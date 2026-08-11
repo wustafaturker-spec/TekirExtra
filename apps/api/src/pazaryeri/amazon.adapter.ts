@@ -1,6 +1,7 @@
-import type { NormalizeSiparis, PazaryeriConfig, PazaryeriStokFiyat } from "./trendyol.adapter";
+import type { NormalizeKesinti, NormalizeSiparis, PazaryeriConfig, PazaryeriStokFiyat } from "./trendyol.adapter";
 
 interface AmazonImlec { token?: string; lastUpdatedAfter: string }
+interface AmazonFinansImleci { token?: string; postedAfter: string; postedBefore?: string }
 
 function para(deger: unknown): number {
   if (!deger || typeof deger !== "object") return 0;
@@ -16,6 +17,13 @@ function imleciCoz(imlec?: string | null): AmazonImlec {
     } catch { /* Eski/geçersiz imleçte yeni pencere açılır. */ }
   }
   return { lastUpdatedAfter: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString() };
+}
+
+function finansImleciniCoz(imlec?: string | null): AmazonFinansImleci {
+  if (imlec) {
+    try { const sonuc = JSON.parse(imlec) as AmazonFinansImleci; if (sonuc.postedAfter) return sonuc; } catch { /* Yeni pencere açılır. */ }
+  }
+  return { postedAfter: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString() };
 }
 
 export class AmazonAdapter {
@@ -107,5 +115,41 @@ export class AmazonAdapter {
     }).filter((s: NormalizeSiparis) => s.hariciId !== "undefined" && s.satirlar.length > 0);
     const sonrakiToken = veri.pagination?.nextToken ?? veri.payload?.NextToken;
     return { siparisler, sonrakiImlec: sonrakiToken ? JSON.stringify({ token: String(sonrakiToken), lastUpdatedAfter: sayfaImleci.lastUpdatedAfter }) : null };
+  }
+
+  async komisyonKayitlariCek(config: PazaryeriConfig, imlec?: string | null): Promise<{ kesintiler: NormalizeKesinti[]; sonrakiImlec: string }> {
+    if (!config.parola || !config.apiAnahtari || !config.magazaId) throw new Error("Amazon finans hareketleri için LWA bilgileri ve marketplace ID zorunludur");
+    const erisimTokeni = await this.erisimTokeniAl(config);
+    const sayfa = finansImleciniCoz(imlec);
+    const postedBefore = sayfa.postedBefore ?? new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    const url = new URL("https://sellingpartnerapi-eu.amazon.com/finances/2024-06-19/transactions");
+    url.searchParams.set("postedAfter", sayfa.postedAfter); url.searchParams.set("postedBefore", postedBefore);
+    url.searchParams.set("marketplaceId", config.magazaId); url.searchParams.set("transactionStatus", "RELEASED"); url.searchParams.set("pageSize", "500");
+    if (sayfa.token) url.searchParams.set("nextToken", sayfa.token);
+    const yanit = await fetch(url, { headers: this.spApiBasliklari(erisimTokeni) });
+    if (!yanit.ok) throw new Error(`Amazon Finances servisi HTTP ${yanit.status}`);
+    const veri = await yanit.json() as any;
+    const payload = veri.payload ?? veri;
+    const islemler = Array.isArray(payload.transactions) ? payload.transactions : [];
+    const kesintiler: NormalizeKesinti[] = [];
+    for (const islem of islemler) {
+      const siparisNo = (Array.isArray(islem.relatedIdentifiers) ? islem.relatedIdentifiers : []).find((x: any) => x.relatedIdentifierName === "ORDER_ID")?.relatedIdentifierValue;
+      const yapraklariGez = (kirimlar: any[], yol: string[] = []) => {
+        for (let i = 0; i < kirimlar.length; i += 1) {
+          const kirim = kirimlar[i]; const alt = Array.isArray(kirim.breakdowns) ? kirim.breakdowns : [];
+          if (alt.length) { yapraklariGez(alt, [...yol, String(kirim.breakdownType ?? i)]); continue; }
+          const miktar = Number(kirim.breakdownAmount?.currencyAmount ?? 0);
+          const doviz = String(kirim.breakdownAmount?.currencyCode ?? islem.totalAmount?.currencyCode ?? "TRY");
+          if (miktar >= 0 || !["TRY", "USD", "EUR"].includes(doviz)) continue;
+          const tur = String(kirim.breakdownType ?? "Amazon kesintisi");
+          kesintiler.push({ hariciId: `${islem.transactionId}:${[...yol, tur, i].join("/")}`, siparisNo: siparisNo ? String(siparisNo) : undefined,
+            tur, aciklama: islem.description ? String(islem.description) : undefined, tarih: String(islem.postedDate).slice(0, 10), tutar: Math.abs(miktar),
+            dovizCinsi: doviz as NormalizeKesinti["dovizCinsi"], hamVeri: { transactionId: islem.transactionId, transactionType: islem.transactionType, transactionStatus: islem.transactionStatus, breakdown: kirim } });
+        }
+      };
+      yapraklariGez(Array.isArray(islem.breakdowns) ? islem.breakdowns : []);
+    }
+    const nextToken = payload.nextToken;
+    return { kesintiler, sonrakiImlec: JSON.stringify(nextToken ? { token: String(nextToken), postedAfter: sayfa.postedAfter, postedBefore } : { postedAfter: postedBefore }) };
   }
 }

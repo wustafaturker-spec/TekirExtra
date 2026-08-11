@@ -18,3 +18,22 @@ export const pazaryeriSiparisSemasi = z.object({
 export const pazaryeriFaturalastirSemasi = z.object({
   siparisler: z.array(z.object({ siparisId: z.string().uuid(), cariId: z.string().uuid() })).min(1).max(100),
 });
+
+export const pazaryeriKesintiSemasi = z.object({
+  baglantiId: z.string().uuid(),
+  hariciId: z.string().min(1),
+  siparisNo: z.string().min(1).optional(),
+  tur: z.string().min(1).max(80),
+  aciklama: z.string().max(500).optional(),
+  tarih: z.string().date(),
+  tutar: z.number().positive(),
+  dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+  hamVeri: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const pazaryeriKesintiGiderlestirSemasi = z.object({
+  kesintiIds: z.array(z.string().uuid()).min(1).max(100),
+  kasaId: z.string().uuid().optional(),
+  bankaHesapId: z.string().uuid().optional(),
+  kur: z.number().positive().default(1),
+}).refine((g) => Boolean(g.kasaId) !== Boolean(g.bankaHesapId), "Kasa veya banka hesabından yalnızca biri seçilmelidir");
