@@ -100,7 +100,7 @@ export class CariController {
     const ayristirma = cariGuncelleSemasi.safeParse(govde);
     if (!ayristirma.success) {
       throw new BadRequestException(
-        ayristirma.error.issues.map((s) => s.message).join("; "),
+        ayristirma.error.issues.map((s) => `${s.path.join(".") || "alan"}: ${s.message}`).join("; "),
       );
     }
     return this.cariService.guncelle(id, ayristirma.data);

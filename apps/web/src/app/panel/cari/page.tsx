@@ -456,7 +456,11 @@ export default function CariSayfasi() {
   async function iletisimGuncelle(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); if (!detay) return; const f = new FormData(e.currentTarget); setHata(""); setBasari("");
     try {
-      await api(`/cari/${detay.id}`, { method: "PATCH", body: JSON.stringify({ eposta: String(f.get("eposta") || "") || undefined, telefon: String(f.get("telefon") || "") || undefined, webSitesi: String(f.get("webSitesi") || "") || undefined, faks: String(f.get("faks") || "") || undefined }) });
+      const degerler = { eposta: String(f.get("eposta") || "").trim(), telefon: String(f.get("telefon") || "").trim(), webSitesi: String(f.get("webSitesi") || "").trim(), faks: String(f.get("faks") || "").trim() };
+      const onceki = { eposta: detay.eposta ?? "", telefon: detay.telefon ?? "", webSitesi: detay.webSitesi ?? "", faks: detay.faks ?? "" };
+      const degisen = Object.fromEntries(Object.entries(degerler).filter(([alan, deger]) => deger !== onceki[alan as keyof typeof onceki]).map(([alan, deger]) => [alan, deger || null]));
+      if (!Object.keys(degisen).length) { setBasari("İletişim bilgilerinde değişiklik yok."); return; }
+      await api(`/cari/${detay.id}`, { method: "PATCH", body: JSON.stringify(degisen) });
       await detayAc(detay.id, true); void yukle(); setBasari("Cari iletişim bilgileri güncellendi.");
     } catch (h) { setHata(h instanceof Error ? h.message : "İletişim bilgileri güncellenemedi"); }
   }
@@ -825,9 +829,9 @@ export default function CariSayfasi() {
                   <div className="card__title">📨 İletişim Bilgileri</div>
                   <form className="stack" onSubmit={iletisimGuncelle}>
                     <Field label="E-posta"><Input name="eposta" type="email" defaultValue={detay.eposta ?? ""} placeholder="odeme@firma.com" /></Field>
-                    <Field label="Telefon"><Input name="telefon" defaultValue={detay.telefon ?? ""} /></Field>
+                    <Field label="Telefon"><Input name="telefon" defaultValue={detay.telefon ?? ""} maxLength={32} /></Field>
                     <Field label="Web sitesi"><Input name="webSitesi" type="url" defaultValue={detay.webSitesi ?? ""} placeholder="https://..." /></Field>
-                    <Field label="Faks"><Input name="faks" defaultValue={detay.faks ?? ""} /></Field>
+                    <Field label="Faks"><Input name="faks" defaultValue={detay.faks ?? ""} maxLength={32} /></Field>
                     <Button type="submit" size="sm" variant="primary">İletişimi güncelle</Button>
                   </form>
                   {!detay.eposta && <p style={{ color: "var(--danger)", fontSize: ".82rem" }}>Ödeme bağlantısı göndermek için e-posta eklenmelidir.</p>}
