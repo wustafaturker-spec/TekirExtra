@@ -453,6 +453,14 @@ export default function CariSayfasi() {
     }
   }
 
+  async function iletisimGuncelle(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault(); if (!detay) return; const f = new FormData(e.currentTarget); setHata(""); setBasari("");
+    try {
+      await api(`/cari/${detay.id}`, { method: "PATCH", body: JSON.stringify({ eposta: String(f.get("eposta") || "") || undefined, telefon: String(f.get("telefon") || "") || undefined, webSitesi: String(f.get("webSitesi") || "") || undefined, faks: String(f.get("faks") || "") || undefined }) });
+      await detayAc(detay.id, true); void yukle(); setBasari("Cari iletişim bilgileri güncellendi.");
+    } catch (h) { setHata(h instanceof Error ? h.message : "İletişim bilgileri güncellenemedi"); }
+  }
+
   async function bankaHesabiEkle(e: React.FormEvent) {
     e.preventDefault();
     if (!detay) return;
@@ -813,6 +821,17 @@ export default function CariSayfasi() {
               </StatGrid>
 
               <div className="row">
+                <Card className="grow" style={{ flex: 1, minWidth: 280 }}>
+                  <div className="card__title">📨 İletişim Bilgileri</div>
+                  <form className="stack" onSubmit={iletisimGuncelle}>
+                    <Field label="E-posta"><Input name="eposta" type="email" defaultValue={detay.eposta ?? ""} placeholder="odeme@firma.com" /></Field>
+                    <Field label="Telefon"><Input name="telefon" defaultValue={detay.telefon ?? ""} /></Field>
+                    <Field label="Web sitesi"><Input name="webSitesi" type="url" defaultValue={detay.webSitesi ?? ""} placeholder="https://..." /></Field>
+                    <Field label="Faks"><Input name="faks" defaultValue={detay.faks ?? ""} /></Field>
+                    <Button type="submit" size="sm" variant="primary">İletişimi güncelle</Button>
+                  </form>
+                  {!detay.eposta && <p style={{ color: "var(--danger)", fontSize: ".82rem" }}>Ödeme bağlantısı göndermek için e-posta eklenmelidir.</p>}
+                </Card>
                 <Card className="grow" style={{ flex: 2, minWidth: 280 }}>
                   <div className="card__title">⚖️ Risk &amp; Finans Bilgileri</div>
                   <table style={{ width: "100%", fontSize: "0.9rem" }}>

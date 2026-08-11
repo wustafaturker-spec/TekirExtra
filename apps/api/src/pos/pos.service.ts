@@ -22,7 +22,9 @@ export class PosService {
     const kaynak = await this.prisma.tenantIslem(tenantId, (tx) => tx.posHesap.findUnique({ where: { id: girdi.posHesapId }, include: { baglanti: true } }));
     if (!kaynak || !kaynak.aktif || !["iyzico", "paytr"].includes(kaynak.saglayici) || !kaynak.baglanti || kaynak.baglanti.durum !== "aktif") throw new BadRequestException("Aktif bağlantılı POS hesabı bulunamadı");
     const cari = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findUnique({ where: { id: girdi.cariId }, include: { adresler: { take: 1 } } }));
-    if (!cari?.eposta || (kaynak.saglayici === "iyzico" && !cari.adresler[0])) throw new BadRequestException("Ödeme için carinin e-posta ve adres bilgileri zorunludur");
+    if (!cari) throw new NotFoundException("Cari hesap bulunamadı");
+    if (!cari.eposta) throw new BadRequestException("Ödeme bağlantısı için carinin e-posta adresi zorunludur");
+    if (kaynak.saglayici === "iyzico" && !cari.adresler[0]) throw new BadRequestException("iyzico ödemesi için carinin en az bir adresi zorunludur");
     if (girdi.faturaId) { const f = await this.prisma.tenantIslem(tenantId, (tx) => tx.fatura.findFirst({ where: { id: girdi.faturaId, cariId: cari.id } })); if (!f) throw new NotFoundException("Cariye ait fatura bulunamadı"); }
     const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.posTahsilat.create({ data: { tenantId, posHesapId: kaynak.id, cariId: cari.id, faturaId: girdi.faturaId, tutar, dovizCinsi: kaynak.dovizCinsi } }));
     const callbackKoku = process.env.PUBLIC_API_URL ?? "http://localhost:3001"; const adres = cari.adresler[0]; const adParcalari = cari.unvan.trim().split(/\s+/); const soyad = adParcalari.length > 1 ? adParcalari.pop()! : "Müşteri"; const ad = adParcalari.join(" ") || cari.unvan;
