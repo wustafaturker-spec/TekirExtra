@@ -41,6 +41,7 @@ export interface DovizBakiye {
   borc: string;
   alacak: string;
   bakiye: string;
+  bakiyeTry: string;
 }
 
 @Injectable()
@@ -105,9 +106,7 @@ export class CariService {
     );
     if (!kayit) throw new NotFoundException("Cari bulunamadı");
     const bakiyeler = (await this.bakiyeleriGetir([id])).get(id) ?? [];
-    const tryBakiye = Number(
-      bakiyeler.find((b) => b.dovizCinsi === "TRY")?.bakiye ?? 0,
-    );
+    const tryBakiye = bakiyeler.reduce((toplam, b) => toplam + Number(b.bakiyeTry), 0);
     const risk = await this.riskOzeti(id, tryBakiye, kayit.riskLimiti);
     return {
       ...this.gorunum(kayit),
@@ -654,18 +653,20 @@ export class CariService {
       tx.cariHareket.groupBy({
         by: ["cariId", "dovizCinsi", "tip"],
         where: { cariId: { in: cariIdler } },
-        _sum: { tutar: true },
+        _sum: { tutar: true, tutarTry: true },
       }),
     );
-    const sonuc = new Map<string, Map<string, { borc: Prisma.Decimal; alacak: Prisma.Decimal }>>();
+    const sonuc = new Map<string, Map<string, { borc: Prisma.Decimal; alacak: Prisma.Decimal; borcTry: Prisma.Decimal; alacakTry: Prisma.Decimal }>>();
     for (const g of gruplar) {
       const cariMap = sonuc.get(g.cariId) ?? new Map();
       const kayit = cariMap.get(g.dovizCinsi) ?? {
         borc: new Prisma.Decimal(0),
         alacak: new Prisma.Decimal(0),
+        borcTry: new Prisma.Decimal(0),
+        alacakTry: new Prisma.Decimal(0),
       };
-      if (g.tip === "borc") kayit.borc = kayit.borc.add(g._sum.tutar ?? 0);
-      else kayit.alacak = kayit.alacak.add(g._sum.tutar ?? 0);
+      if (g.tip === "borc") { kayit.borc = kayit.borc.add(g._sum.tutar ?? 0); kayit.borcTry = kayit.borcTry.add(g._sum.tutarTry ?? 0); }
+      else { kayit.alacak = kayit.alacak.add(g._sum.tutar ?? 0); kayit.alacakTry = kayit.alacakTry.add(g._sum.tutarTry ?? 0); }
       cariMap.set(g.dovizCinsi, kayit);
       sonuc.set(g.cariId, cariMap);
     }
@@ -678,6 +679,7 @@ export class CariService {
           borc: t.borc.toFixed(2),
           alacak: t.alacak.toFixed(2),
           bakiye: t.borc.sub(t.alacak).toFixed(2),
+          bakiyeTry: t.borcTry.sub(t.alacakTry).toFixed(2),
         })),
       );
     }

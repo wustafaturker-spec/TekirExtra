@@ -43,7 +43,7 @@ interface Cari {
   eposta: string | null;
   telefon: string | null;
   karaListe: boolean;
-  bakiyeler: { dovizCinsi: string; bakiye: string }[];
+  bakiyeler: { dovizCinsi: string; bakiye: string; bakiyeTry: string }[];
 }
 
 interface Etiket {
@@ -891,13 +891,13 @@ export default function CariSayfasi() {
             <div aria-labelledby="cari-detay-tab-genel" id="cari-detay-panel-genel" role="tabpanel" tabIndex={0}>
               <StatGrid>
                 {(() => {
-                  const bakiyeNum = Number(detay.bakiyeler.find((b) => b.dovizCinsi === "TRY")?.bakiye ?? "0.00");
+                  const bakiyeNum = detay.bakiyeler.reduce((toplam, b) => toplam + Number(b.bakiyeTry), 0);
                   return (
                     <Stat
                       label="Toplam Bakiye"
                       value={tl(bakiyeNum)}
                       tone={bakiyeNum > 0 ? "success" : bakiyeNum < 0 ? "danger" : "default"}
-                      hint={bakiyeNum > 0 ? "Alacaklıyız" : bakiyeNum < 0 ? "Borçluyuz" : "Bakiye Sıfır"}
+                      hint={bakiyeNum > 0 ? "Tüm dövizler · Alacaklıyız" : bakiyeNum < 0 ? "Tüm dövizler · Borçluyuz" : "Tüm dövizler · Bakiye sıfır"}
                     />
                   );
                 })()}
@@ -919,6 +919,7 @@ export default function CariSayfasi() {
                   hint={detay.risk.limit ? `Limit: ${tl(detay.risk.limit)}` : "Limit Tanımsız"}
                 />
               </StatGrid>
+              {detay.bakiyeler.some((b) => b.dovizCinsi !== "TRY") && <div className="cari-currency-balances"><span>Döviz bakiyeleri</span>{detay.bakiyeler.filter((b) => b.dovizCinsi !== "TRY").map((b) => <strong key={b.dovizCinsi}>{Number(b.bakiye).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {b.dovizCinsi}<small>TL karşılığı {tl(b.bakiyeTry)}</small></strong>)}</div>}
 
               <Card className="cari-identity-card">
                 <div className="expense-entry__section-head"><span className="expense-entry__step">01</span><div><h3>Cari kimlik ve resmî bilgiler</h3><p>Ticari sınıflandırma, vergi ve sicil bilgilerini tek noktadan yönetin</p></div></div>
@@ -1313,7 +1314,7 @@ export default function CariSayfasi() {
               </tr>
             ) : (
               filtrelenmisCariler.map((c) => {
-                const bakiyeNum = Number(c.bakiyeler.find((b) => b.dovizCinsi === "TRY")?.bakiye ?? "0.00");
+                const bakiyeNum = c.bakiyeler.reduce((toplam, b) => toplam + Number(b.bakiyeTry), 0);
                 return (
                   <tr key={c.id}>
                     <td>

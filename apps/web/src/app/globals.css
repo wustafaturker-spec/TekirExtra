@@ -1498,6 +1498,10 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 .cari-finance-form__meta b { color: var(--text); margin-left: .2rem; }
 .cari-finance-form > .btn { justify-self: start; }
 .cari-identity-card { margin: 1rem 0; overflow: hidden; }
+.cari-currency-balances { align-items: center; background: var(--surface-2); border: 1px solid var(--border); border-radius: .65rem; display: flex; flex-wrap: wrap; gap: .55rem; margin: -.25rem 0 1rem; padding: .65rem .75rem; }
+.cari-currency-balances > span { color: var(--text-muted); font-size: .68rem; font-weight: 700; margin-right: .2rem; text-transform: uppercase; }
+.cari-currency-balances > strong { background: var(--surface); border: 1px solid var(--border); border-radius: .5rem; display: grid; font-size: .76rem; gap: .1rem; padding: .4rem .55rem; }
+.cari-currency-balances small { color: var(--text-muted); font-size: .6rem; font-weight: 500; }
 .cari-identity-card > .expense-entry__section-head { background: linear-gradient(145deg, color-mix(in srgb, var(--accent-soft) 38%, var(--surface)), var(--surface)); margin: -1.1rem -1.1rem 1rem; padding: 1rem 1.1rem; }
 .cari-identity-form { display: grid; gap: .7rem; grid-template-columns: repeat(3, minmax(0,1fr)); }
 .cari-identity-form__actions { align-items: center; border-top: 1px solid var(--border); color: var(--text-muted); display: flex; font-size: .7rem; grid-column: 1 / -1; justify-content: space-between; padding-top: .8rem; }
