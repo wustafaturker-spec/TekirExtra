@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { api, tokenAl } from "@/lib/api";
+import { api, apiDosyaIndir, tokenAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import {
   Alert,
@@ -50,6 +50,7 @@ interface Etiket {
   id: string;
   ad: string;
   renk: string | null;
+  _count?: { atamalar: number };
 }
 
 interface BankaHesap {
@@ -92,6 +93,8 @@ interface CariDetay extends Cari {
   karaListeNotu: string | null;
   riskLimiti: string | null;
   varsayilanVadeGun: number | null;
+  varsayilanIskonto: string | null;
+  fiyatListesiId: string | null;
   bankaHesaplari: BankaHesap[];
   etiketler: Etiket[];
   adresler: CariAdres[];
@@ -124,7 +127,11 @@ interface EkstreSatir {
 }
 
 interface EkstreVeri {
-  cari: { id: string; kod: string; unvan: string };
+  cari: { id: string; kod: string; unvan: string; eposta?: string | null };
+  devirBakiyesi: string;
+  donemBorc: string;
+  donemAlacak: string;
+  donemSonuBakiyesi: string;
   satirlar: EkstreSatir[];
 }
 
@@ -183,6 +190,10 @@ export default function CariSayfasi() {
   const [cariAnalizi, setCariAnalizi] = useState<CariAnalizi | null>(null);
   const [etiketler, setEtiketler] = useState<Etiket[]>([]);
   const [aktifSekme, setAktifSekme] = useState<Sekme>("genel");
+  const [ekstreBaslangic, setEkstreBaslangic] = useState("");
+  const [ekstreBitis, setEkstreBitis] = useState("");
+  const [ekstreEposta, setEkstreEposta] = useState("");
+  const [ekstreIslemde, setEkstreIslemde] = useState(false);
   const [filtreTip, setFiltreTip] = useState<FiltreTip>("tumu");
   const [kayitliGorunumler, setKayitliGorunumler] = useState<CariGorunumu[]>([]);
   const [gorunumFormuAcik, setGorunumFormuAcik] = useState(false);
@@ -226,12 +237,14 @@ export default function CariSayfasi() {
   const [adresIl, setAdresIl] = useState("");
   const [adresIlce, setAdresIlce] = useState("");
   const [adresPostaKodu, setAdresPostaKodu] = useState("");
+  const [duzenlenenAdresId, setDuzenlenenAdresId] = useState<string | null>(null);
   // İlgili kişi formu (CARI-09)
   const [kisiAdSoyad, setKisiAdSoyad] = useState("");
   const [kisiGorev, setKisiGorev] = useState("");
   const [kisiTelefon, setKisiTelefon] = useState("");
   const [kisiEposta, setKisiEposta] = useState("");
   const [yeniEtiket, setYeniEtiket] = useState("");
+  const [yeniEtiketRengi, setYeniEtiketRengi] = useState("#2563EB");
   const [secilenEtiketId, setSecilenEtiketId] = useState("");
   const [etkilesimTipi, setEtkilesimTipi] = useState("gorusme");
   const [etkilesimKonusu, setEtkilesimKonusu] = useState("");
@@ -342,6 +355,7 @@ export default function CariSayfasi() {
         api<CariAnalizi>(`/cari/${id}/davranis-analizi`),
       ]);
       setDetay(cDetay);
+      setEkstreEposta(cDetay.eposta || "");
       setEkstre(cEkstre);
       setCrm(cCrm);
       setCariAnalizi(cAnaliz);
@@ -349,6 +363,34 @@ export default function CariSayfasi() {
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Detay veya ekstre yüklenemedi");
     }
+  }
+
+  async function ekstreFiltrele() {
+    if (!detay) return;
+    if (ekstreBaslangic && ekstreBitis && ekstreBaslangic > ekstreBitis) { setHata("Başlangıç tarihi bitiş tarihinden sonra olamaz."); return; }
+    setEkstreIslemde(true); setHata("");
+    try { const qs = new URLSearchParams(); if (ekstreBaslangic) qs.set("baslangic", ekstreBaslangic); if (ekstreBitis) qs.set("bitis", ekstreBitis); setEkstre(await api<EkstreVeri>(`/cari/${detay.id}/ekstre?${qs}`)); }
+    catch (h) { setHata(h instanceof Error ? h.message : "Ekstre yüklenemedi"); }
+    finally { setEkstreIslemde(false); }
+  }
+
+  function ekstreYolu(uzanti: "pdf" | "excel") {
+    if (!detay) return ""; const qs = new URLSearchParams(); if (ekstreBaslangic) qs.set("baslangic", ekstreBaslangic); if (ekstreBitis) qs.set("bitis", ekstreBitis); return `/cari/${detay.id}/ekstre/${uzanti}?${qs}`;
+  }
+
+  async function ekstreGonder() {
+    if (!detay || !ekstreEposta) return;
+    setEkstreIslemde(true); setHata(""); setBasari("");
+    try { const sonuc = await api<{ mesaj: string }>(`/cari/${detay.id}/ekstre/eposta`, { method: "POST", body: JSON.stringify({ baslangic: ekstreBaslangic || undefined, bitis: ekstreBitis || undefined, alici: ekstreEposta }) }); setBasari(sonuc.mesaj); }
+    catch (h) { setHata(h instanceof Error ? h.message : "Ekstre gönderilemedi"); }
+    finally { setEkstreIslemde(false); }
+  }
+
+  async function finansGuncelle(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault(); if (!detay) return; const veri = new FormData(e.currentTarget);
+    setHata(""); setBasari("");
+    try { await api(`/cari/${detay.id}`, { method: "PATCH", body: JSON.stringify({ riskLimiti: String(veri.get("riskLimiti") || "") || undefined, varsayilanVadeGun: veri.get("varsayilanVadeGun") === "" ? undefined : Number(veri.get("varsayilanVadeGun")), varsayilanIskonto: String(veri.get("varsayilanIskonto") || "") || undefined, fiyatListesiId: String(veri.get("fiyatListesiId") || "") || undefined }) }); await detayAc(detay.id, true); setBasari("Risk ve finans koşulları güncellendi."); }
+    catch (h) { setHata(h instanceof Error ? h.message : "Finans bilgileri güncellenemedi"); }
   }
 
   useEffect(() => {
@@ -476,6 +518,28 @@ export default function CariSayfasi() {
     } catch (h) { setHata(h instanceof Error ? h.message : "İletişim bilgileri güncellenemedi"); }
   }
 
+  async function cariKimligiGuncelle(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault(); if (!detay) return; const f = new FormData(e.currentTarget); setHata(""); setBasari("");
+    const degerler = {
+      unvan: String(f.get("unvan") || "").trim(), kisaAd: String(f.get("kisaAd") || "").trim(),
+      tip: String(f.get("tip") || detay.tip), kisiTipi: String(f.get("kisiTipi") || detay.kisiTipi), sektor: String(f.get("sektor") || "").trim(),
+      vknTckn: String(f.get("vknTckn") || "").trim(), vergiDairesi: String(f.get("vergiDairesi") || "").trim(),
+      mersisNo: String(f.get("mersisNo") || "").trim(), ticaretSicilNo: String(f.get("ticaretSicilNo") || "").trim(),
+    };
+    if (!degerler.unvan) { setHata("Ünvan / ad soyad zorunludur."); return; }
+    const onceki = {
+      unvan: detay.unvan, kisaAd: detay.kisaAd ?? "", tip: detay.tip, kisiTipi: detay.kisiTipi,
+      sektor: detay.sektor ?? "", vknTckn: detay.vknTckn ?? "", vergiDairesi: detay.vergiDairesi ?? "",
+      mersisNo: detay.mersisNo ?? "", ticaretSicilNo: detay.ticaretSicilNo ?? "",
+    };
+    const degisen = Object.fromEntries(Object.entries(degerler).filter(([alan, deger]) => deger !== onceki[alan as keyof typeof onceki]).map(([alan, deger]) => [alan, deger === "" ? null : deger]));
+    if (!Object.keys(degisen).length) { setBasari("Cari bilgilerinde değişiklik yok."); return; }
+    try {
+      await api(`/cari/${detay.id}`, { method: "PATCH", body: JSON.stringify(degisen) });
+      await detayAc(detay.id, true); void yukle(); setBasari("Cari kimlik ve resmî bilgileri güncellendi.");
+    } catch (h) { setHata(h instanceof Error ? h.message : "Cari bilgileri güncellenemedi"); }
+  }
+
   async function bankaHesabiEkle(e: React.FormEvent) {
     e.preventDefault();
     if (!detay) return;
@@ -506,8 +570,8 @@ export default function CariSayfasi() {
     e.preventDefault();
     if (!detay) return;
     try {
-      await api(`/cari/${detay.id}/adresler`, {
-        method: "POST",
+      await api(duzenlenenAdresId ? `/cari/${detay.id}/adresler/${duzenlenenAdresId}` : `/cari/${detay.id}/adresler`, {
+        method: duzenlenenAdresId ? "PATCH" : "POST",
         body: JSON.stringify({
           tip: adresTip,
           baslik: adresBaslik.trim(),
@@ -524,10 +588,21 @@ export default function CariSayfasi() {
       setAdresIl("");
       setAdresIlce("");
       setAdresPostaKodu("");
+      setDuzenlenenAdresId(null);
       await detayAc(detay.id, true);
+      setBasari(duzenlenenAdresId ? "Adres güncellendi." : "Adres eklendi.");
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Adres eklenemedi");
     }
+  }
+
+  function adresDuzenle(adres: CariAdres) {
+    setDuzenlenenAdresId(adres.id); setAdresTip(adres.tip); setAdresBaslik(adres.baslik); setAdresMetin(adres.adres);
+    setAdresIl(adres.il ?? ""); setAdresIlce(adres.ilce ?? ""); setAdresPostaKodu(adres.postaKodu ?? ""); setHata(""); setBasari("");
+  }
+
+  function adresFormunuTemizle() {
+    setDuzenlenenAdresId(null); setAdresTip("fatura"); setAdresBaslik(""); setAdresMetin(""); setAdresIl(""); setAdresIlce(""); setAdresPostaKodu("");
   }
 
   async function adresSil(adresId: string) {
@@ -579,7 +654,7 @@ export default function CariSayfasi() {
     try {
       const etiket = await api<Etiket>("/cari/etiketler", {
         method: "POST",
-        body: JSON.stringify({ ad: yeniEtiket.trim() }),
+        body: JSON.stringify({ ad: yeniEtiket.trim(), renk: yeniEtiketRengi }),
       });
       await api(`/cari/${detay.id}/etiketler/${etiket.id}`, { method: "POST" });
       setYeniEtiket("");
@@ -607,6 +682,18 @@ export default function CariSayfasi() {
       await detayAc(detay.id, true);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Etiket kaldırılamadı");
+    }
+  }
+
+  async function etiketiSistemdenSil(etiket: Etiket) {
+    if (!confirm(`“${etiket.ad}” etiketi sistemden silinsin mi? Bu etiket tüm cari kartlarından kaldırılır.`)) return;
+    setHata(""); setBasari("");
+    try {
+      await api(`/cari/etiketler/${etiket.id}`, { method: "DELETE" });
+      await Promise.all([detay ? detayAc(detay.id, true) : Promise.resolve(), etiketleriYukle()]);
+      setBasari("Etiket sistemden silindi.");
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Etiket silinemedi");
     }
   }
 
@@ -833,6 +920,22 @@ export default function CariSayfasi() {
                 />
               </StatGrid>
 
+              <Card className="cari-identity-card">
+                <div className="expense-entry__section-head"><span className="expense-entry__step">01</span><div><h3>Cari kimlik ve resmî bilgiler</h3><p>Ticari sınıflandırma, vergi ve sicil bilgilerini tek noktadan yönetin</p></div></div>
+                <form className="cari-identity-form" onSubmit={cariKimligiGuncelle}>
+                  <Field label="Ünvan / Ad soyad"><Input name="unvan" defaultValue={detay.unvan} required /></Field>
+                  <Field label="Kısa ad"><Input name="kisaAd" defaultValue={detay.kisaAd ?? ""} /></Field>
+                  <Field label="Cari tipi"><Select name="tip" defaultValue={detay.tip}>{Object.entries(TIP_ETIKETLERI).map(([deger, ad]) => <option key={deger} value={deger}>{ad}</option>)}</Select></Field>
+                  <Field label="Kişi tipi"><Select name="kisiTipi" defaultValue={detay.kisiTipi}><option value="tuzel">Tüzel kişi</option><option value="gercek">Gerçek kişi</option></Select></Field>
+                  <Field label="Sektör"><Input name="sektor" defaultValue={detay.sektor ?? ""} placeholder="Örn. Perakende" /></Field>
+                  <Field label="VKN / TCKN"><Input name="vknTckn" defaultValue={detay.vknTckn ?? ""} inputMode="numeric" maxLength={11} pattern="[0-9]{10,11}" title="VKN 10, TCKN 11 rakam olmalıdır" placeholder="VKN 10 · TCKN 11 hane" /></Field>
+                  <Field label="Vergi dairesi"><Input name="vergiDairesi" defaultValue={detay.vergiDairesi ?? ""} /></Field>
+                  <Field label="MERSİS no"><Input name="mersisNo" defaultValue={detay.mersisNo ?? ""} inputMode="numeric" maxLength={16} pattern="[0-9]{16}" title="MERSİS numarası 16 rakam olmalıdır" placeholder="16 hane" /></Field>
+                  <Field label="Ticaret sicil no"><Input name="ticaretSicilNo" defaultValue={detay.ticaretSicilNo ?? ""} /></Field>
+                  <div className="cari-identity-form__actions"><span>Cari kodu <b>{detay.kod}</b></span><Button type="submit" size="sm" variant="primary">Bilgileri güncelle</Button></div>
+                </form>
+              </Card>
+
               <div className="row">
                 <Card className="grow" style={{ flex: 1, minWidth: 280 }}>
                   <div className="card__title">📨 İletişim Bilgileri</div>
@@ -845,50 +948,49 @@ export default function CariSayfasi() {
                   </form>
                   {!detay.eposta && <p style={{ color: "var(--danger)", fontSize: ".82rem" }}>Ödeme bağlantısı göndermek için e-posta eklenmelidir.</p>}
                 </Card>
-                <Card className="grow" style={{ flex: 2, minWidth: 280 }}>
-                  <div className="card__title">⚖️ Risk &amp; Finans Bilgileri</div>
-                  <table style={{ width: "100%", fontSize: "0.9rem" }}>
-                    <tbody>
-                      <SatirCift ad="Mevcut Risk" deger={tl(detay.risk.mevcutRisk)} />
-                      <SatirCift ad="Çek/Senet Riski" deger={tl(detay.risk.cekSenetRiski)} />
-                      {detay.risk.kalanLimit !== null && (
-                        <tr>
-                          <td className="muted" style={{ padding: "0.4rem 0" }}>Kalan Risk Limiti</td>
-                          <td className="num" style={{ fontWeight: 700, color: detay.risk.asim ? "var(--danger)" : "var(--success)" }}>{tl(detay.risk.kalanLimit)}</td>
-                        </tr>
-                      )}
-                      <SatirCift ad="Son İşlem Tarihi" deger={detay.finansalOzet.sonIslemTarihi ?? "—"} />
-                      <SatirCift ad="Son Tahsilat Tarihi" deger={detay.finansalOzet.sonTahsilatTarihi ?? "—"} />
-                      <SatirCift ad="Son Ödeme Tarihi" deger={detay.finansalOzet.sonOdemeTarihi ?? "—"} />
-                    </tbody>
-                  </table>
-                  {detay.risk.asim && <p style={{ color: "var(--danger)", fontSize: "0.85rem", marginTop: "0.75rem" }}>⚠️ Risk limiti aşılmış durumda.</p>}
+                <Card className="grow cari-finance-card" style={{ flex: 2, minWidth: 340 }}>
+                  <div className="expense-entry__section-head"><span className="expense-entry__step">₺</span><div><h3>Risk &amp; finans koşulları</h3><p>Satış ve tahsilat süreçlerinde kullanılacak ticari kurallar</p></div></div>
+                  <div className="cari-risk-summary"><div><span>Mevcut risk</span><strong>{tl(detay.risk.mevcutRisk)}</strong></div><div><span>Çek / senet riski</span><strong>{tl(detay.risk.cekSenetRiski)}</strong></div><div><span>Kalan limit</span><strong className={detay.risk.asim ? "is-negative" : "is-positive"}>{detay.risk.kalanLimit === null ? "Tanımsız" : tl(detay.risk.kalanLimit)}</strong></div></div>
+                  {detay.risk.asim && <div className="cari-risk-alert">Risk limiti aşılmış durumda. Yeni vadeli işlem öncesinde finans onayı alın.</div>}
+                  <form className="cari-finance-form" onSubmit={finansGuncelle}>
+                    <Field label="Risk limiti (TL)"><Input name="riskLimiti" type="number" min="0" step="0.01" defaultValue={detay.riskLimiti ?? ""} placeholder="Limit tanımlayın" /></Field>
+                    <Field label="Varsayılan vade (gün)"><Input name="varsayilanVadeGun" type="number" min="0" max="365" defaultValue={detay.varsayilanVadeGun ?? ""} /></Field>
+                    <Field label="Varsayılan iskonto (%)"><Input name="varsayilanIskonto" type="number" min="0" max="100" step="0.01" defaultValue={detay.varsayilanIskonto ?? ""} /></Field>
+                    <Field label="Fiyat listesi"><Select name="fiyatListesiId" defaultValue={detay.fiyatListesiId ?? ""}><option value="">Stok satış fiyatı</option>{fiyatListeleri.map((liste) => <option key={liste.id} value={liste.id}>{liste.ad} · {liste.dovizCinsi}</option>)}</Select></Field>
+                    <div className="cari-finance-form__meta"><span>Son işlem <b>{detay.finansalOzet.sonIslemTarihi ?? "—"}</b></span><span>Son tahsilat <b>{detay.finansalOzet.sonTahsilatTarihi ?? "—"}</b></span><span>Son ödeme <b>{detay.finansalOzet.sonOdemeTarihi ?? "—"}</b></span></div>
+                    <Button type="submit" size="sm" variant="primary">Finans koşullarını güncelle</Button>
+                  </form>
                 </Card>
 
-                <Card className="grow" style={{ flex: 1, minWidth: 220 }}>
-                  <div className="card__title">🏷️ Etiket Yönetimi</div>
-                  <div className="row-tight" style={{ marginBottom: "0.75rem" }}>
-                    {detay.etiketler.length === 0 && <span className="subtle" style={{ fontSize: "0.85rem" }}>Etiket yok</span>}
+                <Card className="grow cari-tag-studio" style={{ flex: 1, minWidth: 320 }}>
+                  <div className="expense-entry__section-head"><span className="expense-entry__step">🏷</span><div><h3>Etiket Tasarım Stüdyosu</h3><p>Etiketlerinizi tasarlayın ve bu cari hesaba atayın</p></div></div>
+                  <div className="cari-tag-studio__assigned">
+                    <span className="cari-tag-studio__label">Bu cariye atanmış etiketler</span>
+                    {detay.etiketler.length === 0 && <span className="subtle" style={{ fontSize: "0.78rem" }}>Henüz etiket atanmadı</span>}
                     {detay.etiketler.map((e) => (
-                      <span key={e.id} className="chip">
+                      <span key={e.id} className="cari-tag" style={{ backgroundColor: `${e.renk || "#64748B"}18`, borderColor: e.renk || "#64748B", color: e.renk || "#64748B" }}>
+                        <i style={{ backgroundColor: e.renk || "#64748B" }} />
                         {e.ad}
-                        <button onClick={() => etiketKaldir(e.id)}>✕</button>
+                        <button aria-label={`${e.ad} etiketini kaldır`} onClick={() => void etiketKaldir(e.id)}>×</button>
                       </span>
                     ))}
                   </div>
-                  <div className="row-tight" style={{ marginBottom: "0.5rem", flexWrap: "nowrap" }}>
+                  <div className="cari-tag-studio__assign">
                     <Select className="grow" value={secilenEtiketId} onChange={(e) => setSecilenEtiketId(e.target.value)}>
-                      <option value="">Seç...</option>
+                      <option value="">Kayıtlı etiket seçin...</option>
                       {etiketler.filter((e) => !detay.etiketler.some((d) => d.id === e.id)).map((e) => (
-                        <option key={e.id} value={e.id}>{e.ad}</option>
+                        <option key={e.id} value={e.id}>{e.ad}{e._count ? ` · ${e._count.atamalar} cari` : ""}</option>
                       ))}
                     </Select>
-                    <Button size="sm" onClick={etiketAta}>Ata</Button>
+                    <Button size="sm" disabled={!secilenEtiketId} onClick={() => void etiketAta()}>Cariye ata</Button>
                   </div>
-                  <form onSubmit={etiketOlusturVeAta} className="row-tight" style={{ flexWrap: "nowrap" }}>
-                    <Input className="grow" value={yeniEtiket} onChange={(e) => setYeniEtiket(e.target.value)} placeholder="Yeni etiket..." />
-                    <Button size="sm" type="submit">➕</Button>
+                  <form onSubmit={etiketOlusturVeAta} className="cari-tag-designer">
+                    <div className="cari-tag-designer__head"><div><strong>Yeni etiket tasarla</strong><small>Oluşturulan etiket bu cariye otomatik atanır.</small></div><span className="cari-tag cari-tag--preview" style={{ backgroundColor: `${yeniEtiketRengi}18`, borderColor: yeniEtiketRengi, color: yeniEtiketRengi }}><i style={{ backgroundColor: yeniEtiketRengi }} />{yeniEtiket.trim() || "Etiket önizleme"}</span></div>
+                    <Field label="Etiket adı"><Input maxLength={40} value={yeniEtiket} onChange={(e) => setYeniEtiket(e.target.value)} placeholder="Örn. VIP Müşteri" /></Field>
+                    <div><span className="cari-tag-studio__label">Renk seçimi</span><div className="cari-tag-palette">{["#2563EB", "#7C3AED", "#DB2777", "#DC2626", "#EA580C", "#CA8A04", "#16A34A", "#0891B2", "#475569"].map((renk) => <button aria-label={`Etiket rengi ${renk}`} className={yeniEtiketRengi === renk ? "is-selected" : ""} key={renk} onClick={() => setYeniEtiketRengi(renk)} style={{ backgroundColor: renk }} type="button" />)}<label className="cari-tag-palette__custom" title="Özel renk"><input type="color" value={yeniEtiketRengi} onChange={(e) => setYeniEtiketRengi(e.target.value.toUpperCase())} /><span>＋</span></label></div></div>
+                    <Button disabled={!yeniEtiket.trim()} size="sm" type="submit" variant="primary">Oluştur ve cariye ata</Button>
                   </form>
+                  {etiketler.length > 0 && <details className="cari-tag-library"><summary>Etiket kütüphanesini yönet <span>{etiketler.length}</span></summary><div>{etiketler.map((e) => <div className="cari-tag-library__row" key={e.id}><span className="cari-tag" style={{ backgroundColor: `${e.renk || "#64748B"}18`, borderColor: e.renk || "#64748B", color: e.renk || "#64748B" }}><i style={{ backgroundColor: e.renk || "#64748B" }} />{e.ad}</span><small>{e._count?.atamalar ?? 0} cari</small><Button aria-label={`${e.ad} etiketini sistemden sil`} size="sm" variant="danger" onClick={() => void etiketiSistemdenSil(e)}>Sil</Button></div>)}</div></details>}
                 </Card>
               </div>
             </div>
@@ -950,14 +1052,20 @@ export default function CariSayfasi() {
           )}
 
           {aktifSekme === "ekstre" && (
-            <Card aria-labelledby="cari-detay-tab-ekstre" id="cari-detay-panel-ekstre" role="tabpanel" tabIndex={0}>
-              <div className="card__title">📊 Cari Hesap Ekstresi</div>
+            <Card aria-labelledby="cari-detay-tab-ekstre" className="cari-statement" id="cari-detay-panel-ekstre" role="tabpanel" tabIndex={0}>
+              <div className="expense-entry__section-head"><span className="expense-entry__step">01</span><div><h3>Cari hesap ekstresi</h3><p>Tarih aralığına göre devir bakiyeli hesap dökümü</p></div></div>
+              <div className="cari-statement__toolbar">
+                <Field label="Başlangıç"><Input type="date" value={ekstreBaslangic} onChange={(e) => setEkstreBaslangic(e.target.value)} /></Field>
+                <Field label="Bitiş"><Input type="date" value={ekstreBitis} onChange={(e) => setEkstreBitis(e.target.value)} /></Field>
+                <Button disabled={ekstreIslemde} onClick={() => void ekstreFiltrele()}>Uygula</Button>
+                <div className="cari-statement__exports"><Button disabled={!detay} onClick={() => detay && void apiDosyaIndir(ekstreYolu("pdf"), `ekstre-${detay.kod}.pdf`)}>PDF indir</Button><Button disabled={!detay} onClick={() => detay && void apiDosyaIndir(ekstreYolu("excel"), `ekstre-${detay.kod}.xlsx`)}>Excel indir</Button></div>
+              </div>
+              <div className="cari-statement__mail"><Field label="Gönderilecek e-posta"><Input type="email" value={ekstreEposta} onChange={(e) => setEkstreEposta(e.target.value)} placeholder="muhasebe@firma.com" /></Field><Button variant="primary" disabled={!ekstreEposta || ekstreIslemde} onClick={() => void ekstreGonder()}>{ekstreIslemde ? "İşleniyor…" : "PDF + Excel e-posta gönder"}</Button></div>
               {!ekstre ? (
                 <p className="subtle" style={{ fontSize: "0.85rem" }}>Ekstre yükleniyor...</p>
-              ) : ekstre.satirlar.length === 0 ? (
-                <p className="subtle" style={{ fontSize: "0.85rem" }}>Cari hesaba ait herhangi bir hareket bulunmuyor.</p>
               ) : (
-                <TableWrap>
+                <><div className="cari-statement__summary"><div><span>Devir bakiyesi</span><strong>{tl(ekstre.devirBakiyesi)}</strong></div><div><span>Dönem borç</span><strong>{tl(ekstre.donemBorc)}</strong></div><div><span>Dönem alacak</span><strong>{tl(ekstre.donemAlacak)}</strong></div><div><span>Dönem sonu</span><strong>{tl(ekstre.donemSonuBakiyesi)}</strong></div></div>
+                {ekstre.satirlar.length === 0 ? <p className="empty">Seçilen tarih aralığında hareket bulunmuyor.</p> : <TableWrap>
                   <thead>
                     <tr>
                       <th>Tarih</th>
@@ -985,7 +1093,7 @@ export default function CariSayfasi() {
                       );
                     })}
                   </tbody>
-                </TableWrap>
+                </TableWrap>}</>
               )}
             </Card>
           )}
@@ -1011,15 +1119,14 @@ export default function CariSayfasi() {
                         <td>{a.adres}</td>
                         <td>{a.ilce ? `${a.ilce} / ` : ""}{a.il || "—"}</td>
                         <td className="mono">{a.postaKodu || "—"}</td>
-                        <td className="center">
-                          <button className="btn-link" style={{ color: "var(--danger)" }} onClick={() => adresSil(a.id)}>Sil</button>
-                        </td>
+                        <td className="center"><div className="row-tight"><Button size="sm" onClick={() => adresDuzenle(a)}>Düzenle</Button><Button size="sm" variant="danger" onClick={() => void adresSil(a.id)}>Sil</Button></div></td>
                       </tr>
                     ))}
                   </tbody>
                 </TableWrap>
               )}
-              <form onSubmit={adresEkle} className="stack" style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
+              <form onSubmit={adresEkle} className="stack cari-address-form" style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
+                <div className="between"><div><strong>{duzenlenenAdresId ? "Adresi düzenle" : "Yeni adres ekle"}</strong><p className="muted" style={{ fontSize: ".7rem", margin: ".2rem 0 0" }}>{duzenlenenAdresId ? "Seçili adres üzerindeki değişiklikleri kaydedin." : "Fatura, sevk, şube veya depo adresi tanımlayın."}</p></div>{duzenlenenAdresId && <Button size="sm" type="button" onClick={adresFormunuTemizle}>Vazgeç</Button>}</div>
                 <div className="row">
                   <FormAlan flex={1} min={150}>
                     <Field label="Adres Tipi">
@@ -1063,7 +1170,7 @@ export default function CariSayfasi() {
                     minLength={2}
                     maxLength={500}
                   />
-                  <Button size="sm" type="submit">➕ Ekle</Button>
+                  <Button size="sm" type="submit" variant="primary">{duzenlenenAdresId ? "Değişiklikleri kaydet" : "＋ Adres ekle"}</Button>
                 </div>
               </form>
             </Card>

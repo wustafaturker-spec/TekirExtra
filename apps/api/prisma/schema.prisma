@@ -85,6 +85,7 @@ model Tenant {
   masrafKategorileri    MasrafKategori[]
   masraflar             Masraf[]
   kiraSozlesmeleri      KiraSozlesme[]
+  epostaGonderimleri    EpostaGonderim[]
 
   @@map("tenants")
 }
@@ -265,6 +266,23 @@ model EpostaDogrulama {
   createdAt      DateTime @default(now()) @map("created_at")
 
   @@map("eposta_dogrulamalar")
+}
+
+model EpostaGonderim {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  alici       String
+  konu        String
+  tur         String   @default("genel")
+  durum       String
+  ekSayisi    Int      @default(0) @map("ek_sayisi")
+  hataMesaji  String?  @map("hata_mesaji")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@map("eposta_gonderimleri")
 }
 
 /// Modül başına ayarlar; zod şemasıyla doğrulanır (AYR-01/03, MIMARI §4.2).

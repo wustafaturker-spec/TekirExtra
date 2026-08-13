@@ -3,8 +3,10 @@ import { Module, OnModuleInit } from "@nestjs/common";
 import { registerEylemPolitikasi } from "../core/eylemler/eylem-kayit";
 import { CariController } from "./cari.controller";
 import { CariService } from "./cari.service";
+import { TenantModule } from "../tenant/tenant.module";
 
 @Module({
+  imports: [TenantModule],
   controllers: [CariController],
   providers: [CariService],
   exports: [CariService],

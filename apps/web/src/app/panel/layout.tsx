@@ -82,6 +82,7 @@ const MENU: MenuGrup[] = [
       { href: "/panel/ayarlar/pazaryerleri", ikon: "PA", baslik: "Pazaryeri Ayarları", eslesme: "tam" },
       { href: "/panel/ayarlar/pos", ikon: "POS", baslik: "Sanal POS Ayarları", eslesme: "tam" },
       { href: "/panel/ayarlar/sms", ikon: "SMS", baslik: "SMS Ayarları", eslesme: "tam" },
+      { href: "/panel/ayarlar/eposta", ikon: "EP", baslik: "E-posta Ayarları", eslesme: "tam" },
       { href: "/panel/ayarlar/banka-baglantilari", ikon: "BB", baslik: "Banka Bağlantıları", eslesme: "tam" },
       { href: "/panel/ayarlar/denetim", ikon: "Dİ", baslik: "Denetim İzi", eslesme: "tam" },
       { href: "/panel/ayarlar/kullanim", ikon: "KM", baslik: "Kullanım Metrikleri", eslesme: "tam" },

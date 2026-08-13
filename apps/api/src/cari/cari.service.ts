@@ -26,6 +26,7 @@ import { yaslandir } from "./yaslandirma";
 import { cariExcelOku, cariEkstreExcelYaz } from "../core/excel-yardimci";
 import { PdfService } from "../core/pdf/pdf.service";
 import { cariDavranisAnalizi } from "./cari-analiz";
+import { EpostaService } from "../tenant/eposta.service";
 import {
   kacis,
   paraBicim,
@@ -47,6 +48,7 @@ export class CariService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pdf: PdfService,
+    private readonly eposta: EpostaService,
   ) {}
 
   async listele(arama?: string, imlec?: string, adet = 50, tip?: string, durum?: string) {
@@ -403,6 +405,13 @@ export class CariService {
     );
   }
 
+  async adresGuncelle(cariId: string, adresId: string, girdi: z.infer<typeof adresSemasi>) {
+    const { tenantId } = aktifBaglam();
+    const adres = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariAdres.findFirst({ where: { id: adresId, cariId } }));
+    if (!adres) throw new NotFoundException("Adres bulunamadı");
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.cariAdres.update({ where: { id: adresId }, data: girdi }));
+  }
+
   async adresSil(cariId: string, adresId: string) {
     const { tenantId } = aktifBaglam();
     const silinen = await this.prisma.tenantIslem(tenantId, (tx) =>
@@ -599,7 +608,7 @@ export class CariService {
   async ekstre(cariId: string, baslangic?: string, bitis?: string) {
     const { tenantId } = aktifBaglam();
     const cari = await this.getir(cariId);
-    const hareketler = await this.prisma.tenantIslem(tenantId, (tx) =>
+    const [hareketler, oncekiHareketler] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
       tx.cariHareket.findMany({
         where: {
           cariId,
@@ -610,9 +619,13 @@ export class CariService {
         },
         orderBy: [{ tarih: "asc" }, { createdAt: "asc" }],
       }),
-    );
-    let bakiye = new Prisma.Decimal(0);
+      baslangic ? tx.cariHareket.findMany({ where: { cariId, tarih: { lt: new Date(baslangic) } }, select: { tip: true, tutarTry: true } }) : Promise.resolve([]),
+    ]));
+    const devirBakiyesi = oncekiHareketler.reduce((toplam, h) => h.tip === "borc" ? toplam.add(h.tutarTry) : toplam.sub(h.tutarTry), new Prisma.Decimal(0));
+    let bakiye = devirBakiyesi;
+    let donemBorc = new Prisma.Decimal(0); let donemAlacak = new Prisma.Decimal(0);
     const satirlar = hareketler.map((h) => {
+      if (h.tip === "borc") donemBorc = donemBorc.add(h.tutarTry); else donemAlacak = donemAlacak.add(h.tutarTry);
       bakiye =
         h.tip === "borc" ? bakiye.add(h.tutarTry) : bakiye.sub(h.tutarTry);
       return {
@@ -627,7 +640,7 @@ export class CariService {
         yuruyenBakiye: bakiye.toFixed(2),
       };
     });
-    return { cari: { id: cari.id, kod: cari.kod, unvan: cari.unvan }, satirlar };
+    return { cari: { id: cari.id, kod: cari.kod, unvan: cari.unvan, eposta: cari.eposta }, devirBakiyesi: devirBakiyesi.toFixed(2), donemBorc: donemBorc.toFixed(2), donemAlacak: donemAlacak.toFixed(2), donemSonuBakiyesi: bakiye.toFixed(2), satirlar };
   }
 
   // Yaşlandırma raporu RPR-06 araç setine taşındı: cari.yaslandirma (CARI-12).
@@ -778,13 +791,16 @@ export class CariService {
 
   async ekstreExcel(cariId: string, baslangic?: string, bitis?: string): Promise<Buffer> {
     const data = await this.ekstre(cariId, baslangic, bitis);
-    const mapped = data.satirlar.map((s) => ({
+    const hareketSatirlari = data.satirlar.map((s) => ({
       tarih: new Date(s.tarih),
       aciklama: s.aciklama || "",
       borc: s.tip === "borc" ? s.tutarTry : "",
       alacak: s.tip === "alacak" ? s.tutarTry : "",
       bakiye: s.yuruyenBakiye,
     }));
+    const mapped = baslangic
+      ? [{ tarih: new Date(baslangic), aciklama: "DEVİR BAKİYESİ", borc: Number(data.devirBakiyesi) > 0 ? data.devirBakiyesi : "", alacak: Number(data.devirBakiyesi) < 0 ? String(Math.abs(Number(data.devirBakiyesi))) : "", bakiye: data.devirBakiyesi }, ...hareketSatirlari]
+      : hareketSatirlari;
 
     return cariEkstreExcelYaz(data.cari, mapped);
   }
@@ -800,7 +816,8 @@ export class CariService {
       baslangic || bitis
         ? ` — dönem: ${baslangic ? tarihBicim(baslangic) : "…"} – ${bitis ? tarihBicim(bitis) : "…"}`
         : "";
-    const satirlar = data.satirlar
+    const devirSatiri = baslangic ? `<tr><td class="orta">${tarihBicim(baslangic)}</td><td><b>DEVİR BAKİYESİ</b></td><td></td><td></td><td class="sag"><b>${paraBicim(data.devirBakiyesi)}</b></td></tr>` : "";
+    const satirlar = devirSatiri + data.satirlar
       .map(
         (s) => `<tr>
   <td class="orta">${tarihBicim(s.tarih)}</td>
@@ -811,10 +828,7 @@ export class CariService {
 </tr>`,
       )
       .join("\n");
-    const sonBakiye =
-      data.satirlar.length > 0
-        ? data.satirlar[data.satirlar.length - 1].yuruyenBakiye
-        : "0";
+    const sonBakiye = data.donemSonuBakiyesi;
     const icerik = `<table class="veri">
   <thead><tr>
     <th>Tarih</th><th>Açıklama</th>
@@ -837,5 +851,15 @@ export class CariService {
         logoDataUri,
       }),
     );
+  }
+
+  async ekstreEpostaGonder(cariId: string, baslangic?: string, bitis?: string, alici?: string) {
+    const cari = await this.getir(cariId);
+    const hedef = alici ?? cari.eposta;
+    if (!hedef) throw new BadRequestException("Cari kartında e-posta adresi bulunmuyor");
+    const [pdf, excel] = await Promise.all([this.ekstrePdf(cariId, baslangic, bitis), this.ekstreExcel(cariId, baslangic, bitis)]);
+    const donem = baslangic || bitis ? `${baslangic ?? "başlangıç"} - ${bitis ?? "bugün"}` : "tüm dönem";
+    await this.eposta.ekliIletiGonder({ alici: hedef, konu: `${cari.unvan} cari hesap ekstresi`, metin: `Sayın Yetkili,\n\n${donem} cari hesap ekstreniz PDF ve Excel formatında ekte sunulmuştur.\n\nSaygılarımızla`, ekler: [{ dosyaAdi: `ekstre-${cari.kod}.pdf`, icerik: pdf, mime: "application/pdf" }, { dosyaAdi: `ekstre-${cari.kod}.xlsx`, icerik: excel, mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }] });
+    return { mesaj: `Ekstre ${hedef} adresine gönderildi` };
   }
 }

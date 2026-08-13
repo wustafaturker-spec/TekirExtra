@@ -1486,6 +1486,73 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 .document-preview__unsupported strong { font-size: .9rem; }
 .document-preview__unsupported p { color: var(--text-muted); font-size: .75rem; margin: .4rem 0 1rem; }
 
+/* ─── Cari finans ve ekstre çalışma alanı ───────────────────────────────── */
+.cari-finance-card { background: linear-gradient(145deg, color-mix(in srgb, var(--accent-soft) 25%, var(--surface)), var(--surface) 45%); }
+.cari-risk-summary { display: grid; gap: .6rem; grid-template-columns: repeat(3, 1fr); margin: 1rem 0; }
+.cari-risk-summary > div { background: var(--surface); border: 1px solid var(--border); border-radius: .65rem; display: grid; gap: .3rem; padding: .75rem; }
+.cari-risk-summary span { color: var(--text-muted); font-size: .66rem; }
+.cari-risk-summary strong { font-size: .95rem; letter-spacing: -.02em; }
+.cari-risk-alert { background: var(--danger-soft); border-left: 3px solid var(--danger); border-radius: .4rem; color: var(--danger); font-size: .72rem; margin-bottom: .8rem; padding: .6rem .7rem; }
+.cari-finance-form { align-items: end; border-top: 1px solid var(--border); display: grid; gap: .7rem; grid-template-columns: repeat(2, minmax(0,1fr)); padding-top: .9rem; }
+.cari-finance-form__meta { color: var(--text-muted); display: flex; flex-wrap: wrap; font-size: .65rem; gap: .4rem .9rem; grid-column: 1 / -1; }
+.cari-finance-form__meta b { color: var(--text); margin-left: .2rem; }
+.cari-finance-form > .btn { justify-self: start; }
+.cari-identity-card { margin: 1rem 0; overflow: hidden; }
+.cari-identity-card > .expense-entry__section-head { background: linear-gradient(145deg, color-mix(in srgb, var(--accent-soft) 38%, var(--surface)), var(--surface)); margin: -1.1rem -1.1rem 1rem; padding: 1rem 1.1rem; }
+.cari-identity-form { display: grid; gap: .7rem; grid-template-columns: repeat(3, minmax(0,1fr)); }
+.cari-identity-form__actions { align-items: center; border-top: 1px solid var(--border); color: var(--text-muted); display: flex; font-size: .7rem; grid-column: 1 / -1; justify-content: space-between; padding-top: .8rem; }
+.cari-identity-form__actions b { color: var(--text); font-family: var(--font-mono); margin-left: .25rem; }
+.cari-tag-studio { overflow: hidden; }
+.cari-tag-studio > .expense-entry__section-head { background: linear-gradient(145deg, color-mix(in srgb, var(--accent-soft) 38%, var(--surface)), var(--surface)); margin: -1.1rem -1.1rem 1rem; padding: 1rem 1.1rem; }
+.cari-tag-studio__assigned { align-items: center; display: flex; flex-wrap: wrap; gap: .45rem; min-height: 2rem; }
+.cari-tag-studio__label { color: var(--text-muted); display: block; font-size: .65rem; font-weight: 700; letter-spacing: .035em; margin-bottom: .35rem; text-transform: uppercase; width: 100%; }
+.cari-tag { align-items: center; border: 1px solid; border-radius: 999px; display: inline-flex; font-size: .72rem; font-weight: 700; gap: .35rem; line-height: 1; padding: .38rem .52rem; white-space: nowrap; }
+.cari-tag i { border-radius: 50%; height: .42rem; width: .42rem; }
+.cari-tag button { background: transparent; border: 0; color: currentColor; cursor: pointer; font-size: 1rem; line-height: .6; opacity: .65; padding: 0 0 0 .15rem; }
+.cari-tag button:hover { opacity: 1; }
+.cari-tag-studio__assign { border-bottom: 1px solid var(--border); display: grid; gap: .45rem; grid-template-columns: 1fr auto; margin: .8rem 0; padding-bottom: .8rem; }
+.cari-tag-designer { background: var(--surface-2); border: 1px solid var(--border); border-radius: .7rem; display: grid; gap: .75rem; padding: .8rem; }
+.cari-tag-designer__head { align-items: center; display: flex; gap: .65rem; justify-content: space-between; }
+.cari-tag-designer__head > div { display: grid; gap: .2rem; }
+.cari-tag-designer__head strong { font-size: .8rem; }
+.cari-tag-designer__head small { color: var(--text-muted); font-size: .64rem; }
+.cari-tag--preview { max-width: 48%; overflow: hidden; text-overflow: ellipsis; }
+.cari-tag-palette { align-items: center; display: flex; flex-wrap: wrap; gap: .42rem; }
+.cari-tag-palette > button, .cari-tag-palette__custom { border: 2px solid var(--surface); border-radius: 50%; box-shadow: 0 0 0 1px var(--border); cursor: pointer; height: 1.45rem; padding: 0; transition: transform .15s, box-shadow .15s; width: 1.45rem; }
+.cari-tag-palette > button:hover { transform: scale(1.12); }
+.cari-tag-palette > button.is-selected { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); transform: scale(.9); }
+.cari-tag-palette__custom { align-items: center; background: conic-gradient(#ef4444,#eab308,#22c55e,#06b6d4,#3b82f6,#a855f7,#ef4444); color: white; display: inline-flex; font-size: 1rem; justify-content: center; overflow: hidden; position: relative; }
+.cari-tag-palette__custom input { inset: 0; opacity: 0; position: absolute; }
+.cari-tag-library { border-top: 1px solid var(--border); margin-top: .8rem; padding-top: .7rem; }
+.cari-tag-library summary { color: var(--text-muted); cursor: pointer; font-size: .7rem; font-weight: 700; }
+.cari-tag-library summary span { background: var(--surface-2); border-radius: 999px; margin-left: .3rem; padding: .12rem .38rem; }
+.cari-tag-library > div { display: grid; gap: .4rem; margin-top: .65rem; }
+.cari-tag-library__row { align-items: center; display: grid; gap: .45rem; grid-template-columns: minmax(0,1fr) auto auto; }
+.cari-tag-library__row .cari-tag { justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.cari-tag-library__row small { color: var(--text-muted); font-size: .65rem; }
+.cari-statement { overflow: hidden; }
+.cari-statement > .expense-entry__section-head { background: linear-gradient(145deg, color-mix(in srgb, var(--accent-soft) 38%, var(--surface)), var(--surface)); margin: -1.1rem -1.1rem 1rem; padding: 1rem 1.1rem; }
+.cari-statement__toolbar { align-items: end; display: grid; gap: .65rem; grid-template-columns: 170px 170px auto 1fr; }
+.cari-statement__exports { display: flex; gap: .45rem; justify-content: flex-end; }
+.cari-statement__mail { align-items: end; background: var(--surface-2); border: 1px solid var(--border); border-radius: .65rem; display: grid; gap: .65rem; grid-template-columns: minmax(220px,1fr) auto; margin: .8rem 0; padding: .75rem; }
+.cari-statement__summary { display: grid; gap: .55rem; grid-template-columns: repeat(4,1fr); margin: .8rem 0; }
+.cari-statement__summary > div { border: 1px solid var(--border); border-radius: .6rem; display: grid; gap: .3rem; padding: .7rem; }
+.cari-statement__summary span { color: var(--text-muted); font-size: .65rem; }
+.cari-statement__summary strong { font-size: .9rem; }
+.email-settings { display: grid; gap: 1rem; margin: 0 auto; max-width: 1100px; }
+.email-settings__status { display: grid; gap: .8rem; grid-template-columns: repeat(2,1fr); }
+.email-settings__status .card { display: grid; gap: .4rem; }
+.email-settings__status span, .email-settings__status small { color: var(--text-muted); font-size: .7rem; }
+.email-settings__status strong { font-size: 1.25rem; }
+.email-settings__card { overflow: hidden; }
+.email-settings__card > .expense-entry__section-head { background: linear-gradient(145deg, color-mix(in srgb, var(--accent-soft) 38%, var(--surface)), var(--surface)); margin: -1.1rem -1.1rem 1rem; padding: 1rem 1.1rem; }
+.email-settings__form { display: grid; gap: .75rem; grid-template-columns: repeat(3,minmax(0,1fr)); }
+.email-settings__actions { border-top: 1px solid var(--border); grid-column: 1 / -1; padding-top: .8rem; }
+.email-settings__history-head { padding: 1rem 1.1rem; }
+.email-settings__history-head h3, .email-settings__history-head p { margin: 0; }
+.email-settings__history-head p { color: var(--text-muted); font-size: .7rem; margin-top: .2rem; }
+.email-settings__error { color: var(--danger); display: block; margin-top: .2rem; max-width: 420px; }
+
 /* ─── Yönetim kokpiti ──────────────────────────────────────────────────── */
 .dashboard { display: grid; gap: 2rem; }
 .dashboard h1, .dashboard h2, .dashboard p { margin: 0; }
@@ -1603,6 +1670,12 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
   .cheque-row__direction { grid-column: 2; text-align: left; }
   .cheque-row__due { grid-column: 3; grid-row: 1; }
   .cheque-row > em { display: none; }
+  .cari-statement__toolbar { grid-template-columns: 1fr 1fr; }
+  .cari-statement__exports { grid-column: 1 / -1; justify-content: stretch; }
+  .cari-statement__exports .btn { flex: 1; }
+  .cari-statement__summary { grid-template-columns: 1fr 1fr; }
+  .email-settings__form { grid-template-columns: 1fr 1fr; }
+  .cari-identity-form { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 480px) {
   .dashboard-kpis, .cheque-periods { grid-template-columns: 1fr; }
@@ -1617,6 +1690,11 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
   .document-preview > header { align-items: flex-start; }
   .document-preview > header > div:first-child { max-width: 52vw; }
   .document-preview__body { padding: .5rem; }
+  .cari-risk-summary, .cari-finance-form, .cari-identity-form, .cari-tag-studio__assign, .cari-statement__toolbar, .cari-statement__mail, .cari-statement__summary { grid-template-columns: 1fr; }
+  .cari-tag-designer__head { align-items: flex-start; flex-direction: column; }
+  .cari-tag--preview { max-width: 100%; }
+  .email-settings__status, .email-settings__form { grid-template-columns: 1fr; }
+  .cari-statement__exports { grid-column: auto; }
 }
 .document-attachment small { color: var(--muted); margin-top: .15rem; }
 .document-attachments__saved { display: grid; gap: .65rem; margin-top: 1.25rem; }

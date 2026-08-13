@@ -28,6 +28,7 @@ import {
   crmEtkilesimSemasi,
   crmGorevDurumSemasi,
   crmGorevSemasi,
+  ekstreEpostaSemasi,
 } from "./cari.semalar";
 import { sayfaAdedi } from "../core/sayfalama";
 
@@ -123,6 +124,14 @@ export class CariController {
       );
     }
     return this.cariService.adresEkle(id, ayristirma.data);
+  }
+
+  @Patch(":id/adresler/:adresId")
+  @Roller("muhasebe")
+  async adresGuncelle(@Param("id") id: string, @Param("adresId") adresId: string, @Body() govde: unknown) {
+    const ayristirma = adresSemasi.safeParse(govde);
+    if (!ayristirma.success) throw new BadRequestException(ayristirma.error.issues.map((s) => s.message).join("; "));
+    return this.cariService.adresGuncelle(id, adresId, ayristirma.data);
   }
 
   @Delete(":id/adresler/:adresId")
@@ -284,5 +293,13 @@ export class CariController {
       `attachment; filename=ekstre-${id}.xlsx`,
     );
     res.send(buffer);
+  }
+
+  @Post(":id/ekstre/eposta")
+  @Roller("muhasebe", "satis")
+  async ekstreEposta(@Param("id") id: string, @Body() govde: unknown) {
+    const sonuc = ekstreEpostaSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((s) => s.message).join("; "));
+    return this.cariService.ekstreEpostaGonder(id, sonuc.data.baslangic, sonuc.data.bitis, sonuc.data.alici);
   }
 }
