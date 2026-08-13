@@ -9,6 +9,8 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler } from "../core/eylemler/eylem-kayit";
 import { PrismaService } from "../core/prisma.service";
+import { PdfService } from "../core/pdf/pdf.service";
+import { makbuzPdfHtml } from "./makbuz-pdf";
 import type {
   bankaHesapGuncelleSemasi,
   bankaHesapOlusturSemasi,
@@ -32,7 +34,7 @@ export interface KasaBankaBakiye {
 
 @Injectable()
 export class KasaBankaService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly pdf: PdfService) {}
 
   // ─── KASA YÖNETİMİ (KSB-01/04) ─────────────────────────────────────────────
 
@@ -335,6 +337,17 @@ export class KasaBankaService {
     });
   }
 
+  async makbuzPdf(id: string): Promise<{ buffer: Buffer; dosyaAdi: string }> {
+    const { tenantId } = aktifBaglam();
+    const [hareket, firma] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
+      tx.kasaBankaHareket.findUnique({ where: { id }, include: { kasa: true, bankaHesap: true, posHesap: true, cari: { select: { kod: true, unvan: true } }, fatura: { select: { no: true } } } }),
+      tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true } }),
+    ]));
+    if (!hareket || !["tahsilat", "tediye"].includes(hareket.tip)) throw new NotFoundException("Tahsilat/ödeme makbuzu bulunamadı");
+    const logo = await this.pdf.firmaLogoDataUri();
+    return { buffer: await this.pdf.htmlToPdf(makbuzPdfHtml(hareket, firma, logo)), dosyaAdi: `${hareket.tip}-makbuzu-${hareket.id.slice(0, 8)}.pdf` };
+  }
+
   // ─── HESAPLAR ARASI VİRMAN (KSB-03) ───────────────────────────────────────
 
   async virmanEkle(girdi: z.infer<typeof virmanOlusturSemasi>) {
@@ -457,12 +470,19 @@ export class KasaBankaService {
     const kur = D(girdi.kur);
     const tutarTry = tutar.mul(kur).toDecimalPlaces(2);
 
+    const ayniPortfoy = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.cekSenet.findFirst({ where: { portfoyNo: girdi.portfoyNo }, select: { id: true } }),
+    );
+    if (ayniPortfoy) throw new BadRequestException(`“${girdi.portfoyNo}” portföy numarası zaten kullanılıyor`);
+
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const CS = await tx.cekSenet.create({
         data: {
           tenantId,
           tur: girdi.tur,
           portfoyNo: girdi.portfoyNo,
+          cekNo: girdi.cekNo,
+          islemTarihi: new Date(girdi.islemTarihi),
           vadeTarihi: new Date(girdi.vadeTarihi),
           tutar,
           dovizCinsi: girdi.dovizCinsi,
@@ -493,7 +513,7 @@ export class KasaBankaService {
             dovizCinsi: girdi.dovizCinsi,
             kur,
             tutarTry,
-            tarih: new Date(),
+            tarih: new Date(girdi.islemTarihi),
             aciklama: `${girdi.tur.toUpperCase()} ${verilen ? "verildi" : "alımı"} (Portföy No: ${girdi.portfoyNo})`,
             kaynakTur: "cek_senet",
             kaynakRef: CS.id,

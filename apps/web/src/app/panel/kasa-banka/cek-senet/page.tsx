@@ -37,6 +37,8 @@ interface CekSenet {
   tur: "cek" | "senet";
   yon: "alinan" | "verilen";
   portfoyNo: string;
+  cekNo: string | null;
+  islemTarihi: string;
   vadeTarihi: string;
   tutar: string;
   dovizCinsi: string;
@@ -288,7 +290,7 @@ export default function CekSenetSayfasi() {
         <TableWrap>
           <thead>
             <tr>
-              <th>Portföy No</th>
+              <th>Portföy / Çek No</th>
               <th>Tür</th>
               <th>{yon === "alinan" ? "Borçlu" : "Lehtar"}</th>
               <th>Vade</th>
@@ -311,7 +313,7 @@ export default function CekSenetSayfasi() {
                 const gecikti = acik && kalan < 0;
                 return (
                   <tr key={k.id}>
-                    <td className="mono">{k.portfoyNo}</td>
+                    <td><div className="mono">{k.portfoyNo}</div>{k.cekNo && <div className="cell-entity__meta">Çek no: {k.cekNo}</div>}<div className="cell-entity__meta">İşlem: {k.islemTarihi.slice(0, 10)}</div></td>
                     <td>
                       <Badge variant={k.tur === "cek" ? "info" : "neutral"}>
                         {k.tur === "cek" ? "🧾 Çek" : "📜 Senet"}
@@ -414,6 +416,8 @@ function CekSenetFormu({
   const verilen = yon === "verilen";
   const [tur, setTur] = useState<"cek" | "senet">("cek");
   const [portfoyNo, setPortfoyNo] = useState("");
+  const [cekNo, setCekNo] = useState("");
+  const [islemTarihi, setIslemTarihi] = useState(bugun());
   const [vadeTarihi, setVadeTarihi] = useState(bugun());
   const [tutar, setTutar] = useState("");
   const [dovizCinsi, setDovizCinsi] = useState("TRY");
@@ -432,6 +436,8 @@ function CekSenetFormu({
     const ok = await onKaydet({
       tur,
       portfoyNo: portfoyNo.trim(),
+      cekNo: tur === "cek" ? bosNull(cekNo) : null,
+      islemTarihi,
       vadeTarihi,
       tutar,
       dovizCinsi,
@@ -446,6 +452,7 @@ function CekSenetFormu({
     });
     if (ok) {
       setPortfoyNo("");
+      setCekNo("");
       setTutar("");
       setBorclu("");
       setKesideYeri("");
@@ -473,6 +480,16 @@ function CekSenetFormu({
         <div style={{ flex: 1, minWidth: 160 }}>
           <Field label="Portföy No *">
             <Input value={portfoyNo} onChange={(e) => setPortfoyNo(e.target.value)} placeholder="CK-2026-001" />
+          </Field>
+        </div>
+        {tur === "cek" && <div style={{ flex: 1, minWidth: 160 }}>
+          <Field label="Çek Numarası *">
+            <Input value={cekNo} onChange={(e) => setCekNo(e.target.value)} placeholder="Çek üzerindeki seri/no" />
+          </Field>
+        </div>}
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <Field label={verilen ? "Veriliş Tarihi *" : "Alınış Tarihi *"}>
+            <Input type="date" value={islemTarihi} onChange={(e) => setIslemTarihi(e.target.value)} />
           </Field>
         </div>
         <div style={{ flex: 1, minWidth: 160 }}>
@@ -584,6 +601,8 @@ function CekSenetFormu({
           onClick={kaydet}
           disabled={
             portfoyNo.trim() === "" ||
+            (tur === "cek" && cekNo.trim() === "") ||
+            !islemTarihi ||
             borclu.trim().length < 2 ||
             !tutar ||
             Number(tutar) <= 0 ||

@@ -1547,6 +1547,8 @@ model CekSenet {
   tur        CekSenetTur
   yon        CekSenetYon   @default(alinan)
   portfoyNo  String        @map("portfoy_no")
+  cekNo      String?       @map("cek_no")
+  islemTarihi DateTime     @default(now()) @map("islem_tarihi") @db.Date
   vadeTarihi DateTime      @map("vade_tarihi") @db.Date
   tutar      Decimal       @db.Decimal(15, 2)
   dovizCinsi DovizCinsi    @default(TRY) @map("doviz_cinsi")

@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, apiDosyaIndir } from "@/lib/api";
-import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyalari";
+import { api } from "@/lib/api";
+import { BelgeDosyalari, belgeDosyalariniYukle, KayitliEkSatiri, type KayitliEk } from "@/components/belge-dosyalari";
 import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
 import { Alert, Button } from "@/components/ui";
 
-interface Ek { id: string; dosyaAdi: string; mimeTip: string; boyut: number; createdAt: string }
+type Ek = KayitliEk;
 
 export function FaturaEkPaneli({ faturaId, baslik, onKapat }: { faturaId: string; baslik: string; onKapat: () => void }) {
   const [ekler, setEkler] = useState<Ek[]>([]);
@@ -38,11 +38,7 @@ export function FaturaEkPaneli({ faturaId, baslik, onKapat }: { faturaId: string
     <Button variant="primary" disabled={!dosyalar.length || yukleniyor} onClick={() => void ekle()}>{yukleniyor ? "Yükleniyor..." : "Seçilen dosyaları yükle"}</Button>
     <div className="document-attachments__saved">
       <h4>Kayıtlı dosyalar</h4>
-      {ekler.length === 0 ? <p className="muted">Bu faturaya henüz dosya eklenmemiş.</p> : ekler.map((ek) => <div className="document-attachment" key={ek.id}>
-        <span aria-hidden="true">📎</span>
-        <div><strong>{ek.dosyaAdi}</strong><small>{(ek.boyut / 1024).toLocaleString("tr-TR", { maximumFractionDigits: 0 })} KB · {new Date(ek.createdAt).toLocaleDateString("tr-TR")}</small></div>
-        <div className="row-tight"><Button size="sm" onClick={() => void apiDosyaIndir(`/ekler/${ek.id}/indir`, ek.dosyaAdi)}>İndir</Button><Button variant="danger" size="sm" onClick={() => void sil(ek)}>Sil</Button></div>
-      </div>)}
+      {ekler.length === 0 ? <p className="muted">Bu faturaya henüz dosya eklenmemiş.</p> : ekler.map((ek) => <KayitliEkSatiri ek={ek} key={ek.id} onSil={(secili) => void sil(secili)} />)}
     </div>
   </HizliKayitPaneli>;
 }

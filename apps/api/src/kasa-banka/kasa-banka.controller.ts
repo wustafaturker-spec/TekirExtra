@@ -9,9 +9,11 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UploadedFile,
   UseInterceptors,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { EkstreSatirDurum } from "@prisma/client";
 import { Roller } from "../auth/roller.decorator";
@@ -202,6 +204,14 @@ export class KasaBankaController {
       );
     }
     return this.service.hareketEkle(ayristirma.data);
+  }
+
+  @Get("hareketler/:id/makbuz")
+  async makbuz(@Param("id") id: string, @Res() res: Response) {
+    const pdf = await this.service.makbuzPdf(id);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${pdf.dosyaAdi}"`);
+    res.send(pdf.buffer);
   }
 
   @Post("virman")

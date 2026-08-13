@@ -125,6 +125,8 @@ export const cekSenetOlusturSemasi = z
     /** alinan = müşteri çeki (varlık); verilen = kendi çekimiz (borç). */
     yon: z.enum(["alinan", "verilen"]).default("alinan"),
     portfoyNo: z.string().min(1).max(50),
+    cekNo: z.string().min(1).max(50).optional().nullable(),
+    islemTarihi: z.string().date("Geçersiz işlem tarihi (YYYY-MM-DD)"),
     vadeTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)"),
     tutar: pozitifOndalik,
     dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
@@ -143,6 +145,10 @@ export const cekSenetOlusturSemasi = z
   .refine((d) => d.yon !== "verilen" || !!d.cariId, {
     message: "Verilen çek/senet için lehtar cari seçilmelidir",
     path: ["cariId"],
+  })
+  .refine((d) => d.tur !== "cek" || !!d.cekNo, {
+    message: "Çek numarası zorunludur",
+    path: ["cekNo"],
   });
 
 export const cekSenetGuncelleSemasi = z

@@ -122,3 +122,15 @@ export async function apiDosyaIndir(yol: string, dosyaAdi: string): Promise<void
   baglanti.href = adres; baglanti.download = dosyaAdi; baglanti.click();
   URL.revokeObjectURL(adres);
 }
+
+/** Kimlik doğrulamalı dosyayı ekran içi kullanım için Blob olarak döndürür. */
+export async function apiDosyaBlob(yol: string): Promise<Blob> {
+  let yanit = await istekYap(yol, {}, tokenAl());
+  if (yanit.status === 401) {
+    const yeniToken = await accessTokenYenile();
+    if (!yeniToken) return giriseYonlendir();
+    yanit = await istekYap(yol, {}, yeniToken);
+  }
+  if (!yanit.ok) throw new ApiHata("Dosya görüntülenemedi", yanit.status);
+  return yanit.blob();
+}

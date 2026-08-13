@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
+import { api, apiDosyaIndir, tokenAl, tumSayfalariAl } from "@/lib/api";
 import {
   Alert,
   Badge,
@@ -193,7 +193,7 @@ export default function KasaBankaSayfasi() {
     }
 
     try {
-      await api("/kasa-banka/hareketler", {
+      const hareket = await api<{ id: string }>("/kasa-banka/hareketler", {
         method: "POST",
         body: JSON.stringify({
           kasaId,
@@ -208,7 +208,7 @@ export default function KasaBankaSayfasi() {
         }),
       });
 
-      setBasari("İşlem başarıyla kaydedildi.");
+      setBasari(`${hareketTip === "tahsilat" ? "Tahsilat" : "Ödeme"} başarıyla kaydedildi. Makbuz son hareketler tablosundan indirilebilir.`);
       setHareketFormAcik(false);
       setHareketTutar("");
       setHareketAciklama("");
@@ -482,11 +482,12 @@ export default function KasaBankaSayfasi() {
               <th>Cari Muhatap</th>
               <th>Açıklama</th>
               <th className="num">Tutar</th>
+              <th className="center">Makbuz</th>
             </tr>
           </thead>
           <tbody>
             {hareketler.length === 0 ? (
-              <tr><td colSpan={6} className="empty">Henüz bir kasa/banka hareketi girilmemiş.</td></tr>
+              <tr><td colSpan={7} className="empty">Henüz bir kasa/banka hareketi girilmemiş.</td></tr>
             ) : (
               hareketler.map((h) => {
                 const hesapAd = h.kasa?.ad ?? h.bankaHesap?.ad ?? "—";
@@ -505,6 +506,7 @@ export default function KasaBankaSayfasi() {
                     <td className={`num money ${isTahsilat ? "pos" : "neg"}`}>
                       {isTahsilat ? "+" : "-"}{para(h.tutar, h.dovizCinsi)}
                     </td>
+                    <td className="center"><Button size="sm" onClick={() => void apiDosyaIndir(`/kasa-banka/hareketler/${h.id}/makbuz`, `${isTahsilat ? "tahsilat" : "odeme"}-makbuzu.pdf`).catch((e) => setHata(e instanceof Error ? e.message : "Makbuz indirilemedi"))}>PDF Makbuz</Button></td>
                   </tr>
                 );
               })
