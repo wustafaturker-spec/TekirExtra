@@ -56,11 +56,12 @@ function giriseYonlendir(): Promise<never> {
 }
 
 async function istekYap(yol: string, secenekler: RequestInit, token: string | null): Promise<Response> {
+  const formVerisi = typeof FormData !== "undefined" && secenekler.body instanceof FormData;
   return fetch(`${API_URL}${yol}`, {
     ...secenekler,
     credentials: "include",
     headers: {
-      "Content-Type": "application/json",
+      ...(!formVerisi ? { "Content-Type": "application/json" } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...secenekler.headers,
     },
@@ -105,4 +106,19 @@ export async function tumSayfalariAl<T>(yol: string, adet = 200): Promise<T[]> {
     if (imlec) gorulenImlecler.add(imlec);
   } while (imlec);
   return kayitlar;
+}
+
+/** Kimlik doğrulamalı dosya yanıtını indirir; JSON bekleyen api()'den ayrıdır. */
+export async function apiDosyaIndir(yol: string, dosyaAdi: string): Promise<void> {
+  let yanit = await istekYap(yol, {}, tokenAl());
+  if (yanit.status === 401) {
+    const yeniToken = await accessTokenYenile();
+    if (!yeniToken) return giriseYonlendir();
+    yanit = await istekYap(yol, {}, yeniToken);
+  }
+  if (!yanit.ok) throw new ApiHata("Dosya indirilemedi", yanit.status);
+  const adres = URL.createObjectURL(await yanit.blob());
+  const baglanti = document.createElement("a");
+  baglanti.href = adres; baglanti.download = dosyaAdi; baglanti.click();
+  URL.revokeObjectURL(adres);
 }

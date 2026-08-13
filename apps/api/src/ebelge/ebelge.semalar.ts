@@ -22,3 +22,13 @@ export const gelenYanitSemasi = z
     message: "Ret yanıtı için gerekçe zorunludur",
     path: ["gerekce"],
   });
+
+export const earsivIptalSemasi = z.object({
+  iptalTarihi: z.coerce.date(),
+  sube: z.string().max(50).optional(),
+});
+
+export const earsivRaporAralikSemasi = z.object({
+  baslangic: z.coerce.date(),
+  bitis: z.coerce.date(),
+}).refine((g) => g.baslangic <= g.bitis, { message: "Başlangıç tarihi bitişten sonra olamaz" });

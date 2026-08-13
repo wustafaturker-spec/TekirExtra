@@ -1,0 +1,1 @@
+ALTER TYPE "EkSahipTur" ADD VALUE IF NOT EXISTS 'belge';

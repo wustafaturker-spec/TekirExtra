@@ -1,16 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { api, ApiHata, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import { AramaSecici } from "@/components/arama-secici";
 import { DepoSecici } from "@/components/depo-secici";
 import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
+import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyalari";
 import { faturaHesapla, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
   Button,
+  ButtonLabel,
   Card,
   Field,
   Input,
@@ -105,6 +108,7 @@ function durumRozet(durum: string) {
 }
 
 export default function BelgelerSayfasi() {
+  const pathname = usePathname(); const router = useRouter(); const yeniSayfasi = pathname.endsWith("/yeni");
   const [belgeler, setBelgeler] = useState<Belge[]>([]);
   const [cariler, setCariler] = useState<Cari[]>([]);
   const [stoklar, setStoklar] = useState<Stok[]>([]);
@@ -115,7 +119,8 @@ export default function BelgelerSayfasi() {
   const [tarihBitis, setTarihBitis] = useState("");
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
-  const [formAcik, setFormAcik] = useState(false);
+  const [formAcik, setFormAcik] = useState(yeniSayfasi);
+  useEffect(() => { if (yeniSayfasi) setFormAcik(true); }, [yeniSayfasi]);
   const [detay, setDetay] = useState<BelgeDetay | null>(null);
   const [secili, setSecili] = useState<Set<string>>(new Set());
   const [topluFaturaYukleniyor, setTopluFaturaYukleniyor] = useState(false);
@@ -140,6 +145,7 @@ export default function BelgelerSayfasi() {
   const [depoId, setDepoId] = useState("");
   const [tarih, setTarih] = useState(new Date().toISOString().substring(0, 10));
   const [gecerlilik, setGecerlilik] = useState("");
+  const [dosyalar, setDosyalar] = useState<File[]>([]);
   const [satirlar, setSatirlar] = useState<BelgeSatirForm[]>([
     { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 },
   ]);
@@ -298,7 +304,7 @@ export default function BelgelerSayfasi() {
     if (!cariId) { setHata("Lütfen bir cari hesap seçin."); return; }
     if (satirlar.some((s) => !s.stokId)) { setHata("Lütfen tüm satırlarda ürün/hizmet seçin."); return; }
     try {
-      await api("/belgeler", {
+      const kayit = await api<Belge>("/belgeler", {
         method: "POST",
         body: JSON.stringify({
           tur,
@@ -320,10 +326,12 @@ export default function BelgelerSayfasi() {
           })),
         }),
       });
+      if (dosyalar.length > 0) await belgeDosyalariniYukle("belge", kayit.id, dosyalar);
       setBasari(`${TUR_ADI[tur]} taslağı oluşturuldu.`);
       setFormAcik(false);
       setCariId("");
       setGecerlilik("");
+      setDosyalar([]);
       setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 }]);
       void yukle();
     } catch (h) {
@@ -504,7 +512,7 @@ export default function BelgelerSayfasi() {
   }
 
   return (
-    <div>
+    <div className={yeniSayfasi ? "create-page" : undefined}>
       <PageHeader
         title={
           yonBaglami === "satis"
@@ -526,9 +534,7 @@ export default function BelgelerSayfasi() {
                 <Button variant="primary" disabled={topluFaturaYukleniyor} onClick={topluFatura}>{topluFaturaYukleniyor ? "Fatura oluşturuluyor…" : `🧾 Seçilenleri Faturala (${secili.size})`}</Button>
               </>
             )}
-            <Button variant={secili.size > 0 ? "ghost" : "primary"} onClick={() => setFormAcik(!formAcik)}>
-              {formAcik ? "Vazgeç" : "➕ Yeni Belge"}
-            </Button>
+            {yeniSayfasi ? <Button onClick={() => router.push("/panel/belgeler")}>Listeye dön</Button> : <ButtonLabel as="a" variant={secili.size > 0 ? "ghost" : "primary"} href="/panel/belgeler/yeni">➕ Yeni Belge</ButtonLabel>}
           </>
         }
       />
@@ -639,6 +645,10 @@ export default function BelgelerSayfasi() {
                 <div className="document-total-line is-grand"><span>Genel toplam</span><span>{tl(sonuc.genelToplam)}</span></div>
               </div>
             </div>
+          </div>
+
+          <div className="document-editor__section">
+            <BelgeDosyalari dosyalar={dosyalar} onChange={setDosyalar} />
           </div>
 
           <div className="document-editor__actions"><Button variant="primary" onClick={kaydet}>Taslak belgeyi kaydet</Button></div>

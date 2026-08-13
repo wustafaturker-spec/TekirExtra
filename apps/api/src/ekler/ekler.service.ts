@@ -52,9 +52,12 @@ export class EklerService {
       cari: () => tx.cariHesap.findUnique({ where: { id: sahipId } }),
       stok: () => tx.stokKart.findUnique({ where: { id: sahipId } }),
       fatura: () => tx.fatura.findUnique({ where: { id: sahipId } }),
+      belge: () => tx.belge.findUnique({ where: { id: sahipId } }),
       kasa_banka: () =>
         tx.kasaBankaHareket.findUnique({ where: { id: sahipId } }),
       firma: () => tx.tenant.findUnique({ where: { id: sahipId } }),
+      masraf: () => tx.masraf.findUnique({ where: { id: sahipId } }),
+      kira_sozlesme: () => tx.kiraSozlesme.findUnique({ where: { id: sahipId } }),
     }[sahipTur];
     if (!(await sorgu())) {
       throw new NotFoundException("Ekin bağlanacağı kayıt bulunamadı");

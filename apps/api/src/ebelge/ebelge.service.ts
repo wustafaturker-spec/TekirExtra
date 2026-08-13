@@ -100,6 +100,7 @@ export class EbelgeService {
         belgeNo: fatura.no || "TASLAK",
         xml,
         tur: tur === "efatura" ? "efatura" : "earsiv",
+        aliciPostaKutusu: mukellefiyet.postaKutusu,
       });
 
       // 7. e-Belge Kaydını güncelle veya oluştur (durum: iletildi/hata)
@@ -520,7 +521,10 @@ export class EbelgeService {
     const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
     const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
 
-    const sonuc = await adapter.yanitGonder(cfg, kayit.uuid, girdi.yanit);
+    const sonuc = await adapter.yanitGonder(cfg, kayit.uuid, girdi.yanit, girdi.gerekce ?? undefined, {
+      gonderenVkn: kayit.gonderenVkn || "",
+      xml: kayit.xmlIcerik || "",
+    });
     if (!sonuc.basarili) {
       throw new BadRequestException(
         sonuc.hataMesaji ?? "Yanıt entegratöre iletilemedi",
@@ -538,6 +542,45 @@ export class EbelgeService {
         },
       }),
     );
+  }
+
+  async earsivIptalBildir(faturaId: string, girdi: { iptalTarihi: Date; sube?: string }) {
+    const { tenantId } = aktifBaglam();
+    const veri = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const fatura = await tx.fatura.findUnique({ where: { id: faturaId }, include: { ebelge: true } });
+      if (!fatura) throw new NotFoundException("Fatura bulunamadı");
+      if (fatura.durum !== "iptal") throw new BadRequestException("Sovos iptal bildirimi için fatura önce TekirExtra'da iptal edilmelidir");
+      if (!fatura.no || fatura.ebelge?.tur !== "earsiv") throw new BadRequestException("Faturaya bağlı bir e-Arşiv kaydı bulunamadı");
+      const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } });
+      if (!baglanti) throw new BadRequestException("Aktif e-belge bağlantısı bulunamadı");
+      return { fatura, baglanti };
+    });
+    const cfg = JSON.parse(coz(veri.baglanti.sifreliConfig)) as EntegratorConfig;
+    const adapter = this.baglantilarService.adapterCoz(veri.baglanti.saglayici);
+    if (!adapter.earsivIptal) throw new BadRequestException("Aktif entegratör e-Arşiv iptal bildirimini desteklemiyor");
+    const sonuc = await adapter.earsivIptal(cfg, { faturaNo: veri.fatura.no!, toplamTutar: veri.fatura.genelToplam.toFixed(2), iptalTarihi: girdi.iptalTarihi, sube: girdi.sube });
+    if (!sonuc.basarili) throw new BadRequestException(sonuc.mesaj || "e-Arşiv iptali Sovos'a bildirilemedi");
+    return sonuc;
+  }
+
+  async earsivRaporListele(baslangic: Date, bitis: Date) {
+    const { tenantId } = aktifBaglam();
+    const baglanti = await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } }));
+    if (!baglanti) throw new BadRequestException("Aktif e-belge bağlantısı bulunamadı");
+    const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
+    const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
+    if (!adapter.earsivRaporListele) throw new BadRequestException("Aktif entegratör e-Arşiv raporlarını desteklemiyor");
+    return adapter.earsivRaporListele(cfg, baslangic, bitis);
+  }
+
+  async earsivRaporDurum(uuid: string) {
+    const { tenantId } = aktifBaglam();
+    const baglanti = await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } }));
+    if (!baglanti) throw new BadRequestException("Aktif e-belge bağlantısı bulunamadı");
+    const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
+    const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
+    if (!adapter.earsivRaporDurum) throw new BadRequestException("Aktif entegratör e-Arşiv rapor durumunu desteklemiyor");
+    return adapter.earsivRaporDurum(cfg, uuid);
   }
 
   // ─── GELEN BELGE YARDIMCILARI ──────────────────────────────────────────────

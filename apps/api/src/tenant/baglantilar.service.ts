@@ -6,6 +6,7 @@ import {
 import type { Baglanti } from "@prisma/client";
 import {
   MockEntegratorAdapter,
+  SovosEntegratorAdapter,
   type EntegratorAdapter,
   type EntegratorConfig,
 } from "@tekirextra/baglanti";
@@ -23,6 +24,10 @@ export const baglantiOlusturSemasi = z.object({
     parola: z.string().optional(),
     apiAnahtari: z.string().optional(),
     servisAdresi: z.string().optional(),
+    earsivServisAdresi: z.string().optional(),
+    vknTckn: z.string().regex(/^\d{10,11}$/).optional(),
+    gondericiBirimEtiketi: z.string().optional(),
+    postaKutusuEtiketi: z.string().optional(),
     saticiId: z.string().optional(),
     magazaId: z.string().optional(),
     gondericiAdi: z.string().optional(),
@@ -34,6 +39,7 @@ export const baglantiOlusturSemasi = z.object({
   if (girdi.aile === "banka" && girdi.saglayici === "webhook" && (!girdi.config.apiAnahtari || girdi.config.apiAnahtari.length < 24)) ctx.addIssue({ code: "custom", path: ["config", "apiAnahtari"], message: "Banka bağlantısı erişim anahtarı en az 24 karakter olmalıdır" });
   if (girdi.aile === "banka" && girdi.saglayici === "webhook" && !girdi.config.bankaHesapId) ctx.addIssue({ code: "custom", path: ["config", "bankaHesapId"], message: "Banka hesabı zorunludur" });
   if (girdi.aile === "banka" && girdi.saglayici === "vomsis" && (!girdi.config.kullaniciAdi || !girdi.config.parola)) ctx.addIssue({ code: "custom", path: ["config"], message: "Vomsis App Key ve App Secret zorunludur" });
+  if (girdi.aile === "ebelge" && girdi.saglayici === "sovos" && (!girdi.config.parola || !girdi.config.vknTckn || !girdi.config.gondericiBirimEtiketi || !girdi.config.servisAdresi)) ctx.addIssue({ code: "custom", path: ["config"], message: "Sovos için parola, VKN/TCKN, GB etiketi ve servis adresi zorunludur" });
 });
 
 export interface BaglantiGorunumu {
@@ -52,7 +58,8 @@ function maskele(deger: string): string {
 
 /**
  * Dış bağlantı yönetimi (ENT-01, EBLG-01a/01b). Gerçek entegratör hesapları
- * edinilene kadar tüm sağlayıcılar mock adaptöre çözümlenir (T-01).
+ * Gerçek adaptörü bulunan sağlayıcı doğrudan ona, diğer sağlayıcılar mock
+ * adaptöre çözümlenir.
  */
 @Injectable()
 export class BaglantilarService {
@@ -67,9 +74,9 @@ export class BaglantilarService {
     // T-01: gerçek adaptörler geldikçe burada sağlayıcıya göre dallanılır
     let adapter = this.adapterler.get(saglayici);
     if (!adapter) {
-      adapter = new MockEntegratorAdapter(
-        saglayici as EntegratorConfig["saglayici"],
-      );
+      adapter = saglayici === "sovos"
+        ? new SovosEntegratorAdapter()
+        : new MockEntegratorAdapter(saglayici as EntegratorConfig["saglayici"]);
       this.adapterler.set(saglayici, adapter);
     }
     return adapter;

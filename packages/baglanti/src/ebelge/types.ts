@@ -11,6 +11,14 @@ export interface EntegratorConfig {
   parola?: string;
   apiAnahtari?: string;
   servisAdresi?: string;
+  /** Sovos e-Arşiv servisi e-Fatura servisinden ayrı bir WSDL adresidir. */
+  earsivServisAdresi?: string;
+  /** Entegratör servislerinde işlem yapan firmanın VKN/TCKN'si. */
+  vknTckn?: string;
+  /** Gönderici birim (GB) etiketi. */
+  gondericiBirimEtiketi?: string;
+  /** Posta kutusu (PK) etiketi; gelen belge ve yanıt akışında kullanılır. */
+  postaKutusuEtiketi?: string;
 }
 
 export interface BaglantiSonuc {
@@ -31,6 +39,8 @@ export interface UblBelge {
   belgeNo: string;
   xml: string;
   tur: "efatura" | "earsiv";
+  /** e-Fatura için alıcının GİB posta kutusu etiketi. */
+  aliciPostaKutusu?: string;
 }
 
 export interface GonderimSonuc {
@@ -53,4 +63,21 @@ export interface GelenBelge {
   gonderenUnvan: string;
   tarih: Date;
   xml: string;
+}
+
+export interface EarsivIptalGirdi {
+  faturaNo: string;
+  toplamTutar: string;
+  iptalTarihi: Date;
+  sube?: string;
+}
+
+export interface EarsivRapor {
+  uuid: string;
+  donem: string;
+  baslangic: string;
+  bitis: string;
+  faturaSayisi: number;
+  toplamTutar: string;
+  gibDurumu: string;
 }

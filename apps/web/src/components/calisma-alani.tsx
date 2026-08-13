@@ -23,6 +23,7 @@ export function CalismaAlani({
   anaEylem,
   hizliEylemler,
   kuyruklar,
+  araIcerik,
   altBaslik = "Sıradaki işler",
 }: {
   baslik: string;
@@ -30,6 +31,7 @@ export function CalismaAlani({
   anaEylem: { href: string; baslik: string };
   hizliEylemler: HizliEylem[];
   kuyruklar: IsKuyrugu[];
+  araIcerik?: ReactNode;
   altBaslik?: string;
 }) {
   return (
@@ -65,6 +67,8 @@ export function CalismaAlani({
           ))}
         </div>
       </section>
+
+      {araIcerik}
 
       <section aria-labelledby="is-kuyruklari">
         <div className="section-heading">

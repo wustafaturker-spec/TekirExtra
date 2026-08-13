@@ -1,5 +1,12 @@
 import { Fatura, FaturaSatir, CariHesap } from "@prisma/client";
 
+/** UBL içine gömülen başlangıç fatura görünümü; kurumsal şablonla değiştirilebilir. */
+const FATURA_XSLT = `<?xml version="1.0" encoding="UTF-8"?>
+<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+  <xsl:output method="html" encoding="UTF-8"/>
+  <xsl:template match="/"><html><head><meta charset="UTF-8"/><title>Fatura</title></head><body style="font-family:Arial,sans-serif"><h1>Fatura <xsl:value-of select="//*[local-name()='Invoice']/*[local-name()='ID']"/></h1><p>Tarih: <xsl:value-of select="//*[local-name()='IssueDate']"/></p><p>Toplam: <strong><xsl:value-of select="//*[local-name()='PayableAmount']"/> <xsl:value-of select="//*[local-name()='DocumentCurrencyCode']"/></strong></p></body></html></xsl:template>
+</xsl:stylesheet>`;
+
 export function faturaUblUret(
   fatura: Fatura & {
     satirlar: (FaturaSatir & { stok: { kod: string; ad: string } })[];
@@ -43,6 +50,15 @@ export function faturaUblUret(
   <cbc:InvoiceTypeCode>${fatura.tip.toUpperCase()}</cbc:InvoiceTypeCode>
   <cbc:DocumentCurrencyCode>${fatura.dovizCinsi}</cbc:DocumentCurrencyCode>
   <cbc:LineCountNumeric>${fatura.satirlar.length}</cbc:LineCountNumeric>
+
+  <cac:AdditionalDocumentReference>
+    <cbc:ID>${uuid}</cbc:ID>
+    <cbc:IssueDate>${tarihStr}</cbc:IssueDate>
+    <cbc:DocumentTypeCode>XSLT</cbc:DocumentTypeCode>
+    <cac:Attachment>
+      <cbc:EmbeddedDocumentBinaryObject characterSetCode="UTF-8" encodingCode="Base64" filename="${escape(no)}.xslt" mimeCode="application/xml">${Buffer.from(FATURA_XSLT, "utf8").toString("base64")}</cbc:EmbeddedDocumentBinaryObject>
+    </cac:Attachment>
+  </cac:AdditionalDocumentReference>
   
   <cac:Signature>
     <cbc:ID schemeID="VKN_TCKN">${supplier.vkn}</cbc:ID>

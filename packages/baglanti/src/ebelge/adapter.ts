@@ -7,6 +7,8 @@ import type {
   GonderimSonuc,
   MukellefDurum,
   UblBelge,
+  EarsivIptalGirdi,
+  EarsivRapor,
 } from "./types";
 
 /**
@@ -29,5 +31,9 @@ export interface EntegratorAdapter {
     belgeRef: string,
     yanit: "kabul" | "ret",
     gerekce?: string,
+    kaynak?: { gonderenVkn: string; xml: string },
   ): Promise<GonderimSonuc>;
+  earsivIptal?(cfg: EntegratorConfig, girdi: EarsivIptalGirdi): Promise<BaglantiSonuc>;
+  earsivRaporListele?(cfg: EntegratorConfig, baslangic: Date, bitis: Date): Promise<EarsivRapor[]>;
+  earsivRaporDurum?(cfg: EntegratorConfig, uuid: string): Promise<BaglantiSonuc & { kod?: string }>;
 }

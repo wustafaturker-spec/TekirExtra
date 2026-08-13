@@ -1,11 +1,14 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import { AramaSecici } from "@/components/arama-secici";
 import { DepoSecici } from "@/components/depo-secici";
 import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
+import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyalari";
+import { FaturaEkPaneli } from "@/components/fatura-ek-paneli";
 import { faturaHesapla, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
@@ -79,7 +82,8 @@ interface Fatura {
 interface FaturaDetay extends Fatura {
   cari: { id: string; kod: string; unvan: string; vknTckn: string | null; eFaturaMukellefi: boolean | null };
   dovizCinsi: string;
-  satirlar: { stokId: string; stokKod: string; stokAd: string; miktar: string; birim: string }[];
+  depoId?: string | null;
+  satirlar: { stokId: string; varyantId?: string | null; stokKod: string; stokAd: string; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; gibIstisnaKodu?: string | null }[];
   ebelge?: {
     id: string;
     durum: string;
@@ -145,14 +149,17 @@ const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/
 const KAYDEDILMEMIS_DEGISIKLIK_UYARISI = "Bu faturadaki kaydedilmemiş değişiklikler silinecek. Formdan ayrılmak istiyor musunuz?";
 
 export default function FaturaSayfasi() {
+  const pathname = usePathname(); const router = useRouter(); const yeniSayfasi = pathname.endsWith("/yeni");
   const [faturalar, setFaturalar] = useState<Fatura[]>([]);
   const [cariler, setCariler] = useState<Cari[]>([]);
   const [stoklar, setStoklar] = useState<Stok[]>([]);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [epostaGonderilen, setEpostaGonderilen] = useState<Fatura | null>(null);
+  const [ekleriAcikFatura, setEkleriAcikFatura] = useState<Fatura | null>(null);
   const [epostaAdresi, setEpostaAdresi] = useState("");
-  const [formAcik, setFormAcik] = useState(false);
+  const [formAcik, setFormAcik] = useState(yeniSayfasi);
+  const [duzenlenenId, setDuzenlenenId] = useState<string | null>(null);
   const [yonBaglami, setYonBaglami] = useState<"satis" | "alis" | null>(null);
   const [durumFiltresi, setDurumFiltresi] = useState<string | null>(null);
   const [ebelgeFiltresi, setEbelgeFiltresi] = useState<string | null>(null);
@@ -165,6 +172,7 @@ export default function FaturaSayfasi() {
   const urunRefleri = useRef<Array<HTMLInputElement | null>>([]);
   const cariRef = useRef<HTMLInputElement | null>(null);
   const faturaBaslangicRef = useRef<number | null>(null);
+  useEffect(() => { if (yeniSayfasi) { setFormAcik(true); faturaBaslangicRef.current = Date.now(); } }, [yeniSayfasi]);
   const istenenFaturaImlecleri = useRef(new Set<string>());
   const faturaYuklemeSirasi = useRef(0);
   const miktarRefleri = useRef<Array<HTMLInputElement | null>>([]);
@@ -194,6 +202,7 @@ export default function FaturaSayfasi() {
   const [depoId, setDepoId] = useState("");
   const [tip, setTip] = useState("satis");
   const [tarih, setTarih] = useState(new Date().toISOString().substring(0, 10));
+  const [dosyalar, setDosyalar] = useState<File[]>([]);
   const [satirlar, setSatirlar] = useState<FaturaSatir[]>([
     { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" },
   ]);
@@ -201,7 +210,7 @@ export default function FaturaSayfasi() {
   const bugun = new Date().toISOString().substring(0, 10);
   const formKirli = formAcik && (
     cariId !== "" || depoId !== "" || tip !== (yonBaglami ?? "satis") || tarih !== bugun
-    || satirlar.length !== 1
+    || dosyalar.length > 0 || satirlar.length !== 1
     || satirlar.some((satir) => satir.stokId !== "" || satir.miktar !== 1 || satir.birimFiyat !== 0 || satir.iskontoOrani !== 0 || satir.kdvOrani !== 20 || Boolean(satir.gibIstisnaKodu))
   );
 
@@ -286,7 +295,25 @@ export default function FaturaSayfasi() {
       setYonBaglami(yon);
       setTip(yon);
     }
-    if (parametreler.get("yeni") === "1") { setFormAcik(true); faturaBaslangicRef.current = Date.now(); kullanimOlayi("fatura_form_acildi"); }
+    if (parametreler.get("yeni") === "1" && !yeniSayfasi) {
+      parametreler.delete("yeni");
+      router.replace(`/panel/fatura/yeni${parametreler.size ? `?${parametreler.toString()}` : ""}`);
+      return;
+    }
+    const duzenleId = parametreler.get("duzenle");
+    if (yeniSayfasi && duzenleId) {
+      void api<FaturaDetay>(`/fatura/${duzenleId}`).then((fatura) => {
+        if (fatura.durum !== "taslak" || fatura.ebelge) throw new Error("Bu fatura artık düzenlenemez.");
+        setDuzenlenenId(fatura.id); setTip(fatura.tip); setTarih(fatura.tarih.slice(0, 10));
+        setCariId(fatura.cari.id); setDepoId(fatura.depoId ?? "");
+        setSatirlar(fatura.satirlar.map((satir) => ({
+          stokId: satir.stokId, varyantId: satir.varyantId ?? undefined,
+          miktar: Number(satir.miktar), birimFiyat: Number(satir.birimFiyat),
+          iskontoOrani: Number(satir.iskontoOrani), kdvOrani: Number(satir.kdvOrani),
+          gibIstisnaKodu: satir.gibIstisnaKodu ?? "",
+        })));
+      }).catch((h) => setHata(h instanceof Error ? h.message : "Fatura düzenleme için açılamadı"));
+    }
     setDurumFiltresi(parametreler.get("durum"));
     setEbelgeFiltresi(parametreler.get("ebelge"));
     setOdemeFiltresi(parametreler.get("odeme"));
@@ -297,7 +324,7 @@ export default function FaturaSayfasi() {
     try { setKayitliGorunumler(JSON.parse(localStorage.getItem(GORUNUM_ANAHTARI) ?? "[]") as KayitliGorunum[]); }
     catch { localStorage.removeItem(GORUNUM_ANAHTARI); }
     setFaturaFiltreleriHazir(true);
-  }, []);
+  }, [router, yeniSayfasi]);
 
   function filtreleriUygula(filtreler: Omit<KayitliGorunum, "id" | "ad">) {
     setHata("");
@@ -331,6 +358,7 @@ export default function FaturaSayfasi() {
   function formuSifirla() {
     setCariId(""); setCariOzeti(null); setDepoId(""); setTip(yonBaglami ?? "satis"); setTarih(new Date().toISOString().substring(0, 10));
     setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" }]); setAcikSatir(null);
+    setDosyalar([]);
     setCariDogrulamaHatasi(""); setSatirDogrulamaHatalari([]);
   }
 
@@ -479,6 +507,9 @@ export default function FaturaSayfasi() {
   }
 
   useEffect(() => {
+    // Düzenlemede faturaya kaydedilmiş ticari fiyat korunur; güncel fiyat
+    // listesi yalnız yeni faturada cari/tip seçimi değiştiğinde uygulanır.
+    if (duzenlenenId) return;
     if (cariId && satirlar.some((s) => s.stokId)) {
       const guncelleFiyatlar = async () => {
         const yeni = [...satirlar];
@@ -500,7 +531,7 @@ export default function FaturaSayfasi() {
       void guncelleFiyatlar();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cariId, tip]);
+  }, [cariId, tip, duzenlenenId]);
 
   async function kaydet(e: React.FormEvent) {
     e.preventDefault();
@@ -518,8 +549,8 @@ export default function FaturaSayfasi() {
     }
 
     try {
-      await api("/fatura", {
-        method: "POST",
+      const kayit = await api<Fatura>(duzenlenenId ? `/fatura/${duzenlenenId}` : "/fatura", {
+        method: duzenlenenId ? "PATCH" : "POST",
         body: JSON.stringify({
           cariId,
           // STK-07: boş bırakılırsa sunucu varsayılan depoyu kullanır
@@ -545,12 +576,15 @@ export default function FaturaSayfasi() {
         }),
       });
 
-      setBasari("Fatura taslağı başarıyla oluşturuldu.");
+      if (dosyalar.length > 0) await belgeDosyalariniYukle("fatura", kayit.id, dosyalar);
+
+      setBasari(duzenlenenId ? "Fatura taslağı güncellendi." : "Fatura taslağı başarıyla oluşturuldu.");
       kullanimOlayi("fatura_tamamlandi", faturaBaslangicRef.current === null ? undefined : Date.now() - faturaBaslangicRef.current);
       faturaBaslangicRef.current = null;
       setFormAcik(false);
       formuSifirla();
       void yukle();
+      if (yeniSayfasi) router.push("/panel/fatura");
     } catch (h) {
       kullanimOlayi("fatura_dogrulama_hatasi");
       setHata(h instanceof Error ? h.message : "Fatura oluşturulamadı");
@@ -568,6 +602,13 @@ export default function FaturaSayfasi() {
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Kesinleştirme hatası");
     }
+  }
+
+  async function iptalEt(id: string) {
+    if (!window.confirm("Bu taslak faturayı iptal etmek istediğinize emin misiniz? Kayıt, iptal durumuyla korunacaktır.")) return;
+    setHata(""); setBasari("");
+    try { await api(`/fatura/${id}/iptal`, { method: "POST" }); setBasari("Fatura iptal edildi."); void yukle(); }
+    catch (h) { setHata(h instanceof Error ? h.message : "Fatura iptal edilemedi"); }
   }
 
   async function kesinlestirmeOzetiAc(id: string) {
@@ -661,6 +702,17 @@ export default function FaturaSayfasi() {
     }
   }
 
+  async function earsivIptalBildir(id: string) {
+    if (!confirm("Bu faturanın iptalini Sovos e-Arşiv servisine bildirmek istediğinize emin misiniz?")) return;
+    setHata(""); setBasari("");
+    try {
+      await api(`/ebelge/earsiv/${id}/iptal-bildir`, { method: "POST", body: JSON.stringify({ iptalTarihi: new Date().toISOString() }) });
+      setBasari("e-Arşiv iptali Sovos'a bildirildi.");
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "e-Arşiv iptali bildirilemedi");
+    }
+  }
+
   /** FTR-09: proformadan yeni taslak satış faturası üretir. */
   async function satisaDonustur(id: string) {
     setHata("");
@@ -720,7 +772,7 @@ export default function FaturaSayfasi() {
         : "Fatura Yönetimi";
 
   return (
-    <div>
+    <div className={yeniSayfasi ? "create-page" : undefined}>
       <PageHeader
         title={sayfaBasligi}
         subtitle={
@@ -733,9 +785,7 @@ export default function FaturaSayfasi() {
         actions={
           <>
             <ButtonLabel as="a" href="/panel/fatura/raporlar">📈 Raporlar</ButtonLabel>
-            <Button variant="primary" onClick={faturaFormunuAcKapat}>
-              {formAcik ? "Vazgeç" : "➕ Yeni Fatura"}
-            </Button>
+            {yeniSayfasi ? <Button onClick={() => router.push("/panel/fatura")}>Listeye dön</Button> : <ButtonLabel as="a" variant="primary" href="/panel/fatura/yeni">➕ Yeni Fatura</ButtonLabel>}
           </>
         }
       />
@@ -795,7 +845,7 @@ export default function FaturaSayfasi() {
       {formAcik && (
         <div className="document-editor">
           <div className="document-editor__head">
-            <h3>Yeni {tip === "alis" ? "alış" : tip === "proforma" ? "proforma" : "satış"} faturası</h3>
+            <h3>{duzenlenenId ? "Faturayı düzenle" : `Yeni ${tip === "alis" ? "alış" : tip === "proforma" ? "proforma" : "satış"} faturası`}</h3>
             <span className="badge badge--warning">Taslak</span>
           </div>
 
@@ -976,8 +1026,12 @@ export default function FaturaSayfasi() {
             </div>
           </div>
 
+          <div className="document-editor__section">
+            <BelgeDosyalari dosyalar={dosyalar} onChange={setDosyalar} />
+          </div>
+
           <div className="document-editor__actions">
-            <Button variant="primary" onClick={kaydet}>Taslak faturayı kaydet</Button>
+            <Button variant="primary" onClick={kaydet}>{duzenlenenId ? "Değişiklikleri kaydet" : "Taslak faturayı kaydet"}</Button>
           </div>
         </div>
       )}
@@ -996,6 +1050,8 @@ export default function FaturaSayfasi() {
           </form>
         </HizliKayitPaneli>
       )}
+
+      {ekleriAcikFatura && <FaturaEkPaneli faturaId={ekleriAcikFatura.id} baslik={ekleriAcikFatura.no ?? "Taslak"} onKapat={() => setEkleriAcikFatura(null)} />}
 
       {hizliPanel === "stok" && (
         <HizliKayitPaneli baslik="Yeni ürün" onKapat={() => setHizliPanel(null)}>
@@ -1079,6 +1135,7 @@ export default function FaturaSayfasi() {
               <Button type="button" onClick={() => setEbelgeDetayi(null)}>Kapat</Button>
               {["kuyrukta", "iletildi"].includes(ebelgeDetayi.ebelge.durum) && <Button type="button" variant="primary" onClick={() => void ebelgeSorgula(ebelgeDetayi.id)}>Durumu sorgula</Button>}
               {ebelgeDetayi.ebelge.durum === "hata" && <Button type="button" variant="primary" onClick={() => void ebelgeYenidenGonder(ebelgeDetayi.id)}>Yeniden gönder</Button>}
+              {ebelgeDetayi.ebelge.tur === "earsiv" && ebelgeDetayi.durum === "iptal" && <Button type="button" variant="danger" onClick={() => void earsivIptalBildir(ebelgeDetayi.id)}>İptali Sovos'a bildir</Button>}
             </div>
           </div>
         </HizliKayitPaneli>
@@ -1160,9 +1217,7 @@ export default function FaturaSayfasi() {
                   <td className="num">{tl(f.toplamMatrah)}</td>
                   <td className="num" style={{ fontWeight: 700 }}>{tl(f.genelToplam)}</td>
                   <td>
-                    {f.durum === "taslak"
-                      ? <Badge variant="warning">📝 Taslak</Badge>
-                      : <Badge variant="success">🔒 Kesinleşti</Badge>}
+                    {f.durum === "taslak" ? <Badge variant="warning">📝 Taslak</Badge> : f.durum === "iptal" ? <Badge variant="danger">İptal</Badge> : <Badge variant="success">🔒 Kesinleşti</Badge>}
                   </td>
                   <td>
                     {f.ebelge ? (
@@ -1188,7 +1243,8 @@ export default function FaturaSayfasi() {
                       {f.durum === "taslak" ? (
                         <>
                           <Button variant="primary" size="sm" onClick={() => void kesinlestirmeOzetiAc(f.id)}>🔒 Kesinleştir</Button>
-                          <Button variant="danger" size="sm" onClick={() => sil(f.id)}>Sil</Button>
+                          <Button size="sm" onClick={() => router.push(`/panel/fatura/yeni?duzenle=${f.id}`)}>Düzenle</Button>
+                          <Button variant="danger" size="sm" onClick={() => void iptalEt(f.id)}>İptal</Button>
                         </>
                       ) : (
                         <>
@@ -1204,6 +1260,7 @@ export default function FaturaSayfasi() {
                       {f.tip === "proforma" && (
                         <Button size="sm" onClick={() => satisaDonustur(f.id)}>➡️ Satışa Dönüştür</Button>
                       )}
+                      <Button size="sm" onClick={() => setEkleriAcikFatura(f)}>📎 Ekler</Button>
                       <Button size="sm" onClick={() => kopyala(f.id)}>📋 Kopyala</Button>
                     </div>
                   </td>

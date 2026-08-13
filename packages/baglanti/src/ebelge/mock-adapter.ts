@@ -153,6 +153,8 @@ export class MockEntegratorAdapter implements EntegratorAdapter {
     _cfg: EntegratorConfig,
     belgeRef: string,
     _yanit: "kabul" | "ret",
+    _gerekce?: string,
+    _kaynak?: { gonderenVkn: string; xml: string },
   ): Promise<GonderimSonuc> {
     return { basarili: true, belgeRef };
   }

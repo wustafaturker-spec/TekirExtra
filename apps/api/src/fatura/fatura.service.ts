@@ -291,6 +291,81 @@ export class FaturaService {
     return ozet;
   }
 
+  async satisOzeti() {
+    const { tenantId } = aktifBaglam();
+    const simdi = new Date();
+    const buAyBaslangic = new Date(simdi.getFullYear(), simdi.getMonth(), 1);
+    const oncekiAyBaslangic = new Date(simdi.getFullYear(), simdi.getMonth() - 1, 1);
+    const yilBaslangic = new Date(simdi.getFullYear(), 0, 1);
+    const [donemFaturalari, acikFaturalar] = await this.prisma.tenantIslem(tenantId, async (tx) => Promise.all([
+      tx.fatura.findMany({
+        where: { durum: "kesin", tip: { in: ["satis", "satis_iade"] }, tarih: { gte: oncekiAyBaslangic } },
+        select: { tip: true, tarih: true, genelToplam: true, toplamNetKdv: true, kur: true },
+      }),
+      tx.fatura.findMany({
+        where: { durum: "kesin", tip: "satis" },
+        select: { genelToplam: true, kur: true, kasaBankaHarekets: { select: { tutar: true, kur: true } } },
+      }),
+    ]));
+
+    let buAyToplam = D(0); let buAyKdv = D(0); let buAyAdet = 0; let oncekiAyToplam = D(0);
+    for (const fatura of donemFaturalari) {
+      const isaret = fatura.tip === "satis_iade" ? D(-1) : D(1);
+      const toplamTry = fatura.genelToplam.mul(fatura.kur).mul(isaret);
+      if (fatura.tarih >= buAyBaslangic) {
+        buAyToplam = buAyToplam.add(toplamTry);
+        buAyKdv = buAyKdv.add(fatura.toplamNetKdv.mul(fatura.kur).mul(isaret));
+        if (fatura.tip === "satis") buAyAdet += 1;
+      } else {
+        oncekiAyToplam = oncekiAyToplam.add(toplamTry);
+      }
+    }
+
+    const yilFaturalari = await this.prisma.tenantIslem(tenantId, (tx) => tx.fatura.findMany({
+      where: { durum: "kesin", tip: { in: ["satis", "satis_iade"] }, tarih: { gte: yilBaslangic } },
+      select: { tip: true, genelToplam: true, kur: true },
+    }));
+    const yillikToplam = yilFaturalari.reduce((toplam, fatura) => toplam.add(fatura.genelToplam.mul(fatura.kur).mul(fatura.tip === "satis_iade" ? -1 : 1)), D(0));
+    const acikTahsilat = acikFaturalar.reduce((toplam, fatura) => {
+      const odenenTry = fatura.kasaBankaHarekets.reduce((ara, hareket) => ara.add(hareket.tutar.mul(hareket.kur)), D(0));
+      return toplam.add(Prisma.Decimal.max(fatura.genelToplam.mul(fatura.kur).sub(odenenTry), 0));
+    }, D(0));
+    const degisimYuzdesi = oncekiAyToplam.isZero() ? null : buAyToplam.sub(oncekiAyToplam).div(oncekiAyToplam.abs()).mul(100).toDecimalPlaces(1).toNumber();
+
+    return { buAyToplam: buAyToplam.toFixed(2), buAyAdet, buAyKdv: buAyKdv.toFixed(2), yillikToplam: yillikToplam.toFixed(2), acikTahsilat: acikTahsilat.toFixed(2), oncekiAyaGoreDegisim: degisimYuzdesi };
+  }
+
+  async alisOzeti() {
+    const { tenantId } = aktifBaglam();
+    const simdi = new Date();
+    const buAyBaslangic = new Date(simdi.getFullYear(), simdi.getMonth(), 1);
+    const oncekiAyBaslangic = new Date(simdi.getFullYear(), simdi.getMonth() - 1, 1);
+    const yilBaslangic = new Date(simdi.getFullYear(), 0, 1);
+    const [donemFaturalari, yilFaturalari, acikFaturalar] = await this.prisma.tenantIslem(tenantId, async (tx) => Promise.all([
+      tx.fatura.findMany({ where: { durum: "kesin", tip: { in: ["alis", "alis_iade"] }, tarih: { gte: oncekiAyBaslangic } }, select: { tip: true, tarih: true, genelToplam: true, toplamNetKdv: true, kur: true } }),
+      tx.fatura.findMany({ where: { durum: "kesin", tip: { in: ["alis", "alis_iade"] }, tarih: { gte: yilBaslangic } }, select: { tip: true, genelToplam: true, kur: true } }),
+      tx.fatura.findMany({ where: { durum: "kesin", tip: "alis" }, select: { genelToplam: true, kur: true, kasaBankaHarekets: { select: { tutar: true, kur: true } } } }),
+    ]));
+
+    let buAyToplam = D(0); let buAyKdv = D(0); let buAyAdet = 0; let oncekiAyToplam = D(0);
+    for (const fatura of donemFaturalari) {
+      const isaret = fatura.tip === "alis_iade" ? D(-1) : D(1);
+      const toplamTry = fatura.genelToplam.mul(fatura.kur).mul(isaret);
+      if (fatura.tarih >= buAyBaslangic) {
+        buAyToplam = buAyToplam.add(toplamTry);
+        buAyKdv = buAyKdv.add(fatura.toplamNetKdv.mul(fatura.kur).mul(isaret));
+        if (fatura.tip === "alis") buAyAdet += 1;
+      } else oncekiAyToplam = oncekiAyToplam.add(toplamTry);
+    }
+    const yillikToplam = yilFaturalari.reduce((toplam, fatura) => toplam.add(fatura.genelToplam.mul(fatura.kur).mul(fatura.tip === "alis_iade" ? -1 : 1)), D(0));
+    const acikOdeme = acikFaturalar.reduce((toplam, fatura) => {
+      const odenenTry = fatura.kasaBankaHarekets.reduce((ara, hareket) => ara.add(hareket.tutar.mul(hareket.kur)), D(0));
+      return toplam.add(Prisma.Decimal.max(fatura.genelToplam.mul(fatura.kur).sub(odenenTry), 0));
+    }, D(0));
+    const degisimYuzdesi = oncekiAyToplam.isZero() ? null : buAyToplam.sub(oncekiAyToplam).div(oncekiAyToplam.abs()).mul(100).toDecimalPlaces(1).toNumber();
+    return { buAyToplam: buAyToplam.toFixed(2), buAyAdet, buAyKdv: buAyKdv.toFixed(2), yillikToplam: yillikToplam.toFixed(2), acikOdeme: acikOdeme.toFixed(2), oncekiAyaGoreDegisim: degisimYuzdesi };
+  }
+
   async getir(id: string) {
     const ctx = aktifBaglam();
     const kayit = await this.prisma.tenantIslem(ctx.tenantId, (tx) =>
@@ -465,8 +540,8 @@ export class FaturaService {
     const { tenantId, userId } = aktifBaglam();
     const fatura = await this.getir(id);
 
-    if (fatura.durum !== "taslak") {
-      throw new BadRequestException("Yalnızca taslak faturalar güncellenebilir");
+    if (fatura.durum !== "taslak" || fatura.ebelge) {
+      throw new BadRequestException("Yalnızca e-Belgesi oluşmamış taslak faturalar güncellenebilir");
     }
 
     // Tam güncelleme için girdiyi tamamla
@@ -588,8 +663,8 @@ export class FaturaService {
     const { tenantId } = aktifBaglam();
     const fatura = await this.getir(id);
 
-    if (fatura.durum !== "taslak") {
-      throw new BadRequestException("Yalnızca taslak faturalar silinebilir");
+    if (fatura.durum !== "taslak" || fatura.ebelge) {
+      throw new BadRequestException("Yalnızca e-Belgesi oluşmamış taslak faturalar silinebilir");
     }
 
     await this.prisma.tenantIslem(tenantId, async (tx) => {
@@ -601,6 +676,22 @@ export class FaturaService {
         data: { faturaId: null, durum: "onaylandi" },
       });
       await tx.fatura.delete({ where: { id } });
+    });
+  }
+
+  /** E-belge oluşmadan önce taslağı kayıt izini koruyarak iptal eder. */
+  async iptal(id: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const fatura = await tx.fatura.findUnique({
+        where: { id },
+        select: { id: true, durum: true, ebelge: { select: { id: true } } },
+      });
+      if (!fatura) throw new NotFoundException("Fatura bulunamadı");
+      if (fatura.durum !== "taslak") throw new BadRequestException("Yalnızca taslak faturalar iptal edilebilir");
+      if (fatura.ebelge) throw new BadRequestException("e-Belge kaydı oluşmuş fatura iptal edilemez");
+      await tx.belge.updateMany({ where: { faturaId: id }, data: { faturaId: null, durum: "onaylandi" } });
+      return tx.fatura.update({ where: { id }, data: { durum: "iptal" } });
     });
   }
 

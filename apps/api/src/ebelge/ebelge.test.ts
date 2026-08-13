@@ -337,6 +337,8 @@ describe("EbelgeService (EBLG-01..08)", () => {
       expect.any(Object),
       "uuid-1",
       "ret",
+      "Hatalı tutar",
+      expect.objectContaining({ gonderenVkn: expect.anything(), xml: expect.anything() }),
     );
     expect(guncelle).toHaveBeenCalledWith(
       expect.objectContaining({

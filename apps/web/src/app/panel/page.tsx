@@ -46,7 +46,7 @@ export default function PanelSayfasi() {
       const stokKuyrugu: IsKuyrugu = { href: "/panel/stok?durum=kritik", baslik: "Kritik stoklar", aciklama: "Kritik seviyeye ulaşan ürünler", sayi: kritik, ton: kritik ? "danger" : "default" };
       if (ben.rol === "satis") {
         setEylemler([
-          { href: "/panel/fatura?yon=satis&yeni=1", baslik: "Satış faturası", aciklama: "Yeni müşteri faturası", ikon: "SF", vurgu: true },
+          { href: "/panel/fatura/yeni?yon=satis", baslik: "Satış faturası", aciklama: "Yeni müşteri faturası", ikon: "SF", vurgu: true },
           { href: "/panel/belgeler?yon=satis&tur=teklif&yeni=1", baslik: "Teklif oluştur", aciklama: "Yeni satış teklifi", ikon: "TK" },
           { href: "/panel/belgeler?yon=satis&tur=siparis&yeni=1", baslik: "Sipariş oluştur", aciklama: "Müşteri siparişi", ikon: "SP" },
           { href: "/panel/fatura?yon=satis&odeme=acik", baslik: "Tahsilat takibi", aciklama: "Açık müşteri faturaları", ikon: "TH" },
@@ -63,7 +63,7 @@ export default function PanelSayfasi() {
           { href: "/panel/stok", baslik: "Stoklar", aciklama: "Mevcut stok durumu", ikon: "ST" },
           { href: "/panel/raporlar", baslik: "Raporlar", aciklama: "Analiz ve dökümler", ikon: "RP" },
         ] : [
-          { href: "/panel/fatura?yon=alis&yeni=1", baslik: "Alış faturası", aciklama: "Tedarikçi faturası", ikon: "AF", vurgu: true },
+          { href: "/panel/fatura/yeni?yon=alis", baslik: "Alış faturası", aciklama: "Tedarikçi faturası", ikon: "AF", vurgu: true },
           { href: "/panel/fatura/gelen-kutusu", baslik: "Gelen e-Belgeler", aciklama: "Kontrol ve eşleştirme", ikon: "GB" },
           { href: "/panel/kasa-banka?islem=tediye", baslik: "Ödeme yap", aciklama: "Tedarikçi ödemesi", ikon: "ÖD" },
           { href: "/panel/kasa-banka/ekstre", baslik: "Banka ekstresi", aciklama: "Hareketleri eşleştir", ikon: "BK" },

@@ -76,6 +76,16 @@ export class FaturaController {
     return this.faturaService.isKuyruguOzeti();
   }
 
+  @Get("satis-ozeti")
+  async satisOzeti() {
+    return this.faturaService.satisOzeti();
+  }
+
+  @Get("alis-ozeti")
+  async alisOzeti() {
+    return this.faturaService.alisOzeti();
+  }
+
   @Get()
   async listele(
     @Query("arama") arama?: string,
@@ -125,6 +135,12 @@ export class FaturaController {
   @HttpCode(204)
   async sil(@Param("id") id: string) {
     await this.faturaService.sil(id);
+  }
+
+  @Post(":id/iptal")
+  @Roller("muhasebe")
+  async iptal(@Param("id") id: string) {
+    return this.faturaService.iptal(id);
   }
 
   @Post(":id/kesinlestir")

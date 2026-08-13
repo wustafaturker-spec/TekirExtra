@@ -13,6 +13,7 @@ interface Baglanti {
 }
 
 const SAGLAYICILAR = [
+  { id: "sovos", ad: "Sovos Bulut", aciklama: "Sovos Bulut e-Fatura ve e-Arşiv SOAP bağlantısı" },
   { id: "izibiz", ad: "İzibiz", aciklama: "İzibiz e-Belge Özel Entegratör Bağlantısı" },
   { id: "foriba", ad: "Foriba", aciklama: "Foriba (SAP) e-Belge Özel Entegratör Bağlantısı" },
   { id: "elogo", ad: "eLogo", aciklama: "Logo Yazılım (eLogo) e-Belge Özel Entegratör Bağlantısı" },
@@ -66,6 +67,10 @@ export default function EntegratorAyarlariSayfasi() {
       parola: (v.get("parola") as string) || undefined,
       apiAnahtari: (v.get("apiAnahtari") as string) || undefined,
       servisAdresi: (v.get("servisAdresi") as string) || undefined,
+      earsivServisAdresi: (v.get("earsivServisAdresi") as string) || undefined,
+      vknTckn: (v.get("vknTckn") as string) || undefined,
+      gondericiBirimEtiketi: (v.get("gondericiBirimEtiketi") as string) || undefined,
+      postaKutusuEtiketi: (v.get("postaKutusuEtiketi") as string) || undefined,
     };
 
     try {
@@ -213,7 +218,13 @@ export default function EntegratorAyarlariSayfasi() {
                     <Field label="Kullanıcı Adı *"><Input name="kullaniciAdi" required placeholder="entegrator_kullanici_adi" /></Field>
                     <Field label="Parola / Şifre"><Input name="parola" type="password" placeholder="••••••••" /></Field>
                     <Field label="API Anahtarı (Opsiyonel)"><Input name="apiAnahtari" placeholder="api_key_xyz" /></Field>
-                    <Field label="Servis URL (Opsiyonel)"><Input name="servisAdresi" placeholder="https://api.entegrator.com" /></Field>
+                    <Field label={s.id === "sovos" ? "e-Fatura Servis URL *" : "Servis URL (Opsiyonel)"}><Input name="servisAdresi" required={s.id === "sovos"} placeholder={s.id === "sovos" ? "Sovos tarafından verilen .svc adresi" : "https://api.entegrator.com"} /></Field>
+                    {s.id === "sovos" && <>
+                      <Field label="Firma VKN/TCKN *"><Input name="vknTckn" required inputMode="numeric" placeholder="1234567890" /></Field>
+                      <Field label="Gönderici Birim (GB) Etiketi *"><Input name="gondericiBirimEtiketi" required placeholder="urn:mail:defaultgb@firma.com" /></Field>
+                      <Field label="Posta Kutusu (PK) Etiketi"><Input name="postaKutusuEtiketi" placeholder="urn:mail:defaultpk@firma.com" /></Field>
+                      <Field label="e-Arşiv Servis URL"><Input name="earsivServisAdresi" placeholder="Sovos tarafından verilen e-Arşiv .svc adresi" /></Field>
+                    </>}
                   </div>
                   <div className="row-tight" style={{ justifyContent: "flex-end", marginTop: "1rem" }}>
                     <Button type="button" onClick={() => { setAktifForm(null); setDuzenleId(null); }}>İptal</Button>

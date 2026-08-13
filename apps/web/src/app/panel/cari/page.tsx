@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { api, tokenAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import {
@@ -166,12 +167,16 @@ interface CariGorunumu { id: string; ad: string; filtreTip: FiltreTip; }
 const GORUNUM_ANAHTARI = "tekir_cari_gorunumleri";
 
 export default function CariSayfasi() {
+  const pathname = usePathname(); const router = useRouter(); const yeniSayfasi = pathname.endsWith("/yeni");
+  const detayId = !yeniSayfasi ? pathname.match(/^\/panel\/cari\/([^/]+)$/)?.[1] ?? null : null;
+  const detaySayfasi = Boolean(detayId);
   const [cariler, setCariler] = useState<Cari[]>([]);
   const [arama, setArama] = useState("");
   const [aramaSorgusu, setAramaSorgusu] = useState("");
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
-  const [formAcik, setFormAcik] = useState(false);
+  const [formAcik, setFormAcik] = useState(yeniSayfasi);
+  useEffect(() => { if (yeniSayfasi) setFormAcik(true); }, [yeniSayfasi]);
   const [detay, setDetay] = useState<CariDetay | null>(null);
   const [ekstre, setEkstre] = useState<EkstreVeri | null>(null);
   const [crm, setCrm] = useState<CrmVeri | null>(null);
@@ -345,6 +350,12 @@ export default function CariSayfasi() {
       setHata(h instanceof Error ? h.message : "Detay veya ekstre yüklenemedi");
     }
   }
+
+  useEffect(() => {
+    if (detayId && tokenAl()) void detayAc(detayId);
+    // detayAc yalnız rota kimliği değiştiğinde çalışmalı.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detayId]);
 
   async function etkilesimEkle(e: React.FormEvent) {
     e.preventDefault();
@@ -678,20 +689,18 @@ export default function CariSayfasi() {
   const blokeSayisi = cariler.filter((c) => c.karaListe === true).length;
 
   return (
-    <div>
+    <div className={yeniSayfasi ? "create-page" : detaySayfasi ? "detail-page" : undefined}>
       <PageHeader
-        title="Cari Hesaplar"
-        subtitle="Müşterileriniz, tedarikçileriniz ve diğer cari ortaklarınızı buradan yönetin."
+        title={detaySayfasi ? (detay?.unvan ?? "Cari Detayı") : yeniSayfasi ? "Yeni Cari" : "Cari Hesaplar"}
+        subtitle={detaySayfasi ? "Cari bilgileri, finansal durum, CRM ve iletişim kayıtları." : yeniSayfasi ? "Yeni müşteri, tedarikçi veya diğer cari kartını oluşturun." : "Müşterileriniz, tedarikçileriniz ve diğer cari ortaklarınızı buradan yönetin."}
         actions={
           <>
-            <ButtonLabel as="a" href="/panel/cari/raporlar">📈 Raporlar</ButtonLabel>
-            <ButtonLabel>
+            {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/raporlar">📈 Raporlar</ButtonLabel>}
+            {!yeniSayfasi && !detaySayfasi && <ButtonLabel>
               📥 Excel&apos;den İçe Aktar
               <input type="file" accept=".xlsx" onChange={excelYukle} style={{ display: "none" }} />
-            </ButtonLabel>
-            <Button variant="primary" onClick={() => setFormAcik(!formAcik)}>
-              {formAcik ? "Vazgeç" : "➕ Yeni Cari"}
-            </Button>
+            </ButtonLabel>}
+            {(yeniSayfasi || detaySayfasi) ? <Button onClick={() => router.push("/panel/cari")}>Listeye dön</Button> : <ButtonLabel as="a" variant="primary" href="/panel/cari/yeni">➕ Yeni Cari</ButtonLabel>}
           </>
         }
       />
@@ -753,7 +762,7 @@ export default function CariSayfasi() {
       )}
 
       {detay && (
-        <Card style={{ marginBottom: "1.5rem", borderColor: "var(--accent)" }}>
+        <Card className="record-detail" style={{ marginBottom: "1.5rem", borderColor: "var(--accent)" }}>
           <div className="between" style={{ alignItems: "flex-start" }}>
             <div>
               <h3 style={{ fontSize: "1.15rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -770,7 +779,7 @@ export default function CariSayfasi() {
             </div>
             <div className="row-tight">
               <Button size="sm" onClick={karaListeDegistir}>{detay.karaListe ? "✅ Blokajı Kaldır" : "🚫 Kara Listeye Al"}</Button>
-              <Button size="sm" onClick={() => { setDetay(null); setEkstre(null); setCrm(null); setCariAnalizi(null); }}>✖ Kapat</Button>
+              <Button size="sm" onClick={() => { setDetay(null); setEkstre(null); setCrm(null); setCariAnalizi(null); detaySayfasi ? router.push("/panel/cari") : undefined; }}>✖ Kapat</Button>
             </div>
           </div>
 
@@ -1225,7 +1234,7 @@ export default function CariSayfasi() {
                     </td>
                     <td className="center">
                       <div className="row-tight" style={{ flexWrap: "nowrap", justifyContent: "center" }}>
-                        <Button size="sm" onClick={() => detayAc(c.id)}>🔍 Detay</Button>
+                        <Button size="sm" onClick={() => router.push(`/panel/cari/${c.id}`)}>🔍 Detay</Button>
                         <Button size="sm" onClick={() => ekstreIndir(c.id, c.unvan)}>📊 Ekstre</Button>
                         <Button size="sm" onClick={() => kopyala(c.id)}>📋 Kopyala</Button>
                       </div>
