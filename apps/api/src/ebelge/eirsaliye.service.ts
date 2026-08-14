@@ -68,6 +68,7 @@ export class EirsaliyeService {
 
   async gelenYanit(id: string, yanit: "kabul" | "ret", gerekce?: string) {
     const { tenantId } = aktifBaglam();
+    if (yanit === "ret" && !gerekce?.trim()) throw new BadRequestException("Ret gerekçesi zorunludur");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const kayit = await tx.gelenEirsaliye.findUnique({ where: { id } }); if (!kayit) throw new NotFoundException("Gelen e-İrsaliye bulunamadı");
       const { cfg, adapter } = await this.baglanti(tx, tenantId); if (!adapter.irsaliyeYanitiGonder) throw new BadRequestException("Entegratör e-İrsaliye yanıtını desteklemiyor");

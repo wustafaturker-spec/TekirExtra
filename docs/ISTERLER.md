@@ -73,7 +73,14 @@ engelleyen plan değişimi; faturalama iletişimi; dönem sonunda iptal/yeniden
 etkinleştirme ve salt-okur değişiklik geçmişi eklendi. Ödeme sağlayıcısı henüz
 bağlı değildir; sağlayıcı referansı mevcut abonelik modelinde hazırdır.
 
-**Sıradaki paket — Entegratör Paketi (S-01 kapısı kısmen alındı, 2026-07-14):**
+**Durum (e-İrsaliye, 2026-08-14):** Onaylı satış irsaliyeleri Sovos DESPATCH
+servisine gönderilebilir, durumları sorgulanabilir; gelen e-İrsaliyeler kutuya
+alınıp kabul/ret yanıtı gönderilebilir. Bu akışta stok ve cari hareketi
+oluşturulmaz; stok faturada işlenir. Gelen e-İrsaliyenin mal kabul/stok
+akışına dönüştürülmesi kapsam dışıdır.
+
+**Entegratör Paketi (S-01 kapısı kısmen alındı, 2026-07-14; e-Fatura/e-Arşiv ve
+e-İrsaliye dilimleri uygulanıyor):**
 e-belge adaptörleri bugüne dek yalnızca mock; gerçek adaptörler yazılacak.
 Kararlar: **İzibiz ile başlanır** (diğerleri aynı sözleşmeyi izleyerek eklenir),
 sandbox erişimi henüz yok → adaptör kamuya açık dokümana göre yazılıp birim

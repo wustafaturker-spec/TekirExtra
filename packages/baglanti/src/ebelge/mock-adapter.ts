@@ -8,6 +8,8 @@ import type {
   GonderimSonuc,
   MukellefDurum,
   UblBelge,
+  EirsaliyeBelge,
+  GelenEirsaliye,
 } from "./types";
 
 /**
@@ -157,6 +159,28 @@ export class MockEntegratorAdapter implements EntegratorAdapter {
     _kaynak?: { gonderenVkn: string; xml: string },
   ): Promise<GonderimSonuc> {
     return { basarili: true, belgeRef };
+  }
+
+  async irsaliyeGonder(_cfg: EntegratorConfig, belge: EirsaliyeBelge): Promise<GonderimSonuc> {
+    const belgeRef = `MOCK-IRS-${belge.uuid}`;
+    this.gonderilenler.set(belgeRef, 0);
+    return { basarili: true, belgeRef };
+  }
+
+  async irsaliyeDurumSorgula(_cfg: EntegratorConfig, belgeRef: string): Promise<BelgeDurumSonuc> {
+    const sayi = this.gonderilenler.get(belgeRef);
+    if (sayi === undefined) return { belgeRef, durum: "hata", detay: "e-İrsaliye bulunamadı" };
+    this.gonderilenler.set(belgeRef, sayi + 1);
+    return { belgeRef, durum: (["kuyrukta", "iletildi", "kabul"] as const)[Math.min(sayi, 2)] };
+  }
+
+  async gelenIrsaliyeleriCek(_cfg: EntegratorConfig, sonrasi: Date): Promise<GelenEirsaliye[]> {
+    const tarih = new Date(sonrasi.getTime() + 86400000);
+    return [{ uuid: "00000000-0000-4000-8000-000000000101", belgeNo: "MCKIRS202600000001", gonderenVkn: "4840847211", gonderenUnvan: "Mock Sevkiyat A.Ş.", tarih, xml: `<DespatchAdvice><ID>MCKIRS202600000001</ID><UUID>00000000-0000-4000-8000-000000000101</UUID></DespatchAdvice>` }];
+  }
+
+  async irsaliyeYanitiGonder(_cfg: EntegratorConfig, belgeRef: string, _yanit: "kabul" | "ret"): Promise<GonderimSonuc> {
+    return { basarili: true, belgeRef: `MOCK-IRS-RESP-${belgeRef}` };
   }
 }
 

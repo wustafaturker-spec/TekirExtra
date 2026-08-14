@@ -7,6 +7,7 @@ const config: EntegratorConfig = {
   parola: "ws-pass",
   servisAdresi: "https://sovos.test/einvoice.svc",
   earsivServisAdresi: "https://sovos.test/earchive.svc",
+  irsaliyeServisAdresi: "https://sovos.test/edespatch.svc",
   vknTckn: "1234567890",
   gondericiBirimEtiketi: "urn:mail:defaultgb@firma.test",
   postaKutusuEtiketi: "urn:mail:defaultpk@firma.test",
@@ -119,5 +120,17 @@ describe("SovosEntegratorAdapter", () => {
     await expect(adapter.earsivRaporDurum(config, "rapor-1")).resolves.toEqual({ basarili: true, kod: "200", mesaj: "Report reached to the system" });
     expect(fetchMock.mock.calls[0][1].body).toContain("<invoiceId>TKR2026000000003</invoiceId>");
     expect(fetchMock.mock.calls[1][1].body).toContain("<startDate>2026-08-11</startDate>");
+  });
+
+  it("e-İrsaliyeyi DESPATCH olarak gönderir ve 1300 durumunu kabul eder", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, text: async () => `<Envelope><Body><sendDesUBLResponse><EnvUUID>irs-zarf-1</EnvUUID></sendDesUBLResponse></Body></Envelope>` })
+      .mockResolvedValueOnce({ ok: true, text: async () => `<Envelope><Body><getDesEnvelopeStatusResponse><StatusCode>1300</StatusCode><StatusDescription>Sevk belgesi kabul edildi</StatusDescription></getDesEnvelopeStatusResponse></Body></Envelope>` });
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = new SovosEntegratorAdapter();
+    await expect(adapter.irsaliyeGonder(config, { uuid: "irs-1", belgeNo: "IRS2026000000001", aliciPostaKutusu: "urn:mail:pk@alici.test", xml: "<DespatchAdvice/>" })).resolves.toEqual({ basarili: true, belgeRef: "irs-zarf-1" });
+    expect(fetchMock.mock.calls[0][0]).toBe(config.irsaliyeServisAdresi);
+    expect(fetchMock.mock.calls[0][1].body).toContain("<des:DocType>DESPATCH</des:DocType>");
+    await expect(adapter.irsaliyeDurumSorgula(config, "irs-zarf-1")).resolves.toEqual({ belgeRef: "irs-zarf-1", durum: "kabul", detay: "Sevk belgesi kabul edildi" });
   });
 });
