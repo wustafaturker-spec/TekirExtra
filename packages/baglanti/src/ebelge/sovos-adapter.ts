@@ -11,6 +11,8 @@ import type {
   UblBelge,
   EarsivIptalGirdi,
   EarsivRapor,
+  EirsaliyeBelge,
+  GelenEirsaliye,
 } from "./types";
 
 const EFATURA_NS = "http:/fitcons.com/eInvoice/";
@@ -140,6 +142,14 @@ export class SovosEntegratorAdapter implements EntegratorAdapter {
     const soapHatasi = xmlDegeri(xml, ["faultstring"]);
     if (soapHatasi) throw new Error(`Sovos e-Arşiv SOAP: ${soapHatasi}`);
     return xml;
+  }
+
+  private async irsaliyeSoap(cfg: EntegratorConfig, islem: string, govde: string): Promise<string> {
+    if (!cfg.kullaniciAdi || !cfg.parola || !cfg.irsaliyeServisAdresi) throw new Error("Sovos e-İrsaliye kullanıcı bilgileri ve servis adresi zorunludur");
+    const zarf = `<?xml version="1.0" encoding="UTF-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:des="http:/fitcons.com/eDespatch/"><soapenv:Header/><soapenv:Body>${govde}</soapenv:Body></soapenv:Envelope>`;
+    const kimlik = Buffer.from(`${cfg.kullaniciAdi}:${cfg.parola}`, "utf8").toString("base64");
+    const yanit = await fetch(cfg.irsaliyeServisAdresi, { method: "POST", headers: { "content-type": "text/xml; charset=utf-8", SOAPAction: islem, authorization: `Basic ${kimlik}` }, body: zarf });
+    const xml = await yanit.text(); if (!yanit.ok) throw new Error(`Sovos e-İrsaliye HTTP ${yanit.status}: ${xmlDegeri(xml,["faultstring"]) || yanit.statusText}`); return xml;
   }
 
   async baglantiTest(cfg: EntegratorConfig): Promise<BaglantiSonuc> {
@@ -284,5 +294,21 @@ export class SovosEntegratorAdapter implements EntegratorAdapter {
     } catch (hata) {
       return { basarili: false, mesaj: hata instanceof Error ? hata.message : "e-Arşiv rapor durumu sorgulanamadı" };
     }
+  }
+
+  async irsaliyeGonder(cfg: EntegratorConfig, belge: EirsaliyeBelge): Promise<GonderimSonuc> {
+    try { const xml=await this.irsaliyeSoap(cfg,"sendDesUBL",`<des:sendDesUBLRequest><des:VKN_TCKN>${xmlKacir(cfg.vknTckn!)}</des:VKN_TCKN><des:SenderIdentifier>${xmlKacir(cfg.gondericiBirimEtiketi!)}</des:SenderIdentifier><des:ReceiverIdentifier>${xmlKacir(belge.aliciPostaKutusu)}</des:ReceiverIdentifier><des:DocType>DESPATCH</des:DocType><des:DocData>${tekDosyaZipBase64(`${belge.uuid}.xml`,belge.xml)}</des:DocData></des:sendDesUBLRequest>`); const ref=xmlDegeri(xml,["EnvUUID","UUID"]); return ref?{basarili:true,belgeRef:ref}:{basarili:false,hataMesaji:"Sovos e-İrsaliye referansı dönmedi"}; } catch(hata){return{basarili:false,hataMesaji:hata instanceof Error?hata.message:"e-İrsaliye gönderilemedi"};}
+  }
+
+  async irsaliyeDurumSorgula(cfg: EntegratorConfig, belgeRef: string): Promise<BelgeDurumSonuc> {
+    try { const xml=await this.irsaliyeSoap(cfg,"getDesEnvelopeStatus",`<des:getDesEnvelopeStatusRequest><des:Identifier>${xmlKacir(cfg.gondericiBirimEtiketi!)}</des:Identifier><des:VKN_TCKN>${xmlKacir(cfg.vknTckn!)}</des:VKN_TCKN><des:UUID>${xmlKacir(belgeRef)}</des:UUID></des:getDesEnvelopeStatusRequest>`); const kod=xmlDegeri(xml,["StatusCode","Code"]); return{belgeRef,durum:kod==="1300"?"kabul":kod==="1220"?"ret":kod==="1000"||kod==="1100"?"kuyrukta":kod?"iletildi":"hata",detay:xmlDegeri(xml,["StatusDescription","Description"])}; } catch(hata){return{belgeRef,durum:"hata",detay:hata instanceof Error?hata.message:"e-İrsaliye durumu sorgulanamadı"};}
+  }
+
+  async gelenIrsaliyeleriCek(cfg: EntegratorConfig, sonrasi: Date): Promise<GelenEirsaliye[]> {
+    if(!cfg.postaKutusuEtiketi) throw new Error("Sovos gelen e-İrsaliye için PK etiketi zorunludur"); const liste=await this.irsaliyeSoap(cfg,"getDesUBLList",`<des:getDesUBLListRequest><des:Identifier>${xmlKacir(cfg.postaKutusuEtiketi)}</des:Identifier><des:VKN_TCKN>${xmlKacir(cfg.vknTckn!)}</des:VKN_TCKN><des:DocType>DESPATCH</des:DocType><des:Type>INBOUND</des:Type><des:FromDate>${sonrasi.toISOString()}</des:FromDate><des:ToDate>${new Date().toISOString()}</des:ToDate></des:getDesUBLListRequest>`); const ids=xmlBloklari(liste,"UBLList").map(b=>xmlDegeri(b,["UUID"])).filter((x):x is string=>Boolean(x)); const sonuc:GelenEirsaliye[]=[]; for(let i=0;i<ids.length;i+=20){const grup=ids.slice(i,i+20);const xml=await this.irsaliyeSoap(cfg,"getDesUBL",`<des:getDesUBLRequest><des:Identifier>${xmlKacir(cfg.postaKutusuEtiketi)}</des:Identifier><des:VKN_TCKN>${xmlKacir(cfg.vknTckn!)}</des:VKN_TCKN>${grup.map(u=>`<des:UUID>${xmlKacir(u)}</des:UUID>`).join("")}<des:DocType>DESPATCH</des:DocType><des:Type>INBOUND</des:Type><des:Parameters>zip</des:Parameters></des:getDesUBLRequest>`);xmlBloklari(xml,"DocData").forEach((v,s)=>sonuc.push(gelenUblBilgisi(zipIlkXml(v),grup[s]||randomUUID())));} return sonuc;
+  }
+
+  async irsaliyeYanitiGonder(cfg: EntegratorConfig, belgeRef: string, yanit: "kabul"|"ret", gerekce: string|undefined, kaynakXml: string): Promise<GonderimSonuc> {
+    const alici=kaynakXml.match(/<(?:\w+:)?DespatchSupplierParty[\s\S]*?<(?:\w+:)?EndpointID[^>]*>([^<]+)</i)?.[1]; if(!alici)return{basarili:false,hataMesaji:"Gönderen etiketi bulunamadı"}; const uuid=randomUUID(); const receipt=`<?xml version="1.0" encoding="UTF-8"?><ReceiptAdvice xmlns="urn:oasis:names:specification:ubl:schema:xsd:ReceiptAdvice-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"><cbc:UBLVersionID>2.1</cbc:UBLVersionID><cbc:CustomizationID>TR1.2</cbc:CustomizationID><cbc:ID>${uuid}</cbc:ID><cbc:UUID>${uuid}</cbc:UUID><cbc:IssueDate>${new Date().toISOString().slice(0,10)}</cbc:IssueDate><cac:DespatchDocumentReference><cbc:ID>${xmlKacir(belgeRef)}</cbc:ID></cac:DespatchDocumentReference><cac:ReceiptLine><cbc:ID>1</cbc:ID><cbc:ReceivedQuantity unitCode="C62">${yanit==="kabul"?1:0}</cbc:ReceivedQuantity>${gerekce?`<cbc:Note>${xmlKacir(gerekce)}</cbc:Note>`:""}</cac:ReceiptLine></ReceiptAdvice>`; try{const xml=await this.irsaliyeSoap(cfg,"sendDesUBL",`<des:sendDesUBLRequest><des:VKN_TCKN>${xmlKacir(cfg.vknTckn!)}</des:VKN_TCKN><des:SenderIdentifier>${xmlKacir(cfg.postaKutusuEtiketi!)}</des:SenderIdentifier><des:ReceiverIdentifier>${xmlKacir(xmlCoz(alici))}</des:ReceiverIdentifier><des:DocType>RECEIPT</des:DocType><des:DocData>${tekDosyaZipBase64(`${uuid}.xml`,receipt)}</des:DocData></des:sendDesUBLRequest>`);const ref=xmlDegeri(xml,["EnvUUID","UUID"]);return ref?{basarili:true,belgeRef:ref}:{basarili:false,hataMesaji:"İrsaliye yanıt referansı dönmedi"};}catch(hata){return{basarili:false,hataMesaji:hata instanceof Error?hata.message:"İrsaliye yanıtı gönderilemedi"};}
   }
 }

@@ -13,6 +13,7 @@ export interface EntegratorConfig {
   servisAdresi?: string;
   /** Sovos e-Arşiv servisi e-Fatura servisinden ayrı bir WSDL adresidir. */
   earsivServisAdresi?: string;
+  irsaliyeServisAdresi?: string;
   /** Entegratör servislerinde işlem yapan firmanın VKN/TCKN'si. */
   vknTckn?: string;
   /** Gönderici birim (GB) etiketi. */
@@ -81,3 +82,6 @@ export interface EarsivRapor {
   toplamTutar: string;
   gibDurumu: string;
 }
+
+export interface EirsaliyeBelge { uuid: string; belgeNo: string; xml: string; aliciPostaKutusu: string }
+export interface GelenEirsaliye { uuid: string; belgeNo: string; gonderenVkn: string; gonderenUnvan: string; tarih: Date; xml: string }

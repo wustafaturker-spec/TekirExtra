@@ -1,0 +1,12 @@
+CREATE TYPE "EirsaliyeDurum" AS ENUM ('kuyrukta','iletildi','kabul','ret','hata');
+CREATE TYPE "GelenEirsaliyeDurum" AS ENUM ('yeni','kabul','ret');
+CREATE TABLE "eirsaliye_kayitlari" ("id" UUID NOT NULL,"tenant_id" UUID NOT NULL,"belge_id" UUID NOT NULL,"durum" "EirsaliyeDurum" NOT NULL DEFAULT 'kuyrukta',"entegrator_ref" TEXT,"xml_icerik" TEXT,"hata_mesaji" TEXT,"created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,"updated_at" TIMESTAMP(3) NOT NULL,CONSTRAINT "eirsaliye_kayitlari_pkey" PRIMARY KEY ("id"),CONSTRAINT "eirsaliye_kayitlari_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE,CONSTRAINT "eirsaliye_kayitlari_belge_id_fkey" FOREIGN KEY ("belge_id") REFERENCES "belgeler"("id") ON DELETE CASCADE ON UPDATE CASCADE);
+CREATE UNIQUE INDEX "eirsaliye_kayitlari_belge_id_key" ON "eirsaliye_kayitlari"("belge_id");
+CREATE INDEX "eirsaliye_kayitlari_tenant_id_durum_idx" ON "eirsaliye_kayitlari"("tenant_id","durum");
+CREATE TABLE "gelen_eirsaliyeler" ("id" UUID NOT NULL,"tenant_id" UUID NOT NULL,"uuid" TEXT NOT NULL,"belge_no" TEXT NOT NULL,"gonderen_vkn" TEXT NOT NULL,"gonderen_unvan" TEXT NOT NULL,"tarih" DATE NOT NULL,"xml_icerik" TEXT NOT NULL,"durum" "GelenEirsaliyeDurum" NOT NULL DEFAULT 'yeni',"yanit_ref" TEXT,"yanit_gerekcesi" TEXT,"created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,"updated_at" TIMESTAMP(3) NOT NULL,CONSTRAINT "gelen_eirsaliyeler_pkey" PRIMARY KEY ("id"),CONSTRAINT "gelen_eirsaliyeler_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE);
+CREATE UNIQUE INDEX "gelen_eirsaliyeler_tenant_id_uuid_key" ON "gelen_eirsaliyeler"("tenant_id","uuid");
+CREATE INDEX "gelen_eirsaliyeler_tenant_id_durum_tarih_idx" ON "gelen_eirsaliyeler"("tenant_id","durum","tarih");
+ALTER TABLE "eirsaliye_kayitlari" ENABLE ROW LEVEL SECURITY; ALTER TABLE "eirsaliye_kayitlari" FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_eirsaliye_kayitlari ON "eirsaliye_kayitlari" USING ("tenant_id"=current_setting('app.tenant_id',true)::uuid) WITH CHECK ("tenant_id"=current_setting('app.tenant_id',true)::uuid);
+ALTER TABLE "gelen_eirsaliyeler" ENABLE ROW LEVEL SECURITY; ALTER TABLE "gelen_eirsaliyeler" FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_gelen_eirsaliyeler ON "gelen_eirsaliyeler" USING ("tenant_id"=current_setting('app.tenant_id',true)::uuid) WITH CHECK ("tenant_id"=current_setting('app.tenant_id',true)::uuid);

@@ -68,6 +68,7 @@ export default function EntegratorAyarlariSayfasi() {
       apiAnahtari: (v.get("apiAnahtari") as string) || undefined,
       servisAdresi: (v.get("servisAdresi") as string) || undefined,
       earsivServisAdresi: (v.get("earsivServisAdresi") as string) || undefined,
+      irsaliyeServisAdresi: (v.get("irsaliyeServisAdresi") as string) || undefined,
       vknTckn: (v.get("vknTckn") as string) || undefined,
       gondericiBirimEtiketi: (v.get("gondericiBirimEtiketi") as string) || undefined,
       postaKutusuEtiketi: (v.get("postaKutusuEtiketi") as string) || undefined,
@@ -224,6 +225,7 @@ export default function EntegratorAyarlariSayfasi() {
                       <Field label="Gönderici Birim (GB) Etiketi *"><Input name="gondericiBirimEtiketi" required placeholder="urn:mail:defaultgb@firma.com" /></Field>
                       <Field label="Posta Kutusu (PK) Etiketi"><Input name="postaKutusuEtiketi" placeholder="urn:mail:defaultpk@firma.com" /></Field>
                       <Field label="e-Arşiv Servis URL"><Input name="earsivServisAdresi" placeholder="Sovos tarafından verilen e-Arşiv .svc adresi" /></Field>
+                      <Field label="e-İrsaliye Servis URL"><Input name="irsaliyeServisAdresi" placeholder="Sovos tarafından verilen e-İrsaliye .svc adresi" /></Field>
                     </>}
                   </div>
                   <div className="row-tight" style={{ justifyContent: "flex-end", marginTop: "1rem" }}>

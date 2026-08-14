@@ -25,6 +25,7 @@ export const baglantiOlusturSemasi = z.object({
     apiAnahtari: z.string().optional(),
     servisAdresi: z.string().optional(),
     earsivServisAdresi: z.string().optional(),
+    irsaliyeServisAdresi: z.string().optional(),
     vknTckn: z.string().regex(/^\d{10,11}$/).optional(),
     gondericiBirimEtiketi: z.string().optional(),
     postaKutusuEtiketi: z.string().optional(),

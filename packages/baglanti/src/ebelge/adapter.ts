@@ -9,6 +9,8 @@ import type {
   UblBelge,
   EarsivIptalGirdi,
   EarsivRapor,
+  EirsaliyeBelge,
+  GelenEirsaliye,
 } from "./types";
 
 /**
@@ -36,4 +38,8 @@ export interface EntegratorAdapter {
   earsivIptal?(cfg: EntegratorConfig, girdi: EarsivIptalGirdi): Promise<BaglantiSonuc>;
   earsivRaporListele?(cfg: EntegratorConfig, baslangic: Date, bitis: Date): Promise<EarsivRapor[]>;
   earsivRaporDurum?(cfg: EntegratorConfig, uuid: string): Promise<BaglantiSonuc & { kod?: string }>;
+  irsaliyeGonder?(cfg: EntegratorConfig, belge: EirsaliyeBelge): Promise<GonderimSonuc>;
+  irsaliyeDurumSorgula?(cfg: EntegratorConfig, belgeRef: string): Promise<BelgeDurumSonuc>;
+  gelenIrsaliyeleriCek?(cfg: EntegratorConfig, sonrasi: Date): Promise<GelenEirsaliye[]>;
+  irsaliyeYanitiGonder?(cfg: EntegratorConfig, belgeRef: string, yanit: "kabul" | "ret", gerekce: string | undefined, kaynakXml: string): Promise<GonderimSonuc>;
 }

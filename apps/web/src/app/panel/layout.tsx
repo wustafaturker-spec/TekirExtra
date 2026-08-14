@@ -47,6 +47,7 @@ const MENU: MenuGrup[] = [
       { href: "/panel/masraflar/kiralar", ikon: "KR", baslik: "Kira Sözleşmeleri", eslesme: "tam" },
       { href: "/panel/fatura/tekrarlayan", ikon: "↻", baslik: "Tekrarlayan Faturalar" },
       { href: "/panel/fatura/earsiv-raporlari", ikon: "EA", baslik: "e-Arşiv Raporları", eslesme: "tam" },
+      { href: "/panel/ebelge/irsaliye-gelen", ikon: "İG", baslik: "Gelen e-İrsaliyeler", eslesme: "tam" },
       { href: "/panel/pazaryeri", ikon: "PS", baslik: "Pazaryeri Siparişleri", eslesme: "tam" },
       { href: "/panel/pazaryeri/kesintiler", ikon: "PK", baslik: "Pazaryeri Kesintileri", eslesme: "tam" },
       { href: "/panel/kasa-banka", ikon: "KB", baslik: "Kasa & Banka", eslesme: "tam" },

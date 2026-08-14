@@ -87,6 +87,8 @@ model Tenant {
   masraflar             Masraf[]
   kiraSozlesmeleri      KiraSozlesme[]
   epostaGonderimleri    EpostaGonderim[]
+  eirsaliyeKayitlari    EirsaliyeKayit[]
+  gelenEirsaliyeler     GelenEirsaliye[]
 
   @@map("tenants")
 }
@@ -1815,11 +1817,63 @@ model Belge {
   turetilenler Belge[]      @relation("BelgeZinciri")
   fatura       Fatura?      @relation(fields: [faturaId], references: [id])
   satirlar     BelgeSatir[]
+  eirsaliye    EirsaliyeKayit?
 
   @@unique([tenantId, no])
   @@index([tenantId, tur, durum])
   @@index([tenantId, cariId])
   @@map("belgeler")
+}
+
+enum EirsaliyeDurum {
+  kuyrukta
+  iletildi
+  kabul
+  ret
+  hata
+}
+
+enum GelenEirsaliyeDurum {
+  yeni
+  kabul
+  ret
+}
+
+/// Elektronik irsaliye yalnız sevk belgesidir; stok etkisi faturada doğar.
+model EirsaliyeKayit {
+  id             String          @id @default(uuid()) @db.Uuid
+  tenantId       String          @map("tenant_id") @db.Uuid
+  belgeId        String          @unique @map("belge_id") @db.Uuid
+  durum          EirsaliyeDurum  @default(kuyrukta)
+  entegratorRef  String?         @map("entegrator_ref")
+  xmlIcerik      String?         @map("xml_icerik")
+  hataMesaji     String?         @map("hata_mesaji")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  belge  Belge  @relation(fields: [belgeId], references: [id], onDelete: Cascade)
+  @@index([tenantId, durum])
+  @@map("eirsaliye_kayitlari")
+}
+
+model GelenEirsaliye {
+  id             String                 @id @default(uuid()) @db.Uuid
+  tenantId       String                 @map("tenant_id") @db.Uuid
+  uuid           String
+  belgeNo        String                 @map("belge_no")
+  gonderenVkn    String                 @map("gonderen_vkn")
+  gonderenUnvan  String                 @map("gonderen_unvan")
+  tarih          DateTime               @db.Date
+  xmlIcerik      String                 @map("xml_icerik")
+  durum          GelenEirsaliyeDurum    @default(yeni)
+  yanitRef       String?                @map("yanit_ref")
+  yanitGerekcesi String?                @map("yanit_gerekcesi")
+  createdAt      DateTime               @default(now()) @map("created_at")
+  updatedAt      DateTime               @updatedAt @map("updated_at")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, uuid])
+  @@index([tenantId, durum, tarih])
+  @@map("gelen_eirsaliyeler")
 }
 
 model BelgeSatir {

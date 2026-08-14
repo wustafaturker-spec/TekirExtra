@@ -393,6 +393,15 @@ export default function BelgelerSayfasi() {
     }
   }
 
+  async function eirsaliyeGonder(id: string) {
+    setHata(""); setBasari("");
+    try {
+      await api(`/ebelge/irsaliye/${id}/gonder`, { method: "POST" });
+      setBasari("e-İrsaliye entegratöre gönderildi. Stok etkisi oluşmadı; stok faturada işlenecek.");
+      void yukle();
+    } catch (h) { setHata(h instanceof Error ? h.message : "e-İrsaliye gönderilemedi"); }
+  }
+
   async function donusumOzetiAc(id: string, hedef: "siparis" | "irsaliye" | "fatura") {
     setHata("");
     try {
@@ -876,6 +885,7 @@ export default function BelgelerSayfasi() {
                             <Button key={h} size="sm" onClick={() => void donusumOzetiAc(b.id, h)}>→ {h === "fatura" ? "Fatura" : TUR_ADI[h]}</Button>
                           ))}
                           <Button size="sm" onClick={() => eylem(b.id, "iptal", "Belge iptal edildi.")}>İptal</Button>
+                          {b.tur === "irsaliye" && b.yon === "satis" && <Button size="sm" variant="primary" onClick={() => void eirsaliyeGonder(b.id)}>e-İrsaliye</Button>}
                         </>
                       )}
                       <Button size="sm" onClick={() => pdfAc(b.id)}>🖨</Button>
