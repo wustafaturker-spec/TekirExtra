@@ -66,6 +66,13 @@ arası taşıma **transfer fişiyle** yapılır (sevk irsaliyesi üretilmez),
 hareketin yapıldığı **deponun** kullanılabilir stoğuna bakar. Ayrıntı
 `apps/api/src/stok/depo.*`, `transfer.service.ts` ve §STK-07 kabul senaryosu.
 
+**Durum (KLN-08, 2026-08-14):** **abonelik ve paket yönetimi tamamlandı.**
+Başlangıç, Profesyonel ve Kurumsal plan kataloğu; kullanıcı/cari/stok/aylık
+fatura kullanım sayaçları ve kayıt anında limit denetimi; limit aşımını
+engelleyen plan değişimi; faturalama iletişimi; dönem sonunda iptal/yeniden
+etkinleştirme ve salt-okur değişiklik geçmişi eklendi. Ödeme sağlayıcısı henüz
+bağlı değildir; sağlayıcı referansı mevcut abonelik modelinde hazırdır.
+
 **Sıradaki paket — Entegratör Paketi (S-01 kapısı kısmen alındı, 2026-07-14):**
 e-belge adaptörleri bugüne dek yalnızca mock; gerçek adaptörler yazılacak.
 Kararlar: **İzibiz ile başlanır** (diğerleri aynı sözleşmeyi izleyerek eklenir),
@@ -298,7 +305,7 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | KLN-09 | Firma kaydında e-posta doğrulaması yapılmalıdır: kayıtta doğrulama linki gönderilir, link tıklanmadan oturum açılamaz. | Z |
 | KLN-06 | Sistem çok kiracılı (multi-tenant) çalışmalıdır: her firma bağımsız kaydolur, firmalar arası veri yalıtımı hem uygulama hem veri katmanında garanti edilmelidir. | Z |
 | KLN-07 | Firma kaydı (onboarding) self-servis olmalıdır: firma bilgileri, ilk yönetici kullanıcı ve entegratör bağlantısı sihirbazla kurulabilmelidir. | Z |
-| KLN-08 | ✅ Firma hesabı modeli plan, durum, faturalama iletişimi, sağlayıcı referansı ve dönem bilgilerini ayrı abonelik profiliyle taşıyabilir; v1.0'da fiyatlandırma uygulanmaz. | G |
+| KLN-08 | ✅ Abonelik ve paket yönetimi: plan kataloğu, dönem/durum, faturalama iletişimi, kullanım limitleri, plan değişimi, iptal/yeniden etkinleştirme ve değişiklik geçmişi. Ödeme sağlayıcısı entegrasyonu ayrıca bağlanabilir. | G |
 
 ### 3.8 Ayarlar ve Kayıt İşlem Kuralları (AYR)
 

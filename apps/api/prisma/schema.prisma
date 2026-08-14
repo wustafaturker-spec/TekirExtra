@@ -77,6 +77,7 @@ model Tenant {
   baglantilar          Baglanti[]
   auditLoglar          AuditLog[]
   abonelik             TenantAbonelik?
+  abonelikDegisiklikleri AbonelikDegisikligi[]
   pazaryeriSiparisleri PazaryeriSiparis[]
   posTahsilatlari      PosTahsilat[]
   pazaryeriKesintileri PazaryeriKesinti[]
@@ -112,6 +113,22 @@ model TenantAbonelik {
 
   @@index([durum, donemSonu])
   @@map("tenant_abonelikleri")
+}
+
+model AbonelikDegisikligi {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  oncekiPlan  String?  @map("onceki_plan")
+  yeniPlan    String   @map("yeni_plan")
+  oncekiDurum AbonelikDurumu? @map("onceki_durum")
+  yeniDurum   AbonelikDurumu @map("yeni_durum")
+  neden       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@map("abonelik_degisiklikleri")
 }
 
 model User {

@@ -23,6 +23,7 @@ import { sayfaAdedi } from "../core/sayfalama";
 import { stokExcelSablonYaz } from "../core/excel-yardimci";
 import { DepoService } from "./depo.service";
 import { StokService } from "./stok.service";
+import { AbonelikService } from "../tenant/abonelik.service";
 import {
   etiketBasSemasi,
   kategoriSemasi,
@@ -45,6 +46,7 @@ export class StokController {
     private readonly stokService: StokService,
     private readonly depoService: DepoService,
     private readonly prisma: PrismaService,
+    private readonly abonelik: AbonelikService,
   ) {}
 
   // ─── KATEGORİ UÇLARI (Önce tanımlanmalı) ──────────────────────────────────
@@ -188,6 +190,7 @@ export class StokController {
         ayristirma.error.issues.map((s) => s.message).join("; "),
       );
     }
+    await this.abonelik.limitDogrula("stok");
     return this.stokService.olustur(ayristirma.data);
   }
 

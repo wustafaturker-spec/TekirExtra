@@ -15,6 +15,7 @@ import type { Response } from "express";
 import { Roller } from "../auth/roller.decorator";
 import { FaturaService } from "./fatura.service";
 import { sayfaAdedi } from "../core/sayfalama";
+import { AbonelikService } from "../tenant/abonelik.service";
 import {
   faturaGuncelleSemasi,
   faturaOlusturSemasi,
@@ -25,7 +26,7 @@ import {
 
 @Controller("fatura")
 export class FaturaController {
-  constructor(private readonly faturaService: FaturaService) {}
+  constructor(private readonly faturaService: FaturaService, private readonly abonelik: AbonelikService) {}
 
   // ─── FATURA SERİ UÇLARI ───────────────────────────────────────────────────
 
@@ -115,6 +116,7 @@ export class FaturaController {
         ayristirma.error.issues.map((s) => s.message).join("; "),
       );
     }
+    await this.abonelik.limitDogrula("aylikFatura");
     return this.faturaService.olustur(ayristirma.data);
   }
 

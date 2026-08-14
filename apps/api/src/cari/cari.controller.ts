@@ -31,10 +31,11 @@ import {
   ekstreEpostaSemasi,
 } from "./cari.semalar";
 import { sayfaAdedi } from "../core/sayfalama";
+import { AbonelikService } from "../tenant/abonelik.service";
 
 @Controller("cari")
 export class CariController {
-  constructor(private readonly cariService: CariService) {}
+  constructor(private readonly cariService: CariService, private readonly abonelik: AbonelikService) {}
 
   @Get()
   async listele(
@@ -86,6 +87,7 @@ export class CariController {
         ayristirma.error.issues.map((s) => s.message).join("; "),
       );
     }
+    await this.abonelik.limitDogrula("cari");
     return this.cariService.olustur(ayristirma.data);
   }
 

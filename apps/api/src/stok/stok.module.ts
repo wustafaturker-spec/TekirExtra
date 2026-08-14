@@ -6,8 +6,10 @@ import { DepoService } from "./depo.service";
 import { StokController } from "./stok.controller";
 import { StokService } from "./stok.service";
 import { TransferService } from "./transfer.service";
+import { TenantModule } from "../tenant/tenant.module";
 
 @Module({
+  imports: [TenantModule],
   controllers: [StokController, DepoController],
   providers: [StokService, DepoService, TransferService],
   exports: [StokService, DepoService],

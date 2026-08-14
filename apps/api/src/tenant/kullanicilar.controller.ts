@@ -17,6 +17,7 @@ import { z } from "zod";
 import { Roller } from "../auth/roller.decorator";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
+import { AbonelikService } from "./abonelik.service";
 
 const kullaniciOlusturSemasi = z.object({
   eposta: z.email(),
@@ -51,7 +52,7 @@ const KULLANICI_SECIMI = {
 @Controller("kullanicilar")
 @Roller("yonetici")
 export class KullanicilarController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly abonelik: AbonelikService) {}
 
   @Get()
   listele() {
@@ -70,6 +71,7 @@ export class KullanicilarController {
       );
     }
     const girdi = ayristirma.data;
+    await this.abonelik.limitDogrula("kullanici");
     const { tenantId } = aktifBaglam();
 
     const mevcut = await this.prisma.authKimlik.findUnique({
