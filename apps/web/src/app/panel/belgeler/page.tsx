@@ -29,6 +29,7 @@ const YON_ADI: Record<string, string> = { satis: "Satış", alis: "Alış" };
 const EBELGE_DURUM_ADI: Record<string, string> = { kuyrukta: "Kuyrukta", iletildi: "İletildi", kabul: "Kabul edildi", ret: "Reddedildi", hata: "Hata" };
 const ODEME_DURUM_ADI: Record<string, string> = { beklemede: "Beklemede", odenmedi: "Ödenmedi", kismi: "Kısmi ödendi", odendi: "Ödendi" };
 const ebelgeZincirSinifi = (durum: string) => ["hata", "ret"].includes(durum) ? " is-error" : durum === "kabul" ? " is-complete" : " is-current";
+const detalleDurumSinifi = (durum?: string) => !durum ? "" : ["hata", "ret"].includes(durum) ? " is-error" : durum === "kabul" ? " is-complete" : " is-current";
 const odemeZincirSinifi = (durum: string) => durum === "odendi" ? " is-complete" : durum === "kismi" ? " is-current" : "";
 // Zincir: her türün dönüşebileceği hedefler (yalnız onaylı belgede)
 const DONUSUM: Record<string, ("siparis" | "irsaliye" | "fatura")[]> = {
@@ -75,6 +76,7 @@ interface Belge {
   depoId?: string | null;
   cari: { id: string; kod: string; unvan: string };
   faturaId: string | null;
+  eirsaliye?: { durum: string; entegratorRef?: string | null; hataMesaji?: string | null } | null;
 }
 
 interface ZincirRef { id: string; tur: string; no: string | null; durum: string }
@@ -723,6 +725,7 @@ export default function BelgelerSayfasi() {
             ) : (
               <div className="document-timeline__step" aria-disabled="true"><span /><strong>e-Belge</strong><small>{detay.fatura ? "Hazırlanıyor" : "Bekliyor"}</small></div>
             )}
+            {detay.tur === "irsaliye" && <div className={"document-timeline__step" + (detay.eirsaliye?.durum === "kabul" ? " is-complete" : detalleDurumSinifi(detay.eirsaliye?.durum))}><span>{detay.eirsaliye?.durum === "kabul" ? "✓" : ""}</span><strong>e-İrsaliye</strong><small>{detay.eirsaliye ? detay.eirsaliye.durum : "Gönderilmedi"}</small></div>}
             {detay.fatura ? (
               <a className={"document-timeline__step" + odemeZincirSinifi(detay.fatura.odemeOzeti.durum)} href={"/panel/fatura?faturaId=" + detay.fatura.id + "&panel=odeme"}>
                 <span>{detay.fatura.odemeOzeti.durum === "odendi" ? "✓" : ""}</span><strong>Tahsilat/Ödeme</strong><small>{ODEME_DURUM_ADI[detay.fatura.odemeOzeti.durum] ?? detay.fatura.odemeOzeti.durum}</small>

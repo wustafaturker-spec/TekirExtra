@@ -146,6 +146,7 @@ export class BelgelerService {
               kasaBankaHarekets: { select: { tutar: true } },
             },
           },
+          eirsaliye: { select: { durum: true, entegratorRef: true, hataMesaji: true } },
         },
       }),
     );
@@ -200,6 +201,7 @@ export class BelgelerService {
           },
         };
       })() : null,
+      eirsaliye: kayit.eirsaliye,
       izinliEylemler: this.eylemler(kayit),
     };
   }
