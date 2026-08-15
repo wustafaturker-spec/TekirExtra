@@ -57,7 +57,7 @@ export type RaporSatiri = Record<string, string | number | boolean | null>;
 
 export interface RaporTanimi {
   kod: string; // "cari.yaslandirma"
-  modul: "cari" | "stok" | "fatura" | "genel";
+  modul: "cari" | "stok" | "fatura" | "genel" | "urun_hareket";
   ad: string;
   aciklama?: string;
   filtreler: RaporFiltreTanimi[];

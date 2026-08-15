@@ -52,7 +52,7 @@ export class CariService {
     private readonly eposta: EpostaService,
   ) {}
 
-  async listele(arama?: string, imlec?: string, adet = 50, tip?: string, durum?: string) {
+  async listele(arama?: string, imlec?: string, adet = 50, tip?: string, durum?: string, bakiye?: string) {
     const { tenantId } = aktifBaglam();
     const ctx = aktifBaglam();
     const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) =>
@@ -60,6 +60,7 @@ export class CariService {
         where: {
           ...(tip === "musteri" ? { tip: { in: ["musteri", "her_ikisi"] } } : tip === "tedarikci" ? { tip: { in: ["tedarikci", "her_ikisi"] } } : {}),
           ...(durum === "bloke" ? { karaListe: true } : {}),
+          ...(bakiye === "gecikmis" ? { hareketler: { some: { tip: "borc", vadeTarihi: { lt: new Date() } } } } : {}),
           ...(arama ? {
               OR: [
                 { unvan: { contains: arama, mode: "insensitive" } },

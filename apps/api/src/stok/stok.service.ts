@@ -26,6 +26,7 @@ import type {
   stokTedarikciSemasi,
   stokVaryantGuncelleSemasi,
   stokVaryantSemasi,
+  stokFiyatSemasi,
 } from "./stok.semalar";
 
 import { stokExcelOku } from "../core/excel-yardimci";
@@ -170,6 +171,33 @@ export class StokService {
     }
   }
 
+  async fiyatListele(stokId: string) {
+    const { tenantId } = aktifBaglam();
+    await this.getir(stokId);
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.stokFiyat.findMany({ where: { tenantId, stokId }, orderBy: [{ aktif: "desc" }, { tip: "asc" }, { dovizCinsi: "asc" }] }));
+  }
+
+  async fiyatKaydet(stokId: string, girdi: z.infer<typeof stokFiyatSemasi>) {
+    const { tenantId } = aktifBaglam();
+    await this.getir(stokId);
+    if (girdi.varyantId) {
+      const varyant = await this.prisma.tenantIslem(tenantId, (tx) => tx.stokVaryant.findFirst({ where: { id: girdi.varyantId ?? undefined, stokId } }));
+      if (!varyant) throw new NotFoundException("Varyant bulunamadı");
+    }
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const mevcut = await tx.stokFiyat.findFirst({ where: { tenantId, stokId, varyantId: girdi.varyantId ?? null, tip: girdi.tip } });
+      return mevcut
+        ? tx.stokFiyat.update({ where: { id: mevcut.id }, data: { dovizCinsi: girdi.dovizCinsi, tutar: D(girdi.tutar), aktif: girdi.aktif } })
+        : tx.stokFiyat.create({ data: { tenantId, stokId, varyantId: girdi.varyantId ?? null, tip: girdi.tip, dovizCinsi: girdi.dovizCinsi, tutar: D(girdi.tutar), aktif: girdi.aktif } });
+    });
+  }
+
+  async fiyatSil(stokId: string, fiyatId: string) {
+    const { tenantId } = aktifBaglam();
+    const sonuc = await this.prisma.tenantIslem(tenantId, (tx) => tx.stokFiyat.deleteMany({ where: { id: fiyatId, stokId, tenantId } }));
+    if (sonuc.count === 0) throw new NotFoundException("Fiyat bulunamadı");
+  }
+
   async varyantGuncelle(stokId: string, varyantId: string, girdi: z.infer<typeof stokVaryantGuncelleSemasi>) {
     const { tenantId } = aktifBaglam();
     const mevcut = await this.prisma.tenantIslem(tenantId, (tx) => tx.stokVaryant.findFirst({ where: { id: varyantId, stokId } }));
@@ -203,6 +231,8 @@ export class StokService {
             kdvOrani: D(girdi.kdvOrani),
             alisFiyati: girdi.alisFiyati ? D(girdi.alisFiyati) : null,
             satisFiyati: girdi.satisFiyati ? D(girdi.satisFiyati) : null,
+            alisFiyatiDoviz: girdi.alisFiyatiDoviz,
+            satisFiyatiDoviz: girdi.satisFiyatiDoviz,
             kritikSeviye: girdi.kritikSeviye ? D(girdi.kritikSeviye) : null,
             minStok: girdi.minStok ? D(girdi.minStok) : null,
             maksStok: girdi.maksStok ? D(girdi.maksStok) : null,
@@ -225,7 +255,7 @@ export class StokService {
     }
   }
 
-  async tavsiyeFiyat(stokId: string, cariId?: string, tip = "satis") {
+  async tavsiyeFiyat(stokId: string, cariId?: string, tip = "satis", dovizCinsi = "TRY", fiyatListesiId?: string, belgeKuru = "1", urunKuru?: string, varyantId?: string) {
     const { tenantId } = aktifBaglam();
 
     let birimFiyat = 0;
@@ -236,7 +266,16 @@ export class StokService {
     );
     if (!stok) throw new NotFoundException("Stok kartı bulunamadı");
 
-    birimFiyat = Number(tip === "satis" ? stok.satisFiyati ?? 0 : stok.alisFiyati ?? 0);
+    const fiyat = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      if (varyantId) {
+        const varyantFiyati = await tx.stokFiyat.findFirst({ where: { tenantId, stokId, varyantId, tip: tip === "alis" ? "alis" : "satis", aktif: true } });
+        if (varyantFiyati) return varyantFiyati;
+      }
+      return tx.stokFiyat.findFirst({ where: { tenantId, stokId, tip: tip === "alis" ? "alis" : "satis", aktif: true, varyantId: null } });
+    });
+    birimFiyat = fiyat ? Number(fiyat.tutar) : Number(tip === "satis" ? stok.satisFiyati ?? 0 : stok.alisFiyati ?? 0);
+    let kaynakDoviz = fiyat?.dovizCinsi ?? (tip === "alis" ? stok.alisFiyatiDoviz : stok.satisFiyatiDoviz);
+    let fiyatKaynagi = fiyat ? "urun" : "kart";
 
     if (cariId) {
       const cari = await this.prisma.tenantIslem(tenantId, (tx) =>
@@ -246,27 +285,36 @@ export class StokService {
       if (cari) {
         iskontoOrani = Number(cari.varsayilanIskonto ?? 0);
 
-        if (tip === "satis" && cari.fiyatListesiId) {
+        const etkinListeId = fiyatListesiId || cari.fiyatListesiId;
+        if (tip === "satis" && etkinListeId) {
           const listeKalemi = await this.prisma.tenantIslem(tenantId, (tx) =>
-            tx.fiyatListesiKalem.findUnique({
-              where: {
-                tenantId_listeId_stokId: {
-                  tenantId,
-                  listeId: cari.fiyatListesiId!,
-                  stokId,
-                },
-              },
+            tx.fiyatListesiKalem.findFirst({
+              where: { tenantId, listeId: etkinListeId, stokId, liste: { aktif: true } },
+              include: { liste: { select: { dovizCinsi: true } } },
             }),
           );
           if (listeKalemi) {
             birimFiyat = Number(listeKalemi.fiyat);
+            kaynakDoviz = listeKalemi.liste.dovizCinsi;
+            fiyatKaynagi = "fiyat_listesi";
           }
         }
       }
     }
 
+    const belgeKurDegeri = dovizCinsi === "TRY" ? 1 : Number(belgeKuru);
+    const kaynakKurDegeri = kaynakDoviz === "TRY" ? 1 : Number(urunKuru || (kaynakDoviz === dovizCinsi ? belgeKurDegeri : 0));
+    const cevrilebilir = kaynakDoviz === dovizCinsi || (belgeKurDegeri > 0 && kaynakKurDegeri > 0);
+    const cevrilmisFiyat = kaynakDoviz === dovizCinsi ? birimFiyat : cevrilebilir ? birimFiyat * kaynakKurDegeri / belgeKurDegeri : null;
     return {
-      birimFiyat,
+      birimFiyat: cevrilmisFiyat ?? birimFiyat,
+      kaynakFiyat: birimFiyat,
+      kaynakDoviz,
+      belgeDovizi: dovizCinsi,
+      belgeKuru: belgeKurDegeri,
+      urunKuru: kaynakKurDegeri || null,
+      cevrilebilir,
+      fiyatKaynagi,
       iskontoOrani,
     };
   }
@@ -399,6 +447,8 @@ export class StokService {
             kdvOrani: girdi.kdvOrani ? D(girdi.kdvOrani) : undefined,
             alisFiyati: girdi.alisFiyati !== undefined ? (girdi.alisFiyati ? D(girdi.alisFiyati) : null) : undefined,
             satisFiyati: girdi.satisFiyati !== undefined ? (girdi.satisFiyati ? D(girdi.satisFiyati) : null) : undefined,
+            alisFiyatiDoviz: girdi.alisFiyatiDoviz,
+            satisFiyatiDoviz: girdi.satisFiyatiDoviz,
             kritikSeviye: girdi.kritikSeviye !== undefined ? (girdi.kritikSeviye ? D(girdi.kritikSeviye) : null) : undefined,
             minStok: girdi.minStok !== undefined ? (girdi.minStok ? D(girdi.minStok) : null) : undefined,
             maksStok: girdi.maksStok !== undefined ? (girdi.maksStok ? D(girdi.maksStok) : null) : undefined,
@@ -1220,6 +1270,8 @@ export class StokService {
     kdvOrani: Prisma.Decimal;
     alisFiyati: Prisma.Decimal | null;
     satisFiyati: Prisma.Decimal | null;
+    alisFiyatiDoviz: "TRY" | "USD" | "EUR";
+    satisFiyatiDoviz: "TRY" | "USD" | "EUR";
     kritikSeviye: Prisma.Decimal | null;
     minStok: Prisma.Decimal | null;
     maksStok: Prisma.Decimal | null;
@@ -1251,6 +1303,8 @@ export class StokService {
       kdvOrani: D(k.kdvOrani).toFixed(2),
       alisFiyati: k.alisFiyati ? D(k.alisFiyati).toFixed(4) : null,
       satisFiyati: k.satisFiyati ? D(k.satisFiyati).toFixed(4) : null,
+      alisFiyatiDoviz: k.alisFiyatiDoviz,
+      satisFiyatiDoviz: k.satisFiyatiDoviz,
       kritikSeviye: k.kritikSeviye ? D(k.kritikSeviye).toFixed(3) : null,
       minStok: k.minStok ? D(k.minStok).toFixed(3) : null,
       maksStok: k.maksStok ? D(k.maksStok).toFixed(3) : null,

@@ -61,6 +61,7 @@ const MODUL_ADLARI: Record<string, string> = {
   stok: "Stok",
   fatura: "Fatura",
   genel: "Genel",
+  urun_hareket: "Ürün Hareketleri",
 };
 
 const SAYISAL = ["para", "sayi", "yuzde"];

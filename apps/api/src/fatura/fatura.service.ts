@@ -481,6 +481,8 @@ export class FaturaService {
           durum: "taslak",
           tarih: new Date(girdi.tarih),
           vadeTarihi: girdi.vadeTarihi ? new Date(girdi.vadeTarihi) : null,
+          siparisNo: girdi.siparisNo ?? null,
+          siparisTarihi: girdi.siparisTarihi ? new Date(girdi.siparisTarihi) : null,
           cariId: girdi.cariId,
           // STK-07: boş bırakılırsa depo kesinleştirmede varsayılana çözülür
           depoId: girdi.depoId ?? null,
@@ -549,6 +551,8 @@ export class FaturaService {
       tip: girdi.tip ?? (fatura.tip as z.infer<typeof faturaOlusturSemasi>["tip"]),
       tarih: girdi.tarih ?? fatura.tarih,
       vadeTarihi: girdi.vadeTarihi !== undefined ? girdi.vadeTarihi : fatura.vadeTarihi,
+      siparisNo: girdi.siparisNo !== undefined ? girdi.siparisNo : fatura.siparisNo,
+      siparisTarihi: girdi.siparisTarihi !== undefined ? (girdi.siparisTarihi ? new Date(girdi.siparisTarihi) : null) : fatura.siparisTarihi,
       cariId: girdi.cariId ?? fatura.cariId,
       depoId: girdi.depoId !== undefined ? girdi.depoId : fatura.depoId,
       dovizCinsi: girdi.dovizCinsi ?? (fatura.dovizCinsi as "TRY" | "USD" | "EUR"),
@@ -1177,6 +1181,8 @@ export class FaturaService {
     sira: number | null;
     tarih: Date;
     vadeTarihi: Date | null;
+    siparisNo: string | null;
+    siparisTarihi: Date | null;
     cariId: string;
     depoId: string | null;
     dovizCinsi: string;
@@ -1203,6 +1209,8 @@ export class FaturaService {
       sira: k.sira,
       tarih: k.tarih.toISOString().slice(0, 10),
       vadeTarihi: k.vadeTarihi?.toISOString().slice(0, 10) ?? null,
+      siparisNo: k.siparisNo,
+      siparisTarihi: k.siparisTarihi?.toISOString().slice(0, 10) ?? null,
       cariId: k.cariId,
       depoId: k.depoId,
       dovizCinsi: k.dovizCinsi,

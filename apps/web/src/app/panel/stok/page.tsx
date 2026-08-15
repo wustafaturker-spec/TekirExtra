@@ -26,6 +26,8 @@ interface StokKart {
   kdvOrani: string;
   alisFiyati: string | null;
   satisFiyati: string | null;
+  alisFiyatiDoviz: string;
+  satisFiyatiDoviz: string;
   mevcutMiktar: string;
   ortalamaMaliyet: string;
 }
@@ -62,6 +64,8 @@ export default function StokSayfasi() {
   const [kdvOrani, setKdvOrani] = useState("20");
   const [alisFiyati, setAlisFiyati] = useState("");
   const [satisFiyati, setSatisFiyati] = useState("");
+  const [alisFiyatiDoviz, setAlisFiyatiDoviz] = useState("TRY");
+  const [satisFiyatiDoviz, setSatisFiyatiDoviz] = useState("TRY");
 
   const yukle = useCallback(async (imlec?: string) => {
     const istekSirasi = ++stokYuklemeSirasi.current;
@@ -108,6 +112,8 @@ export default function StokSayfasi() {
           kdvOrani: kdvOrani || "20",
           alisFiyati: alisFiyati || null,
           satisFiyati: satisFiyati || null,
+          alisFiyatiDoviz,
+          satisFiyatiDoviz,
         }),
       });
       setBasari("Stok kartı başarıyla oluşturuldu.");
@@ -118,6 +124,7 @@ export default function StokSayfasi() {
       setKdvOrani("20");
       setAlisFiyati("");
       setSatisFiyati("");
+      setAlisFiyatiDoviz("TRY"); setSatisFiyatiDoviz("TRY");
       void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Kayıt hatası");
@@ -228,8 +235,8 @@ export default function StokSayfasi() {
           <div className="document-editor__section">
             <h4 className="document-editor__section-title">Fiyat ve vergi</h4>
             <div className="record-fields record-fields--stock-price">
-              <Field label="Alış fiyatı (TRY)"><Input className="record-number" type="number" min="0" step="0.0001" inputMode="decimal" value={alisFiyati} onChange={(e) => setAlisFiyati(e.target.value)} placeholder="0,00" /></Field>
-              <Field label="Satış fiyatı (TRY)"><Input className="record-number" type="number" min="0" step="0.0001" inputMode="decimal" value={satisFiyati} onChange={(e) => setSatisFiyati(e.target.value)} placeholder="0,00" /></Field>
+              <Field label="Alış fiyatı"><div className="row"><Input className="record-number" type="number" min="0" step="0.0001" inputMode="decimal" value={alisFiyati} onChange={(e) => setAlisFiyati(e.target.value)} placeholder="0,00" /><Select aria-label="Alış fiyatı dövizi" value={alisFiyatiDoviz} onChange={(e) => setAlisFiyatiDoviz(e.target.value)}><option>TRY</option><option>USD</option><option>EUR</option></Select></div></Field>
+              <Field label="Satış fiyatı"><div className="row"><Input className="record-number" type="number" min="0" step="0.0001" inputMode="decimal" value={satisFiyati} onChange={(e) => setSatisFiyati(e.target.value)} placeholder="0,00" /><Select aria-label="Satış fiyatı dövizi" value={satisFiyatiDoviz} onChange={(e) => setSatisFiyatiDoviz(e.target.value)}><option>TRY</option><option>USD</option><option>EUR</option></Select></div></Field>
               <Field label="KDV (%)"><Input className="record-number" type="number" min="0" max="100" inputMode="decimal" value={kdvOrani} onChange={(e) => setKdvOrani(e.target.value)} required /></Field>
             </div>
           </div>
@@ -288,8 +295,8 @@ export default function StokSayfasi() {
                       {miktar.toLocaleString("tr-TR", { minimumFractionDigits: 0 })} {s.anaBirim}
                     </td>
                     <td className="num" style={{ color: "var(--info)" }}>{maliyet > 0 ? tl(maliyet) : "—"}</td>
-                    <td className="num">{s.alisFiyati ? tl(s.alisFiyati) : "—"}</td>
-                    <td className="num" style={{ fontWeight: 600 }}>{s.satisFiyati ? tl(s.satisFiyati) : "—"}</td>
+                    <td className="num">{s.alisFiyati ? `${Number(s.alisFiyati).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${s.alisFiyatiDoviz}` : "—"}</td>
+                    <td className="num" style={{ fontWeight: 600 }}>{s.satisFiyati ? `${Number(s.satisFiyati).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${s.satisFiyatiDoviz}` : "—"}</td>
                     <td className="center">
                       <div className="row-tight" style={{ justifyContent: "center" }}>
                         <ButtonLabel as="a" size="sm" href={`/panel/stok/${s.id}`}>🔍 Detay</ButtonLabel>

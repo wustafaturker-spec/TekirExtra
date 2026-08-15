@@ -42,7 +42,8 @@ const MENU: MenuGrup[] = [
     ogeler: [
       { href: "/panel/cari", ikon: "CH", baslik: "Cari Hesaplar" },
       { href: "/panel/belgeler", ikon: "B", baslik: "Tüm Belgeler", eslesme: "tam" },
-      { href: "/panel/fatura", ikon: "F", baslik: "Tüm Faturalar", eslesme: "tam" },
+      { href: "/panel/fatura?yon=satis", ikon: "SF", baslik: "Satış Faturaları", eslesme: "tam" },
+      { href: "/panel/fatura?yon=alis", ikon: "AF", baslik: "Alış Faturaları", eslesme: "tam" },
       { href: "/panel/masraflar", ikon: "M", baslik: "Masraflar", eslesme: "tam" },
       { href: "/panel/masraflar/kiralar", ikon: "KR", baslik: "Kira Sözleşmeleri", eslesme: "tam" },
       { href: "/panel/fatura/tekrarlayan", ikon: "↻", baslik: "Tekrarlayan Faturalar" },
@@ -60,6 +61,7 @@ const MENU: MenuGrup[] = [
   {
     baslik: "Ürün & Stok",
     ogeler: [
+      { href: "/panel/uretim", ikon: "ÜR", baslik: "Üretim Emirleri", eslesme: "tam" },
       { href: "/panel/stok", ikon: "SK", baslik: "Stok Kartları", eslesme: "tam" },
       { href: "/panel/stok/kategoriler", ikon: "KT", baslik: "Kategoriler", eslesme: "tam" },
       { href: "/panel/stok/sayim", ikon: "SS", baslik: "Stok Sayımı", eslesme: "tam" },
@@ -69,7 +71,10 @@ const MENU: MenuGrup[] = [
   },
   {
     baslik: "Raporlar",
-    ogeler: [{ href: "/panel/raporlar", ikon: "RA", baslik: "Raporlar & Analiz" }],
+    ogeler: [
+      { href: "/panel/raporlar", ikon: "RA", baslik: "Raporlar & Analiz", eslesme: "tam" },
+      { href: "/panel/raporlar/urun-hareketleri", ikon: "ÜH", baslik: "Ürün Hareket Raporu", eslesme: "tam" },
+    ],
   },
   {
     baslik: "Ayarlar",
@@ -96,6 +101,7 @@ const MENU: MenuGrup[] = [
 export default function PanelLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [aktifArama, setAktifArama] = useState("");
   const [rol, setRol] = useState<string | null>(null);
   const [menuAcik, setMenuAcik] = useState(false);
   const [bildirimler, setBildirimler] = useState<Bildirim[]>([]);
@@ -111,6 +117,8 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const mobilMenuRef = useRef<HTMLElement>(null);
   const bildirimTetikleyiciRef = useRef<HTMLButtonElement | null>(null);
   const bildirimPanelRef = useRef<HTMLElement>(null);
+
+  useEffect(() => { setAktifArama(window.location.search); }, [pathname]);
 
   useEffect(() => {
     if (tokenAl()) {
@@ -252,7 +260,12 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   }
 
   function aktifMi(oge: MenuOge): boolean {
-    return oge.eslesme === "tam" ? pathname === oge.href : pathname.startsWith(oge.href);
+    const [hedefYol, hedefSorgu = ""] = oge.href.split("?");
+    const yolEslesiyor = oge.eslesme === "tam" ? pathname === hedefYol : pathname.startsWith(hedefYol);
+    if (!yolEslesiyor || !hedefSorgu) return yolEslesiyor;
+    const hedefParametreler = new URLSearchParams(hedefSorgu);
+    const aktifParametreler = new URLSearchParams(aktifArama);
+    return Array.from(hedefParametreler.entries()).every(([anahtar, deger]) => aktifParametreler.get(anahtar) === deger);
   }
 
   return (
@@ -301,7 +314,13 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
                   key={oge.href}
                   href={oge.href}
                   className={`nav__link${aktifMi(oge) ? " is-active" : ""}`}
-                  onClick={() => setMenuAcik(false)}
+                  onClick={(event) => {
+                    setMenuAcik(false);
+                    if (oge.href.startsWith("/panel/fatura?yon=")) {
+                      event.preventDefault();
+                      window.location.assign(oge.href);
+                    }
+                  }}
                 >
                   <span aria-hidden="true" className="nav__link-icon">{oge.ikon}</span>
                   <span>{oge.baslik}</span>

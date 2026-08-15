@@ -3,6 +3,7 @@ import { z } from "zod";
 const pozitifOndalik = z
   .string()
   .regex(/^\d{1,13}(\.\d{1,6})?$/, "Pozitif sayısal değer gerekli");
+const yuzde = pozitifOndalik.refine((deger) => Number(deger) <= 100, "Oran %100'ü aşamaz");
 
 const partiBilgisiSemasi = z.object({
   lotNo: z.string().min(1).max(100), seriNo: z.string().min(1).max(160).optional().nullable(),
@@ -17,30 +18,44 @@ export const faturaSatirSemasi = z.object({
   miktar: pozitifOndalik,
   birim: z.string().min(1).max(20).default("adet"),
   birimFiyat: pozitifOndalik,
-  iskontoOrani: pozitifOndalik.default("0"),
-  kdvOrani: pozitifOndalik.default("20"),
+  iskontoOrani: yuzde.default("0"),
+  kdvOrani: yuzde.default("20"),
   tevkifatPay: z.number().int().min(1).max(10).optional().nullable(),
   tevkifatPayda: z.number().int().min(1).max(10).optional().nullable(),
   gibIstisnaKodu: z.string().max(20).optional().nullable(),
 });
 
-export const faturaOlusturSemasi = z.object({
+const faturaOlusturGovde = z.object({
   tip: z.enum(["satis", "alis", "satis_iade", "alis_iade", "proforma"]),
   tarih: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)"),
   vadeTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)").optional().nullable(),
+  siparisNo: z.string().trim().max(100).optional().nullable(),
+  siparisTarihi: z.string().date("Geçersiz sipariş tarihi").optional().nullable(),
   cariId: z.string().uuid(),
   /** STK-07: stok hareketlerinin işleneceği depo; boşsa varsayılan depo */
   depoId: z.string().uuid().optional().nullable(),
   dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
   kur: pozitifOndalik.default("1"),
-  genelIskontoYuzdesi: pozitifOndalik.default("0"),
+  genelIskontoYuzdesi: yuzde.default("0"),
   genelIskontoTutari: pozitifOndalik.default("0"),
   aciklama: z.string().max(500).optional().nullable(),
   notlar: z.string().max(2000).optional().nullable(),
   satirlar: z.array(faturaSatirSemasi).min(1, "Faturada en az bir satır bulunmalıdır"),
 });
-
-export const faturaGuncelleSemasi = faturaOlusturSemasi.partial();
+const tevkifatlariDogrula = (fatura: { satirlar?: Array<{ tevkifatPay?: number | null; tevkifatPayda?: number | null }> }, ctx: z.RefinementCtx) => {
+  fatura.satirlar?.forEach((satir, index) => {
+    if (satir.tevkifatPay != null && satir.tevkifatPayda != null && satir.tevkifatPay > satir.tevkifatPayda) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["satirlar", index, "tevkifatPay"], message: "Tevkifat payı paydadan büyük olamaz" });
+    }
+  });
+};
+const faturaFinansalDogrula = (fatura: { satirlar?: Array<{ miktar?: string; birimFiyat?: string; iskontoOrani?: string; tevkifatPay?: number | null; tevkifatPayda?: number | null }>; genelIskontoTutari?: string }, ctx: z.RefinementCtx) => {
+  tevkifatlariDogrula(fatura, ctx);
+  const araToplam = (fatura.satirlar ?? []).reduce((toplam, satir) => toplam + Number(satir.miktar ?? 0) * Number(satir.birimFiyat ?? 0) * (1 - Number(satir.iskontoOrani ?? 0) / 100), 0);
+  if (Number(fatura.genelIskontoTutari ?? 0) > araToplam + 0.01) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["genelIskontoTutari"], message: "Genel iskonto tutarı ara toplamı aşamaz" });
+};
+export const faturaOlusturSemasi = faturaOlusturGovde.superRefine((fatura, ctx) => faturaFinansalDogrula(fatura, ctx));
+export const faturaGuncelleSemasi = faturaOlusturGovde.partial().superRefine((fatura, ctx) => faturaFinansalDogrula(fatura, ctx));
 
 export const faturaSeriSemasi = z.object({
   seri: z.string().regex(/^[A-Z]{3}$/, "Seri 3 büyük harf olmalıdır (örn. TKR)"),

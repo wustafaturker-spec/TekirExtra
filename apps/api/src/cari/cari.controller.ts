@@ -44,9 +44,10 @@ export class CariController {
     @Query("adet") adet?: string,
     @Query("tip") tip?: string,
     @Query("durum") durum?: string,
+    @Query("bakiye") bakiye?: string,
   ) {
     const adetSayi = sayfaAdedi(adet);
-    return this.cariService.listele(arama, imlec, adetSayi, tip, durum);
+    return this.cariService.listele(arama, imlec, adetSayi, tip, durum, bakiye);
   }
 
   @Get("etiketler")

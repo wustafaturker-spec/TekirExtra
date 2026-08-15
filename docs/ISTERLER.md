@@ -297,6 +297,28 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | RPR-04 | Tüm raporlar PDF ve Excel olarak dışa aktarılabilmelidir. | Z |
 | RPR-05 | Kâr/zarar özeti (basit gelir-gider farkı) raporlanabilmelidir. | İ |
 | RPR-06 | **Ortak rapor araç seti:** Her modülün kendi "Raporlar" sekmesi olmalıdır (CARI-12, STK-13, FTR-15). Tüm raporlar ortak yetenek setini sunar: tarih aralığı + modüle özgü filtreler, gruplama/kırılım, sıralama, PDF/Excel dışa aktarım (RPR-04), kayıtlı rapor görünümleri (filtre setini adlandırıp saklama). | Z |
+| RPR-08 | **Modül ekran standardı:** Her iş modülünde ayrı bir "Düzeltme/İşlemler" ve "Raporlar" ekranı bulunmalıdır. Düzeltme ekranı hatalı, eksik veya bekleyen kayıtları filtreleyebilmeli; kayıt ayrıntısına, düzeltme eylemine ve yeniden işleme akışına doğrudan erişim vermelidir. Raporlar ekranı tarih aralığı, durum, kullanıcı, cari/ürün ve modüle özgü filtreleri desteklemeli; sonuçların kaynağı, hesaplama dönemi ve dışa aktarım zamanı gösterilmelidir. | Z |
+
+**Modül ekran matrisi (RPR-08):**
+
+| Modül | Düzeltme/İşlemler ekranı | Raporlar ekranı |
+|---|---|---|
+| Cari | Hatalı/eksik kart bilgileri, bloke durumu, vade ve risk koşulları, içe aktarma hataları | Ekstre, yaşlandırma, bakiye, tahsilat performansı, en yüksek riskli cariler |
+| Satış/Fatura | Taslak ve hatalı e-belgeler, eksik cari/ürün, risk limiti uyarıları, yeniden gönderim | Satış/alış özeti, kâr marjı, KDV, iskonto, iade, açık tahsilat ve bekleyen belgeler |
+| e-Fatura/e-Arşiv | Kuyruk, gönderim hatası, ret/kabul yanıtı, günlük e-Arşiv raporu ve yeniden deneme | Gönderim durumu, hata/ret analizi, kanal ve dönem bazlı belge raporu |
+| Stok | Sayım farkları, eksi stok uyarıları, hatalı hareketler, ürün/barkod eksikleri | Envanter, hareket, kritik stok, devir hızı, kârlılık, fire/zayi ve sipariş önerisi |
+| Kasa/Banka | Eşleşmeyen ekstre satırları, hatalı fişler, başarısız ödeme/talimatlar | Hesap hareketi, bakiye, tahsilat/ödeme, mutabakat, komisyon ve nakit akışı |
+| Pazaryeri/POS | Senkronizasyon, ürün eşleme, stok/fiyat, callback ve başarısız tahsilat işlemleri | Sipariş, ciro, komisyon, iade, kanal ve sağlayıcı performansı |
+
+RPR-08 kapsamındaki her düzeltme eylemi sunucu tarafında yetki, durum ve
+idempotensi kontrolünden geçmeli; başarılı/başarısız sonuçlar denetim izine
+yazılmalı ve kullanıcıya neden ile sonraki önerilen adım gösterilmelidir.
+
+**Döviz kuru kaynağı:** USD ve EUR gösterge kurları TCMB EVDS3 REST servisinden
+sunucu tarafında alınır. API anahtarı yalnızca `TCMB_EVDS_API_KEY` ortam
+değişkeninde tutulur. Belge tarihinde kur yayımlanmamışsa önceki iş gününün kuru
+kullanılır; kaynak tarih kullanıcıya gösterilir ve alınan değerler veritabanında
+önbelleğe alınır. EVDS erişilemezse kullanıcı manuel kur girebilir.
 | RPR-07 | **Gömülü analitik (Metabase):** Sistem, Metabase ile gömülü analiz panoları sunmalıdır. Hazır panolar (satış trendi, nakit akış, cari risk, stok analizi) uygulama içinde gösterilir; kiracı yalıtımı imzalı gömme parametresiyle (kilitli tenant_id) garanti edilir. Operasyonel/mali belgeler (ekstre, KDV özeti gibi) Metabase'e değil, yerli rapor araç setine (RPR-06) aittir. | İ |
 
 ### 3.7 Kullanıcı ve Firma Yönetimi (KLN)
@@ -325,6 +347,7 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | AYR-05 | Kural örnekleri (varsayılan set): kesinleşmiş fatura değiştirilemez/silinemez ama **kopyalanabilir** ve iptal edilebilir; hareketi olan cari/stok kartı silinemez (pasife alınır); taslak kayıtlar serbestçe düzenlenir/silinir. | Z |
 | AYR-06 | İzin verilen eylemler API yanıtında kayıtla birlikte dönmelidir; arayüz düğmeleri buna göre çizer, asıl denetim sunucudadır. | Z |
 | AYR-07 | Kopyalama eylemi: mevcut kayıttan yeni taslak üretir (ör. faturayı kopyala → yeni taslak fatura, yeni tarih/numara ile). | Z |
+| AYR-08 | **Düzeltme standardı:** Her modülün düzeltme ekranı, yalnızca düzenlenebilir durumdaki kayıtları gösterir; kesinleşmiş kayıtlar için ters kayıt/iptal/kopyalama akışını kullanır. Hatalı entegrasyon ve içe aktarma kayıtlarında yeniden işleme idempotent olmalı, hata nedeni ve düzeltme önerisi gösterilmelidir. | Z |
 
 ### 3.9 Entegrasyon Aileleri — Pazaryeri, Sanal POS, Banka (ENT)
 

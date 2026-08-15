@@ -1,4 +1,5 @@
 import "./stok.raporlar";
+import "./urun-hareket.raporlar";
 import { Module, OnModuleInit } from "@nestjs/common";
 import { registerEylemPolitikasi } from "../core/eylemler/eylem-kayit";
 import { DepoController } from "./depo.controller";

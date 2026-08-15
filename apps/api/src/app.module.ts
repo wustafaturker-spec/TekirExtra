@@ -19,6 +19,8 @@ import { TenantModule } from "./tenant/tenant.module";
 import { PazaryeriModule } from "./pazaryeri/pazaryeri.module";
 import { PosModule } from "./pos/pos.module";
 import { MasraflarModule } from "./masraflar/masraflar.module";
+import { DovizModule } from "./doviz/doviz.module";
+import { UretimModule } from "./uretim/uretim.module";
 
 @Module({
   imports: [
@@ -39,6 +41,8 @@ import { MasraflarModule } from "./masraflar/masraflar.module";
     PazaryeriModule,
     PosModule,
     MasraflarModule,
+    DovizModule,
+    UretimModule,
   ],
   providers: [{ provide: APP_INTERCEPTOR, useClass: AuditInterceptor }],
 })

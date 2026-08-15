@@ -35,6 +35,8 @@ export const stokKartOlusturSemasi = z.object({
   kdvOrani: pozitifOndalik.default("20"),
   alisFiyati: pozitifOndalik.optional().nullable(),
   satisFiyati: pozitifOndalik.optional().nullable(),
+  alisFiyatiDoviz: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+  satisFiyatiDoviz: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
   kritikSeviye: pozitifOndalik.optional().nullable(),
   minStok: pozitifOndalik.optional().nullable(),
   maksStok: pozitifOndalik.optional().nullable(),
@@ -104,6 +106,14 @@ export const stokVaryantSemasi = z.object({
 });
 
 export const stokVaryantGuncelleSemasi = stokVaryantSemasi.partial().extend({ aktif: z.boolean().optional() });
+
+export const stokFiyatSemasi = z.object({
+  varyantId: z.string().uuid().optional().nullable(),
+  tip: z.enum(["alis", "satis"]),
+  dovizCinsi: z.enum(["TRY", "USD", "EUR"]),
+  tutar: pozitifOndalik,
+  aktif: z.boolean().optional().default(true),
+});
 
 /** Barkod etiket basımı (STK-15 devamı, 4. aşama). */
 export const etiketBasSemasi = z.object({

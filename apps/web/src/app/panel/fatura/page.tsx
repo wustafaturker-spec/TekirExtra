@@ -9,6 +9,7 @@ import { DepoSecici } from "@/components/depo-secici";
 import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
 import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyalari";
 import { FaturaEkPaneli } from "@/components/fatura-ek-paneli";
+import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { faturaHesapla, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
@@ -69,6 +70,10 @@ interface Fatura {
   no: string | null;
   tip: string;
   tarih: string;
+  vadeTarihi?: string | null;
+  siparisNo?: string | null;
+  siparisTarihi?: string | null;
+  aciklama?: string | null;
   durum: string;
   toplamMatrah: string;
   toplamKdv: string;
@@ -82,6 +87,7 @@ interface Fatura {
 interface FaturaDetay extends Fatura {
   cari: { id: string; kod: string; unvan: string; vknTckn: string | null; eFaturaMukellefi: boolean | null };
   dovizCinsi: string;
+  notlar?: string | null;
   depoId?: string | null;
   satirlar: { stokId: string; varyantId?: string | null; stokKod: string; stokAd: string; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; gibIstisnaKodu?: string | null }[];
   ebelge?: {
@@ -193,6 +199,7 @@ export default function FaturaSayfasi() {
   const [sonrakiFaturaImleci, setSonrakiFaturaImleci] = useState<string | null>(null);
   const [cariDogrulamaHatasi, setCariDogrulamaHatasi] = useState("");
   const [satirDogrulamaHatalari, setSatirDogrulamaHatalari] = useState<number[]>([]);
+  const [urunModali, setUrunModali] = useState<{ satir: number; stokId?: string } | null>(null);
   const [faturaListesiYukleniyor, setFaturaListesiYukleniyor] = useState(false);
   const [faturaFiltreleriHazir, setFaturaFiltreleriHazir] = useState(false);
 
@@ -201,7 +208,17 @@ export default function FaturaSayfasi() {
   const [cariOzeti, setCariOzeti] = useState<CariSecimOzeti | null>(null);
   const [depoId, setDepoId] = useState("");
   const [tip, setTip] = useState("satis");
+  const [dovizCinsi, setDovizCinsi] = useState("TRY");
+  const [kur, setKur] = useState("1");
+  const [kurBilgisi, setKurBilgisi] = useState("");
   const [tarih, setTarih] = useState(new Date().toISOString().substring(0, 10));
+  const [vadeTarihi, setVadeTarihi] = useState("");
+  const [vadeElleDegisti, setVadeElleDegisti] = useState(false);
+  const [siparisNo, setSiparisNo] = useState("");
+  const [siparisTarihi, setSiparisTarihi] = useState("");
+  const [aciklama, setAciklama] = useState("");
+  const [kuruAciklamayaEkle, setKuruAciklamayaEkle] = useState(true);
+  const [notlar, setNotlar] = useState("");
   const [dosyalar, setDosyalar] = useState<File[]>([]);
   const [satirlar, setSatirlar] = useState<FaturaSatir[]>([
     { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" },
@@ -210,7 +227,7 @@ export default function FaturaSayfasi() {
   const bugun = new Date().toISOString().substring(0, 10);
   const formKirli = formAcik && (
     cariId !== "" || depoId !== "" || tip !== (yonBaglami ?? "satis") || tarih !== bugun
-    || dosyalar.length > 0 || satirlar.length !== 1
+    || dovizCinsi !== "TRY" || kur !== "1" || aciklama.trim() !== "" || notlar.trim() !== "" || dosyalar.length > 0 || satirlar.length !== 1
     || satirlar.some((satir) => satir.stokId !== "" || satir.miktar !== 1 || satir.birimFiyat !== 0 || satir.iskontoOrani !== 0 || satir.kdvOrani !== 20 || Boolean(satir.gibIstisnaKodu))
   );
 
@@ -294,7 +311,7 @@ export default function FaturaSayfasi() {
     if (yon === "satis" || yon === "alis") {
       setYonBaglami(yon);
       setTip(yon);
-    }
+    } else setYonBaglami(null);
     if (parametreler.get("yeni") === "1" && !yeniSayfasi) {
       parametreler.delete("yeni");
       router.replace(`/panel/fatura/yeni${parametreler.size ? `?${parametreler.toString()}` : ""}`);
@@ -304,8 +321,8 @@ export default function FaturaSayfasi() {
     if (yeniSayfasi && duzenleId) {
       void api<FaturaDetay>(`/fatura/${duzenleId}`).then((fatura) => {
         if (fatura.durum !== "taslak" || fatura.ebelge) throw new Error("Bu fatura artık düzenlenemez.");
-        setDuzenlenenId(fatura.id); setTip(fatura.tip); setTarih(fatura.tarih.slice(0, 10));
-        setCariId(fatura.cari.id); setDepoId(fatura.depoId ?? "");
+        setDuzenlenenId(fatura.id); setTip(fatura.tip); setTarih(fatura.tarih.slice(0, 10)); setDovizCinsi(fatura.dovizCinsi); setVadeTarihi(fatura.vadeTarihi?.slice(0, 10) ?? ""); setSiparisNo(fatura.siparisNo ?? ""); setSiparisTarihi(fatura.siparisTarihi?.slice(0, 10) ?? ""); setVadeElleDegisti(true);
+        setCariId(fatura.cari.id); setDepoId(fatura.depoId ?? ""); setAciklama(fatura.aciklama ?? ""); setNotlar(fatura.notlar ?? "");
         setSatirlar(fatura.satirlar.map((satir) => ({
           stokId: satir.stokId, varyantId: satir.varyantId ?? undefined,
           miktar: Number(satir.miktar), birimFiyat: Number(satir.birimFiyat),
@@ -356,7 +373,9 @@ export default function FaturaSayfasi() {
   }
   function gorunumUygula(gorunum: KayitliGorunum) { filtreleriUygula(gorunum); kullanimOlayi("gorunum_kullanildi"); }
   function formuSifirla() {
-    setCariId(""); setCariOzeti(null); setDepoId(""); setTip(yonBaglami ?? "satis"); setTarih(new Date().toISOString().substring(0, 10));
+    setCariId(""); setCariOzeti(null); setDepoId(""); setTip(yonBaglami ?? "satis"); setTarih(new Date().toISOString().substring(0, 10)); setDovizCinsi("TRY"); setKur("1");
+    setAciklama(""); setKuruAciklamayaEkle(true);
+    setNotlar(""); setVadeTarihi(""); setVadeElleDegisti(false); setSiparisNo(""); setSiparisTarihi("");
     setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" }]); setAcikSatir(null);
     setDosyalar([]);
     setCariDogrulamaHatasi(""); setSatirDogrulamaHatalari([]);
@@ -382,6 +401,22 @@ export default function FaturaSayfasi() {
       .catch(() => { if (gecerli) setCariOzeti(null); });
     return () => { gecerli = false; };
   }, [cariId]);
+
+  useEffect(() => {
+    if (!cariOzeti || vadeElleDegisti || duzenlenenId) return;
+    const temel = new Date(`${tarih}T00:00:00`);
+    temel.setDate(temel.getDate() + (cariOzeti.varsayilanVadeGun ?? 0));
+    setVadeTarihi(temel.toISOString().slice(0, 10));
+  }, [cariOzeti, tarih, vadeElleDegisti, duzenlenenId]);
+
+  useEffect(() => {
+    if (dovizCinsi === "TRY") { setKur("1"); setKurBilgisi(""); return; }
+    let gecerli = true;
+    api<{ kaynak: string; kurTarihi: string; oncekiIsGunuKullanildi: boolean; kurlar: Record<string, number> }>(`/doviz-kurlari?tarih=${tarih}&tip=alis`)
+      .then((veri) => { if (gecerli && veri.kurlar[dovizCinsi]) { setKur(String(veri.kurlar[dovizCinsi])); setKurBilgisi(`${veri.kaynak === "TCMB_XML" ? "TCMB" : "TCMB EVDS"} · ${veri.kurTarihi}${veri.oncekiIsGunuKullanildi ? " (önceki iş günü)" : ""}`); } })
+      .catch(() => { if (gecerli) setKurBilgisi("TCMB kuru alınamadı; manuel kur girin"); });
+    return () => { gecerli = false; };
+  }, [dovizCinsi, tarih]);
 
   function satirEkle() {
     const yeniIndex = satirlar.length;
@@ -417,7 +452,7 @@ export default function FaturaSayfasi() {
       if (deger) {
         try {
           const tavsiye = await api<{ birimFiyat: number; iskontoOrani: number }>(
-            `/stok/${deger}/tavsiye-fiyat?cariId=${cariId}&tip=${tip}`
+            `/stok/${deger}/tavsiye-fiyat?cariId=${cariId}&tip=${tip}&dovizCinsi=${dovizCinsi}`
           );
           yeni[index].birimFiyat = tavsiye.birimFiyat;
           yeni[index].iskontoOrani = tavsiye.iskontoOrani;
@@ -531,7 +566,7 @@ export default function FaturaSayfasi() {
       void guncelleFiyatlar();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cariId, tip, duzenlenenId]);
+  }, [cariId, tip, dovizCinsi, duzenlenenId]);
 
   async function kaydet(e: React.FormEvent) {
     e.preventDefault();
@@ -549,6 +584,10 @@ export default function FaturaSayfasi() {
     }
 
     try {
+      const kurAciklamasi = kuruAciklamayaEkle && dovizCinsi !== "TRY" ? `Döviz kuru: 1 ${dovizCinsi} = ${Number(kur).toLocaleString("tr-TR", { minimumFractionDigits: 4, maximumFractionDigits: 6 })} TRY${kurBilgisi ? ` (${kurBilgisi})` : ""}` : "";
+      const kullaniciAciklamasi = aciklama.split("\n").filter((satir) => !satir.startsWith("Döviz kuru:")).join("\n").trim();
+      const kayitAciklamasi = [kullaniciAciklamasi, kurAciklamasi].filter(Boolean).join("\n");
+      if (kayitAciklamasi.length > 500) { setHata("Açıklama, döviz kuru bilgisiyle birlikte 500 karakteri aşamaz."); return; }
       const kayit = await api<Fatura>(duzenlenenId ? `/fatura/${duzenlenenId}` : "/fatura", {
         method: duzenlenenId ? "PATCH" : "POST",
         body: JSON.stringify({
@@ -557,6 +596,13 @@ export default function FaturaSayfasi() {
           depoId: depoId || null,
           tip,
           tarih,
+          dovizCinsi,
+          kur,
+          vadeTarihi: vadeTarihi || null,
+          siparisNo: siparisNo.trim() || null,
+          siparisTarihi: siparisTarihi || null,
+          aciklama: kayitAciklamasi || null,
+          notlar: notlar.trim() || null,
           satirlar: satirlar.map((s) => ({
             stokId: s.stokId,
             varyantId: s.varyantId || null,
@@ -885,9 +931,24 @@ export default function FaturaSayfasi() {
               <Field label="Fatura Tarihi">
                 <Input aria-label="Fatura Tarihi" type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} required />
               </Field>
-              <div>
-                <DepoSecici deger={depoId} onChange={setDepoId} />
-              </div>
+              <Field label="Fatura Dövizi">
+                <Select value={dovizCinsi} onChange={(e) => { setDovizCinsi(e.target.value); if (e.target.value === "TRY") setKur("1"); }}>
+                  <option value="TRY">TRY — Türk Lirası</option><option value="USD">USD — Amerikan Doları</option><option value="EUR">EUR — Euro</option>
+                </Select>
+              </Field>
+              {dovizCinsi !== "TRY" && <Field label="Kur (1 döviz = TRY)"><Input type="number" min="0.000001" step="0.000001" value={kur} onChange={(e) => { setKur(e.target.value); setKurBilgisi("Manuel kur"); }} required /><small className="muted">{kurBilgisi || "TCMB EVDS kuru yükleniyor…"}</small></Field>}
+              <Field label="Vade Tarihi">
+                <Input aria-label="Vade Tarihi" type="date" value={vadeTarihi} onChange={(e) => { setVadeTarihi(e.target.value); setVadeElleDegisti(true); }} />
+                {cariOzeti?.varsayilanVadeGun != null && <small className="muted">Cari varsayılanı: {cariOzeti.varsayilanVadeGun} gün</small>}
+              </Field>
+              <Field label="Sipariş No"><Input value={siparisNo} onChange={(e) => setSiparisNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" /></Field>
+              <Field label="Sipariş Tarihi"><Input type="date" value={siparisTarihi} onChange={(e) => setSiparisTarihi(e.target.value)} /></Field>
+            <div>
+              <DepoSecici deger={depoId} onChange={setDepoId} />
+            </div>
+            <Field label="Notlar">
+              <textarea className="input" value={notlar} onChange={(e) => setNotlar(e.target.value)} maxLength={2000} rows={3} placeholder="İç notlar (isteğe bağlı)" />
+            </Field>
             </div>
             {cariOzeti && (
               <div className={`customer-context${cariOzeti.risk.asim ? " is-warning" : ""}`}>
@@ -902,7 +963,7 @@ export default function FaturaSayfasi() {
           </div>
 
           <div className="document-editor__section document-lines invoice-lines">
-            <h4 className="document-editor__section-title">Fatura kalemleri</h4>
+            <div className="between"><h4 className="document-editor__section-title">Fatura kalemleri</h4><Button type="button" variant="primary" onClick={() => setUrunModali({ satir: satirlar.findIndex((s) => !s.stokId) >= 0 ? satirlar.findIndex((s) => !s.stokId) : satirlar.length })}>+ Ürün çağır</Button></div>
             <TableWrap>
               <colgroup>
                 <col className="document-line-col--product" />
@@ -941,7 +1002,7 @@ export default function FaturaSayfasi() {
                           deger={s.stokId}
                           kullanimAnahtari="tekir_son_urunler"
                           inputRef={(eleman) => { urunRefleri.current[index] = eleman; }}
-                          onChange={(deger) => { urunSec(index, deger); if (deger) setSatirDogrulamaHatalari((hatalar) => hatalar.filter((satirIndex) => satirIndex !== index)); }}
+                          onChange={(deger) => { if (deger) { setUrunModali({ satir: index, stokId: deger }); setSatirDogrulamaHatalari((hatalar) => hatalar.filter((satirIndex) => satirIndex !== index)); } }}
                           onSecim={(deger) => requestAnimationFrame(() => {
                             if (s.stokId === deger) urunRefleri.current[index]?.focus();
                             else miktarRefleri.current[index]?.focus();
@@ -1026,6 +1087,13 @@ export default function FaturaSayfasi() {
             </div>
           </div>
 
+          <div className="document-editor__section document-description">
+            <Field label="Fatura açıklaması">
+              <textarea className="textarea document-description__input" value={aciklama} onChange={(e) => setAciklama(e.target.value)} maxLength={500} rows={5} placeholder="Faturada gösterilecek açıklamayı yazın (isteğe bağlı)" />
+              {dovizCinsi !== "TRY" && <label className="check-row"><input type="checkbox" checked={kuruAciklamayaEkle} onChange={(e) => setKuruAciklamayaEkle(e.target.checked)} /> Döviz kurunu açıklamaya ekle</label>}
+            </Field>
+          </div>
+
           <div className="document-editor__section">
             <BelgeDosyalari dosyalar={dosyalar} onChange={setDosyalar} />
           </div>
@@ -1035,6 +1103,14 @@ export default function FaturaSayfasi() {
           </div>
         </div>
       )}
+      <UrunSecimModali acik={urunModali !== null} baslangicStokId={urunModali?.stokId} stoklar={stoklar} cariId={cariId} tip={tip.startsWith("alis") ? "alis" : "satis"} belgeDovizi={dovizCinsi} belgeKuru={kur} belgeTarihi={tarih} onKapat={() => setUrunModali(null)} onEkle={(urun) => {
+        setSatirlar((eskiler) => {
+          const satir = { stokId: urun.stokId, varyantId: urun.varyantId, miktar: urun.miktar, birimFiyat: urun.birimFiyat, iskontoOrani: urun.iskontoOrani, kdvOrani: urun.kdvOrani, gibIstisnaKodu: "" };
+          if (urunModali == null || urunModali.satir >= eskiler.length) return [...eskiler, satir];
+          return eskiler.map((x, i) => i === urunModali.satir ? satir : x);
+        });
+        setUrunModali(null);
+      }} />
 
       {hizliPanel === "cari" && (
         <HizliKayitPaneli baslik={tip === "alis" ? "Yeni tedarikçi" : "Yeni müşteri"} onKapat={() => setHizliPanel(null)}>

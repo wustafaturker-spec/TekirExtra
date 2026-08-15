@@ -30,6 +30,38 @@ interface Kategori {
   ust: { id: string; ad: string } | null;
 }
 
+function ReceteSekmesi({ stokId, anaBirim, recete, stoklar, onKaydedildi, onSilindi, onHata }: { stokId: string; anaBirim: string; recete: Recete | null; stoklar: StokOzet[]; onKaydedildi: () => Promise<void>; onSilindi: () => Promise<void>; onHata: (mesaj: string) => void }) {
+  const [ciktiMiktari, setCiktiMiktari] = useState("1");
+  const [aciklama, setAciklama] = useState("");
+  const [kalemler, setKalemler] = useState<{ malzemeStokId: string; miktar: string; fireOrani: string }[]>([{ malzemeStokId: "", miktar: "1", fireOrani: "0" }]);
+  const [kaydediliyor, setKaydediliyor] = useState(false);
+  useEffect(() => {
+    setCiktiMiktari(recete?.ciktiMiktari ?? "1"); setAciklama(recete?.aciklama ?? "");
+    setKalemler(recete?.kalemler?.length ? recete.kalemler.map((k) => ({ malzemeStokId: k.malzemeStokId, miktar: k.miktar, fireOrani: k.fireOrani })) : [{ malzemeStokId: "", miktar: "1", fireOrani: "0" }]);
+  }, [recete]);
+  async function kaydet(event: React.FormEvent) {
+    event.preventDefault(); onHata(""); setKaydediliyor(true);
+    try {
+      await api(`/uretim/receteler/${stokId}`, { method: "POST", body: JSON.stringify({ ciktiMiktari, aciklama: aciklama || null, kalemler: kalemler.map((k) => ({ ...k, malzemeVaryantId: null })) }) });
+      await onKaydedildi();
+    } catch (h) { onHata(h instanceof Error ? h.message : "Reçete kaydedilemedi"); }
+    finally { setKaydediliyor(false); }
+  }
+  async function sil() {
+    if (!window.confirm("Bu ürün reçetesi kaldırılacak. Devam edilsin mi?")) return;
+    try { await api(`/uretim/receteler/${stokId}`, { method: "DELETE" }); await onSilindi(); }
+    catch (h) { onHata(h instanceof Error ? h.message : "Reçete kaldırılamadı"); }
+  }
+  return <Card title="Ürün reçetesi">
+    <p className="muted">Reçete isteğe bağlıdır. Tanımlandığında bu stok kartı üretim emrinde mamul olarak seçilebilir.</p>
+    <form className="stack" onSubmit={kaydet}>
+      <div className="form-grid"><Field label={`Reçete çıktı miktarı (${anaBirim})`}><Input required type="number" min="0.001" step="0.001" value={ciktiMiktari} onChange={(e) => setCiktiMiktari(e.target.value)} /></Field><Field label="Açıklama"><Input maxLength={500} value={aciklama} onChange={(e) => setAciklama(e.target.value)} placeholder="İsteğe bağlı" /></Field></div>
+      <TableWrap><thead><tr><th>Malzeme</th><th className="num">Miktar</th><th className="num">Fire %</th><th /></tr></thead><tbody>{kalemler.map((kalem, index) => { const secili = stoklar.find((s) => s.id === kalem.malzemeStokId); return <tr key={index}><td><Select required value={kalem.malzemeStokId} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, malzemeStokId: e.target.value } : k))}><option value="">Malzeme seçin</option>{stoklar.map((s) => <option key={s.id} value={s.id}>{s.kod} — {s.ad} · Stok {adet(s.mevcutMiktar)}</option>)}</Select></td><td><Input aria-label="Reçete miktarı" required type="number" min="0.001" step="0.001" value={kalem.miktar} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, miktar: e.target.value } : k))} />{secili && <small className="muted">{secili.anaBirim}</small>}</td><td><Input aria-label="Fire oranı" required type="number" min="0" max="100" step="0.01" value={kalem.fireOrani} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, fireOrani: e.target.value } : k))} /></td><td><Button type="button" size="sm" variant="danger" disabled={kalemler.length === 1} onClick={() => setKalemler((eski) => eski.filter((_, i) => i !== index))}>Sil</Button></td></tr>; })}</tbody></TableWrap>
+      <div className="between"><Button type="button" onClick={() => setKalemler((eski) => [...eski, { malzemeStokId: "", miktar: "1", fireOrani: "0" }])}>+ Malzeme ekle</Button><div className="row-tight">{recete && <Button type="button" variant="danger" onClick={() => void sil()}>Reçeteyi kaldır</Button>}<Button type="submit" variant="primary" disabled={kaydediliyor}>{kaydediliyor ? "Kaydediliyor…" : "Reçeteyi kaydet"}</Button></div></div>
+    </form>
+  </Card>;
+}
+
 interface Birim {
   id: string;
   ad: string;
@@ -54,6 +86,9 @@ interface Tedarikci {
   cari: { id: string; kod: string; unvan: string };
 }
 interface Varyant { id: string; kod: string; ad: string; nitelikler: Record<string, string>; barkod: string | null; alisFiyati: string | null; satisFiyati: string | null; mevcutMiktar: string; aktif: boolean }
+interface StokFiyat { id: string; varyantId: string | null; tip: "alis" | "satis"; dovizCinsi: string; tutar: string; aktif: boolean }
+interface Recete { id: string; ciktiMiktari: string; aciklama: string | null; kalemler?: { id: string; malzemeStokId: string; malzemeVaryantId: string | null; miktar: string; fireOrani: string; malzeme: { id: string; kod: string; ad: string; anaBirim: string; mevcutMiktar: string } }[] }
+interface StokOzet { id: string; kod: string; ad: string; tip: string; anaBirim: string; mevcutMiktar: string }
 
 interface Hareket {
   id: string;
@@ -88,6 +123,8 @@ interface StokDetay {
   kdvOrani: string;
   alisFiyati: string | null;
   satisFiyati: string | null;
+  alisFiyatiDoviz: string;
+  satisFiyatiDoviz: string;
   kritikSeviye: string | null;
   minStok: string | null;
   maksStok: string | null;
@@ -115,7 +152,7 @@ interface CariOzet {
   unvan: string;
 }
 
-type Sekme = "genel" | "hareketler" | "depolar" | "varyantlar" | "partiler" | "birimler" | "barkodlar" | "tedarikciler";
+type Sekme = "genel" | "recete" | "fiyatlar" | "hareketler" | "depolar" | "varyantlar" | "partiler" | "birimler" | "barkodlar" | "tedarikciler";
 
 interface Parti { id: string; lotNo: string; seriNo: string | null; sonKullanmaTarihi: string | null; uretimTarihi: string | null; ilkMiktar: string; kalanMiktar: string; depo: { ad: string }; varyant: { kod: string; ad: string } | null }
 
@@ -182,6 +219,9 @@ export default function StokDetaySayfasi() {
   const [hareketler, setHareketler] = useState<Hareket[]>([]);
   const [depoBakiyeleri, setDepoBakiyeleri] = useState<DepoBakiyeSatiri[]>([]);
   const [partiler, setPartiler] = useState<Parti[]>([]);
+  const [fiyatlar, setFiyatlar] = useState<StokFiyat[]>([]);
+  const [recete, setRecete] = useState<Recete | null>(null);
+  const [tumStoklar, setTumStoklar] = useState<StokOzet[]>([]);
   const [kategoriler, setKategoriler] = useState<Kategori[]>([]);
   const [cariler, setCariler] = useState<CariOzet[]>([]);
   const [aktifSekme, setAktifSekme] = useState<Sekme>("genel");
@@ -189,6 +229,10 @@ export default function StokDetaySayfasi() {
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [uyari, setUyari] = useState("");
+  const [fiyatTipi, setFiyatTipi] = useState<"alis" | "satis">("satis");
+  const [fiyatDovizi, setFiyatDovizi] = useState("TRY");
+  const [fiyatTutar, setFiyatTutar] = useState("");
+  const [fiyatVaryantId, setFiyatVaryantId] = useState("");
 
   const yukle = useCallback(async () => {
     try {
@@ -215,6 +259,13 @@ export default function StokDetaySayfasi() {
     }
   }, [id]);
   const partileriYukle = useCallback(async () => { try { const veri = await api<Parti[]>(`/stok/${id}/partiler`); setPartiler(Array.isArray(veri) ? veri : []); } catch { setPartiler([]); } }, [id]);
+  const fiyatlariYukle = useCallback(async () => { try { setFiyatlar(await api<StokFiyat[]>(`/stok/${id}/fiyatlar`)); } catch { setFiyatlar([]); } }, [id]);
+  const receteyiYukle = useCallback(async () => {
+    try {
+      const veri = await api<Recete | null>(`/uretim/receteler/${id}`);
+      setRecete(veri?.id ? { ...veri, kalemler: Array.isArray(veri.kalemler) ? veri.kalemler : [] } : null);
+    } catch { setRecete(null); }
+  }, [id]);
 
   useEffect(() => {
     if (!tokenAl()) return;
@@ -222,9 +273,12 @@ export default function StokDetaySayfasi() {
     void hareketleriYukle();
     void depoBakiyeleriYukle();
     void partileriYukle();
+    void fiyatlariYukle();
+    void receteyiYukle();
+    void tumSayfalariAl<StokOzet>("/stok").then(setTumStoklar).catch(() => {});
     void api<Kategori[]>("/stok/kategoriler").then(setKategoriler).catch(() => {});
     void tumSayfalariAl<CariOzet>("/cari").then(setCariler).catch(() => {});
-  }, [yukle, hareketleriYukle, depoBakiyeleriYukle, partileriYukle]);
+  }, [yukle, hareketleriYukle, depoBakiyeleriYukle, partileriYukle, fiyatlariYukle, receteyiYukle]);
 
   /** Alt kayıt ekleme/silme sonrası ortak akış. */
   async function islem(calistir: () => Promise<unknown>, basariMesaji: string) {
@@ -240,6 +294,18 @@ export default function StokDetaySayfasi() {
       setHata(h instanceof Error ? h.message : "İşlem başarısız");
       return false;
     }
+  }
+
+  async function fiyatEkle(e: React.FormEvent) {
+    e.preventDefault();
+    if (!fiyatTutar) return;
+    const ok = await islem(() => api(`/stok/${id}/fiyatlar`, { method: "POST", body: JSON.stringify({ tip: fiyatTipi, dovizCinsi: fiyatDovizi, tutar: fiyatTutar, varyantId: fiyatVaryantId || null }) }), "Dövizli fiyat kaydedildi.");
+    if (ok) { setFiyatTutar(""); setFiyatlar(await api<StokFiyat[]>(`/stok/${id}/fiyatlar`)); }
+  }
+
+  async function fiyatSil(fiyatId: string) {
+    const ok = await islem(() => api(`/stok/${id}/fiyatlar/${fiyatId}`, { method: "DELETE" }), "Dövizli fiyat silindi.");
+    if (ok) setFiyatlar(await api<StokFiyat[]>(`/stok/${id}/fiyatlar`));
   }
 
   if (!detay) {
@@ -313,6 +379,8 @@ export default function StokDetaySayfasi() {
           onChange={setAktifSekme}
           items={[
             { deger: "genel", baslik: "Genel" },
+            { deger: "recete", baslik: recete ? `Ürün reçetesi (${recete.kalemler?.length ?? 0})` : "Ürün reçetesi" },
+            { deger: "fiyatlar", baslik: `Dövizli fiyatlar (${fiyatlar.length})` },
             { deger: "hareketler", baslik: `Hareketler (${hareketler.length})` },
             ...(cokluDepo
               ? [{ deger: "depolar" as Sekme, baslik: `Depolar (${depoBakiyeleri.length})` }]
@@ -348,6 +416,9 @@ export default function StokDetaySayfasi() {
           />
         </TabPanel>
       )}
+
+      {aktifSekme === "recete" && <TabPanel idPrefix="stok-detay" value="recete"><ReceteSekmesi stokId={id} anaBirim={detay.anaBirim} recete={recete} stoklar={tumStoklar.filter((s) => s.id !== id && s.tip !== "hizmet")} onKaydedildi={async () => { await receteyiYukle(); setBasari("Ürün reçetesi kaydedildi."); }} onSilindi={async () => { await receteyiYukle(); setBasari("Ürün reçetesi kaldırıldı."); }} onHata={setHata} /></TabPanel>}
+      {aktifSekme === "fiyatlar" && <TabPanel idPrefix="stok-detay" value="fiyatlar"><Card title="Dövizli ürün fiyatları"><form className="form-grid" onSubmit={fiyatEkle}><Field label="Tip"><Select value={fiyatTipi} onChange={(e) => setFiyatTipi(e.target.value as "alis" | "satis")}><option value="satis">Satış</option><option value="alis">Alış</option></Select></Field><Field label="Varyant"><Select value={fiyatVaryantId} onChange={(e) => setFiyatVaryantId(e.target.value)}><option value="">Kart fiyatı</option>{(detay.varyantlar ?? []).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad}</option>)}</Select></Field><Field label="Döviz"><Select value={fiyatDovizi} onChange={(e) => setFiyatDovizi(e.target.value)}><option>TRY</option><option>USD</option><option>EUR</option></Select></Field><Field label="Tutar"><Input type="number" min="0" step="0.0001" value={fiyatTutar} onChange={(e) => setFiyatTutar(e.target.value)} required /></Field><div><Button type="submit" variant="primary">Fiyat kaydet</Button></div></form><TableWrap><thead><tr><th>Tip</th><th>Varyant</th><th>Döviz</th><th className="num">Tutar</th><th>Durum</th><th /></tr></thead><tbody>{fiyatlar.map((f) => <tr key={f.id}><td>{f.tip === "alis" ? "Alış" : "Satış"}</td><td>{f.varyantId ? detay.varyantlar?.find((v) => v.id === f.varyantId)?.kod ?? f.varyantId : "Kart"}</td><td>{f.dovizCinsi}</td><td className="num">{Number(f.tutar).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} {f.dovizCinsi}</td><td>{f.aktif ? "Aktif" : "Pasif"}</td><td><Button size="sm" variant="danger" type="button" onClick={() => void fiyatSil(f.id)}>Sil</Button></td></tr>)}{!fiyatlar.length && <tr><td colSpan={6}>Henüz dövizli fiyat tanımlanmamış.</td></tr>}</tbody></TableWrap></Card></TabPanel>}
 
       {aktifSekme === "hareketler" && (
         <TabPanel idPrefix="stok-detay" value="hareketler"><HareketlerSekmesi
@@ -466,6 +537,8 @@ function GenelSekmesi({
     kdvOrani: detay.kdvOrani,
     alisFiyati: detay.alisFiyati ?? "",
     satisFiyati: detay.satisFiyati ?? "",
+    alisFiyatiDoviz: detay.alisFiyatiDoviz ?? "TRY",
+    satisFiyatiDoviz: detay.satisFiyatiDoviz ?? "TRY",
     kritikSeviye: detay.kritikSeviye ?? "",
     minStok: detay.minStok ?? "",
     maksStok: detay.maksStok ?? "",
@@ -497,6 +570,8 @@ function GenelSekmesi({
       kdvOrani: form.kdvOrani || "20",
       alisFiyati: bosNull(form.alisFiyati),
       satisFiyati: bosNull(form.satisFiyati),
+      alisFiyatiDoviz: form.alisFiyatiDoviz,
+      satisFiyatiDoviz: form.satisFiyatiDoviz,
       kritikSeviye: bosNull(form.kritikSeviye),
       minStok: bosNull(form.minStok),
       maksStok: bosNull(form.maksStok),
@@ -595,13 +670,13 @@ function GenelSekmesi({
           </Field>
         </div>
         <div style={{ flex: 1, minWidth: 150 }}>
-          <Field label="Alış Fiyatı (TRY)">
-            <Input type="number" step="0.0001" {...alan("alisFiyati")} placeholder="0.0000" />
+          <Field label="Alış Fiyatı">
+            <div className="row"><Input type="number" step="0.0001" {...alan("alisFiyati")} placeholder="0.0000" /><Select aria-label="Alış fiyatı dövizi" {...alan("alisFiyatiDoviz")}><option>TRY</option><option>USD</option><option>EUR</option></Select></div>
           </Field>
         </div>
         <div style={{ flex: 1, minWidth: 150 }}>
-          <Field label="Satış Fiyatı (TRY)">
-            <Input type="number" step="0.0001" {...alan("satisFiyati")} placeholder="0.0000" />
+          <Field label="Satış Fiyatı">
+            <div className="row"><Input type="number" step="0.0001" {...alan("satisFiyati")} placeholder="0.0000" /><Select aria-label="Satış fiyatı dövizi" {...alan("satisFiyatiDoviz")}><option>TRY</option><option>USD</option><option>EUR</option></Select></div>
           </Field>
         </div>
       </div>

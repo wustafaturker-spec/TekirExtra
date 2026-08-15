@@ -89,6 +89,7 @@ model Tenant {
   epostaGonderimleri    EpostaGonderim[]
   eirsaliyeKayitlari    EirsaliyeKayit[]
   gelenEirsaliyeler     GelenEirsaliye[]
+  dovizKurlari          DovizKuru[]
 
   @@map("tenants")
 }
@@ -403,6 +404,23 @@ enum DovizCinsi {
   EUR
 }
 
+/// TCMB EVDS'den alınan gösterge kurları tenant bazında önbelleğe alınır.
+model DovizKuru {
+  id          String     @id @default(uuid()) @db.Uuid
+  tenantId    String     @map("tenant_id") @db.Uuid
+  tarih       DateTime   @db.Date
+  dovizCinsi  DovizCinsi @map("doviz_cinsi")
+  dovizAlis   Decimal    @map("doviz_alis") @db.Decimal(15, 6)
+  dovizSatis  Decimal    @map("doviz_satis") @db.Decimal(15, 6)
+  kaynak      String     @default("TCMB_EVDS")
+  alindiAt    DateTime   @default(now()) @map("alindi_at")
+  tenant      Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, tarih, dovizCinsi])
+  @@index([tenantId, dovizCinsi, tarih])
+  @@map("doviz_kurlari")
+}
+
 enum CariHareketTip {
   borc
   alacak
@@ -447,6 +465,12 @@ enum SayimDurum {
 enum TransferDurum {
   taslak
   onaylandi
+}
+
+enum UretimEmriDurum {
+  taslak
+  tamamlandi
+  iptal
 }
 
 model CariHesap {
@@ -706,6 +730,8 @@ model StokKart {
   kdvOrani         Decimal       @default(20) @map("kdv_orani") @db.Decimal(5, 2)
   alisFiyati       Decimal?      @map("alis_fiyati") @db.Decimal(15, 4)
   satisFiyati      Decimal?      @map("satis_fiyati") @db.Decimal(15, 4)
+  alisFiyatiDoviz  DovizCinsi    @default(TRY) @map("alis_fiyati_doviz")
+  satisFiyatiDoviz DovizCinsi    @default(TRY) @map("satis_fiyati_doviz")
   kritikSeviye     Decimal?      @map("kritik_seviye") @db.Decimal(15, 3)
   minStok          Decimal?      @map("min_stok") @db.Decimal(15, 3)
   maksStok         Decimal?      @map("maks_stok") @db.Decimal(15, 3)
@@ -731,15 +757,43 @@ model StokKart {
   tedarikciler       StokTedarikci[]
   hareketler         StokHareket[]
   fiyatlar           FiyatListesiKalem[]
+  stokFiyatlari      StokFiyat[]
   faturaSatirs       FaturaSatir[]
   belgeSatirlari     BelgeSatir[]
   varyantlar         StokVaryant[]
   partiler           StokParti[]
   pazaryeriSatirlari PazaryeriSiparisSatiri[]
+  urunRecetesi       UrunRecetesi?             @relation("MamulRecetesi")
+  receteMalzemeleri  UrunRecetesiKalem[]       @relation("ReceteMalzemesi")
+  uretimEmirleri     UretimEmri[]              @relation("UretilecekStok")
+  uretimMalzemeleri  UretimEmriKalem[]         @relation("UretimMalzemesi")
 
   @@unique([tenantId, kod])
   @@index([tenantId, ad])
   @@map("stok_kartlari")
+}
+
+model StokFiyat {
+  id         String     @id @default(uuid()) @db.Uuid
+  tenantId   String     @map("tenant_id") @db.Uuid
+  stokId     String     @map("stok_id") @db.Uuid
+  varyantId  String?    @map("varyant_id") @db.Uuid
+  tip        FiyatTipi
+  dovizCinsi DovizCinsi @default(TRY) @map("doviz_cinsi")
+  tutar      Decimal    @db.Decimal(15, 4)
+  aktif      Boolean    @default(true)
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+  stok       StokKart   @relation(fields: [stokId], references: [id], onDelete: Cascade)
+  /// Bir ürün/varyant ve fiyat tipi için yalnızca tek para birimli fiyat vardır.
+  @@unique([tenantId, stokId, varyantId, tip])
+  @@index([tenantId, stokId, tip])
+  @@map("stok_fiyatlari")
+}
+
+enum FiyatTipi {
+  alis
+  satis
 }
 
 enum StokTakipTipi {
@@ -813,6 +867,8 @@ model StokVaryant {
   partiler           StokParti[]
   transferKalemleri  DepoTransferKalem[]
   pazaryeriSatirlari PazaryeriSiparisSatiri[]
+  receteMalzemeleri UrunRecetesiKalem[]
+  uretimMalzemeleri UretimEmriKalem[]
 
   @@unique([tenantId, kod])
   @@unique([tenantId, barkod])
@@ -1007,6 +1063,7 @@ model Depo {
   belgeler          Belge[]
   cikisTransferleri DepoTransfer[]          @relation("TransferKaynak")
   girisTransferleri DepoTransfer[]          @relation("TransferHedef")
+  uretimEmirleri    UretimEmri[]
 
   @@unique([tenantId, kod])
   @@index([tenantId])
@@ -1031,6 +1088,86 @@ model StokDepoBakiye {
   @@unique([tenantId, stokId, depoId])
   @@index([tenantId, depoId])
   @@map("stok_depo_bakiyeleri")
+}
+
+/// Stok kartına bağlı, tanımlanması isteğe bağlı ürün reçetesi.
+model UrunRecetesi {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  stokId       String   @unique @map("stok_id") @db.Uuid
+  ciktiMiktari Decimal  @default(1) @map("cikti_miktari") @db.Decimal(15, 3)
+  aciklama     String?
+  aktif        Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  stok     StokKart            @relation("MamulRecetesi", fields: [stokId], references: [id], onDelete: Cascade)
+  kalemler UrunRecetesiKalem[]
+
+  @@unique([tenantId, stokId])
+  @@index([tenantId])
+  @@map("urun_receteleri")
+}
+
+model UrunRecetesiKalem {
+  id               String  @id @default(uuid()) @db.Uuid
+  tenantId         String  @map("tenant_id") @db.Uuid
+  receteId         String  @map("recete_id") @db.Uuid
+  malzemeStokId    String  @map("malzeme_stok_id") @db.Uuid
+  malzemeVaryantId String? @map("malzeme_varyant_id") @db.Uuid
+  miktar           Decimal @db.Decimal(15, 3)
+  fireOrani        Decimal @default(0) @map("fire_orani") @db.Decimal(5, 2)
+
+  recete         UrunRecetesi @relation(fields: [receteId], references: [id], onDelete: Cascade)
+  malzeme        StokKart     @relation("ReceteMalzemesi", fields: [malzemeStokId], references: [id])
+  malzemeVaryant StokVaryant? @relation(fields: [malzemeVaryantId], references: [id])
+
+  @@unique([receteId, malzemeStokId, malzemeVaryantId])
+  @@index([tenantId, malzemeStokId])
+  @@map("urun_recetesi_kalemleri")
+}
+
+model UretimEmri {
+  id              String            @id @default(uuid()) @db.Uuid
+  tenantId        String            @map("tenant_id") @db.Uuid
+  no              String
+  stokId          String            @map("stok_id") @db.Uuid
+  hedefDepoId     String            @map("hedef_depo_id") @db.Uuid
+  planlananMiktar Decimal           @map("planlanan_miktar") @db.Decimal(15, 3)
+  uretilenMiktar  Decimal           @default(0) @map("uretilen_miktar") @db.Decimal(15, 3)
+  toplamMaliyet   Decimal           @default(0) @map("toplam_maliyet") @db.Decimal(15, 4)
+  tarih           DateTime          @db.Date
+  aciklama        String?
+  durum           UretimEmriDurum   @default(taslak)
+  tamamlanmaTarihi DateTime?        @map("tamamlanma_tarihi")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  stok      StokKart          @relation("UretilecekStok", fields: [stokId], references: [id])
+  hedefDepo Depo               @relation(fields: [hedefDepoId], references: [id])
+  kalemler  UretimEmriKalem[]
+
+  @@unique([tenantId, no])
+  @@index([tenantId, tarih])
+  @@map("uretim_emirleri")
+}
+
+model UretimEmriKalem {
+  id               String  @id @default(uuid()) @db.Uuid
+  tenantId         String  @map("tenant_id") @db.Uuid
+  uretimEmriId     String  @map("uretim_emri_id") @db.Uuid
+  malzemeStokId    String  @map("malzeme_stok_id") @db.Uuid
+  malzemeVaryantId String? @map("malzeme_varyant_id") @db.Uuid
+  planlananMiktar  Decimal @map("planlanan_miktar") @db.Decimal(15, 3)
+  sarfEdilenMiktar Decimal @default(0) @map("sarf_edilen_miktar") @db.Decimal(15, 3)
+  birimMaliyet     Decimal @default(0) @map("birim_maliyet") @db.Decimal(15, 4)
+
+  uretimEmri     UretimEmri  @relation(fields: [uretimEmriId], references: [id], onDelete: Cascade)
+  malzeme        StokKart    @relation("UretimMalzemesi", fields: [malzemeStokId], references: [id])
+  malzemeVaryant StokVaryant? @relation(fields: [malzemeVaryantId], references: [id])
+
+  @@index([tenantId, uretimEmriId])
+  @@map("uretim_emri_kalemleri")
 }
 
 /// Depolar arası transfer fişi (STK-07): onayda kaynak depoda transfer_cikis,
@@ -1117,6 +1254,8 @@ model Fatura {
   sira                 Int?
   tarih                DateTime    @db.Date
   vadeTarihi           DateTime?   @map("vade_tarihi") @db.Date
+  siparisNo            String?     @map("siparis_no")
+  siparisTarihi        DateTime?   @map("siparis_tarihi") @db.Date
   cariId               String      @map("cari_id") @db.Uuid
   /// STK-07: stok hareketlerinin işleneceği depo; boşsa varsayılan depo
   depoId               String?     @map("depo_id") @db.Uuid

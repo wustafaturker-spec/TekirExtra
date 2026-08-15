@@ -36,6 +36,7 @@ import {
   stokTedarikciSemasi,
   stokVaryantGuncelleSemasi,
   stokVaryantSemasi,
+  stokFiyatSemasi,
 } from "./stok.semalar";
 
 const D = (deger: string | number): Prisma.Decimal => new Prisma.Decimal(deger);
@@ -177,8 +178,13 @@ export class StokController {
     @Param("id") id: string,
     @Query("cariId") cariId?: string,
     @Query("tip") tip = "satis",
+    @Query("dovizCinsi") dovizCinsi = "TRY",
+    @Query("fiyatListesiId") fiyatListesiId?: string,
+    @Query("belgeKuru") belgeKuru = "1",
+    @Query("urunKuru") urunKuru?: string,
+    @Query("varyantId") varyantId?: string,
   ) {
-    return this.stokService.tavsiyeFiyat(id, cariId, tip);
+    return this.stokService.tavsiyeFiyat(id, cariId, tip, dovizCinsi, fiyatListesiId, belgeKuru, urunKuru, varyantId);
   }
 
   @Post()
@@ -308,6 +314,22 @@ export class StokController {
     if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((s) => s.message).join("; "));
     return this.stokService.varyantGuncelle(id, varyantId, sonuc.data);
   }
+
+  @Get(":id/fiyatlar")
+  async fiyatListele(@Param("id") id: string) { return this.stokService.fiyatListele(id); }
+
+  @Post(":id/fiyatlar")
+  @Roller("muhasebe")
+  async fiyatKaydet(@Param("id") id: string, @Body() govde: unknown) {
+    const sonuc = stokFiyatSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((s) => s.message).join("; "));
+    return this.stokService.fiyatKaydet(id, sonuc.data);
+  }
+
+  @Delete(":id/fiyatlar/:fiyatId")
+  @Roller("muhasebe")
+  @HttpCode(204)
+  async fiyatSil(@Param("id") id: string, @Param("fiyatId") fiyatId: string) { await this.stokService.fiyatSil(id, fiyatId); }
 
   @Get(":id/hareketler")
   async hareketListele(
