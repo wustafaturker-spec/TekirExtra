@@ -52,6 +52,7 @@ const MENU: MenuGrup[] = [
       { href: "/panel/pazaryeri", ikon: "PS", baslik: "Pazaryeri Siparişleri", eslesme: "tam" },
       { href: "/panel/pazaryeri/kesintiler", ikon: "PK", baslik: "Pazaryeri Kesintileri", eslesme: "tam" },
       { href: "/panel/kasa-banka", ikon: "KB", baslik: "Kasa & Banka", eslesme: "tam" },
+      { href: "/panel/kasa-banka/kredi-kartlari", ikon: "KK", baslik: "Kredi Kartları", eslesme: "tam" },
       { href: "/panel/kasa-banka/pos", ikon: "POS", baslik: "POS Hesapları", eslesme: "tam" },
       { href: "/panel/kasa-banka/cek-senet", ikon: "ÇS", baslik: "Çek & Senet", eslesme: "tam" },
       { href: "/panel/kasa-banka/ekstre", ikon: "BE", baslik: "Banka Ekstresi", eslesme: "tam" },

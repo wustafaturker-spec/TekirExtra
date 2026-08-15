@@ -70,10 +70,10 @@ export default function TekrarlayanFaturalarPage() {
     </Card>
     <Card title="Planlar">
       <p className="muted">{yukleniyor ? "Yükleniyor…" : `${planlar.length} plan`}</p>
-      <TableWrap><table><thead><tr><th>Plan</th><th>Şablon / Cari</th><th>Tekrar</th><th>Sıradaki</th><th>Üretilen</th><th>Durum</th><th></th></tr></thead><tbody>
+      <TableWrap><thead><tr><th>Plan</th><th>Şablon / Cari</th><th>Tekrar</th><th>Sıradaki</th><th>Üretilen</th><th>Durum</th><th></th></tr></thead><tbody>
         {planlar.map((p) => <tr key={p.id}><td><strong>{p.ad}</strong></td><td>{p.sablonFatura.no ?? "Taslak"}<br /><small>{p.sablonFatura.cari.unvan}</small></td><td>Her {p.aralik} {p.siklik}</td><td>{tarih(p.sonrakiTarih)}</td><td>{p._count.uretilenler}</td><td>{p.aktif ? "Aktif" : "Duraklatıldı"}</td><td><Button variant="ghost" onClick={() => void durumDegistir(p)}>{p.aktif ? "Duraklat" : "Etkinleştir"}</Button></td></tr>)}
         {!yukleniyor && !planlar.length && <tr><td colSpan={7}>Henüz tekrarlayan fatura planı yok.</td></tr>}
-      </tbody></table></TableWrap>
+      </tbody></TableWrap>
     </Card>
   </div>;
 }

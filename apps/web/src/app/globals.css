@@ -1734,4 +1734,95 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 @media(max-width:680px){.product-picker-layer{padding:0}.product-picker{border-radius:0;height:100vh;max-height:none}.product-picker__grid{grid-template-columns:1fr 1fr}}
 @media (max-width: 1050px) { .sales-metric-grid { grid-template-columns: repeat(2, 1fr); } .sales-metric--primary { grid-row: auto; min-height: 150px; } }
 @media (max-width: 620px) { .sales-metric-grid { grid-template-columns: 1fr; } .sales-metric { min-height: 118px; } }
+
+/* ─── Ürün reçetesi çalışma alanı ─────────────────────────────────────── */
+.recipe-workspace { background: var(--surface); border: 1px solid var(--border); border-radius: 1rem; box-shadow: var(--shadow-sm); overflow: hidden; }
+.recipe-hero { align-items: center; background: linear-gradient(120deg, #172554, #1e3a5f 58%, #155e75); color: #fff; display: flex; justify-content: space-between; padding: 1.4rem 1.6rem; }
+.recipe-hero h2 { color: #fff; font-size: 1.35rem; letter-spacing: -.025em; margin: .25rem 0; }
+.recipe-hero p { color: rgba(255,255,255,.72); font-size: .78rem; margin: 0; }
+.recipe-eyebrow { color: #67e8f9; font-size: .62rem; font-weight: 800; letter-spacing: .14em; }
+.recipe-health { align-items: center; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.18); border-radius: 999px; display: flex; font-size: .72rem; font-weight: 700; gap: .45rem; padding: .45rem .7rem; white-space: nowrap; }
+.recipe-health > span { background: #f59e0b; border-radius: 50%; height: 7px; width: 7px; }
+.recipe-health > span.is-ready { background: #34d399; box-shadow: 0 0 0 3px rgba(52,211,153,.18); }
+.recipe-form { display: grid; }
+.recipe-setup, .recipe-materials { border-bottom: 1px solid var(--border); padding: 1.25rem 1.5rem; }
+.recipe-setup { align-items: end; background: var(--surface-2); display: grid; gap: 1.5rem; grid-template-columns: minmax(220px,.75fr) 2fr; }
+.recipe-setup h3, .recipe-section-head h3 { font-size: .9rem; margin: 0 0 .25rem; }
+.recipe-setup p, .recipe-section-head p { color: var(--text-muted); font-size: .7rem; margin: 0; }
+.recipe-setup__fields { display: grid; gap: .8rem; grid-template-columns: minmax(160px,.6fr) 1.4fr; }
+.recipe-section-head { align-items: center; display: flex; justify-content: space-between; margin-bottom: 1rem; }
+.recipe-materials .table-wrap { border-radius: .65rem; }
+.recipe-materials th { background: var(--surface-2); color: var(--text-muted); font-size: .65rem; letter-spacing: .035em; text-transform: uppercase; }
+.recipe-materials td { vertical-align: middle; }
+.recipe-materials td:first-child { min-width: 235px; }
+.recipe-materials td:nth-child(2) { width: 115px; }
+.recipe-materials td:nth-child(3) { width: 70px; }
+.recipe-materials td:nth-child(4) { width: 110px; }
+.recipe-stock { color: var(--text-subtle); display: block; font-size: .64rem; margin-top: .3rem; }
+.recipe-unit { background: var(--surface-2); border: 1px solid var(--border); border-radius: .4rem; color: var(--text-muted); display: inline-block; font-size: .68rem; font-weight: 700; padding: .35rem .5rem; }
+.recipe-percent { align-items: center; display: flex; gap: .3rem; }
+.recipe-percent span { color: var(--text-muted); font-size: .75rem; }
+.recipe-money { color: var(--text-muted); white-space: nowrap; }
+.recipe-summary { background: var(--surface-2); display: grid; gap: .8rem; grid-template-columns: .7fr 1fr 1.35fr; padding: 1rem 1.5rem; }
+.recipe-summary > div { background: var(--surface); border: 1px solid var(--border); border-radius: .7rem; display: grid; gap: .3rem; padding: .8rem 1rem; }
+.recipe-summary span { color: var(--text-muted); font-size: .66rem; font-weight: 700; }
+.recipe-summary strong { font-size: 1rem; }
+.recipe-summary small { color: var(--text-subtle); font-size: .62rem; }
+.recipe-summary__lead { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)) !important; }
+.recipe-summary__lead strong { color: var(--accent-text); font-size: 1.2rem; }
+.recipe-actions { align-items: center; display: flex; justify-content: space-between; padding: 1rem 1.5rem; }
+.recipe-actions .muted { font-size: .68rem; }
+@media (max-width: 850px) { .recipe-setup { grid-template-columns: 1fr; } .recipe-summary { grid-template-columns: 1fr 1fr; } .recipe-summary__lead { grid-column: 1 / -1; } }
+@media (max-width: 620px) { .recipe-hero, .recipe-section-head, .recipe-actions { align-items: stretch; flex-direction: column; gap: .8rem; } .recipe-setup__fields, .recipe-summary { grid-template-columns: 1fr; } .recipe-summary__lead { grid-column: auto; } .recipe-actions .row-tight { align-items: stretch; flex-direction: column; } }
+
+/* ─── Stok kartı profili ──────────────────────────────────────────────── */
+.stock-detail-page { display: grid; gap: 1rem; }
+.stock-profile { background: linear-gradient(125deg, #0f172a, #172554 55%, #164e63); border: 1px solid rgba(255,255,255,.08); border-radius: 1rem; box-shadow: var(--shadow-md); color: #fff; overflow: hidden; }
+.stock-profile__top { align-items: center; border-bottom: 1px solid rgba(255,255,255,.1); display: flex; justify-content: space-between; padding: .65rem 1.25rem; }
+.stock-profile__top .btn { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.15); color: #fff; }
+.stock-profile__code { color: rgba(255,255,255,.5); font-size: .62rem; font-weight: 800; letter-spacing: .1em; }
+.stock-profile__body { align-items: center; display: grid; gap: 1rem; grid-template-columns: 72px 1fr auto; padding: 1.35rem 1.5rem; }
+.stock-profile__avatar { align-items: center; background: linear-gradient(145deg, #22d3ee, #2563eb); border: 1px solid rgba(255,255,255,.25); border-radius: 1rem; box-shadow: 0 10px 30px rgba(0,0,0,.22); display: flex; font-size: 1.25rem; font-weight: 800; height: 68px; justify-content: center; letter-spacing: -.04em; width: 68px; }
+.stock-profile__badges { display: flex; gap: .35rem; margin-bottom: .45rem; }
+.stock-profile__identity h1 { color: #fff; font-size: clamp(1.35rem,2.5vw,1.9rem); letter-spacing: -.035em; line-height: 1.15; margin: 0; }
+.stock-profile__identity p { color: rgba(255,255,255,.6); font-size: .73rem; margin: .4rem 0 0; }
+.stock-profile__commercial { border-left: 1px solid rgba(255,255,255,.13); display: grid; min-width: 180px; padding-left: 1.4rem; text-align: right; }
+.stock-profile__commercial span { color: rgba(255,255,255,.55); font-size: .64rem; font-weight: 700; }
+.stock-profile__commercial strong { font-size: 1.25rem; letter-spacing: -.025em; margin-top: .3rem; }
+.stock-profile__commercial small { color: rgba(255,255,255,.55); font-size: .63rem; margin-top: .25rem; }
+.stock-kpis { display: grid; gap: .75rem; grid-template-columns: 1.15fr repeat(3,1fr); }
+.stock-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: .8rem; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; min-height: 120px; padding: 1rem; }
+.stock-kpi > span { color: var(--text-muted); font-size: .65rem; font-weight: 800; text-transform: uppercase; }
+.stock-kpi > strong { font-size: 1.25rem; letter-spacing: -.035em; margin-top: .7rem; }
+.stock-kpi > strong small { color: var(--text-muted); font-size: .67rem; font-weight: 700; }
+.stock-kpi > p { color: var(--text-subtle); font-size: .65rem; margin: auto 0 0; padding-top: .55rem; }
+.stock-kpi--lead { background: linear-gradient(145deg, color-mix(in srgb, var(--success) 9%, var(--surface)), var(--surface)); border-color: color-mix(in srgb, var(--success) 28%, var(--border)); }
+.stock-kpi--lead > strong { color: var(--success); font-size: 1.5rem; }
+.stock-kpi--lead.is-danger { background: color-mix(in srgb, var(--danger) 7%, var(--surface)); border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+.stock-kpi--lead.is-danger > strong { color: var(--danger); }
+.stock-kpi--value > strong { color: var(--accent-text); }
+.stock-tabs { background: var(--surface); border: 1px solid var(--border); border-radius: .8rem; box-shadow: var(--shadow-sm); margin: 0; overflow: hidden; padding: .25rem .4rem 0; }
+.stock-editor { overflow: hidden; }
+.stock-editor__section { align-items: center; border-top: 1px solid var(--border); display: flex; gap: .7rem; margin-top: .2rem; padding-top: 1rem; }
+.stock-editor__section > span { align-items: center; background: var(--accent-soft); border-radius: 50%; color: var(--accent-text); display: flex; font-size: .62rem; font-weight: 800; height: 28px; justify-content: center; width: 28px; }
+.stock-editor__section > div { display: grid; gap: .15rem; }
+.stock-editor__section strong { font-size: .78rem; }
+.stock-editor__section small { color: var(--text-muted); font-size: .65rem; }
+.stock-editor__grid { align-items: end; background: var(--surface-2); border: 1px solid var(--border); border-radius: .7rem; display: grid; gap: .8rem; padding: .85rem; }
+.stock-editor__grid--basic { grid-template-columns: minmax(260px,2fr) minmax(150px,.8fr) minmax(180px,1fr); }
+.stock-editor__grid--identity { grid-template-columns: repeat(4,minmax(130px,1fr)); }
+.stock-editor__grid--pricing { grid-template-columns: minmax(110px,.45fr) repeat(2,minmax(230px,1fr)); }
+.stock-editor__grid--planning { grid-template-columns: repeat(5,minmax(115px,1fr)); }
+.stock-field { min-width: 0; }
+.stock-field--full { grid-column: 1 / -1; }
+.stock-field--tracking { grid-column: span 2; }
+.stock-price-input { display: grid; gap: .4rem; grid-template-columns: minmax(0,1fr) 82px; }
+.stock-editor__actions { align-items: center; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; padding-top: 1rem; }
+@media (max-width: 1050px) { .stock-editor__grid--identity { grid-template-columns: repeat(3,1fr); } .stock-editor__grid--planning { grid-template-columns: repeat(3,1fr); } }
+@media (max-width: 900px) { .stock-profile__body { grid-template-columns: 60px 1fr; } .stock-profile__commercial { border-left: 0; border-top: 1px solid rgba(255,255,255,.13); grid-column: 1 / -1; padding: .8rem 0 0; text-align: left; } .stock-kpis { grid-template-columns: 1fr 1fr; } .stock-editor__grid--basic, .stock-editor__grid--pricing { grid-template-columns: 1fr 1fr; } .stock-field--wide { grid-column: 1 / -1; } }
+@media (max-width: 650px) { .stock-editor__grid--basic, .stock-editor__grid--identity, .stock-editor__grid--pricing, .stock-editor__grid--planning { grid-template-columns: 1fr; } .stock-field--tracking, .stock-field--wide { grid-column: auto; } }
+@media (max-width: 560px) { .stock-profile__body { grid-template-columns: 1fr; } .stock-profile__avatar { height: 52px; width: 52px; } .stock-profile__top { align-items: flex-start; flex-direction: column-reverse; gap: .5rem; } .stock-kpis { grid-template-columns: 1fr; } }
+
+/* ─── Kurumsal kredi kartları ─────────────────────────────────────────── */
+.cc-page{display:grid;gap:1rem}.cc-header{align-items:center;background:linear-gradient(125deg,#0f172a,#172554 62%,#155e75);border-radius:1rem;color:#fff;display:flex;justify-content:space-between;padding:1.45rem 1.6rem}.cc-header>div>span{color:#67e8f9;font-size:.62rem;font-weight:800;letter-spacing:.14em}.cc-header h1{color:#fff;font-size:1.55rem;letter-spacing:-.035em;margin:.3rem 0}.cc-header p{color:rgba(255,255,255,.62);font-size:.75rem;margin:0}.cc-summary{display:grid;gap:.7rem;grid-template-columns:1.25fr repeat(3,1fr)}.cc-summary>div{background:var(--surface);border:1px solid var(--border);border-radius:.8rem;box-shadow:var(--shadow-sm);display:flex;flex-direction:column;min-height:118px;padding:1rem}.cc-summary span{color:var(--text-muted);font-size:.66rem;font-weight:750}.cc-summary strong{font-size:1.25rem;letter-spacing:-.035em;margin-top:.7rem}.cc-summary small{color:var(--text-subtle);font-size:.63rem;margin-top:auto}.cc-summary__lead{background:linear-gradient(145deg,color-mix(in srgb,var(--accent-soft) 65%,var(--surface)),var(--surface))!important;border-color:color-mix(in srgb,var(--accent) 25%,var(--border))!important}.cc-summary__lead strong{color:var(--accent-text);font-size:1.5rem}.cc-progress{background:var(--surface-2);border-radius:999px;height:5px;margin-top:auto;overflow:hidden}.cc-progress i{background:linear-gradient(90deg,#0ea5e9,#6366f1);display:block;height:100%}.cc-form-card{border-color:color-mix(in srgb,var(--accent) 24%,var(--border))}.cc-form-grid{display:grid;gap:.8rem;grid-template-columns:repeat(4,1fr)}.cc-form-actions{align-items:end;display:flex;gap:.5rem;grid-column:1/-1;justify-content:flex-end}.cc-section-title h2{font-size:.92rem;margin:0}.cc-section-title p{color:var(--text-muted);font-size:.68rem;margin:.25rem 0 0}.cc-layout{display:grid;gap:1rem;grid-template-columns:minmax(280px,.8fr) minmax(0,2fr)}.cc-wallet,.cc-detail{background:var(--surface);border:1px solid var(--border);border-radius:.9rem;box-shadow:var(--shadow-sm);padding:1rem}.cc-wallet{display:flex;flex-direction:column;gap:.8rem}.cc-card{border:2px solid transparent;border-radius:.9rem;color:#fff;cursor:pointer;display:flex;flex-direction:column;min-height:175px;padding:1rem;text-align:left;transition:.18s transform,.18s box-shadow;width:100%}.cc-card:hover{transform:translateY(-2px)}.cc-card.is-active{border-color:#67e8f9;box-shadow:0 0 0 3px rgba(34,211,238,.14),0 12px 28px rgba(15,23,42,.2)}.cc-card--lacivert{background:linear-gradient(135deg,#0f172a,#1e3a8a)}.cc-card--turkuaz{background:linear-gradient(135deg,#164e63,#0f766e)}.cc-card--mor{background:linear-gradient(135deg,#312e81,#6b21a8)}.cc-card--bordo{background:linear-gradient(135deg,#450a0a,#9f1239)}.cc-card__top,.cc-card__foot{display:flex;justify-content:space-between}.cc-card__top{font-size:.7rem;font-weight:750}.cc-card>strong{font-family:monospace;font-size:1rem;letter-spacing:.08em;margin-top:1.5rem}.cc-card__foot{align-items:end;margin-top:auto}.cc-card__foot>span{font-size:.7rem;font-weight:700}.cc-card__foot>span:last-child{text-align:right}.cc-card__foot small{color:rgba(255,255,255,.58);display:block;font-size:.58rem;font-weight:500;margin-top:.18rem}.cc-detail{min-width:0}.cc-detail__head{align-items:center;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;padding:.2rem .2rem 1rem}.cc-detail__head>div>span{color:var(--accent-text);font-size:.62rem;font-weight:800}.cc-detail__head h2{font-size:1.1rem;margin:.25rem 0}.cc-detail__head p{color:var(--text-muted);font-size:.66rem;margin:0}.cc-detail__metrics{display:grid;gap:.6rem;grid-template-columns:repeat(3,1fr);margin:1rem 0}.cc-detail__metrics>div{background:var(--surface-2);border:1px solid var(--border);border-radius:.65rem;display:grid;gap:.35rem;padding:.75rem}.cc-detail__metrics span{color:var(--text-muted);font-size:.62rem}.cc-detail__metrics strong{font-size:.9rem}.cc-transaction{background:var(--surface-2);border:1px solid var(--border);border-radius:.7rem;display:grid;gap:.65rem;grid-template-columns:repeat(3,1fr);margin-bottom:1rem;padding:.8rem}.cc-transaction>button{align-self:end}.cc-installment{color:var(--text-muted);display:block}.cc-amount{font-weight:750;white-space:nowrap}.cc-amount.is-credit{color:var(--success)}.cc-empty{color:var(--text-muted);padding:2rem;text-align:center}@media(max-width:1050px){.cc-summary{grid-template-columns:repeat(2,1fr)}.cc-form-grid{grid-template-columns:repeat(2,1fr)}.cc-layout{grid-template-columns:1fr}.cc-wallet{display:grid;grid-template-columns:repeat(2,1fr)}.cc-wallet>.cc-section-title{grid-column:1/-1}}@media(max-width:650px){.cc-header{align-items:stretch;flex-direction:column;gap:1rem}.cc-summary,.cc-form-grid,.cc-wallet,.cc-detail__metrics,.cc-transaction{grid-template-columns:1fr}.cc-form-actions{grid-column:auto}.cc-detail__head{align-items:stretch;flex-direction:column;gap:.8rem}}
 @media (max-width: 620px) { .sales-recent__head { align-items: center; } }

@@ -7,11 +7,13 @@ import { BankaWebhookController } from "./banka-webhook.controller";
 import { BankaEntegrasyonService } from "./banka-entegrasyon.service";
 import { AuthModule } from "../auth/auth.module";
 import { OdemeTalimatiService } from "./odeme-talimati.service";
+import { KrediKartiController } from "./kredi-karti.controller";
+import { KrediKartiService } from "./kredi-karti.service";
 
 @Module({
   imports: [AuthModule],
-  controllers: [KasaBankaController, BankaWebhookController],
-  providers: [KasaBankaService, EkstreService, BankaEntegrasyonService, OdemeTalimatiService],
+  controllers: [KasaBankaController, BankaWebhookController, KrediKartiController],
+  providers: [KasaBankaService, EkstreService, BankaEntegrasyonService, OdemeTalimatiService, KrediKartiService],
   exports: [KasaBankaService, EkstreService],
 })
 export class KasaBankaModule implements OnModuleInit {

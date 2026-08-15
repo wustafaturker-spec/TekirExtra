@@ -15,8 +15,6 @@ import {
   Input,
   PageHeader,
   Select,
-  Stat,
-  StatGrid,
   TabPanel,
   Tabs,
   TableWrap,
@@ -52,14 +50,33 @@ function ReceteSekmesi({ stokId, anaBirim, recete, stoklar, onKaydedildi, onSili
     try { await api(`/uretim/receteler/${stokId}`, { method: "DELETE" }); await onSilindi(); }
     catch (h) { onHata(h instanceof Error ? h.message : "Reçete kaldırılamadı"); }
   }
-  return <Card title="Ürün reçetesi">
-    <p className="muted">Reçete isteğe bağlıdır. Tanımlandığında bu stok kartı üretim emrinde mamul olarak seçilebilir.</p>
-    <form className="stack" onSubmit={kaydet}>
-      <div className="form-grid"><Field label={`Reçete çıktı miktarı (${anaBirim})`}><Input required type="number" min="0.001" step="0.001" value={ciktiMiktari} onChange={(e) => setCiktiMiktari(e.target.value)} /></Field><Field label="Açıklama"><Input maxLength={500} value={aciklama} onChange={(e) => setAciklama(e.target.value)} placeholder="İsteğe bağlı" /></Field></div>
-      <TableWrap><thead><tr><th>Malzeme</th><th className="num">Miktar</th><th className="num">Fire %</th><th /></tr></thead><tbody>{kalemler.map((kalem, index) => { const secili = stoklar.find((s) => s.id === kalem.malzemeStokId); return <tr key={index}><td><Select required value={kalem.malzemeStokId} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, malzemeStokId: e.target.value } : k))}><option value="">Malzeme seçin</option>{stoklar.map((s) => <option key={s.id} value={s.id}>{s.kod} — {s.ad} · Stok {adet(s.mevcutMiktar)}</option>)}</Select></td><td><Input aria-label="Reçete miktarı" required type="number" min="0.001" step="0.001" value={kalem.miktar} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, miktar: e.target.value } : k))} />{secili && <small className="muted">{secili.anaBirim}</small>}</td><td><Input aria-label="Fire oranı" required type="number" min="0" max="100" step="0.01" value={kalem.fireOrani} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, fireOrani: e.target.value } : k))} /></td><td><Button type="button" size="sm" variant="danger" disabled={kalemler.length === 1} onClick={() => setKalemler((eski) => eski.filter((_, i) => i !== index))}>Sil</Button></td></tr>; })}</tbody></TableWrap>
-      <div className="between"><Button type="button" onClick={() => setKalemler((eski) => [...eski, { malzemeStokId: "", miktar: "1", fireOrani: "0" }])}>+ Malzeme ekle</Button><div className="row-tight">{recete && <Button type="button" variant="danger" onClick={() => void sil()}>Reçeteyi kaldır</Button>}<Button type="submit" variant="primary" disabled={kaydediliyor}>{kaydediliyor ? "Kaydediliyor…" : "Reçeteyi kaydet"}</Button></div></div>
+  const satirHesapla = (kalem: typeof kalemler[number]) => {
+    const malzeme = stoklar.find((s) => s.id === kalem.malzemeStokId);
+    const net = Number(kalem.miktar) || 0;
+    const brut = net * (1 + (Number(kalem.fireOrani) || 0) / 100);
+    const birimMaliyet = Number(malzeme?.ortalamaMaliyet ?? 0);
+    return { malzeme, brut, birimMaliyet, toplam: brut * birimMaliyet };
+  };
+  const toplamMaliyet = kalemler.reduce((toplam, kalem) => toplam + satirHesapla(kalem).toplam, 0);
+  const birimMamulMaliyeti = toplamMaliyet / Math.max(Number(ciktiMiktari) || 1, 0.001);
+  return <div className="recipe-workspace">
+    <section className="recipe-hero">
+      <div><span className="recipe-eyebrow">ÜRETİM TANIMI</span><h2>Ürün reçetesi</h2><p>Bir üretim çevriminde tüketilecek malzemeleri, fire paylarını ve tahmini maliyeti yönetin.</p></div>
+      <div className="recipe-health"><span className={recete ? "is-ready" : ""} />{recete ? "Üretime hazır" : "Henüz kaydedilmedi"}</div>
+    </section>
+    <form className="recipe-form" onSubmit={kaydet}>
+      <section className="recipe-setup">
+        <div><h3>Reçete bilgileri</h3><p>Hesaplamaların baz aldığı standart üretim çıktısı.</p></div>
+        <div className="recipe-setup__fields"><Field label={`Çıktı miktarı (${anaBirim})`}><Input required type="number" min="0.001" step="0.001" value={ciktiMiktari} onChange={(e) => setCiktiMiktari(e.target.value)} /></Field><Field label="Üretim notu"><Input maxLength={500} value={aciklama} onChange={(e) => setAciklama(e.target.value)} placeholder="Örn. standart üretim partisi" /></Field></div>
+      </section>
+      <section className="recipe-materials">
+        <div className="recipe-section-head"><div><h3>Malzeme listesi</h3><p>Maliyetler stok kartlarındaki güncel ortalama maliyetten hesaplanır.</p></div><Button type="button" onClick={() => setKalemler((eski) => [...eski, { malzemeStokId: "", miktar: "1", fireOrani: "0" }])}>+ Malzeme ekle</Button></div>
+        <TableWrap><thead><tr><th>Malzeme</th><th className="num">Net miktar</th><th>Birim</th><th className="num">Fire</th><th className="num">Birim maliyet</th><th className="num">Satır maliyeti</th><th /></tr></thead><tbody>{kalemler.map((kalem, index) => { const hesap = satirHesapla(kalem); return <tr key={index}><td><Select required value={kalem.malzemeStokId} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, malzemeStokId: e.target.value } : k))}><option value="">Malzeme seçin</option>{stoklar.map((s) => <option key={s.id} value={s.id}>{s.kod} — {s.ad}</option>)}</Select>{hesap.malzeme && <small className="recipe-stock">Kullanılabilir stok: {adet(hesap.malzeme.mevcutMiktar)} {hesap.malzeme.anaBirim}</small>}</td><td><Input aria-label="Reçete miktarı" required type="number" min="0.001" step="0.001" value={kalem.miktar} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, miktar: e.target.value } : k))} /></td><td><span className="recipe-unit">{hesap.malzeme?.anaBirim ?? "—"}</span></td><td><div className="recipe-percent"><Input aria-label="Fire oranı" required type="number" min="0" max="100" step="0.01" value={kalem.fireOrani} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, fireOrani: e.target.value } : k))} /><span>%</span></div></td><td className="num recipe-money">{tl(hesap.birimMaliyet)}</td><td className="num"><strong>{tl(hesap.toplam)}</strong>{Number(kalem.fireOrani) > 0 && <small className="recipe-stock">Fire dahil {adet(hesap.brut)} {hesap.malzeme?.anaBirim}</small>}</td><td><Button type="button" size="sm" variant="danger" disabled={kalemler.length === 1} onClick={() => setKalemler((eski) => eski.filter((_, i) => i !== index))}>Sil</Button></td></tr>; })}</tbody></TableWrap>
+      </section>
+      <section className="recipe-summary"><div><span>Malzeme çeşidi</span><strong>{kalemler.filter((k) => k.malzemeStokId).length}</strong></div><div><span>Reçete toplam maliyeti</span><strong>{tl(toplamMaliyet)}</strong></div><div className="recipe-summary__lead"><span>1 {anaBirim} tahmini maliyet</span><strong>{tl(birimMamulMaliyeti)}</strong><small>İşçilik ve genel üretim giderleri hariç</small></div></section>
+      <div className="recipe-actions"><div>{recete && <Button type="button" variant="danger" onClick={() => void sil()}>Reçeteyi kaldır</Button>}</div><div className="row-tight"><span className="muted">Değişiklikler yeni üretim emirlerine uygulanır.</span><Button type="submit" variant="primary" disabled={kaydediliyor}>{kaydediliyor ? "Kaydediliyor…" : "Reçeteyi kaydet"}</Button></div></div>
     </form>
-  </Card>;
+  </div>;
 }
 
 interface Birim {
@@ -87,8 +104,8 @@ interface Tedarikci {
 }
 interface Varyant { id: string; kod: string; ad: string; nitelikler: Record<string, string>; barkod: string | null; alisFiyati: string | null; satisFiyati: string | null; mevcutMiktar: string; aktif: boolean }
 interface StokFiyat { id: string; varyantId: string | null; tip: "alis" | "satis"; dovizCinsi: string; tutar: string; aktif: boolean }
-interface Recete { id: string; ciktiMiktari: string; aciklama: string | null; kalemler?: { id: string; malzemeStokId: string; malzemeVaryantId: string | null; miktar: string; fireOrani: string; malzeme: { id: string; kod: string; ad: string; anaBirim: string; mevcutMiktar: string } }[] }
-interface StokOzet { id: string; kod: string; ad: string; tip: string; anaBirim: string; mevcutMiktar: string }
+interface Recete { id: string; ciktiMiktari: string; aciklama: string | null; kalemler?: { id: string; malzemeStokId: string; malzemeVaryantId: string | null; miktar: string; fireOrani: string; malzeme: { id: string; kod: string; ad: string; anaBirim: string; mevcutMiktar: string; ortalamaMaliyet: string } }[] }
+interface StokOzet { id: string; kod: string; ad: string; tip: string; anaBirim: string; mevcutMiktar: string; ortalamaMaliyet?: string }
 
 interface Hareket {
   id: string;
@@ -323,55 +340,28 @@ export default function StokDetaySayfasi() {
   const kritikAlti = kritik !== null && miktar <= kritik;
 
   return (
-    <div>
-      <PageHeader
-        title={
-          <span style={{ display: "inline-flex", alignItems: "center", gap: "0.6rem" }}>
-            {detay.ad}
-            {!detay.aktif && <Badge variant="neutral">Pasif</Badge>}
-            {kritikAlti && <Badge variant="warning">⚠️ Kritik Seviye</Badge>}
-          </span>
-        }
-        subtitle={
-          <>
-            {detay.kod} · {TIP_ETIKETLERI[detay.tip] ?? detay.tip} · Ana birim: {detay.anaBirim}
-            {detay.kategori ? ` · ${detay.kategori.ad}` : ""}
-          </>
-        }
-        actions={
-          <ButtonLabel as="a" href="/panel/stok">
-            ← Stok Listesi
-          </ButtonLabel>
-        }
-      />
+    <div className="stock-detail-page">
+      <header className="stock-profile">
+        <div className="stock-profile__top"><ButtonLabel as="a" href="/panel/stok">← Stok listesi</ButtonLabel><span className="stock-profile__code">STOK KARTI / {detay.kod}</span></div>
+        <div className="stock-profile__body">
+          <div className="stock-profile__avatar">{detay.ad.trim().slice(0, 2).toLocaleUpperCase("tr-TR")}</div>
+          <div className="stock-profile__identity"><div className="stock-profile__badges"><Badge variant={detay.aktif ? "success" : "neutral"}>{detay.aktif ? "Aktif" : "Pasif"}</Badge>{kritikAlti && <Badge variant="warning">Kritik stok</Badge>}<Badge variant="neutral">{TIP_ETIKETLERI[detay.tip] ?? detay.tip}</Badge></div><h1>{detay.ad}</h1><p>{detay.kategori?.ad ?? "Kategorisiz"} · Ana birim {detay.anaBirim}{detay.marka ? ` · ${detay.marka}` : ""}{detay.model ? ` ${detay.model}` : ""}</p></div>
+          <div className="stock-profile__commercial"><span>Satış fiyatı</span><strong>{detay.satisFiyati ? `${Number(detay.satisFiyati).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${detay.satisFiyatiDoviz}` : "Tanımsız"}</strong><small>{detay.alisFiyati ? `Alış ${Number(detay.alisFiyati).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${detay.alisFiyatiDoviz}` : "Alış fiyatı tanımsız"}</small></div>
+        </div>
+      </header>
 
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
       {uyari && <Alert tone="error">⚠️ {uyari}</Alert>}
 
-      <StatGrid>
-        <Stat
-          label="Mevcut Stok"
-          value={`${adet(detay.mevcutMiktar)} ${detay.anaBirim}`}
-          tone={miktar < 0 || kritikAlti ? "danger" : miktar > 0 ? "success" : "default"}
-          hint={kritik !== null ? `Kritik seviye: ${adet(kritik)}` : "Kritik seviye tanımsız"}
-        />
-        <Stat
-          label="Kullanılabilir"
-          value={`${adet(detay.kullanilabilirMiktar)} ${detay.anaBirim}`}
-          tone={Number(detay.kullanilabilirMiktar) < 0 ? "danger" : "default"}
-          hint={`Rezerve: ${adet(detay.rezerveMiktar)}`}
-        />
-        <Stat label="Yoldaki" value={`${adet(detay.yoldakiMiktar)} ${detay.anaBirim}`} hint="Açık alış siparişi" />
-        <Stat
-          label="Ort. Maliyet"
-          value={tl(detay.ortalamaMaliyet)}
-          tone="info"
-          hint={`Stok değeri: ${tl(Number(detay.ortalamaMaliyet) * miktar)}`}
-        />
-      </StatGrid>
+      <section className="stock-kpis">
+        <div className={`stock-kpi stock-kpi--lead${kritikAlti ? " is-danger" : ""}`}><span>Mevcut stok</span><strong>{adet(detay.mevcutMiktar)} <small>{detay.anaBirim}</small></strong><p>{kritik !== null ? `Kritik eşik ${adet(kritik)} ${detay.anaBirim}` : "Kritik eşik tanımlanmamış"}</p></div>
+        <div className="stock-kpi"><span>Kullanılabilir</span><strong>{adet(detay.kullanilabilirMiktar)} <small>{detay.anaBirim}</small></strong><p>{adet(detay.rezerveMiktar)} {detay.anaBirim} rezerve</p></div>
+        <div className="stock-kpi"><span>Tedarik görünümü</span><strong>{adet(detay.yoldakiMiktar)} <small>{detay.anaBirim}</small></strong><p>{detay.tedarikSuresiGun != null ? `${detay.tedarikSuresiGun} gün tedarik süresi` : "Tedarik süresi tanımsız"}</p></div>
+        <div className="stock-kpi stock-kpi--value"><span>Stok değeri</span><strong>{tl(Number(detay.ortalamaMaliyet) * miktar)}</strong><p>Ort. maliyet {tl(detay.ortalamaMaliyet)}</p></div>
+      </section>
 
-      <div style={{ margin: "1.25rem 0" }}>
+      <div className="stock-tabs">
         <Tabs<Sekme>
           ariaLabel="Stok kartı bölümleri"
           idPrefix="stok-detay"
@@ -583,10 +573,10 @@ function GenelSekmesi({
   }
 
   return (
-    <Card className="stack">
+    <Card className="stack stock-editor">
       <div className="between">
         <div className="card__title" style={{ margin: 0 }}>
-          Kart Bilgileri
+          Kart bilgileri
         </div>
         <div className="row-tight">
           {duzenlenebilir && (
@@ -602,18 +592,19 @@ function GenelSekmesi({
         </div>
       </div>
 
-      <div className="row">
-        <div style={{ flex: 2, minWidth: 240 }}>
+      <div className="stock-editor__section"><span>01</span><div><strong>Temel bilgiler</strong><small>Ürünün katalogda görünen kimliği ve sınıflandırması</small></div></div>
+      <div className="stock-editor__grid stock-editor__grid--basic">
+        <div className="stock-field stock-field--wide">
           <Field label="Ürün/Hizmet Adı *">
             <Input {...alan("ad")} required />
           </Field>
         </div>
-        <div style={{ flex: 1, minWidth: 160 }}>
+        <div className="stock-field">
           <Field label="Kısa Ad">
             <Input {...alan("kisaAd")} />
           </Field>
         </div>
-        <div style={{ flex: 1, minWidth: 180 }}>
+        <div className="stock-field">
           <Field label="Kategori">
             <Select {...alan("kategoriId")}>
               <option value="">— Kategorisiz —</option>
@@ -625,91 +616,88 @@ function GenelSekmesi({
             </Select>
           </Field>
         </div>
+        <div className="stock-field stock-field--full"><Field label="Açıklama"><Input {...alan("aciklama")} placeholder="Ürünle ilgili kısa açıklama veya kullanım notu" /></Field></div>
       </div>
 
-      <Field label="Açıklama">
-        <Input {...alan("aciklama")} placeholder="Serbest not" />
-      </Field>
-
-      <Field label="Seri / lot takibi">
-        <Select {...alan("takipTipi")}><option value="yok">Takip yok</option><option value="lot">Lot / parti ve son kullanma tarihi</option><option value="seri">Tekil seri numarası</option></Select>
-      </Field>
-
-      <div className="row">
-        <div style={{ flex: 1, minWidth: 150 }}>
+      <div className="stock-editor__section"><span>02</span><div><strong>İzlenebilirlik ve tanımlayıcılar</strong><small>Üretici, menşei ve seri/lot izleme tercihleri</small></div></div>
+      <div className="stock-editor__grid stock-editor__grid--identity">
+        <div className="stock-field stock-field--tracking"><Field label="Seri / lot takibi"><Select {...alan("takipTipi")}><option value="yok">Takip yok</option><option value="lot">Lot / parti ve son kullanma tarihi</option><option value="seri">Tekil seri numarası</option></Select></Field></div>
+        <div className="stock-field">
           <Field label="Marka">
             <Input {...alan("marka")} />
           </Field>
         </div>
-        <div style={{ flex: 1, minWidth: 150 }}>
+        <div className="stock-field">
           <Field label="Model">
             <Input {...alan("model")} />
           </Field>
         </div>
-        <div style={{ flex: 1, minWidth: 130 }}>
+        <div className="stock-field">
           <Field label="Menşei">
             <Input {...alan("mensei")} />
           </Field>
         </div>
-        <div style={{ flex: 1, minWidth: 130 }}>
+        <div className="stock-field">
           <Field label="GTİP Kodu">
             <Input {...alan("gtipKodu")} />
           </Field>
         </div>
-        <div style={{ flex: 1, minWidth: 150 }}>
+        <div className="stock-field">
           <Field label="Üretici Ürün Kodu">
             <Input {...alan("ureticiUrunKodu")} />
           </Field>
         </div>
       </div>
 
-      <div className="row">
-        <div style={{ flex: 1, minWidth: 130 }}>
+      <div className="stock-editor__section"><span>03</span><div><strong>Fiyatlandırma</strong><small>Vergi oranı ve kartın varsayılan alış/satış fiyatları</small></div></div>
+      <div className="stock-editor__grid stock-editor__grid--pricing">
+        <div className="stock-field">
           <Field label="KDV Oranı (%)">
             <Input type="number" step="0.01" {...alan("kdvOrani")} />
           </Field>
         </div>
-        <div style={{ flex: 1, minWidth: 150 }}>
+        <div className="stock-field">
           <Field label="Alış Fiyatı">
-            <div className="row"><Input type="number" step="0.0001" {...alan("alisFiyati")} placeholder="0.0000" /><Select aria-label="Alış fiyatı dövizi" {...alan("alisFiyatiDoviz")}><option>TRY</option><option>USD</option><option>EUR</option></Select></div>
+            <div className="stock-price-input"><Input type="number" step="0.0001" {...alan("alisFiyati")} placeholder="0.0000" /><Select aria-label="Alış fiyatı dövizi" {...alan("alisFiyatiDoviz")}><option>TRY</option><option>USD</option><option>EUR</option></Select></div>
           </Field>
         </div>
-        <div style={{ flex: 1, minWidth: 150 }}>
+        <div className="stock-field">
           <Field label="Satış Fiyatı">
-            <div className="row"><Input type="number" step="0.0001" {...alan("satisFiyati")} placeholder="0.0000" /><Select aria-label="Satış fiyatı dövizi" {...alan("satisFiyatiDoviz")}><option>TRY</option><option>USD</option><option>EUR</option></Select></div>
+            <div className="stock-price-input"><Input type="number" step="0.0001" {...alan("satisFiyati")} placeholder="0.0000" /><Select aria-label="Satış fiyatı dövizi" {...alan("satisFiyatiDoviz")}><option>TRY</option><option>USD</option><option>EUR</option></Select></div>
           </Field>
         </div>
       </div>
 
-      <div className="row">
-        <div style={{ flex: 1, minWidth: 140 }}>
+      <div className="stock-editor__section"><span>04</span><div><strong>Stok planlama</strong><small>Kritik eşikler, güvenlik stoğu ve tedarik parametreleri</small></div></div>
+      <div className="stock-editor__grid stock-editor__grid--planning">
+        <div className="stock-field">
           <Field label="Kritik Seviye">
             <Input type="number" step="0.001" {...alan("kritikSeviye")} />
           </Field>
         </div>
-        <div style={{ flex: 1, minWidth: 120 }}>
+        <div className="stock-field">
           <Field label="Min. Stok">
             <Input type="number" step="0.001" {...alan("minStok")} />
           </Field>
         </div>
-        <div style={{ flex: 1, minWidth: 120 }}>
+        <div className="stock-field">
           <Field label="Maks. Stok">
             <Input type="number" step="0.001" {...alan("maksStok")} />
           </Field>
         </div>
-        <div style={{ flex: 1, minWidth: 140 }}>
+        <div className="stock-field">
           <Field label="Güvenlik Stoğu">
             <Input type="number" step="0.001" {...alan("guvenlikStogu")} />
           </Field>
         </div>
-        <div style={{ flex: 1, minWidth: 150 }}>
+        <div className="stock-field">
           <Field label="Tedarik Süresi (gün)">
             <Input type="number" min="0" max="365" {...alan("tedarikSuresiGun")} />
           </Field>
         </div>
       </div>
 
-      <div>
+      <div className="stock-editor__actions">
         <Button variant="primary" onClick={kaydet} disabled={!duzenlenebilir}>
           Değişiklikleri Kaydet
         </Button>
@@ -795,7 +783,7 @@ function DepolarSekmesi({
 }
 
 function PartilerSekmesi({ detay, partiler }: { detay: StokDetay; partiler: Parti[] }) {
-  return <Card title="Seri / Lot izlenebilirliği"><p className="muted">Çıkışlar son kullanma tarihi en yakın partiden (FEFO) otomatik karşılanır.</p><TableWrap><table><thead><tr><th>Lot / Seri</th><th>Varyant</th><th>Depo</th><th>Üretim</th><th>Son kullanma</th><th>Giren</th><th>Kalan</th></tr></thead><tbody>{partiler.map((p) => <tr key={p.id}><td><strong>{p.lotNo}</strong>{p.seriNo && <><br /><small>{p.seriNo}</small></>}</td><td>{p.varyant ? `${p.varyant.kod} — ${p.varyant.ad}` : "—"}</td><td>{p.depo.ad}</td><td>{p.uretimTarihi?.slice(0, 10) ?? "—"}</td><td>{p.sonKullanmaTarihi?.slice(0, 10) ?? "—"}</td><td>{adet(p.ilkMiktar)} {detay.anaBirim}</td><td><strong>{adet(p.kalanMiktar)} {detay.anaBirim}</strong></td></tr>)}{!partiler.length && <tr><td colSpan={7}>Henüz seri/lot girişi yok.</td></tr>}</tbody></table></TableWrap></Card>;
+  return <Card title="Seri / Lot izlenebilirliği"><p className="muted">Çıkışlar son kullanma tarihi en yakın partiden (FEFO) otomatik karşılanır.</p><TableWrap><thead><tr><th>Lot / Seri</th><th>Varyant</th><th>Depo</th><th>Üretim</th><th>Son kullanma</th><th>Giren</th><th>Kalan</th></tr></thead><tbody>{partiler.map((p) => <tr key={p.id}><td><strong>{p.lotNo}</strong>{p.seriNo && <><br /><small>{p.seriNo}</small></>}</td><td>{p.varyant ? `${p.varyant.kod} — ${p.varyant.ad}` : "—"}</td><td>{p.depo.ad}</td><td>{p.uretimTarihi?.slice(0, 10) ?? "—"}</td><td>{p.sonKullanmaTarihi?.slice(0, 10) ?? "—"}</td><td>{adet(p.ilkMiktar)} {detay.anaBirim}</td><td><strong>{adet(p.kalanMiktar)} {detay.anaBirim}</strong></td></tr>)}{!partiler.length && <tr><td colSpan={7}>Henüz seri/lot girişi yok.</td></tr>}</tbody></TableWrap></Card>;
 }
 
 function VaryantlarSekmesi({ detay, onIslem }: { detay: StokDetay; onIslem: (islem: () => Promise<unknown>, mesaj: string) => Promise<boolean> }) {
@@ -806,7 +794,7 @@ function VaryantlarSekmesi({ detay, onIslem }: { detay: StokDetay; onIslem: (isl
     const basarili = await onIslem(() => api(`/stok/${detay.id}/varyantlar`, { method: "POST", body: JSON.stringify({ kod: form.kod, ad: form.ad, nitelikler, barkod: form.barkod || null, alisFiyati: form.alisFiyati || null, satisFiyati: form.satisFiyati || null }) }), "Varyant eklendi.");
     if (basarili) setForm({ kod: "", ad: "", nitelikler: "", barkod: "", alisFiyati: "", satisFiyati: "" });
   }
-  return <div className="stack"><Card title="Yeni varyant"><form className="form-grid" onSubmit={ekle}><Field label="Varyant kodu"><Input required value={form.kod} onChange={(e) => setForm({ ...form, kod: e.target.value })} /></Field><Field label="Ad"><Input required value={form.ad} onChange={(e) => setForm({ ...form, ad: e.target.value })} /></Field><Field label="Nitelikler"><Input required placeholder="Renk: Siyah, Beden: M" value={form.nitelikler} onChange={(e) => setForm({ ...form, nitelikler: e.target.value })} /></Field><Field label="Barkod"><Input value={form.barkod} onChange={(e) => setForm({ ...form, barkod: e.target.value })} /></Field><Field label="Alış fiyatı"><Input type="number" min="0" step="0.0001" value={form.alisFiyati} onChange={(e) => setForm({ ...form, alisFiyati: e.target.value })} /></Field><Field label="Satış fiyatı"><Input type="number" min="0" step="0.0001" value={form.satisFiyati} onChange={(e) => setForm({ ...form, satisFiyati: e.target.value })} /></Field><div><Button type="submit">Varyant ekle</Button></div></form></Card><Card title="Varyantlar"><TableWrap><table><thead><tr><th>Kod</th><th>Ad / Nitelikler</th><th>Barkod</th><th>Stok</th><th>Satış</th><th>Durum</th></tr></thead><tbody>{(detay.varyantlar ?? []).map((v) => <tr key={v.id}><td>{v.kod}</td><td><strong>{v.ad}</strong><br /><small>{Object.entries(v.nitelikler).map(([k, d]) => `${k}: ${d}`).join(" · ")}</small></td><td>{v.barkod ?? "—"}</td><td>{adet(v.mevcutMiktar)} {detay.anaBirim}</td><td>{v.satisFiyati ? tl(v.satisFiyati) : "Kart fiyatı"}</td><td><Button variant="ghost" size="sm" onClick={() => void onIslem(() => api(`/stok/${detay.id}/varyantlar/${v.id}`, { method: "PATCH", body: JSON.stringify({ aktif: !v.aktif }) }), v.aktif ? "Varyant pasifleştirildi." : "Varyant etkinleştirildi.")}>{v.aktif ? "Aktif" : "Pasif"}</Button></td></tr>)}</tbody></table></TableWrap></Card></div>;
+  return <div className="stack"><Card title="Yeni varyant"><form className="form-grid" onSubmit={ekle}><Field label="Varyant kodu"><Input required value={form.kod} onChange={(e) => setForm({ ...form, kod: e.target.value })} /></Field><Field label="Ad"><Input required value={form.ad} onChange={(e) => setForm({ ...form, ad: e.target.value })} /></Field><Field label="Nitelikler"><Input required placeholder="Renk: Siyah, Beden: M" value={form.nitelikler} onChange={(e) => setForm({ ...form, nitelikler: e.target.value })} /></Field><Field label="Barkod"><Input value={form.barkod} onChange={(e) => setForm({ ...form, barkod: e.target.value })} /></Field><Field label="Alış fiyatı"><Input type="number" min="0" step="0.0001" value={form.alisFiyati} onChange={(e) => setForm({ ...form, alisFiyati: e.target.value })} /></Field><Field label="Satış fiyatı"><Input type="number" min="0" step="0.0001" value={form.satisFiyati} onChange={(e) => setForm({ ...form, satisFiyati: e.target.value })} /></Field><div><Button type="submit">Varyant ekle</Button></div></form></Card><Card title="Varyantlar"><TableWrap><thead><tr><th>Kod</th><th>Ad / Nitelikler</th><th>Barkod</th><th>Stok</th><th>Satış</th><th>Durum</th></tr></thead><tbody>{(detay.varyantlar ?? []).map((v) => <tr key={v.id}><td>{v.kod}</td><td><strong>{v.ad}</strong><br /><small>{Object.entries(v.nitelikler).map(([k, d]) => `${k}: ${d}`).join(" · ")}</small></td><td>{v.barkod ?? "—"}</td><td>{adet(v.mevcutMiktar)} {detay.anaBirim}</td><td>{v.satisFiyati ? tl(v.satisFiyati) : "Kart fiyatı"}</td><td><Button variant="ghost" size="sm" onClick={() => void onIslem(() => api(`/stok/${detay.id}/varyantlar/${v.id}`, { method: "PATCH", body: JSON.stringify({ aktif: !v.aktif }) }), v.aktif ? "Varyant pasifleştirildi." : "Varyant etkinleştirildi.")}>{v.aktif ? "Aktif" : "Pasif"}</Button></td></tr>)}</tbody></TableWrap></Card></div>;
 }
 
 function HareketlerSekmesi({

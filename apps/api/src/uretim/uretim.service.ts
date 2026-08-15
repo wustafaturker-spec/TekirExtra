@@ -16,7 +16,7 @@ export class UretimService {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, (tx) => tx.urunRecetesi.findUnique({
       where: { stokId },
-      include: { kalemler: { orderBy: { id: "asc" }, include: { malzeme: { select: { id: true, kod: true, ad: true, anaBirim: true, mevcutMiktar: true } }, malzemeVaryant: { select: { id: true, kod: true, ad: true } } } } },
+      include: { kalemler: { orderBy: { id: "asc" }, include: { malzeme: { select: { id: true, kod: true, ad: true, anaBirim: true, mevcutMiktar: true, ortalamaMaliyet: true } }, malzemeVaryant: { select: { id: true, kod: true, ad: true } } } } },
     }));
   }
 

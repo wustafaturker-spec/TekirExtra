@@ -90,6 +90,8 @@ model Tenant {
   eirsaliyeKayitlari    EirsaliyeKayit[]
   gelenEirsaliyeler     GelenEirsaliye[]
   dovizKurlari          DovizKuru[]
+  krediKartlari         KrediKarti[]
+  krediKartiHareketleri KrediKartiHareket[]
 
   @@map("tenants")
 }
@@ -1506,9 +1508,59 @@ model BankaHesap {
   baglantiEslemeleri BankaBaglantiHesap[]
   odemeTalimatlari BankaOdemeTalimati[]
   masraflar        Masraf[]
+  krediKartlari    KrediKarti[]
 
   @@unique([tenantId, ad])
   @@map("banka_hesaplari")
+}
+
+enum KrediKartiHareketTipi {
+  harcama
+  iade
+  odeme
+  faiz
+  aidat
+}
+
+model KrediKarti {
+  id String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  ad String
+  bankaAdi String @map("banka_adi")
+  sonDortHane String @map("son_dort_hane")
+  kartSahibi String? @map("kart_sahibi")
+  limit Decimal @db.Decimal(15, 2)
+  dovizCinsi DovizCinsi @default(TRY) @map("doviz_cinsi")
+  hesapKesimGunu Int @map("hesap_kesim_gunu")
+  sonOdemeGunu Int @map("son_odeme_gunu")
+  bagliBankaHesapId String? @map("bagli_banka_hesap_id") @db.Uuid
+  renk String @default("lacivert")
+  aktif Boolean @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bagliBankaHesap BankaHesap? @relation(fields: [bagliBankaHesapId], references: [id])
+  hareketler KrediKartiHareket[]
+  @@unique([tenantId, ad])
+  @@index([tenantId, aktif])
+  @@map("kredi_kartlari")
+}
+
+model KrediKartiHareket {
+  id String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  krediKartiId String @map("kredi_karti_id") @db.Uuid
+  tip KrediKartiHareketTipi
+  tarih DateTime @db.Date
+  aciklama String
+  tutar Decimal @db.Decimal(15, 2)
+  taksitSayisi Int @default(1) @map("taksit_sayisi")
+  belgeNo String? @map("belge_no")
+  createdAt DateTime @default(now()) @map("created_at")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  krediKarti KrediKarti @relation(fields: [krediKartiId], references: [id], onDelete: Cascade)
+  @@index([tenantId, krediKartiId, tarih])
+  @@map("kredi_karti_hareketleri")
 }
 
 enum BankaOdemeTalimatDurumu {

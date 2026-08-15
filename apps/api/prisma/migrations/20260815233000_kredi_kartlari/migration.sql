@@ -1,0 +1,10 @@
+CREATE TYPE "KrediKartiHareketTipi" AS ENUM ('harcama', 'iade', 'odeme', 'faiz', 'aidat');
+CREATE TABLE "kredi_kartlari" ("id" UUID NOT NULL,"tenant_id" UUID NOT NULL,"ad" TEXT NOT NULL,"banka_adi" TEXT NOT NULL,"son_dort_hane" TEXT NOT NULL,"kart_sahibi" TEXT,"limit" DECIMAL(15,2) NOT NULL,"doviz_cinsi" "DovizCinsi" NOT NULL DEFAULT 'TRY',"hesap_kesim_gunu" INTEGER NOT NULL,"son_odeme_gunu" INTEGER NOT NULL,"bagli_banka_hesap_id" UUID,"renk" TEXT NOT NULL DEFAULT 'lacivert',"aktif" BOOLEAN NOT NULL DEFAULT true,"created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,"updated_at" TIMESTAMP(3) NOT NULL,CONSTRAINT "kredi_kartlari_pkey" PRIMARY KEY ("id"));
+CREATE TABLE "kredi_karti_hareketleri" ("id" UUID NOT NULL,"tenant_id" UUID NOT NULL,"kredi_karti_id" UUID NOT NULL,"tip" "KrediKartiHareketTipi" NOT NULL,"tarih" DATE NOT NULL,"aciklama" TEXT NOT NULL,"tutar" DECIMAL(15,2) NOT NULL,"taksit_sayisi" INTEGER NOT NULL DEFAULT 1,"belge_no" TEXT,"created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,CONSTRAINT "kredi_karti_hareketleri_pkey" PRIMARY KEY ("id"));
+CREATE UNIQUE INDEX "kredi_kartlari_tenant_id_ad_key" ON "kredi_kartlari"("tenant_id","ad");
+CREATE INDEX "kredi_kartlari_tenant_id_aktif_idx" ON "kredi_kartlari"("tenant_id","aktif");
+CREATE INDEX "kredi_karti_hareketleri_tenant_id_kredi_karti_id_tarih_idx" ON "kredi_karti_hareketleri"("tenant_id","kredi_karti_id","tarih");
+ALTER TABLE "kredi_kartlari" ADD CONSTRAINT "kredi_kartlari_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "kredi_kartlari" ADD CONSTRAINT "kredi_kartlari_bagli_banka_hesap_id_fkey" FOREIGN KEY ("bagli_banka_hesap_id") REFERENCES "banka_hesaplari"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "kredi_karti_hareketleri" ADD CONSTRAINT "kredi_karti_hareketleri_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "kredi_karti_hareketleri" ADD CONSTRAINT "kredi_karti_hareketleri_kredi_karti_id_fkey" FOREIGN KEY ("kredi_karti_id") REFERENCES "kredi_kartlari"("id") ON DELETE CASCADE ON UPDATE CASCADE;
