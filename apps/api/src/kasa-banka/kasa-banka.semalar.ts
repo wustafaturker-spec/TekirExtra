@@ -46,7 +46,7 @@ export const kasaBankaHareketOlusturSemasi = z.object({
   tip: z.enum(["tahsilat", "tediye"]),
   tutar: pozitifOndalik,
   dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
-  kur: pozitifOndalik.default("1"),
+  kur: pozitifOndalik.optional(),
   tarih: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)"),
   aciklama: z.string().max(500).optional().nullable(),
   cariId: z.string().uuid().optional().nullable(),
@@ -140,6 +140,7 @@ export const cekSenetOlusturSemasi = z
     /** Alınanda çeki veren müşteri, verilende lehtar. */
     cariId: z.string().uuid().optional().nullable(),
     aciklama: z.string().max(500).optional().nullable(),
+    fizikselKonum: z.string().max(150).optional().nullable(),
   })
   // Verilen çekte borç azalışı bir cariye yazılmalı, aksi hâlde kayıt eksik kalır
   .refine((d) => d.yon !== "verilen" || !!d.cariId, {
@@ -155,6 +156,8 @@ export const cekSenetGuncelleSemasi = z
   .object({
     durum: z.enum([
       "portfoyde",
+      "tahsile_verildi",
+      "teminata_verildi",
       "ciro_edildi",
       "tahsil_edildi",
       "karsiliksiz",
@@ -171,6 +174,7 @@ export const cekSenetGuncelleSemasi = z
     hesapKasaId: z.string().uuid().optional().nullable(),
     hesapBankaHesapId: z.string().uuid().optional().nullable(),
     islemTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)").optional(),
+    fizikselKonum: z.string().max(150).optional().nullable(),
   })
   .refine((d) => d.durum !== "ciro_edildi" || !!d.ciroCariId, {
     message: "Ciro için ciro edilen cari seçilmelidir",
@@ -189,4 +193,8 @@ export const cekSenetGuncelleSemasi = z
   .refine((d) => !(d.hesapKasaId && d.hesapBankaHesapId), {
     message: "Yalnız bir hesap seçilebilir (kasa ya da banka)",
     path: ["hesapKasaId"],
+  })
+  .refine((d) => !["karsiliksiz", "iade_edildi"].includes(d.durum) || !!d.aciklama?.trim(), {
+    message: "Karşılıksız/iade işlemi için açıklama zorunludur",
+    path: ["aciklama"],
   });

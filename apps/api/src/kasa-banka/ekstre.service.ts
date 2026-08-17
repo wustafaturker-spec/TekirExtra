@@ -176,7 +176,7 @@ export class EkstreService {
   // ─── KUTU ──────────────────────────────────────────────────────────────────
 
   /** Ekstre satırları + bekleyenler için cari/fatura önerisi. */
-  async satirListele(durum?: EkstreSatirDurum, bankaHesapId?: string) {
+  async satirListele(durum?: EkstreSatirDurum, bankaHesapId?: string, arama?: string, baslangic?: string, bitis?: string, yon?: "tahsilat" | "tediye") {
     const { tenantId } = aktifBaglam();
 
     const satirlar = await this.prisma.tenantIslem(tenantId, (tx) =>
@@ -184,6 +184,14 @@ export class EkstreService {
         where: {
           durum: durum ?? undefined,
           bankaHesapId: bankaHesapId || undefined,
+          ...(baslangic || bitis ? { tarih: { ...(baslangic ? { gte: new Date(baslangic) } : {}), ...(bitis ? { lte: new Date(bitis) } : {}) } } : {}),
+          ...(arama ? { OR: [
+            { aciklama: { contains: arama, mode: "insensitive" } },
+            { dekontNo: { contains: arama, mode: "insensitive" } },
+            { karsiIban: { contains: arama, mode: "insensitive" } },
+            { karsiUnvan: { contains: arama, mode: "insensitive" } },
+            { cari: { unvan: { contains: arama, mode: "insensitive" } } },
+          ] } : {}),
         },
         orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
         include: {
@@ -224,7 +232,7 @@ export class EkstreService {
         onerilenFaturalar: oneri.faturalar,
       });
     }
-    return sonuc;
+    return yon ? sonuc.filter((s) => s.yon === yon) : sonuc;
   }
 
   /**
@@ -241,6 +249,11 @@ export class EkstreService {
 
     const tutar = satir.tutar;
     const tip = tutar.isNegative() ? "tediye" : "tahsilat";
+    const kur = satir.bankaHesap.dovizCinsi === "TRY" ? "1" : await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kayit = await tx.dovizKuru.findFirst({ where: { dovizCinsi: satir.bankaHesap.dovizCinsi, tarih: { lte: satir.tarih } }, orderBy: { tarih: "desc" }, select: { dovizSatis: true } });
+      if (!kayit) throw new BadRequestException(`${satir.bankaHesap.dovizCinsi} için ${satir.tarih.toISOString().slice(0, 10)} tarihinde geçerli kur bulunamadı`);
+      return kayit.dovizSatis.toFixed(6);
+    });
 
     await this.prisma.tenantIslem(tenantId, async (tx) => {
       const cari = await tx.cariHesap.findUnique({
@@ -273,7 +286,7 @@ export class EkstreService {
       tip,
       tutar: tutar.abs().toFixed(2),
       dovizCinsi: satir.bankaHesap.dovizCinsi,
-      kur: "1",
+      kur,
       tarih: satir.tarih.toISOString().slice(0, 10),
       aciklama: satir.aciklama.slice(0, 500),
       cariId: girdi.cariId,

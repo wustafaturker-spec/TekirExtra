@@ -1,7 +1,7 @@
-import { BadRequestException, Body, Controller, Get, Post, Query } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
 import { Roller } from "../auth/roller.decorator";
 import { z } from "zod";
-import { pazaryeriFaturalastirSemasi, pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi } from "./pazaryeri.semalar";
+import { pazaryeriFaturalastirSemasi, pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi, pazaryeriSatirEsleSemasi } from "./pazaryeri.semalar";
 import { PazaryeriService } from "./pazaryeri.service";
 
 @Controller("pazaryeri")
@@ -20,6 +20,12 @@ export class PazaryeriController {
     if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
     return this.service.faturalastir(sonuc.data.siparisler);
   }
+  @Post("siparisler/:siparisId/satirlar/:satirId/esle") @Roller("yonetici", "muhasebe")
+  satirEsle(@Param("siparisId") siparisId: string, @Param("satirId") satirId: string, @Body() govde: unknown) {
+    const sonuc = pazaryeriSatirEsleSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
+    return this.service.satirEsle(siparisId, satirId, sonuc.data);
+  }
   @Post("senkronize") @Roller("yonetici", "muhasebe")
   senkronize(@Body() govde: unknown) {
     const sonuc = z.object({ baglantiId: z.string().uuid().optional() }).safeParse(govde ?? {});
@@ -33,7 +39,10 @@ export class PazaryeriController {
     return this.service.stokFiyatSenkronizeEt(sonuc.data.baglantiId);
   }
   @Get("kesintiler") @Roller("yonetici", "muhasebe")
-  kesintileriListele(@Query("durum") durum?: string) { return this.service.kesintileriListele(durum); }
+  kesintileriListele(@Query("durum") durum?: string) {
+    if (durum && !["bekliyor", "giderlesti"].includes(durum)) throw new BadRequestException("Geçersiz kesinti durumu");
+    return this.service.kesintileriListele(durum);
+  }
   @Post("kesintiler/ice-aktar") @Roller("yonetici", "muhasebe")
   kesintiIceAktar(@Body() govde: unknown) {
     const sonuc = pazaryeriKesintiSemasi.safeParse(govde);

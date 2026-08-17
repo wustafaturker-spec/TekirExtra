@@ -621,6 +621,18 @@ export class CariService {
       }),
       baslangic ? tx.cariHareket.findMany({ where: { cariId, tarih: { lt: new Date(baslangic) } }, select: { tip: true, tutarTry: true } }) : Promise.resolve([]),
     ]));
+    const krediKartiKaynaklari = hareketler.filter((h) => h.kaynakTur === "kredi_karti" && h.kaynakRef).map((h) => h.kaynakRef!);
+    const krediKartiHareketleri = krediKartiKaynaklari.length ? await this.prisma.tenantIslem(tenantId, (tx) => tx.krediKartiHareket.findMany({
+      where: { id: { in: krediKartiKaynaklari } },
+      include: { krediKarti: { select: { ad: true, bankaAdi: true, sonDortHane: true } }, fatura: { select: { id: true, no: true } } },
+    })) : [];
+    const krediKartiHaritasi = new Map(krediKartiHareketleri.map((h) => [h.id, h]));
+    const posKaynaklari = hareketler.filter((h) => h.kaynakTur === "pos_tahsilat" && h.kaynakRef).map((h) => h.kaynakRef!);
+    const posTahsilatlari = posKaynaklari.length ? await this.prisma.tenantIslem(tenantId, (tx) => tx.posTahsilat.findMany({
+      where: { id: { in: posKaynaklari }, durum: "odendi", hareketId: { not: null } },
+      select: { id: true, makbuzAnahtari: true },
+    })) : [];
+    const posMakbuzHaritasi = new Map(posTahsilatlari.map((p) => [p.id, `/pos/makbuz/${tenantId}/${p.id}/${p.makbuzAnahtari}`]));
     const devirBakiyesi = oncekiHareketler.reduce((toplam, h) => h.tip === "borc" ? toplam.add(h.tutarTry) : toplam.sub(h.tutarTry), new Prisma.Decimal(0));
     let bakiye = devirBakiyesi;
     let donemBorc = new Prisma.Decimal(0); let donemAlacak = new Prisma.Decimal(0);
@@ -628,11 +640,24 @@ export class CariService {
       if (h.tip === "borc") donemBorc = donemBorc.add(h.tutarTry); else donemAlacak = donemAlacak.add(h.tutarTry);
       bakiye =
         h.tip === "borc" ? bakiye.add(h.tutarTry) : bakiye.sub(h.tutarTry);
+      const kartHareketi = h.kaynakTur === "kredi_karti" && h.kaynakRef ? krediKartiHaritasi.get(h.kaynakRef) : undefined;
       return {
         tarih: h.tarih.toISOString().slice(0, 10),
         vadeTarihi: h.vadeTarihi?.toISOString().slice(0, 10) ?? null,
         tip: h.tip,
         aciklama: h.aciklama,
+        kaynakTur: h.kaynakTur,
+        makbuzYolu: h.kaynakTur === "pos_tahsilat" && h.kaynakRef ? posMakbuzHaritasi.get(h.kaynakRef) ?? null : null,
+        odemeYontemi: kartHareketi ? {
+          tur: "kredi_karti",
+          kartAdi: kartHareketi.krediKarti.ad,
+          bankaAdi: kartHareketi.krediKarti.bankaAdi,
+          sonDortHane: kartHareketi.krediKarti.sonDortHane,
+          taksitSayisi: kartHareketi.taksitSayisi,
+          komisyonTutari: kartHareketi.komisyonTutari.toFixed(2),
+          karttanCekilenToplam: kartHareketi.tutar.toFixed(2),
+          fatura: kartHareketi.fatura,
+        } : null,
         dovizCinsi: h.dovizCinsi,
         tutar: h.tutar.toFixed(2),
         kur: h.kur.toFixed(4),

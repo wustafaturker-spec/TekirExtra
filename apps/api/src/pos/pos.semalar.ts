@@ -1,2 +1,3 @@
 import { z } from "zod";
 export const posTahsilatBaslatSemasi = z.object({ posHesapId: z.string().uuid(), cariId: z.string().uuid(), faturaId: z.string().uuid().optional(), tutar: z.string().regex(/^\d{1,13}(\.\d{1,2})?$/).refine((x) => Number(x) > 0, "Tutar pozitif olmalıdır") });
+export const posTahsilatListeSemasi = z.object({ durum: z.enum(["baslatildi", "odendi", "basarisiz", "iptal", "suresi_doldu"]).optional(), arama: z.string().trim().max(100).optional(), posHesapId: z.string().uuid().optional(), sayfa: z.coerce.number().int().min(1).default(1), adet: z.coerce.number().int().min(10).max(100).default(25) });

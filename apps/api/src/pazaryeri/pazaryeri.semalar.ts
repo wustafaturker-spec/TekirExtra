@@ -19,6 +19,11 @@ export const pazaryeriFaturalastirSemasi = z.object({
   siparisler: z.array(z.object({ siparisId: z.string().uuid(), cariId: z.string().uuid() })).min(1).max(100),
 });
 
+export const pazaryeriSatirEsleSemasi = z.object({
+  stokId: z.string().uuid(),
+  varyantId: z.string().uuid().nullable().optional(),
+});
+
 export const pazaryeriKesintiSemasi = z.object({
   baglantiId: z.string().uuid(),
   hariciId: z.string().min(1),
@@ -35,5 +40,5 @@ export const pazaryeriKesintiGiderlestirSemasi = z.object({
   kesintiIds: z.array(z.string().uuid()).min(1).max(100),
   kasaId: z.string().uuid().optional(),
   bankaHesapId: z.string().uuid().optional(),
-  kur: z.number().positive().default(1),
+  kur: z.number().positive().optional(),
 }).refine((g) => Boolean(g.kasaId) !== Boolean(g.bankaHesapId), "Kasa veya banka hesabından yalnızca biri seçilmelidir");

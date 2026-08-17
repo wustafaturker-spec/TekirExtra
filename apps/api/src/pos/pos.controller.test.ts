@@ -13,4 +13,11 @@ describe("POS ödeme sonuç sayfası", () => {
     expect(odemeSonucSayfasi(true, true)).toContain("daha önce başarıyla kaydedilmişti");
     expect(odemeSonucSayfasi(false)).toContain("Ödeme tamamlanamadı");
   });
+
+  it("başarılı ödeme ekranında güvenli PDF makbuz bağlantısını gösterir", () => {
+    const html = odemeSonucSayfasi(true, false, "https://api.example.com/api/v1/pos/makbuz/t/p/anahtar");
+    expect(html).toContain("Makbuzu PDF indir");
+    expect(html).toContain("Makbuzu görüntüle / paylaş");
+    expect(html).toContain("/pos/makbuz/t/p/anahtar");
+  });
 });

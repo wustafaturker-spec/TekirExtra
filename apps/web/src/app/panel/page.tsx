@@ -77,6 +77,17 @@ export default function PanelSayfasi() {
   const otuzGunOdeme = vadeOzeti.bugunVerilen.tutar + vadeOzeti.haftaVerilen.tutar + vadeOzeti.ayVerilen.tutar;
   const nakit = Number(finans?.nakitVarliklar ?? 0);
   const cekSonrasiNakit = nakit + otuzGunTahsilat - otuzGunOdeme;
+  const varlikKalemleri = [
+    { etiket: "Nakit ve banka", tutar: nakit, ton: "teal" },
+    { etiket: "Açık hesap alacakları", tutar: Number(finans?.toplamAlacaklar ?? 0), ton: "blue" },
+    { etiket: "Stok", tutar: Number(finans?.envanterDegeri ?? 0), ton: "violet" },
+  ];
+  const toplamVarlik = varlikKalemleri.reduce((toplam, kalem) => toplam + kalem.tutar, 0);
+  const borcKalemleri = [
+    { etiket: "Tedarikçi borçları", tutar: Number(finans?.toplamBorclar ?? 0), ton: "orange" },
+    { etiket: "Yaklaşan çek ve senetler", tutar: otuzGunOdeme, ton: "red" },
+  ];
+  const toplamBorc = borcKalemleri.reduce((toplam, kalem) => toplam + kalem.tutar, 0);
 
   const isler: IsOgesi[] = rol === "satis" ? [
     { href: "/panel/fatura?yon=satis&odeme=acik", baslik: "Açık tahsilatlar", aciklama: "Müşteri takibi bekleyen satış faturaları", sayi: fatura?.acikTahsilat ?? 0, ton: "warning" },
@@ -106,6 +117,19 @@ export default function PanelSayfasi() {
         <article className="dashboard-kpi"><span>Stok değeri</span><strong>{finans ? para(finans.envanterDegeri, true) : "—"}</strong><small>{kritikStok ? `${kritikStok} ürün kritik seviyede` : "Kritik stok bulunmuyor"}</small></article>
         <article className="dashboard-kpi"><span>Net varlık</span><strong>{finans ? para(finans.netVarlikDegeri, true) : "—"}</strong><small>Nakit, alacak, borç ve envanter</small></article>
       </div>
+    </section>}
+
+    {rol !== "satis" && <section className="dashboard-balance-grid" aria-label="Varlık ve borç dağılımı">
+      <article className="dashboard-balance-card">
+        <div className="dashboard-balance-card__head"><div><p className="dashboard-kicker">Finansal yapı</p><h2>Varlıklar</h2></div><strong>{finans ? para(toplamVarlik, true) : "—"}</strong></div>
+        <div className="dashboard-balance-bar" aria-hidden="true">{varlikKalemleri.map((kalem) => <span className={`is-${kalem.ton}`} key={kalem.etiket} style={{ width: toplamVarlik ? `${Math.max(3, kalem.tutar / toplamVarlik * 100)}%` : "0%" }} />)}</div>
+        <div className="dashboard-balance-list">{varlikKalemleri.map((kalem) => <div className="dashboard-balance-row" key={kalem.etiket}><span><i className={`is-${kalem.ton}`} />{kalem.etiket}</span><b>{finans ? para(kalem.tutar, true) : "—"}</b></div>)}</div>
+      </article>
+      <article className="dashboard-balance-card">
+        <div className="dashboard-balance-card__head"><div><p className="dashboard-kicker">Finansal yapı</p><h2>Borçlar</h2></div><strong>{finans ? para(toplamBorc, true) : "—"}</strong></div>
+        <div className="dashboard-balance-bar" aria-hidden="true">{borcKalemleri.map((kalem) => <span className={`is-${kalem.ton}`} key={kalem.etiket} style={{ width: toplamBorc ? `${Math.max(5, kalem.tutar / toplamBorc * 100)}%` : "0%" }} />)}</div>
+        <div className="dashboard-balance-list">{borcKalemleri.map((kalem) => <div className="dashboard-balance-row" key={kalem.etiket}><span><i className={`is-${kalem.ton}`} />{kalem.etiket}</span><b>{finans ? para(kalem.tutar, true) : "—"}</b></div>)}</div>
+      </article>
     </section>}
 
     <div className="dashboard-columns">

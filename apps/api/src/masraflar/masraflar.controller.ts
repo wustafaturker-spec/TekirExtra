@@ -1,7 +1,7 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from "@nestjs/common";
 import type { ZodType } from "zod";
 import { Roller } from "../auth/roller.decorator";
-import { kategoriGuncelleSemasi, kategoriOlusturSemasi, kiraDonemOlusturSemasi, kiraSozlesmeOlusturSemasi, masrafGuncelleSemasi, masrafOdemeSemasi, masrafOlusturSemasi } from "./masraflar.semalar";
+import { kategoriGuncelleSemasi, kategoriOlusturSemasi, kiraDonemOlusturSemasi, kiraSozlesmeGuncelleSemasi, kiraSozlesmeOlusturSemasi, masrafGuncelleSemasi, masrafOdemeSemasi, masrafOlusturSemasi } from "./masraflar.semalar";
 import { MasraflarService } from "./masraflar.service";
 
 function ayristir<T>(sema: ZodType<T>, govde: unknown): T {
@@ -18,6 +18,8 @@ export class MasraflarController {
   @Patch("kategoriler/:id") @Roller("muhasebe") kategoriGuncelle(@Param("id") id: string, @Body() g: unknown) { return this.service.kategoriGuncelle(id, ayristir(kategoriGuncelleSemasi, g)); }
   @Get("kiralar") kiraListele() { return this.service.kiraSozlesmeListele(); }
   @Post("kiralar") @Roller("muhasebe") kiraOlustur(@Body() g: unknown) { return this.service.kiraSozlesmeOlustur(ayristir(kiraSozlesmeOlusturSemasi, g)); }
+  @Patch("kiralar/:id") @Roller("muhasebe") kiraGuncelle(@Param("id") id: string, @Body() g: unknown) { return this.service.kiraSozlesmeGuncelle(id, ayristir(kiraSozlesmeGuncelleSemasi, g)); }
+  @Delete("kiralar/:id") @Roller("muhasebe") @HttpCode(204) kiraSil(@Param("id") id: string) { return this.service.kiraSozlesmeSil(id); }
   @Post("kiralar/:id/donem") @Roller("muhasebe") kiraDonem(@Param("id") id: string, @Body() g: unknown) { return this.service.kiraDonemiOlustur(id, ayristir(kiraDonemOlusturSemasi, g)); }
   @Post("kiralar/:id/aktiflik") @Roller("muhasebe") kiraAktiflik(@Param("id") id: string, @Body() g: unknown) {
     if (typeof (g as { aktif?: unknown })?.aktif !== "boolean") throw new BadRequestException("aktif alanı boolean olmalıdır");

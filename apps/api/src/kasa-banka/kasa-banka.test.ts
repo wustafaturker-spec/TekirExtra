@@ -42,7 +42,7 @@ describe("KasaBankaService (KSB-01..07)", () => {
   it("virmanEkle iki ayrı kasa/banka hareketi ve karsiHareketId bağı oluşturur (KSB-03)", async () => {
     const mockTx = {
       kasa: {
-        findUnique: vi.fn().mockResolvedValue({ dovizCinsi: "TRY" }),
+        findUnique: vi.fn().mockResolvedValue({ aktif: true, dovizCinsi: "TRY" }),
       },
       kasaBankaHareket: {
         create: vi
@@ -75,6 +75,22 @@ describe("KasaBankaService (KSB-01..07)", () => {
 
   it("hareketEkle tahsilat durumunda cariye ALACAK yazar (KSB-02/07)", async () => {
     const mockTx = {
+      kasa: {
+        findUnique: vi.fn().mockResolvedValue({ aktif: true, dovizCinsi: "TRY" }),
+      },
+      cariHesap: {
+        findFirst: vi.fn().mockResolvedValue({ id: "cari-1" }),
+      },
+      fatura: {
+        findUnique: vi.fn().mockResolvedValue({
+          tip: "satis",
+          durum: "kesin",
+          cariId: "cari-1",
+          dovizCinsi: "TRY",
+          genelToplam: new Prisma.Decimal("500.00"),
+          kasaBankaHarekets: [],
+        }),
+      },
       kasaBankaHareket: {
         create: vi.fn().mockResolvedValue({ id: "h1" }),
       },
@@ -102,6 +118,7 @@ describe("KasaBankaService (KSB-01..07)", () => {
         tenantId: "t1-uuid",
         kasaId: "kasa-1",
         bankaHesapId: undefined,
+        posHesapId: undefined,
         tip: "tahsilat",
         tutar: new Prisma.Decimal("500.00"),
         dovizCinsi: "TRY",

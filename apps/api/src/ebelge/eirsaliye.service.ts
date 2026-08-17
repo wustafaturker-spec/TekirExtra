@@ -1,12 +1,16 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { EirsaliyeDurum, GelenEirsaliyeDurum } from "@prisma/client";
 import type { EntegratorConfig } from "@tekirextra/baglanti";
+import { XMLParser } from "fast-xml-parser";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
 
 const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const xmlParser = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true, parseTagValue: false, trimValues: true });
+const dizi = <T>(v: T | T[] | undefined): T[] => v == null ? [] : Array.isArray(v) ? v : [v];
+const metin = (v: unknown): string => typeof v === "object" && v !== null && "#text" in v ? String((v as { "#text": unknown })["#text"]) : v == null ? "" : String(v);
 
 @Injectable()
 export class EirsaliyeService {
@@ -61,16 +65,45 @@ export class EirsaliyeService {
     const { cfg, adapter } = await this.prisma.tenantIslem(tenantId, (tx) => this.baglanti(tx, tenantId));
     if (!adapter.gelenIrsaliyeleriCek) throw new BadRequestException("Entegratör gelen e-İrsaliye akışını desteklemiyor");
     const gelen = await adapter.gelenIrsaliyeleriCek(cfg, new Date(Date.now() - 30 * 86400000));
-    return this.prisma.tenantIslem(tenantId, async (tx) => Promise.all(gelen.map((g) => tx.gelenEirsaliye.upsert({ where: { tenantId_uuid: { tenantId, uuid: g.uuid } }, create: { tenantId, uuid: g.uuid, belgeNo: g.belgeNo, gonderenVkn: g.gonderenVkn, gonderenUnvan: g.gonderenUnvan, tarih: g.tarih, xmlIcerik: g.xml }, update: {} }))));
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const mevcutlar = await tx.gelenEirsaliye.findMany({ where: { uuid: { in: gelen.map((g) => g.uuid) } }, select: { uuid: true } });
+      const mevcutUuid = new Set(mevcutlar.map((x) => x.uuid));
+      await Promise.all(gelen.map((g) => tx.gelenEirsaliye.upsert({ where: { tenantId_uuid: { tenantId, uuid: g.uuid } }, create: { tenantId, uuid: g.uuid, belgeNo: g.belgeNo, gonderenVkn: g.gonderenVkn, gonderenUnvan: g.gonderenUnvan, tarih: g.tarih, xmlIcerik: g.xml }, update: { belgeNo: g.belgeNo, gonderenVkn: g.gonderenVkn, gonderenUnvan: g.gonderenUnvan, tarih: g.tarih, xmlIcerik: g.xml } })));
+      return { toplam: gelen.length, yeni: gelen.filter((g) => !mevcutUuid.has(g.uuid)).length, kontrolTarihi: new Date().toISOString() };
+    });
   }
 
-  async gelenListele(durum?: GelenEirsaliyeDurum) { const { tenantId } = aktifBaglam(); return this.prisma.tenantIslem(tenantId, (tx) => tx.gelenEirsaliye.findMany({ where: durum ? { durum } : undefined, orderBy: { tarih: "desc" } })); }
+  async gelenListele(durum?: GelenEirsaliyeDurum) { const { tenantId } = aktifBaglam(); return this.prisma.tenantIslem(tenantId, (tx) => tx.gelenEirsaliye.findMany({ where: durum ? { durum } : undefined, select: { id: true, uuid: true, belgeNo: true, gonderenVkn: true, gonderenUnvan: true, tarih: true, durum: true, yanitRef: true, yanitGerekcesi: true, createdAt: true, updatedAt: true }, orderBy: [{ tarih: "desc" }, { createdAt: "desc" }] })); }
+
+  async gelenDetay(id: string) {
+    const { tenantId } = aktifBaglam();
+    const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.gelenEirsaliye.findUnique({ where: { id } }));
+    if (!kayit) throw new NotFoundException("Gelen e-İrsaliye bulunamadı");
+    try {
+      const kok = xmlParser.parse(kayit.xmlIcerik) as Record<string, any>;
+      const belge = kok.DespatchAdvice ?? Object.values(kok)[0] ?? {};
+      const teslimat = belge.Delivery ?? {};
+      const adres = teslimat.DeliveryAddress ?? teslimat.DeliveryLocation?.Address ?? {};
+      const satirlar = dizi<any>(belge.DespatchLine).map((s, index) => ({
+        sira: metin(s.ID) || String(index + 1),
+        stokKodu: metin(s.Item?.SellersItemIdentification?.ID || s.Item?.ManufacturersItemIdentification?.ID),
+        ad: metin(s.Item?.Name || s.Item?.Description) || "İsimsiz ürün",
+        miktar: metin(s.DeliveredQuantity),
+        birim: s.DeliveredQuantity?.["@_unitCode"] || "",
+        aciklama: metin(s.Note),
+      }));
+      return { ...kayit, detay: { sevkTarihi: metin(belge.ActualDespatchDate || belge.IssueDate), sevkSaati: metin(belge.ActualDespatchTime || belge.IssueTime), teslimatAdresi: [metin(adres.StreetName), metin(adres.BuildingNumber), metin(adres.CitySubdivisionName), metin(adres.CityName)].filter(Boolean).join(" "), notlar: dizi(belge.Note).map(metin).filter(Boolean), satirlar } };
+    } catch {
+      return { ...kayit, detay: { sevkTarihi: "", sevkSaati: "", teslimatAdresi: "", notlar: [], satirlar: [] } };
+    }
+  }
 
   async gelenYanit(id: string, yanit: "kabul" | "ret", gerekce?: string) {
     const { tenantId } = aktifBaglam();
     if (yanit === "ret" && !gerekce?.trim()) throw new BadRequestException("Ret gerekçesi zorunludur");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const kayit = await tx.gelenEirsaliye.findUnique({ where: { id } }); if (!kayit) throw new NotFoundException("Gelen e-İrsaliye bulunamadı");
+      if (kayit.durum !== "yeni") throw new BadRequestException("Bu e-İrsaliyeye daha önce yanıt verilmiş");
       const { cfg, adapter } = await this.baglanti(tx, tenantId); if (!adapter.irsaliyeYanitiGonder) throw new BadRequestException("Entegratör e-İrsaliye yanıtını desteklemiyor");
       const sonuc = await adapter.irsaliyeYanitiGonder(cfg, kayit.uuid, yanit, gerekce, kayit.xmlIcerik);
       if (!sonuc.basarili) throw new BadRequestException(sonuc.hataMesaji ?? "Yanıt gönderilemedi");

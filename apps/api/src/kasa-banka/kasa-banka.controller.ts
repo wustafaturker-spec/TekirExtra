@@ -233,8 +233,16 @@ export class KasaBankaController {
     @Query("tur") tur?: "cek" | "senet",
     @Query("durum") durum?: string,
     @Query("yon") yon?: string,
+    @Query("arama") arama?: string,
+    @Query("baslangic") baslangic?: string,
+    @Query("bitis") bitis?: string,
   ) {
-    return this.service.cekSenetListele(tur, durum, yon);
+    return this.service.cekSenetListele(tur, durum, yon, arama, baslangic, bitis);
+  }
+
+  @Get("cek-senet-ozet")
+  async cekSenetOzet(@Query("yon") yon?: string) {
+    return this.service.cekSenetOzet(yon);
   }
 
   @Get("cek-senet/:id")
@@ -321,6 +329,10 @@ export class KasaBankaController {
   async ekstreSatirListele(
     @Query("durum") durum?: string,
     @Query("bankaHesapId") bankaHesapId?: string,
+    @Query("arama") arama?: string,
+    @Query("baslangic") baslangic?: string,
+    @Query("bitis") bitis?: string,
+    @Query("yon") yon?: "tahsilat" | "tediye",
   ) {
     if (durum && !EKSTRE_DURUMLARI.includes(durum as EkstreSatirDurum)) {
       throw new BadRequestException(
@@ -330,6 +342,10 @@ export class KasaBankaController {
     return this.ekstre.satirListele(
       durum as EkstreSatirDurum | undefined,
       bankaHesapId,
+      arama,
+      baslangic,
+      bitis,
+      yon,
     );
   }
 

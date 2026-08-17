@@ -132,6 +132,11 @@ export default function EkstreSayfasi() {
   const [suzgec, setSuzgec] = useState<"beklemede" | "eslesti" | "yoksayildi" | "hepsi">(
     "beklemede",
   );
+  const [bankaFiltresi, setBankaFiltresi] = useState("");
+  const [yonFiltresi, setYonFiltresi] = useState<"hepsi" | "tahsilat" | "tediye">("hepsi");
+  const [arama, setArama] = useState("");
+  const [tarihBaslangic, setTarihBaslangic] = useState("");
+  const [tarihBitis, setTarihBitis] = useState("");
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [islemde, setIslemde] = useState<string | null>(null);
@@ -154,15 +159,22 @@ export default function EkstreSayfasi() {
 
   const listeYukle = useCallback(async () => {
     try {
+      const qs = new URLSearchParams();
+      if (suzgec !== "hepsi") qs.set("durum", suzgec);
+      if (bankaFiltresi) qs.set("bankaHesapId", bankaFiltresi);
+      if (arama.trim()) qs.set("arama", arama.trim());
+      if (tarihBaslangic) qs.set("baslangic", tarihBaslangic);
+      if (tarihBitis) qs.set("bitis", tarihBitis);
+      if (yonFiltresi !== "hepsi") qs.set("yon", yonFiltresi);
       const yol =
         suzgec === "hepsi"
-          ? "/kasa-banka/ekstre/satirlar"
-          : `/kasa-banka/ekstre/satirlar?durum=${suzgec}`;
+          ? `/kasa-banka/ekstre/satirlar?${qs}`
+          : `/kasa-banka/ekstre/satirlar?${qs}`;
       setSatirlar(await api<EkstreSatir[]>(yol));
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Ekstre satırları yüklenemedi");
     }
-  }, [suzgec]);
+  }, [suzgec, bankaFiltresi, yonFiltresi, arama, tarihBaslangic, tarihBitis]);
 
   useEffect(() => {
     if (!tokenAl()) return;
@@ -349,25 +361,8 @@ export default function EkstreSayfasi() {
     .reduce((t, s) => t + Math.abs(Number(s.tutar)), 0);
 
   return (
-    <div>
-      <PageHeader
-        title="Banka Ekstresi"
-        subtitle="Bankadan indirdiğiniz ekstreyi yükleyin; sistem cari ve açık faturaları önersin, onayınızla tahsilat/tediye fişine dönüşsün."
-        actions={
-          <>
-            <ButtonLabel as="a" href="/panel/kasa-banka">
-              ← Kasa & Banka
-            </ButtonLabel>
-            <Button
-              variant="primary"
-              onClick={() => setYuklemeAcik(!yuklemeAcik)}
-              disabled={islemde !== null}
-            >
-              {yuklemeAcik ? "Vazgeç" : "⬆️ Ekstre Yükle"}
-            </Button>
-          </>
-        }
-      />
+    <div className="statement-page">
+      <section className="statement-hero"><div><span>BANKA MUTABAKAT MERKEZİ</span><h1>Banka ekstresi çalışma alanı</h1><p>Ekstreleri içeri alın, cari ve faturalarla eşleştirin; banka hareketlerini güvenli biçimde muhasebeleştirin.</p></div><div><ButtonLabel as="a" href="/panel/kasa-banka">← Kasa & Banka</ButtonLabel><Button variant="primary" onClick={() => setYuklemeAcik(!yuklemeAcik)} disabled={islemde !== null}>{yuklemeAcik ? "Vazgeç" : "+ Ekstre yükle"}</Button></div></section>
 
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
@@ -529,13 +524,21 @@ export default function EkstreSayfasi() {
         </Card>
       )}
 
-      <StatGrid>
+      <div className="statement-kpis"><StatGrid>
         <Stat label="Onay Bekleyen" value={bekleyen} tone={bekleyen > 0 ? "accent" : "default"} />
         <Stat label="Görüntülenen Satır" value={satirlar.length} />
         <Stat label="Eşleşen Tutar" value={para(eslesenTutar)} tone="success" />
-      </StatGrid>
+        <Stat label="Cari bulunamayan" value={satirlar.filter(s=>s.durum==="beklemede"&&!cariAl(s)).length} tone="danger" />
+      </StatGrid></div>
 
-      <div style={{ margin: "1.25rem 0 1rem" }}>
+      <Card className="statement-filter"><div className="statement-filter__head"><div><span>EKSTRE FİLTRELERİ</span><strong>Mutabakat görünümünü daraltın</strong></div><small>{satirlar.length} kayıt gösteriliyor</small></div><div className="statement-filter__grid">
+        <Select aria-label="Banka hesabı" value={bankaFiltresi} onChange={e=>setBankaFiltresi(e.target.value)}><option value="">Tüm banka hesapları</option>{hesaplar.map(h=><option key={h.id} value={h.id}>{h.ad} · {h.dovizCinsi}</option>)}</Select>
+        <Select aria-label="Hareket yönü" value={yonFiltresi} onChange={e=>setYonFiltresi(e.target.value as typeof yonFiltresi)}><option value="hepsi">Giriş ve çıkış</option><option value="tahsilat">Girişler / tahsilat</option><option value="tediye">Çıkışlar / tediye</option></Select>
+        <Input aria-label="Ekstre ara" value={arama} onChange={e=>setArama(e.target.value)} placeholder="Açıklama, dekont, IBAN veya cari ara…" />
+        <Input aria-label="Başlangıç tarihi" type="date" value={tarihBaslangic} onChange={e=>setTarihBaslangic(e.target.value)} />
+        <Input aria-label="Bitiş tarihi" type="date" value={tarihBitis} onChange={e=>setTarihBitis(e.target.value)} />
+        {(bankaFiltresi||yonFiltresi!=="hepsi"||arama||tarihBaslangic||tarihBitis)&&<Button size="sm" onClick={()=>{setBankaFiltresi("");setYonFiltresi("hepsi");setArama("");setTarihBaslangic("");setTarihBitis("");}}>Temizle</Button>}
+      </div><div className="statement-filter__tabs">
         <Segmented
           value={suzgec}
           onChange={setSuzgec}
@@ -546,11 +549,11 @@ export default function EkstreSayfasi() {
             { deger: "hepsi", baslik: "Tümü" },
           ]}
         />
-      </div>
+      </div></Card>
 
       {mutabakat && <Card style={{ marginBottom: "1rem" }}><form className="stack" onSubmit={posMutabakatiYap}><div className="between"><div><h3 style={{ margin: 0 }}>POS sağlayıcı ödemesi</h3><p className="muted" style={{ marginBottom: 0 }}>Bankaya gelen net tutar: {para(mutabakat.tutar, mutabakat.bankaHesap.dovizCinsi)}. Brüt tahsilat eksi komisyon bu net tutara eşit olmalıdır.</p></div><Button onClick={() => setMutabakat(null)}>Vazgeç</Button></div><div className="row"><Field label="POS hesabı"><Select name="posHesapId" required><option value="">Hesap seçin</option>{posHesaplar.filter((p) => p.aktif && p.dovizCinsi === mutabakat.bankaHesap.dovizCinsi).map((p) => <option key={p.id} value={p.id}>{p.ad} · {p.saglayici} · bakiye {p.bakiye}</option>)}</Select></Field><Field label="Brüt sağlayıcı alacağı"><Input name="brutTutar" type="number" min="0.01" step="0.01" required defaultValue={mutabakat.tutar} /></Field><Field label="Komisyon / kesinti"><Input name="komisyonTutar" type="number" min="0" step="0.01" defaultValue="0" /></Field></div><Button type="submit" variant="primary" disabled={islemde !== null}>POS → banka mutabakatını işle</Button></form></Card>}
 
-      <Card pad={false}>
+      <Card className="statement-register" pad={false}>
         <TableWrap>
           <thead>
             <tr>

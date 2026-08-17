@@ -248,7 +248,7 @@ export class KasaBankaService {
 
   async posHesapListele() {
     const { tenantId } = aktifBaglam();
-    const hesaplar = await this.prisma.tenantIslem(tenantId, (tx) => tx.posHesap.findMany({ orderBy: { ad: "asc" }, include: { varsayilanBankaHesap: { select: { id: true, ad: true } } } }));
+    const hesaplar = await this.prisma.tenantIslem(tenantId, (tx) => tx.posHesap.findMany({ orderBy: { ad: "asc" }, include: { varsayilanBankaHesap: { select: { id: true, ad: true } }, baglanti: { select: { durum: true, sonSenkronHatasi: true, updatedAt: true } } } }));
     const gruplar = await this.prisma.tenantIslem(tenantId, (tx) => tx.kasaBankaHareket.groupBy({ by: ["posHesapId", "tip"], where: { posHesapId: { in: hesaplar.map((h) => h.id) } }, _sum: { tutar: true } }));
     return hesaplar.map((h) => { let bakiye = D(0); for (const g of gruplar.filter((x) => x.posHesapId === h.id)) bakiye = g.tip === "tahsilat" || g.tip === "virman_gelis" ? bakiye.add(g._sum.tutar ?? 0) : bakiye.sub(g._sum.tutar ?? 0); return { ...h, bakiye: bakiye.toFixed(2) }; });
   }
@@ -275,6 +275,8 @@ export class KasaBankaService {
         },
         orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
         include: {
+          kasa: { select: { id: true, ad: true } },
+          bankaHesap: { select: { id: true, ad: true, bankaAdi: true } },
           cari: { select: { id: true, kod: true, unvan: true } },
           fatura: { select: { id: true, no: true, genelToplam: true } },
           posHesap: { select: { id: true, ad: true, saglayici: true } },
@@ -286,10 +288,27 @@ export class KasaBankaService {
   async hareketEkle(girdi: z.infer<typeof kasaBankaHareketOlusturSemasi>) {
     const { tenantId } = aktifBaglam();
     const tutar = D(girdi.tutar);
-    const kur = D(girdi.kur);
-    const tutarTry = tutar.mul(kur).toDecimalPlaces(2);
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const hesap = girdi.kasaId ? await tx.kasa.findUnique({ where: { id: girdi.kasaId } }) : girdi.bankaHesapId ? await tx.bankaHesap.findUnique({ where: { id: girdi.bankaHesapId } }) : await tx.posHesap.findUnique({ where: { id: girdi.posHesapId! } });
+      if (!hesap || !hesap.aktif) throw new BadRequestException("Aktif kasa, banka veya POS hesabı bulunamadı");
+      if (hesap.dovizCinsi !== girdi.dovizCinsi) throw new BadRequestException(`Hesap ${hesap.dovizCinsi}, hareket ${girdi.dovizCinsi} cinsinde olamaz`);
+      let cariId = girdi.cariId || null;
+      if (cariId && !(await tx.cariHesap.findFirst({ where: { id: cariId, aktif: true }, select: { id: true } }))) throw new BadRequestException("Aktif cari hesap bulunamadı");
+      if (girdi.faturaId) {
+        const fatura = await tx.fatura.findUnique({ where: { id: girdi.faturaId }, select: { tip: true, durum: true, cariId: true, dovizCinsi: true, genelToplam: true, kasaBankaHarekets: { select: { tutar: true } }, krediKartiHareketleri: { select: { cariOdemeTutari: true } } } });
+        if (!fatura || fatura.durum !== "kesin") throw new BadRequestException("Yalnızca kesinleşmiş faturaya ödeme bağlanabilir");
+        const beklenenTip = ["satis", "alis_iade"].includes(fatura.tip) ? "tahsilat" : ["alis", "satis_iade"].includes(fatura.tip) ? "tediye" : null;
+        if (!beklenenTip || girdi.tip !== beklenenTip) throw new BadRequestException(`Bu fatura için ${beklenenTip === "tahsilat" ? "tahsilat" : "tediye"} kaydı gereklidir`);
+        if (fatura.dovizCinsi !== girdi.dovizCinsi) throw new BadRequestException("Fatura ve ödeme hesabı para birimleri aynı olmalıdır");
+        if (cariId && cariId !== fatura.cariId) throw new BadRequestException("Seçilen cari faturanın carisiyle uyuşmuyor");
+        cariId = fatura.cariId;
+        const odenen = (fatura.kasaBankaHarekets ?? []).reduce((t, h) => t.add(h.tutar), D(0)).add((fatura.krediKartiHareketleri ?? []).reduce((t, h) => t.add(h.cariOdemeTutari ?? 0), D(0))); const kalan = Prisma.Decimal.max(fatura.genelToplam.sub(odenen), 0);
+        if (tutar.gt(kalan)) throw new BadRequestException(`Ödeme kalan ${kalan.toFixed(2)} ${fatura.dovizCinsi} tutarını aşamaz`);
+      }
+      const hareketTarihi = new Date(girdi.tarih);
+      const kur = girdi.dovizCinsi === "TRY" ? D(1) : girdi.kur ? D(girdi.kur) : await (async () => { const k = await tx.dovizKuru.findFirst({ where: { tarih: { lte: hareketTarihi }, dovizCinsi: girdi.dovizCinsi }, orderBy: { tarih: "desc" }, select: { dovizSatis: true } }); if (!k) throw new BadRequestException(`${girdi.dovizCinsi} için işlem tarihinde geçerli kur bulunamadı`); return k.dovizSatis; })();
+      const tutarTry = tutar.mul(kur).toDecimalPlaces(2);
       // 1. Kasa/Banka hareketini oluştur
       const hareket = await tx.kasaBankaHareket.create({
         data: {
@@ -302,9 +321,9 @@ export class KasaBankaService {
           dovizCinsi: girdi.dovizCinsi,
           kur,
           tutarTry,
-          tarih: new Date(girdi.tarih),
+          tarih: hareketTarihi,
           aciklama: girdi.aciklama,
-          cariId: girdi.cariId,
+          cariId,
           faturaId: girdi.faturaId,
           kaynakTur: girdi.faturaId ? "fatura_kapama" : "manuel",
           kaynakRef: girdi.faturaId || null,
@@ -314,18 +333,18 @@ export class KasaBankaService {
       // 2. Cari bağlantısı varsa Cari Hareketini oluştur (KSB-02)
       // Tahsilat -> Cari alacaklanır (borcu azalır)
       // Tediye -> Cari borçlanır (alacağı azalır)
-      if (girdi.cariId) {
+      if (cariId) {
         const cariHareketTip = girdi.tip === "tahsilat" ? "alacak" : "borc";
         await tx.cariHareket.create({
           data: {
             tenantId,
-            cariId: girdi.cariId,
+            cariId,
             tip: cariHareketTip,
             tutar,
             dovizCinsi: girdi.dovizCinsi,
             kur,
             tutarTry,
-            tarih: new Date(girdi.tarih),
+            tarih: hareketTarihi,
             aciklama: girdi.aciklama ?? `${girdi.tip.toUpperCase()} kasa/banka fişi`,
             kaynakTur: "kasa_banka",
             kaynakRef: hareket.id,
@@ -358,6 +377,7 @@ export class KasaBankaService {
     const dovizCinsi = await this.virmanKurallariniDenetle(girdi);
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const tarih = new Date(girdi.tarih); const kur = dovizCinsi === "TRY" ? D(1) : await (async () => { const k = await tx.dovizKuru.findFirst({ where: { tarih: { lte: tarih }, dovizCinsi }, orderBy: { tarih: "desc" }, select: { dovizSatis: true } }); if (!k) throw new BadRequestException(`${dovizCinsi} için virman tarihinde geçerli kur bulunamadı`); return k.dovizSatis; })(); const tutarTry = tutar.mul(kur).toDecimalPlaces(2);
       // 1. Kaynak hesaptan para çıkışı (virman_gidis)
       const gidis = await tx.kasaBankaHareket.create({
         data: {
@@ -368,9 +388,9 @@ export class KasaBankaService {
           tip: "virman_gidis",
           tutar,
           dovizCinsi,
-          kur: 1,
-          tutarTry: tutar,
-          tarih: new Date(girdi.tarih),
+          kur,
+          tutarTry,
+          tarih,
           aciklama: girdi.aciklama ?? "Hesaplar arası virman transferi",
         },
       });
@@ -385,9 +405,9 @@ export class KasaBankaService {
           tip: "virman_gelis",
           tutar,
           dovizCinsi,
-          kur: 1,
-          tutarTry: tutar,
-          tarih: new Date(girdi.tarih),
+          kur,
+          tutarTry,
+          tarih,
           aciklama: girdi.aciklama ?? "Hesaplar arası virman transferi",
           karsiHareketId: gidis.id,
         },
@@ -431,7 +451,7 @@ export class KasaBankaService {
 
   // ─── ÇEK VE SENET TAKİBİ (KSB-05) ─────────────────────────────────────────
 
-  async cekSenetListele(tur?: "cek" | "senet", durum?: string, yon?: string) {
+  async cekSenetListele(tur?: "cek" | "senet", durum?: string, yon?: string, arama?: string, baslangic?: string, bitis?: string) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, (tx) =>
       tx.cekSenet.findMany({
@@ -439,6 +459,14 @@ export class KasaBankaService {
           tur: tur || undefined,
           durum: durum ? (durum as CekSenetDurum) : undefined,
           yon: yon ? (yon as CekSenetYon) : undefined,
+          vadeTarihi: { ...(baslangic ? { gte: new Date(baslangic) } : {}), ...(bitis ? { lte: new Date(bitis) } : {}) },
+          ...(arama ? { OR: [
+            { portfoyNo: { contains: arama, mode: "insensitive" } },
+            { cekNo: { contains: arama, mode: "insensitive" } },
+            { borclu: { contains: arama, mode: "insensitive" } },
+            { banka: { contains: arama, mode: "insensitive" } },
+            { cari: { unvan: { contains: arama, mode: "insensitive" } } },
+          ] } : {}),
         },
         orderBy: { vadeTarihi: "asc" },
         include: {
@@ -457,6 +485,7 @@ export class KasaBankaService {
         include: {
           cari: true,
           ciroCari: true,
+          olaylar: { orderBy: [{ createdAt: "desc" }], take: 100 },
         },
       }),
     );
@@ -464,8 +493,30 @@ export class KasaBankaService {
     return CS;
   }
 
-  async cekSenetOlustur(girdi: z.infer<typeof cekSenetOlusturSemasi>) {
+  async cekSenetOzet(yon?: string) {
     const { tenantId } = aktifBaglam();
+    const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) => tx.cekSenet.findMany({
+      where: { yon: yon ? (yon as CekSenetYon) : undefined },
+      select: { durum: true, vadeTarihi: true, tutarTry: true, dovizCinsi: true, tutar: true },
+    }));
+    const bugun = new Date(); bugun.setHours(0, 0, 0, 0);
+    const otuzGun = new Date(bugun); otuzGun.setDate(otuzGun.getDate() + 30);
+    const acikDurumlar = yon === "verilen" ? ["verildi"] : ["portfoyde", "tahsile_verildi", "teminata_verildi"];
+    const acik = kayitlar.filter((k) => acikDurumlar.includes(k.durum));
+    const toplam = (liste: typeof kayitlar) => liste.reduce((t, k) => t.add(k.tutarTry), D(0)).toFixed(2);
+    const dovizler = Object.fromEntries(["TRY", "USD", "EUR"].map((d) => [d, acik.filter((k) => k.dovizCinsi === d).reduce((t, k) => t.add(k.tutar), D(0)).toFixed(2)]));
+    return {
+      acik: { adet: acik.length, toplamTry: toplam(acik), dovizler },
+      geciken: { adet: acik.filter((k) => k.vadeTarihi < bugun).length, toplamTry: toplam(acik.filter((k) => k.vadeTarihi < bugun)) },
+      yaklasan: { adet: acik.filter((k) => k.vadeTarihi >= bugun && k.vadeTarihi <= otuzGun).length, toplamTry: toplam(acik.filter((k) => k.vadeTarihi >= bugun && k.vadeTarihi <= otuzGun)) },
+      bankada: { adet: kayitlar.filter((k) => ["tahsile_verildi", "teminata_verildi"].includes(k.durum)).length, toplamTry: toplam(kayitlar.filter((k) => ["tahsile_verildi", "teminata_verildi"].includes(k.durum))) },
+      ciro: { adet: kayitlar.filter((k) => k.durum === "ciro_edildi").length, toplamTry: toplam(kayitlar.filter((k) => k.durum === "ciro_edildi")) },
+      karsiliksiz: { adet: kayitlar.filter((k) => k.durum === "karsiliksiz").length, toplamTry: toplam(kayitlar.filter((k) => k.durum === "karsiliksiz")) },
+    };
+  }
+
+  async cekSenetOlustur(girdi: z.infer<typeof cekSenetOlusturSemasi>) {
+    const { tenantId, userId } = aktifBaglam();
     const tutar = D(girdi.tutar);
     const kur = D(girdi.kur);
     const tutarTry = tutar.mul(kur).toDecimalPlaces(2);
@@ -497,8 +548,11 @@ export class KasaBankaService {
           durum: girdi.yon === "verilen" ? "verildi" : "portfoyde",
           cariId: girdi.cariId,
           aciklama: girdi.aciklama,
+          fizikselKonum: girdi.fizikselKonum ?? (girdi.yon === "alinan" ? "Şirket portföyü" : "Lehtara teslim"),
         },
       });
+
+      await tx.cekSenetOlay.create({ data: { tenantId, cekSenetId: CS.id, yeniDurum: CS.durum, islemTarihi: new Date(girdi.islemTarihi), aciklama: "Çek/senet kaydı oluşturuldu", userId } });
 
       // Alınan çek/senet: müşteri alacaklanır (bize olan borcu azalır).
       // Verilen çek/senet: lehtar borçlanır (bizim ona olan borcumuz azalır).
@@ -526,35 +580,34 @@ export class KasaBankaService {
   }
 
   async cekSenetGuncelle(id: string, girdi: z.infer<typeof cekSenetGuncelleSemasi>) {
-    const { tenantId } = aktifBaglam();
+    const { tenantId, userId } = aktifBaglam();
     const CS = await this.cekSenetGetir(id);
-
-    // Durum, çek/senetin yönüyle tutarlı olmalı (KSB-05)
     this.cekSenetDurumunuDenetle(CS.yon, girdi.durum);
 
-    // Para hareketi doğuran geçiş mi? (alınanda tahsil, verilende ödeme)
-    // Aynı duruma ikinci kez geçişte tekrar fiş yazılmaz.
-    const paraDurumu =
-      girdi.durum === "tahsil_edildi" || girdi.durum === "odendi";
-    const fisYazilacak = paraDurumu && CS.durum !== girdi.durum;
+    const gecisler: Record<string, string[]> = CS.yon === "alinan" ? {
+      portfoyde: ["tahsile_verildi", "teminata_verildi", "ciro_edildi", "tahsil_edildi", "karsiliksiz", "iade_edildi"],
+      tahsile_verildi: ["portfoyde", "tahsil_edildi", "karsiliksiz", "iade_edildi"],
+      teminata_verildi: ["portfoyde", "tahsil_edildi", "karsiliksiz", "iade_edildi"],
+    } : { verildi: ["odendi", "karsiliksiz", "iade_edildi"] };
+    if (!(gecisler[CS.durum] ?? []).includes(girdi.durum)) throw new BadRequestException(`${CS.durum} durumundan ${girdi.durum} durumuna geçilemez`);
 
-    if (fisYazilacak) {
-      await this.islemHesabiniDenetle(girdi, CS.dovizCinsi);
-    }
+    const fisYazilacak = girdi.durum === "tahsil_edildi" || girdi.durum === "odendi";
+    if (fisYazilacak) await this.islemHesabiniDenetle(girdi, CS.dovizCinsi);
+    const islemTarihi = girdi.islemTarihi ? new Date(girdi.islemTarihi) : new Date();
+    const varsayilanKonum: Record<string, string> = { portfoyde: "Şirket portföyü", tahsile_verildi: "Bankada tahsilde", teminata_verildi: "Bankada teminatta", ciro_edildi: "Ciro edilen caride", tahsil_edildi: "Tahsil edildi", odendi: "Ödendi", karsiliksiz: "Karşılıksız işlem dosyası", iade_edildi: "İade edildi" };
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const hak = await tx.cekSenet.updateMany({ where: { id, durum: CS.durum }, data: { durum: girdi.durum } });
+      if (hak.count !== 1) throw new BadRequestException("Çek/senet başka bir işlemle güncellendi; ekranı yenileyin");
       const guncel = await tx.cekSenet.update({
         where: { id },
         data: {
-          durum: girdi.durum,
           ciroCariId: girdi.ciroCariId,
           aciklama: girdi.aciklama ?? CS.aciklama,
+          fizikselKonum: girdi.fizikselKonum ?? varsayilanKonum[girdi.durum],
         },
       });
 
-      // Alınan tahsil edilince para hesaba girer, verilen ödenince çıkar.
-      // Cari, çek alımında/verilişinde zaten kaydedildiği için burada cari
-      // hareketi YAZILMAZ (çift kayıt olur); fişte cariId boş bırakılır.
       if (fisYazilacak) {
         const odeme = girdi.durum === "odendi";
         await tx.kasaBankaHareket.create({
@@ -567,7 +620,7 @@ export class KasaBankaService {
             dovizCinsi: CS.dovizCinsi,
             kur: CS.kur,
             tutarTry: D(CS.tutar).mul(D(CS.kur)).toDecimalPlaces(2),
-            tarih: girdi.islemTarihi ? new Date(girdi.islemTarihi) : new Date(),
+            tarih: islemTarihi,
             aciklama: odeme
               ? `${CS.tur.toUpperCase()} ödemesi (Portföy No: ${CS.portfoyNo}, Lehtar: ${CS.cari?.unvan ?? "—"})`
               : `${CS.tur.toUpperCase()} tahsili (Portföy No: ${CS.portfoyNo}, Borçlu: ${CS.borclu})`,
@@ -577,24 +630,35 @@ export class KasaBankaService {
         });
       }
 
-      // Ciro edilirse ciro edilen cariye alacak (borcumuz azalır) yazarız
       if (girdi.durum === "ciro_edildi" && girdi.ciroCariId) {
         await tx.cariHareket.create({
           data: {
             tenantId,
             cariId: girdi.ciroCariId,
-            tip: "alacak", // Biz onlara ödeme yapıyoruz (ciro), alacak yazarız
+            tip: "borc",
             tutar: CS.tutar,
             dovizCinsi: CS.dovizCinsi,
             kur: CS.kur,
             tutarTry: D(CS.tutar).mul(D(CS.kur)).toDecimalPlaces(2),
-            tarih: new Date(),
+            tarih: islemTarihi,
             aciklama: `${CS.tur.toUpperCase()} Ciro Edildi (Portföy No: ${CS.portfoyNo})`,
-            kaynakTur: "cek_senet",
+            kaynakTur: "cek_senet_ciro",
             kaynakRef: CS.id,
           },
         });
       }
+
+      if (["karsiliksiz", "iade_edildi"].includes(girdi.durum) && CS.cariId) {
+        await tx.cariHareket.create({ data: {
+          tenantId, cariId: CS.cariId, tip: CS.yon === "alinan" ? "borc" : "alacak",
+          tutar: CS.tutar, dovizCinsi: CS.dovizCinsi, kur: CS.kur,
+          tutarTry: D(CS.tutar).mul(D(CS.kur)).toDecimalPlaces(2), tarih: islemTarihi,
+          aciklama: `${CS.tur.toUpperCase()} ${girdi.durum === "karsiliksiz" ? "karşılıksız" : "iade"} ters kaydı (Portföy No: ${CS.portfoyNo})`,
+          kaynakTur: "cek_senet_ters", kaynakRef: CS.id,
+        } });
+      }
+
+      await tx.cekSenetOlay.create({ data: { tenantId, cekSenetId: CS.id, oncekiDurum: CS.durum, yeniDurum: girdi.durum, islemTarihi, aciklama: girdi.aciklama, userId } });
 
       return guncel;
     });
@@ -676,6 +740,8 @@ export class KasaBankaService {
   /** Yönüne göre bir çek/senetin alabileceği durumlar (KSB-05). */
   private static readonly ALINAN_DURUMLARI: CekSenetDurum[] = [
     "portfoyde",
+    "tahsile_verildi",
+    "teminata_verildi",
     "ciro_edildi",
     "tahsil_edildi",
     "karsiliksiz",
@@ -747,28 +813,28 @@ export class KasaBankaService {
       const k = await this.prisma.tenantIslem(tenantId, (tx) =>
         tx.kasa.findUnique({ where: { id: girdi.kaynakKasaId! } }),
       );
-      kaynakDoviz = k?.dovizCinsi;
+      kaynakDoviz = k?.aktif ? k.dovizCinsi : undefined;
     } else if (girdi.kaynakBankaHesapId) {
       const b = await this.prisma.tenantIslem(tenantId, (tx) =>
         tx.bankaHesap.findUnique({ where: { id: girdi.kaynakBankaHesapId! } }),
       );
-      kaynakDoviz = b?.dovizCinsi;
+      kaynakDoviz = b?.aktif ? b.dovizCinsi : undefined;
     } else {
-      const p = await this.prisma.tenantIslem(tenantId, (tx) => tx.posHesap.findUnique({ where: { id: girdi.kaynakPosHesapId! } })); kaynakDoviz = p?.dovizCinsi;
+      const p = await this.prisma.tenantIslem(tenantId, (tx) => tx.posHesap.findUnique({ where: { id: girdi.kaynakPosHesapId! } })); kaynakDoviz = p?.aktif ? p.dovizCinsi : undefined;
     }
 
     if (girdi.hedefKasaId) {
       const k = await this.prisma.tenantIslem(tenantId, (tx) =>
         tx.kasa.findUnique({ where: { id: girdi.hedefKasaId! } }),
       );
-      hedefDoviz = k?.dovizCinsi;
+      hedefDoviz = k?.aktif ? k.dovizCinsi : undefined;
     } else if (girdi.hedefBankaHesapId) {
       const b = await this.prisma.tenantIslem(tenantId, (tx) =>
         tx.bankaHesap.findUnique({ where: { id: girdi.hedefBankaHesapId! } }),
       );
-      hedefDoviz = b?.dovizCinsi;
+      hedefDoviz = b?.aktif ? b.dovizCinsi : undefined;
     } else {
-      const p = await this.prisma.tenantIslem(tenantId, (tx) => tx.posHesap.findUnique({ where: { id: girdi.hedefPosHesapId! } })); hedefDoviz = p?.dovizCinsi;
+      const p = await this.prisma.tenantIslem(tenantId, (tx) => tx.posHesap.findUnique({ where: { id: girdi.hedefPosHesapId! } })); hedefDoviz = p?.aktif ? p.dovizCinsi : undefined;
     }
 
     if (!kaynakDoviz || !hedefDoviz) {
@@ -778,6 +844,10 @@ export class KasaBankaService {
     if (kaynakDoviz !== hedefDoviz) {
       throw new BadRequestException("Farklı döviz cinsleri arasında virman yapılamaz");
     }
+
+    const kaynak = girdi.kaynakKasaId ? `kasa:${girdi.kaynakKasaId}` : girdi.kaynakBankaHesapId ? `banka:${girdi.kaynakBankaHesapId}` : `pos:${girdi.kaynakPosHesapId}`;
+    const hedef = girdi.hedefKasaId ? `kasa:${girdi.hedefKasaId}` : girdi.hedefBankaHesapId ? `banka:${girdi.hedefBankaHesapId}` : `pos:${girdi.hedefPosHesapId}`;
+    if (kaynak === hedef) throw new BadRequestException("Kaynak ve hedef hesap aynı olamaz");
 
     return kaynakDoviz;
   }

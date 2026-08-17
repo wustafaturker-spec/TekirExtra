@@ -124,6 +124,9 @@ interface EkstreSatir {
   kur: string;
   tutarTry: string;
   yuruyenBakiye: string;
+  kaynakTur: string;
+  makbuzYolu: string | null;
+  odemeYontemi: null | { tur: "kredi_karti"; kartAdi: string; bankaAdi: string; sonDortHane: string; taksitSayisi: number; komisyonTutari: string; karttanCekilenToplam: string; fatura: { id: string; no: string | null } | null };
 }
 
 interface EkstreVeri {
@@ -1075,6 +1078,7 @@ export default function CariSayfasi() {
                       <th className="num">Borç (TL)</th>
                       <th className="num">Alacak (TL)</th>
                       <th className="num">Bakiye (TL)</th>
+                      <th>Belge</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1086,10 +1090,11 @@ export default function CariSayfasi() {
                         <tr key={idx}>
                           <td>{row.tarih}</td>
                           <td>{row.vadeTarihi || "—"}</td>
-                          <td>{row.aciklama || "—"}</td>
+                          <td><div className="stack" style={{ gap: ".25rem" }}><span>{row.aciklama || "—"}</span>{row.odemeYontemi?.tur === "kredi_karti" && <div className="row-tight"><Badge variant="neutral">Kredi kartı</Badge><small>{row.odemeYontemi.bankaAdi} · {row.odemeYontemi.kartAdi} · •••• {row.odemeYontemi.sonDortHane} · {row.odemeYontemi.taksitSayisi > 1 ? `${row.odemeYontemi.taksitSayisi} taksit` : "tek çekim"}{Number(row.odemeYontemi.komisyonTutari) > 0 ? ` · komisyon/vade farkı ${tl(row.odemeYontemi.komisyonTutari)}` : ""}{row.odemeYontemi.fatura?.no ? ` · Fatura ${row.odemeYontemi.fatura.no}` : ""}</small></div>}</div></td>
                           <td className="num" style={{ color: borcVal > 0 ? "var(--danger)" : undefined }}>{borcVal > 0 ? tl(borcVal) : "—"}</td>
                           <td className="num" style={{ color: alacakVal > 0 ? "var(--success)" : undefined }}>{alacakVal > 0 ? tl(alacakVal) : "—"}</td>
                           <td className={`num money ${bakiyeNum > 0 ? "pos" : bakiyeNum < 0 ? "neg" : ""}`}>{tl(bakiyeNum)}</td>
+                          <td>{row.makbuzYolu ? <a className="btn btn--ghost btn--sm" href={`${apiBase()}${row.makbuzYolu}`} target="_blank" rel="noreferrer">Makbuz PDF</a> : "—"}</td>
                         </tr>
                       );
                     })}

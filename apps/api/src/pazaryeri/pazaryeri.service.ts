@@ -19,7 +19,7 @@ export class PazaryeriService {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriSiparis.findMany({
       where: durum ? { durum: durum as never } : undefined,
-      orderBy: { siparisTarihi: "desc" }, include: { satirlar: true, baglanti: { select: { saglayici: true } }, cari: { select: { kod: true, unvan: true } }, fatura: { select: { id: true, no: true } } },
+      orderBy: { siparisTarihi: "desc" }, include: { satirlar: true, baglanti: { select: { id: true, saglayici: true, durum: true, sonSenkronTarihi: true, sonSenkronHatasi: true } }, cari: { select: { kod: true, unvan: true } }, fatura: { select: { id: true, no: true } } },
     }));
   }
 
@@ -30,7 +30,11 @@ export class PazaryeriService {
       const baglanti = await tx.baglanti.findFirst({ where: { id: girdi.baglantiId, aile: "pazaryeri" } });
       if (!baglanti) throw new NotFoundException("Pazaryeri bağlantısı bulunamadı");
       const mevcut = await tx.pazaryeriSiparis.findUnique({ where: { tenantId_baglantiId_hariciId: { tenantId, baglantiId: girdi.baglantiId, hariciId: girdi.hariciId } } });
-      if (mevcut) return mevcut;
+      if (mevcut) {
+        if (mevcut.faturaId) return mevcut;
+        const iptal = /cancel|iptal|cancelled|canceled/i.test(girdi.hariciDurum ?? "");
+        return tx.pazaryeriSiparis.update({ where: { id: mevcut.id }, data: { hariciDurum: girdi.hariciDurum, siparisTarihi: new Date(girdi.siparisTarihi), musteriUnvani: girdi.musteriUnvani, musteriEposta: girdi.musteriEposta, musteriTelefon: girdi.musteriTelefon, vknTckn: girdi.vknTckn, toplam: girdi.toplam, teslimatAdresi: girdi.teslimatAdresi as never, hamVeri: girdi as never, ...(iptal ? { durum: "iptal", hataMesaji: null } : {}) }, include: { satirlar: true } });
+      }
 
       const eslenen = await Promise.all(girdi.satirlar.map(async (satir) => {
         const varyant = await tx.stokVaryant.findFirst({ where: { aktif: true, OR: [{ kod: satir.sku }, ...(satir.barkod ? [{ barkod: satir.barkod }] : [])] }, select: { id: true, stokId: true } });
@@ -50,6 +54,22 @@ export class PazaryeriService {
     });
   }
 
+  async satirEsle(siparisId: string, satirId: string, girdi: { stokId: string; varyantId?: string | null }) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const siparis = await tx.pazaryeriSiparis.findUnique({ where: { id: siparisId }, include: { satirlar: true } });
+      if (!siparis) throw new NotFoundException("Sipariş bulunamadı");
+      if (siparis.faturaId || siparis.durum === "iptal") throw new BadRequestException("Faturalanmış veya iptal edilmiş sipariş değiştirilemez");
+      const satir = siparis.satirlar.find((s) => s.id === satirId); if (!satir) throw new NotFoundException("Sipariş satırı bulunamadı");
+      const stok = await tx.stokKart.findUnique({ where: { id: girdi.stokId }, select: { id: true, aktif: true } });
+      if (!stok?.aktif) throw new BadRequestException("Aktif stok kartı bulunamadı");
+      if (girdi.varyantId) { const varyant = await tx.stokVaryant.findFirst({ where: { id: girdi.varyantId, stokId: girdi.stokId, aktif: true } }); if (!varyant) throw new BadRequestException("Stok varyantı bulunamadı"); }
+      await tx.pazaryeriSiparisSatiri.update({ where: { id: satirId }, data: { stokId: girdi.stokId, varyantId: girdi.varyantId || null } });
+      const kalan = siparis.satirlar.filter((s) => s.id !== satirId).some((s) => !s.stokId);
+      return tx.pazaryeriSiparis.update({ where: { id: siparisId }, data: { durum: kalan ? "esleme_bekliyor" : "faturalanmaya_hazir", hataMesaji: null }, include: { satirlar: true } });
+    });
+  }
+
   async faturalastir(siparisler: { siparisId: string; cariId: string }[]) {
     const { tenantId } = aktifBaglam();
     const sonuclar: { siparisId: string; faturaId?: string; hata?: string }[] = [];
@@ -60,10 +80,16 @@ export class PazaryeriService {
         }));
         if (!siparis) throw new NotFoundException("Sipariş bulunamadı");
         if (siparis.faturaId) { sonuclar.push({ siparisId: siparis.id, faturaId: siparis.faturaId }); continue; }
+        if (siparis.durum !== "faturalanmaya_hazir") throw new BadRequestException("Yalnızca faturalanmaya hazır siparişler işlenebilir");
         if (siparis.satirlar.some((s) => !s.stokId)) throw new BadRequestException("Eşleşmemiş ürün kalemi var");
+        const cari = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findFirst({ where: { id: istek.cariId, aktif: true }, select: { id: true } }));
+        if (!cari) throw new BadRequestException("Aktif cari hesap bulunamadı");
+        const kur = siparis.dovizCinsi === "TRY" ? new Prisma.Decimal(1) : await this.prisma.tenantIslem(tenantId, async (tx) => { const k = await tx.dovizKuru.findFirst({ where: { tarih: { lte: siparis.siparisTarihi }, dovizCinsi: siparis.dovizCinsi }, orderBy: { tarih: "desc" }, select: { dovizSatis: true } }); if (!k) throw new BadRequestException(`${siparis.dovizCinsi} için sipariş tarihinde geçerli kur bulunamadı`); return k.dovizSatis; });
+        const hak = await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriSiparis.updateMany({ where: { id: siparis.id, faturaId: null, durum: "faturalanmaya_hazir" }, data: { durum: "yeni", hataMesaji: null } }));
+        if (hak.count !== 1) throw new BadRequestException("Sipariş başka bir işlem tarafından işleniyor");
         const fatura = await this.faturalar.olustur({
           tip: "satis", tarih: siparis.siparisTarihi.toISOString().slice(0, 10), cariId: istek.cariId,
-          dovizCinsi: siparis.dovizCinsi, kur: "1", genelIskontoYuzdesi: "0", genelIskontoTutari: "0",
+          dovizCinsi: siparis.dovizCinsi, kur: kur.toString(), genelIskontoYuzdesi: "0", genelIskontoTutari: "0",
           aciklama: `Pazaryeri siparişi ${siparis.siparisNo}`,
           satirlar: siparis.satirlar.map((s) => ({ stokId: s.stokId!, varyantId: s.varyantId, miktar: s.miktar.toString(), birim: "adet", birimFiyat: s.birimFiyat.toString(), iskontoOrani: "0", kdvOrani: s.kdvOrani.toString() })),
         });
@@ -90,14 +116,17 @@ export class PazaryeriService {
         const config = JSON.parse(coz(baglanti.sifreliConfig)) as PazaryeriConfig;
         const adapter = baglanti.saglayici === "trendyol" ? new TrendyolAdapter() : baglanti.saglayici === "hepsiburada" ? new HepsiburadaAdapter() : baglanti.saglayici === "n11" ? new N11Adapter() : baglanti.saglayici === "amazon_tr" ? new AmazonAdapter() : null;
         if (!adapter) throw new BadRequestException(`${baglanti.saglayici} canlı adaptörü henüz etkin değil`);
-        const sayfa = await adapter.siparisleriCek(config, baglanti.senkronImleci);
-        let eklenen = 0;
-        for (const siparis of sayfa.siparisler) {
-          const once = await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriSiparis.findUnique({ where: { tenantId_baglantiId_hariciId: { tenantId, baglantiId: baglanti.id, hariciId: siparis.hariciId } }, select: { id: true } }));
-          await this.iceAktar({ ...siparis, baglantiId: baglanti.id }); if (!once) eklenen += 1;
-        }
-        await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id: baglanti.id }, data: { senkronImleci: sayfa.sonrakiImlec, sonSenkronTarihi: new Date(), sonSenkronHatasi: null } }));
-        sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan: sayfa.siparisler.length, eklenen, devamImleci: Boolean(sayfa.sonrakiImlec) });
+        let imlec = baglanti.senkronImleci; let eklenen = 0; let alinan = 0; let sayfaSayisi = 0;
+        do {
+          const sayfa = await adapter.siparisleriCek(config, imlec); sayfaSayisi += 1; alinan += sayfa.siparisler.length;
+          for (const siparis of sayfa.siparisler) {
+            const once = await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriSiparis.findUnique({ where: { tenantId_baglantiId_hariciId: { tenantId, baglantiId: baglanti.id, hariciId: siparis.hariciId } }, select: { id: true } }));
+            await this.iceAktar({ ...siparis, baglantiId: baglanti.id }); if (!once) eklenen += 1;
+          }
+          imlec = sayfa.sonrakiImlec;
+          await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id: baglanti.id }, data: { senkronImleci: imlec, sonSenkronTarihi: new Date(), sonSenkronHatasi: null } }));
+        } while (imlec && sayfaSayisi < 50);
+        sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan, eklenen, sayfaSayisi, devamImleci: Boolean(imlec) });
       } catch (hata) {
         const mesaj = hata instanceof Error ? hata.message : "Senkronizasyon hatası";
         await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id: baglanti.id }, data: { sonSenkronTarihi: new Date(), sonSenkronHatasi: mesaj } }));
@@ -141,7 +170,7 @@ export class PazaryeriService {
     return this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriKesinti.findMany({
       where: durum ? { durum: durum as never } : undefined,
       orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
-      include: { baglanti: { select: { saglayici: true } }, hareket: { select: { id: true, kasaId: true, bankaHesapId: true } } },
+      include: { baglanti: { select: { id: true, saglayici: true, sonSenkronTarihi: true, sonSenkronHatasi: true } }, hareket: { select: { id: true, kasaId: true, bankaHesapId: true, kur: true, tutarTry: true } } },
     }));
   }
 
@@ -153,7 +182,7 @@ export class PazaryeriService {
       return tx.pazaryeriKesinti.upsert({
         where: { tenantId_baglantiId_hariciId: { tenantId, baglantiId: girdi.baglantiId, hariciId: girdi.hariciId } },
         create: { ...girdi, tenantId, tarih: new Date(girdi.tarih), hamVeri: girdi.hamVeri as Prisma.InputJsonValue | undefined },
-        update: {},
+        update: { ...(girdi.siparisNo ? { siparisNo: girdi.siparisNo } : {}), tur: girdi.tur, aciklama: girdi.aciklama, tarih: new Date(girdi.tarih), ...(girdi.hamVeri ? { hamVeri: girdi.hamVeri as Prisma.InputJsonValue } : {}) },
       });
     });
   }
@@ -169,8 +198,8 @@ export class PazaryeriService {
       if (kesintiler.length !== girdi.kesintiIds.length) throw new NotFoundException("Kesinti kayıtlarından biri bulunamadı");
       if (kesintiler.some((k) => k.durum === "giderlesti")) throw new BadRequestException("Seçilen kayıtlardan biri daha önce giderleştirilmiş");
       if (kesintiler.some((k) => k.dovizCinsi !== hesap.dovizCinsi)) throw new BadRequestException("Kesinti dövizi ile hesap dövizi aynı olmalıdır");
-      const kur = new Prisma.Decimal(girdi.kur);
       for (const kesinti of kesintiler) {
+        const kur = kesinti.dovizCinsi === "TRY" ? new Prisma.Decimal(1) : girdi.kur ? new Prisma.Decimal(girdi.kur) : await (async () => { const k = await tx.dovizKuru.findFirst({ where: { tarih: { lte: kesinti.tarih }, dovizCinsi: kesinti.dovizCinsi }, orderBy: { tarih: "desc" }, select: { dovizSatis: true } }); if (!k) throw new BadRequestException(`${kesinti.dovizCinsi} için ${kesinti.tarih.toISOString().slice(0, 10)} tarihinde geçerli kur bulunamadı`); return k.dovizSatis; })();
         const hak = await tx.pazaryeriKesinti.updateMany({ where: { id: kesinti.id, durum: "bekliyor", hareketId: null }, data: { durum: "giderlesti" } });
         if (hak.count !== 1) throw new BadRequestException("Kesinti başka bir işlem tarafından giderleştirildi");
         const hareket = await tx.kasaBankaHareket.create({ data: {
@@ -194,16 +223,22 @@ export class PazaryeriService {
     for (const baglanti of baglantilar) {
       try {
         const config = JSON.parse(coz(baglanti.sifreliConfig)) as PazaryeriConfig;
-        const sayfa = await new AmazonAdapter().komisyonKayitlariCek(config, baglanti.kesintiSenkronImleci);
-        let eklenen = 0;
-        for (const kesinti of sayfa.kesintiler) {
-          const once = await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriKesinti.findUnique({ where: { tenantId_baglantiId_hariciId: { tenantId, baglantiId: baglanti.id, hariciId: kesinti.hariciId } }, select: { id: true } }));
-          await this.kesintiIceAktar({ ...kesinti, baglantiId: baglanti.id }); if (!once) eklenen += 1;
-        }
-        await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id: baglanti.id }, data: { kesintiSenkronImleci: sayfa.sonrakiImlec, sonSenkronTarihi: new Date(), sonSenkronHatasi: null } }));
-        sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan: sayfa.kesintiler.length, eklenen });
+        let imlec = baglanti.kesintiSenkronImleci; let eklenen = 0; let alinan = 0; let sayfaSayisi = 0;
+        do {
+          const sayfa = await new AmazonAdapter().komisyonKayitlariCek(config, imlec); sayfaSayisi += 1; alinan += sayfa.kesintiler.length;
+          for (const kesinti of sayfa.kesintiler) {
+            const once = await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriKesinti.findUnique({ where: { tenantId_baglantiId_hariciId: { tenantId, baglantiId: baglanti.id, hariciId: kesinti.hariciId } }, select: { id: true } }));
+            await this.kesintiIceAktar({ ...kesinti, baglantiId: baglanti.id }); if (!once) eklenen += 1;
+          }
+          imlec = sayfa.sonrakiImlec;
+          const parsed = JSON.parse(imlec) as { token?: string };
+          if (!parsed.token) break;
+        } while (sayfaSayisi < 50);
+        await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id: baglanti.id }, data: { kesintiSenkronImleci: imlec, sonSenkronTarihi: new Date(), sonSenkronHatasi: null } }));
+        sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan, eklenen, sayfaSayisi });
       } catch (hata) {
         const mesaj = hata instanceof Error ? hata.message : "Kesinti senkronizasyon hatası";
+        await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id: baglanti.id }, data: { sonSenkronTarihi: new Date(), sonSenkronHatasi: mesaj } }));
         sonuclar.push({ baglantiId: baglanti.id, saglayici: baglanti.saglayici, alinan: 0, eklenen: 0, hata: mesaj });
       }
     }

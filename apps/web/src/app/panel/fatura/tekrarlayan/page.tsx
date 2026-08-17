@@ -1,79 +1,30 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, tumSayfalariAl } from "@/lib/api";
-import { Alert, Button, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
+import { Alert, Badge, Button, ButtonLabel, Card, Field, Input, Select } from "@/components/ui";
 
-interface Fatura { id: string; no: string | null; tip: string; cari: { unvan: string }; genelToplam: string }
-interface Plan {
-  id: string; ad: string; siklik: "haftalik" | "aylik" | "yillik"; aralik: number;
-  sonrakiTarih: string; bitisTarihi: string | null; aktif: boolean; sonUretimTarihi: string | null;
-  sablonFatura: Fatura; _count: { uretilenler: number };
-}
-
-const tarih = (deger: string) => deger.slice(0, 10).split("-").reverse().join(".");
-const para = (deger: string) => Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL";
+interface Fatura { id: string; no: string | null; tip: string; dovizCinsi: string; cari: { unvan: string }; genelToplam: string }
+interface Plan { id: string; ad: string; siklik: "haftalik" | "aylik" | "yillik"; aralik: number; sonrakiTarih: string; bitisTarihi: string | null; aktif: boolean; sonUretimTarihi: string | null; sablonFatura: Fatura; _count: { uretilenler: number } }
+const bugun = () => new Date().toISOString().slice(0, 10); const tarih = (d: string) => new Date(d).toLocaleDateString("tr-TR");
+const para = (n: string | number, d = "TRY") => Number(n).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + d;
+const tekrarMetni = (p: { aralik: number; siklik: string }) => p.aralik === 1 ? ({ haftalik: "Her hafta", aylik: "Her ay", yillik: "Her yıl" }[p.siklik] ?? p.siklik) : `Her ${p.aralik} ${p.siklik === "haftalik" ? "haftada" : p.siklik === "aylik" ? "ayda" : "yılda"}`;
 
 export default function TekrarlayanFaturalarPage() {
-  const [planlar, setPlanlar] = useState<Plan[]>([]);
-  const [faturalar, setFaturalar] = useState<Fatura[]>([]);
-  const [hata, setHata] = useState("");
-  const [mesaj, setMesaj] = useState("");
-  const [yukleniyor, setYukleniyor] = useState(true);
-  const [form, setForm] = useState({ ad: "", sablonFaturaId: "", siklik: "aylik", aralik: 1, sonrakiTarih: new Date().toISOString().slice(0, 10), bitisTarihi: "" });
-
-  const yukle = useCallback(async () => {
-    setYukleniyor(true); setHata("");
-    try {
-      const [p, f] = await Promise.all([api<Plan[]>("/fatura/tekrarlayanlar"), tumSayfalariAl<Fatura>("/fatura")]);
-      setPlanlar(p); setFaturalar(f);
-    } catch (e) { setHata(e instanceof Error ? e.message : "Kayıtlar yüklenemedi"); }
-    finally { setYukleniyor(false); }
-  }, []);
+  const [planlar, setPlanlar] = useState<Plan[]>([]); const [faturalar, setFaturalar] = useState<Fatura[]>([]); const [hata, setHata] = useState(""); const [mesaj, setMesaj] = useState(""); const [yukleniyor, setYukleniyor] = useState(true); const [formAcik, setFormAcik] = useState(false); const [arama, setArama] = useState(""); const [durum, setDurum] = useState("aktif"); const [islemde, setIslemde] = useState("");
+  const [form, setForm] = useState({ ad: "", sablonFaturaId: "", siklik: "aylik", aralik: 1, sonrakiTarih: bugun(), bitisTarihi: "" });
+  const yukle = useCallback(async () => { setYukleniyor(true); setHata(""); try { const [p, f] = await Promise.all([api<Plan[]>("/fatura/tekrarlayanlar"), tumSayfalariAl<Fatura>("/fatura")]); setPlanlar(p); setFaturalar(f); const secili = new URLSearchParams(window.location.search).get("sablonFaturaId"); if (secili && f.some((x) => x.id === secili)) { setForm((x) => ({ ...x, sablonFaturaId: secili, ad: x.ad || `${f.find((a) => a.id === secili)?.cari.unvan ?? "Fatura"} düzenli faturası` })); setFormAcik(true); } } catch (e) { setHata(e instanceof Error ? e.message : "Kayıtlar yüklenemedi"); } finally { setYukleniyor(false); } }, []);
   useEffect(() => { void yukle(); }, [yukle]);
-
-  async function olustur(e: React.FormEvent) {
-    e.preventDefault(); setHata(""); setMesaj("");
-    try {
-      await api("/fatura/tekrarlayanlar", { method: "POST", body: JSON.stringify({ ...form, bitisTarihi: form.bitisTarihi || null }) });
-      setMesaj("Tekrarlayan fatura planı oluşturuldu."); setForm((x) => ({ ...x, ad: "", sablonFaturaId: "" })); await yukle();
-    } catch (e) { setHata(e instanceof Error ? e.message : "Plan oluşturulamadı"); }
-  }
-
-  async function durumDegistir(plan: Plan) {
-    await api(`/fatura/tekrarlayanlar/${plan.id}`, { method: "PATCH", body: JSON.stringify({ aktif: !plan.aktif }) });
-    await yukle();
-  }
-
-  async function vadesiGelenleriUret() {
-    setHata(""); setMesaj("");
-    try {
-      const sonuc = await api<{ uretilenAdet: number }>("/fatura/tekrarlayanlar/uret", { method: "POST" });
-      setMesaj(`${sonuc.uretilenAdet} taslak fatura üretildi.`); await yukle();
-    } catch (e) { setHata(e instanceof Error ? e.message : "Taslaklar üretilemedi"); }
-  }
-
-  return <div className="page-stack">
-    <PageHeader title="Tekrarlayan Faturalar" subtitle="Düzenli işlemleri şablondan taslak faturaya dönüştürün." actions={<Button onClick={() => void vadesiGelenleriUret()}>Vadesi gelenleri üret</Button>} />
+  const ozet = useMemo(() => ({ aktif: planlar.filter((p) => p.aktif).length, uretilen: planlar.reduce((t, p) => t + p._count.uretilenler, 0), aylik: planlar.filter((p) => p.aktif && p.siklik === "aylik").reduce((t, p) => t + Number(p.sablonFatura.genelToplam) / p.aralik, 0), yaklasan: planlar.filter((p) => p.aktif && p.sonrakiTarih.slice(0, 10) <= new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)).length }), [planlar]);
+  const filtreli = useMemo(() => planlar.filter((p) => (durum === "tumu" || (durum === "aktif") === p.aktif) && `${p.ad} ${p.sablonFatura.cari.unvan} ${p.sablonFatura.no ?? ""}`.toLocaleLowerCase("tr-TR").includes(arama.toLocaleLowerCase("tr-TR"))), [planlar, durum, arama]);
+  async function olustur(e: React.FormEvent) { e.preventDefault(); setHata(""); setMesaj(""); setIslemde("olustur"); try { await api("/fatura/tekrarlayanlar", { method: "POST", body: JSON.stringify({ ...form, bitisTarihi: form.bitisTarihi || null }) }); setMesaj("Tekrarlayan fatura planı oluşturuldu."); setForm({ ad: "", sablonFaturaId: "", siklik: "aylik", aralik: 1, sonrakiTarih: bugun(), bitisTarihi: "" }); setFormAcik(false); window.history.replaceState(null, "", "/panel/fatura/tekrarlayan"); await yukle(); } catch (e) { setHata(e instanceof Error ? e.message : "Plan oluşturulamadı"); } finally { setIslemde(""); } }
+  async function durumDegistir(p: Plan) { setIslemde(p.id); setHata(""); try { await api(`/fatura/tekrarlayanlar/${p.id}`, { method: "PATCH", body: JSON.stringify({ aktif: !p.aktif }) }); setMesaj(p.aktif ? "Plan duraklatıldı." : "Plan etkinleştirildi."); await yukle(); } catch (e) { setHata(e instanceof Error ? e.message : "Plan durumu değiştirilemedi"); } finally { setIslemde(""); } }
+  async function uret() { setIslemde("uret"); setHata(""); setMesaj(""); try { const sonuc = await api<{ uretilenAdet: number }>("/fatura/tekrarlayanlar/uret", { method: "POST" }); setMesaj(`${sonuc.uretilenAdet} taslak fatura üretildi.`); await yukle(); } catch (e) { setHata(e instanceof Error ? e.message : "Taslaklar üretilemedi"); } finally { setIslemde(""); } }
+  return <div className="recurring-page"><header className="recurring-hero"><div><span>OTOMATİK FATURALAMA</span><h1>Tekrarlayan faturalar</h1><p>Düzenli satış ve alış işlemlerini şablonlardan planlı taslaklara dönüştürün.</p></div><div><ButtonLabel as="a" href="/panel/fatura/tekrarlayan/raporlar">Raporlar</ButtonLabel><Button disabled={islemde === "uret"} onClick={() => void uret()}>{islemde === "uret" ? "Üretiliyor…" : "Vadesi gelenleri üret"}</Button><Button variant="primary" onClick={() => setFormAcik((x) => !x)}>+ Yeni plan</Button></div></header>
     {hata && <Alert tone="error">{hata}</Alert>}{mesaj && <Alert tone="success">{mesaj}</Alert>}
-    <Card title="Yeni plan">
-      <p className="muted">Şablon faturanın cari, kalem, fiyat ve vergi bilgileri korunur.</p>
-      <form className="form-grid" onSubmit={olustur}>
-        <Field label="Plan adı"><Input required value={form.ad} onChange={(e) => setForm({ ...form, ad: e.target.value })} /></Field>
-        <Field label="Şablon fatura"><Select required value={form.sablonFaturaId} onChange={(e) => setForm({ ...form, sablonFaturaId: e.target.value })}><option value="">Seçin</option>{faturalar.map((f) => <option key={f.id} value={f.id}>{f.no ?? "Taslak"} — {f.cari.unvan} — {para(f.genelToplam)}</option>)}</Select></Field>
-        <Field label="Sıklık"><Select value={form.siklik} onChange={(e) => setForm({ ...form, siklik: e.target.value })}><option value="haftalik">Haftalık</option><option value="aylik">Aylık</option><option value="yillik">Yıllık</option></Select></Field>
-        <Field label="Her"><Input type="number" min={1} max={36} value={form.aralik} onChange={(e) => setForm({ ...form, aralik: Number(e.target.value) })} /></Field>
-        <Field label="İlk üretim"><Input type="date" required value={form.sonrakiTarih} onChange={(e) => setForm({ ...form, sonrakiTarih: e.target.value })} /></Field>
-        <Field label="Bitiş (isteğe bağlı)"><Input type="date" value={form.bitisTarihi} onChange={(e) => setForm({ ...form, bitisTarihi: e.target.value })} /></Field>
-        <div><Button type="submit">Planı oluştur</Button></div>
-      </form>
-    </Card>
-    <Card title="Planlar">
-      <p className="muted">{yukleniyor ? "Yükleniyor…" : `${planlar.length} plan`}</p>
-      <TableWrap><thead><tr><th>Plan</th><th>Şablon / Cari</th><th>Tekrar</th><th>Sıradaki</th><th>Üretilen</th><th>Durum</th><th></th></tr></thead><tbody>
-        {planlar.map((p) => <tr key={p.id}><td><strong>{p.ad}</strong></td><td>{p.sablonFatura.no ?? "Taslak"}<br /><small>{p.sablonFatura.cari.unvan}</small></td><td>Her {p.aralik} {p.siklik}</td><td>{tarih(p.sonrakiTarih)}</td><td>{p._count.uretilenler}</td><td>{p.aktif ? "Aktif" : "Duraklatıldı"}</td><td><Button variant="ghost" onClick={() => void durumDegistir(p)}>{p.aktif ? "Duraklat" : "Etkinleştir"}</Button></td></tr>)}
-        {!yukleniyor && !planlar.length && <tr><td colSpan={7}>Henüz tekrarlayan fatura planı yok.</td></tr>}
-      </tbody></TableWrap>
-    </Card>
+    <section className="recurring-summary"><div className="is-lead"><span>Aktif plan</span><strong>{ozet.aktif}</strong><small>Toplam {planlar.length} plan</small></div><div><span>Üretilen fatura</span><strong>{ozet.uretilen}</strong><small>Tüm zamanlar</small></div><div><span>Aylık plan değeri</span><strong>{para(ozet.aylik)}</strong><small>Aylık planların normalize toplamı</small></div><div className={ozet.yaklasan ? "is-warning" : ""}><span>7 gün içinde</span><strong>{ozet.yaklasan}</strong><small>Yaklaşan üretim</small></div></section>
+    {formAcik && <Card className="recurring-form" title={<span><small>YENİ OTOMASYON</small>Plan bilgileri</span>}><form onSubmit={olustur}><div className="recurring-form__row"><Field label="Plan adı"><Input autoFocus required value={form.ad} onChange={(e) => setForm({ ...form, ad: e.target.value })} placeholder="Aylık danışmanlık faturası" /></Field><Field label="Şablon fatura"><Select required value={form.sablonFaturaId} onChange={(e) => setForm({ ...form, sablonFaturaId: e.target.value })}><option value="">Fatura seçin</option>{faturalar.map((f) => <option key={f.id} value={f.id}>{f.no ?? "Taslak"} · {f.cari.unvan} · {para(f.genelToplam, f.dovizCinsi)}</option>)}</Select></Field></div><div className="recurring-form__row recurring-form__row--schedule"><Field label="Sıklık"><Select value={form.siklik} onChange={(e) => setForm({ ...form, siklik: e.target.value })}><option value="haftalik">Haftalık</option><option value="aylik">Aylık</option><option value="yillik">Yıllık</option></Select></Field><Field label="Tekrar aralığı"><Input type="number" min={1} max={36} value={form.aralik} onChange={(e) => setForm({ ...form, aralik: Number(e.target.value) })} /></Field><Field label="İlk üretim"><Input type="date" required value={form.sonrakiTarih} onChange={(e) => setForm({ ...form, sonrakiTarih: e.target.value })} /></Field><Field label="Bitiş (isteğe bağlı)"><Input type="date" value={form.bitisTarihi} onChange={(e) => setForm({ ...form, bitisTarihi: e.target.value })} /></Field></div><div className="recurring-form__preview"><span>Plan özeti</span><strong>{tekrarMetni(form)} · {tarih(form.sonrakiTarih)} tarihinde başlar</strong><small>Şablon faturanın cari, kalem, fiyat, döviz ve vergi bilgileri korunur.</small></div><footer><Button type="button" onClick={() => setFormAcik(false)}>Vazgeç</Button><Button disabled={islemde === "olustur"} type="submit" variant="primary">{islemde === "olustur" ? "Kaydediliyor…" : "Planı oluştur"}</Button></footer></form></Card>}
+    <div className="recurring-toolbar"><Input aria-label="Planlarda ara" value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Plan, cari veya fatura no ara…" /><Select aria-label="Plan durumu" value={durum} onChange={(e) => setDurum(e.target.value)}><option value="aktif">Aktif planlar</option><option value="pasif">Duraklatılanlar</option><option value="tumu">Tüm planlar</option></Select><span>{filtreli.length} plan</span></div>
+    <section className="recurring-list">{yukleniyor ? <div className="recurring-empty">Planlar yükleniyor…</div> : filtreli.length === 0 ? <div className="recurring-empty"><strong>Plan bulunamadı</strong><p>İlk tekrarlayan fatura planınızı oluşturun.</p><Button variant="primary" onClick={() => setFormAcik(true)}>Yeni plan</Button></div> : filtreli.map((p) => <article className={`recurring-card ${!p.aktif ? "is-passive" : ""}`} key={p.id}><div className="recurring-card__main"><div className="recurring-card__icon">↻</div><div><div className="recurring-card__badges"><Badge variant={p.aktif ? "success" : "neutral"}>{p.aktif ? "Aktif" : "Duraklatıldı"}</Badge><Badge variant="neutral">{p.sablonFatura.tip === "alis" ? "Alış" : p.sablonFatura.tip === "satis" ? "Satış" : "Proforma"}</Badge></div><h2>{p.ad}</h2><p>{p.sablonFatura.cari.unvan} · {p.sablonFatura.no ?? "Taslak şablon"}</p></div><div className="recurring-card__amount"><span>Şablon toplamı</span><strong>{para(p.sablonFatura.genelToplam, p.sablonFatura.dovizCinsi)}</strong><small>{tekrarMetni(p)}</small></div></div><div className="recurring-card__facts"><div><span>Sıradaki üretim</span><strong>{tarih(p.sonrakiTarih)}</strong></div><div><span>Son üretim</span><strong>{p.sonUretimTarihi ? tarih(p.sonUretimTarihi) : "Henüz yok"}</strong></div><div><span>Bitiş</span><strong>{p.bitisTarihi ? tarih(p.bitisTarihi) : "Süresiz"}</strong></div><div><span>Üretilen</span><strong>{p._count.uretilenler} fatura</strong></div></div><footer><ButtonLabel as="a" size="sm" href={`/panel/fatura/tekrarlayan/raporlar?planId=${p.id}`}>Üretim geçmişi</ButtonLabel><Button size="sm" variant={p.aktif ? "danger" : "primary"} disabled={islemde === p.id} onClick={() => void durumDegistir(p)}>{p.aktif ? "Duraklat" : "Etkinleştir"}</Button></footer></article>)}</section>
   </div>;
 }

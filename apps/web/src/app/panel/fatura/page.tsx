@@ -1338,6 +1338,7 @@ export default function FaturaSayfasi() {
                       )}
                       <Button size="sm" onClick={() => setEkleriAcikFatura(f)}>📎 Ekler</Button>
                       <Button size="sm" onClick={() => kopyala(f.id)}>📋 Kopyala</Button>
+                      <Button size="sm" onClick={() => router.push(`/panel/fatura/tekrarlayan?sablonFaturaId=${f.id}`)}>↻ Tekrarla</Button>
                     </div>
                   </td>
                 </tr>

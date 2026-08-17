@@ -7,6 +7,18 @@ export const krediKartiOlusturSemasi = z.object({
   renk: z.enum(["lacivert", "turkuaz", "mor", "bordo"]).default("lacivert"),
 });
 export const krediKartiHareketSemasi = z.object({
-  krediKartiId: z.string().uuid(), tip: z.enum(["harcama", "iade", "odeme", "faiz", "aidat"]), tarih: z.string().date(),
+  krediKartiId: z.string().uuid(), tip: z.enum(["harcama", "iade", "faiz", "aidat"]), tarih: z.string().date(),
   aciklama: z.string().trim().min(2).max(200), tutar: para, taksitSayisi: z.number().int().min(1).max(36).default(1), belgeNo: z.string().trim().max(50).optional().nullable(),
+});
+
+export const krediKartiCariOdemeSemasi = z.object({
+  krediKartiId: z.string().uuid(), cariId: z.string().uuid(), faturaId: z.string().uuid().optional().nullable(), tarih: z.string().date(),
+  cariOdemeTutari: para, komisyonTutari: z.union([z.string(), z.number()]).transform(String).refine((v) => /^\d{1,13}(\.\d{1,2})?$/.test(v), "Geçerli komisyon tutarı gerekli").default("0"),
+  taksitSayisi: z.number().int().min(1).max(36).default(1), ilkTaksitTarihi: z.string().date(),
+  aciklama: z.string().trim().min(2).max(200), belgeNo: z.string().trim().max(50).optional().nullable(),
+});
+
+export const krediKartiEkstreOdemeSemasi = z.object({
+  krediKartiId: z.string().uuid(), bankaHesapId: z.string().uuid(), tarih: z.string().date(), tutar: para,
+  aciklama: z.string().trim().min(2).max(200).default("Kredi kartı ekstre ödemesi"), belgeNo: z.string().trim().max(50).optional().nullable(),
 });

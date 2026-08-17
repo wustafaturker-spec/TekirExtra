@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
-import type { kategoriGuncelleSemasi, kategoriOlusturSemasi, kiraDonemOlusturSemasi, kiraSozlesmeOlusturSemasi, masrafGuncelleSemasi, masrafOdemeSemasi, masrafOlusturSemasi } from "./masraflar.semalar";
+import type { kategoriGuncelleSemasi, kategoriOlusturSemasi, kiraDonemOlusturSemasi, kiraSozlesmeGuncelleSemasi, kiraSozlesmeOlusturSemasi, masrafGuncelleSemasi, masrafOdemeSemasi, masrafOlusturSemasi } from "./masraflar.semalar";
 
 const D = (deger: string | number | Prisma.Decimal) => new Prisma.Decimal(deger);
 const VARSAYILAN_KATEGORILER = ["Kira", "Elektrik, Su ve Doğalgaz", "Telefon ve İnternet", "Akaryakıt ve Ulaşım", "Yemek", "Ofis ve Kırtasiye", "Yazılım ve Abonelikler", "Reklam ve Pazarlama", "Bakım ve Onarım", "Kargo", "Banka ve POS Komisyonları", "Personel Giderleri", "Vergi, Harç ve Sigorta", "Demirbaş", "Diğer"];
@@ -70,14 +70,14 @@ export class MasraflarService {
         ...(sorgu.durum ? { durum: sorgu.durum as never } : {}),
         ...(sorgu.odemeDurumu ? { odemeDurumu: sorgu.odemeDurumu as never } : {}),
       },
-      include: { kategori: true, cari: { select: { id: true, unvan: true } }, kasa: { select: { id: true, ad: true } }, bankaHesap: { select: { id: true, ad: true } } },
+      include: { kategori: true, cari: { select: { id: true, unvan: true } }, kasa: { select: { id: true, ad: true } }, bankaHesap: { select: { id: true, ad: true } }, odemeler: { include: { kasa: { select: { id: true, ad: true } }, bankaHesap: { select: { id: true, ad: true } } }, orderBy: [{ odemeTarihi: "desc" }, { createdAt: "desc" }] } },
       orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
     }));
   }
 
   async getir(id: string) {
     const { tenantId } = aktifBaglam();
-    const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.masraf.findUnique({ where: { id }, include: { kategori: true, cari: { select: { id: true, unvan: true } }, kasa: true, bankaHesap: true } }));
+    const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.masraf.findUnique({ where: { id }, include: { kategori: true, cari: { select: { id: true, unvan: true } }, kasa: true, bankaHesap: true, odemeler: { include: { kasa: { select: { id: true, ad: true } }, bankaHesap: { select: { id: true, ad: true } } }, orderBy: [{ odemeTarihi: "desc" }, { createdAt: "desc" }] } } }));
     if (!kayit) throw new NotFoundException("Masraf bulunamadı");
     return kayit;
   }
@@ -118,22 +118,31 @@ export class MasraflarService {
       const hesap = girdi.kasaId ? await tx.kasa.findUnique({ where: { id: girdi.kasaId } }) : await tx.bankaHesap.findUnique({ where: { id: girdi.bankaHesapId! } });
       if (!hesap) throw new BadRequestException("Ödeme hesabı bulunamadı");
       if (hesap.dovizCinsi !== mevcut.dovizCinsi) throw new BadRequestException("Masraf ve ödeme hesabı para birimleri aynı olmalıdır");
-      const hareket = await tx.kasaBankaHareket.create({ data: { tenantId, kasaId: girdi.kasaId || null, bankaHesapId: girdi.bankaHesapId || null, tip: "tediye", tutar: mevcut.toplam, dovizCinsi: mevcut.dovizCinsi, kur: D(1), tutarTry: mevcut.toplam, tarih: girdi.odemeTarihi, aciklama: `${mevcut.saticiUnvan ?? mevcut.cari?.unvan ?? "Masraf"} ödemesi`, cariId: mevcut.cariId, kaynakTur: "masraf", kaynakRef: mevcut.id } });
-      if (mevcut.cariId) await tx.cariHareket.create({ data: { tenantId, cariId: mevcut.cariId, tip: "borc", tutar: mevcut.toplam, dovizCinsi: mevcut.dovizCinsi, kur: D(1), tutarTry: mevcut.toplam, tarih: girdi.odemeTarihi, aciklama: "Masraf ödemesi", kaynakTur: "masraf", kaynakRef: mevcut.id } });
-      return tx.masraf.update({ where: { id }, data: { odemeDurumu: "odendi", odemeTarihi: girdi.odemeTarihi, kasaId: girdi.kasaId || null, bankaHesapId: girdi.bankaHesapId || null, hareketId: hareket.id } });
+      const netTutar = mevcut.toplam.sub(mevcut.stopajTutari ?? D(0));
+      const kalanTutar = netTutar.sub(mevcut.odenenTutar);
+      const odenecekTutar = D(girdi.tutar);
+      if (kalanTutar.lte(0)) throw new BadRequestException("Masrafın kalan ödemesi bulunmuyor");
+      if (odenecekTutar.gt(kalanTutar)) throw new BadRequestException(`Ödeme tutarı kalan ${kalanTutar.toFixed(2)} ${mevcut.dovizCinsi} tutarını aşamaz`);
+      const aciklama = girdi.aciklama || `${mevcut.saticiUnvan ?? mevcut.cari?.unvan ?? "Masraf"} ödemesi`;
+      const hareket = await tx.kasaBankaHareket.create({ data: { tenantId, kasaId: girdi.kasaId || null, bankaHesapId: girdi.bankaHesapId || null, tip: "tediye", tutar: odenecekTutar, dovizCinsi: mevcut.dovizCinsi, kur: D(1), tutarTry: odenecekTutar, tarih: girdi.odemeTarihi, aciklama, cariId: mevcut.cariId, kaynakTur: "masraf", kaynakRef: mevcut.id } });
+      if (mevcut.cariId) await tx.cariHareket.create({ data: { tenantId, cariId: mevcut.cariId, tip: "borc", tutar: odenecekTutar, dovizCinsi: mevcut.dovizCinsi, kur: D(1), tutarTry: odenecekTutar, tarih: girdi.odemeTarihi, aciklama: "Masraf ödemesi", kaynakTur: "masraf", kaynakRef: mevcut.id } });
+      await tx.masrafOdeme.create({ data: { tenantId, masrafId: mevcut.id, kasaId: girdi.kasaId || null, bankaHesapId: girdi.bankaHesapId || null, hareketId: hareket.id, tutar: odenecekTutar, odemeTarihi: girdi.odemeTarihi, aciklama: girdi.aciklama || null } });
+      const yeniOdenen = mevcut.odenenTutar.add(odenecekTutar);
+      const tamamenOdendi = yeniOdenen.gte(netTutar);
+      return tx.masraf.update({ where: { id }, data: { odenenTutar: yeniOdenen, odemeDurumu: tamamenOdendi ? "odendi" : "kismi_odendi", odemeTarihi: girdi.odemeTarihi, kasaId: girdi.kasaId || null, bankaHesapId: girdi.bankaHesapId || null, ...(mevcut.hareketId ? {} : { hareketId: hareket.id }) }, include: { odemeler: true } });
     });
   }
 
   async iptal(id: string) {
     const mevcut = await this.getir(id);
-    if (mevcut.odemeDurumu === "odendi") throw new BadRequestException("Ödenmiş masraf iptal edilemez");
+    if (mevcut.odemeDurumu !== "odenmedi") throw new BadRequestException("Ödeme alınmış masraf iptal edilemez");
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, (tx) => tx.masraf.update({ where: { id }, data: { durum: "iptal" } }));
   }
 
   async kiraSozlesmeListele() {
     const { tenantId } = aktifBaglam();
-    return this.prisma.tenantIslem(tenantId, (tx) => tx.kiraSozlesme.findMany({ include: { kategori: true, cari: { select: { id: true, unvan: true } }, _count: { select: { masraflar: true } } }, orderBy: [{ aktif: "desc" }, { baslik: "asc" }] }));
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.kiraSozlesme.findMany({ include: { kategori: true, cari: { select: { id: true, unvan: true } }, masraflar: { select: { id: true, kiraDonemi: true, durum: true, odemeDurumu: true, toplam: true, stopajTutari: true, odenenTutar: true }, orderBy: { kiraDonemi: "desc" } }, _count: { select: { masraflar: true } } }, orderBy: [{ aktif: "desc" }, { baslik: "asc" }] }));
   }
 
   async kiraSozlesmeOlustur(girdi: z.infer<typeof kiraSozlesmeOlusturSemasi>) {
@@ -142,6 +151,27 @@ export class MasraflarService {
       if (!(await tx.masrafKategori.findUnique({ where: { id: girdi.kategoriId } }))) throw new BadRequestException("Masraf kategorisi bulunamadı");
       if (girdi.cariId && !(await tx.cariHesap.findUnique({ where: { id: girdi.cariId } }))) throw new BadRequestException("Cari hesap bulunamadı");
       return tx.kiraSozlesme.create({ data: { tenantId, ...girdi, cariId: girdi.cariId || null, tasinmazAdresi: girdi.tasinmazAdresi || null, kirayaVeren: girdi.kirayaVeren || null, vknTckn: girdi.vknTckn || null, iban: girdi.iban || null, matrah: D(girdi.matrah), kdvOrani: D(girdi.kdvOrani), stopajOrani: D(girdi.stopajOrani) } });
+    });
+  }
+
+  async kiraSozlesmeGuncelle(id: string, girdi: z.infer<typeof kiraSozlesmeGuncelleSemasi>) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      if (!(await tx.kiraSozlesme.findUnique({ where: { id } }))) throw new NotFoundException("Kira sözleşmesi bulunamadı");
+      if (!(await tx.masrafKategori.findUnique({ where: { id: girdi.kategoriId } }))) throw new BadRequestException("Masraf kategorisi bulunamadı");
+      if (girdi.cariId && !(await tx.cariHesap.findUnique({ where: { id: girdi.cariId } }))) throw new BadRequestException("Cari hesap bulunamadı");
+      return tx.kiraSozlesme.update({ where: { id }, data: { ...girdi, cariId: girdi.cariId || null, tasinmazAdresi: girdi.tasinmazAdresi || null, kirayaVeren: girdi.kirayaVeren || null, vknTckn: girdi.vknTckn || null, iban: girdi.iban || null, matrah: D(girdi.matrah), kdvOrani: D(girdi.kdvOrani), stopajOrani: D(girdi.stopajOrani) } });
+    });
+  }
+
+  async kiraSozlesmeSil(id: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kayit = await tx.kiraSozlesme.findUnique({ where: { id }, include: { _count: { select: { masraflar: true } } } });
+      if (!kayit) throw new NotFoundException("Kira sözleşmesi bulunamadı");
+      if (kayit._count.masraflar > 0) throw new BadRequestException("Dönem kaydı bulunan sözleşme silinemez; pasife alabilirsiniz");
+      if (await tx.ek.count({ where: { sahipTur: "kira_sozlesme", sahipId: id } })) throw new BadRequestException("Sözleşmeyi silmeden önce bağlı dosyaları kaldırın");
+      return tx.kiraSozlesme.delete({ where: { id } });
     });
   }
 

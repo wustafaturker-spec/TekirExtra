@@ -62,6 +62,8 @@ enum PosTahsilatDurumu {
   baslatildi
   odendi
   basarisiz
+  iptal
+  suresi_doldu
 }
 
 model Tenant {
@@ -72,26 +74,28 @@ model Tenant {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  users                User[]
-  modulAyarlari        ModulAyar[]
-  baglantilar          Baglanti[]
-  auditLoglar          AuditLog[]
-  abonelik             TenantAbonelik?
+  users                  User[]
+  modulAyarlari          ModulAyar[]
+  baglantilar            Baglanti[]
+  auditLoglar            AuditLog[]
+  abonelik               TenantAbonelik?
   abonelikDegisiklikleri AbonelikDegisikligi[]
-  pazaryeriSiparisleri PazaryeriSiparis[]
-  posTahsilatlari      PosTahsilat[]
-  pazaryeriKesintileri PazaryeriKesinti[]
-  bankaHesapEslemeleri BankaBaglantiHesap[]
-  bankaOdemeTalimatlari BankaOdemeTalimati[]
-  masrafKategorileri    MasrafKategori[]
-  masraflar             Masraf[]
-  kiraSozlesmeleri      KiraSozlesme[]
-  epostaGonderimleri    EpostaGonderim[]
-  eirsaliyeKayitlari    EirsaliyeKayit[]
-  gelenEirsaliyeler     GelenEirsaliye[]
-  dovizKurlari          DovizKuru[]
-  krediKartlari         KrediKarti[]
-  krediKartiHareketleri KrediKartiHareket[]
+  pazaryeriSiparisleri   PazaryeriSiparis[]
+  posTahsilatlari        PosTahsilat[]
+  pazaryeriKesintileri   PazaryeriKesinti[]
+  bankaHesapEslemeleri   BankaBaglantiHesap[]
+  bankaOdemeTalimatlari  BankaOdemeTalimati[]
+  masrafKategorileri     MasrafKategori[]
+  masraflar              Masraf[]
+  masrafOdemeleri        MasrafOdeme[]
+  kiraSozlesmeleri       KiraSozlesme[]
+  epostaGonderimleri     EpostaGonderim[]
+  eirsaliyeKayitlari     EirsaliyeKayit[]
+  gelenEirsaliyeler      GelenEirsaliye[]
+  dovizKurlari           DovizKuru[]
+  krediKartlari          KrediKarti[]
+  krediKartiHareketleri  KrediKartiHareket[]
+  krediKartiTaksitleri   KrediKartiTaksit[]
 
   @@map("tenants")
 }
@@ -121,14 +125,14 @@ model TenantAbonelik {
 }
 
 model AbonelikDegisikligi {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @map("tenant_id") @db.Uuid
-  oncekiPlan  String?  @map("onceki_plan")
-  yeniPlan    String   @map("yeni_plan")
+  id          String          @id @default(uuid()) @db.Uuid
+  tenantId    String          @map("tenant_id") @db.Uuid
+  oncekiPlan  String?         @map("onceki_plan")
+  yeniPlan    String          @map("yeni_plan")
   oncekiDurum AbonelikDurumu? @map("onceki_durum")
-  yeniDurum   AbonelikDurumu @map("yeni_durum")
+  yeniDurum   AbonelikDurumu  @map("yeni_durum")
   neden       String?
-  createdAt   DateTime @default(now()) @map("created_at")
+  createdAt   DateTime        @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -152,10 +156,10 @@ model User {
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
-  tenant          Tenant         @relation(fields: [tenantId], references: [id])
-  temsilciCariler CariHesap[]    @relation("CariTemsilci")
-  crmGorevleri    CrmGorev[]     @relation("CrmGorevAtanan")
-  crmKayitlari    CrmEtkilesim[]
+  tenant                      Tenant               @relation(fields: [tenantId], references: [id])
+  temsilciCariler             CariHesap[]          @relation("CariTemsilci")
+  crmGorevleri                CrmGorev[]           @relation("CrmGorevAtanan")
+  crmKayitlari                CrmEtkilesim[]
   olusturduguOdemeTalimatlari BankaOdemeTalimati[] @relation("TalimatOlusturan")
   onayladigiOdemeTalimatlari  BankaOdemeTalimati[] @relation("TalimatOnaylayan")
 
@@ -224,25 +228,25 @@ model PazaryeriSiparisSatiri {
 }
 
 model PazaryeriKesinti {
-  id          String                    @id @default(uuid()) @db.Uuid
-  tenantId    String                    @map("tenant_id") @db.Uuid
-  baglantiId  String                    @map("baglanti_id") @db.Uuid
-  hariciId    String                    @map("harici_id")
-  siparisNo   String?                   @map("siparis_no")
-  tur         String
-  aciklama    String?
-  tarih       DateTime                  @db.Date
-  tutar       Decimal                   @db.Decimal(15, 2)
-  dovizCinsi  DovizCinsi                @default(TRY) @map("doviz_cinsi")
-  durum       PazaryeriKesintiDurumu    @default(bekliyor)
-  hareketId   String?                   @unique @map("hareket_id") @db.Uuid
-  hamVeri     Json?                     @map("ham_veri")
-  createdAt   DateTime                  @default(now()) @map("created_at")
-  updatedAt   DateTime                  @updatedAt @map("updated_at")
+  id         String                 @id @default(uuid()) @db.Uuid
+  tenantId   String                 @map("tenant_id") @db.Uuid
+  baglantiId String                 @map("baglanti_id") @db.Uuid
+  hariciId   String                 @map("harici_id")
+  siparisNo  String?                @map("siparis_no")
+  tur        String
+  aciklama   String?
+  tarih      DateTime               @db.Date
+  tutar      Decimal                @db.Decimal(15, 2)
+  dovizCinsi DovizCinsi             @default(TRY) @map("doviz_cinsi")
+  durum      PazaryeriKesintiDurumu @default(bekliyor)
+  hareketId  String?                @unique @map("hareket_id") @db.Uuid
+  hamVeri    Json?                  @map("ham_veri")
+  createdAt  DateTime               @default(now()) @map("created_at")
+  updatedAt  DateTime               @updatedAt @map("updated_at")
 
-  tenant      Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  baglanti    Baglanti                  @relation(fields: [baglantiId], references: [id], onDelete: Cascade)
-  hareket     KasaBankaHareket?         @relation(fields: [hareketId], references: [id])
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  baglanti Baglanti          @relation(fields: [baglantiId], references: [id], onDelete: Cascade)
+  hareket  KasaBankaHareket? @relation(fields: [hareketId], references: [id])
 
   @@unique([tenantId, baglantiId, hariciId])
   @@index([tenantId, durum, tarih])
@@ -291,15 +295,15 @@ model EpostaDogrulama {
 }
 
 model EpostaGonderim {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @map("tenant_id") @db.Uuid
-  alici       String
-  konu        String
-  tur         String   @default("genel")
-  durum       String
-  ekSayisi    Int      @default(0) @map("ek_sayisi")
-  hataMesaji  String?  @map("hata_mesaji")
-  createdAt   DateTime @default(now()) @map("created_at")
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  alici      String
+  konu       String
+  tur        String   @default("genel")
+  durum      String
+  ekSayisi   Int      @default(0) @map("ek_sayisi")
+  hataMesaji String?  @map("hata_mesaji")
+  createdAt  DateTime @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -325,21 +329,21 @@ model ModulAyar {
 /// Dış bağlantılar: e-belge/pazaryeri/POS/banka (ENT-01, MIMARI §5).
 /// sifreliConfig: AES-256-GCM ile şifrelenmiş erişim bilgileri (EBLG-01b).
 model Baglanti {
-  id               String         @id @default(uuid()) @db.Uuid
-  tenantId         String         @map("tenant_id") @db.Uuid
-  aile             BaglantiAile
-  saglayici        String
-  sifreliConfig    String         @map("sifreli_config")
-  durum            BaglantiDurumu @default(pasif)
-  senkronImleci    String?        @map("senkron_imleci")
-  kesintiSenkronImleci String?    @map("kesinti_senkron_imleci")
-  sonSenkronTarihi DateTime?      @map("son_senkron_tarihi")
-  sonSenkronHatasi String?        @map("son_senkron_hatasi")
-  createdAt        DateTime       @default(now()) @map("created_at")
-  updatedAt        DateTime       @updatedAt @map("updated_at")
+  id                   String         @id @default(uuid()) @db.Uuid
+  tenantId             String         @map("tenant_id") @db.Uuid
+  aile                 BaglantiAile
+  saglayici            String
+  sifreliConfig        String         @map("sifreli_config")
+  durum                BaglantiDurumu @default(pasif)
+  senkronImleci        String?        @map("senkron_imleci")
+  kesintiSenkronImleci String?        @map("kesinti_senkron_imleci")
+  sonSenkronTarihi     DateTime?      @map("son_senkron_tarihi")
+  sonSenkronHatasi     String?        @map("son_senkron_hatasi")
+  createdAt            DateTime       @default(now()) @map("created_at")
+  updatedAt            DateTime       @updatedAt @map("updated_at")
 
-  tenant             Tenant             @relation(fields: [tenantId], references: [id])
-  pazaryeriSiparises PazaryeriSiparis[]
+  tenant               Tenant               @relation(fields: [tenantId], references: [id])
+  pazaryeriSiparises   PazaryeriSiparis[]
   pazaryeriKesintileri PazaryeriKesinti[]
   posHesaplari         PosHesap[]
   bankaHesapEslemeleri BankaBaglantiHesap[]
@@ -408,15 +412,15 @@ enum DovizCinsi {
 
 /// TCMB EVDS'den alınan gösterge kurları tenant bazında önbelleğe alınır.
 model DovizKuru {
-  id          String     @id @default(uuid()) @db.Uuid
-  tenantId    String     @map("tenant_id") @db.Uuid
-  tarih       DateTime   @db.Date
-  dovizCinsi  DovizCinsi @map("doviz_cinsi")
-  dovizAlis   Decimal    @map("doviz_alis") @db.Decimal(15, 6)
-  dovizSatis  Decimal    @map("doviz_satis") @db.Decimal(15, 6)
-  kaynak      String     @default("TCMB_EVDS")
-  alindiAt    DateTime   @default(now()) @map("alindi_at")
-  tenant      Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id         String     @id @default(uuid()) @db.Uuid
+  tenantId   String     @map("tenant_id") @db.Uuid
+  tarih      DateTime   @db.Date
+  dovizCinsi DovizCinsi @map("doviz_cinsi")
+  dovizAlis  Decimal    @map("doviz_alis") @db.Decimal(15, 6)
+  dovizSatis Decimal    @map("doviz_satis") @db.Decimal(15, 6)
+  kaynak     String     @default("TCMB_EVDS")
+  alindiAt   DateTime   @default(now()) @map("alindi_at")
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, tarih, dovizCinsi])
   @@index([tenantId, dovizCinsi, tarih])
@@ -509,26 +513,27 @@ model CariHesap {
   createdAt               DateTime   @default(now()) @map("created_at")
   updatedAt               DateTime   @updatedAt @map("updated_at")
 
-  fiyatListesi         FiyatListesi?      @relation(fields: [fiyatListesiId], references: [id])
-  temsilci             User?              @relation("CariTemsilci", fields: [temsilciUserId], references: [id])
-  adresler             CariAdres[]
-  kisiler              CariKisi[]
-  bankaHesaplari       CariBankaHesap[]
-  etiketler            CariEtiketAtama[]
-  hareketler           CariHareket[]
-  crmEtkilesimleri     CrmEtkilesim[]
-  crmGorevleri         CrmGorev[]
-  faturas              Fatura[]
-  cekSenetleri         CekSenet[]         @relation("CekSenetCari")
-  ceklerCiro           CekSenet[]         @relation("CekSenetCiro")
-  kasaBankaHareketleri KasaBankaHareket[]
-  stokTedarikcilikleri StokTedarikci[]
-  belgeler             Belge[]
-  ekstreSatirlari      BankaEkstreSatir[]
-  pazaryeriSiparisleri PazaryeriSiparis[]
-  posTahsilatlari      PosTahsilat[]
-  masraflar            Masraf[]
-  kiraSozlesmeleri     KiraSozlesme[]
+  fiyatListesi          FiyatListesi?       @relation(fields: [fiyatListesiId], references: [id])
+  temsilci              User?               @relation("CariTemsilci", fields: [temsilciUserId], references: [id])
+  adresler              CariAdres[]
+  kisiler               CariKisi[]
+  bankaHesaplari        CariBankaHesap[]
+  etiketler             CariEtiketAtama[]
+  hareketler            CariHareket[]
+  crmEtkilesimleri      CrmEtkilesim[]
+  crmGorevleri          CrmGorev[]
+  faturas               Fatura[]
+  cekSenetleri          CekSenet[]          @relation("CekSenetCari")
+  ceklerCiro            CekSenet[]          @relation("CekSenetCiro")
+  kasaBankaHareketleri  KasaBankaHareket[]
+  stokTedarikcilikleri  StokTedarikci[]
+  belgeler              Belge[]
+  ekstreSatirlari       BankaEkstreSatir[]
+  pazaryeriSiparisleri  PazaryeriSiparis[]
+  posTahsilatlari       PosTahsilat[]
+  krediKartiHareketleri KrediKartiHareket[]
+  masraflar             Masraf[]
+  kiraSozlesmeleri      KiraSozlesme[]
 
   @@unique([tenantId, kod])
   @@index([tenantId, unvan])
@@ -765,10 +770,10 @@ model StokKart {
   varyantlar         StokVaryant[]
   partiler           StokParti[]
   pazaryeriSatirlari PazaryeriSiparisSatiri[]
-  urunRecetesi       UrunRecetesi?             @relation("MamulRecetesi")
-  receteMalzemeleri  UrunRecetesiKalem[]       @relation("ReceteMalzemesi")
-  uretimEmirleri     UretimEmri[]              @relation("UretilecekStok")
-  uretimMalzemeleri  UretimEmriKalem[]         @relation("UretimMalzemesi")
+  urunRecetesi       UrunRecetesi?            @relation("MamulRecetesi")
+  receteMalzemeleri  UrunRecetesiKalem[]      @relation("ReceteMalzemesi")
+  uretimEmirleri     UretimEmri[]             @relation("UretilecekStok")
+  uretimMalzemeleri  UretimEmriKalem[]        @relation("UretimMalzemesi")
 
   @@unique([tenantId, kod])
   @@index([tenantId, ad])
@@ -787,6 +792,7 @@ model StokFiyat {
   createdAt  DateTime   @default(now()) @map("created_at")
   updatedAt  DateTime   @updatedAt @map("updated_at")
   stok       StokKart   @relation(fields: [stokId], references: [id], onDelete: Cascade)
+
   /// Bir ürün/varyant ve fiyat tipi için yalnızca tek para birimli fiyat vardır.
   @@unique([tenantId, stokId, varyantId, tip])
   @@index([tenantId, stokId, tip])
@@ -869,8 +875,8 @@ model StokVaryant {
   partiler           StokParti[]
   transferKalemleri  DepoTransferKalem[]
   pazaryeriSatirlari PazaryeriSiparisSatiri[]
-  receteMalzemeleri UrunRecetesiKalem[]
-  uretimMalzemeleri UretimEmriKalem[]
+  receteMalzemeleri  UrunRecetesiKalem[]
+  uretimMalzemeleri  UretimEmriKalem[]
 
   @@unique([tenantId, kod])
   @@unique([tenantId, barkod])
@@ -1130,23 +1136,23 @@ model UrunRecetesiKalem {
 }
 
 model UretimEmri {
-  id              String            @id @default(uuid()) @db.Uuid
-  tenantId        String            @map("tenant_id") @db.Uuid
-  no              String
-  stokId          String            @map("stok_id") @db.Uuid
-  hedefDepoId     String            @map("hedef_depo_id") @db.Uuid
-  planlananMiktar Decimal           @map("planlanan_miktar") @db.Decimal(15, 3)
-  uretilenMiktar  Decimal           @default(0) @map("uretilen_miktar") @db.Decimal(15, 3)
-  toplamMaliyet   Decimal           @default(0) @map("toplam_maliyet") @db.Decimal(15, 4)
-  tarih           DateTime          @db.Date
-  aciklama        String?
-  durum           UretimEmriDurum   @default(taslak)
-  tamamlanmaTarihi DateTime?        @map("tamamlanma_tarihi")
-  createdAt       DateTime          @default(now()) @map("created_at")
-  updatedAt       DateTime          @updatedAt @map("updated_at")
+  id               String          @id @default(uuid()) @db.Uuid
+  tenantId         String          @map("tenant_id") @db.Uuid
+  no               String
+  stokId           String          @map("stok_id") @db.Uuid
+  hedefDepoId      String          @map("hedef_depo_id") @db.Uuid
+  planlananMiktar  Decimal         @map("planlanan_miktar") @db.Decimal(15, 3)
+  uretilenMiktar   Decimal         @default(0) @map("uretilen_miktar") @db.Decimal(15, 3)
+  toplamMaliyet    Decimal         @default(0) @map("toplam_maliyet") @db.Decimal(15, 4)
+  tarih            DateTime        @db.Date
+  aciklama         String?
+  durum            UretimEmriDurum @default(taslak)
+  tamamlanmaTarihi DateTime?       @map("tamamlanma_tarihi")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
 
   stok      StokKart          @relation("UretilecekStok", fields: [stokId], references: [id])
-  hedefDepo Depo               @relation(fields: [hedefDepoId], references: [id])
+  hedefDepo Depo              @relation(fields: [hedefDepoId], references: [id])
   kalemler  UretimEmriKalem[]
 
   @@unique([tenantId, no])
@@ -1164,8 +1170,8 @@ model UretimEmriKalem {
   sarfEdilenMiktar Decimal @default(0) @map("sarf_edilen_miktar") @db.Decimal(15, 3)
   birimMaliyet     Decimal @default(0) @map("birim_maliyet") @db.Decimal(15, 4)
 
-  uretimEmri     UretimEmri  @relation(fields: [uretimEmriId], references: [id], onDelete: Cascade)
-  malzeme        StokKart    @relation("UretimMalzemesi", fields: [malzemeStokId], references: [id])
+  uretimEmri     UretimEmri   @relation(fields: [uretimEmriId], references: [id], onDelete: Cascade)
+  malzeme        StokKart     @relation("UretimMalzemesi", fields: [malzemeStokId], references: [id])
   malzemeVaryant StokVaryant? @relation(fields: [malzemeVaryantId], references: [id])
 
   @@index([tenantId, uretimEmriId])
@@ -1278,20 +1284,21 @@ model Fatura {
   createdAt            DateTime    @default(now()) @map("created_at")
   updatedAt            DateTime    @updatedAt @map("updated_at")
 
-  cari                 CariHesap           @relation(fields: [cariId], references: [id])
-  depo                 Depo?               @relation(fields: [depoId], references: [id])
-  satirlar             FaturaSatir[]
-  ebelge               EbelgeKayit?
-  gelenEbelge          GelenEbelge?
-  kasaBankaHarekets    KasaBankaHareket[]
-  zincirBelgeleri      Belge[]
-  ekstreSatirlari      BankaEkstreSatir[]
-  tekrarlayanSablon    TekrarlayanFatura[] @relation("TekrarlayanFaturaSablon")
-  tekrarlayanPlan      TekrarlayanFatura?  @relation("TekrarlayanFaturaUretim", fields: [tekrarlayanPlanId], references: [id])
-  tekrarlayanPlanId    String?             @map("tekrarlayan_plan_id") @db.Uuid
-  planlananTarih       DateTime?           @map("planlanan_tarih") @db.Date
-  pazaryeriSiparisleri PazaryeriSiparis[]
-  posTahsilatlari      PosTahsilat[]
+  cari                  CariHesap           @relation(fields: [cariId], references: [id])
+  depo                  Depo?               @relation(fields: [depoId], references: [id])
+  satirlar              FaturaSatir[]
+  ebelge                EbelgeKayit?
+  gelenEbelge           GelenEbelge?
+  kasaBankaHarekets     KasaBankaHareket[]
+  zincirBelgeleri       Belge[]
+  ekstreSatirlari       BankaEkstreSatir[]
+  tekrarlayanSablon     TekrarlayanFatura[] @relation("TekrarlayanFaturaSablon")
+  tekrarlayanPlan       TekrarlayanFatura?  @relation("TekrarlayanFaturaUretim", fields: [tekrarlayanPlanId], references: [id])
+  tekrarlayanPlanId     String?             @map("tekrarlayan_plan_id") @db.Uuid
+  planlananTarih        DateTime?           @map("planlanan_tarih") @db.Date
+  pazaryeriSiparisleri  PazaryeriSiparis[]
+  posTahsilatlari       PosTahsilat[]
+  krediKartiHareketleri KrediKartiHareket[]
 
   @@unique([tenantId, seri, sira])
   @@unique([tekrarlayanPlanId, planlananTarih])
@@ -1461,6 +1468,8 @@ enum CekSenetYon {
 /// VERİLEN yönünde kullanılır; karsiliksiz ve iade_edildi ortaktır.
 enum CekSenetDurum {
   portfoyde
+  tahsile_verildi
+  teminata_verildi
   ciro_edildi
   tahsil_edildi
   karsiliksiz
@@ -1478,8 +1487,9 @@ model Kasa {
   createdAt  DateTime   @default(now()) @map("created_at")
   updatedAt  DateTime   @updatedAt @map("updated_at")
 
-  hareketler KasaBankaHareket[]
-  masraflar  Masraf[]
+  hareketler      KasaBankaHareket[]
+  masraflar       Masraf[]
+  masrafOdemeleri MasrafOdeme[]
 
   @@unique([tenantId, ad])
   @@map("kasalar")
@@ -1501,14 +1511,15 @@ model BankaHesap {
   createdAt      DateTime   @default(now()) @map("created_at")
   updatedAt      DateTime   @updatedAt @map("updated_at")
 
-  hareketler      KasaBankaHareket[]
-  ekstreler       BankaEkstre[]
-  ekstreSatirlari BankaEkstreSatir[]
-  posHesaplari    PosHesap[]          @relation("PosVarsayilanBanka")
+  hareketler         KasaBankaHareket[]
+  ekstreler          BankaEkstre[]
+  ekstreSatirlari    BankaEkstreSatir[]
+  posHesaplari       PosHesap[]           @relation("PosVarsayilanBanka")
   baglantiEslemeleri BankaBaglantiHesap[]
-  odemeTalimatlari BankaOdemeTalimati[]
-  masraflar        Masraf[]
-  krediKartlari    KrediKarti[]
+  odemeTalimatlari   BankaOdemeTalimati[]
+  masraflar          Masraf[]
+  masrafOdemeleri    MasrafOdeme[]
+  krediKartlari      KrediKarti[]
 
   @@unique([tenantId, ad])
   @@map("banka_hesaplari")
@@ -1523,44 +1534,75 @@ enum KrediKartiHareketTipi {
 }
 
 model KrediKarti {
-  id String @id @default(uuid()) @db.Uuid
-  tenantId String @map("tenant_id") @db.Uuid
-  ad String
-  bankaAdi String @map("banka_adi")
-  sonDortHane String @map("son_dort_hane")
-  kartSahibi String? @map("kart_sahibi")
-  limit Decimal @db.Decimal(15, 2)
-  dovizCinsi DovizCinsi @default(TRY) @map("doviz_cinsi")
-  hesapKesimGunu Int @map("hesap_kesim_gunu")
-  sonOdemeGunu Int @map("son_odeme_gunu")
-  bagliBankaHesapId String? @map("bagli_banka_hesap_id") @db.Uuid
-  renk String @default("lacivert")
-  aktif Boolean @default(true)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  bagliBankaHesap BankaHesap? @relation(fields: [bagliBankaHesapId], references: [id])
-  hareketler KrediKartiHareket[]
+  id                String              @id @default(uuid()) @db.Uuid
+  tenantId          String              @map("tenant_id") @db.Uuid
+  ad                String
+  bankaAdi          String              @map("banka_adi")
+  sonDortHane       String              @map("son_dort_hane")
+  kartSahibi        String?             @map("kart_sahibi")
+  limit             Decimal             @db.Decimal(15, 2)
+  dovizCinsi        DovizCinsi          @default(TRY) @map("doviz_cinsi")
+  hesapKesimGunu    Int                 @map("hesap_kesim_gunu")
+  sonOdemeGunu      Int                 @map("son_odeme_gunu")
+  bagliBankaHesapId String?             @map("bagli_banka_hesap_id") @db.Uuid
+  renk              String              @default("lacivert")
+  aktif             Boolean             @default(true)
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bagliBankaHesap   BankaHesap?         @relation(fields: [bagliBankaHesapId], references: [id])
+  hareketler        KrediKartiHareket[]
+
   @@unique([tenantId, ad])
   @@index([tenantId, aktif])
   @@map("kredi_kartlari")
 }
 
 model KrediKartiHareket {
-  id String @id @default(uuid()) @db.Uuid
-  tenantId String @map("tenant_id") @db.Uuid
-  krediKartiId String @map("kredi_karti_id") @db.Uuid
-  tip KrediKartiHareketTipi
-  tarih DateTime @db.Date
-  aciklama String
-  tutar Decimal @db.Decimal(15, 2)
-  taksitSayisi Int @default(1) @map("taksit_sayisi")
-  belgeNo String? @map("belge_no")
-  createdAt DateTime @default(now()) @map("created_at")
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  krediKarti KrediKarti @relation(fields: [krediKartiId], references: [id], onDelete: Cascade)
+  id              String                @id @default(uuid()) @db.Uuid
+  tenantId        String                @map("tenant_id") @db.Uuid
+  krediKartiId    String                @map("kredi_karti_id") @db.Uuid
+  tip             KrediKartiHareketTipi
+  tarih           DateTime              @db.Date
+  aciklama        String
+  tutar           Decimal               @db.Decimal(15, 2)
+  /// Karttan çekilen toplamın cari borca uygulanan bölümü.
+  cariOdemeTutari Decimal?              @map("cari_odeme_tutari") @db.Decimal(15, 2)
+  komisyonTutari  Decimal               @default(0) @map("komisyon_tutari") @db.Decimal(15, 2)
+  taksitSayisi    Int                   @default(1) @map("taksit_sayisi")
+  ilkTaksitTarihi DateTime?             @map("ilk_taksit_tarihi") @db.Date
+  belgeNo         String?               @map("belge_no")
+  cariId          String?               @map("cari_id") @db.Uuid
+  faturaId        String?               @map("fatura_id") @db.Uuid
+  bankaHareketId  String?               @unique @map("banka_hareket_id") @db.Uuid
+  createdAt       DateTime              @default(now()) @map("created_at")
+  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  krediKarti      KrediKarti            @relation(fields: [krediKartiId], references: [id], onDelete: Cascade)
+  cari            CariHesap?            @relation(fields: [cariId], references: [id])
+  fatura          Fatura?               @relation(fields: [faturaId], references: [id])
+  bankaHareket    KasaBankaHareket?     @relation(fields: [bankaHareketId], references: [id])
+  taksitler       KrediKartiTaksit[]
+
   @@index([tenantId, krediKartiId, tarih])
+  @@index([tenantId, cariId])
+  @@index([tenantId, faturaId])
   @@map("kredi_karti_hareketleri")
+}
+
+model KrediKartiTaksit {
+  id         String            @id @default(uuid()) @db.Uuid
+  tenantId   String            @map("tenant_id") @db.Uuid
+  hareketId  String            @map("hareket_id") @db.Uuid
+  sira       Int
+  vadeTarihi DateTime          @map("vade_tarihi") @db.Date
+  tutar      Decimal           @db.Decimal(15, 2)
+  createdAt  DateTime          @default(now()) @map("created_at")
+  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  hareket    KrediKartiHareket @relation(fields: [hareketId], references: [id], onDelete: Cascade)
+
+  @@unique([hareketId, sira])
+  @@index([tenantId, vadeTarihi])
+  @@map("kredi_karti_taksitleri")
 }
 
 enum BankaOdemeTalimatDurumu {
@@ -1599,19 +1641,19 @@ model BankaOdemeTalimati {
 }
 
 model BankaBaglantiHesap {
-  id             String   @id @default(uuid()) @db.Uuid
-  tenantId       String   @map("tenant_id") @db.Uuid
-  baglantiId     String   @map("baglanti_id") @db.Uuid
-  bankaHesapId   String   @map("banka_hesap_id") @db.Uuid
-  disHesapId     String   @map("dis_hesap_id")
-  sonHareketId   String?  @map("son_hareket_id")
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  baglantiId       String    @map("baglanti_id") @db.Uuid
+  bankaHesapId     String    @map("banka_hesap_id") @db.Uuid
+  disHesapId       String    @map("dis_hesap_id")
+  sonHareketId     String?   @map("son_hareket_id")
   sonSenkronTarihi DateTime? @map("son_senkron_tarihi")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  baglanti    Baglanti    @relation(fields: [baglantiId], references: [id], onDelete: Cascade)
-  bankaHesap  BankaHesap @relation(fields: [bankaHesapId], references: [id], onDelete: Cascade)
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  baglanti   Baglanti   @relation(fields: [baglantiId], references: [id], onDelete: Cascade)
+  bankaHesap BankaHesap @relation(fields: [bankaHesapId], references: [id], onDelete: Cascade)
 
   @@unique([baglantiId, disHesapId])
   @@unique([baglantiId, bankaHesapId])
@@ -1620,21 +1662,21 @@ model BankaBaglantiHesap {
 }
 
 model PosHesap {
-  id             String     @id @default(uuid()) @db.Uuid
-  tenantId       String     @map("tenant_id") @db.Uuid
-  ad             String
-  saglayici      String
-  baglantiId     String?    @map("baglanti_id") @db.Uuid
-  varsayilanBankaHesapId String? @map("varsayilan_banka_hesap_id") @db.Uuid
-  dovizCinsi     DovizCinsi @default(TRY) @map("doviz_cinsi")
-  aktif          Boolean    @default(true)
-  createdAt      DateTime   @default(now()) @map("created_at")
-  updatedAt      DateTime   @updatedAt @map("updated_at")
+  id                     String     @id @default(uuid()) @db.Uuid
+  tenantId               String     @map("tenant_id") @db.Uuid
+  ad                     String
+  saglayici              String
+  baglantiId             String?    @map("baglanti_id") @db.Uuid
+  varsayilanBankaHesapId String?    @map("varsayilan_banka_hesap_id") @db.Uuid
+  dovizCinsi             DovizCinsi @default(TRY) @map("doviz_cinsi")
+  aktif                  Boolean    @default(true)
+  createdAt              DateTime   @default(now()) @map("created_at")
+  updatedAt              DateTime   @updatedAt @map("updated_at")
 
-  baglanti       Baglanti?  @relation(fields: [baglantiId], references: [id])
-  varsayilanBankaHesap BankaHesap? @relation("PosVarsayilanBanka", fields: [varsayilanBankaHesapId], references: [id])
-  hareketler     KasaBankaHareket[]
-  tahsilatlar    PosTahsilat[]
+  baglanti             Baglanti?          @relation(fields: [baglantiId], references: [id])
+  varsayilanBankaHesap BankaHesap?        @relation("PosVarsayilanBanka", fields: [varsayilanBankaHesapId], references: [id])
+  hareketler           KasaBankaHareket[]
+  tahsilatlar          PosTahsilat[]
 
   @@unique([tenantId, ad])
   @@index([tenantId, aktif])
@@ -1642,26 +1684,30 @@ model PosHesap {
 }
 
 model PosTahsilat {
-  id                String            @id @default(uuid()) @db.Uuid
-  tenantId          String            @map("tenant_id") @db.Uuid
-  posHesapId        String            @map("pos_hesap_id") @db.Uuid
-  cariId            String            @map("cari_id") @db.Uuid
-  faturaId          String?           @map("fatura_id") @db.Uuid
-  tutar             Decimal           @db.Decimal(15, 2)
-  dovizCinsi        DovizCinsi        @default(TRY) @map("doviz_cinsi")
-  durum             PosTahsilatDurumu @default(baslatildi)
-  saglayiciToken    String?           @unique @map("saglayici_token")
-  saglayiciOdemeId  String?           @map("saglayici_odeme_id")
-  odemeSayfasiUrl   String?           @map("odeme_sayfasi_url")
-  hareketId         String?           @unique @map("hareket_id") @db.Uuid
-  hataMesaji        String?           @map("hata_mesaji")
-  epostaGonderimTarihi DateTime?      @map("eposta_gonderim_tarihi")
-  epostaHatasi      String?           @map("eposta_hatasi")
-  smsGonderimTarihi DateTime?         @map("sms_gonderim_tarihi")
-  smsGorevId        String?           @map("sms_gorev_id")
-  smsHatasi         String?           @map("sms_hatasi")
-  createdAt         DateTime          @default(now()) @map("created_at")
-  updatedAt         DateTime          @updatedAt @map("updated_at")
+  id                   String            @id @default(uuid()) @db.Uuid
+  tenantId             String            @map("tenant_id") @db.Uuid
+  posHesapId           String            @map("pos_hesap_id") @db.Uuid
+  cariId               String            @map("cari_id") @db.Uuid
+  faturaId             String?           @map("fatura_id") @db.Uuid
+  tutar                Decimal           @db.Decimal(15, 2)
+  dovizCinsi           DovizCinsi        @default(TRY) @map("doviz_cinsi")
+  durum                PosTahsilatDurumu @default(baslatildi)
+  saglayiciToken       String?           @unique @map("saglayici_token")
+  saglayiciOdemeId     String?           @map("saglayici_odeme_id")
+  odemeSayfasiUrl      String?           @map("odeme_sayfasi_url")
+  hareketId            String?           @unique @map("hareket_id") @db.Uuid
+  hataMesaji           String?           @map("hata_mesaji")
+  odemeTarihi          DateTime?         @map("odeme_tarihi")
+  sonKullanimTarihi    DateTime?         @map("son_kullanim_tarihi")
+  denemeSayisi         Int               @default(1) @map("deneme_sayisi")
+  makbuzAnahtari       String            @unique @map("makbuz_anahtari")
+  epostaGonderimTarihi DateTime?         @map("eposta_gonderim_tarihi")
+  epostaHatasi         String?           @map("eposta_hatasi")
+  smsGonderimTarihi    DateTime?         @map("sms_gonderim_tarihi")
+  smsGorevId           String?           @map("sms_gorev_id")
+  smsHatasi            String?           @map("sms_hatasi")
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
 
   tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   posHesap PosHesap          @relation(fields: [posHesapId], references: [id])
@@ -1753,15 +1799,16 @@ model KasaBankaHareket {
   kaynakRef      String?             @map("kaynak_ref")
   createdAt      DateTime            @default(now()) @map("created_at")
 
-  kasa        Kasa?             @relation(fields: [kasaId], references: [id])
-  bankaHesap  BankaHesap?       @relation(fields: [bankaHesapId], references: [id])
-  posHesap    PosHesap?         @relation(fields: [posHesapId], references: [id])
-  cari        CariHesap?        @relation(fields: [cariId], references: [id])
-  fatura      Fatura?           @relation(fields: [faturaId], references: [id])
-  ekstreSatir BankaEkstreSatir?
-  pazaryeriKesinti PazaryeriKesinti?
+  kasa              Kasa?              @relation(fields: [kasaId], references: [id])
+  bankaHesap        BankaHesap?        @relation(fields: [bankaHesapId], references: [id])
+  posHesap          PosHesap?          @relation(fields: [posHesapId], references: [id])
+  cari              CariHesap?         @relation(fields: [cariId], references: [id])
+  fatura            Fatura?            @relation(fields: [faturaId], references: [id])
+  ekstreSatir       BankaEkstreSatir?
+  pazaryeriKesinti  PazaryeriKesinti?
   posTahsilat       PosTahsilat?
-  masraf             Masraf?
+  masraf            Masraf?
+  krediKartiOdemesi KrediKartiHareket?
 
   @@index([tenantId, tarih])
   @@map("kasa_banka_hareketleri")
@@ -1770,35 +1817,54 @@ model KasaBankaHareket {
 /// cari: alınanda çeki veren müşteri, verilende lehtar (çeki verdiğimiz taraf).
 /// borclu: alınanda keşideci, verilende kendi firmamız.
 model CekSenet {
-  id         String        @id @default(uuid()) @db.Uuid
-  tenantId   String        @map("tenant_id") @db.Uuid
-  tur        CekSenetTur
-  yon        CekSenetYon   @default(alinan)
-  portfoyNo  String        @map("portfoy_no")
-  cekNo      String?       @map("cek_no")
-  islemTarihi DateTime     @default(now()) @map("islem_tarihi") @db.Date
-  vadeTarihi DateTime      @map("vade_tarihi") @db.Date
-  tutar      Decimal       @db.Decimal(15, 2)
-  dovizCinsi DovizCinsi    @default(TRY) @map("doviz_cinsi")
-  kur        Decimal       @default(1) @db.Decimal(15, 6)
-  tutarTry   Decimal       @map("tutar_try") @db.Decimal(15, 2)
-  borclu     String
-  kesideYeri String?       @map("keside_yeri")
-  banka      String?
-  sube       String?
-  hesapNo    String?       @map("hesap_no")
-  durum      CekSenetDurum @default(portfoyde)
-  cariId     String?       @map("cari_id") @db.Uuid
-  ciroCariId String?       @map("ciro_cari_id") @db.Uuid
-  aciklama   String?
-  createdAt  DateTime      @default(now()) @map("created_at")
-  updatedAt  DateTime      @updatedAt @map("updated_at")
+  id            String        @id @default(uuid()) @db.Uuid
+  tenantId      String        @map("tenant_id") @db.Uuid
+  tur           CekSenetTur
+  yon           CekSenetYon   @default(alinan)
+  portfoyNo     String        @map("portfoy_no")
+  cekNo         String?       @map("cek_no")
+  islemTarihi   DateTime      @default(now()) @map("islem_tarihi") @db.Date
+  vadeTarihi    DateTime      @map("vade_tarihi") @db.Date
+  tutar         Decimal       @db.Decimal(15, 2)
+  dovizCinsi    DovizCinsi    @default(TRY) @map("doviz_cinsi")
+  kur           Decimal       @default(1) @db.Decimal(15, 6)
+  tutarTry      Decimal       @map("tutar_try") @db.Decimal(15, 2)
+  borclu        String
+  kesideYeri    String?       @map("keside_yeri")
+  banka         String?
+  sube          String?
+  hesapNo       String?       @map("hesap_no")
+  durum         CekSenetDurum @default(portfoyde)
+  cariId        String?       @map("cari_id") @db.Uuid
+  ciroCariId    String?       @map("ciro_cari_id") @db.Uuid
+  aciklama      String?
+  fizikselKonum String?       @map("fiziksel_konum")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
 
-  cari     CariHesap? @relation("CekSenetCari", fields: [cariId], references: [id])
-  ciroCari CariHesap? @relation("CekSenetCiro", fields: [ciroCariId], references: [id])
+  cari     CariHesap?     @relation("CekSenetCari", fields: [cariId], references: [id])
+  ciroCari CariHesap?     @relation("CekSenetCiro", fields: [ciroCariId], references: [id])
+  olaylar  CekSenetOlay[]
 
   @@unique([tenantId, portfoyNo])
   @@map("cek_senetler")
+}
+
+model CekSenetOlay {
+  id          String         @id @default(uuid()) @db.Uuid
+  tenantId    String         @map("tenant_id") @db.Uuid
+  cekSenetId  String         @map("cek_senet_id") @db.Uuid
+  oncekiDurum CekSenetDurum? @map("onceki_durum")
+  yeniDurum   CekSenetDurum  @map("yeni_durum")
+  islemTarihi DateTime       @map("islem_tarihi") @db.Date
+  aciklama    String?
+  userId      String         @map("user_id") @db.Uuid
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  cekSenet CekSenet @relation(fields: [cekSenetId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, cekSenetId, createdAt])
+  @@map("cek_senet_olaylari")
 }
 
 enum EkSahipTur {
@@ -1829,25 +1895,26 @@ enum MasrafDurum {
 
 enum MasrafOdemeDurumu {
   odenmedi
+  kismi_odendi
   odendi
 }
 
 model MasrafKategori {
-  id                  String   @id @default(uuid()) @db.Uuid
-  tenantId            String   @map("tenant_id") @db.Uuid
-  ad                  String
-  varsayilanKdvOrani  Decimal? @map("varsayilan_kdv_orani") @db.Decimal(5, 2)
-  muhasebeKodu        String?  @map("muhasebe_kodu")
-  ustId               String?  @map("ust_id") @db.Uuid
-  aktif               Boolean  @default(true)
-  createdAt           DateTime @default(now()) @map("created_at")
-  updatedAt           DateTime @updatedAt @map("updated_at")
+  id                 String   @id @default(uuid()) @db.Uuid
+  tenantId           String   @map("tenant_id") @db.Uuid
+  ad                 String
+  varsayilanKdvOrani Decimal? @map("varsayilan_kdv_orani") @db.Decimal(5, 2)
+  muhasebeKodu       String?  @map("muhasebe_kodu")
+  ustId              String?  @map("ust_id") @db.Uuid
+  aktif              Boolean  @default(true)
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
 
-  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  masraflar Masraf[]
+  tenant           Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  masraflar        Masraf[]
   kiraSozlesmeleri KiraSozlesme[]
-  ust       MasrafKategori?  @relation("MasrafKategoriAgaci", fields: [ustId], references: [id])
-  altlar    MasrafKategori[] @relation("MasrafKategoriAgaci")
+  ust              MasrafKategori?  @relation("MasrafKategoriAgaci", fields: [ustId], references: [id])
+  altlar           MasrafKategori[] @relation("MasrafKategoriAgaci")
 
   @@unique([tenantId, ad])
   @@index([tenantId, aktif])
@@ -1856,75 +1923,98 @@ model MasrafKategori {
 }
 
 model Masraf {
-  id             String              @id @default(uuid()) @db.Uuid
-  tenantId       String              @map("tenant_id") @db.Uuid
-  kategoriId     String              @map("kategori_id") @db.Uuid
-  cariId         String?             @map("cari_id") @db.Uuid
-  belgeTuru      MasrafBelgeTuru     @map("belge_turu")
-  belgeNo        String?             @map("belge_no")
-  tarih          DateTime            @db.Date
-  vadeTarihi     DateTime?           @map("vade_tarihi") @db.Date
-  saticiUnvan    String?             @map("satici_unvan")
-  vknTckn        String?             @map("vkn_tckn")
-  vergiDairesi   String?             @map("vergi_dairesi")
+  id             String            @id @default(uuid()) @db.Uuid
+  tenantId       String            @map("tenant_id") @db.Uuid
+  kategoriId     String            @map("kategori_id") @db.Uuid
+  cariId         String?           @map("cari_id") @db.Uuid
+  belgeTuru      MasrafBelgeTuru   @map("belge_turu")
+  belgeNo        String?           @map("belge_no")
+  tarih          DateTime          @db.Date
+  vadeTarihi     DateTime?         @map("vade_tarihi") @db.Date
+  saticiUnvan    String?           @map("satici_unvan")
+  vknTckn        String?           @map("vkn_tckn")
+  vergiDairesi   String?           @map("vergi_dairesi")
   iban           String?
   aciklama       String?
-  matrah         Decimal             @db.Decimal(15, 2)
-  kdvOrani       Decimal             @default(20) @map("kdv_orani") @db.Decimal(5, 2)
-  kdvTutari      Decimal             @map("kdv_tutari") @db.Decimal(15, 2)
-  toplam         Decimal             @db.Decimal(15, 2)
-  dovizCinsi     DovizCinsi          @default(TRY) @map("doviz_cinsi")
-  durum          MasrafDurum         @default(taslak)
-  odemeDurumu    MasrafOdemeDurumu   @default(odenmedi) @map("odeme_durumu")
-  odemeTarihi    DateTime?           @map("odeme_tarihi") @db.Date
-  kasaId         String?             @map("kasa_id") @db.Uuid
-  bankaHesapId   String?             @map("banka_hesap_id") @db.Uuid
-  hareketId      String?             @unique @map("hareket_id") @db.Uuid
-  kiraSozlesmeId String?             @map("kira_sozlesme_id") @db.Uuid
-  kiraDonemi     DateTime?           @map("kira_donemi") @db.Date
-  stopajOrani    Decimal?            @map("stopaj_orani") @db.Decimal(5, 2)
-  stopajTutari   Decimal?            @map("stopaj_tutari") @db.Decimal(15, 2)
-  createdAt      DateTime            @default(now()) @map("created_at")
-  updatedAt      DateTime            @updatedAt @map("updated_at")
+  matrah         Decimal           @db.Decimal(15, 2)
+  kdvOrani       Decimal           @default(20) @map("kdv_orani") @db.Decimal(5, 2)
+  kdvTutari      Decimal           @map("kdv_tutari") @db.Decimal(15, 2)
+  toplam         Decimal           @db.Decimal(15, 2)
+  dovizCinsi     DovizCinsi        @default(TRY) @map("doviz_cinsi")
+  durum          MasrafDurum       @default(taslak)
+  odemeDurumu    MasrafOdemeDurumu @default(odenmedi) @map("odeme_durumu")
+  odenenTutar    Decimal           @default(0) @map("odenen_tutar") @db.Decimal(15, 2)
+  odemeTarihi    DateTime?         @map("odeme_tarihi") @db.Date
+  kasaId         String?           @map("kasa_id") @db.Uuid
+  bankaHesapId   String?           @map("banka_hesap_id") @db.Uuid
+  hareketId      String?           @unique @map("hareket_id") @db.Uuid
+  kiraSozlesmeId String?           @map("kira_sozlesme_id") @db.Uuid
+  kiraDonemi     DateTime?         @map("kira_donemi") @db.Date
+  stopajOrani    Decimal?          @map("stopaj_orani") @db.Decimal(5, 2)
+  stopajTutari   Decimal?          @map("stopaj_tutari") @db.Decimal(15, 2)
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
 
-  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  kategori   MasrafKategori    @relation(fields: [kategoriId], references: [id])
-  cari       CariHesap?        @relation(fields: [cariId], references: [id])
-  kasa       Kasa?             @relation(fields: [kasaId], references: [id])
-  bankaHesap BankaHesap?      @relation(fields: [bankaHesapId], references: [id])
-  hareket    KasaBankaHareket? @relation(fields: [hareketId], references: [id])
-  kiraSozlesme KiraSozlesme?    @relation(fields: [kiraSozlesmeId], references: [id])
+  tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kategori     MasrafKategori    @relation(fields: [kategoriId], references: [id])
+  cari         CariHesap?        @relation(fields: [cariId], references: [id])
+  kasa         Kasa?             @relation(fields: [kasaId], references: [id])
+  bankaHesap   BankaHesap?       @relation(fields: [bankaHesapId], references: [id])
+  hareket      KasaBankaHareket? @relation(fields: [hareketId], references: [id])
+  kiraSozlesme KiraSozlesme?     @relation(fields: [kiraSozlesmeId], references: [id])
+  odemeler     MasrafOdeme[]
 
+  @@unique([kiraSozlesmeId, kiraDonemi])
   @@index([tenantId, tarih])
   @@index([tenantId, kategoriId, durum])
   @@index([tenantId, odemeDurumu, vadeTarihi])
-  @@unique([kiraSozlesmeId, kiraDonemi])
   @@map("masraflar")
 }
 
+model MasrafOdeme {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  masrafId     String   @map("masraf_id") @db.Uuid
+  kasaId       String?  @map("kasa_id") @db.Uuid
+  bankaHesapId String?  @map("banka_hesap_id") @db.Uuid
+  hareketId    String   @unique @map("hareket_id") @db.Uuid
+  tutar        Decimal  @db.Decimal(15, 2)
+  odemeTarihi  DateTime @map("odeme_tarihi") @db.Date
+  aciklama     String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  masraf     Masraf      @relation(fields: [masrafId], references: [id], onDelete: Cascade)
+  kasa       Kasa?       @relation(fields: [kasaId], references: [id])
+  bankaHesap BankaHesap? @relation(fields: [bankaHesapId], references: [id])
+
+  @@index([tenantId, masrafId, odemeTarihi])
+  @@map("masraf_odemeleri")
+}
+
 model KiraSozlesme {
-  id              String   @id @default(uuid()) @db.Uuid
-  tenantId        String   @map("tenant_id") @db.Uuid
-  kategoriId      String   @map("kategori_id") @db.Uuid
-  cariId          String?  @map("cari_id") @db.Uuid
+  id              String     @id @default(uuid()) @db.Uuid
+  tenantId        String     @map("tenant_id") @db.Uuid
+  kategoriId      String     @map("kategori_id") @db.Uuid
+  cariId          String?    @map("cari_id") @db.Uuid
   baslik          String
-  tasinmazAdresi  String?  @map("tasinmaz_adresi")
-  kirayaVeren     String?  @map("kiraya_veren")
-  vknTckn         String?  @map("vkn_tckn")
+  tasinmazAdresi  String?    @map("tasinmaz_adresi")
+  kirayaVeren     String?    @map("kiraya_veren")
+  vknTckn         String?    @map("vkn_tckn")
   iban            String?
-  baslangicTarihi DateTime @map("baslangic_tarihi") @db.Date
-  bitisTarihi     DateTime? @map("bitis_tarihi") @db.Date
-  odemeGunu       Int      @default(1) @map("odeme_gunu")
-  matrah          Decimal  @db.Decimal(15, 2)
-  kdvOrani        Decimal  @default(0) @map("kdv_orani") @db.Decimal(5, 2)
-  stopajOrani     Decimal  @default(0) @map("stopaj_orani") @db.Decimal(5, 2)
+  baslangicTarihi DateTime   @map("baslangic_tarihi") @db.Date
+  bitisTarihi     DateTime?  @map("bitis_tarihi") @db.Date
+  odemeGunu       Int        @default(1) @map("odeme_gunu")
+  matrah          Decimal    @db.Decimal(15, 2)
+  kdvOrani        Decimal    @default(0) @map("kdv_orani") @db.Decimal(5, 2)
+  stopajOrani     Decimal    @default(0) @map("stopaj_orani") @db.Decimal(5, 2)
   dovizCinsi      DovizCinsi @default(TRY) @map("doviz_cinsi")
-  aktif           Boolean  @default(true)
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  aktif           Boolean    @default(true)
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
 
   tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  kategori MasrafKategori @relation(fields: [kategoriId], references: [id])
+  kategori  MasrafKategori @relation(fields: [kategoriId], references: [id])
   cari      CariHesap?     @relation(fields: [cariId], references: [id])
   masraflar Masraf[]
 
@@ -2002,11 +2092,11 @@ model Belge {
   createdAt            DateTime         @default(now()) @map("created_at")
   updatedAt            DateTime         @updatedAt @map("updated_at")
 
-  cari         CariHesap    @relation(fields: [cariId], references: [id])
-  depo         Depo?        @relation(fields: [depoId], references: [id])
-  kaynakBelge  Belge?       @relation("BelgeZinciri", fields: [kaynakBelgeId], references: [id])
-  turetilenler Belge[]      @relation("BelgeZinciri")
-  fatura       Fatura?      @relation(fields: [faturaId], references: [id])
+  cari         CariHesap       @relation(fields: [cariId], references: [id])
+  depo         Depo?           @relation(fields: [depoId], references: [id])
+  kaynakBelge  Belge?          @relation("BelgeZinciri", fields: [kaynakBelgeId], references: [id])
+  turetilenler Belge[]         @relation("BelgeZinciri")
+  fatura       Fatura?         @relation(fields: [faturaId], references: [id])
   satirlar     BelgeSatir[]
   eirsaliye    EirsaliyeKayit?
 
@@ -2032,36 +2122,38 @@ enum GelenEirsaliyeDurum {
 
 /// Elektronik irsaliye yalnız sevk belgesidir; stok etkisi faturada doğar.
 model EirsaliyeKayit {
-  id             String          @id @default(uuid()) @db.Uuid
-  tenantId       String          @map("tenant_id") @db.Uuid
-  belgeId        String          @unique @map("belge_id") @db.Uuid
-  durum          EirsaliyeDurum  @default(kuyrukta)
-  entegratorRef  String?         @map("entegrator_ref")
-  xmlIcerik      String?         @map("xml_icerik")
-  hataMesaji     String?         @map("hata_mesaji")
-  createdAt      DateTime        @default(now()) @map("created_at")
-  updatedAt      DateTime        @updatedAt @map("updated_at")
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  belge  Belge  @relation(fields: [belgeId], references: [id], onDelete: Cascade)
+  id            String         @id @default(uuid()) @db.Uuid
+  tenantId      String         @map("tenant_id") @db.Uuid
+  belgeId       String         @unique @map("belge_id") @db.Uuid
+  durum         EirsaliyeDurum @default(kuyrukta)
+  entegratorRef String?        @map("entegrator_ref")
+  xmlIcerik     String?        @map("xml_icerik")
+  hataMesaji    String?        @map("hata_mesaji")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  belge         Belge          @relation(fields: [belgeId], references: [id], onDelete: Cascade)
+
   @@index([tenantId, durum])
   @@map("eirsaliye_kayitlari")
 }
 
 model GelenEirsaliye {
-  id             String                 @id @default(uuid()) @db.Uuid
-  tenantId       String                 @map("tenant_id") @db.Uuid
+  id             String              @id @default(uuid()) @db.Uuid
+  tenantId       String              @map("tenant_id") @db.Uuid
   uuid           String
-  belgeNo        String                 @map("belge_no")
-  gonderenVkn    String                 @map("gonderen_vkn")
-  gonderenUnvan  String                 @map("gonderen_unvan")
-  tarih          DateTime               @db.Date
-  xmlIcerik      String                 @map("xml_icerik")
-  durum          GelenEirsaliyeDurum    @default(yeni)
-  yanitRef       String?                @map("yanit_ref")
-  yanitGerekcesi String?                @map("yanit_gerekcesi")
-  createdAt      DateTime               @default(now()) @map("created_at")
-  updatedAt      DateTime               @updatedAt @map("updated_at")
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  belgeNo        String              @map("belge_no")
+  gonderenVkn    String              @map("gonderen_vkn")
+  gonderenUnvan  String              @map("gonderen_unvan")
+  tarih          DateTime            @db.Date
+  xmlIcerik      String              @map("xml_icerik")
+  durum          GelenEirsaliyeDurum @default(yeni)
+  yanitRef       String?             @map("yanit_ref")
+  yanitGerekcesi String?             @map("yanit_gerekcesi")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+  tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   @@unique([tenantId, uuid])
   @@index([tenantId, durum, tarih])
   @@map("gelen_eirsaliyeler")

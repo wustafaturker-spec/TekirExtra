@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import {
   Alert,
@@ -51,9 +51,13 @@ interface CekSenet {
   hesapNo: string | null;
   durum: string;
   aciklama: string | null;
+  fizikselKonum: string | null;
   cari: CariOzet | null;
   ciroCari: CariOzet | null;
+  olaylar?: { id:string; oncekiDurum:string|null; yeniDurum:string; islemTarihi:string; aciklama:string|null; createdAt:string }[];
 }
+
+interface PortfoyOzet { acik:{adet:number;toplamTry:string;dovizler:Record<string,string>}; geciken:{adet:number;toplamTry:string}; yaklasan:{adet:number;toplamTry:string}; bankada:{adet:number;toplamTry:string}; ciro:{adet:number;toplamTry:string}; karsiliksiz:{adet:number;toplamTry:string} }
 
 type TurFiltre = "hepsi" | "cek" | "senet";
 type Yon = "alinan" | "verilen";
@@ -62,6 +66,8 @@ type Yon = "alinan" | "verilen";
 
 const DURUMLAR: Record<string, { baslik: string; renk: "warning" | "success" | "info" | "danger" | "neutral" }> = {
   portfoyde: { baslik: "📁 Portföyde", renk: "warning" },
+  tahsile_verildi: { baslik: "🏦 Bankada Tahsilde", renk: "info" },
+  teminata_verildi: { baslik: "🛡️ Bankada Teminatta", renk: "info" },
   ciro_edildi: { baslik: "↪️ Ciro Edildi", renk: "info" },
   tahsil_edildi: { baslik: "✅ Tahsil Edildi", renk: "success" },
   karsiliksiz: { baslik: "⛔ Karşılıksız", renk: "danger" },
@@ -74,7 +80,7 @@ const DURUMLAR: Record<string, { baslik: string; renk: "warning" | "success" | "
 const YON_AKISI: Record<Yon, { acikDurum: string; durumlar: string[]; eylemler: { durum: string; baslik: string; vurgu?: "primary" | "danger" }[] }> = {
   alinan: {
     acikDurum: "portfoyde",
-    durumlar: ["portfoyde", "ciro_edildi", "tahsil_edildi", "karsiliksiz", "iade_edildi"],
+    durumlar: ["portfoyde", "tahsile_verildi", "teminata_verildi", "ciro_edildi", "tahsil_edildi", "karsiliksiz", "iade_edildi"],
     eylemler: [
       { durum: "tahsil_edildi", baslik: "Tahsil Et", vurgu: "primary" },
       { durum: "ciro_edildi", baslik: "Ciro Et" },
@@ -92,6 +98,20 @@ const YON_AKISI: Record<Yon, { acikDurum: string; durumlar: string[]; eylemler: 
     ],
   },
 };
+
+function uygunEylemler(k:CekSenet) {
+  if (k.yon === "verilen") return k.durum === "verildi" ? YON_AKISI.verilen.eylemler : [];
+  if (k.durum === "portfoyde") return [
+    { durum:"tahsil_edildi", baslik:"Tahsil et", vurgu:"primary" as const },
+    { durum:"tahsile_verildi", baslik:"Bankaya ver" }, { durum:"teminata_verildi", baslik:"Teminata ver" },
+    { durum:"ciro_edildi", baslik:"Ciro et" }, { durum:"karsiliksiz", baslik:"Karşılıksız", vurgu:"danger" as const }, { durum:"iade_edildi", baslik:"İade et" },
+  ];
+  if (["tahsile_verildi","teminata_verildi"].includes(k.durum)) return [
+    { durum:"tahsil_edildi", baslik:"Tahsil et", vurgu:"primary" as const }, { durum:"portfoyde", baslik:"Portföye geri al" },
+    { durum:"karsiliksiz", baslik:"Karşılıksız", vurgu:"danger" as const }, { durum:"iade_edildi", baslik:"İade et" },
+  ];
+  return [];
+}
 
 const para = (deger: string | number, doviz = "TRY"): string =>
   Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " " + doviz;
@@ -115,6 +135,11 @@ export default function CekSenetSayfasi() {
   const [yon, setYon] = useState<Yon>("alinan");
   const [tur, setTur] = useState<TurFiltre>("hepsi");
   const [durumFiltre, setDurumFiltre] = useState("");
+  const [arama, setArama] = useState("");
+  const [vadeBaslangic, setVadeBaslangic] = useState("");
+  const [vadeBitis, setVadeBitis] = useState("");
+  const [ozet, setOzet] = useState<PortfoyOzet|null>(null);
+  const [detay, setDetay] = useState<CekSenet|null>(null);
   const [formAcik, setFormAcik] = useState(false);
   const [islemYapilan, setIslemYapilan] = useState<{ kayit: CekSenet; durum: string } | null>(null);
   const [hata, setHata] = useState("");
@@ -127,11 +152,15 @@ export default function CekSenetSayfasi() {
       const qs = new URLSearchParams({ yon });
       if (tur !== "hepsi") qs.set("tur", tur);
       if (durumFiltre) qs.set("durum", durumFiltre);
-      setKayitlar(await api<CekSenet[]>(`/kasa-banka/cek-senet?${qs}`));
+      if (arama.trim()) qs.set("arama", arama.trim());
+      if (vadeBaslangic) qs.set("baslangic", vadeBaslangic);
+      if (vadeBitis) qs.set("bitis", vadeBitis);
+      const [liste, yeniOzet] = await Promise.all([api<CekSenet[]>(`/kasa-banka/cek-senet?${qs}`), api<PortfoyOzet>(`/kasa-banka/cek-senet-ozet?yon=${yon}`)]);
+      setKayitlar(liste); setOzet(yeniOzet);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Çek/senet listesi yüklenemedi");
     }
-  }, [tur, durumFiltre, yon]);
+  }, [tur, durumFiltre, yon, arama, vadeBaslangic, vadeBitis]);
 
   useEffect(() => {
     if (!tokenAl()) return;
@@ -145,23 +174,7 @@ export default function CekSenetSayfasi() {
     void api<Hesap[]>("/kasa-banka/bankalar").then(setBankalar).catch(() => {});
   }, []);
 
-  const ozet = useMemo(() => {
-    const acik = kayitlar.filter((k) => k.durum === akis.acikDurum);
-    const toplam = acik.reduce((t, k) => t + Number(k.tutarTry), 0);
-    const geciken = acik.filter((k) => vadeyeKalanGun(k.vadeTarihi) < 0);
-    const yaklasan = acik.filter((k) => {
-      const g = vadeyeKalanGun(k.vadeTarihi);
-      return g >= 0 && g <= 30;
-    });
-    return {
-      adet: acik.length,
-      toplam,
-      geciken: geciken.reduce((t, k) => t + Number(k.tutarTry), 0),
-      gecikenAdet: geciken.length,
-      yaklasan: yaklasan.reduce((t, k) => t + Number(k.tutarTry), 0),
-      yaklasanAdet: yaklasan.length,
-    };
-  }, [kayitlar, akis.acikDurum]);
+  async function detayAc(id:string){try{setDetay(await api<CekSenet>(`/kasa-banka/cek-senet/${id}`));}catch(h){setHata(h instanceof Error?h.message:"Detay yüklenemedi");}}
 
   async function durumGuncelle(govde: Record<string, unknown>) {
     if (!islemYapilan) return;
@@ -184,27 +197,10 @@ export default function CekSenetSayfasi() {
   }
 
   return (
-    <div>
-      <PageHeader
-        title="Çek & Senet"
-        subtitle={
-          yon === "alinan"
-            ? "Portföyünüzdeki müşteri çek ve senetleri; ciro, tahsil, karşılıksız ve iade işlemleri."
-            : "Kendi kestiğiniz çek ve senetler (borcunuz); ödeme, karşılıksız ve geri alma işlemleri."
-        }
-        actions={
-          <>
-            <ButtonLabel as="a" href="/panel/kasa-banka">
-              ← Kasa & Banka
-            </ButtonLabel>
-            <Button variant="primary" onClick={() => setFormAcik(!formAcik)}>
-              {formAcik ? "Vazgeç" : yon === "alinan" ? "➕ Çek/Senet Al" : "➕ Çek/Senet Ver"}
-            </Button>
-          </>
-        }
-      />
+    <div className="cheque-page">
+      <section className="cheque-hero"><div><span>PORTFÖY & RİSK YÖNETİMİ</span><h1>Çek ve senet çalışma alanı</h1><p>{yon === "alinan" ? "Müşteri çeklerini yönetin, bankaya teslim süreçlerini takip edin ve tahsilat riskini görünür tutun." : "Verilen çek ve senetleri vade, lehtar ve ödeme riskiyle birlikte yönetin."}</p></div><div><ButtonLabel as="a" href="/panel/kasa-banka">← Kasa & Banka</ButtonLabel><Button variant="primary" onClick={() => setFormAcik(!formAcik)}>{formAcik ? "Vazgeç" : yon === "alinan" ? "+ Çek/Senet Al" : "+ Çek/Senet Ver"}</Button></div></section>
 
-      <div style={{ marginBottom: "1.25rem" }}>
+      <div className="cheque-switcher">
         <Segmented<Yon>
           value={yon}
           onChange={(y) => {
@@ -223,26 +219,27 @@ export default function CekSenetSayfasi() {
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
 
-      <StatGrid>
+      <div className="cheque-kpis"><StatGrid>
         <Stat
           label={yon === "alinan" ? "Portföydeki" : "Tedavüldeki Borç"}
-          value={para(ozet.toplam)}
+          value={para(ozet?.acik.toplamTry??0)}
           tone="accent"
-          hint={`${ozet.adet} adet`}
+          hint={`${ozet?.acik.adet??0} adet · ${(ozet?.acik.dovizler.TRY??"0")} TRY · ${(ozet?.acik.dovizler.USD??"0")} USD · ${(ozet?.acik.dovizler.EUR??"0")} EUR`}
         />
         <Stat
           label="Vadesi Geçmiş"
-          value={para(ozet.geciken)}
-          tone={ozet.gecikenAdet > 0 ? "danger" : "default"}
-          hint={`${ozet.gecikenAdet} adet`}
+          value={para(ozet?.geciken.toplamTry??0)}
+          tone={(ozet?.geciken.adet??0) > 0 ? "danger" : "default"}
+          hint={`${ozet?.geciken.adet??0} adet`}
         />
         <Stat
           label="30 Gün İçinde"
-          value={para(ozet.yaklasan)}
-          tone={ozet.yaklasanAdet > 0 ? "info" : "default"}
-          hint={yon === "alinan" ? `${ozet.yaklasanAdet} adet vadesi yaklaşan` : `${ozet.yaklasanAdet} adet ödenecek`}
+          value={para(ozet?.yaklasan.toplamTry??0)}
+          tone={(ozet?.yaklasan.adet??0) > 0 ? "info" : "default"}
+          hint={yon === "alinan" ? `${ozet?.yaklasan.adet??0} adet vadesi yaklaşan` : `${ozet?.yaklasan.adet??0} adet ödenecek`}
         />
-      </StatGrid>
+        <Stat label={yon==="alinan"?"Bankada / Teminatta":"Karşılıksız"} value={para(yon==="alinan"?(ozet?.bankada.toplamTry??0):(ozet?.karsiliksiz.toplamTry??0))} tone="info" hint={`${yon==="alinan"?(ozet?.bankada.adet??0):(ozet?.karsiliksiz.adet??0)} adet`}/>
+      </StatGrid></div>
 
       {formAcik && (
         <CekSenetFormu
@@ -266,7 +263,8 @@ export default function CekSenetSayfasi() {
         />
       )}
 
-      <div className="toolbar" style={{ marginTop: "1.25rem" }}>
+      <Card className="cheque-filter"><div className="cheque-filter__head"><div><span>OPERASYON FİLTRELERİ</span><strong>Portföy görünümünü daraltın</strong></div><small>{kayitlar.length} kayıt gösteriliyor</small></div><div className="cheque-filter__grid">
+        <Input aria-label="Çek senet ara" value={arama} onChange={(e)=>setArama(e.target.value)} placeholder="Portföy, çek no, cari, keşideci veya banka ara…" style={{minWidth:280}}/>
         <Segmented<TurFiltre>
           value={tur}
           onChange={setTur}
@@ -284,9 +282,12 @@ export default function CekSenetSayfasi() {
             </option>
           ))}
         </Select>
-      </div>
+        <Input aria-label="Vade başlangıcı" type="date" value={vadeBaslangic} onChange={(e)=>setVadeBaslangic(e.target.value)} title="Vade başlangıcı"/>
+        <Input aria-label="Vade bitişi" type="date" value={vadeBitis} onChange={(e)=>setVadeBitis(e.target.value)} title="Vade bitişi"/>
+        {(arama||durumFiltre||vadeBaslangic||vadeBitis)&&<Button size="sm" onClick={()=>{setArama("");setDurumFiltre("");setVadeBaslangic("");setVadeBitis("");}}>Filtreleri temizle</Button>}
+      </div></Card>
 
-      <Card pad={false}>
+      <Card className="cheque-register" pad={false}>
         <TableWrap>
           <thead>
             <tr>
@@ -309,7 +310,8 @@ export default function CekSenetSayfasi() {
             ) : (
               kayitlar.map((k) => {
                 const kalan = vadeyeKalanGun(k.vadeTarihi);
-                const acik = k.durum === akis.acikDurum;
+                const eylemler = uygunEylemler(k);
+                const acik = eylemler.length > 0;
                 const gecikti = acik && kalan < 0;
                 return (
                   <tr key={k.id}>
@@ -325,6 +327,7 @@ export default function CekSenetSayfasi() {
                           <div className="cell-entity__name">{k.borclu}</div>
                           {k.cari && <div className="cell-entity__meta">{k.cari.unvan}</div>}
                           {k.ciroCari && <div className="cell-entity__meta">Ciro: {k.ciroCari.unvan}</div>}
+                          {k.fizikselKonum && <div className="cell-entity__meta">Konum: {k.fizikselKonum}</div>}
                         </>
                       ) : (
                         <>
@@ -362,7 +365,7 @@ export default function CekSenetSayfasi() {
                     <td className="center">
                       {acik ? (
                         <div className="row-tight" style={{ justifyContent: "center", flexWrap: "wrap" }}>
-                          {akis.eylemler.map((e) => (
+                          {eylemler.map((e) => (
                             <Button
                               key={e.durum}
                               size="sm"
@@ -374,10 +377,9 @@ export default function CekSenetSayfasi() {
                           ))}
                         </div>
                       ) : (
-                        <span className="muted" style={{ fontSize: "0.85rem" }}>
-                          İşlem tamamlandı
-                        </span>
+                        <Button size="sm" onClick={()=>void detayAc(k.id)}>Detay</Button>
                       )}
+                      {acik&&<Button size="sm" onClick={()=>void detayAc(k.id)}>Geçmiş</Button>}
                     </td>
                   </tr>
                 );
@@ -386,6 +388,11 @@ export default function CekSenetSayfasi() {
           </tbody>
         </TableWrap>
       </Card>
+
+      {detay&&<Card className="stack" style={{marginTop:"1.5rem",borderColor:"var(--accent)"}}>
+        <div className="between"><div><div className="card__title" style={{margin:0}}>{detay.portfoyNo} · İşlem geçmişi</div><p className="muted" style={{margin:".35rem 0 0"}}>{detay.cari?.unvan??detay.borclu} · {para(detay.tutar,detay.dovizCinsi)} · {detay.fizikselKonum??"Konum belirtilmedi"}</p></div><Button size="sm" onClick={()=>setDetay(null)}>Kapat</Button></div>
+        <div className="stack" style={{gap:".65rem"}}>{detay.olaylar?.map(o=><div key={o.id} className="between" style={{padding:".8rem 1rem",border:"1px solid var(--border)",borderRadius:"10px"}}><div><strong>{DURUMLAR[o.yeniDurum]?.baslik??o.yeniDurum}</strong><div className="muted" style={{fontSize:".82rem"}}>{o.oncekiDurum?`${DURUMLAR[o.oncekiDurum]?.baslik??o.oncekiDurum} durumundan geçildi`:"Başlangıç kaydı"}{o.aciklama?` · ${o.aciklama}`:""}</div></div><span className="mono">{new Date(o.createdAt).toLocaleString("tr-TR")}</span></div>)}{!detay.olaylar?.length&&<p className="empty">İşlem geçmişi bulunamadı.</p>}</div>
+      </Card>}
 
       {islemYapilan && (
         <DurumKarti
@@ -639,6 +646,7 @@ function DurumKarti({
   const [hesap, setHesap] = useState("");
   const [islemTarihi, setIslemTarihi] = useState(bugun());
   const [aciklama, setAciklama] = useState("");
+  const [fizikselKonum, setFizikselKonum] = useState("");
 
   const tahsil = durum === "tahsil_edildi";
   const odeme = durum === "odendi";
@@ -653,6 +661,7 @@ function DurumKarti({
     const govde: Record<string, unknown> = { durum };
     if (aciklama.trim() !== "") govde.aciklama = aciklama.trim();
     if (ciro) govde.ciroCariId = ciroCariId;
+    if (fizikselKonum.trim()) govde.fizikselKonum = fizikselKonum.trim();
     if (paraHareketi) {
       const [tip, id] = hesap.split(":");
       if (tip === "kasa") govde.hesapKasaId = id;
@@ -662,7 +671,9 @@ function DurumKarti({
     onOnayla(govde);
   }
 
-  const gecerli = ciro ? ciroCariId !== "" : paraHareketi ? hesap !== "" : true;
+  const gerekceZorunlu = ["karsiliksiz","iade_edildi"].includes(durum);
+  const konumZorunlu = ["tahsile_verildi","teminata_verildi"].includes(durum);
+  const gecerli = (ciro ? ciroCariId !== "" : paraHareketi ? hesap !== "" : true) && (!gerekceZorunlu||aciklama.trim().length>=3) && (!konumZorunlu||fizikselKonum.trim().length>=2);
 
   return (
     <Card className="stack" style={{ marginTop: "1.5rem", borderColor: "var(--accent)" }}>
@@ -746,6 +757,8 @@ function DurumKarti({
         </>
       )}
 
+      {konumZorunlu&&<Field label={durum==="tahsile_verildi"?"Tahsil bankası / konumu *":"Teminat bankası / konumu *"}><Input value={fizikselKonum} onChange={(e)=>setFizikselKonum(e.target.value)} placeholder="Örn. Ziraat Bankası Kadıköy Şubesi"/></Field>}
+
       {durum === "karsiliksiz" && (
         <p className="muted" style={{ fontSize: "0.85rem", margin: 0 }}>
           {kayit.yon === "verilen" ? (
@@ -770,7 +783,7 @@ function DurumKarti({
         </p>
       )}
 
-      <Field label="Açıklama">
+      <Field label={gerekceZorunlu?"İşlem gerekçesi *":"Açıklama"}>
         <Input
           value={aciklama}
           onChange={(e) => setAciklama(e.target.value)}

@@ -1,52 +1,40 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import { Alert, Badge, Button, Card, Field, Input, PageHeader } from "@/components/ui";
+import { Alert, Badge, Button, Card, Field, Input, Select, TableWrap } from "@/components/ui";
 
-interface EarsivRapor {
-  uuid: string; donem: string; baslangic: string; bitis: string;
-  faturaSayisi: number; toplamTutar: string; gibDurumu: string;
-}
+interface EarsivRapor { uuid:string; donem:string; baslangic:string; bitis:string; faturaSayisi:number; toplamTutar:string; gibDurumu:string; sonKontrol?:string; sorguMesaji?:string }
+type Grup="basarili"|"bekliyor"|"hatali"|"bilinmiyor";
+const yerelTarih=(d:Date)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const bugun=()=>yerelTarih(new Date());
+const ayBasi=()=>{const d=new Date();return yerelTarih(new Date(d.getFullYear(),d.getMonth(),1))};
+const para=(v:string|number)=>Number(v).toLocaleString("tr-TR",{style:"currency",currency:"TRY"});
+const tarih=(v:string)=>{const [y,a,g]=v.slice(0,10).split("-");return y&&a&&g?`${g}.${a}.${y}`:v||"—"};
+function durumCoz(v:string):{grup:Grup;kod:string;metin:string}{const ham=(v||"").trim();const [ilk,...kalan]=ham.split(":");const kod=/^\d+$/.test(ilk)?ilk:"";const metin=(kod?kalan.join(":"):ham).trim();if(["200","130"].includes(kod))return{grup:"basarili",kod,metin:metin||"GİB sistemine ulaştı"};if(["190","100","110","120"].includes(kod))return{grup:"bekliyor",kod,metin:metin||"İşlem devam ediyor"};if(kod&&Number(kod)>=300)return{grup:"hatali",kod,metin:metin||"Rapor hatalı"};return{grup:ham?"bekliyor":"bilinmiyor",kod,metin:metin||"Durum bilgisi bulunmuyor"}}
+const badge=(g:Grup):"success"|"warning"|"danger"|"neutral"=>g==="basarili"?"success":g==="bekliyor"?"warning":g==="hatali"?"danger":"neutral";
+const grupMetni=(g:Grup)=>g==="basarili"?"Başarılı":g==="bekliyor"?"İşleniyor":g==="hatali"?"Hatalı":"Bilinmiyor";
 
-export default function EarsivRaporlariSayfasi() {
-  const bugun = new Date();
-  const ayBasi = new Date(bugun.getFullYear(), bugun.getMonth(), 1);
-  const [baslangic, setBaslangic] = useState(ayBasi.toISOString().slice(0, 10));
-  const [bitis, setBitis] = useState(bugun.toISOString().slice(0, 10));
-  const [raporlar, setRaporlar] = useState<EarsivRapor[]>([]);
-  const [hata, setHata] = useState("");
-  const [basari, setBasari] = useState("");
-  const [yukleniyor, setYukleniyor] = useState(false);
-
-  async function yukle() {
-    setYukleniyor(true); setHata(""); setBasari("");
-    try {
-      setRaporlar(await api<EarsivRapor[]>(`/ebelge/earsiv/raporlar?baslangic=${baslangic}&bitis=${bitis}`));
-    } catch (h) { setHata(h instanceof Error ? h.message : "e-Arşiv raporları yüklenemedi"); }
-    finally { setYukleniyor(false); }
-  }
-
-  useEffect(() => { void yukle(); }, []); // İlk açılışta içinde bulunulan ay
-
-  async function durumSorgula(uuid: string) {
-    setHata(""); setBasari("");
-    try {
-      const sonuc = await api<{ basarili: boolean; kod?: string; mesaj?: string }>(`/ebelge/earsiv/raporlar/${uuid}/durum`);
-      setBasari(`Rapor durumu${sonuc.kod ? ` (${sonuc.kod})` : ""}: ${sonuc.mesaj || (sonuc.basarili ? "Başarılı" : "Bekliyor")}`);
-    } catch (h) { setHata(h instanceof Error ? h.message : "Rapor durumu sorgulanamadı"); }
-  }
-
-  return <div className="stack">
-    <PageHeader title="e-Arşiv Raporları" subtitle="Sovos tarafından GİB'e iletilen günlük e-Arşiv raporlarını izleyin." />
-    <Alert tone="error">{hata}</Alert><Alert tone="success">{basari}</Alert>
-    <Card><div className="row">
-      <Field label="Başlangıç"><Input type="date" value={baslangic} onChange={(e) => setBaslangic(e.target.value)} /></Field>
-      <Field label="Bitiş"><Input type="date" value={bitis} onChange={(e) => setBitis(e.target.value)} /></Field>
-      <Button type="button" variant="primary" disabled={yukleniyor} onClick={() => void yukle()}>{yukleniyor ? "Yükleniyor..." : "Raporları getir"}</Button>
-    </div></Card>
-    <Card>
-      {raporlar.length === 0 ? <p className="muted">Seçilen tarih aralığında e-Arşiv raporu bulunamadı.</p> : <div className="table-wrap"><table><thead><tr><th>Dönem</th><th>Tarih aralığı</th><th>Fatura</th><th>Toplam</th><th>GİB durumu</th><th /></tr></thead><tbody>{raporlar.map((r) => <tr key={r.uuid}><td><strong>{r.donem}</strong><br/><small className="mono">{r.uuid}</small></td><td>{r.baslangic} – {r.bitis}</td><td>{r.faturaSayisi}</td><td>{Number(r.toplamTutar).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL</td><td><Badge variant={r.gibDurumu.startsWith("200") || r.gibDurumu.startsWith("130") ? "success" : "neutral"}>{r.gibDurumu || "Bilinmiyor"}</Badge></td><td><Button size="sm" onClick={() => void durumSorgula(r.uuid)}>Durumu sorgula</Button></td></tr>)}</tbody></table></div>}
-    </Card>
+export default function EarsivRaporlariSayfasi(){
+  const[baslangic,setBaslangic]=useState(ayBasi);const[bitis,setBitis]=useState(bugun);const[raporlar,setRaporlar]=useState<EarsivRapor[]>([]);
+  const[arama,setArama]=useState("");const[durum,setDurum]=useState("");const[yukleniyor,setYukleniyor]=useState(false);const[sorgulananlar,setSorgulananlar]=useState<Set<string>>(new Set());
+  const[hata,setHata]=useState("");const[basari,setBasari]=useState("");const[sonListeKontrol,setSonListeKontrol]=useState<string|null>(null);
+  async function yukle(){setYukleniyor(true);setHata("");setBasari("");try{setRaporlar(await api<EarsivRapor[]>(`/ebelge/earsiv/raporlar?baslangic=${baslangic}&bitis=${bitis}`));setSonListeKontrol(new Date().toISOString())}catch(h){setHata(h instanceof Error?h.message:"e-Arşiv raporları yüklenemedi")}finally{setYukleniyor(false)}}
+  useEffect(()=>{void yukle()},[]);
+  const zengin=useMemo(()=>raporlar.map(r=>({...r,_durum:durumCoz(r.gibDurumu)})),[raporlar]);
+  const filtreli=useMemo(()=>zengin.filter(r=>(!arama||`${r.donem} ${r.uuid} ${r.gibDurumu}`.toLocaleLowerCase("tr-TR").includes(arama.toLocaleLowerCase("tr-TR")))&&(!durum||r._durum.grup===durum)),[zengin,arama,durum]);
+  const ozet=useMemo(()=>({rapor:zengin.length,fatura:zengin.reduce((t,r)=>t+r.faturaSayisi,0),tutar:zengin.reduce((t,r)=>t+Number(r.toplamTutar||0),0),basarili:zengin.filter(r=>r._durum.grup==="basarili").length,bekleyen:zengin.filter(r=>r._durum.grup==="bekliyor"||r._durum.grup==="bilinmiyor").length,hatali:zengin.filter(r=>r._durum.grup==="hatali").length}),[zengin]);
+  function hizli(secim:"bugun"|"hafta"|"ay"|"gecenAy"){const d=new Date();let b=d;let s=d;if(secim==="hafta"){b=new Date(d);b.setDate(d.getDate()-((d.getDay()+6)%7))}if(secim==="ay")b=new Date(d.getFullYear(),d.getMonth(),1);if(secim==="gecenAy"){b=new Date(d.getFullYear(),d.getMonth()-1,1);s=new Date(d.getFullYear(),d.getMonth(),0)}setBaslangic(yerelTarih(b));setBitis(yerelTarih(s))}
+  async function durumSorgula(uuid:string,sessiz=false){setSorgulananlar(x=>new Set(x).add(uuid));if(!sessiz){setHata("");setBasari("")}try{const s=await api<{basarili:boolean;kod?:string;mesaj?:string}>(`/ebelge/earsiv/raporlar/${uuid}/durum`);const yeni=`${s.kod||""}${s.kod&&s.mesaj?":":""}${s.mesaj||""}`;setRaporlar(x=>x.map(r=>r.uuid===uuid?{...r,gibDurumu:yeni||r.gibDurumu,sonKontrol:new Date().toISOString(),sorguMesaji:s.mesaj}:r));if(!sessiz)setBasari(`Rapor durumu güncellendi${s.kod?` · GİB kodu ${s.kod}`:""}.`);return s}catch(h){if(!sessiz)setHata(h instanceof Error?h.message:"Rapor durumu sorgulanamadı");return null}finally{setSorgulananlar(x=>{const n=new Set(x);n.delete(uuid);return n})}}
+  async function bekleyenleriSorgula(){const hedef=zengin.filter(r=>r._durum.grup!=="basarili");if(!hedef.length){setBasari("Sorgulanacak bekleyen rapor bulunmuyor.");return}setHata("");setBasari("");let tamam=0;for(const r of hedef){if(await durumSorgula(r.uuid,true))tamam++}setBasari(`${tamam} raporun GİB durumu güncellendi.`)}
+  function csv(){const rows=[["Dönem","Başlangıç","Bitiş","UUID","Fatura Sayısı","Toplam Tutar","Durum","GİB Kodu","Açıklama"],...filtreli.map(r=>[r.donem,r.baslangic,r.bitis,r.uuid,r.faturaSayisi,r.toplamTutar,grupMetni(r._durum.grup),r._durum.kod,r._durum.metin])];const veri="\uFEFF"+rows.map(row=>row.map(x=>`"${String(x).replaceAll('"','""')}"`).join(";")).join("\n");const u=URL.createObjectURL(new Blob([veri],{type:"text/csv;charset=utf-8"}));const a=document.createElement("a");a.href=u;a.download=`earsiv-raporlari-${baslangic}-${bitis}.csv`;a.click();URL.revokeObjectURL(u)}
+  function uuidKopyala(uuid:string){void navigator.clipboard.writeText(uuid);setBasari("Rapor UUID’si panoya kopyalandı.")}
+  return <div className="archive-page">
+    <header className="archive-hero"><div><span>GİB RAPORLAMA MERKEZİ</span><h1>e-Arşiv raporları</h1><p>Günlük e-Arşiv bildirimlerini, GİB durumlarını ve bildirilen finansal toplamları tek merkezden izleyin.</p></div><div><small>{sonListeKontrol?`Son liste kontrolü ${new Date(sonListeKontrol).toLocaleString("tr-TR")}`:"Henüz kontrol edilmedi"}</small><Button disabled={yukleniyor} variant="primary" onClick={()=>void yukle()}>{yukleniyor?"Raporlar alınıyor…":"↻ Raporları yenile"}</Button></div></header>
+    {hata&&<Alert tone="error">{hata}</Alert>}{basari&&<Alert tone="success">{basari}</Alert>}
+    <section className="archive-kpis"><div className="is-lead"><span>Bildirim toplamı</span><strong>{para(ozet.tutar)}</strong><small>{ozet.fatura} fatura · {ozet.rapor} rapor</small></div><div><span>GİB’e ulaşan</span><strong>{ozet.basarili}</strong><small>Başarıyla tamamlanan</small></div><div className={ozet.bekleyen?"is-warning":""}><span>İşlem bekleyen</span><strong>{ozet.bekleyen}</strong><small>Durum sorgusu gerekiyor</small></div><div className={ozet.hatali?"is-danger":""}><span>Hatalı rapor</span><strong>{ozet.hatali}</strong><small>{ozet.hatali?"Müdahale gerekiyor":"Hata bulunmuyor"}</small></div></section>
+    <Card className="archive-filter"><div className="archive-presets"><span>Hızlı dönem</span><div><Button size="sm" onClick={()=>hizli("bugun")}>Bugün</Button><Button size="sm" onClick={()=>hizli("hafta")}>Bu hafta</Button><Button size="sm" onClick={()=>hizli("ay")}>Bu ay</Button><Button size="sm" onClick={()=>hizli("gecenAy")}>Geçen ay</Button></div></div><div className="archive-filter__grid"><Field label="Başlangıç"><Input type="date" required value={baslangic} onChange={e=>setBaslangic(e.target.value)}/></Field><Field label="Bitiş"><Input type="date" required min={baslangic} value={bitis} onChange={e=>setBitis(e.target.value)}/></Field><Field label="Rapor ara"><Input value={arama} onChange={e=>setArama(e.target.value)} placeholder="Dönem, UUID veya GİB kodu…"/></Field><Field label="GİB durumu"><Select value={durum} onChange={e=>setDurum(e.target.value)}><option value="">Tüm durumlar</option><option value="basarili">Başarılı</option><option value="bekliyor">İşleniyor</option><option value="hatali">Hatalı</option><option value="bilinmiyor">Bilinmiyor</option></Select></Field><Button variant="primary" disabled={yukleniyor||!baslangic||!bitis||baslangic>bitis} onClick={()=>void yukle()}>Uygula</Button></div></Card>
+    <div className="archive-toolbar"><div><strong>Rapor kayıtları</strong><span>{filtreli.length} sonuç</span></div><div><Button disabled={!zengin.some(r=>r._durum.grup!=="basarili")||sorgulananlar.size>0} onClick={()=>void bekleyenleriSorgula()}>{sorgulananlar.size?`${sorgulananlar.size} rapor sorgulanıyor…`:"Bekleyenleri sorgula"}</Button><Button onClick={csv} disabled={!filtreli.length}>CSV dışa aktar</Button></div></div>
+    <Card className="archive-register" pad={false}><TableWrap><thead><tr><th>Dönem / Rapor</th><th>Tarih aralığı</th><th>Fatura</th><th>Bildirim toplamı</th><th>GİB durumu</th><th>Son kontrol</th><th>İşlem</th></tr></thead><tbody>{yukleniyor&&!raporlar.length?<tr><td colSpan={7}><div className="archive-empty">Raporlar entegratörden alınıyor…</div></td></tr>:filtreli.map(r=><tr key={r.uuid} className={`status-${r._durum.grup}`}><td><strong>{r.donem||"Dönem yok"}</strong><button title="UUID’yi kopyala" onClick={()=>uuidKopyala(r.uuid)}><span>{r.uuid}</span><i>⧉</i></button></td><td><strong>{tarih(r.baslangic)}</strong><small>{tarih(r.bitis)} tarihine kadar</small></td><td><strong>{r.faturaSayisi.toLocaleString("tr-TR")}</strong><small>e-Arşiv faturası</small></td><td><strong className="archive-amount">{para(r.toplamTutar)}</strong><small>GİB rapor toplamı</small></td><td><div className="archive-status"><Badge variant={badge(r._durum.grup)}>{grupMetni(r._durum.grup)}</Badge>{r._durum.kod&&<b>{r._durum.kod}</b>}</div><small title={r._durum.metin}>{r._durum.metin}</small></td><td>{r.sonKontrol?<><strong>{new Date(r.sonKontrol).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})}</strong><small>{new Date(r.sonKontrol).toLocaleDateString("tr-TR")}</small></>:<span className="archive-not-checked">Bu oturumda sorgulanmadı</span>}</td><td><Button size="sm" disabled={sorgulananlar.has(r.uuid)} variant={r._durum.grup==="hatali"?"danger":"ghost"} onClick={()=>void durumSorgula(r.uuid)}>{sorgulananlar.has(r.uuid)?"Sorgulanıyor…":"Durumu sorgula"}</Button></td></tr>)}{!yukleniyor&&!filtreli.length&&<tr><td colSpan={7}><div className="archive-empty"><strong>Rapor bulunamadı</strong><span>Tarih aralığını veya filtreleri değiştirerek yeniden deneyin.</span></div></td></tr>}</tbody></TableWrap></Card>
   </div>;
 }

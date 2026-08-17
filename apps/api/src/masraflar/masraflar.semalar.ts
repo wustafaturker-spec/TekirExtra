@@ -47,6 +47,8 @@ export const masrafOdemeSemasi = z.object({
   kasaId: bosVeyaUuid,
   bankaHesapId: bosVeyaUuid,
   odemeTarihi: z.coerce.date(),
+  tutar: z.coerce.number().positive("Ödeme tutarı sıfırdan büyük olmalıdır"),
+  aciklama: z.union([z.string().trim().max(500), z.literal(""), z.null()]).optional(),
 }).superRefine((girdi, ctx) => {
   if ((!girdi.kasaId && !girdi.bankaHesapId) || (girdi.kasaId && girdi.bankaHesapId)) {
     ctx.addIssue({ code: "custom", message: "Tam olarak bir kasa veya banka hesabı seçilmelidir" });
@@ -72,5 +74,7 @@ export const kiraSozlesmeOlusturSemasi = z.object({
   if (!girdi.cariId && !girdi.kirayaVeren) ctx.addIssue({ code: "custom", path: ["kirayaVeren"], message: "Cari seçilmediğinde kiraya veren adı zorunludur" });
   if (girdi.bitisTarihi && girdi.bitisTarihi < girdi.baslangicTarihi) ctx.addIssue({ code: "custom", path: ["bitisTarihi"], message: "Bitiş tarihi başlangıçtan önce olamaz" });
 });
+
+export const kiraSozlesmeGuncelleSemasi = kiraSozlesmeOlusturSemasi;
 
 export const kiraDonemOlusturSemasi = z.object({ donem: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Dönem YYYY-AA biçiminde olmalıdır") });

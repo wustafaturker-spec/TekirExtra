@@ -32,8 +32,9 @@ describe("masraf şemaları", () => {
   });
 
   it("ödemede tam olarak bir finans hesabı ister", () => {
-    expect(masrafOdemeSemasi.safeParse({ kasaId: "550e8400-e29b-41d4-a716-446655440001", odemeTarihi: "2026-08-12" }).success).toBe(true);
-    expect(masrafOdemeSemasi.safeParse({ odemeTarihi: "2026-08-12" }).success).toBe(false);
+    expect(masrafOdemeSemasi.safeParse({ kasaId: "550e8400-e29b-41d4-a716-446655440001", odemeTarihi: "2026-08-12", tutar: 500 }).success).toBe(true);
+    expect(masrafOdemeSemasi.safeParse({ odemeTarihi: "2026-08-12", tutar: 500 }).success).toBe(false);
+    expect(masrafOdemeSemasi.safeParse({ kasaId: "550e8400-e29b-41d4-a716-446655440001", odemeTarihi: "2026-08-12", tutar: 0 }).success).toBe(false);
   });
 
   it("cari olmadan kiraya veren adıyla sözleşme kabul eder", () => {

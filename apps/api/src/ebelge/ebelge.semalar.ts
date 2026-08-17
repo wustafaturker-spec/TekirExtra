@@ -31,4 +31,7 @@ export const earsivIptalSemasi = z.object({
 export const earsivRaporAralikSemasi = z.object({
   baslangic: z.coerce.date(),
   bitis: z.coerce.date(),
-}).refine((g) => g.baslangic <= g.bitis, { message: "Başlangıç tarihi bitişten sonra olamaz" });
+}).superRefine((g, ctx) => {
+  if (g.baslangic > g.bitis) ctx.addIssue({ code: "custom", path: ["bitis"], message: "Başlangıç tarihi bitişten sonra olamaz" });
+  if (g.bitis.getTime() - g.baslangic.getTime() > 366 * 86400000) ctx.addIssue({ code: "custom", path: ["bitis"], message: "Rapor aralığı en fazla 366 gün olabilir" });
+});

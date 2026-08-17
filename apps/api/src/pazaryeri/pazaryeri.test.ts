@@ -11,16 +11,17 @@ const siparis = {
 };
 
 describe("PazaryeriService", () => {
-  it("ayni harici siparisi ikinci kez olusturmaz", async () => {
-    const mevcut = { id: "p1", hariciId: "PKT-42" };
-    const create = vi.fn();
+  it("ayni harici siparisi ikinci kez olusturmaz ve guncel bilgileri isler", async () => {
+    const mevcut = { id: "p1", hariciId: "PKT-42", faturaId: null };
+    const create = vi.fn(); const update = vi.fn().mockResolvedValue({ ...mevcut, musteriUnvani: siparis.musteriUnvani });
     const tx = {
       baglanti: { findFirst: vi.fn().mockResolvedValue({ id: siparis.baglantiId }) },
-      pazaryeriSiparis: { findUnique: vi.fn().mockResolvedValue(mevcut), create },
+      pazaryeriSiparis: { findUnique: vi.fn().mockResolvedValue(mevcut), create, update },
     };
     const servis = new PazaryeriService({ tenantIslem: vi.fn((_id, fn) => fn(tx)) } as any);
-    await expect(servis.iceAktar(siparis)).resolves.toEqual(mevcut);
+    await expect(servis.iceAktar(siparis)).resolves.toEqual(expect.objectContaining({ id: "p1" }));
     expect(create).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ musteriUnvani: "Ada Yılmaz" }) }));
   });
 
   it("SKU varyantla eslesince siparisi faturalanmaya hazir isaretler", async () => {
@@ -40,10 +41,10 @@ describe("PazaryeriService", () => {
   it("hazir siparisi taslak satis faturasina donusturur", async () => {
     const update = vi.fn().mockResolvedValue({});
     const tx = { pazaryeriSiparis: {
-      findUnique: vi.fn().mockResolvedValue({ id: "p1", siparisNo: "SP-42", siparisTarihi: new Date("2026-08-10"), dovizCinsi: "TRY", faturaId: null,
+      findUnique: vi.fn().mockResolvedValue({ id: "p1", siparisNo: "SP-42", siparisTarihi: new Date("2026-08-10"), dovizCinsi: "TRY", durum: "faturalanmaya_hazir", faturaId: null,
         satirlar: [{ stokId: "s1", varyantId: null, miktar: { toString: () => "2" }, birimFiyat: { toString: () => "120" }, kdvOrani: { toString: () => "20" } }] }),
-      update, updateMany: vi.fn(),
-    } };
+      update, updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    }, cariHesap: { findFirst: vi.fn().mockResolvedValue({ id: "c1" }) } };
     const faturaOlustur = vi.fn().mockResolvedValue({ id: "f1" });
     const servis = new PazaryeriService({ tenantIslem: vi.fn((_id, fn) => fn(tx)) } as any, { olustur: faturaOlustur } as any);
     const sonuc = await servis.faturalastir([{ siparisId: "p1", cariId: "c1" }]);
@@ -52,13 +53,13 @@ describe("PazaryeriService", () => {
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ faturaId: "f1", durum: "faturalandi" }) }));
   });
 
-  it("komisyon kaydini yalnizca bir kez ice aktarir", async () => {
+  it("komisyon kaydini yalnizca bir kez ice aktarir ve tekrarinda bilgileri gunceller", async () => {
     const upsert = vi.fn().mockResolvedValue({ id: "k1" });
     const tx = { baglanti: { findFirst: vi.fn().mockResolvedValue({ id: siparis.baglantiId }) }, pazaryeriKesinti: { upsert } };
     const servis = new PazaryeriService({ tenantIslem: vi.fn((_id, fn) => fn(tx)) } as any, {} as any);
     await servis.kesintiIceAktar({ baglantiId: siparis.baglantiId, hariciId: "fee-1", tur: "komisyon", tarih: "2026-08-10", tutar: 24, dovizCinsi: "TRY" });
     expect(upsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { tenantId_baglantiId_hariciId: { tenantId: "t1", baglantiId: siparis.baglantiId, hariciId: "fee-1" } }, update: {},
+      where: { tenantId_baglantiId_hariciId: { tenantId: "t1", baglantiId: siparis.baglantiId, hariciId: "fee-1" } }, update: expect.objectContaining({ tur: "komisyon" }),
     }));
   });
 
