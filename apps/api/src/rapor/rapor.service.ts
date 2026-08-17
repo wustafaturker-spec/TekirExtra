@@ -101,7 +101,7 @@ export class RaporService {
     const tarihIso = tarih.toISOString().slice(0, 10);
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const [satislar, hareketler] = await Promise.all([
+      const [satislar, hareketler, cekler] = await Promise.all([
         tx.fatura.findMany({
           where: { tenantId, tarih, durum: "kesin", tip: { in: ["satis", "satis_iade"] } },
           select: { id: true, no: true, tarih: true, tip: true, genelToplam: true, dovizCinsi: true, kur: true, cari: { select: { unvan: true } } },
@@ -109,17 +109,23 @@ export class RaporService {
         }),
         tx.kasaBankaHareket.findMany({
           where: { tenantId, tarih, tip: "tahsilat" },
-          select: { id: true, tarih: true, tutar: true, tutarTry: true, dovizCinsi: true, aciklama: true, kaynakTur: true, kasa: { select: { ad: true } }, bankaHesap: { select: { ad: true } }, posHesap: { select: { ad: true } }, cari: { select: { unvan: true } }, fatura: { select: { id: true, no: true } } },
+          select: { id: true, tarih: true, tutar: true, tutarTry: true, dovizCinsi: true, aciklama: true, kaynakTur: true, kaynakRef: true, kasa: { select: { ad: true } }, bankaHesap: { select: { ad: true } }, posHesap: { select: { ad: true } }, cari: { select: { unvan: true } }, fatura: { select: { id: true, no: true } } },
           orderBy: { createdAt: "desc" },
+        }),
+        tx.cekSenet.findMany({
+          where: { tenantId, islemTarihi: tarih, yon: "alinan" },
+          select: { id: true, tur: true, portfoyNo: true, tutar: true, tutarTry: true, dovizCinsi: true, borclu: true, cari: { select: { unvan: true } } },
         }),
       ]);
       const satisTry = satislar.reduce((toplam, fatura) => toplam.add(fatura.genelToplam.mul(fatura.kur)), D(0));
-      const tahsilatTry = hareketler.reduce((toplam, hareket) => toplam.add(hareket.tutarTry), D(0));
+      const hareketKaynaklari = new Set(hareketler.map((h) => h.kaynakRef).filter(Boolean));
+      const yeniCekler = cekler.filter((cek) => !hareketKaynaklari.has(cek.id));
+      const tahsilatTry = hareketler.reduce((toplam, hareket) => toplam.add(hareket.tutarTry), D(0)).add(yeniCekler.reduce((toplam, cek) => toplam.add(cek.tutarTry), D(0)));
       return {
         tarih: tarihIso,
         satis: { toplam: satisTry.toFixed(2), adet: satislar.length },
-        tahsilat: { toplam: tahsilatTry.toFixed(2), adet: hareketler.length },
-        tahsilatlar: hareketler.map((h) => ({ ...h, hesap: h.kasa?.ad ?? h.bankaHesap?.ad ?? h.posHesap?.ad ?? "Diğer", tutar: h.tutar.toFixed(2), tutarTry: h.tutarTry.toFixed(2) })),
+        tahsilat: { toplam: tahsilatTry.toFixed(2), adet: hareketler.length + yeniCekler.length },
+        tahsilatlar: [...hareketler.map((h) => ({ ...h, hesap: h.kasa?.ad ?? h.bankaHesap?.ad ?? h.posHesap?.ad ?? "Diğer", tutar: h.tutar.toFixed(2), tutarTry: h.tutarTry.toFixed(2) })), ...yeniCekler.map((cek) => ({ id: cek.id, tarih, tutar: cek.tutar.toFixed(2), tutarTry: cek.tutarTry.toFixed(2), dovizCinsi: cek.dovizCinsi, aciklama: `${cek.tur.toUpperCase()} tahsilatı · ${cek.portfoyNo}`, kaynakTur: "cek_senet", hesap: "Çek / Senet", cari: cek.cari, fatura: null }))],
       };
     });
   }
