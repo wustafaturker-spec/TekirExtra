@@ -113,7 +113,7 @@ export class RaporService {
           orderBy: { createdAt: "desc" },
         }),
         tx.cekSenet.findMany({
-          where: { tenantId, islemTarihi: tarih, yon: "alinan" },
+          where: { tenantId, islemTarihi: tarih, yon: "alinan", durum: { in: ["portfoyde", "tahsile_verildi", "teminata_verildi", "tahsil_edildi"] } },
           select: { id: true, tur: true, portfoyNo: true, tutar: true, tutarTry: true, dovizCinsi: true, borclu: true, cari: { select: { unvan: true } } },
         }),
       ]);
