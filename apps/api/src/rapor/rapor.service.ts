@@ -93,4 +93,34 @@ export class RaporService {
       };
     });
   }
+
+  async gunlukOzet(tarihMetni?: string) {
+    const tarih = tarihMetni && /^\d{4}-\d{2}-\d{2}$/.test(tarihMetni)
+      ? new Date(`${tarihMetni}T00:00:00.000Z`)
+      : new Date(Date.UTC(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()));
+    const tarihIso = tarih.toISOString().slice(0, 10);
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const [satislar, hareketler] = await Promise.all([
+        tx.fatura.findMany({
+          where: { tenantId, tarih, durum: "kesin", tip: { in: ["satis", "satis_iade"] } },
+          select: { id: true, no: true, tarih: true, tip: true, genelToplam: true, dovizCinsi: true, kur: true, cari: { select: { unvan: true } } },
+          orderBy: { createdAt: "desc" },
+        }),
+        tx.kasaBankaHareket.findMany({
+          where: { tenantId, tarih, tip: "tahsilat" },
+          select: { id: true, tarih: true, tutar: true, tutarTry: true, dovizCinsi: true, aciklama: true, kaynakTur: true, kasa: { select: { ad: true } }, bankaHesap: { select: { ad: true } }, posHesap: { select: { ad: true } }, cari: { select: { unvan: true } }, fatura: { select: { id: true, no: true } } },
+          orderBy: { createdAt: "desc" },
+        }),
+      ]);
+      const satisTry = satislar.reduce((toplam, fatura) => toplam.add(fatura.genelToplam.mul(fatura.kur)), D(0));
+      const tahsilatTry = hareketler.reduce((toplam, hareket) => toplam.add(hareket.tutarTry), D(0));
+      return {
+        tarih: tarihIso,
+        satis: { toplam: satisTry.toFixed(2), adet: satislar.length },
+        tahsilat: { toplam: tahsilatTry.toFixed(2), adet: hareketler.length },
+        tahsilatlar: hareketler.map((h) => ({ ...h, hesap: h.kasa?.ad ?? h.bankaHesap?.ad ?? h.posHesap?.ad ?? "Diğer", tutar: h.tutar.toFixed(2), tutarTry: h.tutarTry.toFixed(2) })),
+      };
+    });
+  }
 }

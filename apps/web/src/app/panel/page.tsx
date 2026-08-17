@@ -10,6 +10,8 @@ interface FinansOzet { nakitVarliklar: string; envanterDegeri: string; toplamAla
 interface FaturaKuyrukOzeti { taslakSatis: number; taslakAlis: number; ebelgeHata: number; acikTahsilat: number; acikOdeme: number; }
 interface CekSenet { id: string; tur: "cek" | "senet"; yon: "alinan" | "verilen"; portfoyNo: string; vadeTarihi: string; tutarTry: string; borclu: string; durum: string; banka?: string | null; cari?: { unvan: string } | null; }
 interface IsOgesi { href: string; baslik: string; aciklama: string; sayi: number; ton: "danger" | "warning" | "neutral"; }
+interface GunlukOzet { satis: { toplam: string; adet: number }; tahsilat: { toplam: string; adet: number }; }
+interface DovizKurlari { kurTarihi: string; oncekiIsGunuKullanildi?: boolean; kurlar: Record<string, number>; }
 
 const rolAdi: Record<Rol, string> = { yonetici: "Yönetim görünümü", muhasebe: "Muhasebe görünümü", satis: "Satış görünümü", salt_okunur: "Genel görünüm" };
 const para = (deger: string | number, sifirBasamak = false) => Number(deger || 0).toLocaleString("tr-TR", { style: "currency", currency: "TRY", maximumFractionDigits: sifirBasamak ? 0 : 2 });
@@ -31,6 +33,9 @@ export default function PanelSayfasi() {
   const [hata, setHata] = useState("");
   const [yukleniyor, setYukleniyor] = useState(true);
   const [sonGuncelleme, setSonGuncelleme] = useState<Date | null>(null);
+  const [gunluk, setGunluk] = useState<GunlukOzet | null>(null);
+  const [alisKurlari, setAlisKurlari] = useState<DovizKurlari | null>(null);
+  const [satisKurlari, setSatisKurlari] = useState<DovizKurlari | null>(null);
 
   const yukle = useCallback(async () => {
     setYukleniyor(true); setHata("");
@@ -41,6 +46,9 @@ export default function PanelSayfasi() {
       const sonuclar = await Promise.allSettled([
         api<FaturaKuyrukOzeti>("/fatura/is-kuyrugu-ozeti"),
         api<{ kritikStok: number }>("/stok/kritik-ozeti"),
+        api<GunlukOzet>("/rapor/gunluk"),
+        api<DovizKurlari>("/doviz-kurlari?tip=alis"),
+        api<DovizKurlari>("/doviz-kurlari?tip=satis"),
         ...(finansalErisim ? [
           api<FinansOzet>("/rapor/ozet"), api<unknown[]>("/kasa-banka/ekstre/satirlar?durum=beklemede"),
           api<unknown[]>("/ebelge/gelen?durum=beklemede"), api<CekSenet[]>("/kasa-banka/cek-senet"),
@@ -48,11 +56,14 @@ export default function PanelSayfasi() {
       ]);
       if (sonuclar[0]?.status === "fulfilled") setFatura(sonuclar[0].value as FaturaKuyrukOzeti);
       if (sonuclar[1]?.status === "fulfilled") setKritikStok((sonuclar[1].value as { kritikStok: number }).kritikStok);
+      if (sonuclar[2]?.status === "fulfilled") setGunluk(sonuclar[2].value as GunlukOzet);
+      if (sonuclar[3]?.status === "fulfilled") setAlisKurlari(sonuclar[3].value as DovizKurlari);
+      if (sonuclar[4]?.status === "fulfilled") setSatisKurlari(sonuclar[4].value as DovizKurlari);
       if (finansalErisim) {
-        if (sonuclar[2]?.status === "fulfilled") setFinans(sonuclar[2].value as FinansOzet);
-        if (sonuclar[3]?.status === "fulfilled") setEkstre((sonuclar[3].value as unknown[]).length);
-        if (sonuclar[4]?.status === "fulfilled") setGelen((sonuclar[4].value as unknown[]).length);
-        if (sonuclar[5]?.status === "fulfilled") setCekler(sonuclar[5].value as CekSenet[]);
+        if (sonuclar[5]?.status === "fulfilled") setFinans(sonuclar[5].value as FinansOzet);
+        if (sonuclar[6]?.status === "fulfilled") setEkstre((sonuclar[6].value as unknown[]).length);
+        if (sonuclar[7]?.status === "fulfilled") setGelen((sonuclar[7].value as unknown[]).length);
+        if (sonuclar[8]?.status === "fulfilled") setCekler(sonuclar[8].value as CekSenet[]);
       }
       if (sonuclar.some((sonuc) => sonuc.status === "rejected")) setHata("Bazı özetler şu anda yüklenemedi; erişilebilen güncel veriler gösteriliyor.");
       setSonGuncelleme(new Date());
@@ -107,6 +118,12 @@ export default function PanelSayfasi() {
       <div className="dashboard-hero__actions"><span className="dashboard-updated">{sonGuncelleme ? `Son güncelleme ${sonGuncelleme.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}` : "Veriler hazırlanıyor"}</span><button className="btn btn--ghost" disabled={yukleniyor} onClick={() => void yukle()} type="button"><span aria-hidden="true">↻</span>{yukleniyor ? "Güncelleniyor" : "Yenile"}</button><Link className="btn btn--primary" href="/panel/fatura/yeni?yon=satis"><span aria-hidden="true">＋</span>Yeni işlem</Link></div>
     </header>
     {hata && <div className="dashboard-notice" role="status"><span aria-hidden="true">i</span>{hata}</div>}
+
+    <section className="dashboard-daily-strip" aria-label="Bugünün özeti">
+      <div className="dashboard-daily-card dashboard-daily-card--sales"><span>Bugünkü satış</span><strong>{gunluk ? para(gunluk.satis.toplam) : "—"}</strong><small>{gunluk?.satis.adet ?? 0} kesinleşmiş satış faturası</small></div>
+      <Link href={`/panel/kasa-banka?baslangic=${new Date().toISOString().slice(0, 10)}&bitis=${new Date().toISOString().slice(0, 10)}&tur=tahsilat`} className="dashboard-daily-card dashboard-daily-card--collection"><span>Bugünkü tahsilat</span><strong>{gunluk ? para(gunluk.tahsilat.toplam) : "—"}</strong><small>{gunluk?.tahsilat.adet ?? 0} tahsilat · detayları aç <b aria-hidden="true">→</b></small></Link>
+      <div className="dashboard-daily-card dashboard-daily-card--currency"><div><span>TCMB günlük kurları</span><small>{alisKurlari?.kurTarihi ? `${alisKurlari.kurTarihi} · ${alisKurlari.oncekiIsGunuKullanildi ? "son iş günü" : "bugün"}` : "Yükleniyor…"}</small></div><div className="dashboard-rates"><div><b>USD</b><span>Alış <strong>{alisKurlari?.kurlar.USD?.toLocaleString("tr-TR", { minimumFractionDigits: 4 }) ?? "—"}</strong></span><span>Satış <strong>{satisKurlari?.kurlar.USD?.toLocaleString("tr-TR", { minimumFractionDigits: 4 }) ?? "—"}</strong></span></div><div><b>EUR</b><span>Alış <strong>{alisKurlari?.kurlar.EUR?.toLocaleString("tr-TR", { minimumFractionDigits: 4 }) ?? "—"}</strong></span><span>Satış <strong>{satisKurlari?.kurlar.EUR?.toLocaleString("tr-TR", { minimumFractionDigits: 4 }) ?? "—"}</strong></span></div></div></div>
+    </section>
 
     {rol !== "satis" && <section aria-labelledby="finansal-durum">
       <div className="dashboard-section-head"><div><p className="dashboard-kicker">Anlık durum</p><h2 id="finansal-durum">Finansal görünüm</h2></div><Link href="/panel/raporlar">Detaylı raporlar <span aria-hidden="true">→</span></Link></div>

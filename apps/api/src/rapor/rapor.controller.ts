@@ -1,4 +1,4 @@
-import { Controller, Get } from "@nestjs/common";
+import { Controller, Get, Query } from "@nestjs/common";
 import { RaporService } from "./rapor.service";
 
 /**
@@ -12,5 +12,10 @@ export class RaporController {
   @Get("ozet")
   async finansalOzet() {
     return this.raporService.finansalOzet();
+  }
+
+  @Get("gunluk")
+  async gunlukOzet(@Query("tarih") tarih?: string) {
+    return this.raporService.gunlukOzet(tarih);
   }
 }
