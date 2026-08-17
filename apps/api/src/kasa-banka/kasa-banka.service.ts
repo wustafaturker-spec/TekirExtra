@@ -266,8 +266,8 @@ export class KasaBankaService {
 
   async hareketListele(kasaId?: string, bankaHesapId?: string, posHesapId?: string) {
     const { tenantId } = aktifBaglam();
-    return this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.kasaBankaHareket.findMany({
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const hareketler = await tx.kasaBankaHareket.findMany({
         where: {
           kasaId: kasaId || undefined,
           bankaHesapId: bankaHesapId || undefined,
@@ -281,8 +281,18 @@ export class KasaBankaService {
           fatura: { select: { id: true, no: true, genelToplam: true } },
           posHesap: { select: { id: true, ad: true, saglayici: true } },
         },
-      }),
-    );
+      });
+      if (kasaId || bankaHesapId || posHesapId) return hareketler;
+      const cekler = await tx.cekSenet.findMany({
+        where: { tenantId, yon: "alinan", durum: { in: ["portfoyde", "tahsile_verildi", "teminata_verildi", "tahsil_edildi"] } },
+        select: { id: true, tutar: true, dovizCinsi: true, kur: true, tutarTry: true, islemTarihi: true, portfoyNo: true, tur: true, borclu: true, cari: { select: { id: true, kod: true, unvan: true } } },
+        orderBy: { islemTarihi: "desc" },
+      });
+      const fisliCekler = new Set(hareketler.map((h) => h.kaynakRef).filter(Boolean));
+      return [...hareketler, ...cekler.filter((cek) => !fisliCekler.has(cek.id)).map((cek) => ({
+        id: cek.id, kasaId: null, bankaHesapId: null, posHesapId: null, tip: "tahsilat" as const, tutar: cek.tutar, dovizCinsi: cek.dovizCinsi, kur: cek.kur, tutarTry: cek.tutarTry, tarih: cek.islemTarihi, aciklama: `${cek.tur.toUpperCase()} tahsilatı (Portföy No: ${cek.portfoyNo}, Borçlu: ${cek.borclu})`, cariId: cek.cari?.id ?? null, faturaId: null, karsiHareketId: null, kaynakTur: "cek_senet", kaynakRef: cek.id, createdAt: cek.islemTarihi, kasa: null, bankaHesap: null, cari: cek.cari, fatura: null, posHesap: null,
+      }))].sort((a, b) => new Date(b.tarih).getTime() - new Date(a.tarih).getTime());
+    });
   }
 
   async hareketEkle(girdi: z.infer<typeof kasaBankaHareketOlusturSemasi>) {
