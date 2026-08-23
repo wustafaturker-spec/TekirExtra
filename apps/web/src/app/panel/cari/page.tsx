@@ -285,7 +285,8 @@ export default function CariSayfasi() {
 
   const etiketleriYukle = useCallback(async () => {
     try {
-      setEtiketler(await api<Etiket[]>("/cari/etiketler"));
+      const veri = await api<Etiket[]>("/cari/etiketler");
+      setEtiketler(Array.isArray(veri) ? veri : []);
     } catch {
       /* etiketler yüklenemezse liste boş kalır */
     }
@@ -304,7 +305,7 @@ export default function CariSayfasi() {
     if (tokenAl()) {
       void etiketleriYukle();
       api<{ id: string; ad: string; dovizCinsi: string }[]>("/fiyat-listeleri")
-        .then(setFiyatListeleri)
+        .then((veri) => setFiyatListeleri(Array.isArray(veri) ? veri : []))
         .catch(() => undefined);
     }
   }, [etiketleriYukle]);
@@ -353,14 +354,14 @@ export default function CariSayfasi() {
     try {
       const [cDetay, cEkstre, cCrm, cAnaliz] = await Promise.all([
         api<CariDetay>(`/cari/${id}`),
-        api<EkstreVeri>(`/cari/${id}/ekstre`),
-        api<CrmVeri>(`/cari/${id}/crm`),
-        api<CariAnalizi>(`/cari/${id}/davranis-analizi`),
+        api<EkstreVeri>(`/cari/${id}/ekstre`).catch(() => null),
+        api<CrmVeri>(`/cari/${id}/crm`).catch(() => null),
+        api<CariAnalizi>(`/cari/${id}/davranis-analizi`).catch(() => null),
       ]);
       setDetay(cDetay);
       setEkstreEposta(cDetay.eposta || "");
-      setEkstre(cEkstre);
-      setCrm(cCrm);
+      setEkstre(cEkstre ?? { cari: cDetay, devirBakiyesi: "0", donemBorc: "0", donemAlacak: "0", donemSonuBakiyesi: "0", satirlar: [] });
+      setCrm(cCrm ?? { etkilesimler: [], gorevler: [], teklifler: [], kullanicilar: [] });
       setCariAnalizi(cAnaliz);
       if (!sekmeyiKoru) setAktifSekme("genel");
     } catch (h) {
@@ -790,7 +791,7 @@ export default function CariSayfasi() {
               📥 Excel&apos;den İçe Aktar
               <input type="file" accept=".xlsx" onChange={excelYukle} style={{ display: "none" }} />
             </ButtonLabel>}
-            {(yeniSayfasi || detaySayfasi) ? <Button onClick={() => router.push("/panel/cari")}>Listeye dön</Button> : <ButtonLabel as="a" variant="primary" href="/panel/cari/yeni">➕ Yeni Cari</ButtonLabel>}
+            {(yeniSayfasi || detaySayfasi) ? <Button onClick={() => router.push("/panel/cari")}>Listeye dön</Button> : <ButtonLabel as="a" role="button" variant="primary" href="/panel/cari/yeni">➕ Yeni Cari</ButtonLabel>}
           </>
         }
       />
@@ -881,8 +882,8 @@ export default function CariSayfasi() {
               onChange={setAktifSekme}
               items={[
                 { deger: "genel", baslik: "Genel Bakış" },
-                { deger: "crm", baslik: "CRM" },
                 { deger: "ekstre", baslik: "Ekstre" },
+                { deger: "crm", baslik: "CRM" },
                 { deger: "adresler", baslik: "Adresler" },
                 { deger: "kisiler", baslik: "İlgili Kişiler" },
                 { deger: "bankalar", baslik: "Banka Hesapları" },

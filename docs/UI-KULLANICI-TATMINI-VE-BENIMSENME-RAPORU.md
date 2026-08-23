@@ -215,7 +215,7 @@ Temel eylemler acikca ayrilmalidir:
 - **Taslak Kaydet**
 - **Kontrol Et**
 - **Kesinlestir**
-- Kesinlesme sonrasinda **e-Belge Gonder**
+- Kesinlesme sonrasinda **e-Fatura Olustur** wizard'i
 
 Geri donusu zor sonuclari olan "Kaydet ve gonder" benzeri birlesik komutlar
 varsayilan ana eylem olmamalidir.
@@ -230,6 +230,7 @@ Kesinlestirme oncesinde kullaniciya kisa bir ozet verilmelidir:
 - Stok etkisi
 - Cari bakiye/risk etkisi
 - e-Fatura veya e-Arsiv secimi
+- Entegrator, VKN/TCKN ve gonderim onayi
 - Eksik ya da supheli alanlar
 
 ---

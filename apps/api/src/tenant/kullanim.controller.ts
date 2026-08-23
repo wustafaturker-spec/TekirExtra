@@ -1,5 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Post } from "@nestjs/common";
 import { z } from "zod";
+import { ROLLER } from "@tekirextra/shared";
 import { Roller } from "../auth/roller.decorator";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
@@ -70,7 +71,7 @@ export class KullanimController {
     const geriBildirimler = kayitlar.filter((kayit) => kayit.islem === "geri_bildirim").map((kayit) => kayit.detay as { puan?: unknown; kategori?: unknown } | null);
     const puanlar = geriBildirimler.map((detay) => detay?.puan).filter((puan): puan is number => typeof puan === "number");
     const kategoriSayilari = Object.fromEntries(["genel", "kullanilabilirlik", "hata", "oneri"].map((kategori) => [kategori, geriBildirimler.filter((detay) => detay?.kategori === kategori).length]));
-    const rolKirilimi = (["yonetici", "muhasebe", "satis", "salt_okunur"] as const).map((rol) => {
+    const rolKirilimi = ROLLER.map((rol) => {
       const kullaniciIdleri = new Set(kullanicilar.filter((kullanici) => kullanici.rol === rol).map((kullanici) => kullanici.id));
       const olaylar = kayitlar.filter((kayit) => kayit.userId && kullaniciIdleri.has(kayit.userId));
       const rolSay = (olay: string) => olaylar.filter((kayit) => kayit.islem === olay).length;

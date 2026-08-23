@@ -58,9 +58,10 @@ function maskele(deger: string): string {
 }
 
 /**
- * Dış bağlantı yönetimi (ENT-01, EBLG-01a/01b). Gerçek entegratör hesapları
- * Gerçek adaptörü bulunan sağlayıcı doğrudan ona, diğer sağlayıcılar mock
- * adaptöre çözümlenir.
+ * Dış bağlantı yönetimi (ENT-01, EBLG-01a/01b). Gerçek adaptörü bulunan
+ * sağlayıcı doğrudan ona çözümlenir. Mock adapter yalnızca geliştirme/testte
+ * veya açıkça ALLOW_MOCK_ENTEGRATIONS=true ile kullanılabilir; production'da
+ * yanlışlıkla başarılı görünen sahte gönderim varsayılan olarak engellenir.
  */
 @Injectable()
 export class BaglantilarService {
@@ -72,7 +73,13 @@ export class BaglantilarService {
   constructor(private readonly prisma: PrismaService) {}
 
   adapterCoz(saglayici: string): EntegratorAdapter {
-    // T-01: gerçek adaptörler geldikçe burada sağlayıcıya göre dallanılır
+    // T-01: gerçek adaptörler geldikçe burada sağlayıcıya göre dallanılır.
+    const mockaIzinVar = process.env.ALLOW_MOCK_ENTEGRATIONS === "true" || process.env.NODE_ENV !== "production";
+    if (saglayici !== "sovos" && !mockaIzinVar) {
+      throw new BadRequestException(
+        `${saglayici} sağlayıcısı için gerçek entegrasyon henüz etkin değil. Üretimde mock entegrasyon kullanılamaz.`,
+      );
+    }
     let adapter = this.adapterler.get(saglayici);
     if (!adapter) {
       adapter = saglayici === "sovos"

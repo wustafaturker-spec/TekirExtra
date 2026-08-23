@@ -21,6 +21,12 @@ import { PosModule } from "./pos/pos.module";
 import { MasraflarModule } from "./masraflar/masraflar.module";
 import { DovizModule } from "./doviz/doviz.module";
 import { UretimModule } from "./uretim/uretim.module";
+import { ObservabilityModule } from "./core/observability/observability.module";
+import { PersonelModule } from "./personel/personel.module";
+import { MaliMusavirModule } from "./mali-musavir/mali-musavir.module";
+import { CrmFirsatModule } from "./crm/crm-firsat.module";
+import { B2bModule } from "./b2b/b2b.module";
+import { AiModule } from "./ai/ai.module";
 
 @Module({
   imports: [
@@ -43,6 +49,12 @@ import { UretimModule } from "./uretim/uretim.module";
     MasraflarModule,
     DovizModule,
     UretimModule,
+    ObservabilityModule,
+    PersonelModule,
+    MaliMusavirModule,
+    CrmFirsatModule,
+    B2bModule,
+    AiModule,
   ],
   providers: [{ provide: APP_INTERCEPTOR, useClass: AuditInterceptor }],
 })

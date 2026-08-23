@@ -15,13 +15,20 @@ import {
   TableWrap,
 } from "@/components/ui";
 
-const ROLLER = ["yonetici", "muhasebe", "satis", "salt_okunur"] as const;
+const ROLLER = ["yonetici", "muhasebe", "satis", "salt_okunur", "mali_musavir", "b2b_bayi", "uretim_planlama", "uretim_operatoru", "depo", "kalite", "maliyet_muhasebesi"] as const;
 type Rol = (typeof ROLLER)[number];
 const ROL_ADI: Record<Rol, string> = {
   yonetici: "Yönetici",
   muhasebe: "Muhasebe",
   satis: "Satış",
   salt_okunur: "Salt Okunur",
+  mali_musavir: "Mali Müşavir",
+  b2b_bayi: "B2B Bayi",
+  uretim_planlama: "Üretim Planlama",
+  uretim_operatoru: "Üretim Operatörü",
+  depo: "Depo Sorumlusu",
+  kalite: "Kalite Sorumlusu",
+  maliyet_muhasebesi: "Maliyet Muhasebesi",
 };
 
 interface Kullanici {

@@ -18,6 +18,12 @@ const GELEN_DURUMLARI: GelenEbelgeDurum[] = ["beklemede", "islendi", "reddedildi
 export class EbelgeController {
   constructor(private readonly ebelgeService: EbelgeService) {}
 
+  @Get("wizard/:faturaId")
+  @Roller("muhasebe")
+  async wizard(@Param("faturaId") faturaId: string) {
+    return this.ebelgeService.wizardBilgisi(faturaId);
+  }
+
   @Post("gonder/:faturaId")
   @Roller("muhasebe")
   async gonder(@Param("faturaId") faturaId: string) {

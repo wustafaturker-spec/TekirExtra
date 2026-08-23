@@ -12,7 +12,6 @@ import {
   Input,
   PageHeader,
   SearchInput,
-  Segmented,
   Select,
   Stat,
   StatGrid,
@@ -145,6 +144,7 @@ export default function GelenKutusuSayfasi() {
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [islemde, setIslemde] = useState<string | null>(null);
+  const [arama, setArama] = useState("");
 
   /** siraNo → seçili stok kartı; tümü dolmadan "Faturaya İşle" açılmaz (S-01). */
   const [eslesme, setEslesme] = useState<Record<number, StokSecenek | null>>({});
@@ -178,6 +178,14 @@ export default function GelenKutusuSayfasi() {
     if (!tokenAl()) return;
     void listeYukle();
   }, [listeYukle]);
+
+  const gorunenListe = useMemo(() => {
+    const sorgu = arama.trim().toLocaleLowerCase("tr-TR");
+    if (!sorgu) return liste;
+    return liste.filter((g) => `${g.belgeNo} ${g.gonderenUnvan} ${g.gonderenVkn}`.toLocaleLowerCase("tr-TR").includes(sorgu));
+  }, [arama, liste]);
+  const bekleyenSayisi = liste.filter((g) => g.durum === "beklemede").length;
+  const toplamTutar = liste.reduce((toplam, g) => toplam + Number(g.genelToplam ?? 0), 0);
 
   const detayAc = useCallback(async (id: string) => {
     setHata("");
@@ -389,95 +397,63 @@ export default function GelenKutusuSayfasi() {
 
   if (!detay) {
     return (
-      <div>
-        <PageHeader
-          title="Gelen e-Belgeler"
-          subtitle="Entegratörden gelen e-Faturalar burada onay bekler; faturaya yalnızca siz onayladığınızda dönüşür."
-          actions={
-            <>
-              <ButtonLabel as="a" href="/panel/fatura">
-                ← Faturalar
-              </ButtonLabel>
-              <Button
-                variant="primary"
-                onClick={() => void entegratordenCek()}
-                disabled={islemde !== null}
-              >
-                {islemde === "cek" ? "Çekiliyor..." : "⬇️ Entegratörden Çek"}
-              </Button>
-            </>
-          }
-        />
+      <div className="archive-page incoming-invoice-page">
+        <header className="archive-hero">
+          <div>
+            <span>GELEN E-FATURA MERKEZİ</span>
+            <h1>Gelen e-Faturalar</h1>
+            <p>Entegratörden gelen faturaları, yanıt süreçlerini ve faturaya işleme adımlarını tek merkezden yönetin.</p>
+          </div>
+          <div>
+            <ButtonLabel as="a" href="/panel/fatura">← Faturalar</ButtonLabel>
+            <Button variant="primary" onClick={() => void entegratordenCek()} disabled={islemde !== null}>
+              {islemde === "cek" ? "Belgeler alınıyor…" : "↻ Entegratörden çek"}
+            </Button>
+          </div>
+        </header>
 
         <Alert tone="error">{hata}</Alert>
         <Alert tone="success">{basari}</Alert>
 
-        <div style={{ marginBottom: "1rem" }}>
-          <Segmented
-            value={suzgec}
-            onChange={setSuzgec}
-            items={[
-              { deger: "beklemede", baslik: "Onay Bekleyen" },
-              { deger: "islendi", baslik: "İşlenmiş" },
-              { deger: "reddedildi", baslik: "Reddedilen" },
-              { deger: "hepsi", baslik: "Tümü" },
-            ]}
-          />
-        </div>
+        <section className="archive-kpis incoming-kpis">
+          <div className="is-lead"><span>Görünen belge toplamı</span><strong>{para(toplamTutar)}</strong><small>{gorunenListe.length} belge · {gorunenListe.reduce((t, g) => t + g.satirSayisi, 0)} kalem</small></div>
+          <div className={bekleyenSayisi ? "is-warning" : ""}><span>Onay bekleyen</span><strong>{bekleyenSayisi}</strong><small>İşlem yapılması gereken</small></div>
+          <div><span>Faturaya işlenen</span><strong>{liste.filter((g) => g.durum === "islendi").length}</strong><small>Başarıyla aktarılan</small></div>
+          <div className={liste.filter((g) => g.durum === "reddedildi").length ? "is-danger" : ""}><span>Reddedilen</span><strong>{liste.filter((g) => g.durum === "reddedildi").length}</strong><small>Yanıt gönderilen</small></div>
+        </section>
 
-        <Card pad={false}>
+        <Card className="archive-filter">
+          <div className="archive-filter__grid incoming-filter-grid">
+            <Field label="Durum"><Select value={suzgec} onChange={(e) => setSuzgec(e.target.value as typeof suzgec)}><option value="beklemede">Onay bekleyen</option><option value="islendi">İşlenmiş</option><option value="reddedildi">Reddedilen</option><option value="hepsi">Tümü</option></Select></Field>
+            <Field label="Belge ara"><Input value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Belge no, VKN veya gönderen…" /></Field>
+            <div className="incoming-filter-hint"><span>Görüntülenen kayıt</span><strong>{gorunenListe.length}</strong></div>
+          </div>
+        </Card>
+
+        <div className="archive-toolbar"><div><strong>Gelen belge kayıtları</strong><span>{gorunenListe.length} sonuç</span></div><div><Button variant="ghost" onClick={() => void entegratordenCek()} disabled={islemde !== null}>{islemde === "cek" ? "Alınıyor…" : "Listeyi yenile"}</Button></div></div>
+
+        <Card className="archive-register" pad={false}>
           <TableWrap>
             <thead>
               <tr>
-                <th>Belge No</th>
-                <th>Gönderen</th>
-                <th>Tarih</th>
-                <th>Profil</th>
-                <th className="num">Kalem</th>
-                <th className="num">Tutar</th>
-                <th>Durum</th>
-                <th />
+                <th>Belge / Gönderen</th><th>Tarih</th><th>Profil</th><th>Kalem</th><th>Toplam</th><th>Durum</th><th>İşlem</th>
               </tr>
             </thead>
             <tbody>
-              {liste.length === 0 ? (
+              {gorunenListe.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="empty">
-                    Bu görünümde belge yok. Entegratörden çekmeyi deneyin.
-                  </td>
+                  <td colSpan={7}><div className="archive-empty"><strong>Belge bulunamadı</strong><span>Filtreleri değiştirerek veya entegratörden çekerek yeniden deneyin.</span></div></td>
                 </tr>
               ) : (
-                liste.map((g) => (
+                gorunenListe.map((g) => (
                   <tr key={g.id}>
-                    <td className="mono">{g.belgeNo}</td>
-                    <td>
-                      <div>{g.gonderenUnvan}</div>
-                      <div className="muted mono" style={{ fontSize: "0.8rem" }}>
-                        {g.gonderenVkn}
-                      </div>
-                    </td>
-                    <td>{g.tarih}</td>
+                    <td><strong>{g.belgeNo}</strong><small>{g.gonderenUnvan}</small><small className="mono">{g.gonderenVkn}</small></td>
+                    <td><strong>{g.tarih}</strong><small>Belge tarihi</small></td>
                     <td>{profilRozet(g.profilId)}</td>
-                    <td className="num">{g.satirSayisi}</td>
-                    <td className="num">
-                      {g.genelToplam ? para(g.genelToplam, g.dovizCinsi) : "—"}
-                    </td>
-                    <td>
-                      <div className="row-tight">
-                        {durumRozet(g.durum)}
-                        {g.yanit && (
-                          <Badge variant={g.yanit === "kabul" ? "success" : "danger"}>
-                            {g.yanit === "kabul" ? "KABUL" : "RET"}
-                          </Badge>
-                        )}
-                        {!g.okunabilir && <Badge variant="danger">XML OKUNAMADI</Badge>}
-                      </div>
-                    </td>
-                    <td className="num">
-                      <Button size="sm" onClick={() => void detayAc(g.id)}>
-                        İncele
-                      </Button>
-                    </td>
+                    <td><strong>{g.satirSayisi}</strong><small>ürün kalemi</small></td>
+                    <td><strong className="archive-amount">{g.genelToplam ? para(g.genelToplam, g.dovizCinsi) : "—"}</strong><small>fatura toplamı</small></td>
+                    <td><div className="archive-status">{durumRozet(g.durum)}{g.yanit&&<b>{g.yanit === "kabul" ? "KABUL" : "RET"}</b>}</div>{!g.okunabilir&&<small className="muted">XML okunamadı</small>}</td>
+                    <td><Button size="sm" onClick={() => void detayAc(g.id)}>İncele</Button></td>
                   </tr>
                 ))
               )}

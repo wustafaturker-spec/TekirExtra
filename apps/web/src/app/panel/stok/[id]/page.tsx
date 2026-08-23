@@ -28,19 +28,26 @@ interface Kategori {
   ust: { id: string; ad: string } | null;
 }
 
-function ReceteSekmesi({ stokId, anaBirim, recete, stoklar, onKaydedildi, onSilindi, onHata }: { stokId: string; anaBirim: string; recete: Recete | null; stoklar: StokOzet[]; onKaydedildi: () => Promise<void>; onSilindi: () => Promise<void>; onHata: (mesaj: string) => void }) {
+function ReceteSekmesi({ stokId, anaBirim, recete, stoklar, isMerkezleri, onKaydedildi, onSilindi, onHata }: { stokId: string; anaBirim: string; recete: Recete | null; stoklar: StokOzet[]; isMerkezleri: IsMerkezi[]; onKaydedildi: () => Promise<void>; onSilindi: () => Promise<void>; onHata: (mesaj: string) => void }) {
   const [ciktiMiktari, setCiktiMiktari] = useState("1");
   const [aciklama, setAciklama] = useState("");
+  const [degisiklikNedeni, setDegisiklikNedeni] = useState("");
+  const [yururlukBaslangic, setYururlukBaslangic] = useState("");
+  const [kaliteKontrolGerekli, setKaliteKontrolGerekli] = useState(false);
   const [kalemler, setKalemler] = useState<{ malzemeStokId: string; miktar: string; fireOrani: string }[]>([{ malzemeStokId: "", miktar: "1", fireOrani: "0" }]);
+  const [operasyonlar, setOperasyonlar] = useState<{ isMerkeziId: string; operasyonKodu: string; operasyonAdi: string; hazirlikDakika: string; cevrimDakika: string }[]>([]);
   const [kaydediliyor, setKaydediliyor] = useState(false);
   useEffect(() => {
     setCiktiMiktari(recete?.ciktiMiktari ?? "1"); setAciklama(recete?.aciklama ?? "");
     setKalemler(recete?.kalemler?.length ? recete.kalemler.map((k) => ({ malzemeStokId: k.malzemeStokId, miktar: k.miktar, fireOrani: k.fireOrani })) : [{ malzemeStokId: "", miktar: "1", fireOrani: "0" }]);
+    setOperasyonlar(recete?.operasyonlar?.map((o) => ({ isMerkeziId: o.isMerkeziId, operasyonKodu: o.operasyonKodu, operasyonAdi: o.operasyonAdi, hazirlikDakika: o.hazirlikDakika, cevrimDakika: o.cevrimDakika })) ?? []);
+    setKaliteKontrolGerekli(recete?.kaliteKontrolGerekli ?? false);
   }, [recete]);
   async function kaydet(event: React.FormEvent) {
     event.preventDefault(); onHata(""); setKaydediliyor(true);
     try {
-      await api(`/uretim/receteler/${stokId}`, { method: "POST", body: JSON.stringify({ ciktiMiktari, aciklama: aciklama || null, kalemler: kalemler.map((k) => ({ ...k, malzemeVaryantId: null })) }) });
+      await api(`/uretim/receteler/${stokId}`, { method: "POST", body: JSON.stringify({ ciktiMiktari, aciklama: aciklama || null, degisiklikNedeni: degisiklikNedeni || null, yururlukBaslangic: yururlukBaslangic || null, kaliteKontrolGerekli, kalemler: kalemler.map((k) => ({ ...k, malzemeVaryantId: null })), operasyonlar }) });
+      setDegisiklikNedeni("");
       await onKaydedildi();
     } catch (h) { onHata(h instanceof Error ? h.message : "Reçete kaydedilemedi"); }
     finally { setKaydediliyor(false); }
@@ -49,6 +56,13 @@ function ReceteSekmesi({ stokId, anaBirim, recete, stoklar, onKaydedildi, onSili
     if (!window.confirm("Bu ürün reçetesi kaldırılacak. Devam edilsin mi?")) return;
     try { await api(`/uretim/receteler/${stokId}`, { method: "DELETE" }); await onSilindi(); }
     catch (h) { onHata(h instanceof Error ? h.message : "Reçete kaldırılamadı"); }
+  }
+  async function onayla() {
+    if (!recete || !window.confirm(`Reçete v${recete.surum} üretimde kullanılmak üzere etkinleştirilsin mi?`)) return;
+    setKaydediliyor(true); onHata("");
+    try { await api(`/uretim/receteler/${stokId}/surumler/${recete.id}/onayla`, { method: "POST" }); await onKaydedildi(); }
+    catch (h) { onHata(h instanceof Error ? h.message : "Reçete onaylanamadı"); }
+    finally { setKaydediliyor(false); }
   }
   const satirHesapla = (kalem: typeof kalemler[number]) => {
     const malzeme = stoklar.find((s) => s.id === kalem.malzemeStokId);
@@ -62,19 +76,22 @@ function ReceteSekmesi({ stokId, anaBirim, recete, stoklar, onKaydedildi, onSili
   return <div className="recipe-workspace">
     <section className="recipe-hero">
       <div><span className="recipe-eyebrow">ÜRETİM TANIMI</span><h2>Ürün reçetesi</h2><p>Bir üretim çevriminde tüketilecek malzemeleri, fire paylarını ve tahmini maliyeti yönetin.</p></div>
-      <div className="recipe-health"><span className={recete ? "is-ready" : ""} />{recete ? "Üretime hazır" : "Henüz kaydedilmedi"}</div>
+      <div className="recipe-health"><span className={recete?.durum === "aktif" ? "is-ready" : ""} />{recete ? `v${recete.surum} · ${recete.durum === "aktif" ? "Aktif" : recete.durum === "taslak" ? "Taslak" : "Onay bekliyor"}` : "Henüz kaydedilmedi"}</div>
     </section>
     <form className="recipe-form" onSubmit={kaydet}>
       <section className="recipe-setup">
         <div><h3>Reçete bilgileri</h3><p>Hesaplamaların baz aldığı standart üretim çıktısı.</p></div>
-        <div className="recipe-setup__fields"><Field label={`Çıktı miktarı (${anaBirim})`}><Input required type="number" min="0.001" step="0.001" value={ciktiMiktari} onChange={(e) => setCiktiMiktari(e.target.value)} /></Field><Field label="Üretim notu"><Input maxLength={500} value={aciklama} onChange={(e) => setAciklama(e.target.value)} placeholder="Örn. standart üretim partisi" /></Field></div>
+        <div className="recipe-setup__fields"><Field label={`Çıktı miktarı (${anaBirim})`}><Input required type="number" min="0.001" step="0.001" value={ciktiMiktari} onChange={(e) => setCiktiMiktari(e.target.value)} /></Field><Field label="Üretim notu"><Input maxLength={500} value={aciklama} onChange={(e) => setAciklama(e.target.value)} placeholder="Örn. standart üretim partisi" /></Field><Field label="Değişiklik nedeni"><Input maxLength={500} value={degisiklikNedeni} onChange={(e) => setDegisiklikNedeni(e.target.value)} placeholder="Yeni sürümün amacı" /></Field><Field label="Yürürlük başlangıcı"><Input type="date" value={yururlukBaslangic} onChange={(e) => setYururlukBaslangic(e.target.value)} /></Field><label className="check"><input type="checkbox" checked={kaliteKontrolGerekli} onChange={(e) => setKaliteKontrolGerekli(e.target.checked)} /><span>Üretim sonrası kalite kontrolü zorunlu</span></label></div>
+      </section>
+      <section className="recipe-materials"><div className="recipe-section-head"><div><h3>Operasyon rotası</h3><p>Hazırlık ve birim çevrim süreleri üretim emrinin kapasite planına kopyalanır.</p></div><Button type="button" disabled={!isMerkezleri.length} onClick={() => setOperasyonlar((eski) => [...eski, { isMerkeziId: isMerkezleri[0]?.id ?? "", operasyonKodu: `OP-${String(eski.length + 1).padStart(2, "0")}`, operasyonAdi: "", hazirlikDakika: "0", cevrimDakika: "0" }])}>+ Operasyon ekle</Button></div>
+        <TableWrap><thead><tr><th>Sıra</th><th>İş merkezi</th><th>Kod</th><th>Operasyon</th><th className="num">Hazırlık dk</th><th className="num">Çevrim dk/birim</th><th /></tr></thead><tbody>{operasyonlar.map((o, index) => <tr key={index}><td>{index + 1}</td><td><Select required value={o.isMerkeziId} onChange={(e) => setOperasyonlar((eski) => eski.map((x, i) => i === index ? { ...x, isMerkeziId: e.target.value } : x))}>{isMerkezleri.map((m) => <option key={m.id} value={m.id}>{m.kod} — {m.ad}</option>)}</Select></td><td><Input required maxLength={30} value={o.operasyonKodu} onChange={(e) => setOperasyonlar((eski) => eski.map((x, i) => i === index ? { ...x, operasyonKodu: e.target.value } : x))} /></td><td><Input required maxLength={120} value={o.operasyonAdi} onChange={(e) => setOperasyonlar((eski) => eski.map((x, i) => i === index ? { ...x, operasyonAdi: e.target.value } : x))} /></td><td><Input required type="number" min="0" step="0.01" value={o.hazirlikDakika} onChange={(e) => setOperasyonlar((eski) => eski.map((x, i) => i === index ? { ...x, hazirlikDakika: e.target.value } : x))} /></td><td><Input required type="number" min="0" step="0.0001" value={o.cevrimDakika} onChange={(e) => setOperasyonlar((eski) => eski.map((x, i) => i === index ? { ...x, cevrimDakika: e.target.value } : x))} /></td><td><Button type="button" size="sm" variant="danger" onClick={() => setOperasyonlar((eski) => eski.filter((_, i) => i !== index))}>Sil</Button></td></tr>)}{!operasyonlar.length && <tr><td colSpan={7}>Operasyon rotası isteğe bağlıdır. Önce Üretim Planlama ekranından iş merkezi tanımlayın.</td></tr>}</tbody></TableWrap>
       </section>
       <section className="recipe-materials">
         <div className="recipe-section-head"><div><h3>Malzeme listesi</h3><p>Maliyetler stok kartlarındaki güncel ortalama maliyetten hesaplanır.</p></div><Button type="button" onClick={() => setKalemler((eski) => [...eski, { malzemeStokId: "", miktar: "1", fireOrani: "0" }])}>+ Malzeme ekle</Button></div>
         <TableWrap><thead><tr><th>Malzeme</th><th className="num">Net miktar</th><th>Birim</th><th className="num">Fire</th><th className="num">Birim maliyet</th><th className="num">Satır maliyeti</th><th /></tr></thead><tbody>{kalemler.map((kalem, index) => { const hesap = satirHesapla(kalem); return <tr key={index}><td><Select required value={kalem.malzemeStokId} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, malzemeStokId: e.target.value } : k))}><option value="">Malzeme seçin</option>{stoklar.map((s) => <option key={s.id} value={s.id}>{s.kod} — {s.ad}</option>)}</Select>{hesap.malzeme && <small className="recipe-stock">Kullanılabilir stok: {adet(hesap.malzeme.mevcutMiktar)} {hesap.malzeme.anaBirim}</small>}</td><td><Input aria-label="Reçete miktarı" required type="number" min="0.001" step="0.001" value={kalem.miktar} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, miktar: e.target.value } : k))} /></td><td><span className="recipe-unit">{hesap.malzeme?.anaBirim ?? "—"}</span></td><td><div className="recipe-percent"><Input aria-label="Fire oranı" required type="number" min="0" max="100" step="0.01" value={kalem.fireOrani} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, fireOrani: e.target.value } : k))} /><span>%</span></div></td><td className="num recipe-money">{tl(hesap.birimMaliyet)}</td><td className="num"><strong>{tl(hesap.toplam)}</strong>{Number(kalem.fireOrani) > 0 && <small className="recipe-stock">Fire dahil {adet(hesap.brut)} {hesap.malzeme?.anaBirim}</small>}</td><td><Button type="button" size="sm" variant="danger" disabled={kalemler.length === 1} onClick={() => setKalemler((eski) => eski.filter((_, i) => i !== index))}>Sil</Button></td></tr>; })}</tbody></TableWrap>
       </section>
       <section className="recipe-summary"><div><span>Malzeme çeşidi</span><strong>{kalemler.filter((k) => k.malzemeStokId).length}</strong></div><div><span>Reçete toplam maliyeti</span><strong>{tl(toplamMaliyet)}</strong></div><div className="recipe-summary__lead"><span>1 {anaBirim} tahmini maliyet</span><strong>{tl(birimMamulMaliyeti)}</strong><small>İşçilik ve genel üretim giderleri hariç</small></div></section>
-      <div className="recipe-actions"><div>{recete && <Button type="button" variant="danger" onClick={() => void sil()}>Reçeteyi kaldır</Button>}</div><div className="row-tight"><span className="muted">Değişiklikler yeni üretim emirlerine uygulanır.</span><Button type="submit" variant="primary" disabled={kaydediliyor}>{kaydediliyor ? "Kaydediliyor…" : "Reçeteyi kaydet"}</Button></div></div>
+      <div className="recipe-actions"><div>{recete && <Button type="button" variant="danger" onClick={() => void sil()}>Reçeteyi arşivle</Button>}</div><div className="row-tight"><span className="muted">Kaydetme yeni taslak sürüm oluşturur.</span>{recete && ["taslak", "onay_bekliyor"].includes(recete.durum) && <Button type="button" onClick={() => void onayla()} disabled={kaydediliyor}>Sürümü onayla</Button>}<Button type="submit" variant="primary" disabled={kaydediliyor}>{kaydediliyor ? "Kaydediliyor…" : "Yeni sürüm kaydet"}</Button></div></div>
     </form>
   </div>;
 }
@@ -104,7 +121,8 @@ interface Tedarikci {
 }
 interface Varyant { id: string; kod: string; ad: string; nitelikler: Record<string, string>; barkod: string | null; alisFiyati: string | null; satisFiyati: string | null; mevcutMiktar: string; aktif: boolean }
 interface StokFiyat { id: string; varyantId: string | null; tip: "alis" | "satis"; dovizCinsi: string; tutar: string; aktif: boolean }
-interface Recete { id: string; ciktiMiktari: string; aciklama: string | null; kalemler?: { id: string; malzemeStokId: string; malzemeVaryantId: string | null; miktar: string; fireOrani: string; malzeme: { id: string; kod: string; ad: string; anaBirim: string; mevcutMiktar: string; ortalamaMaliyet: string } }[] }
+interface Recete { id: string; surum: number; durum: "taslak" | "onay_bekliyor" | "aktif" | "pasif" | "arsiv"; ciktiMiktari: string; aciklama: string | null; kaliteKontrolGerekli: boolean; operasyonlar?: { id: string; isMerkeziId: string; operasyonKodu: string; operasyonAdi: string; hazirlikDakika: string; cevrimDakika: string }[]; kalemler?: { id: string; malzemeStokId: string; malzemeVaryantId: string | null; miktar: string; fireOrani: string; malzeme: { id: string; kod: string; ad: string; anaBirim: string; mevcutMiktar: string; ortalamaMaliyet: string } }[] }
+interface IsMerkezi { id: string; kod: string; ad: string; aktif: boolean }
 interface StokOzet { id: string; kod: string; ad: string; tip: string; anaBirim: string; mevcutMiktar: string; ortalamaMaliyet?: string }
 
 interface Hareket {
@@ -238,6 +256,7 @@ export default function StokDetaySayfasi() {
   const [partiler, setPartiler] = useState<Parti[]>([]);
   const [fiyatlar, setFiyatlar] = useState<StokFiyat[]>([]);
   const [recete, setRecete] = useState<Recete | null>(null);
+  const [isMerkezleri, setIsMerkezleri] = useState<IsMerkezi[]>([]);
   const [tumStoklar, setTumStoklar] = useState<StokOzet[]>([]);
   const [kategoriler, setKategoriler] = useState<Kategori[]>([]);
   const [cariler, setCariler] = useState<CariOzet[]>([]);
@@ -292,6 +311,7 @@ export default function StokDetaySayfasi() {
     void partileriYukle();
     void fiyatlariYukle();
     void receteyiYukle();
+    void api<IsMerkezi[]>("/uretim/is-merkezleri").then((v) => setIsMerkezleri(v.filter((m) => m.aktif))).catch(() => setIsMerkezleri([]));
     void tumSayfalariAl<StokOzet>("/stok").then(setTumStoklar).catch(() => {});
     void api<Kategori[]>("/stok/kategoriler").then(setKategoriler).catch(() => {});
     void tumSayfalariAl<CariOzet>("/cari").then(setCariler).catch(() => {});
@@ -407,7 +427,7 @@ export default function StokDetaySayfasi() {
         </TabPanel>
       )}
 
-      {aktifSekme === "recete" && <TabPanel idPrefix="stok-detay" value="recete"><ReceteSekmesi stokId={id} anaBirim={detay.anaBirim} recete={recete} stoklar={tumStoklar.filter((s) => s.id !== id && s.tip !== "hizmet")} onKaydedildi={async () => { await receteyiYukle(); setBasari("Ürün reçetesi kaydedildi."); }} onSilindi={async () => { await receteyiYukle(); setBasari("Ürün reçetesi kaldırıldı."); }} onHata={setHata} /></TabPanel>}
+      {aktifSekme === "recete" && <TabPanel idPrefix="stok-detay" value="recete"><ReceteSekmesi stokId={id} anaBirim={detay.anaBirim} recete={recete} stoklar={tumStoklar.filter((s) => s.id !== id && s.tip !== "hizmet")} isMerkezleri={isMerkezleri} onKaydedildi={async () => { await receteyiYukle(); setBasari("Yeni reçete sürümü taslak olarak kaydedildi."); }} onSilindi={async () => { await receteyiYukle(); setBasari("Ürün reçetesi arşivlendi."); }} onHata={setHata} /></TabPanel>}
       {aktifSekme === "fiyatlar" && <TabPanel idPrefix="stok-detay" value="fiyatlar"><Card title="Dövizli ürün fiyatları"><form className="form-grid" onSubmit={fiyatEkle}><Field label="Tip"><Select value={fiyatTipi} onChange={(e) => setFiyatTipi(e.target.value as "alis" | "satis")}><option value="satis">Satış</option><option value="alis">Alış</option></Select></Field><Field label="Varyant"><Select value={fiyatVaryantId} onChange={(e) => setFiyatVaryantId(e.target.value)}><option value="">Kart fiyatı</option>{(detay.varyantlar ?? []).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad}</option>)}</Select></Field><Field label="Döviz"><Select value={fiyatDovizi} onChange={(e) => setFiyatDovizi(e.target.value)}><option>TRY</option><option>USD</option><option>EUR</option></Select></Field><Field label="Tutar"><Input type="number" min="0" step="0.0001" value={fiyatTutar} onChange={(e) => setFiyatTutar(e.target.value)} required /></Field><div><Button type="submit" variant="primary">Fiyat kaydet</Button></div></form><TableWrap><thead><tr><th>Tip</th><th>Varyant</th><th>Döviz</th><th className="num">Tutar</th><th>Durum</th><th /></tr></thead><tbody>{fiyatlar.map((f) => <tr key={f.id}><td>{f.tip === "alis" ? "Alış" : "Satış"}</td><td>{f.varyantId ? detay.varyantlar?.find((v) => v.id === f.varyantId)?.kod ?? f.varyantId : "Kart"}</td><td>{f.dovizCinsi}</td><td className="num">{Number(f.tutar).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} {f.dovizCinsi}</td><td>{f.aktif ? "Aktif" : "Pasif"}</td><td><Button size="sm" variant="danger" type="button" onClick={() => void fiyatSil(f.id)}>Sil</Button></td></tr>)}{!fiyatlar.length && <tr><td colSpan={6}>Henüz dövizli fiyat tanımlanmamış.</td></tr>}</tbody></TableWrap></Card></TabPanel>}
 
       {aktifSekme === "hareketler" && (

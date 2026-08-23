@@ -19,6 +19,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 let sunucu: ChildProcess;
 let taban: string;
+let sunucuCiktisi = "";
 
 /** VKN kontrol hanesi tutan, istenen son haneye sahip bir numara üretir. */
 function vknUret(sonHaneCift: boolean): string {
@@ -201,13 +202,21 @@ beforeAll(async () => {
   sunucu = spawn(process.execPath, [giris], {
     cwd: resolve(__dirname, ".."),
     env: { ...process.env, PORT: String(port) },
-    stdio: "ignore",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  sunucu.stdout?.on("data", (parca) => {
+    sunucuCiktisi = `${sunucuCiktisi}${String(parca)}`.slice(-8_000);
+  });
+  sunucu.stderr?.on("data", (parca) => {
+    sunucuCiktisi = `${sunucuCiktisi}${String(parca)}`.slice(-8_000);
   });
 
   const sonlanma = new Date(Date.now() + 60_000);
   for (;;) {
     if (sunucu.exitCode !== null) {
-      throw new Error(`API süreci ${sunucu.exitCode} koduyla kapandı`);
+      throw new Error(
+        `API süreci ${sunucu.exitCode} koduyla kapandı${sunucuCiktisi ? `\n${sunucuCiktisi}` : ""}`,
+      );
     }
     try {
       const yanit = await fetch(`http://127.0.0.1:${port}/health`);

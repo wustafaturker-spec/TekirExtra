@@ -129,4 +129,30 @@ export class RaporService {
       };
     });
   }
+
+  /** Vadesi geçmiş, halen açık satış ve alış faturaları (panel özeti). */
+  async vadesiGecenler() {
+    const { tenantId } = aktifBaglam();
+    const bugun = new Date();
+    const bugunBaslangic = new Date(Date.UTC(bugun.getUTCFullYear(), bugun.getUTCMonth(), bugun.getUTCDate()));
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const faturalar = await tx.fatura.findMany({
+        where: { tenantId, durum: "kesin", tip: { in: ["satis", "alis"] }, vadeTarihi: { lt: bugunBaslangic } },
+        orderBy: { vadeTarihi: "asc" }, take: 200,
+        select: { id: true, no: true, tip: true, vadeTarihi: true, genelToplam: true, kur: true, cari: { select: { id: true, unvan: true } }, kasaBankaHarekets: { select: { tutarTry: true } }, krediKartiHareketleri: { select: { cariOdemeTutari: true } } },
+      });
+      const satirlar = faturalar.map((f) => {
+        const odenenTry = f.kasaBankaHarekets.reduce((t, h) => t.add(h.tutarTry), D(0)).add(f.krediKartiHareketleri.reduce((t, h) => t.add(D(h.cariOdemeTutari ?? 0).mul(f.kur)), D(0)));
+        const toplamTry = f.genelToplam.mul(f.kur).toDecimalPlaces(2);
+        const kalanTry = Prisma.Decimal.max(toplamTry.sub(odenenTry), 0).toDecimalPlaces(2);
+        const vade = f.vadeTarihi ?? bugunBaslangic;
+        const gecikmeGun = Math.max(1, Math.floor((bugunBaslangic.getTime() - vade.getTime()) / 86_400_000));
+        return { faturaId: f.id, no: f.no, cariId: f.cari.id, cariUnvan: f.cari.unvan, vadeTarihi: vade.toISOString().slice(0, 10), gecikmeGun, kalanTry: kalanTry.toFixed(2), tip: f.tip };
+      }).filter((f) => Number(f.kalanTry) > 0);
+      const alacaklar = satirlar.filter((f) => f.tip === "satis");
+      const borclar = satirlar.filter((f) => f.tip === "alis");
+      const toplam = (liste: typeof satirlar) => liste.reduce((t, f) => t.add(f.kalanTry), D(0)).toFixed(2);
+      return { alacaklar, borclar, toplamAlacak: toplam(alacaklar), toplamBorc: toplam(borclar) };
+    });
+  }
 }

@@ -36,6 +36,35 @@ export class EbelgeService {
 
   // ─── E-BELGE GÖNDERİMİ (EBLG-01/02/06/07) ──────────────────────────────────
 
+  /** Gönderim öncesi wizard önizlemesi. Fatura kesinleşmiş olabilir ancak
+   * bu çağrı e-belge kaydı oluşturmaz ve dış sisteme belge göndermez; yalnızca
+   * mükellefiyet/bağlantı kontrolünü yapar. */
+  async wizardBilgisi(faturaId: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const fatura = await tx.fatura.findUnique({
+        where: { id: faturaId },
+        include: { cari: true, ebelge: { select: { id: true, durum: true, tur: true } } },
+      });
+      if (!fatura) throw new NotFoundException("Fatura bulunamadı");
+      if (fatura.durum !== "kesin") throw new BadRequestException("e-Fatura wizard'ı yalnızca kesinleşmiş faturalar için açılabilir");
+      if (fatura.ebelge && !["hata", "ret"].includes(fatura.ebelge.durum)) {
+        throw new BadRequestException("Bu fatura için zaten e-belge gönderim süreci başlatılmış");
+      }
+      const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" }, select: { saglayici: true } });
+      if (!baglanti) return { gonderilebilir: false, neden: "Aktif bir e-belge entegratör bağlantısı bulunamadı.", faturaNo: fatura.no, cari: fatura.cari.unvan };
+      return {
+        gonderilebilir: true,
+        faturaNo: fatura.no,
+        cari: fatura.cari.unvan,
+        vknTckn: fatura.cari.vknTckn,
+        saglayici: baglanti.saglayici,
+        mevcutEbelge: fatura.ebelge,
+        not: "Mükellefiyet kontrolü gönderim onayında tekrar doğrulanır.",
+      };
+    });
+  }
+
   async gonder(faturaId: string) {
     const { tenantId } = aktifBaglam();
 

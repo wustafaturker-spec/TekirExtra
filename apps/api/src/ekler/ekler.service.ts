@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -42,6 +43,13 @@ export class EklerService {
     private readonly depo: DepoService,
   ) {}
 
+  private personelBelgesiYetkisiDogrula(sahipTur: EkSahipTur): void {
+    const { rol } = aktifBaglam();
+    if (sahipTur === "personel" && rol !== "muhasebe" && rol !== "yonetici") {
+      throw new ForbiddenException("Özlük belgelerine erişim yetkiniz bulunmuyor");
+    }
+  }
+
   /** Sahip kaydın bu kiracıda var olduğunu doğrular (RLS kapsamında). */
   private async sahipDogrula(
     tx: Prisma.TransactionClient,
@@ -58,6 +66,7 @@ export class EklerService {
       firma: () => tx.tenant.findUnique({ where: { id: sahipId } }),
       masraf: () => tx.masraf.findUnique({ where: { id: sahipId } }),
       kira_sozlesme: () => tx.kiraSozlesme.findUnique({ where: { id: sahipId } }),
+      personel: () => tx.personel.findUnique({ where: { id: sahipId } }),
     }[sahipTur];
     if (!(await sorgu())) {
       throw new NotFoundException("Ekin bağlanacağı kayıt bulunamadı");
@@ -98,6 +107,7 @@ export class EklerService {
   }
 
   async listele(sahipTur: EkSahipTur, sahipId: string) {
+    this.personelBelgesiYetkisiDogrula(sahipTur);
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, (tx) =>
       tx.ek.findMany({
@@ -121,6 +131,7 @@ export class EklerService {
       tx.ek.findUnique({ where: { id } }),
     );
     if (!ek) throw new NotFoundException("Ek bulunamadı");
+    this.personelBelgesiYetkisiDogrula(ek.sahipTur);
     const icerik = await this.depo.indir(ek.depoAnahtari);
     return { ek, icerik };
   }

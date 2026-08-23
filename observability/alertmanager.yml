@@ -1,0 +1,15 @@
+route:
+  receiver: tekirextra-dev-mail
+  group_by: [alertname, severity]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  # Geliştirmede Mailpit'e düşer (http://localhost:8025). Üretimde SMTP alıcısını değiştirin.
+  - name: tekirextra-dev-mail
+    email_configs:
+      - to: ops@tekirextra.local
+        from: alertmanager@tekirextra.local
+        smarthost: mailpit:1025
+        require_tls: false

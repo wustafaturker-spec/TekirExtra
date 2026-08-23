@@ -10,6 +10,13 @@ const ROL_ADI: Record<string, string> = {
   muhasebe: "Muhasebe",
   satis: "Satış",
   salt_okunur: "Salt Okunur",
+  mali_musavir: "Mali Müşavir",
+  b2b_bayi: "B2B Bayi",
+  uretim_planlama: "Üretim Planlama",
+  uretim_operatoru: "Üretim Operatörü",
+  depo: "Depo Sorumlusu",
+  kalite: "Kalite Sorumlusu",
+  maliyet_muhasebesi: "Maliyet Muhasebesi",
 };
 
 interface MenuOge {
@@ -33,6 +40,8 @@ const MENU: MenuGrup[] = [
   {
     baslik: "Operasyon",
     ogeler: [
+      { href: "/panel/b2b", ikon: "🛒", baslik: "B2B Bayi Portalı", eslesme: "tam" },
+      { href: "/panel/crm", ikon: "🎯", baslik: "CRM Satış Hunisi", eslesme: "tam" },
       { href: "/panel/satis", ikon: "S", baslik: "Satış", eslesme: "onek" },
       { href: "/panel/satin-alma", ikon: "A", baslik: "Satın Alma", eslesme: "onek" },
     ],
@@ -40,6 +49,7 @@ const MENU: MenuGrup[] = [
   {
     baslik: "Kayıtlar",
     ogeler: [
+      { href: "/panel/personel", ikon: "P", baslik: "Personel & İK", eslesme: "tam" },
       { href: "/panel/cari", ikon: "CH", baslik: "Cari Hesaplar" },
       { href: "/panel/belgeler", ikon: "B", baslik: "Tüm Belgeler", eslesme: "tam" },
       { href: "/panel/fatura?yon=satis", ikon: "SF", baslik: "Satış Faturaları", eslesme: "tam" },
@@ -50,6 +60,7 @@ const MENU: MenuGrup[] = [
       { href: "/panel/fatura/tekrarlayan", ikon: "↻", baslik: "Tekrarlayan Faturalar" },
       { href: "/panel/fatura/tekrarlayan/raporlar", ikon: "TR", baslik: "Tekrarlayan Raporları", eslesme: "tam" },
       { href: "/panel/fatura/earsiv-raporlari", ikon: "EA", baslik: "e-Arşiv Raporları", eslesme: "tam" },
+      { href: "/panel/ebelge/fatura-gelen", ikon: "EF", baslik: "Gelen e-Faturalar", eslesme: "tam" },
       { href: "/panel/ebelge/irsaliye-gelen", ikon: "İG", baslik: "Gelen e-İrsaliyeler", eslesme: "tam" },
       { href: "/panel/pazaryeri", ikon: "PS", baslik: "Pazaryeri Siparişleri", eslesme: "tam" },
       { href: "/panel/pazaryeri/kesintiler", ikon: "PK", baslik: "Pazaryeri Kesintileri", eslesme: "tam" },
@@ -65,6 +76,9 @@ const MENU: MenuGrup[] = [
     baslik: "Ürün & Stok",
     ogeler: [
       { href: "/panel/uretim", ikon: "ÜR", baslik: "Üretim Emirleri", eslesme: "tam" },
+      { href: "/panel/uretim/planlama", ikon: "KP", baslik: "Üretim Planlama", eslesme: "tam" },
+      { href: "/panel/uretim/maliyet", ikon: "MS", baslik: "Üretim Maliyeti", eslesme: "tam" },
+      { href: "/panel/uretim/kalite", ikon: "KK", baslik: "Kalite Kontrol", eslesme: "tam" },
       { href: "/panel/stok", ikon: "SK", baslik: "Stok Kartları", eslesme: "tam" },
       { href: "/panel/stok/kategoriler", ikon: "KT", baslik: "Kategoriler", eslesme: "tam" },
       { href: "/panel/stok/sayim", ikon: "SS", baslik: "Stok Sayımı", eslesme: "tam" },
@@ -75,6 +89,8 @@ const MENU: MenuGrup[] = [
   {
     baslik: "Raporlar",
     ogeler: [
+      { href: "/panel/ai", ikon: "🤖", baslik: "AI Finansal Asistan", eslesme: "tam" },
+      { href: "/panel/mali-musavir", ikon: "MM", baslik: "Mali Müşavir Portalı", eslesme: "tam" },
       { href: "/panel/raporlar", ikon: "RA", baslik: "Raporlar & Analiz", eslesme: "tam" },
       { href: "/panel/raporlar/urun-hareketleri", ikon: "ÜH", baslik: "Ürün Hareket Raporu", eslesme: "tam" },
     ],
@@ -107,6 +123,10 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const [aktifArama, setAktifArama] = useState("");
   const [rol, setRol] = useState<string | null>(null);
   const [menuAcik, setMenuAcik] = useState(false);
+  const [sidebarDaraltildi, setSidebarDaraltildi] = useState(false);
+  // İlk SSR çıktısı ile tarayıcı çıktısı aynı olmalı; kullanıcı tercihi mount sonrası okunur.
+  const menuTercihiYuklendi = useRef(false);
+  const [acikGruplar, setAcikGruplar] = useState<string[]>(["Genel"]);
   const [bildirimler, setBildirimler] = useState<Bildirim[]>([]);
   const [bildirimlerAcik, setBildirimlerAcik] = useState(false);
   const [geriBildirimAcik, setGeriBildirimAcik] = useState(false);
@@ -122,6 +142,22 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const bildirimPanelRef = useRef<HTMLElement>(null);
 
   useEffect(() => { setAktifArama(window.location.search); }, [pathname]);
+  useEffect(() => {
+    try {
+      const kayit = window.localStorage.getItem("tekirextra-acik-menu-gruplari");
+      const gruplar = kayit ? JSON.parse(kayit) : null;
+      if (Array.isArray(gruplar)) setAcikGruplar(gruplar);
+    } catch { /* Bozuk/erişilemeyen tercihler varsayılan menüyü etkilemez. */ }
+    menuTercihiYuklendi.current = true;
+  }, []);
+  useEffect(() => {
+    const aktifGrup = MENU.find((grup) => grup.ogeler.some((oge) => aktifMi(oge)))?.baslik;
+    if (aktifGrup) setAcikGruplar((gruplar) => gruplar.includes(aktifGrup) ? gruplar : [...gruplar, aktifGrup]);
+  }, [pathname, aktifArama]);
+  useEffect(() => {
+    if (!menuTercihiYuklendi.current) return;
+    window.localStorage.setItem("tekirextra-acik-menu-gruplari", JSON.stringify(acikGruplar));
+  }, [acikGruplar]);
 
   useEffect(() => {
     if (tokenAl()) {
@@ -271,6 +307,10 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
     return Array.from(hedefParametreler.entries()).every(([anahtar, deger]) => aktifParametreler.get(anahtar) === deger);
   }
 
+  function grupAcKapat(baslik: string) {
+    setAcikGruplar((gruplar) => gruplar.includes(baslik) ? gruplar.filter((g) => g !== baslik) : [...gruplar, baslik]);
+  }
+
   return (
     <div className="app-shell">
       <a className="skip-link" href="#ana-icerik">Ana içeriğe geç</a>
@@ -299,10 +339,13 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
           type="button"
         />
       )}
-      <aside className={`sidebar${menuAcik ? " is-open" : ""}`} id="ana-menu" ref={mobilMenuRef}>
+      <aside className={`sidebar${menuAcik ? " is-open" : ""}${sidebarDaraltildi ? " is-collapsed" : ""}`} id="ana-menu" ref={mobilMenuRef}>
         <div className="sidebar__brand">
           <span aria-hidden="true" className="sidebar__brand-mark">TE</span>
           <span>Tekir<b>Extra</b></span>
+          <button className="sidebar-collapse" type="button" aria-label={sidebarDaraltildi ? "Menüyü genişlet" : "Menüyü daralt"} aria-expanded={!sidebarDaraltildi} onClick={() => setSidebarDaraltildi((daraltilmis) => !daraltilmis)}>
+            <span aria-hidden="true">{sidebarDaraltildi ? "→" : "←"}</span>
+          </button>
         </div>
 
         <nav className="nav">
@@ -311,24 +354,29 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
           </button>
           {MENU.map((grup) => (
             <div className="nav__group" key={grup.baslik}>
-              <div className="nav__label">{grup.baslik}</div>
-              {grup.ogeler.filter((oge) => oge.href !== "/panel/ayarlar/kullanim" || rol === "yonetici").map((oge) => (
-                <Link
-                  key={oge.href}
-                  href={oge.href}
-                  className={`nav__link${aktifMi(oge) ? " is-active" : ""}`}
-                  onClick={(event) => {
-                    setMenuAcik(false);
-                    if (oge.href.startsWith("/panel/fatura?yon=")) {
-                      event.preventDefault();
-                      window.location.assign(oge.href);
-                    }
-                  }}
-                >
-                  <span aria-hidden="true" className="nav__link-icon">{oge.ikon}</span>
-                  <span>{oge.baslik}</span>
-                </Link>
-              ))}
+              <button className="nav__label" type="button" aria-expanded={acikGruplar.includes(grup.baslik)} onClick={() => grupAcKapat(grup.baslik)}>
+                <span>{grup.baslik}</span><span aria-hidden="true" className="nav__label-chevron">⌄</span>
+              </button>
+              {acikGruplar.includes(grup.baslik) && <div className="nav__group-items">
+                {grup.ogeler.filter((oge) => oge.href !== "/panel/ayarlar/kullanim" || rol === "yonetici").map((oge) => (
+                  <Link
+                    key={oge.href}
+                    href={oge.href}
+                    title={sidebarDaraltildi ? oge.baslik : undefined}
+                    className={`nav__link${aktifMi(oge) ? " is-active" : ""}`}
+                    onClick={(event) => {
+                      setMenuAcik(false);
+                      if (oge.href.startsWith("/panel/fatura?yon=")) {
+                        event.preventDefault();
+                        window.location.assign(oge.href);
+                      }
+                    }}
+                  >
+                    <span aria-hidden="true" className="nav__link-icon">{oge.ikon}</span>
+                    <span>{oge.baslik}</span>
+                  </Link>
+                ))}
+              </div>}
             </div>
           ))}
         </nav>

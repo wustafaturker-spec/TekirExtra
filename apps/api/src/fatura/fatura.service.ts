@@ -4,8 +4,6 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  Inject,
-  forwardRef,
 } from "@nestjs/common";
 import { Prisma, FaturaTip, FaturaDurum, BelgeDurum } from "@prisma/client";
 import { faturaHesapla, type FaturaHesaplaSatirGirdi, type KayitEylem } from "@tekirextra/shared";
@@ -16,7 +14,6 @@ import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
 import { StokService } from "../stok/stok.service";
 import { DepoService } from "../stok/depo.service";
-import { EbelgeKuyrukService } from "../ebelge/ebelge-kuyruk.service";
 import { EpostaService } from "../tenant/eposta.service";
 import { BelgelerService } from "../belgeler/belgeler.service";
 import { faturaPdfHtml } from "./fatura-pdf";
@@ -39,9 +36,21 @@ export class FaturaService {
     private readonly pdf: PdfService,
     private readonly eposta: EpostaService,
     private readonly belgelerService: BelgelerService,
-    @Inject(forwardRef(() => EbelgeKuyrukService))
-    private readonly ebelgeKuyrukService: EbelgeKuyrukService,
   ) {}
+
+  private async cariTipiniDogrula(tx: Prisma.TransactionClient, cariId: string, tip: string): Promise<void> {
+    const cari = await tx.cariHesap.findUnique({ where: { id: cariId }, select: { tip: true } });
+    if (!cari) throw new NotFoundException("Cari hesap bulunamadı");
+    const alisYonlu = tip === "alis" || tip === "alis_iade";
+    const uygun = alisYonlu
+      ? cari.tip === "tedarikci" || cari.tip === "her_ikisi"
+      : cari.tip === "musteri" || cari.tip === "her_ikisi";
+    if (!uygun) {
+      throw new BadRequestException(alisYonlu
+        ? "Alış faturasında tedarikçi veya her iki tipindeki cari seçilmelidir"
+        : "Satış faturasında müşteri veya her iki tipindeki cari seçilmelidir");
+    }
+  }
 
   // ─── FATURA SERİ TANIMLARI ────────────────────────────────────────────────
 
@@ -478,6 +487,7 @@ export class FaturaService {
     const hesaplanan = this.hesaplaFatura(girdi);
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      await this.cariTipiniDogrula(tx, girdi.cariId, girdi.tip);
       // Fatura kafasını oluştur
       const fatura = await tx.fatura.create({
         data: {
@@ -547,8 +557,26 @@ export class FaturaService {
     const { tenantId, userId } = aktifBaglam();
     const fatura = await this.getir(id);
 
-    if (fatura.durum !== "taslak" || fatura.ebelge) {
-      throw new BadRequestException("Yalnızca e-Belgesi oluşmamış taslak faturalar güncellenebilir");
+    const kesinDuzenleme = fatura.durum === "kesin" && !fatura.ebelge;
+    if ((fatura.durum !== "taslak" && !kesinDuzenleme) || fatura.ebelge) {
+      throw new BadRequestException("Yalnızca e-Belgesi gönderilmemiş faturalar güncellenebilir");
+    }
+
+    // Kesinleşmiş ancak henüz e-belgeye dönüşmemiş faturanın stok yönünü,
+    // deposunu veya cari bağlantısını değiştirmek mevcut hareketleri bozar.
+    // Tutar/iskonto/vergi ve açıklama düzeltmeleri serbest; stok etkisi doğuran
+    // alanlar sabit tutulur. Cari hareketi aşağıda aynı transaction'da güncellenir.
+    if (kesinDuzenleme) {
+      if (girdi.tip !== undefined && girdi.tip !== fatura.tip) throw new BadRequestException("Gönderilmemiş kesin faturada fatura tipi değiştirilemez");
+      if (girdi.cariId !== undefined && girdi.cariId !== fatura.cari.id) throw new BadRequestException("Gönderilmemiş kesin faturada cari değiştirilemez");
+      if (girdi.depoId !== undefined && (girdi.depoId ?? null) !== (fatura.depoId ?? null)) throw new BadRequestException("Gönderilmemiş kesin faturada depo değiştirilemez");
+      if (girdi.dovizCinsi !== undefined && girdi.dovizCinsi !== fatura.dovizCinsi) throw new BadRequestException("Gönderilmemiş kesin faturada döviz değiştirilemez");
+      if (girdi.kur !== undefined && Number(girdi.kur) !== Number(fatura.kur)) throw new BadRequestException("Gönderilmemiş kesin faturada kur değiştirilemez");
+      if (girdi.satirlar) {
+        const eski = fatura.satirlar.map((s) => `${s.stokId}|${s.varyantId ?? ""}|${s.miktar}|${s.birim}`).join(";");
+        const yeni = girdi.satirlar.map((s) => `${s.stokId}|${s.varyantId ?? ""}|${s.miktar}|${s.birim}`).join(";");
+        if (eski !== yeni) throw new BadRequestException("Gönderilmemiş kesin faturada stok ve miktar değiştirilemez; yeni taslak oluşturun");
+      }
     }
 
     // Tam güncelleme için girdiyi tamamla
@@ -606,6 +634,7 @@ export class FaturaService {
     const hesaplanan = this.hesaplaFatura(birlesikGirdi);
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      await this.cariTipiniDogrula(tx, birlesikGirdi.cariId, birlesikGirdi.tip);
       // Satırları sil ve yeniden ekle
       await tx.faturaSatir.deleteMany({ where: { faturaId: id } });
 
@@ -663,6 +692,21 @@ export class FaturaService {
           notlar: birlesikGirdi.notlar,
         },
       });
+
+      if (kesinDuzenleme) {
+        await tx.cariHareket.updateMany({
+          where: { tenantId, kaynakTur: "fatura", kaynakRef: id },
+          data: {
+            tutar: D(hesaplanan.genelToplam),
+            dovizCinsi: birlesikGirdi.dovizCinsi,
+            kur: D(birlesikGirdi.kur),
+            tutarTry: D(hesaplanan.genelToplam).mul(D(birlesikGirdi.kur)).toDecimalPlaces(2),
+            tarih: new Date(birlesikGirdi.tarih),
+            vadeTarihi: birlesikGirdi.vadeTarihi ? new Date(birlesikGirdi.vadeTarihi) : null,
+            aciklama: `${fatura.no ?? "Fatura"} nolu fatura hareketi`,
+          },
+        });
+      }
 
       return this.gorunum(guncellenen);
     });
@@ -1031,22 +1075,6 @@ export class FaturaService {
         }
       }
 
-      // 4. e-Belge Gönderim Tetikleyicisi
-      let ebelgeGerekli = false;
-      if (fatura.tip === "satis" || fatura.tip === "satis_iade") {
-        ebelgeGerekli = true;
-        const tur = fatura.cari.eFaturaMukellefi ? "efatura" : "earsiv";
-
-        await tx.ebelgeKayit.create({
-          data: {
-            tenantId,
-            faturaId: fatura.id,
-            tur,
-            durum: "kuyrukta",
-          },
-        });
-      }
-
       // Fatura durumunu güncelle
       const kesinFatura = await tx.fatura.update({
         where: { id },
@@ -1059,15 +1087,8 @@ export class FaturaService {
         },
       });
 
-      return {
-        kesinFatura: { ...this.gorunum(kesinFatura), riskUyari, stokUyarilari },
-        ebelgeGerekli,
-      };
+      return { kesinFatura: { ...this.gorunum(kesinFatura), riskUyari, stokUyarilari } };
     });
-
-    if (sonuc.ebelgeGerekli) {
-      this.ebelgeKuyrukService.kuyrugaEkle(id);
-    }
 
     return sonuc.kesinFatura;
   }

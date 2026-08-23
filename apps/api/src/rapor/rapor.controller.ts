@@ -18,4 +18,9 @@ export class RaporController {
   async gunlukOzet(@Query("tarih") tarih?: string) {
     return this.raporService.gunlukOzet(tarih);
   }
+
+  @Get("vadesi-gecenler")
+  async vadesiGecenler() {
+    return this.raporService.vadesiGecenler();
+  }
 }

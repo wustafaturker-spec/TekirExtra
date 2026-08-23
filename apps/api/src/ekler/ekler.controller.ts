@@ -18,7 +18,7 @@ import { Roller } from "../auth/roller.decorator";
 import { EklerService, type YuklenenDosya } from "./ekler.service";
 
 const sahipSemasi = z.object({
-  sahipTur: z.enum(["cari", "stok", "fatura", "belge", "kasa_banka", "firma", "masraf", "kira_sozlesme"]),
+  sahipTur: z.enum(["cari", "stok", "fatura", "belge", "kasa_banka", "firma", "masraf", "kira_sozlesme", "personel"]),
   sahipId: z.string().uuid(),
 });
 
@@ -26,7 +26,7 @@ function sahipAyristir(girdi: unknown) {
   const sonuc = sahipSemasi.safeParse(girdi);
   if (!sonuc.success) {
     throw new BadRequestException(
-      "Geçerli sahipTur (cari|stok|fatura|belge|kasa_banka|firma|masraf|kira_sozlesme) ve sahipId (UUID) gerekli",
+      "Geçerli sahipTur ve sahipId (UUID) gerekli",
     );
   }
   return sonuc.data;
@@ -38,7 +38,7 @@ export class EklerController {
 
   @Post()
   @Roller("muhasebe")
-  @UseInterceptors(FileInterceptor("dosya"))
+  @UseInterceptors(FileInterceptor("dosya", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
   async yukle(
     @UploadedFile() dosya: YuklenenDosya | undefined,
     @Query() sorgu: unknown,

@@ -1,0 +1,5 @@
+ALTER TYPE "Rol" ADD VALUE IF NOT EXISTS 'uretim_planlama';
+ALTER TYPE "Rol" ADD VALUE IF NOT EXISTS 'uretim_operatoru';
+ALTER TYPE "Rol" ADD VALUE IF NOT EXISTS 'depo';
+ALTER TYPE "Rol" ADD VALUE IF NOT EXISTS 'kalite';
+ALTER TYPE "Rol" ADD VALUE IF NOT EXISTS 'maliyet_muhasebesi';

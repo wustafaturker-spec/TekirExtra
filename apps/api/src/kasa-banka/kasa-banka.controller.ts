@@ -279,7 +279,7 @@ export class KasaBankaController {
   /** Dosyayı ayrıştırıp önizleme + sütun eşlemesi tahminini döner; kaydetmez. */
   @Post("ekstre/onizle")
   @Roller("muhasebe")
-  @UseInterceptors(FileInterceptor("dosya"))
+  @UseInterceptors(FileInterceptor("dosya", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
   async ekstreOnizle(
     @UploadedFile() dosya: { buffer: Buffer; originalname: string } | undefined,
     @Body("bankaHesapId") bankaHesapId?: string,
@@ -295,7 +295,7 @@ export class KasaBankaController {
    */
   @Post("ekstre/yukle")
   @Roller("muhasebe")
-  @UseInterceptors(FileInterceptor("dosya"))
+  @UseInterceptors(FileInterceptor("dosya", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
   async ekstreYukle(
     @UploadedFile() dosya: { buffer: Buffer; originalname: string } | undefined,
     @Body("veri") veri?: string,

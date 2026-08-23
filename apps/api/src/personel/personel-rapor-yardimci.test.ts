@@ -1,0 +1,2 @@
+import {describe,expect,it} from "vitest";import{hesapOzetiTutari}from"./personel-rapor-yardimci";
+describe("personel maliyet raporu",()=>{it("snapshot tutarını okur",()=>expect(hesapOzetiTutari({isverenMaliyeti:"42500.25"},"isverenMaliyeti").toFixed(2)).toBe("42500.25"));it("eski veya bozuk özette güvenli varsayılanı kullanır",()=>{expect(hesapOzetiTutari(null,"isverenMaliyeti",30000).toFixed(2)).toBe("30000.00");expect(hesapOzetiTutari({isverenMaliyeti:"bozuk"},"isverenMaliyeti",100).toFixed(2)).toBe("100.00")});});

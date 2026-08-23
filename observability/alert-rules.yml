@@ -1,0 +1,31 @@
+groups:
+  - name: tekirextra-api
+    rules:
+      - alert: TekirApiDown
+        expr: up{job="tekirextra-api"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "TekirExtra API erişilemiyor"
+          description: "Prometheus API metriklerini iki dakikadır alamıyor."
+      - alert: TekirApiHighErrorRate
+        expr: sum(rate(http_requests_total{job="tekirextra-api",status_code=~"5.."}[5m])) / clamp_min(sum(rate(http_requests_total{job="tekirextra-api"}[5m])), 1) > 0.05
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "API 5xx oranı yüksek"
+          description: "Son 5 dakikada HTTP 5xx oranı %5'i aştı."
+      - alert: TekirApiHighLatency
+        expr: rate(http_request_duration_seconds_sum{job="tekirextra-api"}[5m]) / clamp_min(rate(http_request_duration_seconds_count{job="tekirextra-api"}[5m]), 1) > 1
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "API yanıt süresi yüksek"
+          description: "Ortalama HTTP yanıt süresi 1 saniyeyi aştı."
+      - alert: TekirApiRateLimitSpike
+        expr: increase(rate_limit_rejections_total{job="tekirextra-api"}[10m]) > 100
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "API rate-limit reddi arttı"
+          description: "Son 10 dakikada 100'den fazla istek rate-limit nedeniyle reddedildi."

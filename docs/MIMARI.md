@@ -1,17 +1,17 @@
 # TekirExtra — Mimari Tasarım Dokümanı
 
-**Sürüm:** 0.3
-**Tarih:** 2026-07-12
-**Dayanak:** [ISTERLER.md](./ISTERLER.md) v0.4
+**Sürüm:** 0.4
+**Tarih:** 2026-08-17
+**Dayanak:** [ISTERLER.md](./ISTERLER.md) v0.18
 
 ---
 
 ## 1. Genel Bakış
 
 TekirExtra, **modüler monolit** olarak tasarlanmış çok kiracılı bir SaaS
-uygulamasıdır. İlk sürümde tek dağıtılabilir backend + ayrı işçi (worker)
-süreci vardır; modül sınırları net tutulduğu için ileride e-belge katmanı
-ayrı servise kopartılabilir (bkz. ISTERLER §8).
+uygulamasıdır. API ve web çalışır durumdadır; worker giriş noktası mevcut
+olmakla birlikte e-belge kuyruğu bu sürümde bellek-içi çalışır. Üretim geçişi
+öncesinde Redis/BullMQ consumer, retry ve dead-letter akışları tamamlanmalıdır.
 
 ```mermaid
 flowchart LR
@@ -26,20 +26,18 @@ flowchart LR
         WK --> P
     end
     subgraph Dış Sistemler
-        E1[İzibiz]
-        E2[Foriba]
-        E3[eLogo]
-        E4[Uyumsoft]
+        E1[Sovos gerçek adapter]
+        E2[Diğer sağlayıcılar mock/sandbox]
     end
     B --> W
-    WK -->|adaptörler| E1 & E2 & E3 & E4
+    WK -->|adaptörler| E1 & E2
 ```
 
 | Bileşen | Görev |
 |---|---|
 | **web** (Next.js) | Arayüz; API'ye HTTP ile konuşur, kendi başına veri tutmaz |
 | **api** (NestJS) | Tüm iş kuralları, REST API, kimlik doğrulama, RBAC |
-| **worker** (NestJS) | BullMQ kuyruklarını işler: e-belge gönderim, durum sorgulama, gelen belge çekme |
+| **worker** (NestJS) | Hedef BullMQ işleyicileri; mevcut sürümde kira zamanlayıcısı etkin, e-belge kuyruğu bellek-içi |
 | **PostgreSQL** | Tek veritabanı; kiracı yalıtımı Row-Level Security ile |
 | **Redis** | BullMQ kuyruk deposu + kısa ömürlü önbellek |
 | **Metabase** | Gömülü analiz panoları (ayrı servis, salt-okunur DB erişimi — bkz. §10) |
@@ -243,7 +241,8 @@ v1.0 şemasında ayrılmıştır; adaptör kodu v1.1'de yazılır.
 
 | Kuyruk | Tetikleyici | İş |
 |---|---|---|
-| `ebelge.gonder` | Fatura kesinleşince | Mükellef sorgula → e-Fatura/e-Arşiv yönlendir (EBLG-02) → UBL üret → adaptörle gönder |
+| `ebelge.wizard` | Kesinleşmiş, e-belgesiz faturada kullanıcı eylemi | Aktif entegratörü ve alıcı bilgilerini kontrol et; gönderim önizlemesi sun, e-belge kaydı oluşturma |
+| `ebelge.gonder` | Wizard onayından sonra | Mükellef sorgula → e-Fatura/e-Arşiv yönlendir (EBLG-02) → UBL üret → adaptörle gönder |
 | `ebelge.durum` | Zamanlanmış (5 dk) | "kuyrukta/iletildi" belgelerin durumunu sorgula, değişince kaydet |
 | `ebelge.gelen` | Zamanlanmış (15 dk) | Firma başına gelen e-Faturaları çek, onay kuyruğuna düşür (EBLG-05) |
 | `rapor.disa-aktar` | Kullanıcı isteği | Büyük PDF/Excel üretimini arka planda yap, hazır olunca bildir |

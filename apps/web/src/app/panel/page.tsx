@@ -5,15 +5,17 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiHata, tokenAl, tokenYaz } from "@/lib/api";
 
-type Rol = "yonetici" | "muhasebe" | "satis" | "salt_okunur";
+type Rol = "yonetici" | "muhasebe" | "satis" | "salt_okunur" | "mali_musavir" | "b2b_bayi" | "uretim_planlama" | "uretim_operatoru" | "depo" | "kalite" | "maliyet_muhasebesi";
 interface FinansOzet { nakitVarliklar: string; envanterDegeri: string; toplamAlacaklar: string; toplamBorclar: string; netVarlikDegeri: string; }
 interface FaturaKuyrukOzeti { taslakSatis: number; taslakAlis: number; ebelgeHata: number; acikTahsilat: number; acikOdeme: number; }
 interface CekSenet { id: string; tur: "cek" | "senet"; yon: "alinan" | "verilen"; portfoyNo: string; vadeTarihi: string; tutarTry: string; borclu: string; durum: string; banka?: string | null; cari?: { unvan: string } | null; }
 interface IsOgesi { href: string; baslik: string; aciklama: string; sayi: number; ton: "danger" | "warning" | "neutral"; }
 interface GunlukOzet { satis: { toplam: string; adet: number }; tahsilat: { toplam: string; adet: number }; }
 interface DovizKurlari { kurTarihi: string; oncekiIsGunuKullanildi?: boolean; kurlar: Record<string, number>; }
+interface VadesiGecenSatir { faturaId: string; no: string | null; cariId: string; cariUnvan: string; vadeTarihi: string; gecikmeGun: number; kalanTry: string; tip: "satis" | "alis"; }
+interface VadesiGecenler { alacaklar: VadesiGecenSatir[]; borclar: VadesiGecenSatir[]; toplamAlacak: string; toplamBorc: string; }
 
-const rolAdi: Record<Rol, string> = { yonetici: "Yönetim görünümü", muhasebe: "Muhasebe görünümü", satis: "Satış görünümü", salt_okunur: "Genel görünüm" };
+const rolAdi: Record<Rol, string> = { yonetici: "Yönetim görünümü", muhasebe: "Muhasebe görünümü", satis: "Satış görünümü", salt_okunur: "Genel görünüm", mali_musavir: "Mali müşavir görünümü", b2b_bayi: "Bayi görünümü", uretim_planlama: "Üretim planlama görünümü", uretim_operatoru: "Operatör görünümü", depo: "Depo görünümü", kalite: "Kalite görünümü", maliyet_muhasebesi: "Maliyet görünümü" };
 const para = (deger: string | number, sifirBasamak = false) => Number(deger || 0).toLocaleString("tr-TR", { style: "currency", currency: "TRY", maximumFractionDigits: sifirBasamak ? 0 : 2 });
 const tarih = (deger: string) => new Intl.DateTimeFormat("tr-TR", { day: "numeric", month: "short" }).format(new Date(deger));
 const gunBaslangici = (deger = new Date()) => new Date(deger.getFullYear(), deger.getMonth(), deger.getDate());
@@ -36,6 +38,7 @@ export default function PanelSayfasi() {
   const [gunluk, setGunluk] = useState<GunlukOzet | null>(null);
   const [alisKurlari, setAlisKurlari] = useState<DovizKurlari | null>(null);
   const [satisKurlari, setSatisKurlari] = useState<DovizKurlari | null>(null);
+  const [vadesiGecenler, setVadesiGecenler] = useState<VadesiGecenler | null>(null);
 
   const yukle = useCallback(async () => {
     setYukleniyor(true); setHata("");
@@ -51,7 +54,7 @@ export default function PanelSayfasi() {
         api<DovizKurlari>("/doviz-kurlari?tip=satis"),
         ...(finansalErisim ? [
           api<FinansOzet>("/rapor/ozet"), api<unknown[]>("/kasa-banka/ekstre/satirlar?durum=beklemede"),
-          api<unknown[]>("/ebelge/gelen?durum=beklemede"), api<CekSenet[]>("/kasa-banka/cek-senet"),
+          api<unknown[]>("/ebelge/gelen?durum=beklemede"), api<CekSenet[]>("/kasa-banka/cek-senet"), api<VadesiGecenler>("/rapor/vadesi-gecenler"),
         ] : []),
       ]);
       if (sonuclar[0]?.status === "fulfilled") setFatura(sonuclar[0].value as FaturaKuyrukOzeti);
@@ -64,6 +67,8 @@ export default function PanelSayfasi() {
         if (sonuclar[6]?.status === "fulfilled") setEkstre((sonuclar[6].value as unknown[]).length);
         if (sonuclar[7]?.status === "fulfilled") setGelen((sonuclar[7].value as unknown[]).length);
         if (sonuclar[8]?.status === "fulfilled") setCekler(sonuclar[8].value as CekSenet[]);
+        if (sonuclar[9]?.status === "fulfilled") setVadesiGecenler(sonuclar[9].value as VadesiGecenler);
+        else setVadesiGecenler({ alacaklar: [], borclar: [], toplamAlacak: "0.00", toplamBorc: "0.00" });
       }
       if (sonuclar.some((sonuc) => sonuc.status === "rejected")) setHata("Bazı özetler şu anda yüklenemedi; erişilebilen güncel veriler gösteriliyor.");
       setSonGuncelleme(new Date());
@@ -105,6 +110,8 @@ export default function PanelSayfasi() {
     { href: "/panel/fatura?yon=satis&durum=taslak", baslik: "Taslak satış faturaları", aciklama: "Kesinleştirilmeyi bekleyen kayıtlar", sayi: fatura?.taslakSatis ?? 0, ton: "neutral" },
     { href: "/panel/stok?durum=kritik", baslik: "Kritik stoklar", aciklama: "Satışı etkileyebilecek düşük stoklar", sayi: kritikStok, ton: kritikStok ? "danger" : "neutral" },
   ] : [
+    { href: "/panel/fatura?yon=satis&durum=taslak", baslik: "Taslak satış faturaları", aciklama: "Kesinleştirilmeyi bekleyen kayıtlar", sayi: fatura?.taslakSatis ?? 0, ton: "neutral" },
+    { href: "/panel/stok?durum=kritik", baslik: "Kritik stoklar", aciklama: "Satışı etkileyebilecek düşük stoklar", sayi: kritikStok, ton: kritikStok ? "danger" : "neutral" },
     { href: "/panel/fatura?ebelge=hata", baslik: "e-Belge hataları", aciklama: "Müdahale edilmesi gereken gönderimler", sayi: fatura?.ebelgeHata ?? 0, ton: (fatura?.ebelgeHata ?? 0) ? "danger" : "neutral" },
     { href: "/panel/kasa-banka/cek-senet?durum=vadesi-gecmis", baslik: "Vadesi geçen çekler", aciklama: "Tahsilat veya ödeme işlemi bekleyen kayıtlar", sayi: vadeOzeti.gecikenAlinan.adet + vadeOzeti.gecikenVerilen.adet, ton: "danger" },
     { href: "/panel/fatura/gelen-kutusu?durum=beklemede", baslik: "Bekleyen alış e-Belgeleri", aciklama: "Kontrol ve eşleştirme kuyruğu", sayi: gelen, ton: "warning" },
@@ -165,6 +172,16 @@ export default function PanelSayfasi() {
         ].map(([etiket, alinan, verilen, ton]) => { const a = alinan as { adet: number; tutar: number }; const v = verilen as { adet: number; tutar: number }; return <Link href="/panel/kasa-banka/cek-senet" className={`cheque-period is-${ton}`} key={etiket as string}><span>{etiket as string}</span><div><p><small>Tahsilat</small><strong>{para(a.tutar, true)}</strong><em>{a.adet} kayıt</em></p><p><small>Ödeme</small><strong>{para(v.tutar, true)}</strong><em>{v.adet} kayıt</em></p></div></Link>; })}</div>
       </div>
       <div className="cheque-upcoming"><div className="cheque-upcoming__head"><strong>Yaklaşan kayıtlar</strong><span>Vade önceliğine göre</span></div>{yakinCekler.length ? yakinCekler.map((cek) => { const gun = gunFarki(cek.vadeTarihi); return <Link href="/panel/kasa-banka/cek-senet" className="cheque-row" key={cek.id}><span className={`cheque-row__date${gun <= 0 ? " is-danger" : gun <= 3 ? " is-warning" : ""}`}><b>{tarih(cek.vadeTarihi).split(" ")[0]}</b><small>{tarih(cek.vadeTarihi).split(" ")[1]}</small></span><span className="cheque-row__party"><strong>{cek.cari?.unvan || cek.borclu}</strong><small>{cek.tur === "cek" ? "Çek" : "Senet"} · {cek.portfoyNo}{cek.banka ? ` · ${cek.banka}` : ""}</small></span><span className={`cheque-row__direction is-${cek.yon}`}><small>{cek.yon === "alinan" ? "Tahsil edilecek" : "Ödenecek"}</small><strong>{para(cek.tutarTry, true)}</strong></span><span className={`cheque-row__due${gun <= 0 ? " is-danger" : gun <= 3 ? " is-warning" : ""}`}>{vadeMetni(gun)}</span><em aria-hidden="true">→</em></Link>; }) : <div className="cheque-empty"><span aria-hidden="true">✓</span><div><strong>Yaklaşan çek veya senet yok</strong><p>Önümüzdeki 30 gün için açık kayıt bulunmuyor.</p></div></div>}</div>
+    </section>}
+
+    {rol !== "satis" && <section className="dashboard-overdue-grid" aria-label="Vadesi geçmiş alacak ve borçlar">
+      {[{ baslik: "Vadesi geçmiş alacaklar", alt: "Müşterilerden tahsil edilecek açık faturalar", toplam: vadesiGecenler?.toplamAlacak, liste: vadesiGecenler?.alacaklar ?? [], renk: "is-blue", bos: "Vadesi geçmiş açık alacak bulunmuyor." }, { baslik: "Vadesi geçmiş borçlar", alt: "Tedarikçilere ödenecek açık faturalar", toplam: vadesiGecenler?.toplamBorc, liste: vadesiGecenler?.borclar ?? [], renk: "is-red", bos: "Vadesi geçmiş açık borç bulunmuyor." }].map((grup) => (
+        <article className="dashboard-overdue-card" key={grup.baslik}>
+          <div className="dashboard-overdue-card__head"><div><p className="dashboard-kicker">Vade takibi</p><h2>{grup.baslik}</h2><small>{grup.alt}</small></div><strong>{vadesiGecenler ? para(grup.toplam ?? 0, true) : "—"}</strong></div>
+          <div className="dashboard-overdue-list">{grup.liste.slice(0, 6).map((satir) => <Link className="dashboard-overdue-row" href={`/panel/fatura?faturaId=${satir.faturaId}&panel=odeme`} key={satir.faturaId}><span className="dashboard-overdue-row__party"><strong>{satir.cariUnvan}</strong><small>{satir.no || "Fatura"} · Vade {satir.vadeTarihi}</small></span><span className={`dashboard-overdue-row__amount ${grup.renk}`}><b>{para(satir.kalanTry, true)}</b><small>{satir.gecikmeGun} gün gecikti</small></span><em aria-hidden="true">→</em></Link>)}{!grup.liste.length && <div className="dashboard-overdue-empty">{vadesiGecenler ? grup.bos : "Veriler yükleniyor…"}</div>}</div>
+          {grup.liste.length > 6 && <Link className="dashboard-overdue-more" href={grup.baslik.includes("alacak") ? "/panel/fatura?yon=satis&odeme=acik" : "/panel/fatura?yon=alis&odeme=acik"}>Tümünü görüntüle →</Link>}
+        </article>
+      ))}
     </section>}
   </div>;
 }

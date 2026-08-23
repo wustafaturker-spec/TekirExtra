@@ -1,6 +1,8 @@
 # Monorepo kökünden build edilir: docker build -f apps/api/Dockerfile .
 # Alpine yerine bookworm-slim: Playwright/Chromium (T-02 PDF) glibc ister.
 FROM node:22-bookworm-slim AS build
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 WORKDIR /repo
 COPY . .

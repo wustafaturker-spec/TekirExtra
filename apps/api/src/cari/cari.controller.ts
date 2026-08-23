@@ -257,7 +257,7 @@ export class CariController {
 
   @Post("excel-aktar")
   @Roller("muhasebe")
-  @UseInterceptors(FileInterceptor("file"))
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
   async excelAktar(@UploadedFile() file: any) {
     if (!file) throw new BadRequestException("Lütfen bir Excel dosyası yükleyin");
     return this.cariService.excelImport(file.buffer);

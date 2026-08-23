@@ -151,7 +151,7 @@ export class StokController {
 
   @Post("excel-onizle")
   @Roller("muhasebe")
-  @UseInterceptors(FileInterceptor("file"))
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
   async excelOnizle(@UploadedFile() file: any) {
     if (!file) throw new BadRequestException("Lütfen bir Excel dosyası yükleyin");
     return this.stokService.excelOnizle(file.buffer);
@@ -385,7 +385,7 @@ export class StokController {
 
   @Post("excel-aktar")
   @Roller("muhasebe")
-  @UseInterceptors(FileInterceptor("file"))
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
   async excelAktar(@UploadedFile() file: any) {
     if (!file) throw new BadRequestException("Lütfen bir Excel dosyası yükleyin");
     return this.stokService.excelImport(file.buffer);

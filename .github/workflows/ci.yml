@@ -30,5 +30,27 @@ jobs:
       - name: Testler
         run: pnpm turbo test
 
+      - name: Test altyapısını başlat
+        run: docker compose up -d postgres redis mailpit minio
+
+      - name: Veritabanı migrasyonlarını uygula
+        env:
+          DATABASE_URL_MIGRATE: postgresql://tekir:tekir@localhost:5433/tekirextra
+        run: pnpm --filter @tekirextra/api exec prisma migrate deploy
+
+      - name: Gerçek servislerle kabul testleri
+        env:
+          DATABASE_URL: postgresql://tekir_app:tekir_app_dev@localhost:5433/tekirextra
+          DATABASE_URL_MIGRATE: postgresql://tekir:tekir@localhost:5433/tekirextra
+          REDIS_URL: redis://localhost:6380
+          S3_ENDPOINT: http://localhost:9002
+          S3_ERISIM_ANAHTARI: tekir
+          S3_GIZLI_ANAHTAR: tekir-minio-dev
+          S3_KOVA: tekirextra-ekler
+          BAGLANTI_SIFRELEME_ANAHTARI: 0000000000000000000000000000000000000000000000000000000000000000
+          JWT_SECRET: ci-test-secret
+          ALLOW_MOCK_ENTEGRATIONS: "true"
+        run: pnpm --filter @tekirextra/api test:kabul
+
       - name: Kritik web akışları
         run: pnpm --filter /web test:e2e

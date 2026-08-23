@@ -120,6 +120,15 @@ interface KesinlestirmeOzeti {
   fatura: FaturaDetay;
   risk: { mevcutRisk: string; limit: string | null; kalanLimit: string | null; asim: boolean } | null;
 }
+interface EbelgeWizardBilgisi {
+  gonderilebilir: boolean;
+  neden?: string;
+  faturaNo?: string | null;
+  cari: string;
+  vknTckn?: string | null;
+  saglayici?: string;
+  not?: string;
+}
 interface KayitliGorunum { id: string; ad: string; yon: "satis" | "alis" | null; durum: string | null; ebelge: string | null; odeme: string | null; }
 const GORUNUM_ANAHTARI = "tekir_fatura_gorunumleri";
 
@@ -194,6 +203,7 @@ export default function FaturaSayfasi() {
   const [yeniStokKdv, setYeniStokKdv] = useState("20");
   const [yeniStokFiyat, setYeniStokFiyat] = useState("");
   const [kesinlestirmeOzeti, setKesinlestirmeOzeti] = useState<KesinlestirmeOzeti | null>(null);
+  const [ebelgeWizard, setEbelgeWizard] = useState<{ fatura: Fatura; bilgi: EbelgeWizardBilgisi } | null>(null);
   const [ebelgeDetayi, setEbelgeDetayi] = useState<FaturaDetay | null>(null);
   const [odemeDetayi, setOdemeDetayi] = useState<FaturaDetay | null>(null);
   const [sonrakiFaturaImleci, setSonrakiFaturaImleci] = useState<string | null>(null);
@@ -216,6 +226,7 @@ export default function FaturaSayfasi() {
   const [vadeElleDegisti, setVadeElleDegisti] = useState(false);
   const [siparisNo, setSiparisNo] = useState("");
   const [siparisTarihi, setSiparisTarihi] = useState("");
+  const [faturaNo, setFaturaNo] = useState("");
   const [aciklama, setAciklama] = useState("");
   const [kuruAciklamayaEkle, setKuruAciklamayaEkle] = useState(true);
   const [notlar, setNotlar] = useState("");
@@ -245,7 +256,9 @@ export default function FaturaSayfasi() {
       if (hedef.origin !== window.location.origin || hedef.href === window.location.href) return;
       if (!window.confirm(KAYDEDILMEMIS_DEGISIKLIK_UYARISI)) {
         event.preventDefault();
-        event.stopPropagation();
+        // Next Link kendi document listener'ını da çalıştırmamalı; yalnızca
+        // stopPropagation aynı hedefteki listener'ları durdurmaz.
+        event.stopImmediatePropagation();
       }
     };
     window.addEventListener("beforeunload", ayrilmayiEngelle);
@@ -313,15 +326,19 @@ export default function FaturaSayfasi() {
       setTip(yon);
     } else setYonBaglami(null);
     if (parametreler.get("yeni") === "1" && !yeniSayfasi) {
-      parametreler.delete("yeni");
-      router.replace(`/panel/fatura/yeni${parametreler.size ? `?${parametreler.toString()}` : ""}`);
+      // Çalışma alanı bağlantıları liste bağlamını koruyarak yeni formu açar.
+      // Ayrı /yeni rotasına zorunlu yönlendirme, hızlı geçişlerde formun
+      // açılmadan kalmasına ve erişilebilirlik testlerinde başlığın kaybolmasına
+      // neden olabiliyordu.
+      setFormAcik(true);
+      faturaBaslangicRef.current ??= Date.now();
       return;
     }
     const duzenleId = parametreler.get("duzenle");
     if (yeniSayfasi && duzenleId) {
       void api<FaturaDetay>(`/fatura/${duzenleId}`).then((fatura) => {
-        if (fatura.durum !== "taslak" || fatura.ebelge) throw new Error("Bu fatura artık düzenlenemez.");
-        setDuzenlenenId(fatura.id); setTip(fatura.tip); setTarih(fatura.tarih.slice(0, 10)); setDovizCinsi(fatura.dovizCinsi); setVadeTarihi(fatura.vadeTarihi?.slice(0, 10) ?? ""); setSiparisNo(fatura.siparisNo ?? ""); setSiparisTarihi(fatura.siparisTarihi?.slice(0, 10) ?? ""); setVadeElleDegisti(true);
+        if ((fatura.durum !== "taslak" && !(fatura.durum === "kesin" && !fatura.ebelge)) || fatura.ebelge) throw new Error("Bu fatura artık düzenlenemez.");
+        setDuzenlenenId(fatura.id); setTip(fatura.tip); setFaturaNo(fatura.no ?? ""); setTarih(fatura.tarih.slice(0, 10)); setDovizCinsi(fatura.dovizCinsi); setVadeTarihi(fatura.vadeTarihi?.slice(0, 10) ?? ""); setSiparisNo(fatura.siparisNo ?? ""); setSiparisTarihi(fatura.siparisTarihi?.slice(0, 10) ?? ""); setVadeElleDegisti(true);
         setCariId(fatura.cari.id); setDepoId(fatura.depoId ?? ""); setAciklama(fatura.aciklama ?? ""); setNotlar(fatura.notlar ?? "");
         setSatirlar(fatura.satirlar.map((satir) => ({
           stokId: satir.stokId, varyantId: satir.varyantId ?? undefined,
@@ -374,7 +391,7 @@ export default function FaturaSayfasi() {
   function gorunumUygula(gorunum: KayitliGorunum) { filtreleriUygula(gorunum); kullanimOlayi("gorunum_kullanildi"); }
   function formuSifirla() {
     setCariId(""); setCariOzeti(null); setDepoId(""); setTip(yonBaglami ?? "satis"); setTarih(new Date().toISOString().substring(0, 10)); setDovizCinsi("TRY"); setKur("1");
-    setAciklama(""); setKuruAciklamayaEkle(true);
+    setAciklama(""); setKuruAciklamayaEkle(true); setFaturaNo("");
     setNotlar(""); setVadeTarihi(""); setVadeElleDegisti(false); setSiparisNo(""); setSiparisTarihi("");
     setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" }]); setAcikSatir(null);
     setDosyalar([]);
@@ -484,7 +501,7 @@ export default function FaturaSayfasi() {
         body: JSON.stringify({
           kod: yeniCariKod,
           unvan: yeniCariUnvan,
-          tip: tip === "alis" ? "tedarikci" : "musteri",
+          tip: tip.startsWith("alis") ? "tedarikci" : "musteri",
           kisiTipi: "tuzel",
           vknTckn: yeniCariVkn || undefined,
         }),
@@ -513,8 +530,8 @@ export default function FaturaSayfasi() {
           tip: "urun",
           barkod: yeniStokBarkod || null,
           kdvOrani: yeniStokKdv,
-          alisFiyati: tip === "alis" && yeniStokFiyat ? yeniStokFiyat : null,
-          satisFiyati: tip !== "alis" && yeniStokFiyat ? yeniStokFiyat : null,
+          alisFiyati: tip.startsWith("alis") && yeniStokFiyat ? yeniStokFiyat : null,
+          satisFiyati: !tip.startsWith("alis") && yeniStokFiyat ? yeniStokFiyat : null,
         }),
       });
       setStoklar((eskiler) => [yeni, ...eskiler]);
@@ -524,7 +541,7 @@ export default function FaturaSayfasi() {
               ...satir,
               stokId: yeni.id,
               kdvOrani: Number(yeni.kdvOrani),
-              birimFiyat: Number(tip === "alis" ? yeni.alisFiyati ?? 0 : yeni.satisFiyati ?? 0),
+              birimFiyat: Number(tip.startsWith("alis") ? yeni.alisFiyati ?? 0 : yeni.satisFiyati ?? 0),
             }
           : satir,
       ));
@@ -637,13 +654,13 @@ export default function FaturaSayfasi() {
     }
   }
 
-  async function kesinlestir(id: string) {
+  async function kesinlestir(id: string, belgeNo?: string) {
     setHata("");
     setBasari("");
     try {
-      await api(`/fatura/${id}/kesinlestir`, { method: "POST" });
+      await api(`/fatura/${id}/kesinlestir`, { method: "POST", body: JSON.stringify({ no: belgeNo?.trim() || undefined }) });
       setKesinlestirmeOzeti(null);
-      setBasari("Fatura başarıyla kesinleştirildi ve e-Belge süreci başlatıldı.");
+      setBasari("Fatura kesinleştirildi. e-Fatura gönderimi için e-Fatura Oluştur wizard'ını kullanın.");
       void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Kesinleştirme hatası");
@@ -662,6 +679,7 @@ export default function FaturaSayfasi() {
     try {
       const fatura = await api<FaturaDetay>(`/fatura/${id}`);
       const cari = await api<CariSecimOzeti>(`/cari/${fatura.cari.id}`);
+      setFaturaNo(fatura.no ?? "");
       setKesinlestirmeOzeti({ fatura, risk: cari.risk });
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Kesinleştirme özeti yüklenemedi");
@@ -712,6 +730,25 @@ export default function FaturaSayfasi() {
     } catch (h) {
       setHata(h instanceof Error ? h.message : "e-Belge ayrıntısı yüklenemedi");
     }
+  }
+
+  async function ebelgeWizardAc(fatura: Fatura) {
+    setHata(""); setBasari("");
+    try {
+      const bilgi = await api<EbelgeWizardBilgisi>(`/ebelge/wizard/${fatura.id}`);
+      setEbelgeWizard({ fatura, bilgi });
+    } catch (h) { setHata(h instanceof Error ? h.message : "e-Fatura wizard'ı açılamadı"); }
+  }
+
+  async function ebelgeWizardGonder() {
+    if (!ebelgeWizard) return;
+    setHata(""); setBasari("");
+    try {
+      await api(`/ebelge/gonder/${ebelgeWizard.fatura.id}`, { method: "POST" });
+      setEbelgeWizard(null);
+      setBasari("e-Belge oluşturuldu ve entegratöre gönderim kuyruğuna alındı.");
+      void yukle();
+    } catch (h) { setHata(h instanceof Error ? h.message : "e-Belge gönderilemedi"); }
   }
 
   async function odemeDetayAc(id: string) {
@@ -831,7 +868,7 @@ export default function FaturaSayfasi() {
         actions={
           <>
             <ButtonLabel as="a" href="/panel/fatura/raporlar">📈 Raporlar</ButtonLabel>
-            {yeniSayfasi ? <Button onClick={() => router.push("/panel/fatura")}>Listeye dön</Button> : <ButtonLabel as="a" variant="primary" href="/panel/fatura/yeni">➕ Yeni Fatura</ButtonLabel>}
+            {yeniSayfasi ? <Button onClick={() => router.push("/panel/fatura")}>Listeye dön</Button> : <ButtonLabel as="a" role="button" variant="primary" href={`/panel/fatura/yeni${yonBaglami ? `?yon=${yonBaglami}` : ""}`}>➕ Yeni Fatura</ButtonLabel>}
           </>
         }
       />
@@ -891,16 +928,16 @@ export default function FaturaSayfasi() {
       {formAcik && (
         <div className="document-editor">
           <div className="document-editor__head">
-            <h3>{duzenlenenId ? "Faturayı düzenle" : `Yeni ${tip === "alis" ? "alış" : tip === "proforma" ? "proforma" : "satış"} faturası`}</h3>
-            <span className="badge badge--warning">Taslak</span>
+          <h3>{duzenlenenId ? "Faturayı düzenle" : `Yeni ${tip.startsWith("alis") ? (tip === "alis_iade" ? "alış iade" : "alış") : tip === "proforma" ? "proforma" : "satış"} faturası`}</h3>
+            <div className="row-tight"><span className="badge badge--warning">Taslak</span>{!yeniSayfasi && <Button size="sm" type="button" onClick={faturaFormunuAcKapat}>Vazgeç</Button>}</div>
           </div>
 
           <div className="document-editor__section">
             <h4 className="document-editor__section-title">Cari ve belge bilgileri</h4>
             <div className="document-fields">
-              <Field label={tip === "alis" ? "Tedarikçi" : "Müşteri"}>
+              <Field label={tip.startsWith("alis") ? "Tedarikçi" : "Müşteri"}>
                 <AramaSecici
-                  ariaLabel={tip === "alis" ? "Tedarikçi ara" : "Müşteri ara"}
+                  ariaLabel={tip.startsWith("alis") ? "Tedarikçi ara" : "Müşteri ara"}
                   ariaDescribedBy={cariDogrulamaHatasi ? "fatura-cari-hatasi" : undefined}
                   ariaInvalid={Boolean(cariDogrulamaHatasi)}
                   deger={cariId}
@@ -909,7 +946,7 @@ export default function FaturaSayfasi() {
                   onChange={(deger) => { setCariId(deger); if (deger) setCariDogrulamaHatasi(""); }}
                   placeholder="Ünvan, cari kodu veya VKN ile ara"
                   yeniKayit={{
-                    etiket: tip === "alis" ? "Yeni tedarikçi oluştur" : "Yeni müşteri oluştur",
+                    etiket: tip.startsWith("alis") ? "Yeni tedarikçi oluştur" : "Yeni müşteri oluştur",
                     onClick: () => { setHizliHata(""); setHizliPanel("cari"); },
                   }}
                   secenekler={cariler.map((cari) => ({
@@ -925,6 +962,7 @@ export default function FaturaSayfasi() {
                 <Select aria-label="Fatura Tipi" value={tip} onChange={(e) => { setTip(e.target.value); setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 }]); }}>
                   <option value="satis">Satış Faturası</option>
                   <option value="alis">Alış Faturası</option>
+                  {yonBaglami === "alis" && <option value="alis_iade">Alış İade Faturası</option>}
                   <option value="proforma">Proforma</option>
                 </Select>
               </Field>
@@ -1019,7 +1057,7 @@ export default function FaturaSayfasi() {
                               stok.kod,
                               stok.barkod && `Barkod: ${stok.barkod}`,
                               stok.kullanilabilirMiktar !== undefined && `Stok: ${Number(stok.kullanilabilirMiktar).toLocaleString("tr-TR")} ${stok.anaBirim ?? "adet"}`,
-                              tip === "alis"
+                              tip.startsWith("alis")
                                 ? stok.alisFiyati && `Alış: ${tl(stok.alisFiyati)}`
                                 : stok.satisFiyati && `Satış: ${tl(stok.satisFiyati)}`,
                               `KDV %${Number(stok.kdvOrani)}`,
@@ -1027,7 +1065,7 @@ export default function FaturaSayfasi() {
                             aramaMetni: [stok.kod, stok.barkod, ...(stok.tedarikciUrunKodlari ?? [])].filter(Boolean).join(" "),
                           }))}
                         />
-                        {(stokVaryantlari[s.stokId]?.length ?? 0) > 0 && <Select aria-label="Varyant" required value={s.varyantId ?? ""} onChange={(e) => { const varyant = stokVaryantlari[s.stokId].find((v) => v.id === e.target.value); const yeni = [...satirlar]; yeni[index] = { ...s, varyantId: e.target.value, ...(varyant ? { birimFiyat: Number(tip === "alis" ? varyant.alisFiyati ?? s.birimFiyat : varyant.satisFiyati ?? s.birimFiyat) } : {}) }; setSatirlar(yeni); }}><option value="">Varyant seçin</option>{stokVaryantlari[s.stokId].filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad} · Stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")}</option>)}</Select>}
+                        {(stokVaryantlari[s.stokId]?.length ?? 0) > 0 && <Select aria-label="Varyant" required value={s.varyantId ?? ""} onChange={(e) => { const varyant = stokVaryantlari[s.stokId].find((v) => v.id === e.target.value); const yeni = [...satirlar]; yeni[index] = { ...s, varyantId: e.target.value, ...(varyant ? { birimFiyat: Number(tip.startsWith("alis") ? varyant.alisFiyati ?? s.birimFiyat : varyant.satisFiyati ?? s.birimFiyat) } : {}) }; setSatirlar(yeni); }}><option value="">Varyant seçin</option>{stokVaryantlari[s.stokId].filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad} · Stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")}</option>)}</Select>}
                         {satirDogrulamaHatalari.includes(index) && <p className="field-error" id={`fatura-satir-${index}-hatasi`} role="alert">Bu satır için ürün veya hizmet seçin.</p>}
                         {seciliStok && (
                           <span className={`document-line-stock${stokYetersiz ? " is-warning" : ""}`}>
@@ -1113,7 +1151,7 @@ export default function FaturaSayfasi() {
       }} />
 
       {hizliPanel === "cari" && (
-        <HizliKayitPaneli baslik={tip === "alis" ? "Yeni tedarikçi" : "Yeni müşteri"} onKapat={() => setHizliPanel(null)}>
+          <HizliKayitPaneli baslik={tip.startsWith("alis") ? "Yeni tedarikçi" : "Yeni müşteri"} onKapat={() => setHizliPanel(null)}>
           <form className="quick-panel__form" onSubmit={hizliCariOlustur}>
             <Alert tone="error">{hizliHata}</Alert>
             <Field label="Ünvan / Ad soyad"><Input autoFocus value={yeniCariUnvan} onChange={(e) => setYeniCariUnvan(e.target.value)} required /></Field>
@@ -1136,7 +1174,7 @@ export default function FaturaSayfasi() {
             <Field label="Ürün adı"><Input autoFocus value={yeniStokAd} onChange={(e) => setYeniStokAd(e.target.value)} required /></Field>
             <Field label="Stok kodu"><Input value={yeniStokKod} onChange={(e) => setYeniStokKod(e.target.value)} required placeholder="STK-001" /></Field>
             <Field label="Barkod"><Input value={yeniStokBarkod} onChange={(e) => setYeniStokBarkod(e.target.value)} /></Field>
-            <Field label={tip === "alis" ? "Alış fiyatı (TRY)" : "Satış fiyatı (TRY)"}><Input className="record-number" type="number" min="0" step="0.0001" inputMode="decimal" value={yeniStokFiyat} onChange={(e) => setYeniStokFiyat(e.target.value)} placeholder="0,00" /></Field>
+            <Field label={tip.startsWith("alis") ? "Alış fiyatı (TRY)" : "Satış fiyatı (TRY)"}><Input className="record-number" type="number" min="0" step="0.0001" inputMode="decimal" value={yeniStokFiyat} onChange={(e) => setYeniStokFiyat(e.target.value)} placeholder="0,00" /></Field>
             <Field label="KDV (%)"><Input className="record-number" type="number" min="0" max="100" inputMode="decimal" value={yeniStokKdv} onChange={(e) => setYeniStokKdv(e.target.value)} required /></Field>
             <div className="quick-panel__actions">
               <Button type="button" onClick={() => setHizliPanel(null)}>Vazgeç</Button>
@@ -1171,19 +1209,43 @@ export default function FaturaSayfasi() {
               <div className="approval-effects">
                 <div><span>Stok</span><strong>{proforma ? "Değişmeyecek" : `${toplamMiktar.toLocaleString("tr-TR")} birim ${satisYonlu ? "azalacak" : "artacak"}`}</strong></div>
                 <div><span>Cari hesap</span><strong>{proforma ? "Değişmeyecek" : `${tl(fatura.genelToplam)} ${satisYonlu ? "borç" : "alacak"} yazılacak`}</strong></div>
-                <div><span>e-Belge</span><strong>{proforma ? "Oluşmayacak" : `${fatura.cari.eFaturaMukellefi ? "e-Fatura" : "e-Arşiv"} kuyruğa alınacak`}</strong></div>
+                <div><span>e-Belge</span><strong>{proforma ? "Oluşmayacak" : "Kesinleştirme sonrası ayrıca wizard ile oluşturulacak"}</strong></div>
                 <div><span>Tahmini risk</span><strong>{fatura.tip === "satis" ? tl(tahminiRisk) : "Değişmeyecek"}</strong></div>
               </div>
               {!fatura.cari.vknTckn && !proforma && <div className="approval-impact is-warning">Cari VKN/TCKN bilgisi eksik. e-Belge gönderiminden önce cari kartını tamamlayın.</div>}
               {riskAsimi && <div className="approval-impact is-warning">Kesinleştirme sonrasında tahmini risk {tl(tahminiRisk)} ile {tl(riskLimiti)} limitini aşacak.</div>}
+              {(fatura.tip === "alis" || fatura.tip === "alis_iade") && <Field label="Tedarikçi fatura no *"><Input autoFocus value={faturaNo} onChange={(e) => setFaturaNo(e.target.value)} maxLength={100} placeholder="Tedarikçinin belge numarası" required /></Field>}
               <div className="quick-panel__actions">
                 <Button type="button" onClick={() => setKesinlestirmeOzeti(null)}>Vazgeç</Button>
-                <Button type="button" variant="primary" onClick={() => void kesinlestir(fatura.id)}>Kesinleştir</Button>
+                <Button type="button" variant="primary" disabled={(fatura.tip === "alis" || fatura.tip === "alis_iade") && !faturaNo.trim()} onClick={() => void kesinlestir(fatura.id, faturaNo)}>Kesinleştir</Button>
               </div>
             </div>
           </HizliKayitPaneli>
         );
       })()}
+
+      {ebelgeWizard && (
+        <HizliKayitPaneli baslik="e-Fatura oluştur ve gönder" onKapat={() => setEbelgeWizard(null)}>
+          <div className="approval-summary">
+            <div className="approval-summary__identity">
+              <strong>1. Kontrol</strong>
+              <span>{ebelgeWizard.fatura.no} · {ebelgeWizard.bilgi.cari}</span>
+            </div>
+            <div className="approval-effects">
+              <div><span>Alıcı VKN/TCKN</span><strong>{ebelgeWizard.bilgi.vknTckn || "Eksik"}</strong></div>
+              <div><span>Entegratör</span><strong>{ebelgeWizard.bilgi.saglayici || "Tanımlı değil"}</strong></div>
+              <div><span>Belge türü</span><strong>Mükellefiyet gönderim onayında sorgulanacak: e-Fatura / e-Arşiv</strong></div>
+            </div>
+            {ebelgeWizard.bilgi.neden && <div className="approval-impact is-warning">{ebelgeWizard.bilgi.neden}</div>}
+            {ebelgeWizard.bilgi.not && <div className="approval-impact">{ebelgeWizard.bilgi.not}</div>}
+            <p className="subtle">İkinci adımda UBL-TR belge oluşturulur, entegratöre gönderilir ve durum takibine alınır. Bu işlem faturayı yeniden kesinleştirmez.</p>
+            <div className="quick-panel__actions">
+              <Button type="button" onClick={() => setEbelgeWizard(null)}>Vazgeç</Button>
+              <Button type="button" variant="primary" disabled={!ebelgeWizard.bilgi.gonderilebilir} onClick={() => void ebelgeWizardGonder()}>2. Oluştur ve gönder</Button>
+            </div>
+          </div>
+        </HizliKayitPaneli>
+      )}
 
       {ebelgeDetayi?.ebelge && (
         <HizliKayitPaneli baslik="e-Belge durumu" onKapat={() => setEbelgeDetayi(null)}>
@@ -1326,6 +1388,8 @@ export default function FaturaSayfasi() {
                         <>
                           <Button size="sm" onClick={() => pdfAc(f.id)}>🖨 PDF</Button>
                           <Button size="sm" onClick={() => setEpostaGonderilen(f)}>✉️ E-posta</Button>
+                          {!f.ebelge && f.durum === "kesin" && !f.tip.startsWith("alis") && <Button variant="primary" size="sm" onClick={() => void ebelgeWizardAc(f)}>🧾 e-Fatura Oluştur</Button>}
+                          {!f.ebelge && f.durum === "kesin" && <Button size="sm" onClick={() => router.push(`/panel/fatura/yeni?duzenle=${f.id}`)}>Düzenle</Button>}
                           {f.ebelge && ["kuyrukta", "iletildi"].includes(f.ebelge.durum) && (
                             <Button size="sm" onClick={() => ebelgeSorgula(f.id)}>Sorgula</Button>
                           )}

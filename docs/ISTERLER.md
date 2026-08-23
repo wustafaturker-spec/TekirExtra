@@ -1,8 +1,11 @@
 # TekirExtra — Yazılım İster Dokümanı (SRS)
 
-**Sürüm:** 0.17
-**Tarih:** 2026-07-16
-**Durum (2026-07-16):** **UI Tamamlama** sürüyor (plan: `docs/UI-TAMAMLAMA.md`);
+**Sürüm:** 0.18
+**Tarih:** 2026-08-17
+**Durum (2026-08-17):** UI tamamlama paketleri tamamlandı; üretim hazırlığı
+devam ediyor. Kalıcı worker/kuyruk, gerçek sağlayıcı doğrulaması, readiness,
+CI kabul testleri ve operasyonel gözlemlenebilirlik release kapılarıdır.
+Önceki UI durumu: **UI Tamamlama** sürüyor (plan: `docs/UI-TAMAMLAMA.md`);
 Paket 1/2/3/4/7 bitti. Paket 3 ile **KSB-05 iki kez genişletildi**:
 1. **Tahsil artık para hareketi doğuruyor** — yalnız durum değişiyordu.
    `PATCH /kasa-banka/cek-senet/:id` → `hesapKasaId` / `hesapBankaHesapId` /
@@ -199,7 +202,7 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | FTR-02 | Alış faturası girilebilmeli; girişte ilgili stok miktarları otomatik artmalıdır. | Z |
 | FTR-03 | Satış faturası kesildiğinde stok miktarları otomatik azalmalı, cari bakiye borçlandırılmalıdır. | Z |
 | FTR-04 | Fatura satırlarında KDV, iskonto ve genel toplam otomatik hesaplanmalı; kuruş yuvarlaması mevzuata uygun yapılmalıdır. | Z |
-| FTR-05 | Fatura taslak olarak kaydedilebilmeli, kesinleştirilmeden düzenlenebilmelidir. Kesinleşen fatura değiştirilemez; iptal/iade süreci işletilir. | Z |
+| FTR-05 | Fatura taslak olarak kaydedilebilmeli, kesinleştirilmeden düzenlenebilmelidir. Kesinleşmiş ancak e-belgesi henüz oluşturulmamış faturada stok yönü/miktarı, cari ve depo sabit kalmak kaydıyla tutar, iskonto, vergi ve açıklama düzeltilebilmelidir. e-Belge oluşturulduktan sonra fatura değiştirilemez; iptal/iade süreci işletilir. | Z |
 | FTR-06 | Faturalar numaralandırma serisiyle (ör. TKR2026...) otomatik ve kesintisiz numaralanmalıdır. | Z |
 | FTR-07 | Fatura PDF çıktısı üretilebilmeli, e-posta ile gönderilebilmelidir. | Z |
 | FTR-08 | İade faturası (alış/satış) düzenlenebilmeli, stok ve cari hareketleri ters yönde işlenmelidir. | Z |
@@ -218,7 +221,7 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | EBLG-01 | Entegratör katmanı adaptör mimarisiyle soyutlanmalıdır: her firma, desteklenen entegratörlerden (Foriba, İzibiz, eLogo, Uyumsoft vb.) dilediğini bağımsız seçebilmelidir. Yeni bir entegratör, çekirdek kod değişmeden adaptör eklenerek desteklenebilmelidir. | Z |
 | EBLG-01a | Firma yöneticisi, entegratör erişim bilgilerini (kullanıcı adı, parola/API anahtarı, servis adresi) arayüzden girebilmeli ve "bağlantı testi" ile doğrulayabilmelidir. | Z |
 | EBLG-01b | Entegratör erişim bilgileri veritabanında şifrelenerek (at-rest encryption) saklanmalı, arayüzde ve loglarda asla açık gösterilmemelidir. | Z |
-| EBLG-02 | Fatura kesinleştirilirken alıcının e-Fatura mükellefiyeti otomatik sorgulanmalı; mükellefse e-Fatura, değilse e-Arşiv olarak gönderilmelidir. | Z |
+| EBLG-02 | Fatura kesinleştirme e-belge gönderimini başlatmamalıdır. Kesinleşmiş ve e-belgesi bulunmayan faturada **e-Fatura Oluştur** wizard'ı açılmalı; kontrol adımında aktif entegratör, alıcı VKN/TCKN ve mükellefiyet gösterilmeli, kullanıcı onayından sonra mükellefse e-Fatura, değilse e-Arşiv olarak gönderilmelidir. | Z |
 | EBLG-03 | Giden e-belgeler UBL-TR 1.2 standardına uygun üretilmelidir. | Z |
 | EBLG-04 | Gönderilen belgelerin durumu (kuyrukta, iletildi, kabul, ret, hata) izlenmeli ve arayüzde gösterilmelidir. | Z |
 | EBLG-05 | Gelen e-Faturalar entegratörden çekilebilmeli; kullanıcı onayıyla alış faturası olarak sisteme işlenebilmelidir. | Z |
@@ -413,7 +416,7 @@ mimarisi bu ailelere baştan hazır tasarlanır (bkz. MIMARI.md). Tümü **[G]**
 
 v1.0 aşağıdaki uçtan uca senaryolar hatasız çalıştığında kabul edilir:
 
-1. Cari kartı aç → stoklu satış faturası kes → e-Fatura/e-Arşiv otomatik yönlendirilsin ve entegratörden "iletildi" durumu görülsün → stok düşsün → cari borçlansın → tahsilat gir → bakiye kapansın.
+1. Cari kartı aç → stoklu satış faturası kes → faturayı kesinleştir → **e-Fatura Oluştur** wizard'ını açıp kontrol et ve gönder → entegratörden "iletildi" durumu görülsün → stok düşsün → cari borçlansın → tahsilat gir → bakiye kapansın.
 2. Gelen e-Fatura entegratörden çekilsin → alış faturası olarak işlensin → stok artsın → ödeme girilsin.
 3. İade faturası ile stok ve cari hareketler ters yönde doğru işlensin.
 4. Dönem sonunda KDV özeti, cari ekstre ve stok raporu PDF/Excel alınabilsin.
