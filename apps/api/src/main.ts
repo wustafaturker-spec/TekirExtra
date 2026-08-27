@@ -7,13 +7,14 @@ import { randomUUID } from "node:crypto";
 import { MetricsService } from "./core/observability/metrics.service";
 import { ObservabilityExceptionFilter } from "./core/observability/exception.filter";
 import { structuredLogger } from "./core/observability/structured-logger";
+import { DagitikRateLimiter } from "./core/guvenlik/rate-limiter";
 
 import { json, urlencoded } from "express";
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
-  app.use(json({ limit: "50mb" }));
-  app.use(urlencoded({ limit: "50mb", extended: true }));
+  app.use(json({ limit: process.env.JSON_BODY_LIMIT ?? "2mb" }));
+  app.use(urlencoded({ limit: process.env.FORM_BODY_LIMIT ?? "2mb", extended: true }));
   const metrics = app.get(MetricsService);
   app.useGlobalFilters(new ObservabilityExceptionFilter(metrics));
   app.setGlobalPrefix("api/v1", { exclude: ["health", "metrics"] });
@@ -36,23 +37,19 @@ async function bootstrap(): Promise<void> {
   });
   const limit = Number(process.env.RATE_LIMIT_MAX ?? 300);
   const pencereMs = Number(process.env.RATE_LIMIT_WINDOW_MS ?? 60_000);
-  const istekler = new Map<string, { baslangic: number; sayi: number }>();
-  app.use((req: { ip?: string; path?: string }, res: { status: (kod: number) => { json: (govde: unknown) => void }; setHeader: (ad: string, deger: string) => void }, next: () => void) => {
+  const rateLimiter = await DagitikRateLimiter.olustur(limit, pencereMs, process.env.REDIS_URL);
+  app.use(async (req: { ip?: string; path?: string }, res: { status: (kod: number) => { json: (govde: unknown) => void }; setHeader: (ad: string, deger: string) => void }, next: () => void) => {
     if (req.path === "/health" || req.path === "/health/ready" || req.path === "/metrics") return next();
     const anahtar = req.ip ?? "unknown";
     const simdi = Date.now();
-    const mevcut = istekler.get(anahtar);
-    const kayit = !mevcut || simdi - mevcut.baslangic >= pencereMs
-      ? { baslangic: simdi, sayi: 1 }
-      : { baslangic: mevcut.baslangic, sayi: mevcut.sayi + 1 };
-    istekler.set(anahtar, kayit);
-    if (istekler.size > 10_000) {
-      for (const [ip, deger] of istekler) if (simdi - deger.baslangic >= pencereMs) istekler.delete(ip);
-    }
-    if (kayit.sayi > limit) {
-      res.setHeader("Retry-After", String(Math.ceil((kayit.baslangic + pencereMs - simdi) / 1000)));
+    const sonuc = await rateLimiter.tuket(anahtar, simdi);
+    res.setHeader("RateLimit-Limit", String(limit));
+    res.setHeader("RateLimit-Remaining", String(sonuc.kalan));
+    res.setHeader("RateLimit-Reset", String(Math.ceil(sonuc.sifirlamaMs / 1000)));
+    if (!sonuc.izinli) {
+      res.setHeader("Retry-After", String(Math.max(1, Math.ceil((sonuc.sifirlamaMs - simdi) / 1000))));
       metrics.increment("rate_limit_rejections_total", { path: req.path ?? "unknown" });
-      structuredLogger.warn("rate_limit_rejected", { path: req.path, ip: anahtar });
+      structuredLogger.warn("rate_limit_rejected", { path: req.path, ip: anahtar, source: sonuc.kaynak });
       return res.status(429).json({ mesaj: "Çok fazla istek. Lütfen daha sonra tekrar deneyin." });
     }
     next();
@@ -66,9 +63,12 @@ async function bootstrap(): Promise<void> {
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
     res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+    res.setHeader("Cross-Origin-Resource-Policy", "same-site");
     next();
   });
   app.enableShutdownHooks();
+  app.getHttpAdapter().getInstance().on?.("close", () => { void rateLimiter.kapat(); });
   const port = Number(process.env.PORT ?? 3001);
   await app.listen(port);
   // eslint-disable-next-line no-console

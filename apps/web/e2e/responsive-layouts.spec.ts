@@ -9,7 +9,11 @@ const sayfalar = [
 ] as const;
 
 async function apiMockla(page: Page) {
-  await page.addInitScript(() => localStorage.setItem("tekir_access", "e2e-token"));
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem("tekir_access") && !localStorage.getItem("tekir_access")) {
+      sessionStorage.setItem("tekir_access", "e2e-token");
+    }
+  });
   await page.route("http://localhost:3001/api/v1/**", async (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/auth/ben")) {

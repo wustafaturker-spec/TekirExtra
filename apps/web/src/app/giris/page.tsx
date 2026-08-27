@@ -162,9 +162,10 @@ export default function GirisSayfasi() {
                 />
               </Field>
 
-              <Field label="Parola">
+              <Field label="Parola" htmlFor="giris-parola">
                 <div className="password-input-wrap">
                   <Input
+                    id="giris-parola"
                     name="parola"
                     type={parolaGoster ? "text" : "password"}
                     placeholder="••••••••"
@@ -177,6 +178,8 @@ export default function GirisSayfasi() {
                     className="password-toggle-btn"
                     onClick={() => setParolaGoster(!parolaGoster)}
                     title={parolaGoster ? "Parolayı Gizle" : "Parolayı Göster"}
+                    aria-label={parolaGoster ? "Parolayı gizle" : "Parolayı göster"}
+                    aria-pressed={parolaGoster}
                   >
                     {parolaGoster ? "🙈" : "👁️"}
                   </button>
@@ -198,8 +201,8 @@ export default function GirisSayfasi() {
 
               <div className="form-options">
                 <label className="remember-me">
-                  <input type="checkbox" name="remember" defaultChecked />
-                  <span>Beni Hatırla</span>
+                  <input type="checkbox" checked readOnly />
+                  <span>Bu sekmede oturumu açık tut</span>
                 </label>
                 <a href="#sifre-sifirla" onClick={(e) => { e.preventDefault(); alert("Şifre sıfırlama bağlantısı yöneticinize iletilmiştir."); }} className="forgot-password">
                   Şifremi Unuttum?

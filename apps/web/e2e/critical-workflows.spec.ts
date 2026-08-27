@@ -1,7 +1,11 @@
 import { expect, test } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("tekir_access", "e2e-token"));
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem("tekir_access") && !localStorage.getItem("tekir_access")) {
+      sessionStorage.setItem("tekir_access", "e2e-token");
+    }
+  });
   await page.route("http://localhost:3001/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/auth/ben")) {
@@ -240,6 +244,129 @@ test("dekoratif ikonlar kontrol ve bağlantı adlarını kirletmez", async ({ pa
   await expect(page.getByRole("link", { name: "Cari Hesaplar", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Kasa & Banka", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Güvenli çıkış", exact: true })).toBeVisible();
+});
+
+test("salt okunur rol yetkisiz yönetim sayfasını alt içerik çalışmadan göremez", async ({ page }) => {
+  await page.route("http://localhost:3001/api/v1/auth/ben", (route) =>
+    route.fulfill({ json: { userId: "u2", tenantId: "t1", rol: "salt_okunur" } }),
+  );
+  await page.goto("/panel/ayarlar/kullanicilar");
+
+  await expect(page.getByRole("heading", { name: "Bu sayfaya erişim yetkiniz yok" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Kullanıcılar/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Yeni kullanıcı/ })).toHaveCount(0);
+});
+
+test("proje seçeneklerini yükler ve yeni projeyi kaydeder", async ({ page }) => {
+  let kaydedilen: Record<string, unknown> | null = null;
+  await page.route("http://localhost:3001/api/v1/projeler**", async (route) => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith("/projeler/secenekler")) {
+      return route.fulfill({ json: {
+        cariler: [{ id: "c1", unvan: "Örnek Müşteri" }],
+        kullanicilar: [{ id: "u1", adSoyad: "Proje Sorumlusu" }],
+      } });
+    }
+    if (route.request().method() === "POST") {
+      kaydedilen = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({ status: 201, json: { id: "p1", ...kaydedilen } });
+    }
+    return route.fulfill({ json: [] });
+  });
+  await page.goto("/panel/projeler");
+  await page.getByRole("button", { name: /Yeni Proje Oluştur/ }).click();
+  await page.getByLabel("Proje Kodu *").fill("PRJ-E2E-001");
+  await page.getByLabel("Proje Adı *").fill("E2E Projesi");
+  await page.getByLabel("İşveren / Müşteri (Cari)").selectOption("c1");
+  await page.getByLabel("Proje Sorumlusu").selectOption("u1");
+  await page.getByRole("button", { name: "Projeyi Kaydet" }).click();
+
+  await expect(page.getByText("Proje başarıyla oluşturuldu.")).toBeVisible();
+  expect(kaydedilen).toMatchObject({
+    kod: "PRJ-E2E-001",
+    ad: "E2E Projesi",
+    cariId: "c1",
+    sorumluUserId: "u1",
+  });
+});
+
+test("başarılı giriş access tokenı kaydeder ve panele yönlendirir", async ({ page }) => {
+  await page.route("http://localhost:3001/api/v1/auth/giris", async (route) => {
+    expect(route.request().postDataJSON()).toMatchObject({ eposta: "kullanici@example.com", parola: "guvenli-parola" });
+    await route.fulfill({ json: { accessToken: "yeni-access-token", kullanici: { rol: "yonetici" } } });
+  });
+  await page.goto("/giris");
+  await page.getByLabel("E-posta Adresi").fill("kullanici@example.com");
+  await page.getByLabel("Parola", { exact: true }).fill("guvenli-parola");
+  await page.getByRole("button", { name: "Giriş Yap" }).click();
+
+  await expect(page).toHaveURL(/\/panel$/);
+  expect(await page.evaluate(() => sessionStorage.getItem("tekir_access"))).toBe("yeni-access-token");
+  expect(await page.evaluate(() => localStorage.getItem("tekir_access"))).toBeNull();
+});
+
+test("eski kalıcı tokenı sekme oturumuna taşır ve localStorage kopyasını siler", async ({ page }) => {
+  await page.goto("/giris");
+  await page.evaluate(() => {
+    sessionStorage.removeItem("tekir_access");
+    localStorage.setItem("tekir_access", "eski-access-token");
+  });
+  await page.goto("/panel/satis");
+
+  await expect(page.getByRole("heading", { level: 1, name: "Satış" })).toBeVisible();
+  expect(await page.evaluate(() => sessionStorage.getItem("tekir_access"))).toBe("eski-access-token");
+  expect(await page.evaluate(() => localStorage.getItem("tekir_access"))).toBeNull();
+});
+
+test("faturasız gelir kaydı seçilen hesaba tahsilat oluşturur", async ({ page }) => {
+  let kaydedilen: Record<string, unknown> | null = null;
+  await page.route("http://localhost:3001/api/v1/gelirler**", async (route) => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith("/gelirler/kategoriler")) {
+      return route.fulfill({ json: [{ id: "kat1", ad: "Faiz Geliri", varsayilanStopajOrani: "15", varsayilanKdvOrani: "0", muhasebeKodu: "642", ustId: null }] });
+    }
+    if (route.request().method() === "POST") {
+      kaydedilen = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({ status: 201, json: { id: "g1" } });
+    }
+    return route.fulfill({ json: [] });
+  });
+  await page.route("http://localhost:3001/api/v1/kasa-banka/kasalar", (route) =>
+    route.fulfill({ json: [{ id: "k1", ad: "Merkez Kasa", dovizCinsi: "TRY", bakiye: "1000" }] }),
+  );
+  await page.route("http://localhost:3001/api/v1/kasa-banka/bankalar", (route) => route.fulfill({ json: [] }));
+  await page.goto("/panel/gelirler");
+  await page.getByRole("button", { name: /Yeni Gelir Kaydı/ }).click();
+  await page.getByLabel("Gelir Kategorisi").selectOption("kat1");
+  await page.getByLabel("Tahsil Edilecek Kasa / Banka").selectOption("kasa:k1");
+  await page.getByLabel("Brüt Gelir Tutarı").fill("1000");
+  await page.getByRole("button", { name: "Kaydet ve Tahsil Et" }).click();
+
+  await expect(page.getByText("Faturasız gelir kaydı ve kasa/banka tahsilat hareketi oluşturuldu.")).toBeVisible();
+  expect(kaydedilen).toMatchObject({ kategoriId: "kat1", brutTutar: "1000", stopajOrani: "15", kasaId: "k1" });
+});
+
+test("kasa ödeme fişi doğru hesap ve işlem tipiyle kaydedilir", async ({ page }) => {
+  let kaydedilen: Record<string, unknown> | null = null;
+  await page.route("http://localhost:3001/api/v1/kasa-banka/**", async (route) => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith("/kasalar")) return route.fulfill({ json: [{ id: "k1", ad: "Merkez Kasa", dovizCinsi: "TRY", bakiye: "1000", borc: "0", alacak: "0", aktif: true }] });
+    if (pathname.endsWith("/bankalar")) return route.fulfill({ json: [] });
+    if (pathname.endsWith("/hareketler") && route.request().method() === "POST") {
+      kaydedilen = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({ status: 201, json: { id: "h1" } });
+    }
+    return route.fulfill({ json: [] });
+  });
+  await page.goto("/panel/kasa-banka");
+  await page.getByRole("button", { name: "Fiş Girişi" }).click();
+  await page.getByLabel("Kasa / Banka Seçimi").selectOption("kasa:k1");
+  await page.getByLabel("İşlem Tipi").selectOption("tediye");
+  await page.getByLabel("Tutar").fill("250");
+  await page.getByRole("button", { name: "Fişi kaydet" }).click();
+
+  await expect(page.getByText(/Tediye kaydedildi/)).toBeVisible();
+  expect(kaydedilen).toMatchObject({ kasaId: "k1", bankaHesapId: null, tip: "tediye", tutar: "250" });
 });
 
 test("mobil menü ve bildirim düğmeleri kontrol ettikleri paneli bildirir", async ({ page }) => {

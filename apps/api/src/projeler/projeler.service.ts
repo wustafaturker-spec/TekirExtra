@@ -22,6 +22,26 @@ const D = (deger: string | number): Prisma.Decimal => new Prisma.Decimal(deger);
 export class ProjelerService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async secenekler() {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const [cariler, kullanicilar] = await Promise.all([
+        tx.cariHesap.findMany({
+          where: { aktif: true },
+          select: { id: true, kod: true, unvan: true },
+          orderBy: { unvan: "asc" },
+          take: 200,
+        }),
+        tx.user.findMany({
+          where: { aktif: true },
+          select: { id: true, adSoyad: true, eposta: true },
+          orderBy: { adSoyad: "asc" },
+        }),
+      ]);
+      return { cariler, kullanicilar };
+    });
+  }
+
   async listele(arama?: string, durum?: string) {
     const { tenantId } = aktifBaglam();
     const projeler = await this.prisma.tenantIslem(tenantId, (tx) =>
@@ -100,10 +120,8 @@ export class ProjelerService {
     };
   }
 
-  /**
-   * Projeye bağlı gerçekleşen Gelir ve Gider kalemlerinin hesaplanması
-   * (FaturaSatir, Masraf, GelirKaydi, KasaBankaHareket).
-   */
+  /** Ana kârlılık tahakkuk esaslıdır. Kasa/banka hareketleri çift sayımı
+   * önlemek için toplamdan ayrılır ve nakit özeti olarak ayrıca döndürülür. */
   private async projeFinansOzeti(projeId: string) {
     const { tenantId } = aktifBaglam();
 
@@ -159,14 +177,20 @@ export class ProjelerService {
       if (h.tip === "tediye") kasaTediye += Number(h._sum.tutarTry ?? 0);
     }
 
-    const toplamGelir = (satisFaturaGeliri + ekstraGelir + kasaTahsilat).toFixed(2);
-    const toplamGider = (alisFaturaGideri + masrafGideri + kasaTediye).toFixed(2);
+    const toplamGelir = (satisFaturaGeliri + ekstraGelir).toFixed(2);
+    const toplamGider = (alisFaturaGideri + masrafGideri).toFixed(2);
     const netKarZarar = (Number(toplamGelir) - Number(toplamGider)).toFixed(2);
 
     return {
       toplamGelir,
       toplamGider,
       netKarZarar,
+      esas: "tahakkuk" as const,
+      nakitOzet: {
+        tahsilat: kasaTahsilat.toFixed(2),
+        tediye: kasaTediye.toFixed(2),
+        netNakitAkisi: (kasaTahsilat - kasaTediye).toFixed(2),
+      },
       detay: {
         satisFaturaGeliri: satisFaturaGeliri.toFixed(2),
         ekstraGelir: ekstraGelir.toFixed(2),
@@ -186,10 +210,16 @@ export class ProjelerService {
 
     const kirilimDetaylari = await Promise.all(
       altKirilimlar.map(async (k) => {
-        const [faturalar, masraflar, gelirler] = await Promise.all([
+        const [satisFaturalari, alisFaturalari, masraflar, gelirler] = await Promise.all([
           this.prisma.tenantIslem(tenantId, (tx) =>
             tx.faturaSatir.aggregate({
-              where: { projeAltKirilimId: k.id, fatura: { durum: { not: "iptal" } } },
+              where: { projeAltKirilimId: k.id, fatura: { tip: "satis", durum: { not: "iptal" } } },
+              _sum: { toplamTutar: true },
+            }),
+          ),
+          this.prisma.tenantIslem(tenantId, (tx) =>
+            tx.faturaSatir.aggregate({
+              where: { projeAltKirilimId: k.id, fatura: { tip: "alis", durum: { not: "iptal" } } },
               _sum: { toplamTutar: true },
             }),
           ),
@@ -207,11 +237,14 @@ export class ProjelerService {
           ),
         ]);
 
-        const gerceklesenTutar = (
-          Number(faturalar._sum.toplamTutar ?? 0) +
-          Number(masraflar._sum.toplam ?? 0) +
-          Number(gelirler._sum.netTutarTry ?? 0)
-        ).toFixed(2);
+        const gerceklesenGelir = Number(satisFaturalari._sum.toplamTutar ?? 0) + Number(gelirler._sum.netTutarTry ?? 0);
+        const gerceklesenGider = Number(alisFaturalari._sum.toplamTutar ?? 0) + Number(masraflar._sum.toplam ?? 0);
+        const netTutar = gerceklesenGelir - gerceklesenGider;
+        const gerceklesenTutar = (k.tip === "gelir"
+          ? gerceklesenGelir
+          : k.tip === "gider"
+            ? gerceklesenGider
+            : Math.abs(netTutar)).toFixed(2);
 
         const butce = Number(k.butceTutari);
         const gerceklesen = Number(gerceklesenTutar);
@@ -221,6 +254,9 @@ export class ProjelerService {
           ...k,
           butceTutari: k.butceTutari.toString(),
           gerceklesenTutar,
+          gerceklesenGelir: gerceklesenGelir.toFixed(2),
+          gerceklesenGider: gerceklesenGider.toFixed(2),
+          netTutar: netTutar.toFixed(2),
           sapma,
           kullanimOrani: butce > 0 ? Math.round((gerceklesen / butce) * 100) : null,
         };

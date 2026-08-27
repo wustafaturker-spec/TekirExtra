@@ -9,25 +9,11 @@ import { randomUUID } from "node:crypto";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { DepoService } from "./depo.service";
+import { dosyaIceriginiDogrula } from "../core/guvenlik/dosya-dogrulama";
 
 /** Belge/dosya ekleri ortak altyapısı (4. aşama S-01). */
 
 const MAKS_BOYUT = 10 * 1024 * 1024; // 10 MB
-
-const IZINLI_MIMELER = new Set([
-  "application/pdf",
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "text/plain",
-  "text/csv",
-  "application/xml",
-  "text/xml",
-  "application/vnd.ms-excel",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-]);
 
 export interface YuklenenDosya {
   originalname: string;
@@ -77,11 +63,7 @@ export class EklerService {
     if (dosya.size > MAKS_BOYUT) {
       throw new BadRequestException("Dosya 10 MB sınırını aşıyor");
     }
-    if (!IZINLI_MIMELER.has(dosya.mimetype)) {
-      throw new BadRequestException(
-        `'${dosya.mimetype}' türü desteklenmiyor (PDF, görsel, Office ve metin dosyaları yüklenebilir)`,
-      );
-    }
+    dosyaIceriginiDogrula(dosya);
     const { tenantId, userId } = aktifBaglam();
     const guvenliAd = dosya.originalname.replace(/[^\w.\-çğıöşüÇĞİÖŞÜ ]/g, "_");
     const depoAnahtari = `${tenantId}/${sahipTur}/${sahipId}/${randomUUID()}-${guvenliAd}`;

@@ -78,14 +78,16 @@ export default function ProjelerSayfasi() {
   const yukle = useCallback(async () => {
     setYukleniyor(true);
     try {
-      const [projelerRes, carilerRes, crmRes] = await Promise.all([
+      const [projelerRes, secenekler] = await Promise.all([
         api<Proje[]>("/projeler"),
-        api<{ kayitlar: { id: string; unvan: string }[] }>("/cari?adet=100"),
-        api<{ kullanicilar: { id: string; adSoyad: string }[] }>("/cari/crm/veri").catch(() => ({ kullanicilar: [] })),
+        api<{
+          cariler: { id: string; unvan: string }[];
+          kullanicilar: { id: string; adSoyad: string }[];
+        }>("/projeler/secenekler"),
       ]);
       setProjeler(Array.isArray(projelerRes) ? projelerRes : []);
-      setCariler(carilerRes.kayitlar ?? []);
-      setKullanicilar(crmRes.kullanicilar ?? []);
+      setCariler(secenekler.cariler ?? []);
+      setKullanicilar(secenekler.kullanicilar ?? []);
     } catch (e) {
       setHata(e instanceof Error ? e.message : "Projeler yüklenemedi");
     } finally {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api, tokenAl, tokenYaz } from "@/lib/api";
+import { rolMenuYoluGorebilir } from "@/lib/rol-yetkileri";
 
 const ROL_ADI: Record<string, string> = {
   yonetici: "Yönetici",
@@ -159,6 +160,10 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const mobilMenuRef = useRef<HTMLElement>(null);
   const bildirimTetikleyiciRef = useRef<HTMLButtonElement | null>(null);
   const bildirimPanelRef = useRef<HTMLElement>(null);
+  const gorunurMenu = MENU
+    .map((grup) => ({ ...grup, ogeler: grup.ogeler.filter((oge) => rolMenuYoluGorebilir(rol, oge.href)) }))
+    .filter((grup) => grup.ogeler.length > 0);
+  const sayfaYetkili = rolMenuYoluGorebilir(rol, pathname);
 
   useEffect(() => { setAktifArama(window.location.search); }, [pathname]);
   useEffect(() => {
@@ -194,8 +199,10 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
           setBildirimler(yeni);
         })
         .catch(() => setBildirimler([]));
+    } else {
+      router.replace("/giris");
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => { setBildirimlerAcik(false); setGeriBildirimAcik(false); }, [pathname]);
   useEffect(() => {
@@ -371,13 +378,13 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
           <button className="notification-nav" aria-controls="bildirim-paneli" aria-expanded={bildirimlerAcik} onClick={bildirimleriDegistir} type="button">
             <span aria-hidden="true">🔔</span><span>Bildirimler</span>{bildirimSayisi > 0 && <span className="notification-nav__count">{bildirimSayisi}</span>}
           </button>
-          {MENU.map((grup) => (
+          {gorunurMenu.map((grup) => (
             <div className="nav__group" key={grup.baslik}>
               <button className="nav__label" type="button" aria-expanded={acikGruplar.includes(grup.baslik)} onClick={() => grupAcKapat(grup.baslik)}>
                 <span>{grup.baslik}</span><span aria-hidden="true" className="nav__label-chevron">⌄</span>
               </button>
               {acikGruplar.includes(grup.baslik) && <div className="nav__group-items">
-                {grup.ogeler.filter((oge) => oge.href !== "/panel/ayarlar/kullanim" || rol === "yonetici").map((oge) => (
+                {grup.ogeler.map((oge) => (
                   <Link
                     key={oge.href}
                     href={oge.href}
@@ -428,7 +435,20 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
       )}
 
       <main className="app-main" id="ana-icerik" tabIndex={-1}>
-        <div className="app-content">{children}</div>
+        <div className="app-content">
+          {rol === null ? (
+            <section className="card empty-state" role="status" aria-live="polite">
+              <p>Oturum ve erişim yetkileri doğrulanıyor…</p>
+            </section>
+          ) : sayfaYetkili ? children : (
+            <section aria-labelledby="yetkisiz-baslik" className="card empty-state" role="alert">
+              <span aria-hidden="true" className="empty-state__icon">🔒</span>
+              <h1 id="yetkisiz-baslik">Bu sayfaya erişim yetkiniz yok</h1>
+              <p>Hesabınıza tanımlı rol bu modülü görüntülemeye izin vermiyor.</p>
+              <Link className="btn btn--primary" href={rol === "b2b_bayi" ? "/panel/b2b" : "/panel"}>Yetkili olduğum alana dön</Link>
+            </section>
+          )}
+        </div>
       </main>
     </div>
   );

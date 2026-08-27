@@ -32,6 +32,7 @@ import {
 } from "./cari.semalar";
 import { sayfaAdedi } from "../core/sayfalama";
 import { AbonelikService } from "../tenant/abonelik.service";
+import { excelDosyasiniDogrula, type YuklemeDosyasi } from "../core/guvenlik/dosya-dogrulama";
 
 @Controller("cari")
 export class CariController {
@@ -270,8 +271,9 @@ export class CariController {
   @Post("excel-aktar")
   @Roller("muhasebe")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
-  async excelAktar(@UploadedFile() file: any) {
+  async excelAktar(@UploadedFile() file: YuklemeDosyasi | undefined) {
     if (!file) throw new BadRequestException("Lütfen bir Excel dosyası yükleyin");
+    excelDosyasiniDogrula(file);
     return this.cariService.excelImport(file.buffer);
   }
 

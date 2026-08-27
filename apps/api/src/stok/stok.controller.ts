@@ -24,6 +24,7 @@ import { stokExcelSablonYaz } from "../core/excel-yardimci";
 import { DepoService } from "./depo.service";
 import { StokService } from "./stok.service";
 import { AbonelikService } from "../tenant/abonelik.service";
+import { excelDosyasiniDogrula, type YuklemeDosyasi } from "../core/guvenlik/dosya-dogrulama";
 import {
   etiketBasSemasi,
   kategoriSemasi,
@@ -152,8 +153,9 @@ export class StokController {
   @Post("excel-onizle")
   @Roller("muhasebe")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
-  async excelOnizle(@UploadedFile() file: any) {
+  async excelOnizle(@UploadedFile() file: YuklemeDosyasi | undefined) {
     if (!file) throw new BadRequestException("Lütfen bir Excel dosyası yükleyin");
+    excelDosyasiniDogrula(file);
     return this.stokService.excelOnizle(file.buffer);
   }
 
@@ -386,8 +388,9 @@ export class StokController {
   @Post("excel-aktar")
   @Roller("muhasebe")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
-  async excelAktar(@UploadedFile() file: any) {
+  async excelAktar(@UploadedFile() file: YuklemeDosyasi | undefined) {
     if (!file) throw new BadRequestException("Lütfen bir Excel dosyası yükleyin");
+    excelDosyasiniDogrula(file);
     return this.stokService.excelImport(file.buffer);
   }
 }

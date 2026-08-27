@@ -9,6 +9,7 @@ import {
   Query,
 } from "@nestjs/common";
 import { GelirlerService } from "./gelirler.service";
+import { Roller } from "../auth/roller.decorator";
 import {
   gelirKategoriGuncelleSemasi,
   gelirKategoriOlusturSemasi,
@@ -16,6 +17,7 @@ import {
 } from "./gelirler.semalar";
 
 @Controller("gelirler")
+@Roller("yonetici", "muhasebe", "salt_okunur")
 export class GelirlerController {
   constructor(private readonly gelirlerService: GelirlerService) {}
 
@@ -25,18 +27,21 @@ export class GelirlerController {
   }
 
   @Post("kategoriler")
+  @Roller("yonetici", "muhasebe")
   kategoriOlustur(@Body() govde: unknown) {
     const girdi = gelirKategoriOlusturSemasi.parse(govde);
     return this.gelirlerService.kategoriOlustur(girdi);
   }
 
   @Patch("kategoriler/:id")
+  @Roller("yonetici", "muhasebe")
   kategoriGuncelle(@Param("id") id: string, @Body() govde: unknown) {
     const girdi = gelirKategoriGuncelleSemasi.parse(govde);
     return this.gelirlerService.kategoriGuncelle(id, girdi);
   }
 
   @Delete("kategoriler/:id")
+  @Roller("yonetici", "muhasebe")
   kategoriSil(@Param("id") id: string) {
     return this.gelirlerService.kategoriSil(id);
   }
@@ -51,12 +56,14 @@ export class GelirlerController {
   }
 
   @Post()
+  @Roller("yonetici", "muhasebe")
   olustur(@Body() govde: unknown) {
     const girdi = gelirKaydiOlusturSemasi.parse(govde);
     return this.gelirlerService.olustur(girdi);
   }
 
   @Delete(":id")
+  @Roller("yonetici", "muhasebe")
   sil(@Param("id") id: string) {
     return this.gelirlerService.sil(id);
   }

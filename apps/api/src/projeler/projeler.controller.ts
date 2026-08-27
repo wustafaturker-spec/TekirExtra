@@ -9,6 +9,7 @@ import {
   Query,
 } from "@nestjs/common";
 import { ProjelerService } from "./projeler.service";
+import { Roller } from "../auth/roller.decorator";
 import {
   projeAltKirilimSemasi,
   projeAsamaSemasi,
@@ -18,8 +19,14 @@ import {
 } from "./projeler.semalar";
 
 @Controller("projeler")
+@Roller("yonetici", "muhasebe", "satis", "salt_okunur")
 export class ProjelerController {
   constructor(private readonly projelerService: ProjelerService) {}
+
+  @Get("secenekler")
+  async secenekler() {
+    return this.projelerService.secenekler();
+  }
 
   @Get()
   async listele(
@@ -35,12 +42,14 @@ export class ProjelerController {
   }
 
   @Post()
+  @Roller("yonetici", "muhasebe", "satis")
   async olustur(@Body() govde: unknown) {
     const girdi = projeOlusturSemasi.parse(govde);
     return this.projelerService.olustur(girdi);
   }
 
   @Patch(":id")
+  @Roller("yonetici", "muhasebe", "satis")
   async guncelle(
     @Param("id") id: string,
     @Body() govde: unknown,
@@ -50,6 +59,7 @@ export class ProjelerController {
   }
 
   @Delete(":id")
+  @Roller("yonetici", "muhasebe")
   async sil(@Param("id") id: string) {
     await this.projelerService.sil(id);
     return { mesaj: "Proje başarıyla silindi" };
@@ -57,6 +67,7 @@ export class ProjelerController {
 
   // Aşamalar
   @Post(":id/asamalar")
+  @Roller("yonetici", "muhasebe", "satis")
   async asamaEkle(
     @Param("id") id: string,
     @Body() govde: unknown,
@@ -66,6 +77,7 @@ export class ProjelerController {
   }
 
   @Patch(":id/asamalar/:asamaId")
+  @Roller("yonetici", "muhasebe", "satis")
   async asamaGuncelle(
     @Param("id") id: string,
     @Param("asamaId") asamaId: string,
@@ -76,6 +88,7 @@ export class ProjelerController {
   }
 
   @Delete(":id/asamalar/:asamaId")
+  @Roller("yonetici", "muhasebe", "satis")
   async asamaSil(
     @Param("id") id: string,
     @Param("asamaId") asamaId: string,
@@ -86,6 +99,7 @@ export class ProjelerController {
 
   // Alt Kırılımlar (Analitik Yevmiye)
   @Post(":id/alt-kirilimlar")
+  @Roller("yonetici", "muhasebe")
   async altKirilimEkle(
     @Param("id") id: string,
     @Body() govde: unknown,
@@ -95,6 +109,7 @@ export class ProjelerController {
   }
 
   @Delete(":id/alt-kirilimlar/:kirilimId")
+  @Roller("yonetici", "muhasebe")
   async altKirilimSil(
     @Param("id") id: string,
     @Param("kirilimId") kirilimId: string,
@@ -105,6 +120,7 @@ export class ProjelerController {
 
   // Notlar
   @Post(":id/notlar")
+  @Roller("yonetici", "muhasebe", "satis")
   async notEkle(
     @Param("id") id: string,
     @Body() govde: unknown,

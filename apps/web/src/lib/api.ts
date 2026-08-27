@@ -2,16 +2,27 @@
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
+const ACCESS_TOKEN_ANAHTARI = "tekir_access";
 
 export function tokenAl(): string | null {
-  return typeof window === "undefined"
-    ? null
-    : window.localStorage.getItem("tekir_access");
+  if (typeof window === "undefined") return null;
+  const sekmeTokeni = window.sessionStorage.getItem(ACCESS_TOKEN_ANAHTARI);
+  if (sekmeTokeni) return sekmeTokeni;
+
+  // Önceki sürümden kalan kalıcı tokenı bir kez sekme oturumuna taşı ve sil.
+  const eskiToken = window.localStorage.getItem(ACCESS_TOKEN_ANAHTARI);
+  if (!eskiToken) return null;
+  window.sessionStorage.setItem(ACCESS_TOKEN_ANAHTARI, eskiToken);
+  window.localStorage.removeItem(ACCESS_TOKEN_ANAHTARI);
+  return eskiToken;
 }
 
 export function tokenYaz(token: string | null): void {
-  if (token) window.localStorage.setItem("tekir_access", token);
-  else window.localStorage.removeItem("tekir_access");
+  if (typeof window === "undefined") return;
+  // Access token kalıcı depoda tutulmaz; refresh token zaten HttpOnly cookie'dedir.
+  window.localStorage.removeItem(ACCESS_TOKEN_ANAHTARI);
+  if (token) window.sessionStorage.setItem(ACCESS_TOKEN_ANAHTARI, token);
+  else window.sessionStorage.removeItem(ACCESS_TOKEN_ANAHTARI);
 }
 
 export class ApiHata extends Error {

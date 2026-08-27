@@ -15,6 +15,7 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { ekstreDosyasiniDogrula, type YuklemeDosyasi } from "../core/guvenlik/dosya-dogrulama";
 import { EkstreSatirDurum } from "@prisma/client";
 import { Roller } from "../auth/roller.decorator";
 import { EkstreService } from "./ekstre.service";
@@ -281,10 +282,11 @@ export class KasaBankaController {
   @Roller("muhasebe")
   @UseInterceptors(FileInterceptor("dosya", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
   async ekstreOnizle(
-    @UploadedFile() dosya: { buffer: Buffer; originalname: string } | undefined,
+    @UploadedFile() dosya: YuklemeDosyasi | undefined,
     @Body("bankaHesapId") bankaHesapId?: string,
   ) {
     if (!dosya) throw new BadRequestException("Lütfen bir ekstre dosyası yükleyin");
+    ekstreDosyasiniDogrula(dosya);
     if (!bankaHesapId) throw new BadRequestException("Banka hesabı seçilmelidir");
     return this.ekstre.onizle(bankaHesapId, dosya.buffer);
   }
@@ -297,10 +299,11 @@ export class KasaBankaController {
   @Roller("muhasebe")
   @UseInterceptors(FileInterceptor("dosya", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
   async ekstreYukle(
-    @UploadedFile() dosya: { buffer: Buffer; originalname: string } | undefined,
+    @UploadedFile() dosya: YuklemeDosyasi | undefined,
     @Body("veri") veri?: string,
   ) {
     if (!dosya) throw new BadRequestException("Lütfen bir ekstre dosyası yükleyin");
+    ekstreDosyasiniDogrula(dosya);
 
     let govde: unknown;
     try {
