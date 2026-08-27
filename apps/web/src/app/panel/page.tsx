@@ -119,69 +119,231 @@ export default function PanelSayfasi() {
   ];
 
   const tarihBasligi = new Intl.DateTimeFormat("tr-TR", { weekday: "long", day: "numeric", month: "long" }).format(new Date());
-  return <div className="dashboard">
-    <header className="dashboard-hero">
-      <div><p className="dashboard-kicker">{rol ? rolAdi[rol] : "Finansal kontrol merkezi"}</p><h1>{firma}</h1><p>{tarihBasligi.charAt(0).toUpperCase() + tarihBasligi.slice(1)} · İşletmenizin bugünkü finansal görünümü</p></div>
-      <div className="dashboard-hero__actions"><span className="dashboard-updated">{sonGuncelleme ? `Son güncelleme ${sonGuncelleme.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}` : "Veriler hazırlanıyor"}</span><button className="btn btn--ghost" disabled={yukleniyor} onClick={() => void yukle()} type="button"><span aria-hidden="true">↻</span>{yukleniyor ? "Güncelleniyor" : "Yenile"}</button><Link className="btn btn--primary" href="/panel/fatura/yeni?yon=satis"><span aria-hidden="true">＋</span>Yeni işlem</Link></div>
-    </header>
-    {hata && <div className="dashboard-notice" role="status"><span aria-hidden="true">i</span>{hata}</div>}
 
-    <section className="dashboard-daily-strip" aria-label="Bugünün özeti">
-      <div className="dashboard-daily-card dashboard-daily-card--sales"><span>Bugünkü satış</span><strong>{gunluk ? para(gunluk.satis.toplam) : "—"}</strong><small>{gunluk?.satis.adet ?? 0} kesinleşmiş satış faturası</small></div>
-      <Link href={`/panel/kasa-banka?baslangic=${new Date().toISOString().slice(0, 10)}&bitis=${new Date().toISOString().slice(0, 10)}&tur=tahsilat`} className="dashboard-daily-card dashboard-daily-card--collection"><span>Bugünkü tahsilat</span><strong>{gunluk ? para(gunluk.tahsilat.toplam) : "—"}</strong><small>{gunluk?.tahsilat.adet ?? 0} tahsilat · detayları aç <b aria-hidden="true">→</b></small></Link>
-      <div className="dashboard-daily-card dashboard-daily-card--currency"><div><span>TCMB günlük kurları</span><small>{alisKurlari?.kurTarihi ? `${alisKurlari.kurTarihi} · ${alisKurlari.oncekiIsGunuKullanildi ? "son iş günü" : "bugün"}` : "Yükleniyor…"}</small></div><div className="dashboard-rates"><div><b>USD</b><span>Alış <strong>{alisKurlari?.kurlar.USD?.toLocaleString("tr-TR", { minimumFractionDigits: 4 }) ?? "—"}</strong></span><span>Satış <strong>{satisKurlari?.kurlar.USD?.toLocaleString("tr-TR", { minimumFractionDigits: 4 }) ?? "—"}</strong></span></div><div><b>EUR</b><span>Alış <strong>{alisKurlari?.kurlar.EUR?.toLocaleString("tr-TR", { minimumFractionDigits: 4 }) ?? "—"}</strong></span><span>Satış <strong>{satisKurlari?.kurlar.EUR?.toLocaleString("tr-TR", { minimumFractionDigits: 4 }) ?? "—"}</strong></span></div></div></div>
-    </section>
+  return (
+    <div style={{ minHeight: "100vh", backgroundColor: "#f8fafc", color: "#0f172a", margin: "-20px -24px", padding: "24px 32px" }}>
+      {/* Header Banner */}
+      <header style={{ backgroundColor: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "16px", padding: "24px 32px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px" }}>
+            <span style={{ backgroundColor: "#ffedd5", color: "#c2410c", padding: "3px 10px", borderRadius: "12px", fontSize: "12px", fontWeight: "700" }}>
+              {rol ? rolAdi[rol] : "Finansal Kontrol Merkezi"}
+            </span>
+            <span style={{ fontSize: "12px", color: "#94a3b8" }}>•</span>
+            <span style={{ fontSize: "13px", color: "#64748b" }}>{tarihBasligi.charAt(0).toUpperCase() + tarihBasligi.slice(1)}</span>
+          </div>
+          <h1 style={{ fontSize: "26px", fontWeight: "800", color: "#0f172a", margin: "4px 0" }}>{firma}</h1>
+          <p style={{ fontSize: "13px", color: "#64748b", margin: 0 }}>İşletmenizin anlık finansal ve operasyonel canlı durumu</p>
+        </div>
 
-    {rol !== "satis" && <section aria-labelledby="finansal-durum">
-      <div className="dashboard-section-head"><div><p className="dashboard-kicker">Anlık durum</p><h2 id="finansal-durum">Finansal görünüm</h2></div><Link href="/panel/raporlar">Detaylı raporlar <span aria-hidden="true">→</span></Link></div>
-      <div className="dashboard-kpis">
-        <article className="dashboard-kpi dashboard-kpi--lead"><span>Nakit ve banka</span><strong>{finans ? para(finans.nakitVarliklar, true) : "—"}</strong><small>30 günlük çek etkisi sonrası <b className={cekSonrasiNakit < 0 ? "is-negative" : "is-positive"}>{finans ? para(cekSonrasiNakit, true) : "—"}</b></small></article>
-        <article className="dashboard-kpi"><span>Müşteri alacakları</span><strong>{finans ? para(finans.toplamAlacaklar, true) : "—"}</strong><small>Açık satış bakiyesi</small></article>
-        <article className="dashboard-kpi"><span>Tedarikçi borçları</span><strong>{finans ? para(finans.toplamBorclar, true) : "—"}</strong><small>Açık alış bakiyesi</small></article>
-        <article className="dashboard-kpi"><span>Stok değeri</span><strong>{finans ? para(finans.envanterDegeri, true) : "—"}</strong><small>{kritikStok ? `${kritikStok} ürün kritik seviyede` : "Kritik stok bulunmuyor"}</small></article>
-        <article className="dashboard-kpi"><span>Net varlık</span><strong>{finans ? para(finans.netVarlikDegeri, true) : "—"}</strong><small>Nakit, alacak, borç ve envanter</small></article>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <span style={{ fontSize: "12px", color: "#94a3b8", fontWeight: "500" }}>
+            {sonGuncelleme ? `Son güncelleme: ${sonGuncelleme.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}` : "Yükleniyor..."}
+          </span>
+          <button
+            disabled={yukleniyor}
+            onClick={() => void yukle()}
+            style={{ padding: "9px 16px", backgroundColor: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "10px", fontSize: "13px", fontWeight: "600", cursor: "pointer", color: "#334155", display: "flex", alignItems: "center", gap: "6px" }}
+          >
+            <span>↻</span> {yukleniyor ? "Yenileniyor..." : "Yenile"}
+          </button>
+          <Link href="/panel/fatura/yeni?yon=satis" style={{ padding: "9px 18px", backgroundColor: "#e8792b", color: "#ffffff", borderRadius: "10px", textDecoration: "none", fontSize: "13px", fontWeight: "700", boxShadow: "0 4px 12px rgba(232, 121, 43, 0.25)", display: "flex", alignItems: "center", gap: "6px" }}>
+            <span>+</span> Yeni İşlem
+          </Link>
+        </div>
+      </header>
+
+      {hata && (
+        <div style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "12px", padding: "12px 20px", color: "#991b1b", fontSize: "13px", fontWeight: "500", marginBottom: "24px", display: "flex", alignItems: "center", gap: "10px" }}>
+          <span>⚠️</span> {hata}
+        </div>
+      )}
+
+      {/* Daily Strip (Satış & Tahsilat & Kurlar) */}
+      <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "20px", marginBottom: "28px" }}>
+        <Link href={`/panel/fatura?yon=satis&baslangic=${new Date().toISOString().slice(0, 10)}&bitis=${new Date().toISOString().slice(0, 10)}`} style={{ backgroundColor: "#ffffff", padding: "20px", borderRadius: "14px", border: "1px solid #e2e8f0", textDecoration: "none", boxShadow: "0 1px 3px rgba(0,0,0,0.03)", display: "block" }}>
+          <div style={{ color: "#64748b", fontSize: "13px", fontWeight: "600", marginBottom: "6px" }}>Bugünkü Satış Hacmi</div>
+          <div style={{ fontSize: "28px", fontWeight: "800", color: "#0f172a", marginBottom: "4px" }}>{gunluk ? para(gunluk.satis.toplam) : "—"}</div>
+          <div style={{ fontSize: "12px", color: "#16a34a", fontWeight: "600" }}>{gunluk?.satis.adet ?? 0} adet kesinleşmiş satış faturası · Detayları Gör →</div>
+        </Link>
+
+        <Link href={`/panel/kasa-banka?baslangic=${new Date().toISOString().slice(0, 10)}&bitis=${new Date().toISOString().slice(0, 10)}&tur=tahsilat`} style={{ backgroundColor: "#ffffff", padding: "20px", borderRadius: "14px", border: "1px solid #e2e8f0", textDecoration: "none", boxShadow: "0 1px 3px rgba(0,0,0,0.03)", display: "block" }}>
+          <div style={{ color: "#64748b", fontSize: "13px", fontWeight: "600", marginBottom: "6px" }}>Bugünkü Tahsilat</div>
+          <div style={{ fontSize: "28px", fontWeight: "800", color: "#0f172a", marginBottom: "4px" }}>{gunluk ? para(gunluk.tahsilat.toplam) : "—"}</div>
+          <div style={{ fontSize: "12px", color: "#e8792b", fontWeight: "600" }}>{gunluk?.tahsilat.adet ?? 0} tahsilat kaydı · Detayları Gör →</div>
+        </Link>
+
+        <div style={{ backgroundColor: "#ffffff", padding: "20px", borderRadius: "14px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", color: "#64748b", fontSize: "13px", fontWeight: "600", marginBottom: "10px" }}>
+            <span>TCMB Döviz Kurları</span>
+            <span style={{ fontSize: "11px", color: "#94a3b8" }}>{alisKurlari?.kurTarihi ?? "Canlı"}</span>
+          </div>
+          <div style={{ display: "flex", gap: "20px", fontSize: "13px" }}>
+            <div>
+              <div style={{ fontWeight: "700", color: "#0f172a" }}>USD</div>
+              <div style={{ fontSize: "12px", color: "#64748b" }}>Alış: <strong style={{ color: "#0f172a" }}>{alisKurlari?.kurlar.USD?.toFixed(4) ?? "—"}</strong></div>
+              <div style={{ fontSize: "12px", color: "#64748b" }}>Satış: <strong style={{ color: "#0f172a" }}>{satisKurlari?.kurlar.USD?.toFixed(4) ?? "—"}</strong></div>
+            </div>
+            <div style={{ borderLeft: "1px solid #f1f5f9", paddingLeft: "20px" }}>
+              <div style={{ fontWeight: "700", color: "#0f172a" }}>EUR</div>
+              <div style={{ fontSize: "12px", color: "#64748b" }}>Alış: <strong style={{ color: "#0f172a" }}>{alisKurlari?.kurlar.EUR?.toFixed(4) ?? "—"}</strong></div>
+              <div style={{ fontSize: "12px", color: "#64748b" }}>Satış: <strong style={{ color: "#0f172a" }}>{satisKurlari?.kurlar.EUR?.toFixed(4) ?? "—"}</strong></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Main KPI Grid */}
+      {rol !== "satis" && (
+        <section style={{ marginBottom: "28px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+            <h2 style={{ fontSize: "18px", fontWeight: "800", color: "#0f172a", margin: 0 }}>Finansal Varlık & Borç Durumu</h2>
+            <Link href="/panel/raporlar" style={{ fontSize: "13px", color: "#e8792b", fontWeight: "700", textDecoration: "none" }}>Tüm Detaylı Raporlar →</Link>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px" }}>
+            <div style={{ backgroundColor: "#ffffff", padding: "20px", borderRadius: "14px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+              <span style={{ fontSize: "12px", color: "#64748b", fontWeight: "600" }}>Nakit ve Banka</span>
+              <div style={{ fontSize: "24px", fontWeight: "800", color: "#0f172a", margin: "6px 0 4px 0" }}>{finans ? para(finans.nakitVarliklar, true) : "—"}</div>
+              <div style={{ fontSize: "11px", color: cekSonrasiNakit < 0 ? "#dc2626" : "#16a34a", fontWeight: "600" }}>
+                30 günlük çek etkisi: {finans ? para(cekSonrasiNakit, true) : "—"}
+              </div>
+            </div>
+
+            <div style={{ backgroundColor: "#ffffff", padding: "20px", borderRadius: "14px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+              <span style={{ fontSize: "12px", color: "#64748b", fontWeight: "600" }}>Müşteri Alacakları</span>
+              <div style={{ fontSize: "24px", fontWeight: "800", color: "#0f172a", margin: "6px 0 4px 0" }}>{finans ? para(finans.toplamAlacaklar, true) : "—"}</div>
+              <div style={{ fontSize: "11px", color: "#64748b" }}>Açık satış faturaları bakiyesi</div>
+            </div>
+
+            <div style={{ backgroundColor: "#ffffff", padding: "20px", borderRadius: "14px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+              <span style={{ fontSize: "12px", color: "#64748b", fontWeight: "600" }}>Tedarikçi Borçları</span>
+              <div style={{ fontSize: "24px", fontWeight: "800", color: "#0f172a", margin: "6px 0 4px 0" }}>{finans ? para(finans.toplamBorclar, true) : "—"}</div>
+              <div style={{ fontSize: "11px", color: "#64748b" }}>Açık alış faturaları borcu</div>
+            </div>
+
+            <div style={{ backgroundColor: "#ffffff", padding: "20px", borderRadius: "14px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+              <span style={{ fontSize: "12px", color: "#64748b", fontWeight: "600" }}>Stok Değeri</span>
+              <div style={{ fontSize: "24px", fontWeight: "800", color: "#0f172a", margin: "6px 0 4px 0" }}>{finans ? para(finans.envanterDegeri, true) : "—"}</div>
+              <div style={{ fontSize: "11px", color: kritikStok ? "#dc2626" : "#64748b", fontWeight: "600" }}>
+                {kritikStok ? `${kritikStok} ürün kritik stokta` : "Kritik stok yok"}
+              </div>
+            </div>
+
+            <div style={{ backgroundColor: "#ffffff", padding: "20px", borderRadius: "14px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+              <span style={{ fontSize: "12px", color: "#64748b", fontWeight: "600" }}>Net Varlık Degeri</span>
+              <div style={{ fontSize: "24px", fontWeight: "800", color: "#0f172a", margin: "6px 0 4px 0" }}>{finans ? para(finans.netVarlikDegeri, true) : "—"}</div>
+              <div style={{ fontSize: "11px", color: "#64748b" }}>Nakit + alacak + envanter - borç</div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Two Column Layout (Task List & Quick Actions) */}
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "24px", marginBottom: "28px" }}>
+
+        {/* Priority Task List Card */}
+        <div style={{ backgroundColor: "#ffffff", padding: "24px", borderRadius: "16px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "18px" }}>
+            <div>
+              <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#0f172a", margin: 0 }}>Öncelikli Operasyonel İşler</h3>
+              <p style={{ fontSize: "12px", color: "#64748b", margin: "2px 0 0 0" }}>Aksiyon almanız gereken bekleyen süreçler</p>
+            </div>
+            <span style={{ backgroundColor: "#f1f5f9", color: "#475569", padding: "4px 10px", borderRadius: "12px", fontSize: "12px", fontWeight: "700" }}>
+              {isler.reduce((toplam, is) => toplam + is.sayi, 0)} Açık İş
+            </span>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {isler.map((is) => (
+              <Link
+                href={is.href}
+                key={is.baslik}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", backgroundColor: "#f8fafc", border: "1px solid #f1f5f9", borderRadius: "12px", textDecoration: "none", transition: "all 0.2s" }}
+              >
+                <div>
+                  <div style={{ fontSize: "14px", fontWeight: "700", color: "#0f172a" }}>{is.baslik}</div>
+                  <div style={{ fontSize: "12px", color: "#64748b", marginTop: "2px" }}>{is.aciklama}</div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <span style={{
+                    backgroundColor: is.ton === "danger" ? "#fee2e2" : is.ton === "warning" ? "#fef3c7" : "#e2e8f0",
+                    color: is.ton === "danger" ? "#dc2626" : is.ton === "warning" ? "#b45309" : "#475569",
+                    padding: "4px 10px",
+                    borderRadius: "10px",
+                    fontSize: "12px",
+                    fontWeight: "800"
+                  }}>
+                    {is.sayi}
+                  </span>
+                  <span style={{ color: "#94a3b8", fontWeight: "bold" }}>→</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {/* Quick Shortcuts */}
+        <div style={{ backgroundColor: "#ffffff", padding: "24px", borderRadius: "16px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+          <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#0f172a", margin: "0 0 16px 0" }}>Hızlı Kısayollar</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            {(rol === "satis" ? [
+              ["SF", "Satış Faturası", "/panel/fatura/yeni?yon=satis"],
+              ["TK", "Teklif Oluştur", "/panel/belgeler/yeni?yon=satis&tur=teklif"],
+              ["CR", "Yeni Cari", "/panel/cari/yeni"],
+              ["TH", "Tahsilat Al", "/panel/kasa-banka?islem=tahsilat"],
+            ] : [
+              ["SF", "Satış Faturası", "/panel/fatura/yeni?yon=satis"],
+              ["AF", "Alış Faturası", "/panel/fatura/yeni?yon=alis"],
+              ["MS", "Masraf Ekle", "/panel/masraflar/yeni"],
+              ["TH", "Tahsilat Al", "/panel/kasa-banka?islem=tahsilat"]
+            ]).map(([ikon, baslik, href]) => (
+              <Link href={href} key={baslik} style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "14px", backgroundColor: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "12px", textDecoration: "none", color: "#0f172a" }}>
+                <span style={{ width: "32px", height: "32px", borderRadius: "8px", backgroundColor: "#ffedd5", color: "#e8792b", fontWeight: "800", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center" }}>{ikon}</span>
+                <span style={{ fontSize: "13px", fontWeight: "700" }}>{baslik}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+
       </div>
-    </section>}
 
-    {rol !== "satis" && <section className="dashboard-balance-grid" aria-label="Varlık ve borç dağılımı">
-      <article className="dashboard-balance-card">
-        <div className="dashboard-balance-card__head"><div><p className="dashboard-kicker">Finansal yapı</p><h2>Varlıklar</h2></div><strong>{finans ? para(toplamVarlik, true) : "—"}</strong></div>
-        <div className="dashboard-balance-bar" aria-hidden="true">{varlikKalemleri.map((kalem) => <span className={`is-${kalem.ton}`} key={kalem.etiket} style={{ width: toplamVarlik ? `${Math.max(3, kalem.tutar / toplamVarlik * 100)}%` : "0%" }} />)}</div>
-        <div className="dashboard-balance-list">{varlikKalemleri.map((kalem) => <div className="dashboard-balance-row" key={kalem.etiket}><span><i className={`is-${kalem.ton}`} />{kalem.etiket}</span><b>{finans ? para(kalem.tutar, true) : "—"}</b></div>)}</div>
-      </article>
-      <article className="dashboard-balance-card">
-        <div className="dashboard-balance-card__head"><div><p className="dashboard-kicker">Finansal yapı</p><h2>Borçlar</h2></div><strong>{finans ? para(toplamBorc, true) : "—"}</strong></div>
-        <div className="dashboard-balance-bar" aria-hidden="true">{borcKalemleri.map((kalem) => <span className={`is-${kalem.ton}`} key={kalem.etiket} style={{ width: toplamBorc ? `${Math.max(5, kalem.tutar / toplamBorc * 100)}%` : "0%" }} />)}</div>
-        <div className="dashboard-balance-list">{borcKalemleri.map((kalem) => <div className="dashboard-balance-row" key={kalem.etiket}><span><i className={`is-${kalem.ton}`} />{kalem.etiket}</span><b>{finans ? para(kalem.tutar, true) : "—"}</b></div>)}</div>
-      </article>
-    </section>}
+      {/* Overdue Tables (Alacak & Borç) */}
+      {rol !== "satis" && (
+        <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "24px" }}>
+          {[{ baslik: "Vadesi Geçmiş Alacaklar", alt: "Müşterilerden tahsil edilecek açık faturalar", toplam: vadesiGecenler?.toplamAlacak, liste: vadesiGecenler?.alacaklar ?? [], renk: "#16a34a", bos: "Vadesi geçmiş alacak yok." }, { baslik: "Vadesi Geçmiş Borçlar", alt: "Tedarikçilere ödenecek açık faturalar", toplam: vadesiGecenler?.toplamBorc, liste: vadesiGecenler?.borclar ?? [], renk: "#dc2626", bos: "Vadesi geçmiş borç yok." }].map((grup) => (
+            <div key={grup.baslik} style={{ backgroundColor: "#ffffff", padding: "24px", borderRadius: "16px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
+                <div>
+                  <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#0f172a", margin: 0 }}>{grup.baslik}</h3>
+                  <p style={{ fontSize: "12px", color: "#64748b", margin: "2px 0 0 0" }}>{grup.alt}</p>
+                </div>
+                <strong style={{ fontSize: "16px", fontWeight: "800", color: grup.renk }}>{vadesiGecenler ? para(grup.toplam ?? 0, true) : "—"}</strong>
+              </div>
 
-    <div className="dashboard-columns">
-      <section className="dashboard-panel" aria-labelledby="oncelikli-isler"><div className="dashboard-panel__head"><div><p className="dashboard-kicker">Operasyon</p><h2 id="oncelikli-isler">Öncelikli işler</h2></div><span>{isler.reduce((toplam, is) => toplam + is.sayi, 0)} açık kayıt</span></div><div className="dashboard-task-list">{isler.map((is) => <Link href={is.href} className="dashboard-task" key={is.baslik}><i className={`is-${is.ton}`} /><span><strong>{is.baslik}</strong><small>{is.aciklama}</small></span><b>{is.sayi}</b><em aria-hidden="true">→</em></Link>)}</div></section>
-      <section className="dashboard-panel dashboard-panel--actions" aria-labelledby="hizli-islemler"><div className="dashboard-panel__head"><div><p className="dashboard-kicker">Kısayollar</p><h2 id="hizli-islemler">Hızlı işlemler</h2></div></div><div className="dashboard-actions">{(rol === "satis" ? [
-        ["SF", "Satış faturası", "/panel/fatura/yeni?yon=satis"], ["TK", "Teklif oluştur", "/panel/belgeler/yeni?yon=satis&tur=teklif"], ["CR", "Yeni cari", "/panel/cari/yeni"], ["TH", "Tahsilat al", "/panel/kasa-banka?islem=tahsilat"],
-      ] : [["SF", "Satış faturası", "/panel/fatura/yeni?yon=satis"], ["AF", "Alış faturası", "/panel/fatura/yeni?yon=alis"], ["MS", "Masraf ekle", "/panel/masraflar/yeni"], ["TH", "Tahsilat al", "/panel/kasa-banka?islem=tahsilat"]]).map(([ikon, baslik, href]) => <Link href={href} key={baslik}><span>{ikon}</span><strong>{baslik}</strong><em aria-hidden="true">↗</em></Link>)}</div></section>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                {grup.liste.slice(0, 5).map((satir) => (
+                  <Link href={`/panel/fatura?faturaId=${satir.faturaId}&panel=odeme`} key={satir.faturaId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", backgroundColor: "#f8fafc", borderRadius: "10px", textDecoration: "none", color: "#0f172a" }}>
+                    <div>
+                      <div style={{ fontSize: "13px", fontWeight: "700" }}>{satir.cariUnvan}</div>
+                      <div style={{ fontSize: "11px", color: "#64748b" }}>{satir.no || "Fatura"} · Vade: {satir.vadeTarihi}</div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: "13px", fontWeight: "800", color: grup.renk }}>{para(satir.kalanTry, true)}</div>
+                      <div style={{ fontSize: "10px", color: "#dc2626", fontWeight: "600" }}>{satir.gecikmeGun} gün gecikti</div>
+                    </div>
+                  </Link>
+                ))}
+                {!grup.liste.length && (
+                  <div style={{ padding: "20px", textAlign: "center", color: "#94a3b8", fontSize: "13px" }}>
+                    {vadesiGecenler ? grup.bos : "Veriler yükleniyor…"}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
     </div>
-
-    {rol !== "satis" && <section className="dashboard-cheques" aria-labelledby="cek-takvimi">
-      <div className="dashboard-section-head"><div><p className="dashboard-kicker">30 günlük görünüm</p><h2 id="cek-takvimi">Çek &amp; senet takvimi</h2><p>Yaklaşan tahsilat ve ödemelerin nakit pozisyonunuza etkisi</p></div><Link href="/panel/kasa-banka/cek-senet">Tümünü görüntüle <span aria-hidden="true">→</span></Link></div>
-      <div className="cheque-summary">
-        <div className="cheque-balance"><span>30 gün içinde beklenen net etki</span><strong className={otuzGunTahsilat - otuzGunOdeme < 0 ? "is-negative" : "is-positive"}>{para(otuzGunTahsilat - otuzGunOdeme, true)}</strong><div><p><i className="is-in" />Tahsil edilecek <b>{para(otuzGunTahsilat, true)}</b></p><p><i className="is-out" />Ödenecek <b>{para(otuzGunOdeme, true)}</b></p></div></div>
-        <div className="cheque-periods">{[
-          ["Vadesi geçmiş", vadeOzeti.gecikenAlinan, vadeOzeti.gecikenVerilen, "danger"], ["Bugün", vadeOzeti.bugunAlinan, vadeOzeti.bugunVerilen, "urgent"], ["Önümüzdeki 7 gün", vadeOzeti.haftaAlinan, vadeOzeti.haftaVerilen, "warning"], ["8–30 gün", vadeOzeti.ayAlinan, vadeOzeti.ayVerilen, "calm"],
-        ].map(([etiket, alinan, verilen, ton]) => { const a = alinan as { adet: number; tutar: number }; const v = verilen as { adet: number; tutar: number }; return <Link href="/panel/kasa-banka/cek-senet" className={`cheque-period is-${ton}`} key={etiket as string}><span>{etiket as string}</span><div><p><small>Tahsilat</small><strong>{para(a.tutar, true)}</strong><em>{a.adet} kayıt</em></p><p><small>Ödeme</small><strong>{para(v.tutar, true)}</strong><em>{v.adet} kayıt</em></p></div></Link>; })}</div>
-      </div>
-      <div className="cheque-upcoming"><div className="cheque-upcoming__head"><strong>Yaklaşan kayıtlar</strong><span>Vade önceliğine göre</span></div>{yakinCekler.length ? yakinCekler.map((cek) => { const gun = gunFarki(cek.vadeTarihi); return <Link href="/panel/kasa-banka/cek-senet" className="cheque-row" key={cek.id}><span className={`cheque-row__date${gun <= 0 ? " is-danger" : gun <= 3 ? " is-warning" : ""}`}><b>{tarih(cek.vadeTarihi).split(" ")[0]}</b><small>{tarih(cek.vadeTarihi).split(" ")[1]}</small></span><span className="cheque-row__party"><strong>{cek.cari?.unvan || cek.borclu}</strong><small>{cek.tur === "cek" ? "Çek" : "Senet"} · {cek.portfoyNo}{cek.banka ? ` · ${cek.banka}` : ""}</small></span><span className={`cheque-row__direction is-${cek.yon}`}><small>{cek.yon === "alinan" ? "Tahsil edilecek" : "Ödenecek"}</small><strong>{para(cek.tutarTry, true)}</strong></span><span className={`cheque-row__due${gun <= 0 ? " is-danger" : gun <= 3 ? " is-warning" : ""}`}>{vadeMetni(gun)}</span><em aria-hidden="true">→</em></Link>; }) : <div className="cheque-empty"><span aria-hidden="true">✓</span><div><strong>Yaklaşan çek veya senet yok</strong><p>Önümüzdeki 30 gün için açık kayıt bulunmuyor.</p></div></div>}</div>
-    </section>}
-
-    {rol !== "satis" && <section className="dashboard-overdue-grid" aria-label="Vadesi geçmiş alacak ve borçlar">
-      {[{ baslik: "Vadesi geçmiş alacaklar", alt: "Müşterilerden tahsil edilecek açık faturalar", toplam: vadesiGecenler?.toplamAlacak, liste: vadesiGecenler?.alacaklar ?? [], renk: "is-blue", bos: "Vadesi geçmiş açık alacak bulunmuyor." }, { baslik: "Vadesi geçmiş borçlar", alt: "Tedarikçilere ödenecek açık faturalar", toplam: vadesiGecenler?.toplamBorc, liste: vadesiGecenler?.borclar ?? [], renk: "is-red", bos: "Vadesi geçmiş açık borç bulunmuyor." }].map((grup) => (
-        <article className="dashboard-overdue-card" key={grup.baslik}>
-          <div className="dashboard-overdue-card__head"><div><p className="dashboard-kicker">Vade takibi</p><h2>{grup.baslik}</h2><small>{grup.alt}</small></div><strong>{vadesiGecenler ? para(grup.toplam ?? 0, true) : "—"}</strong></div>
-          <div className="dashboard-overdue-list">{grup.liste.slice(0, 6).map((satir) => <Link className="dashboard-overdue-row" href={`/panel/fatura?faturaId=${satir.faturaId}&panel=odeme`} key={satir.faturaId}><span className="dashboard-overdue-row__party"><strong>{satir.cariUnvan}</strong><small>{satir.no || "Fatura"} · Vade {satir.vadeTarihi}</small></span><span className={`dashboard-overdue-row__amount ${grup.renk}`}><b>{para(satir.kalanTry, true)}</b><small>{satir.gecikmeGun} gün gecikti</small></span><em aria-hidden="true">→</em></Link>)}{!grup.liste.length && <div className="dashboard-overdue-empty">{vadesiGecenler ? grup.bos : "Veriler yükleniyor…"}</div>}</div>
-          {grup.liste.length > 6 && <Link className="dashboard-overdue-more" href={grup.baslik.includes("alacak") ? "/panel/fatura?yon=satis&odeme=acik" : "/panel/fatura?yon=alis&odeme=acik"}>Tümünü görüntüle →</Link>}
-        </article>
-      ))}
-    </section>}
-  </div>;
+  );
 }

@@ -31,6 +31,8 @@ export const masrafOlusturSemasi = z.object({
   dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
   stopajOrani: z.coerce.number().min(0).max(100).nullable().optional(),
   stopajTutari: z.coerce.number().min(0).nullable().optional(),
+  projeId: bosVeyaUuid,
+  projeAltKirilimId: bosVeyaUuid,
 }).superRefine((girdi, ctx) => {
   if (!girdi.cariId && !girdi.saticiUnvan) {
     ctx.addIssue({ code: "custom", path: ["saticiUnvan"], message: "Cari seçilmediğinde satıcı/kiraya veren adı zorunludur" });

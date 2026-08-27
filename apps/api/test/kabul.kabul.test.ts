@@ -20,6 +20,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 let sunucu: ChildProcess;
 let taban: string;
 let sunucuCiktisi = "";
+const bugun = () => new Date().toISOString().slice(0, 10);
 
 /** VKN kontrol hanesi tutan, istenen son haneye sahip bir numara üretir. */
 function vknUret(sonHaneCift: boolean): string {
@@ -245,7 +246,7 @@ describe("Kabul Ölçütü 1 — satış: e-belge yönlendirme, stok, cari, tahs
 
     const fatura = await faturaKes(jeton, {
       tip: "satis",
-      tarih: "2026-02-01",
+      tarih: bugun(),
       cariId,
       satirlar: [
         { stokId, miktar: "10", birim: "adet", birimFiyat: "100", kdvOrani: "20" },
@@ -312,7 +313,7 @@ describe("Kabul Ölçütü 1 — satış: e-belge yönlendirme, stok, cari, tahs
 
     const fatura = await faturaKes(jeton, {
       tip: "satis",
-      tarih: "2026-02-01",
+      tarih: bugun(),
       cariId,
       satirlar: [{ stokId, miktar: "1", birim: "adet", birimFiyat: "100", kdvOrani: "20" }],
     });
@@ -544,21 +545,25 @@ describe("Kabul Ölçütü 5 — rol kısıtı ve denetim izi", () => {
       satirlar: [{ stokId, miktar: "1", birim: "adet", birimFiyat: "100", kdvOrani: "20" }],
     });
 
-    const iz = await istek<{
-      kayitlar: Array<{ islem: string; varlik: string; varlikId: string | null; kullanici: { eposta: string } | null }>;
-    }>("/denetim?adet=200", { jeton });
-    expect(iz.durum, JSON.stringify(iz.veri)).toBe(200);
+    type DenetimKaydi = { islem: string; varlik: string; varlikId: string | null; kullanici: { eposta: string } | null };
+    let iz: Yanit<{ kayitlar: DenetimKaydi[] }> | null = null;
+    let kesme: DenetimKaydi | undefined;
+    for (let deneme = 0; deneme < 5 && !kesme; deneme++) {
+      iz = await istek<{ kayitlar: DenetimKaydi[] }>("/denetim?adet=200", { jeton });
+      expect(iz.durum, JSON.stringify(iz.veri)).toBe(200);
+      kesme = iz.veri.kayitlar.find(
+        (k) => k.varlik === "fatura" && k.islem.includes("kesinlestir") && k.varlikId === fatura.id,
+      );
+      if (!kesme) await new Promise((c) => setTimeout(c, 100));
+    }
 
     // KLN-04: fatura kesme izde, kim yaptığıyla birlikte
-    const kesme = iz.veri.kayitlar.find(
-      (k) => k.varlik === "fatura" && k.islem.includes("kesinlestir") && k.varlikId === fatura.id,
-    );
     expect(kesme, "fatura kesinleştirme denetim izinde yok").toBeDefined();
     expect(kesme?.kullanici?.eposta).toContain("kabul-s5b");
 
     // Cari ve stok oluşturma da ize düşer
-    expect(iz.veri.kayitlar.some((k) => k.varlik === "cari")).toBe(true);
-    expect(iz.veri.kayitlar.some((k) => k.varlik === "stok")).toBe(true);
+    expect(iz?.veri.kayitlar.some((k) => k.varlik === "cari")).toBe(true);
+    expect(iz?.veri.kayitlar.some((k) => k.varlik === "stok")).toBe(true);
 
     // KLN-04a: satış rolü denetim izini okuyamaz
     const satisEposta = `kabul-s5b-satis-${Date.now()}@deneme.local`;
@@ -590,7 +595,7 @@ describe("Kabul Ölçütü 6 — çok kiracılı yalıtım", () => {
     await stokGirisi(a.jeton, aStok, "10");
     const aFatura = await faturaKes(a.jeton, {
       tip: "satis",
-      tarih: "2026-06-01",
+      tarih: bugun(),
       cariId: aCari,
       satirlar: [{ stokId: aStok, miktar: "1", birim: "adet", birimFiyat: "100", kdvOrani: "20" }],
     });

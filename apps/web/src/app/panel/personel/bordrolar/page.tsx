@@ -63,7 +63,28 @@ export default function BordroCalismaAlani() {
     <div><Link href="/panel/personel" className="text-sm font-medium text-slate-500 hover:text-orange-700">← Personel listesine dön</Link></div>
     <header className="flex flex-col gap-4 border-b border-slate-200 pb-5 md:flex-row md:items-end md:justify-between">
       <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-orange-600">İnsan Kaynakları</p><h1 className="mt-1 text-2xl font-bold text-slate-900">Bordro çalışma alanı</h1><p className="mt-1 text-sm text-slate-500">Tahakkukları kontrol edin, onaya gönderin ve görev ayrılığıyla yönetin.</p></div>
-      <div className="flex gap-2">
+      <div className="flex gap-2 items-end">
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              const res = await api<{ dosyaAdi: string; dosyaIcerigi: string }>(`/personel/bordrolar/banka-dosyasi?yil=${donem.yil}&ay=${donem.ay}&format=garanti`);
+              const blob = new Blob([res.dosyaIcerigi], { type: "text/csv;charset=utf-8;" });
+              const url = URL.createObjectURL(blob);
+              const link = document.createElement("a");
+              link.href = url;
+              link.setAttribute("download", res.dosyaAdi);
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            } catch (err) {
+              alert(err instanceof Error ? err.message : "Banka maaş dosyası indirilemedi. Onaylanmış bordro bulunduğundan emin olun.");
+            }
+          }}
+          className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800"
+        >
+          🏦 Banka Maaş Havale Dosyası (.CSV)
+        </button>
         <label className="text-xs font-semibold text-slate-500">Yıl<input type="number" min={2020} max={2100} value={donem.yil} onChange={(e) => setDonem({ ...donem, yil: Number(e.target.value) })} className="mt-1 block w-28 rounded-lg border bg-white px-3 py-2 text-sm text-slate-900" /></label>
         <label className="text-xs font-semibold text-slate-500">Ay<select value={donem.ay} onChange={(e) => setDonem({ ...donem, ay: Number(e.target.value) })} className="mt-1 block rounded-lg border bg-white px-3 py-2 text-sm text-slate-900">{Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{new Intl.DateTimeFormat("tr-TR", { month: "long" }).format(new Date(2026, i, 1))}</option>)}</select></label>
       </div>

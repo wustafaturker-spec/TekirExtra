@@ -85,9 +85,14 @@ interface CariKisi {
 interface CariDetay extends Cari {
   kisaAd: string | null;
   kisiTipi: string;
+  temsilciUserId: string | null;
+  temsilci: { id: string; adSoyad: string } | null;
   vergiDairesi: string | null;
   mersisNo: string | null;
   ticaretSicilNo: string | null;
+  kvkkOnayTarihi: string | null;
+  iban: string | null;
+  notlar: string | null;
   webSitesi: string | null;
   faks: string | null;
   karaListeNotu: string | null;
@@ -95,6 +100,7 @@ interface CariDetay extends Cari {
   varsayilanVadeGun: number | null;
   varsayilanIskonto: string | null;
   fiyatListesiId: string | null;
+  eFaturaMukellefi: boolean | null;
   bankaHesaplari: BankaHesap[];
   etiketler: Etiket[];
   adresler: CariAdres[];
@@ -213,16 +219,20 @@ export default function CariSayfasi() {
   const [tip, setTip] = useState("musteri");
   const [kisiTipi, setKisiTipi] = useState("tuzel");
   const [sektor, setSektor] = useState("");
+  const [temsilciUserId, setTemsilciUserId] = useState("");
   // Vergi / resmi
   const [vknTckn, setVknTckn] = useState("");
   const [vergiDairesi, setVergiDairesi] = useState("");
   const [mersisNo, setMersisNo] = useState("");
   const [ticaretSicilNo, setTicaretSicilNo] = useState("");
-  // İletişim
+  const [kvkkOnayTarihi, setKvkkOnayTarihi] = useState("");
+  // İletişim & Banka
   const [eposta, setEposta] = useState("");
   const [telefon, setTelefon] = useState("");
   const [webSitesi, setWebSitesi] = useState("");
   const [faks, setFaks] = useState("");
+  const [anaIban, setAnaIban] = useState("");
+  const [notlar, setNotlar] = useState("");
   // Finans (CARI-10: özel satış koşulları)
   const [riskLimiti, setRiskLimiti] = useState("");
   const [fiyatListesiId, setFiyatListesiId] = useState("");
@@ -240,6 +250,7 @@ export default function CariSayfasi() {
   const [adresIl, setAdresIl] = useState("");
   const [adresIlce, setAdresIlce] = useState("");
   const [adresPostaKodu, setAdresPostaKodu] = useState("");
+  const [adresUlke, setAdresUlke] = useState("TR");
   const [duzenlenenAdresId, setDuzenlenenAdresId] = useState<string | null>(null);
   // İlgili kişi formu (CARI-09)
   const [kisiAdSoyad, setKisiAdSoyad] = useState("");
@@ -454,18 +465,22 @@ export default function CariSayfasi() {
           tip,
           kisiTipi,
           sektor: sektor || undefined,
+          temsilciUserId: temsilciUserId || undefined,
           vknTckn: vknTckn || undefined,
           vergiDairesi: vergiDairesi || undefined,
           mersisNo: mersisNo || undefined,
           ticaretSicilNo: ticaretSicilNo || undefined,
+          kvkkOnayTarihi: kvkkOnayTarihi || undefined,
           eposta: eposta || undefined,
           telefon: telefon || undefined,
           webSitesi: webSitesi || undefined,
           faks: faks || undefined,
+          iban: anaIban || undefined,
           riskLimiti: riskLimiti || undefined,
           fiyatListesiId: fiyatListesiId || undefined,
           varsayilanIskonto: varsayilanIskonto || undefined,
           varsayilanVadeGun: varsayilanVadeGun ? Number(varsayilanVadeGun) : undefined,
+          notlar: notlar || undefined,
         }),
       });
       setBasari("Cari kart başarıyla oluşturuldu.");
@@ -474,14 +489,18 @@ export default function CariSayfasi() {
       setUnvan("");
       setKisaAd("");
       setSektor("");
+      setTemsilciUserId("");
       setVknTckn("");
       setVergiDairesi("");
       setMersisNo("");
       setTicaretSicilNo("");
+      setKvkkOnayTarihi("");
       setEposta("");
       setTelefon("");
       setWebSitesi("");
       setFaks("");
+      setAnaIban("");
+      setNotlar("");
       setRiskLimiti("");
       setFiyatListesiId("");
       setVarsayilanIskonto("");
@@ -513,12 +532,26 @@ export default function CariSayfasi() {
   async function iletisimGuncelle(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); if (!detay) return; const f = new FormData(e.currentTarget); setHata(""); setBasari("");
     try {
-      const degerler = { eposta: String(f.get("eposta") || "").trim(), telefon: String(f.get("telefon") || "").trim(), webSitesi: String(f.get("webSitesi") || "").trim(), faks: String(f.get("faks") || "").trim() };
-      const onceki = { eposta: detay.eposta ?? "", telefon: detay.telefon ?? "", webSitesi: detay.webSitesi ?? "", faks: detay.faks ?? "" };
+      const degerler = {
+        eposta: String(f.get("eposta") || "").trim(),
+        telefon: String(f.get("telefon") || "").trim(),
+        webSitesi: String(f.get("webSitesi") || "").trim(),
+        faks: String(f.get("faks") || "").trim(),
+        iban: String(f.get("iban") || "").trim(),
+        notlar: String(f.get("notlar") || "").trim(),
+      };
+      const onceki = {
+        eposta: detay.eposta ?? "",
+        telefon: detay.telefon ?? "",
+        webSitesi: detay.webSitesi ?? "",
+        faks: detay.faks ?? "",
+        iban: detay.iban ?? "",
+        notlar: detay.notlar ?? "",
+      };
       const degisen = Object.fromEntries(Object.entries(degerler).filter(([alan, deger]) => deger !== onceki[alan as keyof typeof onceki]).map(([alan, deger]) => [alan, deger || null]));
-      if (!Object.keys(degisen).length) { setBasari("İletişim bilgilerinde değişiklik yok."); return; }
+      if (!Object.keys(degisen).length) { setBasari("İletişim ve not bilgilerinde değişiklik yok."); return; }
       await api(`/cari/${detay.id}`, { method: "PATCH", body: JSON.stringify(degisen) });
-      await detayAc(detay.id, true); void yukle(); setBasari("Cari iletişim bilgileri güncellendi.");
+      await detayAc(detay.id, true); void yukle(); setBasari("Cari iletişim ve not bilgileri güncellendi.");
     } catch (h) { setHata(h instanceof Error ? h.message : "İletişim bilgileri güncellenemedi"); }
   }
 
@@ -527,14 +560,16 @@ export default function CariSayfasi() {
     const degerler = {
       unvan: String(f.get("unvan") || "").trim(), kisaAd: String(f.get("kisaAd") || "").trim(),
       tip: String(f.get("tip") || detay.tip), kisiTipi: String(f.get("kisiTipi") || detay.kisiTipi), sektor: String(f.get("sektor") || "").trim(),
+      temsilciUserId: String(f.get("temsilciUserId") || "").trim(),
       vknTckn: String(f.get("vknTckn") || "").trim(), vergiDairesi: String(f.get("vergiDairesi") || "").trim(),
       mersisNo: String(f.get("mersisNo") || "").trim(), ticaretSicilNo: String(f.get("ticaretSicilNo") || "").trim(),
+      kvkkOnayTarihi: String(f.get("kvkkOnayTarihi") || "").trim(),
     };
     if (!degerler.unvan) { setHata("Ünvan / ad soyad zorunludur."); return; }
     const onceki = {
       unvan: detay.unvan, kisaAd: detay.kisaAd ?? "", tip: detay.tip, kisiTipi: detay.kisiTipi,
-      sektor: detay.sektor ?? "", vknTckn: detay.vknTckn ?? "", vergiDairesi: detay.vergiDairesi ?? "",
-      mersisNo: detay.mersisNo ?? "", ticaretSicilNo: detay.ticaretSicilNo ?? "",
+      sektor: detay.sektor ?? "", temsilciUserId: detay.temsilciUserId ?? "", vknTckn: detay.vknTckn ?? "", vergiDairesi: detay.vergiDairesi ?? "",
+      mersisNo: detay.mersisNo ?? "", ticaretSicilNo: detay.ticaretSicilNo ?? "", kvkkOnayTarihi: detay.kvkkOnayTarihi ?? "",
     };
     const degisen = Object.fromEntries(Object.entries(degerler).filter(([alan, deger]) => deger !== onceki[alan as keyof typeof onceki]).map(([alan, deger]) => [alan, deger === "" ? null : deger]));
     if (!Object.keys(degisen).length) { setBasari("Cari bilgilerinde değişiklik yok."); return; }
@@ -580,8 +615,7 @@ export default function CariSayfasi() {
           tip: adresTip,
           baslik: adresBaslik.trim(),
           adres: adresMetin.trim(),
-          // Boş metinler şemadaki min/max kontrollerine takılmasın diye
-          // gönderilmez (alanlar opsiyonel).
+          ulke: adresUlke.trim().toUpperCase() || "TR",
           ...(adresIl.trim() ? { il: adresIl.trim() } : {}),
           ...(adresIlce.trim() ? { ilce: adresIlce.trim() } : {}),
           ...(adresPostaKodu.trim() ? { postaKodu: adresPostaKodu.trim() } : {}),
@@ -592,6 +626,7 @@ export default function CariSayfasi() {
       setAdresIl("");
       setAdresIlce("");
       setAdresPostaKodu("");
+      setAdresUlke("TR");
       setDuzenlenenAdresId(null);
       await detayAc(detay.id, true);
       setBasari(duzenlenenAdresId ? "Adres güncellendi." : "Adres eklendi.");
@@ -602,11 +637,11 @@ export default function CariSayfasi() {
 
   function adresDuzenle(adres: CariAdres) {
     setDuzenlenenAdresId(adres.id); setAdresTip(adres.tip); setAdresBaslik(adres.baslik); setAdresMetin(adres.adres);
-    setAdresIl(adres.il ?? ""); setAdresIlce(adres.ilce ?? ""); setAdresPostaKodu(adres.postaKodu ?? ""); setHata(""); setBasari("");
+    setAdresIl(adres.il ?? ""); setAdresIlce(adres.ilce ?? ""); setAdresPostaKodu(adres.postaKodu ?? ""); setAdresUlke(adres.ulke ?? "TR"); setHata(""); setBasari("");
   }
 
   function adresFormunuTemizle() {
-    setDuzenlenenAdresId(null); setAdresTip("fatura"); setAdresBaslik(""); setAdresMetin(""); setAdresIl(""); setAdresIlce(""); setAdresPostaKodu("");
+    setDuzenlenenAdresId(null); setAdresTip("fatura"); setAdresBaslik(""); setAdresMetin(""); setAdresIl(""); setAdresIlce(""); setAdresPostaKodu(""); setAdresUlke("TR");
   }
 
   async function adresSil(adresId: string) {
@@ -786,6 +821,7 @@ export default function CariSayfasi() {
         subtitle={detaySayfasi ? "Cari bilgileri, finansal durum, CRM ve iletişim kayıtları." : yeniSayfasi ? "Yeni müşteri, tedarikçi veya diğer cari kartını oluşturun." : "Müşterileriniz, tedarikçileriniz ve diğer cari ortaklarınızı buradan yönetin."}
         actions={
           <>
+            {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/kur-farki">💱 Kur Farkı Değerleme</ButtonLabel>}
             {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/raporlar">📈 Raporlar</ButtonLabel>}
             {!yeniSayfasi && !detaySayfasi && <ButtonLabel>
               📥 Excel&apos;den İçe Aktar
@@ -815,6 +851,7 @@ export default function CariSayfasi() {
               <Field label="Kısa ad"><Input value={kisaAd} onChange={(e) => setKisaAd(e.target.value)} placeholder="Teknoloji" /></Field>
               <Field label="Kişi tipi"><Select value={kisiTipi} onChange={(e) => setKisiTipi(e.target.value)}><option value="tuzel">Tüzel kişi</option><option value="gercek">Gerçek kişi</option></Select></Field>
               <Field label="Sektör"><Input value={sektor} onChange={(e) => setSektor(e.target.value)} placeholder="Perakende" /></Field>
+              <Field label="Müşteri temsilcisi"><Select value={temsilciUserId} onChange={(e) => setTemsilciUserId(e.target.value)}><option value="">Seçiniz (İsteğe bağlı)</option>{crm?.kullanicilar?.map((u) => <option key={u.id} value={u.id}>{u.adSoyad}</option>)}</Select></Field>
             </div>
           </div>
 
@@ -825,16 +862,19 @@ export default function CariSayfasi() {
               <Field label="Vergi dairesi"><Input value={vergiDairesi} onChange={(e) => setVergiDairesi(e.target.value)} /></Field>
               <Field label="MERSİS no"><Input value={mersisNo} onChange={(e) => setMersisNo(e.target.value)} placeholder="16 hane" /></Field>
               <Field label="Ticaret sicil no"><Input value={ticaretSicilNo} onChange={(e) => setTicaretSicilNo(e.target.value)} /></Field>
+              <Field label="KVKK onay tarihi"><Input type="date" value={kvkkOnayTarihi} onChange={(e) => setKvkkOnayTarihi(e.target.value)} /></Field>
             </div>
           </details>
 
           <details className="record-disclosure">
-            <summary>İletişim bilgileri</summary>
+            <summary>İletişim ve banka bilgileri</summary>
             <div className="record-fields record-fields--four">
               <Field label="E-posta"><Input type="email" value={eposta} onChange={(e) => setEposta(e.target.value)} /></Field>
               <Field label="Telefon"><Input value={telefon} onChange={(e) => setTelefon(e.target.value)} /></Field>
               <Field label="Web sitesi"><Input value={webSitesi} onChange={(e) => setWebSitesi(e.target.value)} placeholder="https://..." /></Field>
               <Field label="Faks"><Input value={faks} onChange={(e) => setFaks(e.target.value)} /></Field>
+              <Field label="Ana IBAN"><Input value={anaIban} onChange={(e) => setAnaIban(e.target.value)} placeholder="TR..." maxLength={34} /></Field>
+              <Field label="Cari Notları"><Input value={notlar} onChange={(e) => setNotlar(e.target.value)} placeholder="Özel açıklamalar..." /></Field>
             </div>
           </details>
 
@@ -933,23 +973,27 @@ export default function CariSayfasi() {
                   <Field label="Cari tipi"><Select name="tip" defaultValue={detay.tip}>{Object.entries(TIP_ETIKETLERI).map(([deger, ad]) => <option key={deger} value={deger}>{ad}</option>)}</Select></Field>
                   <Field label="Kişi tipi"><Select name="kisiTipi" defaultValue={detay.kisiTipi}><option value="tuzel">Tüzel kişi</option><option value="gercek">Gerçek kişi</option></Select></Field>
                   <Field label="Sektör"><Input name="sektor" defaultValue={detay.sektor ?? ""} placeholder="Örn. Perakende" /></Field>
+                  <Field label="Müşteri temsilcisi"><Select name="temsilciUserId" defaultValue={detay.temsilciUserId ?? ""}><option value="">Seçiniz</option>{crm?.kullanicilar?.map((u) => <option key={u.id} value={u.id}>{u.adSoyad}</option>)}</Select></Field>
                   <Field label="VKN / TCKN"><Input name="vknTckn" defaultValue={detay.vknTckn ?? ""} inputMode="numeric" maxLength={11} pattern="[0-9]{10,11}" title="VKN 10, TCKN 11 rakam olmalıdır" placeholder="VKN 10 · TCKN 11 hane" /></Field>
                   <Field label="Vergi dairesi"><Input name="vergiDairesi" defaultValue={detay.vergiDairesi ?? ""} /></Field>
                   <Field label="MERSİS no"><Input name="mersisNo" defaultValue={detay.mersisNo ?? ""} inputMode="numeric" maxLength={16} pattern="[0-9]{16}" title="MERSİS numarası 16 rakam olmalıdır" placeholder="16 hane" /></Field>
                   <Field label="Ticaret sicil no"><Input name="ticaretSicilNo" defaultValue={detay.ticaretSicilNo ?? ""} /></Field>
+                  <Field label="KVKK onay tarihi"><Input name="kvkkOnayTarihi" type="date" defaultValue={detay.kvkkOnayTarihi ?? ""} /></Field>
                   <div className="cari-identity-form__actions"><span>Cari kodu <b>{detay.kod}</b></span><Button type="submit" size="sm" variant="primary">Bilgileri güncelle</Button></div>
                 </form>
               </Card>
 
               <div className="row">
                 <Card className="grow" style={{ flex: 1, minWidth: 280 }}>
-                  <div className="card__title">📨 İletişim Bilgileri</div>
+                  <div className="card__title">📨 İletişim &amp; Notlar</div>
                   <form className="stack" onSubmit={iletisimGuncelle}>
                     <Field label="E-posta"><Input name="eposta" type="email" defaultValue={detay.eposta ?? ""} placeholder="odeme@firma.com" /></Field>
                     <Field label="Telefon"><Input name="telefon" defaultValue={detay.telefon ?? ""} maxLength={32} /></Field>
                     <Field label="Web sitesi"><Input name="webSitesi" type="url" defaultValue={detay.webSitesi ?? ""} placeholder="https://..." /></Field>
                     <Field label="Faks"><Input name="faks" defaultValue={detay.faks ?? ""} maxLength={32} /></Field>
-                    <Button type="submit" size="sm" variant="primary">İletişimi güncelle</Button>
+                    <Field label="Ana IBAN"><Input name="iban" defaultValue={detay.iban ?? ""} placeholder="TR..." maxLength={34} /></Field>
+                    <Field label="Cari Notları"><Input name="notlar" defaultValue={detay.notlar ?? ""} placeholder="Özel açıklamalar..." /></Field>
+                    <Button type="submit" size="sm" variant="primary">İletişim &amp; notları güncelle</Button>
                   </form>
                   {!detay.eposta && <p style={{ color: "var(--danger)", fontSize: ".82rem" }}>Ödeme bağlantısı göndermek için e-posta eklenmelidir.</p>}
                 </Card>
@@ -1115,7 +1159,7 @@ export default function CariSayfasi() {
                   <thead>
                     <tr>
                       <th>Başlık</th><th>Tip</th><th>Adres</th><th>İl / İlçe</th>
-                      <th>Posta Kodu</th><th className="center">İşlem</th>
+                      <th>Posta Kodu</th><th>Ülke</th><th className="center">İşlem</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1126,6 +1170,7 @@ export default function CariSayfasi() {
                         <td>{a.adres}</td>
                         <td>{a.ilce ? `${a.ilce} / ` : ""}{a.il || "—"}</td>
                         <td className="mono">{a.postaKodu || "—"}</td>
+                        <td className="mono">{a.ulke || "TR"}</td>
                         <td className="center"><div className="row-tight"><Button size="sm" onClick={() => adresDuzenle(a)}>Düzenle</Button><Button size="sm" variant="danger" onClick={() => void adresSil(a.id)}>Sil</Button></div></td>
                       </tr>
                     ))}
@@ -1164,6 +1209,11 @@ export default function CariSayfasi() {
                   <FormAlan flex={1} min={110}>
                     <Field label="Posta Kodu">
                       <Input value={adresPostaKodu} onChange={(e) => setAdresPostaKodu(e.target.value)} placeholder="34000" maxLength={10} />
+                    </Field>
+                  </FormAlan>
+                  <FormAlan flex={1} min={90}>
+                    <Field label="Ülke">
+                      <Input value={adresUlke} onChange={(e) => setAdresUlke(e.target.value)} placeholder="TR" maxLength={2} />
                     </Field>
                   </FormAlan>
                 </div>

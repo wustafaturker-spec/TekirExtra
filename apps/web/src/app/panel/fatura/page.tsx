@@ -53,6 +53,7 @@ interface Stok {
   takipTipi?: "yok" | "lot" | "seri";
 }
 interface StokVaryant { id: string; kod: string; ad: string; barkod: string | null; satisFiyati: string | null; alisFiyati: string | null; mevcutMiktar: string; aktif: boolean }
+interface Proje { id: string; kod: string; ad: string; durum: string; altKirilimlar?: { id: string; kod: string; ad: string }[] }
 
 interface FaturaSatir {
   stokId: string;
@@ -62,6 +63,8 @@ interface FaturaSatir {
   iskontoOrani: number;
   kdvOrani: number;
   gibIstisnaKodu?: string;
+  projeId?: string;
+  projeAltKirilimId?: string;
   lotNo?: string; seriNolar?: string; sonKullanmaTarihi?: string; uretimTarihi?: string;
 }
 
@@ -168,6 +171,7 @@ export default function FaturaSayfasi() {
   const [faturalar, setFaturalar] = useState<Fatura[]>([]);
   const [cariler, setCariler] = useState<Cari[]>([]);
   const [stoklar, setStoklar] = useState<Stok[]>([]);
+  const [projeler, setProjeler] = useState<Proje[]>([]);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [epostaGonderilen, setEpostaGonderilen] = useState<Fatura | null>(null);
@@ -218,6 +222,7 @@ export default function FaturaSayfasi() {
   const [cariOzeti, setCariOzeti] = useState<CariSecimOzeti | null>(null);
   const [depoId, setDepoId] = useState("");
   const [tip, setTip] = useState("satis");
+  const [gelirTuru, setGelirTuru] = useState<string>("ticari_satis");
   const [dovizCinsi, setDovizCinsi] = useState("TRY");
   const [kur, setKur] = useState("1");
   const [kurBilgisi, setKurBilgisi] = useState("");
@@ -309,6 +314,7 @@ export default function FaturaSayfasi() {
     if (tokenAl()) {
       tumSayfalariAl<Cari>("/cari").then(setCariler).catch(() => undefined);
       tumSayfalariAl<Stok>("/stok").then(setStoklar).catch(() => undefined);
+      api<Proje[]>("/projeler").then(setProjeler).catch(() => undefined);
     }
   }, []);
 
@@ -345,6 +351,8 @@ export default function FaturaSayfasi() {
           miktar: Number(satir.miktar), birimFiyat: Number(satir.birimFiyat),
           iskontoOrani: Number(satir.iskontoOrani), kdvOrani: Number(satir.kdvOrani),
           gibIstisnaKodu: satir.gibIstisnaKodu ?? "",
+          projeId: (satir as any).projeId ?? (satir as any).proje?.id ?? undefined,
+          projeAltKirilimId: (satir as any).projeAltKirilimId ?? (satir as any).projeAltKirilim?.id ?? undefined,
         })));
       }).catch((h) => setHata(h instanceof Error ? h.message : "Fatura düzenleme için açılamadı"));
     }
@@ -390,7 +398,7 @@ export default function FaturaSayfasi() {
   }
   function gorunumUygula(gorunum: KayitliGorunum) { filtreleriUygula(gorunum); kullanimOlayi("gorunum_kullanildi"); }
   function formuSifirla() {
-    setCariId(""); setCariOzeti(null); setDepoId(""); setTip(yonBaglami ?? "satis"); setTarih(new Date().toISOString().substring(0, 10)); setDovizCinsi("TRY"); setKur("1");
+    setCariId(""); setCariOzeti(null); setDepoId(""); setTip(yonBaglami ?? "satis"); setGelirTuru("ticari_satis"); setTarih(new Date().toISOString().substring(0, 10)); setDovizCinsi("TRY"); setKur("1");
     setAciklama(""); setKuruAciklamayaEkle(true); setFaturaNo("");
     setNotlar(""); setVadeTarihi(""); setVadeElleDegisti(false); setSiparisNo(""); setSiparisTarihi("");
     setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" }]); setAcikSatir(null);
@@ -612,6 +620,7 @@ export default function FaturaSayfasi() {
           // STK-07: boş bırakılırsa sunucu varsayılan depoyu kullanır
           depoId: depoId || null,
           tip,
+          gelirTuru: tip === "satis" ? gelirTuru : undefined,
           tarih,
           dovizCinsi,
           kur,
@@ -629,6 +638,8 @@ export default function FaturaSayfasi() {
             iskontoOrani: String(s.iskontoOrani),
             kdvOrani: String(s.kdvOrani),
             gibIstisnaKodu: s.gibIstisnaKodu || undefined,
+            projeId: s.projeId || undefined,
+            projeAltKirilimId: s.projeAltKirilimId || undefined,
             partiBilgileri: (() => {
               const stok = stoklar.find((x) => x.id === s.stokId);
               if (!(["alis", "satis_iade"].includes(tip)) || !stok?.takipTipi || stok.takipTipi === "yok") return [];
@@ -966,6 +977,17 @@ export default function FaturaSayfasi() {
                   <option value="proforma">Proforma</option>
                 </Select>
               </Field>
+              {tip === "satis" && (
+                <Field label="Fatura Kategorisi / Gelir Türü">
+                  <Select aria-label="Fatura Kategorisi" value={gelirTuru} onChange={(e) => setGelirTuru(e.target.value)}>
+                    <option value="ticari_satis">🛒 Esas Ticari Satış Hasılatı</option>
+                    <option value="kira_geliri">🏢 Faaliyet Dışı Kira Geliri</option>
+                    <option value="varlik_satisi">🚜 Faaliyet Dışı Varlık / Demirbaş Satışı</option>
+                    <option value="yansitma">🔄 Yansıtma / Masraf Aktarımı</option>
+                    <option value="hizmet_diger">🌐 Diğer Faaliyet Dışı Gelirler</option>
+                  </Select>
+                </Field>
+              )}
               <Field label="Fatura Tarihi">
                 <Input aria-label="Fatura Tarihi" type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} required />
               </Field>
@@ -1091,6 +1113,41 @@ export default function FaturaSayfasi() {
                             <Field label="GİB istisna kodu">
                               <Input className="document-line-code" aria-label="GİB istisna kodu" type="text" placeholder="351" value={s.gibIstisnaKodu || ""} onChange={(e) => satirGuncelle(index, "gibIstisnaKodu", e.target.value)} />
                             </Field>
+                            <Field label="İlişkili Proje">
+                              <Select
+                                aria-label="Proje seçimi"
+                                value={s.projeId || ""}
+                                onChange={(e) => {
+                                  const pId = e.target.value;
+                                  const yeni = [...satirlar];
+                                  yeni[index] = { ...s, projeId: pId || undefined, projeAltKirilimId: undefined };
+                                  setSatirlar(yeni);
+                                }}
+                              >
+                                <option value="">(Proje Yok)</option>
+                                {projeler.map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    [{p.kod}] {p.ad}
+                                  </option>
+                                ))}
+                              </Select>
+                            </Field>
+                            {s.projeId && (
+                              <Field label="Maliyet Merkezi (WBS)">
+                                <Select
+                                  aria-label="Maliyet merkezi seçimi"
+                                  value={s.projeAltKirilimId || ""}
+                                  onChange={(e) => satirGuncelle(index, "projeAltKirilimId", e.target.value)}
+                                >
+                                  <option value="">(Alt Kırılım Yok)</option>
+                                  {(projeler.find((p) => p.id === s.projeId)?.altKirilimlar ?? []).map((k) => (
+                                    <option key={k.id} value={k.id}>
+                                      [{k.kod}] {k.ad}
+                                    </option>
+                                  ))}
+                                </Select>
+                              </Field>
+                            )}
                             {["alis", "satis_iade"].includes(tip) && seciliStok?.takipTipi && seciliStok.takipTipi !== "yok" && <><Field label="Lot / Parti No"><Input required value={s.lotNo ?? ""} onChange={(e) => satirGuncelle(index, "lotNo", e.target.value)} /></Field>{seciliStok.takipTipi === "seri" && <Field label="Seri numaraları (virgülle)"><Input required value={s.seriNolar ?? ""} onChange={(e) => satirGuncelle(index, "seriNolar", e.target.value)} /></Field>}<Field label="Üretim tarihi"><Input type="date" value={s.uretimTarihi ?? ""} onChange={(e) => satirGuncelle(index, "uretimTarihi", e.target.value)} /></Field><Field label="Son kullanma tarihi"><Input type="date" value={s.sonKullanmaTarihi ?? ""} onChange={(e) => satirGuncelle(index, "sonKullanmaTarihi", e.target.value)} /></Field></>}
                             <div className="document-line-detail__actions">
                               <Button size="sm" type="button" onClick={() => satirKopyala(index)}>Satırı kopyala</Button>

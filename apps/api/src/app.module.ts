@@ -28,6 +28,9 @@ import { CrmFirsatModule } from "./crm/crm-firsat.module";
 import { B2bModule } from "./b2b/b2b.module";
 import { AiModule } from "./ai/ai.module";
 
+import { GelirlerModule } from "./gelirler/gelirler.module";
+import { ProjelerModule } from "./projeler/projeler.module";
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -47,6 +50,8 @@ import { AiModule } from "./ai/ai.module";
     PazaryeriModule,
     PosModule,
     MasraflarModule,
+    GelirlerModule,
+    ProjelerModule,
     DovizModule,
     UretimModule,
     ObservabilityModule,

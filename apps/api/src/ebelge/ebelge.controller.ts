@@ -10,7 +10,7 @@ import {
 import { GelenEbelgeDurum } from "@prisma/client";
 import { Roller } from "../auth/roller.decorator";
 import { EbelgeService } from "./ebelge.service";
-import { earsivIptalSemasi, earsivRaporAralikSemasi, gelenOnaySemasi, gelenYanitSemasi } from "./ebelge.semalar";
+import { earsivIptalSemasi, earsivRaporAralikSemasi, gelenOnaySemasi, gelenXmlYukleSemasi, gelenYanitSemasi } from "./ebelge.semalar";
 
 const GELEN_DURUMLARI: GelenEbelgeDurum[] = ["beklemede", "islendi", "reddedildi"];
 
@@ -66,6 +66,18 @@ export class EbelgeController {
     return this.ebelgeService.gelenBelgeleriCek();
   }
 
+  @Post("gelen/xml-yukle")
+  @Roller("muhasebe")
+  async gelenXmlYukle(@Body() govde: unknown) {
+    const ayristirma = gelenXmlYukleSemasi.safeParse(govde);
+    if (!ayristirma.success) {
+      throw new BadRequestException(
+        ayristirma.error.issues.map((s) => s.message).join("; "),
+      );
+    }
+    return this.ebelgeService.gelenXmlYukle(ayristirma.data.xml);
+  }
+
   @Get("gelen")
   async gelenListele(@Query("durum") durum?: string) {
     if (durum && !GELEN_DURUMLARI.includes(durum as GelenEbelgeDurum)) {
@@ -93,6 +105,12 @@ export class EbelgeController {
     return this.ebelgeService.gelenOnayla(id, ayristirma.data);
   }
 
+  @Post("gelen/:id/taslak-iptal")
+  @Roller("muhasebe")
+  async gelenTaslakIptal(@Param("id") id: string) {
+    return this.ebelgeService.gelenTaslakIptalEt(id);
+  }
+
   @Post("gelen/:id/yanit")
   @Roller("muhasebe")
   async gelenYanit(@Param("id") id: string, @Body() govde: unknown) {
@@ -103,5 +121,14 @@ export class EbelgeController {
       );
     }
     return this.ebelgeService.gelenYanitGonder(id, ayristirma.data);
+  }
+
+  @Post("xml-yukle")
+  @Roller("muhasebe")
+  async xmlYukle(@Body("xml") xmlIcerik: string) {
+    if (!xmlIcerik || typeof xmlIcerik !== "string") {
+      throw new BadRequestException("Lütfen geçerli bir XML metni veya dosyası yükleyin");
+    }
+    return this.ebelgeService.xmlYukleVeParseEt(xmlIcerik);
   }
 }

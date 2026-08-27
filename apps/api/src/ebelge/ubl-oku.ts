@@ -44,6 +44,7 @@ export interface UblFatura {
   profilId: string;
   faturaTipKodu: string;
   tarih: string;
+  vadeTarihi?: string;
   dovizCinsi: string;
   gonderen: { vknTckn: string; unvan: string; vergiDairesi?: string };
   alici: { vknTckn: string; unvan: string };
@@ -263,12 +264,18 @@ export function faturaUblOku(xml: string): UblFatura {
   const matrah = sayi(parasal?.TaxExclusiveAmount) || satirToplami;
   const genelToplam = sayi(parasal?.PayableAmount) || sayi(parasal?.TaxInclusiveAmount);
 
+  const vadeTarihi =
+    metin(yol(fatura, "PaymentMeans", "PaymentDueDate")) ||
+    metin(yol(fatura, "PaymentTerms", "PaymentDueDate")) ||
+    metin(yol(fatura, "PaymentTerms", "SettlementPeriod", "EndDate"));
+
   return {
     uuid: metin(fatura.UUID),
     belgeNo: metin(fatura.ID),
     profilId: metin(fatura.ProfileID) || "TEMELFATURA",
     faturaTipKodu: metin(fatura.InvoiceTypeCode) || "SATIS",
     tarih: metin(fatura.IssueDate),
+    vadeTarihi: vadeTarihi || undefined,
     dovizCinsi: metin(fatura.DocumentCurrencyCode) || "TRY",
     gonderen: partyOku(yol(fatura, "AccountingSupplierParty", "Party")),
     alici: partyOku(yol(fatura, "AccountingCustomerParty", "Party")),

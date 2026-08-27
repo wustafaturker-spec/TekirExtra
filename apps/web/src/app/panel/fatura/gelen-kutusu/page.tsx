@@ -113,6 +113,26 @@ const para = (deger: string | number, dovizCinsi = "TRY"): string =>
 const adet = (deger: string | number): string =>
   Number(deger).toLocaleString("tr-TR", { maximumFractionDigits: 3 });
 
+const STANDART_BIRIMLER = [
+  "adet",
+  "kg",
+  "gram",
+  "ton",
+  "litre",
+  "metre",
+  "cm",
+  "m2",
+  "m3",
+  "paket",
+  "kutu",
+  "koli",
+  "palet",
+  "saat",
+  "gun",
+  "ay",
+  "hizmet",
+] as const;
+
 const ESLESME_ETIKETI: Record<string, string> = {
   alici_urun_kodu: "ürün kodumuz",
   barkod: "barkod",
@@ -158,12 +178,16 @@ export default function GelenKutusuSayfasi() {
   const [yeniKartSira, setYeniKartSira] = useState<number | null>(null);
   const [yeniKod, setYeniKod] = useState("");
   const [yeniAd, setYeniAd] = useState("");
+  const [yeniTip, setYeniTip] = useState<"urun" | "sarf" | "hizmet">("urun");
   const [yeniBirim, setYeniBirim] = useState("adet");
   const [yeniKdv, setYeniKdv] = useState("20");
 
   // Ret gerekçesi
   const [retAcik, setRetAcik] = useState(false);
   const [retGerekce, setRetGerekce] = useState("");
+
+  // Yeni cari hesap onay kontrolü
+  const [yeniCariOnay, setYeniCariOnay] = useState(false);
 
   const listeYukle = useCallback(async () => {
     try {
@@ -192,6 +216,7 @@ export default function GelenKutusuSayfasi() {
     setBasari("");
     setRetAcik(false);
     setRetGerekce("");
+    setYeniCariOnay(false);
     setSeciciSira(null);
     setYeniKartSira(null);
     try {
@@ -276,7 +301,11 @@ export default function GelenKutusuSayfasi() {
     setSeciciSira(null);
     setYeniKod(satir.barkod ?? satir.saticiUrunKodu ?? "");
     setYeniAd(satir.ad);
-    setYeniBirim(satir.birim);
+    setYeniTip("urun");
+    // Gelen e-faturadaki birim standart listede varsa onu kullan, yoksa "adet" olarak varsay
+    const belgedekiBirim = (satir.birim ?? "").trim().toLowerCase();
+    const esleseBirim = STANDART_BIRIMLER.find((b) => b === belgedekiBirim) ?? "adet";
+    setYeniBirim(esleseBirim);
     setYeniKdv(satir.kdvOrani);
   }
 
@@ -291,7 +320,8 @@ export default function GelenKutusuSayfasi() {
           body: JSON.stringify({
             kod: yeniKod.trim(),
             ad: yeniAd.trim(),
-            anaBirim: yeniBirim.trim() || "adet",
+            tip: yeniTip,
+            anaBirim: yeniBirim || "adet",
             kdvOrani: Number(yeniKdv || "20").toFixed(2),
             alisFiyati: Number(satir.birimFiyat).toFixed(4),
             barkod: satir.barkod ?? null,
@@ -332,6 +362,12 @@ export default function GelenKutusuSayfasi() {
 
   async function faturayaIsle() {
     if (!detay) return;
+    if (!detay.cari && !yeniCariOnay) {
+      setHata(
+        `Gönderen firma (${detay.gonderenUnvan}) sisteminizde kayıtlı bir cari hesap değil. Lütfen yeni cari hesap açılması onay kutusunu işaretleyin.`,
+      );
+      return;
+    }
     setHata("");
     setBasari("");
     setIslemde("onayla");
@@ -345,6 +381,7 @@ export default function GelenKutusuSayfasi() {
               siraNo: sa.siraNo,
               stokId: eslesme[sa.siraNo]?.id,
             })),
+            yeniCariOnay,
           }),
         },
       );
@@ -393,6 +430,85 @@ export default function GelenKutusuSayfasi() {
     }
   }
 
+  async function taslakIptalEt() {
+    if (!detay) return;
+    if (
+      !confirm(
+        "Oluşturulan taslak alış faturası silinecek ve bu belge yeniden stok eşleştirmesi yapmanız için onaya düşürülecek. Devam etmek istiyor musunuz?",
+      )
+    )
+      return;
+    setHata("");
+    setBasari("");
+    setIslemde("taslak-iptal");
+    try {
+      await api(`/ebelge/gelen/${detay.id}/taslak-iptal`, { method: "POST" });
+      setBasari("Taslak fatura iptal edildi ve belge yeniden onay bekliyor durumuna getirildi.");
+      await detayAc(detay.id);
+      await listeYukle();
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Taslak fatura iptal edilemedi");
+    } finally {
+      setIslemde(null);
+    }
+  }
+
+  const [xmlModal, setXmlModal] = useState(false);
+  const [xmlIcerik, setXmlIcerik] = useState("");
+
+  async function xmlYukleHander() {
+    if (!xmlIcerik.trim()) return;
+    setHata("");
+    setBasari("");
+    setIslemde("xml");
+    try {
+      const res = await api<{ mesaj: string }>(`/ebelge/xml-yukle`, {
+        method: "POST",
+        body: JSON.stringify({ xml: xmlIcerik }),
+      });
+      setBasari(res.mesaj);
+      setXmlModal(false);
+      setXmlIcerik("");
+      await listeYukle();
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "XML yüklenemedi");
+    } finally {
+      setIslemde(null);
+    }
+  }
+
+  function xmlDosyaSec(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const text = evt.target?.result as string;
+      setXmlIcerik(text);
+    };
+    reader.readAsText(file, "UTF-8");
+  }
+
+  async function taslakIptalEtById(id: string) {
+    if (
+      !confirm(
+        "Oluşturulan taslak alış faturası silinecek ve bu belge yeniden stok eşleştirmesi yapmanız için onaya düşürülecek. Devam etmek istiyor musunuz?",
+      )
+    )
+      return;
+    setHata("");
+    setBasari("");
+    setIslemde(`taslak-iptal-${id}`);
+    try {
+      await api(`/ebelge/gelen/${id}/taslak-iptal`, { method: "POST" });
+      setBasari("Taslak fatura iptal edildi ve belge yeniden onay bekliyor durumuna getirildi.");
+      await listeYukle();
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Taslak fatura iptal edilemedi");
+    } finally {
+      setIslemde(null);
+    }
+  }
+
   /* ─── Görünüm: liste ───────────────────────────────────────────────────── */
 
   if (!detay) {
@@ -402,15 +518,45 @@ export default function GelenKutusuSayfasi() {
           <div>
             <span>GELEN E-FATURA MERKEZİ</span>
             <h1>Gelen e-Faturalar</h1>
-            <p>Entegratörden gelen faturaları, yanıt süreçlerini ve faturaya işleme adımlarını tek merkezden yönetin.</p>
+            <p>Entegratörden gelen faturaları, manuel XML dosyalarını ve faturaya işleme adımlarını tek merkezden yönetin.</p>
           </div>
-          <div>
+          <div style={{ display: "flex", gap: "8px" }}>
             <ButtonLabel as="a" href="/panel/fatura">← Faturalar</ButtonLabel>
+            <Button onClick={() => setXmlModal(true)}>📁 XML Dosyası Yükle</Button>
             <Button variant="primary" onClick={() => void entegratordenCek()} disabled={islemde !== null}>
               {islemde === "cek" ? "Belgeler alınıyor…" : "↻ Entegratörden çek"}
             </Button>
           </div>
         </header>
+
+        {xmlModal && (
+          <div className="treasury-backdrop" style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999 }}>
+            <div style={{ backgroundColor: "#fff", padding: "24px", borderRadius: "12px", width: "90%", maxWidth: "600px", boxShadow: "0 10px 25px rgba(0,0,0,0.2)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700 }}>📄 Manuel XML Alış Faturası Yükle</h3>
+                <button onClick={() => setXmlModal(false)} style={{ background: "none", border: "none", fontSize: "20px", cursor: "pointer" }}>×</button>
+              </div>
+              <p style={{ fontSize: "13px", color: "#64748b", marginBottom: "16px" }}>Tedarikçinizden aldığınız UBL-TR formatındaki <strong>.xml</strong> fatura dosyasını seçebilir veya metin olarak yapıştırabilirsiniz.</p>
+
+              <Field label="XML Dosyası Seç (.xml)">
+                <input type="file" accept=".xml" onChange={xmlDosyaSec} style={{ width: "100%", padding: "8px", border: "1px solid #cbd5e1", borderRadius: "6px" }} />
+              </Field>
+
+              <div style={{ marginTop: "12px" }}>
+                <Field label="Veya XML İçeriğini Yapıştırın">
+                  <textarea rows={6} value={xmlIcerik} onChange={(e) => setXmlIcerik(e.target.value)} placeholder="<?xml version=..." style={{ width: "100%", padding: "8px", fontFamily: "monospace", fontSize: "12px", border: "1px solid #cbd5e1", borderRadius: "6px" }} />
+                </Field>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "16px" }}>
+                <Button onClick={() => setXmlModal(false)}>İptal</Button>
+                <Button variant="primary" onClick={() => void xmlYukleHander()} disabled={!xmlIcerik.trim() || islemde === "xml"}>
+                  {islemde === "xml" ? "İçeri Aktarılıyor…" : "📥 İçeri Aktar & Gelen Kutusuna Ekle"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <Alert tone="error">{hata}</Alert>
         <Alert tone="success">{basari}</Alert>
@@ -453,7 +599,21 @@ export default function GelenKutusuSayfasi() {
                     <td><strong>{g.satirSayisi}</strong><small>ürün kalemi</small></td>
                     <td><strong className="archive-amount">{g.genelToplam ? para(g.genelToplam, g.dovizCinsi) : "—"}</strong><small>fatura toplamı</small></td>
                     <td><div className="archive-status">{durumRozet(g.durum)}{g.yanit&&<b>{g.yanit === "kabul" ? "KABUL" : "RET"}</b>}</div>{!g.okunabilir&&<small className="muted">XML okunamadı</small>}</td>
-                    <td><Button size="sm" onClick={() => void detayAc(g.id)}>İncele</Button></td>
+                    <td>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <Button size="sm" onClick={() => void detayAc(g.id)}>İncele</Button>
+                        {g.durum === "islendi" && (
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            onClick={() => void taslakIptalEtById(g.id)}
+                            disabled={islemde !== null}
+                          >
+                            {islemde === `taslak-iptal-${g.id}` ? "İptal Ediliyor..." : "↩ Taslağı İptal Et"}
+                          </Button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}
@@ -520,8 +680,17 @@ export default function GelenKutusuSayfasi() {
         />
       </StatGrid>
 
-      <Card style={{ marginTop: "1.25rem" }}>
-        <div className="card__title">Cari Hesap</div>
+      <Card
+        style={{
+          marginTop: "1.25rem",
+          ...(!detay.cari
+            ? { borderLeft: "4px solid #f59e0b", backgroundColor: "#fffbeb" }
+            : {}),
+        }}
+      >
+        <div className="card__title" style={!detay.cari ? { color: "#b45309" } : undefined}>
+          {!detay.cari ? "⚠️ Yeni Tedarikçi Uyarısı — Cari Hesap Bulunamadı" : "Cari Hesap"}
+        </div>
         {detay.cari ? (
           <p style={{ margin: 0 }}>
             <code className="mono">{detay.cari.kod}</code> — {detay.cari.unvan}
@@ -533,11 +702,34 @@ export default function GelenKutusuSayfasi() {
             )}
           </p>
         ) : (
-          <p className="muted" style={{ margin: 0 }}>
-            Bu VKN ile kayıtlı cari yok. Faturaya işlerken{" "}
-            <strong>{detay.gonderenUnvan}</strong> adında yeni bir tedarikçi carisi
-            açılacak.
-          </p>
+          <div>
+            <p style={{ fontSize: "0.875rem", margin: "4px 0 12px", color: "#92400e" }}>
+              Gönderen firma <strong>{detay.gonderenUnvan}</strong> (VKN:{" "}
+              <code className="mono">{detay.gonderenVkn}</code>) sisteminizde cari hesap
+              olarak kayıtlı değil. Bu faturayı işlediğinizde bu firma için otomatik yeni bir{" "}
+              <strong>Tedarikçi Cari Hesabı</strong> açılacaktır.
+            </p>
+            {detay.durum === "beklemede" && (
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  fontSize: "0.875rem",
+                  color: "#78350f",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={yeniCariOnay}
+                  onChange={(e) => setYeniCariOnay(e.target.checked)}
+                />
+                <span>Bu firma için yeni tedarikçi cari hesabı açılmasını onaylıyorum.</span>
+              </label>
+            )}
+          </div>
         )}
       </Card>
 
@@ -726,26 +918,38 @@ export default function GelenKutusuSayfasi() {
                           borderRadius: "var(--radius-sm)",
                         }}
                       >
-                        <div className="row">
-                          <div style={{ flex: 1, minWidth: 130 }}>
+                        <div className="row" style={{ flexWrap: "wrap", gap: "0.5rem" }}>
+                          <div style={{ flex: 1, minWidth: 120 }}>
+                            <Field label="Stok Tipi *">
+                              <Select value={yeniTip} onChange={(e) => setYeniTip(e.target.value as "urun" | "sarf" | "hizmet")}>
+                                <option value="urun">📦 Stoklanabilir Ürün</option>
+                                <option value="sarf">🛠 Sarf Malzemesi</option>
+                                <option value="hizmet">⚙️ Hizmet</option>
+                              </Select>
+                            </Field>
+                          </div>
+                          <div style={{ flex: 1, minWidth: 120 }}>
                             <Field label="Kod *">
                               <Input value={yeniKod} onChange={(e) => setYeniKod(e.target.value)} />
                             </Field>
                           </div>
-                          <div style={{ flex: 2, minWidth: 180 }}>
+                          <div style={{ flex: 2, minWidth: 170 }}>
                             <Field label="Ad *">
                               <Input value={yeniAd} onChange={(e) => setYeniAd(e.target.value)} />
                             </Field>
                           </div>
                           <div style={{ flex: 1, minWidth: 110 }}>
-                            <Field label="Ana Birim">
-                              <Input
-                                value={yeniBirim}
-                                onChange={(e) => setYeniBirim(e.target.value)}
-                              />
+                            <Field label="Ana Birim *">
+                              <Select value={yeniBirim} onChange={(e) => setYeniBirim(e.target.value)}>
+                                {STANDART_BIRIMLER.map((b) => (
+                                  <option key={b} value={b}>
+                                    {b}
+                                  </option>
+                                ))}
+                              </Select>
                             </Field>
                           </div>
-                          <div style={{ flex: 1, minWidth: 100 }}>
+                          <div style={{ flex: 1, minWidth: 90 }}>
                             <Field label="KDV %">
                               <Select value={yeniKdv} onChange={(e) => setYeniKdv(e.target.value)}>
                                 <option value="0">0</option>
@@ -789,20 +993,32 @@ export default function GelenKutusuSayfasi() {
         <div className="between" style={{ padding: "1rem 1.25rem" }}>
           <span className="muted" style={{ fontSize: "0.9rem" }}>
             {detay.durum === "islendi"
-              ? "Bu belge taslak alış faturasına işlendi."
+              ? "Bu belge taslak alış faturasına işlendi. Hatalı eşleştirme varsa taslağı iptal edip yeniden eşleyebilirsiniz."
               : detay.durum === "reddedildi"
                 ? "Reddedilen belge faturaya işlenemez."
                 : eksikSatirlar.length === 0
                   ? `${detay.satirlar.length} satırın tamamı eşleşti.`
                   : `${eksikSatirlar.length} satır hâlâ eşleşmedi.`}
           </span>
-          <Button
-            variant="primary"
-            onClick={() => void faturayaIsle()}
-            disabled={!islenebilir || eksikSatirlar.length > 0 || islemde !== null}
-          >
-            {islemde === "onayla" ? "İşleniyor..." : "Faturaya İşle"}
-          </Button>
+          {detay.durum === "islendi" ? (
+            <Button
+              variant="danger"
+              onClick={() => void taslakIptalEt()}
+              disabled={islemde !== null}
+            >
+              {islemde === "taslak-iptal"
+                ? "İptal Ediliyor..."
+                : "↩ Taslağı İptal Et ve Yeniden Eşleştir"}
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              onClick={() => void faturayaIsle()}
+              disabled={!islenebilir || eksikSatirlar.length > 0 || islemde !== null}
+            >
+              {islemde === "onayla" ? "İşleniyor..." : "Faturaya İşle"}
+            </Button>
+          )}
         </div>
       </Card>
     </div>

@@ -211,12 +211,20 @@ export class FaturaService {
     yon?: string,
     ebelge?: string,
     cariId?: string,
+    baslangic?: string,
+    bitis?: string,
   ) {
     const { tenantId } = aktifBaglam();
     const ctx = aktifBaglam();
 
+    const tarihKosulu: Prisma.DateTimeFilter | undefined = (baslangic || bitis) ? {
+      ...(baslangic ? { gte: new Date(`${baslangic}T00:00:00.000Z`) } : {}),
+      ...(bitis ? { lte: new Date(`${bitis}T23:59:59.999Z`) } : {}),
+    } : undefined;
+
     const where: Prisma.FaturaWhereInput = {
       ...(cariId ? { cariId } : {}),
+      ...(tarihKosulu ? { tarih: tarihKosulu } : {}),
       ...(tip ? { tip: tip as FaturaTip } : yon === "satis" ? { tip: { in: ["satis", "satis_iade", "proforma"] } } : yon === "alis" ? { tip: { in: ["alis", "alis_iade"] } } : {}),
       ...(durum ? { durum: durum as FaturaDurum } : {}),
       ...(ebelge ? { ebelge: { is: { durum: ebelge === "hata" ? { in: ["hata", "ret"] } : ebelge as BelgeDurum } } } : {}),
@@ -242,6 +250,13 @@ export class FaturaService {
           ebelge: { select: { id: true, durum: true, tur: true } },
           kasaBankaHarekets: { select: { tutar: true } },
           krediKartiHareketleri: { select: { cariOdemeTutari: true } },
+          satirlar: {
+            include: {
+              stok: { select: { id: true, kod: true, ad: true } },
+              proje: { select: { id: true, kod: true, ad: true } },
+              projeAltKirilim: { select: { id: true, kod: true, ad: true } },
+            },
+          },
         },
       }),
     );
@@ -387,6 +402,8 @@ export class FaturaService {
             include: {
               stok: { select: { id: true, kod: true, ad: true } },
               varyant: { select: { id: true, kod: true, ad: true, nitelikler: true } },
+              proje: { select: { id: true, kod: true, ad: true } },
+              projeAltKirilim: { select: { id: true, kod: true, ad: true } },
             },
           },
           ebelge: true,
@@ -488,14 +505,33 @@ export class FaturaService {
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       await this.cariTipiniDogrula(tx, girdi.cariId, girdi.tip);
+
+      const cari = await tx.cariHesap.findUnique({
+        where: { id: girdi.cariId },
+        select: { varsayilanVadeGun: true },
+      });
+
+      let hesaplananVadeTarihi: Date;
+      if (girdi.vadeTarihi) {
+        hesaplananVadeTarihi = new Date(girdi.vadeTarihi);
+      } else if (cari?.varsayilanVadeGun && cari.varsayilanVadeGun > 0) {
+        const d = new Date(girdi.tarih);
+        d.setDate(d.getDate() + cari.varsayilanVadeGun);
+        hesaplananVadeTarihi = d;
+      } else {
+        hesaplananVadeTarihi = new Date(girdi.tarih);
+      }
+
       // Fatura kafasını oluştur
       const fatura = await tx.fatura.create({
         data: {
           tenantId,
           tip: girdi.tip,
+          gelirTuru: girdi.gelirTuru ?? "ticari_satis",
           durum: "taslak",
+          no: girdi.no ?? null,
           tarih: new Date(girdi.tarih),
-          vadeTarihi: girdi.vadeTarihi ? new Date(girdi.vadeTarihi) : null,
+          vadeTarihi: hesaplananVadeTarihi,
           siparisNo: girdi.siparisNo ?? null,
           siparisTarihi: girdi.siparisTarihi ? new Date(girdi.siparisTarihi) : null,
           cariId: girdi.cariId,
@@ -545,6 +581,8 @@ export class FaturaService {
             netKdvTutari: D(s.netKdvTutari),
             toplamTutar: D(s.toplamTutar),
             gibIstisnaKodu: orijinalSatir.gibIstisnaKodu,
+            projeId: orijinalSatir.projeId,
+            projeAltKirilimId: orijinalSatir.projeAltKirilimId,
           },
         });
       }
@@ -582,6 +620,7 @@ export class FaturaService {
     // Tam güncelleme için girdiyi tamamla
     const birlesikGirdi = {
       tip: girdi.tip ?? (fatura.tip as z.infer<typeof faturaOlusturSemasi>["tip"]),
+      no: girdi.no !== undefined ? girdi.no : fatura.no,
       tarih: girdi.tarih ?? fatura.tarih,
       vadeTarihi: girdi.vadeTarihi !== undefined ? girdi.vadeTarihi : fatura.vadeTarihi,
       siparisNo: girdi.siparisNo !== undefined ? girdi.siparisNo : fatura.siparisNo,
@@ -608,6 +647,8 @@ export class FaturaService {
           tevkifatPay: s.tevkifatPay,
           tevkifatPayda: s.tevkifatPayda,
           gibIstisnaKodu: s.gibIstisnaKodu,
+          projeId: (s as any).projeId ?? undefined,
+          projeAltKirilimId: (s as any).projeAltKirilimId ?? undefined,
         })),
     };
 
@@ -664,6 +705,8 @@ export class FaturaService {
             netKdvTutari: D(s.netKdvTutari),
             toplamTutar: D(s.toplamTutar),
             gibIstisnaKodu: orijinalSatir.gibIstisnaKodu,
+            projeId: orijinalSatir.projeId,
+            projeAltKirilimId: orijinalSatir.projeAltKirilimId,
           },
         });
       }
@@ -672,6 +715,7 @@ export class FaturaService {
         where: { id },
         data: {
           tip: birlesikGirdi.tip,
+          no: birlesikGirdi.no ?? null,
           tarih: new Date(birlesikGirdi.tarih),
           vadeTarihi: birlesikGirdi.vadeTarihi ? new Date(birlesikGirdi.vadeTarihi) : null,
           cariId: birlesikGirdi.cariId,
@@ -728,6 +772,10 @@ export class FaturaService {
         where: { faturaId: id },
         data: { faturaId: null, durum: "onaylandi" },
       });
+      await tx.gelenEbelge.updateMany({
+        where: { faturaId: id },
+        data: { faturaId: null, durum: "beklemede" },
+      });
       await tx.fatura.delete({ where: { id } });
     });
   }
@@ -744,6 +792,7 @@ export class FaturaService {
       if (fatura.durum !== "taslak") throw new BadRequestException("Yalnızca taslak faturalar iptal edilebilir");
       if (fatura.ebelge) throw new BadRequestException("e-Belge kaydı oluşmuş fatura iptal edilemez");
       await tx.belge.updateMany({ where: { faturaId: id }, data: { faturaId: null, durum: "onaylandi" } });
+      await tx.gelenEbelge.updateMany({ where: { faturaId: id }, data: { faturaId: null, durum: "beklemede" } });
       return tx.fatura.update({ where: { id }, data: { durum: "iptal" } });
     });
   }
@@ -1227,6 +1276,27 @@ export class FaturaService {
     notlar: string | null;
     tekrarlayanPlanId?: string | null;
     planlananTarih?: Date | null;
+    satirlar?: Array<{
+      id: string;
+      stokId: string;
+      varyantId?: string | null;
+      miktar: Prisma.Decimal;
+      birimFiyat: Prisma.Decimal;
+      iskontoOrani: Prisma.Decimal;
+      iskontoTutari?: Prisma.Decimal;
+      netTutar?: Prisma.Decimal;
+      kdvOrani: Prisma.Decimal;
+      kdvTutari?: Prisma.Decimal;
+      tevkifatOrani?: number;
+      tevkifatTutari?: Prisma.Decimal;
+      satirToplami?: Prisma.Decimal;
+      gibIstisnaKodu?: string | null;
+      projeId?: string | null;
+      projeAltKirilimId?: string | null;
+      proje?: { id: string; kod: string; ad: string } | null;
+      projeAltKirilim?: { id: string; kod: string; ad: string } | null;
+      stok?: { id: string; kod: string; ad: string } | null;
+    }>;
   }) {
     return {
       id: k.id,
@@ -1257,6 +1327,27 @@ export class FaturaService {
       notlar: k.notlar,
       tekrarlayanPlanId: k.tekrarlayanPlanId ?? null,
       planlananTarih: k.planlananTarih?.toISOString().slice(0, 10) ?? null,
+      satirlar: k.satirlar?.map((s) => ({
+        id: s.id,
+        stokId: s.stokId,
+        varyantId: s.varyantId ?? null,
+        miktar: s.miktar !== undefined && s.miktar !== null ? D(s.miktar).toNumber() : 0,
+        birimFiyat: s.birimFiyat !== undefined && s.birimFiyat !== null ? D(s.birimFiyat).toFixed(2) : "0.00",
+        iskontoOrani: s.iskontoOrani !== undefined && s.iskontoOrani !== null ? D(s.iskontoOrani).toFixed(2) : "0.00",
+        iskontoTutari: s.iskontoTutari !== undefined && s.iskontoTutari !== null ? D(s.iskontoTutari).toFixed(2) : "0.00",
+        netTutar: s.netTutar !== undefined && s.netTutar !== null ? D(s.netTutar).toFixed(2) : "0.00",
+        kdvOrani: s.kdvOrani !== undefined && s.kdvOrani !== null ? D(s.kdvOrani).toFixed(2) : "0.00",
+        kdvTutari: s.kdvTutari !== undefined && s.kdvTutari !== null ? D(s.kdvTutari).toFixed(2) : "0.00",
+        tevkifatOrani: s.tevkifatOrani ?? 0,
+        tevkifatTutari: s.tevkifatTutari !== undefined && s.tevkifatTutari !== null ? D(s.tevkifatTutari).toFixed(2) : "0.00",
+        satirToplami: s.satirToplami !== undefined && s.satirToplami !== null ? D(s.satirToplami).toFixed(2) : "0.00",
+        gibIstisnaKodu: s.gibIstisnaKodu ?? null,
+        projeId: s.projeId ?? null,
+        projeAltKirilimId: s.projeAltKirilimId ?? null,
+        proje: s.proje ? { id: s.proje.id, kod: s.proje.kod, ad: s.proje.ad } : null,
+        projeAltKirilim: s.projeAltKirilim ? { id: s.projeAltKirilim.id, kod: s.projeAltKirilim.kod, ad: s.projeAltKirilim.ad } : null,
+        stok: s.stok ? { id: s.stok.id, kod: s.stok.kod, ad: s.stok.ad } : null,
+      })),
     };
   }
 }

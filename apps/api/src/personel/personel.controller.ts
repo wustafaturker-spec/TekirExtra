@@ -42,6 +42,16 @@ export class PersonelController {
     return this.personelService.donemCalismaListele(tenantId, f.yil, f.ay);
   }
 
+  @Get("bordrolar/banka-dosyasi")
+  async bankaMaasDosyasi(
+    @Query("yil") yil: string,
+    @Query("ay") ay: string,
+    @Query("format") format?: "garanti" | "akbank" | "isbank" | "standart"
+  ) {
+    const { tenantId } = aktifBaglam();
+    return this.personelService.bankaMaasDosyasiOlustur(tenantId, Number(yil), Number(ay), format || "standart");
+  }
+
   @Post("calisma-gunleri")
   async calismaGunuKaydet(@Body() body: unknown) { return this.personelService.donemCalismaKaydet(aktifBaglam().tenantId, donemCalismaSemasi.parse(body)); }
 

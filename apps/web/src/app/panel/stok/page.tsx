@@ -182,6 +182,7 @@ export default function StokSayfasi() {
         subtitle="Ürünlerinizi, hizmetlerinizi, envanter miktarlarını ve maliyetlerini takip edin."
         actions={
           <>
+            <ButtonLabel as="a" href="/panel/stok/smm">₺ SMM & Karlılık</ButtonLabel>
             <ButtonLabel as="a" href="/panel/stok/raporlar">📈 Raporlar</ButtonLabel>
             <Button onClick={() => void excelSablonIndir()}>📄 Örnek Şablon</Button>
             <ButtonLabel>

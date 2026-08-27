@@ -9,7 +9,12 @@ export default function FaturaRaporlariSayfasi() {
       <PageHeader
         title="📄 Fatura Raporları"
         subtitle="Dönemsel özet, kâr marjı, iskonto analizi, KDV dökümü, iade oranları ve taslaklar."
-        actions={<ButtonLabel as="a" href="/panel/fatura">← Faturalar</ButtonLabel>}
+        actions={
+          <div style={{ display: "flex", gap: "8px" }}>
+            <ButtonLabel as="a" href="/panel/fatura/pivot" variant="primary">📊 Detaylı Pivot Tablo</ButtonLabel>
+            <ButtonLabel as="a" href="/panel/fatura">← Faturalar</ButtonLabel>
+          </div>
+        }
       />
       <RaporPaneli modul="fatura" />
     </div>

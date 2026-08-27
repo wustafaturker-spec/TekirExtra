@@ -10,6 +10,7 @@ export const gelenOnaySemasi = z.object({
       }),
     )
     .min(1, "En az bir satır eşleştirmesi gerekli"),
+  yeniCariOnay: z.boolean().optional(),
 });
 
 /** EBLG-06: ticari faturaya kabul/ret yanıtı. */
@@ -34,4 +35,8 @@ export const earsivRaporAralikSemasi = z.object({
 }).superRefine((g, ctx) => {
   if (g.baslangic > g.bitis) ctx.addIssue({ code: "custom", path: ["bitis"], message: "Başlangıç tarihi bitişten sonra olamaz" });
   if (g.bitis.getTime() - g.baslangic.getTime() > 366 * 86400000) ctx.addIssue({ code: "custom", path: ["bitis"], message: "Rapor aralığı en fazla 366 gün olabilir" });
+});
+
+export const gelenXmlYukleSemasi = z.object({
+  xml: z.string().min(10, "Geçerli bir XML içeriği girilmelidir"),
 });

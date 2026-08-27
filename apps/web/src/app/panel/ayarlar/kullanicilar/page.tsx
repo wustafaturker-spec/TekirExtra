@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { api, tokenAl } from "@/lib/api";
 import {
   Alert,
@@ -124,9 +125,14 @@ export default function KullanicilarSayfasi() {
         title="Kullanıcılar"
         subtitle="Firma kullanıcılarını yönetin: davet, rol atama, aktif/pasif (yalnızca yönetici) — KLN-02."
         actions={
-          <Button variant="primary" onClick={() => setFormAcik(!formAcik)}>
-            {formAcik ? "Vazgeç" : "➕ Yeni Kullanıcı"}
-          </Button>
+          <>
+            <Link href="/panel/ayarlar/izinler" style={{ padding: "8px 14px", backgroundColor: "#e2e8f0", color: "#334155", borderRadius: "6px", textDecoration: "none", fontSize: "12px", fontWeight: "700" }}>
+              🛡️ İzin Matrisi
+            </Link>
+            <Button variant="primary" onClick={() => setFormAcik(!formAcik)}>
+              {formAcik ? "Vazgeç" : "➕ Yeni Kullanıcı"}
+            </Button>
+          </>
         }
       />
 

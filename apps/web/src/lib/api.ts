@@ -57,15 +57,19 @@ function giriseYonlendir(): Promise<never> {
 
 async function istekYap(yol: string, secenekler: RequestInit, token: string | null): Promise<Response> {
   const formVerisi = typeof FormData !== "undefined" && secenekler.body instanceof FormData;
-  return fetch(`${API_URL}${yol}`, {
-    ...secenekler,
-    credentials: "include",
-    headers: {
-      ...(!formVerisi ? { "Content-Type": "application/json" } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...secenekler.headers,
-    },
-  });
+  try {
+    return await fetch(`${API_URL}${yol}`, {
+      ...secenekler,
+      credentials: "include",
+      headers: {
+        ...(!formVerisi ? { "Content-Type": "application/json" } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...secenekler.headers,
+      },
+    });
+  } catch {
+    throw new ApiHata("Sunucuya bağlanılamadı. Lütfen sunucunun çalıştığından emin olun.", 0);
+  }
 }
 
 export async function api<T>(

@@ -104,7 +104,10 @@ describe("EbelgeService (EBLG-01..08)", () => {
   } as any;
 
   const mockAdapter = {
-    mukellefSorgula: vi.fn().mockResolvedValue({ eFaturaMukellefi: true }),
+    mukellefSorgula: vi.fn().mockResolvedValue({
+      eFaturaMukellefi: true,
+      postaKutusu: "urn:mail:defaultpk@1234567890",
+    }),
     belgeGonder: vi.fn().mockResolvedValue({ basarili: true, belgeRef: "REF-123" }),
     durumSorgula: vi.fn().mockResolvedValue({ durum: "kabul" }),
     gelenBelgeleriCek: vi.fn().mockResolvedValue([
@@ -160,10 +163,11 @@ describe("EbelgeService (EBLG-01..08)", () => {
         update: vi.fn().mockResolvedValue({}),
       },
       tenant: {
-        findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "9876543210" }),
+        findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114" }),
       },
       ebelgeKayit: {
-        upsert: vi.fn().mockResolvedValue({ id: "eb1" }),
+        create: vi.fn().mockResolvedValue({ id: "eb1" }),
+        update: vi.fn().mockResolvedValue({ id: "eb1" }),
       },
       ebelgeArsiv: {
         upsert: vi.fn().mockResolvedValue({}),
@@ -178,17 +182,19 @@ describe("EbelgeService (EBLG-01..08)", () => {
       "1234567890",
     );
     expect(mockAdapter.belgeGonder).toHaveBeenCalled();
-    expect(mockTx.ebelgeKayit.upsert).toHaveBeenCalledWith({
-      where: { faturaId: "f1" },
-      create: {
+    expect(mockTx.ebelgeKayit.create).toHaveBeenCalledWith({
+      data: {
         tenantId: "t1-uuid",
         faturaId: "f1",
-        tur: "efatura",
-        durum: "iletildi",
-        entegratorRef: "REF-123",
+        tur: "earsiv",
+        durum: "kuyrukta",
         hataMesaji: null,
       },
-      update: {
+      select: { id: true },
+    });
+    expect(mockTx.ebelgeKayit.update).toHaveBeenCalledWith({
+      where: { id: "eb1" },
+      data: {
         tur: "efatura",
         durum: "iletildi",
         entegratorRef: "REF-123",
@@ -349,5 +355,67 @@ describe("EbelgeService (EBLG-01..08)", () => {
         }),
       }),
     );
+  });
+
+  it("gelenXmlYukle alıcı VKN eşleşmediğinde hata fırlatır", async () => {
+    const mockTx = {
+      tenant: { findUnique: vi.fn().mockResolvedValue({ vkn: "9999999999" }) },
+    };
+    mockTenantIslem.mockImplementation((_tenantId: string, cb: any) => cb(mockTx));
+
+    const xmlWithAlici = GELEN_UBL.replace(
+      "</Invoice>",
+      `<cac:AccountingCustomerParty><cac:Party><cac:PartyIdentification><cbc:ID schemeID="VKN">1111111111</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>Farklı Firma</cbc:Name></cac:PartyName></cac:Party></cac:AccountingCustomerParty></Invoice>`,
+    );
+
+    await expect(service.gelenXmlYukle(xmlWithAlici)).rejects.toThrow(
+      /bilgisi, firmanızın VKN \(9999999999\) bilgisi ile eşleşmiyor/,
+    );
+  });
+
+  it("gelenXmlYukle alıcı VKN eşleştiğinde belgeyi kaydeder", async () => {
+    const mockTx = {
+      tenant: { findUnique: vi.fn().mockResolvedValue({ vkn: "1111111111" }) },
+      gelenEbelge: {
+        upsert: vi.fn().mockResolvedValue({
+          id: "g-xml-1",
+          uuid: "uuid-1",
+          belgeNo: "GIB2026000000001",
+          gonderenVkn: "1234567890",
+          gonderenUnvan: "Tedarikçi A.Ş.",
+          tarih: new Date("2026-07-20"),
+          profilId: "TICARIFATURA",
+          durum: "beklemede",
+        }),
+      },
+    };
+    mockTenantIslem.mockImplementation((_tenantId: string, cb: any) => cb(mockTx));
+
+    const xmlWithAlici = GELEN_UBL.replace(
+      "</Invoice>",
+      `<cac:AccountingCustomerParty><cac:Party><cac:PartyIdentification><cbc:ID schemeID="VKN">1111111111</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>Bizim Firma</cbc:Name></cac:PartyName></cac:Party></cac:AccountingCustomerParty></Invoice>`,
+    );
+
+    const sonuc = await service.gelenXmlYukle(xmlWithAlici);
+    expect(sonuc.aliciVkn).toBe("1111111111");
+    expect(sonuc.belgeNo).toBe("GIB2026000000001");
+  });
+
+  it("gelenTaslakIptalEt taslak faturayı silip belgeyi tekrar beklemede durumuna getirir", async () => {
+    const mockTx = {
+      gelenEbelge: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "g-1",
+          durum: "islendi",
+          faturaId: "fatura-taslak-1",
+          fatura: { id: "fatura-taslak-1", durum: "taslak" },
+        }),
+      },
+    };
+    mockTenantIslem.mockImplementation((_tenantId: string, cb: any) => cb(mockTx));
+
+    const sonuc = await service.gelenTaslakIptalEt("g-1");
+    expect(mockFatura.sil).toHaveBeenCalledWith("fatura-taslak-1");
+    expect(sonuc.basarili).toBe(true);
   });
 });

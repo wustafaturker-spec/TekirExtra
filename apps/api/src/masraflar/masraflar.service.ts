@@ -83,7 +83,7 @@ export class MasraflarService {
   }
 
   private veri(girdi: z.infer<typeof masrafOlusturSemasi>) {
-    return { ...girdi, cariId: girdi.cariId || null, belgeNo: girdi.belgeNo || null, saticiUnvan: girdi.saticiUnvan || null, vknTckn: girdi.vknTckn || null, vergiDairesi: girdi.vergiDairesi || null, iban: girdi.iban || null, aciklama: girdi.aciklama || null, matrah: D(girdi.matrah), kdvOrani: D(girdi.kdvOrani), kdvTutari: D(girdi.kdvTutari), toplam: D(girdi.toplam), stopajOrani: girdi.stopajOrani == null ? null : D(girdi.stopajOrani), stopajTutari: girdi.stopajTutari == null ? null : D(girdi.stopajTutari) };
+    return { ...girdi, cariId: girdi.cariId || null, projeId: girdi.projeId || null, projeAltKirilimId: girdi.projeAltKirilimId || null, belgeNo: girdi.belgeNo || null, saticiUnvan: girdi.saticiUnvan || null, vknTckn: girdi.vknTckn || null, vergiDairesi: girdi.vergiDairesi || null, iban: girdi.iban || null, aciklama: girdi.aciklama || null, matrah: D(girdi.matrah), kdvOrani: D(girdi.kdvOrani), kdvTutari: D(girdi.kdvTutari), toplam: D(girdi.toplam), stopajOrani: girdi.stopajOrani == null ? null : D(girdi.stopajOrani), stopajTutari: girdi.stopajTutari == null ? null : D(girdi.stopajTutari) };
   }
 
   async olustur(girdi: z.infer<typeof masrafOlusturSemasi>) {
@@ -106,11 +106,36 @@ export class MasraflarService {
     const mevcut = await this.getir(id);
     if (mevcut.durum !== "taslak") throw new BadRequestException("Yalnızca taslak masraf onaylanabilir");
     const { tenantId } = aktifBaglam();
-    return this.prisma.tenantIslem(tenantId, (tx) => tx.masraf.update({ where: { id }, data: { durum: "onaylandi" } }));
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      if (mevcut.cariId) {
+        const netTutar = mevcut.toplam.sub(mevcut.stopajTutari ?? D(0));
+        const unvan = mevcut.cari?.unvan ?? mevcut.saticiUnvan ?? "Masraf";
+        const aciklama = `${unvan} masraf kaydı (${mevcut.kategori.ad}${mevcut.belgeNo ? ` · #${mevcut.belgeNo}` : ""})`;
+        await tx.cariHareket.create({
+          data: {
+            tenantId,
+            cariId: mevcut.cariId,
+            tip: "alacak",
+            tutar: netTutar,
+            dovizCinsi: mevcut.dovizCinsi,
+            kur: D(1),
+            tutarTry: netTutar,
+            tarih: new Date(mevcut.tarih),
+            aciklama,
+            kaynakTur: "masraf",
+            kaynakRef: mevcut.id,
+          },
+        });
+      }
+      return tx.masraf.update({ where: { id }, data: { durum: "onaylandi" } });
+    });
   }
 
   async ode(id: string, girdi: z.infer<typeof masrafOdemeSemasi>) {
     const mevcut = await this.getir(id);
+    if (mevcut.cariId) {
+      throw new BadRequestException("Cari hesap bağlantılı masraf kayıtlarında ödemeler cari hesap tediye işlemleri üzerinden yapılmalıdır.");
+    }
     if (mevcut.durum !== "onaylandi") throw new BadRequestException("Masraf ödeme öncesinde onaylanmalıdır");
     if (mevcut.odemeDurumu === "odendi") throw new BadRequestException("Masraf zaten ödenmiş");
     const { tenantId } = aktifBaglam();
@@ -137,7 +162,29 @@ export class MasraflarService {
     const mevcut = await this.getir(id);
     if (mevcut.odemeDurumu !== "odenmedi") throw new BadRequestException("Ödeme alınmış masraf iptal edilemez");
     const { tenantId } = aktifBaglam();
-    return this.prisma.tenantIslem(tenantId, (tx) => tx.masraf.update({ where: { id }, data: { durum: "iptal" } }));
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      if (mevcut.cariId && mevcut.durum === "onaylandi") {
+        const netTutar = mevcut.toplam.sub(mevcut.stopajTutari ?? D(0));
+        const unvan = mevcut.cari?.unvan ?? mevcut.saticiUnvan ?? "Masraf";
+        const aciklama = `${unvan} masraf kaydı iptali (${mevcut.kategori.ad}${mevcut.belgeNo ? ` · #${mevcut.belgeNo}` : ""})`;
+        await tx.cariHareket.create({
+          data: {
+            tenantId,
+            cariId: mevcut.cariId,
+            tip: "borc",
+            tutar: netTutar,
+            dovizCinsi: mevcut.dovizCinsi,
+            kur: D(1),
+            tutarTry: netTutar,
+            tarih: new Date(),
+            aciklama,
+            kaynakTur: "masraf",
+            kaynakRef: mevcut.id,
+          },
+        });
+      }
+      return tx.masraf.update({ where: { id }, data: { durum: "iptal" } });
+    });
   }
 
   async kiraSozlesmeListele() {

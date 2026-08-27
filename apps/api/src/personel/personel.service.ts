@@ -679,4 +679,60 @@ export class PersonelService {
       return tx.personelAvans.update({ where: { id }, data: { durum: "odendi", odendi: true, odenenTutar: avans.tutar, kalanTutar: avans.tutar, kasaBankaFiId: fis.id, tarih: veri.tarih } });
     });
   }
+
+  /**
+   * Seçili ay ve yıl için onaylanmış bordrolardan Banka Toplu Maaş Havale / EFT dosyası üretir.
+   */
+  async bankaMaasDosyasiOlustur(tenantId: string, yil: number, ay: number, bankaFormat: "garanti" | "akbank" | "isbank" | "standart" = "standart") {
+    const bordrolar = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.personelBordro.findMany({
+        where: {
+          tenantId,
+          donemYil: yil,
+          donemAy: ay,
+          durum: "onaylandi",
+        },
+        include: {
+          personel: { select: { ad: true, soyad: true, tckn: true, iban: true } },
+        },
+      })
+    );
+
+    if (bordrolar.length === 0) {
+      throw new BadRequestException("Belirtilen dönemde onaylanmış maaş bordrosu bulunamadı");
+    }
+
+    let dosyaIcerigi = "";
+    const toplamOdenecek = bordrolar.reduce((sum, b) => sum + Number(b.odenecekTutar), 0);
+
+    if (bankaFormat === "garanti" || bankaFormat === "isbank") {
+      // CSV formatı: Alıcı Adı;IBAN;Tutar;Açıklama;VKN/TCKN
+      dosyaIcerigi = "Alıcı Adı Soyadı;IBAN;Ödenecek Tutar;Açıklama;TCKN\n";
+      bordrolar.forEach((b) => {
+        const adSoyad = `${b.personel.ad} ${b.personel.soyad}`;
+        const iban = b.personel.iban || "IBAN_TANIMSIZ";
+        const tutar = Number(b.odenecekTutar).toFixed(2);
+        const aciklama = `${yil}/${ay.toString().padStart(2, "0")} Maaş Ödemesi`;
+        const tckn = b.personel.tckn || "";
+        dosyaIcerigi += `"${adSoyad}";"${iban}";${tutar};"${aciklama}";"${tckn}"\n`;
+      });
+    } else {
+      // Standart TXT / CSV formatı
+      dosyaIcerigi = `Dönem: ${yil}/${ay.toString().padStart(2, "0")} - Toplam Personel: ${bordrolar.length} - Toplam Tutari: ${toplamOdenecek.toFixed(2)} TL\n`;
+      dosyaIcerigi += "Sıra;Ad Soyad;TCKN;IBAN;Net Ödenecek (TL)\n";
+      bordrolar.forEach((b, idx) => {
+        dosyaIcerigi += `${idx + 1};${b.personel.ad} ${b.personel.soyad};${b.personel.tckn || "—"};${b.personel.iban || "—"};${Number(b.odenecekTutar).toFixed(2)}\n`;
+      });
+    }
+
+    return {
+      donemYil: yil,
+      donemAy: ay,
+      bankaFormat,
+      toplamPersonel: bordrolar.length,
+      toplamTutar: toplamOdenecek.toFixed(2),
+      dosyaAdi: `Maas_Transfer_${yil}_${ay.toString().padStart(2, "0")}_${bankaFormat}.csv`,
+      dosyaIcerigi,
+    };
+  }
 }

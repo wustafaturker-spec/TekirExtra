@@ -890,4 +890,139 @@ export class CariService {
     await this.eposta.ekliIletiGonder({ alici: hedef, konu: `${cari.unvan} cari hesap ekstresi`, metin: `Sayın Yetkili,\n\n${donem} cari hesap ekstreniz PDF ve Excel formatında ekte sunulmuştur.\n\nSaygılarımızla`, ekler: [{ dosyaAdi: `ekstre-${cari.kod}.pdf`, icerik: pdf, mime: "application/pdf" }, { dosyaAdi: `ekstre-${cari.kod}.xlsx`, icerik: excel, mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }] });
     return { mesaj: `Ekstre ${hedef} adresine gönderildi` };
   }
+
+  /**
+   * Dövizli Cari Hesaplar için Kur Farkı (Revalüasyon) Analizi.
+   * Belirtilen tarihteki güncel TCMB kuru ile hareketlerdeki kur farkından doğan Kar/Zarar tutarını hesaplar.
+   */
+  async kurFarkiAnalizi(hedefTarihMetni?: string) {
+    const { tenantId } = aktifBaglam();
+    const hedefTarih = hedefTarihMetni ? new Date(hedefTarihMetni) : new Date();
+
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      // 1. Dövizli hareketi olan tüm aktif carileri al
+      const cariler = await tx.cariHesap.findMany({
+        where: { tenantId, aktif: true },
+        select: { id: true, kod: true, unvan: true, vknTckn: true },
+      });
+
+      // Güncel kurları çek (USD ve EUR)
+      const kurlar = await tx.dovizKuru.findMany({
+        where: { tenantId, tarih: { lte: hedefTarih }, dovizCinsi: { in: ["USD", "EUR"] } },
+        orderBy: { tarih: "desc" },
+        take: 4,
+      });
+
+      // Varsayılan gösterge kurları (Veritabanında kur çekilmemişse düşme engeli)
+      const guncelKurHaritasi: Record<string, number> = { TRY: 1, USD: 36.45, EUR: 38.20 };
+      kurlar.forEach((k) => {
+        if (k.dovizAlis && Number(k.dovizAlis) > 0) {
+          guncelKurHaritasi[k.dovizCinsi] = Number(k.dovizAlis);
+        }
+      });
+
+      const sonuclar = [];
+
+      for (const cari of cariler) {
+        const bakiyeler = await this.bakiyeleriGetir([cari.id]);
+        const cariDovizBakiyeleri = bakiyeler.get(cari.id) || [];
+
+        for (const b of cariDovizBakiyeleri) {
+          if (b.dovizCinsi === "TRY" || Number(b.bakiye) === 0) continue;
+
+          const dovizBakiye = Number(b.bakiye); // Borç - Alacak (Döviz Cinsinden)
+          const kayitliTryBakiye = Number(b.bakiyeTry); // Kayıt anındaki TRY Karşılığı bakiye
+          const guncelKur = guncelKurHaritasi[b.dovizCinsi] || 1;
+          const guncelTryDegeri = dovizBakiye * guncelKur;
+
+          // Kur Farkı = Güncel TRY Değeri - Kayıtlı TRY Değeri
+          const kurFarkiTutari = guncelTryDegeri - kayitliTryBakiye;
+
+          if (Math.abs(kurFarkiTutari) > 0.05) { // 5 kuruştan büyük farklar
+            sonuclar.push({
+              cariId: cari.id,
+              cariKod: cari.kod,
+              cariUnvan: cari.unvan,
+              dovizCinsi: b.dovizCinsi,
+              dovizBakiye,
+              kayitliTryBakiye,
+              guncelKur,
+              guncelTryDegeri: Number(guncelTryDegeri.toFixed(2)),
+              kurFarkiTutari: Number(kurFarkiTutari.toFixed(2)),
+              faturaTipi: kurFarkiTutari > 0 ? "satis" : "alis", // Pozitifse Kur Farkı Satış (Gelir), Negatifse Kur Farkı Alış (Gider)
+              aciklama: `${b.dovizCinsi} Döviz Bakiye Kur Değerleme Farkı (GÜNCEL KUR: 1 ${b.dovizCinsi} = ${guncelKur} TL)`,
+            });
+          }
+        }
+      }
+
+      return {
+        degerlemeTarihi: hedefTarih.toISOString().slice(0, 10),
+        guncelKurlar: guncelKurHaritasi,
+        toplamCariSayisi: sonuclar.length,
+        sonuclar,
+      };
+    });
+  }
+
+  /**
+   * Kur Farkı Değerlemesinden Otomatik Kur Farkı Faturası Taslağı Keser.
+   */
+  async kurFarkiFaturasiOlustur(cariId: string, dovizCinsi: string, kurFarkiTutari: number, aciklama: string) {
+    const { tenantId } = aktifBaglam();
+    const cari = await this.getir(cariId);
+
+    const faturaTip = kurFarkiTutari > 0 ? "satis" : "alis";
+    const netTutar = Math.abs(kurFarkiTutari);
+
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const fatura = await tx.fatura.create({
+        data: {
+          tenantId,
+          cariId: cari.id,
+          tip: faturaTip,
+          durum: "taslak",
+          tarih: new Date(),
+          dovizCinsi: "TRY",
+          kur: D(1),
+          toplamBrut: D(netTutar),
+          toplamSatirIskontosu: D(0),
+          genelIskontoTutari: D(0),
+          genelIskontoToplam: D(0),
+          toplamMatrah: D(netTutar),
+          toplamKdv: D(0),
+          toplamTevkifat: D(0),
+          toplamNetKdv: D(0),
+          genelToplam: D(netTutar),
+          aciklama: aciklama || `Dövizli Cari Kur Farkı Faturası (${dovizCinsi})`,
+          satirlar: {
+            create: [
+              {
+                tenantId,
+                stokId: (await tx.stokKart.findFirst({ where: { tenantId, tip: "hizmet" } }))?.id || (await tx.stokKart.findFirst({ where: { tenantId } }))!.id,
+                miktar: D(1),
+                birim: "adet",
+                birimFiyat: D(netTutar),
+                iskontoOrani: D(0),
+                iskontoTutari: D(0),
+                matrah: D(netTutar),
+                kdvOrani: D(0),
+                kdvTutari: D(0),
+                netKdvTutari: D(0),
+                toplamTutar: D(netTutar),
+              },
+            ],
+          },
+        },
+      });
+
+      return {
+        faturaId: fatura.id,
+        faturaNo: fatura.no || "Taslak",
+        faturaTip: fatura.tip,
+        tutar: netTutar.toFixed(2),
+        mesaj: `Kur Farkı Faturası taslak olarak oluşturuldu.`,
+      };
+    });
+  }
 }

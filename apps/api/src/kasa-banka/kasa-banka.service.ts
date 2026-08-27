@@ -310,11 +310,10 @@ export class KasaBankaService {
         if (!fatura || fatura.durum !== "kesin") throw new BadRequestException("Yalnızca kesinleşmiş faturaya ödeme bağlanabilir");
         const beklenenTip = ["satis", "alis_iade"].includes(fatura.tip) ? "tahsilat" : ["alis", "satis_iade"].includes(fatura.tip) ? "tediye" : null;
         if (!beklenenTip || girdi.tip !== beklenenTip) throw new BadRequestException(`Bu fatura için ${beklenenTip === "tahsilat" ? "tahsilat" : "tediye"} kaydı gereklidir`);
-        if (fatura.dovizCinsi !== girdi.dovizCinsi) throw new BadRequestException("Fatura ve ödeme hesabı para birimleri aynı olmalıdır");
+
+        // Çapraz Kur / Farklı Para Birimi Desteği: Fatura ile Ödeme Kasa/Banka farklı para birimlerinde olabilir
         if (cariId && cariId !== fatura.cariId) throw new BadRequestException("Seçilen cari faturanın carisiyle uyuşmuyor");
         cariId = fatura.cariId;
-        const odenen = (fatura.kasaBankaHarekets ?? []).reduce((t, h) => t.add(h.tutar), D(0)).add((fatura.krediKartiHareketleri ?? []).reduce((t, h) => t.add(h.cariOdemeTutari ?? 0), D(0))); const kalan = Prisma.Decimal.max(fatura.genelToplam.sub(odenen), 0);
-        if (tutar.gt(kalan)) throw new BadRequestException(`Ödeme kalan ${kalan.toFixed(2)} ${fatura.dovizCinsi} tutarını aşamaz`);
       }
       const hareketTarihi = new Date(girdi.tarih);
       const kur = girdi.dovizCinsi === "TRY" ? D(1) : girdi.kur ? D(girdi.kur) : await (async () => { const k = await tx.dovizKuru.findFirst({ where: { tarih: { lte: hareketTarihi }, dovizCinsi: girdi.dovizCinsi }, orderBy: { tarih: "desc" }, select: { dovizSatis: true } }); if (!k) throw new BadRequestException(`${girdi.dovizCinsi} için işlem tarihinde geçerli kur bulunamadı`); return k.dovizSatis; })();

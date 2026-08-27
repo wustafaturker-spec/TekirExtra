@@ -8,6 +8,7 @@ import {
 } from "@nestjs/common";
 import { BelgeDurum, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
 import type { EntegratorConfig } from "@tekirextra/baglanti";
+import { vknTcknGecerliMi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
@@ -24,6 +25,13 @@ export type EslesmeKaynagi =
   | "uretici_urun_kodu"
   | "ad"
   | null;
+
+const YEDI_GUN_MS = 7 * 24 * 60 * 60 * 1_000;
+
+function gonderimTarihiGecerliMi(tarih: Date, simdi = new Date()): boolean {
+  const fark = simdi.getTime() - tarih.getTime();
+  return fark >= 0 && fark <= YEDI_GUN_MS;
+}
 
 @Injectable()
 export class EbelgeService {
@@ -53,6 +61,12 @@ export class EbelgeService {
       }
       const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" }, select: { saglayici: true } });
       if (!baglanti) return { gonderilebilir: false, neden: "Aktif bir e-belge entegratör bağlantısı bulunamadı.", faturaNo: fatura.no, cari: fatura.cari.unvan };
+      if (!fatura.cari.vknTckn || !vknTcknGecerliMi(fatura.cari.vknTckn)) {
+        return { gonderilebilir: false, neden: "Alıcının geçerli bir VKN/TCKN bilgisi olmalıdır.", faturaNo: fatura.no, cari: fatura.cari.unvan, vknTckn: fatura.cari.vknTckn, saglayici: baglanti.saglayici };
+      }
+      if (!gonderimTarihiGecerliMi(fatura.tarih)) {
+        return { gonderilebilir: false, neden: "Fatura tarihi bugün veya en fazla 7 gün önce olmalıdır.", faturaNo: fatura.no, cari: fatura.cari.unvan, vknTckn: fatura.cari.vknTckn, saglayici: baglanti.saglayici };
+      }
       return {
         gonderilebilir: true,
         faturaNo: fatura.no,
@@ -67,9 +81,9 @@ export class EbelgeService {
 
   async gonder(faturaId: string) {
     const { tenantId } = aktifBaglam();
-
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
-      // 1. Faturayı, satırlarını, ürünlerini ve cari bilgisini çek
+    // Önce veritabanında tekil bir gönderim rezervasyonu oluşturulur. Böylece
+    // çift tıklama/iki sekme aynı UUID'yi entegratöre iki kez gönderemez.
+    const hazirlik = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const fatura = await tx.fatura.findUnique({
         where: { id: faturaId },
         include: {
@@ -83,6 +97,15 @@ export class EbelgeService {
       if (fatura.durum !== "kesin") {
         throw new BadRequestException("Yalnızca kesinleşmiş faturalar gönderilebilir");
       }
+      if (!fatura.cari.vknTckn || !vknTcknGecerliMi(fatura.cari.vknTckn)) {
+        throw new BadRequestException("Alıcının geçerli bir VKN/TCKN bilgisi olmalıdır");
+      }
+      if (!gonderimTarihiGecerliMi(fatura.tarih)) {
+        throw new BadRequestException("Fatura tarihi bugün veya en fazla 7 gün önce olmalıdır");
+      }
+      if (fatura.ebelge && !["hata", "ret"].includes(fatura.ebelge.durum)) {
+        throw new ConflictException("Bu fatura için e-belge gönderim süreci zaten başlatılmış");
+      }
 
       // 2. Aktif e-belge bağlantısını bul
       const baglanti = await tx.baglanti.findFirst({
@@ -95,79 +118,85 @@ export class EbelgeService {
         );
       }
 
-      const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
-      const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
-
-      // 3. Alıcının VKN/TCKN durumuna göre e-Fatura/e-Arşiv ayrımı (EBLG-01)
-      const mukellefiyet = await adapter.mukellefSorgula(cfg, fatura.cari.vknTckn || "");
-      
-      // Cari mükellefiyet kaydını veritabanında güncelle
-      await tx.cariHesap.update({
-        where: { id: fatura.cariId },
-        data: {
-          eFaturaMukellefi: mukellefiyet.eFaturaMukellefi,
-          mukellefiyetSorguZamani: new Date(),
-        },
-      });
-
-      const tur: EbelgeTur = mukellefiyet.eFaturaMukellefi ? "efatura" : "earsiv";
-
-      // 4. Firmamız (Tenant/Gonderen) bilgilerini çek
       const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
       if (!tenant) throw new NotFoundException("Tenant bulunamadı");
+      if (!vknTcknGecerliMi(tenant.vkn)) {
+        throw new BadRequestException("Gönderen firmanın geçerli bir VKN/TCKN bilgisi olmalıdır");
+      }
 
-      // 5. UBL-TR XML üret (EBLG-02)
-      const xml = faturaUblUret(fatura, {
-        unvan: tenant.unvan,
-        vkn: tenant.vkn,
-        vergiDairesi: tenant.vergiDairesi || undefined,
+      let rezervasyon: { id: string };
+      if (fatura.ebelge) {
+        const kilit = await tx.ebelgeKayit.updateMany({
+          where: { id: fatura.ebelge.id, durum: { in: ["hata", "ret"] } },
+          data: { durum: "kuyrukta", entegratorRef: null, hataMesaji: null },
+        });
+        if (kilit.count !== 1) {
+          throw new ConflictException("Bu fatura için başka bir gönderim işlemi devam ediyor");
+        }
+        rezervasyon = { id: fatura.ebelge.id };
+      } else {
+        try {
+          rezervasyon = await tx.ebelgeKayit.create({
+            data: { tenantId, faturaId, tur: "earsiv", durum: "kuyrukta", hataMesaji: null },
+            select: { id: true },
+          });
+        } catch (hata) {
+          if (hata instanceof Prisma.PrismaClientKnownRequestError && hata.code === "P2002") {
+            throw new ConflictException("Bu fatura için başka bir gönderim işlemi devam ediyor");
+          }
+          throw hata;
+        }
+      }
+
+      return {
+        fatura,
+        tenant,
+        rezervasyonId: rezervasyon.id,
+        saglayici: baglanti.saglayici,
+        cfg: JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig,
+      };
+    });
+
+    const adapter = this.baglantilarService.adapterCoz(hazirlik.saglayici);
+    try {
+      const mukellefiyet = await adapter.mukellefSorgula(hazirlik.cfg, hazirlik.fatura.cari.vknTckn!);
+      if (mukellefiyet.eFaturaMukellefi && !mukellefiyet.postaKutusu) {
+        throw new BadRequestException("Alıcı e-Fatura mükellefi ancak GİB posta kutusu (alias) bulunamadı");
+      }
+      const tur: EbelgeTur = mukellefiyet.eFaturaMukellefi ? "efatura" : "earsiv";
+
+      const xml = faturaUblUret(hazirlik.fatura, {
+        unvan: hazirlik.tenant.unvan,
+        vkn: hazirlik.tenant.vkn,
+        vergiDairesi: hazirlik.tenant.vergiDairesi || undefined,
       });
 
-      // 6. Belgeyi Entegratöre Gönder (EBLG-03/06)
-      const gonderimResult = await adapter.belgeGonder(cfg, {
-        uuid: fatura.id,
-        belgeNo: fatura.no || "TASLAK",
+      const gonderimResult = await adapter.belgeGonder(hazirlik.cfg, {
+        uuid: hazirlik.fatura.id,
+        belgeNo: hazirlik.fatura.no || "TASLAK",
         xml,
-        tur: tur === "efatura" ? "efatura" : "earsiv",
+        tur,
         aliciPostaKutusu: mukellefiyet.postaKutusu,
       });
-
-      // 7. e-Belge Kaydını güncelle veya oluştur (durum: iletildi/hata)
       const durum: BelgeDurum = gonderimResult.basarili ? "iletildi" : "hata";
 
-      const ebelgeKayit = await tx.ebelgeKayit.upsert({
-        where: { faturaId },
-        create: {
-          tenantId,
-          faturaId,
-          tur,
-          durum,
-          entegratorRef: gonderimResult.belgeRef || null,
-          hataMesaji: gonderimResult.hataMesaji || null,
-        },
-        update: {
-          tur,
-          durum,
-          entegratorRef: gonderimResult.belgeRef || null,
-          hataMesaji: gonderimResult.hataMesaji || null,
-        },
-      });
-
-      // 8. XML arşiv kaydını oluştur (EBLG-07)
-      if (gonderimResult.basarili) {
-        await tx.ebelgeArsiv.upsert({
-          where: { ebelgeId: ebelgeKayit.id },
-          create: {
-            tenantId,
-            ebelgeId: ebelgeKayit.id,
-            xmlIcerik: xml,
-            pdfDosyaUrl: `/panel/fatura/${faturaId}/pdf`, // v1.0 içi pdf url
-          },
-          update: {
-            xmlIcerik: xml,
-          },
+      await this.prisma.tenantIslem(tenantId, async (tx) => {
+        await tx.cariHesap.update({
+          where: { id: hazirlik.fatura.cariId },
+          data: { eFaturaMukellefi: mukellefiyet.eFaturaMukellefi, mukellefiyetSorguZamani: new Date() },
         });
-      }
+        await tx.ebelgeKayit.update({
+          where: { id: hazirlik.rezervasyonId },
+          data: { tur, durum, entegratorRef: gonderimResult.belgeRef || null, hataMesaji: gonderimResult.hataMesaji || null },
+        });
+        if (gonderimResult.basarili) {
+          await tx.ebelgeArsiv.upsert({
+            where: { ebelgeId: hazirlik.rezervasyonId },
+            create: { tenantId, ebelgeId: hazirlik.rezervasyonId, xmlIcerik: xml, pdfDosyaUrl: `/panel/fatura/${faturaId}/pdf` },
+            update: { xmlIcerik: xml },
+          });
+        }
+      });
 
       return {
         basarili: gonderimResult.basarili,
@@ -176,7 +205,14 @@ export class EbelgeService {
         ebelgeRef: gonderimResult.belgeRef,
         hataMesaji: gonderimResult.hataMesaji,
       };
-    });
+    } catch (hata) {
+      const mesaj = hata instanceof Error ? hata.message : "e-Belge gönderimi sırasında beklenmeyen hata";
+      await this.prisma.tenantIslem(tenantId, (tx) => tx.ebelgeKayit.update({
+        where: { id: hazirlik.rezervasyonId },
+        data: { durum: "hata", hataMesaji: mesaj },
+      }));
+      throw hata;
+    }
   }
 
   // ─── DURUM SORGULAMA (EBLG-03/06) ──────────────────────────────────────────
@@ -295,6 +331,67 @@ export class EbelgeService {
     };
   }
 
+  /**
+   * Manuel XML fatura yükleme: UBL XML'i doğrular, alıcı VKN/TCKN bilgisinin
+   * mevcut kiracı (şirket) VKN'si ile eşleştiğini kontrol eder ve gelen kutusuna yazar.
+   */
+  async gelenXmlYukle(xmlIcerik: string) {
+    const { tenantId } = aktifBaglam();
+
+    let ubl: UblFatura;
+    try {
+      ubl = faturaUblOku(xmlIcerik);
+    } catch (hata) {
+      throw new BadRequestException(
+        hata instanceof UblOkumaHatasi
+          ? `Yüklenen XML okunamadı: ${hata.message}`
+          : "Yüklenen XML geçerli bir UBL-TR faturası değil",
+      );
+    }
+
+    const tenant = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.tenant.findUnique({ where: { id: tenantId }, select: { vkn: true } }),
+    );
+
+    if (tenant?.vkn && ubl.alici.vknTckn && ubl.alici.vknTckn !== tenant.vkn) {
+      throw new BadRequestException(
+        `Fatura alıcı VKN/TCKN (${ubl.alici.vknTckn}) bilgisi, firmanızın VKN (${tenant.vkn}) bilgisi ile eşleşmiyor. Farklı bir firmaya kesilmiş faturalar yüklenemez.`,
+      );
+    }
+
+    const tarih = new Date(ubl.tarih);
+    const gecerliTarih = Number.isNaN(tarih.getTime()) ? new Date() : tarih;
+
+    const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.gelenEbelge.upsert({
+        where: { tenantId_uuid: { tenantId, uuid: ubl.uuid } },
+        create: {
+          tenantId,
+          uuid: ubl.uuid,
+          belgeNo: ubl.belgeNo,
+          gonderenVkn: ubl.gonderen.vknTckn,
+          gonderenUnvan: ubl.gonderen.unvan,
+          tarih: gecerliTarih,
+          profilId: ubl.profilId,
+          xmlIcerik,
+        },
+        update: { xmlIcerik, profilId: ubl.profilId },
+      }),
+    );
+
+    return {
+      id: kayit.id,
+      uuid: kayit.uuid,
+      belgeNo: kayit.belgeNo,
+      gonderenVkn: kayit.gonderenVkn,
+      gonderenUnvan: kayit.gonderenUnvan,
+      aliciVkn: ubl.alici.vknTckn,
+      profilId: kayit.profilId,
+      tarih: kayit.tarih.toISOString().slice(0, 10),
+      durum: kayit.durum,
+    };
+  }
+
   /** Gelen kutusu listesi; XML gövdesi yerine ayrıştırılmış özeti döner. */
   async gelenListele(durum?: GelenEbelgeDurum) {
     const { tenantId } = aktifBaglam();
@@ -408,7 +505,7 @@ export class EbelgeService {
    */
   async gelenOnayla(
     id: string,
-    girdi: { satirEslesmeleri: { siraNo: number; stokId: string }[] },
+    girdi: { satirEslesmeleri: { siraNo: number; stokId: string }[]; yeniCariOnay?: boolean },
   ) {
     const { tenantId } = aktifBaglam();
 
@@ -450,6 +547,19 @@ export class EbelgeService {
       throw new BadRequestException("Eşleştirilen stok kartlarından biri bulunamadı");
     }
 
+    const mevcutCari = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.cariHesap.findFirst({
+        where: { tenantId, vknTckn: kayit.gonderenVkn },
+        select: { id: true },
+      }),
+    );
+
+    if (!mevcutCari && !girdi.yeniCariOnay) {
+      throw new BadRequestException(
+        `Gönderen firma (${kayit.gonderenUnvan} - VKN: ${kayit.gonderenVkn}) sisteminizde kayıtlı bir cari hesap değil. Lütfen yeni cari hesap açılmasını onaylayın.`,
+      );
+    }
+
     const cariId = await this.gonderenCariBulVeyaOlustur(
       tenantId,
       kayit.gonderenVkn,
@@ -458,8 +568,9 @@ export class EbelgeService {
 
     const fatura = await this.faturaService.olustur({
       tip: "alis",
+      no: kayit.belgeNo,
       tarih: kayit.tarih.toISOString().slice(0, 10),
-      vadeTarihi: null,
+      vadeTarihi: ubl.vadeTarihi ?? null,
       cariId,
       dovizCinsi: (["TRY", "USD", "EUR"] as const).includes(
         ubl.dovizCinsi as "TRY" | "USD" | "EUR",
@@ -507,6 +618,47 @@ export class EbelgeService {
         Math.abs(Number(fatura.genelToplam) - ubl.toplamlar.genelToplam) > 0.01
           ? (Number(fatura.genelToplam) - ubl.toplamlar.genelToplam).toFixed(2)
           : null,
+    };
+  }
+
+  /**
+   * Oluşturulan taslak alış faturasını siler ve gelen e-belgeyi
+   * tekrar 'beklemede' durumuna getirerek yeniden stok eşleştirmesi yapılmasına olanak tanır.
+   */
+  async gelenTaslakIptalEt(id: string) {
+    const { tenantId } = aktifBaglam();
+
+    const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.gelenEbelge.findUnique({
+        where: { id },
+        include: { fatura: true },
+      }),
+    );
+
+    if (!kayit) throw new NotFoundException("Gelen belge bulunamadı");
+    if (!kayit.faturaId || !kayit.fatura) {
+      await this.prisma.tenantIslem(tenantId, (tx) =>
+        tx.gelenEbelge.update({
+          where: { id },
+          data: { durum: "beklemede", faturaId: null },
+        }),
+      );
+      return { basarili: true, mesaj: "Belge tekrar onaya düştü" };
+    }
+
+    if (kayit.fatura.durum === "kesin") {
+      throw new BadRequestException(
+        "Kesinleşmiş alış faturası iptal edilemez; öncelikle faturanın durumunu taslağa çekin veya silin.",
+      );
+    }
+
+    const faturaId = kayit.faturaId;
+    await this.faturaService.sil(faturaId);
+
+    return {
+      basarili: true,
+      gelenEbelgeId: id,
+      mesaj: "Taslak fatura silindi ve belge tekrar onaya düştü",
     };
   }
 
@@ -797,5 +949,71 @@ export class EbelgeService {
       });
       return yeni.id;
     });
+  }
+
+  /**
+   * Manuel XML e-Fatura / e-Arşiv Yükleme (UBL-TR 1.2 XML Ayrıştırma & Taslak Gelen Belge Kaydı)
+   */
+  async xmlYukleVeParseEt(xmlIcerik: string) {
+    const { tenantId } = aktifBaglam();
+
+    let ubl: UblFatura;
+    try {
+      ubl = faturaUblOku(xmlIcerik);
+    } catch (hata) {
+      throw new BadRequestException(
+        hata instanceof UblOkumaHatasi
+          ? `Yüklenen XML dosyası ayrıştırılamadı: ${hata.message}`
+          : "Yüklenen XML dosyası geçerli bir UBL-TR e-Fatura formatında değil",
+      );
+    }
+
+    // Gelen e-Belge tablosuna taslak olarak kaydet (varsa güncelle, yoksa ekle)
+    const kayit = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const mevcut = await tx.gelenEbelge.findFirst({
+        where: { tenantId, uuid: ubl.uuid },
+      });
+
+      if (mevcut) {
+        return tx.gelenEbelge.update({
+          where: { id: mevcut.id },
+          data: {
+            xmlIcerik,
+            belgeNo: ubl.belgeNo,
+            gonderenVkn: ubl.gonderen.vknTckn,
+            gonderenUnvan: ubl.gonderen.unvan,
+            tarih: new Date(ubl.tarih),
+            profilId: ubl.profilId,
+          },
+        });
+      }
+
+      return tx.gelenEbelge.create({
+        data: {
+          tenantId,
+          uuid: ubl.uuid,
+          belgeNo: ubl.belgeNo,
+          gonderenVkn: ubl.gonderen.vknTckn,
+          gonderenUnvan: ubl.gonderen.unvan,
+          tarih: new Date(ubl.tarih),
+          profilId: ubl.profilId,
+          xmlIcerik,
+          durum: "beklemede",
+        },
+      });
+    });
+
+    return {
+      gelenEbelgeId: kayit.id,
+      uuid: kayit.uuid,
+      belgeNo: kayit.belgeNo,
+      gonderenUnvan: kayit.gonderenUnvan,
+      gonderenVkn: kayit.gonderenVkn,
+      tarih: kayit.tarih.toISOString().slice(0, 10),
+      toplamTutar: ubl.toplamlar.genelToplam.toFixed(2),
+      dovizCinsi: ubl.dovizCinsi,
+      satirSayisi: ubl.satirlar.length,
+      mesaj: "XML e-Fatura başarıyla içeri aktarıldı ve gelen kutusuna eklendi.",
+    };
   }
 }

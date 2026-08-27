@@ -1,8 +1,9 @@
 import { z } from "zod";
 
 const pozitifOndalik = z
-  .string()
-  .regex(/^\d{1,13}(\.\d{1,6})?$/, "Pozitif sayısal değer gerekli");
+  .union([z.string(), z.number()])
+  .transform((val) => String(val))
+  .pipe(z.string().regex(/^\d{1,13}(\.\d{1,6})?$/, "Pozitif sayısal değer gerekli"));
 const yuzde = pozitifOndalik.refine((deger) => Number(deger) <= 100, "Oran %100'ü aşamaz");
 
 const partiBilgisiSemasi = z.object({
@@ -23,14 +24,23 @@ export const faturaSatirSemasi = z.object({
   tevkifatPay: z.number().int().min(1).max(10).optional().nullable(),
   tevkifatPayda: z.number().int().min(1).max(10).optional().nullable(),
   gibIstisnaKodu: z.string().max(20).optional().nullable(),
+  projeId: z.string().uuid().optional().nullable(),
+  projeAltKirilimId: z.string().uuid().optional().nullable(),
 });
+
+const tarihSemasi = z
+  .string()
+  .transform((val) => (val.includes("T") ? val.slice(0, 10) : val))
+  .pipe(z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)"));
 
 const faturaOlusturGovde = z.object({
   tip: z.enum(["satis", "alis", "satis_iade", "alis_iade", "proforma"]),
-  tarih: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)"),
-  vadeTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)").optional().nullable(),
+  gelirTuru: z.enum(["ticari_satis", "kira_geliri", "varlik_satisi", "yansitma", "hizmet_diger"]).optional().nullable(),
+  no: z.string().trim().max(100).optional().nullable(),
+  tarih: tarihSemasi,
+  vadeTarihi: tarihSemasi.optional().nullable(),
   siparisNo: z.string().trim().max(100).optional().nullable(),
-  siparisTarihi: z.string().date("Geçersiz sipariş tarihi").optional().nullable(),
+  siparisTarihi: tarihSemasi.optional().nullable(),
   cariId: z.string().uuid(),
   /** STK-07: stok hareketlerinin işleneceği depo; boşsa varsayılan depo */
   depoId: z.string().uuid().optional().nullable(),

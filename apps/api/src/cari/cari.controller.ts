@@ -74,6 +74,18 @@ export class CariController {
     await this.cariService.etiketSil(etiketId);
   }
 
+  @Get("kur-farki-analizi")
+  @Roller("muhasebe")
+  async kurFarkiAnalizi(@Query("tarih") tarih?: string) {
+    return this.cariService.kurFarkiAnalizi(tarih);
+  }
+
+  @Post("kur-farki-faturasi-olustur")
+  @Roller("muhasebe")
+  async kurFarkiFaturasiOlustur(@Body() body: { cariId: string; dovizCinsi: string; kurFarkiTutari: number; aciklama: string }) {
+    return this.cariService.kurFarkiFaturasiOlustur(body.cariId, body.dovizCinsi, body.kurFarkiTutari, body.aciklama);
+  }
+
   @Get(":id")
   async getir(@Param("id") id: string) {
     return this.cariService.getir(id);

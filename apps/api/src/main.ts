@@ -8,8 +8,12 @@ import { MetricsService } from "./core/observability/metrics.service";
 import { ObservabilityExceptionFilter } from "./core/observability/exception.filter";
 import { structuredLogger } from "./core/observability/structured-logger";
 
+import { json, urlencoded } from "express";
+
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  app.use(json({ limit: "50mb" }));
+  app.use(urlencoded({ limit: "50mb", extended: true }));
   const metrics = app.get(MetricsService);
   app.useGlobalFilters(new ObservabilityExceptionFilter(metrics));
   app.setGlobalPrefix("api/v1", { exclude: ["health", "metrics"] });

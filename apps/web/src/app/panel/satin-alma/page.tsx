@@ -44,7 +44,7 @@ export default function SatinAlmaCalismaAlani() {
       ]}
       araIcerik={
         <section aria-labelledby="alis-ozeti" className="sales-overview purchase-overview">
-          <div className="section-heading"><div><p className="workspace-eyebrow">Güncel maliyet</p><h2 className="section-title" id="alis-ozeti">Satın alma özeti</h2></div><a className="btn btn--ghost btn--sm" href="/panel/fatura/raporlar">Detaylı raporlar</a></div>
+          <div className="section-heading"><div><p className="workspace-eyebrow">Güncel maliyet</p><h2 className="section-title" id="alis-ozeti">Satın alma özeti</h2></div><div style={{ display: "flex", gap: "8px" }}><a className="btn btn--ghost btn--sm" href="/panel/fatura/pivot">📊 Pivot Analiz</a><a className="btn btn--ghost btn--sm" href="/panel/fatura/raporlar">Detaylı raporlar</a></div></div>
           {ozetHatasi ? <div className="sales-overview__empty">Satın alma özeti şu anda yüklenemedi.</div> : <div className="sales-metric-grid">
             <article className="sales-metric sales-metric--primary purchase-metric--primary"><span>Bu ay net alış</span><strong>{ozet?.buAyToplam != null ? para(ozet.buAyToplam) : "—"}</strong><small>{ozet?.oncekiAyaGoreDegisim == null ? "Karşılaştırma için önceki ay verisi yok" : `Geçen aya göre %${Math.abs(ozet.oncekiAyaGoreDegisim).toLocaleString("tr-TR")} ${ozet.oncekiAyaGoreDegisim >= 0 ? "artış" : "azalış"}`}</small></article>
             <article className="sales-metric"><span>Bu ay fatura adedi</span><strong>{ozet?.buAyAdet != null ? ozet.buAyAdet.toLocaleString("tr-TR") : "—"}</strong><small>Kesinleşmiş alış faturası</small></article>

@@ -23,4 +23,17 @@ export class RaporController {
   async vadesiGecenler() {
     return this.raporService.vadesiGecenler();
   }
+
+  @Get("smm")
+  async smmAnalizi(@Query("yontem") yontem?: "agirlikli_ortalama" | "fifo") {
+    return this.raporService.smmAnalizi(yontem);
+  }
+
+  @Get("gelir-gider")
+  async gelirGiderRaporu(
+    @Query("baslangic") baslangic?: string,
+    @Query("bitis") bitis?: string,
+  ) {
+    return this.raporService.gelirGiderRaporu(baslangic, bitis);
+  }
 }

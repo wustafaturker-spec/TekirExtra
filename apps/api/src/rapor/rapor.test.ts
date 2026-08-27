@@ -27,7 +27,7 @@ describe("RaporService (RPR-04..05)", () => {
       },
       stokKart: {
         findMany: vi.fn().mockResolvedValue([
-          { mevcutMiktar: new Prisma.Decimal(10), ortalamaMaliyet: new Prisma.Decimal(15.0) }, // 150 TL envanter
+          { tip: "urun", mevcutMiktar: new Prisma.Decimal(10), ortalamaMaliyet: new Prisma.Decimal(15.0) }, // 150 TL envanter
         ]),
       },
       cariHesap: {
