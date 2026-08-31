@@ -8,7 +8,8 @@ fi
 
 for file in "$@"; do
   case "$file" in
-    *.sql.gz|*.tar.gz) gzip -t "$file" ;;
+    *.sql.gz) gzip -t "$file" ;;
+    *.tar.gz) gzip -dc "$file" | tar -tf - >/dev/null ;;
     *.sql|*) test -s "$file" ;;
   esac
   echo "Yedek doğrulandı: $file"

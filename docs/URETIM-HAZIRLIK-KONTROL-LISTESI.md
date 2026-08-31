@@ -21,15 +21,15 @@ tamamlandı sayılmaz.
 
 ## Release kapıları
 
-- [ ] E-belge kuyruğu bellek-içi `setTimeout` yerine Redis/BullMQ ile kalıcı hale getirilecek.
-- [ ] Worker gerçek consumer olarak e-belge gönderim, durum sorgulama ve gelen belge işlerini işleyecek.
-- [ ] Retry, exponential backoff, idempotency ve dead-letter akışları test edilecek.
+- [x] E-belge gönderim kuyruğu bellek-içi `setTimeout` yerine Redis/BullMQ ile kalıcı hale getirildi.
+- [x] Worker gerçek consumer olarak e-belge gönderim, durum sorgulama ve gelen belge işlerini işliyor.
+- [x] Retry, exponential backoff, idempotency ve dead-letter akışları birim testleriyle doğrulandı.
 - [ ] Sovos canlı/sandbox akışı gerçek ortamda doğrulanacak.
 - [x] Mock adapter kullanan sağlayıcılar üretimde `ALLOW_MOCK_ENTEGRATIONS=true` olmadan engelleniyor.
 - [x] Kabul testleri PostgreSQL, Redis, Mailpit ve MinIO servisleriyle CI içinde çalıştırılacak.
 - [x] Tenant izolasyonu için iki tenantlı negatif erişim testleri CI’a eklenecek.
 - [x] Migration uygulaması CI içinde otomatikleştirildi; geri yükleme provası ayrıca sürdürülüyor.
-- [ ] PostgreSQL ve MinIO yedekleme/geri yükleme prosedürü yazılı ve denenmiş olacak.
+- [x] PostgreSQL ve MinIO yedekleme/geri yükleme prosedürü yazıldı; 2026-08-30 izole geri yükleme provası tamamlandı.
 - [x] Rate limit, webhook replay koruması ve upload boyut/tür kontrolleri etkin olacak.
 - [x] Merkezi log, error tracking, metrik ve alarm kanalları (JSON stdout + request ID + Prometheus/Alertmanager; `observability/README.md`).
 

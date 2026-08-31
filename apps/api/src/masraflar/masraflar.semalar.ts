@@ -48,12 +48,15 @@ export const masrafGuncelleSemasi = masrafOlusturSemasi;
 export const masrafOdemeSemasi = z.object({
   kasaId: bosVeyaUuid,
   bankaHesapId: bosVeyaUuid,
+  krediKartiId: bosVeyaUuid,
   odemeTarihi: z.coerce.date(),
   tutar: z.coerce.number().positive("Ödeme tutarı sıfırdan büyük olmalıdır"),
+  taksitSayisi: z.coerce.number().int().min(1).max(36).default(1),
+  ilkTaksitTarihi: z.coerce.date().optional(),
   aciklama: z.union([z.string().trim().max(500), z.literal(""), z.null()]).optional(),
 }).superRefine((girdi, ctx) => {
-  if ((!girdi.kasaId && !girdi.bankaHesapId) || (girdi.kasaId && girdi.bankaHesapId)) {
-    ctx.addIssue({ code: "custom", message: "Tam olarak bir kasa veya banka hesabı seçilmelidir" });
+  if ([girdi.kasaId, girdi.bankaHesapId, girdi.krediKartiId].filter(Boolean).length !== 1) {
+    ctx.addIssue({ code: "custom", message: "Tam olarak bir kasa, banka hesabı veya kredi kartı seçilmelidir" });
   }
 });
 

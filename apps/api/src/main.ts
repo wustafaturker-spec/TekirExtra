@@ -17,7 +17,7 @@ async function bootstrap(): Promise<void> {
   app.use(urlencoded({ limit: process.env.FORM_BODY_LIMIT ?? "2mb", extended: true }));
   const metrics = app.get(MetricsService);
   app.useGlobalFilters(new ObservabilityExceptionFilter(metrics));
-  app.setGlobalPrefix("api/v1", { exclude: ["health", "metrics"] });
+  app.setGlobalPrefix("api/v1", { exclude: ["health", "health/ready", "metrics"] });
   app.use((_req: unknown, _res: unknown, next: () => void) =>
     bosTutucuylaCalistir(next),
   );

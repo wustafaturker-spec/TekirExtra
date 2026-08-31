@@ -70,6 +70,7 @@ const MENU: MenuGrup[] = [
       { href: "/panel/fatura/tekrarlayan/raporlar", ikon: "TR", baslik: "Tekrarlayan Raporları", eslesme: "tam" },
       { href: "/panel/ebelge/fatura-gelen", ikon: "EF", baslik: "Gelen e-Faturalar", eslesme: "tam" },
       { href: "/panel/ebelge/irsaliye-gelen", ikon: "İG", baslik: "Gelen e-İrsaliyeler", eslesme: "tam" },
+      { href: "/panel/ebelge/kuyruk", ikon: "KQ", baslik: "e-Belge Operasyonları", eslesme: "tam" },
       { href: "/panel/fatura/earsiv-raporlari", ikon: "EA", baslik: "e-Arşiv Raporları", eslesme: "tam" },
       { href: "/panel/belgeler", ikon: "B", baslik: "Tüm Belgeler", eslesme: "tam" },
     ],

@@ -41,3 +41,8 @@ export function aktifBaglam(): IstekBaglami {
   }
   return deger;
 }
+
+/** HTTP isteği dışındaki worker işlerini açık bir kimlik bağlamında çalıştırır. */
+export function baglamlaCalistir<T>(deger: IstekBaglami, is: () => Promise<T>): Promise<T> {
+  return istekBaglami.run({ deger }, is);
+}

@@ -9,9 +9,14 @@
 ## 1. Genel Bakış
 
 TekirExtra, **modüler monolit** olarak tasarlanmış çok kiracılı bir SaaS
-uygulamasıdır. API ve web çalışır durumdadır; worker giriş noktası mevcut
-olmakla birlikte e-belge kuyruğu bu sürümde bellek-içi çalışır. Üretim geçişi
-öncesinde Redis/BullMQ consumer, retry ve dead-letter akışları tamamlanmalıdır.
+uygulamasıdır. API ve web çalışır durumdadır. e-Belge gönderimi, durum
+sorgulama ve gelen belge senkronizasyonu kalıcı Redis/BullMQ kuyruğunda ayrı
+worker tarafından, exponential backoff ve ayrı dead-letter politikasıyla
+işlenir. e-Arşiv rapor durumları da aynı kalıcı iş sözleşmesini kullanır.
+Worker aktif e-Belge bağlantısı bulunan tenantlar için gelen belgeyi
+ve bekleyen durum sorgularını varsayılan olarak beş dakikada bir planlar.
+Worker metrikleri ayrı `:9464/metrics` ucundan Prometheus'a açılır; worker
+erişilebilirliği, eski iş, planlayıcı hatası ve dead-letter için alarm vardır.
 
 ```mermaid
 flowchart LR
@@ -37,7 +42,7 @@ flowchart LR
 |---|---|
 | **web** (Next.js) | Arayüz; API'ye HTTP ile konuşur, kendi başına veri tutmaz |
 | **api** (NestJS) | Tüm iş kuralları, REST API, kimlik doğrulama, RBAC |
-| **worker** (NestJS) | Hedef BullMQ işleyicileri; mevcut sürümde kira zamanlayıcısı etkin, e-belge kuyruğu bellek-içi |
+| **worker** (NestJS) | BullMQ e-belge gönderim, durum sorgulama ve gelen belge consumer'ları + kira zamanlayıcısı |
 | **PostgreSQL** | Tek veritabanı; kiracı yalıtımı Row-Level Security ile |
 | **Redis** | BullMQ kuyruk deposu + kısa ömürlü önbellek |
 | **Metabase** | Gömülü analiz panoları (ayrı servis, salt-okunur DB erişimi — bkz. §10) |

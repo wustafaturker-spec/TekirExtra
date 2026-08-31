@@ -273,14 +273,13 @@ export default function GelenKutusuSayfasi() {
     setBasari("");
     setIslemde("cek");
     try {
-      const s = await api<{ toplamCekilen: number; yeniBelgeSayisi: number }>(
+      const s = await api<{ isId: string; durum: string; tekrar: boolean }>(
         "/ebelge/gelenleri-cek",
         { method: "POST" },
       );
-      setBasari(
-        `${s.toplamCekilen} belge sorgulandı; ${s.yeniBelgeSayisi} yeni belge gelen kutusuna eklendi.`,
-      );
-      await listeYukle();
+      setBasari(s.tekrar
+        ? "Gelen belge senkronizasyonu zaten devam ediyor."
+        : "Gelen belge senkronizasyonu kuyruğa alındı; sonucu e-Belge operasyon merkezinden izleyebilirsiniz.");
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Belgeler çekilemedi");
     } finally {
@@ -524,7 +523,7 @@ export default function GelenKutusuSayfasi() {
             <ButtonLabel as="a" href="/panel/fatura">← Faturalar</ButtonLabel>
             <Button onClick={() => setXmlModal(true)}>📁 XML Dosyası Yükle</Button>
             <Button variant="primary" onClick={() => void entegratordenCek()} disabled={islemde !== null}>
-              {islemde === "cek" ? "Belgeler alınıyor…" : "↻ Entegratörden çek"}
+              {islemde === "cek" ? "Kuyruğa alınıyor…" : "↻ Entegratörden çek"}
             </Button>
           </div>
         </header>

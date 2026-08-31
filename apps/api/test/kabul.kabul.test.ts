@@ -18,8 +18,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  */
 
 let sunucu: ChildProcess;
+let worker: ChildProcess;
 let taban: string;
 let sunucuCiktisi = "";
+let workerCiktisi = "";
 const bugun = () => new Date().toISOString().slice(0, 10);
 
 /** VKN kontrol hanesi tutan, istenen son haneye sahip bir numara üretir. */
@@ -75,7 +77,7 @@ async function firmaAc(etiket: string, vkn: string) {
       parola,
     },
   });
-  expect(kayit.durum, JSON.stringify(kayit.veri)).toBe(201);
+  expect(kayit.durum, `${JSON.stringify(kayit.veri)}${sunucuCiktisi ? `\nAPI çıktısı:\n${sunucuCiktisi}` : ""}`).toBe(201);
 
   const giris = await istek<{ accessToken: string }>("/auth/giris", {
     method: "POST",
@@ -192,6 +194,21 @@ async function faturaKes(
   return { id: olustur.veri.id, no: kesin.veri.no };
 }
 
+async function kuyrukIsiniBekle(jeton: string, isId: string) {
+  const sonlanma = Date.now() + 30_000;
+  for (;;) {
+    const liste = await istek<Array<{ id: string; durum: string; hata: string | null }>>("/ebelge/kuyruk", { jeton });
+    expect(liste.durum, JSON.stringify(liste.veri)).toBe(200);
+    const is = liste.veri.find((kayit) => String(kayit.id) === String(isId));
+    if (is?.durum === "completed") return;
+    if (is?.durum === "failed" || is?.durum === "dead-letter") {
+      throw new Error(`Kuyruk işi başarısız: ${is.hata ?? is.durum}`);
+    }
+    if (Date.now() >= sonlanma) throw new Error(`Kuyruk işi 30 sn içinde tamamlanmadı: ${isId}`);
+    await new Promise((c) => setTimeout(c, 200));
+  }
+}
+
 beforeAll(async () => {
   const giris = resolve(__dirname, "../dist/main.js");
   if (!existsSync(giris)) {
@@ -199,6 +216,7 @@ beforeAll(async () => {
   }
 
   const port = 3100 + Math.floor(Math.random() * 400);
+  const workerPort = 9500 + Math.floor(Math.random() * 400);
   taban = `http://127.0.0.1:${port}/api/v1`;
   sunucu = spawn(process.execPath, [giris], {
     cwd: resolve(__dirname, ".."),
@@ -210,6 +228,18 @@ beforeAll(async () => {
   });
   sunucu.stderr?.on("data", (parca) => {
     sunucuCiktisi = `${sunucuCiktisi}${String(parca)}`.slice(-8_000);
+  });
+
+  worker = spawn(process.execPath, [resolve(__dirname, "../dist/main.worker.js")], {
+    cwd: resolve(__dirname, ".."),
+    env: { ...process.env, WORKER_METRICS_PORT: String(workerPort), EBELGE_SCHEDULE_INTERVAL_MS: "3600000" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  worker.stdout?.on("data", (parca) => {
+    workerCiktisi = `${workerCiktisi}${String(parca)}`.slice(-8_000);
+  });
+  worker.stderr?.on("data", (parca) => {
+    workerCiktisi = `${workerCiktisi}${String(parca)}`.slice(-8_000);
   });
 
   const sonlanma = new Date(Date.now() + 60_000);
@@ -225,13 +255,90 @@ beforeAll(async () => {
     } catch {
       /* henüz dinlemiyor */
     }
-    if (Date.now() > sonlanma.getTime()) throw new Error("API 60 sn içinde ayağa kalkmadı");
+    if (Date.now() > sonlanma.getTime()) {
+      throw new Error(`API 60 sn içinde ayağa kalkmadı${sunucuCiktisi ? `\n${sunucuCiktisi}` : ""}`);
+    }
+    await new Promise((c) => setTimeout(c, 300));
+  }
+
+  const workerSonlanma = Date.now() + 60_000;
+  for (;;) {
+    if (worker.exitCode !== null) throw new Error(`Worker süreci ${worker.exitCode} koduyla kapandı\n${workerCiktisi}`);
+    try {
+      const yanit = await fetch(`http://127.0.0.1:${workerPort}/health`);
+      if (yanit.ok) break;
+    } catch {
+      /* henüz dinlemiyor */
+    }
+    if (Date.now() > workerSonlanma) throw new Error(`Worker 60 sn içinde ayağa kalkmadı\n${workerCiktisi}`);
     await new Promise((c) => setTimeout(c, 300));
   }
 });
 
+describe("R0 operasyon — liveness ve readiness", () => {
+  it("kimlik doğrulamasız readiness rotasında zorunlu bağımlılıkları doğrular", async () => {
+    const yanit = await fetch(taban.replace(/\/api\/v1$/, "/health/ready"));
+    const veri = await yanit.json() as {
+      durum: string;
+      bagimliliklar: Record<string, string>;
+    };
+    expect(yanit.status, JSON.stringify(veri)).toBe(200);
+    expect(veri.durum).toBe("ready");
+    expect(veri.bagimliliklar).toEqual(expect.objectContaining({
+      veritabani: "ok",
+      redis: "ok",
+      depo: "ok",
+    }));
+  });
+});
+
+describe("R0 kritik regresyon — tekrarlayan fatura idempotansı", () => {
+  it("iki eşzamanlı tetiklemede aynı dönem için yalnızca bir taslak üretir", async () => {
+    const { jeton } = await firmaAc("r0-tekrarlayan", vknUret(true));
+    const stokId = await stokAc(jeton, "TEKRAR-1");
+    const cariId = await cariAc(jeton, "TEKRAR-CARI", vknUret(true));
+    const sablon = await istek<{ id: string }>("/fatura", {
+      method: "POST",
+      jeton,
+      body: {
+        tip: "satis",
+        tarih: bugun(),
+        cariId,
+        satirlar: [{ stokId, miktar: "1", birim: "adet", birimFiyat: "100", kdvOrani: "20" }],
+      },
+    });
+    expect(sablon.durum, JSON.stringify(sablon.veri)).toBe(201);
+
+    const plan = await istek<{ id: string }>("/fatura/tekrarlayanlar", {
+      method: "POST",
+      jeton,
+      body: {
+        ad: "Eşzamanlı kabul planı",
+        sablonFaturaId: sablon.veri.id,
+        siklik: "aylik",
+        aralik: 1,
+        sonrakiTarih: bugun(),
+        bitisTarihi: null,
+      },
+    });
+    expect(plan.durum, JSON.stringify(plan.veri)).toBe(201);
+
+    const [birinci, ikinci] = await Promise.all([
+      istek<{ uretilenAdet: number }>("/fatura/tekrarlayanlar/uret", { method: "POST", jeton }),
+      istek<{ uretilenAdet: number }>("/fatura/tekrarlayanlar/uret", { method: "POST", jeton }),
+    ]);
+    expect(birinci.durum, JSON.stringify(birinci.veri)).toBe(201);
+    expect(ikinci.durum, JSON.stringify(ikinci.veri)).toBe(201);
+    expect(birinci.veri.uretilenAdet + ikinci.veri.uretilenAdet).toBe(1);
+
+    const planlar = await istek<Array<{ id: string; _count: { uretilenler: number } }>>("/fatura/tekrarlayanlar", { jeton });
+    expect(planlar.veri.find((kayit) => kayit.id === plan.veri.id)?._count.uretilenler).toBe(1);
+  });
+});
+
 afterAll(() => {
   sunucu?.kill("SIGTERM");
+  worker?.kill("SIGTERM");
 });
 
 describe("Kabul Ölçütü 1 — satış: e-belge yönlendirme, stok, cari, tahsilat", () => {
@@ -257,26 +364,25 @@ describe("Kabul Ölçütü 1 — satış: e-belge yönlendirme, stok, cari, tahs
     expect(await cariBakiyesi(jeton, cariId)).toBeCloseTo(1200, 2);
 
     // EBLG-02: mükellefiyet sorgulanır, e-Fatura'ya yönlendirilir
-    const gonder = await istek<{ tur: string; durum: string }>(`/ebelge/gonder/${fatura.id}`, {
+    const gonder = await istek<{ isId: string }>(`/ebelge/gonder/${fatura.id}`, {
       method: "POST",
       jeton,
     });
     expect(gonder.durum, JSON.stringify(gonder.veri)).toBe(201);
-    expect(gonder.veri.tur).toBe("efatura");
+    await kuyrukIsiniBekle(jeton, gonder.veri.isId);
+    const gonderilen = await istek<{ ebelge: { tur: string; durum: string } }>(`/fatura/${fatura.id}`, { jeton });
+    expect(gonderilen.veri.ebelge.tur).toBe("efatura");
 
     // EBLG-04: durum sorgulandıkça kuyrukta → iletildi → kabul ilerler
-    const ilk = await istek<{ durum: string }>(`/ebelge/sorgula/${fatura.id}`, {
-      method: "POST",
-      jeton,
-    });
-    expect(["kuyrukta", "iletildi", "kabul"]).toContain(ilk.veri.durum);
-    let sonDurum = ilk.veri.durum;
-    for (let i = 0; i < 3 && sonDurum !== "iletildi" && sonDurum !== "kabul"; i++) {
-      const tekrar = await istek<{ durum: string }>(`/ebelge/sorgula/${fatura.id}`, {
+    let sonDurum = "kuyrukta";
+    for (let deneme = 0; deneme < 3 && sonDurum !== "iletildi" && sonDurum !== "kabul"; deneme++) {
+      const sorguIsi = await istek<{ isId: string }>(`/ebelge/sorgula/${fatura.id}`, {
         method: "POST",
         jeton,
       });
-      sonDurum = tekrar.veri.durum;
+      await kuyrukIsiniBekle(jeton, sorguIsi.veri.isId);
+      const sorgulanan = await istek<{ ebelge: { durum: string } }>(`/fatura/${fatura.id}`, { jeton });
+      sonDurum = sorgulanan.veri.ebelge.durum;
     }
     expect(["iletildi", "kabul"]).toContain(sonDurum);
 
@@ -318,12 +424,14 @@ describe("Kabul Ölçütü 1 — satış: e-belge yönlendirme, stok, cari, tahs
       satirlar: [{ stokId, miktar: "1", birim: "adet", birimFiyat: "100", kdvOrani: "20" }],
     });
 
-    const gonder = await istek<{ tur: string }>(`/ebelge/gonder/${fatura.id}`, {
+    const gonder = await istek<{ isId: string }>(`/ebelge/gonder/${fatura.id}`, {
       method: "POST",
       jeton,
     });
     expect(gonder.durum, JSON.stringify(gonder.veri)).toBe(201);
-    expect(gonder.veri.tur).toBe("earsiv");
+    await kuyrukIsiniBekle(jeton, gonder.veri.isId);
+    const gonderilen = await istek<{ ebelge: { tur: string } }>(`/fatura/${fatura.id}`, { jeton });
+    expect(gonderilen.veri.ebelge.tur).toBe("earsiv");
   });
 });
 
@@ -335,27 +443,26 @@ describe("Kabul Ölçütü 2 — gelen e-Fatura alış faturasına işlenir", ()
 
     // Paket 6b (EBLG-05): çekilen belgeler doğrudan fatura üretmez, önce
     // gelen kutusuna düşer; fatura yalnız kullanıcı onayıyla oluşur.
-    const cek = await istek<{ toplamCekilen: number; yeniBelgeSayisi: number }>(
+    const cek = await istek<{ isId: string }>(
       "/ebelge/gelenleri-cek",
       { method: "POST", jeton },
     );
     expect(cek.durum, JSON.stringify(cek.veri)).toBe(201);
-    expect(cek.veri.toplamCekilen).toBeGreaterThan(0);
-    // Mock entegratör biri TİCARİ biri TEMEL iki belge döner
-    expect(cek.veri.yeniBelgeSayisi).toBe(2);
+    await kuyrukIsiniBekle(jeton, cek.veri.isId);
 
     // Aynı belge ikinci çekimde yinelenmez (EBLG-05)
-    const tekrar = await istek<{ yeniBelgeSayisi: number }>("/ebelge/gelenleri-cek", {
+    const tekrar = await istek<{ isId: string }>("/ebelge/gelenleri-cek", {
       method: "POST",
       jeton,
     });
-    expect(tekrar.veri.yeniBelgeSayisi).toBe(0);
+    await kuyrukIsiniBekle(jeton, tekrar.veri.isId);
 
     const kutu = await istek<Array<{ id: string; durum: string; belgeNo: string; satirSayisi: number }>>(
       "/ebelge/gelen",
       { jeton },
     );
     expect(kutu.durum, JSON.stringify(kutu.veri)).toBe(200);
+    // Mock entegratör biri TİCARİ biri TEMEL iki belge döner; tekrarlı çekim çoğaltmaz.
     expect(kutu.veri).toHaveLength(2);
     const gelen = kutu.veri.find((k) => k.belgeNo === "MCK2026000000001")!;
     expect(gelen.durum).toBe("beklemede");
@@ -370,6 +477,7 @@ describe("Kabul Ölçütü 2 — gelen e-Fatura alış faturasına işlenir", ()
       method: "POST",
       jeton,
       body: {
+        yeniCariOnay: true,
         satirEslesmeleri: detay.veri.satirlar.map((s) => ({ siraNo: s.siraNo, stokId })),
       },
     });
@@ -446,6 +554,469 @@ describe("Kabul Ölçütü 3 — iade faturası stok ve cariyi ters yönde işle
 
     expect(await stokMiktari(jeton, stokId)).toBe(44);
     expect(await cariBakiyesi(jeton, cariId)).toBeCloseTo(720, 2);
+  });
+});
+
+describe("R0 kritik regresyon — kesin fatura iptali ters kayıt üretir", () => {
+  it("e-belgesiz alış faturasını stok ve cari ters hareketleriyle iptal eder", async () => {
+    const { jeton } = await firmaAc("r0-fatura-iptal", vknUret(true));
+    const stokId = await stokAc(jeton, "IPT-1");
+    const cariId = await cariAc(jeton, "TED-IPT", vknUret(true), "tedarikci");
+
+    const olustur = await istek<{ id: string }>("/fatura", {
+      method: "POST",
+      jeton,
+      body: {
+        tip: "alis",
+        tarih: "2026-03-10",
+        cariId,
+        satirlar: [{ stokId, miktar: "5", birim: "adet", birimFiyat: "100", kdvOrani: "20" }],
+      },
+    });
+    expect(olustur.durum, JSON.stringify(olustur.veri)).toBe(201);
+    const kesin = await istek<{ durum: string }>(`/fatura/${olustur.veri.id}/kesinlestir`, {
+      method: "POST",
+      jeton,
+      body: { no: "ALIS-IPT-001" },
+    });
+    expect(kesin.durum, JSON.stringify(kesin.veri)).toBe(201);
+    expect(await stokMiktari(jeton, stokId)).toBe(5);
+    expect(await cariBakiyesi(jeton, cariId)).toBeCloseTo(-600, 2);
+
+    const iptal = await istek<{ durum: string }>(`/fatura/${olustur.veri.id}/iptal`, {
+      method: "POST",
+      jeton,
+    });
+    expect(iptal.durum, JSON.stringify(iptal.veri)).toBe(201);
+    expect(iptal.veri.durum).toBe("iptal");
+    expect(await stokMiktari(jeton, stokId)).toBe(0);
+    expect(await cariBakiyesi(jeton, cariId)).toBeCloseTo(0, 2);
+
+    const hareketler = await istek<Array<{ tip: string; kaynakTur: string; kaynakRef: string }>>(
+      `/stok/${stokId}/hareketler`,
+      { jeton },
+    );
+    expect(hareketler.veri).toEqual(expect.arrayContaining([
+      expect.objectContaining({ tip: "giris", kaynakTur: "fatura", kaynakRef: olustur.veri.id }),
+      expect.objectContaining({ tip: "cikis", kaynakTur: "fatura_iptal", kaynakRef: olustur.veri.id }),
+    ]));
+
+    const ikinciIptal = await istek(`/fatura/${olustur.veri.id}/iptal`, { method: "POST", jeton });
+    expect(ikinciIptal.durum).toBe(400);
+    expect(await stokMiktari(jeton, stokId)).toBe(0);
+    expect(await cariBakiyesi(jeton, cariId)).toBeCloseTo(0, 2);
+  });
+
+  it("ödeme bağlı kesin faturanın doğrudan iptalini engeller", async () => {
+    const { jeton } = await firmaAc("r0-fatura-odeme-iptal", vknUret(true));
+    const stokId = await stokAc(jeton, "IPT-ODEME");
+    const cariId = await cariAc(jeton, "TED-ODEME", vknUret(true), "tedarikci");
+    const olustur = await istek<{ id: string }>("/fatura", {
+      method: "POST",
+      jeton,
+      body: {
+        tip: "alis",
+        tarih: "2026-03-11",
+        cariId,
+        satirlar: [{ stokId, miktar: "2", birim: "adet", birimFiyat: "100", kdvOrani: "20" }],
+      },
+    });
+    expect(olustur.durum, JSON.stringify(olustur.veri)).toBe(201);
+    const kesin = await istek(`/fatura/${olustur.veri.id}/kesinlestir`, {
+      method: "POST",
+      jeton,
+      body: { no: "ALIS-ODEME-001" },
+    });
+    expect(kesin.durum, JSON.stringify(kesin.veri)).toBe(201);
+
+    const kasa = await istek<{ id: string }>("/kasa-banka/kasalar", {
+      method: "POST",
+      jeton,
+      body: { ad: "Fatura İptal Kasası", dovizCinsi: "TRY" },
+    });
+    expect(kasa.durum, JSON.stringify(kasa.veri)).toBe(201);
+    const odeme = await istek("/kasa-banka/hareketler", {
+      method: "POST",
+      jeton,
+      body: {
+        kasaId: kasa.veri.id,
+        tip: "tediye",
+        tutar: "240",
+        tarih: "2026-03-12",
+        cariId,
+        faturaId: olustur.veri.id,
+        aciklama: "Bağlı alış faturası ödemesi",
+      },
+    });
+    expect(odeme.durum, JSON.stringify(odeme.veri)).toBe(201);
+
+    const iptal = await istek<{ message: string }>(`/fatura/${olustur.veri.id}/iptal`, {
+      method: "POST",
+      jeton,
+    });
+    expect(iptal.durum).toBe(400);
+    expect(iptal.veri.message).toContain("önce finans hareketini geri alın veya iade faturası düzenleyin");
+    expect(await stokMiktari(jeton, stokId)).toBe(2);
+    expect(await cariBakiyesi(jeton, cariId)).toBeCloseTo(0, 2);
+  });
+});
+
+describe("R0 kritik regresyon — masraf kısmi ve taksitli kart ödemesi", () => {
+  it("onaylanan masraf önce kasadan kısmen, sonra kartla taksitli ödenerek kapanır", async () => {
+    const { jeton } = await firmaAc("r0-masraf", vknUret(true));
+
+    const kategori = await istek<{ id: string }>("/masraflar/kategoriler", {
+      method: "POST",
+      jeton,
+      body: { ad: `Kabul Gideri ${Date.now()}`, varsayilanKdvOrani: 20 },
+    });
+    expect(kategori.durum, JSON.stringify(kategori.veri)).toBe(201);
+
+    const kasa = await istek<{ id: string }>("/kasa-banka/kasalar", {
+      method: "POST",
+      jeton,
+      body: { ad: "Masraf Kasası", dovizCinsi: "TRY" },
+    });
+    expect(kasa.durum, JSON.stringify(kasa.veri)).toBe(201);
+
+    const kart = await istek<{ id: string }>("/kasa-banka/kredi-kartlari", {
+      method: "POST",
+      jeton,
+      body: {
+        ad: "Masraf Kartı",
+        bankaAdi: "Kabul Bankası",
+        sonDortHane: "4242",
+        limit: "10000",
+        dovizCinsi: "TRY",
+        hesapKesimGunu: 20,
+        sonOdemeGunu: 30,
+      },
+    });
+    expect(kart.durum, JSON.stringify(kart.veri)).toBe(201);
+
+    const masraf = await istek<{ id: string; durum: string; odemeDurumu: string }>("/masraflar", {
+      method: "POST",
+      jeton,
+      body: {
+        kategoriId: kategori.veri.id,
+        belgeTuru: "fatura",
+        belgeNo: `KBL-M-${Date.now()}`,
+        tarih: "2026-07-01",
+        saticiUnvan: "Kabul Tedarikçisi",
+        aciklama: "R0 kısmi ve taksitli ödeme senaryosu",
+        matrah: 833.33,
+        kdvOrani: 20,
+        kdvTutari: 166.67,
+        toplam: 1000,
+        dovizCinsi: "TRY",
+      },
+    });
+    expect(masraf.durum, JSON.stringify(masraf.veri)).toBe(201);
+    expect(masraf.veri.durum).toBe("taslak");
+
+    const onay = await istek<{ durum: string }>(`/masraflar/${masraf.veri.id}/onayla`, {
+      method: "POST",
+      jeton,
+    });
+    expect(onay.durum, JSON.stringify(onay.veri)).toBe(201);
+    expect(onay.veri.durum).toBe("onaylandi");
+
+    const kismi = await istek<{ odemeDurumu: string; odenenTutar: string }>(
+      `/masraflar/${masraf.veri.id}/ode`,
+      {
+        method: "POST",
+        jeton,
+        body: { kasaId: kasa.veri.id, odemeTarihi: "2026-07-02", tutar: 300 },
+      },
+    );
+    expect(kismi.durum, JSON.stringify(kismi.veri)).toBe(201);
+    expect(kismi.veri.odemeDurumu).toBe("kismi_odendi");
+    expect(Number(kismi.veri.odenenTutar)).toBe(300);
+
+    const kapanis = await istek<{ odemeDurumu: string; odenenTutar: string }>(
+      `/masraflar/${masraf.veri.id}/ode`,
+      {
+        method: "POST",
+        jeton,
+        body: {
+          krediKartiId: kart.veri.id,
+          odemeTarihi: "2026-07-03",
+          tutar: 700,
+          taksitSayisi: 3,
+          ilkTaksitTarihi: "2026-08-01",
+          aciklama: "Kalan masraf kart ödemesi",
+        },
+      },
+    );
+    expect(kapanis.durum, JSON.stringify(kapanis.veri)).toBe(201);
+    expect(kapanis.veri.odemeDurumu).toBe("odendi");
+    expect(Number(kapanis.veri.odenenTutar)).toBe(1000);
+
+    const detay = await istek<{
+      odemeDurumu: string;
+      odemeler: Array<{ tutar: string; kasaId: string | null; krediKartiId: string | null }>;
+    }>(`/masraflar/${masraf.veri.id}`, { jeton });
+    expect(detay.durum, JSON.stringify(detay.veri)).toBe(200);
+    expect(detay.veri.odemeDurumu).toBe("odendi");
+    expect(detay.veri.odemeler).toHaveLength(2);
+    expect(detay.veri.odemeler.map((o) => Number(o.tutar)).sort((a, b) => a - b)).toEqual([300, 700]);
+    expect(detay.veri.odemeler.some((o) => o.kasaId === kasa.veri.id)).toBe(true);
+    expect(detay.veri.odemeler.some((o) => o.krediKartiId === kart.veri.id)).toBe(true);
+
+    const kartlar = await istek<Array<{
+      id: string;
+      borc: string;
+      hareketler: Array<{ tutar: string; taksitSayisi: number; taksitler: Array<{ tutar: string }> }>;
+    }>>("/kasa-banka/kredi-kartlari", { jeton });
+    expect(kartlar.durum, JSON.stringify(kartlar.veri)).toBe(200);
+    const kartDetayi = kartlar.veri.find((k) => k.id === kart.veri.id);
+    expect(kartDetayi).toBeDefined();
+    expect(Number(kartDetayi?.borc)).toBe(700);
+    expect(kartDetayi?.hareketler).toHaveLength(1);
+    expect(kartDetayi?.hareketler[0].taksitSayisi).toBe(3);
+    expect(kartDetayi?.hareketler[0].taksitler).toHaveLength(3);
+    expect(kartDetayi?.hareketler[0].taksitler.reduce((t, k) => t + Number(k.tutar), 0)).toBeCloseTo(700, 2);
+
+    const fazlaOdeme = await istek(`/masraflar/${masraf.veri.id}/ode`, {
+      method: "POST",
+      jeton,
+      body: { kasaId: kasa.veri.id, odemeTarihi: "2026-07-04", tutar: 1 },
+    });
+    expect(fazlaOdeme.durum).toBe(400);
+  });
+});
+
+describe("R0 kritik regresyon — çek/senet hesap ve cari yönleri", () => {
+  it("alınan çek tahsilata, verilen senet tediyeye dönüşür; cari ikinci kez etkilenmez", async () => {
+    const { jeton } = await firmaAc("r0-cek-senet", vknUret(true));
+    const musteriId = await cariAc(jeton, "R0-CS-M", vknUret(true));
+    const tedarikciId = await cariAc(jeton, "R0-CS-T", vknUret(true), "tedarikci");
+    const kasa = await istek<{ id: string }>("/kasa-banka/kasalar", {
+      method: "POST",
+      jeton,
+      body: { ad: "Çek Senet Kasası", dovizCinsi: "TRY" },
+    });
+    expect(kasa.durum, JSON.stringify(kasa.veri)).toBe(201);
+
+    const alinan = await istek<{ id: string; durum: string; yon: string }>("/kasa-banka/cek-senet", {
+      method: "POST",
+      jeton,
+      body: {
+        tur: "cek",
+        yon: "alinan",
+        portfoyNo: `R0-A-${Date.now()}`,
+        cekNo: `A-${Date.now()}`,
+        islemTarihi: "2026-07-10",
+        vadeTarihi: "2026-08-10",
+        tutar: "500",
+        dovizCinsi: "TRY",
+        kur: "1",
+        borclu: "Kabul Müşterisi",
+        cariId: musteriId,
+      },
+    });
+    expect(alinan.durum, JSON.stringify(alinan.veri)).toBe(201);
+    expect(alinan.veri.durum).toBe("portfoyde");
+    expect(await cariBakiyesi(jeton, musteriId)).toBeCloseTo(-500, 2);
+
+    const tahsil = await istek<{ durum: string }>(`/kasa-banka/cek-senet/${alinan.veri.id}`, {
+      method: "PATCH",
+      jeton,
+      body: { durum: "tahsil_edildi", hesapKasaId: kasa.veri.id, islemTarihi: "2026-08-10" },
+    });
+    expect(tahsil.durum, JSON.stringify(tahsil.veri)).toBe(200);
+    expect(tahsil.veri.durum).toBe("tahsil_edildi");
+    expect(await cariBakiyesi(jeton, musteriId)).toBeCloseTo(-500, 2);
+
+    const verilen = await istek<{ id: string; durum: string; yon: string }>("/kasa-banka/cek-senet", {
+      method: "POST",
+      jeton,
+      body: {
+        tur: "senet",
+        yon: "verilen",
+        portfoyNo: `R0-V-${Date.now()}`,
+        islemTarihi: "2026-07-11",
+        vadeTarihi: "2026-08-11",
+        tutar: "300",
+        dovizCinsi: "TRY",
+        kur: "1",
+        borclu: "Kabul Test Firması",
+        cariId: tedarikciId,
+      },
+    });
+    expect(verilen.durum, JSON.stringify(verilen.veri)).toBe(201);
+    expect(verilen.veri.durum).toBe("verildi");
+    expect(await cariBakiyesi(jeton, tedarikciId)).toBeCloseTo(300, 2);
+
+    const odeme = await istek<{ durum: string }>(`/kasa-banka/cek-senet/${verilen.veri.id}`, {
+      method: "PATCH",
+      jeton,
+      body: { durum: "odendi", hesapKasaId: kasa.veri.id, islemTarihi: "2026-08-11" },
+    });
+    expect(odeme.durum, JSON.stringify(odeme.veri)).toBe(200);
+    expect(odeme.veri.durum).toBe("odendi");
+    expect(await cariBakiyesi(jeton, tedarikciId)).toBeCloseTo(300, 2);
+
+    const kasaDetayi = await istek<{ bakiye: string; borc: string; alacak: string }>(
+      `/kasa-banka/kasalar/${kasa.veri.id}`,
+      { jeton },
+    );
+    expect(kasaDetayi.durum, JSON.stringify(kasaDetayi.veri)).toBe(200);
+    expect(Number(kasaDetayi.veri.borc)).toBe(500);
+    expect(Number(kasaDetayi.veri.alacak)).toBe(300);
+    expect(Number(kasaDetayi.veri.bakiye)).toBe(200);
+
+    const hareketler = await istek<Array<{ tip: string; kaynakTur: string; kaynakRef: string }>>(
+      `/kasa-banka/hareketler?kasaId=${kasa.veri.id}`,
+      { jeton },
+    );
+    expect(hareketler.durum, JSON.stringify(hareketler.veri)).toBe(200);
+    expect(hareketler.veri).toEqual(expect.arrayContaining([
+      expect.objectContaining({ tip: "tahsilat", kaynakTur: "cek_senet", kaynakRef: alinan.veri.id }),
+      expect.objectContaining({ tip: "tediye", kaynakTur: "cek_senet", kaynakRef: verilen.veri.id }),
+    ]));
+  });
+});
+
+describe("R0 kritik regresyon — POS banka mutabakatı ve geri alma", () => {
+  it("POS tahsilatını net banka satırıyla eşleştirir ve geri almada üç finans hareketini temizler", async () => {
+    const { jeton } = await firmaAc("r0-pos", vknUret(true));
+    const cariId = await cariAc(jeton, "R0-POS-M", vknUret(true));
+
+    const banka = await istek<{ id: string }>("/kasa-banka/bankalar", {
+      method: "POST",
+      jeton,
+      body: { ad: "POS Mutabakat Bankası", bankaAdi: "Kabul Bankası", dovizCinsi: "TRY" },
+    });
+    expect(banka.durum, JSON.stringify(banka.veri)).toBe(201);
+
+    const pos = await istek<{ id: string }>("/kasa-banka/pos-hesaplari", {
+      method: "POST",
+      jeton,
+      body: {
+        ad: "Kabul POS",
+        saglayici: "paytr",
+        varsayilanBankaHesapId: banka.veri.id,
+        dovizCinsi: "TRY",
+      },
+    });
+    expect(pos.durum, JSON.stringify(pos.veri)).toBe(201);
+
+    const tahsilat = await istek<{ id: string }>("/kasa-banka/hareketler", {
+      method: "POST",
+      jeton,
+      body: {
+        posHesapId: pos.veri.id,
+        tip: "tahsilat",
+        tutar: "1000",
+        dovizCinsi: "TRY",
+        tarih: "2026-08-14",
+        aciklama: "POS kart tahsilatı",
+        cariId,
+      },
+    });
+    expect(tahsilat.durum, JSON.stringify(tahsilat.veri)).toBe(201);
+    expect(await cariBakiyesi(jeton, cariId)).toBeCloseTo(-1000, 2);
+
+    const ilkPos = await istek<Array<{ id: string; bakiye: string }>>("/kasa-banka/pos-hesaplari", { jeton });
+    expect(Number(ilkPos.veri.find((h) => h.id === pos.veri.id)?.bakiye)).toBe(1000);
+
+    const csv = "Tarih,Açıklama,Tutar\n2026-08-15,PayTR net aktarımı,960.00\n";
+    const form = new FormData();
+    form.append("dosya", new Blob([csv], { type: "text/csv" }), "pos-mutabakat.csv");
+    form.append("veri", JSON.stringify({
+      bankaHesapId: banka.veri.id,
+      esleme: { baslikSatiri: 0, tarih: 0, aciklama: 1, tutar: 2 },
+      eslemeyiKaydet: false,
+    }));
+    const yuklemeYaniti = await fetch(`${taban}/kasa-banka/ekstre/yukle`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${jeton}` },
+      body: form,
+    });
+    expect(yuklemeYaniti.status, await yuklemeYaniti.text()).toBe(201);
+
+    const bekleyenler = await istek<Array<{ id: string; tutar: string; durum: string }>>(
+      `/kasa-banka/ekstre/satirlar?durum=beklemede&bankaHesapId=${banka.veri.id}`,
+      { jeton },
+    );
+    expect(bekleyenler.durum, JSON.stringify(bekleyenler.veri)).toBe(200);
+    const ekstreSatiri = bekleyenler.veri.find((s) => Number(s.tutar) === 960);
+    expect(ekstreSatiri).toBeDefined();
+
+    const aktarim = await istek<{
+      gidis: { id: string };
+      gelis: { id: string };
+      komisyonHareketi: { id: string };
+      komisyonMasrafi: { id: string };
+      netTutar: string;
+    }>("/kasa-banka/pos-hesaplari/bankaya-aktar", {
+      method: "POST",
+      jeton,
+      body: {
+        posHesapId: pos.veri.id,
+        ekstreSatirId: ekstreSatiri!.id,
+        brutTutar: "1000",
+        komisyonTutar: "40",
+        tarih: "2026-08-15",
+      },
+    });
+    expect(aktarim.durum, JSON.stringify(aktarim.veri)).toBe(201);
+    expect(Number(aktarim.veri.netTutar)).toBe(960);
+
+    const komisyonMasraflari = await istek<Array<{
+      id: string;
+      toplam: string;
+      kdvOrani: string;
+      durum: string;
+      odemeDurumu: string;
+      hareketId: string | null;
+      kategori: { ad: string };
+    }>>("/masraflar", { jeton });
+    const komisyonMasrafi = komisyonMasraflari.veri.find((masraf) => masraf.id === aktarim.veri.komisyonMasrafi.id);
+    expect(komisyonMasrafi).toEqual(expect.objectContaining({
+      toplam: "40",
+      kdvOrani: "0",
+      durum: "onaylandi",
+      odemeDurumu: "odendi",
+      hareketId: aktarim.veri.komisyonHareketi.id,
+      kategori: expect.objectContaining({ ad: "Banka ve POS Komisyonları" }),
+    }));
+
+    const mutabikPos = await istek<Array<{ id: string; bakiye: string }>>("/kasa-banka/pos-hesaplari", { jeton });
+    expect(Number(mutabikPos.veri.find((h) => h.id === pos.veri.id)?.bakiye)).toBe(0);
+    const mutabikBanka = await istek<{ bakiye: string }>(`/kasa-banka/bankalar/${banka.veri.id}`, { jeton });
+    expect(Number(mutabikBanka.veri.bakiye)).toBe(960);
+
+    const eslesenler = await istek<Array<{ id: string; durum: string; hareketId: string | null }>>(
+      `/kasa-banka/ekstre/satirlar?durum=eslesti&bankaHesapId=${banka.veri.id}`,
+      { jeton },
+    );
+    const eslesen = eslesenler.veri.find((s) => s.id === ekstreSatiri!.id);
+    expect(eslesen?.hareketId).toBe(aktarim.veri.gelis.id);
+
+    const geriAl = await istek<{ durum: string; hareketId: string | null }>(
+      `/kasa-banka/ekstre/satirlar/${ekstreSatiri!.id}/geri-al`,
+      { method: "POST", jeton },
+    );
+    expect(geriAl.durum, JSON.stringify(geriAl.veri)).toBe(201);
+    expect(geriAl.veri.durum).toBe("beklemede");
+    expect(geriAl.veri.hareketId).toBeNull();
+
+    const geriPos = await istek<Array<{ id: string; bakiye: string }>>("/kasa-banka/pos-hesaplari", { jeton });
+    expect(Number(geriPos.veri.find((h) => h.id === pos.veri.id)?.bakiye)).toBe(1000);
+    const geriBanka = await istek<{ bakiye: string }>(`/kasa-banka/bankalar/${banka.veri.id}`, { jeton });
+    expect(Number(geriBanka.veri.bakiye)).toBe(0);
+
+    const posHareketleri = await istek<Array<{ id: string; kaynakTur: string | null }>>(
+      `/kasa-banka/hareketler?posHesapId=${pos.veri.id}`,
+      { jeton },
+    );
+    expect(posHareketleri.veri).toHaveLength(1);
+    expect(posHareketleri.veri[0].id).toBe(tahsilat.veri.id);
+
+    const geriAlinanMasraflar = await istek<Array<{ id: string }>>("/masraflar", { jeton });
+    expect(geriAlinanMasraflar.veri.some((masraf) => masraf.id === aktarim.veri.komisyonMasrafi.id)).toBe(false);
   });
 });
 

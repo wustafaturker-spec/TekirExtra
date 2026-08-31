@@ -3,11 +3,16 @@ import { Injectable } from "@nestjs/common";
 @Injectable()
 export class MetricsService {
   private readonly counters = new Map<string, number>();
+  private readonly gauges = new Map<string, number>();
   private readonly durations = { count: 0, sum: 0 };
 
   increment(name: string, labels: Record<string, string> = {}, value = 1): void {
     const key = `${name}|${JSON.stringify(labels)}`;
     this.counters.set(key, (this.counters.get(key) ?? 0) + value);
+  }
+
+  set(name: string, value: number, labels: Record<string, string> = {}): void {
+    this.gauges.set(`${name}|${JSON.stringify(labels)}`, value);
   }
 
   observeHttp(durationMs: number, labels: { method: string; route: string; status: number }): void {
@@ -29,6 +34,12 @@ export class MetricsService {
       const [name, rawLabels] = key.split("|", 2);
       const labels = Object.entries(JSON.parse(rawLabels) as Record<string, string>)
         .map(([k, v]) => `${k}="${v.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}` + `"`).join(",");
+      lines.push(`${name}{${labels}} ${value}`);
+    }
+    for (const [key, value] of this.gauges) {
+      const [name, rawLabels] = key.split("|", 2);
+      const labels = Object.entries(JSON.parse(rawLabels) as Record<string, string>)
+        .map(([k, v]) => `${k}="${v.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`).join(",");
       lines.push(`${name}{${labels}} ${value}`);
     }
     lines.push(

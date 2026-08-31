@@ -29,3 +29,33 @@ groups:
         annotations:
           summary: "API rate-limit reddi arttı"
           description: "Son 10 dakikada 100'den fazla istek rate-limit nedeniyle reddedildi."
+  - name: tekirextra-worker
+    rules:
+      - alert: TekirWorkerDown
+        expr: up{job="tekirextra-worker"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "TekirExtra worker erişilemiyor"
+          description: "Kalıcı e-Belge işleri iki dakikadır işlenemiyor."
+      - alert: TekirEbelgeDeadLetter
+        expr: ebelge_queue_dead_letter_depth{job="tekirextra-worker"} > 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "e-Belge dead-letter işi oluştu"
+          description: "Otomatik denemeleri tükenen en az bir e-Belge işi müdahale bekliyor."
+      - alert: TekirEbelgeQueueStale
+        expr: ebelge_queue_oldest_job_age_seconds{job="tekirextra-worker"} > 900
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "e-Belge kuyruğunda eski iş var"
+          description: "En eski bekleyen e-Belge işi 15 dakikadan uzun süredir tamamlanamadı."
+      - alert: TekirEbelgeSchedulerFailing
+        expr: increase(ebelge_schedule_runs_total{job="tekirextra-worker",result="failed"}[15m]) > 0
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "e-Belge periyodik planlayıcısı hata verdi"
+          description: "Son 15 dakikada tenant e-Belge planlama çalışması başarısız oldu."

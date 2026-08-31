@@ -727,7 +727,7 @@ export default function FaturaSayfasi() {
     setBasari("");
     try {
       await api(`/ebelge/sorgula/${id}`, { method: "POST" });
-      setBasari("e-Belge durumu sorgulandı ve güncellendi.");
+      setBasari("e-Belge durum sorgusu kuyruğa alındı; sonuç otomatik güncellenecek.");
       void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Sorgulama hatası");

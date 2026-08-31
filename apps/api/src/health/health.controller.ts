@@ -11,16 +11,9 @@ export class HealthController {
   /** Konteyner/yük dengeleyici sağlık yoklaması — kimlik doğrulama istemez (NFR-14). */
   @Public()
   @Get()
-  async health(): Promise<{ durum: string; veritabani: string; zaman: string }> {
-    let veritabani = "ok";
-    try {
-      await this.prisma.$queryRaw`SELECT 1`;
-    } catch {
-      veritabani = "erisilemiyor";
-    }
+  health(): { durum: string; zaman: string } {
     return {
-      durum: veritabani === "ok" ? "ok" : "degraded",
-      veritabani,
+      durum: "ok",
       zaman: new Date().toISOString(),
     };
   }

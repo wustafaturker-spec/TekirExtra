@@ -453,8 +453,35 @@ export class KasaBankaService {
       const gelis = await tx.kasaBankaHareket.create({ data: { ...ortak, bankaHesapId: bankaId, tip: "virman_gelis", tutar: net, tutarTry: net, karsiHareketId: gidis.id } });
       await tx.kasaBankaHareket.update({ where: { id: gidis.id }, data: { karsiHareketId: gelis.id } });
       const komisyonHareketi = komisyon.isPositive() ? await tx.kasaBankaHareket.create({ data: { ...ortak, posHesapId: pos.id, tip: "tediye", tutar: komisyon, tutarTry: komisyon, kaynakRef: gidis.id, aciklama: `${pos.ad} komisyon/kesinti` } }) : null;
+      const komisyonMasrafi = komisyonHareketi ? await (async () => {
+        const kategori = await tx.masrafKategori.upsert({
+          where: { tenantId_ad: { tenantId, ad: "Banka ve POS Komisyonları" } },
+          create: { tenantId, ad: "Banka ve POS Komisyonları", varsayilanKdvOrani: D(0) },
+          update: { aktif: true },
+        });
+        return tx.masraf.create({
+          data: {
+            tenantId,
+            kategoriId: kategori.id,
+            belgeTuru: "dekont",
+            tarih: new Date(girdi.tarih),
+            saticiUnvan: pos.ad,
+            aciklama: `${pos.ad} komisyon/kesinti`,
+            matrah: komisyon,
+            kdvOrani: D(0),
+            kdvTutari: D(0),
+            toplam: komisyon,
+            dovizCinsi: pos.dovizCinsi,
+            durum: "onaylandi",
+            odemeDurumu: "odendi",
+            odenenTutar: komisyon,
+            odemeTarihi: new Date(girdi.tarih),
+            hareketId: komisyonHareketi.id,
+          },
+        });
+      })() : null;
       if (ekstreSatir) await tx.bankaEkstreSatir.update({ where: { id: ekstreSatir.id }, data: { durum: "eslesti", hareketId: gelis.id } });
-      return { gidis, gelis, komisyonHareketi, brutTutar: brut.toFixed(2), netTutar: net.toFixed(2), komisyonTutar: komisyon.toFixed(2) };
+      return { gidis, gelis, komisyonHareketi, komisyonMasrafi, brutTutar: brut.toFixed(2), netTutar: net.toFixed(2), komisyonTutar: komisyon.toFixed(2) };
     });
   }
 

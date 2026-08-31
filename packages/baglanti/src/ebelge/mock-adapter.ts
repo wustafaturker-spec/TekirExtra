@@ -20,8 +20,6 @@ import type {
 export class MockEntegratorAdapter implements EntegratorAdapter {
   readonly saglayici: EbelgeSaglayici;
 
-  private readonly gonderilenler = new Map<string, number>();
-
   constructor(saglayici: EbelgeSaglayici = "izibiz") {
     this.saglayici = saglayici;
   }
@@ -46,19 +44,19 @@ export class MockEntegratorAdapter implements EntegratorAdapter {
 
   async belgeGonder(_cfg: EntegratorConfig, belge: UblBelge): Promise<GonderimSonuc> {
     const belgeRef = `MOCK-${belge.uuid}`;
-    this.gonderilenler.set(belgeRef, 0);
     return { basarili: true, belgeRef };
   }
 
-  /** Her sorguda durum bir adım ilerler: kuyrukta → iletildi → kabul. */
+  /**
+   * Mock referansı süreç belleğine bağlı olmadan doğrulanır. Gerçek BullMQ
+   * kurulumunda gönderim ve sorgu farklı worker süreçlerine düşebileceği için
+   * adaptör içi Map kullanmak restart ve yatay ölçekleme testlerini bozardı.
+   */
   async durumSorgula(_cfg: EntegratorConfig, belgeRef: string): Promise<BelgeDurumSonuc> {
-    const sorguSayisi = this.gonderilenler.get(belgeRef);
-    if (sorguSayisi === undefined) {
+    if (!/^MOCK-[0-9a-f-]{36}$/i.test(belgeRef)) {
       return { belgeRef, durum: "hata", detay: "Belge bulunamadı" };
     }
-    this.gonderilenler.set(belgeRef, sorguSayisi + 1);
-    const durumlar = ["kuyrukta", "iletildi", "kabul"] as const;
-    return { belgeRef, durum: durumlar[Math.min(sorguSayisi, 2)] };
+    return { belgeRef, durum: "kabul" };
   }
 
   /**
@@ -163,15 +161,12 @@ export class MockEntegratorAdapter implements EntegratorAdapter {
 
   async irsaliyeGonder(_cfg: EntegratorConfig, belge: EirsaliyeBelge): Promise<GonderimSonuc> {
     const belgeRef = `MOCK-IRS-${belge.uuid}`;
-    this.gonderilenler.set(belgeRef, 0);
     return { basarili: true, belgeRef };
   }
 
   async irsaliyeDurumSorgula(_cfg: EntegratorConfig, belgeRef: string): Promise<BelgeDurumSonuc> {
-    const sayi = this.gonderilenler.get(belgeRef);
-    if (sayi === undefined) return { belgeRef, durum: "hata", detay: "e-İrsaliye bulunamadı" };
-    this.gonderilenler.set(belgeRef, sayi + 1);
-    return { belgeRef, durum: (["kuyrukta", "iletildi", "kabul"] as const)[Math.min(sayi, 2)] };
+    if (!/^MOCK-IRS-[0-9a-f-]{36}$/i.test(belgeRef)) return { belgeRef, durum: "hata", detay: "e-İrsaliye bulunamadı" };
+    return { belgeRef, durum: "kabul" };
   }
 
   async gelenIrsaliyeleriCek(_cfg: EntegratorConfig, sonrasi: Date): Promise<GelenEirsaliye[]> {

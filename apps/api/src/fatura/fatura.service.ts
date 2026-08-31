@@ -135,6 +135,16 @@ export class FaturaService {
     const { tenantId } = aktifBaglam();
     const bugun = new Date(); bugun.setUTCHours(0, 0, 0, 0);
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      // Manuel tetikleme ve zamanlanmış görev aynı anda çalışabilir. Tenant
+      // bazlı transaction kilidi, "kontrol et → oluştur" aralığını sıralar;
+      // ikinci çağrı ilk transaction'ın ilerlettiği sonraki tarihi görür.
+      await tx.$queryRaw(Prisma.sql`
+        SELECT 1 AS kilit
+        FROM pg_advisory_xact_lock(
+          hashtext(CAST(${tenantId} AS text)),
+          hashtext('tekrarlayan_fatura_uret')
+        )
+      `);
       const planlar = await tx.tekrarlayanFatura.findMany({
         where: { aktif: true, sonrakiTarih: { lte: bugun } },
         include: { sablonFatura: { include: { satirlar: true } } },
@@ -780,19 +790,83 @@ export class FaturaService {
     });
   }
 
-  /** E-belge oluşmadan önce taslağı kayıt izini koruyarak iptal eder. */
+  /**
+   * Taslağı kayıt izini koruyarak iptal eder. Kesin ve e-belgesiz faturada
+   * mali kayıtlar silinmez; stok ve cari için ters hareket üretilir.
+   */
   async iptal(id: string) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const fatura = await tx.fatura.findUnique({
         where: { id },
-        select: { id: true, durum: true, ebelge: { select: { id: true } } },
+        include: { ebelge: { select: { id: true } } },
       });
       if (!fatura) throw new NotFoundException("Fatura bulunamadı");
-      if (fatura.durum !== "taslak") throw new BadRequestException("Yalnızca taslak faturalar iptal edilebilir");
+      if (fatura.durum === "iptal") throw new BadRequestException("Fatura zaten iptal edilmiş");
       if (fatura.ebelge) throw new BadRequestException("e-Belge kaydı oluşmuş fatura iptal edilemez");
-      await tx.belge.updateMany({ where: { faturaId: id }, data: { faturaId: null, durum: "onaylandi" } });
-      await tx.gelenEbelge.updateMany({ where: { faturaId: id }, data: { faturaId: null, durum: "beklemede" } });
+
+      if (fatura.durum === "taslak") {
+        await tx.belge.updateMany({ where: { faturaId: id }, data: { faturaId: null, durum: "onaylandi" } });
+        await tx.gelenEbelge.updateMany({ where: { faturaId: id }, data: { faturaId: null, durum: "beklemede" } });
+        return tx.fatura.update({ where: { id }, data: { durum: "iptal" } });
+      }
+
+      const [kasaBankaSayisi, posSayisi, krediKartiSayisi] = await Promise.all([
+        tx.kasaBankaHareket.count({ where: { faturaId: id } }),
+        tx.posTahsilat.count({ where: { faturaId: id } }),
+        tx.krediKartiHareket.count({ where: { faturaId: id } }),
+      ]);
+      if (kasaBankaSayisi + posSayisi + krediKartiSayisi > 0) {
+        throw new BadRequestException("Tahsilat veya ödeme bağlı fatura doğrudan iptal edilemez; önce finans hareketini geri alın veya iade faturası düzenleyin");
+      }
+
+      if (fatura.tip !== "proforma") {
+        const hareketler = await tx.stokHareket.findMany({
+          where: { kaynakTur: "fatura", kaynakRef: id },
+          include: { partiler: { include: { parti: true } } },
+          orderBy: { createdAt: "asc" },
+        });
+        for (const hareket of hareketler) {
+          await this.stokService.hareketEkle(tx, {
+            stokId: hareket.stokId,
+            varyantId: hareket.varyantId,
+            depoId: hareket.depoId,
+            tip: hareket.tip === "cikis" ? "giris" : "cikis",
+            miktar: hareket.miktar,
+            girilenBirim: hareket.girilenBirim,
+            girilenMiktar: hareket.girilenMiktar,
+            birimMaliyet: hareket.maliyet,
+            tarih: new Date(),
+            aciklama: `${fatura.no || fatura.id} nolu fatura iptal ters hareketi`,
+            kaynakTur: "fatura_iptal",
+            kaynakRef: fatura.id,
+            partiler: hareket.partiler.map((parti) => ({
+              lotNo: parti.parti.lotNo,
+              seriNo: parti.parti.seriNo,
+              sonKullanmaTarihi: parti.parti.sonKullanmaTarihi?.toISOString().slice(0, 10) ?? null,
+              uretimTarihi: parti.parti.uretimTarihi?.toISOString().slice(0, 10) ?? null,
+              miktar: parti.miktar.abs(),
+            })),
+          });
+        }
+
+        const cariHareketTip = fatura.tip === "satis" || fatura.tip === "alis_iade" ? "alacak" : "borc";
+        await tx.cariHareket.create({
+          data: {
+            tenantId,
+            cariId: fatura.cariId,
+            tip: cariHareketTip,
+            tutar: fatura.genelToplam,
+            dovizCinsi: fatura.dovizCinsi,
+            kur: fatura.kur,
+            tutarTry: fatura.genelToplam.mul(fatura.kur).toDecimalPlaces(2),
+            tarih: new Date(),
+            aciklama: `${fatura.no || fatura.id} nolu fatura iptal ters hareketi`,
+            kaynakTur: "fatura_iptal",
+            kaynakRef: fatura.id,
+          },
+        });
+      }
       return tx.fatura.update({ where: { id }, data: { durum: "iptal" } });
     });
   }

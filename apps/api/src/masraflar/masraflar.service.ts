@@ -6,6 +6,20 @@ import { PrismaService } from "../core/prisma.service";
 import type { kategoriGuncelleSemasi, kategoriOlusturSemasi, kiraDonemOlusturSemasi, kiraSozlesmeGuncelleSemasi, kiraSozlesmeOlusturSemasi, masrafGuncelleSemasi, masrafOdemeSemasi, masrafOlusturSemasi } from "./masraflar.semalar";
 
 const D = (deger: string | number | Prisma.Decimal) => new Prisma.Decimal(deger);
+
+function ayEkle(tarih: Date, ay: number): Date {
+  const yil = tarih.getUTCFullYear(); const hedefAy = tarih.getUTCMonth() + ay; const gun = tarih.getUTCDate();
+  const aySonu = new Date(Date.UTC(yil, hedefAy + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(yil, hedefAy, Math.min(gun, aySonu)));
+}
+
+function taksitVerileri(tenantId: string, hareketId: string, toplam: Prisma.Decimal, adet: number, ilkTarih: Date) {
+  const tabanKurus = toplam.mul(100).div(adet).floor(); const toplamKurus = toplam.mul(100).toDecimalPlaces(0); let dagitilan = D(0);
+  return Array.from({ length: adet }, (_, i) => {
+    const kurus = i === adet - 1 ? toplamKurus.sub(dagitilan) : tabanKurus; dagitilan = dagitilan.add(kurus);
+    return { tenantId, hareketId, sira: i + 1, vadeTarihi: ayEkle(ilkTarih, i), tutar: kurus.div(100) };
+  });
+}
 const VARSAYILAN_KATEGORILER = ["Kira", "Elektrik, Su ve Doğalgaz", "Telefon ve İnternet", "Akaryakıt ve Ulaşım", "Yemek", "Ofis ve Kırtasiye", "Yazılım ve Abonelikler", "Reklam ve Pazarlama", "Bakım ve Onarım", "Kargo", "Banka ve POS Komisyonları", "Personel Giderleri", "Vergi, Harç ve Sigorta", "Demirbaş", "Diğer"];
 
 @Injectable()
@@ -70,14 +84,14 @@ export class MasraflarService {
         ...(sorgu.durum ? { durum: sorgu.durum as never } : {}),
         ...(sorgu.odemeDurumu ? { odemeDurumu: sorgu.odemeDurumu as never } : {}),
       },
-      include: { kategori: true, cari: { select: { id: true, unvan: true } }, kasa: { select: { id: true, ad: true } }, bankaHesap: { select: { id: true, ad: true } }, odemeler: { include: { kasa: { select: { id: true, ad: true } }, bankaHesap: { select: { id: true, ad: true } } }, orderBy: [{ odemeTarihi: "desc" }, { createdAt: "desc" }] } },
+      include: { kategori: true, cari: { select: { id: true, unvan: true } }, kasa: { select: { id: true, ad: true } }, bankaHesap: { select: { id: true, ad: true } }, odemeler: { include: { kasa: { select: { id: true, ad: true } }, bankaHesap: { select: { id: true, ad: true } }, krediKarti: { select: { id: true, ad: true, sonDortHane: true } } }, orderBy: [{ odemeTarihi: "desc" }, { createdAt: "desc" }] } },
       orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
     }));
   }
 
   async getir(id: string) {
     const { tenantId } = aktifBaglam();
-    const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.masraf.findUnique({ where: { id }, include: { kategori: true, cari: { select: { id: true, unvan: true } }, kasa: true, bankaHesap: true, odemeler: { include: { kasa: { select: { id: true, ad: true } }, bankaHesap: { select: { id: true, ad: true } } }, orderBy: [{ odemeTarihi: "desc" }, { createdAt: "desc" }] } } }));
+    const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.masraf.findUnique({ where: { id }, include: { kategori: true, cari: { select: { id: true, unvan: true } }, kasa: true, bankaHesap: true, odemeler: { include: { kasa: { select: { id: true, ad: true } }, bankaHesap: { select: { id: true, ad: true } }, krediKarti: { select: { id: true, ad: true, sonDortHane: true } } }, orderBy: [{ odemeTarihi: "desc" }, { createdAt: "desc" }] } } }));
     if (!kayit) throw new NotFoundException("Masraf bulunamadı");
     return kayit;
   }
@@ -140,8 +154,13 @@ export class MasraflarService {
     if (mevcut.odemeDurumu === "odendi") throw new BadRequestException("Masraf zaten ödenmiş");
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const hesap = girdi.kasaId ? await tx.kasa.findUnique({ where: { id: girdi.kasaId } }) : await tx.bankaHesap.findUnique({ where: { id: girdi.bankaHesapId! } });
+      const hesap = girdi.kasaId
+        ? await tx.kasa.findUnique({ where: { id: girdi.kasaId } })
+        : girdi.bankaHesapId
+          ? await tx.bankaHesap.findUnique({ where: { id: girdi.bankaHesapId } })
+          : await tx.krediKarti.findUnique({ where: { id: girdi.krediKartiId! } });
       if (!hesap) throw new BadRequestException("Ödeme hesabı bulunamadı");
+      if (!hesap.aktif) throw new BadRequestException("Ödeme hesabı aktif değil");
       if (hesap.dovizCinsi !== mevcut.dovizCinsi) throw new BadRequestException("Masraf ve ödeme hesabı para birimleri aynı olmalıdır");
       const netTutar = mevcut.toplam.sub(mevcut.stopajTutari ?? D(0));
       const kalanTutar = netTutar.sub(mevcut.odenenTutar);
@@ -149,12 +168,21 @@ export class MasraflarService {
       if (kalanTutar.lte(0)) throw new BadRequestException("Masrafın kalan ödemesi bulunmuyor");
       if (odenecekTutar.gt(kalanTutar)) throw new BadRequestException(`Ödeme tutarı kalan ${kalanTutar.toFixed(2)} ${mevcut.dovizCinsi} tutarını aşamaz`);
       const aciklama = girdi.aciklama || `${mevcut.saticiUnvan ?? mevcut.cari?.unvan ?? "Masraf"} ödemesi`;
-      const hareket = await tx.kasaBankaHareket.create({ data: { tenantId, kasaId: girdi.kasaId || null, bankaHesapId: girdi.bankaHesapId || null, tip: "tediye", tutar: odenecekTutar, dovizCinsi: mevcut.dovizCinsi, kur: D(1), tutarTry: odenecekTutar, tarih: girdi.odemeTarihi, aciklama, cariId: mevcut.cariId, kaynakTur: "masraf", kaynakRef: mevcut.id } });
-      if (mevcut.cariId) await tx.cariHareket.create({ data: { tenantId, cariId: mevcut.cariId, tip: "borc", tutar: odenecekTutar, dovizCinsi: mevcut.dovizCinsi, kur: D(1), tutarTry: odenecekTutar, tarih: girdi.odemeTarihi, aciklama: "Masraf ödemesi", kaynakTur: "masraf", kaynakRef: mevcut.id } });
-      await tx.masrafOdeme.create({ data: { tenantId, masrafId: mevcut.id, kasaId: girdi.kasaId || null, bankaHesapId: girdi.bankaHesapId || null, hareketId: hareket.id, tutar: odenecekTutar, odemeTarihi: girdi.odemeTarihi, aciklama: girdi.aciklama || null } });
+      let hareketId: string | null = null;
+      let krediKartiHareketId: string | null = null;
+      if (girdi.krediKartiId) {
+        const ilkTaksitTarihi = girdi.ilkTaksitTarihi ?? girdi.odemeTarihi;
+        const kartHareketi = await tx.krediKartiHareket.create({ data: { tenantId, krediKartiId: girdi.krediKartiId, tip: "harcama", tarih: girdi.odemeTarihi, aciklama, tutar: odenecekTutar, taksitSayisi: girdi.taksitSayisi, ilkTaksitTarihi, belgeNo: mevcut.belgeNo } });
+        await tx.krediKartiTaksit.createMany({ data: taksitVerileri(tenantId, kartHareketi.id, odenecekTutar, girdi.taksitSayisi, ilkTaksitTarihi) });
+        krediKartiHareketId = kartHareketi.id;
+      } else {
+        const hareket = await tx.kasaBankaHareket.create({ data: { tenantId, kasaId: girdi.kasaId || null, bankaHesapId: girdi.bankaHesapId || null, tip: "tediye", tutar: odenecekTutar, dovizCinsi: mevcut.dovizCinsi, kur: D(1), tutarTry: odenecekTutar, tarih: girdi.odemeTarihi, aciklama, cariId: mevcut.cariId, kaynakTur: "masraf", kaynakRef: mevcut.id } });
+        hareketId = hareket.id;
+      }
+      await tx.masrafOdeme.create({ data: { tenantId, masrafId: mevcut.id, kasaId: girdi.kasaId || null, bankaHesapId: girdi.bankaHesapId || null, krediKartiId: girdi.krediKartiId || null, hareketId, krediKartiHareketId, tutar: odenecekTutar, odemeTarihi: girdi.odemeTarihi, aciklama: girdi.aciklama || null } });
       const yeniOdenen = mevcut.odenenTutar.add(odenecekTutar);
       const tamamenOdendi = yeniOdenen.gte(netTutar);
-      return tx.masraf.update({ where: { id }, data: { odenenTutar: yeniOdenen, odemeDurumu: tamamenOdendi ? "odendi" : "kismi_odendi", odemeTarihi: girdi.odemeTarihi, kasaId: girdi.kasaId || null, bankaHesapId: girdi.bankaHesapId || null, ...(mevcut.hareketId ? {} : { hareketId: hareket.id }) }, include: { odemeler: true } });
+      return tx.masraf.update({ where: { id }, data: { odenenTutar: yeniOdenen, odemeDurumu: tamamenOdendi ? "odendi" : "kismi_odendi", odemeTarihi: girdi.odemeTarihi, kasaId: girdi.kasaId || null, bankaHesapId: girdi.bankaHesapId || null, ...(!mevcut.hareketId && hareketId ? { hareketId } : {}) }, include: { odemeler: true } });
     });
   }
 

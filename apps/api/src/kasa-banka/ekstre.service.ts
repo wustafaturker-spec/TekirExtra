@@ -395,7 +395,15 @@ export class EkstreService {
       const hareket = await tx.kasaBankaHareket.findUnique({ where: { id: hareketId }, select: { id: true, kaynakTur: true, karsiHareketId: true } });
       if (hareket?.kaynakTur === "pos_mutabakat") {
         const gidisId = hareket.karsiHareketId;
-        if (gidisId) await tx.kasaBankaHareket.deleteMany({ where: { kaynakTur: "pos_mutabakat", kaynakRef: gidisId } });
+        if (gidisId) {
+          const komisyonHareketleri = await tx.kasaBankaHareket.findMany({ where: { kaynakTur: "pos_mutabakat", kaynakRef: gidisId }, select: { id: true } });
+          const komisyonHareketIds = komisyonHareketleri.map((kayit) => kayit.id);
+          if (komisyonHareketIds.length > 0) {
+            await tx.masrafOdeme.deleteMany({ where: { hareketId: { in: komisyonHareketIds } } });
+            await tx.masraf.deleteMany({ where: { hareketId: { in: komisyonHareketIds } } });
+            await tx.kasaBankaHareket.deleteMany({ where: { id: { in: komisyonHareketIds } } });
+          }
+        }
         await tx.kasaBankaHareket.deleteMany({ where: { id: { in: [hareket.id, ...(gidisId ? [gidisId] : [])] } } });
         return;
       }

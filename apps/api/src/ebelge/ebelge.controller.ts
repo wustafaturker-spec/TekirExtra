@@ -10,13 +10,14 @@ import {
 import { GelenEbelgeDurum } from "@prisma/client";
 import { Roller } from "../auth/roller.decorator";
 import { EbelgeService } from "./ebelge.service";
+import { EbelgeKuyrukService } from "./ebelge-kuyruk.service";
 import { earsivIptalSemasi, earsivRaporAralikSemasi, gelenOnaySemasi, gelenXmlYukleSemasi, gelenYanitSemasi } from "./ebelge.semalar";
 
 const GELEN_DURUMLARI: GelenEbelgeDurum[] = ["beklemede", "islendi", "reddedildi"];
 
 @Controller("ebelge")
 export class EbelgeController {
-  constructor(private readonly ebelgeService: EbelgeService) {}
+  constructor(private readonly ebelgeService: EbelgeService, private readonly kuyrukService: EbelgeKuyrukService) {}
 
   @Get("wizard/:faturaId")
   @Roller("muhasebe")
@@ -27,13 +28,27 @@ export class EbelgeController {
   @Post("gonder/:faturaId")
   @Roller("muhasebe")
   async gonder(@Param("faturaId") faturaId: string) {
-    return this.ebelgeService.gonder(faturaId);
+    const wizard = await this.ebelgeService.wizardBilgisi(faturaId);
+    if (!wizard.gonderilebilir) throw new BadRequestException(wizard.neden || "Fatura e-Belge gönderimine uygun değil");
+    return this.kuyrukService.kuyrugaEkle(faturaId);
   }
+
+  @Get("kuyruk")
+  @Roller("muhasebe")
+  kuyrukListele() { return this.kuyrukService.listele(); }
+
+  @Get("kuyruk/ozet")
+  @Roller("muhasebe")
+  kuyrukOzet() { return this.kuyrukService.ozet(); }
+
+  @Post("kuyruk/:isId/yeniden-dene")
+  @Roller("muhasebe")
+  yenidenDene(@Param("isId") isId: string) { return this.kuyrukService.yenidenDene(isId); }
 
   @Post("sorgula/:faturaId")
   @Roller("muhasebe")
   async sorgula(@Param("faturaId") faturaId: string) {
-    return this.ebelgeService.durumSorgula(faturaId);
+    return this.kuyrukService.durumSorgulaKuyrugaEkle(faturaId);
   }
 
   @Post("earsiv/:faturaId/iptal-bildir")
@@ -52,10 +67,10 @@ export class EbelgeController {
     return this.ebelgeService.earsivRaporListele(sonuc.data.baslangic, sonuc.data.bitis);
   }
 
-  @Get("earsiv/raporlar/:uuid/durum")
+  @Post("earsiv/raporlar/:uuid/durum")
   @Roller("muhasebe")
   async earsivRaporDurum(@Param("uuid") uuid: string) {
-    return this.ebelgeService.earsivRaporDurum(uuid);
+    return this.kuyrukService.earsivRaporKuyrugaEkle(uuid);
   }
 
   // ─── GELEN KUTUSU (EBLG-05/06) ─────────────────────────────────────────────
@@ -63,7 +78,7 @@ export class EbelgeController {
   @Post("gelenleri-cek")
   @Roller("muhasebe")
   async gelenleriCek() {
-    return this.ebelgeService.gelenBelgeleriCek();
+    return this.kuyrukService.gelenBelgeleriKuyrugaEkle();
   }
 
   @Post("gelen/xml-yukle")

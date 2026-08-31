@@ -10,7 +10,8 @@ import { MasrafEkPaneli } from "@/components/masraf-ek-paneli";
 interface Kategori { id: string; ad: string; varsayilanKdvOrani: string | null; ustId: string | null; ust: { id: string; ad: string } | null; _count: { altlar: number; masraflar: number } }
 interface Cari { id: string; unvan: string }
 interface Hesap { id: string; ad: string; dovizCinsi: string }
-interface MasrafOdeme { id: string; tutar: string; odemeTarihi: string; aciklama: string | null; kasa: { ad: string } | null; bankaHesap: { ad: string } | null }
+interface KrediKarti extends Hesap { sonDortHane: string; aktif: boolean }
+interface MasrafOdeme { id: string; tutar: string; odemeTarihi: string; aciklama: string | null; kasa: { ad: string } | null; bankaHesap: { ad: string } | null; krediKarti: { ad: string; sonDortHane: string } | null }
 interface Masraf { id: string; tarih: string; belgeTuru: string; belgeNo: string | null; saticiUnvan: string | null; vknTckn?: string | null; aciklama?: string | null; matrah: string; kdvOrani: string; kdvTutari: string; toplam: string; stopajTutari?: string | null; odenenTutar: string; dovizCinsi: string; durum: "taslak" | "onaylandi" | "iptal"; odemeDurumu: "odenmedi" | "kismi_odendi" | "odendi"; kategori: Kategori; cari: Cari | null; odemeler: MasrafOdeme[] }
 
 const bugun = () => new Date().toISOString().slice(0, 10);
@@ -23,9 +24,10 @@ export default function MasraflarSayfasi() {
   const [cariler, setCariler] = useState<Cari[]>([]);
   const [kasalar, setKasalar] = useState<Hesap[]>([]);
   const [bankalar, setBankalar] = useState<Hesap[]>([]);
+  const [krediKartlari, setKrediKartlari] = useState<KrediKarti[]>([]);
   const [formAcik, setFormAcik] = useState(yeniSayfasi);
   const [duzenlenenId, setDuzenlenenId] = useState<string | null>(null); const [ekleriAcikMasraf, setEkleriAcikMasraf] = useState<Masraf | null>(null);
-  const [odenecekMasraf, setOdenecekMasraf] = useState<Masraf | null>(null); const [odemeHesabi, setOdemeHesabi] = useState(""); const [odemeTarihi, setOdemeTarihi] = useState(bugun()); const [odemeTutari, setOdemeTutari] = useState(""); const [odemeAciklama, setOdemeAciklama] = useState(""); const [odemeKaydediliyor, setOdemeKaydediliyor] = useState(false);
+  const [odenecekMasraf, setOdenecekMasraf] = useState<Masraf | null>(null); const [odemeHesabi, setOdemeHesabi] = useState(""); const [odemeTarihi, setOdemeTarihi] = useState(bugun()); const [odemeTutari, setOdemeTutari] = useState(""); const [odemeAciklama, setOdemeAciklama] = useState(""); const [taksitSayisi, setTaksitSayisi] = useState("1"); const [ilkTaksitTarihi, setIlkTaksitTarihi] = useState(bugun()); const [odemeKaydediliyor, setOdemeKaydediliyor] = useState(false);
   const [hata, setHata] = useState(""); const [basari, setBasari] = useState("");
   const [kategoriId, setKategoriId] = useState(""); const [cariId, setCariId] = useState("");
   const [belgeTuru, setBelgeTuru] = useState("fis"); const [belgeNo, setBelgeNo] = useState("");
@@ -45,8 +47,8 @@ export default function MasraflarSayfasi() {
   const filtreliMasraflar = useMemo(() => masraflar.filter((m) => { const metin = `${m.cari?.unvan ?? m.saticiUnvan ?? ""} ${m.belgeNo ?? ""} ${m.aciklama ?? ""} ${m.kategori.ad}`.toLocaleLowerCase("tr-TR"); const durumUygun = durumFiltresi === "tumu" || (durumFiltresi === "aktif" ? m.durum !== "iptal" : durumFiltresi === "odenmedi" ? m.durum !== "iptal" && m.odemeDurumu !== "odendi" : m.durum === durumFiltresi); return metin.includes(arama.toLocaleLowerCase("tr-TR")) && durumUygun && (!kategoriFiltresi || m.kategori.id === kategoriFiltresi); }), [masraflar, arama, durumFiltresi, kategoriFiltresi]);
 
   const yukle = useCallback(async () => {
-    const [m, k, c, ks, bs] = await Promise.all([api<Masraf[]>("/masraflar"), api<Kategori[]>("/masraflar/kategoriler"), tumSayfalariAl<Cari>("/cari"), api<Hesap[]>("/kasa-banka/kasalar"), api<Hesap[]>("/kasa-banka/bankalar")]);
-    setMasraflar(m); setKategoriler(k); setCariler(c); setKasalar(ks); setBankalar(bs); setKategoriId((x) => x || k.find((a) => a.ustId || a._count.altlar === 0)?.id || "");
+    const [m, k, c, ks, bs, kk] = await Promise.all([api<Masraf[]>("/masraflar"), api<Kategori[]>("/masraflar/kategoriler"), tumSayfalariAl<Cari>("/cari"), api<Hesap[]>("/kasa-banka/kasalar"), api<Hesap[]>("/kasa-banka/bankalar"), api<KrediKarti[]>("/kasa-banka/kredi-kartlari")]);
+    setMasraflar(m); setKategoriler(k); setCariler(c); setKasalar(ks); setBankalar(bs); setKrediKartlari(kk); setKategoriId((x) => x || k.find((a) => a.ustId || a._count.altlar === 0)?.id || "");
   }, []);
   useEffect(() => { if (tokenAl()) void yukle().catch((e) => setHata(e instanceof Error ? e.message : "Masraflar yüklenemedi")); }, [yukle]);
   useEffect(() => { setFormAcik(yeniSayfasi); }, [yeniSayfasi]);
@@ -80,7 +82,8 @@ export default function MasraflarSayfasi() {
   function odemeModaliniAc(m: Masraf) {
     const uygunKasa = kasalar.find((k) => k.dovizCinsi === m.dovizCinsi);
     const uygunBanka = bankalar.find((b) => b.dovizCinsi === m.dovizCinsi);
-    setOdenecekMasraf(m); setOdemeHesabi(uygunKasa ? `kasa:${uygunKasa.id}` : uygunBanka ? `banka:${uygunBanka.id}` : ""); setOdemeTarihi(bugun()); setOdemeTutari(String(Math.max(0, Number(m.toplam) - Number(m.stopajTutari || 0) - Number(m.odenenTutar || 0)))); setOdemeAciklama(""); setHata("");
+    const uygunKart = krediKartlari.find((k) => k.aktif && k.dovizCinsi === m.dovizCinsi);
+    setOdenecekMasraf(m); setOdemeHesabi(uygunKasa ? `kasa:${uygunKasa.id}` : uygunBanka ? `banka:${uygunBanka.id}` : uygunKart ? `kart:${uygunKart.id}` : ""); setOdemeTarihi(bugun()); setOdemeTutari(String(Math.max(0, Number(m.toplam) - Number(m.stopajTutari || 0) - Number(m.odenenTutar || 0)))); setOdemeAciklama(""); setTaksitSayisi("1"); setIlkTaksitTarihi(bugun()); setHata("");
   }
 
   async function odemeYap(e: React.FormEvent) {
@@ -88,7 +91,7 @@ export default function MasraflarSayfasi() {
     if (!odenecekMasraf || !odemeHesabi) return;
     const [tur, id] = odemeHesabi.split(":"); setOdemeKaydediliyor(true); setHata("");
     try {
-      await api(`/masraflar/${odenecekMasraf.id}/ode`, { method: "POST", body: JSON.stringify({ kasaId: tur === "kasa" ? id : null, bankaHesapId: tur === "banka" ? id : null, odemeTarihi, tutar: odemeTutari, aciklama: odemeAciklama || null }) });
+      await api(`/masraflar/${odenecekMasraf.id}/ode`, { method: "POST", body: JSON.stringify({ kasaId: tur === "kasa" ? id : null, bankaHesapId: tur === "banka" ? id : null, krediKartiId: tur === "kart" ? id : null, odemeTarihi, tutar: odemeTutari, taksitSayisi: tur === "kart" ? taksitSayisi : 1, ilkTaksitTarihi: tur === "kart" ? ilkTaksitTarihi : undefined, aciklama: odemeAciklama || null }) });
       setOdenecekMasraf(null); setBasari("Masraf ödemesi kaydedildi."); await yukle();
     } catch (e) { setHata(e instanceof Error ? e.message : "Ödeme kaydedilemedi"); }
     finally { setOdemeKaydediliyor(false); }
@@ -136,12 +139,13 @@ export default function MasraflarSayfasi() {
     {ekleriAcikMasraf && <MasrafEkPaneli masrafId={ekleriAcikMasraf.id} baslik={ekleriAcikMasraf.belgeNo ?? ekleriAcikMasraf.saticiUnvan ?? "Masraf"} onKapat={() => setEkleriAcikMasraf(null)} />}
     {odenecekMasraf && <div className="feedback-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !odemeKaydediliyor) setOdenecekMasraf(null); }}><section aria-labelledby="expense-payment-title" aria-modal="true" className="feedback-dialog expense-payment" role="dialog"><div className="feedback-dialog__head"><div><strong id="expense-payment-title">Masraf ödemesi</strong><small>Ödeme finans hareketlerine tediye olarak kaydedilir.</small></div><button aria-label="Ödeme penceresini kapat" disabled={odemeKaydediliyor} onClick={() => setOdenecekMasraf(null)} type="button">×</button></div><form className="feedback-form" onSubmit={odemeYap}>
       <div className="expense-payment__summary"><div><span>Alıcı</span><strong>{odenecekMasraf.cari?.unvan ?? odenecekMasraf.saticiUnvan}</strong></div><div><span>Kalan bakiye</span><strong>{para(Math.max(0, Number(odenecekMasraf.toplam) - Number(odenecekMasraf.stopajTutari || 0) - Number(odenecekMasraf.odenenTutar || 0)), odenecekMasraf.dovizCinsi)}</strong><small>Ödenen {para(odenecekMasraf.odenenTutar || 0, odenecekMasraf.dovizCinsi)} · Net {para(Number(odenecekMasraf.toplam) - Number(odenecekMasraf.stopajTutari || 0), odenecekMasraf.dovizCinsi)}</small></div></div>
-      <Field label="Ödeme hesabı"><Select autoFocus required value={odemeHesabi} onChange={(e) => setOdemeHesabi(e.target.value)}><option value="">Kasa veya banka seçin</option>{kasalar.filter((k) => k.dovizCinsi === odenecekMasraf.dovizCinsi).length > 0 && <optgroup label="Kasalar">{kasalar.filter((k) => k.dovizCinsi === odenecekMasraf.dovizCinsi).map((k) => <option key={k.id} value={`kasa:${k.id}`}>{k.ad} · {k.dovizCinsi}</option>)}</optgroup>}{bankalar.filter((b) => b.dovizCinsi === odenecekMasraf.dovizCinsi).length > 0 && <optgroup label="Banka hesapları">{bankalar.filter((b) => b.dovizCinsi === odenecekMasraf.dovizCinsi).map((b) => <option key={b.id} value={`banka:${b.id}`}>{b.ad} · {b.dovizCinsi}</option>)}</optgroup>}</Select></Field>
+      <Field label="Ödeme hesabı"><Select autoFocus required value={odemeHesabi} onChange={(e) => setOdemeHesabi(e.target.value)}><option value="">Kasa, banka veya şirket kartı seçin</option>{kasalar.filter((k) => k.dovizCinsi === odenecekMasraf.dovizCinsi).length > 0 && <optgroup label="Kasalar">{kasalar.filter((k) => k.dovizCinsi === odenecekMasraf.dovizCinsi).map((k) => <option key={k.id} value={`kasa:${k.id}`}>{k.ad} · {k.dovizCinsi}</option>)}</optgroup>}{bankalar.filter((b) => b.dovizCinsi === odenecekMasraf.dovizCinsi).length > 0 && <optgroup label="Banka hesapları">{bankalar.filter((b) => b.dovizCinsi === odenecekMasraf.dovizCinsi).map((b) => <option key={b.id} value={`banka:${b.id}`}>{b.ad} · {b.dovizCinsi}</option>)}</optgroup>}{krediKartlari.filter((k) => k.aktif && k.dovizCinsi === odenecekMasraf.dovizCinsi).length > 0 && <optgroup label="Şirket kredi kartları">{krediKartlari.filter((k) => k.aktif && k.dovizCinsi === odenecekMasraf.dovizCinsi).map((k) => <option key={k.id} value={`kart:${k.id}`}>{k.ad} · •••• {k.sonDortHane} · {k.dovizCinsi}</option>)}</optgroup>}</Select></Field>
       <Field label="Ödeme tarihi"><Input required type="date" value={odemeTarihi} onChange={(e) => setOdemeTarihi(e.target.value)} /></Field>
       <Field label="Ödenecek tutar"><Input required type="number" min="0.01" step="0.01" max={Math.max(0, Number(odenecekMasraf.toplam) - Number(odenecekMasraf.stopajTutari || 0) - Number(odenecekMasraf.odenenTutar || 0))} value={odemeTutari} onChange={(e) => setOdemeTutari(e.target.value)} /></Field>
+      {odemeHesabi.startsWith("kart:") && <><Field label="Taksit sayısı"><Input required type="number" min="1" max="36" step="1" value={taksitSayisi} onChange={(e) => setTaksitSayisi(e.target.value)} /></Field><Field label="İlk taksit tarihi"><Input required type="date" value={ilkTaksitTarihi} onChange={(e) => setIlkTaksitTarihi(e.target.value)} /></Field></>}
       <Field label="Açıklama (isteğe bağlı)"><Input value={odemeAciklama} onChange={(e) => setOdemeAciklama(e.target.value)} placeholder="Örn. ilk taksit" /></Field>
-      {odenecekMasraf.odemeler?.length > 0 && <div className="expense-payment__history"><strong>Ödeme geçmişi</strong>{odenecekMasraf.odemeler.map((o) => <div key={o.id}><span>{new Date(o.odemeTarihi).toLocaleDateString("tr-TR")} · {o.kasa?.ad ?? o.bankaHesap?.ad ?? "Finans hesabı"}</span><b>{para(o.tutar, odenecekMasraf.dovizCinsi)}</b></div>)}</div>}
-      {!odemeHesabi && <p className="expense-payment__hint">Bu para birimine uygun bir kasa veya banka hesabı seçin.</p>}
+      {odenecekMasraf.odemeler?.length > 0 && <div className="expense-payment__history"><strong>Ödeme geçmişi</strong>{odenecekMasraf.odemeler.map((o) => <div key={o.id}><span>{new Date(o.odemeTarihi).toLocaleDateString("tr-TR")} · {o.kasa?.ad ?? o.bankaHesap?.ad ?? (o.krediKarti ? `${o.krediKarti.ad} •••• ${o.krediKarti.sonDortHane}` : "Finans hesabı")}</span><b>{para(o.tutar, odenecekMasraf.dovizCinsi)}</b></div>)}</div>}
+      {!odemeHesabi && <p className="expense-payment__hint">Bu para birimine uygun bir kasa, banka hesabı veya şirket kredi kartı seçin.</p>}
       <div className="feedback-form__actions"><Button disabled={odemeKaydediliyor} onClick={() => setOdenecekMasraf(null)} type="button">Vazgeç</Button><Button disabled={odemeKaydediliyor || !odemeHesabi || Number(odemeTutari) <= 0} variant="primary" type="submit">{odemeKaydediliyor ? "Kaydediliyor…" : "Ödemeyi kaydet"}</Button></div>
     </form></section></div>}
   </div>;
