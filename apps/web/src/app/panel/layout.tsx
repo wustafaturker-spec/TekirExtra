@@ -39,6 +39,7 @@ const MENU: MenuGrup[] = [
     baslik: "Genel & Özet",
     ogeler: [
       { href: "/panel", ikon: "ÖZ", baslik: "Finansal Özet", eslesme: "tam" },
+      { href: "/panel/islemler", ikon: "İŞ", baslik: "Düzeltme Merkezi", eslesme: "tam" },
       { href: "/panel/ai", ikon: "🤖", baslik: "AI Finansal Asistan", eslesme: "tam" },
     ],
   },

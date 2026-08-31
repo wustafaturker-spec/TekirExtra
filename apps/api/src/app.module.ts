@@ -30,6 +30,7 @@ import { AiModule } from "./ai/ai.module";
 
 import { GelirlerModule } from "./gelirler/gelirler.module";
 import { ProjelerModule } from "./projeler/projeler.module";
+import { DuzeltmelerModule } from "./duzeltmeler/duzeltmeler.module";
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { ProjelerModule } from "./projeler/projeler.module";
     MasraflarModule,
     GelirlerModule,
     ProjelerModule,
+    DuzeltmelerModule,
     DovizModule,
     UretimModule,
     ObservabilityModule,

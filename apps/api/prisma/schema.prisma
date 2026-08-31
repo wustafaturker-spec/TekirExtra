@@ -73,6 +73,31 @@ enum PosTahsilatDurumu {
   suresi_doldu
 }
 
+enum DuzeltmeDurumu {
+  acik
+  incelemede
+  beklemede
+  cozuldu
+  yoksayildi
+}
+
+enum DuzeltmeOnemi {
+  bilgi
+  uyari
+  kritik
+}
+
+enum DuzeltmeTuru {
+  banka_ekstre
+  kredi_karti
+  masraf
+  pos
+  ebelge
+  stok
+  cek_senet
+  fatura_cari
+}
+
 model Tenant {
   id           String   @id @default(uuid()) @db.Uuid
   unvan        String
@@ -138,6 +163,8 @@ model Tenant {
   projeAsamalari            ProjeAsama[]
   projeAltKirilimlari       ProjeAltKirilim[]
   projeNotlari              ProjeNot[]
+  duzeltmeKayitlari         DuzeltmeKaydi[]
+  duzeltmeOlaylari          DuzeltmeOlayi[]
 
   @@map("tenants")
 }
@@ -210,6 +237,9 @@ model User {
   kapattigiUretimDonemleri    UretimDonemKilidi[]    @relation("UretimDonemKapatan")
   sorumluProjeler             Proje[]                @relation("ProjeSorumlu")
   projeNotlari                ProjeNot[]
+  atananDuzeltmeKayitlari     DuzeltmeKaydi[]        @relation("DuzeltmeAtanan")
+  cozduguDuzeltmeKayitlari    DuzeltmeKaydi[]        @relation("DuzeltmeCozen")
+  duzeltmeOlaylari            DuzeltmeOlayi[]
 
   @@unique([tenantId, eposta])
   @@index([tenantId])
@@ -3371,4 +3401,55 @@ model ProjeNot {
 
   @@index([tenantId, projeId, createdAt])
   @@map("proje_notlari")
+}
+
+model DuzeltmeKaydi {
+  id               String         @id @default(uuid()) @db.Uuid
+  tenantId         String         @map("tenant_id") @db.Uuid
+  tur              DuzeltmeTuru
+  onem             DuzeltmeOnemi  @default(uyari)
+  durum            DuzeltmeDurumu @default(acik)
+  kaynakTur        String         @map("kaynak_tur")
+  kaynakRef        String         @map("kaynak_ref")
+  nedenKodu        String         @map("neden_kodu")
+  tekillikAnahtari String?        @map("tekillik_anahtari")
+  aciklama         String
+  onerilenEylem    String?        @map("onerilen_eylem")
+  atananUserId     String?        @map("atanan_user_id") @db.Uuid
+  sonTarih         DateTime?      @map("son_tarih")
+  cozenUserId      String?        @map("cozen_user_id") @db.Uuid
+  cozulmeTarihi    DateTime?      @map("cozulme_tarihi")
+  sonTespitTarihi  DateTime       @default(now()) @map("son_tespit_tarihi")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  tenant  Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  atanan  User?           @relation("DuzeltmeAtanan", fields: [atananUserId], references: [id])
+  cozen   User?           @relation("DuzeltmeCozen", fields: [cozenUserId], references: [id])
+  olaylar DuzeltmeOlayi[]
+
+  @@unique([tenantId, tekillikAnahtari])
+  @@index([tenantId, durum, onem, createdAt])
+  @@index([tenantId, atananUserId, durum])
+  @@index([tenantId, tur, durum])
+  @@map("duzeltme_kayitlari")
+}
+
+model DuzeltmeOlayi {
+  id              String          @id @default(uuid()) @db.Uuid
+  tenantId        String          @map("tenant_id") @db.Uuid
+  duzeltmeKaydiId String          @map("duzeltme_kaydi_id") @db.Uuid
+  userId          String?         @map("user_id") @db.Uuid
+  oncekiDurum     DuzeltmeDurumu? @map("onceki_durum")
+  yeniDurum       DuzeltmeDurumu? @map("yeni_durum")
+  olayTuru        String          @map("olay_turu")
+  aciklama        String?
+  createdAt       DateTime        @default(now()) @map("created_at")
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  duzeltmeKaydi DuzeltmeKaydi @relation(fields: [duzeltmeKaydiId], references: [id], onDelete: Cascade)
+  user          User?         @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, duzeltmeKaydiId, createdAt])
+  @@map("duzeltme_olaylari")
 }

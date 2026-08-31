@@ -2,7 +2,7 @@
 
 **Sürüm:** 1.0
 **Tarih:** 2026-08-28
-**Durum:** Ürün sahibi onayı bekleyen uygulama planı
+**Durum:** R1 kapsamı ürün sahibi tarafından 2026-08-31 tarihinde onaylandı
 **Dayanak:** `docs/ISTERLER.md`, `docs/MIMARI.md`,
 `docs/URETIM-HAZIRLIK-KONTROL-LISTESI.md`
 
@@ -165,6 +165,9 @@ Yük profili:
 **Süre:** 2 sprint
 **Amaç:** Modüller arasındaki eksik, hatalı ve eşleşmemiş kayıtları tek çalışma
 kuyruğunda görünür ve çözülebilir yapmak.
+
+**Ürün sahibi kararı (2026-08-31):** R1 kapsamı; aşağıdaki alan modeli,
+dedektörler, API, arayüz ve kabul ölçütleriyle geliştirmeye açılmıştır.
 
 ### 6.1 Alan modeli
 

@@ -1,8 +1,8 @@
 const ROL_YOLLARI: Record<string, string[]> = {
-  muhasebe: ["/panel", "/panel/cari", "/panel/fatura", "/panel/ebelge", "/panel/belgeler", "/panel/satin-alma", "/panel/masraflar", "/panel/gelirler", "/panel/kasa-banka", "/panel/projeler", "/panel/stok", "/panel/raporlar", "/panel/mali-musavir", "/panel/personel", "/panel/pazaryeri", "/panel/ayarlar/eposta", "/panel/ayarlar/hesap"],
+  muhasebe: ["/panel", "/panel/islemler", "/panel/cari", "/panel/fatura", "/panel/ebelge", "/panel/belgeler", "/panel/satin-alma", "/panel/masraflar", "/panel/gelirler", "/panel/kasa-banka", "/panel/projeler", "/panel/stok", "/panel/raporlar", "/panel/mali-musavir", "/panel/personel", "/panel/pazaryeri", "/panel/ayarlar/eposta", "/panel/ayarlar/hesap"],
   satis: ["/panel", "/panel/satis", "/panel/crm", "/panel/fatura", "/panel/belgeler", "/panel/cari", "/panel/projeler", "/panel/ayarlar/hesap"],
-  salt_okunur: ["/panel", "/panel/cari", "/panel/fatura", "/panel/belgeler", "/panel/kasa-banka", "/panel/projeler", "/panel/stok", "/panel/raporlar", "/panel/ayarlar/hesap"],
-  mali_musavir: ["/panel", "/panel/mali-musavir", "/panel/raporlar", "/panel/fatura", "/panel/cari", "/panel/ayarlar/hesap"],
+  salt_okunur: ["/panel", "/panel/islemler", "/panel/cari", "/panel/fatura", "/panel/belgeler", "/panel/kasa-banka", "/panel/projeler", "/panel/stok", "/panel/raporlar", "/panel/ayarlar/hesap"],
+  mali_musavir: ["/panel", "/panel/islemler", "/panel/mali-musavir", "/panel/raporlar", "/panel/fatura", "/panel/cari", "/panel/ayarlar/hesap"],
   b2b_bayi: ["/panel/b2b", "/panel/ayarlar/hesap"],
   uretim_planlama: ["/panel", "/panel/uretim", "/panel/stok", "/panel/ayarlar/hesap"],
   uretim_operatoru: ["/panel", "/panel/uretim", "/panel/ayarlar/hesap"],

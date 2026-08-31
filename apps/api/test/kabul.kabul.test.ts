@@ -292,6 +292,20 @@ describe("R0 operasyon — liveness ve readiness", () => {
   });
 });
 
+describe("R1 düzeltme merkezi — tenant bağlamlı tarama ve listeleme", () => {
+  it("yeni tenant için taramayı çalıştırır ve sayfalı iş kuyruğunu döndürür", async () => {
+    const { jeton } = await firmaAc("r1-duzeltme", vknUret(true));
+    const tarama = await istek<{ bulunan: number; otomatikCozulen: number }>("/duzeltmeler/tara", { method: "POST", jeton, body: {} });
+    expect(tarama.durum, JSON.stringify(tarama.veri)).toBe(201);
+    expect(tarama.veri.bulunan).toBeGreaterThanOrEqual(0);
+
+    const liste = await istek<{ kayitlar: unknown[]; toplam: number; sayfa: number }>("/duzeltmeler?durum=acik", { jeton });
+    expect(liste.durum, JSON.stringify(liste.veri)).toBe(200);
+    expect(liste.veri).toMatchObject({ sayfa: 1 });
+    expect(Array.isArray(liste.veri.kayitlar)).toBe(true);
+  });
+});
+
 describe("R0 kritik regresyon — tekrarlayan fatura idempotansı", () => {
   it("iki eşzamanlı tetiklemede aynı dönem için yalnızca bir taslak üretir", async () => {
     const { jeton } = await firmaAc("r0-tekrarlayan", vknUret(true));
