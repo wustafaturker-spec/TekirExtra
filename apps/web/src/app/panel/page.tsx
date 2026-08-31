@@ -17,10 +17,8 @@ interface VadesiGecenler { alacaklar: VadesiGecenSatir[]; borclar: VadesiGecenSa
 
 const rolAdi: Record<Rol, string> = { yonetici: "Yönetim görünümü", muhasebe: "Muhasebe görünümü", satis: "Satış görünümü", salt_okunur: "Genel görünüm", mali_musavir: "Mali müşavir görünümü", b2b_bayi: "Bayi görünümü", uretim_planlama: "Üretim planlama görünümü", uretim_operatoru: "Operatör görünümü", depo: "Depo görünümü", kalite: "Kalite görünümü", maliyet_muhasebesi: "Maliyet görünümü" };
 const para = (deger: string | number, sifirBasamak = false) => Number(deger || 0).toLocaleString("tr-TR", { style: "currency", currency: "TRY", maximumFractionDigits: sifirBasamak ? 0 : 2 });
-const tarih = (deger: string) => new Intl.DateTimeFormat("tr-TR", { day: "numeric", month: "short" }).format(new Date(deger));
 const gunBaslangici = (deger = new Date()) => new Date(deger.getFullYear(), deger.getMonth(), deger.getDate());
 const gunFarki = (deger: string) => Math.round((gunBaslangici(new Date(deger)).getTime() - gunBaslangici().getTime()) / 86_400_000);
-const vadeMetni = (gun: number) => gun < 0 ? `${Math.abs(gun)} gün gecikti` : gun === 0 ? "Bugün" : gun === 1 ? "Yarın" : `${gun} gün kaldı`;
 
 export default function PanelSayfasi() {
   const router = useRouter();
@@ -88,22 +86,10 @@ export default function PanelSayfasi() {
     };
     return { gecikenAlinan: hesapla("alinan", -99_999, -1), gecikenVerilen: hesapla("verilen", -99_999, -1), bugunAlinan: hesapla("alinan", 0, 0), bugunVerilen: hesapla("verilen", 0, 0), haftaAlinan: hesapla("alinan", 1, 7), haftaVerilen: hesapla("verilen", 1, 7), ayAlinan: hesapla("alinan", 8, 30), ayVerilen: hesapla("verilen", 8, 30) };
   }, [aktifCekler]);
-  const yakinCekler = useMemo(() => [...aktifCekler].filter((cek) => gunFarki(cek.vadeTarihi) <= 30).sort((a, b) => a.vadeTarihi.localeCompare(b.vadeTarihi)).slice(0, 6), [aktifCekler]);
   const otuzGunTahsilat = vadeOzeti.bugunAlinan.tutar + vadeOzeti.haftaAlinan.tutar + vadeOzeti.ayAlinan.tutar;
   const otuzGunOdeme = vadeOzeti.bugunVerilen.tutar + vadeOzeti.haftaVerilen.tutar + vadeOzeti.ayVerilen.tutar;
   const nakit = Number(finans?.nakitVarliklar ?? 0);
   const cekSonrasiNakit = nakit + otuzGunTahsilat - otuzGunOdeme;
-  const varlikKalemleri = [
-    { etiket: "Nakit ve banka", tutar: nakit, ton: "teal" },
-    { etiket: "Açık hesap alacakları", tutar: Number(finans?.toplamAlacaklar ?? 0), ton: "blue" },
-    { etiket: "Stok", tutar: Number(finans?.envanterDegeri ?? 0), ton: "violet" },
-  ];
-  const toplamVarlik = varlikKalemleri.reduce((toplam, kalem) => toplam + kalem.tutar, 0);
-  const borcKalemleri = [
-    { etiket: "Tedarikçi borçları", tutar: Number(finans?.toplamBorclar ?? 0), ton: "orange" },
-    { etiket: "Yaklaşan çek ve senetler", tutar: otuzGunOdeme, ton: "red" },
-  ];
-  const toplamBorc = borcKalemleri.reduce((toplam, kalem) => toplam + kalem.tutar, 0);
 
   const isler: IsOgesi[] = rol === "satis" ? [
     { href: "/panel/fatura?yon=satis&odeme=acik", baslik: "Açık tahsilatlar", aciklama: "Müşteri takibi bekleyen satış faturaları", sayi: fatura?.acikTahsilat ?? 0, ton: "warning" },
@@ -121,73 +107,73 @@ export default function PanelSayfasi() {
   const tarihBasligi = new Intl.DateTimeFormat("tr-TR", { weekday: "long", day: "numeric", month: "long" }).format(new Date());
 
   return (
-    <div style={{ minHeight: "100vh", backgroundColor: "#f8fafc", color: "#0f172a", margin: "-20px -24px", padding: "24px 32px" }}>
+    <div style={{ minHeight: "100vh", backgroundColor: "var(--bg)", color: "var(--text)", margin: "-20px -24px", padding: "24px 32px" }}>
       {/* Header Banner */}
-      <header style={{ backgroundColor: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "16px", padding: "24px 32px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+      <header style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderRadius: "16px", padding: "24px 32px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px", boxShadow: "var(--shadow)" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px" }}>
-            <span style={{ backgroundColor: "#ffedd5", color: "#c2410c", padding: "3px 10px", borderRadius: "12px", fontSize: "12px", fontWeight: "700" }}>
+            <span style={{ backgroundColor: "var(--accent-soft)", color: "var(--accent-text)", padding: "3px 10px", borderRadius: "12px", fontSize: "12px", fontWeight: "700" }}>
               {rol ? rolAdi[rol] : "Finansal Kontrol Merkezi"}
             </span>
-            <span style={{ fontSize: "12px", color: "#94a3b8" }}>•</span>
-            <span style={{ fontSize: "13px", color: "#64748b" }}>{tarihBasligi.charAt(0).toUpperCase() + tarihBasligi.slice(1)}</span>
+            <span style={{ fontSize: "12px", color: "var(--text-subtle)" }}>•</span>
+            <span style={{ fontSize: "13px", color: "var(--text-muted)" }}>{tarihBasligi.charAt(0).toUpperCase() + tarihBasligi.slice(1)}</span>
           </div>
-          <h1 style={{ fontSize: "26px", fontWeight: "800", color: "#0f172a", margin: "4px 0" }}>{firma}</h1>
-          <p style={{ fontSize: "13px", color: "#64748b", margin: 0 }}>İşletmenizin anlık finansal ve operasyonel canlı durumu</p>
+          <h1 style={{ fontSize: "26px", fontWeight: "800", color: "var(--text)", margin: "4px 0" }}>{firma}</h1>
+          <p style={{ fontSize: "13px", color: "var(--text-muted)", margin: 0 }}>İşletmenizin anlık finansal ve operasyonel canlı durumu</p>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <span style={{ fontSize: "12px", color: "#94a3b8", fontWeight: "500" }}>
+          <span style={{ fontSize: "12px", color: "var(--text-subtle)", fontWeight: "500" }}>
             {sonGuncelleme ? `Son güncelleme: ${sonGuncelleme.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}` : "Yükleniyor..."}
           </span>
           <button
             disabled={yukleniyor}
             onClick={() => void yukle()}
-            style={{ padding: "9px 16px", backgroundColor: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "10px", fontSize: "13px", fontWeight: "600", cursor: "pointer", color: "#334155", display: "flex", alignItems: "center", gap: "6px" }}
+            style={{ padding: "9px 16px", backgroundColor: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "10px", fontSize: "13px", fontWeight: "600", cursor: "pointer", color: "var(--text)", display: "flex", alignItems: "center", gap: "6px" }}
           >
             <span>↻</span> {yukleniyor ? "Yenileniyor..." : "Yenile"}
           </button>
-          <Link href="/panel/fatura/yeni?yon=satis" style={{ padding: "9px 18px", backgroundColor: "#e8792b", color: "#ffffff", borderRadius: "10px", textDecoration: "none", fontSize: "13px", fontWeight: "700", boxShadow: "0 4px 12px rgba(232, 121, 43, 0.25)", display: "flex", alignItems: "center", gap: "6px" }}>
+          <Link href="/panel/fatura/yeni?yon=satis" style={{ padding: "9px 18px", backgroundColor: "var(--accent)", color: "#ffffff", borderRadius: "10px", textDecoration: "none", fontSize: "13px", fontWeight: "700", boxShadow: "0 4px 12px rgba(0,0,0,0.15)", display: "flex", alignItems: "center", gap: "6px" }}>
             <span>+</span> Yeni İşlem
           </Link>
         </div>
       </header>
 
       {hata && (
-        <div style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "12px", padding: "12px 20px", color: "#991b1b", fontSize: "13px", fontWeight: "500", marginBottom: "24px", display: "flex", alignItems: "center", gap: "10px" }}>
+        <div style={{ backgroundColor: "var(--danger-soft)", border: "1px solid var(--danger)", borderRadius: "12px", padding: "12px 20px", color: "var(--danger)", fontSize: "13px", fontWeight: "500", marginBottom: "24px", display: "flex", alignItems: "center", gap: "10px" }}>
           <span>⚠️</span> {hata}
         </div>
       )}
 
       {/* Daily Strip (Satış & Tahsilat & Kurlar) */}
       <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "20px", marginBottom: "28px" }}>
-        <Link href={`/panel/fatura?yon=satis&baslangic=${new Date().toISOString().slice(0, 10)}&bitis=${new Date().toISOString().slice(0, 10)}`} style={{ backgroundColor: "#ffffff", padding: "20px", borderRadius: "14px", border: "1px solid #e2e8f0", textDecoration: "none", boxShadow: "0 1px 3px rgba(0,0,0,0.03)", display: "block" }}>
-          <div style={{ color: "#64748b", fontSize: "13px", fontWeight: "600", marginBottom: "6px" }}>Bugünkü Satış Hacmi</div>
-          <div style={{ fontSize: "28px", fontWeight: "800", color: "#0f172a", marginBottom: "4px" }}>{gunluk ? para(gunluk.satis.toplam) : "—"}</div>
-          <div style={{ fontSize: "12px", color: "#16a34a", fontWeight: "600" }}>{gunluk?.satis.adet ?? 0} adet kesinleşmiş satış faturası · Detayları Gör →</div>
+        <Link href={`/panel/fatura?yon=satis&baslangic=${new Date().toISOString().slice(0, 10)}&bitis=${new Date().toISOString().slice(0, 10)}`} style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "14px", border: "1px solid var(--border)", textDecoration: "none", boxShadow: "var(--shadow)", display: "block" }}>
+          <div style={{ color: "var(--text-muted)", fontSize: "13px", fontWeight: "600", marginBottom: "6px" }}>Bugünkü Satış Hacmi</div>
+          <div style={{ fontSize: "28px", fontWeight: "800", color: "var(--text)", marginBottom: "4px" }}>{gunluk ? para(gunluk.satis.toplam) : "—"}</div>
+          <div style={{ fontSize: "12px", color: "var(--success)", fontWeight: "600" }}>{gunluk?.satis.adet ?? 0} adet kesinleşmiş satış faturası · Detayları Gör →</div>
         </Link>
 
-        <Link href={`/panel/kasa-banka?baslangic=${new Date().toISOString().slice(0, 10)}&bitis=${new Date().toISOString().slice(0, 10)}&tur=tahsilat`} style={{ backgroundColor: "#ffffff", padding: "20px", borderRadius: "14px", border: "1px solid #e2e8f0", textDecoration: "none", boxShadow: "0 1px 3px rgba(0,0,0,0.03)", display: "block" }}>
-          <div style={{ color: "#64748b", fontSize: "13px", fontWeight: "600", marginBottom: "6px" }}>Bugünkü Tahsilat</div>
-          <div style={{ fontSize: "28px", fontWeight: "800", color: "#0f172a", marginBottom: "4px" }}>{gunluk ? para(gunluk.tahsilat.toplam) : "—"}</div>
-          <div style={{ fontSize: "12px", color: "#e8792b", fontWeight: "600" }}>{gunluk?.tahsilat.adet ?? 0} tahsilat kaydı · Detayları Gör →</div>
+        <Link href={`/panel/kasa-banka?baslangic=${new Date().toISOString().slice(0, 10)}&bitis=${new Date().toISOString().slice(0, 10)}&tur=tahsilat`} style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "14px", border: "1px solid var(--border)", textDecoration: "none", boxShadow: "var(--shadow)", display: "block" }}>
+          <div style={{ color: "var(--text-muted)", fontSize: "13px", fontWeight: "600", marginBottom: "6px" }}>Bugünkü Tahsilat</div>
+          <div style={{ fontSize: "28px", fontWeight: "800", color: "var(--text)", marginBottom: "4px" }}>{gunluk ? para(gunluk.tahsilat.toplam) : "—"}</div>
+          <div style={{ fontSize: "12px", color: "var(--accent)", fontWeight: "600" }}>{gunluk?.tahsilat.adet ?? 0} tahsilat kaydı · Detayları Gör →</div>
         </Link>
 
-        <div style={{ backgroundColor: "#ffffff", padding: "20px", borderRadius: "14px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", color: "#64748b", fontSize: "13px", fontWeight: "600", marginBottom: "10px" }}>
+        <div style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "14px", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)", fontSize: "13px", fontWeight: "600", marginBottom: "10px" }}>
             <span>TCMB Döviz Kurları</span>
-            <span style={{ fontSize: "11px", color: "#94a3b8" }}>{alisKurlari?.kurTarihi ?? "Canlı"}</span>
+            <span style={{ fontSize: "11px", color: "var(--text-subtle)" }}>{alisKurlari?.kurTarihi ?? "Canlı"}</span>
           </div>
           <div style={{ display: "flex", gap: "20px", fontSize: "13px" }}>
             <div>
-              <div style={{ fontWeight: "700", color: "#0f172a" }}>USD</div>
-              <div style={{ fontSize: "12px", color: "#64748b" }}>Alış: <strong style={{ color: "#0f172a" }}>{alisKurlari?.kurlar.USD?.toFixed(4) ?? "—"}</strong></div>
-              <div style={{ fontSize: "12px", color: "#64748b" }}>Satış: <strong style={{ color: "#0f172a" }}>{satisKurlari?.kurlar.USD?.toFixed(4) ?? "—"}</strong></div>
+              <div style={{ fontWeight: "700", color: "var(--text)" }}>USD</div>
+              <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>Alış: <strong style={{ color: "var(--text)" }}>{alisKurlari?.kurlar.USD?.toFixed(4) ?? "—"}</strong></div>
+              <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>Satış: <strong style={{ color: "var(--text)" }}>{satisKurlari?.kurlar.USD?.toFixed(4) ?? "—"}</strong></div>
             </div>
-            <div style={{ borderLeft: "1px solid #f1f5f9", paddingLeft: "20px" }}>
-              <div style={{ fontWeight: "700", color: "#0f172a" }}>EUR</div>
-              <div style={{ fontSize: "12px", color: "#64748b" }}>Alış: <strong style={{ color: "#0f172a" }}>{alisKurlari?.kurlar.EUR?.toFixed(4) ?? "—"}</strong></div>
-              <div style={{ fontSize: "12px", color: "#64748b" }}>Satış: <strong style={{ color: "#0f172a" }}>{satisKurlari?.kurlar.EUR?.toFixed(4) ?? "—"}</strong></div>
+            <div style={{ borderLeft: "1px solid var(--border)", paddingLeft: "20px" }}>
+              <div style={{ fontWeight: "700", color: "var(--text)" }}>EUR</div>
+              <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>Alış: <strong style={{ color: "var(--text)" }}>{alisKurlari?.kurlar.EUR?.toFixed(4) ?? "—"}</strong></div>
+              <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>Satış: <strong style={{ color: "var(--text)" }}>{satisKurlari?.kurlar.EUR?.toFixed(4) ?? "—"}</strong></div>
             </div>
           </div>
         </div>
@@ -197,43 +183,43 @@ export default function PanelSayfasi() {
       {rol !== "satis" && (
         <section style={{ marginBottom: "28px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-            <h2 style={{ fontSize: "18px", fontWeight: "800", color: "#0f172a", margin: 0 }}>Finansal Varlık & Borç Durumu</h2>
-            <Link href="/panel/raporlar" style={{ fontSize: "13px", color: "#e8792b", fontWeight: "700", textDecoration: "none" }}>Tüm Detaylı Raporlar →</Link>
+            <h2 style={{ fontSize: "18px", fontWeight: "800", color: "var(--text)", margin: 0 }}>Finansal Varlık & Borç Durumu</h2>
+            <Link href="/panel/raporlar" style={{ fontSize: "13px", color: "var(--accent)", fontWeight: "700", textDecoration: "none" }}>Tüm Detaylı Raporlar →</Link>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px" }}>
-            <div style={{ backgroundColor: "#ffffff", padding: "20px", borderRadius: "14px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
-              <span style={{ fontSize: "12px", color: "#64748b", fontWeight: "600" }}>Nakit ve Banka</span>
-              <div style={{ fontSize: "24px", fontWeight: "800", color: "#0f172a", margin: "6px 0 4px 0" }}>{finans ? para(finans.nakitVarliklar, true) : "—"}</div>
-              <div style={{ fontSize: "11px", color: cekSonrasiNakit < 0 ? "#dc2626" : "#16a34a", fontWeight: "600" }}>
+            <div style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "14px", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
+              <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: "600" }}>Nakit ve Banka</span>
+              <div style={{ fontSize: "24px", fontWeight: "800", color: "var(--text)", margin: "6px 0 4px 0" }}>{finans ? para(finans.nakitVarliklar, true) : "—"}</div>
+              <div style={{ fontSize: "11px", color: cekSonrasiNakit < 0 ? "var(--danger)" : "var(--success)", fontWeight: "600" }}>
                 30 günlük çek etkisi: {finans ? para(cekSonrasiNakit, true) : "—"}
               </div>
             </div>
 
-            <div style={{ backgroundColor: "#ffffff", padding: "20px", borderRadius: "14px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
-              <span style={{ fontSize: "12px", color: "#64748b", fontWeight: "600" }}>Müşteri Alacakları</span>
-              <div style={{ fontSize: "24px", fontWeight: "800", color: "#0f172a", margin: "6px 0 4px 0" }}>{finans ? para(finans.toplamAlacaklar, true) : "—"}</div>
-              <div style={{ fontSize: "11px", color: "#64748b" }}>Açık satış faturaları bakiyesi</div>
+            <div style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "14px", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
+              <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: "600" }}>Müşteri Alacakları</span>
+              <div style={{ fontSize: "24px", fontWeight: "800", color: "var(--text)", margin: "6px 0 4px 0" }}>{finans ? para(finans.toplamAlacaklar, true) : "—"}</div>
+              <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>Açık satış faturaları bakiyesi</div>
             </div>
 
-            <div style={{ backgroundColor: "#ffffff", padding: "20px", borderRadius: "14px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
-              <span style={{ fontSize: "12px", color: "#64748b", fontWeight: "600" }}>Tedarikçi Borçları</span>
-              <div style={{ fontSize: "24px", fontWeight: "800", color: "#0f172a", margin: "6px 0 4px 0" }}>{finans ? para(finans.toplamBorclar, true) : "—"}</div>
-              <div style={{ fontSize: "11px", color: "#64748b" }}>Açık alış faturaları borcu</div>
+            <div style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "14px", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
+              <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: "600" }}>Tedarikçi Borçları</span>
+              <div style={{ fontSize: "24px", fontWeight: "800", color: "var(--text)", margin: "6px 0 4px 0" }}>{finans ? para(finans.toplamBorclar, true) : "—"}</div>
+              <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>Açık alış faturaları borcu</div>
             </div>
 
-            <div style={{ backgroundColor: "#ffffff", padding: "20px", borderRadius: "14px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
-              <span style={{ fontSize: "12px", color: "#64748b", fontWeight: "600" }}>Stok Değeri</span>
-              <div style={{ fontSize: "24px", fontWeight: "800", color: "#0f172a", margin: "6px 0 4px 0" }}>{finans ? para(finans.envanterDegeri, true) : "—"}</div>
-              <div style={{ fontSize: "11px", color: kritikStok ? "#dc2626" : "#64748b", fontWeight: "600" }}>
+            <div style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "14px", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
+              <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: "600" }}>Stok Değeri</span>
+              <div style={{ fontSize: "24px", fontWeight: "800", color: "var(--text)", margin: "6px 0 4px 0" }}>{finans ? para(finans.envanterDegeri, true) : "—"}</div>
+              <div style={{ fontSize: "11px", color: kritikStok ? "var(--danger)" : "var(--text-muted)", fontWeight: "600" }}>
                 {kritikStok ? `${kritikStok} ürün kritik stokta` : "Kritik stok yok"}
               </div>
             </div>
 
-            <div style={{ backgroundColor: "#ffffff", padding: "20px", borderRadius: "14px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
-              <span style={{ fontSize: "12px", color: "#64748b", fontWeight: "600" }}>Net Varlık Degeri</span>
-              <div style={{ fontSize: "24px", fontWeight: "800", color: "#0f172a", margin: "6px 0 4px 0" }}>{finans ? para(finans.netVarlikDegeri, true) : "—"}</div>
-              <div style={{ fontSize: "11px", color: "#64748b" }}>Nakit + alacak + envanter - borç</div>
+            <div style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "14px", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
+              <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: "600" }}>Net Varlık Degeri</span>
+              <div style={{ fontSize: "24px", fontWeight: "800", color: "var(--text)", margin: "6px 0 4px 0" }}>{finans ? para(finans.netVarlikDegeri, true) : "—"}</div>
+              <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>Nakit + alacak + envanter - borç</div>
             </div>
           </div>
         </section>
@@ -243,13 +229,13 @@ export default function PanelSayfasi() {
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "24px", marginBottom: "28px" }}>
 
         {/* Priority Task List Card */}
-        <div style={{ backgroundColor: "#ffffff", padding: "24px", borderRadius: "16px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+        <div style={{ backgroundColor: "var(--surface)", padding: "24px", borderRadius: "16px", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "18px" }}>
             <div>
-              <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#0f172a", margin: 0 }}>Öncelikli Operasyonel İşler</h3>
-              <p style={{ fontSize: "12px", color: "#64748b", margin: "2px 0 0 0" }}>Aksiyon almanız gereken bekleyen süreçler</p>
+              <h3 style={{ fontSize: "16px", fontWeight: "700", color: "var(--text)", margin: 0 }}>Öncelikli Operasyonel İşler</h3>
+              <p style={{ fontSize: "12px", color: "var(--text-muted)", margin: "2px 0 0 0" }}>Aksiyon almanız gereken bekleyen süreçler</p>
             </div>
-            <span style={{ backgroundColor: "#f1f5f9", color: "#475569", padding: "4px 10px", borderRadius: "12px", fontSize: "12px", fontWeight: "700" }}>
+            <span style={{ backgroundColor: "var(--surface-2)", color: "var(--text-muted)", fontSize: "12px", fontWeight: "700", padding: "2px 10px", borderRadius: "12px" }}>
               {isler.reduce((toplam, is) => toplam + is.sayi, 0)} Açık İş
             </span>
           </div>
@@ -257,52 +243,71 @@ export default function PanelSayfasi() {
           <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
             {isler.map((is) => (
               <Link
-                href={is.href}
                 key={is.baslik}
-                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", backgroundColor: "#f8fafc", border: "1px solid #f1f5f9", borderRadius: "12px", textDecoration: "none", transition: "all 0.2s" }}
+                href={is.href}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "12px 16px",
+                  borderRadius: "12px",
+                  border: "1px solid var(--border)",
+                  backgroundColor: "var(--surface-2)",
+                  textDecoration: "none",
+                  transition: "all 0.15s ease"
+                }}
               >
                 <div>
-                  <div style={{ fontSize: "14px", fontWeight: "700", color: "#0f172a" }}>{is.baslik}</div>
-                  <div style={{ fontSize: "12px", color: "#64748b", marginTop: "2px" }}>{is.aciklama}</div>
+                  <div style={{ fontSize: "14px", fontWeight: "700", color: "var(--text)" }}>{is.baslik}</div>
+                  <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>{is.aciklama}</div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                   <span style={{
-                    backgroundColor: is.ton === "danger" ? "#fee2e2" : is.ton === "warning" ? "#fef3c7" : "#e2e8f0",
-                    color: is.ton === "danger" ? "#dc2626" : is.ton === "warning" ? "#b45309" : "#475569",
+                    backgroundColor: is.ton === "danger" ? "var(--danger-soft)" : is.ton === "warning" ? "var(--warning-soft)" : "var(--surface)",
+                    color: is.ton === "danger" ? "var(--danger)" : is.ton === "warning" ? "var(--warning)" : "var(--text-muted)",
                     padding: "4px 10px",
-                    borderRadius: "10px",
+                    borderRadius: "12px",
                     fontSize: "12px",
                     fontWeight: "800"
                   }}>
-                    {is.sayi}
+                    {is.sayi} Adet
                   </span>
-                  <span style={{ color: "#94a3b8", fontWeight: "bold" }}>→</span>
+                  <span style={{ color: "var(--text-subtle)", fontSize: "14px" }}>→</span>
                 </div>
               </Link>
             ))}
           </div>
         </div>
 
-        {/* Quick Shortcuts */}
-        <div style={{ backgroundColor: "#ffffff", padding: "24px", borderRadius: "16px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
-          <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#0f172a", margin: "0 0 16px 0" }}>Hızlı Kısayollar</h3>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-            {(rol === "satis" ? [
-              ["SF", "Satış Faturası", "/panel/fatura/yeni?yon=satis"],
-              ["TK", "Teklif Oluştur", "/panel/belgeler/yeni?yon=satis&tur=teklif"],
-              ["CR", "Yeni Cari", "/panel/cari/yeni"],
-              ["TH", "Tahsilat Al", "/panel/kasa-banka?islem=tahsilat"],
-            ] : [
-              ["SF", "Satış Faturası", "/panel/fatura/yeni?yon=satis"],
-              ["AF", "Alış Faturası", "/panel/fatura/yeni?yon=alis"],
-              ["MS", "Masraf Ekle", "/panel/masraflar/yeni"],
-              ["TH", "Tahsilat Al", "/panel/kasa-banka?islem=tahsilat"]
-            ]).map(([ikon, baslik, href]) => (
-              <Link href={href} key={baslik} style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "14px", backgroundColor: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "12px", textDecoration: "none", color: "#0f172a" }}>
-                <span style={{ width: "32px", height: "32px", borderRadius: "8px", backgroundColor: "#ffedd5", color: "#e8792b", fontWeight: "800", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center" }}>{ikon}</span>
-                <span style={{ fontSize: "13px", fontWeight: "700" }}>{baslik}</span>
-              </Link>
-            ))}
+        {/* Quick Actions & AI Card */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+          <div style={{ backgroundColor: "var(--surface)", padding: "24px", borderRadius: "16px", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
+            <h3 style={{ fontSize: "16px", fontWeight: "700", color: "var(--text)", margin: "0 0 14px 0" }}>Hızlı Operasyonlar</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {(rol === "satis" ? [
+                ["📄", "Satış Faturası Kes", "/panel/fatura/yeni?yon=satis"],
+                ["📝", "Teklif Oluştur", "/panel/belgeler/yeni?yon=satis&tur=teklif"],
+                ["👥", "Yeni Cari Kartı Aç", "/panel/cari/yeni"],
+                ["💳", "Tahsilat Al", "/panel/kasa-banka?islem=tahsilat"],
+              ] : [
+                ["📄", "Satış Faturası Kes", "/panel/fatura/yeni?yon=satis"],
+                ["🧾", "Alış Faturası Gir", "/panel/fatura/yeni?yon=alis"],
+                ["📎", "Masraf Ekle", "/panel/masraflar/yeni"],
+                ["💳", "Tahsilat Al", "/panel/kasa-banka?islem=tahsilat"],
+              ]).map(([ikon, baslik, href]) => (
+                <Link key={baslik} href={href} style={{ padding: "12px 14px", backgroundColor: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "10px", textDecoration: "none", fontSize: "13px", fontWeight: "600", color: "var(--text)", display: "flex", alignItems: "center", gap: "10px" }}>
+                  <span aria-hidden="true">{ikon}</span> {baslik}
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ backgroundColor: "var(--accent-soft)", border: "1px solid var(--border)", borderRadius: "16px", padding: "20px" }}>
+            <div style={{ fontSize: "11px", color: "var(--accent-text)", fontWeight: "800", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>✨ AI Akıllı Öneri</div>
+            <h4 style={{ fontSize: "14px", fontWeight: "700", color: "var(--accent-text)", margin: "0 0 6px 0" }}>Banka Ekstresi Eşleştirme</h4>
+            <p style={{ fontSize: "12px", color: "var(--text-muted)", margin: 0, lineHeight: 1.5 }}>
+              Son aktarılan banka ekstrenizde {ekstre} adet işlenmemiş hareket bulundu. Yapay zeka ile otomatik cari eşleştirmesi yapabilirsiniz.
+            </p>
           </div>
         </div>
 
@@ -311,31 +316,31 @@ export default function PanelSayfasi() {
       {/* Overdue Tables (Alacak & Borç) */}
       {rol !== "satis" && (
         <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "24px" }}>
-          {[{ baslik: "Vadesi Geçmiş Alacaklar", alt: "Müşterilerden tahsil edilecek açık faturalar", toplam: vadesiGecenler?.toplamAlacak, liste: vadesiGecenler?.alacaklar ?? [], renk: "#16a34a", bos: "Vadesi geçmiş alacak yok." }, { baslik: "Vadesi Geçmiş Borçlar", alt: "Tedarikçilere ödenecek açık faturalar", toplam: vadesiGecenler?.toplamBorc, liste: vadesiGecenler?.borclar ?? [], renk: "#dc2626", bos: "Vadesi geçmiş borç yok." }].map((grup) => (
-            <div key={grup.baslik} style={{ backgroundColor: "#ffffff", padding: "24px", borderRadius: "16px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+          {[{ baslik: "Vadesi Geçmiş Alacaklar", alt: "Müşterilerden tahsil edilecek açık faturalar", toplam: vadesiGecenler?.toplamAlacak, liste: vadesiGecenler?.alacaklar ?? [], renk: "var(--success)", bos: "Vadesi geçmiş alacak yok." }, { baslik: "Vadesi Geçmiş Borçlar", alt: "Tedarikçilere ödenecek açık faturalar", toplam: vadesiGecenler?.toplamBorc, liste: vadesiGecenler?.borclar ?? [], renk: "var(--danger)", bos: "Vadesi geçmiş borç yok." }].map((grup) => (
+            <div key={grup.baslik} style={{ backgroundColor: "var(--surface)", padding: "24px", borderRadius: "16px", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
                 <div>
-                  <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#0f172a", margin: 0 }}>{grup.baslik}</h3>
-                  <p style={{ fontSize: "12px", color: "#64748b", margin: "2px 0 0 0" }}>{grup.alt}</p>
+                  <h3 style={{ fontSize: "16px", fontWeight: "700", color: "var(--text)", margin: 0 }}>{grup.baslik}</h3>
+                  <p style={{ fontSize: "12px", color: "var(--text-muted)", margin: "2px 0 0 0" }}>{grup.alt}</p>
                 </div>
                 <strong style={{ fontSize: "16px", fontWeight: "800", color: grup.renk }}>{vadesiGecenler ? para(grup.toplam ?? 0, true) : "—"}</strong>
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 {grup.liste.slice(0, 5).map((satir) => (
-                  <Link href={`/panel/fatura?faturaId=${satir.faturaId}&panel=odeme`} key={satir.faturaId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", backgroundColor: "#f8fafc", borderRadius: "10px", textDecoration: "none", color: "#0f172a" }}>
+                  <Link href={`/panel/fatura?faturaId=${satir.faturaId}&panel=odeme`} key={satir.faturaId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", backgroundColor: "var(--surface-2)", borderRadius: "10px", textDecoration: "none", color: "var(--text)" }}>
                     <div>
                       <div style={{ fontSize: "13px", fontWeight: "700" }}>{satir.cariUnvan}</div>
-                      <div style={{ fontSize: "11px", color: "#64748b" }}>{satir.no || "Fatura"} · Vade: {satir.vadeTarihi}</div>
+                      <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{satir.no || "Fatura"} · Vade: {satir.vadeTarihi}</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontSize: "13px", fontWeight: "800", color: grup.renk }}>{para(satir.kalanTry, true)}</div>
-                      <div style={{ fontSize: "10px", color: "#dc2626", fontWeight: "600" }}>{satir.gecikmeGun} gün gecikti</div>
+                      <div style={{ fontSize: "10px", color: "var(--danger)", fontWeight: "600" }}>{satir.gecikmeGun} gün gecikti</div>
                     </div>
                   </Link>
                 ))}
                 {!grup.liste.length && (
-                  <div style={{ padding: "20px", textAlign: "center", color: "#94a3b8", fontSize: "13px" }}>
+                  <div style={{ padding: "20px", textAlign: "center", color: "var(--text-subtle)", fontSize: "13px" }}>
                     {vadesiGecenler ? grup.bos : "Veriler yükleniyor…"}
                   </div>
                 )}

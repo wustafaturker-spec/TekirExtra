@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api, tokenAl, tokenYaz } from "@/lib/api";
 import { rolMenuYoluGorebilir } from "@/lib/rol-yetkileri";
+import { ThemeSwitcher } from "@/components/theme-switcher";
 
 const ROL_ADI: Record<string, string> = {
   yonetici: "Yönetici",
@@ -341,6 +342,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   return (
     <div className="app-shell">
       <a className="skip-link" href="#ana-icerik">Ana içeriğe geç</a>
+
       <header className="mobile-topbar">
         <button
           aria-controls="ana-menu"
@@ -354,6 +356,9 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
           <span aria-hidden="true">☰</span>
         </button>
         <Link className="mobile-brand" href="/panel">Tekir<b>Extra</b></Link>
+        <div style={{ marginLeft: "auto", marginRight: "8px" }}>
+          <ThemeSwitcher />
+        </div>
         <button className="notification-button" aria-controls="bildirim-paneli" aria-expanded={bildirimlerAcik} aria-label={"Bildirimler" + (bildirimSayisi ? ", " + bildirimSayisi + " açık kayıt" : "")} onClick={bildirimleriDegistir} title="Bildirimler" type="button">
           <span aria-hidden="true">🔔</span>{bildirimSayisi > 0 && <span className="notification-button__count">{bildirimSayisi > 99 ? "99+" : bildirimSayisi}</span>}
         </button>
@@ -373,6 +378,11 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
           <button className="sidebar-collapse" type="button" aria-label={sidebarDaraltildi ? "Menüyü genişlet" : "Menüyü daralt"} aria-expanded={!sidebarDaraltildi} onClick={() => setSidebarDaraltildi((daraltilmis) => !daraltilmis)}>
             <span aria-hidden="true">{sidebarDaraltildi ? "→" : "←"}</span>
           </button>
+        </div>
+
+        {/* 🎨 Tema Seçici (Theme Switcher) */}
+        <div style={{ padding: sidebarDaraltildi ? "0 4px" : "4px 8px", marginBottom: "4px" }}>
+          <ThemeSwitcher />
         </div>
 
         <nav className="nav">
