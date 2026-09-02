@@ -14,17 +14,19 @@ Bu belge R1 düzeltme dedektörlerinin işletimi, izlenmesi ve güvenli müdahal
 
 Worker'ın `/metrics` ucunda aşağıdaki metrikler yayınlanır:
 
-- `correction_scan_runs_total{result="success|failed"}`: tarama çalıştırma sonucu.
+- `correction_scan_runs_total{result="success|partial|failed"}`: tarama çalıştırma sonucu.
+- `correction_scan_tenant_total{result="success|failed"}`: tenant bazında tarama sonucu; bir tenant hatası diğerlerini durdurmaz.
 - `correction_findings_total`: taramalarda bulunan toplam istisna.
 - `correction_auto_resolutions_total`: kaynağı düzelmiş olduğu için otomatik kapanan toplam kayıt.
 - `correction_scan_duration_seconds`: son taramanın süresi.
 - `correction_scan_tenants`: son taramada işlenen tenant sayısı.
+- `correction_scan_failed_tenants`: son turda taranamayan tenant sayısı.
 - `correction_scan_last_success_timestamp_seconds`: son başarılı taramanın Unix zamanı.
 
 Önerilen alarmlar:
 
 1. Son başarılı taramanın üzerinden 20 dakika geçmişse kritik alarm.
-2. `correction_scan_runs_total{result="failed"}` artıyorsa uyarı.
+2. `correction_scan_runs_total{result="failed|partial"}` veya `correction_scan_failed_tenants` artıyorsa uyarı.
 3. Tarama süresi yapılandırılmış aralığa yaklaşıyorsa kapasite uyarısı.
 4. Kritik açık kayıt veya SLA aşan kayıt sayısı sıfırdan büyükse operasyon uyarısı.
 

@@ -40,19 +40,27 @@ export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleD
     this.calisiyor = true;
     const baslangic = Date.now();
     try {
-      let bulunan = 0; let otomatikCozulen = 0; const tenantIdleri = await this.tenantIdleriAl();
+      let bulunan = 0; let otomatikCozulen = 0; let basarisizTenant = 0; const tenantIdleri = await this.tenantIdleriAl();
       for (const tenantId of tenantIdleri) {
-        const sonuc = await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => this.duzeltmeler.tara());
-        bulunan += sonuc.bulunan; otomatikCozulen += sonuc.otomatikCozulen;
+        try {
+          const sonuc = await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => this.duzeltmeler.tara());
+          bulunan += sonuc.bulunan; otomatikCozulen += sonuc.otomatikCozulen;
+          this.metrics.increment("correction_scan_tenant_total", { result: "success" });
+        } catch (hata) {
+          basarisizTenant++;
+          this.metrics.increment("correction_scan_tenant_total", { result: "failed" });
+          this.logger.error(JSON.stringify({ event: "correction_scan_tenant_failed", tenantId, error: hata instanceof Error ? hata.message : String(hata) }));
+        }
       }
       const sureMs = Date.now() - baslangic;
-      this.metrics.increment("correction_scan_runs_total", { result: "success" });
+      this.metrics.increment("correction_scan_runs_total", { result: basarisizTenant ? "partial" : "success" });
       this.metrics.increment("correction_findings_total", {}, bulunan);
       this.metrics.increment("correction_auto_resolutions_total", {}, otomatikCozulen);
       this.metrics.set("correction_scan_duration_seconds", sureMs / 1000);
       this.metrics.set("correction_scan_tenants", tenantIdleri.length);
-      this.metrics.set("correction_scan_last_success_timestamp_seconds", Math.floor(Date.now() / 1000));
-      this.logger.debug(JSON.stringify({ event: "correction_scan_completed", tenantCount: tenantIdleri.length, findings: bulunan, autoResolutions: otomatikCozulen, durationMs: sureMs }));
+      this.metrics.set("correction_scan_failed_tenants", basarisizTenant);
+      if (!basarisizTenant) this.metrics.set("correction_scan_last_success_timestamp_seconds", Math.floor(Date.now() / 1000));
+      this.logger.debug(JSON.stringify({ event: "correction_scan_completed", tenantCount: tenantIdleri.length, failedTenantCount: basarisizTenant, findings: bulunan, autoResolutions: otomatikCozulen, durationMs: sureMs }));
     } catch (hata) {
       this.metrics.increment("correction_scan_runs_total", { result: "failed" });
       this.logger.error(JSON.stringify({ event: "correction_scan_failed", durationMs: Date.now() - baslangic, error: hata instanceof Error ? hata.message : String(hata) }), hata instanceof Error ? hata.stack : undefined);

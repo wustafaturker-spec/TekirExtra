@@ -4,6 +4,7 @@ import { DuzeltmeTaramaZamanlayiciService } from "./duzeltme-tarama-zamanlayici.
 describe("DuzeltmeTaramaZamanlayiciService", () => {
   const oncekiWorker = process.env.TEKIR_WORKER;
   const oncekiAralik = process.env.DUZELTME_TARAMA_INTERVAL_MS;
+  const metrics = { increment: vi.fn(), set: vi.fn() };
 
   afterEach(() => {
     vi.clearAllMocks();
@@ -43,5 +44,17 @@ describe("DuzeltmeTaramaZamanlayiciService", () => {
     expect(metrics.increment).toHaveBeenCalledWith("correction_auto_resolutions_total", {}, 1);
     expect(metrics.set).toHaveBeenCalledWith("correction_scan_last_success_timestamp_seconds", expect.any(Number));
   });
+
+  it("bir tenant başarısız olduğunda sonraki tenantı taramaya devam eder", async () => {
+    const duzeltmeler = { tara: vi.fn().mockRejectedValueOnce(new Error("tenant bozuk")).mockResolvedValueOnce({ bulunan: 2, otomatikCozulen: 0 }) };
+    const service = new DuzeltmeTaramaZamanlayiciService(duzeltmeler as never, metrics as never);
+    vi.spyOn(service as never, "tenantIdleriAl").mockResolvedValue(["tenant-1", "tenant-2"]);
+
+    await service.calistir();
+
+    expect(duzeltmeler.tara).toHaveBeenCalledTimes(2);
+    expect(metrics.increment).toHaveBeenCalledWith("correction_scan_runs_total", { result: "partial" });
+    expect(metrics.set).toHaveBeenCalledWith("correction_scan_failed_tenants", 1);
+    expect(metrics.set).not.toHaveBeenCalledWith("correction_scan_last_success_timestamp_seconds", expect.any(Number));
+  });
 });
-  const metrics = { increment: vi.fn(), set: vi.fn() };
