@@ -107,9 +107,9 @@ export default function PanelSayfasi() {
   const tarihBasligi = new Intl.DateTimeFormat("tr-TR", { weekday: "long", day: "numeric", month: "long" }).format(new Date());
 
   return (
-    <div style={{ minHeight: "100vh", backgroundColor: "var(--bg)", color: "var(--text)", margin: "-20px -24px", padding: "24px 32px" }}>
+    <div className="dashboard-home" style={{ minHeight: "100vh", backgroundColor: "var(--bg)", color: "var(--text)", margin: "-20px -24px", padding: "24px 32px" }}>
       {/* Header Banner */}
-      <header style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderRadius: "16px", padding: "24px 32px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px", boxShadow: "var(--shadow)" }}>
+      <header className="dashboard-home__header" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderRadius: "16px", padding: "24px 32px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px", boxShadow: "var(--shadow)" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px" }}>
             <span style={{ backgroundColor: "var(--accent-soft)", color: "var(--accent-text)", padding: "3px 10px", borderRadius: "12px", fontSize: "12px", fontWeight: "700" }}>
@@ -122,7 +122,7 @@ export default function PanelSayfasi() {
           <p style={{ fontSize: "13px", color: "var(--text-muted)", margin: 0 }}>İşletmenizin anlık finansal ve operasyonel canlı durumu</p>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+        <div className="dashboard-home__header-actions" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <span style={{ fontSize: "12px", color: "var(--text-subtle)", fontWeight: "500" }}>
             {sonGuncelleme ? `Son güncelleme: ${sonGuncelleme.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}` : "Yükleniyor..."}
           </span>
@@ -187,38 +187,58 @@ export default function PanelSayfasi() {
             <Link href="/panel/raporlar" style={{ fontSize: "13px", color: "var(--accent)", fontWeight: "700", textDecoration: "none" }}>Tüm Detaylı Raporlar →</Link>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px" }}>
-            <div style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "14px", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "24px 16px", marginTop: "16px" }}>
+            {/* 1. Nakit ve Banka - Teal/Yeşil Gradient Icon Header */}
+            <div style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "16px", border: "1px solid var(--border)", boxShadow: "var(--shadow)", position: "relative" }}>
+              <div style={{ width: "46px", height: "46px", borderRadius: "12px", background: "linear-gradient(195deg, #66bb6a, #43a047)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", marginTop: "-36px", marginBottom: "12px", boxShadow: "0 4px 14px rgba(67, 160, 71, 0.4)" }}>
+                🏦
+              </div>
               <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: "600" }}>Nakit ve Banka</span>
-              <div style={{ fontSize: "24px", fontWeight: "800", color: "var(--text)", margin: "6px 0 4px 0" }}>{finans ? para(finans.nakitVarliklar, true) : "—"}</div>
+              <div style={{ fontSize: "24px", fontWeight: "800", color: "var(--text)", margin: "4px 0" }}>{finans ? para(finans.nakitVarliklar, true) : "—"}</div>
               <div style={{ fontSize: "11px", color: cekSonrasiNakit < 0 ? "var(--danger)" : "var(--success)", fontWeight: "600" }}>
                 30 günlük çek etkisi: {finans ? para(cekSonrasiNakit, true) : "—"}
               </div>
             </div>
 
-            <div style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "14px", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
+            {/* 2. Müşteri Alacakları - Mavi Gradient Icon Header */}
+            <div style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "16px", border: "1px solid var(--border)", boxShadow: "var(--shadow)", position: "relative" }}>
+              <div style={{ width: "46px", height: "46px", borderRadius: "12px", background: "linear-gradient(195deg, #49a3f1, #1A73E8)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", marginTop: "-36px", marginBottom: "12px", boxShadow: "0 4px 14px rgba(26, 115, 232, 0.4)" }}>
+                📊
+              </div>
               <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: "600" }}>Müşteri Alacakları</span>
-              <div style={{ fontSize: "24px", fontWeight: "800", color: "var(--text)", margin: "6px 0 4px 0" }}>{finans ? para(finans.toplamAlacaklar, true) : "—"}</div>
+              <div style={{ fontSize: "24px", fontWeight: "800", color: "var(--text)", margin: "4px 0" }}>{finans ? para(finans.toplamAlacaklar, true) : "—"}</div>
               <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>Açık satış faturaları bakiyesi</div>
             </div>
 
-            <div style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "14px", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
+            {/* 3. Tedarikçi Borçları - Kırmızı/Pembe Gradient Icon Header */}
+            <div style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "16px", border: "1px solid var(--border)", boxShadow: "var(--shadow)", position: "relative" }}>
+              <div style={{ width: "46px", height: "46px", borderRadius: "12px", background: "linear-gradient(195deg, #ec407a, #d81b60)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", marginTop: "-36px", marginBottom: "12px", boxShadow: "0 4px 14px rgba(216, 27, 96, 0.4)" }}>
+                💳
+              </div>
               <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: "600" }}>Tedarikçi Borçları</span>
-              <div style={{ fontSize: "24px", fontWeight: "800", color: "var(--text)", margin: "6px 0 4px 0" }}>{finans ? para(finans.toplamBorclar, true) : "—"}</div>
+              <div style={{ fontSize: "24px", fontWeight: "800", color: "var(--text)", margin: "4px 0" }}>{finans ? para(finans.toplamBorclar, true) : "—"}</div>
               <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>Açık alış faturaları borcu</div>
             </div>
 
-            <div style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "14px", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
+            {/* 4. Stok Değeri - Turuncu Gradient Icon Header */}
+            <div style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "16px", border: "1px solid var(--border)", boxShadow: "var(--shadow)", position: "relative" }}>
+              <div style={{ width: "46px", height: "46px", borderRadius: "12px", background: "linear-gradient(195deg, #ffa726, #fb8c00)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", marginTop: "-36px", marginBottom: "12px", boxShadow: "0 4px 14px rgba(251, 140, 0, 0.4)" }}>
+                📦
+              </div>
               <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: "600" }}>Stok Değeri</span>
-              <div style={{ fontSize: "24px", fontWeight: "800", color: "var(--text)", margin: "6px 0 4px 0" }}>{finans ? para(finans.envanterDegeri, true) : "—"}</div>
+              <div style={{ fontSize: "24px", fontWeight: "800", color: "var(--text)", margin: "4px 0" }}>{finans ? para(finans.envanterDegeri, true) : "—"}</div>
               <div style={{ fontSize: "11px", color: kritikStok ? "var(--danger)" : "var(--text-muted)", fontWeight: "600" }}>
                 {kritikStok ? `${kritikStok} ürün kritik stokta` : "Kritik stok yok"}
               </div>
             </div>
 
-            <div style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "14px", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
-              <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: "600" }}>Net Varlık Degeri</span>
-              <div style={{ fontSize: "24px", fontWeight: "800", color: "var(--text)", margin: "6px 0 4px 0" }}>{finans ? para(finans.netVarlikDegeri, true) : "—"}</div>
+            {/* 5. Net Varlık Değeri - Koyu/Obsidian Gradient Icon Header */}
+            <div style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "16px", border: "1px solid var(--border)", boxShadow: "var(--shadow)", position: "relative" }}>
+              <div style={{ width: "46px", height: "46px", borderRadius: "12px", background: "linear-gradient(195deg, #42424a, #191919)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", marginTop: "-36px", marginBottom: "12px", boxShadow: "0 4px 14px rgba(25, 25, 25, 0.4)" }}>
+                💎
+              </div>
+              <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: "600" }}>Net Varlık Değeri</span>
+              <div style={{ fontSize: "24px", fontWeight: "800", color: "var(--text)", margin: "4px 0" }}>{finans ? para(finans.netVarlikDegeri, true) : "—"}</div>
               <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>Nakit + alacak + envanter - borç</div>
             </div>
           </div>
@@ -226,7 +246,7 @@ export default function PanelSayfasi() {
       )}
 
       {/* Two Column Layout (Task List & Quick Actions) */}
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "24px", marginBottom: "28px" }}>
+      <div className="dashboard-home__operations" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "24px", marginBottom: "28px" }}>
 
         {/* Priority Task List Card */}
         <div style={{ backgroundColor: "var(--surface)", padding: "24px", borderRadius: "16px", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
@@ -315,7 +335,7 @@ export default function PanelSayfasi() {
 
       {/* Overdue Tables (Alacak & Borç) */}
       {rol !== "satis" && (
-        <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "24px" }}>
+        <section className="dashboard-home__overdue" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "24px" }}>
           {[{ baslik: "Vadesi Geçmiş Alacaklar", alt: "Müşterilerden tahsil edilecek açık faturalar", toplam: vadesiGecenler?.toplamAlacak, liste: vadesiGecenler?.alacaklar ?? [], renk: "var(--success)", bos: "Vadesi geçmiş alacak yok." }, { baslik: "Vadesi Geçmiş Borçlar", alt: "Tedarikçilere ödenecek açık faturalar", toplam: vadesiGecenler?.toplamBorc, liste: vadesiGecenler?.borclar ?? [], renk: "var(--danger)", bos: "Vadesi geçmiş borç yok." }].map((grup) => (
             <div key={grup.baslik} style={{ backgroundColor: "var(--surface)", padding: "24px", borderRadius: "16px", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>

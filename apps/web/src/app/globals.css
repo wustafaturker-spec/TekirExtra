@@ -110,6 +110,39 @@
   --ring: 0 0 0 3px rgba(59, 130, 246, 0.25);
 }
 
+@media (max-width: 700px) {
+  .dashboard-home {
+    margin: -14px !important;
+    padding: 16px !important;
+  }
+
+  .dashboard-home__header {
+    align-items: stretch !important;
+    padding: 20px !important;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .dashboard-home__header-actions {
+    align-items: stretch !important;
+    flex-wrap: wrap;
+  }
+
+  .dashboard-home__header-actions > span:first-child {
+    flex-basis: 100%;
+  }
+
+  .dashboard-home__header-actions > :where(button, a) {
+    justify-content: center;
+    flex: 1 1 130px;
+  }
+
+  .dashboard-home__operations,
+  .dashboard-home__overdue {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
 /* Personnel workspace subpages */
 .hr-subpage {
   --hr-accent: #ea580c;

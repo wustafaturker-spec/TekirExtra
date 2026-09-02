@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, tokenAl, tokenYaz } from "@/lib/api";
 import { rolMenuYoluGorebilir } from "@/lib/rol-yetkileri";
 import { ThemeSwitcher } from "@/components/theme-switcher";
+import { ThemeConfiguratorDrawer } from "@/components/theme-configurator-drawer";
 
 const ROL_ADI: Record<string, string> = {
   yonetici: "Yönetici",
@@ -462,6 +463,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
           )}
         </div>
       </main>
+      <ThemeConfiguratorDrawer />
     </div>
   );
 }

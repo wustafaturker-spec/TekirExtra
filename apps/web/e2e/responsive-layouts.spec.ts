@@ -191,10 +191,18 @@ async function veriDoluAnaPanelMockla(page: Page) {
       await route.fulfill({ json: { taslakSatis: 4, taslakAlis: 3, ebelgeHata: 2, acikTahsilat: 8, acikOdeme: 5 } });
     } else if (pathname.endsWith("/stok/kritik-ozeti")) {
       await route.fulfill({ json: { kritikStok: 6 } });
+    } else if (pathname.endsWith("/rapor/gunluk")) {
+      await route.fulfill({ json: { satis: { toplam: "128450.00", adet: 12 }, tahsilat: { toplam: "84200.00", adet: 8 } } });
+    } else if (pathname.endsWith("/doviz-kurlari")) {
+      await route.fulfill({ json: { kurTarihi: "2026-08-09", kurlar: { USD: 40.72, EUR: 47.46 } } });
     } else if (pathname.endsWith("/kasa-banka/ekstre/satirlar")) {
       await route.fulfill({ json: [{ id: "e1" }, { id: "e2" }, { id: "e3" }] });
     } else if (pathname.endsWith("/ebelge/gelen")) {
       await route.fulfill({ json: [{ id: "g1" }, { id: "g2" }] });
+    } else if (pathname.endsWith("/kasa-banka/cek-senet")) {
+      await route.fulfill({ json: [] });
+    } else if (pathname.endsWith("/rapor/vadesi-gecenler")) {
+      await route.fulfill({ json: { alacaklar: [], borclar: [], toplamAlacak: "0.00", toplamBorc: "0.00" } });
     } else if (pathname.endsWith("/rapor/ozet")) {
       await route.fulfill({ json: { nakitVarliklar: "208700.00", envanterDegeri: "486250.75", toplamAlacaklar: "342800.50", toplamBorclar: "198450.25", netVarlikDegeri: "839300.00" } });
     } else {
@@ -351,11 +359,18 @@ for (const gorunum of [
       await veriDoluAnaPanelMockla(page);
       await page.goto("/panel");
       await expect(page.getByText("TekirExtra Örnek Sanayi ve Ticaret Limited Şirketi")).toBeVisible();
-      await expect(page.getByText("839.300,00 TL")).toBeVisible();
+      await expect(page.getByText("₺839.300")).toBeVisible();
       await expect(page.getByText("Eşleşmemiş banka hareketleri")).toBeVisible();
       await expect(page).toHaveScreenshot(`yonetici-ana-paneli-${gorunum.ad}.png`, {
         animations: "disabled", caret: "hide", fullPage: true,
       });
+
+      const temaDugmesi = page.getByRole("button", { name: "Görünüm ve Tema Ayarlarını Aç" });
+      await temaDugmesi.click();
+      await expect(page.getByRole("dialog", { name: "Görünüm Ayarları" })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog", { name: "Görünüm Ayarları" })).toBeHidden();
+      await expect(temaDugmesi).toBeFocused();
 
       await page.locator(gorunum.ad === "mobil" ? ".notification-button" : ".notification-nav").click();
       await expect(page.getByLabel("Bildirim merkezi")).toBeVisible();
