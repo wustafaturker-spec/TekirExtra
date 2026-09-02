@@ -2189,6 +2189,10 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 .cari-statement__summary > div { border: 1px solid var(--border); border-radius: .6rem; display: grid; gap: .3rem; padding: .7rem; }
 .cari-statement__summary span { color: var(--text-muted); font-size: .65rem; }
 .cari-statement__summary strong { font-size: .9rem; }
+.cari-statement__currency-summary { align-items: baseline; background: var(--surface-2); border: 1px solid var(--border); border-radius: .6rem; display: flex; flex-wrap: wrap; gap: .45rem .9rem; margin: .8rem 0; padding: .7rem; }
+.cari-statement__currency-summary > strong { flex-basis: 100%; font-size: .75rem; }
+.cari-statement__currency-summary > span { color: var(--text-muted); font-size: .72rem; }
+.cari-statement__currency-summary b { color: var(--text); }
 .email-settings { display: grid; gap: 1rem; margin: 0 auto; max-width: 1100px; }
 .email-settings__status { display: grid; gap: .8rem; grid-template-columns: repeat(2,1fr); }
 .email-settings__status .card { display: grid; gap: .4rem; }

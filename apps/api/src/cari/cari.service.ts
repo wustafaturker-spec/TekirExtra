@@ -608,18 +608,20 @@ export class CariService {
   async ekstre(cariId: string, baslangic?: string, bitis?: string) {
     const { tenantId } = aktifBaglam();
     const cari = await this.getir(cariId);
+    const bitisTarihi = bitis ? new Date(`${bitis}T23:59:59.999`) : undefined;
+    const baslangicTarihi = baslangic ? new Date(`${baslangic}T00:00:00.000`) : undefined;
     const [hareketler, oncekiHareketler] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
       tx.cariHareket.findMany({
         where: {
           cariId,
           tarih: {
-            ...(baslangic ? { gte: new Date(baslangic) } : {}),
-            ...(bitis ? { lte: new Date(bitis) } : {}),
+            ...(baslangicTarihi ? { gte: baslangicTarihi } : {}),
+            ...(bitisTarihi ? { lte: bitisTarihi } : {}),
           },
         },
         orderBy: [{ tarih: "asc" }, { createdAt: "asc" }],
       }),
-      baslangic ? tx.cariHareket.findMany({ where: { cariId, tarih: { lt: new Date(baslangic) } }, select: { tip: true, tutarTry: true } }) : Promise.resolve([]),
+      baslangicTarihi ? tx.cariHareket.findMany({ where: { cariId, tarih: { lt: baslangicTarihi } }, select: { tip: true, tutarTry: true, dovizCinsi: true, tutar: true } }) : Promise.resolve([]),
     ]));
     const krediKartiKaynaklari = hareketler.filter((h) => h.kaynakTur === "kredi_karti" && h.kaynakRef).map((h) => h.kaynakRef!);
     const krediKartiHareketleri = krediKartiKaynaklari.length ? await this.prisma.tenantIslem(tenantId, (tx) => tx.krediKartiHareket.findMany({
@@ -636,8 +638,17 @@ export class CariService {
     const devirBakiyesi = oncekiHareketler.reduce((toplam, h) => h.tip === "borc" ? toplam.add(h.tutarTry) : toplam.sub(h.tutarTry), new Prisma.Decimal(0));
     let bakiye = devirBakiyesi;
     let donemBorc = new Prisma.Decimal(0); let donemAlacak = new Prisma.Decimal(0);
+    const dovizOzetleri = new Map<string, { devir: Prisma.Decimal; borc: Prisma.Decimal; alacak: Prisma.Decimal }>();
+    for (const h of oncekiHareketler) {
+      const ozet = dovizOzetleri.get(h.dovizCinsi) ?? { devir: new Prisma.Decimal(0), borc: new Prisma.Decimal(0), alacak: new Prisma.Decimal(0) };
+      ozet.devir = ozet.devir.add(h.tip === "borc" ? h.tutar : h.tutar.neg());
+      dovizOzetleri.set(h.dovizCinsi, ozet);
+    }
     const satirlar = hareketler.map((h) => {
       if (h.tip === "borc") donemBorc = donemBorc.add(h.tutarTry); else donemAlacak = donemAlacak.add(h.tutarTry);
+      const ozet = dovizOzetleri.get(h.dovizCinsi) ?? { devir: new Prisma.Decimal(0), borc: new Prisma.Decimal(0), alacak: new Prisma.Decimal(0) };
+      if (h.tip === "borc") ozet.borc = ozet.borc.add(h.tutar); else ozet.alacak = ozet.alacak.add(h.tutar);
+      dovizOzetleri.set(h.dovizCinsi, ozet);
       bakiye =
         h.tip === "borc" ? bakiye.add(h.tutarTry) : bakiye.sub(h.tutarTry);
       const kartHareketi = h.kaynakTur === "kredi_karti" && h.kaynakRef ? krediKartiHaritasi.get(h.kaynakRef) : undefined;
@@ -665,7 +676,14 @@ export class CariService {
         yuruyenBakiye: bakiye.toFixed(2),
       };
     });
-    return { cari: { id: cari.id, kod: cari.kod, unvan: cari.unvan, eposta: cari.eposta }, devirBakiyesi: devirBakiyesi.toFixed(2), donemBorc: donemBorc.toFixed(2), donemAlacak: donemAlacak.toFixed(2), donemSonuBakiyesi: bakiye.toFixed(2), satirlar };
+    const dovizOzet = [...dovizOzetleri.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([dovizCinsi, ozet]) => ({
+      dovizCinsi,
+      devir: ozet.devir.toFixed(2),
+      borc: ozet.borc.toFixed(2),
+      alacak: ozet.alacak.toFixed(2),
+      bakiye: ozet.devir.add(ozet.borc).sub(ozet.alacak).toFixed(2),
+    }));
+    return { cari: { id: cari.id, kod: cari.kod, unvan: cari.unvan, eposta: cari.eposta }, devirBakiyesi: devirBakiyesi.toFixed(2), donemBorc: donemBorc.toFixed(2), donemAlacak: donemAlacak.toFixed(2), donemSonuBakiyesi: bakiye.toFixed(2), dovizOzet, satirlar };
   }
 
   // Yaşlandırma raporu RPR-06 araç setine taşındı: cari.yaslandirma (CARI-12).

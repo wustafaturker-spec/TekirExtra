@@ -141,6 +141,7 @@ interface EkstreVeri {
   donemBorc: string;
   donemAlacak: string;
   donemSonuBakiyesi: string;
+  dovizOzet: { dovizCinsi: string; devir: string; borc: string; alacak: string; bakiye: string }[];
   satirlar: EkstreSatir[];
 }
 
@@ -371,7 +372,7 @@ export default function CariSayfasi() {
       ]);
       setDetay(cDetay);
       setEkstreEposta(cDetay.eposta || "");
-      setEkstre(cEkstre ?? { cari: cDetay, devirBakiyesi: "0", donemBorc: "0", donemAlacak: "0", donemSonuBakiyesi: "0", satirlar: [] });
+      setEkstre(cEkstre ?? { cari: cDetay, devirBakiyesi: "0", donemBorc: "0", donemAlacak: "0", donemSonuBakiyesi: "0", dovizOzet: [], satirlar: [] });
       setCrm(cCrm ?? { etkilesimler: [], gorevler: [], teklifler: [], kullanicilar: [] });
       setCariAnalizi(cAnaliz);
       if (!sekmeyiKoru) setAktifSekme("genel");
@@ -1114,12 +1115,15 @@ export default function CariSayfasi() {
                 <p className="subtle" style={{ fontSize: "0.85rem" }}>Ekstre yükleniyor...</p>
               ) : (
                 <><div className="cari-statement__summary"><div><span>Devir bakiyesi</span><strong>{tl(ekstre.devirBakiyesi)}</strong></div><div><span>Dönem borç</span><strong>{tl(ekstre.donemBorc)}</strong></div><div><span>Dönem alacak</span><strong>{tl(ekstre.donemAlacak)}</strong></div><div><span>Dönem sonu</span><strong>{tl(ekstre.donemSonuBakiyesi)}</strong></div></div>
+                {ekstre.dovizOzet.length > 0 && <div className="cari-statement__currency-summary"><strong>Döviz bazında bakiye</strong>{ekstre.dovizOzet.map((ozet) => <span key={ozet.dovizCinsi}><b>{ozet.dovizCinsi}</b> devir {Number(ozet.devir).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} · dönem borç {Number(ozet.borc).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} · alacak {Number(ozet.alacak).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} · bakiye <b>{Number(ozet.bakiye).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {ozet.dovizCinsi}</b></span>)}</div>}
                 {ekstre.satirlar.length === 0 ? <p className="empty">Seçilen tarih aralığında hareket bulunmuyor.</p> : <TableWrap>
                   <thead>
                     <tr>
                       <th>Tarih</th>
                       <th>Vade Tarihi</th>
                       <th>Açıklama</th>
+                      <th className="num">Borç</th>
+                      <th className="num">Alacak</th>
                       <th className="num">Borç (TL)</th>
                       <th className="num">Alacak (TL)</th>
                       <th className="num">Bakiye (TL)</th>
@@ -1136,6 +1140,8 @@ export default function CariSayfasi() {
                           <td>{row.tarih}</td>
                           <td>{row.vadeTarihi || "—"}</td>
                           <td><div className="stack" style={{ gap: ".25rem" }}><span>{row.aciklama || "—"}</span>{row.odemeYontemi?.tur === "kredi_karti" && <div className="row-tight"><Badge variant="neutral">Kredi kartı</Badge><small>{row.odemeYontemi.bankaAdi} · {row.odemeYontemi.kartAdi} · •••• {row.odemeYontemi.sonDortHane} · {row.odemeYontemi.taksitSayisi > 1 ? `${row.odemeYontemi.taksitSayisi} taksit` : "tek çekim"}{Number(row.odemeYontemi.komisyonTutari) > 0 ? ` · komisyon/vade farkı ${tl(row.odemeYontemi.komisyonTutari)}` : ""}{row.odemeYontemi.fatura?.no ? ` · Fatura ${row.odemeYontemi.fatura.no}` : ""}</small></div>}</div></td>
+                          <td className="num" style={{ color: borcVal > 0 ? "var(--danger)" : undefined }}>{row.tip === "borc" ? `${Number(row.tutar).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${row.dovizCinsi}` : "—"}</td>
+                          <td className="num" style={{ color: alacakVal > 0 ? "var(--success)" : undefined }}>{row.tip === "alacak" ? `${Number(row.tutar).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${row.dovizCinsi}` : "—"}</td>
                           <td className="num" style={{ color: borcVal > 0 ? "var(--danger)" : undefined }}>{borcVal > 0 ? tl(borcVal) : "—"}</td>
                           <td className="num" style={{ color: alacakVal > 0 ? "var(--success)" : undefined }}>{alacakVal > 0 ? tl(alacakVal) : "—"}</td>
                           <td className={`num money ${bakiyeNum > 0 ? "pos" : bakiyeNum < 0 ? "neg" : ""}`}>{tl(bakiyeNum)}</td>

@@ -89,19 +89,20 @@ describe("FaturaService (FTR-14 - maksIskontoYuzdesi)", () => {
     }));
   });
 
-  it("iş kuyruğu sayaçlarını ödeme toplamlarıyla hesaplar", async () => {
-    const fatura = (tip: string, durum: string, toplam: string, odemeler: string[], ebelgeDurum?: string) => ({
-      tip, durum, genelToplam: new Prisma.Decimal(toplam),
+  it("iş kuyruğu sayaçlarını TRY ödeme karşılığıyla hesaplar", async () => {
+    const fatura = (tip: string, durum: string, toplam: string, odemeler: Array<{ tutarTry: string }>, ebelgeDurum?: string, kur = "1") => ({
+      tip, durum, genelToplam: new Prisma.Decimal(toplam), kur: new Prisma.Decimal(kur),
       ebelge: ebelgeDurum ? { durum: ebelgeDurum } : null,
-      kasaBankaHarekets: odemeler.map((tutar) => ({ tutar: new Prisma.Decimal(tutar) })),
+      kasaBankaHarekets: odemeler.map(({ tutarTry }) => ({ tutarTry: new Prisma.Decimal(tutarTry) })),
     });
     const findMany = vi.fn().mockResolvedValue([
       fatura("satis", "taslak", "100", [], "hata"),
       fatura("alis", "taslak", "100", []),
-      fatura("satis", "kesin", "100", ["20"]),
-      fatura("alis", "kesin", "100", ["100"]),
+      fatura("satis", "kesin", "100", [{ tutarTry: "20" }]),
+      fatura("alis", "kesin", "100", [{ tutarTry: "100" }]),
       fatura("satis_iade", "kesin", "100", []),
       fatura("alis_iade", "kesin", "100", []),
+      fatura("satis", "kesin", "100", [{ tutarTry: "200" }], undefined, "2"),
     ]);
     mockTenantIslem.mockImplementation((_tenantId, cb) => cb({ fatura: { findMany } }));
 

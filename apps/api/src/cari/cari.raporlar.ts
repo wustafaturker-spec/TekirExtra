@@ -13,7 +13,9 @@ const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal =>
 
 const tarihAraligi = (baslangic?: unknown, bitis?: unknown) => ({
   ...(baslangic ? { gte: new Date(String(baslangic)) } : {}),
-  ...(bitis ? { lte: new Date(String(bitis)) } : {}),
+  ...(bitis
+    ? { lte: new Date(/^\d{4}-\d{2}-\d{2}$/.test(String(bitis)) ? `${String(bitis)}T23:59:59.999` : String(bitis)) }
+    : {}),
 });
 
 const TARIH_FILTRELERI = [

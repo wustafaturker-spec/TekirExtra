@@ -258,7 +258,7 @@ export class FaturaService {
         include: {
           cari: { select: { id: true, kod: true, unvan: true } },
           ebelge: { select: { id: true, durum: true, tur: true } },
-          kasaBankaHarekets: { select: { tutar: true } },
+          kasaBankaHarekets: { select: { tutarTry: true } },
           krediKartiHareketleri: { select: { cariOdemeTutari: true } },
           satirlar: {
             include: {
@@ -277,7 +277,7 @@ export class FaturaService {
     return {
       kayitlar: sayfa.map((k) => {
         const odenen = k.kasaBankaHarekets.reduce(
-          (toplam, hareket) => toplam.add(hareket.tutar),
+          (toplam, hareket) => toplam.add(hareket.tutarTry.div(k.kur)),
           D(0),
         ).add(k.krediKartiHareketleri.reduce((toplam, hareket) => toplam.add(hareket.cariOdemeTutari ?? 0), D(0)));
         const kalan = Prisma.Decimal.max(k.genelToplam.sub(odenen), 0);
@@ -305,8 +305,9 @@ export class FaturaService {
           tip: true,
           durum: true,
           genelToplam: true,
+          kur: true,
           ebelge: { select: { durum: true } },
-          kasaBankaHarekets: { select: { tutar: true } },
+          kasaBankaHarekets: { select: { tutarTry: true } },
         },
       }),
     );
@@ -318,8 +319,8 @@ export class FaturaService {
       }
       if (["hata", "ret"].includes(fatura.ebelge?.durum ?? "")) ozet.ebelgeHata += 1;
       if (fatura.durum !== "kesin") continue;
-      const odenen = fatura.kasaBankaHarekets.reduce((toplam, hareket) => toplam.add(hareket.tutar), D(0));
-      if (odenen.greaterThanOrEqualTo(fatura.genelToplam)) continue;
+      const odenenTry = fatura.kasaBankaHarekets.reduce((toplam, hareket) => toplam.add(hareket.tutarTry), D(0));
+      if (odenenTry.greaterThanOrEqualTo(fatura.genelToplam.mul(fatura.kur))) continue;
       if (["satis", "alis_iade"].includes(fatura.tip)) ozet.acikTahsilat += 1;
       if (["alis", "satis_iade"].includes(fatura.tip)) ozet.acikOdeme += 1;
     }
@@ -339,7 +340,7 @@ export class FaturaService {
       }),
       tx.fatura.findMany({
         where: { durum: "kesin", tip: "satis" },
-        select: { genelToplam: true, kur: true, kasaBankaHarekets: { select: { tutar: true, kur: true } } },
+        select: { genelToplam: true, kur: true, kasaBankaHarekets: { select: { tutarTry: true } } },
       }),
     ]));
 
@@ -362,7 +363,7 @@ export class FaturaService {
     }));
     const yillikToplam = yilFaturalari.reduce((toplam, fatura) => toplam.add(fatura.genelToplam.mul(fatura.kur).mul(fatura.tip === "satis_iade" ? -1 : 1)), D(0));
     const acikTahsilat = acikFaturalar.reduce((toplam, fatura) => {
-      const odenenTry = fatura.kasaBankaHarekets.reduce((ara, hareket) => ara.add(hareket.tutar.mul(hareket.kur)), D(0));
+      const odenenTry = fatura.kasaBankaHarekets.reduce((ara, hareket) => ara.add(hareket.tutarTry), D(0));
       return toplam.add(Prisma.Decimal.max(fatura.genelToplam.mul(fatura.kur).sub(odenenTry), 0));
     }, D(0));
     const degisimYuzdesi = oncekiAyToplam.isZero() ? null : buAyToplam.sub(oncekiAyToplam).div(oncekiAyToplam.abs()).mul(100).toDecimalPlaces(1).toNumber();
@@ -379,7 +380,7 @@ export class FaturaService {
     const [donemFaturalari, yilFaturalari, acikFaturalar] = await this.prisma.tenantIslem(tenantId, async (tx) => Promise.all([
       tx.fatura.findMany({ where: { durum: "kesin", tip: { in: ["alis", "alis_iade"] }, tarih: { gte: oncekiAyBaslangic } }, select: { tip: true, tarih: true, genelToplam: true, toplamNetKdv: true, kur: true } }),
       tx.fatura.findMany({ where: { durum: "kesin", tip: { in: ["alis", "alis_iade"] }, tarih: { gte: yilBaslangic } }, select: { tip: true, genelToplam: true, kur: true } }),
-      tx.fatura.findMany({ where: { durum: "kesin", tip: "alis" }, select: { genelToplam: true, kur: true, kasaBankaHarekets: { select: { tutar: true, kur: true } } } }),
+      tx.fatura.findMany({ where: { durum: "kesin", tip: "alis" }, select: { genelToplam: true, kur: true, kasaBankaHarekets: { select: { tutarTry: true } } } }),
     ]));
 
     let buAyToplam = D(0); let buAyKdv = D(0); let buAyAdet = 0; let oncekiAyToplam = D(0);
@@ -394,7 +395,7 @@ export class FaturaService {
     }
     const yillikToplam = yilFaturalari.reduce((toplam, fatura) => toplam.add(fatura.genelToplam.mul(fatura.kur).mul(fatura.tip === "alis_iade" ? -1 : 1)), D(0));
     const acikOdeme = acikFaturalar.reduce((toplam, fatura) => {
-      const odenenTry = fatura.kasaBankaHarekets.reduce((ara, hareket) => ara.add(hareket.tutar.mul(hareket.kur)), D(0));
+      const odenenTry = fatura.kasaBankaHarekets.reduce((ara, hareket) => ara.add(hareket.tutarTry), D(0));
       return toplam.add(Prisma.Decimal.max(fatura.genelToplam.mul(fatura.kur).sub(odenenTry), 0));
     }, D(0));
     const degisimYuzdesi = oncekiAyToplam.isZero() ? null : buAyToplam.sub(oncekiAyToplam).div(oncekiAyToplam.abs()).mul(100).toDecimalPlaces(1).toNumber();
@@ -435,7 +436,7 @@ export class FaturaService {
     if (!kayit) throw new NotFoundException("Fatura bulunamadı");
 
     const odenen = kayit.kasaBankaHarekets.reduce(
-      (toplam, hareket) => toplam.add(hareket.tutar),
+      (toplam, hareket) => toplam.add(hareket.tutarTry.div(kayit.kur)),
       new Prisma.Decimal(0),
     ).add(kayit.krediKartiHareketleri.reduce((toplam, hareket) => toplam.add(hareket.cariOdemeTutari ?? 0), D(0)));
     const kalan = Prisma.Decimal.max(kayit.genelToplam.sub(odenen), 0);
@@ -476,6 +477,7 @@ export class FaturaService {
           id: hareket.id,
           tip: hareket.tip,
           tutar: hareket.tutar.toFixed(2),
+          tutarTry: hareket.tutarTry.toFixed(2),
           dovizCinsi: hareket.dovizCinsi,
           tarih: hareket.tarih.toISOString().slice(0, 10),
           aciklama: hareket.aciklama,
