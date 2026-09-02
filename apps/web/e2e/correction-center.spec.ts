@@ -13,7 +13,7 @@ test("düzeltme kaydı incelenir, atanır, notlanır ve beklemeye alınır", asy
   await page.route("http://localhost:3001/api/v1/**", async (route) => {
     const { pathname } = new URL(route.request().url()); const method = route.request().method();
     if (pathname.endsWith("/auth/ben")) return route.fulfill({ json: { userId: "u1", tenantId: "t1", rol: "yonetici" } });
-    if (pathname.endsWith("/duzeltmeler/ozet")) return route.fulfill({ json: { acik: 1, kritik: 0, banaAtanan: atanan ? 1 : 0, slaAsan: 0 } });
+    if (pathname.endsWith("/duzeltmeler/ozet")) return route.fulfill({ json: { acik: 1, kritik: 0, bugunOlusan: 1, banaAtanan: atanan ? 1 : 0, slaAsan: 0 } });
     if (pathname.endsWith("/duzeltmeler/secenekler")) return route.fulfill({ json: [{ id: "11111111-1111-4111-8111-111111111111", adSoyad: "Ayşe Yönetici", eposta: "ayse@example.com" }] });
     if (pathname.endsWith("/duzeltmeler/duzeltme-1/ata")) { atanan = true; return route.fulfill({ json: kayit() }); }
     if (pathname.endsWith("/duzeltmeler/duzeltme-1/notlar")) { notEklendi = true; return route.fulfill({ json: {} }); }

@@ -12,7 +12,7 @@ describe("DuzeltmelerService", () => {
     stokDepoBakiye: { findMany: vi.fn() },
     cekSenet: { findMany: vi.fn() },
     fatura: { findMany: vi.fn() },
-    duzeltmeKaydi: { upsert: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+    duzeltmeKaydi: { upsert: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn(), count: vi.fn(), groupBy: vi.fn() },
     duzeltmeOlayi: { create: vi.fn() },
     user: { findMany: vi.fn() },
   };
@@ -72,6 +72,19 @@ describe("DuzeltmelerService", () => {
     expect(sonuc).toHaveLength(1);
     expect(tx.user.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { aktif: true, rol: { in: ["yonetici", "muhasebe"] } },
+    }));
+  });
+
+  it("salt okunur listesinde rolün erişemediği masraf ve e-belge kaynaklarını dışlar", async () => {
+    tx.duzeltmeKaydi.count.mockResolvedValue(0); tx.duzeltmeKaydi.findMany.mockResolvedValue([]);
+
+    await baglamlaCalistir(
+      { tenantId: "tenant-1", userId: "user-1", rol: "salt_okunur" },
+      () => service.listele({ sayfa: 1, limit: 25 }),
+    );
+
+    expect(tx.duzeltmeKaydi.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { tur: { in: ["banka_ekstre", "kredi_karti", "pos", "stok", "cek_senet", "fatura_cari"] } },
     }));
   });
 });

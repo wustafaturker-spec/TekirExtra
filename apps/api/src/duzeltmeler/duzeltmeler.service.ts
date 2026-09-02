@@ -21,13 +21,16 @@ export class DuzeltmelerService {
   constructor(private readonly prisma: PrismaService) {}
 
   async listele(girdi: ListeGirdisi) {
-    const { tenantId } = aktifBaglam();
+    const { tenantId, rol } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const where: Prisma.DuzeltmeKaydiWhereInput = {
+        ...this.rolKapsami(rol),
         ...(girdi.tur ? { tur: girdi.tur } : {}),
         ...(girdi.onem ? { onem: girdi.onem } : {}),
         ...(girdi.durum ? { durum: girdi.durum } : {}),
         ...(girdi.atananUserId ? { atananUserId: girdi.atananUserId } : {}),
+        ...(girdi.kaynak ? { OR: [{ kaynakTur: { contains: girdi.kaynak, mode: "insensitive" } }, { kaynakRef: { contains: girdi.kaynak, mode: "insensitive" } }] } : {}),
+        ...(girdi.baslangic || girdi.bitis ? { createdAt: { ...(girdi.baslangic ? { gte: girdi.baslangic } : {}), ...(girdi.bitis ? { lte: girdi.bitis } : {}) } } : {}),
       };
       const [toplam, kayitlar] = await Promise.all([
         tx.duzeltmeKaydi.count({ where }),
@@ -44,15 +47,17 @@ export class DuzeltmelerService {
   }
 
   async ozet() {
-    const { tenantId, userId } = aktifBaglam();
+    const { tenantId, userId, rol } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const [gruplar, banaAtanan, slaAsan] = await Promise.all([
-        tx.duzeltmeKaydi.groupBy({ by: ["durum", "onem"], _count: { _all: true } }),
-        tx.duzeltmeKaydi.count({ where: { atananUserId: userId, durum: { in: ["acik", "incelemede", "beklemede"] } } }),
-        tx.duzeltmeKaydi.count({ where: { sonTarih: { lt: new Date() }, durum: { in: ["acik", "incelemede", "beklemede"] } } }),
+      const kapsam = this.rolKapsami(rol); const gunBaslangici = new Date(); gunBaslangici.setHours(0, 0, 0, 0);
+      const [gruplar, banaAtanan, slaAsan, bugunOlusan] = await Promise.all([
+        tx.duzeltmeKaydi.groupBy({ by: ["durum", "onem"], where: kapsam, _count: { _all: true } }),
+        tx.duzeltmeKaydi.count({ where: { ...kapsam, atananUserId: userId, durum: { in: ["acik", "incelemede", "beklemede"] } } }),
+        tx.duzeltmeKaydi.count({ where: { ...kapsam, sonTarih: { lt: new Date() }, durum: { in: ["acik", "incelemede", "beklemede"] } } }),
+        tx.duzeltmeKaydi.count({ where: { ...kapsam, createdAt: { gte: gunBaslangici } } }),
       ]);
       const say = (durumlar: DuzeltmeDurumu[], onem?: DuzeltmeOnemi) => gruplar.filter((g) => durumlar.includes(g.durum) && (!onem || g.onem === onem)).reduce((n, g) => n + g._count._all, 0);
-      return { acik: say(["acik", "incelemede", "beklemede"]), kritik: say(["acik", "incelemede", "beklemede"], "kritik"), banaAtanan, slaAsan };
+      return { acik: say(["acik", "incelemede", "beklemede"]), kritik: say(["acik", "incelemede", "beklemede"], "kritik"), bugunOlusan, banaAtanan, slaAsan };
     });
   }
 
@@ -66,9 +71,9 @@ export class DuzeltmelerService {
   }
 
   async getir(id: string) {
-    const { tenantId } = aktifBaglam();
-    const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.duzeltmeKaydi.findUnique({
-      where: { id },
+    const { tenantId, rol } = aktifBaglam();
+    const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.duzeltmeKaydi.findFirst({
+      where: { id, ...this.rolKapsami(rol) },
       include: {
         atanan: { select: { id: true, adSoyad: true, eposta: true } },
         cozen: { select: { id: true, adSoyad: true } },
@@ -167,5 +172,11 @@ export class DuzeltmelerService {
     const kayit = await tx.duzeltmeKaydi.findUnique({ where: { id }, select: { id: true, durum: true } });
     if (!kayit) throw new NotFoundException("Düzeltme kaydı bulunamadı");
     return kayit;
+  }
+
+  private rolKapsami(rol: string): Prisma.DuzeltmeKaydiWhereInput {
+    if (rol === "mali_musavir") return { tur: "fatura_cari" };
+    if (rol === "salt_okunur") return { tur: { in: ["banka_ekstre", "kredi_karti", "pos", "stok", "cek_senet", "fatura_cari"] } };
+    return {};
   }
 }
