@@ -13,6 +13,9 @@ export const duzeltmeListeSemasi = z.object({
 }).refine((girdi) => !girdi.baslangic || !girdi.bitis || girdi.baslangic <= girdi.bitis, { message: "Başlangıç tarihi bitiş tarihinden sonra olamaz", path: ["bitis"] });
 
 export const duzeltmeAtaSemasi = z.object({ userId: z.string().uuid().nullable() });
+const topluIdler = z.array(z.string().uuid()).min(1).max(100).transform((idler) => [...new Set(idler)]);
+export const duzeltmeTopluAtaSemasi = z.object({ ids: topluIdler, userId: z.string().uuid().nullable() });
+export const duzeltmeTopluYoksaySemasi = z.object({ ids: topluIdler, aciklama: z.string().trim().min(2).max(500) });
 export const duzeltmeNotSemasi = z.object({ aciklama: z.string().trim().min(2).max(2000) });
 export const duzeltmeDurumSemasi = z.object({
   durum: z.enum(["incelemede", "beklemede", "cozuldu", "yoksayildi"]),

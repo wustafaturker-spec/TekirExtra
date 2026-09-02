@@ -146,6 +146,7 @@
 /* Correction center */
 .correction-filters { display:grid; gap:.75rem; grid-template-columns:repeat(3,minmax(0,1fr)); }
 .correction-pagination { align-items:center; border-top:1px solid var(--border); display:flex; gap:1rem; justify-content:flex-end; padding:1rem; }
+.correction-bulk { align-items:center; display:grid; gap:.6rem; grid-template-columns:auto minmax(160px,1fr) auto minmax(180px,1.4fr) auto; }
 .correction-backdrop { background:rgba(2,6,23,.58); display:flex; inset:0; justify-content:flex-end; position:fixed; z-index:1100; }
 .correction-drawer { background:var(--surface); box-shadow:-20px 0 50px rgba(0,0,0,.24); display:flex; flex-direction:column; height:100%; max-width:620px; overflow:auto; width:96vw; }
 .correction-drawer>header { align-items:flex-start; background:var(--surface); border-bottom:1px solid var(--border); display:flex; justify-content:space-between; padding:1.25rem 1.5rem; position:sticky; top:0; z-index:1; }
@@ -162,7 +163,7 @@
 .correction-history article { border-left:2px solid var(--border); display:grid; gap:.15rem; padding-left:.75rem; }
 .correction-history article span,.correction-history article small { color:var(--text-muted); }
 .correction-drawer>footer { background:var(--surface); border-top:1px solid var(--border); bottom:0; display:flex; flex-wrap:wrap; gap:.5rem; justify-content:flex-end; margin-top:auto; padding:1rem 1.5rem; position:sticky; }
-@media(max-width:700px){.correction-filters{grid-template-columns:1fr}.correction-drawer{width:100%}.correction-drawer>footer .btn{flex:1 1 45%}}
+@media(max-width:900px){.correction-bulk{grid-template-columns:1fr 1fr}.correction-bulk>strong{grid-column:1/-1}}@media(max-width:700px){.correction-filters,.correction-bulk{grid-template-columns:1fr}.correction-bulk>strong{grid-column:auto}.correction-drawer{width:100%}.correction-drawer>footer .btn{flex:1 1 45%}}
 
 /* Personnel workspace subpages */
 .hr-subpage {

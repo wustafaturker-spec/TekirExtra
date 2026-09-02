@@ -16,6 +16,8 @@ test("düzeltme kaydı incelenir, atanır, notlanır ve beklemeye alınır", asy
     if (pathname.endsWith("/duzeltmeler/ozet")) return route.fulfill({ json: { acik: 2, kritik: 2, bugunOlusan: 1, banaAtanan: atanan ? 1 : 0, slaAsan: 1 } });
     if (pathname.endsWith("/fatura/is-kuyrugu-ozeti")) return route.fulfill({ json: { taslakSatis: 0, taslakAlis: 0, ebelgeHata: 0, acikTahsilat: 0, acikOdeme: 0 } });
     if (pathname.endsWith("/duzeltmeler/secenekler")) return route.fulfill({ json: [{ id: "11111111-1111-4111-8111-111111111111", adSoyad: "Ayşe Yönetici", eposta: "ayse@example.com" }] });
+    if (pathname.endsWith("/duzeltmeler/toplu/ata")) { atanan = true; return route.fulfill({ json: { guncellenen: 1 } }); }
+    if (pathname.endsWith("/duzeltmeler/toplu/yoksay")) return route.fulfill({ json: { guncellenen: 1 } });
     if (pathname.endsWith("/duzeltmeler/duzeltme-1/ata")) { atanan = true; return route.fulfill({ json: kayit() }); }
     if (pathname.endsWith("/duzeltmeler/duzeltme-1/notlar")) { notEklendi = true; return route.fulfill({ json: {} }); }
     if (pathname.endsWith("/duzeltmeler/duzeltme-1/durum")) { durum = "beklemede"; return route.fulfill({ json: kayit() }); }
@@ -29,6 +31,10 @@ test("düzeltme kaydı incelenir, atanır, notlanır ve beklemeye alınır", asy
   await expect(page.getByText("Kritik düzeltme gerekli")).toBeVisible();
   await expect(page.getByText("1 kayıt SLA süresini aştı.")).toBeVisible();
   await page.getByRole("button", { name: "Bildirimleri kapat" }).click();
+  await page.getByRole("checkbox", { name: "Banka ekstresi kaydını seç" }).check();
+  await page.getByLabel("Toplu atanacak kullanıcı").selectOption("11111111-1111-4111-8111-111111111111");
+  await page.getByRole("button", { name: "Toplu ata" }).click();
+  await expect(page.getByText("1 kayıt için atama güncellendi.")).toBeVisible();
   await page.getByRole("button", { name: "Ayrıntı" }).click();
   const dialog = page.getByRole("dialog", { name: "Banka ekstresi" });
   await expect(dialog.getByText("Neden oluştu?")).toBeVisible();
@@ -40,4 +46,8 @@ test("düzeltme kaydı incelenir, atanır, notlanır ve beklemeye alınır", asy
   await dialog.getByRole("button", { name: "Beklemeye al" }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByText("Kayıt beklemede olarak güncellendi.")).toBeVisible();
+  await page.getByRole("checkbox", { name: "Banka ekstresi kaydını seç" }).check();
+  await page.getByLabel("Toplu yoksayma gerekçesi").fill("Mükerrer banka satırı doğrulandı.");
+  await page.getByRole("button", { name: "Banka bulgularını yoksay" }).click();
+  await expect(page.getByText("1 banka ekstresi bulgusu yoksayıldı.")).toBeVisible();
 });

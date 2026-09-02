@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { Roller } from "../auth/roller.decorator";
 import { DuzeltmelerService } from "./duzeltmeler.service";
-import { duzeltmeAtaSemasi, duzeltmeDurumSemasi, duzeltmeListeSemasi, duzeltmeNotSemasi } from "./duzeltmeler.semalar";
+import { duzeltmeAtaSemasi, duzeltmeDurumSemasi, duzeltmeListeSemasi, duzeltmeNotSemasi, duzeltmeTopluAtaSemasi, duzeltmeTopluYoksaySemasi } from "./duzeltmeler.semalar";
 
 @Controller("duzeltmeler")
 @Roller("yonetici", "muhasebe", "salt_okunur", "mali_musavir")
@@ -23,6 +23,14 @@ export class DuzeltmelerController {
   @Post("tara")
   @Roller("yonetici", "muhasebe")
   tara() { return this.service.tara(); }
+
+  @Patch("toplu/ata")
+  @Roller("yonetici", "muhasebe")
+  topluAta(@Body() govde: unknown) { const girdi = duzeltmeTopluAtaSemasi.parse(govde); return this.service.topluAta(girdi.ids, girdi.userId); }
+
+  @Post("toplu/yoksay")
+  @Roller("yonetici", "muhasebe")
+  topluYoksay(@Body() govde: unknown) { const girdi = duzeltmeTopluYoksaySemasi.parse(govde); return this.service.topluYoksay(girdi.ids, girdi.aciklama); }
 
   @Patch(":id/ata")
   @Roller("yonetici", "muhasebe")

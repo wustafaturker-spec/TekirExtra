@@ -14,9 +14,9 @@ describe("DuzeltmelerService", () => {
     sayim: { findMany: vi.fn() },
     cekSenet: { findMany: vi.fn() },
     fatura: { findMany: vi.fn() },
-    duzeltmeKaydi: { upsert: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn(), count: vi.fn(), groupBy: vi.fn() },
-    duzeltmeOlayi: { create: vi.fn() },
-    user: { findMany: vi.fn() },
+    duzeltmeKaydi: { upsert: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn(), count: vi.fn(), groupBy: vi.fn() },
+    duzeltmeOlayi: { create: vi.fn(), createMany: vi.fn() },
+    user: { findMany: vi.fn(), findFirst: vi.fn() },
   };
   const prisma = { tenantIslem: vi.fn(async (_tenantId: string, is: (istemci: typeof tx) => unknown) => is(tx)) };
   let service: DuzeltmelerService;
@@ -103,5 +103,30 @@ describe("DuzeltmelerService", () => {
     expect(tx.duzeltmeKaydi.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { tur: { in: ["banka_ekstre", "kredi_karti", "pos", "stok", "cek_senet", "fatura_cari"] } },
     }));
+  });
+
+  it("kritik türleri toplu yoksaymaya izin vermez", async () => {
+    tx.duzeltmeKaydi.findMany.mockResolvedValue([{ id: "11111111-1111-4111-8111-111111111111", tur: "stok", durum: "acik" }]);
+
+    await expect(baglamlaCalistir(
+      { tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" },
+      () => service.topluYoksay(["11111111-1111-4111-8111-111111111111"], "Kontrol edildi"),
+    )).rejects.toThrow("yalnız banka ekstresi");
+    expect(tx.duzeltmeKaydi.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("banka ekstresi bulgularını gerekçesiyle toplu yoksayar ve olay geçmişi yazar", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    tx.duzeltmeKaydi.findMany.mockResolvedValue([{ id, tur: "banka_ekstre", durum: "incelemede" }]);
+    tx.duzeltmeKaydi.updateMany.mockResolvedValue({ count: 1 }); tx.duzeltmeOlayi.createMany.mockResolvedValue({ count: 1 });
+
+    const sonuc = await baglamlaCalistir(
+      { tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" },
+      () => service.topluYoksay([id], "Mükerrer hareket doğrulandı"),
+    );
+
+    expect(sonuc).toEqual({ guncellenen: 1 });
+    expect(tx.duzeltmeKaydi.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ durum: "yoksayildi", tekillikAnahtari: null }) }));
+    expect(tx.duzeltmeOlayi.createMany).toHaveBeenCalledWith(expect.objectContaining({ data: [expect.objectContaining({ olayTuru: "toplu_yoksayma", aciklama: "Mükerrer hareket doğrulandı" })] }));
   });
 });

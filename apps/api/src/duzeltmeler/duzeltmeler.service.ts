@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import type { DuzeltmeDurumu, DuzeltmeOnemi, DuzeltmeTuru, Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -152,6 +152,31 @@ export class DuzeltmelerService {
       const kayit = await tx.duzeltmeKaydi.update({ where: { id }, data: { atananUserId: userId } });
       await tx.duzeltmeOlayi.create({ data: { tenantId, duzeltmeKaydiId: id, userId: yapan, olayTuru: "atama", aciklama: userId ? "Kayıt kullanıcıya atandı." : "Kayıt ataması kaldırıldı." } });
       return kayit;
+    });
+  }
+
+  async topluAta(ids: string[], userId: string | null) {
+    const { tenantId, userId: yapan } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      if (userId && !(await tx.user.findFirst({ where: { id: userId, aktif: true, rol: { in: ["yonetici", "muhasebe"] } }, select: { id: true } }))) throw new NotFoundException("Atanacak aktif kullanıcı bulunamadı");
+      const kayitlar = await tx.duzeltmeKaydi.findMany({ where: { id: { in: ids }, durum: { in: ["acik", "incelemede", "beklemede"] } }, select: { id: true } });
+      if (kayitlar.length !== ids.length) throw new BadRequestException("Seçimde bulunamayan veya kapanmış düzeltme kaydı var");
+      await tx.duzeltmeKaydi.updateMany({ where: { id: { in: ids } }, data: { atananUserId: userId } });
+      await tx.duzeltmeOlayi.createMany({ data: kayitlar.map((kayit) => ({ tenantId, duzeltmeKaydiId: kayit.id, userId: yapan, olayTuru: "toplu_atama", aciklama: userId ? "Kayıt toplu olarak kullanıcıya atandı." : "Kayıt ataması toplu olarak kaldırıldı." })) });
+      return { guncellenen: kayitlar.length };
+    });
+  }
+
+  async topluYoksay(ids: string[], aciklama: string) {
+    const { tenantId, userId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kayitlar = await tx.duzeltmeKaydi.findMany({ where: { id: { in: ids }, durum: { in: ["acik", "incelemede", "beklemede"] } }, select: { id: true, tur: true, durum: true } });
+      if (kayitlar.length !== ids.length) throw new BadRequestException("Seçimde bulunamayan veya kapanmış düzeltme kaydı var");
+      if (kayitlar.some((kayit) => kayit.tur !== "banka_ekstre")) throw new BadRequestException("Toplu yoksayma yalnız banka ekstresi bulgularında kullanılabilir");
+      const cozulmeTarihi = new Date();
+      await tx.duzeltmeKaydi.updateMany({ where: { id: { in: ids } }, data: { durum: "yoksayildi", cozenUserId: userId, cozulmeTarihi, tekillikAnahtari: null } });
+      await tx.duzeltmeOlayi.createMany({ data: kayitlar.map((kayit) => ({ tenantId, duzeltmeKaydiId: kayit.id, userId, oncekiDurum: kayit.durum, yeniDurum: "yoksayildi", olayTuru: "toplu_yoksayma", aciklama })) });
+      return { guncellenen: kayitlar.length };
     });
   }
 
