@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma } from "@prisma/client";
 import { baglamlaCalistir } from "../core/istek-baglami";
 import { DuzeltmelerService } from "./duzeltmeler.service";
 
@@ -10,6 +11,7 @@ describe("DuzeltmelerService", () => {
     posTahsilat: { findMany: vi.fn() },
     ebelgeKayit: { findMany: vi.fn() },
     stokDepoBakiye: { findMany: vi.fn() },
+    sayim: { findMany: vi.fn() },
     cekSenet: { findMany: vi.fn() },
     fatura: { findMany: vi.fn() },
     duzeltmeKaydi: { upsert: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn(), count: vi.fn(), groupBy: vi.fn() },
@@ -27,6 +29,7 @@ describe("DuzeltmelerService", () => {
     tx.posTahsilat.findMany.mockResolvedValue([]);
     tx.ebelgeKayit.findMany.mockResolvedValue([]);
     tx.stokDepoBakiye.findMany.mockResolvedValue([]);
+    tx.sayim.findMany.mockResolvedValue([]);
     tx.cekSenet.findMany.mockResolvedValue([]);
     tx.fatura.findMany.mockResolvedValue([]);
     tx.duzeltmeKaydi.findMany.mockResolvedValue([]);
@@ -59,6 +62,20 @@ describe("DuzeltmelerService", () => {
     expect(sonuc.otomatikCozulen).toBe(1);
     expect(tx.duzeltmeKaydi.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "duzeltme-1" }, data: expect.objectContaining({ durum: "cozuldu", tekillikAnahtari: null }) }));
     expect(tx.duzeltmeOlayi.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ olayTuru: "otomatik_cozum" }) }));
+  });
+
+  it("fark içeren taslak sayımı onaysız sayım bulgusu olarak açar", async () => {
+    tx.sayim.findMany.mockResolvedValue([{ id: "sayim-1", tarih: new Date(), aciklama: null, depo: { ad: "Merkez" }, kalemler: [{ sistemMiktar: new Prisma.Decimal(10), fiiliMiktar: new Prisma.Decimal(8) }] }]);
+
+    const sonuc = await baglamlaCalistir(
+      { tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" },
+      () => service.tara(),
+    );
+
+    expect(sonuc).toMatchObject({ taranan: 1, bulunan: 1 });
+    expect(tx.duzeltmeKaydi.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { tenantId_tekillikAnahtari: { tenantId: "tenant-1", tekillikAnahtari: "SAYIM_FARKI_ONAYSIZ:stok_sayim:sayim-1" } },
+    }));
   });
 
   it("atama seçeneklerini aktif yönetici ve muhasebe kullanıcılarıyla sınırlar", async () => {

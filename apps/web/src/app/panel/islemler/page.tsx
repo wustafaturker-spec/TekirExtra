@@ -15,7 +15,7 @@ interface Kullanici { id: string; adSoyad: string; eposta: string }
 
 const DURUM_ADI: Record<Durum, string> = { acik: "Açık", incelemede: "İncelemede", beklemede: "Beklemede", cozuldu: "Çözüldü", yoksayildi: "Yoksayıldı" };
 const TUR_ADI: Record<string, string> = { banka_ekstre: "Banka ekstresi", kredi_karti: "Kredi kartı", masraf: "Masraf", pos: "POS", ebelge: "e-Belge", stok: "Stok", cek_senet: "Çek / senet", fatura_cari: "Fatura / cari" };
-const KAYNAK_YOLU: Record<string, string> = { banka_ekstre_satiri: "/panel/kasa-banka/ekstre", kredi_karti_hareketi: "/panel/kasa-banka/kredi-kartlari", masraf: "/panel/masraflar", pos_tahsilat: "/panel/kasa-banka/pos", ebelge: "/panel/ebelge/kuyruk", stok_depo_bakiyesi: "/panel/stok", cek_senet: "/panel/kasa-banka/cek-senet", fatura: "/panel/fatura" };
+const KAYNAK_YOLU: Record<string, string> = { banka_ekstre_satiri: "/panel/kasa-banka/ekstre", kredi_karti_hareketi: "/panel/kasa-banka/kredi-kartlari", masraf: "/panel/masraflar", pos_tahsilat: "/panel/kasa-banka/pos", ebelge: "/panel/ebelge/kuyruk", stok_depo_bakiyesi: "/panel/stok", stok_sayim: "/panel/stok/sayim", cek_senet: "/panel/kasa-banka/cek-senet", fatura: "/panel/fatura" };
 
 export default function DuzeltmeMerkeziSayfasi() {
   const [liste, setListe] = useState<Liste>({ kayitlar: [], toplam: 0, sayfa: 1, toplamSayfa: 0 });
