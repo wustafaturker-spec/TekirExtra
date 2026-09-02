@@ -14,7 +14,7 @@ describe("DuzeltmelerService", () => {
     sayim: { findMany: vi.fn() },
     cekSenet: { findMany: vi.fn() },
     fatura: { findMany: vi.fn() },
-    duzeltmeKaydi: { upsert: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn(), count: vi.fn(), groupBy: vi.fn() },
+    duzeltmeKaydi: { upsert: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn(), count: vi.fn(), groupBy: vi.fn() },
     duzeltmeOlayi: { create: vi.fn(), createMany: vi.fn() },
     user: { findMany: vi.fn(), findFirst: vi.fn() },
   };
@@ -128,5 +128,15 @@ describe("DuzeltmelerService", () => {
     expect(sonuc).toEqual({ guncellenen: 1 });
     expect(tx.duzeltmeKaydi.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ durum: "yoksayildi", tekillikAnahtari: null }) }));
     expect(tx.duzeltmeOlayi.createMany).toHaveBeenCalledWith(expect.objectContaining({ data: [expect.objectContaining({ olayTuru: "toplu_yoksayma", aciklama: "Mükerrer hareket doğrulandı" })] }));
+  });
+
+  it("kapanmış kaydın durumunu yeniden açmaz", async () => {
+    tx.duzeltmeKaydi.findUnique.mockResolvedValue({ id: "duzeltme-1", durum: "cozuldu" });
+
+    await expect(baglamlaCalistir(
+      { tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" },
+      () => service.durumDegistir("duzeltme-1", "incelemede"),
+    )).rejects.toThrow("Kapanmış düzeltme kaydının durumu değiştirilemez");
+    expect(tx.duzeltmeKaydi.update).not.toHaveBeenCalled();
   });
 });

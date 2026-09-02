@@ -38,6 +38,8 @@ test("düzeltme kaydı incelenir, atanır, notlanır ve beklemeye alınır", asy
   await page.getByRole("button", { name: "Ayrıntı" }).click();
   const dialog = page.getByRole("dialog", { name: "Banka ekstresi" });
   await expect(dialog.getByText("Neden oluştu?")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Kaynağı yeniden doğrula" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Çözüldü", exact: true })).toHaveCount(0);
   await dialog.getByLabel("Atanan kullanıcı").selectOption("11111111-1111-4111-8111-111111111111");
   await expect(dialog.getByLabel("Atanan kullanıcı")).toHaveValue("11111111-1111-4111-8111-111111111111");
   await dialog.getByLabel("İnceleme notu").fill("Banka dekontu istendi.");

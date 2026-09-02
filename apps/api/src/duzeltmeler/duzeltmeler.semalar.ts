@@ -18,6 +18,6 @@ export const duzeltmeTopluAtaSemasi = z.object({ ids: topluIdler, userId: z.stri
 export const duzeltmeTopluYoksaySemasi = z.object({ ids: topluIdler, aciklama: z.string().trim().min(2).max(500) });
 export const duzeltmeNotSemasi = z.object({ aciklama: z.string().trim().min(2).max(2000) });
 export const duzeltmeDurumSemasi = z.object({
-  durum: z.enum(["incelemede", "beklemede", "cozuldu", "yoksayildi"]),
+  durum: z.enum(["incelemede", "beklemede", "yoksayildi"]),
   aciklama: z.string().trim().min(2).max(2000).optional(),
 });

@@ -188,11 +188,12 @@ export class DuzeltmelerService {
     });
   }
 
-  async durumDegistir(id: string, durum: Exclude<DuzeltmeDurumu, "acik">, aciklama?: string) {
+  async durumDegistir(id: string, durum: Exclude<DuzeltmeDurumu, "acik" | "cozuldu">, aciklama?: string) {
     const { tenantId, userId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const onceki = await this.kayitDogrula(tx, id);
-      const kapali = durum === "cozuldu" || durum === "yoksayildi";
+      if (onceki.durum === "cozuldu" || onceki.durum === "yoksayildi") throw new BadRequestException("Kapanmış düzeltme kaydının durumu değiştirilemez");
+      const kapali = durum === "yoksayildi";
       const kayit = await tx.duzeltmeKaydi.update({ where: { id }, data: { durum, ...(kapali ? { cozenUserId: userId, cozulmeTarihi: new Date(), tekillikAnahtari: null } : {}) } });
       await tx.duzeltmeOlayi.create({ data: { tenantId, duzeltmeKaydiId: id, userId, oncekiDurum: onceki.durum, yeniDurum: durum, olayTuru: "durum", aciklama } });
       return kayit;
