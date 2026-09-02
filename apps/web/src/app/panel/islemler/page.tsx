@@ -1,15 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { Alert, Badge, Button, Card, Select, TableWrap } from "@/components/ui";
 import { api } from "@/lib/api";
 
 type Durum = "acik" | "incelemede" | "beklemede" | "cozuldu" | "yoksayildi";
 type Onem = "bilgi" | "uyari" | "kritik";
-interface Kayit { id: string; tur: string; onem: Onem; durum: Durum; kaynakTur: string; kaynakRef: string; nedenKodu: string; aciklama: string; onerilenEylem: string | null; createdAt: string; sonTarih: string | null; atanan: { id: string; adSoyad: string } | null }
+interface Olay { id: string; olayTuru: string; aciklama: string | null; createdAt: string; user: { adSoyad: string } | null }
+interface Kayit { id: string; tur: string; onem: Onem; durum: Durum; kaynakTur: string; kaynakRef: string; nedenKodu: string; aciklama: string; onerilenEylem: string | null; createdAt: string; atanan: { id: string; adSoyad: string } | null; olaylar?: Olay[] }
 interface Liste { kayitlar: Kayit[]; toplam: number; sayfa: number; toplamSayfa: number }
 interface Ozet { acik: number; kritik: number; banaAtanan: number; slaAsan: number }
+interface Kullanici { id: string; adSoyad: string; eposta: string }
 
 const DURUM_ADI: Record<Durum, string> = { acik: "Açık", incelemede: "İncelemede", beklemede: "Beklemede", cozuldu: "Çözüldü", yoksayildi: "Yoksayıldı" };
 const TUR_ADI: Record<string, string> = { banka_ekstre: "Banka ekstresi", kredi_karti: "Kredi kartı", masraf: "Masraf", pos: "POS", ebelge: "e-Belge", stok: "Stok", cek_senet: "Çek / senet", fatura_cari: "Fatura / cari" };
@@ -18,43 +20,42 @@ const KAYNAK_YOLU: Record<string, string> = { banka_ekstre_satiri: "/panel/kasa-
 export default function DuzeltmeMerkeziSayfasi() {
   const [liste, setListe] = useState<Liste>({ kayitlar: [], toplam: 0, sayfa: 1, toplamSayfa: 0 });
   const [ozet, setOzet] = useState<Ozet>({ acik: 0, kritik: 0, banaAtanan: 0, slaAsan: 0 });
+  const [kullanicilar, setKullanicilar] = useState<Kullanici[]>([]);
   const [durum, setDurum] = useState<Durum | "">("acik");
-  const [yukleniyor, setYukleniyor] = useState(true); const [hata, setHata] = useState(""); const [mesaj, setMesaj] = useState("");
+  const [onem, setOnem] = useState<Onem | "">("");
+  const [tur, setTur] = useState(""); const [sayfa, setSayfa] = useState(1);
+  const [detay, setDetay] = useState<Kayit | null>(null); const [notMetni, setNotMetni] = useState("");
+  const [yukleniyor, setYukleniyor] = useState(true); const [isleniyor, setIsleniyor] = useState(false);
+  const [hata, setHata] = useState(""); const [mesaj, setMesaj] = useState("");
+  const kapatRef = useRef<HTMLButtonElement>(null);
 
   const yukle = useCallback(async () => {
     setYukleniyor(true); setHata("");
     try {
-      const parametre = durum ? `?durum=${durum}` : "";
-      const [kayitlar, sayilar] = await Promise.all([api<Liste>(`/duzeltmeler${parametre}`), api<Ozet>("/duzeltmeler/ozet")]);
-      setListe(kayitlar); setOzet(sayilar);
+      const q = new URLSearchParams({ sayfa: String(sayfa) });
+      if (durum) q.set("durum", durum); if (onem) q.set("onem", onem); if (tur) q.set("tur", tur);
+      const [kayitlar, sayilar, secenekler] = await Promise.all([api<Liste>(`/duzeltmeler?${q}`), api<Ozet>("/duzeltmeler/ozet"), api<Kullanici[]>("/duzeltmeler/secenekler")]);
+      setListe(kayitlar); setOzet(sayilar); setKullanicilar(secenekler);
     } catch (e) { setHata(e instanceof Error ? e.message : "Düzeltme kayıtları alınamadı"); }
     finally { setYukleniyor(false); }
-  }, [durum]);
+  }, [durum, onem, sayfa, tur]);
 
   useEffect(() => { void yukle(); }, [yukle]);
+  useEffect(() => { if (!detay) return; kapatRef.current?.focus(); const f = (e: KeyboardEvent) => { if (e.key === "Escape") setDetay(null); }; window.addEventListener("keydown", f); return () => window.removeEventListener("keydown", f); }, [detay]);
 
-  async function tara() {
-    setMesaj(""); setHata("");
-    try {
-      const sonuc = await api<{ bulunan: number; otomatikCozulen: number }>("/duzeltmeler/tara", { method: "POST" });
-      setMesaj(`${sonuc.bulunan} bulgu güncellendi, ${sonuc.otomatikCozulen} kayıt otomatik çözüldü.`); await yukle();
-    } catch (e) { setHata(e instanceof Error ? e.message : "Tarama başlatılamadı"); }
-  }
+  async function tara() { setIsleniyor(true); setHata(""); try { const r = await api<{ bulunan: number; otomatikCozulen: number }>("/duzeltmeler/tara", { method: "POST" }); setMesaj(`${r.bulunan} bulgu güncellendi, ${r.otomatikCozulen} kayıt otomatik çözüldü.`); await yukle(); } catch (e) { setHata(e instanceof Error ? e.message : "Tarama başlatılamadı"); } finally { setIsleniyor(false); } }
+  async function detayAc(id: string) { try { setDetay(await api<Kayit>(`/duzeltmeler/${id}`)); } catch (e) { setHata(e instanceof Error ? e.message : "Kayıt ayrıntısı alınamadı"); } }
+  async function durumDegistir(yeniDurum: Exclude<Durum, "acik">) { if (!detay) return; setIsleniyor(true); try { await api(`/duzeltmeler/${detay.id}/durum`, { method: "PATCH", body: JSON.stringify({ durum: yeniDurum }) }); setMesaj(`Kayıt ${DURUM_ADI[yeniDurum].toLocaleLowerCase("tr-TR")} olarak güncellendi.`); setDetay(null); await yukle(); } catch (e) { setHata(e instanceof Error ? e.message : "Durum güncellenemedi"); } finally { setIsleniyor(false); } }
+  async function ata(userId: string) { if (!detay) return; setIsleniyor(true); try { await api(`/duzeltmeler/${detay.id}/ata`, { method: "PATCH", body: JSON.stringify({ userId: userId || null }) }); await detayAc(detay.id); await yukle(); } catch (e) { setHata(e instanceof Error ? e.message : "Atama güncellenemedi"); } finally { setIsleniyor(false); } }
+  async function notEkle(e: FormEvent) { e.preventDefault(); if (!detay || notMetni.trim().length < 2) return; setIsleniyor(true); try { await api(`/duzeltmeler/${detay.id}/notlar`, { method: "POST", body: JSON.stringify({ aciklama: notMetni }) }); setNotMetni(""); await detayAc(detay.id); } catch (err) { setHata(err instanceof Error ? err.message : "Not eklenemedi"); } finally { setIsleniyor(false); } }
 
-  async function durumDegistir(id: string, yeniDurum: Durum) {
-    try { await api(`/duzeltmeler/${id}/durum`, { method: "PATCH", body: JSON.stringify({ durum: yeniDurum }) }); await yukle(); }
-    catch (e) { setHata(e instanceof Error ? e.message : "Durum güncellenemedi"); }
-  }
-
-  return <div className="stack">
-    <div className="page-header"><div><p className="eyebrow">R1 · MERKEZİ MUTABAKAT</p><h1>Düzeltme Merkezi</h1><p>Finansal istisnaları tek kuyrukta inceleyin, atayın ve çözün.</p></div><Button onClick={() => void tara()}>↻ Yeniden tara</Button></div>
+  const filtrele = (setter: (v: string) => void) => (e: ChangeEvent<HTMLSelectElement>) => { setter(e.target.value); setSayfa(1); };
+  return <div className="stack correction-page">
+    <div className="page-header"><div><p className="eyebrow">R1 · MERKEZİ MUTABAKAT</p><h1>Düzeltme Merkezi</h1><p>Finansal istisnaları tek kuyrukta inceleyin, atayın ve çözün.</p></div><Button disabled={isleniyor} onClick={() => void tara()}>↻ Yeniden tara</Button></div>
     {hata && <Alert tone="error">{hata}</Alert>}{mesaj && <Alert tone="success">{mesaj}</Alert>}
     <div className="stats-grid"><Card><span className="muted">Açık kayıt</span><h2>{ozet.acik}</h2></Card><Card><span className="muted">Kritik</span><h2>{ozet.kritik}</h2></Card><Card><span className="muted">Bana atanan</span><h2>{ozet.banaAtanan}</h2></Card><Card><span className="muted">SLA aşan</span><h2>{ozet.slaAsan}</h2></Card></div>
-    <Card pad={false} title={<div className="page-header"><div><h2>İş kuyruğu</h2><span className="muted">{liste.toplam} kayıt</span></div><Select aria-label="Durum filtresi" value={durum} onChange={(e) => setDurum(e.target.value as Durum | "")}><option value="">Tüm durumlar</option>{Object.entries(DURUM_ADI).map(([kod, ad]) => <option key={kod} value={kod}>{ad}</option>)}</Select></div>}>
-      <TableWrap><thead><tr><th>Bulgu</th><th>Önem / durum</th><th>Atanan</th><th>Önerilen eylem</th><th>İşlem</th></tr></thead><tbody>
-        {liste.kayitlar.map((kayit) => <tr key={kayit.id}><td><strong>{TUR_ADI[kayit.tur] ?? kayit.tur}</strong><div>{kayit.aciklama}</div><small className="muted">{new Date(kayit.createdAt).toLocaleString("tr-TR")}</small></td><td><Badge variant={kayit.onem === "kritik" ? "danger" : kayit.onem === "uyari" ? "warning" : "info"}>{kayit.onem}</Badge><small>{DURUM_ADI[kayit.durum]}</small></td><td>{kayit.atanan?.adSoyad ?? "Atanmadı"}</td><td>{kayit.onerilenEylem ?? "Kaynağı inceleyin."}{KAYNAK_YOLU[kayit.kaynakTur] && <div><Link href={KAYNAK_YOLU[kayit.kaynakTur]}>Kaynağa git →</Link></div>}</td><td><div className="inline-actions">{kayit.durum === "acik" && <Button size="sm" variant="ghost" onClick={() => void durumDegistir(kayit.id, "incelemede")}>İncele</Button>}{!["cozuldu", "yoksayildi"].includes(kayit.durum) && <Button size="sm" onClick={() => void durumDegistir(kayit.id, "cozuldu")}>Çöz</Button>}</div></td></tr>)}
-        {!yukleniyor && !liste.kayitlar.length && <tr><td colSpan={5}>Bu filtrede düzeltme kaydı bulunmuyor.</td></tr>}{yukleniyor && !liste.kayitlar.length && <tr><td colSpan={5}>Yükleniyor…</td></tr>}
-      </tbody></TableWrap>
-    </Card>
+    <Card><div className="correction-filters"><Select aria-label="Durum filtresi" value={durum} onChange={filtrele((v) => setDurum(v as Durum | ""))}><option value="">Tüm durumlar</option>{Object.entries(DURUM_ADI).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select><Select aria-label="Önem filtresi" value={onem} onChange={filtrele((v) => setOnem(v as Onem | ""))}><option value="">Tüm önemler</option><option value="kritik">Kritik</option><option value="uyari">Uyarı</option><option value="bilgi">Bilgi</option></Select><Select aria-label="Tür filtresi" value={tur} onChange={filtrele(setTur)}><option value="">Tüm türler</option>{Object.entries(TUR_ADI).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></div></Card>
+    <Card pad={false} title={<div><h2>İş kuyruğu</h2><span className="muted">{liste.toplam} kayıt</span></div>}><TableWrap><thead><tr><th>Bulgu</th><th>Önem / durum</th><th>Atanan</th><th>Önerilen eylem</th><th>İşlem</th></tr></thead><tbody>{liste.kayitlar.map((k) => <tr key={k.id}><td><strong>{TUR_ADI[k.tur] ?? k.tur}</strong><div>{k.aciklama}</div><small className="muted">{new Date(k.createdAt).toLocaleString("tr-TR")}</small></td><td><Badge variant={k.onem === "kritik" ? "danger" : k.onem === "uyari" ? "warning" : "info"}>{k.onem}</Badge><small>{DURUM_ADI[k.durum]}</small></td><td>{k.atanan?.adSoyad ?? "Atanmadı"}</td><td>{k.onerilenEylem ?? "Kaynağı inceleyin."}</td><td><Button size="sm" onClick={() => void detayAc(k.id)}>Ayrıntı</Button></td></tr>)}{!yukleniyor && !liste.kayitlar.length && <tr><td colSpan={5}>Bu filtrede düzeltme kaydı bulunmuyor.</td></tr>}{yukleniyor && !liste.kayitlar.length && <tr><td colSpan={5}>Yükleniyor…</td></tr>}</tbody></TableWrap>{liste.toplamSayfa > 1 && <div className="correction-pagination"><Button size="sm" disabled={sayfa <= 1} onClick={() => setSayfa((s) => s - 1)}>← Önceki</Button><span>{liste.sayfa} / {liste.toplamSayfa}</span><Button size="sm" disabled={sayfa >= liste.toplamSayfa} onClick={() => setSayfa((s) => s + 1)}>Sonraki →</Button></div>}</Card>
+    {detay && <div className="correction-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setDetay(null); }}><aside className="correction-drawer" role="dialog" aria-modal="true" aria-labelledby="correction-title"><header><div><span>{detay.nedenKodu}</span><h2 id="correction-title">{TUR_ADI[detay.tur] ?? detay.tur}</h2></div><button ref={kapatRef} aria-label="Ayrıntıyı kapat" onClick={() => setDetay(null)}>×</button></header><div className="correction-drawer__body"><section><h3>Neden oluştu?</h3><p>{detay.aciklama}</p></section><section><h3>Nasıl çözülür?</h3><p>{detay.onerilenEylem}</p>{KAYNAK_YOLU[detay.kaynakTur] && <Link href={KAYNAK_YOLU[detay.kaynakTur]}>Kaynak kayda git →</Link>}</section><label className="field"><span>Atanan kullanıcı</span><Select disabled={isleniyor} value={detay.atanan?.id ?? ""} onChange={(e) => void ata(e.target.value)}><option value="">Atanmamış</option>{kullanicilar.map((k) => <option key={k.id} value={k.id}>{k.adSoyad}</option>)}</Select></label><form onSubmit={notEkle}><label className="field"><span>İnceleme notu</span><textarea className="textarea" value={notMetni} onChange={(e) => setNotMetni(e.target.value)} minLength={2} maxLength={2000} placeholder="Yapılan kontrolü yazın…" /></label><Button disabled={isleniyor || notMetni.trim().length < 2}>Not ekle</Button></form><section><h3>İşlem geçmişi</h3><div className="correction-history">{detay.olaylar?.map((o) => <article key={o.id}><strong>{o.user?.adSoyad ?? "Sistem"}</strong><span>{o.aciklama ?? o.olayTuru}</span><small>{new Date(o.createdAt).toLocaleString("tr-TR")}</small></article>)}{!detay.olaylar?.length && <p className="muted">Henüz işlem geçmişi yok.</p>}</div></section></div>{!["cozuldu", "yoksayildi"].includes(detay.durum) && <footer><Button disabled={isleniyor} onClick={() => void durumDegistir("incelemede")}>İncelemede</Button><Button disabled={isleniyor} onClick={() => void durumDegistir("beklemede")}>Beklemeye al</Button><Button disabled={isleniyor} variant="danger" onClick={() => void durumDegistir("yoksayildi")}>Yoksay</Button><Button disabled={isleniyor} variant="primary" onClick={() => void durumDegistir("cozuldu")}>Çözüldü</Button></footer>}</aside></div>}
   </div>;
 }

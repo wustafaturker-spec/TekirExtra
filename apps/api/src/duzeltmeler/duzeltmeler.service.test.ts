@@ -14,6 +14,7 @@ describe("DuzeltmelerService", () => {
     fatura: { findMany: vi.fn() },
     duzeltmeKaydi: { upsert: vi.fn(), findMany: vi.fn(), update: vi.fn() },
     duzeltmeOlayi: { create: vi.fn() },
+    user: { findMany: vi.fn() },
   };
   const prisma = { tenantIslem: vi.fn(async (_tenantId: string, is: (istemci: typeof tx) => unknown) => is(tx)) };
   let service: DuzeltmelerService;
@@ -58,5 +59,19 @@ describe("DuzeltmelerService", () => {
     expect(sonuc.otomatikCozulen).toBe(1);
     expect(tx.duzeltmeKaydi.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "duzeltme-1" }, data: expect.objectContaining({ durum: "cozuldu", tekillikAnahtari: null }) }));
     expect(tx.duzeltmeOlayi.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ olayTuru: "otomatik_cozum" }) }));
+  });
+
+  it("atama seçeneklerini aktif yönetici ve muhasebe kullanıcılarıyla sınırlar", async () => {
+    tx.user.findMany.mockResolvedValue([{ id: "user-1", adSoyad: "Ayşe Yönetici", eposta: "ayse@example.com" }]);
+
+    const sonuc = await baglamlaCalistir(
+      { tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" },
+      () => service.secenekler(),
+    );
+
+    expect(sonuc).toHaveLength(1);
+    expect(tx.user.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { aktif: true, rol: { in: ["yonetici", "muhasebe"] } },
+    }));
   });
 });

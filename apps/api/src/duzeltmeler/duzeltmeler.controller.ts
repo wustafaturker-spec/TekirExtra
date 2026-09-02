@@ -14,6 +14,9 @@ export class DuzeltmelerController {
   @Get("ozet")
   ozet() { return this.service.ozet(); }
 
+  @Get("secenekler")
+  secenekler() { return this.service.secenekler(); }
+
   @Get(":id")
   getir(@Param("id") id: string) { return this.service.getir(id); }
 

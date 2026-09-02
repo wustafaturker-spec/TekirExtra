@@ -56,6 +56,15 @@ export class DuzeltmelerService {
     });
   }
 
+  async secenekler() {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.user.findMany({
+      where: { aktif: true, rol: { in: ["yonetici", "muhasebe"] } },
+      select: { id: true, adSoyad: true, eposta: true },
+      orderBy: { adSoyad: "asc" },
+    }));
+  }
+
   async getir(id: string) {
     const { tenantId } = aktifBaglam();
     const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.duzeltmeKaydi.findUnique({
