@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
 import { baglamlaCalistir } from "../core/istek-baglami";
+import { MetricsService } from "../core/observability/metrics.service";
 import { DuzeltmelerService } from "./duzeltmeler.service";
 
 const ON_BES_DAKIKA_MS = 15 * 60 * 1000;
@@ -13,7 +14,7 @@ export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleD
   private zamanlayici?: NodeJS.Timeout;
   private calisiyor = false;
 
-  constructor(private readonly duzeltmeler: DuzeltmelerService) {}
+  constructor(private readonly duzeltmeler: DuzeltmelerService, private readonly metrics: MetricsService) {}
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
@@ -21,7 +22,7 @@ export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleD
     const ayar = Number(process.env.DUZELTME_TARAMA_INTERVAL_MS || ON_BES_DAKIKA_MS);
     const aralik = Math.min(Number.isFinite(ayar) && ayar > 0 ? ayar : ON_BES_DAKIKA_MS, ON_BES_DAKIKA_MS);
     this.zamanlayici = setInterval(() => void this.calistir(), aralik);
-    this.logger.log(`Düzeltme dedektörleri ${Math.round(aralik / 1000)} saniyelik aralıkla planlandı`);
+    this.logger.log(JSON.stringify({ event: "correction_scan_scheduled", intervalMs: aralik }));
   }
 
   onModuleDestroy(): void { if (this.zamanlayici) clearInterval(this.zamanlayici); }
@@ -37,15 +38,24 @@ export class DuzeltmeTaramaZamanlayiciService implements OnModuleInit, OnModuleD
   async calistir(): Promise<void> {
     if (this.calisiyor) return;
     this.calisiyor = true;
+    const baslangic = Date.now();
     try {
-      let bulunan = 0; let otomatikCozulen = 0;
-      for (const tenantId of await this.tenantIdleriAl()) {
+      let bulunan = 0; let otomatikCozulen = 0; const tenantIdleri = await this.tenantIdleriAl();
+      for (const tenantId of tenantIdleri) {
         const sonuc = await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () => this.duzeltmeler.tara());
         bulunan += sonuc.bulunan; otomatikCozulen += sonuc.otomatikCozulen;
       }
-      this.logger.debug(`Otomatik düzeltme taraması tamamlandı: ${bulunan} bulgu, ${otomatikCozulen} otomatik çözüm`);
+      const sureMs = Date.now() - baslangic;
+      this.metrics.increment("correction_scan_runs_total", { result: "success" });
+      this.metrics.increment("correction_findings_total", {}, bulunan);
+      this.metrics.increment("correction_auto_resolutions_total", {}, otomatikCozulen);
+      this.metrics.set("correction_scan_duration_seconds", sureMs / 1000);
+      this.metrics.set("correction_scan_tenants", tenantIdleri.length);
+      this.metrics.set("correction_scan_last_success_timestamp_seconds", Math.floor(Date.now() / 1000));
+      this.logger.debug(JSON.stringify({ event: "correction_scan_completed", tenantCount: tenantIdleri.length, findings: bulunan, autoResolutions: otomatikCozulen, durationMs: sureMs }));
     } catch (hata) {
-      this.logger.error("Otomatik düzeltme taraması başarısız", hata instanceof Error ? hata.stack : String(hata));
+      this.metrics.increment("correction_scan_runs_total", { result: "failed" });
+      this.logger.error(JSON.stringify({ event: "correction_scan_failed", durationMs: Date.now() - baslangic, error: hata instanceof Error ? hata.message : String(hata) }), hata instanceof Error ? hata.stack : undefined);
     } finally { this.calisiyor = false; }
   }
 }

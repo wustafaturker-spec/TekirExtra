@@ -6,6 +6,7 @@ describe("DuzeltmeTaramaZamanlayiciService", () => {
   const oncekiAralik = process.env.DUZELTME_TARAMA_INTERVAL_MS;
 
   afterEach(() => {
+    vi.clearAllMocks();
     vi.useRealTimers();
     if (oncekiWorker === undefined) delete process.env.TEKIR_WORKER; else process.env.TEKIR_WORKER = oncekiWorker;
     if (oncekiAralik === undefined) delete process.env.DUZELTME_TARAMA_INTERVAL_MS; else process.env.DUZELTME_TARAMA_INTERVAL_MS = oncekiAralik;
@@ -13,14 +14,14 @@ describe("DuzeltmeTaramaZamanlayiciService", () => {
 
   it("API sürecinde zamanlayıcı başlatmaz", () => {
     delete process.env.TEKIR_WORKER; vi.useFakeTimers();
-    const service = new DuzeltmeTaramaZamanlayiciService({ tara: vi.fn() } as never);
+    const service = new DuzeltmeTaramaZamanlayiciService({ tara: vi.fn() } as never, metrics as never);
     service.onModuleInit();
     expect(vi.getTimerCount()).toBe(0);
   });
 
   it("worker sürecinde taramayı hemen ve en fazla 15 dakikalık aralıkla planlar", async () => {
     process.env.TEKIR_WORKER = "1"; process.env.DUZELTME_TARAMA_INTERVAL_MS = String(20 * 60 * 1000); vi.useFakeTimers();
-    const service = new DuzeltmeTaramaZamanlayiciService({ tara: vi.fn() } as never);
+    const service = new DuzeltmeTaramaZamanlayiciService({ tara: vi.fn() } as never, metrics as never);
     const calistir = vi.spyOn(service, "calistir").mockResolvedValue();
     service.onModuleInit();
     await vi.advanceTimersByTimeAsync(0);
@@ -29,4 +30,18 @@ describe("DuzeltmeTaramaZamanlayiciService", () => {
     expect(calistir).toHaveBeenCalledTimes(2);
     service.onModuleDestroy();
   });
+
+  it("başarılı taramanın bulgu, çözüm ve son başarı metriklerini yayınlar", async () => {
+    const duzeltmeler = { tara: vi.fn().mockResolvedValue({ bulunan: 3, otomatikCozulen: 1 }) };
+    const service = new DuzeltmeTaramaZamanlayiciService(duzeltmeler as never, metrics as never);
+    vi.spyOn(service as never, "tenantIdleriAl").mockResolvedValue(["tenant-1"]);
+
+    await service.calistir();
+
+    expect(metrics.increment).toHaveBeenCalledWith("correction_scan_runs_total", { result: "success" });
+    expect(metrics.increment).toHaveBeenCalledWith("correction_findings_total", {}, 3);
+    expect(metrics.increment).toHaveBeenCalledWith("correction_auto_resolutions_total", {}, 1);
+    expect(metrics.set).toHaveBeenCalledWith("correction_scan_last_success_timestamp_seconds", expect.any(Number));
+  });
 });
+  const metrics = { increment: vi.fn(), set: vi.fn() };
