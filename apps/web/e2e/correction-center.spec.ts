@@ -13,7 +13,8 @@ test("düzeltme kaydı incelenir, atanır, notlanır ve beklemeye alınır", asy
   await page.route("http://localhost:3001/api/v1/**", async (route) => {
     const { pathname } = new URL(route.request().url()); const method = route.request().method();
     if (pathname.endsWith("/auth/ben")) return route.fulfill({ json: { userId: "u1", tenantId: "t1", rol: "yonetici" } });
-    if (pathname.endsWith("/duzeltmeler/ozet")) return route.fulfill({ json: { acik: 1, kritik: 0, bugunOlusan: 1, banaAtanan: atanan ? 1 : 0, slaAsan: 0 } });
+    if (pathname.endsWith("/duzeltmeler/ozet")) return route.fulfill({ json: { acik: 2, kritik: 2, bugunOlusan: 1, banaAtanan: atanan ? 1 : 0, slaAsan: 1 } });
+    if (pathname.endsWith("/fatura/is-kuyrugu-ozeti")) return route.fulfill({ json: { taslakSatis: 0, taslakAlis: 0, ebelgeHata: 0, acikTahsilat: 0, acikOdeme: 0 } });
     if (pathname.endsWith("/duzeltmeler/secenekler")) return route.fulfill({ json: [{ id: "11111111-1111-4111-8111-111111111111", adSoyad: "Ayşe Yönetici", eposta: "ayse@example.com" }] });
     if (pathname.endsWith("/duzeltmeler/duzeltme-1/ata")) { atanan = true; return route.fulfill({ json: kayit() }); }
     if (pathname.endsWith("/duzeltmeler/duzeltme-1/notlar")) { notEklendi = true; return route.fulfill({ json: {} }); }
@@ -24,6 +25,10 @@ test("düzeltme kaydı incelenir, atanır, notlanır ve beklemeye alınır", asy
   });
 
   await page.goto("/panel/islemler");
+  await page.locator(".notification-nav").click();
+  await expect(page.getByText("Kritik düzeltme gerekli")).toBeVisible();
+  await expect(page.getByText("1 kayıt SLA süresini aştı.")).toBeVisible();
+  await page.getByRole("button", { name: "Bildirimleri kapat" }).click();
   await page.getByRole("button", { name: "Ayrıntı" }).click();
   const dialog = page.getByRole("dialog", { name: "Banka ekstresi" });
   await expect(dialog.getByText("Neden oluştu?")).toBeVisible();
