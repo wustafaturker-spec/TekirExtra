@@ -7,6 +7,9 @@ import { api, tokenAl, tokenYaz } from "@/lib/api";
 import { rolMenuYoluGorebilir } from "@/lib/rol-yetkileri";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { ThemeConfiguratorDrawer } from "@/components/theme-configurator-drawer";
+import { KomutPaleti } from "@/components/komut-paleti";
+import { AYARLAR, MENU, type MenuOge } from "@/lib/menu";
+import { Bell, ChevronRight, CircleHelp, LogOut, Menu as MenuIkonu, Search, Settings } from "lucide-react";
 
 const ROL_ADI: Record<string, string> = {
   yonetici: "Yönetici",
@@ -22,125 +25,36 @@ const ROL_ADI: Record<string, string> = {
   maliyet_muhasebesi: "Maliyet Muhasebesi",
 };
 
-interface MenuOge {
-  href: string;
-  ikon: string;
-  baslik: string;
-  eslesme?: "tam" | "onek";
-}
-interface MenuGrup {
-  baslik: string;
-  ogeler: MenuOge[];
-}
 interface Bildirim { href: string; baslik: string; aciklama: string; sayi: number; ton: "warning" | "danger"; }
 interface DuzeltmeBildirimOzeti { kritik: number; slaAsan: number; }
 interface FaturaKuyrukOzeti { taslakSatis: number; taslakAlis: number; ebelgeHata: number; acikTahsilat: number; acikOdeme: number; }
 
-const MENU: MenuGrup[] = [
-  {
-    baslik: "Genel & Özet",
-    ogeler: [
-      { href: "/panel", ikon: "ÖZ", baslik: "Finansal Özet", eslesme: "tam" },
-      { href: "/panel/islemler", ikon: "İŞ", baslik: "Düzeltme Merkezi", eslesme: "tam" },
-      { href: "/panel/ai", ikon: "🤖", baslik: "AI Finansal Asistan", eslesme: "tam" },
-    ],
-  },
-  {
-    baslik: "Satış & CRM",
-    ogeler: [
-      { href: "/panel/satis", ikon: "S", baslik: "Satış İşlemleri", eslesme: "onek" },
-      { href: "/panel/crm", ikon: "🎯", baslik: "CRM Satış Hunisi", eslesme: "tam" },
-      { href: "/panel/b2b", ikon: "🛒", baslik: "B2B Bayi Portalı", eslesme: "tam" },
-      { href: "/panel/pazaryeri", ikon: "PS", baslik: "Pazaryeri Siparişleri", eslesme: "tam" },
-      { href: "/panel/pazaryeri/kesintiler", ikon: "PK", baslik: "Pazaryeri Kesintileri", eslesme: "tam" },
-    ],
-  },
-  {
-    baslik: "Satın Alma & Masraf",
-    ogeler: [
-      { href: "/panel/satin-alma", ikon: "A", baslik: "Satın Alma İşlemleri", eslesme: "onek" },
-      { href: "/panel/masraflar", ikon: "M", baslik: "Masraflar", eslesme: "tam" },
-      { href: "/panel/masraflar/kiralar", ikon: "KR", baslik: "Kira Sözleşmeleri", eslesme: "tam" },
-      { href: "/panel/gelirler", ikon: "G", baslik: "Faaliyet Dışı Gelirler", eslesme: "tam" },
-      { href: "/panel/masraflar/raporlar", ikon: "MR", baslik: "Masraf Raporları", eslesme: "tam" },
-    ],
-  },
-  {
-    baslik: "Faturalar & e-Belge",
-    ogeler: [
-      { href: "/panel/fatura?yon=satis", ikon: "SF", baslik: "Satış Faturaları", eslesme: "tam" },
-      { href: "/panel/fatura?yon=alis", ikon: "AF", baslik: "Alış Faturaları", eslesme: "tam" },
-      { href: "/panel/fatura/tekrarlayan", ikon: "↻", baslik: "Tekrarlayan Faturalar" },
-      { href: "/panel/fatura/tekrarlayan/raporlar", ikon: "TR", baslik: "Tekrarlayan Raporları", eslesme: "tam" },
-      { href: "/panel/ebelge/fatura-gelen", ikon: "EF", baslik: "Gelen e-Faturalar", eslesme: "tam" },
-      { href: "/panel/ebelge/irsaliye-gelen", ikon: "İG", baslik: "Gelen e-İrsaliyeler", eslesme: "tam" },
-      { href: "/panel/ebelge/kuyruk", ikon: "KQ", baslik: "e-Belge Operasyonları", eslesme: "tam" },
-      { href: "/panel/fatura/earsiv-raporlari", ikon: "EA", baslik: "e-Arşiv Raporları", eslesme: "tam" },
-      { href: "/panel/belgeler", ikon: "B", baslik: "Tüm Belgeler", eslesme: "tam" },
-    ],
-  },
-  {
-    baslik: "Finans & Kasa/Banka",
-    ogeler: [
-      { href: "/panel/kasa-banka", ikon: "KB", baslik: "Kasa & Banka", eslesme: "tam" },
-      { href: "/panel/kasa-banka/kredi-kartlari", ikon: "KK", baslik: "Kredi Kartları", eslesme: "tam" },
-      { href: "/panel/kasa-banka/pos", ikon: "POS", baslik: "POS Hesapları", eslesme: "tam" },
-      { href: "/panel/kasa-banka/cek-senet", ikon: "ÇS", baslik: "Çek & Senetler", eslesme: "tam" },
-      { href: "/panel/kasa-banka/ekstre", ikon: "BE", baslik: "Banka Ekstresi", eslesme: "tam" },
-      { href: "/panel/projeler", ikon: "🏗️", baslik: "Projeler & Analitik Yevmiye", eslesme: "tam" },
-    ],
-  },
-  {
-    baslik: "Stok & Üretim",
-    ogeler: [
-      { href: "/panel/stok", ikon: "SK", baslik: "Stok Kartları", eslesme: "tam" },
-      { href: "/panel/stok/kategoriler", ikon: "KT", baslik: "Kategoriler", eslesme: "tam" },
-      { href: "/panel/stok/sayim", ikon: "SS", baslik: "Stok Sayımı", eslesme: "tam" },
-      { href: "/panel/stok/transferler", ikon: "DT", baslik: "Depo Transferi", eslesme: "tam" },
-      { href: "/panel/stok/fiyat-listeleri", ikon: "FL", baslik: "Fiyat Listeleri", eslesme: "tam" },
-      { href: "/panel/uretim", ikon: "ÜR", baslik: "Üretim Emirleri", eslesme: "tam" },
-      { href: "/panel/uretim/planlama", ikon: "KP", baslik: "Üretim Planlama", eslesme: "tam" },
-      { href: "/panel/uretim/maliyet", ikon: "MS", baslik: "Üretim Maliyeti", eslesme: "tam" },
-      { href: "/panel/uretim/kalite", ikon: "KK", baslik: "Kalite Kontrol", eslesme: "tam" },
-    ],
-  },
-  {
-    baslik: "Cari & Personel",
-    ogeler: [
-      { href: "/panel/cari", ikon: "CH", baslik: "Cari Hesaplar" },
-      { href: "/panel/personel", ikon: "P", baslik: "Personel & İK", eslesme: "tam" },
-    ],
-  },
-  {
-    baslik: "Raporlar & Mali Müşavir",
-    ogeler: [
-      { href: "/panel/raporlar", ikon: "RA", baslik: "Raporlar & Analiz", eslesme: "tam" },
-      { href: "/panel/raporlar/gelir-gider", ikon: "GG", baslik: "Gelir - Gider Raporu", eslesme: "tam" },
-      { href: "/panel/raporlar/urun-hareketleri", ikon: "ÜH", baslik: "Ürün Hareket Raporu", eslesme: "tam" },
-      { href: "/panel/mali-musavir", ikon: "MM", baslik: "Mali Müşavir Portalı", eslesme: "tam" },
-    ],
-  },
-  {
-    baslik: "Ayarlar",
-    ogeler: [
-      { href: "/panel/ayarlar/firma", ikon: "FA", baslik: "Firma Ayarları", eslesme: "tam" },
-      { href: "/panel/ayarlar/kullanicilar", ikon: "KU", baslik: "Kullanıcılar", eslesme: "tam" },
-      { href: "/panel/ayarlar/fatura-serileri", ikon: "FS", baslik: "Fatura Serileri", eslesme: "tam" },
-      { href: "/panel/ayarlar/depolar", ikon: "DP", baslik: "Depolar", eslesme: "tam" },
-      { href: "/panel/ayarlar/entegratorler", ikon: "EB", baslik: "e-Belge Ayarları", eslesme: "tam" },
-      { href: "/panel/ayarlar/pazaryerleri", ikon: "PA", baslik: "Pazaryeri Ayarları", eslesme: "tam" },
-      { href: "/panel/ayarlar/pos", ikon: "POS", baslik: "Sanal POS Ayarları", eslesme: "tam" },
-      { href: "/panel/ayarlar/banka-baglantilari", ikon: "BB", baslik: "Banka Bağlantıları", eslesme: "tam" },
-      { href: "/panel/ayarlar/sms", ikon: "SMS", baslik: "SMS Ayarları", eslesme: "tam" },
-      { href: "/panel/ayarlar/eposta", ikon: "EP", baslik: "E-posta Ayarları", eslesme: "tam" },
-      { href: "/panel/ayarlar/moduller", ikon: "MA", baslik: "Modül Ayarları", eslesme: "tam" },
-      { href: "/panel/ayarlar/abonelik", ikon: "AP", baslik: "Abonelik ve Paket", eslesme: "tam" },
-      { href: "/panel/ayarlar/denetim", ikon: "Dİ", baslik: "Denetim İzi", eslesme: "tam" },
-      { href: "/panel/ayarlar/kullanim", ikon: "KM", baslik: "Kullanım Metrikleri", eslesme: "tam" },
-      { href: "/panel/ayarlar/hesap", ikon: "HG", baslik: "Hesap Güvenliği", eslesme: "tam" },
-    ],
-  },
-];
+
+/**
+ * İkinci seviye menü bağlantısı. `/panel/fatura?yon=…` bağlantıları aynı
+ * rotanın farklı sorgu parametreleridir; Next.js istemci gezinmesi sayfayı
+ * yeniden kurmadığı için tam gezinme yapılır.
+ */
+function MenuBaglantisi({ oge, aktif, onGit }: { oge: MenuOge; aktif: boolean; onGit: () => void }) {
+  const Ikon = oge.ikon;
+  return (
+    <Link
+      className={`nav__link${aktif ? " is-active" : ""}`}
+      href={oge.href}
+      onClick={(olay) => {
+        onGit();
+        if (oge.href.startsWith("/panel/fatura?yon=")) {
+          olay.preventDefault();
+          window.location.assign(oge.href);
+        }
+      }}
+      title={oge.baslik}
+    >
+      <Ikon aria-hidden="true" className="nav__link-icon" size={16} strokeWidth={1.9} />
+      <span>{oge.baslik}</span>
+    </Link>
+  );
+}
 
 export default function PanelLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -151,7 +65,12 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const [sidebarDaraltildi, setSidebarDaraltildi] = useState(false);
   // İlk SSR çıktısı ile tarayıcı çıktısı aynı olmalı; kullanıcı tercihi mount sonrası okunur.
   const menuTercihiYuklendi = useRef(false);
-  const [acikGruplar, setAcikGruplar] = useState<string[]>(["Genel"]);
+  // Aynı anda tek çalışma alanı açıktır: ekranda 8 alan + açık alanın maddeleri
+  // durur, 55 satırlık düz liste değil.
+  const [acikAlan, setAcikAlan] = useState<string>("Özet");
+  const [ayarlarAcik, setAyarlarAcik] = useState(false);
+  const [paletAcik, setPaletAcik] = useState(false);
+  const ayarlarTetikleyiciRef = useRef<HTMLButtonElement>(null);
   const [bildirimler, setBildirimler] = useState<Bildirim[]>([]);
   const [bildirimlerAcik, setBildirimlerAcik] = useState(false);
   const [geriBildirimAcik, setGeriBildirimAcik] = useState(false);
@@ -166,27 +85,28 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const bildirimTetikleyiciRef = useRef<HTMLButtonElement | null>(null);
   const bildirimPanelRef = useRef<HTMLElement>(null);
   const gorunurMenu = MENU
-    .map((grup) => ({ ...grup, ogeler: grup.ogeler.filter((oge) => rolMenuYoluGorebilir(rol, oge.href)) }))
-    .filter((grup) => grup.ogeler.length > 0);
+    .map((alan) => ({ ...alan, ogeler: alan.ogeler.filter((oge) => rolMenuYoluGorebilir(rol, oge.href)) }))
+    .filter((alan) => alan.ogeler.length > 0);
+  const gorunurAyarlar = AYARLAR.filter((oge) => rolMenuYoluGorebilir(rol, oge.href));
   const sayfaYetkili = rolMenuYoluGorebilir(rol, pathname);
 
   useEffect(() => { setAktifArama(window.location.search); }, [pathname]);
   useEffect(() => {
     try {
-      const kayit = window.localStorage.getItem("tekirextra-acik-menu-gruplari");
-      const gruplar = kayit ? JSON.parse(kayit) : null;
-      if (Array.isArray(gruplar)) setAcikGruplar(gruplar);
+      const kayit = window.localStorage.getItem("tekirextra-acik-menu-alani");
+      if (kayit && MENU.some((alan) => alan.baslik === kayit)) setAcikAlan(kayit);
     } catch { /* Bozuk/erişilemeyen tercihler varsayılan menüyü etkilemez. */ }
     menuTercihiYuklendi.current = true;
   }, []);
+  // Gezinilen sayfanın alanı her zaman açılır — kullanıcı nerede olduğunu görür.
   useEffect(() => {
-    const aktifGrup = MENU.find((grup) => grup.ogeler.some((oge) => aktifMi(oge)))?.baslik;
-    if (aktifGrup) setAcikGruplar((gruplar) => gruplar.includes(aktifGrup) ? gruplar : [...gruplar, aktifGrup]);
+    const aktifAlan = MENU.find((alan) => alan.ogeler.some((oge) => aktifMi(oge)))?.baslik;
+    if (aktifAlan) setAcikAlan(aktifAlan);
   }, [pathname, aktifArama]);
   useEffect(() => {
     if (!menuTercihiYuklendi.current) return;
-    window.localStorage.setItem("tekirextra-acik-menu-gruplari", JSON.stringify(acikGruplar));
-  }, [acikGruplar]);
+    window.localStorage.setItem("tekirextra-acik-menu-alani", acikAlan);
+  }, [acikAlan]);
 
   useEffect(() => {
     if (tokenAl()) {
@@ -346,8 +266,13 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
     return Array.from(hedefParametreler.entries()).every(([anahtar, deger]) => aktifParametreler.get(anahtar) === deger);
   }
 
-  function grupAcKapat(baslik: string) {
-    setAcikGruplar((gruplar) => gruplar.includes(baslik) ? gruplar.filter((g) => g !== baslik) : [...gruplar, baslik]);
+  function paletiAc() {
+    setMenuAcik(false);
+    setPaletAcik(true);
+  }
+
+  function alanAcKapat(baslik: string) {
+    setAcikAlan((acik) => (acik === baslik ? "" : baslik));
   }
 
   return (
@@ -364,14 +289,17 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
           ref={mobilMenuTetikleyiciRef}
           type="button"
         >
-          <span aria-hidden="true">☰</span>
+          <MenuIkonu aria-hidden="true" size={20} strokeWidth={2} />
         </button>
         <Link className="mobile-brand" href="/panel">Tekir<b>Extra</b></Link>
-        <div style={{ marginLeft: "auto", marginRight: "8px" }}>
+        <div style={{ marginLeft: "auto", marginRight: "8px", display: "flex", alignItems: "center", gap: "4px" }}>
+          <button aria-label="Ara veya git" className="notification-button" onClick={paletiAc} type="button">
+            <Search aria-hidden="true" size={19} strokeWidth={1.9} />
+          </button>
           <ThemeSwitcher />
         </div>
         <button className="notification-button" aria-controls="bildirim-paneli" aria-expanded={bildirimlerAcik} aria-label={"Bildirimler" + (bildirimSayisi ? ", " + bildirimSayisi + " açık kayıt" : "")} onClick={bildirimleriDegistir} title="Bildirimler" type="button">
-          <span aria-hidden="true">🔔</span>{bildirimSayisi > 0 && <span className="notification-button__count">{bildirimSayisi > 99 ? "99+" : bildirimSayisi}</span>}
+          <Bell aria-hidden="true" size={19} strokeWidth={1.9} />{bildirimSayisi > 0 && <span className="notification-button__count">{bildirimSayisi > 99 ? "99+" : bildirimSayisi}</span>}
         </button>
       </header>
       {menuAcik && (
@@ -391,52 +319,73 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
           </button>
         </div>
 
-        {/* 🎨 Tema Seçici (Theme Switcher) */}
-        <div style={{ padding: sidebarDaraltildi ? "0 4px" : "4px 8px", marginBottom: "4px" }}>
-          <ThemeSwitcher />
-        </div>
-
         <nav className="nav">
-          <button className="notification-nav" aria-controls="bildirim-paneli" aria-expanded={bildirimlerAcik} onClick={bildirimleriDegistir} type="button">
-            <span aria-hidden="true">🔔</span><span>Bildirimler</span>{bildirimSayisi > 0 && <span className="notification-nav__count">{bildirimSayisi}</span>}
+          <button className="palet-tetik" onClick={paletiAc} title="Komut paleti (Ctrl+K)" type="button">
+            <Search aria-hidden="true" size={15} strokeWidth={1.9} />
+            <span>Ara veya git…</span>
+            <kbd className="palet__kbd">⌘K</kbd>
           </button>
-          {gorunurMenu.map((grup) => (
-            <div className="nav__group" key={grup.baslik}>
-              <button className="nav__label" type="button" aria-expanded={acikGruplar.includes(grup.baslik)} onClick={() => grupAcKapat(grup.baslik)}>
-                <span>{grup.baslik}</span><span aria-hidden="true" className="nav__label-chevron">⌄</span>
-              </button>
-              {acikGruplar.includes(grup.baslik) && <div className="nav__group-items">
-                {grup.ogeler.map((oge) => (
-                  <Link
-                    key={oge.href}
-                    href={oge.href}
-                    title={sidebarDaraltildi ? oge.baslik : undefined}
-                    className={`nav__link${aktifMi(oge) ? " is-active" : ""}`}
-                    onClick={(event) => {
-                      setMenuAcik(false);
-                      if (oge.href.startsWith("/panel/fatura?yon=")) {
-                        event.preventDefault();
-                        window.location.assign(oge.href);
-                      }
-                    }}
-                  >
-                    <span aria-hidden="true" className="nav__link-icon">{oge.ikon}</span>
-                    <span>{oge.baslik}</span>
-                  </Link>
-                ))}
-              </div>}
-            </div>
-          ))}
+          <button className="notification-nav" aria-controls="bildirim-paneli" aria-expanded={bildirimlerAcik} onClick={bildirimleriDegistir} type="button">
+            <Bell aria-hidden="true" size={16} strokeWidth={1.9} /><span>Bildirimler</span>{bildirimSayisi > 0 && <span className="notification-nav__count">{bildirimSayisi}</span>}
+          </button>
+          {gorunurMenu.map((alan) => {
+            const acik = acikAlan === alan.baslik;
+            const alanAktif = alan.ogeler.some((oge) => aktifMi(oge));
+            const AlanIkonu = alan.ikon;
+            return (
+              <div className="nav__group" key={alan.baslik}>
+                <button
+                  aria-expanded={acik}
+                  className={`nav__alan${alanAktif ? " is-aktif-alan" : ""}`}
+                  onClick={() => alanAcKapat(alan.baslik)}
+                  title={sidebarDaraltildi ? alan.baslik : undefined}
+                  type="button"
+                >
+                  <AlanIkonu aria-hidden="true" className="nav__alan-ikon" size={17} strokeWidth={1.9} />
+                  <span>{alan.baslik}</span>
+                  {alanAktif && !acik
+                    ? <span aria-hidden="true" className="nav__alan-nokta" />
+                    : <ChevronRight aria-hidden="true" className="nav__alan-ok" size={14} strokeWidth={2.2} />}
+                </button>
+                {acik && (
+                  <div className="nav__ogeler">
+                    {alan.ogeler.map((oge) => <MenuBaglantisi key={oge.href} aktif={aktifMi(oge)} oge={oge} onGit={() => setMenuAcik(false)} />)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
-        <button className="feedback-trigger" onClick={() => { setMenuAcik(false); setGeriBildirimAcik(true); setGeriBildirimDurum(""); }} ref={geriBildirimTetikleyiciRef} type="button"><span aria-hidden="true">?</span><span>Geri bildirim ver</span></button>
+        {gorunurAyarlar.length > 0 && (
+          <div className="nav__group nav__ayarlar">
+            <button
+              aria-expanded={ayarlarAcik}
+              className="nav__alan"
+              onClick={() => setAyarlarAcik((acik) => !acik)}
+              ref={ayarlarTetikleyiciRef}
+              title={sidebarDaraltildi ? "Ayarlar" : undefined}
+              type="button"
+            >
+              <Settings aria-hidden="true" className="nav__alan-ikon" size={17} strokeWidth={1.9} />
+              <span>Ayarlar</span>
+              <ChevronRight aria-hidden="true" className="nav__alan-ok" size={14} strokeWidth={2.2} />
+            </button>
+            {ayarlarAcik && (
+              <div className="nav__ogeler">
+                {gorunurAyarlar.map((oge) => <MenuBaglantisi key={oge.href} aktif={aktifMi(oge)} oge={oge} onGit={() => setMenuAcik(false)} />)}
+              </div>
+            )}
+          </div>
+        )}
+        <button className="feedback-trigger" onClick={() => { setMenuAcik(false); setGeriBildirimAcik(true); setGeriBildirimDurum(""); }} ref={geriBildirimTetikleyiciRef} type="button"><CircleHelp aria-hidden="true" size={16} strokeWidth={1.9} /><span>Geri bildirim ver</span></button>
         <div className="sidebar__user">
           <div className="grow sidebar__user-info">
             <div className="sidebar__user-name">{rol ? ROL_ADI[rol] ?? "Hesabım" : "Hesabım"}</div>
             <div className="sidebar__user-role">Aktif oturum</div>
           </div>
           <button aria-label="Güvenli çıkış" className="btn btn--ghost btn--icon" onClick={() => void cikis()} title="Güvenli çıkış">
-            <span aria-hidden="true">↗</span>
+            <LogOut aria-hidden="true" size={16} strokeWidth={1.9} />
           </button>
         </div>
       </aside>
@@ -455,6 +404,8 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
           </div>
         </aside>
       )}
+
+      <KomutPaleti acik={paletAcik} rol={rol} setAcik={setPaletAcik} />
 
       <main className="app-main" id="ana-icerik" tabIndex={-1}>
         <div className="app-content">

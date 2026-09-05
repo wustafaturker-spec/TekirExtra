@@ -183,6 +183,9 @@ export default function FaturaSayfasi() {
   const [durumFiltresi, setDurumFiltresi] = useState<string | null>(null);
   const [ebelgeFiltresi, setEbelgeFiltresi] = useState<string | null>(null);
   const [odemeFiltresi, setOdemeFiltresi] = useState<string | null>(null);
+  // Komut paleti ve derin bağlantılar fatura numarasıyla gelebilir; sunucu
+  // tarafı arama olmadan aranan kayıt ilk sayfada olmayabilir.
+  const [aramaFiltresi, setAramaFiltresi] = useState<string | null>(null);
   const [odakFaturaId, setOdakFaturaId] = useState<string | null>(null);
   const [kayitliGorunumler, setKayitliGorunumler] = useState<KayitliGorunum[]>([]);
   const [gorunumFormuAcik, setGorunumFormuAcik] = useState(false);
@@ -294,6 +297,7 @@ export default function FaturaSayfasi() {
       if (yonBaglami) parametreler.set("yon", yonBaglami);
       if (durumFiltresi) parametreler.set("durum", durumFiltresi);
       if (ebelgeFiltresi) parametreler.set("ebelge", ebelgeFiltresi);
+      if (aramaFiltresi) parametreler.set("arama", aramaFiltresi);
       if (imlec) parametreler.set("imlec", imlec);
       const sorgu = parametreler.size ? `?${parametreler.toString()}` : "";
       const fVeri = await api<{ kayitlar: Fatura[]; sonrakiImlec: string | null }>(`/fatura${sorgu}`);
@@ -308,7 +312,7 @@ export default function FaturaSayfasi() {
     } finally {
       if (istekSirasi === faturaYuklemeSirasi.current) setFaturaListesiYukleniyor(false);
     }
-  }, [yonBaglami, durumFiltresi, ebelgeFiltresi]);
+  }, [yonBaglami, durumFiltresi, ebelgeFiltresi, aramaFiltresi]);
 
   useEffect(() => {
     if (tokenAl()) {
@@ -358,6 +362,7 @@ export default function FaturaSayfasi() {
     }
     setDurumFiltresi(parametreler.get("durum"));
     setEbelgeFiltresi(parametreler.get("ebelge"));
+    setAramaFiltresi(parametreler.get("arama"));
     setOdemeFiltresi(parametreler.get("odeme"));
     const faturaId = parametreler.get("faturaId");
     setOdakFaturaId(faturaId);
@@ -890,7 +895,7 @@ export default function FaturaSayfasi() {
       {odakFaturaId && (
         <Card className="between" style={{ marginBottom: "1rem", borderColor: "var(--accent)" }}>
           <div><strong>Belge zincirinden açılan fatura</strong><div className="muted">{odakFatura?.no ?? odakFaturaId}{odakFatura ? " · " + odakFatura.cari.unvan : ""}</div></div>
-          <Button size="sm" type="button" onClick={() => { setOdakFaturaId(null); window.history.replaceState(null, "", "/panel/fatura"); }}>Tüm faturaları göster</Button>
+          <Button size="sm" type="button" onClick={() => { setOdakFaturaId(null); setAramaFiltresi(null); window.history.replaceState(null, "", "/panel/fatura"); }}>Tüm faturaları göster</Button>
         </Card>
       )}
 
