@@ -222,11 +222,13 @@ model User {
   totpSecretSifreli  String?  @map("totp_secret_sifreli")
   totpAktif          Boolean  @default(false) @map("totp_aktif")
   maksIskontoYuzdesi Decimal? @map("maks_iskonto_yuzdesi") @db.Decimal(5, 2)
+  bayiCariId         String?  @map("bayi_cari_id") @db.Uuid
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
   tenant                      Tenant                 @relation(fields: [tenantId], references: [id])
   temsilciCariler             CariHesap[]            @relation("CariTemsilci")
+  bayiCari                     CariHesap?             @relation("BayiKullaniciCari", fields: [bayiCariId], references: [id], onDelete: SetNull)
   crmGorevleri                CrmGorev[]             @relation("CrmGorevAtanan")
   crmKayitlari                CrmEtkilesim[]
   crmFirsatlari               CrmFirsat[]            @relation("CrmFirsatSorumlu")
@@ -243,6 +245,7 @@ model User {
 
   @@unique([tenantId, eposta])
   @@index([tenantId])
+  @@index([tenantId, bayiCariId])
   @@map("users")
 }
 
@@ -636,6 +639,7 @@ model CariHesap {
 
   fiyatListesi          FiyatListesi?       @relation(fields: [fiyatListesiId], references: [id])
   temsilci              User?               @relation("CariTemsilci", fields: [temsilciUserId], references: [id])
+  bayiKullanicilari      User[]              @relation("BayiKullaniciCari")
   adresler              CariAdres[]
   kisiler               CariKisi[]
   bankaHesaplari        CariBankaHesap[]
@@ -2687,6 +2691,7 @@ model Belge {
   notlar               String?
   kaynakBelgeId        String?          @map("kaynak_belge_id") @db.Uuid
   faturaId             String?          @map("fatura_id") @db.Uuid
+  b2bIdempotencyAnahtari String?         @map("b2b_idempotency_anahtari") @db.Uuid
   createdAt            DateTime         @default(now()) @map("created_at")
   updatedAt            DateTime         @updatedAt @map("updated_at")
 
@@ -2699,6 +2704,7 @@ model Belge {
   eirsaliye    EirsaliyeKayit?
 
   @@unique([tenantId, no])
+  @@unique([tenantId, b2bIdempotencyAnahtari])
   @@index([tenantId, tur, durum])
   @@index([tenantId, cariId])
   @@map("belgeler")
@@ -2778,6 +2784,7 @@ model BelgeSatir {
   tevkifatTutari   Decimal @default(0) @map("tevkifat_tutari") @db.Decimal(15, 2)
   netKdvTutari     Decimal @map("net_kdv_tutari") @db.Decimal(15, 2)
   toplamTutar      Decimal @map("toplam_tutar") @db.Decimal(15, 2)
+  fiyatListesiId   String? @map("fiyat_listesi_id") @db.Uuid
 
   belge          Belge        @relation(fields: [belgeId], references: [id], onDelete: Cascade)
   stok           StokKart     @relation(fields: [stokId], references: [id])

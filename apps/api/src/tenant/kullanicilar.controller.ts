@@ -29,12 +29,14 @@ const kullaniciOlusturSemasi = z.object({
     .regex(/[a-zA-Z]/, "Parola harf içermelidir")
     .regex(/\d/, "Parola rakam içermelidir"),
   maksIskontoYuzdesi: z.number().min(0).max(100).nullable().optional(),
+  bayiCariId: z.string().uuid().nullable().optional(),
 });
 
 const kullaniciGuncelleSemasi = z.object({
   rol: z.enum(ROLLER).optional(),
   aktif: z.boolean().optional(),
   maksIskontoYuzdesi: z.number().min(0).max(100).nullable().optional(),
+  bayiCariId: z.string().uuid().nullable().optional(),
 });
 
 const KULLANICI_SECIMI = {
@@ -46,6 +48,8 @@ const KULLANICI_SECIMI = {
   epostaDogrulandi: true,
   totpAktif: true,
   maksIskontoYuzdesi: true,
+  bayiCariId: true,
+  bayiCari: { select: { id: true, kod: true, unvan: true } },
 } as const;
 
 /** Firma içi kullanıcı yönetimi (KLN-02) — yalnızca yönetici. */
@@ -53,6 +57,14 @@ const KULLANICI_SECIMI = {
 @Roller("yonetici")
 export class KullanicilarController {
   constructor(private readonly prisma: PrismaService, private readonly abonelik: AbonelikService) {}
+
+  private async bayiCariDogrula(tenantId: string, bayiCariId?: string | null) {
+    if (!bayiCariId) return;
+    const cari = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.cariHesap.findFirst({ where: { id: bayiCariId, tenantId, aktif: true }, select: { id: true } }),
+    );
+    if (!cari) throw new BadRequestException("Atanacak bayi/cari bu firmada bulunamadı veya pasif");
+  }
 
   @Get()
   listele() {
@@ -73,6 +85,7 @@ export class KullanicilarController {
     const girdi = ayristirma.data;
     await this.abonelik.limitDogrula("kullanici");
     const { tenantId } = aktifBaglam();
+    await this.bayiCariDogrula(tenantId, girdi.bayiCariId);
 
     const mevcut = await this.prisma.authKimlik.findUnique({
       where: { eposta: girdi.eposta },
@@ -98,6 +111,7 @@ export class KullanicilarController {
           maksIskontoYuzdesi: girdi.maksIskontoYuzdesi !== undefined && girdi.maksIskontoYuzdesi !== null
             ? new Prisma.Decimal(girdi.maksIskontoYuzdesi)
             : null,
+          bayiCariId: girdi.rol === "b2b_bayi" ? girdi.bayiCariId : null,
         },
         select: KULLANICI_SECIMI,
       }),
@@ -115,6 +129,7 @@ export class KullanicilarController {
       throw new BadRequestException("Geçersiz kullanıcı bilgisi");
     }
     const { tenantId, userId } = aktifBaglam();
+    await this.bayiCariDogrula(tenantId, ayristirma.data.bayiCariId);
     if (id === userId && ayristirma.data.aktif === false) {
       throw new BadRequestException("Kendi hesabınızı pasifleştiremezsiniz");
     }
@@ -124,6 +139,7 @@ export class KullanicilarController {
           where: { id },
           data: {
             ...ayristirma.data,
+            bayiCariId: ayristirma.data.rol && ayristirma.data.rol !== "b2b_bayi" ? null : ayristirma.data.bayiCariId,
             maksIskontoYuzdesi: ayristirma.data.maksIskontoYuzdesi !== undefined
               ? (ayristirma.data.maksIskontoYuzdesi !== null ? new Prisma.Decimal(ayristirma.data.maksIskontoYuzdesi) : null)
               : undefined,

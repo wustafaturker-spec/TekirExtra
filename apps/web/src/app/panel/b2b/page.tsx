@@ -21,6 +21,7 @@ interface Urun {
   listeFiyati: number;
   bayiBirimFiyati: number;
   iskontoYuzdesi: number;
+  kdvOrani: number;
 }
 
 interface SepetKalem {
@@ -47,11 +48,12 @@ export default function B2bKatalogSayfasi() {
 
   const fetchCariler = useCallback(async () => {
     try {
-      const data = await api<{ kayitlar: Cari[] }>("/cari?adet=50");
-      if (data?.kayitlar) {
-        setCariler(data.kayitlar);
-        if (data.kayitlar.length > 0) setSeciliCariId(data.kayitlar[0].id);
-      }
+      const kimlik = await api<{ rol: string }>("/auth/ben");
+      const kayitlar = kimlik.rol === "b2b_bayi"
+        ? [await api<Cari>("/b2b/profil")]
+        : (await api<{ kayitlar: Cari[] }>("/cari?adet=50")).kayitlar;
+      setCariler(kayitlar);
+      if (kayitlar.length > 0) setSeciliCariId(kayitlar[0].id);
     } catch (e) {
       console.error(e);
       setHata("Cari listesi alınamadı.");
@@ -62,7 +64,7 @@ export default function B2bKatalogSayfasi() {
     setYukleniyor(true);
     setHata("");
     try {
-      const data = await api<Urun[]>(`/b2b/katalog/${cariId}`);
+      const data = await api<Urun[]>(`/b2b/katalog?cariId=${encodeURIComponent(cariId)}`);
       setUrunler(data || []);
     } catch (e) {
       console.error(e);
@@ -105,7 +107,7 @@ export default function B2bKatalogSayfasi() {
   };
 
   const sepetToplam = sepet.reduce(
-    (toplam, item) => toplam + Number(item.urun.bayiBirimFiyati) * item.miktar,
+    (toplam, item) => toplam + Number(item.urun.bayiBirimFiyati) * item.miktar * (1 + Number(item.urun.kdvOrani) / 100),
     0
   );
 
@@ -119,6 +121,7 @@ export default function B2bKatalogSayfasi() {
         method: "POST",
         body: JSON.stringify({
           cariId: seciliCariId,
+          idempotencyAnahtari: crypto.randomUUID(),
           kalemler: sepet.map((item) => ({ stokId: item.urun.id, miktar: item.miktar })),
           aciklama: "B2B Bayi Sipariş Portalı Siparişi",
         }),
@@ -198,7 +201,7 @@ export default function B2bKatalogSayfasi() {
         />
         <Stat
           label="Sepet Net Toplamı"
-          value={`${(sepetToplam * 1.2).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL`}
+          value={`${sepetToplam.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL`}
           hint="KDV Dahil Tahmini"
         />
       </StatGrid>
@@ -524,7 +527,7 @@ export default function B2bKatalogSayfasi() {
                 >
                   <span>Toplam (KDV Dahil):</span>
                   <span style={{ color: "var(--accent-text)" }}>
-                    {(sepetToplam * 1.2).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
+                    {sepetToplam.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
                   </span>
                 </div>
 

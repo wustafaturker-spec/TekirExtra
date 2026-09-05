@@ -6,7 +6,8 @@ export const b2bSiparisKalemSemasi = z.object({
 });
 
 export const b2bSiparisOlusturSemasi = z.object({
-  cariId: z.string().uuid("Geçersiz cari hesap"),
+  cariId: z.string().uuid("Geçersiz cari hesap").optional(),
+  idempotencyAnahtari: z.string().uuid("Geçersiz tekrar gönderim anahtarı"),
   kalemler: z.array(b2bSiparisKalemSemasi).min(1, "Siparişte en az bir ürün bulunmalıdır"),
   aciklama: z.string().trim().max(500).optional(),
 });

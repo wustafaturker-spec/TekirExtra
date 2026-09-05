@@ -41,10 +41,15 @@ interface Kullanici {
   epostaDogrulandi: boolean;
   totpAktif: boolean;
   maksIskontoYuzdesi: number | null;
+  bayiCariId: string | null;
+  bayiCari: { id: string; kod: string; unvan: string } | null;
 }
+
+interface Cari { id: string; kod: string; unvan: string }
 
 export default function KullanicilarSayfasi() {
   const [kullanicilar, setKullanicilar] = useState<Kullanici[]>([]);
+  const [cariler, setCariler] = useState<Cari[]>([]);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [formAcik, setFormAcik] = useState(false);
@@ -55,11 +60,17 @@ export default function KullanicilarSayfasi() {
   const [rol, setRol] = useState<Rol>("satis");
   const [parola, setParola] = useState("");
   const [maksIskonto, setMaksIskonto] = useState("");
+  const [bayiCariId, setBayiCariId] = useState("");
 
   const yukle = useCallback(async () => {
     setHata("");
     try {
-      setKullanicilar(await api<Kullanici[]>("/kullanicilar"));
+      const [kullanicilarVerisi, cariVerisi] = await Promise.all([
+        api<Kullanici[]>("/kullanicilar"),
+        api<{ kayitlar: Cari[] }>("/cari?adet=200"),
+      ]);
+      setKullanicilar(kullanicilarVerisi);
+      setCariler(cariVerisi.kayitlar);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Kullanıcılar yüklenemedi (yalnızca yönetici görebilir)");
     }
@@ -82,6 +93,7 @@ export default function KullanicilarSayfasi() {
           rol,
           parola,
           maksIskontoYuzdesi: maksIskonto ? Number(maksIskonto) : undefined,
+          bayiCariId: rol === "b2b_bayi" ? bayiCariId || undefined : undefined,
         }),
       });
       setBasari(`${adSoyad} kullanıcısı oluşturuldu.`);
@@ -91,6 +103,7 @@ export default function KullanicilarSayfasi() {
       setRol("satis");
       setParola("");
       setMaksIskonto("");
+      setBayiCariId("");
       await yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Kullanıcı oluşturulamadı");
@@ -116,6 +129,16 @@ export default function KullanicilarSayfasi() {
       await yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Durum güncellenemedi");
+    }
+  }
+
+  async function bayiCariDegistir(kullaniciId: string, yeniCariId: string) {
+    setHata("");
+    try {
+      await api(`/kullanicilar/${kullaniciId}`, { method: "PATCH", body: JSON.stringify({ bayiCariId: yeniCariId || null }) });
+      await yukle();
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Bayi ataması güncellenemedi");
     }
   }
 
@@ -151,6 +174,7 @@ export default function KullanicilarSayfasi() {
               <div style={{ flex: 1, minWidth: 160 }}><Field label="Rol"><Select value={rol} onChange={(e) => setRol(e.target.value as Rol)}>{ROLLER.map((r) => (<option key={r} value={r}>{ROL_ADI[r]}</option>))}</Select></Field></div>
               <div style={{ flex: 1, minWidth: 200 }}><Field label="Parola * (en az 10, harf + rakam)"><Input type="password" value={parola} onChange={(e) => setParola(e.target.value)} required minLength={10} /></Field></div>
               <div style={{ flex: 1, minWidth: 160 }}><Field label="Maks. İskonto % (opsiyonel)"><Input type="number" step="0.01" min="0" max="100" value={maksIskonto} onChange={(e) => setMaksIskonto(e.target.value)} placeholder="sınırsız" /></Field></div>
+              {rol === "b2b_bayi" && <div style={{ flex: 1, minWidth: 200 }}><Field label="Bağlı Bayi / Cari *"><Select required value={bayiCariId} onChange={(e) => setBayiCariId(e.target.value)}><option value="">Bayi seçin</option>{cariler.map((c) => <option key={c.id} value={c.id}>{c.unvan} ({c.kod})</option>)}</Select></Field></div>}
             </div>
             <div><Button variant="primary" type="submit">Kullanıcı Oluştur</Button></div>
           </form>
@@ -166,13 +190,14 @@ export default function KullanicilarSayfasi() {
               <th>Rol</th>
               <th>Durum</th>
               <th>2FA</th>
+              <th>Bağlı Bayi / Cari</th>
               <th className="num">Maks. İskonto</th>
               <th className="center">İşlem</th>
             </tr>
           </thead>
           <tbody>
             {kullanicilar.length === 0 ? (
-              <tr><td colSpan={7} className="empty">Kullanıcı bulunamadı.</td></tr>
+              <tr><td colSpan={8} className="empty">Kullanıcı bulunamadı.</td></tr>
             ) : (
               kullanicilar.map((k) => (
                 <tr key={k.id}>
@@ -188,6 +213,7 @@ export default function KullanicilarSayfasi() {
                   </td>
                   <td><Status tone={k.aktif ? "ok" : "danger"}>{k.aktif ? "Aktif" : "Pasif"}</Status></td>
                   <td>{k.totpAktif ? <Badge variant="success">Etkin</Badge> : <span className="subtle">—</span>}</td>
+                  <td style={{ minWidth: 220 }}>{k.rol === "b2b_bayi" ? <Select value={k.bayiCariId ?? ""} onChange={(e) => bayiCariDegistir(k.id, e.target.value)}><option value="">Atanmamış</option>{cariler.map((c) => <option key={c.id} value={c.id}>{c.unvan} ({c.kod})</option>)}</Select> : <span className="subtle">—</span>}</td>
                   <td className="num">{k.maksIskontoYuzdesi === null ? <span className="subtle">Sınırsız</span> : `%${k.maksIskontoYuzdesi}`}</td>
                   <td className="center">
                     <Button size="sm" variant={k.aktif ? "danger" : "ghost"} onClick={() => aktifDegistir(k)}>
