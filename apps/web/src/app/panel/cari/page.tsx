@@ -1115,7 +1115,10 @@ export default function CariSayfasi() {
                 <p className="subtle" style={{ fontSize: "0.85rem" }}>Ekstre yükleniyor...</p>
               ) : (
                 <><div className="cari-statement__summary"><div><span>Devir bakiyesi</span><strong>{tl(ekstre.devirBakiyesi)}</strong></div><div><span>Dönem borç</span><strong>{tl(ekstre.donemBorc)}</strong></div><div><span>Dönem alacak</span><strong>{tl(ekstre.donemAlacak)}</strong></div><div><span>Dönem sonu</span><strong>{tl(ekstre.donemSonuBakiyesi)}</strong></div></div>
-                {ekstre.dovizOzet.length > 0 && <div className="cari-statement__currency-summary"><strong>Döviz bazında bakiye</strong>{ekstre.dovizOzet.map((ozet) => <span key={ozet.dovizCinsi}><b>{ozet.dovizCinsi}</b> devir {Number(ozet.devir).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} · dönem borç {Number(ozet.borc).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} · alacak {Number(ozet.alacak).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} · bakiye <b>{Number(ozet.bakiye).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {ozet.dovizCinsi}</b></span>)}</div>}
+                {ekstre.dovizOzet.length > 0 && <div className="cari-statement__currency-summary">
+                  <strong>Döviz bazında bakiye</strong>
+                  <TableWrap className="cari-statement__currency-table"><thead><tr><th>Döviz</th><th className="num">Devir</th><th className="num">Dönem borç</th><th className="num">Dönem alacak</th><th className="num">Bakiye</th></tr></thead><tbody>{ekstre.dovizOzet.map((ozet) => <tr key={ozet.dovizCinsi}><td><b>{ozet.dovizCinsi}</b></td><td className="num">{Number(ozet.devir).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</td><td className="num">{Number(ozet.borc).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</td><td className="num">{Number(ozet.alacak).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</td><td className={`num money ${Number(ozet.bakiye) > 0 ? "pos" : Number(ozet.bakiye) < 0 ? "neg" : ""}`}>{Number(ozet.bakiye).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {ozet.dovizCinsi}</td></tr>)}</tbody></TableWrap>
+                </div>}
                 {ekstre.satirlar.length === 0 ? <p className="empty">Seçilen tarih aralığında hareket bulunmuyor.</p> : <TableWrap>
                   <thead>
                     <tr>

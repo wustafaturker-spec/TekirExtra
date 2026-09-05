@@ -387,11 +387,119 @@ export function Alert({ tone, children }: { tone: "error" | "success"; children:
   );
 }
 
-/* ─── Tablo (ince sarmalayıcı) ───────────────────────────────────────────── */
-export function TableWrap({ children }: { children: ReactNode }) {
+/* ─── Tablo Mimarisi & Gelişmiş Bileşenler ──────────────────────────────── */
+export type TableDensity = "compact" | "normal" | "comfortable";
+
+export function TableWrap({
+  stickyHeader,
+  className,
+  children,
+}: {
+  stickyHeader?: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
+  const isTable = isValidElement(children) && children.type === "table";
   return (
-    <div className="table-wrap">
-      <table className="table">{children}</table>
+    <div className={cx("table-wrap", stickyHeader && "table-wrap--sticky", className)}>
+      {isTable ? children : <table className="table">{children}</table>}
+    </div>
+  );
+}
+
+export function Table({
+  density = "normal",
+  striped = false,
+  stickyHeader = false,
+  className,
+  children,
+  ...rest
+}: {
+  density?: TableDensity;
+  striped?: boolean;
+  stickyHeader?: boolean;
+  className?: string;
+  children: ReactNode;
+} & HTMLAttributes<HTMLTableElement>) {
+  return (
+    <div className={cx("table-wrap", stickyHeader && "table-wrap--sticky")}>
+      <table
+        className={cx(
+          "table",
+          density === "compact" && "table--compact",
+          density === "comfortable" && "table--comfortable",
+          striped && "table--striped",
+          className,
+        )}
+        {...rest}
+      >
+        {children}
+      </table>
+    </div>
+  );
+}
+
+export function TableSkeleton({ rows = 5, cols = 4 }: { rows?: number; cols?: number }) {
+  return (
+    <Table>
+      <thead>
+        <tr>
+          {Array.from({ length: cols }).map((_, i) => (
+            <th key={i}>
+              <span className="skeleton-box" style={{ width: "60%" }} />
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {Array.from({ length: rows }).map((_, r) => (
+          <tr key={r}>
+            {Array.from({ length: cols }).map((_, c) => (
+              <td key={c}>
+                <span className="skeleton-box" style={{ width: c === 0 ? "80%" : "50%" }} />
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </Table>
+  );
+}
+
+export function BulkActionsBar({
+  selectedCount,
+  onClear,
+  children,
+}: {
+  selectedCount: number;
+  onClear?: () => void;
+  children: ReactNode;
+}) {
+  if (selectedCount <= 0) return null;
+  return (
+    <div className="bulk-actions-bar" role="region" aria-label="Toplu işlemler">
+      <span style={{ fontSize: "13px", fontWeight: "700" }}>
+        {selectedCount} öge seçildi
+      </span>
+      {onClear && (
+        <button
+          onClick={onClear}
+          type="button"
+          style={{
+            background: "none",
+            border: "none",
+            color: "var(--text-subtle)",
+            cursor: "pointer",
+            fontSize: "12px",
+            textDecoration: "underline",
+          }}
+        >
+          Seçimi Temizle
+        </button>
+      )}
+      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        {children}
+      </div>
     </div>
   );
 }
