@@ -11,7 +11,7 @@ describe("CariService arama", () => {
     const prisma = {
       tenantIslem: vi.fn((_tenantId, calistir) => calistir({ cariHesap: { findMany } })),
     } as any;
-    const servis = new CariService(prisma, {} as any, {} as any);
+    const servis = new CariService(prisma, {} as any, {} as any, {} as any);
 
     await servis.listele("0532 123 45 67");
 
@@ -25,7 +25,7 @@ describe("CariService arama", () => {
     const prisma = {
       tenantIslem: vi.fn((_tenantId, calistir) => calistir({ cariHesap: { findMany } })),
     } as any;
-    const servis = new CariService(prisma, {} as any, {} as any);
+    const servis = new CariService(prisma, {} as any, {} as any, {} as any);
 
     await servis.listele(undefined, undefined, 50, "musteri", "bloke");
 
@@ -40,7 +40,7 @@ describe("CariService arama", () => {
     const prisma = {
       tenantIslem: vi.fn((_tenantId, calistir) => calistir({ crmGorev: { findFirst, update } })),
     } as any;
-    const servis = new CariService(prisma, {} as any, {} as any);
+    const servis = new CariService(prisma, {} as any, {} as any, {} as any);
 
     await expect(servis.crmGorevDurum("cari-1", "gorev-1", "tamamlandi"))
       .rejects.toThrow("CRM görevi bulunamadı");
@@ -59,7 +59,7 @@ describe("CariService arama", () => {
         user: { findMany: vi.fn().mockResolvedValue([]) },
       })),
     } as any;
-    const servis = new CariService(prisma, {} as any, {} as any);
+    const servis = new CariService(prisma, {} as any, {} as any, {} as any);
     vi.spyOn(servis, "getir").mockResolvedValue({ id: "cari-1" } as any);
 
     await servis.crmGetir("cari-1");

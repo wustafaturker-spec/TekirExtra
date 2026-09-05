@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
+import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import type { kategoriGuncelleSemasi, kategoriOlusturSemasi, kiraDonemOlusturSemasi, kiraSozlesmeGuncelleSemasi, kiraSozlesmeOlusturSemasi, masrafGuncelleSemasi, masrafOdemeSemasi, masrafOlusturSemasi } from "./masraflar.semalar";
 
 const D = (deger: string | number | Prisma.Decimal) => new Prisma.Decimal(deger);
@@ -24,7 +25,7 @@ const VARSAYILAN_KATEGORILER = ["Kira", "Elektrik, Su ve Doğalgaz", "Telefon ve
 
 @Injectable()
 export class MasraflarService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly donemKilidi: DonemKilidiService) {}
 
   async kategoriListele() {
     const { tenantId } = aktifBaglam();
@@ -102,6 +103,7 @@ export class MasraflarService {
 
   async olustur(girdi: z.infer<typeof masrafOlusturSemasi>) {
     const { tenantId } = aktifBaglam();
+    await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "masraf oluşturma");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       if (!(await tx.masrafKategori.findUnique({ where: { id: girdi.kategoriId } }))) throw new BadRequestException("Masraf kategorisi bulunamadı");
       if (girdi.cariId && !(await tx.cariHesap.findUnique({ where: { id: girdi.cariId } }))) throw new BadRequestException("Cari hesap bulunamadı");
@@ -113,6 +115,7 @@ export class MasraflarService {
     const mevcut = await this.getir(id);
     if (mevcut.durum !== "taslak") throw new BadRequestException("Yalnızca taslak masraf düzenlenebilir");
     const { tenantId } = aktifBaglam();
+    await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "masraf güncelleme");
     return this.prisma.tenantIslem(tenantId, (tx) => tx.masraf.update({ where: { id }, data: this.veri(girdi) }));
   }
 
@@ -120,6 +123,7 @@ export class MasraflarService {
     const mevcut = await this.getir(id);
     if (mevcut.durum !== "taslak") throw new BadRequestException("Yalnızca taslak masraf onaylanabilir");
     const { tenantId } = aktifBaglam();
+    await this.donemKilidi.tarihDogrula(tenantId, mevcut.tarih, "masraf onaylama");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       if (mevcut.cariId) {
         const netTutar = mevcut.toplam.sub(mevcut.stopajTutari ?? D(0));
@@ -153,6 +157,7 @@ export class MasraflarService {
     if (mevcut.durum !== "onaylandi") throw new BadRequestException("Masraf ödeme öncesinde onaylanmalıdır");
     if (mevcut.odemeDurumu === "odendi") throw new BadRequestException("Masraf zaten ödenmiş");
     const { tenantId } = aktifBaglam();
+    await this.donemKilidi.tarihDogrula(tenantId, girdi.odemeTarihi, "masraf ödeme");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const hesap = girdi.kasaId
         ? await tx.kasa.findUnique({ where: { id: girdi.kasaId } })

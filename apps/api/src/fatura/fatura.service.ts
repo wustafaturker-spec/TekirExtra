@@ -16,6 +16,7 @@ import { StokService } from "../stok/stok.service";
 import { DepoService } from "../stok/depo.service";
 import { EpostaService } from "../tenant/eposta.service";
 import { BelgelerService } from "../belgeler/belgeler.service";
+import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { faturaPdfHtml } from "./fatura-pdf";
 import type {
   faturaOlusturSemasi,
@@ -36,6 +37,7 @@ export class FaturaService {
     private readonly pdf: PdfService,
     private readonly eposta: EpostaService,
     private readonly belgelerService: BelgelerService,
+    private readonly donemKilidi: DonemKilidiService,
   ) {}
 
   private async cariTipiniDogrula(tx: Prisma.TransactionClient, cariId: string, tip: string): Promise<void> {
@@ -491,6 +493,7 @@ export class FaturaService {
 
   async olustur(girdi: z.infer<typeof faturaOlusturSemasi>) {
     const { tenantId, userId } = aktifBaglam();
+    await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "fatura oluşturma");
 
     // FTR-14: satıcı kullanıcı bazında maksimum iskonto yetkisi kontrolü
     const user = await this.prisma.tenantIslem(tenantId, (tx) =>
@@ -606,6 +609,7 @@ export class FaturaService {
   async guncelle(id: string, girdi: z.infer<typeof faturaGuncelleSemasi>) {
     const { tenantId, userId } = aktifBaglam();
     const fatura = await this.getir(id);
+    await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih ?? fatura.tarih, "fatura güncelleme");
 
     const kesinDuzenleme = fatura.durum === "kesin" && !fatura.ebelge;
     if ((fatura.durum !== "taslak" && !kesinDuzenleme) || fatura.ebelge) {
@@ -1020,6 +1024,9 @@ export class FaturaService {
 
   async kesinlestir(id: string, veri?: { no?: string; seri?: string }) {
     const { tenantId } = aktifBaglam();
+    const tarih = await this.prisma.tenantIslem(tenantId, (tx) => tx.fatura.findUnique({ where: { id }, select: { tarih: true } }));
+    if (!tarih) throw new NotFoundException("Fatura bulunamadı");
+    await this.donemKilidi.tarihDogrula(tenantId, tarih.tarih, "fatura kesinleştirme");
     
     // Faturayı kilitlemek ve işlemleri yürütmek için transaction başlatıyoruz
     const sonuc = await this.prisma.tenantIslem(tenantId, async (tx) => {

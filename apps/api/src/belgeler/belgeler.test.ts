@@ -30,7 +30,7 @@ describe("BelgelerService", () => {
       faturaSatir: { create: vi.fn() },
     };
     const prisma = { tenantIslem: vi.fn((_tenantId, calistir) => calistir(tx)) } as any;
-    const service = new BelgelerService(prisma, {} as any, {} as any);
+    const service = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
 
     await expect(service.topluFatura({ belgeIds: ["b1"] })).rejects.toThrow(ConflictException);
     expect(tx.belge.updateMany).toHaveBeenCalledWith({
@@ -55,7 +55,7 @@ describe("BelgelerService", () => {
     const prisma = {
       tenantIslem: vi.fn((_tenantId, calistir) => calistir({ belge: { findMany } })),
     } as any;
-    const service = new BelgelerService(prisma, {} as any, {} as any);
+    const service = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
 
     const sonuc = await service.listele(undefined, undefined, undefined, undefined, undefined, undefined, undefined, 2);
 

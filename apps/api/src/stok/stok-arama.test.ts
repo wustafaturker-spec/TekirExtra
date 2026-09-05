@@ -12,7 +12,7 @@ describe("StokService arama", () => {
     const prisma = {
       tenantIslem: vi.fn((_tenantId, calistir) => calistir({ stokKart: { findMany } })),
     } as any;
-    const servis = new StokService(prisma, {} as any, {} as any);
+    const servis = new StokService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
 
     await servis.listele("TED-URUN-42");
 
@@ -33,14 +33,14 @@ describe("StokService arama", () => {
     const prisma = {
       tenantIslem: vi.fn((_tenantId, calistir) => calistir({ $queryRaw: queryRaw })),
     } as any;
-    const servis = new StokService(prisma, {} as any, {} as any);
+    const servis = new StokService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
 
     await expect(servis.kritikOzeti()).resolves.toEqual({ kritikStok: 7 });
     expect(queryRaw).toHaveBeenCalledOnce();
   });
 
   it("başka stok kartına ait varyantla hareket yazılmasını engeller", async () => {
-    const servis = new StokService({} as any, {} as any, {} as any);
+    const servis = new StokService({} as any, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
     const tx = {
       stokKart: { findUnique: vi.fn().mockResolvedValue({ id: "stok-1", tip: "urun", mevcutMiktar: new Prisma.Decimal(0), ortalamaMaliyet: new Prisma.Decimal(0) }) },
       stokVaryant: { findFirst: vi.fn().mockResolvedValue(null) },
@@ -53,7 +53,7 @@ describe("StokService arama", () => {
   });
 
   it("parti çıkışını FEFO sırasıyla tahsis eder", async () => {
-    const servis = new StokService({} as any, {} as any, {} as any);
+    const servis = new StokService({} as any, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
     const erken = { id: "p1", lotNo: "LOT-ERKEN", seriNo: null, sonKullanmaTarihi: new Date("2026-09-01"), uretimTarihi: null, kalanMiktar: new Prisma.Decimal(2), createdAt: new Date() };
     const gec = { ...erken, id: "p2", lotNo: "LOT-GEC", sonKullanmaTarihi: new Date("2026-12-01"), kalanMiktar: new Prisma.Decimal(5) };
     const update = vi.fn().mockResolvedValue({});

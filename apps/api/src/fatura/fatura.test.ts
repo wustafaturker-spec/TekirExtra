@@ -17,7 +17,7 @@ describe("FaturaService (FTR-14 - maksIskontoYuzdesi)", () => {
     tenantIslem: mockTenantIslem,
   } as any;
   const mockEposta = {} as any;
-  const service = new FaturaService(mockPrisma, mockEposta);
+  const service = new FaturaService(mockPrisma, mockEposta, {} as any, {} as any, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
 
   it("maksIskontoYuzdesi asildiginda BadRequestException firlatir", async () => {
     const mockTx = {

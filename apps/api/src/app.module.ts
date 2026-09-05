@@ -31,6 +31,7 @@ import { AiModule } from "./ai/ai.module";
 import { GelirlerModule } from "./gelirler/gelirler.module";
 import { ProjelerModule } from "./projeler/projeler.module";
 import { DuzeltmelerModule } from "./duzeltmeler/duzeltmeler.module";
+import { DonemKapatmaModule } from "./donem-kapatma/donem-kapatma.module";
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { DuzeltmelerModule } from "./duzeltmeler/duzeltmeler.module";
     GelirlerModule,
     ProjelerModule,
     DuzeltmelerModule,
+    DonemKapatmaModule,
     DovizModule,
     UretimModule,
     ObservabilityModule,

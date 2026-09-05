@@ -156,6 +156,9 @@ model Tenant {
   uretimVardiyalari         UretimVardiya[]
   uretimDuruslari           UretimDurus[]
   uretimDonemKilitleri      UretimDonemKilidi[]
+  maliDonemler              MaliDonem[]
+  maliDonemOlaylari         MaliDonemOlayi[]
+  donemKontrolleri          DonemKontrolu[]
   uretimEmriCiktilari       UretimEmriCikti[]
   urunRecetesiCiktilari     UrunRecetesiCikti[]
   crmFirsatlari             CrmFirsat[]
@@ -237,6 +240,7 @@ model User {
   uretimOperasyonlari         UretimEmriOperasyonu[] @relation("UretimOperatoru")
   olusturduguUretimDuruslari  UretimDurus[]          @relation("UretimDurusOlusturan")
   kapattigiUretimDonemleri    UretimDonemKilidi[]    @relation("UretimDonemKapatan")
+  maliDonemOlaylari           MaliDonemOlayi[]        @relation("MaliDonemOlayKullanicisi")
   sorumluProjeler             Proje[]                @relation("ProjeSorumlu")
   projeNotlari                ProjeNot[]
   atananDuzeltmeKayitlari     DuzeltmeKaydi[]        @relation("DuzeltmeAtanan")
@@ -1516,6 +1520,70 @@ model UretimDonemKilidi {
   @@unique([tenantId, yil, ay])
   @@index([tenantId, yil, ay])
   @@map("uretim_donem_kilitleri")
+}
+
+enum MaliDonemDurumu {
+  acik
+  kapali
+}
+
+enum MaliDonemOlayTuru {
+  kapatildi
+  yeniden_acildi
+}
+
+model MaliDonem {
+  id          String           @id @default(uuid()) @db.Uuid
+  tenantId    String           @map("tenant_id") @db.Uuid
+  yil         Int
+  ay          Int
+  durum       MaliDonemDurumu  @default(acik)
+  kapatildiAt DateTime?        @map("kapatildi_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kontroller  DonemKontrolu[]
+  olaylar     MaliDonemOlayi[]
+
+  @@unique([tenantId, yil, ay])
+  @@index([tenantId, durum, yil, ay])
+  @@map("mali_donemler")
+}
+
+model DonemKontrolu {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  maliDonemId String    @map("mali_donem_id") @db.Uuid
+  kod         String
+  basarili    Boolean
+  aciklama    String
+  detay       Json?
+  kontrolAt   DateTime  @default(now()) @map("kontrol_at")
+
+  maliDonem MaliDonem @relation(fields: [maliDonemId], references: [id], onDelete: Cascade)
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([maliDonemId, kod])
+  @@index([tenantId, maliDonemId])
+  @@map("donem_kontrolleri")
+}
+
+model MaliDonemOlayi {
+  id          String             @id @default(uuid()) @db.Uuid
+  tenantId    String             @map("tenant_id") @db.Uuid
+  maliDonemId String             @map("mali_donem_id") @db.Uuid
+  tur         MaliDonemOlayTuru
+  gerekce     String
+  userId      String             @map("user_id") @db.Uuid
+  createdAt   DateTime           @default(now()) @map("created_at")
+
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  maliDonem MaliDonem @relation(fields: [maliDonemId], references: [id], onDelete: Cascade)
+  kullanici  User      @relation("MaliDonemOlayKullanicisi", fields: [userId], references: [id])
+
+  @@index([tenantId, maliDonemId, createdAt])
+  @@map("mali_donem_olaylari")
 }
 
 /// Tenant ve yıl bazında çakışmasız üretim emri numarası üretir.

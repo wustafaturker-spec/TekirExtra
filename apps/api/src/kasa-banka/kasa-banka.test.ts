@@ -16,7 +16,7 @@ describe("KasaBankaService (KSB-01..07)", () => {
     tenantIslem: mockTenantIslem,
   } as any;
 
-  const service = new KasaBankaService(mockPrisma);
+  const service = new KasaBankaService(mockPrisma, {} as any, { tarihDogrula: vi.fn() } as any);
 
   it("kasaOlustur yeni bir kasa kaydı oluşturur (KSB-01)", async () => {
     const mockTx = {

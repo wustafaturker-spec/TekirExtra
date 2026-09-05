@@ -27,6 +27,7 @@ import { cariExcelOku, cariEkstreExcelYaz } from "../core/excel-yardimci";
 import { PdfService } from "../core/pdf/pdf.service";
 import { cariDavranisAnalizi } from "./cari-analiz";
 import { EpostaService } from "../tenant/eposta.service";
+import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import {
   kacis,
   paraBicim,
@@ -50,6 +51,7 @@ export class CariService {
     private readonly prisma: PrismaService,
     private readonly pdf: PdfService,
     private readonly eposta: EpostaService,
+    private readonly donemKilidi: DonemKilidiService,
   ) {}
 
   async listele(arama?: string, imlec?: string, adet = 50, tip?: string, durum?: string, bakiye?: string) {
@@ -583,6 +585,7 @@ export class CariService {
 
   async hareketEkle(cariId: string, girdi: CariHareketGirdisi) {
     const { tenantId } = aktifBaglam();
+    await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "cari hareketi oluşturma");
     await this.getir(cariId);
     const tutar = D(girdi.tutar);
     const kur = D(girdi.kur);

@@ -14,6 +14,7 @@ import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
 import { DepoService } from "./depo.service";
+import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { etiketPdfHtml, type EtiketVerisi } from "./etiket-pdf";
 import type {
   etiketBasSemasi,
@@ -58,6 +59,7 @@ export class StokService {
     private readonly prisma: PrismaService,
     private readonly pdf: PdfService,
     private readonly depoService: DepoService,
+    private readonly donemKilidi: DonemKilidiService,
   ) {}
 
   // ─── STOK KART YÖNETİMİ (STK-01) ───────────────────────────────────────────
@@ -650,6 +652,7 @@ export class StokService {
     girdi: StokHareketGirdisi,
   ): Promise<{ hareket: unknown; eksiStokUyarisi: string | null; partiTahsisleri: { lotNo: string; seriNo: string | null; sonKullanmaTarihi: string | null; uretimTarihi: string | null; miktar: Prisma.Decimal }[] }> {
     const { tenantId } = aktifBaglam();
+    await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "stok hareketi oluşturma");
     const {
       stokId,
       varyantId,

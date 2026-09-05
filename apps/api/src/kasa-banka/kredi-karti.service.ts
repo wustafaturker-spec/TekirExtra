@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
+import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import type { krediKartiCariOdemeSemasi, krediKartiEkstreOdemeSemasi, krediKartiHareketSemasi, krediKartiOlusturSemasi } from "./kredi-karti.semalar";
 
 const D = (deger: Prisma.Decimal.Value) => new Prisma.Decimal(deger);
@@ -24,7 +25,7 @@ function taksitVerileri(tenantId: string, hareketId: string, toplam: Prisma.Deci
 
 @Injectable()
 export class KrediKartiService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly donemKilidi: DonemKilidiService) {}
 
   async listele() {
     const { tenantId } = aktifBaglam();
@@ -45,6 +46,7 @@ export class KrediKartiService {
 
   async hareketEkle(girdi: z.infer<typeof krediKartiHareketSemasi>) {
     const { tenantId } = aktifBaglam();
+    await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "kredi kartı hareketi oluşturma");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const kart = await tx.krediKarti.findUnique({ where: { id: girdi.krediKartiId } }); if (!kart?.aktif) throw new NotFoundException("Aktif kredi kartı hesabı bulunamadı");
       const hareket = await tx.krediKartiHareket.create({ data: { ...girdi, tenantId, tarih: new Date(girdi.tarih), tutar: D(girdi.tutar) } });
@@ -55,6 +57,7 @@ export class KrediKartiService {
 
   async cariOdeme(girdi: z.infer<typeof krediKartiCariOdemeSemasi>) {
     const { tenantId } = aktifBaglam(); const cariTutar = D(girdi.cariOdemeTutari); const komisyon = D(girdi.komisyonTutari); const toplam = cariTutar.add(komisyon); const tarih = new Date(girdi.tarih);
+    await this.donemKilidi.tarihDogrula(tenantId, tarih, "kredi kartıyla cari ödeme");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const [kart, cari] = await Promise.all([tx.krediKarti.findUnique({ where: { id: girdi.krediKartiId } }), tx.cariHesap.findUnique({ where: { id: girdi.cariId } })]);
       if (!kart?.aktif) throw new NotFoundException("Aktif kredi kartı hesabı bulunamadı"); if (!cari?.aktif) throw new NotFoundException("Aktif cari hesap bulunamadı");
@@ -76,6 +79,7 @@ export class KrediKartiService {
 
   async ekstreOdeme(girdi: z.infer<typeof krediKartiEkstreOdemeSemasi>) {
     const { tenantId } = aktifBaglam(); const tutar = D(girdi.tutar); const tarih = new Date(girdi.tarih);
+    await this.donemKilidi.tarihDogrula(tenantId, tarih, "kredi kartı ekstre ödemesi");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const [kart, banka] = await Promise.all([tx.krediKarti.findUnique({ where: { id: girdi.krediKartiId }, include: { hareketler: { select: { tip: true, tutar: true } } } }), tx.bankaHesap.findUnique({ where: { id: girdi.bankaHesapId } })]);
       if (!kart?.aktif || !banka?.aktif) throw new NotFoundException("Aktif kredi kartı veya banka hesabı bulunamadı"); if (kart.dovizCinsi !== banka.dovizCinsi) throw new BadRequestException("Kart ve banka hesabı para birimleri aynı olmalıdır");

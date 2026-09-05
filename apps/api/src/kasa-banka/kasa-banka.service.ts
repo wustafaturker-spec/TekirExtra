@@ -11,6 +11,7 @@ import { izinliEylemler } from "../core/eylemler/eylem-kayit";
 import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
 import { makbuzPdfHtml } from "./makbuz-pdf";
+import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import type {
   bankaHesapGuncelleSemasi,
   bankaHesapOlusturSemasi,
@@ -34,7 +35,7 @@ export interface KasaBankaBakiye {
 
 @Injectable()
 export class KasaBankaService {
-  constructor(private readonly prisma: PrismaService, private readonly pdf: PdfService) {}
+  constructor(private readonly prisma: PrismaService, private readonly pdf: PdfService, private readonly donemKilidi: DonemKilidiService) {}
 
   // ─── KASA YÖNETİMİ (KSB-01/04) ─────────────────────────────────────────────
 
@@ -297,6 +298,7 @@ export class KasaBankaService {
 
   async hareketEkle(girdi: z.infer<typeof kasaBankaHareketOlusturSemasi>) {
     const { tenantId } = aktifBaglam();
+    await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "kasa/banka hareketi oluşturma");
     const tutar = D(girdi.tutar);
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {

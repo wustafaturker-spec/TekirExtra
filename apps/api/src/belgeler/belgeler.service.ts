@@ -17,6 +17,7 @@ import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PdfService } from "../core/pdf/pdf.service";
 import { PrismaService } from "../core/prisma.service";
 import { DepoService } from "../stok/depo.service";
+import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { belgePdfHtml } from "./belge-pdf";
 import type {
   belgeGuncelleSemasi,
@@ -68,6 +69,7 @@ export class BelgelerService {
     private readonly prisma: PrismaService,
     private readonly pdf: PdfService,
     private readonly depoService: DepoService,
+    private readonly donemKilidi: DonemKilidiService,
   ) {}
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────
@@ -208,6 +210,7 @@ export class BelgelerService {
 
   async olustur(girdi: z.infer<typeof belgeOlusturSemasi>) {
     const { tenantId, userId } = aktifBaglam();
+    await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "belge oluşturma");
 
     // FTR-14: satıcı kullanıcı bazında maksimum iskonto yetkisi kontrolü
     const user = await this.prisma.tenantIslem(tenantId, (tx) =>
@@ -260,6 +263,7 @@ export class BelgelerService {
   async guncelle(id: string, girdi: z.infer<typeof belgeGuncelleSemasi>) {
     const { tenantId } = aktifBaglam();
     const mevcut = await this.getir(id);
+    await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih ?? mevcut.tarih, "belge güncelleme");
     if (mevcut.durum !== "taslak") {
       throw new BadRequestException("Yalnızca taslak belgeler güncellenebilir");
     }
@@ -431,6 +435,9 @@ export class BelgelerService {
 
   async onayla(id: string) {
     const { tenantId } = aktifBaglam();
+    const tarih = await this.prisma.tenantIslem(tenantId, (tx) => tx.belge.findUnique({ where: { id }, select: { tarih: true } }));
+    if (!tarih) throw new NotFoundException("Belge bulunamadı");
+    await this.donemKilidi.tarihDogrula(tenantId, tarih.tarih, "belge onaylama");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const belge = await tx.belge.findUnique({
         where: { id },
