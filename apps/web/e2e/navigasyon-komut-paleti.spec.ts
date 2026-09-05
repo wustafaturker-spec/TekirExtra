@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { metinNormalize } from "@tekirextra/shared";
 
 /**
  * Yeni bilgi mimarisinin iki iddiasını doğrular:
@@ -16,19 +17,16 @@ const STOKLAR = [{ id: "stok-1", kod: "PRD-0042", ad: "Şişli Vidalı Bağlant�
 const FATURALAR = [{ id: "fatura-1", no: "SF2026000123", tip: "satis", genelToplam: "12000.00", cari: { unvan: "Şişli Makina Sanayi Ltd. Şti." } }];
 
 /**
- * Kayıt aramasını sunucu yapar; Prisma `contains` + `mode: "insensitive"`
- * Postgres ILIKE'a çevrilir. `en_US.utf8` derlemiyle ILIKE büyük/küçük harfi
- * tamamen katlar (I→i, İ→i) ama aksanı katlamaz (ş≠s, ç≠c). Aşağıdaki katlama
- * canlı API'ye karşı sekiz sorguda doğrulandı: "ŞIŞLI", "ŞİŞLİ", "MAKINA"
- * eşleşir; "sisli", "sişli", "şisli" eşleşmez.
+ * Kayıt aramasını sunucu yapar. ARA-01'den beri sorgu, veritabanının ürettiği
+ * `arama_normal` kolonunda aranır: terim de kolon da küçültülüp aksanları
+ * katlanarak karşılaştırılır, yani "sisli" araması "Şişli Makina"yı bulur.
+ * Sunucu terimi `metinNormalize` ile katladığı için sahte uç da aynı işlevi
+ * kullanır — kural iki yerde ayrı ayrı yazılmaz.
  *
  * Sahte uç bu davranışı taklit etmezse test, aramanın çalıştığını değil sahte
  * uçun her sorguya kayıt döndürdüğünü doğrular.
  */
-function sunucuKatlamasi(metin: string): string {
-  // toLowerCase() "İ" harfini "i" + birleşik nokta olarak açar; glibc açmaz.
-  return metin.toLowerCase().replace(/\u0307/g, "");
-}
+const sunucuKatlamasi = metinNormalize;
 
 function sunucudaSuz<T>(kayitlar: T[], arama: string, alanlar: (kayit: T) => (string | null)[]): T[] {
   if (!arama) return [];
@@ -170,18 +168,16 @@ test.describe("Komut paleti", () => {
     await expect(palet.getByRole("option", { name: /^SF2026000123.*₺12\.000,00/ })).toBeVisible();
   });
 
-  test("kayıt aramasında aksan katlanmaz — sunucu tarafı ILIKE'ın sınırı", async ({ page }) => {
+  test("kayıt aramasında aksan katlanır (ARA-01)", async ({ page }) => {
     await page.keyboard.press("Control+k");
     const palet = page.getByRole("dialog", { name: "Komut paleti" });
-    // Sayfa adları istemcide normalize edilir, kayıtlar ise sunucuda ILIKE ile
-    // aranır: "sisli" yazan kullanıcı "Şişli Makina"yı BULAMAZ. Bu davranış
-    // istenmiyorsa çözüm sunucuda (unaccent) aranmalıdır; test bugünkü
-    // gerçeği sabitler ki düzeltildiğinde burada kırılsın.
+    // Klavyesinde Türkçe harf olmayan ya da acele eden kullanıcı "sisli" yazar;
+    // kayıt sunucuda aksansız `arama_normal` kolonunda arandığı için bulunur.
     await palet.getByRole("combobox").fill("sisli");
     await expect(palet.getByText("Aranıyor…")).toHaveCount(0, { timeout: 10_000 });
-    await expect(palet.getByRole("option", { name: /Şişli/ })).toHaveCount(0);
+    await expect(palet.getByRole("option", { name: /^Şişli Makina Sanayi Ltd\. Şti\./ })).toBeVisible();
 
-    // Büyük/küçük harf farkı ise sorun değildir — Türkçe "İ" ve "I" dahil.
+    // Büyük/küçük harf farkı da katlanır — Türkçe "İ" ve "I" dahil.
     await palet.getByRole("combobox").fill("ŞİŞLİ MAKINA");
     await expect(palet.getByRole("option", { name: /^Şişli Makina Sanayi Ltd\. Şti\./ })).toBeVisible();
   });
