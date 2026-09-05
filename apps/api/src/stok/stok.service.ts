@@ -13,6 +13,7 @@ import { ayarTanimiAl } from "../core/ayarlar/ayar-kayit";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
+import { metinNormalize } from "@tekirextra/shared";
 import { DepoService } from "./depo.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { etiketPdfHtml, type EtiketVerisi } from "./etiket-pdf";
@@ -81,15 +82,16 @@ export class StokService {
   async listele(arama?: string, kategoriId?: string, imlec?: string, adet = 50) {
     const { tenantId } = aktifBaglam();
     const ctx = aktifBaglam();
+    const aranan = arama ? metinNormalize(arama) : "";
 
     const where: Prisma.StokKartWhereInput = {
       ...(kategoriId ? { kategoriId } : {}),
-      ...(arama
+      ...(aranan
         ? {
             OR: [
-              { ad: { contains: arama, mode: "insensitive" } },
-              { kod: { contains: arama, mode: "insensitive" } },
-              { barkod: { contains: arama, mode: "insensitive" } },
+              // ARA-01: ad, kod ve ana barkod veritabanının ürettiği
+              // `arama_normal` kolonunda toplanır — aksan orada katlanır.
+              { aramaNormal: { contains: aranan } },
               // STK-15: barkod tablosundan da bul
               { barkodlar: { some: { barkod: { contains: arama } } } },
               // STK-18: tedarikcinin urun koduyla da bul

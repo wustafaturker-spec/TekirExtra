@@ -618,6 +618,9 @@ model CariHesap {
   sektor                  String?
   temsilciUserId          String?    @map("temsilci_user_id") @db.Uuid
   vknTckn                 String?    @map("vkn_tckn")
+  /// Veritabanının ürettiği aksansız arama kolonu (20260904200000_aksansiz_arama).
+  /// GENERATED ALWAYS olduğu için yalnız okunur; Prisma ile yazılmaz.
+  aramaNormal             String?    @map("arama_normal")
   vergiDairesi            String?    @map("vergi_dairesi")
   mersisNo                String?    @map("mersis_no")
   ticaretSicilNo          String?    @map("ticaret_sicil_no")
@@ -894,6 +897,9 @@ model StokKart {
   mensei           String?
   gtipKodu         String?       @map("gtip_kodu")
   ureticiUrunKodu  String?       @map("uretici_urun_kodu")
+  /// Veritabanının ürettiği aksansız arama kolonu (20260904200000_aksansiz_arama).
+  /// GENERATED ALWAYS olduğu için yalnız okunur; Prisma ile yazılmaz.
+  aramaNormal      String?       @map("arama_normal")
   barkod           String?
   kategoriId       String?       @map("kategori_id") @db.Uuid
   anaBirim         String        @default("adet") @map("ana_birim")
@@ -1827,6 +1833,9 @@ model Fatura {
   no                   String?
   seri                 String?
   sira                 Int?
+  /// Veritabanının ürettiği aksansız arama kolonu (20260904200000_aksansiz_arama).
+  /// GENERATED ALWAYS olduğu için yalnız okunur; Prisma ile yazılmaz.
+  aramaNormal          String?         @map("arama_normal")
   tarih                DateTime        @db.Date
   vadeTarihi           DateTime?       @map("vade_tarihi") @db.Date
   siparisNo            String?         @map("siparis_no")

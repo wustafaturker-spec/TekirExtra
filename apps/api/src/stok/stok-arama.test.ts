@@ -18,9 +18,10 @@ describe("StokService arama", () => {
 
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
-        OR: expect.arrayContaining([{
-          tedarikciler: { some: { tedarikciUrunKodu: { contains: "TED-URUN-42", mode: "insensitive" } } },
-        }]),
+        OR: expect.arrayContaining([
+          { aramaNormal: { contains: "ted-urun-42" } },
+          { tedarikciler: { some: { tedarikciUrunKodu: { contains: "TED-URUN-42", mode: "insensitive" } } } },
+        ]),
       }),
       include: expect.objectContaining({
         tedarikciler: { select: { tedarikciUrunKodu: true } },

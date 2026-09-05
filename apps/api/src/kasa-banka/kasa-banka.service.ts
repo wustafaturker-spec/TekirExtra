@@ -8,6 +8,7 @@ import type { KayitEylem } from "@tekirextra/shared";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler } from "../core/eylemler/eylem-kayit";
+import { metinNormalize } from "@tekirextra/shared";
 import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
 import { makbuzPdfHtml } from "./makbuz-pdf";
@@ -503,7 +504,7 @@ export class KasaBankaService {
             { cekNo: { contains: arama, mode: "insensitive" } },
             { borclu: { contains: arama, mode: "insensitive" } },
             { banka: { contains: arama, mode: "insensitive" } },
-            { cari: { unvan: { contains: arama, mode: "insensitive" } } },
+            { cari: { aramaNormal: { contains: metinNormalize(arama) } } },
           ] } : {}),
         },
         orderBy: { vadeTarihi: "asc" },

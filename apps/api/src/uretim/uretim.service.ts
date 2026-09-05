@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
+import { metinNormalize } from "@tekirextra/shared";
 import { PrismaService } from "../core/prisma.service";
 import { StokService } from "../stok/stok.service";
 import type { isMerkeziKaydetSemasi, kaliteKararSemasi, operasyonBaslatSemasi, operasyonBekletSemasi, operasyonTamamlaSemasi, receteKaydetSemasi, sarfDuzeltmeSemasi, uretimBildirimiSemasi, uretimDonemKilidiSemasi, uretimEmriListeSemasi, uretimEmriOlusturSemasi, uretimTamamlaSemasi, vardiyaKaydetSemasi, yenidenIslemeTamamlaSemasi } from "./uretim.semalar";
@@ -227,7 +228,8 @@ export class UretimService {
     const { tenantId } = aktifBaglam();
     const where: Prisma.UretimEmriWhereInput = {};
     if (sorgu.durum) where.durum = sorgu.durum;
-    if (sorgu.arama) where.OR = [{ no: { contains: sorgu.arama, mode: "insensitive" } }, { stok: { kod: { contains: sorgu.arama, mode: "insensitive" } } }, { stok: { ad: { contains: sorgu.arama, mode: "insensitive" } } }];
+    // ARA-01: stok tarafı aksansız `arama_normal` kolonundan aranır.
+    if (sorgu.arama) where.OR = [{ no: { contains: sorgu.arama, mode: "insensitive" } }, { stok: { aramaNormal: { contains: metinNormalize(sorgu.arama) } } }];
     if (sorgu.geciken === "true") where.AND = [{ tarih: { lt: new Date(new Date().toISOString().slice(0, 10)) } }, { durum: { notIn: ["tamamlandi", "iptal"] } }];
     return this.prisma.tenantIslem(tenantId, (tx) => tx.uretimEmri.findMany({ where, orderBy: [{ tarih: "desc" }, { createdAt: "desc" }], include: { stok: { select: { id: true, kod: true, ad: true, anaBirim: true, takipTipi: true } }, hedefDepo: { select: { id: true, kod: true, ad: true } }, satisSiparisSatiri: { select: { belge: { select: { id: true, no: true } } } }, _count: { select: { kalemler: true } } } }));
   }

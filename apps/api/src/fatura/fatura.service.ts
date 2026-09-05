@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma, FaturaTip, FaturaDurum, BelgeDurum } from "@prisma/client";
-import { faturaHesapla, type FaturaHesaplaSatirGirdi, type KayitEylem } from "@tekirextra/shared";
+import { faturaHesapla, metinNormalize, type FaturaHesaplaSatirGirdi, type KayitEylem } from "@tekirextra/shared";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
@@ -228,6 +228,7 @@ export class FaturaService {
   ) {
     const { tenantId } = aktifBaglam();
     const ctx = aktifBaglam();
+    const aranan = arama ? metinNormalize(arama) : "";
 
     const tarihKosulu: Prisma.DateTimeFilter | undefined = (baslangic || bitis) ? {
       ...(baslangic ? { gte: new Date(`${baslangic}T00:00:00.000Z`) } : {}),
@@ -240,12 +241,13 @@ export class FaturaService {
       ...(tip ? { tip: tip as FaturaTip } : yon === "satis" ? { tip: { in: ["satis", "satis_iade", "proforma"] } } : yon === "alis" ? { tip: { in: ["alis", "alis_iade"] } } : {}),
       ...(durum ? { durum: durum as FaturaDurum } : {}),
       ...(ebelge ? { ebelge: { is: { durum: ebelge === "hata" ? { in: ["hata", "ret"] } : ebelge as BelgeDurum } } } : {}),
-      ...(arama
+      ...(aranan
         ? {
+            // ARA-01: fatura numarası ve carinin unvan/kod/VKN bilgisi kendi
+            // `arama_normal` kolonlarında aksansız tutulur.
             OR: [
-              { no: { contains: arama, mode: "insensitive" } },
-              { cari: { unvan: { contains: arama, mode: "insensitive" } } },
-              { cari: { kod: { contains: arama, mode: "insensitive" } } },
+              { aramaNormal: { contains: aranan } },
+              { cari: { aramaNormal: { contains: aranan } } },
             ],
           }
         : {}),

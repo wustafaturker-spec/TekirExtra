@@ -15,6 +15,7 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PdfService } from "../core/pdf/pdf.service";
+import { metinNormalize } from "@tekirextra/shared";
 import { PrismaService } from "../core/prisma.service";
 import { DepoService } from "../stok/depo.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
@@ -99,8 +100,8 @@ export class BelgelerService {
         ? {
             OR: [
               { no: { contains: arama, mode: "insensitive" } },
-              { cari: { unvan: { contains: arama, mode: "insensitive" } } },
-              { cari: { kod: { contains: arama, mode: "insensitive" } } },
+              // ARA-01: cari tarafı aksansız `arama_normal` kolonundan aranır.
+              { cari: { aramaNormal: { contains: metinNormalize(arama) } } },
             ],
           }
         : {}),

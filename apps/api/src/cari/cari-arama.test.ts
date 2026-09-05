@@ -6,7 +6,7 @@ vi.mock("../core/istek-baglami", () => ({
 }));
 
 describe("CariService arama", () => {
-  it("telefonu unvan, kod ve VKN ile ayni sorguda arar", async () => {
+  it("unvani, kodu, VKN'yi ve telefonu tek aksansiz kolondan arar (ARA-01)", async () => {
     const findMany = vi.fn().mockResolvedValue([]);
     const prisma = {
       tenantIslem: vi.fn((_tenantId, calistir) => calistir({ cariHesap: { findMany } })),
@@ -16,7 +16,21 @@ describe("CariService arama", () => {
     await servis.listele("0532 123 45 67");
 
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { OR: expect.arrayContaining([{ telefon: { contains: "0532 123 45 67" } }]) },
+      where: { aramaNormal: { contains: "0532 123 45 67" } },
+    }));
+  });
+
+  it("arama terimini kucultup aksanlarini katlar — 'sisli' sorgusu 'Sisli'yi de bulur", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const prisma = {
+      tenantIslem: vi.fn((_tenantId, calistir) => calistir({ cariHesap: { findMany } })),
+    } as any;
+    const servis = new CariService(prisma, {} as any, {} as any, {} as any);
+
+    await servis.listele("ŞİŞLİ Makina");
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { aramaNormal: { contains: "sisli makina" } },
     }));
   });
 

@@ -14,6 +14,7 @@ import {
 import { EkstreSatirDurum, Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { aktifBaglam } from "../core/istek-baglami";
+import { metinNormalize } from "@tekirextra/shared";
 import { PrismaService } from "../core/prisma.service";
 import { KasaBankaService } from "./kasa-banka.service";
 import {
@@ -190,7 +191,7 @@ export class EkstreService {
             { dekontNo: { contains: arama, mode: "insensitive" } },
             { karsiIban: { contains: arama, mode: "insensitive" } },
             { karsiUnvan: { contains: arama, mode: "insensitive" } },
-            { cari: { unvan: { contains: arama, mode: "insensitive" } } },
+            { cari: { aramaNormal: { contains: metinNormalize(arama) } } },
           ] } : {}),
         },
         orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],

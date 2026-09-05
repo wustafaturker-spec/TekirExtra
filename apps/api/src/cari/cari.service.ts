@@ -26,6 +26,7 @@ import { yaslandir } from "./yaslandirma";
 import { cariExcelOku, cariEkstreExcelYaz } from "../core/excel-yardimci";
 import { PdfService } from "../core/pdf/pdf.service";
 import { cariDavranisAnalizi } from "./cari-analiz";
+import { metinNormalize } from "@tekirextra/shared";
 import { EpostaService } from "../tenant/eposta.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import {
@@ -57,20 +58,17 @@ export class CariService {
   async listele(arama?: string, imlec?: string, adet = 50, tip?: string, durum?: string, bakiye?: string) {
     const { tenantId } = aktifBaglam();
     const ctx = aktifBaglam();
+    const aranan = arama ? metinNormalize(arama) : "";
     const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.cariHesap.findMany({
         where: {
           ...(tip === "musteri" ? { tip: { in: ["musteri", "her_ikisi"] } } : tip === "tedarikci" ? { tip: { in: ["tedarikci", "her_ikisi"] } } : {}),
           ...(durum === "bloke" ? { karaListe: true } : {}),
           ...(bakiye === "gecikmis" ? { hareketler: { some: { tip: "borc", vadeTarihi: { lt: new Date() } } } } : {}),
-          ...(arama ? {
-              OR: [
-                { unvan: { contains: arama, mode: "insensitive" } },
-                { kod: { contains: arama, mode: "insensitive" } },
-                { vknTckn: { contains: arama } },
-                { telefon: { contains: arama } },
-              ],
-            } : {}),
+          // ARA-01: unvan, kod, VKN/TCKN ve telefon veritabanının ürettiği
+          // `arama_normal` kolonunda toplanır; aksan ve büyük/küçük harf orada
+          // katlandığı için "sisli" araması "Şişli Makina"yı da bulur.
+          ...(aranan ? { aramaNormal: { contains: aranan } } : {}),
         },
         orderBy: [{ kod: "asc" }, { id: "asc" }],
         take: adet + 1,
