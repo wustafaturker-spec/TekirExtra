@@ -53,4 +53,4 @@ jobs:
         run: pnpm --filter @tekirextra/api test:kabul
 
       - name: Kritik web akışları
-        run: pnpm --filter /web test:e2e
+        run: pnpm --fail-if-no-match --filter @tekirextra/web test:e2e
