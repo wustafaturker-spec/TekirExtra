@@ -1791,6 +1791,19 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 .alert--success { background: var(--success-soft); color: var(--success); }
 
 /* ─── Para / metin yardımcıları ──────────────────────────────────────────── */
+/* <Para>, <Miktar>, <Tarih> bileşenlerinin ortak sınıfı. Sabit genişlikli
+   rakamlar sayesinde alt alta gelen tutarların basamakları hizalanır. */
+.para {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  white-space: nowrap;
+}
+.para.is-negatif { color: var(--danger); }
+.para.is-pozitif { color: var(--success); }
+.para__birim { color: var(--text-subtle); font-size: 0.85em; margin-left: 0.25em; }
+/* Sayı kolonları sağa hizalanır; başlığı da aynı hizaya çeker. */
+.table th.num, .table th.table-num { text-align: right; }
+
 .money { font-variant-numeric: tabular-nums; font-weight: 600; }
 .money.pos { color: var(--success); }
 .money.neg { color: var(--danger); }

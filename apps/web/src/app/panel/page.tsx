@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiHata, tokenAl, tokenYaz } from "@/lib/api";
+import { paraBicimle } from "@tekirextra/shared";
+import { Para, Tarih } from "@/components/ui";
 
 type Rol = "yonetici" | "muhasebe" | "satis" | "salt_okunur" | "mali_musavir" | "b2b_bayi" | "uretim_planlama" | "uretim_operatoru" | "depo" | "kalite" | "maliyet_muhasebesi";
 interface FinansOzet { nakitVarliklar: string; envanterDegeri: string; toplamAlacaklar: string; toplamBorclar: string; netVarlikDegeri: string; }
@@ -16,7 +18,8 @@ interface VadesiGecenSatir { faturaId: string; no: string | null; cariId: string
 interface VadesiGecenler { alacaklar: VadesiGecenSatir[]; borclar: VadesiGecenSatir[]; toplamAlacak: string; toplamBorc: string; }
 
 const rolAdi: Record<Rol, string> = { yonetici: "Yönetim görünümü", muhasebe: "Muhasebe görünümü", satis: "Satış görünümü", salt_okunur: "Genel görünüm", mali_musavir: "Mali müşavir görünümü", b2b_bayi: "Bayi görünümü", uretim_planlama: "Üretim planlama görünümü", uretim_operatoru: "Operatör görünümü", depo: "Depo görünümü", kalite: "Kalite görünümü", maliyet_muhasebesi: "Maliyet görünümü" };
-const para = (deger: string | number, sifirBasamak = false) => Number(deger || 0).toLocaleString("tr-TR", { style: "currency", currency: "TRY", maximumFractionDigits: sifirBasamak ? 0 : 2 });
+// Biçim tek kaynaktan gelir (packages/shared/bicim); sayfa kendi kuralını kurmaz.
+const para = (deger: string | number, sifirBasamak = false) => paraBicimle(deger, { basamak: sifirBasamak ? 0 : 2, bosDeger: paraBicimle(0, { basamak: sifirBasamak ? 0 : 2 }) });
 const gunBaslangici = (deger = new Date()) => new Date(deger.getFullYear(), deger.getMonth(), deger.getDate());
 const gunFarki = (deger: string) => Math.round((gunBaslangici(new Date(deger)).getTime() - gunBaslangici().getTime()) / 86_400_000);
 
@@ -351,10 +354,10 @@ export default function PanelSayfasi() {
                   <Link href={`/panel/fatura?faturaId=${satir.faturaId}&panel=odeme`} key={satir.faturaId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", backgroundColor: "var(--surface-2)", borderRadius: "10px", textDecoration: "none", color: "var(--text)" }}>
                     <div>
                       <div style={{ fontSize: "13px", fontWeight: "700" }}>{satir.cariUnvan}</div>
-                      <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{satir.no || "Fatura"} · Vade: {satir.vadeTarihi}</div>
+                      <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{satir.no || "Fatura"} · Vade: <Tarih deger={satir.vadeTarihi} /></div>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: "13px", fontWeight: "800", color: grup.renk }}>{para(satir.kalanTry, true)}</div>
+                      <div style={{ fontSize: "13px", fontWeight: "800", color: grup.renk }}><Para basamak={0} deger={satir.kalanTry} /></div>
                       <div style={{ fontSize: "10px", color: "var(--danger)", fontWeight: "600" }}>{satir.gecikmeGun} gün gecikti</div>
                     </div>
                   </Link>

@@ -4,6 +4,15 @@
  * Renk/ölçü bilgisi burada DEĞİL — hepsi CSS token'larından gelir.
  */
 import {
+  miktarBicimle,
+  paraBicimle,
+  sayiyaCevir,
+  tarihBicimle,
+  tarihSaatBicimle,
+  type SayisalDeger,
+  type TarihGirdisi,
+} from "@tekirextra/shared";
+import {
   cloneElement,
   forwardRef,
   isValidElement,
@@ -134,6 +143,57 @@ export function Stat({
       {hint && <p className="stat__hint">{hint}</p>}
     </div>
   );
+}
+
+/* ─── Sayısal değerler ───────────────────────────────────────────────────── */
+/**
+ * Parasal tutar. Sayfaların kendi `toLocaleString` çağrılarının yerini alır:
+ * biçim `@tekirextra/shared`'dan tek kaynaktan gelir, hizalama ve sabit
+ * genişlikli rakamlar (`tabular-nums`) CSS'ten. Tablo hücrelerinde kolonun
+ * hizalanması için `<td className="num">` ile birlikte kullanılır.
+ */
+export function Para({
+  deger,
+  dovizCinsi,
+  basamak,
+  simgesiz,
+  bosDeger,
+  isaretle = false,
+  className,
+}: {
+  deger: SayisalDeger;
+  dovizCinsi?: string;
+  basamak?: number;
+  simgesiz?: boolean;
+  bosDeger?: string;
+  /** Negatifi kırmızı, pozitifi yeşil gösterir — bakiye ve fark kolonları için. */
+  isaretle?: boolean;
+  className?: string;
+}) {
+  const sayi = sayiyaCevir(deger);
+  const ton = !isaretle || sayi === null || sayi === 0 ? null : sayi < 0 ? "is-negatif" : "is-pozitif";
+  return (
+    <span className={cx("para", ton, className)}>
+      {paraBicimle(deger, { dovizCinsi, basamak, simgesiz, bosDeger })}
+    </span>
+  );
+}
+
+/** Miktar — gereksiz sıfır basamak yazılmaz, birim soluk gösterilir. */
+export function Miktar({ deger, birim, bosDeger }: { deger: SayisalDeger; birim?: string | null; bosDeger?: string }) {
+  const sayi = sayiyaCevir(deger);
+  if (sayi === null) return <span className="para">{bosDeger ?? "—"}</span>;
+  return (
+    <span className="para">
+      {miktarBicimle(deger, undefined, bosDeger)}
+      {birim && <small className="para__birim">{birim}</small>}
+    </span>
+  );
+}
+
+/** Tarih (`15.08.2026`) — yalnız tarih taşıyan alanlarda gün kaymaz. */
+export function Tarih({ deger, saatli = false, bosDeger }: { deger: TarihGirdisi; saatli?: boolean; bosDeger?: string }) {
+  return <span className="para">{saatli ? tarihSaatBicimle(deger, bosDeger) : tarihBicimle(deger, bosDeger)}</span>;
 }
 
 /* ─── Rozet ──────────────────────────────────────────────────────────────── */
