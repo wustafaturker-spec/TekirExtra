@@ -17,6 +17,7 @@ import {
   StatGrid,
   TableWrap,
 } from "@/components/ui";
+import { AramaSecici } from "@/components/arama-secici";
 
 /* ─── Tipler ─────────────────────────────────────────────────────────────── */
 
@@ -546,14 +547,7 @@ function CekSenetFormu({
         </div>
         <div style={{ flex: 2, minWidth: 220 }}>
           <Field label={verilen ? "Lehtar (kime verildi) *" : "İlgili Cari"}>
-            <Select aria-label={verilen ? "Lehtar (kime verildi)" : "İlgili Cari"} value={cariId} onChange={(e) => setCariId(e.target.value)}>
-              <option value="">{verilen ? "— Cari seçin —" : "— Cari bağlantısı yok —"}</option>
-              {cariler.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.kod} · {c.unvan}
-                </option>
-              ))}
-            </Select>
+            <AramaSecici ariaLabel={verilen ? "Lehtar (kime verildi)" : "İlgili Cari"} deger={cariId} onChange={setCariId} placeholder={verilen ? "Cari ara ve seç…" : "Cari bağlantısı ara…"} secenekler={cariler.map((c) => ({ deger: c.id, baslik: c.unvan, aciklama: c.kod, aramaMetni: `${c.kod} ${c.unvan}` }))} />
           </Field>
         </div>
         <div style={{ flex: 1, minWidth: 150 }}>
@@ -693,14 +687,7 @@ function DurumKarti({
       {ciro && (
         <>
           <Field label="Ciro Edilen Cari *">
-            <Select aria-label="Ciro Edilen Cari" value={ciroCariId} onChange={(e) => setCiroCariId(e.target.value)}>
-              <option value="">— Cari seçin —</option>
-              {cariler.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.kod} · {c.unvan}
-                </option>
-              ))}
-            </Select>
+            <AramaSecici ariaLabel="Ciro Edilen Cari" deger={ciroCariId} onChange={setCiroCariId} placeholder="Cari ara ve seç…" secenekler={cariler.map((c) => ({ deger: c.id, baslik: c.unvan, aciklama: c.kod, aramaMetni: `${c.kod} ${c.unvan}` }))} />
           </Field>
           <p className="muted" style={{ fontSize: "0.85rem", margin: 0 }}>
             Ciro edilen cariye tutar kadar <strong>alacak</strong> yazılır (ona olan borcumuz azalır).

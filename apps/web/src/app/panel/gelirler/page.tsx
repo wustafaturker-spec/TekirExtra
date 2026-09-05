@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
+import { AramaSecici } from "@/components/arama-secici";
 
 interface Kategori {
   id: string;
@@ -366,14 +367,7 @@ export default function GelirlerPage() {
                 </Field>
 
                 <Field label="Muhatap (Cari - Opsiyonel)">
-                  <Select value={cariId} onChange={(e) => setCariId(e.target.value)}>
-                    <option value="">Cari Seçilmedi</option>
-                    {cariler.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.unvan}
-                      </option>
-                    ))}
-                  </Select>
+                  <AramaSecici ariaLabel="Muhatap Cari" deger={cariId} onChange={setCariId} placeholder="Cari ara…" secenekler={cariler.map((c) => ({ deger: c.id, baslik: c.unvan }))} />
                 </Field>
 
                 <Field label="Brüt Gelir Tutarı">

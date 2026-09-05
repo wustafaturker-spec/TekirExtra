@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, tokenAl } from "@/lib/api";
+import { AramaSecici } from "@/components/arama-secici";
 import {
   Alert,
   Badge,
@@ -200,10 +201,7 @@ export default function ProjelerSayfasi() {
               <Field label="Proje Kodu *"><Input value={kod} onChange={(e) => setKod(e.target.value)} required placeholder="PRJ-2026-001" /></Field>
               <Field label="Proje Adı *"><Input value={ad} onChange={(e) => setAd(e.target.value)} required placeholder="Örn. A Binası İnşaat İşi" /></Field>
               <Field label="İşveren / Müşteri (Cari)">
-                <Select value={cariId} onChange={(e) => setCariId(e.target.value)}>
-                  <option value="">Seçiniz (İsteğe bağlı)</option>
-                  {cariler.map((c) => <option key={c.id} value={c.id}>{c.unvan}</option>)}
-                </Select>
+                <AramaSecici ariaLabel="İşveren / Müşteri (Cari)" deger={cariId} onChange={setCariId} placeholder="Cari ara…" secenekler={cariler.map((c) => ({ deger: c.id, baslik: c.unvan }))} />
               </Field>
             </div>
             <div className="row">
