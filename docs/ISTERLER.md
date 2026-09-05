@@ -1,7 +1,12 @@
 # TekirExtra — Yazılım İster Dokümanı (SRS)
 
-**Sürüm:** 0.18
-**Tarih:** 2026-08-17
+**Sürüm:** 0.19
+**Tarih:** 2026-09-05
+**Durum (2026-09-05):** Uygulama/modül inceleme raporunun (2026-09-02) P0
+bulguları kapatıldı (B2B bayi yalıtımı ve fiyatlandırma, mali müşavir XML/CSV
+üretimi, AI/OCR'ın simülasyon olduğunun arayüzde ayrılması, CI'nin e2e adımı) ve
+şirket geneli **mali dönem kapatma** ile **aksansız arama** eklendi. Sıradaki
+paket **Bildirim ve Görev Merkezi (§3.10)**; S-01 kapı kararları o bölümdedir.
 **Durum (2026-08-17):** UI tamamlama paketleri tamamlandı; üretim hazırlığı
 devam ediyor. Kalıcı worker/kuyruk, gerçek sağlayıcı doğrulaması, readiness,
 CI kabul testleri ve operasyonel gözlemlenebilirlik release kapılarıdır.
@@ -368,6 +373,41 @@ mimarisi bu ailelere baştan hazır tasarlanır (bkz. MIMARI.md). Tümü **[G]**
 | ENT-06 | Banka entegrasyonu: hesap hareketleri otomatik çekilmeli, gelen/giden tutarlar cari ve faturalarla eşleştirilebilmelidir (önerili otomatik eşleştirme + kullanıcı onayı). **Vomsis App Key/Secret kimlik doğrulaması, hesap eşlemesi, `lastId` ile artımlı hareket çekimi ve mevcut cari/fatura öneri-onay kutusuna idempotent aktarım tamamlandı. Yetkili banka/fintek sağlayıcıları ayrıca Bearer anahtarlı webhook ile hareket aktarabilir.** | G |
 | ENT-07 | Banka entegrasyonu üzerinden ödeme talimatı (EFT/havale) oluşturulabilmelidir; talimat gönderimi çift onay (oluşturan ≠ onaylayan) ve zorunlu TOTP ile korunmalıdır. **Talimat kaydı, oluşturan ≠ onaylayan atomik denetimi, onaylayanda zorunlu yeniden TOTP doğrulaması, iptal ve yönetim ekranı tamamlandı. Vomsis'in kamuya açık portalında para transferi gönderim endpoint'i yayımlanmadığından onaylanan kayıt sağlayıcıya gönderilmez ve muhasebe hareketi üretmez; gönderim adaptörü sözleşmeli dokümanı bekler.** | G |
 | ENT-08 | Pazaryeri komisyon/kesinti kayıtları gider olarak işlenebilmelidir. **İdempotent kesinti kaydı, kasa/banka tediye giderine güvenli dönüştürme, yönetim ekranı ve Amazon Finances v2024-06-19 canlı çekimi tamamlandı. Trendyol, Hepsiburada ve N11 için kamuya açık resmî finans API dokümanı bekleniyor.** | G |
+
+### 3.10 Bildirim ve Görev Merkezi (BLD)
+
+Bugün zil menüsü iki API özetini (`/fatura/is-kuyrugu-ozeti`, `/duzeltmeler/ozet`)
+tarayıcıda birleştirip 15 dakikada bir yeniliyor. Kalıcı bildirim kaydı, okundu
+durumu, kullanıcı tercihi ve sahiplenme yoktur; bu yüzden kritik bir olayın
+kullanıcıya **teslim edildiği ve sahiplenildiği** kanıtlanamaz. Bu bölüm o
+katmanı tanımlar.
+
+**S-01 kapı kararları (2026-09-05, kullanıcı onayı):**
+
+1. **Görev kapsamı:** ayrı `Gorev` modeli **yok**. Sahiplenme bildirimin
+   üzerinde tutulur (üstlen → aksiyon alındı / yok say + son tarih). Elle görev
+   açma ve yorum akışı kapsam dışıdır; düzeltme merkezindeki mevcut atama/SLA
+   deseniyle kavram çakışması bu sayede olmaz.
+2. **Kanallar:** uygulama içi + e-posta. SMS kapsam dışı (Netgsm adaptörü POS
+   modülünde mevcut; kritik olaylar için sonraki pakete bırakıldı).
+3. **Kaynak olaylar:** dört grubun tamamı — düzeltme/e-belge, vade ve tahsilat,
+   stok ve dönem, entegrasyon hataları.
+4. **Teslim:** uygulama içi bildirimler **yoklama ile** tazelenir, aralık 15
+   dakikadan **60 saniyeye** çekilir. SSE/WebSocket kapsam dışı — çok kiracılı
+   bağlantı yönetimi ve ölçekleme maliyeti bu paketin kazancını aşıyor.
+
+| No | İster | Öncelik |
+|---|---|---|
+| BLD-01 | Kritik olaylar kalıcı bildirim kaydı üretmelidir: tür, önem (bilgi/uyarı/kritik), başlık, açıklama, kaynak modül ve kayıt referansı, kaynağa götüren yol, oluşma zamanı. | G |
+| BLD-02 | Bildirim, rolüne göre belirlenen hedef kullanıcılara ayrı teslimat kaydı olarak düşmelidir; okundu, üstlenildi, aksiyon alındı ve yok sayıldı durumları kullanıcı bazında tutulmalıdır. **Okundu ile aksiyon alındı ayrı ölçülür.** | G |
+| BLD-03 | Aynı kaynak kayıt için ikinci bir bildirim üretilmemelidir (birleştirme anahtarı); olay sürüyorsa mevcut kayıt güncellenir, çözülmüşse kendiliğinden kapanır. | G |
+| BLD-04 | Kullanıcı, olay türü bazında uygulama içi ve e-posta kanallarını kapatabilmeli; sessiz saat aralığı tanımlayabilmelidir. Sessiz saatte üretilen bildirim kaydedilir, e-postası aralık bitince gönderilir. | G |
+| BLD-05 | Kritik bildirim, son tarihine kadar aksiyon almazsa yöneticiye yükseltilmelidir (escalation). | G |
+| BLD-06 | E-posta teslimatı kayıt altına alınmalı (gönderildi/hata, deneme sayısı) ve hata durumunda kalıcı kuyrukta yeniden denenmelidir. | G |
+| BLD-07 | Zil menüsü kalıcı kayıttan beslenmeli; ayrıca filtrelenebilir bir bildirim ekranı (`/panel/bildirimler`) bulunmalıdır: önem, durum ve tür filtresi, okundu işaretleme, üstlenme, kaynağa gitme. | G |
+| BLD-08 | Bildirim kaynakları: kritik düzeltme kaydı ve SLA aşımı; e-belge hata/ret ve dead-letter; geciken alacak/borç ve vadesi yaklaşan çek/senet; kritik seviye altı stok ve onaysız sayım; başarısız dönem kapatma kontrolü; pazaryeri/POS/banka entegrasyon hataları. | G |
+| BLD-09 | Bildirim ve teslimat kayıtları kiracı yalıtımına (RLS) tabidir; kullanıcı yalnız kendi teslimatlarını, yönetici firma genelini görebilir. | G |
+| BLD-10 | Bildirim üretimi zamanlanmış tarama ile çalışmalı, tarama süresi ve üretilen kayıt sayısı metrik olarak yayımlanmalıdır. | G |
 
 ---
 
