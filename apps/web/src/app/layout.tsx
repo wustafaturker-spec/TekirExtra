@@ -14,7 +14,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("tekir_theme");if(["amber-default","slate-mint","corporate-navy","dark-obsidian"].indexOf(t)!==-1){document.documentElement.setAttribute("data-theme",t)}}catch(e){}})();`,
+            __html: `(function(){try{var t=localStorage.getItem("tekir_theme");if(["amber-default","emerald-finance","slate-mint","corporate-navy","dark-obsidian","high-contrast"].indexOf(t)!==-1){document.documentElement.setAttribute("data-theme",t)}}catch(e){}})();`,
           }}
         />
       </head>

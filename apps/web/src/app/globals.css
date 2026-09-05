@@ -110,6 +110,50 @@
   --ring: 0 0 0 3px rgba(59, 130, 246, 0.25);
 }
 
+/* ─── 5. Emerald Accounting (Yeşil Güven) ─────────────────────────────────── */
+[data-theme="emerald-finance"] {
+  --bg: #f0fdf4;
+  --surface: #ffffff;
+  --surface-2: #f7fee7;
+  --sidebar-bg: #064e3b;
+  --border: #dcfce7;
+  --border-strong: #bbf7d0;
+
+  --text: #064e3b;
+  --text-muted: #166534;
+  --text-subtle: #15803d;
+
+  --accent: #10b981;
+  --accent-strong: #059669;
+  --accent-soft: #dcfce7;
+  --accent-text: #047857;
+
+  --shadow: 0 1px 3px rgba(6, 78, 59, 0.08);
+  --ring: 0 0 0 3px rgba(16, 185, 129, 0.2);
+}
+
+/* ─── 6. High Contrast (Yüksek Karşıtlık) ─────────────────────────────────── */
+[data-theme="high-contrast"] {
+  --bg: #000000;
+  --surface: #0a0a0a;
+  --surface-2: #171717;
+  --sidebar-bg: #000000;
+  --border: #ffffff;
+  --border-strong: #ffff00;
+
+  --text: #ffffff;
+  --text-muted: #fef08a;
+  --text-subtle: #e5e5e5;
+
+  --accent: #eab308;
+  --accent-strong: #facc15;
+  --accent-soft: #422006;
+  --accent-text: #fef08a;
+
+  --shadow: 0 0 0 2px #ffffff;
+  --ring: 0 0 0 4px #eab308;
+}
+
 @media (max-width: 700px) {
   .dashboard-home {
     margin: -14px !important;

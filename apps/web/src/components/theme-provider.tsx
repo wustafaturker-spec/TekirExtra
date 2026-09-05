@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
-export type ThemeKey = "amber-default" | "slate-mint" | "corporate-navy" | "dark-obsidian";
+export type ThemeKey = "amber-default" | "slate-mint" | "corporate-navy" | "dark-obsidian" | "emerald-finance" | "high-contrast";
 
 export interface ThemeMeta {
   id: ThemeKey;
@@ -14,9 +14,11 @@ export interface ThemeMeta {
 
 export const THEME_OPTIONS: ThemeMeta[] = [
   { id: "amber-default", name: "Modern Amber", badge: "Standart", primaryColor: "#e8792b", bgColor: "#f7f8fa" },
-  { id: "slate-mint", name: "Slate Minimal & Mint", badge: "Ferah", primaryColor: "#10b981", bgColor: "#f1f5f9" },
+  { id: "emerald-finance", name: "Emerald Accounting", badge: "Yeşil Güven", primaryColor: "#10b981", bgColor: "#f0fdf4" },
+  { id: "slate-mint", name: "Slate Minimal & Mint", badge: "Ferah", primaryColor: "#059669", bgColor: "#f1f5f9" },
   { id: "corporate-navy", name: "Corporate Indigo & Navy", badge: "Executive", primaryColor: "#6366f1", bgColor: "#0f172a" },
   { id: "dark-obsidian", name: "Midnight Cyber", badge: "Dark Mode", primaryColor: "#3b82f6", bgColor: "#09090b" },
+  { id: "high-contrast", name: "High Contrast", badge: "Erişilebilir", primaryColor: "#eab308", bgColor: "#000000" },
 ];
 
 interface ThemeContextType {
