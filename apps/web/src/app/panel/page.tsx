@@ -372,6 +372,32 @@ export default function PanelSayfasi() {
           ))}
         </section>
       )}
+
+      {rol !== "satis" && (
+        <section style={{ marginTop: "24px", backgroundColor: "var(--surface)", padding: "24px", borderRadius: "16px", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
+            <div>
+              <h3 style={{ fontSize: "16px", fontWeight: "700", color: "var(--text)", margin: 0 }}>Bekleyen çek ve senetler</h3>
+              <p style={{ fontSize: "12px", color: "var(--text-muted)", margin: "2px 0 0" }}>Tahsilat ve ödeme tarihi yaklaşan portföy kayıtları</p>
+            </div>
+            <Link href="/panel/kasa-banka/cek-senet" style={{ fontSize: "12px", color: "var(--accent)", fontWeight: "700", textDecoration: "none" }}>Tümünü görüntüle →</Link>
+          </div>
+          {!aktifCekler.length ? (
+            <div style={{ padding: "18px", textAlign: "center", color: "var(--text-subtle)", fontSize: "13px" }}>Bekleyen çek veya senet bulunmuyor.</div>
+          ) : (
+            <div style={{ display: "grid", gap: "8px" }}>
+              {aktifCekler.slice().sort((a, b) => a.vadeTarihi.localeCompare(b.vadeTarihi)).slice(0, 8).map((cek) => {
+                const kalanGun = gunFarki(cek.vadeTarihi);
+                const renk = cek.yon === "alinan" ? "var(--success)" : "var(--danger)";
+                return <Link href={`/panel/kasa-banka/cek-senet?odak=${cek.id}`} key={cek.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", padding: "11px 14px", borderRadius: "10px", border: "1px solid var(--border)", backgroundColor: "var(--surface-2)", textDecoration: "none", color: "var(--text)" }}>
+                  <div style={{ minWidth: 0 }}><div style={{ fontSize: "13px", fontWeight: "700" }}>{cek.cari?.unvan ?? cek.borclu}</div><div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{cek.tur === "cek" ? "Çek" : "Senet"} · {cek.yon === "alinan" ? "Tahsil edilecek" : "Ödenecek"} · Vade <Tarih deger={cek.vadeTarihi} /></div></div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}><div style={{ fontSize: "13px", fontWeight: "800", color: renk }}><Para basamak={0} deger={cek.tutarTry} /></div><div style={{ fontSize: "10px", color: kalanGun < 0 ? "var(--danger)" : "var(--text-muted)", fontWeight: "600" }}>{kalanGun < 0 ? `${Math.abs(kalanGun)} gün gecikti` : kalanGun === 0 ? "Bugün" : `${kalanGun} gün kaldı`}</div></div>
+                </Link>;
+              })}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }
