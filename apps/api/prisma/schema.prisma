@@ -157,6 +157,10 @@ model Tenant {
   uretimDuruslari           UretimDurus[]
   uretimDonemKilitleri      UretimDonemKilidi[]
   maliDonemler              MaliDonem[]
+  bildirimler               Bildirim[]
+  bildirimTeslimatlari      BildirimTeslimati[]
+  bildirimTercihleri        BildirimTercihi[]
+  bildirimAyarlari          BildirimKullaniciAyari[]
   maliDonemOlaylari         MaliDonemOlayi[]
   donemKontrolleri          DonemKontrolu[]
   uretimEmriCiktilari       UretimEmriCikti[]
@@ -241,6 +245,9 @@ model User {
   olusturduguUretimDuruslari  UretimDurus[]          @relation("UretimDurusOlusturan")
   kapattigiUretimDonemleri    UretimDonemKilidi[]    @relation("UretimDonemKapatan")
   maliDonemOlaylari           MaliDonemOlayi[]        @relation("MaliDonemOlayKullanicisi")
+  bildirimTeslimatlari        BildirimTeslimati[]
+  bildirimTercihleri          BildirimTercihi[]
+  bildirimAyari               BildirimKullaniciAyari?
   sorumluProjeler             Proje[]                @relation("ProjeSorumlu")
   projeNotlari                ProjeNot[]
   atananDuzeltmeKayitlari     DuzeltmeKaydi[]        @relation("DuzeltmeAtanan")
@@ -3536,4 +3543,131 @@ model DuzeltmeOlayi {
 
   @@index([tenantId, duzeltmeKaydiId, createdAt])
   @@map("duzeltme_olaylari")
+}
+
+enum BildirimTuru {
+  duzeltme
+  ebelge
+  vade
+  cek_senet
+  stok
+  donem
+  entegrasyon
+}
+
+enum BildirimOnemi {
+  bilgi
+  uyari
+  kritik
+}
+
+/// Teslimatın kullanıcı bazındaki durumu. `okundu` ile `aksiyon_alindi` bilerek
+/// ayrıdır: bildirimi görmek onu sahiplenmek değildir (BLD-02).
+enum BildirimTeslimatDurumu {
+  yeni
+  okundu
+  ustlenildi
+  aksiyon_alindi
+  yoksayildi
+}
+
+enum BildirimKanalDurumu {
+  beklemede
+  gonderildi
+  hata
+  kapali
+}
+
+/// Bir olayın kalıcı kaydı. Aynı kaynak kayıt için ikinci bildirim üretilmez;
+/// olay sürdükçe `sonTespitTarihi` güncellenir, çözüldüğünde `kapandiAt` dolar.
+model Bildirim {
+  id               String        @id @default(uuid()) @db.Uuid
+  tenantId         String        @map("tenant_id") @db.Uuid
+  tur              BildirimTuru
+  onem             BildirimOnemi @default(uyari)
+  baslik           String
+  aciklama         String
+  kaynakTur        String?       @map("kaynak_tur")
+  kaynakRef        String?       @map("kaynak_ref")
+  hedefYol         String?       @map("hedef_yol")
+  birlesimAnahtari String        @map("birlesim_anahtari")
+  sonTarih         DateTime?     @map("son_tarih")
+  yukseltildiAt    DateTime?     @map("yukseltildi_at")
+  kapandiAt        DateTime?     @map("kapandi_at")
+  sonTespitTarihi  DateTime      @default(now()) @map("son_tespit_tarihi")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  tenant      Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teslimatlar BildirimTeslimati[]
+
+  @@unique([tenantId, birlesimAnahtari])
+  @@index([tenantId, kapandiAt, onem, createdAt])
+  @@index([tenantId, tur, kapandiAt])
+  @@map("bildirimler")
+}
+
+/// Bildirimin tek bir kullanıcıya teslimi. E-posta kanalının durumu da burada
+/// tutulur; kritik olayın teslim edildiği ancak bu kayıtla kanıtlanabilir.
+model BildirimTeslimati {
+  id                 String                 @id @default(uuid()) @db.Uuid
+  tenantId           String                 @map("tenant_id") @db.Uuid
+  bildirimId         String                 @map("bildirim_id") @db.Uuid
+  userId             String                 @map("user_id") @db.Uuid
+  durum              BildirimTeslimatDurumu @default(yeni)
+  okunduAt           DateTime?              @map("okundu_at")
+  ustlenildiAt       DateTime?              @map("ustlenildi_at")
+  aksiyonAt          DateTime?              @map("aksiyon_at")
+  aksiyonNotu        String?                @map("aksiyon_notu")
+  epostaDurumu       BildirimKanalDurumu    @default(beklemede) @map("eposta_durumu")
+  epostaGonderildiAt DateTime?              @map("eposta_gonderildi_at")
+  epostaDenemeSayisi Int                    @default(0) @map("eposta_deneme_sayisi")
+  epostaHatasi       String?                @map("eposta_hatasi")
+  createdAt          DateTime               @default(now()) @map("created_at")
+  updatedAt          DateTime               @updatedAt @map("updated_at")
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bildirim  Bildirim @relation(fields: [bildirimId], references: [id], onDelete: Cascade)
+  kullanici User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([bildirimId, userId])
+  @@index([tenantId, userId, durum])
+  @@index([tenantId, epostaDurumu])
+  @@map("bildirim_teslimatlari")
+}
+
+/// Kullanıcının olay türü bazında kanal tercihi. Satır yoksa iki kanal da açıktır.
+model BildirimTercihi {
+  id          String       @id @default(uuid()) @db.Uuid
+  tenantId    String       @map("tenant_id") @db.Uuid
+  userId      String       @map("user_id") @db.Uuid
+  tur         BildirimTuru
+  uygulamaIci Boolean      @default(true) @map("uygulama_ici")
+  eposta      Boolean      @default(true)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kullanici User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, tur])
+  @@map("bildirim_tercihleri")
+}
+
+/// Sessiz saat kullanıcı geneli tutulur; tür bazında olması kullanıcıya anlam
+/// ifade etmeyen bir ayar karmaşası yaratırdı.
+model BildirimKullaniciAyari {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  userId          String   @unique @map("user_id") @db.Uuid
+  sessizBaslangic String?  @map("sessiz_baslangic")
+  sessizBitis     String?  @map("sessiz_bitis")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kullanici User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@map("bildirim_kullanici_ayarlari")
 }

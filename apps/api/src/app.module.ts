@@ -32,6 +32,7 @@ import { GelirlerModule } from "./gelirler/gelirler.module";
 import { ProjelerModule } from "./projeler/projeler.module";
 import { DuzeltmelerModule } from "./duzeltmeler/duzeltmeler.module";
 import { DonemKapatmaModule } from "./donem-kapatma/donem-kapatma.module";
+import { BildirimlerModule } from "./bildirimler/bildirimler.module";
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { DonemKapatmaModule } from "./donem-kapatma/donem-kapatma.module";
     ProjelerModule,
     DuzeltmelerModule,
     DonemKapatmaModule,
+    BildirimlerModule,
     DovizModule,
     UretimModule,
     ObservabilityModule,
