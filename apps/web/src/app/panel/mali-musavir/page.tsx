@@ -48,7 +48,7 @@ export default function MaliMusavirSayfasi() {
       {/* Başlık */}
       <div className="border-b pb-4">
         <h1 className="text-2xl font-bold text-slate-800">Mali Müşavir & Veri Aktarım Portalı</h1>
-        <p className="text-sm text-slate-500">Fatura, fiş ve KDV verilerini muhasebe programlarına (Luca, Zirve vb.) uygun formatta dışa aktarın.</p>
+        <p className="text-sm text-slate-500">Fatura, fiş ve KDV verilerini sürümlü Luca/Zirve aktarım taslaklarında indirin. Dosyaları hedef muhasebe yazılımınızın sürümünde içe aktarmadan önce doğrulayın.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
