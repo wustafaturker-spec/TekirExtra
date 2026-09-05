@@ -12,6 +12,7 @@ interface AiTahmin {
   tahminiSonBakiye: number;
   riskSeviyesi: string;
   tavsiyeler: string[];
+  hesaplamaYontemi: string;
 }
 
 interface OcrSonuc {
@@ -80,8 +81,8 @@ export default function AiAsistanSayfasi() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="🤖 AI Finansal Asistan & Fiş OCR"
-        subtitle="Yapay zeka ile geleceğe dönük nakit akışı tahmini ve fiş/fatura görsel tarama servisi."
+        title="Finansal Projeksiyon"
+        subtitle="Kayıtlı vade, ödeme ve bakiyelerden hesaplanan açıklanabilir nakit görünümü."
       />
 
       <Alert tone="error">{hata}</Alert>
@@ -90,7 +91,7 @@ export default function AiAsistanSayfasi() {
         {/* 1. Nakit Akış Tahmin Kartı */}
         <Card className="p-6 space-y-6">
           <div className="flex justify-between items-center border-b pb-3">
-            <h2 className="text-lg font-bold text-slate-800">📊 AI Nakit Akış Projeksiyonu (30 Gün)</h2>
+            <h2 className="text-lg font-bold text-slate-800">📊 Nakit Akış Projeksiyonu (30 Gün)</h2>
             {tahmin && (
               <span
                 className={`text-xs font-bold px-3 py-1 rounded-full ${
@@ -142,7 +143,8 @@ export default function AiAsistanSayfasi() {
 
               {/* Akıllı Tavsiyeler */}
               <div className="pt-2 space-y-2">
-                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">AI Akıllı Önerileri</h4>
+                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Kural Bazlı Uyarılar</h4>
+                <p className="text-xs text-slate-500">{tahmin.hesaplamaYontemi}</p>
                 <div className="space-y-1.5">
                   {tahmin.tavsiyeler.map((t, idx) => (
                     <div key={idx} className="p-3 bg-slate-100 rounded-lg text-xs font-medium text-slate-700">
@@ -158,8 +160,8 @@ export default function AiAsistanSayfasi() {
         {/* 2. Fiş & Fatura OCR Okuma Kartı */}
         <Card className="p-6 space-y-6">
           <div className="border-b pb-3">
-            <h2 className="text-lg font-bold text-slate-800">🧾 Fiş & Fatura Otomatik OCR Metin Okuma</h2>
-            <p className="text-xs text-slate-500">Alış fişi veya masraf belgesi fotoğrafını yükleyin, veriler otomatik aktarılsın.</p>
+            <h2 className="text-lg font-bold text-slate-800">🧾 Fiş & Fatura OCR <span className="text-xs text-amber-700">Deneysel — kapalı</span></h2>
+            <p className="text-xs text-slate-500">Doğrulanmış OCR sağlayıcısı ve kullanıcı onaylı taslak akışı tamamlanana kadar belge yükleme kullanıma kapalıdır.</p>
           </div>
 
           <div className="border-2 border-dashed border-slate-300 rounded-2xl p-8 text-center space-y-3 hover:border-orange-500 transition">
@@ -169,11 +171,12 @@ export default function AiAsistanSayfasi() {
               onChange={ocrTara}
               className="hidden"
               id="ocr-upload"
+              disabled
             />
-            <label htmlFor="ocr-upload" className="cursor-pointer space-y-2 block">
+            <label className="cursor-not-allowed opacity-60 space-y-2 block">
               <div className="text-3xl">📷</div>
-              <div className="text-sm font-bold text-orange-600">Fiş / Fatura Görseli Yükle</div>
-              <div className="text-xs text-slate-400">PNG, JPG, JPEG desteklenir</div>
+              <div className="text-sm font-bold text-orange-600">Yakında</div>
+              <div className="text-xs text-slate-400">Henüz gerçek belge işleme yapılmıyor</div>
             </label>
           </div>
 

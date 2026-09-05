@@ -1,4 +1,5 @@
-import { Injectable, BadRequestException } from "@nestjs/common";
+import { Injectable, NotImplementedException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../core/prisma.service";
 import { ocrTaramaSemasi, aiTahminSemasi } from "./ai.semalar";
 import { z } from "zod";
@@ -11,29 +12,8 @@ export class AiService {
    * Fiş / Fatura Görselinden KDV, Tutar, Tarih ve VKN Okuma (Simüle OCR Motoru)
    */
   async fisFaturaOcrTara(tenantId: string, girdi: z.infer<typeof ocrTaramaSemasi>) {
-    const { gorselBase64 } = ocrTaramaSemasi.parse(girdi);
-
-    if (!gorselBase64) {
-      throw new BadRequestException("Görsel verisi boş olamaz");
-    }
-
-    // Gerçek OCR taraması motoru simülasyonu (Tesseract / Cloud Vision çıktısı)
-    const bugun = new Date().toISOString().split("T")[0];
-
-    return {
-      basarili: true,
-      okunanVeriler: {
-        unvan: "MİGROS TİCARET A.Ş.",
-        vkn: "6220031122",
-        tarih: bugun,
-        toplamTutar: 475.50,
-        kdvOrani: 20,
-        kdvTutari: 79.25,
-        matrah: 396.25,
-        fiisNo: "0142",
-      },
-      guvenSkoru: 0.94,
-    };
+    ocrTaramaSemasi.parse(girdi);
+    throw new NotImplementedException("OCR özelliği doğrulanmış bir sağlayıcı bağlanana kadar kullanıma kapalıdır");
   }
 
   /**
@@ -50,34 +30,34 @@ export class AiService {
       const mevcutBakiye = kasalar.reduce((sum: number, k: any) => sum + Number(k.bakiye), 0) +
                            bankalar.reduce((sum: number, b: any) => sum + Number(b.bakiye), 0);
 
-      // 2. Vadesi Gelen Satış Faturaları (Alacaklar)
-      const alacaklar = await tx.fatura.aggregate({
-        where: { tenantId, tip: "satis", durum: "kesin" },
-        _sum: { genelToplam: true },
+      const ufuk = new Date();
+      ufuk.setDate(ufuk.getDate() + tarihAraligiGun);
+      const faturalar = await tx.fatura.findMany({
+        where: { tenantId, tip: { in: ["satis", "alis"] }, durum: "kesin", vadeTarihi: { lte: ufuk } },
+        select: { tip: true, genelToplam: true, kur: true, kasaBankaHarekets: { select: { tutarTry: true } }, krediKartiHareketleri: { select: { cariOdemeTutari: true } } },
       });
-      const toplamAlacak = Number(alacaklar._sum.genelToplam || 0);
-
-      // 3. Vadesi Gelen Alış Faturaları (Borçlar)
-      const borclar = await tx.fatura.aggregate({
-        where: { tenantId, tip: "alis", durum: "kesin" },
-        _sum: { genelToplam: true },
-      });
-      const toplamBorc = Number(borclar._sum.genelToplam || 0);
-
-      // 4. AI Projeksiyon Hesaplaması
-      const tahminiNetNakit = mevcutBakiye + (toplamAlacak * 0.85) - (toplamBorc * 0.95);
+      let toplamAlacak = new Prisma.Decimal(0), toplamBorc = new Prisma.Decimal(0);
+      for (const fatura of faturalar) {
+        const toplamTry = new Prisma.Decimal(fatura.genelToplam).mul(fatura.kur);
+        const odenenTry = fatura.kasaBankaHarekets.reduce((toplam, h) => toplam.add(new Prisma.Decimal(h.tutarTry)), new Prisma.Decimal(0))
+          .add(fatura.krediKartiHareketleri.reduce((toplam, h) => toplam.add(new Prisma.Decimal(h.cariOdemeTutari ?? 0).mul(fatura.kur)), new Prisma.Decimal(0)));
+        const kalan = Prisma.Decimal.max(toplamTry.sub(odenenTry), 0);
+        if (fatura.tip === "satis") toplamAlacak = toplamAlacak.add(kalan); else toplamBorc = toplamBorc.add(kalan);
+      }
+      const tahminiNetNakit = mevcutBakiye + toplamAlacak.toNumber() - toplamBorc.toNumber();
       const riskSeviyesi = tahminiNetNakit < 0 ? "YÜKSEK_RİSK" : tahminiNetNakit < 50000 ? "ORTA_RİSK" : "DÜŞÜK_RİSK";
 
       return {
         tarihAraligiGun,
         mevcutBakiye,
-        beklenenAlacaklar: toplamAlacak,
-        beklenenBorclar: toplamBorc,
+        beklenenAlacaklar: toplamAlacak.toNumber(),
+        beklenenBorclar: toplamBorc.toNumber(),
         tahminiSonBakiye: tahminiNetNakit,
         riskSeviyesi,
+        hesaplamaYontemi: "Vadesi ufuk tarihine kadar gelen kesin faturaların kayıtlı ödemeler düşüldükten sonraki TRY bakiyesi; olasılık katsayısı uygulanmaz.",
         tavsiyeler: [
           tahminiNetNakit < 0
-            ? "⚠️ Dikkat: Önümüzdeki 30 günde nakit eksiye düşebilir. Alacak tahsilatlarını hızlandırın."
+            ? `⚠️ Dikkat: Önümüzdeki ${tarihAraligiGun} günde nakit eksiye düşebilir. Alacak tahsilatlarını hızlandırın.`
             : "✅ Nakit akışınız dengeli görünmektedir.",
           "💡 Tedarikçi ödemelerinizde erken ödeme iskontoları talep edebilirsiniz."
         ]
