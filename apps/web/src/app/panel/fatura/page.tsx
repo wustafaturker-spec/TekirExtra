@@ -10,7 +10,19 @@ import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
 import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyalari";
 import { FaturaEkPaneli } from "@/components/fatura-ek-paneli";
 import { UrunSecimModali } from "@/components/urun-secim-modali";
-import { faturaHesapla, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
+import {
+  GIB_KOD_LISTESI_SURUMU,
+  KDV_ISTISNA_KODLARI,
+  TEVKIFAT_KODLARI,
+  faturaHesapla,
+  faturaSenaryosuTuret,
+  senaryoHatalari,
+  senaryoUblKodu,
+  tevkifatKoduBul,
+  tevkifatPayPayda,
+  type FaturaHesaplaSatirGirdi,
+  type FaturaSenaryosu,
+} from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -37,6 +49,7 @@ interface CariSecimOzeti extends Cari {
   risk: { mevcutRisk: string; limit: string | null; kalanLimit: string | null; asim: boolean };
   varsayilanVadeGun?: number | null;
   eFaturaMukellefi?: boolean | null;
+  efaturaProfili?: "temel" | "ticari";
 }
 
 interface Stok {
@@ -63,6 +76,8 @@ interface FaturaSatir {
   iskontoOrani: number;
   kdvOrani: number;
   gibIstisnaKodu?: string;
+  tevkifatKodu?: string;
+  tevkifatOrani?: string;
   projeId?: string;
   projeAltKirilimId?: string;
   lotNo?: string; seriNolar?: string; sonKullanmaTarihi?: string; uretimTarihi?: string;
@@ -82,6 +97,9 @@ interface Fatura {
   toplamKdv: string;
   genelToplam: string;
   cari: { unvan: string };
+  /** Satırlardan türetilen GİB senaryosu (FTR-16) ve UBL'e yazılan profil (FTR-19). */
+  senaryo?: FaturaSenaryosu;
+  efaturaProfili?: "temel" | "ticari";
   /**
    * API iç içe döner; gönderilmemiş faturada null. `durum` zarfın GİB durumu,
    * `aliciYaniti` ise alıcının kabul/ret kararıdır — ikisi ayrı eksendir
@@ -96,7 +114,7 @@ interface FaturaDetay extends Fatura {
   dovizCinsi: string;
   notlar?: string | null;
   depoId?: string | null;
-  satirlar: { stokId: string; varyantId?: string | null; stokKod: string; stokAd: string; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; gibIstisnaKodu?: string | null }[];
+  satirlar: { stokId: string; varyantId?: string | null; stokKod: string; stokAd: string; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; gibIstisnaKodu?: string | null; tevkifatKodu?: string | null; tevkifatOrani?: string | null }[];
   ebelge?: {
     id: string;
     durum: string;
@@ -149,6 +167,14 @@ const TIP_ETIKETLERI: Record<string, string> = {
   satis_iade: "↩️ Satış İade",
   alis_iade: "↪️ Alış İade",
   proforma: "📄 Proforma",
+};
+
+/** Senaryo özetindeki Türkçe adlar; UBL'e yazılan kod `senaryoUblKodu`dur (FTR-20). */
+const SENARYO_ADLARI: Record<FaturaSenaryosu, string> = {
+  satis: "Satış",
+  iade: "İade",
+  tevkifat: "Tevkifat",
+  istisna: "İstisna",
 };
 
 /** BelgeDurum enum'u (EBLG-04). */
@@ -239,6 +265,10 @@ export default function FaturaSayfasi() {
   const [tarih, setTarih] = useState(new Date().toISOString().substring(0, 10));
   const [vadeTarihi, setVadeTarihi] = useState("");
   const [vadeElleDegisti, setVadeElleDegisti] = useState(false);
+  // Profil cari kartından gelir ama fatura üzerinde değiştirilebilir (FTR-19);
+  // kullanıcı bir kez seçtiyse cari değişse de seçimi ezilmez.
+  const [efaturaProfili, setEfaturaProfili] = useState<"temel" | "ticari">("temel");
+  const [profilElleDegisti, setProfilElleDegisti] = useState(false);
   const [siparisNo, setSiparisNo] = useState("");
   const [siparisTarihi, setSiparisTarihi] = useState("");
   const [faturaNo, setFaturaNo] = useState("");
@@ -285,14 +315,36 @@ export default function FaturaSayfasi() {
   }, [formKirli]);
 
   // Önizleme hesaplamaları
-  const girdiSatirlar: FaturaHesaplaSatirGirdi[] = satirlar.map((s) => ({
-    stokId: s.stokId || "gecici-id",
-    miktar: s.miktar,
-    birimFiyat: s.birimFiyat,
-    kdvOrani: s.kdvOrani,
-    iskontoOrani: s.iskontoOrani,
-  }));
+  const girdiSatirlar: FaturaHesaplaSatirGirdi[] = satirlar.map((s) => {
+    // Oran GİB kodundan gelir (FTR-18); önizleme bunu hesaba katmazsa ekranda
+    // yazan tutar ile kaydedilen fatura ayrışır.
+    const tevkifat = tevkifatPayPayda(s.tevkifatKodu, s.tevkifatOrani);
+    return {
+      stokId: s.stokId || "gecici-id",
+      miktar: s.miktar,
+      birimFiyat: s.birimFiyat,
+      kdvOrani: s.kdvOrani,
+      iskontoOrani: s.iskontoOrani,
+      tevkifatPay: tevkifat?.pay,
+      tevkifatPayda: tevkifat?.payda,
+    };
+  });
   const sonuc = faturaHesapla({ satirlar: girdiSatirlar });
+
+  // Senaryo ve GİB kural hataları sunucudakiyle aynı işlevden gelir; kullanıcı
+  // kaydetmeden önce ne göndereceğini görür (FTR-16, FTR-20).
+  const senaryoSatirlari = satirlar.map((s) => ({
+    kdvOrani: Number(s.kdvOrani),
+    tevkifatKodu: s.tevkifatKodu,
+    tevkifatOrani: s.tevkifatOrani,
+    gibIstisnaKodu: s.gibIstisnaKodu,
+  }));
+  const turetilenSenaryo = faturaSenaryosuTuret(tip, senaryoSatirlari);
+  const senaryoUyarilari = senaryoHatalari(senaryoSatirlari);
+  const istisnaliSatirSayisi = senaryoSatirlari.filter((s) => Boolean(s.gibIstisnaKodu)).length;
+  const tevkifatliSatirSayisi = senaryoSatirlari.filter((s) => Boolean(s.tevkifatKodu)).length;
+  // Profil yalnız bizim kestiğimiz belgelerde anlamlı; alış faturası bize gelir.
+  const gidenBelge = ["satis", "satis_iade"].includes(tip);
 
   const yukle = useCallback(async (imlec?: string) => {
     if (imlec && istenenFaturaImlecleri.current.has(imlec)) return;
@@ -357,11 +409,14 @@ export default function FaturaSayfasi() {
         if ((fatura.durum !== "taslak" && !(fatura.durum === "kesin" && !fatura.ebelge)) || fatura.ebelge) throw new Error("Bu fatura artık düzenlenemez.");
         setDuzenlenenId(fatura.id); setTip(fatura.tip); setFaturaNo(fatura.no ?? ""); setTarih(fatura.tarih.slice(0, 10)); setDovizCinsi(fatura.dovizCinsi); setVadeTarihi(fatura.vadeTarihi?.slice(0, 10) ?? ""); setSiparisNo(fatura.siparisNo ?? ""); setSiparisTarihi(fatura.siparisTarihi?.slice(0, 10) ?? ""); setVadeElleDegisti(true);
         setCariId(fatura.cari.id); setDepoId(fatura.depoId ?? ""); setAciklama(fatura.aciklama ?? ""); setNotlar(fatura.notlar ?? "");
+        setEfaturaProfili(fatura.efaturaProfili ?? "temel"); setProfilElleDegisti(true);
         setSatirlar(fatura.satirlar.map((satir) => ({
           stokId: satir.stokId, varyantId: satir.varyantId ?? undefined,
           miktar: Number(satir.miktar), birimFiyat: Number(satir.birimFiyat),
           iskontoOrani: Number(satir.iskontoOrani), kdvOrani: Number(satir.kdvOrani),
           gibIstisnaKodu: satir.gibIstisnaKodu ?? "",
+          tevkifatKodu: satir.tevkifatKodu ?? "",
+          tevkifatOrani: satir.tevkifatOrani ?? "",
           projeId: (satir as any).projeId ?? (satir as any).proje?.id ?? undefined,
           projeAltKirilimId: (satir as any).projeAltKirilimId ?? (satir as any).projeAltKirilim?.id ?? undefined,
         })));
@@ -413,6 +468,7 @@ export default function FaturaSayfasi() {
     setCariId(""); setCariOzeti(null); setDepoId(""); setTip(yonBaglami ?? "satis"); setGelirTuru("ticari_satis"); setTarih(new Date().toISOString().substring(0, 10)); setDovizCinsi("TRY"); setKur("1");
     setAciklama(""); setKuruAciklamayaEkle(true); setFaturaNo("");
     setNotlar(""); setVadeTarihi(""); setVadeElleDegisti(false); setSiparisNo(""); setSiparisTarihi("");
+    setEfaturaProfili("temel"); setProfilElleDegisti(false);
     setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" }]); setAcikSatir(null);
     setDosyalar([]);
     setCariDogrulamaHatasi(""); setSatirDogrulamaHatalari([]);
@@ -438,6 +494,11 @@ export default function FaturaSayfasi() {
       .catch(() => { if (gecerli) setCariOzeti(null); });
     return () => { gecerli = false; };
   }, [cariId]);
+
+  useEffect(() => {
+    if (!cariOzeti || profilElleDegisti || duzenlenenId) return;
+    setEfaturaProfili(cariOzeti.efaturaProfili ?? "temel");
+  }, [cariOzeti, profilElleDegisti, duzenlenenId]);
 
   useEffect(() => {
     if (!cariOzeti || vadeElleDegisti || duzenlenenId) return;
@@ -620,6 +681,16 @@ export default function FaturaSayfasi() {
       return;
     }
 
+    // Eksik istisna kodu gibi senaryo hataları burada durdurulur; sunucuya
+    // gitse de aynı kuraldan dönerdi (FTR-20).
+    if (senaryoUyarilari.length > 0) {
+      const ilk = senaryoUyarilari[0];
+      setHata(`Satır ${ilk.satirIndeksi + 1}: ${ilk.mesaj}`);
+      setAcikSatir(ilk.satirIndeksi);
+      kullanimOlayi("fatura_dogrulama_hatasi");
+      return;
+    }
+
     try {
       const kurAciklamasi = kuruAciklamayaEkle && dovizCinsi !== "TRY" ? `Döviz kuru: 1 ${dovizCinsi} = ${Number(kur).toLocaleString("tr-TR", { minimumFractionDigits: 4, maximumFractionDigits: 6 })} TRY${kurBilgisi ? ` (${kurBilgisi})` : ""}` : "";
       const kullaniciAciklamasi = aciklama.split("\n").filter((satir) => !satir.startsWith("Döviz kuru:")).join("\n").trim();
@@ -629,6 +700,7 @@ export default function FaturaSayfasi() {
         method: duzenlenenId ? "PATCH" : "POST",
         body: JSON.stringify({
           cariId,
+          efaturaProfili,
           // STK-07: boş bırakılırsa sunucu varsayılan depoyu kullanır
           depoId: depoId || null,
           tip,
@@ -650,6 +722,8 @@ export default function FaturaSayfasi() {
             iskontoOrani: String(s.iskontoOrani),
             kdvOrani: String(s.kdvOrani),
             gibIstisnaKodu: s.gibIstisnaKodu || undefined,
+            tevkifatKodu: s.tevkifatKodu || undefined,
+            tevkifatOrani: s.tevkifatOrani || undefined,
             projeId: s.projeId || undefined,
             projeAltKirilimId: s.projeAltKirilimId || undefined,
             partiBilgileri: (() => {
@@ -1013,6 +1087,21 @@ export default function FaturaSayfasi() {
                 <Input aria-label="Vade Tarihi" type="date" value={vadeTarihi} onChange={(e) => { setVadeTarihi(e.target.value); setVadeElleDegisti(true); }} />
                 {cariOzeti?.varsayilanVadeGun != null && <small className="muted">Cari varsayılanı: {cariOzeti.varsayilanVadeGun} gün</small>}
               </Field>
+              {gidenBelge && (
+                <Field label="e-Fatura Profili">
+                  <Select
+                    aria-label="e-Fatura Profili"
+                    value={efaturaProfili}
+                    onChange={(e) => { setEfaturaProfili(e.target.value as "temel" | "ticari"); setProfilElleDegisti(true); }}
+                  >
+                    <option value="temel">TEMELFATURA — alıcı yanıt veremez</option>
+                    <option value="ticari">TICARIFATURA — alıcı 8 gün içinde kabul/ret verir</option>
+                  </Select>
+                  <small className="muted">
+                    {cariOzeti ? `Cari varsayılanı: ${(cariOzeti.efaturaProfili ?? "temel") === "ticari" ? "TICARIFATURA" : "TEMELFATURA"}` : "Cari seçilince varsayılanı gelir"}
+                  </small>
+                </Field>
+              )}
               <Field label="Sipariş No"><Input value={siparisNo} onChange={(e) => setSiparisNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" /></Field>
               <Field label="Sipariş Tarihi"><Input type="date" value={siparisTarihi} onChange={(e) => setSiparisTarihi(e.target.value)} /></Field>
             <div>
@@ -1122,9 +1211,57 @@ export default function FaturaSayfasi() {
                       <tr className="document-line-detail">
                         <td colSpan={7}>
                           <div className="document-line-detail__content">
-                            <Field label="GİB istisna kodu">
-                              <Input className="document-line-code" aria-label="GİB istisna kodu" type="text" placeholder="351" value={s.gibIstisnaKodu || ""} onChange={(e) => satirGuncelle(index, "gibIstisnaKodu", e.target.value)} />
+                            <Field label={Number(s.kdvOrani) === 0 ? "GİB istisna kodu (zorunlu)" : "GİB istisna kodu"}>
+                              <Select
+                                aria-label="GİB istisna kodu"
+                                value={s.gibIstisnaKodu || ""}
+                                onChange={(e) => satirGuncelle(index, "gibIstisnaKodu", e.target.value)}
+                              >
+                                <option value="">{Number(s.kdvOrani) === 0 ? "Kod seçin" : "(KDV oranı sıfır değil)"}</option>
+                                <optgroup label="Tam istisna">
+                                  {KDV_ISTISNA_KODLARI.filter((k) => k.tur === "tam").map((k) => (
+                                    <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>
+                                  ))}
+                                </optgroup>
+                                <optgroup label="Kısmi istisna">
+                                  {KDV_ISTISNA_KODLARI.filter((k) => k.tur === "kismi").map((k) => (
+                                    <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>
+                                  ))}
+                                </optgroup>
+                              </Select>
                             </Field>
+                            <Field label="Tevkifat kodu">
+                              <Select
+                                aria-label="GİB tevkifat kodu"
+                                value={s.tevkifatKodu || ""}
+                                onChange={(e) => {
+                                  const kod = tevkifatKoduBul(e.target.value);
+                                  const yeniSatirlar = [...satirlar];
+                                  // Oran koddan gelir; yalnız 650 için kullanıcı seçer (FTR-18).
+                                  yeniSatirlar[index] = {
+                                    ...s,
+                                    tevkifatKodu: e.target.value,
+                                    tevkifatOrani: kod && kod.oranlar.length === 1 ? kod.oranlar[0] : "",
+                                  };
+                                  setSatirlar(yeniSatirlar);
+                                }}
+                              >
+                                <option value="">Tevkifat yok</option>
+                                {TEVKIFAT_KODLARI.map((k) => (
+                                  <option key={k.kod} value={k.kod}>
+                                    {k.kod} — {k.ad}{k.oranlar.length === 1 ? ` (${k.oranlar[0]})` : ""}
+                                  </option>
+                                ))}
+                              </Select>
+                            </Field>
+                            {(tevkifatKoduBul(s.tevkifatKodu)?.oranlar.length ?? 0) > 1 && (
+                              <Field label="Tevkifat oranı">
+                                <Select aria-label="Tevkifat oranı" value={s.tevkifatOrani || ""} onChange={(e) => satirGuncelle(index, "tevkifatOrani", e.target.value)}>
+                                  <option value="">Oran seçin</option>
+                                  {tevkifatKoduBul(s.tevkifatKodu)!.oranlar.map((o) => <option key={o} value={o}>{o}</option>)}
+                                </Select>
+                              </Field>
+                            )}
                             <Field label="İlişkili Proje">
                               <Select
                                 aria-label="Proje seçimi"
@@ -1187,6 +1324,11 @@ export default function FaturaSayfasi() {
                 <div className="document-total-line is-tax">
                   <span>KDV toplamı</span><span>{tl(sonuc.toplamKdv)}</span>
                 </div>
+                {sonuc.toplamTevkifat > 0 && (
+                  <div className="document-total-line is-discount">
+                    <span>Tevkifat</span><span>-{tl(sonuc.toplamTevkifat)}</span>
+                  </div>
+                )}
                 <div className="document-total-line is-grand">
                   <span>Ödenecek</span><span>{tl(sonuc.genelToplam)}</span>
                 </div>
@@ -1203,6 +1345,44 @@ export default function FaturaSayfasi() {
 
           <div className="document-editor__section">
             <BelgeDosyalari dosyalar={dosyalar} onChange={setDosyalar} />
+          </div>
+
+          {/* FTR-20: kaydetmeden önceki son kontrol. Ne göndereceğimizi
+              satırlardan türetip gösterir; geçersiz senaryo burada durdurulur. */}
+          <div className="document-editor__section">
+            <h4 className="document-editor__section-title">Senaryo özeti</h4>
+            <div className={`scenario-summary${senaryoUyarilari.length > 0 ? " is-warning" : ""}`}>
+              <div>
+                <span>GİB senaryosu</span>
+                <strong>{SENARYO_ADLARI[turetilenSenaryo]} · {senaryoUblKodu(turetilenSenaryo)}</strong>
+              </div>
+              {gidenBelge && (
+                <div>
+                  <span>e-Fatura profili</span>
+                  <strong>{efaturaProfili === "ticari" ? "TICARIFATURA" : "TEMELFATURA"}</strong>
+                </div>
+              )}
+              <div>
+                <span>İstisnalı satır</span>
+                <strong>{istisnaliSatirSayisi} / {satirlar.length}</strong>
+              </div>
+              <div>
+                <span>Tevkifatlı satır</span>
+                <strong>{tevkifatliSatirSayisi} / {satirlar.length}</strong>
+              </div>
+              <div>
+                <span>{sonuc.toplamTevkifat > 0 ? "Tevkifat sonrası tahsil edilecek" : "Tahsil edilecek"}</span>
+                <strong>{tl(sonuc.genelToplam)}</strong>
+              </div>
+              {senaryoUyarilari.length > 0 && (
+                <ul role="alert">
+                  {senaryoUyarilari.map((uyari, sira) => (
+                    <li key={`${uyari.satirIndeksi}-${uyari.alan}-${sira}`}>Satır {uyari.satirIndeksi + 1}: {uyari.mesaj}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <small className="muted">GİB kod listesi: {GIB_KOD_LISTESI_SURUMU}</small>
           </div>
 
           <div className="document-editor__actions">

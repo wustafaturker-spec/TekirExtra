@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma, FaturaTip, FaturaDurum, BelgeDurum } from "@prisma/client";
-import { faturaHesapla, metinNormalize, type FaturaHesaplaSatirGirdi, type KayitEylem } from "@tekirextra/shared";
+import { faturaHesapla, faturaSenaryosuTuret, metinNormalize, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type KayitEylem } from "@tekirextra/shared";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
@@ -467,6 +467,8 @@ export class FaturaService {
         matrah: s.matrah.toFixed(2),
         kdvOrani: s.kdvOrani.toFixed(2),
         kdvTutari: s.kdvTutari.toFixed(2),
+        tevkifatKodu: s.tevkifatKodu,
+        tevkifatOrani: s.tevkifatPay && s.tevkifatPayda ? `${s.tevkifatPay}/${s.tevkifatPayda}` : null,
         tevkifatPay: s.tevkifatPay,
         tevkifatPayda: s.tevkifatPayda,
         tevkifatTutari: s.tevkifatTutari.toFixed(2),
@@ -527,7 +529,7 @@ export class FaturaService {
 
       const cari = await tx.cariHesap.findUnique({
         where: { id: girdi.cariId },
-        select: { varsayilanVadeGun: true },
+        select: { varsayilanVadeGun: true, efaturaProfili: true },
       });
 
       let hesaplananVadeTarihi: Date;
@@ -547,6 +549,14 @@ export class FaturaService {
           tenantId,
           tip: girdi.tip,
           gelirTuru: girdi.gelirTuru ?? "ticari_satis",
+          // Senaryo satırlardan türetilir, kullanıcı seçmez (FTR-16); profilin
+          // varsayılanı cari kartından gelir (FTR-19).
+          senaryo: faturaSenaryosuTuret(girdi.tip, girdi.satirlar.map((s) => ({
+            kdvOrani: Number(s.kdvOrani),
+            tevkifatKodu: s.tevkifatKodu,
+            gibIstisnaKodu: s.gibIstisnaKodu,
+          }))),
+          efaturaProfili: girdi.efaturaProfili ?? cari?.efaturaProfili ?? "temel",
           durum: "taslak",
           no: girdi.no ?? null,
           tarih: new Date(girdi.tarih),
@@ -594,6 +604,7 @@ export class FaturaService {
             matrah: D(s.matrah),
             kdvOrani: D(s.kdvOrani),
             kdvTutari: D(s.kdvTutari),
+            tevkifatKodu: orijinalSatir.tevkifatKodu,
             tevkifatPay: s.tevkifatPay,
             tevkifatPayda: s.tevkifatPayda,
             tevkifatTutari: D(s.tevkifatTutari),
@@ -646,6 +657,7 @@ export class FaturaService {
       siparisNo: girdi.siparisNo !== undefined ? girdi.siparisNo : fatura.siparisNo,
       siparisTarihi: girdi.siparisTarihi !== undefined ? (girdi.siparisTarihi ? new Date(girdi.siparisTarihi) : null) : fatura.siparisTarihi,
       cariId: girdi.cariId ?? fatura.cariId,
+      efaturaProfili: girdi.efaturaProfili ?? (fatura.efaturaProfili as "temel" | "ticari"),
       depoId: girdi.depoId !== undefined ? girdi.depoId : fatura.depoId,
       dovizCinsi: girdi.dovizCinsi ?? (fatura.dovizCinsi as "TRY" | "USD" | "EUR"),
       kur: girdi.kur ?? fatura.kur,
@@ -664,6 +676,7 @@ export class FaturaService {
           birimFiyat: s.birimFiyat,
           iskontoOrani: s.iskontoOrani,
           kdvOrani: s.kdvOrani,
+          tevkifatKodu: s.tevkifatKodu,
           tevkifatPay: s.tevkifatPay,
           tevkifatPayda: s.tevkifatPayda,
           gibIstisnaKodu: s.gibIstisnaKodu,
@@ -719,6 +732,7 @@ export class FaturaService {
             matrah: D(s.matrah),
             kdvOrani: D(s.kdvOrani),
             kdvTutari: D(s.kdvTutari),
+            tevkifatKodu: orijinalSatir.tevkifatKodu,
             tevkifatPay: s.tevkifatPay,
             tevkifatPayda: s.tevkifatPayda,
             tevkifatTutari: D(s.tevkifatTutari),
@@ -735,6 +749,14 @@ export class FaturaService {
         where: { id },
         data: {
           tip: birlesikGirdi.tip,
+          // Satırlar değiştiyse senaryo da değişebilir; her güncellemede
+          // yeniden türetilir (FTR-16).
+          senaryo: faturaSenaryosuTuret(birlesikGirdi.tip, birlesikGirdi.satirlar.map((s) => ({
+            kdvOrani: Number(s.kdvOrani),
+            tevkifatKodu: s.tevkifatKodu,
+            gibIstisnaKodu: s.gibIstisnaKodu,
+          }))),
+          efaturaProfili: birlesikGirdi.efaturaProfili,
           no: birlesikGirdi.no ?? null,
           tarih: new Date(birlesikGirdi.tarih),
           vadeTarihi: birlesikGirdi.vadeTarihi ? new Date(birlesikGirdi.vadeTarihi) : null,
@@ -1307,21 +1329,28 @@ export class FaturaService {
       birimFiyat: string | number | Prisma.Decimal;
       iskontoOrani: string | number | Prisma.Decimal;
       kdvOrani: string | number | Prisma.Decimal;
+      tevkifatKodu?: string | null;
+      tevkifatOrani?: string | null;
       tevkifatPay?: number | null;
       tevkifatPayda?: number | null;
     }[];
     genelIskontoYuzdesi?: string | number | Prisma.Decimal;
     genelIskontoTutari?: string | number | Prisma.Decimal;
   }) {
-    const satirGirdileri: FaturaHesaplaSatirGirdi[] = girdi.satirlar.map((s) => ({
-      stokId: s.stokId,
-      miktar: Number(s.miktar),
-      birimFiyat: Number(s.birimFiyat),
-      iskontoOrani: Number(s.iskontoOrani),
-      kdvOrani: Number(s.kdvOrani),
-      tevkifatPay: s.tevkifatPay || undefined,
-      tevkifatPayda: s.tevkifatPayda || undefined,
-    }));
+    const satirGirdileri: FaturaHesaplaSatirGirdi[] = girdi.satirlar.map((s) => {
+      // Oran GİB kodundan türer (FTR-18). Saklı satırlar yeniden hesaplanırken
+      // kod henüz yoksa mevcut pay/payda korunur.
+      const oran = tevkifatPayPayda(s.tevkifatKodu, s.tevkifatOrani);
+      return {
+        stokId: s.stokId,
+        miktar: Number(s.miktar),
+        birimFiyat: Number(s.birimFiyat),
+        iskontoOrani: Number(s.iskontoOrani),
+        kdvOrani: Number(s.kdvOrani),
+        tevkifatPay: oran?.pay ?? s.tevkifatPay ?? undefined,
+        tevkifatPayda: oran?.payda ?? s.tevkifatPayda ?? undefined,
+      };
+    });
 
     return faturaHesapla({
       satirlar: satirGirdileri,
@@ -1346,6 +1375,8 @@ export class FaturaService {
     siparisNo: string | null;
     siparisTarihi: Date | null;
     cariId: string;
+    senaryo: string;
+    efaturaProfili: string;
     depoId: string | null;
     dovizCinsi: string;
     kur: Prisma.Decimal;
@@ -1397,6 +1428,8 @@ export class FaturaService {
       siparisNo: k.siparisNo,
       siparisTarihi: k.siparisTarihi?.toISOString().slice(0, 10) ?? null,
       cariId: k.cariId,
+      senaryo: k.senaryo,
+      efaturaProfili: k.efaturaProfili,
       depoId: k.depoId,
       dovizCinsi: k.dovizCinsi,
       kur: D(k.kur).toFixed(4),

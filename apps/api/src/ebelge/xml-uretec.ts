@@ -1,4 +1,5 @@
 import { Fatura, FaturaSatir, CariHesap } from "@prisma/client";
+import { senaryoUblKodu, tevkifatKoduBul } from "@tekirextra/shared";
 
 /** UBL içine gömülen başlangıç fatura görünümü; kurumsal şablonla değiştirilebilir. */
 const FATURA_XSLT = `<?xml version="1.0" encoding="UTF-8"?>
@@ -32,6 +33,36 @@ export function faturaUblUret(
   const uuid = fatura.id;
   const no = fatura.no || "TASLAK";
 
+  /**
+   * Tevkifat, fatura düzeyinde `WithholdingTaxTotal` olarak bildirilir; vergi
+   * türü kodu satırdaki GİB tevkifat kodudur (FTR-18). Aynı kodlu satırlar tek
+   * blokta toplanır, çünkü kod başına bir alt toplam beklenir.
+   */
+  const tevkifatGruplari = new Map<string, { tutar: number; oran: number }>();
+  for (const satir of fatura.satirlar) {
+    if (!satir.tevkifatKodu || Number(satir.tevkifatTutari) === 0) continue;
+    const mevcut = tevkifatGruplari.get(satir.tevkifatKodu) ?? { tutar: 0, oran: 0 };
+    mevcut.tutar += Number(satir.tevkifatTutari);
+    // Oran koddan gelir; pay/payda saklı türetilmiş değerlerdir.
+    if (satir.tevkifatPay && satir.tevkifatPayda) mevcut.oran = (satir.tevkifatPay / satir.tevkifatPayda) * 100;
+    tevkifatGruplari.set(satir.tevkifatKodu, mevcut);
+  }
+  const tevkifatBlogu = [...tevkifatGruplari.entries()]
+    .filter(([kod]) => tevkifatKoduBul(kod))
+    .map(([kod, deger]) => `  <cac:WithholdingTaxTotal>
+    <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${deger.tutar.toFixed(2)}</cbc:TaxAmount>
+    <cac:TaxSubtotal>
+      <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${deger.tutar.toFixed(2)}</cbc:TaxAmount>
+      <cbc:Percent>${deger.oran.toFixed(2)}</cbc:Percent>
+      <cac:TaxCategory>
+        <cac:TaxScheme>
+          <cbc:TaxTypeCode>${kod}</cbc:TaxTypeCode>
+        </cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>
+  </cac:WithholdingTaxTotal>`)
+    .join("\n");
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
          xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
@@ -41,13 +72,13 @@ export function faturaUblUret(
          xsi:schemaLocation="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2 http://www.gib.gov.tr/schemas/Document/UTR/UBLTR-Invoice-2.1.xsd">
   <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
   <cbc:CustomizationID>TR1.2</cbc:CustomizationID>
-  <cbc:ProfileID>TEMELFATURA</cbc:ProfileID>
+  <cbc:ProfileID>${fatura.efaturaProfili === "ticari" ? "TICARIFATURA" : "TEMELFATURA"}</cbc:ProfileID>
   <cbc:ID>${no}</cbc:ID>
   <cbc:CopyIndicator>false</cbc:CopyIndicator>
   <cbc:UUID>${uuid}</cbc:UUID>
   <cbc:IssueDate>${tarihStr}</cbc:IssueDate>
   <cbc:IssueTime>${saatStr}</cbc:IssueTime>
-  <cbc:InvoiceTypeCode>${fatura.tip.toUpperCase()}</cbc:InvoiceTypeCode>
+  <cbc:InvoiceTypeCode>${senaryoUblKodu(fatura.senaryo)}</cbc:InvoiceTypeCode>
   <cbc:DocumentCurrencyCode>${fatura.dovizCinsi}</cbc:DocumentCurrencyCode>
   <cbc:LineCountNumeric>${fatura.satirlar.length}</cbc:LineCountNumeric>
 
@@ -127,7 +158,7 @@ export function faturaUblUret(
       </cac:TaxCategory>
     </cac:TaxSubtotal>
   </cac:TaxTotal>
-
+${tevkifatBlogu}
   <cac:LegalMonetaryTotal>
     <cbc:LineExtensionAmount currencyID="${fatura.dovizCinsi}">${fatura.toplamBrut.toFixed(2)}</cbc:LineExtensionAmount>
     <cbc:TaxExclusiveAmount currencyID="${fatura.dovizCinsi}">${fatura.toplamMatrah.toFixed(2)}</cbc:TaxExclusiveAmount>

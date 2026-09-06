@@ -5,3 +5,5 @@ export * from "./fatura-hesapla";
 export * from "./vkn-tckn";
 export * from "./bicim";
 
+export * from "./gib-kodlari";
+export * from "./fatura-senaryo";

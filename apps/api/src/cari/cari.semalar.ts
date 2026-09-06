@@ -48,6 +48,8 @@ export const cariOlusturSemasi = z.object({
   fiyatListesiId: z.uuid().optional(),
   varsayilanIskonto: pozitifOndalik.optional(),
   varsayilanVadeGun: z.number().int().min(0).max(365).optional(),
+  /** Bu cariye kesilen e-Faturaların varsayılan profili (FTR-19). */
+  efaturaProfili: z.enum(["temel", "ticari"]).optional(),
   riskLimiti: pozitifOndalik.optional(),
   notlar: z.string().max(2000).optional(),
 });

@@ -646,6 +646,9 @@ model CariHesap {
   riskLimiti              Decimal?   @map("risk_limiti") @db.Decimal(15, 2)
   eFaturaMukellefi        Boolean?   @map("e_fatura_mukellefi")
   mukellefiyetSorguZamani DateTime?  @map("mukellefiyet_sorgu_zamani")
+  /// Bu cariye kesilen e-Faturaların varsayılan profili (FTR-19); fatura
+  /// üzerinde değiştirilebilir.
+  efaturaProfili          EfaturaProfili @default(temel) @map("efatura_profili")
   notlar                  String?
   aktif                   Boolean    @default(true)
   createdAt               DateTime   @default(now()) @map("created_at")
@@ -1804,6 +1807,23 @@ model TransferSayac {
   @@map("transfer_sayaclari")
 }
 
+/// Faturanın GİB senaryosu (FTR-16). `FaturaTip`ten ayrıdır: tip bizim iç
+/// sınıflandırmamız (satis/alis/proforma), senaryo ise UBL'e yazılan
+/// `InvoiceTypeCode`tur ve satırlardan türetilir.
+enum FaturaSenaryo {
+  satis
+  iade
+  tevkifat
+  istisna
+}
+
+/// e-Fatura profili (FTR-19). TICARIFATURA alıcıya 8 gün içinde kabul/ret
+/// yükümlülüğü getirir; kabul/ret takibi (EBLG-13) yalnız bu profilde işler.
+enum EfaturaProfili {
+  temel
+  ticari
+}
+
 enum FaturaTip {
   satis
   alis
@@ -1860,6 +1880,10 @@ model Fatura {
   toplamMatrah         Decimal         @map("toplam_matrah") @db.Decimal(15, 2)
   toplamKdv            Decimal         @map("toplam_kdv") @db.Decimal(15, 2)
   toplamTevkifat       Decimal         @map("toplam_tevkifat") @db.Decimal(15, 2)
+  /// Satırlardan türetilen GİB senaryosu; UBL'e InvoiceTypeCode olarak yazılır.
+  senaryo              FaturaSenaryo   @default(satis)
+  /// UBL'e ProfileID olarak yazılır; varsayılanı cari kartından gelir.
+  efaturaProfili       EfaturaProfili  @default(temel) @map("efatura_profili")
   toplamNetKdv         Decimal         @map("toplam_net_kdv") @db.Decimal(15, 2)
   genelToplam          Decimal         @map("genel_toplam") @db.Decimal(15, 2)
   aciklama             String?
@@ -1932,6 +1956,9 @@ model FaturaSatir {
   matrah            Decimal @db.Decimal(15, 2)
   kdvOrani          Decimal @default(20) @map("kdv_orani") @db.Decimal(5, 2)
   kdvTutari         Decimal @map("kdv_tutari") @db.Decimal(15, 2)
+  /// GİB tevkifat kodu (FTR-18); oran bu koddan türer, pay/payda türetilmiş
+  /// değerlerdir ve doğrudan girilmez.
+  tevkifatKodu      String? @map("tevkifat_kodu")
   tevkifatPay       Int?    @map("tevkifat_pay")
   tevkifatPayda     Int?    @map("tevkifat_payda")
   tevkifatTutari    Decimal @default(0) @map("tevkifat_tutari") @db.Decimal(15, 2)

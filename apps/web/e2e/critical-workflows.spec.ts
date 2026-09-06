@@ -20,7 +20,7 @@ test.beforeEach(async ({ page }) => {
       await route.fulfill({ json: { kayitlar: [] } });
       return;
     }
-    if (url.pathname.endsWith("/depo") || url.pathname.endsWith("/fiyat-listeleri") || url.pathname.includes("/kasa-banka/")) {
+    if (url.pathname.endsWith("/depo") || url.pathname.endsWith("/projeler") || url.pathname.endsWith("/fiyat-listeleri") || url.pathname.includes("/kasa-banka/")) {
       await route.fulfill({ json: [] });
       return;
     }
@@ -1628,4 +1628,46 @@ test("teklif, sipariş, irsaliye ve fatura zinciri bulunup gezilebilir", async (
   await expect(zincir.getByRole("button", { name: /Teklif Mevcut/ })).toBeDisabled();
   await expect(zincir.getByRole("button", { name: /İrsaliye IRS-001/ })).toBeEnabled();
   await expect(zincir.getByRole("link", { name: /e-Belge Hata/ })).toHaveClass(/is-error/);
+});
+
+test("senaryo özeti kaydetmeden önce gönderilecek belgeyi gösterir", async ({ page }) => {
+  await page.route("http://localhost:3001/api/v1/cari**", (route) => {
+    const { pathname } = new URL(route.request().url());
+    return route.fulfill({ json: pathname.endsWith("/cari/c1")
+      ? { id: "c1", kod: "C001", unvan: "Test Müşteri", efaturaProfili: "ticari", bakiyeler: [], risk: { mevcutRisk: "0", limit: null, kalanLimit: null, asim: false } }
+      : { kayitlar: [{ id: "c1", kod: "C001", unvan: "Test Müşteri" }], sonrakiImlec: null }
+    });
+  });
+  await page.goto("/panel/fatura?yon=satis&yeni=1");
+
+  const ozet = page.locator(".scenario-summary");
+  await expect(ozet).toContainText("Satış · SATIS");
+
+  // Profil cari kartındaki varsayılandan gelir ama fatura üzerinde değiştirilebilir (FTR-19).
+  await page.getByRole("combobox", { name: "Müşteri ara" }).click();
+  await page.getByRole("option", { name: /Test Müşteri/ }).click();
+  const profil = page.getByLabel("e-Fatura Profili");
+  await expect(profil).toHaveValue("ticari");
+  await expect(ozet).toContainText("TICARIFATURA");
+  await profil.selectOption("temel");
+  await expect(ozet).toContainText("TEMELFATURA");
+  await profil.selectOption("ticari");
+
+  // KDV sıfırlanınca istisna kodu zorunludur (FTR-17).
+  await page.getByLabel("Birim fiyat").fill("1000");
+  await page.getByLabel("KDV yüzdesi").fill("0");
+  await expect(ozet.getByRole("alert")).toContainText("Satır 1: KDV oranı sıfır olan satırda GİB istisna kodu seçilmelidir");
+
+  await page.getByRole("button", { name: "Satır ayrıntıları" }).click();
+  await page.getByLabel("GİB istisna kodu").selectOption("351");
+  await expect(ozet.getByRole("alert")).toHaveCount(0);
+  await expect(ozet).toContainText("İstisna · ISTISNA");
+
+  // Tevkifat oranı koddan gelir; özetteki tutar tevkifat sonrasıdır (FTR-18, FTR-20).
+  await page.getByLabel("GİB istisna kodu").selectOption("");
+  await page.getByLabel("KDV yüzdesi").fill("20");
+  await page.getByLabel("GİB tevkifat kodu").selectOption("607");
+  await expect(ozet).toContainText("Tevkifat · TEVKIFAT");
+  await expect(ozet).toContainText("Tevkifat sonrası tahsil edilecek");
+  await expect(ozet).toContainText("1.020,00 TL");
 });

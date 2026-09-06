@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { senaryoHatalari } from "@tekirextra/shared";
 
 const pozitifOndalik = z
   .union([z.string(), z.number()])
@@ -21,8 +22,13 @@ export const faturaSatirSemasi = z.object({
   birimFiyat: pozitifOndalik,
   iskontoOrani: yuzde.default("0"),
   kdvOrani: yuzde.default("20"),
-  tevkifatPay: z.number().int().min(1).max(10).optional().nullable(),
-  tevkifatPayda: z.number().int().min(1).max(10).optional().nullable(),
+  /**
+   * Tevkifat GİB koduyla girilir; oran koddan türer (FTR-18). Pay/payda artık
+   * girdi değildir, servis bunları koddan hesaplayıp saklar.
+   */
+  tevkifatKodu: z.string().max(10).optional().nullable(),
+  /** Yalnız `650 Diğerleri` için anlamlı; diğer kodlarda oran tektir. */
+  tevkifatOrani: z.string().max(10).optional().nullable(),
   gibIstisnaKodu: z.string().max(20).optional().nullable(),
   projeId: z.string().uuid().optional().nullable(),
   projeAltKirilimId: z.string().uuid().optional().nullable(),
@@ -42,6 +48,11 @@ const faturaOlusturGovde = z.object({
   siparisNo: z.string().trim().max(100).optional().nullable(),
   siparisTarihi: tarihSemasi.optional().nullable(),
   cariId: z.string().uuid(),
+  /**
+   * e-Fatura profili (FTR-19). Boş bırakılırsa cari kartındaki varsayılan
+   * kullanılır; UBL'e `ProfileID` olarak bu değer yazılır.
+   */
+  efaturaProfili: z.enum(["temel", "ticari"]).optional().nullable(),
   /** STK-07: stok hareketlerinin işleneceği depo; boşsa varsayılan depo */
   depoId: z.string().uuid().optional().nullable(),
   dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
@@ -52,15 +63,27 @@ const faturaOlusturGovde = z.object({
   notlar: z.string().max(2000).optional().nullable(),
   satirlar: z.array(faturaSatirSemasi).min(1, "Faturada en az bir satır bulunmalıdır"),
 });
-const tevkifatlariDogrula = (fatura: { satirlar?: Array<{ tevkifatPay?: number | null; tevkifatPayda?: number | null }> }, ctx: z.RefinementCtx) => {
-  fatura.satirlar?.forEach((satir, index) => {
-    if (satir.tevkifatPay != null && satir.tevkifatPayda != null && satir.tevkifatPay > satir.tevkifatPayda) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["satirlar", index, "tevkifatPay"], message: "Tevkifat payı paydadan büyük olamaz" });
-    }
-  });
+/**
+ * GİB senaryo kuralları (FTR-17, FTR-18). Kural kümesi `@tekirextra/shared`
+ * içindedir; arayüz kaydetmeden önce aynı işlevi çağırır, böylece iki taraf
+ * kuralı ayrı ayrı yorumlamaz.
+ */
+const senaryolariDogrula = (
+  fatura: { satirlar?: Array<{ kdvOrani?: string; tevkifatKodu?: string | null; tevkifatOrani?: string | null; gibIstisnaKodu?: string | null }> },
+  ctx: z.RefinementCtx,
+) => {
+  const satirlar = (fatura.satirlar ?? []).map((satir) => ({
+    kdvOrani: Number(satir.kdvOrani ?? 0),
+    tevkifatKodu: satir.tevkifatKodu,
+    tevkifatOrani: satir.tevkifatOrani,
+    gibIstisnaKodu: satir.gibIstisnaKodu,
+  }));
+  for (const hata of senaryoHatalari(satirlar)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["satirlar", hata.satirIndeksi, hata.alan], message: hata.mesaj });
+  }
 };
-const faturaFinansalDogrula = (fatura: { satirlar?: Array<{ miktar?: string; birimFiyat?: string; iskontoOrani?: string; tevkifatPay?: number | null; tevkifatPayda?: number | null }>; genelIskontoTutari?: string }, ctx: z.RefinementCtx) => {
-  tevkifatlariDogrula(fatura, ctx);
+const faturaFinansalDogrula = (fatura: { satirlar?: Array<{ miktar?: string; birimFiyat?: string; iskontoOrani?: string; kdvOrani?: string; tevkifatKodu?: string | null; tevkifatOrani?: string | null; gibIstisnaKodu?: string | null }>; genelIskontoTutari?: string }, ctx: z.RefinementCtx) => {
+  senaryolariDogrula(fatura, ctx);
   const araToplam = (fatura.satirlar ?? []).reduce((toplam, satir) => toplam + Number(satir.miktar ?? 0) * Number(satir.birimFiyat ?? 0) * (1 - Number(satir.iskontoOrani ?? 0) / 100), 0);
   if (Number(fatura.genelIskontoTutari ?? 0) > araToplam + 0.01) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["genelIskontoTutari"], message: "Genel iskonto tutarı ara toplamı aşamaz" });
 };

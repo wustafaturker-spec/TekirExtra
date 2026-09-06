@@ -202,19 +202,23 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 
 ### 3.2 Fatura Yönetimi (FTR)
 
-**Durum (Fatura Senaryoları, 2026-09-06):** FTR-16…FTR-21 eklendi. FTR-11
-"tevkifatlı ve istisnalı senaryolar" hesaplama ve PDF tarafında kapatılmıştı
-ama e-belge tarafı eksik kaldığı görüldü: `InvoiceTypeCode` fatura tipinin
-büyük harfi olarak yazılıyor (GİB'de karşılığı olmayan `SATIS_IADE`, `ALIS`,
-`PROFORMA` değerleri üretiyor), istisnalı fatura `SATIS` olarak gidiyor,
-tevkifat UBL'e hiç yansımıyor ve `ProfileID` sabit `TEMELFATURA`. Sonuncusunun
-yan etkisi şu: her fatura TEMEL gittiği için alıcı kabul/ret veremiyor ve
-EBLG-13 ile eklenen yanıt takibi pratikte hiç tetiklenmiyor.
+**Durum (Fatura Senaryoları, 2026-09-06):** FTR-16…FTR-21 tamamlandı. Paket,
+FTR-11'in e-belge tarafındaki açığını kapatıyordu: `InvoiceTypeCode` fatura
+tipinin büyük harfi olarak yazılıyor (GİB'de karşılığı olmayan `SATIS_IADE`,
+`ALIS`, `PROFORMA` değerleri üretiyor), istisnalı fatura `SATIS` olarak
+gidiyor, tevkifat UBL'e hiç yansımıyor ve `ProfileID` sabit `TEMELFATURA`
+oluyordu — sonuncusu yüzünden alıcı kabul/ret veremediği için EBLG-13 yanıt
+takibi pratikte hiç tetiklenmiyordu.
 
-İstisna kodu bugün satır ayrıntısındaki serbest metin bir kutudur (varsayılan
-örnek `351`); liste, doğrulama ve KDV sıfırlandığında görünürlük yoktur.
-Tevkifatın ise hiç arayüzü yoktur, yalnız API'den ham pay/payda olarak
-girilebilir ve GİB kodu saklanmaz.
+Şimdi senaryo satırlardan türetilip `faturalar.senaryo` alanında saklanıyor ve
+UBL'e `InvoiceTypeCode` olarak yazılıyor; tevkifat satırda GİB koduyla giriliyor
+(oran koddan türer) ve UBL'de kod başına `WithholdingTaxTotal` bloğu üretiliyor;
+istisna kodu listeden seçiliyor ve KDV sıfırken zorunlu; profil cari kartından
+geliyor, fatura üzerinde değiştirilebiliyor. Kural kümesi
+`packages/shared/src/fatura-senaryo.ts`, kod listeleri
+`packages/shared/src/gib-kodlari.ts` (sürüm sabiti `GIB_KOD_LISTESI_SURUMU`) —
+aynı kuralı hem zod şeması hem fatura ekranındaki senaryo özeti çağırıyor, iki
+taraf kuralı ayrı yorumlamıyor. Göç: `20260906160000_fatura_senaryolari`.
 
 **S-01 kapı kararları (2026-09-06, kullanıcı onayı):**
 
@@ -232,7 +236,8 @@ girilebilir ve GİB kodu saklanmaz.
 
 **Kod listelerinin kapsamı** (UBL-TR Kod Listeleri v1.16, `docs/e-belge/`):
 KDV kısmi istisna 2xx (36 kod), KDV tam istisna 3xx (30 kod, `351` "istisna
-olmayan diğer" dahil), tevkifat 601…611 (11 kod, her biri kendi oranıyla).
+olmayan diğer" dahil), tevkifat 601…623 ve 650 (24 kod, her biri kendi oranıyla; yalnız `650 Diğerleri`
+birden çok oranla kullanılabilir).
 
 | No | İster | Öncelik |
 |---|---|---|
@@ -250,12 +255,12 @@ olmayan diğer" dahil), tevkifat 601…611 (11 kod, her biri kendi oranıyla).
 | FTR-12 | Belge zinciri desteklenmelidir: teklif → sipariş → irsaliye → fatura; her adım bir sonrakine tek tıkla dönüştürülebilmeli, zincir izlenebilmelidir (e-İrsaliye kapsam dışı; kağıt/PDF irsaliye). Not (2026-07-13): sipariş aşamasında stok rezervasyonu ile rezerve/yoldaki stok göstergeleri bu kapsamda ele alınır. | İ |
 | FTR-13 | Bekleyen siparişler/irsaliyeler toplu seçilip tek faturada birleştirilebilmelidir (toplu faturalama). | İ |
 | FTR-14 | Fatura kaleminde carinin fiyat listesi ve özel iskontosu otomatik önerilmeli (CARI-10, STK-11); satıcı kullanıcı bazında maksimum iskonto yetkisi tanımlanabilmelidir. | İ |
-| FTR-16 | Faturanın GİB senaryosu (`InvoiceTypeCode`) **satırlardan türetilmelidir**: tevkifatlı satır varsa TEVKIFAT, KDV oranı sıfır ve istisna kodu girilmiş satır varsa ISTISNA, iade tipindeyse IADE, aksi halde SATIS. Türetilen senaryo kaydedilmeli, gönderim onayında kullanıcıya gösterilmeli ve UBL'e bu değer yazılmalıdır. Kullanıcı senaryoyu elle seçmez. | G |
-| FTR-17 | KDV oranı sıfır girilen satırda **GİB istisna kodu zorunlu** olmalı ve aranabilir bir listeden seçilmelidir; serbest metin kabul edilmemelidir. Liste UBL-TR Kod Listeleri'nin KDV kısmi istisna (2xx) ve tam istisna (3xx) kümelerini içerir. Vergisiz ama istisna sayılmayan satışlar için `351` seçeneği listede açıklamasıyla bulunmalıdır. | G |
-| FTR-18 | Tevkifat, satırda **GİB tevkifat kodu** seçilerek girilmelidir (601…611); tevkifat oranı koddan türetilir, kullanıcı pay/payda girmez. Seçilen kod UBL'de `WithholdingTaxTotal` altında `TaxTypeCode` olarak yazılmalı, tevkifat tutarı ve oranı aynı bloktan raporlanmalıdır. | G |
-| FTR-19 | Faturanın e-Fatura profili (TEMELFATURA / TICARIFATURA) **cari kartındaki varsayılandan** gelmeli, fatura üzerinde değiştirilebilmelidir; UBL'e `ProfileID` olarak bu değer yazılır. Alıcının kabul/ret yanıtı yalnız TICARIFATURA'da beklendiği için (EBLG-13) profil seçimi bu takibin kapısıdır. | G |
-| FTR-20 | Satış faturası ekranı, kaydetmeden önce **senaryo özetini** göstermelidir: türetilen fatura tipi, profil, istisna ve tevkifat içeren satır sayısı, tevkifat sonrası tahsil edilecek tutar. Eksik istisna kodu veya geçersiz senaryo bu adımda engellenmelidir. | G |
-| FTR-21 | GİB kod listeleri (istisna, tevkifat) kod ve açıklamalarıyla uygulamada tanımlı olmalı; kod listesinin sürümü izlenebilmelidir. Liste dışı bir kod ne arayüzden ne API'den kabul edilmelidir. | G |
+| FTR-16 | ✅ Faturanın GİB senaryosu (`InvoiceTypeCode`) **satırlardan türetilmelidir**: tevkifatlı satır varsa TEVKIFAT, KDV oranı sıfır ve istisna kodu girilmiş satır varsa ISTISNA, iade tipindeyse IADE, aksi halde SATIS. Türetilen senaryo kaydedilmeli, gönderim onayında kullanıcıya gösterilmeli ve UBL'e bu değer yazılmalıdır. Kullanıcı senaryoyu elle seçmez. | G |
+| FTR-17 | ✅ KDV oranı sıfır girilen satırda **GİB istisna kodu zorunlu** olmalı ve aranabilir bir listeden seçilmelidir; serbest metin kabul edilmemelidir. Liste UBL-TR Kod Listeleri'nin KDV kısmi istisna (2xx) ve tam istisna (3xx) kümelerini içerir. Vergisiz ama istisna sayılmayan satışlar için `351` seçeneği listede açıklamasıyla bulunmalıdır. | G |
+| FTR-18 | ✅ Tevkifat, satırda **GİB tevkifat kodu** seçilerek girilmelidir (601…623, 650); tevkifat oranı koddan türetilir, kullanıcı pay/payda girmez. Seçilen kod UBL'de `WithholdingTaxTotal` altında `TaxTypeCode` olarak yazılmalı, tevkifat tutarı ve oranı aynı bloktan raporlanmalıdır. | G |
+| FTR-19 | ✅ Faturanın e-Fatura profili (TEMELFATURA / TICARIFATURA) **cari kartındaki varsayılandan** gelmeli, fatura üzerinde değiştirilebilmelidir; UBL'e `ProfileID` olarak bu değer yazılır. Alıcının kabul/ret yanıtı yalnız TICARIFATURA'da beklendiği için (EBLG-13) profil seçimi bu takibin kapısıdır. | G |
+| FTR-20 | ✅ Satış faturası ekranı, kaydetmeden önce **senaryo özetini** göstermelidir: türetilen fatura tipi, profil, istisna ve tevkifat içeren satır sayısı, tevkifat sonrası tahsil edilecek tutar. Eksik istisna kodu veya geçersiz senaryo bu adımda engellenmelidir. | G |
+| FTR-21 | ✅ GİB kod listeleri (istisna, tevkifat) kod ve açıklamalarıyla uygulamada tanımlı olmalı; kod listesinin sürümü izlenebilmelidir. Liste dışı bir kod ne arayüzden ne API'den kabul edilmelidir. | G |
 | FTR-15 | **Modül içi raporlar:** dönemsel satış/alış özeti, kâr marjı analizi (satış - ağırlıklı ortalama maliyet), iskonto analizi, KDV dökümü, iade oranları, taslakta bekleyen belgeler. Tümü RPR-06 rapor araç setini kullanır. | Z |
 
 ### 3.3 e-Fatura / e-Arşiv Entegrasyonu (EBLG)

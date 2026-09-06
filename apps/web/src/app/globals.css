@@ -1612,7 +1612,8 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
   gap: 1rem;
   grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(150px, 1fr));
 }
-.customer-context {
+.customer-context,
+.scenario-summary {
   align-items: stretch;
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -1621,12 +1622,23 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
   grid-template-columns: repeat(5, minmax(0, 1fr));
   margin-top: 0.85rem;
 }
-.customer-context > div { border-right: 1px solid var(--border); padding: 0.6rem 0.7rem; }
+/* Profil hücresi yalnız giden belgelerde çıktığı için sütun sayısı sabit değil. */
+.scenario-summary {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin-top: 0;
+}
+.customer-context > div,
+.scenario-summary > div { border-right: 1px solid var(--border); padding: 0.6rem 0.7rem; }
 .customer-context > div:nth-child(5) { border-right: 0; }
-.customer-context span { color: var(--text-muted); display: block; font-size: 0.7rem; margin-bottom: 0.15rem; }
-.customer-context strong { font-size: 0.8rem; font-variant-numeric: tabular-nums; }
-.customer-context.is-warning { border-color: var(--danger); }
-.customer-context p {
+.scenario-summary > div:last-of-type { border-right: 0; }
+.customer-context span,
+.scenario-summary span { color: var(--text-muted); display: block; font-size: 0.7rem; margin-bottom: 0.15rem; }
+.customer-context strong,
+.scenario-summary strong { font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.customer-context.is-warning,
+.scenario-summary.is-warning { border-color: var(--danger); }
+.customer-context p,
+.scenario-summary ul {
   background: var(--danger-soft);
   color: var(--danger);
   font-size: 0.78rem;
@@ -1634,6 +1646,8 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
   margin: 0;
   padding: 0.55rem 0.7rem;
 }
+.scenario-summary ul { list-style: none; }
+.scenario-summary li + li { margin-top: 0.3rem; }
 .document-lines .table-wrap {
   max-width: 100%;
   overflow-x: auto;
