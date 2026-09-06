@@ -222,6 +222,41 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 
 ### 3.3 e-Fatura / e-Arşiv Entegrasyonu (EBLG)
 
+**Durum (Çağrı Disiplini, 2026-09-06): EBLG-10…EBLG-15 eklendi ve
+tamamlandı.** Sovos'un "Doğru Kullanım Tavsiyeleri" kılavuzları çağrı sayısına
+üst limit koymuyor ama hatalı kullanım kalıplarında erişimin **otomatik
+bloklandığını** yazıyor. Mevcut kod üç kalıba da giriyordu: her fatura
+gönderiminde tam mükellef listesi indiriliyor, gelen belge taraması beş
+dakikada bir son 30 günü yeniden sorguluyor, zarf durumu tek tek soruluyordu.
+
+Neyin indiği: global `gib_mukellefler` tablosu ve günlük senkron (kanal kararı
+artık lokalden, gönderim başına sorgu yok); `ebelge_gelen_kursor` ile ilerleyen
+gelen belge taraması (saatlik zamanlanmış iş + saatlik sınırlı elle tazeleme);
+zarf düzeyinde gelen çekim ve buradan okunan alıcı kabul/ret yanıtı
+(`ebelge_kayitlari.alici_yaniti`, ret kritik bildirim üretir); 20'şerli ve iki
+saatlik pencereyle toplu zarf durumu sorgusu; `ebelge_entegrator_cagri_total`
+metriği.
+
+**Bu paketin kapsamı dışında kalan Sovos metotları** (sonraki pakete):
+`getInvoiceView` ve e-Arşiv `getInvoiceDocument`/`getSignedInvoice` (fatura
+görüntüsü ve imzalı UBL — yasal saklama için gerekir), `actionService`
+(e-Arşiv itirazı), `sendEnvelope` (toplu e-Arşiv), `getDesReceipts`
+(gönderdiğimiz e-İrsaliyeye gelen yanıt), `getPartialUserList`.
+
+**S-01 kapı kararları (2026-09-06, kullanıcı onayı):**
+
+1. **Mükellef listesi:** kiracıdan bağımsız **tek global tablo**, günde bir kez
+   tam senkron. GİB kaydı kamuya açık ve her kiracı için aynı; kiracı başına
+   indirmek aynı listeyi N kez saklamak olurdu.
+2. **Liste bayatsa:** gönderim **durdurulur**. Yanlış kanal seçimi (e-Fatura
+   yerine e-Arşiv) yasal ve ticari hata olduğundan, tahmin etmektense durmak
+   tercih edildi.
+3. **Alıcı yanıtı:** `EbelgeKayit` üzerinde **ayrı alanlar**; mevcut `durum`
+   alanı zarfın GİB durumu olarak kalır. Tek alana sıkıştırılırsa "zarf kabul
+   edildi" ile "alıcı kabul etti" birbirini ezer.
+4. **Sıklık:** gelen belge **saatte bir**, zarf durumu **2 saatte bir** ve
+   20'şerli. Arayüzdeki elle tazeleme korunur, kiracı başına saatte bir.
+
 | No | İster | Öncelik |
 |---|---|---|
 | EBLG-01 | Entegratör katmanı adaptör mimarisiyle soyutlanmalıdır: her firma, desteklenen entegratörlerden (Foriba, İzibiz, eLogo, Uyumsoft vb.) dilediğini bağımsız seçebilmelidir. Yeni bir entegratör, çekirdek kod değişmeden adaptör eklenerek desteklenebilmelidir. | Z |
@@ -235,6 +270,12 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | EBLG-07 | e-Arşiv faturaları için GİB'e günlük raporlama entegratör üzerinden otomatik yürütülmelidir. | Z |
 | EBLG-08 | Gönderim hatalarında belge "hata" durumuna düşmeli, kullanıcı düzeltip yeniden gönderebilmelidir; otomatik yeniden deneme uygulanmalıdır. | Z |
 | EBLG-09 | e-belge XML ve PDF görüntüleri arşivlenmeli, mevzuat gereği en az 10 yıl saklanabilir yapıda tutulmalıdır. | Z |
+| EBLG-10 | Alıcının e-Fatura mükellefiyeti **lokal listeden** belirlenmelidir. Tam mükellef listesi günde bir kez indirilip saklanır; belge gönderiminde entegratöre canlı liste sorgusu yapılmaz. Liste hiç indirilmemişse veya tazelik penceresinin dışındaysa gönderim durdurulur ve kullanıcıya listenin güncellenmesi gerektiği bildirilir. | G |
+| EBLG-11 | Gelen belge çekimi **tarih kursörüyle** ilerlemelidir: en son sorgulanan ana kadar olan aralık ikinci kez sorgulanmaz, her tarama kursörden bugüne kadarki aralığı en çok birer günlük dilimler hâlinde ister. Zamanlanmış tarama en sık **saatte bir** çalışır; arayüzdeki elle tazeleme kiracı başına saatte bir ile sınırlanır. | G |
+| EBLG-12 | Gelen belge çekimi **zarf düzeyinde** yapılmalıdır; fatura, uygulama yanıtı ve sistem yanıtı belge tipleri için ayrı ayrı çağrı yapılmaz. | G |
+| EBLG-13 | Kestiğimiz ticari faturaya alıcının verdiği **kabul/ret yanıtı** gelen zarflardan okunup faturanın e-belge kaydında ayrı alanlarda (yanıt, zaman, gerekçe) izlenmelidir; zarfın GİB durumu ile alıcının yanıtı ayrı eksenlerdir. Gelen **ret** kritik bildirim üretir (bkz. §3.10). | G |
+| EBLG-14 | Zarf durumu **20'şerli toplu** sorgulanmalıdır; son duruma ulaşmış (kabul/ret/kalıcı hata) zarf bir daha sorgulanmaz ve aynı zarf en erken **2 saat** sonra yeniden sorgulanır. | G |
+| EBLG-15 | Entegratöre yapılan çağrılar metot bazında metrik olarak yayımlanmalıdır; çağrı disiplininin (EBLG-10…14) korunduğu ölçülebilir olmalıdır. | G |
 
 ### 3.4 Stok Takibi (STK)
 

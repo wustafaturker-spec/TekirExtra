@@ -261,7 +261,9 @@ export class FaturaService {
         ...(imlec ? { cursor: { id: imlec }, skip: 1 } : {}),
         include: {
           cari: { select: { id: true, kod: true, unvan: true } },
-          ebelge: { select: { id: true, durum: true, tur: true } },
+          // Alıcının kabul/ret kararı zarf durumundan ayrı bir eksendir
+          // (EBLG-13); listede ikisi birlikte gösterilir.
+          ebelge: { select: { id: true, durum: true, tur: true, aliciYaniti: true, aliciYanitZamani: true, aliciYanitNotu: true } },
           kasaBankaHarekets: { select: { tutarTry: true } },
           krediKartiHareketleri: { select: { cariOdemeTutari: true } },
           satirlar: {

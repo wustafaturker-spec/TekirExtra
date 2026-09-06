@@ -11,10 +11,28 @@ const GONDERIM_ISI = "ebelge-gonder";
 const DURUM_ISI = "ebelge-durum-sorgula";
 const GELEN_ISI = "gelen-belge-cek";
 const EARSIV_RAPOR_ISI = "earsiv-raporla";
+const DURUM_TOPLU_ISI = "ebelge-durum-toplu";
+const MUKELLEF_SENKRON_ISI = "gib-mukellef-senkron";
 const DEAD_LETTER_KUYRUGU = `${KUYRUK_ADI}-dead-letter`;
 const SISTEM_KULLANICISI = "00000000-0000-0000-0000-000000000000";
 
-export type EbelgeIsTuru = typeof GONDERIM_ISI | typeof DURUM_ISI | typeof GELEN_ISI | typeof EARSIV_RAPOR_ISI;
+export type EbelgeIsTuru =
+  | typeof GONDERIM_ISI
+  | typeof DURUM_ISI
+  | typeof GELEN_ISI
+  | typeof EARSIV_RAPOR_ISI
+  | typeof DURUM_TOPLU_ISI
+  | typeof MUKELLEF_SENKRON_ISI;
+
+/**
+ * Gelen belge taraması bu aralıktan sık çalışmaz. Sağlayıcı kılavuzu
+ * "job sıklığı olarak minimum 1 saat ayarlanmalıdır, böylece günde toplam
+ * 24 çağrıdan fazla otomatik olarak yapılmamalıdır" diyor (EBLG-11).
+ */
+const GELEN_TARAMA_ARALIK_MS = Number(process.env.EBLG_GELEN_ARALIK_MS || 60 * 60 * 1_000);
+
+/** Aynı zarfın iki sorgusu arasındaki asgari süre (EBLG-14). */
+const DURUM_SORGU_ARALIK_MS = Number(process.env.EBLG_DURUM_SORGU_ARALIK_MS || 2 * 60 * 60 * 1_000);
 
 export interface EbelgeKuyrukVerisi {
   tenantId: string;
@@ -39,6 +57,8 @@ const isKimligi = (tenantId: string, faturaId: string) => `ebelge-gonder-${tenan
 const durumIsKimligi = (tenantId: string, faturaId: string) => `ebelge-durum-${tenantId}-${faturaId}`;
 const gelenIsKimligi = (tenantId: string) => `gelen-belge-${tenantId}`;
 const earsivRaporIsKimligi = (tenantId: string, uuid: string) => `earsiv-rapor-${tenantId}-${uuid}`;
+const durumTopluIsKimligi = (tenantId: string) => `ebelge-durum-toplu-${tenantId}`;
+const mukellefSenkronIsKimligi = () => "gib-mukellef-senkron";
 
 @Injectable()
 export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
@@ -99,6 +119,16 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
   async gelenBelgeleriKuyrugaEkle() {
     const baglam = aktifBaglam();
     return this.tekrarlanabilirIsEkle(GELEN_ISI, gelenIsKimligi(baglam.tenantId));
+  }
+
+  async durumlariTopluKuyrugaEkle() {
+    const baglam = aktifBaglam();
+    return this.tekrarlanabilirIsEkle(DURUM_TOPLU_ISI, durumTopluIsKimligi(baglam.tenantId));
+  }
+
+  async mukellefSenkronKuyrugaEkle() {
+    const baglam = aktifBaglam();
+    return this.tekrarlanabilirIsEkle(MUKELLEF_SENKRON_ISI, mukellefSenkronIsKimligi());
   }
 
   async earsivRaporKuyrugaEkle(raporUuid: string) {
@@ -164,6 +194,8 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
       await dlq.remove();
       this.metrics.increment("ebelge_queue_jobs_total", { result: "dead_letter_retry", type: dlq.data.isTuru });
       if (dlq.data.isTuru === GELEN_ISI) return this.gelenBelgeleriKuyrugaEkle();
+      if (dlq.data.isTuru === DURUM_TOPLU_ISI) return this.durumlariTopluKuyrugaEkle();
+      if (dlq.data.isTuru === MUKELLEF_SENKRON_ISI) return this.mukellefSenkronKuyrugaEkle();
       if (dlq.data.isTuru === EARSIV_RAPOR_ISI) {
         if (!dlq.data.raporUuid) throw new NotFoundException("Dead-letter işi rapor bilgisi eksik");
         return this.earsivRaporKuyrugaEkle(dlq.data.raporUuid);
@@ -176,6 +208,8 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
     if (durum !== "failed") return { isId: is.id, durum, tekrar: true };
     const veri = is.data; await is.remove(); this.metrics.increment("ebelge_queue_jobs_total", { result: "manual_retry", type: veri.isTuru || is.name });
     if ((veri.isTuru || is.name) === GELEN_ISI) return this.gelenBelgeleriKuyrugaEkle();
+    if ((veri.isTuru || is.name) === DURUM_TOPLU_ISI) return this.durumlariTopluKuyrugaEkle();
+    if ((veri.isTuru || is.name) === MUKELLEF_SENKRON_ISI) return this.mukellefSenkronKuyrugaEkle();
     if ((veri.isTuru || is.name) === EARSIV_RAPOR_ISI) {
       if (!veri.raporUuid) throw new NotFoundException("Kuyruk işi rapor bilgisi eksik");
       return this.earsivRaporKuyrugaEkle(veri.raporUuid);
@@ -191,6 +225,8 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
     }
     return baglamlaCalistir({ tenantId: is.data.tenantId, userId: is.data.userId, rol: is.data.rol }, async () => {
       if (is.name === GELEN_ISI) return this.ebelgeService.gelenBelgeleriCek();
+      if (is.name === DURUM_TOPLU_ISI) return this.ebelgeService.durumlariTopluSorgula();
+      if (is.name === MUKELLEF_SENKRON_ISI) return this.ebelgeService.mukellefListesiSenkronEt();
       if (is.name === EARSIV_RAPOR_ISI) {
         if (!is.data.raporUuid) throw new Error("Kuyruk işinde e-Arşiv rapor UUID bilgisi eksik");
         const sonuc = await this.ebelgeService.earsivRaporDurum(is.data.raporUuid);
@@ -244,11 +280,34 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
     const yonetim = new PrismaClient({ datasourceUrl: yonetimUrl });
     try {
       const tenantlar = await yonetim.tenant.findMany({ where: { baglantilar: { some: { aile: "ebelge", durum: "aktif" } } }, select: { id: true } });
+
+      // Mükellef listesi kiracıdan bağımsız ve global; tur başına en fazla bir
+      // kez, o da günlük aralık dolduysa kuyruğa girer (EBLG-10).
+      if (tenantlar[0] && (await this.ebelgeService.mukellefSenkronVaktiGeldi())) {
+        await baglamlaCalistir({ tenantId: tenantlar[0].id, userId: SISTEM_KULLANICISI, rol: "muhasebe" }, () => this.mukellefSenkronKuyrugaEkle());
+      }
+
       for (const tenant of tenantlar) {
         await baglamlaCalistir({ tenantId: tenant.id, userId: SISTEM_KULLANICISI, rol: "muhasebe" }, async () => {
-          await this.gelenBelgeleriKuyrugaEkle();
-          const bekleyen = await yonetim.ebelgeKayit.findMany({ where: { tenantId: tenant.id, durum: { in: ["kuyrukta", "iletildi"] }, entegratorRef: { not: null } }, select: { faturaId: true }, take: 500 });
-          for (const kayit of bekleyen) await this.durumSorgulaKuyrugaEkle(kayit.faturaId);
+          // Gelen belge taraması kursörle ilerler; aralık dolmadan yeni iş
+          // açmak aynı tarih penceresini tekrar sorgulamak olurdu (EBLG-11).
+          const kursor = await yonetim.ebelgeGelenKursor.findUnique({ where: { tenantId: tenant.id }, select: { sonCekimAt: true } });
+          if (!kursor || Date.now() - kursor.sonCekimAt.getTime() >= GELEN_TARAMA_ARALIK_MS) {
+            await this.gelenBelgeleriKuyrugaEkle();
+          }
+
+          // Zarf durumları fatura başına değil, kiracı başına tek toplu iş
+          // olarak sorgulanır; sorgulanacak kayıt yoksa iş hiç açılmaz (EBLG-14).
+          const esik = new Date(Date.now() - DURUM_SORGU_ARALIK_MS);
+          const bekleyen = await yonetim.ebelgeKayit.count({
+            where: {
+              tenantId: tenant.id,
+              durum: { in: ["kuyrukta", "iletildi"] },
+              entegratorRef: { not: null },
+              OR: [{ sonDurumSorguAt: null }, { sonDurumSorguAt: { lt: esik } }],
+            },
+          });
+          if (bekleyen > 0) await this.durumlariTopluKuyrugaEkle();
         });
       }
       this.metrics.increment("ebelge_schedule_runs_total", { result: "success" });

@@ -85,3 +85,52 @@ export interface EarsivRapor {
 
 export interface EirsaliyeBelge { uuid: string; belgeNo: string; xml: string; aliciPostaKutusu: string }
 export interface GelenEirsaliye { uuid: string; belgeNo: string; gonderenVkn: string; gonderenUnvan: string; tarih: Date; xml: string }
+
+/**
+ * Entegratörden toplu indirilen GİB mükellef kaydı (EBLG-10). Bir VKN'nin
+ * birden çok posta kutusu etiketi olabilir; liste her etiketi ayrı satır
+ * olarak taşır, kanal kararını okuyan taraf verir.
+ */
+export interface MukellefKaydi {
+  vknTckn: string;
+  /**
+   * e-Fatura ve e-İrsaliye kayıtları GİB'de ayrıdır: bir firma e-Fatura
+   * mükellefi olup e-İrsaliye kullanmıyor olabilir. Tek indirme ikisini de
+   * getirdiğinden tür kayıtta taşınır.
+   */
+  belgeTuru: "efatura" | "eirsaliye";
+  postaKutusu: string;
+  unvan?: string;
+}
+
+/** Gelen zarf çekiminin tarih penceresi; kursör bu aralığı belirler (EBLG-11). */
+export interface ZarfAraligi {
+  baslangic: Date;
+  bitis: Date;
+}
+
+/**
+ * Bize gelen uygulama yanıtı — *bizim kestiğimiz* faturaya alıcının verdiği
+ * kabul/ret (EBLG-13). Gelen faturadan farklıdır: burada belge bizim, karar
+ * karşı tarafındır.
+ */
+export interface GelenAliciYaniti {
+  /** Yanıt belgesinin kendi UUID'si; mükerrer işlemeyi bu anahtar engeller. */
+  uuid: string;
+  /** Yanıtın atıf yaptığı faturanın UUID'si (varsa). */
+  faturaUuid?: string;
+  /** Yanıtın atıf yaptığı fatura numarası (varsa). */
+  faturaNo?: string;
+  yanit: "kabul" | "ret";
+  gerekce?: string;
+  tarih: Date;
+}
+
+/**
+ * Zarf düzeyinde tek çağrıyla alınan gelen belge kümesi (EBLG-12). Fatura ve
+ * uygulama yanıtı için ayrı ayrı liste çağrısı yapılmaz.
+ */
+export interface GelenZarfSonucu {
+  belgeler: GelenBelge[];
+  yanitlar: GelenAliciYaniti[];
+}

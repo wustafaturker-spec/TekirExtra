@@ -82,8 +82,12 @@ interface Fatura {
   toplamKdv: string;
   genelToplam: string;
   cari: { unvan: string };
-  /** API iç içe döner; gönderilmemiş faturada null. */
-  ebelge?: { id: string; durum: string; tur: string } | null;
+  /**
+   * API iç içe döner; gönderilmemiş faturada null. `durum` zarfın GİB durumu,
+   * `aliciYaniti` ise alıcının kabul/ret kararıdır — ikisi ayrı eksendir
+   * (EBLG-13): zarf kabul edilmiş olabilir ama alıcı faturayı reddetmiş olabilir.
+   */
+  ebelge?: { id: string; durum: string; tur: string; aliciYaniti?: "kabul" | "ret" | null; aliciYanitZamani?: string | null; aliciYanitNotu?: string | null } | null;
   odemeOzeti?: { durum: "beklemede" | "odenmedi" | "kismi" | "odendi"; odenen: string; kalan: string };
 }
 
@@ -99,6 +103,9 @@ interface FaturaDetay extends Fatura {
     tur: string;
     entegratorRef: string | null;
     hataMesaji: string | null;
+    aliciYaniti?: "kabul" | "ret" | null;
+    aliciYanitZamani?: string | null;
+    aliciYanitNotu?: string | null;
     createdAt: string;
     updatedAt: string;
   } | null;
@@ -1325,12 +1332,26 @@ export default function FaturaSayfasi() {
                 <span />
                 <div><strong>{EBELGE_DURUMLARI[ebelgeDetayi.ebelge.durum]?.baslik ?? ebelgeDetayi.ebelge.durum}</strong><small>{new Date(ebelgeDetayi.ebelge.updatedAt).toLocaleString("tr-TR")}</small></div>
               </div>
+              {ebelgeDetayi.ebelge.aliciYaniti && (
+                <div className={`status-history__item${ebelgeDetayi.ebelge.aliciYaniti === "ret" ? " is-error" : " is-complete"}`}>
+                  <span />
+                  <div>
+                    <strong>{ebelgeDetayi.ebelge.aliciYaniti === "ret" ? "Alıcı faturayı reddetti" : "Alıcı faturayı kabul etti"}</strong>
+                    <small>{ebelgeDetayi.ebelge.aliciYanitZamani ? new Date(ebelgeDetayi.ebelge.aliciYanitZamani).toLocaleDateString("tr-TR") : "—"}</small>
+                  </div>
+                </div>
+              )}
             </div>
             <dl>
               <div><dt>Entegratör referansı</dt><dd>{ebelgeDetayi.ebelge.entegratorRef || "Henüz oluşmadı"}</dd></div>
               <div><dt>Son güncelleme</dt><dd>{new Date(ebelgeDetayi.ebelge.updatedAt).toLocaleString("tr-TR")}</dd></div>
             </dl>
             {ebelgeDetayi.ebelge.hataMesaji && <div className="approval-impact is-warning">{ebelgeDetayi.ebelge.hataMesaji}</div>}
+            {ebelgeDetayi.ebelge.aliciYaniti === "ret" && (
+              <div className="approval-impact is-warning">
+                Alıcı ret gerekçesi: {ebelgeDetayi.ebelge.aliciYanitNotu || "belirtilmedi"}. Ret alan ticari fatura için iade faturası kesilmesi gerekir.
+              </div>
+            )}
             <div className="quick-panel__actions">
               <Button type="button" onClick={() => setEbelgeDetayi(null)}>Kapat</Button>
               {["kuyrukta", "iletildi"].includes(ebelgeDetayi.ebelge.durum) && <Button type="button" variant="primary" onClick={() => void ebelgeSorgula(ebelgeDetayi.id)}>Durumu sorgula</Button>}
@@ -1426,6 +1447,11 @@ export default function FaturaSayfasi() {
                           {EBELGE_DURUMLARI[f.ebelge.durum]?.baslik ?? f.ebelge.durum}
                           {f.ebelge.tur === "efatura" ? " · e-Fatura" : " · e-Arşiv"}
                         </Badge>
+                        {f.ebelge.aliciYaniti && (
+                          <Badge variant={f.ebelge.aliciYaniti === "ret" ? "danger" : "success"}>
+                            {f.ebelge.aliciYaniti === "ret" ? "Alıcı reddetti" : "Alıcı kabul etti"}
+                          </Badge>
+                        )}
                       </button>
                     ) : (
                       <span className="subtle">—</span>

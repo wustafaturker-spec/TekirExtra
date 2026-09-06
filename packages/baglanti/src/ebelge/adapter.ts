@@ -11,6 +11,9 @@ import type {
   EarsivRapor,
   EirsaliyeBelge,
   GelenEirsaliye,
+  MukellefKaydi,
+  ZarfAraligi,
+  GelenZarfSonucu,
 } from "./types";
 
 /**
@@ -28,6 +31,20 @@ export interface EntegratorAdapter {
   belgeGonder(cfg: EntegratorConfig, belge: UblBelge): Promise<GonderimSonuc>;
   durumSorgula(cfg: EntegratorConfig, belgeRef: string): Promise<BelgeDurumSonuc>;
   gelenBelgeleriCek(cfg: EntegratorConfig, sonrasi: Date): Promise<GelenBelge[]>;
+  /**
+   * Tam GİB mükellef listesini indirir (EBLG-10). Yalnızca toplu liste sunan
+   * sağlayıcılar uygular; tekil sorgusu ucuz olan sağlayıcılarda tanımsız
+   * kalır ve çağıran `mukellefSorgula`'ya düşer.
+   */
+  mukellefListesiCek?(cfg: EntegratorConfig): Promise<MukellefKaydi[]>;
+  /**
+   * Verilen tarih aralığındaki gelen zarfları tek çağrı ailesiyle indirir
+   * (EBLG-11, EBLG-12). Aralık kursörden gelir; adaptör aralığı sağlayıcının
+   * izin verdiği dilimlere kendi böler.
+   */
+  gelenZarflariCek?(cfg: EntegratorConfig, aralik: ZarfAraligi): Promise<GelenZarfSonucu>;
+  /** Zarf durumlarını toplu sorgular (EBLG-14); sağlayıcı sınırına adaptör uyar. */
+  durumSorgulaToplu?(cfg: EntegratorConfig, belgeRefleri: string[]): Promise<BelgeDurumSonuc[]>;
   yanitGonder(
     cfg: EntegratorConfig,
     belgeRef: string,

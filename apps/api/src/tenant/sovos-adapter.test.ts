@@ -134,3 +134,117 @@ describe("SovosEntegratorAdapter", () => {
     await expect(adapter.irsaliyeDurumSorgula(config, "irs-zarf-1")).resolves.toEqual({ belgeRef: "irs-zarf-1", durum: "kabul", detay: "Sevk belgesi kabul edildi" });
   });
 });
+
+/* ─── Entegratör çağrı disiplini (EBLG-10, 12, 13, 14) ──────────────────── */
+
+/** Sovos `getRAWUserList` yanıtını base64 ZIP içinde `UserList` olarak döndürür. */
+function kullaniciListesiYaniti(icerik: string): string {
+  return `<S:Envelope><S:Body><getRAWUserListResponse><DocData>${tekDosyaZipBase64("userlist.xml", icerik)}</DocData></getRAWUserListResponse></S:Body></S:Envelope>`;
+}
+
+describe("SovosEntegratorAdapter — mükellef listesi (EBLG-10)", () => {
+  it("ZIP'li kullanıcı listesini çözer, e-Fatura ve e-İrsaliye etiketlerini ayırır", async () => {
+    const liste = `<UserList>
+      <User>
+        <Identifier>1234567890</Identifier><Title>Alfa Ticaret A.Ş.</Title>
+        <Documents>
+          <Document type="INVOICE"><Alias><Name>urn:mail:defaultpk@alfa.test</Name></Alias></Document>
+          <Document type="DESPATCH"><Alias><Name>urn:mail:irsaliyepk@alfa.test</Name></Alias></Document>
+        </Documents>
+      </User>
+    </UserList>`;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: async () => kullaniciListesiYaniti(liste) }));
+
+    const kayitlar = await new SovosEntegratorAdapter().mukellefListesiCek(config);
+
+    expect(kayitlar).toEqual([
+      { vknTckn: "1234567890", belgeTuru: "efatura", postaKutusu: "urn:mail:defaultpk@alfa.test", unvan: "Alfa Ticaret A.Ş." },
+      { vknTckn: "1234567890", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:irsaliyepk@alfa.test", unvan: "Alfa Ticaret A.Ş." },
+    ]);
+  });
+
+  it("silinmiş etiketi listeye almaz — o kutuya gönderilen zarf karşı tarafa ulaşmaz", async () => {
+    const liste = `<UserList>
+      <User>
+        <Identifier>1234567890</Identifier><Title>Alfa</Title>
+        <Documents><Document type="INVOICE">
+          <Alias><Name>urn:mail:eski@alfa.test</Name><DeletionTime>2026-01-01T00:00:00</DeletionTime></Alias>
+          <Alias><Name>urn:mail:guncel@alfa.test</Name></Alias>
+        </Document></Documents>
+      </User>
+    </UserList>`;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: async () => kullaniciListesiYaniti(liste) }));
+
+    const kayitlar = await new SovosEntegratorAdapter().mukellefListesiCek(config);
+
+    expect(kayitlar.map((k) => k.postaKutusu)).toEqual(["urn:mail:guncel@alfa.test"]);
+  });
+});
+
+describe("SovosEntegratorAdapter — gelen zarf akışı (EBLG-11, EBLG-12)", () => {
+  it("zarf tipinde liste ister ve tek çağrı ailesiyle fatura ile alıcı yanıtını birlikte alır", async () => {
+    const fatura = `<Invoice xmlns:cbc="x"><cbc:ID>MCK1</cbc:ID><cbc:UUID>fatura-uuid-1</cbc:UUID><cbc:IssueDate>2026-09-01</cbc:IssueDate><cac:AccountingSupplierParty><cac:Party><cbc:ID schemeID="VKN">4840847211</cbc:ID><cbc:Name>Tedarik A.Ş.</cbc:Name></cac:Party></cac:AccountingSupplierParty></Invoice>`;
+    const yanit = `<ApplicationResponse><cbc:UUID>yanit-uuid-1</cbc:UUID><cbc:IssueDate>2026-09-02</cbc:IssueDate><cac:DocumentResponse><cac:Response><cbc:ResponseCode>RED</cbc:ResponseCode><cbc:Description>Miktar hatalı</cbc:Description></cac:Response><cac:DocumentReference><cbc:ID>TKR2026000000009</cbc:ID><cbc:UUID>bizim-fatura-uuid</cbc:UUID></cac:DocumentReference></cac:DocumentResponse></ApplicationResponse>`;
+    const zarf = `<sh:StandardBusinessDocument><ef:Package><Elements><ElementList>${fatura}${yanit}</ElementList></Elements></ef:Package></sh:StandardBusinessDocument>`;
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, text: async () => `<S:Envelope><S:Body><getUBLListResponse><UBLList><UUID>zarf-1</UUID></UBLList></getUBLListResponse></S:Body></S:Envelope>` })
+      .mockResolvedValueOnce({ ok: true, text: async () => `<S:Envelope><S:Body><getUBLResponse><DocData>${tekDosyaZipBase64("zarf.xml", zarf)}</DocData></getUBLResponse></S:Body></S:Envelope>` });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const sonuc = await new SovosEntegratorAdapter().gelenZarflariCek(config, {
+      baslangic: new Date("2026-09-01T00:00:00Z"),
+      bitis: new Date("2026-09-01T12:00:00Z"),
+    });
+
+    // Liste ve indirme için toplam iki çağrı; belge tipi başına ayrı çağrı yok.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][1].body).toContain("<ein:DocType>ENVELOPE</ein:DocType>");
+    expect(sonuc.belgeler.map((b) => b.uuid)).toEqual(["fatura-uuid-1"]);
+    expect(sonuc.yanitlar).toEqual([
+      expect.objectContaining({ uuid: "yanit-uuid-1", yanit: "ret", faturaUuid: "bizim-fatura-uuid", faturaNo: "TKR2026000000009", gerekce: "Miktar hatalı" }),
+    ]);
+  });
+
+  it("aralığı bir günlük dilimlere böler — sağlayıcı daha geniş aralık kabul etmiyor", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => `<S:Envelope><S:Body><getUBLListResponse/></S:Body></S:Envelope>` });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new SovosEntegratorAdapter().gelenZarflariCek(config, {
+      baslangic: new Date("2026-09-01T00:00:00Z"),
+      bitis: new Date("2026-09-04T00:00:00Z"),
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("SovosEntegratorAdapter — toplu durum sorgusu (EBLG-14)", () => {
+  it("zarfları 20'şerli gruplar ve tek çağrıda sorar", async () => {
+    const refler = Array.from({ length: 25 }, (_, i) => `zarf-${i}`);
+    const yanitla = (grup: string[]) =>
+      `<S:Envelope><S:Body><getEnvelopeStatusResponse>${grup.map((u) => `<Response><UUID>${u}</UUID><ResponseCode>1300</ResponseCode><Description>Kabul</Description></Response>`).join("")}</getEnvelopeStatusResponse></S:Body></S:Envelope>`;
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, text: async () => yanitla(refler.slice(0, 20)) })
+      .mockResolvedValueOnce({ ok: true, text: async () => yanitla(refler.slice(20)) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const sonuc = await new SovosEntegratorAdapter().durumSorgulaToplu(config, refler);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect((fetchMock.mock.calls[0][1].body.match(/<ein:UUID>/g) || []).length).toBe(20);
+    expect(sonuc).toHaveLength(25);
+    expect(sonuc[0]).toEqual({ belgeRef: "zarf-0", durum: "kabul", detay: "Kabul" });
+  });
+
+  it("yanıtta karşılığı dönmeyen zarfı son duruma taşımaz", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => `<S:Envelope><S:Body><getEnvelopeStatusResponse><Response><UUID>zarf-a</UUID><ResponseCode>1300</ResponseCode></Response></getEnvelopeStatusResponse></S:Body></S:Envelope>`,
+    }));
+
+    const sonuc = await new SovosEntegratorAdapter().durumSorgulaToplu(config, ["zarf-a", "zarf-b"]);
+
+    expect(sonuc.map((s) => s.belgeRef)).toEqual(["zarf-a"]);
+  });
+});

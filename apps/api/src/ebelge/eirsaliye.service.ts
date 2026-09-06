@@ -6,6 +6,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
+import { MukellefListesiService } from "./mukellef-listesi.service";
 
 const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const xmlParser = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true, parseTagValue: false, trimValues: true });
@@ -14,7 +15,11 @@ const metin = (v: unknown): string => typeof v === "object" && v !== null && "#t
 
 @Injectable()
 export class EirsaliyeService {
-  constructor(private readonly prisma: PrismaService, private readonly baglantilar: BaglantilarService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly baglantilar: BaglantilarService,
+    private readonly mukellefListesi: MukellefListesiService,
+  ) {}
 
   private async baglanti(tx: any, tenantId: string) {
     const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } });
@@ -35,10 +40,12 @@ export class EirsaliyeService {
       if (belge.tur !== "irsaliye" || belge.yon !== "satis") throw new BadRequestException("Yalnızca satış irsaliyesi e-İrsaliye olarak gönderilebilir");
       if (belge.durum !== "onaylandi") throw new BadRequestException("e-İrsaliye göndermek için belge onaylanmış olmalıdır");
       if (belge.eirsaliye?.durum === "kabul" || belge.eirsaliye?.durum === "iletildi") return belge.eirsaliye;
-      const { cfg, adapter } = await this.baglanti(tx, tenantId);
+      const { baglanti, cfg, adapter } = await this.baglanti(tx, tenantId);
       if (!adapter.irsaliyeGonder) throw new BadRequestException("Seçili entegratör e-İrsaliye gönderimini desteklemiyor");
       if (!belge.cari.vknTckn) throw new BadRequestException("Cari VKN/TCKN bilgisi eksik");
-      const mukellef = await adapter.mukellefSorgula(cfg, belge.cari.vknTckn);
+      // e-İrsaliye kaydı GİB'de e-Fatura'dan ayrıdır; lokal liste sorgusu da
+      // "eirsaliye" türüyle yapılır (EBLG-10).
+      const mukellef = await this.mukellefListesi.kanalBelirle(baglanti.saglayici, cfg, belge.cari.vknTckn, "eirsaliye");
       if (!mukellef.eFaturaMukellefi || !mukellef.postaKutusu) throw new BadRequestException("Cari e-İrsaliye alıcısı olarak tanımlı değil");
       const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
       const xml = this.ubl(belge, tenant);

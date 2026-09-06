@@ -7,14 +7,17 @@ import {
   forwardRef,
 } from "@nestjs/common";
 import { BelgeDurum, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
-import type { EntegratorConfig } from "@tekirextra/baglanti";
+import type { EntegratorConfig, GelenAliciYaniti } from "@tekirextra/baglanti";
 import { vknTcknGecerliMi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
+import { BildirimService } from "../bildirimler/bildirim.service";
+import { MetricsService } from "../core/observability/metrics.service";
 import { PrismaService } from "../core/prisma.service";
 import { FaturaService } from "../fatura/fatura.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
 import { UblOkumaHatasi, faturaUblOku, type UblFatura, type UblSatir } from "./ubl-oku";
+import { MukellefListesiService } from "./mukellef-listesi.service";
 import { faturaUblUret } from "./xml-uretec";
 
 /** Onay ekranında satırın hangi ipucuyla eşleştiği. */
@@ -28,6 +31,16 @@ export type EslesmeKaynagi =
 
 const YEDI_GUN_MS = 7 * 24 * 60 * 60 * 1_000;
 
+/**
+ * Aynı zarf bu süre dolmadan yeniden sorgulanmaz. Sağlayıcı kılavuzu "bir zarf
+ * otomatik job'larla en az 2 saat sonra tekrar sorgulanmalıdır" diyor; zarfın
+ * son duruma ulaşması zaten günler alabiliyor.
+ */
+const DURUM_SORGU_ARALIK_MS = Number(process.env.EBLG_DURUM_SORGU_ARALIK_MS || 2 * 60 * 60 * 1_000);
+
+/** Ekrandaki "Yenile" düğmesinin kiracı başına asgari aralığı (EBLG-11). */
+const ELLE_TAZELEME_ARALIK_MS = Number(process.env.EBLG_ELLE_TAZELEME_ARALIK_MS || 60 * 60 * 1_000);
+
 function gonderimTarihiGecerliMi(tarih: Date, simdi = new Date()): boolean {
   const fark = simdi.getTime() - tarih.getTime();
   return fark >= 0 && fark <= YEDI_GUN_MS;
@@ -40,6 +53,9 @@ export class EbelgeService {
     private readonly baglantilarService: BaglantilarService,
     @Inject(forwardRef(() => FaturaService))
     private readonly faturaService: FaturaService,
+    private readonly mukellefListesi: MukellefListesiService,
+    private readonly metrics: MetricsService,
+    private readonly bildirimler: BildirimService,
   ) {}
 
   // ─── E-BELGE GÖNDERİMİ (EBLG-01/02/06/07) ──────────────────────────────────
@@ -159,7 +175,9 @@ export class EbelgeService {
 
     const adapter = this.baglantilarService.adapterCoz(hazirlik.saglayici);
     try {
-      const mukellefiyet = await adapter.mukellefSorgula(hazirlik.cfg, hazirlik.fatura.cari.vknTckn!);
+      // Kanal kararı lokal listeden verilir; gönderim başına entegratöre tam
+      // liste sorulması bloklanma sebebiydi (EBLG-10).
+      const mukellefiyet = await this.mukellefListesi.kanalBelirle(hazirlik.saglayici, hazirlik.cfg, hazirlik.fatura.cari.vknTckn!);
       if (mukellefiyet.eFaturaMukellefi && !mukellefiyet.postaKutusu) {
         throw new BadRequestException("Alıcı e-Fatura mükellefi ancak GİB posta kutusu (alias) bulunamadı");
       }
@@ -244,26 +262,166 @@ export class EbelgeService {
       const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
 
       // Entegratörden güncel durumu sorgula
+      this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "durumSorgula", saglayici: baglanti.saglayici });
       const sonuc = await adapter.durumSorgula(cfg, ebelge.entegratorRef);
 
-      // Durumu veritabanında güncelle
+      // Durumu veritabanında güncelle. `sonDurumSorguAt` yazılır ki zamanlanmış
+      // toplu tarama aynı zarfı iki saat dolmadan tekrar sormasın (EBLG-14).
       return tx.ebelgeKayit.update({
         where: { id: ebelge.id },
         data: {
           durum: sonuc.durum,
           hataMesaji: sonuc.detay || null,
+          sonDurumSorguAt: new Date(),
         },
       });
     });
   }
 
+  /**
+   * Bekleyen zarfların durumunu toplu sorgular (EBLG-14).
+   *
+   * Önceki kurgu her bekleyen fatura için ayrı iş açıyordu; sağlayıcı kılavuzu
+   * bunu açıkça yasaklıyor ("84 tekil çağrı yapılmamalıdır"). Burada zarflar
+   * adaptörün toplu metoduna verilir, son duruma ulaşmış kayıtlar zaten
+   * seçilmez ve her sorgudan sonra `sonDurumSorguAt` işaretlenir; böylece aynı
+   * zarf iki saat dolmadan yeniden sorulmaz.
+   */
+  async durumlariTopluSorgula(): Promise<{ sorgulanan: number; guncellenen: number }> {
+    const { tenantId } = aktifBaglam();
+
+    const baglanti = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } }),
+    );
+    if (!baglanti) return { sorgulanan: 0, guncellenen: 0 };
+
+    const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
+    const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
+    const esik = new Date(Date.now() - DURUM_SORGU_ARALIK_MS);
+
+    const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.ebelgeKayit.findMany({
+        where: {
+          tenantId,
+          durum: { in: ["kuyrukta", "iletildi"] },
+          entegratorRef: { not: null },
+          OR: [{ sonDurumSorguAt: null }, { sonDurumSorguAt: { lt: esik } }],
+        },
+        select: { id: true, entegratorRef: true },
+        take: 500,
+      }),
+    );
+    if (kayitlar.length === 0) return { sorgulanan: 0, guncellenen: 0 };
+
+    const refKayit = new Map(kayitlar.map((k) => [k.entegratorRef!, k.id]));
+    // e-Arşiv referansları zarf sorgusuna girmez; ayrı servisin tekil durum
+    // metodunu kullanırlar.
+    const zarflar = [...refKayit.keys()].filter((ref) => !ref.startsWith("EARSIV:"));
+    const digerleri = [...refKayit.keys()].filter((ref) => ref.startsWith("EARSIV:"));
+
+    const sonuclar = [];
+    if (zarflar.length > 0) {
+      if (adapter.durumSorgulaToplu) {
+        this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "durumSorgulaToplu", saglayici: baglanti.saglayici }, Math.ceil(zarflar.length / 20));
+        sonuclar.push(...(await adapter.durumSorgulaToplu(cfg, zarflar)));
+      } else {
+        for (const ref of zarflar) {
+          this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "durumSorgula", saglayici: baglanti.saglayici });
+          sonuclar.push(await adapter.durumSorgula(cfg, ref));
+        }
+      }
+    }
+    for (const ref of digerleri) {
+      this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "durumSorgula", saglayici: baglanti.saglayici });
+      sonuclar.push(await adapter.durumSorgula(cfg, ref));
+    }
+
+    let guncellenen = 0;
+    for (const sonuc of sonuclar) {
+      const id = refKayit.get(sonuc.belgeRef);
+      if (!id) continue;
+      await this.prisma.tenantIslem(tenantId, (tx) =>
+        tx.ebelgeKayit.update({
+          where: { id },
+          data: { durum: sonuc.durum, hataMesaji: sonuc.detay || null, sonDurumSorguAt: new Date() },
+        }),
+      );
+      guncellenen += 1;
+    }
+
+    this.metrics.increment("ebelge_durum_toplu_sorgu_total", {}, 1);
+    return { sorgulanan: refKayit.size, guncellenen };
+  }
+
+  // ─── GİB MÜKELLEF LİSTESİ (EBLG-10) ────────────────────────────────────────
+
+  /**
+   * Aktif bağlantının kimlik bilgileriyle global mükellef listesini tazeler.
+   * Liste kiracıdan bağımsız olduğundan hangi kiracının hesabıyla indirildiği
+   * sonucu değiştirmez; kayıt hangi sağlayıcıdan geldiğini saklar.
+   */
+  async mukellefListesiSenkronEt() {
+    const { tenantId } = aktifBaglam();
+    const baglanti = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } }),
+    );
+    if (!baglanti) throw new BadRequestException("Aktif e-belge bağlantısı bulunamadı");
+    const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
+    return this.mukellefListesi.senkronEt(baglanti.saglayici, cfg);
+  }
+
+  mukellefSenkronVaktiGeldi() {
+    return this.mukellefListesi.senkronVaktiGeldi();
+  }
+
+  mukellefListesiDurumu() {
+    return this.mukellefListesi.durum();
+  }
+
+  /**
+   * Elle tazelemenin saatlik sınırı (EBLG-11). Kılavuz son kullanıcı ekranının
+   * doğrudan bu API üzerinde çalıştırılmamasını istiyor; buton kalıyor ama
+   * kiracı başına saatte bir kez geçiyor.
+   */
+  async elleTazelemeIzniAl(): Promise<void> {
+    const { tenantId } = aktifBaglam();
+    const simdi = new Date();
+    const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.ebelgeGelenKursor.findUnique({ where: { tenantId } }),
+    );
+    if (kayit?.sonTetiklemeAt && simdi.getTime() - kayit.sonTetiklemeAt.getTime() < ELLE_TAZELEME_ARALIK_MS) {
+      const kalanDk = Math.ceil((ELLE_TAZELEME_ARALIK_MS - (simdi.getTime() - kayit.sonTetiklemeAt.getTime())) / 60_000);
+      throw new BadRequestException(`Gelen belge kutusu saatte bir tazelenebilir; ${kalanDk} dakika sonra tekrar deneyin`);
+    }
+    await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.ebelgeGelenKursor.upsert({
+        where: { tenantId },
+        // Kursörü ileri almaz; yalnız tetikleme anını işaretler. İlk kayıtta
+        // çekim penceresini `gelenKursoruOku` belirler.
+        create: { tenantId, sonCekimAt: kayit?.sonCekimAt ?? this.ilkGelenPenceresi(), sonTetiklemeAt: simdi },
+        update: { sonTetiklemeAt: simdi },
+      }),
+    );
+  }
+
+  private ilkGelenPenceresi(): Date {
+    const pencere = new Date();
+    pencere.setDate(pencere.getDate() - Number(process.env.EBLG_ILK_GELEN_PENCERE_GUN || 7));
+    return pencere;
+  }
+
   // ─── GELEN E-BELGE KUTUSU (EBLG-05/06) ─────────────────────────────────────
 
   /**
-   * Entegratörden son 30 günün gelen belgelerini çeker ve **yalnızca gelen
-   * kutusuna** yazar (EBLG-05). Fatura üretilmez — bu, kullanıcı onayıyla
+   * Gelen belgeleri kursörün bıraktığı yerden çeker (EBLG-11) ve **yalnızca
+   * gelen kutusuna** yazar (EBLG-05). Fatura üretilmez — bu, kullanıcı onayıyla
    * {@link gelenOnayla} üzerinden olur. Tekrar çekimde aynı belge
    * `[tenantId, uuid]` teklik kısıtıyla yinelenmez.
+   *
+   * Kursör, sağlayıcının "sorgulanan tarih aralıkları kesinlikle tekrar tekrar
+   * sorgulanmamalıdır" kuralının karşılığıdır: her tarama yalnızca son çekimden
+   * bu yana açılan aralığı ister. Adaptörü zarf düzeyinde çekim yapabilen
+   * sağlayıcılarda fatura ve alıcı yanıtı tek çağrı ailesiyle alınır (EBLG-12).
    */
   async gelenBelgeleriCek() {
     const { tenantId } = aktifBaglam();
@@ -279,10 +437,20 @@ export class EbelgeService {
     const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
     const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
 
-    const otuzGunOnce = new Date();
-    otuzGunOnce.setDate(otuzGunOnce.getDate() - 30);
+    const bitis = new Date();
+    const baslangic = await this.gelenKursoruOku(tenantId);
 
-    const belgeler = await adapter.gelenBelgeleriCek(cfg, otuzGunOnce);
+    let belgeler;
+    let yanitlar: GelenAliciYaniti[] = [];
+    if (adapter.gelenZarflariCek) {
+      this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "gelenZarflariCek", saglayici: baglanti.saglayici });
+      const zarflar = await adapter.gelenZarflariCek(cfg, { baslangic, bitis });
+      belgeler = zarflar.belgeler;
+      yanitlar = zarflar.yanitlar;
+    } else {
+      this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "gelenBelgeleriCek", saglayici: baglanti.saglayici });
+      belgeler = await adapter.gelenBelgeleriCek(cfg, baslangic);
+    }
 
     let yeniBelgeSayisi = 0;
 
@@ -325,10 +493,99 @@ export class EbelgeService {
       if (!oncesi) yeniBelgeSayisi += 1;
     }
 
+    const islenenYanit = await this.aliciYanitlariniIsle(tenantId, yanitlar);
+
+    // Kursör yalnızca çekim bittikten sonra ilerletilir; ortada hata alırsak
+    // aralık yeniden istenir, çünkü kayıp belge tekrar sorgudan daha kötüdür.
+    await this.gelenKursoruYaz(tenantId, bitis);
+    this.metrics.increment("ebelge_gelen_cekim_total", { result: "success" });
+    this.metrics.set("ebelge_gelen_kursor_yasi_saniye", (Date.now() - baslangic.getTime()) / 1000);
+
     return {
       toplamCekilen: belgeler.length,
       yeniBelgeSayisi,
+      islenenAliciYaniti: islenenYanit,
     };
+  }
+
+  /**
+   * Gelen belge kursörünü okur. Kursör yoksa ilk tarama için makul bir pencere
+   * açılır: 30 gün geriye gitmek günlük dilimlerde 30 liste çağrısı demek olur
+   * ve tam da kaçınmaya çalıştığımız yığılmayı ilk çalıştırmada üretirdi.
+   */
+  private async gelenKursoruOku(tenantId: string): Promise<Date> {
+    const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.ebelgeGelenKursor.findUnique({ where: { tenantId } }),
+    );
+    return kayit ? kayit.sonCekimAt : this.ilkGelenPenceresi();
+  }
+
+  private async gelenKursoruYaz(tenantId: string, an: Date): Promise<void> {
+    await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.ebelgeGelenKursor.upsert({
+        where: { tenantId },
+        create: { tenantId, sonCekimAt: an },
+        update: { sonCekimAt: an },
+      }),
+    );
+  }
+
+  /**
+   * Alıcının *bizim kestiğimiz* faturaya verdiği kabul/ret yanıtını işler
+   * (EBLG-13). Yanıt faturanın kendi UUID'siyle, o tutmazsa fatura numarasıyla
+   * eşlenir. Kayıt `durum` alanına dokunulmaz: o alan zarfın GİB durumudur,
+   * alıcının kararı ayrı eksendir.
+   */
+  private async aliciYanitlariniIsle(tenantId: string, yanitlar: GelenAliciYaniti[]): Promise<number> {
+    let islenen = 0;
+    for (const yanit of yanitlar) {
+      const kayit = await this.prisma.tenantIslem(tenantId, async (tx) => {
+        const fatura = yanit.faturaUuid
+          ? await tx.fatura.findFirst({ where: { tenantId, id: yanit.faturaUuid }, select: { id: true } })
+          : null;
+        const hedefFaturaId = fatura?.id
+          ?? (yanit.faturaNo
+            ? (await tx.fatura.findFirst({ where: { tenantId, no: yanit.faturaNo }, select: { id: true } }))?.id
+            : undefined);
+        if (!hedefFaturaId) return null;
+        return tx.ebelgeKayit.findUnique({ where: { faturaId: hedefFaturaId }, select: { id: true, aliciYanitRef: true } });
+      });
+      // Bize ait olmayan bir belgeye atıf yapan yanıt sessizce atlanır; gelen
+      // kutusundaki başkasının faturasına verdiğimiz yanıt da buraya düşebilir.
+      if (!kayit) continue;
+      if (kayit.aliciYanitRef === yanit.uuid) continue;
+
+      await this.prisma.tenantIslem(tenantId, (tx) =>
+        tx.ebelgeKayit.update({
+          where: { id: kayit.id },
+          data: {
+            aliciYaniti: yanit.yanit,
+            aliciYanitZamani: yanit.tarih,
+            aliciYanitNotu: yanit.gerekce?.slice(0, 500) ?? null,
+            aliciYanitRef: yanit.uuid,
+          },
+        }),
+      );
+      islenen += 1;
+      this.metrics.increment("ebelge_alici_yanit_total", { yanit: yanit.yanit });
+
+      // Ret, iade faturası kesilmesini gerektirdiği için sahiplenilmesi gereken
+      // bir olaydır; kabul bilgilendirmedir ve bildirim üretmez (EBLG-13).
+      if (yanit.yanit === "ret") {
+        await this.bildirimler.uret({
+          tur: "ebelge",
+          onem: "kritik",
+          baslik: "Alıcı faturayı reddetti",
+          aciklama: `${yanit.faturaNo ?? "Fatura"} için ret yanıtı geldi${yanit.gerekce ? `: ${yanit.gerekce}` : ""}. İade faturası kesilmesi gerekebilir.`,
+          birlesimAnahtari: `ebelge-ret:${yanit.uuid}`,
+          kaynakTur: "fatura",
+          kaynakRef: kayit.id,
+          hedefYol: "/panel/fatura?ebelge=ret",
+          roller: ["yonetici", "muhasebe"],
+        });
+      }
+    }
+    return islenen;
   }
 
   /**

@@ -1,6 +1,7 @@
 import type { EntegratorAdapter } from "./adapter";
 import { createHash, randomUUID } from "node:crypto";
 import { inflateRawSync } from "node:zlib";
+import type { BelgeDurum } from "@tekirextra/shared";
 import type {
   BaglantiSonuc,
   BelgeDurumSonuc,
@@ -13,6 +14,10 @@ import type {
   EarsivRapor,
   EirsaliyeBelge,
   GelenEirsaliye,
+  MukellefKaydi,
+  ZarfAraligi,
+  GelenZarfSonucu,
+  GelenAliciYaniti,
 } from "./types";
 
 const EFATURA_NS = "http:/fitcons.com/eInvoice/";
@@ -64,6 +69,59 @@ function gelenUblBilgisi(xml: string, varsayilanUuid: string): GelenBelge {
   const gonderenUnvan = xmlDegeri(tedarikci, ["Name"]) || gonderenVkn;
   const tarihMetni = xmlDegeri(xml, ["IssueDate"]);
   return { uuid, belgeNo: xmlCoz(belgeNo), gonderenVkn, gonderenUnvan: xmlCoz(gonderenUnvan), tarih: tarihMetni ? new Date(`${tarihMetni}T00:00:00Z`) : new Date(), xml };
+}
+
+/**
+ * Sovos zarf durum kodunu ortak BelgeDurum kümesine indirger. 1300 GİB'de
+ * kabul, 1220/1221 ret; 1000/1100 hâlâ işlemde. Kod hiç dönmediyse "hata"
+ * denmez — sorgunun kendisi boş dönmüş olabilir, çağıran karar verir.
+ */
+function zarfDurumu(kod: string | undefined): BelgeDurum {
+  if (kod === "1300") return "kabul";
+  if (kod === "1220" || kod === "1221") return "ret";
+  if (kod === "1000" || kod === "1100") return "kuyrukta";
+  return kod ? "iletildi" : "hata";
+}
+
+/** Bir zarfın (StandardBusinessDocument) paketindeki UBL belgelerini ayırır. */
+function zarfBelgeleri(zarfXml: string): { faturalar: string[]; yanitlar: string[] } {
+  const kok = (ad: string) =>
+    [...zarfXml.matchAll(new RegExp(`<(?:\\w+:)?${ad}(?:\\s[^>]*)?>[\\s\\S]*?<\\/(?:\\w+:)?${ad}>`, "gi"))].map((m) => m[0]);
+  // Zarfsız gelen (tek belge) durumunda paket sarmalayıcısı yoktur; belgenin
+  // kendisi köktedir, o yüzden arama zarf/paket ayrımı yapmadan yürür.
+  return { faturalar: kok("Invoice"), yanitlar: kok("ApplicationResponse") };
+}
+
+/** Uygulama yanıtı UBL'inden alıcının kabul/ret kararını okur (EBLG-13). */
+function aliciYanitiOku(xml: string, varsayilanUuid: string): GelenAliciYaniti | undefined {
+  const cevap = xml.match(/<(?:\w+:)?DocumentResponse[\s\S]*?<\/(?:\w+:)?DocumentResponse>/i)?.[0];
+  if (!cevap) return undefined;
+  const kod = (xmlDegeri(cevap, ["ResponseCode"]) || "").toUpperCase();
+  // GİB kod listesinde kabul "KABUL", ret "RED"; başka bir kod gelirse yanıt
+  // olarak sayılmaz — yanlış tarafa yazmaktansa işlenmemiş bırakılır.
+  if (kod !== "KABUL" && kod !== "RED") return undefined;
+  const atif = cevap.match(/<(?:\w+:)?DocumentReference[\s\S]*?<\/(?:\w+:)?DocumentReference>/i)?.[0] || "";
+  const tarihMetni = xmlDegeri(xml, ["IssueDate"]);
+  return {
+    uuid: xmlDegeri(xml, ["UUID"]) || varsayilanUuid,
+    faturaUuid: xmlDegeri(atif, ["UUID"]),
+    faturaNo: xmlDegeri(atif, ["ID"]),
+    yanit: kod === "KABUL" ? "kabul" : "ret",
+    gerekce: xmlDegeri(cevap, ["Description"]) || xmlDegeri(xml, ["Note"]),
+    tarih: tarihMetni ? new Date(`${tarihMetni.slice(0, 10)}T00:00:00Z`) : new Date(),
+  };
+}
+
+/** Bir günü aşmayan dilimler üretir; Sovos liste sorgusunun tavanı 1 gündür. */
+function gunlukDilimler(aralik: ZarfAraligi): ZarfAraligi[] {
+  const dilimler: ZarfAraligi[] = [];
+  let imlec = new Date(aralik.baslangic);
+  while (imlec < aralik.bitis) {
+    const ertesi = new Date(imlec.getTime() + 24 * 60 * 60 * 1000);
+    dilimler.push({ baslangic: new Date(imlec), bitis: ertesi < aralik.bitis ? ertesi : new Date(aralik.bitis) });
+    imlec = ertesi;
+  }
+  return dilimler;
 }
 
 function crc32(veri: Uint8Array): number {
@@ -211,9 +269,8 @@ export class SovosEntegratorAdapter implements EntegratorAdapter {
     }
     try {
       const xml = await this.soap(cfg, "getEnvelopeStatus", `<ein:getEnvelopeStatusRequest><ein:Identifier>${xmlKacir(cfg.gondericiBirimEtiketi!)}</ein:Identifier><ein:VKN_TCKN>${xmlKacir(cfg.vknTckn!)}</ein:VKN_TCKN><ein:UUID>${xmlKacir(belgeRef)}</ein:UUID></ein:getEnvelopeStatusRequest>`);
-      const kod = xmlDegeri(xml, ["StatusCode", "Code", "Status"]);
-      const durum = kod === "1300" ? "kabul" : kod === "1220" || kod === "1221" ? "ret" : kod === "1000" || kod === "1100" ? "kuyrukta" : kod ? "iletildi" : "hata";
-      return { belgeRef, durum, detay: xmlDegeri(xml, ["StatusDescription", "Description", "Message"]) };
+      const kod = xmlDegeri(xml, ["ResponseCode", "StatusCode", "Code", "Status"]);
+      return { belgeRef, durum: zarfDurumu(kod), detay: xmlDegeri(xml, ["Description", "StatusDescription", "Message"]) };
     } catch (hata) {
       return { belgeRef, durum: "hata", detay: hata instanceof Error ? hata.message : "Sovos durum sorgusu başarısız" };
     }
@@ -260,6 +317,102 @@ export class SovosEntegratorAdapter implements EntegratorAdapter {
     } catch (hata) {
       return { basarili: false, hataMesaji: hata instanceof Error ? hata.message : "Sovos uygulama yanıtı gönderilemedi" };
     }
+  }
+
+  /**
+   * Tam GİB mükellef listesini indirir (EBLG-10). Yanıt tek bir base64 ZIP
+   * içinde `UserList` XML'i taşır; her kullanıcının INVOICE tipindeki silinmemiş
+   * etiketleri kanal kararının kaynağıdır. Bu metot günde bir kez çağrılır,
+   * belge gönderiminde değil.
+   */
+  async mukellefListesiCek(cfg: EntegratorConfig): Promise<MukellefKaydi[]> {
+    const hata = configDogrula(cfg);
+    if (hata) throw new Error(hata);
+    const yanit = await this.soap(cfg, "getRAWUserList", `<ein:getRAWUserListRequest><ein:Identifier>${xmlKacir(cfg.gondericiBirimEtiketi!)}</ein:Identifier><ein:VKN_TCKN>${xmlKacir(cfg.vknTckn!)}</ein:VKN_TCKN><ein:Role>PK</ein:Role></ein:getRAWUserListRequest>`);
+    const veri = xmlDegeri(yanit, ["DocData"]);
+    if (!veri) throw new Error("Sovos mükellef listesi yanıtında DocData bulunamadı");
+    const liste = zipIlkXml(veri);
+    const kayitlar: MukellefKaydi[] = [];
+    for (const kullanici of xmlBloklari(liste, "User")) {
+      const vknTckn = xmlDegeri(kullanici, ["Identifier"]);
+      if (!vknTckn) continue;
+      const unvan = xmlDegeri(kullanici, ["Title"]);
+      for (const belge of [...kullanici.matchAll(/<(?:\w+:)?Document\s[^>]*type=["']([^"']+)["'][^>]*>([\s\S]*?)<\/(?:\w+:)?Document>/gi)]) {
+        const tip = belge[1].toUpperCase();
+        // Tek indirme e-Fatura ve e-İrsaliye kayıtlarının ikisini de getirir;
+        // ayrı ayrı liste çekmeye gerek yok.
+        const belgeTuru = tip === "INVOICE" ? "efatura" as const : tip === "DESPATCH" ? "eirsaliye" as const : undefined;
+        if (!belgeTuru) continue;
+        for (const etiket of xmlBloklari(belge[2], "Alias")) {
+          // Silinme zamanı dolmuş etiket artık geçerli değildir; buna gönderim
+          // yapılırsa zarf karşı tarafa ulaşmaz.
+          if (xmlDegeri(etiket, ["DeletionTime"])) continue;
+          const ad = xmlDegeri(etiket, ["Name"]);
+          if (ad) kayitlar.push({ vknTckn: xmlCoz(vknTckn), belgeTuru, postaKutusu: xmlCoz(ad), unvan: unvan ? xmlCoz(unvan) : undefined });
+        }
+      }
+    }
+    return kayitlar;
+  }
+
+  /**
+   * Gelen zarfları kursörün verdiği aralıkta indirir (EBLG-11, EBLG-12).
+   * Liste zarf tipinde çekilir; böylece fatura ve uygulama yanıtı için ayrı
+   * çağrı yapılmaz. Aralık bir günlük dilimlere bölünür, UBL'ler 20'şerli
+   * indirilir.
+   */
+  async gelenZarflariCek(cfg: EntegratorConfig, aralik: ZarfAraligi): Promise<GelenZarfSonucu> {
+    if (!cfg.postaKutusuEtiketi) throw new Error("Sovos gelen belge akışı için PK etiketi zorunludur");
+    const kimlikler: string[] = [];
+    for (const dilim of gunlukDilimler(aralik)) {
+      const xml = await this.soap(cfg, "getUBLList", `<ein:getUBLListRequest><ein:Identifier>${xmlKacir(cfg.postaKutusuEtiketi)}</ein:Identifier><ein:VKN_TCKN>${xmlKacir(cfg.vknTckn!)}</ein:VKN_TCKN><ein:DocType>ENVELOPE</ein:DocType><ein:Type>INBOUND</ein:Type><ein:FromDate>${dilim.baslangic.toISOString()}</ein:FromDate><ein:ToDate>${dilim.bitis.toISOString()}</ein:ToDate></ein:getUBLListRequest>`);
+      for (const blok of xmlBloklari(xml, "UBLList")) {
+        const uuid = xmlDegeri(blok, ["UUID"]);
+        if (uuid && !kimlikler.includes(uuid)) kimlikler.push(uuid);
+      }
+    }
+    const belgeler: GelenBelge[] = [];
+    const yanitlar: GelenAliciYaniti[] = [];
+    for (let i = 0; i < kimlikler.length; i += 20) {
+      const grup = kimlikler.slice(i, i + 20);
+      const xml = await this.soap(cfg, "getUBL", `<ein:getUBLRequest><ein:Identifier>${xmlKacir(cfg.postaKutusuEtiketi)}</ein:Identifier><ein:VKN_TCKN>${xmlKacir(cfg.vknTckn!)}</ein:VKN_TCKN>${grup.map((uuid) => `<ein:UUID>${xmlKacir(uuid)}</ein:UUID>`).join("")}<ein:DocType>ENVELOPE</ein:DocType><ein:Type>INBOUND</ein:Type><ein:Parameters>zip</ein:Parameters></ein:getUBLRequest>`);
+      xmlBloklari(xml, "DocData").forEach((veri, sira) => {
+        const zarfUuid = grup[sira] || randomUUID();
+        const paket = zarfBelgeleri(zipIlkXml(veri));
+        for (const fatura of paket.faturalar) belgeler.push(gelenUblBilgisi(fatura, zarfUuid));
+        for (const yanitXml of paket.yanitlar) {
+          const yanit = aliciYanitiOku(yanitXml, zarfUuid);
+          if (yanit) yanitlar.push(yanit);
+        }
+      });
+    }
+    return { belgeler, yanitlar };
+  }
+
+  /**
+   * Zarf durumlarını 20'şerli sorgular (EBLG-14). Tek tek sorgulama
+   * sağlayıcının bloklama sebeplerinden biridir.
+   */
+  async durumSorgulaToplu(cfg: EntegratorConfig, belgeRefleri: string[]): Promise<BelgeDurumSonuc[]> {
+    const sonuc: BelgeDurumSonuc[] = [];
+    for (let i = 0; i < belgeRefleri.length; i += 20) {
+      const grup = belgeRefleri.slice(i, i + 20);
+      try {
+        const xml = await this.soap(cfg, "getEnvelopeStatus", `<ein:getEnvelopeStatusRequest><ein:Identifier>${xmlKacir(cfg.gondericiBirimEtiketi!)}</ein:Identifier><ein:VKN_TCKN>${xmlKacir(cfg.vknTckn!)}</ein:VKN_TCKN>${grup.map((uuid) => `<ein:UUID>${xmlKacir(uuid)}</ein:UUID>`).join("")}</ein:getEnvelopeStatusRequest>`);
+        const bloklar = xmlBloklari(xml, "Response");
+        for (const blok of bloklar) {
+          const belgeRef = xmlDegeri(blok, ["UUID"]);
+          if (!belgeRef) continue;
+          sonuc.push({ belgeRef, durum: zarfDurumu(xmlDegeri(blok, ["ResponseCode", "StatusCode", "Code"])), detay: xmlDegeri(blok, ["Description", "StatusDescription"]) });
+        }
+        // Yanıtta karşılığı dönmeyen zarf sorgulanmamış sayılır; "hata" yazmak
+        // kaydı yanlışlıkla son duruma taşır ve bir daha sorgulanmaz olurdu.
+      } catch (hata) {
+        const detay = hata instanceof Error ? hata.message : "Sovos toplu durum sorgusu başarısız";
+        for (const belgeRef of grup) sonuc.push({ belgeRef, durum: "hata", detay });
+      }
+    }
+    return sonuc;
   }
 
   async earsivIptal(cfg: EntegratorConfig, girdi: EarsivIptalGirdi): Promise<BaglantiSonuc> {

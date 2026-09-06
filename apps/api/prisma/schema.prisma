@@ -1968,16 +1968,83 @@ model EbelgeKayit {
   tenantId      String     @map("tenant_id") @db.Uuid
   faturaId      String     @unique @map("fatura_id") @db.Uuid
   tur           EbelgeTur
+  /// Zarfın GİB durumu. Alıcının kabul/ret kararı ayrı eksendir (EBLG-13),
+  /// bu alana yazılmaz — "zarf kabul edildi" ile "alıcı kabul etti" farklıdır.
   durum         BelgeDurum @default(kuyrukta)
   entegratorRef String?    @map("entegrator_ref")
   hataMesaji    String?    @map("hata_mesaji")
+  /// Zarf durumunun en son sorgulandığı an; aynı zarf 2 saat dolmadan tekrar
+  /// sorgulanmaz (EBLG-14).
+  sonDurumSorguAt DateTime? @map("son_durum_sorgu_at")
+  /// Alıcının bizim kestiğimiz ticari faturaya verdiği yanıt (EBLG-13).
+  aliciYaniti      AliciYanit? @map("alici_yaniti")
+  aliciYanitZamani DateTime?   @map("alici_yanit_zamani")
+  aliciYanitNotu   String?     @map("alici_yanit_notu")
+  /// Yanıt belgesinin UUID'si; aynı yanıt ikinci kez işlenmesin diye.
+  aliciYanitRef    String?     @map("alici_yanit_ref")
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
 
   fatura Fatura       @relation(fields: [faturaId], references: [id], onDelete: Cascade)
   arsiv  EbelgeArsiv?
 
+  @@index([tenantId, durum, sonDurumSorguAt])
   @@map("ebelge_kayitlari")
+}
+
+enum AliciYanit {
+  kabul
+  ret
+}
+
+/// GİB kayıt listesinin belge türü; e-Arşiv'in GİB kaydı yoktur, bu yüzden
+/// EbelgeTur'dan ayrı bir kümedir.
+enum GibBelgeTuru {
+  efatura
+  eirsaliye
+}
+
+/// GİB'e kayıtlı e-Fatura kullanıcıları (EBLG-10). Liste kamuya açıktır ve her
+/// kiracı için aynıdır; kiracı başına kopyalamak aynı veriyi N kez saklamak
+/// olurdu, bu yüzden tablo global tutulur ve RLS uygulanmaz. Bir VKN'nin birden
+/// çok posta kutusu etiketi olabildiğinden teklik (vkn, etiket) çiftindedir.
+model GibMukellef {
+  vknTckn     String    @map("vkn_tckn")
+  /// e-Fatura ve e-İrsaliye kayıtları GİB'de ayrıdır; bir firma e-Fatura
+  /// mükellefi olup e-İrsaliye kullanmıyor olabilir.
+  belgeTuru   GibBelgeTuru @map("belge_turu")
+  postaKutusu String    @map("posta_kutusu")
+  unvan       String?
+  guncellendi DateTime  @default(now())
+
+  @@id([vknTckn, belgeTuru, postaKutusu])
+  @@index([vknTckn, belgeTuru])
+  @@map("gib_mukellefler")
+}
+
+/// Mükellef listesi senkronunun durumu; gönderim yolunun tazelik kontrolü
+/// (EBLG-10) buradan okunur. Tek satırlıdır.
+model GibMukellefSenkron {
+  id           String    @id
+  sonSenkronAt DateTime? @map("son_senkron_at")
+  kayitSayisi  Int       @default(0) @map("kayit_sayisi")
+  durum        String    @default("beklemede")
+  hataMesaji   String?   @map("hata_mesaji")
+  saglayici    String?
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@map("gib_mukellef_senkron")
+}
+
+/// Gelen belge çekiminin tarih kursörü (EBLG-11). Bu ana kadarki aralık bir
+/// daha sorgulanmaz; elle tazelemenin saatlik sınırı da bu satırdan okunur.
+model EbelgeGelenKursor {
+  tenantId       String    @id @map("tenant_id") @db.Uuid
+  sonCekimAt     DateTime  @map("son_cekim_at")
+  sonTetiklemeAt DateTime? @map("son_tetikleme_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@map("ebelge_gelen_kursor")
 }
 
 model EbelgeArsiv {

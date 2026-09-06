@@ -78,7 +78,24 @@ export class EbelgeController {
   @Post("gelenleri-cek")
   @Roller("muhasebe")
   async gelenleriCek() {
+    // Elle tazeleme korunur ama saatlik sınıra tabidir (EBLG-11): son
+    // kullanıcı ekranı doğrudan entegratör API'sini sürmemelidir.
+    await this.ebelgeService.elleTazelemeIzniAl();
     return this.kuyrukService.gelenBelgeleriKuyrugaEkle();
+  }
+
+  // ─── GİB MÜKELLEF LİSTESİ (EBLG-10) ────────────────────────────────────────
+
+  @Get("mukellef-listesi")
+  @Roller("muhasebe")
+  mukellefListesiDurumu() {
+    return this.ebelgeService.mukellefListesiDurumu();
+  }
+
+  @Post("mukellef-listesi/senkron")
+  @Roller("muhasebe")
+  mukellefListesiSenkron() {
+    return this.ebelgeService.mukellefListesiSenkronEt();
   }
 
   @Post("gelen/xml-yukle")

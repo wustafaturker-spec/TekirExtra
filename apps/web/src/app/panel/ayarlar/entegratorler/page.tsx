@@ -12,6 +12,16 @@ interface Baglanti {
   kullaniciAdiMaskeli: string;
 }
 
+/** GİB mükellef listesinin lokal kopyasının durumu (EBLG-10). */
+interface MukellefListesi {
+  sonSenkronAt: string | null;
+  kayitSayisi: number;
+  durum: string;
+  hataMesaji: string | null;
+  saglayici: string | null;
+  taze: boolean;
+}
+
 const SAGLAYICILAR = [
   { id: "sovos", ad: "Sovos Bulut", aciklama: "Sovos Bulut e-Fatura ve e-Arşiv SOAP bağlantısı" },
   { id: "izibiz", ad: "İzibiz", aciklama: "İzibiz e-Belge Özel Entegratör Bağlantısı" },
@@ -34,10 +44,13 @@ export default function EntegratorAyarlariSayfasi() {
   const [aktifForm, setAktifForm] = useState<string | null>(null); // Hangi entegratörün formunun açık olduğunu tutar
   const [duzenleId, setDuzenleId] = useState<string | null>(null); // Düzenlenen bağlantının ID'si
   const [islemde, setIslemde] = useState<string | null>(null); // Yüklenme durumu için
+  const [mukellefListesi, setMukellefListesi] = useState<MukellefListesi | null>(null);
 
   const yukle = useCallback(async () => {
     try {
       setBaglantilar(await api<Baglanti[]>("/baglantilar"));
+      // Liste durumu bağlantıdan bağımsız okunur; bağlantı yoksa uç boş döner.
+      setMukellefListesi(await api<MukellefListesi>("/ebelge/mukellef-listesi").catch(() => null));
     } catch (h) {
       if (h instanceof ApiHata && h.durum === 401) {
         tokenYaz(null);
@@ -153,6 +166,21 @@ export default function EntegratorAyarlariSayfasi() {
     }
   }
 
+  async function mukellefListesiniGuncelle() {
+    setIslemde("mukellef");
+    setHata("");
+    setBasari("");
+    try {
+      const sonuc = await api<MukellefListesi>("/ebelge/mukellef-listesi/senkron", { method: "POST" });
+      setMukellefListesi(sonuc);
+      setBasari(`GİB mükellef listesi güncellendi: ${sonuc.kayitSayisi.toLocaleString("tr-TR")} etiket.`);
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Mükellef listesi güncellenemedi");
+    } finally {
+      setIslemde(null);
+    }
+  }
+
   return (
     <div style={{ maxWidth: 900, margin: "0 auto" }}>
       <PageHeader
@@ -163,6 +191,41 @@ export default function EntegratorAyarlariSayfasi() {
 
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
+
+      <Card>
+        <div className="between" style={{ alignItems: "flex-start" }}>
+          <div>
+            <div className="row-tight">
+              <h3 style={{ fontSize: "1.15rem", margin: 0 }}>GİB Mükellef Listesi</h3>
+              {mukellefListesi && (mukellefListesi.taze
+                ? <Badge variant="success">GÜNCEL</Badge>
+                : <Badge variant="danger">{mukellefListesi.sonSenkronAt ? "BAYAT" : "İNDİRİLMEDİ"}</Badge>)}
+            </div>
+            <p className="muted" style={{ fontSize: "0.85rem", margin: "0.35rem 0" }}>
+              Alıcının e-Fatura mükellefi olup olmadığı bu lokal listeden belirlenir; gönderim sırasında
+              entegratöre sorulmaz. Liste günde bir kez kendiliğinden güncellenir.
+            </p>
+            {mukellefListesi?.sonSenkronAt && (
+              <div style={{ fontSize: "0.85rem" }}>
+                <span className="muted">Son güncelleme: </span>
+                {new Date(mukellefListesi.sonSenkronAt).toLocaleString("tr-TR")}
+                <span className="muted"> · </span>
+                {mukellefListesi.kayitSayisi.toLocaleString("tr-TR")} etiket
+                {mukellefListesi.saglayici && <><span className="muted"> · </span>{mukellefListesi.saglayici}</>}
+              </div>
+            )}
+            {mukellefListesi && !mukellefListesi.taze && (
+              <p style={{ fontSize: "0.85rem", color: "var(--danger)", margin: "0.5rem 0 0" }}>
+                Liste güncel olmadığı sürece e-Belge gönderimi durur — yanlış kanal seçmektense durmak tercih edilir.
+                {mukellefListesi.hataMesaji && ` Son hata: ${mukellefListesi.hataMesaji}`}
+              </p>
+            )}
+          </div>
+          <Button variant="primary" size="sm" onClick={() => void mukellefListesiniGuncelle()} disabled={islemde !== null}>
+            {islemde === "mukellef" ? "Güncelleniyor..." : "Listeyi Güncelle"}
+          </Button>
+        </div>
+      </Card>
 
       <div className="stack">
         {SAGLAYICILAR.map((s) => {
