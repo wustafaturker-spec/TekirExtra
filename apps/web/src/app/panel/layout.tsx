@@ -25,9 +25,17 @@ const ROL_ADI: Record<string, string> = {
   maliyet_muhasebesi: "Maliyet Muhasebesi",
 };
 
-interface Bildirim { href: string; baslik: string; aciklama: string; sayi: number; ton: "warning" | "danger"; }
-interface DuzeltmeBildirimOzeti { kritik: number; slaAsan: number; }
-interface FaturaKuyrukOzeti { taslakSatis: number; taslakAlis: number; ebelgeHata: number; acikTahsilat: number; acikOdeme: number; }
+/**
+ * Zil menüsü artık kalıcı bildirim kayıtlarından beslenir (BLD-07). Önceki
+ * sürüm iki API özetini tarayıcıda birleştiriyordu; okundu durumu, sahiplenme
+ * ve teslim kanıtı tutulamıyordu.
+ */
+interface BildirimTeslimati {
+  id: string;
+  durum: "yeni" | "okundu" | "ustlenildi" | "aksiyon_alindi" | "yoksayildi";
+  bildirim: { baslik: string; aciklama: string; onem: "bilgi" | "uyari" | "kritik"; hedefYol: string | null };
+}
+interface BildirimOzeti { okunmamis: number; acik: number; kritik: number; }
 
 
 /**
@@ -71,7 +79,8 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const [ayarlarAcik, setAyarlarAcik] = useState(false);
   const [paletAcik, setPaletAcik] = useState(false);
   const ayarlarTetikleyiciRef = useRef<HTMLButtonElement>(null);
-  const [bildirimler, setBildirimler] = useState<Bildirim[]>([]);
+  const [bildirimler, setBildirimler] = useState<BildirimTeslimati[]>([]);
+  const [bildirimOzeti, setBildirimOzeti] = useState<BildirimOzeti>({ okunmamis: 0, acik: 0, kritik: 0 });
   const [bildirimlerAcik, setBildirimlerAcik] = useState(false);
   const [geriBildirimAcik, setGeriBildirimAcik] = useState(false);
   const [geriBildirimPuan, setGeriBildirimPuan] = useState(5);
@@ -113,24 +122,18 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
       const bildirimleriYenile = () => api<{ rol: string }>("/auth/ben")
         .then(async (b) => {
           setRol(b.rol);
-          const duzeltmeYetkili = ["yonetici", "muhasebe", "salt_okunur", "mali_musavir"].includes(b.rol);
-          const [ozet, duzeltme] = await Promise.all([
-            api<FaturaKuyrukOzeti>("/fatura/is-kuyrugu-ozeti"),
-            duzeltmeYetkili ? api<DuzeltmeBildirimOzeti>("/duzeltmeler/ozet") : Promise.resolve(null),
+          const [ozet, liste] = await Promise.all([
+            api<BildirimOzeti>("/bildirimler/ozet"),
+            api<{ kayitlar: BildirimTeslimati[] }>("/bildirimler?limit=8"),
           ]);
-          const yeni: Bildirim[] = [];
-          const ebelgeHatasi = ozet.ebelgeHata;
-          const taslak = b.rol === "satis" ? ozet.taslakSatis : ozet.taslakSatis + ozet.taslakAlis;
-          const acikOdeme = b.rol === "satis" ? ozet.acikTahsilat : ozet.acikTahsilat + ozet.acikOdeme;
-          if (ebelgeHatasi > 0 && b.rol !== "satis") yeni.push({ href: "/panel/fatura?ebelge=hata", baslik: "e-Belge müdahalesi gerekli", aciklama: "Hatalı veya reddedilen belgeleri inceleyin.", sayi: ebelgeHatasi, ton: "danger" });
-          if (taslak > 0) yeni.push({ href: b.rol === "satis" ? "/panel/fatura?yon=satis&durum=taslak" : "/panel/fatura?durum=taslak", baslik: "Bekleyen fatura taslakları", aciklama: "Kontrol edilip kesinleştirilecek kayıtlar.", sayi: taslak, ton: "warning" });
-          if (acikOdeme > 0) yeni.push({ href: b.rol === "satis" ? "/panel/fatura?yon=satis&odeme=acik" : "/panel/fatura?odeme=acik", baslik: b.rol === "satis" ? "Tahsilat takibi" : "Açık tahsilat ve ödemeler", aciklama: "Finansal kapanışı bekleyen faturalar.", sayi: acikOdeme, ton: "warning" });
-          if (duzeltme?.kritik) yeni.unshift({ href: "/panel/islemler", baslik: "Kritik düzeltme gerekli", aciklama: duzeltme.slaAsan ? `${duzeltme.slaAsan} kayıt SLA süresini aştı.` : "Kritik finansal istisnaları inceleyin.", sayi: duzeltme.kritik, ton: "danger" });
-          setBildirimler(yeni);
+          setBildirimOzeti(ozet);
+          setBildirimler(liste.kayitlar);
         })
-        .catch(() => setBildirimler([]));
+        .catch(() => { setBildirimler([]); setBildirimOzeti({ okunmamis: 0, acik: 0, kritik: 0 }); });
       void bildirimleriYenile();
-      const zamanlayici = window.setInterval(() => void bildirimleriYenile(), 15 * 60 * 1000);
+      // Kayıt sunucuda tutulduğu için tazeleme ucuzdur; kritik olay 15 dakika
+      // değil en geç bir dakika içinde görünür (BLD-04 teslim kararı).
+      const zamanlayici = window.setInterval(() => void bildirimleriYenile(), 60 * 1000);
       return () => window.clearInterval(zamanlayici);
     } else {
       router.replace("/giris");
@@ -221,7 +224,21 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
       if (bildirimTetikleyiciRef.current?.isConnected) bildirimTetikleyiciRef.current.focus();
     };
   }, [bildirimlerAcik]);
-  const bildirimSayisi = bildirimler.reduce((toplam, bildirim) => toplam + bildirim.sayi, 0);
+  const bildirimSayisi = bildirimOzeti.acik;
+
+  async function tumunuOkunduIsaretle() {
+    try {
+      await api("/bildirimler/tumunu-okundu", { method: "POST" });
+      const [ozet, liste] = await Promise.all([
+        api<BildirimOzeti>("/bildirimler/ozet"),
+        api<{ kayitlar: BildirimTeslimati[] }>("/bildirimler?limit=8"),
+      ]);
+      setBildirimOzeti(ozet);
+      setBildirimler(liste.kayitlar);
+    } catch {
+      // Zil menüsü bilgilendirme yüzeyidir; başarısız işaretleme sayfayı bozmamalı.
+    }
+  }
 
   function bildirimleriDegistir(event: React.MouseEvent<HTMLButtonElement>) {
     if (!bildirimlerAcik) bildirimTetikleyiciRef.current = event.currentTarget;
@@ -394,13 +411,17 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
 
       {bildirimlerAcik && (
         <aside className="notification-panel" aria-label="Bildirim merkezi" id="bildirim-paneli" ref={bildirimPanelRef}>
-          <div className="notification-panel__head"><div><strong>Bildirimler</strong><small>{bildirimSayisi ? bildirimSayisi + " açık kayıt" : "Güncel"}</small></div><button aria-label="Bildirimleri kapat" onClick={() => setBildirimlerAcik(false)} type="button">×</button></div>
+          <div className="notification-panel__head"><div><strong>Bildirimler</strong><small>{bildirimSayisi ? bildirimSayisi + " açık kayıt" + (bildirimOzeti.okunmamis ? ", " + bildirimOzeti.okunmamis + " okunmamış" : "") : "Güncel"}</small></div><button aria-label="Bildirimleri kapat" onClick={() => setBildirimlerAcik(false)} type="button">×</button></div>
           <div className="notification-panel__list">
-            {bildirimler.length === 0 ? <p className="notification-panel__empty">İlgilenmeniz gereken yeni bir kayıt yok.</p> : bildirimler.map((bildirim) => (
-              <Link className="notification-item" href={bildirim.href} key={bildirim.baslik}>
-                <span aria-hidden="true" className={"notification-item__status is-" + bildirim.ton} /><span><strong>{bildirim.baslik}</strong><small>{bildirim.aciklama}</small></span><b>{bildirim.sayi}</b>
+            {bildirimler.length === 0 ? <p className="notification-panel__empty">İlgilenmeniz gereken yeni bir kayıt yok.</p> : bildirimler.map((teslimat) => (
+              <Link className="notification-item" href={teslimat.bildirim.hedefYol ?? "/panel/bildirimler"} key={teslimat.id}>
+                <span aria-hidden="true" className={"notification-item__status is-" + (teslimat.bildirim.onem === "kritik" ? "danger" : "warning")} /><span><strong>{teslimat.bildirim.baslik}</strong><small>{teslimat.bildirim.aciklama}</small></span>{teslimat.durum === "yeni" && <b aria-label="okunmamış">•</b>}
               </Link>
             ))}
+          </div>
+          <div className="notification-panel__foot">
+            <button onClick={() => void tumunuOkunduIsaretle()} type="button">Tümünü okundu işaretle</button>
+            <Link href="/panel/bildirimler" onClick={() => setBildirimlerAcik(false)}>Bildirim merkezi →</Link>
           </div>
         </aside>
       )}

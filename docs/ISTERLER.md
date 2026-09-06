@@ -1,12 +1,13 @@
 # TekirExtra — Yazılım İster Dokümanı (SRS)
 
-**Sürüm:** 0.19
-**Tarih:** 2026-09-05
+**Sürüm:** 0.20
+**Tarih:** 2026-09-06
+**Durum (2026-09-06):** **Bildirim ve Görev Merkezi (§3.10) tamamlandı** —
+BLD-01…BLD-10'un tamamı kapatıldı; ayrıntı o bölümdedir.
 **Durum (2026-09-05):** Uygulama/modül inceleme raporunun (2026-09-02) P0
 bulguları kapatıldı (B2B bayi yalıtımı ve fiyatlandırma, mali müşavir XML/CSV
 üretimi, AI/OCR'ın simülasyon olduğunun arayüzde ayrılması, CI'nin e2e adımı) ve
-şirket geneli **mali dönem kapatma** ile **aksansız arama** eklendi. Sıradaki
-paket **Bildirim ve Görev Merkezi (§3.10)**; S-01 kapı kararları o bölümdedir.
+şirket geneli **mali dönem kapatma** ile **aksansız arama** eklendi.
 **Durum (2026-08-17):** UI tamamlama paketleri tamamlandı; üretim hazırlığı
 devam ediyor. Kalıcı worker/kuyruk, gerçek sağlayıcı doğrulaması, readiness,
 CI kabul testleri ve operasyonel gözlemlenebilirlik release kapılarıdır.
@@ -376,11 +377,17 @@ mimarisi bu ailelere baştan hazır tasarlanır (bkz. MIMARI.md). Tümü **[G]**
 
 ### 3.10 Bildirim ve Görev Merkezi (BLD)
 
-Bugün zil menüsü iki API özetini (`/fatura/is-kuyrugu-ozeti`, `/duzeltmeler/ozet`)
-tarayıcıda birleştirip 15 dakikada bir yeniliyor. Kalıcı bildirim kaydı, okundu
-durumu, kullanıcı tercihi ve sahiplenme yoktur; bu yüzden kritik bir olayın
-kullanıcıya **teslim edildiği ve sahiplenildiği** kanıtlanamaz. Bu bölüm o
-katmanı tanımlar.
+Paket öncesinde zil menüsü iki API özetini (`/fatura/is-kuyrugu-ozeti`,
+`/duzeltmeler/ozet`) tarayıcıda birleştirip 15 dakikada bir yeniliyordu. Kalıcı
+bildirim kaydı, okundu durumu, kullanıcı tercihi ve sahiplenme yoktu; bu yüzden
+kritik bir olayın kullanıcıya **teslim edildiği ve sahiplenildiği**
+kanıtlanamıyordu. Bu bölüm o katmanı tanımlar.
+
+**Durum (2026-09-06): tamamlandı.** `Bildirim` olayı, `BildirimTeslimati` ise
+olayın tek bir kullanıcıdaki durumunu tutar; e-posta kanalının durumu ve deneme
+sayısı aynı satırdadır, böylece yeniden başlatma bir mesajı ne kaybedebilir ne
+de iki kez gönderebilir. Zil menüsü artık bu kayıtlardan beslenir
+(`/panel/bildirimler`, tercihler `/panel/ayarlar/bildirimler`).
 
 **S-01 kapı kararları (2026-09-05, kullanıcı onayı):**
 
@@ -398,16 +405,16 @@ katmanı tanımlar.
 
 | No | İster | Öncelik |
 |---|---|---|
-| BLD-01 | Kritik olaylar kalıcı bildirim kaydı üretmelidir: tür, önem (bilgi/uyarı/kritik), başlık, açıklama, kaynak modül ve kayıt referansı, kaynağa götüren yol, oluşma zamanı. | G |
-| BLD-02 | Bildirim, rolüne göre belirlenen hedef kullanıcılara ayrı teslimat kaydı olarak düşmelidir; okundu, üstlenildi, aksiyon alındı ve yok sayıldı durumları kullanıcı bazında tutulmalıdır. **Okundu ile aksiyon alındı ayrı ölçülür.** | G |
-| BLD-03 | Aynı kaynak kayıt için ikinci bir bildirim üretilmemelidir (birleştirme anahtarı); olay sürüyorsa mevcut kayıt güncellenir, çözülmüşse kendiliğinden kapanır. | G |
-| BLD-04 | Kullanıcı, olay türü bazında uygulama içi ve e-posta kanallarını kapatabilmeli; sessiz saat aralığı tanımlayabilmelidir. Sessiz saatte üretilen bildirim kaydedilir, e-postası aralık bitince gönderilir. | G |
-| BLD-05 | Kritik bildirim, son tarihine kadar aksiyon almazsa yöneticiye yükseltilmelidir (escalation). | G |
-| BLD-06 | E-posta teslimatı kayıt altına alınmalı (gönderildi/hata, deneme sayısı) ve hata durumunda kalıcı kuyrukta yeniden denenmelidir. | G |
-| BLD-07 | Zil menüsü kalıcı kayıttan beslenmeli; ayrıca filtrelenebilir bir bildirim ekranı (`/panel/bildirimler`) bulunmalıdır: önem, durum ve tür filtresi, okundu işaretleme, üstlenme, kaynağa gitme. | G |
-| BLD-08 | Bildirim kaynakları: kritik düzeltme kaydı ve SLA aşımı; e-belge hata/ret ve dead-letter; geciken alacak/borç ve vadesi yaklaşan çek/senet; kritik seviye altı stok ve onaysız sayım; başarısız dönem kapatma kontrolü; pazaryeri/POS/banka entegrasyon hataları. | G |
-| BLD-09 | Bildirim ve teslimat kayıtları kiracı yalıtımına (RLS) tabidir; kullanıcı yalnız kendi teslimatlarını, yönetici firma genelini görebilir. | G |
-| BLD-10 | Bildirim üretimi zamanlanmış tarama ile çalışmalı, tarama süresi ve üretilen kayıt sayısı metrik olarak yayımlanmalıdır. | G |
+| BLD-01 | Kritik olaylar kalıcı bildirim kaydı üretmelidir: tür, önem (bilgi/uyarı/kritik), başlık, açıklama, kaynak modül ve kayıt referansı, kaynağa götüren yol, oluşma zamanı. **Tamamlandı** — `bildirimler` tablosu tür, önem, başlık, açıklama, kaynak modül/ref ve `hedefYol` alanlarını tutar. | G |
+| BLD-02 | Bildirim, rolüne göre belirlenen hedef kullanıcılara ayrı teslimat kaydı olarak düşmelidir; okundu, üstlenildi, aksiyon alındı ve yok sayıldı durumları kullanıcı bazında tutulmalıdır. **Okundu ile aksiyon alındı ayrı ölçülür.** **Tamamlandı** — `bildirim_teslimatlari` hedef kullanıcı başına bir satır; `yeni/okundu/ustlenildi/aksiyon_alindi/yoksayildi` ayrı izlenir, aksiyon notu kaydedilir. | G |
+| BLD-03 | Aynı kaynak kayıt için ikinci bir bildirim üretilmemelidir (birleştirme anahtarı); olay sürüyorsa mevcut kayıt güncellenir, çözülmüşse kendiliğinden kapanır. **Tamamlandı** — `birlesimAnahtari` ile tek kayıt; olay sürerken metin tazelenir, tespit edilmeyince kayıt kendiliğinden kapanır. Son tarih yeniden tespitte **bilerek** ilerletilmez, aksi halde SLA hiç dolmazdı. | G |
+| BLD-04 | Kullanıcı, olay türü bazında uygulama içi ve e-posta kanallarını kapatabilmeli; sessiz saat aralığı tanımlayabilmelidir. Sessiz saatte üretilen bildirim kaydedilir, e-postası aralık bitince gönderilir. **Tamamlandı** — tür bazında kanal kapatma ve sessiz saat `/panel/ayarlar/bildirimler` ekranında; sessiz saatte biriken e-posta aralık bitince ilk taramada gönderilir. | G |
+| BLD-05 | Kritik bildirim, son tarihine kadar aksiyon almazsa yöneticiye yükseltilmelidir (escalation). **Tamamlandı** — son tarihi geçmiş, kimsenin üstlenmediği kritik bildirim yöneticilere bir kez yükseltilir (`yukseltildiAt`). | G |
+| BLD-06 | E-posta teslimatı kayıt altına alınmalı (gönderildi/hata, deneme sayısı) ve hata durumunda kalıcı kuyrukta yeniden denenmelidir. **Tamamlandı** — `epostaDurumu`/`epostaDenemeSayisi`/`epostaHatasi` teslimat satırında; azami denemeye kadar sonraki taramada yeniden denenir, sonrasında `hata` olarak kalır. | G |
+| BLD-07 | Zil menüsü kalıcı kayıttan beslenmeli; ayrıca filtrelenebilir bir bildirim ekranı (`/panel/bildirimler`) bulunmalıdır: önem, durum ve tür filtresi, okundu işaretleme, üstlenme, kaynağa gitme. **Tamamlandı** — zil menüsü kalıcı kayıttan beslenir ve 60 saniyede tazelenir; `/panel/bildirimler` önem, durum ve tür filtresi, okundu işaretleme, üstlenme, aksiyon ve kaynağa gitme sunar. | G |
+| BLD-08 | Bildirim kaynakları: kritik düzeltme kaydı ve SLA aşımı; e-belge hata/ret ve dead-letter; geciken alacak/borç ve vadesi yaklaşan çek/senet; kritik seviye altı stok ve onaysız sayım; başarısız dönem kapatma kontrolü; pazaryeri/POS/banka entegrasyon hataları. **Tamamlandı** — sahibi olması gereken istisnalar (kritik düzeltme, e-belge hatası, kapanamayan dönem) tek tek; yüksek hacimli liste olayları (geciken alacak/borç, vadesi yaklaşan çek/senet, kritik altı stok, onaysız sayım) günde bir kez özetlenir. Dış sistem kaynaklı düzeltme kayıtları `entegrasyon` türüne düşer. Geciken tutarlar RaporService'ten okunur, böylece zil ile rapor çelişemez. | G |
+| BLD-09 | Bildirim ve teslimat kayıtları kiracı yalıtımına (RLS) tabidir; kullanıcı yalnız kendi teslimatlarını, yönetici firma genelini görebilir. **Tamamlandı** — dört tabloda da `FORCE ROW LEVEL SECURITY` + kiracı politikası; kullanıcı yalnız kendi teslimatlarını, yönetici firma genelini görür. | G |
+| BLD-10 | Bildirim üretimi zamanlanmış tarama ile çalışmalı, tarama süresi ve üretilen kayıt sayısı metrik olarak yayımlanmalıdır. **Tamamlandı** — zamanlanmış tarama `notification_scan_duration_seconds`, `notification_scan_runs_total`, `notification_scan_tenant_total`, `notification_deliveries_total` ve `notification_emails_sent_total` metriklerini yayımlar. | G |
 
 ---
 

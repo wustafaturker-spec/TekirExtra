@@ -15,6 +15,7 @@ import {
   Archive,
   ArrowLeftRight,
   BadgeCheck,
+  Bell,
   BookUser,
   Boxes,
   Building2,
@@ -87,6 +88,7 @@ export const MENU: MenuAlani[] = [
     ogeler: [
       { href: "/panel", ikon: Gauge, baslik: "Finansal Özet", eslesme: "tam", esanlamlilar: ["ana sayfa", "dashboard", "kokpit"] },
       { href: "/panel/islemler", ikon: TriangleAlert, baslik: "Düzeltme Merkezi", eslesme: "tam", esanlamlilar: ["hata", "istisna", "uyarı"] },
+      { href: "/panel/bildirimler", ikon: Bell, baslik: "Bildirimler", eslesme: "tam", esanlamlilar: ["uyarı", "hatırlatma", "görev"] },
       { href: "/panel/donem-kapatma", ikon: Lock, baslik: "Dönem Kapatma", eslesme: "tam", esanlamlilar: ["mali dönem", "kilit", "kapanış"] },
       { href: "/panel/ai", ikon: Sparkles, baslik: "AI Finansal Asistan", eslesme: "tam", esanlamlilar: ["yapay zeka", "nakit akış tahmini"] },
     ],
@@ -190,6 +192,7 @@ export const AYARLAR: MenuOge[] = [
   { href: "/panel/ayarlar/banka-baglantilari", ikon: Landmark, baslik: "Banka Bağlantıları", eslesme: "tam" },
   { href: "/panel/ayarlar/sms", ikon: MessageSquare, baslik: "SMS Ayarları", eslesme: "tam", esanlamlilar: ["netgsm"] },
   { href: "/panel/ayarlar/eposta", ikon: Mail, baslik: "E-posta Ayarları", eslesme: "tam", esanlamlilar: ["smtp"] },
+  { href: "/panel/ayarlar/bildirimler", ikon: Bell, baslik: "Bildirim Tercihleri", eslesme: "tam", esanlamlilar: ["sessiz saat", "kanal", "e-posta bildirimi"] },
   { href: "/panel/ayarlar/moduller", ikon: Settings, baslik: "Modül Ayarları", eslesme: "tam" },
   { href: "/panel/ayarlar/abonelik", ikon: CreditCard, baslik: "Abonelik ve Paket", eslesme: "tam" },
   { href: "/panel/ayarlar/denetim", ikon: ShieldCheck, baslik: "Denetim İzi", eslesme: "tam", esanlamlilar: ["log", "audit"] },
