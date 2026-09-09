@@ -404,6 +404,29 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
     }
   }
 
+  /**
+   * Yeniden denemeden önce belgenin sağlayıcıda zaten var olup olmadığına
+   * bakar (EBLG-17). NES, UBL'deki `cbc:UUID` değerini belgenin kimliği olarak
+   * saklar; biz oraya fatura kimliğimizi yazdığımız için `uuid` filtresiyle
+   * kendi kaydımızı doğrudan bulabiliriz.
+   */
+  async belgeAra(cfg: EntegratorConfig, kaynakKayitId: string, tur: UblBelge["tur"]): Promise<GonderimSonuc | undefined> {
+    const arsiv = tur === "earsiv";
+    const liste = await this.cagir<{ data?: { id?: string; documentNumber?: string }[] }>(
+      cfg,
+      arsiv ? "earchive" : "einvoice",
+      arsiv ? "/v1/invoices" : "/v1/outgoing/invoices",
+      { sorgu: { uuid: kaynakKayitId, page: 1, pageSize: 1 } },
+    );
+    const belge = liste?.data?.find((satir) => satir.id);
+    if (!belge?.id) return undefined;
+    return {
+      basarili: true,
+      belgeRef: arsiv ? `${EARSIV_ONEKI}${belge.id}` : belge.id,
+      belgeNo: belge.documentNumber,
+    };
+  }
+
   async durumSorgula(cfg: EntegratorConfig, belgeRef: string): Promise<BelgeDurumSonuc> {
     if (belgeRef.startsWith(EARSIV_ONEKI)) {
       const uuid = belgeRef.slice(EARSIV_ONEKI.length);

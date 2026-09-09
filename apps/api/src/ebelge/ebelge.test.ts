@@ -121,6 +121,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
       },
     ]),
     yanitGonder: vi.fn().mockResolvedValue({ basarili: true, belgeRef: "REF-9" }),
+    belgeAra: vi.fn(),
   };
 
   const mockBaglantilar = {
@@ -215,6 +216,69 @@ describe("EbelgeService (EBLG-01..08)", () => {
       },
     });
     expect(sonuc.basarili).toBe(true);
+  });
+
+
+  /** Yeniden deneme senaryosu için ortak tx: fatura zaten hatalı bir e-belge kaydına sahip. */
+  function yenidenDenemeTx() {
+    return {
+      fatura: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "f1", tip: "satis", durum: "kesin", tarih: new Date(), no: "TKR2026000000001",
+          toplamBrut: 100, toplamMatrah: 100, toplamKdv: 20, genelToplam: 120,
+          dovizCinsi: "TRY", toplamSatirIskontosu: 0,
+          satirlar: [{ miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20, birimFiyat: 100, stok: { kod: "U1", ad: "Ürün 1" } }],
+          cari: { vknTckn: "1234567890", unvan: "Müşteri" },
+          ebelge: { id: "eb1", durum: "hata" },
+        }),
+      },
+      baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "test" }) }) },
+      cariHesap: { update: vi.fn().mockResolvedValue({}) },
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114" }) },
+      ebelgeKayit: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        create: vi.fn(),
+        update: vi.fn().mockResolvedValue({ id: "eb1" }),
+      },
+      ebelgeArsiv: { upsert: vi.fn().mockResolvedValue({}) },
+    };
+  }
+
+  it("yeniden denemede sağlayıcıda duran belgeyi benimser, ikinci kez göndermez (EBLG-17)", async () => {
+    // Önceki denemede ağ çağrısı geçmiş ama kalıcılaştırma düşmüş olabilir;
+    // yeniden göndermek aynı satış için ikinci belge düzenlemek olurdu.
+    mockAdapter.belgeGonder.mockClear();
+    mockAdapter.belgeAra.mockResolvedValue({ basarili: true, belgeRef: "REF-ONCEKI", belgeNo: "K072026000000015" });
+    const mockTx = yenidenDenemeTx();
+    mockTenantIslem.mockImplementation((tenantId, cb) => cb(mockTx));
+
+    const sonuc = await service.gonder("f1");
+
+    expect(mockAdapter.belgeAra).toHaveBeenCalledWith(expect.any(Object), "f1", "efatura");
+    expect(mockAdapter.belgeGonder).not.toHaveBeenCalled();
+    expect(mockTx.ebelgeKayit.update).toHaveBeenCalledWith({
+      where: { id: "eb1" },
+      data: { tur: "efatura", durum: "iletildi", entegratorRef: "REF-ONCEKI", hataMesaji: null },
+    });
+    expect(sonuc.basarili).toBe(true);
+  });
+
+  it("sağlayıcıda belge yoksa yeniden denemede normal gönderim yapar", async () => {
+    mockAdapter.belgeGonder.mockClear();
+    mockAdapter.belgeAra.mockResolvedValue(undefined);
+    mockTenantIslem.mockImplementation((tenantId, cb) => cb(yenidenDenemeTx()));
+
+    await service.gonder("f1");
+
+    expect(mockAdapter.belgeAra).toHaveBeenCalled();
+    expect(mockAdapter.belgeGonder).toHaveBeenCalled();
+  });
+
+  it("ilk gönderimde sağlayıcıya belge sorgusu yapılmaz", async () => {
+    mockAdapter.belgeAra.mockClear();
+    // İlk gönderimde kayıt yeni yaratılır; boşuna çağrı yapmak çağrı
+    // disiplinini bozardı (EBLG-15).
+    expect(mockAdapter.belgeAra).not.toHaveBeenCalled();
   });
 
   it("gelenBelgeleriCek fatura ÜRETMEZ, belgeyi gelen kutusuna yazar (EBLG-05 onay kapısı)", async () => {

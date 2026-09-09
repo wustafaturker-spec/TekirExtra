@@ -3,11 +3,12 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   forwardRef,
 } from "@nestjs/common";
 import { BelgeDurum, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
-import type { EntegratorConfig, GelenAliciYaniti } from "@tekirextra/baglanti";
+import type { EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
 import { vknTcknGecerliMi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
@@ -48,6 +49,8 @@ function gonderimTarihiGecerliMi(tarih: Date, simdi = new Date()): boolean {
 
 @Injectable()
 export class EbelgeService {
+  private readonly logger = new Logger(EbelgeService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly baglantilarService: BaglantilarService,
@@ -145,6 +148,9 @@ export class EbelgeService {
       }
 
       let rezervasyon: { id: string };
+      // Mevcut kaydın yeniden denenmesi mi, ilk gönderim mi? Yeniden denemede
+      // belge sağlayıcıda çoktan oluşmuş olabilir (EBLG-17).
+      const yenidenDeneme = Boolean(fatura.ebelge);
       if (fatura.ebelge) {
         const kilit = await tx.ebelgeKayit.updateMany({
           where: { id: fatura.ebelge.id, durum: { in: ["hata", "ret"] } },
@@ -172,6 +178,7 @@ export class EbelgeService {
         fatura,
         tenant,
         rezervasyonId: rezervasyon.id,
+        yenidenDeneme,
         saglayici: baglanti.saglayici,
         cfg: baglantiConfig,
       };
@@ -200,7 +207,25 @@ export class EbelgeService {
         vergiDairesi: hazirlik.tenant.vergiDairesi || undefined,
       });
 
-      const gonderimResult = await adapter.belgeGonder(hazirlik.cfg, {
+      // Yeniden denemede önce sağlayıcıya sorulur: önceki denemede ağ çağrısı
+      // başarılı olup kalıcılaştırma düşmüş olabilir. Belge oradaysa yeniden
+      // gönderilmez, benimsenir — aksi hâlde aynı satış için ikinci belge
+      // düzenlenmiş olur (EBLG-17).
+      let mevcutBelge: GonderimSonuc | undefined;
+      if (hazirlik.yenidenDeneme && adapter.belgeAra) {
+        this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "belgeAra", saglayici: hazirlik.saglayici });
+        mevcutBelge = await adapter.belgeAra(hazirlik.cfg, hazirlik.fatura.id, tur);
+        if (mevcutBelge) {
+          this.logger.warn(JSON.stringify({
+            event: "ebelge_mevcut_belge_benimsendi",
+            faturaId,
+            belgeRef: mevcutBelge.belgeRef,
+            belgeNo: mevcutBelge.belgeNo,
+          }));
+        }
+      }
+
+      const gonderimResult = mevcutBelge ?? await adapter.belgeGonder(hazirlik.cfg, {
         uuid: hazirlik.fatura.id,
         belgeNo: ublFatura.no || "TASLAK",
         xml,

@@ -320,6 +320,7 @@ görüntüsü ve imzalı UBL — yasal saklama için gerekir), `actionService`
 | EBLG-14 | Zarf durumu **20'şerli toplu** sorgulanmalıdır; son duruma ulaşmış (kabul/ret/kalıcı hata) zarf bir daha sorgulanmaz ve aynı zarf en erken **2 saat** sonra yeniden sorgulanır. | G |
 | EBLG-15 | Entegratöre yapılan çağrılar metot bazında metrik olarak yayımlanmalıdır; çağrı disiplininin (EBLG-10…14) korunduğu ölçülebilir olmalıdır. | G |
 | EBLG-16 | Belge numarasını **entegratör atıyorsa** (sağlayıcıda otomatik numaralandırılan seri tanımlıysa) yerel sayaç ilerletilmemelidir: UBL'e yalnız seri öneki yazılır, numara gönderim yanıtından okunup faturaya işlenir. Numarası henüz atanmamış kesin fatura yazdırılamaz ve e-postalanamaz. Numarayı bizden bekleyen sağlayıcılarda yerel sayaç kullanılmaya devam eder; numaralandırma sahipliği sağlayıcı başına belirlenir. | G |
+| EBLG-17 | Gönderim ağ çağrısı ile veritabanına yazma aynı atomik birim olmadığından, başarılı çağrıdan sonra gelen bir hata belgeyi sağlayıcıda bırakabilir. **Yeniden denemeden önce** sağlayıcıya aynı kaynak kayıt için belge oluşup oluşmadığı sorulmalı; oluşmuşsa belge yeniden gönderilmez, mevcut belge benimsenir. İlk gönderimde bu sorgu yapılmaz. | G |
 
 ### 3.4 Stok Takibi (STK)
 

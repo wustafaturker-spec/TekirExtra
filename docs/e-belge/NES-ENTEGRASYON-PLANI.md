@@ -251,12 +251,19 @@ gitmişti**: NES'te `K072026000000015` (5.400 TL) belgesi oluştu ve bizde hiçb
 kaydı yok. Yeniden deneme `…016`'yı üretti — yani aynı ticari işlem için GİB'de
 iki belge var.
 
-Bu, numaralandırmadan bağımsız, önceden var olan bir açık: ağ çağrısı ile
+Bu, numaralandırmadan bağımsız, önceden var olan bir açıktı: ağ çağrısı ile
 kalıcılaştırma aynı atomik birim değil ve `EbelgeKayit` "hata" durumundan
-yeniden denenebiliyor. Çözüm elimizde: gönderimde `SourceAppRecordId` alanına
-zaten fatura kimliğimizi yazıyoruz, dolayısıyla yeniden denemeden önce
-entegratöre "bu kayıt için belge var mı" diye sorup varsa onu benimsemek
-yeterli. **Yapılmadı, karar bekliyor.**
+yeniden denenebiliyor.
+
+**Kapatıldı (EBLG-17).** Sözleşmeye `belgeAra` eklendi: yeniden denemeden önce
+sağlayıcıya aynı kaynak kayıt için belge oluşup oluşmadığı sorulur, oluşmuşsa
+gönderim tekrarlanmaz ve mevcut belge benimsenir (referansı ve numarasıyla).
+İlk gönderimde bu sorgu yapılmaz, çağrı disiplini korunur.
+
+NES tarafında arama `uuid` filtresiyle yapılır: NES, UBL'deki `cbc:UUID`
+değerini belgenin kimliği olarak saklıyor ve biz oraya fatura kimliğimizi
+yazıyoruz — uçtan uca denemede dönen `entegratorRef` faturanın kimliğiyle
+birebir aynıydı. Benimseme `ebelge_mevcut_belge_benimsendi` olayıyla loglanır.
 
 ## Bilinen boşluklar
 

@@ -51,6 +51,20 @@ export interface EntegratorAdapter {
    * izin verdiği dilimlere kendi böler.
    */
   gelenZarflariCek?(cfg: EntegratorConfig, aralik: ZarfAraligi): Promise<GelenZarfSonucu>;
+  /**
+   * Kaynak kaydımız için sağlayıcıda **zaten oluşmuş** belgeyi arar (EBLG-17).
+   *
+   * Gönderim ağ çağrısı ile veritabanına yazma aynı atomik birim değildir:
+   * çağrı başarılı olup kalıcılaştırma düşerse belge sağlayıcıda kalır, bizde
+   * kaydı olmaz ve yeniden deneme aynı satış için ikinci belge üretir. Yeniden
+   * denemeden önce bu uç sorulur; belge varsa gönderim tekrarlanmaz, mevcut
+   * belge benimsenir.
+   *
+   * Bulunamazsa `undefined` döner. Aramayı desteklemeyen sağlayıcıda tanımsız
+   * kalır ve çağıran doğrudan göndermeye devam eder.
+   */
+  belgeAra?(cfg: EntegratorConfig, kaynakKayitId: string, tur: UblBelge["tur"]): Promise<GonderimSonuc | undefined>;
+
   /** Zarf durumlarını toplu sorgular (EBLG-14); sağlayıcı sınırına adaptör uyar. */
   durumSorgulaToplu?(cfg: EntegratorConfig, belgeRefleri: string[]): Promise<BelgeDurumSonuc[]>;
   yanitGonder(
