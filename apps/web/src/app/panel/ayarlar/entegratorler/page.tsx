@@ -86,6 +86,7 @@ export default function EntegratorAyarlariSayfasi() {
       vknTckn: (v.get("vknTckn") as string) || undefined,
       gondericiBirimEtiketi: (v.get("gondericiBirimEtiketi") as string) || undefined,
       postaKutusuEtiketi: (v.get("postaKutusuEtiketi") as string) || undefined,
+      belgeSeriOneki: (v.get("belgeSeriOneki") as string) || undefined,
     };
 
     try {
@@ -293,6 +294,11 @@ export default function EntegratorAyarlariSayfasi() {
                       <Field label="Gönderici Birim (GB) Etiketi *"><Input name="gondericiBirimEtiketi" required placeholder="urn:mail:defaultgb@firma.com" /></Field>
                       <Field label="Posta Kutusu (PK) Etiketi"><Input name="postaKutusuEtiketi" placeholder="urn:mail:defaultpk@firma.com" /></Field>
                     </>}
+                    {nes && (
+                      <Field label="Otomatik Seri Öneki">
+                        <Input name="belgeSeriOneki" maxLength={8} placeholder="K07 — boşsa numarayı TekirExtra atar" />
+                      </Field>
+                    )}
                     {sovos && <>
                       <Field label="e-Arşiv Servis URL"><Input name="earsivServisAdresi" placeholder="Sovos tarafından verilen e-Arşiv .svc adresi" /></Field>
                       <Field label="e-İrsaliye Servis URL"><Input name="irsaliyeServisAdresi" placeholder="Sovos tarafından verilen e-İrsaliye .svc adresi" /></Field>

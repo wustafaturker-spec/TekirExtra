@@ -282,6 +282,9 @@ function gonderenUnvani(taraf: GelenSatir["accountingSupplierParty"], vkn: strin
 export class NesEntegratorAdapter implements EntegratorAdapter {
   readonly saglayici = "nes" as const;
 
+  /** NES serileri otomatik numaralandırılabilir; numarayı yükleme yanıtı verir. */
+  readonly belgeNoAtar = true;
+
   private async cagir<T>(
     cfg: EntegratorConfig,
     aile: Aile,
@@ -386,12 +389,16 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
     }
     const aile: Aile = belge.tur === "earsiv" ? "earchive" : "einvoice";
     try {
-      const sonuc = await this.cagir<{ uuid?: string }>(cfg, aile, "/v1/uploads/document", {
+      const sonuc = await this.cagir<{ uuid?: string; documentNumber?: string }>(cfg, aile, "/v1/uploads/document", {
         metot: "POST",
         govde: yuklemeFormu(belge, cfg.gondericiBirimEtiketi!, belge.aliciPostaKutusu),
       });
       if (!sonuc?.uuid) return { basarili: false, hataMesaji: "NES yükleme yanıtında belge UUID'si dönmedi" };
-      return { basarili: true, belgeRef: belge.tur === "earsiv" ? `${EARSIV_ONEKI}${sonuc.uuid}` : sonuc.uuid };
+      return {
+        basarili: true,
+        belgeRef: belge.tur === "earsiv" ? `${EARSIV_ONEKI}${sonuc.uuid}` : sonuc.uuid,
+        belgeNo: sonuc.documentNumber,
+      };
     } catch (hata) {
       return { basarili: false, hataMesaji: hata instanceof Error ? hata.message : "NES gönderimi başarısız" };
     }

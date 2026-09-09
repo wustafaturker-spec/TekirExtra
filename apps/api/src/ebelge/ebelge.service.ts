@@ -183,7 +183,14 @@ export class EbelgeService {
       }
       const tur: EbelgeTur = mukellefiyet.eFaturaMukellefi ? "efatura" : "earsiv";
 
-      const xml = faturaUblUret(hazirlik.fatura, {
+      // Otomatik numaralandıran seride UBL'e tam numara değil yalnızca seri
+      // öneki yazılır; numarayı entegratör atar ve yanıtta döndürür (EBLG-16).
+      const saglayiciNumaralandirir = Boolean(adapter.belgeNoAtar && hazirlik.cfg.belgeSeriOneki);
+      const ublFatura = saglayiciNumaralandirir
+        ? { ...hazirlik.fatura, no: hazirlik.cfg.belgeSeriOneki! }
+        : hazirlik.fatura;
+
+      const xml = faturaUblUret(ublFatura, {
         unvan: hazirlik.tenant.unvan,
         vkn: hazirlik.tenant.vkn,
         vergiDairesi: hazirlik.tenant.vergiDairesi || undefined,
@@ -191,7 +198,7 @@ export class EbelgeService {
 
       const gonderimResult = await adapter.belgeGonder(hazirlik.cfg, {
         uuid: hazirlik.fatura.id,
-        belgeNo: hazirlik.fatura.no || "TASLAK",
+        belgeNo: ublFatura.no || "TASLAK",
         xml,
         tur,
         aliciPostaKutusu: mukellefiyet.postaKutusu,
@@ -207,6 +214,19 @@ export class EbelgeService {
           where: { id: hazirlik.rezervasyonId },
           data: { tur, durum, entegratorRef: gonderimResult.belgeRef || null, hataMesaji: gonderimResult.hataMesaji || null },
         });
+        // Entegratörün attığı numara faturanın resmî numarasıdır; kesinleşmede
+        // boş bırakılmıştı. Cari hareketin açıklaması da o an numarasız
+        // yazıldığı için burada tamamlanır (bağ zaten kaynakRef üzerinden).
+        if (gonderimResult.basarili && saglayiciNumaralandirir && gonderimResult.belgeNo) {
+          await tx.fatura.update({
+            where: { id: faturaId },
+            data: { no: gonderimResult.belgeNo },
+          });
+          await tx.cariHareket.updateMany({
+            where: { kaynakTur: "fatura", kaynakRef: faturaId },
+            data: { aciklama: `${gonderimResult.belgeNo} nolu fatura hareketi` },
+          });
+        }
         if (gonderimResult.basarili) {
           await tx.ebelgeArsiv.upsert({
             where: { ebelgeId: hazirlik.rezervasyonId },

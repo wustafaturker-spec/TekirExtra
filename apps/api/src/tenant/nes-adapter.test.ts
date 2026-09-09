@@ -54,7 +54,7 @@ describe("NesEntegratorAdapter", () => {
       aliciPostaKutusu: "urn:mail:defaultpk@alici.test",
     });
 
-    expect(sonuc).toEqual({ basarili: true, belgeRef: "belge-1" });
+    expect(sonuc).toEqual({ basarili: true, belgeRef: "belge-1", belgeNo: "TKR2026000000001" });
     const [adres, istek] = fetchMock.mock.calls[0];
     expect(adres).toBe("https://apitest.nes.com.tr/einvoice/v1/uploads/document");
     expect(istek.headers.authorization).toBe("Bearer nes-api-anahtari");
@@ -64,6 +64,19 @@ describe("NesEntegratorAdapter", () => {
     expect(istek.body.get("ReceiverAlias")).toBe("urn:mail:defaultpk@alici.test");
     expect(istek.body.get("SourceApp")).toBe("TekirExtra");
     expect(istek.body.get("SourceAppRecordId")).toBe("fatura-1");
+  });
+
+  it("otomatik seride entegratörün attığı numarayı geri döndürür", async () => {
+    // Seri otomatikse UBL'e yalnız önek yazılır, numarayı NES atar (EBLG-16).
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ uuid: "belge-9", documentNumber: "K072026000000014" })));
+
+    const sonuc = await new NesEntegratorAdapter().belgeGonder(config, {
+      uuid: "fatura-9", belgeNo: "K07", xml: "<Invoice/>", tur: "efatura",
+      aliciPostaKutusu: "urn:mail:defaultpk@alici.test",
+    });
+
+    expect(sonuc).toEqual({ basarili: true, belgeRef: "belge-9", belgeNo: "K072026000000014" });
+    expect(new NesEntegratorAdapter().belgeNoAtar).toBe(true);
   });
 
   it("e-Arşivi earchive ailesine yükler ve referansı ön ekle ayırır", async () => {

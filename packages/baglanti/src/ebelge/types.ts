@@ -20,6 +20,13 @@ export interface EntegratorConfig {
   gondericiBirimEtiketi?: string;
   /** Posta kutusu (PK) etiketi; gelen belge ve yanıt akışında kullanılır. */
   postaKutusuEtiketi?: string;
+  /**
+   * Sağlayıcıda **otomatik numaralandırılan** serinin öneki (örn. `K07`).
+   * Dolu olduğunda belge numarasını entegratör atar: UBL'e yalnız bu önek
+   * yazılır, numara gönderim yanıtından okunur (EBLG-16). Boşsa numarayı
+   * kendi seri/sayaç modülümüz üretir.
+   */
+  belgeSeriOneki?: string;
 }
 
 export interface BaglantiSonuc {
@@ -55,6 +62,11 @@ export interface GonderimSonuc {
   basarili: boolean;
   /** Sağlayıcının belge takip referansı. */
   belgeRef?: string;
+  /**
+   * Sağlayıcının atadığı belge numarası; yalnızca otomatik numaralandıran
+   * seride dolar (EBLG-16). Çağıran bunu faturanın numarası olarak kaydeder.
+   */
+  belgeNo?: string;
   hataMesaji?: string;
 }
 

@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import type { Baglanti } from "@prisma/client";
+import { Prisma, type Baglanti } from "@prisma/client";
 import {
   MockEntegratorAdapter,
   NesEntegratorAdapter,
@@ -38,6 +38,7 @@ export const baglantiOlusturSemasi = z.object({
     irsaliyeServisAdresi: z.string().optional(),
     vknTckn: z.string().regex(/^\d{10,11}$/).optional(),
     gondericiBirimEtiketi: z.string().optional(),
+    belgeSeriOneki: z.string().min(1).max(8).optional(),
     postaKutusuEtiketi: z.string().optional(),
     saticiId: z.string().optional(),
     magazaId: z.string().optional(),
@@ -96,6 +97,27 @@ export class BaglantilarService {
       this.adapterler.set(saglayici, adapter);
     }
     return adapter;
+  }
+
+  /**
+   * Aktif e-Belge entegratörünün belge numarasını kendisinin atayıp atmadığını
+   * söyler (EBLG-16). Sağlayıcı otomatik seri kullanıyorsa numarayı biz
+   * üretmeyiz — iki sayaç aynı anda çalışamaz. Çağıranın açık işlemi içinde
+   * okunabilsin diye `tx` dışarıdan verilir.
+   */
+  async numaralandirma(tx: Prisma.TransactionClient): Promise<{ saglayiciAtar: boolean; seriOneki?: string }> {
+    const { tenantId } = aktifBaglam();
+    const baglanti = await tx.baglanti.findFirst({
+      where: { tenantId, aile: "ebelge", durum: "aktif" },
+      select: { saglayici: true, sifreliConfig: true },
+    });
+    if (!baglanti) return { saglayiciAtar: false };
+    if (!GERCEK_ADAPTORLER[baglanti.saglayici]) return { saglayiciAtar: false };
+    if (!this.adapterCoz(baglanti.saglayici).belgeNoAtar) return { saglayiciAtar: false };
+    // Sağlayıcı yetenekli olsa da devir ancak seri öneki tanımlıysa geçerlidir;
+    // önek yoksa firma otomatik olmayan seri kullanıyor demektir.
+    const seriOneki = (JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig).belgeSeriOneki;
+    return seriOneki ? { saglayiciAtar: true, seriOneki } : { saglayiciAtar: false };
   }
 
   async listele(): Promise<BaglantiGorunumu[]> {

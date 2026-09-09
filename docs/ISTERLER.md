@@ -319,6 +319,7 @@ görüntüsü ve imzalı UBL — yasal saklama için gerekir), `actionService`
 | EBLG-13 | Kestiğimiz ticari faturaya alıcının verdiği **kabul/ret yanıtı** gelen zarflardan okunup faturanın e-belge kaydında ayrı alanlarda (yanıt, zaman, gerekçe) izlenmelidir; zarfın GİB durumu ile alıcının yanıtı ayrı eksenlerdir. Gelen **ret** kritik bildirim üretir (bkz. §3.10). | G |
 | EBLG-14 | Zarf durumu **20'şerli toplu** sorgulanmalıdır; son duruma ulaşmış (kabul/ret/kalıcı hata) zarf bir daha sorgulanmaz ve aynı zarf en erken **2 saat** sonra yeniden sorgulanır. | G |
 | EBLG-15 | Entegratöre yapılan çağrılar metot bazında metrik olarak yayımlanmalıdır; çağrı disiplininin (EBLG-10…14) korunduğu ölçülebilir olmalıdır. | G |
+| EBLG-16 | Belge numarasını **entegratör atıyorsa** (sağlayıcıda otomatik numaralandırılan seri tanımlıysa) yerel sayaç ilerletilmemelidir: UBL'e yalnız seri öneki yazılır, numara gönderim yanıtından okunup faturaya işlenir. Numarası henüz atanmamış kesin fatura yazdırılamaz ve e-postalanamaz. Numarayı bizden bekleyen sağlayıcılarda yerel sayaç kullanılmaya devam eder; numaralandırma sahipliği sağlayıcı başına belirlenir. | G |
 
 ### 3.4 Stok Takibi (STK)
 

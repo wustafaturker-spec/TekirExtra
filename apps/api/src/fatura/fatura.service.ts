@@ -16,6 +16,7 @@ import { StokService } from "../stok/stok.service";
 import { DepoService } from "../stok/depo.service";
 import { EpostaService } from "../tenant/eposta.service";
 import { BelgelerService } from "../belgeler/belgeler.service";
+import { BaglantilarService } from "../tenant/baglantilar.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { faturaPdfHtml } from "./fatura-pdf";
 import type {
@@ -38,6 +39,7 @@ export class FaturaService {
     private readonly eposta: EpostaService,
     private readonly belgelerService: BelgelerService,
     private readonly donemKilidi: DonemKilidiService,
+    private readonly baglantilar: BaglantilarService,
   ) {}
 
   private async cariTipiniDogrula(tx: Prisma.TransactionClient, cariId: string, tip: string): Promise<void> {
@@ -1076,31 +1078,41 @@ export class FaturaService {
 
       let seriKod = veri?.seri ?? "TKR";
       let faturaNo = veri?.no ?? null;
+      const numaralandirma = await this.baglantilar.numaralandirma(tx);
 
       // 1. Numara Serisi Üretimi (FTR-06):
       // Alış faturalarında numara el ile girilir, satış faturalarında sayaç artırılarak otomatik üretilir.
       if (fatura.tip === "satis" || fatura.tip === "satis_iade") {
-        const yil = new Date(fatura.tarih).getFullYear();
+        // Entegratör otomatik seri kullanıyorsa numarayı o atar (EBLG-16);
+        // burada sayaç ilerletilmez. Reddedilen belge böylece seride boşluk
+        // bırakmaz, numara gönderim yanıtından gelir.
+        if (numaralandirma.saglayiciAtar && !veri?.no) {
+          seriKod = numaralandirma.seriOneki!;
+          fatura.seri = seriKod;
+          faturaNo = null;
+        } else {
+          const yil = new Date(fatura.tarih).getFullYear();
         
-        // FaturaSeri kaydını kilitleyerek güncelliyoruz (Concurrency Safe)
-        let seriKaydi = await tx.faturaSeri.findUnique({
-          where: { tenantId_seri_yil: { tenantId, seri: seriKod, yil } },
-        });
-
-        if (!seriKaydi) {
-          seriKaydi = await tx.faturaSeri.create({
-            data: { tenantId, seri: seriKod, yil, sonSira: 0 },
+          // FaturaSeri kaydını kilitleyerek güncelliyoruz (Concurrency Safe)
+          let seriKaydi = await tx.faturaSeri.findUnique({
+            where: { tenantId_seri_yil: { tenantId, seri: seriKod, yil } },
           });
+
+          if (!seriKaydi) {
+            seriKaydi = await tx.faturaSeri.create({
+              data: { tenantId, seri: seriKod, yil, sonSira: 0 },
+            });
+          }
+
+          const guncelSeri = await tx.faturaSeri.update({
+            where: { id: seriKaydi.id },
+            data: { sonSira: { increment: 1 } },
+          });
+
+          faturaNo = `${seriKod}${yil}${String(guncelSeri.sonSira).padStart(9, "0")}`;
+          fatura.seri = seriKod;
+          fatura.sira = guncelSeri.sonSira;
         }
-
-        const guncelSeri = await tx.faturaSeri.update({
-          where: { id: seriKaydi.id },
-          data: { sonSira: { increment: 1 } },
-        });
-
-        faturaNo = `${seriKod}${yil}${String(guncelSeri.sonSira).padStart(9, "0")}`;
-        fatura.seri = seriKod;
-        fatura.sira = guncelSeri.sonSira;
       } else {
         // Alış faturası ise el ile girilen numara zorunlu olmalı
         if (!faturaNo) {
@@ -1255,6 +1267,13 @@ export class FaturaService {
 
   async pdfUret(id: string): Promise<{ buffer: Buffer; dosyaAdi: string }> {
     const fatura = await this.getir(id);
+    // Numarasız belge dışarı çıkmamalı: entegratör numarayı gönderimde atıyorsa
+    // (EBLG-16) fatura kesin olsa bile henüz resmî numarası yoktur.
+    if (fatura.durum === "kesin" && !fatura.no) {
+      throw new BadRequestException(
+        "Faturanın numarası entegratör tarafından henüz atanmadı; e-Belge gönderimi tamamlanmadan yazdırılamaz veya e-postalanamaz",
+      );
+    }
     const { tenantId } = aktifBaglam();
     const firma = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.tenant.findUnique({

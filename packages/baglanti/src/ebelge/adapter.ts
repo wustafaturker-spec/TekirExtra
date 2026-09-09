@@ -26,6 +26,14 @@ import type {
 export interface EntegratorAdapter {
   readonly saglayici: EbelgeSaglayici;
 
+  /**
+   * Sağlayıcı belge numarasını kendisi atayabiliyor mu (EBLG-16)? Yalnızca
+   * yetenek bildirir; numaralandırmayı devretmek için ayrıca yapılandırmada
+   * seri öneki tanımlı olmalıdır. Sovos gibi numarayı bizden bekleyen
+   * sağlayıcılarda tanımsız kalır.
+   */
+  readonly belgeNoAtar?: boolean;
+
   baglantiTest(cfg: EntegratorConfig): Promise<BaglantiSonuc>;
   mukellefSorgula(cfg: EntegratorConfig, vknTckn: string): Promise<MukellefDurum>;
   belgeGonder(cfg: EntegratorConfig, belge: UblBelge): Promise<GonderimSonuc>;

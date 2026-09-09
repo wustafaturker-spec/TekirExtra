@@ -190,20 +190,24 @@ seri/sayaç modülümüz numarayı kendisi üretiyor — iki sayaç aynı anda
 | ~~Çok etiketli alıcıda posta kutusu seçimi~~ | **Karara bağlandı:** kendi entegratörümüzün alan adı → `defaultpk` → en yeni. Adaylar `postaKutulari` ile açılıyor; kullanıcıya seçtirme EBLG-02 onay adımına bırakıldı. |
 | Belge numarasını kim atar | **Karara bağlandı: NES otomatik serisi.** UBL'e yalnız seri öneki yazılır, numarayı NES atar. Uygulaması bekliyor — bkz. aşağıdaki not. |
 
-### NES otomatik serisi — uygulama notu
+### NES otomatik serisi (uygulandı)
 
-Karar verildi, kod henüz yazılmadı. Gereken değişiklikler:
+Numaralandırma sahipliği **sağlayıcı başına** belirlenir (EBLG-16); ürün geneli
+bir mod değildir, çünkü Sovos numarayı UBL içinde hazır bekler.
 
-- `EntegratorConfig`'e seri öneki alanı (örn. `K07`) ve arayüzde girişi.
-- Adaptörde "numarayı sağlayıcı atar" yeteneği; `GonderimSonuc`'a `belgeNo`
-  eklenip yükleme yanıtındaki `documentNumber` geri döndürülmeli.
-- `ebelge.service` UBL'i seri önekiyle üretmeli ve dönen numarayı kaydetmeli.
+- `EntegratorAdapter.belgeNoAtar` sağlayıcının yeteneğini bildirir (NES: evet).
+- Devir ancak yapılandırmada `belgeSeriOneki` (örn. `K07`) doluysa geçerlidir;
+  önek yoksa firma otomatik olmayan seri kullanıyordur ve numarayı biz atarız.
+- `BaglantilarService.numaralandirma(tx)` bu iki koşulu birleştirip karar verir.
+- `kesinlestir` devir varken `FaturaSeri` sayacını **ilerletmez**, `no` boş kalır.
+- `ebelge.service` UBL'i seri önekiyle üretir; dönen `documentNumber` faturaya
+  ve cari hareketin açıklamasına yazılır (bağ zaten `kaynakRef` üzerinden id ile
+  kurulduğu için yapısal bir eksik oluşmaz).
+- Numarasız kesin fatura yazdırılamaz ve e-postalanamaz.
 
-Açık nokta: numara artık **gönderim anında** doğuyor. Bugün `Fatura.no`
-kesinleştirmede bizim seri/sayaç modülümüzden atanıyor; iki sayaç aynı anda
-çalışamayacağı için e-Fatura'ya gidecek faturalarda numara atamasının
-kesinleştirmeden gönderime kayması gerekiyor. Bu, fatura numarasının yasal
-kaydını etkilediğinden ayrıca kararlaştırılmalı.
+Yan kazanç: reddedilen belge artık numara tüketmiyor, seride boşluk kalmıyor.
+Karşılığında kesinleşme ile gönderim arasında fatura numarasız durur; kuyruk
+kalıcı hataya düşerse bu durum kullanıcıya görünür olmalıdır.
 
 ## Bilinen boşluklar
 
