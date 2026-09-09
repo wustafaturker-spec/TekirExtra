@@ -209,6 +209,55 @@ Yan kazanç: reddedilen belge artık numara tüketmiyor, seride boşluk kalmıyo
 Karşılığında kesinleşme ile gönderim arasında fatura numarasız durur; kuyruk
 kalıcı hataya düşerse bu durum kullanıcıya görünür olmalıdır.
 
+## Uçtan uca doğrulama (2026-09-09)
+
+Uygulamanın tamamı üzerinden, canlı NES test ortamına karşı:
+
+| Adım | Sonuç |
+|---|---|
+| Bağlantı testi (`/baglantilar/:id/test`) | başarılı |
+| Mükellef listesi senkronu | 33.845 kayıt, 3,9 sn |
+| Taslak → kesinleştir | `no: null`, `seri: K07` — numara atanmadı (EBLG-16) |
+| Numarasızken PDF | `400` — engellendi |
+| Kuyruk → gönderim | `tur: efatura`, `durum: iletildi` |
+| Numara geri yazımı | **K072026000000016** |
+| Numara sonrası PDF | `200`, 28 KB |
+
+Kanal kararı lokal listeden verildi: alıcı `5555554408` listede e-Fatura
+mükellefi olarak bulunduğu için belge e-Arşiv'e değil e-Fatura'ya gitti.
+
+### Test ortamı bayrağı
+
+Entegratörlerin test ortamları sentetik firma kimliği veriyor: NES'in
+`1234567801`'i VKN kontrol hanesini tutmuyor (bağımsız olarak doğrulandı; GİB
+listesindeki 22.889 VKN'nin %74'ü geçerli, bu değil). Gönderen VKN kontrolü
+(`ebelge.service`) bu yüzden sandbox'ta gönderimi bloke ediyordu.
+
+Bağlantı yapılandırmasına açık bir **`testOrtami`** bayrağı eklendi; yalnızca
+gönderen VKN kontrol hanesi doğrulamasını gevşetir, başka hiçbir kuralı
+etkilemez. Üretim bağlantılarında kapalıdır.
+
+### Bulunan iki kusur
+
+**1. Cari hareket açıklaması geriye dönük güncellenemez.** Numarayı yazarken
+`cariHareket.updateMany` çağırıyordum; uygulama rolünün `cari_hareketler`
+üzerinde **UPDATE yetkisi yok** — hareketler bilinçli olarak ekle-sil. Çağrı
+kaldırıldı; kesinleşmede numara yoksa açıklama artık "Fatura hareketi" yazıyor
+ve bağ zaten `kaynakRef` üzerinden kuruluyor.
+
+**2. Başarılı gönderimden sonra gelen veritabanı hatası yetim belge bırakıyor.**
+Yukarıdaki kusur ilk denemede işlemi geri aldı, ama **HTTP çağrısı çoktan
+gitmişti**: NES'te `K072026000000015` (5.400 TL) belgesi oluştu ve bizde hiçbir
+kaydı yok. Yeniden deneme `…016`'yı üretti — yani aynı ticari işlem için GİB'de
+iki belge var.
+
+Bu, numaralandırmadan bağımsız, önceden var olan bir açık: ağ çağrısı ile
+kalıcılaştırma aynı atomik birim değil ve `EbelgeKayit` "hata" durumundan
+yeniden denenebiliyor. Çözüm elimizde: gönderimde `SourceAppRecordId` alanına
+zaten fatura kimliğimizi yazıyoruz, dolayısıyla yeniden denemeden önce
+entegratöre "bu kayıt için belge var mı" diye sorup varsa onu benimsemek
+yeterli. **Yapılmadı, karar bekliyor.**
+
 ## Bilinen boşluklar
 
 | Konu | Durum |

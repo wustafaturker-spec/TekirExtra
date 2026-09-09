@@ -27,6 +27,13 @@ export interface EntegratorConfig {
    * kendi seri/sayaç modülümüz üretir.
    */
   belgeSeriOneki?: string;
+  /**
+   * Bağlantı entegratörün **test ortamına** bakıyor. Test ortamlarında
+   * entegratör sentetik firma kimlikleri verir (NES'in `1234567801`'i gibi)
+   * ve bunlar VKN kontrol hanesini tutmaz. Bu bayrak yalnızca gönderen VKN
+   * doğrulamasını gevşetir; başka hiçbir kuralı etkilemez.
+   */
+  testOrtami?: boolean;
 }
 
 export interface BaglantiSonuc {

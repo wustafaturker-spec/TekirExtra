@@ -39,6 +39,7 @@ export const baglantiOlusturSemasi = z.object({
     vknTckn: z.string().regex(/^\d{10,11}$/).optional(),
     gondericiBirimEtiketi: z.string().optional(),
     belgeSeriOneki: z.string().min(1).max(8).optional(),
+    testOrtami: z.boolean().optional(),
     postaKutusuEtiketi: z.string().optional(),
     saticiId: z.string().optional(),
     magazaId: z.string().optional(),

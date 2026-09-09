@@ -134,9 +134,13 @@ export class EbelgeService {
         );
       }
 
+      const baglantiConfig = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
       const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
       if (!tenant) throw new NotFoundException("Tenant bulunamadı");
-      if (!vknTcknGecerliMi(tenant.vkn)) {
+      // Entegratörlerin test ortamları sentetik firma kimliği verir ve bunlar
+      // VKN kontrol hanesini tutmaz; bağlantı test olarak işaretlendiyse bu
+      // tek kontrol gevşetilir, üretimde olduğu gibi kalır.
+      if (!vknTcknGecerliMi(tenant.vkn) && !baglantiConfig.testOrtami) {
         throw new BadRequestException("Gönderen firmanın geçerli bir VKN/TCKN bilgisi olmalıdır");
       }
 
@@ -169,7 +173,7 @@ export class EbelgeService {
         tenant,
         rezervasyonId: rezervasyon.id,
         saglayici: baglanti.saglayici,
-        cfg: JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig,
+        cfg: baglantiConfig,
       };
     });
 
@@ -215,16 +219,14 @@ export class EbelgeService {
           data: { tur, durum, entegratorRef: gonderimResult.belgeRef || null, hataMesaji: gonderimResult.hataMesaji || null },
         });
         // Entegratörün attığı numara faturanın resmî numarasıdır; kesinleşmede
-        // boş bırakılmıştı. Cari hareketin açıklaması da o an numarasız
-        // yazıldığı için burada tamamlanır (bağ zaten kaynakRef üzerinden).
+        // boş bırakılmıştı. Cari hareketin açıklaması geriye dönük
+        // düzeltilmez: hareketler ekle-sil olarak tasarlanmıştır (uygulama
+        // rolünün `cari_hareketler` üzerinde UPDATE yetkisi yoktur) ve bağ
+        // zaten `kaynakRef` üzerinden fatura kimliğiyle kurulur.
         if (gonderimResult.basarili && saglayiciNumaralandirir && gonderimResult.belgeNo) {
           await tx.fatura.update({
             where: { id: faturaId },
             data: { no: gonderimResult.belgeNo },
-          });
-          await tx.cariHareket.updateMany({
-            where: { kaynakTur: "fatura", kaynakRef: faturaId },
-            data: { aciklama: `${gonderimResult.belgeNo} nolu fatura hareketi` },
           });
         }
         if (gonderimResult.basarili) {

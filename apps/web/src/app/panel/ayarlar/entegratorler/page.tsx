@@ -87,6 +87,7 @@ export default function EntegratorAyarlariSayfasi() {
       gondericiBirimEtiketi: (v.get("gondericiBirimEtiketi") as string) || undefined,
       postaKutusuEtiketi: (v.get("postaKutusuEtiketi") as string) || undefined,
       belgeSeriOneki: (v.get("belgeSeriOneki") as string) || undefined,
+      testOrtami: v.get("testOrtami") === "on" || undefined,
     };
 
     try {
@@ -294,6 +295,16 @@ export default function EntegratorAyarlariSayfasi() {
                       <Field label="Gönderici Birim (GB) Etiketi *"><Input name="gondericiBirimEtiketi" required placeholder="urn:mail:defaultgb@firma.com" /></Field>
                       <Field label="Posta Kutusu (PK) Etiketi"><Input name="postaKutusuEtiketi" placeholder="urn:mail:defaultpk@firma.com" /></Field>
                     </>}
+                    {(sovos || nes) && (
+                      <Field label="Test Ortamı">
+                        <label className="row-tight" style={{ gap: "0.5rem", alignItems: "center" }}>
+                          <input type="checkbox" name="testOrtami" />
+                          <span className="muted" style={{ fontSize: "0.85rem" }}>
+                            Entegratörün test ortamı — sentetik firma VKN&apos;si kabul edilir
+                          </span>
+                        </label>
+                      </Field>
+                    )}
                     {nes && (
                       <Field label="Otomatik Seri Öneki">
                         <Input name="belgeSeriOneki" maxLength={8} placeholder="K07 — boşsa numarayı TekirExtra atar" />

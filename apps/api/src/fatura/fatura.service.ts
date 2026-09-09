@@ -1220,7 +1220,7 @@ export class FaturaService {
             tutarTry: fatura.genelToplam.mul(fatura.kur).toDecimalPlaces(2),
             tarih: new Date(fatura.tarih),
             vadeTarihi: fatura.vadeTarihi ? new Date(fatura.vadeTarihi) : null,
-            aciklama: `${faturaNo || "Fatura"} nolu fatura hareketi`,
+            aciklama: faturaNo ? `${faturaNo} nolu fatura hareketi` : "Fatura hareketi",
             kaynakTur: "fatura",
             kaynakRef: fatura.id,
           },
