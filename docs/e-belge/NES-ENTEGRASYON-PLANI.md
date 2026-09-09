@@ -59,6 +59,7 @@ geçilemez!` biçiminde birleştirilir.
 |---|---|
 | `baglantiTest` | `GET /general/v1/einvoice/aliases/Gb` |
 | `mukellefSorgula` | `GET /einvoice/v1/users/{vkn}/Pk` |
+| `mukellefListesiCek` | `GET /einvoice/v1/users/zip/Pk` + `GET /edespatch/v1/users/zip/Pk` |
 | `belgeGonder` (e-Fatura) | `POST /einvoice/v1/uploads/document` (multipart) |
 | `belgeGonder` (e-Arşiv) | `POST /earchive/v1/uploads/document` (multipart) |
 | `durumSorgula` (e-Fatura) | `GET /einvoice/v1/outgoing/invoices/{uuid}` |
@@ -96,39 +97,64 @@ ile `documentAnswer` (alıcı kararı) ayrı alanlardır; `nesBelgeDurumu` ikisi
 ortak `BelgeDurum` kümesine indirger ve alıcı kararına öncelik verir. Tanınmayan
 durum **"hata" değil "kuyrukta"** sayılır — aksi hâlde belge takipten düşer.
 
+## Posta kutusu seçimi
+
+Tekil sorgu bir VKN için GİB'de kayıtlı **tüm** etiketleri döndürür ve
+varsayılanı işaretlemez (`isDefault` yalnızca kendi hesabımızın etiketlerinde
+vardır). Test Kurum 02'nin 225 etiketi var, en eskisi 2014 tarihli. Firma her
+entegratör değiştirdiğinde yeni etiket eklendiği için **en son oluşturulan**
+etiket yürürlüktedir; adaptör `creationTime`'a göre seçer. Toplu listede de
+silinme damgası yoktur, yani güncellik elimizdeki tek sinyaldir.
+
+## Mükellef listesi
+
+`GET /{aile}/v1/users/zip/Pk` → ZIP → `{aile}_pk_user_list.xml`:
+
+```xml
+<UserList><User>
+  <Identifier>…</Identifier><Title>…</Title><Type>OZEL|KAMU</Type>
+  <FirstCreationTime>…</FirstCreationTime>
+  <AccountType>OZELENTEGRASYON|ENTEGRASYON|GIBPORTAL</AccountType>
+  <Aliases><Alias><Name>urn:mail:…</Name><CreationTime>…</CreationTime></Alias></Aliases>
+</User></UserList>
+```
+
+Liste belge ailesi başına ayrıdır; e-Fatura ve e-İrsaliye için iki indirme
+yapılır ve kayıtlar `belgeTuru` ile etiketlenir. e-İrsaliye modülü kapalı bir
+hesapta ikinci indirme 403/404 döner; bu veri arızası değil ürün kapsamı
+olduğundan yutulur, diğer hatalar yukarı taşınır.
+
+Test ortamında ölçülen (2026-09-09): e-Fatura 28.891 etiket / 27.183 mükellef,
+e-İrsaliye 4.955 etiket; iki indirme + ayrıştırma toplam **0,9 saniye**, açık
+XML ~11,8 MB. Metot günde bir kez çağrılır (EBLG-10), belge gönderiminde değil.
+
 ## Bilinen boşluklar
 
 | Konu | Durum |
 |---|---|
-| `mukellefListesiCek` | Uygulanmadı. `GET /einvoice/v1/users/zip/{aliasType}` bir ZIP indiriyor; içindeki dosya biçimi (CSV mi XML mi) çalışan test erişimi olmadan doğrulanamadı. Sözleşme gereği metot tanımsız bırakıldığında çağıran tekil `mukellefSorgula`'ya düşer (EBLG-10 lokal liste katmanı NES'te devre dışı kalır). |
 | `earsivRaporDurum` | Uygulanmadı. `/histories` ve `/details` uçlarının yanıt şeması şemalarda tanımsız. Rapor listesi zaten bölüm başına `status` taşıdığı için ekran bu bilgiyi listeden okuyabilir. |
 | e-Arşiv `recordStatus` | `GET /earchive/v1/invoices/{uuid}` yanıt şeması şemada ayrıntılı değil; alan savunmacı okunuyor, canlı yanıtla doğrulanmalı. |
 | e-Arşiv rapor tutarı | NES rapor bölümünde toplam tutar dönmüyor; `EarsivRapor.toplamTutar` "0" olarak doldurulur. |
 | Rate limit | Hiçbir şemada tanımlı değil, 429 davranışı bilinmiyor. NES'e soruldu. |
 
-## Açık konu: test erişimi
+## Test erişimi — çözüldü
 
-2026-09-09 itibarıyla erişim sayfasındaki test anahtarı `HTTP 401` /
-`WWW-Authenticate: Bearer error="invalid_token"` dönüyor. Uç nokta, metot ve
-başlık biçimi doğru (NES'in kendi entegrasyon sayfasındaki `curl` örneğiyle
-birebir aynı); reddedilen anahtarın kendisi.
+Erişim sayfasında verilen anahtar `HTTP 401` /
+`WWW-Authenticate: Bearer error="invalid_token"` dönüyordu. **Çözüm: anahtarı
+portalda üretmek** (bkz. "API anahtarı üretimi"); portalda üretilen anahtarla
+uçlar 200 dönüyor.
 
-**Muhtemel sebep ve ilk denenecek yol:** anahtar portalda üretilen bir değerdir
-(bkz. "API anahtarı üretimi"). Erişim sayfasındaki değer üretilmiş aktif bir
-anahtar olmayabilir. `portaltest.nes.com.tr`'ye erişim sayfasındaki portal
-kullanıcısı/parolasıyla girip **yeni bir anahtar üretmek** en hızlı doğrulamadır.
+Erişim sayfasındaki GB/PK etiketleri de örnek veriymiş: sayfa iki test kurumuna
+da aynı dört `@nes.com.tr` etiketini basıyor, oysa gerçek etiketler API'den
+geliyor (Kurum 02'nin 225 etiketi var, hiçbiri `@nes.com.tr` değil). Alıcı
+etiketi bu yüzden NES'e sorulmadan `mukellefSorgula` ile belirlenebiliyor.
 
-Ayrıca sayfadaki değerlerin örnek veri olduğundan şüpheleniliyor: VKN'ler
-`1234567801`/`1234567802`, kullanıcılar `test01@`/`test02@nes.com.tr` ve **iki
-test kurumuna da aynı GB/PK etiketleri** verilmiş; bu haliyle "Kurum 01'den
-Kurum 02'ye gönder" senaryosunda `ReceiverAlias` belirlenemiyor.
+Canlı doğrulanan uçlar (2026-09-09): hesap etiketleri, tekil mükellef sorgusu,
+toplu mükellef listesi (iki aile), gelen fatura listesi. Gönderim ve durum
+akışı henüz canlıda denenmedi.
 
-`entegrasyon@nesbilgi.com.tr` adresine sorulacaklar:
+Geriye kalan tek açık soru **rate limit / 429 davranışı**; hiçbir şemada
+tanımlı değil, NES'e sorulmalı.
 
-1. Test anahtarları aktif mi; Bearer kullanımı doğru mu, öncesinde token alma adımı var mı?
-2. Test Kurum 01 ve 02 için **ayrı ayrı** GB ve PK etiketleri nedir?
-3. Rate limit ve 429 davranışı nedir?
-
-Bu üçü yanıtlanana kadar adaptör canlı uçlara karşı doğrulanmamış sayılır;
-birim testleri sözleşmeyi (şemadan çıkarılan istek/yanıt biçimlerini) doğrular,
-gerçek ortam davranışını değil.
+Birim testleri sözleşmeyi doğrular, gerçek ortam davranışını değil; canlıda
+denenmemiş uçlar için bu ayrım geçerlidir.

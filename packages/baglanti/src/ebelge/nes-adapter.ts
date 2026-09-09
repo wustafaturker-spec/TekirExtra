@@ -1,4 +1,5 @@
 import type { EntegratorAdapter } from "./adapter";
+import { zipIlkXmlBuffer } from "./zip";
 import { randomUUID } from "node:crypto";
 import type { BelgeDurum } from "@tekirextra/shared";
 import type {
@@ -13,6 +14,7 @@ import type {
   EarsivRapor,
   EirsaliyeBelge,
   GelenEirsaliye,
+  MukellefKaydi,
 } from "./types";
 
 /**
@@ -173,6 +175,37 @@ function receiptAdviceXml(belgeRef: string, yanit: "kabul" | "ret", gerekce?: st
   return { uuid, xml };
 }
 
+/** XML metin düğümlerindeki varlıkları çözer; ünvanlarda `&` sık görülür. */
+function xmlCoz(deger: string): string {
+  return deger
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+/**
+ * NES toplu mükellef listesi XML'i: her `User` bir VKN/TCKN, altındaki her
+ * `Alias` bir posta kutusu. Sovos'un aksine silinme damgası yoktur — dosya
+ * yalnızca yürürlükteki kayıtları taşır, ayıklanacak ölü etiket yoktur.
+ */
+function mukellefListesiAyristir(xml: string, belgeTuru: MukellefKaydi["belgeTuru"]): MukellefKaydi[] {
+  const kayitlar: MukellefKaydi[] = [];
+  for (const kullanici of xml.matchAll(/<User>([\s\S]*?)<\/User>/g)) {
+    const govde = kullanici[1];
+    const vknTckn = govde.match(/<Identifier>([^<]*)<\/Identifier>/)?.[1]?.trim();
+    if (!vknTckn) continue;
+    const unvan = govde.match(/<Title>([^<]*)<\/Title>/)?.[1]?.trim();
+    for (const etiket of govde.matchAll(/<Name>([^<]*)<\/Name>/g)) {
+      const postaKutusu = etiket[1].trim();
+      if (!postaKutusu) continue;
+      kayitlar.push({ vknTckn, belgeTuru, postaKutusu: xmlCoz(postaKutusu), unvan: unvan ? xmlCoz(unvan) : undefined });
+    }
+  }
+  return kayitlar;
+}
+
 function configDogrula(cfg: EntegratorConfig): string | undefined {
   if (!cfg.apiAnahtari) return "NES API anahtarı zorunludur";
   if (!cfg.servisAdresi) return "NES servis kök adresi zorunludur (örn. https://apitest.nes.com.tr)";
@@ -217,6 +250,7 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
       sorgu?: Record<string, string | number | boolean | undefined>;
       govde?: unknown;
       metin?: boolean;
+      ikili?: boolean;
     } = {},
   ): Promise<T> {
     const form = secenekler.govde instanceof FormData;
@@ -224,7 +258,7 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
       method: secenekler.metot ?? "GET",
       headers: {
         authorization: `Bearer ${cfg.apiAnahtari}`,
-        accept: secenekler.metin ? "application/xml" : "application/json",
+        accept: secenekler.ikili ? "application/zip" : secenekler.metin ? "application/xml" : "application/json",
         // FormData'nın sınır (boundary) başlığını fetch kendisi kurar; elle
         // content-type yazmak gövdeyi okunamaz hâle getirir.
         ...(!form && secenekler.govde !== undefined ? { "content-type": "application/json" } : {}),
@@ -232,6 +266,8 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
       body: form ? (secenekler.govde as FormData) : secenekler.govde !== undefined ? JSON.stringify(secenekler.govde) : undefined,
     });
     if (!yanit.ok) throw await nesHatasi(yanit);
+    // ZIP gövdesi metne çevrilirse bozulur; ikili yanıt ham tampon döner.
+    if (secenekler.ikili) return Buffer.from(await yanit.arrayBuffer()) as T;
     const metin = await yanit.text();
     if (secenekler.metin) return metin as T;
     return (metin ? JSON.parse(metin) : undefined) as T;
@@ -272,6 +308,31 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
       if (hata instanceof NesHatasi && hata.durum === 404) return { vknTckn, eFaturaMukellefi: false };
       throw hata;
     }
+  }
+
+  /**
+   * Tam GİB mükellef listesini indirir (EBLG-10). NES listeyi belge ailesi
+   * başına ayrı ZIP'te verir; e-Fatura ve e-İrsaliye için iki indirme gerekir.
+   * Test ortamında e-Fatura dosyası ~27 bin mükellef ve ~29 bin etiket taşır,
+   * bu yüzden metot günde bir kez çağrılır, belge gönderiminde değil.
+   */
+  async mukellefListesiCek(cfg: EntegratorConfig): Promise<MukellefKaydi[]> {
+    const hata = configDogrula(cfg);
+    if (hata) throw new Error(hata);
+    const kayitlar = mukellefListesiAyristir(await this.mukellefListesiXml(cfg, "einvoice"), "efatura");
+    try {
+      kayitlar.push(...mukellefListesiAyristir(await this.mukellefListesiXml(cfg, "edespatch"), "eirsaliye"));
+    } catch (hata) {
+      // e-İrsaliye modülü açık olmayan hesapta bu uç yetki hatası döner; bu
+      // veri arızası değil ürün kapsamıdır. Diğer hatalar yukarı taşınır,
+      // yoksa eksik liste tam sanılıp gönderimler yanlış kanala kayar.
+      if (!(hata instanceof NesHatasi) || (hata.durum !== 403 && hata.durum !== 404)) throw hata;
+    }
+    return kayitlar;
+  }
+
+  private async mukellefListesiXml(cfg: EntegratorConfig, aile: Aile): Promise<string> {
+    return zipIlkXmlBuffer(await this.cagir<Buffer>(cfg, aile, "/v1/users/zip/Pk", { ikili: true }));
   }
 
   async belgeGonder(cfg: EntegratorConfig, belge: UblBelge): Promise<GonderimSonuc> {

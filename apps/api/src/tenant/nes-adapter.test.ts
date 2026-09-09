@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NesEntegratorAdapter, nesBelgeDurumu, type EntegratorConfig } from "@tekirextra/baglanti";
+import { NesEntegratorAdapter, nesBelgeDurumu, tekDosyaZipBase64, type EntegratorConfig } from "@tekirextra/baglanti";
 
 const config: EntegratorConfig = {
   saglayici: "nes",
@@ -18,6 +18,26 @@ function yanit(govde: unknown, durum = 200) {
     text: async () => (typeof govde === "string" ? govde : JSON.stringify(govde)),
   };
 }
+
+/** Toplu mükellef listesi ucu ZIP döner; gövde ikili okunur. */
+function zipYanit(xml: string) {
+  const zip = Buffer.from(tekDosyaZipBase64("user_list.xml", xml), "base64");
+  return { ok: true, status: 200, arrayBuffer: async () => zip.buffer.slice(zip.byteOffset, zip.byteOffset + zip.byteLength) };
+}
+
+const KULLANICI_LISTESI = `<?xml version="1.0" encoding="utf-8"?>
+<UserList>
+  <User>
+    <Identifier>1234567802</Identifier>
+    <Title>TEST &amp; KURUM - 02</Title>
+    <Type>OZEL</Type>
+    <AccountType>OZELENTEGRASYON</AccountType>
+    <Aliases>
+      <Alias><Name>urn:mail:eski_pk@turktelekom.com.tr</Name><CreationTime>2014-07-18T16:07:05</CreationTime></Alias>
+      <Alias><Name>urn:mail:guncel_pk@mersel.io</Name><CreationTime>2025-05-26T13:31:39</CreationTime></Alias>
+    </Aliases>
+  </User>
+</UserList>`;
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -264,6 +284,43 @@ describe("NesEntegratorAdapter", () => {
     const sonuc = await new NesEntegratorAdapter().baglantiTest(config);
 
     expect(sonuc).toEqual({ basarili: false, mesaj: "NES 401" });
+  });
+
+  it("mükellef listesini iki aileden indirip ayrıştırır", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(zipYanit(KULLANICI_LISTESI));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const kayitlar = await new NesEntegratorAdapter().mukellefListesiCek(config);
+
+    // NES listeyi belge ailesi başına ayrı ZIP'te verir, tek indirme yetmez.
+    expect(fetchMock.mock.calls.map(([adres]) => String(adres))).toEqual([
+      "https://apitest.nes.com.tr/einvoice/v1/users/zip/Pk",
+      "https://apitest.nes.com.tr/edespatch/v1/users/zip/Pk",
+    ]);
+    expect(kayitlar).toEqual([
+      { vknTckn: "1234567802", belgeTuru: "efatura", postaKutusu: "urn:mail:eski_pk@turktelekom.com.tr", unvan: "TEST & KURUM - 02" },
+      { vknTckn: "1234567802", belgeTuru: "efatura", postaKutusu: "urn:mail:guncel_pk@mersel.io", unvan: "TEST & KURUM - 02" },
+      { vknTckn: "1234567802", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:eski_pk@turktelekom.com.tr", unvan: "TEST & KURUM - 02" },
+      { vknTckn: "1234567802", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:guncel_pk@mersel.io", unvan: "TEST & KURUM - 02" },
+    ]);
+  });
+
+  it("e-İrsaliye modülü kapalıysa e-Fatura listesini yine de döndürür", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(zipYanit(KULLANICI_LISTESI))
+      .mockResolvedValueOnce(yanit("", 403)));
+
+    const kayitlar = await new NesEntegratorAdapter().mukellefListesiCek(config);
+
+    expect(kayitlar).toHaveLength(2);
+    expect(kayitlar.every((k) => k.belgeTuru === "efatura")).toBe(true);
+  });
+
+  it("e-Fatura listesi hata verirse eksik liste döndürmez", async () => {
+    // Eksik liste tam sanılırsa gönderimler yanlış kanala kayar.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit("", 500)));
+
+    await expect(new NesEntegratorAdapter().mukellefListesiCek(config)).rejects.toThrow("NES 500");
   });
 
   it("toplu durum ve zarf uçlarını NES desteklemediği için tanımlamaz", () => {
