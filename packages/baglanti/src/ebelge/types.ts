@@ -30,8 +30,15 @@ export interface BaglantiSonuc {
 export interface MukellefDurum {
   vknTckn: string;
   eFaturaMukellefi: boolean;
-  /** Mükellefse GİB posta kutusu etiketi. */
+  /** Mükellefse GİB posta kutusu etiketi; birden çok adaydan seçilen. */
   postaKutusu?: string;
+  /**
+   * Alıcının GİB'de kayıtlı **tüm** posta kutusu etiketleri. Bir VKN'de onlarca
+   * etiket olabilir ve hangisinin yürürlükte olduğu veriden kesin çıkarılamaz;
+   * `postaKutusu` en iyi tahmindir, bu liste seçimi kullanıcıya sormak isteyen
+   * çağıran içindir. Tek etiket varsa doldurulmaz.
+   */
+  postaKutulari?: string[];
 }
 
 /** ebelge modülünün ürettiği UBL-TR 1.2 belgesi — adaptör içeriğe dokunmaz (EBLG-03). */

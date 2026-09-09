@@ -206,6 +206,47 @@ function mukellefListesiAyristir(xml: string, belgeTuru: MukellefKaydi["belgeTur
   return kayitlar;
 }
 
+/** `urn:mail:defaultpk@nes.com.tr` → `nes.com.tr` */
+function etiketAlanAdi(etiket?: string): string | undefined {
+  const i = etiket?.lastIndexOf("@") ?? -1;
+  return i > 0 ? etiket!.slice(i + 1).toLowerCase() : undefined;
+}
+
+/** `urn:mail:defaultpk@nes.com.tr` → `defaultpk` */
+function etiketYerelAdi(etiket: string): string {
+  return (/^urn:mail:([^@]+)/.exec(etiket)?.[1] ?? "").toLowerCase();
+}
+
+/**
+ * Alıcının posta kutusunu seçer. Tek etiket varsa soru yoktur; gerçek
+ * firmaların neredeyse tamamı bu durumdadır.
+ *
+ * Birden çoksa veriden çıkarılabilecek en güvenilir sinyal, etiketin **bizim
+ * entegratörümüzün alan adında** olmasıdır: alıcı da aynı entegratördeyse
+ * teslimat oradan yürür. Bu küme içinde GİB'in birincil kutu adlandırması olan
+ * `defaultpk` tercih edilir, kalan eşitlik en yeni kayıtla bozulur.
+ *
+ * Denenip elenen iki kural: "listenin ilki" (API sırası rastgele) ve "en yeni
+ * etiket" — GİB test VKN'lerinde yıllar içinde her entegratörden etiket birikir;
+ * Kurum 02'nin 225 etiketinin 57'si `defaultpk` ve en yenisi yürürlükteki kutu
+ * değil. Seçim bu yüzden bir tahmindir; adayların tamamı `postaKutulari` ile
+ * döner ki çağıran gerektiğinde kullanıcıya sorabilsin.
+ */
+function postaKutusuSec(
+  etiketler: { alias?: string; creationTime?: string }[],
+  kendiEtiketimiz?: string,
+): string | undefined {
+  const adaylar = etiketler.filter((e) => e.alias);
+  if (adaylar.length <= 1) return adaylar[0]?.alias;
+  const bizimAlan = etiketAlanAdi(kendiEtiketimiz);
+  const ayniEntegrator = bizimAlan ? adaylar.filter((e) => etiketAlanAdi(e.alias) === bizimAlan) : [];
+  const havuz = ayniEntegrator.length ? ayniEntegrator : adaylar;
+  const varsayilanlar = havuz.filter((e) => etiketYerelAdi(e.alias!) === "defaultpk");
+  return (varsayilanlar.length ? varsayilanlar : havuz)
+    .slice()
+    .sort((a, b) => (b.creationTime ?? "").localeCompare(a.creationTime ?? ""))[0]?.alias;
+}
+
 function configDogrula(cfg: EntegratorConfig): string | undefined {
   if (!cfg.apiAnahtari) return "NES API anahtarı zorunludur";
   if (!cfg.servisAdresi) return "NES servis kök adresi zorunludur (örn. https://apitest.nes.com.tr)";
@@ -293,15 +334,17 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
         "einvoice",
         `/v1/users/${encodeURIComponent(vknTckn)}/Pk`,
       );
-      // GİB bir VKN'ye onlarca posta kutusu tanımlayabilir (test kurumunun 225
-      // etiketi var) ve bu uç varsayılanı işaretlemez. Firma entegratör
-      // değiştirdikçe yeni etiket eklendiği için **en son oluşturulan** etiket
-      // yürürlüktekidir; listenin ilkini almak yıllar önce terk edilmiş bir
-      // posta kutusuna gönderim yapmak olurdu.
-      const postaKutusu = (kullanici?.aliases ?? [])
-        .filter((etiket) => etiket.alias)
-        .sort((a, b) => (b.creationTime ?? "").localeCompare(a.creationTime ?? ""))[0]?.alias;
-      return { vknTckn, eFaturaMukellefi: Boolean(postaKutusu), postaKutusu };
+      // Bu uç varsayılanı işaretlemez (`isDefault` yalnızca kendi hesabımızın
+      // etiketlerinde vardır), o yüzden seçim kuralı adaptörde (postaKutusuSec)
+      // ve adayların tamamı çağırana açılır.
+      const etiketler = (kullanici?.aliases ?? []).filter((etiket) => etiket.alias);
+      const postaKutusu = postaKutusuSec(etiketler, cfg.gondericiBirimEtiketi);
+      return {
+        vknTckn,
+        eFaturaMukellefi: Boolean(postaKutusu),
+        postaKutusu,
+        postaKutulari: etiketler.length > 1 ? etiketler.map((etiket) => etiket.alias!) : undefined,
+      };
     } catch (hata) {
       // 404 "mükellef değil" demektir, arıza değil. Diğer hatalar yutulursa
       // e-Fatura mükellefine e-Arşiv kesilir; o yüzden yukarı taşınır.

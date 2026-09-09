@@ -118,9 +118,30 @@ describe("NesEntegratorAdapter", () => {
     expect(nesBelgeDurumu("EnvelopeSystemResponseIsBeingWaitedFromReceiver", "Waiting")).toBe("iletildi");
   });
 
-  it("çok etiketli mükellefte en son oluşturulan posta kutusunu seçer", async () => {
-    // Gerçek test kurumunda 225 etiket var ve uç varsayılanı işaretlemiyor;
-    // ilkini almak terk edilmiş bir posta kutusuna gönderim olurdu.
+  it("çok etiketli mükellefte kendi entegratörümüzdeki varsayılan kutuyu seçer", async () => {
+    // Canlı karşılığı: Kurum 02'nin 225 etiketi içinden gerçek trafiğin
+    // kullandığı urn:mail:defaultpk@nes.com.tr seçilmeli. "En yeni" kuralı
+    // burada mersel.io etiketini seçip yanlış kutuya gönderim yapardı.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({
+      identifier: "1234567802",
+      aliases: [
+        { alias: "urn:mail:defaultpk@elogo.com.tr", creationTime: "2014-07-22T00:00:00" },
+        { alias: "urn:mail:defaultpk@firma.test", creationTime: "2021-03-25T14:30:41" },
+        { alias: "urn:mail:merkezpk@firma.test", creationTime: "2021-03-25T15:05:36" },
+        { alias: "urn:mail:defaultpk-cgbilgi@mersel.io", creationTime: "2025-05-26T13:31:39" },
+      ],
+    })));
+
+    const durum = await new NesEntegratorAdapter().mukellefSorgula(config, "1234567802");
+
+    expect(durum.postaKutusu).toBe("urn:mail:defaultpk@firma.test");
+    // Seçim bir tahmin; adaylar çağırana açılır ki gerekirse kullanıcıya sorulsun.
+    expect(durum.postaKutulari).toHaveLength(4);
+  });
+
+  it("kendi entegratörümüzde etiket yoksa en yeni etikete düşer", async () => {
+    // Hiçbir etiket bizim alan adımızda değil ve hiçbirinin yerel adı
+    // "defaultpk" değil; geriye kalan tek sinyal güncelliktir.
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({
       identifier: "1234567802",
       aliases: [
@@ -130,11 +151,23 @@ describe("NesEntegratorAdapter", () => {
       ],
     })));
 
-    await expect(new NesEntegratorAdapter().mukellefSorgula(config, "1234567802")).resolves.toEqual({
+    await expect(new NesEntegratorAdapter().mukellefSorgula(config, "1234567802")).resolves.toMatchObject({
       vknTckn: "1234567802",
       eFaturaMukellefi: true,
       postaKutusu: "urn:mail:guncel_pk@mersel.io",
     });
+  });
+
+  it("tek etiketli mükellefte aday listesi doldurulmaz", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({
+      identifier: "1234567802",
+      aliases: [{ alias: "urn:mail:defaultpk@alici.test", creationTime: "2024-01-01T00:00:00" }],
+    })));
+
+    const durum = await new NesEntegratorAdapter().mukellefSorgula(config, "1234567802");
+
+    expect(durum.postaKutusu).toBe("urn:mail:defaultpk@alici.test");
+    expect(durum.postaKutulari).toBeUndefined();
   });
 
   it("etiketi olmayan kaydı mükellef saymaz", async () => {

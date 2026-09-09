@@ -101,19 +101,27 @@ durum **"hata" değil "kuyrukta"** sayılır — aksi hâlde belge takipten dü�
 
 Tekil sorgu bir VKN için GİB'de kayıtlı **tüm** etiketleri döndürür ve
 varsayılanı işaretlemez (`isDefault` yalnızca kendi hesabımızın etiketlerinde
-vardır). Test Kurum 02'nin 225 etiketi var, en eskisi 2014 tarihli. Firma her
-entegratör değiştirdiğinde yeni etiket eklendiği için **en son oluşturulan**
-etiket yürürlüktedir; adaptör `creationTime`'a göre seçer. Toplu listede de
-silinme damgası yoktur, yani güncellik elimizdeki tek sinyaldir.
+vardır). Test Kurum 02'nin 225 etiketi var, en eskisi 2014 tarihli.
 
-⚠️ **Bu kural test ortamında doğrulanmadı, aksine bir karşı örnek var.** Kurum
-02'nin en yeni etiketi `…@mersel.io` (2025-05-26) iken hesabın gerçek giden
-trafiği `urn:mail:defaultpk@nes.com.tr`'ye (2021-03-25) gidiyor. GİB test
-VKN'leri yıllar içinde her entegratörden etiket biriktirdiği için "en yeni"
-burada "bu VKN ile en son oynayan entegratör" anlamına geliyor. Gerçek bir
-firmada tek aktif posta kutusu olacağı için kural çoğu durumda çalışır, ama
-çok etiketli alıcıda yanlış kutuya gönderim riski duruyor — **karara bağlanmalı**
-(bkz. Açık kararlar).
+Sıralı kural (`postaKutusuSec`):
+
+1. Tek etiket varsa o kullanılır — gerçek firmaların neredeyse tamamı böyle.
+2. Birden çoksa **bizim entegratörümüzün alan adındaki** etiketler ayrılır:
+   alıcı da aynı entegratördeyse teslimat oradan yürür.
+3. Bu küme içinde GİB'in birincil kutu adlandırması `defaultpk` tercih edilir.
+4. Kalan eşitlik en yeni `creationTime` ile bozulur.
+
+Denenip elenen iki kural: **"listenin ilki"** (API sırası rastgele) ve **"en
+yeni etiket"**. İkincisi Kurum 02'de `…@mersel.io` (2025) seçiyordu, oysa
+hesabın gerçek giden trafiği `urn:mail:defaultpk@nes.com.tr`'ye (2021) gidiyor;
+GİB test VKN'leri yıllar içinde her entegratörden etiket biriktirdiği için
+"en yeni" burada "bu VKN ile en son oynayan entegratör" demek. 225 etiketin
+57'sinin yerel adı `defaultpk` olduğundan tek başına o filtre de yetmiyor.
+Yukarıdaki kural canlı veride doğru kutuyu seçiyor.
+
+Seçim yine de bir tahmindir. Bu yüzden birden çok aday varsa hepsi
+`MukellefDurum.postaKutulari` ile döner; nihai çözüm, EBLG-02 onay adımında
+kullanıcıya seçtirip cari kartında saklamaktır (yapılmadı).
 
 ## Mükellef listesi
 
@@ -179,8 +187,23 @@ seri/sayaç modülümüz numarayı kendisi üretiyor — iki sayaç aynı anda
 
 | Konu | Seçenekler |
 |---|---|
-| Çok etiketli alıcıda posta kutusu seçimi | (a) en yeni `creationTime` — şu anki davranış; (b) yerel/kullanıcı seçimi; (c) `defaultpk` önekli etiketi tercih et |
-| Belge numarasını kim atar | (a) NES otomatik seri — UBL'e yalnız önek yazılır, sayaç NES'te; (b) otomatik olmayan seri tanımlanır, sayaç bizde kalır |
+| ~~Çok etiketli alıcıda posta kutusu seçimi~~ | **Karara bağlandı:** kendi entegratörümüzün alan adı → `defaultpk` → en yeni. Adaylar `postaKutulari` ile açılıyor; kullanıcıya seçtirme EBLG-02 onay adımına bırakıldı. |
+| Belge numarasını kim atar | **Karara bağlandı: NES otomatik serisi.** UBL'e yalnız seri öneki yazılır, numarayı NES atar. Uygulaması bekliyor — bkz. aşağıdaki not. |
+
+### NES otomatik serisi — uygulama notu
+
+Karar verildi, kod henüz yazılmadı. Gereken değişiklikler:
+
+- `EntegratorConfig`'e seri öneki alanı (örn. `K07`) ve arayüzde girişi.
+- Adaptörde "numarayı sağlayıcı atar" yeteneği; `GonderimSonuc`'a `belgeNo`
+  eklenip yükleme yanıtındaki `documentNumber` geri döndürülmeli.
+- `ebelge.service` UBL'i seri önekiyle üretmeli ve dönen numarayı kaydetmeli.
+
+Açık nokta: numara artık **gönderim anında** doğuyor. Bugün `Fatura.no`
+kesinleştirmede bizim seri/sayaç modülümüzden atanıyor; iki sayaç aynı anda
+çalışamayacağı için e-Fatura'ya gidecek faturalarda numara atamasının
+kesinleştirmeden gönderime kayması gerekiyor. Bu, fatura numarasının yasal
+kaydını etkilediğinden ayrıca kararlaştırılmalı.
 
 ## Bilinen boşluklar
 
