@@ -72,6 +72,9 @@ type NesHataGovdesi = {
   title?: string;
   detail?: string;
   invalidFields?: { field?: string; description?: string; detail?: string }[];
+  /** 403'te dönen yetki gövdesi: hangi scope'un eksik olduğunu söyler. */
+  scope?: string;
+  role?: string | null;
   errors?: { code?: string; description?: string; detail?: string }[] | Record<string, string[] | string>;
 };
 
@@ -112,6 +115,11 @@ async function nesHatasi(yanit: Response): Promise<NesHatasi> {
   let ayrinti = metin.slice(0, 300);
   try {
     const govde = JSON.parse(metin) as NesHataGovdesi;
+    // 403 gövdesi ötekilere benzemez: yalnızca eksik yetkinin adını taşır.
+    // Ham JSON'u basmak kullanıcıya ne yapacağını söylemez.
+    if (yanit.status === 403 && govde.scope) {
+      return new NesHatasi(403, `NES 403: API anahtarının '${govde.scope}' yetkisi yok — NES portalında Yönetim Paneli > API Tanımları'ndan anahtarın scope'larını genişletin`);
+    }
     const baslik = govde.message || govde.Message || govde.title || govde.detail;
     ayrinti = [baslik, hataSatirlari(govde).join("; ")].filter(Boolean).join(" — ") || ayrinti;
   } catch {

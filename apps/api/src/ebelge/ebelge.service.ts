@@ -214,7 +214,17 @@ export class EbelgeService {
       let mevcutBelge: GonderimSonuc | undefined;
       if (hazirlik.yenidenDeneme && adapter.belgeAra) {
         this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "belgeAra", saglayici: hazirlik.saglayici });
-        mevcutBelge = await adapter.belgeAra(hazirlik.cfg, hazirlik.fatura.id, tur);
+        try {
+          mevcutBelge = await adapter.belgeAra(hazirlik.cfg, hazirlik.fatura.id, tur);
+        } catch (hata) {
+          // Sorgu çalışmazsa mükerrer belge ihtimalini eleyemeyiz. Körlemesine
+          // göndermek aynı satış için ikinci belge düzenlemek olur; bu yüzden
+          // gönderim durdurulur ve sebep açıkça söylenir.
+          const sebep = hata instanceof Error ? hata.message : "bilinmeyen hata";
+          throw new BadRequestException(
+            `Belgenin entegratörde zaten oluşup oluşmadığı kontrol edilemedi, mükerrer gönderim riski nedeniyle durduruldu: ${sebep}`,
+          );
+        }
         if (mevcutBelge) {
           this.logger.warn(JSON.stringify({
             event: "ebelge_mevcut_belge_benimsendi",

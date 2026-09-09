@@ -263,6 +263,16 @@ describe("EbelgeService (EBLG-01..08)", () => {
     expect(sonuc.basarili).toBe(true);
   });
 
+  it("mükerrer kontrolü çalışmazsa gönderimi durdurur, körlemesine göndermez", async () => {
+    // Sorgu düşerse mükerrer ihtimali elenemez; göndermek ikinci belge demektir.
+    mockAdapter.belgeGonder.mockClear();
+    mockAdapter.belgeAra.mockRejectedValue(new Error("NES 403: API anahtarının yetkisi yok"));
+    mockTenantIslem.mockImplementation((tenantId, cb) => cb(yenidenDenemeTx()));
+
+    await expect(service.gonder("f1")).rejects.toThrow("mükerrer gönderim riski");
+    expect(mockAdapter.belgeGonder).not.toHaveBeenCalled();
+  });
+
   it("sağlayıcıda belge yoksa yeniden denemede normal gönderim yapar", async () => {
     mockAdapter.belgeGonder.mockClear();
     mockAdapter.belgeAra.mockResolvedValue(undefined);

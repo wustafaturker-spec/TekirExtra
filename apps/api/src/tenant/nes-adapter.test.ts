@@ -348,6 +348,18 @@ describe("NesEntegratorAdapter", () => {
     expect(sonuc.hataMesaji).toContain("File: The File field is required.");
   });
 
+  it("403 yetki hatasında eksik scope'u ve ne yapılacağını söyler", async () => {
+    // 403 gövdesi ötekilere benzemez; ham JSON basmak yol göstermez.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ role: null, scope: "earchive:outgoing:list:read" }, 403)));
+
+    const sonuc = await new NesEntegratorAdapter().belgeGonder(config, {
+      uuid: "fatura-7", belgeNo: "K07", xml: "<Invoice/>", tur: "earsiv",
+    });
+
+    expect(sonuc.hataMesaji).toContain("earchive:outgoing:list:read");
+    expect(sonuc.hataMesaji).toContain("API Tanımları");
+  });
+
   it("gövdesiz 401'de bile durum kodunu mesaja yazar", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit("", 401)));
 
