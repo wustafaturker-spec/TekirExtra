@@ -191,6 +191,65 @@ describe("NesEntegratorAdapter", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("400 gövdesindeki alan hatasını mesaja taşır", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({
+      message: "GECERSIZ ISTEK",
+      invalidFields: [{ field: "SenderAlias", description: "Gönderici Etiketi boş geçilemez!", detail: "" }],
+    }, 400)));
+
+    const sonuc = await new NesEntegratorAdapter().belgeGonder(config, {
+      uuid: "fatura-4",
+      belgeNo: "TKR2026000000004",
+      xml: "<Invoice/>",
+      tur: "earsiv",
+    });
+
+    // Yalnızca "GECERSIZ ISTEK" göstermek hangi alanın reddedildiğini gizlerdi.
+    expect(sonuc.hataMesaji).toBe("NES 400: GECERSIZ ISTEK — SenderAlias: Gönderici Etiketi boş geçilemez!");
+  });
+
+  it("422 şematron hatasını kod ve açıklamasıyla birlikte verir", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({
+      message: "HATALI ISTEK",
+      errors: [{ code: "1000", description: "SCHEMATRON_CHECK_RESULT_HAS_FAILED", detail: "ŞEMATRON KONTROL SONUCU HATALI" }],
+    }, 422)));
+
+    const sonuc = await new NesEntegratorAdapter().belgeGonder(config, {
+      uuid: "fatura-5",
+      belgeNo: "TKR2026000000005",
+      xml: "<Invoice/>",
+      tur: "earsiv",
+    });
+
+    expect(sonuc.hataMesaji).toBe(
+      "NES 422: HATALI ISTEK — SCHEMATRON_CHECK_RESULT_HAS_FAILED (ŞEMATRON KONTROL SONUCU HATALI)",
+    );
+  });
+
+  it("ProblemDetails biçimindeki hata sözlüğünü de okur", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({
+      title: "One or more validation errors occurred.",
+      errors: { File: ["The File field is required."] },
+    }, 400)));
+
+    const sonuc = await new NesEntegratorAdapter().belgeGonder(config, {
+      uuid: "fatura-6",
+      belgeNo: "TKR2026000000006",
+      xml: "<Invoice/>",
+      tur: "earsiv",
+    });
+
+    expect(sonuc.hataMesaji).toContain("File: The File field is required.");
+  });
+
+  it("gövdesiz 401'de bile durum kodunu mesaja yazar", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit("", 401)));
+
+    const sonuc = await new NesEntegratorAdapter().baglantiTest(config);
+
+    expect(sonuc).toEqual({ basarili: false, mesaj: "NES 401" });
+  });
+
   it("toplu durum ve zarf uçlarını NES desteklemediği için tanımlamaz", () => {
     const adapter = new NesEntegratorAdapter();
     // Tanımsız bırakılınca çağıran tekil sorguya düşer (EBLG-13, EBLG-14).

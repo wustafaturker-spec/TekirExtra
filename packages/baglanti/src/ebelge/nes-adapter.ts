@@ -59,25 +59,63 @@ function konum(
 }
 
 /**
- * NES hata gövdesi kimi uçta ProblemDetails, kimi uçta düz metindir; 401'de
- * ise gövde tamamen boş gelir. Durum kodu her hâlükârda mesaja yazılır, yoksa
- * "yetki yok" ile "belge yok" ayrımı loglardan kaybolur.
+ * NES hata gövdesinin iki belgelenmiş biçimi vardır:
+ * 400 → `{ message, invalidFields: [{ field, description, detail }] }`
+ * 422 → `{ message, errors: [{ code, description, detail }] }`
+ * Bunların yanında ASP.NET ProblemDetails (`errors` sözlüğü) da gelebilir.
+ */
+type NesHataGovdesi = {
+  message?: string;
+  Message?: string;
+  title?: string;
+  detail?: string;
+  invalidFields?: { field?: string; description?: string; detail?: string }[];
+  errors?: { code?: string; description?: string; detail?: string }[] | Record<string, string[] | string>;
+};
+
+/**
+ * Gövdedeki alan ve iş kuralı hatalarını okunur satırlara çevirir. Başlık tek
+ * başına yetmez: "GECERSIZ ISTEK" hangi alanın neden reddedildiğini söylemez,
+ * faturayı düzeltecek bilgi bu listededir.
+ */
+function hataSatirlari(govde: NesHataGovdesi): string[] {
+  const satirlar: string[] = [];
+  for (const alan of govde.invalidFields ?? []) {
+    const aciklama = alan?.description || alan?.detail;
+    if (aciklama) satirlar.push(alan?.field ? `${alan.field}: ${aciklama}` : aciklama);
+  }
+  const hatalar = govde.errors;
+  if (Array.isArray(hatalar)) {
+    for (const hata of hatalar) {
+      // 422'de description makine kodu, detail onun Türkçe karşılığıdır;
+      // ikisi de varsa şematron hatasını izlemek için ikisi birden yazılır.
+      if (hata?.description && hata?.detail) satirlar.push(`${hata.description} (${hata.detail})`);
+      else if (hata?.description || hata?.detail) satirlar.push((hata.description || hata.detail)!);
+    }
+  } else if (hatalar && typeof hatalar === "object") {
+    for (const [alan, mesajlar] of Object.entries(hatalar)) {
+      const metin = Array.isArray(mesajlar) ? mesajlar.join(", ") : String(mesajlar);
+      if (metin) satirlar.push(`${alan}: ${metin}`);
+    }
+  }
+  return satirlar;
+}
+
+/**
+ * 401'de gövde tamamen boş gelir. Durum kodu her hâlükârda mesaja yazılır,
+ * yoksa "yetki yok" ile "belge yok" ayrımı loglardan kaybolur.
  */
 async function nesHatasi(yanit: Response): Promise<NesHatasi> {
   const metin = await yanit.text().catch(() => "");
   let ayrinti = metin.slice(0, 300);
   try {
-    const govde = JSON.parse(metin);
-    ayrinti =
-      govde?.detail ||
-      govde?.title ||
-      govde?.message ||
-      govde?.Message ||
-      (Array.isArray(govde?.errors) ? govde.errors.join("; ") : ayrinti);
+    const govde = JSON.parse(metin) as NesHataGovdesi;
+    const baslik = govde.message || govde.Message || govde.title || govde.detail;
+    ayrinti = [baslik, hataSatirlari(govde).join("; ")].filter(Boolean).join(" — ") || ayrinti;
   } catch {
     // Gövde JSON değilse ham metnin başı yeterli ayrıntıdır.
   }
-  return new NesHatasi(yanit.status, `NES ${yanit.status}${ayrinti ? `: ${ayrinti}` : ""}`);
+  return new NesHatasi(yanit.status, `NES ${yanit.status}${ayrinti ? `: ${ayrinti.slice(0, 400)}` : ""}`);
 }
 
 /**

@@ -21,6 +21,38 @@ Testler: `apps/api/src/tenant/nes-adapter.test.ts`
 `/earchive`, `/edespatch`, `/general`) adaptör ekler. Sovos'taki gibi aile başına
 ayrı servis adresi girilmez.
 
+## API anahtarı üretimi
+
+Anahtar bize dağıtılmaz, **portalda kendimiz üretiriz**
+(`developer.nes.com.tr/docs/auth/auth-token`): portala kullanıcı adı/şifre ile
+girilir, ardından **Yönetim Paneli → API Tanımları → Yeni API Anahtarı**.
+
+- **Açıklama:** anahtarı tanıtan serbest metin (örn. "TekirExtra üretim").
+- **Son geçerlilik tarihi:** boş bırakılırsa süresiz.
+- **Scope:** test ortamında yok sayılır. Canlıda anahtarın ilgili uç için gerekli
+  scope'u yoksa `403 Forbidden` döner — yani canlıda 403 scope sorunudur,
+  401 ise anahtarın kendisinin geçersizliğidir.
+- **Anahtar yalnızca bir kez görüntülenir;** üretildiği anda kaydedilmelidir.
+
+## Hata gövdeleri
+
+`developer.nes.com.tr/docs/shared-classes` iki biçim tanımlar; `nesHatasi`
+ikisini de ayrıştırır ve başlığın yanına alan/kural ayrıntısını ekler.
+
+```json
+// 400 — istek biçimi geçersiz
+{ "message": "GECERSIZ ISTEK",
+  "invalidFields": [{ "field": "SenderAlias", "description": "Gönderici Etiketi boş geçilemez!", "detail": "" }] }
+
+// 422 — istek geçerli, iş kuralı reddediyor
+{ "message": "HATALI ISTEK",
+  "errors": [{ "code": "1000", "description": "SCHEMATRON_CHECK_RESULT_HAS_FAILED", "detail": "ŞEMATRON KONTROL SONUCU HATALI" }] }
+```
+
+Başlık tek başına ("GECERSIZ ISTEK") faturayı düzeltmeye yetmez; kullanıcıya
+gösterilen mesaj bu yüzden `GECERSIZ ISTEK — SenderAlias: Gönderici Etiketi boş
+geçilemez!` biçiminde birleştirilir.
+
 ## Sözleşme eşlemesi
 
 | `EntegratorAdapter` metodu | NES ucu |
@@ -76,14 +108,20 @@ durum **"hata" değil "kuyrukta"** sayılır — aksi hâlde belge takipten dü�
 
 ## Açık konu: test erişimi
 
-2026-09-09 itibarıyla elimizdeki test anahtarı `HTTP 401` /
+2026-09-09 itibarıyla erişim sayfasındaki test anahtarı `HTTP 401` /
 `WWW-Authenticate: Bearer error="invalid_token"` dönüyor. Uç nokta, metot ve
 başlık biçimi doğru (NES'in kendi entegrasyon sayfasındaki `curl` örneğiyle
-birebir aynı); reddedilen anahtarın kendisi. Test erişim sayfasındaki değerlerin
-örnek veri olduğundan şüpheleniliyor: VKN'ler `1234567801`/`1234567802`,
-kullanıcılar `test01@`/`test02@nes.com.tr` ve **iki test kurumuna da aynı GB/PK
-etiketleri** verilmiş; bu haliyle "Kurum 01'den Kurum 02'ye gönder" senaryosunda
-`ReceiverAlias` belirlenemiyor.
+birebir aynı); reddedilen anahtarın kendisi.
+
+**Muhtemel sebep ve ilk denenecek yol:** anahtar portalda üretilen bir değerdir
+(bkz. "API anahtarı üretimi"). Erişim sayfasındaki değer üretilmiş aktif bir
+anahtar olmayabilir. `portaltest.nes.com.tr`'ye erişim sayfasındaki portal
+kullanıcısı/parolasıyla girip **yeni bir anahtar üretmek** en hızlı doğrulamadır.
+
+Ayrıca sayfadaki değerlerin örnek veri olduğundan şüpheleniliyor: VKN'ler
+`1234567801`/`1234567802`, kullanıcılar `test01@`/`test02@nes.com.tr` ve **iki
+test kurumuna da aynı GB/PK etiketleri** verilmiş; bu haliyle "Kurum 01'den
+Kurum 02'ye gönder" senaryosunda `ReceiverAlias` belirlenemiyor.
 
 `entegrasyon@nesbilgi.com.tr` adresine sorulacaklar:
 
