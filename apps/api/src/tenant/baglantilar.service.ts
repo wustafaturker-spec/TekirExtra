@@ -219,10 +219,15 @@ export class BaglantilarService {
       ? { basarili: bicimGecerli, mesaj: bicimGecerli ? "Kimlik biçimi doğrulandı; canlı test ilk işlem sırasında yapılacaktır" : "Sağlayıcı için zorunlu kimlik alanları eksik" }
       : await this.adapterCoz(kayit.saglayici).baglantiTest(config);
 
+    // Test yalnızca sonucu raporlar, bağlantıyı **aktifleştirmez**.
+    // Aktifleştirme ayrı bir eylemdir (`aktifEt`) ve e-Belgede tek aktif
+    // sağlayıcı kuralını uygular. Burada doğrudan aktife çekmek, ikinci bir
+    // e-Belge bağlantısı test edildiğinde iki aktif kayıt doğuruyor ve hangi
+    // entegratörün kullanılacağını belirsiz bırakıyordu.
     await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.baglanti.update({
         where: { id },
-        data: { durum: sonuc.basarili ? "aktif" : "hata" },
+        data: { durum: sonuc.basarili ? (kayit.durum === "aktif" ? "aktif" : "pasif") : "hata" },
       }),
     );
     return sonuc;

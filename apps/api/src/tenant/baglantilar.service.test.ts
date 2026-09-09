@@ -66,3 +66,46 @@ describe("BaglantilarService numaralandırma sahibi", () => {
     await expect(baglamda(() => servis.numaralandirma(tx))).resolves.toEqual({ saglayiciAtar: false });
   });
 });
+
+describe("BaglantilarService bağlantı testi", () => {
+  it("başarılı test pasif bağlantıyı aktifleştirmez", async () => {
+    // İkinci bir e-Belge bağlantısını test etmek, tek aktif sağlayıcı kuralını
+    // atlayarak iki aktif kayıt doğuruyordu.
+    const update = vi.fn().mockResolvedValue({});
+    const kayit = { id: "b1", aile: "ebelge", saglayici: "nes", durum: "pasif",
+      sifreliConfig: sifrele(JSON.stringify({ saglayici: "nes" })) };
+    const prisma = { tenantIslem: vi.fn(async (_t, cb) => cb({ baglanti: { findUnique: async () => kayit, update } })) } as never;
+    const servis = new BaglantilarService(prisma);
+    vi.spyOn(servis, "adapterCoz").mockReturnValue({ baglantiTest: async () => ({ basarili: true }) } as never);
+
+    await baglamda(() => servis.test("b1"));
+
+    expect(update).toHaveBeenCalledWith({ where: { id: "b1" }, data: { durum: "pasif" } });
+  });
+
+  it("zaten aktif olan bağlantı başarılı testten sonra aktif kalır", async () => {
+    const update = vi.fn().mockResolvedValue({});
+    const kayit = { id: "b1", aile: "ebelge", saglayici: "nes", durum: "aktif",
+      sifreliConfig: sifrele(JSON.stringify({ saglayici: "nes" })) };
+    const prisma = { tenantIslem: vi.fn(async (_t, cb) => cb({ baglanti: { findUnique: async () => kayit, update } })) } as never;
+    const servis = new BaglantilarService(prisma);
+    vi.spyOn(servis, "adapterCoz").mockReturnValue({ baglantiTest: async () => ({ basarili: true }) } as never);
+
+    await baglamda(() => servis.test("b1"));
+
+    expect(update).toHaveBeenCalledWith({ where: { id: "b1" }, data: { durum: "aktif" } });
+  });
+
+  it("başarısız test bağlantıyı hata durumuna alır", async () => {
+    const update = vi.fn().mockResolvedValue({});
+    const kayit = { id: "b1", aile: "ebelge", saglayici: "nes", durum: "aktif",
+      sifreliConfig: sifrele(JSON.stringify({ saglayici: "nes" })) };
+    const prisma = { tenantIslem: vi.fn(async (_t, cb) => cb({ baglanti: { findUnique: async () => kayit, update } })) } as never;
+    const servis = new BaglantilarService(prisma);
+    vi.spyOn(servis, "adapterCoz").mockReturnValue({ baglantiTest: async () => ({ basarili: false, mesaj: "olmadı" }) } as never);
+
+    await baglamda(() => servis.test("b1"));
+
+    expect(update).toHaveBeenCalledWith({ where: { id: "b1" }, data: { durum: "hata" } });
+  });
+});
