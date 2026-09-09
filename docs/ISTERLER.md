@@ -302,7 +302,7 @@ görüntüsü ve imzalı UBL — yasal saklama için gerekir), `actionService`
 
 | No | İster | Öncelik |
 |---|---|---|
-| EBLG-01 | Entegratör katmanı adaptör mimarisiyle soyutlanmalıdır: her firma, desteklenen entegratörlerden (Foriba, İzibiz, eLogo, Uyumsoft vb.) dilediğini bağımsız seçebilmelidir. Yeni bir entegratör, çekirdek kod değişmeden adaptör eklenerek desteklenebilmelidir. | Z |
+| EBLG-01 | Entegratör katmanı adaptör mimarisiyle soyutlanmalıdır: her firma, desteklenen entegratörlerden (Sovos, NES, Foriba, İzibiz, eLogo, Uyumsoft vb.) dilediğini bağımsız seçebilmelidir. Yeni bir entegratör, çekirdek kod değişmeden adaptör eklenerek desteklenebilmelidir. | Z |
 | EBLG-01a | Firma yöneticisi, entegratör erişim bilgilerini (kullanıcı adı, parola/API anahtarı, servis adresi) arayüzden girebilmeli ve "bağlantı testi" ile doğrulayabilmelidir. | Z |
 | EBLG-01b | Entegratör erişim bilgileri veritabanında şifrelenerek (at-rest encryption) saklanmalı, arayüzde ve loglarda asla açık gösterilmemelidir. | Z |
 | EBLG-02 | Fatura kesinleştirme e-belge gönderimini başlatmamalıdır. Kesinleşmiş ve e-belgesi bulunmayan faturada **e-Fatura Oluştur** wizard'ı açılmalı; kontrol adımında aktif entegratör, alıcı VKN/TCKN ve mükellefiyet gösterilmeli, kullanıcı onayından sonra mükellefse e-Fatura, değilse e-Arşiv olarak gönderilmelidir. | Z |

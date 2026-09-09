@@ -24,6 +24,7 @@ interface MukellefListesi {
 
 const SAGLAYICILAR = [
   { id: "sovos", ad: "Sovos Bulut", aciklama: "Sovos Bulut e-Fatura ve e-Arşiv SOAP bağlantısı" },
+  { id: "nes", ad: "NES", aciklama: "NES e-Belge Özel Entegratör REST API bağlantısı" },
   { id: "izibiz", ad: "İzibiz", aciklama: "İzibiz e-Belge Özel Entegratör Bağlantısı" },
   { id: "foriba", ad: "Foriba", aciklama: "Foriba (SAP) e-Belge Özel Entegratör Bağlantısı" },
   { id: "elogo", ad: "eLogo", aciklama: "Logo Yazılım (eLogo) e-Belge Özel Entegratör Bağlantısı" },
@@ -232,6 +233,10 @@ export default function EntegratorAyarlariSayfasi() {
           const baglanti = baglantilar.find((b) => b.saglayici === s.id);
           const formAcik = aktifForm === s.id;
           const aktif = baglanti?.durum === "aktif";
+          // Sovos SOAP kullanıcı/parola ile, NES tek API anahtarıyla yetkilenir;
+          // zorunlu alanlar bu yüzden sağlayıcıya göre değişir.
+          const sovos = s.id === "sovos";
+          const nes = s.id === "nes";
 
           return (
             <Card key={s.id} style={aktif ? { borderColor: "var(--accent)", boxShadow: "0 0 0 1px var(--accent)" } : undefined}>
@@ -279,14 +284,16 @@ export default function EntegratorAyarlariSayfasi() {
                     {duzenleId ? `${s.ad} Bilgilerini Güncelle` : `${s.ad} Bağlantı Bilgileri`}
                   </h4>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
-                    <Field label="Kullanıcı Adı *"><Input name="kullaniciAdi" required placeholder="entegrator_kullanici_adi" /></Field>
-                    <Field label="Parola / Şifre"><Input name="parola" type="password" placeholder="••••••••" /></Field>
-                    <Field label="API Anahtarı (Opsiyonel)"><Input name="apiAnahtari" placeholder="api_key_xyz" /></Field>
-                    <Field label={s.id === "sovos" ? "e-Fatura Servis URL *" : "Servis URL (Opsiyonel)"}><Input name="servisAdresi" required={s.id === "sovos"} placeholder={s.id === "sovos" ? "Sovos tarafından verilen .svc adresi" : "https://api.entegrator.com"} /></Field>
-                    {s.id === "sovos" && <>
-                      <Field label="Firma VKN/TCKN *"><Input name="vknTckn" required inputMode="numeric" placeholder="1234567890" /></Field>
+                    <Field label={nes ? "Portal Kullanıcısı *" : "Kullanıcı Adı *"}><Input name="kullaniciAdi" required placeholder={nes ? "test01@nes.com.tr" : "entegrator_kullanici_adi"} /></Field>
+                    <Field label={nes ? "Portal Parolası" : "Parola / Şifre"}><Input name="parola" type="password" placeholder="••••••••" /></Field>
+                    <Field label={nes ? "API Anahtarı *" : "API Anahtarı (Opsiyonel)"}><Input name="apiAnahtari" required={nes} placeholder={nes ? "NES erişim sayfasındaki API KEY" : "api_key_xyz"} /></Field>
+                    <Field label={sovos ? "e-Fatura Servis URL *" : nes ? "Servis Kök Adresi *" : "Servis URL (Opsiyonel)"}><Input name="servisAdresi" required={sovos || nes} placeholder={sovos ? "Sovos tarafından verilen .svc adresi" : nes ? "https://apitest.nes.com.tr" : "https://api.entegrator.com"} /></Field>
+                    {(sovos || nes) && <>
+                      <Field label={sovos ? "Firma VKN/TCKN *" : "Firma VKN/TCKN"}><Input name="vknTckn" required={sovos} inputMode="numeric" placeholder="1234567890" /></Field>
                       <Field label="Gönderici Birim (GB) Etiketi *"><Input name="gondericiBirimEtiketi" required placeholder="urn:mail:defaultgb@firma.com" /></Field>
                       <Field label="Posta Kutusu (PK) Etiketi"><Input name="postaKutusuEtiketi" placeholder="urn:mail:defaultpk@firma.com" /></Field>
+                    </>}
+                    {sovos && <>
                       <Field label="e-Arşiv Servis URL"><Input name="earsivServisAdresi" placeholder="Sovos tarafından verilen e-Arşiv .svc adresi" /></Field>
                       <Field label="e-İrsaliye Servis URL"><Input name="irsaliyeServisAdresi" placeholder="Sovos tarafından verilen e-İrsaliye .svc adresi" /></Field>
                     </>}

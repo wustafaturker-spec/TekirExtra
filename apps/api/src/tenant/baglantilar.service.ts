@@ -6,6 +6,7 @@ import {
 import type { Baglanti } from "@prisma/client";
 import {
   MockEntegratorAdapter,
+  NesEntegratorAdapter,
   SovosEntegratorAdapter,
   type EntegratorAdapter,
   type EntegratorConfig,
@@ -15,6 +16,15 @@ import { z } from "zod";
 import { coz, sifrele } from "../core/kripto";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
+
+/**
+ * Gerçek entegratör adaptörü bulunan sağlayıcılar. Buradaki bir sağlayıcı
+ * üretimde de kullanılabilir; listede olmayan yalnızca mock ile çalışır.
+ */
+const GERCEK_ADAPTORLER: Record<string, () => EntegratorAdapter> = {
+  sovos: () => new SovosEntegratorAdapter(),
+  nes: () => new NesEntegratorAdapter(),
+};
 
 export const baglantiOlusturSemasi = z.object({
   aile: z.enum(BAGLANTI_AILELERI),
@@ -73,18 +83,16 @@ export class BaglantilarService {
   constructor(private readonly prisma: PrismaService) {}
 
   adapterCoz(saglayici: string): EntegratorAdapter {
-    // T-01: gerçek adaptörler geldikçe burada sağlayıcıya göre dallanılır.
+    const uret = GERCEK_ADAPTORLER[saglayici];
     const mockaIzinVar = process.env.ALLOW_MOCK_ENTEGRATIONS === "true" || process.env.NODE_ENV !== "production";
-    if (saglayici !== "sovos" && !mockaIzinVar) {
+    if (!uret && !mockaIzinVar) {
       throw new BadRequestException(
         `${saglayici} sağlayıcısı için gerçek entegrasyon henüz etkin değil. Üretimde mock entegrasyon kullanılamaz.`,
       );
     }
     let adapter = this.adapterler.get(saglayici);
     if (!adapter) {
-      adapter = saglayici === "sovos"
-        ? new SovosEntegratorAdapter()
-        : new MockEntegratorAdapter(saglayici as EntegratorConfig["saglayici"]);
+      adapter = uret ? uret() : new MockEntegratorAdapter(saglayici as EntegratorConfig["saglayici"]);
       this.adapterler.set(saglayici, adapter);
     }
     return adapter;
