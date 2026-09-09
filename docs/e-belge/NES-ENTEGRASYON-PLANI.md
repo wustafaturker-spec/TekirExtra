@@ -106,6 +106,15 @@ entegratör değiştirdiğinde yeni etiket eklendiği için **en son oluşturula
 etiket yürürlüktedir; adaptör `creationTime`'a göre seçer. Toplu listede de
 silinme damgası yoktur, yani güncellik elimizdeki tek sinyaldir.
 
+⚠️ **Bu kural test ortamında doğrulanmadı, aksine bir karşı örnek var.** Kurum
+02'nin en yeni etiketi `…@mersel.io` (2025-05-26) iken hesabın gerçek giden
+trafiği `urn:mail:defaultpk@nes.com.tr`'ye (2021-03-25) gidiyor. GİB test
+VKN'leri yıllar içinde her entegratörden etiket biriktirdiği için "en yeni"
+burada "bu VKN ile en son oynayan entegratör" anlamına geliyor. Gerçek bir
+firmada tek aktif posta kutusu olacağı için kural çoğu durumda çalışır, ama
+çok etiketli alıcıda yanlış kutuya gönderim riski duruyor — **karara bağlanmalı**
+(bkz. Açık kararlar).
+
 ## Mükellef listesi
 
 `GET /{aile}/v1/users/zip/Pk` → ZIP → `{aile}_pk_user_list.xml`:
@@ -128,6 +137,51 @@ Test ortamında ölçülen (2026-09-09): e-Fatura 28.891 etiket / 27.183 mükell
 e-İrsaliye 4.955 etiket; iki indirme + ayrıştırma toplam **0,9 saniye**, açık
 XML ~11,8 MB. Metot günde bir kez çağrılır (EBLG-10), belge gönderiminde değil.
 
+## Canlı gönderim doğrulaması (2026-09-09)
+
+Kurum 01 → Kurum 02 arasında gerçek bir e-Fatura gönderildi ve zincirin tamamı
+çalıştı:
+
+```
+gönderim  → uuid 0945cb36-7062-4c73-bea4-3eab1e5e15b1
+durum     → kuyrukta → kuyrukta → iletildi
+belge no  → K072026000000014   (NES atadı)
+zarf      → 1300 BASARIYLA TAMAMLANDI
+           urn:mail:defaultgb@nes.com.tr → urn:mail:defaultpk@nes.com.tr
+```
+
+`outgoingStatus = EnvelopeHasBeenTransferredToReceiverSuccessfully` değeri
+`nesBelgeDurumu` ile doğru şekilde `iletildi`ye indirgendi.
+
+**Kendi UBL üreticimizde üç kusur bu deneme sırasında bulundu ve düzeltildi**
+(`apps/api/src/ebelge/xml-uretec.ts`); üçü de daha önce hiç şema doğrulamasından
+geçmemişti:
+
+1. `cac:SignatoryParty` yalnızca `PartyIdentification` taşıyordu; UBL-TR ayrıca
+   `PartyName` ve `PostalAddress` istiyor.
+2. Alıcı `cac:PostalAddress`'inde `CityName` tek başına yazılıyordu;
+   dizide önce `CitySubdivisionName` gelmek zorunda.
+3. `xsi:schemaLocation` GİB'in şema URL'ini gösteriyordu; şematron kuralı
+   değerin `UBL-Invoice-2.1.xsd` olmasını şart koşuyor.
+
+### Seri numarasını kim veriyor?
+
+Dördüncü ret sebebi bir davranış farkıydı:
+`OTOMATIK NUMARALANDIRILAN SERIDIR! 16 HANELI NUMARA VERILEMEZ : K07`.
+
+NES'te seriler "otomatik numaralandırılan" olarak işaretlenebiliyor; böyle bir
+seride UBL'e **tam belge numarası değil yalnızca seri öneki** (`K07`) yazılır ve
+numarayı NES atar, yükleme yanıtındaki `documentNumber` ile geri döner. Bizim
+seri/sayaç modülümüz numarayı kendisi üretiyor — iki sayaç aynı anda
+çalışamaz. **Karara bağlanmalı** (bkz. Açık kararlar).
+
+## Açık kararlar
+
+| Konu | Seçenekler |
+|---|---|
+| Çok etiketli alıcıda posta kutusu seçimi | (a) en yeni `creationTime` — şu anki davranış; (b) yerel/kullanıcı seçimi; (c) `defaultpk` önekli etiketi tercih et |
+| Belge numarasını kim atar | (a) NES otomatik seri — UBL'e yalnız önek yazılır, sayaç NES'te; (b) otomatik olmayan seri tanımlanır, sayaç bizde kalır |
+
 ## Bilinen boşluklar
 
 | Konu | Durum |
@@ -144,14 +198,14 @@ Erişim sayfasında verilen anahtar `HTTP 401` /
 portalda üretmek** (bkz. "API anahtarı üretimi"); portalda üretilen anahtarla
 uçlar 200 dönüyor.
 
-Erişim sayfasındaki GB/PK etiketleri de örnek veriymiş: sayfa iki test kurumuna
-da aynı dört `@nes.com.tr` etiketini basıyor, oysa gerçek etiketler API'den
-geliyor (Kurum 02'nin 225 etiketi var, hiçbiri `@nes.com.tr` değil). Alıcı
-etiketi bu yüzden NES'e sorulmadan `mukellefSorgula` ile belirlenebiliyor.
+Erişim sayfasındaki `@nes.com.tr` etiketleri **gerçek**: Kurum 02'nin 225
+etiketi arasında `urn:mail:defaultpk@nes.com.tr` (2021-03-25 kayıtlı) da var ve
+hesabın giden fatura geçmişi bu adrese gidiyor. Sayfanın iki kuruma da aynı
+etiketleri basması yine de yanıltıcı; doğru alıcı etiketi API'den okunmalı.
 
 Canlı doğrulanan uçlar (2026-09-09): hesap etiketleri, tekil mükellef sorgusu,
-toplu mükellef listesi (iki aile), gelen fatura listesi. Gönderim ve durum
-akışı henüz canlıda denenmedi.
+toplu mükellef listesi (iki aile), gelen fatura listesi, **belge gönderimi ve
+durum sorgusu**, seri tanımları.
 
 Geriye kalan tek açık soru **rate limit / 429 davranışı**; hiçbir şemada
 tanımlı değil, NES'e sorulmalı.

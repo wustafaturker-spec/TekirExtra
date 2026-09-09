@@ -69,7 +69,7 @@ export function faturaUblUret(
          xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
          xmlns:ext="urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2 http://www.gib.gov.tr/schemas/Document/UTR/UBLTR-Invoice-2.1.xsd">
+         xsi:schemaLocation="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2 UBL-Invoice-2.1.xsd">
   <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
   <cbc:CustomizationID>TR1.2</cbc:CustomizationID>
   <cbc:ProfileID>${fatura.efaturaProfili === "ticari" ? "TICARIFATURA" : "TEMELFATURA"}</cbc:ProfileID>
@@ -97,6 +97,16 @@ export function faturaUblUret(
       <cac:PartyIdentification>
         <cbc:ID schemeID="VKN">${supplier.vkn}</cbc:ID>
       </cac:PartyIdentification>
+      <cac:PartyName>
+        <cbc:Name>${escape(supplier.unvan)}</cbc:Name>
+      </cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:CitySubdivisionName>Merkez</cbc:CitySubdivisionName>
+        <cbc:CityName>Istanbul</cbc:CityName>
+        <cac:Country>
+          <cbc:Name>Türkiye</cbc:Name>
+        </cac:Country>
+      </cac:PostalAddress>
     </cac:SignatoryParty>
     <cac:DigitalSignatureAttachment>
       <cac:ExternalReference>
@@ -137,6 +147,7 @@ export function faturaUblUret(
         <cbc:Name>${escape(fatura.cari.unvan)}</cbc:Name>
       </cac:PartyName>
       <cac:PostalAddress>
+        <cbc:CitySubdivisionName>Merkez</cbc:CitySubdivisionName>
         <cbc:CityName>Istanbul</cbc:CityName>
         <cac:Country>
           <cbc:Name>Türkiye</cbc:Name>
