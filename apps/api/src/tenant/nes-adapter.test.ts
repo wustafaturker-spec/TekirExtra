@@ -112,25 +112,41 @@ describe("NesEntegratorAdapter", () => {
   it("kaynak kaydımızla sağlayıcıda duran belgeyi bulur", async () => {
     // NES, UBL'deki cbc:UUID değerini belge kimliği olarak saklar; oraya
     // fatura kimliğimizi yazdığımız için uuid filtresiyle bulunur.
-    const fetchMock = vi.fn().mockResolvedValue(yanit({ data: [{ id: "fatura-uuid-1", documentNumber: "K072026000000015" }] }));
+    const fetchMock = vi.fn().mockResolvedValue(yanit({ data: [{ id: "11111111-1111-4111-8111-111111111111", documentNumber: "K072026000000015" }] }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const sonuc = await new NesEntegratorAdapter().belgeAra(config, "fatura-uuid-1", "efatura");
+    const sonuc = await new NesEntegratorAdapter().belgeAra(config, "11111111-1111-4111-8111-111111111111", "efatura");
 
-    expect(sonuc).toEqual({ basarili: true, belgeRef: "fatura-uuid-1", belgeNo: "K072026000000015" });
-    expect(String(fetchMock.mock.calls[0][0])).toContain("uuid=fatura-uuid-1");
+    expect(sonuc).toEqual({ basarili: true, belgeRef: "11111111-1111-4111-8111-111111111111", belgeNo: "K072026000000015" });
+    expect(String(fetchMock.mock.calls[0][0])).toContain("uuid=11111111-1111-4111-8111-111111111111");
   });
 
   it("e-Arşiv aramasında referansı ön ekle döndürür", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ data: [{ id: "arsiv-1", documentNumber: "K072026000000015" }] })));
-    await expect(new NesEntegratorAdapter().belgeAra(config, "fatura-uuid-1", "earsiv")).resolves.toEqual({
-      basarili: true, belgeRef: "EARSIV:arsiv-1", belgeNo: "K072026000000015",
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ data: [{ id: "11111111-1111-4111-8111-111111111111", documentNumber: "K072026000000015" }] })));
+    await expect(new NesEntegratorAdapter().belgeAra(config, "11111111-1111-4111-8111-111111111111", "earsiv")).resolves.toEqual({
+      basarili: true, belgeRef: "EARSIV:11111111-1111-4111-8111-111111111111", belgeNo: "K072026000000015",
     });
+  });
+
+  it("sorduğumuzdan başka bir belge dönerse benimsemez", async () => {
+    // NES çözümlenemeyen uuid filtresini yok sayıp tüm listeyi döndürüyor;
+    // eşitlik aranmazsa faturaya başkasının numarası yazılırdı.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ data: [{ id: "baska-belge", documentNumber: "MSD2026000000080" }] })));
+    await expect(
+      new NesEntegratorAdapter().belgeAra(config, "11111111-1111-4111-8111-111111111111", "earsiv"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("UUID olmayan kaynak kimliğiyle hiç sorgu yapmaz", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(new NesEntegratorAdapter().belgeAra(config, "olmayan-uuid", "efatura")).rejects.toThrow("geçerli bir UUID");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("belge yoksa arama tanımsız döner", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ data: [] })));
-    await expect(new NesEntegratorAdapter().belgeAra(config, "fatura-uuid-1", "efatura")).resolves.toBeUndefined();
+    await expect(new NesEntegratorAdapter().belgeAra(config, "11111111-1111-4111-8111-111111111111", "efatura")).resolves.toBeUndefined();
   });
 
   it("alıcının reddi zarf durumunu ezer", async () => {

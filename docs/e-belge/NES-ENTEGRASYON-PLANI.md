@@ -265,6 +265,34 @@ değerini belgenin kimliği olarak saklıyor ve biz oraya fatura kimliğimizi
 yazıyoruz — uçtan uca denemede dönen `entegratorRef` faturanın kimliğiyle
 birebir aynıydı. Benimseme `ebelge_mevcut_belge_benimsendi` olayıyla loglanır.
 
+## Yetki kapsamı (scope)
+
+Dokümantasyon "test ortamında scope'lar geçerli değildir" diyor; **doğru değil,
+test ortamında da uygulanıyor.** Anahtar üretilirken hangi aileler işaretlendiyse
+yalnızca onlar açılır ve eksik yetki `403` ile döner:
+
+```json
+{"role": null, "scope": "earchive:outgoing:list:read"}
+```
+
+Bu gövde belgelenmiş iki hata biçiminin ikisine de uymaz; `nesHatasi` onu ayrı
+ele alır ve eksik yetkinin adıyla birlikte nereden verileceğini söyler.
+
+Ölçülen: yalnız e-Fatura scope'u seçilmiş bir anahtarda `einvoice` ve `general`
+uçları 200, tüm `earchive`/`edespatch` uçları 403 dönüyordu; istisna
+`edespatch/v1/users/zip` (GİB mükellef listesi — belge modülü değil, kayıt
+defteri). Scope'lar genişletilince hepsi açıldı. **Not:** e-Arşiv raporları
+`general` altında servis edilse de `earchive:reports:read` yetkisi ister.
+
+### `uuid` filtresinde keskin kenar
+
+Liste uçlarına **çözümlenemeyen** bir `uuid` verilirse NES filtreyi sessizce yok
+sayar ve tüm listeyi döndürür (biçimsel olarak geçerli ama var olmayan bir UUID
+doğru şekilde boş döner). `belgeAra` bu yüzden iki kez korunur: kaynak kimliği
+UUID biçiminde değilse sorgu hiç yapılmaz, ve dönen kaydın kimliği sorulanla
+birebir eşleşmedikçe belge benimsenmez. Aksi hâlde yeniden denemede faturaya
+alakasız bir belgenin numarası yazılabilirdi.
+
 ## Bilinen boşluklar
 
 | Konu | Durum |

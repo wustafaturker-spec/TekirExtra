@@ -419,6 +419,10 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
    * kendi kaydımızı doğrudan bulabiliriz.
    */
   async belgeAra(cfg: EntegratorConfig, kaynakKayitId: string, tur: UblBelge["tur"]): Promise<GonderimSonuc | undefined> {
+    // Filtre çözümlenemezse sorgu tüm listeyi getirir; hiç sormamak daha güvenli.
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(kaynakKayitId)) {
+      throw new Error(`Belge araması için geçerli bir UUID gerekir: ${kaynakKayitId}`);
+    }
     const arsiv = tur === "earsiv";
     const liste = await this.cagir<{ data?: { id?: string; documentNumber?: string }[] }>(
       cfg,
@@ -426,7 +430,11 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
       arsiv ? "/v1/invoices" : "/v1/outgoing/invoices",
       { sorgu: { uuid: kaynakKayitId, page: 1, pageSize: 1 } },
     );
-    const belge = liste?.data?.find((satir) => satir.id);
+    // Dönen kaydın kimliği sorduğumuzla birebir aynı olmalı. NES, çözümlenemeyen
+    // bir `uuid` filtresini sessizce yok sayıp **tüm listeyi** döndürüyor; eşitlik
+    // aranmazsa yeniden denemede alakasız bir belge benimsenir ve faturaya
+    // başkasının numarası yazılırdı.
+    const belge = liste?.data?.find((satir) => satir.id === kaynakKayitId);
     if (!belge?.id) return undefined;
     return {
       basarili: true,
