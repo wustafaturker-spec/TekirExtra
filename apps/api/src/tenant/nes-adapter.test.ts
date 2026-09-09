@@ -98,16 +98,32 @@ describe("NesEntegratorAdapter", () => {
     expect(nesBelgeDurumu("EnvelopeSystemResponseIsBeingWaitedFromReceiver", "Waiting")).toBe("iletildi");
   });
 
-  it("mükellefin posta kutusunu döndürür", async () => {
+  it("çok etiketli mükellefte en son oluşturulan posta kutusunu seçer", async () => {
+    // Gerçek test kurumunda 225 etiket var ve uç varsayılanı işaretlemiyor;
+    // ilkini almak terk edilmiş bir posta kutusuna gönderim olurdu.
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({
       identifier: "1234567802",
-      aliases: [{ alias: "urn:mail:defaultpk@alici.test", type: "Pk" }],
+      aliases: [
+        { alias: "urn:mail:eski_pk@turktelekom.com.tr", creationTime: "2014-07-18T16:07:05", type: "Pk" },
+        { alias: "urn:mail:guncel_pk@mersel.io", creationTime: "2025-05-26T13:31:39", type: "Pk" },
+        { alias: "urn:mail:orta_pk@vadi.com.tr", creationTime: "2016-03-25T10:01:54", type: "Pk" },
+      ],
     })));
 
     await expect(new NesEntegratorAdapter().mukellefSorgula(config, "1234567802")).resolves.toEqual({
       vknTckn: "1234567802",
       eFaturaMukellefi: true,
-      postaKutusu: "urn:mail:defaultpk@alici.test",
+      postaKutusu: "urn:mail:guncel_pk@mersel.io",
+    });
+  });
+
+  it("etiketi olmayan kaydı mükellef saymaz", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ identifier: "1234567802", aliases: [] })));
+
+    await expect(new NesEntegratorAdapter().mukellefSorgula(config, "1234567802")).resolves.toEqual({
+      vknTckn: "1234567802",
+      eFaturaMukellefi: false,
+      postaKutusu: undefined,
     });
   });
 

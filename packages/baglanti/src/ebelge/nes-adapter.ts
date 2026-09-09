@@ -252,14 +252,19 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
 
   async mukellefSorgula(cfg: EntegratorConfig, vknTckn: string): Promise<MukellefDurum> {
     try {
-      const kullanici = await this.cagir<{ aliases?: { alias?: string }[] }>(
+      const kullanici = await this.cagir<{ aliases?: { alias?: string; creationTime?: string }[] }>(
         cfg,
         "einvoice",
         `/v1/users/${encodeURIComponent(vknTckn)}/Pk`,
       );
-      // GİB bir VKN'ye birden çok posta kutusu tanımlamaya izin verir; ilk
-      // geçerli etiket kullanılır, seçim kuralı ebelge modülünde değişebilir.
-      const postaKutusu = (kullanici?.aliases ?? []).map((etiket) => etiket.alias).find(Boolean);
+      // GİB bir VKN'ye onlarca posta kutusu tanımlayabilir (test kurumunun 225
+      // etiketi var) ve bu uç varsayılanı işaretlemez. Firma entegratör
+      // değiştirdikçe yeni etiket eklendiği için **en son oluşturulan** etiket
+      // yürürlüktekidir; listenin ilkini almak yıllar önce terk edilmiş bir
+      // posta kutusuna gönderim yapmak olurdu.
+      const postaKutusu = (kullanici?.aliases ?? [])
+        .filter((etiket) => etiket.alias)
+        .sort((a, b) => (b.creationTime ?? "").localeCompare(a.creationTime ?? ""))[0]?.alias;
       return { vknTckn, eFaturaMukellefi: Boolean(postaKutusu), postaKutusu };
     } catch (hata) {
       // 404 "mükellef değil" demektir, arıza değil. Diğer hatalar yutulursa
