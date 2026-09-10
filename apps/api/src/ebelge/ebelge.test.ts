@@ -622,6 +622,18 @@ describe("EbelgeService.earsivBelgesiniIptalEt (EBLG-22)", () => {
     expect(bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({ tur: "ebelge", onem: "uyari" }));
   });
 
+  it("entegratörde zaten iptalse ikinci iptal çağrısı yapmaz, kaydı eşitler", async () => {
+    // NES iptal edilmiş belgeyi listede döndürmüyor; ikinci iptal denemesi
+    // "belge bulunamadı" diye dönüp gerçek arıza gibi görünüyordu.
+    const { service, tx, earsivIptal, bildirimler } = kur({ durum: "iletildi", iptalEdilmis: true, raporlandi: true });
+
+    await service.earsivBelgesiniIptalEt(tx, fatura, ebelge);
+
+    expect(earsivIptal).not.toHaveBeenCalled();
+    expect(bildirimler.uret).not.toHaveBeenCalled();
+    expect(tx.ebelgeKayit.update).toHaveBeenCalledWith({ where: { id: "eb1" }, data: { durum: "iptal", hataMesaji: null } });
+  });
+
   it("rapora girmemiş belgede bildirim üretilmez", async () => {
     const { service, tx, bildirimler } = kur({ durum: "iletildi", raporlandi: false });
 

@@ -303,6 +303,25 @@ describe("NesEntegratorAdapter", () => {
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ uuids: ["arsiv-uuid-1"] });
   });
 
+  it("iptal edilebilir belge bulunamazsa sebebini ikisiyle birlikte söyler", async () => {
+    // NES iptal edilmiş belgeyi bu listede döndürmüyor, dolayısıyla boş yanıt
+    // "yok" ile "zaten iptal"i ayırt etmiyor.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ data: [] })));
+
+    const sonuc = await new NesEntegratorAdapter().earsivIptal(config, {
+      faturaNo: "SNC2026000000002", toplamTutar: "900.00", iptalTarihi: new Date("2026-09-10T00:00:00Z"),
+    });
+
+    expect(sonuc.basarili).toBe(false);
+    expect(sonuc.mesaj).toContain("daha önce iptal edilmiş olabilir");
+  });
+
+  it("iptal edilmiş belgeyi durum sorgusunda iptalEdilmis ile bildirir", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ archiveDocumentStatus: "Signed", isCanceled: true, cancelDate: "2026-09-10T21:04:13" })));
+
+    await expect(new NesEntegratorAdapter().durumSorgula(config, "EARSIV:arsiv-9")).resolves.toMatchObject({ iptalEdilmis: true });
+  });
+
   it("iptalde numarası tutmayan kaydı iptal etmez", async () => {
     // İptal geri alınamaz; filtre bir gün sessizce yok sayılırsa başkasının
     // faturası iptal edilirdi (`uuid` filtresinde yaşanan tuzağın aynısı).
@@ -323,7 +342,7 @@ describe("NesEntegratorAdapter", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ archiveDocumentStatus: "WaitingSign", isCanceled: false })));
 
     await expect(new NesEntegratorAdapter().durumSorgula(config, "EARSIV:arsiv-9")).resolves.toEqual({
-      belgeRef: "EARSIV:arsiv-9", durum: "kuyrukta", detay: undefined, raporlandi: false,
+      belgeRef: "EARSIV:arsiv-9", durum: "kuyrukta", detay: undefined, raporlandi: false, iptalEdilmis: false,
     });
   });
 

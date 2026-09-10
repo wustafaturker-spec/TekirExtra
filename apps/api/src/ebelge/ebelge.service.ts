@@ -1097,6 +1097,15 @@ export class EbelgeService {
     if (ebelge.entegratorRef) {
       this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "durumSorgula", saglayici: baglanti.saglayici });
       const durum = await this.entegratordenOku(() => adapter.durumSorgula(cfg, ebelge.entegratorRef!));
+      // Belge sağlayıcıda zaten iptalse istenen sonuç gerçekleşmiş demektir;
+      // ikinci iptal çağrısı hata döndürür ("iptal edilebilir belgeler
+      // arasında yok") ve kullanıcı bunu gerçek bir arıza sanır. Kaydı
+      // eşitleyip sessizce çıkıyoruz.
+      if (durum.iptalEdilmis) {
+        this.logger.warn(JSON.stringify({ event: "earsiv_zaten_iptal", faturaId: fatura.id, belgeNo: fatura.no }));
+        await tx.ebelgeKayit.update({ where: { id: ebelge.id }, data: { durum: "iptal", hataMesaji: null } });
+        return;
+      }
       // Raporlanmış olmak iptali engellemez ama iptalin de GİB'e bildirilmesi
       // gerekir; bu iş muhasebede olduğu için bildirimle haber verilir.
       if (durum.raporlandi) raporlandi = true;
@@ -1138,6 +1147,18 @@ export class EbelgeService {
     const cfg = JSON.parse(coz(veri.baglanti.sifreliConfig)) as EntegratorConfig;
     const adapter = this.baglantilarService.adapterCoz(veri.baglanti.saglayici);
     if (!adapter.earsivIptal) throw new BadRequestException("Aktif entegratör e-Arşiv iptal bildirimini desteklemiyor");
+    // Bu uç, bildirimi düşen kaydı kurtarmak için. Belge entegratörde zaten
+    // iptalse yapılacak iş kaydı eşitlemekten ibaret.
+    const ref = veri.fatura.ebelge?.entegratorRef;
+    if (ref) {
+      const durum = await this.entegratordenOku(() => adapter.durumSorgula(cfg, ref));
+      if (durum.iptalEdilmis) {
+        await this.prisma.tenantIslem(tenantId, (tx) =>
+          tx.ebelgeKayit.update({ where: { id: veri.fatura.ebelge!.id }, data: { durum: "iptal", hataMesaji: null } }),
+        );
+        return { basarili: true, mesaj: "Belge entegratörde zaten iptal edilmiş; kayıt eşitlendi" };
+      }
+    }
     const sonuc = await this.entegratordenOku(() => adapter.earsivIptal!(cfg, { faturaNo: veri.fatura.no!, toplamTutar: veri.fatura.genelToplam.toFixed(2), iptalTarihi: girdi.iptalTarihi, sube: girdi.sube }));
     if (!sonuc.basarili) throw new BadRequestException(sonuc.mesaj || "e-Arşiv iptali entegratöre bildirilemedi");
     return sonuc;

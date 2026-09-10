@@ -544,7 +544,13 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
         // `reportDivisionStatus` belgenin GİB raporu yolculuğu:
         // None → XmlCreateWait → XmlCreated → XmlSigned → Query → Completed.
         // `Completed` olan belge GİB'e raporlanmıştır.
-        return { belgeRef, durum, detay: iptal, raporlandi: fatura?.reportDivisionStatus === "Completed" };
+        return {
+          belgeRef,
+          durum,
+          detay: iptal,
+          raporlandi: fatura?.reportDivisionStatus === "Completed",
+          iptalEdilmis: Boolean(fatura?.isCanceled),
+        };
       } catch (hata) {
         return { belgeRef, durum: "hata", detay: hata instanceof Error ? hata.message : "NES e-Arşiv durum sorgusu başarısız" };
       }
@@ -651,7 +657,15 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
       // tüm listeyi döndürüyor; aynı sürprizin bedeli burada başkasının
       // faturasını iptal etmek olurdu (EBLG-17'nin aynı dersi).
       const uuid = liste?.data?.find((satir) => satir.id && satir.documentNumber === girdi.faturaNo)?.id;
-      if (!uuid) return { basarili: false, mesaj: `İptal edilecek e-Arşiv faturası NES'te bulunamadı: ${girdi.faturaNo}` };
+      // NES iptal edilmiş belgeyi bu listede döndürmüyor, dolayısıyla boş yanıt
+      // "böyle bir belge yok" ile "zaten iptal edilmiş"i ayırt etmiyor; mesaj
+      // ikisini de söylüyor. Çağıran ayrımı tekil durum sorgusundan yapar.
+      if (!uuid) {
+        return {
+          basarili: false,
+          mesaj: `${girdi.faturaNo} numaralı e-Arşiv faturası NES'te iptal edilebilir belgeler arasında yok; belge hiç oluşmamış ya da daha önce iptal edilmiş olabilir`,
+        };
+      }
       await this.cagir(cfg, "earchive", "/v1/invoices/cancel", { metot: "POST", govde: { uuids: [uuid] } });
       return { basarili: true, mesaj: "e-Arşiv iptali NES'e bildirildi" };
     } catch (hata) {

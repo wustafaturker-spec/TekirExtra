@@ -101,6 +101,11 @@ export interface BelgeDurumSonuc {
    * faturası artık uygulamadan iptal edilmez; iptal bildirimi ayrı yürür.
    */
   raporlandi?: boolean;
+  /**
+   * Belge sağlayıcıda iptal edilmiş mi (yalnız e-Arşiv). İptal isteği ikinci
+   * kez geldiğinde hata değil "zaten iptal" demek için gerekir.
+   */
+  iptalEdilmis?: boolean;
 }
 
 export interface GelenBelge {
