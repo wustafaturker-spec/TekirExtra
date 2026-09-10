@@ -40,6 +40,7 @@ export const baglantiOlusturSemasi = z.object({
     gondericiBirimEtiketi: z.string().optional(),
     belgeSeriOneki: z.string().min(1).max(8).optional(),
     earsivSeriOneki: z.string().min(1).max(8).optional(),
+    eirsaliyeSeriOneki: z.string().length(3, "e-İrsaliye seri öneki 3 harf olmalıdır").optional(),
     testOrtami: z.boolean().optional(),
     postaKutusuEtiketi: z.string().optional(),
     saticiId: z.string().optional(),
@@ -124,6 +125,21 @@ export class BaglantilarService {
     // önek yoksa firma otomatik olmayan seri kullanıyor demektir.
     const seriOneki = (JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig).belgeSeriOneki;
     return seriOneki ? { saglayiciAtar: true, seriOneki } : { saglayiciAtar: false };
+  }
+
+  /**
+   * e-İrsaliye seri öneki (EBLG-20). Numarayı fatura ve e-Arşiv'in aksine biz
+   * üretiriz; burada yalnız hangi seriden üretileceği okunur. Tanımsızsa
+   * belge modülünün varsayılanı kullanılır.
+   */
+  async irsaliyeSeriOneki(tx: Prisma.TransactionClient): Promise<string | undefined> {
+    const { tenantId } = aktifBaglam();
+    const baglanti = await tx.baglanti.findFirst({
+      where: { tenantId, aile: "ebelge", durum: "aktif" },
+      select: { sifreliConfig: true },
+    });
+    if (!baglanti) return undefined;
+    return (JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig).eirsaliyeSeriOneki;
   }
 
   async listele(): Promise<BaglantiGorunumu[]> {

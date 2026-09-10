@@ -35,6 +35,14 @@ export interface EntegratorConfig {
    */
   earsivSeriOneki?: string;
   /**
+   * e-İrsaliye serisinin öneki. e-İrsaliye numarası **sevkten önce** gerekir —
+   * kâğıt malla birlikte yola çıkar — bu yüzden numarayı fatura/e-Arşiv'in
+   * aksine biz üretiriz ve sağlayıcıdaki serinin **elle numaralandırılan**
+   * (NES'te `isPortal: false`) bir seri olması gerekir; otomatik seride
+   * sağlayıcı tam numarayı reddeder.
+   */
+  eirsaliyeSeriOneki?: string;
+  /**
    * Bağlantı entegratörün **test ortamına** bakıyor. Test ortamlarında
    * entegratör sentetik firma kimlikleri verir (NES'in `1234567801`'i gibi)
    * ve bunlar VKN kontrol hanesini tutmaz. Bu bayrak yalnızca gönderen VKN

@@ -88,6 +88,7 @@ export default function EntegratorAyarlariSayfasi() {
       postaKutusuEtiketi: (v.get("postaKutusuEtiketi") as string) || undefined,
       belgeSeriOneki: (v.get("belgeSeriOneki") as string) || undefined,
       earsivSeriOneki: (v.get("earsivSeriOneki") as string) || undefined,
+      eirsaliyeSeriOneki: (v.get("eirsaliyeSeriOneki") as string) || undefined,
       testOrtami: v.get("testOrtami") === "on" || undefined,
     };
 
@@ -313,6 +314,9 @@ export default function EntegratorAyarlariSayfasi() {
                         </Field>
                         <Field label="Otomatik Seri Öneki (e-Arşiv)">
                           <Input name="earsivSeriOneki" maxLength={8} placeholder="GİB e-Fatura serisinden farklı olmasını ister" />
+                        </Field>
+                        <Field label="e-İrsaliye Seri Öneki">
+                          <Input name="eirsaliyeSeriOneki" maxLength={3} placeholder="IRS — entegratörde elle numaralandırılan seri olmalı" />
                         </Field>
                       </>
                     )}

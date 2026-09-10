@@ -19,6 +19,7 @@ import { metinNormalize } from "@tekirextra/shared";
 import { PrismaService } from "../core/prisma.service";
 import { DepoService } from "../stok/depo.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
+import { BaglantilarService } from "../tenant/baglantilar.service";
 import { belgePdfHtml } from "./belge-pdf";
 import type {
   belgeGuncelleSemasi,
@@ -71,6 +72,7 @@ export class BelgelerService {
     private readonly pdf: PdfService,
     private readonly depoService: DepoService,
     private readonly donemKilidi: DonemKilidiService,
+    private readonly baglantilar: BaglantilarService,
   ) {}
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────
@@ -455,7 +457,14 @@ export class BelgelerService {
         create: { tenantId, tur: belge.tur, yil, sonSira: 1 },
         update: { sonSira: { increment: 1 } },
       });
-      const no = `${NO_ONEKLERI[belge.tur]}${yil}${String(sayac.sonSira).padStart(6, "0")}`;
+      // İrsaliye e-İrsaliye olarak GİB'e gidebilir ve GİB belge numarasını
+      // 16 karakter bekler: 3 harf önek + 4 hane yıl + 9 hane sıra. Teklif ve
+      // sipariş dışarı çıkmayan iç belgeler, onların genişliği korunur.
+      // Önek de e-İrsaliye'de firmanın entegratörde tanımlı serisidir; sabit
+      // "IRS" yalnızca varsayılandır (EBLG-20).
+      const irsaliye = belge.tur === "irsaliye";
+      const onek = (irsaliye ? await this.baglantilar.irsaliyeSeriOneki(tx) : undefined) ?? NO_ONEKLERI[belge.tur];
+      const no = `${onek}${yil}${String(sayac.sonSira).padStart(irsaliye ? 9 : 6, "0")}`;
 
       // Otomatik rezervasyon (S-01): satış siparişi rezerv, alış yoldaki üretir
       if (belge.tur === "siparis") {
