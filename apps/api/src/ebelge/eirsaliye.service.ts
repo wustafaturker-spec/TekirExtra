@@ -27,15 +27,55 @@ export class EirsaliyeService {
     return { baglanti, cfg: JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig, adapter: this.baglantilar.adapterCoz(baglanti.saglayici) };
   }
 
+  /**
+   * UBL-TR 1.2.1 DespatchAdvice. Eleman sırası şemada bağlayıcıdır ve GİB
+   * örneğinden birebir alınmıştır (`docs/e-belge/… UBL-TR 1.2.1/XML/
+   * DespatchAdvice.xml`); sıra bozulursa NES belgeyi `FAILED_XML_SCHEMA_CHECK`
+   * ile geri çevirir.
+   *
+   * `ProfileID` **TEMELIRSALIYE**'dir; `SEVK` belgenin türüdür
+   * (`DespatchAdviceTypeCode`), profili değil.
+   */
   private ubl(b: any, tenant: any) {
-    const lines = b.satirlar.map((s: any, i: number) => `<cac:DespatchLine><cbc:ID>${i + 1}</cbc:ID><cbc:DeliveredQuantity unitCode="C62">${s.miktar}</cbc:DeliveredQuantity><cac:Item><cbc:Name>${esc(s.stok.ad)}</cbc:Name><cac:SellersItemIdentification><cbc:ID>${esc(s.stok.kod)}</cbc:ID></cac:SellersItemIdentification></cac:Item></cac:DespatchLine>`).join("");
-    return `<?xml version="1.0" encoding="UTF-8"?><DespatchAdvice xmlns="urn:oasis:names:specification:ubl:schema:xsd:DespatchAdvice-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"><cbc:UBLVersionID>2.1</cbc:UBLVersionID><cbc:CustomizationID>TR1.2</cbc:CustomizationID><cbc:ProfileID>SEVK</cbc:ProfileID><cbc:ID>${esc(b.no ?? b.id)}</cbc:ID><cbc:UUID>${b.id}</cbc:UUID><cbc:IssueDate>${new Date(b.tarih).toISOString().slice(0, 10)}</cbc:IssueDate><cac:DespatchSupplierParty><cac:Party><cac:PartyName><cbc:Name>${esc(tenant.unvan)}</cbc:Name></cac:PartyName><cac:PartyIdentification><cbc:ID schemeID="VKN">${esc(tenant.vkn)}</cbc:ID></cac:PartyIdentification><cbc:EndpointID>${esc(tenant.vkn)}</cbc:EndpointID></cac:Party></cac:DespatchSupplierParty><cac:DeliveryCustomerParty><cac:Party><cac:PartyName><cbc:Name>${esc(b.cari.unvan)}</cbc:Name></cac:PartyName><cac:PartyIdentification><cbc:ID schemeID="VKN">${esc(b.cari.vknTckn ?? "")}</cbc:ID></cac:PartyIdentification></cac:Party></cac:DeliveryCustomerParty>${lines}</DespatchAdvice>`;
+    const tarih = new Date(b.tarih).toISOString().slice(0, 10);
+    // Fiili sevk saati irsaliye kartında tutulmuyor; kaydın oluşturulma saati
+    // en yakın gerçeğe. Ayrı bir "fiili sevk tarihi/saati" alanı açılmalı.
+    const saat = new Date(b.createdAt ?? b.tarih).toISOString().slice(11, 19);
+    const adres = (birim: string, sehir: string) =>
+      `<cac:PostalAddress><cbc:CitySubdivisionName>${esc(birim)}</cbc:CitySubdivisionName><cbc:CityName>${esc(sehir)}</cbc:CityName><cac:Country><cbc:Name>Türkiye</cbc:Name></cac:Country></cac:PostalAddress>`;
+    const taraf = (vkn: string, unvan: string) =>
+      `<cac:Party><cac:PartyIdentification><cbc:ID schemeID="${vkn.length === 11 ? "TCKN" : "VKN"}">${esc(vkn)}</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>${esc(unvan)}</cbc:Name></cac:PartyName>${adres("Merkez", "Istanbul")}</cac:Party>`;
+    const satirlar = b.satirlar
+      .map(
+        (s: any, i: number) =>
+          `<cac:DespatchLine><cbc:ID>${i + 1}</cbc:ID><cbc:DeliveredQuantity unitCode="C62">${s.miktar}</cbc:DeliveredQuantity><cac:OrderLineReference><cbc:LineID>${i + 1}</cbc:LineID></cac:OrderLineReference><cac:Item><cbc:Name>${esc(s.stok.ad)}</cbc:Name><cac:SellersItemIdentification><cbc:ID>${esc(s.stok.kod)}</cbc:ID></cac:SellersItemIdentification></cac:Item></cac:DespatchLine>`,
+      )
+      .join("");
+    return `<?xml version="1.0" encoding="UTF-8"?><DespatchAdvice xmlns="urn:oasis:names:specification:ubl:schema:xsd:DespatchAdvice-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">`
+      + `<cbc:UBLVersionID>2.1</cbc:UBLVersionID><cbc:CustomizationID>TR1.2</cbc:CustomizationID><cbc:ProfileID>TEMELIRSALIYE</cbc:ProfileID>`
+      + `<cbc:ID>${esc(b.no ?? b.id)}</cbc:ID><cbc:CopyIndicator>false</cbc:CopyIndicator><cbc:UUID>${b.id}</cbc:UUID>`
+      + `<cbc:IssueDate>${tarih}</cbc:IssueDate><cbc:IssueTime>${saat}</cbc:IssueTime>`
+      + `<cbc:DespatchAdviceTypeCode>SEVK</cbc:DespatchAdviceTypeCode><cbc:LineCountNumeric>${b.satirlar.length}</cbc:LineCountNumeric>`
+      + `<cac:Signature><cbc:ID schemeID="VKN_TCKN">${esc(tenant.vkn)}</cbc:ID><cac:SignatoryParty><cac:PartyIdentification><cbc:ID schemeID="VKN">${esc(tenant.vkn)}</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>${esc(tenant.unvan)}</cbc:Name></cac:PartyName>${adres("Merkez", "Istanbul")}</cac:SignatoryParty><cac:DigitalSignatureAttachment><cac:ExternalReference><cbc:URI>#Signature</cbc:URI></cac:ExternalReference></cac:DigitalSignatureAttachment></cac:Signature>`
+      + `<cac:DespatchSupplierParty>${taraf(tenant.vkn, tenant.unvan)}</cac:DespatchSupplierParty>`
+      + `<cac:DeliveryCustomerParty>${taraf(b.cari.vknTckn ?? "", b.cari.unvan)}</cac:DeliveryCustomerParty>`
+      // Fiili sevk zamanı `cac:Shipment` içinde bildirilir; taşıyan ve plaka
+      // bilgisi kartta tutulmadığı için yazılmıyor.
+      // Fiili sevk zamanı ve malın nereye teslim edildiği `cac:Shipment`
+      // içinde bildirilir; teslimat adresi zorunludur (şematron), taşıyan ve
+      // plaka bilgisi ise kartta tutulmadığı için yazılmıyor.
+      // Taşıyan zorunlu: GİB `DriverPerson` ya da `CarrierParty` ister. Şoför,
+      // plaka ve taşıyıcı firma irsaliye kartında tutulmadığı için malı kendi
+      // aracıyla götüren firma varsayılıyor — kargoyla sevk eden bir firmada
+      // bu bilgi yanlış olur, taşıyan alanları açılmalı.
+      + `<cac:Shipment><cbc:ID>1</cbc:ID><cac:Delivery><cac:DeliveryAddress><cbc:StreetName>${esc(b.teslimatAdresi.adres)}</cbc:StreetName><cbc:CitySubdivisionName>${esc(b.teslimatAdresi.ilce)}</cbc:CitySubdivisionName><cbc:CityName>${esc(b.teslimatAdresi.il)}</cbc:CityName><cbc:PostalZone>${esc(b.teslimatAdresi.postaKodu)}</cbc:PostalZone><cac:Country><cbc:Name>Türkiye</cbc:Name></cac:Country></cac:DeliveryAddress><cac:CarrierParty><cac:PartyIdentification><cbc:ID schemeID="VKN">${esc(tenant.vkn)}</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>${esc(tenant.unvan)}</cbc:Name></cac:PartyName>${adres("Merkez", "Istanbul")}</cac:CarrierParty><cac:Despatch><cbc:ActualDespatchDate>${tarih}</cbc:ActualDespatchDate><cbc:ActualDespatchTime>${saat}</cbc:ActualDespatchTime></cac:Despatch></cac:Delivery></cac:Shipment>`
+      + `${satirlar}</DespatchAdvice>`;
   }
 
   async gonder(belgeId: string) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const belge = await tx.belge.findUnique({ where: { id: belgeId }, include: { cari: true, satirlar: { include: { stok: true } }, eirsaliye: true } });
+      const belge = await tx.belge.findUnique({ where: { id: belgeId }, include: { cari: { include: { adresler: true } }, satirlar: { include: { stok: true } }, eirsaliye: true } });
       if (!belge) throw new NotFoundException("Belge bulunamadı");
       if (belge.tur !== "irsaliye" || belge.yon !== "satis") throw new BadRequestException("Yalnızca satış irsaliyesi e-İrsaliye olarak gönderilebilir");
       if (belge.durum !== "onaylandi") throw new BadRequestException("e-İrsaliye göndermek için belge onaylanmış olmalıdır");
@@ -47,8 +87,20 @@ export class EirsaliyeService {
       // "eirsaliye" türüyle yapılır (EBLG-10).
       const mukellef = await this.mukellefListesi.kanalBelirle(baglanti.saglayici, cfg, belge.cari.vknTckn, "eirsaliye");
       if (!mukellef.eFaturaMukellefi || !mukellef.postaKutusu) throw new BadRequestException("Cari e-İrsaliye alıcısı olarak tanımlı değil");
+      // Malın fiilen nereye gittiği e-İrsaliye'nin varlık sebebi; uydurulmuş
+      // bir adres yazmaktansa gönderim durur. Sevk adresi yoksa merkez/fatura
+      // adresi kullanılır.
+      const adresler = belge.cari.adresler as { tip: string; adres: string; il: string | null; ilce: string | null; postaKodu: string | null }[];
+      // Şematron il, ilçe ve posta kodunun üçünü de dolu ister.
+      const tam = (a: (typeof adresler)[number]) => Boolean(a.il && a.ilce && a.postaKodu);
+      const teslimatAdresi =
+        adresler.find((a) => a.tip === "sevk" && tam(a)) ??
+        adresler.find((a) => (a.tip === "merkez" || a.tip === "fatura") && tam(a));
+      if (!teslimatAdresi) {
+        throw new BadRequestException("e-İrsaliye teslimat adresi ister; cari kartına il, ilçe ve posta kodu dolu bir sevk adresi ekleyin");
+      }
       const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
-      const xml = this.ubl(belge, tenant);
+      const xml = this.ubl({ ...belge, teslimatAdresi }, tenant);
       const sonuc = await adapter.irsaliyeGonder(cfg, { uuid: belge.id, belgeNo: belge.no ?? belge.id, xml, aliciPostaKutusu: mukellef.postaKutusu });
       return tx.eirsaliyeKayit.upsert({ where: { belgeId }, create: { tenantId, belgeId, durum: sonuc.basarili ? "iletildi" : "hata", entegratorRef: sonuc.belgeRef, xmlIcerik: xml, hataMesaji: sonuc.hataMesaji }, update: { durum: sonuc.basarili ? "iletildi" : "hata", entegratorRef: sonuc.belgeRef, xmlIcerik: xml, hataMesaji: sonuc.hataMesaji } });
     });
