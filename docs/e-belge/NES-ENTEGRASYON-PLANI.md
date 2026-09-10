@@ -463,6 +463,26 @@ harcamadan bulundu. Aynı klasördeki `XML/DespatchAdvice.xml` ve
 | ReceiptAdvice'ta `ProfileID` yok, sıra yanlış | `FAILED_XML_SCHEMA_CHECK … expected 'ProfileID'` |
 | Gelen irsaliyede gönderen boş kaydediliyordu | NES irsaliyede `despatchSupplierParty` diyor, adaptör faturadaki `accountingSupplierParty`'yi okuyordu |
 
+### Yanıt belgesinin numarasını sağlayıcı atar (EBLG-24)
+
+İrsaliye yanıtı **ayrı bir belgedir ve ayrı seri ailesinde durur**: NES'te
+`/edespatch/v1/answerseries` (varsayılan `YNT`, otomatik numaralandırılan).
+İrsaliyenin kendisinden farklı olarak numaranın elde önceden bulunması
+gerekmiyor — yanıt kâğıtla yola çıkmıyor — bu yüzden numarayı sağlayıcı atar,
+tıpkı e-Fatura ve e-Arşiv'de olduğu gibi (EBLG-16).
+
+İlk kurguda numara **saatten türetiliyordu** ve üstelik irsaliye serisinden
+alınıyordu: gönderdiğimiz ilk yanıt NES'e `GBZ2026006697162` olarak gitti —
+hem anlamsız bir sıra, hem de irsaliye serisinin içinde ikinci bir sayaç.
+
+Şimdi UBL'e yalnız yanıt serisinin öneki yazılıyor, tam numara
+`POST …/receiptadvice` yanıtındaki `documentNumber`'dan okunup
+`gelen_eirsaliyeler.yanit_belge_no` alanına yazılıyor. Seri öneki bağlantıda
+(`eirsaliyeYanitSeriOneki`); irsaliye serisiyle aynı olamaz, yoksa seri içinde
+numara çakışır. Tanımlı değilse yanıt gönderilmez.
+
+Canlı doğrulandı: ret yanıtı **`YNT2026000000002`** numarasıyla düzenlendi.
+
 ### Numarayı e-İrsaliye'de biz atarız
 
 e-Fatura ve e-Arşiv'de numarayı sağlayıcı atar (EBLG-16). **e-İrsaliye'de
@@ -565,7 +585,6 @@ alakasız bir belgenin numarası yazılabilirdi.
 | Gerçek kişi ad/soyad | Cari kartında tek `unvan` var; UBL'deki `FirstName`/`FamilyName` ayrımı son kelimeden türetiliyor. |
 | e-Arşiv gönderim şekli | Sabit `ELEKTRONIK`; `KAGIT` seçeneği yok. |
 | e-İrsaliye araç/şoför kartları | Şoför ve plaka her irsaliyede yeniden giriliyor; sık kullanılan araç için kayıtlı kart yok. |
-| İrsaliye yanıtı numarası | Kalıcı sayaç yok, gün içi sıra zamandan türetiliyor. Yanıt sayacı açılmalı. |
 | Gelen irsaliye yanıtı | `hataMesaji` alanına başarı açıklaması da yazılıyor ("ZARF BAŞARIYLA İŞLENDİ"). |
 
 ## Test erişimi — çözüldü
