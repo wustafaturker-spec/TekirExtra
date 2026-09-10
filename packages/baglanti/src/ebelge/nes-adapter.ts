@@ -125,7 +125,26 @@ async function nesHatasi(yanit: Response): Promise<NesHatasi> {
   } catch {
     // Gövde JSON değilse ham metnin başı yeterli ayrıntıdır.
   }
-  return new NesHatasi(yanit.status, `NES ${yanit.status}${ayrinti ? `: ${ayrinti.slice(0, 400)}` : ""}`);
+  return new NesHatasi(yanit.status, `NES ${yanit.status}${ayrinti ? `: ${kirp(ayrinti)}` : ""}`);
+}
+
+/**
+ * Uzun gövdeyi keser ama kuralı ortasından bölmez: bir belge birden çok
+ * şematron kuralına takılabiliyor ve yarım cümle hangi alanın eksik olduğunu
+ * söylemiyor. Sığmayan kuralların sayısı yazılır ki eksik olduğu bilinsin.
+ */
+function kirp(metin: string, sinir = 1000): string {
+  if (metin.length <= sinir) return metin;
+  const parcalar = metin.split("; ");
+  const tutulan: string[] = [];
+  let uzunluk = 0;
+  for (const parca of parcalar) {
+    if (uzunluk + parca.length > sinir && tutulan.length) break;
+    tutulan.push(parca);
+    uzunluk += parca.length + 2;
+  }
+  const kalan = parcalar.length - tutulan.length;
+  return tutulan.join("; ") + (kalan > 0 ? ` (+${kalan} kural daha)` : "");
 }
 
 /**
@@ -174,12 +193,61 @@ function yuklemeFormu(belge: { uuid: string; xml: string }, gonderen: string, al
   return form;
 }
 
-/** Gelen e-İrsaliyeye verilecek ReceiptAdvice UBL'i. */
-function receiptAdviceXml(belgeRef: string, yanit: "kabul" | "ret", gerekce?: string): { uuid: string; xml: string } {
+/** Kaynak irsaliyeden tek bir alanı çeker; UBL-TR alan adları benzersizdir. */
+function ublAlan(xml: string, blok: string, alan: string): string {
+  const govde = new RegExp(`<cac:${blok}>([\\s\\S]*?)</cac:${blok}>`).exec(xml)?.[1] ?? xml;
+  return xmlCoz(new RegExp(`<cbc:${alan}[^>]*>([^<]*)</cbc:${alan}>`).exec(govde)?.[1] ?? "");
+}
+
+/**
+ * Gelen e-İrsaliyeye verilecek ReceiptAdvice UBL'i (UBL-TR 1.2.1). Eleman
+ * sırası şemada bağlayıcı; `docs/e-belge/… UBL-TR 1.2.1/XML/ReceiptAdvice.xml`
+ * örneğinden alınmıştır. Taraflar ve satırlar yanıtlanan irsaliyeden okunur —
+ * yanıt, cevapladığı belgenin taraflarını aynen taşımak zorundadır.
+ */
+function receiptAdviceXml(
+  belgeRef: string,
+  yanit: "kabul" | "ret",
+  gerekce: string | undefined,
+  kaynakXml: string,
+  seriOneki: string,
+): { uuid: string; xml: string } {
   const uuid = randomUUID();
   const kacir = (deger: string) =>
     deger.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
-  const xml = `<?xml version="1.0" encoding="UTF-8"?><ReceiptAdvice xmlns="urn:oasis:names:specification:ubl:schema:xsd:ReceiptAdvice-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"><cbc:UBLVersionID>2.1</cbc:UBLVersionID><cbc:CustomizationID>TR1.2</cbc:CustomizationID><cbc:ID>${uuid}</cbc:ID><cbc:UUID>${uuid}</cbc:UUID><cbc:IssueDate>${new Date().toISOString().slice(0, 10)}</cbc:IssueDate><cac:DespatchDocumentReference><cbc:ID>${kacir(belgeRef)}</cbc:ID></cac:DespatchDocumentReference><cac:ReceiptLine><cbc:ID>1</cbc:ID><cbc:ReceivedQuantity unitCode="C62">${yanit === "kabul" ? 1 : 0}</cbc:ReceivedQuantity>${gerekce ? `<cbc:Note>${kacir(gerekce)}</cbc:Note>` : ""}</cac:ReceiptLine></ReceiptAdvice>`;
+  const bugun = new Date();
+  const tarih = bugun.toISOString().slice(0, 10);
+  // Yanıt belgesinin kendi numarası: GİB 16 karakter ister. Kalıcı bir yanıt
+  // sayacımız yok; gün içi sıra zamandan türetiliyor — yanıt sayacı açılmalı.
+  const sira = String(Math.floor((bugun.getTime() % 86_400_000) / 10)).padStart(9, "0");
+  const no = `${seriOneki}${bugun.getFullYear()}${sira}`;
+  const irsaliyeNo = ublAlan(kaynakXml, "", "ID");
+  const irsaliyeTarihi = ublAlan(kaynakXml, "", "IssueDate") || tarih;
+  const taraf = (blok: string) => {
+    const govde = new RegExp(`<cac:${blok}>([\\s\\S]*?)</cac:${blok}>`).exec(kaynakXml)?.[1] ?? "";
+    const kimlik = /<cbc:ID schemeID="(VKN|TCKN)">([^<]*)</.exec(govde);
+    const ad = /<cac:PartyName>\s*<cbc:Name>([^<]*)</.exec(govde);
+    return `<cac:Party><cac:PartyIdentification><cbc:ID schemeID="${kimlik?.[1] ?? "VKN"}">${kacir(kimlik?.[2] ?? "")}</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>${kacir(xmlCoz(ad?.[1] ?? ""))}</cbc:Name></cac:PartyName><cac:PostalAddress><cbc:CitySubdivisionName>Merkez</cbc:CitySubdivisionName><cbc:CityName>Istanbul</cbc:CityName><cac:Country><cbc:Name>Türkiye</cbc:Name></cac:Country></cac:PostalAddress></cac:Party>`;
+  };
+  // Satırlar birebir yanıtlanır: kabulde gelen miktar, rette sıfır.
+  const satirlar = [...kaynakXml.matchAll(/<cac:DespatchLine>([\s\S]*?)<\/cac:DespatchLine>/g)].map((eslesme, sira) => {
+    const govde = eslesme[1];
+    const id = /<cbc:ID>([^<]*)</.exec(govde)?.[1] ?? String(sira + 1);
+    const miktar = /<cbc:DeliveredQuantity[^>]*>([^<]*)</.exec(govde)?.[1] ?? "0";
+    const birim = /<cbc:DeliveredQuantity unitCode="([^"]*)"/.exec(govde)?.[1] ?? "C62";
+    const adi = xmlCoz(/<cac:Item>\s*<cbc:Name>([^<]*)</.exec(govde)?.[1] ?? "");
+    return `<cac:ReceiptLine><cbc:ID>${kacir(id)}</cbc:ID><cbc:ReceivedQuantity unitCode="${kacir(birim)}">${yanit === "kabul" ? kacir(miktar) : "0"}</cbc:ReceivedQuantity><cac:DespatchLineReference><cbc:LineID>${kacir(id)}</cbc:LineID></cac:DespatchLineReference><cac:Item><cbc:Name>${kacir(adi)}</cbc:Name></cac:Item></cac:ReceiptLine>`;
+  }).join("");
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><ReceiptAdvice xmlns="urn:oasis:names:specification:ubl:schema:xsd:ReceiptAdvice-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">`
+    + `<cbc:UBLVersionID>2.1</cbc:UBLVersionID><cbc:CustomizationID>TR1.2</cbc:CustomizationID><cbc:ProfileID>TEMELIRSALIYE</cbc:ProfileID>`
+    + `<cbc:ID>${kacir(no)}</cbc:ID><cbc:CopyIndicator>false</cbc:CopyIndicator><cbc:UUID>${uuid}</cbc:UUID>`
+    + `<cbc:IssueDate>${tarih}</cbc:IssueDate><cbc:IssueTime>${bugun.toISOString().slice(11, 19)}</cbc:IssueTime>`
+    + `<cbc:ReceiptAdviceTypeCode>SEVK</cbc:ReceiptAdviceTypeCode>`
+    + (gerekce ? `<cbc:Note>${kacir(gerekce)}</cbc:Note>` : "")
+    + `<cac:DespatchDocumentReference><cbc:ID>${kacir(irsaliyeNo)}</cbc:ID><cbc:IssueDate>${kacir(irsaliyeTarihi)}</cbc:IssueDate></cac:DespatchDocumentReference>`
+    + `<cac:DeliveryCustomerParty>${taraf("DeliveryCustomerParty")}</cac:DeliveryCustomerParty>`
+    + `<cac:DespatchSupplierParty>${taraf("DespatchSupplierParty")}</cac:DespatchSupplierParty>`
+    + `${satirlar}</ReceiptAdvice>`;
   return { uuid, xml };
 }
 
@@ -262,15 +330,19 @@ function configDogrula(cfg: EntegratorConfig): string | undefined {
   return undefined;
 }
 
+type GonderenTaraf = { partyIdentification?: string; partyName?: string; firstName?: string; familyName?: string };
+
 type GelenSatir = {
   id?: string;
   documentNumber?: string;
   issueDate?: string;
   createdAt?: string;
-  accountingSupplierParty?: { partyIdentification?: string; partyName?: string; firstName?: string; familyName?: string };
+  accountingSupplierParty?: GonderenTaraf;
+  /** e-İrsaliye yanıtında gönderen bu adla döner, faturadakiyle aynı değil. */
+  despatchSupplierParty?: GonderenTaraf;
 };
 
-function gonderenUnvani(taraf: GelenSatir["accountingSupplierParty"], vkn: string): string {
+function gonderenUnvani(taraf: GonderenTaraf | undefined, vkn: string): string {
   const kisi = [taraf?.firstName, taraf?.familyName].filter(Boolean).join(" ");
   return taraf?.partyName || kisi || vkn;
 }
@@ -671,12 +743,16 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
         const xml = await this.cagir<string>(cfg, "edespatch", `/v1/incoming/despatches/${encodeURIComponent(satir.id)}/xml`, {
           metin: true,
         });
-        const gonderenVkn = satir.accountingSupplierParty?.partyIdentification ?? "";
+        // NES gelen irsaliyede göndereni `despatchSupplierParty` altında
+        // veriyor; fatura akışındaki adı arayınca gönderen boş kaydediliyordu
+        // (2026-09-10). Fatura adı yedek olarak duruyor.
+        const gonderen = satir.despatchSupplierParty ?? satir.accountingSupplierParty;
+        const gonderenVkn = gonderen?.partyIdentification ?? "";
         irsaliyeler.push({
           uuid: satir.id,
           belgeNo: satir.documentNumber ?? satir.id,
           gonderenVkn,
-          gonderenUnvan: gonderenUnvani(satir.accountingSupplierParty, gonderenVkn),
+          gonderenUnvan: gonderenUnvani(gonderen, gonderenVkn),
           tarih: new Date(satir.issueDate ?? satir.createdAt ?? Date.now()),
           xml,
         });
@@ -695,10 +771,11 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
     cfg: EntegratorConfig,
     belgeRef: string,
     yanit: "kabul" | "ret",
-    gerekce?: string,
+    gerekce: string | undefined,
+    kaynakXml: string,
   ): Promise<GonderimSonuc> {
     try {
-      const receipt = receiptAdviceXml(belgeRef, yanit, gerekce);
+      const receipt = receiptAdviceXml(belgeRef, yanit, gerekce, kaynakXml, cfg.eirsaliyeSeriOneki ?? "IRS");
       const form = new FormData();
       form.set("File", new Blob([receipt.xml], { type: "application/xml" }), `${receipt.uuid}.xml`);
       form.set("AnswerType", yanit === "kabul" ? "AllAccepted" : "AllRejected");

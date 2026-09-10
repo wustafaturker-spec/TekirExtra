@@ -336,6 +336,52 @@ describe("NesEntegratorAdapter", () => {
     expect(sonuc.detay).toContain("iptal edilmiş");
   });
 
+  it("gelen e-İrsaliyede göndereni despatchSupplierParty'den okur", async () => {
+    // NES fatura akışında `accountingSupplierParty`, irsaliyede
+    // `despatchSupplierParty` diyor; fatura adını aramak göndereni boş
+    // bırakıyordu (2026-09-10).
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(yanit({ data: [{ id: "irs-1", documentNumber: "TYH2026000000016", issueDate: "2026-09-10", despatchSupplierParty: { partyIdentification: "4620553774", partyName: "HIZLI BİLİŞİM A.Ş." } }] }))
+      .mockResolvedValueOnce(yanit("<DespatchAdvice/>"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const gelen = await new NesEntegratorAdapter().gelenIrsaliyeleriCek!(config, new Date("2026-09-01"));
+
+    expect(gelen[0].gonderenVkn).toBe("4620553774");
+    expect(gelen[0].gonderenUnvan).toBe("HIZLI BİLİŞİM A.Ş.");
+  });
+
+  it("irsaliye yanıtını UBL-TR sırasına göre ve kaynak belgeden kurar", async () => {
+    // Sıra şemada bağlayıcı: ProfileID, ID'den önce gelir. Taraflar ve satırlar
+    // yanıtlanan irsaliyeden okunur; uydurulmuş taraf belgeyi geçersiz kılar.
+    const kaynak = `<?xml version="1.0"?><DespatchAdvice xmlns:cac="urn:cac" xmlns:cbc="urn:cbc"><cbc:ID>TYH2026000000016</cbc:ID><cbc:IssueDate>2026-09-10</cbc:IssueDate><cac:DespatchSupplierParty><cac:Party><cac:PartyIdentification><cbc:ID schemeID="VKN">4620553774</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>Gönderen A.Ş.</cbc:Name></cac:PartyName></cac:Party></cac:DespatchSupplierParty><cac:DeliveryCustomerParty><cac:Party><cac:PartyIdentification><cbc:ID schemeID="VKN">1234567801</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>Alıcı A.Ş.</cbc:Name></cac:PartyName></cac:Party></cac:DeliveryCustomerParty><cac:DespatchLine><cbc:ID>1</cbc:ID><cbc:DeliveredQuantity unitCode="C62">5</cbc:DeliveredQuantity><cac:Item><cbc:Name>Ürün</cbc:Name></cac:Item></cac:DespatchLine></DespatchAdvice>`;
+    const fetchMock = vi.fn().mockResolvedValue(yanit(""));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new NesEntegratorAdapter().irsaliyeYanitiGonder!({ ...config, eirsaliyeSeriOneki: "GBZ" }, "irs-1", "kabul", undefined, kaynak);
+
+    const xml = await (fetchMock.mock.calls[0][1].body.get("File") as Blob).text();
+    expect(xml.indexOf("<cbc:ProfileID>")).toBeLessThan(xml.indexOf("<cbc:ID>"));
+    expect(xml).toContain("<cbc:ReceiptAdviceTypeCode>SEVK</cbc:ReceiptAdviceTypeCode>");
+    expect(xml).toContain("<cbc:ID>TYH2026000000016</cbc:ID>");
+    expect(xml).toContain("Gönderen A.Ş.");
+    expect(xml).toContain(`<cbc:ReceivedQuantity unitCode="C62">5</cbc:ReceivedQuantity>`);
+    expect(/<cbc:ID>GBZ\d{13}<\/cbc:ID>/.test(xml)).toBe(true);
+  });
+
+  it("reddedilen irsaliye satırında alınan miktar sıfırdır", async () => {
+    const kaynak = `<DespatchAdvice xmlns:cac="urn:cac" xmlns:cbc="urn:cbc"><cbc:ID>TYH1</cbc:ID><cac:DespatchLine><cbc:ID>1</cbc:ID><cbc:DeliveredQuantity unitCode="C62">5</cbc:DeliveredQuantity><cac:Item><cbc:Name>Ürün</cbc:Name></cac:Item></cac:DespatchLine></DespatchAdvice>`;
+    const fetchMock = vi.fn().mockResolvedValue(yanit(""));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new NesEntegratorAdapter().irsaliyeYanitiGonder!(config, "irs-1", "ret", "Mal hasarlı geldi", kaynak);
+
+    const xml = await (fetchMock.mock.calls[0][1].body.get("File") as Blob).text();
+    expect(xml).toContain(`<cbc:ReceivedQuantity unitCode="C62">0</cbc:ReceivedQuantity>`);
+    expect(xml).toContain("<cbc:Note>Mal hasarlı geldi</cbc:Note>");
+    expect(fetchMock.mock.calls[0][1].body.get("AnswerType")).toBe("AllRejected");
+  });
+
   it("API anahtarı yoksa bağlantı testi ağ çağrısı yapmaz", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
