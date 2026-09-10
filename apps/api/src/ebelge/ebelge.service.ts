@@ -1057,6 +1057,46 @@ export class EbelgeService {
     );
   }
 
+  /**
+   * e-Arşiv belgesini entegratörde iptal eder ve kaydı iptal olarak işaretler.
+   * Fatura iptalinin **kendi işleminin içinden** çağrılır: bir başarısızlık
+   * burada hata fırlatır ve çağıranın işlemi geri alınır, böylece "bizde
+   * iptal, entegratörde canlı" belge kalmaz.
+   *
+   * GİB raporuna girmiş belge iptal edilmez — o noktadan sonra iptal bildirimi
+   * raporlama üzerinden yürür ve uygulamanın doğrulayamayacağı bir süreçtir.
+   */
+  async earsivBelgesiniIptalEt(
+    tx: Prisma.TransactionClient,
+    fatura: { id: string; no: string | null; genelToplam: Prisma.Decimal },
+    ebelge: { id: string; entegratorRef: string | null },
+  ): Promise<void> {
+    const { tenantId } = aktifBaglam();
+    const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } });
+    if (!baglanti) throw new BadRequestException("Aktif e-belge bağlantısı bulunamadı; e-Arşiv belgesi iptal edilemez");
+    const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
+    const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
+    if (!adapter.earsivIptal) throw new BadRequestException("Aktif entegratör e-Arşiv iptalini desteklemiyor");
+    if (!fatura.no) throw new BadRequestException("Numarasız e-Arşiv belgesi iptal edilemez");
+
+    if (ebelge.entegratorRef) {
+      this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "durumSorgula", saglayici: baglanti.saglayici });
+      const durum = await this.entegratordenOku(() => adapter.durumSorgula(cfg, ebelge.entegratorRef!));
+      if (durum.raporlandi) {
+        throw new BadRequestException(
+          `${fatura.no} numaralı e-Arşiv faturası GİB raporuna girmiş; bu aşamadan sonra iptal uygulamadan yapılamaz, iptal bildirimi mali müşavirinizle raporlama üzerinden yürütülmelidir.`,
+        );
+      }
+    }
+
+    this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "earsivIptal", saglayici: baglanti.saglayici });
+    const sonuc = await this.entegratordenOku(() =>
+      adapter.earsivIptal!(cfg, { faturaNo: fatura.no!, toplamTutar: fatura.genelToplam.toFixed(2), iptalTarihi: new Date() }),
+    );
+    if (!sonuc.basarili) throw new BadRequestException(sonuc.mesaj || "e-Arşiv iptali entegratöre bildirilemedi");
+    await tx.ebelgeKayit.update({ where: { id: ebelge.id }, data: { durum: "iptal", hataMesaji: null } });
+  }
+
   async earsivIptalBildir(faturaId: string, girdi: { iptalTarihi: Date; sube?: string }) {
     const { tenantId } = aktifBaglam();
     const veri = await this.prisma.tenantIslem(tenantId, async (tx) => {

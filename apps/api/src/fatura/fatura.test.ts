@@ -112,3 +112,70 @@ describe("FaturaService (FTR-14 - maksIskontoYuzdesi)", () => {
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ select: expect.any(Object) }));
   });
 });
+
+describe("FaturaService.iptal — e-belge kuralı (EBLG-22)", () => {
+  const mockTenantIslem = vi.fn();
+  const mockPrisma = { tenantIslem: mockTenantIslem } as any;
+
+  function kur(ebelge: unknown) {
+    const earsivBelgesiniIptalEt = vi.fn();
+    const tx = {
+      fatura: { findUnique: vi.fn().mockResolvedValue({ id: "f1", no: "SNC2026000000003", durum: "kesin", tip: "satis", genelToplam: new Prisma.Decimal("900.00"), cariId: "c1", dovizCinsi: "TRY", kur: new Prisma.Decimal("1"), ebelge }) },
+      kasaBankaHareket: { count: vi.fn().mockResolvedValue(0) },
+      posTahsilat: { count: vi.fn().mockResolvedValue(0) },
+      krediKartiHareket: { count: vi.fn().mockResolvedValue(0) },
+      stokHareket: { findMany: vi.fn().mockResolvedValue([]) },
+      cariHareket: { create: vi.fn().mockResolvedValue({}) },
+      cariHesap: { update: vi.fn().mockResolvedValue({}) },
+      belge: { updateMany: vi.fn().mockResolvedValue({}) },
+      gelenEbelge: { updateMany: vi.fn().mockResolvedValue({}) },
+      fatura2: null,
+    } as any;
+    tx.fatura.update = vi.fn().mockResolvedValue({ id: "f1", durum: "iptal" });
+    mockTenantIslem.mockImplementation((_t: string, cb: (t: unknown) => unknown) => cb(tx));
+    const service = new FaturaService(
+      mockPrisma, {} as any, { hareketEkle: vi.fn() } as any, {} as any, {} as any, {} as any,
+      { tarihDogrula: vi.fn() } as any, {} as any, { earsivBelgesiniIptalEt } as any,
+    );
+    return { service, tx, earsivBelgesiniIptalEt };
+  }
+
+  it("e-Fatura olarak gönderilmiş faturayı iptal etmez, iade faturasına yönlendirir", async () => {
+    // Kesilen e-Fatura iptal edilmez; düzeltme yolu iade faturasıdır.
+    const { service, earsivBelgesiniIptalEt } = kur({ id: "eb1", tur: "efatura", durum: "iletildi", entegratorRef: "REF" });
+
+    await expect(service.iptal("f1")).rejects.toThrow("iade faturası düzenleyin");
+    expect(earsivBelgesiniIptalEt).not.toHaveBeenCalled();
+  });
+
+  it("e-Arşiv faturasında belgeyi entegratörde de iptal eder", async () => {
+    // Tek adım: iki sistem ya birlikte iptal olur ya hiç.
+    const { service, earsivBelgesiniIptalEt } = kur({ id: "eb1", tur: "earsiv", durum: "iletildi", entegratorRef: "EARSIV:x" });
+
+    await service.iptal("f1");
+
+    expect(earsivBelgesiniIptalEt).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: "f1" }),
+      expect.objectContaining({ id: "eb1" }),
+    );
+  });
+
+  it("entegratör iptali başarısızsa fatura iptal edilmez", async () => {
+    // Hata yukarı taşınır ve çağıranın işlemi geri alınır; bizde iptal görünüp
+    // GİB'de canlı duran belge kalmaz.
+    const { service, tx, earsivBelgesiniIptalEt } = kur({ id: "eb1", tur: "earsiv", durum: "iletildi", entegratorRef: "EARSIV:x" });
+    earsivBelgesiniIptalEt.mockRejectedValue(new BadRequestException("GİB raporuna girmiş"));
+
+    await expect(service.iptal("f1")).rejects.toThrow("GİB raporuna girmiş");
+    expect(tx.fatura.update).not.toHaveBeenCalled();
+  });
+
+  it("zaten iptal edilmiş belgeyi ikinci kez iptal etmeye çalışmaz", async () => {
+    const { service, earsivBelgesiniIptalEt } = kur({ id: "eb1", tur: "earsiv", durum: "iptal", entegratorRef: "EARSIV:x" });
+
+    await service.iptal("f1");
+
+    expect(earsivBelgesiniIptalEt).not.toHaveBeenCalled();
+  });
+});

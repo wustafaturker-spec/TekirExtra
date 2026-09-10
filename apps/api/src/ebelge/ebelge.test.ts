@@ -562,6 +562,46 @@ describe("EbelgeService (EBLG-01..08)", () => {
 
 /* ─── Entegratör çağrı disiplini (EBLG-11, 13, 14) ──────────────────────── */
 
+describe("EbelgeService.earsivBelgesiniIptalEt (EBLG-22)", () => {
+  const mockTenantIslem = vi.fn();
+  const prisma = { tenantIslem: mockTenantIslem } as any;
+  const metrics = { increment: vi.fn(), set: vi.fn() } as any;
+
+  function kur(durumSonucu: Record<string, unknown>) {
+    const earsivIptal = vi.fn().mockResolvedValue({ basarili: true, mesaj: "iptal edildi" });
+    const adapter = { durumSorgula: vi.fn().mockResolvedValue(durumSonucu), earsivIptal };
+    const baglantilar = { adapterCoz: vi.fn().mockReturnValue(adapter) } as any;
+    const tx = {
+      baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "u" }) }) },
+      ebelgeKayit: { update: vi.fn().mockResolvedValue({}) },
+    } as any;
+    const service = new EbelgeService(prisma, baglantilar, {} as any, {} as any, metrics, { uret: vi.fn() } as any);
+    return { service, tx, earsivIptal };
+  }
+
+  const fatura = { id: "f1", no: "SNC2026000000003", genelToplam: { toFixed: () => "900.00" } as any };
+  const ebelge = { id: "eb1", entegratorRef: "EARSIV:x" };
+
+  it("GİB raporuna girmiş belgeyi iptal etmez", async () => {
+    // Rapordan sonra iptal bildirimi raporlama üzerinden yürür; uygulamanın
+    // doğrulayamayacağı bir süreci sessizce başlatmaz.
+    const { service, tx, earsivIptal } = kur({ durum: "iletildi", raporlandi: true });
+
+    await expect(service.earsivBelgesiniIptalEt(tx, fatura, ebelge)).rejects.toThrow("GİB raporuna girmiş");
+    expect(earsivIptal).not.toHaveBeenCalled();
+    expect(tx.ebelgeKayit.update).not.toHaveBeenCalled();
+  });
+
+  it("rapora girmemiş belgeyi iptal eder ve kaydı iptal olarak işaretler", async () => {
+    const { service, tx, earsivIptal } = kur({ durum: "iletildi", raporlandi: false });
+
+    await service.earsivBelgesiniIptalEt(tx, fatura, ebelge);
+
+    expect(earsivIptal).toHaveBeenCalled();
+    expect(tx.ebelgeKayit.update).toHaveBeenCalledWith({ where: { id: "eb1" }, data: { durum: "iptal", hataMesaji: null } });
+  });
+});
+
 describe("EbelgeService — çağrı disiplini", () => {
   const cfg = JSON.stringify({ kullaniciAdi: "test" });
 

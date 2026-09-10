@@ -4,6 +4,8 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Inject,
+  forwardRef,
 } from "@nestjs/common";
 import { Prisma, FaturaTip, FaturaDurum, BelgeDurum } from "@prisma/client";
 import { faturaHesapla, faturaSenaryosuTuret, metinNormalize, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type KayitEylem } from "@tekirextra/shared";
@@ -17,6 +19,7 @@ import { DepoService } from "../stok/depo.service";
 import { EpostaService } from "../tenant/eposta.service";
 import { BelgelerService } from "../belgeler/belgeler.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
+import { EbelgeService } from "../ebelge/ebelge.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { faturaPdfHtml } from "./fatura-pdf";
 import type {
@@ -40,6 +43,7 @@ export class FaturaService {
     private readonly belgelerService: BelgelerService,
     private readonly donemKilidi: DonemKilidiService,
     private readonly baglantilar: BaglantilarService,
+    @Inject(forwardRef(() => EbelgeService)) private readonly ebelge: EbelgeService,
   ) {}
 
   private async cariTipiniDogrula(tx: Prisma.TransactionClient, cariId: string, tip: string): Promise<void> {
@@ -833,11 +837,16 @@ export class FaturaService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const fatura = await tx.fatura.findUnique({
         where: { id },
-        include: { ebelge: { select: { id: true } } },
+        include: { ebelge: { select: { id: true, tur: true, durum: true, entegratorRef: true } } },
       });
       if (!fatura) throw new NotFoundException("Fatura bulunamadı");
       if (fatura.durum === "iptal") throw new BadRequestException("Fatura zaten iptal edilmiş");
-      if (fatura.ebelge) throw new BadRequestException("e-Belge kaydı oluşmuş fatura iptal edilemez");
+      // Kesilen e-Fatura iptal edilmez; düzeltme yolu iade faturasıdır.
+      // e-Arşiv'de ise iptal normal mekanizmadır — belge GİB raporuna
+      // girmediği sürece iptal edilebilir (EBLG-22).
+      if (fatura.ebelge && fatura.ebelge.tur !== "earsiv") {
+        throw new BadRequestException("e-Fatura olarak gönderilmiş fatura iptal edilemez; iade faturası düzenleyin");
+      }
 
       if (fatura.durum === "taslak") {
         await tx.belge.updateMany({ where: { faturaId: id }, data: { faturaId: null, durum: "onaylandi" } });
@@ -852,6 +861,13 @@ export class FaturaService {
       ]);
       if (kasaBankaSayisi + posSayisi + krediKartiSayisi > 0) {
         throw new BadRequestException("Tahsilat veya ödeme bağlı fatura doğrudan iptal edilemez; önce finans hareketini geri alın veya iade faturası düzenleyin");
+      }
+
+      // Entegratördeki iptal bu işlemin içinde yapılır: başarısız olursa
+      // buradaki hata işlemi geri alır ve bizde iptal görünen ama GİB'de canlı
+      // duran bir belge kalmaz.
+      if (fatura.ebelge && fatura.ebelge.durum !== "iptal") {
+        await this.ebelge.earsivBelgesiniIptalEt(tx, fatura, fatura.ebelge);
       }
 
       if (fatura.tip !== "proforma") {

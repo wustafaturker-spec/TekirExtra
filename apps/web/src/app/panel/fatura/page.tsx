@@ -1536,7 +1536,8 @@ export default function FaturaSayfasi() {
               <Button type="button" onClick={() => setEbelgeDetayi(null)}>Kapat</Button>
               {["kuyrukta", "iletildi"].includes(ebelgeDetayi.ebelge.durum) && <Button type="button" variant="primary" onClick={() => void ebelgeSorgula(ebelgeDetayi.id)}>Durumu sorgula</Button>}
               {ebelgeDetayi.ebelge.durum === "hata" && <Button type="button" variant="primary" onClick={() => void ebelgeYenidenGonder(ebelgeDetayi.id)}>Yeniden gönder</Button>}
-              {ebelgeDetayi.ebelge.tur === "earsiv" && ebelgeDetayi.durum === "iptal" && <Button type="button" variant="danger" onClick={() => void earsivIptalBildir(ebelgeDetayi.id)}>İptali entegratöre bildir</Button>}
+              {/* İptal artık faturayı iptal ederken bildiriliyor; bu düğme yalnızca bildirim düşmüş kayıtları kurtarmak için durur. */}
+              {ebelgeDetayi.ebelge.tur === "earsiv" && ebelgeDetayi.durum === "iptal" && ebelgeDetayi.ebelge.durum !== "iptal" && <Button type="button" variant="danger" onClick={() => void earsivIptalBildir(ebelgeDetayi.id)}>İptali entegratöre bildir</Button>}
             </div>
           </div>
         </HizliKayitPaneli>
