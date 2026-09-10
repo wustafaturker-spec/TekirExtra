@@ -41,6 +41,7 @@ export const baglantiOlusturSemasi = z.object({
     belgeSeriOneki: z.string().min(1).max(8).optional(),
     earsivSeriOneki: z.string().min(1).max(8).optional(),
     eirsaliyeSeriOneki: z.string().length(3, "e-İrsaliye seri öneki 3 harf olmalıdır").optional(),
+    eirsaliyeYanitSeriOneki: z.string().length(3, "e-İrsaliye yanıt seri öneki 3 harf olmalıdır").optional(),
     testOrtami: z.boolean().optional(),
     postaKutusuEtiketi: z.string().optional(),
     saticiId: z.string().optional(),
@@ -54,6 +55,9 @@ export const baglantiOlusturSemasi = z.object({
   // GİB e-Fatura ve e-Arşiv serilerinin farklı olmasını ister; aynı önek
   // girilirse hata gönderim anında entegratörden döner, formda yakalamak daha
   // ucuz.
+  // Yanıt belgesi irsaliyeden ayrı bir belge; aynı seriden numara alırlarsa
+  // seri içinde numara çakışır.
+  if (girdi.config.eirsaliyeYanitSeriOneki && girdi.config.eirsaliyeYanitSeriOneki === girdi.config.eirsaliyeSeriOneki) ctx.addIssue({ code: "custom", path: ["config", "eirsaliyeYanitSeriOneki"], message: "Yanıt serisi e-İrsaliye serisinden farklı olmalıdır" });
   if (girdi.config.earsivSeriOneki && girdi.config.earsivSeriOneki === girdi.config.belgeSeriOneki) ctx.addIssue({ code: "custom", path: ["config", "earsivSeriOneki"], message: "e-Arşiv serisi e-Fatura serisinden farklı olmalıdır" });
   if (girdi.aile === "banka" && girdi.saglayici === "webhook" && (!girdi.config.apiAnahtari || girdi.config.apiAnahtari.length < 24)) ctx.addIssue({ code: "custom", path: ["config", "apiAnahtari"], message: "Banka bağlantısı erişim anahtarı en az 24 karakter olmalıdır" });
   if (girdi.aile === "banka" && girdi.saglayici === "webhook" && !girdi.config.bankaHesapId) ctx.addIssue({ code: "custom", path: ["config", "bankaHesapId"], message: "Banka hesabı zorunludur" });

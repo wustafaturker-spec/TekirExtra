@@ -217,10 +217,9 @@ function receiptAdviceXml(
     deger.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
   const bugun = new Date();
   const tarih = bugun.toISOString().slice(0, 10);
-  // Yanıt belgesinin kendi numarası: GİB 16 karakter ister. Kalıcı bir yanıt
-  // sayacımız yok; gün içi sıra zamandan türetiliyor — yanıt sayacı açılmalı.
-  const sira = String(Math.floor((bugun.getTime() % 86_400_000) / 10)).padStart(9, "0");
-  const no = `${seriOneki}${bugun.getFullYear()}${sira}`;
+  // Numarayı sağlayıcı atar: UBL'e yalnız seri öneki yazılır, tam numara
+  // yükleme yanıtından okunur (EBLG-16'nın yanıt belgesindeki karşılığı).
+  const no = seriOneki;
   const irsaliyeNo = ublAlan(kaynakXml, "", "ID");
   const irsaliyeTarihi = ublAlan(kaynakXml, "", "IssueDate") || tarih;
   const taraf = (blok: string) => {
@@ -792,15 +791,20 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
     kaynakXml: string,
   ): Promise<GonderimSonuc> {
     try {
-      const receipt = receiptAdviceXml(belgeRef, yanit, gerekce, kaynakXml, cfg.eirsaliyeSeriOneki ?? "IRS");
+      if (!cfg.eirsaliyeYanitSeriOneki) {
+        return { basarili: false, hataMesaji: "e-İrsaliye yanıt serisi tanımlı değil; Ayarlar > Entegratörler ekranından yanıt seri önekini girin" };
+      }
+      const receipt = receiptAdviceXml(belgeRef, yanit, gerekce, kaynakXml, cfg.eirsaliyeYanitSeriOneki);
       const form = new FormData();
       form.set("File", new Blob([receipt.xml], { type: "application/xml" }), `${receipt.uuid}.xml`);
       form.set("AnswerType", yanit === "kabul" ? "AllAccepted" : "AllRejected");
-      await this.cagir(cfg, "edespatch", `/v1/incoming/despatches/${encodeURIComponent(belgeRef)}/receiptadvice`, {
-        metot: "POST",
-        govde: form,
-      });
-      return { basarili: true, belgeRef: receipt.uuid };
+      const sonuc = await this.cagir<{ uuid?: string; documentNumber?: string }>(
+        cfg,
+        "edespatch",
+        `/v1/incoming/despatches/${encodeURIComponent(belgeRef)}/receiptadvice`,
+        { metot: "POST", govde: form },
+      );
+      return { basarili: true, belgeRef: sonuc?.uuid ?? receipt.uuid, belgeNo: sonuc?.documentNumber };
     } catch (hata) {
       return { basarili: false, hataMesaji: hata instanceof Error ? hata.message : "İrsaliye yanıtı gönderilemedi" };
     }

@@ -43,6 +43,13 @@ export interface EntegratorConfig {
    */
   eirsaliyeSeriOneki?: string;
   /**
+   * e-İrsaliye **yanıt** serisinin öneki. Yanıt, irsaliyeden ayrı bir belgedir
+   * ve sağlayıcıda ayrı seri ailesinde durur (NES'te `answerseries`; varsayılan
+   * `YNT`). İrsaliyenin aksine numarayı sağlayıcı atar — yanıt kâğıtla yola
+   * çıkmaz, elde numarası olmasını gerektiren bir sebep yok (EBLG-24).
+   */
+  eirsaliyeYanitSeriOneki?: string;
+  /**
    * Bağlantı entegratörün **test ortamına** bakıyor. Test ortamlarında
    * entegratör sentetik firma kimlikleri verir (NES'in `1234567801`'i gibi)
    * ve bunlar VKN kontrol hanesini tutmaz. Bu bayrak yalnızca gönderen VKN

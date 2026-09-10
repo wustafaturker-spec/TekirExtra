@@ -303,6 +303,28 @@ describe("NesEntegratorAdapter", () => {
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ uuids: ["arsiv-uuid-1"] });
   });
 
+  it("yanıt numarasını sağlayıcının verdiği numaradan alır", async () => {
+    // Yanıt serisi NES'te otomatik numaralandırılıyor (answerseries); numarayı
+    // saatten türetmek `GBZ2026006697162` gibi anlamsız numaralar üretiyordu.
+    const kaynak = `<DespatchAdvice xmlns:cac="urn:cac" xmlns:cbc="urn:cbc"><cbc:ID>TYH1</cbc:ID><cac:DespatchLine><cbc:ID>1</cbc:ID><cbc:DeliveredQuantity unitCode="C62">2</cbc:DeliveredQuantity><cac:Item><cbc:Name>Ürün</cbc:Name></cac:Item></cac:DespatchLine></DespatchAdvice>`;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ uuid: "yanit-uuid", documentNumber: "YNT2026000000002" })));
+
+    const sonuc = await new NesEntegratorAdapter().irsaliyeYanitiGonder!({ ...config, eirsaliyeYanitSeriOneki: "YNT" }, "irs-1", "kabul", undefined, kaynak);
+
+    expect(sonuc).toMatchObject({ basarili: true, belgeRef: "yanit-uuid", belgeNo: "YNT2026000000002" });
+  });
+
+  it("yanıt serisi tanımlı değilse yanıt göndermez", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const sonuc = await new NesEntegratorAdapter().irsaliyeYanitiGonder!(config, "irs-1", "kabul", undefined, "<DespatchAdvice/>");
+
+    expect(sonuc.basarili).toBe(false);
+    expect(sonuc.hataMesaji).toContain("yanıt seri önekini girin");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("iptal edilebilir belge bulunamazsa sebebini ikisiyle birlikte söyler", async () => {
     // NES iptal edilmiş belgeyi bu listede döndürmüyor, dolayısıyla boş yanıt
     // "yok" ile "zaten iptal"i ayırt etmiyor.
@@ -377,7 +399,7 @@ describe("NesEntegratorAdapter", () => {
     const fetchMock = vi.fn().mockResolvedValue(yanit(""));
     vi.stubGlobal("fetch", fetchMock);
 
-    await new NesEntegratorAdapter().irsaliyeYanitiGonder!({ ...config, eirsaliyeSeriOneki: "GBZ" }, "irs-1", "kabul", undefined, kaynak);
+    await new NesEntegratorAdapter().irsaliyeYanitiGonder!({ ...config, eirsaliyeYanitSeriOneki: "YNT" }, "irs-1", "kabul", undefined, kaynak);
 
     const xml = await (fetchMock.mock.calls[0][1].body.get("File") as Blob).text();
     expect(xml.indexOf("<cbc:ProfileID>")).toBeLessThan(xml.indexOf("<cbc:ID>"));
@@ -385,7 +407,8 @@ describe("NesEntegratorAdapter", () => {
     expect(xml).toContain("<cbc:ID>TYH2026000000016</cbc:ID>");
     expect(xml).toContain("Gönderen A.Ş.");
     expect(xml).toContain(`<cbc:ReceivedQuantity unitCode="C62">5</cbc:ReceivedQuantity>`);
-    expect(/<cbc:ID>GBZ\d{13}<\/cbc:ID>/.test(xml)).toBe(true);
+    // Numarayı sağlayıcı atar; UBL'e yalnız yanıt serisinin öneki yazılır.
+    expect(xml).toContain("<cbc:ID>YNT</cbc:ID>");
   });
 
   it("reddedilen irsaliye satırında alınan miktar sıfırdır", async () => {
@@ -393,7 +416,7 @@ describe("NesEntegratorAdapter", () => {
     const fetchMock = vi.fn().mockResolvedValue(yanit(""));
     vi.stubGlobal("fetch", fetchMock);
 
-    await new NesEntegratorAdapter().irsaliyeYanitiGonder!(config, "irs-1", "ret", "Mal hasarlı geldi", kaynak);
+    await new NesEntegratorAdapter().irsaliyeYanitiGonder!({ ...config, eirsaliyeYanitSeriOneki: "YNT" }, "irs-1", "ret", "Mal hasarlı geldi", kaynak);
 
     const xml = await (fetchMock.mock.calls[0][1].body.get("File") as Blob).text();
     expect(xml).toContain(`<cbc:ReceivedQuantity unitCode="C62">0</cbc:ReceivedQuantity>`);

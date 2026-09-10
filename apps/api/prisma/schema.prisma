@@ -2944,6 +2944,8 @@ model GelenEirsaliye {
   xmlIcerik      String              @map("xml_icerik")
   durum          GelenEirsaliyeDurum @default(yeni)
   yanitRef       String?             @map("yanit_ref")
+  /// Yanıt belgesinin numarası; sağlayıcı atar (EBLG-24).
+  yanitBelgeNo   String?             @map("yanit_belge_no")
   yanitGerekcesi String?             @map("yanit_gerekcesi")
   createdAt      DateTime            @default(now()) @map("created_at")
   updatedAt      DateTime            @updatedAt @map("updated_at")
