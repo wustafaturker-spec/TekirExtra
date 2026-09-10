@@ -673,6 +673,7 @@ model CariHesap {
   gelirKayitlari        GelirKaydi[]
   stokTedarikcilikleri  StokTedarikci[]
   belgeler              Belge[]
+  tasidigiBelgeler      Belge[]             @relation("BelgeTasiyici")
   ekstreSatirlari       BankaEkstreSatir[]
   pazaryeriSiparisleri  PazaryeriSiparis[]
   posTahsilatlari       PosTahsilat[]
@@ -2868,6 +2869,16 @@ model Belge {
   genelToplam          Decimal          @map("genel_toplam") @db.Decimal(15, 2)
   aciklama             String?
   notlar               String?
+  /// e-İrsaliye taşıma bilgileri (EBLG-23). Yalnız irsaliyede anlamlı.
+  /// Malın fiilen yola çıktığı an; boşsa onay anı yazılır.
+  fiiliSevkZamani      DateTime?        @map("fiili_sevk_zamani")
+  /// Taşıyan nakliyeci/kargo firması. Boşsa malı kendi aracımızla götürdük.
+  tasiyiciCariId       String?          @map("tasiyici_cari_id") @db.Uuid
+  plaka                String?
+  dorsePlaka           String?          @map("dorse_plaka")
+  soforAdi             String?          @map("sofor_adi")
+  soforSoyadi          String?          @map("sofor_soyadi")
+  soforTckn            String?          @map("sofor_tckn")
   kaynakBelgeId        String?          @map("kaynak_belge_id") @db.Uuid
   faturaId             String?          @map("fatura_id") @db.Uuid
   b2bIdempotencyAnahtari String?         @map("b2b_idempotency_anahtari") @db.Uuid
@@ -2875,6 +2886,7 @@ model Belge {
   updatedAt            DateTime         @updatedAt @map("updated_at")
 
   cari         CariHesap       @relation(fields: [cariId], references: [id])
+  tasiyiciCari CariHesap?      @relation("BelgeTasiyici", fields: [tasiyiciCariId], references: [id])
   depo         Depo?           @relation(fields: [depoId], references: [id])
   kaynakBelge  Belge?          @relation("BelgeZinciri", fields: [kaynakBelgeId], references: [id])
   turetilenler Belge[]         @relation("BelgeZinciri")

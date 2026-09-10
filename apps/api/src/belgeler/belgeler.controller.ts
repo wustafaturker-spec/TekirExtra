@@ -19,6 +19,7 @@ import {
   belgeDonusturSemasi,
   belgeGuncelleSemasi,
   belgeOlusturSemasi,
+  tasimaBilgisiSemasi,
   topluFaturaSemasi,
 } from "./belgeler.semalar";
 
@@ -58,6 +59,13 @@ export class BelgelerController {
   @Roller("muhasebe", "satis")
   async olustur(@Body() govde: unknown) {
     return this.belgelerService.olustur(ayristir(belgeOlusturSemasi, govde));
+  }
+
+  /** Onaylanmış irsaliyede de açık kalan tek alan kümesi (EBLG-23). */
+  @Patch(":id/tasima-bilgisi")
+  @Roller("muhasebe", "satis")
+  async tasimaBilgisi(@Param("id") id: string, @Body() govde: unknown) {
+    return this.belgelerService.tasimaBilgisiGuncelle(id, ayristir(tasimaBilgisiSemasi, govde));
   }
 
   @Patch(":id")

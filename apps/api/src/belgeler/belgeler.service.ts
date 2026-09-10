@@ -24,6 +24,7 @@ import { belgePdfHtml } from "./belge-pdf";
 import type {
   belgeGuncelleSemasi,
   belgeOlusturSemasi,
+  tasimaBilgisiSemasi,
   topluFaturaSemasi,
 } from "./belgeler.semalar";
 
@@ -211,6 +212,20 @@ export class BelgelerService {
     };
   }
 
+  /** Taşıma alanları yalnız irsaliyede anlamlıdır; başka türde yazılmaz. */
+  private tasimaAlanlari(girdi: { tur?: string; fiiliSevkZamani?: string | null; tasiyiciCariId?: string | null; plaka?: string | null; dorsePlaka?: string | null; soforAdi?: string | null; soforSoyadi?: string | null; soforTckn?: string | null }) {
+    if (girdi.tur !== "irsaliye") return {};
+    return {
+      fiiliSevkZamani: girdi.fiiliSevkZamani ? new Date(girdi.fiiliSevkZamani) : null,
+      tasiyiciCariId: girdi.tasiyiciCariId ?? null,
+      plaka: girdi.plaka ?? null,
+      dorsePlaka: girdi.dorsePlaka ?? null,
+      soforAdi: girdi.soforAdi ?? null,
+      soforSoyadi: girdi.soforSoyadi ?? null,
+      soforTckn: girdi.soforTckn ?? null,
+    };
+  }
+
   async olustur(girdi: z.infer<typeof belgeOlusturSemasi>) {
     const { tenantId, userId } = aktifBaglam();
     await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "belge oluşturma");
@@ -256,10 +271,35 @@ export class BelgelerService {
           ...this.toplamAlanlari(hesap),
           aciklama: girdi.aciklama,
           notlar: girdi.notlar,
+          ...this.tasimaAlanlari(girdi),
         },
       });
       await this.satirlariYaz(tx, belge.id, hesap.satirlar, girdi.satirlar);
       return this.gorunum(belge);
+    });
+  }
+
+  /**
+   * Taşıma bilgilerini onaylanmış irsaliyede de günceller (EBLG-23). Şoför,
+   * plaka ve fiili sevk zamanı çoğu zaman onaydan sonra, mal yüklenirken
+   * belli oluyor; belgenin ticari içeriği kilitli kaldığı için bunu açmak
+   * onay kilidini zayıflatmaz. e-İrsaliye gönderildikten sonra kapanır.
+   */
+  async tasimaBilgisiGuncelle(id: string, girdi: z.infer<typeof tasimaBilgisiSemasi>) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const belge = await tx.belge.findUnique({ where: { id }, include: { eirsaliye: true } });
+      if (!belge) throw new NotFoundException("Belge bulunamadı");
+      if (belge.tur !== "irsaliye") throw new BadRequestException("Taşıma bilgisi yalnızca irsaliyede tutulur");
+      if (belge.durum === "iptal") throw new BadRequestException("İptal edilmiş belgenin taşıma bilgisi değiştirilemez");
+      if (belge.eirsaliye && belge.eirsaliye.durum !== "hata") {
+        throw new BadRequestException("e-İrsaliye gönderilmiş belgenin taşıma bilgisi değiştirilemez");
+      }
+      const guncel = await tx.belge.update({
+        where: { id },
+        data: this.tasimaAlanlari({ ...girdi, tur: "irsaliye" }),
+      });
+      return this.gorunum(guncel);
     });
   }
 
@@ -281,6 +321,13 @@ export class BelgelerService {
       genelIskontoTutari: girdi.genelIskontoTutari ?? mevcut.genelIskontoTutari,
       aciklama: girdi.aciklama ?? mevcut.aciklama,
       notlar: girdi.notlar ?? mevcut.notlar,
+      fiiliSevkZamani: girdi.fiiliSevkZamani !== undefined ? girdi.fiiliSevkZamani : mevcut.fiiliSevkZamani,
+      tasiyiciCariId: girdi.tasiyiciCariId !== undefined ? girdi.tasiyiciCariId : mevcut.tasiyiciCariId,
+      plaka: girdi.plaka !== undefined ? girdi.plaka : mevcut.plaka,
+      dorsePlaka: girdi.dorsePlaka !== undefined ? girdi.dorsePlaka : mevcut.dorsePlaka,
+      soforAdi: girdi.soforAdi !== undefined ? girdi.soforAdi : mevcut.soforAdi,
+      soforSoyadi: girdi.soforSoyadi !== undefined ? girdi.soforSoyadi : mevcut.soforSoyadi,
+      soforTckn: girdi.soforTckn !== undefined ? girdi.soforTckn : mevcut.soforTckn,
       satirlar:
         girdi.satirlar ??
         mevcut.satirlar.map((s) => ({
@@ -473,7 +520,13 @@ export class BelgelerService {
 
       const guncel = await tx.belge.update({
         where: { id },
-        data: { durum: "onaylandi", no },
+        data: {
+          durum: "onaylandi",
+          no,
+          // Fiili sevk zamanı girilmediyse onay anı yazılır: mal onaylanan
+          // irsaliyeyle yola çıkar (EBLG-23).
+          ...(irsaliye && !belge.fiiliSevkZamani ? { fiiliSevkZamani: new Date() } : {}),
+        },
       });
       return this.gorunum(guncel);
     });
@@ -907,6 +960,13 @@ export class BelgelerService {
     genelToplam: Prisma.Decimal;
     aciklama: string | null;
     notlar: string | null;
+    fiiliSevkZamani?: Date | null;
+    tasiyiciCariId?: string | null;
+    plaka?: string | null;
+    dorsePlaka?: string | null;
+    soforAdi?: string | null;
+    soforSoyadi?: string | null;
+    soforTckn?: string | null;
     kaynakBelgeId: string | null;
     faturaId: string | null;
   }) {
@@ -934,6 +994,13 @@ export class BelgelerService {
       genelToplam: D(k.genelToplam).toFixed(2),
       aciklama: k.aciklama,
       notlar: k.notlar,
+      fiiliSevkZamani: k.fiiliSevkZamani?.toISOString() ?? null,
+      tasiyiciCariId: k.tasiyiciCariId ?? null,
+      plaka: k.plaka ?? null,
+      dorsePlaka: k.dorsePlaka ?? null,
+      soforAdi: k.soforAdi ?? null,
+      soforSoyadi: k.soforSoyadi ?? null,
+      soforTckn: k.soforTckn ?? null,
       kaynakBelgeId: k.kaynakBelgeId,
       faturaId: k.faturaId,
     };

@@ -45,6 +45,18 @@ export const belgeOlusturSemasi = z.object({
   genelIskontoTutari: pozitifOndalik.default("0"),
   aciklama: z.string().max(500).optional().nullable(),
   notlar: z.string().max(2000).optional().nullable(),
+  /**
+   * e-İrsaliye taşıma bilgileri (EBLG-23). Diğer belge türlerinde yok sayılır;
+   * zorunluluk irsaliye onayında değil, e-İrsaliye gönderiminde denetlenir.
+   */
+  fiiliSevkZamani: z.iso.datetime({ offset: true, message: "Geçersiz tarih/saat" }).optional().nullable(),
+  /** Taşıyan nakliyeci/kargo carisi; boşsa mal kendi aracımızla götürülür. */
+  tasiyiciCariId: z.string().uuid().optional().nullable(),
+  plaka: z.string().max(20).optional().nullable(),
+  dorsePlaka: z.string().max(20).optional().nullable(),
+  soforAdi: z.string().max(80).optional().nullable(),
+  soforSoyadi: z.string().max(80).optional().nullable(),
+  soforTckn: z.string().regex(/^\d{11}$/, "Şoför TCKN 11 haneli olmalıdır").optional().nullable(),
   satirlar: z.array(belgeSatirSemasi).min(1, "Belgede en az bir satır bulunmalıdır"),
 });
 
@@ -59,4 +71,19 @@ export const belgeDonusturSemasi = z.object({
 /** FTR-13: bekleyen sipariş/irsaliyeleri tek faturada birleştirme. */
 export const topluFaturaSemasi = z.object({
   belgeIds: z.array(z.string().uuid()).min(1, "En az bir belge seçin"),
+});
+
+/**
+ * Onaylanmış irsaliyede yalnız taşıma bilgileri düzenlenebilir (EBLG-23).
+ * Mal yola çıkarken bilinen bilgiler bunlar; belgenin ticari içeriği kilitli
+ * kalır, e-İrsaliye gönderildikten sonra bunlar da kilitlenir.
+ */
+export const tasimaBilgisiSemasi = belgeOlusturSemasi.pick({
+  fiiliSevkZamani: true,
+  tasiyiciCariId: true,
+  plaka: true,
+  dorsePlaka: true,
+  soforAdi: true,
+  soforSoyadi: true,
+  soforTckn: true,
 });
