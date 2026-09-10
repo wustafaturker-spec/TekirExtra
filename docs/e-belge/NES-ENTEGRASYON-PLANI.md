@@ -389,6 +389,63 @@ Doğru alan `archiveDocumentStatus`: `Waiting`/`WaitingSign` → kuyrukta,
 `familyName: "Test)"` olarak gitti. Gerçek kişi kartına ayrı ad/soyad alanı
 açılması gereken sebep bu.
 
+## e-İrsaliye uçtan uca doğrulama (2026-09-10)
+
+Satış irsaliyesi **`GBZ2026000800001`** canlı NES test ortamında uçtan uca
+gitti: onay → gönderim → `iletildi` + entegratör referansı → durum sorgusu
+(`EnvelopeIsWaitingToBeSendedToReceiverByGib` → kuyrukta, "ZARF BAŞARIYLA
+İŞLENDİ"). Gelen tarafta iki e-İrsaliye çekildi ve birine **kabul** yanıtı
+gönderildi.
+
+**Kendi ürettiğimiz iki UBL de baştan yazıldı.** DespatchAdvice ve
+ReceiptAdvice şema kontrolünü geçmiyordu; ikisi de artık UBL-TR 1.2.1
+örneklerindeki eleman sırasına göre kuruluyor.
+
+**Yerel doğrulama:** UBL-TR 1.2.1 XSD seti depoda —
+`docs/e-belge/Sovos Bulut e-İrsaliye WS API v1.3/EK1 - Teknik Belgeler/
+UBL-TR 1.2.1/`. Ürettiğimiz XML entegratöre gitmeden `lxml` ile bu şemalara
+karşı doğrulanabiliyor; sıra hatalarının çoğu böyle, tek bir NES çağrısı
+harcamadan bulundu. Aynı klasördeki `XML/DespatchAdvice.xml` ve
+`XML/ReceiptAdvice.xml` GİB'in kendi örnekleri, sıra için başvurulacak yer.
+
+### Bulunan kusurlar
+
+| Kusur | Belirti |
+|---|---|
+| `cbc:UUID`, `cbc:ID`'den hemen sonra geliyordu | `FAILED_XML_SCHEMA_CHECK … expected 'CopyIndicator'` |
+| `ProfileID` `SEVK` yazılıyordu | `SEVK` belgenin **türüdür** (`DespatchAdviceTypeCode`); profil `TEMELIRSALIYE` |
+| `cac:Party` içinde `PartyName` `PartyIdentification`'dan önceydi | Şema sırası |
+| `cac:OrderLineReference` yoktu | XSD'de `DespatchLine` içinde zorunlu |
+| Teslimat adresi hiç yazılmıyordu | `cac:Shipment/cac:Delivery/cac:DeliveryAddress/cbc:CityName …` |
+| Posta kodu yazılmıyordu | `Hatalı Posta Kodu :''` |
+| Taşıyan bilgisi yoktu | `DriverPerson veya CarrierParty alanlarından en az birini içermelidir` |
+| Belge numarası 13 karakterdi | `DOKUMAN NUMARASI (<cbc:ID>) GECERSIZ` — GİB 16 ister |
+| ReceiptAdvice'ta `ProfileID` yok, sıra yanlış | `FAILED_XML_SCHEMA_CHECK … expected 'ProfileID'` |
+| Gelen irsaliyede gönderen boş kaydediliyordu | NES irsaliyede `despatchSupplierParty` diyor, adaptör faturadaki `accountingSupplierParty`'yi okuyordu |
+
+### Numarayı e-İrsaliye'de biz atarız
+
+e-Fatura ve e-Arşiv'de numarayı sağlayıcı atar (EBLG-16). **e-İrsaliye'de
+tersi geçerli:** numara sevkten önce gerekir, kâğıt malla birlikte yola çıkar.
+Bu yüzden numarayı belge modülü üretir ve entegratördeki serinin **elle
+numaralandırılan** (NES'te `isPortal: false`) bir seri olması gerekir; otomatik
+seride NES tam numarayı `OTOMATIK NUMARALANDIRILAN SERIDIR!` diyerek reddeder.
+
+Seri öneki artık bağlantıda (`eirsaliyeSeriOneki`, 3 harf); sabit `IRS`
+yalnızca varsayılan. İrsaliye numarası 16 karaktere çıkarıldı (önek + yıl +
+9 hane); teklif ve sipariş dışarı çıkmayan iç belgeler olduğu için 6 hanede
+kaldı.
+
+**Kurulum notu:** mevcut bir seriyi devralan firmada belge sayacı serinin
+kaldığı yerden başlatılmalı — sıfırdan başlarsa entegratör `RECORD_EXISTS`
+döndürür (test hesabında bu yaşandı).
+
+### Çok kurallı şematron yanıtı kırpılıyordu
+
+Hata metni 400 karakterde kesiliyor ve bir belge birden çok kurala takılınca
+ikinci kural yarım kalıyordu. Sınır 1000'e çıkarıldı ve kesme kural sınırında
+yapılıyor; sığmayan kural sayısı `(+N kural daha)` diye yazılıyor.
+
 ## Yetki kapsamı (scope)
 
 Dokümantasyon "test ortamında scope'lar geçerli değildir" diyor; **doğru değil,
@@ -429,6 +486,10 @@ alakasız bir belgenin numarası yazılabilirdi.
 | e-Arşiv rapor uçları | `earchive:reports:read` scope'u anahtarda hâlâ yok; uç `502` ile bunu söylüyor ama rapor akışı canlıda denenmedi. |
 | Gerçek kişi ad/soyad | Cari kartında tek `unvan` var; UBL'deki `FirstName`/`FamilyName` ayrımı son kelimeden türetiliyor. |
 | e-Arşiv gönderim şekli | Sabit `ELEKTRONIK`; `KAGIT` seçeneği yok. |
+| e-İrsaliye taşıyan bilgisi | Şoför, plaka ve taşıyıcı firma kartta tutulmuyor; UBL'e malı **kendi aracıyla götüren firma** yazılıyor. Kargoyla sevk eden firmada bu yanlış — taşıyan alanları açılmalı. |
+| e-İrsaliye fiili sevk saati | Kartta yok; kaydın oluşturulma saati yazılıyor. |
+| İrsaliye yanıtı numarası | Kalıcı sayaç yok, gün içi sıra zamandan türetiliyor. Yanıt sayacı açılmalı. |
+| Gelen irsaliye yanıtı | `hataMesaji` alanına başarı açıklaması da yazılıyor ("ZARF BAŞARIYLA İŞLENDİ"). |
 
 ## Test erişimi — çözüldü
 
