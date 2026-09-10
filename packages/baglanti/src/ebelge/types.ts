@@ -96,6 +96,11 @@ export interface BelgeDurumSonuc {
   belgeRef: string;
   durum: BelgeDurum;
   detay?: string;
+  /**
+   * Belge GİB'e raporlanmış mı (yalnız e-Arşiv). Raporlanmış bir e-Arşiv
+   * faturası artık uygulamadan iptal edilmez; iptal bildirimi ayrı yürür.
+   */
+  raporlandi?: boolean;
 }
 
 export interface GelenBelge {

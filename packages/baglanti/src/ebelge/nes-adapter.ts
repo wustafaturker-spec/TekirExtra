@@ -519,7 +519,7 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
     if (belgeRef.startsWith(EARSIV_ONEKI)) {
       const uuid = belgeRef.slice(EARSIV_ONEKI.length);
       try {
-        const fatura = await this.cagir<{ archiveDocumentStatus?: string; isCanceled?: boolean; cancelDate?: string }>(
+        const fatura = await this.cagir<{ archiveDocumentStatus?: string; isCanceled?: boolean; cancelDate?: string; reportDivisionStatus?: string }>(
           cfg,
           "earchive",
           `/v1/invoices/${encodeURIComponent(uuid)}`,
@@ -541,7 +541,10 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
         const iptal = fatura?.isCanceled
           ? `Belge NES'te iptal edilmiş${fatura.cancelDate ? ` (${fatura.cancelDate})` : ""}`
           : undefined;
-        return { belgeRef, durum, detay: iptal };
+        // `reportDivisionStatus` belgenin GİB raporu yolculuğu:
+        // None → XmlCreateWait → XmlCreated → XmlSigned → Query → Completed.
+        // `Completed` olan belge GİB'e raporlanmıştır.
+        return { belgeRef, durum, detay: iptal, raporlandi: fatura?.reportDivisionStatus === "Completed" };
       } catch (hata) {
         return { belgeRef, durum: "hata", detay: hata instanceof Error ? hata.message : "NES e-Arşiv durum sorgusu başarısız" };
       }

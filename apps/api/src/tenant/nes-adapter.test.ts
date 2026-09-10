@@ -323,7 +323,7 @@ describe("NesEntegratorAdapter", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ archiveDocumentStatus: "WaitingSign", isCanceled: false })));
 
     await expect(new NesEntegratorAdapter().durumSorgula(config, "EARSIV:arsiv-9")).resolves.toEqual({
-      belgeRef: "EARSIV:arsiv-9", durum: "kuyrukta", detay: undefined,
+      belgeRef: "EARSIV:arsiv-9", durum: "kuyrukta", detay: undefined, raporlandi: false,
     });
   });
 
@@ -380,6 +380,20 @@ describe("NesEntegratorAdapter", () => {
     expect(xml).toContain(`<cbc:ReceivedQuantity unitCode="C62">0</cbc:ReceivedQuantity>`);
     expect(xml).toContain("<cbc:Note>Mal hasarlı geldi</cbc:Note>");
     expect(fetchMock.mock.calls[0][1].body.get("AnswerType")).toBe("AllRejected");
+  });
+
+  it("GİB raporuna girmiş e-Arşiv belgesini raporlandı olarak bildirir", async () => {
+    // İptal kapısı buna bakıyor (EBLG-22): raporlanmış belge uygulamadan
+    // iptal edilmez.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ archiveDocumentStatus: "Signed", reportDivisionStatus: "Completed" })));
+
+    await expect(new NesEntegratorAdapter().durumSorgula(config, "EARSIV:arsiv-9")).resolves.toMatchObject({ raporlandi: true });
+  });
+
+  it("rapora girmemiş belgede raporlandı yanlıştır", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ archiveDocumentStatus: "Signed", reportDivisionStatus: "None" })));
+
+    await expect(new NesEntegratorAdapter().durumSorgula(config, "EARSIV:arsiv-9")).resolves.toMatchObject({ raporlandi: false });
   });
 
   it("API anahtarı yoksa bağlantı testi ağ çağrısı yapmaz", async () => {

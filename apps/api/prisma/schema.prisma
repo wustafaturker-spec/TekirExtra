@@ -42,6 +42,7 @@ enum BelgeDurum {
   kabul
   ret
   hata
+  iptal
 }
 
 enum AbonelikDurumu {
