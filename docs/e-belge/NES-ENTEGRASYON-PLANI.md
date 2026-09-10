@@ -362,10 +362,14 @@ edilemiyordu.
 **Karar (EBLG-22, 2026-09-10):** kural kanala ve belgenin rapor durumuna bakar.
 
 - e-Fatura: iptal yok, iade faturası düzenlenir. Kesilen e-Fatura geri alınmaz.
-- e-Arşiv: belge GİB raporuna girmediği sürece iptal edilir. Rapor durumu
-  entegratöre iptal anında sorulur (`reportDivisionStatus`); `Completed` ise
-  iptal durur ve kullanıcıya bu aşamadan sonra iptalin raporlama üzerinden
-  yürüdüğü söylenir.
+- e-Arşiv: fatura tarihinden itibaren **8 gün** içinde iptal edilir; süre
+  geçtiyse düzeltme yolu iade faturasıdır. Süre ayarlanabilir
+  (`ayarlar/ebelge > earsivIptalGunSayisi`, varsayılan 8).
+- **Rapor durumu engel değil, bilgidir.** İlk kurgu "GİB raporuna girmemişse
+  iptal edilir" diyordu; e-Arşiv raporu **günlük** gittiği için bu, mevzuatın
+  tanıdığı iptali ikinci günden itibaren reddederdi. Belge raporlanmışsa iptal
+  yine yapılır, muhasebeye iptalin de raporlanması gerektiğini söyleyen bir
+  bildirim düşer ([[bildirim-merkezi-bld]]).
 - **İptal tek adımdır:** fatura iptal edilirken belge entegratörde de iptal
   edilir. Entegratör çağrısı fatura iptalinin **kendi işleminin içinde** yapılır;
   başarısız olursa işlem geri alınır, böylece bizde iptal görünüp GİB'de canlı
@@ -374,13 +378,16 @@ edilemiyordu.
 - `BelgeDurum` kümesine `iptal` eklendi (göç `20260910190000_earsiv_iptal`);
   iptal edilmiş belge artık "iletildi" görünmüyor.
 
-Canlı doğrulandı: `SNC2026000000003` tek adımda iptal edildi — fatura `iptal`,
-e-belge kaydı `iptal`, NES'te `isCanceled: true`. e-Fatura olarak gönderilmiş
-`K072026000000016` ise beklendiği gibi reddedildi.
+Canlı doğrulandı: `SNC2026000000003` ve `SNC2026000000004` tek adımda iptal
+edildi — fatura `iptal`, e-belge kaydı `iptal`, NES'te `isCanceled: true`.
+e-Fatura olarak gönderilmiş `K072026000000016` reddedildi. Tarihi 9 gün geriye
+alınan fatura *"8 günlük iptal süresi geçmiş (9 gün); düzeltme için iade
+faturası düzenleyin"* ile durdu; ayar 30 güne çekilince aynı fatura kapıdan
+geçti.
 
-**Mevzuat tarafı:** raporlanmış e-Arşiv faturasının iptalinin nasıl yürüdüğü
-(raporda iptal bildirimi mi, İptal/İtiraz portalı mı) mali müşavire sorulacak;
-uygulama o noktada durup kullanıcıyı uyarıyor.
+**Süre nereden geliyor:** 8 gün yaygın uygulama
+(`parasut.com/blog/e-arsiv-fatura-nasil-iptal-edilir`), tebliğ metni değil.
+Ayar olmasının sebebi bu — mali müşavirin söylediği süreyle değiştirilebilir.
 
 ### `documentNumber` filtresi çalışıyor, `uuid` filtresi çalışmıyor
 
