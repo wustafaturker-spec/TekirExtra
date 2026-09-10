@@ -87,6 +87,7 @@ export default function EntegratorAyarlariSayfasi() {
       gondericiBirimEtiketi: (v.get("gondericiBirimEtiketi") as string) || undefined,
       postaKutusuEtiketi: (v.get("postaKutusuEtiketi") as string) || undefined,
       belgeSeriOneki: (v.get("belgeSeriOneki") as string) || undefined,
+      earsivSeriOneki: (v.get("earsivSeriOneki") as string) || undefined,
       testOrtami: v.get("testOrtami") === "on" || undefined,
     };
 
@@ -306,9 +307,14 @@ export default function EntegratorAyarlariSayfasi() {
                       </Field>
                     )}
                     {nes && (
-                      <Field label="Otomatik Seri Öneki">
-                        <Input name="belgeSeriOneki" maxLength={8} placeholder="K07 — boşsa numarayı TekirExtra atar" />
-                      </Field>
+                      <>
+                        <Field label="Otomatik Seri Öneki (e-Fatura)">
+                          <Input name="belgeSeriOneki" maxLength={8} placeholder="K07 — boşsa numarayı TekirExtra atar" />
+                        </Field>
+                        <Field label="Otomatik Seri Öneki (e-Arşiv)">
+                          <Input name="earsivSeriOneki" maxLength={8} placeholder="GİB e-Fatura serisinden farklı olmasını ister" />
+                        </Field>
+                      </>
                     )}
                     {sovos && <>
                       <Field label="e-Arşiv Servis URL"><Input name="earsivServisAdresi" placeholder="Sovos tarafından verilen e-Arşiv .svc adresi" /></Field>

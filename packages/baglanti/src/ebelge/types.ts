@@ -28,6 +28,13 @@ export interface EntegratorConfig {
    */
   belgeSeriOneki?: string;
   /**
+   * e-Arşiv serisinin öneki. GİB, e-Fatura ve e-Arşiv serilerinin **farklı**
+   * olmasını zorunlu tutar; aynı önekle gönderilen e-Arşiv belgesi şematron
+   * kontrolünde reddedilir (NES, 2026-09-10). Sağlayıcı numaralandırıyorsa
+   * e-Arşiv kanalı bu öneki kullanır.
+   */
+  earsivSeriOneki?: string;
+  /**
    * Bağlantı entegratörün **test ortamına** bakıyor. Test ortamlarında
    * entegratör sentetik firma kimlikleri verir (NES'in `1234567801`'i gibi)
    * ve bunlar VKN kontrol hanesini tutmaz. Bu bayrak yalnızca gönderen VKN

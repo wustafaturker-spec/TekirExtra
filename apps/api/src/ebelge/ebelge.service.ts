@@ -196,16 +196,32 @@ export class EbelgeService {
 
       // Otomatik numaralandıran seride UBL'e tam numara değil yalnızca seri
       // öneki yazılır; numarayı entegratör atar ve yanıtta döndürür (EBLG-16).
-      const saglayiciNumaralandirir = Boolean(adapter.belgeNoAtar && hazirlik.cfg.belgeSeriOneki);
+      // Önek kanala göre seçilir: GİB e-Fatura ile e-Arşiv serilerinin aynı
+      // olmasına izin vermez, aynı önekle giden e-Arşiv belgesi şematronda
+      // reddedilir. Kanal ancak mükellefiyet sorgusundan sonra bilindiği için
+      // eksik önek burada, gönderimden hemen önce yakalanır.
+      const seriOneki = tur === "earsiv" ? hazirlik.cfg.earsivSeriOneki : hazirlik.cfg.belgeSeriOneki;
+      if (adapter.belgeNoAtar && tur === "earsiv" && hazirlik.cfg.belgeSeriOneki && !seriOneki) {
+        throw new BadRequestException(
+          "Alıcı e-Fatura mükellefi değil, belge e-Arşiv olarak düzenlenecek. Ayarlar > Entegratörler ekranında e-Fatura serisinden farklı bir e-Arşiv seri öneki tanımlayın.",
+        );
+      }
+      const saglayiciNumaralandirir = Boolean(adapter.belgeNoAtar && seriOneki);
       const ublFatura = saglayiciNumaralandirir
-        ? { ...hazirlik.fatura, no: hazirlik.cfg.belgeSeriOneki! }
+        ? { ...hazirlik.fatura, no: seriOneki! }
         : hazirlik.fatura;
 
-      const xml = faturaUblUret(ublFatura, {
-        unvan: hazirlik.tenant.unvan,
-        vkn: hazirlik.tenant.vkn,
-        vergiDairesi: hazirlik.tenant.vergiDairesi || undefined,
-      });
+      // Profil belge kanalına göre değişir: e-Arşiv'de GİB `EARSIVFATURA` bekler,
+      // e-Fatura profili (temel/ticari) yalnız e-Fatura kanalında geçerlidir.
+      const xml = faturaUblUret(
+        ublFatura,
+        {
+          unvan: hazirlik.tenant.unvan,
+          vkn: hazirlik.tenant.vkn,
+          vergiDairesi: hazirlik.tenant.vergiDairesi || undefined,
+        },
+        { tur },
+      );
 
       // Yeniden denemede önce sağlayıcıya sorulur: önceki denemede ağ çağrısı
       // başarılı olup kalıcılaştırma düşmüş olabilir. Belge oradaysa yeniden

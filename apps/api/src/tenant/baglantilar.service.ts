@@ -39,6 +39,7 @@ export const baglantiOlusturSemasi = z.object({
     vknTckn: z.string().regex(/^\d{10,11}$/).optional(),
     gondericiBirimEtiketi: z.string().optional(),
     belgeSeriOneki: z.string().min(1).max(8).optional(),
+    earsivSeriOneki: z.string().min(1).max(8).optional(),
     testOrtami: z.boolean().optional(),
     postaKutusuEtiketi: z.string().optional(),
     saticiId: z.string().optional(),
@@ -49,6 +50,10 @@ export const baglantiOlusturSemasi = z.object({
 }).superRefine((girdi, ctx) => {
   const izinli = girdi.aile === "ebelge" ? EBELGE_SAGLAYICILARI : girdi.aile === "pazaryeri" ? PAZARYERI_SAGLAYICILARI : girdi.aile === "pos" ? POS_SAGLAYICILARI : girdi.aile === "sms" ? SMS_SAGLAYICILARI : girdi.aile === "banka" ? BANKA_SAGLAYICILARI : [];
   if (!(izinli as readonly string[]).includes(girdi.saglayici)) ctx.addIssue({ code: "custom", path: ["saglayici"], message: "Sağlayıcı bağlantı ailesiyle uyumlu değil" });
+  // GİB e-Fatura ve e-Arşiv serilerinin farklı olmasını ister; aynı önek
+  // girilirse hata gönderim anında entegratörden döner, formda yakalamak daha
+  // ucuz.
+  if (girdi.config.earsivSeriOneki && girdi.config.earsivSeriOneki === girdi.config.belgeSeriOneki) ctx.addIssue({ code: "custom", path: ["config", "earsivSeriOneki"], message: "e-Arşiv serisi e-Fatura serisinden farklı olmalıdır" });
   if (girdi.aile === "banka" && girdi.saglayici === "webhook" && (!girdi.config.apiAnahtari || girdi.config.apiAnahtari.length < 24)) ctx.addIssue({ code: "custom", path: ["config", "apiAnahtari"], message: "Banka bağlantısı erişim anahtarı en az 24 karakter olmalıdır" });
   if (girdi.aile === "banka" && girdi.saglayici === "webhook" && !girdi.config.bankaHesapId) ctx.addIssue({ code: "custom", path: ["config", "bankaHesapId"], message: "Banka hesabı zorunludur" });
   if (girdi.aile === "banka" && girdi.saglayici === "vomsis" && (!girdi.config.kullaniciAdi || !girdi.config.parola)) ctx.addIssue({ code: "custom", path: ["config"], message: "Vomsis App Key ve App Secret zorunludur" });

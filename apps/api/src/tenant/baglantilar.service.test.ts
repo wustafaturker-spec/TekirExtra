@@ -2,7 +2,7 @@ import { describe, expect, it, afterEach, vi } from "vitest";
 import { BadRequestException } from "@nestjs/common";
 import { istekBaglami } from "../core/istek-baglami";
 import { sifrele } from "../core/kripto";
-import { BaglantilarService } from "./baglantilar.service";
+import { BaglantilarService, baglantiOlusturSemasi } from "./baglantilar.service";
 
 // Şifreli config yazıp okuyabilmek için testlik sabit anahtar.
 process.env.BAGLANTI_SIFRELEME_ANAHTARI ??= "0".repeat(64);
@@ -107,5 +107,25 @@ describe("BaglantilarService bağlantı testi", () => {
     await baglamda(() => servis.test("b1"));
 
     expect(update).toHaveBeenCalledWith({ where: { id: "b1" }, data: { durum: "hata" } });
+  });
+});
+
+describe("BaglantilarService seri önekleri", () => {
+  // GİB e-Fatura ve e-Arşiv serilerinin farklı olmasını ister; aynı önek
+  // girilirse belge şematron kontrolünde reddediliyor (NES, 2026-09-10).
+  const govde = (config: Record<string, unknown>) => ({
+    aile: "ebelge", saglayici: "nes",
+    config: { kullaniciAdi: "test", apiAnahtari: "a", servisAdresi: "https://apitest.nes.com.tr", ...config },
+  });
+
+  it("e-Arşiv serisi e-Fatura serisiyle aynıysa kabul etmez", () => {
+    const sonuc = baglantiOlusturSemasi.safeParse(govde({ belgeSeriOneki: "K07", earsivSeriOneki: "K07" }));
+
+    expect(sonuc.success).toBe(false);
+    expect(sonuc.error!.issues[0].message).toContain("farklı olmalıdır");
+  });
+
+  it("farklı seriler geçerlidir", () => {
+    expect(baglantiOlusturSemasi.safeParse(govde({ belgeSeriOneki: "K07", earsivSeriOneki: "SNC" })).success).toBe(true);
   });
 });

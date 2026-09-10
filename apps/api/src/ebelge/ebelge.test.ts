@@ -291,6 +291,58 @@ describe("EbelgeService (EBLG-01..08)", () => {
     expect(mockAdapter.belgeAra).not.toHaveBeenCalled();
   });
 
+  /** e-Arşiv kanalı: alıcı e-Fatura mükellefi değil, kayıt ilk kez yaratılıyor. */
+  function earsivTx(config: Record<string, unknown>) {
+    return {
+      fatura: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "f1", tip: "satis", durum: "kesin", tarih: new Date(), no: null,
+          toplamBrut: 100, toplamMatrah: 100, toplamKdv: 20, genelToplam: 120,
+          dovizCinsi: "TRY", toplamSatirIskontosu: 0,
+          satirlar: [{ miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20, birimFiyat: 100, stok: { kod: "U1", ad: "Ürün 1" } }],
+          cari: { vknTckn: "10000000078", unvan: "Ayşe Yılmaz" },
+          ebelge: null,
+        }),
+      },
+      baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify(config) }) },
+      cariHesap: { update: vi.fn().mockResolvedValue({}) },
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114" }) },
+      ebelgeKayit: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        create: vi.fn().mockResolvedValue({ id: "eb1" }),
+        update: vi.fn().mockResolvedValue({ id: "eb1" }),
+      },
+      ebelgeArsiv: { upsert: vi.fn().mockResolvedValue({}) },
+    };
+  }
+
+  it("e-Arşiv serisi tanımlı değilse gönderimi durdurur (GİB ayrı seri ister)", async () => {
+    // Aynı önekle giden e-Arşiv belgesini GİB şematronu reddediyor; hatayı
+    // entegratörden almaktansa gönderimden önce söylemek gerekir.
+    mockAdapter.belgeGonder.mockClear();
+    mockAdapter.belgeNoAtar = true;
+    mockMukellefListesi.kanalBelirle.mockResolvedValueOnce({ vknTckn: "10000000078", eFaturaMukellefi: false });
+    mockTenantIslem.mockImplementation((tenantId: string, cb: (tx: unknown) => unknown) => cb(earsivTx({ kullaniciAdi: "test", belgeSeriOneki: "K07" })));
+
+    await expect(service.gonder("f1")).rejects.toThrow("e-Arşiv seri öneki");
+    expect(mockAdapter.belgeGonder).not.toHaveBeenCalled();
+  });
+
+  it("e-Arşiv kanalında UBL'e e-Arşiv serisinin önekini yazar", async () => {
+    mockAdapter.belgeGonder.mockClear();
+    mockAdapter.belgeNoAtar = true;
+    mockMukellefListesi.kanalBelirle.mockResolvedValueOnce({ vknTckn: "10000000078", eFaturaMukellefi: false });
+    mockTenantIslem.mockImplementation((tenantId: string, cb: (tx: unknown) => unknown) => cb(earsivTx({ kullaniciAdi: "test", belgeSeriOneki: "K07", earsivSeriOneki: "SNC" })));
+
+    await service.gonder("f1");
+
+    const belge = mockAdapter.belgeGonder.mock.calls[0][1];
+    expect(belge.tur).toBe("earsiv");
+    expect(belge.belgeNo).toBe("SNC");
+    expect(belge.xml).toContain("<cbc:ID>SNC</cbc:ID>");
+    expect(belge.xml).toContain("<cbc:ProfileID>EARSIVFATURA</cbc:ProfileID>");
+  });
+
   it("gelenBelgeleriCek fatura ÜRETMEZ, belgeyi gelen kutusuna yazar (EBLG-05 onay kapısı)", async () => {
     const mockTx = {
       baglanti: {
