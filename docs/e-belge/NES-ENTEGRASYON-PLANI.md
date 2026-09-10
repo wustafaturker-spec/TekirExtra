@@ -354,18 +354,33 @@ NES tarafı doğrulandı: `SNC2026000000002` adaptör üzerinden iptal edildi
 (`GET /earchive/v1/invoices?documentNumber=…` → `POST /earchive/v1/invoices/cancel`)
 ve belge NES'te `isCanceled: true`, `cancelDate: 2026-09-10T21:04:13` oldu.
 
-**Uygulama akışı ise kilitli.** İki kural birbirini kesiyor:
+**Uygulama akışı kilitliydi**: `FaturaService.iptal` `fatura.ebelge` varsa
+kanaldan bağımsız reddediyor, `earsivIptalBildir` ise faturanın önce iptal
+edilmiş olmasını istiyordu — yani e-Arşiv olarak çıkmış hiçbir fatura iptal
+edilemiyordu.
 
-- `FaturaService.iptal` → `e-Belge kaydı oluşmuş fatura iptal edilemez`
-  (`fatura.ebelge` varsa, kanaldan bağımsız).
-- `EbelgeService.earsivIptalBildir` → faturanın `durum === "iptal"` olmasını ister.
+**Karar (EBLG-22, 2026-09-10):** kural kanala ve belgenin rapor durumuna bakar.
 
-Yani gerçekten e-Arşiv olarak çıkmış hiçbir fatura bu yoldan iptal edilemez.
-Kural e-Fatura için doğru (kesilen e-Fatura iptal edilmez, iade faturası
-düzenlenir) ama e-Arşiv'de iptal normal mekanizmadır — bildirim ucunun varlık
-sebebi de bu. **Ürün kararı gerekiyor** ([[modul-onay-kapisi]] S-01): e-Arşiv
-kanalında iptale hangi koşulla izin verilecek (GİB raporu gönderilmeden önce mi,
-`reportDivisionStatus` neyse ona bakılarak mı).
+- e-Fatura: iptal yok, iade faturası düzenlenir. Kesilen e-Fatura geri alınmaz.
+- e-Arşiv: belge GİB raporuna girmediği sürece iptal edilir. Rapor durumu
+  entegratöre iptal anında sorulur (`reportDivisionStatus`); `Completed` ise
+  iptal durur ve kullanıcıya bu aşamadan sonra iptalin raporlama üzerinden
+  yürüdüğü söylenir.
+- **İptal tek adımdır:** fatura iptal edilirken belge entegratörde de iptal
+  edilir. Entegratör çağrısı fatura iptalinin **kendi işleminin içinde** yapılır;
+  başarısız olursa işlem geri alınır, böylece bizde iptal görünüp GİB'de canlı
+  duran belge kalmaz. Ayarlar ekranındaki "İptali entegratöre bildir" düğmesi
+  artık yalnız bildirimin düştüğü kayıtları kurtarmak için görünür.
+- `BelgeDurum` kümesine `iptal` eklendi (göç `20260910190000_earsiv_iptal`);
+  iptal edilmiş belge artık "iletildi" görünmüyor.
+
+Canlı doğrulandı: `SNC2026000000003` tek adımda iptal edildi — fatura `iptal`,
+e-belge kaydı `iptal`, NES'te `isCanceled: true`. e-Fatura olarak gönderilmiş
+`K072026000000016` ise beklendiği gibi reddedildi.
+
+**Mevzuat tarafı:** raporlanmış e-Arşiv faturasının iptalinin nasıl yürüdüğü
+(raporda iptal bildirimi mi, İptal/İtiraz portalı mı) mali müşavire sorulacak;
+uygulama o noktada durup kullanıcıyı uyarıyor.
 
 ### `documentNumber` filtresi çalışıyor, `uuid` filtresi çalışmıyor
 
@@ -479,8 +494,7 @@ alakasız bir belgenin numarası yazılabilirdi.
 | Konu | Durum |
 |---|---|
 | `earsivRaporDurum` | Uygulanmadı. `/histories` ve `/details` uçlarının yanıt şeması şemalarda tanımsız. Rapor listesi zaten bölüm başına `status` taşıdığı için ekran bu bilgiyi listeden okuyabilir. |
-| e-Arşiv iptal akışı | **Uygulamadan çalıştırılamıyor:** fatura iptali `e-Belge kaydı oluşmuş fatura iptal edilemez` diyor, iptal bildirimi ise faturanın önce iptal edilmiş olmasını şart koşuyor. Ürün kararı bekliyor (S-01). |
-| `BelgeDurum`'da iptal yok | İptal edilmiş e-Arşiv belgesi `iletildi` görünüyor, iptal yalnız `hataMesaji` alanında yazıyor. Enum'a değer eklemek göç ister. |
+| Raporlanmış e-Arşiv iptali | Uygulama `Completed` belgede duruyor; rapor sonrası iptalin nasıl bildirileceği mevzuat tarafında netleşmedi. |
 | e-Arşiv rapor tutarı | NES rapor bölümünde toplam tutar dönmüyor; `EarsivRapor.toplamTutar` "0" olarak doldurulur. |
 | Rate limit | Hiçbir şemada tanımlı değil, 429 davranışı bilinmiyor. NES'e soruldu. |
 | e-Arşiv rapor uçları | `earchive:reports:read` scope'u anahtarda hâlâ yok; uç `502` ile bunu söylüyor ama rapor akışı canlıda denenmedi. |
