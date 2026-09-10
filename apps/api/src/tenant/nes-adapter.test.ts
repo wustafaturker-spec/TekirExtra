@@ -287,7 +287,7 @@ describe("NesEntegratorAdapter", () => {
 
   it("e-Arşiv iptalinde fatura numarasını UUID'ye çevirip iptal eder", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(yanit({ data: [{ id: "arsiv-uuid-1" }] }))
+      .mockResolvedValueOnce(yanit({ data: [{ id: "arsiv-uuid-1", documentNumber: "TKR2026000000002" }] }))
       .mockResolvedValueOnce(yanit(""));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -301,6 +301,39 @@ describe("NesEntegratorAdapter", () => {
     expect(String(fetchMock.mock.calls[0][0])).toContain("documentNumber=TKR2026000000002");
     expect(fetchMock.mock.calls[1][0]).toBe("https://apitest.nes.com.tr/earchive/v1/invoices/cancel");
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ uuids: ["arsiv-uuid-1"] });
+  });
+
+  it("iptalde numarası tutmayan kaydı iptal etmez", async () => {
+    // İptal geri alınamaz; filtre bir gün sessizce yok sayılırsa başkasının
+    // faturası iptal edilirdi (`uuid` filtresinde yaşanan tuzağın aynısı).
+    const fetchMock = vi.fn().mockResolvedValueOnce(yanit({ data: [{ id: "baska-uuid", documentNumber: "TKR2026000000009" }] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const sonuc = await new NesEntegratorAdapter().earsivIptal(config, {
+      faturaNo: "TKR2026000000002", toplamTutar: "1180.00", iptalTarihi: new Date("2026-09-10T00:00:00Z"),
+    });
+
+    expect(sonuc.basarili).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("e-Arşiv durumunu archiveDocumentStatus alanından okur", async () => {
+    // NES yanıtında `recordStatus` diye bir alan yok; onu okumak imzalanmamış
+    // belgeyi de "iletildi" göstermek demekti (2026-09-10).
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ archiveDocumentStatus: "WaitingSign", isCanceled: false })));
+
+    await expect(new NesEntegratorAdapter().durumSorgula(config, "EARSIV:arsiv-9")).resolves.toEqual({
+      belgeRef: "EARSIV:arsiv-9", durum: "kuyrukta", detay: undefined,
+    });
+  });
+
+  it("NES'te iptal edilmiş e-Arşiv belgesini ayrıntıda bildirir", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ archiveDocumentStatus: "Signed", isCanceled: true, cancelDate: "2026-09-10T21:04:13" })));
+
+    const sonuc = await new NesEntegratorAdapter().durumSorgula(config, "EARSIV:arsiv-9");
+
+    expect(sonuc.durum).toBe("iletildi");
+    expect(sonuc.detay).toContain("iptal edilmiş");
   });
 
   it("API anahtarı yoksa bağlantı testi ağ çağrısı yapmaz", async () => {

@@ -447,15 +447,29 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
     if (belgeRef.startsWith(EARSIV_ONEKI)) {
       const uuid = belgeRef.slice(EARSIV_ONEKI.length);
       try {
-        const fatura = await this.cagir<{ recordStatus?: string }>(
+        const fatura = await this.cagir<{ archiveDocumentStatus?: string; isCanceled?: boolean; cancelDate?: string }>(
           cfg,
           "earchive",
           `/v1/invoices/${encodeURIComponent(uuid)}`,
         );
-        // e-Arşiv'de alıcı kabul/ret akışı yoktur; belge NES'te oluştuysa
-        // GİB'e raporlanmak üzere iletilmiş sayılır.
-        const kayit = fatura?.recordStatus;
-        return { belgeRef, durum: kayit === "Error" ? "hata" : kayit === "Waiting" ? "kuyrukta" : "iletildi" };
+        // Durum alanı `archiveDocumentStatus`; `recordStatus` diye bir alan
+        // yanıtta yok (2026-09-10 canlı yanıtla ölçüldü) — onu okumak her
+        // belgeyi "iletildi" göstermek demekti.
+        const kayit = fatura?.archiveDocumentStatus;
+        const durum =
+          kayit === "Error" || kayit === "XmlParseError" || kayit === "XmlFileDoesNotExist"
+            ? "hata"
+            : kayit === "Waiting" || kayit === "WaitingSign"
+              ? "kuyrukta"
+              : "iletildi";
+        // e-Arşiv'de alıcı kabul/ret akışı yoktur; belge imzalandıysa GİB'e
+        // raporlanmak üzere iletilmiş sayılır. İptal ayrı bir eksende
+        // (`isCanceled`) durur ve `BelgeDurum` kümesinde karşılığı yok; en
+        // azından görünür olsun diye ayrıntıya yazılır.
+        const iptal = fatura?.isCanceled
+          ? `Belge NES'te iptal edilmiş${fatura.cancelDate ? ` (${fatura.cancelDate})` : ""}`
+          : undefined;
+        return { belgeRef, durum, detay: iptal };
       } catch (hata) {
         return { belgeRef, durum: "hata", detay: hata instanceof Error ? hata.message : "NES e-Arşiv durum sorgusu başarısız" };
       }
@@ -553,10 +567,15 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
    */
   async earsivIptal(cfg: EntegratorConfig, girdi: EarsivIptalGirdi): Promise<BaglantiSonuc> {
     try {
-      const liste = await this.cagir<{ data?: { id?: string }[] }>(cfg, "earchive", "/v1/invoices", {
+      const liste = await this.cagir<{ data?: { id?: string; documentNumber?: string }[] }>(cfg, "earchive", "/v1/invoices", {
         sorgu: { documentNumber: girdi.faturaNo, page: 1, pageSize: 2 },
       });
-      const uuid = liste?.data?.find((satir) => satir.id)?.id;
+      // İptal geri alınamaz: dönen kaydın numarası sorduğumuzla birebir
+      // eşleşmedikçe iptal edilmez. `documentNumber` filtresi NES'te çalışıyor
+      // (2026-09-10 ölçüldü) ama `uuid` filtresi çözümleyemediğinde sessizce
+      // tüm listeyi döndürüyor; aynı sürprizin bedeli burada başkasının
+      // faturasını iptal etmek olurdu (EBLG-17'nin aynı dersi).
+      const uuid = liste?.data?.find((satir) => satir.id && satir.documentNumber === girdi.faturaNo)?.id;
       if (!uuid) return { basarili: false, mesaj: `İptal edilecek e-Arşiv faturası NES'te bulunamadı: ${girdi.faturaNo}` };
       await this.cagir(cfg, "earchive", "/v1/invoices/cancel", { metot: "POST", govde: { uuids: [uuid] } });
       return { basarili: true, mesaj: "e-Arşiv iptali NES'e bildirildi" };
