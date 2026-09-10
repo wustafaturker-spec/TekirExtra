@@ -265,6 +265,130 @@ değerini belgenin kimliği olarak saklıyor ve biz oraya fatura kimliğimizi
 yazıyoruz — uçtan uca denemede dönen `entegratorRef` faturanın kimliğiyle
 birebir aynıydı. Benimseme `ebelge_mevcut_belge_benimsendi` olayıyla loglanır.
 
+## e-Arşiv uçtan uca doğrulama (2026-09-10)
+
+e-Fatura mükellefi **olmayan** bir gerçek kişiye (TCKN `10000000078`) kesilen
+3.600 TL'lik satış faturası, canlı NES test ortamında uçtan uca doğrulandı:
+kesinleştir (numarasız) → kuyruk → gönderim → NES numarayı atadı
+(**`SNC2026000000002`**) → faturaya yazıldı → durum sorgusu `iletildi` → PDF
+numarayla açıldı. Kanal kararı lokal mükellef listesinden verildi; e-Arşiv'de
+alıcı posta kutusu sorulmaz.
+
+**Dört kusur bu deneme sırasında bulundu ve düzeltildi.** Dördü de yalnız
+e-Arşiv kanalında ortaya çıkıyor; e-Fatura akışı bunlardan etkilenmiyordu.
+
+**1. Profil e-Fatura profiliydi.** UBL üreticisi `ProfileID` alanına her zaman
+`TEMELFATURA`/`TICARIFATURA` yazıyordu; e-Arşiv'de GİB `EARSIVFATURA` bekler.
+
+> `Geçersiz cbc:ProfileID elemanı değeri : 'TEMELFATURA'. Geçerli cbc:ProfileID
+> değerleri için ProfileIDTypeEarchive listesine bakınız.`
+
+`faturaUblUret` artık kanalı (`tur`) parametre olarak alıyor. Profil kanaldan
+gelir; cari kartındaki temel/ticari tercihi (FTR-19) yalnız e-Fatura kanalında
+anlamlıdır.
+
+**2. Gerçek kişi alıcıda `cac:Person` yoktu.** Ünvan yalnızca `cac:PartyName`
+içinde yazılıyordu.
+
+> `schemeID niteliği değeri 'TCKN' olması durumunda cac:Person elemanı
+> bulunmalıdır.`
+
+Alıcı kimliği 11 haneliyse ünvan `cac:Person` altına (`FirstName`/`FamilyName`)
+yazılır ve `cac:PartyName` üretilmez. Kart üzerinde ad/soyad ayrı tutulmadığı
+için son kelime soyad, kalanı ad sayılır — **kalan iş:** gerçek kişi cari
+kartına ayrı ad/soyad alanları.
+
+**3. Gönderim şekli bildirilmiyordu.**
+
+> `GONDERIM TIPI GECERSIZ : SEND_TYPE`
+
+e-Arşiv UBL'i gönderim şeklini `AdditionalDocumentReference` içinde taşır;
+NES'in aradığı kod **`SEND_TYPE`**'tır (elimizdeki Sovos örneğinde aynı bilgi
+`EREPSENDT` koduyla duruyor — kod entegratöre göre değişiyor, örneğe bakıp
+kopyalamak yanıltıcı). Değer şimdilik sabit `ELEKTRONIK`; PDF'i e-postayla
+ilettiğimiz için doğru varsayılan bu. **Kalan iş:** kâğıt teslim eden firmalar
+için `KAGIT` seçeneği.
+
+**4. e-Arşiv, e-Fatura serisini kullanamaz.**
+
+> `E-FATURA'DA KULLANILAN SERI TESPIT EDILDI. E-FATURA/E-ARSIV SERILERI
+> BIRBIRINDEN FARKLI OLMALIDIR`
+
+Bağlantıda tek bir `belgeSeriOneki` vardı ve iki kanal da onu kullanıyordu.
+Ayrı bir `earsivSeriOneki` eklendi (Ayarlar > Entegratörler ekranında ikinci
+alan); iki önek aynıysa form kaydı reddeder. Kanal ancak mükellefiyet
+sorgusundan sonra bilindiği için eksik e-Arşiv öneki gönderimden hemen önce,
+entegratöre gidilmeden yakalanır.
+
+### Seri, otomatik numaralandırılan seri olmalıdır
+
+İlk denemede önek olarak `ETV` verildi ve NES reddetti:
+
+> `OTOMATIK NUMARALANDIRILAN SERI DEGILDIR! 16 HANELI NUMARA VERILMELIDIR : ETV`
+
+`GET /{aile}/v1/definitions/series` yanıtında otomatik seriler
+**`isPortal: true`** olanlardır ve yıl bazlı `counters` taşırlar; `isPortal:
+false` seriler için numarayı bizim üretmemiz beklenir. Doğrulanan e-Arşiv
+serisi: **`SNC`**. Aynı ayrım e-Fatura tarafında da geçerli (`K07`
+`isPortal: true`). **Kalan iş:** bağlantı kaydedilirken önek bu listeye karşı
+doğrulanabilir; şimdilik yanlış önek gönderim anında anlaşılıyor.
+
+### Biten gönderim işi yeniden kuyruğa alınmıyordu
+
+Dead-letter'a düşen gönderimden sonra fatura ekranındaki "yeniden gönder"
+hiçbir şey yapmıyor, kullanıcıya yine de "e-Belge yeniden gönderildi" diyordu:
+iş kimliği kuyrukta durduğu için `kuyrugaEkle` mevcut işi bulup geri dönüyordu.
+Biten (`completed`/`failed`) iş artık kaldırılıp yenisi ekleniyor; süren iş
+olduğu gibi bildiriliyor, mükerrer gönderim üretilmiyor.
+
+### Entegratör hatası 500'e dönüşüyordu
+
+e-Arşiv rapor listesi çağrısı `HTTP 500 — "Beklenmeyen sunucu hatası"`
+veriyordu. Adaptör doğru mesajı üretmişti (eksik scope'un adıyla birlikte) ama
+servis `NesHatasi`'nı sarmadığı için mesaj kullanıcıya ulaşmıyordu. Rapor ve
+iptal uçları artık entegratör hatasını `502` ve okunur mesajla döndürüyor.
+
+## e-Arşiv iptali (2026-09-10)
+
+NES tarafı doğrulandı: `SNC2026000000002` adaptör üzerinden iptal edildi
+(`GET /earchive/v1/invoices?documentNumber=…` → `POST /earchive/v1/invoices/cancel`)
+ve belge NES'te `isCanceled: true`, `cancelDate: 2026-09-10T21:04:13` oldu.
+
+**Uygulama akışı ise kilitli.** İki kural birbirini kesiyor:
+
+- `FaturaService.iptal` → `e-Belge kaydı oluşmuş fatura iptal edilemez`
+  (`fatura.ebelge` varsa, kanaldan bağımsız).
+- `EbelgeService.earsivIptalBildir` → faturanın `durum === "iptal"` olmasını ister.
+
+Yani gerçekten e-Arşiv olarak çıkmış hiçbir fatura bu yoldan iptal edilemez.
+Kural e-Fatura için doğru (kesilen e-Fatura iptal edilmez, iade faturası
+düzenlenir) ama e-Arşiv'de iptal normal mekanizmadır — bildirim ucunun varlık
+sebebi de bu. **Ürün kararı gerekiyor** ([[modul-onay-kapisi]] S-01): e-Arşiv
+kanalında iptale hangi koşulla izin verilecek (GİB raporu gönderilmeden önce mi,
+`reportDivisionStatus` neyse ona bakılarak mı).
+
+### `documentNumber` filtresi çalışıyor, `uuid` filtresi çalışmıyor
+
+Ölçüldü (2026-09-10): var olmayan ve çözümlenemeyen numaralarda liste **boş**
+dönüyor — yani `uuid` filtresindeki "sessizce tüm listeyi döndürme" davranışı
+burada yok. Yine de iptal geri alınamaz bir işlem olduğu için dönen kaydın
+`documentNumber` değeri sorulanla birebir karşılaştırılıyor.
+
+### Durum alanı `recordStatus` değil `archiveDocumentStatus`
+
+`GET /earchive/v1/invoices/{uuid}` yanıtında `recordStatus` diye bir alan
+**yok**; şemada da tanımlı değil. Adaptör bu alanı okuduğu için her e-Arşiv
+belgesi — imzalanmamış ya da hatalı olanlar dahil — `iletildi` görünüyordu.
+Doğru alan `archiveDocumentStatus`: `Waiting`/`WaitingSign` → kuyrukta,
+`Error`/`XmlParseError`/`XmlFileDoesNotExist` → hata, `Signed` → iletildi.
+İptal ayrı eksende (`isCanceled` + `cancelDate`) durur.
+
+**Canlı yanıttan iki teyit daha:** gönderdiğimiz gönderim şekli `sendType:
+"ELEKTRONIK"` olarak okunmuş; ad/soyad ayrıştırması ise beklendiği gibi kaba —
+"Ayşe Yılmaz (e-Arşiv Test)" ünvanı NES'e `firstName: "Ayşe Yılmaz (e-Arşiv"`,
+`familyName: "Test)"` olarak gitti. Gerçek kişi kartına ayrı ad/soyad alanı
+açılması gereken sebep bu.
+
 ## Yetki kapsamı (scope)
 
 Dokümantasyon "test ortamında scope'lar geçerli değildir" diyor; **doğru değil,
@@ -298,9 +422,13 @@ alakasız bir belgenin numarası yazılabilirdi.
 | Konu | Durum |
 |---|---|
 | `earsivRaporDurum` | Uygulanmadı. `/histories` ve `/details` uçlarının yanıt şeması şemalarda tanımsız. Rapor listesi zaten bölüm başına `status` taşıdığı için ekran bu bilgiyi listeden okuyabilir. |
-| e-Arşiv `recordStatus` | `GET /earchive/v1/invoices/{uuid}` yanıt şeması şemada ayrıntılı değil; alan savunmacı okunuyor, canlı yanıtla doğrulanmalı. |
+| e-Arşiv iptal akışı | **Uygulamadan çalıştırılamıyor:** fatura iptali `e-Belge kaydı oluşmuş fatura iptal edilemez` diyor, iptal bildirimi ise faturanın önce iptal edilmiş olmasını şart koşuyor. Ürün kararı bekliyor (S-01). |
+| `BelgeDurum`'da iptal yok | İptal edilmiş e-Arşiv belgesi `iletildi` görünüyor, iptal yalnız `hataMesaji` alanında yazıyor. Enum'a değer eklemek göç ister. |
 | e-Arşiv rapor tutarı | NES rapor bölümünde toplam tutar dönmüyor; `EarsivRapor.toplamTutar` "0" olarak doldurulur. |
 | Rate limit | Hiçbir şemada tanımlı değil, 429 davranışı bilinmiyor. NES'e soruldu. |
+| e-Arşiv rapor uçları | `earchive:reports:read` scope'u anahtarda hâlâ yok; uç `502` ile bunu söylüyor ama rapor akışı canlıda denenmedi. |
+| Gerçek kişi ad/soyad | Cari kartında tek `unvan` var; UBL'deki `FirstName`/`FamilyName` ayrımı son kelimeden türetiliyor. |
+| e-Arşiv gönderim şekli | Sabit `ELEKTRONIK`; `KAGIT` seçeneği yok. |
 
 ## Test erişimi — çözüldü
 
