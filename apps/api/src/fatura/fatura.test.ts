@@ -120,7 +120,7 @@ describe("FaturaService.iptal — e-belge kuralı (EBLG-22)", () => {
   function kur(ebelge: unknown) {
     const earsivBelgesiniIptalEt = vi.fn();
     const tx = {
-      fatura: { findUnique: vi.fn().mockResolvedValue({ id: "f1", no: "SNC2026000000003", durum: "kesin", tip: "satis", genelToplam: new Prisma.Decimal("900.00"), cariId: "c1", dovizCinsi: "TRY", kur: new Prisma.Decimal("1"), ebelge }) },
+      fatura: { findUnique: vi.fn().mockResolvedValue({ id: "f1", no: "SNC2026000000003", durum: "kesin", tip: "satis", tarih: new Date(), genelToplam: new Prisma.Decimal("900.00"), cariId: "c1", dovizCinsi: "TRY", kur: new Prisma.Decimal("1"), ebelge }) },
       kasaBankaHareket: { count: vi.fn().mockResolvedValue(0) },
       posTahsilat: { count: vi.fn().mockResolvedValue(0) },
       krediKartiHareket: { count: vi.fn().mockResolvedValue(0) },

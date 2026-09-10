@@ -57,5 +57,18 @@ registerModulAyar(
   { varsayilanKasaId: null, varsayilanBankaHesapId: null },
 );
 
-
-
+registerModulAyar(
+  "ebelge",
+  z.object({
+    /**
+     * e-Arşiv faturasının kaç gün içinde iptal edilebileceği (EBLG-22).
+     * Süre geçtikten sonra düzeltme yolu iade faturasıdır.
+     *
+     * Varsayılan 8 gün yaygın uygulamadır; tebliğ metninden değil sektör
+     * kaynağından geldiği için mali müşavirin söylediği süreyle
+     * değiştirilebilsin diye ayar yapıldı.
+     */
+    earsivIptalGunSayisi: z.number().int().min(0).max(90),
+  }),
+  { earsivIptalGunSayisi: 8 },
+);

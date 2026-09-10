@@ -15,6 +15,7 @@ import { vknTcknGecerliMi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { BildirimService } from "../bildirimler/bildirim.service";
+import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { MetricsService } from "../core/observability/metrics.service";
 import { PrismaService } from "../core/prisma.service";
 import { FaturaService } from "../fatura/fatura.service";
@@ -61,6 +62,7 @@ export class EbelgeService {
     private readonly mukellefListesi: MukellefListesiService,
     private readonly metrics: MetricsService,
     private readonly bildirimler: BildirimService,
+    private readonly ayarlar: AyarlarService,
   ) {}
 
   // ─── E-BELGE GÖNDERİMİ (EBLG-01/02/06/07) ──────────────────────────────────
@@ -1068,7 +1070,7 @@ export class EbelgeService {
    */
   async earsivBelgesiniIptalEt(
     tx: Prisma.TransactionClient,
-    fatura: { id: string; no: string | null; genelToplam: Prisma.Decimal },
+    fatura: { id: string; no: string | null; tarih: Date; genelToplam: Prisma.Decimal },
     ebelge: { id: string; entegratorRef: string | null },
   ): Promise<void> {
     const { tenantId } = aktifBaglam();
@@ -1078,15 +1080,26 @@ export class EbelgeService {
     const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
     if (!adapter.earsivIptal) throw new BadRequestException("Aktif entegratör e-Arşiv iptalini desteklemiyor");
     if (!fatura.no) throw new BadRequestException("Numarasız e-Arşiv belgesi iptal edilemez");
+    let raporlandi = false;
+
+    // İptali sınırlayan şey raporlanma değil süredir: e-Arşiv raporu günlük
+    // gidiyor, belge ertesi gün raporlanmış oluyor ama iptal hakkı sürüyor.
+    // Süre sektör kaynağından geldiği için ayarlanabilir (varsayılan 8 gün).
+    const ayarlar = await this.ayarlar.getir("ebelge", tx);
+    const gunSayisi = Number(ayarlar.earsivIptalGunSayisi ?? 8);
+    const gunFarki = Math.floor((Date.now() - fatura.tarih.getTime()) / 86_400_000);
+    if (gunFarki > gunSayisi) {
+      throw new BadRequestException(
+        `${fatura.no} numaralı e-Arşiv faturasının ${gunSayisi} günlük iptal süresi geçmiş (${gunFarki} gün); düzeltme için iade faturası düzenleyin.`,
+      );
+    }
 
     if (ebelge.entegratorRef) {
       this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "durumSorgula", saglayici: baglanti.saglayici });
       const durum = await this.entegratordenOku(() => adapter.durumSorgula(cfg, ebelge.entegratorRef!));
-      if (durum.raporlandi) {
-        throw new BadRequestException(
-          `${fatura.no} numaralı e-Arşiv faturası GİB raporuna girmiş; bu aşamadan sonra iptal uygulamadan yapılamaz, iptal bildirimi mali müşavirinizle raporlama üzerinden yürütülmelidir.`,
-        );
-      }
+      // Raporlanmış olmak iptali engellemez ama iptalin de GİB'e bildirilmesi
+      // gerekir; bu iş muhasebede olduğu için bildirimle haber verilir.
+      if (durum.raporlandi) raporlandi = true;
     }
 
     this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "earsivIptal", saglayici: baglanti.saglayici });
@@ -1095,6 +1108,20 @@ export class EbelgeService {
     );
     if (!sonuc.basarili) throw new BadRequestException(sonuc.mesaj || "e-Arşiv iptali entegratöre bildirilemedi");
     await tx.ebelgeKayit.update({ where: { id: ebelge.id }, data: { durum: "iptal", hataMesaji: null } });
+
+    if (raporlandi) {
+      await this.bildirimler.uret({
+        tur: "ebelge",
+        onem: "uyari",
+        baslik: `${fatura.no} iptal edildi, GİB'e raporlanmıştı`,
+        aciklama: "Fatura GİB e-Arşiv raporuna girdikten sonra iptal edildi; iptalin raporlanması muhasebe tarafında takip edilmelidir.",
+        birlesimAnahtari: `earsiv-iptal-raporlu:${fatura.id}`,
+        kaynakTur: "fatura",
+        kaynakRef: fatura.id,
+        hedefYol: `/panel/fatura?fatura=${fatura.id}`,
+        roller: ["muhasebe", "yonetici"],
+      });
+    }
   }
 
   async earsivIptalBildir(faturaId: string, girdi: { iptalTarihi: Date; sube?: string }) {

@@ -567,7 +567,7 @@ describe("EbelgeService.earsivBelgesiniIptalEt (EBLG-22)", () => {
   const prisma = { tenantIslem: mockTenantIslem } as any;
   const metrics = { increment: vi.fn(), set: vi.fn() } as any;
 
-  function kur(durumSonucu: Record<string, unknown>) {
+  function kur(durumSonucu: Record<string, unknown>, gunSayisi = 8) {
     const earsivIptal = vi.fn().mockResolvedValue({ basarili: true, mesaj: "iptal edildi" });
     const adapter = { durumSorgula: vi.fn().mockResolvedValue(durumSonucu), earsivIptal };
     const baglantilar = { adapterCoz: vi.fn().mockReturnValue(adapter) } as any;
@@ -575,30 +575,59 @@ describe("EbelgeService.earsivBelgesiniIptalEt (EBLG-22)", () => {
       baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "u" }) }) },
       ebelgeKayit: { update: vi.fn().mockResolvedValue({}) },
     } as any;
-    const service = new EbelgeService(prisma, baglantilar, {} as any, {} as any, metrics, { uret: vi.fn() } as any);
-    return { service, tx, earsivIptal };
+    const bildirimler = { uret: vi.fn().mockResolvedValue({}) };
+    const ayarlar = { getir: vi.fn().mockResolvedValue({ earsivIptalGunSayisi: gunSayisi }) } as any;
+    const service = new EbelgeService(prisma, baglantilar, {} as any, {} as any, metrics, bildirimler as any, ayarlar);
+    return { service, tx, earsivIptal, bildirimler };
   }
 
-  const fatura = { id: "f1", no: "SNC2026000000003", genelToplam: { toFixed: () => "900.00" } as any };
+  const gunOnce = (gun: number) => new Date(Date.now() - gun * 86_400_000);
+  const fatura = { id: "f1", no: "SNC2026000000003", tarih: gunOnce(2), genelToplam: { toFixed: () => "900.00" } as any };
   const ebelge = { id: "eb1", entegratorRef: "EARSIV:x" };
 
-  it("GİB raporuna girmiş belgeyi iptal etmez", async () => {
-    // Rapordan sonra iptal bildirimi raporlama üzerinden yürür; uygulamanın
-    // doğrulayamayacağı bir süreci sessizce başlatmaz.
+  it("iptal süresi geçmiş faturayı iptal etmez, iade faturasına yönlendirir", async () => {
+    // e-Arşiv raporu günlük gidiyor; sınır raporlanma değil süredir.
     const { service, tx, earsivIptal } = kur({ durum: "iletildi", raporlandi: true });
 
-    await expect(service.earsivBelgesiniIptalEt(tx, fatura, ebelge)).rejects.toThrow("GİB raporuna girmiş");
+    await expect(service.earsivBelgesiniIptalEt(tx, { ...fatura, tarih: gunOnce(9) }, ebelge)).rejects.toThrow("iade faturası");
     expect(earsivIptal).not.toHaveBeenCalled();
     expect(tx.ebelgeKayit.update).not.toHaveBeenCalled();
   });
 
-  it("rapora girmemiş belgeyi iptal eder ve kaydı iptal olarak işaretler", async () => {
+  it("süre ayarı uzatılırsa eski faturayı da iptal eder", async () => {
+    // Süre tebliğ metninden değil sektör kaynağından geldi; ayarlanabilir.
+    const { service, earsivIptal } = kur({ durum: "iletildi", raporlandi: false }, 30);
+
+    await service.earsivBelgesiniIptalEt(kur({}, 30).tx, { ...fatura, tarih: gunOnce(20) }, ebelge);
+
+    expect(earsivIptal).toHaveBeenCalled();
+  });
+
+  it("süre içindeki belgeyi iptal eder ve kaydı iptal olarak işaretler", async () => {
     const { service, tx, earsivIptal } = kur({ durum: "iletildi", raporlandi: false });
 
     await service.earsivBelgesiniIptalEt(tx, fatura, ebelge);
 
     expect(earsivIptal).toHaveBeenCalled();
     expect(tx.ebelgeKayit.update).toHaveBeenCalledWith({ where: { id: "eb1" }, data: { durum: "iptal", hataMesaji: null } });
+  });
+
+  it("raporlanmış belge iptal edilince muhasebeyi bildirimle uyarır", async () => {
+    // Raporlanmış olmak iptali engellemez ama iptalin de bildirilmesi gerekir.
+    const { service, tx, earsivIptal, bildirimler } = kur({ durum: "iletildi", raporlandi: true });
+
+    await service.earsivBelgesiniIptalEt(tx, fatura, ebelge);
+
+    expect(earsivIptal).toHaveBeenCalled();
+    expect(bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({ tur: "ebelge", onem: "uyari" }));
+  });
+
+  it("rapora girmemiş belgede bildirim üretilmez", async () => {
+    const { service, tx, bildirimler } = kur({ durum: "iletildi", raporlandi: false });
+
+    await service.earsivBelgesiniIptalEt(tx, fatura, ebelge);
+
+    expect(bildirimler.uret).not.toHaveBeenCalled();
   });
 });
 

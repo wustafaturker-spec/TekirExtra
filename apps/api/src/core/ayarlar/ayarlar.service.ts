@@ -13,15 +13,17 @@ export class AyarlarService {
   constructor(private readonly prisma: PrismaService) {}
 
   /** Saklanan değerleri varsayılanların üstüne bindirerek döner. */
-  async getir(modul: string): Promise<Record<string, unknown>> {
+  async getir(modul: string, tx?: Prisma.TransactionClient): Promise<Record<string, unknown>> {
     const tanim = ayarTanimiAl(modul);
     if (!tanim) {
       throw new NotFoundException(`'${modul}' modülünün ayar tanımı yok`);
     }
     const { tenantId } = aktifBaglam();
-    const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.modulAyar.findUnique({ where: { tenantId_modul: { tenantId, modul } } }),
-    );
+    // Açık bir işlemin içinden okunabilsin diye `tx` dışarıdan verilebilir;
+    // yoksa kendi işlemini açar.
+    const oku = (islem: Prisma.TransactionClient) =>
+      islem.modulAyar.findUnique({ where: { tenantId_modul: { tenantId, modul } } });
+    const kayit = tx ? await oku(tx) : await this.prisma.tenantIslem(tenantId, oku);
     const saklanan = (kayit?.ayarlar ?? {}) as Record<string, unknown>;
     return { ...tanim.varsayilanlar, ...saklanan };
   }
