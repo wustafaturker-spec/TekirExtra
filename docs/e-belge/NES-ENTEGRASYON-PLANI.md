@@ -545,6 +545,30 @@ Canlı doğrulandı: `GBZ2026000800002` şoför "Mehmet Öztürk", plaka "34 ABC
 ve girilen sevk saati (07:45) ile gitti; taşıyan bilgisi girilmeden yapılan
 gönderim ise beklendiği gibi durdu.
 
+## Araç ve şoför kartları (EBLG-25, 2026-09-10)
+
+Plaka ve şoför her irsaliyede yeniden yazılmasın diye kayıtlı kartlar:
+**Ayarlar > Araçlar ve Şoförler** (`/api/v1/sevkiyat/araclar`,
+`/api/v1/sevkiyat/soforler`; tablolar `araclar`, `soforler`, göç
+`20260910220000_arac_sofor_kartlari`, ikisi de RLS'e tabi).
+
+**Kararlar** ([[modul-onay-kapisi]] S-01):
+
+- **İki ayrı kart.** Araç (plaka, dorse, açıklama) ve şoför (ad, soyad, TCKN)
+  ayrı tutulur; aynı şoför başka araç kullandığında kart çoğalmaz.
+- **Seçim değerleri kopyalar, belge kartı referans almaz.** İrsaliyede kart
+  seçilince plaka ve şoför alanları dolar, sonrasında elle de düzeltilebilir.
+  Kart yarın düzeltilse ya da silinse gönderilmiş e-İrsaliye GİB'e ne
+  gittiyse onu göstermeye devam eder — referans tutsaydık ekran ile belge
+  ayrışırdı.
+- Şoför TCKN'si **zorunlu değil** (GİB `NationalityID` koşullu) ve kişisel
+  veri olduğu için formda bu belirtiliyor.
+- Aynı plaka ikinci kez açılamaz; kart pasife alınabilir, silme de serbest
+  (belgeler kartı referans almadığı için geçmişi bozmaz).
+
+Canlı doğrulandı: karttan gelen plaka ve şoförle düzenlenen
+`GBZ2026000800003` NES'e iletildi.
+
 ## Yetki kapsamı (scope)
 
 Dokümantasyon "test ortamında scope'lar geçerli değildir" diyor; **doğru değil,
@@ -584,7 +608,6 @@ alakasız bir belgenin numarası yazılabilirdi.
 | e-Arşiv rapor uçları | `earchive:reports:read` scope'u anahtarda hâlâ yok; uç `502` ile bunu söylüyor ama rapor akışı canlıda denenmedi. |
 | Gerçek kişi ad/soyad | Cari kartında tek `unvan` var; UBL'deki `FirstName`/`FamilyName` ayrımı son kelimeden türetiliyor. |
 | e-Arşiv gönderim şekli | Sabit `ELEKTRONIK`; `KAGIT` seçeneği yok. |
-| e-İrsaliye araç/şoför kartları | Şoför ve plaka her irsaliyede yeniden giriliyor; sık kullanılan araç için kayıtlı kart yok. |
 | Gelen irsaliye yanıtı | `hataMesaji` alanına başarı açıklaması da yazılıyor ("ZARF BAŞARIYLA İŞLENDİ"). |
 
 ## Test erişimi — çözüldü
