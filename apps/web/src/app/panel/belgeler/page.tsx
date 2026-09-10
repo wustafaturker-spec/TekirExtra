@@ -149,6 +149,14 @@ export default function BelgelerSayfasi() {
   const [tarih, setTarih] = useState(new Date().toISOString().substring(0, 10));
   const [gecerlilik, setGecerlilik] = useState("");
   const [aciklama, setAciklama] = useState("");
+  // e-İrsaliye taşıma bilgileri (EBLG-23); yalnız irsaliyede sorulur.
+  const [fiiliSevkZamani, setFiiliSevkZamani] = useState("");
+  const [tasiyiciCariId, setTasiyiciCariId] = useState("");
+  const [plaka, setPlaka] = useState("");
+  const [dorsePlaka, setDorsePlaka] = useState("");
+  const [soforAdi, setSoforAdi] = useState("");
+  const [soforSoyadi, setSoforSoyadi] = useState("");
+  const [soforTckn, setSoforTckn] = useState("");
   const [kuruAciklamayaEkle, setKuruAciklamayaEkle] = useState(true);
   const [dovizCinsi, setDovizCinsi] = useState("TRY");
   const [kur, setKur] = useState("1");
@@ -339,6 +347,17 @@ export default function BelgelerSayfasi() {
           dovizCinsi,
           kur: dovizCinsi === "TRY" ? "1" : kur,
           aciklama: kayitAciklamasi || null,
+          ...(tur === "irsaliye"
+            ? {
+                fiiliSevkZamani: fiiliSevkZamani ? new Date(fiiliSevkZamani).toISOString() : null,
+                tasiyiciCariId: tasiyiciCariId || null,
+                plaka: plaka || null,
+                dorsePlaka: dorsePlaka || null,
+                soforAdi: soforAdi || null,
+                soforSoyadi: soforSoyadi || null,
+                soforTckn: soforTckn || null,
+              }
+            : {}),
           satirlar: satirlar.map((s) => ({
             stokId: s.stokId,
             varyantId: s.varyantId || null,
@@ -617,6 +636,31 @@ export default function BelgelerSayfasi() {
             )}
             </div>
           </div>
+
+          {tur === "irsaliye" && (
+            <div className="document-editor__section">
+              <h4 className="document-editor__section-title">Sevkiyat</h4>
+              <div className="document-fields document-fields--belge">
+                <Field label="Fiili Sevk Tarihi ve Saati">
+                  <Input type="datetime-local" value={fiiliSevkZamani} onChange={(e) => setFiiliSevkZamani(e.target.value)} />
+                  <small className="muted">Boş bırakılırsa onay anı yazılır.</small>
+                </Field>
+                <Field label="Taşıyan">
+                  <Select value={tasiyiciCariId} onChange={(e) => setTasiyiciCariId(e.target.value)}>
+                    <option value="">Kendi aracımızla</option>
+                    {cariler.map((c) => <option key={c.id} value={c.id}>{c.unvan}</option>)}
+                  </Select>
+                  <small className="muted">Nakliyeci ya da kargo firmasını cari kartından seçin.</small>
+                </Field>
+                <Field label="Plaka"><Input value={plaka} onChange={(e) => setPlaka(e.target.value)} placeholder="34 ABC 123" /></Field>
+                <Field label="Dorse Plakası"><Input value={dorsePlaka} onChange={(e) => setDorsePlaka(e.target.value)} /></Field>
+                <Field label="Şoför Adı"><Input value={soforAdi} onChange={(e) => setSoforAdi(e.target.value)} /></Field>
+                <Field label="Şoför Soyadı"><Input value={soforSoyadi} onChange={(e) => setSoforSoyadi(e.target.value)} /></Field>
+                <Field label="Şoför TCKN"><Input value={soforTckn} onChange={(e) => setSoforTckn(e.target.value)} maxLength={11} /></Field>
+              </div>
+              <small className="muted">e-İrsaliye gönderiminde taşıyıcı firma ya da şoför adı, soyadı ve plaka zorunludur.</small>
+            </div>
+          )}
 
           <div className="document-editor__section document-lines">
             <div className="between"><h4 className="document-editor__section-title">Belge kalemleri</h4><Button type="button" variant="primary" onClick={() => setUrunModali({ satir: satirlar.findIndex((s) => !s.stokId) >= 0 ? satirlar.findIndex((s) => !s.stokId) : satirlar.length })}>+ Ürün çağır</Button></div>

@@ -38,13 +38,29 @@ export class EirsaliyeService {
    */
   private ubl(b: any, tenant: any) {
     const tarih = new Date(b.tarih).toISOString().slice(0, 10);
-    // Fiili sevk saati irsaliye kartında tutulmuyor; kaydın oluşturulma saati
-    // en yakın gerçeğe. Ayrı bir "fiili sevk tarihi/saati" alanı açılmalı.
-    const saat = new Date(b.createdAt ?? b.tarih).toISOString().slice(11, 19);
+    // Fiili sevk zamanı belgeden gelir (EBLG-23); onayda boş bırakılmışsa onay
+    // anıyla dolduruluyor, yine de yoksa belge tarihine düşülür.
+    const sevk = new Date(b.fiiliSevkZamani ?? b.createdAt ?? b.tarih);
+    const sevkTarihi = sevk.toISOString().slice(0, 10);
+    const saat = sevk.toISOString().slice(11, 19);
     const adres = (birim: string, sehir: string) =>
       `<cac:PostalAddress><cbc:CitySubdivisionName>${esc(birim)}</cbc:CitySubdivisionName><cbc:CityName>${esc(sehir)}</cbc:CityName><cac:Country><cbc:Name>Türkiye</cbc:Name></cac:Country></cac:PostalAddress>`;
     const taraf = (vkn: string, unvan: string) =>
       `<cac:Party><cac:PartyIdentification><cbc:ID schemeID="${vkn.length === 11 ? "TCKN" : "VKN"}">${esc(vkn)}</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>${esc(unvan)}</cbc:Name></cac:PartyName>${adres("Merkez", "Istanbul")}</cac:Party>`;
+    // Taşıyan: cari seçilmediyse malı kendi aracımızla götürmüşüzdür.
+    const tasiyan = b.tasiyiciCari
+      ? { vknTckn: b.tasiyiciCari.vknTckn ?? "", unvan: b.tasiyiciCari.unvan }
+      : { vknTckn: tenant.vkn, unvan: tenant.unvan };
+    const sofor = b.soforAdi && b.soforSoyadi
+      ? `<cac:DriverPerson><cbc:FirstName>${esc(b.soforAdi)}</cbc:FirstName><cbc:FamilyName>${esc(b.soforSoyadi)}</cbc:FamilyName>${b.soforTckn ? `<cbc:NationalityID>${esc(b.soforTckn)}</cbc:NationalityID>` : ""}</cac:DriverPerson>`
+      : "";
+    const arac = b.plaka
+      ? `<cac:TransportMeans><cac:RoadTransport><cbc:LicensePlateID schemeID="PLAKA">${esc(b.plaka)}</cbc:LicensePlateID></cac:RoadTransport></cac:TransportMeans>`
+      : "";
+    const sevkiyatAsamasi = arac || sofor ? `<cac:ShipmentStage>${arac}${sofor}</cac:ShipmentStage>` : "";
+    const dorse = b.dorsePlaka
+      ? `<cac:TransportHandlingUnit><cac:TransportEquipment><cbc:ID schemeID="DORSEPLAKA">${esc(b.dorsePlaka)}</cbc:ID></cac:TransportEquipment></cac:TransportHandlingUnit>`
+      : "";
     const satirlar = b.satirlar
       .map(
         (s: any, i: number) =>
@@ -64,18 +80,17 @@ export class EirsaliyeService {
       // Fiili sevk zamanı ve malın nereye teslim edildiği `cac:Shipment`
       // içinde bildirilir; teslimat adresi zorunludur (şematron), taşıyan ve
       // plaka bilgisi ise kartta tutulmadığı için yazılmıyor.
-      // Taşıyan zorunlu: GİB `DriverPerson` ya da `CarrierParty` ister. Şoför,
-      // plaka ve taşıyıcı firma irsaliye kartında tutulmadığı için malı kendi
-      // aracıyla götüren firma varsayılıyor — kargoyla sevk eden bir firmada
-      // bu bilgi yanlış olur, taşıyan alanları açılmalı.
-      + `<cac:Shipment><cbc:ID>1</cbc:ID><cac:Delivery><cac:DeliveryAddress><cbc:StreetName>${esc(b.teslimatAdresi.adres)}</cbc:StreetName><cbc:CitySubdivisionName>${esc(b.teslimatAdresi.ilce)}</cbc:CitySubdivisionName><cbc:CityName>${esc(b.teslimatAdresi.il)}</cbc:CityName><cbc:PostalZone>${esc(b.teslimatAdresi.postaKodu)}</cbc:PostalZone><cac:Country><cbc:Name>Türkiye</cbc:Name></cac:Country></cac:DeliveryAddress><cac:CarrierParty><cac:PartyIdentification><cbc:ID schemeID="VKN">${esc(tenant.vkn)}</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>${esc(tenant.unvan)}</cbc:Name></cac:PartyName>${adres("Merkez", "Istanbul")}</cac:CarrierParty><cac:Despatch><cbc:ActualDespatchDate>${tarih}</cbc:ActualDespatchDate><cbc:ActualDespatchTime>${saat}</cbc:ActualDespatchTime></cac:Despatch></cac:Delivery></cac:Shipment>`
+      // Taşıyan: nakliyeci/kargo carisi seçildiyse o, seçilmediyse malı kendi
+      // aracıyla götüren firma. Şoför ve plaka `ShipmentStage`'te taşınır;
+      // GİB `DriverPerson` ya da `CarrierParty`'den en az birini ister.
+      + `<cac:Shipment><cbc:ID>1</cbc:ID>${sevkiyatAsamasi}<cac:Delivery><cac:DeliveryAddress><cbc:StreetName>${esc(b.teslimatAdresi.adres)}</cbc:StreetName><cbc:CitySubdivisionName>${esc(b.teslimatAdresi.ilce)}</cbc:CitySubdivisionName><cbc:CityName>${esc(b.teslimatAdresi.il)}</cbc:CityName><cbc:PostalZone>${esc(b.teslimatAdresi.postaKodu)}</cbc:PostalZone><cac:Country><cbc:Name>Türkiye</cbc:Name></cac:Country></cac:DeliveryAddress><cac:CarrierParty><cac:PartyIdentification><cbc:ID schemeID="${tasiyan.vknTckn.length === 11 ? "TCKN" : "VKN"}">${esc(tasiyan.vknTckn)}</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>${esc(tasiyan.unvan)}</cbc:Name></cac:PartyName>${adres("Merkez", "Istanbul")}</cac:CarrierParty><cac:Despatch><cbc:ActualDespatchDate>${sevkTarihi}</cbc:ActualDespatchDate><cbc:ActualDespatchTime>${saat}</cbc:ActualDespatchTime></cac:Despatch></cac:Delivery>${dorse}</cac:Shipment>`
       + `${satirlar}</DespatchAdvice>`;
   }
 
   async gonder(belgeId: string) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const belge = await tx.belge.findUnique({ where: { id: belgeId }, include: { cari: { include: { adresler: true } }, satirlar: { include: { stok: true } }, eirsaliye: true } });
+      const belge = await tx.belge.findUnique({ where: { id: belgeId }, include: { cari: { include: { adresler: true } }, tasiyiciCari: true, satirlar: { include: { stok: true } }, eirsaliye: true } });
       if (!belge) throw new NotFoundException("Belge bulunamadı");
       if (belge.tur !== "irsaliye" || belge.yon !== "satis") throw new BadRequestException("Yalnızca satış irsaliyesi e-İrsaliye olarak gönderilebilir");
       if (belge.durum !== "onaylandi") throw new BadRequestException("e-İrsaliye göndermek için belge onaylanmış olmalıdır");
@@ -98,6 +113,18 @@ export class EirsaliyeService {
         adresler.find((a) => (a.tip === "merkez" || a.tip === "fatura") && tam(a));
       if (!teslimatAdresi) {
         throw new BadRequestException("e-İrsaliye teslimat adresi ister; cari kartına il, ilçe ve posta kodu dolu bir sevk adresi ekleyin");
+      }
+      // Taşıyan bilgisi irsaliye onayında değil burada zorunlu (EBLG-23): kâğıt
+      // irsaliye kesen firma engellenmesin, GİB'e giden belge eksik gitmesin.
+      // Nakliyeciye verilmediyse malı kendi aracımızla götürmüşüzdür ve o
+      // araca dair şoför/plaka bilgisini biz biliriz.
+      if (!belge.tasiyiciCariId && !(belge.soforAdi && belge.soforSoyadi && belge.plaka)) {
+        throw new BadRequestException(
+          "e-İrsaliye taşıyan bilgisi ister: taşıyıcı firmayı seçin ya da şoför adı, soyadı ve plakayı girin",
+        );
+      }
+      if (belge.tasiyiciCariId && !belge.tasiyiciCari?.vknTckn) {
+        throw new BadRequestException("Taşıyıcı cari kartında VKN/TCKN bilgisi bulunmalıdır");
       }
       const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
       const xml = this.ubl({ ...belge, teslimatAdresi }, tenant);

@@ -21,6 +21,12 @@ describe("EirsaliyeService UBL", () => {
     createdAt: new Date("2026-09-10T15:30:00Z"),
     cari: { unvan: "Alıcı A.Ş.", vknTckn: "1230460944" },
     teslimatAdresi: { adres: "OSB 3. Cadde No:7", il: "Denizli", ilce: "Honaz", postaKodu: "20330" },
+    fiiliSevkZamani: new Date("2026-09-10T07:45:00Z"),
+    plaka: "34 ABC 123",
+    dorsePlaka: "34 DR 4088",
+    soforAdi: "Mehmet",
+    soforSoyadi: "Öztürk",
+    soforTckn: "10000000078",
     satirlar: [{ miktar: "5", stok: { ad: "Ürün", kod: "STK-1" } }],
   };
 
@@ -49,7 +55,46 @@ describe("EirsaliyeService UBL", () => {
     // Posta kodu ve taşıyan olmadan şematron belgeyi geçirmiyor.
     expect(gonderi).toContain("<cbc:PostalZone>20330</cbc:PostalZone>");
     expect(gonderi).toContain("<cac:CarrierParty>");
+  });
+
+  it("fiili sevk zamanını belgeden alır, kaydın oluşturulma anından değil", () => {
+    // Sevk zamanı yanlış yazılırsa belge yanlış saatte yola çıkmış görünür.
+    const gonderi = ubl(belge).match(/<cac:Despatch>[\s\S]*?<\/cac:Despatch>/)![0];
+
     expect(gonderi).toContain("<cbc:ActualDespatchDate>2026-09-10</cbc:ActualDespatchDate>");
+    expect(gonderi).toContain("<cbc:ActualDespatchTime>07:45:00</cbc:ActualDespatchTime>");
+  });
+
+  it("şoförü, plakayı ve dorseyi taşıma alanlarına yazar", () => {
+    const xml = ubl(belge);
+
+    expect(xml).toContain(`<cbc:LicensePlateID schemeID="PLAKA">34 ABC 123</cbc:LicensePlateID>`);
+    expect(xml).toContain("<cbc:FirstName>Mehmet</cbc:FirstName>");
+    expect(xml).toContain("<cbc:NationalityID>10000000078</cbc:NationalityID>");
+    expect(xml).toContain(`<cbc:ID schemeID="DORSEPLAKA">34 DR 4088</cbc:ID>`);
+  });
+
+  it("taşıyıcı seçilmediyse taşıyan firmanın kendisidir", () => {
+    const gonderi = ubl(belge).match(/<cac:CarrierParty>[\s\S]*?<\/cac:CarrierParty>/)![0];
+
+    expect(gonderi).toContain("Satıcı A.Ş.");
+    expect(gonderi).toContain(`<cbc:ID schemeID="VKN">1234567801</cbc:ID>`);
+  });
+
+  it("taşıyıcı cari seçildiyse taşıyan o firmadır", () => {
+    // Kargoyla giden malda kendi firmamızı taşıyan yazmak belgeyi yanlışlar.
+    const gonderi = ubl({ ...belge, tasiyiciCari: { unvan: "Hızlı Nakliyat Ltd.", vknTckn: "4620553774" } })
+      .match(/<cac:CarrierParty>[\s\S]*?<\/cac:CarrierParty>/)![0];
+
+    expect(gonderi).toContain("Hızlı Nakliyat Ltd.");
+    expect(gonderi).toContain(`<cbc:ID schemeID="VKN">4620553774</cbc:ID>`);
+  });
+
+  it("şoför ve plaka yoksa taşıma aşaması hiç yazılmaz", () => {
+    const xml = ubl({ ...belge, plaka: null, dorsePlaka: null, soforAdi: null, soforSoyadi: null, soforTckn: null });
+
+    expect(xml).not.toContain("<cac:ShipmentStage>");
+    expect(xml).not.toContain("<cac:TransportHandlingUnit>");
   });
 
   it("satırda sipariş satırı referansını atlamaz", () => {
