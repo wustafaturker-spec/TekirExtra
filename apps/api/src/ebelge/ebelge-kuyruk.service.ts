@@ -100,7 +100,15 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
   async kuyrugaEkle(faturaId: string) {
     const baglam = aktifBaglam(); const jobId = isKimligi(baglam.tenantId, faturaId);
     const mevcut = await this.kuyruk.getJob(jobId);
-    if (mevcut) return { isId: mevcut.id, durum: await mevcut.getState(), tekrar: true };
+    if (mevcut) {
+      const durum = await mevcut.getState();
+      // Biten iş kuyrukta kimliğiyle duruyor; kaldırılmazsa aynı fatura için
+      // ikinci gönderim sessizce yutulur ve kullanıcı "gönderildi" der ama
+      // hiçbir şey olmaz (e-Arşiv denemesi, 2026-09-10). Süren işte ise tekrar
+      // eklemek mükerrer gönderim olurdu, olduğu gibi bildirilir.
+      if (durum !== "completed" && durum !== "failed") return { isId: mevcut.id, durum, tekrar: true };
+      await mevcut.remove();
+    }
     try {
       const is = await this.kuyruk.add(GONDERIM_ISI, { tenantId: baglam.tenantId, userId: baglam.userId, rol: baglam.rol, isTuru: GONDERIM_ISI, faturaId, correlationId: crypto.randomUUID(), kuyrugaAlinmaZamani: new Date().toISOString() }, { jobId });
       this.metrics.increment("ebelge_queue_jobs_total", { result: "enqueued" });

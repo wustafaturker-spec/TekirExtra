@@ -29,6 +29,29 @@ describe("EbelgeKuyrukService", () => {
     expect(metrics.increment).toHaveBeenCalledWith("ebelge_queue_jobs_total", { result: "enqueued" });
   });
 
+  it("biten işi kaldırıp yeniden kuyruğa alır, gönderimi sessizce yutmaz", async () => {
+    // Dead-letter'a düşen gönderimden sonra fatura ekranından "yeniden gönder"
+    // denendiğinde iş kuyrukta kimliğiyle duruyordu; kaldırılmazsa kullanıcı
+    // "gönderildi" mesajı alır ama hiçbir şey gönderilmez.
+    const remove = vi.fn();
+    bull.getJob.mockResolvedValue({ id: "ebelge-gonder-tenant-1-fatura-1", getState: async () => "failed", remove });
+
+    const sonuc = await baglamlaCalistir({ tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" }, () => service.kuyrugaEkle("fatura-1"));
+
+    expect(remove).toHaveBeenCalled();
+    expect(bull.add).toHaveBeenCalled();
+    expect(sonuc).toMatchObject({ durum: "waiting", tekrar: false });
+  });
+
+  it("süren işi ikinci kez kuyruğa almaz", async () => {
+    bull.getJob.mockResolvedValue({ id: "ebelge-gonder-tenant-1-fatura-1", getState: async () => "active", remove: vi.fn() });
+
+    const sonuc = await baglamlaCalistir({ tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" }, () => service.kuyrugaEkle("fatura-1"));
+
+    expect(bull.add).not.toHaveBeenCalled();
+    expect(sonuc).toMatchObject({ durum: "active", tekrar: true });
+  });
+
   it("worker işlemini işin tenant bağlamında çalıştırır", async () => {
     ebelge.gonder.mockImplementation(async () => ({ basarili: true, tenantId: aktifBaglam().tenantId }));
     const sonuc = await (service as unknown as { isle(is: unknown): Promise<{ tenantId: string }> }).isle({ name: "ebelge-gonder", data: { tenantId: "tenant-worker", userId: "user-worker", rol: "muhasebe", faturaId: "fatura-2", correlationId: "corr", kuyrugaAlinmaZamani: new Date().toISOString() } });
