@@ -14,7 +14,11 @@ export function faturaUblUret(
     cari: CariHesap;
   },
   supplier: { unvan: string; vkn: string; vergiDairesi?: string; adres?: string },
+  secenekler: { tur?: "efatura" | "earsiv" } = {},
 ): string {
+  // e-Arşiv, e-Fatura'dan üç noktada ayrılır: profil `EARSIVFATURA`, alıcı
+  // etiketi yoktur ve gönderim şekli UBL içinde bildirilir.
+  const earsiv = secenekler.tur === "earsiv";
   // ISO Tarihleri
   const tarihStr = fatura.tarih.toISOString().slice(0, 10);
   const saatStr = "12:00:00";
@@ -32,6 +36,17 @@ export function faturaUblUret(
 
   const uuid = fatura.id;
   const no = fatura.no || "TASLAK";
+
+  /**
+   * Gerçek kişi alıcı. UBL-TR şematronu `schemeID="TCKN"` gördüğünde `cac:Person`
+   * arar; ünvanı `cac:PartyName` içinde bırakmak e-Arşiv gönderimini reddettirir
+   * (NES, 2026-09-10). Kart üzerinde ad/soyad ayrı tutulmadığı için son kelime
+   * soyad, kalanı ad sayılır.
+   */
+  const aliciTckn = fatura.cari.vknTckn?.length === 11;
+  const adParcalari = (fatura.cari.unvan ?? "").trim().split(/\s+/).filter(Boolean);
+  const aliciSoyad = adParcalari.length > 1 ? adParcalari[adParcalari.length - 1] : adParcalari[0] ?? "";
+  const aliciAd = adParcalari.length > 1 ? adParcalari.slice(0, -1).join(" ") : adParcalari[0] ?? "";
 
   /**
    * Tevkifat, fatura düzeyinde `WithholdingTaxTotal` olarak bildirilir; vergi
@@ -72,7 +87,7 @@ export function faturaUblUret(
          xsi:schemaLocation="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2 UBL-Invoice-2.1.xsd">
   <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
   <cbc:CustomizationID>TR1.2</cbc:CustomizationID>
-  <cbc:ProfileID>${fatura.efaturaProfili === "ticari" ? "TICARIFATURA" : "TEMELFATURA"}</cbc:ProfileID>
+  <cbc:ProfileID>${earsiv ? "EARSIVFATURA" : fatura.efaturaProfili === "ticari" ? "TICARIFATURA" : "TEMELFATURA"}</cbc:ProfileID>
   <cbc:ID>${no}</cbc:ID>
   <cbc:CopyIndicator>false</cbc:CopyIndicator>
   <cbc:UUID>${uuid}</cbc:UUID>
@@ -82,6 +97,11 @@ export function faturaUblUret(
   <cbc:DocumentCurrencyCode>${fatura.dovizCinsi}</cbc:DocumentCurrencyCode>
   <cbc:LineCountNumeric>${fatura.satirlar.length}</cbc:LineCountNumeric>
 
+${earsiv ? `  <cac:AdditionalDocumentReference>
+    <cbc:ID>ELEKTRONIK</cbc:ID>
+    <cbc:IssueDate>${tarihStr}</cbc:IssueDate>
+    <cbc:DocumentTypeCode>SEND_TYPE</cbc:DocumentTypeCode>
+  </cac:AdditionalDocumentReference>` : ""}
   <cac:AdditionalDocumentReference>
     <cbc:ID>${uuid}</cbc:ID>
     <cbc:IssueDate>${tarihStr}</cbc:IssueDate>
@@ -141,11 +161,11 @@ export function faturaUblUret(
   <cac:AccountingCustomerParty>
     <cac:Party>
       <cac:PartyIdentification>
-        <cbc:ID schemeID="${fatura.cari.vknTckn?.length === 11 ? "TCKN" : "VKN"}">${fatura.cari.vknTckn}</cbc:ID>
+        <cbc:ID schemeID="${aliciTckn ? "TCKN" : "VKN"}">${fatura.cari.vknTckn}</cbc:ID>
       </cac:PartyIdentification>
-      <cac:PartyName>
+${aliciTckn ? "" : `      <cac:PartyName>
         <cbc:Name>${escape(fatura.cari.unvan)}</cbc:Name>
-      </cac:PartyName>
+      </cac:PartyName>`}
       <cac:PostalAddress>
         <cbc:CitySubdivisionName>Merkez</cbc:CitySubdivisionName>
         <cbc:CityName>Istanbul</cbc:CityName>
@@ -153,6 +173,10 @@ export function faturaUblUret(
           <cbc:Name>Türkiye</cbc:Name>
         </cac:Country>
       </cac:PostalAddress>
+${aliciTckn ? `      <cac:Person>
+        <cbc:FirstName>${escape(aliciAd)}</cbc:FirstName>
+        <cbc:FamilyName>${escape(aliciSoyad)}</cbc:FamilyName>
+      </cac:Person>` : ""}
     </cac:Party>
   </cac:AccountingCustomerParty>
 
