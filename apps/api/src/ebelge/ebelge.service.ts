@@ -1,6 +1,8 @@
 import {
+  BadGatewayException,
   BadRequestException,
   ConflictException,
+  HttpException,
   Inject,
   Injectable,
   Logger,
@@ -1060,7 +1062,7 @@ export class EbelgeService {
     const veri = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const fatura = await tx.fatura.findUnique({ where: { id: faturaId }, include: { ebelge: true } });
       if (!fatura) throw new NotFoundException("Fatura bulunamadı");
-      if (fatura.durum !== "iptal") throw new BadRequestException("Sovos iptal bildirimi için fatura önce TekirExtra'da iptal edilmelidir");
+      if (fatura.durum !== "iptal") throw new BadRequestException("e-Arşiv iptal bildirimi için fatura önce TekirExtra'da iptal edilmelidir");
       if (!fatura.no || fatura.ebelge?.tur !== "earsiv") throw new BadRequestException("Faturaya bağlı bir e-Arşiv kaydı bulunamadı");
       const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } });
       if (!baglanti) throw new BadRequestException("Aktif e-belge bağlantısı bulunamadı");
@@ -1069,9 +1071,24 @@ export class EbelgeService {
     const cfg = JSON.parse(coz(veri.baglanti.sifreliConfig)) as EntegratorConfig;
     const adapter = this.baglantilarService.adapterCoz(veri.baglanti.saglayici);
     if (!adapter.earsivIptal) throw new BadRequestException("Aktif entegratör e-Arşiv iptal bildirimini desteklemiyor");
-    const sonuc = await adapter.earsivIptal(cfg, { faturaNo: veri.fatura.no!, toplamTutar: veri.fatura.genelToplam.toFixed(2), iptalTarihi: girdi.iptalTarihi, sube: girdi.sube });
-    if (!sonuc.basarili) throw new BadRequestException(sonuc.mesaj || "e-Arşiv iptali Sovos'a bildirilemedi");
+    const sonuc = await this.entegratordenOku(() => adapter.earsivIptal!(cfg, { faturaNo: veri.fatura.no!, toplamTutar: veri.fatura.genelToplam.toFixed(2), iptalTarihi: girdi.iptalTarihi, sube: girdi.sube }));
+    if (!sonuc.basarili) throw new BadRequestException(sonuc.mesaj || "e-Arşiv iptali entegratöre bildirilemedi");
     return sonuc;
+  }
+
+  /**
+   * Entegratör hatasını kullanıcıya taşır. Adaptörler yetki ve istek hatalarını
+   * okunur mesaja çeviriyor (eksik NES scope'unun adı gibi); sarmalanmadığında
+   * bu mesaj 500'e dönüşüp "Beklenmeyen sunucu hatası" olarak kayboluyordu
+   * (e-Arşiv raporları, 2026-09-10).
+   */
+  private async entegratordenOku<T>(islem: () => Promise<T>): Promise<T> {
+    try {
+      return await islem();
+    } catch (hata) {
+      if (hata instanceof HttpException) throw hata;
+      throw new BadGatewayException(hata instanceof Error ? hata.message : "Entegratör çağrısı başarısız");
+    }
   }
 
   async earsivRaporListele(baslangic: Date, bitis: Date) {
@@ -1081,7 +1098,7 @@ export class EbelgeService {
     const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
     const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
     if (!adapter.earsivRaporListele) throw new BadRequestException("Aktif entegratör e-Arşiv raporlarını desteklemiyor");
-    return adapter.earsivRaporListele(cfg, baslangic, bitis);
+    return this.entegratordenOku(() => adapter.earsivRaporListele!(cfg, baslangic, bitis));
   }
 
   async earsivRaporDurum(uuid: string) {
@@ -1091,7 +1108,7 @@ export class EbelgeService {
     const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
     const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
     if (!adapter.earsivRaporDurum) throw new BadRequestException("Aktif entegratör e-Arşiv rapor durumunu desteklemiyor");
-    return adapter.earsivRaporDurum(cfg, uuid);
+    return this.entegratordenOku(() => adapter.earsivRaporDurum!(cfg, uuid));
   }
 
   // ─── GELEN BELGE YARDIMCILARI ──────────────────────────────────────────────

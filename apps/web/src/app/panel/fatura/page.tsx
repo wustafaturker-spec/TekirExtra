@@ -883,11 +883,11 @@ export default function FaturaSayfasi() {
   }
 
   async function earsivIptalBildir(id: string) {
-    if (!confirm("Bu faturanın iptalini Sovos e-Arşiv servisine bildirmek istediğinize emin misiniz?")) return;
+    if (!confirm("Bu faturanın iptalini e-Arşiv servisine bildirmek istediğinize emin misiniz? İptal geri alınamaz.")) return;
     setHata(""); setBasari("");
     try {
       await api(`/ebelge/earsiv/${id}/iptal-bildir`, { method: "POST", body: JSON.stringify({ iptalTarihi: new Date().toISOString() }) });
-      setBasari("e-Arşiv iptali Sovos'a bildirildi.");
+      setBasari("e-Arşiv iptali entegratöre bildirildi.");
     } catch (h) {
       setHata(h instanceof Error ? h.message : "e-Arşiv iptali bildirilemedi");
     }
@@ -1536,7 +1536,7 @@ export default function FaturaSayfasi() {
               <Button type="button" onClick={() => setEbelgeDetayi(null)}>Kapat</Button>
               {["kuyrukta", "iletildi"].includes(ebelgeDetayi.ebelge.durum) && <Button type="button" variant="primary" onClick={() => void ebelgeSorgula(ebelgeDetayi.id)}>Durumu sorgula</Button>}
               {ebelgeDetayi.ebelge.durum === "hata" && <Button type="button" variant="primary" onClick={() => void ebelgeYenidenGonder(ebelgeDetayi.id)}>Yeniden gönder</Button>}
-              {ebelgeDetayi.ebelge.tur === "earsiv" && ebelgeDetayi.durum === "iptal" && <Button type="button" variant="danger" onClick={() => void earsivIptalBildir(ebelgeDetayi.id)}>İptali Sovos'a bildir</Button>}
+              {ebelgeDetayi.ebelge.tur === "earsiv" && ebelgeDetayi.durum === "iptal" && <Button type="button" variant="danger" onClick={() => void earsivIptalBildir(ebelgeDetayi.id)}>İptali entegratöre bildir</Button>}
             </div>
           </div>
         </HizliKayitPaneli>
