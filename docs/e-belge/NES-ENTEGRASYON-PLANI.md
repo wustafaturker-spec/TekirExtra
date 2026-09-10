@@ -389,6 +389,24 @@ geçti.
 (`parasut.com/blog/e-arsiv-fatura-nasil-iptal-edilir`), tebliğ metni değil.
 Ayar olmasının sebebi bu — mali müşavirin söylediği süreyle değiştirilebilir.
 
+### İptal ikinci kez istendiğinde
+
+NES **iptal edilmiş belgeyi `/earchive/v1/invoices` listesinde döndürmüyor**
+(2026-09-10 ölçüldü: iptalli iki belge de `documentNumber` filtresiyle boş
+dönüyor). Bu yüzden ikinci iptal denemesi "belge bulunamadı" hatası veriyordu
+ve gerçek bir arıza gibi okunuyordu.
+
+Ayrım tekil sorgudan yapılıyor: `GET /earchive/v1/invoices/{uuid}` iptalli
+belgeyi `isCanceled: true` ile döndürür. `durumSorgula` bunu `iptalEdilmis`
+alanında taşıyor; iptal isteği geldiğinde belge sağlayıcıda zaten iptalse
+istenen sonuç gerçekleşmiş sayılıp kayıt eşitleniyor, ikinci çağrı yapılmıyor
+(`earsiv_zaten_iptal` olayıyla loglanır). Aynı ayrım kurtarma ucunda
+(`earsivIptalBildir`) da var.
+
+Liste boş dönerse — `entegratorRef` olmadığı için tekil sorgu yapılamayan eski
+kayıtlarda — mesaj artık iki ihtimali birden söylüyor: belge hiç oluşmamış ya
+da daha önce iptal edilmiş olabilir.
+
 ### `documentNumber` filtresi çalışıyor, `uuid` filtresi çalışmıyor
 
 Ölçüldü (2026-09-10): var olmayan ve çözümlenemeyen numaralarda liste **boş**
