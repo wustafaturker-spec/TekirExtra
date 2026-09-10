@@ -2843,6 +2843,42 @@ enum ZincirBelgeDurum {
 
 /// Stok düşümü HER ZAMAN faturada (S-01 2026-07-13); irsaliye yalnız sevk
 /// belgesidir. Satış siparişi onayı rezerv, alış siparişi yoldaki üretir.
+/// Kayıtlı araç kartı (EBLG-25). e-İrsaliyede plaka her seferinde elle
+/// girilmesin diye tutulur; seçildiğinde değerler belgeye **kopyalanır**,
+/// belge kartı referans almaz — kart sonradan değişse de geçmiş irsaliye
+/// GİB'e ne gönderildiyse onu göstermeye devam eder.
+model Arac {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  plaka      String
+  dorsePlaka String?  @map("dorse_plaka")
+  aciklama   String?
+  aktif      Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, plaka])
+  @@index([tenantId, aktif])
+  @@map("araclar")
+}
+
+/// Kayıtlı şoför kartı (EBLG-25). Araçtan ayrı tutulur: aynı şoför başka araç
+/// kullandığında kart çoğalmasın.
+model Sofor {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  ad        String
+  soyad     String
+  /// GİB `DriverPerson/NationalityID`. Kişisel veri; zorunlu değil.
+  tckn      String?
+  aktif     Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId, aktif])
+  @@map("soforler")
+}
+
 model Belge {
   id                   String           @id @default(uuid()) @db.Uuid
   tenantId             String           @map("tenant_id") @db.Uuid

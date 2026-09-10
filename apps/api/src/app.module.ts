@@ -6,6 +6,7 @@ import { AuthModule } from "./auth/auth.module";
 import { BelgelerModule } from "./belgeler/belgeler.module";
 import { CariModule } from "./cari/cari.module";
 import { StokModule } from "./stok/stok.module";
+import { SevkiyatModule } from "./sevkiyat/sevkiyat.module";
 import { FiyatListeleriModule } from "./fiyat-listeleri/fiyat-listeleri.module";
 import { FaturaModule } from "./fatura/fatura.module";
 import { KasaBankaModule } from "./kasa-banka/kasa-banka.module";
@@ -36,6 +37,7 @@ import { BildirimlerModule } from "./bildirimler/bildirimler.module";
 
 @Module({
   imports: [
+    SevkiyatModule,
     ConfigModule.forRoot({ isGlobal: true }),
     CoreModule,
     AuthModule,
