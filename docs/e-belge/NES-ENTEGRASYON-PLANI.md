@@ -461,6 +461,45 @@ Hata metni 400 karakterde kesiliyor ve bir belge birden çok kurala takılınca
 ikinci kural yarım kalıyordu. Sınır 1000'e çıkarıldı ve kesme kural sınırında
 yapılıyor; sığmayan kural sayısı `(+N kural daha)` diye yazılıyor.
 
+## e-İrsaliye taşıma bilgileri (EBLG-23, 2026-09-10)
+
+Fiili sevk zamanı ve taşıyan artık uydurulmuyor; irsaliyede tutuluyor.
+
+**Alanlar** (`belgeler` tablosu, göç `20260910200000_eirsaliye_tasima_bilgileri`):
+`fiiliSevkZamani`, `tasiyiciCariId`, `plaka`, `dorsePlaka`, `soforAdi`,
+`soforSoyadi`, `soforTckn`. Hepsi yalnız irsaliyede anlamlı; başka belge
+türünde yazılmıyor.
+
+**Kararlar** ([[modul-onay-kapisi]] S-01):
+
+- **Taşıyan cari kartından seçilir.** Nakliyeci ya da kargo firması zaten cari;
+  VKN ve ünvan oradan gelir, mükerrer veri girilmez. Seçilmezse mal **kendi
+  aracımızla** götürülmüş sayılır ve `CarrierParty` firmamız olur.
+- **Şoför ve plaka irsaliyede düz alanlar.** Kayıtlı araç/şoför kartları
+  açılmadı; filoyla çalışan firmada tekrar giriş gerekecek, kalan iş listesinde.
+- **Zorunluluk gönderimde.** İrsaliye eksik bilgiyle oluşturulup onaylanabilir;
+  kâğıt irsaliye kesen firma engellenmez. e-İrsaliye gönderilirken taşıyıcı
+  firma ya da şoför adı+soyadı+plaka yoksa gönderim durur.
+- **Fiili sevk zamanı boşsa onay anı yazılır** — mal onaylanan irsaliyeyle yola
+  çıkar.
+
+**Onaylanmış irsaliyede taşıma bilgisi düzenlenebilir.** Şoför ve plaka çoğu
+zaman onaydan sonra, mal yüklenirken belli oluyor; onay kilidi bu alan kümesi
+için açık (`PATCH /belgeler/:id/tasima-bilgisi`). Belgenin ticari içeriği
+kilitli kalır, e-İrsaliye gönderildikten sonra taşıma bilgisi de kilitlenir.
+Bu kapı olmasa onayı yapılmış ama taşıyanı girilmemiş irsaliye hiç
+gönderilemezdi.
+
+**UBL karşılıkları:** şoför `ShipmentStage/DriverPerson` (ad, soyad,
+`NationalityID`), çekici `ShipmentStage/TransportMeans/RoadTransport/
+LicensePlateID schemeID="PLAKA"`, dorse `TransportHandlingUnit/
+TransportEquipment/ID schemeID="DORSEPLAKA"`, taşıyan `Delivery/CarrierParty`,
+zaman `Delivery/Despatch/ActualDespatchDate` + `ActualDespatchTime`.
+
+Canlı doğrulandı: `GBZ2026000800002` şoför "Mehmet Öztürk", plaka "34 ABC 123"
+ve girilen sevk saati (07:45) ile gitti; taşıyan bilgisi girilmeden yapılan
+gönderim ise beklendiği gibi durdu.
+
 ## Yetki kapsamı (scope)
 
 Dokümantasyon "test ortamında scope'lar geçerli değildir" diyor; **doğru değil,
@@ -500,8 +539,7 @@ alakasız bir belgenin numarası yazılabilirdi.
 | e-Arşiv rapor uçları | `earchive:reports:read` scope'u anahtarda hâlâ yok; uç `502` ile bunu söylüyor ama rapor akışı canlıda denenmedi. |
 | Gerçek kişi ad/soyad | Cari kartında tek `unvan` var; UBL'deki `FirstName`/`FamilyName` ayrımı son kelimeden türetiliyor. |
 | e-Arşiv gönderim şekli | Sabit `ELEKTRONIK`; `KAGIT` seçeneği yok. |
-| e-İrsaliye taşıyan bilgisi | Şoför, plaka ve taşıyıcı firma kartta tutulmuyor; UBL'e malı **kendi aracıyla götüren firma** yazılıyor. Kargoyla sevk eden firmada bu yanlış — taşıyan alanları açılmalı. |
-| e-İrsaliye fiili sevk saati | Kartta yok; kaydın oluşturulma saati yazılıyor. |
+| e-İrsaliye araç/şoför kartları | Şoför ve plaka her irsaliyede yeniden giriliyor; sık kullanılan araç için kayıtlı kart yok. |
 | İrsaliye yanıtı numarası | Kalıcı sayaç yok, gün içi sıra zamandan türetiliyor. Yanıt sayacı açılmalı. |
 | Gelen irsaliye yanıtı | `hataMesaji` alanına başarı açıklaması da yazılıyor ("ZARF BAŞARIYLA İŞLENDİ"). |
 
