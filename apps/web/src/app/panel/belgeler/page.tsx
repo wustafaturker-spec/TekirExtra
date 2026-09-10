@@ -39,6 +39,9 @@ const DONUSUM: Record<string, ("siparis" | "irsaliye" | "fatura")[]> = {
   irsaliye: ["fatura"],
 };
 
+type AracKarti = { id: string; plaka: string; dorsePlaka: string | null; aciklama: string | null };
+type SoforKarti = { id: string; ad: string; soyad: string; tckn: string | null };
+
 type Tur = "teklif" | "siparis" | "irsaliye";
 type Yon = "satis" | "alis";
 type TurFiltre = "tumu" | Tur;
@@ -157,6 +160,10 @@ export default function BelgelerSayfasi() {
   const [soforAdi, setSoforAdi] = useState("");
   const [soforSoyadi, setSoforSoyadi] = useState("");
   const [soforTckn, setSoforTckn] = useState("");
+  // Kayıtlı kartlar (EBLG-25): seçim yalnızca alanları doldurur; belge kartı
+  // referans almaz, gönderilmiş irsaliye kart değişse de olduğu gibi kalır.
+  const [araclar, setAraclar] = useState<AracKarti[]>([]);
+  const [soforKartlari, setSoforKartlari] = useState<SoforKarti[]>([]);
   const [kuruAciklamayaEkle, setKuruAciklamayaEkle] = useState(true);
   const [dovizCinsi, setDovizCinsi] = useState("TRY");
   const [kur, setKur] = useState("1");
@@ -225,6 +232,8 @@ export default function BelgelerSayfasi() {
     if (!tokenAl()) return;
     tumSayfalariAl<Cari>("/cari").then(setCariler).catch(() => undefined);
     tumSayfalariAl<Stok>("/stok").then(setStoklar).catch(() => undefined);
+    api<AracKarti[]>("/sevkiyat/araclar").then(setAraclar).catch(() => undefined);
+    api<SoforKarti[]>("/sevkiyat/soforler").then(setSoforKartlari).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -652,6 +661,22 @@ export default function BelgelerSayfasi() {
                   </Select>
                   <small className="muted">Nakliyeci ya da kargo firmasını cari kartından seçin.</small>
                 </Field>
+                {araclar.length > 0 && (
+                  <Field label="Kayıtlı Araç">
+                    <Select value="" onChange={(e) => { const a = araclar.find((x) => x.id === e.target.value); if (a) { setPlaka(a.plaka); setDorsePlaka(a.dorsePlaka ?? ""); } }}>
+                      <option value="">Seçin — alanlara yazılır</option>
+                      {araclar.map((a) => <option key={a.id} value={a.id}>{a.plaka}{a.aciklama ? ` — ${a.aciklama}` : ""}</option>)}
+                    </Select>
+                  </Field>
+                )}
+                {soforKartlari.length > 0 && (
+                  <Field label="Kayıtlı Şoför">
+                    <Select value="" onChange={(e) => { const k = soforKartlari.find((x) => x.id === e.target.value); if (k) { setSoforAdi(k.ad); setSoforSoyadi(k.soyad); setSoforTckn(k.tckn ?? ""); } }}>
+                      <option value="">Seçin — alanlara yazılır</option>
+                      {soforKartlari.map((k) => <option key={k.id} value={k.id}>{k.ad} {k.soyad}</option>)}
+                    </Select>
+                  </Field>
+                )}
                 <Field label="Plaka"><Input value={plaka} onChange={(e) => setPlaka(e.target.value)} placeholder="34 ABC 123" /></Field>
                 <Field label="Dorse Plakası"><Input value={dorsePlaka} onChange={(e) => setDorsePlaka(e.target.value)} /></Field>
                 <Field label="Şoför Adı"><Input value={soforAdi} onChange={(e) => setSoforAdi(e.target.value)} /></Field>

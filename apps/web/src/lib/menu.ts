@@ -186,6 +186,7 @@ export const AYARLAR: MenuOge[] = [
   { href: "/panel/ayarlar/kullanicilar", ikon: Users, baslik: "Kullanıcılar", eslesme: "tam", esanlamlilar: ["rol", "yetki", "bayi"] },
   { href: "/panel/ayarlar/fatura-serileri", ikon: FileText, baslik: "Fatura Serileri", eslesme: "tam" },
   { href: "/panel/ayarlar/depolar", ikon: Boxes, baslik: "Depolar", eslesme: "tam" },
+  { href: "/panel/ayarlar/araclar", ikon: Truck, baslik: "Araçlar ve Şoförler", eslesme: "tam", esanlamlilar: ["plaka", "dorse", "şoför", "sevkiyat", "e-irsaliye"] },
   { href: "/panel/ayarlar/entegratorler", ikon: Plug, baslik: "e-Belge Ayarları", eslesme: "tam", esanlamlilar: ["sovos", "izibiz", "entegratör"] },
   { href: "/panel/ayarlar/pazaryerleri", ikon: Store, baslik: "Pazaryeri Ayarları", eslesme: "tam" },
   { href: "/panel/ayarlar/pos", ikon: Terminal, baslik: "Sanal POS Ayarları", eslesme: "tam" },
