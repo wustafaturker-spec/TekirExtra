@@ -569,6 +569,29 @@ Plaka ve şoför her irsaliyede yeniden yazılmasın diye kayıtlı kartlar:
 Canlı doğrulandı: karttan gelen plaka ve şoförle düzenlenen
 `GBZ2026000800003` NES'e iletildi.
 
+## Durum açıklaması hata alanına yazılmaz (2026-09-11)
+
+Durum sorgusu sağlayıcının açıklamasını (`detay`) durumdan bağımsız olarak
+`hataMesaji`'na yazıyordu. NES açıklamayı başarılı belgede de döndürüyor
+("1300 BASARIYLA TAMAMLANDI", "ZARF BAŞARIYLA İŞLENDİ"), e-Fatura detayı da
+`hataMesaji`'nı uyarı kutusunda gösterdiği için başarılı belge uyarıyla
+açılıyordu. Kural artık tek yerde (`ebelge/durum-aciklamasi.ts`), e-Fatura,
+e-Arşiv ve e-İrsaliye için aynı:
+
+| Durum | Açıklama nereye gider |
+|---|---|
+| `hata` | `hataMesaji` |
+| e-Arşiv sağlayıcıda iptal (`iptalEdilmis`) | `hataMesaji` — bizde hâlâ geçerli göründüğü için uyarı |
+| `ret` | `aliciYanitNotu`; gelen yanıt taramasından gelmiş not ezilmez |
+| diğerleri | saklanmaz, `hataMesaji` boşaltılır |
+
+NES adaptörü retde yalnız `incomingAnswer.answerNote`'u döndürür; not yoksa zarf
+açıklamasına düşseydi ret gerekçesi olarak "BASARIYLA TAMAMLANDI" görünürdü.
+Ekrandaki ret kutusu artık `durum === "ret"` iken de çıkıyor; önceden yalnız
+gelen yanıt taramasının yazdığı `aliciYaniti`'na bakıyordu. İrsaliyede alıcı
+notu alanı yok, orada açıklamadan yalnız hata kısmı kalır. Eski kayıtlarda kalan
+iki başarı metni bir sonraki durum sorgusunda temizlenir.
+
 ## Yetki kapsamı (scope)
 
 Dokümantasyon "test ortamında scope'lar geçerli değildir" diyor; **doğru değil,
@@ -608,7 +631,6 @@ alakasız bir belgenin numarası yazılabilirdi.
 | e-Arşiv rapor uçları | `earchive:reports:read` scope'u anahtarda hâlâ yok; uç `502` ile bunu söylüyor ama rapor akışı canlıda denenmedi. |
 | Gerçek kişi ad/soyad | Cari kartında tek `unvan` var; UBL'deki `FirstName`/`FamilyName` ayrımı son kelimeden türetiliyor. |
 | e-Arşiv gönderim şekli | Sabit `ELEKTRONIK`; `KAGIT` seçeneği yok. |
-| Gelen irsaliye yanıtı | `hataMesaji` alanına başarı açıklaması da yazılıyor ("ZARF BAŞARIYLA İŞLENDİ"). |
 
 ## Test erişimi — çözüldü
 
