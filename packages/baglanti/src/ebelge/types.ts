@@ -137,8 +137,29 @@ export interface EarsivRapor {
   baslangic: string;
   bitis: string;
   faturaSayisi: number;
-  toplamTutar: string;
+  /** Raporda bildirilen iptal sayısı; sağlayıcı vermiyorsa yok. */
+  iptalSayisi?: number;
+  /**
+   * Sağlayıcının listede verdiği rapor toplamı. NES listede tutar döndürmez;
+   * `null` "bilinmiyor" demektir, tutar rapor dökümünden ayrıca istenir
+   * (`earsivRaporTutari`). "0" yazmak "sıfır lira bildirildi" diye okunuyordu.
+   */
+  toplamTutar: string | null;
   gibDurumu: string;
+}
+
+/** Bir rapor dökümünün para birimine göre toplamı. */
+export interface EarsivRaporToplami {
+  paraBirimi: string;
+  tutar: string;
+  belgeSayisi: number;
+}
+
+/** Rapor dökümünden hesaplanan tutarlar: bildirilen belgeler ve bildirilen iptaller ayrı. */
+export interface EarsivRaporTutari {
+  uuid: string;
+  bildirilen: EarsivRaporToplami[];
+  iptal: EarsivRaporToplami[];
 }
 
 export interface EirsaliyeBelge { uuid: string; belgeNo: string; xml: string; aliciPostaKutusu: string }

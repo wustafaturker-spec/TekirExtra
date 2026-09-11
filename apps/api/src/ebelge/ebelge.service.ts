@@ -1217,6 +1217,24 @@ export class EbelgeService {
     return this.entegratordenOku(() => adapter.earsivRaporDurum!(cfg, uuid));
   }
 
+  /**
+   * Rapor bölümünün GİB'e bildirilen tutarı (EBLG-07). NES listede tutar
+   * vermediği için ekran bunu satır bazında ister; liste her bölüm için
+   * döküm çağırmaz (çağrı disiplini, EBLG-15).
+   */
+  async earsivRaporTutari(uuid: string) {
+    const { tenantId } = aktifBaglam();
+    const baglanti = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } }),
+    );
+    if (!baglanti) throw new BadRequestException("Aktif e-belge bağlantısı bulunamadı");
+    const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
+    const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
+    if (!adapter.earsivRaporTutari) throw new BadRequestException("Aktif entegratör rapor tutarını listede veriyor; ayrı döküm sorgusu yok");
+    this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "earsivRaporTutari", saglayici: baglanti.saglayici });
+    return this.entegratordenOku(() => adapter.earsivRaporTutari!(cfg, uuid));
+  }
+
   // ─── GELEN BELGE YARDIMCILARI ──────────────────────────────────────────────
 
   /**

@@ -12,6 +12,7 @@ import type {
   UblBelge,
   EarsivIptalGirdi,
   EarsivRapor,
+  EarsivRaporTutari,
   EirsaliyeBelge,
   GelenEirsaliye,
   MukellefKaydi,
@@ -153,6 +154,38 @@ function kirp(metin: string, sinir = 1000): string {
  * Tanınmayan bir durum "hata" sayılmaz — belge takipten düşer ve bir daha
  * sorgulanmaz; bilinmeyen hâl "kuyrukta" kalıp yeniden sorgulanmalıdır.
  */
+/** NES rapor dökümünün bir satırı (general/v1 şeması, 2026-09-11). */
+export interface NesRaporDokumSatiri {
+  documentNumber?: string;
+  isCancelRecord?: boolean;
+  documentCurrencyCode?: string;
+  payableAmount?: number;
+}
+
+/**
+ * Döküm satırlarını para birimine göre toplar. İptal kaydı (`isCancelRecord`)
+ * bildirilen toplama katılmaz, ayrı listelenir. Toplama kuruş cinsinden
+ * tamsayıyla yapılır; kayan noktalı toplama yüzlerce belgede kuruş kaydırır.
+ */
+export function earsivRaporTutariOzetle(uuid: string, satirlar: NesRaporDokumSatiri[]): EarsivRaporTutari {
+  const topla = (liste: NesRaporDokumSatiri[]) => {
+    const gruplar = new Map<string, { kurus: number; belgeSayisi: number }>();
+    for (const satir of liste) {
+      const paraBirimi = satir.documentCurrencyCode || "TRY";
+      const grup = gruplar.get(paraBirimi) ?? { kurus: 0, belgeSayisi: 0 };
+      grup.kurus += Math.round(Number(satir.payableAmount ?? 0) * 100);
+      grup.belgeSayisi += 1;
+      gruplar.set(paraBirimi, grup);
+    }
+    return [...gruplar].map(([paraBirimi, g]) => ({ paraBirimi, tutar: (g.kurus / 100).toFixed(2), belgeSayisi: g.belgeSayisi }));
+  };
+  return {
+    uuid,
+    bildirilen: topla(satirlar.filter((s) => !s.isCancelRecord)),
+    iptal: topla(satirlar.filter((s) => s.isCancelRecord)),
+  };
+}
+
 export function nesBelgeDurumu(gidenDurum?: string, yanit?: string): BelgeDurum {
   if (yanit === "Accepted") return "kabul";
   if (yanit === "Rejected") return "ret";
@@ -677,9 +710,11 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
   }
 
   /**
-   * e-Arşiv raporlarını ay ay listeler (EBLG-07). NES raporu dönem bölümleri
-   * hâlinde tutar ve tutar toplamı döndürmez; tutar alanı bu yüzden boştur,
-   * ekran belge sayısı ve GİB durumu üzerinden okunur.
+   * e-Arşiv raporlarını ay ay listeler (EBLG-07). NES rapor bölümü belge ve
+   * iptal sayısını verir ama tutar vermez; tutar `null` döner ve istenirse
+   * bölümün dökümünden hesaplanır (`earsivRaporTutari`). Liste her bölüm için
+   * döküm çağırmaz: aylık listede ~30 ek çağrı demek, NES'in çağrı sınırı da
+   * belgelenmemiş.
    */
   async earsivRaporListele(cfg: EntegratorConfig, baslangic: Date, bitis: Date): Promise<EarsivRapor[]> {
     const raporlar: EarsivRapor[] = [];
@@ -689,7 +724,7 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
       const yil = imlec.getUTCFullYear();
       const ay = imlec.getUTCMonth() + 1;
       const bolumler = await this.cagir<
-        { id?: string; startDate?: string; endDate?: string; eArchiveInvoiceCount?: number; status?: string }[]
+        { id?: string; startDate?: string; endDate?: string; eArchiveInvoiceCount?: number; eArchiveInvoiceCanceledCount?: number; status?: string }[]
       >(cfg, "general", `/v1/earchivedocumentsreport/${yil}/${ay}`);
       for (const bolum of bolumler ?? []) {
         if (!bolum.id) continue;
@@ -699,13 +734,27 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
           baslangic: (bolum.startDate ?? "").slice(0, 10),
           bitis: (bolum.endDate ?? "").slice(0, 10),
           faturaSayisi: bolum.eArchiveInvoiceCount ?? 0,
-          toplamTutar: "0",
+          iptalSayisi: bolum.eArchiveInvoiceCanceledCount ?? 0,
+          toplamTutar: null,
           gibDurumu: bolum.status ?? "",
         });
       }
       imlec.setUTCMonth(imlec.getUTCMonth() + 1);
     }
     return raporlar;
+  }
+
+  /**
+   * Bir rapor bölümünün GİB'e bildirilen tutarı, bölümün belge dökümünden
+   * (`/earchivedocumentsreport/{id}/details`). Ekran bunu satır bazında ister.
+   */
+  async earsivRaporTutari(cfg: EntegratorConfig, uuid: string): Promise<EarsivRaporTutari> {
+    const satirlar = await this.cagir<NesRaporDokumSatiri[]>(
+      cfg,
+      "general",
+      `/v1/earchivedocumentsreport/${encodeURIComponent(uuid)}/details`,
+    );
+    return earsivRaporTutariOzetle(uuid, satirlar ?? []);
   }
 
   async irsaliyeGonder(cfg: EntegratorConfig, belge: EirsaliyeBelge): Promise<GonderimSonuc> {

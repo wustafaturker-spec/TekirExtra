@@ -9,6 +9,7 @@ import type {
   UblBelge,
   EarsivIptalGirdi,
   EarsivRapor,
+  EarsivRaporTutari,
   EirsaliyeBelge,
   GelenEirsaliye,
   MukellefKaydi,
@@ -77,6 +78,12 @@ export interface EntegratorAdapter {
   earsivIptal?(cfg: EntegratorConfig, girdi: EarsivIptalGirdi): Promise<BaglantiSonuc>;
   earsivRaporListele?(cfg: EntegratorConfig, baslangic: Date, bitis: Date): Promise<EarsivRapor[]>;
   earsivRaporDurum?(cfg: EntegratorConfig, uuid: string): Promise<BaglantiSonuc & { kod?: string }>;
+  /**
+   * Rapor bölümünün bildirilen tutarı, bölümün belge dökümünden. Yalnız
+   * listede tutar vermeyen sağlayıcı (NES) uygular; liste tutar veriyorsa
+   * (Sovos) tanımsız kalır.
+   */
+  earsivRaporTutari?(cfg: EntegratorConfig, uuid: string): Promise<EarsivRaporTutari>;
   irsaliyeGonder?(cfg: EntegratorConfig, belge: EirsaliyeBelge): Promise<GonderimSonuc>;
   irsaliyeDurumSorgula?(cfg: EntegratorConfig, belgeRef: string): Promise<BelgeDurumSonuc>;
   gelenIrsaliyeleriCek?(cfg: EntegratorConfig, sonrasi: Date): Promise<GelenEirsaliye[]>;

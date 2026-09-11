@@ -78,6 +78,13 @@ export class EbelgeController {
     return this.kuyrukService.earsivRaporKuyrugaEkle(uuid);
   }
 
+  /** Rapor bölümünün GİB'e bildirilen tutarı; ekran satır bazında ister. */
+  @Get("earsiv/raporlar/:uuid/tutar")
+  @Roller("muhasebe")
+  async earsivRaporTutari(@Param("uuid") uuid: string) {
+    return this.ebelgeService.earsivRaporTutari(uuid);
+  }
+
   // ─── GELEN KUTUSU (EBLG-05/06) ─────────────────────────────────────────────
 
   @Post("gelenleri-cek")
