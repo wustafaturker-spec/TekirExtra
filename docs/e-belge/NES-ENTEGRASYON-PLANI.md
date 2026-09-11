@@ -570,6 +570,34 @@ Plaka ve şoför her irsaliyede yeniden yazılmasın diye kayıtlı kartlar:
 Canlı doğrulandı: karttan gelen plaka ve şoförle düzenlenen
 `GBZ2026000800003` NES'e iletildi.
 
+## e-Arşiv rapor tutarı (EBLG-07, 2026-09-11)
+
+NES rapor listesi (`/general/v1/earchivedocumentsreport/{yil}/{ay}`) bölüm başına
+belge ve iptal sayısı verir (`eArchiveInvoiceCount`,
+`eArchiveInvoiceCanceledCount`) ama tutar vermez. Adaptör tutarı `"0"` yazıyordu
+ve ekran her raporda "GİB rapor toplamı 0,00 TL" gösteriyordu — bu "sıfır lira
+bildirildi" diye okunur. Önceki notun aksine `/details` ve `/histories`
+yanıtları `general/v1/swagger.json`'da tanımlı: `/details` bölümün belge belge
+dökümüdür (`documentNumber`, `payableAmount`, `documentCurrencyCode`,
+`isCancelRecord`, `isCanceled`).
+
+**Kararlar** ([[modul-onay-kapisi]] S-01):
+
+- **Tutar dökümden, satırda istekle.** Liste tutarı `null` ("bilinmiyor") döner;
+  satırdaki "Tutarı getir" `GET /ebelge/earsiv/raporlar/:uuid/tutar` ile o
+  bölümün dökümünü çeker. Liste her bölüm için döküm çağırmaz: aylık listede
+  ~30 ek çağrı olur ve NES'in çağrı sınırı belgelenmemiş. Üstteki "Bildirim
+  toplamı" yalnız tutarı bilinen raporları toplar ve kaçının bilindiğini söyler.
+- **İptaller ayrı.** `isCancelRecord` satırları bildirilen toplama girmez,
+  "İptal: …" olarak ayrı gösterilir; fatura sütunu iptal sayısını da yazar.
+- Toplam para birimine göre ayrılır ve kuruş cinsinden tamsayıyla toplanır
+  (`earsivRaporTutariOzetle`). Sovos listede tutar verdiği için orada döküm
+  sorgusu yok.
+
+**Canlıda denenmedi:** rapor uçları `earchive:reports:read` scope'u ister,
+anahtarda hâlâ yok. Scope eklenince ilk iş bir raporun tutarını getirip
+belge sayısının listeyle tuttuğunu görmek.
+
 ## e-Arşiv gönderim şekli (EBLG-26, 2026-09-11)
 
 GİB, e-Arşiv faturanın alıcıya elektronik mi kâğıt mı teslim edildiğini
@@ -653,9 +681,8 @@ alakasız bir belgenin numarası yazılabilirdi.
 
 | Konu | Durum |
 |---|---|
-| `earsivRaporDurum` | Uygulanmadı. `/histories` ve `/details` uçlarının yanıt şeması şemalarda tanımsız. Rapor listesi zaten bölüm başına `status` taşıdığı için ekran bu bilgiyi listeden okuyabilir. |
+| `earsivRaporDurum` | Uygulanmadı. Rapor listesi bölüm başına `status` taşıdığı için ekran durumu listeden okur. `/histories` yanıtı (2026-09-11 şemasında tanımlı) yalnız işlem geçmişi verir. |
 | Raporlanmış e-Arşiv iptali | Uygulama `Completed` belgede duruyor; rapor sonrası iptalin nasıl bildirileceği mevzuat tarafında netleşmedi. |
-| e-Arşiv rapor tutarı | NES rapor bölümünde toplam tutar dönmüyor; `EarsivRapor.toplamTutar` "0" olarak doldurulur. |
 | Rate limit | Hiçbir şemada tanımlı değil, 429 davranışı bilinmiyor. NES'e soruldu. |
 | e-Arşiv rapor uçları | `earchive:reports:read` scope'u anahtarda hâlâ yok; uç `502` ile bunu söylüyor ama rapor akışı canlıda denenmedi. |
 
