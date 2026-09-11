@@ -21,6 +21,7 @@ import { PrismaService } from "../core/prisma.service";
 import { FaturaService } from "../fatura/fatura.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
 import { UblOkumaHatasi, faturaUblOku, type UblFatura, type UblSatir } from "./ubl-oku";
+import { adSoyadCoz } from "../cari/ad-soyad";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import { MukellefListesiService } from "./mukellef-listesi.service";
 import { faturaUblUret } from "./xml-uretec";
@@ -99,6 +100,9 @@ export class EbelgeService {
         saglayici: baglanti.saglayici,
         mevcutEbelge: fatura.ebelge,
         earsivGonderimSekli: fatura.earsivGonderimSekli,
+        // TCKN'li alıcıda e-Arşiv'e yazılacak ad/soyad; kartta yoksa tahmin
+        // edildiği sihirbazda gösterilir (CARI-21).
+        aliciAdi: fatura.cari.vknTckn.length === 11 ? adSoyadCoz(fatura.cari) : undefined,
         not: "Mükellefiyet kontrolü gönderim onayında tekrar doğrulanır.",
       };
     });

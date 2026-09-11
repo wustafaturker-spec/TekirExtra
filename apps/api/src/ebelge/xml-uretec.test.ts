@@ -110,6 +110,17 @@ describe("faturaUblUret", () => {
     expect(gonderim).toContain("<cbc:ID>KAGIT</cbc:ID>");
   });
 
+  it("gerçek kişi alıcıda karttaki ad ve soyadı yazar, unvandan tahmin etmez (CARI-21)", () => {
+    const xml = faturaUblUret(
+      { ...earsivFaturasi, cari: { vknTckn: "10000000078", unvan: "Ayşe Nur Yılmaz Demir", ad: "Ayşe Nur", soyad: "Yılmaz Demir" } } as never,
+      saglayici,
+      { tur: "earsiv" },
+    );
+
+    expect(xml).toContain("<cbc:FirstName>Ayşe Nur</cbc:FirstName>");
+    expect(xml).toContain("<cbc:FamilyName>Yılmaz Demir</cbc:FamilyName>");
+  });
+
   it("e-Fatura kanalında e-Arşiv profilini ve gönderim şeklini yazmaz", () => {
     const xml = faturaUblUret(earsivFaturasi as never, saglayici, { tur: "efatura" });
 

@@ -8,6 +8,7 @@ import { EpostaService } from "../tenant/eposta.service";
 import { NetgsmAdapter, type NetgsmConfig } from "./netgsm.adapter";
 import { PaytrAdapter, type PaytrCallback, type PaytrConfig } from "./paytr.adapter";
 import { randomBytes } from "node:crypto";
+import { adSoyadCoz } from "../cari/ad-soyad";
 import { PdfService } from "../core/pdf/pdf.service";
 import { makbuzPdfHtml } from "../kasa-banka/makbuz-pdf";
 
@@ -32,7 +33,7 @@ export class PosService {
     if (kaynak.saglayici === "iyzico" && !cari.adresler[0]) throw new BadRequestException("iyzico ödemesi için carinin en az bir adresi zorunludur");
     if (girdi.faturaId) { const f = await this.prisma.tenantIslem(tenantId, (tx) => tx.fatura.findFirst({ where: { id: girdi.faturaId, cariId: cari.id }, include: { kasaBankaHarekets: { select: { tutar: true } }, krediKartiHareketleri: { select: { cariOdemeTutari: true } } } })); if (!f || f.durum !== "kesin" || !["satis", "alis_iade"].includes(f.tip)) throw new BadRequestException("Yalnızca kesinleşmiş açık satış faturası tahsil edilebilir"); if (f.dovizCinsi !== kaynak.dovizCinsi) throw new BadRequestException("Fatura ve POS hesabı para birimleri aynı olmalıdır"); const odenen = f.kasaBankaHarekets.reduce((t, h) => t.add(h.tutar), new Prisma.Decimal(0)).add(f.krediKartiHareketleri.reduce((t, h) => t.add(h.cariOdemeTutari ?? 0), new Prisma.Decimal(0))); const kalan = Prisma.Decimal.max(0, f.genelToplam.sub(odenen)); if (tutar.gt(kalan)) throw new BadRequestException(`Tahsilat kalan ${kalan.toFixed(2)} ${f.dovizCinsi} tutarını aşamaz`); }
     const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.posTahsilat.create({ data: { tenantId, posHesapId: kaynak.id, cariId: cari.id, faturaId: girdi.faturaId, tutar, dovizCinsi: kaynak.dovizCinsi, sonKullanimTarihi: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), makbuzAnahtari: randomBytes(32).toString("hex") } }));
-    const callbackKoku = process.env.PUBLIC_API_URL ?? "http://localhost:3001"; const adres = cari.adresler[0]; const adParcalari = cari.unvan.trim().split(/\s+/); const soyad = adParcalari.length > 1 ? adParcalari.pop()! : "Müşteri"; const ad = adParcalari.join(" ") || cari.unvan;
+    const callbackKoku = process.env.PUBLIC_API_URL ?? "http://localhost:3001"; const adres = cari.adresler[0]; const { ad, soyad } = adSoyadCoz(cari); // CARI-21: karttaki ad/soyad, yoksa unvandan tahmin
     try {
       if (kaynak.saglayici === "paytr") {
         if (!process.env.PUBLIC_API_URL || !callbackKoku.startsWith("https://") || /localhost|127\.0\.0\.1|:\d+(?:\/|$)/i.test(callbackKoku)) throw new BadRequestException("PayTR için portsuz, herkese açık HTTPS PUBLIC_API_URL tanımlanmalıdır");

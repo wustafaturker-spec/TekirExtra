@@ -1,5 +1,6 @@
 import { Fatura, FaturaSatir, CariHesap } from "@prisma/client";
 import { senaryoUblKodu, tevkifatKoduBul } from "@tekirextra/shared";
+import { adSoyadCoz } from "../cari/ad-soyad";
 
 /** UBL içine gömülen başlangıç fatura görünümü; kurumsal şablonla değiştirilebilir. */
 const FATURA_XSLT = `<?xml version="1.0" encoding="UTF-8"?>
@@ -40,13 +41,11 @@ export function faturaUblUret(
   /**
    * Gerçek kişi alıcı. UBL-TR şematronu `schemeID="TCKN"` gördüğünde `cac:Person`
    * arar; ünvanı `cac:PartyName` içinde bırakmak e-Arşiv gönderimini reddettirir
-   * (NES, 2026-09-10). Kart üzerinde ad/soyad ayrı tutulmadığı için son kelime
-   * soyad, kalanı ad sayılır.
+   * (NES, 2026-09-10). Ad ve soyad kartta ayrı tutulur (CARI-21); boşsa
+   * unvandan tahmin edilir.
    */
   const aliciTckn = fatura.cari.vknTckn?.length === 11;
-  const adParcalari = (fatura.cari.unvan ?? "").trim().split(/\s+/).filter(Boolean);
-  const aliciSoyad = adParcalari.length > 1 ? adParcalari[adParcalari.length - 1] : adParcalari[0] ?? "";
-  const aliciAd = adParcalari.length > 1 ? adParcalari.slice(0, -1).join(" ") : adParcalari[0] ?? "";
+  const { ad: aliciAd, soyad: aliciSoyad } = adSoyadCoz(fatura.cari);
 
   /**
    * Tevkifat, fatura düzeyinde `WithholdingTaxTotal` olarak bildirilir; vergi

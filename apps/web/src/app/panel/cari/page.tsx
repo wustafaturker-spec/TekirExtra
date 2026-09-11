@@ -85,6 +85,9 @@ interface CariKisi {
 interface CariDetay extends Cari {
   kisaAd: string | null;
   kisiTipi: string;
+  /** Gerçek kişide dolu; unvan bunlardan türer (CARI-21). */
+  ad: string | null;
+  soyad: string | null;
   temsilciUserId: string | null;
   temsilci: { id: string; adSoyad: string } | null;
   vergiDairesi: string | null;
@@ -220,6 +223,10 @@ export default function CariSayfasi() {
   // Form alanları — kimlik
   const [kod, setKod] = useState("");
   const [unvan, setUnvan] = useState("");
+  const [ad, setAd] = useState("");
+  const [soyad, setSoyad] = useState("");
+  // Detay formunda seçilen kişi tipi; kaydedilene kadar ad/soyad ya da unvan alanını belirler.
+  const [detayKisiTipi, setDetayKisiTipi] = useState<string | null>(null);
   const [kisaAd, setKisaAd] = useState("");
   const [tip, setTip] = useState("musteri");
   const [kisiTipi, setKisiTipi] = useState("tuzel");
@@ -377,6 +384,7 @@ export default function CariSayfasi() {
         api<CariAnalizi>(`/cari/${id}/davranis-analizi`).catch(() => null),
       ]);
       setDetay(cDetay);
+      setDetayKisiTipi(null);
       setEkstreEposta(cDetay.eposta || "");
       setEkstre(cEkstre ?? { cari: cDetay, devirBakiyesi: "0", donemBorc: "0", donemAlacak: "0", donemSonuBakiyesi: "0", dovizOzet: [], satirlar: [] });
       setCrm(cCrm ?? { etkilesimler: [], gorevler: [], teklifler: [], kullanicilar: [] });
@@ -467,7 +475,10 @@ export default function CariSayfasi() {
         method: "POST",
         body: JSON.stringify({
           kod,
-          unvan,
+          // Gerçek kişide unvanı API ad ve soyaddan kurar (CARI-21).
+          unvan: kisiTipi === "gercek" ? `${ad.trim()} ${soyad.trim()}` : unvan,
+          ad: kisiTipi === "gercek" ? ad : undefined,
+          soyad: kisiTipi === "gercek" ? soyad : undefined,
           kisaAd: kisaAd || undefined,
           tip,
           kisiTipi,
@@ -496,6 +507,8 @@ export default function CariSayfasi() {
       setFormAcik(false);
       setKod("");
       setUnvan("");
+      setAd("");
+      setSoyad("");
       setKisaAd("");
       setSektor("");
       setTemsilciUserId("");
@@ -569,16 +582,24 @@ export default function CariSayfasi() {
   async function cariKimligiGuncelle(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); if (!detay) return; const f = new FormData(e.currentTarget); setHata(""); setBasari("");
     const degerler = {
-      unvan: String(f.get("unvan") || "").trim(), kisaAd: String(f.get("kisaAd") || "").trim(),
+      unvan: String(f.get("unvan") || "").trim(), ad: String(f.get("ad") || "").trim(), soyad: String(f.get("soyad") || "").trim(),
+      kisaAd: String(f.get("kisaAd") || "").trim(),
       tip: String(f.get("tip") || detay.tip), kisiTipi: String(f.get("kisiTipi") || detay.kisiTipi), sektor: String(f.get("sektor") || "").trim(),
       temsilciUserId: String(f.get("temsilciUserId") || "").trim(),
       vknTckn: String(f.get("vknTckn") || "").trim(), vergiDairesi: String(f.get("vergiDairesi") || "").trim(),
       mersisNo: String(f.get("mersisNo") || "").trim(), ticaretSicilNo: String(f.get("ticaretSicilNo") || "").trim(),
       kvkkOnayTarihi: String(f.get("kvkkOnayTarihi") || "").trim(),
     };
-    if (!degerler.unvan) { setHata("Ünvan / ad soyad zorunludur."); return; }
+    // Gerçek kişide unvan ad ve soyaddan türer (CARI-21); tüzelde ad/soyad tutulmaz.
+    if (degerler.kisiTipi === "gercek") {
+      if (!degerler.ad || !degerler.soyad) { setHata("Gerçek kişide ad ve soyad zorunludur."); return; }
+      degerler.unvan = `${degerler.ad} ${degerler.soyad}`;
+    } else {
+      degerler.ad = ""; degerler.soyad = "";
+    }
+    if (!degerler.unvan) { setHata("Ünvan zorunludur."); return; }
     const onceki = {
-      unvan: detay.unvan, kisaAd: detay.kisaAd ?? "", tip: detay.tip, kisiTipi: detay.kisiTipi,
+      unvan: detay.unvan, ad: detay.ad ?? "", soyad: detay.soyad ?? "", kisaAd: detay.kisaAd ?? "", tip: detay.tip, kisiTipi: detay.kisiTipi,
       sektor: detay.sektor ?? "", temsilciUserId: detay.temsilciUserId ?? "", vknTckn: detay.vknTckn ?? "", vergiDairesi: detay.vergiDairesi ?? "",
       mersisNo: detay.mersisNo ?? "", ticaretSicilNo: detay.ticaretSicilNo ?? "", kvkkOnayTarihi: detay.kvkkOnayTarihi ?? "",
     };
@@ -856,7 +877,14 @@ export default function CariSayfasi() {
           <div className="document-editor__section">
             <h4 className="document-editor__section-title">Temel bilgiler</h4>
             <div className="record-fields record-fields--cari-main">
-              <Field label="Ünvan / Ad soyad"><Input value={unvan} onChange={(e) => setUnvan(e.target.value)} required placeholder="Teknoloji A.Ş." /></Field>
+              {kisiTipi === "gercek" ? (
+                <>
+                  <Field label="Ad"><Input value={ad} onChange={(e) => setAd(e.target.value)} required placeholder="Ayşe Nur" /></Field>
+                  <Field label="Soyad"><Input value={soyad} onChange={(e) => setSoyad(e.target.value)} required placeholder="Yılmaz" /></Field>
+                </>
+              ) : (
+                <Field label="Ünvan"><Input value={unvan} onChange={(e) => setUnvan(e.target.value)} required placeholder="Teknoloji A.Ş." /></Field>
+              )}
               <Field label="Cari kodu"><Input value={kod} onChange={(e) => setKod(e.target.value)} required placeholder="CARI-001" /></Field>
               <Field label="Cari tipi"><Select value={tip} onChange={(e) => setTip(e.target.value)}>{Object.entries(TIP_ETIKETLERI).map(([deger, ad]) => (<option key={deger} value={deger}>{ad}</option>))}</Select></Field>
               <Field label="Kısa ad"><Input value={kisaAd} onChange={(e) => setKisaAd(e.target.value)} placeholder="Teknoloji" /></Field>
@@ -983,10 +1011,17 @@ export default function CariSayfasi() {
               <Card className="cari-identity-card">
                 <div className="expense-entry__section-head"><span className="expense-entry__step">01</span><div><h3>Cari kimlik ve resmî bilgiler</h3><p>Ticari sınıflandırma, vergi ve sicil bilgilerini tek noktadan yönetin</p></div></div>
                 <form className="cari-identity-form" onSubmit={cariKimligiGuncelle}>
-                  <Field label="Ünvan / Ad soyad"><Input name="unvan" defaultValue={detay.unvan} required /></Field>
+                  {(detayKisiTipi ?? detay.kisiTipi) === "gercek" ? (
+                    <>
+                      <Field label="Ad"><Input name="ad" defaultValue={detay.ad ?? ""} required /></Field>
+                      <Field label="Soyad"><Input name="soyad" defaultValue={detay.soyad ?? ""} required /></Field>
+                    </>
+                  ) : (
+                    <Field label="Ünvan"><Input name="unvan" defaultValue={detay.unvan} required /></Field>
+                  )}
                   <Field label="Kısa ad"><Input name="kisaAd" defaultValue={detay.kisaAd ?? ""} /></Field>
                   <Field label="Cari tipi"><Select name="tip" defaultValue={detay.tip}>{Object.entries(TIP_ETIKETLERI).map(([deger, ad]) => <option key={deger} value={deger}>{ad}</option>)}</Select></Field>
-                  <Field label="Kişi tipi"><Select name="kisiTipi" defaultValue={detay.kisiTipi}><option value="tuzel">Tüzel kişi</option><option value="gercek">Gerçek kişi</option></Select></Field>
+                  <Field label="Kişi tipi"><Select name="kisiTipi" defaultValue={detay.kisiTipi} onChange={(e) => setDetayKisiTipi(e.target.value)}><option value="tuzel">Tüzel kişi</option><option value="gercek">Gerçek kişi</option></Select></Field>
                   <Field label="Sektör"><Input name="sektor" defaultValue={detay.sektor ?? ""} placeholder="Örn. Perakende" /></Field>
                   <Field label="Müşteri temsilcisi"><Select name="temsilciUserId" defaultValue={detay.temsilciUserId ?? ""}><option value="">Seçiniz</option>{crm?.kullanicilar?.map((u) => <option key={u.id} value={u.id}>{u.adSoyad}</option>)}</Select></Field>
                   <Field label="VKN / TCKN"><Input name="vknTckn" defaultValue={detay.vknTckn ?? ""} inputMode="numeric" maxLength={11} pattern="[0-9]{10,11}" title="VKN 10, TCKN 11 rakam olmalıdır" placeholder="VKN 10 · TCKN 11 hane" /></Field>

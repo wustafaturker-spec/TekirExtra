@@ -620,6 +620,10 @@ model CariHesap {
   tenantId                String     @map("tenant_id") @db.Uuid
   kod                     String
   unvan                   String
+  /// Gerçek kişide ad ve soyad zorunludur, unvan bunlardan türer (CARI-21).
+  /// Tüzel kişide boştur.
+  ad                      String?
+  soyad                   String?
   kisaAd                  String?    @map("kisa_ad")
   tip                     CariTip
   kisiTipi                KisiTip    @default(tuzel) @map("kisi_tipi")

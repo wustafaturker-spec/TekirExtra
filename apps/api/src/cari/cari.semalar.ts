@@ -26,6 +26,9 @@ export const cariOlusturSemasi = z.object({
   kisaAd: z.string().max(80).optional(),
   tip: z.enum(CARI_TIPLERI),
   kisiTipi: z.enum(KISI_TIPLERI).default("tuzel"),
+  /** Gerçek kişide zorunlu; unvan bunlardan türer (CARI-21). Tüzel kişide yok sayılır. */
+  ad: z.string().trim().max(100).optional().nullable(),
+  soyad: z.string().trim().max(100).optional().nullable(),
   sektor: z.string().max(120).optional(),
   temsilciUserId: z.uuid().optional(),
   vknTckn: z

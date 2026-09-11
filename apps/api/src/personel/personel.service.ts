@@ -137,6 +137,8 @@ export class PersonelService {
             unvan: `${veri.ad} ${veri.soyad}`,
             tip: "personel",
             kisiTipi: "gercek",
+            ad: veri.ad,
+            soyad: veri.soyad,
             eposta: veri.eposta || null,
             telefon: veri.telefon || null,
             iban: veri.iban || null,

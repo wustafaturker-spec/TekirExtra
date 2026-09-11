@@ -26,6 +26,7 @@ import { yaslandir } from "./yaslandirma";
 import { cariExcelOku, cariEkstreExcelYaz } from "../core/excel-yardimci";
 import { PdfService } from "../core/pdf/pdf.service";
 import { cariDavranisAnalizi } from "./cari-analiz";
+import { gercekKisiUnvani } from "./ad-soyad";
 import { metinNormalize } from "@tekirextra/shared";
 import { EpostaService } from "../tenant/eposta.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
@@ -200,14 +201,27 @@ export class CariService {
     });
   }
 
+  /**
+   * CARI-21: gerçek kişide ad ve soyad zorunludur ve unvan bunlardan türer,
+   * böylece listeler/PDF'teki unvan ile e-Belge'ye giden ad ayrışmaz. Tüzel
+   * kişide ad/soyad tutulmaz.
+   */
+  private kisiKimligi(kisiTipi: string, ad?: string | null, soyad?: string | null) {
+    if (kisiTipi !== "gercek") return { ad: null, soyad: null };
+    if (!ad?.trim() || !soyad?.trim()) throw new BadRequestException("Gerçek kişi carisinde ad ve soyad zorunludur");
+    return { ad: ad.trim(), soyad: soyad.trim(), unvan: gercekKisiUnvani(ad, soyad) };
+  }
+
   async olustur(girdi: CariOlusturGirdisi) {
     const { tenantId } = aktifBaglam();
+    const kimlik = this.kisiKimligi(girdi.kisiTipi, girdi.ad, girdi.soyad);
     try {
       const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
         tx.cariHesap.create({
           data: {
             tenantId,
             ...girdi,
+            ...kimlik,
             kvkkOnayTarihi: girdi.kvkkOnayTarihi
               ? new Date(girdi.kvkkOnayTarihi)
               : undefined,
@@ -274,6 +288,8 @@ export class CariService {
           kisaAd: cari.kisaAd ? `${cari.kisaAd} (Kopya)` : null,
           tip: cari.tip,
           kisiTipi: cari.kisiTipi,
+          ad: cari.ad,
+          soyad: cari.soyad,
           sektor: cari.sektor,
           temsilciUserId: cari.temsilciUserId,
           vknTckn: cari.vknTckn,
@@ -364,12 +380,23 @@ export class CariService {
 
   async guncelle(id: string, girdi: z.infer<typeof cariGuncelleSemasi>) {
     const { tenantId } = aktifBaglam();
-    await this.getir(id);
+    const mevcut = await this.getir(id);
+    // Kimlik kuralı yalnız kimlik alanlarından biri değişirken uygulanır; başka
+    // alanı güncelleyen istek, ad/soyadı henüz girilmemiş eski kayıtta kırılmasın.
+    const kimlikDegisiyor = girdi.unvan !== undefined || girdi.ad !== undefined || girdi.soyad !== undefined || girdi.kisiTipi !== undefined;
+    const kimlik = kimlikDegisiyor
+      ? this.kisiKimligi(
+          girdi.kisiTipi ?? mevcut.kisiTipi,
+          girdi.ad !== undefined ? girdi.ad : mevcut.ad,
+          girdi.soyad !== undefined ? girdi.soyad : mevcut.soyad,
+        )
+      : {};
     const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.cariHesap.update({
         where: { id },
         data: {
           ...girdi,
+          ...kimlik,
           kvkkOnayTarihi: girdi.kvkkOnayTarihi
             ? new Date(girdi.kvkkOnayTarihi)
             : undefined,
@@ -752,6 +779,8 @@ export class CariService {
     kisaAd: string | null;
     tip: string;
     kisiTipi: string;
+    ad: string | null;
+    soyad: string | null;
     sektor: string | null;
     temsilciUserId: string | null;
     vknTckn: string | null;
@@ -784,6 +813,8 @@ export class CariService {
       kisaAd: k.kisaAd,
       tip: k.tip,
       kisiTipi: k.kisiTipi,
+      ad: k.ad,
+      soyad: k.soyad,
       sektor: k.sektor,
       temsilciUserId: k.temsilciUserId,
       vknTckn: k.vknTckn,

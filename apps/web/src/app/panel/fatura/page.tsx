@@ -158,6 +158,8 @@ interface EbelgeWizardBilgisi {
   vknTckn?: string | null;
   saglayici?: string;
   earsivGonderimSekli?: "elektronik" | "kagit";
+  /** TCKN'li alıcıda e-Arşiv'e yazılacak ad/soyad; `tahmin` ise kartta girilmemiş (CARI-21). */
+  aliciAdi?: { ad: string; soyad: string; tahmin: boolean };
   not?: string;
 }
 interface KayitliGorunum { id: string; ad: string; yon: "satis" | "alis" | null; durum: string | null; ebelge: string | null; odeme: string | null; }
@@ -1500,6 +1502,11 @@ export default function FaturaSayfasi() {
                   <option value="kagit">Kâğıt — basılı olarak teslim edilir</option>
                 </Select>
               </Field>
+            )}
+            {ebelgeWizard.bilgi.aliciAdi?.tahmin && (
+              <div className="approval-impact is-warning">
+                Carinin adı ve soyadı kartta girilmemiş; e-Arşiv&apos;e unvandan tahminle Ad: <strong>{ebelgeWizard.bilgi.aliciAdi.ad}</strong>, Soyad: <strong>{ebelgeWizard.bilgi.aliciAdi.soyad}</strong> yazılacak. Doğru değilse cari kartında düzeltin.
+              </div>
             )}
             {ebelgeWizard.bilgi.neden && <div className="approval-impact is-warning">{ebelgeWizard.bilgi.neden}</div>}
             {ebelgeWizard.bilgi.not && <div className="approval-impact">{ebelgeWizard.bilgi.not}</div>}
