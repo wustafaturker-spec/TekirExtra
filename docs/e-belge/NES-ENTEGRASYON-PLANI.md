@@ -294,9 +294,11 @@ içinde yazılıyordu.
 > bulunmalıdır.`
 
 Alıcı kimliği 11 haneliyse ünvan `cac:Person` altına (`FirstName`/`FamilyName`)
-yazılır ve `cac:PartyName` üretilmez. Kart üzerinde ad/soyad ayrı tutulmadığı
-için son kelime soyad, kalanı ad sayılır — **kalan iş:** gerçek kişi cari
-kartına ayrı ad/soyad alanları.
+yazılır ve `cac:PartyName` üretilmez. Ad ve soyad cari kartında ayrı tutulur
+(CARI-21, 2026-09-11); gerçek kişide zorunludur ve unvan bunlardan türer. Alanlar
+boşsa (eski kayıt ya da tüzel işaretlenmiş TCKN'li cari) son kelime soyad,
+kalanı ad sayılır ve e-Belge sihirbazı tahmini gösterir. Kural tek yerde:
+`cari/ad-soyad.ts` (POS ödemesi de aynısını kullanır).
 
 **3. Gönderim şekli bildirilmiyordu.**
 
@@ -656,7 +658,6 @@ alakasız bir belgenin numarası yazılabilirdi.
 | e-Arşiv rapor tutarı | NES rapor bölümünde toplam tutar dönmüyor; `EarsivRapor.toplamTutar` "0" olarak doldurulur. |
 | Rate limit | Hiçbir şemada tanımlı değil, 429 davranışı bilinmiyor. NES'e soruldu. |
 | e-Arşiv rapor uçları | `earchive:reports:read` scope'u anahtarda hâlâ yok; uç `502` ile bunu söylüyor ama rapor akışı canlıda denenmedi. |
-| Gerçek kişi ad/soyad | Cari kartında tek `unvan` var; UBL'deki `FirstName`/`FamilyName` ayrımı son kelimeden türetiliyor. |
 
 ## Test erişimi — çözüldü
 

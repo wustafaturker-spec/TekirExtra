@@ -198,6 +198,7 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | CARI-17 | Kara liste / işlem blokajı: blokajlı cariye belge kesimi AYR-04 kural altyapısıyla engellenir. Kart üzerinde risk özeti gösterilir: risk limiti, mevcut risk (bakiye + çek/senet riski), kalan limit. | Z |
 | CARI-18 | Kart detayında hesaplanan finansal özet sunulmalıdır: son işlem/tahsilat/ödeme tarihi, vadesi geçmiş bakiye. | Z |
 | CARI-19 | ✅ CRM özellikleri: tarihçeli görüşme/telefon/e-posta/ziyaret kayıtları, kullanıcıya atanabilen görev ve hatırlatmalar, görev durum takibi, cari teklif geçmişi. | G |
+| CARI-21 | ✅ Gerçek kişi carilerde **ad ve soyad** ayrı alanlarda tutulmalı ve zorunlu olmalıdır; unvan bunlardan türer. e-Arşiv UBL'inde (`FirstName`/`FamilyName`) ve POS ödemesinde bu alanlar kullanılır; boşsa (eski kayıt) unvandan tahmin edilir ve e-Belge sihirbazı tahmini gösterir. **(2026-09-11'de yapıldı — docs/e-belge/NES-ENTEGRASYON-PLANI.md)** | G |
 | CARI-20 | ✅ Açıklanabilir karar desteği: FIFO tahsilat geçmişinden gecikme tahmini, bileşenli risk skoru, ödeme davranışı/güven analizi ve son 6 aylık hacme dayalı otomatik limit önerisi. | G |
 
 ### 3.2 Fatura Yönetimi (FTR)
