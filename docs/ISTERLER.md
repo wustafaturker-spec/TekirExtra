@@ -505,6 +505,39 @@ de iki kez gönderebilir. Zil menüsü artık bu kayıtlardan beslenir
 
 ---
 
+### 3.11 Nakit Akışı Tahmini (NAK)
+
+**S-01 kapı kararları (2026-09-11, kullanıcı onayı):** Bütçe ve nakit akışı
+modülünün ilk paketi nakit akışı tahminidir; bütçe (plan/gerçekleşen) ikinci
+pakette ayrıca netleştirilir. Tahmin mevcut kayıtlardan üretilir: fatura,
+çek/senet, masraf, kira, kredi kartı taksiti, bordro, tekrarlayan fatura ve
+ödeme talimatı. Alacaklar üç senaryoda (iyimser/baz/kötümser) carinin geçmiş
+tahsilat gecikmesine göre kaydırılır. Yalnız yönetici ve muhasebe görür.
+**Kapsam dışı (ilk sürüm):** bütçe, elle girilen tahmin kalemleri ve KDV,
+muhtasar, SGK gibi vergi/prim ödemeleri — sonuncusu tahmine girmez ve ekran
+bunu açıkça belirtir; uydurma oranla tahmin üretilmez.
+
+Önceki "AI nakit tahmini" başlangıç bakiyesini kasa/banka kaydında olmayan bir
+`bakiye` alanından okuduğu için `NaN` üretiyor ve her firmaya "düşük risk"
+diyordu; NAK bu ekranın yerini alır.
+
+| No | İster | Öncelik |
+|---|---|---|
+| NAK-01 | Başlangıç bakiyesi aktif kasa ve banka hesaplarının hareketlerinden (TL karşılığı) hesaplanmalıdır; kayıtlı bir bakiye alanına güvenilmez. | Z |
+| NAK-02 | Tahmin 7, 30 ve 90 günlük ufukta üretilmelidir; 7 ve 30 günde günlük, 90 günde haftalık dökümle her dönem için giriş, çıkış, net ve dönem sonu bakiye gösterilir. | Z |
+| NAK-03 | **Faturalar:** kesin satış faturası ve alış iadesi giriş, alış faturası ve satış iadesi çıkış sayılır; tutar kayıtlı ödemeler düşülmüş kalan, tarih vadedir. | Z |
+| NAK-04 | **Çek/senet:** alınanlardan portföyde ya da tahsile verilmiş olanlar vadesinde giriş sayılır; ciro edilen, teminattaki, karşılıksız ve iade edilenler sayılmaz. Verilen ve ödenmemiş olanlar vadesinde çıkıştır. | Z |
+| NAK-05 | **Masraf ve kira:** onaylı ve ödenmemiş masrafın kalanı vadesinde (vade yoksa belge tarihinde) çıkıştır. Aktif kira sözleşmesi her ay ödeme gününde matrah + KDV − stopaj kadar çıkış üretir; o ayın kira masrafı zaten kayıtlıysa sözleşme ayrıca sayılmaz. | Z |
+| NAK-06 | **Kredi kartı:** taksitler vade tarihinde çıkıştır. | Z |
+| NAK-07 | **Bordro:** onaylı ya da kısmen ödenmiş bordroların kalanı ödeme tarihinde (yoksa dönem sonunda) çıkıştır. Ufuk içindeki sonraki aylar için son dönemin toplam ödenecek tutarı tekrar ediyor sayılır ve **tahmin** olarak işaretlenir. | Z |
+| NAK-08 | **Tekrarlayan fatura ve ödeme talimatı:** aktif tekrarlayan faturalar ufuk içindeki her üretim tarihinde şablon faturanın tutarıyla (satış giriş, alış çıkış) tahmin kalemi üretir. Onaylanmış ama bankaya gönderilmemiş ödeme talimatları bugün çıkış sayılır. | Z |
+| NAK-09 | **Senaryolar:** iyimser — alacaklar vadesinde tahsil edilir; baz — vade + carinin tutar ağırlıklı ortalama tahsilat gecikmesi (CARI-20; veri yetersizse 0); kötümser — gecikmenin iki katı, ayrıca kara listedeki carilerin ve vadesi 90 günden fazla geçmiş alacakların tahsilatı ufuk dışında kalır. Borçlar her senaryoda vadesinde ödenir. Vadesi geçmiş kalemler en erken bugüne düşer. | Z |
+| NAK-10 | Dövizli kalemler güncel TCMB kuruyla TL'ye çevrilmeli; kullanılan kur ekranda görünmelidir. | Z |
+| NAK-11 | **Açıklanabilirlik:** her tahmin kalemi kaynağını (belge türü, no, cari), gerçek tarihini, senaryoya göre kaydırılmış tarihini ve kaydırma nedenini taşımalı; ekrandan kaynak belgeye gidilebilmelidir. | Z |
+| NAK-12 | Bir senaryoda bakiye eksiye düşüyorsa ilk düştüğü gün ve açık tutar gösterilmelidir; hazır "risk seviyesi" ya da kalıp tavsiye metni üretilmez. | Z |
+| NAK-13 | Nakit akışı yalnız **yönetici** ve **muhasebe** rollerine açıktır; mali müşavir dahil diğer roller göremez. | Z |
+| NAK-14 | `/panel/nakit-akisi` ekranı eklenir; eski AI sayfasındaki nakit tahmini kartı ve API ucu kaldırılıp yeni ekrana yönlendirilir. | Z |
+
 ## 4. Fonksiyonel Olmayan İsterler
 
 ### 4.1 Performans
