@@ -305,9 +305,8 @@ kartına ayrı ad/soyad alanları.
 e-Arşiv UBL'i gönderim şeklini `AdditionalDocumentReference` içinde taşır;
 NES'in aradığı kod **`SEND_TYPE`**'tır (elimizdeki Sovos örneğinde aynı bilgi
 `EREPSENDT` koduyla duruyor — kod entegratöre göre değişiyor, örneğe bakıp
-kopyalamak yanıltıcı). Değer şimdilik sabit `ELEKTRONIK`; PDF'i e-postayla
-ilettiğimiz için doğru varsayılan bu. **Kalan iş:** kâğıt teslim eden firmalar
-için `KAGIT` seçeneği.
+kopyalamak yanıltıcı). Değer faturanın teslim şeklinden gelir: `ELEKTRONIK` ya
+da `KAGIT` (EBLG-26, bkz. "e-Arşiv gönderim şekli").
 
 **4. e-Arşiv, e-Fatura serisini kullanamaz.**
 
@@ -569,6 +568,34 @@ Plaka ve şoför her irsaliyede yeniden yazılmasın diye kayıtlı kartlar:
 Canlı doğrulandı: karttan gelen plaka ve şoförle düzenlenen
 `GBZ2026000800003` NES'e iletildi.
 
+## e-Arşiv gönderim şekli (EBLG-26, 2026-09-11)
+
+GİB, e-Arşiv faturanın alıcıya elektronik mi kâğıt mı teslim edildiğini
+UBL'de ister (`AdditionalDocumentReference`, `DocumentTypeCode = SEND_TYPE`).
+Değer sabit `ELEKTRONIK` idi; kâğıt fatura isteyen müşteriye doğru bildirim
+yapılamıyordu.
+
+**Kararlar** ([[modul-onay-kapisi]] S-01):
+
+- **Varsayılan cari kartında, seçim sihirbazda.** Cari kartında "e-Arşiv
+  teslim şekli" (başta elektronik); fatura oluşturulurken faturaya kopyalanır
+  (`faturalar.earsiv_gonderim_sekli`, göç `20260911100000_earsiv_gonderim_sekli`).
+  e-Belge sihirbazı seçimi gösterir ve fatura bazında değiştirilebilir;
+  e-Fatura profilindeki (FTR-19) düzenin aynısı. Gönderim kuyruktan yürüdüğü
+  için seçim gönder ucunun gövdesiyle faturaya yazılır, UBL faturadan okur.
+- **Sihirbaz kanalı önceden sormaz.** Seçim "e-Arşiv olarak düzenlenirse"
+  diye her zaman görünür; kanal e-Fatura çıkarsa değer kullanılmaz. Kanalı
+  sihirbazda belirlemek bayat mükellef listesinde sihirbazı da kilitlerdi.
+- **Kâğıt bildirilmiş e-Arşiv e-postalanabilir, ama uyarıyla.** Müşteri kopya
+  isteyebilir; e-posta penceresi bunun bilgi amaçlı bir kopya olduğunu söyler.
+- **PDF ibaresi.** Elektronik iletilen e-Arşivin PDF'inde "e-Arşiv izni
+  kapsamında elektronik ortamda iletilmiştir." ibaresi çıkar; kâğıt teslimde ve
+  e-Faturada çıkmaz. Metin mali müşavire teyit ettirilecek.
+
+Canlı doğrulandı: cari kartı elektronikken sihirbazda kâğıt seçilerek
+gönderilen `SNC2026000000005` NES'e iletildi; arşivlenen UBL'de gönderim şekli
+`KAGIT`, PDF'inde ibare yok.
+
 ## Durum açıklaması hata alanına yazılmaz (2026-09-11)
 
 Durum sorgusu sağlayıcının açıklamasını (`detay`) durumdan bağımsız olarak
@@ -630,7 +657,6 @@ alakasız bir belgenin numarası yazılabilirdi.
 | Rate limit | Hiçbir şemada tanımlı değil, 429 davranışı bilinmiyor. NES'e soruldu. |
 | e-Arşiv rapor uçları | `earchive:reports:read` scope'u anahtarda hâlâ yok; uç `502` ile bunu söylüyor ama rapor akışı canlıda denenmedi. |
 | Gerçek kişi ad/soyad | Cari kartında tek `unvan` var; UBL'deki `FirstName`/`FamilyName` ayrımı son kelimeden türetiliyor. |
-| e-Arşiv gönderim şekli | Sabit `ELEKTRONIK`; `KAGIT` seçeneği yok. |
 
 ## Test erişimi — çözüldü
 
