@@ -1527,7 +1527,7 @@ export default function FaturaSayfasi() {
               <div><dt>Son güncelleme</dt><dd>{new Date(ebelgeDetayi.ebelge.updatedAt).toLocaleString("tr-TR")}</dd></div>
             </dl>
             {ebelgeDetayi.ebelge.hataMesaji && <div className="approval-impact is-warning">{ebelgeDetayi.ebelge.hataMesaji}</div>}
-            {ebelgeDetayi.ebelge.aliciYaniti === "ret" && (
+            {(ebelgeDetayi.ebelge.aliciYaniti === "ret" || ebelgeDetayi.ebelge.durum === "ret") && (
               <div className="approval-impact is-warning">
                 Alıcı ret gerekçesi: {ebelgeDetayi.ebelge.aliciYanitNotu || "belirtilmedi"}. Ret alan ticari fatura için iade faturası kesilmesi gerekir.
               </div>

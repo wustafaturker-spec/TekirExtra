@@ -21,6 +21,7 @@ import { PrismaService } from "../core/prisma.service";
 import { FaturaService } from "../fatura/fatura.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
 import { UblOkumaHatasi, faturaUblOku, type UblFatura, type UblSatir } from "./ubl-oku";
+import { durumAciklamasi } from "./durum-aciklamasi";
 import { MukellefListesiService } from "./mukellef-listesi.service";
 import { faturaUblUret } from "./xml-uretec";
 
@@ -348,7 +349,7 @@ export class EbelgeService {
         where: { id: ebelge.id },
         data: {
           durum: sonuc.durum,
-          hataMesaji: sonuc.detay || null,
+          ...durumAciklamasi(sonuc, ebelge.aliciYanitNotu),
           sonDurumSorguAt: new Date(),
         },
       });
@@ -384,13 +385,13 @@ export class EbelgeService {
           entegratorRef: { not: null },
           OR: [{ sonDurumSorguAt: null }, { sonDurumSorguAt: { lt: esik } }],
         },
-        select: { id: true, entegratorRef: true },
+        select: { id: true, entegratorRef: true, aliciYanitNotu: true },
         take: 500,
       }),
     );
     if (kayitlar.length === 0) return { sorgulanan: 0, guncellenen: 0 };
 
-    const refKayit = new Map(kayitlar.map((k) => [k.entegratorRef!, k.id]));
+    const refKayit = new Map(kayitlar.map((k) => [k.entegratorRef!, k]));
     // e-Arşiv referansları zarf sorgusuna girmez; ayrı servisin tekil durum
     // metodunu kullanırlar.
     const zarflar = [...refKayit.keys()].filter((ref) => !ref.startsWith("EARSIV:"));
@@ -415,12 +416,12 @@ export class EbelgeService {
 
     let guncellenen = 0;
     for (const sonuc of sonuclar) {
-      const id = refKayit.get(sonuc.belgeRef);
-      if (!id) continue;
+      const kayit = refKayit.get(sonuc.belgeRef);
+      if (!kayit) continue;
       await this.prisma.tenantIslem(tenantId, (tx) =>
         tx.ebelgeKayit.update({
-          where: { id },
-          data: { durum: sonuc.durum, hataMesaji: sonuc.detay || null, sonDurumSorguAt: new Date() },
+          where: { id: kayit.id },
+          data: { durum: sonuc.durum, ...durumAciklamasi(sonuc, kayit.aliciYanitNotu), sonDurumSorguAt: new Date() },
         }),
       );
       guncellenen += 1;

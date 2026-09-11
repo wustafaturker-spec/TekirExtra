@@ -561,13 +561,17 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
         outgoingEnvelope?: { description?: string };
         incomingAnswer?: { answerNote?: string; errorDescription?: string };
       }>(cfg, "einvoice", `/v1/outgoing/invoices/${encodeURIComponent(belgeRef)}`);
+      const durum = nesBelgeDurumu(fatura?.outgoingStatus, fatura?.documentAnswer);
       return {
         belgeRef,
-        durum: nesBelgeDurumu(fatura?.outgoingStatus, fatura?.documentAnswer),
+        durum,
+        // Retteki açıklama alıcının notu olarak saklanır; not yoksa zarf
+        // açıklamasına ("BASARIYLA TAMAMLANDI") düşülürse ret gerekçesi diye
+        // o görünür.
         detay:
-          fatura?.incomingAnswer?.answerNote ||
-          fatura?.incomingAnswer?.errorDescription ||
-          fatura?.outgoingEnvelope?.description,
+          durum === "ret"
+            ? fatura?.incomingAnswer?.answerNote
+            : fatura?.incomingAnswer?.errorDescription || fatura?.outgoingEnvelope?.description,
       };
     } catch (hata) {
       return { belgeRef, durum: "hata", detay: hata instanceof Error ? hata.message : "NES durum sorgusu başarısız" };

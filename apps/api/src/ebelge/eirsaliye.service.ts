@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { EirsaliyeDurum, GelenEirsaliyeDurum } from "@prisma/client";
+import { durumAciklamasi } from "./durum-aciklamasi";
 import type { EntegratorConfig } from "@tekirextra/baglanti";
 import { XMLParser } from "fast-xml-parser";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -142,7 +143,8 @@ export class EirsaliyeService {
       const { cfg, adapter } = await this.baglanti(tx, tenantId);
       if (!adapter.irsaliyeDurumSorgula) throw new BadRequestException("Entegratör e-İrsaliye durumunu desteklemiyor");
       const sonuc = await adapter.irsaliyeDurumSorgula(cfg, kayit.entegratorRef);
-      return tx.eirsaliyeKayit.update({ where: { id: kayit.id }, data: { durum: sonuc.durum as EirsaliyeDurum, hataMesaji: sonuc.detay ?? null } });
+      // İrsaliyede alıcı notu tutulmaz; açıklamadan yalnız hata kısmı kalır.
+      return tx.eirsaliyeKayit.update({ where: { id: kayit.id }, data: { durum: sonuc.durum as EirsaliyeDurum, hataMesaji: durumAciklamasi(sonuc).hataMesaji } });
     });
   }
 

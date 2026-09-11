@@ -770,6 +770,8 @@ describe("EbelgeService — çağrı disiplini", () => {
     expect(durumSorgula).not.toHaveBeenCalled();
     expect(sonuc).toEqual({ sorgulanan: 2, guncellenen: 2 });
     expect(guncelle.mock.calls[0][0].data.sonDurumSorguAt).toBeInstanceOf(Date);
+    // Başarı açıklaması ekranda uyarı kutusuna düşmesin.
+    expect(guncelle.mock.calls[0][0].data.hataMesaji).toBeNull();
   });
 
   it("e-Arşiv referansını zarf sorgusuna karıştırmaz", async () => {
