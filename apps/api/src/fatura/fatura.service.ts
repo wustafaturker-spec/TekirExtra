@@ -535,7 +535,7 @@ export class FaturaService {
 
       const cari = await tx.cariHesap.findUnique({
         where: { id: girdi.cariId },
-        select: { varsayilanVadeGun: true, efaturaProfili: true },
+        select: { varsayilanVadeGun: true, efaturaProfili: true, earsivGonderimSekli: true },
       });
 
       let hesaplananVadeTarihi: Date;
@@ -563,6 +563,7 @@ export class FaturaService {
             gibIstisnaKodu: s.gibIstisnaKodu,
           }))),
           efaturaProfili: girdi.efaturaProfili ?? cari?.efaturaProfili ?? "temel",
+          earsivGonderimSekli: girdi.earsivGonderimSekli ?? cari?.earsivGonderimSekli ?? "elektronik",
           durum: "taslak",
           no: girdi.no ?? null,
           tarih: new Date(girdi.tarih),
@@ -664,6 +665,7 @@ export class FaturaService {
       siparisTarihi: girdi.siparisTarihi !== undefined ? (girdi.siparisTarihi ? new Date(girdi.siparisTarihi) : null) : fatura.siparisTarihi,
       cariId: girdi.cariId ?? fatura.cariId,
       efaturaProfili: girdi.efaturaProfili ?? (fatura.efaturaProfili as "temel" | "ticari"),
+      earsivGonderimSekli: girdi.earsivGonderimSekli ?? (fatura.earsivGonderimSekli as "elektronik" | "kagit"),
       depoId: girdi.depoId !== undefined ? girdi.depoId : fatura.depoId,
       dovizCinsi: girdi.dovizCinsi ?? (fatura.dovizCinsi as "TRY" | "USD" | "EUR"),
       kur: girdi.kur ?? fatura.kur,
@@ -763,6 +765,7 @@ export class FaturaService {
             gibIstisnaKodu: s.gibIstisnaKodu,
           }))),
           efaturaProfili: birlesikGirdi.efaturaProfili,
+          earsivGonderimSekli: birlesikGirdi.earsivGonderimSekli,
           no: birlesikGirdi.no ?? null,
           tarih: new Date(birlesikGirdi.tarih),
           vadeTarihi: birlesikGirdi.vadeTarihi ? new Date(birlesikGirdi.vadeTarihi) : null,
@@ -1412,6 +1415,7 @@ export class FaturaService {
     cariId: string;
     senaryo: string;
     efaturaProfili: string;
+    earsivGonderimSekli: string;
     depoId: string | null;
     dovizCinsi: string;
     kur: Prisma.Decimal;
@@ -1465,6 +1469,7 @@ export class FaturaService {
       cariId: k.cariId,
       senaryo: k.senaryo,
       efaturaProfili: k.efaturaProfili,
+      earsivGonderimSekli: k.earsivGonderimSekli,
       depoId: k.depoId,
       dovizCinsi: k.dovizCinsi,
       kur: D(k.kur).toFixed(4),

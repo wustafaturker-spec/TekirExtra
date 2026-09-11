@@ -100,6 +100,8 @@ interface Fatura {
   /** Satırlardan türetilen GİB senaryosu (FTR-16) ve UBL'e yazılan profil (FTR-19). */
   senaryo?: FaturaSenaryosu;
   efaturaProfili?: "temel" | "ticari";
+  /** Belge e-Arşiv olarak düzenlenirse teslim şekli (EBLG-26). */
+  earsivGonderimSekli?: "elektronik" | "kagit";
   /**
    * API iç içe döner; gönderilmemiş faturada null. `durum` zarfın GİB durumu,
    * `aliciYaniti` ise alıcının kabul/ret kararıdır — ikisi ayrı eksendir
@@ -155,6 +157,7 @@ interface EbelgeWizardBilgisi {
   cari: string;
   vknTckn?: string | null;
   saglayici?: string;
+  earsivGonderimSekli?: "elektronik" | "kagit";
   not?: string;
 }
 interface KayitliGorunum { id: string; ad: string; yon: "satis" | "alis" | null; durum: string | null; ebelge: string | null; odeme: string | null; }
@@ -243,7 +246,7 @@ export default function FaturaSayfasi() {
   const [yeniStokKdv, setYeniStokKdv] = useState("20");
   const [yeniStokFiyat, setYeniStokFiyat] = useState("");
   const [kesinlestirmeOzeti, setKesinlestirmeOzeti] = useState<KesinlestirmeOzeti | null>(null);
-  const [ebelgeWizard, setEbelgeWizard] = useState<{ fatura: Fatura; bilgi: EbelgeWizardBilgisi } | null>(null);
+  const [ebelgeWizard, setEbelgeWizard] = useState<{ fatura: Fatura; bilgi: EbelgeWizardBilgisi; earsivSekli: "elektronik" | "kagit" } | null>(null);
   const [ebelgeDetayi, setEbelgeDetayi] = useState<FaturaDetay | null>(null);
   const [odemeDetayi, setOdemeDetayi] = useState<FaturaDetay | null>(null);
   const [sonrakiFaturaImleci, setSonrakiFaturaImleci] = useState<string | null>(null);
@@ -833,7 +836,7 @@ export default function FaturaSayfasi() {
     setHata(""); setBasari("");
     try {
       const bilgi = await api<EbelgeWizardBilgisi>(`/ebelge/wizard/${fatura.id}`);
-      setEbelgeWizard({ fatura, bilgi });
+      setEbelgeWizard({ fatura, bilgi, earsivSekli: bilgi.earsivGonderimSekli ?? "elektronik" });
     } catch (h) { setHata(h instanceof Error ? h.message : "e-Fatura wizard'ı açılamadı"); }
   }
 
@@ -841,7 +844,7 @@ export default function FaturaSayfasi() {
     if (!ebelgeWizard) return;
     setHata(""); setBasari("");
     try {
-      await api(`/ebelge/gonder/${ebelgeWizard.fatura.id}`, { method: "POST" });
+      await api(`/ebelge/gonder/${ebelgeWizard.fatura.id}`, { method: "POST", body: JSON.stringify({ earsivGonderimSekli: ebelgeWizard.earsivSekli }) });
       setEbelgeWizard(null);
       setBasari("e-Belge oluşturuldu ve entegratöre gönderim kuyruğuna alındı.");
       void yukle();
@@ -1006,6 +1009,11 @@ export default function FaturaSayfasi() {
           <p className="muted" style={{ fontSize: "0.9rem", margin: 0 }}>
             {epostaGonderilen.no} · {epostaGonderilen.cari.unvan} · {tl(epostaGonderilen.genelToplam)}
           </p>
+          {epostaGonderilen.ebelge?.tur === "earsiv" && epostaGonderilen.earsivGonderimSekli === "kagit" && (
+            <div className="approval-impact is-warning">
+              Bu e-Arşiv fatura GİB&apos;e kâğıt olarak teslim edilecek şekilde bildirildi. E-postayla göndermek yalnız bilgi amaçlı bir kopya olur.
+            </div>
+          )}
           <Field label="Alıcı E-posta">
             <Input
               type="email"
@@ -1485,6 +1493,14 @@ export default function FaturaSayfasi() {
               <div><span>Entegratör</span><strong>{ebelgeWizard.bilgi.saglayici || "Tanımlı değil"}</strong></div>
               <div><span>Belge türü</span><strong>Mükellefiyet gönderim onayında sorgulanacak: e-Fatura / e-Arşiv</strong></div>
             </div>
+            {ebelgeWizard.bilgi.gonderilebilir && (
+              <Field label="e-Arşiv olarak düzenlenirse teslim şekli">
+                <Select value={ebelgeWizard.earsivSekli} onChange={(e) => setEbelgeWizard({ ...ebelgeWizard, earsivSekli: e.target.value as "elektronik" | "kagit" })}>
+                  <option value="elektronik">Elektronik — PDF e-postayla iletilir</option>
+                  <option value="kagit">Kâğıt — basılı olarak teslim edilir</option>
+                </Select>
+              </Field>
+            )}
             {ebelgeWizard.bilgi.neden && <div className="approval-impact is-warning">{ebelgeWizard.bilgi.neden}</div>}
             {ebelgeWizard.bilgi.not && <div className="approval-impact">{ebelgeWizard.bilgi.not}</div>}
             <p className="subtle">İkinci adımda UBL-TR belge oluşturulur, entegratöre gönderilir ve durum takibine alınır. Bu işlem faturayı yeniden kesinleştirmez.</p>

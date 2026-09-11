@@ -11,7 +11,7 @@ import { GelenEbelgeDurum } from "@prisma/client";
 import { Roller } from "../auth/roller.decorator";
 import { EbelgeService } from "./ebelge.service";
 import { EbelgeKuyrukService } from "./ebelge-kuyruk.service";
-import { earsivIptalSemasi, earsivRaporAralikSemasi, gelenOnaySemasi, gelenXmlYukleSemasi, gelenYanitSemasi } from "./ebelge.semalar";
+import { earsivIptalSemasi, earsivRaporAralikSemasi, ebelgeGonderSemasi, gelenOnaySemasi, gelenXmlYukleSemasi, gelenYanitSemasi } from "./ebelge.semalar";
 
 const GELEN_DURUMLARI: GelenEbelgeDurum[] = ["beklemede", "islendi", "reddedildi"];
 
@@ -27,9 +27,14 @@ export class EbelgeController {
 
   @Post("gonder/:faturaId")
   @Roller("muhasebe")
-  async gonder(@Param("faturaId") faturaId: string) {
+  async gonder(@Param("faturaId") faturaId: string, @Body() govde: unknown) {
+    const secim = ebelgeGonderSemasi.safeParse(govde ?? {});
+    if (!secim.success) throw new BadRequestException(secim.error.issues.map((s) => s.message).join("; "));
     const wizard = await this.ebelgeService.wizardBilgisi(faturaId);
     if (!wizard.gonderilebilir) throw new BadRequestException(wizard.neden || "Fatura e-Belge gönderimine uygun değil");
+    if (secim.data.earsivGonderimSekli) {
+      await this.ebelgeService.earsivGonderimSekliniKaydet(faturaId, secim.data.earsivGonderimSekli);
+    }
     return this.kuyrukService.kuyrugaEkle(faturaId);
   }
 

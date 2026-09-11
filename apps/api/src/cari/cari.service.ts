@@ -293,6 +293,7 @@ export class CariService {
           varsayilanIskonto: cari.varsayilanIskonto,
           varsayilanVadeGun: cari.varsayilanVadeGun,
           efaturaProfili: cari.efaturaProfili,
+          earsivGonderimSekli: cari.earsivGonderimSekli,
           riskLimiti: cari.riskLimiti,
           eFaturaMukellefi: cari.eFaturaMukellefi,
           mukellefiyetSorguZamani: cari.mukellefiyetSorguZamani,
@@ -770,6 +771,7 @@ export class CariService {
     varsayilanIskonto: Prisma.Decimal | null;
     varsayilanVadeGun: number | null;
     efaturaProfili: string;
+    earsivGonderimSekli: string;
     riskLimiti: Prisma.Decimal | null;
     eFaturaMukellefi: boolean | null;
     notlar: string | null;
@@ -801,6 +803,7 @@ export class CariService {
       varsayilanIskonto: k.varsayilanIskonto?.toFixed(2) ?? null,
       varsayilanVadeGun: k.varsayilanVadeGun,
       efaturaProfili: k.efaturaProfili,
+      earsivGonderimSekli: k.earsivGonderimSekli,
       riskLimiti: k.riskLimiti?.toFixed(2) ?? null,
       eFaturaMukellefi: k.eFaturaMukellefi,
       notlar: k.notlar,

@@ -100,6 +100,8 @@ interface CariDetay extends Cari {
   varsayilanVadeGun: number | null;
   /** Bu cariye kesilen e-Faturaların varsayılan profili (FTR-19). */
   efaturaProfili: "temel" | "ticari";
+  /** Bu cariye kesilen e-Arşiv faturaların varsayılan teslim şekli (EBLG-26). */
+  earsivGonderimSekli: "elektronik" | "kagit";
   varsayilanIskonto: string | null;
   fiyatListesiId: string | null;
   eFaturaMukellefi: boolean | null;
@@ -242,6 +244,7 @@ export default function CariSayfasi() {
   const [varsayilanIskonto, setVarsayilanIskonto] = useState("");
   const [varsayilanVadeGun, setVarsayilanVadeGun] = useState("");
   const [efaturaProfili, setEfaturaProfili] = useState<"temel" | "ticari">("temel");
+  const [earsivGonderimSekli, setEarsivGonderimSekli] = useState<"elektronik" | "kagit">("elektronik");
   const [fiyatListeleri, setFiyatListeleri] = useState<{ id: string; ad: string; dovizCinsi: string }[]>([]);
   // Detay panel alt formları
   const [bankaAdi, setBankaAdi] = useState("");
@@ -408,7 +411,7 @@ export default function CariSayfasi() {
   async function finansGuncelle(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); if (!detay) return; const veri = new FormData(e.currentTarget);
     setHata(""); setBasari("");
-    try { await api(`/cari/${detay.id}`, { method: "PATCH", body: JSON.stringify({ riskLimiti: String(veri.get("riskLimiti") || "") || undefined, varsayilanVadeGun: veri.get("varsayilanVadeGun") === "" ? undefined : Number(veri.get("varsayilanVadeGun")), varsayilanIskonto: String(veri.get("varsayilanIskonto") || "") || undefined, fiyatListesiId: String(veri.get("fiyatListesiId") || "") || undefined, efaturaProfili: veri.get("efaturaProfili") as "temel" | "ticari" }) }); await detayAc(detay.id, true); setBasari("Risk ve finans koşulları güncellendi."); }
+    try { await api(`/cari/${detay.id}`, { method: "PATCH", body: JSON.stringify({ riskLimiti: String(veri.get("riskLimiti") || "") || undefined, varsayilanVadeGun: veri.get("varsayilanVadeGun") === "" ? undefined : Number(veri.get("varsayilanVadeGun")), varsayilanIskonto: String(veri.get("varsayilanIskonto") || "") || undefined, fiyatListesiId: String(veri.get("fiyatListesiId") || "") || undefined, efaturaProfili: veri.get("efaturaProfili") as "temel" | "ticari", earsivGonderimSekli: veri.get("earsivGonderimSekli") as "elektronik" | "kagit" }) }); await detayAc(detay.id, true); setBasari("Risk ve finans koşulları güncellendi."); }
     catch (h) { setHata(h instanceof Error ? h.message : "Finans bilgileri güncellenemedi"); }
   }
 
@@ -485,6 +488,7 @@ export default function CariSayfasi() {
           varsayilanIskonto: varsayilanIskonto || undefined,
           varsayilanVadeGun: varsayilanVadeGun ? Number(varsayilanVadeGun) : undefined,
           efaturaProfili,
+          earsivGonderimSekli,
           notlar: notlar || undefined,
         }),
       });
@@ -511,6 +515,7 @@ export default function CariSayfasi() {
       setVarsayilanIskonto("");
       setVarsayilanVadeGun("");
       setEfaturaProfili("temel");
+      setEarsivGonderimSekli("elektronik");
       void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Kayıt hatası");
@@ -893,6 +898,8 @@ export default function CariSayfasi() {
               <Field label="Risk limiti (TL)"><Input className="record-number" type="number" min="0" step="0.01" inputMode="decimal" value={riskLimiti} onChange={(e) => setRiskLimiti(e.target.value)} placeholder="0,00" /></Field>
               {/* FTR-19: faturanın profili buradan gelir, fatura üzerinde değiştirilebilir. */}
               <Field label="e-Fatura profili"><Select value={efaturaProfili} onChange={(e) => setEfaturaProfili(e.target.value as "temel" | "ticari")}><option value="temel">TEMELFATURA</option><option value="ticari">TICARIFATURA</option></Select></Field>
+              {/* EBLG-26: e-Belge sihirbazında fatura bazında değiştirilebilir. */}
+              <Field label="e-Arşiv teslim şekli"><Select value={earsivGonderimSekli} onChange={(e) => setEarsivGonderimSekli(e.target.value as "elektronik" | "kagit")}><option value="elektronik">Elektronik</option><option value="kagit">Kâğıt</option></Select></Field>
             </div>
           </details>
 
@@ -1015,6 +1022,7 @@ export default function CariSayfasi() {
                     <Field label="Varsayılan iskonto (%)"><Input name="varsayilanIskonto" type="number" min="0" max="100" step="0.01" defaultValue={detay.varsayilanIskonto ?? ""} /></Field>
                     <Field label="Fiyat listesi"><Select name="fiyatListesiId" defaultValue={detay.fiyatListesiId ?? ""}><option value="">Stok satış fiyatı</option>{fiyatListeleri.map((liste) => <option key={liste.id} value={liste.id}>{liste.ad} · {liste.dovizCinsi}</option>)}</Select></Field>
                     <Field label="e-Fatura profili"><Select name="efaturaProfili" defaultValue={detay.efaturaProfili}><option value="temel">TEMELFATURA</option><option value="ticari">TICARIFATURA — alıcı kabul/ret verir</option></Select></Field>
+                    <Field label="e-Arşiv teslim şekli"><Select name="earsivGonderimSekli" defaultValue={detay.earsivGonderimSekli ?? "elektronik"}><option value="elektronik">Elektronik — PDF e-postayla</option><option value="kagit">Kâğıt — basılı teslim</option></Select></Field>
                     <div className="cari-finance-form__meta"><span>Son işlem <b>{detay.finansalOzet.sonIslemTarihi ?? "—"}</b></span><span>Son tahsilat <b>{detay.finansalOzet.sonTahsilatTarihi ?? "—"}</b></span><span>Son ödeme <b>{detay.finansalOzet.sonOdemeTarihi ?? "—"}</b></span></div>
                     <Button type="submit" size="sm" variant="primary">Finans koşullarını güncelle</Button>
                   </form>

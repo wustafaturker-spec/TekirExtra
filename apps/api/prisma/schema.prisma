@@ -650,6 +650,9 @@ model CariHesap {
   /// Bu cariye kesilen e-Faturaların varsayılan profili (FTR-19); fatura
   /// üzerinde değiştirilebilir.
   efaturaProfili          EfaturaProfili @default(temel) @map("efatura_profili")
+  /// Bu cariye kesilen e-Arşiv faturaların varsayılan teslim şekli (EBLG-26);
+  /// e-Belge sihirbazında fatura bazında değiştirilebilir.
+  earsivGonderimSekli     EarsivGonderimSekli @default(elektronik) @map("earsiv_gonderim_sekli")
   notlar                  String?
   aktif                   Boolean    @default(true)
   createdAt               DateTime   @default(now()) @map("created_at")
@@ -1826,6 +1829,13 @@ enum EfaturaProfili {
   ticari
 }
 
+/// e-Arşiv faturanın alıcıya nasıl teslim edildiği; UBL'e SEND_TYPE olarak
+/// yazılır (EBLG-26).
+enum EarsivGonderimSekli {
+  elektronik
+  kagit
+}
+
 enum FaturaTip {
   satis
   alis
@@ -1886,6 +1896,9 @@ model Fatura {
   senaryo              FaturaSenaryo   @default(satis)
   /// UBL'e ProfileID olarak yazılır; varsayılanı cari kartından gelir.
   efaturaProfili       EfaturaProfili  @default(temel) @map("efatura_profili")
+  /// Belge e-Arşiv olarak düzenlenirse teslim şekli (EBLG-26); varsayılanı cari
+  /// kartından gelir. e-Fatura kanalında kullanılmaz.
+  earsivGonderimSekli  EarsivGonderimSekli @default(elektronik) @map("earsiv_gonderim_sekli")
   toplamNetKdv         Decimal         @map("toplam_net_kdv") @db.Decimal(15, 2)
   genelToplam          Decimal         @map("genel_toplam") @db.Decimal(15, 2)
   aciklama             String?

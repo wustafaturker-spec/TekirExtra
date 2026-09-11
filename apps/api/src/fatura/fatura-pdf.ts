@@ -49,7 +49,16 @@ export interface FaturaPdfVerisi {
   aciklama: string | null;
   cari: { kod: string; unvan: string; vknTckn: string | null };
   satirlar: FaturaPdfSatiri[];
+  /** Faturanın e-belge kanalı; gönderilmemişse yok (EBLG-26). */
+  ebelge?: { tur: string } | null;
+  earsivGonderimSekli?: string;
 }
+
+/**
+ * Elektronik ortamda iletilen e-Arşiv faturada bulunması gereken ibare
+ * (EBLG-26). Kâğıt olarak teslim edilen e-Arşivde yer almaz.
+ */
+export const EARSIV_ELEKTRONIK_IBARESI = "e-Arşiv izni kapsamında elektronik ortamda iletilmiştir.";
 
 export interface FirmaBilgisi {
   unvan: string;
@@ -144,7 +153,8 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
 <table style="margin-top:12px;margin-left:auto;border:1px solid #e5e7eb;border-radius:4px;font-size:9pt">
   ${toplamlar}
 </table>
-${f.aciklama ? `<p style="margin-top:10px;color:#6b7280">${kacis(f.aciklama)}</p>` : ""}`;
+${f.aciklama ? `<p style="margin-top:10px;color:#6b7280">${kacis(f.aciklama)}</p>` : ""}
+${f.ebelge?.tur === "earsiv" && f.earsivGonderimSekli !== "kagit" ? `<p style="margin-top:10px;font-size:9pt">${EARSIV_ELEKTRONIK_IBARESI}</p>` : ""}`;
 
   return sayfaSablonu({
     baslik: f.durum === "taslak" ? `${baslik} (TASLAK)` : baslik,

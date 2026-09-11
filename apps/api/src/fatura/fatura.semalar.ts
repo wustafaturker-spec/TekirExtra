@@ -53,6 +53,11 @@ const faturaOlusturGovde = z.object({
    * kullanılır; UBL'e `ProfileID` olarak bu değer yazılır.
    */
   efaturaProfili: z.enum(["temel", "ticari"]).optional().nullable(),
+  /**
+   * e-Arşiv teslim şekli (EBLG-26). Boş bırakılırsa cari kartındaki varsayılan
+   * kullanılır; e-Belge sihirbazında da değiştirilebilir.
+   */
+  earsivGonderimSekli: z.enum(["elektronik", "kagit"]).optional().nullable(),
   /** STK-07: stok hareketlerinin işleneceği depo; boşsa varsayılan depo */
   depoId: z.string().uuid().optional().nullable(),
   dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),

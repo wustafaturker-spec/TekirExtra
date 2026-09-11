@@ -9,7 +9,7 @@ import {
   NotFoundException,
   forwardRef,
 } from "@nestjs/common";
-import { BelgeDurum, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
+import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
 import type { EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
 import { vknTcknGecerliMi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -98,9 +98,22 @@ export class EbelgeService {
         vknTckn: fatura.cari.vknTckn,
         saglayici: baglanti.saglayici,
         mevcutEbelge: fatura.ebelge,
+        earsivGonderimSekli: fatura.earsivGonderimSekli,
         not: "Mükellefiyet kontrolü gönderim onayında tekrar doğrulanır.",
       };
     });
+  }
+
+  /**
+   * Sihirbazda seçilen e-Arşiv teslim şeklini faturaya yazar (EBLG-26).
+   * Gönderim kuyruktan yürüdüğü için UBL seçimi faturadan okur; kanal e-Fatura
+   * çıkarsa değer kullanılmaz.
+   */
+  async earsivGonderimSekliniKaydet(faturaId: string, sekil: EarsivGonderimSekli) {
+    const { tenantId } = aktifBaglam();
+    await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.fatura.update({ where: { id: faturaId }, data: { earsivGonderimSekli: sekil } }),
+    );
   }
 
   async gonder(faturaId: string) {

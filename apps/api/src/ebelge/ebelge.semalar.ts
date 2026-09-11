@@ -24,6 +24,11 @@ export const gelenYanitSemasi = z
     path: ["gerekce"],
   });
 
+/** EBLG-26: sihirbazda seçilen e-Arşiv teslim şekli; boşsa faturadaki kalır. */
+export const ebelgeGonderSemasi = z.object({
+  earsivGonderimSekli: z.enum(["elektronik", "kagit"]).optional(),
+});
+
 export const earsivIptalSemasi = z.object({
   iptalTarihi: z.coerce.date(),
   sube: z.string().max(50).optional(),

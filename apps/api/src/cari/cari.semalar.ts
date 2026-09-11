@@ -50,6 +50,8 @@ export const cariOlusturSemasi = z.object({
   varsayilanVadeGun: z.number().int().min(0).max(365).optional(),
   /** Bu cariye kesilen e-Faturaların varsayılan profili (FTR-19). */
   efaturaProfili: z.enum(["temel", "ticari"]).optional(),
+  /** Bu cariye kesilen e-Arşiv faturaların varsayılan teslim şekli (EBLG-26). */
+  earsivGonderimSekli: z.enum(["elektronik", "kagit"]).optional(),
   riskLimiti: pozitifOndalik.optional(),
   notlar: z.string().max(2000).optional(),
 });

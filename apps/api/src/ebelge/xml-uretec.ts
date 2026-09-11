@@ -98,7 +98,7 @@ export function faturaUblUret(
   <cbc:LineCountNumeric>${fatura.satirlar.length}</cbc:LineCountNumeric>
 
 ${earsiv ? `  <cac:AdditionalDocumentReference>
-    <cbc:ID>ELEKTRONIK</cbc:ID>
+    <cbc:ID>${fatura.earsivGonderimSekli === "kagit" ? "KAGIT" : "ELEKTRONIK"}</cbc:ID>
     <cbc:IssueDate>${tarihStr}</cbc:IssueDate>
     <cbc:DocumentTypeCode>SEND_TYPE</cbc:DocumentTypeCode>
   </cac:AdditionalDocumentReference>` : ""}

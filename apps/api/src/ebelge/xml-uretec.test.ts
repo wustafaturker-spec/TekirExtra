@@ -102,6 +102,14 @@ describe("faturaUblUret", () => {
     expect(gonderim).toContain("<cbc:ID>ELEKTRONIK</cbc:ID>");
   });
 
+  it("kâğıt teslim edilecek e-Arşivde gönderim şeklini KAGIT yazar (EBLG-26)", () => {
+    const xml = faturaUblUret({ ...earsivFaturasi, earsivGonderimSekli: "kagit" } as never, saglayici, { tur: "earsiv" });
+
+    const gonderim = xml.match(/<cac:AdditionalDocumentReference>[\s\S]*?<\/cac:AdditionalDocumentReference>/g)!
+      .find((blok) => blok.includes("SEND_TYPE"))!;
+    expect(gonderim).toContain("<cbc:ID>KAGIT</cbc:ID>");
+  });
+
   it("e-Fatura kanalında e-Arşiv profilini ve gönderim şeklini yazmaz", () => {
     const xml = faturaUblUret(earsivFaturasi as never, saglayici, { tur: "efatura" });
 
