@@ -56,6 +56,12 @@ export const cariOlusturSemasi = z.object({
   notlar: z.string().max(2000).optional(),
 });
 export const cariGuncelleSemasi = cariOlusturSemasi.partial().extend({
+  // zod 4'te `.partial()` varsayılanları korur: gönderilmeyen alan varsayılanla
+  // dolar. Bu üçü ezilmezse her PATCH kişi tipini tüzele, kara listeyi false'a,
+  // döviz cinsini TRY'ye çeviriyordu.
+  kisiTipi: z.enum(KISI_TIPLERI).optional(),
+  karaListe: z.boolean().optional(),
+  dovizCinsi: z.enum(DOVIZLER).optional(),
   aktif: z.boolean().optional(),
   kisaAd: z.string().max(120).optional().nullable(),
   sektor: z.string().max(80).optional().nullable(),
