@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { guncellemeSemasi } from "../core/sema";
 
 const pozitifOndalik = z
   .string()
@@ -9,7 +10,7 @@ export const kasaOlusturSemasi = z.object({
   dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
 });
 
-export const kasaGuncelleSemasi = kasaOlusturSemasi.partial().extend({
+export const kasaGuncelleSemasi = guncellemeSemasi(kasaOlusturSemasi).extend({
   aktif: z.boolean().optional(),
 });
 
@@ -22,7 +23,7 @@ export const bankaHesapOlusturSemasi = z.object({
   dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
 });
 
-export const bankaHesapGuncelleSemasi = bankaHesapOlusturSemasi.partial().extend({
+export const bankaHesapGuncelleSemasi = guncellemeSemasi(bankaHesapOlusturSemasi).extend({
   aktif: z.boolean().optional(),
 });
 

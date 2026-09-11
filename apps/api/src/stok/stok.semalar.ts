@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { guncellemeSemasi } from "../core/sema";
 
 const pozitifOndalik = z
   .string()
@@ -46,7 +47,7 @@ export const stokKartOlusturSemasi = z.object({
   takipTipi: z.enum(["yok", "lot", "seri"]).default("yok"),
 });
 
-export const stokKartGuncelleSemasi = stokKartOlusturSemasi.partial().extend({
+export const stokKartGuncelleSemasi = guncellemeSemasi(stokKartOlusturSemasi).extend({
   aktif: z.boolean().optional(),
 });
 

@@ -1,5 +1,6 @@
 import { vknTcknGecerliMi } from "@tekirextra/shared";
 import { z } from "zod";
+import { guncellemeSemasi } from "../core/sema";
 
 export const CARI_TIPLERI = [
   "musteri",
@@ -58,13 +59,7 @@ export const cariOlusturSemasi = z.object({
   riskLimiti: pozitifOndalik.optional(),
   notlar: z.string().max(2000).optional(),
 });
-export const cariGuncelleSemasi = cariOlusturSemasi.partial().extend({
-  // zod 4'te `.partial()` varsayılanları korur: gönderilmeyen alan varsayılanla
-  // dolar. Bu üçü ezilmezse her PATCH kişi tipini tüzele, kara listeyi false'a,
-  // döviz cinsini TRY'ye çeviriyordu.
-  kisiTipi: z.enum(KISI_TIPLERI).optional(),
-  karaListe: z.boolean().optional(),
-  dovizCinsi: z.enum(DOVIZLER).optional(),
+export const cariGuncelleSemasi = guncellemeSemasi(cariOlusturSemasi).extend({
   aktif: z.boolean().optional(),
   kisaAd: z.string().max(120).optional().nullable(),
   sektor: z.string().max(80).optional().nullable(),

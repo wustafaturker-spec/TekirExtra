@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { guncellemeSemasi } from "../core/sema";
 
 /** Çoklu depo (STK-07) şemaları. */
 
@@ -14,7 +15,7 @@ export const depoOlusturSemasi = z.object({
   varsayilan: z.boolean().default(false),
 });
 
-export const depoGuncelleSemasi = depoOlusturSemasi.partial().extend({
+export const depoGuncelleSemasi = guncellemeSemasi(depoOlusturSemasi).extend({
   aktif: z.boolean().optional(),
 });
 

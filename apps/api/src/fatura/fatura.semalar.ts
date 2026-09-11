@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { guncellemeSemasi } from "../core/sema";
 import { senaryoHatalari } from "@tekirextra/shared";
 
 const pozitifOndalik = z
@@ -93,7 +94,7 @@ const faturaFinansalDogrula = (fatura: { satirlar?: Array<{ miktar?: string; bir
   if (Number(fatura.genelIskontoTutari ?? 0) > araToplam + 0.01) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["genelIskontoTutari"], message: "Genel iskonto tutarı ara toplamı aşamaz" });
 };
 export const faturaOlusturSemasi = faturaOlusturGovde.superRefine((fatura, ctx) => faturaFinansalDogrula(fatura, ctx));
-export const faturaGuncelleSemasi = faturaOlusturGovde.partial().superRefine((fatura, ctx) => faturaFinansalDogrula(fatura, ctx));
+export const faturaGuncelleSemasi = guncellemeSemasi(faturaOlusturGovde).superRefine((fatura, ctx) => faturaFinansalDogrula(fatura, ctx));
 
 export const faturaSeriSemasi = z.object({
   seri: z.string().regex(/^[A-Z]{3}$/, "Seri 3 büyük harf olmalıdır (örn. TKR)"),

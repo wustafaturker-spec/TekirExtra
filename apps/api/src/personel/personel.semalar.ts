@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { guncellemeSemasi } from "../core/sema";
 import { tcknGecerliMi } from "@tekirextra/shared";
 
 const bosVeyaUuid = z.union([z.string().uuid(), z.literal(""), z.null()]).optional();
@@ -31,7 +32,7 @@ export const personelOlusturSemasi = z.object({
   cariOlustur: z.boolean().default(true),
 });
 
-export const personelGuncelleSemasi = personelOlusturSemasi.partial();
+export const personelGuncelleSemasi = guncellemeSemasi(personelOlusturSemasi);
 
 export const personelIstenCikarSemasi = z.object({
   cikisTarihi: z.coerce.date(),

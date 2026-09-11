@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { guncellemeSemasi } from "../core/sema";
 
 export const PROJE_DURUMLARI = [
   "planlanan",
@@ -32,7 +33,7 @@ export const projeOlusturSemasi = z.object({
   notlar: z.string().max(4000).optional().nullable(),
 });
 
-export const projeGuncelleSemasi = projeOlusturSemasi.partial().extend({
+export const projeGuncelleSemasi = guncellemeSemasi(projeOlusturSemasi).extend({
   aktif: z.boolean().optional(),
 });
 

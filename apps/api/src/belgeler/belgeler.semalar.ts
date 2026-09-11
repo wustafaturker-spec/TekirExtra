@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { guncellemeSemasi } from "../core/sema";
 
 const pozitifOndalik = z
   .string()
@@ -60,9 +61,7 @@ export const belgeOlusturSemasi = z.object({
   satirlar: z.array(belgeSatirSemasi).min(1, "Belgede en az bir satır bulunmalıdır"),
 });
 
-export const belgeGuncelleSemasi = belgeOlusturSemasi
-  .omit({ tur: true, yon: true })
-  .partial();
+export const belgeGuncelleSemasi = guncellemeSemasi(belgeOlusturSemasi.omit({ tur: true, yon: true }));
 
 export const belgeDonusturSemasi = z.object({
   hedef: z.enum(["siparis", "irsaliye", "fatura"]),

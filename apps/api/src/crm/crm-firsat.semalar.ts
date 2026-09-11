@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { guncellemeSemasi } from "../core/sema";
 
 const bosVeyaUuid = z.union([z.string().uuid(), z.literal(""), z.null()]).optional();
 const bosVeyaMetin = z.union([z.string().trim().max(500), z.literal(""), z.null()]).optional();
@@ -20,7 +21,7 @@ export const firsatOlusturSemasi = z.object({
   notlar: bosVeyaMetin,
 });
 
-export const firsatGuncelleSemasi = firsatOlusturSemasi.partial();
+export const firsatGuncelleSemasi = guncellemeSemasi(firsatOlusturSemasi);
 
 export const firsatAsamaDegistirSemasi = z.object({
   asama: z.enum([

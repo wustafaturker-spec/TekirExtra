@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { guncellemeSemasi } from "../core/sema";
 
 /**
  * Kayıtlı araç ve şoför kartları (EBLG-25). Kartlar irsaliyede seçildiğinde
@@ -10,7 +11,7 @@ export const aracOlusturSemasi = z.object({
   aciklama: z.string().trim().max(120).optional().nullable(),
   aktif: z.boolean().default(true),
 });
-export const aracGuncelleSemasi = aracOlusturSemasi.partial();
+export const aracGuncelleSemasi = guncellemeSemasi(aracOlusturSemasi);
 
 export const soforOlusturSemasi = z.object({
   ad: z.string().trim().min(2).max(80),
@@ -19,4 +20,4 @@ export const soforOlusturSemasi = z.object({
   tckn: z.string().regex(/^\d{11}$/, "TCKN 11 haneli olmalıdır").optional().nullable(),
   aktif: z.boolean().default(true),
 });
-export const soforGuncelleSemasi = soforOlusturSemasi.partial();
+export const soforGuncelleSemasi = guncellemeSemasi(soforOlusturSemasi);
