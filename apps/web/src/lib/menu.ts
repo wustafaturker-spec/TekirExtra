@@ -90,7 +90,8 @@ export const MENU: MenuAlani[] = [
       { href: "/panel/islemler", ikon: TriangleAlert, baslik: "Düzeltme Merkezi", eslesme: "tam", esanlamlilar: ["hata", "istisna", "uyarı"] },
       { href: "/panel/bildirimler", ikon: Bell, baslik: "Bildirimler", eslesme: "tam", esanlamlilar: ["uyarı", "hatırlatma", "görev"] },
       { href: "/panel/donem-kapatma", ikon: Lock, baslik: "Dönem Kapatma", eslesme: "tam", esanlamlilar: ["mali dönem", "kilit", "kapanış"] },
-      { href: "/panel/ai", ikon: Sparkles, baslik: "AI Finansal Asistan", eslesme: "tam", esanlamlilar: ["yapay zeka", "nakit akış tahmini"] },
+      { href: "/panel/nakit-akisi", ikon: TrendingUp, baslik: "Nakit Akışı", eslesme: "tam", esanlamlilar: ["nakit akış tahmini", "nakit tahmini", "likidite", "senaryo"] },
+      { href: "/panel/ai", ikon: Sparkles, baslik: "AI Finansal Asistan", eslesme: "tam", esanlamlilar: ["yapay zeka", "ocr"] },
     ],
   },
   {

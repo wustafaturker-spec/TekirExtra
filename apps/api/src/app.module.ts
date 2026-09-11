@@ -34,6 +34,7 @@ import { ProjelerModule } from "./projeler/projeler.module";
 import { DuzeltmelerModule } from "./duzeltmeler/duzeltmeler.module";
 import { DonemKapatmaModule } from "./donem-kapatma/donem-kapatma.module";
 import { BildirimlerModule } from "./bildirimler/bildirimler.module";
+import { NakitAkisiModule } from "./nakit-akisi/nakit-akisi.module";
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { BildirimlerModule } from "./bildirimler/bildirimler.module";
     CrmFirsatModule,
     B2bModule,
     AiModule,
+    NakitAkisiModule,
   ],
   providers: [{ provide: APP_INTERCEPTOR, useClass: AuditInterceptor }],
 })

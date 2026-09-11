@@ -1,19 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
+import { useState } from "react";
 import { api } from "@/lib/api";
-import { Alert, Card, PageHeader } from "@/components/ui";
-
-interface AiTahmin {
-  tarihAraligiGun: number;
-  mevcutBakiye: number;
-  beklenenAlacaklar: number;
-  beklenenBorclar: number;
-  tahminiSonBakiye: number;
-  riskSeviyesi: string;
-  tavsiyeler: string[];
-  hesaplamaYontemi: string;
-}
+import { Alert, Button, Card, PageHeader } from "@/components/ui";
 
 interface OcrSonuc {
   unvan: string;
@@ -26,30 +16,10 @@ interface OcrSonuc {
 }
 
 export default function AiAsistanSayfasi() {
-  const [tahmin, setTahmin] = useState<AiTahmin | null>(null);
-  const [yukleniyorTahmin, setYukleniyorTahmin] = useState(true);
   const [hata, setHata] = useState("");
 
   const [ocrYukleniyor, setOcrYukleniyor] = useState(false);
   const [ocrSonuc, setOcrSonuc] = useState<OcrSonuc | null>(null);
-
-  const fetchTahmin = useCallback(async () => {
-    setYukleniyorTahmin(true);
-    setHata("");
-    try {
-      const data = await api<AiTahmin>("/ai/nakit-akis-tahmini?gun=30");
-      if (data) setTahmin(data);
-    } catch (e) {
-      console.error(e);
-      setHata("Nakit akış tahmini hesaplanırken hata oluştu.");
-    } finally {
-      setYukleniyorTahmin(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void fetchTahmin();
-  }, [fetchTahmin]);
 
   const ocrTara = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -82,79 +52,23 @@ export default function AiAsistanSayfasi() {
     <div className="space-y-6">
       <PageHeader
         title="Finansal Projeksiyon"
-        subtitle="Kayıtlı vade, ödeme ve bakiyelerden hesaplanan açıklanabilir nakit görünümü."
+        subtitle="Nakit tahmini ve belge okuma araçları."
       />
 
       <Alert tone="error">{hata}</Alert>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* 1. Nakit Akış Tahmin Kartı */}
-        <Card className="p-6 space-y-6">
-          <div className="flex justify-between items-center border-b pb-3">
-            <h2 className="text-lg font-bold text-slate-800">📊 Nakit Akış Projeksiyonu (30 Gün)</h2>
-            {tahmin && (
-              <span
-                className={`text-xs font-bold px-3 py-1 rounded-full ${
-                  tahmin.riskSeviyesi === "DÜŞÜK_RİSK"
-                    ? "bg-green-100 text-green-800"
-                    : tahmin.riskSeviyesi === "ORTA_RİSK"
-                    ? "bg-amber-100 text-amber-800"
-                    : "bg-red-100 text-red-800"
-                }`}
-              >
-                {tahmin.riskSeviyesi}
-              </span>
-            )}
+        {/* NAK-14: nakit tahmini kendi ekranına taşındı. */}
+        <Card className="p-6 space-y-4">
+          <div className="border-b pb-3">
+            <h2 className="text-lg font-bold text-slate-800">📊 Nakit akışı tahmini</h2>
           </div>
-
-          {yukleniyorTahmin ? (
-            <div className="py-8 text-center text-slate-500">Analiz hesaplanıyor...</div>
-          ) : tahmin ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-slate-50 rounded-xl border">
-                  <div className="text-xs text-slate-500 font-semibold">Mevcut Kasa/Banka Bakiyesi</div>
-                  <div className="text-lg font-bold text-slate-800">
-                    {Number(tahmin.mevcutBakiye).toLocaleString("tr-TR")} ₺
-                  </div>
-                </div>
-
-                <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
-                  <div className="text-xs text-blue-600 font-semibold">Beklenen Tahsilatlar (30 Gün)</div>
-                  <div className="text-lg font-bold text-blue-800">
-                    +{Number(tahmin.beklenenAlacaklar).toLocaleString("tr-TR")} ₺
-                  </div>
-                </div>
-
-                <div className="p-4 bg-rose-50 rounded-xl border border-rose-100">
-                  <div className="text-xs text-rose-600 font-semibold">Beklenen Ödemeler (30 Gün)</div>
-                  <div className="text-lg font-bold text-rose-800">
-                    -{Number(tahmin.beklenenBorclar).toLocaleString("tr-TR")} ₺
-                  </div>
-                </div>
-
-                <div className="p-4 bg-orange-50 rounded-xl border border-orange-200">
-                  <div className="text-xs text-orange-700 font-semibold">Tahmini Ay Sonu Net Bakiye</div>
-                  <div className="text-lg font-bold text-orange-700">
-                    {Number(tahmin.tahminiSonBakiye).toLocaleString("tr-TR")} ₺
-                  </div>
-                </div>
-              </div>
-
-              {/* Akıllı Tavsiyeler */}
-              <div className="pt-2 space-y-2">
-                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Kural Bazlı Uyarılar</h4>
-                <p className="text-xs text-slate-500">{tahmin.hesaplamaYontemi}</p>
-                <div className="space-y-1.5">
-                  {tahmin.tavsiyeler.map((t, idx) => (
-                    <div key={idx} className="p-3 bg-slate-100 rounded-lg text-xs font-medium text-slate-700">
-                      {t}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : null}
+          <p className="text-sm text-slate-600">
+            Nakit tahmini artık ayrı bir ekranda: kasa ve banka bakiyesinden başlayıp faturalar, çek/senetler, masraflar,
+            kira, kart taksitleri, bordro ve tekrarlayan faturalardan 7, 30 ve 90 günlük; iyimser, baz ve kötümser
+            senaryolu, kalem kalem açıklanabilir tahmin.
+          </p>
+          <Link href="/panel/nakit-akisi"><Button variant="primary">Nakit akışını aç</Button></Link>
         </Card>
 
         {/* 2. Fiş & Fatura OCR Okuma Kartı */}
