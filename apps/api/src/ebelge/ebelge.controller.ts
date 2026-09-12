@@ -6,18 +6,43 @@ import {
   Param,
   Post,
   Query,
+  Res,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { GelenEbelgeDurum } from "@prisma/client";
 import { Roller } from "../auth/roller.decorator";
 import { EbelgeService } from "./ebelge.service";
 import { EbelgeKuyrukService } from "./ebelge-kuyruk.service";
+import { EbelgeGorunumService } from "./ebelge-gorunum.service";
 import { earsivIptalSemasi, earsivRaporAralikSemasi, ebelgeGonderSemasi, gelenOnaySemasi, gelenXmlYukleSemasi, gelenYanitSemasi } from "./ebelge.semalar";
 
 const GELEN_DURUMLARI: GelenEbelgeDurum[] = ["beklemede", "islendi", "reddedildi"];
 
 @Controller("ebelge")
 export class EbelgeController {
-  constructor(private readonly ebelgeService: EbelgeService, private readonly kuyrukService: EbelgeKuyrukService) {}
+  constructor(
+    private readonly ebelgeService: EbelgeService,
+    private readonly kuyrukService: EbelgeKuyrukService,
+    private readonly gorunumService: EbelgeGorunumService,
+  ) {}
+
+  /** EBLG-27: gelen belgenin PDF görünümü; kaynak saklanan UBL'dir. */
+  @Get("gelen/:id/pdf")
+  async gelenPdf(@Param("id") id: string, @Res() res: Response) {
+    this.pdfYanitla(res, await this.gorunumService.gelenPdf(id));
+  }
+
+  /** EBLG-27: kestiğimiz belgenin alıcıya giden görünümü. */
+  @Get("giden/:faturaId/pdf")
+  async gidenPdf(@Param("faturaId") faturaId: string, @Res() res: Response) {
+    this.pdfYanitla(res, await this.gorunumService.gidenPdf(faturaId));
+  }
+
+  private pdfYanitla(res: Response, pdf: { buffer: Buffer; dosyaAdi: string }) {
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${pdf.dosyaAdi}"`);
+    res.send(pdf.buffer);
+  }
 
   @Get("wizard/:faturaId")
   @Roller("muhasebe")

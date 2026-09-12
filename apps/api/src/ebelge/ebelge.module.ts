@@ -5,6 +5,7 @@ import { TenantModule } from "../tenant/tenant.module";
 import { EbelgeController } from "./ebelge.controller";
 import { EbelgeService } from "./ebelge.service";
 import { EbelgeKuyrukService } from "./ebelge-kuyruk.service";
+import { EbelgeGorunumService } from "./ebelge-gorunum.service";
 import { EirsaliyeController } from "./eirsaliye.controller";
 import { EirsaliyeService } from "./eirsaliye.service";
 import { MukellefListesiService } from "./mukellef-listesi.service";
@@ -14,7 +15,7 @@ import { MukellefListesiService } from "./mukellef-listesi.service";
   // yapılır; FaturaModule da e-belge kuyruğunu kullandığı için döngüsel.
   imports: [TenantModule, BildirimlerModule, forwardRef(() => FaturaModule)],
   controllers: [EbelgeController, EirsaliyeController],
-  providers: [EbelgeService, EbelgeKuyrukService, EirsaliyeService, MukellefListesiService],
+  providers: [EbelgeService, EbelgeKuyrukService, EbelgeGorunumService, EirsaliyeService, MukellefListesiService],
   exports: [EbelgeService, EbelgeKuyrukService, MukellefListesiService],
 })
 export class EbelgeModule {}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EARSIV_ELEKTRONIK_IBARESI, faturaPdfHtml, type FaturaPdfVerisi } from "./fatura-pdf";
+import { EARSIV_ELEKTRONIK_IBARESI, faturaPdfHtml, profilAdi, type FaturaPdfVerisi } from "./fatura-pdf";
 
 const fatura: FaturaPdfVerisi = {
   tip: "satis",
@@ -36,5 +36,32 @@ describe("faturaPdfHtml — e-Arşiv ibaresi (EBLG-26)", () => {
   it("e-Fatura ve henüz gönderilmemiş faturada ibareyi yazmaz", () => {
     expect(faturaPdfHtml({ ...fatura, ebelge: { tur: "efatura" }, earsivGonderimSekli: "elektronik" }, firma)).not.toContain(EARSIV_ELEKTRONIK_IBARESI);
     expect(faturaPdfHtml({ ...fatura, ebelge: null }, firma)).not.toContain(EARSIV_ELEKTRONIK_IBARESI);
+  });
+});
+
+describe("faturaPdfHtml — e-belge kimliği (EBLG-30)", () => {
+  const kimlikli = {
+    ...fatura,
+    id: "11111111-1111-4111-8111-111111111111",
+    senaryo: "TEVKIFAT",
+    efaturaProfili: "ticari",
+  };
+
+  it("gönderilen belgede ETTN, senaryo ve profili yazar", () => {
+    const html = faturaPdfHtml({ ...kimlikli, ebelge: { tur: "efatura" } }, firma);
+    expect(html).toContain("ETTN: 11111111-1111-4111-8111-111111111111");
+    expect(html).toContain("TEVKIFAT");
+    expect(html).toContain("TICARIFATURA");
+  });
+
+  it("e-Arşiv kanalında profil EARSIVFATURA'dır", () => {
+    expect(profilAdi({ ebelge: { tur: "earsiv" }, efaturaProfili: "ticari" })).toBe("EARSIVFATURA");
+    expect(profilAdi({ ebelge: { tur: "efatura" }, efaturaProfili: "temel" })).toBe("TEMELFATURA");
+  });
+
+  it("gönderilmemiş faturada kimlik satırı yoktur — ETTN'in henüz anlamı yok", () => {
+    const html = faturaPdfHtml({ ...kimlikli, ebelge: null }, firma);
+    expect(html).not.toContain("ETTN");
+    expect(profilAdi({ ebelge: null })).toBeNull();
   });
 });

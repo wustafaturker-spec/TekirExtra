@@ -323,6 +323,25 @@ görüntüsü ve imzalı UBL — yasal saklama için gerekir), `actionService`
 | EBLG-16 | Belge numarasını **entegratör atıyorsa** (sağlayıcıda otomatik numaralandırılan seri tanımlıysa) yerel sayaç ilerletilmemelidir: UBL'e yalnız seri öneki yazılır, numara gönderim yanıtından okunup faturaya işlenir. Numarası henüz atanmamış kesin fatura yazdırılamaz ve e-postalanamaz. Numarayı bizden bekleyen sağlayıcılarda yerel sayaç kullanılmaya devam eder; numaralandırma sahipliği sağlayıcı başına belirlenir. | G |
 | EBLG-17 | Gönderim ağ çağrısı ile veritabanına yazma aynı atomik birim olmadığından, başarılı çağrıdan sonra gelen bir hata belgeyi sağlayıcıda bırakabilir. **Yeniden denemeden önce** sağlayıcıya aynı kaynak kayıt için belge oluşup oluşmadığı sorulmalı; oluşmuşsa belge yeniden gönderilmez, mevcut belge benimsenir. İlk gönderimde bu sorgu yapılmaz. | G |
 
+**e-Belge PDF görüntüleme (EBLG-27…EBLG-32) — S-01 kapı kararları (2026-09-12,
+kullanıcı onayı):** Gelen ve giden e-Fatura/e-Arşiv belgeleri PDF olarak
+görüntülenebilmelidir. İnceleme sırasında görüldü ki gelen belgenin
+yazdırılabilir hiçbir görünümü yok (yalnız eşleştirme modalı var); giden belgenin
+PDF'i ise iç çıktıdır, e-belge kimlik alanlarını taşımaz; ayrıca UBL'e gömdüğümüz
+XSLT bir taslaktır (yalnız numara, tarih, toplam), yani alıcı faturamızı böyle
+görür. **Kararlar:** görünüm belgenin kendi gömülü XSLT'sinden çizilir; giden
+tarafta hem PDF zenginleştirilir hem aynı görünüm XSLT olarak gömülür; PDF
+saklanmaz, istendiğinde XML'den üretilir.
+
+| No | İster | Öncelik |
+|---|---|---|
+| EBLG-27 | Gelen ve giden e-Fatura/e-Arşiv belgesi, kayıtlı UBL'inden **PDF olarak görüntülenebilmelidir**. PDF saklanmaz, her istekte üretilir; saklanan asıl belge XML'dir. Belge numarasıyla adlandırılır ve tarayıcıda satır içi açılır. | G |
+| EBLG-28 | Görünüm, belgenin UBL'ine **gömülü XSLT** eklentisinden (`DocumentTypeCode = XSLT`) çizilmelidir; belge, gönderenin tasarladığı resmî görünümle çıkar. XSLT yoksa veya dönüşüm başarısızsa uygulamanın kendi şablonuna düşülür ve çıktıda bunun yedek görünüm olduğu belirtilir. | G |
+| EBLG-29 | XSLT yabancı bir kaynaktan gelir; dönüşüm **yalıtılmış** çalışmalıdır: dış ağ erişimi, yerel dosya okuma ve betik çalıştırma kapalı olmalı, dönüşüm süre sınırına bağlanmalıdır. Bozuk veya kötü niyetli XSLT PDF üretimini düşürmemeli, yedek görünüme düşürmelidir. | G |
+| EBLG-30 | Giden faturanın PDF'i e-belge kimlik alanlarını taşımalıdır: **ETTN (UUID)**, GİB **senaryosu** ve **profili**. | G |
+| EBLG-31 | UBL'e gömülen XSLT, giden faturanın PDF'iyle **aynı görünümü** üretmelidir; alıcının gördüğü belge ile bizim bastığımız belge ayrışmamalıdır. | G |
+| EBLG-32 | **Beklemede:** e-Arşiv faturasının PDF'inde **GİB karekodu** bulunmalıdır. Karekodun içeriği GİB *e-Belge Karekod Uygulama Kılavuzu*'nda tanımlıdır; kılavuz elde olmadığından alan tahminle üretilmez — ürün sahibi kılavuzu temin edene kadar karekod basılmaz. | G |
+
 ### 3.4 Stok Takibi (STK)
 
 | No | İster | Öncelik |

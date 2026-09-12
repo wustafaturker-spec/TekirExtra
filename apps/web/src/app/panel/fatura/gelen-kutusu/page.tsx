@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, tokenAl } from "@/lib/api";
+import { api, apiPdfAc, tokenAl } from "@/lib/api";
 import {
   Alert,
   Badge,
@@ -455,6 +455,16 @@ export default function GelenKutusuSayfasi() {
   const [xmlModal, setXmlModal] = useState(false);
   const [xmlIcerik, setXmlIcerik] = useState("");
 
+  /** EBLG-27: belgeyi gönderenin kendi görünümüyle PDF olarak açar. */
+  async function pdfAc(id: string) {
+    setHata("");
+    try {
+      await apiPdfAc(`/ebelge/gelen/${id}/pdf`);
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "PDF açılamadı");
+    }
+  }
+
   async function xmlYukleHander() {
     if (!xmlIcerik.trim()) return;
     setHata("");
@@ -601,6 +611,7 @@ export default function GelenKutusuSayfasi() {
                     <td>
                       <div style={{ display: "flex", gap: "6px" }}>
                         <Button size="sm" onClick={() => void detayAc(g.id)}>İncele</Button>
+                        <Button size="sm" onClick={() => void pdfAc(g.id)}>PDF</Button>
                         {g.durum === "islendi" && (
                           <Button
                             size="sm"

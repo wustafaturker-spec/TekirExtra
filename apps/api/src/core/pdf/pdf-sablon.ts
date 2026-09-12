@@ -37,13 +37,12 @@ export interface SayfaSecenekleri {
   logoDataUri?: string;
 }
 
-/** Tüm PDF'lerin ortak iskeleti: üst şerit, içerik, tarihli alt bilgi. */
-export function sayfaSablonu(s: SayfaSecenekleri): string {
-  return `<!doctype html>
-<html lang="tr">
-<head>
-<meta charset="utf-8">
-<style>
+/**
+ * Sayfa biçimi tek kaynaktan gelir: PDF şablonu da, UBL'e gömülen XSLT görünümü
+ * de (EBLG-31) bu stili kullanır, böylece alıcının gördüğü belge ile bizim
+ * bastığımız belge ayrışmaz.
+ */
+export const SAYFA_STILI = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: "DejaVu Sans", Arial, sans-serif;
@@ -75,7 +74,15 @@ export function sayfaSablonu(s: SayfaSecenekleri): string {
     color: #9ca3af; font-size: 7.5pt; display: flex;
     justify-content: space-between;
   }
-</style>
+`;
+
+/** Tüm PDF'lerin ortak iskeleti: üst şerit, içerik, tarihli alt bilgi. */
+export function sayfaSablonu(s: SayfaSecenekleri): string {
+  return `<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<style>${SAYFA_STILI}</style>
 </head>
 <body>
   <div class="ust-serit">

@@ -52,6 +52,19 @@ export interface FaturaPdfVerisi {
   /** Faturanın e-belge kanalı; gönderilmemişse yok (EBLG-26). */
   ebelge?: { tur: string } | null;
   earsivGonderimSekli?: string;
+  /** EBLG-30: belgenin ETTN'i — UBL'de UUID olarak giden değerin aynısı. */
+  id?: string;
+  /** EBLG-30: satırlardan türetilen GİB senaryosu (FTR-16). */
+  senaryo?: string;
+  /** EBLG-30: e-Fatura profili; e-Arşiv'de kanal profili yazar. */
+  efaturaProfili?: string;
+}
+
+/** EBLG-30: PDF'te gösterilen profil adı; UBL'deki ProfileID ile aynı ayrımdır. */
+export function profilAdi(f: Pick<FaturaPdfVerisi, "ebelge" | "efaturaProfili">): string | null {
+  if (!f.ebelge) return null;
+  if (f.ebelge.tur === "earsiv") return "EARSIVFATURA";
+  return f.efaturaProfili === "ticari" ? "TICARIFATURA" : "TEMELFATURA";
 }
 
 /**
@@ -115,6 +128,13 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
     toplamSatiri("Genel Toplam", f.genelToplam, true),
   ].join("");
 
+  // EBLG-30: belge gönderildiyse kimliği çıktıda yer alır; taslakta ETTN'in
+  // bir anlamı yoktur, gösterilmez.
+  const profil = profilAdi(f);
+  const ebelgeKimligi = profil
+    ? `<br>ETTN: ${kacis(f.id ?? "")}<br>Senaryo: ${kacis(f.senaryo ?? "")} &nbsp;•&nbsp; Profil: ${kacis(profil)}`
+    : "";
+
   const icerik = `
 <table style="width:100%;margin-bottom:12px;font-size:9pt">
   <tr>
@@ -136,7 +156,7 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
           f.dovizCinsi !== "TRY"
             ? `<br>Döviz: ${kacis(f.dovizCinsi)} (kur ${sayiBicim(f.kur)})`
             : ""
-        }
+        }${ebelgeKimligi}
       </div>
     </td>
   </tr>

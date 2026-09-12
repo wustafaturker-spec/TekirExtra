@@ -149,3 +149,14 @@ export async function apiDosyaBlob(yol: string): Promise<Blob> {
   if (!yanit.ok) throw new ApiHata("Dosya görüntülenemedi", yanit.status);
   return yanit.blob();
 }
+
+/**
+ * Kimlik doğrulamalı bir PDF'i yeni sekmede açar (EBLG-27). Adres doğrudan
+ * açılamaz: uç Authorization başlığı ister, tarayıcı sekmesi bunu göndermez.
+ */
+export async function apiPdfAc(yol: string): Promise<void> {
+  const adres = URL.createObjectURL(await apiDosyaBlob(yol));
+  window.open(adres, "_blank");
+  // Sekme belgeyi okuyana kadar adres yaşamalı; sonra bellekten düşülür.
+  setTimeout(() => URL.revokeObjectURL(adres), 60_000);
+}

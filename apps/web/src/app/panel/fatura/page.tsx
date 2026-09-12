@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
+import { api, apiPdfAc, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import { AramaSecici } from "@/components/arama-secici";
 import { DepoSecici } from "@/components/depo-secici";
@@ -201,7 +201,6 @@ const ODEME_DURUMLARI: Record<string, { baslik: string; renk: "info" | "success"
 const tl = (deger: string | number): string =>
   Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL";
 
-const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
 const KAYDEDILMEMIS_DEGISIKLIK_UYARISI = "Bu faturadaki kaydedilmemiş değişiklikler silinecek. Formdan ayrılmak istiyor musunuz?";
 
 export default function FaturaSayfasi() {
@@ -927,10 +926,26 @@ export default function FaturaSayfasi() {
     }
   }
 
-  function pdfAc(id: string) {
-    const token = tokenAl();
-    const url = `${apiBase()}/fatura/${id}/pdf?token=${token ?? ""}`;
-    window.open(url, "_blank");
+  async function pdfAc(id: string) {
+    setHata("");
+    try {
+      await apiPdfAc(`/fatura/${id}/pdf`);
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "PDF açılamadı");
+    }
+  }
+
+  /**
+   * EBLG-27: alıcıya giden belgenin görünümü. Kaynak arşivlenen UBL olduğu için
+   * bu, yukarıdaki iç fatura çıktısından ayrı bir belgedir.
+   */
+  async function ebelgePdfAc(faturaId: string) {
+    setHata("");
+    try {
+      await apiPdfAc(`/ebelge/giden/${faturaId}/pdf`);
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "e-Belge PDF açılamadı");
+    }
   }
 
   const gorunenFaturalar = faturalar.filter((f) =>
@@ -1678,7 +1693,8 @@ export default function FaturaSayfasi() {
                         </>
                       ) : (
                         <>
-                          <Button size="sm" onClick={() => pdfAc(f.id)}>🖨 PDF</Button>
+                          <Button size="sm" onClick={() => void pdfAc(f.id)}>🖨 PDF</Button>
+                          {f.ebelge && <Button size="sm" onClick={() => void ebelgePdfAc(f.id)}>📄 e-Belge PDF</Button>}
                           <Button size="sm" onClick={() => setEpostaGonderilen(f)}>✉️ E-posta</Button>
                           {!f.ebelge && f.durum === "kesin" && !f.tip.startsWith("alis") && <Button variant="primary" size="sm" onClick={() => void ebelgeWizardAc(f)}>🧾 e-Fatura Oluştur</Button>}
                           {!f.ebelge && f.durum === "kesin" && <Button size="sm" onClick={() => router.push(`/panel/fatura/yeni?duzenle=${f.id}`)}>Düzenle</Button>}
