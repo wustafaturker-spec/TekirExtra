@@ -12,7 +12,7 @@ interface Cari { id: string; unvan: string }
 interface Hesap { id: string; ad: string; dovizCinsi: string }
 interface KrediKarti extends Hesap { sonDortHane: string; aktif: boolean }
 interface MasrafOdeme { id: string; tutar: string; odemeTarihi: string; aciklama: string | null; kasa: { ad: string } | null; bankaHesap: { ad: string } | null; krediKarti: { ad: string; sonDortHane: string } | null }
-interface Masraf { id: string; tarih: string; belgeTuru: string; belgeNo: string | null; saticiUnvan: string | null; vknTckn?: string | null; aciklama?: string | null; matrah: string; kdvOrani: string; kdvTutari: string; toplam: string; stopajTutari?: string | null; odenenTutar: string; dovizCinsi: string; durum: "taslak" | "onaylandi" | "iptal"; odemeDurumu: "odenmedi" | "kismi_odendi" | "odendi"; kategori: Kategori; cari: Cari | null; odemeler: MasrafOdeme[] }
+interface Masraf { id: string; tarih: string; belgeTuru: string; belgeNo: string | null; saticiUnvan: string | null; vknTckn?: string | null; aciklama?: string | null; matrah: string; kdvOrani: string; kdvTutari: string; toplam: string; stopajTutari?: string | null; odenenTutar: string; dovizCinsi: string; kur: string; durum: "taslak" | "onaylandi" | "iptal"; odemeDurumu: "odenmedi" | "kismi_odendi" | "odendi"; kategori: Kategori; cari: Cari | null; odemeler: MasrafOdeme[] }
 
 const bugun = () => new Date().toISOString().slice(0, 10);
 const para = (n: string | number, d = "TRY") => Number(n).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + d;
@@ -34,6 +34,7 @@ export default function MasraflarSayfasi() {
   const [tarih, setTarih] = useState(bugun()); const [saticiUnvan, setSaticiUnvan] = useState("");
   const [vknTckn, setVknTckn] = useState(""); const [aciklama, setAciklama] = useState("");
   const [toplamBedel, setToplamBedel] = useState(""); const [kdvOrani, setKdvOrani] = useState("20");
+  const [dovizCinsi, setDovizCinsi] = useState("TRY"); const [kur, setKur] = useState("1"); const [kurBilgisi, setKurBilgisi] = useState("");
   const [dosyalar, setDosyalar] = useState<File[]>([]);
   const [arama, setArama] = useState(""); const [durumFiltresi, setDurumFiltresi] = useState("aktif"); const [kategoriFiltresi, setKategoriFiltresi] = useState("");
 
@@ -43,7 +44,8 @@ export default function MasraflarSayfasi() {
   }, [toplamBedel, kdvOrani]);
   const kdvTutari = useMemo(() => (Number(toplamBedel || 0) - Number(matrah)).toFixed(2), [toplamBedel, matrah]);
   const toplam = useMemo(() => Number(toplamBedel || 0).toFixed(2), [toplamBedel]);
-  const ozet = useMemo(() => { const gecerli = masraflar.filter((m) => m.durum !== "iptal" && m.dovizCinsi === "TRY"); return { toplam: gecerli.reduce((t, m) => t + Number(m.toplam), 0), odenmemis: gecerli.reduce((t, m) => t + Math.max(0, Number(m.toplam) - Number(m.stopajTutari || 0) - Number(m.odenenTutar || 0)), 0), kira: gecerli.filter((m) => m.belgeTuru === "kira").reduce((t, m) => t + Number(m.toplam), 0), taslak: gecerli.filter((m) => m.durum === "taslak").length }; }, [masraflar]);
+  // Dövizli masraf da sayılır: belge kuruyla TL karşılığına çevrilir.
+  const ozet = useMemo(() => { const gecerli = masraflar.filter((m) => m.durum !== "iptal"); const tl = (m: Masraf, tutar: string | number | null | undefined) => Number(tutar || 0) * Number(m.kur || 1); return { toplam: gecerli.reduce((t, m) => t + tl(m, m.toplam), 0), odenmemis: gecerli.reduce((t, m) => t + Math.max(0, tl(m, m.toplam) - tl(m, m.stopajTutari) - tl(m, m.odenenTutar)), 0), kira: gecerli.filter((m) => m.belgeTuru === "kira").reduce((t, m) => t + tl(m, m.toplam), 0), taslak: gecerli.filter((m) => m.durum === "taslak").length }; }, [masraflar]);
   const filtreliMasraflar = useMemo(() => masraflar.filter((m) => { const metin = `${m.cari?.unvan ?? m.saticiUnvan ?? ""} ${m.belgeNo ?? ""} ${m.aciklama ?? ""} ${m.kategori.ad}`.toLocaleLowerCase("tr-TR"); const durumUygun = durumFiltresi === "tumu" || (durumFiltresi === "aktif" ? m.durum !== "iptal" : durumFiltresi === "odenmedi" ? m.durum !== "iptal" && m.odemeDurumu !== "odendi" : m.durum === durumFiltresi); return metin.includes(arama.toLocaleLowerCase("tr-TR")) && durumUygun && (!kategoriFiltresi || m.kategori.id === kategoriFiltresi); }), [masraflar, arama, durumFiltresi, kategoriFiltresi]);
 
   const yukle = useCallback(async () => {
@@ -54,8 +56,18 @@ export default function MasraflarSayfasi() {
   useEffect(() => { setFormAcik(yeniSayfasi); }, [yeniSayfasi]);
   useEffect(() => {
     if (!yeniSayfasi) return; const id = new URLSearchParams(window.location.search).get("duzenle"); if (!id) return;
-    void api<Masraf>(`/masraflar/${id}`).then((m) => { if (m.durum !== "taslak") throw new Error("Yalnızca taslak masraf düzenlenebilir"); setDuzenlenenId(m.id); setKategoriId(m.kategori.id); setCariId(m.cari?.id ?? ""); setBelgeTuru(m.belgeTuru); setBelgeNo(m.belgeNo ?? ""); setTarih(m.tarih.slice(0, 10)); setSaticiUnvan(m.saticiUnvan ?? ""); setVknTckn(m.vknTckn ?? ""); setAciklama(m.aciklama ?? ""); setToplamBedel(m.toplam); setKdvOrani(m.kdvOrani); }).catch((e) => setHata(e instanceof Error ? e.message : "Masraf açılamadı"));
+    void api<Masraf>(`/masraflar/${id}`).then((m) => { if (m.durum !== "taslak") throw new Error("Yalnızca taslak masraf düzenlenebilir"); setDuzenlenenId(m.id); setKategoriId(m.kategori.id); setCariId(m.cari?.id ?? ""); setBelgeTuru(m.belgeTuru); setBelgeNo(m.belgeNo ?? ""); setTarih(m.tarih.slice(0, 10)); setSaticiUnvan(m.saticiUnvan ?? ""); setVknTckn(m.vknTckn ?? ""); setAciklama(m.aciklama ?? ""); setToplamBedel(m.toplam); setKdvOrani(m.kdvOrani); setDovizCinsi(m.dovizCinsi); setKur(m.kur); setKurBilgisi(m.dovizCinsi === "TRY" ? "" : "Kayıttaki kur"); }).catch((e) => setHata(e instanceof Error ? e.message : "Masraf açılamadı"));
   }, [yeniSayfasi]);
+  useEffect(() => {
+    // Gider yabancı para satın alınarak ödenir: satış kuru. Ucun kendisi kuru
+    // kaydettiği için kira dönemi gibi kura ihtiyaç duyan akışlar da beslenir.
+    if (dovizCinsi === "TRY") { setKur("1"); setKurBilgisi(""); return; }
+    let gecerli = true;
+    api<{ kaynak: string; kurTarihi: string; oncekiIsGunuKullanildi: boolean; kurlar: Record<string, number> }>(`/doviz-kurlari?tarih=${tarih}&tip=satis`)
+      .then((veri) => { if (gecerli && veri.kurlar[dovizCinsi]) { setKur(String(veri.kurlar[dovizCinsi])); setKurBilgisi(`${veri.kaynak === "TCMB_XML" ? "TCMB" : "TCMB EVDS"} · ${veri.kurTarihi}${veri.oncekiIsGunuKullanildi ? " (önceki iş günü)" : ""}`); } })
+      .catch(() => { if (gecerli) setKurBilgisi("TCMB kuru alınamadı; kuru elle girin"); });
+    return () => { gecerli = false; };
+  }, [dovizCinsi, tarih]);
   useEffect(() => {
     if (!odenecekMasraf) return;
     const oncekiTasme = document.body.style.overflow; document.body.style.overflow = "hidden";
@@ -67,9 +79,9 @@ export default function MasraflarSayfasi() {
   async function kaydet(e: React.FormEvent) {
     e.preventDefault(); setHata(""); setBasari("");
     try {
-      const kayit = await api<Masraf>(duzenlenenId ? `/masraflar/${duzenlenenId}` : "/masraflar", { method: duzenlenenId ? "PATCH" : "POST", body: JSON.stringify({ kategoriId, cariId: cariId || null, belgeTuru, belgeNo: belgeNo || null, tarih, saticiUnvan: cariId ? null : saticiUnvan, vknTckn: vknTckn || null, aciklama: aciklama || null, matrah, kdvOrani, kdvTutari, toplam, dovizCinsi: "TRY" }) });
+      const kayit = await api<Masraf>(duzenlenenId ? `/masraflar/${duzenlenenId}` : "/masraflar", { method: duzenlenenId ? "PATCH" : "POST", body: JSON.stringify({ kategoriId, cariId: cariId || null, belgeTuru, belgeNo: belgeNo || null, tarih, saticiUnvan: cariId ? null : saticiUnvan, vknTckn: vknTckn || null, aciklama: aciklama || null, matrah, kdvOrani, kdvTutari, toplam, dovizCinsi, kur }) });
       if (dosyalar.length) await belgeDosyalariniYukle("masraf", kayit.id, dosyalar);
-      setBasari(duzenlenenId ? "Masraf güncellendi." : "Masraf taslak olarak kaydedildi."); setFormAcik(false); setToplamBedel(""); setBelgeNo(""); setSaticiUnvan(""); setAciklama(""); setDosyalar([]); await yukle(); if (yeniSayfasi) router.push("/panel/masraflar");
+      setBasari(duzenlenenId ? "Masraf güncellendi." : "Masraf taslak olarak kaydedildi."); setFormAcik(false); setToplamBedel(""); setBelgeNo(""); setSaticiUnvan(""); setAciklama(""); setDovizCinsi("TRY"); setKur("1"); setKurBilgisi(""); setDosyalar([]); await yukle(); if (yeniSayfasi) router.push("/panel/masraflar");
     } catch (e) { setHata(e instanceof Error ? e.message : "Masraf kaydedilemedi"); }
   }
 
@@ -100,7 +112,7 @@ export default function MasraflarSayfasi() {
   return <div className={yeniSayfasi ? "create-page" : "expense-page"}>
     {yeniSayfasi ? <PageHeader title="Yeni Masraf" subtitle="Fiş, fatura veya gider belgesini kaydedin." actions={<Button onClick={() => router.push("/panel/masraflar")}>Listeye dön</Button>} /> : <header className="expense-hero"><div><span>GİDER YÖNETİM MERKEZİ</span><h1>Masraflar</h1><p>Giderlerinizi kaydedin, onaylayın ve ödeme durumunu tek ekrandan yönetin.</p></div><div><ButtonLabel as="a" href="/panel/masraflar/raporlar">Ayrıntılı raporlar</ButtonLabel><ButtonLabel as="a" href="/panel/masraflar/kategoriler">Kategoriler</ButtonLabel><ButtonLabel as="a" variant="primary" href="/panel/masraflar/yeni">+ Yeni masraf</ButtonLabel></div></header>}
     {hata && <Alert tone="error">{hata}</Alert>}{basari && <Alert tone="success">{basari}</Alert>}
-    {!yeniSayfasi && <section className="expense-summary"><div className="expense-summary__lead"><span>Toplam gider</span><strong>{para(ozet.toplam)}</strong><small>İptal kayıtlar hariç · TRY</small></div><div className={ozet.odenmemis ? "is-danger" : ""}><span>Ödenecek bakiye</span><strong>{para(ozet.odenmemis)}</strong><small>Stopaj sonrası net ödeme</small></div><div><span>Kira giderleri</span><strong>{para(ozet.kira)}</strong><small>Toplam gider içindeki pay %{ozet.toplam ? Math.round(ozet.kira / ozet.toplam * 100) : 0}</small></div><div className={ozet.taslak ? "is-warning" : ""}><span>Onay bekleyen</span><strong>{ozet.taslak}</strong><small>Taslak masraf kaydı</small></div></section>}
+    {!yeniSayfasi && <section className="expense-summary"><div className="expense-summary__lead"><span>Toplam gider</span><strong>{para(ozet.toplam)}</strong><small>İptal kayıtlar hariç · TL karşılığı</small></div><div className={ozet.odenmemis ? "is-danger" : ""}><span>Ödenecek bakiye</span><strong>{para(ozet.odenmemis)}</strong><small>Stopaj sonrası net ödeme</small></div><div><span>Kira giderleri</span><strong>{para(ozet.kira)}</strong><small>Toplam gider içindeki pay %{ozet.toplam ? Math.round(ozet.kira / ozet.toplam * 100) : 0}</small></div><div className={ozet.taslak ? "is-warning" : ""}><span>Onay bekleyen</span><strong>{ozet.taslak}</strong><small>Taslak masraf kaydı</small></div></section>}
     {formAcik && <Card className="expense-entry" title={<span><span className="expense-entry__eyebrow">{duzenlenenId ? "DÜZENLEME" : "YENİ KAYIT"}</span>Masraf bilgileri</span>} style={{ marginTop: "1rem" }}><form onSubmit={kaydet}>
       <div className="expense-entry__layout">
         <section className="expense-entry__section">
@@ -110,6 +122,8 @@ export default function MasraflarSayfasi() {
             <Field label="Kategori"><Select required value={kategoriId} onChange={(e) => { setKategoriId(e.target.value); const k = kategoriler.find((x) => x.id === e.target.value); if (k?.varsayilanKdvOrani) setKdvOrani(k.varsayilanKdvOrani); }}>{kategoriler.filter((k) => !k.ustId).map((grup) => grup._count.altlar > 0 ? <optgroup key={grup.id} label={grup.ad}>{kategoriler.filter((k) => k.ustId === grup.id).map((k) => <option key={k.id} value={k.id}>{k.ad}</option>)}</optgroup> : <option key={grup.id} value={grup.id}>{grup.ad}</option>)}</Select></Field>
             <Field label="Belge tarihi"><Input required type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} /></Field>
             <Field label="Belge numarası"><Input value={belgeNo} onChange={(e) => setBelgeNo(e.target.value)} placeholder="Varsa belge numarası" /></Field>
+            <Field label="Para birimi"><Select value={dovizCinsi} onChange={(e) => setDovizCinsi(e.target.value)}><option value="TRY">TRY — Türk Lirası</option><option value="USD">USD — Amerikan Doları</option><option value="EUR">EUR — Euro</option></Select></Field>
+            {dovizCinsi !== "TRY" && <Field label={`Kur (1 ${dovizCinsi} = TRY)`}><Input required type="number" min="0.000001" step="0.000001" value={kur} onChange={(e) => { setKur(e.target.value); setKurBilgisi("Elle girilen kur"); }} /><small className="muted">{kurBilgisi || "TCMB satış kuru yükleniyor…"}</small></Field>}
           </div>
         </section>
         <section className="expense-entry__section">
@@ -128,7 +142,7 @@ export default function MasraflarSayfasi() {
             <Field label="KDV oranı"><Select value={kdvOrani} onChange={(e) => setKdvOrani(e.target.value)}><option value="0">%0</option><option value="1">%1</option><option value="10">%10</option><option value="20">%20</option></Select></Field>
             <Field label="Matrah"><Input readOnly value={matrah} /></Field>
             <Field label="KDV tutarı"><Input readOnly value={kdvTutari} /></Field>
-            <div className="expense-entry__total"><span>KDV dâhil toplam</span><strong>{para(toplam)}</strong></div>
+            <div className="expense-entry__total"><span>KDV dâhil toplam</span><strong>{para(toplam, dovizCinsi)}</strong>{dovizCinsi !== "TRY" && <small>{para(Number(toplam) * Number(kur || 0))} karşılığı</small>}</div>
             <div className="expense-entry__file"><BelgeDosyalari dosyalar={dosyalar} onChange={setDosyalar} /></div>
           </div>
         </section>

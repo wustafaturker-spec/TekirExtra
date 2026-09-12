@@ -2157,6 +2157,7 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 .expense-entry__total { min-height: 4.45rem; padding: 0.72rem 0.9rem; border-radius: 0.7rem; background: var(--accent); color: white; display: flex; flex-direction: column; justify-content: center; }
 .expense-entry__total span { font-size: 0.7rem; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.06em; }
 .expense-entry__total strong { margin-top: 0.15rem; font-size: 1.15rem; }
+.expense-entry__total small { margin-top: 0.1rem; font-size: 0.72rem; opacity: 0.85; }
 .expense-entry__file { grid-column: 1 / -1; }
 .expense-entry__file small { display: block; margin-top: 0.35rem; color: var(--muted); }
 .expense-entry__actions { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); }
