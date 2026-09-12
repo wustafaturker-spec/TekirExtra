@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { PrismaService } from "../core/prisma.service";
+import { kurCoz } from "../doviz/kur-coz";
 
 const BIR_GUN_MS = 24 * 60 * 60 * 1000;
 const ISTANBUL_UTC_FARKI_MS = 3 * 60 * 60 * 1000;
@@ -62,15 +63,22 @@ export class KiraTahakkukZamanlayiciService implements OnModuleInit, OnModuleDes
             const bitis = s.bitisTarihi ? new Date(Date.UTC(s.bitisTarihi.getUTCFullYear(), s.bitisTarihi.getUTCMonth(), 1)) : mevcutDonem;
             const sonDonem = bitis < mevcutDonem ? bitis : mevcutDonem;
             const kayitlar: Prisma.MasrafCreateManyInput[] = [];
+            let kursuz = 0;
             while (donem <= sonDonem) {
               const anahtar = donem.toISOString().slice(0, 7);
               if (!mevcut.has(anahtar)) {
                 const aySonu = new Date(Date.UTC(donem.getUTCFullYear(), donem.getUTCMonth() + 1, 0)).getUTCDate();
                 const kdvTutari = s.matrah.mul(s.kdvOrani).div(100).toDecimalPlaces(2); const stopajTutari = s.matrah.mul(s.stopajOrani).div(100).toDecimalPlaces(2);
-                kayitlar.push({ tenantId, kategoriId: s.kategoriId, cariId: s.cariId, belgeTuru: "kira", tarih: donem, vadeTarihi: new Date(Date.UTC(donem.getUTCFullYear(), donem.getUTCMonth(), Math.min(s.odemeGunu, aySonu))), saticiUnvan: s.kirayaVeren || s.cari?.unvan, vknTckn: s.vknTckn, iban: s.iban, aciklama: `${s.baslik} - ${anahtar} kira dönemi (otomatik)`, matrah: s.matrah, kdvOrani: s.kdvOrani, kdvTutari, toplam: s.matrah.add(kdvTutari), dovizCinsi: s.dovizCinsi, stopajOrani: s.stopajOrani, stopajTutari, kiraSozlesmeId: s.id, kiraDonemi: donem });
+                // Kuru bilinmeyen dövizli dönem atlanır: 1 ile yazmak döviz
+                // tutarını TL sanmak olurdu. Kullanıcı kurları güncelleyince
+                // bir sonraki tarama dönemi oluşturur.
+                const kur = await kurCoz(tx, tenantId, s.dovizCinsi, donem);
+                if (kur) kayitlar.push({ tenantId, kategoriId: s.kategoriId, cariId: s.cariId, belgeTuru: "kira", tarih: donem, vadeTarihi: new Date(Date.UTC(donem.getUTCFullYear(), donem.getUTCMonth(), Math.min(s.odemeGunu, aySonu))), saticiUnvan: s.kirayaVeren || s.cari?.unvan, vknTckn: s.vknTckn, iban: s.iban, aciklama: `${s.baslik} - ${anahtar} kira dönemi (otomatik)`, matrah: s.matrah, kdvOrani: s.kdvOrani, kdvTutari, toplam: s.matrah.add(kdvTutari), dovizCinsi: s.dovizCinsi, kur, stopajOrani: s.stopajOrani, stopajTutari, kiraSozlesmeId: s.id, kiraDonemi: donem });
+                else kursuz += 1;
               }
               donem = new Date(Date.UTC(donem.getUTCFullYear(), donem.getUTCMonth() + 1, 1));
             }
+            if (kursuz) this.logger.warn(`${s.baslik}: ${kursuz} ${s.dovizCinsi} kira dönemi, kur kaydı bulunmadığı için oluşturulmadı`);
             if (kayitlar.length) olusan += (await tx.masraf.createMany({ data: kayitlar, skipDuplicates: true })).count;
           }
           return olusan;

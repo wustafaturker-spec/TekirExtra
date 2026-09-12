@@ -4,6 +4,7 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
+import { kurCoz } from "../doviz/kur-coz";
 import type { kategoriGuncelleSemasi, kategoriOlusturSemasi, kiraDonemOlusturSemasi, kiraSozlesmeGuncelleSemasi, kiraSozlesmeOlusturSemasi, masrafGuncelleSemasi, masrafOdemeSemasi, masrafOlusturSemasi } from "./masraflar.semalar";
 
 const D = (deger: string | number | Prisma.Decimal) => new Prisma.Decimal(deger);
@@ -98,7 +99,7 @@ export class MasraflarService {
   }
 
   private veri(girdi: z.infer<typeof masrafOlusturSemasi>) {
-    return { ...girdi, cariId: girdi.cariId || null, projeId: girdi.projeId || null, projeAltKirilimId: girdi.projeAltKirilimId || null, belgeNo: girdi.belgeNo || null, saticiUnvan: girdi.saticiUnvan || null, vknTckn: girdi.vknTckn || null, vergiDairesi: girdi.vergiDairesi || null, iban: girdi.iban || null, aciklama: girdi.aciklama || null, matrah: D(girdi.matrah), kdvOrani: D(girdi.kdvOrani), kdvTutari: D(girdi.kdvTutari), toplam: D(girdi.toplam), stopajOrani: girdi.stopajOrani == null ? null : D(girdi.stopajOrani), stopajTutari: girdi.stopajTutari == null ? null : D(girdi.stopajTutari) };
+    return { ...girdi, cariId: girdi.cariId || null, projeId: girdi.projeId || null, projeAltKirilimId: girdi.projeAltKirilimId || null, belgeNo: girdi.belgeNo || null, saticiUnvan: girdi.saticiUnvan || null, vknTckn: girdi.vknTckn || null, vergiDairesi: girdi.vergiDairesi || null, iban: girdi.iban || null, aciklama: girdi.aciklama || null, matrah: D(girdi.matrah), kdvOrani: D(girdi.kdvOrani), kdvTutari: D(girdi.kdvTutari), toplam: D(girdi.toplam), kur: girdi.dovizCinsi === "TRY" ? D(1) : D(girdi.kur), stopajOrani: girdi.stopajOrani == null ? null : D(girdi.stopajOrani), stopajTutari: girdi.stopajTutari == null ? null : D(girdi.stopajTutari) };
   }
 
   async olustur(girdi: z.infer<typeof masrafOlusturSemasi>) {
@@ -136,8 +137,8 @@ export class MasraflarService {
             tip: "alacak",
             tutar: netTutar,
             dovizCinsi: mevcut.dovizCinsi,
-            kur: D(1),
-            tutarTry: netTutar,
+            kur: mevcut.kur,
+            tutarTry: netTutar.mul(mevcut.kur).toDecimalPlaces(2),
             tarih: new Date(mevcut.tarih),
             aciklama,
             kaynakTur: "masraf",
@@ -181,7 +182,7 @@ export class MasraflarService {
         await tx.krediKartiTaksit.createMany({ data: taksitVerileri(tenantId, kartHareketi.id, odenecekTutar, girdi.taksitSayisi, ilkTaksitTarihi) });
         krediKartiHareketId = kartHareketi.id;
       } else {
-        const hareket = await tx.kasaBankaHareket.create({ data: { tenantId, kasaId: girdi.kasaId || null, bankaHesapId: girdi.bankaHesapId || null, tip: "tediye", tutar: odenecekTutar, dovizCinsi: mevcut.dovizCinsi, kur: D(1), tutarTry: odenecekTutar, tarih: girdi.odemeTarihi, aciklama, cariId: mevcut.cariId, kaynakTur: "masraf", kaynakRef: mevcut.id } });
+        const hareket = await tx.kasaBankaHareket.create({ data: { tenantId, kasaId: girdi.kasaId || null, bankaHesapId: girdi.bankaHesapId || null, tip: "tediye", tutar: odenecekTutar, dovizCinsi: mevcut.dovizCinsi, kur: mevcut.kur, tutarTry: odenecekTutar.mul(mevcut.kur).toDecimalPlaces(2), tarih: girdi.odemeTarihi, aciklama, cariId: mevcut.cariId, kaynakTur: "masraf", kaynakRef: mevcut.id } });
         hareketId = hareket.id;
       }
       await tx.masrafOdeme.create({ data: { tenantId, masrafId: mevcut.id, kasaId: girdi.kasaId || null, bankaHesapId: girdi.bankaHesapId || null, krediKartiId: girdi.krediKartiId || null, hareketId, krediKartiHareketId, tutar: odenecekTutar, odemeTarihi: girdi.odemeTarihi, aciklama: girdi.aciklama || null } });
@@ -207,8 +208,8 @@ export class MasraflarService {
             tip: "borc",
             tutar: netTutar,
             dovizCinsi: mevcut.dovizCinsi,
-            kur: D(1),
-            tutarTry: netTutar,
+            kur: mevcut.kur,
+            tutarTry: netTutar.mul(mevcut.kur).toDecimalPlaces(2),
             tarih: new Date(),
             aciklama,
             kaynakTur: "masraf",
@@ -277,8 +278,12 @@ export class MasraflarService {
       if (donem < baslangic || (bitis && donem > bitis)) throw new BadRequestException("Seçilen dönem sözleşme tarihleri dışında");
       const kdvTutari = sozlesme.matrah.mul(sozlesme.kdvOrani).div(100).toDecimalPlaces(2);
       const stopajTutari = sozlesme.matrah.mul(sozlesme.stopajOrani).div(100).toDecimalPlaces(2);
+      // Dövizli sözleşmede dönemin kuru sözleşmede değil, dönem tarihindeki
+      // TCMB satış kurundadır; kur bilinmeden dönem tahakkuk ettirilemez.
+      const kur = await kurCoz(tx, tenantId, sozlesme.dovizCinsi, donem);
+      if (!kur) throw new BadRequestException(`${girdi.donem} dönemi için kayıtlı ${sozlesme.dovizCinsi} kuru yok; kur kaydı oluşmadan dövizli dönem tahakkuk ettirilemez`);
       try {
-        return await tx.masraf.create({ data: { tenantId, kategoriId: sozlesme.kategoriId, cariId: sozlesme.cariId, belgeTuru: "kira", tarih: donem, vadeTarihi: vade, saticiUnvan: sozlesme.kirayaVeren || sozlesme.cari?.unvan, vknTckn: sozlesme.vknTckn, iban: sozlesme.iban, aciklama: `${sozlesme.baslik} - ${girdi.donem} kira dönemi`, matrah: sozlesme.matrah, kdvOrani: sozlesme.kdvOrani, kdvTutari, toplam: sozlesme.matrah.add(kdvTutari), dovizCinsi: sozlesme.dovizCinsi, stopajOrani: sozlesme.stopajOrani, stopajTutari, kiraSozlesmeId: sozlesme.id, kiraDonemi: donem } });
+        return await tx.masraf.create({ data: { tenantId, kategoriId: sozlesme.kategoriId, cariId: sozlesme.cariId, belgeTuru: "kira", tarih: donem, vadeTarihi: vade, saticiUnvan: sozlesme.kirayaVeren || sozlesme.cari?.unvan, vknTckn: sozlesme.vknTckn, iban: sozlesme.iban, aciklama: `${sozlesme.baslik} - ${girdi.donem} kira dönemi`, matrah: sozlesme.matrah, kdvOrani: sozlesme.kdvOrani, kdvTutari, toplam: sozlesme.matrah.add(kdvTutari), dovizCinsi: sozlesme.dovizCinsi, kur, stopajOrani: sozlesme.stopajOrani, stopajTutari, kiraSozlesmeId: sozlesme.id, kiraDonemi: donem } });
       } catch (hata) {
         if (hata instanceof Prisma.PrismaClientKnownRequestError && hata.code === "P2002") throw new BadRequestException("Bu sözleşme için seçilen kira dönemi zaten oluşturulmuş");
         throw hata;

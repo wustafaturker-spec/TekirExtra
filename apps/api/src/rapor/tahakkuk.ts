@@ -60,6 +60,7 @@ export interface TahakkukVerisi {
     belgeNo: string | null;
     tarih: Date;
     matrah: Sayi;
+    kur: Sayi;
     dovizCinsi: string;
     aciklama: string | null;
     saticiUnvan: string | null;
@@ -113,14 +114,11 @@ function ayinSonGunu(yil: number, ay: number): string {
 }
 
 /**
- * Belgeleri tahakkuk kalemlerine çevirir. `kurBul` dövizli masrafın belge
- * tarihindeki kurunu verir (masraf kaydı kur taşımaz); bulunamayan kalem
- * sayılmaz ve `cevrilemeyen` ile bildirilir.
+ * Belgeleri tahakkuk kalemlerine çevirir (BUT-01: TL karşılık belge kurundan).
+ * Kuru girilmemiş dövizli masraf (kur 1) sayılmaz ve `cevrilemeyen` ile
+ * bildirilir; TL sanılıp toplama katılması sessiz bir hata olurdu.
  */
-export function tahakkukSiniflandir(
-  veri: TahakkukVerisi,
-  kurBul: (dovizCinsi: string, tarih: Date) => number | null,
-): { kalemler: TahakkukKalemi[]; cevrilemeyen: number } {
+export function tahakkukSiniflandir(veri: TahakkukVerisi): { kalemler: TahakkukKalemi[]; cevrilemeyen: number } {
   const kalemler: TahakkukKalemi[] = [];
   let cevrilemeyen = 0;
   const sabit = (anahtar: string) => SABIT.get(anahtar)!;
@@ -154,8 +152,8 @@ export function tahakkukSiniflandir(
   }
 
   for (const m of veri.masraflar) {
-    const kur = m.dovizCinsi === "TRY" ? 1 : kurBul(m.dovizCinsi, m.tarih);
-    if (kur === null) { cevrilemeyen += 1; continue; }
+    const kur = sayi(m.kur) || 1;
+    if (m.dovizCinsi !== "TRY" && kur === 1) { cevrilemeyen += 1; continue; }
     const matrah = sayi(m.matrah);
     kalemler.push({
       id: m.id, tarih: isoGun(m.tarih), tur: "gider", anahtar: `masraf_kategori:${m.kategori.id}`,
@@ -224,7 +222,7 @@ export async function tahakkukOku(tx: Prisma.TransactionClient, tenantId: string
   const masraflar = await tx.masraf.findMany({
     where: { tenantId, durum: "onaylandi", tarih: { gte: baslangic, lte: bitis } },
     select: {
-      id: true, belgeNo: true, tarih: true, matrah: true, dovizCinsi: true, aciklama: true, saticiUnvan: true,
+      id: true, belgeNo: true, tarih: true, matrah: true, kur: true, dovizCinsi: true, aciklama: true, saticiUnvan: true,
       kategori: { select: { id: true, ad: true, ust: { select: { id: true, ad: true } } } },
       cari: { select: { unvan: true } },
     },
@@ -250,21 +248,7 @@ export async function tahakkukOku(tx: Prisma.TransactionClient, tenantId: string
     return aySonu >= baslangic && aySonu <= bitis;
   });
 
-  const dovizler = [...new Set(masraflar.map((m) => m.dovizCinsi).filter((d) => d !== "TRY"))];
-  const kurlar = dovizler.length
-    ? await tx.dovizKuru.findMany({
-        where: { tenantId, dovizCinsi: { in: dovizler as ("USD" | "EUR")[] }, tarih: { lte: bitis } },
-        orderBy: { tarih: "desc" },
-        select: { tarih: true, dovizCinsi: true, dovizSatis: true },
-      })
-    : [];
-  // Gider yabancı para alınarak ödenir: döviz satış kuru.
-  const kurBul = (doviz: string, tarih: Date) => {
-    const k = kurlar.find((x) => x.dovizCinsi === doviz && x.tarih <= tarih);
-    return k ? Number(k.dovizSatis) : null;
-  };
-
-  const { kalemler, cevrilemeyen } = tahakkukSiniflandir({ faturalar, masraflar, gelirKayitlari, bordrolar }, kurBul);
-  const uyarilar = cevrilemeyen ? [`${cevrilemeyen} dövizli masraf, tarihinde kur kaydı bulunmadığı için sayılmadı.`] : [];
+  const { kalemler, cevrilemeyen } = tahakkukSiniflandir({ faturalar, masraflar, gelirKayitlari, bordrolar });
+  const uyarilar = cevrilemeyen ? [`${cevrilemeyen} dövizli masraf, kuru kayıtlı olmadığı için sayılmadı.`] : [];
   return { kalemler, uyarilar };
 }

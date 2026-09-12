@@ -2807,6 +2807,9 @@ model Masraf {
   kdvTutari         Decimal           @map("kdv_tutari") @db.Decimal(15, 2)
   toplam            Decimal           @db.Decimal(15, 2)
   dovizCinsi        DovizCinsi        @default(TRY) @map("doviz_cinsi")
+  /// Belge tarihindeki TL karşılığı kuru; masraftan doğan kasa/banka ve cari
+  /// hareketlerin `tutarTry` değeri buradan gelir. TRY masrafta 1'dir.
+  kur               Decimal           @default(1) @db.Decimal(15, 6)
   durum             MasrafDurum       @default(taslak)
   odemeDurumu       MasrafOdemeDurumu @default(odenmedi) @map("odeme_durumu")
   odenenTutar       Decimal           @default(0) @map("odenen_tutar") @db.Decimal(15, 2)

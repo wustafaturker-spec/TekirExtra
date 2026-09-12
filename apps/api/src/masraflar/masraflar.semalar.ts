@@ -29,6 +29,7 @@ export const masrafOlusturSemasi = z.object({
   kdvTutari: z.coerce.number().min(0),
   toplam: z.coerce.number().positive(),
   dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+  kur: z.coerce.number().positive().default(1),
   stopajOrani: z.coerce.number().min(0).max(100).nullable().optional(),
   stopajTutari: z.coerce.number().min(0).nullable().optional(),
   projeId: bosVeyaUuid,
@@ -40,6 +41,11 @@ export const masrafOlusturSemasi = z.object({
   const hesaplanan = girdi.matrah + girdi.kdvTutari;
   if (Math.abs(hesaplanan - girdi.toplam) > 0.02) {
     ctx.addIssue({ code: "custom", path: ["toplam"], message: "Toplam, matrah ve KDV toplamıyla uyuşmuyor" });
+  }
+  // Kur olmadan dövizli masrafın TL karşılığı yazılamaz; 1 kabul etmek döviz
+  // tutarını TL sanmak demektir.
+  if (girdi.dovizCinsi !== "TRY" && girdi.kur === 1) {
+    ctx.addIssue({ code: "custom", path: ["kur"], message: "Dövizli masrafta belge tarihindeki kur girilmelidir" });
   }
 });
 

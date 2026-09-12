@@ -11,6 +11,7 @@ import { izinliEylemler } from "../core/eylemler/eylem-kayit";
 import { metinNormalize } from "@tekirextra/shared";
 import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
+import { kurCoz } from "../doviz/kur-coz";
 import { makbuzPdfHtml } from "./makbuz-pdf";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import type {
@@ -451,11 +452,15 @@ export class KasaBankaService {
       let kullanilabilir = D(0);
       for (const grup of bakiyeGruplari) kullanilabilir = grup.tip === "tahsilat" || grup.tip === "virman_gelis" ? kullanilabilir.add(grup._sum.tutar ?? 0) : kullanilabilir.sub(grup._sum.tutar ?? 0);
       if (brut.greaterThan(kullanilabilir)) throw new BadRequestException(`Aktarım tutarı POS bakiyesini aşıyor (kullanılabilir: ${kullanilabilir.toFixed(2)} ${pos.dovizCinsi})`);
-      const ortak = { tenantId, dovizCinsi: pos.dovizCinsi, kur: D(1), tarih: new Date(girdi.tarih), kaynakTur: "pos_mutabakat", aciklama: girdi.aciklama ?? `${pos.ad} sağlayıcı ödemesi` };
-      const gidis = await tx.kasaBankaHareket.create({ data: { ...ortak, posHesapId: pos.id, tip: "virman_gidis", tutar: net, tutarTry: net } });
-      const gelis = await tx.kasaBankaHareket.create({ data: { ...ortak, bankaHesapId: bankaId, tip: "virman_gelis", tutar: net, tutarTry: net, karsiHareketId: gidis.id } });
+      const tarih = new Date(girdi.tarih);
+      const kur = await kurCoz(tx, tenantId, pos.dovizCinsi, tarih);
+      if (!kur) throw new BadRequestException(`${girdi.tarih} tarihi için kayıtlı ${pos.dovizCinsi} kuru yok; kur kaydı oluşmadan dövizli POS mutabakatı yapılamaz`);
+      const try_ = (tutar: Prisma.Decimal) => tutar.mul(kur).toDecimalPlaces(2);
+      const ortak = { tenantId, dovizCinsi: pos.dovizCinsi, kur, tarih, kaynakTur: "pos_mutabakat", aciklama: girdi.aciklama ?? `${pos.ad} sağlayıcı ödemesi` };
+      const gidis = await tx.kasaBankaHareket.create({ data: { ...ortak, posHesapId: pos.id, tip: "virman_gidis", tutar: net, tutarTry: try_(net) } });
+      const gelis = await tx.kasaBankaHareket.create({ data: { ...ortak, bankaHesapId: bankaId, tip: "virman_gelis", tutar: net, tutarTry: try_(net), karsiHareketId: gidis.id } });
       await tx.kasaBankaHareket.update({ where: { id: gidis.id }, data: { karsiHareketId: gelis.id } });
-      const komisyonHareketi = komisyon.isPositive() ? await tx.kasaBankaHareket.create({ data: { ...ortak, posHesapId: pos.id, tip: "tediye", tutar: komisyon, tutarTry: komisyon, kaynakRef: gidis.id, aciklama: `${pos.ad} komisyon/kesinti` } }) : null;
+      const komisyonHareketi = komisyon.isPositive() ? await tx.kasaBankaHareket.create({ data: { ...ortak, posHesapId: pos.id, tip: "tediye", tutar: komisyon, tutarTry: try_(komisyon), kaynakRef: gidis.id, aciklama: `${pos.ad} komisyon/kesinti` } }) : null;
       const komisyonMasrafi = komisyonHareketi ? await (async () => {
         const kategori = await tx.masrafKategori.upsert({
           where: { tenantId_ad: { tenantId, ad: "Banka ve POS Komisyonları" } },
@@ -467,7 +472,7 @@ export class KasaBankaService {
             tenantId,
             kategoriId: kategori.id,
             belgeTuru: "dekont",
-            tarih: new Date(girdi.tarih),
+            tarih,
             saticiUnvan: pos.ad,
             aciklama: `${pos.ad} komisyon/kesinti`,
             matrah: komisyon,
@@ -475,10 +480,11 @@ export class KasaBankaService {
             kdvTutari: D(0),
             toplam: komisyon,
             dovizCinsi: pos.dovizCinsi,
+            kur,
             durum: "onaylandi",
             odemeDurumu: "odendi",
             odenenTutar: komisyon,
-            odemeTarihi: new Date(girdi.tarih),
+            odemeTarihi: tarih,
             hareketId: komisyonHareketi.id,
           },
         });

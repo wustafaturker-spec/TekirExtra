@@ -31,6 +31,15 @@ describe("masraf şemaları", () => {
     expect(masrafOlusturSemasi.safeParse({ ...temel, saticiUnvan: "Market", toplam: 125 }).success).toBe(false);
   });
 
+  it("dövizli masrafta kur ister, TL masrafta istemez", () => {
+    const doviz = { ...temel, dovizCinsi: "USD", saticiUnvan: "Market" };
+    expect(masrafOlusturSemasi.safeParse(doviz).success).toBe(false);
+    const kurlu = masrafOlusturSemasi.safeParse({ ...doviz, kur: 41.25 });
+    expect(kurlu.success && kurlu.data.kur).toBe(41.25);
+    const tl = masrafOlusturSemasi.safeParse({ ...temel, saticiUnvan: "Market" });
+    expect(tl.success && tl.data.kur).toBe(1);
+  });
+
   it("ödemede tam olarak bir finans hesabı ister", () => {
     expect(masrafOdemeSemasi.safeParse({ kasaId: "550e8400-e29b-41d4-a716-446655440001", odemeTarihi: "2026-08-12", tutar: 500 }).success).toBe(true);
     expect(masrafOdemeSemasi.safeParse({ krediKartiId: "550e8400-e29b-41d4-a716-446655440001", odemeTarihi: "2026-08-12", tutar: 500, taksitSayisi: 3, ilkTaksitTarihi: "2026-09-01" }).success).toBe(true);
