@@ -24,7 +24,7 @@ import { UblOkumaHatasi, faturaUblOku, type UblFatura, type UblSatir } from "./u
 import { adSoyadCoz } from "../cari/ad-soyad";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import { MukellefListesiService } from "./mukellef-listesi.service";
-import { faturaUblUret } from "./xml-uretec";
+import { belgeNoyuUbleYaz, faturaUblUret } from "./xml-uretec";
 
 /** Onay ekranında satırın hangi ipucuyla eşleştiği. */
 export type EslesmeKaynagi =
@@ -303,10 +303,16 @@ export class EbelgeService {
           });
         }
         if (gonderimResult.basarili) {
+          // Sağlayıcı numaralandırıyorsa gönderilen XML'de yalnız seri öneki
+          // vardı; arşiv düzenlenen belgeyi tutmalı, o yüzden numara geri yazılır.
+          const arsivXml =
+            saglayiciNumaralandirir && gonderimResult.belgeNo
+              ? belgeNoyuUbleYaz(xml, gonderimResult.belgeNo)
+              : xml;
           await tx.ebelgeArsiv.upsert({
             where: { ebelgeId: hazirlik.rezervasyonId },
-            create: { tenantId, ebelgeId: hazirlik.rezervasyonId, xmlIcerik: xml, pdfDosyaUrl: `/panel/fatura/${faturaId}/pdf` },
-            update: { xmlIcerik: xml },
+            create: { tenantId, ebelgeId: hazirlik.rezervasyonId, xmlIcerik: arsivXml, pdfDosyaUrl: `/panel/fatura/${faturaId}/pdf` },
+            update: { xmlIcerik: arsivXml },
           });
         }
       });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { faturaUblUret } from "./xml-uretec";
+import { belgeNoyuUbleYaz, faturaUblUret } from "./xml-uretec";
 
 describe("faturaUblUret", () => {
   it("Sovos/GİB görüntüleyicisi için XSLT'yi UBL içine gömer", () => {
@@ -152,5 +152,41 @@ describe("faturaUblUret", () => {
     expect(alici).toContain('<cbc:ID schemeID="VKN">1234567802</cbc:ID>');
     expect(alici).toContain("<cbc:Name>Alıcı A.Ş.</cbc:Name>");
     expect(alici).not.toContain("<cac:Person>");
+  });
+});
+
+describe("belgeNoyuUbleYaz (EBLG-16 arşivi)", () => {
+  const ubl = (id: string) =>
+    `<Invoice><cbc:ProfileID>EARSIVFATURA</cbc:ProfileID>\n  <cbc:ID>${id}</cbc:ID>\n  <cbc:UUID>u</cbc:UUID>` +
+    `<cac:AccountingSupplierParty><cac:PartyIdentification><cbc:ID>1234567801</cbc:ID></cac:PartyIdentification></cac:AccountingSupplierParty>` +
+    `<cac:InvoiceLine><cbc:ID>1</cbc:ID></cac:InvoiceLine></Invoice>`;
+
+  it("sağlayıcının attığı numarayı fatura kimliğine yazar", () => {
+    const sonuc = belgeNoyuUbleYaz(ubl("SNC"), "SNC2026000000006");
+    expect(sonuc).toContain("<cbc:ID>SNC2026000000006</cbc:ID>");
+  });
+
+  it("diğer cbc:ID alanlarına dokunmaz — belgede onlarca tane var", () => {
+    const sonuc = belgeNoyuUbleYaz(ubl("SNC"), "SNC2026000000006");
+    expect(sonuc).toContain("<cbc:ID>1234567801</cbc:ID>");
+    expect(sonuc).toContain("<cac:InvoiceLine><cbc:ID>1</cbc:ID>");
+  });
+
+  it("numarayı kaçırır ve beklenmedik yapıda XML'i olduğu gibi bırakır", () => {
+    expect(belgeNoyuUbleYaz(ubl("SNC"), 'A&B"C')).toContain("<cbc:ID>A&amp;B&quot;C</cbc:ID>");
+    const yapisiz = "<Invoice><cbc:ID>X</cbc:ID></Invoice>";
+    expect(belgeNoyuUbleYaz(yapisiz, "YENI")).toBe(yapisiz);
+  });
+
+  it("gerçek üretilen UBL üzerinde çalışır", () => {
+    const xml = faturaUblUret({
+      id: "33333333-3333-4333-8333-333333333333", no: "SNC", tarih: new Date("2026-09-12T12:00:00Z"),
+      tip: "satis", dovizCinsi: "TRY", toplamKdv: 90, toplamMatrah: 450, toplamBrut: 500,
+      genelToplam: 540, toplamSatirIskontosu: 50,
+      cari: { vknTckn: "10000000078", unvan: "Ayşe Yılmaz" },
+      satirlar: [{ miktar: 2, matrah: 450, iskontoTutari: 50, iskontoOrani: 10, kdvTutari: 90,
+        kdvOrani: 20, gibIstisnaKodu: null, birimFiyat: 250, stok: { kod: "S1", ad: "Hizmet" } }],
+    } as never, { unvan: "ErpClub", vkn: "1234567801" }, { tur: "earsiv" });
+    expect(belgeNoyuUbleYaz(xml, "SNC2026000000006")).toContain("<cbc:ID>SNC2026000000006</cbc:ID>");
   });
 });

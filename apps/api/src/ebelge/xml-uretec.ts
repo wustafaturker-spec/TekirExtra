@@ -490,3 +490,27 @@ ${tevkifatBlogu}
     .join("")}
 </Invoice>`;
 }
+
+/**
+ * EBLG-16 sonrası düzeltme: numarayı sağlayıcı attığında UBL'e yalnız seri
+ * öneki yazılmış olur. Arşivlenen belge, düzenlenen belgenin kendisidir; bu
+ * yüzden sağlayıcıdan dönen numara `cbc:ID` alanına geri yazılır. Yoksa
+ * arşivdeki belge numarasız kalır ve ondan üretilen görünüm "SNC" der.
+ *
+ * Fatura numarası, `cbc:ProfileID`'yi izleyen ilk `cbc:ID`'dir — belgede
+ * onlarca `cbc:ID` bulunduğu için değişiklik bu çıpaya bağlanır.
+ */
+export function belgeNoyuUbleYaz(xml: string, belgeNo: string): string {
+  const desen = /(<cbc:ProfileID>[^<]*<\/cbc:ProfileID>\s*<cbc:ID>)([^<]*)(<\/cbc:ID>)/;
+  if (!desen.test(xml)) return xml;
+  return xml.replace(desen, (_tam, bas: string, _eski: string, son: string) => `${bas}${escapeXml(belgeNo)}${son}`);
+}
+
+function escapeXml(deger: string): string {
+  return deger
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
