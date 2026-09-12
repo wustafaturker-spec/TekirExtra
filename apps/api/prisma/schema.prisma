@@ -163,6 +163,9 @@ model Tenant {
   bildirimTercihleri        BildirimTercihi[]
   bildirimAyarlari          BildirimKullaniciAyari[]
   maliDonemOlaylari         MaliDonemOlayi[]
+  butceler                  Butce[]
+  butceSatirlari            ButceSatiri[]
+  butceOlaylari             ButceOlayi[]
   donemKontrolleri          DonemKontrolu[]
   uretimEmriCiktilari       UretimEmriCikti[]
   urunRecetesiCiktilari     UrunRecetesiCikti[]
@@ -246,6 +249,8 @@ model User {
   olusturduguUretimDuruslari  UretimDurus[]          @relation("UretimDurusOlusturan")
   kapattigiUretimDonemleri    UretimDonemKilidi[]    @relation("UretimDonemKapatan")
   maliDonemOlaylari           MaliDonemOlayi[]        @relation("MaliDonemOlayKullanicisi")
+  onaylananButceler           Butce[]                 @relation("ButceOnaylayan")
+  butceOlaylari               ButceOlayi[]            @relation("ButceOlayKullanicisi")
   bildirimTeslimatlari        BildirimTeslimati[]
   bildirimTercihleri          BildirimTercihi[]
   bildirimAyari               BildirimKullaniciAyari?
@@ -1557,6 +1562,20 @@ enum MaliDonemOlayTuru {
   yeniden_acildi
 }
 
+/// Bütçe revizyonunun yaşamı (BUT-06): onaylanan revizyon öncekini
+/// `yerine_gecildi` yapar; aynı yıl için aynı anda tek taslak olur.
+enum ButceDurumu {
+  taslak
+  onayli
+  yerine_gecildi
+}
+
+enum ButceOlayTuru {
+  olusturuldu
+  onaylandi
+  revizyon_acildi
+}
+
 model MaliDonem {
   id          String           @id @default(uuid()) @db.Uuid
   tenantId    String           @map("tenant_id") @db.Uuid
@@ -1609,6 +1628,65 @@ model MaliDonemOlayi {
 
   @@index([tenantId, maliDonemId, createdAt])
   @@map("mali_donem_olaylari")
+}
+
+/// Yıllık bütçenin bir revizyonu (BUT-05, BUT-06). Aynı yıl için tek taslak
+/// kuralı göçteki kısmi tekil indeksle de korunur.
+model Butce {
+  id              String      @id @default(uuid()) @db.Uuid
+  tenantId        String      @map("tenant_id") @db.Uuid
+  yil             Int
+  revizyon        Int
+  durum           ButceDurumu @default(taslak)
+  /// Revizyon açılırken istenen gerekçe; ilk revizyonda boş.
+  gerekce         String?
+  onaylayanUserId String?     @map("onaylayan_user_id") @db.Uuid
+  onayTarihi      DateTime?   @map("onay_tarihi")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  tenant    Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  onaylayan User?         @relation("ButceOnaylayan", fields: [onaylayanUserId], references: [id])
+  satirlar  ButceSatiri[]
+  olaylar   ButceOlayi[]
+
+  @@unique([tenantId, yil, revizyon])
+  @@index([tenantId, yil])
+  @@map("butceler")
+}
+
+/// Bütçenin bir kalemi için bir ayın tutarı (TL). `anahtar` tahakkuk kalemi
+/// anahtarıdır (rapor/tahakkuk.ts): gerçekleşen aynı anahtarla eşleşir.
+model ButceSatiri {
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String  @map("tenant_id") @db.Uuid
+  butceId  String  @map("butce_id") @db.Uuid
+  anahtar  String
+  ay       Int
+  tutar    Decimal @db.Decimal(15, 2)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  butce  Butce  @relation(fields: [butceId], references: [id], onDelete: Cascade)
+
+  @@unique([butceId, anahtar, ay])
+  @@map("butce_satirlari")
+}
+
+model ButceOlayi {
+  id        String        @id @default(uuid()) @db.Uuid
+  tenantId  String        @map("tenant_id") @db.Uuid
+  butceId   String        @map("butce_id") @db.Uuid
+  tur       ButceOlayTuru
+  gerekce   String?
+  userId    String        @map("user_id") @db.Uuid
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  butce     Butce  @relation(fields: [butceId], references: [id], onDelete: Cascade)
+  kullanici User   @relation("ButceOlayKullanicisi", fields: [userId], references: [id])
+
+  @@index([tenantId, butceId, createdAt])
+  @@map("butce_olaylari")
 }
 
 /// Tenant ve yıl bazında çakışmasız üretim emri numarası üretir.

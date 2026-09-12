@@ -35,6 +35,7 @@ import { DuzeltmelerModule } from "./duzeltmeler/duzeltmeler.module";
 import { DonemKapatmaModule } from "./donem-kapatma/donem-kapatma.module";
 import { BildirimlerModule } from "./bildirimler/bildirimler.module";
 import { NakitAkisiModule } from "./nakit-akisi/nakit-akisi.module";
+import { ButceModule } from "./butce/butce.module";
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { NakitAkisiModule } from "./nakit-akisi/nakit-akisi.module";
     B2bModule,
     AiModule,
     NakitAkisiModule,
+    ButceModule,
   ],
   providers: [{ provide: APP_INTERCEPTOR, useClass: AuditInterceptor }],
 })
