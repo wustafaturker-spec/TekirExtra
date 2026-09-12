@@ -2175,7 +2175,7 @@ model EbelgeArsiv {
   id          String   @id @default(uuid()) @db.Uuid
   tenantId    String   @map("tenant_id") @db.Uuid
   ebelgeId    String   @unique @map("ebelge_id") @db.Uuid
-  xmlIcerik   String   @map("xml_icirik")
+  xmlIcerik   String   @map("xml_icerik")
   pdfDosyaUrl String?  @map("pdf_dosya_url")
   createdAt   DateTime @default(now()) @map("created_at")
 
