@@ -14,7 +14,7 @@ interface GelirGiderOzet {
   mevcutStokDegeri: string;
   alisMaliyeti: string;
   masrafGiderleri: string;
-  digerGiderler: string;
+  personelGiderleri: string;
 }
 
 interface KategoriKirilim {
@@ -147,7 +147,7 @@ export default function GelirGiderRaporuSayfasi() {
     <div>
       <PageHeader
         title="📊 Gelir - Gider & Mali Analiz Raporu"
-        subtitle="Satışlar, alımlar, faaliyet dışı gelirler, mevcut stok değeri ve masraf kalemlerinin (ana/alt kategori kırılımlı) mali analizi."
+        subtitle="Tahakkuk esaslı ve KDV hariç: faturalar, onaylı masraflar, faaliyet dışı gelir kayıtları ve bordro. Belgesiz kasa/banka hareketleri sayılmaz; personel gideri net ödenecek tutardır."
         actions={
           <div className="row-tight">
             <Button onClick={() => window.print()}>🖨️ Yazdır / PDF</Button>
@@ -205,15 +205,15 @@ export default function GelirGiderRaporuSayfasi() {
           {/* Özet KPI Kartları */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem", marginBottom: "1.5rem" }}>
             <Card style={{ borderLeft: "4px solid #16a34a" }}>
-              <span className="muted" style={{ fontSize: "12px", textTransform: "uppercase", fontWeight: 600 }}>Toplam Gelir & Varlık</span>
+              <span className="muted" style={{ fontSize: "12px", textTransform: "uppercase", fontWeight: 600 }}>Toplam Gelir</span>
               <h2 style={{ color: "#16a34a", marginTop: "4px", marginBottom: 0 }}>+{tl(veri.ozet.toplamGelir)}</h2>
-              <small className="muted">Satışlar + Faaliyet Dışı + Stok Değeri</small>
+              <small className="muted">Satışlar, faaliyet dışı gelirler, alış iadeleri</small>
             </Card>
 
             <Card style={{ borderLeft: "4px solid #dc2626" }}>
               <span className="muted" style={{ fontSize: "12px", textTransform: "uppercase", fontWeight: 600 }}>Toplam Gider & Maliyet</span>
               <h2 style={{ color: "#dc2626", marginTop: "4px", marginBottom: 0 }}>-{tl(veri.ozet.toplamGider)}</h2>
-              <small className="muted">Alışlar + Ana/Alt Kategori Masrafları</small>
+              <small className="muted">Alışlar, masraflar, personel, satış iadeleri</small>
             </Card>
 
             <Card style={{ borderLeft: `4px solid ${netFark >= 0 ? "#16a34a" : "#dc2626"}` }}>
@@ -227,7 +227,7 @@ export default function GelirGiderRaporuSayfasi() {
             <Card style={{ borderLeft: "4px solid #2563eb" }}>
               <span className="muted" style={{ fontSize: "12px", textTransform: "uppercase", fontWeight: 600 }}>Aktif Stok Değeri</span>
               <h2 style={{ color: "#2563eb", marginTop: "4px", marginBottom: 0 }}>{tl(veri.ozet.mevcutStokDegeri)}</h2>
-              <small className="muted">Güncel Envanter Değeri</small>
+              <small className="muted">Varlıktır; gelire ve net farka katılmaz</small>
             </Card>
           </div>
 
@@ -240,7 +240,7 @@ export default function GelirGiderRaporuSayfasi() {
               {/* Gelirler Tablosu */}
               <Card style={{ borderTop: "3px solid #16a34a" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-                  <h3 style={{ margin: 0, color: "#16a34a" }}>📈 GELİRLER & VARLIKLAR</h3>
+                  <h3 style={{ margin: 0, color: "#16a34a" }}>📈 GELİRLER</h3>
                   <Badge variant="success">Toplam: +{tl(veri.ozet.toplamGelir)}</Badge>
                 </div>
                 <TableWrap>

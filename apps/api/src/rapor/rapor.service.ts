@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
+import { kategoriOzeti, tahakkukOku, toplam } from "./tahakkuk";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal => new Prisma.Decimal(deger);
 
@@ -284,469 +285,59 @@ export class RaporService {
   }
 
   /**
-   * Tarihler arası Gelir - Gider Raporu.
-   * Genel özet (kategori bazlı) ve ayrıntılı kalemler versiyonu.
+   * Tarihler arası gelir-gider raporu (BUT-01…BUT-04): tahakkuk esaslı, KDV
+   * hariç ve yalnız belgelerden. Hesap `tahakkuk.ts`'te; bütçenin gerçekleşeni
+   * de aynı fonksiyonu kullanır. Mevcut stok değeri bilgi olarak döner, gelire
+   * ve net farka katılmaz.
    */
   async gelirGiderRaporu(baslangicMetni?: string, bitisMetni?: string) {
     const { tenantId } = aktifBaglam();
 
     const simdi = new Date();
-    const varsayilanBaslangic = new Date(Date.UTC(simdi.getFullYear(), simdi.getMonth(), 1));
-    const varsayilanBitis = new Date(Date.UTC(simdi.getFullYear(), simdi.getMonth() + 1, 0, 23, 59, 59, 999));
-
     const baslangic = baslangicMetni && /^\d{4}-\d{2}-\d{2}$/.test(baslangicMetni)
       ? new Date(`${baslangicMetni}T00:00:00.000Z`)
-      : varsayilanBaslangic;
-
+      : new Date(Date.UTC(simdi.getFullYear(), simdi.getMonth(), 1));
     const bitis = bitisMetni && /^\d{4}-\d{2}-\d{2}$/.test(bitisMetni)
       ? new Date(`${bitisMetni}T23:59:59.999Z`)
-      : varsayilanBitis;
+      : new Date(Date.UTC(simdi.getFullYear(), simdi.getMonth() + 1, 0, 23, 59, 59, 999));
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      // 1. Kesinleşmiş Faturalar
-      const faturalar = await tx.fatura.findMany({
-        where: {
-          tenantId,
-          durum: "kesin",
-          tarih: { gte: baslangic, lte: bitis },
-        },
-        select: {
-          id: true,
-          no: true,
-          tip: true,
-          tarih: true,
-          toplamMatrah: true,
-          genelToplam: true,
-          kur: true,
-          dovizCinsi: true,
-          aciklama: true,
-          gelirTuru: true,
-          cari: { select: { unvan: true } },
-          satirlar: {
-            select: {
-              matrah: true,
-              stok: { select: { tip: true } },
-            },
-          },
-        },
-        orderBy: { tarih: "desc" },
-      });
+      const { kalemler, uyarilar } = await tahakkukOku(tx, tenantId, baslangic, bitis);
 
-      // 2. Kasa/Banka Hareketleri (Faturaya bağlı olmayan doğrudan işlemler)
-      const hareketler = await tx.kasaBankaHareket.findMany({
-        where: {
-          tenantId,
-          tarih: { gte: baslangic, lte: bitis },
-          faturaId: null,
-          cariId: null,
-          kaynakTur: { notIn: ["masraf_odeme", "masraf", "fatura", "fatura_kapama"] },
-        },
-        select: {
-          id: true,
-          tip: true,
-          tarih: true,
-          tutar: true,
-          tutarTry: true,
-          dovizCinsi: true,
-          aciklama: true,
-          kaynakTur: true,
-          cari: { select: { unvan: true } },
-          kasa: { select: { ad: true } },
-          bankaHesap: { select: { ad: true } },
-          posHesap: { select: { ad: true } },
-        },
-        orderBy: { tarih: "desc" },
-      });
-
-      // 3. Masraf Kayıtları (Ana ve Alt Kategori İlişkisiyle)
-      const masraflar = await tx.masraf.findMany({
-        where: {
-          tenantId,
-          durum: { not: "iptal" },
-          tarih: { gte: baslangic, lte: bitis },
-        },
-        select: {
-          id: true,
-          belgeNo: true,
-          tarih: true,
-          toplam: true,
-          dovizCinsi: true,
-          aciklama: true,
-          saticiUnvan: true,
-          kategori: {
-            select: {
-              ad: true,
-              ust: { select: { ad: true } },
-            },
-          },
-          cari: { select: { unvan: true } },
-        },
-        orderBy: { tarih: "desc" },
-      });
-
-      // 4. Mevcut Stok / Envanter Değeri (İşletme Aktif Varlığı - Sadece fiziki stoklanan ürün/sarf malzemeleri)
+      // Yalnız bilgi: stok bir varlıktır, dönem geliri değildir (BUT-04).
       const stoklar = await tx.stokKart.findMany({
         where: { tenantId, aktif: true, tip: { in: ["urun", "sarf"] } },
         select: { mevcutMiktar: true, ortalamaMaliyet: true },
       });
-      let envanterDegeri = D(0);
-      stoklar.forEach((s) => {
-        envanterDegeri = envanterDegeri.add(s.mevcutMiktar.mul(s.ortalamaMaliyet));
-      });
+      const envanterDegeri = stoklar.reduce((t, s) => t.add(s.mevcutMiktar.mul(s.ortalamaMaliyet)), D(0));
 
-      // 5. Personel Bordro / Maaş Kayıtları
-      const bordrolar = await tx.personelBordro.findMany({
-        where: { tenantId },
-        select: {
-          id: true,
-          donemYil: true,
-          donemAy: true,
-          odenecekTutar: true,
-          odemeTarihi: true,
-          personel: { select: { ad: true, soyad: true } },
-        },
-      });
-
-      // Sınıflandırma ve Kalem Dizisi
-      let satisHasilati = D(0);
-      let satisIadeleri = D(0);
-      let alisMaliyeti = D(0);
-      let alisIadeleri = D(0);
-      let digerGelirler = D(0);
-      let digerGiderler = D(0);
-      let masrafGiderleri = D(0);
-      let personelGiderleri = D(0);
-
-      const masrafHaritasi = new Map<string, { anaKategori: string; altKategori: string; tutar: Prisma.Decimal }>();
-
-      const kalemler: Array<{
-        id: string;
-        tarih: string;
-        tur: "gelir" | "gider";
-        anaKategori: string;
-        altKategori: string;
-        belgeNo: string;
-        cariUnvan: string;
-        aciklama: string;
-        tutarTry: string;
-        dovizCinsi: string;
-        tutar: string;
-      }> = [];
-
-      // Faturaları işle
-      faturalar.forEach((f) => {
-        const matrahTry = f.toplamMatrah.mul(f.kur);
-        const tarihStr = f.tarih.toISOString().slice(0, 10);
-        const belgeNo = f.no || "(Taslak)";
-        const cari = f.cari.unvan;
-
-        if (f.tip === "satis") {
-          const isFaaliyetDisi = f.gelirTuru && f.gelirTuru !== "ticari_satis";
-          let anaKategori = "Esas Faaliyet Gelirleri";
-          let altKategori = "Satış Hasılatı";
-
-          if (isFaaliyetDisi) {
-            digerGelirler = digerGelirler.add(matrahTry);
-            anaKategori = "Faaliyet Dışı Gelirler";
-            if (f.gelirTuru === "kira_geliri") altKategori = "Kira Geliri";
-            else if (f.gelirTuru === "varlik_satisi") altKategori = "Varlık / Demirbaş Satışı";
-            else if (f.gelirTuru === "yansitma") altKategori = "Yansıtma Gelirleri";
-            else altKategori = "Diğer Faaliyet Dışı Gelirler";
-          } else {
-            satisHasilati = satisHasilati.add(matrahTry);
-          }
-
-          kalemler.push({
-            id: f.id,
-            tarih: tarihStr,
-            tur: "gelir",
-            anaKategori,
-            altKategori,
-            belgeNo,
-            cariUnvan: cari,
-            aciklama: f.aciklama || (isFaaliyetDisi ? "Faaliyet Dışı Satış Faturası" : "Satış Faturası"),
-            tutarTry: matrahTry.toFixed(2),
-            dovizCinsi: f.dovizCinsi,
-            tutar: f.toplamMatrah.toFixed(2),
-          });
-        } else if (f.tip === "satis_iade") {
-          satisIadeleri = satisIadeleri.add(matrahTry);
-          kalemler.push({
-            id: f.id,
-            tarih: tarihStr,
-            tur: "gider",
-            anaKategori: "Satış İadeleri",
-            altKategori: "Satış İadesi",
-            belgeNo,
-            cariUnvan: cari,
-            aciklama: f.aciklama || "Satış İade Faturası",
-            tutarTry: matrahTry.toFixed(2),
-            dovizCinsi: f.dovizCinsi,
-            tutar: f.toplamMatrah.toFixed(2),
-          });
-        } else if (f.tip === "alis") {
-          // Hizmet alışları ile stok/mal alışlarını ayıralım
-          let faturaHizmetMatrah = D(0);
-          let faturaMalMatrah = D(0);
-
-          if (f.satirlar && f.satirlar.length > 0) {
-            f.satirlar.forEach((satir) => {
-              if (satir.stok?.tip === "hizmet") {
-                faturaHizmetMatrah = faturaHizmetMatrah.add(satir.matrah);
-              } else {
-                faturaMalMatrah = faturaMalMatrah.add(satir.matrah);
-              }
-            });
-          } else {
-            faturaMalMatrah = f.toplamMatrah;
-          }
-
-          if (faturaHizmetMatrah.greaterThan(0)) {
-            const hizmetMatrahTry = faturaHizmetMatrah.mul(f.kur);
-            masrafGiderleri = masrafGiderleri.add(hizmetMatrahTry);
-
-            const grupAnahtari = "Hizmet Alış Giderleri::Hizmet Alışları";
-            const mevcutGrup = masrafHaritasi.get(grupAnahtari);
-            if (mevcutGrup) {
-              mevcutGrup.tutar = mevcutGrup.tutar.add(hizmetMatrahTry);
-            } else {
-              masrafHaritasi.set(grupAnahtari, {
-                anaKategori: "Hizmet Alış Giderleri",
-                altKategori: "Hizmet Alışları",
-                tutar: hizmetMatrahTry,
-              });
-            }
-
-            kalemler.push({
-              id: `${f.id}-hizmet`,
-              tarih: tarihStr,
-              tur: "gider",
-              anaKategori: "Hizmet Alış Giderleri",
-              altKategori: "Hizmet Alışları",
-              belgeNo,
-              cariUnvan: cari,
-              aciklama: f.aciklama ? `${f.aciklama} (Hizmet)` : "Alış Faturası (Hizmet Kalemi)",
-              tutarTry: hizmetMatrahTry.toFixed(2),
-              dovizCinsi: f.dovizCinsi,
-              tutar: faturaHizmetMatrah.toFixed(2),
-            });
-          }
-
-          if (faturaMalMatrah.greaterThan(0)) {
-            const malMatrahTry = faturaMalMatrah.mul(f.kur);
-            alisMaliyeti = alisMaliyeti.add(malMatrahTry);
-
-            kalemler.push({
-              id: f.id,
-              tarih: tarihStr,
-              tur: "gider",
-              anaKategori: "Mal Alış Maliyetleri",
-              altKategori: "Mal Alış Maliyeti",
-              belgeNo,
-              cariUnvan: cari,
-              aciklama: f.aciklama || "Alış Faturası (Ürün/Sarf)",
-              tutarTry: malMatrahTry.toFixed(2),
-              dovizCinsi: f.dovizCinsi,
-              tutar: faturaMalMatrah.toFixed(2),
-            });
-          }
-        } else if (f.tip === "alis_iade") {
-          alisIadeleri = alisIadeleri.add(matrahTry);
-          kalemler.push({
-            id: f.id,
-            tarih: tarihStr,
-            tur: "gelir",
-            anaKategori: "Faaliyet Gelirleri",
-            altKategori: "Alış İadesi Geliri",
-            belgeNo,
-            cariUnvan: cari,
-            aciklama: f.aciklama || "Alış İade Faturası",
-            tutarTry: matrahTry.toFixed(2),
-            dovizCinsi: f.dovizCinsi,
-            tutar: f.toplamMatrah.toFixed(2),
-          });
-        }
-      });
-
-      // Doğrudan Kasa/Banka hareketlerini akıllı kategorileme ile işle
-      hareketler.forEach((h) => {
-        const tarihStr = h.tarih.toISOString().slice(0, 10);
-        const hesapAd = h.kasa?.ad ?? h.bankaHesap?.ad ?? h.posHesap?.ad ?? "Kasa/Banka";
-        const cari = h.cari?.unvan ?? "Cari Belirtilmemiş";
-        const aciklamaMetin = h.aciklama || "";
-
-        if (h.tip === "tahsilat" || h.tip === "virman_gelis") {
-          digerGelirler = digerGelirler.add(h.tutarTry);
-          kalemler.push({
-            id: h.id,
-            tarih: tarihStr,
-            tur: "gelir",
-            anaKategori: "Faaliyet Dışı / Diğer Gelirler",
-            altKategori: "Doğrudan Tahsilat / Faiz / Diğer",
-            belgeNo: h.kaynakTur,
-            cariUnvan: cari,
-            aciklama: `${aciklamaMetin || "Faaliyet Dışı Tahsilat"} (${hesapAd})`,
-            tutarTry: h.tutarTry.toFixed(2),
-            dovizCinsi: h.dovizCinsi,
-            tutar: h.tutar.toFixed(2),
-          });
-        } else if (h.tip === "tediye" || h.tip === "virman_gidis") {
-          let anaKategori = "Diğer İşletme Ödemeleri";
-          let altKategori = "Genel Ödeme / Tediye";
-
-          if (/kira/i.test(aciklamaMetin)) {
-            anaKategori = "Kira ve Konut Giderleri";
-            altKategori = "İşyeri / Depo Kirası";
-          } else if (/maaş|personel|bordro|avans/i.test(aciklamaMetin)) {
-            anaKategori = "Personel Giderleri";
-            altKategori = "Doğrudan Maaş / Avans Ödemesi";
-          }
-
-          digerGiderler = digerGiderler.add(h.tutarTry);
-          kalemler.push({
-            id: h.id,
-            tarih: tarihStr,
-            tur: "gider",
-            anaKategori,
-            altKategori,
-            belgeNo: h.kaynakTur,
-            cariUnvan: cari,
-            aciklama: `${aciklamaMetin || "Tediye"} (${hesapAd})`,
-            tutarTry: h.tutarTry.toFixed(2),
-            dovizCinsi: h.dovizCinsi,
-            tutar: h.tutar.toFixed(2),
-          });
-        }
-      });
-
-      // Masrafları ana ve alt kategori kırılımı ile işle
-      masraflar.forEach((m) => {
-        const tarihStr = m.tarih.toISOString().slice(0, 10);
-        const aciklamaMetin = m.aciklama || "";
-
-        let anaKategori = m.kategori?.ust?.ad ?? m.kategori?.ad;
-        let altKategori = m.kategori?.ust ? m.kategori.ad : "Genel Masraf";
-
-        if (!anaKategori) {
-          if (/kira/i.test(aciklamaMetin) || /kira/i.test(m.saticiUnvan || "")) {
-            anaKategori = "Kira ve Konut Giderleri";
-            altKategori = "İşyeri / Depo Kirası";
-          } else {
-            anaKategori = "Masraflar ve Giderler";
-          }
-        }
-
-        const tutarTry = m.toplam;
-        masrafGiderleri = masrafGiderleri.add(tutarTry);
-
-        // Kategori grup toplamı
-        const grupAnahtari = `${anaKategori}::${altKategori}`;
-        const mevcutGrup = masrafHaritasi.get(grupAnahtari);
-        if (mevcutGrup) {
-          mevcutGrup.tutar = mevcutGrup.tutar.add(tutarTry);
-        } else {
-          masrafHaritasi.set(grupAnahtari, { anaKategori, altKategori, tutar: tutarTry });
-        }
-
-        kalemler.push({
-          id: m.id,
-          tarih: tarihStr,
-          tur: "gider",
-          anaKategori,
-          altKategori,
-          belgeNo: m.belgeNo || "Masraf",
-          cariUnvan: m.cari?.unvan ?? m.saticiUnvan ?? "İşletme Masrafı",
-          aciklama: aciklamaMetin || `${anaKategori} > ${altKategori}`,
-          tutarTry: tutarTry.toFixed(2),
-          dovizCinsi: m.dovizCinsi,
-          tutar: m.toplam.toFixed(2),
-        });
-      });
-
-      // Personel Bordro / Maaş Kayıtlarını işle
-      bordrolar.forEach((b) => {
-        const bTarih = b.odemeTarihi ?? new Date(Date.UTC(b.donemYil, b.donemAy - 1, 15));
-        if (bTarih >= baslangic && bTarih <= bitis) {
-          const tutarTry = b.odenecekTutar;
-          personelGiderleri = personelGiderleri.add(tutarTry);
-          const anaKategori = "Personel Giderleri";
-          const altKategori = "Maaş & Bordro Ödemeleri";
-
-          const grupAnahtari = `${anaKategori}::${altKategori}`;
-          const mevcutGrup = masrafHaritasi.get(grupAnahtari);
-          if (mevcutGrup) {
-            mevcutGrup.tutar = mevcutGrup.tutar.add(tutarTry);
-          } else {
-            masrafHaritasi.set(grupAnahtari, { anaKategori, altKategori, tutar: tutarTry });
-          }
-
-          kalemler.push({
-            id: b.id,
-            tarih: bTarih.toISOString().slice(0, 10),
-            tur: "gider",
-            anaKategori,
-            altKategori,
-            belgeNo: `BRD-${b.donemYil}-${b.donemAy}`,
-            cariUnvan: `${b.personel.ad} ${b.personel.soyad}`,
-            aciklama: `${b.donemYil}/${b.donemAy} Personel Bordrosu`,
-            tutarTry: tutarTry.toFixed(2),
-            dovizCinsi: "TRY",
-            tutar: tutarTry.toFixed(2),
-          });
-        }
-      });
-
-      // Kalemleri tarihe göre azalan sırala
-      kalemler.sort((a, b) => (a.tarih < b.tarih ? 1 : a.tarih > b.tarih ? -1 : 0));
-
-      const toplamGelir = satisHasilati.add(alisIadeleri).add(digerGelirler).add(envanterDegeri);
-      const toplamGider = alisMaliyeti.add(satisIadeleri).add(digerGiderler).add(masrafGiderleri).add(personelGiderleri);
-      const netFark = toplamGelir.sub(toplamGider);
-      const karMarjiYuzde = toplamGelir.greaterThan(0)
-        ? netFark.div(toplamGelir).mul(100).toNumber()
-        : 0;
-
-      // Gelir Kategori Dağılımı
-      const gelirKategorileri = [
-        { anaKategori: "Esas Faaliyet Gelirleri", altKategori: "Satış Hasılatı", tutar: satisHasilati.toFixed(2) },
-        { anaKategori: "Faaliyet Gelirleri", altKategori: "Alış İadeleri Geliri", tutar: alisIadeleri.toFixed(2) },
-        { anaKategori: "Faaliyet Dışı Gelirler", altKategori: "Doğrudan Tahsilat / Faiz / Diğer", tutar: digerGelirler.toFixed(2) },
-        { anaKategori: "İşletme Aktif Varlıkları", altKategori: "Mevcut Stok Değeri", tutar: envanterDegeri.toFixed(2) },
-      ].filter((k) => Number(k.tutar) > 0);
-
-      // Gider Kategori Dağılımı (Ana & Alt Kırılımlı Masraflar dahil)
-      const masrafKategoriGruplari = Array.from(masrafHaritasi.values()).map((g) => ({
-        anaKategori: g.anaKategori,
-        altKategori: g.altKategori,
-        tutar: g.tutar.toFixed(2),
-      }));
-
-      const giderKategorileri = [
-        { anaKategori: "Mal Alış Maliyetleri", altKategori: "Mal Alış Maliyeti", tutar: alisMaliyeti.toFixed(2) },
-        { anaKategori: "Satış İadeleri", altKategori: "Satış İadeleri İskontoları", tutar: satisIadeleri.toFixed(2) },
-        ...masrafKategoriGruplari,
-        { anaKategori: "Diğer İşletme Ödemeleri", altKategori: "Doğrudan Tediye Ödemeleri", tutar: digerGiderler.toFixed(2) },
-      ].filter((k) => Number(k.tutar) > 0);
+      const kalem = (kosul: (anahtar: string) => boolean) => toplam(kalemler, (k) => kosul(k.anahtar)).toFixed(2);
+      const toplamGelir = toplam(kalemler, (k) => k.tur === "gelir");
+      const toplamGider = toplam(kalemler, (k) => k.tur === "gider");
+      const netFark = Math.round((toplamGelir - toplamGider) * 100) / 100;
 
       return {
         baslangicTarihi: baslangic.toISOString().slice(0, 10),
         bitisTarihi: bitis.toISOString().slice(0, 10),
         ozet: {
-          satisHasilati: satisHasilati.toFixed(2),
-          faaliyetDisiGelirler: digerGelirler.toFixed(2),
-          mevcutStokDegeri: envanterDegeri.toFixed(2),
+          satisHasilati: kalem((a) => a === "satis:ticari_satis"),
+          faaliyetDisiGelirler: kalem((a) => (a.startsWith("satis:") && a !== "satis:ticari_satis") || a.startsWith("gelir_kategori:")),
+          alisIadeleri: kalem((a) => a === "alis_iadesi"),
           toplamGelir: toplamGelir.toFixed(2),
-          alisMaliyeti: alisMaliyeti.toFixed(2),
-          masrafGiderleri: masrafGiderleri.toFixed(2),
-          digerGiderler: digerGiderler.toFixed(2),
-          personelGiderleri: personelGiderleri.toFixed(2),
+          alisMaliyeti: kalem((a) => a === "mal_alis"),
+          hizmetAlislari: kalem((a) => a === "hizmet_alis"),
+          masrafGiderleri: kalem((a) => a.startsWith("masraf_kategori:")),
+          personelGiderleri: kalem((a) => a === "personel"),
+          satisIadeleri: kalem((a) => a === "satis_iadesi"),
           toplamGider: toplamGider.toFixed(2),
           netFark: netFark.toFixed(2),
-          karMarjiYuzde: Number(karMarjiYuzde.toFixed(2)),
+          karMarjiYuzde: toplamGelir > 0 ? Number(((netFark / toplamGelir) * 100).toFixed(2)) : 0,
+          mevcutStokDegeri: envanterDegeri.toFixed(2),
         },
-        gelirKategorileri,
-        giderKategorileri,
-        kalemler,
+        gelirKategorileri: kategoriOzeti(kalemler, "gelir"),
+        giderKategorileri: kategoriOzeti(kalemler, "gider"),
+        kalemler: kalemler.map((k) => ({ ...k, tutarTry: k.tutarTry.toFixed(2), tutar: k.tutar.toFixed(2) })),
+        uyarilar,
       };
     });
   }
