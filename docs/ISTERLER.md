@@ -538,6 +538,31 @@ diyordu; NAK bu ekranın yerini alır.
 | NAK-13 | Nakit akışı yalnız **yönetici** ve **muhasebe** rollerine açıktır; mali müşavir dahil diğer roller göremez. | Z |
 | NAK-14 | `/panel/nakit-akisi` ekranı eklenir; eski AI sayfasındaki nakit tahmini kartı ve API ucu kaldırılıp yeni ekrana yönlendirilir. | Z |
 
+### 3.12 Bütçe (BUT)
+
+**S-01 kapı kararları (2026-09-11, kullanıcı onayı):** Bütçe satırları gelir-gider
+raporunun kalemleri ve masraf/gelir kategori ağacıdır; gerçekleşen tahakkuk
+esaslı ve KDV hariç sayılır; bütçe taslak → onay → revizyon akışıyla yönetilir;
+nakit tahmini bu pakette bütçeyi kullanmaz. İnceleme sırasında gelir-gider
+raporunun stok değerini gelire eklediği, masrafı KDV dahil saydığı, faaliyet
+dışı gelir kayıtlarını okumadığı ve virman, çek/senet, POS, bordro ödemesi gibi
+belgesiz kasa/banka hareketlerini gelir/gider diye (belgeyle birlikte ikinci
+kez) saydığı görüldü. **Karar:** rapor ve bütçe tek ortak hesabı kullanır ve bu
+hesap yalnız belgelerden oluşur — rapordaki rakamlar buna göre değişir.
+
+| No | İster | Öncelik |
+|---|---|---|
+| BUT-01 | Gelir-gider raporu ve bütçenin gerçekleşeni **tek fonksiyondan** hesaplanmalıdır. Kaynaklar: kesin faturalar, onaylı masraflar, faaliyet dışı gelir kayıtları ve bordro; tutarlar KDV hariç, belge kuruyla TL; tarih belge tarihi (bordroda dönem). | Z |
+| BUT-02 | **Faturalar:** satışlar gelir türüne göre (satış hasılatı, kira, varlık satışı, yansıtma, diğer), alışlar hizmet/mal olarak ayrılır; satış ve alış iadeleri ayrı kalemdir. | Z |
+| BUT-03 | **Masraflar** kategori ağacına göre sayılır (ana kategori alt kategorilerin toplamını da gösterir); **gelir kayıtları** gelir kategorisine göre; **bordro** dönemine göre ve net ödenecek tutarla — reddedilen ve iptal edilen bordrolar sayılmaz. İşveren maliyeti kayıtlı olmadığı için ekranda belirtilir. | Z |
+| BUT-04 | Belgesiz kasa/banka hareketleri (virman, çek/senet, POS, bordro ödemesi, gelir tahsilatı, elle girilen hareket) gelir/gider sayılmaz. Mevcut stok değeri gelir değildir; raporda ayrı bilgi olarak durur, toplam gelire ve net farka katılmaz. | Z |
+| BUT-05 | Bütçe yıllıktır ve aylara dağıtılır; satırları BUT-02/BUT-03 kalemleridir, tutarlar TL'dir. | Z |
+| BUT-06 | **Taslak → onaylı:** taslağı yönetici ve muhasebe düzenler, yalnız yönetici onaylar. Onaylı bütçe değiştirilemez; gerekçeyle yeni revizyon açılır, taslak olarak başlar ve onaylanınca geçerli olur. Önceki revizyonlar salt okunur saklanır; onay ve revizyon olayları kim/ne zaman/gerekçe ile tutulur. | Z |
+| BUT-07 | **Karşılaştırma:** son onaylı revizyon satır ve ay bazında gerçekleşenle karşılaştırılır; fark ve oran gösterilir, gider satırında aşım, gelir satırında eksik kalma vurgulanır. İlk onaylı plan ayrı sütunda görünür. Gelecek aylarda gerçekleşen boş kalır. | Z |
+| BUT-08 | **Giriş araçları:** satıra yıllık tutar yazılıp 12 aya eşit dağıtılabilir (kuruş farkı son aya); taslak geçen yılın aylık gerçekleşeninden, isteğe bağlı yüzde artışla oluşturulabilir; yeni revizyon son onaylı revizyonun tutarlarıyla başlar. | G |
+| BUT-09 | Bütçe yalnız **yönetici** ve **muhasebe** rollerine açıktır. | Z |
+| BUT-10 | **Kapsam dışı:** nakit tahminine bağlanma, proje bütçesi (projeler kendi hedefleriyle kalır), şube/masraf merkezi, dövizli bütçe. | — |
+
 ## 4. Fonksiyonel Olmayan İsterler
 
 ### 4.1 Performans
