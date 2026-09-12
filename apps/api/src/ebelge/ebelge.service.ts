@@ -84,9 +84,12 @@ export class EbelgeService {
       if (fatura.ebelge && !["hata", "ret"].includes(fatura.ebelge.durum)) {
         throw new BadRequestException("Bu fatura için zaten e-belge gönderim süreci başlatılmış");
       }
-      const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" }, select: { saglayici: true } });
+      const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" }, select: { saglayici: true, sifreliConfig: true } });
       if (!baglanti) return { gonderilebilir: false, neden: "Aktif bir e-belge entegratör bağlantısı bulunamadı.", faturaNo: fatura.no, cari: fatura.cari.unvan };
-      if (!fatura.cari.vknTckn || !vknTcknGecerliMi(fatura.cari.vknTckn)) {
+      // Test ortamında sentetik VKN'ler kontrol hanesini tutmaz; kural gönderim
+      // adımıyla aynıdır, sihirbaz gönderilebilir olanı gönderilemez göstermesin.
+      const testOrtami = Boolean((JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig).testOrtami);
+      if (!fatura.cari.vknTckn || (!vknTcknGecerliMi(fatura.cari.vknTckn) && !testOrtami)) {
         return { gonderilebilir: false, neden: "Alıcının geçerli bir VKN/TCKN bilgisi olmalıdır.", faturaNo: fatura.no, cari: fatura.cari.unvan, vknTckn: fatura.cari.vknTckn, saglayici: baglanti.saglayici };
       }
       if (!gonderimTarihiGecerliMi(fatura.tarih)) {
@@ -138,7 +141,7 @@ export class EbelgeService {
       if (fatura.durum !== "kesin") {
         throw new BadRequestException("Yalnızca kesinleşmiş faturalar gönderilebilir");
       }
-      if (!fatura.cari.vknTckn || !vknTcknGecerliMi(fatura.cari.vknTckn)) {
+      if (!fatura.cari.vknTckn) {
         throw new BadRequestException("Alıcının geçerli bir VKN/TCKN bilgisi olmalıdır");
       }
       if (!gonderimTarihiGecerliMi(fatura.tarih)) {
@@ -167,6 +170,12 @@ export class EbelgeService {
       // tek kontrol gevşetilir, üretimde olduğu gibi kalır.
       if (!vknTcknGecerliMi(tenant.vkn) && !baglantiConfig.testOrtami) {
         throw new BadRequestException("Gönderen firmanın geçerli bir VKN/TCKN bilgisi olmalıdır");
+      }
+      // Aynı gevşetme alıcı için de geçerlidir: test ortamında karşı taraf da
+      // sentetik kimliktir (bu kimliklerden belge alabiliyoruz, onlara belge
+      // kesememek tutarsızdı). Üretimde kontrol aynen sürer.
+      if (!vknTcknGecerliMi(fatura.cari.vknTckn) && !baglantiConfig.testOrtami) {
+        throw new BadRequestException("Alıcının geçerli bir VKN/TCKN bilgisi olmalıdır");
       }
 
       let rezervasyon: { id: string };

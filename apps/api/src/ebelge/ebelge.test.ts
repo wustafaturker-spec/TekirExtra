@@ -219,6 +219,45 @@ describe("EbelgeService (EBLG-01..08)", () => {
   });
 
 
+  /**
+   * Entegratör test ortamlarının sentetik kimlikleri VKN kontrol hanesini
+   * tutmaz. Kural gönderen için zaten gevşetiliyordu; alıcı için de aynı
+   * olmalı — o kimliklerden belge alıp onlara belge kesememek tutarsızdı.
+   */
+  function sentetikVknTx(testOrtami: boolean) {
+    return {
+      fatura: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "f1", tip: "satis", durum: "kesin", tarih: new Date(), no: null,
+          toplamBrut: 100, toplamMatrah: 100, toplamKdv: 20, genelToplam: 120,
+          dovizCinsi: "TRY", toplamSatirIskontosu: 0,
+          satirlar: [{ miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20, birimFiyat: 100, stok: { kod: "U1", ad: "Ürün 1" } }],
+          // GİB sandbox kimliği: kontrol hanesi tutmaz.
+          cari: { vknTckn: "1234567801", unvan: "Test Kurum" },
+        }),
+      },
+      baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "t", testOrtami }) }) },
+      cariHesap: { update: vi.fn().mockResolvedValue({}) },
+      // Gönderen VKN'si geçerli: böylece test yalnız alıcı kuralını ölçer.
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114" }) },
+      ebelgeKayit: { create: vi.fn().mockResolvedValue({ id: "eb1" }), update: vi.fn().mockResolvedValue({ id: "eb1" }) },
+      ebelgeArsiv: { upsert: vi.fn().mockResolvedValue({}) },
+    };
+  }
+
+  it("test ortamında sentetik alıcı VKN'sini kabul eder", async () => {
+    const tx = sentetikVknTx(true);
+    mockTenantIslem.mockImplementation((_t: string, cb: (x: unknown) => unknown) => cb(tx));
+    mockMukellefListesi.kanalBelirle.mockResolvedValueOnce({ vknTckn: "1234567801", eFaturaMukellefi: true, postaKutusu: "urn:mail:defaultpk@nes.com.tr" });
+    await expect(service.gonder("f1")).resolves.toMatchObject({ basarili: true });
+  });
+
+  it("üretimde sentetik alıcı VKN'sini reddeder", async () => {
+    const tx = sentetikVknTx(false);
+    mockTenantIslem.mockImplementation((_t: string, cb: (x: unknown) => unknown) => cb(tx));
+    await expect(service.gonder("f1")).rejects.toThrow(/Alıcının geçerli bir VKN/);
+  });
+
   /** Yeniden deneme senaryosu için ortak tx: fatura zaten hatalı bir e-belge kaydına sahip. */
   function yenidenDenemeTx() {
     return {
