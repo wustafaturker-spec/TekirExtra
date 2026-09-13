@@ -16,6 +16,8 @@ import {
   Button,
   ButtonLabel,
   Card,
+  EylemCubugu,
+  EylemMenusu,
   Field,
   Input,
   PageHeader,
@@ -252,6 +254,9 @@ export default function BelgelerSayfasi() {
     setTarihBaslangic(parametreler.get("baslangic") ?? "");
     setTarihBitis(parametreler.get("bitis") ?? "");
     setDurumFiltresi(parametreler.get("durum"));
+    // Başka ekrandan bir belgeye verilen bağlantı (ör. cari CRM'deki teklif) o belgeyi açar.
+    const odak = parametreler.get("odak");
+    if (odak && tokenAl()) void detayAc(odak);
     try { setKayitliGorunumler(JSON.parse(localStorage.getItem(GORUNUM_ANAHTARI) ?? "[]") as BelgeGorunumu[]); }
     catch { localStorage.removeItem(GORUNUM_ANAHTARI); }
     setFiltrelerHazir(true);
@@ -452,6 +457,7 @@ export default function BelgelerSayfasi() {
     try {
       await api(`/ebelge/irsaliye/${id}/gonder`, { method: "POST" });
       setBasari("e-İrsaliye entegratöre gönderildi. Stok etkisi oluşmadı; stok faturada işlenecek.");
+      if (detay?.id === id) await detayAc(id);
       void yukle();
     } catch (h) { setHata(h instanceof Error ? h.message : "e-İrsaliye gönderilemedi"); }
   }
@@ -498,6 +504,11 @@ export default function BelgelerSayfasi() {
       setHata(h instanceof Error ? h.message : "Belge detayı yüklenemedi");
     }
   }
+
+  // Kart listenin üstünde açılır; satırdan ya da zincirden açılan belge görünür olsun.
+  useEffect(() => {
+    if (detay?.id) document.getElementById("belge-detayi")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [detay?.id]);
 
   async function pdfAc(id: string) {
     try {
@@ -778,7 +789,7 @@ export default function BelgelerSayfasi() {
       }} />
 
       {detay && (
-        <Card style={{ marginBottom: "1.5rem", borderColor: "var(--accent)" }}>
+        <Card key={detay.id} id="belge-detayi" className="record-detail" style={{ marginBottom: "1.5rem", borderColor: "var(--accent)", scrollMarginTop: "1rem" }}>
           <div className="between" style={{ alignItems: "flex-start" }}>
             <div>
               <h3 style={{ fontSize: "1.15rem", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -790,6 +801,19 @@ export default function BelgelerSayfasi() {
             </div>
             <Button size="sm" onClick={() => setDetay(null)}>✖ Kapat</Button>
           </div>
+          <EylemCubugu etiket="Belge eylemleri">
+            {detay.durum === "taslak" && <Button variant="primary" size="sm" type="button" onClick={() => void onayOzetiAc(detay.id)}>✅ Onayla</Button>}
+            {detay.durum === "onaylandi" && DONUSUM[detay.tur]?.map((hedef) => (
+              <Button key={hedef} variant={hedef === "fatura" ? "primary" : undefined} size="sm" type="button" onClick={() => void donusumOzetiAc(detay.id, hedef)}>→ {hedef === "fatura" ? "Fatura" : TUR_ADI[hedef]}</Button>
+            ))}
+            {detay.durum === "onaylandi" && detay.tur === "irsaliye" && detay.yon === "satis" && !detay.eirsaliye && <Button size="sm" type="button" onClick={() => void eirsaliyeGonder(detay.id)}>🚚 e-İrsaliye gönder</Button>}
+            <Button size="sm" type="button" onClick={() => void pdfAc(detay.id)}>🖨 PDF</Button>
+            <EylemMenusu>
+              <Button size="sm" type="button" onClick={() => void eylem(detay.id, "kopyala", "Belge kopyalandı (taslak).")}>📋 Kopyala</Button>
+              {detay.durum === "onaylandi" && <Button variant="danger" size="sm" type="button" onClick={() => void eylem(detay.id, "iptal", "Belge iptal edildi.")}>İptal et</Button>}
+              {detay.durum === "taslak" && <Button variant="danger" size="sm" type="button" onClick={() => void sil(detay.id)}>Sil</Button>}
+            </EylemMenusu>
+          </EylemCubugu>
           <div className="document-timeline" aria-label="Belge yaşam döngüsü">
             {(["teklif", "siparis", "irsaliye"] as const).map((adim) => {
               const tamZincirKaydi = detay.zincirBelgeleri?.find((belge) => belge.tur === adim);
@@ -959,22 +983,28 @@ export default function BelgelerSayfasi() {
               <th>Tarih</th>
               <th className="num">Genel Toplam</th>
               <th>Durum</th>
-              <th className="center">Eylemler</th>
             </tr>
           </thead>
           <tbody>
             {listeYukleniyor && belgeler.length === 0 ? (
-              <tr><td colSpan={8} className="empty" role="status">Belgeler yükleniyor…</td></tr>
+              <tr><td colSpan={7} className="empty" role="status">Belgeler yükleniyor…</td></tr>
             ) : hata && belgeler.length === 0 ? (
-              <tr><td colSpan={8} className="empty">
+              <tr><td colSpan={7} className="empty">
                 <div className="stack" role="alert"><span>Belge listesi yüklenemedi.</span><div><Button type="button" onClick={() => void yukle()}>Tekrar dene</Button></div></div>
               </td></tr>
             ) : gorunen.length === 0 ? (
-              <tr><td colSpan={8} className="empty">{arama || turFiltre !== "tumu" || yonBaglami || durumFiltresi || tarihBaslangic || tarihBitis ? "Filtrelere uygun belge bulunamadı." : "Kayıtlı belge bulunmuyor."}</td></tr>
+              <tr><td colSpan={7} className="empty">{arama || turFiltre !== "tumu" || yonBaglami || durumFiltresi || tarihBaslangic || tarihBitis ? "Filtrelere uygun belge bulunamadı." : "Kayıtlı belge bulunmuyor."}</td></tr>
             ) : (
               gorunen.map((b) => (
-                <tr key={b.id}>
-                  <td className="center">
+                <tr
+                  key={b.id}
+                  className="row-link"
+                  tabIndex={0}
+                  aria-label={`${TUR_ADI[b.tur]} ${b.no || "Taslak"} belgesini aç`}
+                  onClick={() => void detayAc(b.id)}
+                  onKeyDown={(olay) => { if (olay.target === olay.currentTarget && (olay.key === "Enter" || olay.key === " ")) { olay.preventDefault(); void detayAc(b.id); } }}
+                >
+                  <td className="center" onClick={(olay) => olay.stopPropagation()}>
                     {faturalanabilir(b) && (
                       <input aria-label={(b.no ?? "Taslak") + " belgesini seç"} type="checkbox" checked={secili.has(b.id)} disabled={topluFaturaYukleniyor || Boolean(secimUyumlulukAnahtari && faturaUyumlulukAnahtari(b) !== secimUyumlulukAnahtari)} onChange={() => seciliDegistir(b.id)} title={secimUyumlulukAnahtari && faturaUyumlulukAnahtari(b) !== secimUyumlulukAnahtari ? "Seçilen belgeler aynı cari, döviz, kur, yön ve depoda olmalıdır" : "Toplu faturalama için seç"} />
                     )}
@@ -985,28 +1015,6 @@ export default function BelgelerSayfasi() {
                   <td>{b.tarih}</td>
                   <td className="num" style={{ fontWeight: 700 }}>{tl(b.genelToplam, b.dovizCinsi)}</td>
                   <td>{durumRozet(b.durum)}</td>
-                  <td className="center">
-                    <div className="row-tight" style={{ flexWrap: "nowrap", justifyContent: "center" }}>
-                      <Button aria-label="Belge detayını aç" title="Belge detayını aç" size="sm" onClick={() => detayAc(b.id)}>🔍</Button>
-                      {b.durum === "taslak" && (
-                        <>
-                          <Button variant="primary" size="sm" onClick={() => void onayOzetiAc(b.id)}>Onayla</Button>
-                          <Button variant="danger" size="sm" onClick={() => sil(b.id)}>Sil</Button>
-                        </>
-                      )}
-                      {b.durum === "onaylandi" && (
-                        <>
-                          {DONUSUM[b.tur]?.map((h) => (
-                            <Button key={h} size="sm" onClick={() => void donusumOzetiAc(b.id, h)}>→ {h === "fatura" ? "Fatura" : TUR_ADI[h]}</Button>
-                          ))}
-                          <Button size="sm" onClick={() => eylem(b.id, "iptal", "Belge iptal edildi.")}>İptal</Button>
-                          {b.tur === "irsaliye" && b.yon === "satis" && <Button size="sm" variant="primary" onClick={() => void eirsaliyeGonder(b.id)}>e-İrsaliye</Button>}
-                        </>
-                      )}
-                      <Button size="sm" onClick={() => pdfAc(b.id)}>🖨</Button>
-                      <Button size="sm" onClick={() => eylem(b.id, "kopyala", "Belge kopyalandı (taslak).")}>📋</Button>
-                    </div>
-                  </td>
                 </tr>
               ))
             )}

@@ -1209,8 +1209,8 @@ test("belge dönüşümünden önce aktarılacak içerik onaylanır", async ({ p
   });
 
   await page.goto("/panel/belgeler");
-  const satir = page.getByRole("row").filter({ hasText: "TK-001" });
-  await satir.getByRole("button", { name: "Belge detayını aç" }).click();
+  await page.getByRole("row", { name: "Teklif TK-001 belgesini aç" }).click();
+  await expect(page.getByRole("toolbar", { name: "Belge eylemleri" }).getByRole("button", { name: "→ Sipariş" })).toBeVisible();
   const zincir = page.getByLabel("Belge yaşam döngüsü");
   await expect(zincir.getByRole("button", { name: /Teklif Mevcut/ })).toBeDisabled();
   await zincir.getByRole("button", { name: /Sipariş Oluştur/ }).click();
