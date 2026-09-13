@@ -11,6 +11,8 @@ import {
   Button,
   ButtonLabel,
   Card,
+  EylemCubugu,
+  EylemMenusu,
   Field,
   Input,
   PageHeader,
@@ -345,6 +347,22 @@ export default function StokDetaySayfasi() {
     if (ok) setFiyatlar(await api<StokFiyat[]>(`/stok/${id}/fiyatlar`));
   }
 
+  async function kopyala() {
+    setHata(""); setBasari(""); setUyari("");
+    try {
+      const kopya = await api<StokDetay>(`/stok/${id}/kopyala`, { method: "POST" });
+      router.push(`/panel/stok/${kopya.id}`);
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Kopyalama hatası");
+    }
+  }
+
+  async function sil() {
+    if (!detay || !window.confirm(`“${detay.ad}” stok kartı silinsin mi?`)) return;
+    const ok = await islem(() => api(`/stok/${id}`, { method: "DELETE" }), "Stok kartı silindi.");
+    if (ok) router.push("/panel/stok");
+  }
+
   if (!detay) {
     return (
       <div>
@@ -369,6 +387,17 @@ export default function StokDetaySayfasi() {
           <div className="stock-profile__commercial"><span>Satış fiyatı</span><strong>{detay.satisFiyati ? `${Number(detay.satisFiyati).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${detay.satisFiyatiDoviz}` : "Tanımsız"}</strong><small>{detay.alisFiyati ? `Alış ${Number(detay.alisFiyati).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${detay.alisFiyatiDoviz}` : "Alış fiyatı tanımsız"}</small></div>
         </div>
       </header>
+
+      {(detay.izinliEylemler.includes("kopyala") || detay.izinliEylemler.includes("sil")) && (
+        <EylemCubugu etiket="Stok kartı eylemleri">
+          {detay.izinliEylemler.includes("kopyala") && <Button size="sm" type="button" onClick={() => void kopyala()}>⧉ Kopyala</Button>}
+          {detay.izinliEylemler.includes("sil") && (
+            <EylemMenusu>
+              <Button size="sm" type="button" variant="danger" onClick={() => void sil()}>🗑️ Sil</Button>
+            </EylemMenusu>
+          )}
+        </EylemCubugu>
+      )}
 
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
@@ -414,14 +443,6 @@ export default function StokDetaySayfasi() {
                 () => api(`/stok/${id}`, { method: "PATCH", body: JSON.stringify(govde) }),
                 "Stok kartı güncellendi.",
               )
-            }
-            onSil={
-              detay.izinliEylemler.includes("sil")
-                ? async () => {
-                    const ok = await islem(() => api(`/stok/${id}`, { method: "DELETE" }), "Stok kartı silindi.");
-                    if (ok) router.push("/panel/stok");
-                  }
-                : undefined
             }
           />
         </TabPanel>
@@ -526,12 +547,10 @@ function GenelSekmesi({
   detay,
   kategoriler,
   onKaydet,
-  onSil,
 }: {
   detay: StokDetay;
   kategoriler: Kategori[];
   onKaydet: (govde: Record<string, unknown>) => Promise<boolean>;
-  onSil?: () => void;
 }) {
   const duzenlenebilir = detay.izinliEylemler.includes("duzenle");
   const [form, setForm] = useState({
@@ -598,18 +617,11 @@ function GenelSekmesi({
         <div className="card__title" style={{ margin: 0 }}>
           Kart bilgileri
         </div>
-        <div className="row-tight">
-          {duzenlenebilir && (
-            <Button size="sm" onClick={() => setForm((f) => ({ ...f, aktif: !f.aktif }))}>
-              {form.aktif ? "Pasife Al" : "Aktife Al"}
-            </Button>
-          )}
-          {onSil && (
-            <Button size="sm" variant="danger" onClick={onSil}>
-              🗑️ Sil
-            </Button>
-          )}
-        </div>
+        {duzenlenebilir && (
+          <Button size="sm" onClick={() => setForm((f) => ({ ...f, aktif: !f.aktif }))}>
+            {form.aktif ? "Pasife Al" : "Aktife Al"}
+          </Button>
+        )}
       </div>
 
       <div className="stock-editor__section"><span>01</span><div><strong>Temel bilgiler</strong><small>Ürünün katalogda görünen kimliği ve sınıflandırması</small></div></div>

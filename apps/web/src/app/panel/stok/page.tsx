@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api, tokenAl } from "@/lib/api";
 import {
   Alert,
@@ -43,6 +44,7 @@ const tl = (deger: string | number): string =>
 const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
 
 export default function StokSayfasi() {
+  const router = useRouter();
   const [stoklar, setStoklar] = useState<StokKart[]>([]);
   const [arama, setArama] = useState("");
   const [aramaSorgusu, setAramaSorgusu] = useState("");
@@ -163,18 +165,6 @@ export default function StokSayfasi() {
     } catch (h) { setHata(h instanceof Error ? h.message : "Şablon indirme hatası"); }
   }
 
-  async function kopyala(id: string) {
-    setHata("");
-    setBasari("");
-    try {
-      await api(`/stok/${id}/kopyala`, { method: "POST" });
-      setBasari("Stok kartı başarıyla kopyalandı.");
-      void yukle();
-    } catch (h) {
-      setHata(h instanceof Error ? h.message : "Kopyalama hatası");
-    }
-  }
-
   return (
     <div>
       <PageHeader
@@ -267,20 +257,26 @@ export default function StokSayfasi() {
               <th className="num">Ort. Maliyet</th>
               <th className="num">Alış Fiyatı</th>
               <th className="num">Satış Fiyatı</th>
-              <th className="center">Eylemler</th>
             </tr>
           </thead>
           <tbody>
             {stoklar.length === 0 ? (
               <tr>
-                <td colSpan={9} className="empty">Arama kriterlerinize uygun stok kartı bulunamadı.</td>
+                <td colSpan={8} className="empty">Arama kriterlerinize uygun stok kartı bulunamadı.</td>
               </tr>
             ) : (
               stoklar.map((s) => {
                 const miktar = Number(s.mevcutMiktar);
                 const maliyet = Number(s.ortalamaMaliyet);
                 return (
-                  <tr key={s.id}>
+                  <tr
+                    key={s.id}
+                    className="row-link"
+                    tabIndex={0}
+                    aria-label={`${s.ad} stok kartını aç`}
+                    onClick={() => router.push(`/panel/stok/${s.id}`)}
+                    onKeyDown={(olay) => { if (olay.key === "Enter" || olay.key === " ") { olay.preventDefault(); router.push(`/panel/stok/${s.id}`); } }}
+                  >
                     <td className="mono">{s.kod}</td>
                     <td>
                       <div className="cell-entity__name">{s.ad}</div>
@@ -298,12 +294,6 @@ export default function StokSayfasi() {
                     <td className="num" style={{ color: "var(--info)" }}>{maliyet > 0 ? tl(maliyet) : "—"}</td>
                     <td className="num">{s.alisFiyati ? `${Number(s.alisFiyati).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${s.alisFiyatiDoviz}` : "—"}</td>
                     <td className="num" style={{ fontWeight: 600 }}>{s.satisFiyati ? `${Number(s.satisFiyati).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${s.satisFiyatiDoviz}` : "—"}</td>
-                    <td className="center">
-                      <div className="row-tight" style={{ justifyContent: "center" }}>
-                        <ButtonLabel as="a" size="sm" href={`/panel/stok/${s.id}`}>🔍 Detay</ButtonLabel>
-                        <Button size="sm" onClick={() => kopyala(s.id)}>📋 Kopyala</Button>
-                      </div>
-                    </td>
                   </tr>
                 );
               })
