@@ -584,6 +584,28 @@ hesap yalnız belgelerden oluşur — rapordaki rakamlar buna göre değişir.
 | BUT-09 | Bütçe yalnız **yönetici** ve **muhasebe** rollerine açıktır. | Z |
 | BUT-10 | **Kapsam dışı:** nakit tahminine bağlanma, proje bütçesi (projeler kendi hedefleriyle kalır), şube/masraf merkezi, dövizli bütçe. | — |
 
+### 3.13 Döviz Kurları (DVZ)
+
+**S-01 kapı kararları (2026-09-13, kullanıcı onayı):** TCMB kuru herkes için
+aynıdır; kiracı başına kopyalanmaz, **ortak tabloda** tutulur ve günde bir kez
+çekilir. Firmanın uyguladığı farklı kur **kiracıya özel elle kur** olarak girilir
+ve o kiracıda TCMB kurunun yerine geçer — resmî kurun bulunduğu günlerde de.
+İnceleme sırasında kurların yalnız ekranlar istedikçe çekildiği, kur çözümünün
+geriye bakış sınırı olmadığı (Eylül dönemine sessizce Temmuz kuru düşebiliyordu)
+ve kur bulunamadığı için oluşturulamayan kira döneminin yalnız loga yazıldığı
+görüldü.
+
+| No | İster | Öncelik |
+|---|---|---|
+| DVZ-01 | ✅ **Kaynak:** TCMB gösterge kuru; USD ve EUR için döviz alış ve satış. Önce EVDS, olmazsa TCMB günlük XML dosyası kullanılır. Her kaydın kaynağı ve alınma zamanı saklanır. TCMB kurları tüm kiracılar için ortak tabloda tutulur. | G |
+| DVZ-02 | ✅ **Günlük otomatik çekim:** worker her gün TCMB yayımından sonra o günün kurunu çeker; ekranların istemesini beklemez. Çekim kiracı başına değil bir kez yapılır. | G |
+| DVZ-03 | ✅ **Geçmiş aralık:** seçilen tarih aralığındaki eksik günler toplu çekilebilir; yayımlanmayan günler (hafta sonu, tatil) eksik sayılmaz. | G |
+| DVZ-04 | ✅ **Kur çözümü:** belge tarihindeki kur kullanılır; kiracının o güne elle kuru varsa o, yoksa TCMB kuru. O gün kur yoksa önceki günlere en fazla **10 takvim günü** geriye gidilir. Daha eski kur sessizce kullanılmaz ve varsayılan/sabit bir kura hiçbir koşulda düşülmez: işlem kur bulunamadı diye durur ve kullanıcıyı Döviz Kurları ekranına yönlendirir. TCMB'den çekme veritabanı işleminin içinde yapılmaz; eksik kur günlük çekimle (DVZ-02), ekranların kur isteğiyle ve otomatik kira tahakkukunun işlemden önceki çekimiyle tamamlanır. | G |
+| DVZ-05 | ✅ **Elle kur:** yönetici ve muhasebe bir gün ve para birimi için alış/satış kuru girebilir; resmî kurun bulunduğu günlerde de girilebilir ve o kiracıda TCMB kurunun yerine geçer. Gerekçe zorunludur; girme, değiştirme ve silme kim/ne zaman/gerekçe ile olay geçmişinde tutulur. Silinen elle kurun yerine TCMB kuru geçer. | G |
+| DVZ-06 | ✅ **Ekran (Ayarlar > Döviz Kurları):** tarih aralığında USD/EUR alış ve satış, kaynak (TCMB / elle), alınma zamanı listelenir; elle kurun yanında aynı günün TCMB kuru ve farkı görünür. Aralıktaki eksik iş günleri gösterilir; "eksikleri çek" ve elle kur işlemleri buradan yapılır. | G |
+| DVZ-07 | ✅ **Kur yüzünden duran iş görünür olur:** kur bulunamadığı için oluşturulamayan otomatik kira dönemi bildirim üretir (bkz. §3.10); bildirim eksik tarihi ve para birimini söyler. | G |
+| DVZ-08 | **Kapsam dışı:** USD ve EUR dışındaki para birimleri, efektif kur, kaydedilmiş belgelerin kurunu geriye dönük değiştirmek (belge kendi kurunu taşır, BUT-01). | — |
+
 ## 4. Fonksiyonel Olmayan İsterler
 
 ### 4.1 Performans
