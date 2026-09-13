@@ -218,7 +218,7 @@ const FATURA_XSLT = `<?xml version="1.0" encoding="UTF-8"?>
           </xsl:call-template>
           <xsl:if test="$parasal/*[local-name()='AllowanceTotalAmount'] &gt; 0">
             <xsl:call-template name="toplamSatiri">
-              <xsl:with-param name="etiket">Genel İskonto</xsl:with-param>
+              <xsl:with-param name="etiket">İskonto</xsl:with-param>
               <xsl:with-param name="deger" select="0 - $parasal/*[local-name()='AllowanceTotalAmount']"/>
             </xsl:call-template>
           </xsl:if>
@@ -444,7 +444,7 @@ ${tevkifatBlogu}
     <cbc:LineExtensionAmount currencyID="${fatura.dovizCinsi}">${fatura.toplamBrut.toFixed(2)}</cbc:LineExtensionAmount>
     <cbc:TaxExclusiveAmount currencyID="${fatura.dovizCinsi}">${fatura.toplamMatrah.toFixed(2)}</cbc:TaxExclusiveAmount>
     <cbc:TaxInclusiveAmount currencyID="${fatura.dovizCinsi}">${fatura.genelToplam.toFixed(2)}</cbc:TaxInclusiveAmount>
-    <cbc:AllowanceTotalAmount currencyID="${fatura.dovizCinsi}">${fatura.toplamSatirIskontosu.toFixed(2)}</cbc:AllowanceTotalAmount>
+    <cbc:AllowanceTotalAmount currencyID="${fatura.dovizCinsi}">${kurusTopla(fatura.toplamSatirIskontosu, fatura.genelIskontoToplam)}</cbc:AllowanceTotalAmount>
     <cbc:PayableAmount currencyID="${fatura.dovizCinsi}">${fatura.genelToplam.toFixed(2)}</cbc:PayableAmount>
   </cac:LegalMonetaryTotal>
 
@@ -459,7 +459,12 @@ ${tevkifatBlogu}
       <cbc:ChargeIndicator>false</cbc:ChargeIndicator>
       ${Number(s.iskontoOrani ?? 0) > 0 ? `<cbc:MultiplierFactorNumeric>${(Number(s.iskontoOrani) / 100).toFixed(4)}</cbc:MultiplierFactorNumeric>` : ""}
       <cbc:Amount currencyID="${fatura.dovizCinsi}">${s.iskontoTutari.toFixed(2)}</cbc:Amount>
-    </cac:AllowanceCharge>
+    </cac:AllowanceCharge>${Number(s.genelIskontoPayi ?? 0) > 0 ? `
+    <cac:AllowanceCharge>
+      <cbc:ChargeIndicator>false</cbc:ChargeIndicator>
+      <cbc:AllowanceChargeReason>Genel iskonto payı</cbc:AllowanceChargeReason>
+      <cbc:Amount currencyID="${fatura.dovizCinsi}">${Number(s.genelIskontoPayi).toFixed(2)}</cbc:Amount>
+    </cac:AllowanceCharge>` : ""}
     <cac:TaxTotal>
       <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${s.kdvTutari.toFixed(2)}</cbc:TaxAmount>
       <cac:TaxSubtotal>
@@ -504,6 +509,12 @@ export function belgeNoyuUbleYaz(xml: string, belgeNo: string): string {
   const desen = /(<cbc:ProfileID>[^<]*<\/cbc:ProfileID>\s*<cbc:ID>)([^<]*)(<\/cbc:ID>)/;
   if (!desen.test(xml)) return xml;
   return xml.replace(desen, (_tam, bas: string, _eski: string, son: string) => `${bas}${escapeXml(belgeNo)}${son}`);
+}
+
+/** Tutarları kuruşta toplar; ondalıklı toplama `0.1 + 0.2` kaymasına düşmesin. */
+function kurusTopla(...tutarlar: (number | { toString(): string } | null | undefined)[]): string {
+  const kurus = tutarlar.reduce<number>((t, v) => t + Math.round(Number(v ?? 0) * 100), 0);
+  return (kurus / 100).toFixed(2);
 }
 
 function escapeXml(deger: string): string {

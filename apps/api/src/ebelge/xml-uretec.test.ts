@@ -155,6 +155,64 @@ describe("faturaUblUret", () => {
   });
 });
 
+describe("faturaUblUret iskonto tutarlılığı", () => {
+  // Genel iskonto hesapta satırlara dağıtılır (matrah = brüt − satır iskontosu −
+  // genel iskonto payı) ama UBL'e yazılmıyordu: satırda brüt − iskonto matrahı,
+  // başlıkta LineExtensionAmount − AllowanceTotalAmount TaxExclusiveAmount'u
+  // vermiyordu. Tutarlar faturaHesapla kuralıyla: 19 TL genel iskonto 90:100
+  // oranında 9 ve 10 olarak dağılır.
+  const xml = faturaUblUret({
+    id: "33333333-3333-4333-8333-333333333333",
+    no: "TKR2026000000003",
+    tarih: new Date("2026-09-13T12:00:00Z"),
+    tip: "satis",
+    dovizCinsi: "TRY",
+    toplamBrut: 200,
+    toplamSatirIskontosu: 10,
+    genelIskontoToplam: 19,
+    toplamMatrah: 171,
+    toplamKdv: 34.2,
+    genelToplam: 205.2,
+    cari: { vknTckn: "1234567890", unvan: "Alıcı A.Ş." },
+    satirlar: [
+      { miktar: 1, birimFiyat: 100, iskontoOrani: 10, iskontoTutari: 10, genelIskontoPayi: 9, matrah: 81, kdvOrani: 20, kdvTutari: 16.2, gibIstisnaKodu: null, stok: { kod: "A", ad: "A" } },
+      { miktar: 1, birimFiyat: 100, iskontoOrani: 0, iskontoTutari: 0, genelIskontoPayi: 10, matrah: 90, kdvOrani: 20, kdvTutari: 18, gibIstisnaKodu: null, stok: { kod: "B", ad: "B" } },
+    ],
+  } as never, { unvan: "Satıcı A.Ş.", vkn: "9876543210" });
+
+  const tutar = (parca: string, alan: string) => Number(parca.match(new RegExp(`<cbc:${alan}[^>]*>([^<]+)<`))?.[1]);
+  const satirlar = xml.split("<cac:InvoiceLine>").slice(1);
+
+  it("başlıkta brüt − toplam iskonto matrahı verir; toplam iskonto genel iskontoyu da içerir", () => {
+    const parasal = xml.slice(xml.indexOf("<cac:LegalMonetaryTotal>"), xml.indexOf("</cac:LegalMonetaryTotal>"));
+    expect(tutar(parasal, "LineExtensionAmount")).toBe(200);
+    expect(tutar(parasal, "AllowanceTotalAmount")).toBe(29);
+    expect(tutar(parasal, "TaxExclusiveAmount")).toBe(171);
+  });
+
+  it("satırda brüt − iskontolar satır tutarını verir; genel iskonto payı ayrı kayıttır", () => {
+    for (const satir of satirlar) {
+      const iskontolar = [...satir.matchAll(/<cbc:Amount[^>]*>([^<]+)</g)].map((m) => Number(m[1])).reduce((t, v) => t + v, 0);
+      expect(Math.round((100 - iskontolar) * 100) / 100).toBe(tutar(satir, "LineExtensionAmount"));
+    }
+    // Satır iskontosunun oranı yalnız kendi tutarını tanımlar; pay oransız ayrı kayıttır.
+    expect(satirlar[0]).toContain("<cbc:MultiplierFactorNumeric>0.1000</cbc:MultiplierFactorNumeric>");
+    expect(satirlar[0].match(/<cac:AllowanceCharge>/g)).toHaveLength(2);
+    expect(satirlar[0]).toContain("<cbc:AllowanceChargeReason>Genel iskonto payı</cbc:AllowanceChargeReason>");
+  });
+
+  it("genel iskontosuz faturada ek iskonto kaydı yazmaz", () => {
+    const sade = faturaUblUret({
+      id: "44444444-4444-4444-8444-444444444444", no: "TKR2026000000004", tarih: new Date("2026-09-13T12:00:00Z"), tip: "satis", dovizCinsi: "TRY",
+      toplamBrut: 100, toplamSatirIskontosu: 0, genelIskontoToplam: 0, toplamMatrah: 100, toplamKdv: 20, genelToplam: 120,
+      cari: { vknTckn: "1234567890", unvan: "Alıcı A.Ş." },
+      satirlar: [{ miktar: 1, birimFiyat: 100, iskontoTutari: 0, genelIskontoPayi: 0, matrah: 100, kdvOrani: 20, kdvTutari: 20, gibIstisnaKodu: null, stok: { kod: "A", ad: "A" } }],
+    } as never, { unvan: "Satıcı A.Ş.", vkn: "9876543210" });
+    expect(sade).not.toContain("Genel iskonto payı");
+    expect(sade).toContain("<cbc:AllowanceTotalAmount currencyID=\"TRY\">0.00</cbc:AllowanceTotalAmount>");
+  });
+});
+
 describe("belgeNoyuUbleYaz (EBLG-16 arşivi)", () => {
   const ubl = (id: string) =>
     `<Invoice><cbc:ProfileID>EARSIVFATURA</cbc:ProfileID>\n  <cbc:ID>${id}</cbc:ID>\n  <cbc:UUID>u</cbc:UUID>` +
