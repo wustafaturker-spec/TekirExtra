@@ -4,7 +4,8 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
-import { kurCoz } from "../doviz/kur-coz";
+import { DovizService } from "../doviz/doviz.service";
+import { KUR_GERI_BAKIS_GUN, kurCoz } from "../doviz/kur-coz";
 import type { kategoriGuncelleSemasi, kategoriOlusturSemasi, kiraDonemOlusturSemasi, kiraSozlesmeGuncelleSemasi, kiraSozlesmeOlusturSemasi, masrafGuncelleSemasi, masrafOdemeSemasi, masrafOlusturSemasi } from "./masraflar.semalar";
 
 const D = (deger: string | number | Prisma.Decimal) => new Prisma.Decimal(deger);
@@ -26,7 +27,7 @@ const VARSAYILAN_KATEGORILER = ["Kira", "Elektrik, Su ve Doğalgaz", "Telefon ve
 
 @Injectable()
 export class MasraflarService {
-  constructor(private readonly prisma: PrismaService, private readonly donemKilidi: DonemKilidiService) {}
+  constructor(private readonly prisma: PrismaService, private readonly donemKilidi: DonemKilidiService, private readonly doviz: DovizService) {}
 
   async kategoriListele() {
     const { tenantId } = aktifBaglam();
@@ -265,6 +266,13 @@ export class MasraflarService {
 
   async kiraDonemiOlustur(id: string, girdi: z.infer<typeof kiraDonemOlusturSemasi>) {
     const { tenantId } = aktifBaglam();
+    // DVZ-04: dövizli sözleşmede dönemin kuru, tahakkuk işleminden önce TCMB'den
+    // çekilmeye çalışılır; ağ çağrısı veritabanı işleminin içinde yapılmaz.
+    const dovizCinsi = (await this.prisma.tenantIslem(tenantId, (tx) => tx.kiraSozlesme.findUnique({ where: { id }, select: { dovizCinsi: true } })))?.dovizCinsi;
+    if (dovizCinsi && dovizCinsi !== "TRY" && /^\d{4}-\d{2}$/.test(girdi.donem)) {
+      const [kurYil, kurAy] = girdi.donem.split("-").map(Number);
+      await this.doviz.kurGarantile(new Date(Date.UTC(kurYil, kurAy - 1, 1))).catch(() => false);
+    }
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const sozlesme = await tx.kiraSozlesme.findUnique({ where: { id }, include: { cari: { select: { unvan: true } } } });
       if (!sozlesme) throw new NotFoundException("Kira sözleşmesi bulunamadı");
@@ -281,7 +289,7 @@ export class MasraflarService {
       // Dövizli sözleşmede dönemin kuru sözleşmede değil, dönem tarihindeki
       // TCMB satış kurundadır; kur bilinmeden dönem tahakkuk ettirilemez.
       const kur = await kurCoz(tx, tenantId, sozlesme.dovizCinsi, donem);
-      if (!kur) throw new BadRequestException(`${girdi.donem} dönemi için kayıtlı ${sozlesme.dovizCinsi} kuru yok; kur kaydı oluşmadan dövizli dönem tahakkuk ettirilemez`);
+      if (!kur) throw new BadRequestException(`${girdi.donem} dönemi için ${sozlesme.dovizCinsi} kuru bulunamadı (dönem başından en fazla ${KUR_GERI_BAKIS_GUN} gün öncesine kadar arandı); Ayarlar > Döviz Kurları ekranından çekin ya da elle girin`);
       try {
         return await tx.masraf.create({ data: { tenantId, kategoriId: sozlesme.kategoriId, cariId: sozlesme.cariId, belgeTuru: "kira", tarih: donem, vadeTarihi: vade, saticiUnvan: sozlesme.kirayaVeren || sozlesme.cari?.unvan, vknTckn: sozlesme.vknTckn, iban: sozlesme.iban, aciklama: `${sozlesme.baslik} - ${girdi.donem} kira dönemi`, matrah: sozlesme.matrah, kdvOrani: sozlesme.kdvOrani, kdvTutari, toplam: sozlesme.matrah.add(kdvTutari), dovizCinsi: sozlesme.dovizCinsi, kur, stopajOrani: sozlesme.stopajOrani, stopajTutari, kiraSozlesmeId: sozlesme.id, kiraDonemi: donem } });
       } catch (hata) {

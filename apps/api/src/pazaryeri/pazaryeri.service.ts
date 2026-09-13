@@ -9,6 +9,7 @@ import { HepsiburadaAdapter } from "./hepsiburada.adapter";
 import { N11Adapter } from "./n11.adapter";
 import { AmazonAdapter } from "./amazon.adapter";
 import { Prisma } from "@prisma/client";
+import { kurZorunlu } from "../doviz/kur-coz";
 import { pazaryeriKesintiGiderlestirSemasi, pazaryeriKesintiSemasi, pazaryeriSiparisSemasi } from "./pazaryeri.semalar";
 
 @Injectable()
@@ -84,7 +85,7 @@ export class PazaryeriService {
         if (siparis.satirlar.some((s) => !s.stokId)) throw new BadRequestException("Eşleşmemiş ürün kalemi var");
         const cari = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findFirst({ where: { id: istek.cariId, aktif: true }, select: { id: true } }));
         if (!cari) throw new BadRequestException("Aktif cari hesap bulunamadı");
-        const kur = siparis.dovizCinsi === "TRY" ? new Prisma.Decimal(1) : await this.prisma.tenantIslem(tenantId, async (tx) => { const k = await tx.dovizKuru.findFirst({ where: { tarih: { lte: siparis.siparisTarihi }, dovizCinsi: siparis.dovizCinsi }, orderBy: { tarih: "desc" }, select: { dovizSatis: true } }); if (!k) throw new BadRequestException(`${siparis.dovizCinsi} için sipariş tarihinde geçerli kur bulunamadı`); return k.dovizSatis; });
+        const kur = siparis.dovizCinsi === "TRY" ? new Prisma.Decimal(1) : await this.prisma.tenantIslem(tenantId, (tx) => kurZorunlu(tx, siparis.dovizCinsi, siparis.siparisTarihi, "satis", tenantId));
         const hak = await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriSiparis.updateMany({ where: { id: siparis.id, faturaId: null, durum: "faturalanmaya_hazir" }, data: { durum: "yeni", hataMesaji: null } }));
         if (hak.count !== 1) throw new BadRequestException("Sipariş başka bir işlem tarafından işleniyor");
         const fatura = await this.faturalar.olustur({
@@ -199,7 +200,7 @@ export class PazaryeriService {
       if (kesintiler.some((k) => k.durum === "giderlesti")) throw new BadRequestException("Seçilen kayıtlardan biri daha önce giderleştirilmiş");
       if (kesintiler.some((k) => k.dovizCinsi !== hesap.dovizCinsi)) throw new BadRequestException("Kesinti dövizi ile hesap dövizi aynı olmalıdır");
       for (const kesinti of kesintiler) {
-        const kur = kesinti.dovizCinsi === "TRY" ? new Prisma.Decimal(1) : girdi.kur ? new Prisma.Decimal(girdi.kur) : await (async () => { const k = await tx.dovizKuru.findFirst({ where: { tarih: { lte: kesinti.tarih }, dovizCinsi: kesinti.dovizCinsi }, orderBy: { tarih: "desc" }, select: { dovizSatis: true } }); if (!k) throw new BadRequestException(`${kesinti.dovizCinsi} için ${kesinti.tarih.toISOString().slice(0, 10)} tarihinde geçerli kur bulunamadı`); return k.dovizSatis; })();
+        const kur = kesinti.dovizCinsi === "TRY" ? new Prisma.Decimal(1) : girdi.kur ? new Prisma.Decimal(girdi.kur) : await kurZorunlu(tx, kesinti.dovizCinsi, kesinti.tarih);
         const hak = await tx.pazaryeriKesinti.updateMany({ where: { id: kesinti.id, durum: "bekliyor", hareketId: null }, data: { durum: "giderlesti" } });
         if (hak.count !== 1) throw new BadRequestException("Kesinti başka bir işlem tarafından giderleştirildi");
         const hareket = await tx.kasaBankaHareket.create({ data: {

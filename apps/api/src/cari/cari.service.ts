@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { kurZorunlu } from "../doviz/kur-coz";
 import type { KayitEylem } from "@tekirextra/shared";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -962,20 +963,13 @@ export class CariService {
         select: { id: true, kod: true, unvan: true, vknTckn: true },
       });
 
-      // Güncel kurları çek (USD ve EUR)
-      const kurlar = await tx.dovizKuru.findMany({
-        where: { tenantId, tarih: { lte: hedefTarih }, dovizCinsi: { in: ["USD", "EUR"] } },
-        orderBy: { tarih: "desc" },
-        take: 4,
-      });
-
-      // Varsayılan gösterge kurları (Veritabanında kur çekilmemişse düşme engeli)
-      const guncelKurHaritasi: Record<string, number> = { TRY: 1, USD: 36.45, EUR: 38.20 };
-      kurlar.forEach((k) => {
-        if (k.dovizAlis && Number(k.dovizAlis) > 0) {
-          guncelKurHaritasi[k.dovizCinsi] = Number(k.dovizAlis);
-        }
-      });
+      // Değerleme hedef tarihin kuruyla yapılır (DVZ-04). Kuru olmayan para
+      // birimi için sabit bir gösterge kuruna düşülmez: işlem açık hatayla durur.
+      const kurlar = new Map<string, number>();
+      const kurAl = async (doviz: string) => {
+        if (!kurlar.has(doviz)) kurlar.set(doviz, Number(await kurZorunlu(tx, doviz, hedefTarih, "alis", tenantId)));
+        return kurlar.get(doviz)!;
+      };
 
       const sonuclar = [];
 
@@ -988,7 +982,7 @@ export class CariService {
 
           const dovizBakiye = Number(b.bakiye); // Borç - Alacak (Döviz Cinsinden)
           const kayitliTryBakiye = Number(b.bakiyeTry); // Kayıt anındaki TRY Karşılığı bakiye
-          const guncelKur = guncelKurHaritasi[b.dovizCinsi] || 1;
+          const guncelKur = await kurAl(b.dovizCinsi);
           const guncelTryDegeri = dovizBakiye * guncelKur;
 
           // Kur Farkı = Güncel TRY Değeri - Kayıtlı TRY Değeri
@@ -1014,7 +1008,7 @@ export class CariService {
 
       return {
         degerlemeTarihi: hedefTarih.toISOString().slice(0, 10),
-        guncelKurlar: guncelKurHaritasi,
+        guncelKurlar: { TRY: 1, ...Object.fromEntries(kurlar) },
         toplamCariSayisi: sonuclar.length,
         sonuclar,
       };

@@ -127,7 +127,8 @@ model Tenant {
   epostaGonderimleri        EpostaGonderim[]
   eirsaliyeKayitlari        EirsaliyeKayit[]
   gelenEirsaliyeler         GelenEirsaliye[]
-  dovizKurlari              DovizKuru[]
+  elleKurlari               ElleKur[]
+  elleKurOlaylari           ElleKurOlayi[]
   krediKartlari             KrediKarti[]
   krediKartiHareketleri     KrediKartiHareket[]
   krediKartiTaksitleri      KrediKartiTaksit[]
@@ -251,6 +252,8 @@ model User {
   maliDonemOlaylari           MaliDonemOlayi[]        @relation("MaliDonemOlayKullanicisi")
   onaylananButceler           Butce[]                 @relation("ButceOnaylayan")
   butceOlaylari               ButceOlayi[]            @relation("ButceOlayKullanicisi")
+  elleKurlari                 ElleKur[]               @relation("ElleKurKullanicisi")
+  elleKurOlaylari             ElleKurOlayi[]          @relation("ElleKurOlayKullanicisi")
   bildirimTeslimatlari        BildirimTeslimati[]
   bildirimTercihleri          BildirimTercihi[]
   bildirimAyari               BildirimKullaniciAyari?
@@ -514,20 +517,69 @@ enum DovizCinsi {
 }
 
 /// TCMB EVDS'den alınan gösterge kurları tenant bazında önbelleğe alınır.
-model DovizKuru {
+/// DVZ-01: TCMB gösterge kuru. Kur herkes için aynıdır; kiracı başına
+/// kopyalanmaz ve RLS uygulanmaz (GibMukellef ile aynı gerekçe).
+model TcmbKuru {
+  tarih      DateTime   @db.Date
+  dovizCinsi DovizCinsi @map("doviz_cinsi")
+  dovizAlis  Decimal    @map("doviz_alis") @db.Decimal(15, 6)
+  dovizSatis Decimal    @map("doviz_satis") @db.Decimal(15, 6)
+  /// TCMB_EVDS | TCMB_XML
+  kaynak     String
+  alindiAt   DateTime   @default(now()) @map("alindi_at")
+
+  @@id([tarih, dovizCinsi])
+  @@map("tcmb_kurlari")
+}
+
+/// DVZ-05: kiracının elle girdiği kur; o kiracıda aynı günün TCMB kurunun
+/// yerine geçer.
+model ElleKur {
   id         String     @id @default(uuid()) @db.Uuid
   tenantId   String     @map("tenant_id") @db.Uuid
   tarih      DateTime   @db.Date
   dovizCinsi DovizCinsi @map("doviz_cinsi")
   dovizAlis  Decimal    @map("doviz_alis") @db.Decimal(15, 6)
   dovizSatis Decimal    @map("doviz_satis") @db.Decimal(15, 6)
-  kaynak     String     @default("TCMB_EVDS")
-  alindiAt   DateTime   @default(now()) @map("alindi_at")
-  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  gerekce    String
+  userId     String     @map("user_id") @db.Uuid
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kullanici User   @relation("ElleKurKullanicisi", fields: [userId], references: [id])
 
   @@unique([tenantId, tarih, dovizCinsi])
-  @@index([tenantId, dovizCinsi, tarih])
-  @@map("doviz_kurlari")
+  @@map("elle_kurlar")
+}
+
+enum ElleKurOlayTuru {
+  girildi
+  degistirildi
+  silindi
+}
+
+/// DVZ-05: elle kurun girme/değiştirme/silme geçmişi. Elle kura bağlanmaz;
+/// silinen kurun izi de kalır.
+model ElleKurOlayi {
+  id         String          @id @default(uuid()) @db.Uuid
+  tenantId   String          @map("tenant_id") @db.Uuid
+  tarih      DateTime        @db.Date
+  dovizCinsi DovizCinsi      @map("doviz_cinsi")
+  tur        ElleKurOlayTuru
+  eskiAlis   Decimal?        @map("eski_alis") @db.Decimal(15, 6)
+  eskiSatis  Decimal?        @map("eski_satis") @db.Decimal(15, 6)
+  yeniAlis   Decimal?        @map("yeni_alis") @db.Decimal(15, 6)
+  yeniSatis  Decimal?        @map("yeni_satis") @db.Decimal(15, 6)
+  gerekce    String
+  userId     String          @map("user_id") @db.Uuid
+  createdAt  DateTime        @default(now()) @map("created_at")
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kullanici User   @relation("ElleKurOlayKullanicisi", fields: [userId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@map("elle_kur_olaylari")
 }
 
 enum CariHareketTip {

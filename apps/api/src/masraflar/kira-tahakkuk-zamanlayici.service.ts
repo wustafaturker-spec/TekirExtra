@@ -1,10 +1,14 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Prisma, PrismaClient } from "@prisma/client";
+import { BildirimService } from "../bildirimler/bildirim.service";
+import { baglamlaCalistir } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
-import { kurCoz } from "../doviz/kur-coz";
+import { DovizService } from "../doviz/doviz.service";
+import { KUR_GERI_BAKIS_GUN, kurCoz } from "../doviz/kur-coz";
 
 const BIR_GUN_MS = 24 * 60 * 60 * 1000;
 const ISTANBUL_UTC_FARKI_MS = 3 * 60 * 60 * 1000;
+const SISTEM_USER_ID = "00000000-0000-4000-8000-000000000000";
 
 /** Bir sonraki İstanbul saati 00:05 çalışmasına kalan süre. */
 function sonrakiGunlukKontrolMs(simdiMs = Date.now()): number {
@@ -12,6 +16,27 @@ function sonrakiGunlukKontrolMs(simdiMs = Date.now()): number {
   let hedefMs = Date.UTC(istanbul.getUTCFullYear(), istanbul.getUTCMonth(), istanbul.getUTCDate(), 0, 5) - ISTANBUL_UTC_FARKI_MS;
   if (hedefMs <= simdiMs) hedefMs += BIR_GUN_MS;
   return hedefMs - simdiMs;
+}
+
+const ayBasi = (tarih: Date) => new Date(Date.UTC(tarih.getUTCFullYear(), tarih.getUTCMonth(), 1));
+const sonrakiAy = (tarih: Date) => new Date(Date.UTC(tarih.getUTCFullYear(), tarih.getUTCMonth() + 1, 1));
+
+type Sozlesme = {
+  baslangicTarihi: Date;
+  bitisTarihi: Date | null;
+  masraflar: { kiraDonemi: Date | null }[];
+};
+
+/** Sözleşmenin henüz tahakkuk etmemiş dönemleri (ayın ilk günü). */
+function eksikDonemler(s: Sozlesme, mevcutDonem: Date): Date[] {
+  const mevcut = new Set(s.masraflar.map((m) => m.kiraDonemi?.toISOString().slice(0, 7)));
+  const bitis = s.bitisTarihi ? ayBasi(s.bitisTarihi) : mevcutDonem;
+  const sonDonem = bitis < mevcutDonem ? bitis : mevcutDonem;
+  const donemler: Date[] = [];
+  for (let donem = ayBasi(s.baslangicTarihi); donem <= sonDonem; donem = sonrakiAy(donem)) {
+    if (!mevcut.has(donem.toISOString().slice(0, 7))) donemler.push(donem);
+  }
+  return donemler;
 }
 
 /** Worker içinde aktif sözleşmelerin eksik aylık tahakkuklarını tamamlar. */
@@ -22,7 +47,11 @@ export class KiraTahakkukZamanlayiciService implements OnModuleInit, OnModuleDes
   private zamanlayici?: NodeJS.Timeout;
   private calisiyor = false;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly doviz: DovizService,
+    private readonly bildirimler: BildirimService,
+  ) {}
 
   onModuleInit(): void {
     if (process.env.TEKIR_WORKER !== "1") return;
@@ -47,46 +76,86 @@ export class KiraTahakkukZamanlayiciService implements OnModuleInit, OnModuleDes
     finally { await yonetim.$disconnect(); }
   }
 
+  /**
+   * DVZ-04: dövizli sözleşmelerin eksik dönemleri için kur, tahakkuk işleminden
+   * önce çekilir — TCMB'ye gitmek veritabanı işleminin içinde yapılmaz.
+   */
+  private async kurlariHazirla(tenantId: string, mevcutDonem: Date) {
+    const sozlesmeler = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.kiraSozlesme.findMany({
+        where: { aktif: true, dovizCinsi: { not: "TRY" }, baslangicTarihi: { lte: new Date(Date.UTC(mevcutDonem.getUTCFullYear(), mevcutDonem.getUTCMonth() + 1, 0)) } },
+        select: { baslangicTarihi: true, bitisTarihi: true, masraflar: { select: { kiraDonemi: true } } },
+      }),
+    );
+    const donemler = new Map<string, Date>();
+    for (const s of sozlesmeler) for (const d of eksikDonemler(s, mevcutDonem)) donemler.set(d.toISOString(), d);
+    for (const donem of donemler.values()) {
+      try { await this.doviz.kurGarantile(donem); }
+      catch (hata) { this.logger.warn(`${donem.toISOString().slice(0, 10)} kuru çekilemedi: ${hata instanceof Error ? hata.message : String(hata)}`); }
+    }
+  }
+
   async calistir(): Promise<void> {
     if (this.calisiyor) return;
     this.calisiyor = true;
     try {
-      const simdi = new Date(); const mevcutDonem = new Date(Date.UTC(simdi.getUTCFullYear(), simdi.getUTCMonth(), 1));
+      const simdi = new Date(); const mevcutDonem = ayBasi(simdi);
       let toplam = 0;
       for (const tenantId of await this.tenantIdleriAl()) {
+        await this.kurlariHazirla(tenantId, mevcutDonem);
+        const kursuzlar: { id: string; baslik: string; dovizCinsi: string; donemler: string[] }[] = [];
         toplam += await this.prisma.tenantIslem(tenantId, async (tx) => {
           const sozlesmeler = await tx.kiraSozlesme.findMany({ where: { aktif: true, baslangicTarihi: { lte: new Date(Date.UTC(simdi.getUTCFullYear(), simdi.getUTCMonth() + 1, 0)) } }, include: { cari: { select: { unvan: true } }, masraflar: { select: { kiraDonemi: true } } } });
           let olusan = 0;
           for (const s of sozlesmeler) {
-            const mevcut = new Set(s.masraflar.map((m) => m.kiraDonemi?.toISOString().slice(0, 7)));
-            let donem = new Date(Date.UTC(s.baslangicTarihi.getUTCFullYear(), s.baslangicTarihi.getUTCMonth(), 1));
-            const bitis = s.bitisTarihi ? new Date(Date.UTC(s.bitisTarihi.getUTCFullYear(), s.bitisTarihi.getUTCMonth(), 1)) : mevcutDonem;
-            const sonDonem = bitis < mevcutDonem ? bitis : mevcutDonem;
             const kayitlar: Prisma.MasrafCreateManyInput[] = [];
-            let kursuz = 0;
-            while (donem <= sonDonem) {
+            const kursuzDonemler: string[] = [];
+            for (const donem of eksikDonemler(s, mevcutDonem)) {
               const anahtar = donem.toISOString().slice(0, 7);
-              if (!mevcut.has(anahtar)) {
-                const aySonu = new Date(Date.UTC(donem.getUTCFullYear(), donem.getUTCMonth() + 1, 0)).getUTCDate();
-                const kdvTutari = s.matrah.mul(s.kdvOrani).div(100).toDecimalPlaces(2); const stopajTutari = s.matrah.mul(s.stopajOrani).div(100).toDecimalPlaces(2);
-                // Kuru bilinmeyen dövizli dönem atlanır: 1 ile yazmak döviz
-                // tutarını TL sanmak olurdu. Kullanıcı kurları güncelleyince
-                // bir sonraki tarama dönemi oluşturur.
-                const kur = await kurCoz(tx, tenantId, s.dovizCinsi, donem);
-                if (kur) kayitlar.push({ tenantId, kategoriId: s.kategoriId, cariId: s.cariId, belgeTuru: "kira", tarih: donem, vadeTarihi: new Date(Date.UTC(donem.getUTCFullYear(), donem.getUTCMonth(), Math.min(s.odemeGunu, aySonu))), saticiUnvan: s.kirayaVeren || s.cari?.unvan, vknTckn: s.vknTckn, iban: s.iban, aciklama: `${s.baslik} - ${anahtar} kira dönemi (otomatik)`, matrah: s.matrah, kdvOrani: s.kdvOrani, kdvTutari, toplam: s.matrah.add(kdvTutari), dovizCinsi: s.dovizCinsi, kur, stopajOrani: s.stopajOrani, stopajTutari, kiraSozlesmeId: s.id, kiraDonemi: donem });
-                else kursuz += 1;
-              }
-              donem = new Date(Date.UTC(donem.getUTCFullYear(), donem.getUTCMonth() + 1, 1));
+              const aySonu = new Date(Date.UTC(donem.getUTCFullYear(), donem.getUTCMonth() + 1, 0)).getUTCDate();
+              const kdvTutari = s.matrah.mul(s.kdvOrani).div(100).toDecimalPlaces(2); const stopajTutari = s.matrah.mul(s.stopajOrani).div(100).toDecimalPlaces(2);
+              // Kuru bilinmeyen dövizli dönem atlanır: 1 ile yazmak döviz
+              // tutarını TL sanmak olurdu. Kur gelince bir sonraki tarama dönemi oluşturur.
+              const kur = await kurCoz(tx, tenantId, s.dovizCinsi, donem);
+              if (kur) kayitlar.push({ tenantId, kategoriId: s.kategoriId, cariId: s.cariId, belgeTuru: "kira", tarih: donem, vadeTarihi: new Date(Date.UTC(donem.getUTCFullYear(), donem.getUTCMonth(), Math.min(s.odemeGunu, aySonu))), saticiUnvan: s.kirayaVeren || s.cari?.unvan, vknTckn: s.vknTckn, iban: s.iban, aciklama: `${s.baslik} - ${anahtar} kira dönemi (otomatik)`, matrah: s.matrah, kdvOrani: s.kdvOrani, kdvTutari, toplam: s.matrah.add(kdvTutari), dovizCinsi: s.dovizCinsi, kur, stopajOrani: s.stopajOrani, stopajTutari, kiraSozlesmeId: s.id, kiraDonemi: donem });
+              else kursuzDonemler.push(anahtar);
             }
-            if (kursuz) this.logger.warn(`${s.baslik}: ${kursuz} ${s.dovizCinsi} kira dönemi, kur kaydı bulunmadığı için oluşturulmadı`);
+            if (kursuzDonemler.length) {
+              this.logger.warn(`${s.baslik}: ${kursuzDonemler.length} ${s.dovizCinsi} kira dönemi, kur kaydı bulunmadığı için oluşturulmadı`);
+              kursuzlar.push({ id: s.id, baslik: s.baslik, dovizCinsi: s.dovizCinsi, donemler: kursuzDonemler });
+            }
             if (kayitlar.length) olusan += (await tx.masraf.createMany({ data: kayitlar, skipDuplicates: true })).count;
           }
           return olusan;
         });
+        await this.kursuzlariBildir(tenantId, kursuzlar);
       }
       if (toplam) this.logger.log(`${toplam} eksik kira tahakkuku otomatik oluşturuldu`);
       else this.logger.debug("Otomatik kira tahakkukları güncel");
     } catch (hata) { this.logger.error("Otomatik kira tahakkuk kontrolü başarısız", hata instanceof Error ? hata.stack : String(hata)); }
     finally { this.calisiyor = false; }
+  }
+
+  /** DVZ-07: kur yüzünden oluşturulamayan dönem yalnız loga değil, bildirime düşer. */
+  private async kursuzlariBildir(tenantId: string, kursuzlar: { id: string; baslik: string; dovizCinsi: string; donemler: string[] }[]) {
+    for (const k of kursuzlar) {
+      try {
+        await baglamlaCalistir({ tenantId, userId: SISTEM_USER_ID, rol: "yonetici" }, () =>
+          this.bildirimler.uret({
+            tur: "entegrasyon",
+            onem: "uyari",
+            baslik: "Kur bulunamadığı için kira tahakkuku oluşturulamadı",
+            aciklama: `${k.baslik}: ${k.donemler.join(", ")} dönemi için ${k.dovizCinsi} kuru bulunamadı (dönem başından en fazla ${KUR_GERI_BAKIS_GUN} gün öncesine kadar arandı). Ayarlar > Döviz Kurları ekranından kuru çekin ya da elle girin; tahakkuk bir sonraki taramada oluşur.`,
+            birlesimAnahtari: `kira-kur-eksik:${k.id}`,
+            kaynakTur: "kira_sozlesme",
+            kaynakRef: k.id,
+            hedefYol: "/panel/ayarlar/doviz-kurlari",
+            roller: ["yonetici", "muhasebe"],
+          }),
+        );
+      } catch (hata) {
+        this.logger.warn(`${k.baslik}: kur eksikliği bildirimi üretilemedi: ${hata instanceof Error ? hata.message : String(hata)}`);
+      }
+    }
   }
 }

@@ -12,6 +12,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { EkstreSatirDurum, Prisma } from "@prisma/client";
+import { kurZorunlu } from "../doviz/kur-coz";
 import { createHash } from "node:crypto";
 import { aktifBaglam } from "../core/istek-baglami";
 import { metinNormalize } from "@tekirextra/shared";
@@ -250,11 +251,7 @@ export class EkstreService {
 
     const tutar = satir.tutar;
     const tip = tutar.isNegative() ? "tediye" : "tahsilat";
-    const kur = satir.bankaHesap.dovizCinsi === "TRY" ? "1" : await this.prisma.tenantIslem(tenantId, async (tx) => {
-      const kayit = await tx.dovizKuru.findFirst({ where: { dovizCinsi: satir.bankaHesap.dovizCinsi, tarih: { lte: satir.tarih } }, orderBy: { tarih: "desc" }, select: { dovizSatis: true } });
-      if (!kayit) throw new BadRequestException(`${satir.bankaHesap.dovizCinsi} için ${satir.tarih.toISOString().slice(0, 10)} tarihinde geçerli kur bulunamadı`);
-      return kayit.dovizSatis.toFixed(6);
-    });
+    const kur = satir.bankaHesap.dovizCinsi === "TRY" ? "1" : await this.prisma.tenantIslem(tenantId, async (tx) => (await kurZorunlu(tx, satir.bankaHesap.dovizCinsi, satir.tarih, "satis", tenantId)).toFixed(6));
 
     await this.prisma.tenantIslem(tenantId, async (tx) => {
       const cari = await tx.cariHesap.findUnique({

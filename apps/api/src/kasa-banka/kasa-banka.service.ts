@@ -11,7 +11,7 @@ import { izinliEylemler } from "../core/eylemler/eylem-kayit";
 import { metinNormalize } from "@tekirextra/shared";
 import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
-import { kurCoz } from "../doviz/kur-coz";
+import { kurCoz, kurZorunlu } from "../doviz/kur-coz";
 import { makbuzPdfHtml } from "./makbuz-pdf";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import type {
@@ -320,7 +320,7 @@ export class KasaBankaService {
         cariId = fatura.cariId;
       }
       const hareketTarihi = new Date(girdi.tarih);
-      const kur = girdi.dovizCinsi === "TRY" ? D(1) : girdi.kur ? D(girdi.kur) : await (async () => { const k = await tx.dovizKuru.findFirst({ where: { tarih: { lte: hareketTarihi }, dovizCinsi: girdi.dovizCinsi }, orderBy: { tarih: "desc" }, select: { dovizSatis: true } }); if (!k) throw new BadRequestException(`${girdi.dovizCinsi} için işlem tarihinde geçerli kur bulunamadı`); return k.dovizSatis; })();
+      const kur = girdi.dovizCinsi === "TRY" ? D(1) : girdi.kur ? D(girdi.kur) : await kurZorunlu(tx, girdi.dovizCinsi, hareketTarihi);
       const tutarTry = tutar.mul(kur).toDecimalPlaces(2);
       // 1. Kasa/Banka hareketini oluştur
       const hareket = await tx.kasaBankaHareket.create({
@@ -390,7 +390,7 @@ export class KasaBankaService {
     const dovizCinsi = await this.virmanKurallariniDenetle(girdi);
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const tarih = new Date(girdi.tarih); const kur = dovizCinsi === "TRY" ? D(1) : await (async () => { const k = await tx.dovizKuru.findFirst({ where: { tarih: { lte: tarih }, dovizCinsi }, orderBy: { tarih: "desc" }, select: { dovizSatis: true } }); if (!k) throw new BadRequestException(`${dovizCinsi} için virman tarihinde geçerli kur bulunamadı`); return k.dovizSatis; })(); const tutarTry = tutar.mul(kur).toDecimalPlaces(2);
+      const tarih = new Date(girdi.tarih); const kur = dovizCinsi === "TRY" ? D(1) : await kurZorunlu(tx, dovizCinsi, tarih); const tutarTry = tutar.mul(kur).toDecimalPlaces(2);
       // 1. Kaynak hesaptan para çıkışı (virman_gidis)
       const gidis = await tx.kasaBankaHareket.create({
         data: {
