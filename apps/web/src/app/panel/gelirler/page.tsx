@@ -68,8 +68,11 @@ export default function GelirlerPage() {
   const [brutTutar, setBrutTutar] = useState("");
   const [stopajOrani, setStopajOrani] = useState("0");
   const [kdvOrani, setKdvOrani] = useState("0");
+  // GLR-01: para birimi seçilen hesaptan gelir; kullanıcı ayrıca seçmez.
   const [dovizCinsi, setDovizCinsi] = useState("TRY");
   const [kur, setKur] = useState("1");
+  const [kurBilgisi, setKurBilgisi] = useState("");
+  const [kurHatasi, setKurHatasi] = useState("");
   const [aciklama, setAciklama] = useState("");
   const [belgeNo, setBelgeNo] = useState("");
   const [cariId, setCariId] = useState("");
@@ -109,6 +112,22 @@ export default function GelirlerPage() {
     }
   }, [yukle]);
 
+  useEffect(() => {
+    // GLR-02: gelen yabancı para TL'ye çevrilir, bu yüzden döviz alış kuru önerilir.
+    if (dovizCinsi === "TRY") { setKur("1"); setKurBilgisi(""); setKurHatasi(""); return; }
+    let gecerli = true;
+    setKur(""); setKurBilgisi("Kur yükleniyor…"); setKurHatasi("");
+    api<{ kaynak: string; kurTarihi: string; oncekiIsGunuKullanildi: boolean; kurlar: Record<string, number> }>(`/doviz-kurlari?tarih=${tarih}&tip=alis`)
+      .then((veri) => {
+        if (!gecerli || !veri.kurlar[dovizCinsi]) return;
+        setKur(String(veri.kurlar[dovizCinsi]));
+        setKurBilgisi(`TCMB döviz alış · ${veri.kurTarihi}${veri.oncekiIsGunuKullanildi ? " (önceki iş günü)" : ""}`);
+      })
+      // Kur yoksa sabit bir kura düşülmez (DVZ-04); sunucunun mesajı kullanıcıyı yönlendirir.
+      .catch((err) => { if (gecerli) { setKurBilgisi(""); setKurHatasi(err instanceof Error ? err.message : "Kur bulunamadı"); } });
+    return () => { gecerli = false; };
+  }, [dovizCinsi, tarih]);
+
   // Hesaplamalar
   const brut = Number(brutTutar || 0);
   const stpOran = Number(stopajOrani || 0);
@@ -137,6 +156,10 @@ export default function GelirlerPage() {
       return;
     }
     const [ht, hId] = hesapSecim.split(":");
+    if (dovizCinsi !== "TRY" && (!Number(kur) || Number(kur) === 1)) {
+      setHata(`${dovizCinsi} gelirde belge tarihindeki kur girilmelidir.`);
+      return;
+    }
 
     try {
       await api("/gelirler", {
@@ -234,12 +257,12 @@ export default function GelirlerPage() {
     Number(v).toLocaleString("tr-TR", { style: "currency", currency: d });
 
   return (
-    <div className="space-y-6">
+    <div className="stack">
       <PageHeader
         title="Faaliyet Dışı & Faturasız Gelirler"
         subtitle="Kira, Mevduat Faizi, Temettü, Hibe ve Varlık Satış gelirlerinizi dinamik kategorilerle kaydedin."
         actions={
-          <div className="flex gap-2">
+          <>
             <Button
               onClick={() => {
                 setDuzenlenenKategori(null);
@@ -260,12 +283,14 @@ export default function GelirlerPage() {
                 setKdvOrani("0");
                 setAciklama("");
                 setBelgeNo("");
+                setHesapSecim("");
+                setDovizCinsi("TRY");
                 setModal("gelir");
               }}
             >
               ➕ Yeni Gelir Kaydı
             </Button>
-          </div>
+          </>
         }
       />
 
@@ -279,9 +304,9 @@ export default function GelirlerPage() {
               <th>Tarih</th>
               <th>Kategori</th>
               <th>Muhatap (Cari) / Belge</th>
-              <th>Brüt Tutar</th>
-              <th>Stopaj</th>
-              <th>Net Tahsilat</th>
+              <th className="num">Brüt Tutar</th>
+              <th className="num">Stopaj</th>
+              <th className="num">Net Tahsilat</th>
               <th>Hesap (Kasa/Banka)</th>
               <th>Açıklama</th>
               <th>İşlem</th>
@@ -294,22 +319,22 @@ export default function GelirlerPage() {
                 <td>
                   <Badge variant="info">{g.kategori.ad}</Badge>
                   {g.kategori.muhasebeKodu && (
-                    <small className="block text-gray-500">Kod: {g.kategori.muhasebeKodu}</small>
+                    <div className="cell-entity__meta">Kod: {g.kategori.muhasebeKodu}</div>
                   )}
                 </td>
                 <td>
                   <strong>{g.cari?.unvan || "—"}</strong>
-                  {g.belgeNo && <small className="block text-gray-500">Dekont: {g.belgeNo}</small>}
+                  {g.belgeNo && <div className="cell-entity__meta">Dekont: {g.belgeNo}</div>}
                 </td>
-                <td>{para(g.brutTutar, g.dovizCinsi)}</td>
-                <td className="text-red-600">
+                <td className="num money">{para(g.brutTutar, g.dovizCinsi)}</td>
+                <td className={Number(g.stopajTutari) > 0 ? "num money neg" : "num"}>
                   {Number(g.stopajTutari) > 0 ? `-%${g.stopajOrani} (${para(g.stopajTutari, g.dovizCinsi)})` : "—"}
                 </td>
-                <td className="font-semibold text-green-700">{para(g.netTutar, g.dovizCinsi)}</td>
+                <td className="num money pos">{para(g.netTutar, g.dovizCinsi)}</td>
                 <td>{g.kasa?.ad || g.bankaHesap?.ad || "—"}</td>
                 <td>{g.aciklama || "—"}</td>
                 <td>
-                  <Button size="sm" onClick={() => void gelirSil(g.id)}>
+                  <Button size="sm" variant="danger" onClick={() => void gelirSil(g.id)}>
                     Sil
                   </Button>
                 </td>
@@ -317,7 +342,7 @@ export default function GelirlerPage() {
             ))}
             {!kayitlar.length && !loading && (
               <tr>
-                <td colSpan={9} className="text-center py-6 text-gray-500">
+                <td colSpan={9} className="empty">
                   Henüz kaydedilmiş faturasız gelir bulunmuyor.
                 </td>
               </tr>
@@ -356,7 +381,14 @@ export default function GelirlerPage() {
                 </Field>
 
                 <Field label="Tahsil Edilecek Kasa / Banka">
-                  <Select required value={hesapSecim} onChange={(e) => setHesapSecim(e.target.value)}>
+                  <Select
+                    required
+                    value={hesapSecim}
+                    onChange={(e) => {
+                      setHesapSecim(e.target.value);
+                      setDovizCinsi(tumHesaplar.find((x) => `${x.tur}:${x.id}` === e.target.value)?.dovizCinsi ?? "TRY");
+                    }}
+                  >
                     <option value="">Hesap Seçin</option>
                     {tumHesaplar.map((x) => (
                       <option key={`${x.tur}:${x.id}`} value={`${x.tur}:${x.id}`}>
@@ -365,6 +397,28 @@ export default function GelirlerPage() {
                     ))}
                   </Select>
                 </Field>
+
+                {dovizCinsi !== "TRY" && (
+                  // Alanın altında bilgi satırı olduğu için Field etiketi kendiliğinden bağlayamaz.
+                  <Field label={`Kur (1 ${dovizCinsi} = TRY)`} htmlFor="gelir-kur">
+                    <Input
+                      id="gelir-kur"
+                      type="number"
+                      step="0.000001"
+                      min="0.000001"
+                      required
+                      value={kur}
+                      onChange={(e) => { setKur(e.target.value); setKurBilgisi("Elle girilen kur"); setKurHatasi(""); }}
+                    />
+                    {kurHatasi ? (
+                      <small className="money neg">
+                        {kurHatasi} <a className="btn-link" href="/panel/ayarlar/doviz-kurlari">Döviz Kurları</a>
+                      </small>
+                    ) : (
+                      <small className="muted">{kurBilgisi}</small>
+                    )}
+                  </Field>
+                )}
 
                 <Field label="Muhatap (Cari - Opsiyonel)">
                   <AramaSecici ariaLabel="Muhatap Cari" deger={cariId} onChange={setCariId} placeholder="Cari ara…" secenekler={cariler.map((c) => ({ deger: c.id, baslik: c.unvan }))} />
@@ -408,21 +462,27 @@ export default function GelirlerPage() {
                   <Input value={belgeNo} onChange={(e) => setBelgeNo(e.target.value)} placeholder="Opsiyonel" />
                 </Field>
 
-                <Field label="Açıklama" className="col-span-2">
+                <Field label="Açıklama" className="income-form__wide">
                   <Input value={aciklama} onChange={(e) => setAciklama(e.target.value)} placeholder="Örn: Ağustos Ayı Repo/Faiz Getirisi" />
                 </Field>
               </div>
 
               {brut > 0 && (
-                <div style={{ backgroundColor: "#f0fdf4", padding: 12, borderRadius: 8, marginTop: 12, border: "1px solid #bbf7d0", fontSize: 13 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <div className="income-preview">
+                  <div>
                     <span>Brüt Tutar: <strong>{para(brut, dovizCinsi)}</strong></span>
-                    {Number(stopajTutari) > 0 && <span style={{ color: "#dc2626" }}>Stopaj Kesintisi (%{stopajOrani}): -{para(stopajTutari, dovizCinsi)}</span>}
+                    {Number(stopajTutari) > 0 && <span className="money neg">Stopaj Kesintisi (%{stopajOrani}): -{para(stopajTutari, dovizCinsi)}</span>}
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px dashed #86efac", paddingTop: 6, fontWeight: "bold" }}>
+                  <div className="income-preview__total">
                     <span>Net Hesaba Yatan Tutar:</span>
-                    <span style={{ color: "#15803d", fontSize: 15 }}>{para(netTutar, dovizCinsi)}</span>
+                    <span className="money pos">{para(netTutar, dovizCinsi)}</span>
                   </div>
+                  {dovizCinsi !== "TRY" && Number(kur) > 0 && (
+                    <div>
+                      <span className="muted">TL karşılığı (kur {kur})</span>
+                      <span className="money">{para(Number(netTutar) * Number(kur))}</span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -465,6 +525,16 @@ export default function GelirlerPage() {
                     onChange={(e) => setKatStopaj(e.target.value)}
                   />
                 </Field>
+                <Field label="Varsayılan KDV Oranı (%)">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    value={katKdv}
+                    onChange={(e) => setKatKdv(e.target.value)}
+                  />
+                </Field>
                 <Field label="Muhasebe Kodu">
                   <Input
                     value={katMuhasebe}
@@ -481,6 +551,7 @@ export default function GelirlerPage() {
                       setDuzenlenenKategori(null);
                       setKatAd("");
                       setKatStopaj("0");
+                      setKatKdv("0");
                       setKatMuhasebe("");
                     }}
                   >
@@ -498,6 +569,7 @@ export default function GelirlerPage() {
                 <tr>
                   <th>Kategori Adı</th>
                   <th>Varsayılan Stopaj</th>
+                  <th>Varsayılan KDV</th>
                   <th>Muhasebe Kodu</th>
                   <th>İşlem</th>
                 </tr>
@@ -507,6 +579,7 @@ export default function GelirlerPage() {
                   <tr key={k.id}>
                     <td><strong>{k.ad}</strong></td>
                     <td>{k.varsayilanStopajOrani ? `%${k.varsayilanStopajOrani}` : "%0"}</td>
+                    <td>{k.varsayilanKdvOrani ? `%${k.varsayilanKdvOrani}` : "%0"}</td>
                     <td>{k.muhasebeKodu || "—"}</td>
                     <td>
                       <div style={{ display: "flex", gap: 6 }}>
@@ -516,6 +589,8 @@ export default function GelirlerPage() {
                             setDuzenlenenKategori(k);
                             setKatAd(k.ad);
                             setKatStopaj(k.varsayilanStopajOrani || "0");
+                            // Form her kaydetmede KDV'yi de gönderir; mevcut oran yüklenmezse sıfırlanırdı.
+                            setKatKdv(k.varsayilanKdvOrani || "0");
                             setKatMuhasebe(k.muhasebeKodu || "");
                           }}
                         >

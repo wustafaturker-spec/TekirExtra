@@ -36,4 +36,9 @@ export const gelirKaydiOlusturSemasi = z.object({
 }).refine((data) => Boolean(data.kasaId || data.bankaHesapId), {
   message: "Tahsilatın aktarılacağı bir kasa veya banka hesabı seçilmelidir",
   path: ["kasaId"],
+}).superRefine((data, ctx) => {
+  // GLR-03: dövizli kayıtta 1 "tutar zaten TL" demektir; TL karşılığı yanlış yazılır.
+  if (data.dovizCinsi !== "TRY" && Number(data.kur) === 1) {
+    ctx.addIssue({ code: "custom", path: ["kur"], message: "Dövizli gelirde belge tarihindeki kur girilmelidir" });
+  }
 });
