@@ -594,9 +594,14 @@ dökümüdür (`documentNumber`, `payableAmount`, `documentCurrencyCode`,
   (`earsivRaporTutariOzetle`). Sovos listede tutar verdiği için orada döküm
   sorgusu yok.
 
-**Canlıda denenmedi:** rapor uçları `earchive:reports:read` scope'u ister,
-anahtarda hâlâ yok. Scope eklenince ilk iş bir raporun tutarını getirip
-belge sayısının listeyle tuttuğunu görmek.
+**Canlı deneme (2026-09-13, scope'lu yeni anahtarla):** liste çalışıyor
+(Eylül'de 2 bölüm, 37 ve 267 belge). `/details` ise her bölümde
+`500 HATALI ISTEK` döndü — parametresiz, `page/pageSize` ve
+`pageNumber/pageSize` ile; swagger'da ucun yalnız `path:id` parametresi var.
+Test hesabındaki Temmuz–Eylül bölümlerinin **hepsi `XmlCreateWait`**,
+`/histories` yalnız "Rapor oluşturulmak üzere bölümlendi" diyor: rapor XML'i
+hiç üretilmemiş, döküm de bu yüzden yok gibi. Tamamlanmış bir bölümde
+denenmeden tutar akışı doğrulanmış sayılmaz; NES'e sorulacak.
 
 ## e-Arşiv gönderim şekli (EBLG-26, 2026-09-11)
 
