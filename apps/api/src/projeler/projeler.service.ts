@@ -47,6 +47,7 @@ export class ProjelerService {
     const projeler = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.proje.findMany({
         where: {
+          tenantId,
           ...(durum ? { durum: durum as any } : {}),
           ...(arama
             ? {
@@ -92,7 +93,7 @@ export class ProjelerService {
     const { tenantId } = aktifBaglam();
     const proje = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.proje.findUnique({
-        where: { id },
+        where: { id, tenantId },
         include: {
           cari: { select: { id: true, unvan: true, kod: true } },
           sorumlu: { select: { id: true, adSoyad: true, eposta: true } },
@@ -151,7 +152,7 @@ export class ProjelerService {
         // Gelir Kayıtları (gelir)
         this.prisma.tenantIslem(tenantId, (tx) =>
           tx.gelirKaydi.aggregate({
-            where: { projeId },
+            where: { projeId, tenantId },
             _sum: { netTutarTry: true },
           }),
         ),
@@ -231,7 +232,7 @@ export class ProjelerService {
           ),
           this.prisma.tenantIslem(tenantId, (tx) =>
             tx.gelirKaydi.aggregate({
-              where: { projeAltKirilimId: k.id },
+              where: { projeAltKirilimId: k.id, tenantId },
               _sum: { netTutarTry: true },
             }),
           ),
@@ -302,7 +303,7 @@ export class ProjelerService {
 
     await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.proje.update({
-        where: { id },
+        where: { id, tenantId },
         data: {
           ...(girdi.kod ? { kod: girdi.kod.trim().toUpperCase() } : {}),
           ...(girdi.ad ? { ad: girdi.ad.trim() } : {}),
@@ -334,7 +335,7 @@ export class ProjelerService {
       throw new BadRequestException("İlişkili fatura veya masraf kaydı bulunan proje silinemez. Durumunu 'iptal' yapabilirsiniz.");
     }
 
-    await this.prisma.tenantIslem(tenantId, (tx) => tx.proje.delete({ where: { id } }));
+    await this.prisma.tenantIslem(tenantId, (tx) => tx.proje.delete({ where: { id, tenantId } }));
   }
 
   // ─── AŞAMALAR (PHASES) ────────────────────────────────────────────────
@@ -362,13 +363,13 @@ export class ProjelerService {
   async asamaGuncelle(projeId: string, asamaId: string, girdi: z.infer<typeof projeAsamaSemasi>) {
     const { tenantId } = aktifBaglam();
     const asama = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.projeAsama.findFirst({ where: { id: asamaId, projeId } }),
+      tx.projeAsama.findFirst({ where: { id: asamaId, projeId, tenantId } }),
     );
     if (!asama) throw new NotFoundException("Proje aşaması bulunamadı");
 
     return this.prisma.tenantIslem(tenantId, (tx) =>
       tx.projeAsama.update({
-        where: { id: asamaId },
+        where: { id: asamaId, tenantId },
         data: {
           sira: girdi.sira,
           ad: girdi.ad.trim(),
@@ -385,7 +386,7 @@ export class ProjelerService {
   async asamaSil(projeId: string, asamaId: string) {
     const { tenantId } = aktifBaglam();
     const silinen = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.projeAsama.deleteMany({ where: { id: asamaId, projeId } }),
+      tx.projeAsama.deleteMany({ where: { id: asamaId, projeId, tenantId } }),
     );
     if (silinen.count === 0) throw new NotFoundException("Proje aşaması bulunamadı");
   }
@@ -420,7 +421,7 @@ export class ProjelerService {
   async altKirilimSil(projeId: string, kirilimId: string) {
     const { tenantId } = aktifBaglam();
     const silinen = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.projeAltKirilim.deleteMany({ where: { id: kirilimId, projeId } }),
+      tx.projeAltKirilim.deleteMany({ where: { id: kirilimId, projeId, tenantId } }),
     );
     if (silinen.count === 0) throw new NotFoundException("Analitik alt kırılım bulunamadı");
   }

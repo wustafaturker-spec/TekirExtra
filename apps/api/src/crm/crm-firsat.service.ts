@@ -73,7 +73,7 @@ export class CrmFirsatService {
 
     return this.prisma.tenantIslem(tenantId, (tx) =>
       tx.crmFirsat.update({
-        where: { id },
+        where: { id, tenantId },
         data: {
           ...(veri.baslik && { baslik: veri.baslik }),
           ...(veri.cariId && { cariId: veri.cariId }),
@@ -96,7 +96,7 @@ export class CrmFirsatService {
 
     return this.prisma.tenantIslem(tenantId, (tx) =>
       tx.crmFirsat.update({
-        where: { id },
+        where: { id, tenantId },
         data: { asama },
         include: {
           cari: { select: { id: true, kod: true, unvan: true } }

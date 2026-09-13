@@ -191,7 +191,7 @@ export class StokService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const mevcut = await tx.stokFiyat.findFirst({ where: { tenantId, stokId, varyantId: girdi.varyantId ?? null, tip: girdi.tip } });
       return mevcut
-        ? tx.stokFiyat.update({ where: { id: mevcut.id }, data: { dovizCinsi: girdi.dovizCinsi, tutar: D(girdi.tutar), aktif: girdi.aktif } })
+        ? tx.stokFiyat.update({ where: { id: mevcut.id, tenantId }, data: { dovizCinsi: girdi.dovizCinsi, tutar: D(girdi.tutar), aktif: girdi.aktif } })
         : tx.stokFiyat.create({ data: { tenantId, stokId, varyantId: girdi.varyantId ?? null, tip: girdi.tip, dovizCinsi: girdi.dovizCinsi, tutar: D(girdi.tutar), aktif: girdi.aktif } });
     });
   }

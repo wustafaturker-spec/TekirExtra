@@ -656,7 +656,7 @@ export class CariService {
     ]));
     const krediKartiKaynaklari = hareketler.filter((h) => h.kaynakTur === "kredi_karti" && h.kaynakRef).map((h) => h.kaynakRef!);
     const krediKartiHareketleri = krediKartiKaynaklari.length ? await this.prisma.tenantIslem(tenantId, (tx) => tx.krediKartiHareket.findMany({
-      where: { id: { in: krediKartiKaynaklari } },
+      where: { tenantId, id: { in: krediKartiKaynaklari } },
       include: { krediKarti: { select: { ad: true, bankaAdi: true, sonDortHane: true } }, fatura: { select: { id: true, no: true } } },
     })) : [];
     const krediKartiHaritasi = new Map(krediKartiHareketleri.map((h) => [h.id, h]));

@@ -96,7 +96,7 @@ describe("UretimService profesyonel emir akışı", () => {
     await service.planla("emir-1");
 
     expect(prisma.uretimEmri.updateMany).toHaveBeenCalledWith({
-      where: { id: "emir-1", durum: { in: ["taslak"] } },
+      where: { id: "emir-1", tenantId: "tenant-1", durum: { in: ["taslak"] } },
       data: { durum: "planlandi" },
     });
   });
@@ -129,7 +129,7 @@ describe("UretimService profesyonel emir akışı", () => {
 
     expect(prisma.stokDepoBakiye.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { rezerveMiktar: { increment: D(8) } } }));
     expect(prisma.uretimMalzemeRezervasyon.upsert).toHaveBeenCalledWith(expect.objectContaining({ create: expect.objectContaining({ depoId: "depo-1", rezerveMiktar: D(8) }) }));
-    expect(prisma.uretimEmri.update).toHaveBeenCalledWith({ where: { id: "emir-1" }, data: { durum: "hazir" } });
+    expect(prisma.uretimEmri.update).toHaveBeenCalledWith({ where: { id: "emir-1", tenantId: "tenant-1" }, data: { durum: "hazir" } });
   });
 
   it("malzeme uygunluğunda rezerve miktarı kullanılabilir stoktan düşer", async () => {
@@ -217,7 +217,7 @@ describe("UretimService profesyonel emir akışı", () => {
 
     expect(hareketEkle).toHaveBeenCalledTimes(2);
     expect(hareketEkle).toHaveBeenNthCalledWith(2, prisma, expect.objectContaining({ depoId: "depo-1", tip: "giris", partiler: expect.arrayContaining([expect.objectContaining({ lotNo: "LOT-1" })]) }));
-    expect(prisma.uretimEmri.update).toHaveBeenLastCalledWith(expect.objectContaining({ where: { id: "emir-1" }, data: expect.objectContaining({ durum: "tamamlandi" }) }));
+    expect(prisma.uretimEmri.update).toHaveBeenLastCalledWith(expect.objectContaining({ where: { id: "emir-1", tenantId: "tenant-1" }, data: expect.objectContaining({ durum: "tamamlandi" }) }));
   });
 
   it("kalite reddinde miktarı gerçekleşenden düşürüp emri yeniden üretime açar", async () => {
@@ -232,9 +232,9 @@ describe("UretimService profesyonel emir akışı", () => {
 
     expect(hareketEkle).toHaveBeenCalledTimes(1);
     expect(prisma.uretimEmri.update).toHaveBeenLastCalledWith({
-      where: { id: "emir-1" },
+      where: { id: "emir-1", tenantId: "tenant-1" },
       data: { durum: "malzeme_bekliyor", uretilenMiktar: D(3), tamamlanmaTarihi: null },
     });
-    expect(prisma.uretimEmriKalem.update).toHaveBeenCalledWith({ where: { id: "kalem-1" }, data: { ekIhtiyacMiktari: { increment: D(4) } } });
+    expect(prisma.uretimEmriKalem.update).toHaveBeenCalledWith({ where: { id: "kalem-1", tenantId: "tenant-1" }, data: { ekIhtiyacMiktari: { increment: D(4) } } });
   });
 });

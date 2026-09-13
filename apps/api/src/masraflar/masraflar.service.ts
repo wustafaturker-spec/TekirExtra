@@ -165,7 +165,7 @@ export class MasraflarService {
         ? await tx.kasa.findUnique({ where: { id: girdi.kasaId } })
         : girdi.bankaHesapId
           ? await tx.bankaHesap.findUnique({ where: { id: girdi.bankaHesapId } })
-          : await tx.krediKarti.findUnique({ where: { id: girdi.krediKartiId! } });
+          : await tx.krediKarti.findUnique({ where: { id: girdi.krediKartiId!, tenantId } });
       if (!hesap) throw new BadRequestException("Ödeme hesabı bulunamadı");
       if (!hesap.aktif) throw new BadRequestException("Ödeme hesabı aktif değil");
       if (hesap.dovizCinsi !== mevcut.dovizCinsi) throw new BadRequestException("Masraf ve ödeme hesabı para birimleri aynı olmalıdır");

@@ -29,7 +29,7 @@ export class DonemKapatmaService {
         tx.gelenEbelge.count({ where: { tarih: { gte: baslangic, lt: bitis }, durum: "beklemede" } }),
         tx.pazaryeriSiparis.count({ where: { siparisTarihi: { gte: baslangic, lt: bitis }, durum: { in: ["yeni", "esleme_bekliyor", "faturalanmaya_hazir", "hata"] } } }),
         tx.posTahsilat.count({ where: { durum: "odendi", odemeTarihi: { gte: baslangic, lt: bitis }, hareketId: null } }),
-        tx.krediKartiHareket.count({ where: { tarih: { gte: baslangic, lt: bitis }, tip: "odeme", bankaHareketId: null } }),
+        tx.krediKartiHareket.count({ where: { tenantId, tarih: { gte: baslangic, lt: bitis }, tip: "odeme", bankaHareketId: null } }),
       ]);
       const sonuclar = [
         { kod: "TASLAK_FATURA", sayi: taslakFatura, aciklama: `${taslakFatura} taslak fatura var` },

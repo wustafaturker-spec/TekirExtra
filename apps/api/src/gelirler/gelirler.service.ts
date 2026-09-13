@@ -32,7 +32,7 @@ export class GelirlerService {
   async kategoriListele() {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      if ((await tx.gelirKategori.count()) === 0) {
+      if ((await tx.gelirKategori.count({ where: { tenantId } })) === 0) {
         await tx.gelirKategori.createMany({
           data: VARSAYILAN_GELIR_KATEGORILERI.map((k) => ({
             tenantId,
@@ -43,7 +43,7 @@ export class GelirlerService {
         });
       }
       return tx.gelirKategori.findMany({
-        where: { aktif: true },
+        where: { tenantId, aktif: true },
         include: {
           ust: { select: { id: true, ad: true } },
           _count: { select: { altlar: true, gelirKayitlari: true } },
@@ -58,7 +58,7 @@ export class GelirlerService {
     try {
       return await this.prisma.tenantIslem(tenantId, async (tx) => {
         if (girdi.ustId) {
-          const ust = await tx.gelirKategori.findUnique({ where: { id: girdi.ustId } });
+          const ust = await tx.gelirKategori.findUnique({ where: { id: girdi.ustId, tenantId } });
           if (!ust) throw new BadRequestException("Üst kategori bulunamadı");
         }
         return tx.gelirKategori.create({
@@ -81,11 +81,11 @@ export class GelirlerService {
   async kategoriGuncelle(id: string, girdi: z.infer<typeof gelirKategoriGuncelleSemasi>) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const kat = await tx.gelirKategori.findUnique({ where: { id } });
+      const kat = await tx.gelirKategori.findUnique({ where: { id, tenantId } });
       if (!kat) throw new NotFoundException("Gelir kategorisi bulunamadı");
       try {
         return await tx.gelirKategori.update({
-          where: { id },
+          where: { id, tenantId },
           data: {
             ...(girdi.ad !== undefined ? { ad: girdi.ad } : {}),
             ...(girdi.varsayilanStopajOrani !== undefined
@@ -107,14 +107,14 @@ export class GelirlerService {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const kat = await tx.gelirKategori.findUnique({
-        where: { id },
+        where: { id, tenantId },
         include: { _count: { select: { gelirKayitlari: true, altlar: true } } },
       });
       if (!kat) throw new NotFoundException("Gelir kategorisi bulunamadı");
       if (kat._count.gelirKayitlari > 0 || kat._count.altlar > 0) {
-        return tx.gelirKategori.update({ where: { id }, data: { aktif: false } });
+        return tx.gelirKategori.update({ where: { id, tenantId }, data: { aktif: false } });
       }
-      return tx.gelirKategori.delete({ where: { id } });
+      return tx.gelirKategori.delete({ where: { id, tenantId } });
     });
   }
 
@@ -125,6 +125,7 @@ export class GelirlerService {
     return this.prisma.tenantIslem(tenantId, (tx) =>
       tx.gelirKaydi.findMany({
         where: {
+          tenantId,
           ...(sorgu.baslangic || sorgu.bitis
             ? {
                 tarih: {
@@ -154,7 +155,7 @@ export class GelirlerService {
     const hareketTarihi = new Date(girdi.tarih);
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const kat = await tx.gelirKategori.findUnique({ where: { id: girdi.kategoriId } });
+      const kat = await tx.gelirKategori.findUnique({ where: { id: girdi.kategoriId, tenantId } });
       if (!kat || !kat.aktif) throw new BadRequestException("Aktif gelir kategorisi bulunamadı");
 
       const hesap = girdi.kasaId
@@ -217,14 +218,14 @@ export class GelirlerService {
   async sil(id: string) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const kayit = await tx.gelirKaydi.findUnique({ where: { id } });
+      const kayit = await tx.gelirKaydi.findUnique({ where: { id, tenantId } });
       if (!kayit) throw new NotFoundException("Gelir kaydı bulunamadı");
 
       if (kayit.hareketId) {
         await tx.kasaBankaHareket.delete({ where: { id: kayit.hareketId } });
       }
 
-      return tx.gelirKaydi.delete({ where: { id } });
+      return tx.gelirKaydi.delete({ where: { id, tenantId } });
     });
   }
 }

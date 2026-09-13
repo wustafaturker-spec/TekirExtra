@@ -30,6 +30,7 @@ export class KrediKartiService {
   async listele() {
     const { tenantId } = aktifBaglam();
     const kartlar = await this.prisma.tenantIslem(tenantId, (tx) => tx.krediKarti.findMany({
+      where: { tenantId },
       orderBy: [{ aktif: "desc" }, { ad: "asc" }],
       include: { bagliBankaHesap: { select: { id: true, ad: true } }, hareketler: { orderBy: [{ tarih: "desc" }, { createdAt: "desc" }], include: { cari: { select: { id: true, kod: true, unvan: true } }, fatura: { select: { id: true, no: true } }, taksitler: { orderBy: { sira: "asc" } } } } },
     }));
@@ -48,7 +49,7 @@ export class KrediKartiService {
     const { tenantId } = aktifBaglam();
     await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "kredi kartı hareketi oluşturma");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const kart = await tx.krediKarti.findUnique({ where: { id: girdi.krediKartiId } }); if (!kart?.aktif) throw new NotFoundException("Aktif kredi kartı hesabı bulunamadı");
+      const kart = await tx.krediKarti.findUnique({ where: { id: girdi.krediKartiId, tenantId } }); if (!kart?.aktif) throw new NotFoundException("Aktif kredi kartı hesabı bulunamadı");
       const hareket = await tx.krediKartiHareket.create({ data: { ...girdi, tenantId, tarih: new Date(girdi.tarih), tutar: D(girdi.tutar) } });
       if (girdi.tip === "harcama") await tx.krediKartiTaksit.createMany({ data: taksitVerileri(tenantId, hareket.id, D(girdi.tutar), girdi.taksitSayisi, new Date(girdi.tarih)) });
       return hareket;
@@ -59,7 +60,7 @@ export class KrediKartiService {
     const { tenantId } = aktifBaglam(); const cariTutar = D(girdi.cariOdemeTutari); const komisyon = D(girdi.komisyonTutari); const toplam = cariTutar.add(komisyon); const tarih = new Date(girdi.tarih);
     await this.donemKilidi.tarihDogrula(tenantId, tarih, "kredi kartıyla cari ödeme");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const [kart, cari] = await Promise.all([tx.krediKarti.findUnique({ where: { id: girdi.krediKartiId } }), tx.cariHesap.findUnique({ where: { id: girdi.cariId } })]);
+      const [kart, cari] = await Promise.all([tx.krediKarti.findUnique({ where: { id: girdi.krediKartiId, tenantId } }), tx.cariHesap.findUnique({ where: { id: girdi.cariId } })]);
       if (!kart?.aktif) throw new NotFoundException("Aktif kredi kartı hesabı bulunamadı"); if (!cari?.aktif) throw new NotFoundException("Aktif cari hesap bulunamadı");
       if (kart.dovizCinsi !== cari.dovizCinsi) throw new BadRequestException("Kart ve cari hesabın para birimleri aynı olmalıdır");
       if (girdi.faturaId) {
@@ -81,7 +82,7 @@ export class KrediKartiService {
     const { tenantId } = aktifBaglam(); const tutar = D(girdi.tutar); const tarih = new Date(girdi.tarih);
     await this.donemKilidi.tarihDogrula(tenantId, tarih, "kredi kartı ekstre ödemesi");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const [kart, banka] = await Promise.all([tx.krediKarti.findUnique({ where: { id: girdi.krediKartiId }, include: { hareketler: { select: { tip: true, tutar: true } } } }), tx.bankaHesap.findUnique({ where: { id: girdi.bankaHesapId } })]);
+      const [kart, banka] = await Promise.all([tx.krediKarti.findUnique({ where: { id: girdi.krediKartiId, tenantId }, include: { hareketler: { select: { tip: true, tutar: true } } } }), tx.bankaHesap.findUnique({ where: { id: girdi.bankaHesapId } })]);
       if (!kart?.aktif || !banka?.aktif) throw new NotFoundException("Aktif kredi kartı veya banka hesabı bulunamadı"); if (kart.dovizCinsi !== banka.dovizCinsi) throw new BadRequestException("Kart ve banka hesabı para birimleri aynı olmalıdır");
       const borc = kart.hareketler.reduce((t, h) => t.add(["harcama", "faiz", "aidat"].includes(h.tip) ? h.tutar : h.tutar.negated()), D(0)); if (tutar.gt(Prisma.Decimal.max(0, borc))) throw new BadRequestException(`Ödeme güncel ${Prisma.Decimal.max(0, borc).toFixed(2)} ${kart.dovizCinsi} kart borcunu aşamaz`);
       const bankaHareket = await tx.kasaBankaHareket.create({ data: { tenantId, bankaHesapId: banka.id, tip: "tediye", tutar, dovizCinsi: kart.dovizCinsi, kur: 1, tutarTry: tutar, tarih, aciklama: girdi.aciklama, kaynakTur: "kredi_karti_ekstre" } });

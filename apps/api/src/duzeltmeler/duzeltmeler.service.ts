@@ -92,7 +92,7 @@ export class DuzeltmelerService {
       const [ekstreler, masraflar, kartHarcamalari, posTahsilatlari, ebelgeler, negatifStoklar, sayimlar, vadesiGecenEvraklar, faturalar] = await Promise.all([
         tx.bankaEkstreSatir.findMany({ where: { durum: "beklemede" }, select: { id: true, aciklama: true, tutar: true }, take: 2_000 }),
         tx.masraf.findMany({ where: { durum: "onaylandi", odemeDurumu: { not: "odendi" }, odemeler: { none: {} } }, select: { id: true, belgeNo: true, saticiUnvan: true, toplam: true }, take: 2_000 }),
-        tx.krediKartiHareket.findMany({ where: { tip: "harcama", masrafOdemesi: null, faturaId: null }, select: { id: true, aciklama: true, tutar: true }, take: 2_000 }),
+        tx.krediKartiHareket.findMany({ where: { tenantId, tip: "harcama", masrafOdemesi: null, faturaId: null }, select: { id: true, aciklama: true, tutar: true }, take: 2_000 }),
         tx.posTahsilat.findMany({ where: { durum: "odendi", hareketId: null }, select: { id: true, tutar: true, saglayiciOdemeId: true }, take: 2_000 }),
         tx.ebelgeKayit.findMany({ where: { OR: [{ durum: "hata" }, { durum: "kuyrukta", createdAt: { lt: beklemeEsigi } }] }, select: { id: true, faturaId: true, durum: true, hataMesaji: true }, take: 2_000 }),
         tx.stokDepoBakiye.findMany({ where: { mevcutMiktar: { lt: 0 } }, select: { id: true, mevcutMiktar: true, stok: { select: { kod: true, ad: true } }, depo: { select: { ad: true } } }, take: 2_000 }),

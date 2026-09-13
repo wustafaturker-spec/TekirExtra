@@ -860,7 +860,7 @@ export class FaturaService {
       const [kasaBankaSayisi, posSayisi, krediKartiSayisi] = await Promise.all([
         tx.kasaBankaHareket.count({ where: { faturaId: id } }),
         tx.posTahsilat.count({ where: { faturaId: id } }),
-        tx.krediKartiHareket.count({ where: { faturaId: id } }),
+        tx.krediKartiHareket.count({ where: { tenantId, faturaId: id } }),
       ]);
       if (kasaBankaSayisi + posSayisi + krediKartiSayisi > 0) {
         throw new BadRequestException("Tahsilat veya ödeme bağlı fatura doğrudan iptal edilemez; önce finans hareketini geri alın veya iade faturası düzenleyin");
