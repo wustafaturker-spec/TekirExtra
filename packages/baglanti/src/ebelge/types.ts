@@ -115,6 +115,16 @@ export interface BelgeDurumSonuc {
   iptalEdilmis?: boolean;
 }
 
+/**
+ * Gelen belgeye entegratörde verilmiş kabul/ret kararı (EBLG-34). Belge
+ * portalda ya da aynı hesabı kullanan başka bir yerde yanıtlanmış olabilir.
+ */
+export interface GelenYanit {
+  karar: "kabul" | "ret";
+  /** Entegratörün sakladığı ret/kabul notu. */
+  not?: string;
+}
+
 export interface GelenBelge {
   uuid: string;
   belgeNo: string;
@@ -122,6 +132,8 @@ export interface GelenBelge {
   gonderenUnvan: string;
   tarih: Date;
   xml: string;
+  /** Sağlayıcı bildiriyorsa entegratörde verilmiş karar. */
+  yanit?: GelenYanit;
 }
 
 export interface EarsivIptalGirdi {
@@ -163,7 +175,7 @@ export interface EarsivRaporTutari {
 }
 
 export interface EirsaliyeBelge { uuid: string; belgeNo: string; xml: string; aliciPostaKutusu: string }
-export interface GelenEirsaliye { uuid: string; belgeNo: string; gonderenVkn: string; gonderenUnvan: string; tarih: Date; xml: string }
+export interface GelenEirsaliye { uuid: string; belgeNo: string; gonderenVkn: string; gonderenUnvan: string; tarih: Date; xml: string; /** Sağlayıcı bildiriyorsa entegratörde verilmiş karar (EBLG-34). */ yanit?: GelenYanit }
 
 /**
  * Entegratörden toplu indirilen GİB mükellef kaydı (EBLG-10). Bir VKN'nin

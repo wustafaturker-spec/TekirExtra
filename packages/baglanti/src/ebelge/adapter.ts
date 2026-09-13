@@ -15,6 +15,7 @@ import type {
   MukellefKaydi,
   ZarfAraligi,
   GelenZarfSonucu,
+  GelenYanit,
 } from "./types";
 
 /**
@@ -87,5 +88,13 @@ export interface EntegratorAdapter {
   irsaliyeGonder?(cfg: EntegratorConfig, belge: EirsaliyeBelge): Promise<GonderimSonuc>;
   irsaliyeDurumSorgula?(cfg: EntegratorConfig, belgeRef: string): Promise<BelgeDurumSonuc>;
   gelenIrsaliyeleriCek?(cfg: EntegratorConfig, sonrasi: Date): Promise<GelenEirsaliye[]>;
+  /**
+   * EBLG-34: gelen faturaya entegratörde verilmiş kabul/ret kararı; karar
+   * yoksa `null`. Yanıt göndermeden önce sorulur — belge portalda ya da aynı
+   * hesabı kullanan başka bir yerde yanıtlanmış olabilir.
+   */
+  gelenYanitDurumu?(cfg: EntegratorConfig, belgeRef: string): Promise<GelenYanit | null>;
+  /** EBLG-34: gelen e-İrsaliyeye entegratörde verilmiş karar; yoksa `null`. */
+  gelenIrsaliyeYanitDurumu?(cfg: EntegratorConfig, belgeRef: string): Promise<GelenYanit | null>;
   irsaliyeYanitiGonder?(cfg: EntegratorConfig, belgeRef: string, yanit: "kabul" | "ret", gerekce: string | undefined, kaynakXml: string): Promise<GonderimSonuc>;
 }

@@ -16,6 +16,7 @@ import type {
   EirsaliyeBelge,
   GelenEirsaliye,
   MukellefKaydi,
+  GelenYanit,
 } from "./types";
 
 /**
@@ -372,7 +373,35 @@ type GelenSatir = {
   accountingSupplierParty?: GonderenTaraf;
   /** e-İrsaliye yanıtında gönderen bu adla döner, faturadakiyle aynı değil. */
   despatchSupplierParty?: GonderenTaraf;
+  /** Faturada alıcı kararı, listede: None | Waiting | Accepted | Rejected. */
+  documentAnswer?: string;
+  /** İrsaliyede alıcı kararı: AllAccepted | AllRejected | … */
+  despatchAnswer?: string;
+  /** Verilen yanıtın kendisi; tekil faturada karar yalnız burada döner. */
+  outgoingAnswer?: { documentAnswer?: string; answerNote?: string };
 };
+
+const NES_KARARLARI: Record<string, "kabul" | "ret"> = {
+  Accepted: "kabul",
+  AllAccepted: "kabul",
+  Rejected: "ret",
+  AllRejected: "ret",
+};
+
+/**
+ * NES'in gelen belgeye kaydettiği kabul/ret kararı (EBLG-34). Karar üç alandan
+ * birinde gelebilir (fatura listesi, tekil fatura, irsaliye); tanınmayan ya da
+ * henüz verilmemiş karar (`None`, `Waiting`, kısmi kabul) `undefined` döner —
+ * belirsiz kararı benimsemek yerel yanıtı yanlışlıkla kapatırdı.
+ */
+export function nesGelenYanit(satir: GelenSatir): GelenYanit | undefined {
+  const karar = [satir.despatchAnswer, satir.documentAnswer, satir.outgoingAnswer?.documentAnswer]
+    .map((ham) => (ham ? NES_KARARLARI[ham] : undefined))
+    .find(Boolean);
+  if (!karar) return undefined;
+  const not = satir.outgoingAnswer?.answerNote?.trim();
+  return not ? { karar, not } : { karar };
+}
 
 function gonderenUnvani(taraf: GonderenTaraf | undefined, vkn: string): string {
   const kisi = [taraf?.firstName, taraf?.familyName].filter(Boolean).join(" ");
@@ -639,6 +668,7 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
           metin: true,
         });
         const gonderenVkn = satir.accountingSupplierParty?.partyIdentification ?? "";
+        const yanit = nesGelenYanit(satir);
         belgeler.push({
           uuid: satir.id,
           belgeNo: satir.documentNumber ?? satir.id,
@@ -646,6 +676,7 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
           gonderenUnvan: gonderenUnvani(satir.accountingSupplierParty, gonderenVkn),
           tarih: new Date(satir.issueDate ?? satir.createdAt ?? Date.now()),
           xml,
+          ...(yanit ? { yanit } : {}),
         });
       }
       if (satirlar.length < SAYFA_BOYUTU) break;
@@ -817,6 +848,7 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
         // (2026-09-10). Fatura adı yedek olarak duruyor.
         const gonderen = satir.despatchSupplierParty ?? satir.accountingSupplierParty;
         const gonderenVkn = gonderen?.partyIdentification ?? "";
+        const yanit = nesGelenYanit(satir);
         irsaliyeler.push({
           uuid: satir.id,
           belgeNo: satir.documentNumber ?? satir.id,
@@ -824,11 +856,27 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
           gonderenUnvan: gonderenUnvani(gonderen, gonderenVkn),
           tarih: new Date(satir.issueDate ?? satir.createdAt ?? Date.now()),
           xml,
+          ...(yanit ? { yanit } : {}),
         });
       }
       if (satirlar.length < SAYFA_BOYUTU) break;
     }
     return irsaliyeler;
+  }
+
+  /**
+   * EBLG-34: gelen faturaya verilmiş karar. Tekil yanıtta karar kök düzeyde
+   * değil `outgoingAnswer.documentAnswer` içinde döner (2026-09-13 ölçüldü).
+   */
+  async gelenYanitDurumu(cfg: EntegratorConfig, belgeRef: string): Promise<GelenYanit | null> {
+    const belge = await this.cagir<GelenSatir>(cfg, "einvoice", `/v1/incoming/invoices/${encodeURIComponent(belgeRef)}`);
+    return (belge && nesGelenYanit(belge)) ?? null;
+  }
+
+  /** EBLG-34: gelen e-İrsaliyeye verilmiş karar (`despatchAnswer`). */
+  async gelenIrsaliyeYanitDurumu(cfg: EntegratorConfig, belgeRef: string): Promise<GelenYanit | null> {
+    const belge = await this.cagir<GelenSatir>(cfg, "edespatch", `/v1/incoming/despatches/${encodeURIComponent(belgeRef)}`);
+    return (belge && nesGelenYanit(belge)) ?? null;
   }
 
   /**

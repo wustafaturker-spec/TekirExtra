@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { EirsaliyeDurum, GelenEirsaliyeDurum } from "@prisma/client";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import type { EntegratorConfig } from "@tekirextra/baglanti";
@@ -154,6 +154,8 @@ export class EirsaliyeService {
       const mevcutlar = await tx.gelenEirsaliye.findMany({ where: { uuid: { in: gelen.map((g) => g.uuid) } }, select: { uuid: true } });
       const mevcutUuid = new Set(mevcutlar.map((x) => x.uuid));
       await Promise.all(gelen.map((g) => tx.gelenEirsaliye.upsert({ where: { tenantId_uuid: { tenantId, uuid: g.uuid } }, create: { tenantId, uuid: g.uuid, belgeNo: g.belgeNo, gonderenVkn: g.gonderenVkn, gonderenUnvan: g.gonderenUnvan, tarih: g.tarih, xmlIcerik: g.xml }, update: { belgeNo: g.belgeNo, gonderenVkn: g.gonderenVkn, gonderenUnvan: g.gonderenUnvan, tarih: g.tarih, xmlIcerik: g.xml } })));
+      // EBLG-34: portalda ya da başka bir yerde verilmiş karar yanıt bekleyen kayda yazılır; yerel kararın üzerine yazılmaz.
+      await Promise.all(gelen.filter((g) => g.yanit).map((g) => tx.gelenEirsaliye.updateMany({ where: { tenantId, uuid: g.uuid, durum: "yeni" }, data: { durum: g.yanit!.karar, yanitGerekcesi: g.yanit!.not ?? null } })));
       return { toplam: gelen.length, yeni: gelen.filter((g) => !mevcutUuid.has(g.uuid)).length, kontrolTarihi: new Date().toISOString() };
     });
   }
@@ -177,13 +179,21 @@ export class EirsaliyeService {
   async gelenYanit(id: string, yanit: "kabul" | "ret", gerekce?: string) {
     const { tenantId } = aktifBaglam();
     if (yanit === "ret" && !gerekce?.trim()) throw new BadRequestException("Ret gerekçesi zorunludur");
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
+    const { kayit, cfg, adapter } = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const kayit = await tx.gelenEirsaliye.findUnique({ where: { id } }); if (!kayit) throw new NotFoundException("Gelen e-İrsaliye bulunamadı");
       if (kayit.durum !== "yeni") throw new BadRequestException("Bu e-İrsaliyeye daha önce yanıt verilmiş");
-      const { cfg, adapter } = await this.baglanti(tx, tenantId); if (!adapter.irsaliyeYanitiGonder) throw new BadRequestException("Entegratör e-İrsaliye yanıtını desteklemiyor");
-      const sonuc = await adapter.irsaliyeYanitiGonder(cfg, kayit.uuid, yanit, gerekce, kayit.xmlIcerik);
-      if (!sonuc.basarili) throw new BadRequestException(sonuc.hataMesaji ?? "Yanıt gönderilemedi");
-      return tx.gelenEirsaliye.update({ where: { id }, data: { durum: yanit, yanitRef: sonuc.belgeRef, yanitBelgeNo: sonuc.belgeNo ?? null, yanitGerekcesi: gerekce ?? null } });
+      return { kayit, ...(await this.baglanti(tx, tenantId)) };
     });
+    if (!adapter.irsaliyeYanitiGonder) throw new BadRequestException("Entegratör e-İrsaliye yanıtını desteklemiyor");
+    // EBLG-34: belge portalda ya da aynı hesabı kullanan başka bir yerde yanıtlanmış olabilir. Sorgu yapılamazsa gönderim sürer; mükerrer yanıtı entegratör reddeder.
+    const mevcut = adapter.gelenIrsaliyeYanitDurumu ? await adapter.gelenIrsaliyeYanitDurumu(cfg, kayit.uuid).catch(() => null) : null;
+    if (mevcut) {
+      await this.prisma.tenantIslem(tenantId, (tx) => tx.gelenEirsaliye.updateMany({ where: { tenantId, id, durum: "yeni" }, data: { durum: mevcut.karar, yanitGerekcesi: mevcut.not ?? null } }));
+      throw new ConflictException(`Bu e-İrsaliyeye entegratörde zaten '${mevcut.karar}' yanıtı verilmiş; kayıt güncellendi`);
+    }
+    // Entegratör çağrısı veritabanı işleminin dışında yapılır: yanıt geri alınamaz, işlemi uzun süre açık tutmanın kazancı yok.
+    const sonuc = await adapter.irsaliyeYanitiGonder(cfg, kayit.uuid, yanit, gerekce, kayit.xmlIcerik);
+    if (!sonuc.basarili) throw new BadRequestException(sonuc.hataMesaji ?? "Yanıt gönderilemedi");
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.gelenEirsaliye.update({ where: { id }, data: { durum: yanit, yanitRef: sonuc.belgeRef, yanitBelgeNo: sonuc.belgeNo ?? null, yanitGerekcesi: gerekce ?? null } }));
   }
 }

@@ -392,6 +392,52 @@ describe("NesEntegratorAdapter", () => {
     expect(gelen[0].gonderenUnvan).toBe("HIZLI BİLİŞİM A.Ş.");
   });
 
+  it("gelen fatura listesinde entegratörde verilmiş kararı taşır, bekleyeni taşımaz (EBLG-34)", async () => {
+    const satir = (id: string, ek: object) => ({ id, documentNumber: `FTR-${id}`, issueDate: "2026-09-01", ...ek });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(yanit({ data: [
+        satir("a", { documentAnswer: "Accepted" }),
+        satir("b", { documentAnswer: "Rejected", outgoingAnswer: { documentAnswer: "Rejected", answerNote: " Hatalı tutar " } }),
+        satir("c", { documentAnswer: "Waiting" }),
+        satir("d", { documentAnswer: "None" }),
+      ] }))
+      .mockResolvedValue(yanit("<Invoice/>"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const belgeler = await new NesEntegratorAdapter().gelenBelgeleriCek(config, new Date("2026-09-01T00:00:00Z"));
+
+    expect(belgeler.map((b) => b.yanit)).toEqual([{ karar: "kabul" }, { karar: "ret", not: "Hatalı tutar" }, undefined, undefined]);
+  });
+
+  it("gelen irsaliye listesinde AllAccepted/AllRejected kararını taşır (EBLG-34)", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(yanit({ data: [
+        { id: "irs-1", documentNumber: "TYH2026000000016", despatchAnswer: "AllAccepted" },
+        { id: "irs-2", documentNumber: "TYH2026000000013", despatchAnswer: "AllRejected" },
+      ] }))
+      .mockResolvedValue(yanit("<DespatchAdvice/>"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const gelen = await new NesEntegratorAdapter().gelenIrsaliyeleriCek!(config, new Date("2026-09-01"));
+
+    expect(gelen.map((g) => g.yanit)).toEqual([{ karar: "kabul" }, { karar: "ret" }]);
+  });
+
+  it("gelen belgenin kararını tekil sorar; faturada karar outgoingAnswer içindedir (EBLG-34)", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(yanit({ id: "gelen-7", outgoingAnswer: { documentAnswer: "Accepted" } }))
+      .mockResolvedValueOnce(yanit({ id: "gelen-8" }))
+      .mockResolvedValueOnce(yanit({ id: "irs-1", despatchAnswer: "AllRejected" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const adaptor = new NesEntegratorAdapter();
+
+    expect(await adaptor.gelenYanitDurumu(config, "gelen-7")).toEqual({ karar: "kabul" });
+    expect(await adaptor.gelenYanitDurumu(config, "gelen-8")).toBeNull();
+    expect(await adaptor.gelenIrsaliyeYanitDurumu(config, "irs-1")).toEqual({ karar: "ret" });
+    expect(String(fetchMock.mock.calls[0][0])).toBe("https://apitest.nes.com.tr/einvoice/v1/incoming/invoices/gelen-7");
+    expect(String(fetchMock.mock.calls[2][0])).toBe("https://apitest.nes.com.tr/edespatch/v1/incoming/despatches/irs-1");
+  });
+
   it("irsaliye yanıtını UBL-TR sırasına göre ve kaynak belgeden kurar", async () => {
     // Sıra şemada bağlayıcı: ProfileID, ID'den önce gelir. Taraflar ve satırlar
     // yanıtlanan irsaliyeden okunur; uydurulmuş taraf belgeyi geçersiz kılar.

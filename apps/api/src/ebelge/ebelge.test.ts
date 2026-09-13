@@ -491,6 +491,56 @@ describe("EbelgeService (EBLG-01..08)", () => {
     expect(sonuc.toplamFarki).toBeNull(); // belge toplamı ile hesaplanan uyuşuyor
   });
 
+  it("gelen taramada entegratörde verilmiş kararı yanıtı olmayan kayda yazar (EBLG-34)", async () => {
+    mockAdapter.gelenBelgeleriCek.mockResolvedValueOnce([
+      { uuid: "uuid-1", belgeNo: "GIB2026000000001", gonderenVkn: "1234567890", gonderenUnvan: "Tedarikçi A.Ş.", tarih: new Date("2026-07-20"), xml: GELEN_UBL, yanit: { karar: "ret", not: "Portalda reddedildi" } },
+    ]);
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const mockTx = {
+      baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "izibiz", sifreliConfig: JSON.stringify({ kullaniciAdi: "test" }) }) },
+      gelenEbelge: { findUnique: vi.fn().mockResolvedValue(null), upsert: vi.fn().mockResolvedValue({ id: "gelen-1" }), updateMany },
+      ebelgeGelenKursor: { findUnique: vi.fn().mockResolvedValue(null), upsert: vi.fn() },
+      fatura: { create: vi.fn() },
+    };
+    mockTenantIslem.mockImplementation((_tenantId: string, cb: any) => cb(mockTx));
+
+    await service.gelenBelgeleriCek();
+
+    const kosul = { tenantId: "t1-uuid", uuid: "uuid-1", yanit: null };
+    // Ret yalnız bekleyen belgeyi kapatır; faturaya işlenmiş belgenin durumu korunur.
+    expect(updateMany).toHaveBeenCalledWith({ where: { ...kosul, durum: "beklemede" }, data: { durum: "reddedildi" } });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: kosul,
+      data: expect.objectContaining({ yanit: "ret", yanitGerekce: "Portalda reddedildi" }),
+    });
+  });
+
+  it("gelenYanitGonder entegratörde zaten yanıtlanmış belgeye göndermez, kararı kayda işler (EBLG-34)", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const kayit = { id: "gelen-1", uuid: "uuid-1", durum: "beklemede", yanit: null, profilId: "TICARIFATURA", gonderenVkn: "1234567890", xmlIcerik: GELEN_UBL };
+    const mockTx = {
+      gelenEbelge: { findUnique: vi.fn().mockResolvedValue(kayit), update: vi.fn(), updateMany },
+      baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "izibiz", sifreliConfig: JSON.stringify({ kullaniciAdi: "test" }) }) },
+    };
+    mockTenantIslem.mockImplementation((_tenantId: string, cb: any) => cb(mockTx));
+    const adaptor = mockAdapter as typeof mockAdapter & { gelenYanitDurumu?: ReturnType<typeof vi.fn> };
+    adaptor.gelenYanitDurumu = vi.fn().mockResolvedValue({ karar: "kabul" });
+    mockAdapter.yanitGonder.mockClear();
+    try {
+      await expect(service.gelenYanitGonder("gelen-1", { yanit: "ret", gerekce: "Hatalı" })).rejects.toThrow(/zaten 'kabul'/);
+      expect(adaptor.gelenYanitDurumu).toHaveBeenCalledWith(expect.any(Object), "uuid-1");
+      expect(mockAdapter.yanitGonder).not.toHaveBeenCalled();
+      expect(updateMany).toHaveBeenCalledWith({ where: { tenantId: "t1-uuid", uuid: "uuid-1", yanit: null }, data: expect.objectContaining({ yanit: "kabul" }) });
+
+      // Sorgu yapılamazsa gönderim sürer: mükerrer yanıtı entegratör reddeder.
+      adaptor.gelenYanitDurumu = vi.fn().mockRejectedValue(new Error("NES 500"));
+      await service.gelenYanitGonder("gelen-1", { yanit: "kabul" });
+      expect(mockAdapter.yanitGonder).toHaveBeenCalledTimes(1);
+    } finally {
+      delete adaptor.gelenYanitDurumu;
+    }
+  });
+
   it("gelenYanitGonder temel faturada kabul/ret kabul etmez, ticaride gönderir (EBLG-06)", async () => {
     const guncelle = vi.fn().mockResolvedValue({});
     const kayit = {

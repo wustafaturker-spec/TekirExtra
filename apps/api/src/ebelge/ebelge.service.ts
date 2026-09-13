@@ -581,8 +581,8 @@ export class EbelgeService {
         }),
       );
 
-      await this.prisma.tenantIslem(tenantId, (tx) =>
-        tx.gelenEbelge.upsert({
+      await this.prisma.tenantIslem(tenantId, async (tx) => {
+        await tx.gelenEbelge.upsert({
           where: { tenantId_uuid: { tenantId, uuid: b.uuid } },
           create: {
             tenantId,
@@ -597,8 +597,11 @@ export class EbelgeService {
           // Yalnızca entegratör tarafındaki gövde tazelenir; durum/yanıt
           // bizim iş akışımıza ait olduğu için korunur.
           update: { xmlIcerik: b.xml, profilId },
-        }),
-      );
+        });
+        // EBLG-34: belge portalda ya da başka bir yerde yanıtlanmışsa karar
+        // yanıtı olmayan kayda yazılır; yerel kararın üzerine yazılmaz.
+        if (b.yanit) await this.yanitBenimse(tx, tenantId, b.uuid, b.yanit);
+      });
 
       if (!oncesi) yeniBelgeSayisi += 1;
     }
@@ -1033,6 +1036,27 @@ export class EbelgeService {
    * EBLG-06: ticari faturaya kabul/ret yanıtı gönderir. Temel faturada yanıt
    * kavramı yoktur; ret gerekçe ister ve belgeyi işlenemez hale getirir.
    */
+  /**
+   * EBLG-34: entegratörde verilmiş kararı, yerelde yanıtı olmayan kayda
+   * yazar. Ret yalnız bekleyen belgeyi kapatır; faturaya işlenmiş belgenin
+   * durumu korunur. Yerel kararın üzerine yazılmaz.
+   */
+  private async yanitBenimse(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    uuid: string,
+    yanit: { karar: "kabul" | "ret"; not?: string },
+  ) {
+    const kosul = { tenantId, uuid, yanit: null };
+    if (yanit.karar === "ret") {
+      await tx.gelenEbelge.updateMany({ where: { ...kosul, durum: "beklemede" }, data: { durum: "reddedildi" } });
+    }
+    await tx.gelenEbelge.updateMany({
+      where: kosul,
+      data: { yanit: yanit.karar, yanitGerekce: yanit.not ?? null, yanitZamani: new Date() },
+    });
+  }
+
   async gelenYanitGonder(
     id: string,
     girdi: { yanit: "kabul" | "ret"; gerekce?: string | null },
@@ -1068,6 +1092,20 @@ export class EbelgeService {
 
     const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
     const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
+
+    // EBLG-34: belge portalda ya da aynı hesabı kullanan başka bir yerde
+    // yanıtlanmış olabilir; fatura taraması kursörle ilerlediği için önceden
+    // içe aktarılmış belge bunu ancak burada öğrenir. Sorgu yapılamazsa
+    // gönderim sürer — mükerrer yanıtı entegratör kendisi reddeder.
+    const mevcut = adapter.gelenYanitDurumu
+      ? await adapter.gelenYanitDurumu(cfg, kayit.uuid).catch(() => null)
+      : null;
+    if (mevcut) {
+      await this.prisma.tenantIslem(tenantId, (tx) => this.yanitBenimse(tx, tenantId, kayit.uuid, mevcut));
+      throw new ConflictException(
+        `Bu belgeye entegratörde zaten '${mevcut.karar}' yanıtı verilmiş; kayıt güncellendi`,
+      );
+    }
 
     const sonuc = await adapter.yanitGonder(cfg, kayit.uuid, girdi.yanit, girdi.gerekce ?? undefined, {
       gonderenVkn: kayit.gonderenVkn || "",
