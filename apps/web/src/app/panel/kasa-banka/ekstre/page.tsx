@@ -8,6 +8,7 @@ import {
   Button,
   ButtonLabel,
   Card,
+  EylemMenusu,
   Field,
   Input,
   PageHeader,
@@ -730,10 +731,9 @@ export default function EkstreSayfasi() {
                       )}
                     </td>
                     <td className="num">
-                      <div className="row-tight" style={{ justifyContent: "flex-end" }}>
+                      <div className="row-tight statement-row-actions" style={{ justifyContent: "flex-end" }}>
                         {bekliyor && (
                           <>
-                            {s.yon === "tahsilat" && <Button size="sm" onClick={() => setMutabakat(s)} disabled={islemde !== null}>POS ödemesi</Button>}
                             <Button
                               variant="primary"
                               size="sm"
@@ -742,13 +742,18 @@ export default function EkstreSayfasi() {
                             >
                               {islemde === `eslestir-${s.id}` ? "İşleniyor..." : "Eşleştir"}
                             </Button>
-                            <Button
-                              size="sm"
-                              onClick={() => void satirEylemi(s, "yoksay")}
-                              disabled={islemde !== null}
-                            >
-                              Yoksay
-                            </Button>
+                            {/* Birincil iş eşleştirme; seyrek eylemler satırı kalabalıklaştırmasın. */}
+                            <EylemMenusu>
+                              {s.yon === "tahsilat" && <Button size="sm" type="button" onClick={() => setMutabakat(s)} disabled={islemde !== null}>POS ödemesi</Button>}
+                              <Button
+                                size="sm"
+                                type="button"
+                                onClick={() => void satirEylemi(s, "yoksay")}
+                                disabled={islemde !== null}
+                              >
+                                Yoksay
+                              </Button>
+                            </EylemMenusu>
                           </>
                         )}
                         {!bekliyor && (
