@@ -3715,6 +3715,8 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 .document-editor__note { background: var(--warning-soft); border-bottom: 1px solid var(--border); color: var(--text); font-size: 0.85rem; margin: 0; padding: 0.6rem 1.35rem; }
 .record-detail > .between:first-child:has(+ .action-bar) { margin-bottom: 0; }
 .record-detail > .action-bar { margin: 0 -1rem 1rem; padding-inline: 1.25rem; }
+.incoming-detail > .action-bar { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 1rem; padding-inline: 1rem; }
+.incoming-detail__badges { margin-left: auto; }
 .table tr.row-link { cursor: pointer; }
 .table tr.row-link:hover > td { background: var(--surface-2); }
 .table tr.row-link:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

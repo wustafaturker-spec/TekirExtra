@@ -8,6 +8,7 @@ import {
   Button,
   ButtonLabel,
   Card,
+  EylemCubugu,
   Field,
   Input,
   PageHeader,
@@ -497,27 +498,6 @@ export default function GelenKutusuSayfasi() {
     reader.readAsText(file, "UTF-8");
   }
 
-  async function taslakIptalEtById(id: string) {
-    if (
-      !confirm(
-        "Oluşturulan taslak alış faturası silinecek ve bu belge yeniden stok eşleştirmesi yapmanız için onaya düşürülecek. Devam etmek istiyor musunuz?",
-      )
-    )
-      return;
-    setHata("");
-    setBasari("");
-    setIslemde(`taslak-iptal-${id}`);
-    try {
-      await api(`/ebelge/gelen/${id}/taslak-iptal`, { method: "POST" });
-      setBasari("Taslak fatura iptal edildi ve belge yeniden onay bekliyor durumuna getirildi.");
-      await listeYukle();
-    } catch (h) {
-      setHata(h instanceof Error ? h.message : "Taslak fatura iptal edilemedi");
-    } finally {
-      setIslemde(null);
-    }
-  }
-
   /* ─── Görünüm: liste ───────────────────────────────────────────────────── */
 
   if (!detay) {
@@ -591,39 +571,30 @@ export default function GelenKutusuSayfasi() {
           <TableWrap>
             <thead>
               <tr>
-                <th>Belge / Gönderen</th><th>Tarih</th><th>Profil</th><th>Kalem</th><th>Toplam</th><th>Durum</th><th>İşlem</th>
+                <th>Belge / Gönderen</th><th>Tarih</th><th>Profil</th><th>Kalem</th><th>Toplam</th><th>Durum</th>
               </tr>
             </thead>
             <tbody>
               {gorunenListe.length === 0 ? (
                 <tr>
-                  <td colSpan={7}><div className="archive-empty"><strong>Belge bulunamadı</strong><span>Filtreleri değiştirerek veya entegratörden çekerek yeniden deneyin.</span></div></td>
+                  <td colSpan={6}><div className="archive-empty"><strong>Belge bulunamadı</strong><span>Filtreleri değiştirerek veya entegratörden çekerek yeniden deneyin.</span></div></td>
                 </tr>
               ) : (
                 gorunenListe.map((g) => (
-                  <tr key={g.id}>
+                  <tr
+                    key={g.id}
+                    className="row-link"
+                    tabIndex={0}
+                    aria-label={`${g.belgeNo} belgesini aç`}
+                    onClick={() => void detayAc(g.id)}
+                    onKeyDown={(olay) => { if (olay.key === "Enter" || olay.key === " ") { olay.preventDefault(); void detayAc(g.id); } }}
+                  >
                     <td><strong>{g.belgeNo}</strong><small>{g.gonderenUnvan}</small><small className="mono">{g.gonderenVkn}</small></td>
                     <td><strong>{g.tarih}</strong><small>Belge tarihi</small></td>
                     <td>{profilRozet(g.profilId)}</td>
                     <td><strong>{g.satirSayisi}</strong><small>ürün kalemi</small></td>
                     <td><strong className="archive-amount">{g.genelToplam ? para(g.genelToplam, g.dovizCinsi) : "—"}</strong><small>fatura toplamı</small></td>
                     <td><div className="archive-status">{durumRozet(g.durum)}{g.yanit&&<b>{g.yanit === "kabul" ? "KABUL" : "RET"}</b>}</div>{!g.okunabilir&&<small className="muted">XML okunamadı</small>}</td>
-                    <td>
-                      <div style={{ display: "flex", gap: "6px" }}>
-                        <Button size="sm" onClick={() => void detayAc(g.id)}>İncele</Button>
-                        <Button size="sm" onClick={() => void pdfAc(g.id)}>PDF</Button>
-                        {g.durum === "islendi" && (
-                          <Button
-                            size="sm"
-                            variant="danger"
-                            onClick={() => void taslakIptalEtById(g.id)}
-                            disabled={islemde !== null}
-                          >
-                            {islemde === `taslak-iptal-${g.id}` ? "İptal Ediliyor..." : "↩ Taslağı İptal Et"}
-                          </Button>
-                        )}
-                      </div>
-                    </td>
                   </tr>
                 ))
               )}
@@ -639,7 +610,7 @@ export default function GelenKutusuSayfasi() {
   const islenebilir = detay.durum === "beklemede";
 
   return (
-    <div>
+    <div className="incoming-detail">
       <PageHeader
         title={`Gelen e-Fatura ${detay.belgeNo}`}
         subtitle={`${detay.gonderenUnvan} · VKN ${detay.gonderenVkn} · ${detay.tarih}`}
@@ -654,27 +625,30 @@ export default function GelenKutusuSayfasi() {
             >
               ← Gelen Kutusu
             </Button>
-            {detay.faturaId && (
-              <ButtonLabel as="a" href="/panel/fatura">
-                Taslak Faturaya Git
-              </ButtonLabel>
-            )}
           </>
         }
       />
 
+      <EylemCubugu etiket="Gelen belge eylemleri">
+        {detay.faturaId && (
+          <ButtonLabel as="a" variant="primary" size="sm" href={`/panel/fatura/yeni?ac=${detay.faturaId}&yon=alis`}>
+            🧾 Alış faturasını aç
+          </ButtonLabel>
+        )}
+        <Button size="sm" type="button" onClick={() => void pdfAc(detay.id)}>📄 PDF</Button>
+        <div className="row-tight incoming-detail__badges">
+          {durumRozet(detay.durum)}
+          {profilRozet(detay.profilId)}
+          {detay.yanit && (
+            <Badge variant={detay.yanit === "kabul" ? "success" : "danger"}>
+              YANIT: {detay.yanit === "kabul" ? "KABUL" : "RET"}
+            </Badge>
+          )}
+        </div>
+      </EylemCubugu>
+
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
-
-      <div className="row-tight" style={{ marginBottom: "1rem" }}>
-        {durumRozet(detay.durum)}
-        {profilRozet(detay.profilId)}
-        {detay.yanit && (
-          <Badge variant={detay.yanit === "kabul" ? "success" : "danger"}>
-            YANIT: {detay.yanit === "kabul" ? "KABUL" : "RET"}
-          </Badge>
-        )}
-      </div>
 
       <StatGrid>
         <Stat label="Matrah" value={para(detay.belgeToplamlari.matrah, detay.dovizCinsi)} />
