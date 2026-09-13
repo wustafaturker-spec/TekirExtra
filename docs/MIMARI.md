@@ -97,14 +97,32 @@ Yalıtım iki katmanda zorlanır (KLN-06):
 2. **Veritabanı katmanı (asıl güvence):** Kiracıya ait her tabloda RLS aktiftir:
 
 ```sql
-ALTER TABLE faturalar ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON faturalar
-  USING (tenant_id = current_setting('app.tenant_id')::uuid);
+ALTER TABLE "faturalar" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "faturalar" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_faturalar" ON "faturalar"
+  USING ("tenant_id" = current_setting('app.tenant_id', true)::uuid)
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true)::uuid);
 ```
 
 Uygulama, her transaction başında `SET LOCAL app.tenant_id = '<uuid>'` çalıştırır.
 Uygulamanın DB kullanıcısı `BYPASSRLS` yetkisi **taşımaz**; kod hatası olsa bile
 başka kiracının satırı dönmez (ISTERLER kabul ölçütü 6).
+
+**Her yeni kiracı tablosu** bu üç satırı kendi geçişinde taşır. RLS'siz bir
+tabloda `tenantIslem` yalnız oturum değişkenini kurar, satırları süzmez; servis
+sorguları `tenantId` koşulu taşımadığı için yalıtım tamamen kalkar.
+`test/rls-kapsama.kabul.test.ts`, `tenant_id` sütunu olan her tabloda RLS,
+FORCE ve politika olduğunu canlı katalogdan denetler.
+
+**Bilinçli istisnalar:** `auth_kimlikler`, `oturumlar`, `eposta_dogrulamalar`.
+Giriş, oturum yenileme ve e-posta doğrulama kiracı bağlamı kurulmadan çalışır;
+bu tablolar kiracı API'sine açık değildir. Kapsama testindeki istisna listesi
+yalnız bunları içerir.
+
+**Dikkat:** Yarım kalan bir geçişi `prisma migrate resolve --applied` ile
+"uygulandı" işaretlemek, dosyadaki kalan satırları (çoğunlukla sondaki RLS
+satırlarını) hiç çalıştırmaz. 2026-09-13 denetiminde 17 tablonun yalıtımsız
+kaldığı bulundu; `20260913220000_rls_eksik_tablolar` ile kapatıldı.
 
 ---
 
