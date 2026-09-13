@@ -1,4 +1,5 @@
 import { kacis, paraBicim, sayfaSablonu, sayiBicim, tarihBicim } from "../core/pdf/pdf-sablon";
+import { karekodImg } from "./karekod";
 import type { UblFatura } from "./ubl-oku";
 
 /**
@@ -18,8 +19,12 @@ const PROFIL_ADLARI: Record<string, string> = {
   YOLCUBERABERFATURA: "Yolcu Beraberi Fatura",
 };
 
-export function ebelgeYedekPdfHtml(f: UblFatura, secenekler: { logoDataUri?: string } = {}): string {
+export function ebelgeYedekPdfHtml(
+  f: UblFatura,
+  secenekler: { logoDataUri?: string; /** EBLG-32: yalnız kestiğimiz belgede verilir. */ karekodDataUri?: string } = {},
+): string {
   const paraBirimi = f.dovizCinsi === "TRY" ? "TL" : f.dovizCinsi;
+  const karekod = secenekler.karekodDataUri ? `<div style="margin-top:8px">${karekodImg(secenekler.karekodDataUri)}</div>` : "";
   const profil = PROFIL_ADLARI[f.profilId] ?? f.profilId;
 
   const satirlar = f.satirlar
@@ -51,7 +56,7 @@ export function ebelgeYedekPdfHtml(f: UblFatura, secenekler: { logoDataUri?: str
       <div class="kutu">
         <strong>${kacis(f.gonderen.unvan)}</strong><br>
         VKN/TCKN: ${kacis(f.gonderen.vknTckn)}${f.gonderen.vergiDairesi ? ` — ${kacis(f.gonderen.vergiDairesi)}` : ""}
-      </div>
+      </div>${karekod}
     </td>
     <td style="width:4%"></td>
     <td style="vertical-align:top;width:46%">

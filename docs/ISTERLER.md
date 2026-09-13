@@ -340,7 +340,7 @@ saklanmaz, istendiğinde XML'den üretilir.
 | EBLG-29 | XSLT yabancı bir kaynaktan gelir; dönüşüm **yalıtılmış** çalışmalıdır: dış ağ erişimi, yerel dosya okuma ve betik çalıştırma kapalı olmalı, dönüşüm süre sınırına bağlanmalıdır. Bozuk veya kötü niyetli XSLT PDF üretimini düşürmemeli, yedek görünüme düşürmelidir. | G |
 | EBLG-30 | Giden faturanın PDF'i e-belge kimlik alanlarını taşımalıdır: **ETTN (UUID)**, GİB **senaryosu** ve **profili**. | G |
 | EBLG-31 | UBL'e gömülen XSLT, giden faturanın PDF'iyle **aynı görünümü** üretmelidir; alıcının gördüğü belge ile bizim bastığımız belge ayrışmamalıdır. | G |
-| EBLG-32 | **Beklemede:** e-Arşiv faturasının PDF'inde **GİB karekodu** bulunmalıdır. Karekodun içeriği GİB *e-Belge Karekod Uygulama Kılavuzu*'nda tanımlıdır; kılavuz elde olmadığından alan tahminle üretilmez — ürün sahibi kılavuzu temin edene kadar karekod basılmaz. | G |
+| EBLG-32 | Giden **e-Arşiv ve e-Fatura** PDF'inde **GİB karekodu** bulunmalıdır. İçerik GİB *Karekod Standardı Kılavuzu* v1.0 (Şubat 2023, `docs/e-belge/GIB-Karekod-Standardi-Kilavuzu-v1.0.pdf`) §2.1–2.2'deki JSON'dur: `vkntckn`, `avkntckn`, `senaryo`, `tip`, `tarih`, `no`, `ettn`, `parabirimi`, `malhizmettoplam`, her KDV oranı için `kdvmatrah(oran)` ve `hesaplanankdv(oran)`, `vergidahil`, `odenecek`; değerler UBL'den okunur, tutarlar 2 ondalıklı metindir. **Karekod PDF basılırken üretilir (karar 2026-09-13):** belge numarasını sağlayıcı gönderimden sonra atadığı için (EBLG-16) gönderilen XSLT'ye gömülen karekod numarasız kalırdı; numaralı arşiv UBL'inden üretilir, bu yüzden alıcının kendi görüntüleyicisinde görünmez. Numarası olmayan belgeye karekod basılmaz. e-İrsaliye kapsam dışı. | G |
 
 ### 3.4 Stok Takibi (STK)
 

@@ -289,3 +289,86 @@ export function faturaUblOku(xml: string): UblFatura {
     satirlar,
   };
 }
+
+/** Sağlayıcının atadığı tam numara: 3 karakter seri + 4 hane yıl + 9 hane sıra. */
+const TAM_BELGE_NO = /^[A-Z0-9]{3}\d{13}$/;
+
+const kurus = (deger: unknown) => Math.round(sayi(deger) * 100);
+const tlMetin = (kurusDeger: number) => (kurusDeger / 100).toFixed(2);
+
+/** Oran yazılmış mı? Sıfır oran da geçerli bir oran olduğu için değere değil varlığa bakılır. */
+function oranYazili(taxSubtotal: Dugum): boolean {
+  return metin(taxSubtotal.Percent) !== "" || metin(yol(taxSubtotal, "TaxCategory", "Percent")) !== "";
+}
+
+function kdvAltToplamlari(taxTotal: unknown): Dugum[] {
+  return dizi(yol(taxTotal, "TaxSubtotal")).filter((a) => {
+    const kod = metin(yol(a, "TaxCategory", "TaxScheme", "TaxTypeCode"));
+    return kod === "" || kod === "0015";
+  });
+}
+
+/**
+ * KDV matrahı ve vergisi oran bazında. Başlıktaki alt toplamlar oranı
+ * taşıyorsa onlar kullanılır; taşımıyorsa (kendi üretecimiz başlığa tek,
+ * oransız alt toplam yazar) satırların alt toplamları orana göre toplanır.
+ */
+function kdvOranGruplari(fatura: Dugum): { oran: number; matrah: number; vergi: number }[] {
+  const baslik = kdvAltToplamlari(fatura.TaxTotal);
+  const kaynak =
+    baslik.length > 0 && baslik.every(oranYazili)
+      ? baslik
+      : dizi(fatura.InvoiceLine).flatMap((satir) =>
+          kdvAltToplamlari(satir.TaxTotal).map((a) =>
+            oranYazili(a) ? a : { ...a, Percent: String(kdvOraniOku(a)), TaxableAmount: a.TaxableAmount ?? satir.LineExtensionAmount },
+          ),
+        );
+  const gruplar = new Map<number, { oran: number; matrah: number; vergi: number }>();
+  for (const a of kaynak) {
+    const oran = kdvOraniOku(a);
+    const grup = gruplar.get(oran) ?? { oran, matrah: 0, vergi: 0 };
+    grup.matrah += kurus(a.TaxableAmount);
+    grup.vergi += kurus(a.TaxAmount);
+    gruplar.set(oran, grup);
+  }
+  return [...gruplar.values()].sort((x, y) => x.oran - y.oran);
+}
+
+/**
+ * EBLG-32: GİB Karekod Standardı Kılavuzu v1.0 §2.1–2.2 alanları, kılavuzdaki
+ * sırayla. Değerler UBL'den okunur, hesaplanmaz. Tam numarası olmayan belgede
+ * (sağlayıcı numarayı henüz atamamışsa UBL'de yalnız seri öneki durur)
+ * karekod geçersiz olacağı için `null` döner.
+ */
+export function faturaKarekodVerisi(xml: string): Record<string, string> | null {
+  let fatura: Dugum | undefined;
+  try {
+    fatura = nesne(nesne(parser.parse(xml))?.Invoice);
+  } catch {
+    return null;
+  }
+  if (!fatura) return null;
+  const no = metin(fatura.ID);
+  if (!TAM_BELGE_NO.test(no)) return null;
+
+  const parasal = nesne(fatura.LegalMonetaryTotal);
+  const veri: Record<string, string> = {
+    vkntckn: vknBul(yol(fatura, "AccountingSupplierParty", "Party")),
+    avkntckn: vknBul(yol(fatura, "AccountingCustomerParty", "Party")),
+    senaryo: metin(fatura.ProfileID),
+    tip: metin(fatura.InvoiceTypeCode),
+    tarih: metin(fatura.IssueDate),
+    no,
+    ettn: metin(fatura.UUID),
+    parabirimi: metin(fatura.DocumentCurrencyCode) || "TRY",
+    malhizmettoplam: tlMetin(kurus(parasal?.LineExtensionAmount)),
+  };
+  for (const g of kdvOranGruplari(fatura)) {
+    const oran = String(Math.round(g.oran * 100) / 100);
+    veri[`kdvmatrah(${oran})`] = tlMetin(g.matrah);
+    veri[`hesaplanankdv(${oran})`] = tlMetin(g.vergi);
+  }
+  veri.vergidahil = tlMetin(kurus(parasal?.TaxInclusiveAmount));
+  veri.odenecek = tlMetin(kurus(parasal?.PayableAmount));
+  return veri;
+}
