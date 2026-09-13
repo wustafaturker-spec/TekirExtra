@@ -603,6 +603,26 @@ Test hesabındaki Temmuz–Eylül bölümlerinin **hepsi `XmlCreateWait`**,
 hiç üretilmemiş, döküm de bu yüzden yok gibi. Tamamlanmış bir bölümde
 denenmeden tutar akışı doğrulanmış sayılmaz; NES'e sorulacak.
 
+## Gelen belgeye başka yerden verilmiş yanıt (EBLG-34, 2026-09-13)
+
+NES gelen belgeye verilmiş kabul/ret kararını belgeyle birlikte döndürür; bunu
+okumadığımız için portalda ya da aynı hesabı kullanan başka bir kiracıda
+yanıtlanmış belge bizde "yanıt bekliyor" kalıyordu. Ölçülen alanlar:
+
+| Kaynak | Alan | Değerler |
+|---|---|---|
+| `GET /einvoice/v1/incoming/invoices` (liste) | `documentAnswer` | `None`, `Waiting`, `Accepted`, `Rejected` |
+| `GET /einvoice/v1/incoming/invoices/{uuid}` (tekil) | `outgoingAnswer.documentAnswer` (kökte yok) | aynı; not `outgoingAnswer.answerNote` |
+| `GET /edespatch/v1/incoming/despatches` ve tekil | `despatchAnswer` | `AllAccepted`, `AllRejected` |
+
+`nesGelenYanit` yalnız kesin kararı (`Accepted`/`AllAccepted`,
+`Rejected`/`AllRejected`) benimser; `None`, `Waiting` ve tanınmayan değer karar
+sayılmaz. Tarama kararı yanıtı olmayan kayda yazar; yanıt göndermeden önce
+`gelenYanitDurumu` / `gelenIrsaliyeYanitDurumu` tekil sorulur, karar varsa
+gönderilmez. Canlıda: nes-e2e'de bekleyen 24 ticari faturanın 17'si NES'te
+zaten yanıtlıydı; `NTN2026000000011`'e kabul denemesi NES'e gitmeden 409 döndü
+ve kayda NES'teki ret (`not: test`) işlendi.
+
 ## e-Arşiv gönderim şekli (EBLG-26, 2026-09-11)
 
 GİB, e-Arşiv faturanın alıcıya elektronik mi kâğıt mı teslim edildiğini
