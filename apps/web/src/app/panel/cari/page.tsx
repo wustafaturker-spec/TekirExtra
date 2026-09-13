@@ -11,6 +11,7 @@ import {
   Button,
   ButtonLabel,
   Card,
+  EylemCubugu,
   Field,
   Input,
   PageHeader,
@@ -799,37 +800,14 @@ export default function CariSayfasi() {
     }
   }
 
-  async function ekstreIndir(id: string, unvanAd: string) {
-    try {
-      const token = tokenAl();
-      const res = await fetch(`${apiBase()}/cari/${id}/ekstre/excel`, {
-        method: "GET",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) throw new Error("Ekstre indirilemedi");
-
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `ekstre-${unvanAd.replace(/\s+/g, "-")}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch {
-      setHata("Excel ekstre indirilirken bir hata oluştu.");
-    }
-  }
-
   async function kopyala(id: string) {
     setHata("");
     setBasari("");
     try {
-      await api(`/cari/${id}/kopyala`, { method: "POST" });
-      setBasari("Cari hesap başarıyla kopyalandı.");
+      const kopya = await api<CariDetay>(`/cari/${id}/kopyala`, { method: "POST" });
       void yukle();
+      router.push(`/panel/cari/${kopya.id}`);
+      setBasari(`Cari kopyalandı; “${kopya.unvan}” kartı açıldı.`);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Kopyalama hatası");
     }
@@ -951,11 +929,12 @@ export default function CariSayfasi() {
                 <p style={{ color: "var(--danger)", fontSize: "0.85rem", margin: "0.3rem 0 0" }}>Blokaj nedeni: {detay.karaListeNotu}</p>
               )}
             </div>
-            <div className="row-tight">
-              <Button size="sm" onClick={karaListeDegistir}>{detay.karaListe ? "✅ Blokajı Kaldır" : "🚫 Kara Listeye Al"}</Button>
-              <Button size="sm" onClick={() => { setDetay(null); setEkstre(null); setCrm(null); setCariAnalizi(null); detaySayfasi ? router.push("/panel/cari") : undefined; }}>✖ Kapat</Button>
-            </div>
           </div>
+          <EylemCubugu etiket="Cari eylemleri">
+            <Button size="sm" type="button" onClick={() => setAktifSekme("ekstre")}>📊 Ekstre</Button>
+            <Button size="sm" type="button" onClick={() => void kopyala(detay.id)}>📋 Kopyala</Button>
+            <Button size="sm" type="button" variant={detay.karaListe ? undefined : "danger"} onClick={() => void karaListeDegistir()}>{detay.karaListe ? "✅ Blokajı Kaldır" : "🚫 Kara Listeye Al"}</Button>
+          </EylemCubugu>
 
           <div style={{ marginTop: "1.25rem" }}>
             <Tabs<Sekme>
@@ -1420,19 +1399,25 @@ export default function CariSayfasi() {
               <th>VKN / TCKN</th>
               <th className="num">Bakiye</th>
               <th>Risk</th>
-              <th className="center">Eylemler</th>
             </tr>
           </thead>
           <tbody>
             {filtrelenmisCariler.length === 0 ? (
               <tr>
-                <td colSpan={7} className="empty">Arama kriterlerinize uygun cari hesap kaydı bulunamadı.</td>
+                <td colSpan={6} className="empty">Arama kriterlerinize uygun cari hesap kaydı bulunamadı.</td>
               </tr>
             ) : (
               filtrelenmisCariler.map((c) => {
                 const bakiyeNum = c.bakiyeler.reduce((toplam, b) => toplam + Number(b.bakiyeTry), 0);
                 return (
-                  <tr key={c.id}>
+                  <tr
+                    key={c.id}
+                    className="row-link"
+                    tabIndex={0}
+                    aria-label={`${c.unvan} carisini aç`}
+                    onClick={() => router.push(`/panel/cari/${c.id}`)}
+                    onKeyDown={(olay) => { if (olay.key === "Enter" || olay.key === " ") { olay.preventDefault(); router.push(`/panel/cari/${c.id}`); } }}
+                  >
                     <td>
                       <div className="cell-entity">
                         <Avatar isim={c.unvan} />
@@ -1455,13 +1440,6 @@ export default function CariSayfasi() {
                     <td className={`num money ${bakiyeNum > 0 ? "pos" : bakiyeNum < 0 ? "neg" : ""}`}>{tl(bakiyeNum)}</td>
                     <td>
                       <Status tone={c.karaListe ? "danger" : "ok"}>{c.karaListe ? "Bloke" : "Normal"}</Status>
-                    </td>
-                    <td className="center">
-                      <div className="row-tight" style={{ flexWrap: "nowrap", justifyContent: "center" }}>
-                        <Button size="sm" onClick={() => router.push(`/panel/cari/${c.id}`)}>🔍 Detay</Button>
-                        <Button size="sm" onClick={() => ekstreIndir(c.id, c.unvan)}>📊 Ekstre</Button>
-                        <Button size="sm" onClick={() => kopyala(c.id)}>📋 Kopyala</Button>
-                      </div>
                     </td>
                   </tr>
                 );
