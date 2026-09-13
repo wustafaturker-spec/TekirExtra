@@ -578,7 +578,7 @@ hesap yalnız belgelerden oluşur — rapordaki rakamlar buna göre değişir.
 | BUT-05 | Bütçe yıllıktır ve aylara dağıtılır; satırları BUT-02/BUT-03 kalemleridir, tutarlar TL'dir. | Z |
 | BUT-06 | **Taslak → onaylı:** taslağı yönetici ve muhasebe düzenler, yalnız yönetici onaylar. Onaylı bütçe değiştirilemez; gerekçeyle yeni revizyon açılır, taslak olarak başlar ve onaylanınca geçerli olur. Önceki revizyonlar salt okunur saklanır; onay ve revizyon olayları kim/ne zaman/gerekçe ile tutulur. | Z |
 | BUT-07 | **Karşılaştırma:** son onaylı revizyon satır ve ay bazında gerçekleşenle karşılaştırılır; fark ve oran gösterilir, gider satırında aşım, gelir satırında eksik kalma vurgulanır. İlk onaylı plan ayrı sütunda görünür. Gelecek aylarda gerçekleşen boş kalır. | Z |
-| BUT-08 | **Giriş araçları:** satıra yıllık tutar yazılıp 12 aya eşit dağıtılabilir (kuruş farkı son aya); taslak geçen yılın aylık gerçekleşeninden, isteğe bağlı yüzde artışla oluşturulabilir; yeni revizyon son onaylı revizyonun tutarlarıyla başlar. | G |
+| BUT-08 | ✅ **Giriş araçları:** satıra yıllık tutar yazılıp 12 aya eşit dağıtılabilir (kuruş farkı son aya); taslak geçen yılın aylık gerçekleşeninden, isteğe bağlı yüzde artışla oluşturulabilir; yeni revizyon son onaylı revizyonun tutarlarıyla başlar. | G |
 | BUT-09 | Bütçe yalnız **yönetici** ve **muhasebe** rollerine açıktır. | Z |
 | BUT-10 | **Kapsam dışı:** nakit tahminine bağlanma, proje bütçesi (projeler kendi hedefleriyle kalır), şube/masraf merkezi, dövizli bütçe. | — |
 
