@@ -1108,15 +1108,17 @@ test("kesinleştirme öncesi stok, cari, vergi ve e-Belge etkisi gösterilir", a
     risk: { mevcutRisk: "300.00", limit: "5000.00", kalanLimit: "4700.00", asim: false },
   } }));
 
-  await page.goto("/panel/fatura");
-  await page.getByRole("button", { name: /Kesinleştir/ }).click();
+  // Liste satır eylemi taşımaz; fatura açılır, eylem formun üstündeki çubuktadır.
+  await page.goto("/panel/fatura/yeni?ac=f1");
+  await page.getByRole("toolbar", { name: "Fatura eylemleri" }).getByRole("button", { name: /Kesinleştir/ }).click();
   const panel = page.getByRole("dialog", { name: "Faturayı kesinleştir" });
   await expect(panel).toBeVisible();
   await expect(panel).toContainText("KDV");
   await expect(panel).toContainText("200,00 TL");
   await expect(panel).toContainText("2 birim azalacak");
   await expect(panel).toContainText("1.200,00 TL borç yazılacak");
-  await expect(panel).toContainText("e-Fatura kuyruğa alınacak");
+  // e-Belge kesinleştirmeyle kuyruğa girmez; kesinleşen faturada sihirbazla oluşturulur.
+  await expect(panel).toContainText("Kesinleştirme sonrası ayrıca wizard ile oluşturulacak");
   await expect(panel).toContainText("1.500,00 TL");
 });
 

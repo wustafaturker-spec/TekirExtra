@@ -1783,7 +1783,7 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 .create-page > .stat-grid,
 .create-page > .saved-view-bar,
 .create-page > .toolbar,
-.create-page > .card:not(.expense-entry),
+.create-page > .card:not(.expense-entry):not(.create-page__keep),
 .create-page > .table-wrap { display: none; }
 .create-page > .document-editor { margin-inline: auto; max-width: 1180px; }
 .detail-page > .stat-grid,
@@ -3700,3 +3700,19 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 .queue-page{display:grid;gap:1rem;max-width:1500px;margin:0 auto}.queue-hero{display:flex;align-items:flex-end;justify-content:space-between;gap:2rem;padding:1.7rem;border-radius:22px;color:#fff;background:radial-gradient(circle at 90% 0,rgba(56,189,248,.35),transparent 30%),linear-gradient(135deg,#172554,#1e3a8a 58%,#075985);box-shadow:0 20px 44px rgba(30,58,138,.2)}.queue-hero span,.queue-register__title span{display:block;font-size:.68rem;font-weight:850;letter-spacing:.14em;color:#bae6fd}.queue-hero h1{margin:.3rem 0;font-size:clamp(1.8rem,3vw,2.6rem)}.queue-hero p{max-width:780px;margin:0;color:#dbeafe;line-height:1.55}.queue-hero>div:last-child{display:grid;justify-items:end;gap:.5rem}.queue-hero small{color:#bfdbfe}.queue-hero .btn{border-color:rgba(255,255,255,.28);color:#fff;background:rgba(255,255,255,.1)}.queue-kpis{display:grid;grid-template-columns:1.15fr repeat(4,1fr);gap:.75rem}.queue-kpis button{display:grid;gap:.25rem;min-height:112px;padding:1rem;text-align:left;border:1px solid var(--border);border-radius:16px;background:var(--surface);box-shadow:0 6px 20px rgba(15,23,42,.04);cursor:pointer}.queue-kpis button:hover,.queue-kpis button.is-selected{border-color:#3b82f6;background:#eff6ff}.queue-kpis button.is-danger{border-color:#fda4af;background:#fff1f2}.queue-kpis span,.queue-kpis small{color:var(--text-muted)}.queue-kpis strong{font-size:1.8rem}.queue-register__title{display:flex;align-items:center;justify-content:space-between;gap:2rem;width:100%}.queue-register__title span{color:#2563eb}.queue-register__title h2{margin:.15rem 0}.queue-register__title select{min-width:190px}.queue-register td{vertical-align:middle}.queue-register td strong,.queue-register td small,.queue-register td span{display:block}.queue-register td small{margin-top:.2rem;color:var(--text-muted)}.queue-register tr.is-failed{background:color-mix(in srgb,#f43f5e 5%,transparent)}.queue-error{display:-webkit-box;max-width:360px;margin:0;overflow:hidden;color:#b91c1c;font-size:.75rem;line-height:1.4;-webkit-box-orient:vertical;-webkit-line-clamp:3}.queue-ok,.queue-managed{color:var(--text-muted);font-size:.75rem}.queue-empty{display:grid;place-items:center;gap:.3rem;min-height:130px;color:var(--text-muted)}@media(max-width:1100px){.queue-kpis{grid-template-columns:repeat(3,1fr)}}@media(max-width:760px){.queue-hero{align-items:flex-start;flex-direction:column}.queue-hero>div:last-child{justify-items:start}.queue-kpis{grid-template-columns:1fr 1fr}.queue-register__title{align-items:flex-start;flex-direction:column;gap:.6rem}.queue-register__title select{width:100%}}@media(max-width:480px){.queue-kpis{grid-template-columns:1fr}}
 .treasury-payment-methods { display: grid; gap: .45rem; margin-top: .8rem; padding: .7rem .8rem; border: 1px solid var(--border); border-radius: .65rem; background: var(--surface-2); color: var(--text-muted); font-size: .72rem; }
 .treasury-payment-methods > div { display: flex; flex-wrap: wrap; gap: .45rem; }
+
+/* ── Kayıt eylem çubuğu ─────────────────────────────────────────────────
+   Listeler satır başına eylem taşımaz; satıra tıklanınca açılan kaydın
+   üstünde, duruma uygun eylemler bu çubukta toplanır. */
+.action-bar { align-items: center; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0.7rem 1.35rem; position: sticky; top: 0; z-index: 4; }
+.action-menu { position: relative; }
+.action-menu > summary { list-style: none; }
+.action-menu > summary::-webkit-details-marker { display: none; }
+.action-menu__list { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-md); display: grid; gap: 0.2rem; min-width: 12rem; padding: 0.35rem; position: absolute; left: 0; top: calc(100% + 0.3rem); z-index: 30; }
+.action-menu__list .btn { border-color: transparent; justify-content: flex-start; text-align: left; width: 100%; }
+/* Salt okunur kayıtta bütün alanlar tek fieldset ile kilitlenir; kutu düzeni bozmasın. */
+.document-editor__fieldset { border: 0; display: contents; margin: 0; min-width: 0; padding: 0; }
+.document-editor__note { background: var(--warning-soft); border-bottom: 1px solid var(--border); color: var(--text); font-size: 0.85rem; margin: 0; padding: 0.6rem 1.35rem; }
+.table tr.row-link { cursor: pointer; }
+.table tr.row-link:hover > td { background: var(--surface-2); }
+.table tr.row-link:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

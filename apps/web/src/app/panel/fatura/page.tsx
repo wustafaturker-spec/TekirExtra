@@ -34,6 +34,8 @@ import {
   PageHeader,
   Select,
   TableWrap,
+  EylemCubugu,
+  EylemMenusu,
 } from "@/components/ui";
 
 interface Cari {
@@ -203,6 +205,24 @@ const tl = (deger: string | number): string =>
 
 const KAYDEDILMEMIS_DEGISIKLIK_UYARISI = "Bu faturadaki kaydedilmemiş değişiklikler silinecek. Formdan ayrılmak istiyor musunuz?";
 
+// Taslak ya da e-belgesi oluşmamış kesin fatura düzenlenebilir (FTR-05); diğerleri salt okunur açılır.
+function faturaDuzenlenebilir(fatura: { durum: string; ebelge?: unknown }): boolean {
+  return fatura.durum === "taslak" || (fatura.durum === "kesin" && !fatura.ebelge);
+}
+
+function FaturaDurumRozeti({ fatura }: { fatura: Fatura }) {
+  return (
+    <>
+      {fatura.durum === "taslak" ? <Badge variant="warning">📝 Taslak</Badge> : fatura.durum === "iptal" ? <Badge variant="danger">İptal</Badge> : <Badge variant="success">🔒 Kesinleşti</Badge>}
+      {fatura.ebelge && (
+        <Badge variant={EBELGE_DURUMLARI[fatura.ebelge.durum]?.renk ?? "neutral"}>
+          {EBELGE_DURUMLARI[fatura.ebelge.durum]?.baslik ?? fatura.ebelge.durum}
+          {fatura.ebelge.tur === "efatura" ? " · e-Fatura" : " · e-Arşiv"}
+        </Badge>
+      )}
+    </>
+  );
+}
 export default function FaturaSayfasi() {
   const pathname = usePathname(); const router = useRouter(); const yeniSayfasi = pathname.endsWith("/yeni");
   const [faturalar, setFaturalar] = useState<Fatura[]>([]);
@@ -216,6 +236,8 @@ export default function FaturaSayfasi() {
   const [epostaAdresi, setEpostaAdresi] = useState("");
   const [formAcik, setFormAcik] = useState(yeniSayfasi);
   const [duzenlenenId, setDuzenlenenId] = useState<string | null>(null);
+  /** Satırdan açılan fatura; eylem çubuğu ve salt okunur kararı buna bakar. */
+  const [acikFatura, setAcikFatura] = useState<FaturaDetay | null>(null);
   const [yonBaglami, setYonBaglami] = useState<"satis" | "alis" | null>(null);
   const [durumFiltresi, setDurumFiltresi] = useState<string | null>(null);
   const [ebelgeFiltresi, setEbelgeFiltresi] = useState<string | null>(null);
@@ -232,6 +254,15 @@ export default function FaturaSayfasi() {
   const cariRef = useRef<HTMLInputElement | null>(null);
   const faturaBaslangicRef = useRef<number | null>(null);
   useEffect(() => { if (yeniSayfasi) { setFormAcik(true); faturaBaslangicRef.current = Date.now(); } }, [yeniSayfasi]);
+  const saltOkunur = acikFatura !== null && !faturaDuzenlenebilir(acikFatura);
+  const faturayiAc = (id: string) => router.push(`/panel/fatura/yeni?ac=${id}${yonBaglami ? `&yon=${yonBaglami}` : ""}`);
+  // Eylemler başarıda mesaj yazıp listeyi tazeler; açık faturanın çubuğu da yeni
+  // durumu (kesinleşti, e-belge kuyrukta, iptal…) göstersin diye fatura yeniden okunur.
+  useEffect(() => {
+    if (!basari || !acikFatura) return;
+    void api<FaturaDetay>(`/fatura/${acikFatura.id}`).then(setAcikFatura).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [basari]);
   const istenenFaturaImlecleri = useRef(new Set<string>());
   const faturaYuklemeSirasi = useRef(0);
   const miktarRefleri = useRef<Array<HTMLInputElement | null>>([]);
@@ -407,11 +438,11 @@ export default function FaturaSayfasi() {
       faturaBaslangicRef.current ??= Date.now();
       return;
     }
-    const duzenleId = parametreler.get("duzenle");
+    const duzenleId = parametreler.get("ac") ?? parametreler.get("duzenle");
     if (yeniSayfasi && duzenleId) {
       void api<FaturaDetay>(`/fatura/${duzenleId}`).then((fatura) => {
-        if ((fatura.durum !== "taslak" && !(fatura.durum === "kesin" && !fatura.ebelge)) || fatura.ebelge) throw new Error("Bu fatura artık düzenlenemez.");
-        setDuzenlenenId(fatura.id); setTip(fatura.tip); setFaturaNo(fatura.no ?? ""); setTarih(fatura.tarih.slice(0, 10)); setDovizCinsi(fatura.dovizCinsi); setVadeTarihi(fatura.vadeTarihi?.slice(0, 10) ?? ""); setSiparisNo(fatura.siparisNo ?? ""); setSiparisTarihi(fatura.siparisTarihi?.slice(0, 10) ?? ""); setVadeElleDegisti(true);
+        setAcikFatura(fatura);
+        setDuzenlenenId(faturaDuzenlenebilir(fatura) ? fatura.id : null); setTip(fatura.tip); setFaturaNo(fatura.no ?? ""); setTarih(fatura.tarih.slice(0, 10)); setDovizCinsi(fatura.dovizCinsi); setVadeTarihi(fatura.vadeTarihi?.slice(0, 10) ?? ""); setSiparisNo(fatura.siparisNo ?? ""); setSiparisTarihi(fatura.siparisTarihi?.slice(0, 10) ?? ""); setVadeElleDegisti(true);
         setCariId(fatura.cari.id); setDepoId(fatura.depoId ?? ""); setAciklama(fatura.aciklama ?? ""); setNotlar(fatura.notlar ?? "");
         setEfaturaProfili(fatura.efaturaProfili ?? "temel"); setProfilElleDegisti(true);
         setSatirlar(fatura.satirlar.map((satir) => ({
@@ -424,7 +455,7 @@ export default function FaturaSayfasi() {
           projeId: (satir as any).projeId ?? (satir as any).proje?.id ?? undefined,
           projeAltKirilimId: (satir as any).projeAltKirilimId ?? (satir as any).projeAltKirilim?.id ?? undefined,
         })));
-      }).catch((h) => setHata(h instanceof Error ? h.message : "Fatura düzenleme için açılamadı"));
+      }).catch((h) => setHata(h instanceof Error ? h.message : "Fatura açılamadı"));
     }
     setDurumFiltresi(parametreler.get("durum"));
     setEbelgeFiltresi(parametreler.get("ebelge"));
@@ -985,7 +1016,7 @@ export default function FaturaSayfasi() {
         actions={
           <>
             <ButtonLabel as="a" href="/panel/fatura/raporlar">📈 Raporlar</ButtonLabel>
-            {yeniSayfasi ? <Button onClick={() => router.push("/panel/fatura")}>Listeye dön</Button> : <ButtonLabel as="a" role="button" variant="primary" href={`/panel/fatura/yeni${yonBaglami ? `?yon=${yonBaglami}` : ""}`}>➕ Yeni Fatura</ButtonLabel>}
+            {yeniSayfasi ? <Button onClick={() => router.push(`/panel/fatura${yonBaglami ? `?yon=${yonBaglami}` : ""}`)}>Listeye dön</Button> : <ButtonLabel as="a" role="button" variant="primary" href={`/panel/fatura/yeni${yonBaglami ? `?yon=${yonBaglami}` : ""}`}>➕ Yeni Fatura</ButtonLabel>}
           </>
         }
       />
@@ -1016,7 +1047,7 @@ export default function FaturaSayfasi() {
       </section>
 
       {epostaGonderilen && (
-        <Card className="stack" style={{ marginBottom: "1.5rem", borderColor: "var(--accent)", maxWidth: 620 }}>
+        <Card className="stack create-page__keep" style={{ marginBottom: "1.5rem", borderColor: "var(--accent)", maxWidth: 620 }}>
           <div className="between">
             <div className="card__title" style={{ margin: 0 }}>
               ✉️ Fatura PDF&apos;ini E-posta ile Gönder
@@ -1050,10 +1081,37 @@ export default function FaturaSayfasi() {
       {formAcik && (
         <div className="document-editor">
           <div className="document-editor__head">
-          <h3>{duzenlenenId ? "Faturayı düzenle" : `Yeni ${tip.startsWith("alis") ? (tip === "alis_iade" ? "alış iade" : "alış") : tip === "proforma" ? "proforma" : "satış"} faturası`}</h3>
-            <div className="row-tight"><span className="badge badge--warning">Taslak</span>{!yeniSayfasi && <Button size="sm" type="button" onClick={faturaFormunuAcKapat}>Vazgeç</Button>}</div>
+          <h3>{acikFatura ? `${saltOkunur ? "Fatura" : "Faturayı düzenle"} · ${acikFatura.no ?? (acikFatura.durum === "taslak" ? "Taslak" : acikFatura.durum === "kesin" ? "numara bekliyor" : "numarasız")}` :`Yeni ${tip.startsWith("alis") ? (tip === "alis_iade" ? "alış iade" : "alış") : tip === "proforma" ? "proforma" : "satış"} faturası`}</h3>
+            <div className="row-tight">{acikFatura ? <FaturaDurumRozeti fatura={acikFatura} /> : <span className="badge badge--warning">Taslak</span>}{!yeniSayfasi && <Button size="sm" type="button" onClick={faturaFormunuAcKapat}>Vazgeç</Button>}</div>
           </div>
-
+          {acikFatura && (
+            <EylemCubugu etiket="Fatura eylemleri">
+              {acikFatura.durum === "taslak" && <Button variant="primary" size="sm" type="button" onClick={() => void kesinlestirmeOzetiAc(acikFatura.id)}>🔒 Kesinleştir</Button>}
+              {!acikFatura.ebelge && acikFatura.durum === "kesin" && !acikFatura.tip.startsWith("alis") && <Button variant="primary" size="sm" type="button" onClick={() => void ebelgeWizardAc(acikFatura)}>🧾 e-Fatura Oluştur</Button>}
+              {acikFatura.ebelge && <Button size="sm" type="button" onClick={() => void ebelgePdfAc(acikFatura.id)}>📄 e-Belge PDF</Button>}
+              {acikFatura.durum !== "taslak" && <Button size="sm" type="button" onClick={() => void pdfAc(acikFatura.id)}>🖨 PDF</Button>}
+              {acikFatura.durum !== "taslak" && <Button size="sm" type="button" onClick={() => setEpostaGonderilen(acikFatura)}>✉️ E-posta</Button>}
+              {acikFatura.ebelge && ["kuyrukta", "iletildi"].includes(acikFatura.ebelge.durum) && <Button size="sm" type="button" onClick={() => void ebelgeSorgula(acikFatura.id)}>Sorgula</Button>}
+              {acikFatura.ebelge?.durum === "hata" && <Button size="sm" type="button" onClick={() => void ebelgeYenidenGonder(acikFatura.id)}>Yeniden gönder</Button>}
+              <Button size="sm" type="button" onClick={() => setEkleriAcikFatura(acikFatura)}>📎 Ekler</Button>
+              <EylemMenusu>
+                {acikFatura.tip === "proforma" && <Button size="sm" type="button" onClick={() => void satisaDonustur(acikFatura.id)}>➡️ Satışa Dönüştür</Button>}
+                <Button size="sm" type="button" onClick={() => void kopyala(acikFatura.id)}>📋 Kopyala</Button>
+                <Button size="sm" type="button" onClick={() => router.push(`/panel/fatura/tekrarlayan?sablonFaturaId=${acikFatura.id}`)}>↻ Tekrarla</Button>
+                <Button size="sm" type="button" onClick={() => void odemeDetayAc(acikFatura.id)}>Ödeme ayrıntısı</Button>
+                {acikFatura.ebelge && <Button size="sm" type="button" onClick={() => void ebelgeDetayAc(acikFatura.id)}>e-Belge ayrıntısı</Button>}
+                {acikFatura.durum === "taslak" && <Button variant="danger" size="sm" type="button" onClick={() => void iptalEt(acikFatura.id)}>İptal et</Button>}
+              </EylemMenusu>
+            </EylemCubugu>
+          )}
+          {saltOkunur && (
+            <p className="document-editor__note">
+              {acikFatura?.durum === "iptal"
+                ? "Bu fatura iptal edildiği için değiştirilemez."
+                : "Bu faturanın e-belgesi oluşturulduğu için değiştirilemez; düzeltme iade faturasıyla yapılır."}
+            </p>
+          )}
+          <fieldset className="document-editor__fieldset" disabled={saltOkunur}>
           <div className="document-editor__section">
             <h4 className="document-editor__section-title">Cari ve belge bilgileri</h4>
             <div className="document-fields">
@@ -1410,9 +1468,13 @@ export default function FaturaSayfasi() {
             <small className="muted">GİB kod listesi: {GIB_KOD_LISTESI_SURUMU}</small>
           </div>
 
-          <div className="document-editor__actions">
-            <Button variant="primary" onClick={kaydet}>{duzenlenenId ? "Değişiklikleri kaydet" : "Taslak faturayı kaydet"}</Button>
-          </div>
+          </fieldset>
+
+          {!saltOkunur && (
+            <div className="document-editor__actions">
+              <Button variant="primary" onClick={kaydet}>{duzenlenenId ? "Değişiklikleri kaydet" : "Taslak faturayı kaydet"}</Button>
+            </div>
+          )}
         </div>
       )}
       <UrunSecimModali acik={urunModali !== null} baslangicStokId={urunModali?.stokId} stoklar={stoklar} cariId={cariId} tip={tip.startsWith("alis") ? "alis" : "satis"} belgeDovizi={dovizCinsi} belgeKuru={kur} belgeTarihi={tarih} onKapat={() => setUrunModali(null)} onEkle={(urun) => {
@@ -1639,17 +1701,23 @@ export default function FaturaSayfasi() {
               <th>Durum</th>
               <th>e-Belge</th>
               <th>Ödeme</th>
-              <th className="center">Eylemler</th>
             </tr>
           </thead>
           <tbody>
             {gorunenFaturalar.length === 0 ? (
               <tr>
-                <td colSpan={10} className="empty">Sistemde henüz kayıtlı fatura bulunmuyor.</td>
+                <td colSpan={9} className="empty">Sistemde henüz kayıtlı fatura bulunmuyor.</td>
               </tr>
             ) : (
               gorunenFaturalar.map((f) => (
-                <tr key={f.id}>
+                <tr
+                  key={f.id}
+                  className="row-link"
+                  tabIndex={0}
+                  aria-label={`${f.no || "Taslak"} faturasını aç`}
+                  onClick={() => faturayiAc(f.id)}
+                  onKeyDown={(olay) => { if (olay.key === "Enter" || olay.key === " ") { olay.preventDefault(); faturayiAc(f.id); } }}
+                >
                   <td style={{ fontWeight: 700 }} className="mono">{f.no || "(Taslak)"}</td>
                   <td>{f.cari.unvan}</td>
                   <td>{f.tarih}</td>
@@ -1661,7 +1729,7 @@ export default function FaturaSayfasi() {
                   </td>
                   <td>
                     {f.ebelge ? (
-                      <button className="status-trigger" onClick={() => void ebelgeDetayAc(f.id)} title="e-Belge ayrıntısını aç" type="button">
+                      <button className="status-trigger" onClick={(olay) => { olay.stopPropagation(); void ebelgeDetayAc(f.id); }} onKeyDown={(olay) => olay.stopPropagation()} title="e-Belge ayrıntısını aç" type="button">
                         <Badge variant={EBELGE_DURUMLARI[f.ebelge.durum]?.renk ?? "neutral"}>
                           {EBELGE_DURUMLARI[f.ebelge.durum]?.baslik ?? f.ebelge.durum}
                           {f.ebelge.tur === "efatura" ? " · e-Fatura" : " · e-Arşiv"}
@@ -1677,41 +1745,11 @@ export default function FaturaSayfasi() {
                     )}
                   </td>
                   <td>
-                    <button className="status-trigger" onClick={() => void odemeDetayAc(f.id)} title="Ödeme ayrıntısını aç" type="button">
+                    <button className="status-trigger" onClick={(olay) => { olay.stopPropagation(); void odemeDetayAc(f.id); }} onKeyDown={(olay) => olay.stopPropagation()} title="Ödeme ayrıntısını aç" type="button">
                       <Badge variant={ODEME_DURUMLARI[f.odemeOzeti?.durum ?? "beklemede"].renk}>
                         {ODEME_DURUMLARI[f.odemeOzeti?.durum ?? "beklemede"].baslik}
                       </Badge>
                     </button>
-                  </td>
-                  <td className="center">
-                    <div className="row-tight" style={{ flexWrap: "nowrap", justifyContent: "center" }}>
-                      {f.durum === "taslak" ? (
-                        <>
-                          <Button variant="primary" size="sm" onClick={() => void kesinlestirmeOzetiAc(f.id)}>🔒 Kesinleştir</Button>
-                          <Button size="sm" onClick={() => router.push(`/panel/fatura/yeni?duzenle=${f.id}`)}>Düzenle</Button>
-                          <Button variant="danger" size="sm" onClick={() => void iptalEt(f.id)}>İptal</Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button size="sm" onClick={() => void pdfAc(f.id)}>🖨 PDF</Button>
-                          {f.ebelge && <Button size="sm" onClick={() => void ebelgePdfAc(f.id)}>📄 e-Belge PDF</Button>}
-                          <Button size="sm" onClick={() => setEpostaGonderilen(f)}>✉️ E-posta</Button>
-                          {!f.ebelge && f.durum === "kesin" && !f.tip.startsWith("alis") && <Button variant="primary" size="sm" onClick={() => void ebelgeWizardAc(f)}>🧾 e-Fatura Oluştur</Button>}
-                          {!f.ebelge && f.durum === "kesin" && <Button size="sm" onClick={() => router.push(`/panel/fatura/yeni?duzenle=${f.id}`)}>Düzenle</Button>}
-                          {f.ebelge && ["kuyrukta", "iletildi"].includes(f.ebelge.durum) && (
-                            <Button size="sm" onClick={() => ebelgeSorgula(f.id)}>Sorgula</Button>
-                          )}
-                          {f.ebelge?.durum === "hata" && <Button size="sm" onClick={() => void ebelgeYenidenGonder(f.id)}>Yeniden gönder</Button>}
-                        </>
-                      )}
-                      {/* FTR-09: yalnız proforma satışa dönüştürülebilir */}
-                      {f.tip === "proforma" && (
-                        <Button size="sm" onClick={() => satisaDonustur(f.id)}>➡️ Satışa Dönüştür</Button>
-                      )}
-                      <Button size="sm" onClick={() => setEkleriAcikFatura(f)}>📎 Ekler</Button>
-                      <Button size="sm" onClick={() => kopyala(f.id)}>📋 Kopyala</Button>
-                      <Button size="sm" onClick={() => router.push(`/panel/fatura/tekrarlayan?sablonFaturaId=${f.id}`)}>↻ Tekrarla</Button>
-                    </div>
                   </td>
                 </tr>
               ))

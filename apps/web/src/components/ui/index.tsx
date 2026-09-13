@@ -503,3 +503,34 @@ export function BulkActionsBar({
     </div>
   );
 }
+
+/**
+ * Kaydın üstünde duran eylem çubuğu. Listeler satır başına eylem taşımaz; kayıt
+ * açıldığında o duruma uygun eylemler burada toplanır. Çubuk form kayarken
+ * görünür kalır.
+ */
+export function EylemCubugu({ etiket, children }: { etiket: string; children: ReactNode }) {
+  return (
+    <div className="action-bar" role="toolbar" aria-label={etiket}>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Çubuğa sığmayan ikincil eylemler için açılır menü. Yerel `<details>` üzerine
+ * kuruludur; bir eyleme basılınca menü kapanır.
+ */
+export function EylemMenusu({ etiket = "Diğer", children }: { etiket?: string; children: ReactNode }) {
+  return (
+    <details className="action-menu">
+      <summary className="btn btn--ghost btn--sm">{etiket} ▾</summary>
+      <div
+        className="action-menu__list"
+        onClick={(olay) => (olay.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open")}
+      >
+        {children}
+      </div>
+    </details>
+  );
+}
