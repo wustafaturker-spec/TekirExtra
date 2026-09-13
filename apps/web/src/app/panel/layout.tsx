@@ -5,7 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api, tokenAl, tokenYaz } from "@/lib/api";
 import { rolMenuYoluGorebilir } from "@/lib/rol-yetkileri";
-import { ThemeSwitcher } from "@/components/theme-switcher";
 import { ThemeConfiguratorDrawer } from "@/components/theme-configurator-drawer";
 import { KomutPaleti } from "@/components/komut-paleti";
 import { AYARLAR, MENU, type MenuOge } from "@/lib/menu";
@@ -313,7 +312,6 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
           <button aria-label="Ara veya git" className="notification-button" onClick={paletiAc} type="button">
             <Search aria-hidden="true" size={19} strokeWidth={1.9} />
           </button>
-          <ThemeSwitcher />
         </div>
         <button className="notification-button" aria-controls="bildirim-paneli" aria-expanded={bildirimlerAcik} aria-label={"Bildirimler" + (bildirimSayisi ? ", " + bildirimSayisi + " açık kayıt" : "")} onClick={bildirimleriDegistir} title="Bildirimler" type="button">
           <Bell aria-hidden="true" size={19} strokeWidth={1.9} />{bildirimSayisi > 0 && <span className="notification-button__count">{bildirimSayisi > 99 ? "99+" : bildirimSayisi}</span>}

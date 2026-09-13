@@ -4,8 +4,8 @@ const sayfalar = [
   { yol: "/panel/fatura", baslik: "Fatura Yönetimi" },
   { yol: "/panel/cari", baslik: "Cari Hesaplar" },
   { yol: "/panel/stok", baslik: "Stok Kartları" },
-  { yol: "/panel/kasa-banka", baslik: "Kasa & Banka Yönetimi" },
-  { yol: "/panel/kasa-banka/ekstre", baslik: "Banka Ekstresi" },
+  { yol: "/panel/kasa-banka", baslik: "Kasa ve banka yönetimi" },
+  { yol: "/panel/kasa-banka/ekstre", baslik: "Banka ekstresi çalışma alanı" },
 ] as const;
 
 async function apiMockla(page: Page) {
@@ -20,7 +20,7 @@ async function apiMockla(page: Page) {
       await route.fulfill({ json: { userId: "u1", tenantId: "t1", rol: "yonetici" } });
       return;
     }
-    if (pathname.endsWith("/cari/etiketler") || pathname.endsWith("/fiyat-listeleri") || pathname.includes("/kasa-banka/") || pathname.endsWith("/depo")) {
+    if (pathname.endsWith("/cari/etiketler") || pathname.endsWith("/fiyat-listeleri") || pathname.includes("/kasa-banka/") || pathname.endsWith("/depo") || pathname.endsWith("/projeler")) {
       await route.fulfill({ json: [] });
       return;
     }
@@ -121,7 +121,7 @@ async function faturaFormuMockla(page: Page) {
   await page.route("http://localhost:3001/api/v1/stok**", async (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/stok/stok-1/tavsiye-fiyat")) {
-      await route.fulfill({ json: { birimFiyat: 185, iskontoOrani: 5 } });
+      await route.fulfill({ json: { kaynakFiyat: 185, kaynakDoviz: "TRY", iskontoOrani: 5, cevrilebilir: true } });
       return;
     }
     await route.fulfill({ json: { kayitlar: [{
@@ -140,15 +140,15 @@ async function veriDoluAnaKayitMockla(page: Page) {
       return;
     }
     await route.fulfill({ json: { kayitlar: [
-      { id: "cari-1", kod: "CR-00124", unvan: "ABC Makina Sanayi ve Ticaret Limited Şirketi İstanbul Avrupa Yakası Şubesi", tip: "musteri", sektor: "Makine ve Endüstriyel Üretim", vknTckn: "1234567890", eposta: "muhasebe@abcmakina.example", telefon: "0212 555 01 24", karaListe: false, bakiyeler: [{ dovizCinsi: "TRY", bakiye: "84200.00" }] },
-      { id: "cari-2", kod: "CR-00208", unvan: "Kuzey Tedarik A.Ş.", tip: "tedarikci", sektor: "Toptan Ticaret", vknTckn: "9876543210", eposta: null, telefon: null, karaListe: false, bakiyeler: [{ dovizCinsi: "TRY", bakiye: "-31850.50" }] },
-      { id: "cari-3", kod: "CR-00311", unvan: "Riskli Müşteri Ltd. Şti.", tip: "musteri", sektor: null, vknTckn: "1122334455", eposta: null, telefon: null, karaListe: true, bakiyeler: [{ dovizCinsi: "TRY", bakiye: "126400.00" }] },
+      { id: "cari-1", kod: "CR-00124", unvan: "ABC Makina Sanayi ve Ticaret Limited Şirketi İstanbul Avrupa Yakası Şubesi", tip: "musteri", sektor: "Makine ve Endüstriyel Üretim", vknTckn: "1234567890", eposta: "muhasebe@abcmakina.example", telefon: "0212 555 01 24", karaListe: false, bakiyeler: [{ dovizCinsi: "TRY", bakiye: "84200.00", bakiyeTry: "84200.00" }] },
+      { id: "cari-2", kod: "CR-00208", unvan: "Kuzey Tedarik A.Ş.", tip: "tedarikci", sektor: "Toptan Ticaret", vknTckn: "9876543210", eposta: null, telefon: null, karaListe: false, bakiyeler: [{ dovizCinsi: "TRY", bakiye: "-31850.50", bakiyeTry: "-31850.50" }] },
+      { id: "cari-3", kod: "CR-00311", unvan: "Riskli Müşteri Ltd. Şti.", tip: "musteri", sektor: null, vknTckn: "1122334455", eposta: null, telefon: null, karaListe: true, bakiyeler: [{ dovizCinsi: "TRY", bakiye: "126400.00", bakiyeTry: "126400.00" }] },
     ], sonrakiImlec: null } });
   });
   await page.route("http://localhost:3001/api/v1/stok**", (route) => route.fulfill({ json: { kayitlar: [
-    { id: "stok-1", kod: "PRD-0042", ad: "A4 Fotokopi Kağıdı 80 gr Beyaz 500 Yaprak Ekonomik Ofis Paketi", tip: "urun", barkod: "8690000000042", anaBirim: "paket", kdvOrani: "20", alisFiyati: "145.00", satisFiyati: "185.00", mevcutMiktar: "124", ortalamaMaliyet: "141.75" },
-    { id: "stok-2", kod: "PRD-0088", ad: "Endüstriyel Kesici Disk 115 mm", tip: "urun", barkod: "8690000000088", anaBirim: "adet", kdvOrani: "20", alisFiyati: "72.50", satisFiyati: "110.00", mevcutMiktar: "0", ortalamaMaliyet: "68.40" },
-    { id: "stok-3", kod: "SRV-0012", ad: "Yerinde Kurulum ve Teknik Destek Hizmeti", tip: "hizmet", barkod: null, anaBirim: "saat", kdvOrani: "20", alisFiyati: null, satisFiyati: "1250.00", mevcutMiktar: "0", ortalamaMaliyet: "0" },
+    { id: "stok-1", kod: "PRD-0042", ad: "A4 Fotokopi Kağıdı 80 gr Beyaz 500 Yaprak Ekonomik Ofis Paketi", tip: "urun", barkod: "8690000000042", anaBirim: "paket", kdvOrani: "20", alisFiyati: "145.00", satisFiyati: "185.00", mevcutMiktar: "124", ortalamaMaliyet: "141.75", alisFiyatiDoviz: "TRY", satisFiyatiDoviz: "TRY" },
+    { id: "stok-2", kod: "PRD-0088", ad: "Endüstriyel Kesici Disk 115 mm", tip: "urun", barkod: "8690000000088", anaBirim: "adet", kdvOrani: "20", alisFiyati: "72.50", satisFiyati: "110.00", mevcutMiktar: "0", ortalamaMaliyet: "68.40", alisFiyatiDoviz: "TRY", satisFiyatiDoviz: "TRY" },
+    { id: "stok-3", kod: "SRV-0012", ad: "Yerinde Kurulum ve Teknik Destek Hizmeti", tip: "hizmet", barkod: null, anaBirim: "saat", kdvOrani: "20", alisFiyati: null, satisFiyati: "1250.00", mevcutMiktar: "0", ortalamaMaliyet: "0", alisFiyatiDoviz: "TRY", satisFiyatiDoviz: "TRY" },
   ], sonrakiImlec: null } }));
 }
 
@@ -157,21 +157,21 @@ async function veriDoluKasaBankaMockla(page: Page) {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/kasa-banka/kasalar")) {
       await route.fulfill({ json: [
-        { id: "kasa-1", ad: "Merkez TL Kasası", dovizCinsi: "TRY", bakiye: "24500.00" },
-        { id: "kasa-2", ad: "Şube Nakit Kasası", dovizCinsi: "TRY", bakiye: "-1250.75" },
+        { id: "kasa-1", ad: "Merkez TL Kasası", dovizCinsi: "TRY", bakiye: "24500.00", aktif: true },
+        { id: "kasa-2", ad: "Şube Nakit Kasası", dovizCinsi: "TRY", bakiye: "-1250.75", aktif: true },
       ] });
       return;
     }
     if (pathname.endsWith("/kasa-banka/bankalar")) {
       await route.fulfill({ json: [
-        { id: "banka-1", ad: "İş Bankası Ticari TL Ana Hesabı", bankaAdi: "Türkiye İş Bankası", hesapNo: "1234-567890", iban: "TR120006200000000123456789", dovizCinsi: "TRY", bakiye: "184200.00" },
-        { id: "banka-2", ad: "İhracat USD Hesabı", bankaAdi: "Garanti BBVA", hesapNo: "7788-990011", iban: "TR330006200000000987654321", dovizCinsi: "USD", bakiye: "8250.50" },
+        { id: "banka-1", ad: "İş Bankası Ticari TL Ana Hesabı", bankaAdi: "Türkiye İş Bankası", hesapNo: "1234-567890", iban: "TR120006200000000123456789", dovizCinsi: "TRY", bakiye: "184200.00", aktif: true },
+        { id: "banka-2", ad: "İhracat USD Hesabı", bankaAdi: "Garanti BBVA", hesapNo: "7788-990011", iban: "TR330006200000000987654321", dovizCinsi: "USD", bakiye: "8250.50", aktif: true },
       ] });
       return;
     }
     await route.fulfill({ json: [
-      { id: "hareket-1", tarih: "2026-08-09", tip: "tahsilat", tutar: "12000.00", dovizCinsi: "TRY", aciklama: "SF2026000123 numaralı satış faturası tahsilatı", kasa: null, bankaHesap: { ad: "İş Bankası Ticari TL Ana Hesabı" }, cari: { unvan: "ABC Makina Sanayi ve Ticaret Ltd. Şti." } },
-      { id: "hareket-2", tarih: "2026-08-08", tip: "tediye", tutar: "31850.50", dovizCinsi: "TRY", aciklama: "Temmuz dönemi toplu tedarikçi ödemesi ve masraf kapaması", kasa: null, bankaHesap: { ad: "İş Bankası Ticari TL Ana Hesabı" }, cari: { unvan: "Kuzey Tedarik A.Ş." } },
+      { id: "hareket-1", tarih: "2026-08-09", tip: "tahsilat", tutar: "12000.00", dovizCinsi: "TRY", kur: "1", tutarTry: "12000.00", aciklama: "SF2026000123 numaralı satış faturası tahsilatı", kaynakTur: "fatura_kapama", karsiHareketId: null, kasa: null, bankaHesap: { id: "banka-1", ad: "İş Bankası Ticari TL Ana Hesabı", bankaAdi: "Türkiye İş Bankası" }, cari: { unvan: "ABC Makina Sanayi ve Ticaret Ltd. Şti." } },
+      { id: "hareket-2", tarih: "2026-08-08", tip: "tediye", tutar: "31850.50", dovizCinsi: "TRY", kur: "1", tutarTry: "31850.50", aciklama: "Temmuz dönemi toplu tedarikçi ödemesi ve masraf kapaması", kaynakTur: "manuel", karsiHareketId: null, kasa: null, bankaHesap: { id: "banka-1", ad: "İş Bankası Ticari TL Ana Hesabı", bankaAdi: "Türkiye İş Bankası" }, cari: { unvan: "Kuzey Tedarik A.Ş." } },
     ] });
   });
   await page.route("http://localhost:3001/api/v1/cari**", (route) => route.fulfill({ json: { kayitlar: [
@@ -185,6 +185,13 @@ async function veriDoluAnaPanelMockla(page: Page) {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/auth/ben")) {
       await route.fulfill({ json: { userId: "u1", tenantId: "t1", rol: "yonetici" } });
+    } else if (pathname.endsWith("/bildirimler/ozet")) {
+      await route.fulfill({ json: { okunmamis: 5, acik: 22, kritik: 2 } });
+    } else if (pathname.endsWith("/bildirimler")) {
+      await route.fulfill({ json: { kayitlar: [
+        { id: "teslimat-1", durum: "yeni", bildirim: { baslik: "2 e-Belge gönderimi hatalı", aciklama: "Alıcı posta kutusu etiketi doğrulanamadı.", onem: "kritik", hedefYol: "/panel/fatura?ebelge=hata" } },
+        { id: "teslimat-2", durum: "okundu", bildirim: { baslik: "6 ürün kritik stok seviyesinde", aciklama: "Tedarik süresi dolmadan sipariş verin.", onem: "uyari", hedefYol: "/panel/stok?kritik=1" } },
+      ] } });
     } else if (pathname.endsWith("/firma")) {
       await route.fulfill({ json: { unvan: "TekirExtra Örnek Sanayi ve Ticaret Limited Şirketi" } });
     } else if (pathname.endsWith("/fatura/is-kuyrugu-ozeti")) {
@@ -294,8 +301,11 @@ for (const gorunum of [
 
       await page.getByRole("combobox", { name: "1. satır ürün veya hizmet seçimi" }).click();
       await page.getByRole("option", { name: /A4 Fotokopi Kağıdı 80 gr/ }).click();
+      // Ürün seçimi fiyatı satıra doğrudan yazmaz; önerilen fiyatla ürün penceresi açılır.
+      const urunPenceresi = page.getByRole("dialog", { name: "Ürün veya hizmet ekle" });
+      await urunPenceresi.getByLabel("Miktar").fill("12");
+      await urunPenceresi.getByRole("button", { name: "+ Ekle" }).click();
       await expect(page.getByLabel("Birim fiyat")).toHaveValue("185");
-      await page.getByLabel("Miktar").fill("12");
       await expect(page.getByText("2.530,80 TL").first()).toBeVisible();
       await expect(page).toHaveScreenshot(`fatura-formu-doldurulmus-${gorunum.ad}.png`, {
         animations: "disabled",
@@ -325,7 +335,7 @@ for (const gorunum of [
 
       await page.goto("/panel/stok");
       await expect(page.getByText("A4 Fotokopi Kağıdı 80 gr Beyaz 500 Yaprak Ekonomik Ofis Paketi")).toBeVisible();
-      await expect(page.getByText("1.250,00 TL")).toBeVisible();
+      await expect(page.getByText("1.250,00 TRY")).toBeVisible();
       await expect(page).toHaveScreenshot(`stok-listesi-veri-dolu-${gorunum.ad}.png`, {
         animations: "disabled", caret: "hide", fullPage: true,
       });
@@ -335,20 +345,22 @@ for (const gorunum of [
       await apiMockla(page);
       await veriDoluKasaBankaMockla(page);
       await page.goto("/panel/kasa-banka");
-      await expect(page.getByText("184.200,00 TRY")).toBeVisible();
+      await expect(page.getByText("₺184.200,00").first()).toBeVisible();
       await expect(page.getByText("SF2026000123 numaralı satış faturası tahsilatı")).toBeVisible();
       await expect(page).toHaveScreenshot(`kasa-banka-veri-dolu-${gorunum.ad}.png`, {
         animations: "disabled", caret: "hide", fullPage: true,
       });
 
       await page.getByRole("button", { name: /Fiş Girişi/ }).click();
-      const secimler = page.locator("select");
-      await secimler.nth(0).selectOption("banka:banka-1");
-      await secimler.nth(1).selectOption("tahsilat");
-      await secimler.nth(2).selectOption("cari-1");
-      await page.locator('input[type="number"]').fill("12000");
-      await page.locator('input[type="date"]').fill("2026-08-09");
-      await page.getByPlaceholder("Örn. Tahsilat makbuzu 123 veya Ofis gideri").fill("SF2026000123 faturası banka tahsilatı");
+      // Fiş alanları etiketleriyle bulunur; cari aranabilir seçicidir.
+      const fisFormu = page.locator("form").filter({ has: page.getByLabel("Kasa / Banka Seçimi") });
+      await fisFormu.getByLabel("Kasa / Banka Seçimi").selectOption("banka:banka-1");
+      await fisFormu.getByLabel("İşlem Tipi").selectOption("tahsilat");
+      await fisFormu.getByLabel("Tutar").fill("12000");
+      await fisFormu.getByLabel("Tarih").fill("2026-08-09");
+      await fisFormu.getByRole("combobox", { name: "Cari bağlantısı" }).click();
+      await page.getByRole("option", { name: /ABC Makina/ }).click();
+      await fisFormu.getByLabel("Açıklama").fill("SF2026000123 faturası banka tahsilatı");
       await expect(page).toHaveScreenshot(`kasa-banka-tahsilat-formu-${gorunum.ad}.png`, {
         animations: "disabled", caret: "hide", fullPage: true,
       });
@@ -357,6 +369,8 @@ for (const gorunum of [
     test("yönetici ana paneli ve bildirim merkezi görsel olarak korunur", async ({ page }) => {
       await apiMockla(page);
       await veriDoluAnaPanelMockla(page);
+      // Panel bugünün tarihini ve son güncelleme saatini yazar; görüntü her gün değişmesin.
+      await page.clock.setFixedTime(new Date("2026-08-09T10:30:00+03:00"));
       await page.goto("/panel");
       await expect(page.getByText("TekirExtra Örnek Sanayi ve Ticaret Limited Şirketi")).toBeVisible();
       await expect(page.getByText("₺839.300")).toBeVisible();
@@ -372,7 +386,10 @@ for (const gorunum of [
       await expect(page.getByRole("dialog", { name: "Görünüm Ayarları" })).toBeHidden();
       await expect(temaDugmesi).toBeFocused();
 
-      await page.locator(gorunum.ad === "mobil" ? ".notification-button" : ".notification-nav").click();
+      // Mobil üst çubukta arama düğmesi de aynı sınıfı taşır; bildirim düğmesi adıyla bulunur.
+      await (gorunum.ad === "mobil"
+        ? page.locator(".mobile-topbar").getByRole("button", { name: /^Bildirimler/ })
+        : page.locator(".notification-nav")).click();
       await expect(page.getByLabel("Bildirim merkezi")).toBeVisible();
       await expect(page.getByText("22 açık kayıt")).toBeVisible();
       await expect(page).toHaveScreenshot(`bildirim-merkezi-${gorunum.ad}.png`, {

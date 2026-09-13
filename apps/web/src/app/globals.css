@@ -2227,7 +2227,7 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
     background: var(--surface);
     border-bottom: 1px solid var(--border);
     display: grid;
-    grid-template-columns: 40px 1fr auto;
+    grid-template-columns: 40px 1fr auto auto;
     height: 56px;
     left: 0;
     padding: 0 0.75rem;
@@ -3722,6 +3722,10 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 .income-preview { background: var(--success-soft); border: 1px solid var(--border); border-radius: var(--radius); display: grid; font-size: 0.82rem; gap: 0.35rem; margin-top: 0.75rem; padding: 0.75rem; }
 .income-preview > div { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; }
 .income-preview__total { border-top: 1px dashed var(--border); font-weight: 700; padding-top: 0.4rem; }
+/* Koyu zeminli başlık kutuları metni beyaz yapar; genel `h1 { color: var(--text) }`
+   kuralı başlığın bu rengi almasını engelliyordu. */
+.dashboard-hero h1, .incoming-hero h1, .archive-hero h1, .cheque-hero h1, .statement-hero h1,
+.pos-hero h1, .market-hero h1, .fee-hero h1, .queue-hero h1 { color: inherit; }
 /* Son sütundaki satır menüsü sağa açılırsa tablodan taşar. */
 .statement-row-actions .action-menu__list { left: auto; right: 0; }
 .table tr.row-link { cursor: pointer; }
