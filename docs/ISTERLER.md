@@ -606,6 +606,22 @@ görüldü.
 | DVZ-07 | ✅ **Kur yüzünden duran iş görünür olur:** kur bulunamadığı için oluşturulamayan otomatik kira dönemi bildirim üretir (bkz. §3.10); bildirim eksik tarihi ve para birimini söyler. | G |
 | DVZ-08 | **Kapsam dışı:** USD ve EUR dışındaki para birimleri, efektif kur, kaydedilmiş belgelerin kurunu geriye dönük değiştirmek (belge kendi kurunu taşır, BUT-01). | — |
 
+### 3.14 Faaliyet Dışı ve Faturasız Gelirler (GLR)
+
+**S-01 kapı kararları (2026-09-13, kullanıcı onayı):** gelir kaydının para birimi
+tahsil edildiği hesabın para birimidir; kullanıcı ayrıca seçmez. Dövizli gelirin
+TL karşılığı kaydın kendi kurundan hesaplanır (BUT-01). İnceleme sırasında gelir
+formunun her kaydı TRY ve kur 1 gönderdiği, bu yüzden USD/EUR hesaba gelir
+girilemediği (sunucu uyuşmazlığı reddediyor), ayrıca kategori düzenlemenin
+kategorinin varsayılan KDV oranını sessizce sıfırladığı görüldü.
+
+| No | İster | Öncelik |
+|---|---|---|
+| GLR-01 | ✅ **Para birimi hesaptan gelir:** gelir kaydının para birimi seçilen kasa/banka hesabının para birimidir. Hesap ile kaydın para birimi uyuşmazsa sunucu kaydı reddeder. | Z |
+| GLR-02 | ✅ **Kur:** dövizli gelirde belge tarihindeki kur zorunludur ve TCMB **döviz alış** kuruyla önerilir (gelen yabancı para TL'ye çevrilir); kullanıcı değiştirebilir. Kur çözümü DVZ-04'e uyar: kur bulunamazsa kayıt durur ve kullanıcı Döviz Kurları ekranına yönlendirilir. | Z |
+| GLR-03 | ✅ **Kur 1 olamaz:** dövizli gelir kaydında kur 1 sunucu tarafından reddedilir; 1 "tutar zaten TL" demektir. TRY kayıtta kur daima 1'dir. | Z |
+| GLR-04 | ✅ **Kategori varsayılanları korunur:** gelir kategorisi formu varsayılan stopaj ve KDV oranını gösterir ve düzenlemede mevcut değerleri yükler; bir alanı değiştirmek diğer varsayılanı değiştirmez. | Z |
+
 ## 4. Fonksiyonel Olmayan İsterler
 
 ### 4.1 Performans
