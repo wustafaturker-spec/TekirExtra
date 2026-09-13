@@ -2,17 +2,14 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { EirsaliyeDurum, GelenEirsaliyeDurum } from "@prisma/client";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import type { EntegratorConfig } from "@tekirextra/baglanti";
-import { XMLParser } from "fast-xml-parser";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
+import { irsaliyeUblOku } from "./eirsaliye-ubl-oku";
 import { MukellefListesiService } from "./mukellef-listesi.service";
 
 const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-const xmlParser = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true, parseTagValue: false, trimValues: true });
-const dizi = <T>(v: T | T[] | undefined): T[] => v == null ? [] : Array.isArray(v) ? v : [v];
-const metin = (v: unknown): string => typeof v === "object" && v !== null && "#text" in v ? String((v as { "#text": unknown })["#text"]) : v == null ? "" : String(v);
 
 @Injectable()
 export class EirsaliyeService {
@@ -168,19 +165,10 @@ export class EirsaliyeService {
     const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.gelenEirsaliye.findUnique({ where: { id } }));
     if (!kayit) throw new NotFoundException("Gelen e-İrsaliye bulunamadı");
     try {
-      const kok = xmlParser.parse(kayit.xmlIcerik) as Record<string, any>;
-      const belge = kok.DespatchAdvice ?? Object.values(kok)[0] ?? {};
-      const teslimat = belge.Delivery ?? {};
-      const adres = teslimat.DeliveryAddress ?? teslimat.DeliveryLocation?.Address ?? {};
-      const satirlar = dizi<any>(belge.DespatchLine).map((s, index) => ({
-        sira: metin(s.ID) || String(index + 1),
-        stokKodu: metin(s.Item?.SellersItemIdentification?.ID || s.Item?.ManufacturersItemIdentification?.ID),
-        ad: metin(s.Item?.Name || s.Item?.Description) || "İsimsiz ürün",
-        miktar: metin(s.DeliveredQuantity),
-        birim: s.DeliveredQuantity?.["@_unitCode"] || "",
-        aciklama: metin(s.Note),
-      }));
-      return { ...kayit, detay: { sevkTarihi: metin(belge.ActualDespatchDate || belge.IssueDate), sevkSaati: metin(belge.ActualDespatchTime || belge.IssueTime), teslimatAdresi: [metin(adres.StreetName), metin(adres.BuildingNumber), metin(adres.CitySubdivisionName), metin(adres.CityName)].filter(Boolean).join(" "), notlar: dizi(belge.Note).map(metin).filter(Boolean), satirlar } };
+      // Detay ekranı ve yedek PDF görünümü (EBLG-33) aynı okuyucuyu kullanır.
+      const r = irsaliyeUblOku(kayit.xmlIcerik);
+      const satirlar = r.satirlar.map(({ sira, stokKodu, ad, miktar, birim, aciklama }) => ({ sira, stokKodu, ad, miktar, birim, aciklama }));
+      return { ...kayit, detay: { sevkTarihi: r.sevkTarihi, sevkSaati: r.sevkSaati, teslimatAdresi: r.teslimatAdresi, notlar: r.notlar, satirlar } };
     } catch {
       return { ...kayit, detay: { sevkTarihi: "", sevkSaati: "", teslimatAdresi: "", notlar: [], satirlar: [] } };
     }

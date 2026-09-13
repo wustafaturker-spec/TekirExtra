@@ -1,11 +1,22 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, Res } from "@nestjs/common";
+import type { Response } from "express";
 import { GelenEirsaliyeDurum } from "@prisma/client";
 import { Roller } from "../auth/roller.decorator";
+import { EbelgeGorunumService } from "./ebelge-gorunum.service";
 import { EirsaliyeService } from "./eirsaliye.service";
 
 @Controller("ebelge/irsaliye")
 export class EirsaliyeController {
-  constructor(private readonly service: EirsaliyeService) {}
+  constructor(private readonly service: EirsaliyeService, private readonly gorunum: EbelgeGorunumService) {}
+
+  /** EBLG-33: gelen e-İrsaliyenin PDF görünümü; kaynak saklanan UBL'dir. */
+  @Get("gelen/:id/pdf")
+  async gelenPdf(@Param("id") id: string, @Res() res: Response) {
+    const pdf = await this.gorunum.gelenIrsaliyePdf(id);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${pdf.dosyaAdi}"`);
+    res.send(pdf.buffer);
+  }
   @Post(":belgeId/gonder") @Roller("muhasebe") gonder(@Param("belgeId") id: string) { return this.service.gonder(id); }
   @Post(":belgeId/sorgula") @Roller("muhasebe") durum(@Param("belgeId") id: string) { return this.service.durum(id); }
   @Post("gelenleri-cek") @Roller("muhasebe") gelenleriCek() { return this.service.gelenleriCek(); }

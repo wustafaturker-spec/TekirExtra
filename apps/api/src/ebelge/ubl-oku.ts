@@ -79,6 +79,10 @@ const BIRIM_KODLARI: Record<string, string> = {
   ANN: "yıl",
 };
 
+/** UBL birim kodunun sistemdeki adı; bilinmeyen kod küçük harfle kalır. */
+export const birimAdi = (kod: string): string =>
+  BIRIM_KODLARI[kod.toUpperCase()] ?? (kod ? kod.toLowerCase() : "");
+
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "@_",
