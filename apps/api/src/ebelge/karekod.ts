@@ -5,8 +5,12 @@ import * as bwipjs from "bwip-js";
  * burada yalnız QR'a çevrilir ve basılacak sayfaya yerleştirilir.
  */
 
-/** Karekodun basılı kenarı; okuyucuların kâğıttan rahat okuduğu boyut. */
-const KAREKOD_KENARI = "30mm";
+/**
+ * Karekodun basılı kenarı. İçerik KDV oranı başına uzar; iki oranlı faturada
+ * (373 karakter) 30 mm karekod 100 dpi'lık taramada okunmadı, 35 mm okundu
+ * (2026-09-13, WeChat QR okuyucusuyla ölçüldü).
+ */
+const KAREKOD_KENARI = "35mm";
 
 /** Hata düzeltme seviyesi BWIPP'nin QR varsayılanı olan M'dir; kılavuz seviye belirtmez. */
 export function karekodDataUri(veri: Record<string, string>): string {
