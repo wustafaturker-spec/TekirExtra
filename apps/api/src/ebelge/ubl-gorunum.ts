@@ -66,11 +66,14 @@ export function gomuluXsltCikar(xml: string): string | null {
 
   for (const ek of dizi(belge.AdditionalDocumentReference)) {
     // Eklentinin türü iki ayrı alanda bildirilebiliyor: UBL-TR uygulamalarının
-    // neredeyse tamamı `DocumentType` yazar (gelen 54 belgenin 53'ü), OASIS
-    // alanı `DocumentTypeCode` ise bizim ürettiğimiz belgelerde bulunur.
+    // çoğu `DocumentType` yazar, OASIS alanı `DocumentTypeCode` ise bizim
+    // ürettiğimiz belgelerde bulunur. Bir kısmı ise türü hiç yazmaz, yalnız
+    // `.xslt` uzantılı dosya ekler (2026-09-13: görünümlü 131 gelen belgenin
+    // 77'si) — portallar bunları da görünüm sayar, biz de dosya adına bakarız.
     const tur = (metin(ek.DocumentType) || metin(ek.DocumentTypeCode)).toUpperCase();
-    if (tur !== "XSLT") continue;
     const ikili = nesne(ek.Attachment)?.EmbeddedDocumentBinaryObject;
+    const dosyaAdi = String(nesne(ikili)?.["@_filename"] ?? "").trim().toLowerCase();
+    if (tur !== "XSLT" && !/\.xslt?$/.test(dosyaAdi)) continue;
     const xslt = xsltCoz(metin(ikili));
     if (xslt) return xslt;
   }

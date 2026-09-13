@@ -60,6 +60,20 @@ describe("gomuluXsltCikar (EBLG-28)", () => {
     expect(gomuluXsltCikar(ek)).toContain("<xsl:stylesheet");
   });
 
+  it("türü hiç yazılmamış ama .xslt dosyası olarak eklenmiş görünümü bulur", () => {
+    // NES portalından gelen belgelerde eklentide yalnız ID, tarih ve dosya var.
+    const icerik = Buffer.from('<xsl:stylesheet version="2.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform"/>').toString("base64");
+    const ek = (dosyaAdi: string) => sarmala(`<AdditionalDocumentReference>
+      <ID>35f3e909-eaa0-46d6-a252-a781b0e5c712</ID>
+      <IssueDate>2026-09-10</IssueDate>
+      <Attachment><EmbeddedDocumentBinaryObject filename="${dosyaAdi}" mimeCode="application/xml">${icerik}</EmbeddedDocumentBinaryObject></Attachment>
+    </AdditionalDocumentReference>`);
+    expect(gomuluXsltCikar(ek("35f3e909.xslt"))).toContain("<xsl:stylesheet");
+    expect(gomuluXsltCikar(ek("GORUNUM.XSL"))).toContain("<xsl:stylesheet");
+    // Türsüz eklenti dosya adı görünüm demiyorsa görünüm sayılmaz.
+    expect(gomuluXsltCikar(ek("sozlesme.pdf"))).toBeNull();
+  });
+
   it("XSLT'ye benzemeyen base64 içeriği görünüm sayılmaz", () => {
     const gorselEki = sarmala(`<AdditionalDocumentReference>
       <DocumentTypeCode>XSLT</DocumentTypeCode>

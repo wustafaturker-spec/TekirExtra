@@ -336,7 +336,7 @@ saklanmaz, istendiğinde XML'den üretilir.
 | No | İster | Öncelik |
 |---|---|---|
 | EBLG-27 | Gelen ve giden e-Fatura/e-Arşiv belgesi, kayıtlı UBL'inden **PDF olarak görüntülenebilmelidir**. PDF saklanmaz, her istekte üretilir; saklanan asıl belge XML'dir. Belge numarasıyla adlandırılır ve tarayıcıda satır içi açılır. | G |
-| EBLG-28 | Görünüm, belgenin UBL'ine **gömülü XSLT** eklentisinden (`DocumentTypeCode = XSLT`) çizilmelidir; belge, gönderenin tasarladığı resmî görünümle çıkar. XSLT yoksa veya dönüşüm başarısızsa uygulamanın kendi şablonuna düşülür ve çıktıda bunun yedek görünüm olduğu belirtilir. | G |
+| EBLG-28 | Görünüm, belgenin UBL'ine **gömülü XSLT** eklentisinden çizilmelidir; eklenti türü (`DocumentType` ya da `DocumentTypeCode`) `XSLT` olan **ya da** türü yazılmamış olsa da dosya adı `.xsl`/`.xslt` olan ek görünüm sayılır (gönderenlerin bir kısmı türü hiç yazmaz, portallar bu belgeleri de görünümüyle gösterir); belge, gönderenin tasarladığı resmî görünümle çıkar. XSLT yoksa veya dönüşüm başarısızsa uygulamanın kendi şablonuna düşülür ve çıktıda bunun yedek görünüm olduğu belirtilir. | G |
 | EBLG-29 | XSLT yabancı bir kaynaktan gelir; dönüşüm **yalıtılmış** çalışmalıdır: dış ağ erişimi, yerel dosya okuma ve betik çalıştırma kapalı olmalı, dönüşüm süre sınırına bağlanmalıdır. Bozuk veya kötü niyetli XSLT PDF üretimini düşürmemeli, yedek görünüme düşürmelidir. | G |
 | EBLG-30 | Giden faturanın PDF'i e-belge kimlik alanlarını taşımalıdır: **ETTN (UUID)**, GİB **senaryosu** ve **profili**. | G |
 | EBLG-31 | UBL'e gömülen XSLT, giden faturanın PDF'iyle **aynı görünümü** üretmelidir; alıcının gördüğü belge ile bizim bastığımız belge ayrışmamalıdır. | G |
