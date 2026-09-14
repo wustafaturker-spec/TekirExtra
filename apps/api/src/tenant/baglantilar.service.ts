@@ -65,6 +65,35 @@ export const baglantiOlusturSemasi = z.object({
   if (girdi.aile === "ebelge" && girdi.saglayici === "sovos" && (!girdi.config.parola || !girdi.config.vknTckn || !girdi.config.gondericiBirimEtiketi || !girdi.config.servisAdresi)) ctx.addIssue({ code: "custom", path: ["config"], message: "Sovos için parola, VKN/TCKN, GB etiketi ve servis adresi zorunludur" });
 });
 
+/**
+ * Düzenlemede gösterilmeyen, boş bırakılınca kayıtlı değeri korunan alanlar
+ * (EBLG-01b).
+ */
+const GIZLI_ALANLAR = ["kullaniciAdi", "parola", "apiAnahtari"] as const;
+
+/**
+ * Düzenleme formunun kayıtlı değerle açtığı gizli olmayan ayarlar. İzin
+ * listesidir: config'e sonradan eklenen bir alan buraya yazılmadıkça
+ * arayüze dönmez.
+ */
+const GORUNUR_AYARLAR = [
+  "servisAdresi",
+  "earsivServisAdresi",
+  "irsaliyeServisAdresi",
+  "vknTckn",
+  "gondericiBirimEtiketi",
+  "postaKutusuEtiketi",
+  "belgeSeriOneki",
+  "earsivSeriOneki",
+  "eirsaliyeSeriOneki",
+  "eirsaliyeYanitSeriOneki",
+] as const;
+
+/** Güncellemede kullanıcı adı da gizli alandır; boşsa kayıtlı değer korunur. */
+export const baglantiGuncelleSemasi = z.object({
+  config: baglantiOlusturSemasi.shape.config.extend({ kullaniciAdi: z.string().optional() }),
+});
+
 export interface BaglantiGorunumu {
   id: string;
   aile: string;
@@ -74,6 +103,8 @@ export interface BaglantiGorunumu {
   kullaniciAdiMaskeli: string;
   /** Gizli değil; düzenleme formu mevcut ortam seçimini korumak için okur (EBLG-01a). */
   testOrtami: boolean;
+  /** Düzenleme formunun kayıtlı değerle açtığı gizli olmayan ayarlar (EBLG-01b). */
+  ayarlar: Partial<Record<(typeof GORUNUR_AYARLAR)[number], string>>;
 }
 
 function maskele(deger: string): string {
@@ -193,19 +224,35 @@ export class BaglantilarService {
     return this.gorunum(kayit);
   }
 
+  /**
+   * Config baştan yazılır; form gizli olmayan ayarları kayıtlı değerle açtığı
+   * için gelmeyen bir ayar bilerek temizlenmiştir. Gizli alanlar formda
+   * gösterilmediğinden boş gelirse kayıtlı değer korunur (EBLG-01b).
+   */
   async guncelle(
     id: string,
-    girdi: { config: z.infer<typeof baglantiOlusturSemasi>["config"] },
+    girdi: z.infer<typeof baglantiGuncelleSemasi>,
   ): Promise<BaglantiGorunumu> {
     const { tenantId } = aktifBaglam();
     const kayit = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const mevcut = await tx.baglanti.findUnique({ where: { id } });
       if (!mevcut) throw new NotFoundException("Bağlantı bulunamadı");
 
+      let onceki: Record<string, unknown> = {};
+      try {
+        onceki = JSON.parse(coz(mevcut.sifreliConfig)) as Record<string, unknown>;
+      } catch {
+        onceki = {};
+      }
+      const config: Record<string, unknown> = { ...girdi.config };
+      for (const alan of GIZLI_ALANLAR) {
+        if (!config[alan] && onceki[alan]) config[alan] = onceki[alan];
+      }
+
       return tx.baglanti.update({
         where: { id },
         data: {
-          sifreliConfig: sifrele(JSON.stringify(saklanacakConfig(mevcut.saglayici, girdi.config))),
+          sifreliConfig: sifrele(JSON.stringify(saklanacakConfig(mevcut.saglayici, config))),
           durum: "pasif",
         },
       });
@@ -288,6 +335,14 @@ export class BaglantilarService {
       durum: k.durum,
       kullaniciAdiMaskeli: maskele(config.kullaniciAdi ?? ""),
       testOrtami: Boolean(config.testOrtami),
+      ayarlar: Object.fromEntries(
+        GORUNUR_AYARLAR.flatMap((alan) => {
+          // NES adresi test seçiminden türer (EBLG-01a); eski kayıtta kalmış değer gösterilmez.
+          if (k.saglayici === "nes" && alan === "servisAdresi") return [];
+          const deger = (config as Record<string, unknown>)[alan];
+          return typeof deger === "string" && deger !== "" ? [[alan, deger]] : [];
+        }),
+      ),
     };
   }
 }

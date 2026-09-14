@@ -1,8 +1,8 @@
 import { describe, expect, it, afterEach, vi } from "vitest";
 import { BadRequestException } from "@nestjs/common";
 import { istekBaglami } from "../core/istek-baglami";
-import { sifrele } from "../core/kripto";
-import { BaglantilarService, baglantiOlusturSemasi } from "./baglantilar.service";
+import { coz, sifrele } from "../core/kripto";
+import { BaglantilarService, baglantiGuncelleSemasi, baglantiOlusturSemasi } from "./baglantilar.service";
 
 // Şifreli config yazıp okuyabilmek için testlik sabit anahtar.
 process.env.BAGLANTI_SIFRELEME_ANAHTARI ??= "0".repeat(64);
@@ -107,6 +107,57 @@ describe("BaglantilarService bağlantı testi", () => {
     await baglamda(() => servis.test("b1"));
 
     expect(update).toHaveBeenCalledWith({ where: { id: "b1" }, data: { durum: "hata" } });
+  });
+});
+
+describe("BaglantilarService güncelleme (EBLG-01b)", () => {
+  const ESKI = { kullaniciAdi: "test01@nes.com.tr", apiAnahtari: "gizli-anahtar", belgeSeriOneki: "K07", earsivSeriOneki: "SNC", testOrtami: true };
+
+  function kurulum(saglayici = "nes", config: Record<string, unknown> = ESKI) {
+    const update = vi.fn().mockImplementation(({ data }: { data: { sifreliConfig: string; durum: string } }) => ({
+      id: "b1", aile: "ebelge", saglayici, durum: data.durum, sifreliConfig: data.sifreliConfig,
+    }));
+    const tx = {
+      baglanti: {
+        findUnique: vi.fn().mockResolvedValue({ id: "b1", aile: "ebelge", saglayici, durum: "aktif", sifreliConfig: sifrele(JSON.stringify({ saglayici, ...config })) }),
+        update,
+      },
+    };
+    const prisma = { tenantIslem: (_tenantId: string, fn: (t: typeof tx) => unknown) => fn(tx) };
+    const saklanan = () => JSON.parse(coz(update.mock.calls[0][0].data.sifreliConfig)) as Record<string, unknown>;
+    return { servis: new BaglantilarService(prisma as never), saklanan };
+  }
+
+  it("boş bırakılan gizli alanları korur, gönderilen gizli olmayan alanları olduğu gibi yazar", async () => {
+    const { servis, saklanan } = kurulum();
+    await baglamda(() => servis.guncelle("b1", { config: { belgeSeriOneki: "K08", earsivSeriOneki: "SNC", testOrtami: true } }));
+
+    expect(saklanan()).toEqual({
+      saglayici: "nes", kullaniciAdi: "test01@nes.com.tr", apiAnahtari: "gizli-anahtar",
+      belgeSeriOneki: "K08", earsivSeriOneki: "SNC", testOrtami: true,
+    });
+  });
+
+  it("gönderilmeyen gizli olmayan alan bilerek temizlenmiştir; yazılan gizli değer eskisinin yerine geçer", async () => {
+    const { servis, saklanan } = kurulum();
+    await baglamda(() => servis.guncelle("b1", { config: { apiAnahtari: "yeni-anahtar", earsivSeriOneki: "SNC", testOrtami: true } }));
+
+    expect(saklanan().belgeSeriOneki).toBeUndefined();
+    expect(saklanan().apiAnahtari).toBe("yeni-anahtar");
+    expect(saklanan().kullaniciAdi).toBe("test01@nes.com.tr");
+  });
+
+  it("görünüm gizli olmayan ayarları taşır, gizli değerleri taşımaz", async () => {
+    const { servis } = kurulum("sovos", { kullaniciAdi: "sovos-kullanici", parola: "gizli-parola", servisAdresi: "https://sovos.test/einvoice.svc", postaKutusuEtiketi: "urn:mail:pk@firma.test" });
+    const sonuc = await baglamda(() => servis.guncelle("b1", { config: { servisAdresi: "https://sovos.test/einvoice.svc", postaKutusuEtiketi: "urn:mail:pk@firma.test" } }));
+
+    expect(sonuc.ayarlar).toEqual({ servisAdresi: "https://sovos.test/einvoice.svc", postaKutusuEtiketi: "urn:mail:pk@firma.test" });
+    expect(JSON.stringify(sonuc)).not.toContain("gizli-parola");
+    expect(JSON.stringify(sonuc)).not.toContain("sovos-kullanici");
+  });
+
+  it("güncelleme gövdesinde kullanıcı adı zorunlu değildir", () => {
+    expect(baglantiGuncelleSemasi.safeParse({ config: { belgeSeriOneki: "K07" } }).success).toBe(true);
   });
 });
 

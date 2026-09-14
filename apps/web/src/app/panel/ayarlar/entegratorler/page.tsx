@@ -11,6 +11,8 @@ interface Baglanti {
   durum: string;
   kullaniciAdiMaskeli: string;
   testOrtami: boolean;
+  /** Gizli olmayan kayıtlı ayarlar; düzenleme formu bunlarla açılır (EBLG-01b). */
+  ayarlar: Partial<Record<string, string>>;
 }
 
 /** EBLG-01a: NES adresi girilmez, test ortamı seçiminden türer. */
@@ -248,6 +250,10 @@ export default function EntegratorAyarlariSayfasi() {
           // zorunlu alanlar bu yüzden sağlayıcıya göre değişir.
           const sovos = s.id === "sovos";
           const nes = s.id === "nes";
+          // Düzenlemede gizli olmayan alanlar kayıtlı değerle açılır; gizli alanlar boş kalır ve boşsa korunur.
+          const duzenlenen = duzenleId && baglanti?.id === duzenleId ? baglanti : undefined;
+          const ayar = (ad: string) => duzenlenen?.ayarlar[ad] ?? "";
+          const gizliIpucu = duzenlenen ? "Kayıtlı — değiştirmek için yazın" : undefined;
 
           return (
             <Card key={s.id} style={aktif ? { borderColor: "var(--accent)", boxShadow: "0 0 0 1px var(--accent)" } : undefined}>
@@ -294,15 +300,21 @@ export default function EntegratorAyarlariSayfasi() {
                   <h4 className="card__title" style={{ fontSize: "0.95rem" }}>
                     {duzenleId ? `${s.ad} Bilgilerini Güncelle` : `${s.ad} Bağlantı Bilgileri`}
                   </h4>
+                  {duzenlenen && (
+                    <p className="muted" style={{ fontSize: "0.85rem", margin: "0 0 0.75rem" }}>
+                      Kullanıcı adı, parola ve API anahtarı güvenlik nedeniyle gösterilmez; boş bırakırsanız kayıtlı değer korunur.
+                      Diğer alanlar kayıtlı değerleriyle gelir — sildiğiniz alan kayıttan da silinir.
+                    </p>
+                  )}
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
-                    <Field label={nes ? "Portal Kullanıcısı *" : "Kullanıcı Adı *"}><Input name="kullaniciAdi" required placeholder={nes ? "test01@nes.com.tr" : "entegrator_kullanici_adi"} /></Field>
-                    <Field label={nes ? "Portal Parolası" : "Parola / Şifre"}><Input name="parola" type="password" placeholder="••••••••" /></Field>
-                    <Field label={nes ? "API Anahtarı *" : "API Anahtarı (Opsiyonel)"}><Input name="apiAnahtari" required={nes} placeholder={nes ? "NES erişim sayfasındaki API KEY" : "api_key_xyz"} /></Field>
-                    {!nes && <Field label={sovos ? "e-Fatura Servis URL *" : "Servis URL (Opsiyonel)"}><Input name="servisAdresi" required={sovos} placeholder={sovos ? "Sovos tarafından verilen .svc adresi" : "https://api.entegrator.com"} /></Field>}
+                    <Field label={nes ? "Portal Kullanıcısı *" : "Kullanıcı Adı *"}><Input name="kullaniciAdi" required={!duzenlenen} placeholder={gizliIpucu ?? (nes ? "test01@nes.com.tr" : "entegrator_kullanici_adi")} /></Field>
+                    <Field label={nes ? "Portal Parolası" : "Parola / Şifre"}><Input name="parola" type="password" placeholder={gizliIpucu ?? "••••••••"} /></Field>
+                    <Field label={nes ? "API Anahtarı *" : "API Anahtarı (Opsiyonel)"}><Input name="apiAnahtari" required={nes && !duzenlenen} placeholder={gizliIpucu ?? (nes ? "NES erişim sayfasındaki API KEY" : "api_key_xyz")} /></Field>
+                    {!nes && <Field label={sovos ? "e-Fatura Servis URL *" : "Servis URL (Opsiyonel)"}><Input name="servisAdresi" defaultValue={ayar("servisAdresi")} required={sovos} placeholder={sovos ? "Sovos tarafından verilen .svc adresi" : "https://api.entegrator.com"} /></Field>}
                     {(sovos || nes) && <>
-                      <Field label={sovos ? "Firma VKN/TCKN *" : "Firma VKN/TCKN"}><Input name="vknTckn" required={sovos} inputMode="numeric" placeholder="1234567890" /></Field>
-                      <Field label="Gönderici Birim (GB) Etiketi *"><Input name="gondericiBirimEtiketi" required placeholder="urn:mail:defaultgb@firma.com" /></Field>
-                      <Field label="Posta Kutusu (PK) Etiketi"><Input name="postaKutusuEtiketi" placeholder="urn:mail:defaultpk@firma.com" /></Field>
+                      <Field label={sovos ? "Firma VKN/TCKN *" : "Firma VKN/TCKN"}><Input name="vknTckn" defaultValue={ayar("vknTckn")} required={sovos} inputMode="numeric" placeholder="1234567890" /></Field>
+                      <Field label="Gönderici Birim (GB) Etiketi *"><Input name="gondericiBirimEtiketi" defaultValue={ayar("gondericiBirimEtiketi")} required placeholder="urn:mail:defaultgb@firma.com" /></Field>
+                      <Field label="Posta Kutusu (PK) Etiketi"><Input name="postaKutusuEtiketi" defaultValue={ayar("postaKutusuEtiketi")} placeholder="urn:mail:defaultpk@firma.com" /></Field>
                     </>}
                     {(sovos || nes) && (
                       <Field label="Test Ortamı">
@@ -318,22 +330,22 @@ export default function EntegratorAyarlariSayfasi() {
                     {nes && (
                       <>
                         <Field label="Otomatik Seri Öneki (e-Fatura)">
-                          <Input name="belgeSeriOneki" maxLength={8} placeholder="K07 — boşsa numarayı TekirExtra atar" />
+                          <Input name="belgeSeriOneki" defaultValue={ayar("belgeSeriOneki")} maxLength={8} placeholder="K07 — boşsa numarayı TekirExtra atar" />
                         </Field>
                         <Field label="Otomatik Seri Öneki (e-Arşiv)">
-                          <Input name="earsivSeriOneki" maxLength={8} placeholder="GİB e-Fatura serisinden farklı olmasını ister" />
+                          <Input name="earsivSeriOneki" defaultValue={ayar("earsivSeriOneki")} maxLength={8} placeholder="GİB e-Fatura serisinden farklı olmasını ister" />
                         </Field>
                         <Field label="e-İrsaliye Seri Öneki">
-                          <Input name="eirsaliyeSeriOneki" maxLength={3} placeholder="IRS — entegratörde elle numaralandırılan seri olmalı" />
+                          <Input name="eirsaliyeSeriOneki" defaultValue={ayar("eirsaliyeSeriOneki")} maxLength={3} placeholder="IRS — entegratörde elle numaralandırılan seri olmalı" />
                         </Field>
                         <Field label="e-İrsaliye Yanıt Seri Öneki">
-                          <Input name="eirsaliyeYanitSeriOneki" maxLength={3} placeholder="YNT — numarayı entegratör atar" />
+                          <Input name="eirsaliyeYanitSeriOneki" defaultValue={ayar("eirsaliyeYanitSeriOneki")} maxLength={3} placeholder="YNT — numarayı entegratör atar" />
                         </Field>
                       </>
                     )}
                     {sovos && <>
-                      <Field label="e-Arşiv Servis URL"><Input name="earsivServisAdresi" placeholder="Sovos tarafından verilen e-Arşiv .svc adresi" /></Field>
-                      <Field label="e-İrsaliye Servis URL"><Input name="irsaliyeServisAdresi" placeholder="Sovos tarafından verilen e-İrsaliye .svc adresi" /></Field>
+                      <Field label="e-Arşiv Servis URL"><Input name="earsivServisAdresi" defaultValue={ayar("earsivServisAdresi")} placeholder="Sovos tarafından verilen e-Arşiv .svc adresi" /></Field>
+                      <Field label="e-İrsaliye Servis URL"><Input name="irsaliyeServisAdresi" defaultValue={ayar("irsaliyeServisAdresi")} placeholder="Sovos tarafından verilen e-İrsaliye .svc adresi" /></Field>
                     </>}
                   </div>
                   <div className="row-tight" style={{ justifyContent: "flex-end", marginTop: "1rem" }}>

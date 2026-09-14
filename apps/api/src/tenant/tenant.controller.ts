@@ -16,6 +16,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import {
   BaglantilarService,
+  baglantiGuncelleSemasi,
   baglantiOlusturSemasi,
 } from "./baglantilar.service";
 import { KayitService, kayitSemasi } from "./kayit.service";
@@ -127,7 +128,7 @@ export class TenantController {
   @Patch("baglantilar/:id")
   @Roller("yonetici")
   baglantiGuncelle(@Param("id") id: string, @Body() govde: unknown) {
-    const ayristirma = z.object({ config: baglantiOlusturSemasi.shape.config }).safeParse(govde);
+    const ayristirma = baglantiGuncelleSemasi.safeParse(govde);
     if (!ayristirma.success) {
       throw new BadRequestException("Geçersiz bağlantı bilgisi");
     }
