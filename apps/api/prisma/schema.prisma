@@ -3119,6 +3119,30 @@ model EirsaliyeKayit {
   @@map("eirsaliye_kayitlari")
 }
 
+/// Belge durum geçmişi (EBLG-35). Satırları veritabanı tetikleyicisi yazar
+/// (`belge_durum_gecmisi_yaz`); uygulama yalnız okur, rolün UPDATE/DELETE
+/// yetkisi yoktur. `eksen`: fatura | ebelge | alici_yaniti | eirsaliye.
+model BelgeDurumGecmisi {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  eksen     String
+  kayitId   String   @map("kayit_id") @db.Uuid
+  faturaId  String?  @map("fatura_id") @db.Uuid
+  belgeId   String?  @map("belge_id") @db.Uuid
+  eskiDurum String?  @map("eski_durum")
+  yeniDurum String   @map("yeni_durum")
+  aciklama  String?
+  /// İşlem başında kurulan `app.user_id`; sistem işlerinde sıfır UUID.
+  userId    String?  @map("user_id") @db.Uuid
+  /// Özellik öncesi kayıtlar için eklenen, gerçek değişiklik olmayan satır.
+  baslangic Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, faturaId, createdAt])
+  @@index([tenantId, belgeId, createdAt])
+  @@map("belge_durum_gecmisi")
+}
+
 model GelenEirsaliye {
   id             String              @id @default(uuid()) @db.Uuid
   tenantId       String              @map("tenant_id") @db.Uuid

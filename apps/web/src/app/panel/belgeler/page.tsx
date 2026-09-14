@@ -9,6 +9,7 @@ import { DepoSecici } from "@/components/depo-secici";
 import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
 import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyalari";
 import { UrunSecimModali } from "@/components/urun-secim-modali";
+import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { faturaHesapla, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
@@ -870,6 +871,10 @@ export default function BelgelerSayfasi() {
             )}
           </div>
           {detay.tur === "irsaliye" && detay.yon === "satis" && detay.eirsaliye?.durum === "hata" && <div className="row-tight" style={{ margin: "0 0 1rem" }}><span className="muted">{detay.eirsaliye.hataMesaji ?? "Gönderim başarısız."}</span><Button size="sm" variant="primary" onClick={() => void eirsaliyeGonder(detay.id)}>Tekrar gönder</Button></div>}
+          {/* EBLG-35: e-İrsaliye ve bağlı fatura durum geçmişi; durum değiştikçe yeniden yüklenir. */}
+          {(detay.eirsaliye || detay.fatura) && (
+            <DurumGecmisi key={`${detay.id}-${detay.eirsaliye?.durum ?? ""}-${detay.fatura?.durum ?? ""}-${detay.fatura?.ebelge?.durum ?? ""}`} adres={`/belgeler/${detay.id}/durum-gecmisi`} />
+          )}
           <TableWrap>
             <thead>
               <tr><th>Ürün</th><th className="num">Miktar</th><th className="num">Birim Fiyat</th><th className="num">İskonto %</th><th className="num">KDV %</th></tr>

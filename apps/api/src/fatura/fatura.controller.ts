@@ -104,6 +104,12 @@ export class FaturaController {
     return this.faturaService.listele(arama, tip, durum, imlec, adetSayi, yon, ebelge, cariId, baslangic, bitis);
   }
 
+  /** EBLG-35: fatura, e-Belge ve alıcı yanıtı durum geçmişi. */
+  @Get(":id/durum-gecmisi")
+  async durumGecmisi(@Param("id") id: string) {
+    return this.faturaService.durumGecmisi(id);
+  }
+
   @Get(":id")
   async getir(@Param("id") id: string) {
     return this.faturaService.getir(id);

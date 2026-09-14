@@ -50,6 +50,12 @@ export class BelgelerController {
     return this.belgelerService.listele(tur, yon, durum, arama, baslangic, bitis, imlec);
   }
 
+  /** EBLG-35: e-İrsaliye ve bağlı fatura durum geçmişi. */
+  @Get(":id/durum-gecmisi")
+  async durumGecmisi(@Param("id") id: string) {
+    return this.belgelerService.durumGecmisi(id);
+  }
+
   @Get(":id")
   async getir(@Param("id") id: string) {
     return this.belgelerService.getir(id);

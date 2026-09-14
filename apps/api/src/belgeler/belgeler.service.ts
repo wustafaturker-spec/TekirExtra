@@ -21,6 +21,7 @@ import { DepoService } from "../stok/depo.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
 import { belgePdfHtml } from "./belge-pdf";
+import { durumGecmisiOku } from "../core/durum-gecmisi";
 import type {
   belgeGuncelleSemasi,
   belgeOlusturSemasi,
@@ -127,6 +128,16 @@ export class BelgelerService {
       })),
       sonrakiImlec,
     };
+  }
+
+  /** EBLG-35: belgenin e-İrsaliye durum geçmişi ve bağlı faturanın geçmişi. */
+  async durumGecmisi(id: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const belge = await tx.belge.findUnique({ where: { id }, select: { faturaId: true } });
+      if (!belge) throw new NotFoundException("Belge bulunamadı");
+      return durumGecmisiOku(tx, { OR: [{ belgeId: id }, ...(belge.faturaId ? [{ faturaId: belge.faturaId }] : [])] });
+    });
   }
 
   async getir(id: string) {

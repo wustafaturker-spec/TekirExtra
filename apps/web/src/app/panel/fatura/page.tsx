@@ -10,6 +10,7 @@ import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
 import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyalari";
 import { FaturaEkPaneli } from "@/components/fatura-ek-paneli";
 import { UrunSecimModali } from "@/components/urun-secim-modali";
+import { DurumGecmisi } from "@/components/durum-gecmisi";
 import {
   GIB_KOD_LISTESI_SURUMU,
   KDV_ISTISNA_KODLARI,
@@ -1632,6 +1633,8 @@ export default function FaturaSayfasi() {
                 Alıcı ret gerekçesi: {ebelgeDetayi.ebelge.aliciYanitNotu || "belirtilmedi"}. Ret alan ticari fatura için iade faturası kesilmesi gerekir.
               </div>
             )}
+            {/* EBLG-35: kayıt güncellendikçe key değişir, geçmiş yeniden yüklenir. */}
+            <DurumGecmisi key={ebelgeDetayi.ebelge.updatedAt} adres={`/fatura/${ebelgeDetayi.id}/durum-gecmisi`} />
             <div className="quick-panel__actions">
               <Button type="button" onClick={() => setEbelgeDetayi(null)}>Kapat</Button>
               {["kuyrukta", "iletildi"].includes(ebelgeDetayi.ebelge.durum) && <Button type="button" variant="primary" onClick={() => void ebelgeSorgula(ebelgeDetayi.id)}>Durumu sorgula</Button>}

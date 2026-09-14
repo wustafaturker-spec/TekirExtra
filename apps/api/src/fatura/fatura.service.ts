@@ -22,6 +22,7 @@ import { BaglantilarService } from "../tenant/baglantilar.service";
 import { EbelgeService } from "../ebelge/ebelge.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { faturaPdfHtml } from "./fatura-pdf";
+import { durumGecmisiOku } from "../core/durum-gecmisi";
 import type {
   faturaOlusturSemasi,
   faturaGuncelleSemasi,
@@ -412,6 +413,16 @@ export class FaturaService {
     }, D(0));
     const degisimYuzdesi = oncekiAyToplam.isZero() ? null : buAyToplam.sub(oncekiAyToplam).div(oncekiAyToplam.abs()).mul(100).toDecimalPlaces(1).toNumber();
     return { buAyToplam: buAyToplam.toFixed(2), buAyAdet, buAyKdv: buAyKdv.toFixed(2), yillikToplam: yillikToplam.toFixed(2), acikOdeme: acikOdeme.toFixed(2), oncekiAyaGoreDegisim: degisimYuzdesi };
+  }
+
+  /** EBLG-35: faturanın, e-Belgesinin ve alıcı yanıtının durum geçmişi. */
+  async durumGecmisi(id: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const fatura = await tx.fatura.findUnique({ where: { id }, select: { id: true } });
+      if (!fatura) throw new NotFoundException("Fatura bulunamadı");
+      return durumGecmisiOku(tx, { faturaId: id });
+    });
   }
 
   async getir(id: string) {
