@@ -1,4 +1,5 @@
 import { ConflictException, Injectable } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import * as argon2 from "argon2";
 import { tenantKayitSemasi } from "@tekirextra/shared";
@@ -39,56 +40,64 @@ export class KayitService {
 
     // Firma + ilk yönetici: RLS bağlamı yeni tenant kimliğiyle kurulur;
     // WITH CHECK politikası yalnızca bu kiracıya yazmaya izin verir.
-    // VKN tekilliği tenants.vkn @unique ile DB'de zorlanır.
-    await this.prisma.tenantIslem(tenantId, async (tx) => {
-      await tx.tenant.create({
-        data: {
-          id: tenantId,
-          unvan: girdi.unvan,
-          vkn: girdi.vkn,
-          vergiDairesi: girdi.vergiDairesi,
-        },
+    // VKN tekilliği tenants.vkn @unique ile DB'de zorlanır; ön sorgu RLS
+    // bağlamında başka firmayı göremeyeceği için ihlal yakalanır.
+    try {
+      await this.prisma.tenantIslem(tenantId, async (tx) => {
+        await tx.tenant.create({
+          data: {
+            id: tenantId,
+            unvan: girdi.unvan,
+            vkn: girdi.vkn,
+            vergiDairesi: girdi.vergiDairesi,
+          },
+        });
+        await tx.user.create({
+          data: {
+            id: userId,
+            tenantId,
+            eposta: girdi.yoneticiEposta,
+            parolaHash,
+            adSoyad: girdi.yoneticiAdSoyad,
+            rol: "yonetici",
+            epostaDogrulandi: true,
+          },
+        });
+        await tx.tenantAbonelik.create({
+          data: {
+            tenantId,
+            planKodu: "v1",
+            durum: "aktif",
+            faturaEpostasi: girdi.yoneticiEposta,
+            faturalandirmaUnvani: girdi.unvan,
+          },
+        });
+        // STK-07: her firmada en az bir depo bulunur. Tek depolu firmalarda
+        // arayüz depo seçimi göstermez; stok akışları bu varsayılana yazar.
+        await tx.depo.create({
+          data: {
+            tenantId,
+            kod: "MERKEZ",
+            ad: "Merkez Depo",
+            varsayilan: true,
+          },
+        });
+        await tx.auditLog.create({
+          data: {
+            tenantId,
+            userId,
+            islem: "firma_kaydi",
+            varlik: "tenant",
+            varlikId: tenantId,
+          },
+        });
       });
-      await tx.user.create({
-        data: {
-          id: userId,
-          tenantId,
-          eposta: girdi.yoneticiEposta,
-          parolaHash,
-          adSoyad: girdi.yoneticiAdSoyad,
-          rol: "yonetici",
-          epostaDogrulandi: true,
-        },
-      });
-      await tx.tenantAbonelik.create({
-        data: {
-          tenantId,
-          planKodu: "v1",
-          durum: "aktif",
-          faturaEpostasi: girdi.yoneticiEposta,
-          faturalandirmaUnvani: girdi.unvan,
-        },
-      });
-      // STK-07: her firmada en az bir depo bulunur. Tek depolu firmalarda
-      // arayüz depo seçimi göstermez; stok akışları bu varsayılana yazar.
-      await tx.depo.create({
-        data: {
-          tenantId,
-          kod: "MERKEZ",
-          ad: "Merkez Depo",
-          varsayilan: true,
-        },
-      });
-      await tx.auditLog.create({
-        data: {
-          tenantId,
-          userId,
-          islem: "firma_kaydi",
-          varlik: "tenant",
-          varlikId: tenantId,
-        },
-      });
-    });
+    } catch (hata) {
+      if (hata instanceof Prisma.PrismaClientKnownRequestError && hata.code === "P2002") {
+        throw new ConflictException("Bu VKN/TCKN ile kayıtlı bir firma zaten var");
+      }
+      throw hata;
+    }
     await this.prisma.authKimlik.create({
       data: { eposta: girdi.yoneticiEposta, tenantId, userId },
     });

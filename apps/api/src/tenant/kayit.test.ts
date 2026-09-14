@@ -1,3 +1,5 @@
+import { ConflictException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import { KayitService } from "./kayit.service";
 
@@ -29,5 +31,25 @@ describe("KayitService abonelik altyapisi", () => {
     expect(abonelikCreate).toHaveBeenCalledWith({ data: expect.objectContaining({
       planKodu: "v1", durum: "aktif", faturaEpostasi: "ada@example.com", faturalandirmaUnvani: "Örnek Firma AŞ",
     }) });
+  });
+
+  it("kayitli VKN ile gelen kaydi sunucu hatasi yerine cakisma olarak reddeder", async () => {
+    const ihlal = new Prisma.PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", clientVersion: "6.19.3" });
+    const authKimlikCreate = vi.fn();
+    const prisma = {
+      authKimlik: { findUnique: vi.fn().mockResolvedValue(null), create: authKimlikCreate },
+      tenantIslem: vi.fn().mockRejectedValue(ihlal),
+      epostaDogrulama: { create: vi.fn() },
+    } as any;
+    const servis = new KayitService(prisma, { dogrulamaGonder: vi.fn() } as any);
+
+    const sonuc = servis.kaydet({
+      unvan: "Örnek Firma AŞ", vkn: "1234567890",
+      yoneticiAdSoyad: "Ada Yılmaz", yoneticiEposta: "ada@example.com", parola: "gucluParola1",
+    });
+
+    await expect(sonuc).rejects.toBeInstanceOf(ConflictException);
+    await expect(sonuc).rejects.toThrow("Bu VKN/TCKN ile kayıtlı bir firma zaten var");
+    expect(authKimlikCreate).not.toHaveBeenCalled();
   });
 });
