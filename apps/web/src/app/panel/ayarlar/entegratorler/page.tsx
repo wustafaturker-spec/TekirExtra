@@ -10,7 +10,11 @@ interface Baglanti {
   saglayici: string;
   durum: string;
   kullaniciAdiMaskeli: string;
+  testOrtami: boolean;
 }
+
+/** EBLG-01a: NES adresi girilmez, test ortamı seçiminden türer. */
+const NES_ADRESI = { test: "https://apitest.nes.com.tr", canli: "https://api.nes.com.tr" };
 
 /** GİB mükellef listesinin lokal kopyasının durumu (EBLG-10). */
 interface MukellefListesi {
@@ -44,6 +48,8 @@ export default function EntegratorAyarlariSayfasi() {
   const [basari, setBasari] = useState("");
   const [aktifForm, setAktifForm] = useState<string | null>(null); // Hangi entegratörün formunun açık olduğunu tutar
   const [duzenleId, setDuzenleId] = useState<string | null>(null); // Düzenlenen bağlantının ID'si
+  // Güncelleme config'i baştan yazar; düzenlemede seçim korunmazsa test bağlantısı canlıya döner.
+  const [testOrtami, setTestOrtami] = useState(false);
   const [islemde, setIslemde] = useState<string | null>(null); // Yüklenme durumu için
   const [mukellefListesi, setMukellefListesi] = useState<MukellefListesi | null>(null);
 
@@ -270,11 +276,11 @@ export default function EntegratorAyarlariSayfasi() {
                         <Button size="sm" onClick={() => void testEt(baglanti.id, s.id)} disabled={islemde !== null}>
                           {islemde === `test-${baglanti.id}` ? "Test ediliyor..." : "Bağlantı Testi"}
                         </Button>
-                        <Button size="sm" onClick={() => { setDuzenleId(baglanti.id); setAktifForm(s.id); }} disabled={islemde !== null}>Düzenle</Button>
+                        <Button size="sm" onClick={() => { setDuzenleId(baglanti.id); setTestOrtami(baglanti.testOrtami); setAktifForm(s.id); }} disabled={islemde !== null}>Düzenle</Button>
                         <Button variant="danger" size="sm" onClick={() => void sil(baglanti.id, s.id)} disabled={islemde !== null}>Sil</Button>
                       </>
                     ) : (
-                      <Button variant="primary" size="sm" onClick={() => { setDuzenleId(null); setAktifForm(s.id); }} disabled={islemde !== null}>Bağlantıyı Kur</Button>
+                      <Button variant="primary" size="sm" onClick={() => { setDuzenleId(null); setTestOrtami(false); setAktifForm(s.id); }} disabled={islemde !== null}>Bağlantıyı Kur</Button>
                     )}
                   </div>
                 )}
@@ -292,7 +298,7 @@ export default function EntegratorAyarlariSayfasi() {
                     <Field label={nes ? "Portal Kullanıcısı *" : "Kullanıcı Adı *"}><Input name="kullaniciAdi" required placeholder={nes ? "test01@nes.com.tr" : "entegrator_kullanici_adi"} /></Field>
                     <Field label={nes ? "Portal Parolası" : "Parola / Şifre"}><Input name="parola" type="password" placeholder="••••••••" /></Field>
                     <Field label={nes ? "API Anahtarı *" : "API Anahtarı (Opsiyonel)"}><Input name="apiAnahtari" required={nes} placeholder={nes ? "NES erişim sayfasındaki API KEY" : "api_key_xyz"} /></Field>
-                    <Field label={sovos ? "e-Fatura Servis URL *" : nes ? "Servis Kök Adresi *" : "Servis URL (Opsiyonel)"}><Input name="servisAdresi" required={sovos || nes} placeholder={sovos ? "Sovos tarafından verilen .svc adresi" : nes ? "https://apitest.nes.com.tr" : "https://api.entegrator.com"} /></Field>
+                    {!nes && <Field label={sovos ? "e-Fatura Servis URL *" : "Servis URL (Opsiyonel)"}><Input name="servisAdresi" required={sovos} placeholder={sovos ? "Sovos tarafından verilen .svc adresi" : "https://api.entegrator.com"} /></Field>}
                     {(sovos || nes) && <>
                       <Field label={sovos ? "Firma VKN/TCKN *" : "Firma VKN/TCKN"}><Input name="vknTckn" required={sovos} inputMode="numeric" placeholder="1234567890" /></Field>
                       <Field label="Gönderici Birim (GB) Etiketi *"><Input name="gondericiBirimEtiketi" required placeholder="urn:mail:defaultgb@firma.com" /></Field>
@@ -301,9 +307,10 @@ export default function EntegratorAyarlariSayfasi() {
                     {(sovos || nes) && (
                       <Field label="Test Ortamı">
                         <label className="row-tight" style={{ gap: "0.5rem", alignItems: "center" }}>
-                          <input type="checkbox" name="testOrtami" />
+                          <input type="checkbox" name="testOrtami" checked={testOrtami} onChange={(e) => setTestOrtami(e.target.checked)} />
                           <span className="muted" style={{ fontSize: "0.85rem" }}>
                             Entegratörün test ortamı — sentetik firma VKN&apos;si kabul edilir
+                            {nes && <><br />Bağlanılacak adres: <code className="mono">{testOrtami ? NES_ADRESI.test : NES_ADRESI.canli}</code></>}
                           </span>
                         </label>
                       </Field>

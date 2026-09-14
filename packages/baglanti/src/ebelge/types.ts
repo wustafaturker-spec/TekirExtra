@@ -52,8 +52,9 @@ export interface EntegratorConfig {
   /**
    * Bağlantı entegratörün **test ortamına** bakıyor. Test ortamlarında
    * entegratör sentetik firma kimlikleri verir (NES'in `1234567801`'i gibi)
-   * ve bunlar VKN kontrol hanesini tutmaz. Bu bayrak yalnızca gönderen VKN
-   * doğrulamasını gevşetir; başka hiçbir kuralı etkilemez.
+   * ve bunlar VKN kontrol hanesini tutmaz; bayrak gönderen VKN doğrulamasını
+   * gevşetir. NES'te gidilecek ortamı da belirler: adres bundan türetilir,
+   * `servisAdresi` okunmaz (EBLG-01a).
    */
   testOrtami?: boolean;
 }

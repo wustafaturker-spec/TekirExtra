@@ -20,11 +20,19 @@ import type {
 } from "./types";
 
 /**
- * NES uçları tek kök adres altında servis ailelerine ayrılır; config yalnızca
- * kökü tutar (örn. https://apitest.nes.com.tr), aile ön ekini adaptör ekler.
- * Sovos'taki gibi aile başına ayrı servis adresi tanımlamaya gerek yoktur.
+ * NES uçları tek kök adres altında servis ailelerine ayrılır; aile ön ekini
+ * adaptör ekler. Kök kullanıcıdan alınmaz, test ortamı seçiminden türetilir
+ * (EBLG-01a): serbest adres test bayrağıyla ayrışabiliyor ve API anahtarını
+ * herhangi bir sunucuya gönderebiliyordu.
  */
 type Aile = "einvoice" | "earchive" | "edespatch" | "general";
+
+export const NES_TEST_KOKU = "https://apitest.nes.com.tr";
+export const NES_CANLI_KOKU = "https://api.nes.com.tr";
+
+export function nesKokAdresi(cfg: Pick<EntegratorConfig, "testOrtami">): string {
+  return cfg.testOrtami ? NES_TEST_KOKU : NES_CANLI_KOKU;
+}
 
 /**
  * e-Arşiv referansları e-Fatura zarflarıyla aynı kümede saklandığı için ön ek
@@ -54,8 +62,7 @@ function konum(
   yol: string,
   sorgu?: Record<string, string | number | boolean | undefined>,
 ): string {
-  const kok = (cfg.servisAdresi ?? "").replace(/\/+$/, "");
-  const adres = new URL(`${kok}/${aile}${yol}`);
+  const adres = new URL(`${nesKokAdresi(cfg)}/${aile}${yol}`);
   for (const [ad, deger] of Object.entries(sorgu ?? {})) {
     if (deger !== undefined) adres.searchParams.set(ad, String(deger));
   }
@@ -358,7 +365,6 @@ function postaKutusuSec(
 
 function configDogrula(cfg: EntegratorConfig): string | undefined {
   if (!cfg.apiAnahtari) return "NES API anahtarı zorunludur";
-  if (!cfg.servisAdresi) return "NES servis kök adresi zorunludur (örn. https://apitest.nes.com.tr)";
   if (!cfg.gondericiBirimEtiketi) return "NES gönderici birim (GB) etiketi zorunludur";
   return undefined;
 }

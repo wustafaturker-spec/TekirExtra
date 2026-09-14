@@ -115,7 +115,7 @@ describe("BaglantilarService seri önekleri", () => {
   // girilirse belge şematron kontrolünde reddediliyor (NES, 2026-09-10).
   const govde = (config: Record<string, unknown>) => ({
     aile: "ebelge", saglayici: "nes",
-    config: { kullaniciAdi: "test", apiAnahtari: "a", servisAdresi: "https://apitest.nes.com.tr", ...config },
+    config: { kullaniciAdi: "test", apiAnahtari: "a", testOrtami: true, ...config },
   });
 
   it("e-Arşiv serisi e-Fatura serisiyle aynıysa kabul etmez", () => {

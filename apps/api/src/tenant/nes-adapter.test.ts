@@ -5,7 +5,7 @@ const config: EntegratorConfig = {
   saglayici: "nes",
   kullaniciAdi: "test01@nes.com.tr",
   apiAnahtari: "nes-api-anahtari",
-  servisAdresi: "https://apitest.nes.com.tr",
+  testOrtami: true,
   vknTckn: "1234567801",
   gondericiBirimEtiketi: "urn:mail:defaultgb@firma.test",
   postaKutusuEtiketi: "urn:mail:defaultpk@firma.test",
@@ -42,6 +42,21 @@ const KULLANICI_LISTESI = `<?xml version="1.0" encoding="utf-8"?>
 afterEach(() => vi.unstubAllGlobals());
 
 describe("NesEntegratorAdapter", () => {
+  it("adresi test ortamı seçiminden türetir; kayıtta kalmış serbest adresi okumaz (EBLG-01a)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(yanit({ uuid: "belge-1" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const belge = { uuid: "fatura-1", belgeNo: "TKR2026000000001", xml: "<Invoice/>", tur: "efatura" as const, aliciPostaKutusu: "urn:mail:defaultpk@alici.test" };
+    const eskiAdres = { servisAdresi: "https://baska-sunucu.example" };
+
+    await new NesEntegratorAdapter().belgeGonder({ ...config, ...eskiAdres, testOrtami: true }, belge);
+    await new NesEntegratorAdapter().belgeGonder({ ...config, ...eskiAdres, testOrtami: false }, belge);
+
+    expect(fetchMock.mock.calls.map((c) => String(c[0]))).toEqual([
+      "https://apitest.nes.com.tr/einvoice/v1/uploads/document",
+      "https://api.nes.com.tr/einvoice/v1/uploads/document",
+    ]);
+  });
+
   it("e-Faturayı çok parçalı gövdeyle yükler ve Bearer anahtarı gönderir", async () => {
     const fetchMock = vi.fn().mockResolvedValue(yanit({ uuid: "belge-1", documentNumber: "TKR2026000000001" }));
     vi.stubGlobal("fetch", fetchMock);

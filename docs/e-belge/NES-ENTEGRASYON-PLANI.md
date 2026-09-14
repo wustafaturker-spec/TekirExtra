@@ -709,7 +709,7 @@ alakasız bir belgenin numarası yazılabilirdi.
 | `earsivRaporDurum` | Uygulanmadı. Rapor listesi bölüm başına `status` taşıdığı için ekran durumu listeden okur. `/histories` yanıtı (2026-09-11 şemasında tanımlı) yalnız işlem geçmişi verir. |
 | Raporlanmış e-Arşiv iptali | Uygulama `Completed` belgede duruyor; rapor sonrası iptalin nasıl bildirileceği mevzuat tarafında netleşmedi. |
 | Rate limit | Hiçbir şemada ve belge sitesinin hiçbir sayfasında tanımlı değil (2026-09-14 taraması: 137 sayfa + 6 şema); 429 davranışı bilinmiyor. NES'e soruldu. |
-| e-Arşiv rapor uçları | Scope 2026-09-13'te verildi; liste çalışıyor, `/details` her bölümde `500` (şemada yalnız 200/403/404 tanımlı). Kullanılmayan uçlar: `GET/POST /unreported` (`earchive:reports:write`), `/{id}/xml`, `/{id}/excel`. |
+| e-Arşiv rapor uçları | Scope 2026-09-13'te verildi; liste çalışıyor. `/details` **ve `/excel`** test hesabındaki beş bölümün (Temmuz–Eylül, hepsi `XmlCreateWait`) hepsinde `500 HATALI ISTEK / 9999 UNEXPECTED_ERROR` (2026-09-14; şemada yalnız 200/403/404 tanımlı). Excel, `/details`'e alternatif olmadı: sorun uca değil, üretilmemiş rapora bağlı görünüyor. Bölümlerde binlerce belge var (ör. 16 Temmuz: 8.752), yani test hesabı başka entegrasyonlarla ortak. Kullanılmayan uçlar: `GET/POST /unreported` (`earchive:reports:write`), `/{id}/xml`. |
 
 ## Belge sitesi taraması (2026-09-14)
 
@@ -723,6 +723,21 @@ adresleri `{aile}/v1.swagger.json` ve `{aile}/v1.swagger.taged.json`; ikisi de
 **QR Kod Zorunluluğu sayfası:** NES karekodu XSLT içinde JavaScript ile, belge
 açıldığında XML'den okuyarak çizer ve GİB'in sağ üst köşeyi zorunlu tuttuğunu
 yazar (kılavuz v1.0 konum belirtmez). EBLG-32 bu yönteme geçti.
+
+## Servis adresi test seçiminden türer (EBLG-01a, 2026-09-14)
+
+NES belgesi iki kök verir: canlı `https://api.nes.com.tr/{API_NAME}/`, test
+`https://apitest.nes.com.tr/{API_NAME}/`. Önceden kök bağlantı formunda serbest
+metin olarak girilirdi ve "Test Ortamı" kutucuğundan bağımsızdı: kutucuk
+işaretli + canlı adres (kontrol hanesi tutmayan VKN canlıya gidebilir), kutucuk
+işaretsiz + test adresi, aile önekiyle girilen adres (`/einvoice/einvoice/…`
+404) ve anahtarın başka bir sunucuya gönderilmesi mümkündü.
+
+Artık `nesKokAdresi(cfg)` kökü yalnız `testOrtami`'ndan seçer; `servisAdresi`
+okunmaz ve NES kaydında saklanmaz. Güncelleme config'i baştan yazdığı için
+bağlantı görünümü `testOrtami`'nı taşır ve düzenleme formu mevcut seçimle
+açılır — yoksa bir test bağlantısını düzenleyip kaydetmek onu sessizce canlıya
+çevirirdi. Mevcut iki kayıt (`testOrtami=true`, `apitest`) davranış değiştirmez.
 
 ## Gömülü XSLT karekodu (EBLG-32, 2026-09-14)
 

@@ -72,11 +72,23 @@ export interface BaglantiGorunumu {
   durum: string;
   /** Kimlik bilgileri asla dönmez; yalnızca maskeli kullanıcı adı (EBLG-01b). */
   kullaniciAdiMaskeli: string;
+  /** Gizli değil; düzenleme formu mevcut ortam seçimini korumak için okur (EBLG-01a). */
+  testOrtami: boolean;
 }
 
 function maskele(deger: string): string {
   if (deger.length <= 3) return "***";
   return `${deger.slice(0, 3)}***`;
+}
+
+/**
+ * Saklanacak config. NES'in adresi test ortamı seçiminden türer (EBLG-01a);
+ * formdan ya da eski kayıttan gelen serbest adres saklanmaz ki yanıltmasın.
+ */
+function saklanacakConfig(saglayici: string, config: Record<string, unknown>): Record<string, unknown> {
+  const temiz: Record<string, unknown> = { saglayici, ...config };
+  if (saglayici === "nes") delete temiz.servisAdresi;
+  return temiz;
 }
 
 /**
@@ -174,9 +186,7 @@ export class BaglantilarService {
           tenantId,
           aile: girdi.aile,
           saglayici: girdi.saglayici,
-          sifreliConfig: sifrele(
-            JSON.stringify({ saglayici: girdi.saglayici, ...girdi.config }),
-          ),
+          sifreliConfig: sifrele(JSON.stringify(saklanacakConfig(girdi.saglayici, girdi.config))),
         },
       });
     });
@@ -195,9 +205,7 @@ export class BaglantilarService {
       return tx.baglanti.update({
         where: { id },
         data: {
-          sifreliConfig: sifrele(
-            JSON.stringify({ saglayici: mevcut.saglayici, ...girdi.config }),
-          ),
+          sifreliConfig: sifrele(JSON.stringify(saklanacakConfig(mevcut.saglayici, girdi.config))),
           durum: "pasif",
         },
       });
@@ -267,19 +275,19 @@ export class BaglantilarService {
   }
 
   private gorunum(k: Baglanti): BaglantiGorunumu {
-    let kullaniciAdi = "";
+    let config: Partial<EntegratorConfig> = {};
     try {
-      kullaniciAdi = (JSON.parse(coz(k.sifreliConfig)) as EntegratorConfig)
-        .kullaniciAdi;
+      config = JSON.parse(coz(k.sifreliConfig)) as EntegratorConfig;
     } catch {
-      kullaniciAdi = "";
+      config = {};
     }
     return {
       id: k.id,
       aile: k.aile,
       saglayici: k.saglayici,
       durum: k.durum,
-      kullaniciAdiMaskeli: maskele(kullaniciAdi),
+      kullaniciAdiMaskeli: maskele(config.kullaniciAdi ?? ""),
+      testOrtami: Boolean(config.testOrtami),
     };
   }
 }
