@@ -708,8 +708,41 @@ alakasız bir belgenin numarası yazılabilirdi.
 |---|---|
 | `earsivRaporDurum` | Uygulanmadı. Rapor listesi bölüm başına `status` taşıdığı için ekran durumu listeden okur. `/histories` yanıtı (2026-09-11 şemasında tanımlı) yalnız işlem geçmişi verir. |
 | Raporlanmış e-Arşiv iptali | Uygulama `Completed` belgede duruyor; rapor sonrası iptalin nasıl bildirileceği mevzuat tarafında netleşmedi. |
-| Rate limit | Hiçbir şemada tanımlı değil, 429 davranışı bilinmiyor. NES'e soruldu. |
-| e-Arşiv rapor uçları | `earchive:reports:read` scope'u anahtarda hâlâ yok; uç `502` ile bunu söylüyor ama rapor akışı canlıda denenmedi. |
+| Rate limit | Hiçbir şemada ve belge sitesinin hiçbir sayfasında tanımlı değil (2026-09-14 taraması: 137 sayfa + 6 şema); 429 davranışı bilinmiyor. NES'e soruldu. |
+| e-Arşiv rapor uçları | Scope 2026-09-13'te verildi; liste çalışıyor, `/details` her bölümde `500` (şemada yalnız 200/403/404 tanımlı). Kullanılmayan uçlar: `GET/POST /unreported` (`earchive:reports:write`), `/{id}/xml`, `/{id}/excel`. |
+
+## Belge sitesi taraması (2026-09-14)
+
+`developertest.nes.com.tr/docs` bir Docusaurus SPA'sıdır; sayfa HTML'i ve
+`sitemap.xml` boş kabuk döner. İçerik `assets/js/<ad>.<hash>.js` parçalarındadır
+(ad ve hash `runtime~main` içindeki `n.u` fonksiyonunda), sayfa→parça eşlemesi
+`main` paketindeki `"@site/docs/….md"` rota tablosundadır. Şemaların güncel
+adresleri `{aile}/v1.swagger.json` ve `{aile}/v1.swagger.taged.json`; ikisi de
+çalışıyor. Adaptörün çağırdığı 18 farklı uç güncel şemalarda duruyor.
+
+**QR Kod Zorunluluğu sayfası:** NES karekodu XSLT içinde JavaScript ile, belge
+açıldığında XML'den okuyarak çizer ve GİB'in sağ üst köşeyi zorunlu tuttuğunu
+yazar (kılavuz v1.0 konum belirtmez). EBLG-32 bu yönteme geçti.
+
+## Gömülü XSLT karekodu (EBLG-32, 2026-09-14)
+
+Gönderdiğimiz XSLT karekodu kendisi çizer (`qrcode-generator` gömülü, JSON
+`karekodVerisi` şablonunda). Bizim PDF'imizde betik kapalı kaldığı için sunucu
+görseli XSLT'deki `#gib-karekod` yer tutucusuna girer.
+
+**Canlı doğrulama:** `nes-e2e` kiracısından iki oranlı (%20 + %10) e-Arşiv
+**`SNC2026000000010`** kesildi, `iletildi` oldu, sonra iptal edildi. Üç görünümde
+de WeChat QR okuyucusuyla tek karekod, sağ üstte ve aynı JSON okundu:
+
+| Görünüm | Not |
+|---|---|
+| Bizim PDF'imiz (`/ebelge/giden/:id/pdf`) | Sunucu görseli yer tutucuda; çift karekod yok |
+| NES `GET /earchive/v1/invoices/{uuid}/html` | Betik JS açık Chromium'da hatasız çalıştı |
+| NES `GET /earchive/v1/invoices/{uuid}/pdf` | NES PDF'i wkhtmltopdf 0.12.5 ile basıyor ve betiği çalıştırıyor |
+
+Karekod NES'in atadığı numarayı taşıyor: XSLT numarayı sabit yazmadığı, açılışta
+XML'den okuduğu için 2026-09-13 kararının gerekçesi ("gömülürse numarasız kalır")
+bu yöntemde geçerli değil.
 
 ## Test erişimi — çözüldü
 
