@@ -23,12 +23,28 @@ export function karekodImg(dataUri: string): string {
 }
 
 /**
- * Belgenin kendi görünümüne karekodu ekler. Görünüm gönderilmiş belgenin
- * içindeki XSLT'den geldiği için şablona dokunulmaz; karekod sayfanın başına,
- * sağa yaslı bir blok olarak girer. Temizlemeden sonra çağrılır — karekod
- * yabancı içerik değil, bizim ürettiğimiz görseldir.
+ * Gömülü XSLT'nin karekod için bıraktığı yer. Alıcının görüntüleyicisinde
+ * XSLT'deki betik karekodu buraya çizer; bizim PDF'imizde betik çalışmadığı
+ * için (EBLG-29) sunucu görseli buraya girer.
+ */
+export const KAREKOD_YER_TUTUCU_ID = "gib-karekod";
+
+const YER_TUTUCU = new RegExp(`<div\\b[^>]*\\bid="${KAREKOD_YER_TUTUCU_ID}"[^>]*?(/?)>`, "i");
+
+/**
+ * Belgenin görünümüne karekodu ekler. Görünümde karekod yer tutucusu varsa
+ * görsel oraya girer; yoksa (yer tutucudan önce kesilmiş belge, yedek
+ * görünüm) sayfanın başına, sağa yaslı bir blok olarak eklenir. Temizlemeden
+ * sonra çağrılır — karekod yabancı içerik değil, bizim ürettiğimiz görseldir.
  */
 export function karekoduHtmlEkle(html: string, dataUri: string): string {
+  const yer = YER_TUTUCU.exec(html);
+  if (yer) {
+    const son = yer.index + yer[0].length;
+    // XMLSerializer boş div'i kendiliğinden kapanan etiket olarak yazabilir.
+    const acilis = yer[1] ? `${yer[0].slice(0, -2)}>` : yer[0];
+    return html.slice(0, yer.index) + acilis + karekodImg(dataUri) + (yer[1] ? "</div>" : "") + html.slice(son);
+  }
   const blok = `<div style="text-align:right;margin:0 0 6px">${karekodImg(dataUri)}</div>`;
   const govde = /<body\b[^>]*>/i.exec(html);
   if (!govde) return blok + html;

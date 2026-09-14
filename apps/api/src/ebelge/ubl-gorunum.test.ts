@@ -110,4 +110,14 @@ describe("gömülü görünüm ile PDF çıktısı (EBLG-31)", () => {
     expect(xslt).toContain("Senaryo");
     expect(xslt).toContain("Profil");
   });
+
+  it("karekodu kendisi çizer: yer tutucu, kütüphane ve kütüphanenin lisans notu (EBLG-32)", () => {
+    expect(xslt).toContain('id="gib-karekod"');
+    expect(xslt).toContain('name="karekodVerisi"');
+    expect(xslt).toContain("Copyright (c) 2009 Kazuhiko Arase | MIT License");
+    expect(xslt).toContain("stringToBytesFuncs");
+    // Kütüphane gömülürken değiştirme kalıpları bozulmamış, CDATA tek parça kalmış olmalı.
+    expect(xslt).not.toContain("__QR_KUTUPHANESI__");
+    expect(xslt.split("]]>")).toHaveLength(2);
+  });
 });

@@ -1,5 +1,5 @@
 import { kacis, paraBicim, sayfaSablonu, sayiBicim, tarihBicim } from "../core/pdf/pdf-sablon";
-import { karekodImg } from "./karekod";
+import { karekoduHtmlEkle } from "./karekod";
 import type { UblFatura } from "./ubl-oku";
 
 /**
@@ -24,7 +24,6 @@ export function ebelgeYedekPdfHtml(
   secenekler: { logoDataUri?: string; /** EBLG-32: yalnız kestiğimiz belgede verilir. */ karekodDataUri?: string } = {},
 ): string {
   const paraBirimi = f.dovizCinsi === "TRY" ? "TL" : f.dovizCinsi;
-  const karekod = secenekler.karekodDataUri ? `<div style="margin-top:8px">${karekodImg(secenekler.karekodDataUri)}</div>` : "";
   const profil = PROFIL_ADLARI[f.profilId] ?? f.profilId;
 
   const satirlar = f.satirlar
@@ -56,7 +55,7 @@ export function ebelgeYedekPdfHtml(
       <div class="kutu">
         <strong>${kacis(f.gonderen.unvan)}</strong><br>
         VKN/TCKN: ${kacis(f.gonderen.vknTckn)}${f.gonderen.vergiDairesi ? ` — ${kacis(f.gonderen.vergiDairesi)}` : ""}
-      </div>${karekod}
+      </div>
     </td>
     <td style="width:4%"></td>
     <td style="vertical-align:top;width:46%">
@@ -89,12 +88,14 @@ export function ebelgeYedekPdfHtml(
 </table>
 <p style="margin-top:14px;color:#6b7280;font-size:8pt">${YEDEK_NOTU}</p>`;
 
-  return sayfaSablonu({
+  const sayfa = sayfaSablonu({
     baslik: profil.toLocaleUpperCase("tr-TR"),
     altBaslik: `${f.gonderen.unvan} — ${f.belgeNo}`,
     icerik,
     logoDataUri: secenekler.logoDataUri,
   });
+  // EBLG-32: gömülü görünümdeki gibi sayfanın sağ üstünde.
+  return secenekler.karekodDataUri ? karekoduHtmlEkle(sayfa, secenekler.karekodDataUri) : sayfa;
 }
 
 export { YEDEK_NOTU as EBELGE_YEDEK_GORUNUM_NOTU };

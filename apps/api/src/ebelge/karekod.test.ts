@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ebelgeYedekPdfHtml } from "./ebelge-pdf";
-import { karekodDataUri, karekoduHtmlEkle } from "./karekod";
+import { KAREKOD_YER_TUTUCU_ID, karekodDataUri, karekoduHtmlEkle } from "./karekod";
 import { faturaKarekodVerisi, faturaUblOku } from "./ubl-oku";
 import { faturaUblUret } from "./xml-uretec";
 
@@ -114,15 +114,31 @@ describe("karekodun sayfaya basılması (EBLG-32)", () => {
     expect(Buffer.from(uri.split(",")[1], "base64").toString("utf8")).toContain("<svg");
   });
 
-  it("belgenin kendi görünümünde karekodu gövdenin başına ekler", () => {
+  it("yer tutucusu olmayan görünümde karekodu gövdenin başına ekler", () => {
     const html = karekoduHtmlEkle('<html><head></head><body class="a"><h1>e-FATURA</h1></body></html>', uri);
     expect(html.indexOf(uri)).toBeGreaterThan(html.indexOf('<body class="a">'));
     expect(html.indexOf(uri)).toBeLessThan(html.indexOf("<h1>"));
   });
 
-  it("yedek görünümde karekod verilince basar, verilmezse basmaz", () => {
+  it("görünümde yer tutucu varsa karekodu yalnız oraya koyar", () => {
+    const html = karekoduHtmlEkle(
+      `<html><body><div><div id="${KAREKOD_YER_TUTUCU_ID}" style="width:35mm"></div></div><h1>e-FATURA</h1></body></html>`,
+      uri,
+    );
+    expect(html).toContain(`<div id="${KAREKOD_YER_TUTUCU_ID}" style="width:35mm"><img src="${uri}"`);
+    expect(html.split(uri)).toHaveLength(2);
+  });
+
+  it("kendiliğinden kapanan yer tutucuyu açıp karekodu içine koyar", () => {
+    const html = karekoduHtmlEkle(`<body><div id="${KAREKOD_YER_TUTUCU_ID}" style="width:35mm"/><h1>x</h1></body>`, uri);
+    expect(html).toMatch(new RegExp(`<div id="${KAREKOD_YER_TUTUCU_ID}" style="width:35mm"><img [^>]+/></div><h1>`));
+  });
+
+  it("yedek görünümde karekodu verilince sayfanın başına, üst şeridin üstüne basar; verilmezse basmaz", () => {
     const fatura = faturaUblOku(ubl());
-    expect(ebelgeYedekPdfHtml(fatura, { karekodDataUri: uri })).toContain(uri);
+    const html = ebelgeYedekPdfHtml(fatura, { karekodDataUri: uri });
+    expect(html.indexOf(uri)).toBeGreaterThan(-1);
+    expect(html.indexOf(uri)).toBeLessThan(html.indexOf('class="ust-serit"'));
     expect(ebelgeYedekPdfHtml(fatura)).not.toContain("GİB karekodu");
   });
 });

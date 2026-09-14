@@ -3,6 +3,23 @@ import { senaryoUblKodu, tevkifatKoduBul } from "@tekirextra/shared";
 import { adSoyadCoz } from "../cari/ad-soyad";
 import { SAYFA_STILI } from "../core/pdf/pdf-sablon";
 import { EARSIV_ELEKTRONIK_IBARESI } from "../fatura/fatura-pdf";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { KAREKOD_YER_TUTUCU_ID } from "./karekod";
+
+/**
+ * EBLG-32: alıcının görüntüleyicisinde karekodu çizen kütüphane
+ * (qrcode-generator). Her faturaya gömüldüğü için satır başı girintisi ve
+ * tamamı yorum olan satırlar atılır; satır sonları korunduğu için kodun anlamı
+ * değişmez. Lisans notu MIT gereği başa yeniden yazılır.
+ */
+const QR_KUTUPHANESI =
+  "/*! QR Code Generator for JavaScript | Copyright (c) 2009 Kazuhiko Arase | MIT License */\n" +
+  readFileSync(createRequire(__filename).resolve("qrcode-generator"), "utf8")
+    .split("\n")
+    .map((satir) => satir.trim())
+    .filter((satir) => satir !== "" && !satir.startsWith("//"))
+    .join("\n");
 
 /**
  * EBLG-31: UBL'e gömülen görünüm. Alıcı belgemizi bununla görür, bu yüzden
@@ -18,6 +35,15 @@ const FATURA_XSLT = `<?xml version="1.0" encoding="UTF-8"?>
   <xsl:output method="html" encoding="UTF-8" indent="no"/>
   <xsl:decimal-format name="tr" decimal-separator="," grouping-separator="."/>
 
+  <!--
+    EBLG-32: karekodun KDV kırılımı. Bu görünüm yalnız kendi ürettiğimiz UBL'e
+    gömülür; üreteç başlığa tek, oransız KDV alt toplamı yazdığı için kırılım
+    satırların alt toplamlarından orana göre gruplanır (Muenchian yöntemi).
+  -->
+  <xsl:key name="kdvOrani"
+    match="*[local-name()='InvoiceLine']/*[local-name()='TaxTotal']/*[local-name()='TaxSubtotal'][*[local-name()='TaxCategory']/*[local-name()='TaxScheme']/*[local-name()='TaxTypeCode'] = '0015']"
+    use="number(*[local-name()='Percent'])"/>
+
   <xsl:variable name="fatura" select="/*[local-name()='Invoice']"/>
   <xsl:variable name="paraKodu" select="$fatura/*[local-name()='DocumentCurrencyCode']"/>
   <xsl:variable name="para">
@@ -26,6 +52,12 @@ const FATURA_XSLT = `<?xml version="1.0" encoding="UTF-8"?>
       <xsl:otherwise><xsl:value-of select="$paraKodu"/></xsl:otherwise>
     </xsl:choose>
   </xsl:variable>
+
+  <!-- Sağlayıcının atadığı tam numara: 3 karakter seri + 13 hane. Yalnız önek varsa karekod basılmaz. -->
+  <xsl:variable name="belgeNo" select="normalize-space($fatura/*[local-name()='ID'])"/>
+  <xsl:variable name="karekodlu" select="string-length($belgeNo) = 16
+    and translate(substring($belgeNo, 1, 3), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', '') = ''
+    and translate(substring($belgeNo, 4), '0123456789', '') = ''"/>
 
   <!-- UBL tarihi YYYY-AA-GG; PDF ile aynı biçimde gösterilir. -->
   <xsl:template name="tarih">
@@ -79,6 +111,108 @@ const FATURA_XSLT = `<?xml version="1.0" encoding="UTF-8"?>
     </tr>
   </xsl:template>
 
+  <!-- Taraf kimliği: schemeID'si VKN/TCKN olan, yoksa ilki (ubl-oku.ts vknBul). -->
+  <xsl:template name="vknTckn">
+    <xsl:param name="taraf"/>
+    <xsl:variable name="kimlikler" select="$taraf/*[local-name()='PartyIdentification']/*[local-name()='ID']"/>
+    <xsl:variable name="uygun" select="$kimlikler[translate(@schemeID, 'vkntc', 'VKNTC') = 'VKN' or translate(@schemeID, 'vkntc', 'VKNTC') = 'TCKN']"/>
+    <xsl:choose>
+      <xsl:when test="$uygun"><xsl:value-of select="normalize-space($uygun[1])"/></xsl:when>
+      <xsl:otherwise><xsl:value-of select="normalize-space($kimlikler[1])"/></xsl:otherwise>
+    </xsl:choose>
+  </xsl:template>
+
+  <xsl:template name="jsonAlan">
+    <xsl:param name="ad"/>
+    <xsl:param name="deger"/>
+    <xsl:param name="ilk" select="0"/>
+    <xsl:if test="$ilk = 0"><xsl:text>,</xsl:text></xsl:if>
+    <xsl:text>"</xsl:text><xsl:value-of select="$ad"/><xsl:text>":"</xsl:text><xsl:value-of select="$deger"/><xsl:text>"</xsl:text>
+  </xsl:template>
+
+  <!--
+    EBLG-32: GİB Karekod Standardı Kılavuzu v1.0 §2.1–2.2 JSON'u. Alan sırası ve
+    biçimi sunucudaki faturaKarekodVerisi (ubl-oku.ts) ile birebir aynıdır;
+    karekod-xslt kabul testi ikisini tarayıcıda karşılaştırır.
+  -->
+  <xsl:template name="karekodVerisi">
+    <xsl:variable name="parasal" select="$fatura/*[local-name()='LegalMonetaryTotal']"/>
+    <xsl:text>{</xsl:text>
+    <xsl:call-template name="jsonAlan">
+      <xsl:with-param name="ad">vkntckn</xsl:with-param>
+      <xsl:with-param name="ilk" select="1"/>
+      <xsl:with-param name="deger">
+        <xsl:call-template name="vknTckn">
+          <xsl:with-param name="taraf" select="$fatura/*[local-name()='AccountingSupplierParty']/*[local-name()='Party']"/>
+        </xsl:call-template>
+      </xsl:with-param>
+    </xsl:call-template>
+    <xsl:call-template name="jsonAlan">
+      <xsl:with-param name="ad">avkntckn</xsl:with-param>
+      <xsl:with-param name="deger">
+        <xsl:call-template name="vknTckn">
+          <xsl:with-param name="taraf" select="$fatura/*[local-name()='AccountingCustomerParty']/*[local-name()='Party']"/>
+        </xsl:call-template>
+      </xsl:with-param>
+    </xsl:call-template>
+    <xsl:call-template name="jsonAlan">
+      <xsl:with-param name="ad">senaryo</xsl:with-param>
+      <xsl:with-param name="deger" select="normalize-space($fatura/*[local-name()='ProfileID'])"/>
+    </xsl:call-template>
+    <xsl:call-template name="jsonAlan">
+      <xsl:with-param name="ad">tip</xsl:with-param>
+      <xsl:with-param name="deger" select="normalize-space($fatura/*[local-name()='InvoiceTypeCode'])"/>
+    </xsl:call-template>
+    <xsl:call-template name="jsonAlan">
+      <xsl:with-param name="ad">tarih</xsl:with-param>
+      <xsl:with-param name="deger" select="normalize-space($fatura/*[local-name()='IssueDate'])"/>
+    </xsl:call-template>
+    <xsl:call-template name="jsonAlan">
+      <xsl:with-param name="ad">no</xsl:with-param>
+      <xsl:with-param name="deger" select="$belgeNo"/>
+    </xsl:call-template>
+    <xsl:call-template name="jsonAlan">
+      <xsl:with-param name="ad">ettn</xsl:with-param>
+      <xsl:with-param name="deger" select="normalize-space($fatura/*[local-name()='UUID'])"/>
+    </xsl:call-template>
+    <xsl:call-template name="jsonAlan">
+      <xsl:with-param name="ad">parabirimi</xsl:with-param>
+      <xsl:with-param name="deger">
+        <xsl:choose>
+          <xsl:when test="normalize-space($paraKodu) != ''"><xsl:value-of select="normalize-space($paraKodu)"/></xsl:when>
+          <xsl:otherwise>TRY</xsl:otherwise>
+        </xsl:choose>
+      </xsl:with-param>
+    </xsl:call-template>
+    <xsl:call-template name="jsonAlan">
+      <xsl:with-param name="ad">malhizmettoplam</xsl:with-param>
+      <xsl:with-param name="deger" select="format-number($parasal/*[local-name()='LineExtensionAmount'], '0.00')"/>
+    </xsl:call-template>
+    <xsl:variable name="kdvAltToplamlari" select="$fatura/*[local-name()='InvoiceLine']/*[local-name()='TaxTotal']/*[local-name()='TaxSubtotal'][*[local-name()='TaxCategory']/*[local-name()='TaxScheme']/*[local-name()='TaxTypeCode'] = '0015']"/>
+    <xsl:for-each select="$kdvAltToplamlari[generate-id() = generate-id(key('kdvOrani', number(*[local-name()='Percent']))[1])]">
+      <xsl:sort select="number(*[local-name()='Percent'])" data-type="number"/>
+      <xsl:variable name="oran" select="number(*[local-name()='Percent'])"/>
+      <xsl:variable name="grup" select="key('kdvOrani', $oran)"/>
+      <xsl:call-template name="jsonAlan">
+        <xsl:with-param name="ad" select="concat('kdvmatrah(', format-number($oran, '0.##'), ')')"/>
+        <xsl:with-param name="deger" select="format-number(sum($grup/*[local-name()='TaxableAmount']), '0.00')"/>
+      </xsl:call-template>
+      <xsl:call-template name="jsonAlan">
+        <xsl:with-param name="ad" select="concat('hesaplanankdv(', format-number($oran, '0.##'), ')')"/>
+        <xsl:with-param name="deger" select="format-number(sum($grup/*[local-name()='TaxAmount']), '0.00')"/>
+      </xsl:call-template>
+    </xsl:for-each>
+    <xsl:call-template name="jsonAlan">
+      <xsl:with-param name="ad">vergidahil</xsl:with-param>
+      <xsl:with-param name="deger" select="format-number($parasal/*[local-name()='TaxInclusiveAmount'], '0.00')"/>
+    </xsl:call-template>
+    <xsl:call-template name="jsonAlan">
+      <xsl:with-param name="ad">odenecek</xsl:with-param>
+      <xsl:with-param name="deger" select="format-number($parasal/*[local-name()='PayableAmount'], '0.00')"/>
+    </xsl:call-template>
+    <xsl:text>}</xsl:text>
+  </xsl:template>
+
   <xsl:template match="/">
     <html lang="tr">
       <head>
@@ -87,6 +221,13 @@ const FATURA_XSLT = `<?xml version="1.0" encoding="UTF-8"?>
         <style>__STIL__</style>
       </head>
       <body>
+        <!-- EBLG-32: karekod sağ üstte. Veri gizli metin olarak durur, aşağıdaki betik çizer. -->
+        <xsl:if test="$karekodlu">
+          <div style="text-align:right;margin:0 0 6px">
+            <div id="${KAREKOD_YER_TUTUCU_ID}" style="display:inline-block;width:35mm;height:35mm"></div>
+          </div>
+          <div id="${KAREKOD_YER_TUTUCU_ID}-veri" style="display:none"><xsl:call-template name="karekodVerisi"/></div>
+        </xsl:if>
         <div class="ust-serit">
           <h1>
             <xsl:choose>
@@ -249,12 +390,30 @@ const FATURA_XSLT = `<?xml version="1.0" encoding="UTF-8"?>
         <xsl:if test="$fatura/*[local-name()='ProfileID'] = 'EARSIVFATURA' and not($fatura//*[local-name()='SendType'] = 'KAGIT')">
           <p style="margin-top:10px;font-size:9pt">__EARSIV_IBARESI__</p>
         </xsl:if>
+        <xsl:if test="$karekodlu">
+          <script type="text/javascript"><![CDATA[__QR_KUTUPHANESI__
+(function () {
+  var hedef = document.getElementById("${KAREKOD_YER_TUTUCU_ID}");
+  var veri = document.getElementById("${KAREKOD_YER_TUTUCU_ID}-veri");
+  if (!hedef || !veri || hedef.firstChild) return;
+  qrcode.stringToBytes = qrcode.stringToBytesFuncs["UTF-8"];
+  var qr = qrcode(0, "M");
+  qr.addData(veri.textContent);
+  qr.make();
+  hedef.innerHTML = qr.createSvgTag({ scalable: true, margin: 0 });
+  var svg = hedef.firstChild;
+  if (svg && svg.style) { svg.style.width = "100%"; svg.style.height = "100%"; }
+})();
+]]></script>
+        </xsl:if>
       </body>
     </html>
   </xsl:template>
 </xsl:stylesheet>`
   .replace("__STIL__", SAYFA_STILI)
-  .replace("__EARSIV_IBARESI__", EARSIV_ELEKTRONIK_IBARESI);
+  .replace("__EARSIV_IBARESI__", EARSIV_ELEKTRONIK_IBARESI)
+  // İşlev biçimi: kütüphanedeki "$" dizileri değiştirme kalıbı olarak yorumlanmasın.
+  .replace("__QR_KUTUPHANESI__", () => QR_KUTUPHANESI);
 
 export function faturaUblUret(
   fatura: Fatura & {
