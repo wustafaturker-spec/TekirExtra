@@ -69,6 +69,13 @@ registerModulAyar(
      * değiştirilebilsin diye ayar yapıldı.
      */
     earsivIptalGunSayisi: z.number().int().min(0).max(90),
+    /**
+     * Alıcı yanıt vermezse giden e-İrsaliyenin gönderimden sonra kaç gün
+     * otomatik sorgulanacağı (EBLG-36). GİB yanıt için 7 gün öngörür; varsayılan
+     * 3 gün pay bırakır. Süre dolunca elle sorgu açık kalır. Planlayıcı en fazla
+     * 60 güne kadar bakar.
+     */
+    eirsaliyeYanitGunSayisi: z.number().int().min(1).max(60),
   }),
-  { earsivIptalGunSayisi: 8 },
+  { earsivIptalGunSayisi: 8, eirsaliyeYanitGunSayisi: 10 },
 );

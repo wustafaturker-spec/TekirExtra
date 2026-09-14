@@ -194,6 +194,42 @@ export function earsivRaporTutariOzetle(uuid: string, satirlar: NesRaporDokumSat
   };
 }
 
+/**
+ * EBLG-36: irsaliye yanıtının (UBL-TR ReceiptAdvice) kararı satır
+ * miktarlarından çıkar — yalnız teslim alınan → kabul, hiç teslim alınmayan →
+ * ret, ikisi birden → kısmi kabul. Eksik miktar (`ShortQuantity`) da teslim
+ * alınmamış sayılır. Satır ya da miktar yoksa karar verilmez.
+ */
+export function irsaliyeYanitiKarari(xml: string): { durum: "kabul" | "ret" | "kismi_kabul"; detay?: string } | undefined {
+  const satirlar = xml.match(/<(?:\w+:)?ReceiptLine\b[\s\S]*?<\/(?:\w+:)?ReceiptLine>/g) ?? [];
+  const miktar = (satir: string, ad: string) => {
+    const deger = satir.match(new RegExp(`<(?:\\w+:)?${ad}\\b[^>]*>([^<]*)<`))?.[1]?.trim().replace(",", ".");
+    const sayi = deger ? Number(deger) : 0;
+    return Number.isFinite(sayi) ? sayi : 0;
+  };
+  let alinan = 0;
+  let reddedilen = 0;
+  let eksik = 0;
+  const gerekceler = new Set<string>();
+  for (const satir of satirlar) {
+    alinan += miktar(satir, "ReceivedQuantity");
+    reddedilen += miktar(satir, "RejectedQuantity");
+    eksik += miktar(satir, "ShortQuantity");
+    const gerekce = satir.match(/<(?:\w+:)?RejectReason\b[^>]*>([^<]*)</)?.[1]?.trim();
+    if (gerekce) gerekceler.add(gerekce);
+  }
+  const teslimAlinmayan = reddedilen + eksik;
+  if (alinan === 0 && teslimAlinmayan === 0) return undefined;
+
+  const yuvarla = (n: number) => Math.round(n * 1000) / 1000;
+  const detay = [
+    teslimAlinmayan > 0 ? `teslim alınan ${yuvarla(alinan)}, reddedilen ${yuvarla(reddedilen)}${eksik ? `, eksik ${yuvarla(eksik)}` : ""}` : "",
+    gerekceler.size ? `gerekçe: ${[...gerekceler].join("; ")}` : "",
+  ].filter(Boolean).join(" · ");
+  const durum = teslimAlinmayan === 0 ? "kabul" : alinan === 0 ? "ret" : "kismi_kabul";
+  return detay ? { durum, detay: detay.slice(0, 500) } : { durum };
+}
+
 export function nesBelgeDurumu(gidenDurum?: string, yanit?: string): BelgeDurum {
   if (yanit === "Accepted") return "kabul";
   if (yanit === "Rejected") return "ret";
@@ -810,21 +846,56 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
     }
   }
 
-  async irsaliyeDurumSorgula(cfg: EntegratorConfig, belgeRef: string): Promise<BelgeDurumSonuc> {
-    try {
-      const irsaliye = await this.cagir<{ outgoingStatus?: string; documentAnswer?: string; outgoingEnvelope?: { description?: string } }>(
+  /**
+   * EBLG-36: giden e-İrsaliyenin durumu iki kaynaktan okunur. Zarfın GİB
+   * yolculuğu `outgoingStatus`'tadır. Alıcının kararı ayrı bir belgedir
+   * (irsaliye yanıtı / ReceiptAdvice): `despatchAnswer` yalnız yanıtın gelip
+   * gelmediğini söyler (None/Waiting/Answered), kabul/ret alanı yoktur; karar
+   * yanıt XML'indeki satır miktarlarından çıkarılır. Önceki kod faturadaki
+   * `documentAnswer` alanını okuyordu — irsaliyede bu alan yok, karar hiç
+   * görünmüyordu; ayrıca GİB hatası `iletildi` kalıyordu (2026-09-14 canlı
+   * yanıtla ölçüldü).
+   *
+   * Çağrı hatası `hata` durumuna çevrilmez, fırlatılır: `hata` son durumdur ve
+   * geçici bir NES kesintisi irsaliyeyi kalıcı olarak hatalı gösterirdi.
+   */
+  async irsaliyeDurumSorgula(
+    cfg: EntegratorConfig,
+    belgeRef: string,
+  ): Promise<Omit<BelgeDurumSonuc, "durum"> & { durum: BelgeDurum | "kismi_kabul" }> {
+    const irsaliye = await this.cagir<{
+      outgoingStatus?: string;
+      despatchAnswer?: string;
+      outgoingEnvelope?: { description?: string };
+      errorDescription?: string;
+    }>(cfg, "edespatch", `/v1/outgoing/despatches/${encodeURIComponent(belgeRef)}`);
+    const zarf = nesBelgeDurumu(irsaliye?.outgoingStatus);
+    if (zarf === "hata") {
+      return { belgeRef, durum: "hata", detay: irsaliye?.outgoingEnvelope?.description || irsaliye?.errorDescription };
+    }
+
+    if (irsaliye?.despatchAnswer === "Answered") {
+      const liste = await this.cagir<{ data?: { id?: string; outgoingDespatch?: { id?: string } }[] }>(
         cfg,
         "edespatch",
-        `/v1/outgoing/despatches/${encodeURIComponent(belgeRef)}`,
+        "/v1/incoming/receiptadvices",
+        { sorgu: { despatchUuid: belgeRef, page: 1, pageSize: 10 } },
       );
-      return {
-        belgeRef,
-        durum: nesBelgeDurumu(irsaliye?.outgoingStatus, irsaliye?.documentAnswer),
-        detay: irsaliye?.outgoingEnvelope?.description,
-      };
-    } catch (hata) {
-      return { belgeRef, durum: "hata", detay: hata instanceof Error ? hata.message : "e-İrsaliye durumu sorgulanamadı" };
+      // NES çözümleyemediği filtreyi sessizce yok sayabiliyor (bkz. `belgeAra`);
+      // yanıtın bu irsaliyeye ait olduğu ayrıca doğrulanır.
+      const yanitBelgesi = liste?.data?.find((s) => s.outgoingDespatch?.id?.toLowerCase() === belgeRef.toLowerCase());
+      if (yanitBelgesi?.id) {
+        const xml = await this.cagir<string>(
+          cfg,
+          "edespatch",
+          `/v1/incoming/receiptadvices/${encodeURIComponent(yanitBelgesi.id)}/xml`,
+          { metin: true },
+        );
+        const karar = irsaliyeYanitiKarari(xml);
+        if (karar) return { belgeRef, ...karar };
+      }
     }
+    return { belgeRef, durum: zarf };
   }
 
   async gelenIrsaliyeleriCek(cfg: EntegratorConfig, sonrasi: Date): Promise<GelenEirsaliye[]> {

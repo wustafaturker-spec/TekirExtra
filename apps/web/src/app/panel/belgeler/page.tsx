@@ -30,7 +30,7 @@ import {
 
 const TUR_ADI: Record<string, string> = { teklif: "Teklif", siparis: "Sipariş", irsaliye: "İrsaliye" };
 const YON_ADI: Record<string, string> = { satis: "Satış", alis: "Alış" };
-const EBELGE_DURUM_ADI: Record<string, string> = { kuyrukta: "Kuyrukta", iletildi: "İletildi", kabul: "Kabul edildi", ret: "Reddedildi", hata: "Hata" };
+const EBELGE_DURUM_ADI: Record<string, string> = { kuyrukta: "Kuyrukta", iletildi: "İletildi", kabul: "Kabul edildi", ret: "Reddedildi", hata: "Hata", kismi_kabul: "Kısmi kabul", iptal: "İptal" };
 const ODEME_DURUM_ADI: Record<string, string> = { beklemede: "Beklemede", odenmedi: "Ödenmedi", kismi: "Kısmi ödendi", odendi: "Ödendi" };
 const ebelgeZincirSinifi = (durum: string) => ["hata", "ret"].includes(durum) ? " is-error" : durum === "kabul" ? " is-complete" : " is-current";
 const detalleDurumSinifi = (durum?: string) => !durum ? "" : ["hata", "ret"].includes(durum) ? " is-error" : durum === "kabul" ? " is-complete" : " is-current";
@@ -861,7 +861,7 @@ export default function BelgelerSayfasi() {
             ) : (
               <div className="document-timeline__step" aria-disabled="true"><span /><strong>e-Belge</strong><small>{detay.fatura ? "Hazırlanıyor" : "Bekliyor"}</small></div>
             )}
-            {detay.tur === "irsaliye" && <div className={"document-timeline__step" + (detay.eirsaliye?.durum === "kabul" ? " is-complete" : detalleDurumSinifi(detay.eirsaliye?.durum))}><span>{detay.eirsaliye?.durum === "kabul" ? "✓" : ""}</span><strong>e-İrsaliye</strong><small>{detay.eirsaliye ? detay.eirsaliye.durum : "Gönderilmedi"}</small></div>}
+            {detay.tur === "irsaliye" && <div className={"document-timeline__step" + (detay.eirsaliye?.durum === "kabul" ? " is-complete" : detalleDurumSinifi(detay.eirsaliye?.durum))}><span>{detay.eirsaliye?.durum === "kabul" ? "✓" : ""}</span><strong>e-İrsaliye</strong><small>{detay.eirsaliye ? (EBELGE_DURUM_ADI[detay.eirsaliye.durum] ?? detay.eirsaliye.durum) : "Gönderilmedi"}</small></div>}
             {detay.fatura ? (
               <a className={"document-timeline__step" + odemeZincirSinifi(detay.fatura.odemeOzeti.durum)} href={"/panel/fatura?faturaId=" + detay.fatura.id + "&panel=odeme"}>
                 <span>{detay.fatura.odemeOzeti.durum === "odendi" ? "✓" : ""}</span><strong>Tahsilat/Ödeme</strong><small>{ODEME_DURUM_ADI[detay.fatura.odemeOzeti.durum] ?? detay.fatura.odemeOzeti.durum}</small>

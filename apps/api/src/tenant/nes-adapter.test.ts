@@ -41,6 +41,84 @@ const KULLANICI_LISTESI = `<?xml version="1.0" encoding="utf-8"?>
 
 afterEach(() => vi.unstubAllGlobals());
 
+describe("NesEntegratorAdapter e-İrsaliye durum sorgusu (EBLG-36)", () => {
+  const REF = "400756ac-fc44-4b90-8c89-a14f076b089e";
+  const satir = (alinan: string, reddedilen = "0", eksik = "", gerekce = "") =>
+    `<cac:ReceiptLine><cbc:ID>1</cbc:ID><cbc:ReceivedQuantity unitCode="C62">${alinan}</cbc:ReceivedQuantity>` +
+    (eksik ? `<cbc:ShortQuantity unitCode="C62">${eksik}</cbc:ShortQuantity>` : "") +
+    `<cbc:RejectedQuantity unitCode="C62">${reddedilen}</cbc:RejectedQuantity>` +
+    (gerekce ? `<cbc:RejectReason>${gerekce}</cbc:RejectReason>` : "") +
+    `</cac:ReceiptLine>`;
+  const yanitXml = (...satirlar: string[]) =>
+    `<?xml version="1.0"?><ReceiptAdvice xmlns:cac="urn:cac" xmlns:cbc="urn:cbc"><cac:DespatchDocumentReference><cbc:ID>GBZ2026000800003</cbc:ID></cac:DespatchDocumentReference>${satirlar.join("")}</ReceiptAdvice>`;
+
+  /** NES'i adrese göre taklit eder: irsaliye, yanıt listesi, yanıt XML'i. */
+  function nes(irsaliye: object, yanitlar: object[] = [], xml = "") {
+    const fetchMock = vi.fn().mockImplementation(async (adres: string) => {
+      if (adres.includes("/incoming/receiptadvices?")) return yanit({ data: yanitlar });
+      if (adres.includes("/incoming/receiptadvices/")) return yanit(xml);
+      return yanit(irsaliye);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+  const iletilmis = { outgoingStatus: "EnvelopeHasBeenTransferredToReceiverSuccessfully" };
+  const yanitlanmis = { ...iletilmis, despatchAnswer: "Answered" };
+  const buIrsaliyeninYaniti = [{ id: "yanit-1", outgoingDespatch: { id: REF.toUpperCase() } }];
+
+  it("GİB hatasını açıklamasıyla hata olarak döner ve yanıt aramaz", async () => {
+    const fetchMock = nes({
+      outgoingStatus: "ErrorHasBeenDetectedInEnvelopeByGib",
+      despatchAnswer: "Waiting",
+      outgoingEnvelope: { code: "1150", description: "SCHEMATRON KONTROL SONUCU HATALI(Geçersiz plaka değeri : '34 ABC 123')" },
+    });
+    const sonuc = await new NesEntegratorAdapter().irsaliyeDurumSorgula(config, REF);
+
+    expect(sonuc).toEqual({ belgeRef: REF, durum: "hata", detay: expect.stringContaining("Geçersiz plaka") });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("yanıt beklenirken zarf durumunu döner", async () => {
+    nes({ ...iletilmis, despatchAnswer: "Waiting" });
+    expect(await new NesEntegratorAdapter().irsaliyeDurumSorgula(config, REF)).toEqual({ belgeRef: REF, durum: "iletildi" });
+  });
+
+  it("yalnız teslim alınan satırlarla gelen yanıtı kabul sayar", async () => {
+    const fetchMock = nes(yanitlanmis, buIrsaliyeninYaniti, yanitXml(satir("20"), satir("12")));
+    const sonuc = await new NesEntegratorAdapter().irsaliyeDurumSorgula(config, REF);
+
+    expect(sonuc).toEqual({ belgeRef: REF, durum: "kabul" });
+    expect(String(fetchMock.mock.calls[1][0])).toContain(`despatchUuid=${REF}`);
+    expect(String(fetchMock.mock.calls[2][0])).toContain("/edespatch/v1/incoming/receiptadvices/yanit-1/xml");
+  });
+
+  it("teslim alınan ve reddedilen miktar birlikteyse kısmi kabul sayar, miktarları ve gerekçeyi yazar", async () => {
+    nes(yanitlanmis, buIrsaliyeninYaniti, yanitXml(satir("18", "2", "", "Hasarlı"), satir("10", "0", "2")));
+    const sonuc = await new NesEntegratorAdapter().irsaliyeDurumSorgula(config, REF);
+
+    expect(sonuc.durum).toBe("kismi_kabul");
+    expect(sonuc.detay).toBe("teslim alınan 28, reddedilen 2, eksik 2 · gerekçe: Hasarlı");
+  });
+
+  it("hiç teslim alınmayan yanıtı ret sayar", async () => {
+    nes(yanitlanmis, buIrsaliyeninYaniti, yanitXml(satir("0", "5", "", "Sipariş iptal")));
+    const sonuc = await new NesEntegratorAdapter().irsaliyeDurumSorgula(config, REF);
+
+    expect(sonuc).toEqual({ belgeRef: REF, durum: "ret", detay: "teslim alınan 0, reddedilen 5 · gerekçe: Sipariş iptal" });
+  });
+
+  it("başka irsaliyeye ait yanıtı benimsemez", async () => {
+    const fetchMock = nes(yanitlanmis, [{ id: "yanit-9", outgoingDespatch: { id: "baska-irsaliye" } }], yanitXml(satir("0", "5")));
+    expect(await new NesEntegratorAdapter().irsaliyeDurumSorgula(config, REF)).toEqual({ belgeRef: REF, durum: "iletildi" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("NES'e ulaşılamazsa hata durumuna çevirmez, fırlatır", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ message: "Beklenmeyen sunucu hatası" }, 500)));
+    await expect(new NesEntegratorAdapter().irsaliyeDurumSorgula(config, REF)).rejects.toThrow();
+  });
+});
+
 describe("NesEntegratorAdapter", () => {
   it("adresi test ortamı seçiminden türetir; kayıtta kalmış serbest adresi okumaz (EBLG-01a)", async () => {
     const fetchMock = vi.fn().mockResolvedValue(yanit({ uuid: "belge-1" }));

@@ -1,5 +1,6 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import { EirsaliyeDurum, GelenEirsaliyeDurum } from "@prisma/client";
+import { BadGatewayException, BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { EirsaliyeDurum, GelenEirsaliyeDurum, Prisma } from "@prisma/client";
+import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import type { EntegratorConfig } from "@tekirextra/baglanti";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -11,13 +12,43 @@ import { MukellefListesiService } from "./mukellef-listesi.service";
 
 const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+/** Aynı irsaliyenin iki durum sorgusu arasındaki asgari süre (EBLG-36, faturadaki EBLG-14 ile aynı). */
+const DURUM_SORGU_ARALIK_MS = Number(process.env.EBLG_DURUM_SORGU_ARALIK_MS || 2 * 60 * 60 * 1_000);
+
+/**
+ * EBLG-36: otomatik sorgulanacak giden e-İrsaliyeler. `kuyrukta` irsaliye GİB
+ * sonucu gelene kadar, `iletildi` irsaliye alıcı yanıtı için gönderimden
+ * itibaren `yanitGunSayisi` gün sorgulanır. Planlayıcı da aynı koşulu kullanır.
+ */
+export function eirsaliyeSorguKosulu(tenantId: string, simdi: number, yanitGunSayisi: number): Prisma.EirsaliyeKayitWhereInput {
+  return {
+    tenantId,
+    entegratorRef: { not: null },
+    OR: [{ sonDurumSorguAt: null }, { sonDurumSorguAt: { lt: new Date(simdi - DURUM_SORGU_ARALIK_MS) } }],
+    AND: [{ OR: [{ durum: "kuyrukta" }, { durum: "iletildi", createdAt: { gte: new Date(simdi - yanitGunSayisi * 86_400_000) } }] }],
+  };
+}
+
 @Injectable()
 export class EirsaliyeService {
+  private readonly logger = new Logger(EirsaliyeService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly baglantilar: BaglantilarService,
     private readonly mukellefListesi: MukellefListesiService,
+    private readonly ayarlar?: AyarlarService,
   ) {}
+
+  /** Durum sonucunun kayda yazılan hâli. Açıklama yalnız dikkat gerektiren durumda tutulur. */
+  private durumVerisi(sonuc: { durum: string; detay?: string }) {
+    const detay = sonuc.detay?.trim() || null;
+    return {
+      durum: sonuc.durum as EirsaliyeDurum,
+      hataMesaji: ["hata", "ret", "kismi_kabul"].includes(sonuc.durum) ? detay : null,
+      sonDurumSorguAt: new Date(),
+    };
+  }
 
   private async baglanti(tx: any, tenantId: string) {
     const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } });
@@ -139,10 +170,55 @@ export class EirsaliyeService {
       if (!kayit.entegratorRef) return kayit;
       const { cfg, adapter } = await this.baglanti(tx, tenantId);
       if (!adapter.irsaliyeDurumSorgula) throw new BadRequestException("Entegratör e-İrsaliye durumunu desteklemiyor");
-      const sonuc = await adapter.irsaliyeDurumSorgula(cfg, kayit.entegratorRef);
-      // İrsaliyede alıcı notu tutulmaz; açıklamadan yalnız hata kısmı kalır.
-      return tx.eirsaliyeKayit.update({ where: { id: kayit.id }, data: { durum: sonuc.durum as EirsaliyeDurum, hataMesaji: durumAciklamasi(sonuc).hataMesaji } });
+      let sonuc;
+      try {
+        sonuc = await adapter.irsaliyeDurumSorgula(cfg, kayit.entegratorRef);
+      } catch (hata) {
+        // Ulaşılamayan entegratör belgeyi hatalı yapmaz (EBLG-36); kullanıcıya söylenir.
+        throw new BadGatewayException(`e-İrsaliye durumu sorgulanamadı: ${hata instanceof Error ? hata.message : String(hata)}`);
+      }
+      return tx.eirsaliyeKayit.update({ where: { id: kayit.id }, data: this.durumVerisi(sonuc) });
     });
+  }
+
+  /**
+   * EBLG-36: bekleyen giden e-İrsaliyelerin durumunu sorgular. NES'te toplu
+   * durum ucu yoktur; irsaliye başına bir çağrı yapılır, her birinin ardından
+   * `sonDurumSorguAt` yazılır ki aynı irsaliye 2 saat dolmadan yeniden sorulmasın.
+   * Çağrısı başarısız olan irsaliyeye dokunulmaz, sonraki turda yeniden denenir.
+   */
+  async durumlariTopluSorgula(): Promise<{ sorgulanan: number; guncellenen: number; atlanan: number }> {
+    const { tenantId } = aktifBaglam();
+    const hazirlik = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } });
+      if (!baglanti) return null;
+      const adapter = this.baglantilar.adapterCoz(baglanti.saglayici);
+      if (!adapter.irsaliyeDurumSorgula) return null;
+      const ayarlar = this.ayarlar ? await this.ayarlar.getir("ebelge", tx) : {};
+      const yanitGunSayisi = Number(ayarlar.eirsaliyeYanitGunSayisi ?? 10);
+      const kayitlar = await tx.eirsaliyeKayit.findMany({
+        where: eirsaliyeSorguKosulu(tenantId, Date.now(), yanitGunSayisi),
+        select: { id: true, entegratorRef: true },
+        orderBy: { sonDurumSorguAt: { sort: "asc", nulls: "first" } },
+        take: 100,
+      });
+      return { cfg: JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig, adapter, kayitlar };
+    });
+    if (!hazirlik) return { sorgulanan: 0, guncellenen: 0, atlanan: 0 };
+
+    let guncellenen = 0;
+    let atlanan = 0;
+    for (const kayit of hazirlik.kayitlar) {
+      try {
+        const sonuc = await hazirlik.adapter.irsaliyeDurumSorgula!(hazirlik.cfg, kayit.entegratorRef!);
+        await this.prisma.tenantIslem(tenantId, (tx) => tx.eirsaliyeKayit.update({ where: { id: kayit.id }, data: this.durumVerisi(sonuc) }));
+        guncellenen += 1;
+      } catch (hata) {
+        atlanan += 1;
+        this.logger.warn(JSON.stringify({ event: "eirsaliye_durum_sorgusu_atlandi", tenantId, kayitId: kayit.id, hata: hata instanceof Error ? hata.message : String(hata) }));
+      }
+    }
+    return { sorgulanan: hazirlik.kayitlar.length, guncellenen, atlanan };
   }
 
   async gelenleriCek() {

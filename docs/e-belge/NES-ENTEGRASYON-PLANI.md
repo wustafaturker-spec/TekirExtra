@@ -724,6 +724,31 @@ adresleri `{aile}/v1.swagger.json` ve `{aile}/v1.swagger.taged.json`; ikisi de
 açıldığında XML'den okuyarak çizer ve GİB'in sağ üst köşeyi zorunlu tuttuğunu
 yazar (kılavuz v1.0 konum belirtmez). EBLG-32 bu yönteme geçti.
 
+## Giden e-İrsaliye durumu ve alıcı yanıtı (EBLG-36, 2026-09-14)
+
+Önceden irsaliye durumu yalnız elle sorgulanıyordu. Canlı kontrolde
+`GBZ2026000800002` ve `…003` bizde `iletildi` görünürken NES'te
+`ErrorHasBeenDetectedInEnvelopeByGib` idi (şematron: "Geçersiz plaka değeri");
+`…001` `kuyrukta` iken NES'te `EnvelopeIsWaitingToBeSendedToReceiverByGib`.
+
+**Şemadan öğrenilenler (edespatch):**
+- Giden irsaliyede **`documentAnswer` alanı yok** — adaptör onu okuyordu, karar
+  hiç görünmüyordu. `despatchAnswer` yalnız `None/Waiting/Answered` taşır.
+  `incomingAnswer` yanıt zarfının bilgisidir (kod, açıklama), kararı değil.
+- Alıcı kararı ayrı belgedir: `GET /v1/incoming/receiptadvices?despatchUuid=…`
+  (`IncomingReceiptAdvice.outgoingDespatch.id` ile eşleşme doğrulanır) →
+  `GET /v1/incoming/receiptadvices/{id}/xml`. Karar XML'deki `ReceiptLine`
+  miktarlarından: `ReceivedQuantity` / `RejectedQuantity` / `ShortQuantity`
+  (+ `RejectReason`). Yalnız teslim → kabul, hiç teslim yok → ret, ikisi → `kismi_kabul`.
+- NES'te toplu durum ucu yok; irsaliye başına tekil çağrı.
+
+**Uygulama:** worker planlayıcısı kiracı başına `eirsaliye-durum-toplu` işi açar;
+`kuyrukta` GİB sonucuna kadar, `iletildi` gönderimden itibaren
+`eirsaliyeYanitGunSayisi` (varsayılan 10) gün, 2 saatte bir sorgulanır. Çağrı
+hatası `hata` durumuna çevrilmez (adaptör fırlatır, iş o irsaliyeyi atlar).
+Alıcı yanıtı akışı canlıda **denenmedi** — test hesabındaki irsaliyelere yanıt
+verilmedi; kurallar birim testleriyle korunuyor.
+
 ## Servis adresi test seçiminden türer (EBLG-01a, 2026-09-14)
 
 NES belgesi iki kök verir: canlı `https://api.nes.com.tr/{API_NAME}/`, test

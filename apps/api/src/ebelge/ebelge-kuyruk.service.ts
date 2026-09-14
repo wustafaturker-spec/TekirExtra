@@ -5,6 +5,7 @@ import type { Rol } from "@tekirextra/shared";
 import { aktifBaglam, baglamlaCalistir } from "../core/istek-baglami";
 import { MetricsService } from "../core/observability/metrics.service";
 import { EbelgeService } from "./ebelge.service";
+import { EirsaliyeService, eirsaliyeSorguKosulu } from "./eirsaliye.service";
 
 const KUYRUK_ADI = "tekirextra-ebelge";
 const GONDERIM_ISI = "ebelge-gonder";
@@ -13,6 +14,7 @@ const GELEN_ISI = "gelen-belge-cek";
 const EARSIV_RAPOR_ISI = "earsiv-raporla";
 const DURUM_TOPLU_ISI = "ebelge-durum-toplu";
 const MUKELLEF_SENKRON_ISI = "gib-mukellef-senkron";
+const EIRSALIYE_DURUM_TOPLU_ISI = "eirsaliye-durum-toplu";
 const DEAD_LETTER_KUYRUGU = `${KUYRUK_ADI}-dead-letter`;
 const SISTEM_KULLANICISI = "00000000-0000-0000-0000-000000000000";
 
@@ -22,7 +24,8 @@ export type EbelgeIsTuru =
   | typeof GELEN_ISI
   | typeof EARSIV_RAPOR_ISI
   | typeof DURUM_TOPLU_ISI
-  | typeof MUKELLEF_SENKRON_ISI;
+  | typeof MUKELLEF_SENKRON_ISI
+  | typeof EIRSALIYE_DURUM_TOPLU_ISI;
 
 /**
  * Gelen belge taraması bu aralıktan sık çalışmaz. Sağlayıcı kılavuzu
@@ -59,6 +62,10 @@ const gelenIsKimligi = (tenantId: string) => `gelen-belge-${tenantId}`;
 const earsivRaporIsKimligi = (tenantId: string, uuid: string) => `earsiv-rapor-${tenantId}-${uuid}`;
 const durumTopluIsKimligi = (tenantId: string) => `ebelge-durum-toplu-${tenantId}`;
 const mukellefSenkronIsKimligi = () => "gib-mukellef-senkron";
+const eirsaliyeDurumTopluIsKimligi = (tenantId: string) => `eirsaliye-durum-toplu-${tenantId}`;
+
+/** Planlayıcının iş açarken baktığı en uzun irsaliye yanıt süresi; kiracının kendi süresi işte uygulanır. */
+const EIRSALIYE_AZAMI_YANIT_GUNU = 60;
 
 @Injectable()
 export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
@@ -73,7 +80,11 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
   private periyodikKontrol?: NodeJS.Timeout;
   private zamanlamaCalisiyor = false;
 
-  constructor(@Inject(forwardRef(() => EbelgeService)) private readonly ebelgeService: EbelgeService, private readonly metrics: MetricsService) {}
+  constructor(
+    @Inject(forwardRef(() => EbelgeService)) private readonly ebelgeService: EbelgeService,
+    private readonly metrics: MetricsService,
+    private readonly eirsaliyeService?: EirsaliyeService,
+  ) {}
 
   async onModuleInit() {
     this.kuyruk.on("error", (hata) => this.logger.error(`e-Belge kuyruğu Redis hatası: ${hata.message}`));
@@ -132,6 +143,12 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
   async durumlariTopluKuyrugaEkle() {
     const baglam = aktifBaglam();
     return this.tekrarlanabilirIsEkle(DURUM_TOPLU_ISI, durumTopluIsKimligi(baglam.tenantId));
+  }
+
+  /** EBLG-36: kiracının bekleyen giden e-İrsaliyeleri için tek toplu durum işi. */
+  async irsaliyeDurumlariKuyrugaEkle() {
+    const baglam = aktifBaglam();
+    return this.tekrarlanabilirIsEkle(EIRSALIYE_DURUM_TOPLU_ISI, eirsaliyeDurumTopluIsKimligi(baglam.tenantId));
   }
 
   async mukellefSenkronKuyrugaEkle() {
@@ -203,6 +220,7 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
       this.metrics.increment("ebelge_queue_jobs_total", { result: "dead_letter_retry", type: dlq.data.isTuru });
       if (dlq.data.isTuru === GELEN_ISI) return this.gelenBelgeleriKuyrugaEkle();
       if (dlq.data.isTuru === DURUM_TOPLU_ISI) return this.durumlariTopluKuyrugaEkle();
+      if (dlq.data.isTuru === EIRSALIYE_DURUM_TOPLU_ISI) return this.irsaliyeDurumlariKuyrugaEkle();
       if (dlq.data.isTuru === MUKELLEF_SENKRON_ISI) return this.mukellefSenkronKuyrugaEkle();
       if (dlq.data.isTuru === EARSIV_RAPOR_ISI) {
         if (!dlq.data.raporUuid) throw new NotFoundException("Dead-letter işi rapor bilgisi eksik");
@@ -217,6 +235,7 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
     const veri = is.data; await is.remove(); this.metrics.increment("ebelge_queue_jobs_total", { result: "manual_retry", type: veri.isTuru || is.name });
     if ((veri.isTuru || is.name) === GELEN_ISI) return this.gelenBelgeleriKuyrugaEkle();
     if ((veri.isTuru || is.name) === DURUM_TOPLU_ISI) return this.durumlariTopluKuyrugaEkle();
+    if ((veri.isTuru || is.name) === EIRSALIYE_DURUM_TOPLU_ISI) return this.irsaliyeDurumlariKuyrugaEkle();
     if ((veri.isTuru || is.name) === MUKELLEF_SENKRON_ISI) return this.mukellefSenkronKuyrugaEkle();
     if ((veri.isTuru || is.name) === EARSIV_RAPOR_ISI) {
       if (!veri.raporUuid) throw new NotFoundException("Kuyruk işi rapor bilgisi eksik");
@@ -234,6 +253,10 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
     return baglamlaCalistir({ tenantId: is.data.tenantId, userId: is.data.userId, rol: is.data.rol }, async () => {
       if (is.name === GELEN_ISI) return this.ebelgeService.gelenBelgeleriCek();
       if (is.name === DURUM_TOPLU_ISI) return this.ebelgeService.durumlariTopluSorgula();
+      if (is.name === EIRSALIYE_DURUM_TOPLU_ISI) {
+        if (!this.eirsaliyeService) throw new Error("e-İrsaliye servisi worker'a bağlanmamış");
+        return this.eirsaliyeService.durumlariTopluSorgula();
+      }
       if (is.name === MUKELLEF_SENKRON_ISI) return this.ebelgeService.mukellefListesiSenkronEt();
       if (is.name === EARSIV_RAPOR_ISI) {
         if (!is.data.raporUuid) throw new Error("Kuyruk işinde e-Arşiv rapor UUID bilgisi eksik");
@@ -316,6 +339,14 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
             },
           });
           if (bekleyen > 0) await this.durumlariTopluKuyrugaEkle();
+
+          // EBLG-36: giden e-İrsaliye durumları da kiracı başına tek işte
+          // sorgulanır. Kiracının yanıt süresi ayarı işte uygulanır; burada en
+          // uzun süreyle yalnız iş açılıp açılmayacağına bakılır.
+          const bekleyenIrsaliye = await yonetim.eirsaliyeKayit.count({
+            where: eirsaliyeSorguKosulu(tenant.id, Date.now(), EIRSALIYE_AZAMI_YANIT_GUNU),
+          });
+          if (bekleyenIrsaliye > 0) await this.irsaliyeDurumlariKuyrugaEkle();
         });
       }
       this.metrics.increment("ebelge_schedule_runs_total", { result: "success" });

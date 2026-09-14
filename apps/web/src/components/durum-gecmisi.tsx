@@ -31,6 +31,7 @@ const DURUM_ADI: Record<string, string> = {
   ret: "Ret",
   hata: "Hata",
   iptal: "İptal",
+  kismi_kabul: "Kısmi kabul",
 };
 
 const durumAdi = (durum: string) => DURUM_ADI[durum] ?? durum;

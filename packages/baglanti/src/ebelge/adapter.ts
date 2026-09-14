@@ -86,7 +86,15 @@ export interface EntegratorAdapter {
    */
   earsivRaporTutari?(cfg: EntegratorConfig, uuid: string): Promise<EarsivRaporTutari>;
   irsaliyeGonder?(cfg: EntegratorConfig, belge: EirsaliyeBelge): Promise<GonderimSonuc>;
-  irsaliyeDurumSorgula?(cfg: EntegratorConfig, belgeRef: string): Promise<BelgeDurumSonuc>;
+  /**
+   * EBLG-36: alıcı irsaliyenin bir kısmını kabul edebilir (`kismi_kabul`).
+   * Entegratöre ulaşılamazsa hata fırlatılmalıdır; `hata` durumu belgenin
+   * kendisinin reddedildiği anlamına gelir ve son durumdur.
+   */
+  irsaliyeDurumSorgula?(
+    cfg: EntegratorConfig,
+    belgeRef: string,
+  ): Promise<Omit<BelgeDurumSonuc, "durum"> & { durum: BelgeDurumSonuc["durum"] | "kismi_kabul" }>;
   gelenIrsaliyeleriCek?(cfg: EntegratorConfig, sonrasi: Date): Promise<GelenEirsaliye[]>;
   /**
    * EBLG-34: gelen faturaya entegratörde verilmiş kabul/ret kararı; karar

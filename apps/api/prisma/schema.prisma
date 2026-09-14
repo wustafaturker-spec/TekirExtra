@@ -3093,6 +3093,8 @@ enum EirsaliyeDurum {
   kabul
   ret
   hata
+  /// Alıcı irsaliyenin bir kısmını kabul etti, bir kısmını reddetti (EBLG-36).
+  kismi_kabul
 }
 
 enum GelenEirsaliyeDurum {
@@ -3110,12 +3112,14 @@ model EirsaliyeKayit {
   entegratorRef String?        @map("entegrator_ref")
   xmlIcerik     String?        @map("xml_icerik")
   hataMesaji    String?        @map("hata_mesaji")
+  /// Durumun en son sorgulandığı an; aynı irsaliye 2 saat dolmadan tekrar sorulmaz (EBLG-36).
+  sonDurumSorguAt DateTime?    @map("son_durum_sorgu_at")
   createdAt     DateTime       @default(now()) @map("created_at")
   updatedAt     DateTime       @updatedAt @map("updated_at")
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   belge         Belge          @relation(fields: [belgeId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, durum])
+  @@index([tenantId, durum, sonDurumSorguAt])
   @@map("eirsaliye_kayitlari")
 }
 
