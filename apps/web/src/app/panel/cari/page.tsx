@@ -139,6 +139,8 @@ interface EkstreSatir {
   tutarTry: string;
   yuruyenBakiye: string;
   kaynakTur: string;
+  /** İptal edilmiş faturanın hareketi (CARI-22); yalnız iptaller gösterilince gelir. */
+  iptal?: boolean;
   makbuzYolu: string | null;
   odemeYontemi: null | { tur: "kredi_karti"; kartAdi: string; bankaAdi: string; sonDortHane: string; taksitSayisi: number; komisyonTutari: string; karttanCekilenToplam: string; fatura: { id: string; no: string | null } | null };
 }
@@ -212,6 +214,7 @@ export default function CariSayfasi() {
   const [ekstreBitis, setEkstreBitis] = useState("");
   const [ekstreEposta, setEkstreEposta] = useState("");
   const [ekstreIslemde, setEkstreIslemde] = useState(false);
+  const [ekstreIptaller, setEkstreIptaller] = useState(false);
   const [filtreTip, setFiltreTip] = useState<FiltreTip>("tumu");
   const [kayitliGorunumler, setKayitliGorunumler] = useState<CariGorunumu[]>([]);
   const [gorunumFormuAcik, setGorunumFormuAcik] = useState(false);
@@ -396,23 +399,23 @@ export default function CariSayfasi() {
     }
   }
 
-  async function ekstreFiltrele() {
+  async function ekstreFiltrele(iptaller = ekstreIptaller) {
     if (!detay) return;
     if (ekstreBaslangic && ekstreBitis && ekstreBaslangic > ekstreBitis) { setHata("Başlangıç tarihi bitiş tarihinden sonra olamaz."); return; }
     setEkstreIslemde(true); setHata("");
-    try { const qs = new URLSearchParams(); if (ekstreBaslangic) qs.set("baslangic", ekstreBaslangic); if (ekstreBitis) qs.set("bitis", ekstreBitis); setEkstre(await api<EkstreVeri>(`/cari/${detay.id}/ekstre?${qs}`)); }
+    try { const qs = new URLSearchParams(); if (ekstreBaslangic) qs.set("baslangic", ekstreBaslangic); if (ekstreBitis) qs.set("bitis", ekstreBitis); if (iptaller) qs.set("iptaller", "1"); setEkstre(await api<EkstreVeri>(`/cari/${detay.id}/ekstre?${qs}`)); }
     catch (h) { setHata(h instanceof Error ? h.message : "Ekstre yüklenemedi"); }
     finally { setEkstreIslemde(false); }
   }
 
   function ekstreYolu(uzanti: "pdf" | "excel") {
-    if (!detay) return ""; const qs = new URLSearchParams(); if (ekstreBaslangic) qs.set("baslangic", ekstreBaslangic); if (ekstreBitis) qs.set("bitis", ekstreBitis); return `/cari/${detay.id}/ekstre/${uzanti}?${qs}`;
+    if (!detay) return ""; const qs = new URLSearchParams(); if (ekstreBaslangic) qs.set("baslangic", ekstreBaslangic); if (ekstreBitis) qs.set("bitis", ekstreBitis); if (ekstreIptaller) qs.set("iptaller", "1"); return `/cari/${detay.id}/ekstre/${uzanti}?${qs}`;
   }
 
   async function ekstreGonder() {
     if (!detay || !ekstreEposta) return;
     setEkstreIslemde(true); setHata(""); setBasari("");
-    try { const sonuc = await api<{ mesaj: string }>(`/cari/${detay.id}/ekstre/eposta`, { method: "POST", body: JSON.stringify({ baslangic: ekstreBaslangic || undefined, bitis: ekstreBitis || undefined, alici: ekstreEposta }) }); setBasari(sonuc.mesaj); }
+    try { const sonuc = await api<{ mesaj: string }>(`/cari/${detay.id}/ekstre/eposta`, { method: "POST", body: JSON.stringify({ baslangic: ekstreBaslangic || undefined, bitis: ekstreBitis || undefined, alici: ekstreEposta, iptalleriGoster: ekstreIptaller }) }); setBasari(sonuc.mesaj); }
     catch (h) { setHata(h instanceof Error ? h.message : "Ekstre gönderilemedi"); }
     finally { setEkstreIslemde(false); }
   }
@@ -1138,6 +1141,7 @@ export default function CariSayfasi() {
                 <Field label="Başlangıç"><Input type="date" value={ekstreBaslangic} onChange={(e) => setEkstreBaslangic(e.target.value)} /></Field>
                 <Field label="Bitiş"><Input type="date" value={ekstreBitis} onChange={(e) => setEkstreBitis(e.target.value)} /></Field>
                 <Button disabled={ekstreIslemde} onClick={() => void ekstreFiltrele()}>Uygula</Button>
+                <label className="check-row"><input type="checkbox" checked={ekstreIptaller} disabled={ekstreIslemde} onChange={(e) => { setEkstreIptaller(e.target.checked); void ekstreFiltrele(e.target.checked); }} /> İptalleri de göster</label>
                 <div className="cari-statement__exports"><Button disabled={!detay} onClick={() => detay && void apiDosyaIndir(ekstreYolu("pdf"), `ekstre-${detay.kod}.pdf`)}>PDF indir</Button><Button disabled={!detay} onClick={() => detay && void apiDosyaIndir(ekstreYolu("excel"), `ekstre-${detay.kod}.xlsx`)}>Excel indir</Button></div>
               </div>
               <div className="cari-statement__mail"><Field label="Gönderilecek e-posta"><Input type="email" value={ekstreEposta} onChange={(e) => setEkstreEposta(e.target.value)} placeholder="muhasebe@firma.com" /></Field><Button variant="primary" disabled={!ekstreEposta || ekstreIslemde} onClick={() => void ekstreGonder()}>{ekstreIslemde ? "İşleniyor…" : "PDF + Excel e-posta gönder"}</Button></div>
@@ -1169,10 +1173,10 @@ export default function CariSayfasi() {
                       const alacakVal = row.tip === "alacak" ? Number(row.tutarTry) : 0;
                       const bakiyeNum = Number(row.yuruyenBakiye);
                       return (
-                        <tr key={idx}>
+                        <tr key={idx} style={row.iptal ? { opacity: 0.6 } : undefined}>
                           <td>{row.tarih}</td>
                           <td>{row.vadeTarihi || "—"}</td>
-                          <td><div className="stack" style={{ gap: ".25rem" }}><span>{row.aciklama || "—"}</span>{row.odemeYontemi?.tur === "kredi_karti" && <div className="row-tight"><Badge variant="neutral">Kredi kartı</Badge><small>{row.odemeYontemi.bankaAdi} · {row.odemeYontemi.kartAdi} · •••• {row.odemeYontemi.sonDortHane} · {row.odemeYontemi.taksitSayisi > 1 ? `${row.odemeYontemi.taksitSayisi} taksit` : "tek çekim"}{Number(row.odemeYontemi.komisyonTutari) > 0 ? ` · komisyon/vade farkı ${tl(row.odemeYontemi.komisyonTutari)}` : ""}{row.odemeYontemi.fatura?.no ? ` · Fatura ${row.odemeYontemi.fatura.no}` : ""}</small></div>}</div></td>
+                          <td><div className="stack" style={{ gap: ".25rem" }}><span>{row.aciklama || "—"}{row.iptal && <> <Badge variant="neutral">İptal</Badge></>}</span>{row.odemeYontemi?.tur === "kredi_karti" && <div className="row-tight"><Badge variant="neutral">Kredi kartı</Badge><small>{row.odemeYontemi.bankaAdi} · {row.odemeYontemi.kartAdi} · •••• {row.odemeYontemi.sonDortHane} · {row.odemeYontemi.taksitSayisi > 1 ? `${row.odemeYontemi.taksitSayisi} taksit` : "tek çekim"}{Number(row.odemeYontemi.komisyonTutari) > 0 ? ` · komisyon/vade farkı ${tl(row.odemeYontemi.komisyonTutari)}` : ""}{row.odemeYontemi.fatura?.no ? ` · Fatura ${row.odemeYontemi.fatura.no}` : ""}</small></div>}</div></td>
                           <td className="num" style={{ color: borcVal > 0 ? "var(--danger)" : undefined }}>{row.tip === "borc" ? `${Number(row.tutar).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${row.dovizCinsi}` : "—"}</td>
                           <td className="num" style={{ color: alacakVal > 0 ? "var(--success)" : undefined }}>{row.tip === "alacak" ? `${Number(row.tutar).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${row.dovizCinsi}` : "—"}</td>
                           <td className="num" style={{ color: borcVal > 0 ? "var(--danger)" : undefined }}>{borcVal > 0 ? tl(borcVal) : "—"}</td>

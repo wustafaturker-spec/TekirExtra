@@ -25,6 +25,7 @@ import { DepoService } from "./depo.service";
 import { StokService } from "./stok.service";
 import { AbonelikService } from "../tenant/abonelik.service";
 import { excelDosyasiniDogrula, type YuklemeDosyasi } from "../core/guvenlik/dosya-dogrulama";
+import { iptalleriGoster } from "../fatura/iptal-cifti";
 import {
   etiketBasSemasi,
   kategoriSemasi,
@@ -337,8 +338,9 @@ export class StokController {
   async hareketListele(
     @Param("id") id: string,
     @Query("depoId") depoId?: string,
+    @Query("iptaller") iptaller?: string,
   ) {
-    return this.stokService.hareketListele(id, depoId);
+    return this.stokService.hareketListele(id, depoId, iptalleriGoster(iptaller));
   }
 
   @Get(":id/partiler")

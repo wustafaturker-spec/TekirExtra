@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { registerRapor } from "../core/raporlar/rapor-kayit";
+import { iptalCiftiMi, iptalEdilmisFaturalar, iptalleriGoster } from "../fatura/iptal-cifti";
 
 const D = (v: string | number | Prisma.Decimal) => new Prisma.Decimal(v);
 const tarihAraligi = (baslangic?: unknown, bitis?: unknown) => ({ ...(baslangic ? { gte: new Date(String(baslangic)) } : {}), ...(bitis ? { lte: new Date(String(bitis)) } : {}) });
@@ -16,12 +17,14 @@ function hareketGrubu(h: { tip: string; kaynakTur: string }) {
 
 registerRapor({
   kod: "urun-hareket.hareketler", modul: "urun_hareket", ad: "Hareketler", aciklama: "Tüm giriş, çıkış, fire, transfer ve üretim hareketlerinin tarih sıralı dökümü",
-  filtreler: [...TARIH, { alan: "stok", ad: "Ürün", tip: "stok" }, { alan: "depo", ad: "Depo", tip: "depo" }, { alan: "grup", ad: "Hareket Grubu", tip: "secim", secenekler: [{ deger: "giris", ad: "Girişler" }, { deger: "cikis", ad: "Çıkışlar" }, { deger: "fire", ad: "Fire / Zayi" }, { deger: "uretim", ad: "Üretim" }, { deger: "transfer", ad: "Transfer" }, { deger: "sayim", ad: "Sayım" }] }],
+  filtreler: [...TARIH, { alan: "stok", ad: "Ürün", tip: "stok" }, { alan: "depo", ad: "Depo", tip: "depo" }, { alan: "grup", ad: "Hareket Grubu", tip: "secim", secenekler: [{ deger: "giris", ad: "Girişler" }, { deger: "cikis", ad: "Çıkışlar" }, { deger: "fire", ad: "Fire / Zayi" }, { deger: "uretim", ad: "Üretim" }, { deger: "transfer", ad: "Transfer" }, { deger: "sayim", ad: "Sayım" }] }, { alan: "iptaller", ad: "İptalleri de göster", tip: "onay" }],
   kolonlar: [{ alan: "tarih", baslik: "Tarih", tip: "tarih" }, { alan: "kod", baslik: "Kod", tip: "metin" }, { alan: "urun", baslik: "Ürün / Varyant", tip: "metin" }, { alan: "depo", baslik: "Depo", tip: "metin" }, { alan: "hareket", baslik: "Hareket", tip: "metin" }, { alan: "kaynak", baslik: "Kaynak", tip: "metin" }, { alan: "giris", baslik: "Giriş", tip: "sayi" }, { alan: "cikis", baslik: "Çıkış", tip: "sayi" }, { alan: "birimMaliyet", baslik: "Birim Maliyet", tip: "para" }, { alan: "toplamMaliyet", baslik: "Toplam Maliyet", tip: "para" }, { alan: "aciklama", baslik: "Açıklama", tip: "metin" }],
   async calistir(girdi, { tx }) {
     const f = girdi.filtreler ?? {};
     const hareketler = await tx.stokHareket.findMany({ where: { tarih: tarihAraligi(f.baslangic, f.bitis), ...(f.stok ? { stokId: String(f.stok) } : {}), ...(f.depo ? { depoId: String(f.depo) } : {}) }, orderBy: [{ tarih: "desc" }, { createdAt: "desc" }], include: { stok: { select: { kod: true, ad: true, anaBirim: true } }, varyant: { select: { kod: true, ad: true } }, depo: { select: { kod: true, ad: true } } } });
-    return hareketler.filter((h) => !f.grup || hareketGrubu(h) === f.grup).map((h) => { const m = D(h.miktar); return { tarih: h.tarih.toISOString().slice(0, 10), kod: h.stok.kod, urun: `${h.stok.ad}${h.varyant ? ` / ${h.varyant.kod} — ${h.varyant.ad}` : ""}`, depo: `${h.depo.kod} — ${h.depo.ad}`, hareket: h.kaynakTur === "uretim_sarf" ? "Üretim sarfı" : h.kaynakTur === "uretim_giris" ? "Üretim girişi" : HAREKET_ADI[h.tip] ?? h.tip, kaynak: `${h.kaynakTur}${h.kaynakRef ? ` · ${h.kaynakRef}` : ""}`, giris: m.gt(0) ? m.toFixed(3) : "0", cikis: m.lt(0) ? m.abs().toFixed(3) : "0", birimMaliyet: h.maliyet.toFixed(4), toplamMaliyet: m.abs().mul(h.maliyet).toFixed(2), aciklama: h.aciklama ?? "" }; });
+    // STK-22: iptal edilmiş faturanın hareketleri seçenek işaretlenmedikçe gösterilmez.
+    const iptaller = await iptalEdilmisFaturalar(tx, hareketler);
+    return hareketler.filter((h) => (iptalleriGoster(f.iptaller) || !iptalCiftiMi(h, iptaller)) && (!f.grup || hareketGrubu(h) === f.grup)).map((h) => { const m = D(h.miktar); return { tarih: h.tarih.toISOString().slice(0, 10), kod: h.stok.kod, urun: `${h.stok.ad}${h.varyant ? ` / ${h.varyant.kod} — ${h.varyant.ad}` : ""}`, depo: `${h.depo.kod} — ${h.depo.ad}`, hareket: h.kaynakTur === "uretim_sarf" ? "Üretim sarfı" : h.kaynakTur === "uretim_giris" ? "Üretim girişi" : HAREKET_ADI[h.tip] ?? h.tip, kaynak: `${h.kaynakTur}${h.kaynakRef ? ` · ${h.kaynakRef}` : ""}`, giris: m.gt(0) ? m.toFixed(3) : "0", cikis: m.lt(0) ? m.abs().toFixed(3) : "0", birimMaliyet: h.maliyet.toFixed(4), toplamMaliyet: m.abs().mul(h.maliyet).toFixed(2), aciklama: `${h.aciklama ?? ""}${iptalCiftiMi(h, iptaller) ? " (iptal)" : ""}` }; });
   },
 });
 

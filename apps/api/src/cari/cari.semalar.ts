@@ -138,6 +138,8 @@ export const ekstreEpostaSemasi = z.object({
   baslangic: z.string().date().optional(),
   bitis: z.string().date().optional(),
   alici: z.email("Geçerli bir alıcı e-posta adresi girilmelidir").optional(),
+  /** CARI-22: iptal edilmiş faturanın hareketleri ekte de gösterilsin mi? */
+  iptalleriGoster: z.boolean().optional(),
 }).refine((g) => !g.baslangic || !g.bitis || g.baslangic <= g.bitis, { message: "Başlangıç tarihi bitiş tarihinden sonra olamaz", path: ["bitis"] });
 
 export type CariOlusturGirdisi = z.infer<typeof cariOlusturSemasi>;

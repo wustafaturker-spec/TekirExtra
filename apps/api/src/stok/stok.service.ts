@@ -32,6 +32,7 @@ import type {
 } from "./stok.semalar";
 
 import { stokExcelOku } from "../core/excel-yardimci";
+import { iptalCiftiMi, iptalEdilmisFaturalar } from "../fatura/iptal-cifti";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal => new Prisma.Decimal(deger);
 
@@ -602,16 +603,22 @@ export class StokService {
 
   // ─── STOK HAREKETLERİ & AVCO HESAPLAMA (STK-02/08) ───────────────────────
 
-  async hareketListele(stokId: string, depoId?: string) {
+  async hareketListele(stokId: string, depoId?: string, iptalleriGosterilsin = false) {
     const { tenantId } = aktifBaglam();
     await this.getir(stokId);
-    return this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.stokHareket.findMany({
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const hareketler = await tx.stokHareket.findMany({
         where: { stokId, ...(depoId ? { depoId } : {}) },
         orderBy: [{ tarih: "asc" }, { createdAt: "asc" }],
         include: { depo: { select: { id: true, kod: true, ad: true } }, varyant: { select: { id: true, kod: true, ad: true } } },
-      }),
-    );
+      });
+      // STK-22: iptal edilmiş faturanın hareketi, ters hareketi ve telafisi
+      // birbirini sıfırlar; varsayılan olarak gösterilmez.
+      const iptaller = await iptalEdilmisFaturalar(tx, hareketler);
+      return hareketler
+        .map((h) => ({ ...h, iptal: iptalCiftiMi(h, iptaller) }))
+        .filter((h) => iptalleriGosterilsin || !h.iptal);
+    });
   }
 
   async partiListele(stokId: string, varyantId?: string, depoId?: string, stokta = false) {

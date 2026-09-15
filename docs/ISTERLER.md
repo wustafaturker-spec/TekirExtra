@@ -200,6 +200,7 @@ Firma, entegratör erişim bilgilerini girerek bağlantıyı kendisi kurar.
 | CARI-19 | ✅ CRM özellikleri: tarihçeli görüşme/telefon/e-posta/ziyaret kayıtları, kullanıcıya atanabilen görev ve hatırlatmalar, görev durum takibi, cari teklif geçmişi. | G |
 | CARI-21 | ✅ Gerçek kişi carilerde **ad ve soyad** ayrı alanlarda tutulmalı ve zorunlu olmalıdır; unvan bunlardan türer. e-Arşiv UBL'inde (`FirstName`/`FamilyName`) ve POS ödemesinde bu alanlar kullanılır; boşsa (eski kayıt) unvandan tahmin edilir ve e-Belge sihirbazı tahmini gösterir. **(2026-09-11'de yapıldı — docs/e-belge/NES-ENTEGRASYON-PLANI.md)** | G |
 | CARI-20 | ✅ Açıklanabilir karar desteği: FIFO tahsilat geçmişinden gecikme tahmini, bileşenli risk skoru, ödeme davranışı/güven analizi ve son 6 aylık hacme dayalı otomatik limit önerisi. | G |
+| CARI-22 | **İptal edilen faturanın hareketleri ekstrede varsayılan olarak gizlenir** (karar 2026-09-15). İptal edilmiş faturanın cari hareketi ile iptalin ters hareketi birbirini sıfırlar; ekstrede yan yana durmaları kafa karıştırıyordu. (1) Ekstre (ekran, PDF, Excel, e-posta) bu çifti göstermez; **"İptalleri de göster"** işaretlenince görünür, e-posta ve dışa aktarma seçime uyar. (2) Gizlenen çift **devir bakiyesinden de düşülür**: tarih aralığı iptali ikiye böldüğünde (fatura aralıktan önce, iptal aralıkta) devir ile dönem sonu tutarlı kalır; çift sıfırlandığı için dönem sonu bakiyesi seçimden etkilenmez. (3) İptaller gösterildiğinde bu satırlar soluk ve **"İptal" rozetiyle**, PDF/Excel'de açıklamaya "(iptal)" eklenerek ayırt edilir. Çift, `kaynakRef`'i iptal durumundaki faturayı gösteren `fatura`/`fatura_iptal`/`fatura_iptal_duzeltme` hareketleridir. Stok tarafı STK-22. | G |
 
 ### 3.2 Fatura Yönetimi (FTR)
 
@@ -375,6 +376,7 @@ saklanmaz, istendiğinde XML'den üretilir.
 | STK-19 | Stok hareket türleri genişletilmelidir: fire, zayi, numune, promosyon, açılış fişi; fire/zayi raporlanabilmelidir. | Z |
 | STK-20 | Sayım farkları doğrudan stoğa işlenmemeli; taslak → onay → düzeltme hareketi akışıyla, onay yetkisine bağlı işlenmelidir. | Z |
 | STK-21 | ✅ Seri numarası ve lot/parti + son kullanma tarihi takibi (FEFO çıkış desteğiyle). **(2026-08-10'da yapıldı — varyant/depo bazlı parti, tekil seri, hareket izi, transfer ve fatura/belge zinciri)** | G |
+| STK-22 | **İptal edilen faturanın stok hareketleri varsayılan olarak gizlenir** (karar 2026-09-15, CARI-22 ile aynı kural). Stok kartının Hareketler sekmesi, "Ürün hareketleri" raporu ve "Stok hareket özeti" raporu iptal edilmiş faturanın çıkış/giriş hareketini, iptalin ters hareketini ve varsa telafisini göstermez ya da saymaz; **"İptalleri de göster"** seçeneği (raporlarda filtre) işaretlenince görünür. Gösterildiğinde satırlar soluk ve "İptal" rozetli, raporda açıklamaya "(iptal)" eklenir. Çift sıfırlandığı için bakiye ve net değişim seçimden etkilenmez; özet raporda gizlemek giriş/çıkış sütunlarının şişmesini önler. | G |
 
 ### 3.5 Kasa ve Banka (KSB)
 

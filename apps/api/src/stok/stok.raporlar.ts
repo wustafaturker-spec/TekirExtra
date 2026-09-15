@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { registerRapor } from "../core/raporlar/rapor-kayit";
+import { iptalCiftiMi, iptalEdilmisFaturalar, iptalleriGoster } from "../fatura/iptal-cifti";
 
 /** Stok modülü raporları (STK-13) — RPR-06 araç seti tanımları. */
 
@@ -144,6 +145,7 @@ registerRapor({
     ...TARIH_FILTRELERI,
     { alan: "stok", ad: "Ürün", tip: "stok" },
     { alan: "depo", ad: "Depo", tip: "depo" },
+    { alan: "iptaller", ad: "İptalleri de göster", tip: "onay" },
   ],
   kolonlar: [
     { alan: "kod", baslik: "Kod", tip: "metin" },
@@ -166,9 +168,15 @@ registerRapor({
         stokId: true,
         tip: true,
         miktar: true,
+        kaynakTur: true,
+        kaynakRef: true,
         stok: { select: { kod: true, ad: true } },
       },
     });
+    // STK-22: iptal edilmiş faturanın hareketleri net değişimi etkilemez ama
+    // giriş ve çıkış sütunlarını şişirir; seçenek işaretlenmedikçe sayılmaz.
+    const iptaller = await iptalEdilmisFaturalar(tx, hareketler);
+    const iptalleriSay = iptalleriGoster(f.iptaller);
     const gruplar = new Map<
       string,
       {
@@ -181,6 +189,7 @@ registerRapor({
       }
     >();
     for (const h of hareketler) {
+      if (!iptalleriSay && iptalCiftiMi(h, iptaller)) continue;
       const g = gruplar.get(h.stokId) ?? {
         kod: h.stok.kod,
         ad: h.stok.ad,
@@ -189,10 +198,13 @@ registerRapor({
         duzeltme: 0,
         transfer: 0,
       };
-      // miktar imzalı saklanır (çıkış türleri negatif); kovalar mutlak değerle
+      // miktar imzalı saklanır (çıkış türleri negatif). Kovalar işaretle
+      // toplanır, mutlak değerle değil: işareti tipine uymayan hareket (fatura
+      // iptalinin eskiden yazdığı eksi girişler) mutlak alınınca giriş sayılıp
+      // net değişimi stok bakiyesinden saptırıyordu. Doğru veride sonuç aynı.
       const m = Number(h.miktar);
-      if (GIRIS_TURLERI.has(h.tip)) g.giris += Math.abs(m);
-      else if (CIKIS_TURLERI.has(h.tip)) g.cikis += Math.abs(m);
+      if (GIRIS_TURLERI.has(h.tip)) g.giris += m;
+      else if (CIKIS_TURLERI.has(h.tip)) g.cikis -= m;
       // Transfer imzalı toplanır: depo süzgeci yoksa firma genelinde sıfırlanır
       else if (TRANSFER_TURLERI.has(h.tip)) g.transfer += m;
       else g.duzeltme += m;

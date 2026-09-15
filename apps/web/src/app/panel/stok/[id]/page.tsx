@@ -138,6 +138,8 @@ interface Hareket {
   aciklama: string | null;
   kaynakTur: string;
   kaynakRef: string | null;
+  /** İptal edilmiş faturanın hareketi (STK-22); yalnız iptaller gösterilince gelir. */
+  iptal?: boolean;
   depo?: { id: string; kod: string; ad: string } | null;
   varyant?: { id: string; kod: string; ad: string } | null;
 }
@@ -254,6 +256,7 @@ export default function StokDetaySayfasi() {
 
   const [detay, setDetay] = useState<StokDetay | null>(null);
   const [hareketler, setHareketler] = useState<Hareket[]>([]);
+  const [iptalleriGoster, setIptalleriGoster] = useState(false);
   const [depoBakiyeleri, setDepoBakiyeleri] = useState<DepoBakiyeSatiri[]>([]);
   const [partiler, setPartiler] = useState<Parti[]>([]);
   const [fiyatlar, setFiyatlar] = useState<StokFiyat[]>([]);
@@ -283,11 +286,11 @@ export default function StokDetaySayfasi() {
 
   const hareketleriYukle = useCallback(async () => {
     try {
-      setHareketler(await api<Hareket[]>(`/stok/${id}/hareketler`));
+      setHareketler(await api<Hareket[]>(`/stok/${id}/hareketler${iptalleriGoster ? "?iptaller=1" : ""}`));
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Hareketler yüklenemedi");
     }
-  }, [id]);
+  }, [id, iptalleriGoster]);
 
   const depoBakiyeleriYukle = useCallback(async () => {
     try {
@@ -455,6 +458,8 @@ export default function StokDetaySayfasi() {
         <TabPanel idPrefix="stok-detay" value="hareketler"><HareketlerSekmesi
           detay={detay}
           hareketler={hareketler}
+          iptalleriGoster={iptalleriGoster}
+          onIptalleriGoster={setIptalleriGoster}
           onEkle={async (govde) => {
             setHata("");
             setBasari("");
@@ -832,10 +837,14 @@ function VaryantlarSekmesi({ detay, onIslem }: { detay: StokDetay; onIslem: (isl
 function HareketlerSekmesi({
   detay,
   hareketler,
+  iptalleriGoster,
+  onIptalleriGoster,
   onEkle,
 }: {
   detay: StokDetay;
   hareketler: Hareket[];
+  iptalleriGoster: boolean;
+  onIptalleriGoster: (goster: boolean) => void;
   onEkle: (govde: Record<string, unknown>) => Promise<boolean>;
 }) {
   const { cokluDepo } = useDepolar();
@@ -986,6 +995,10 @@ function HareketlerSekmesi({
         )}
       </Card>
 
+      <label className="check-row">
+        <input type="checkbox" checked={iptalleriGoster} onChange={(e) => onIptalleriGoster(e.target.checked)} />
+        İptalleri de göster
+      </label>
       <Card pad={false}>
         <TableWrap>
           <thead>
@@ -1013,13 +1026,14 @@ function HareketlerSekmesi({
                 // miktar API'de işaretli saklanır (çıkışlarda eksi); işareti biz eklemiyoruz.
                 const degisim = Number(h.miktar);
                 return (
-                  <tr key={h.id}>
+                  <tr key={h.id} style={h.iptal ? { opacity: 0.6 } : undefined}>
                     <td className="mono">{h.tarih.slice(0, 10)}</td>
                     {cokluDepo && <td>{h.depo?.ad ?? "—"}</td>}
                     <td>
                       <Badge variant={y === "giris" ? "success" : y === "cikis" ? "danger" : "info"}>
                         {baslik(h.tip)}
                       </Badge>
+                      {h.iptal && <> <Badge variant="neutral">İptal</Badge></>}
                     </td>
                     <td className="num">
                       {adet(h.girilenMiktar)} {h.girilenBirim}

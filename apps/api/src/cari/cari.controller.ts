@@ -33,6 +33,7 @@ import {
 import { sayfaAdedi } from "../core/sayfalama";
 import { AbonelikService } from "../tenant/abonelik.service";
 import { excelDosyasiniDogrula, type YuklemeDosyasi } from "../core/guvenlik/dosya-dogrulama";
+import { iptalleriGoster } from "../fatura/iptal-cifti";
 
 @Controller("cari")
 export class CariController {
@@ -264,8 +265,9 @@ export class CariController {
     @Param("id") id: string,
     @Query("baslangic") baslangic?: string,
     @Query("bitis") bitis?: string,
+    @Query("iptaller") iptaller?: string,
   ) {
-    return this.cariService.ekstre(id, baslangic, bitis);
+    return this.cariService.ekstre(id, baslangic, bitis, iptalleriGoster(iptaller));
   }
 
   @Post("excel-aktar")
@@ -283,8 +285,9 @@ export class CariController {
     @Res() res: Response,
     @Query("baslangic") baslangic?: string,
     @Query("bitis") bitis?: string,
+    @Query("iptaller") iptaller?: string,
   ) {
-    const buffer = await this.cariService.ekstrePdf(id, baslangic, bitis);
+    const buffer = await this.cariService.ekstrePdf(id, baslangic, bitis, iptalleriGoster(iptaller));
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition",
@@ -299,8 +302,9 @@ export class CariController {
     @Res() res: Response,
     @Query("baslangic") baslangic?: string,
     @Query("bitis") bitis?: string,
+    @Query("iptaller") iptaller?: string,
   ) {
-    const buffer = await this.cariService.ekstreExcel(id, baslangic, bitis);
+    const buffer = await this.cariService.ekstreExcel(id, baslangic, bitis, iptalleriGoster(iptaller));
     res.setHeader(
       "Content-Type",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -317,6 +321,6 @@ export class CariController {
   async ekstreEposta(@Param("id") id: string, @Body() govde: unknown) {
     const sonuc = ekstreEpostaSemasi.safeParse(govde);
     if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((s) => s.message).join("; "));
-    return this.cariService.ekstreEpostaGonder(id, sonuc.data.baslangic, sonuc.data.bitis, sonuc.data.alici);
+    return this.cariService.ekstreEpostaGonder(id, sonuc.data.baslangic, sonuc.data.bitis, sonuc.data.alici, sonuc.data.iptalleriGoster ?? false);
   }
 }

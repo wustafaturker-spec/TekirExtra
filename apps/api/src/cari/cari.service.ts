@@ -31,6 +31,7 @@ import { gercekKisiUnvani } from "./ad-soyad";
 import { metinNormalize } from "@tekirextra/shared";
 import { EpostaService } from "../tenant/eposta.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
+import { iptalCiftiMi, iptalEdilmisFaturalar } from "../fatura/iptal-cifti";
 import {
   kacis,
   paraBicim,
@@ -636,12 +637,12 @@ export class CariService {
   }
 
   /** Ekstre (CARI-04): tarih aralığı + yürüyen bakiye (TRY). */
-  async ekstre(cariId: string, baslangic?: string, bitis?: string) {
+  async ekstre(cariId: string, baslangic?: string, bitis?: string, iptalleriGosterilsin = false) {
     const { tenantId } = aktifBaglam();
     const cari = await this.getir(cariId);
     const bitisTarihi = bitis ? new Date(`${bitis}T23:59:59.999`) : undefined;
     const baslangicTarihi = baslangic ? new Date(`${baslangic}T00:00:00.000`) : undefined;
-    const [hareketler, oncekiHareketler] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
+    const [tumHareketler, tumOncekiHareketler] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
       tx.cariHareket.findMany({
         where: {
           cariId,
@@ -652,8 +653,17 @@ export class CariService {
         },
         orderBy: [{ tarih: "asc" }, { createdAt: "asc" }],
       }),
-      baslangicTarihi ? tx.cariHareket.findMany({ where: { cariId, tarih: { lt: baslangicTarihi } }, select: { tip: true, tutarTry: true, dovizCinsi: true, tutar: true } }) : Promise.resolve([]),
+      baslangicTarihi ? tx.cariHareket.findMany({ where: { cariId, tarih: { lt: baslangicTarihi } }, select: { tip: true, tutarTry: true, dovizCinsi: true, tutar: true, kaynakTur: true, kaynakRef: true } }) : Promise.resolve([]),
     ]));
+    // CARI-22: iptal edilmiş faturanın hareketi ile ters hareketi birbirini
+    // sıfırlar ve varsayılan olarak gösterilmez. Devirden de düşülür; yoksa
+    // tarih aralığı iptali ikiye böldüğünde (satış önce, iptal aralıkta) devir
+    // ile dönem sonu arasında gizlenen satır kadar fark kalırdı.
+    const iptaller = await this.prisma.tenantIslem(tenantId, (tx) => iptalEdilmisFaturalar(tx, [...tumHareketler, ...tumOncekiHareketler]));
+    const gorunur = <T extends { kaynakTur: string; kaynakRef: string | null }>(liste: T[]) =>
+      iptalleriGosterilsin ? liste : liste.filter((h) => !iptalCiftiMi(h, iptaller));
+    const hareketler = gorunur(tumHareketler);
+    const oncekiHareketler = gorunur(tumOncekiHareketler);
     const krediKartiKaynaklari = hareketler.filter((h) => h.kaynakTur === "kredi_karti" && h.kaynakRef).map((h) => h.kaynakRef!);
     const krediKartiHareketleri = krediKartiKaynaklari.length ? await this.prisma.tenantIslem(tenantId, (tx) => tx.krediKartiHareket.findMany({
       where: { tenantId, id: { in: krediKartiKaynaklari } },
@@ -689,6 +699,7 @@ export class CariService {
         tip: h.tip,
         aciklama: h.aciklama,
         kaynakTur: h.kaynakTur,
+        iptal: iptalCiftiMi(h, iptaller),
         makbuzYolu: h.kaynakTur === "pos_tahsilat" && h.kaynakRef ? posMakbuzHaritasi.get(h.kaynakRef) ?? null : null,
         odemeYontemi: kartHareketi ? {
           tur: "kredi_karti",
@@ -874,11 +885,11 @@ export class CariService {
     return { eklenen: cariler.length };
   }
 
-  async ekstreExcel(cariId: string, baslangic?: string, bitis?: string): Promise<Buffer> {
-    const data = await this.ekstre(cariId, baslangic, bitis);
+  async ekstreExcel(cariId: string, baslangic?: string, bitis?: string, iptalleriGosterilsin = false): Promise<Buffer> {
+    const data = await this.ekstre(cariId, baslangic, bitis, iptalleriGosterilsin);
     const hareketSatirlari = data.satirlar.map((s) => ({
       tarih: new Date(s.tarih),
-      aciklama: s.aciklama || "",
+      aciklama: `${s.aciklama || ""}${s.iptal ? " (iptal)" : ""}`,
       borc: s.tip === "borc" ? s.tutarTry : "",
       alacak: s.tip === "alacak" ? s.tutarTry : "",
       bakiye: s.yuruyenBakiye,
@@ -895,8 +906,9 @@ export class CariService {
     cariId: string,
     baslangic?: string,
     bitis?: string,
+    iptalleriGosterilsin = false,
   ): Promise<Buffer> {
-    const data = await this.ekstre(cariId, baslangic, bitis);
+    const data = await this.ekstre(cariId, baslangic, bitis, iptalleriGosterilsin);
     const aralik =
       baslangic || bitis
         ? ` — dönem: ${baslangic ? tarihBicim(baslangic) : "…"} – ${bitis ? tarihBicim(bitis) : "…"}`
@@ -906,7 +918,7 @@ export class CariService {
       .map(
         (s) => `<tr>
   <td class="orta">${tarihBicim(s.tarih)}</td>
-  <td>${kacis(s.aciklama ?? "")}</td>
+  <td>${kacis(`${s.aciklama ?? ""}${s.iptal ? " (iptal)" : ""}`)}</td>
   <td class="sag">${s.tip === "borc" ? paraBicim(s.tutarTry) : ""}</td>
   <td class="sag">${s.tip === "alacak" ? paraBicim(s.tutarTry) : ""}</td>
   <td class="sag">${paraBicim(s.yuruyenBakiye)}</td>
@@ -938,11 +950,11 @@ export class CariService {
     );
   }
 
-  async ekstreEpostaGonder(cariId: string, baslangic?: string, bitis?: string, alici?: string) {
+  async ekstreEpostaGonder(cariId: string, baslangic?: string, bitis?: string, alici?: string, iptalleriGosterilsin = false) {
     const cari = await this.getir(cariId);
     const hedef = alici ?? cari.eposta;
     if (!hedef) throw new BadRequestException("Cari kartında e-posta adresi bulunmuyor");
-    const [pdf, excel] = await Promise.all([this.ekstrePdf(cariId, baslangic, bitis), this.ekstreExcel(cariId, baslangic, bitis)]);
+    const [pdf, excel] = await Promise.all([this.ekstrePdf(cariId, baslangic, bitis, iptalleriGosterilsin), this.ekstreExcel(cariId, baslangic, bitis, iptalleriGosterilsin)]);
     const donem = baslangic || bitis ? `${baslangic ?? "başlangıç"} - ${bitis ?? "bugün"}` : "tüm dönem";
     await this.eposta.ekliIletiGonder({ alici: hedef, konu: `${cari.unvan} cari hesap ekstresi`, metin: `Sayın Yetkili,\n\n${donem} cari hesap ekstreniz PDF ve Excel formatında ekte sunulmuştur.\n\nSaygılarımızla`, ekler: [{ dosyaAdi: `ekstre-${cari.kod}.pdf`, icerik: pdf, mime: "application/pdf" }, { dosyaAdi: `ekstre-${cari.kod}.xlsx`, icerik: excel, mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }] });
     return { mesaj: `Ekstre ${hedef} adresine gönderildi` };
