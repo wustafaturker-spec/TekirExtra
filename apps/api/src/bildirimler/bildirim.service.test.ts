@@ -105,19 +105,29 @@ describe("BildirimService kapsam ve kapatma", () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 3 });
     const servis = servisKur({ bildirim: { updateMany } });
 
-    await expect(servis.kapatEksikleri("stok", ["stok_kritik:2026-09-05"])).resolves.toBe(3);
+    await expect(servis.kapatEksikleri("stok", ["stok_kritik:2026-09-05"], ["stok_kritik:"])).resolves.toBe(3);
     expect(updateMany).toHaveBeenCalledWith({
-      where: { tur: "stok", kapandiAt: null, birlesimAnahtari: { notIn: ["stok_kritik:2026-09-05"] } },
+      where: {
+        tur: "stok",
+        kapandiAt: null,
+        OR: [{ birlesimAnahtari: { startsWith: "stok_kritik:" } }],
+        birlesimAnahtari: { notIn: ["stok_kritik:2026-09-05"] },
+      },
       data: { kapandiAt: expect.any(Date) },
     });
   });
 
-  it("hiç tespit yoksa o türün tüm açık bildirimlerini kapatır", async () => {
+  it("hiç tespit yoksa taramanın ürettiği açık bildirimleri kapatır, olay bildirimlerine dokunmaz", async () => {
+    // Alıcı reddi (`ebelge-ret:`) gibi anında üretilen bildirim taramada hiç
+    // bulunmaz; önek sınırı olmasa her taramada kapanırdı.
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
     const servis = servisKur({ bildirim: { updateMany } });
 
-    await servis.kapatEksikleri("vade", []);
-    expect(updateMany).toHaveBeenCalledWith({ where: { tur: "vade", kapandiAt: null }, data: { kapandiAt: expect.any(Date) } });
+    await servis.kapatEksikleri("ebelge", [], ["ebelge:"]);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { tur: "ebelge", kapandiAt: null, OR: [{ birlesimAnahtari: { startsWith: "ebelge:" } }] },
+      data: { kapandiAt: expect.any(Date) },
+    });
   });
 });
 

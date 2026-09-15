@@ -100,12 +100,22 @@ export class BildirimService {
    * Bir türde artık tespit edilmeyen bildirimleri kapatır. Olay ortadan
    * kalktığında kullanıcının listesi kendiliğinden temizlenir; kapanmış kayıt
    * silinmez, geçmiş olarak kalır.
+   *
+   * Yalnız `onekler` ile başlayan, yani taramanın kendi ürettiği anahtarlar
+   * kapatılır. Aynı türde olay anında üretilen bildirimler (alıcı reddi,
+   * raporlanmış iptal) taramada hiç tespit edilmediği için onlara dokunulursa
+   * dakikalar içinde sessizce kapanıyorlardı.
    */
-  async kapatEksikleri(tur: BildirimTuru, acikAnahtarlar: string[]): Promise<number> {
+  async kapatEksikleri(tur: BildirimTuru, acikAnahtarlar: string[], onekler: string[]): Promise<number> {
     const { tenantId } = aktifBaglam();
     const sonuc = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.bildirim.updateMany({
-        where: { tur, kapandiAt: null, ...(acikAnahtarlar.length ? { birlesimAnahtari: { notIn: acikAnahtarlar } } : {}) },
+        where: {
+          tur,
+          kapandiAt: null,
+          OR: onekler.map((onek) => ({ birlesimAnahtari: { startsWith: onek } })),
+          ...(acikAnahtarlar.length ? { birlesimAnahtari: { notIn: acikAnahtarlar } } : {}),
+        },
         data: { kapandiAt: new Date() },
       }),
     );

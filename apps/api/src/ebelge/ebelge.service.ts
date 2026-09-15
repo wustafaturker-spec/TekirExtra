@@ -27,6 +27,7 @@ import { MukellefListesiService } from "./mukellef-listesi.service";
 import { takiliRezervasyonKosulu, takiliRezervasyonMu } from "./takili-rezervasyon";
 import { SON_EBELGE_DURUMLARI, durumSorgusuEngeli } from "./durum-sorgusu";
 import { faturaSorguKosulu, faturaSorguSureleriniOku } from "./fatura-sorgu-kosulu";
+import { entegratorIptalBildirimi } from "./entegrator-iptal-bildirimi";
 import { belgeNoyuUbleYaz, faturaUblUret } from "./xml-uretec";
 
 /** Onay ekranında satırın hangi ipucuyla eşleştiği. */
@@ -413,17 +414,7 @@ export class EbelgeService {
     if (sonuc.iptalEdilmis && kayit.durum !== "iptal") {
       const fatura = await tx.fatura.findUnique({ where: { id: kayit.faturaId }, select: { no: true, durum: true } });
       if (fatura && fatura.durum !== "iptal") {
-        await this.bildirimler.uret({
-          tur: "ebelge",
-          onem: "uyari",
-          baslik: `${fatura.no ?? "e-Arşiv faturası"} entegratörde iptal edilmiş`,
-          aciklama: "e-Arşiv belgesi entegratör tarafında (ör. portaldan) iptal edildi ama fatura uygulamada hâlâ kesin. Faturayı iptal ederek stok ve cari hareketlerini geri alın.",
-          birlesimAnahtari: `earsiv-entegrator-iptal:${kayit.faturaId}`,
-          kaynakTur: "fatura",
-          kaynakRef: kayit.faturaId,
-          hedefYol: `/panel/fatura?fatura=${kayit.faturaId}`,
-          roller: ["muhasebe", "yonetici"],
-        });
+        await this.bildirimler.uret(entegratorIptalBildirimi(kayit.faturaId, fatura.no));
       }
     }
     return guncel;

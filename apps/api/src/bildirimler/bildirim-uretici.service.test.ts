@@ -94,6 +94,36 @@ describe("BildirimUreticiService.tara", () => {
     const vadeCagrisi = bildirimler.kapatEksikleri.mock.calls.find(([tur]) => tur === "vade");
     expect(vadeCagrisi?.[1]).toEqual([]);
   });
+
+  it("kapatmayı taramanın kendi anahtarlarıyla sınırlar; olay bildirimleri açık kalır", async () => {
+    // Alıcı reddi ve raporlanmış iptal taramada bulunmaz; önek dışında kalmalı.
+    const { servis, bildirimler } = servisKur();
+    await servis.tara();
+
+    const ebelgeCagrisi = bildirimler.kapatEksikleri.mock.calls.find(([tur]) => tur === "ebelge");
+    const onekler: string[] = ebelgeCagrisi?.[2];
+    expect(onekler).toEqual(expect.arrayContaining(["ebelge:", "earsiv-entegrator-iptal:"]));
+    for (const olay of ["ebelge-ret:u1", "earsiv-iptal-raporlu:f1"]) {
+      expect(onekler.some((onek) => olay.startsWith(onek))).toBe(false);
+    }
+    const entegrasyonCagrisi = bildirimler.kapatEksikleri.mock.calls.find(([tur]) => tur === "entegrasyon");
+    expect((entegrasyonCagrisi?.[2] as string[]).some((onek) => "kira-kur-eksik:k1".startsWith(onek))).toBe(false);
+  });
+
+  it("entegratörde iptal edilmiş belgeyi fatura kesin kaldıkça hatırlatır (EBLG-39)", async () => {
+    const { servis, bildirimler } = servisKur({
+      ebelgeler: [{ id: "e1", durum: "iptal", hataMesaji: "Belge NES'te iptal edilmiş", faturaId: "f9", fatura: { no: "SNC2026000000009", durum: "kesin", cari: { unvan: "Alıcı" } } }],
+    });
+
+    await servis.tara();
+
+    expect(bildirimler.uret).toHaveBeenCalledWith(
+      expect.objectContaining({ tur: "ebelge", onem: "uyari", birlesimAnahtari: "earsiv-entegrator-iptal:f9", kaynakRef: "f9" }),
+    );
+    expect(bildirimler.uret).not.toHaveBeenCalledWith(expect.objectContaining({ birlesimAnahtari: "ebelge:e1" }));
+    const ebelgeCagrisi = bildirimler.kapatEksikleri.mock.calls.find(([tur]) => tur === "ebelge");
+    expect(ebelgeCagrisi?.[1]).toEqual(["earsiv-entegrator-iptal:f9"]);
+  });
 });
 
 describe("BildirimUreticiService yükseltme", () => {

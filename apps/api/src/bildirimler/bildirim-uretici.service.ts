@@ -3,6 +3,7 @@ import type { BildirimTuru, DuzeltmeTuru } from "@prisma/client";
 import type { Rol } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
+import { ENTEGRATOR_IPTAL_ANAHTAR_ONEKI, entegratorIptalBildirimi } from "../ebelge/entegrator-iptal-bildirimi";
 import { RaporService } from "../rapor/rapor.service";
 import { BildirimService, type BildirimGirdisi } from "./bildirim.service";
 
@@ -33,6 +34,23 @@ const DUZELTME_TUR_ESLEMESI: Record<DuzeltmeTuru, BildirimTuru> = {
   stok: "stok",
   cek_senet: "cek_senet",
   fatura_cari: "duzeltme",
+};
+
+/**
+ * Taramanın her türde ürettiği anahtar önekleri. Kapatma yalnız bunlarla
+ * sınırlıdır: aynı türde olay anında üretilen bildirimler (alıcı reddi
+ * `ebelge-ret:`, raporlanmış iptal `earsiv-iptal-raporlu:`, kira kuru
+ * `kira-kur-eksik:`) taramada bulunmadığı için her turda kapanıyordu.
+ * Düzeltme kayıtları eşlemeye göre birçok türe düşer, `duzeltme:` her türdedir.
+ */
+const TARAMA_ONEKLERI: Record<BildirimTuru, string[]> = {
+  duzeltme: ["duzeltme:"],
+  ebelge: ["duzeltme:", "ebelge:", ENTEGRATOR_IPTAL_ANAHTAR_ONEKI],
+  vade: ["duzeltme:", "vade:"],
+  cek_senet: ["duzeltme:", "cek_senet:"],
+  stok: ["duzeltme:", "stok_kritik:", "stok_sayim:"],
+  donem: ["duzeltme:", "donem:"],
+  entegrasyon: ["duzeltme:"],
 };
 
 function gunAnahtari(tarih = new Date()): string {
@@ -75,7 +93,7 @@ export class BildirimUreticiService {
     let kapanan = 0;
     for (const tur of taranan) {
       const anahtarlar = girdiler.filter((g) => g.tur === tur).map((g) => g.birlesimAnahtari);
-      kapanan += await this.bildirimler.kapatEksikleri(tur, anahtarlar);
+      kapanan += await this.bildirimler.kapatEksikleri(tur, anahtarlar, TARAMA_ONEKLERI[tur]);
     }
 
     return { uretilen: girdiler.length, yeniTeslimat, kapanan, yukseltilen: await this.yukselt() };
@@ -155,13 +173,18 @@ export class BildirimUreticiService {
     const { tenantId } = aktifBaglam();
     const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.ebelgeKayit.findMany({
-        where: { durum: { in: ["hata", "ret"] } },
-        select: { id: true, durum: true, hataMesaji: true, faturaId: true, fatura: { select: { no: true, cari: { select: { unvan: true } } } } },
+        where: { OR: [{ durum: { in: ["hata", "ret"] } }, { durum: "iptal", fatura: { durum: "kesin" } }] },
+        select: { id: true, durum: true, hataMesaji: true, faturaId: true, fatura: { select: { no: true, durum: true, cari: { select: { unvan: true } } } } },
         orderBy: { updatedAt: "desc" },
         take: 200,
       }),
     );
-    return kayitlar.map((kayit) => ({
+    // EBLG-39: entegratörde iptal edilmiş belge, fatura iptal edilene kadar
+    // hatırlatılır; fatura iptal edilince tespit edilmez ve bildirim kapanır.
+    const iptaller = kayitlar
+      .filter((kayit) => kayit.durum === "iptal" && kayit.fatura.durum === "kesin")
+      .map((kayit) => entegratorIptalBildirimi(kayit.faturaId, kayit.fatura.no));
+    return [...iptaller, ...kayitlar.filter((kayit) => kayit.durum !== "iptal").map((kayit) => ({
       tur: "ebelge" as const,
       onem: "kritik" as const,
       baslik: kayit.durum === "ret" ? "e-Belge reddedildi" : "e-Belge gönderimi hata verdi",
@@ -172,7 +195,7 @@ export class BildirimUreticiService {
       hedefYol: "/panel/fatura?ebelge=hata",
       sonTarih: this.sla("kritik"),
       roller: HEDEF_ROLLER.ebelge,
-    }));
+    }))];
   }
 
   private async vadeOzetleri(): Promise<BildirimGirdisi[]> {
