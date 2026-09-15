@@ -259,7 +259,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
   });
 
   /** Yeniden deneme senaryosu için ortak tx: fatura zaten hatalı bir e-belge kaydına sahip. */
-  function yenidenDenemeTx() {
+  function yenidenDenemeTx(ebelge: Record<string, unknown> = { id: "eb1", durum: "hata" }) {
     return {
       fatura: {
         findUnique: vi.fn().mockResolvedValue({
@@ -268,7 +268,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
           dovizCinsi: "TRY", toplamSatirIskontosu: 0,
           satirlar: [{ miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20, birimFiyat: 100, stok: { kod: "U1", ad: "Ürün 1" } }],
           cari: { vknTckn: "1234567890", unvan: "Müşteri" },
-          ebelge: { id: "eb1", durum: "hata" },
+          ebelge,
         }),
       },
       baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "test" }) }) },
@@ -321,6 +321,32 @@ describe("EbelgeService (EBLG-01..08)", () => {
 
     expect(mockAdapter.belgeAra).toHaveBeenCalled();
     expect(mockAdapter.belgeGonder).toHaveBeenCalled();
+  });
+
+  it("yarım kalmış rezervasyonu yeniden gönderir, önce sağlayıcıya sorar (EBLG-37)", async () => {
+    // Süreç rezervasyonla sonuç yazımı arasında ölmüş; kayıt referanssız kaldı.
+    mockAdapter.belgeGonder.mockClear();
+    mockAdapter.belgeAra.mockReset().mockResolvedValue(undefined);
+    const mockTx = yenidenDenemeTx({ id: "eb1", durum: "kuyrukta", entegratorRef: null, updatedAt: new Date(Date.now() - 20 * 60 * 1000) });
+    mockTenantIslem.mockImplementation((tenantId, cb) => cb(mockTx));
+
+    await expect(service.gonder("f1")).resolves.toMatchObject({ basarili: true });
+
+    expect(mockTx.ebelgeKayit.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "eb1", OR: [{ durum: { in: ["hata", "ret"] } }, expect.objectContaining({ durum: "kuyrukta", entegratorRef: null })] },
+    }));
+    expect(mockAdapter.belgeAra).toHaveBeenCalled();
+    expect(mockAdapter.belgeGonder).toHaveBeenCalled();
+  });
+
+  it("15 dakika dolmamış ya da referanslı kuyrukta kaydı yeniden göndermez (EBLG-37)", async () => {
+    mockAdapter.belgeGonder.mockClear();
+    mockTenantIslem.mockImplementation((tenantId, cb) => cb(yenidenDenemeTx({ id: "eb1", durum: "kuyrukta", entegratorRef: null, updatedAt: new Date() })));
+    await expect(service.gonder("f1")).rejects.toThrow("zaten başlatılmış");
+
+    mockTenantIslem.mockImplementation((tenantId, cb) => cb(yenidenDenemeTx({ id: "eb1", durum: "kuyrukta", entegratorRef: "EARSIV:1", updatedAt: new Date(0) })));
+    await expect(service.gonder("f1")).rejects.toThrow("zaten başlatılmış");
+    expect(mockAdapter.belgeGonder).not.toHaveBeenCalled();
   });
 
   it("ilk gönderimde sağlayıcıya belge sorgusu yapılmaz", async () => {

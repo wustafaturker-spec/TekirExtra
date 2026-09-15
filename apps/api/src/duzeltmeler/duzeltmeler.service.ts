@@ -3,6 +3,7 @@ import type { DuzeltmeDurumu, DuzeltmeOnemi, DuzeltmeTuru, Prisma } from "@prism
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
+import { takiliRezervasyonKosulu } from "../ebelge/takili-rezervasyon";
 import type { duzeltmeListeSemasi } from "./duzeltmeler.semalar";
 
 type ListeGirdisi = z.infer<typeof duzeltmeListeSemasi>;
@@ -87,14 +88,13 @@ export class DuzeltmelerService {
   async tara() {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const beklemeEsigi = new Date(Date.now() - 15 * 60 * 1000);
       const bugun = new Date(); bugun.setUTCHours(0, 0, 0, 0);
       const [ekstreler, masraflar, kartHarcamalari, posTahsilatlari, ebelgeler, negatifStoklar, sayimlar, vadesiGecenEvraklar, faturalar] = await Promise.all([
         tx.bankaEkstreSatir.findMany({ where: { durum: "beklemede" }, select: { id: true, aciklama: true, tutar: true }, take: 2_000 }),
         tx.masraf.findMany({ where: { durum: "onaylandi", odemeDurumu: { not: "odendi" }, odemeler: { none: {} } }, select: { id: true, belgeNo: true, saticiUnvan: true, toplam: true }, take: 2_000 }),
         tx.krediKartiHareket.findMany({ where: { tenantId, tip: "harcama", masrafOdemesi: null, faturaId: null }, select: { id: true, aciklama: true, tutar: true }, take: 2_000 }),
         tx.posTahsilat.findMany({ where: { durum: "odendi", hareketId: null }, select: { id: true, tutar: true, saglayiciOdemeId: true }, take: 2_000 }),
-        tx.ebelgeKayit.findMany({ where: { OR: [{ durum: "hata" }, { durum: "kuyrukta", createdAt: { lt: beklemeEsigi } }] }, select: { id: true, faturaId: true, durum: true, hataMesaji: true }, take: 2_000 }),
+        tx.ebelgeKayit.findMany({ where: { OR: [{ durum: "hata" }, takiliRezervasyonKosulu()] }, select: { id: true, faturaId: true, durum: true, hataMesaji: true }, take: 2_000 }),
         tx.stokDepoBakiye.findMany({ where: { mevcutMiktar: { lt: 0 } }, select: { id: true, mevcutMiktar: true, stok: { select: { kod: true, ad: true } }, depo: { select: { ad: true } } }, take: 2_000 }),
         tx.sayim.findMany({ where: { durum: "taslak" }, select: { id: true, tarih: true, aciklama: true, depo: { select: { ad: true } }, kalemler: { select: { sistemMiktar: true, fiiliMiktar: true } } }, take: 2_000 }),
         tx.cekSenet.findMany({ where: { vadeTarihi: { lt: bugun }, durum: { in: ["portfoyde", "tahsile_verildi", "teminata_verildi", "ciro_edildi", "verildi"] } }, select: { id: true, portfoyNo: true, vadeTarihi: true, tutar: true, durum: true }, take: 2_000 }),
@@ -114,7 +114,7 @@ export class DuzeltmelerService {
         ...masraflar.map((masraf) => ({ tur: "masraf" as const, onem: "uyari" as const, kaynakTur: "masraf", kaynakRef: masraf.id, nedenKodu: "ODEME_BAGLANTISI_YOK", aciklama: `${masraf.belgeNo || masraf.saticiUnvan || "Onaylı masraf"} için ${masraf.toplam.toString()} tutarında ödeme bağlantısı yok.`, onerilenEylem: "Masrafa kasa, banka veya kredi kartı ödemesi bağlayın." })),
         ...kartHarcamalari.map((hareket) => ({ tur: "kredi_karti" as const, onem: "uyari" as const, kaynakTur: "kredi_karti_hareketi", kaynakRef: hareket.id, nedenKodu: "BELGESIZ_KART_HARCAMASI", aciklama: `${hareket.aciklama} kart harcamasının ${hareket.tutar.toString()} tutarı bir masraf veya faturaya bağlı değil.`, onerilenEylem: "Kart harcamasını masraf belgesiyle ilişkilendirin." })),
         ...posTahsilatlari.map((tahsilat) => ({ tur: "pos" as const, onem: "kritik" as const, kaynakTur: "pos_tahsilat", kaynakRef: tahsilat.id, nedenKodu: "POS_FINANS_HAREKETI_EKSIK", aciklama: `${tahsilat.saglayiciOdemeId || tahsilat.id} referanslı ${tahsilat.tutar.toString()} POS tahsilatının finans hareketi yok.`, onerilenEylem: "Sağlayıcı sonucunu doğrulayın ve tahsilat hareketini idempotent olarak yeniden oluşturun." })),
-        ...ebelgeler.map((belge) => ({ tur: "ebelge" as const, onem: belge.durum === "hata" ? "kritik" as const : "uyari" as const, kaynakTur: "ebelge", kaynakRef: belge.faturaId, nedenKodu: belge.durum === "hata" ? "EBELGE_HATALI" : "EBELGE_UZUN_BEKLIYOR", aciklama: belge.hataMesaji || "e-Belge 15 dakikadan uzun süredir kuyrukta bekliyor.", onerilenEylem: "e-Belge operasyon kuyruğundan hata ayrıntısını inceleyip güvenli yeniden deneme başlatın." })),
+        ...ebelgeler.map((belge) => ({ tur: "ebelge" as const, onem: belge.durum === "hata" ? "kritik" as const : "uyari" as const, kaynakTur: "ebelge", kaynakRef: belge.faturaId, nedenKodu: belge.durum === "hata" ? "EBELGE_HATALI" : "EBELGE_UZUN_BEKLIYOR", aciklama: belge.hataMesaji || "e-Belge gönderimi yarım kalmış: 15 dakikadır kuyrukta ve entegratöre ulaşmamış.", onerilenEylem: belge.durum === "hata" ? "e-Belge operasyon kuyruğundan hata ayrıntısını inceleyip güvenli yeniden deneme başlatın." : "Faturanın e-Belge panelinden yeniden gönderin; belge entegratörde oluşmuşsa yeniden gönderilmez, benimsenir." })),
         ...negatifStoklar.map((bakiye) => ({ tur: "stok" as const, onem: "kritik" as const, kaynakTur: "stok_depo_bakiyesi", kaynakRef: bakiye.id, nedenKodu: "NEGATIF_STOK", aciklama: `${bakiye.stok.kod} · ${bakiye.stok.ad}, ${bakiye.depo.ad} deposunda ${bakiye.mevcutMiktar.toString()} bakiyeye düştü.`, onerilenEylem: "Eksik giriş/transfer hareketini düzeltin veya kontrollü sayım farkı onayı oluşturun." })),
         ...farkliTaslakSayimlar.map((sayim) => ({ tur: "stok" as const, onem: "uyari" as const, kaynakTur: "stok_sayim", kaynakRef: sayim.id, nedenKodu: "SAYIM_FARKI_ONAYSIZ", aciklama: `${sayim.depo.ad} deposundaki ${sayim.farkliKalem} sayım farkı henüz onaylanmadı.`, onerilenEylem: "Sayım farklarını inceleyip sayımı onaylayın veya taslağı düzeltin." })),
         ...vadesiGecenEvraklar.map((evrak) => ({ tur: "cek_senet" as const, onem: "uyari" as const, kaynakTur: "cek_senet", kaynakRef: evrak.id, nedenKodu: "VADE_GECTI_DURUM_ACIK", aciklama: `${evrak.portfoyNo} portföy numaralı ${evrak.tutar.toString()} tutarlı evrakın vadesi ${evrak.vadeTarihi.toLocaleDateString("tr-TR")} tarihinde geçti; durumu ${evrak.durum}.`, onerilenEylem: "Tahsilat/ödeme sonucunu kaydedin veya evrak durumunu güncelleyin." })),

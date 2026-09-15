@@ -24,6 +24,7 @@ import { UblOkumaHatasi, faturaUblOku, type UblFatura, type UblSatir } from "./u
 import { adSoyadCoz } from "../cari/ad-soyad";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import { MukellefListesiService } from "./mukellef-listesi.service";
+import { takiliRezervasyonKosulu, takiliRezervasyonMu } from "./takili-rezervasyon";
 import { belgeNoyuUbleYaz, faturaUblUret } from "./xml-uretec";
 
 /** Onay ekranında satırın hangi ipucuyla eşleştiği. */
@@ -77,11 +78,11 @@ export class EbelgeService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const fatura = await tx.fatura.findUnique({
         where: { id: faturaId },
-        include: { cari: true, ebelge: { select: { id: true, durum: true, tur: true } } },
+        include: { cari: true, ebelge: { select: { id: true, durum: true, tur: true, entegratorRef: true, updatedAt: true } } },
       });
       if (!fatura) throw new NotFoundException("Fatura bulunamadı");
       if (fatura.durum !== "kesin") throw new BadRequestException("e-Fatura wizard'ı yalnızca kesinleşmiş faturalar için açılabilir");
-      if (fatura.ebelge && !["hata", "ret"].includes(fatura.ebelge.durum)) {
+      if (fatura.ebelge && !["hata", "ret"].includes(fatura.ebelge.durum) && !takiliRezervasyonMu(fatura.ebelge)) {
         throw new BadRequestException("Bu fatura için zaten e-belge gönderim süreci başlatılmış");
       }
       const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" }, select: { saglayici: true, sifreliConfig: true } });
@@ -147,7 +148,7 @@ export class EbelgeService {
       if (!gonderimTarihiGecerliMi(fatura.tarih)) {
         throw new BadRequestException("Fatura tarihi bugün veya en fazla 7 gün önce olmalıdır");
       }
-      if (fatura.ebelge && !["hata", "ret"].includes(fatura.ebelge.durum)) {
+      if (fatura.ebelge && !["hata", "ret"].includes(fatura.ebelge.durum) && !takiliRezervasyonMu(fatura.ebelge)) {
         throw new ConflictException("Bu fatura için e-belge gönderim süreci zaten başlatılmış");
       }
 
@@ -180,11 +181,13 @@ export class EbelgeService {
 
       let rezervasyon: { id: string };
       // Mevcut kaydın yeniden denenmesi mi, ilk gönderim mi? Yeniden denemede
-      // belge sağlayıcıda çoktan oluşmuş olabilir (EBLG-17).
+      // belge sağlayıcıda çoktan oluşmuş olabilir (EBLG-17). Yarım kalmış
+      // rezervasyon da yeniden denemedir (EBLG-37); kilit `updatedAt`'i
+      // tazelediği için iki eşzamanlı deneme aynı kaydı alamaz.
       const yenidenDeneme = Boolean(fatura.ebelge);
       if (fatura.ebelge) {
         const kilit = await tx.ebelgeKayit.updateMany({
-          where: { id: fatura.ebelge.id, durum: { in: ["hata", "ret"] } },
+          where: { id: fatura.ebelge.id, OR: [{ durum: { in: ["hata", "ret"] } }, takiliRezervasyonKosulu()] },
           data: { durum: "kuyrukta", entegratorRef: null, hataMesaji: null },
         });
         if (kilit.count !== 1) {

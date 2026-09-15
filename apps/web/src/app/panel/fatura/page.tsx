@@ -110,7 +110,8 @@ interface Fatura {
    * `aliciYaniti` ise alıcının kabul/ret kararıdır — ikisi ayrı eksendir
    * (EBLG-13): zarf kabul edilmiş olabilir ama alıcı faturayı reddetmiş olabilir.
    */
-  ebelge?: { id: string; durum: string; tur: string; aliciYaniti?: "kabul" | "ret" | null; aliciYanitZamani?: string | null; aliciYanitNotu?: string | null } | null;
+  /** `takiliGonderim`: gönderim yarım kalmış, yeniden gönderilebilir (EBLG-37). */
+  ebelge?: { id: string; durum: string; tur: string; entegratorRef?: string | null; takiliGonderim?: boolean; aliciYaniti?: "kabul" | "ret" | null; aliciYanitZamani?: string | null; aliciYanitNotu?: string | null } | null;
   odemeOzeti?: { durum: "beklemede" | "odenmedi" | "kismi" | "odendi"; odenen: string; kalan: string };
 }
 
@@ -125,6 +126,7 @@ interface FaturaDetay extends Fatura {
     durum: string;
     tur: string;
     entegratorRef: string | null;
+    takiliGonderim?: boolean;
     hataMesaji: string | null;
     aliciYaniti?: "kabul" | "ret" | null;
     aliciYanitZamani?: string | null;
@@ -1092,8 +1094,8 @@ export default function FaturaSayfasi() {
               {acikFatura.ebelge && <Button size="sm" type="button" onClick={() => void ebelgePdfAc(acikFatura.id)}>📄 e-Belge PDF</Button>}
               {acikFatura.durum !== "taslak" && <Button size="sm" type="button" onClick={() => void pdfAc(acikFatura.id)}>🖨 PDF</Button>}
               {acikFatura.durum !== "taslak" && <Button size="sm" type="button" onClick={() => setEpostaGonderilen(acikFatura)}>✉️ E-posta</Button>}
-              {acikFatura.ebelge && ["kuyrukta", "iletildi"].includes(acikFatura.ebelge.durum) && <Button size="sm" type="button" onClick={() => void ebelgeSorgula(acikFatura.id)}>Sorgula</Button>}
-              {acikFatura.ebelge?.durum === "hata" && <Button size="sm" type="button" onClick={() => void ebelgeYenidenGonder(acikFatura.id)}>Yeniden gönder</Button>}
+              {acikFatura.ebelge?.entegratorRef && ["kuyrukta", "iletildi"].includes(acikFatura.ebelge.durum) && <Button size="sm" type="button" onClick={() => void ebelgeSorgula(acikFatura.id)}>Sorgula</Button>}
+              {(acikFatura.ebelge?.durum === "hata" || acikFatura.ebelge?.takiliGonderim) && <Button size="sm" type="button" onClick={() => void ebelgeYenidenGonder(acikFatura.id)}>Yeniden gönder</Button>}
               <Button size="sm" type="button" onClick={() => setEkleriAcikFatura(acikFatura)}>📎 Ekler</Button>
               <EylemMenusu>
                 {acikFatura.tip === "proforma" && <Button size="sm" type="button" onClick={() => void satisaDonustur(acikFatura.id)}>➡️ Satışa Dönüştür</Button>}
@@ -1637,8 +1639,8 @@ export default function FaturaSayfasi() {
             <DurumGecmisi key={ebelgeDetayi.ebelge.updatedAt} adres={`/fatura/${ebelgeDetayi.id}/durum-gecmisi`} />
             <div className="quick-panel__actions">
               <Button type="button" onClick={() => setEbelgeDetayi(null)}>Kapat</Button>
-              {["kuyrukta", "iletildi"].includes(ebelgeDetayi.ebelge.durum) && <Button type="button" variant="primary" onClick={() => void ebelgeSorgula(ebelgeDetayi.id)}>Durumu sorgula</Button>}
-              {ebelgeDetayi.ebelge.durum === "hata" && <Button type="button" variant="primary" onClick={() => void ebelgeYenidenGonder(ebelgeDetayi.id)}>Yeniden gönder</Button>}
+              {ebelgeDetayi.ebelge.entegratorRef && ["kuyrukta", "iletildi"].includes(ebelgeDetayi.ebelge.durum) && <Button type="button" variant="primary" onClick={() => void ebelgeSorgula(ebelgeDetayi.id)}>Durumu sorgula</Button>}
+              {(ebelgeDetayi.ebelge.durum === "hata" || ebelgeDetayi.ebelge.takiliGonderim) && <Button type="button" variant="primary" onClick={() => void ebelgeYenidenGonder(ebelgeDetayi.id)}>Yeniden gönder</Button>}
               {/* İptal artık faturayı iptal ederken bildiriliyor; bu düğme yalnızca bildirim düşmüş kayıtları kurtarmak için durur. */}
               {ebelgeDetayi.ebelge.tur === "earsiv" && ebelgeDetayi.durum === "iptal" && ebelgeDetayi.ebelge.durum !== "iptal" && <Button type="button" variant="danger" onClick={() => void earsivIptalBildir(ebelgeDetayi.id)}>İptali entegratöre bildir</Button>}
             </div>

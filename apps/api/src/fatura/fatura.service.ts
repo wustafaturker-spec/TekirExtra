@@ -23,6 +23,7 @@ import { EbelgeService } from "../ebelge/ebelge.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { faturaPdfHtml } from "./fatura-pdf";
 import { durumGecmisiOku } from "../core/durum-gecmisi";
+import { takiliRezervasyonMu } from "../ebelge/takili-rezervasyon";
 import type {
   faturaOlusturSemasi,
   faturaGuncelleSemasi,
@@ -270,7 +271,7 @@ export class FaturaService {
           cari: { select: { id: true, kod: true, unvan: true } },
           // Alıcının kabul/ret kararı zarf durumundan ayrı bir eksendir
           // (EBLG-13); listede ikisi birlikte gösterilir.
-          ebelge: { select: { id: true, durum: true, tur: true, aliciYaniti: true, aliciYanitZamani: true, aliciYanitNotu: true } },
+          ebelge: { select: { id: true, durum: true, tur: true, entegratorRef: true, updatedAt: true, aliciYaniti: true, aliciYanitZamani: true, aliciYanitNotu: true } },
           kasaBankaHarekets: { select: { tutarTry: true } },
           krediKartiHareketleri: { select: { cariOdemeTutari: true } },
           satirlar: {
@@ -297,7 +298,7 @@ export class FaturaService {
         return {
           ...this.gorunum(k),
           cari: k.cari,
-          ebelge: k.ebelge,
+          ebelge: k.ebelge && { ...k.ebelge, takiliGonderim: takiliRezervasyonMu(k.ebelge) },
           odemeOzeti: {
             durum: k.durum !== "kesin" ? "beklemede" : kalan.isZero() ? "odendi" : odenen.greaterThan(0) ? "kismi" : "odenmedi",
             odenen: odenen.toFixed(2),
@@ -493,7 +494,7 @@ export class FaturaService {
         toplamTutar: s.toplamTutar.toFixed(2),
         gibIstisnaKodu: s.gibIstisnaKodu,
       })),
-      ebelge: kayit.ebelge,
+      ebelge: kayit.ebelge && { ...kayit.ebelge, takiliGonderim: takiliRezervasyonMu(kayit.ebelge) },
       odemeOzeti: {
         durum: kayit.durum !== "kesin" ? "beklemede" : kalan.isZero() ? "odendi" : odenen.greaterThan(0) ? "kismi" : "odenmedi",
         odenen: odenen.toFixed(2),
