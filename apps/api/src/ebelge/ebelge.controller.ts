@@ -78,6 +78,7 @@ export class EbelgeController {
   @Post("sorgula/:faturaId")
   @Roller("muhasebe")
   async sorgula(@Param("faturaId") faturaId: string) {
+    await this.ebelgeService.durumSorgusuKontrol(faturaId);
     return this.kuyrukService.durumSorgulaKuyrugaEkle(faturaId);
   }
 

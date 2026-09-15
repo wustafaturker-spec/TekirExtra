@@ -25,6 +25,7 @@ import { adSoyadCoz } from "../cari/ad-soyad";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import { MukellefListesiService } from "./mukellef-listesi.service";
 import { takiliRezervasyonKosulu, takiliRezervasyonMu } from "./takili-rezervasyon";
+import { durumSorgusuEngeli } from "./durum-sorgusu";
 import { belgeNoyuUbleYaz, faturaUblUret } from "./xml-uretec";
 
 /** Onay ekranında satırın hangi ipucuyla eşleştiği. */
@@ -347,6 +348,16 @@ export class EbelgeService {
   }
 
   // ─── DURUM SORGULAMA (EBLG-03/06) ──────────────────────────────────────────
+
+  /** Elle durum sorgusu kuyruğa alınmadan önce kalıcı engelleri söyler (EBLG-38). */
+  async durumSorgusuKontrol(faturaId: string): Promise<void> {
+    const { tenantId } = aktifBaglam();
+    const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.ebelgeKayit.findUnique({ where: { faturaId }, select: { durum: true, entegratorRef: true } }),
+    );
+    const engel = durumSorgusuEngeli(kayit);
+    if (engel) throw new BadRequestException(engel);
+  }
 
   async durumSorgula(faturaId: string) {
     const { tenantId } = aktifBaglam();

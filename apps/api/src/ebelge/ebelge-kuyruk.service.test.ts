@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { aktifBaglam, baglamlaCalistir } from "../core/istek-baglami";
 import { EbelgeKuyrukService } from "./ebelge-kuyruk.service";
@@ -68,6 +69,25 @@ describe("EbelgeKuyrukService", () => {
     const sonuc = await baglamlaCalistir({ tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" }, () => service.durumSorgulaKuyrugaEkle("fatura-9"));
     expect(sonuc).toMatchObject({ isId: "ebelge-durum-tenant-1-fatura-9", durum: "waiting" });
     expect(bull.add).toHaveBeenCalledWith("ebelge-durum-sorgula", expect.objectContaining({ isTuru: "ebelge-durum-sorgula", faturaId: "fatura-9" }), { jobId: "ebelge-durum-tenant-1-fatura-9" });
+  });
+
+  it("elle durum sorgusu eski dead-letter kaydını temizleyip yeniden kuyruğa alır (EBLG-38)", async () => {
+    const remove = vi.fn();
+    bull.getJob.mockResolvedValueOnce({ id: "dead-ebelge-durum-tenant-1-fatura-9", remove });
+    const sonuc = await baglamlaCalistir({ tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" }, () => service.durumSorgulaKuyrugaEkle("fatura-9"));
+    expect(remove).toHaveBeenCalled();
+    expect(bull.add).toHaveBeenCalledWith("ebelge-durum-sorgula", expect.objectContaining({ faturaId: "fatura-9" }), { jobId: "ebelge-durum-tenant-1-fatura-9" });
+    expect(sonuc).toMatchObject({ durum: "waiting", tekrar: false });
+  });
+
+  it("sorgulanamayan belgede durum işini yeniden denemeden atlar (EBLG-38)", async () => {
+    ebelge.durumSorgula.mockRejectedValue(new BadRequestException("Gönderimi yapılmamış belgenin durumu sorgulanamaz"));
+    const is = { id: "ebelge-durum-tenant-1-fatura-6", name: "ebelge-durum-sorgula", data: { tenantId: "tenant-1", userId: "user-1", rol: "muhasebe", isTuru: "ebelge-durum-sorgula", faturaId: "fatura-6" } };
+    await expect((service as unknown as { isle(is: unknown): Promise<unknown> }).isle(is)).resolves.toMatchObject({ atlandi: true });
+
+    // Entegratör hatası geçicidir, yeniden denenmek üzere yükselir.
+    ebelge.durumSorgula.mockRejectedValue(new Error("NES 503"));
+    await expect((service as unknown as { isle(is: unknown): Promise<unknown> }).isle(is)).rejects.toThrow("NES 503");
   });
 
   it("devam eden gelen belge senkronunu ikinci kez oluşturmaz", async () => {

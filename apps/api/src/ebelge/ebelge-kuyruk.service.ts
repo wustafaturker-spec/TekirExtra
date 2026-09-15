@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, NotFoundException, ServiceUnavailableException, forwardRef } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, NotFoundException, ServiceUnavailableException, forwardRef } from "@nestjs/common";
 import { Job, Queue, QueueEvents, Worker } from "bullmq";
 import { PrismaClient } from "@prisma/client";
 import type { Rol } from "@tekirextra/shared";
@@ -132,7 +132,16 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
 
   async durumSorgulaKuyrugaEkle(faturaId: string) {
     const baglam = aktifBaglam();
-    return this.tekrarlanabilirIsEkle(DURUM_ISI, durumIsKimligi(baglam.tenantId, faturaId), { faturaId });
+    const jobId = durumIsKimligi(baglam.tenantId, faturaId);
+    // EBLG-38: fatura başına durum işini yalnız kullanıcı açar (planlayıcı toplu
+    // iş kullanır). Eski dead-letter kaydı kalırsa bu faturanın her sorgusu
+    // sessizce yutulurdu; açık kullanıcı eylemi onu temizler.
+    const eskiDeadLetter = await this.deadLetter.getJob(`dead-${jobId}`);
+    if (eskiDeadLetter) {
+      await eskiDeadLetter.remove();
+      this.metrics.increment("ebelge_queue_jobs_total", { result: "dead_letter_retry", type: DURUM_ISI });
+    }
+    return this.tekrarlanabilirIsEkle(DURUM_ISI, jobId, { faturaId });
   }
 
   async gelenBelgeleriKuyrugaEkle() {
@@ -265,7 +274,17 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
         return sonuc;
       }
       if (!is.data.faturaId) throw new Error("Kuyruk işinde fatura kimliği eksik");
-      if (is.name === DURUM_ISI) return this.ebelgeService.durumSorgula(is.data.faturaId);
+      if (is.name === DURUM_ISI) {
+        try {
+          return await this.ebelgeService.durumSorgula(is.data.faturaId);
+        } catch (hata) {
+          // Kayıt yok ya da belge gönderilmemiş: yeniden denemek aynı sonuca
+          // varır ve iş dead-letter'a düşerdi (EBLG-38). İş atlanmış olarak biter.
+          if (!(hata instanceof BadRequestException || hata instanceof NotFoundException)) throw hata;
+          this.logger.warn(JSON.stringify({ event: "ebelge_durum_sorgusu_atlandi", jobId: is.id, tenantId: is.data.tenantId, faturaId: is.data.faturaId, neden: hata.message }));
+          return { atlandi: true, neden: hata.message };
+        }
+      }
       if (is.name === GONDERIM_ISI) {
         const sonuc = await this.ebelgeService.gonder(is.data.faturaId);
         if (!sonuc.basarili) throw new Error(sonuc.hataMesaji || "Entegratör gönderimi başarısız");
