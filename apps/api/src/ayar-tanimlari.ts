@@ -76,6 +76,13 @@ registerModulAyar(
      * 60 güne kadar bakar.
      */
     eirsaliyeYanitGunSayisi: z.number().int().min(1).max(60),
+    /**
+     * Alıcı yanıt vermezse giden ticari e-Faturanın gönderimden sonra kaç gün
+     * otomatik sorgulanacağı (EBLG-40). Mevzuat yanıt için 8 gün öngörür;
+     * varsayılan 2 gün teslim payı bırakır. Süre dolunca elle sorgu açık kalır,
+     * geç gelen yanıtı gelen tarama okur. Planlayıcı en fazla 60 güne bakar.
+     */
+    efaturaYanitGunSayisi: z.number().int().min(1).max(60),
   }),
-  { earsivIptalGunSayisi: 8, eirsaliyeYanitGunSayisi: 10 },
+  { earsivIptalGunSayisi: 8, eirsaliyeYanitGunSayisi: 10, efaturaYanitGunSayisi: 10 },
 );

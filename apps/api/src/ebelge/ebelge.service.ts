@@ -26,6 +26,7 @@ import { durumAciklamasi } from "./durum-aciklamasi";
 import { MukellefListesiService } from "./mukellef-listesi.service";
 import { takiliRezervasyonKosulu, takiliRezervasyonMu } from "./takili-rezervasyon";
 import { SON_EBELGE_DURUMLARI, durumSorgusuEngeli } from "./durum-sorgusu";
+import { faturaSorguKosulu, faturaSorguSureleriniOku } from "./fatura-sorgu-kosulu";
 import { belgeNoyuUbleYaz, faturaUblUret } from "./xml-uretec";
 
 /** Onay ekranında satırın hangi ipucuyla eşleştiği. */
@@ -38,13 +39,6 @@ export type EslesmeKaynagi =
   | null;
 
 const YEDI_GUN_MS = 7 * 24 * 60 * 60 * 1_000;
-
-/**
- * Aynı zarf bu süre dolmadan yeniden sorgulanmaz. Sağlayıcı kılavuzu "bir zarf
- * otomatik job'larla en az 2 saat sonra tekrar sorgulanmalıdır" diyor; zarfın
- * son duruma ulaşması zaten günler alabiliyor.
- */
-const DURUM_SORGU_ARALIK_MS = Number(process.env.EBLG_DURUM_SORGU_ARALIK_MS || 2 * 60 * 60 * 1_000);
 
 /** Ekrandaki "Yenile" düğmesinin kiracı başına asgari aralığı (EBLG-11). */
 const ELLE_TAZELEME_ARALIK_MS = Number(process.env.EBLG_ELLE_TAZELEME_ARALIK_MS || 60 * 60 * 1_000);
@@ -454,16 +448,13 @@ export class EbelgeService {
 
     const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
     const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
-    const esik = new Date(Date.now() - DURUM_SORGU_ARALIK_MS);
+    // EBLG-40: temel e-Fatura alıcıya ulaşınca, ticari yanıt süresi ve e-Arşiv
+    // iptal süresi dolunca otomatik sorgu durur; elle sorgu açık kalır.
+    const sureler = faturaSorguSureleriniOku(this.ayarlar ? await this.ayarlar.getir("ebelge") : {});
 
     const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.ebelgeKayit.findMany({
-        where: {
-          tenantId,
-          durum: { in: ["kuyrukta", "iletildi"] },
-          entegratorRef: { not: null },
-          OR: [{ sonDurumSorguAt: null }, { sonDurumSorguAt: { lt: esik } }],
-        },
+        where: faturaSorguKosulu(tenantId, Date.now(), sureler),
         select: { id: true, faturaId: true, durum: true, entegratorRef: true, aliciYanitNotu: true },
         take: 500,
       }),

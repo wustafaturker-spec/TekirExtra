@@ -6,6 +6,7 @@ import { aktifBaglam, baglamlaCalistir } from "../core/istek-baglami";
 import { MetricsService } from "../core/observability/metrics.service";
 import { EbelgeService } from "./ebelge.service";
 import { EirsaliyeService, eirsaliyeSorguKosulu } from "./eirsaliye.service";
+import { AZAMI_FATURA_SORGU_SURELERI, faturaSorguKosulu } from "./fatura-sorgu-kosulu";
 
 const KUYRUK_ADI = "tekirextra-ebelge";
 const GONDERIM_ISI = "ebelge-gonder";
@@ -33,9 +34,6 @@ export type EbelgeIsTuru =
  * 24 çağrıdan fazla otomatik olarak yapılmamalıdır" diyor (EBLG-11).
  */
 const GELEN_TARAMA_ARALIK_MS = Number(process.env.EBLG_GELEN_ARALIK_MS || 60 * 60 * 1_000);
-
-/** Aynı zarfın iki sorgusu arasındaki asgari süre (EBLG-14). */
-const DURUM_SORGU_ARALIK_MS = Number(process.env.EBLG_DURUM_SORGU_ARALIK_MS || 2 * 60 * 60 * 1_000);
 
 export interface EbelgeKuyrukVerisi {
   tenantId: string;
@@ -348,14 +346,10 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
 
           // Zarf durumları fatura başına değil, kiracı başına tek toplu iş
           // olarak sorgulanır; sorgulanacak kayıt yoksa iş hiç açılmaz (EBLG-14).
-          const esik = new Date(Date.now() - DURUM_SORGU_ARALIK_MS);
+          // Süreli koşul en uzun sürelerle bakılır, kiracının süresi işte
+          // uygulanır (EBLG-40).
           const bekleyen = await yonetim.ebelgeKayit.count({
-            where: {
-              tenantId: tenant.id,
-              durum: { in: ["kuyrukta", "iletildi"] },
-              entegratorRef: { not: null },
-              OR: [{ sonDurumSorguAt: null }, { sonDurumSorguAt: { lt: esik } }],
-            },
+            where: faturaSorguKosulu(tenant.id, Date.now(), AZAMI_FATURA_SORGU_SURELERI),
           });
           if (bekleyen > 0) await this.durumlariTopluKuyrugaEkle();
 
