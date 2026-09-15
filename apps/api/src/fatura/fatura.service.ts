@@ -897,7 +897,10 @@ export class FaturaService {
             varyantId: hareket.varyantId,
             depoId: hareket.depoId,
             tip: hareket.tip === "cikis" ? "giris" : "cikis",
-            miktar: hareket.miktar,
+            // Hareket miktarı işaretli saklanır (çıkış eksi), `hareketEkle` ise
+            // yönü tipten alıp pozitif miktar bekler. İşaretli verilince iptalin
+            // "girişi" stoğu bir kez daha düşürüyordu.
+            miktar: hareket.miktar.abs(),
             girilenBirim: hareket.girilenBirim,
             girilenMiktar: hareket.girilenMiktar,
             birimMaliyet: hareket.maliyet,

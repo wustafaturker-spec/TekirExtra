@@ -119,6 +119,7 @@ describe("FaturaService.iptal — e-belge kuralı (EBLG-22)", () => {
 
   function kur(ebelge: unknown) {
     const earsivBelgesiniIptalEt = vi.fn();
+    const hareketEkle = vi.fn();
     const tx = {
       fatura: { findUnique: vi.fn().mockResolvedValue({ id: "f1", no: "SNC2026000000003", durum: "kesin", tip: "satis", tarih: new Date(), genelToplam: new Prisma.Decimal("900.00"), cariId: "c1", dovizCinsi: "TRY", kur: new Prisma.Decimal("1"), ebelge }) },
       kasaBankaHareket: { count: vi.fn().mockResolvedValue(0) },
@@ -134,11 +135,28 @@ describe("FaturaService.iptal — e-belge kuralı (EBLG-22)", () => {
     tx.fatura.update = vi.fn().mockResolvedValue({ id: "f1", durum: "iptal" });
     mockTenantIslem.mockImplementation((_t: string, cb: (t: unknown) => unknown) => cb(tx));
     const service = new FaturaService(
-      mockPrisma, {} as any, { hareketEkle: vi.fn() } as any, {} as any, {} as any, {} as any,
+      mockPrisma, { hareketEkle } as any, {} as any, {} as any, {} as any, {} as any,
       { tarihDogrula: vi.fn() } as any, {} as any, { earsivBelgesiniIptalEt } as any,
     );
-    return { service, tx, earsivBelgesiniIptalEt };
+    return { service, tx, earsivBelgesiniIptalEt, hareketEkle };
   }
+
+  it("stok çıkışını pozitif miktarlı girişle geri alır", async () => {
+    // Hareket miktarı işaretli saklanır (çıkış -1000); işaretli verilirse
+    // iptalin girişi stoğu bir kez daha düşürüyordu.
+    const { service, tx, hareketEkle } = kur(null);
+    tx.stokHareket.findMany.mockResolvedValue([{
+      stokId: "s1", varyantId: null, depoId: "d1", tip: "cikis",
+      miktar: new Prisma.Decimal("-1000"), girilenBirim: "adet", girilenMiktar: new Prisma.Decimal("1000"),
+      maliyet: new Prisma.Decimal("0"), partiler: [],
+    }]);
+
+    await service.iptal("f1");
+
+    const girdi = hareketEkle.mock.calls[0][1];
+    expect(girdi.tip).toBe("giris");
+    expect(girdi.miktar.toString()).toBe("1000");
+  });
 
   it("e-Fatura olarak gönderilmiş faturayı iptal etmez, iade faturasına yönlendirir", async () => {
     // Kesilen e-Fatura iptal edilmez; düzeltme yolu iade faturasıdır.
