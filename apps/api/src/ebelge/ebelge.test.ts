@@ -693,7 +693,7 @@ describe("EbelgeService.earsivBelgesiniIptalEt (EBLG-22)", () => {
     const bildirimler = { uret: vi.fn().mockResolvedValue({}) };
     const ayarlar = { getir: vi.fn().mockResolvedValue({ earsivIptalGunSayisi: gunSayisi }) } as any;
     const service = new EbelgeService(prisma, baglantilar, {} as any, {} as any, metrics, bildirimler as any, ayarlar);
-    return { service, tx, earsivIptal, bildirimler };
+    return { service, tx, earsivIptal, bildirimler, adapter };
   }
 
   const gunOnce = (gun: number) => new Date(Date.now() - gun * 86_400_000);
@@ -747,6 +747,17 @@ describe("EbelgeService.earsivBelgesiniIptalEt (EBLG-22)", () => {
     expect(earsivIptal).not.toHaveBeenCalled();
     expect(bildirimler.uret).not.toHaveBeenCalled();
     expect(tx.ebelgeKayit.update).toHaveBeenCalledWith({ where: { id: "eb1" }, data: { durum: "iptal", hataMesaji: null } });
+  });
+
+  it("durum sorgusu entegratöre ulaşamazsa iptal çağrısı yapmadan durur (EBLG-39)", async () => {
+    // Sorgu okunamazsa belgenin zaten iptal olup olmadığı ve raporlanıp
+    // raporlanmadığı bilinemez; körlemesine iptal edilmez.
+    const { service, tx, earsivIptal, adapter } = kur({});
+    adapter.durumSorgula.mockRejectedValue(new Error("NES 503"));
+
+    await expect(service.earsivBelgesiniIptalEt(tx, fatura, ebelge)).rejects.toThrow("NES 503");
+    expect(earsivIptal).not.toHaveBeenCalled();
+    expect(tx.ebelgeKayit.update).not.toHaveBeenCalled();
   });
 
   it("rapora girmemiş belgede bildirim üretilmez", async () => {
@@ -883,7 +894,7 @@ describe("EbelgeService — çağrı disiplini", () => {
 
     expect(durumSorgulaToplu).toHaveBeenCalledOnce();
     expect(durumSorgula).not.toHaveBeenCalled();
-    expect(sonuc).toEqual({ sorgulanan: 2, guncellenen: 2 });
+    expect(sonuc).toEqual({ sorgulanan: 2, guncellenen: 2, atlanan: 0 });
     expect(guncelle.mock.calls[0][0].data.sonDurumSorguAt).toBeInstanceOf(Date);
     // Başarı açıklaması ekranda uyarı kutusuna düşmesin.
     expect(guncelle.mock.calls[0][0].data.hataMesaji).toBeNull();
@@ -908,6 +919,66 @@ describe("EbelgeService — çağrı disiplini", () => {
 
     expect(durumSorgulaToplu).toHaveBeenCalledWith(expect.any(Object), ["zarf-a"]);
     expect(durumSorgula).toHaveBeenCalledWith(expect.any(Object), "EARSIV:u1");
+  });
+
+  const nesBaglanti = { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: cfg }) };
+  const earsivKaydi = (durum: string) => ({ id: "eb-1", faturaId: "f-1", durum, entegratorRef: "EARSIV:u1", aliciYanitNotu: null });
+
+  it("toplu sorguda ulaşılamayan belgeyi hataya çevirmez, diğerlerini günceller (EBLG-39)", async () => {
+    const durumSorgula = vi.fn()
+      .mockRejectedValueOnce(new Error("NES 503"))
+      .mockResolvedValueOnce({ belgeRef: "EARSIV:u2", durum: "iletildi" });
+    const guncelle = vi.fn();
+    const tx = {
+      baglanti: nesBaglanti,
+      ebelgeKayit: {
+        findMany: vi.fn().mockResolvedValue([earsivKaydi("iletildi"), { ...earsivKaydi("iletildi"), id: "eb-2", faturaId: "f-2", entegratorRef: "EARSIV:u2" }]),
+        update: guncelle,
+      },
+    };
+    const { service } = kur(tx, { durumSorgula });
+
+    await expect(service.durumlariTopluSorgula()).resolves.toEqual({ sorgulanan: 2, guncellenen: 1, atlanan: 1 });
+    expect(guncelle).toHaveBeenCalledOnce();
+    expect(guncelle.mock.calls[0][0].where).toEqual({ id: "eb-2" });
+  });
+
+  it("tekil sorguda entegratör hatasını kullanıcıya söyler, kayda dokunmaz (EBLG-39)", async () => {
+    const guncelle = vi.fn();
+    const tx = { baglanti: nesBaglanti, ebelgeKayit: { findUnique: vi.fn().mockResolvedValue(earsivKaydi("iletildi")), update: guncelle } };
+    const { service } = kur(tx, { durumSorgula: vi.fn().mockRejectedValue(new Error("NES 503")) });
+
+    await expect(service.durumSorgula("f-1")).rejects.toThrow("NES 503");
+    expect(guncelle).not.toHaveBeenCalled();
+  });
+
+  it("entegratörde iptal edilmiş belgeyi iptal yapar, faturayı iptal etmeden haber verir (EBLG-39)", async () => {
+    const guncelle = vi.fn().mockResolvedValue({});
+    const faturaGuncelle = vi.fn();
+    const tx = {
+      baglanti: nesBaglanti,
+      ebelgeKayit: { findUnique: vi.fn().mockResolvedValue(earsivKaydi("iletildi")), update: guncelle },
+      fatura: { findUnique: vi.fn().mockResolvedValue({ no: "NES2026000000007", durum: "kesin" }), update: faturaGuncelle },
+    };
+    const { service, bildirimler } = kur(tx, {
+      durumSorgula: vi.fn().mockResolvedValue({ belgeRef: "EARSIV:u1", durum: "iletildi", detay: "Belge NES'te iptal edilmiş", iptalEdilmis: true }),
+    });
+
+    await service.durumSorgula("f-1");
+
+    expect(guncelle.mock.calls[0][0].data.durum).toBe("iptal");
+    expect(faturaGuncelle).not.toHaveBeenCalled();
+    expect(bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({ kaynakRef: "f-1", birlesimAnahtari: "earsiv-entegrator-iptal:f-1" }));
+  });
+
+  it("iptal edilmiş kaydı yeniden sorgulamaz (EBLG-39)", async () => {
+    const durumSorgula = vi.fn();
+    const tx = { baglanti: nesBaglanti, ebelgeKayit: { findUnique: vi.fn().mockResolvedValue(earsivKaydi("iptal")), update: vi.fn() } };
+    const { service } = kur(tx, { durumSorgula });
+
+    await service.durumSorgula("f-1");
+
+    expect(durumSorgula).not.toHaveBeenCalled();
   });
 
   it("elle tazeleme saatlik sınıra takılır (EBLG-11)", async () => {

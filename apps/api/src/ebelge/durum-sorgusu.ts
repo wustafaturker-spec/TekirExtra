@@ -1,5 +1,9 @@
-/** Durumu entegratöre sorulmayan, son durum sayılan e-Belge durumları (EBLG-14). */
-export const SON_EBELGE_DURUMLARI: readonly string[] = ["kabul", "ret", "hata"];
+/**
+ * Durumu entegratöre sorulmayan, son durum sayılan e-Belge durumları (EBLG-14).
+ * İptal de son durumdur: sorgu iptal edilmiş belgeyi "iletildi"ye geri
+ * çevirmemeli (EBLG-39).
+ */
+export const SON_EBELGE_DURUMLARI: readonly string[] = ["kabul", "ret", "hata", "iptal"];
 
 /**
  * Faturanın durum sorgusu neden açılamaz (EBLG-38); açılabiliyorsa null.

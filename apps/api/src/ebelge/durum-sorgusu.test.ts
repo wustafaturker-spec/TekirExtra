@@ -11,7 +11,7 @@ describe("durumSorgusuEngeli (EBLG-38)", () => {
   });
 
   it("son durumdaki belgeyi yeniden sorgulamaz", () => {
-    for (const durum of ["kabul", "ret", "hata"]) {
+    for (const durum of ["kabul", "ret", "hata", "iptal"]) {
       expect(durumSorgusuEngeli({ durum, entegratorRef: "REF-1" })).toMatch("son durumuna");
     }
   });

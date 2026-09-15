@@ -247,4 +247,20 @@ describe("SovosEntegratorAdapter — toplu durum sorgusu (EBLG-14)", () => {
 
     expect(sonuc.map((s) => s.belgeRef)).toEqual(["zarf-a"]);
   });
+
+  it("sorulamayan grubu hataya çevirmez; hiçbir grup sorulamazsa hatayı yükseltir (EBLG-39)", async () => {
+    const refler = Array.from({ length: 25 }, (_, i) => `zarf-${i}`);
+    const yanit = `<S:Envelope><S:Body><getEnvelopeStatusResponse>${refler.slice(0, 20).map((u) => `<Response><UUID>${u}</UUID><ResponseCode>1300</ResponseCode></Response>`).join("")}</getEnvelopeStatusResponse></S:Body></S:Envelope>`;
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce({ ok: true, text: async () => yanit })
+      .mockRejectedValueOnce(new Error("Sovos kapalı")));
+
+    const sonuc = await new SovosEntegratorAdapter().durumSorgulaToplu(config, refler);
+
+    expect(sonuc).toHaveLength(20);
+    expect(sonuc.every((s) => s.durum !== "hata")).toBe(true);
+
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Sovos kapalı")));
+    await expect(new SovosEntegratorAdapter().durumSorgulaToplu(config, ["zarf-a"])).rejects.toThrow("Sovos kapalı");
+  });
 });

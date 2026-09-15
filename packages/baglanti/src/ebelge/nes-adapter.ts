@@ -618,68 +618,64 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
     };
   }
 
+  /**
+   * Çağrı hatası fırlatılır, `hata` durumu olarak dönmez: geçici kesinti
+   * belgeyi son duruma taşıyıp takipten düşürüyordu (EBLG-39).
+   */
   async durumSorgula(cfg: EntegratorConfig, belgeRef: string): Promise<BelgeDurumSonuc> {
     if (belgeRef.startsWith(EARSIV_ONEKI)) {
       const uuid = belgeRef.slice(EARSIV_ONEKI.length);
-      try {
-        const fatura = await this.cagir<{ archiveDocumentStatus?: string; isCanceled?: boolean; cancelDate?: string; reportDivisionStatus?: string }>(
-          cfg,
-          "earchive",
-          `/v1/invoices/${encodeURIComponent(uuid)}`,
-        );
-        // Durum alanı `archiveDocumentStatus`; `recordStatus` diye bir alan
-        // yanıtta yok (2026-09-10 canlı yanıtla ölçüldü) — onu okumak her
-        // belgeyi "iletildi" göstermek demekti.
-        const kayit = fatura?.archiveDocumentStatus;
-        const durum =
-          kayit === "Error" || kayit === "XmlParseError" || kayit === "XmlFileDoesNotExist"
-            ? "hata"
-            : kayit === "Waiting" || kayit === "WaitingSign"
-              ? "kuyrukta"
-              : "iletildi";
-        // e-Arşiv'de alıcı kabul/ret akışı yoktur; belge imzalandıysa GİB'e
-        // raporlanmak üzere iletilmiş sayılır. İptal ayrı bir eksende
-        // (`isCanceled`) durur ve `BelgeDurum` kümesinde karşılığı yok; en
-        // azından görünür olsun diye ayrıntıya yazılır.
-        const iptal = fatura?.isCanceled
-          ? `Belge NES'te iptal edilmiş${fatura.cancelDate ? ` (${fatura.cancelDate})` : ""}`
-          : undefined;
-        // `reportDivisionStatus` belgenin GİB raporu yolculuğu:
-        // None → XmlCreateWait → XmlCreated → XmlSigned → Query → Completed.
-        // `Completed` olan belge GİB'e raporlanmıştır.
-        return {
-          belgeRef,
-          durum,
-          detay: iptal,
-          raporlandi: fatura?.reportDivisionStatus === "Completed",
-          iptalEdilmis: Boolean(fatura?.isCanceled),
-        };
-      } catch (hata) {
-        return { belgeRef, durum: "hata", detay: hata instanceof Error ? hata.message : "NES e-Arşiv durum sorgusu başarısız" };
-      }
-    }
-    try {
-      const fatura = await this.cagir<{
-        outgoingStatus?: string;
-        documentAnswer?: string;
-        outgoingEnvelope?: { description?: string };
-        incomingAnswer?: { answerNote?: string; errorDescription?: string };
-      }>(cfg, "einvoice", `/v1/outgoing/invoices/${encodeURIComponent(belgeRef)}`);
-      const durum = nesBelgeDurumu(fatura?.outgoingStatus, fatura?.documentAnswer);
+      const fatura = await this.cagir<{ archiveDocumentStatus?: string; isCanceled?: boolean; cancelDate?: string; reportDivisionStatus?: string }>(
+        cfg,
+        "earchive",
+        `/v1/invoices/${encodeURIComponent(uuid)}`,
+      );
+      // Durum alanı `archiveDocumentStatus`; `recordStatus` diye bir alan
+      // yanıtta yok (2026-09-10 canlı yanıtla ölçüldü) — onu okumak her
+      // belgeyi "iletildi" göstermek demekti.
+      const kayit = fatura?.archiveDocumentStatus;
+      const durum =
+        kayit === "Error" || kayit === "XmlParseError" || kayit === "XmlFileDoesNotExist"
+          ? "hata"
+          : kayit === "Waiting" || kayit === "WaitingSign"
+            ? "kuyrukta"
+            : "iletildi";
+      // e-Arşiv'de alıcı kabul/ret akışı yoktur; belge imzalandıysa GİB'e
+      // raporlanmak üzere iletilmiş sayılır. İptal ayrı bir eksende
+      // (`isCanceled`) durur; servis `iptalEdilmis` ile kaydı iptal yapar,
+      // tarih görünür olsun diye ayrıntıya yazılır.
+      const iptal = fatura?.isCanceled
+        ? `Belge NES'te iptal edilmiş${fatura.cancelDate ? ` (${fatura.cancelDate})` : ""}`
+        : undefined;
+      // `reportDivisionStatus` belgenin GİB raporu yolculuğu:
+      // None → XmlCreateWait → XmlCreated → XmlSigned → Query → Completed.
+      // `Completed` olan belge GİB'e raporlanmıştır.
       return {
         belgeRef,
         durum,
-        // Retteki açıklama alıcının notu olarak saklanır; not yoksa zarf
-        // açıklamasına ("BASARIYLA TAMAMLANDI") düşülürse ret gerekçesi diye
-        // o görünür.
-        detay:
-          durum === "ret"
-            ? fatura?.incomingAnswer?.answerNote
-            : fatura?.incomingAnswer?.errorDescription || fatura?.outgoingEnvelope?.description,
+        detay: iptal,
+        raporlandi: fatura?.reportDivisionStatus === "Completed",
+        iptalEdilmis: Boolean(fatura?.isCanceled),
       };
-    } catch (hata) {
-      return { belgeRef, durum: "hata", detay: hata instanceof Error ? hata.message : "NES durum sorgusu başarısız" };
     }
+    const fatura = await this.cagir<{
+      outgoingStatus?: string;
+      documentAnswer?: string;
+      outgoingEnvelope?: { description?: string };
+      incomingAnswer?: { answerNote?: string; errorDescription?: string };
+    }>(cfg, "einvoice", `/v1/outgoing/invoices/${encodeURIComponent(belgeRef)}`);
+    const durum = nesBelgeDurumu(fatura?.outgoingStatus, fatura?.documentAnswer);
+    return {
+      belgeRef,
+      durum,
+      // Retteki açıklama alıcının notu olarak saklanır; not yoksa zarf
+      // açıklamasına ("BASARIYLA TAMAMLANDI") düşülürse ret gerekçesi diye
+      // o görünür.
+      detay:
+        durum === "ret"
+          ? fatura?.incomingAnswer?.answerNote
+          : fatura?.incomingAnswer?.errorDescription || fatura?.outgoingEnvelope?.description,
+    };
   }
 
   /**

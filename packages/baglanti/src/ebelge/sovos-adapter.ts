@@ -199,25 +199,18 @@ export class SovosEntegratorAdapter implements EntegratorAdapter {
     }
   }
 
+  /** Çağrı hatası fırlatılır; geçici kesinti belgeyi `hata` yapmamalı (EBLG-39). */
   async durumSorgula(cfg: EntegratorConfig, belgeRef: string): Promise<BelgeDurumSonuc> {
     if (belgeRef.startsWith("EARSIV:")) {
       const uuid = belgeRef.slice(7);
-      try {
-        const xml = await this.earsivSoap(cfg, "getStatus", `<svc:getStatusRequestType><UUID>${xmlKacir(uuid)}</UUID><vkn>${xmlKacir(cfg.vknTckn!)}</vkn></svc:getStatusRequestType>`);
-        const kod = xmlDegeri(xml, ["statusCode"]);
-        const durum = kod === "130" ? "kabul" : kod === "150" || kod === "200" ? "iletildi" : kod === "190" ? "kuyrukta" : "hata";
-        return { belgeRef, durum, detay: xmlDegeri(xml, ["Detail"]) };
-      } catch (hata) {
-        return { belgeRef, durum: "hata", detay: hata instanceof Error ? hata.message : "Sovos e-Arşiv durum sorgusu başarısız" };
-      }
+      const xml = await this.earsivSoap(cfg, "getStatus", `<svc:getStatusRequestType><UUID>${xmlKacir(uuid)}</UUID><vkn>${xmlKacir(cfg.vknTckn!)}</vkn></svc:getStatusRequestType>`);
+      const kod = xmlDegeri(xml, ["statusCode"]);
+      const durum = kod === "130" ? "kabul" : kod === "150" || kod === "200" ? "iletildi" : kod === "190" ? "kuyrukta" : "hata";
+      return { belgeRef, durum, detay: xmlDegeri(xml, ["Detail"]) };
     }
-    try {
-      const xml = await this.soap(cfg, "getEnvelopeStatus", `<ein:getEnvelopeStatusRequest><ein:Identifier>${xmlKacir(cfg.gondericiBirimEtiketi!)}</ein:Identifier><ein:VKN_TCKN>${xmlKacir(cfg.vknTckn!)}</ein:VKN_TCKN><ein:UUID>${xmlKacir(belgeRef)}</ein:UUID></ein:getEnvelopeStatusRequest>`);
-      const kod = xmlDegeri(xml, ["ResponseCode", "StatusCode", "Code", "Status"]);
-      return { belgeRef, durum: zarfDurumu(kod), detay: xmlDegeri(xml, ["Description", "StatusDescription", "Message"]) };
-    } catch (hata) {
-      return { belgeRef, durum: "hata", detay: hata instanceof Error ? hata.message : "Sovos durum sorgusu başarısız" };
-    }
+    const xml = await this.soap(cfg, "getEnvelopeStatus", `<ein:getEnvelopeStatusRequest><ein:Identifier>${xmlKacir(cfg.gondericiBirimEtiketi!)}</ein:Identifier><ein:VKN_TCKN>${xmlKacir(cfg.vknTckn!)}</ein:VKN_TCKN><ein:UUID>${xmlKacir(belgeRef)}</ein:UUID></ein:getEnvelopeStatusRequest>`);
+    const kod = xmlDegeri(xml, ["ResponseCode", "StatusCode", "Code", "Status"]);
+    return { belgeRef, durum: zarfDurumu(kod), detay: xmlDegeri(xml, ["Description", "StatusDescription", "Message"]) };
   }
 
   async gelenBelgeleriCek(_cfg: EntegratorConfig, _sonrasi: Date): Promise<GelenBelge[]> {
@@ -339,6 +332,7 @@ export class SovosEntegratorAdapter implements EntegratorAdapter {
    */
   async durumSorgulaToplu(cfg: EntegratorConfig, belgeRefleri: string[]): Promise<BelgeDurumSonuc[]> {
     const sonuc: BelgeDurumSonuc[] = [];
+    let sonHata: unknown;
     for (let i = 0; i < belgeRefleri.length; i += 20) {
       const grup = belgeRefleri.slice(i, i + 20);
       try {
@@ -352,10 +346,13 @@ export class SovosEntegratorAdapter implements EntegratorAdapter {
         // Yanıtta karşılığı dönmeyen zarf sorgulanmamış sayılır; "hata" yazmak
         // kaydı yanlışlıkla son duruma taşır ve bir daha sorgulanmaz olurdu.
       } catch (hata) {
-        const detay = hata instanceof Error ? hata.message : "Sovos toplu durum sorgusu başarısız";
-        for (const belgeRef of grup) sonuc.push({ belgeRef, durum: "hata", detay });
+        // Sorulamayan grup sonuca eklenmez, sonraki turda yeniden sorulur;
+        // "hata" yazmak geçici kesintiyi kalıcı hataya çevirirdi (EBLG-39).
+        sonHata = hata;
       }
     }
+    // Hiçbir grup sorulamadıysa kesinti çağırana bildirilir.
+    if (sonHata && sonuc.length === 0) throw sonHata;
     return sonuc;
   }
 

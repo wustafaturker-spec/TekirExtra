@@ -470,6 +470,13 @@ describe("NesEntegratorAdapter", () => {
     expect(sonuc.detay).toContain("iptal edilmiş");
   });
 
+  it("çağrı hatasında durum uydurmaz, hatayı yükseltir (EBLG-39)", async () => {
+    // "hata" dönmek belgeyi son duruma taşıyıp takipten düşürüyordu.
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ağ kesildi")));
+    await expect(new NesEntegratorAdapter().durumSorgula(config, "EARSIV:arsiv-9")).rejects.toThrow();
+    await expect(new NesEntegratorAdapter().durumSorgula(config, "belge-1")).rejects.toThrow();
+  });
+
   it("gelen e-İrsaliyede göndereni despatchSupplierParty'den okur", async () => {
     // NES fatura akışında `accountingSupplierParty`, irsaliyede
     // `despatchSupplierParty` diyor; fatura adını aramak göndereni boş

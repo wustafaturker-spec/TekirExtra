@@ -10,7 +10,7 @@ import {
   forwardRef,
 } from "@nestjs/common";
 import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
-import type { EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
+import type { BelgeDurumSonuc, EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
 import { vknTcknGecerliMi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
@@ -25,7 +25,7 @@ import { adSoyadCoz } from "../cari/ad-soyad";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import { MukellefListesiService } from "./mukellef-listesi.service";
 import { takiliRezervasyonKosulu, takiliRezervasyonMu } from "./takili-rezervasyon";
-import { durumSorgusuEngeli } from "./durum-sorgusu";
+import { SON_EBELGE_DURUMLARI, durumSorgusuEngeli } from "./durum-sorgusu";
 import { belgeNoyuUbleYaz, faturaUblUret } from "./xml-uretec";
 
 /** Onay ekranında satırın hangi ipucuyla eşleştiği. */
@@ -372,8 +372,9 @@ export class EbelgeService {
         throw new BadRequestException("Gönderimi yapılmamış belgenin durumu sorgulanamaz");
       }
 
-      // Eğer zaten son duruma (kabul/ret/hata) ulaşmışsa entegratöre gitme
-      if (["kabul", "ret", "hata"].includes(ebelge.durum)) {
+      // Son duruma ulaşmış belge için entegratöre gidilmez; iptal edilmiş belge
+      // sorguyla "iletildi"ye geri dönmemeli (EBLG-39).
+      if (SON_EBELGE_DURUMLARI.includes(ebelge.durum)) {
         return ebelge;
       }
 
@@ -385,21 +386,53 @@ export class EbelgeService {
       const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
       const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
 
-      // Entegratörden güncel durumu sorgula
+      // Entegratöre ulaşılamazsa kayda dokunulmaz, kullanıcıya söylenir:
+      // geçici kesinti belgeyi hatalı göstermemeli (EBLG-39).
       this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "durumSorgula", saglayici: baglanti.saglayici });
-      const sonuc = await adapter.durumSorgula(cfg, ebelge.entegratorRef);
-
-      // Durumu veritabanında güncelle. `sonDurumSorguAt` yazılır ki zamanlanmış
-      // toplu tarama aynı zarfı iki saat dolmadan tekrar sormasın (EBLG-14).
-      return tx.ebelgeKayit.update({
-        where: { id: ebelge.id },
-        data: {
-          durum: sonuc.durum,
-          ...durumAciklamasi(sonuc, ebelge.aliciYanitNotu),
-          sonDurumSorguAt: new Date(),
-        },
-      });
+      const entegratorRef = ebelge.entegratorRef;
+      const sonuc = await this.entegratordenOku(() => adapter.durumSorgula(cfg, entegratorRef));
+      return this.durumSonucunuYaz(tx, ebelge, sonuc);
     });
+  }
+
+  /**
+   * Durum sonucunu kayda yazar. `sonDurumSorguAt` yazılır ki zamanlanmış toplu
+   * tarama aynı zarfı iki saat dolmadan tekrar sormasın (EBLG-14).
+   *
+   * Sağlayıcıda iptal edilmiş e-Arşiv belgesi (ör. entegratör portalından)
+   * kayıtta `iptal` olur (EBLG-39). Fatura kendiliğinden iptal edilmez: stok ve
+   * cari ters hareketleri kullanıcının kararıdır, muhasebeye haber verilir.
+   */
+  private async durumSonucunuYaz(
+    tx: Prisma.TransactionClient,
+    kayit: { id: string; faturaId: string; durum: string; aliciYanitNotu: string | null },
+    sonuc: BelgeDurumSonuc,
+  ) {
+    const guncel = await tx.ebelgeKayit.update({
+      where: { id: kayit.id },
+      data: {
+        durum: sonuc.iptalEdilmis ? "iptal" : sonuc.durum,
+        ...durumAciklamasi(sonuc, kayit.aliciYanitNotu),
+        sonDurumSorguAt: new Date(),
+      },
+    });
+    if (sonuc.iptalEdilmis && kayit.durum !== "iptal") {
+      const fatura = await tx.fatura.findUnique({ where: { id: kayit.faturaId }, select: { no: true, durum: true } });
+      if (fatura && fatura.durum !== "iptal") {
+        await this.bildirimler.uret({
+          tur: "ebelge",
+          onem: "uyari",
+          baslik: `${fatura.no ?? "e-Arşiv faturası"} entegratörde iptal edilmiş`,
+          aciklama: "e-Arşiv belgesi entegratör tarafında (ör. portaldan) iptal edildi ama fatura uygulamada hâlâ kesin. Faturayı iptal ederek stok ve cari hareketlerini geri alın.",
+          birlesimAnahtari: `earsiv-entegrator-iptal:${kayit.faturaId}`,
+          kaynakTur: "fatura",
+          kaynakRef: kayit.faturaId,
+          hedefYol: `/panel/fatura?fatura=${kayit.faturaId}`,
+          roller: ["muhasebe", "yonetici"],
+        });
+      }
+    }
+    return guncel;
   }
 
   /**
@@ -411,13 +444,13 @@ export class EbelgeService {
    * seçilmez ve her sorgudan sonra `sonDurumSorguAt` işaretlenir; böylece aynı
    * zarf iki saat dolmadan yeniden sorulmaz.
    */
-  async durumlariTopluSorgula(): Promise<{ sorgulanan: number; guncellenen: number }> {
+  async durumlariTopluSorgula(): Promise<{ sorgulanan: number; guncellenen: number; atlanan: number }> {
     const { tenantId } = aktifBaglam();
 
     const baglanti = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } }),
     );
-    if (!baglanti) return { sorgulanan: 0, guncellenen: 0 };
+    if (!baglanti) return { sorgulanan: 0, guncellenen: 0, atlanan: 0 };
 
     const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
     const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
@@ -431,11 +464,11 @@ export class EbelgeService {
           entegratorRef: { not: null },
           OR: [{ sonDurumSorguAt: null }, { sonDurumSorguAt: { lt: esik } }],
         },
-        select: { id: true, entegratorRef: true, aliciYanitNotu: true },
+        select: { id: true, faturaId: true, durum: true, entegratorRef: true, aliciYanitNotu: true },
         take: 500,
       }),
     );
-    if (kayitlar.length === 0) return { sorgulanan: 0, guncellenen: 0 };
+    if (kayitlar.length === 0) return { sorgulanan: 0, guncellenen: 0, atlanan: 0 };
 
     const refKayit = new Map(kayitlar.map((k) => [k.entegratorRef!, k]));
     // e-Arşiv referansları zarf sorgusuna girmez; ayrı servisin tekil durum
@@ -443,38 +476,43 @@ export class EbelgeService {
     const zarflar = [...refKayit.keys()].filter((ref) => !ref.startsWith("EARSIV:"));
     const digerleri = [...refKayit.keys()].filter((ref) => ref.startsWith("EARSIV:"));
 
-    const sonuclar = [];
+    // Entegratöre ulaşılamayan zarfa ya da belgeye dokunulmaz, sonraki turda
+    // yeniden sorulur; çağrı hatası belgeyi `hata`ya taşıyıp takipten
+    // düşürmemeli (EBLG-39). Bir çağrının düşmesi diğerlerini de durdurmaz.
+    const sonuclar: BelgeDurumSonuc[] = [];
+    const oku = async (islem: () => Promise<BelgeDurumSonuc[]>) => {
+      try {
+        sonuclar.push(...(await islem()));
+      } catch (hata) {
+        this.logger.warn(JSON.stringify({ event: "ebelge_durum_sorgusu_atlandi", tenantId, hata: hata instanceof Error ? hata.message : String(hata) }));
+      }
+    };
     if (zarflar.length > 0) {
       if (adapter.durumSorgulaToplu) {
         this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "durumSorgulaToplu", saglayici: baglanti.saglayici }, Math.ceil(zarflar.length / 20));
-        sonuclar.push(...(await adapter.durumSorgulaToplu(cfg, zarflar)));
+        await oku(() => adapter.durumSorgulaToplu!(cfg, zarflar));
       } else {
         for (const ref of zarflar) {
           this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "durumSorgula", saglayici: baglanti.saglayici });
-          sonuclar.push(await adapter.durumSorgula(cfg, ref));
+          await oku(async () => [await adapter.durumSorgula(cfg, ref)]);
         }
       }
     }
     for (const ref of digerleri) {
       this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "durumSorgula", saglayici: baglanti.saglayici });
-      sonuclar.push(await adapter.durumSorgula(cfg, ref));
+      await oku(async () => [await adapter.durumSorgula(cfg, ref)]);
     }
 
     let guncellenen = 0;
     for (const sonuc of sonuclar) {
       const kayit = refKayit.get(sonuc.belgeRef);
       if (!kayit) continue;
-      await this.prisma.tenantIslem(tenantId, (tx) =>
-        tx.ebelgeKayit.update({
-          where: { id: kayit.id },
-          data: { durum: sonuc.durum, ...durumAciklamasi(sonuc, kayit.aliciYanitNotu), sonDurumSorguAt: new Date() },
-        }),
-      );
+      await this.prisma.tenantIslem(tenantId, (tx) => this.durumSonucunuYaz(tx, kayit, sonuc));
       guncellenen += 1;
     }
 
     this.metrics.increment("ebelge_durum_toplu_sorgu_total", {}, 1);
-    return { sorgulanan: refKayit.size, guncellenen };
+    return { sorgulanan: refKayit.size, guncellenen, atlanan: refKayit.size - guncellenen };
   }
 
   // ─── GİB MÜKELLEF LİSTESİ (EBLG-10) ────────────────────────────────────────
