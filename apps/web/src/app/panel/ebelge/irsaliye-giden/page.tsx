@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import { EbelgeAdimSeridi } from "@/components/durum-gecmisi";
 import { Alert, Badge, Button, Card, Field, Input, Select, TableWrap } from "@/components/ui";
 
 type Durum = "gonderilmedi" | "kuyrukta" | "iletildi" | "kabul" | "kismi_kabul" | "ret" | "hata";
@@ -340,6 +341,7 @@ export default function GidenEirsaliyeler() {
             </div>
             <button aria-label="Kapat" onClick={() => setDetay(null)}>×</button>
           </header>
+          <EbelgeAdimSeridi akis={{ tur: "eirsaliye", durum: detay.durum }} />
           <section className="incoming-drawer__summary">
             <div><span>Alıcı</span><strong>{detay.cariUnvan}</strong><small>{gun(detay.tarih)}</small></div>
             <div><span>Gönderim</span><strong>{an(detay.gonderimZamani)}</strong><small>{an(detay.sonDurumSorguAt) ? `Son sorgu ${an(detay.sonDurumSorguAt)}` : "Henüz sorgulanmadı"}</small></div>

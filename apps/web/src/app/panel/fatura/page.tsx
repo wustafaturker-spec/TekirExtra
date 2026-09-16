@@ -1636,7 +1636,16 @@ export default function FaturaSayfasi() {
               </div>
             )}
             {/* EBLG-35: kayıt güncellendikçe key değişir, geçmiş yeniden yüklenir. */}
-            <DurumGecmisi key={ebelgeDetayi.ebelge.updatedAt} adres={`/fatura/${ebelgeDetayi.id}/durum-gecmisi`} />
+            <DurumGecmisi
+              key={ebelgeDetayi.ebelge.updatedAt}
+              adres={`/fatura/${ebelgeDetayi.id}/durum-gecmisi`}
+              akis={{
+                tur: ebelgeDetayi.ebelge.tur === "earsiv" ? "earsiv" : "efatura",
+                profil: ebelgeDetayi.efaturaProfili ?? "temel",
+                durum: ebelgeDetayi.durum === "iptal" ? "iptal" : ebelgeDetayi.ebelge.durum,
+                aliciYaniti: ebelgeDetayi.ebelge.aliciYaniti ?? null,
+              }}
+            />
             <div className="quick-panel__actions">
               <Button type="button" onClick={() => setEbelgeDetayi(null)}>Kapat</Button>
               {ebelgeDetayi.ebelge.entegratorRef && ["kuyrukta", "iletildi"].includes(ebelgeDetayi.ebelge.durum) && <Button type="button" variant="primary" onClick={() => void ebelgeSorgula(ebelgeDetayi.id)}>Durumu sorgula</Button>}

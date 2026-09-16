@@ -905,7 +905,13 @@ export default function BelgelerSayfasi() {
           {detay.tur === "irsaliye" && detay.yon === "satis" && detay.eirsaliye?.durum === "hata" && <div className="row-tight" style={{ margin: "0 0 1rem" }}><span className="muted">{detay.eirsaliye.hataMesaji ?? "Gönderim başarısız."}</span><Button size="sm" variant="primary" onClick={() => void eirsaliyeGonder(detay.id)}>Tekrar gönder</Button></div>}
           {/* EBLG-35: e-İrsaliye ve bağlı fatura durum geçmişi; durum değiştikçe yeniden yüklenir. */}
           {(detay.eirsaliye || detay.fatura) && (
-            <DurumGecmisi key={`${detay.id}-${detay.eirsaliye?.durum ?? ""}-${detay.fatura?.durum ?? ""}-${detay.fatura?.ebelge?.durum ?? ""}`} adres={`/belgeler/${detay.id}/durum-gecmisi`} />
+            <DurumGecmisi
+              key={`${detay.id}-${detay.eirsaliye?.durum ?? ""}-${detay.fatura?.durum ?? ""}-${detay.fatura?.ebelge?.durum ?? ""}`}
+              adres={`/belgeler/${detay.id}/durum-gecmisi`}
+              // Şerit yalnız e-İrsaliye gönderilmiş irsaliyede anlamlı; teklif
+              // ve siparişin resmi bir e-Belge akışı yoktur.
+              akis={detay.tur === "irsaliye" && detay.eirsaliye ? { tur: "eirsaliye", durum: detay.durum === "iptal" ? "iptal" : detay.eirsaliye.durum } : undefined}
+            />
           )}
           <TableWrap>
             <thead>

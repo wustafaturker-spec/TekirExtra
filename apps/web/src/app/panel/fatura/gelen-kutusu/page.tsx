@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, apiPdfAc, tokenAl } from "@/lib/api";
+import { EbelgeAdimSeridi } from "@/components/durum-gecmisi";
 import {
   Alert,
   Badge,
@@ -663,6 +664,9 @@ export default function GelenKutusuSayfasi() {
           tone="accent"
         />
       </StatGrid>
+
+      {/* EBLG-45: gelen belgede akış terstir — belge bize ulaşır, yanıtı biz veririz. */}
+      <EbelgeAdimSeridi akis={{ tur: "gelen_efatura", durum: detay.durum }} />
 
       <Card
         style={{

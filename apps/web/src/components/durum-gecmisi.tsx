@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { ebelgeAdimlari, type AkisGirdisi } from "@/lib/ebelge-adimlari";
 
 /** EBLG-35: belge durum geçmişi; satırları veritabanı tetikleyicisi yazar. */
 interface DurumGecmisiSatiri {
@@ -36,11 +37,41 @@ const DURUM_ADI: Record<string, string> = {
 
 const durumAdi = (durum: string) => DURUM_ADI[durum] ?? durum;
 
+const ADIM_SIMGESI: Record<string, string> = { tamam: "✓", suanki: "•", hata: "!", iptal: "×", bekliyor: "" };
+
 /**
- * Durum geçmişini en yeni üstte listeler. Güncel veriyi yeniden çekmek için
- * çağıran `key` değiştirir (ör. kaydın son güncellenme zamanı).
+ * EBLG-45: belgenin resmi akıştaki yerini gösteren şerit. Geçmiş listesi "ne
+ * oldu"yu, şerit "neredeyiz"i anlatır; zaman damgaları geçmiş kayıtlarından
+ * eşleştirilir, kaydı olmayan adımda boş kalır.
  */
-export function DurumGecmisi({ adres, baslik = "Durum geçmişi" }: { adres: string; baslik?: string }) {
+export function EbelgeAdimSeridi({ akis, gecmis = [] }: { akis: AkisGirdisi; gecmis?: DurumGecmisiSatiri[] }) {
+  const zamanBul = (kaynak?: { eksen: string; yeniDurum: string }) => {
+    if (!kaynak) return null;
+    const kayit = gecmis.find((k) => k.eksen === kaynak.eksen && k.yeniDurum === kaynak.yeniDurum);
+    return kayit ? new Date(kayit.zaman).toLocaleString("tr-TR") : null;
+  };
+
+  return (
+    <ol aria-label="Belge durum adımları" className="ebelge-steps">
+      {ebelgeAdimlari(akis).map((adim) => {
+        const zaman = zamanBul(adim.kaynak);
+        return (
+          <li className={`ebelge-steps__item is-${adim.durum}`} key={adim.anahtar}>
+            <strong><i aria-hidden="true">{ADIM_SIMGESI[adim.durum]}</i>{adim.baslik}</strong>
+            <small>{adim.not ?? zaman ?? (adim.durum === "suanki" ? "Bekleniyor" : adim.durum === "bekliyor" ? "Sırada" : "")}</small>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/**
+ * Durum geçmişini en yeni üstte listeler; `akis` verilirse üstünde resmi adım
+ * şeridi (EBLG-45) gösterir. Güncel veriyi yeniden çekmek için çağıran `key`
+ * değiştirir (ör. kaydın son güncellenme zamanı).
+ */
+export function DurumGecmisi({ adres, baslik = "Durum geçmişi", akis }: { adres: string; baslik?: string; akis?: AkisGirdisi }) {
   const [kayitlar, setKayitlar] = useState<DurumGecmisiSatiri[] | null>(null);
   const [hata, setHata] = useState("");
 
@@ -56,6 +87,7 @@ export function DurumGecmisi({ adres, baslik = "Durum geçmişi" }: { adres: str
 
   return (
     <section aria-label={baslik} style={{ marginTop: "1rem" }}>
+      {akis && <EbelgeAdimSeridi akis={akis} gecmis={kayitlar ?? []} />}
       <h4 className="card__title" style={{ fontSize: "0.95rem", margin: "0 0 0.5rem" }}>{baslik}</h4>
       {hata && <p className="muted">{hata}</p>}
       {!hata && kayitlar === null && <p className="muted">Yükleniyor…</p>}

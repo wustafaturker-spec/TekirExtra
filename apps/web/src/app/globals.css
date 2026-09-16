@@ -1560,6 +1560,26 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 .status-history__item strong { font-size: 0.82rem; }
 .status-history__item small { color: var(--text-muted); font-size: 0.72rem; }
 
+/* e-Belge resmi durum adımları (EBLG-45): yatay şerit, dar ekranda sarar. */
+.ebelge-steps { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.9rem; }
+.ebelge-steps__item {
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  display: grid;
+  flex: 1 1 8.5rem;
+  gap: 0.15rem;
+  padding: 0.55rem 0.7rem;
+}
+.ebelge-steps__item strong { align-items: center; display: flex; font-size: 0.78rem; gap: 0.35rem; }
+.ebelge-steps__item small { color: var(--text-muted); font-size: 0.7rem; }
+.ebelge-steps__item i { font-size: 0.8rem; font-style: normal; }
+.ebelge-steps__item.is-tamam { background: var(--success-soft); border-color: var(--success); color: var(--success); }
+.ebelge-steps__item.is-suanki { background: var(--info-soft); border-color: var(--accent); }
+.ebelge-steps__item.is-hata { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); }
+.ebelge-steps__item.is-iptal { color: var(--text-muted); opacity: 0.65; }
+.ebelge-steps__item.is-bekliyor { color: var(--text-muted); }
+
 /* Fatura / belge form çalışma alanı */
 .document-editor {
   background: var(--surface);
