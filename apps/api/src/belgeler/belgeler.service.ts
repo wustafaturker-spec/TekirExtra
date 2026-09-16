@@ -98,7 +98,13 @@ export class BelgelerService {
     const where: Prisma.BelgeWhereInput = {
       ...(tur ? { tur: tur as BelgeTur } : {}),
       ...(yon ? { yon: yon as "satis" | "alis" } : {}),
-      ...(durum ? { durum: durum as ZincirBelgeDurum } : {}),
+      // SAT-10: virgülle birden çok durum verilebilir ("onaylandi,kismen_kapandi")
+      ...(durum
+        ? (() => {
+            const durumlar = durum.split(",").map((d) => d.trim()).filter(Boolean) as ZincirBelgeDurum[];
+            return durumlar.length > 1 ? { durum: { in: durumlar } } : { durum: durumlar[0] };
+          })()
+        : {}),
       ...(baslangicTarihi || bitisTarihi ? { tarih: { ...(baslangicTarihi ? { gte: baslangicTarihi } : {}), ...(bitisTarihi ? { lte: bitisTarihi } : {}) } } : {}),
       ...(arama
         ? {
@@ -153,7 +159,8 @@ export class BelgelerService {
             kaynakBelge: { select: { id: true, tur: true, no: true, durum: true } },
           } },
           turetilenler: { select: {
-            id: true, tur: true, no: true, durum: true,
+            id: true, tur: true, no: true, durum: true, tarih: true,
+            satirlar: { select: { kaynakSatirId: true, miktar: true, birim: true, stok: { select: { kod: true, ad: true } } } },
             turetilenler: { select: { id: true, tur: true, no: true, durum: true } },
           } },
           fatura: {
@@ -202,6 +209,26 @@ export class BelgelerService {
         kdvTutari: s.kdvTutari.toFixed(2),
         toplamTutar: s.toplamTutar.toFixed(2),
       })),
+      // SAT-10: siparişin teslim geçmişi — hangi irsaliye, ne zaman, ne kadar.
+      // İptal edilen irsaliye teslim sayılmaz, listede de yer almaz.
+      teslimatlar:
+        kayit.tur === "siparis"
+          ? kayit.turetilenler
+              .filter((t) => t.tur === "irsaliye" && t.durum !== "iptal")
+              .map((t) => ({
+                id: t.id,
+                no: t.no,
+                durum: t.durum,
+                tarih: t.tarih.toISOString().slice(0, 10),
+                kalemler: t.satirlar.map((s) => ({
+                  satirId: s.kaynakSatirId,
+                  stokKod: s.stok.kod,
+                  stokAd: s.stok.ad,
+                  miktar: s.miktar.toFixed(3),
+                  birim: s.birim,
+                })),
+              }))
+          : [],
       // Zincir izleme (FTR-12): tüm teklif, sipariş ve irsaliye halkaları
       zincirBelgeleri: [...zincirBelgeleri.values()],
       kaynakBelge: kayit.kaynakBelge,

@@ -68,6 +68,12 @@ export default function SatinAlmaCalismaAlani() {
           ton: "warning",
         },
         {
+          href: "/panel/belgeler?tur=siparis&yon=alis&durum=onaylandi%2Ckismen_kapandi",
+          baslik: "Mal kabul bekleyen siparişler",
+          aciklama: "Tedarikçiden tamamı gelmemiş alış siparişleri; kalanı irsaliyeye dönüştürün",
+          ton: "warning",
+        },
+        {
           href: "/panel/fatura/gelen-kutusu",
           baslik: "Kontrol bekleyen e-Belgeler",
           aciklama: "Cari ve stok eşleştirmesi tamamlanacak belgeler",

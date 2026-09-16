@@ -234,4 +234,56 @@ describe("BelgelerService", () => {
     expect(tx.belge.update).toHaveBeenCalledWith({ where: { id: "sip1" }, data: { durum: "onaylandi" } });
     expect(tx.belge.update).toHaveBeenCalledWith({ where: { id: "irs1" }, data: { durum: "iptal" } });
   });
+
+  it("teslim geçmişinde iptal edilen irsaliyeyi saymaz (SAT-10)", async () => {
+    const siparisSatiri = {
+      id: "s1", stokId: "stk1", varyantId: null, partiBilgileri: null,
+      miktar: D("100"), teslimEdilenMiktar: D("40"), birim: "adet", birimFiyat: D("10"),
+      iskontoOrani: D(0), iskontoTutari: D(0), genelIskontoPayi: D(0), matrah: D("1000"),
+      kdvOrani: D("20"), kdvTutari: D("200"), tevkifatPay: null, tevkifatPayda: null,
+      tevkifatTutari: D(0), netKdvTutari: D("200"), toplamTutar: D("1200"),
+      stok: { id: "stk1", kod: "STK-1", ad: "Ürün" }, varyant: null,
+    };
+    const irsaliyeSatiri = (miktar: string) => ({
+      kaynakSatirId: "s1", miktar: D(miktar), birim: "adet", stok: { kod: "STK-1", ad: "Ürün" },
+    });
+    const kayit = {
+      id: "sip1", tur: "siparis", yon: "alis", durum: "kismen_kapandi", no: "SIP2026000001",
+      tarih: new Date("2026-09-16"), gecerlilikTarihi: null, cariId: "c1", depoId: "d1",
+      dovizCinsi: "TRY", kur: D(1), genelIskontoYuzdesi: D(0), genelIskontoTutari: D(0),
+      toplamBrut: D("1000"), toplamSatirIskontosu: D(0), genelIskontoToplam: D(0),
+      toplamMatrah: D("1000"), toplamKdv: D("200"), toplamTevkifat: D(0), toplamNetKdv: D("200"),
+      genelToplam: D("1200"), aciklama: null, notlar: null, kaynakBelgeId: null, faturaId: null,
+      cari: { id: "c1", kod: "C1", unvan: "Tedarikçi" },
+      satirlar: [siparisSatiri],
+      kaynakBelge: null,
+      turetilenler: [
+        { id: "irs1", tur: "irsaliye", no: "IRS1", durum: "onaylandi", tarih: new Date("2026-09-16"), satirlar: [irsaliyeSatiri("40")], turetilenler: [] },
+        { id: "irs2", tur: "irsaliye", no: "IRS2", durum: "iptal", tarih: new Date("2026-09-16"), satirlar: [irsaliyeSatiri("25")], turetilenler: [] },
+      ],
+      fatura: null,
+      eirsaliye: null,
+    };
+    const prisma = { tenantIslem: vi.fn((_t: string, calistir: (tx: unknown) => unknown) => calistir({ belge: { findUnique: vi.fn().mockResolvedValue(kayit) } })) } as any;
+    const servis = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any, { irsaliyeSeriOneki: vi.fn() } as any);
+
+    const detay = await servis.getir("sip1");
+
+    expect(detay.teslimatlar).toHaveLength(1);
+    expect(detay.teslimatlar[0]).toMatchObject({ no: "IRS1", kalemler: [{ satirId: "s1", stokKod: "STK-1", miktar: "40.000" }] });
+    // Satırda kalan miktar da görünür (SAT-09)
+    expect(detay.satirlar[0]).toMatchObject({ teslimEdilenMiktar: "40.000", kalanMiktar: "60.000" });
+  });
+
+  it("virgüllü durum süzgecini çoklu duruma çevirir (SAT-10)", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const prisma = { tenantIslem: vi.fn((_t: string, calistir: (tx: unknown) => unknown) => calistir({ belge: { findMany } })) } as any;
+    const servis = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any, { irsaliyeSeriOneki: vi.fn() } as any);
+
+    await servis.listele("siparis", "alis", "onaylandi,kismen_kapandi");
+    expect(findMany.mock.calls[0][0].where).toMatchObject({ durum: { in: ["onaylandi", "kismen_kapandi"] } });
+
+    await servis.listele("siparis", "alis", "onaylandi");
+    expect(findMany.mock.calls[1][0].where).toMatchObject({ durum: "onaylandi" });
+  });
 });

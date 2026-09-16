@@ -99,7 +99,12 @@ interface BelgeDetay extends Belge {
     ebelge: { tur: string; durum: string } | null;
     odemeOzeti: { durum: string; odenen: string; kalan: string };
   } | null;
-  satirlar: { stokId: string; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string }[];
+  satirlar: { id: string; stokId: string; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; teslimEdilenMiktar?: string; kalanMiktar?: string }[];
+  /** SAT-10: siparişin teslim geçmişi (iptal edilen irsaliyeler sayılmaz). */
+  teslimatlar?: {
+    id: string; no: string | null; durum: string; tarih: string;
+    kalemler: { satirId: string | null; stokKod: string; stokAd: string; miktar: string; birim: string }[];
+  }[];
 }
 
 const tl = (d: string | number, doviz = "TL"): string =>
@@ -107,6 +112,11 @@ const tl = (d: string | number, doviz = "TL"): string =>
 const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
 function csvHucre(deger: string | number | null): string {
   return "\"" + String(deger ?? "").replaceAll("\"", "\"\"") + "\"";
+}
+
+/** SAT-10: satır bazında miktar yalnız siparişten irsaliyeye dönüşümde girilir. */
+function kismiTeslimVar(belge: { tur: string }, hedef: string) {
+  return belge.tur === "siparis" && hedef === "irsaliye";
 }
 
 function durumRozet(durum: string) {
@@ -138,6 +148,8 @@ export default function BelgelerSayfasi() {
   const [yonBaglami, setYonBaglami] = useState<Yon | null>(null);
   const [onayBekleyen, setOnayBekleyen] = useState<BelgeDetay | null>(null);
   const [donusumBekleyen, setDonusumBekleyen] = useState<{ belge: BelgeDetay; hedef: "siparis" | "irsaliye" | "fatura" } | null>(null);
+  /** SAT-10: siparişten irsaliyeye dönüşümde satır başına teslim miktarı. */
+  const [teslimMiktarlari, setTeslimMiktarlari] = useState<Record<string, string>>({});
   const [durumFiltresi, setDurumFiltresi] = useState<string | null>(null);
   const [kayitliGorunumler, setKayitliGorunumler] = useState<BelgeGorunumu[]>([]);
   const [gorunumFormuAcik, setGorunumFormuAcik] = useState(false);
@@ -442,10 +454,10 @@ export default function BelgelerSayfasi() {
     }
   }
 
-  async function donustur(id: string, hedef: string) {
+  async function donustur(id: string, hedef: string, kalemler?: { satirId: string; miktar: string }[]) {
     setHata(""); setBasari("");
     try {
-      await api(`/belgeler/${id}/donustur`, { method: "POST", body: JSON.stringify({ hedef }) });
+      await api(`/belgeler/${id}/donustur`, { method: "POST", body: JSON.stringify({ hedef, ...(kalemler?.length ? { kalemler } : {}) }) });
       setBasari(hedef === "fatura" ? "Belge faturaya dönüştürüldü (taslak fatura oluştu)." : `Belge ${TUR_ADI[hedef] ?? hedef}'e dönüştürüldü.`);
       if (detay?.id === id) await detayAc(id);
       void yukle();
@@ -467,7 +479,15 @@ export default function BelgelerSayfasi() {
   async function donusumOzetiAc(id: string, hedef: "siparis" | "irsaliye" | "fatura") {
     setHata("");
     try {
-      setDonusumBekleyen({ belge: await api<BelgeDetay>(`/belgeler/${id}`), hedef });
+      const belge = await api<BelgeDetay>(`/belgeler/${id}`);
+      // SAT-10: teslim miktarı varsayılan olarak satırın kalanıdır; kalanı
+      // bitmiş satır dönüşüme hiç girmez.
+      setTeslimMiktarlari(
+        kismiTeslimVar(belge, hedef)
+          ? Object.fromEntries(belge.satirlar.filter((s) => Number(s.kalanMiktar ?? s.miktar) > 0).map((s) => [s.id, String(Number(s.kalanMiktar ?? s.miktar))]))
+          : {},
+      );
+      setDonusumBekleyen({ belge, hedef });
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Dönüşüm özeti yüklenemedi");
     }
@@ -476,8 +496,17 @@ export default function BelgelerSayfasi() {
   async function donusumuTamamla() {
     if (!donusumBekleyen) return;
     const { belge, hedef } = donusumBekleyen;
+    const kalemler = kismiTeslimVar(belge, hedef)
+      ? Object.entries(teslimMiktarlari)
+          .filter(([, miktar]) => Number(miktar) > 0)
+          .map(([satirId, miktar]) => ({ satirId, miktar: String(Number(miktar)) }))
+      : undefined;
+    if (kalemler && kalemler.length === 0) {
+      setHata("En az bir satır için teslim miktarı girin");
+      return;
+    }
     setDonusumBekleyen(null);
-    await donustur(belge.id, hedef);
+    await donustur(belge.id, hedef, kalemler);
   }
 
   async function topluFatura() {
@@ -880,7 +909,7 @@ export default function BelgelerSayfasi() {
           )}
           <TableWrap>
             <thead>
-              <tr><th>Ürün</th><th className="num">Miktar</th><th className="num">Birim Fiyat</th><th className="num">İskonto %</th><th className="num">KDV %</th></tr>
+              <tr><th>Ürün</th><th className="num">Miktar</th>{detay.tur === "siparis" && <><th className="num">Teslim</th><th className="num">Kalan</th></>}<th className="num">Birim Fiyat</th><th className="num">İskonto %</th><th className="num">KDV %</th></tr>
             </thead>
             <tbody>
               {detay.satirlar.map((s, i) => {
@@ -889,6 +918,11 @@ export default function BelgelerSayfasi() {
                   <tr key={i}>
                     <td>{st ? `${st.ad} (${st.kod})` : s.stokId}</td>
                     <td className="num">{Number(s.miktar).toLocaleString("tr-TR")} {s.birim}</td>
+                    {/* SAT-09/10: siparişin ne kadarı teslim edildi, ne kadarı bekliyor */}
+                    {detay.tur === "siparis" && <>
+                      <td className="num">{Number(s.teslimEdilenMiktar ?? 0).toLocaleString("tr-TR")}</td>
+                      <td className="num">{Number(s.kalanMiktar ?? s.miktar) > 0 ? <strong>{Number(s.kalanMiktar ?? s.miktar).toLocaleString("tr-TR")}</strong> : "—"}</td>
+                    </>}
                     <td className="num">{tl(s.birimFiyat)}</td>
                     <td className="num">%{Number(s.iskontoOrani)}</td>
                     <td className="num">%{Number(s.kdvOrani)}</td>
@@ -897,6 +931,27 @@ export default function BelgelerSayfasi() {
               })}
             </tbody>
           </TableWrap>
+          {/* SAT-10: hangi irsaliye, ne zaman, ne kadar teslim etti */}
+          {detay.tur === "siparis" && (detay.teslimatlar?.length ?? 0) > 0 && (
+            <section aria-label="Teslim geçmişi">
+              <h3>Teslim geçmişi</h3>
+              <TableWrap>
+                <thead>
+                  <tr><th>İrsaliye</th><th>Tarih</th><th>Durum</th><th>Teslim edilenler</th></tr>
+                </thead>
+                <tbody>
+                  {detay.teslimatlar?.map((t) => (
+                    <tr key={t.id}>
+                      <td><Button size="sm" type="button" onClick={() => void detayAc(t.id)}>{t.no ?? "Taslak irsaliye"}</Button></td>
+                      <td>{t.tarih}</td>
+                      <td>{durumRozet(t.durum)}</td>
+                      <td>{t.kalemler.map((k) => `${k.stokKod}: ${Number(k.miktar).toLocaleString("tr-TR")} ${k.birim}`).join(" · ")}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </TableWrap>
+            </section>
+          )}
         </Card>
       )}
 
@@ -934,12 +989,48 @@ export default function BelgelerSayfasi() {
               <span>{donusumBekleyen.belge.cari.unvan}</span>
             </div>
             <dl>
-              <div><dt>Aktarılacak kalem</dt><dd>{donusumBekleyen.belge.satirlar.length}</dd></div>
+              <div><dt>Aktarılacak kalem</dt><dd>{kismiTeslimVar(donusumBekleyen.belge, donusumBekleyen.hedef) ? Object.values(teslimMiktarlari).filter((m) => Number(m) > 0).length : donusumBekleyen.belge.satirlar.length}</dd></div>
               <div><dt>Genel toplam</dt><dd>{tl(donusumBekleyen.belge.genelToplam, donusumBekleyen.belge.dovizCinsi)}</dd></div>
               <div><dt>Kaynak referansı</dt><dd>{donusumBekleyen.belge.no ?? "Taslak belge"}</dd></div>
             </dl>
+            {/* SAT-10: teslim edilen miktar satır başına girilir; kalanı biten satır listede yer almaz. */}
+            {kismiTeslimVar(donusumBekleyen.belge, donusumBekleyen.hedef) && (
+              <TableWrap>
+                <thead>
+                  <tr><th>Ürün</th><th className="num">Sipariş</th><th className="num">Kalan</th><th className="num">Teslim edilecek</th></tr>
+                </thead>
+                <tbody>
+                  {donusumBekleyen.belge.satirlar.filter((s) => Number(s.kalanMiktar ?? s.miktar) > 0).map((s) => {
+                    const st = stoklar.find((x) => x.id === s.stokId);
+                    const kalan = Number(s.kalanMiktar ?? s.miktar);
+                    const girilen = Number(teslimMiktarlari[s.id] ?? 0);
+                    return (
+                      <tr key={s.id}>
+                        <td>{st ? `${st.ad} (${st.kod})` : s.stokId}</td>
+                        <td className="num">{Number(s.miktar).toLocaleString("tr-TR")} {s.birim}</td>
+                        <td className="num">{kalan.toLocaleString("tr-TR")}</td>
+                        <td className="num">
+                          <Input
+                            aria-label={`${st?.ad ?? "Satır"} için teslim miktarı`}
+                            aria-invalid={girilen > kalan}
+                            max={kalan}
+                            min={0}
+                            step="0.001"
+                            type="number"
+                            value={teslimMiktarlari[s.id] ?? ""}
+                            onChange={(e) => setTeslimMiktarlari((onceki) => ({ ...onceki, [s.id]: e.target.value }))}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </TableWrap>
+            )}
             <div className="approval-impact">
-              Cari, belge kalemleri, fiyatlar, iskontolar, vergiler ve kaynak belge referansı yeni taslağa aktarılacak. Kaynak belge kapatılacak.
+              {kismiTeslimVar(donusumBekleyen.belge, donusumBekleyen.hedef)
+                ? "Girilen miktarlar için taslak irsaliye oluşturulacak. Kalanı olan sipariş açık kalır ve sonraki teslimlerde yeniden dönüştürülebilir; stok etkisi fatura kesinleştiğinde oluşur."
+                : "Cari, belge kalemleri, fiyatlar, iskontolar, vergiler ve kaynak belge referansı yeni taslağa aktarılacak. Kaynak belge kapatılacak."}
             </div>
             <div className="quick-panel__actions">
               <Button type="button" onClick={() => setDonusumBekleyen(null)}>Vazgeç</Button>
@@ -952,7 +1043,7 @@ export default function BelgelerSayfasi() {
       <section className="saved-view-bar" aria-label="Belge görünümü ve filtreleri">
         <div className="saved-view-filters">
           <Field label="Yön" htmlFor="belge-yon-filtresi"><Select id="belge-yon-filtresi" value={yonBaglami ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: (e.target.value || null) as Yon | null, durum: durumFiltresi })}><option value="">Tümü</option><option value="satis">Satış</option><option value="alis">Satın alma</option></Select></Field>
-          <Field label="Belge durumu" htmlFor="belge-durum-filtresi"><Select id="belge-durum-filtresi" value={durumFiltresi ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: yonBaglami, durum: e.target.value || null })}><option value="">Tümü</option><option value="taslak">Taslak</option><option value="onaylandi">Onaylı</option><option value="kismen_kapandi">Kısmen teslim</option><option value="kapandi">Kapandı</option><option value="iptal">İptal</option></Select></Field>
+          <Field label="Belge durumu" htmlFor="belge-durum-filtresi"><Select id="belge-durum-filtresi" value={durumFiltresi ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: yonBaglami, durum: e.target.value || null })}><option value="">Tümü</option><option value="taslak">Taslak</option><option value="onaylandi">Onaylı</option><option value="kismen_kapandi">Kısmen teslim</option><option value="onaylandi,kismen_kapandi">Teslim bekleyen</option><option value="kapandi">Kapandı</option><option value="iptal">İptal</option></Select></Field>
           <Field label="Başlangıç tarihi"><Input aria-label="Başlangıç tarihi" type="date" value={tarihBaslangic} onChange={(e) => tarihFiltresiDegistir("baslangic", e.target.value)} /></Field>
           <Field label="Bitiş tarihi"><Input aria-label="Bitiş tarihi" type="date" min={tarihBaslangic || undefined} value={tarihBitis} onChange={(e) => tarihFiltresiDegistir("bitis", e.target.value)} /></Field>
           <Field label="Kaydedilmiş görünüm"><Select aria-label="Kaydedilmiş görünüm" value="" onChange={(e) => { const gorunum = kayitliGorunumler.find((g) => g.id === e.target.value); if (gorunum) kayitliGorunumuUygula(gorunum); }}><option value="">Görünüm seçin</option>{kayitliGorunumler.map((g) => <option value={g.id} key={g.id}>{g.ad}</option>)}</Select></Field>
