@@ -65,6 +65,8 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
     ikon: "🛒",
     alanlar: [
       { ad: "onayEsigi", etiket: "Onay eşiği (TL)", tip: "sayi", min: 0, max: 1_000_000_000, ipucu: "Tahmini tutar eşik ve altındaysa muhasebe, üstündeyse yönetici onaylar (SAT-03)" },
+      { ad: "miktarToleransYuzde", etiket: "Miktar toleransı (%)", tip: "sayi", min: 0, max: 100, ipucu: "Fatura miktarı mal kabulden bu oranın üstünde ayrılırsa Düzeltme Merkezi'ne fark düşer (SAT-11)" },
+      { ad: "fiyatToleransYuzde", etiket: "Fiyat toleransı (%)", tip: "sayi", min: 0, max: 100, ipucu: "Fatura birim fiyatı siparişten bu oranın üstünde ayrılırsa Düzeltme Merkezi'ne fark düşer (SAT-11)" },
     ],
   },
   kasaBanka: {

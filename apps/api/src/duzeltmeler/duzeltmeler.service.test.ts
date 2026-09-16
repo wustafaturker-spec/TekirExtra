@@ -34,7 +34,7 @@ describe("DuzeltmelerService", () => {
     tx.fatura.findMany.mockResolvedValue([]);
     tx.duzeltmeKaydi.findMany.mockResolvedValue([]);
     tx.duzeltmeKaydi.upsert.mockResolvedValue({});
-    service = new DuzeltmelerService(prisma as never);
+    service = new DuzeltmelerService(prisma as never, { getir: vi.fn().mockResolvedValue({ miktarToleransYuzde: 1, fiyatToleransYuzde: 1 }) } as never);
   });
 
   it("aynı kaynak için deterministik tekillik anahtarıyla upsert yapar", async () => {

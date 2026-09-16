@@ -95,6 +95,13 @@ registerModulAyar(
      * altındaysa muhasebe, üstündeyse yönetici onaylar.
      */
     onayEsigi: z.number().min(0).max(1_000_000_000),
+    /**
+     * SAT-11: üçlü eşleştirmede fark sayılmayan sapma (%). Faturanın miktarı
+     * mal kabulden, birim fiyatı siparişten bu oranın üstünde ayrılırsa
+     * Düzeltme Merkezi'ne kayıt düşer; fatura yine de kesilebilir.
+     */
+    miktarToleransYuzde: z.number().min(0).max(100),
+    fiyatToleransYuzde: z.number().min(0).max(100),
   }),
-  { onayEsigi: 25_000 },
+  { onayEsigi: 25_000, miktarToleransYuzde: 1, fiyatToleransYuzde: 1 },
 );

@@ -126,7 +126,8 @@ describe("BildirimUreticiService.tara", () => {
     expect(bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({ birlesimAnahtari: "satin_alma:talep:t2", roller: ["yonetici"] }));
     const cagri = bildirimler.kapatEksikleri.mock.calls.find(([tur]) => tur === "satin_alma");
     expect(cagri?.[1]).toEqual(["satin_alma:talep:t1", "satin_alma:talep:t2"]);
-    expect(cagri?.[2]).toEqual(["satin_alma:"]);
+    // SAT-11: üçlü eşleştirme farkı da bu türe düştüğü için "duzeltme:" öneki de kapatılır
+    expect(cagri?.[2]).toEqual(["duzeltme:", "satin_alma:"]);
   });
 
   it("entegratörde iptal edilmiş belgeyi fatura kesin kaldıkça hatırlatır (EBLG-39)", async () => {

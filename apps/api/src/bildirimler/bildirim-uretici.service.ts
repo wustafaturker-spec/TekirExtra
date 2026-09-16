@@ -37,6 +37,7 @@ const DUZELTME_TUR_ESLEMESI: Record<DuzeltmeTuru, BildirimTuru> = {
   stok: "stok",
   cek_senet: "cek_senet",
   fatura_cari: "duzeltme",
+  satin_alma: "satin_alma",
 };
 
 /**
@@ -54,7 +55,7 @@ const TARAMA_ONEKLERI: Record<BildirimTuru, string[]> = {
   stok: ["duzeltme:", "stok_kritik:", "stok_sayim:"],
   donem: ["duzeltme:", "donem:"],
   entegrasyon: ["duzeltme:"],
-  satin_alma: ["satin_alma:"],
+  satin_alma: ["duzeltme:", "satin_alma:"],
 };
 
 function gunAnahtari(tarih = new Date()): string {

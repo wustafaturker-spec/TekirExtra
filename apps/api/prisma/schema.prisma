@@ -97,6 +97,8 @@ enum DuzeltmeTuru {
   stok
   cek_senet
   fatura_cari
+  /// SAT-11: sipariş–mal kabul–fatura arasındaki miktar/fiyat farkı
+  satin_alma
 }
 
 model Tenant {
