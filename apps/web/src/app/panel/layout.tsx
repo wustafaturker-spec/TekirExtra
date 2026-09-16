@@ -7,7 +7,7 @@ import { api, tokenAl, tokenYaz } from "@/lib/api";
 import { rolMenuYoluGorebilir } from "@/lib/rol-yetkileri";
 import { ThemeConfiguratorDrawer } from "@/components/theme-configurator-drawer";
 import { KomutPaleti } from "@/components/komut-paleti";
-import { AYARLAR, MENU, type MenuOge } from "@/lib/menu";
+import { AYARLAR, MENU, menuOgesiAktifMi, type MenuOge } from "@/lib/menu";
 import { Bell, ChevronRight, CircleHelp, LogOut, Menu as MenuIkonu, Search, Settings } from "lucide-react";
 
 const ROL_ADI: Record<string, string> = {
@@ -274,12 +274,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   }
 
   function aktifMi(oge: MenuOge): boolean {
-    const [hedefYol, hedefSorgu = ""] = oge.href.split("?");
-    const yolEslesiyor = oge.eslesme === "tam" ? pathname === hedefYol : pathname.startsWith(hedefYol);
-    if (!yolEslesiyor || !hedefSorgu) return yolEslesiyor;
-    const hedefParametreler = new URLSearchParams(hedefSorgu);
-    const aktifParametreler = new URLSearchParams(aktifArama);
-    return Array.from(hedefParametreler.entries()).every(([anahtar, deger]) => aktifParametreler.get(anahtar) === deger);
+    return menuOgesiAktifMi(oge, pathname, aktifArama);
   }
 
   function paletiAc() {

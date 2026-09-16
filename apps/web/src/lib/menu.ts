@@ -99,7 +99,9 @@ export const MENU: MenuAlani[] = [
     baslik: "Satış",
     ikon: TrendingUp,
     ogeler: [
-      { href: "/panel/satis", ikon: ShoppingCart, baslik: "Satış İşlemleri", eslesme: "onek", esanlamlilar: ["teklif", "sipariş", "irsaliye"] },
+      { href: "/panel/satis", ikon: ShoppingCart, baslik: "Satış İşlemleri", eslesme: "onek", esanlamlilar: ["çalışma alanı", "satış özeti"] },
+      { href: "/panel/belgeler?tur=teklif&yon=satis", ikon: ScrollText, baslik: "Satış Teklifleri", eslesme: "tam", esanlamlilar: ["teklif", "fiyat teklifi", "proforma"] },
+      { href: "/panel/belgeler?tur=siparis&yon=satis", ikon: ClipboardCheck, baslik: "Satış Siparişleri", eslesme: "tam", esanlamlilar: ["sipariş", "müşteri siparişi", "sevkiyat"] },
       { href: "/panel/fatura?yon=satis", ikon: FileText, baslik: "Satış Faturaları", eslesme: "tam", esanlamlilar: ["kesilen fatura", "müşteri faturası"] },
       { href: "/panel/crm", ikon: Target, baslik: "CRM Satış Hunisi", eslesme: "tam", esanlamlilar: ["fırsat", "pipeline", "aday"] },
       { href: "/panel/b2b", ikon: Store, baslik: "B2B Bayi Portalı", eslesme: "tam", esanlamlilar: ["bayi", "katalog"] },
@@ -113,6 +115,7 @@ export const MENU: MenuAlani[] = [
     ogeler: [
       { href: "/panel/satin-alma", ikon: ShoppingBag, baslik: "Satın Alma İşlemleri", eslesme: "tam", esanlamlilar: ["tedarik", "sipariş"] },
       { href: "/panel/satin-alma/talepler", ikon: ShoppingBag, baslik: "Satın Alma Talepleri", eslesme: "onek", esanlamlilar: ["talep", "onay", "teklif", "tedarikçi teklifi"] },
+      { href: "/panel/belgeler?tur=siparis&yon=alis", ikon: ClipboardCheck, baslik: "Satın Alma Siparişleri", eslesme: "tam", esanlamlilar: ["sipariş", "tedarikçi siparişi", "mal kabul", "teslim bekleyen"] },
       { href: "/panel/fatura?yon=alis", ikon: FileText, baslik: "Alış Faturaları", eslesme: "tam", esanlamlilar: ["gelen fatura", "tedarikçi faturası"] },
       { href: "/panel/masraflar", ikon: Receipt, baslik: "Masraflar", eslesme: "tam", esanlamlilar: ["gider", "fiş", "harcama"] },
       { href: "/panel/masraflar/kiralar", ikon: Building2, baslik: "Kira Sözleşmeleri", eslesme: "tam", esanlamlilar: ["kira", "stopaj"] },
@@ -219,3 +222,30 @@ export const TUM_SAYFALAR: MenuOge[] = [
   ...PALET_EK_SAYFALAR,
   ...AYARLAR,
 ];
+
+/** Menü maddesinin sorgusu açık sayfanınkiyle örtüşüyor mu? */
+function sorguEslesiyor(hedefSorgu: string, aktifArama: string): boolean {
+  const hedef = new URLSearchParams(hedefSorgu);
+  const aktif = new URLSearchParams(aktifArama);
+  return Array.from(hedef.entries()).every(([anahtar, deger]) => aktif.get(anahtar) === deger);
+}
+
+/**
+ * Menü maddesi açık sayfayı mı gösteriyor?
+ *
+ * Aynı sayfayı hem süzgeçli (ör. "Satış Siparişleri") hem süzgeçsiz (ör. "Tüm
+ * Belgeler") gösteren maddeler var. Süzgeçli madde eşleştiğinde süzgeçsiz olan
+ * geri çekilir; yoksa iki madde birden aktif görünürdü.
+ */
+export function menuOgesiAktifMi(oge: MenuOge, pathname: string, aktifArama: string, menu: MenuAlani[] = MENU): boolean {
+  const [hedefYol, hedefSorgu = ""] = oge.href.split("?");
+  const yolEslesiyor = oge.eslesme === "tam" ? pathname === hedefYol : pathname.startsWith(hedefYol);
+  if (!yolEslesiyor) return false;
+  if (hedefSorgu) return sorguEslesiyor(hedefSorgu, aktifArama);
+  return !menu.some((alan) =>
+    alan.ogeler.some((digerOge) => {
+      const [digerYol, digerSorgu = ""] = digerOge.href.split("?");
+      return digerSorgu !== "" && digerYol === hedefYol && sorguEslesiyor(digerSorgu, aktifArama);
+    }),
+  );
+}
