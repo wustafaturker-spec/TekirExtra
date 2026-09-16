@@ -3,7 +3,9 @@ import type { BildirimTuru, DuzeltmeTuru } from "@prisma/client";
 import type { Rol } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
+import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { ENTEGRATOR_IPTAL_ANAHTAR_ONEKI, entegratorIptalBildirimi } from "../ebelge/entegrator-iptal-bildirimi";
+import { VARSAYILAN_ONAY_ESIGI, onaylayabilecekRoller } from "../satin-alma/satin-alma.hesap";
 import { RaporService } from "../rapor/rapor.service";
 import { BildirimService, type BildirimGirdisi } from "./bildirim.service";
 
@@ -19,6 +21,7 @@ const HEDEF_ROLLER: Record<BildirimTuru, Rol[]> = {
   stok: ["yonetici", "depo"],
   donem: ["yonetici", "muhasebe"],
   entegrasyon: ["yonetici", "muhasebe"],
+  satin_alma: ["yonetici", "muhasebe"],
 };
 
 /**
@@ -51,6 +54,7 @@ const TARAMA_ONEKLERI: Record<BildirimTuru, string[]> = {
   stok: ["duzeltme:", "stok_kritik:", "stok_sayim:"],
   donem: ["duzeltme:", "donem:"],
   entegrasyon: ["duzeltme:"],
+  satin_alma: ["satin_alma:"],
 };
 
 function gunAnahtari(tarih = new Date()): string {
@@ -73,6 +77,7 @@ export class BildirimUreticiService {
     private readonly prisma: PrismaService,
     private readonly bildirimler: BildirimService,
     private readonly rapor: RaporService,
+    private readonly ayarlar?: AyarlarService,
   ) {}
 
   async tara(): Promise<{ uretilen: number; yeniTeslimat: number; kapanan: number; yukseltilen: number }> {
@@ -82,6 +87,7 @@ export class BildirimUreticiService {
       ...(await this.vadeOzetleri()),
       ...(await this.stokOzetleri()),
       ...(await this.donemKontrolleri()),
+      ...(await this.satinAlmaOnaylari()),
     ];
 
     let yeniTeslimat = 0;
@@ -89,7 +95,7 @@ export class BildirimUreticiService {
 
     // Yalnız bu taramada gerçekten bakılan türler kapatılır; bakılmayan bir
     // türün kayıtları "artık tespit edilmiyor" sanılıp kapanmamalıdır.
-    const taranan: BildirimTuru[] = ["duzeltme", "ebelge", "vade", "cek_senet", "stok", "donem", "entegrasyon"];
+    const taranan: BildirimTuru[] = ["duzeltme", "ebelge", "vade", "cek_senet", "stok", "donem", "entegrasyon", "satin_alma"];
     let kapanan = 0;
     for (const tur of taranan) {
       const anahtarlar = girdiler.filter((g) => g.tur === tur).map((g) => g.birlesimAnahtari);
@@ -139,6 +145,36 @@ export class BildirimUreticiService {
     const sonTarih = new Date();
     sonTarih.setHours(sonTarih.getHours() + KRITIK_SLA_SAATI);
     return sonTarih;
+  }
+
+  /**
+   * SAT-07: onay bekleyen her satın alma talebi, tutarına göre onaylayabilecek
+   * rollere bildirilir; karara bağlanınca ya da geri çekilince tespit edilmez ve
+   * bildirim kapanır.
+   */
+  private async satinAlmaOnaylari(): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const ayar = this.ayarlar ? await this.ayarlar.getir("satin_alma") : {};
+    const esik = Number(ayar.onayEsigi ?? VARSAYILAN_ONAY_ESIGI);
+    const talepler = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.satinAlmaTalebi.findMany({
+        where: { durum: "onay_bekliyor" },
+        select: { id: true, no: true, tahminiToplam: true, talepEden: { select: { adSoyad: true } } },
+        orderBy: { createdAt: "asc" },
+        take: 200,
+      }),
+    );
+    return talepler.map((t) => ({
+      tur: "satin_alma" as const,
+      onem: "uyari" as const,
+      baslik: "Satın alma talebi onay bekliyor",
+      aciklama: `${t.no} · ${t.talepEden.adSoyad} · ${Number(t.tahminiToplam).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL`,
+      birlesimAnahtari: `satin_alma:talep:${t.id}`,
+      kaynakTur: "satin_alma_talebi",
+      kaynakRef: t.id,
+      hedefYol: `/panel/satin-alma/talepler?talep=${t.id}`,
+      roller: onaylayabilecekRoller(Number(t.tahminiToplam), esik),
+    }));
   }
 
   private async duzeltmeKayitlari(): Promise<BildirimGirdisi[]> {

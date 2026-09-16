@@ -17,6 +17,12 @@ export default function SatinAlmaCalismaAlani() {
       anaEylem={{ href: "/panel/fatura?yon=alis&yeni=1", baslik: "Alış faturası" }}
       hizliEylemler={[
         {
+          href: "/panel/satin-alma/talepler",
+          baslik: "Satın alma talebi",
+          aciklama: "Talep açın, onaylayın, teklifleri karşılaştırın",
+          ikon: "ST",
+        },
+        {
           href: "/panel/fatura?yon=alis&yeni=1",
           baslik: "Alış faturası",
           aciklama: "Tedarikçiden gelen faturayı kaydedin",
@@ -55,6 +61,12 @@ export default function SatinAlmaCalismaAlani() {
         </section>
       }
       kuyruklar={[
+        {
+          href: "/panel/satin-alma/talepler",
+          baslik: "Onay bekleyen talepler",
+          aciklama: "Karar verilmesi ve teklif toplanması gereken satın alma talepleri",
+          ton: "warning",
+        },
         {
           href: "/panel/fatura/gelen-kutusu",
           baslik: "Kontrol bekleyen e-Belgeler",

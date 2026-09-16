@@ -62,7 +62,7 @@ function BelgeOnizleme({ dosyaAdi, mimeTip, url, blob, onKapat, onIndir }: { dos
   return <div className="document-preview-layer" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onKapat(); }}><section aria-label={`${dosyaAdi} önizlemesi`} aria-modal="true" className="document-preview" role="dialog"><header><div><strong>{dosyaAdi}</strong><small>{mimeTip || "Dosya"} · {(blob.size / 1024).toLocaleString("tr-TR", { maximumFractionDigits: 0 })} KB</small></div><div>{onIndir && <Button size="sm" onClick={onIndir}>İndir</Button>}<Button aria-label="Önizlemeyi kapat" size="sm" onClick={onKapat}>Kapat</Button></div></header><div className="document-preview__body">{gorselMi ? <img alt={dosyaAdi} src={url} /> : pdfMi ? <iframe src={`${url}#view=FitH`} title={dosyaAdi} /> : metinMi ? <pre>{metin || "İçerik yükleniyor…"}</pre> : <div className="document-preview__unsupported"><span aria-hidden="true">DOC</span><strong>Bu dosya türü tarayıcıda önizlenemiyor</strong><p>Word ve Excel belgelerini incelemek için dosyayı indirin.</p>{onIndir && <Button variant="primary" onClick={onIndir}>Dosyayı indir</Button>}</div>}</div></section></div>;
 }
 
-export async function belgeDosyalariniYukle(sahipTur: "fatura" | "belge" | "masraf" | "kira_sozlesme" | "personel", sahipId: string, dosyalar: File[]) {
+export async function belgeDosyalariniYukle(sahipTur: "fatura" | "belge" | "masraf" | "kira_sozlesme" | "personel" | "satin_alma_teklif", sahipId: string, dosyalar: File[]) {
   for (const dosya of dosyalar) {
     const govde = new FormData();
     govde.append("dosya", dosya);

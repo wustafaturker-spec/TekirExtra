@@ -86,3 +86,15 @@ registerModulAyar(
   }),
   { earsivIptalGunSayisi: 8, eirsaliyeYanitGunSayisi: 10, efaturaYanitGunSayisi: 10 },
 );
+
+registerModulAyar(
+  "satin_alma",
+  z.object({
+    /**
+     * Satın alma talebinin onay eşiği, TL (SAT-03). Tahmini toplam eşik ve
+     * altındaysa muhasebe, üstündeyse yönetici onaylar.
+     */
+    onayEsigi: z.number().min(0).max(1_000_000_000),
+  }),
+  { onayEsigi: 25_000 },
+);

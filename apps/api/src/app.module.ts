@@ -36,6 +36,7 @@ import { DonemKapatmaModule } from "./donem-kapatma/donem-kapatma.module";
 import { BildirimlerModule } from "./bildirimler/bildirimler.module";
 import { NakitAkisiModule } from "./nakit-akisi/nakit-akisi.module";
 import { ButceModule } from "./butce/butce.module";
+import { SatinAlmaModule } from "./satin-alma/satin-alma.module";
 
 @Module({
   imports: [
@@ -72,6 +73,7 @@ import { ButceModule } from "./butce/butce.module";
     AiModule,
     NakitAkisiModule,
     ButceModule,
+    SatinAlmaModule,
   ],
   providers: [{ provide: APP_INTERCEPTOR, useClass: AuditInterceptor }],
 })

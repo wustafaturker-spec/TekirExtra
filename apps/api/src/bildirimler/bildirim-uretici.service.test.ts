@@ -6,6 +6,7 @@ vi.mock("../core/istek-baglami", () => ({ aktifBaglam: () => ({ tenantId: "t1", 
 interface TxSecenekleri {
   duzeltmeler?: unknown[];
   ebelgeler?: unknown[];
+  satinAlmaTalepleri?: unknown[];
   cekSayisi?: number;
   kritikStok?: number;
   taslakSayim?: number;
@@ -21,6 +22,7 @@ function servisKur(secenek: TxSecenekleri = {}) {
   const tx = {
     duzeltmeKaydi: { findMany: vi.fn().mockResolvedValue(secenek.duzeltmeler ?? []) },
     ebelgeKayit: { findMany: vi.fn().mockResolvedValue(secenek.ebelgeler ?? []) },
+    satinAlmaTalebi: { findMany: vi.fn().mockResolvedValue(secenek.satinAlmaTalepleri ?? []) },
     cekSenet: { count: vi.fn().mockResolvedValue(secenek.cekSayisi ?? 0) },
     sayim: { count: vi.fn().mockResolvedValue(secenek.taslakSayim ?? 0) },
     maliDonem: { findMany: vi.fn().mockResolvedValue(secenek.donemler ?? []) },
@@ -108,6 +110,23 @@ describe("BildirimUreticiService.tara", () => {
     }
     const entegrasyonCagrisi = bildirimler.kapatEksikleri.mock.calls.find(([tur]) => tur === "entegrasyon");
     expect((entegrasyonCagrisi?.[2] as string[]).some((onek) => "kira-kur-eksik:k1".startsWith(onek))).toBe(false);
+  });
+
+  it("onay bekleyen satın alma talebini tutara göre onaylayabilecek rollere bildirir (SAT-07)", async () => {
+    const { servis, bildirimler } = servisKur({
+      satinAlmaTalepleri: [
+        { id: "t1", no: "STL2026000001", tahminiToplam: "10000.00", talepEden: { adSoyad: "Depo Sorumlusu" } },
+        { id: "t2", no: "STL2026000002", tahminiToplam: "40000.00", talepEden: { adSoyad: "Depo Sorumlusu" } },
+      ],
+    });
+
+    await servis.tara();
+
+    expect(bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({ tur: "satin_alma", birlesimAnahtari: "satin_alma:talep:t1", roller: ["muhasebe", "yonetici"] }));
+    expect(bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({ birlesimAnahtari: "satin_alma:talep:t2", roller: ["yonetici"] }));
+    const cagri = bildirimler.kapatEksikleri.mock.calls.find(([tur]) => tur === "satin_alma");
+    expect(cagri?.[1]).toEqual(["satin_alma:talep:t1", "satin_alma:talep:t2"]);
+    expect(cagri?.[2]).toEqual(["satin_alma:"]);
   });
 
   it("entegratörde iptal edilmiş belgeyi fatura kesin kaldıkça hatırlatır (EBLG-39)", async () => {

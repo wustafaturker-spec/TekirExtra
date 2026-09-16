@@ -26,8 +26,11 @@ type Tx = Prisma.TransactionClient;
 export class ButceService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Bütçelenebilecek kalemler: sabit kalemler + gelir ve masraf kategori ağaçları. */
-  private async kalemTanimlari(tx: Tx, tenantId: string): Promise<KalemTanimi[]> {
+  /**
+   * Bütçelenebilecek kalemler: sabit kalemler + gelir ve masraf kategori ağaçları.
+   * Satın alma talebinin bütçe kalemi de bu listeden seçilir (SAT-01).
+   */
+  async kalemTanimlari(tx: Tx, tenantId: string): Promise<KalemTanimi[]> {
     const [masraf, gelir] = [
       await tx.masrafKategori.findMany({ where: { tenantId }, select: { id: true, ad: true, ust: { select: { ad: true } } } }),
       await tx.gelirKategori.findMany({ where: { tenantId }, select: { id: true, ad: true, ust: { select: { ad: true } } } }),

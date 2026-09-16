@@ -38,6 +38,7 @@ const TUR_ADLARI: Record<string, string> = {
   stok: "Stok",
   donem: "Dönem",
   entegrasyon: "Entegrasyon",
+  satin_alma: "Satın Alma",
 };
 
 const DURUM_ADLARI: Record<Durum, string> = {

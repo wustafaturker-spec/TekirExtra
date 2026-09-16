@@ -165,6 +165,12 @@ model Tenant {
   bildirimAyarlari          BildirimKullaniciAyari[]
   maliDonemOlaylari         MaliDonemOlayi[]
   butceler                  Butce[]
+  satinAlmaTalepleri        SatinAlmaTalebi[]
+  satinAlmaTalepKalemleri   SatinAlmaTalepKalemi[]
+  satinAlmaTeklifleri       SatinAlmaTeklifi[]
+  satinAlmaTeklifKalemleri  SatinAlmaTeklifKalemi[]
+  satinAlmaTalepOlaylari    SatinAlmaTalepOlayi[]
+  satinAlmaSayaclari        SatinAlmaSayac[]
   butceSatirlari            ButceSatiri[]
   butceOlaylari             ButceOlayi[]
   donemKontrolleri          DonemKontrolu[]
@@ -252,6 +258,9 @@ model User {
   maliDonemOlaylari           MaliDonemOlayi[]        @relation("MaliDonemOlayKullanicisi")
   onaylananButceler           Butce[]                 @relation("ButceOnaylayan")
   butceOlaylari               ButceOlayi[]            @relation("ButceOlayKullanicisi")
+  satinAlmaTalepleri          SatinAlmaTalebi[]       @relation("SatinAlmaTalepEden")
+  onayladigiSatinAlmaTalepleri SatinAlmaTalebi[]      @relation("SatinAlmaTalepOnaylayan")
+  satinAlmaTalepOlaylari      SatinAlmaTalepOlayi[]
   elleKurlari                 ElleKur[]               @relation("ElleKurKullanicisi")
   elleKurOlaylari             ElleKurOlayi[]          @relation("ElleKurOlayKullanicisi")
   bildirimTeslimatlari        BildirimTeslimati[]
@@ -722,6 +731,7 @@ model CariHesap {
   fiyatListesi          FiyatListesi?       @relation(fields: [fiyatListesiId], references: [id])
   temsilci              User?               @relation("CariTemsilci", fields: [temsilciUserId], references: [id])
   bayiKullanicilari      User[]              @relation("BayiKullaniciCari")
+  satinAlmaTeklifleri    SatinAlmaTeklifi[]
   adresler              CariAdres[]
   kisiler               CariKisi[]
   bankaHesaplari        CariBankaHesap[]
@@ -1012,6 +1022,7 @@ model StokKart {
   stokFiyatlari       StokFiyat[]
   faturaSatirs        FaturaSatir[]
   belgeSatirlari      BelgeSatir[]
+  satinAlmaTalepKalemleri SatinAlmaTalepKalemi[]
   varyantlar          StokVaryant[]
   partiler            StokParti[]
   pazaryeriSatirlari  PazaryeriSiparisSatiri[]
@@ -2718,6 +2729,7 @@ enum EkSahipTur {
   masraf
   kira_sozlesme
   personel
+  satin_alma_teklif
 }
 
 enum PersonelBelgeTuru {
@@ -3078,6 +3090,8 @@ model Belge {
   turetilenler Belge[]         @relation("BelgeZinciri")
   fatura       Fatura?         @relation(fields: [faturaId], references: [id])
   satirlar     BelgeSatir[]
+  /// SAT-06: bu sipariş bir satın alma talebinden oluştuysa.
+  satinAlmaTalebi SatinAlmaTalebi?
   eirsaliye    EirsaliyeKayit?
 
   @@unique([tenantId, no])
@@ -3212,6 +3226,162 @@ model BelgeSayac {
 
   @@unique([tenantId, tur, yil])
   @@map("belge_sayaclari")
+}
+
+/// Satın alma talebi (SAT-01…SAT-08): taslak → onay_bekliyor → onaylandi /
+/// reddedildi → siparise_donustu; taslak veya onay bekleyen talep iptal edilebilir.
+enum SatinAlmaTalepDurumu {
+  taslak
+  onay_bekliyor
+  onaylandi
+  reddedildi
+  siparise_donustu
+  iptal
+}
+
+enum SatinAlmaOlayTuru {
+  olusturuldu
+  guncellendi
+  onaya_gonderildi
+  geri_cekildi
+  onaylandi
+  reddedildi
+  iptal_edildi
+  teklif_eklendi
+  teklif_silindi
+  teklif_secildi
+  siparise_donustu
+}
+
+model SatinAlmaTalebi {
+  id                   String               @id @default(uuid()) @db.Uuid
+  tenantId             String               @map("tenant_id") @db.Uuid
+  no                   String
+  talepEdenUserId      String               @map("talep_eden_user_id") @db.Uuid
+  departmanId          String?              @map("departman_id") @db.Uuid
+  ihtiyacTarihi        DateTime             @map("ihtiyac_tarihi") @db.Date
+  gerekce              String
+  /// Bütçe satırı anahtarı (BUT-05): mal_alis, hizmet_alis veya masraf_kategori:<id>.
+  butceAnahtari        String               @map("butce_anahtari")
+  durum                SatinAlmaTalepDurumu @default(taslak)
+  /// Kalemlerin tahmini tutarı; KDV hariç, TL.
+  tahminiToplam        Decimal              @map("tahmini_toplam") @db.Decimal(15, 2)
+  /// Onaylayan ya da reddeden kullanıcı.
+  onaylayanUserId      String?              @map("onaylayan_user_id") @db.Uuid
+  onayZamani           DateTime?            @map("onay_zamani")
+  butceAsimGerekcesi   String?              @map("butce_asim_gerekcesi")
+  redGerekcesi         String?              @map("red_gerekcesi")
+  teklifSecimGerekcesi String?              @map("teklif_secim_gerekcesi")
+  siparisBelgeId       String?              @unique @map("siparis_belge_id") @db.Uuid
+  createdAt            DateTime             @default(now()) @map("created_at")
+  updatedAt            DateTime             @updatedAt @map("updated_at")
+
+  tenant       Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  talepEden    User                   @relation("SatinAlmaTalepEden", fields: [talepEdenUserId], references: [id])
+  onaylayan    User?                  @relation("SatinAlmaTalepOnaylayan", fields: [onaylayanUserId], references: [id], onDelete: SetNull)
+  departman    PersonelDepartman?     @relation(fields: [departmanId], references: [id], onDelete: SetNull)
+  siparisBelge Belge?                 @relation(fields: [siparisBelgeId], references: [id], onDelete: SetNull)
+  kalemler     SatinAlmaTalepKalemi[]
+  teklifler    SatinAlmaTeklifi[]
+  olaylar      SatinAlmaTalepOlayi[]
+
+  @@unique([tenantId, no])
+  @@index([tenantId, durum])
+  @@index([tenantId, talepEdenUserId])
+  @@map("satin_alma_talepleri")
+}
+
+model SatinAlmaTalepKalemi {
+  id                String  @id @default(uuid()) @db.Uuid
+  tenantId          String  @map("tenant_id") @db.Uuid
+  talepId           String  @map("talep_id") @db.Uuid
+  sira              Int
+  /// Siparişe dönüşümde belge satırı kart ister; hizmet alımı hizmet kartıyla girilir.
+  stokId            String  @map("stok_id") @db.Uuid
+  miktar            Decimal @db.Decimal(15, 3)
+  /// Kartın ana birimi.
+  birim             String
+  tahminiBirimFiyat Decimal @map("tahmini_birim_fiyat") @db.Decimal(15, 4)
+
+  tenant          Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  talep           SatinAlmaTalebi         @relation(fields: [talepId], references: [id], onDelete: Cascade)
+  stok            StokKart                @relation(fields: [stokId], references: [id])
+  teklifKalemleri SatinAlmaTeklifKalemi[]
+
+  @@index([talepId])
+  @@map("satin_alma_talep_kalemleri")
+}
+
+model SatinAlmaTeklifi {
+  id               String     @id @default(uuid()) @db.Uuid
+  tenantId         String     @map("tenant_id") @db.Uuid
+  talepId          String     @map("talep_id") @db.Uuid
+  tedarikciCariId  String     @map("tedarikci_cari_id") @db.Uuid
+  dovizCinsi       DovizCinsi @default(TRY) @map("doviz_cinsi")
+  kur              Decimal    @default(1) @db.Decimal(18, 6)
+  teslimSuresiGun  Int?       @map("teslim_suresi_gun")
+  gecerlilikTarihi DateTime?  @map("gecerlilik_tarihi") @db.Date
+  aciklama         String?
+  /// KDV hariç, teklif dövizinde.
+  toplam           Decimal    @db.Decimal(15, 2)
+  /// KDV hariç, teklifin kuruyla TL; karşılaştırma ve bütçe bu tutarla yapılır.
+  toplamTry        Decimal    @map("toplam_try") @db.Decimal(15, 2)
+  secildi          Boolean    @default(false)
+  createdAt        DateTime   @default(now()) @map("created_at")
+
+  tenant    Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  talep     SatinAlmaTalebi         @relation(fields: [talepId], references: [id], onDelete: Cascade)
+  tedarikci CariHesap               @relation(fields: [tedarikciCariId], references: [id])
+  kalemler  SatinAlmaTeklifKalemi[]
+
+  @@index([talepId])
+  @@map("satin_alma_teklifleri")
+}
+
+model SatinAlmaTeklifKalemi {
+  id            String  @id @default(uuid()) @db.Uuid
+  tenantId      String  @map("tenant_id") @db.Uuid
+  teklifId      String  @map("teklif_id") @db.Uuid
+  talepKalemiId String  @map("talep_kalemi_id") @db.Uuid
+  birimFiyat    Decimal @map("birim_fiyat") @db.Decimal(15, 4)
+  kdvOrani      Decimal @map("kdv_orani") @db.Decimal(5, 2)
+
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teklif      SatinAlmaTeklifi     @relation(fields: [teklifId], references: [id], onDelete: Cascade)
+  talepKalemi SatinAlmaTalepKalemi @relation(fields: [talepKalemiId], references: [id], onDelete: Cascade)
+
+  @@unique([teklifId, talepKalemiId])
+  @@map("satin_alma_teklif_kalemleri")
+}
+
+/// SAT-03: talep olay geçmişi; yalnız eklenir.
+model SatinAlmaTalepOlayi {
+  id        String            @id @default(uuid()) @db.Uuid
+  tenantId  String            @map("tenant_id") @db.Uuid
+  talepId   String            @map("talep_id") @db.Uuid
+  tur       SatinAlmaOlayTuru
+  aciklama  String?
+  userId    String            @map("user_id") @db.Uuid
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  talep  SatinAlmaTalebi @relation(fields: [talepId], references: [id], onDelete: Cascade)
+  user   User            @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, talepId, createdAt])
+  @@map("satin_alma_talep_olaylari")
+}
+
+model SatinAlmaSayac {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  yil      Int
+  sonSira  Int    @default(0) @map("son_sira")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, yil])
+  @@map("satin_alma_sayaclari")
 }
 
 // ─── 4. Aşama (Ek Modüller): Personel & İK ─────────────────────────────
@@ -3477,6 +3647,7 @@ model PersonelDepartman {
   altDepartmanlar PersonelDepartman[] @relation("DepartmanAgaci")
   pozisyonlar     PersonelPozisyon[]
   personeller     Personel[]
+  satinAlmaTalepleri SatinAlmaTalebi[]
 
   @@unique([tenantId, kod])
   @@index([tenantId, isyeriId, aktif])
@@ -3876,6 +4047,7 @@ enum BildirimTuru {
   stok
   donem
   entegrasyon
+  satin_alma
 }
 
 enum BildirimOnemi {

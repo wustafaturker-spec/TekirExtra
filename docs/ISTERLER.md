@@ -630,6 +630,30 @@ kategorinin varsayılan KDV oranını sessizce sıfırladığı görüldü.
 | GLR-03 | ✅ **Kur 1 olamaz:** dövizli gelir kaydında kur 1 sunucu tarafından reddedilir; 1 "tutar zaten TL" demektir. TRY kayıtta kur daima 1'dir. | Z |
 | GLR-04 | ✅ **Kategori varsayılanları korunur:** gelir kategorisi formu varsayılan stopaj ve KDV oranını gösterir ve düzenlemede mevcut değerleri yükler; bir alanı değiştirmek diğer varsayılanı değiştirmez. | Z |
 
+### 3.15 Satın Alma Talep ve Onay (SAT)
+
+**S-01 kapı kararları (2026-09-15, kullanıcı onayı):** 2026-09-02 modül inceleme
+raporu (§5.4) "Satın Alma" ekranının yalnız alış faturasına yönlendiren bir çalışma
+alanı olduğunu, talep/onay/teklif akışı bulunmadığını tespit etti. Paket **iki
+aşamalıdır**: birinci aşama talep → onay → teklif karşılaştırma → alış siparişine
+dönüşüm, bütçe kontrolü ve bildirim (SAT-01…SAT-08); ikinci aşama kısmi mal kabul ve
+üçlü eşleştirme (SAT-09…SAT-10) ayrı onayla başlar. Onay **tutar eşiği + rol**
+iledir; bütçe aşımında **uyarı + zorunlu gerekçe**; talebi **tüm iç kullanıcılar**
+açabilir. Varsayılan eşik 25.000 TL.
+
+| No | İster | Öncelik |
+|---|---|---|
+| SAT-01 | **Talep:** otomatik numaralı talep; talep eden kullanıcı, isteğe bağlı departman (personel departmanlarından), ihtiyaç tarihi, gerekçe ve **bütçe kalemi** (mal alışı, hizmet alışı veya bir masraf kategorisi — bütçe satırı anahtarıyla aynı, BUT-05). Kalemler **stok veya hizmet kartıdır** (siparişe dönüşümde belge satırı kart ister), miktar, birim ve tahmini birim fiyat (TL) içerir. Durumlar: taslak → onay bekliyor → onaylandı / reddedildi → siparişe dönüştü; taslak veya onay bekleyen talep iptal edilebilir. | G |
+| SAT-02 | **Yetki:** salt okunur, mali müşavir ve B2B bayi dışındaki tüm roller talep açar. Kullanıcı yalnız kendi taleplerini görür ve düzenler; muhasebe ve yönetici tüm talepleri görür. Onaya gönderilmiş talep düzenlenemez; talep eden onu taslağa geri çekebilir. | G |
+| SAT-03 | **Onay:** tahmini toplam `satin_alma` modül ayarı `onayEsigi` (varsayılan 25.000 TL) ve altındaysa muhasebe, üstündeyse yönetici onaylar; yönetici her tutarı onaylayabilir. **Talep eden, yönetici dahil, kendi talebini onaylayamaz** (görev ayrılığı, ENT-07 ile aynı ilke). Red gerekçesi zorunludur. Oluşturma, onaya gönderme, geri çekme, onay, red, iptal ve siparişe dönüşüm olayları kullanıcı, zaman ve gerekçeyle yalnız eklenen geçmişe yazılır. | G |
+| SAT-04 | **Bütçe kontrolü:** onay ekranı talebin bütçe kaleminde ihtiyaç tarihinin ayı için geçerli onaylı bütçe revizyonundaki tutarı, o ayın gerçekleşenini (gelir-gider raporuyla aynı tahakkuk, BUT) ve aynı kalemde o aya düşen **diğer onaylı, henüz faturalaşmamış** taleplerin toplamını gösterir; kalan = bütçe − gerçekleşen − diğer onaylı talepler. Talep kalanı aşıyorsa onay için **aşım gerekçesi zorunludur** ve gerekçe geçmişe yazılır. Onaylı bütçe yoksa "bütçe tanımsız" bilgisi gösterilir, gerekçe istenmez. | G |
+| SAT-05 | **Teklif:** onaylı talebe muhasebe veya yönetici tedarikçi teklifleri girer: tedarikçi carisi, talep kalemlerine birim fiyat ve KDV oranı, döviz ve kur (dövizde kur 1 olamaz, DVZ), teslim süresi (gün), geçerlilik tarihi, not ve ek dosya. Karşılaştırma ekranı kalem bazında fiyatları ve TL karşılığı toplamları yan yana gösterir, en düşük toplamı vurgular. Bir teklif seçilir; **en düşükten farklı teklif seçilirse gerekçe zorunludur.** | G |
+| SAT-06 | **Siparişe dönüşüm:** muhasebe veya yönetici seçilen teklifi mevcut **alış siparişi** belgesine dönüştürür (cari = tedarikçi, satırlar teklif fiyatlarıyla, depo seçilir); onaylanan alış siparişinin "yoldaki" stok ve belge zinciri (FTR-12) aynen işler. Teklif girilmemiş onaylı talep, tedarikçi ve fiyat dönüşümde girilerek doğrudan siparişe dönüştürülebilir. Talep "siparişe dönüştü" olur ve siparişe bağlantı gösterir; bir talepten tek sipariş oluşur. | G |
+| SAT-07 | **Bildirim:** onay bekleyen her talep için onaylayabilecek rollere (eşiğe göre muhasebe ve/veya yönetici) `satin_alma` türünde bildirim düşer; talep karara bağlanınca veya geri çekilince bildirim kendiliğinden kapanır (BLD tarama deseni, tarayıcının kendi anahtarı). | G |
+| SAT-08 | **Ekranlar:** `/panel/satin-alma/talepler` "Taleplerim", "Onay bekleyenler" ve (muhasebe/yönetici için) "Tüm talepler" sekmeleriyle çalışır; talep detayında kalemler, bütçe durumu, geçmiş, teklif karşılaştırması ve siparişe dönüşüm yer alır. Mevcut Satın Alma çalışma alanı korunur, talep kısa yolu ve "onay bekleyen talepler" kuyruğu eklenir. Onay eşiği Ayarlar > Modüller'de düzenlenir. Talepler sayfası ve menüsü SAT-02'deki rollere açılır; ekrandaki eylemler sunucunun bildirdiği yetkilere göre gösterilir. | G |
+| SAT-09 | **Kısmi mal kabul** (ikinci aşama, ayrı onay): alış siparişine karşı parça parça mal kabulü, kalan miktar takibi. | G |
+| SAT-10 | **Üçlü eşleştirme** (ikinci aşama, ayrı onay): sipariş–mal kabul–fatura miktar ve fiyat karşılaştırması, tolerans ayarı, tolerans dışı farkların Düzeltme Merkezi'ne düşmesi. | G |
+
 ## 4. Fonksiyonel Olmayan İsterler
 
 ### 4.1 Performans

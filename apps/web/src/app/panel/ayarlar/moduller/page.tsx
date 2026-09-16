@@ -60,6 +60,13 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
       { ad: "faturaSablonu", etiket: "Fatura şablonu", tip: "enum", secenekler: [["standart", "Standart"], ["modern", "Modern"], ["klasik", "Klasik"]] },
     ],
   },
+  satin_alma: {
+    baslik: "Satın Alma",
+    ikon: "🛒",
+    alanlar: [
+      { ad: "onayEsigi", etiket: "Onay eşiği (TL)", tip: "sayi", min: 0, max: 1_000_000_000, ipucu: "Tahmini tutar eşik ve altındaysa muhasebe, üstündeyse yönetici onaylar (SAT-03)" },
+    ],
+  },
   kasaBanka: {
     baslik: "Kasa & Banka",
     ikon: "🏦",
@@ -71,7 +78,7 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
 };
 
 // Ekranda görünme sırası
-const SIRA = ["fatura", "stok", "cari", "kasaBanka", "arayuz"];
+const SIRA = ["fatura", "stok", "cari", "satin_alma", "kasaBanka", "arayuz"];
 
 interface Ref {
   id: string;

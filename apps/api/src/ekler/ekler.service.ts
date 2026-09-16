@@ -53,6 +53,7 @@ export class EklerService {
       masraf: () => tx.masraf.findUnique({ where: { id: sahipId } }),
       kira_sozlesme: () => tx.kiraSozlesme.findUnique({ where: { id: sahipId } }),
       personel: () => tx.personel.findUnique({ where: { id: sahipId } }),
+      satin_alma_teklif: () => tx.satinAlmaTeklifi.findUnique({ where: { id: sahipId } }),
     }[sahipTur];
     if (!(await sorgu())) {
       throw new NotFoundException("Ekin bağlanacağı kayıt bulunamadı");
