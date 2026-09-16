@@ -131,6 +131,7 @@ export const MENU: MenuAlani[] = [
       { href: "/panel/fatura/tekrarlayan", ikon: Repeat, baslik: "Tekrarlayan Faturalar", esanlamlilar: ["abonelik", "periyodik"] },
       { href: "/panel/ebelge/fatura-gelen", ikon: Inbox, baslik: "Gelen e-Faturalar", eslesme: "tam", esanlamlilar: ["gib", "gelen kutusu"] },
       { href: "/panel/ebelge/irsaliye-gelen", ikon: Truck, baslik: "Gelen e-İrsaliyeler", eslesme: "tam" },
+      { href: "/panel/ebelge/irsaliye-giden", ikon: Truck, baslik: "Giden e-İrsaliyeler", eslesme: "tam", esanlamlilar: ["sevk", "irsaliye gönder", "e-irsaliye durumu"] },
       { href: "/panel/ebelge/kuyruk", ikon: ListChecks, baslik: "e-Belge Operasyonları", eslesme: "tam", esanlamlilar: ["kuyruk", "gönderim", "hata"] },
       { href: "/panel/fatura/earsiv-raporlari", ikon: Archive, baslik: "e-Arşiv Raporları", eslesme: "tam" },
     ],

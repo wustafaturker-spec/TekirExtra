@@ -72,6 +72,12 @@ export default function SatisCalismaAlani() {
           ton: "warning",
         },
         {
+          href: "/panel/ebelge/irsaliye-giden?durum=gonderilmedi",
+          baslik: "e-İrsaliye bekleyen sevkiyatlar",
+          aciklama: "Onaylı satış irsaliyelerinden henüz entegratöre gönderilmemiş olanlar",
+          ton: "warning",
+        },
+        {
           href: "/panel/fatura?yon=satis&ebelge=hata",
           baslik: "e-Belge hataları",
           aciklama: "Düzeltilip yeniden gönderilmesi gereken kayıtlar",

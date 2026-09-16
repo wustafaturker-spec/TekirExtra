@@ -7,6 +7,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
+import { gonderimEngelleri, teslimatAdresiSec, type MukellefDurumu } from "./eirsaliye-engeller";
 import { irsaliyeUblOku } from "./eirsaliye-ubl-oku";
 import { MukellefListesiService } from "./mukellef-listesi.service";
 
@@ -130,34 +131,24 @@ export class EirsaliyeService {
       // e-İrsaliye kaydı GİB'de e-Fatura'dan ayrıdır; lokal liste sorgusu da
       // "eirsaliye" türüyle yapılır (EBLG-10).
       const mukellef = await this.mukellefListesi.kanalBelirle(baglanti.saglayici, cfg, belge.cari.vknTckn, "eirsaliye");
-      if (!mukellef.eFaturaMukellefi || !mukellef.postaKutusu) throw new BadRequestException("Cari e-İrsaliye alıcısı olarak tanımlı değil");
+      // Kalan ön koşullar ekranın gösterdiğiyle aynı kuraldan gelir (EBLG-42);
+      // taşıyan bilgisi irsaliye onayında değil burada zorunludur (EBLG-23):
+      // kâğıt irsaliye kesen firma engellenmesin, GİB'e giden belge eksik gitmesin.
+      const aliciPostaKutusu = mukellef.eFaturaMukellefi ? mukellef.postaKutusu : undefined;
+      const engeller = gonderimEngelleri(
+        { ...belge, cari: { vknTckn: belge.cari.vknTckn, adresler: belge.cari.adresler } },
+        aliciPostaKutusu ? "mukellef" : "degil",
+      );
       // Malın fiilen nereye gittiği e-İrsaliye'nin varlık sebebi; uydurulmuş
-      // bir adres yazmaktansa gönderim durur. Sevk adresi yoksa merkez/fatura
-      // adresi kullanılır.
-      const adresler = belge.cari.adresler as { tip: string; adres: string; il: string | null; ilce: string | null; postaKodu: string | null }[];
-      // Şematron il, ilçe ve posta kodunun üçünü de dolu ister.
-      const tam = (a: (typeof adresler)[number]) => Boolean(a.il && a.ilce && a.postaKodu);
-      const teslimatAdresi =
-        adresler.find((a) => a.tip === "sevk" && tam(a)) ??
-        adresler.find((a) => (a.tip === "merkez" || a.tip === "fatura") && tam(a));
-      if (!teslimatAdresi) {
-        throw new BadRequestException("e-İrsaliye teslimat adresi ister; cari kartına il, ilçe ve posta kodu dolu bir sevk adresi ekleyin");
-      }
-      // Taşıyan bilgisi irsaliye onayında değil burada zorunlu (EBLG-23): kâğıt
-      // irsaliye kesen firma engellenmesin, GİB'e giden belge eksik gitmesin.
-      // Nakliyeciye verilmediyse malı kendi aracımızla götürmüşüzdür ve o
-      // araca dair şoför/plaka bilgisini biz biliriz.
-      if (!belge.tasiyiciCariId && !(belge.soforAdi && belge.soforSoyadi && belge.plaka)) {
-        throw new BadRequestException(
-          "e-İrsaliye taşıyan bilgisi ister: taşıyıcı firmayı seçin ya da şoför adı, soyadı ve plakayı girin",
-        );
-      }
-      if (belge.tasiyiciCariId && !belge.tasiyiciCari?.vknTckn) {
-        throw new BadRequestException("Taşıyıcı cari kartında VKN/TCKN bilgisi bulunmalıdır");
+      // bir adres yazmaktansa gönderim durur. Engel listesi boşsa adres de
+      // posta kutusu da vardır; ikisi de burada daraltılır.
+      const teslimatAdresi = teslimatAdresiSec(belge.cari.adresler as { tip: string; adres: string; il: string | null; ilce: string | null; postaKodu: string | null }[]);
+      if (engeller.length > 0 || !aliciPostaKutusu || !teslimatAdresi) {
+        throw new BadRequestException(engeller[0]?.mesaj ?? "Cari e-İrsaliye alıcısı olarak tanımlı değil");
       }
       const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
       const xml = this.ubl({ ...belge, teslimatAdresi }, tenant);
-      const sonuc = await adapter.irsaliyeGonder(cfg, { uuid: belge.id, belgeNo: belge.no ?? belge.id, xml, aliciPostaKutusu: mukellef.postaKutusu });
+      const sonuc = await adapter.irsaliyeGonder(cfg, { uuid: belge.id, belgeNo: belge.no ?? belge.id, xml, aliciPostaKutusu });
       return tx.eirsaliyeKayit.upsert({ where: { belgeId }, create: { tenantId, belgeId, durum: sonuc.basarili ? "iletildi" : "hata", entegratorRef: sonuc.belgeRef, xmlIcerik: xml, hataMesaji: sonuc.hataMesaji }, update: { durum: sonuc.basarili ? "iletildi" : "hata", entegratorRef: sonuc.belgeRef, xmlIcerik: xml, hataMesaji: sonuc.hataMesaji } });
     });
   }
@@ -219,6 +210,139 @@ export class EirsaliyeService {
       }
     }
     return { sorgulanan: hazirlik.kayitlar.length, guncellenen, atlanan };
+  }
+
+  // ─── Giden e-İrsaliyeler (EBLG-41…43) ─────────────────────────────────────
+
+  /**
+   * Gönderilmiş ve gönderilmeyi bekleyen satış irsaliyeleri tek listede.
+   * Bekleyenlerin gönderim engelleri (EBLG-42) yerel veriden hesaplanır;
+   * mükellefiyet yerel GİB listesinden okunur, liste bayatsa engel sayılmaz.
+   */
+  async gidenListele(durumSuzgeci?: string) {
+    const { tenantId, rol } = aktifBaglam();
+    // Gönderim uçları muhasebe ve yöneticiye açıktır; satış ekranı görür ama
+    // gönderemez, buton da bu yüzden sunucunun bildirdiği yetkiye bakar.
+    const gonderebilir = rol === "muhasebe" || rol === "yonetici";
+    const mukellefDurumu = await this.mukellefListesi.durum();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const belgeler = await tx.belge.findMany({
+        where: {
+          tur: "irsaliye",
+          yon: "satis",
+          // Kaydı olan her irsaliye defterde kalır; kaydı olmayanlardan yalnız
+          // onaylı olanlar gönderilmeyi bekliyor sayılır.
+          OR: [{ eirsaliye: { isNot: null } }, { durum: "onaylandi" }],
+        },
+        select: {
+          id: true,
+          no: true,
+          tarih: true,
+          durum: true,
+          fiiliSevkZamani: true,
+          tur: true,
+          yon: true,
+          tasiyiciCariId: true,
+          soforAdi: true,
+          soforSoyadi: true,
+          plaka: true,
+          genelToplam: true,
+          cari: { select: { unvan: true, vknTckn: true, adresler: { select: { tip: true, il: true, ilce: true, postaKodu: true } } } },
+          tasiyiciCari: { select: { vknTckn: true } },
+          eirsaliye: { select: { durum: true, entegratorRef: true, hataMesaji: true, sonDurumSorguAt: true, createdAt: true } },
+        },
+        orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
+        take: 500,
+      });
+
+      // Mükellefiyet tek sorguda çözülür; satır başına entegratör çağrısı
+      // kabul edilemez (bkz. entegratör çağrı disiplini).
+      const vknler = [...new Set(belgeler.map((b) => b.cari.vknTckn).filter((v): v is string => Boolean(v)))];
+      const mukellefler = mukellefDurumu.taze && vknler.length > 0
+        ? await this.prisma.gibMukellef.findMany({ where: { vknTckn: { in: vknler }, belgeTuru: "eirsaliye" }, select: { vknTckn: true } })
+        : [];
+      const mukellefKumesi = new Set(mukellefler.map((m) => m.vknTckn));
+
+      const satirlar = belgeler.map((b) => {
+        const mukellef: MukellefDurumu = !mukellefDurumu.taze ? "bilinmiyor" : b.cari.vknTckn && mukellefKumesi.has(b.cari.vknTckn) ? "mukellef" : "degil";
+        const gonderildi = Boolean(b.eirsaliye);
+        // Gönderilmiş belgede engel aramak anlamsız; defterde durumu konuşulur.
+        const engeller = gonderildi && b.eirsaliye?.durum !== "hata" ? [] : gonderimEngelleri(b, mukellef);
+        return {
+          belgeId: b.id,
+          belgeNo: b.no,
+          tarih: b.tarih.toISOString().slice(0, 10),
+          fiiliSevkZamani: b.fiiliSevkZamani?.toISOString() ?? null,
+          belgeDurumu: b.durum,
+          genelToplam: b.genelToplam.toFixed(2),
+          cari: { unvan: b.cari.unvan, vknTckn: b.cari.vknTckn },
+          durum: b.eirsaliye?.durum ?? ("gonderilmedi" as const),
+          entegratorRef: b.eirsaliye?.entegratorRef ?? null,
+          hataMesaji: b.eirsaliye?.hataMesaji ?? null,
+          sonDurumSorguAt: b.eirsaliye?.sonDurumSorguAt?.toISOString() ?? null,
+          gonderimZamani: b.eirsaliye?.createdAt.toISOString() ?? null,
+          engeller,
+          gonderilebilir: engeller.length === 0 && (!gonderildi || b.eirsaliye?.durum === "hata"),
+          mukellefDogrulandi: mukellefDurumu.taze,
+        };
+      });
+      return {
+        kayitlar: durumSuzgeci ? satirlar.filter((s) => s.durum === durumSuzgeci) : satirlar,
+        yetkiler: { gonderebilir },
+      };
+    });
+  }
+
+  /** Giden e-İrsaliyenin UBL içeriği ve hata ayrıntısı. */
+  async gidenDetay(belgeId: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kayit = await tx.eirsaliyeKayit.findUnique({
+        where: { belgeId },
+        select: { durum: true, entegratorRef: true, hataMesaji: true, xmlIcerik: true, sonDurumSorguAt: true, createdAt: true, belge: { select: { no: true, tarih: true, cari: { select: { unvan: true } } } } },
+      });
+      if (!kayit) throw new NotFoundException("Bu belge için e-İrsaliye kaydı bulunamadı");
+      return {
+        belgeNo: kayit.belge.no,
+        tarih: kayit.belge.tarih.toISOString().slice(0, 10),
+        cariUnvan: kayit.belge.cari.unvan,
+        durum: kayit.durum,
+        entegratorRef: kayit.entegratorRef,
+        hataMesaji: kayit.hataMesaji,
+        xmlIcerik: kayit.xmlIcerik,
+        sonDurumSorguAt: kayit.sonDurumSorguAt?.toISOString() ?? null,
+        gonderimZamani: kayit.createdAt.toISOString(),
+      };
+    });
+  }
+
+  /** Tek seferde gönderilebilecek azami belge sayısı (EBLG-43). */
+  static readonly TOPLU_GONDERIM_SINIRI = 50;
+
+  /**
+   * EBLG-43: seçilen irsaliyeleri sırayla gönderir. Her belge kendi işleminde
+   * ilerler; biri başarısız olduğunda kalanlar durmaz ve sonuç belge numarasıyla
+   * raporlanır — toplu çağrının yarısının sessizce kaybolmaması için.
+   */
+  async topluGonder(belgeIdler: string[]): Promise<{ gonderilen: number; basarisiz: { belgeId: string; belgeNo: string | null; hata: string }[] }> {
+    const { tenantId } = aktifBaglam();
+    if (belgeIdler.length > EirsaliyeService.TOPLU_GONDERIM_SINIRI) {
+      throw new BadRequestException(`Tek seferde en çok ${EirsaliyeService.TOPLU_GONDERIM_SINIRI} e-İrsaliye gönderilebilir`);
+    }
+    const numaralar = new Map(
+      (await this.prisma.tenantIslem(tenantId, (tx) => tx.belge.findMany({ where: { id: { in: belgeIdler } }, select: { id: true, no: true } }))).map((b) => [b.id, b.no]),
+    );
+    let gonderilen = 0;
+    const basarisiz: { belgeId: string; belgeNo: string | null; hata: string }[] = [];
+    for (const belgeId of belgeIdler) {
+      try {
+        await this.gonder(belgeId);
+        gonderilen++;
+      } catch (hata) {
+        basarisiz.push({ belgeId, belgeNo: numaralar.get(belgeId) ?? null, hata: hata instanceof Error ? hata.message : "Bilinmeyen hata" });
+      }
+    }
+    return { gonderilen, basarisiz };
   }
 
   async gelenleriCek() {

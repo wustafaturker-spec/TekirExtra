@@ -371,7 +371,7 @@ export function SearchInput({ className, ...rest }: InputHTMLAttributes<HTMLInpu
 }
 
 /* ─── Uyarı satırı ───────────────────────────────────────────────────────── */
-export function Alert({ tone, children }: { tone: "error" | "success"; children: ReactNode }) {
+export function Alert({ tone, children }: { tone: "error" | "success" | "warning"; children: ReactNode }) {
   if (!children) return null;
   const isError = tone === "error";
 

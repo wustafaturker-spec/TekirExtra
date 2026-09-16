@@ -2115,6 +2115,7 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 .alert { padding: 0.7rem 0.95rem; border-radius: var(--radius-sm); font-size: 0.88rem; font-weight: 500; margin-bottom: 1rem; }
 .alert--error { background: var(--danger-soft); color: var(--danger); }
 .alert--success { background: var(--success-soft); color: var(--success); }
+.alert--warning { background: var(--warning-soft); color: var(--warning); }
 
 /* ─── Para / metin yardımcıları ──────────────────────────────────────────── */
 /* <Para>, <Miktar>, <Tarih> bileşenlerinin ortak sınıfı. Sabit genişlikli

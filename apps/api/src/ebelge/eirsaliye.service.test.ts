@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { BadRequestException } from "@nestjs/common";
+import { describe, expect, it, vi } from "vitest";
+import { baglamlaCalistir } from "../core/istek-baglami";
 import { EirsaliyeService } from "./eirsaliye.service";
 
 /**
@@ -102,5 +104,55 @@ describe("EirsaliyeService UBL", () => {
     const satir = ubl(belge).match(/<cac:DespatchLine>[\s\S]*?<\/cac:DespatchLine>/)![0];
 
     expect(satir.indexOf("<cac:OrderLineReference>")).toBeLessThan(satir.indexOf("<cac:Item>"));
+  });
+});
+
+describe("EirsaliyeService.topluGonder (EBLG-43)", () => {
+  /** `gonder` dışındaki her şeyi sahteleyip toplu akışı tek başına ölçer. */
+  function servisKur(gonderSonuclari: Record<string, "ok" | string>) {
+    const numaralar = Object.keys(gonderSonuclari).map((id, i) => ({ id, no: `GBZ202600080000${i + 1}` }));
+    const prisma = {
+      tenantIslem: vi.fn((_t: string, calistir: (tx: unknown) => unknown) =>
+        calistir({ belge: { findMany: vi.fn().mockResolvedValue(numaralar) } }),
+      ),
+    } as never;
+    const servis = new EirsaliyeService(prisma, {} as never, {} as never, {} as never, {} as never);
+    vi.spyOn(servis, "gonder").mockImplementation(async (belgeId: string) => {
+      const sonuc = gonderSonuclari[belgeId];
+      if (sonuc !== "ok") throw new BadRequestException(sonuc);
+      return {} as never;
+    });
+    return { servis, numaralar };
+  }
+
+  it("biri başarısız olsa da kalanları göndermeyi sürdürür ve belge numarasıyla raporlar", async () => {
+    const { servis } = servisKur({
+      "11111111-1111-4111-8111-111111111111": "ok",
+      "22222222-2222-4222-8222-222222222222": "Cari e-İrsaliye alıcısı olarak tanımlı değil",
+      "33333333-3333-4333-8333-333333333333": "ok",
+    });
+
+    const sonuc = await baglamlaCalistir({ tenantId: "t1", userId: "u1", rol: "muhasebe" }, () =>
+      servis.topluGonder([
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+        "33333333-3333-4333-8333-333333333333",
+      ]),
+    );
+
+    expect(sonuc.gonderilen).toBe(2);
+    expect(sonuc.basarisiz).toEqual([
+      { belgeId: "22222222-2222-4222-8222-222222222222", belgeNo: "GBZ2026000800002", hata: "Cari e-İrsaliye alıcısı olarak tanımlı değil" },
+    ]);
+  });
+
+  it("üst sınırı aşan seçimi hiç göndermeden reddeder", async () => {
+    const { servis } = servisKur({});
+    const fazla = Array.from({ length: 51 }, (_, i) => `1111111${String(i).padStart(4, "0")}-1111-4111-8111-111111111111`);
+
+    await expect(
+      baglamlaCalistir({ tenantId: "t1", userId: "u1", rol: "muhasebe" }, () => servis.topluGonder(fazla)),
+    ).rejects.toThrow(/en çok 50/);
+    expect(servis.gonder).not.toHaveBeenCalled();
   });
 });
