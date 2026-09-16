@@ -112,6 +112,7 @@ function csvHucre(deger: string | number | null): string {
 function durumRozet(durum: string) {
   if (durum === "taslak") return <Badge variant="warning">📝 Taslak</Badge>;
   if (durum === "onaylandi") return <Badge variant="info">✅ Onaylı</Badge>;
+  if (durum === "kismen_kapandi") return <Badge variant="warning">📦 Kısmen teslim</Badge>;
   if (durum === "kapandi") return <Badge variant="neutral">🔗 Kapandı</Badge>;
   return <Badge variant="danger">İptal</Badge>;
 }
@@ -804,14 +805,16 @@ export default function BelgelerSayfasi() {
           </div>
           <EylemCubugu etiket="Belge eylemleri">
             {detay.durum === "taslak" && <Button variant="primary" size="sm" type="button" onClick={() => void onayOzetiAc(detay.id)}>✅ Onayla</Button>}
-            {detay.durum === "onaylandi" && DONUSUM[detay.tur]?.map((hedef) => (
-              <Button key={hedef} variant={hedef === "fatura" ? "primary" : undefined} size="sm" type="button" onClick={() => void donusumOzetiAc(detay.id, hedef)}>→ {hedef === "fatura" ? "Fatura" : TUR_ADI[hedef]}</Button>
+            {(detay.durum === "onaylandi" || detay.durum === "kismen_kapandi") && DONUSUM[detay.tur]?.map((hedef) => (
+              hedef === "fatura" && detay.durum !== "onaylandi" ? null : (
+                <Button key={hedef} variant={hedef === "fatura" ? "primary" : undefined} size="sm" type="button" onClick={() => void donusumOzetiAc(detay.id, hedef)}>→ {hedef === "fatura" ? "Fatura" : TUR_ADI[hedef]}</Button>
+              )
             ))}
             {detay.durum === "onaylandi" && detay.tur === "irsaliye" && detay.yon === "satis" && !detay.eirsaliye && <Button size="sm" type="button" onClick={() => void eirsaliyeGonder(detay.id)}>🚚 e-İrsaliye gönder</Button>}
             <Button size="sm" type="button" onClick={() => void pdfAc(detay.id)}>🖨 PDF</Button>
             <EylemMenusu>
               <Button size="sm" type="button" onClick={() => void eylem(detay.id, "kopyala", "Belge kopyalandı (taslak).")}>📋 Kopyala</Button>
-              {detay.durum === "onaylandi" && <Button variant="danger" size="sm" type="button" onClick={() => void eylem(detay.id, "iptal", "Belge iptal edildi.")}>İptal et</Button>}
+              {(detay.durum === "onaylandi" || detay.durum === "kismen_kapandi") && <Button variant="danger" size="sm" type="button" onClick={() => void eylem(detay.id, "iptal", "Belge iptal edildi.")}>İptal et</Button>}
               {detay.durum === "taslak" && <Button variant="danger" size="sm" type="button" onClick={() => void sil(detay.id)}>Sil</Button>}
             </EylemMenusu>
           </EylemCubugu>
@@ -825,7 +828,7 @@ export default function BelgelerSayfasi() {
                   : detay.turetilenler.find((t) => t.tur === adim));
               const mevcut = detay.tur === adim;
               const hedefAdim = adim === "teklif" ? null : adim;
-              const olusturulabilir = detay.durum === "onaylandi" && !kayit && hedefAdim !== null && DONUSUM[detay.tur]?.includes(hedefAdim);
+              const olusturulabilir = (detay.durum === "onaylandi" || (detay.durum === "kismen_kapandi" && hedefAdim === "irsaliye")) && !kayit && hedefAdim !== null && DONUSUM[detay.tur]?.includes(hedefAdim);
               return (
                 <button
                   className={`document-timeline__step${kayit ? " is-complete" : ""}${mevcut ? " is-current" : ""}`}
@@ -949,7 +952,7 @@ export default function BelgelerSayfasi() {
       <section className="saved-view-bar" aria-label="Belge görünümü ve filtreleri">
         <div className="saved-view-filters">
           <Field label="Yön" htmlFor="belge-yon-filtresi"><Select id="belge-yon-filtresi" value={yonBaglami ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: (e.target.value || null) as Yon | null, durum: durumFiltresi })}><option value="">Tümü</option><option value="satis">Satış</option><option value="alis">Satın alma</option></Select></Field>
-          <Field label="Belge durumu" htmlFor="belge-durum-filtresi"><Select id="belge-durum-filtresi" value={durumFiltresi ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: yonBaglami, durum: e.target.value || null })}><option value="">Tümü</option><option value="taslak">Taslak</option><option value="onaylandi">Onaylı</option><option value="kapandi">Kapandı</option><option value="iptal">İptal</option></Select></Field>
+          <Field label="Belge durumu" htmlFor="belge-durum-filtresi"><Select id="belge-durum-filtresi" value={durumFiltresi ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: yonBaglami, durum: e.target.value || null })}><option value="">Tümü</option><option value="taslak">Taslak</option><option value="onaylandi">Onaylı</option><option value="kismen_kapandi">Kısmen teslim</option><option value="kapandi">Kapandı</option><option value="iptal">İptal</option></Select></Field>
           <Field label="Başlangıç tarihi"><Input aria-label="Başlangıç tarihi" type="date" value={tarihBaslangic} onChange={(e) => tarihFiltresiDegistir("baslangic", e.target.value)} /></Field>
           <Field label="Bitiş tarihi"><Input aria-label="Bitiş tarihi" type="date" min={tarihBaslangic || undefined} value={tarihBitis} onChange={(e) => tarihFiltresiDegistir("bitis", e.target.value)} /></Field>
           <Field label="Kaydedilmiş görünüm"><Select aria-label="Kaydedilmiş görünüm" value="" onChange={(e) => { const gorunum = kayitliGorunumler.find((g) => g.id === e.target.value); if (gorunum) kayitliGorunumuUygula(gorunum); }}><option value="">Görünüm seçin</option>{kayitliGorunumler.map((g) => <option value={g.id} key={g.id}>{g.ad}</option>)}</Select></Field>

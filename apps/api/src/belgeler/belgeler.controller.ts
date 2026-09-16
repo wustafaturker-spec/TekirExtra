@@ -111,8 +111,8 @@ export class BelgelerController {
   @Post(":id/donustur")
   @Roller("muhasebe", "satis")
   async donustur(@Param("id") id: string, @Body() govde: unknown) {
-    const { hedef } = ayristir(belgeDonusturSemasi, govde);
-    return this.belgelerService.donustur(id, hedef);
+    const { hedef, kalemler } = ayristir(belgeDonusturSemasi, govde);
+    return this.belgelerService.donustur(id, hedef, { kalemler });
   }
 
   /** FTR-13: bekleyen sipariş/irsaliyeleri tek fatura taslağında birleştirir. */

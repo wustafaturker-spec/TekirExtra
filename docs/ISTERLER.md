@@ -637,9 +637,15 @@ raporu (§5.4) "Satın Alma" ekranının yalnız alış faturasına yönlendiren
 alanı olduğunu, talep/onay/teklif akışı bulunmadığını tespit etti. Paket **iki
 aşamalıdır**: birinci aşama talep → onay → teklif karşılaştırma → alış siparişine
 dönüşüm, bütçe kontrolü ve bildirim (SAT-01…SAT-08); ikinci aşama kısmi mal kabul ve
-üçlü eşleştirme (SAT-09…SAT-10) ayrı onayla başlar. Onay **tutar eşiği + rol**
+üçlü eşleştirme (SAT-09…SAT-11) ayrı onayla başlar. Onay **tutar eşiği + rol**
 iledir; bütçe aşımında **uyarı + zorunlu gerekçe**; talebi **tüm iç kullanıcılar**
 açabilir. Varsayılan eşik 25.000 TL.
+
+**S-01 ikinci aşama kararları (2026-09-16, kullanıcı onayı):** mal kabul ayrı bir
+varlık değildir, mevcut **alış irsaliyesi** kısmi dönüşümle kullanılır; kısmi
+dönüşüm **alış ve satış** yönlerinde birlikte gelir (satışta kısmi sevkiyat);
+üçlü eşleştirmede tolerans dışı fark faturayı engellemez, **Düzeltme Merkezi'ne**
+düşer; önce SAT-09/10 kodlanıp canlı denenir, SAT-11 ayrı turda gelir.
 
 | No | İster | Öncelik |
 |---|---|---|
@@ -651,8 +657,9 @@ açabilir. Varsayılan eşik 25.000 TL.
 | SAT-06 | **Siparişe dönüşüm:** muhasebe veya yönetici seçilen teklifi mevcut **alış siparişi** belgesine dönüştürür (cari = tedarikçi, satırlar teklif fiyatlarıyla, depo seçilir); onaylanan alış siparişinin "yoldaki" stok ve belge zinciri (FTR-12) aynen işler. Teklif girilmemiş onaylı talep, tedarikçi ve fiyat dönüşümde girilerek doğrudan siparişe dönüştürülebilir. Talep "siparişe dönüştü" olur ve siparişe bağlantı gösterir; bir talepten tek sipariş oluşur. | G |
 | SAT-07 | **Bildirim:** onay bekleyen her talep için onaylayabilecek rollere (eşiğe göre muhasebe ve/veya yönetici) `satin_alma` türünde bildirim düşer; talep karara bağlanınca veya geri çekilince bildirim kendiliğinden kapanır (BLD tarama deseni, tarayıcının kendi anahtarı). | G |
 | SAT-08 | **Ekranlar:** `/panel/satin-alma/talepler` "Taleplerim", "Onay bekleyenler" ve (muhasebe/yönetici için) "Tüm talepler" sekmeleriyle çalışır; talep detayında kalemler, bütçe durumu, geçmiş, teklif karşılaştırması ve siparişe dönüşüm yer alır. Mevcut Satın Alma çalışma alanı korunur, talep kısa yolu ve "onay bekleyen talepler" kuyruğu eklenir. Onay eşiği Ayarlar > Modüller'de düzenlenir. Talepler sayfası ve menüsü SAT-02'deki rollere açılır; ekrandaki eylemler sunucunun bildirdiği yetkilere göre gösterilir. | G |
-| SAT-09 | **Kısmi mal kabul** (ikinci aşama, ayrı onay): alış siparişine karşı parça parça mal kabulü, kalan miktar takibi. | G |
-| SAT-10 | **Üçlü eşleştirme** (ikinci aşama, ayrı onay): sipariş–mal kabul–fatura miktar ve fiyat karşılaştırması, tolerans ayarı, tolerans dışı farkların Düzeltme Merkezi'ne düşmesi. | G |
+| SAT-09 | **Kısmi teslim (mekanik):** onaylı sipariş irsaliyeye dönüştürülürken satır bazında miktar girilir (varsayılan: o satırın kalanı); sipariş satırında teslim edilen miktar birikir, kalan = sipariş miktarı − teslim edilen. Teslim edilen miktar sipariş miktarını **aşamaz**. Tamamı teslim edilmemiş sipariş `kismen_kapandi` olur ve yeniden dönüştürülebilir; tamamlanınca `kapandi`. Kural **alışta mal kabul ve satışta sevkiyat** için aynı işler. Stok kuralı değişmez: düşüm faturada kalır, alıştaki "yoldaki" ve satıştaki "rezerve" miktar fatura kesinleşene dek sürer (S-01 2026-07-13). İrsaliye iptal edilirse teslim edilen miktar geri alınır ve sipariş gerekirse `kismen_kapandi`/`onaylandi` durumuna döner. | G |
+| SAT-10 | **Kısmi teslim (ekranlar):** dönüşüm ekranı satır başına kalan miktarı ve girilecek miktarı gösterir, kalanı sıfır olan satır varsayılan olarak dışarıda kalır. Sipariş detayında sipariş/teslim/kalan sütunları ve teslim geçmişi (hangi irsaliye, ne zaman, ne kadar) yer alır; belge listesinde "kısmen teslim" süzgeci bulunur. Satın alma çalışma alanına "mal kabul bekleyen siparişler" kuyruğu eklenir. | G |
+| SAT-11 | **Üçlü eşleştirme** (SAT-09/10 canlı denendikten sonra ayrı turda): sipariş–mal kabul–fatura miktar ve fiyat karşılaştırması; `satin_alma` modül ayarında miktar ve fiyat için yüzde tolerans. Tolerans dışı fark **faturayı engellemez**, Düzeltme Merkezi'ne yeni `satin_alma` türüyle düşer ve orada kapatılır (DZL deseni). | G |
 
 ## 4. Fonksiyonel Olmayan İsterler
 

@@ -2995,10 +2995,12 @@ enum BelgeYon {
   alis
 }
 
-/// kapandi = zincirde sonraki belgeye/faturaya dönüştü
+/// kapandi = zincirde sonraki belgeye/faturaya dönüştü; kismen_kapandi =
+/// siparişin bir kısmı irsaliyeye dönüştü, kalanı hâlâ bekliyor (SAT-09)
 enum ZincirBelgeDurum {
   taslak
   onaylandi
+  kismen_kapandi
   kapandi
   iptal
 }
@@ -3206,13 +3208,22 @@ model BelgeSatir {
   netKdvTutari     Decimal @map("net_kdv_tutari") @db.Decimal(15, 2)
   toplamTutar      Decimal @map("toplam_tutar") @db.Decimal(15, 2)
   fiyatListesiId   String? @map("fiyat_listesi_id") @db.Uuid
+  /// SAT-09: sipariş satırından şimdiye dek irsaliyeye dönüşen miktar; kalan
+  /// = miktar − teslimEdilenMiktar. Yalnız sipariş satırlarında birikir.
+  teslimEdilenMiktar Decimal @default(0) @map("teslim_edilen_miktar") @db.Decimal(15, 3)
+  /// SAT-09: bu satırın türediği sipariş satırı. İrsaliye iptal edilince
+  /// teslim edilen miktarın hangi satırdan düşeceğini bu bağ söyler.
+  kaynakSatirId    String? @map("kaynak_satir_id") @db.Uuid
 
-  belge          Belge        @relation(fields: [belgeId], references: [id], onDelete: Cascade)
-  stok           StokKart     @relation(fields: [stokId], references: [id])
-  varyant        StokVaryant? @relation(fields: [varyantId], references: [id])
-  uretimEmirleri UretimEmri[]
+  belge             Belge        @relation(fields: [belgeId], references: [id], onDelete: Cascade)
+  stok              StokKart     @relation(fields: [stokId], references: [id])
+  varyant           StokVaryant? @relation(fields: [varyantId], references: [id])
+  uretimEmirleri    UretimEmri[]
+  kaynakSatir       BelgeSatir?  @relation("BelgeSatirZinciri", fields: [kaynakSatirId], references: [id], onDelete: SetNull)
+  turetilenSatirlar BelgeSatir[] @relation("BelgeSatirZinciri")
 
   @@index([tenantId, belgeId])
+  @@index([kaynakSatirId])
   @@map("belge_satirlari")
 }
 

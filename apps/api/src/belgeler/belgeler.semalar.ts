@@ -65,6 +65,23 @@ export const belgeGuncelleSemasi = guncellemeSemasi(belgeOlusturSemasi.omit({ tu
 
 export const belgeDonusturSemasi = z.object({
   hedef: z.enum(["siparis", "irsaliye", "fatura"]),
+  /**
+   * SAT-09: siparişten irsaliyeye kısmi teslim. Verilmezse her satırın kalanı
+   * dönüşür; verilen miktarlar satırın kalanını aşamaz (sunucuda denetlenir).
+   */
+  kalemler: z
+    .array(
+      z.object({
+        satirId: z.string().uuid(),
+        miktar: z
+          .union([z.string(), z.number()])
+          .transform((v) => String(v).trim())
+          .pipe(z.string().regex(/^\d{1,13}(\.\d{1,3})?$/, "Teslim miktarı sayı olmalıdır")),
+      }),
+    )
+    .min(1)
+    .max(500)
+    .optional(),
 });
 
 /** FTR-13: bekleyen sipariş/irsaliyeleri tek faturada birleştirme. */

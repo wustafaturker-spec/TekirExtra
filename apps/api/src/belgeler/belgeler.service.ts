@@ -191,6 +191,9 @@ export class BelgelerService {
         stokKod: s.stok.kod,
         stokAd: s.stok.ad,
         miktar: s.miktar.toFixed(3),
+        // SAT-09: siparişte ne kadarı teslim edildi, ne kadarı bekliyor
+        teslimEdilenMiktar: s.teslimEdilenMiktar.toFixed(3),
+        kalanMiktar: s.miktar.sub(s.teslimEdilenMiktar).toFixed(3),
         birim: s.birim,
         birimFiyat: s.birimFiyat.toFixed(4),
         iskontoOrani: s.iskontoOrani.toFixed(2),
@@ -556,9 +559,21 @@ export class BelgelerService {
           "Kapanmış veya iptal edilmiş belge iptal edilemez",
         );
       }
-      // Onaylı siparişin rezervi/yoldakisi çözülür
-      if (belge.durum === "onaylandi" && belge.tur === "siparis") {
-        await this.siparisEtkisiUygula(tx, belge.yon, belge.satirlar, -1, belge.depoId);
+      // Onaylı siparişin rezervi/yoldakisi çözülür. Kısmen teslim edilmiş
+      // siparişte teslim edilenin etkisi zincire geçtiği için yalnız kalan
+      // miktar çözülür (SAT-09); hiç teslim yoksa bu tüm miktar demektir.
+      if (belge.tur === "siparis" && ["onaylandi", "kismen_kapandi"].includes(belge.durum)) {
+        const kalanlar = belge.satirlar
+          .map((s) => ({ ...s, miktar: s.miktar.sub(s.teslimEdilenMiktar) }))
+          .filter((s) => s.miktar.greaterThan(0));
+        if (kalanlar.length > 0) {
+          await this.siparisEtkisiUygula(tx, belge.yon, kalanlar, -1, belge.depoId);
+        }
+      }
+      // İptal edilen irsaliyenin malı teslim edilmemiş sayılır: sipariş
+      // satırındaki birikim geri alınır ve sipariş yeniden teslime açılır.
+      if (belge.tur === "irsaliye") {
+        await this.teslimGeriAl(tx, belge.satirlar, belge.kaynakBelgeId);
       }
       const guncel = await tx.belge.update({
         where: { id },
@@ -568,9 +583,51 @@ export class BelgelerService {
     });
   }
 
+  /**
+   * SAT-09: iptal edilen irsaliyenin miktarlarını sipariş satırlarından düşer ve
+   * kaynak siparişi kalan durumuna göre yeniden açar. Faturaya bağlanmış sipariş
+   * (kapandı) bu yoldan geri açılmaz; orada teslim birikimi zaten yoktur.
+   */
+  private async teslimGeriAl(
+    tx: Prisma.TransactionClient,
+    satirlar: { miktar: Prisma.Decimal; kaynakSatirId: string | null }[],
+    kaynakBelgeId: string | null,
+  ): Promise<void> {
+    const bagliSatirlar = satirlar.filter((s) => s.kaynakSatirId);
+    if (bagliSatirlar.length === 0) return;
+    for (const s of bagliSatirlar) {
+      await tx.belgeSatir.update({
+        where: { id: s.kaynakSatirId as string },
+        data: { teslimEdilenMiktar: { decrement: s.miktar } },
+      });
+    }
+    if (!kaynakBelgeId) return;
+    const siparis = await tx.belge.findUnique({
+      where: { id: kaynakBelgeId },
+      include: { satirlar: { select: { miktar: true, teslimEdilenMiktar: true } } },
+    });
+    if (!siparis || siparis.tur !== "siparis" || siparis.faturaId || siparis.durum === "iptal") return;
+    const teslimVar = siparis.satirlar.some((s) => s.teslimEdilenMiktar.greaterThan(0));
+    const tamamlandi = siparis.satirlar.every((s) => s.teslimEdilenMiktar.greaterThanOrEqualTo(s.miktar));
+    await tx.belge.update({
+      where: { id: siparis.id },
+      data: { durum: tamamlandi ? "kapandi" : teslimVar ? "kismen_kapandi" : "onaylandi" },
+    });
+  }
+
   // ─── DÖNÜŞTÜRME (FTR-12 zinciri) ──────────────────────────────────────────
 
-  async donustur(id: string, hedef: "siparis" | "irsaliye" | "fatura") {
+  /**
+   * Zincirde bir sonraki belgeyi üretir (FTR-12). Siparişten irsaliyeye
+   * dönüşümde satır bazında miktar verilebilir (SAT-09): verilmezse her satırın
+   * kalanı dönüşür. Kalanı olan sipariş `kismen_kapandi` olarak açık kalır ve
+   * sonraki teslimler için yeniden dönüştürülebilir.
+   */
+  async donustur(
+    id: string,
+    hedef: "siparis" | "irsaliye" | "fatura",
+    girdi?: { kalemler?: { satirId: string; miktar: string }[] },
+  ) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const belge = await tx.belge.findUnique({
@@ -578,7 +635,9 @@ export class BelgelerService {
         include: { satirlar: true },
       });
       if (!belge) throw new NotFoundException("Belge bulunamadı");
-      if (belge.durum !== "onaylandi") {
+      // Kısmen teslim edilmiş sipariş kalanı için yeniden dönüştürülebilir.
+      const kismenAcik = belge.tur === "siparis" && belge.durum === "kismen_kapandi";
+      if (belge.durum !== "onaylandi" && !kismenAcik) {
         throw new BadRequestException(
           "Yalnızca onaylanmış belgeler dönüştürülebilir",
         );
@@ -586,6 +645,16 @@ export class BelgelerService {
       if (!DONUSUM_HEDEFLERI[belge.tur].includes(hedef)) {
         throw new BadRequestException(
           `${belge.tur} → ${hedef} dönüşümü zincire uygun değil (teklif → sipariş → irsaliye → fatura)`,
+        );
+      }
+
+      const miktarlar = this.donusecekMiktarlar(belge, hedef, girdi?.kalemler);
+
+      // Kısmen teslim edilmiş sipariş faturaya atlayamaz: teslim edilen mal
+      // irsaliyesi üzerinden faturalanır, iki yol aynı malı iki kez faturalardı.
+      if (hedef === "fatura" && belge.satirlar.some((s) => s.teslimEdilenMiktar.greaterThan(0))) {
+        throw new BadRequestException(
+          "Kısmen teslim edilmiş sipariş doğrudan faturalanamaz; irsaliyelerini faturalayın",
         );
       }
 
@@ -597,6 +666,12 @@ export class BelgelerService {
         });
         return { donusenTur: "fatura" as const, faturaId: fatura.id };
       }
+
+      const donusenler = belge.satirlar.filter((s) => miktarlar.has(s.id));
+      // Miktarların tamamı geliyorsa belge birebir kopyalanır; kısmi teslimde
+      // satır ve belge toplamları yeni miktarlarla yeniden hesaplanır.
+      const tamDonusum = donusenler.length === belge.satirlar.length && donusenler.every((s) => miktarlar.get(s.id)!.equals(s.miktar));
+      const hesap = tamDonusum ? null : this.kismiHesap(belge, donusenler, miktarlar);
 
       // Teklif → sipariş rezervasyon üretmez; yeni sipariş önce taslak olur,
       // rezerv onayında konur. Sipariş → irsaliyede rezerv sürer (stok
@@ -613,51 +688,138 @@ export class BelgelerService {
           dovizCinsi: belge.dovizCinsi,
           kur: belge.kur,
           genelIskontoYuzdesi: belge.genelIskontoYuzdesi,
-          genelIskontoTutari: belge.genelIskontoTutari,
-          toplamBrut: belge.toplamBrut,
-          toplamSatirIskontosu: belge.toplamSatirIskontosu,
-          genelIskontoToplam: belge.genelIskontoToplam,
-          toplamMatrah: belge.toplamMatrah,
-          toplamKdv: belge.toplamKdv,
-          toplamTevkifat: belge.toplamTevkifat,
-          toplamNetKdv: belge.toplamNetKdv,
-          genelToplam: belge.genelToplam,
+          genelIskontoTutari: hesap ? hesap.genelIskontoTutari : belge.genelIskontoTutari,
+          ...(hesap
+            ? this.toplamAlanlari(hesap.hesap)
+            : {
+                toplamBrut: belge.toplamBrut,
+                toplamSatirIskontosu: belge.toplamSatirIskontosu,
+                genelIskontoToplam: belge.genelIskontoToplam,
+                toplamMatrah: belge.toplamMatrah,
+                toplamKdv: belge.toplamKdv,
+                toplamTevkifat: belge.toplamTevkifat,
+                toplamNetKdv: belge.toplamNetKdv,
+                genelToplam: belge.genelToplam,
+              }),
           aciklama: belge.aciklama,
           notlar: belge.notlar,
           kaynakBelgeId: belge.id,
         },
       });
       await tx.belgeSatir.createMany({
-        data: belge.satirlar.map((s) => ({
-          tenantId,
-          belgeId: yeni.id,
-          stokId: s.stokId,
-          varyantId: s.varyantId,
-          partiBilgileri: s.partiBilgileri ?? Prisma.JsonNull,
-          miktar: s.miktar,
-          birim: s.birim,
-          birimFiyat: s.birimFiyat,
-          iskontoOrani: s.iskontoOrani,
-          iskontoTutari: s.iskontoTutari,
-          genelIskontoPayi: s.genelIskontoPayi,
-          matrah: s.matrah,
-          kdvOrani: s.kdvOrani,
-          kdvTutari: s.kdvTutari,
-          tevkifatPay: s.tevkifatPay,
-          tevkifatPayda: s.tevkifatPayda,
-          tevkifatTutari: s.tevkifatTutari,
-          netKdvTutari: s.netKdvTutari,
-          toplamTutar: s.toplamTutar,
-        })),
+        data: donusenler.map((s, i) => {
+          const h = hesap?.hesap.satirlar[i];
+          return {
+            tenantId,
+            belgeId: yeni.id,
+            // İrsaliye satırı türediği sipariş satırını gösterir: iptal edilirse
+            // teslim edilen miktarın nereden düşeceği buradan bilinir (SAT-09).
+            kaynakSatirId: s.id,
+            stokId: s.stokId,
+            varyantId: s.varyantId,
+            partiBilgileri: s.partiBilgileri ?? Prisma.JsonNull,
+            miktar: miktarlar.get(s.id)!,
+            birim: s.birim,
+            birimFiyat: s.birimFiyat,
+            iskontoOrani: s.iskontoOrani,
+            iskontoTutari: h ? D(h.iskontoTutari) : s.iskontoTutari,
+            genelIskontoPayi: h ? D(h.genelIskontoPayi) : s.genelIskontoPayi,
+            matrah: h ? D(h.matrah) : s.matrah,
+            kdvOrani: s.kdvOrani,
+            kdvTutari: h ? D(h.kdvTutari) : s.kdvTutari,
+            tevkifatPay: s.tevkifatPay,
+            tevkifatPayda: s.tevkifatPayda,
+            tevkifatTutari: h ? D(h.tevkifatTutari) : s.tevkifatTutari,
+            netKdvTutari: h ? D(h.netKdvTutari) : s.netKdvTutari,
+            toplamTutar: h ? D(h.toplamTutar) : s.toplamTutar,
+          };
+        }),
       });
 
-      // Sipariş → irsaliye dönüşümünde rezerv taşınmalı: kaynak sipariş
-      // kapanır ama rezerv, zincir fatura kesinleşene dek sürer; bu yüzden
-      // burada rezerv ÇÖZÜLMEZ. Teklif → siparişte yeni sipariş taslaktır,
-      // rezerv onayla gelir.
-      await tx.belge.update({ where: { id }, data: { durum: "kapandi" } });
-      return { donusenTur: hedef, belgeId: yeni.id };
+      // Teslim edilen miktar sipariş satırında birikir; sipariş ancak her satırı
+      // tamamlanınca kapanır, kalanı varsa "kısmen kapandı" olarak açık durur.
+      let tamamlandi = true;
+      if (belge.tur === "siparis") {
+        for (const s of belge.satirlar) {
+          const eklenen = miktarlar.get(s.id);
+          if (eklenen) {
+            await tx.belgeSatir.update({ where: { id: s.id }, data: { teslimEdilenMiktar: { increment: eklenen } } });
+          }
+          if (s.teslimEdilenMiktar.add(eklenen ?? D(0)).lessThan(s.miktar)) tamamlandi = false;
+        }
+      }
+      await tx.belge.update({ where: { id }, data: { durum: tamamlandi ? "kapandi" : "kismen_kapandi" } });
+      return { donusenTur: hedef, belgeId: yeni.id, kaynakKapandi: tamamlandi };
     });
+  }
+
+  /**
+   * SAT-09: hangi satırdan ne kadar dönüşeceği. Kalem verilmezse her satırın
+   * kalanı (miktar − teslim edilen) alınır; verilirse miktarlar kalanı aşamaz.
+   */
+  private donusecekMiktarlar(
+    belge: { tur: BelgeTur; satirlar: { id: string; miktar: Prisma.Decimal; teslimEdilenMiktar: Prisma.Decimal }[] },
+    hedef: "siparis" | "irsaliye" | "fatura",
+    kalemler?: { satirId: string; miktar: string }[],
+  ): Map<string, Prisma.Decimal> {
+    const kalan = (s: { miktar: Prisma.Decimal; teslimEdilenMiktar: Prisma.Decimal }) => s.miktar.sub(s.teslimEdilenMiktar);
+    const miktarlar = new Map<string, Prisma.Decimal>();
+    if (kalemler?.length) {
+      if (!(belge.tur === "siparis" && hedef === "irsaliye")) {
+        throw new BadRequestException("Satır bazında miktar yalnız siparişten irsaliyeye dönüşümde verilebilir");
+      }
+      for (const kalem of kalemler) {
+        const satir = belge.satirlar.find((s) => s.id === kalem.satirId);
+        if (!satir) throw new BadRequestException("Belgede bulunmayan bir satır için miktar girilmiş");
+        if (miktarlar.has(kalem.satirId)) throw new BadRequestException("Aynı satır için birden çok miktar girilmiş");
+        const miktar = D(kalem.miktar);
+        if (miktar.lessThanOrEqualTo(0)) throw new BadRequestException("Teslim miktarı sıfırdan büyük olmalıdır");
+        if (miktar.greaterThan(kalan(satir))) {
+          throw new BadRequestException(`Teslim miktarı sipariş kalanını aşamaz (kalan: ${kalan(satir).toFixed(3)})`);
+        }
+        miktarlar.set(kalem.satirId, miktar);
+      }
+    } else {
+      for (const s of belge.satirlar) {
+        if (kalan(s).greaterThan(0)) miktarlar.set(s.id, kalan(s));
+      }
+    }
+    if (miktarlar.size === 0) throw new BadRequestException("Dönüştürülecek miktar kalmadı");
+    return miktarlar;
+  }
+
+  /**
+   * SAT-09: kısmi dönüşümün satır ve belge toplamları. Sabit tutarlı genel
+   * iskonto, dönüşen satırların brütü oranında taşınır; yüzdeli iskonto zaten
+   * yeni tutarların üzerinden işler.
+   */
+  private kismiHesap(
+    belge: { genelIskontoYuzdesi: Prisma.Decimal; genelIskontoTutari: Prisma.Decimal; satirlar: BelgeSatirKaydi[] },
+    donusenler: (BelgeSatirKaydi & { id: string })[],
+    miktarlar: Map<string, Prisma.Decimal>,
+  ) {
+    const brut = (satirlar: { miktar: Prisma.Decimal; birimFiyat: Prisma.Decimal }[]) =>
+      satirlar.reduce((toplam, s) => toplam.add(s.miktar.mul(s.birimFiyat)), D(0));
+    const kaynakBrut = brut(belge.satirlar);
+    const yeniBrut = brut(donusenler.map((s) => ({ miktar: miktarlar.get(s.id)!, birimFiyat: s.birimFiyat })));
+    const genelIskontoTutari =
+      belge.genelIskontoTutari.isZero() || kaynakBrut.isZero()
+        ? D(0)
+        : belge.genelIskontoTutari.mul(yeniBrut).div(kaynakBrut).toDecimalPlaces(2);
+    const hesap = this.hesapla({
+      satirlar: donusenler.map((s) => ({
+        stokId: s.stokId,
+        miktar: miktarlar.get(s.id)!,
+        birimFiyat: s.birimFiyat,
+        iskontoOrani: s.iskontoOrani,
+        kdvOrani: s.kdvOrani,
+        tevkifatPay: s.tevkifatPay,
+        tevkifatPayda: s.tevkifatPayda,
+      })),
+      genelIskontoYuzdesi: belge.genelIskontoYuzdesi,
+      genelIskontoTutari,
+    });
+    return { hesap, genelIskontoTutari };
   }
 
   // ─── TOPLU FATURALAMA (FTR-13) ───────────────────────────────────────────

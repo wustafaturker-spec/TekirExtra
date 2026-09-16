@@ -18,8 +18,9 @@ export class BelgelerModule implements OnModuleInit {
     registerEylemPolitikasi<{ durum: string }>("belge", {
       duzenle: (b, ctx) => b.durum === "taslak" && yetkili(ctx.rol),
       sil: (b, ctx) => b.durum === "taslak" && yetkili(ctx.rol),
+      // Kısmen teslim edilmiş siparişin kalanından vazgeçilebilir (SAT-09).
       iptal: (b, ctx) =>
-        ["taslak", "onaylandi"].includes(b.durum) && yetkili(ctx.rol),
+        ["taslak", "onaylandi", "kismen_kapandi"].includes(b.durum) && yetkili(ctx.rol),
       kopyala: (b, ctx) => ctx.rol !== "salt_okunur",
     });
   }
