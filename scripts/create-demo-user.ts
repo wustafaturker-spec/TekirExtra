@@ -45,12 +45,12 @@ async function main() {
     },
   });
 
+  // Kimlik tablosu yalnız e-postayı kiracıya eşler; parola kullanıcı kaydındadır.
   await prisma.authKimlik.create({
     data: {
       userId,
       tenantId,
       eposta,
-      parolaHash,
     },
   });
 
