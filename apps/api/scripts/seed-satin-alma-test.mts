@@ -35,6 +35,10 @@ async function main() {
   const tenantId = tenant.id;
   console.log(`Kiracı: ${tenant.unvan} (${tenantId})`);
 
+  // Abonelik kaydı olmayan kiracıda cari/stok/fatura oluşturma kilitlenir.
+  const abonelik = await prisma.tenantAbonelik.findUnique({ where: { tenantId } });
+  if (!abonelik) await prisma.tenantAbonelik.create({ data: { tenantId, planKodu: "v1", durum: "aktif" } });
+
   // Talep açan ve onaylayan ayrı kullanıcılar: görev ayrılığı (SAT-03) denenebilsin.
   await kullanici(tenantId, "depo@tekirextra.local", "Deniz Depo", "depo");
   await kullanici(tenantId, "muhasebe@tekirextra.local", "Meral Muhasebe", "muhasebe");

@@ -54,6 +54,12 @@ async function main() {
     },
   });
 
+  // Kayıt akışının açtığı abonelik burada da açılır; kaydı olmayan kiracıda
+  // cari, stok ve fatura oluşturma abonelik kontrolüne takılıyordu.
+  await prisma.tenantAbonelik.create({
+    data: { tenantId, planKodu: "v1", durum: "aktif", faturaEpostasi: eposta },
+  });
+
   console.log("Demo kullanıcısı başarıyla oluşturuldu!");
   console.log(`E-posta: ${eposta}`);
   console.log(`Parola : ${parola}`);

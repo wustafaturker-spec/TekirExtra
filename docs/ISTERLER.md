@@ -81,6 +81,12 @@ fatura kullanım sayaçları ve kayıt anında limit denetimi; limit aşımını
 engelleyen plan değişimi; faturalama iletişimi; dönem sonunda iptal/yeniden
 etkinleştirme ve salt-okur değişiklik geçmişi eklendi. Ödeme sağlayıcısı henüz
 bağlı değildir; sağlayıcı referansı mevcut abonelik modelinde hazırdır.
+**Düzeltme (2026-09-16):** abonelik kaydı yalnız web kayıt akışında açıldığı
+için betikle ya da elle oluşturulan kiracıda kayıt bulunmuyor, cari/stok/fatura
+oluşturma "abonelik aktif değil" diye kilitleniyordu. Kaydın yokluğu artık
+askıya alma sayılmaz: ilk erişimde varsayılan planla (`v1` → Profesyonel) aktif
+bir abonelik açılır. Gerçek askıya alma `durum` alanıyla yapılır ve engellemeyi
+sürdürür.
 
 **Durum (e-İrsaliye, 2026-08-14):** Onaylı satış irsaliyeleri Sovos DESPATCH
 servisine gönderilebilir, durumları sorgulanabilir; gelen e-İrsaliyeler kutuya

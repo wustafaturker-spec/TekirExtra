@@ -1,9 +1,15 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { AbonelikDurumu } from "@prisma/client";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 
 export type LimitAnahtari = "kullanici" | "cari" | "stok" | "aylikFatura";
+
+/**
+ * Abonelik kaydı yoksa açılan plan. Şemadaki varsayılanla aynıdır ve
+ * `profesyonel` plana eşlenir.
+ */
+export const VARSAYILAN_PLAN_KODU = "v1";
 
 export const ABONELIK_PLANLARI = [
   { kod: "baslangic", ad: "Başlangıç", aciklama: "Küçük ekipler için temel finans ve stok yönetimi.", aylikFiyat: 399, limitler: { kullanici: 3, cari: 250, stok: 500, aylikFatura: 100 }, ozellikler: ["Cari, fatura ve stok", "Kasa ve banka", "Temel raporlar"] },
@@ -21,6 +27,23 @@ export class AbonelikService {
     return plan;
   }
 
+  /**
+   * Kiracının abonelik kaydını döndürür, yoksa varsayılan planla açar.
+   *
+   * Abonelik kaydı yalnızca web kayıt akışında yazılıyordu; betikle ya da elle
+   * açılan kiracıda kayıt bulunmadığı için cari, stok ve fatura oluşturma
+   * "abonelik aktif değil" diye kilitleniyordu. Kaydın yokluğu bir veri eksiği,
+   * askıya alma değildir: gerçek askıya alma `durum` alanıyla yapılır ve bu yol
+   * onu değiştirmez.
+   */
+  private async abonelikSagla(tx: any, tenantId: string) {
+    return tx.tenantAbonelik.upsert({
+      where: { tenantId },
+      create: { tenantId, planKodu: VARSAYILAN_PLAN_KODU, durum: AbonelikDurumu.aktif },
+      update: {},
+    });
+  }
+
   private async kullanimSay(tx: any) {
     const ayBasi = new Date();
     ayBasi.setDate(1); ayBasi.setHours(0, 0, 0, 0);
@@ -36,8 +59,7 @@ export class AbonelikService {
   async ozet() {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const abonelik = await tx.tenantAbonelik.findUnique({ where: { tenantId } });
-      if (!abonelik) throw new NotFoundException("Abonelik kaydı bulunamadı");
+      const abonelik = await this.abonelikSagla(tx, tenantId);
       const kullanim = await this.kullanimSay(tx);
       const plan = this.plan(abonelik.planKodu === "v1" ? "profesyonel" : abonelik.planKodu);
       return { abonelik, plan, planlar: ABONELIK_PLANLARI, kullanim };
@@ -48,8 +70,7 @@ export class AbonelikService {
     const { tenantId } = aktifBaglam();
     const yeniPlan = this.plan(yeniPlanKodu);
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const mevcut = await tx.tenantAbonelik.findUnique({ where: { tenantId } });
-      if (!mevcut) throw new NotFoundException("Abonelik kaydı bulunamadı");
+      const mevcut = await this.abonelikSagla(tx, tenantId);
       const kullanim = await this.kullanimSay(tx);
       const asimlar = Object.entries(yeniPlan.limitler).filter(([anahtar, limit]) => limit !== null && kullanim[anahtar as LimitAnahtari] > limit);
       if (asimlar.length) {
@@ -65,14 +86,16 @@ export class AbonelikService {
 
   async iletisimGuncelle(girdi: { faturaEpostasi?: string; faturalandirmaUnvani?: string }) {
     const { tenantId } = aktifBaglam();
-    return this.prisma.tenantIslem(tenantId, (tx) => tx.tenantAbonelik.update({ where: { tenantId }, data: girdi }));
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      await this.abonelikSagla(tx, tenantId);
+      return tx.tenantAbonelik.update({ where: { tenantId }, data: girdi });
+    });
   }
 
   async durumDegistir(yeniDurum: "aktif" | "iptal") {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const mevcut = await tx.tenantAbonelik.findUnique({ where: { tenantId } });
-      if (!mevcut) throw new NotFoundException("Abonelik kaydı bulunamadı");
+      const mevcut = await this.abonelikSagla(tx, tenantId);
       const abonelik = await tx.tenantAbonelik.update({ where: { tenantId }, data: { durum: yeniDurum, iptalTarihi: yeniDurum === "iptal" ? new Date() : null } });
       await tx.abonelikDegisikligi.create({ data: { tenantId, oncekiPlan: mevcut.planKodu, yeniPlan: mevcut.planKodu, oncekiDurum: mevcut.durum, yeniDurum, neden: yeniDurum === "iptal" ? "Dönem sonunda iptal talebi" : "Abonelik yeniden etkinleştirildi" } });
       return abonelik;
@@ -87,8 +110,8 @@ export class AbonelikService {
   async limitDogrula(anahtar: LimitAnahtari) {
     const { tenantId } = aktifBaglam();
     await this.prisma.tenantIslem(tenantId, async (tx) => {
-      const abonelik = await tx.tenantAbonelik.findUnique({ where: { tenantId } });
-      if (!abonelik || abonelik.durum === AbonelikDurumu.askida) throw new BadRequestException("Abonelik aktif değil");
+      const abonelik = await this.abonelikSagla(tx, tenantId);
+      if (abonelik.durum === AbonelikDurumu.askida) throw new BadRequestException("Abonelik askıya alınmış");
       const plan = this.plan(abonelik.planKodu === "v1" ? "profesyonel" : abonelik.planKodu);
       const limit = plan.limitler[anahtar];
       if (limit === null) return;
