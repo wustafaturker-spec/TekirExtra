@@ -62,7 +62,17 @@ describe("ebelgeAdimlari (EBLG-45)", () => {
     const adimlar = ebelgeAdimlari({ tur: "efatura", profil: "temel", durum: "iptal" });
 
     expect(adimlar.every((a) => a.durum === "iptal" || a.durum === "tamam")).toBe(true);
-    expect(adimlar.some((a) => a.not === "Belge iptal edildi")).toBe(true);
+    expect(adimlar.filter((a) => a.not === "Belge iptal edildi")).toHaveLength(1);
+  });
+
+  it("iptalden önce gidilen yolu korur", () => {
+    // Belge GİB'e ulaşmışsa iptal o adımları geçersiz kılmaz; yalnız kalanı kapatır.
+    expect(ozet({ tur: "efatura", profil: "ticari", durum: "iptal", ulasilanDurum: "iletildi" })).toEqual([
+      "Belge gönderildi:tamam",
+      "Maliyeye iletildi:tamam",
+      "Alıcıya ulaştı:iptal",
+      "Alıcı kabul etti:iptal",
+    ]);
   });
 
   it("gelen belgede akışı iki adıma indirir", () => {

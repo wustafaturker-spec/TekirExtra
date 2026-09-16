@@ -18,6 +18,12 @@ export interface AkisGirdisi {
   durum?: string | null;
   /** Alıcının ticari faturaya verdiği yanıt; zarf kabulünden ayrı eksendir. */
   aliciYaniti?: "kabul" | "ret" | null;
+  /**
+   * İptal edilen belgenin iptalden önce ulaştığı en ileri zarf durumu. Son
+   * durum "iptal" olunca yol bilgisi kaybolur; geçmişten gelen bu değer,
+   * belgenin nereye kadar gittiğini şeritte görünür tutar.
+   */
+  ulasilanDurum?: string | null;
 }
 
 export interface Adim {
@@ -51,7 +57,7 @@ function gidenAdimlar(girdi: AkisGirdisi): Adim[] {
   const eksen = girdi.tur === "eirsaliye" ? "eirsaliye" : "ebelge";
   const hata = girdi.durum === "hata";
   const iptal = girdi.durum === "iptal";
-  const ilerleme = zarfIlerlemesi(girdi.durum);
+  const ilerleme = zarfIlerlemesi(iptal ? girdi.ulasilanDurum : girdi.durum);
   // e-Arşiv'in zarfı alıcıya değil GİB'e gider; "alıcıya ulaştı" demek yanıltır.
   const ucuncuBaslik = girdi.tur === "earsiv" ? "GİB'e işlendi" : "Alıcıya ulaştı";
   const adimlar: Adim[] = [
@@ -86,7 +92,14 @@ function gidenAdimlar(girdi: AkisGirdisi): Adim[] {
   }
 
   if (iptal) {
-    return adimlar.map((a) => (a.durum === "tamam" ? a : { ...a, durum: "iptal" as const, not: a.not ?? "Belge iptal edildi" }));
+    // Tamamlanan adımlar olduğu gibi kalır: belge oraya kadar gerçekten gitti.
+    let ilkIptal = true;
+    return adimlar.map((a) => {
+      if (a.durum === "tamam") return a;
+      const not = ilkIptal ? "Belge iptal edildi" : undefined;
+      ilkIptal = false;
+      return { ...a, durum: "iptal" as const, not: a.not ?? not };
+    });
   }
   return adimlar;
 }

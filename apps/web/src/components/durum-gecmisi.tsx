@@ -45,6 +45,8 @@ const ADIM_SIMGESI: Record<string, string> = { tamam: "✓", suanki: "•", hata
  * eşleştirilir, kaydı olmayan adımda boş kalır.
  */
 export function EbelgeAdimSeridi({ akis, gecmis = [] }: { akis: AkisGirdisi; gecmis?: DurumGecmisiSatiri[] }) {
+  // İptal edilen belgenin nereye kadar gittiği yalnız geçmişte durur.
+  const ulasilanDurum = ["kabul", "iletildi", "kuyrukta"].find((durum) => gecmis.some((k) => k.yeniDurum === durum)) ?? null;
   const zamanBul = (kaynak?: { eksen: string; yeniDurum: string }) => {
     if (!kaynak) return null;
     const kayit = gecmis.find((k) => k.eksen === kaynak.eksen && k.yeniDurum === kaynak.yeniDurum);
@@ -53,7 +55,7 @@ export function EbelgeAdimSeridi({ akis, gecmis = [] }: { akis: AkisGirdisi; gec
 
   return (
     <ol aria-label="Belge durum adımları" className="ebelge-steps">
-      {ebelgeAdimlari(akis).map((adim) => {
+      {ebelgeAdimlari({ ...akis, ulasilanDurum: akis.ulasilanDurum ?? ulasilanDurum }).map((adim) => {
         const zaman = zamanBul(adim.kaynak);
         return (
           <li className={`ebelge-steps__item is-${adim.durum}`} key={adim.anahtar}>
