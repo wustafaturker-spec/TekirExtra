@@ -11,6 +11,7 @@ import {
 } from "@nestjs/common";
 import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
 import type { BelgeDurumSonuc, EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
+import { birimTanindiMi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { BildirimService } from "../bildirimler/bildirim.service";
@@ -74,7 +75,11 @@ export class EbelgeService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const fatura = await tx.fatura.findUnique({
         where: { id: faturaId },
-        include: { cari: true, ebelge: { select: { id: true, durum: true, tur: true, entegratorRef: true, updatedAt: true } } },
+        include: {
+          cari: true,
+          satirlar: { select: { birim: true, stok: { select: { kod: true, ad: true } } } },
+          ebelge: { select: { id: true, durum: true, tur: true, entegratorRef: true, updatedAt: true } },
+        },
       });
       if (!fatura) throw new NotFoundException("Fatura bulunamadı");
       if (fatura.durum !== "kesin") throw new BadRequestException("e-Fatura wizard'ı yalnızca kesinleşmiş faturalar için açılabilir");
@@ -103,6 +108,11 @@ export class EbelgeService {
         // TCKN'li alıcıda e-Arşiv'e yazılacak ad/soyad; kartta yoksa tahmin
         // edildiği sihirbazda gösterilir (CARI-21).
         aliciAdi: fatura.cari.vknTckn.length === 11 ? adSoyadCoz(fatura.cari) : undefined,
+        // Birimi GİB kod listesinde karşılığı olmayan satırlar belgeye "adet"
+        // olarak gider; sessiz kalmasın diye sihirbazda söylenir.
+        birimUyarilari: fatura.satirlar
+          .filter((satir) => !birimTanindiMi(satir.birim))
+          .map((satir, sira) => ({ sira: sira + 1, stok: satir.stok.ad, birim: satir.birim })),
         not: "Mükellefiyet kontrolü gönderim onayında tekrar doğrulanır.",
       };
     });

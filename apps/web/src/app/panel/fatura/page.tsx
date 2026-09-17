@@ -165,6 +165,8 @@ interface EbelgeWizardBilgisi {
   earsivGonderimSekli?: "elektronik" | "kagit";
   /** TCKN'li alıcıda e-Arşiv'e yazılacak ad/soyad; `tahmin` ise kartta girilmemiş (CARI-21). */
   aliciAdi?: { ad: string; soyad: string; tahmin: boolean };
+  /** GİB birim kod listesinde karşılığı olmayan satırlar; belgeye adet olarak gider. */
+  birimUyarilari?: { sira: number; stok: string; birim: string }[];
   not?: string;
 }
 interface KayitliGorunum { id: string; ad: string; yon: "satis" | "alis" | null; durum: string | null; ebelge: string | null; odeme: string | null; }
@@ -1586,6 +1588,12 @@ export default function FaturaSayfasi() {
             {ebelgeWizard.bilgi.aliciAdi?.tahmin && (
               <div className="approval-impact is-warning">
                 Carinin adı ve soyadı kartta girilmemiş; e-Arşiv&apos;e unvandan tahminle Ad: <strong>{ebelgeWizard.bilgi.aliciAdi.ad}</strong>, Soyad: <strong>{ebelgeWizard.bilgi.aliciAdi.soyad}</strong> yazılacak. Doğru değilse cari kartında düzeltin.
+              </div>
+            )}
+            {(ebelgeWizard.bilgi.birimUyarilari?.length ?? 0) > 0 && (
+              <div className="approval-impact is-warning">
+                Şu satırların birimi GİB kod listesinde yok, belgeye <strong>adet</strong> olarak yazılacak:{" "}
+                {ebelgeWizard.bilgi.birimUyarilari!.map((u) => `${u.sira}. ${u.stok} (${u.birim})`).join(", ")}. Doğru değilse stok kartındaki birimi düzeltin.
               </div>
             )}
             {ebelgeWizard.bilgi.neden && <div className="approval-impact is-warning">{ebelgeWizard.bilgi.neden}</div>}

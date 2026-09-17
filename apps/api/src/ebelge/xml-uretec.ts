@@ -1,5 +1,5 @@
 import { Fatura, FaturaSatir, CariHesap } from "@prisma/client";
-import { senaryoUblKodu, tevkifatKoduBul } from "@tekirextra/shared";
+import { birimUblKodu, senaryoUblKodu, tevkifatKoduBul } from "@tekirextra/shared";
 import { adSoyadCoz } from "../cari/ad-soyad";
 
 /*
@@ -199,7 +199,7 @@ ${tevkifatBlogu}
       (s, index) => `
   <cac:InvoiceLine>
     <cbc:ID>${index + 1}</cbc:ID>
-    <cbc:InvoicedQuantity unitCode="NIU">${s.miktar.toFixed(3)}</cbc:InvoicedQuantity>
+    <cbc:InvoicedQuantity unitCode="${birimUblKodu(s.birim)}">${s.miktar.toFixed(3)}</cbc:InvoicedQuantity>
     <cbc:LineExtensionAmount currencyID="${fatura.dovizCinsi}">${s.matrah.toFixed(2)}</cbc:LineExtensionAmount>
     <cac:AllowanceCharge>
       <cbc:ChargeIndicator>false</cbc:ChargeIndicator>

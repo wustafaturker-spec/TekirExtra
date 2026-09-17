@@ -3,7 +3,7 @@ import { EirsaliyeDurum, GelenEirsaliyeDurum, Prisma } from "@prisma/client";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import type { EntegratorConfig } from "@tekirextra/baglanti";
-import { dorseSchemeId, plakaNormalize, plakaSchemeId } from "@tekirextra/shared";
+import { birimUblKodu, dorseSchemeId, plakaNormalize, plakaSchemeId } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
@@ -96,7 +96,7 @@ export class EirsaliyeService {
     const satirlar = b.satirlar
       .map(
         (s: any, i: number) =>
-          `<cac:DespatchLine><cbc:ID>${i + 1}</cbc:ID><cbc:DeliveredQuantity unitCode="C62">${s.miktar}</cbc:DeliveredQuantity><cac:OrderLineReference><cbc:LineID>${i + 1}</cbc:LineID></cac:OrderLineReference><cac:Item><cbc:Name>${esc(s.stok.ad)}</cbc:Name><cac:SellersItemIdentification><cbc:ID>${esc(s.stok.kod)}</cbc:ID></cac:SellersItemIdentification></cac:Item></cac:DespatchLine>`,
+          `<cac:DespatchLine><cbc:ID>${i + 1}</cbc:ID><cbc:DeliveredQuantity unitCode="${birimUblKodu(s.birim)}">${s.miktar}</cbc:DeliveredQuantity><cac:OrderLineReference><cbc:LineID>${i + 1}</cbc:LineID></cac:OrderLineReference><cac:Item><cbc:Name>${esc(s.stok.ad)}</cbc:Name><cac:SellersItemIdentification><cbc:ID>${esc(s.stok.kod)}</cbc:ID></cac:SellersItemIdentification></cac:Item></cac:DespatchLine>`,
       )
       .join("");
     return `<?xml version="1.0" encoding="UTF-8"?><DespatchAdvice xmlns="urn:oasis:names:specification:ubl:schema:xsd:DespatchAdvice-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">`

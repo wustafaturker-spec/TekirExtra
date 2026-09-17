@@ -77,6 +77,12 @@ describe("EirsaliyeService UBL", () => {
     expect(xml).toContain(`<cbc:ID schemeID="DORSEPLAKA">34DR4088</cbc:ID>`);
   });
 
+  it("satır birimini GİB birim koduna çevirir", () => {
+    const kiloluk = { ...belge, satirlar: [{ ...belge.satirlar[0], birim: "kg" }] };
+    expect(ubl(kiloluk)).toContain('<cbc:DeliveredQuantity unitCode="KGM">');
+    expect(ubl(belge)).toContain('<cbc:DeliveredQuantity unitCode="C62">');
+  });
+
   it("yabancı plakayı kendi schemeID'siyle bildirir", () => {
     const xml = ubl({ ...belge, plaka: "AFK-159", dorsePlaka: "BG_77" });
 

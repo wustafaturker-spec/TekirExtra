@@ -27,6 +27,32 @@ describe("faturaUblUret", () => {
     expect(xml).not.toContain("<xsl:stylesheet");
   });
 
+  it("satır birimini GİB birim koduna çevirir", () => {
+    // Birim serbest metindir; UBL `unitCode` bekler. Sabit kod yazmak kiloyla
+    // satılan malı adet gösteriyordu.
+    const fatura = (birim: string) => ({
+      id: "33333333-3333-4333-8333-333333333333",
+      no: "TKR2026000000003",
+      tarih: new Date("2026-08-12T12:00:00Z"),
+      tip: "satis",
+      dovizCinsi: "TRY",
+      toplamKdv: 20, toplamMatrah: 100, toplamBrut: 100, genelToplam: 120, toplamSatirIskontosu: 0,
+      cari: { vknTckn: "1234567890", unvan: "Alıcı A.Ş." },
+      satirlar: [{
+        miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20,
+        gibIstisnaKodu: null, birimFiyat: 100, birim,
+        stok: { kod: "STK-1", ad: "Ürün" },
+      }],
+    }) as never;
+    const ubl = (birim: string) => faturaUblUret(fatura(birim), { unvan: "Satıcı A.Ş.", vkn: "9876543210" });
+
+    expect(ubl("kg")).toContain('<cbc:InvoicedQuantity unitCode="KGM">');
+    expect(ubl("adet")).toContain('<cbc:InvoicedQuantity unitCode="C62">');
+    expect(ubl("saat")).toContain('<cbc:InvoicedQuantity unitCode="HUR">');
+    // Tanınmayan birimde belge yine geçerli kalır: adet yazılır.
+    expect(ubl("zımbırtı")).toContain('<cbc:InvoicedQuantity unitCode="C62">');
+  });
+
   it("UBL-TR şema ve şematron kontrollerini geçen zorunlu alanları yazar", () => {
     // Üçü de NES test ortamında gerçek reddedilme sebebiydi (2026-09-09):
     // SignatoryParty eksik içerik, PostalAddress'te sıra dışı CityName ve

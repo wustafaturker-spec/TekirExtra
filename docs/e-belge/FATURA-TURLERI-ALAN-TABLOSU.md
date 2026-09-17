@@ -59,10 +59,10 @@ Sihirbazın her türde doğruladığı çekirdek. Hepsi bugün üretiliyor.
 | KDV matrahı, tutarı, oranı, `0015` | `TaxTotal` | Hesaplama | ✅ |
 | Satır: sıra, miktar, birim fiyat, tutar, ürün adı, ürün kodu | `InvoiceLine` | Satırlar | ✅ |
 
-**Ortak açık:** birim kodu UBL'e sabit `NIU` yazılıyor (`xml-uretec.ts:202`);
-oysa GİB `C62`=adet, `KGM`=kg, `MTR`=m, `LTR`=litre, `HUR`=saat bekliyor.
-Stok birimi ile UBL birim kodu arasında eşleme tablosu gerekiyor — ihracatta ve
-şarjda daha da kritik. **(İş kalemi A)**
+~~**Ortak açık:** birim kodu UBL'e sabit `NIU` yazılıyor.~~ **Kapandı
+(EBLG-52, 2026-09-17):** eşleme `packages/shared/src/birim-kodu.ts`'de; fatura
+ve irsaliye satırı onu kullanır, tanınmayan birim `C62` gider ve sihirbaz
+uyarır. Canlıda doğrulandı (`SNC2026000000018`, kg satırı `unitCode="KGM"`).
 
 ---
 
@@ -188,7 +188,7 @@ mi, yoksa yalnız kayda mı işlenecek (tasarım belgesi §5.2 adım 5).
 
 | # | İş | Kapsam |
 |---|---|---|
-| A | Birim kodu eşlemesi (`NIU` sabiti yerine C62/KGM/MTR/LTR/HUR) | Tüm türler |
+| ~~A~~ | ~~Birim kodu eşlemesi~~ — **bitti** (EBLG-52) | Tüm türler |
 | B | e-Arşiv internet satışı alan grubu | e-Arşiv |
 | C | İhracat: profil, ülke, GTİP, menşei, TaxCurrencyCode, teslim şartı, fiili ihracat tarihi | İhracat |
 | D | Gümrük beyanname no akışı (karar bekliyor) | İhracat |
