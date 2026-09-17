@@ -11,7 +11,6 @@ import {
 } from "@nestjs/common";
 import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
 import type { BelgeDurumSonuc, EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
-import { vknTcknGecerliMi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { BildirimService } from "../bildirimler/bildirim.service";
@@ -25,6 +24,7 @@ import { adSoyadCoz } from "../cari/ad-soyad";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import { MukellefListesiService } from "./mukellef-listesi.service";
 import { takiliRezervasyonKosulu, takiliRezervasyonMu } from "./takili-rezervasyon";
+import { vknTcknKabulEdilebilirMi } from "./vkn-kabulu";
 import { SON_EBELGE_DURUMLARI, durumSorgusuEngeli } from "./durum-sorgusu";
 import { faturaSorguKosulu, faturaSorguSureleriniOku } from "./fatura-sorgu-kosulu";
 import { entegratorIptalBildirimi } from "./entegrator-iptal-bildirimi";
@@ -83,10 +83,10 @@ export class EbelgeService {
       }
       const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" }, select: { saglayici: true, sifreliConfig: true } });
       if (!baglanti) return { gonderilebilir: false, neden: "Aktif bir e-belge entegratör bağlantısı bulunamadı.", faturaNo: fatura.no, cari: fatura.cari.unvan };
-      // Test ortamında sentetik VKN'ler kontrol hanesini tutmaz; kural gönderim
-      // adımıyla aynıdır, sihirbaz gönderilebilir olanı gönderilemez göstermesin.
+      // Kural gönderim adımıyla aynıdır (EBLG-47), sihirbaz gönderilebilir olanı
+      // gönderilemez göstermesin.
       const testOrtami = Boolean((JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig).testOrtami);
-      if (!fatura.cari.vknTckn || (!vknTcknGecerliMi(fatura.cari.vknTckn) && !testOrtami)) {
+      if (!vknTcknKabulEdilebilirMi(fatura.cari.vknTckn, testOrtami)) {
         return { gonderilebilir: false, neden: "Alıcının geçerli bir VKN/TCKN bilgisi olmalıdır.", faturaNo: fatura.no, cari: fatura.cari.unvan, vknTckn: fatura.cari.vknTckn, saglayici: baglanti.saglayici };
       }
       if (!gonderimTarihiGecerliMi(fatura.tarih)) {
@@ -162,16 +162,13 @@ export class EbelgeService {
       const baglantiConfig = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
       const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
       if (!tenant) throw new NotFoundException("Tenant bulunamadı");
-      // Entegratörlerin test ortamları sentetik firma kimliği verir ve bunlar
-      // VKN kontrol hanesini tutmaz; bağlantı test olarak işaretlendiyse bu
-      // tek kontrol gevşetilir, üretimde olduğu gibi kalır.
-      if (!vknTcknGecerliMi(tenant.vkn) && !baglantiConfig.testOrtami) {
+      // Test bağlantısında kontrol hanesi aranmaz (EBLG-47); gönderen de alıcı da
+      // o ortamda sentetik kimlik taşır, üretimde kural aynen sürer.
+      const testOrtami = Boolean(baglantiConfig.testOrtami);
+      if (!vknTcknKabulEdilebilirMi(tenant.vkn, testOrtami)) {
         throw new BadRequestException("Gönderen firmanın geçerli bir VKN/TCKN bilgisi olmalıdır");
       }
-      // Aynı gevşetme alıcı için de geçerlidir: test ortamında karşı taraf da
-      // sentetik kimliktir (bu kimliklerden belge alabiliyoruz, onlara belge
-      // kesememek tutarsızdı). Üretimde kontrol aynen sürer.
-      if (!vknTcknGecerliMi(fatura.cari.vknTckn) && !baglantiConfig.testOrtami) {
+      if (!vknTcknKabulEdilebilirMi(fatura.cari.vknTckn, testOrtami)) {
         throw new BadRequestException("Alıcının geçerli bir VKN/TCKN bilgisi olmalıdır");
       }
 

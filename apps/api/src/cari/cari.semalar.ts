@@ -1,4 +1,3 @@
-import { vknTcknGecerliMi } from "@tekirextra/shared";
 import { z } from "zod";
 import { guncellemeSemasi } from "../core/sema";
 
@@ -32,10 +31,14 @@ export const cariOlusturSemasi = z.object({
   soyad: z.string().trim().max(100).optional().nullable(),
   sektor: z.string().max(120).optional(),
   temsilciUserId: z.uuid().optional(),
+  /**
+   * Kontrol hanesi burada değil serviste doğrulanır (EBLG-47): e-belge test
+   * bağlantısı olan kiracıda sentetik kimlikler kontrol hanesini tutmaz ve
+   * şema kiracının bağlantısını göremez.
+   */
   vknTckn: z
     .string()
     .regex(/^\d{10,11}$/)
-    .refine(vknTcknGecerliMi, "Geçersiz VKN/TCKN (kontrol hanesi tutmuyor)")
     .optional(),
   vergiDairesi: z.string().max(120).optional(),
   mersisNo: z.string().regex(/^\d{16}$/, "MERSİS no 16 haneli olmalıdır").optional(),

@@ -28,6 +28,8 @@ import { cariExcelOku, cariEkstreExcelYaz } from "../core/excel-yardimci";
 import { PdfService } from "../core/pdf/pdf.service";
 import { cariDavranisAnalizi } from "./cari-analiz";
 import { gercekKisiUnvani } from "./ad-soyad";
+import { ebelgeTestOrtamiMi, vknTcknKabulEdilebilirMi } from "../ebelge/vkn-kabulu";
+import { vknTcknGecerliMi } from "@tekirextra/shared";
 import { metinNormalize } from "@tekirextra/shared";
 import { EpostaService } from "../tenant/eposta.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
@@ -214,9 +216,24 @@ export class CariService {
     return { ad: ad.trim(), soyad: soyad.trim(), unvan: gercekKisiUnvani(ad, soyad) };
   }
 
+  /**
+   * Kontrol hanesi tutmayan kimliği yalnız e-belge test bağlantısı olan kiracıda
+   * kabul eder (EBLG-47): o ortamın sentetik kimliklerine fatura kesebiliyorsak
+   * onları cari olarak da kaydedebilmeliyiz. Bağlantı sorgusu yalnız kontrol
+   * hanesi tutmadığında yapılır, normal kayıt fazladan sorgu görmez.
+   */
+  private async vknTcknDogrula(tenantId: string, vknTckn: string | null | undefined): Promise<void> {
+    if (!vknTckn || vknTcknGecerliMi(vknTckn)) return;
+    const testOrtami = await this.prisma.tenantIslem(tenantId, (tx) => ebelgeTestOrtamiMi(tx, tenantId));
+    if (!vknTcknKabulEdilebilirMi(vknTckn, testOrtami)) {
+      throw new BadRequestException("Geçersiz VKN/TCKN (kontrol hanesi tutmuyor)");
+    }
+  }
+
   async olustur(girdi: CariOlusturGirdisi) {
     const { tenantId } = aktifBaglam();
     const kimlik = this.kisiKimligi(girdi.kisiTipi, girdi.ad, girdi.soyad);
+    await this.vknTcknDogrula(tenantId, girdi.vknTckn);
     try {
       const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
         tx.cariHesap.create({
@@ -382,6 +399,7 @@ export class CariService {
 
   async guncelle(id: string, girdi: z.infer<typeof cariGuncelleSemasi>) {
     const { tenantId } = aktifBaglam();
+    await this.vknTcknDogrula(tenantId, girdi.vknTckn);
     const mevcut = await this.getir(id);
     // Kimlik kuralı yalnız kimlik alanlarından biri değişirken uygulanır; başka
     // alanı güncelleyen istek, ad/soyadı henüz girilmemiş eski kayıtta kırılmasın.
