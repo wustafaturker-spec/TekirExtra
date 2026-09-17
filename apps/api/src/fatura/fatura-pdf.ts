@@ -5,6 +5,7 @@ import {
   sayiBicim,
   tarihBicim,
 } from "../core/pdf/pdf-sablon";
+import type { BelgeTemasi } from "../core/pdf/belge-temasi";
 
 /** Fatura PDF şablonu (FTR-07, T-02 altyapısı). */
 
@@ -78,7 +79,7 @@ export interface FirmaBilgisi {
   vkn: string;
   vergiDairesi: string | null;
   /** KLN-03: firma logosu, data URI olarak gömülür. */
-  logoDataUri?: string;
+  tema?: BelgeTemasi;
 }
 
 export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
@@ -179,6 +180,6 @@ ${f.ebelge?.tur === "earsiv" && f.earsivGonderimSekli !== "kagit" ? `<p style="m
   return sayfaSablonu({
     baslik: f.durum === "taslak" ? `${baslik} (TASLAK)` : baslik,
     icerik,
-    logoDataUri: firma.logoDataUri,
+    tema: firma.tema,
   });
 }

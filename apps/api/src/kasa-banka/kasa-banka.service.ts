@@ -376,8 +376,8 @@ export class KasaBankaService {
       tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true } }),
     ]));
     if (!hareket || !["tahsilat", "tediye"].includes(hareket.tip)) throw new NotFoundException("Tahsilat/ödeme makbuzu bulunamadı");
-    const logo = await this.pdf.firmaLogoDataUri();
-    return { buffer: await this.pdf.htmlToPdf(makbuzPdfHtml(hareket, firma, logo)), dosyaAdi: `${hareket.tip}-makbuzu-${hareket.id.slice(0, 8)}.pdf` };
+    const tema = await this.pdf.belgeTemasi();
+    return { buffer: await this.pdf.htmlToPdf(makbuzPdfHtml(hareket, firma, tema)), dosyaAdi: `${hareket.tip}-makbuzu-${hareket.id.slice(0, 8)}.pdf` };
   }
 
   // ─── HESAPLAR ARASI VİRMAN (KSB-03) ───────────────────────────────────────

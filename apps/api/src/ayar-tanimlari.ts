@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { registerModulAyar } from "./core/ayarlar/ayar-kayit";
+import { BELGE_SABLONLARI, VARSAYILAN_VURGU_RENGI } from "./core/pdf/belge-temasi";
 
 /**
  * Modül ayar tanımları (AYR-01/03). Her modül geldiği aşamada kendi
@@ -43,9 +44,17 @@ registerModulAyar(
   z.object({
     varsayilanSeri: z.string().regex(/^[A-Z]{3}$/).default("TKR"),
     varsayilanKdvOrani: z.number().min(0).max(100).default(20),
-    faturaSablonu: z.enum(["standart", "modern", "klasik"]).default("standart"),
+    /// FTR-22: basılan tüm belgelerin ve UBL'e gömülen görünümün yerleşimi.
+    faturaSablonu: z.enum(BELGE_SABLONLARI).default("standart"),
+    /// FTR-23: şablonun vurgu rengi; üzerindeki yazı rengi kontrasta göre seçilir.
+    vurguRengi: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Renk #rrggbb biçiminde olmalıdır").default(VARSAYILAN_VURGU_RENGI),
   }),
-  { varsayilanSeri: "TKR", varsayilanKdvOrani: 20, faturaSablonu: "standart" },
+  {
+    varsayilanSeri: "TKR",
+    varsayilanKdvOrani: 20,
+    faturaSablonu: "standart",
+    vurguRengi: VARSAYILAN_VURGU_RENGI,
+  },
 );
 
 registerModulAyar(

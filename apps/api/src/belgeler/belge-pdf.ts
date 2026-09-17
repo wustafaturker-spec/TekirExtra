@@ -5,6 +5,7 @@ import {
   sayiBicim,
   tarihBicim,
 } from "../core/pdf/pdf-sablon";
+import type { BelgeTemasi } from "../core/pdf/belge-temasi";
 
 /** Zincir belgeleri PDF şablonu (FTR-12, T-02; kağıt/PDF irsaliye). */
 
@@ -50,7 +51,7 @@ export function belgePdfHtml(
     vkn: string;
     vergiDairesi: string | null;
     /** KLN-03: firma logosu, data URI olarak gömülür. */
-    logoDataUri?: string;
+    tema?: BelgeTemasi;
   },
 ): string {
   const baslik = BASLIKLAR[b.tur]?.[b.yon] ?? "BELGE";
@@ -126,6 +127,6 @@ ${b.aciklama ? `<p style="margin-top:10px;color:#6b7280">${kacis(b.aciklama)}</p
   return sayfaSablonu({
     baslik: b.durum === "taslak" ? `${baslik} (TASLAK)` : baslik,
     icerik,
-    logoDataUri: firma.logoDataUri,
+    tema: firma.tema,
   });
 }

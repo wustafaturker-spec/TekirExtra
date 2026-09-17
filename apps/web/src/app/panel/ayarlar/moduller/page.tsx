@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
 import { Alert, Button, Card, Field, Input, PageHeader, Select } from "@/components/ui";
+import { BelgeSablonuSecici, type BelgeSablonu } from "@/components/belge-sablonu-secici";
 
 /**
  * Modül Ayarları (AYR-01/03): backend jenerik ayar altyapısını
  * (GET/PUT /ayarlar/:modul) tipli bir form ile tüketir. Alan tanımları burada
  * deklaratiftir; yeni modül ayarı gelince yalnız bu tablo genişletilir.
  */
-type AlanTip = "enum" | "sayi" | "onay" | "metin" | "kasaRef" | "bankaRef";
+type AlanTip = "enum" | "sayi" | "onay" | "metin" | "kasaRef" | "bankaRef" | "sablon" | "gizli";
 interface Alan {
   ad: string;
   etiket: string;
@@ -57,7 +58,9 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
     alanlar: [
       { ad: "varsayilanSeri", etiket: "Varsayılan seri (3 büyük harf)", tip: "metin", ipucu: "Ör. TKR" },
       { ad: "varsayilanKdvOrani", etiket: "Varsayılan KDV (%)", tip: "sayi", min: 0, max: 100 },
-      { ad: "faturaSablonu", etiket: "Fatura şablonu", tip: "enum", secenekler: [["standart", "Standart"], ["modern", "Modern"], ["klasik", "Klasik"]] },
+      // FTR-22/23: şablon ve vurgu rengi tek bir seçim bloğunda, önizlemesiyle.
+      { ad: "faturaSablonu", etiket: "Belge şablonu", tip: "sablon" },
+      { ad: "vurguRengi", etiket: "Vurgu rengi", tip: "gizli" },
     ],
   },
   satin_alma: {
@@ -152,6 +155,15 @@ export default function ModulAyarlariSayfasi() {
 
   function alanGir(modul: string, a: Alan) {
     const v = degerler[modul]?.[a.ad];
+    if (a.tip === "sablon") {
+      return (
+        <BelgeSablonuSecici
+          sablon={(v as BelgeSablonu) ?? "standart"}
+          renk={String(degerler[modul]?.vurguRengi ?? "#6d28d9")}
+          onDegis={(alan, deger) => alanGuncelle(modul, alan, deger)}
+        />
+      );
+    }
     if (a.tip === "enum") {
       return (
         <Select value={String(v ?? "")} onChange={(e) => alanGuncelle(modul, a.ad, e.target.value)}>
@@ -206,9 +218,9 @@ export default function ModulAyarlariSayfasi() {
                 </Button>
               </div>
               <div className="row">
-                {tanim.alanlar.map((a) => (
-                  <div key={a.ad} style={{ flex: 1, minWidth: 200 }}>
-                    <Field label={a.etiket}>{alanGir(m, a)}</Field>
+                {tanim.alanlar.filter((a) => a.tip !== "gizli").map((a) => (
+                  <div key={a.ad} style={a.tip === "sablon" ? { flexBasis: "100%" } : { flex: 1, minWidth: 200 }}>
+                    {a.tip === "sablon" ? alanGir(m, a) : <Field label={a.etiket}>{alanGir(m, a)}</Field>}
                     {a.ipucu && a.tip !== "metin" && <p className="subtle" style={{ fontSize: "0.75rem", margin: "0.25rem 0 0" }}>{a.ipucu}</p>}
                   </div>
                 ))}

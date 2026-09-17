@@ -919,9 +919,9 @@ export class BelgelerService {
       }),
     );
     if (!firma) throw new NotFoundException("Firma bulunamadı");
-    const logoDataUri = await this.pdf.firmaLogoDataUri();
+    const tema = await this.pdf.belgeTemasi();
     const buffer = await this.pdf.htmlToPdf(
-      belgePdfHtml(belge, { ...firma, logoDataUri }),
+      belgePdfHtml(belge, { ...firma, tema }),
     );
     return { buffer, dosyaAdi: `belge-${belge.no ?? "taslak"}.pdf` };
   }

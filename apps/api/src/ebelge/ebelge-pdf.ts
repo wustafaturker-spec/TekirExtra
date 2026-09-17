@@ -1,4 +1,5 @@
 import { kacis, paraBicim, sayfaSablonu, sayiBicim, tarihBicim } from "../core/pdf/pdf-sablon";
+import type { BelgeTemasi } from "../core/pdf/belge-temasi";
 import { karekoduHtmlEkle } from "./karekod";
 import type { UblFatura } from "./ubl-oku";
 
@@ -21,7 +22,7 @@ const PROFIL_ADLARI: Record<string, string> = {
 
 export function ebelgeYedekPdfHtml(
   f: UblFatura,
-  secenekler: { logoDataUri?: string; /** EBLG-32: yalnız kestiğimiz belgede verilir. */ karekodDataUri?: string } = {},
+  secenekler: { tema?: BelgeTemasi; /** EBLG-32: yalnız kestiğimiz belgede verilir. */ karekodDataUri?: string } = {},
 ): string {
   const paraBirimi = f.dovizCinsi === "TRY" ? "TL" : f.dovizCinsi;
   const profil = PROFIL_ADLARI[f.profilId] ?? f.profilId;
@@ -92,7 +93,7 @@ export function ebelgeYedekPdfHtml(
     baslik: profil.toLocaleUpperCase("tr-TR"),
     altBaslik: `${f.gonderen.unvan} — ${f.belgeNo}`,
     icerik,
-    logoDataUri: secenekler.logoDataUri,
+    tema: secenekler.tema,
   });
   // EBLG-32: gömülü görünümdeki gibi sayfanın sağ üstünde.
   return secenekler.karekodDataUri ? karekoduHtmlEkle(sayfa, secenekler.karekodDataUri) : sayfa;

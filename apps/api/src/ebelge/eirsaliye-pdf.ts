@@ -1,3 +1,4 @@
+import type { BelgeTemasi } from "../core/pdf/belge-temasi";
 import { kacis, sayfaSablonu, sayiBicim, tarihBicim } from "../core/pdf/pdf-sablon";
 import type { UblIrsaliye } from "./eirsaliye-ubl-oku";
 
@@ -12,7 +13,7 @@ const YEDEK_NOTU =
 
 const satirIfSatir = (etiket: string, deger: string) => (deger ? `${etiket}: ${kacis(deger)}<br>` : "");
 
-export function eirsaliyeYedekPdfHtml(r: UblIrsaliye, secenekler: { logoDataUri?: string } = {}): string {
+export function eirsaliyeYedekPdfHtml(r: UblIrsaliye, secenekler: { tema?: BelgeTemasi } = {}): string {
   const satirlar = r.satirlar
     .map(
       (s) => `<tr>
@@ -78,7 +79,7 @@ ${r.notlar.length ? `<p style="margin-top:12px;font-size:9pt">${r.notlar.map(kac
     baslik: "e-İRSALİYE",
     altBaslik: `${r.gonderen.unvan} — ${r.belgeNo}`,
     icerik,
-    logoDataUri: secenekler.logoDataUri,
+    tema: secenekler.tema,
   });
 }
 

@@ -1,6 +1,12 @@
 import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
 import { type Browser, chromium } from "playwright";
 import { DepoService } from "../../ekler/depo.service";
+import { AyarlarService } from "../ayarlar/ayarlar.service";
+import {
+  type BelgeTemasi,
+  renkNormalize,
+  sablonNormalize,
+} from "./belge-temasi";
 import { aktifBaglam } from "../istek-baglami";
 import { PrismaService } from "../prisma.service";
 
@@ -17,7 +23,28 @@ export class PdfService implements OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly depo: DepoService,
+    private readonly ayarlar: AyarlarService,
   ) {}
+
+  /**
+   * FTR-22/23: kiracının belge teması. Şablon ve vurgu rengi fatura modülü
+   * ayarlarından, logo firma kartından gelir; ayar okunamazsa varsayılan
+   * şablonla basılır — belge basımı ayar yüzünden düşmez.
+   */
+  async belgeTemasi(): Promise<BelgeTemasi> {
+    const logoDataUri = await this.firmaLogoDataUri();
+    try {
+      const ayar = await this.ayarlar.getir("fatura");
+      return {
+        sablon: sablonNormalize(ayar.faturaSablonu),
+        vurguRengi: renkNormalize(ayar.vurguRengi),
+        logoDataUri,
+      };
+    } catch (hata) {
+      this.logger.warn(`Belge teması okunamadı, varsayılan şablon kullanılıyor: ${String(hata)}`);
+      return { sablon: "standart", vurguRengi: renkNormalize(undefined), logoDataUri };
+    }
+  }
 
   /**
    * KLN-03: firma logosunu data URI olarak verir (PDF'ler dış kaynak

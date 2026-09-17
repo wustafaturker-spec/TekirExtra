@@ -1,6 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
 import { describe, expect, it } from "vitest";
-import { SAYFA_STILI } from "../core/pdf/pdf-sablon";
+import { sayfaStili } from "../core/pdf/belge-temasi";
 import { gomuluXsltCikar } from "./ubl-gorunum";
 import { faturaUblUret } from "./xml-uretec";
 
@@ -93,7 +93,7 @@ describe("gömülü görünüm ile PDF çıktısı (EBLG-31)", () => {
   });
 
   it("PDF ile aynı sayfa stilini taşır", () => {
-    expect(xslt).toContain(SAYFA_STILI.trim().slice(0, 120));
+    expect(xslt).toContain(sayfaStili().trim().slice(0, 120));
   });
 
   it("PDF ile aynı sütun başlıklarını ve toplam etiketlerini kullanır", () => {

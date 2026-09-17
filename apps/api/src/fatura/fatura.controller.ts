@@ -87,6 +87,22 @@ export class FaturaController {
     return this.faturaService.alisOzeti();
   }
 
+  /**
+   * FTR-24: şablon önizlemesi. Kaydetmeden önce seçilen şablon/renkle örnek
+   * fatura basılır; parametre verilmezse kiracının kayıtlı teması kullanılır.
+   */
+  @Get("sablon-onizleme")
+  async sablonOnizleme(
+    @Res() res: Response,
+    @Query("sablon") sablon?: string,
+    @Query("renk") renk?: string,
+  ) {
+    const buffer = await this.faturaService.sablonOnizlemePdf(sablon, renk);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", 'inline; filename="sablon-onizleme.pdf"');
+    res.send(buffer);
+  }
+
   @Get()
   async listele(
     @Query("arama") arama?: string,

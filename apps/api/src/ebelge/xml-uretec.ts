@@ -1,7 +1,12 @@
 import { Fatura, FaturaSatir, CariHesap } from "@prisma/client";
 import { senaryoUblKodu, tevkifatKoduBul } from "@tekirextra/shared";
 import { adSoyadCoz } from "../cari/ad-soyad";
-import { SAYFA_STILI } from "../core/pdf/pdf-sablon";
+import {
+  type BelgeTemasi,
+  VARSAYILAN_TEMA,
+  sablonNormalize,
+  sayfaStili,
+} from "../core/pdf/belge-temasi";
 import { EARSIV_ELEKTRONIK_IBARESI } from "../fatura/fatura-pdf";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -23,14 +28,16 @@ const QR_KUTUPHANESI =
 
 /**
  * EBLG-31: UBL'e gömülen görünüm. Alıcı belgemizi bununla görür, bu yüzden
- * kendi PDF çıktımızla aynı düzeni ve aynı stili (`SAYFA_STILI`) üretir —
- * gönderdiğimiz belge ile bastığımız belge ayrışmamalıdır.
+ * kendi PDF çıktımızla aynı düzeni ve aynı stili (`sayfaStili`) üretir —
+ * gönderdiğimiz belge ile bastığımız belge ayrışmamalıdır. FTR-25: kiracının
+ * seçtiği şablon, vurgu rengi ve logosu buraya da işler, böylece alıcı da
+ * gönderenin tasarımını görür.
  *
  * XSLT 1.0'dır: e-fatura görüntüleyicilerinin ortak paydası budur. Ad alanı
  * önekleri gönderene göre değişebildiği için düğümler `local-name()` ile
  * seçilir.
  */
-const FATURA_XSLT = `<?xml version="1.0" encoding="UTF-8"?>
+const FATURA_XSLT_SABLONU = `<?xml version="1.0" encoding="UTF-8"?>
 <xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
   <xsl:output method="html" encoding="UTF-8" indent="no"/>
   <xsl:decimal-format name="tr" decimal-separator="," grouping-separator="."/>
@@ -220,7 +227,7 @@ const FATURA_XSLT = `<?xml version="1.0" encoding="UTF-8"?>
         <title><xsl:value-of select="$fatura/*[local-name()='ID']"/></title>
         <style>__STIL__</style>
       </head>
-      <body>
+      <body class="sablon-__SABLON__">
         <!-- EBLG-32: karekod sağ üstte. Veri gizli metin olarak durur, aşağıdaki betik çizer. -->
         <xsl:if test="$karekodlu">
           <div style="text-align:right;margin:0 0 6px">
@@ -235,7 +242,7 @@ const FATURA_XSLT = `<?xml version="1.0" encoding="UTF-8"?>
               <xsl:otherwise>e-FATURA</xsl:otherwise>
             </xsl:choose>
           </h1>
-          <span class="marka">TekirExtra</span>
+          __MARKA__
         </div>
 
         <table style="width:100%;margin-bottom:12px;font-size:9pt">
@@ -409,11 +416,34 @@ const FATURA_XSLT = `<?xml version="1.0" encoding="UTF-8"?>
       </body>
     </html>
   </xsl:template>
-</xsl:stylesheet>`
-  .replace("__STIL__", SAYFA_STILI)
-  .replace("__EARSIV_IBARESI__", EARSIV_ELEKTRONIK_IBARESI)
-  // İşlev biçimi: kütüphanedeki "$" dizileri değiştirme kalıbı olarak yorumlanmasın.
-  .replace("__QR_KUTUPHANESI__", () => QR_KUTUPHANESI);
+</xsl:stylesheet>`;
+
+/**
+ * Logo XSLT'ye data URI olarak gömülür (alıcının görüntüleyicisi dış kaynak
+ * yükleyemez). Karekod zaten ~52 KB ekliyor; bu yüzden logo LOGO_SINIRI'ni
+ * aşarsa belgeye konmaz, marka yazısı kalır — fatura logonun boyutu yüzünden
+ * şişmesin.
+ */
+const LOGO_SINIRI = 50 * 1024;
+
+function markaHtml(tema: BelgeTemasi): string {
+  const logo = tema.logoDataUri;
+  if (logo && logo.length <= LOGO_SINIRI) {
+    return `<img class="logo" src="${logo.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}" alt=""/>`;
+  }
+  return `<span class="marka">TekirExtra</span>`;
+}
+
+/** Kiracının temasıyla üretilmiş gömülü görünüm (FTR-25). */
+export function faturaXslt(tema: BelgeTemasi = VARSAYILAN_TEMA): string {
+  return FATURA_XSLT_SABLONU
+    .replace("__STIL__", sayfaStili(tema))
+    .replace("__SABLON__", sablonNormalize(tema.sablon))
+    .replace("__MARKA__", () => markaHtml(tema))
+    .replace("__EARSIV_IBARESI__", EARSIV_ELEKTRONIK_IBARESI)
+    // İşlev biçimi: kütüphanedeki "$" dizileri değiştirme kalıbı olarak yorumlanmasın.
+    .replace("__QR_KUTUPHANESI__", () => QR_KUTUPHANESI);
+}
 
 export function faturaUblUret(
   fatura: Fatura & {
@@ -421,7 +451,7 @@ export function faturaUblUret(
     cari: CariHesap;
   },
   supplier: { unvan: string; vkn: string; vergiDairesi?: string; adres?: string },
-  secenekler: { tur?: "efatura" | "earsiv" } = {},
+  secenekler: { tur?: "efatura" | "earsiv"; tema?: BelgeTemasi } = {},
 ): string {
   // e-Arşiv, e-Fatura'dan üç noktada ayrılır: profil `EARSIVFATURA`, alıcı
   // etiketi yoktur ve gönderim şekli UBL içinde bildirilir.
@@ -512,7 +542,7 @@ ${earsiv ? `  <cac:AdditionalDocumentReference>
     <cbc:IssueDate>${tarihStr}</cbc:IssueDate>
     <cbc:DocumentType>XSLT</cbc:DocumentType>
     <cac:Attachment>
-      <cbc:EmbeddedDocumentBinaryObject characterSetCode="UTF-8" encodingCode="Base64" filename="${escape(no)}.xslt" mimeCode="application/xml">${Buffer.from(FATURA_XSLT, "utf8").toString("base64")}</cbc:EmbeddedDocumentBinaryObject>
+      <cbc:EmbeddedDocumentBinaryObject characterSetCode="UTF-8" encodingCode="Base64" filename="${escape(no)}.xslt" mimeCode="application/xml">${Buffer.from(faturaXslt(secenekler.tema), "utf8").toString("base64")}</cbc:EmbeddedDocumentBinaryObject>
     </cac:Attachment>
   </cac:AdditionalDocumentReference>
   

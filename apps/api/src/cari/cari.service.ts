@@ -957,13 +957,13 @@ export class CariService {
 <p style="margin-top:10px;text-align:right;font-weight:bold">
   Dönem sonu bakiyesi: ${paraBicim(sonBakiye)} TL
 </p>`;
-    const logoDataUri = await this.pdf.firmaLogoDataUri();
+    const tema = await this.pdf.belgeTemasi();
     return this.pdf.htmlToPdf(
       sayfaSablonu({
         baslik: "CARİ HESAP EKSTRESİ",
         altBaslik: `${data.cari.kod} — ${data.cari.unvan}${aralik}`,
         icerik,
-        logoDataUri,
+        tema,
       }),
     );
   }

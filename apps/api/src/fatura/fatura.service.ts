@@ -21,6 +21,8 @@ import { BelgelerService } from "../belgeler/belgeler.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
 import { EbelgeService } from "../ebelge/ebelge.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
+import { renkNormalize, sablonNormalize } from "../core/pdf/belge-temasi";
+import { ornekFatura } from "./sablon-onizleme";
 import { faturaPdfHtml } from "./fatura-pdf";
 import { durumGecmisiOku } from "../core/durum-gecmisi";
 import { takiliRezervasyonMu } from "../ebelge/takili-rezervasyon";
@@ -1316,14 +1318,41 @@ export class FaturaService {
       }),
     );
     if (!firma) throw new NotFoundException("Firma bulunamadı");
-    const logoDataUri = await this.pdf.firmaLogoDataUri();
+    const tema = await this.pdf.belgeTemasi();
     const buffer = await this.pdf.htmlToPdf(
-      faturaPdfHtml(fatura, { ...firma, logoDataUri }),
+      faturaPdfHtml(fatura, { ...firma, tema }),
     );
     return {
       buffer,
       dosyaAdi: `fatura-${fatura.no ?? "taslak"}.pdf`,
     };
+  }
+
+  /**
+   * FTR-24: şablon önizlemesi. Örnek faturayı gerçek PDF üretecinden geçirir;
+   * seçim kaydedilmeden denenebilsin diye şablon ve renk parametreden gelir,
+   * verilmeyeni kiracının kayıtlı temasından tamamlanır.
+   */
+  async sablonOnizlemePdf(sablon?: string, renk?: string): Promise<Buffer> {
+    const { tenantId } = aktifBaglam();
+    const firma = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.tenant.findUnique({
+        where: { id: tenantId },
+        select: { unvan: true, vkn: true, vergiDairesi: true },
+      }),
+    );
+    if (!firma) throw new NotFoundException("Firma bulunamadı");
+    const kayitli = await this.pdf.belgeTemasi();
+    return this.pdf.htmlToPdf(
+      faturaPdfHtml(ornekFatura(), {
+        ...firma,
+        tema: {
+          sablon: sablonNormalize(sablon ?? kayitli.sablon),
+          vurguRengi: renkNormalize(renk ?? kayitli.vurguRengi),
+          logoDataUri: kayitli.logoDataUri,
+        },
+      }),
+    );
   }
 
   /**

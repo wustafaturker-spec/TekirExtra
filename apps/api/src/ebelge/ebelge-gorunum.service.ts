@@ -53,9 +53,9 @@ export class EbelgeGorunumService {
       }
       throw hata;
     }
-    const logoDataUri = await this.pdf.firmaLogoDataUri();
+    const tema = await this.pdf.belgeTemasi();
     return {
-      buffer: await this.pdf.htmlToPdf(ebelgeYedekPdfHtml(fatura, { logoDataUri, karekodDataUri: karekodUri })),
+      buffer: await this.pdf.htmlToPdf(ebelgeYedekPdfHtml(fatura, { tema, karekodDataUri: karekodUri })),
       dosyaAdi,
     };
   }
@@ -113,7 +113,7 @@ export class EbelgeGorunumService {
       }
       throw hata;
     }
-    const logoDataUri = await this.pdf.firmaLogoDataUri();
-    return { buffer: await this.pdf.htmlToPdf(eirsaliyeYedekPdfHtml(irsaliye, { logoDataUri })), dosyaAdi };
+    const tema = await this.pdf.belgeTemasi();
+    return { buffer: await this.pdf.htmlToPdf(eirsaliyeYedekPdfHtml(irsaliye, { tema })), dosyaAdi };
   }
 }

@@ -1,13 +1,14 @@
+import type { BelgeTemasi } from "../core/pdf/belge-temasi";
 import { kacis, paraBicim, sayfaSablonu, tarihBicim } from "../core/pdf/pdf-sablon";
 
-export function makbuzPdfHtml(h: any, firma: any, logoDataUri?: string): string {
+export function makbuzPdfHtml(h: any, firma: any, tema?: BelgeTemasi): string {
   const tahsilat = h.tip === "tahsilat";
   const hesap = h.kasa?.ad ?? h.bankaHesap?.ad ?? h.posHesap?.ad ?? "—";
   const no = `MKB-${String(h.id).slice(0, 8).toUpperCase()}`;
   return sayfaSablonu({
     baslik: tahsilat ? "TAHSİLAT MAKBUZU" : "ÖDEME MAKBUZU",
     altBaslik: `${firma.unvan} · Makbuz No: ${no}`,
-    logoDataUri,
+    tema,
     icerik: `
       <div style="display:flex;justify-content:space-between;gap:16px;margin:18px 0">
         <div class="kutu" style="flex:1"><b>İşlem tarihi</b><br>${tarihBicim(h.tarih)}</div>
