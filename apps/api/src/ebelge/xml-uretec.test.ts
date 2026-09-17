@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { belgeNoyuUbleYaz, faturaUblUret } from "./xml-uretec";
 
 describe("faturaUblUret", () => {
-  it("Sovos/GİB görüntüleyicisi için XSLT'yi UBL içine gömer", () => {
+  it("belgeye görünüm (XSLT) gömmez — tasarımı entegratör yapar (2026-09-17)", () => {
     const xml = faturaUblUret({
       id: "11111111-1111-4111-8111-111111111111",
       no: "TKR2026000000001",
@@ -22,12 +22,9 @@ describe("faturaUblUret", () => {
       }],
     } as never, { unvan: "Satıcı A.Ş.", vkn: "9876543210" });
 
-    // Türü `DocumentType` ile bildiriyoruz: UBL-TR görüntüleyicilerinin
-    // okuduğu alan bu (gelen 54 belgenin 53'ü de böyle yazıyor).
-    expect(xml).toContain("<cbc:DocumentType>XSLT</cbc:DocumentType>");
-    expect(xml).toContain('filename="TKR2026000000001.xslt"');
-    const base64 = xml.match(/<cbc:EmbeddedDocumentBinaryObject[^>]*>([^<]+)</)?.[1];
-    expect(Buffer.from(base64!, "base64").toString("utf8")).toContain("<xsl:stylesheet");
+    expect(xml).not.toContain("<cbc:DocumentType>XSLT</cbc:DocumentType>");
+    expect(xml).not.toContain("EmbeddedDocumentBinaryObject");
+    expect(xml).not.toContain("<xsl:stylesheet");
   });
 
   it("UBL-TR şema ve şematron kontrollerini geçen zorunlu alanları yazar", () => {

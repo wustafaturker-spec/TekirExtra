@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { EbelgeService } from "./ebelge.service";
-import { VARSAYILAN_TEMA } from "../core/pdf/belge-temasi";
 import { faturaUblOku } from "./ubl-oku";
 
 vi.mock("../core/istek-baglami", () => ({
@@ -143,8 +142,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
 
   const mockBildirimler = { uret: vi.fn() } as any;
 
-  const mockPdf = { belgeTemasi: vi.fn().mockResolvedValue(VARSAYILAN_TEMA) } as any;
-  const service = new EbelgeService(mockPrisma, mockBaglantilar, mockFatura, mockMukellefListesi, mockMetrics, mockBildirimler, undefined as any, mockPdf);
+  const service = new EbelgeService(mockPrisma, mockBaglantilar, mockFatura, mockMukellefListesi, mockMetrics, mockBildirimler);
 
   it("gonder kanalı lokal mükellef listesinden belirler, UBL uretir ve gönderir (EBLG-01/02/03/10)", async () => {
     const mockTx = {
@@ -198,8 +196,6 @@ describe("EbelgeService (EBLG-01..08)", () => {
     );
     expect(mockAdapter.mukellefSorgula).not.toHaveBeenCalled();
     expect(mockAdapter.belgeGonder).toHaveBeenCalled();
-    // FTR-25: gönderilen belgenin gömülü görünümü kiracının temasıyla üretilir.
-    expect(mockPdf.belgeTemasi).toHaveBeenCalled();
     expect(mockTx.ebelgeKayit.create).toHaveBeenCalledWith({
       data: {
         tenantId: "t1-uuid",
@@ -696,7 +692,7 @@ describe("EbelgeService.earsivBelgesiniIptalEt (EBLG-22)", () => {
     } as any;
     const bildirimler = { uret: vi.fn().mockResolvedValue({}) };
     const ayarlar = { getir: vi.fn().mockResolvedValue({ earsivIptalGunSayisi: gunSayisi }) } as any;
-    const service = new EbelgeService(prisma, baglantilar, {} as any, {} as any, metrics, bildirimler as any, ayarlar, { belgeTemasi: vi.fn().mockResolvedValue(VARSAYILAN_TEMA) } as any);
+    const service = new EbelgeService(prisma, baglantilar, {} as any, {} as any, metrics, bildirimler as any, ayarlar);
     return { service, tx, earsivIptal, bildirimler, adapter };
   }
 
@@ -789,8 +785,6 @@ describe("EbelgeService — çağrı disiplini", () => {
       mukellefListesi,
       metrics,
       bildirimler,
-      undefined as any,
-      { belgeTemasi: vi.fn().mockResolvedValue(VARSAYILAN_TEMA) } as any,
     );
     return { service, metrics, bildirimler };
   }

@@ -1,6 +1,5 @@
-import { XMLParser } from "fast-xml-parser";
 import { describe, expect, it } from "vitest";
-import { sayfaStili } from "../core/pdf/belge-temasi";
+import { EBELGE_YEDEK_GORUNUM_NOTU, ebelgeYedekPdfHtml } from "./ebelge-pdf";
 import { gomuluXsltCikar } from "./ubl-gorunum";
 import { faturaUblUret } from "./xml-uretec";
 
@@ -30,14 +29,14 @@ const sarmala = (icerik: string) =>
   `<?xml version="1.0"?><Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">${icerik}</Invoice>`;
 
 describe("gomuluXsltCikar (EBLG-28)", () => {
-  it("kendi ürettiğimiz UBL'den görünümü çıkarır", () => {
-    const xslt = gomuluXsltCikar(ubl());
+  it("gönderenin gömdüğü görünümü çıkarır", () => {
+    const gonderenBelgesi = sarmala(`<AdditionalDocumentReference>
+      <DocumentTypeCode>XSLT</DocumentTypeCode>
+      <Attachment><EmbeddedDocumentBinaryObject>${Buffer.from('<xsl:stylesheet version="1.0"><!-- ETTN --></xsl:stylesheet>').toString("base64")}</EmbeddedDocumentBinaryObject></Attachment>
+    </AdditionalDocumentReference>`);
+    const xslt = gomuluXsltCikar(gonderenBelgesi);
     expect(xslt).toContain("<xsl:stylesheet");
     expect(xslt).toContain("ETTN");
-  });
-
-  it("e-Arşiv belgesinde de görünüm bulunur", () => {
-    expect(gomuluXsltCikar(ubl({ tur: "earsiv" }))).toContain("<xsl:stylesheet");
   });
 
   it("görünüm yoksa, başka türde eklenti varsa ya da XML bozuksa null döner", () => {
@@ -83,41 +82,39 @@ describe("gomuluXsltCikar (EBLG-28)", () => {
   });
 });
 
-describe("gömülü görünüm ile PDF çıktısı (EBLG-31)", () => {
-  const xslt = gomuluXsltCikar(ubl())!;
-
-  it("geçerli XML'dir ve XSLT 1.0 bildirir", () => {
-    const ayristirici = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", removeNSPrefix: true });
-    const kok = ayristirici.parse(xslt) as Record<string, Record<string, unknown>>;
-    expect(kok.stylesheet["@_version"]).toBe("1.0");
-  });
-
-  it("PDF ile aynı sayfa stilini taşır", () => {
-    expect(xslt).toContain(sayfaStili().trim().slice(0, 120));
-  });
-
-  it("PDF ile aynı sütun başlıklarını ve toplam etiketlerini kullanır", () => {
-    for (const baslik of ["Ürün / Hizmet", "Birim Fiyat", "KDV %", "Matrah"]) {
-      expect(xslt).toContain(baslik);
-    }
-    for (const etiket of ["Brüt Toplam", "KDV Matrahı", "Hesaplanan KDV", "Genel Toplam"]) {
-      expect(xslt).toContain(etiket);
+describe("giden belgeye görünüm gömülmez (2026-09-17 kararı)", () => {
+  // Portal denemesinde entegratörün belgeyi kendi tasarımıyla bastığı görüldü;
+  // gömülü görünüm okunmuyordu ve her faturaya ~80 KB ölü yük ekliyordu.
+  it("kendi ürettiğimiz UBL'de XSLT eklentisi yoktur", () => {
+    for (const tur of [undefined, "earsiv" as const]) {
+      const xml = ubl(tur ? { tur } : undefined);
+      expect(gomuluXsltCikar(xml)).toBeNull();
+      expect(xml).not.toContain("<cbc:DocumentType>XSLT</cbc:DocumentType>");
+      expect(xml).not.toContain("<xsl:stylesheet");
     }
   });
 
-  it("belge kimliğini gösterir: ETTN, senaryo ve profil", () => {
-    expect(xslt).toContain("ETTN");
-    expect(xslt).toContain("Senaryo");
-    expect(xslt).toContain("Profil");
+  it("e-Arşiv gönderim şekli eklentisi yerinde kalır", () => {
+    // SEND_TYPE eklentisi görünümle ilgili değil; NES onu bekliyor.
+    expect(ubl({ tur: "earsiv" })).toContain("<cbc:DocumentTypeCode>SEND_TYPE</cbc:DocumentTypeCode>");
   });
 
-  it("karekodu kendisi çizer: yer tutucu, kütüphane ve kütüphanenin lisans notu (EBLG-32)", () => {
-    expect(xslt).toContain('id="gib-karekod"');
-    expect(xslt).toContain('name="karekodVerisi"');
-    expect(xslt).toContain("Copyright (c) 2009 Kazuhiko Arase | MIT License");
-    expect(xslt).toContain("stringToBytesFuncs");
-    // Kütüphane gömülürken değiştirme kalıpları bozulmamış, CDATA tek parça kalmış olmalı.
-    expect(xslt).not.toContain("__QR_KUTUPHANESI__");
-    expect(xslt.split("]]>")).toHaveLength(2);
+  it("belge kimliği ve karekod verisi UBL'de durmaya devam eder", () => {
+    const xml = ubl();
+    expect(xml).toContain("11111111-1111-4111-8111-111111111111");
+    expect(xml).toContain("TKR2026000000001");
+  });
+});
+
+describe("kendi kestiğimiz belgenin görünümü (2026-09-17)", () => {
+  it("yedek görünüm notu yalnız gelen belgede yazılır", () => {
+    const fatura = {
+      profilId: "TICARIFATURA", belgeNo: "K072026000000049", tarih: "2026-09-17",
+      dovizCinsi: "TRY", satirlar: [], toplamlar: {},
+      gonderen: { unvan: "Satıcı A.Ş.", vknTckn: "9876543210" },
+      alici: { unvan: "Alıcı A.Ş.", vknTckn: "1234567890" },
+    } as never;
+    expect(ebelgeYedekPdfHtml(fatura)).toContain(EBELGE_YEDEK_GORUNUM_NOTU);
+    expect(ebelgeYedekPdfHtml(fatura, { kendiBelgemiz: true })).not.toContain(EBELGE_YEDEK_GORUNUM_NOTU);
   });
 });

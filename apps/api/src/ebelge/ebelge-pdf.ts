@@ -5,8 +5,13 @@ import type { UblFatura } from "./ubl-oku";
 
 /**
  * EBLG-28 yedek görünümü: belgede gömülü XSLT yoksa ya da uygulanamadıysa
- * belge UBL'den okunan alanlarla basılır. Bu, gönderenin tasarladığı resmî
- * görünüm değildir; çıktı bunu açıkça söyler.
+ * belge UBL'den okunan alanlarla basılır. **Gelen** belgede bu, gönderenin
+ * tasarladığı resmî görünüm değildir; çıktı bunu açıkça söyler.
+ *
+ * Kendi kestiğimiz belgede durum başkadır (2026-09-17): giden belgeye görünüm
+ * gömülmüyoruz (EBLG-31 iptal), yani bu düzen kendi seçtiğimiz şablondur —
+ * "gönderenin şablonu yok" notu orada yanıltıcı olur, `kendiBelgemiz` ile
+ * kapatılır.
  */
 
 const YEDEK_NOTU =
@@ -22,7 +27,13 @@ const PROFIL_ADLARI: Record<string, string> = {
 
 export function ebelgeYedekPdfHtml(
   f: UblFatura,
-  secenekler: { tema?: BelgeTemasi; /** EBLG-32: yalnız kestiğimiz belgede verilir. */ karekodDataUri?: string } = {},
+  secenekler: {
+    tema?: BelgeTemasi;
+    /** EBLG-32: yalnız kestiğimiz belgede verilir. */
+    karekodDataUri?: string;
+    /** Kestiğimiz belge: düzen yedek değil, seçtiğimiz şablondur. */
+    kendiBelgemiz?: boolean;
+  } = {},
 ): string {
   const paraBirimi = f.dovizCinsi === "TRY" ? "TL" : f.dovizCinsi;
   const profil = PROFIL_ADLARI[f.profilId] ?? f.profilId;
@@ -87,7 +98,7 @@ export function ebelgeYedekPdfHtml(
   ${toplamSatiri("Hesaplanan KDV", f.toplamlar.kdv)}
   ${toplamSatiri("Ödenecek Tutar", f.toplamlar.genelToplam, true)}
 </table>
-<p style="margin-top:14px;color:#6b7280;font-size:8pt">${YEDEK_NOTU}</p>`;
+${secenekler.kendiBelgemiz ? "" : `<p style="margin-top:14px;color:#6b7280;font-size:8pt">${YEDEK_NOTU}</p>`}`;
 
   const sayfa = sayfaSablonu({
     baslik: profil.toLocaleUpperCase("tr-TR"),

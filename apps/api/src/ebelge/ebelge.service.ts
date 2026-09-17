@@ -15,7 +15,6 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { BildirimService } from "../bildirimler/bildirim.service";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
-import { PdfService } from "../core/pdf/pdf.service";
 import { MetricsService } from "../core/observability/metrics.service";
 import { PrismaService } from "../core/prisma.service";
 import { FaturaService } from "../fatura/fatura.service";
@@ -63,7 +62,6 @@ export class EbelgeService {
     private readonly metrics: MetricsService,
     private readonly bildirimler: BildirimService,
     private readonly ayarlar: AyarlarService,
-    private readonly pdf: PdfService,
   ) {}
 
   // ─── E-BELGE GÖNDERİMİ (EBLG-01/02/06/07) ──────────────────────────────────
@@ -242,8 +240,6 @@ export class EbelgeService {
 
       // Profil belge kanalına göre değişir: e-Arşiv'de GİB `EARSIVFATURA` bekler,
       // e-Fatura profili (temel/ticari) yalnız e-Fatura kanalında geçerlidir.
-      // FTR-25: alıcı belgeyi gönderenin seçtiği şablonla görür.
-      const tema = await this.pdf.belgeTemasi();
       const xml = faturaUblUret(
         ublFatura,
         {
@@ -251,7 +247,7 @@ export class EbelgeService {
           vkn: hazirlik.tenant.vkn,
           vergiDairesi: hazirlik.tenant.vergiDairesi || undefined,
         },
-        { tur, tema },
+        { tur },
       );
 
       // Yeniden denemede önce sağlayıcıya sorulur: önceki denemede ağ çağrısı

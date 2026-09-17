@@ -35,6 +35,9 @@ export class EbelgeGorunumService {
    * karekodu göndereninin işidir.
    */
   private async pdfUret(xml: string, dosyaAdi: string, karekodlu = false) {
+    // `karekodlu` yalnız kendi kestiğimiz belgede açık; yedek görünümün
+    // "gönderenin şablonu yok" notu da o belgede yersizdir.
+    const kendiBelgemiz = karekodlu;
     const karekod = karekodlu ? faturaKarekodVerisi(xml) : null;
     const karekodUri = karekod ? karekodDataUri(karekod) : undefined;
 
@@ -55,7 +58,7 @@ export class EbelgeGorunumService {
     }
     const tema = await this.pdf.belgeTemasi();
     return {
-      buffer: await this.pdf.htmlToPdf(ebelgeYedekPdfHtml(fatura, { tema, karekodDataUri: karekodUri })),
+      buffer: await this.pdf.htmlToPdf(ebelgeYedekPdfHtml(fatura, { tema, karekodDataUri: karekodUri, kendiBelgemiz })),
       dosyaAdi,
     };
   }
