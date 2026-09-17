@@ -1634,6 +1634,16 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
   gap: 1rem;
   grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(150px, 1fr));
 }
+/*
+ * Taşıma bilgisi paneli hızlı kayıt çekmecesinin içinde durur (420px):
+ * belge formunun 4 sütunlu ızgarası oraya sığmıyor, son sütunlar kırpılıp
+ * şoför ad-soyad alanları görünmez oluyordu (EBLG-49).
+ */
+.tasima-fields {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
 .customer-context,
 .scenario-summary {
   align-items: stretch;

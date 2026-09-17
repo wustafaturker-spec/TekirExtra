@@ -165,7 +165,7 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
           {tasiyiciCariId && secilenTasiyici && !secilenTasiyici.vknTckn && (
             <Alert tone="warning">Seçilen taşıyıcı carinin VKN/TCKN bilgisi yok; e-İrsaliye bu haliyle gönderilemez.</Alert>
           )}
-          <div className="document-fields document-fields--belge">
+          <div className="tasima-fields">
             <Field label="Fiili Sevk Tarihi ve Saati">
               <Input aria-label="Fiili sevk tarihi ve saati" type="datetime-local" value={fiiliSevkZamani} onChange={(e) => setFiiliSevkZamani(e.target.value)} />
               <small className="muted">Boş bırakılırsa onay anı yazılır.</small>
