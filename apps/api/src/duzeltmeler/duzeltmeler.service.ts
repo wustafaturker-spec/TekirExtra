@@ -5,6 +5,7 @@ import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { takiliRezervasyonKosulu } from "../ebelge/takili-rezervasyon";
+import { yerlesmisHataKosulu } from "../ebelge/yerlesmis-hata";
 import { VARSAYILAN_TOLERANS_YUZDE, farkAciklamasi, ucluEslestir } from "../satin-alma/uclu-eslestirme";
 import type { duzeltmeListeSemasi } from "./duzeltmeler.semalar";
 
@@ -99,7 +100,7 @@ export class DuzeltmelerService {
         tx.masraf.findMany({ where: { durum: "onaylandi", odemeDurumu: { not: "odendi" }, odemeler: { none: {} } }, select: { id: true, belgeNo: true, saticiUnvan: true, toplam: true }, take: 2_000 }),
         tx.krediKartiHareket.findMany({ where: { tenantId, tip: "harcama", masrafOdemesi: null, faturaId: null }, select: { id: true, aciklama: true, tutar: true }, take: 2_000 }),
         tx.posTahsilat.findMany({ where: { durum: "odendi", hareketId: null }, select: { id: true, tutar: true, saglayiciOdemeId: true }, take: 2_000 }),
-        tx.ebelgeKayit.findMany({ where: { OR: [{ durum: "hata" }, takiliRezervasyonKosulu()] }, select: { id: true, faturaId: true, durum: true, hataMesaji: true }, take: 2_000 }),
+        tx.ebelgeKayit.findMany({ where: { OR: [yerlesmisHataKosulu(), takiliRezervasyonKosulu()] }, select: { id: true, faturaId: true, durum: true, hataMesaji: true }, take: 2_000 }),
         tx.stokDepoBakiye.findMany({ where: { mevcutMiktar: { lt: 0 } }, select: { id: true, mevcutMiktar: true, stok: { select: { kod: true, ad: true } }, depo: { select: { ad: true } } }, take: 2_000 }),
         tx.sayim.findMany({ where: { durum: "taslak" }, select: { id: true, tarih: true, aciklama: true, depo: { select: { ad: true } }, kalemler: { select: { sistemMiktar: true, fiiliMiktar: true } } }, take: 2_000 }),
         tx.cekSenet.findMany({ where: { vadeTarihi: { lt: bugun }, durum: { in: ["portfoyde", "tahsile_verildi", "teminata_verildi", "ciro_edildi", "verildi"] } }, select: { id: true, portfoyNo: true, vadeTarihi: true, tutar: true, durum: true }, take: 2_000 }),

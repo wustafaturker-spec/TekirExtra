@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 import { baglamlaCalistir } from "../core/istek-baglami";
+import { HATA_YERLESME_MS } from "../ebelge/yerlesmis-hata";
 import { DuzeltmelerService } from "./duzeltmeler.service";
 
 describe("DuzeltmelerService", () => {
@@ -49,6 +50,14 @@ describe("DuzeltmelerService", () => {
     expect(tx.duzeltmeKaydi.upsert).toHaveBeenCalledWith(expect.objectContaining({
       where: { tenantId_tekillikAnahtari: { tenantId: "tenant-1", tekillikAnahtari: "ESLESMEMIS_EKSTRE:banka_ekstre_satiri:satir-1" } },
     }));
+  });
+
+  it("taze e-Belge hatasını değil, yalnız yerleşmiş hatayı sorgular (EBLG-46)", async () => {
+    await baglamlaCalistir({ tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" }, () => service.tara());
+
+    const kosul = tx.ebelgeKayit.findMany.mock.calls[0][0].where.OR[0];
+    expect(kosul.durum).toBe("hata");
+    expect(Date.now() - kosul.updatedAt.lte.getTime()).toBeGreaterThanOrEqual(HATA_YERLESME_MS);
   });
 
   it("kaynakta artık bulunmayan açık kaydı otomatik çözer", async () => {
