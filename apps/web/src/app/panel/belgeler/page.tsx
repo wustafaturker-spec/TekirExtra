@@ -10,6 +10,7 @@ import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
 import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyalari";
 import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
+import { TasimaBilgisiPaneli } from "@/components/tasima-bilgisi-paneli";
 import { faturaHesapla, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
@@ -89,6 +90,13 @@ interface Belge {
 interface ZincirRef { id: string; tur: string; no: string | null; durum: string }
 interface BelgeDetay extends Belge {
   gecerlilikTarihi: string | null;
+  fiiliSevkZamani?: string | null;
+  tasiyiciCariId?: string | null;
+  plaka?: string | null;
+  dorsePlaka?: string | null;
+  soforAdi?: string | null;
+  soforSoyadi?: string | null;
+  soforTckn?: string | null;
   aciklama: string | null;
   notlar: string | null;
   kaynakBelge: ZincirRef | null;
@@ -142,6 +150,7 @@ export default function BelgelerSayfasi() {
   const [formAcik, setFormAcik] = useState(yeniSayfasi);
   useEffect(() => { if (yeniSayfasi) setFormAcik(true); }, [yeniSayfasi]);
   const [detay, setDetay] = useState<BelgeDetay | null>(null);
+  const [tasimaPaneli, setTasimaPaneli] = useState<{ id: string; no: string | null } | null>(null);
   const [secili, setSecili] = useState<Set<string>>(new Set());
   const [topluFaturaYukleniyor, setTopluFaturaYukleniyor] = useState(false);
   const [olusanFaturaId, setOlusanFaturaId] = useState<string | null>(null);
@@ -839,6 +848,10 @@ export default function BelgelerSayfasi() {
                 <Button key={hedef} variant={hedef === "fatura" ? "primary" : undefined} size="sm" type="button" onClick={() => void donusumOzetiAc(detay.id, hedef)}>→ {hedef === "fatura" ? "Fatura" : TUR_ADI[hedef]}</Button>
               )
             ))}
+            {/* EBLG-49: şoför/plaka mal yüklenirken belli olur; onaydan sonra da girilebilir (EBLG-23). */}
+            {detay.tur === "irsaliye" && detay.durum !== "iptal" && (!detay.eirsaliye || detay.eirsaliye.durum === "hata") && (
+              <Button size="sm" type="button" onClick={() => setTasimaPaneli({ id: detay.id, no: detay.no })}>🚚 Taşıma bilgisi</Button>
+            )}
             {detay.durum === "onaylandi" && detay.tur === "irsaliye" && detay.yon === "satis" && !detay.eirsaliye && <Button size="sm" type="button" onClick={() => void eirsaliyeGonder(detay.id)}>🚚 e-İrsaliye gönder</Button>}
             <Button size="sm" type="button" onClick={() => void pdfAc(detay.id)}>🖨 PDF</Button>
             <EylemMenusu>
@@ -902,6 +915,14 @@ export default function BelgelerSayfasi() {
               <div className="document-timeline__step" aria-disabled="true"><span /><strong>Tahsilat/Ödeme</strong><small>Bekliyor</small></div>
             )}
           </div>
+          {detay.tur === "irsaliye" && (
+            <p className="muted" style={{ margin: "0 0 1rem", fontSize: "0.85rem" }}>
+              Sevkiyat: {detay.tasiyiciCariId ? (cariler.find((c) => c.id === detay.tasiyiciCariId)?.unvan ?? "Taşıyıcı cari") : "Kendi aracımızla"}
+              {" · "}Plaka {detay.plaka || "—"}
+              {" · "}Şoför {[detay.soforAdi, detay.soforSoyadi].filter(Boolean).join(" ") || "—"}
+              {detay.fiiliSevkZamani ? ` · Fiili sevk ${new Date(detay.fiiliSevkZamani).toLocaleString("tr-TR")}` : ""}
+            </p>
+          )}
           {detay.tur === "irsaliye" && detay.yon === "satis" && detay.eirsaliye?.durum === "hata" && <div className="row-tight" style={{ margin: "0 0 1rem" }}><span className="muted">{detay.eirsaliye.hataMesaji ?? "Gönderim başarısız."}</span><Button size="sm" variant="primary" onClick={() => void eirsaliyeGonder(detay.id)}>Tekrar gönder</Button></div>}
           {/* EBLG-35: e-İrsaliye ve bağlı fatura durum geçmişi; durum değiştikçe yeniden yüklenir. */}
           {(detay.eirsaliye || detay.fatura) && (
@@ -959,6 +980,15 @@ export default function BelgelerSayfasi() {
             </section>
           )}
         </Card>
+      )}
+
+      {tasimaPaneli && (
+        <TasimaBilgisiPaneli
+          belgeId={tasimaPaneli.id}
+          belgeNo={tasimaPaneli.no}
+          onKapat={() => setTasimaPaneli(null)}
+          onKaydedildi={(mesaj) => { const id = tasimaPaneli.id; setTasimaPaneli(null); setHata(""); setBasari(mesaj); void detayAc(id); void yukle(); }}
+        />
       )}
 
       {onayBekleyen && (

@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { EbelgeAdimSeridi } from "@/components/durum-gecmisi";
+import { TasimaBilgisiPaneli } from "@/components/tasima-bilgisi-paneli";
 import { Alert, Badge, Button, Card, Field, Input, Select, TableWrap } from "@/components/ui";
 
 type Durum = "gonderilmedi" | "kuyrukta" | "iletildi" | "kabul" | "kismi_kabul" | "ret" | "hata";
@@ -68,6 +69,13 @@ const DURUM_TONU: Record<Durum, "neutral" | "info" | "success" | "warning" | "da
   hata: "danger",
 };
 
+/**
+ * Taşıma bilgisi kapısı (EBLG-49). Sunucu bu alanları gönderilmiş e-İrsaliyede
+ * kapatır, hata alanda yeniden açar (EBLG-23); ekran aynı sınırı gösterir.
+ */
+const tasiyanEngeli = (e: Engel) => e.kod === "tasiyan_yok" || e.kod === "tasiyici_vkn_yok";
+const tasimaGirilebilir = (s: Satir) => s.belgeDurumu !== "iptal" && (s.durum === "gonderilmedi" || s.durum === "hata");
+
 const gun = (v: string) => new Date(v).toLocaleDateString("tr-TR");
 const an = (v: string | null) => (v ? new Date(v).toLocaleString("tr-TR") : null);
 const SAYFA_ADEDI = 15;
@@ -82,6 +90,7 @@ export default function GidenEirsaliyeler() {
   const [sayfa, setSayfa] = useState(1);
   const [secili, setSecili] = useState<Set<string>>(new Set());
   const [detay, setDetay] = useState<Detay | null>(null);
+  const [tasimaBelgesi, setTasimaBelgesi] = useState<{ id: string; no: string | null } | null>(null);
   const [yukleniyor, setYukleniyor] = useState(true);
   const [islemde, setIslemde] = useState("");
   const [hata, setHata] = useState("");
@@ -308,6 +317,11 @@ export default function GidenEirsaliyeler() {
                       {islemde === s.belgeId ? "Gönderiliyor…" : s.durum === "hata" ? "Yeniden gönder" : "Gönder"}
                     </Button>
                   )}
+                  {tasimaGirilebilir(s) && gonderebilir && (
+                    <Button size="sm" variant={s.engeller.some(tasiyanEngeli) ? "primary" : undefined} onClick={() => setTasimaBelgesi({ id: s.belgeId, no: s.belgeNo })}>
+                      🚚 Taşıma bilgisi
+                    </Button>
+                  )}
                   {s.durum !== "gonderilmedi" && <Button size="sm" onClick={() => void detayAc(s.belgeId)}>İncele</Button>}
                   <a className="btn btn--ghost btn--sm" href={`/panel/belgeler?odak=${s.belgeId}`}>Belgeyi aç</a>
                 </div>
@@ -354,6 +368,15 @@ export default function GidenEirsaliyeler() {
           </footer>
         </aside>
       </div>
+    )}
+
+    {tasimaBelgesi && (
+      <TasimaBilgisiPaneli
+        belgeId={tasimaBelgesi.id}
+        belgeNo={tasimaBelgesi.no}
+        onKapat={() => setTasimaBelgesi(null)}
+        onKaydedildi={(mesaj) => { setTasimaBelgesi(null); setHata(""); setBasari(mesaj); void yukle(); }}
+      />
     )}
   </div>;
 }
