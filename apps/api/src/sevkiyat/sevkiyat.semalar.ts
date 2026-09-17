@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PLAKA_HATA_MESAJI, plakaGecerliMi, plakaNormalize } from "@tekirextra/shared";
 import { guncellemeSemasi } from "../core/sema";
 
 /**
@@ -6,8 +7,23 @@ import { guncellemeSemasi } from "../core/sema";
  * değerleri belgeye kopyalanır; belge kartı referans almaz.
  */
 export const aracOlusturSemasi = z.object({
-  plaka: z.string().trim().min(2).max(20),
-  dorsePlaka: z.string().trim().max(20).optional().nullable(),
+  // Kart plakası irsaliyeye kopyalanıyor; GİB biçimi burada da aranır
+  // (şematron 14.09.2026 §3), yoksa hatalı plaka belgeye taşınır.
+  plaka: z
+    .string()
+    .trim()
+    .min(2)
+    .max(20)
+    .transform(plakaNormalize)
+    .refine(plakaGecerliMi, PLAKA_HATA_MESAJI),
+  dorsePlaka: z
+    .string()
+    .trim()
+    .max(20)
+    .optional()
+    .nullable()
+    .transform((deger) => (deger ? plakaNormalize(deger) : deger))
+    .refine((deger) => !deger || plakaGecerliMi(deger), PLAKA_HATA_MESAJI),
   aciklama: z.string().trim().max(120).optional().nullable(),
   aktif: z.boolean().default(true),
 });

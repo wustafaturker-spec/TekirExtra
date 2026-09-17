@@ -16,6 +16,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, tumSayfalariAl } from "@/lib/api";
 import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
 import { eksikTasiyanAlanlari, tasiyanBelli } from "@/lib/tasima-bilgisi";
+import { PLAKA_HATA_MESAJI, plakaGecerliMi, plakaNormalize, plakaTuru } from "@tekirextra/shared";
 import { Alert, Button, Field, Input, Select } from "@/components/ui";
 
 interface Cari { id: string; unvan: string; vknTckn?: string | null }
@@ -102,14 +103,26 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
     void api<SoforKarti[]>("/sevkiyat/soforler").then(setSoforKartlari).catch(() => undefined);
   }, []);
 
+  // Şematron 14.09.2026 §3: plaka biçimi GİB tarafından denetleniyor.
+  const plakaBozuk = Boolean(plaka.trim()) && !plakaGecerliMi(plaka);
+  const dorseBozuk = Boolean(dorsePlaka.trim()) && !plakaGecerliMi(dorsePlaka);
+  const plakaYabanci = plakaTuru(plaka) === "yabanci";
   const secilenTasiyici = cariler.find((c) => c.id === tasiyiciCariId);
   const suanki = { tasiyiciCariId: tasiyiciCariId || null, soforAdi, soforSoyadi, plaka };
   const eksikler = eksikTasiyanAlanlari(suanki);
-  const gonderilebilir = tasiyanBelli(suanki) && !(tasiyiciCariId && secilenTasiyici && !secilenTasiyici.vknTckn);
+  const gonderilebilir =
+    tasiyanBelli(suanki)
+    && !plakaBozuk
+    && !dorseBozuk
+    && !(tasiyiciCariId && secilenTasiyici && !secilenTasiyici.vknTckn);
 
   async function kaydet() {
     if (soforTckn.trim() && !/^\d{11}$/.test(soforTckn.trim())) {
       setHata("Şoför TCKN 11 haneli olmalıdır.");
+      return;
+    }
+    if (plakaBozuk || dorseBozuk) {
+      setHata(PLAKA_HATA_MESAJI);
       return;
     }
     setKaydediliyor(true);
@@ -162,6 +175,7 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
               e-İrsaliye taşıyan bilgisi ister: taşıyıcı firmayı seçin ya da {eksikler.join(", ")} girin.
             </Alert>
           ) : null}
+          {(plakaBozuk || dorseBozuk) && <Alert tone="warning">{PLAKA_HATA_MESAJI}</Alert>}
           {tasiyiciCariId && secilenTasiyici && !secilenTasiyici.vknTckn && (
             <Alert tone="warning">Seçilen taşıyıcı carinin VKN/TCKN bilgisi yok; e-İrsaliye bu haliyle gönderilemez.</Alert>
           )}
@@ -193,8 +207,24 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
                 </Select>
               </Field>
             )}
-            <Field label="Plaka"><Input aria-invalid={eksikler.includes("plaka")} value={plaka} onChange={(e) => setPlaka(e.target.value)} placeholder="34 ABC 123" /></Field>
-            <Field label="Dorse Plakası"><Input value={dorsePlaka} onChange={(e) => setDorsePlaka(e.target.value)} /></Field>
+            <Field label="Plaka">
+              <Input
+                aria-invalid={eksikler.includes("plaka") || plakaBozuk}
+                onBlur={() => setPlaka((p) => plakaNormalize(p))}
+                onChange={(e) => setPlaka(e.target.value)}
+                placeholder="34ABC123"
+                value={plaka}
+              />
+              <small className="muted">{plakaYabanci ? "Yabancı plaka olarak bildirilecek" : "Türkiye plakası: il kodu + harf + rakam"}</small>
+            </Field>
+            <Field label="Dorse Plakası">
+              <Input
+                aria-invalid={dorseBozuk}
+                onBlur={() => setDorsePlaka((p) => plakaNormalize(p))}
+                onChange={(e) => setDorsePlaka(e.target.value)}
+                value={dorsePlaka}
+              />
+            </Field>
             <Field label="Şoför Adı"><Input aria-invalid={eksikler.includes("şoför adı")} value={soforAdi} onChange={(e) => setSoforAdi(e.target.value)} /></Field>
             <Field label="Şoför Soyadı"><Input aria-invalid={eksikler.includes("şoför soyadı")} value={soforSoyadi} onChange={(e) => setSoforSoyadi(e.target.value)} /></Field>
             <Field label="Şoför TCKN"><Input value={soforTckn} onChange={(e) => setSoforTckn(e.target.value)} maxLength={11} /></Field>

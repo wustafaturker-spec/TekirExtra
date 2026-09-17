@@ -1,5 +1,15 @@
 import { z } from "zod";
+import { PLAKA_HATA_MESAJI, plakaGecerliMi, plakaNormalize } from "@tekirextra/shared";
 import { guncellemeSemasi } from "../core/sema";
+
+/** Plaka alanı: boşluk/küçük harf düzeltilir, biçim GİB kuralıyla sınanır. */
+const plakaAlani = z
+  .string()
+  .max(20)
+  .optional()
+  .nullable()
+  .transform((deger) => (deger ? plakaNormalize(deger) : deger))
+  .refine((deger) => !deger || plakaGecerliMi(deger), PLAKA_HATA_MESAJI);
 
 const pozitifOndalik = z
   .string()
@@ -53,8 +63,11 @@ export const belgeOlusturSemasi = z.object({
   fiiliSevkZamani: z.iso.datetime({ offset: true, message: "Geçersiz tarih/saat" }).optional().nullable(),
   /** Taşıyan nakliyeci/kargo carisi; boşsa mal kendi aracımızla götürülür. */
   tasiyiciCariId: z.string().uuid().optional().nullable(),
-  plaka: z.string().max(20).optional().nullable(),
-  dorsePlaka: z.string().max(20).optional().nullable(),
+  // Şematron 14.09.2026 §3: plaka biçimi GİB tarafından denetleniyor; boşluklu
+  // ya da küçük harfli yazım belgeyi reddettiriyor. Girdi normalize edilip
+  // kalıba uymayan değer daha kayıt anında durdurulur.
+  plaka: plakaAlani,
+  dorsePlaka: plakaAlani,
   soforAdi: z.string().max(80).optional().nullable(),
   soforSoyadi: z.string().max(80).optional().nullable(),
   soforTckn: z.string().regex(/^\d{11}$/, "Şoför TCKN 11 haneli olmalıdır").optional().nullable(),

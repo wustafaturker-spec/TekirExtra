@@ -3,6 +3,7 @@ import { EirsaliyeDurum, GelenEirsaliyeDurum, Prisma } from "@prisma/client";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import type { EntegratorConfig } from "@tekirextra/baglanti";
+import { dorseSchemeId, plakaNormalize, plakaSchemeId } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
@@ -85,11 +86,12 @@ export class EirsaliyeService {
       ? `<cac:DriverPerson><cbc:FirstName>${esc(b.soforAdi)}</cbc:FirstName><cbc:FamilyName>${esc(b.soforSoyadi)}</cbc:FamilyName>${b.soforTckn ? `<cbc:NationalityID>${esc(b.soforTckn)}</cbc:NationalityID>` : ""}</cac:DriverPerson>`
       : "";
     const arac = b.plaka
-      ? `<cac:TransportMeans><cac:RoadTransport><cbc:LicensePlateID schemeID="PLAKA">${esc(b.plaka)}</cbc:LicensePlateID></cac:RoadTransport></cac:TransportMeans>`
+      // Şematron 14.09.2026 §3: yabancı plaka ayrı schemeID ile bildirilir.
+      ? `<cac:TransportMeans><cac:RoadTransport><cbc:LicensePlateID schemeID="${plakaSchemeId(b.plaka)}">${esc(plakaNormalize(b.plaka))}</cbc:LicensePlateID></cac:RoadTransport></cac:TransportMeans>`
       : "";
     const sevkiyatAsamasi = arac || sofor ? `<cac:ShipmentStage>${arac}${sofor}</cac:ShipmentStage>` : "";
     const dorse = b.dorsePlaka
-      ? `<cac:TransportHandlingUnit><cac:TransportEquipment><cbc:ID schemeID="DORSEPLAKA">${esc(b.dorsePlaka)}</cbc:ID></cac:TransportEquipment></cac:TransportHandlingUnit>`
+      ? `<cac:TransportHandlingUnit><cac:TransportEquipment><cbc:ID schemeID="${dorseSchemeId(b.dorsePlaka)}">${esc(plakaNormalize(b.dorsePlaka))}</cbc:ID></cac:TransportEquipment></cac:TransportHandlingUnit>`
       : "";
     const satirlar = b.satirlar
       .map(

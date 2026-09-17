@@ -11,7 +11,7 @@ import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyal
 import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { TasimaBilgisiPaneli } from "@/components/tasima-bilgisi-paneli";
-import { faturaHesapla, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
+import { faturaHesapla, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -728,13 +728,13 @@ export default function BelgelerSayfasi() {
                     </Select>
                   </Field>
                 )}
-                <Field label="Plaka"><Input value={plaka} onChange={(e) => setPlaka(e.target.value)} placeholder="34 ABC 123" /></Field>
-                <Field label="Dorse Plakası"><Input value={dorsePlaka} onChange={(e) => setDorsePlaka(e.target.value)} /></Field>
+                <Field label="Plaka"><Input value={plaka} onChange={(e) => setPlaka(e.target.value)} onBlur={() => setPlaka((p) => plakaNormalize(p))} placeholder="34ABC123" /></Field>
+                <Field label="Dorse Plakası"><Input value={dorsePlaka} onChange={(e) => setDorsePlaka(e.target.value)} onBlur={() => setDorsePlaka((p) => plakaNormalize(p))} /></Field>
                 <Field label="Şoför Adı"><Input value={soforAdi} onChange={(e) => setSoforAdi(e.target.value)} /></Field>
                 <Field label="Şoför Soyadı"><Input value={soforSoyadi} onChange={(e) => setSoforSoyadi(e.target.value)} /></Field>
                 <Field label="Şoför TCKN"><Input value={soforTckn} onChange={(e) => setSoforTckn(e.target.value)} maxLength={11} /></Field>
               </div>
-              <small className="muted">e-İrsaliye gönderiminde taşıyıcı firma ya da şoför adı, soyadı ve plaka zorunludur.</small>
+              <small className="muted">e-İrsaliye gönderiminde taşıyıcı firma ya da şoför adı, soyadı ve plaka zorunludur. Plaka boşluksuz yazılır (GİB kuralı): 34ABC123.</small>
             </div>
           )}
 

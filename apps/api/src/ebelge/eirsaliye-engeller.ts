@@ -1,3 +1,5 @@
+import { PLAKA_HATA_MESAJI, plakaGecerliMi } from "@tekirextra/shared";
+
 /**
  * e-İrsaliye gönderim engelleri (EBLG-42).
  *
@@ -7,6 +9,7 @@
  */
 
 export type EngelKodu =
+  | "plaka_bicimi"
   | "belge_turu"
   | "onaysiz"
   | "vkn_yok"
@@ -33,6 +36,7 @@ export interface EirsaliyeAdayi {
   soforAdi: string | null;
   soforSoyadi: string | null;
   plaka: string | null;
+  dorsePlaka?: string | null;
 }
 
 /** Şematron il, ilçe ve posta kodunun üçünü de dolu ister. */
@@ -65,6 +69,16 @@ export function gonderimEngelleri(belge: EirsaliyeAdayi, mukellef: MukellefDurum
   }
   if (!belge.tasiyiciCariId && !(belge.soforAdi && belge.soforSoyadi && belge.plaka)) {
     engeller.push({ kod: "tasiyan_yok", mesaj: "e-İrsaliye taşıyan bilgisi ister: taşıyıcı firmayı seçin ya da şoför adı, soyadı ve plakayı girin" });
+  }
+  // Şematron 14.09.2026 §3: şoför bildirilen belgede plaka zorunludur;
+  // taşıyıcı firma seçilmiş olsa bile şoför varsa plaka aranır.
+  if ((belge.soforAdi || belge.soforSoyadi) && !belge.plaka) {
+    engeller.push({ kod: "tasiyan_yok", mesaj: "Şoför bildirilen irsaliyede araç plakası zorunludur" });
+  }
+  for (const [alan, deger] of [["Araç plakası", belge.plaka], ["Dorse plakası", belge.dorsePlaka]] as const) {
+    if (deger && !plakaGecerliMi(deger)) {
+      engeller.push({ kod: "plaka_bicimi", mesaj: `${alan} GİB biçimine uymuyor: ${PLAKA_HATA_MESAJI}` });
+    }
   }
   if (belge.tasiyiciCariId && !belge.tasiyiciCari?.vknTckn) {
     engeller.push({ kod: "tasiyici_vkn_yok", mesaj: "Taşıyıcı cari kartında VKN/TCKN bilgisi bulunmalıdır" });

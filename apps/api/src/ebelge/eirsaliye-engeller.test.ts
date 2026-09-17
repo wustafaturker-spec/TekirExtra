@@ -67,3 +67,36 @@ describe("gonderimEngelleri (EBLG-42)", () => {
     expect(kodlar(belge({ soforAdi: null, soforSoyadi: null, plaka: null }, { adresler: [] }))).toEqual(["adres_yok", "tasiyan_yok"]);
   });
 });
+
+describe("plaka engelleri (şematron 14.09.2026 §3)", () => {
+  const temel = {
+    tur: "irsaliye", yon: "satis", durum: "onaylandi",
+    cari: { vknTckn: "1234567890", adresler: [{ tip: "sevk", il: "Denizli", ilce: "Honaz", postaKodu: "20330" }] },
+    tasiyiciCariId: null, tasiyiciCari: null,
+    soforAdi: "Mehmet", soforSoyadi: "Öztürk", plaka: "34ABC123", dorsePlaka: null,
+  };
+
+  it("geçerli plakada engel üretmez", () => {
+    expect(gonderimEngelleri(temel, "mukellef")).toEqual([]);
+    expect(gonderimEngelleri({ ...temel, plaka: "AFK-159" }, "mukellef")).toEqual([]);
+  });
+
+  it("şoför bildirilip plaka verilmediyse engeller", () => {
+    const engeller = gonderimEngelleri({ ...temel, plaka: null }, "mukellef");
+    expect(engeller.map((e) => e.kod)).toContain("tasiyan_yok");
+    expect(engeller.some((e) => e.mesaj.includes("araç plakası zorunludur"))).toBe(true);
+  });
+
+  it("taşıyıcı firma seçili olsa da şoför varsa plaka ister", () => {
+    const engeller = gonderimEngelleri(
+      { ...temel, tasiyiciCariId: "c1", tasiyiciCari: { vknTckn: "1234567890" }, plaka: null },
+      "mukellef",
+    );
+    expect(engeller.some((e) => e.mesaj.includes("araç plakası zorunludur"))).toBe(true);
+  });
+
+  it("biçime uymayan araç ve dorse plakasını engeller", () => {
+    const engeller = gonderimEngelleri({ ...temel, plaka: "34.ABC.123", dorsePlaka: "dorse plaka!" }, "mukellef");
+    expect(engeller.filter((e) => e.kod === "plaka_bicimi")).toHaveLength(2);
+  });
+});

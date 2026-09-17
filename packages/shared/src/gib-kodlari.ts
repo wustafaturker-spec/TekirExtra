@@ -50,6 +50,7 @@ export const KDV_ISTISNA_KODLARI: readonly IstisnaKodu[] = [
   { kod: "230", tur: "kismi", ad: "17/4-g Külçe Altın, Külçe Gümüş Ve Kiymetli Taşlarin Teslimi" },
   { kod: "231", tur: "kismi", ad: "17/4-g Metal Plastik, Lastik, Kauçuk, Kağit, Cam Hurda Ve Atıkların Teslimi" },
   { kod: "232", tur: "kismi", ad: "17/4-g Döviz, Para, Damga Pulu, Değerli Kağıtlar, Hisse Senedi ve Tahvil Teslimleri" },
+  { kod: "233", tur: "kismi", ad: "2942 Sayılı Kamulaştırma Kanunu Kapsamında Taşınmazların Devri" },
   { kod: "234", tur: "kismi", ad: "17/4-ş Konut Finansmanı Amacıyla Teminat Gösterilen ve İpotek Konulan Konutların Teslimi" },
   { kod: "235", tur: "kismi", ad: "16/1-c Transit ve Gümrük Antrepo Rejimleri İle Geçici Depolama ve Serbest Bölge Hükümlerinin Uygulandığiı Malların Teslimi" },
   { kod: "236", tur: "kismi", ad: "19/2 Usulüne Göre Yürürlüğe Girmiş Uluslararası Anlaşmalar Kapsamındaki İstisnalar (İade Hakkı Tanınmayan)" },

@@ -67,13 +67,21 @@ describe("EirsaliyeService UBL", () => {
     expect(gonderi).toContain("<cbc:ActualDespatchTime>07:45:00</cbc:ActualDespatchTime>");
   });
 
-  it("şoförü, plakayı ve dorseyi taşıma alanlarına yazar", () => {
+  it("şoförü, plakayı ve dorseyi taşıma alanlarına yazar; plakayı GİB biçimine getirir", () => {
+    // Şematron 14.09.2026 §3: plaka boşluksuz ve büyük harf olmalı.
     const xml = ubl(belge);
 
-    expect(xml).toContain(`<cbc:LicensePlateID schemeID="PLAKA">34 ABC 123</cbc:LicensePlateID>`);
+    expect(xml).toContain(`<cbc:LicensePlateID schemeID="PLAKA">34ABC123</cbc:LicensePlateID>`);
     expect(xml).toContain("<cbc:FirstName>Mehmet</cbc:FirstName>");
     expect(xml).toContain("<cbc:NationalityID>10000000078</cbc:NationalityID>");
-    expect(xml).toContain(`<cbc:ID schemeID="DORSEPLAKA">34 DR 4088</cbc:ID>`);
+    expect(xml).toContain(`<cbc:ID schemeID="DORSEPLAKA">34DR4088</cbc:ID>`);
+  });
+
+  it("yabancı plakayı kendi schemeID'siyle bildirir", () => {
+    const xml = ubl({ ...belge, plaka: "AFK-159", dorsePlaka: "BG_77" });
+
+    expect(xml).toContain(`<cbc:LicensePlateID schemeID="YABANCIPLAKA">AFK-159</cbc:LicensePlateID>`);
+    expect(xml).toContain(`<cbc:ID schemeID="YABANCIDORSEPLAKA">BG_77</cbc:ID>`);
   });
 
   it("taşıyıcı seçilmediyse taşıyan firmanın kendisidir", () => {

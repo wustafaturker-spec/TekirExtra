@@ -7,3 +7,4 @@ export * from "./bicim";
 
 export * from "./gib-kodlari";
 export * from "./fatura-senaryo";
+export * from "./plaka";
