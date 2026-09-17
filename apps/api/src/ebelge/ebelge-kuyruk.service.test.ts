@@ -4,11 +4,11 @@ import { aktifBaglam, baglamlaCalistir } from "../core/istek-baglami";
 import { EbelgeKuyrukService } from "./ebelge-kuyruk.service";
 
 const bull = vi.hoisted(() => ({
-  add: vi.fn(), getJob: vi.fn(), getJobs: vi.fn(), close: vi.fn(), on: vi.fn(),
+  add: vi.fn(), getJob: vi.fn(), getJobs: vi.fn(), close: vi.fn(), on: vi.fn(), getWorkersCount: vi.fn(),
 }));
 
 vi.mock("bullmq", () => ({
-  Queue: class { add = bull.add; getJob = bull.getJob; getJobs = bull.getJobs; close = bull.close; on = bull.on; },
+  Queue: class { add = bull.add; getJob = bull.getJob; getJobs = bull.getJobs; close = bull.close; on = bull.on; getWorkersCount = bull.getWorkersCount; },
   QueueEvents: class { on = vi.fn(); waitUntilReady = vi.fn(); close = vi.fn(); },
   Worker: class {},
 }));
@@ -19,7 +19,7 @@ describe("EbelgeKuyrukService", () => {
   let service: EbelgeKuyrukService;
 
   beforeEach(() => {
-    vi.clearAllMocks(); bull.getJob.mockResolvedValue(null); bull.add.mockImplementation(async (_ad, data, opts) => ({ id: opts.jobId, data })); bull.getJobs.mockResolvedValue([]);
+    vi.clearAllMocks(); bull.getJob.mockResolvedValue(null); bull.add.mockImplementation(async (_ad, data, opts) => ({ id: opts.jobId, data })); bull.getJobs.mockResolvedValue([]); bull.getWorkersCount.mockResolvedValue(1);
     service = new EbelgeKuyrukService(ebelge as never, metrics as never);
   });
 
@@ -168,5 +168,22 @@ describe("EbelgeKuyrukService", () => {
 
     expect(isler.map((is) => is.id)).toEqual(["hedef-1"]);
     expect(bull.getJobs).toHaveBeenNthCalledWith(2, ["waiting"], 500, 999, true);
+  });
+
+  it("özet, kuyruğu dinleyen worker sayısını da söyler (EBLG-48)", async () => {
+    bull.getWorkersCount.mockResolvedValue(0);
+
+    const ozet = await baglamlaCalistir({ tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" }, () => service.ozet());
+
+    expect(ozet.calisanWorker).toBe(0);
+    expect(ozet.sayilar).toMatchObject({ waiting: 0, "dead-letter": 0 });
+  });
+
+  it("worker sayısı okunamazsa null döner, ekran yanlış alarm vermesin (EBLG-48)", async () => {
+    bull.getWorkersCount.mockRejectedValue(new Error("Redis yok"));
+
+    const ozet = await baglamlaCalistir({ tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" }, () => service.ozet());
+
+    expect(ozet.calisanWorker).toBeNull();
   });
 });

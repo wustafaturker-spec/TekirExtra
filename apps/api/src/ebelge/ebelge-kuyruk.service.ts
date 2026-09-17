@@ -176,7 +176,25 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
     const sayilar: Record<string, number> = { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 };
     await Promise.all(isler.map(async (is) => { if (deadLetterAsilIdleri.has(String(is.id))) return; const durum = await is.getState(); sayilar[durum] = (sayilar[durum] || 0) + 1; }));
     sayilar["dead-letter"] = deadLetterIsleri.length;
-    return sayilar;
+    return { sayilar, calisanWorker: await this.calisanWorkerSayisi() };
+  }
+
+  /**
+   * Kuyruğu dinleyen worker sayısı (EBLG-48).
+   *
+   * Gönderim isteği kuyruğa yazılır ve hemen döner; worker süreci ayakta
+   * değilse iş "waiting"te öylece durur ve ekranda hiçbir belirti olmaz —
+   * bir NES test gönderiminde saatler bu yüzden kaybedildi. Sayı bilinmiyorsa
+   * (Redis cevap vermedi) null döner ki ekran "worker yok" diye yanlış alarm
+   * vermesin.
+   */
+  private async calisanWorkerSayisi(): Promise<number | null> {
+    try {
+      return await this.kuyruk.getWorkersCount();
+    } catch (hata) {
+      this.logger.warn(`Worker sayısı okunamadı: ${hata instanceof Error ? hata.message : hata}`);
+      return null;
+    }
   }
 
   async listele() {
