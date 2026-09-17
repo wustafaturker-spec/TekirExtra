@@ -5,6 +5,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { ENTEGRATOR_IPTAL_ANAHTAR_ONEKI, entegratorIptalBildirimi } from "../ebelge/entegrator-iptal-bildirimi";
+import { yerlesmisHataKosulu } from "../ebelge/yerlesmis-hata";
 import { VARSAYILAN_ONAY_ESIGI, onaylayabilecekRoller } from "../satin-alma/satin-alma.hesap";
 import { RaporService } from "../rapor/rapor.service";
 import { BildirimService, type BildirimGirdisi } from "./bildirim.service";
@@ -210,7 +211,12 @@ export class BildirimUreticiService {
     const { tenantId } = aktifBaglam();
     const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.ebelgeKayit.findMany({
-        where: { OR: [{ durum: { in: ["hata", "ret"] } }, { durum: "iptal", fatura: { durum: "kesin" } }] },
+        // Taze `hata` bildirim doğurmaz (EBLG-46): gönderim işi düşünce kayıt
+        // hemen `hata` yazılır ama kuyruk birkaç kez daha dener, ikinci
+        // denemede geçen gönderim de arada `hata` görünür — bildirim geri
+        // alınamadığı için denemeler bitene kadar beklenir. `ret` alıcının
+        // nihai kararıdır, yeniden denenmez, bu yüzden hemen bildirilir.
+        where: { OR: [yerlesmisHataKosulu(), { durum: "ret" }, { durum: "iptal", fatura: { durum: "kesin" } }] },
         select: { id: true, durum: true, hataMesaji: true, faturaId: true, fatura: { select: { no: true, durum: true, cari: { select: { unvan: true } } } } },
         orderBy: { updatedAt: "desc" },
         take: 200,

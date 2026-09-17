@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { BildirimUreticiService } from "./bildirim-uretici.service";
+import { HATA_YERLESME_MS } from "../ebelge/yerlesmis-hata";
 
 vi.mock("../core/istek-baglami", () => ({ aktifBaglam: () => ({ tenantId: "t1", userId: "u1", rol: "yonetici" }) }));
 
@@ -52,6 +53,21 @@ describe("BildirimUreticiService.tara", () => {
       expect.objectContaining({ tur: "entegrasyon", birlesimAnahtari: "duzeltme:d1", kaynakRef: "d1", onem: "kritik" }),
     );
     expect(bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({ tur: "duzeltme", birlesimAnahtari: "duzeltme:d2" }));
+  });
+
+
+  it("taze e-Belge hatasını sormaz, yerleşmişi ve reddi sorar (EBLG-46)", async () => {
+    // Gönderim ilk denemede düşüp ikincide geçebilir; geri alınamayan e-posta
+    // denemeler bitmeden gitmemeli. Ret alıcının nihai kararıdır, beklemez.
+    const { servis, tx } = servisKur();
+
+    await servis.tara();
+
+    const kosul = tx.ebelgeKayit.findMany.mock.calls[0][0].where.OR;
+    expect(kosul[0].durum).toBe("hata");
+    expect(Date.now() - kosul[0].updatedAt.lte.getTime()).toBeGreaterThanOrEqual(HATA_YERLESME_MS);
+    expect(kosul[1]).toEqual({ durum: "ret" });
+    expect(JSON.stringify(kosul)).not.toContain('"in":["hata","ret"]');
   });
 
   it("kritik bildirime son tarih verir, uyarı seviyesine vermez", async () => {

@@ -5,12 +5,18 @@ import type { Prisma } from "@prisma/client";
  *
  * Gönderim işi düşünce kayıt hemen `hata` yazılır, ama kuyruk işi üstel
  * beklemeyle birkaç kez daha dener; ikinci denemede geçen bir gönderim de
- * arada `hata` görünür. Düzeltme taraması tam o aralığa denk gelirse kritik
- * bir düzeltme kaydı ve "e-Belge gönderimi hata verdi" e-postası üretir,
- * gönderim sonra başarılı olunca kayıt sessizce çözülür — e-posta geri
- * alınamaz. Bu yüzden `hata` durumu ancak denemeler bittikten sonra, kayda
- * bu süre boyunca dokunulmamışsa gerçek bir bulgu sayılır: her başarısız
- * deneme `updatedAt`'i tazelediği için denemeler sürerken süre baştan başlar.
+ * arada `hata` görünür. O aralığa denk gelen tarama insanı boşuna uyandırır:
+ * düzeltme taraması kritik bir kayıt açar, bildirim üreticisi "e-Belge
+ * gönderimi hata verdi" bildirimi ve e-postası yollar. Gönderim sonra
+ * başarılı olunca kayıt sessizce çözülür ama e-posta geri alınamaz. Bu yüzden
+ * `hata` durumu ancak denemeler bittikten sonra, kayda bu süre boyunca
+ * dokunulmamışsa gerçek bir bulgu sayılır: her başarısız deneme `updatedAt`'i
+ * tazelediği için denemeler sürerken süre baştan başlar.
+ *
+ * Kuralı **insana haber uçuran** her iki taraf da kullanır (düzeltme taraması
+ * ve bildirim üreticisi). Ekrandaki sayaçlar ve kullanıcının kendi seçtiği
+ * "hatalı e-belgeler" filtresi beklemez: onlar kimseyi uyandırmaz ve gönderim
+ * düzelince kendiliğinden düzelir.
  *
  * Eşik kuyruğun toplam yeniden deneme penceresinden (5 deneme, 5 sn'den üstel
  * bekleme ≈ 75 sn) belirgin biçimde uzun tutulur.
