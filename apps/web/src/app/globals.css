@@ -1321,6 +1321,8 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; color: var(--text); }
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .input::placeholder, .textarea::placeholder { color: var(--text-subtle); }
+/* Eksik bırakıldığı için işaretlenen alan; uyarı şeridiyle aynı şeyi söyler. */
+.input[aria-invalid="true"], .select[aria-invalid="true"], .textarea[aria-invalid="true"] { border-color: var(--danger); }
 .input:focus, .select:focus, .textarea:focus {
   outline: none;
   border-color: var(--accent);

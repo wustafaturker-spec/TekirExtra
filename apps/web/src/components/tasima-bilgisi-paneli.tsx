@@ -51,6 +51,7 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
 }) {
   const [yukleniyor, setYukleniyor] = useState(true);
   const [kaydediliyor, setKaydediliyor] = useState(false);
+  const [kaydedildiUyarisi, setKaydedildiUyarisi] = useState("");
   const [hata, setHata] = useState("");
   const [cariler, setCariler] = useState<Cari[]>([]);
   const [araclar, setAraclar] = useState<AracKarti[]>([]);
@@ -92,6 +93,8 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
   }, [belgeId]);
 
   useEffect(() => { void yukle(); }, [yukle]);
+  // "Eksik kaydedildi" uyarısı kaydedilen hale aittir; alan değişince düşer.
+  useEffect(() => { setKaydedildiUyarisi(""); }, [soforAdi, soforSoyadi, plaka, tasiyiciCariId]);
   useEffect(() => {
     // Kartlar olmasa da alanlar elle doldurulabilir; listeler gelmezse panel çalışmaya devam eder.
     void tumSayfalariAl<Cari>("/cari").then(setCariler).catch(() => undefined);
@@ -111,6 +114,7 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
     }
     setKaydediliyor(true);
     setHata("");
+    setKaydedildiUyarisi("");
     try {
       await api(`/belgeler/${belgeId}/tasima-bilgisi`, {
         method: "PATCH",
@@ -126,11 +130,17 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
           soforTckn: soforTckn.trim() || null,
         }),
       });
-      onKaydedildi(
-        gonderilebilir
-          ? `${no ?? "Belge"} taşıma bilgisi kaydedildi; e-İrsaliye gönderilebilir.`
-          : `${no ?? "Belge"} taşıma bilgisi kaydedildi.`,
-      );
+      if (!gonderilebilir) {
+        // Eksik bilgi kaydedilebilir ama panel kapanmaz: sessizce kapansaydı
+        // kullanıcı "girdim" sanıp aynı gönderim hatasına geri düşerdi.
+        setKaydedildiUyarisi(
+          eksikler.length > 0
+            ? `Kaydedildi. e-İrsaliye için hâlâ ${eksikler.join(", ")} gerekiyor — şoför TCKN'si bunların yerine geçmez.`
+            : "Kaydedildi. Seçilen taşıyıcı carinin VKN/TCKN bilgisi girilmeden e-İrsaliye gönderilemez.",
+        );
+        return;
+      }
+      onKaydedildi(`${no ?? "Belge"} taşıma bilgisi kaydedildi; e-İrsaliye gönderilebilir.`);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Taşıma bilgisi kaydedilemedi");
     } finally {
@@ -145,11 +155,13 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
         <p className="muted">Taşıma bilgisi yükleniyor…</p>
       ) : (
         <>
-          {eksikler.length > 0 && (
+          {kaydedildiUyarisi ? (
+            <Alert tone="warning">{kaydedildiUyarisi}</Alert>
+          ) : eksikler.length > 0 ? (
             <Alert tone="warning">
               e-İrsaliye taşıyan bilgisi ister: taşıyıcı firmayı seçin ya da {eksikler.join(", ")} girin.
             </Alert>
-          )}
+          ) : null}
           {tasiyiciCariId && secilenTasiyici && !secilenTasiyici.vknTckn && (
             <Alert tone="warning">Seçilen taşıyıcı carinin VKN/TCKN bilgisi yok; e-İrsaliye bu haliyle gönderilemez.</Alert>
           )}
@@ -181,16 +193,16 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
                 </Select>
               </Field>
             )}
-            <Field label="Plaka"><Input value={plaka} onChange={(e) => setPlaka(e.target.value)} placeholder="34 ABC 123" /></Field>
+            <Field label="Plaka"><Input aria-invalid={eksikler.includes("plaka")} value={plaka} onChange={(e) => setPlaka(e.target.value)} placeholder="34 ABC 123" /></Field>
             <Field label="Dorse Plakası"><Input value={dorsePlaka} onChange={(e) => setDorsePlaka(e.target.value)} /></Field>
-            <Field label="Şoför Adı"><Input value={soforAdi} onChange={(e) => setSoforAdi(e.target.value)} /></Field>
-            <Field label="Şoför Soyadı"><Input value={soforSoyadi} onChange={(e) => setSoforSoyadi(e.target.value)} /></Field>
+            <Field label="Şoför Adı"><Input aria-invalid={eksikler.includes("şoför adı")} value={soforAdi} onChange={(e) => setSoforAdi(e.target.value)} /></Field>
+            <Field label="Şoför Soyadı"><Input aria-invalid={eksikler.includes("şoför soyadı")} value={soforSoyadi} onChange={(e) => setSoforSoyadi(e.target.value)} /></Field>
             <Field label="Şoför TCKN"><Input value={soforTckn} onChange={(e) => setSoforTckn(e.target.value)} maxLength={11} /></Field>
           </div>
           <div className="quick-panel__actions">
             <Button type="button" onClick={onKapat}>Vazgeç</Button>
             <Button type="button" variant="primary" disabled={kaydediliyor} onClick={() => void kaydet()}>
-              {kaydediliyor ? "Kaydediliyor…" : "Taşıma bilgisini kaydet"}
+              {kaydediliyor ? "Kaydediliyor…" : gonderilebilir ? "Taşıma bilgisini kaydet" : "Eksik haliyle kaydet"}
             </Button>
           </div>
         </>
