@@ -11,20 +11,31 @@ import { belgeAdresiSec } from "./adres";
 import { ulkeKoduCoz, yurtDisiMi } from "./ulke";
 
 /**
- * Yurt dışı alıcının VKN'si yoktur; GİB ihracat faturasında alıcı kimliği
- * olarak bu sabiti bekler. Cari kartındaki kimlik (varsa ülkesindeki vergi
- * numarası) belgeye yazılmaz — kontrol hanesi tutmadığı için zaten kaydedilemez.
+ * İhracat faturasının **alıcısı** yurt dışındaki müşteri değil, Ticaret
+ * Bakanlığı'dır (GİB `IHRACAT.xml` resmî örneği). Mal ı alan yabancı firma
+ * belgede ayrı bir tarafta, `cac:BuyerCustomerParty` içinde bildirilir.
+ * VKN GİB mükellef listesinde de bu unvanla durur.
  */
-export const IHRACAT_ALICI_VKN = "2222222222";
+export const GUMRUK_BAKANLIGI_VKN = "1460415308";
+export const GUMRUK_BAKANLIGI_UNVAN =
+  "Gümrük ve Ticaret Bakanlığı Gümrükler Genel Müdürlüğü - Bilgi İşlem Dairesi Başkanlığı";
+export const GUMRUK_BAKANLIGI_IL = "Ankara";
 
 /**
- * İhracat faturası alıcının kutusuna değil, Ticaret Bakanlığı'nın GİB posta
- * kutusuna gönderilir; gümrük beyannamesiyle eşleşme oradan yürür.
+ * Belge Bakanlığın ihracat kutusuna gönderilir; gümrük beyannamesiyle eşleşme
+ * oradan yürür. Aynı VKN'nin yolcu beraberi için ayrı bir kutusu vardır, o
+ * yüzden kutu mükellef listesinden seçilmez, burada açıkça yazılır.
  */
 export const IHRACAT_POSTA_KUTUSU = "urn:mail:ihracatpk@gtb.gov.tr";
 
-/** İhracat her zaman satış tipindedir; satırlar sıfır KDV'li olsa bile. */
-export const IHRACAT_FATURA_TIPI = "SATIS";
+/**
+ * İhracat KDV'den istisnadır ve belge tipi bunu söyler: resmî örnekte
+ * `InvoiceTypeCode` `ISTISNA`'dır. Tasarım belgesi "SATIS" diyordu.
+ */
+export const IHRACAT_FATURA_TIPI = "ISTISNA";
+
+/** Yabancı alıcı `cac:BuyerCustomerParty` içinde bu kimlikle bildirilir. */
+export const IHRACAT_ALICI_PARTY_TIPI = "EXPORT";
 
 /** UBL'e `cbc:ProfileID` olarak yazılan senaryo kodu. */
 export const IHRACAT_PROFILI = "IHRACAT";
@@ -91,6 +102,11 @@ export function gtipNormalize(kod: string | null | undefined): string | undefine
  */
 export function ihracatIstisnaKodu(stokTipi: string | null | undefined): string {
   return stokTipi === "hizmet" ? "302" : "301";
+}
+
+/** İstisna kodunun belgeye yazılan açıklaması (`cbc:TaxExemptionReason`). */
+export function ihracatIstisnaAciklamasi(kod: string): string {
+  return kod === "302" ? "11/1-a Hizmet ihracatı" : "11/1-a Mal ihracatı";
 }
 
 /** İhracatta kullanılabilecek tam istisna kodları; kullanıcı bunlardan birini seçtiyse korunur. */

@@ -110,17 +110,17 @@ doğrulanmalı.
 | Alan | UBL | Zorunlu | Kaynak | Durum |
 |---|---|---|---|---|
 | Senaryo `IHRACAT` | `cbc:ProfileID` | Evet | Kural (alıcı yurt dışı) | ✅ |
-| Alıcı kimliği `2222222222` | `PartyIdentification` schemeID="VKN" | Evet | Sabit (yurt dışı alıcının VKN'si yok) | ✅ |
-| Alıcı posta kutusu = Ticaret Bakanlığı | `urn:mail:ihracatpk@gtb.gov.tr` | Evet | Sabit; mükellef listesi sorulmaz | ✅ |
-| Alıcı ülke kodu (TR dışı) | `Country/IdentificationCode` | Evet | Cari adresi (`cari_adresler.ulke`) | ✅ |
-| Vergi para birimi | `cbc:TaxCurrencyCode` = TRY | Dövizlide evet | Sabit | ✅ |
-| Fiyatlama para birimi + kur | `cbc:PricingCurrencyCode`, `cac:TaxExchangeRate` | Önerilir | Fatura dövizi ve kuru | ✅ |
-| GTİP (satır) | `CommodityClassification` listID="GTIP", 12 hane | Evet | Stok kartı (`gtip_kodu`) | ✅ |
-| Menşei | `OriginCountry` | Koşullu | Stok kartı (`mensei`) | ✅ |
-| KDV 0 + istisna kodu **301/302** | `TaxExemptionReasonCode` | Evet | Kural (mal/hizmet) | ✅ |
-| Fiili ihracat tarihi | `cbc:ActualDeliveryDate` | Evet | Sihirbaz | ✅ |
-| Teslim şartı (Incoterms) | `cac:DeliveryTerms` | Önerilir | Sihirbaz | ✅ |
-| Taşıma şekli | `TransportModeCode` | Koşullu | Sihirbaz | ✅ |
+| Belge tipi `ISTISNA` | `cbc:InvoiceTypeCode` | Evet | Kural | ✅ |
+| **Alıcı = Ticaret Bakanlığı** | `AccountingCustomerParty`, VKN `1460415308` | Evet | Sabit; posta kutusu `urn:mail:ihracatpk@gtb.gov.tr` | ✅ |
+| **Malı alan yabancı firma** | `cac:BuyerCustomerParty`, `PartyIdentification` schemeID="PARTYTYPE" = `EXPORT` | Evet | Cari kartı; ülkesindeki vergi no `PartyLegalEntity/CompanyID` | ✅ |
+| Alıcı ülkesi (TR dışı) | `BuyerCustomerParty/PostalAddress/Country` | Evet | Cari adresi (`cari_adresler.ulke`) | ✅ |
+| Vergi para birimi + kur | `cbc:TaxCurrencyCode`=TRY, `cac:TaxExchangeRate`, `cac:PricingExchangeRate` | Dövizlide evet | Fatura dövizi ve kuru | ⚠️ NES reddediyor, bkz. EBLG-57 |
+| **GTİP (satır)** | `InvoiceLine/Delivery/Shipment/GoodsItem/cbc:RequiredCustomsID`, 12 hane | Evet | Stok kartı (`gtip_kodu`) | ✅ |
+| Menşei (satır) | `Item/OriginCountry` — **`cbc:Name` zorunlu**, yalnız kod şemadan döner | Koşullu | Stok kartı (`mensei`) | ✅ |
+| KDV 0 + istisna kodu **301/302** + açıklaması | fatura `TaxTotal/TaxCategory/TaxExemptionReasonCode` + `TaxExemptionReason` | Evet | Kural (mal/hizmet) | ✅ |
+| Fiili ihracat tarihi | `InvoiceLine/Delivery/cbc:ActualDeliveryDate` | Evet | Sihirbaz | ✅ |
+| Teslim şartı (Incoterms) | `InvoiceLine/Delivery/cac:DeliveryTerms` | Önerilir | Sihirbaz | ✅ |
+| Taşıma şekli | `InvoiceLine/Delivery/Shipment/ShipmentStage/TransportModeCode` | Koşullu | Sihirbaz | ✅ |
 | Gümrük beyanname no | `AdditionalDocumentReference` DocumentType="CUST_INV" | Gümrük kapandıktan sonra | Sonradan girilir | ✅ |
 
 **Kapandı (EBLG-53/54, 2026-09-18).** İki düzeltme:
@@ -133,10 +133,22 @@ doğrulanmalı.
    gönderilmiş e-Fatura değiştirilemediği ve gümrük eşleşmesi fatura UUID'si
    üzerinden yürüdüğü için GİB'e ikinci gönderim yapılmaz.
 
-**Canlıda denenmedi:** yurt dışı alıcı kimliği (`2222222222`), Ticaret Bakanlığı
-posta kutusu ve `listID="GTIP"` yazımı GİB ihracat kılavuzunun yerleşik
-uygulamasıdır; repodaki kaynaklarda geçmiyor. İlk gerçek ihracat faturasından
-önce NES test ortamında doğrulanmalı.
+**Denendi ve düzeltildi (2026-09-18).** İlk uygulama tasarım belgesine
+dayanıyordu ve altı yerde yanlıştı; **GİB'in resmî örneği repoda duruyor**:
+`docs/e-belge/Sovos Bulut e-Fatura WS API v2.3/EK1 - Teknik Belgeler/UBL-TR
+1.2.1/XSLT/IHRACAT.xml`. Yanlış olanlar: belge tipi (SATIS → **ISTISNA**), alıcı
+(uydurma `2222222222` → **Bakanlık VKN'si**, yabancı firma ayrı tarafa),
+GTİP'in yeri (`CommodityClassification` → **`RequiredCustomsID`**), teslimatın
+yeri (fatura → **satır** düzeyi) ve istisna kodunun yeri.
+
+NES test ortamına gönderim iki bulgu daha verdi:
+1. `cac:OriginCountry` **`cbc:Name` ister**; yalnız kod yazılan belge
+   `FAILED_XML_SCHEMA_CHECK` ile döner. Düzeltildi.
+2. Dövizli belge hâlâ reddediliyor (EBLG-57) — bu kural ihracata değil TRY dışı
+   her belgeye ait ve sistemden bugüne dek dövizli belge hiç gönderilmemiş.
+
+**TRY ihracat faturası NES test ortamında kabul edildi** (`iletildi`), yani
+yapının kalanı şematrondan geçiyor.
 
 ### 3.5 Yolcu beraberi (`YOLCUBERABERIESYA`)
 

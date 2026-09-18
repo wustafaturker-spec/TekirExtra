@@ -260,7 +260,8 @@ describe("EbelgeService (EBLG-01..08)", () => {
     expect(gonderilen.tur).toBe("efatura");
     expect(gonderilen.aliciPostaKutusu).toBe("urn:mail:ihracatpk@gtb.gov.tr");
     expect(gonderilen.xml).toContain("<cbc:ProfileID>IHRACAT</cbc:ProfileID>");
-    expect(gonderilen.xml).toContain('<cbc:ID schemeID="VKN">2222222222</cbc:ID>');
+    expect(gonderilen.xml).toContain('<cbc:ID schemeID="VKN">1460415308</cbc:ID>');
+    expect(gonderilen.xml).toContain('<cbc:ID schemeID="PARTYTYPE">EXPORT</cbc:ID>');
   });
 
   it("ihracat faturasında fiili ihracat tarihi ve GTİP eksikse göndermez (EBLG-53)", async () => {

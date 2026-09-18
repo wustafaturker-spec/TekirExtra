@@ -305,19 +305,25 @@ describe("belgeNoyuUbleYaz (EBLG-16 arşivi)", () => {
     });
 
     expect(xml).toContain("<cbc:ProfileID>IHRACAT</cbc:ProfileID>");
-    expect(xml).toContain("<cbc:InvoiceTypeCode>SATIS</cbc:InvoiceTypeCode>");
+    // Resmî örnekte ihracatın belge tipi ISTISNA'dır; tasarım belgesi SATIS diyordu.
+    expect(xml).toContain("<cbc:InvoiceTypeCode>ISTISNA</cbc:InvoiceTypeCode>");
     // Vergi TRY üzerinden okunur; dövizli faturada kur da belgeye girer.
     expect(xml).toContain("<cbc:TaxCurrencyCode>TRY</cbc:TaxCurrencyCode>");
-    expect(xml).toContain("<cbc:PricingCurrencyCode>USD</cbc:PricingCurrencyCode>");
+    expect(xml).toContain("<cac:PricingExchangeRate>");
     expect(xml).toContain("<cbc:CalculationRate>41.500000</cbc:CalculationRate>");
-    // Yurt dışı alıcının VKN'si yoktur; GİB sabiti yazılır ve ülke kodu TR olamaz.
-    expect(xml).toContain('<cbc:ID schemeID="VKN">2222222222</cbc:ID>');
-    expect(xml).toContain("<cbc:IdentificationCode>DE</cbc:IdentificationCode>");
-    expect(xml).toContain("<cbc:Name>Muster GmbH</cbc:Name>");
-    expect(xml).toContain("<cbc:CityName>Berlin</cbc:CityName>");
-    expect(xml).toContain("<cbc:ActualDeliveryDate>2026-09-20</cbc:ActualDeliveryDate>");
-    expect(xml).toContain('<cbc:ID schemeID="INCOTERMS">FOB</cbc:ID>');
-    expect(xml).toContain("<cbc:TransportModeCode>1</cbc:TransportModeCode>");
+    // Belgenin alıcısı Gümrük Bakanlığı'dır; malı alan yabancı firma ayrı tarafta.
+    expect(xml).toContain('<cbc:ID schemeID="VKN">1460415308</cbc:ID>');
+    expect(xml).toContain("<cbc:CityName>Ankara</cbc:CityName>");
+    const yabanci = xml.match(/<cac:BuyerCustomerParty>[\s\S]*?<\/cac:BuyerCustomerParty>/)![0];
+    expect(yabanci).toContain('<cbc:ID schemeID="PARTYTYPE">EXPORT</cbc:ID>');
+    expect(yabanci).toContain("<cbc:Name>Muster GmbH</cbc:Name>");
+    expect(yabanci).toContain("<cbc:CityName>Berlin</cbc:CityName>");
+    expect(yabanci).toContain("<cbc:IdentificationCode>DE</cbc:IdentificationCode>");
+    // Teslimat, teslim şartı ve taşıma şekli satır düzeyinde durur.
+    const satir = xml.match(/<cac:InvoiceLine>[\s\S]*?<\/cac:InvoiceLine>/)![0];
+    expect(satir).toContain("<cbc:ActualDeliveryDate>2026-09-20</cbc:ActualDeliveryDate>");
+    expect(satir).toContain('<cbc:ID schemeID="INCOTERMS">FOB</cbc:ID>');
+    expect(satir).toContain("<cbc:TransportModeCode>1</cbc:TransportModeCode>");
     expect(xml).not.toContain("<cac:Person>");
   });
 
@@ -343,16 +349,20 @@ describe("belgeNoyuUbleYaz (EBLG-16 arşivi)", () => {
       ihracat: { ulkeKodu: "DE", teslimTarihi: new Date("2026-09-20T00:00:00Z") },
     });
 
+    // GTİP, resmî örnekteki yeriyle: satırın gönderi bilgisinde.
     const mal = ubl({ kod: "STK-9", ad: "Fındık", tip: "urun", gtipKodu: "080222100000", mensei: "TR" });
-    expect(mal).toContain('<cbc:ItemClassificationCode listID="GTIP">080222100000</cbc:ItemClassificationCode>');
+    expect(mal).toContain("<cbc:RequiredCustomsID>080222100000</cbc:RequiredCustomsID>");
+    expect(mal).not.toContain("CommodityClassification");
     expect(mal).toContain("<cac:OriginCountry>");
     expect(mal).toContain("<cbc:TaxExemptionReasonCode>301</cbc:TaxExemptionReasonCode>");
+    expect(mal).toContain("<cbc:TaxExemptionReason>11/1-a Mal ihracatı</cbc:TaxExemptionReason>");
 
     // Hizmet ihracatının kodu ayrıdır; menşei çözülemezse hiç yazılmaz.
     const hizmet = ubl({ kod: "HZM-1", ad: "Danışmanlık", tip: "hizmet", gtipKodu: null, mensei: "Zımbırtistan" });
     expect(hizmet).toContain("<cbc:TaxExemptionReasonCode>302</cbc:TaxExemptionReasonCode>");
+    expect(hizmet).toContain("<cbc:TaxExemptionReason>11/1-a Hizmet ihracatı</cbc:TaxExemptionReason>");
     expect(hizmet).not.toContain("<cac:OriginCountry>");
-    expect(hizmet).not.toContain("CommodityClassification");
+    expect(hizmet).not.toContain("RequiredCustomsID");
   });
 
   it("yurt içi faturaya ihracat alanlarından hiçbirini karıştırmaz", () => {
@@ -374,6 +384,7 @@ describe("belgeNoyuUbleYaz (EBLG-16 arşivi)", () => {
 
     expect(xml).toContain("<cbc:ProfileID>TEMELFATURA</cbc:ProfileID>");
     expect(xml).not.toContain("IHRACAT");
+    expect(xml).not.toContain("BuyerCustomerParty");
     expect(xml).not.toContain("TaxCurrencyCode");
     expect(xml).not.toContain("CommodityClassification");
     expect(xml).not.toContain("<cac:Delivery>");

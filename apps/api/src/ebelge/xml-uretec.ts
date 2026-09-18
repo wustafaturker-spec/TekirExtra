@@ -1,17 +1,22 @@
 import { Fatura, FaturaSatir, CariHesap } from "@prisma/client";
 import {
-  IHRACAT_ALICI_VKN,
+  GUMRUK_BAKANLIGI_IL,
+  GUMRUK_BAKANLIGI_UNVAN,
+  GUMRUK_BAKANLIGI_VKN,
+  IHRACAT_ALICI_PARTY_TIPI,
   IHRACAT_FATURA_TIPI,
   IHRACAT_PROFILI,
   IHRACAT_VERGI_PARA_BIRIMI,
   birimUblKodu,
   gtipNormalize,
+  ihracatIstisnaAciklamasi,
   ihracatIstisnaKodu,
   ihracatIstisnaKoduMu,
   senaryoUblKodu,
   tevkifatKoduBul,
   odemeSekliUblKodu,
   ublAdresi,
+  ulkeAdi,
   ulkeKoduCoz,
 } from "@tekirextra/shared";
 import { adSoyadCoz } from "../cari/ad-soyad";
@@ -79,6 +84,13 @@ export function faturaUblUret(
    */
   const aliciAdres = ublAdresi(fatura.cari.adresler);
   /**
+   * Menşei ülkesinin adı. UBL-TR `cac:OriginCountry` içinde **`cbc:Name` arar**;
+   * yalnız kod yazılan belge şemadan döner (NES, 2026-09-18:
+   * `FAILED_XML_SCHEMA_CHECK … OriginCountry … expected 'Name'`). Adı
+   * bilinmeyen ülkede blok hiç yazılmaz.
+   */
+  const menseiAdi = (mensei: string | null | undefined) => ulkeAdi(ulkeKoduCoz(mensei));
+  /**
    * İnternet satışı alan grubu (EBLG-56). Yalnız e-Arşiv kanalında istenir;
    * e-Fatura mükellefine kesilen belgede grup yazılmaz.
    */
@@ -115,6 +127,12 @@ export function faturaUblUret(
   };
 
   /**
+   * Belge düzeyinde bildirilen ihracat istisnası. Resmî örnekte kod ve açıklama
+   * fatura `TaxTotal`'ındadır; satırlarda tekrar edilmez.
+   */
+  const ihracatIstisnasi = ihracat ? satirIstisnaKodu(fatura.satirlar[0]) : null;
+
+  /**
    * Gerçek kişi alıcı. UBL-TR şematronu `schemeID="TCKN"` gördüğünde `cac:Person`
    * arar; ünvanı `cac:PartyName` içinde bırakmak e-Arşiv gönderimini reddettirir
    * (NES, 2026-09-10). Ad ve soyad kartta ayrı tutulur (CARI-21); boşsa
@@ -128,6 +146,34 @@ export function faturaUblUret(
    * türü kodu satırdaki GİB tevkifat kodudur (FTR-18). Aynı kodlu satırlar tek
    * blokta toplanır, çünkü kod başına bir alt toplam beklenir.
    */
+  /*
+   * Dövizli belgede kur zorunludur — "Para birimi TRY olmayan belgelerde kur
+   * bilgisi zorunludur" (NES şematronu, 2026-09-18). Kural ihracata özgü değil,
+   * TRY dışı her belgede geçerlidir; fiyatlama kuru her zaman, vergi kuru ise
+   * kur `cac:PricingExchangeRate` içinde, ihracatta ayrıca `TaxCurrencyCode`
+   * ve `cac:TaxExchangeRate` ile bildirilir.
+   *
+   * **Açık iş:** NES bu hâli de "kur bilgisi zorunludur" diyerek reddediyor
+   * (2026-09-18 denemeleri: yalnız `TaxExchangeRate`, yalnız
+   * `PricingExchangeRate` ve ikisi birden — üçü de aynı yanıtı verdi). UBL-TR
+   * kılavuzu iki elemanı da "seçimli" sayar, aranan XPath repodaki kaynaklarda
+   * geçmiyor; entegratöre sorulmalı. Dövizli belge bu yüzden gönderilemiyor,
+   * TRY belgeler etkilenmiyor.
+   */
+  const dovizli = fatura.dovizCinsi !== IHRACAT_VERGI_PARA_BIRIMI;
+  const kurSatirlari = `
+    <cbc:SourceCurrencyCode>${fatura.dovizCinsi}</cbc:SourceCurrencyCode>
+    <cbc:TargetCurrencyCode>${IHRACAT_VERGI_PARA_BIRIMI}</cbc:TargetCurrencyCode>
+    <cbc:CalculationRate>${Number(fatura.kur ?? 1).toFixed(6)}</cbc:CalculationRate>
+    <cbc:Date>${tarihStr}</cbc:Date>`;
+  const kurBlogu = dovizli
+    ? `${ihracat ? `  <cac:TaxExchangeRate>${kurSatirlari}
+  </cac:TaxExchangeRate>
+` : ""}  <cac:PricingExchangeRate>${kurSatirlari}
+  </cac:PricingExchangeRate>
+`
+    : "";
+
   const tevkifatGruplari = new Map<string, { tutar: number; oran: number }>();
   for (const satir of fatura.satirlar) {
     if (!satir.tevkifatKodu || Number(satir.tevkifatTutari) === 0) continue;
@@ -137,17 +183,50 @@ export function faturaUblUret(
     if (satir.tevkifatPay && satir.tevkifatPayda) mevcut.oran = (satir.tevkifatPay / satir.tevkifatPayda) * 100;
     tevkifatGruplari.set(satir.tevkifatKodu, mevcut);
   }
-  /*
-   * Teslimat bilgisi tek `cac:Delivery` bloğunda toplanır: ihracatta fiili
-   * ihracat tarihi ve taşıma şekli, internet satışında gönderi tarihi, teslimat
-   * adresi ve kargo firması aynı yere yazılır. Eleman sırası GİB'in kabul ettiği
-   * e-İrsaliye belgesindekiyle aynıdır (adres → taşıyan).
+  /**
+   * Malı alan yabancı firma, ihracat belgesinde alıcı değil **BuyerCustomerParty**
+   * olarak bildirilir (GİB `IHRACAT.xml`): kimliği `PARTYTYPE`/`EXPORT`'tur ve
+   * kendi ülkesindeki vergi numarası `PartyLegalEntity` içinde durur.
    */
-  const teslimTarihi = ihracat?.teslimTarihi ?? internet?.gonderiTarihi;
-  const teslimatBlogu = ihracat || internet
+  const yabanciAliciBlogu = ihracat
     ? `
-  <cac:Delivery>${teslimTarihi ? `
-    <cbc:ActualDeliveryDate>${teslimTarihi.toISOString().slice(0, 10)}</cbc:ActualDeliveryDate>` : ""}${teslimatAdresi ? `
+  <cac:BuyerCustomerParty>
+    <cac:Party>
+      <cac:PartyIdentification>
+        <cbc:ID schemeID="PARTYTYPE">${IHRACAT_ALICI_PARTY_TIPI}</cbc:ID>
+      </cac:PartyIdentification>
+      <cac:PartyName>
+        <cbc:Name>${escape(fatura.cari.unvan)}</cbc:Name>
+      </cac:PartyName>
+      <cac:PostalAddress>${aliciAdres.adres ? `
+        <cbc:StreetName>${escape(aliciAdres.adres)}</cbc:StreetName>` : ""}
+        <cbc:CitySubdivisionName>${escape(aliciAdres.ilce)}</cbc:CitySubdivisionName>
+        <cbc:CityName>${escape(aliciAdres.il)}</cbc:CityName>${aliciAdres.postaKodu ? `
+        <cbc:PostalZone>${escape(aliciAdres.postaKodu)}</cbc:PostalZone>` : ""}
+        <cac:Country>
+          <cbc:IdentificationCode>${aliciAdres.ulkeKodu}</cbc:IdentificationCode>${aliciAdres.ulkeAdi ? `
+          <cbc:Name>${escape(aliciAdres.ulkeAdi)}</cbc:Name>` : ""}
+        </cac:Country>
+      </cac:PostalAddress>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>${escape(fatura.cari.unvan)}</cbc:RegistrationName>${fatura.cari.vknTckn ? `
+        <cbc:CompanyID>${escape(fatura.cari.vknTckn)}</cbc:CompanyID>` : ""}
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:BuyerCustomerParty>
+`
+    : "";
+
+  /*
+   * Fatura düzeyindeki teslimat bilgisi yalnız internet satışına aittir: malın
+   * gönderildiği adres, kargo firması ve ödeme şekli (EBLG-56). İhracatta bu
+   * bilgiler satır düzeyinde durur (GİB `IHRACAT.xml`), aşağıdaki
+   * `ihracatSatirTeslimati` onu üretir.
+   */
+  const teslimatBlogu = internet
+    ? `
+  <cac:Delivery>${internet.gonderiTarihi ? `
+    <cbc:ActualDeliveryDate>${internet.gonderiTarihi.toISOString().slice(0, 10)}</cbc:ActualDeliveryDate>` : ""}${teslimatAdresi ? `
     <cac:DeliveryAddress>${teslimatAdresi.adres ? `
       <cbc:StreetName>${escape(teslimatAdresi.adres)}</cbc:StreetName>` : ""}
       <cbc:CitySubdivisionName>${escape(teslimatAdresi.ilce)}</cbc:CitySubdivisionName>
@@ -157,7 +236,7 @@ export function faturaUblUret(
         <cbc:IdentificationCode>${teslimatAdresi.ulkeKodu}</cbc:IdentificationCode>${teslimatAdresi.ulkeAdi ? `
         <cbc:Name>${escape(teslimatAdresi.ulkeAdi)}</cbc:Name>` : ""}
       </cac:Country>
-    </cac:DeliveryAddress>` : ""}${internet?.tasiyiciUnvan ? `
+    </cac:DeliveryAddress>` : ""}${internet.tasiyiciUnvan ? `
     <cac:CarrierParty>${internet.tasiyiciVkn ? `
       <cac:PartyIdentification>
         <cbc:ID schemeID="${internet.tasiyiciVkn.length === 11 ? "TCKN" : "VKN"}">${escape(internet.tasiyiciVkn)}</cbc:ID>
@@ -165,17 +244,8 @@ export function faturaUblUret(
       <cac:PartyName>
         <cbc:Name>${escape(internet.tasiyiciUnvan)}</cbc:Name>
       </cac:PartyName>
-    </cac:CarrierParty>` : ""}${ihracat?.tasimaSekli ? `
-    <cac:Shipment>
-      <cbc:ID>1</cbc:ID>
-      <cac:ShipmentStage>
-        <cbc:TransportModeCode>${escape(ihracat.tasimaSekli)}</cbc:TransportModeCode>
-      </cac:ShipmentStage>
-    </cac:Shipment>` : ""}
-  </cac:Delivery>${ihracat?.teslimSarti ? `
-  <cac:DeliveryTerms>
-    <cbc:ID schemeID="INCOTERMS">${escape(ihracat.teslimSarti)}</cbc:ID>
-  </cac:DeliveryTerms>` : ""}${internet?.odemeSekli ? `
+    </cac:CarrierParty>` : ""}
+  </cac:Delivery>${internet.odemeSekli ? `
   <cac:PaymentMeans>
     <cbc:PaymentMeansCode>${odemeSekliUblKodu(internet.odemeSekli)}</cbc:PaymentMeansCode>${internet.odemeTarihi ? `
     <cbc:PaymentDueDate>${internet.odemeTarihi.toISOString().slice(0, 10)}</cbc:PaymentDueDate>` : ""}${internet.odemeAracisi ? `
@@ -183,6 +253,45 @@ export function faturaUblUret(
   </cac:PaymentMeans>` : ""}
 `
     : "";
+
+  /**
+   * İhracatta teslimat satır düzeyinde bildirilir (GİB `IHRACAT.xml`): malın
+   * teslim yeri, teslim şartı, GTİP (`RequiredCustomsID`) ve gönderilme şekli
+   * aynı `cac:Delivery` altında toplanır. GTİP satırın stok kartından gelir,
+   * bu yüzden blok satır başına üretilir.
+   */
+  const ihracatSatirTeslimati = (gtip: string | undefined) => {
+    if (!ihracat) return "";
+    const gonderim = ihracat.tasimaSekli || gtip
+      ? `
+      <cac:Shipment>
+        <cbc:ID>1</cbc:ID>${gtip ? `
+        <cac:GoodsItem>
+          <cbc:RequiredCustomsID>${gtip}</cbc:RequiredCustomsID>
+        </cac:GoodsItem>` : ""}${ihracat.tasimaSekli ? `
+        <cac:ShipmentStage>
+          <cbc:TransportModeCode>${escape(ihracat.tasimaSekli)}</cbc:TransportModeCode>
+        </cac:ShipmentStage>` : ""}
+      </cac:Shipment>`
+      : "";
+    return `
+    <cac:Delivery>${ihracat.teslimTarihi ? `
+      <cbc:ActualDeliveryDate>${ihracat.teslimTarihi.toISOString().slice(0, 10)}</cbc:ActualDeliveryDate>` : ""}
+      <cac:DeliveryAddress>${aliciAdres.adres ? `
+        <cbc:StreetName>${escape(aliciAdres.adres)}</cbc:StreetName>` : ""}
+        <cbc:CitySubdivisionName>${escape(aliciAdres.ilce)}</cbc:CitySubdivisionName>
+        <cbc:CityName>${escape(aliciAdres.il)}</cbc:CityName>${aliciAdres.postaKodu ? `
+        <cbc:PostalZone>${escape(aliciAdres.postaKodu)}</cbc:PostalZone>` : ""}
+        <cac:Country>
+          <cbc:IdentificationCode>${aliciAdres.ulkeKodu}</cbc:IdentificationCode>${aliciAdres.ulkeAdi ? `
+          <cbc:Name>${escape(aliciAdres.ulkeAdi)}</cbc:Name>` : ""}
+        </cac:Country>
+      </cac:DeliveryAddress>${ihracat.teslimSarti ? `
+      <cac:DeliveryTerms>
+        <cbc:ID schemeID="INCOTERMS">${escape(ihracat.teslimSarti)}</cbc:ID>
+      </cac:DeliveryTerms>` : ""}${gonderim}
+    </cac:Delivery>`;
+  };
 
   const tevkifatBlogu = [...tevkifatGruplari.entries()]
     .filter(([kod]) => tevkifatKoduBul(kod))
@@ -217,9 +326,8 @@ export function faturaUblUret(
   <cbc:IssueTime>${saatStr}</cbc:IssueTime>
   <cbc:InvoiceTypeCode>${ihracat ? IHRACAT_FATURA_TIPI : senaryoUblKodu(fatura.senaryo)}</cbc:InvoiceTypeCode>${internet?.webAdresi ? `
   <cbc:Note>${escape(`İnternet satışı — ${internet.webAdresi}`)}</cbc:Note>` : ""}
-  <cbc:DocumentCurrencyCode>${fatura.dovizCinsi}</cbc:DocumentCurrencyCode>${ihracat ? `
-  <cbc:TaxCurrencyCode>${IHRACAT_VERGI_PARA_BIRIMI}</cbc:TaxCurrencyCode>${fatura.dovizCinsi === IHRACAT_VERGI_PARA_BIRIMI ? "" : `
-  <cbc:PricingCurrencyCode>${fatura.dovizCinsi}</cbc:PricingCurrencyCode>`}` : ""}
+  <cbc:DocumentCurrencyCode>${fatura.dovizCinsi}</cbc:DocumentCurrencyCode>${dovizli && ihracat ? `
+  <cbc:TaxCurrencyCode>${IHRACAT_VERGI_PARA_BIRIMI}</cbc:TaxCurrencyCode>` : ""}
   <cbc:LineCountNumeric>${fatura.satirlar.length}</cbc:LineCountNumeric>${fatura.siparisNo ? `
   <cac:OrderReference>
     <cbc:ID>${escape(fatura.siparisNo)}</cbc:ID>${fatura.siparisTarihi ? `
@@ -287,12 +395,18 @@ ${earsiv ? `  <cac:AdditionalDocumentReference>
   <cac:AccountingCustomerParty>
     <cac:Party>
       <cac:PartyIdentification>
-        <cbc:ID schemeID="${ihracat ? "VKN" : aliciTckn ? "TCKN" : "VKN"}">${ihracat ? IHRACAT_ALICI_VKN : fatura.cari.vknTckn}</cbc:ID>
+        <cbc:ID schemeID="${ihracat || !aliciTckn ? "VKN" : "TCKN"}">${ihracat ? GUMRUK_BAKANLIGI_VKN : fatura.cari.vknTckn}</cbc:ID>
       </cac:PartyIdentification>
 ${aliciTckn && !ihracat ? "" : `      <cac:PartyName>
-        <cbc:Name>${escape(fatura.cari.unvan)}</cbc:Name>
+        <cbc:Name>${escape(ihracat ? GUMRUK_BAKANLIGI_UNVAN : fatura.cari.unvan)}</cbc:Name>
       </cac:PartyName>`}
-      <cac:PostalAddress>${aliciAdres.adres ? `
+      <cac:PostalAddress>${ihracat ? `
+        <cbc:CitySubdivisionName>-</cbc:CitySubdivisionName>
+        <cbc:CityName>${GUMRUK_BAKANLIGI_IL}</cbc:CityName>
+        <cac:Country>
+          <cbc:IdentificationCode>TR</cbc:IdentificationCode>
+          <cbc:Name>Türkiye</cbc:Name>
+        </cac:Country>` : `${aliciAdres.adres ? `
         <cbc:StreetName>${escape(aliciAdres.adres)}</cbc:StreetName>` : ""}
         <cbc:CitySubdivisionName>${escape(aliciAdres.ilce)}</cbc:CitySubdivisionName>
         <cbc:CityName>${escape(aliciAdres.il)}</cbc:CityName>${aliciAdres.postaKodu ? `
@@ -300,7 +414,7 @@ ${aliciTckn && !ihracat ? "" : `      <cac:PartyName>
         <cac:Country>
           <cbc:IdentificationCode>${aliciAdres.ulkeKodu}</cbc:IdentificationCode>${aliciAdres.ulkeAdi ? `
           <cbc:Name>${escape(aliciAdres.ulkeAdi)}</cbc:Name>` : ""}
-        </cac:Country>
+        </cac:Country>`}
       </cac:PostalAddress>
 ${aliciTckn && !ihracat ? `      <cac:Person>
         <cbc:FirstName>${escape(aliciAd)}</cbc:FirstName>
@@ -308,19 +422,15 @@ ${aliciTckn && !ihracat ? `      <cac:Person>
       </cac:Person>` : ""}
     </cac:Party>
   </cac:AccountingCustomerParty>
-${teslimatBlogu}
-${ihracat && fatura.dovizCinsi !== IHRACAT_VERGI_PARA_BIRIMI ? `  <cac:TaxExchangeRate>
-    <cbc:SourceCurrencyCode>${fatura.dovizCinsi}</cbc:SourceCurrencyCode>
-    <cbc:TargetCurrencyCode>${IHRACAT_VERGI_PARA_BIRIMI}</cbc:TargetCurrencyCode>
-    <cbc:CalculationRate>${Number(fatura.kur).toFixed(6)}</cbc:CalculationRate>
-    <cbc:Date>${tarihStr}</cbc:Date>
-  </cac:TaxExchangeRate>
-` : ""}  <cac:TaxTotal>
+${yabanciAliciBlogu}${teslimatBlogu}
+${kurBlogu}  <cac:TaxTotal>
     <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${fatura.toplamKdv.toFixed(2)}</cbc:TaxAmount>
     <cac:TaxSubtotal>
       <cbc:TaxableAmount currencyID="${fatura.dovizCinsi}">${fatura.toplamMatrah.toFixed(2)}</cbc:TaxableAmount>
       <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${fatura.toplamKdv.toFixed(2)}</cbc:TaxAmount>
-      <cac:TaxCategory>
+      <cac:TaxCategory>${ihracatIstisnasi ? `
+        <cbc:TaxExemptionReasonCode>${ihracatIstisnasi}</cbc:TaxExemptionReasonCode>
+        <cbc:TaxExemptionReason>${escape(ihracatIstisnaAciklamasi(ihracatIstisnasi))}</cbc:TaxExemptionReason>` : ""}
         <cac:TaxScheme>
           <cbc:Name>KDV</cbc:Name>
           <cbc:TaxTypeCode>0015</cbc:TaxTypeCode>
@@ -343,7 +453,7 @@ ${tevkifatBlogu}
   <cac:InvoiceLine>
     <cbc:ID>${index + 1}</cbc:ID>
     <cbc:InvoicedQuantity unitCode="${birimUblKodu(s.birim)}">${s.miktar.toFixed(3)}</cbc:InvoicedQuantity>
-    <cbc:LineExtensionAmount currencyID="${fatura.dovizCinsi}">${s.matrah.toFixed(2)}</cbc:LineExtensionAmount>
+    <cbc:LineExtensionAmount currencyID="${fatura.dovizCinsi}">${s.matrah.toFixed(2)}</cbc:LineExtensionAmount>${ihracatSatirTeslimati(gtipNormalize(s.stok.gtipKodu))}
     <cac:AllowanceCharge>
       <cbc:ChargeIndicator>false</cbc:ChargeIndicator>
       ${Number(s.iskontoOrani ?? 0) > 0 ? `<cbc:MultiplierFactorNumeric>${(Number(s.iskontoOrani) / 100).toFixed(4)}</cbc:MultiplierFactorNumeric>` : ""}
@@ -373,13 +483,11 @@ ${tevkifatBlogu}
       <cbc:Name>${escape(s.stok.ad)}</cbc:Name>
       <cac:SellersItemIdentification>
         <cbc:ID>${escape(s.stok.kod)}</cbc:ID>
-      </cac:SellersItemIdentification>${ihracat && ulkeKoduCoz(s.stok.mensei) ? `
+      </cac:SellersItemIdentification>${ihracat && menseiAdi(s.stok.mensei) ? `
       <cac:OriginCountry>
         <cbc:IdentificationCode>${ulkeKoduCoz(s.stok.mensei)}</cbc:IdentificationCode>
-      </cac:OriginCountry>` : ""}${ihracat && gtipNormalize(s.stok.gtipKodu) ? `
-      <cac:CommodityClassification>
-        <cbc:ItemClassificationCode listID="GTIP">${gtipNormalize(s.stok.gtipKodu)}</cbc:ItemClassificationCode>
-      </cac:CommodityClassification>` : ""}
+        <cbc:Name>${escape(menseiAdi(s.stok.mensei))}</cbc:Name>
+      </cac:OriginCountry>` : ""}
     </cac:Item>
     <cac:Price>
       <cbc:PriceAmount currencyID="${fatura.dovizCinsi}">${s.birimFiyat.toFixed(4)}</cbc:PriceAmount>
