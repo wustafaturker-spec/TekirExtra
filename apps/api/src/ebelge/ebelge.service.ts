@@ -31,6 +31,7 @@ import { faturaSorguKosulu, faturaSorguSureleriniOku } from "./fatura-sorgu-kosu
 import { entegratorIptalBildirimi } from "./entegrator-iptal-bildirimi";
 import { belgeNoyuUbleYaz, faturaUblUret } from "./xml-uretec";
 import { ihracatOzeti } from "./ihracat-bilgisi";
+import { internetSatisOzeti } from "./internet-satis-bilgisi";
 
 /** Onay ekranında satırın hangi ipucuyla eşleştiği. */
 export type EslesmeKaynagi =
@@ -101,6 +102,7 @@ export class EbelgeService {
       // İhracatta alıcının VKN'si yoktur; belgeye GİB'in yurt dışı alıcı
       // sabiti yazılır, kart üzerindeki kimlik hiç kullanılmaz.
       const ihracat = ihracatOzeti(fatura);
+      const internet = internetSatisOzeti(fatura);
       if (!ihracat.ihracat && !vknTcknKabulEdilebilirMi(fatura.cari.vknTckn, testOrtami)) {
         return { gonderilebilir: false, neden: "Alıcının geçerli bir VKN/TCKN bilgisi olmalıdır.", faturaNo: fatura.no, cari: fatura.cari.unvan, vknTckn: fatura.cari.vknTckn, saglayici: baglanti.saglayici };
       }
@@ -108,8 +110,11 @@ export class EbelgeService {
         return { gonderilebilir: false, neden: "Fatura tarihi bugün veya en fazla 7 gün önce olmalıdır.", faturaNo: fatura.no, cari: fatura.cari.unvan, vknTckn: fatura.cari.vknTckn, saglayici: baglanti.saglayici };
       }
       return {
-        gonderilebilir: ihracat.engeller.length === 0,
-        neden: ihracat.engeller.length ? ihracat.engeller.map((e) => e.mesaj).join(" · ") : undefined,
+        // Bağlantı, kimlik ve tarih kontrolleri geçti. Türe özel eksikler
+        // (ihracat, internet satışı) kendi listelerinde döner: değerleri
+        // sihirbazda girilir, gönderim aynı kuralı kaydettikten sonra yeniden
+        // uygular ve eksikse belgeyi göndermez.
+        gonderilebilir: true,
         faturaNo: fatura.no,
         cari: fatura.cari.unvan,
         vknTckn: fatura.cari.vknTckn,
@@ -133,6 +138,23 @@ export class EbelgeService {
         // TCKN'li alıcıda e-Arşiv'e yazılacak ad/soyad; kartta yoksa tahmin
         // edildiği sihirbazda gösterilir (CARI-21).
         aliciAdi: fatura.cari.vknTckn?.length === 11 ? adSoyadCoz(fatura.cari) : undefined,
+        // İnternet satışı alan grubu yalnız e-Arşiv kanalında belgeye yazılır;
+        // işaret ve alanlar sihirbazda toplanır (EBLG-56).
+        internetSatisi: {
+          isaretli: internet.internetSatisi,
+          webAdresi: fatura.internetWebAdresi,
+          odemeSekli: fatura.internetOdemeSekli,
+          odemeTarihi: fatura.internetOdemeTarihi,
+          odemeAracisi: fatura.internetOdemeAracisi,
+          tasiyiciUnvan: fatura.internetTasiyiciUnvan,
+          tasiyiciVkn: fatura.internetTasiyiciVkn,
+          gonderiTarihi: fatura.internetGonderiTarihi,
+          siparisNo: fatura.siparisNo,
+          siparisTarihi: fatura.siparisTarihi,
+          // Malın gideceği adres kartta var mı; sihirbaz eksikleri bununla üretir.
+          teslimatAdresiVar: internet.teslimatAdresiVar,
+          engeller: internet.engeller,
+        },
         // Kartta adres yoksa belgeye şehir uydurulmaz, alanlar "-" gider
         // (EBLG-55); belgeyi durdurmaz ama sihirbazda söylenir.
         adresEksik: ublAdresi(fatura.cari.adresler).eksik,
@@ -204,6 +226,53 @@ export class EbelgeService {
     });
   }
 
+  /**
+   * Sihirbazda girilen internet satışı bilgisini faturaya yazar (EBLG-56).
+   * İşaret kaldırılırsa alanlar da temizlenir; belgede "internet satışı" yazıp
+   * ödeme bilgisi taşımayan bir kayıt kalmasın.
+   */
+  async internetSatisiniKaydet(
+    faturaId: string,
+    bilgi: {
+      internetSatisi: boolean;
+      webAdresi?: string | null;
+      odemeSekli?: string | null;
+      odemeTarihi?: Date | null;
+      odemeAracisi?: string | null;
+      tasiyiciUnvan?: string | null;
+      tasiyiciVkn?: string | null;
+      gonderiTarihi?: Date | null;
+    },
+  ) {
+    const { tenantId } = aktifBaglam();
+    await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.fatura.update({
+        where: { id: faturaId },
+        data: bilgi.internetSatisi
+          ? {
+              internetSatisi: true,
+              internetWebAdresi: bilgi.webAdresi?.trim() || null,
+              internetOdemeSekli: bilgi.odemeSekli ?? null,
+              internetOdemeTarihi: bilgi.odemeTarihi ?? null,
+              internetOdemeAracisi: bilgi.odemeAracisi?.trim() || null,
+              internetTasiyiciUnvan: bilgi.tasiyiciUnvan?.trim() || null,
+              internetTasiyiciVkn: bilgi.tasiyiciVkn?.trim() || null,
+              internetGonderiTarihi: bilgi.gonderiTarihi ?? null,
+            }
+          : {
+              internetSatisi: false,
+              internetWebAdresi: null,
+              internetOdemeSekli: null,
+              internetOdemeTarihi: null,
+              internetOdemeAracisi: null,
+              internetTasiyiciUnvan: null,
+              internetTasiyiciVkn: null,
+              internetGonderiTarihi: null,
+            },
+      }),
+    );
+  }
+
   async gonder(faturaId: string) {
     const { tenantId } = aktifBaglam();
     // Önce veritabanında tekil bir gönderim rezervasyonu oluşturulur. Böylece
@@ -223,8 +292,10 @@ export class EbelgeService {
         throw new BadRequestException("Yalnızca kesinleşmiş faturalar gönderilebilir");
       }
       const ihracat = ihracatOzeti(fatura);
-      if (ihracat.engeller.length) {
-        throw new BadRequestException(ihracat.engeller.map((e) => e.mesaj).join("; "));
+      const internet = internetSatisOzeti(fatura);
+      const engeller = [...ihracat.engeller, ...internet.engeller];
+      if (engeller.length) {
+        throw new BadRequestException(engeller.map((e) => e.mesaj).join("; "));
       }
       if (!ihracat.ihracat && !fatura.cari.vknTckn) {
         throw new BadRequestException("Alıcının geçerli bir VKN/TCKN bilgisi olmalıdır");
@@ -297,6 +368,7 @@ export class EbelgeService {
         saglayici: baglanti.saglayici,
         cfg: baglantiConfig,
         ihracat,
+        internet,
       };
     });
 
@@ -340,7 +412,7 @@ export class EbelgeService {
           vkn: hazirlik.tenant.vkn,
           vergiDairesi: hazirlik.tenant.vergiDairesi || undefined,
         },
-        { tur, ihracat: hazirlik.ihracat.ublBilgisi },
+        { tur, ihracat: hazirlik.ihracat.ublBilgisi, internetSatisi: hazirlik.internet.ublBilgisi },
       );
 
       // Yeniden denemede önce sağlayıcıya sorulur: önceki denemede ağ çağrısı

@@ -1,4 +1,4 @@
-import { tasimaSekliGecerliMi, teslimSartiGecerliMi } from "@tekirextra/shared";
+import { odemeSekliGecerliMi, tasimaSekliGecerliMi, teslimSartiGecerliMi } from "@tekirextra/shared";
 import { z } from "zod";
 
 /** EBLG-05: onay ekranından gelen satır → stok kartı eşleştirmeleri. */
@@ -33,6 +33,19 @@ export const ebelgeGonderSemasi = z.object({
       teslimTarihi: z.coerce.date().nullable().optional(),
       teslimSarti: z.string().refine(teslimSartiGecerliMi, "Tanımsız teslim şartı").nullable().optional(),
       tasimaSekli: z.string().refine(tasimaSekliGecerliMi, "Tanımsız taşıma şekli").nullable().optional(),
+    })
+    .optional(),
+  /** EBLG-56: internet satışı işareti ve alan grubu; işaret kalkarsa alanlar temizlenir. */
+  internetSatisi: z
+    .object({
+      internetSatisi: z.boolean(),
+      webAdresi: z.string().max(200).nullable().optional(),
+      odemeSekli: z.string().refine(odemeSekliGecerliMi, "Tanımsız ödeme şekli").nullable().optional(),
+      odemeTarihi: z.coerce.date().nullable().optional(),
+      odemeAracisi: z.string().max(100).nullable().optional(),
+      tasiyiciUnvan: z.string().max(200).nullable().optional(),
+      tasiyiciVkn: z.string().regex(/^\d{10}$|^\d{11}$/, "Taşıyıcı VKN/TCKN 10 ya da 11 haneli olmalıdır").nullable().optional(),
+      gonderiTarihi: z.coerce.date().nullable().optional(),
     })
     .optional(),
 });

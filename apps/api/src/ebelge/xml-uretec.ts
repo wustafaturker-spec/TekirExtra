@@ -10,6 +10,7 @@ import {
   ihracatIstisnaKoduMu,
   senaryoUblKodu,
   tevkifatKoduBul,
+  odemeSekliUblKodu,
   ublAdresi,
   ulkeKoduCoz,
 } from "@tekirextra/shared";
@@ -36,6 +37,18 @@ export interface IhracatUblBilgisi {
   beyannameNo?: string | null;
 }
 
+export interface InternetSatisUblBilgisi {
+  webAdresi?: string | null;
+  odemeSekli?: string | null;
+  odemeTarihi?: Date | null;
+  odemeAracisi?: string | null;
+  tasiyiciUnvan?: string | null;
+  tasiyiciVkn?: string | null;
+  gonderiTarihi?: Date | null;
+  /** Malın gönderildiği adres; cari kartının sevk adresidir. */
+  teslimatAdresi?: { adres?: string | null; il?: string | null; ilce?: string | null; postaKodu?: string | null; ulke?: string | null };
+}
+
 export function faturaUblUret(
   fatura: Fatura & {
     satirlar: (FaturaSatir & {
@@ -48,7 +61,7 @@ export function faturaUblUret(
     cari: CariHesap & { adresler?: { tip: string; adres: string | null; il: string | null; ilce: string | null; postaKodu: string | null; ulke: string | null }[] };
   },
   supplier: { unvan: string; vkn: string; vergiDairesi?: string; adres?: string },
-  secenekler: { tur?: "efatura" | "earsiv"; ihracat?: IhracatUblBilgisi } = {},
+  secenekler: { tur?: "efatura" | "earsiv"; ihracat?: IhracatUblBilgisi; internetSatisi?: InternetSatisUblBilgisi } = {},
 ): string {
   // e-Arşiv, e-Fatura'dan üç noktada ayrılır: profil `EARSIVFATURA`, alıcı
   // etiketi yoktur ve gönderim şekli UBL içinde bildirilir.
@@ -65,6 +78,14 @@ export function faturaUblUret(
    * adresin ülkesinden gelir.
    */
   const aliciAdres = ublAdresi(fatura.cari.adresler);
+  /**
+   * İnternet satışı alan grubu (EBLG-56). Yalnız e-Arşiv kanalında istenir;
+   * e-Fatura mükellefine kesilen belgede grup yazılmaz.
+   */
+  const internet = earsiv ? secenekler.internetSatisi : undefined;
+  const teslimatAdresi = internet?.teslimatAdresi
+    ? ublAdresi([{ tip: "sevk", ...internet.teslimatAdresi }])
+    : undefined;
   // ISO Tarihleri
   const tarihStr = fatura.tarih.toISOString().slice(0, 10);
   const saatStr = "12:00:00";
@@ -116,6 +137,53 @@ export function faturaUblUret(
     if (satir.tevkifatPay && satir.tevkifatPayda) mevcut.oran = (satir.tevkifatPay / satir.tevkifatPayda) * 100;
     tevkifatGruplari.set(satir.tevkifatKodu, mevcut);
   }
+  /*
+   * Teslimat bilgisi tek `cac:Delivery` bloğunda toplanır: ihracatta fiili
+   * ihracat tarihi ve taşıma şekli, internet satışında gönderi tarihi, teslimat
+   * adresi ve kargo firması aynı yere yazılır. Eleman sırası GİB'in kabul ettiği
+   * e-İrsaliye belgesindekiyle aynıdır (adres → taşıyan).
+   */
+  const teslimTarihi = ihracat?.teslimTarihi ?? internet?.gonderiTarihi;
+  const teslimatBlogu = ihracat || internet
+    ? `
+  <cac:Delivery>${teslimTarihi ? `
+    <cbc:ActualDeliveryDate>${teslimTarihi.toISOString().slice(0, 10)}</cbc:ActualDeliveryDate>` : ""}${teslimatAdresi ? `
+    <cac:DeliveryAddress>${teslimatAdresi.adres ? `
+      <cbc:StreetName>${escape(teslimatAdresi.adres)}</cbc:StreetName>` : ""}
+      <cbc:CitySubdivisionName>${escape(teslimatAdresi.ilce)}</cbc:CitySubdivisionName>
+      <cbc:CityName>${escape(teslimatAdresi.il)}</cbc:CityName>${teslimatAdresi.postaKodu ? `
+      <cbc:PostalZone>${escape(teslimatAdresi.postaKodu)}</cbc:PostalZone>` : ""}
+      <cac:Country>
+        <cbc:IdentificationCode>${teslimatAdresi.ulkeKodu}</cbc:IdentificationCode>${teslimatAdresi.ulkeAdi ? `
+        <cbc:Name>${escape(teslimatAdresi.ulkeAdi)}</cbc:Name>` : ""}
+      </cac:Country>
+    </cac:DeliveryAddress>` : ""}${internet?.tasiyiciUnvan ? `
+    <cac:CarrierParty>${internet.tasiyiciVkn ? `
+      <cac:PartyIdentification>
+        <cbc:ID schemeID="${internet.tasiyiciVkn.length === 11 ? "TCKN" : "VKN"}">${escape(internet.tasiyiciVkn)}</cbc:ID>
+      </cac:PartyIdentification>` : ""}
+      <cac:PartyName>
+        <cbc:Name>${escape(internet.tasiyiciUnvan)}</cbc:Name>
+      </cac:PartyName>
+    </cac:CarrierParty>` : ""}${ihracat?.tasimaSekli ? `
+    <cac:Shipment>
+      <cbc:ID>1</cbc:ID>
+      <cac:ShipmentStage>
+        <cbc:TransportModeCode>${escape(ihracat.tasimaSekli)}</cbc:TransportModeCode>
+      </cac:ShipmentStage>
+    </cac:Shipment>` : ""}
+  </cac:Delivery>${ihracat?.teslimSarti ? `
+  <cac:DeliveryTerms>
+    <cbc:ID schemeID="INCOTERMS">${escape(ihracat.teslimSarti)}</cbc:ID>
+  </cac:DeliveryTerms>` : ""}${internet?.odemeSekli ? `
+  <cac:PaymentMeans>
+    <cbc:PaymentMeansCode>${odemeSekliUblKodu(internet.odemeSekli)}</cbc:PaymentMeansCode>${internet.odemeTarihi ? `
+    <cbc:PaymentDueDate>${internet.odemeTarihi.toISOString().slice(0, 10)}</cbc:PaymentDueDate>` : ""}${internet.odemeAracisi ? `
+    <cbc:InstructionNote>${escape(internet.odemeAracisi)}</cbc:InstructionNote>` : ""}
+  </cac:PaymentMeans>` : ""}
+`
+    : "";
+
   const tevkifatBlogu = [...tevkifatGruplari.entries()]
     .filter(([kod]) => tevkifatKoduBul(kod))
     .map(([kod, deger]) => `  <cac:WithholdingTaxTotal>
@@ -147,11 +215,16 @@ export function faturaUblUret(
   <cbc:UUID>${uuid}</cbc:UUID>
   <cbc:IssueDate>${tarihStr}</cbc:IssueDate>
   <cbc:IssueTime>${saatStr}</cbc:IssueTime>
-  <cbc:InvoiceTypeCode>${ihracat ? IHRACAT_FATURA_TIPI : senaryoUblKodu(fatura.senaryo)}</cbc:InvoiceTypeCode>
+  <cbc:InvoiceTypeCode>${ihracat ? IHRACAT_FATURA_TIPI : senaryoUblKodu(fatura.senaryo)}</cbc:InvoiceTypeCode>${internet?.webAdresi ? `
+  <cbc:Note>${escape(`İnternet satışı — ${internet.webAdresi}`)}</cbc:Note>` : ""}
   <cbc:DocumentCurrencyCode>${fatura.dovizCinsi}</cbc:DocumentCurrencyCode>${ihracat ? `
   <cbc:TaxCurrencyCode>${IHRACAT_VERGI_PARA_BIRIMI}</cbc:TaxCurrencyCode>${fatura.dovizCinsi === IHRACAT_VERGI_PARA_BIRIMI ? "" : `
   <cbc:PricingCurrencyCode>${fatura.dovizCinsi}</cbc:PricingCurrencyCode>`}` : ""}
-  <cbc:LineCountNumeric>${fatura.satirlar.length}</cbc:LineCountNumeric>
+  <cbc:LineCountNumeric>${fatura.satirlar.length}</cbc:LineCountNumeric>${fatura.siparisNo ? `
+  <cac:OrderReference>
+    <cbc:ID>${escape(fatura.siparisNo)}</cbc:ID>${fatura.siparisTarihi ? `
+    <cbc:IssueDate>${fatura.siparisTarihi.toISOString().slice(0, 10)}</cbc:IssueDate>` : ""}
+  </cac:OrderReference>` : ""}
 
 ${earsiv ? `  <cac:AdditionalDocumentReference>
     <cbc:ID>${fatura.earsivGonderimSekli === "kagit" ? "KAGIT" : "ELEKTRONIK"}</cbc:ID>
@@ -235,20 +308,7 @@ ${aliciTckn && !ihracat ? `      <cac:Person>
       </cac:Person>` : ""}
     </cac:Party>
   </cac:AccountingCustomerParty>
-${ihracat ? `
-  <cac:Delivery>${ihracat.teslimTarihi ? `
-    <cbc:ActualDeliveryDate>${ihracat.teslimTarihi.toISOString().slice(0, 10)}</cbc:ActualDeliveryDate>` : ""}${ihracat.tasimaSekli ? `
-    <cac:Shipment>
-      <cbc:ID>1</cbc:ID>
-      <cac:ShipmentStage>
-        <cbc:TransportModeCode>${escape(ihracat.tasimaSekli)}</cbc:TransportModeCode>
-      </cac:ShipmentStage>
-    </cac:Shipment>` : ""}
-  </cac:Delivery>${ihracat.teslimSarti ? `
-  <cac:DeliveryTerms>
-    <cbc:ID schemeID="INCOTERMS">${escape(ihracat.teslimSarti)}</cbc:ID>
-  </cac:DeliveryTerms>` : ""}
-` : ""}
+${teslimatBlogu}
 ${ihracat && fatura.dovizCinsi !== IHRACAT_VERGI_PARA_BIRIMI ? `  <cac:TaxExchangeRate>
     <cbc:SourceCurrencyCode>${fatura.dovizCinsi}</cbc:SourceCurrencyCode>
     <cbc:TargetCurrencyCode>${IHRACAT_VERGI_PARA_BIRIMI}</cbc:TargetCurrencyCode>

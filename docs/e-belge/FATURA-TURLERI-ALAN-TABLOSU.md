@@ -88,14 +88,22 @@ Ticari ile aynı alan kümesi; farkı yanıt beklenmemesidir. Sihirbaz bunu
 | Gönderim şekli (elektronik/kâğıt) | `AdditionalDocumentReference` SEND_TYPE | Evet | Sihirbaz | ✅ |
 | Bireysel alıcıda ad/soyad | `Person` | TCKN'li alıcıda | Cari kartı (tahmin edilir, CARI-21) | ✅ |
 | TCKN bilinmiyorsa `11111111111` | `PartyIdentification` | Koşullu | Sihirbaz seçimi | ❌ |
-| **İnternet satışı**: sipariş no + tarih | `cac:OrderReference` | İnternet satışında | Fatura (`siparis_no`, `siparis_tarihi` **var**) | ⚠️ alan var, UBL'e yazılmıyor |
-| **İnternet satışı**: teslimat adresi | `cac:Delivery/DeliveryAddress` | İnternet satışında | Cari sevk adresi | ❌ |
-| **İnternet satışı**: platform/web adresi, ödeme şekli, ödeme tarihi | `PaymentMeans`, `Note` | İnternet satışında | Sihirbaz | ❌ |
+| **İnternet satışı**: sipariş no + tarih | `cac:OrderReference` | İnternet satışında | Fatura (`siparis_no`, `siparis_tarihi`) | ✅ |
+| **İnternet satışı**: teslimat adresi | `cac:Delivery/DeliveryAddress` | İnternet satışında | Cari sevk adresi (e-İrsaliye ile aynı kural) | ✅ |
+| **İnternet satışı**: web adresi | `cbc:Note` | İnternet satışında | Sihirbaz | ✅ |
+| **İnternet satışı**: ödeme şekli + tarihi + aracısı | `cac:PaymentMeans` (UN/ECE 4461) | İnternet satışında | Sihirbaz | ✅ |
+| **İnternet satışı**: kargo firması + gönderi tarihi | `Delivery/CarrierParty`, `ActualDeliveryDate` | Mal gönderiliyorsa | Sihirbaz | ✅ |
 | Alıcı e-Fatura mükellefi **değil** doğrulaması | — | Evet | Mükellef listesi | ✅ |
 
-**(İş kalemi B)** — internet satışı alanları e-Arşiv'de zorunlu; bugün hiçbiri
-UBL'e gitmiyor. Sihirbazda "bu bir internet satışı" kutusu açılınca bu grup
-istenmeli.
+**(İş kalemi B) kapandı (EBLG-56, 2026-09-18).** İşaret sihirbazda konur, grup
+yalnız e-Arşiv kanalında yazılır; sipariş referansı kanaldan bağımsız her
+faturaya gider. Kargo ve gönderi tarihi tabloda yoktu, GİB internet satışında
+bunları da istediği için eklendi.
+
+**Canlıda denenmedi:** web adresinin `cbc:Note` içinde taşınması ve ödeme
+şekillerinin UN/ECE 4461 karşılıkları GİB e-Arşiv kılavuzunun yerleşik
+uygulamasıdır; ilk internet satışı faturasından önce NES test ortamında
+doğrulanmalı.
 
 ### 3.4 İhracat (`IHRACAT`) — tasarım belgesi §5
 
@@ -203,7 +211,7 @@ uygulamasıdır; repodaki kaynaklarda geçmiyor. İlk gerçek ihracat faturasın
 | # | İş | Kapsam |
 |---|---|---|
 | ~~A~~ | ~~Birim kodu eşlemesi~~ — **bitti** (EBLG-52) | Tüm türler |
-| B | e-Arşiv internet satışı alan grubu | e-Arşiv |
+| ~~B~~ | ~~e-Arşiv internet satışı alan grubu~~ — **bitti** (EBLG-56) | e-Arşiv |
 | ~~C~~ | ~~İhracat alan kümesi~~ — **bitti** (EBLG-53) | İhracat |
 | ~~D~~ | ~~Gümrük beyanname no~~ — **bitti** (EBLG-54): yalnız kayda işlenir | İhracat |
 | E | KAMU-IADE alan grubu | Kamu |

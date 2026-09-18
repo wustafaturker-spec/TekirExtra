@@ -2057,6 +2057,16 @@ model Fatura {
   /// yalnız kayda işlenir, gönderilmiş belge GİB'e yeniden gönderilmez.
   gumrukBeyannameNo    String?         @map("gumruk_beyanname_no")
   gumrukBeyannameTarihi DateTime?      @map("gumruk_beyanname_tarihi") @db.Date
+  /// EBLG-56: satış internet üzerinden yapıldı mı; işaret e-Belge sihirbazında
+  /// konur ve alan grubu yalnız e-Arşiv kanalında belgeye yazılır.
+  internetSatisi       Boolean         @default(false) @map("internet_satisi")
+  internetWebAdresi    String?         @map("internet_web_adresi")
+  internetOdemeSekli   String?         @map("internet_odeme_sekli")
+  internetOdemeTarihi  DateTime?       @map("internet_odeme_tarihi") @db.Date
+  internetOdemeAracisi String?         @map("internet_odeme_aracisi")
+  internetTasiyiciUnvan String?        @map("internet_tasiyici_unvan")
+  internetTasiyiciVkn  String?         @map("internet_tasiyici_vkn")
+  internetGonderiTarihi DateTime?      @map("internet_gonderi_tarihi") @db.Date
   toplamNetKdv         Decimal         @map("toplam_net_kdv") @db.Decimal(15, 2)
   genelToplam          Decimal         @map("genel_toplam") @db.Decimal(15, 2)
   aciklama             String?

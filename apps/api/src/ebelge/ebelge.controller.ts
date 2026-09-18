@@ -60,6 +60,9 @@ export class EbelgeController {
     if (secim.data.ihracat) {
       await this.ebelgeService.ihracatBilgisiniKaydet(faturaId, secim.data.ihracat);
     }
+    if (secim.data.internetSatisi) {
+      await this.ebelgeService.internetSatisiniKaydet(faturaId, secim.data.internetSatisi);
+    }
     const wizard = await this.ebelgeService.wizardBilgisi(faturaId);
     if (!wizard.gonderilebilir) throw new BadRequestException(wizard.neden || "Fatura e-Belge gönderimine uygun değil");
     if (secim.data.earsivGonderimSekli) {

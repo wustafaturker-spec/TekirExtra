@@ -14,11 +14,13 @@ import { DurumGecmisi } from "@/components/durum-gecmisi";
 import {
   GIB_KOD_LISTESI_SURUMU,
   KDV_ISTISNA_KODLARI,
+  ODEME_SEKILLERI,
   TASIMA_SEKILLERI,
   TESLIM_SARTLARI,
   TEVKIFAT_KODLARI,
   faturaHesapla,
   faturaSenaryosuTuret,
+  internetSatisEngelleri,
   senaryoHatalari,
   senaryoUblKodu,
   tevkifatKoduBul,
@@ -177,6 +179,21 @@ interface EbelgeWizardBilgisi {
   birimUyarilari?: { sira: number; stok: string; birim: string }[];
   /** EBLG-55: cari kartında adres yok; belgeye il/ilçe "-" gidecek. */
   adresEksik?: boolean;
+  /** EBLG-56: internet satışı işareti ve alan grubu; yalnız e-Arşiv kanalında belgeye yazılır. */
+  internetSatisi?: {
+    isaretli: boolean;
+    webAdresi?: string | null;
+    odemeSekli?: string | null;
+    odemeTarihi?: string | null;
+    odemeAracisi?: string | null;
+    tasiyiciUnvan?: string | null;
+    tasiyiciVkn?: string | null;
+    gonderiTarihi?: string | null;
+    siparisNo?: string | null;
+    siparisTarihi?: string | null;
+    teslimatAdresiVar: boolean;
+    engeller: { alan: string; mesaj: string }[];
+  };
   /**
    * EBLG-53: alıcı yurt dışıysa dolu gelir. Kanal kullanıcıya sorulmaz, cari
    * adresinden türer; sihirbaz kararı gerekçesiyle gösterir ve türe özel
@@ -313,6 +330,16 @@ export default function FaturaSayfasi() {
     bilgi: EbelgeWizardBilgisi;
     earsivSekli: "elektronik" | "kagit";
     ihracat: { teslimTarihi: string; teslimSarti: string; tasimaSekli: string };
+    internet: {
+      isaretli: boolean;
+      webAdresi: string;
+      odemeSekli: string;
+      odemeTarihi: string;
+      odemeAracisi: string;
+      tasiyiciUnvan: string;
+      tasiyiciVkn: string;
+      gonderiTarihi: string;
+    };
   } | null>(null);
   /** EBLG-54: gümrük beyanname panelinin taslak değerleri. */
   const [beyanname, setBeyanname] = useState<{ no: string; tarih: string } | null>(null);
@@ -914,6 +941,16 @@ export default function FaturaSayfasi() {
           teslimSarti: bilgi.ihracat?.teslimSarti ?? "",
           tasimaSekli: bilgi.ihracat?.tasimaSekli ?? "",
         },
+        internet: {
+          isaretli: bilgi.internetSatisi?.isaretli ?? false,
+          webAdresi: bilgi.internetSatisi?.webAdresi ?? "",
+          odemeSekli: bilgi.internetSatisi?.odemeSekli ?? "",
+          odemeTarihi: bilgi.internetSatisi?.odemeTarihi?.slice(0, 10) ?? "",
+          odemeAracisi: bilgi.internetSatisi?.odemeAracisi ?? "",
+          tasiyiciUnvan: bilgi.internetSatisi?.tasiyiciUnvan ?? "",
+          tasiyiciVkn: bilgi.internetSatisi?.tasiyiciVkn ?? "",
+          gonderiTarihi: bilgi.internetSatisi?.gonderiTarihi?.slice(0, 10) ?? "",
+        },
       });
     } catch (h) { setHata(h instanceof Error ? h.message : "e-Fatura wizard'ı açılamadı"); }
   }
@@ -933,6 +970,20 @@ export default function FaturaSayfasi() {
                 teslimTarihi: ebelgeWizard.ihracat.teslimTarihi || null,
                 teslimSarti: ebelgeWizard.ihracat.teslimSarti || null,
                 tasimaSekli: ebelgeWizard.ihracat.tasimaSekli || null,
+              }
+            : undefined,
+          // İnternet satışı işareti her gönderimde yazılır; kutu kaldırıldıysa
+          // sunucu alanları da temizler.
+          internetSatisi: ebelgeWizard.bilgi.internetSatisi
+            ? {
+                internetSatisi: ebelgeWizard.internet.isaretli,
+                webAdresi: ebelgeWizard.internet.webAdresi || null,
+                odemeSekli: ebelgeWizard.internet.odemeSekli || null,
+                odemeTarihi: ebelgeWizard.internet.odemeTarihi || null,
+                odemeAracisi: ebelgeWizard.internet.odemeAracisi || null,
+                tasiyiciUnvan: ebelgeWizard.internet.tasiyiciUnvan || null,
+                tasiyiciVkn: ebelgeWizard.internet.tasiyiciVkn || null,
+                gonderiTarihi: ebelgeWizard.internet.gonderiTarihi || null,
               }
             : undefined,
         }),
@@ -971,8 +1022,25 @@ export default function FaturaSayfasi() {
   const ihracatEngelleri = ebelgeWizard?.bilgi.ihracat?.engeller.filter(
     (engel) => !(engel.alan === "teslimTarihi" && ebelgeWizard.ihracat.teslimTarihi),
   ) ?? [];
+  /**
+   * İnternet satışı eksikleri panelde girilen değerlerle yeniden hesaplanır —
+   * kural sunucudakiyle aynı işlevden gelir. Gönderim kaydettikten sonra aynı
+   * denetimi tekrarlar, bu yüzden burada hesaplamak kuralı gevşetmez.
+   */
+  const internetEngelleri = ebelgeWizard?.bilgi.internetSatisi && ebelgeWizard.internet.isaretli
+    ? internetSatisEngelleri({
+        internetSatisi: true,
+        siparisNo: ebelgeWizard.bilgi.internetSatisi.siparisNo,
+        siparisTarihi: ebelgeWizard.bilgi.internetSatisi.siparisTarihi,
+        webAdresi: ebelgeWizard.internet.webAdresi,
+        odemeSekli: ebelgeWizard.internet.odemeSekli,
+        odemeTarihi: ebelgeWizard.internet.odemeTarihi || null,
+        tasiyiciVkn: ebelgeWizard.internet.tasiyiciVkn,
+        teslimatAdresiVar: ebelgeWizard.bilgi.internetSatisi.teslimatAdresiVar,
+      })
+    : [];
   const wizardGonderilebilir = Boolean(
-    ebelgeWizard && (ebelgeWizard.bilgi.gonderilebilir || (ebelgeWizard.bilgi.ihracat && ihracatEngelleri.length === 0)),
+    ebelgeWizard?.bilgi.gonderilebilir && ihracatEngelleri.length === 0 && internetEngelleri.length === 0,
   );
 
   async function odemeDetayAc(id: string) {
@@ -1710,6 +1778,78 @@ export default function FaturaSayfasi() {
                     Şu satırların menşei ülkesi çözülemedi, belgeye menşei yazılmayacak:{" "}
                     {ebelgeWizard.bilgi.ihracat.menseiEksikleri.map((m) => `${m.sira}. ${m.stokAdi} (${m.mensei})`).join(", ")}. Stok kartında ülke adını ya da iki harfli kodunu yazın.
                   </div>
+                )}
+              </>
+            )}
+            {ebelgeWizard.bilgi.internetSatisi && !ebelgeWizard.bilgi.ihracat && (
+              <>
+                <label className="check-row">
+                  <input
+                    type="checkbox"
+                    checked={ebelgeWizard.internet.isaretli}
+                    onChange={(e) => setEbelgeWizard({ ...ebelgeWizard, internet: { ...ebelgeWizard.internet, isaretli: e.target.checked } })}
+                  />
+                  Bu bir internet satışı — e-Arşiv olarak düzenlenirse ödeme ve gönderi bilgisi belgeye yazılır
+                </label>
+                {ebelgeWizard.internet.isaretli && (
+                  <>
+                    <Field label="Satışın yapıldığı web adresi">
+                      <Input
+                        value={ebelgeWizard.internet.webAdresi}
+                        placeholder="https://magaza.example.com"
+                        onChange={(e) => setEbelgeWizard({ ...ebelgeWizard, internet: { ...ebelgeWizard.internet, webAdresi: e.target.value } })}
+                      />
+                    </Field>
+                    <Field label="Ödeme şekli">
+                      <Select
+                        value={ebelgeWizard.internet.odemeSekli}
+                        onChange={(e) => setEbelgeWizard({ ...ebelgeWizard, internet: { ...ebelgeWizard.internet, odemeSekli: e.target.value } })}
+                      >
+                        <option value="">Seçilmedi</option>
+                        {ODEME_SEKILLERI.map((o) => <option key={o.kod} value={o.kod}>{o.ad}</option>)}
+                      </Select>
+                    </Field>
+                    <Field label="Ödeme tarihi">
+                      <Input
+                        type="date"
+                        value={ebelgeWizard.internet.odemeTarihi}
+                        onChange={(e) => setEbelgeWizard({ ...ebelgeWizard, internet: { ...ebelgeWizard.internet, odemeTarihi: e.target.value } })}
+                      />
+                    </Field>
+                    <Field label="Ödeme aracısı (varsa)">
+                      <Input
+                        value={ebelgeWizard.internet.odemeAracisi}
+                        placeholder="iyzico, PayPal…"
+                        onChange={(e) => setEbelgeWizard({ ...ebelgeWizard, internet: { ...ebelgeWizard.internet, odemeAracisi: e.target.value } })}
+                      />
+                    </Field>
+                    <Field label="Kargo / taşıyıcı firma (varsa)">
+                      <Input
+                        value={ebelgeWizard.internet.tasiyiciUnvan}
+                        onChange={(e) => setEbelgeWizard({ ...ebelgeWizard, internet: { ...ebelgeWizard.internet, tasiyiciUnvan: e.target.value } })}
+                      />
+                    </Field>
+                    <Field label="Taşıyıcı VKN/TCKN (varsa)">
+                      <Input
+                        value={ebelgeWizard.internet.tasiyiciVkn}
+                        inputMode="numeric"
+                        onChange={(e) => setEbelgeWizard({ ...ebelgeWizard, internet: { ...ebelgeWizard.internet, tasiyiciVkn: e.target.value.replace(/\D/g, "") } })}
+                      />
+                    </Field>
+                    <Field label="Gönderi tarihi (varsa)">
+                      <Input
+                        type="date"
+                        value={ebelgeWizard.internet.gonderiTarihi}
+                        onChange={(e) => setEbelgeWizard({ ...ebelgeWizard, internet: { ...ebelgeWizard.internet, gonderiTarihi: e.target.value } })}
+                      />
+                    </Field>
+                    {internetEngelleri.length > 0 && (
+                      <div className="approval-impact is-warning">
+                        <strong>İnternet satışında eksik olanlar:</strong>
+                        <ul>{internetEngelleri.map((e) => <li key={e.alan}>{e.mesaj}</li>)}</ul>
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}

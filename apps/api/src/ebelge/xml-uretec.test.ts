@@ -419,4 +419,77 @@ describe("belgeNoyuUbleYaz (EBLG-16 arşivi)", () => {
     expect(ubl()).toContain("<cbc:CityName>Istanbul</cbc:CityName>");
   });
 
+
+  it("e-Arşiv internet satışında sipariş, ödeme ve gönderi bilgisini yazar (EBLG-56)", () => {
+    const fatura = {
+      id: "88888888-8888-4888-8888-888888888888",
+      no: "SNC2026000000008",
+      tarih: new Date("2026-09-18T12:00:00Z"),
+      tip: "satis", senaryo: "satis", efaturaProfili: "temel",
+      earsivGonderimSekli: "elektronik",
+      siparisNo: "SIP-2026-001", siparisTarihi: new Date("2026-09-15T00:00:00Z"),
+      dovizCinsi: "TRY", kur: 1,
+      toplamKdv: 20, toplamMatrah: 100, toplamBrut: 100, genelToplam: 120,
+      toplamSatirIskontosu: 0, genelIskontoToplam: 0,
+      cari: {
+        vknTckn: "10000000078", unvan: "Ayşe Yılmaz", ad: "Ayşe", soyad: "Yılmaz",
+        adresler: [{ tip: "sevk", adres: "Bağdat Cad. 9", il: "İstanbul", ilce: "Maltepe", postaKodu: "34840", ulke: "TR" }],
+      },
+      satirlar: [{
+        miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20,
+        gibIstisnaKodu: null, birimFiyat: 100, birim: "adet",
+        stok: { kod: "STK-1", ad: "Ürün" },
+      }],
+    } as never;
+    const internetSatisi = {
+      webAdresi: "https://magaza.example.com",
+      odemeSekli: "kredi_karti",
+      odemeTarihi: new Date("2026-09-15T00:00:00Z"),
+      odemeAracisi: "iyzico",
+      tasiyiciUnvan: "Hızlı Kargo A.Ş.",
+      tasiyiciVkn: "1234567890",
+      gonderiTarihi: new Date("2026-09-16T00:00:00Z"),
+      teslimatAdresi: { adres: "Bağdat Cad. 9", il: "İstanbul", ilce: "Maltepe", postaKodu: "34840", ulke: "TR" },
+    };
+    const satici = { unvan: "Satıcı A.Ş.", vkn: "9876543210" };
+
+    const earsiv = faturaUblUret(fatura, satici, { tur: "earsiv", internetSatisi });
+    expect(earsiv).toContain("<cac:OrderReference>");
+    expect(earsiv).toContain("<cbc:ID>SIP-2026-001</cbc:ID>");
+    expect(earsiv).toContain("<cbc:IssueDate>2026-09-15</cbc:IssueDate>");
+    expect(earsiv).toContain("İnternet satışı — https://magaza.example.com");
+    expect(earsiv).toContain("<cbc:ActualDeliveryDate>2026-09-16</cbc:ActualDeliveryDate>");
+    expect(earsiv).toContain("<cac:DeliveryAddress>");
+    expect(earsiv).toContain("<cbc:CityName>İstanbul</cbc:CityName>");
+    expect(earsiv).toContain("<cbc:Name>Hızlı Kargo A.Ş.</cbc:Name>");
+    expect(earsiv).toContain("<cbc:PaymentMeansCode>48</cbc:PaymentMeansCode>");
+    expect(earsiv).toContain("<cbc:PaymentDueDate>2026-09-15</cbc:PaymentDueDate>");
+    expect(earsiv).toContain("<cbc:InstructionNote>iyzico</cbc:InstructionNote>");
+
+    // e-Fatura kanalında grup istenmez; sipariş referansı iş bilgisi olarak kalır.
+    const efatura = faturaUblUret(fatura, satici, { tur: "efatura", internetSatisi });
+    expect(efatura).toContain("<cac:OrderReference>");
+    expect(efatura).not.toContain("<cac:PaymentMeans>");
+    expect(efatura).not.toContain("<cac:Delivery>");
+    expect(efatura).not.toContain("İnternet satışı");
+  });
+
+  it("sipariş numarası olmayan faturaya sipariş referansı yazmaz", () => {
+    const xml = faturaUblUret({
+      id: "99999999-9999-4999-8999-999999999999",
+      no: "TKR2026000000009", tarih: new Date("2026-09-18T12:00:00Z"),
+      tip: "satis", senaryo: "satis", efaturaProfili: "temel",
+      dovizCinsi: "TRY", kur: 1,
+      toplamKdv: 20, toplamMatrah: 100, toplamBrut: 100, genelToplam: 120,
+      toplamSatirIskontosu: 0, genelIskontoToplam: 0,
+      cari: { vknTckn: "1234567890", unvan: "Alıcı A.Ş.", adresler: [] },
+      satirlar: [{
+        miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20,
+        gibIstisnaKodu: null, birimFiyat: 100, birim: "adet", stok: { kod: "STK-1", ad: "Ürün" },
+      }],
+    } as never, { unvan: "Satıcı A.Ş.", vkn: "9876543210" }, { tur: "efatura" });
+
+    expect(xml).not.toContain("<cac:OrderReference>");
+  });
+
 });
