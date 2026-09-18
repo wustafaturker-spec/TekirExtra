@@ -21,7 +21,10 @@ describe("EirsaliyeService UBL", () => {
     no: "GBZ2026000800001",
     tarih: "2026-09-10",
     createdAt: new Date("2026-09-10T15:30:00Z"),
-    cari: { unvan: "Alıcı A.Ş.", vknTckn: "1230460944" },
+    cari: {
+      unvan: "Alıcı A.Ş.", vknTckn: "1230460944",
+      adresler: [{ tip: "merkez", adres: "OSB 3. Cadde No:7", il: "Denizli", ilce: "Honaz", postaKodu: "20330", ulke: "TR" }],
+    },
     teslimatAdresi: { adres: "OSB 3. Cadde No:7", il: "Denizli", ilce: "Honaz", postaKodu: "20330" },
     fiiliSevkZamani: new Date("2026-09-10T07:45:00Z"),
     plaka: "34 ABC 123",
@@ -38,6 +41,15 @@ describe("EirsaliyeService UBL", () => {
     // `SEVK` belgenin türüdür, profili değil.
     expect(xml).toContain("<cbc:ProfileID>TEMELIRSALIYE</cbc:ProfileID>");
     expect(xml).toContain("<cbc:DespatchAdviceTypeCode>SEVK</cbc:DespatchAdviceTypeCode>");
+  });
+
+  it("alıcı tarafına karttaki adresi yazar (EBLG-55)", () => {
+    const alici = ubl(belge).match(/<cac:DeliveryCustomerParty>[\s\S]*?<\/cac:DeliveryCustomerParty>/)![0];
+
+    expect(alici).toContain("<cbc:CityName>Denizli</cbc:CityName>");
+    expect(alici).toContain("<cbc:CitySubdivisionName>Honaz</cbc:CitySubdivisionName>");
+    expect(alici).toContain("<cbc:PostalZone>20330</cbc:PostalZone>");
+    expect(alici).not.toContain("Istanbul");
   });
 
   it("UBL-TR eleman sırasını korur", () => {

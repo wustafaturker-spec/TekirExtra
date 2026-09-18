@@ -285,7 +285,10 @@ describe("belgeNoyuUbleYaz (EBLG-16 arşivi)", () => {
       kur: 41.5,
       toplamKdv: 0, toplamMatrah: 1000, toplamBrut: 1000, genelToplam: 1000,
       toplamSatirIskontosu: 0, genelIskontoToplam: 0,
-      cari: { vknTckn: null, unvan: "Muster GmbH" },
+      cari: {
+        vknTckn: null, unvan: "Muster GmbH",
+        adresler: [{ tip: "fatura", adres: "Hauptstr. 1", il: "Berlin", ilce: "Mitte", postaKodu: "10115", ulke: "DE" }],
+      },
       satirlar: [{
         miktar: 2, matrah: 1000, iskontoTutari: 0, kdvTutari: 0, kdvOrani: 0,
         gibIstisnaKodu: null, birimFiyat: 500, birim: "kg",
@@ -295,7 +298,6 @@ describe("belgeNoyuUbleYaz (EBLG-16 arşivi)", () => {
       tur: "efatura",
       ihracat: {
         ulkeKodu: "DE",
-        adres: { adres: "Hauptstr. 1", il: "Berlin", ilce: "Mitte", postaKodu: "10115" },
         teslimTarihi: new Date("2026-09-20T00:00:00Z"),
         teslimSarti: "FOB",
         tasimaSekli: "1",
@@ -328,7 +330,10 @@ describe("belgeNoyuUbleYaz (EBLG-16 arşivi)", () => {
       dovizCinsi: "TRY", kur: 1,
       toplamKdv: 0, toplamMatrah: 100, toplamBrut: 100, genelToplam: 100,
       toplamSatirIskontosu: 0, genelIskontoToplam: 0,
-      cari: { vknTckn: null, unvan: "Muster GmbH" },
+      cari: {
+        vknTckn: null, unvan: "Muster GmbH",
+        adresler: [{ tip: "fatura", adres: null, il: "Berlin", ilce: "Mitte", postaKodu: null, ulke: "DE" }],
+      },
       satirlar: [{
         miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 0, kdvOrani: 0,
         gibIstisnaKodu: null, birimFiyat: 100, birim: "adet", stok,
@@ -373,6 +378,45 @@ describe("belgeNoyuUbleYaz (EBLG-16 arşivi)", () => {
     expect(xml).not.toContain("CommodityClassification");
     expect(xml).not.toContain("<cac:Delivery>");
     expect(xml).toContain('<cbc:ID schemeID="VKN">1234567890</cbc:ID>');
+  });
+
+
+  it("alıcı adresini cari kartından yazar, sabit şehir uydurmaz (EBLG-55)", () => {
+    const fatura = (adresler?: unknown[]) => ({
+      id: "77777777-7777-4777-8777-777777777777",
+      no: "TKR2026000000007",
+      tarih: new Date("2026-09-18T12:00:00Z"),
+      tip: "satis", senaryo: "satis", efaturaProfili: "temel",
+      dovizCinsi: "TRY", kur: 1,
+      toplamKdv: 20, toplamMatrah: 100, toplamBrut: 100, genelToplam: 120,
+      toplamSatirIskontosu: 0, genelIskontoToplam: 0,
+      cari: { vknTckn: "1234567890", unvan: "Alıcı A.Ş.", adresler },
+      satirlar: [{
+        miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20,
+        gibIstisnaKodu: null, birimFiyat: 100, birim: "adet",
+        stok: { kod: "STK-1", ad: "Ürün" },
+      }],
+    }) as never;
+    const ubl = (adresler?: unknown[]) => faturaUblUret(fatura(adresler), { unvan: "Satıcı A.Ş.", vkn: "9876543210" }, { tur: "efatura" });
+
+    const kartli = ubl([
+      { tip: "sevk", adres: "Depo Yolu 5", il: "Kocaeli", ilce: "Gebze", postaKodu: "41400", ulke: "TR" },
+      { tip: "fatura", adres: "Atatürk Cad. 1", il: "İstanbul", ilce: "Kadıköy", postaKodu: "34710", ulke: "TR" },
+    ]);
+    // Fatura adresi sevk adresine yeğlenir.
+    expect(kartli).toContain("<cbc:StreetName>Atatürk Cad. 1</cbc:StreetName>");
+    expect(kartli).toContain("<cbc:CityName>İstanbul</cbc:CityName>");
+    expect(kartli).toContain("<cbc:CitySubdivisionName>Kadıköy</cbc:CitySubdivisionName>");
+    expect(kartli).toContain("<cbc:PostalZone>34710</cbc:PostalZone>");
+    expect(kartli).toContain("<cbc:IdentificationCode>TR</cbc:IdentificationCode>");
+
+    // Kartta adres yoksa şehir uydurulmaz; alanlar boş görünür.
+    const adressiz = ubl([]);
+    expect(adressiz).toContain("<cbc:CityName>-</cbc:CityName>");
+    expect(adressiz).toContain("<cbc:CitySubdivisionName>-</cbc:CitySubdivisionName>");
+    expect(adressiz).not.toContain("<cbc:StreetName>");
+    // Satıcı tarafı kendi adresimiz kartta tutulmadığı için sabit kalır.
+    expect(ubl()).toContain("<cbc:CityName>Istanbul</cbc:CityName>");
   });
 
 });

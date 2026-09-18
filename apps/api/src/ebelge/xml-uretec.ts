@@ -10,7 +10,7 @@ import {
   ihracatIstisnaKoduMu,
   senaryoUblKodu,
   tevkifatKoduBul,
-  ulkeAdi,
+  ublAdresi,
   ulkeKoduCoz,
 } from "@tekirextra/shared";
 import { adSoyadCoz } from "../cari/ad-soyad";
@@ -26,7 +26,6 @@ import { adSoyadCoz } from "../cari/ad-soyad";
 export interface IhracatUblBilgisi {
   /** Alıcının ISO 3166-1 alpha-2 ülke kodu; TR olamaz. */
   ulkeKodu: string;
-  adres?: { adres?: string | null; il?: string | null; ilce?: string | null; postaKodu?: string | null };
   /** Fiili ihracat tarihi. */
   teslimTarihi?: Date | null;
   /** Incoterms kodu (EXW, FOB, CIF…). */
@@ -42,7 +41,11 @@ export function faturaUblUret(
     satirlar: (FaturaSatir & {
       stok: { kod: string; ad: string; tip?: string | null; gtipKodu?: string | null; mensei?: string | null };
     })[];
-    cari: CariHesap;
+    /**
+     * EBLG-55: alıcı adresi karttan gelir. Adresler okunmadan üretilen belgede
+     * adres "-" gider; sabit bir şehir yazmaktansa eksikliği görünsün.
+     */
+    cari: CariHesap & { adresler?: { tip: string; adres: string | null; il: string | null; ilce: string | null; postaKodu: string | null; ulke: string | null }[] };
   },
   supplier: { unvan: string; vkn: string; vergiDairesi?: string; adres?: string },
   secenekler: { tur?: "efatura" | "earsiv"; ihracat?: IhracatUblBilgisi } = {},
@@ -56,6 +59,12 @@ export function faturaUblUret(
    * Karar sihirbazda verilmez, alıcının ülkesinden gelir (tasarım belgesi §3.1).
    */
   const ihracat = secenekler.ihracat;
+  /**
+   * Alıcı adresi (EBLG-55). Belgede tek bir adres görünür; hangisi olduğu
+   * `belgeAdresiSec` kuralına göre seçilir ve ihracat kanalı kararı da aynı
+   * adresin ülkesinden gelir.
+   */
+  const aliciAdres = ublAdresi(fatura.cari.adresler);
   // ISO Tarihleri
   const tarihStr = fatura.tarih.toISOString().slice(0, 10);
   const saatStr = "12:00:00";
@@ -210,20 +219,15 @@ ${earsiv ? `  <cac:AdditionalDocumentReference>
 ${aliciTckn && !ihracat ? "" : `      <cac:PartyName>
         <cbc:Name>${escape(fatura.cari.unvan)}</cbc:Name>
       </cac:PartyName>`}
-      <cac:PostalAddress>${ihracat ? `${ihracat.adres?.adres ? `
-        <cbc:StreetName>${escape(ihracat.adres.adres)}</cbc:StreetName>` : ""}
-        <cbc:CitySubdivisionName>${escape(ihracat.adres?.ilce) || "-"}</cbc:CitySubdivisionName>
-        <cbc:CityName>${escape(ihracat.adres?.il) || "-"}</cbc:CityName>${ihracat.adres?.postaKodu ? `
-        <cbc:PostalZone>${escape(ihracat.adres.postaKodu)}</cbc:PostalZone>` : ""}
+      <cac:PostalAddress>${aliciAdres.adres ? `
+        <cbc:StreetName>${escape(aliciAdres.adres)}</cbc:StreetName>` : ""}
+        <cbc:CitySubdivisionName>${escape(aliciAdres.ilce)}</cbc:CitySubdivisionName>
+        <cbc:CityName>${escape(aliciAdres.il)}</cbc:CityName>${aliciAdres.postaKodu ? `
+        <cbc:PostalZone>${escape(aliciAdres.postaKodu)}</cbc:PostalZone>` : ""}
         <cac:Country>
-          <cbc:IdentificationCode>${escape(ihracat.ulkeKodu)}</cbc:IdentificationCode>${ulkeAdi(ihracat.ulkeKodu) ? `
-          <cbc:Name>${escape(ulkeAdi(ihracat.ulkeKodu))}</cbc:Name>` : ""}
-        </cac:Country>` : `
-        <cbc:CitySubdivisionName>Merkez</cbc:CitySubdivisionName>
-        <cbc:CityName>Istanbul</cbc:CityName>
-        <cac:Country>
-          <cbc:Name>Türkiye</cbc:Name>
-        </cac:Country>`}
+          <cbc:IdentificationCode>${aliciAdres.ulkeKodu}</cbc:IdentificationCode>${aliciAdres.ulkeAdi ? `
+          <cbc:Name>${escape(aliciAdres.ulkeAdi)}</cbc:Name>` : ""}
+        </cac:Country>
       </cac:PostalAddress>
 ${aliciTckn && !ihracat ? `      <cac:Person>
         <cbc:FirstName>${escape(aliciAd)}</cbc:FirstName>

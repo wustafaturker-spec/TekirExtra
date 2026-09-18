@@ -40,8 +40,6 @@ export interface IhracatOzeti {
   ublBilgisi?: IhracatUblBilgisi;
 }
 
-const ADRES_SIRASI = ["fatura", "merkez", "sube", "sevk", "depo"];
-
 export function ihracatOzeti(fatura: IhracatFaturaGirdisi): IhracatOzeti {
   const ulkeKodu = aliciUlkeKodu(fatura.cari.adresler);
   if (!yurtDisiMi(ulkeKodu)) return { ihracat: false, engeller: [], menseiEksikleri: [] };
@@ -60,9 +58,6 @@ export function ihracatOzeti(fatura: IhracatFaturaGirdisi): IhracatOzeti {
     teslimSarti: fatura.ihracatTeslimSarti,
     tasimaSekli: fatura.ihracatTasimaSekli,
   };
-  const adres = [...fatura.cari.adresler].sort(
-    (a, b) => ADRES_SIRASI.indexOf(a.tip) - ADRES_SIRASI.indexOf(b.tip),
-  )[0];
 
   return {
     ihracat: true,
@@ -71,8 +66,9 @@ export function ihracatOzeti(fatura: IhracatFaturaGirdisi): IhracatOzeti {
     engeller: ihracatEngelleri(ulkeKodu, bilgi, satirlar),
     menseiEksikleri: menseiUyarilari(satirlar),
     ublBilgisi: {
+      // Adres UBL üreticisinin kendisi tarafından karttan okunur (EBLG-55);
+      // burada yalnız ihracata özgü alanlar taşınır.
       ulkeKodu: ulkeKodu!,
-      adres: adres ? { adres: adres.adres, il: adres.il, ilce: adres.ilce, postaKodu: adres.postaKodu } : undefined,
       teslimTarihi: fatura.ihracatTeslimTarihi,
       teslimSarti: fatura.ihracatTeslimSarti,
       tasimaSekli: fatura.ihracatTasimaSekli,

@@ -3,7 +3,7 @@ import { EirsaliyeDurum, GelenEirsaliyeDurum, Prisma } from "@prisma/client";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import type { EntegratorConfig } from "@tekirextra/baglanti";
-import { birimUblKodu, dorseSchemeId, plakaNormalize, plakaSchemeId } from "@tekirextra/shared";
+import { birimUblKodu, dorseSchemeId, plakaNormalize, plakaSchemeId, ublAdresi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
@@ -76,8 +76,11 @@ export class EirsaliyeService {
     const saat = sevk.toISOString().slice(11, 19);
     const adres = (birim: string, sehir: string) =>
       `<cac:PostalAddress><cbc:CitySubdivisionName>${esc(birim)}</cbc:CitySubdivisionName><cbc:CityName>${esc(sehir)}</cbc:CityName><cac:Country><cbc:Name>Türkiye</cbc:Name></cac:Country></cac:PostalAddress>`;
-    const taraf = (vkn: string, unvan: string) =>
-      `<cac:Party><cac:PartyIdentification><cbc:ID schemeID="${vkn.length === 11 ? "TCKN" : "VKN"}">${esc(vkn)}</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>${esc(unvan)}</cbc:Name></cac:PartyName>${adres("Merkez", "Istanbul")}</cac:Party>`;
+    /** Karttaki adres (EBLG-55); kendi firmamızın adresi kartta tutulmadığı için satıcı tarafı hâlâ sabit. */
+    const kartAdresi = (a: ReturnType<typeof ublAdresi>) =>
+      `<cac:PostalAddress>${a.adres ? `<cbc:StreetName>${esc(a.adres)}</cbc:StreetName>` : ""}<cbc:CitySubdivisionName>${esc(a.ilce)}</cbc:CitySubdivisionName><cbc:CityName>${esc(a.il)}</cbc:CityName>${a.postaKodu ? `<cbc:PostalZone>${esc(a.postaKodu)}</cbc:PostalZone>` : ""}<cac:Country><cbc:IdentificationCode>${a.ulkeKodu}</cbc:IdentificationCode>${a.ulkeAdi ? `<cbc:Name>${esc(a.ulkeAdi)}</cbc:Name>` : ""}</cac:Country></cac:PostalAddress>`;
+    const taraf = (vkn: string, unvan: string, adresBlogu = adres("Merkez", "Istanbul")) =>
+      `<cac:Party><cac:PartyIdentification><cbc:ID schemeID="${vkn.length === 11 ? "TCKN" : "VKN"}">${esc(vkn)}</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>${esc(unvan)}</cbc:Name></cac:PartyName>${adresBlogu}</cac:Party>`;
     // Taşıyan: cari seçilmediyse malı kendi aracımızla götürmüşüzdür.
     const tasiyan = b.tasiyiciCari
       ? { vknTckn: b.tasiyiciCari.vknTckn ?? "", unvan: b.tasiyiciCari.unvan }
@@ -106,7 +109,7 @@ export class EirsaliyeService {
       + `<cbc:DespatchAdviceTypeCode>SEVK</cbc:DespatchAdviceTypeCode><cbc:LineCountNumeric>${b.satirlar.length}</cbc:LineCountNumeric>`
       + `<cac:Signature><cbc:ID schemeID="VKN_TCKN">${esc(tenant.vkn)}</cbc:ID><cac:SignatoryParty><cac:PartyIdentification><cbc:ID schemeID="VKN">${esc(tenant.vkn)}</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>${esc(tenant.unvan)}</cbc:Name></cac:PartyName>${adres("Merkez", "Istanbul")}</cac:SignatoryParty><cac:DigitalSignatureAttachment><cac:ExternalReference><cbc:URI>#Signature</cbc:URI></cac:ExternalReference></cac:DigitalSignatureAttachment></cac:Signature>`
       + `<cac:DespatchSupplierParty>${taraf(tenant.vkn, tenant.unvan)}</cac:DespatchSupplierParty>`
-      + `<cac:DeliveryCustomerParty>${taraf(b.cari.vknTckn ?? "", b.cari.unvan)}</cac:DeliveryCustomerParty>`
+      + `<cac:DeliveryCustomerParty>${taraf(b.cari.vknTckn ?? "", b.cari.unvan, kartAdresi(ublAdresi(b.cari.adresler)))}</cac:DeliveryCustomerParty>`
       // Fiili sevk zamanı `cac:Shipment` içinde bildirilir; taşıyan ve plaka
       // bilgisi kartta tutulmadığı için yazılmıyor.
       // Fiili sevk zamanı ve malın nereye teslim edildiği `cac:Shipment`

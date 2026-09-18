@@ -11,7 +11,7 @@ import {
 } from "@nestjs/common";
 import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
 import type { BelgeDurumSonuc, EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
-import { IHRACAT_POSTA_KUTUSU, birimTanindiMi } from "@tekirextra/shared";
+import { IHRACAT_POSTA_KUTUSU, birimTanindiMi, ublAdresi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { BildirimService } from "../bildirimler/bildirim.service";
@@ -133,6 +133,9 @@ export class EbelgeService {
         // TCKN'li alıcıda e-Arşiv'e yazılacak ad/soyad; kartta yoksa tahmin
         // edildiği sihirbazda gösterilir (CARI-21).
         aliciAdi: fatura.cari.vknTckn?.length === 11 ? adSoyadCoz(fatura.cari) : undefined,
+        // Kartta adres yoksa belgeye şehir uydurulmaz, alanlar "-" gider
+        // (EBLG-55); belgeyi durdurmaz ama sihirbazda söylenir.
+        adresEksik: ublAdresi(fatura.cari.adresler).eksik,
         // Birimi GİB kod listesinde karşılığı olmayan satırlar belgeye "adet"
         // olarak gider; sessiz kalmasın diye sihirbazda söylenir.
         birimUyarilari: fatura.satirlar

@@ -7,6 +7,7 @@
  * listeyi okur.
  */
 
+import { belgeAdresiSec } from "./adres";
 import { ulkeKoduCoz, yurtDisiMi } from "./ulke";
 
 /**
@@ -104,14 +105,12 @@ export interface IhracatAdres {
 }
 
 /**
- * Alıcının ülkesi: fatura adresi, yoksa merkez, yoksa ilk adres. Adres yoksa
- * ülke bilinmiyor demektir ve belge yurt içi sayılır — ihracat, kayıtlı bir
- * yurt dışı adrese dayanmak zorundadır.
+ * Alıcının ülkesi, belgeye yazılan adresten okunur (`belgeAdresiSec` ile aynı
+ * sıra). Adres yoksa ülke bilinmiyor demektir ve belge yurt içi sayılır —
+ * ihracat, kayıtlı bir yurt dışı adrese dayanmak zorundadır.
  */
 export function aliciUlkeKodu(adresler: readonly IhracatAdres[]): string | undefined {
-  const sirali = ["fatura", "merkez", "sube", "sevk", "depo"];
-  const adres = [...adresler].sort((a, b) => sirali.indexOf(a.tip) - sirali.indexOf(b.tip))[0];
-  return ulkeKoduCoz(adres?.ulke);
+  return ulkeKoduCoz(belgeAdresiSec(adresler)?.ulke);
 }
 
 /** Belge ihracat faturası mı — alıcının ülkesi Türkiye dışında mı? */

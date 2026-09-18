@@ -10,4 +10,5 @@ export * from "./fatura-senaryo";
 export * from "./plaka";
 export * from "./birim-kodu";
 export * from "./ulke";
+export * from "./adres";
 export * from "./ihracat";

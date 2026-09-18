@@ -175,6 +175,8 @@ interface EbelgeWizardBilgisi {
   aliciAdi?: { ad: string; soyad: string; tahmin: boolean };
   /** GİB birim kod listesinde karşılığı olmayan satırlar; belgeye adet olarak gider. */
   birimUyarilari?: { sira: number; stok: string; birim: string }[];
+  /** EBLG-55: cari kartında adres yok; belgeye il/ilçe "-" gidecek. */
+  adresEksik?: boolean;
   /**
    * EBLG-53: alıcı yurt dışıysa dolu gelir. Kanal kullanıcıya sorulmaz, cari
    * adresinden türer; sihirbaz kararı gerekçesiyle gösterir ve türe özel
@@ -1722,6 +1724,11 @@ export default function FaturaSayfasi() {
             {ebelgeWizard.bilgi.aliciAdi?.tahmin && (
               <div className="approval-impact is-warning">
                 Carinin adı ve soyadı kartta girilmemiş; e-Arşiv&apos;e unvandan tahminle Ad: <strong>{ebelgeWizard.bilgi.aliciAdi.ad}</strong>, Soyad: <strong>{ebelgeWizard.bilgi.aliciAdi.soyad}</strong> yazılacak. Doğru değilse cari kartında düzeltin.
+              </div>
+            )}
+            {ebelgeWizard.bilgi.adresEksik && (
+              <div className="approval-impact is-warning">
+                Cari kartında adres yok; belgeye il ve ilçe yerine &quot;-&quot; yazılacak. Doğru adresi cari kartının adresler bölümüne ekleyin.
               </div>
             )}
             {(ebelgeWizard.bilgi.birimUyarilari?.length ?? 0) > 0 && (
