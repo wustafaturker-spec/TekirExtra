@@ -65,6 +65,12 @@ export class EbelgeController {
     }
     const wizard = await this.ebelgeService.wizardBilgisi(faturaId);
     if (!wizard.gonderilebilir) throw new BadRequestException(wizard.neden || "Fatura e-Belge gönderimine uygun değil");
+    // Türe özel eksikler de burada durdurulur. `gonderilebilir` yalnız bağlantı,
+    // kimlik ve tarih kontrollerini anlatır; ihracat ve internet satışı
+    // listelerine bakılmazsa eksik belge kuyruğa girer ve hata orada patlar —
+    // kullanıcı ise "gönderildi" görür.
+    const engeller = [...(wizard.ihracat?.engeller ?? []), ...(wizard.internetSatisi?.engeller ?? [])];
+    if (engeller.length) throw new BadRequestException(engeller.map((e) => e.mesaj).join("; "));
     if (secim.data.earsivGonderimSekli) {
       await this.ebelgeService.earsivGonderimSekliniKaydet(faturaId, secim.data.earsivGonderimSekli);
     }
