@@ -160,7 +160,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
           dovizCinsi: "TRY",
           toplamSatirIskontosu: 0,
           satirlar: [{ miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20, birimFiyat: 100, stok: { kod: "U1", ad: "Ürün 1" } }],
-          cari: { vknTckn: "1234567890", unvan: "Müşteri" },
+          cari: { vknTckn: "1234567890", unvan: "Müşteri", adresler: [] },
         }),
       },
       baglanti: {
@@ -220,6 +220,77 @@ describe("EbelgeService (EBLG-01..08)", () => {
 
 
   /**
+   * İhracatta kanal alıcının ülkesinden gelir (EBLG-53): mükellef listesi hiç
+   * sorulmaz, belge alıcının değil Ticaret Bakanlığı'nın kutusuna gider ve
+   * yurt dışı alıcının VKN'si olmadığı için kart kimliği aranmaz.
+   */
+  it("ihracat faturasında mükellef listesi sorulmaz, belge Ticaret Bakanlığı kutusuna gider (EBLG-53)", async () => {
+    mockMukellefListesi.kanalBelirle.mockClear();
+    mockAdapter.belgeGonder.mockClear();
+    const mockTx = {
+      fatura: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "f9", tip: "satis", durum: "kesin", tarih: new Date(), no: "TKR2026000000009",
+          toplamBrut: 1000, toplamMatrah: 1000, toplamKdv: 0, genelToplam: 1000,
+          dovizCinsi: "USD", kur: 41.5, toplamSatirIskontosu: 0,
+          senaryo: "istisna", efaturaProfili: "temel",
+          ihracatTeslimTarihi: new Date("2026-09-20"), ihracatTeslimSarti: "FOB", ihracatTasimaSekli: "1",
+          gumrukBeyannameNo: null,
+          satirlar: [{
+            miktar: 1, matrah: 1000, iskontoTutari: 0, kdvTutari: 0, kdvOrani: 0, birimFiyat: 1000,
+            stok: { kod: "U9", ad: "Fındık", tip: "urun", gtipKodu: "080222100000", mensei: "TR" },
+          }],
+          // Yurt dışı alıcının VKN'si yoktur; adresteki ülke kanalı belirler.
+          cari: { vknTckn: null, unvan: "Muster GmbH", adresler: [{ tip: "fatura", ulke: "DE", adres: "Hauptstr. 1", il: "Berlin", ilce: "Mitte", postaKodu: "10115" }] },
+        }),
+      },
+      baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "t" }) }) },
+      cariHesap: { update: vi.fn().mockResolvedValue({}) },
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114" }) },
+      ebelgeKayit: { create: vi.fn().mockResolvedValue({ id: "eb9" }), update: vi.fn().mockResolvedValue({ id: "eb9" }) },
+      ebelgeArsiv: { upsert: vi.fn().mockResolvedValue({}) },
+    };
+    mockTenantIslem.mockImplementation((tenantId: string, cb: (tx: unknown) => unknown) => cb(mockTx));
+
+    const sonuc = await service.gonder("f9");
+
+    expect(mockMukellefListesi.kanalBelirle).not.toHaveBeenCalled();
+    expect(sonuc.basarili).toBe(true);
+    const gonderilen = mockAdapter.belgeGonder.mock.calls.at(-1)![1];
+    expect(gonderilen.tur).toBe("efatura");
+    expect(gonderilen.aliciPostaKutusu).toBe("urn:mail:ihracatpk@gtb.gov.tr");
+    expect(gonderilen.xml).toContain("<cbc:ProfileID>IHRACAT</cbc:ProfileID>");
+    expect(gonderilen.xml).toContain('<cbc:ID schemeID="VKN">2222222222</cbc:ID>');
+  });
+
+  it("ihracat faturasında fiili ihracat tarihi ve GTİP eksikse göndermez (EBLG-53)", async () => {
+    mockAdapter.belgeGonder.mockClear();
+    const mockTx = {
+      fatura: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "f10", tip: "satis", durum: "kesin", tarih: new Date(), no: "TKR2026000000010",
+          toplamBrut: 1000, toplamMatrah: 1000, toplamKdv: 0, genelToplam: 1000,
+          dovizCinsi: "USD", kur: 41.5, toplamSatirIskontosu: 0,
+          senaryo: "istisna", efaturaProfili: "temel",
+          ihracatTeslimTarihi: null, ihracatTeslimSarti: null, ihracatTasimaSekli: null, gumrukBeyannameNo: null,
+          satirlar: [{ miktar: 1, matrah: 1000, iskontoTutari: 0, kdvTutari: 0, kdvOrani: 0, birimFiyat: 1000, stok: { kod: "U9", ad: "Fındık", tip: "urun", gtipKodu: null, mensei: "TR" } }],
+          cari: { vknTckn: null, unvan: "Muster GmbH", adresler: [{ tip: "fatura", ulke: "DE", adres: null, il: null, ilce: null, postaKodu: null }] },
+        }),
+      },
+      baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "t" }) }) },
+      cariHesap: { update: vi.fn().mockResolvedValue({}) },
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114" }) },
+      ebelgeKayit: { create: vi.fn(), update: vi.fn() },
+      ebelgeArsiv: { upsert: vi.fn() },
+    };
+    mockTenantIslem.mockImplementation((tenantId: string, cb: (tx: unknown) => unknown) => cb(mockTx));
+
+    await expect(service.gonder("f10")).rejects.toThrow("Fiili ihracat tarihi");
+    expect(mockAdapter.belgeGonder).not.toHaveBeenCalled();
+    expect(mockTx.ebelgeKayit.create).not.toHaveBeenCalled();
+  });
+
+  /**
    * Entegratör test ortamlarının sentetik kimlikleri VKN kontrol hanesini
    * tutmaz. Kural gönderen için zaten gevşetiliyordu; alıcı için de aynı
    * olmalı — o kimliklerden belge alıp onlara belge kesememek tutarsızdı.
@@ -233,7 +304,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
           dovizCinsi: "TRY", toplamSatirIskontosu: 0,
           satirlar: [{ miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20, birimFiyat: 100, stok: { kod: "U1", ad: "Ürün 1" } }],
           // GİB sandbox kimliği: kontrol hanesi tutmaz.
-          cari: { vknTckn: "1234567801", unvan: "Test Kurum" },
+          cari: { vknTckn: "1234567801", unvan: "Test Kurum", adresler: [] },
         }),
       },
       baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "t", testOrtami }) }) },
@@ -267,7 +338,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
           toplamBrut: 100, toplamMatrah: 100, toplamKdv: 20, genelToplam: 120,
           dovizCinsi: "TRY", toplamSatirIskontosu: 0,
           satirlar: [{ miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20, birimFiyat: 100, stok: { kod: "U1", ad: "Ürün 1" } }],
-          cari: { vknTckn: "1234567890", unvan: "Müşteri" },
+          cari: { vknTckn: "1234567890", unvan: "Müşteri", adresler: [] },
           ebelge,
         }),
       },
@@ -365,7 +436,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
           toplamBrut: 100, toplamMatrah: 100, toplamKdv: 20, genelToplam: 120,
           dovizCinsi: "TRY", toplamSatirIskontosu: 0,
           satirlar: [{ miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20, birimFiyat: 100, stok: { kod: "U1", ad: "Ürün 1" } }],
-          cari: { vknTckn: "10000000078", unvan: "Ayşe Yılmaz" },
+          cari: { vknTckn: "10000000078", unvan: "Ayşe Yılmaz", adresler: [] },
           ebelge: null,
         }),
       },

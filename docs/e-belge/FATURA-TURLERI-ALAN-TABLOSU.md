@@ -26,7 +26,7 @@ tablo ikisini birlikte gösterir.
 | 1 | Ticari e-Fatura | `TICARIFATURA` | SATIS / IADE | Alıcı GİB'de kayıtlı, yanıt isteniyor | Kabul/ret/süre uzatma — 8 gün, sessizlik kabul | ✅ |
 | 2 | Temel e-Fatura | `TEMELFATURA` | SATIS / IADE | Alıcı GİB'de kayıtlı, yanıt gerekmiyor | Yok | ✅ |
 | 3 | e-Arşiv | `EARSIVFATURA` | SATIS / IADE | Alıcı GİB'de kayıtsız ya da nihai tüketici | Yok | ✅ |
-| 4 | İhracat | `IHRACAT` | SATIS | Alıcı yurt dışı | Yok (gümrük süreci ayrı) | ❌ |
+| 4 | İhracat | `IHRACAT` | SATIS | Alıcı yurt dışı | Yok (gümrük süreci ayrı) | ✅ |
 | 5 | Yolcu beraberi | `YOLCUBERABERIESYA` | SATIS | Tax-free yolcu satışı | Yok | ❌ |
 | 6 | Kamu iade | `KAMU` | IADE | Kamu kurumuna kesilen iade faturası | — | ❌ |
 | 7 | Şarj | `EARSIVFATURA` / e-Fatura | `SARJ` | Elektrikli araç şarj hizmeti | Kanala göre | ❌ |
@@ -101,20 +101,34 @@ istenmeli.
 
 | Alan | UBL | Zorunlu | Kaynak | Durum |
 |---|---|---|---|---|
-| Senaryo `IHRACAT` | `cbc:ProfileID` | Evet | Kural (alıcı yurt dışı) | ❌ |
-| Alıcı ülke kodu (TR dışı) | `Country/IdentificationCode` | Evet | Cari adresi (`cari_adresler.ulke` **var**) | ⚠️ alan var, UBL'e yazılmıyor |
-| Vergi para birimi | `cbc:TaxCurrencyCode` = TRY | Dövizlide evet | Sabit | ❌ |
-| Fiyatlama para birimi | `cbc:PricingCurrencyCode` | Önerilir | Fatura dövizi | ❌ |
-| GTİP (satır) | `CommodityClassification` schemeID="GTİP", 12 hane | Evet | Stok kartı (`gtip_kodu` **var**) | ⚠️ alan var, UBL'e yazılmıyor |
-| Menşei | `OriginCountry` | Koşullu | Stok kartı (`mensei` **var**) | ⚠️ |
-| KDV 0 + istisna kodu `351` | `TaxExemptionReasonCode` | Evet | Kural | ⚠️ kod listede var, otomatik seçilmiyor |
-| Fiili ihracat tarihi | `cbc:ActualDeliveryDate` | Evet | Sihirbaz | ❌ |
-| Teslim şartı (Incoterms) | `cac:DeliveryTerms` | Önerilir | Sihirbaz | ❌ |
-| Taşıma şekli | `TransportModeCode` | Koşullu | Sihirbaz | ❌ |
-| Gümrük beyanname no | `AdditionalDocumentReference` documentType="CUST_INV" | Gümrük kapandıktan sonra | Sonradan girilir | ❌ |
+| Senaryo `IHRACAT` | `cbc:ProfileID` | Evet | Kural (alıcı yurt dışı) | ✅ |
+| Alıcı kimliği `2222222222` | `PartyIdentification` schemeID="VKN" | Evet | Sabit (yurt dışı alıcının VKN'si yok) | ✅ |
+| Alıcı posta kutusu = Ticaret Bakanlığı | `urn:mail:ihracatpk@gtb.gov.tr` | Evet | Sabit; mükellef listesi sorulmaz | ✅ |
+| Alıcı ülke kodu (TR dışı) | `Country/IdentificationCode` | Evet | Cari adresi (`cari_adresler.ulke`) | ✅ |
+| Vergi para birimi | `cbc:TaxCurrencyCode` = TRY | Dövizlide evet | Sabit | ✅ |
+| Fiyatlama para birimi + kur | `cbc:PricingCurrencyCode`, `cac:TaxExchangeRate` | Önerilir | Fatura dövizi ve kuru | ✅ |
+| GTİP (satır) | `CommodityClassification` listID="GTIP", 12 hane | Evet | Stok kartı (`gtip_kodu`) | ✅ |
+| Menşei | `OriginCountry` | Koşullu | Stok kartı (`mensei`) | ✅ |
+| KDV 0 + istisna kodu **301/302** | `TaxExemptionReasonCode` | Evet | Kural (mal/hizmet) | ✅ |
+| Fiili ihracat tarihi | `cbc:ActualDeliveryDate` | Evet | Sihirbaz | ✅ |
+| Teslim şartı (Incoterms) | `cac:DeliveryTerms` | Önerilir | Sihirbaz | ✅ |
+| Taşıma şekli | `TransportModeCode` | Koşullu | Sihirbaz | ✅ |
+| Gümrük beyanname no | `AdditionalDocumentReference` DocumentType="CUST_INV" | Gümrük kapandıktan sonra | Sonradan girilir | ✅ |
 
-**Karar bekleyen:** beyanname numarası geldiğinde GİB'e güncelleme gönderilecek
-mi, yoksa yalnız kayda mı işlenecek (tasarım belgesi §5.2 adım 5).
+**Kapandı (EBLG-53/54, 2026-09-18).** İki düzeltme:
+
+1. **İstisna kodu `351` değil `301`/`302`.** Tasarım belgesi `351` diyor; GİB
+   kod listesinde `351` = "KDV - İstisna Olmayan Diğer", yani işlem istisna
+   sayılmaz ve KDV iadesi riske girer. Mal ihracatı `301`, hizmet ihracatı
+   `302`; kod satırın stok tipinden türer, kullanıcı seçmez.
+2. **Beyanname numarası yalnız kayda işlenir** (karar 2026-09-18, §5.2 adım 5):
+   gönderilmiş e-Fatura değiştirilemediği ve gümrük eşleşmesi fatura UUID'si
+   üzerinden yürüdüğü için GİB'e ikinci gönderim yapılmaz.
+
+**Canlıda denenmedi:** yurt dışı alıcı kimliği (`2222222222`), Ticaret Bakanlığı
+posta kutusu ve `listID="GTIP"` yazımı GİB ihracat kılavuzunun yerleşik
+uygulamasıdır; repodaki kaynaklarda geçmiyor. İlk gerçek ihracat faturasından
+önce NES test ortamında doğrulanmalı.
 
 ### 3.5 Yolcu beraberi (`YOLCUBERABERIESYA`)
 
@@ -190,8 +204,8 @@ mi, yoksa yalnız kayda mı işlenecek (tasarım belgesi §5.2 adım 5).
 |---|---|---|
 | ~~A~~ | ~~Birim kodu eşlemesi~~ — **bitti** (EBLG-52) | Tüm türler |
 | B | e-Arşiv internet satışı alan grubu | e-Arşiv |
-| C | İhracat: profil, ülke, GTİP, menşei, TaxCurrencyCode, teslim şartı, fiili ihracat tarihi | İhracat |
-| D | Gümrük beyanname no akışı (karar bekliyor) | İhracat |
+| ~~C~~ | ~~İhracat alan kümesi~~ — **bitti** (EBLG-53) | İhracat |
+| ~~D~~ | ~~Gümrük beyanname no~~ — **bitti** (EBLG-54): yalnız kayda işlenir | İhracat |
 | E | KAMU-IADE alan grubu | Kamu |
 | F | SARJ / SARJANLIK alan grubu | Şarj |
 | G | Yolcu beraberi | Tax-free |

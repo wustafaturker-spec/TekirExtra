@@ -2046,6 +2046,17 @@ model Fatura {
   /// Belge e-Arşiv olarak düzenlenirse teslim şekli (EBLG-26); varsayılanı cari
   /// kartından gelir. e-Fatura kanalında kullanılmaz.
   earsivGonderimSekli  EarsivGonderimSekli @default(elektronik) @map("earsiv_gonderim_sekli")
+  /// EBLG-53: fiili ihracat tarihi; UBL'e `cac:Delivery/cbc:ActualDeliveryDate`
+  /// olarak yazılır ve ihracat faturasında zorunludur.
+  ihracatTeslimTarihi  DateTime?       @map("ihracat_teslim_tarihi") @db.Date
+  /// EBLG-53: Incoterms teslim şartı (EXW, FOB, CIF…).
+  ihracatTeslimSarti   String?         @map("ihracat_teslim_sarti")
+  /// EBLG-53: UN/ECE Rec. 19 taşıma şekli kodu (1 deniz, 3 kara…).
+  ihracatTasimaSekli   String?         @map("ihracat_tasima_sekli")
+  /// EBLG-54: gümrük beyanname numarası; gümrük kapandıktan sonra girilir ve
+  /// yalnız kayda işlenir, gönderilmiş belge GİB'e yeniden gönderilmez.
+  gumrukBeyannameNo    String?         @map("gumruk_beyanname_no")
+  gumrukBeyannameTarihi DateTime?      @map("gumruk_beyanname_tarihi") @db.Date
   toplamNetKdv         Decimal         @map("toplam_net_kdv") @db.Decimal(15, 2)
   genelToplam          Decimal         @map("genel_toplam") @db.Decimal(15, 2)
   aciklama             String?

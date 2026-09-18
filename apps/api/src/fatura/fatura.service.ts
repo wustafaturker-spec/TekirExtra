@@ -1460,6 +1460,11 @@ export class FaturaService {
     senaryo: string;
     efaturaProfili: string;
     earsivGonderimSekli: string;
+    ihracatTeslimTarihi?: Date | null;
+    ihracatTeslimSarti?: string | null;
+    ihracatTasimaSekli?: string | null;
+    gumrukBeyannameNo?: string | null;
+    gumrukBeyannameTarihi?: Date | null;
     depoId: string | null;
     dovizCinsi: string;
     kur: Prisma.Decimal;
@@ -1514,6 +1519,12 @@ export class FaturaService {
       senaryo: k.senaryo,
       efaturaProfili: k.efaturaProfili,
       earsivGonderimSekli: k.earsivGonderimSekli,
+      // EBLG-53/54: ihracat ve gümrük alanları; yurt içi faturada boş durur.
+      ihracatTeslimTarihi: k.ihracatTeslimTarihi?.toISOString().slice(0, 10) ?? null,
+      ihracatTeslimSarti: k.ihracatTeslimSarti ?? null,
+      ihracatTasimaSekli: k.ihracatTasimaSekli ?? null,
+      gumrukBeyannameNo: k.gumrukBeyannameNo ?? null,
+      gumrukBeyannameTarihi: k.gumrukBeyannameTarihi?.toISOString().slice(0, 10) ?? null,
       depoId: k.depoId,
       dovizCinsi: k.dovizCinsi,
       kur: D(k.kur).toFixed(4),

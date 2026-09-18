@@ -1,3 +1,4 @@
+import { tasimaSekliGecerliMi, teslimSartiGecerliMi } from "@tekirextra/shared";
 import { z } from "zod";
 
 /** EBLG-05: onay ekranından gelen satır → stok kartı eşleştirmeleri. */
@@ -24,9 +25,22 @@ export const gelenYanitSemasi = z
     path: ["gerekce"],
   });
 
-/** EBLG-26: sihirbazda seçilen e-Arşiv teslim şekli; boşsa faturadaki kalır. */
+/** EBLG-26/53: sihirbazda seçilen e-Arşiv teslim şekli ve ihracat alanları; boşsa faturadaki kalır. */
 export const ebelgeGonderSemasi = z.object({
   earsivGonderimSekli: z.enum(["elektronik", "kagit"]).optional(),
+  ihracat: z
+    .object({
+      teslimTarihi: z.coerce.date().nullable().optional(),
+      teslimSarti: z.string().refine(teslimSartiGecerliMi, "Tanımsız teslim şartı").nullable().optional(),
+      tasimaSekli: z.string().refine(tasimaSekliGecerliMi, "Tanımsız taşıma şekli").nullable().optional(),
+    })
+    .optional(),
+});
+
+/** EBLG-54: gümrük beyanname bilgisi; belge gönderildikten sonra da girilebilir. */
+export const gumrukBeyannameSemasi = z.object({
+  no: z.string().max(40).nullable().optional(),
+  tarih: z.coerce.date().nullable().optional(),
 });
 
 export const earsivIptalSemasi = z.object({

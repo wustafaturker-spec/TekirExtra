@@ -14,7 +14,7 @@ import { Roller } from "../auth/roller.decorator";
 import { EbelgeService } from "./ebelge.service";
 import { EbelgeKuyrukService } from "./ebelge-kuyruk.service";
 import { EbelgeGorunumService } from "./ebelge-gorunum.service";
-import { earsivIptalSemasi, earsivRaporAralikSemasi, ebelgeGonderSemasi, gelenOnaySemasi, gelenXmlYukleSemasi, gelenYanitSemasi } from "./ebelge.semalar";
+import { earsivIptalSemasi, earsivRaporAralikSemasi, ebelgeGonderSemasi, gelenOnaySemasi, gelenXmlYukleSemasi, gelenYanitSemasi, gumrukBeyannameSemasi } from "./ebelge.semalar";
 
 const GELEN_DURUMLARI: GelenEbelgeDurum[] = ["beklemede", "islendi", "reddedildi"];
 
@@ -55,12 +55,27 @@ export class EbelgeController {
   async gonder(@Param("faturaId") faturaId: string, @Body() govde: unknown) {
     const secim = ebelgeGonderSemasi.safeParse(govde ?? {});
     if (!secim.success) throw new BadRequestException(secim.error.issues.map((s) => s.message).join("; "));
+    // İhracat alanları önizlemeden önce yazılır: eksikleri sihirbazda girilen
+    // değerlerle değil, faturadaki son hâliyle denetleriz (EBLG-53).
+    if (secim.data.ihracat) {
+      await this.ebelgeService.ihracatBilgisiniKaydet(faturaId, secim.data.ihracat);
+    }
     const wizard = await this.ebelgeService.wizardBilgisi(faturaId);
     if (!wizard.gonderilebilir) throw new BadRequestException(wizard.neden || "Fatura e-Belge gönderimine uygun değil");
     if (secim.data.earsivGonderimSekli) {
       await this.ebelgeService.earsivGonderimSekliniKaydet(faturaId, secim.data.earsivGonderimSekli);
     }
     return this.kuyrukService.kuyrugaEkle(faturaId);
+  }
+
+  /** EBLG-54: gümrük beyanname numarası; belge gönderildikten sonra da işlenir. */
+  @Post("gumruk-beyannamesi/:faturaId")
+  @Roller("muhasebe")
+  async gumrukBeyannamesi(@Param("faturaId") faturaId: string, @Body() govde: unknown) {
+    const girdi = gumrukBeyannameSemasi.safeParse(govde ?? {});
+    if (!girdi.success) throw new BadRequestException(girdi.error.issues.map((s) => s.message).join("; "));
+    await this.ebelgeService.gumrukBeyannamesiniKaydet(faturaId, { no: girdi.data.no ?? null, tarih: girdi.data.tarih ?? null });
+    return { kaydedildi: true };
   }
 
   @Get("kuyruk")

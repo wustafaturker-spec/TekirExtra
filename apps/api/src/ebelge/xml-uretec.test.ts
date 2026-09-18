@@ -270,4 +270,109 @@ describe("belgeNoyuUbleYaz (EBLG-16 arşivi)", () => {
     } as never, { unvan: "ErpClub", vkn: "1234567801" }, { tur: "earsiv" });
     expect(belgeNoyuUbleYaz(xml, "SNC2026000000006")).toContain("<cbc:ID>SNC2026000000006</cbc:ID>");
   });
+
+  it("ihracat faturasını IHRACAT profiliyle ve gümrük alanlarıyla yazar (EBLG-53)", () => {
+    const xml = faturaUblUret({
+      id: "44444444-4444-4444-8444-444444444444",
+      no: "TKR2026000000004",
+      tarih: new Date("2026-09-18T12:00:00Z"),
+      tip: "satis",
+      // Sıfır KDV'li satır senaryoyu "istisna" türetir; ihracat faturası yine
+      // SATIS tipindedir.
+      senaryo: "istisna",
+      efaturaProfili: "temel",
+      dovizCinsi: "USD",
+      kur: 41.5,
+      toplamKdv: 0, toplamMatrah: 1000, toplamBrut: 1000, genelToplam: 1000,
+      toplamSatirIskontosu: 0, genelIskontoToplam: 0,
+      cari: { vknTckn: null, unvan: "Muster GmbH" },
+      satirlar: [{
+        miktar: 2, matrah: 1000, iskontoTutari: 0, kdvTutari: 0, kdvOrani: 0,
+        gibIstisnaKodu: null, birimFiyat: 500, birim: "kg",
+        stok: { kod: "STK-9", ad: "Fındık", tip: "urun", gtipKodu: "080222100000", mensei: "Türkiye" },
+      }],
+    } as never, { unvan: "Satıcı A.Ş.", vkn: "9876543210" }, {
+      tur: "efatura",
+      ihracat: {
+        ulkeKodu: "DE",
+        adres: { adres: "Hauptstr. 1", il: "Berlin", ilce: "Mitte", postaKodu: "10115" },
+        teslimTarihi: new Date("2026-09-20T00:00:00Z"),
+        teslimSarti: "FOB",
+        tasimaSekli: "1",
+      },
+    });
+
+    expect(xml).toContain("<cbc:ProfileID>IHRACAT</cbc:ProfileID>");
+    expect(xml).toContain("<cbc:InvoiceTypeCode>SATIS</cbc:InvoiceTypeCode>");
+    // Vergi TRY üzerinden okunur; dövizli faturada kur da belgeye girer.
+    expect(xml).toContain("<cbc:TaxCurrencyCode>TRY</cbc:TaxCurrencyCode>");
+    expect(xml).toContain("<cbc:PricingCurrencyCode>USD</cbc:PricingCurrencyCode>");
+    expect(xml).toContain("<cbc:CalculationRate>41.500000</cbc:CalculationRate>");
+    // Yurt dışı alıcının VKN'si yoktur; GİB sabiti yazılır ve ülke kodu TR olamaz.
+    expect(xml).toContain('<cbc:ID schemeID="VKN">2222222222</cbc:ID>');
+    expect(xml).toContain("<cbc:IdentificationCode>DE</cbc:IdentificationCode>");
+    expect(xml).toContain("<cbc:Name>Muster GmbH</cbc:Name>");
+    expect(xml).toContain("<cbc:CityName>Berlin</cbc:CityName>");
+    expect(xml).toContain("<cbc:ActualDeliveryDate>2026-09-20</cbc:ActualDeliveryDate>");
+    expect(xml).toContain('<cbc:ID schemeID="INCOTERMS">FOB</cbc:ID>');
+    expect(xml).toContain("<cbc:TransportModeCode>1</cbc:TransportModeCode>");
+    expect(xml).not.toContain("<cac:Person>");
+  });
+
+  it("ihracat satırına GTİP, menşei ve mal ihracatı istisna kodunu yazar (EBLG-53)", () => {
+    const ubl = (stok: Record<string, unknown>) => faturaUblUret({
+      id: "55555555-5555-4555-8555-555555555555",
+      no: "TKR2026000000005",
+      tarih: new Date("2026-09-18T12:00:00Z"),
+      tip: "satis", senaryo: "istisna", efaturaProfili: "temel",
+      dovizCinsi: "TRY", kur: 1,
+      toplamKdv: 0, toplamMatrah: 100, toplamBrut: 100, genelToplam: 100,
+      toplamSatirIskontosu: 0, genelIskontoToplam: 0,
+      cari: { vknTckn: null, unvan: "Muster GmbH" },
+      satirlar: [{
+        miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 0, kdvOrani: 0,
+        gibIstisnaKodu: null, birimFiyat: 100, birim: "adet", stok,
+      }],
+    } as never, { unvan: "Satıcı A.Ş.", vkn: "9876543210" }, {
+      tur: "efatura",
+      ihracat: { ulkeKodu: "DE", teslimTarihi: new Date("2026-09-20T00:00:00Z") },
+    });
+
+    const mal = ubl({ kod: "STK-9", ad: "Fındık", tip: "urun", gtipKodu: "080222100000", mensei: "TR" });
+    expect(mal).toContain('<cbc:ItemClassificationCode listID="GTIP">080222100000</cbc:ItemClassificationCode>');
+    expect(mal).toContain("<cac:OriginCountry>");
+    expect(mal).toContain("<cbc:TaxExemptionReasonCode>301</cbc:TaxExemptionReasonCode>");
+
+    // Hizmet ihracatının kodu ayrıdır; menşei çözülemezse hiç yazılmaz.
+    const hizmet = ubl({ kod: "HZM-1", ad: "Danışmanlık", tip: "hizmet", gtipKodu: null, mensei: "Zımbırtistan" });
+    expect(hizmet).toContain("<cbc:TaxExemptionReasonCode>302</cbc:TaxExemptionReasonCode>");
+    expect(hizmet).not.toContain("<cac:OriginCountry>");
+    expect(hizmet).not.toContain("CommodityClassification");
+  });
+
+  it("yurt içi faturaya ihracat alanlarından hiçbirini karıştırmaz", () => {
+    const xml = faturaUblUret({
+      id: "66666666-6666-4666-8666-666666666666",
+      no: "TKR2026000000006",
+      tarih: new Date("2026-09-18T12:00:00Z"),
+      tip: "satis", senaryo: "satis", efaturaProfili: "temel",
+      dovizCinsi: "TRY", kur: 1,
+      toplamKdv: 20, toplamMatrah: 100, toplamBrut: 100, genelToplam: 120,
+      toplamSatirIskontosu: 0, genelIskontoToplam: 0,
+      cari: { vknTckn: "1234567890", unvan: "Alıcı A.Ş." },
+      satirlar: [{
+        miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20,
+        gibIstisnaKodu: null, birimFiyat: 100, birim: "adet",
+        stok: { kod: "STK-1", ad: "Ürün", tip: "urun", gtipKodu: "080222100000", mensei: "TR" },
+      }],
+    } as never, { unvan: "Satıcı A.Ş.", vkn: "9876543210" }, { tur: "efatura" });
+
+    expect(xml).toContain("<cbc:ProfileID>TEMELFATURA</cbc:ProfileID>");
+    expect(xml).not.toContain("IHRACAT");
+    expect(xml).not.toContain("TaxCurrencyCode");
+    expect(xml).not.toContain("CommodityClassification");
+    expect(xml).not.toContain("<cac:Delivery>");
+    expect(xml).toContain('<cbc:ID schemeID="VKN">1234567890</cbc:ID>');
+  });
+
 });

@@ -9,3 +9,5 @@ export * from "./gib-kodlari";
 export * from "./fatura-senaryo";
 export * from "./plaka";
 export * from "./birim-kodu";
+export * from "./ulke";
+export * from "./ihracat";

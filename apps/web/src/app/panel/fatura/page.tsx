@@ -14,6 +14,8 @@ import { DurumGecmisi } from "@/components/durum-gecmisi";
 import {
   GIB_KOD_LISTESI_SURUMU,
   KDV_ISTISNA_KODLARI,
+  TASIMA_SEKILLERI,
+  TESLIM_SARTLARI,
   TEVKIFAT_KODLARI,
   faturaHesapla,
   faturaSenaryosuTuret,
@@ -118,6 +120,12 @@ interface Fatura {
 interface FaturaDetay extends Fatura {
   cari: { id: string; kod: string; unvan: string; vknTckn: string | null; eFaturaMukellefi: boolean | null };
   dovizCinsi: string;
+  /** EBLG-53/54: ihracat ve gümrük alanları; yurt içi faturada boş. */
+  ihracatTeslimTarihi?: string | null;
+  ihracatTeslimSarti?: string | null;
+  ihracatTasimaSekli?: string | null;
+  gumrukBeyannameNo?: string | null;
+  gumrukBeyannameTarihi?: string | null;
   notlar?: string | null;
   depoId?: string | null;
   satirlar: { stokId: string; varyantId?: string | null; stokKod: string; stokAd: string; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; gibIstisnaKodu?: string | null; tevkifatKodu?: string | null; tevkifatOrani?: string | null }[];
@@ -167,6 +175,21 @@ interface EbelgeWizardBilgisi {
   aliciAdi?: { ad: string; soyad: string; tahmin: boolean };
   /** GİB birim kod listesinde karşılığı olmayan satırlar; belgeye adet olarak gider. */
   birimUyarilari?: { sira: number; stok: string; birim: string }[];
+  /**
+   * EBLG-53: alıcı yurt dışıysa dolu gelir. Kanal kullanıcıya sorulmaz, cari
+   * adresinden türer; sihirbaz kararı gerekçesiyle gösterir ve türe özel
+   * alanları toplar.
+   */
+  ihracat?: {
+    ulkeKodu?: string;
+    ulkeAdi?: string;
+    teslimTarihi?: string | null;
+    teslimSarti?: string | null;
+    tasimaSekli?: string | null;
+    beyannameNo?: string | null;
+    engeller: { alan: string; mesaj: string }[];
+    menseiEksikleri: { sira: number; stokAdi: string; mensei: string }[];
+  };
   not?: string;
 }
 interface KayitliGorunum { id: string; ad: string; yon: "satis" | "alis" | null; durum: string | null; ebelge: string | null; odeme: string | null; }
@@ -283,7 +306,14 @@ export default function FaturaSayfasi() {
   const [yeniStokKdv, setYeniStokKdv] = useState("20");
   const [yeniStokFiyat, setYeniStokFiyat] = useState("");
   const [kesinlestirmeOzeti, setKesinlestirmeOzeti] = useState<KesinlestirmeOzeti | null>(null);
-  const [ebelgeWizard, setEbelgeWizard] = useState<{ fatura: Fatura; bilgi: EbelgeWizardBilgisi; earsivSekli: "elektronik" | "kagit" } | null>(null);
+  const [ebelgeWizard, setEbelgeWizard] = useState<{
+    fatura: Fatura;
+    bilgi: EbelgeWizardBilgisi;
+    earsivSekli: "elektronik" | "kagit";
+    ihracat: { teslimTarihi: string; teslimSarti: string; tasimaSekli: string };
+  } | null>(null);
+  /** EBLG-54: gümrük beyanname panelinin taslak değerleri. */
+  const [beyanname, setBeyanname] = useState<{ no: string; tarih: string } | null>(null);
   const [ebelgeDetayi, setEbelgeDetayi] = useState<FaturaDetay | null>(null);
   const [odemeDetayi, setOdemeDetayi] = useState<FaturaDetay | null>(null);
   const [sonrakiFaturaImleci, setSonrakiFaturaImleci] = useState<string | null>(null);
@@ -873,7 +903,16 @@ export default function FaturaSayfasi() {
     setHata(""); setBasari("");
     try {
       const bilgi = await api<EbelgeWizardBilgisi>(`/ebelge/wizard/${fatura.id}`);
-      setEbelgeWizard({ fatura, bilgi, earsivSekli: bilgi.earsivGonderimSekli ?? "elektronik" });
+      setEbelgeWizard({
+        fatura,
+        bilgi,
+        earsivSekli: bilgi.earsivGonderimSekli ?? "elektronik",
+        ihracat: {
+          teslimTarihi: bilgi.ihracat?.teslimTarihi?.slice(0, 10) ?? "",
+          teslimSarti: bilgi.ihracat?.teslimSarti ?? "",
+          tasimaSekli: bilgi.ihracat?.tasimaSekli ?? "",
+        },
+      });
     } catch (h) { setHata(h instanceof Error ? h.message : "e-Fatura wizard'ı açılamadı"); }
   }
 
@@ -881,12 +920,58 @@ export default function FaturaSayfasi() {
     if (!ebelgeWizard) return;
     setHata(""); setBasari("");
     try {
-      await api(`/ebelge/gonder/${ebelgeWizard.fatura.id}`, { method: "POST", body: JSON.stringify({ earsivGonderimSekli: ebelgeWizard.earsivSekli }) });
+      await api(`/ebelge/gonder/${ebelgeWizard.fatura.id}`, {
+        method: "POST",
+        body: JSON.stringify({
+          earsivGonderimSekli: ebelgeWizard.earsivSekli,
+          // İhracat alanları yalnız ihracat faturasında gönderilir; sunucu
+          // eksikleri kendi listesiyle yeniden denetler.
+          ihracat: ebelgeWizard.bilgi.ihracat
+            ? {
+                teslimTarihi: ebelgeWizard.ihracat.teslimTarihi || null,
+                teslimSarti: ebelgeWizard.ihracat.teslimSarti || null,
+                tasimaSekli: ebelgeWizard.ihracat.tasimaSekli || null,
+              }
+            : undefined,
+        }),
+      });
       setEbelgeWizard(null);
       setBasari("e-Belge oluşturuldu ve entegratöre gönderim kuyruğuna alındı.");
       void yukle();
     } catch (h) { setHata(h instanceof Error ? h.message : "e-Belge gönderilemedi"); }
   }
+
+  /**
+   * EBLG-54: gümrük beyanname numarası belge gönderildikten sonra belli olur;
+   * yalnız kayda işlenir, GİB'e ikinci bir gönderim yapılmaz.
+   */
+  async function beyannameKaydet(faturaId: string) {
+    if (!beyanname) return;
+    setHata(""); setBasari("");
+    try {
+      await api(`/ebelge/gumruk-beyannamesi/${faturaId}`, {
+        method: "POST",
+        body: JSON.stringify({ no: beyanname.no.trim() || null, tarih: beyanname.tarih || null }),
+      });
+      setBeyanname(null);
+      setBasari("Gümrük beyanname bilgisi faturaya işlendi.");
+      await ebelgeDetayAc(faturaId);
+      void yukle();
+    } catch (h) { setHata(h instanceof Error ? h.message : "Beyanname bilgisi kaydedilemedi"); }
+  }
+
+  /**
+   * Sunucunun ihracat engelleri panel açıldığı andaki faturayı yansıtır; fiili
+   * ihracat tarihi panelde girildiği için o engel kullanıcı tarihi doldurunca
+   * düşer. Gönderim aynı listeyi kaydettikten sonra yeniden üretir, bu yüzden
+   * burada gevşetmek kuralı atlatmaz.
+   */
+  const ihracatEngelleri = ebelgeWizard?.bilgi.ihracat?.engeller.filter(
+    (engel) => !(engel.alan === "teslimTarihi" && ebelgeWizard.ihracat.teslimTarihi),
+  ) ?? [];
+  const wizardGonderilebilir = Boolean(
+    ebelgeWizard && (ebelgeWizard.bilgi.gonderilebilir || (ebelgeWizard.bilgi.ihracat && ihracatEngelleri.length === 0)),
+  );
 
   async function odemeDetayAc(id: string) {
     setHata("");
@@ -1575,9 +1660,58 @@ export default function FaturaSayfasi() {
             <div className="approval-effects">
               <div><span>Alıcı VKN/TCKN</span><strong>{ebelgeWizard.bilgi.vknTckn || "Eksik"}</strong></div>
               <div><span>Entegratör</span><strong>{ebelgeWizard.bilgi.saglayici || "Tanımlı değil"}</strong></div>
-              <div><span>Belge türü</span><strong>Mükellefiyet gönderim onayında sorgulanacak: e-Fatura / e-Arşiv</strong></div>
+              <div>
+                <span>Belge türü</span>
+                <strong>
+                  {ebelgeWizard.bilgi.ihracat
+                    ? `İhracat faturası — alıcı ${ebelgeWizard.bilgi.ihracat.ulkeAdi ?? ebelgeWizard.bilgi.ihracat.ulkeKodu} adresli`
+                    : "Mükellefiyet gönderim onayında sorgulanacak: e-Fatura / e-Arşiv"}
+                </strong>
+              </div>
             </div>
-            {ebelgeWizard.bilgi.gonderilebilir && (
+            {ebelgeWizard.bilgi.ihracat && (
+              <>
+                <Field label="Fiili ihracat tarihi">
+                  <Input
+                    type="date"
+                    value={ebelgeWizard.ihracat.teslimTarihi}
+                    onChange={(e) => setEbelgeWizard({ ...ebelgeWizard, ihracat: { ...ebelgeWizard.ihracat, teslimTarihi: e.target.value } })}
+                  />
+                </Field>
+                <Field label="Teslim şartı (Incoterms)">
+                  <Select
+                    value={ebelgeWizard.ihracat.teslimSarti}
+                    onChange={(e) => setEbelgeWizard({ ...ebelgeWizard, ihracat: { ...ebelgeWizard.ihracat, teslimSarti: e.target.value } })}
+                  >
+                    <option value="">Belirtilmedi</option>
+                    {TESLIM_SARTLARI.map((t) => <option key={t.kod} value={t.kod}>{t.ad}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Taşıma şekli">
+                  <Select
+                    value={ebelgeWizard.ihracat.tasimaSekli}
+                    onChange={(e) => setEbelgeWizard({ ...ebelgeWizard, ihracat: { ...ebelgeWizard.ihracat, tasimaSekli: e.target.value } })}
+                  >
+                    <option value="">Belirtilmedi</option>
+                    {TASIMA_SEKILLERI.map((t) => <option key={t.kod} value={t.kod}>{t.ad}</option>)}
+                  </Select>
+                </Field>
+                {ihracatEngelleri.length > 0 && (
+                  <div className="approval-impact is-warning">
+                    <strong>Gönderimi engelleyen eksikler:</strong>
+                    <ul>{ihracatEngelleri.map((e) => <li key={e.alan}>{e.mesaj}</li>)}</ul>
+                    GTİP stok kartında, KDV oranı fatura satırında düzeltilir.
+                  </div>
+                )}
+                {ebelgeWizard.bilgi.ihracat.menseiEksikleri.length > 0 && (
+                  <div className="approval-impact is-warning">
+                    Şu satırların menşei ülkesi çözülemedi, belgeye menşei yazılmayacak:{" "}
+                    {ebelgeWizard.bilgi.ihracat.menseiEksikleri.map((m) => `${m.sira}. ${m.stokAdi} (${m.mensei})`).join(", ")}. Stok kartında ülke adını ya da iki harfli kodunu yazın.
+                  </div>
+                )}
+              </>
+            )}
+            {ebelgeWizard.bilgi.gonderilebilir && !ebelgeWizard.bilgi.ihracat && (
               <Field label="e-Arşiv olarak düzenlenirse teslim şekli">
                 <Select value={ebelgeWizard.earsivSekli} onChange={(e) => setEbelgeWizard({ ...ebelgeWizard, earsivSekli: e.target.value as "elektronik" | "kagit" })}>
                   <option value="elektronik">Elektronik — PDF e-postayla iletilir</option>
@@ -1596,12 +1730,12 @@ export default function FaturaSayfasi() {
                 {ebelgeWizard.bilgi.birimUyarilari!.map((u) => `${u.sira}. ${u.stok} (${u.birim})`).join(", ")}. Doğru değilse stok kartındaki birimi düzeltin.
               </div>
             )}
-            {ebelgeWizard.bilgi.neden && <div className="approval-impact is-warning">{ebelgeWizard.bilgi.neden}</div>}
+            {ebelgeWizard.bilgi.neden && !ebelgeWizard.bilgi.ihracat && <div className="approval-impact is-warning">{ebelgeWizard.bilgi.neden}</div>}
             {ebelgeWizard.bilgi.not && <div className="approval-impact">{ebelgeWizard.bilgi.not}</div>}
             <p className="subtle">İkinci adımda UBL-TR belge oluşturulur, entegratöre gönderilir ve durum takibine alınır. Bu işlem faturayı yeniden kesinleştirmez.</p>
             <div className="quick-panel__actions">
               <Button type="button" onClick={() => setEbelgeWizard(null)}>Vazgeç</Button>
-              <Button type="button" variant="primary" disabled={!ebelgeWizard.bilgi.gonderilebilir} onClick={() => void ebelgeWizardGonder()}>2. Oluştur ve gönder</Button>
+              <Button type="button" variant="primary" disabled={!wizardGonderilebilir} onClick={() => void ebelgeWizardGonder()}>2. Oluştur ve gönder</Button>
             </div>
           </div>
         </HizliKayitPaneli>
@@ -1654,6 +1788,39 @@ export default function FaturaSayfasi() {
                 aliciYaniti: ebelgeDetayi.ebelge.aliciYaniti ?? null,
               }}
             />
+            {/* EBLG-54: beyanname numarası gümrük kapandıktan sonra girilir; belge yeniden gönderilmez. */}
+            {ebelgeDetayi.ebelge.tur === "efatura" && (
+              beyanname ? (
+                <div className="approval-impact">
+                  <Field label="Gümrük beyanname numarası">
+                    <Input value={beyanname.no} onChange={(e) => setBeyanname({ ...beyanname, no: e.target.value })} placeholder="26060100EX123456" />
+                  </Field>
+                  <Field label="Beyanname tarihi">
+                    <Input type="date" value={beyanname.tarih} onChange={(e) => setBeyanname({ ...beyanname, tarih: e.target.value })} />
+                  </Field>
+                  <p className="subtle">Numara yalnız kayda işlenir; gönderilmiş e-Fatura değiştirilemediği için GİB&apos;e ikinci bir gönderim yapılmaz.</p>
+                  <div className="quick-panel__actions">
+                    <Button type="button" onClick={() => setBeyanname(null)}>Vazgeç</Button>
+                    <Button type="button" variant="primary" onClick={() => void beyannameKaydet(ebelgeDetayi.id)}>Beyannameyi kaydet</Button>
+                  </div>
+                </div>
+              ) : (
+                <dl>
+                  <div>
+                    <dt>Gümrük beyannamesi</dt>
+                    <dd>
+                      {ebelgeDetayi.gumrukBeyannameNo
+                        ? `${ebelgeDetayi.gumrukBeyannameNo}${ebelgeDetayi.gumrukBeyannameTarihi ? ` · ${ebelgeDetayi.gumrukBeyannameTarihi}` : ""}`
+                        : "Girilmedi"}
+                      {" "}
+                      <Button type="button" size="sm" onClick={() => setBeyanname({ no: ebelgeDetayi.gumrukBeyannameNo ?? "", tarih: ebelgeDetayi.gumrukBeyannameTarihi ?? "" })}>
+                        {ebelgeDetayi.gumrukBeyannameNo ? "Düzenle" : "Gir"}
+                      </Button>
+                    </dd>
+                  </div>
+                </dl>
+              )
+            )}
             <div className="quick-panel__actions">
               <Button type="button" onClick={() => setEbelgeDetayi(null)}>Kapat</Button>
               {ebelgeDetayi.ebelge.entegratorRef && ["kuyrukta", "iletildi"].includes(ebelgeDetayi.ebelge.durum) && <Button type="button" variant="primary" onClick={() => void ebelgeSorgula(ebelgeDetayi.id)}>Durumu sorgula</Button>}
