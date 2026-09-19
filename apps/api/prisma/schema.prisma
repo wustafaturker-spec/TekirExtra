@@ -2089,11 +2089,34 @@ model Fatura {
   pazaryeriSiparisleri  PazaryeriSiparis[]
   posTahsilatlari       PosTahsilat[]
   krediKartiHareketleri KrediKartiHareket[]
+  iadeReferanslari      FaturaIadeReferansi[] @relation("IadeReferanslari")
+  iadeEdildigiFaturalar FaturaIadeReferansi[] @relation("IadeKaynagi")
 
   @@unique([tenantId, seri, sira])
   @@unique([tekrarlayanPlanId, planlananTarih])
   @@index([tenantId, tarih])
   @@map("faturalar")
+}
+
+/// EBLG-58: iade faturasının iade edilen faturalara referansı. GİB, iade
+/// edilen her fatura için 16 haneli numara ve tarih ister; fatura sistemde
+/// kayıtlıysa `kaynakFaturaId` onu gösterir, değilse numara elle girilir.
+model FaturaIadeReferansi {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  faturaId        String   @map("fatura_id") @db.Uuid
+  kaynakFaturaId  String?  @map("kaynak_fatura_id") @db.Uuid
+  sira            Int
+  belgeNo         String   @map("belge_no")
+  tarih           DateTime @db.Date
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  fatura        Fatura  @relation("IadeReferanslari", fields: [faturaId], references: [id], onDelete: Cascade)
+  kaynakFatura  Fatura? @relation("IadeKaynagi", fields: [kaynakFaturaId], references: [id], onDelete: SetNull)
+
+  @@unique([faturaId, belgeNo])
+  @@index([tenantId, kaynakFaturaId])
+  @@map("fatura_iade_referanslari")
 }
 
 enum TekrarSikligi {

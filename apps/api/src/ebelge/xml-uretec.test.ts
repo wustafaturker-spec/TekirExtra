@@ -504,3 +504,44 @@ describe("belgeNoyuUbleYaz (EBLG-16 arşivi)", () => {
   });
 
 });
+
+describe("faturaUblUret — iade referansı (EBLG-58)", () => {
+  const iadeFaturasi = {
+    id: "55555555-5555-4555-8555-555555555555",
+    no: "TKR2026000000009",
+    tarih: new Date("2026-09-19T12:00:00Z"),
+    tip: "alis_iade",
+    senaryo: "iade",
+    dovizCinsi: "TRY",
+    toplamKdv: 20, toplamMatrah: 100, toplamBrut: 100, genelToplam: 120, toplamSatirIskontosu: 0,
+    siparisNo: "SIP-7",
+    cari: { vknTckn: "1234567890", unvan: "Tedarikçi A.Ş." },
+    satirlar: [{
+      miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20,
+      gibIstisnaKodu: null, birimFiyat: 100, stok: { kod: "STK-1", ad: "Ürün" },
+    }],
+  } as never;
+  const satici = { unvan: "Satıcı A.Ş.", vkn: "9876543210" };
+
+  it("iade edilen her fatura için şematronun aradığı referansı yazar", () => {
+    const xml = faturaUblUret(iadeFaturasi, satici, {
+      iadeReferanslari: [
+        { belgeNo: "ABC2026000000001", tarih: new Date("2026-09-10T00:00:00Z") },
+        { belgeNo: "ABC2026000000002", tarih: new Date("2026-09-11T00:00:00Z") },
+      ],
+    });
+    expect(xml).toContain("<cbc:InvoiceTypeCode>IADE</cbc:InvoiceTypeCode>");
+    const bloklar = xml.match(/<cac:BillingReference>[\s\S]*?<\/cac:BillingReference>/g)!;
+    expect(bloklar).toHaveLength(2);
+    expect(bloklar[0]).toContain("<cbc:ID>ABC2026000000001</cbc:ID>");
+    expect(bloklar[0]).toContain("<cbc:IssueDate>2026-09-10</cbc:IssueDate>");
+    expect(bloklar[0]).toContain("<cbc:DocumentTypeCode>IADE</cbc:DocumentTypeCode>");
+    // UBL şeması sırayı dayatır: OrderReference → BillingReference → Signature.
+    expect(xml.indexOf("<cac:OrderReference>")).toBeLessThan(xml.indexOf("<cac:BillingReference>"));
+    expect(xml.lastIndexOf("</cac:BillingReference>")).toBeLessThan(xml.indexOf("<cac:Signature>"));
+  });
+
+  it("referans verilmeyen belgeye blok yazmaz", () => {
+    expect(faturaUblUret(iadeFaturasi, satici)).not.toContain("BillingReference");
+  });
+});

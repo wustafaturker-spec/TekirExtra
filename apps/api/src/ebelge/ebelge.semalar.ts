@@ -1,4 +1,4 @@
-import { odemeSekliGecerliMi, tasimaSekliGecerliMi, teslimSartiGecerliMi } from "@tekirextra/shared";
+import { IADE_REFERANS_UST_SINIRI, odemeSekliGecerliMi, tasimaSekliGecerliMi, teslimSartiGecerliMi } from "@tekirextra/shared";
 import { z } from "zod";
 
 /** EBLG-05: onay ekranından gelen satır → stok kartı eşleştirmeleri. */
@@ -46,6 +46,23 @@ export const ebelgeGonderSemasi = z.object({
       tasiyiciUnvan: z.string().max(200).nullable().optional(),
       tasiyiciVkn: z.string().regex(/^\d{10}$|^\d{11}$/, "Taşıyıcı VKN/TCKN 10 ya da 11 haneli olmalıdır").nullable().optional(),
       gonderiTarihi: z.coerce.date().nullable().optional(),
+    })
+    .optional(),
+  /**
+   * EBLG-58: alış iadesinde iade edilen faturalar. Listeden seçilen fatura
+   * kimliğiyle gelir; sistemde olmayan fatura numarası ve tarihiyle girilir.
+   */
+  iade: z
+    .object({
+      referanslar: z
+        .array(
+          z.object({
+            kaynakFaturaId: z.string().uuid().nullable().optional(),
+            belgeNo: z.string().max(16).nullable().optional(),
+            tarih: z.coerce.date().nullable().optional(),
+          }),
+        )
+        .max(IADE_REFERANS_UST_SINIRI, `En çok ${IADE_REFERANS_UST_SINIRI} fatura referans verilebilir`),
     })
     .optional(),
 });

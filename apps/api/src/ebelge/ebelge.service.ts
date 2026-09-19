@@ -11,7 +11,7 @@ import {
 } from "@nestjs/common";
 import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
 import type { BelgeDurumSonuc, EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
-import { IHRACAT_POSTA_KUTUSU, birimTanindiMi, ublAdresi } from "@tekirextra/shared";
+import { IHRACAT_POSTA_KUTUSU, birimTanindiMi, gibBelgeNoMu, ublAdresi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { BildirimService } from "../bildirimler/bildirim.service";
@@ -31,6 +31,7 @@ import { faturaSorguKosulu, faturaSorguSureleriniOku } from "./fatura-sorgu-kosu
 import { entegratorIptalBildirimi } from "./entegrator-iptal-bildirimi";
 import { belgeNoyuUbleYaz, faturaUblUret } from "./xml-uretec";
 import { ihracatOzeti } from "./ihracat-bilgisi";
+import { ebelgeGonderilebilirTipMi, iadeOzeti } from "./iade-bilgisi";
 import { internetSatisOzeti } from "./internet-satis-bilgisi";
 
 /** Onay ekranında satırın hangi ipucuyla eşleştiği. */
@@ -51,6 +52,10 @@ function gonderimTarihiGecerliMi(tarih: Date, simdi = new Date()): boolean {
   const fark = simdi.getTime() - tarih.getTime();
   return fark >= 0 && fark <= YEDI_GUN_MS;
 }
+
+/** EBLG-58: satış iadesinin, alışın ve proformanın faturasını biz kesmeyiz. */
+const TIP_GONDERILEMEZ =
+  "Yalnızca satış ve alış iade faturaları e-belge olarak gönderilir; satış iadesinin faturasını müşteri keser.";
 
 @Injectable()
 export class EbelgeService {
@@ -87,10 +92,12 @@ export class EbelgeService {
             },
           },
           ebelge: { select: { id: true, durum: true, tur: true, entegratorRef: true, updatedAt: true } },
+          iadeReferanslari: true,
         },
       });
       if (!fatura) throw new NotFoundException("Fatura bulunamadı");
       if (fatura.durum !== "kesin") throw new BadRequestException("e-Fatura wizard'ı yalnızca kesinleşmiş faturalar için açılabilir");
+      if (!ebelgeGonderilebilirTipMi(fatura.tip)) throw new BadRequestException(TIP_GONDERILEMEZ);
       if (fatura.ebelge && !["hata", "ret"].includes(fatura.ebelge.durum) && !takiliRezervasyonMu(fatura.ebelge)) {
         throw new BadRequestException("Bu fatura için zaten e-belge gönderim süreci başlatılmış");
       }
@@ -103,6 +110,7 @@ export class EbelgeService {
       // sabiti yazılır, kart üzerindeki kimlik hiç kullanılmaz.
       const ihracat = ihracatOzeti(fatura);
       const internet = internetSatisOzeti(fatura);
+      const iade = iadeOzeti(fatura);
       if (!ihracat.ihracat && !vknTcknKabulEdilebilirMi(fatura.cari.vknTckn, testOrtami)) {
         return { gonderilebilir: false, neden: "Alıcının geçerli bir VKN/TCKN bilgisi olmalıdır.", faturaNo: fatura.no, cari: fatura.cari.unvan, vknTckn: fatura.cari.vknTckn, saglayici: baglanti.saglayici };
       }
@@ -155,6 +163,23 @@ export class EbelgeService {
           teslimatAdresiVar: internet.teslimatAdresiVar,
           engeller: internet.engeller,
         },
+        // İade faturasında iade edilen faturalar (EBLG-58). Adaylar aynı
+        // tedarikçinin, iadeden önce kesinleşmiş ve GİB numaralı alış
+        // faturalarıdır; listede olmayan fatura sihirbazda elle girilir.
+        iade: iade.iade
+          ? {
+              referanslar: iade.referanslar,
+              adaylar: (
+                await tx.fatura.findMany({
+                  where: { cariId: fatura.cariId, tip: "alis", durum: "kesin", no: { not: null }, tarih: { lte: fatura.tarih } },
+                  orderBy: { tarih: "desc" },
+                  take: 50,
+                  select: { id: true, no: true, tarih: true, genelToplam: true, dovizCinsi: true },
+                })
+              ).filter((aday) => gibBelgeNoMu(aday.no)),
+              engeller: iade.engeller,
+            }
+          : undefined,
         // Kartta adres yoksa belgeye şehir uydurulmaz, alanlar "-" gider
         // (EBLG-55); belgeyi durdurmaz ama sihirbazda söylenir.
         adresEksik: ublAdresi(fatura.cari.adresler).eksik,
@@ -227,6 +252,52 @@ export class EbelgeService {
   }
 
   /**
+   * Sihirbazda seçilen iade referanslarını yazar (EBLG-58); öncekilerin yerini
+   * alır. Listeden seçilen faturanın numarası ve tarihi istemciden değil kendi
+   * kaydından okunur, ve yalnız aynı tedarikçinin kesinleşmiş alış faturası
+   * seçilebilir. Elle girilen numara olduğu gibi (büyük harfle) saklanır.
+   */
+  async iadeReferanslariniKaydet(
+    faturaId: string,
+    referanslar: { kaynakFaturaId?: string | null; belgeNo?: string | null; tarih?: Date | null }[],
+  ) {
+    const { tenantId } = aktifBaglam();
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const fatura = await tx.fatura.findUnique({ where: { id: faturaId }, select: { id: true, tip: true, cariId: true } });
+      if (!fatura) throw new NotFoundException("Fatura bulunamadı");
+      if (fatura.tip !== "alis_iade") throw new BadRequestException("İade referansı yalnız alış iade faturasına girilir");
+
+      const kaynakIdleri = referanslar.map((r) => r.kaynakFaturaId).filter((id): id is string => Boolean(id));
+      const kaynaklar = new Map(
+        (await tx.fatura.findMany({
+          where: { id: { in: kaynakIdleri }, cariId: fatura.cariId, tip: "alis", durum: "kesin" },
+          select: { id: true, no: true, tarih: true },
+        })).map((k) => [k.id, k]),
+      );
+      const satirlar = referanslar.map((ref, index) => {
+        if (ref.kaynakFaturaId) {
+          const kaynak = kaynaklar.get(ref.kaynakFaturaId);
+          if (!kaynak?.no) throw new BadRequestException(`${index + 1}. referans bu tedarikçinin kesinleşmiş bir alış faturası değil`);
+          return { kaynakFaturaId: kaynak.id, belgeNo: kaynak.no, tarih: kaynak.tarih };
+        }
+        const belgeNo = ref.belgeNo?.trim().toLocaleUpperCase("tr-TR");
+        if (!belgeNo || !ref.tarih) throw new BadRequestException(`${index + 1}. referansın numarası ve tarihi girilmelidir`);
+        return { kaynakFaturaId: null, belgeNo, tarih: ref.tarih };
+      });
+      if (new Set(satirlar.map((s) => s.belgeNo)).size !== satirlar.length) {
+        throw new BadRequestException("Aynı fatura birden çok kez girilmiş");
+      }
+
+      await tx.faturaIadeReferansi.deleteMany({ where: { faturaId } });
+      if (satirlar.length) {
+        await tx.faturaIadeReferansi.createMany({
+          data: satirlar.map((s, index) => ({ ...s, tenantId, faturaId, sira: index + 1 })),
+        });
+      }
+    });
+  }
+
+  /**
    * Sihirbazda girilen internet satışı bilgisini faturaya yazar (EBLG-56).
    * İşaret kaldırılırsa alanlar da temizlenir; belgede "internet satışı" yazıp
    * ödeme bilgisi taşımayan bir kayıt kalmasın.
@@ -284,6 +355,7 @@ export class EbelgeService {
           satirlar: { include: { stok: { select: { kod: true, ad: true, tip: true, gtipKodu: true, mensei: true } } } },
           cari: { include: { adresler: true } },
           ebelge: true,
+          iadeReferanslari: true,
         },
       });
 
@@ -291,9 +363,11 @@ export class EbelgeService {
       if (fatura.durum !== "kesin") {
         throw new BadRequestException("Yalnızca kesinleşmiş faturalar gönderilebilir");
       }
+      if (!ebelgeGonderilebilirTipMi(fatura.tip)) throw new BadRequestException(TIP_GONDERILEMEZ);
       const ihracat = ihracatOzeti(fatura);
       const internet = internetSatisOzeti(fatura);
-      const engeller = [...ihracat.engeller, ...internet.engeller];
+      const iade = iadeOzeti(fatura);
+      const engeller = [...ihracat.engeller, ...internet.engeller, ...iade.engeller];
       if (engeller.length) {
         throw new BadRequestException(engeller.map((e) => e.mesaj).join("; "));
       }
@@ -369,6 +443,7 @@ export class EbelgeService {
         cfg: baglantiConfig,
         ihracat,
         internet,
+        iade,
       };
     });
 
@@ -412,7 +487,12 @@ export class EbelgeService {
           vkn: hazirlik.tenant.vkn,
           vergiDairesi: hazirlik.tenant.vergiDairesi || undefined,
         },
-        { tur, ihracat: hazirlik.ihracat.ublBilgisi, internetSatisi: hazirlik.internet.ublBilgisi },
+        {
+          tur,
+          ihracat: hazirlik.ihracat.ublBilgisi,
+          internetSatisi: hazirlik.internet.ublBilgisi,
+          iadeReferanslari: hazirlik.iade.iade ? hazirlik.iade.referanslar : undefined,
+        },
       );
 
       // Yeniden denemede önce sağlayıcıya sorulur: önceki denemede ağ çağrısı

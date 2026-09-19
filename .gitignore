@@ -10,3 +10,6 @@ test-results/
 .env
 .env.local
 .DS_Store
+
+# Yerel PostgreSQL yedekleri (scripts/backup-postgres.sh)
+backups/

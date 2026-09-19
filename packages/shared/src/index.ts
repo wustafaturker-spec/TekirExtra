@@ -13,3 +13,4 @@ export * from "./ulke";
 export * from "./adres";
 export * from "./internet-satisi";
 export * from "./ihracat";
+export * from "./iade";

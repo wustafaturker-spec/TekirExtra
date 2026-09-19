@@ -20,6 +20,7 @@ import {
   TEVKIFAT_KODLARI,
   faturaHesapla,
   faturaSenaryosuTuret,
+  iadeEngelleri,
   internetSatisEngelleri,
   senaryoHatalari,
   senaryoUblKodu,
@@ -209,6 +210,15 @@ interface EbelgeWizardBilgisi {
     engeller: { alan: string; mesaj: string }[];
     menseiEksikleri: { sira: number; stokAdi: string; mensei: string }[];
   };
+  /**
+   * EBLG-58: alış iadesinde iade edilen faturalar. Adaylar aynı tedarikçinin
+   * GİB numaralı alış faturalarıdır; listede olmayan elle girilir.
+   */
+  iade?: {
+    referanslar: { belgeNo: string; tarih: string; kaynakFaturaId: string | null }[];
+    adaylar: { id: string; no: string; tarih: string; genelToplam: string; dovizCinsi: string }[];
+    engeller: { sira?: number; mesaj: string }[];
+  };
   not?: string;
 }
 interface KayitliGorunum { id: string; ad: string; yon: "satis" | "alis" | null; durum: string | null; ebelge: string | null; odeme: string | null; }
@@ -340,6 +350,12 @@ export default function FaturaSayfasi() {
       tasiyiciVkn: string;
       gonderiTarihi: string;
     };
+    iade: {
+      referanslar: { kaynakFaturaId: string | null; belgeNo: string; tarih: string }[];
+      /** Elle girilecek referansın taslağı. */
+      elleNo: string;
+      elleTarih: string;
+    };
   } | null>(null);
   /** EBLG-54: gümrük beyanname panelinin taslak değerleri. */
   const [beyanname, setBeyanname] = useState<{ no: string; tarih: string } | null>(null);
@@ -443,7 +459,8 @@ export default function FaturaSayfasi() {
   const istisnaliSatirSayisi = senaryoSatirlari.filter((s) => Boolean(s.gibIstisnaKodu)).length;
   const tevkifatliSatirSayisi = senaryoSatirlari.filter((s) => Boolean(s.tevkifatKodu)).length;
   // Profil yalnız bizim kestiğimiz belgelerde anlamlı; alış faturası bize gelir.
-  const gidenBelge = ["satis", "satis_iade"].includes(tip);
+  // EBLG-58: iade faturasını malı geri gönderen keser; bizim kestiğimiz iade alış iadesidir.
+  const gidenBelge = ["satis", "alis_iade"].includes(tip);
 
   const yukle = useCallback(async (imlec?: string) => {
     if (imlec && istenenFaturaImlecleri.current.has(imlec)) return;
@@ -951,6 +968,11 @@ export default function FaturaSayfasi() {
           tasiyiciVkn: bilgi.internetSatisi?.tasiyiciVkn ?? "",
           gonderiTarihi: bilgi.internetSatisi?.gonderiTarihi?.slice(0, 10) ?? "",
         },
+        iade: {
+          referanslar: (bilgi.iade?.referanslar ?? []).map((r) => ({ kaynakFaturaId: r.kaynakFaturaId, belgeNo: r.belgeNo, tarih: r.tarih.slice(0, 10) })),
+          elleNo: "",
+          elleTarih: "",
+        },
       });
     } catch (h) { setHata(h instanceof Error ? h.message : "e-Fatura wizard'ı açılamadı"); }
   }
@@ -984,6 +1006,15 @@ export default function FaturaSayfasi() {
                 tasiyiciUnvan: ebelgeWizard.internet.tasiyiciUnvan || null,
                 tasiyiciVkn: ebelgeWizard.internet.tasiyiciVkn || null,
                 gonderiTarihi: ebelgeWizard.internet.gonderiTarihi || null,
+              }
+            : undefined,
+          // İade referansları her gönderimde baştan yazılır; listeden seçilen
+          // faturanın numarasını sunucu kendi kaydından okur.
+          iade: ebelgeWizard.bilgi.iade
+            ? {
+                referanslar: ebelgeWizard.iade.referanslar.map((r) =>
+                  r.kaynakFaturaId ? { kaynakFaturaId: r.kaynakFaturaId } : { belgeNo: r.belgeNo, tarih: r.tarih },
+                ),
               }
             : undefined,
         }),
@@ -1039,8 +1070,12 @@ export default function FaturaSayfasi() {
         teslimatAdresiVar: ebelgeWizard.bilgi.internetSatisi.teslimatAdresiVar,
       })
     : [];
+  // EBLG-58: iade eksikleri de panelde seçilenlerle, sunucudaki kuralla hesaplanır.
+  const iadeEksikleri = ebelgeWizard?.bilgi.iade
+    ? iadeEngelleri(ebelgeWizard.iade.referanslar, ebelgeWizard.fatura.tarih)
+    : [];
   const wizardGonderilebilir = Boolean(
-    ebelgeWizard?.bilgi.gonderilebilir && ihracatEngelleri.length === 0 && internetEngelleri.length === 0,
+    ebelgeWizard?.bilgi.gonderilebilir && ihracatEngelleri.length === 0 && internetEngelleri.length === 0 && iadeEksikleri.length === 0,
   );
 
   async function odemeDetayAc(id: string) {
@@ -1247,7 +1282,7 @@ export default function FaturaSayfasi() {
           {acikFatura && (
             <EylemCubugu etiket="Fatura eylemleri">
               {acikFatura.durum === "taslak" && <Button variant="primary" size="sm" type="button" onClick={() => void kesinlestirmeOzetiAc(acikFatura.id)}>🔒 Kesinleştir</Button>}
-              {!acikFatura.ebelge && acikFatura.durum === "kesin" && !acikFatura.tip.startsWith("alis") && <Button variant="primary" size="sm" type="button" onClick={() => void ebelgeWizardAc(acikFatura)}>🧾 e-Fatura Oluştur</Button>}
+              {!acikFatura.ebelge && acikFatura.durum === "kesin" && ["satis", "alis_iade"].includes(acikFatura.tip) && <Button variant="primary" size="sm" type="button" onClick={() => void ebelgeWizardAc(acikFatura)}>🧾 e-Fatura Oluştur</Button>}
               {acikFatura.ebelge && <Button size="sm" type="button" onClick={() => void ebelgePdfAc(acikFatura.id)}>📄 e-Belge PDF</Button>}
               {acikFatura.durum !== "taslak" && <Button size="sm" type="button" onClick={() => void pdfAc(acikFatura.id)}>🖨 PDF</Button>}
               {acikFatura.durum !== "taslak" && <Button size="sm" type="button" onClick={() => setEpostaGonderilen(acikFatura)}>✉️ E-posta</Button>}
@@ -1710,10 +1745,11 @@ export default function FaturaSayfasi() {
               </div>
               {!fatura.cari.vknTckn && !proforma && <div className="approval-impact is-warning">Cari VKN/TCKN bilgisi eksik. e-Belge gönderiminden önce cari kartını tamamlayın.</div>}
               {riskAsimi && <div className="approval-impact is-warning">Kesinleştirme sonrasında tahmini risk {tl(tahminiRisk)} ile {tl(riskLimiti)} limitini aşacak.</div>}
-              {(fatura.tip === "alis" || fatura.tip === "alis_iade") && <Field label="Tedarikçi fatura no *"><Input autoFocus value={faturaNo} onChange={(e) => setFaturaNo(e.target.value)} maxLength={100} placeholder="Tedarikçinin belge numarası" required /></Field>}
+              {/* Alış iadesini biz keseriz, numarası kendi serimizden gelir (EBLG-58). */}
+              {fatura.tip === "alis" && <Field label="Tedarikçi fatura no *"><Input autoFocus value={faturaNo} onChange={(e) => setFaturaNo(e.target.value)} maxLength={100} placeholder="Tedarikçinin belge numarası" required /></Field>}
               <div className="quick-panel__actions">
                 <Button type="button" onClick={() => setKesinlestirmeOzeti(null)}>Vazgeç</Button>
-                <Button type="button" variant="primary" disabled={(fatura.tip === "alis" || fatura.tip === "alis_iade") && !faturaNo.trim()} onClick={() => void kesinlestir(fatura.id, faturaNo)}>Kesinleştir</Button>
+                <Button type="button" variant="primary" disabled={fatura.tip === "alis" && !faturaNo.trim()} onClick={() => void kesinlestir(fatura.id, faturaNo)}>Kesinleştir</Button>
               </div>
             </div>
           </HizliKayitPaneli>
@@ -1781,6 +1817,69 @@ export default function FaturaSayfasi() {
                 )}
               </>
             )}
+            {ebelgeWizard.bilgi.iade && (() => {
+              const iade = ebelgeWizard.iade;
+              const iadeGuncelle = (degisiklik: Partial<typeof iade>) => setEbelgeWizard({ ...ebelgeWizard, iade: { ...iade, ...degisiklik } });
+              const secilmemisAdaylar = ebelgeWizard.bilgi.iade.adaylar.filter((a) => !iade.referanslar.some((r) => r.kaynakFaturaId === a.id));
+              return (
+                <>
+                  <strong>İade edilen faturalar</strong>
+                  {iade.referanslar.length > 0 && (
+                    <div className="approval-impact">
+                      <ul>
+                        {iade.referanslar.map((r, index) => (
+                          <li key={`${r.belgeNo}-${index}`}>
+                            {r.belgeNo} · {r.tarih ? new Date(r.tarih).toLocaleDateString("tr-TR") : "tarih yok"}{!r.kaynakFaturaId && " · elle girildi"}{" "}
+                            <Button type="button" size="sm" onClick={() => iadeGuncelle({ referanslar: iade.referanslar.filter((_, i) => i !== index) })}>Kaldır</Button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {secilmemisAdaylar.length > 0 && (
+                    <Field label="Bu tedarikçinin alış faturalarından seç">
+                      <Select
+                        value=""
+                        onChange={(e) => {
+                          const aday = secilmemisAdaylar.find((a) => a.id === e.target.value);
+                          if (aday) iadeGuncelle({ referanslar: [...iade.referanslar, { kaynakFaturaId: aday.id, belgeNo: aday.no, tarih: aday.tarih.slice(0, 10) }] });
+                        }}
+                      >
+                        <option value="">Fatura seçin…</option>
+                        {secilmemisAdaylar.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.no} · {new Date(a.tarih).toLocaleDateString("tr-TR")} · {Number(a.genelToplam).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {a.dovizCinsi}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                  )}
+                  <Field label="Sistemde olmayan fatura: 16 haneli numara ve tarih">
+                    <Input
+                      value={iade.elleNo}
+                      maxLength={16}
+                      placeholder="ABC2026000000001"
+                      onChange={(e) => iadeGuncelle({ elleNo: e.target.value.toLocaleUpperCase("tr-TR") })}
+                    />
+                    <Input type="date" value={iade.elleTarih} onChange={(e) => iadeGuncelle({ elleTarih: e.target.value })} />
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={!iade.elleNo.trim() || !iade.elleTarih}
+                      onClick={() => iadeGuncelle({ referanslar: [...iade.referanslar, { kaynakFaturaId: null, belgeNo: iade.elleNo.trim(), tarih: iade.elleTarih }], elleNo: "", elleTarih: "" })}
+                    >
+                      Ekle
+                    </Button>
+                  </Field>
+                  {iadeEksikleri.length > 0 && (
+                    <div className="approval-impact is-warning">
+                      <strong>İade faturasında eksik olanlar:</strong>
+                      <ul>{iadeEksikleri.map((e, i) => <li key={`${e.sira ?? 0}-${i}`}>{e.mesaj}</li>)}</ul>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
             {ebelgeWizard.bilgi.internetSatisi && !ebelgeWizard.bilgi.ihracat && (
               <>
                 <label className="check-row">

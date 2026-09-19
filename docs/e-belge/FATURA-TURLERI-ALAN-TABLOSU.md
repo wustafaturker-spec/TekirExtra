@@ -74,7 +74,7 @@ uyarır. Canlıda doğrulandı (`SNC2026000000018`, kg satırı `unitCode="KGM"`
 |---|---|---|---|---|
 | Alıcı posta kutusu (alias) | `PartyIdentification` BUYER_ALIAS | Evet | GİB mükellef listesi | ⚠️ liste sorgulanıyor, alias UBL'e yazılmıyor |
 | Alıcı yanıtı takibi | — | Evet | Entegratör sorgusu (EBLG-13/34) | ✅ |
-| İade referansı | `cac:BillingReference` | İade tipinde | İade edilen fatura | ❌ |
+| İade referansı | `cac:BillingReference` | İade tipinde | İade edilen fatura | ✅ (EBLG-58) — her fatura ayrı blok, 16 haneli no + `DocumentTypeCode` IADE |
 
 ### 3.2 Temel e-Fatura (`TEMELFATURA`)
 
@@ -231,6 +231,6 @@ yapının kalanı şematrondan geçiyor.
 | G | Yolcu beraberi | Tax-free |
 | H | İhraç kayıtlı | İhracat zinciri |
 | I | Alıcı alias'ının UBL'e yazılması | e-Fatura |
-| J | İade faturasında `BillingReference` | Tüm iade tipleri |
+| J | İade faturasında `BillingReference` | Tüm iade tipleri — ✅ EBLG-58 (alış iadesi; TEVKIFATIADE açık) |
 | K | İstisna kod listesinin fatura tipine göre süzülmesi | Tüm türler |
 | L | Sihirbazın çok adımlı hale getirilmesi | Arayüz |

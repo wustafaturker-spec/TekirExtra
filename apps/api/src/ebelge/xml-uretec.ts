@@ -7,6 +7,7 @@ import {
   IHRACAT_FATURA_TIPI,
   IHRACAT_PROFILI,
   IHRACAT_VERGI_PARA_BIRIMI,
+  IADE_BELGE_TUR_KODU,
   birimUblKodu,
   gtipNormalize,
   ihracatIstisnaAciklamasi,
@@ -66,7 +67,13 @@ export function faturaUblUret(
     cari: CariHesap & { adresler?: { tip: string; adres: string | null; il: string | null; ilce: string | null; postaKodu: string | null; ulke: string | null }[] };
   },
   supplier: { unvan: string; vkn: string; vergiDairesi?: string; adres?: string },
-  secenekler: { tur?: "efatura" | "earsiv"; ihracat?: IhracatUblBilgisi; internetSatisi?: InternetSatisUblBilgisi } = {},
+  secenekler: {
+    tur?: "efatura" | "earsiv";
+    ihracat?: IhracatUblBilgisi;
+    internetSatisi?: InternetSatisUblBilgisi;
+    /** EBLG-58: iade faturasında iade edilen faturalar; sırasıyla yazılır. */
+    iadeReferanslari?: { belgeNo: string; tarih: Date }[];
+  } = {},
 ): string {
   // e-Arşiv, e-Fatura'dan üç noktada ayrılır: profil `EARSIVFATURA`, alıcı
   // etiketi yoktur ve gönderim şekli UBL içinde bildirilir.
@@ -172,6 +179,23 @@ export function faturaUblUret(
   </cac:PricingExchangeRate>
 `
     : "";
+
+  /*
+   * İade edilen her fatura ayrı bir `BillingReference` olur (EBLG-58). Şematron
+   * 16 haneli numara ve `DocumentTypeCode` "IADE" arar; GİB görünümü de iade
+   * tablosunu bu koda bakarak basar. Şemada yeri `OrderReference`'tan sonra,
+   * `AdditionalDocumentReference`'tan öncedir.
+   */
+  const iadeReferansBloklari = (secenekler.iadeReferanslari ?? [])
+    .map((ref) => `
+  <cac:BillingReference>
+    <cac:InvoiceDocumentReference>
+      <cbc:ID>${escape(ref.belgeNo)}</cbc:ID>
+      <cbc:IssueDate>${ref.tarih.toISOString().slice(0, 10)}</cbc:IssueDate>
+      <cbc:DocumentTypeCode>${IADE_BELGE_TUR_KODU}</cbc:DocumentTypeCode>
+    </cac:InvoiceDocumentReference>
+  </cac:BillingReference>`)
+    .join("");
 
   const tevkifatGruplari = new Map<string, { tutar: number; oran: number }>();
   for (const satir of fatura.satirlar) {
@@ -331,7 +355,7 @@ export function faturaUblUret(
   <cac:OrderReference>
     <cbc:ID>${escape(fatura.siparisNo)}</cbc:ID>${fatura.siparisTarihi ? `
     <cbc:IssueDate>${fatura.siparisTarihi.toISOString().slice(0, 10)}</cbc:IssueDate>` : ""}
-  </cac:OrderReference>` : ""}
+  </cac:OrderReference>` : ""}${iadeReferansBloklari}
 
 ${earsiv ? `  <cac:AdditionalDocumentReference>
     <cbc:ID>${fatura.earsivGonderimSekli === "kagit" ? "KAGIT" : "ELEKTRONIK"}</cbc:ID>

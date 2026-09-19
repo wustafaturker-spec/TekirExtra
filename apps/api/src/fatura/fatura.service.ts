@@ -1118,7 +1118,8 @@ export class FaturaService {
 
       // 1. Numara Serisi Üretimi (FTR-06):
       // Alış faturalarında numara el ile girilir, satış faturalarında sayaç artırılarak otomatik üretilir.
-      if (fatura.tip === "satis" || fatura.tip === "satis_iade") {
+      // Alış iadesini biz keseriz (EBLG-58); numarası satıştaki gibi kendi serimizden gelir.
+      if (fatura.tip === "satis" || fatura.tip === "satis_iade" || fatura.tip === "alis_iade") {
         // Entegratör otomatik seri kullanıyorsa numarayı o atar (EBLG-16);
         // burada sayaç ilerletilmez. Reddedilen belge böylece seride boşluk
         // bırakmaz, numara gönderim yanıtından gelir.
