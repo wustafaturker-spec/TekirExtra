@@ -18,6 +18,18 @@ interface Firma {
   vkn: string;
   vergiDairesi: string | null;
   logo: Logo | null;
+  /** EBLG-62: e-belgenin satıcı tarafına ve PDF'lere yazılan bilgiler. */
+  adres: string | null;
+  ilce: string | null;
+  il: string | null;
+  postaKodu: string | null;
+  telefon: string | null;
+  eposta: string | null;
+  webSitesi: string | null;
+  mersisNo: string | null;
+  ticaretSicilNo: string | null;
+  /** e-Belge gönderimini durduran eksikler; boşsa gönderilebilir. */
+  ebelgeEksikleri: string[];
   abonelik: {
     planKodu: string;
     durum: "deneme" | "aktif" | "askida" | "iptal";
@@ -27,6 +39,11 @@ interface Firma {
   } | null;
 }
 
+const ILETISIM_ALANLARI = ["adres", "ilce", "il", "postaKodu", "telefon", "eposta", "webSitesi", "mersisNo", "ticaretSicilNo"] as const;
+type IletisimAlani = (typeof ILETISIM_ALANLARI)[number];
+const BOS_ILETISIM = Object.fromEntries(ILETISIM_ALANLARI.map((a) => [a, ""])) as Record<IletisimAlani, string>;
+const iletisimOku = (f: Firma) => Object.fromEntries(ILETISIM_ALANLARI.map((a) => [a, f[a] ?? ""])) as Record<IletisimAlani, string>;
+
 const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
 
 export default function FirmaAyarlariSayfasi() {
@@ -34,6 +51,7 @@ export default function FirmaAyarlariSayfasi() {
   const [firma, setFirma] = useState<Firma | null>(null);
   const [unvan, setUnvan] = useState("");
   const [vergiDairesi, setVergiDairesi] = useState("");
+  const [iletisim, setIletisim] = useState<Record<IletisimAlani, string>>(BOS_ILETISIM);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
@@ -60,6 +78,7 @@ export default function FirmaAyarlariSayfasi() {
       setFirma(veri);
       setUnvan(veri.unvan);
       setVergiDairesi(veri.vergiDairesi ?? "");
+      setIletisim(iletisimOku(veri));
       if (veri.logo) {
         void yukleLogo(veri.logo.id);
       } else {
@@ -94,10 +113,13 @@ export default function FirmaAyarlariSayfasi() {
         body: JSON.stringify({
           unvan: unvan || undefined,
           vergiDairesi: vergiDairesi || undefined,
+          // Boş alan "sil" demektir; sunucu null olarak kaydeder.
+          ...iletisim,
         }),
       });
       setBasari("Firma bilgileri başarıyla güncellendi.");
       setFirma(guncel);
+      setIletisim(iletisimOku(guncel));
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Güncelleme hatası");
     } finally {
@@ -251,6 +273,43 @@ export default function FirmaAyarlariSayfasi() {
             <Field label="Vergi Dairesi">
               <Input value={vergiDairesi} onChange={(e) => setVergiDairesi(e.target.value)} placeholder="Ör. Kadıköy Vergi Dairesi" />
             </Field>
+            {/* EBLG-62: e-Fatura, e-Arşiv ve e-İrsaliye'nin satıcı tarafına ve PDF'lere yazılır. */}
+            {firma && firma.ebelgeEksikleri.length > 0 && (
+              <Alert tone="warning">{firma.ebelgeEksikleri.join(" ")} Bu bilgiler olmadan e-belge gönderilemez.</Alert>
+            )}
+            <Field label="Adres (mahalle, cadde/sokak, no)">
+              <Input value={iletisim.adres} onChange={(e) => setIletisim({ ...iletisim, adres: e.target.value })} maxLength={300} placeholder="Ör. Maltepe Mh. Çırpıcı Yol Sk. No:7/2" />
+            </Field>
+            <div className="row">
+              <div style={{ flex: 1, minWidth: 160 }}>
+                <Field label="İlçe"><Input value={iletisim.ilce} onChange={(e) => setIletisim({ ...iletisim, ilce: e.target.value })} maxLength={80} /></Field>
+              </div>
+              <div style={{ flex: 1, minWidth: 160 }}>
+                <Field label="İl"><Input value={iletisim.il} onChange={(e) => setIletisim({ ...iletisim, il: e.target.value })} maxLength={80} /></Field>
+              </div>
+              <div style={{ flex: "0 1 120px", minWidth: 100 }}>
+                <Field label="Posta kodu"><Input value={iletisim.postaKodu} onChange={(e) => setIletisim({ ...iletisim, postaKodu: e.target.value })} maxLength={10} inputMode="numeric" /></Field>
+              </div>
+            </div>
+            <div className="row">
+              <div style={{ flex: 1, minWidth: 160 }}>
+                <Field label="Telefon"><Input value={iletisim.telefon} onChange={(e) => setIletisim({ ...iletisim, telefon: e.target.value })} maxLength={30} type="tel" /></Field>
+              </div>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <Field label="E-posta"><Input value={iletisim.eposta} onChange={(e) => setIletisim({ ...iletisim, eposta: e.target.value })} type="email" /></Field>
+              </div>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <Field label="Web sitesi"><Input value={iletisim.webSitesi} onChange={(e) => setIletisim({ ...iletisim, webSitesi: e.target.value })} maxLength={200} placeholder="www.firma.com.tr" /></Field>
+              </div>
+            </div>
+            <div className="row">
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <Field label="MERSİS no"><Input value={iletisim.mersisNo} onChange={(e) => setIletisim({ ...iletisim, mersisNo: e.target.value.replace(/\D/g, "") })} maxLength={16} inputMode="numeric" placeholder="16 hane" /></Field>
+              </div>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <Field label="Ticaret sicil no"><Input value={iletisim.ticaretSicilNo} onChange={(e) => setIletisim({ ...iletisim, ticaretSicilNo: e.target.value })} maxLength={30} /></Field>
+              </div>
+            </div>
             <div>
               <Button variant="primary" type="submit" disabled={islemde}>
                 {islemde ? "Kaydediliyor..." : "💾 Değişiklikleri Kaydet"}

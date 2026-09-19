@@ -426,8 +426,8 @@ describe("belgeNoyuUbleYaz (EBLG-16 arşivi)", () => {
     expect(adressiz).toContain("<cbc:CityName>-</cbc:CityName>");
     expect(adressiz).toContain("<cbc:CitySubdivisionName>-</cbc:CitySubdivisionName>");
     expect(adressiz).not.toContain("<cbc:StreetName>");
-    // Satıcı tarafı kendi adresimiz kartta tutulmadığı için sabit kalır.
-    expect(ubl()).toContain("<cbc:CityName>Istanbul</cbc:CityName>");
+    // Satıcı tarafına artık sabit şehir yazılmaz (EBLG-62).
+    expect(ubl()).not.toContain("Istanbul");
   });
 
 
@@ -657,5 +657,49 @@ describe("faturaUblUret — tevkifatlı faturanın iadesi (EBLG-61)", () => {
   it("iade gibi referans taşır ve TEMELFATURA gider", () => {
     expect(xml).toContain("<cbc:DocumentTypeCode>IADE</cbc:DocumentTypeCode>");
     expect(xml).toContain("<cbc:ProfileID>TEMELFATURA</cbc:ProfileID>");
+  });
+});
+
+describe("faturaUblUret — satıcı bilgisi firma kartından (EBLG-62)", () => {
+  const fatura = {
+    id: "99999999-9999-4999-8999-999999999999", no: "TKR2026000000013", tarih: new Date("2026-09-19T12:00:00Z"),
+    tip: "satis", senaryo: "satis", dovizCinsi: "TRY",
+    toplamKdv: 20, toplamMatrah: 100, toplamBrut: 100, genelToplam: 120, toplamSatirIskontosu: 0,
+    cari: { vknTckn: "1234567890", unvan: "Alıcı A.Ş." },
+    satirlar: [{ miktar: 1, birimFiyat: 100, iskontoTutari: 0, matrah: 100, kdvOrani: 20, kdvTutari: 20, gibIstisnaKodu: null, stok: { kod: "S", ad: "Ürün" } }],
+  } as never;
+  const firma = {
+    unvan: "KA Grup Ltd.", vkn: "5240004634", vergiDairesi: "Davutpaşa",
+    adres: "Maltepe Mh. Çırpıcı Yol Sk. No:7/2", ilce: "Zeytinburnu", il: "İstanbul", postaKodu: "34010",
+    telefon: "2124819113", eposta: "info@firma.test", webSitesi: "www.firma.test",
+    mersisNo: "0524000463400019", ticaretSicilNo: "325632",
+  };
+  const xml = faturaUblUret(fatura, firma);
+  const satici = xml.slice(xml.indexOf("<cac:AccountingSupplierParty>"), xml.indexOf("</cac:AccountingSupplierParty>"));
+
+  it("adresi, vergi dairesini ve iletişimi yazar; uydurma değer kalmaz", () => {
+    expect(satici).toContain("<cbc:StreetName>Maltepe Mh. Çırpıcı Yol Sk. No:7/2</cbc:StreetName>");
+    expect(satici).toContain("<cbc:CitySubdivisionName>Zeytinburnu</cbc:CitySubdivisionName>");
+    expect(satici).toContain("<cbc:CityName>İstanbul</cbc:CityName>");
+    expect(satici).toContain("<cbc:PostalZone>34010</cbc:PostalZone>");
+    expect(satici).toContain("<cbc:Name>Davutpaşa</cbc:Name>");
+    expect(satici).toContain("<cbc:Telephone>2124819113</cbc:Telephone>");
+    expect(satici).toContain("<cbc:ElectronicMail>info@firma.test</cbc:ElectronicMail>");
+    expect(xml).not.toContain("Marmara V.D.");
+    expect(xml).not.toContain(">Merkez<");
+  });
+
+  it("web sitesini, MERSİS ve ticaret sicil numarasını UBL sırasıyla yazar", () => {
+    expect(satici).toContain('<cbc:ID schemeID="MERSISNO">0524000463400019</cbc:ID>');
+    expect(satici).toContain('<cbc:ID schemeID="TICARETSICILNO">325632</cbc:ID>');
+    // Party içinde WebsiteURI kimliklerden, kimlikler addan önce gelir.
+    expect(satici.indexOf("<cbc:WebsiteURI>")).toBeLessThan(satici.indexOf("<cac:PartyIdentification>"));
+    expect(satici.lastIndexOf("</cac:PartyIdentification>")).toBeLessThan(satici.indexOf("<cac:PartyName>"));
+    expect(satici.indexOf("<cac:PartyTaxScheme>")).toBeLessThan(satici.indexOf("<cac:Contact>"));
+  });
+
+  it("imza tarafında da aynı adres durur", () => {
+    const imza = xml.slice(xml.indexOf("<cac:Signature>"), xml.indexOf("</cac:Signature>"));
+    expect(imza).toContain("<cbc:CitySubdivisionName>Zeytinburnu</cbc:CitySubdivisionName>");
   });
 });

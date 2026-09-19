@@ -173,7 +173,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
         update: vi.fn().mockResolvedValue({}),
       },
       tenant: {
-        findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114" }),
+        findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", vergiDairesi: "Davutpaşa", adres: "Maltepe Mh. Çırpıcı Yol Sk. No:7", ilce: "Zeytinburnu", il: "İstanbul" }),
       },
       ebelgeKayit: {
         create: vi.fn().mockResolvedValue({ id: "eb1" }),
@@ -246,7 +246,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
       },
       baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "t" }) }) },
       cariHesap: { update: vi.fn().mockResolvedValue({}) },
-      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114" }) },
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", vergiDairesi: "Davutpaşa", adres: "Maltepe Mh. Çırpıcı Yol Sk. No:7", ilce: "Zeytinburnu", il: "İstanbul" }) },
       ebelgeKayit: { create: vi.fn().mockResolvedValue({ id: "eb9" }), update: vi.fn().mockResolvedValue({ id: "eb9" }) },
       ebelgeArsiv: { upsert: vi.fn().mockResolvedValue({}) },
     };
@@ -280,7 +280,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
       },
       baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "t" }) }) },
       cariHesap: { update: vi.fn().mockResolvedValue({}) },
-      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114" }) },
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", vergiDairesi: "Davutpaşa", adres: "Maltepe Mh. Çırpıcı Yol Sk. No:7", ilce: "Zeytinburnu", il: "İstanbul" }) },
       ebelgeKayit: { create: vi.fn(), update: vi.fn() },
       ebelgeArsiv: { upsert: vi.fn() },
     };
@@ -311,7 +311,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
       baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "t", testOrtami }) }) },
       cariHesap: { update: vi.fn().mockResolvedValue({}) },
       // Gönderen VKN'si geçerli: böylece test yalnız alıcı kuralını ölçer.
-      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114" }) },
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", vergiDairesi: "Davutpaşa", adres: "Maltepe Mh. Çırpıcı Yol Sk. No:7", ilce: "Zeytinburnu", il: "İstanbul" }) },
       ebelgeKayit: { create: vi.fn().mockResolvedValue({ id: "eb1" }), update: vi.fn().mockResolvedValue({ id: "eb1" }) },
       ebelgeArsiv: { upsert: vi.fn().mockResolvedValue({}) },
     };
@@ -345,7 +345,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
       },
       baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "test" }) }) },
       cariHesap: { update: vi.fn().mockResolvedValue({}) },
-      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114" }) },
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", vergiDairesi: "Davutpaşa", adres: "Maltepe Mh. Çırpıcı Yol Sk. No:7", ilce: "Zeytinburnu", il: "İstanbul" }) },
       ebelgeKayit: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         create: vi.fn(),
@@ -443,7 +443,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
       },
       baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify(config) }) },
       cariHesap: { update: vi.fn().mockResolvedValue({}) },
-      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114" }) },
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", vergiDairesi: "Davutpaşa", adres: "Maltepe Mh. Çırpıcı Yol Sk. No:7", ilce: "Zeytinburnu", il: "İstanbul" }) },
       ebelgeKayit: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         create: vi.fn().mockResolvedValue({ id: "eb1" }),

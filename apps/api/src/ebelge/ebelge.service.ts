@@ -11,7 +11,7 @@ import {
 } from "@nestjs/common";
 import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
 import type { BelgeDurumSonuc, EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
-import { IHRACAT_POSTA_KUTUSU, birimTanindiMi, gibBelgeNoMu, ublAdresi } from "@tekirextra/shared";
+import { type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { BildirimService } from "../bildirimler/bildirim.service";
@@ -152,6 +152,12 @@ export class EbelgeService {
       }
       if (!gonderimTarihiGecerliMi(fatura.tarih)) {
         return { gonderilebilir: false, neden: "Fatura tarihi bugün veya en fazla 7 gün önce olmalıdır.", faturaNo: fatura.no, cari: fatura.cari.unvan, vknTckn: fatura.cari.vknTckn, saglayici: baglanti.saglayici };
+      }
+      // EBLG-62: firma adresi eksikse sihirbaz ilk adımda durur.
+      const firma = await tx.tenant.findUnique({ where: { id: tenantId } });
+      const firmaEksigi = firma ? firmaEbelgeEksikleri(firma) : [];
+      if (firmaEksigi.length) {
+        return { gonderilebilir: false, neden: firmaEksigi.join("; "), faturaNo: fatura.no, cari: fatura.cari.unvan, vknTckn: fatura.cari.vknTckn, saglayici: baglanti.saglayici };
       }
       return {
         // Bağlantı, kimlik ve tarih kontrolleri geçti. Türe özel eksikler
@@ -393,12 +399,15 @@ export class EbelgeService {
       saglayici: string;
       cfg: EntegratorConfig;
       fatura: Parameters<typeof faturaUblUret>[0];
-      tenant: { unvan: string; vkn: string; vergiDairesi: string | null };
+      tenant: { unvan: string; vkn: string } & FirmaEbelgeBilgisi;
       ihracat: ReturnType<typeof ihracatOzeti>;
       internet: ReturnType<typeof internetSatisOzeti>;
       iade: ReturnType<typeof iadeOzeti>;
     },
   ) {
+    // EBLG-62: satıcı adresi belgede zorunlu; uydurma adresle belge kesilmez.
+    const firmaEksigi = firmaEbelgeEksikleri(hazirlik.tenant);
+    if (firmaEksigi.length) throw new BadRequestException(firmaEksigi.join("; "));
     // Kanal kararı lokal listeden verilir; gönderim başına entegratöre tam
     // liste sorulması bloklanma sebebiydi (EBLG-10). Alıcı yurt dışıysa liste
     // hiç sorulmaz: ihracat faturası e-Fatura kanalından, alıcının değil
@@ -432,11 +441,7 @@ export class EbelgeService {
     // e-Fatura profili (temel/ticari) yalnız e-Fatura kanalında geçerlidir.
     const xml = faturaUblUret(
       ublFatura,
-      {
-        unvan: hazirlik.tenant.unvan,
-        vkn: hazirlik.tenant.vkn,
-        vergiDairesi: hazirlik.tenant.vergiDairesi || undefined,
-      },
+      hazirlik.tenant,
       {
         tur,
         ihracat: hazirlik.ihracat.ublBilgisi,

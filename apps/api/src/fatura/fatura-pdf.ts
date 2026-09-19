@@ -6,6 +6,8 @@ import {
   sayiBicim,
   tarihBicim,
   tlKarsiligi,
+  firmaIletisimSatirlari,
+  type FirmaIletisimi,
 } from "../core/pdf/pdf-sablon";
 import type { BelgeTemasi } from "../core/pdf/belge-temasi";
 
@@ -76,7 +78,7 @@ export function profilAdi(f: Pick<FaturaPdfVerisi, "ebelge" | "efaturaProfili">)
  */
 export const EARSIV_ELEKTRONIK_IBARESI = "e-Arşiv izni kapsamında elektronik ortamda iletilmiştir.";
 
-export interface FirmaBilgisi {
+export interface FirmaBilgisi extends FirmaIletisimi {
   unvan: string;
   vkn: string;
   vergiDairesi: string | null;
@@ -150,7 +152,7 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
     <td style="vertical-align:top;width:50%">
       <div class="kutu">
         <strong>${kacis(firma.unvan)}</strong><br>
-        VKN: ${kacis(firma.vkn)}${firma.vergiDairesi ? ` — ${kacis(firma.vergiDairesi)}` : ""}
+        VKN: ${kacis(firma.vkn)}${firma.vergiDairesi ? ` — ${kacis(firma.vergiDairesi)}` : ""}${firmaIletisimSatirlari(firma)}
       </div>
     </td>
     <td style="width:4%"></td>

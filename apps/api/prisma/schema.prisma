@@ -106,6 +106,16 @@ model Tenant {
   unvan        String
   vkn          String   @unique
   vergiDairesi String?  @map("vergi_dairesi")
+  /// EBLG-62: e-belgenin satıcı tarafına ve PDF'lere yazılan firma bilgisi.
+  adres          String? @map("adres")
+  ilce           String? @map("ilce")
+  il             String? @map("il")
+  postaKodu      String? @map("posta_kodu")
+  telefon        String? @map("telefon")
+  eposta         String? @map("eposta")
+  webSitesi      String? @map("web_sitesi")
+  mersisNo       String? @map("mersis_no")
+  ticaretSicilNo String? @map("ticaret_sicil_no")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 

@@ -41,6 +41,28 @@ export const kacis = (deger: unknown): string =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
+/**
+ * Firma kutusunun VKN altındaki satırları (EBLG-62): adres, iletişim, MERSİS
+ * ve ticaret sicil. Boş alan satır üretmez; kart eksikse kutu eskisi gibi kalır.
+ */
+export interface FirmaIletisimi {
+  adres?: string | null; ilce?: string | null; il?: string | null; postaKodu?: string | null;
+  telefon?: string | null; eposta?: string | null; webSitesi?: string | null;
+  mersisNo?: string | null; ticaretSicilNo?: string | null;
+}
+
+export function firmaIletisimSatirlari(firma: FirmaIletisimi): string {
+  const yer = [firma.postaKodu, [firma.ilce, firma.il].filter(Boolean).join(" / ")].filter(Boolean).join(" ");
+  const satirlar = [
+    firma.adres,
+    yer,
+    [firma.telefon && `Tel: ${firma.telefon}`, firma.eposta].filter(Boolean).join(" · "),
+    firma.webSitesi,
+    [firma.mersisNo && `MERSİS: ${firma.mersisNo}`, firma.ticaretSicilNo && `Tic. Sicil: ${firma.ticaretSicilNo}`].filter(Boolean).join(" · "),
+  ].filter((s): s is string => Boolean(s));
+  return satirlar.map((s) => `<br>${kacis(s)}`).join("");
+}
+
 export interface SayfaSecenekleri {
   /** Belge başlığı (ör. "SATIŞ FATURASI", rapor adı). */
   baslik: string;

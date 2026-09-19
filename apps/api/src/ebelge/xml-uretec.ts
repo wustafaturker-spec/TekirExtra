@@ -8,6 +8,7 @@ import {
   IHRACAT_PROFILI,
   IHRACAT_VERGI_PARA_BIRIMI,
   IADE_BELGE_TUR_KODU,
+  type FirmaEbelgeBilgisi,
   birimUblKodu,
   gtipNormalize,
   ihracatIstisnaAciklamasi,
@@ -68,7 +69,8 @@ export function faturaUblUret(
      */
     cari: CariHesap & { adresler?: { tip: string; adres: string | null; il: string | null; ilce: string | null; postaKodu: string | null; ulke: string | null }[] };
   },
-  supplier: { unvan: string; vkn: string; vergiDairesi?: string; adres?: string },
+  /** Satıcı: firma kartı (EBLG-62). Adres eksikse gönderim daha önce durur. */
+  supplier: { unvan: string; vkn: string } & FirmaEbelgeBilgisi,
   secenekler: {
     tur?: "efatura" | "earsiv";
     ihracat?: IhracatUblBilgisi;
@@ -137,6 +139,20 @@ export function faturaUblUret(
   const tevkifatIade = fatura.senaryo === "tevkifatiade";
   const belgeKdvi = (satir: { kdvTutari: unknown; netKdvTutari?: unknown }) =>
     Number(tevkifatIade ? satir.netKdvTutari ?? satir.kdvTutari : satir.kdvTutari);
+  /*
+   * Satıcı adresi firma kartından gelir (EBLG-62); önceden sabit
+   * "Merkez/Istanbul" yazılıyordu. İmza tarafında da aynı adres durur.
+   */
+  const saticiAdresi = `      <cac:PostalAddress>${supplier.adres ? `
+        <cbc:StreetName>${escape(supplier.adres)}</cbc:StreetName>` : ""}
+        <cbc:CitySubdivisionName>${escape(supplier.ilce) || "-"}</cbc:CitySubdivisionName>
+        <cbc:CityName>${escape(supplier.il) || "-"}</cbc:CityName>${supplier.postaKodu ? `
+        <cbc:PostalZone>${escape(supplier.postaKodu)}</cbc:PostalZone>` : ""}
+        <cac:Country>
+          <cbc:IdentificationCode>TR</cbc:IdentificationCode>
+          <cbc:Name>Türkiye</cbc:Name>
+        </cac:Country>
+      </cac:PostalAddress>`;
   const uuid = fatura.id;
   const no = fatura.no || "TASLAK";
 
@@ -426,13 +442,7 @@ ${earsiv ? `  <cac:AdditionalDocumentReference>
       <cac:PartyName>
         <cbc:Name>${escape(supplier.unvan)}</cbc:Name>
       </cac:PartyName>
-      <cac:PostalAddress>
-        <cbc:CitySubdivisionName>Merkez</cbc:CitySubdivisionName>
-        <cbc:CityName>Istanbul</cbc:CityName>
-        <cac:Country>
-          <cbc:Name>Türkiye</cbc:Name>
-        </cac:Country>
-      </cac:PostalAddress>
+${saticiAdresi}
     </cac:SignatoryParty>
     <cac:DigitalSignatureAttachment>
       <cac:ExternalReference>
@@ -442,25 +452,30 @@ ${earsiv ? `  <cac:AdditionalDocumentReference>
   </cac:Signature>
 
   <cac:AccountingSupplierParty>
-    <cac:Party>
+    <cac:Party>${supplier.webSitesi ? `
+      <cbc:WebsiteURI>${escape(supplier.webSitesi)}</cbc:WebsiteURI>` : ""}
       <cac:PartyIdentification>
         <cbc:ID schemeID="VKN">${supplier.vkn}</cbc:ID>
-      </cac:PartyIdentification>
+      </cac:PartyIdentification>${supplier.mersisNo ? `
+      <cac:PartyIdentification>
+        <cbc:ID schemeID="MERSISNO">${escape(supplier.mersisNo)}</cbc:ID>
+      </cac:PartyIdentification>` : ""}${supplier.ticaretSicilNo ? `
+      <cac:PartyIdentification>
+        <cbc:ID schemeID="TICARETSICILNO">${escape(supplier.ticaretSicilNo)}</cbc:ID>
+      </cac:PartyIdentification>` : ""}
       <cac:PartyName>
         <cbc:Name>${escape(supplier.unvan)}</cbc:Name>
       </cac:PartyName>
-      <cac:PostalAddress>
-        <cbc:CitySubdivisionName>Merkez</cbc:CitySubdivisionName>
-        <cbc:CityName>Istanbul</cbc:CityName>
-        <cac:Country>
-          <cbc:Name>Türkiye</cbc:Name>
-        </cac:Country>
-      </cac:PostalAddress>
+${saticiAdresi}
       <cac:PartyTaxScheme>
         <cac:TaxScheme>
-          <cbc:Name>${escape(supplier.vergiDairesi || "Marmara V.D.")}</cbc:Name>
+          <cbc:Name>${escape(supplier.vergiDairesi)}</cbc:Name>
         </cac:TaxScheme>
-      </cac:PartyTaxScheme>
+      </cac:PartyTaxScheme>${supplier.telefon || supplier.eposta ? `
+      <cac:Contact>${supplier.telefon ? `
+        <cbc:Telephone>${escape(supplier.telefon)}</cbc:Telephone>` : ""}${supplier.eposta ? `
+        <cbc:ElectronicMail>${escape(supplier.eposta)}</cbc:ElectronicMail>` : ""}
+      </cac:Contact>` : ""}
     </cac:Party>
   </cac:AccountingSupplierParty>
 

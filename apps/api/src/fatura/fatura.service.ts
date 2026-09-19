@@ -1319,7 +1319,7 @@ export class FaturaService {
     const firma = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.tenant.findUnique({
         where: { id: tenantId },
-        select: { unvan: true, vkn: true, vergiDairesi: true },
+        select: { unvan: true, vkn: true, vergiDairesi: true, adres: true, ilce: true, il: true, postaKodu: true, telefon: true, eposta: true, webSitesi: true, mersisNo: true, ticaretSicilNo: true },
       }),
     );
     if (!firma) throw new NotFoundException("Firma bulunamadı");
@@ -1343,7 +1343,7 @@ export class FaturaService {
     const firma = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.tenant.findUnique({
         where: { id: tenantId },
-        select: { unvan: true, vkn: true, vergiDairesi: true },
+        select: { unvan: true, vkn: true, vergiDairesi: true, adres: true, ilce: true, il: true, postaKodu: true, telefon: true, eposta: true, webSitesi: true, mersisNo: true, ticaretSicilNo: true },
       }),
     );
     if (!firma) throw new NotFoundException("Firma bulunamadı");

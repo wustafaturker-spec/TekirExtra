@@ -82,3 +82,20 @@ describe("faturaPdfHtml — TL karşılığı (EBLG-57)", () => {
     expect(html).not.toContain("Döviz Kuru");
   });
 });
+
+describe("faturaPdfHtml — firma adresi ve iletişim (EBLG-62)", () => {
+  it("firma kartındaki adresi, iletişimi ve MERSİS/sicili yazar", () => {
+    const html = faturaPdfHtml(fatura, {
+      ...firma, vergiDairesi: "Davutpaşa", adres: "Maltepe Mh. No:7", ilce: "Zeytinburnu", il: "İstanbul", postaKodu: "34010",
+      telefon: "2124819113", eposta: "info@firma.test", mersisNo: "0524000463400019", ticaretSicilNo: "325632",
+    });
+    expect(html).toContain("Maltepe Mh. No:7");
+    expect(html).toContain("34010 Zeytinburnu / İstanbul");
+    expect(html).toContain("Tel: 2124819113 · info@firma.test");
+    expect(html).toContain("MERSİS: 0524000463400019 · Tic. Sicil: 325632");
+  });
+
+  it("kart boşsa fazladan satır üretmez", () => {
+    expect(faturaPdfHtml(fatura, firma)).not.toContain("Tel:");
+  });
+});

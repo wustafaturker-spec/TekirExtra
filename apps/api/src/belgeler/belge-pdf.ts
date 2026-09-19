@@ -4,6 +4,8 @@ import {
   sayfaSablonu,
   sayiBicim,
   tarihBicim,
+  firmaIletisimSatirlari,
+  type FirmaIletisimi,
 } from "../core/pdf/pdf-sablon";
 import type { BelgeTemasi } from "../core/pdf/belge-temasi";
 
@@ -50,6 +52,7 @@ export function belgePdfHtml(
     unvan: string;
     vkn: string;
     vergiDairesi: string | null;
+  } & FirmaIletisimi & {
     /** KLN-03: firma logosu, data URI olarak gömülür. */
     tema?: BelgeTemasi;
   },
@@ -78,7 +81,7 @@ export function belgePdfHtml(
     <td style="vertical-align:top;width:50%">
       <div class="kutu">
         <strong>${kacis(firma.unvan)}</strong><br>
-        VKN: ${kacis(firma.vkn)}${firma.vergiDairesi ? ` — ${kacis(firma.vergiDairesi)}` : ""}
+        VKN: ${kacis(firma.vkn)}${firma.vergiDairesi ? ` — ${kacis(firma.vergiDairesi)}` : ""}${firmaIletisimSatirlari(firma)}
       </div>
     </td>
     <td style="width:4%"></td>

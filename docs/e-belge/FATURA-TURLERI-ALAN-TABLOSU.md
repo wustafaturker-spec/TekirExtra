@@ -54,7 +54,8 @@ Sihirbazın her türde doğruladığı çekirdek. Hepsi bugün üretiliyor.
 | Fatura tipi | `cbc:InvoiceTypeCode` | Satırlardan türetilir | ✅ |
 | Para birimi | `cbc:DocumentCurrencyCode` | Fatura dövizi | ✅ |
 | Satır sayısı | `cbc:LineCountNumeric` | Satırlar | ✅ |
-| Satıcı VKN, unvan, adres, vergi dairesi | `AccountingSupplierParty` | Firma kartı | ✅ |
+| Satıcı VKN, unvan, adres, vergi dairesi | `AccountingSupplierParty` | Firma kartı | ✅ EBLG-62 — adres önceden sabit "Merkez/Istanbul" idi; artık firma kartından, eksikse gönderim durur |
+| Satıcı web sitesi, MERSİS, ticaret sicil, telefon, e-posta | `WebsiteURI`, `PartyIdentification`, `Contact` | Firma kartı | ✅ EBLG-62 (isteğe bağlı) |
 | Alıcı VKN/TCKN, unvan, adres | `AccountingCustomerParty` | Cari kartı | ✅ |
 | KDV matrahı, tutarı, oranı, `0015` | `TaxTotal` | Hesaplama | ✅ |
 | Satır: sıra, miktar, birim fiyat, tutar, ürün adı, ürün kodu | `InvoiceLine` | Satırlar | ✅ |

@@ -1,3 +1,4 @@
+import { firmaEbelgeEksikleri } from "@tekirextra/shared";
 import {
   BadRequestException,
   Body,
@@ -21,10 +22,30 @@ import {
 } from "./baglantilar.service";
 import { KayitService, kayitSemasi } from "./kayit.service";
 
+/** Boş metin "sil" demektir; alan null olarak kaydedilir. */
+const serbestMetin = (sinir: number) => z.string().trim().max(sinir).transform((d) => d || null).nullable().optional();
+
 const firmaGuncelleSemasi = z.object({
   unvan: z.string().min(2).max(255).optional(),
   vergiDairesi: z.string().min(2).max(120).optional(),
+  // EBLG-62: e-belgenin satıcı tarafına ve PDF'lere yazılan bilgiler.
+  adres: serbestMetin(300),
+  ilce: serbestMetin(80),
+  il: serbestMetin(80),
+  postaKodu: serbestMetin(10),
+  telefon: serbestMetin(30),
+  eposta: z.union([z.string().trim().email("Geçerli bir e-posta girin"), z.literal("")]).transform((d) => d || null).nullable().optional(),
+  webSitesi: serbestMetin(200),
+  mersisNo: z.union([z.string().trim().regex(/^\d{16}$/, "MERSİS numarası 16 hanedir"), z.literal("")]).transform((d) => d || null).nullable().optional(),
+  ticaretSicilNo: serbestMetin(30),
 });
+
+/** Firma ekranının okuduğu alanlar; e-belge eksikleri de bununla hesaplanır. */
+const FIRMA_ALANLARI = {
+  id: true, unvan: true, vkn: true, vergiDairesi: true,
+  adres: true, ilce: true, il: true, postaKodu: true, telefon: true, eposta: true, webSitesi: true, mersisNo: true, ticaretSicilNo: true,
+  abonelik: { select: { planKodu: true, durum: true, faturaEpostasi: true, donemBaslangici: true, donemSonu: true } },
+} as const;
 
 @Controller()
 export class TenantController {
@@ -57,7 +78,7 @@ export class TenantController {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const tenant = await tx.tenant.findUnique({
         where: { id: tenantId },
-        select: { id: true, unvan: true, vkn: true, vergiDairesi: true, abonelik: { select: { planKodu: true, durum: true, faturaEpostasi: true, donemBaslangici: true, donemSonu: true } } },
+        select: FIRMA_ALANLARI,
       });
       if (!tenant) return null;
 
@@ -67,9 +88,11 @@ export class TenantController {
         select: { id: true, dosyaAdi: true, mimeTip: true, boyut: true },
       });
 
+      // EBLG-62: e-belge gönderimini durduracak eksikler ekranda gösterilir.
       return {
         ...tenant,
         logo,
+        ebelgeEksikleri: firmaEbelgeEksikleri(tenant),
       };
     });
   }
@@ -79,14 +102,14 @@ export class TenantController {
   async firmaGuncelle(@Body() govde: unknown) {
     const ayristirma = firmaGuncelleSemasi.safeParse(govde);
     if (!ayristirma.success) {
-      throw new BadRequestException("Geçersiz firma bilgisi");
+      throw new BadRequestException(ayristirma.error.issues.map((s) => s.message).join("; ") || "Geçersiz firma bilgisi");
     }
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const tenant = await tx.tenant.update({
         where: { id: tenantId },
         data: ayristirma.data,
-        select: { id: true, unvan: true, vkn: true, vergiDairesi: true, abonelik: { select: { planKodu: true, durum: true, faturaEpostasi: true, donemBaslangici: true, donemSonu: true } } },
+        select: FIRMA_ALANLARI,
       });
 
       const logo = await tx.ek.findFirst({
@@ -95,9 +118,11 @@ export class TenantController {
         select: { id: true, dosyaAdi: true, mimeTip: true, boyut: true },
       });
 
+      // EBLG-62: e-belge gönderimini durduracak eksikler ekranda gösterilir.
       return {
         ...tenant,
         logo,
+        ebelgeEksikleri: firmaEbelgeEksikleri(tenant),
       };
     });
   }

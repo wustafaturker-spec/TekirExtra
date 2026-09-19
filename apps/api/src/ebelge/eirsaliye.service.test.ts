@@ -35,6 +35,20 @@ describe("EirsaliyeService UBL", () => {
     satirlar: [{ miktar: "5", stok: { ad: "Ürün", kod: "STK-1" } }],
   };
 
+  it("gönderen, imza ve kendi taşımamızda firma kartındaki adresi yazar (EBLG-62)", () => {
+    const xml = (EirsaliyeService.prototype as unknown as { ubl: (b: unknown, t: unknown) => string }).ubl.call(
+      Object.create(EirsaliyeService.prototype),
+      belge,
+      { unvan: "Satıcı A.Ş.", vkn: "1234567801", adres: "Maltepe Mh. No:7", ilce: "Zeytinburnu", il: "İstanbul", postaKodu: "34010" },
+    );
+    const gonderen = xml.slice(xml.indexOf("<cac:DespatchSupplierParty>"), xml.indexOf("</cac:DespatchSupplierParty>"));
+    expect(gonderen).toContain("<cbc:StreetName>Maltepe Mh. No:7</cbc:StreetName>");
+    expect(gonderen).toContain("<cbc:CitySubdivisionName>Zeytinburnu</cbc:CitySubdivisionName>");
+    const tasiyan = xml.slice(xml.indexOf("<cac:CarrierParty>"), xml.indexOf("</cac:CarrierParty>"));
+    expect(tasiyan).toContain("<cbc:CityName>İstanbul</cbc:CityName>");
+    expect(xml).not.toContain(">Merkez<");
+  });
+
   it("profili ve belge türünü ayrı alanlara yazar", () => {
     const xml = ubl(belge);
 
