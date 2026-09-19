@@ -1,4 +1,4 @@
-import { ihracKayitliKoduBul } from "@tekirextra/shared";
+import { ihracKayitliKoduBul, senaryoUblKodu, type FaturaSenaryosu } from "@tekirextra/shared";
 import {
   kacis,
   kurBicim,
@@ -66,13 +66,35 @@ export interface FaturaPdfVerisi {
   senaryo?: string;
   /** EBLG-30: e-Fatura profili; e-Arşiv'de kanal profili yazar. */
   efaturaProfili?: string;
+  /** KAMU senaryosu: yalnız sihirbaz alıcıyı kamu idaresi bulduğunda dolar. */
+  kamuHarcamaBirimiVkn?: string | null;
+  kamuHarcamaBirimiAdi?: string | null;
+  kamuIban?: string | null;
 }
 
 /** EBLG-30: PDF'te gösterilen profil adı; UBL'deki ProfileID ile aynı ayrımdır. */
-export function profilAdi(f: Pick<FaturaPdfVerisi, "ebelge" | "efaturaProfili">): string | null {
+export function profilAdi(f: Pick<FaturaPdfVerisi, "ebelge" | "efaturaProfili" | "kamuIban">): string | null {
   if (!f.ebelge) return null;
   if (f.ebelge.tur === "earsiv") return "EARSIVFATURA";
+  // KAMU bilgisi yalnız KAMU senaryosuyla giden belgede yazılır; UBL'de de
+  // profil seçimini ezer.
+  if (f.kamuIban) return "KAMU";
   return f.efaturaProfili === "ticari" ? "TICARIFATURA" : "TEMELFATURA";
+}
+
+/** IBAN'ı okunur biçimde dörderli gruplar: TR33 0006 1005 … */
+const ibanBicim = (iban: string): string => iban.replace(/\s/g, "").replace(/(.{4})(?=.)/g, "$1 ");
+
+/**
+ * KAMU senaryosu (belge altı): ödemeyi yapacak harcama birimi ve ödemenin
+ * yapılacağı IBAN — UBL'deki `BuyerCustomerParty` ve `PaymentMeans` karşılığı.
+ */
+function kamuBilgisi(f: FaturaPdfVerisi): string {
+  if (!f.kamuIban) return "";
+  const birim = f.kamuHarcamaBirimiAdi
+    ? `${f.kamuHarcamaBirimiAdi}${f.kamuHarcamaBirimiVkn ? ` (VKN ${f.kamuHarcamaBirimiVkn})` : ""}`
+    : f.kamuHarcamaBirimiVkn ?? "";
+  return `<p style="margin-top:10px;font-size:9pt">${birim ? `Ödemeyi yapacak harcama birimi: <strong>${kacis(birim)}</strong><br>` : ""}Ödemenin yapılacağı IBAN: <strong>${kacis(ibanBicim(f.kamuIban))}</strong></p>`;
 }
 
 /**
@@ -157,7 +179,7 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
   // bir anlamı yoktur, gösterilmez.
   const profil = profilAdi(f);
   const ebelgeKimligi = profil
-    ? `<br>ETTN: ${kacis(f.id ?? "")}<br>Senaryo: ${kacis(f.senaryo ?? "")} &nbsp;•&nbsp; Profil: ${kacis(profil)}`
+    ? `<br>ETTN: ${kacis(f.id ?? "")}<br>Senaryo: ${kacis((f.senaryo && senaryoUblKodu(f.senaryo as FaturaSenaryosu)) || f.senaryo || "")} &nbsp;•&nbsp; Profil: ${kacis(profil)}`
     : "";
 
   const icerik = `
@@ -200,7 +222,8 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
 </table>
 ${f.aciklama ? `<p style="margin-top:10px;color:#6b7280">${kacis(f.aciklama)}</p>` : ""}
 ${f.ebelge?.tur === "earsiv" && f.earsivGonderimSekli !== "kagit" ? `<p style="margin-top:10px;font-size:9pt">${EARSIV_ELEKTRONIK_IBARESI}</p>` : ""}
-${ihracKayitliIbaresi(f.ihracKayitliKodu)}`;
+${ihracKayitliIbaresi(f.ihracKayitliKodu)}
+${kamuBilgisi(f)}`;
 
   return sayfaSablonu({
     baslik: f.durum === "taslak" ? `${baslik} (TASLAK)` : baslik,

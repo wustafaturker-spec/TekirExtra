@@ -1490,6 +1490,9 @@ export class FaturaService {
     ihracatTasimaSekli?: string | null;
     gumrukBeyannameNo?: string | null;
     gumrukBeyannameTarihi?: Date | null;
+    kamuHarcamaBirimiVkn?: string | null;
+    kamuHarcamaBirimiAdi?: string | null;
+    kamuIban?: string | null;
     depoId: string | null;
     dovizCinsi: string;
     kur: Prisma.Decimal;
@@ -1554,6 +1557,10 @@ export class FaturaService {
       ihracatTasimaSekli: k.ihracatTasimaSekli ?? null,
       gumrukBeyannameNo: k.gumrukBeyannameNo ?? null,
       gumrukBeyannameTarihi: k.gumrukBeyannameTarihi?.toISOString().slice(0, 10) ?? null,
+      // KAMU senaryosu: sihirbazda seçilen harcama birimi ve IBAN.
+      kamuHarcamaBirimiVkn: k.kamuHarcamaBirimiVkn ?? null,
+      kamuHarcamaBirimiAdi: k.kamuHarcamaBirimiAdi ?? null,
+      kamuIban: k.kamuIban ?? null,
       depoId: k.depoId,
       dovizCinsi: k.dovizCinsi,
       kur: D(k.kur).toFixed(4),

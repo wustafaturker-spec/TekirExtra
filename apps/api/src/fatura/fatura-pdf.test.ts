@@ -111,3 +111,26 @@ describe("faturaPdfHtml — ihraç kayıtlı (EBLG-60)", () => {
     expect(faturaPdfHtml(fatura, firma)).not.toContain("tahsil edilmez");
   });
 });
+
+describe("faturaPdfHtml — KAMU senaryosu", () => {
+  const kamu = {
+    ...fatura,
+    efaturaProfili: "ticari",
+    kamuHarcamaBirimiVkn: "2222222105",
+    kamuHarcamaBirimiAdi: "Destek Hizmetleri Daire Başkanlığı",
+    kamuIban: "TR330006100519786457841326",
+  };
+
+  it("harcama birimini ve IBAN'ı belge altına, profili KAMU yazar", () => {
+    const html = faturaPdfHtml({ ...kamu, ebelge: { tur: "efatura" } }, firma);
+    expect(html).toContain("Ödemeyi yapacak harcama birimi: <strong>Destek Hizmetleri Daire Başkanlığı (VKN 2222222105)</strong>");
+    expect(html).toContain("Ödemenin yapılacağı IBAN: <strong>TR33 0006 1005 1978 6457 8413 26</strong>");
+    expect(profilAdi({ ebelge: { tur: "efatura" }, efaturaProfili: "ticari", kamuIban: kamu.kamuIban })).toBe("KAMU");
+    // Senaryo iç kodla değil GİB'in UBL koduyla yazılır.
+    expect(faturaPdfHtml({ ...kamu, id: "x", senaryo: "satis", ebelge: { tur: "efatura" } }, firma)).toContain("Senaryo: SATIS");
+  });
+
+  it("KAMU bilgisi olmayan faturada blok yoktur", () => {
+    expect(faturaPdfHtml({ ...fatura, ebelge: { tur: "efatura" } }, firma)).not.toContain("harcama birimi");
+  });
+});
