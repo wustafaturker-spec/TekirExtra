@@ -1,3 +1,4 @@
+import { ihracKayitliKoduBul } from "@tekirextra/shared";
 import {
   kacis,
   kurBicim,
@@ -49,6 +50,8 @@ export interface FaturaPdfVerisi {
   genelIskontoToplam: string;
   toplamMatrah: string;
   toplamKdv: string;
+  /** EBLG-60: ihraç kayıtlı kodu; doluysa KDV gösterilir ama tahsil edilmez. */
+  ihracKayitliKodu?: string | null;
   toplamTevkifat: string;
   genelToplam: string;
   aciklama: string | null;
@@ -84,6 +87,17 @@ export interface FirmaBilgisi extends FirmaIletisimi {
   vergiDairesi: string | null;
   /** KLN-03: firma logosu, data URI olarak gömülür. */
   tema?: BelgeTemasi;
+}
+
+/**
+ * İhraç kayıtlı satışın belge altı ibaresi (EBLG-60). Metin kod listesindeki
+ * addan gelir; kullanıcının kabul edilmiş belgesindeki açıklamayla aynı anlamı taşır.
+ */
+function ihracKayitliIbaresi(kod: string | null | undefined): string {
+  const tanim = ihracKayitliKoduBul(kod);
+  return tanim
+    ? `<p style="margin-top:10px;font-size:9pt">${kacis(`${tanim.kod} — ${tanim.ad}: ihraç edilmek şartıyla teslim edildiğinden KDV tahsil edilmemiştir.`)}</p>`
+    : "";
 }
 
 export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
@@ -122,7 +136,7 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
     ...(Number(f.toplamSatirIskontosu) > 0 ? [{ etiket: "Satır İskontoları", deger: `-${f.toplamSatirIskontosu}` }] : []),
     ...(Number(f.genelIskontoToplam) > 0 ? [{ etiket: "Genel İskonto", deger: `-${f.genelIskontoToplam}` }] : []),
     { etiket: "KDV Matrahı", deger: f.toplamMatrah },
-    { etiket: "Hesaplanan KDV", deger: f.toplamKdv },
+    { etiket: f.ihracKayitliKodu ? `Hesaplanan KDV (tahsil edilmez — ${kacis(f.ihracKayitliKodu)})` : "Hesaplanan KDV", deger: f.toplamKdv },
     ...(Number(f.toplamTevkifat) > 0 ? [{ etiket: "KDV Tevkifatı", deger: `-${f.toplamTevkifat}` }] : []),
     { etiket: "Genel Toplam", deger: f.genelToplam, kalin: true },
   ];
@@ -185,7 +199,8 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
   ${toplamlar}
 </table>
 ${f.aciklama ? `<p style="margin-top:10px;color:#6b7280">${kacis(f.aciklama)}</p>` : ""}
-${f.ebelge?.tur === "earsiv" && f.earsivGonderimSekli !== "kagit" ? `<p style="margin-top:10px;font-size:9pt">${EARSIV_ELEKTRONIK_IBARESI}</p>` : ""}`;
+${f.ebelge?.tur === "earsiv" && f.earsivGonderimSekli !== "kagit" ? `<p style="margin-top:10px;font-size:9pt">${EARSIV_ELEKTRONIK_IBARESI}</p>` : ""}
+${ihracKayitliIbaresi(f.ihracKayitliKodu)}`;
 
   return sayfaSablonu({
     baslik: f.durum === "taslak" ? `${baslik} (TASLAK)` : baslik,

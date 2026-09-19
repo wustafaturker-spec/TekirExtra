@@ -99,3 +99,15 @@ describe("faturaPdfHtml — firma adresi ve iletişim (EBLG-62)", () => {
     expect(faturaPdfHtml(fatura, firma)).not.toContain("Tel:");
   });
 });
+
+describe("faturaPdfHtml — ihraç kayıtlı (EBLG-60)", () => {
+  it("KDV satırını ve belge altını tahsil edilmez diye yazar", () => {
+    const html = faturaPdfHtml({ ...fatura, ihracKayitliKodu: "701", toplamKdv: "10.00", genelToplam: "100.00" }, firma);
+    expect(html).toContain("Hesaplanan KDV (tahsil edilmez — 701)");
+    expect(html).toContain("ihraç edilmek şartıyla teslim edildiğinden KDV tahsil edilmemiştir");
+  });
+
+  it("normal satışta ibare yoktur", () => {
+    expect(faturaPdfHtml(fatura, firma)).not.toContain("tahsil edilmez");
+  });
+});
