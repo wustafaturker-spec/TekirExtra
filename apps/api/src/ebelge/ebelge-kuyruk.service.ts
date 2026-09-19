@@ -118,6 +118,14 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
       if (durum !== "completed" && durum !== "failed") return { isId: mevcut.id, durum, tekrar: true };
       await mevcut.remove();
     }
+    // Yalnız kullanıcı gönderir; eski dead-letter kaydı kalırsa worker yeni işi
+    // "dead-letter var" diye atlar ve fatura dünkü hatasıyla kalır (EBLG-38'in
+    // gönderimdeki eşi, 2026-09-19). Açık gönderim onu temizler.
+    const eskiDeadLetter = await this.deadLetter.getJob(`dead-${jobId}`);
+    if (eskiDeadLetter) {
+      await eskiDeadLetter.remove();
+      this.metrics.increment("ebelge_queue_jobs_total", { result: "dead_letter_retry", type: GONDERIM_ISI });
+    }
     try {
       const is = await this.kuyruk.add(GONDERIM_ISI, { tenantId: baglam.tenantId, userId: baglam.userId, rol: baglam.rol, isTuru: GONDERIM_ISI, faturaId, correlationId: crypto.randomUUID(), kuyrugaAlinmaZamani: new Date().toISOString() }, { jobId });
       this.metrics.increment("ebelge_queue_jobs_total", { result: "enqueued" });

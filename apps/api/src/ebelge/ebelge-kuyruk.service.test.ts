@@ -44,6 +44,20 @@ describe("EbelgeKuyrukService", () => {
     expect(sonuc).toMatchObject({ durum: "waiting", tekrar: false });
   });
 
+  it("yeniden gönderimde eski dead-letter kaydını temizler, iş atlanmaz", async () => {
+    // Ana iş kuyruktan düşmüş ama `dead-…` kaydı duruyor: worker yeni işi
+    // atlıyor, fatura önceki hatasıyla kalıyordu (NES ihracat denemesi, 2026-09-19).
+    const remove = vi.fn();
+    bull.getJob.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "dead-ebelge-gonder-tenant-1-fatura-1", remove });
+
+    const sonuc = await baglamlaCalistir({ tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" }, () => service.kuyrugaEkle("fatura-1"));
+
+    expect(bull.getJob).toHaveBeenLastCalledWith("dead-ebelge-gonder-tenant-1-fatura-1");
+    expect(remove).toHaveBeenCalled();
+    expect(bull.add).toHaveBeenCalledWith("ebelge-gonder", expect.objectContaining({ faturaId: "fatura-1" }), { jobId: "ebelge-gonder-tenant-1-fatura-1" });
+    expect(sonuc).toMatchObject({ durum: "waiting", tekrar: false });
+  });
+
   it("süren işi ikinci kez kuyruğa almaz", async () => {
     bull.getJob.mockResolvedValue({ id: "ebelge-gonder-tenant-1-fatura-1", getState: async () => "active", remove: vi.fn() });
 
