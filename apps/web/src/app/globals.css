@@ -1483,6 +1483,32 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; color: var(--text); }
 .quick-panel__body { padding: 1.1rem; }
 .quick-panel__form { display: grid; gap: 0.9rem; }
 .quick-panel__actions { display: flex; gap: 0.6rem; justify-content: flex-end; padding-top: 0.3rem; }
+
+/* L: entegratör önizlemesinin tam ekran görünümü; sihirbaz panelinin üstünde açılır. */
+.document-preview-screen {
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  inset: 0;
+  position: fixed;
+  z-index: 90;
+}
+.document-preview-screen__head {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+}
+.document-preview-screen__head h3 { font-size: 1rem; }
+.document-preview-screen__frame {
+  /* Belge kendi beyaz sayfasını çizer; koyu temada da kâğıt gibi görünmeli. */
+  background: #fff;
+  border: 0;
+  flex: 1;
+  width: 100%;
+}
 .document-timeline {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));

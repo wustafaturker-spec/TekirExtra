@@ -6,6 +6,7 @@ import { api, apiPdfAc, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import { AramaSecici } from "@/components/arama-secici";
 import { DepoSecici } from "@/components/depo-secici";
+import { BelgeOnizlemeEkrani } from "@/components/belge-onizleme-ekrani";
 import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
 import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyalari";
 import { FaturaEkPaneli } from "@/components/fatura-ek-paneli";
@@ -374,6 +375,8 @@ export default function FaturaSayfasi() {
     /** L: 1 kontrol, 2 türe özel bilgiler, 3 önizleme ve gönderim. */
     adim: 1 | 2 | 3;
     onizleme: EbelgeOnizleme | null;
+    /** Önizleme ayrı, tam ekran katmanda açık mı. */
+    tamEkran?: boolean;
   } | null>(null);
   /** EBLG-54: gümrük beyanname panelinin taslak değerleri. */
   const [beyanname, setBeyanname] = useState<{ no: string; tarih: string } | null>(null);
@@ -2059,7 +2062,10 @@ export default function FaturaSayfasi() {
                   )}
                   {o.destekleniyor && o.basarili && o.html && (
                     <>
-                      <div className="approval-impact">Entegratörün denetiminden geçti. Alıcının göreceği görünüm:</div>
+                      <div className="approval-impact">
+                        Entegratörün denetiminden geçti. Alıcının göreceği görünüm:{" "}
+                        <Button type="button" size="sm" onClick={() => setEbelgeWizard({ ...ebelgeWizard, tamEkran: true })}>Tam ekran aç</Button>
+                      </div>
                       {/* Görünüm entegratörden gelir ve karekodu betikle çizer; ayrı kökende, betiğe izinli ama sayfaya erişimsiz çalışır. */}
                       <iframe
                         title="Belge önizlemesi"
@@ -2095,6 +2101,13 @@ export default function FaturaSayfasi() {
             </div>
           </div>
         </HizliKayitPaneli>
+      )}
+      {ebelgeWizard?.tamEkran && ebelgeWizard.onizleme?.durum === "hazir" && ebelgeWizard.onizleme.html && (
+        <BelgeOnizlemeEkrani
+          baslik={`Önizleme · ${ebelgeWizard.bilgi.cari}`}
+          html={ebelgeWizard.onizleme.html}
+          onKapat={() => setEbelgeWizard({ ...ebelgeWizard, tamEkran: false })}
+        />
       )}
 
       {ebelgeDetayi?.ebelge && (
