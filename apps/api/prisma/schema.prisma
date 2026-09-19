@@ -1967,6 +1967,7 @@ enum FaturaSenaryo {
   iade
   tevkifat
   istisna
+  ihrackayitli
 }
 
 /// e-Fatura profili (FTR-19). TICARIFATURA alıcıya 8 gün içinde kabul/ret
@@ -2067,6 +2068,9 @@ model Fatura {
   internetTasiyiciUnvan String?        @map("internet_tasiyici_unvan")
   internetTasiyiciVkn  String?         @map("internet_tasiyici_vkn")
   internetGonderiTarihi DateTime?      @map("internet_gonderi_tarihi") @db.Date
+  /// EBLG-60: ihraç kayıtlı satış kodu (701/702). Doluysa KDV hesaplanır ama
+  /// tahsil edilmez; belge IHRACKAYITLI tipinde gider.
+  ihracKayitliKodu     String?         @map("ihrac_kayitli_kodu")
   toplamNetKdv         Decimal         @map("toplam_net_kdv") @db.Decimal(15, 2)
   genelToplam          Decimal         @map("genel_toplam") @db.Decimal(15, 2)
   aciklama             String?

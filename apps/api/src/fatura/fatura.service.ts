@@ -575,7 +575,9 @@ export class FaturaService {
             kdvOrani: Number(s.kdvOrani),
             tevkifatKodu: s.tevkifatKodu,
             gibIstisnaKodu: s.gibIstisnaKodu,
-          }))),
+          })), girdi.ihracKayitliKodu),
+          // EBLG-60: ihraç kayıtlıda KDV hesaplanır ama tahsil edilmez.
+          ihracKayitliKodu: girdi.ihracKayitliKodu ?? null,
           efaturaProfili: girdi.efaturaProfili ?? cari?.efaturaProfili ?? "temel",
           earsivGonderimSekli: girdi.earsivGonderimSekli ?? cari?.earsivGonderimSekli ?? "elektronik",
           durum: "taslak",
@@ -680,6 +682,7 @@ export class FaturaService {
       cariId: girdi.cariId ?? fatura.cariId,
       efaturaProfili: girdi.efaturaProfili ?? (fatura.efaturaProfili as "temel" | "ticari"),
       earsivGonderimSekli: girdi.earsivGonderimSekli ?? (fatura.earsivGonderimSekli as "elektronik" | "kagit"),
+      ihracKayitliKodu: girdi.ihracKayitliKodu !== undefined ? girdi.ihracKayitliKodu : fatura.ihracKayitliKodu,
       depoId: girdi.depoId !== undefined ? girdi.depoId : fatura.depoId,
       dovizCinsi: girdi.dovizCinsi ?? (fatura.dovizCinsi as "TRY" | "USD" | "EUR"),
       kur: girdi.kur ?? fatura.kur,
@@ -777,7 +780,8 @@ export class FaturaService {
             kdvOrani: Number(s.kdvOrani),
             tevkifatKodu: s.tevkifatKodu,
             gibIstisnaKodu: s.gibIstisnaKodu,
-          }))),
+          })), birlesikGirdi.ihracKayitliKodu),
+          ihracKayitliKodu: birlesikGirdi.ihracKayitliKodu,
           efaturaProfili: birlesikGirdi.efaturaProfili,
           earsivGonderimSekli: birlesikGirdi.earsivGonderimSekli,
           no: birlesikGirdi.no ?? null,
@@ -1406,6 +1410,7 @@ export class FaturaService {
   }
 
   private hesaplaFatura(girdi: {
+    ihracKayitliKodu?: string | null;
     satirlar: {
       stokId: string;
       miktar: string | number | Prisma.Decimal;
@@ -1439,6 +1444,7 @@ export class FaturaService {
       satirlar: satirGirdileri,
       genelIskontoYuzdesi: girdi.genelIskontoYuzdesi ? Number(girdi.genelIskontoYuzdesi) : 0,
       genelIskontoTutari: girdi.genelIskontoTutari ? Number(girdi.genelIskontoTutari) : 0,
+      kdvTahsilEdilmez: Boolean(girdi.ihracKayitliKodu),
     });
   }
 
@@ -1461,6 +1467,7 @@ export class FaturaService {
     senaryo: string;
     efaturaProfili: string;
     earsivGonderimSekli: string;
+    ihracKayitliKodu?: string | null;
     ihracatTeslimTarihi?: Date | null;
     ihracatTeslimSarti?: string | null;
     ihracatTasimaSekli?: string | null;
@@ -1520,6 +1527,8 @@ export class FaturaService {
       senaryo: k.senaryo,
       efaturaProfili: k.efaturaProfili,
       earsivGonderimSekli: k.earsivGonderimSekli,
+      // EBLG-60: ihraç kayıtlı satış kodu; boşsa normal satış.
+      ihracKayitliKodu: k.ihracKayitliKodu ?? null,
       // EBLG-53/54: ihracat ve gümrük alanları; yurt içi faturada boş durur.
       ihracatTeslimTarihi: k.ihracatTeslimTarihi?.toISOString().slice(0, 10) ?? null,
       ihracatTeslimSarti: k.ihracatTeslimSarti ?? null,

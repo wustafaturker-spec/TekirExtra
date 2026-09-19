@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { faturaSenaryosuTuret, izinliIstisnaKodlari, senaryoHatalari } from "./fatura-senaryo";
+import { faturaSenaryosuTuret, ihracKayitliHatalari, izinliIstisnaKodlari, senaryoHatalari } from "./fatura-senaryo";
 
 // Kurallar GİB şematronundan (NES önizlemesiyle denendi, 2026-09-19 — EBLG-59).
 describe("fatura senaryosu türetme", () => {
@@ -29,5 +29,19 @@ describe("istisna kodunun fatura tipine göre süzülmesi", () => {
     const tevkifatli = { kdvOrani: 20, tevkifatKodu: "602" };
     expect(senaryoHatalari([tevkifatli, { kdvOrani: 0, gibIstisnaKodu: "201" }]).map((h) => h.satirIndeksi)).toEqual([1]);
     expect(senaryoHatalari([tevkifatli, { kdvOrani: 0, gibIstisnaKodu: "351" }])).toEqual([]);
+  });
+});
+
+describe("ihraç kayıtlı satış (EBLG-60)", () => {
+  it("faturada işaretlenince tip IHRACKAYITLI olur, satırlar ne olursa olsun", () => {
+    expect(faturaSenaryosuTuret("satis", [{ kdvOrani: 10 }], "701")).toBe("ihrackayitli");
+    expect(faturaSenaryosuTuret("satis", [{ kdvOrani: 10 }], null)).toBe("satis");
+  });
+
+  it("yalnız satışta, tevkifatsız ve tanımlı kodla kabul eder", () => {
+    expect(ihracKayitliHatalari({ tip: "satis", ihracKayitliKodu: "701", satirlar: [{}] })).toEqual([]);
+    expect(ihracKayitliHatalari({ tip: "satis", ihracKayitliKodu: "703", satirlar: [{}] })).toHaveLength(1);
+    expect(ihracKayitliHatalari({ tip: "alis", ihracKayitliKodu: "701", satirlar: [{}] })).toHaveLength(1);
+    expect(ihracKayitliHatalari({ tip: "satis", ihracKayitliKodu: "702", satirlar: [{ tevkifatKodu: "602" }] })).toHaveLength(1);
   });
 });

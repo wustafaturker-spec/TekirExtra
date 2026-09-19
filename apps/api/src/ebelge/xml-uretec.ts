@@ -13,6 +13,7 @@ import {
   ihracatIstisnaAciklamasi,
   ihracatIstisnaKodu,
   ihracatIstisnaKoduMu,
+  ihracKayitliKoduBul,
   istisnaKoduBul,
   senaryoUblKodu,
   tevkifatKoduBul,
@@ -147,7 +148,17 @@ export function faturaUblUret(
 
   /** İstisna kodunun belgeye yazılan açıklaması; şematron boş bırakılmasına izin vermez. */
   const istisnaAciklamasi = (kod: string) =>
-    ihracatIstisnasi ? ihracatIstisnaAciklamasi(kod) : `${kod} ${istisnaKoduBul(kod)?.ad ?? ""}`.trim();
+    ihracatIstisnasi ? ihracatIstisnaAciklamasi(kod) : `${kod} ${(istisnaKoduBul(kod) ?? ihracKayitliKoduBul(kod))?.ad ?? ""}`.trim();
+
+  /*
+   * İhraç kayıtlı satış (EBLG-60): KDV hesaplanıp gösterilir ama tahsil
+   * edilmez. Kod KDV'li alt toplamlara yazılır; kullanıcının kabul edilmiş
+   * örneği (M012026000000078) kodu %10'luk alt toplamda taşıyor. Sıfır KDV'li
+   * satır kendi istisna kodunu korur.
+   */
+  const ihracKayitliKodu = fatura.senaryo === "ihrackayitli" ? fatura.ihracKayitliKodu : null;
+  const altToplamKodu = (satir: Parameters<typeof satirIstisnaKodu>[0] & { kdvOrani: unknown }) =>
+    Number(satir.kdvOrani) === 0 ? satirIstisnaKodu(satir) : ihracKayitliKodu ?? null;
 
   /*
    * Belge düzeyindeki KDV alt toplamları oran ve istisna kodu başına ayrılır
@@ -159,7 +170,7 @@ export function faturaUblUret(
    */
   const kdvAltToplamlari = [...fatura.satirlar.reduce((gruplar, satir) => {
     const oran = Number(satir.kdvOrani);
-    const kod = oran === 0 ? satirIstisnaKodu(satir) : null;
+    const kod = altToplamKodu(satir);
     const anahtar = `${oran}|${kod ?? ""}`;
     const grup = gruplar.get(anahtar) ?? { oran, kod, matrahKurus: 0, kdvKurus: 0 };
     grup.matrahKurus += Math.round(Number(satir.matrah) * 100);
@@ -494,7 +505,7 @@ ${tevkifatBlogu}
   <cac:LegalMonetaryTotal>
     <cbc:LineExtensionAmount currencyID="${fatura.dovizCinsi}">${fatura.toplamBrut.toFixed(2)}</cbc:LineExtensionAmount>
     <cbc:TaxExclusiveAmount currencyID="${fatura.dovizCinsi}">${fatura.toplamMatrah.toFixed(2)}</cbc:TaxExclusiveAmount>
-    <cbc:TaxInclusiveAmount currencyID="${fatura.dovizCinsi}">${fatura.genelToplam.toFixed(2)}</cbc:TaxInclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="${fatura.dovizCinsi}">${ihracKayitliKodu ? kurusTopla(fatura.toplamMatrah, fatura.toplamKdv) : fatura.genelToplam.toFixed(2)}</cbc:TaxInclusiveAmount>
     <cbc:AllowanceTotalAmount currencyID="${fatura.dovizCinsi}">${kurusTopla(fatura.toplamSatirIskontosu, fatura.genelIskontoToplam)}</cbc:AllowanceTotalAmount>
     <cbc:PayableAmount currencyID="${fatura.dovizCinsi}">${fatura.genelToplam.toFixed(2)}</cbc:PayableAmount>
   </cac:LegalMonetaryTotal>
@@ -523,8 +534,8 @@ ${tevkifatBlogu}
         <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${s.kdvTutari.toFixed(2)}</cbc:TaxAmount>
         <cbc:Percent>${s.kdvOrani.toFixed(2)}</cbc:Percent>
         <cac:TaxCategory>
-          ${satirIstisnaKodu(s) ? `<cbc:TaxExemptionReasonCode>${escape(satirIstisnaKodu(s))}</cbc:TaxExemptionReasonCode>
-          <cbc:TaxExemptionReason>${escape(istisnaAciklamasi(satirIstisnaKodu(s)!))}</cbc:TaxExemptionReason>` : ""}
+          ${altToplamKodu(s) ? `<cbc:TaxExemptionReasonCode>${escape(altToplamKodu(s))}</cbc:TaxExemptionReasonCode>
+          <cbc:TaxExemptionReason>${escape(istisnaAciklamasi(altToplamKodu(s)!))}</cbc:TaxExemptionReason>` : ""}
           <cac:TaxScheme>
             <cbc:Name>KDV</cbc:Name>
             <cbc:TaxTypeCode>0015</cbc:TaxTypeCode>

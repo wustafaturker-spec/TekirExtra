@@ -12,6 +12,11 @@ export interface FaturaHesaplaGirdi {
   satirlar: FaturaHesaplaSatirGirdi[];
   genelIskontoYuzdesi?: number; // Genel iskonto yüzde (örn. 5)
   genelIskontoTutari?: number;  // VEYA genel iskonto tutarı (örn. 100.00 TL)
+  /**
+   * İhraç kayıtlı satış (EBLG-60): KDV hesaplanır ve belgede görünür ama
+   * tahsil edilmez. Net KDV sıfır, genel toplam matrahtır.
+   */
+  kdvTahsilEdilmez?: boolean;
 }
 
 export interface FaturaHesaplaSatirSonuc {
@@ -123,7 +128,7 @@ export function faturaHesapla(girdi: FaturaHesaplaGirdi): FaturaHesaplaSonuc {
       s.tevkifatTutari = 0;
     }
 
-    s.netKdvTutari = Y(s.kdvTutari - s.tevkifatTutari);
+    s.netKdvTutari = girdi.kdvTahsilEdilmez ? 0 : Y(s.kdvTutari - s.tevkifatTutari);
     s.toplamTutar = Y(s.matrah + s.netKdvTutari);
   });
 

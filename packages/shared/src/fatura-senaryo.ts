@@ -1,7 +1,7 @@
-import { type IstisnaKodu, KDV_ISTISNA_KODLARI, istisnaKoduBul, tevkifatKoduBul, tevkifatOraniAyristir } from "./gib-kodlari";
+import { type IstisnaKodu, KDV_ISTISNA_KODLARI, ihracKayitliKoduBul, istisnaKoduBul, tevkifatKoduBul, tevkifatOraniAyristir } from "./gib-kodlari";
 
 /** UBL'e `InvoiceTypeCode` olarak yazılan GİB senaryosu (FTR-16). */
-export type FaturaSenaryosu = "satis" | "iade" | "tevkifat" | "istisna";
+export type FaturaSenaryosu = "satis" | "iade" | "tevkifat" | "istisna" | "ihrackayitli";
 
 /** GİB'in `InvoiceTypeCode` kod listesindeki karşılıkları. */
 const UBL_KARSILIGI: Record<FaturaSenaryosu, string> = {
@@ -9,6 +9,7 @@ const UBL_KARSILIGI: Record<FaturaSenaryosu, string> = {
   iade: "IADE",
   tevkifat: "TEVKIFAT",
   istisna: "ISTISNA",
+  ihrackayitli: "IHRACKAYITLI",
 };
 
 export function senaryoUblKodu(senaryo: FaturaSenaryosu): string {
@@ -44,7 +45,9 @@ const istisnaSayilir = (kod: string | null | undefined) => Boolean(kod) && kod !
  * taşısa da IADE kalır — IADE tipi 201–350 kodlarını kabul eder ve iade
  * referansı yalnız bu tipte anlamlıdır. 351 faturayı ISTISNA yapmaz.
  */
-export function faturaSenaryosuTuret(tip: string, satirlar: SenaryoSatirGirdi[]): FaturaSenaryosu {
+export function faturaSenaryosuTuret(tip: string, satirlar: SenaryoSatirGirdi[], ihracKayitliKodu?: string | null): FaturaSenaryosu {
+  // EBLG-60: ihraç kayıtlı satış faturada işaretlenir; satırlardan türemez.
+  if (ihracKayitliKodu && tip === "satis") return "ihrackayitli";
   if (satirlar.some((s) => Boolean(s.tevkifatKodu))) return "tevkifat";
   if (iadeTipi(tip)) return "iade";
   if (satirlar.some((s) => Number(s.kdvOrani) === 0 && istisnaSayilir(s.gibIstisnaKodu))) return "istisna";
@@ -127,6 +130,26 @@ export function senaryoHatalari(satirlar: SenaryoSatirGirdi[]): SenaryoHatasi[] 
     }
   });
 
+  return hatalar;
+}
+
+/**
+ * İhraç kayıtlı satışın fatura düzeyindeki kuralları (EBLG-60). Kod yalnız
+ * satış faturasında anlamlıdır; tevkifatla birlikte olamaz, çünkü KDV zaten
+ * tahsil edilmez. Şema doğrulaması ile fatura ekranı aynı listeyi kullanır.
+ */
+export function ihracKayitliHatalari(fatura: {
+  tip: string;
+  ihracKayitliKodu?: string | null;
+  satirlar: Pick<SenaryoSatirGirdi, "tevkifatKodu">[];
+}): string[] {
+  if (!fatura.ihracKayitliKodu) return [];
+  const hatalar: string[] = [];
+  if (!ihracKayitliKoduBul(fatura.ihracKayitliKodu)) hatalar.push(`Tanımsız ihraç kayıtlı kodu: ${fatura.ihracKayitliKodu}`);
+  if (fatura.tip !== "satis") hatalar.push("İhraç kayıtlı yalnız satış faturasında seçilebilir");
+  if (fatura.satirlar.some((s) => Boolean(s.tevkifatKodu))) {
+    hatalar.push("İhraç kayıtlı satışta KDV tahsil edilmez; tevkifat uygulanamaz");
+  }
   return hatalar;
 }
 

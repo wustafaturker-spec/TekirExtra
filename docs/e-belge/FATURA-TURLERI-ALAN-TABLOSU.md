@@ -31,7 +31,7 @@ tablo ikisini birlikte gösterir.
 | 6 | Kamu iade | `KAMU` | IADE | Kamu kurumuna kesilen iade faturası | — | ❌ |
 | 7 | Şarj | `EARSIVFATURA` / e-Fatura | `SARJ` | Elektrikli araç şarj hizmeti | Kanala göre | ❌ |
 | 8 | Şarjanlık | `EARSIVFATURA` / e-Fatura | `SARJANLIK` | Şarj ünitesi/işletmecilik | Kanala göre | ❌ |
-| 9 | İhraç kayıtlı | `IHRACKAYITLI` | SATIS | İhracatçıya ihraç kaydıyla teslim | — | ❌ |
+| 9 | İhraç kayıtlı | TEMEL/TICARI | IHRACKAYITLI | İhracatçıya ihraç kaydıyla teslim | Profile göre | ✅ (EBLG-60) |
 
 **Kanal kararı sihirbaza değil, kurala aittir** (tasarım belgesi §3.1): alıcı
 yurt dışıysa → İhracat; yurt içi ve GİB'de kayıtlıysa → e-Fatura (ticari/temel
@@ -188,9 +188,15 @@ yapının kalanı şematrondan geçiyor.
 
 | Alan | UBL | Zorunlu | Durum |
 |---|---|---|---|
-| Senaryo `IHRACKAYITLI` | `ProfileID` | Evet | ❌ |
-| KDV hesaplanır ama tahsil edilmez | `TaxTotal` + istisna kodu | Evet | ❌ |
-| İhracatçının VKN'si | `AccountingCustomerParty` | Evet | ⚠️ normal alıcı alanı |
+| Tip `IHRACKAYITLI` (profil değil; profil TEMEL/TICARI kalır) | `InvoiceTypeCode` | Evet | ✅ faturada işaretlenir |
+| KDV hesaplanır, gösterilir, tahsil edilmez; kod 701/702 + açıklama KDV'li alt toplamda | `TaxTotal` + `TaxExemptionReasonCode` | Evet | ✅ net KDV 0, ödenecek = matrah |
+| KDV dahil tutar ≠ ödenecek | `TaxInclusiveAmount` / `PayableAmount` | Evet | ✅ |
+| İhracatçının VKN'si | `AccountingCustomerParty` | Evet | ✅ normal alıcı alanı |
+
+Kaynak: kullanıcının kabul edilmiş belgesi (M012026000000078, yalnız yerelde).
+Şematron bu tipte gevşek (kodsuz da geçiyor); 701 ise yalnız IHRACKAYITLI/IADE/SGK'da
+geçer. 703 (ÖTV) desteklenmiyor. Yurt dışı alıcıya ihraç kayıtlı kesilemez.
+NES testte K072026000000059 kabul (2026-09-19).
 
 ---
 
@@ -235,7 +241,7 @@ SGK · 801–811 → OZELMATRAH, IADE, SGK. IADE tipi TICARIFATURA profiliyle gi
 | E | KAMU-IADE alan grubu | Kamu |
 | F | SARJ / SARJANLIK alan grubu | Şarj |
 | G | Yolcu beraberi | Tax-free |
-| H | İhraç kayıtlı | İhracat zinciri |
+| H | İhraç kayıtlı | İhracat zinciri — ✅ EBLG-60 |
 | I | Alıcı alias'ının UBL'e yazılması | e-Fatura |
 | J | İade faturasında `BillingReference` | Tüm iade tipleri — ✅ EBLG-58 (alış iadesi; TEVKIFATIADE açık) |
 | K | İstisna kod listesinin fatura tipine göre süzülmesi | Tüm türler — ✅ EBLG-59 |

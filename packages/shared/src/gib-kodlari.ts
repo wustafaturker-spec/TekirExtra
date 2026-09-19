@@ -91,6 +91,17 @@ export const KDV_ISTISNA_KODLARI: readonly IstisnaKodu[] = [
   { kod: "351", tur: "tam", ad: "KDV - İstisna Olmayan Diğer" },
 ];
 
+/**
+ * İhraç kayıtlı satış kodları (EBLG-60). Kod listesinde 703 de var; o ÖTV
+ * ihraç kaydıdır ve ÖTV desteklenmediği için bilerek dışarıda.
+ */
+export const IHRAC_KAYITLI_KODLARI: readonly { kod: string; ad: string }[] = [
+  { kod: "701", ad: "3065 s. KDV Kanununun 11/1-c md. Kapsamındaki İhraç Kayıtlı Satış" },
+  { kod: "702", ad: "DİİB ve Geçici Kabul Rejimi Kapsamındaki Satışlar" },
+];
+
+export const ihracKayitliKoduBul = (kod: string | null | undefined) => IHRAC_KAYITLI_KODLARI.find((k) => k.kod === kod);
+
 export interface TevkifatKodu {
   kod: string;
   ad: string;

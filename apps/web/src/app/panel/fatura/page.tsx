@@ -21,6 +21,8 @@ import {
   faturaHesapla,
   faturaSenaryosuTuret,
   iadeEngelleri,
+  ihracKayitliHatalari,
+  IHRAC_KAYITLI_KODLARI,
   internetSatisEngelleri,
   izinliIstisnaKodlari,
   senaryoHatalari,
@@ -109,6 +111,8 @@ interface Fatura {
   /** Satırlardan türetilen GİB senaryosu (FTR-16) ve UBL'e yazılan profil (FTR-19). */
   senaryo?: FaturaSenaryosu;
   efaturaProfili?: "temel" | "ticari";
+  /** EBLG-60: ihraç kayıtlı satış kodu (701/702); doluysa KDV tahsil edilmez. */
+  ihracKayitliKodu?: string | null;
   /** Belge e-Arşiv olarak düzenlenirse teslim şekli (EBLG-26). */
   earsivGonderimSekli?: "elektronik" | "kagit";
   /**
@@ -190,6 +194,8 @@ interface EbelgeWizardBilgisi {
   vknTckn?: string | null;
   saglayici?: string;
   earsivGonderimSekli?: "elektronik" | "kagit";
+  /** EBLG-60: faturada işaretlenen ihraç kayıtlı kodu; sihirbaz yalnız gösterir. */
+  ihracKayitliKodu?: string | null;
   /** TCKN'li alıcıda e-Arşiv'e yazılacak ad/soyad; `tahmin` ise kartta girilmemiş (CARI-21). */
   aliciAdi?: { ad: string; soyad: string; tahmin: boolean };
   /** GİB birim kod listesinde karşılığı olmayan satırlar; belgeye adet olarak gider. */
@@ -255,6 +261,7 @@ const SENARYO_ADLARI: Record<FaturaSenaryosu, string> = {
   iade: "İade",
   tevkifat: "Tevkifat",
   istisna: "İstisna",
+  ihrackayitli: "İhraç kayıtlı",
 };
 
 /** BelgeDurum enum'u (EBLG-04). */
@@ -405,6 +412,8 @@ export default function FaturaSayfasi() {
   // kullanıcı bir kez seçtiyse cari değişse de seçimi ezilmez.
   const [efaturaProfili, setEfaturaProfili] = useState<"temel" | "ticari">("temel");
   const [profilElleDegisti, setProfilElleDegisti] = useState(false);
+  /** EBLG-60: ihraç kayıtlı satış kodu; boşsa normal satış. */
+  const [ihracKayitliKodu, setIhracKayitliKodu] = useState("");
   const [siparisNo, setSiparisNo] = useState("");
   const [siparisTarihi, setSiparisTarihi] = useState("");
   const [faturaNo, setFaturaNo] = useState("");
@@ -465,7 +474,9 @@ export default function FaturaSayfasi() {
       tevkifatPayda: tevkifat?.payda,
     };
   });
-  const sonuc = faturaHesapla({ satirlar: girdiSatirlar });
+  // EBLG-60: ihraç kayıtlı yalnız satışta; tip değişince seçim yok sayılır.
+  const ihracKayitli = tip === "satis" && ihracKayitliKodu ? ihracKayitliKodu : null;
+  const sonuc = faturaHesapla({ satirlar: girdiSatirlar, kdvTahsilEdilmez: Boolean(ihracKayitli) });
 
   // Senaryo ve GİB kural hataları sunucudakiyle aynı işlevden gelir; kullanıcı
   // kaydetmeden önce ne göndereceğini görür (FTR-16, FTR-20).
@@ -475,7 +486,8 @@ export default function FaturaSayfasi() {
     tevkifatOrani: s.tevkifatOrani,
     gibIstisnaKodu: s.gibIstisnaKodu,
   }));
-  const turetilenSenaryo = faturaSenaryosuTuret(tip, senaryoSatirlari);
+  const turetilenSenaryo = faturaSenaryosuTuret(tip, senaryoSatirlari, ihracKayitli);
+  const ihracKayitliUyarilari = ihracKayitliHatalari({ tip, ihracKayitliKodu: ihracKayitli, satirlar: senaryoSatirlari });
   // EBLG-59: tevkifatlı faturada sıfır KDV satırı yalnız 351 alabilir; liste sunucudaki kuralla süzülür.
   const istisnaSecenekleri = izinliIstisnaKodlari(senaryoSatirlari);
   const senaryoUyarilari = senaryoHatalari(senaryoSatirlari);
@@ -548,7 +560,7 @@ export default function FaturaSayfasi() {
         setAcikFatura(fatura);
         setDuzenlenenId(faturaDuzenlenebilir(fatura) ? fatura.id : null); setTip(fatura.tip); setFaturaNo(fatura.no ?? ""); setTarih(fatura.tarih.slice(0, 10)); setDovizCinsi(fatura.dovizCinsi); setVadeTarihi(fatura.vadeTarihi?.slice(0, 10) ?? ""); setSiparisNo(fatura.siparisNo ?? ""); setSiparisTarihi(fatura.siparisTarihi?.slice(0, 10) ?? ""); setVadeElleDegisti(true);
         setCariId(fatura.cari.id); setDepoId(fatura.depoId ?? ""); setAciklama(fatura.aciklama ?? ""); setNotlar(fatura.notlar ?? "");
-        setEfaturaProfili(fatura.efaturaProfili ?? "temel"); setProfilElleDegisti(true);
+        setEfaturaProfili(fatura.efaturaProfili ?? "temel"); setProfilElleDegisti(true); setIhracKayitliKodu(fatura.ihracKayitliKodu ?? "");
         setSatirlar(fatura.satirlar.map((satir) => ({
           stokId: satir.stokId, varyantId: satir.varyantId ?? undefined,
           miktar: Number(satir.miktar), birimFiyat: Number(satir.birimFiyat),
@@ -607,7 +619,7 @@ export default function FaturaSayfasi() {
     setCariId(""); setCariOzeti(null); setDepoId(""); setTip(yonBaglami ?? "satis"); setGelirTuru("ticari_satis"); setTarih(new Date().toISOString().substring(0, 10)); setDovizCinsi("TRY"); setKur("1");
     setAciklama(""); setKuruAciklamayaEkle(true); setFaturaNo("");
     setNotlar(""); setVadeTarihi(""); setVadeElleDegisti(false); setSiparisNo(""); setSiparisTarihi("");
-    setEfaturaProfili("temel"); setProfilElleDegisti(false);
+    setEfaturaProfili("temel"); setProfilElleDegisti(false); setIhracKayitliKodu("");
     setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" }]); setAcikSatir(null);
     setDosyalar([]);
     setCariDogrulamaHatasi(""); setSatirDogrulamaHatalari([]);
@@ -822,6 +834,11 @@ export default function FaturaSayfasi() {
 
     // Eksik istisna kodu gibi senaryo hataları burada durdurulur; sunucuya
     // gitse de aynı kuraldan dönerdi (FTR-20).
+    if (ihracKayitliUyarilari.length > 0) {
+      setHata(ihracKayitliUyarilari[0]);
+      kullanimOlayi("fatura_dogrulama_hatasi");
+      return;
+    }
     if (senaryoUyarilari.length > 0) {
       const ilk = senaryoUyarilari[0];
       setHata(`Satır ${ilk.satirIndeksi + 1}: ${ilk.mesaj}`);
@@ -840,6 +857,7 @@ export default function FaturaSayfasi() {
         body: JSON.stringify({
           cariId,
           efaturaProfili,
+          ihracKayitliKodu: ihracKayitli,
           // STK-07: boş bırakılırsa sunucu varsayılan depoyu kullanır
           depoId: depoId || null,
           tip,
@@ -1425,6 +1443,17 @@ export default function FaturaSayfasi() {
                   </small>
                 </Field>
               )}
+              {tip === "satis" && (
+                <Field label="İhraç kayıtlı satış">
+                  <Select aria-label="İhraç kayıtlı satış" value={ihracKayitliKodu} onChange={(e) => setIhracKayitliKodu(e.target.value)}>
+                    <option value="">Hayır — normal satış</option>
+                    {IHRAC_KAYITLI_KODLARI.map((k) => <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>)}
+                  </Select>
+                  <small className="muted">
+                    {ihracKayitliKodu ? "KDV hesaplanır ve belgede görünür ama tahsil edilmez; ödenecek tutar matrahtır." : "İhracatçıya ihraç kaydıyla teslimde seçilir."}
+                  </small>
+                </Field>
+              )}
               <Field label="Sipariş No"><Input value={siparisNo} onChange={(e) => setSiparisNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" /></Field>
               <Field label="Sipariş Tarihi"><Input type="date" value={siparisTarihi} onChange={(e) => setSiparisTarihi(e.target.value)} /></Field>
             <div>
@@ -1647,7 +1676,7 @@ export default function FaturaSayfasi() {
                   <span>Toplam iskonto</span><span>-{tl(sonuc.toplamSatirIskontosu)}</span>
                 </div>
                 <div className="document-total-line is-tax">
-                  <span>KDV toplamı</span><span>{tl(sonuc.toplamKdv)}</span>
+                  <span>{ihracKayitli ? "Hesaplanan KDV (tahsil edilmez)" : "KDV toplamı"}</span><span>{tl(sonuc.toplamKdv)}</span>
                 </div>
                 {sonuc.toplamTevkifat > 0 && (
                   <div className="document-total-line is-discount">
@@ -1676,7 +1705,7 @@ export default function FaturaSayfasi() {
               satırlardan türetip gösterir; geçersiz senaryo burada durdurulur. */}
           <div className="document-editor__section">
             <h4 className="document-editor__section-title">Senaryo özeti</h4>
-            <div className={`scenario-summary${senaryoUyarilari.length > 0 ? " is-warning" : ""}`}>
+            <div className={`scenario-summary${senaryoUyarilari.length + ihracKayitliUyarilari.length > 0 ? " is-warning" : ""}`}>
               <div>
                 <span>GİB senaryosu</span>
                 <strong>{SENARYO_ADLARI[turetilenSenaryo]} · {senaryoUblKodu(turetilenSenaryo)}</strong>
@@ -1699,6 +1728,9 @@ export default function FaturaSayfasi() {
                 <span>{sonuc.toplamTevkifat > 0 ? "Tevkifat sonrası tahsil edilecek" : "Tahsil edilecek"}</span>
                 <strong>{tl(sonuc.genelToplam)}</strong>
               </div>
+              {ihracKayitliUyarilari.length > 0 && (
+                <ul role="alert">{ihracKayitliUyarilari.map((mesaj) => <li key={mesaj}>{mesaj}</li>)}</ul>
+              )}
               {senaryoUyarilari.length > 0 && (
                 <ul role="alert">
                   {senaryoUyarilari.map((uyari, sira) => (
@@ -1829,7 +1861,9 @@ export default function FaturaSayfasi() {
                 <strong>
                   {ebelgeWizard.bilgi.ihracat
                     ? `İhracat faturası — alıcı ${ebelgeWizard.bilgi.ihracat.ulkeAdi ?? ebelgeWizard.bilgi.ihracat.ulkeKodu} adresli`
-                    : "Mükellefiyet gönderim onayında sorgulanacak: e-Fatura / e-Arşiv"}
+                    : ebelgeWizard.bilgi.ihracKayitliKodu
+                      ? `İhraç kayıtlı satış (${ebelgeWizard.bilgi.ihracKayitliKodu}) — KDV gösterilir, tahsil edilmez`
+                      : "Mükellefiyet gönderim onayında sorgulanacak: e-Fatura / e-Arşiv"}
                 </strong>
               </div>
             </div>}

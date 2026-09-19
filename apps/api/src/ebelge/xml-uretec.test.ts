@@ -595,3 +595,34 @@ describe("faturaUblUret — KDV alt toplamları ve istisna (EBLG-59)", () => {
     expect(faturaUblUret(fatura([satir(20, null)], { senaryo: "satis", efaturaProfili: "ticari" }), satici)).toContain("<cbc:ProfileID>TICARIFATURA</cbc:ProfileID>");
   });
 });
+
+describe("faturaUblUret — ihraç kayıtlı satış (EBLG-60)", () => {
+  // Kullanıcının kabul edilmiş örneği M012026000000078: %10 KDV hesaplanır ve
+  // 701 koduyla gösterilir, ödenecek tutar yalnız matrahtır.
+  const fatura = {
+    id: "77777777-7777-4777-8777-777777777777", no: "TKR2026000000011", tarih: new Date("2026-09-19T12:00:00Z"),
+    tip: "satis", senaryo: "ihrackayitli", ihracKayitliKodu: "701", dovizCinsi: "TRY",
+    toplamKdv: 10966.03, toplamMatrah: 109660.29, toplamBrut: 109660.29, genelToplam: 109660.29, toplamSatirIskontosu: 0,
+    cari: { vknTckn: "0680054120", unvan: "İhracatçı Ltd." },
+    satirlar: [{
+      miktar: 7000, birimFiyat: 15.665755, iskontoTutari: 0, matrah: 109660.29, kdvOrani: 10, kdvTutari: 10966.03,
+      gibIstisnaKodu: null, stok: { kod: "SF0101", ad: "Mumlu bez" },
+    }],
+  } as never;
+  const xml = faturaUblUret(fatura, { unvan: "Satıcı A.Ş.", vkn: "9876543210" });
+
+  it("tipi IHRACKAYITLI yazar, KDV'li alt toplama 701 kodunu ve açıklamasını koyar", () => {
+    expect(xml).toContain("<cbc:InvoiceTypeCode>IHRACKAYITLI</cbc:InvoiceTypeCode>");
+    const belge = xml.slice(xml.indexOf("<cac:TaxTotal>"), xml.indexOf("</cac:TaxTotal>"));
+    expect(belge).toContain("<cbc:Percent>10.00</cbc:Percent>");
+    expect(belge).toContain('<cbc:TaxAmount currencyID="TRY">10966.03</cbc:TaxAmount>');
+    expect(belge).toContain("<cbc:TaxExemptionReasonCode>701</cbc:TaxExemptionReasonCode>");
+    expect(belge).toContain("<cbc:TaxExemptionReason>701 3065 s. KDV Kanununun 11/1-c md. Kapsamındaki İhraç Kayıtlı Satış</cbc:TaxExemptionReason>");
+    expect(xml.slice(xml.indexOf("<cac:InvoiceLine>"))).toContain("<cbc:TaxExemptionReasonCode>701</cbc:TaxExemptionReasonCode>");
+  });
+
+  it("KDV dahil tutarı gösterir ama ödenecek yalnız matrahtır", () => {
+    expect(xml).toContain('<cbc:TaxInclusiveAmount currencyID="TRY">120626.32</cbc:TaxInclusiveAmount>');
+    expect(xml).toContain('<cbc:PayableAmount currencyID="TRY">109660.29</cbc:PayableAmount>');
+  });
+});

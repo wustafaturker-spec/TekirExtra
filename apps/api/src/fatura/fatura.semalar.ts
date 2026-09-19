@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { guncellemeSemasi } from "../core/sema";
-import { senaryoHatalari } from "@tekirextra/shared";
+import { ihracKayitliHatalari, senaryoHatalari } from "@tekirextra/shared";
 
 const pozitifOndalik = z
   .union([z.string(), z.number()])
@@ -59,6 +59,8 @@ const faturaOlusturGovde = z.object({
    * kullanılır; e-Belge sihirbazında da değiştirilebilir.
    */
   earsivGonderimSekli: z.enum(["elektronik", "kagit"]).optional().nullable(),
+  /** EBLG-60: ihraç kayıtlı satış kodu (701/702); doluysa KDV tahsil edilmez. */
+  ihracKayitliKodu: z.string().optional().nullable(),
   /** STK-07: stok hareketlerinin işleneceği depo; boşsa varsayılan depo */
   depoId: z.string().uuid().optional().nullable(),
   dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
@@ -88,8 +90,14 @@ const senaryolariDogrula = (
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["satirlar", hata.satirIndeksi, hata.alan], message: hata.mesaj });
   }
 };
-const faturaFinansalDogrula = (fatura: { satirlar?: Array<{ miktar?: string; birimFiyat?: string; iskontoOrani?: string; kdvOrani?: string; tevkifatKodu?: string | null; tevkifatOrani?: string | null; gibIstisnaKodu?: string | null }>; genelIskontoTutari?: string; dovizCinsi?: string; kur?: string }, ctx: z.RefinementCtx) => {
+const faturaFinansalDogrula = (fatura: { satirlar?: Array<{ miktar?: string; birimFiyat?: string; iskontoOrani?: string; kdvOrani?: string; tevkifatKodu?: string | null; tevkifatOrani?: string | null; gibIstisnaKodu?: string | null }>; genelIskontoTutari?: string; dovizCinsi?: string; kur?: string; tip?: string; ihracKayitliKodu?: string | null }, ctx: z.RefinementCtx) => {
   senaryolariDogrula(fatura, ctx);
+  // Güncellemede tip gelmeyebilir; kural tam hâliyle serviste yeniden uygulanır.
+  if (fatura.ihracKayitliKodu && fatura.tip) {
+    for (const mesaj of ihracKayitliHatalari({ tip: fatura.tip, ihracKayitliKodu: fatura.ihracKayitliKodu, satirlar: fatura.satirlar ?? [] })) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ihracKayitliKodu"], message: mesaj });
+    }
+  }
   // EBLG-57: dövizli belgede 1 "tutar zaten TL" demektir; e-belgenin TL
   // karşılığı ve cari/rapor tutarları yanlış çıkar (masraf ve gelirle aynı kural).
   if (fatura.dovizCinsi !== undefined && fatura.dovizCinsi !== "TRY" && Number(fatura.kur ?? 1) === 1) {

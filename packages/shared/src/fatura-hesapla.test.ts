@@ -118,3 +118,14 @@ describe("faturaHesapla motoru (FTR-04/11)", () => {
     expect(sonuc.genelToplam).toBe(1100.0); // 1000 + 100 = 1100
   });
 });
+
+describe("ihraç kayıtlı satış — KDV tahsil edilmez (EBLG-60)", () => {
+  it("KDV hesaplanır ama net KDV sıfır, genel toplam matrahtır", () => {
+    // Örnek belge M012026000000078: 7000 × 15,665755 = 109.660,29 matrah, %10 KDV 10.966,03.
+    const sonuc = faturaHesapla({ satirlar: [{ stokId: "s", miktar: 7000, birimFiyat: 15.665755, kdvOrani: 10 }], kdvTahsilEdilmez: true });
+    expect(sonuc.toplamMatrah).toBe(109660.29);
+    expect(sonuc.toplamKdv).toBe(10966.03);
+    expect(sonuc.toplamNetKdv).toBe(0);
+    expect(sonuc.genelToplam).toBe(109660.29);
+  });
+});

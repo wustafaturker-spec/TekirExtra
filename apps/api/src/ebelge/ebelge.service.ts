@@ -65,6 +65,7 @@ function gonderimKosullariniDenetle(
   fatura: Parameters<typeof ihracatOzeti>[0] & Parameters<typeof internetSatisOzeti>[0] & Parameters<typeof iadeOzeti>[0] & {
     durum: string;
     cari: { vknTckn: string | null };
+    ihracKayitliKodu?: string | null;
   },
 ) {
   if (fatura.durum !== "kesin") {
@@ -74,9 +75,14 @@ function gonderimKosullariniDenetle(
   const ihracat = ihracatOzeti(fatura);
   const internet = internetSatisOzeti(fatura);
   const iade = iadeOzeti(fatura);
-  const engeller = [...ihracat.engeller, ...internet.engeller, ...iade.engeller];
+  const engeller = [...ihracat.engeller, ...internet.engeller, ...iade.engeller].map((e) => e.mesaj);
+  // EBLG-60: ihraç kayıtlı satış yurt içindeki ihracatçıya yapılır; alıcı yurt
+  // dışındaysa belge ihracat faturasıdır, ikisi birden olamaz.
+  if (ihracat.ihracat && fatura.ihracKayitliKodu) {
+    engeller.push("Alıcı yurt dışında; ihraç kayıtlı satış yurt içindeki ihracatçıya kesilir. Faturadaki ihraç kayıtlı işaretini kaldırın");
+  }
   if (engeller.length) {
-    throw new BadRequestException(engeller.map((e) => e.mesaj).join("; "));
+    throw new BadRequestException(engeller.join("; "));
   }
   if (!ihracat.ihracat && !fatura.cari.vknTckn) {
     throw new BadRequestException("Alıcının geçerli bir VKN/TCKN bilgisi olmalıdır");
@@ -159,6 +165,8 @@ export class EbelgeService {
         saglayici: baglanti.saglayici,
         mevcutEbelge: fatura.ebelge,
         earsivGonderimSekli: fatura.earsivGonderimSekli,
+        // EBLG-60: faturada işaretlenir; sihirbaz yalnız gösterir.
+        ihracKayitliKodu: fatura.ihracKayitliKodu,
         // İhracat faturasında kanal sorulmaz, alıcının ülkesinden gelir; sihirbaz
         // kararı gerekçesiyle gösterir ve türe özel alanları toplar (EBLG-53).
         ihracat: ihracat.ihracat
