@@ -134,3 +134,29 @@ describe("faturaPdfHtml — KAMU senaryosu", () => {
     expect(faturaPdfHtml({ ...fatura, ebelge: { tur: "efatura" } }, firma)).not.toContain("harcama birimi");
   });
 });
+
+describe("faturaPdfHtml — yolcu beraberi (tax-free)", () => {
+  const yolcuFaturasi = {
+    ...fatura,
+    yolcuBeraberi: {
+      yolcu: { ad: "John", soyad: "Doe", uyruk: "GB", pasaportNo: "P1234567", sehir: "London", ulke: "GB" },
+      araciKurum: { vkn: "1111111111", etiket: "urn:mail:yolcuberaberpk@arefund.com.tr", unvan: "A Refund Turkey A.Ş." },
+    },
+  };
+
+  it("yolcuyu, aracı kurumu ve istisna sebebini yazar; profil YOLCUBERABERFATURA'dır", () => {
+    const html = faturaPdfHtml({ ...yolcuFaturasi, ebelge: { tur: "efatura" } }, firma);
+    expect(html).toContain("Yolcu: <strong>John Doe</strong>");
+    expect(html).toContain("Pasaport no: P1234567");
+    expect(html).toContain("İkamet: London / Birleşik Krallık");
+    expect(html).toContain("KDV iadesini yapacak aracı kurum: A Refund Turkey A.Ş. (VKN 1111111111)");
+    expect(html).toContain("501");
+    expect(profilAdi({ ebelge: { tur: "efatura" }, yolcuBeraberi: yolcuFaturasi.yolcuBeraberi })).toBe("YOLCUBERABERFATURA");
+    // Belgenin GİB tipi ISTISNA'dır; iç senaryo kodu (satis) yazılmaz.
+    expect(faturaPdfHtml({ ...yolcuFaturasi, id: "x", senaryo: "satis", ebelge: { tur: "efatura" } }, firma)).toContain("Senaryo: ISTISNA");
+  });
+
+  it("yolcu bilgisi olmayan faturada blok yoktur", () => {
+    expect(faturaPdfHtml({ ...fatura, ebelge: { tur: "efatura" } }, firma)).not.toContain("Yolcu:");
+  });
+});

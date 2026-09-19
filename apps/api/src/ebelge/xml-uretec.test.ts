@@ -764,3 +764,66 @@ describe("faturaUblUret — KAMU senaryosu", () => {
     expect(earsiv).not.toContain("PayeeFinancialAccount");
   });
 });
+
+describe("faturaUblUret — yolcu beraberi (tax-free)", () => {
+  const fatura = {
+    id: "99999999-9999-4999-8999-999999999999",
+    no: "TKR2026000000009",
+    tarih: new Date("2026-09-20T12:00:00Z"),
+    tip: "satis", senaryo: "satis", efaturaProfili: "temel",
+    dovizCinsi: "TRY", kur: 1,
+    toplamKdv: 400, toplamMatrah: 2000, toplamBrut: 2000, genelToplam: 2400,
+    toplamSatirIskontosu: 0, genelIskontoToplam: 0,
+    cari: { vknTckn: null, unvan: "Yolcu beraberi satışlar", adresler: [] },
+    satirlar: [{
+      miktar: 1, matrah: 2000, iskontoTutari: 0, kdvTutari: 400, kdvOrani: 20,
+      gibIstisnaKodu: null, birimFiyat: 2000, birim: "adet",
+      stok: { kod: "STK-1", ad: "Halı" },
+    }],
+  } as never;
+  const satici = { unvan: "Satıcı A.Ş.", vkn: "9876543210" };
+  const yolcuBeraberi = {
+    yolcu: { ad: "John", soyad: "Doe", uyruk: "GB", pasaportNo: "P1234567", pasaportTarihi: "2019-04-11", sehir: "London", ulke: "GB", bankaHesapNo: "GB33BUKB20201555555555", bankaAdi: "Barclays" },
+    araciKurum: { vkn: "1111111111", etiket: "urn:mail:yolcuberaberpk@arefund.com.tr", unvan: "A Refund Turkey A.Ş." },
+  };
+  const xml = faturaUblUret(fatura, satici, { tur: "efatura", yolcuBeraberi });
+
+  it("profili ve tipi GİB'in beklediği gibi yazar, alıcı Gümrük Bakanlığı'dır", () => {
+    expect(xml).toContain("<cbc:ProfileID>YOLCUBERABERFATURA</cbc:ProfileID>");
+    expect(xml).toContain("<cbc:InvoiceTypeCode>ISTISNA</cbc:InvoiceTypeCode>");
+    const alici = xml.slice(xml.indexOf("<cac:AccountingCustomerParty>"), xml.indexOf("</cac:AccountingCustomerParty>"));
+    expect(alici).toContain('<cbc:ID schemeID="VKN">1460415308</cbc:ID>');
+  });
+
+  it("yolcuyu TAXFREE kimliğiyle, pasaportu ve iade hesabıyla bildirir", () => {
+    const yolcu = xml.slice(xml.indexOf("<cac:BuyerCustomerParty>"), xml.indexOf("</cac:BuyerCustomerParty>"));
+    expect(yolcu).toContain('<cbc:ID schemeID="PARTYTYPE">TAXFREE</cbc:ID>');
+    expect(yolcu).toContain("<cbc:FirstName>John</cbc:FirstName>");
+    expect(yolcu).toContain("<cbc:NationalityID>GB</cbc:NationalityID>");
+    expect(yolcu).toContain("<cbc:ID>P1234567</cbc:ID>");
+    expect(yolcu).toContain("<cbc:IssueDate>2019-04-11</cbc:IssueDate>");
+    expect(yolcu).toContain("<cbc:Name>Barclays</cbc:Name>");
+    expect(yolcu).toContain("<cbc:CityName>London</cbc:CityName>");
+  });
+
+  it("pasaport tarihi yoksa kılavuzun sabitini yazar", () => {
+    const eksik = faturaUblUret(fatura, satici, { tur: "efatura", yolcuBeraberi: { ...yolcuBeraberi, yolcu: { ...yolcuBeraberi.yolcu, pasaportTarihi: null } } });
+    expect(eksik).toContain("<cbc:IssueDate>2005-01-01</cbc:IssueDate>");
+  });
+
+  it("aracı kurumu TaxRepresentativeParty içinde bildirir", () => {
+    const araci = xml.slice(xml.indexOf("<cac:TaxRepresentativeParty>"), xml.indexOf("</cac:TaxRepresentativeParty>"));
+    expect(araci).toContain('<cbc:ID schemeID="ARACIKURUMVKN">1111111111</cbc:ID>');
+    expect(araci).toContain('<cbc:ID schemeID="ARACIKURUMETIKET">urn:mail:yolcuberaberpk@arefund.com.tr</cbc:ID>');
+    expect(araci).toContain("<cbc:Name>A Refund Turkey A.Ş.</cbc:Name>");
+  });
+
+  it("501 kodunu yalnız belge düzeyinde yazar; KDV tahsil edilir", () => {
+    const belgeVergisi = xml.slice(xml.indexOf("<cac:TaxTotal>"), xml.indexOf("<cac:LegalMonetaryTotal>"));
+    expect(belgeVergisi).toContain("<cbc:TaxExemptionReasonCode>501</cbc:TaxExemptionReasonCode>");
+    expect(belgeVergisi).toContain("Yolcu Beraberi Eşya");
+    const satir = xml.slice(xml.indexOf("<cac:InvoiceLine>"));
+    expect(satir).not.toContain("TaxExemptionReasonCode");
+    expect(xml).toContain('<cbc:PayableAmount currencyID="TRY">2400.00</cbc:PayableAmount>');
+  });
+});

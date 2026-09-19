@@ -48,6 +48,32 @@ export const ebelgeGonderSemasi = z.object({
       gonderiTarihi: z.coerce.date().nullable().optional(),
     })
     .optional(),
+  /** Yolcu beraberi (tax-free): işaret, yolcu kimliği ve aracı kurum. */
+  yolcuBeraberi: z
+    .object({
+      isaretli: z.boolean(),
+      yolcu: z
+        .object({
+          ad: z.string().max(100).nullable().optional(),
+          soyad: z.string().max(100).nullable().optional(),
+          uyruk: z.string().max(2).nullable().optional(),
+          pasaportNo: z.string().max(40).nullable().optional(),
+          pasaportTarihi: z.string().max(10).nullable().optional(),
+          sehir: z.string().max(80).nullable().optional(),
+          ulke: z.string().max(2).nullable().optional(),
+          bankaHesapNo: z.string().max(40).nullable().optional(),
+          bankaAdi: z.string().max(120).nullable().optional(),
+        })
+        .optional(),
+      araciKurum: z
+        .object({
+          vkn: z.string().max(10).nullable().optional(),
+          etiket: z.string().max(200).nullable().optional(),
+          unvan: z.string().max(200).nullable().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
   /** KAMU senaryosu: ödemeyi yapacak harcama birimi ve ödemenin yapılacağı IBAN. */
   kamu: z
     .object({

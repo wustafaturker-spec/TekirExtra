@@ -28,6 +28,10 @@ interface Firma {
   webSitesi: string | null;
   mersisNo: string | null;
   ticaretSicilNo: string | null;
+  /** Yolcu beraberi (tax-free): KDV iadesini yapan aracı kurumun varsayılanı. */
+  araciKurumVkn: string | null;
+  araciKurumEtiket: string | null;
+  araciKurumUnvan: string | null;
   /** e-Belge gönderimini durduran eksikler; boşsa gönderilebilir. */
   ebelgeEksikleri: string[];
   abonelik: {
@@ -39,7 +43,7 @@ interface Firma {
   } | null;
 }
 
-const ILETISIM_ALANLARI = ["adres", "ilce", "il", "postaKodu", "telefon", "eposta", "webSitesi", "mersisNo", "ticaretSicilNo"] as const;
+const ILETISIM_ALANLARI = ["adres", "ilce", "il", "postaKodu", "telefon", "eposta", "webSitesi", "mersisNo", "ticaretSicilNo", "araciKurumVkn", "araciKurumEtiket", "araciKurumUnvan"] as const;
 type IletisimAlani = (typeof ILETISIM_ALANLARI)[number];
 const BOS_ILETISIM = Object.fromEntries(ILETISIM_ALANLARI.map((a) => [a, ""])) as Record<IletisimAlani, string>;
 const iletisimOku = (f: Firma) => Object.fromEntries(ILETISIM_ALANLARI.map((a) => [a, f[a] ?? ""])) as Record<IletisimAlani, string>;
@@ -308,6 +312,24 @@ export default function FirmaAyarlariSayfasi() {
               </div>
               <div style={{ flex: 1, minWidth: 200 }}>
                 <Field label="Ticaret sicil no"><Input value={iletisim.ticaretSicilNo} onChange={(e) => setIletisim({ ...iletisim, ticaretSicilNo: e.target.value })} maxLength={30} /></Field>
+              </div>
+            </div>
+            <h3 style={{ margin: "1rem 0 0", fontSize: "0.95rem" }}>Yolcu beraberi (tax-free) aracı kurumu</h3>
+            <p className="muted" style={{ margin: 0 }}>
+              Türkiye'de ikamet etmeyen yolcuya yapılan satışta KDV iadesini yapan yetkili aracı kurum belgede bildirilir.
+              Burada varsayılanı durur; sihirbazda faturaya özel değiştirilebilir.
+            </p>
+            <div className="row">
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <Field label="Aracı kurum VKN"><Input value={iletisim.araciKurumVkn} onChange={(e) => setIletisim({ ...iletisim, araciKurumVkn: e.target.value.replace(/\D/g, "") })} maxLength={10} inputMode="numeric" placeholder="10 hane" /></Field>
+              </div>
+              <div style={{ flex: 2, minWidth: 260 }}>
+                <Field label="Aracı kurum posta kutusu etiketi"><Input value={iletisim.araciKurumEtiket} onChange={(e) => setIletisim({ ...iletisim, araciKurumEtiket: e.target.value.trim() })} maxLength={200} placeholder="urn:mail:yolcuberaberpk@firma.com.tr" /></Field>
+              </div>
+            </div>
+            <div className="row">
+              <div style={{ flex: 1, minWidth: 260 }}>
+                <Field label="Aracı kurum unvanı"><Input value={iletisim.araciKurumUnvan} onChange={(e) => setIletisim({ ...iletisim, araciKurumUnvan: e.target.value })} maxLength={200} /></Field>
               </div>
             </div>
             <div>

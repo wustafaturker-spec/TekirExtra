@@ -11,7 +11,7 @@ import {
 } from "@nestjs/common";
 import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
 import type { BelgeDurumSonuc, EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
-import { type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu } from "@tekirextra/shared";
+import { type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, YOLCU_BERABER_POSTA_KUTUSU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { BildirimService } from "../bildirimler/bildirim.service";
@@ -33,6 +33,7 @@ import { belgeNoyuUbleYaz, faturaUblUret } from "./xml-uretec";
 import { ihracatOzeti } from "./ihracat-bilgisi";
 import { ebelgeGonderilebilirTipMi, iadeOzeti } from "./iade-bilgisi";
 import { internetSatisOzeti } from "./internet-satis-bilgisi";
+import { yolcuBeraberiOzeti } from "./yolcu-beraberi-bilgisi";
 
 /** Onay ekranında satırın hangi ipucuyla eşleştiği. */
 export type EslesmeKaynagi =
@@ -48,9 +49,21 @@ const YEDI_GUN_MS = 7 * 24 * 60 * 60 * 1_000;
 /** Ekrandaki "Yenile" düğmesinin kiracı başına asgari aralığı (EBLG-11). */
 const ELLE_TAZELEME_ARALIK_MS = Number(process.env.EBLG_ELLE_TAZELEME_ARALIK_MS || 60 * 60 * 1_000);
 
-function gonderimTarihiGecerliMi(tarih: Date, simdi = new Date()): boolean {
-  const fark = simdi.getTime() - tarih.getTime();
-  return fark >= 0 && fark <= YEDI_GUN_MS;
+/** Anı Türkiye takvimindeki güne indirger (YYYY-AA-GG). */
+const istanbulGunu = (an: Date): string => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Istanbul" }).format(an);
+
+/**
+ * Fatura tarihi bugün ya da en çok 7 gün önce olmalı. Karşılaştırma **gün**
+ * üzerinden yapılır: fatura tarihi UTC gün başı olarak saklandığı için anlık
+ * karşılaştırma, Türkiye'de gece yarısı ile 03:00 arasında kesilen bugünkü
+ * faturayı "gelecek tarihli" sayıp gönderimi durduruyordu.
+ */
+export function gonderimTarihiGecerliMi(tarih: Date, simdi = new Date()): boolean {
+  const bugun = istanbulGunu(simdi);
+  const gun = tarih.toISOString().slice(0, 10);
+  if (gun > bugun) return false;
+  const enEski = new Date(`${bugun}T00:00:00Z`).getTime() - YEDI_GUN_MS;
+  return new Date(`${gun}T00:00:00Z`).getTime() >= enEski;
 }
 
 /** EBLG-58: satış iadesinin, alışın ve proformanın faturasını biz kesmeyiz. */
@@ -62,7 +75,7 @@ const TIP_GONDERILEMEZ =
  * da belge gönderilebilecek durumda değilse durdurur; türe özel özetleri döner.
  */
 function gonderimKosullariniDenetle(
-  fatura: Parameters<typeof ihracatOzeti>[0] & Parameters<typeof internetSatisOzeti>[0] & Parameters<typeof iadeOzeti>[0] & {
+  fatura: Parameters<typeof ihracatOzeti>[0] & Parameters<typeof internetSatisOzeti>[0] & Parameters<typeof iadeOzeti>[0] & Parameters<typeof yolcuBeraberiOzeti>[0] & {
     durum: string;
     cari: { vknTckn: string | null };
     ihracKayitliKodu?: string | null;
@@ -72,11 +85,17 @@ function gonderimKosullariniDenetle(
     throw new BadRequestException("Yalnızca kesinleşmiş faturalar gönderilebilir");
   }
   if (!ebelgeGonderilebilirTipMi(fatura.tip)) throw new BadRequestException(TIP_GONDERILEMEZ);
-  const ihracat = ihracatOzeti(fatura);
+  // Yolcu beraberi işareti ihracat kanalını ezer: yolcunun kendi ülkesindeki
+  // adresi belgeyi ihracat faturası yapmaz, satış yurt içinde yapılmıştır.
+  const yolcu = yolcuBeraberiOzeti(fatura);
+  const ihracat = yolcu.yolcuBeraberi ? IHRACAT_YOK : ihracatOzeti(fatura);
   const internet = internetSatisOzeti(fatura);
   const iade = iadeOzeti(fatura);
   if (iade.iade && ihracat.ihracat) throw new BadRequestException(YURT_DISI_IADE_ENGELI);
-  const engeller = [...ihracat.engeller, ...internet.engeller, ...iade.engeller].map((e) => e.mesaj);
+  const engeller = [...ihracat.engeller, ...internet.engeller, ...iade.engeller, ...yolcu.engeller].map((e) => e.mesaj);
+  if (yolcu.yolcuBeraberi && fatura.ihracKayitliKodu) {
+    engeller.push("Yolcu beraberi satışta ihraç kayıtlı işareti bulunamaz");
+  }
   // EBLG-60: ihraç kayıtlı satış yurt içindeki ihracatçıya yapılır; alıcı yurt
   // dışındaysa belge ihracat faturasıdır, ikisi birden olamaz.
   if (ihracat.ihracat && fatura.ihracKayitliKodu) {
@@ -85,14 +104,18 @@ function gonderimKosullariniDenetle(
   if (engeller.length) {
     throw new BadRequestException(engeller.join("; "));
   }
-  if (!ihracat.ihracat && !fatura.cari.vknTckn) {
+  // Yolcu beraberinde alıcı Gümrük Bakanlığı'dır; genel carinin VKN'si aranmaz.
+  if (!ihracat.ihracat && !yolcu.yolcuBeraberi && !fatura.cari.vknTckn) {
     throw new BadRequestException("Alıcının geçerli bir VKN/TCKN bilgisi olmalıdır");
   }
   if (!gonderimTarihiGecerliMi(fatura.tarih)) {
     throw new BadRequestException("Fatura tarihi bugün veya en fazla 7 gün önce olmalıdır");
   }
-  return { ihracat, internet, iade };
+  return { ihracat, internet, iade, yolcu };
 }
+
+/** İhracat özetinin "ihracat değil" hâli; yolcu beraberi işareti kanalı ezer. */
+const IHRACAT_YOK: ReturnType<typeof ihracatOzeti> = { ihracat: false, engeller: [], menseiEksikleri: [] };
 
 @Injectable()
 export class EbelgeService {
@@ -145,20 +168,26 @@ export class EbelgeService {
       const testOrtami = Boolean((JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig).testOrtami);
       // İhracatta alıcının VKN'si yoktur; belgeye GİB'in yurt dışı alıcı
       // sabiti yazılır, kart üzerindeki kimlik hiç kullanılmaz.
-      const ihracat = ihracatOzeti(fatura);
+      const yolcu = yolcuBeraberiOzeti(fatura);
+      const ihracat = yolcu.yolcuBeraberi ? IHRACAT_YOK : ihracatOzeti(fatura);
       const internet = internetSatisOzeti(fatura);
       const iade = iadeOzeti(fatura);
+      const firma = await tx.tenant.findUnique({ where: { id: tenantId } });
+      // Yolcu beraberi satış genel bir cariye kesilir; o carinin VKN'si yoktur.
+      // Kimlik kontrolü bu yüzden satış faturasında durdurucu değil, eksik
+      // olarak bildirilir: işaret konursa belge zaten Bakanlığa gider.
+      const vknYok = !vknTcknKabulEdilebilirMi(fatura.cari.vknTckn, testOrtami);
+      const yolcuOlabilir = fatura.tip === "satis" && !ihracat.ihracat;
       if (iade.iade && ihracat.ihracat) {
         return { gonderilebilir: false, neden: YURT_DISI_IADE_ENGELI, faturaNo: fatura.no, cari: fatura.cari.unvan, vknTckn: fatura.cari.vknTckn, saglayici: baglanti.saglayici };
       }
-      if (!ihracat.ihracat && !vknTcknKabulEdilebilirMi(fatura.cari.vknTckn, testOrtami)) {
+      if (!ihracat.ihracat && vknYok && !(yolcuOlabilir && (yolcu.yolcuBeraberi || !fatura.cari.vknTckn))) {
         return { gonderilebilir: false, neden: "Alıcının geçerli bir VKN/TCKN bilgisi olmalıdır.", faturaNo: fatura.no, cari: fatura.cari.unvan, vknTckn: fatura.cari.vknTckn, saglayici: baglanti.saglayici };
       }
       if (!gonderimTarihiGecerliMi(fatura.tarih)) {
         return { gonderilebilir: false, neden: "Fatura tarihi bugün veya en fazla 7 gün önce olmalıdır.", faturaNo: fatura.no, cari: fatura.cari.unvan, vknTckn: fatura.cari.vknTckn, saglayici: baglanti.saglayici };
       }
       // EBLG-62: firma adresi eksikse sihirbaz ilk adımda durur.
-      const firma = await tx.tenant.findUnique({ where: { id: tenantId } });
       const firmaEksigi = firma ? firmaEbelgeEksikleri(firma) : [];
       if (firmaEksigi.length) {
         return { gonderilebilir: false, neden: firmaEksigi.join("; "), faturaNo: fatura.no, cari: fatura.cari.unvan, vknTckn: fatura.cari.vknTckn, saglayici: baglanti.saglayici };
@@ -166,8 +195,8 @@ export class EbelgeService {
       // KAMU senaryosu: liste türü sihirbazda kanal kararından önce okunur.
       // Harcama birimi faturada yoksa kartın varsayılanı, o da yoksa alıcının
       // kendisi önerilir (genel bütçeli kurumda iki VKN aynıdır).
-      const listeTuru = ihracat.ihracat ? undefined : await this.mukellefListesi.listeTuru(fatura.cari.vknTckn);
-      const kamuMu = !ihracat.ihracat && kamuSenaryosuMu({ listeTuru, kartIsareti: fatura.cari.kamuIdaresi });
+      const listeTuru = ihracat.ihracat || yolcu.yolcuBeraberi ? undefined : await this.mukellefListesi.listeTuru(fatura.cari.vknTckn);
+      const kamuMu = !ihracat.ihracat && !yolcu.yolcuBeraberi && kamuSenaryosuMu({ listeTuru, kartIsareti: fatura.cari.kamuIdaresi });
       const kamuHesaplari = kamuMu
         ? await tx.bankaHesap.findMany({
             where: { tenantId, aktif: true, dovizCinsi: "TRY", iban: { not: null } },
@@ -257,6 +286,19 @@ export class EbelgeService {
               engeller: kamuEngelleri(kamuBilgisi),
             }
           : undefined,
+        // Yolcu beraberi (tax-free): işaret sihirbazda konur, yolcu bilgisi
+        // faturaya yazılır. Aracı kurum firma kartındaki varsayılandan gelir.
+        yolcuBeraberi: yolcuOlabilir
+          ? {
+              isaretli: yolcu.yolcuBeraberi,
+              aliciVknEksik: vknYok,
+              yolcu: yolcu.bilgi?.yolcu ?? {},
+              araciKurum: yolcu.bilgi?.araciKurum?.vkn
+                ? yolcu.bilgi.araciKurum
+                : { vkn: firma?.araciKurumVkn ?? null, etiket: firma?.araciKurumEtiket ?? null, unvan: firma?.araciKurumUnvan ?? null },
+              engeller: yolcu.engeller,
+            }
+          : undefined,
         // Kartta adres yoksa belgeye şehir uydurulmaz, alanlar "-" gider
         // (EBLG-55); belgeyi durdurmaz ama sihirbazda söylenir.
         adresEksik: ublAdresi(fatura.cari.adresler).eksik,
@@ -265,7 +307,9 @@ export class EbelgeService {
         birimUyarilari: fatura.satirlar
           .map((satir, index) => ({ sira: index + 1, stok: satir.stok.ad, birim: satir.birim }))
           .filter((satir) => !birimTanindiMi(satir.birim)),
-        not: kamuMu
+        not: yolcu.yolcuBeraberi
+          ? "Yolcu beraberi satış: belge Gümrük Bakanlığı'na gider, gümrük çıkışında onaylanır ve KDV iadesini aracı kurum yapar. Satış iptali/iadesi ayrıca GİB'in Tax-Free Satış İptal/İade Bildirim Portalı'ndan bildirilmelidir."
+          : kamuMu
           ? "Alıcı kamu idaresi olduğu için belge KAMU senaryosuyla düzenlenir: ödemeyi yapacak harcama birimi ve ödemenin yapılacağı IBAN belgeye yazılır."
           : ihracat.ihracat
           ? "Alıcı yurt dışı olduğu için belge ihracat faturası olarak düzenlenir: mükellefiyet sorgulanmaz, belge Ticaret Bakanlığı'nın posta kutusuna gider ve satırlar KDV'den istisna yazılır."
@@ -336,6 +380,24 @@ export class EbelgeService {
    * kaydından okunur, ve yalnız aynı tedarikçinin kesinleşmiş alış faturası
    * seçilebilir. Elle girilen numara olduğu gibi (büyük harfle) saklanır.
    */
+  /**
+   * Yolcu beraberi (tax-free) işareti ve yolcu bilgisi faturaya yazılır; işaret
+   * kalkınca kayıt tümüyle silinir.
+   */
+  async yolcuBeraberiniKaydet(
+    faturaId: string,
+    secim: { isaretli: boolean; yolcu?: Prisma.InputJsonObject; araciKurum?: Prisma.InputJsonObject },
+  ) {
+    const { tenantId } = aktifBaglam();
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const sonuc = await tx.fatura.updateMany({
+        where: { id: faturaId, durum: "kesin" },
+        data: { yolcuBeraberi: secim.isaretli ? { yolcu: secim.yolcu ?? {}, araciKurum: secim.araciKurum ?? {} } : Prisma.DbNull },
+      });
+      if (sonuc.count !== 1) throw new NotFoundException("Kesinleşmiş fatura bulunamadı");
+    });
+  }
+
   /** KAMU senaryosu: sihirbazda seçilen harcama birimi ve IBAN faturaya yazılır. */
   async kamuBilgisiniKaydet(faturaId: string, bilgi: { harcamaBirimiVkn?: string | null; harcamaBirimiAdi?: string | null; iban?: string | null }) {
     const { tenantId } = aktifBaglam();
@@ -454,6 +516,7 @@ export class EbelgeService {
       ihracat: ReturnType<typeof ihracatOzeti>;
       internet: ReturnType<typeof internetSatisOzeti>;
       iade: ReturnType<typeof iadeOzeti>;
+      yolcu: ReturnType<typeof yolcuBeraberiOzeti>;
     },
   ) {
     // EBLG-62: satıcı adresi belgede zorunlu; uydurma adresle belge kesilmez.
@@ -465,7 +528,11 @@ export class EbelgeService {
     // Ticaret Bakanlığı'nın kutusuna gider (tasarım belgesi §3.1 adım 1).
     const mukellefiyet = hazirlik.ihracat.ihracat
       ? { eFaturaMukellefi: true, postaKutusu: IHRACAT_POSTA_KUTUSU }
-      : await this.mukellefListesi.kanalBelirle(hazirlik.saglayici, hazirlik.cfg, hazirlik.fatura.cari.vknTckn!);
+      // Yolcu beraberi de Bakanlığa gider, ama ihracatın kutusuna değil: aynı
+      // VKN'nin yolcu beraberi için ayrı posta kutusu etiketi vardır.
+      : hazirlik.yolcu.yolcuBeraberi
+        ? { eFaturaMukellefi: true, postaKutusu: YOLCU_BERABER_POSTA_KUTUSU }
+        : await this.mukellefListesi.kanalBelirle(hazirlik.saglayici, hazirlik.cfg, hazirlik.fatura.cari.vknTckn!);
     if (mukellefiyet.eFaturaMukellefi && !mukellefiyet.postaKutusu) {
       throw new BadRequestException("Alıcı e-Fatura mükellefi ancak GİB posta kutusu (alias) bulunamadı");
     }
@@ -473,7 +540,7 @@ export class EbelgeService {
 
     // KAMU senaryosu: alıcı listede KAMU türündeyse ya da kartında işaretliyse.
     // Kamu idaresi e-Fatura mükellefidir; e-Arşiv'e düşen belge KAMU olamaz.
-    const kamu = !hazirlik.ihracat.ihracat && kamuSenaryosuMu({
+    const kamu = !hazirlik.ihracat.ihracat && !hazirlik.yolcu.yolcuBeraberi && kamuSenaryosuMu({
       listeTuru: "kamu" in mukellefiyet && mukellefiyet.kamu ? MUKELLEF_TURU_KAMU : undefined,
       kartIsareti: hazirlik.fatura.cari.kamuIdaresi,
     });
@@ -516,6 +583,7 @@ export class EbelgeService {
         internetSatisi: hazirlik.internet.ublBilgisi,
         iadeReferanslari: hazirlik.iade.iade ? hazirlik.iade.referanslar : undefined,
         kamu: kamuBilgisi,
+        yolcuBeraberi: hazirlik.yolcu.bilgi,
       },
     );
     return { mukellefiyet, tur, ublFatura, saglayiciNumaralandirir, xml };
@@ -581,7 +649,7 @@ export class EbelgeService {
       });
 
       if (!fatura) throw new NotFoundException("Fatura bulunamadı");
-      const { ihracat, internet, iade } = gonderimKosullariniDenetle(fatura);
+      const { ihracat, internet, iade, yolcu } = gonderimKosullariniDenetle(fatura);
       if (fatura.ebelge && !["hata", "ret"].includes(fatura.ebelge.durum) && !takiliRezervasyonMu(fatura.ebelge)) {
         throw new ConflictException("Bu fatura için e-belge gönderim süreci zaten başlatılmış");
       }
@@ -606,7 +674,7 @@ export class EbelgeService {
       if (!vknTcknKabulEdilebilirMi(tenant.vkn, testOrtami)) {
         throw new BadRequestException("Gönderen firmanın geçerli bir VKN/TCKN bilgisi olmalıdır");
       }
-      if (!ihracat.ihracat && !vknTcknKabulEdilebilirMi(fatura.cari.vknTckn, testOrtami)) {
+      if (!ihracat.ihracat && !yolcu.yolcuBeraberi && !vknTcknKabulEdilebilirMi(fatura.cari.vknTckn, testOrtami)) {
         throw new BadRequestException("Alıcının geçerli bir VKN/TCKN bilgisi olmalıdır");
       }
 
@@ -649,6 +717,7 @@ export class EbelgeService {
         ihracat,
         internet,
         iade,
+        yolcu,
       };
     });
 

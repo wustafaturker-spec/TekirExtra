@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { EbelgeService } from "./ebelge.service";
+import { EbelgeService, gonderimTarihiGecerliMi } from "./ebelge.service";
 import { faturaUblOku } from "./ubl-oku";
 
 vi.mock("../core/istek-baglami", () => ({
@@ -1175,5 +1175,24 @@ describe("EbelgeService — çağrı disiplini", () => {
     await service.elleTazelemeIzniAl();
 
     expect(upsert.mock.calls[0][0].update.sonTetiklemeAt).toBeInstanceOf(Date);
+  });
+});
+
+describe("gonderimTarihiGecerliMi", () => {
+  const an = (metin: string) => new Date(metin);
+  const gun = (metin: string) => new Date(`${metin}T00:00:00.000Z`);
+
+  it("Türkiye'de gün dönmüşken bugünkü faturayı kabul eder (UTC'de hâlâ dün)", () => {
+    // 20 Eylül 00:28 (TSİ) = 19 Eylül 21:28 UTC.
+    expect(gonderimTarihiGecerliMi(gun("2026-09-20"), an("2026-09-19T21:28:00Z"))).toBe(true);
+  });
+
+  it("yarının faturasını kabul etmez", () => {
+    expect(gonderimTarihiGecerliMi(gun("2026-09-21"), an("2026-09-19T21:28:00Z"))).toBe(false);
+  });
+
+  it("yedi günden eskisini kabul etmez, tam yedi günü kabul eder", () => {
+    expect(gonderimTarihiGecerliMi(gun("2026-09-13"), an("2026-09-20T09:00:00Z"))).toBe(true);
+    expect(gonderimTarihiGecerliMi(gun("2026-09-12"), an("2026-09-20T09:00:00Z"))).toBe(false);
   });
 });

@@ -1,4 +1,15 @@
-import { ihracKayitliKoduBul, senaryoUblKodu, type FaturaSenaryosu } from "@tekirextra/shared";
+import {
+  YOLCU_BERABER_FATURA_TIPI,
+  YOLCU_BERABER_ISTISNA_ACIKLAMASI,
+  YOLCU_BERABER_ISTISNA_KODU,
+  YOLCU_BERABER_PROFILI,
+  ihracKayitliKoduBul,
+  senaryoUblKodu,
+  ulkeAdi,
+  type AraciKurum,
+  type FaturaSenaryosu,
+  type YolcuBilgisi,
+} from "@tekirextra/shared";
 import {
   kacis,
   kurBicim,
@@ -70,12 +81,15 @@ export interface FaturaPdfVerisi {
   kamuHarcamaBirimiVkn?: string | null;
   kamuHarcamaBirimiAdi?: string | null;
   kamuIban?: string | null;
+  /** Yolcu beraberi (tax-free): yolcu ve aracı kurum; boşsa değildir. */
+  yolcuBeraberi?: { yolcu?: YolcuBilgisi | null; araciKurum?: AraciKurum | null } | null;
 }
 
 /** EBLG-30: PDF'te gösterilen profil adı; UBL'deki ProfileID ile aynı ayrımdır. */
-export function profilAdi(f: Pick<FaturaPdfVerisi, "ebelge" | "efaturaProfili" | "kamuIban">): string | null {
+export function profilAdi(f: Pick<FaturaPdfVerisi, "ebelge" | "efaturaProfili" | "kamuIban" | "yolcuBeraberi">): string | null {
   if (!f.ebelge) return null;
   if (f.ebelge.tur === "earsiv") return "EARSIVFATURA";
+  if (f.yolcuBeraberi?.yolcu) return YOLCU_BERABER_PROFILI;
   // KAMU bilgisi yalnız KAMU senaryosuyla giden belgede yazılır; UBL'de de
   // profil seçimini ezer.
   if (f.kamuIban) return "KAMU";
@@ -95,6 +109,25 @@ function kamuBilgisi(f: FaturaPdfVerisi): string {
     ? `${f.kamuHarcamaBirimiAdi}${f.kamuHarcamaBirimiVkn ? ` (VKN ${f.kamuHarcamaBirimiVkn})` : ""}`
     : f.kamuHarcamaBirimiVkn ?? "";
   return `<p style="margin-top:10px;font-size:9pt">${birim ? `Ödemeyi yapacak harcama birimi: <strong>${kacis(birim)}</strong><br>` : ""}Ödemenin yapılacağı IBAN: <strong>${kacis(ibanBicim(f.kamuIban))}</strong></p>`;
+}
+
+/**
+ * Yolcu beraberi (tax-free) belge altı bilgisi: yolcunun kimliği ve KDV
+ * iadesini yapacak aracı kurum — UBL'deki `BuyerCustomerParty` ve
+ * `TaxRepresentativeParty` karşılığı. Mağaza çıktıyı yolcuya verir.
+ */
+function yolcuBeraberiBilgisi(f: FaturaPdfVerisi): string {
+  const yolcu = f.yolcuBeraberi?.yolcu;
+  if (!yolcu) return "";
+  const araci = f.yolcuBeraberi?.araciKurum;
+  const satirlar = [
+    `Yolcu: <strong>${kacis(`${yolcu.ad ?? ""} ${yolcu.soyad ?? ""}`.trim())}</strong>`,
+    yolcu.pasaportNo ? `Pasaport no: ${kacis(yolcu.pasaportNo)}` : "",
+    yolcu.uyruk ? `Uyruğu: ${kacis(ulkeAdi(yolcu.uyruk) ?? yolcu.uyruk)}` : "",
+    yolcu.sehir || yolcu.ulke ? `İkamet: ${kacis([yolcu.sehir, ulkeAdi(yolcu.ulke) ?? yolcu.ulke].filter(Boolean).join(" / "))}` : "",
+    araci?.unvan ? `KDV iadesini yapacak aracı kurum: ${kacis(araci.unvan)}${araci.vkn ? ` (VKN ${kacis(araci.vkn)})` : ""}` : "",
+  ].filter(Boolean);
+  return `<p style="margin-top:10px;font-size:9pt">${satirlar.join("<br>")}<br>${kacis(YOLCU_BERABER_ISTISNA_ACIKLAMASI)} (${YOLCU_BERABER_ISTISNA_KODU}); KDV, gümrük çıkış onayından sonra aracı kurumca iade edilir.</p>`;
 }
 
 /**
@@ -179,7 +212,7 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
   // bir anlamı yoktur, gösterilmez.
   const profil = profilAdi(f);
   const ebelgeKimligi = profil
-    ? `<br>ETTN: ${kacis(f.id ?? "")}<br>Senaryo: ${kacis((f.senaryo && senaryoUblKodu(f.senaryo as FaturaSenaryosu)) || f.senaryo || "")} &nbsp;•&nbsp; Profil: ${kacis(profil)}`
+    ? `<br>ETTN: ${kacis(f.id ?? "")}<br>Senaryo: ${kacis(f.yolcuBeraberi?.yolcu ? YOLCU_BERABER_FATURA_TIPI : (f.senaryo && senaryoUblKodu(f.senaryo as FaturaSenaryosu)) || f.senaryo || "")} &nbsp;•&nbsp; Profil: ${kacis(profil)}`
     : "";
 
   const icerik = `
@@ -223,7 +256,8 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
 ${f.aciklama ? `<p style="margin-top:10px;color:#6b7280">${kacis(f.aciklama)}</p>` : ""}
 ${f.ebelge?.tur === "earsiv" && f.earsivGonderimSekli !== "kagit" ? `<p style="margin-top:10px;font-size:9pt">${EARSIV_ELEKTRONIK_IBARESI}</p>` : ""}
 ${ihracKayitliIbaresi(f.ihracKayitliKodu)}
-${kamuBilgisi(f)}`;
+${kamuBilgisi(f)}
+${yolcuBeraberiBilgisi(f)}`;
 
   return sayfaSablonu({
     baslik: f.durum === "taslak" ? `${baslik} (TASLAK)` : baslik,

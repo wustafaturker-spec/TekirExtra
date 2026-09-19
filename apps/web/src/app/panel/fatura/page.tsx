@@ -23,6 +23,8 @@ import {
   iadeEngelleri,
   ihracKayitliHatalari,
   kamuEngelleri,
+  ULKELER,
+  yolcuBeraberiEngelleri,
   IHRAC_KAYITLI_KODLARI,
   internetSatisEngelleri,
   izinliIstisnaKodlari,
@@ -245,6 +247,15 @@ interface EbelgeWizardBilgisi {
     adaylar: { id: string; no: string; tarih: string; genelToplam: string; dovizCinsi: string }[];
     engeller: { sira?: number; mesaj: string }[];
   };
+  /** Yolcu beraberi (tax-free): satış faturasında sihirbazda işaretlenir. */
+  yolcuBeraberi?: {
+    isaretli: boolean;
+    /** Genel carinin VKN'si yok; işaret konmazsa belge gönderilemez. */
+    aliciVknEksik: boolean;
+    yolcu: { ad?: string | null; soyad?: string | null; uyruk?: string | null; pasaportNo?: string | null; pasaportTarihi?: string | null; sehir?: string | null; ulke?: string | null; bankaHesapNo?: string | null; bankaAdi?: string | null };
+    araciKurum: { vkn?: string | null; etiket?: string | null; unvan?: string | null };
+    engeller: { alan: string; mesaj: string }[];
+  };
   /** KAMU senaryosu: alıcı listede KAMU ya da kartında işaretli. */
   kamu?: {
     kaynak: "liste" | "kart";
@@ -396,6 +407,12 @@ export default function FaturaSayfasi() {
       elleTarih: string;
     };
     kamu: { harcamaBirimiVkn: string; harcamaBirimiAdi: string; iban: string };
+    yolcu: {
+      isaretli: boolean;
+      ad: string; soyad: string; uyruk: string; pasaportNo: string; pasaportTarihi: string;
+      sehir: string; ulke: string; bankaHesapNo: string; bankaAdi: string;
+      araciKurumVkn: string; araciKurumEtiket: string; araciKurumUnvan: string;
+    };
     /** L: 1 kontrol, 2 türe özel bilgiler, 3 önizleme ve gönderim. */
     adim: 1 | 2 | 3;
     onizleme: EbelgeOnizleme | null;
@@ -1036,6 +1053,21 @@ export default function FaturaSayfasi() {
           elleNo: "",
           elleTarih: "",
         },
+        yolcu: {
+          isaretli: bilgi.yolcuBeraberi?.isaretli ?? false,
+          ad: bilgi.yolcuBeraberi?.yolcu.ad ?? "",
+          soyad: bilgi.yolcuBeraberi?.yolcu.soyad ?? "",
+          uyruk: bilgi.yolcuBeraberi?.yolcu.uyruk ?? "",
+          pasaportNo: bilgi.yolcuBeraberi?.yolcu.pasaportNo ?? "",
+          pasaportTarihi: bilgi.yolcuBeraberi?.yolcu.pasaportTarihi?.slice(0, 10) ?? "",
+          sehir: bilgi.yolcuBeraberi?.yolcu.sehir ?? "",
+          ulke: bilgi.yolcuBeraberi?.yolcu.ulke ?? "",
+          bankaHesapNo: bilgi.yolcuBeraberi?.yolcu.bankaHesapNo ?? "",
+          bankaAdi: bilgi.yolcuBeraberi?.yolcu.bankaAdi ?? "",
+          araciKurumVkn: bilgi.yolcuBeraberi?.araciKurum.vkn ?? "",
+          araciKurumEtiket: bilgi.yolcuBeraberi?.araciKurum.etiket ?? "",
+          araciKurumUnvan: bilgi.yolcuBeraberi?.araciKurum.unvan ?? "",
+        },
         kamu: {
           harcamaBirimiVkn: bilgi.kamu?.harcamaBirimiVkn ?? "",
           harcamaBirimiAdi: bilgi.kamu?.harcamaBirimiAdi ?? "",
@@ -1081,6 +1113,20 @@ export default function FaturaSayfasi() {
                 referanslar: w.iade.referanslar.map((r) =>
                   r.kaynakFaturaId ? { kaynakFaturaId: r.kaynakFaturaId } : { belgeNo: r.belgeNo, tarih: r.tarih },
                 ),
+              }
+            : undefined,
+          // Yolcu beraberi işareti her gönderimde yazılır; kaldırılırsa sunucu
+          // yolcu bilgisini de siler.
+          yolcuBeraberi: w.bilgi.yolcuBeraberi
+            ? {
+                isaretli: w.yolcu.isaretli,
+                yolcu: {
+                  ad: w.yolcu.ad || null, soyad: w.yolcu.soyad || null, uyruk: w.yolcu.uyruk || null,
+                  pasaportNo: w.yolcu.pasaportNo || null, pasaportTarihi: w.yolcu.pasaportTarihi || null,
+                  sehir: w.yolcu.sehir || null, ulke: w.yolcu.ulke || null,
+                  bankaHesapNo: w.yolcu.bankaHesapNo || null, bankaAdi: w.yolcu.bankaAdi || null,
+                },
+                araciKurum: { vkn: w.yolcu.araciKurumVkn || null, etiket: w.yolcu.araciKurumEtiket || null, unvan: w.yolcu.araciKurumUnvan || null },
               }
             : undefined,
           kamu: w.bilgi.kamu
@@ -1169,8 +1215,35 @@ export default function FaturaSayfasi() {
     : [];
   // KAMU senaryosu: harcama birimi ve IBAN panelde seçilenlerle denetlenir.
   const kamuEksikleri = ebelgeWizard?.bilgi.kamu ? kamuEngelleri(ebelgeWizard.kamu) : [];
+  /**
+   * Yolcu beraberi eksikleri panelde girilenlerle, sunucudaki kuralla hesaplanır.
+   * İşaret konmamışsa tek eksik, VKN'si olmayan alıcıdır: o belge ancak yolcu
+   * beraberi olarak gönderilebilir.
+   */
+  const yolcuEksikleri = ebelgeWizard?.bilgi.yolcuBeraberi
+    ? ebelgeWizard.yolcu.isaretli
+      // Sunucunun listesinden yalnız panelde hesaplanamayanlar alınır (satır ve
+      // tip kuralları); kalanlar panelde girilen güncel değerlerden üretilir,
+      // yoksa kullanıcı düzelttiği eksiği görmeye devam ederdi.
+      ? [...ebelgeWizard.bilgi.yolcuBeraberi.engeller.filter((e) => e.alan === "satir" || e.alan === "tip"), ...yolcuBeraberiEngelleri(
+          {
+            yolcu: {
+              ad: ebelgeWizard.yolcu.ad, soyad: ebelgeWizard.yolcu.soyad, uyruk: ebelgeWizard.yolcu.uyruk,
+              pasaportNo: ebelgeWizard.yolcu.pasaportNo, pasaportTarihi: ebelgeWizard.yolcu.pasaportTarihi || null,
+              sehir: ebelgeWizard.yolcu.sehir, ulke: ebelgeWizard.yolcu.ulke,
+            },
+            araciKurum: { vkn: ebelgeWizard.yolcu.araciKurumVkn, etiket: ebelgeWizard.yolcu.araciKurumEtiket, unvan: ebelgeWizard.yolcu.araciKurumUnvan },
+          },
+          // Satır kuralları (sıfır KDV, tevkifat) sunucunun listesinden gelir;
+          // listedeki fatura satırları burada yok.
+          { tip: ebelgeWizard.fatura.tip, tarih: ebelgeWizard.fatura.tarih, satirlar: [] },
+        )].filter((e, i, liste) => liste.findIndex((d) => d.mesaj === e.mesaj) === i).map((e) => ({ mesaj: e.mesaj }))
+      : ebelgeWizard.bilgi.yolcuBeraberi.aliciVknEksik
+        ? [{ mesaj: "Alıcının VKN/TCKN'si yok; bu fatura ancak yolcu beraberi (tax-free) olarak gönderilebilir" }]
+        : []
+    : [];
   const wizardGonderilebilir = Boolean(
-    ebelgeWizard?.bilgi.gonderilebilir && ihracatEngelleri.length === 0 && internetEngelleri.length === 0 && iadeEksikleri.length === 0 && kamuEksikleri.length === 0,
+    ebelgeWizard?.bilgi.gonderilebilir && ihracatEngelleri.length === 0 && internetEngelleri.length === 0 && iadeEksikleri.length === 0 && kamuEksikleri.length === 0 && yolcuEksikleri.length === 0,
   );
 
   async function odemeDetayAc(id: string) {
@@ -1946,6 +2019,55 @@ export default function FaturaSayfasi() {
                 )}
               </>
             )}
+            {ebelgeWizard.bilgi.yolcuBeraberi && (() => {
+              const y = ebelgeWizard.yolcu;
+              const yGuncelle = (degisiklik: Partial<typeof y>) => setEbelgeWizard({ ...ebelgeWizard, yolcu: { ...y, ...degisiklik } });
+              return (
+                <>
+                  <label className="check-row">
+                    <input type="checkbox" checked={y.isaretli} onChange={(e) => yGuncelle({ isaretli: e.target.checked })} />
+                    Bu bir yolcu beraberi (tax-free) satışı — belge Gümrük Bakanlığı'na gider, KDV'yi yolcuya aracı kurum iade eder
+                  </label>
+                  {y.isaretli && (
+                    <>
+                      <Field label="Yolcunun adı *"><Input value={y.ad} maxLength={100} onChange={(e) => yGuncelle({ ad: e.target.value })} /></Field>
+                      <Field label="Yolcunun soyadı *"><Input value={y.soyad} maxLength={100} onChange={(e) => yGuncelle({ soyad: e.target.value })} /></Field>
+                      <Field label="Uyruğu (pasaportta yazan ülke) *">
+                        <Select value={y.uyruk} onChange={(e) => yGuncelle({ uyruk: e.target.value })}>
+                          <option value="">Ülke seçin…</option>
+                          {ULKELER.map((u) => <option key={u.kod} value={u.kod}>{u.ad}</option>)}
+                        </Select>
+                      </Field>
+                      <Field label="Pasaport no *"><Input value={y.pasaportNo} maxLength={40} onChange={(e) => yGuncelle({ pasaportNo: e.target.value })} /></Field>
+                      <Field label="Pasaportun veriliş tarihi">
+                        <Input type="date" value={y.pasaportTarihi} onChange={(e) => yGuncelle({ pasaportTarihi: e.target.value })} />
+                        <small className="muted">Bilinmiyorsa boş bırakın; belgeye GİB'in kabul ettiği 01.01.2005 yazılır.</small>
+                      </Field>
+                      <Field label="İkamet ettiği şehir *"><Input value={y.sehir} maxLength={80} onChange={(e) => yGuncelle({ sehir: e.target.value })} /></Field>
+                      <Field label="İkamet ettiği ülke *">
+                        <Select value={y.ulke} onChange={(e) => yGuncelle({ ulke: e.target.value })}>
+                          <option value="">Ülke seçin…</option>
+                          {ULKELER.filter((u) => u.kod !== "TR").map((u) => <option key={u.kod} value={u.kod}>{u.ad}</option>)}
+                        </Select>
+                      </Field>
+                      <Field label="İade hesabı (isteğe bağlı)">
+                        <Input value={y.bankaHesapNo} maxLength={40} placeholder="Hesap no / IBAN" onChange={(e) => yGuncelle({ bankaHesapNo: e.target.value })} />
+                        <Input value={y.bankaAdi} maxLength={120} placeholder="Banka adı" onChange={(e) => yGuncelle({ bankaAdi: e.target.value })} />
+                      </Field>
+                      <Field label="Aracı kurum VKN *"><Input value={y.araciKurumVkn} inputMode="numeric" maxLength={10} onChange={(e) => yGuncelle({ araciKurumVkn: e.target.value.replace(/\D/g, "") })} /></Field>
+                      <Field label="Aracı kurum etiketi *"><Input value={y.araciKurumEtiket} maxLength={200} placeholder="urn:mail:yolcuberaberpk@firma.com.tr" onChange={(e) => yGuncelle({ araciKurumEtiket: e.target.value.trim() })} /></Field>
+                      <Field label="Aracı kurum unvanı *"><Input value={y.araciKurumUnvan} maxLength={200} onChange={(e) => yGuncelle({ araciKurumUnvan: e.target.value })} /></Field>
+                    </>
+                  )}
+                  {yolcuEksikleri.length > 0 && (
+                    <div className="approval-impact is-warning">
+                      <strong>Yolcu beraberi faturasında eksik olanlar:</strong>
+                      <ul>{yolcuEksikleri.map((e, i) => <li key={i}>{e.mesaj}</li>)}</ul>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
             {ebelgeWizard.bilgi.kamu && (() => {
               const kamu = ebelgeWizard.kamu;
               const kamuGuncelle = (degisiklik: Partial<typeof kamu>) => setEbelgeWizard({ ...ebelgeWizard, kamu: { ...kamu, ...degisiklik } });

@@ -38,12 +38,17 @@ const firmaGuncelleSemasi = z.object({
   webSitesi: serbestMetin(200),
   mersisNo: z.union([z.string().trim().regex(/^\d{16}$/, "MERSİS numarası 16 hanedir"), z.literal("")]).transform((d) => d || null).nullable().optional(),
   ticaretSicilNo: serbestMetin(30),
+  // Yolcu beraberi (tax-free): KDV iadesini yapan aracı kurumun varsayılanı.
+  araciKurumVkn: z.union([z.string().trim().regex(/^\d{10}$/, "Aracı kurum VKN'si 10 hanedir"), z.literal("")]).transform((d) => d || null).nullable().optional(),
+  araciKurumEtiket: z.union([z.string().trim().regex(/^urn:mail:\S+@\S+$/, "Etiket urn:mail:…@… biçiminde olmalıdır"), z.literal("")]).transform((d) => d || null).nullable().optional(),
+  araciKurumUnvan: serbestMetin(200),
 });
 
 /** Firma ekranının okuduğu alanlar; e-belge eksikleri de bununla hesaplanır. */
 const FIRMA_ALANLARI = {
   id: true, unvan: true, vkn: true, vergiDairesi: true,
   adres: true, ilce: true, il: true, postaKodu: true, telefon: true, eposta: true, webSitesi: true, mersisNo: true, ticaretSicilNo: true,
+  araciKurumVkn: true, araciKurumEtiket: true, araciKurumUnvan: true,
   abonelik: { select: { planKodu: true, durum: true, faturaEpostasi: true, donemBaslangici: true, donemSonu: true } },
 } as const;
 

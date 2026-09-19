@@ -16,3 +16,4 @@ export * from "./ihracat";
 export * from "./iade";
 export * from "./firma";
 export * from "./kamu";
+export * from "./yolcu-beraberi";

@@ -1493,6 +1493,7 @@ export class FaturaService {
     kamuHarcamaBirimiVkn?: string | null;
     kamuHarcamaBirimiAdi?: string | null;
     kamuIban?: string | null;
+    yolcuBeraberi?: unknown;
     depoId: string | null;
     dovizCinsi: string;
     kur: Prisma.Decimal;
@@ -1561,6 +1562,8 @@ export class FaturaService {
       kamuHarcamaBirimiVkn: k.kamuHarcamaBirimiVkn ?? null,
       kamuHarcamaBirimiAdi: k.kamuHarcamaBirimiAdi ?? null,
       kamuIban: k.kamuIban ?? null,
+      // Yolcu beraberi (tax-free): yolcu ve aracı kurum bilgisi; boşsa değildir.
+      yolcuBeraberi: (k.yolcuBeraberi as Record<string, unknown> | null) ?? null,
       depoId: k.depoId,
       dovizCinsi: k.dovizCinsi,
       kur: D(k.kur).toFixed(4),

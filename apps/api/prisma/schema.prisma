@@ -116,6 +116,11 @@ model Tenant {
   webSitesi      String? @map("web_sitesi")
   mersisNo       String? @map("mersis_no")
   ticaretSicilNo String? @map("ticaret_sicil_no")
+  /// Yolcu beraberi (tax-free): KDV iadesini yapan aracı kurumun varsayılanı;
+  /// sihirbazda faturaya özel değiştirilir.
+  araciKurumVkn    String? @map("araci_kurum_vkn")
+  araciKurumEtiket String? @map("araci_kurum_etiket")
+  araciKurumUnvan  String? @map("araci_kurum_unvan")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -2091,6 +2096,9 @@ model Fatura {
   kamuHarcamaBirimiVkn String?         @map("kamu_harcama_birimi_vkn")
   kamuHarcamaBirimiAdi String?         @map("kamu_harcama_birimi_adi")
   kamuIban             String?         @map("kamu_iban")
+  /// Yolcu beraberi (tax-free): yolcu ve aracı kurum bilgisi; boşsa değildir.
+  /// Biçim `YolcuBeraberiBilgisi` (packages/shared/src/yolcu-beraberi.ts).
+  yolcuBeraberi        Json?           @map("yolcu_beraberi")
   toplamNetKdv         Decimal         @map("toplam_net_kdv") @db.Decimal(15, 2)
   genelToplam          Decimal         @map("genel_toplam") @db.Decimal(15, 2)
   aciklama             String?

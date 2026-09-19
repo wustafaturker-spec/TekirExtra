@@ -10,6 +10,13 @@ import {
   IADE_BELGE_TUR_KODU,
   KAMU_ODEME_KODU,
   KAMU_PROFILI,
+  PASAPORT_TARIHI_BILINMIYOR,
+  YOLCU_BERABER_FATURA_TIPI,
+  YOLCU_BERABER_ISTISNA_ACIKLAMASI,
+  YOLCU_BERABER_ISTISNA_KODU,
+  YOLCU_BERABER_PARTY_TIPI,
+  YOLCU_BERABER_PROFILI,
+  type YolcuBeraberiBilgisi,
   ibanNormalize,
   type FirmaEbelgeBilgisi,
   birimUblKodu,
@@ -89,6 +96,8 @@ export function faturaUblUret(
     iadeReferanslari?: { belgeNo: string; tarih: Date }[];
     /** Alıcı kamu idaresiyse; profil KAMU olur (SATIS ve IADE tiplerinde). */
     kamu?: KamuUblBilgisi;
+    /** Yolcu beraberi (tax-free) satışı: yolcu ve aracı kurum. */
+    yolcuBeraberi?: YolcuBeraberiBilgisi;
   } = {},
 ): string {
   // e-Arşiv, e-Fatura'dan üç noktada ayrılır: profil `EARSIVFATURA`, alıcı
@@ -100,6 +109,15 @@ export function faturaUblUret(
    * Karar sihirbazda verilmez, alıcının ülkesinden gelir (tasarım belgesi §3.1).
    */
   const ihracat = secenekler.ihracat;
+  /*
+   * Yolcu beraberi (GİB Gümrük İşlemleri Kılavuzu §4, resmî `YOLCUBERABER.xml`):
+   * e-Fatura kanalında, profil YOLCUBERABERFATURA, tip ISTISNA. Alıcı ihracatta
+   * olduğu gibi Gümrük Bakanlığı'dır; yolcu `BuyerCustomerParty`, aracı kurum
+   * `TaxRepresentativeParty` içinde durur. KDV hesaplanır ve tahsil edilir,
+   * belge düzeyindeki vergi alt toplamı 501 koduyla işaretlenir.
+   */
+  const yolcu = earsiv || ihracat ? undefined : secenekler.yolcuBeraberi;
+  const gtbAlici = Boolean(ihracat || yolcu);
   /**
    * Alıcı adresi (EBLG-55). Belgede tek bir adres görünür; hangisi olduğu
    * `belgeAdresiSec` kuralına göre seçilir ve ihracat kanalı kararı da aynı
@@ -186,7 +204,8 @@ export function faturaUblUret(
 
   /** İstisna kodunun belgeye yazılan açıklaması; şematron boş bırakılmasına izin vermez. */
   const istisnaAciklamasi = (kod: string) =>
-    ihracatIstisnasi ? ihracatIstisnaAciklamasi(kod) : `${kod} ${(istisnaKoduBul(kod) ?? ihracKayitliKoduBul(kod))?.ad ?? ""}`.trim();
+    yolcu && kod === YOLCU_BERABER_ISTISNA_KODU ? YOLCU_BERABER_ISTISNA_ACIKLAMASI
+    : ihracatIstisnasi ? ihracatIstisnaAciklamasi(kod) : `${kod} ${(istisnaKoduBul(kod) ?? ihracKayitliKoduBul(kod))?.ad ?? ""}`.trim();
 
   /*
    * İhraç kayıtlı satış (EBLG-60): KDV hesaplanıp gösterilir ama tahsil
@@ -196,7 +215,9 @@ export function faturaUblUret(
    */
   const ihracKayitliKodu = fatura.senaryo === "ihrackayitli" ? fatura.ihracKayitliKodu : null;
   const altToplamKodu = (satir: Parameters<typeof satirIstisnaKodu>[0] & { kdvOrani: unknown }) =>
-    Number(satir.kdvOrani) === 0 ? satirIstisnaKodu(satir) : ihracKayitliKodu ?? null;
+    Number(satir.kdvOrani) === 0 ? satirIstisnaKodu(satir) : yolcu ? YOLCU_BERABER_ISTISNA_KODU : ihracKayitliKodu ?? null;
+  /** Satırda tekrarlanacak kod; yolcu beraberinde resmî örnek kodu yalnız belge düzeyinde yazar. */
+  const satirKodu = (satir: Parameters<typeof altToplamKodu>[0]) => (yolcu ? null : altToplamKodu(satir));
 
   /*
    * Belge düzeyindeki KDV alt toplamları oran ve istisna kodu başına ayrılır
@@ -324,7 +345,64 @@ export function faturaUblUret(
    * durur. Alıcı (muhasebe birimi) `AccountingCustomerParty`'de kalır; genel
    * bütçeli kurumda iki VKN aynıdır. Harcama biriminin adresi alıcınınkidir.
    */
-  const kamu = earsiv || ihracat ? undefined : secenekler.kamu;
+  const kamu = earsiv || ihracat || yolcu ? undefined : secenekler.kamu;
+  const yolcuUlke = yolcu ? ulkeKoduCoz(yolcu.yolcu.ulke) : undefined;
+  const yolcuBlogu = yolcu
+    ? `
+  <cac:BuyerCustomerParty>
+    <cac:Party>
+      <cac:PartyIdentification>
+        <cbc:ID schemeID="PARTYTYPE">${YOLCU_BERABER_PARTY_TIPI}</cbc:ID>
+      </cac:PartyIdentification>
+      <cac:PostalAddress>
+        <cbc:CitySubdivisionName>-</cbc:CitySubdivisionName>
+        <cbc:CityName>${escape(yolcu.yolcu.sehir ?? "-")}</cbc:CityName>
+        <cac:Country>${yolcuUlke ? `
+          <cbc:IdentificationCode>${yolcuUlke}</cbc:IdentificationCode>` : ""}
+          <cbc:Name>${escape(ulkeAdi(yolcuUlke) ?? yolcu.yolcu.ulke ?? "-")}</cbc:Name>
+        </cac:Country>
+      </cac:PostalAddress>
+      <cac:Person>
+        <cbc:FirstName>${escape(yolcu.yolcu.ad ?? "")}</cbc:FirstName>
+        <cbc:FamilyName>${escape(yolcu.yolcu.soyad ?? "")}</cbc:FamilyName>
+        <cbc:NationalityID>${escape(yolcu.yolcu.uyruk ?? "")}</cbc:NationalityID>${yolcu.yolcu.bankaHesapNo ? `
+        <cac:FinancialAccount>
+          <cbc:ID>${escape(yolcu.yolcu.bankaHesapNo)}</cbc:ID>${yolcu.yolcu.bankaAdi ? `
+          <cac:FinancialInstitutionBranch>
+            <cbc:Name>-</cbc:Name>
+            <cac:FinancialInstitution>
+              <cbc:Name>${escape(yolcu.yolcu.bankaAdi)}</cbc:Name>
+            </cac:FinancialInstitution>
+          </cac:FinancialInstitutionBranch>` : ""}
+        </cac:FinancialAccount>` : ""}
+        <cac:IdentityDocumentReference>
+          <cbc:ID>${escape(yolcu.yolcu.pasaportNo ?? "")}</cbc:ID>
+          <cbc:IssueDate>${escape((yolcu.yolcu.pasaportTarihi || PASAPORT_TARIHI_BILINMIYOR).slice(0, 10))}</cbc:IssueDate>
+        </cac:IdentityDocumentReference>
+      </cac:Person>
+    </cac:Party>
+  </cac:BuyerCustomerParty>
+  <cac:TaxRepresentativeParty>
+    <cac:PartyIdentification>
+      <cbc:ID schemeID="ARACIKURUMVKN">${escape(yolcu.araciKurum.vkn ?? "")}</cbc:ID>
+    </cac:PartyIdentification>
+    <cac:PartyIdentification>
+      <cbc:ID schemeID="ARACIKURUMETIKET">${escape(yolcu.araciKurum.etiket ?? "")}</cbc:ID>
+    </cac:PartyIdentification>
+    <cac:PartyName>
+      <cbc:Name>${escape(yolcu.araciKurum.unvan ?? "")}</cbc:Name>
+    </cac:PartyName>
+    <cac:PostalAddress>
+      <cbc:CitySubdivisionName>-</cbc:CitySubdivisionName>
+      <cbc:CityName>-</cbc:CityName>
+      <cac:Country>
+        <cbc:IdentificationCode>TR</cbc:IdentificationCode>
+        <cbc:Name>Türkiye</cbc:Name>
+      </cac:Country>
+    </cac:PostalAddress>
+  </cac:TaxRepresentativeParty>
+`
+    : "";
   const kamuAliciBlogu = kamu
     ? `
   <cac:BuyerCustomerParty>
@@ -461,13 +539,13 @@ export function faturaUblUret(
          xsi:schemaLocation="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2 UBL-Invoice-2.1.xsd">
   <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
   <cbc:CustomizationID>TR1.2</cbc:CustomizationID>
-  <cbc:ProfileID>${ihracat ? IHRACAT_PROFILI : kamu ? KAMU_PROFILI : earsiv ? "EARSIVFATURA" : fatura.efaturaProfili === "ticari" && !iadeSenaryosu ? "TICARIFATURA" : "TEMELFATURA"}</cbc:ProfileID>
+  <cbc:ProfileID>${ihracat ? IHRACAT_PROFILI : yolcu ? YOLCU_BERABER_PROFILI : kamu ? KAMU_PROFILI : earsiv ? "EARSIVFATURA" : fatura.efaturaProfili === "ticari" && !iadeSenaryosu ? "TICARIFATURA" : "TEMELFATURA"}</cbc:ProfileID>
   <cbc:ID>${no}</cbc:ID>
   <cbc:CopyIndicator>false</cbc:CopyIndicator>
   <cbc:UUID>${uuid}</cbc:UUID>
   <cbc:IssueDate>${tarihStr}</cbc:IssueDate>
   <cbc:IssueTime>${saatStr}</cbc:IssueTime>
-  <cbc:InvoiceTypeCode>${ihracat ? IHRACAT_FATURA_TIPI : senaryoUblKodu(fatura.senaryo)}</cbc:InvoiceTypeCode>${internet?.webAdresi ? `
+  <cbc:InvoiceTypeCode>${ihracat ? IHRACAT_FATURA_TIPI : yolcu ? YOLCU_BERABER_FATURA_TIPI : senaryoUblKodu(fatura.senaryo)}</cbc:InvoiceTypeCode>${internet?.webAdresi ? `
   <cbc:Note>${escape(`İnternet satışı — ${internet.webAdresi}`)}</cbc:Note>` : ""}
   <cbc:DocumentCurrencyCode>${fatura.dovizCinsi}</cbc:DocumentCurrencyCode>${dovizli && ihracat ? `
   <cbc:TaxCurrencyCode>${IHRACAT_VERGI_PARA_BIRIMI}</cbc:TaxCurrencyCode>` : ""}
@@ -537,12 +615,12 @@ ${saticiAdresi}
   <cac:AccountingCustomerParty>
     <cac:Party>
       <cac:PartyIdentification>
-        <cbc:ID schemeID="${ihracat || !aliciTckn ? "VKN" : "TCKN"}">${ihracat ? GUMRUK_BAKANLIGI_VKN : fatura.cari.vknTckn}</cbc:ID>
+        <cbc:ID schemeID="${gtbAlici || !aliciTckn ? "VKN" : "TCKN"}">${gtbAlici ? GUMRUK_BAKANLIGI_VKN : fatura.cari.vknTckn}</cbc:ID>
       </cac:PartyIdentification>
-${aliciTckn && !ihracat ? "" : `      <cac:PartyName>
-        <cbc:Name>${escape(ihracat ? GUMRUK_BAKANLIGI_UNVAN : fatura.cari.unvan)}</cbc:Name>
+${aliciTckn && !gtbAlici ? "" : `      <cac:PartyName>
+        <cbc:Name>${escape(gtbAlici ? GUMRUK_BAKANLIGI_UNVAN : fatura.cari.unvan)}</cbc:Name>
       </cac:PartyName>`}
-      <cac:PostalAddress>${ihracat ? `
+      <cac:PostalAddress>${gtbAlici ? `
         <cbc:CitySubdivisionName>-</cbc:CitySubdivisionName>
         <cbc:CityName>${GUMRUK_BAKANLIGI_IL}</cbc:CityName>
         <cac:Country>
@@ -558,13 +636,13 @@ ${aliciTckn && !ihracat ? "" : `      <cac:PartyName>
           <cbc:Name>${escape(aliciAdres.ulkeAdi)}</cbc:Name>` : ""}
         </cac:Country>`}
       </cac:PostalAddress>
-${aliciTckn && !ihracat ? `      <cac:Person>
+${aliciTckn && !gtbAlici ? `      <cac:Person>
         <cbc:FirstName>${escape(aliciAd)}</cbc:FirstName>
         <cbc:FamilyName>${escape(aliciSoyad)}</cbc:FamilyName>
       </cac:Person>` : ""}
     </cac:Party>
   </cac:AccountingCustomerParty>
-${yabanciAliciBlogu}${kamuAliciBlogu}${teslimatBlogu}${kamuOdemeBlogu}
+${yabanciAliciBlogu}${yolcuBlogu}${kamuAliciBlogu}${teslimatBlogu}${kamuOdemeBlogu}
 ${kurBlogu}  <cac:TaxTotal>
     <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${(tevkifatIade ? Number(fatura.toplamNetKdv) : Number(fatura.toplamKdv)).toFixed(2)}</cbc:TaxAmount>
 ${kdvAltToplamlari.map((g) => `    <cac:TaxSubtotal>
@@ -614,8 +692,8 @@ ${tevkifatBlogu}
         <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${belgeKdvi(s).toFixed(2)}</cbc:TaxAmount>
         <cbc:Percent>${s.kdvOrani.toFixed(2)}</cbc:Percent>
         <cac:TaxCategory>
-          ${altToplamKodu(s) ? `<cbc:TaxExemptionReasonCode>${escape(altToplamKodu(s))}</cbc:TaxExemptionReasonCode>
-          <cbc:TaxExemptionReason>${escape(istisnaAciklamasi(altToplamKodu(s)!))}</cbc:TaxExemptionReason>` : ""}
+          ${satirKodu(s) ? `<cbc:TaxExemptionReasonCode>${escape(satirKodu(s))}</cbc:TaxExemptionReasonCode>
+          <cbc:TaxExemptionReason>${escape(istisnaAciklamasi(satirKodu(s)!))}</cbc:TaxExemptionReason>` : ""}
           <cac:TaxScheme>
             <cbc:Name>KDV</cbc:Name>
             <cbc:TaxTypeCode>0015</cbc:TaxTypeCode>

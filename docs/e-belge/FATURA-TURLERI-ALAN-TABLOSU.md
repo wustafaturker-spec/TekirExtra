@@ -27,7 +27,7 @@ tablo ikisini birlikte gösterir.
 | 2 | Temel e-Fatura | `TEMELFATURA` | SATIS / IADE | Alıcı GİB'de kayıtlı, yanıt gerekmiyor | Yok | ✅ |
 | 3 | e-Arşiv | `EARSIVFATURA` | SATIS / IADE | Alıcı GİB'de kayıtsız ya da nihai tüketici | Yok | ✅ |
 | 4 | İhracat | `IHRACAT` | SATIS | Alıcı yurt dışı | Yok (gümrük süreci ayrı) | ✅ |
-| 5 | Yolcu beraberi | `YOLCUBERABERIESYA` | SATIS | Tax-free yolcu satışı | Yok | ❌ |
+| 5 | Yolcu beraberi | `YOLCUBERABERFATURA` | ISTISNA | Türkiye'de ikamet etmeyen yolcuya KDV'li satış; iade yetkili aracı kurumdan | Yok (gümrük onayı aracı kuruma gider) | ✅ (2026-09-20) |
 | 6 | Kamu | `KAMU` | SATIS / TEVKIFAT / ISTISNA / IADE | Alıcı merkezi yönetim kamu idaresi (GİB listesinde `<Type>KAMU</Type>` ya da kartta işaret); IADE: kamu idaresinden alınan malın iadesi | Yok | ✅ (2026-09-20) |
 | 7 | Şarj | `EARSIVFATURA` / e-Fatura | `SARJ` | Elektrikli araç şarj hizmeti | Kanala göre | ❌ |
 | 8 | Şarjanlık | `EARSIVFATURA` / e-Fatura | `SARJANLIK` | Şarj ünitesi/işletmecilik | Kanala göre | ❌ |
@@ -158,9 +158,18 @@ yapının kalanı şematrondan geçiyor.
 
 | Alan | UBL | Zorunlu | Durum |
 |---|---|---|---|
-| Yolcu pasaport no ve ülkesi | `PartyIdentification` schemeID="PASAPORTNO" | Evet | ❌ |
-| KDV tahsil edilir, iade süreci ayrı | `TaxTotal` | Evet | ❌ |
-| İade aracı kurum (varsa) | `Note` | Koşullu | ❌ |
+| Yolcunun kimliği | `BuyerCustomerParty` (`PARTYTYPE`=TAXFREE) → `Person`: `FirstName`, `FamilyName`, `NationalityID` (ISO2), `IdentityDocumentReference/ID` + `IssueDate` | Evet | ✅ — tarih bilinmiyorsa 2005-01-01 (kılavuz) |
+| Yolcunun ikamet adresi | `BuyerCustomerParty/PostalAddress` (şehir + ülke) | Evet | ✅ — ülke TR olamaz |
+| Yolcunun iade hesabı | `Person/FinancialAccount` | Seçimli | ✅ |
+| Aracı kurum | `TaxRepresentativeParty`: `ARACIKURUMVKN`, `ARACIKURUMETIKET`, unvan, adres | Evet | ✅ — firma kartında varsayılan, sihirbazda değişir |
+| KDV tahsil edilir, iade süreci ayrı | `TaxTotal` → `TaxExemptionReasonCode` 501 + açıklama (belge düzeyinde) | Evet | ✅ — sıfır KDV'li ya da tevkifatlı satır kabul edilmez |
+| Alıcı ve kutu | `AccountingCustomerParty` Gümrük Bakanlığı (1460415308), zarf `urn:mail:yolcuberaberpk@gtb.gov.tr` | Evet | ✅ — ihracatın kutusundan ayrıdır |
+
+Kaynak: GİB "e-Fatura Uygulaması Gümrük İşlemleri Kılavuzu" v1.8 §4 ve resmî
+`XSLT/YOLCUBERABER.xml`. İşaret sihirbazda konur ve cari adresinden türeyen
+ihracat kararını ezer; satış genel bir cariye kesildiği için alıcının VKN'si
+aranmaz. Satış iptali/iadesi ayrıca GİB'in Tax-Free Satış İptal/İade Bildirim
+Portalı'ndan bildirilir (sistem dışı). NES testte K072026000000066 kabul edildi.
 
 ### 3.6 Kamu iade (`KAMU` + `IADE`) — şematron §4
 
@@ -255,7 +264,7 @@ SGK · 801–811 → OZELMATRAH, IADE, SGK. IADE tipi TICARIFATURA profiliyle gi
 | ~~D~~ | ~~Gümrük beyanname no~~ — **bitti** (EBLG-54): yalnız kayda işlenir | İhracat |
 | ~~E~~ | ~~KAMU-IADE alan grubu~~ — **bitti**, kamuya satışla birlikte (KAMU senaryosu) | Kamu |
 | F | SARJ / SARJANLIK alan grubu | Şarj |
-| G | Yolcu beraberi | Tax-free |
+| ~~G~~ | ~~Yolcu beraberi~~ — **bitti** (2026-09-20) | Tax-free |
 | H | İhraç kayıtlı | İhracat zinciri — ✅ EBLG-60 |
 | I | Alıcı alias'ının UBL'e yazılması | e-Fatura |
 | J | İade faturasında `BillingReference` | Tüm iade tipleri — ✅ EBLG-58 (alış iadesi; TEVKIFATIADE açık) |

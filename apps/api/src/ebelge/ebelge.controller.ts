@@ -88,6 +88,13 @@ export class EbelgeController {
     if (secim.data.iade) {
       await this.ebelgeService.iadeReferanslariniKaydet(faturaId, secim.data.iade.referanslar);
     }
+    if (secim.data.yolcuBeraberi) {
+      await this.ebelgeService.yolcuBeraberiniKaydet(faturaId, {
+        isaretli: secim.data.yolcuBeraberi.isaretli,
+        yolcu: secim.data.yolcuBeraberi.yolcu,
+        araciKurum: secim.data.yolcuBeraberi.araciKurum,
+      });
+    }
     if (secim.data.kamu) {
       await this.ebelgeService.kamuBilgisiniKaydet(faturaId, secim.data.kamu);
     }
@@ -97,7 +104,7 @@ export class EbelgeController {
     // kimlik ve tarih kontrollerini anlatır; ihracat ve internet satışı
     // listelerine bakılmazsa eksik belge kuyruğa girer ve hata orada patlar —
     // kullanıcı ise "gönderildi" görür.
-    const engeller = [...(wizard.ihracat?.engeller ?? []), ...(wizard.internetSatisi?.engeller ?? []), ...(wizard.iade?.engeller ?? []), ...(wizard.kamu?.engeller ?? [])];
+    const engeller = [...(wizard.ihracat?.engeller ?? []), ...(wizard.internetSatisi?.engeller ?? []), ...(wizard.iade?.engeller ?? []), ...(wizard.kamu?.engeller ?? []), ...(wizard.yolcuBeraberi?.engeller ?? [])];
     if (engeller.length) throw new BadRequestException(engeller.map((e) => e.mesaj).join("; "));
     if (secim.data.earsivGonderimSekli) {
       await this.ebelgeService.earsivGonderimSekliniKaydet(faturaId, secim.data.earsivGonderimSekli);
