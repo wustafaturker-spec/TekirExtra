@@ -166,6 +166,21 @@ interface KesinlestirmeOzeti {
   fatura: FaturaDetay;
   risk: { mevcutRisk: string; limit: string | null; kalanLimit: string | null; asim: boolean } | null;
 }
+/** L: son adımdaki önizleme; entegratörün önizleme ucu yoksa yalnız kanal kararı gelir. */
+type EbelgeOnizleme =
+  | { durum: "yukleniyor" }
+  | { durum: "hata"; mesaj: string }
+  | {
+      durum: "hazir";
+      tur: "efatura" | "earsiv";
+      profil?: string;
+      tip?: string;
+      destekleniyor: boolean;
+      basarili?: boolean;
+      html?: string;
+      hataMesaji?: string;
+    };
+
 interface EbelgeWizardBilgisi {
   gonderilebilir: boolean;
   neden?: string;
@@ -356,6 +371,9 @@ export default function FaturaSayfasi() {
       elleNo: string;
       elleTarih: string;
     };
+    /** L: 1 kontrol, 2 türe özel bilgiler, 3 önizleme ve gönderim. */
+    adim: 1 | 2 | 3;
+    onizleme: EbelgeOnizleme | null;
   } | null>(null);
   /** EBLG-54: gümrük beyanname panelinin taslak değerleri. */
   const [beyanname, setBeyanname] = useState<{ no: string; tarih: string } | null>(null);
@@ -975,8 +993,64 @@ export default function FaturaSayfasi() {
           elleNo: "",
           elleTarih: "",
         },
+        adim: 1,
+        onizleme: null,
       });
     } catch (h) { setHata(h instanceof Error ? h.message : "e-Fatura wizard'ı açılamadı"); }
+  }
+
+  /** Sihirbazda girilenler; gönderim ve önizleme aynı gövdeyi yollar. */
+  function wizardSecimi(w: NonNullable<typeof ebelgeWizard>) {
+    return {
+          earsivGonderimSekli: w.earsivSekli,
+          // İhracat alanları yalnız ihracat faturasında gönderilir; sunucu
+          // eksikleri kendi listesiyle yeniden denetler.
+          ihracat: w.bilgi.ihracat
+            ? {
+                teslimTarihi: w.ihracat.teslimTarihi || null,
+                teslimSarti: w.ihracat.teslimSarti || null,
+                tasimaSekli: w.ihracat.tasimaSekli || null,
+              }
+            : undefined,
+          // İnternet satışı işareti her gönderimde yazılır; kutu kaldırıldıysa
+          // sunucu alanları da temizler.
+          internetSatisi: w.bilgi.internetSatisi
+            ? {
+                internetSatisi: w.internet.isaretli,
+                webAdresi: w.internet.webAdresi || null,
+                odemeSekli: w.internet.odemeSekli || null,
+                odemeTarihi: w.internet.odemeTarihi || null,
+                odemeAracisi: w.internet.odemeAracisi || null,
+                tasiyiciUnvan: w.internet.tasiyiciUnvan || null,
+                tasiyiciVkn: w.internet.tasiyiciVkn || null,
+                gonderiTarihi: w.internet.gonderiTarihi || null,
+              }
+            : undefined,
+          // İade referansları her gönderimde baştan yazılır; listeden seçilen
+          // faturanın numarasını sunucu kendi kaydından okur.
+          iade: w.bilgi.iade
+            ? {
+                referanslar: w.iade.referanslar.map((r) =>
+                  r.kaynakFaturaId ? { kaynakFaturaId: r.kaynakFaturaId } : { belgeNo: r.belgeNo, tarih: r.tarih },
+                ),
+              }
+            : undefined,
+        };
+  }
+
+  /** L: son adıma geçerken belge gönderilecek hâliyle entegratörde önizlenir. */
+  async function ebelgeOnizle(w: NonNullable<typeof ebelgeWizard>) {
+    setEbelgeWizard({ ...w, adim: 3, onizleme: { durum: "yukleniyor" } });
+    try {
+      const sonuc = await api<Omit<Extract<EbelgeOnizleme, { durum: "hazir" }>, "durum">>(`/ebelge/onizle/${w.fatura.id}`, {
+        method: "POST",
+        body: JSON.stringify(wizardSecimi(w)),
+      });
+      setEbelgeWizard((guncel) => guncel && guncel.adim === 3 ? { ...guncel, onizleme: { durum: "hazir", ...sonuc } } : guncel);
+    } catch (h) {
+      const mesaj = h instanceof Error ? h.message : "Önizleme alınamadı";
+      setEbelgeWizard((guncel) => guncel && guncel.adim === 3 ? { ...guncel, onizleme: { durum: "hata", mesaj } } : guncel);
+    }
   }
 
   async function ebelgeWizardGonder() {
@@ -985,41 +1059,7 @@ export default function FaturaSayfasi() {
     try {
       await api(`/ebelge/gonder/${ebelgeWizard.fatura.id}`, {
         method: "POST",
-        body: JSON.stringify({
-          earsivGonderimSekli: ebelgeWizard.earsivSekli,
-          // İhracat alanları yalnız ihracat faturasında gönderilir; sunucu
-          // eksikleri kendi listesiyle yeniden denetler.
-          ihracat: ebelgeWizard.bilgi.ihracat
-            ? {
-                teslimTarihi: ebelgeWizard.ihracat.teslimTarihi || null,
-                teslimSarti: ebelgeWizard.ihracat.teslimSarti || null,
-                tasimaSekli: ebelgeWizard.ihracat.tasimaSekli || null,
-              }
-            : undefined,
-          // İnternet satışı işareti her gönderimde yazılır; kutu kaldırıldıysa
-          // sunucu alanları da temizler.
-          internetSatisi: ebelgeWizard.bilgi.internetSatisi
-            ? {
-                internetSatisi: ebelgeWizard.internet.isaretli,
-                webAdresi: ebelgeWizard.internet.webAdresi || null,
-                odemeSekli: ebelgeWizard.internet.odemeSekli || null,
-                odemeTarihi: ebelgeWizard.internet.odemeTarihi || null,
-                odemeAracisi: ebelgeWizard.internet.odemeAracisi || null,
-                tasiyiciUnvan: ebelgeWizard.internet.tasiyiciUnvan || null,
-                tasiyiciVkn: ebelgeWizard.internet.tasiyiciVkn || null,
-                gonderiTarihi: ebelgeWizard.internet.gonderiTarihi || null,
-              }
-            : undefined,
-          // İade referansları her gönderimde baştan yazılır; listeden seçilen
-          // faturanın numarasını sunucu kendi kaydından okur.
-          iade: ebelgeWizard.bilgi.iade
-            ? {
-                referanslar: ebelgeWizard.iade.referanslar.map((r) =>
-                  r.kaynakFaturaId ? { kaynakFaturaId: r.kaynakFaturaId } : { belgeNo: r.belgeNo, tarih: r.tarih },
-                ),
-              }
-            : undefined,
-        }),
+        body: JSON.stringify(wizardSecimi(ebelgeWizard)),
       });
       setEbelgeWizard(null);
       setBasari("e-Belge oluşturuldu ve entegratöre gönderim kuyruğuna alındı.");
@@ -1764,10 +1804,21 @@ export default function FaturaSayfasi() {
         <HizliKayitPaneli baslik="e-Fatura oluştur ve gönder" onKapat={() => setEbelgeWizard(null)}>
           <div className="approval-summary">
             <div className="approval-summary__identity">
-              <strong>1. Kontrol</strong>
-              <span>{ebelgeWizard.fatura.no} · {ebelgeWizard.bilgi.cari}</span>
+              <strong>{ebelgeWizard.bilgi.cari}</strong>
+              <span>{ebelgeWizard.fatura.no ?? "Numara gönderimde verilir"}</span>
             </div>
-            <div className="approval-effects">
+            <ol aria-label="Sihirbaz adımları" className="ebelge-steps">
+              {(["Kontrol", "Bilgiler", "Önizle ve gönder"] as const).map((baslik, index) => {
+                const sira = index + 1;
+                const durum = sira < ebelgeWizard.adim ? "tamam" : sira === ebelgeWizard.adim ? "suanki" : "bekliyor";
+                return (
+                  <li className={`ebelge-steps__item is-${durum}`} key={baslik} aria-current={durum === "suanki" ? "step" : undefined}>
+                    <strong><i aria-hidden="true">{durum === "tamam" ? "✓" : sira}</i>{baslik}</strong>
+                  </li>
+                );
+              })}
+            </ol>
+            {ebelgeWizard.adim === 1 && <div className="approval-effects">
               <div><span>Alıcı VKN/TCKN</span><strong>{ebelgeWizard.bilgi.vknTckn || "Eksik"}</strong></div>
               <div><span>Entegratör</span><strong>{ebelgeWizard.bilgi.saglayici || "Tanımlı değil"}</strong></div>
               <div>
@@ -1778,7 +1829,8 @@ export default function FaturaSayfasi() {
                     : "Mükellefiyet gönderim onayında sorgulanacak: e-Fatura / e-Arşiv"}
                 </strong>
               </div>
-            </div>
+            </div>}
+            {ebelgeWizard.adim === 2 && (<>
             {ebelgeWizard.bilgi.ihracat && (
               <>
                 <Field label="Fiili ihracat tarihi">
@@ -1964,6 +2016,8 @@ export default function FaturaSayfasi() {
                 </Select>
               </Field>
             )}
+            </>)}
+            {ebelgeWizard.adim === 1 && (<>
             {ebelgeWizard.bilgi.aliciAdi?.tahmin && (
               <div className="approval-impact is-warning">
                 Carinin adı ve soyadı kartta girilmemiş; e-Arşiv&apos;e unvandan tahminle Ad: <strong>{ebelgeWizard.bilgi.aliciAdi.ad}</strong>, Soyad: <strong>{ebelgeWizard.bilgi.aliciAdi.soyad}</strong> yazılacak. Doğru değilse cari kartında düzeltin.
@@ -1982,10 +2036,62 @@ export default function FaturaSayfasi() {
             )}
             {ebelgeWizard.bilgi.neden && !ebelgeWizard.bilgi.ihracat && <div className="approval-impact is-warning">{ebelgeWizard.bilgi.neden}</div>}
             {ebelgeWizard.bilgi.not && <div className="approval-impact">{ebelgeWizard.bilgi.not}</div>}
-            <p className="subtle">İkinci adımda UBL-TR belge oluşturulur, entegratöre gönderilir ve durum takibine alınır. Bu işlem faturayı yeniden kesinleştirmez.</p>
+            </>)}
+            {ebelgeWizard.adim === 3 && (() => {
+              const o = ebelgeWizard.onizleme;
+              if (!o || o.durum === "yukleniyor") return <p className="subtle">Belge gönderilecek hâliyle üretilip entegratörde denetleniyor…</p>;
+              if (o.durum === "hata") return <div className="approval-impact is-warning"><strong>Önizleme alınamadı:</strong> {o.mesaj}</div>;
+              return (
+                <>
+                  <div className="approval-effects">
+                    <div><span>Kanal</span><strong>{o.tur === "efatura" ? "e-Fatura" : "e-Arşiv"}</strong></div>
+                    {o.profil && <div><span>Senaryo</span><strong>{o.profil}</strong></div>}
+                    {o.tip && <div><span>Fatura tipi</span><strong>{o.tip}</strong></div>}
+                  </div>
+                  {!o.destekleniyor && (
+                    <div className="approval-impact">Entegratörün önizleme ucu yok; belge gönderimde denetlenecek.</div>
+                  )}
+                  {o.destekleniyor && !o.basarili && (
+                    <div className="approval-impact is-warning">
+                      <strong>Entegratör belgeyi kabul etmedi:</strong> {o.hataMesaji}
+                      <br />Geri dönüp bilgileri düzeltin; belge gönderilmedi, numara harcanmadı.
+                    </div>
+                  )}
+                  {o.destekleniyor && o.basarili && o.html && (
+                    <>
+                      <div className="approval-impact">Entegratörün denetiminden geçti. Alıcının göreceği görünüm:</div>
+                      {/* Görünüm entegratörden gelir ve karekodu betikle çizer; ayrı kökende, betiğe izinli ama sayfaya erişimsiz çalışır. */}
+                      <iframe
+                        title="Belge önizlemesi"
+                        sandbox="allow-scripts"
+                        srcDoc={o.html}
+                        style={{ width: "100%", height: "32rem", border: "1px solid var(--border)", borderRadius: "0.6rem", background: "#fff" }}
+                      />
+                    </>
+                  )}
+                </>
+              );
+            })()}
             <div className="quick-panel__actions">
-              <Button type="button" onClick={() => setEbelgeWizard(null)}>Vazgeç</Button>
-              <Button type="button" variant="primary" disabled={!wizardGonderilebilir} onClick={() => void ebelgeWizardGonder()}>2. Oluştur ve gönder</Button>
+              {ebelgeWizard.adim === 1
+                ? <Button type="button" onClick={() => setEbelgeWizard(null)}>Vazgeç</Button>
+                : <Button type="button" onClick={() => setEbelgeWizard({ ...ebelgeWizard, adim: (ebelgeWizard.adim - 1) as 1 | 2, onizleme: null })}>← Geri</Button>}
+              {ebelgeWizard.adim === 1 && (
+                <Button type="button" variant="primary" disabled={!ebelgeWizard.bilgi.gonderilebilir} onClick={() => setEbelgeWizard({ ...ebelgeWizard, adim: 2 })}>İleri →</Button>
+              )}
+              {ebelgeWizard.adim === 2 && (
+                <Button type="button" variant="primary" disabled={!wizardGonderilebilir} onClick={() => void ebelgeOnizle(ebelgeWizard)}>Önizle →</Button>
+              )}
+              {ebelgeWizard.adim === 3 && (
+                <Button
+                  type="button"
+                  variant="primary"
+                  disabled={!(ebelgeWizard.onizleme?.durum === "hazir" && (ebelgeWizard.onizleme.basarili || !ebelgeWizard.onizleme.destekleniyor))}
+                  onClick={() => void ebelgeWizardGonder()}
+                >
+                  Gönder
+                </Button>
+              )}
             </div>
           </div>
         </HizliKayitPaneli>

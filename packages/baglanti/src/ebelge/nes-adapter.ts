@@ -9,6 +9,7 @@ import type {
   GelenBelge,
   GonderimSonuc,
   MukellefDurum,
+  OnizlemeSonuc,
   UblBelge,
   EarsivIptalGirdi,
   EarsivRapor,
@@ -584,6 +585,32 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
       };
     } catch (hata) {
       return { basarili: false, hataMesaji: hata instanceof Error ? hata.message : "NES gönderimi başarısız" };
+    }
+  }
+
+  /**
+   * Gönderim öncesi önizleme (L): `/v1/uploads/document/preview` belgeyi
+   * oluşturmadan şema ve şematron denetiminden geçirir ve alıcının göreceği
+   * HTML'i base64 olarak döndürür. Denetim hatası 422 ile gelir, kural
+   * metinleri `nesHatasi` ile okunur. Kural keşfi için de kullanıldı: EBLG-57,
+   * 58 ve 59'daki şematron kuralları bu uçla bulundu (2026-09-19).
+   */
+  async belgeOnizle(cfg: EntegratorConfig, belge: UblBelge): Promise<OnizlemeSonuc> {
+    const hata = configDogrula(cfg);
+    if (hata) return { basarili: false, hataMesaji: hata };
+    const aile: Aile = belge.tur === "earsiv" ? "earchive" : "einvoice";
+    const form = new FormData();
+    form.set("File", new Blob([belge.xml], { type: "application/xml" }), `${belge.uuid}.xml`);
+    try {
+      const sonuc = await this.cagir<{ content?: string; errorMessage?: string | null }>(cfg, aile, "/v1/uploads/document/preview", {
+        metot: "POST",
+        govde: form,
+      });
+      if (sonuc?.errorMessage) return { basarili: false, hataMesaji: `NES: ${sonuc.errorMessage}` };
+      if (!sonuc?.content) return { basarili: false, hataMesaji: "NES önizleme yanıtında görünüm dönmedi" };
+      return { basarili: true, html: Buffer.from(sonuc.content, "base64").toString("utf8") };
+    } catch (hata) {
+      return { basarili: false, hataMesaji: hata instanceof Error ? hata.message : "NES önizlemesi başarısız" };
     }
   }
 

@@ -100,6 +100,18 @@ export interface GonderimSonuc {
   hataMesaji?: string;
 }
 
+/**
+ * Gönderim öncesi önizleme (L). Belge oluşturmaz, numara harcamaz; sağlayıcı
+ * belgeyi şema ve şematron denetiminden geçirip alıcının göreceği görünümü
+ * döndürür.
+ */
+export interface OnizlemeSonuc {
+  basarili: boolean;
+  /** Sağlayıcının çizdiği HTML görünüm; yalnız başarılı önizlemede. */
+  html?: string;
+  hataMesaji?: string;
+}
+
 export interface BelgeDurumSonuc {
   belgeRef: string;
   durum: BelgeDurum;

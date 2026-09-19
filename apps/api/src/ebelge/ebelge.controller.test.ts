@@ -62,3 +62,34 @@ describe("EbelgeController.gonder", () => {
     expect(kayitSirasi).toBeLessThan(ebelge.wizardBilgisi.mock.invocationCallOrder[0]);
   });
 });
+
+describe("EbelgeController.onizle (L)", () => {
+  const kur = (wizard: Record<string, unknown>) => {
+    const ebelge = {
+      wizardBilgisi: vi.fn().mockResolvedValue(wizard),
+      ihracatBilgisiniKaydet: vi.fn().mockResolvedValue(undefined),
+      internetSatisiniKaydet: vi.fn().mockResolvedValue(undefined),
+      earsivGonderimSekliniKaydet: vi.fn().mockResolvedValue(undefined),
+      onizle: vi.fn().mockResolvedValue({ destekleniyor: true, basarili: true, html: "<html/>" }),
+    };
+    const kuyruk = { kuyrugaEkle: vi.fn() };
+    return { controller: new EbelgeController(ebelge as never, kuyruk as never, {} as never), ebelge, kuyruk };
+  };
+
+  it("seçimleri kaydedip önizler, kuyruğa hiçbir şey almaz", async () => {
+    const { controller, ebelge, kuyruk } = kur({ gonderilebilir: true, internetSatisi: { engeller: [] } });
+    await expect(controller.onizle("f1", { earsivGonderimSekli: "kagit" })).resolves.toMatchObject({ basarili: true });
+    expect(ebelge.earsivGonderimSekliniKaydet).toHaveBeenCalledWith("f1", "kagit");
+    expect(ebelge.onizle).toHaveBeenCalledWith("f1");
+    expect(kuyruk.kuyrugaEkle).not.toHaveBeenCalled();
+  });
+
+  it("eksik varken önizlemeye gitmez", async () => {
+    const { controller, ebelge } = kur({
+      gonderilebilir: true,
+      iade: { engeller: [{ mesaj: "İade edilen en az bir fatura seçilmeli ya da numarasıyla girilmelidir" }] },
+    });
+    await expect(controller.onizle("f1", {})).rejects.toThrow("İade edilen en az bir fatura");
+    expect(ebelge.onizle).not.toHaveBeenCalled();
+  });
+});

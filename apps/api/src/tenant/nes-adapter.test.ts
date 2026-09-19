@@ -709,3 +709,27 @@ describe("NesEntegratorAdapter", () => {
     expect(adapter.gelenZarflariCek).toBeUndefined();
   });
 });
+
+describe("NES önizleme (L)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const belge = { uuid: "fatura-1", belgeNo: "K07", xml: "<Invoice/>", tur: "earsiv" as const };
+
+  it("belgeyi aile ucuna gönderir, base64 görünümü çözer", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(yanit({ content: Buffer.from("<html>görünüm</html>").toString("base64"), errorMessage: null }));
+    vi.stubGlobal("fetch", fetchMock);
+    const sonuc = await new NesEntegratorAdapter().belgeOnizle(config, belge);
+    expect(sonuc).toEqual({ basarili: true, html: "<html>görünüm</html>" });
+    expect(fetchMock.mock.calls[0][0]).toBe("https://apitest.nes.com.tr/earchive/v1/uploads/document/preview");
+    expect(fetchMock.mock.calls[0][1].body.get("File")).toBeTruthy();
+  });
+
+  it("şematron hatasını kural metniyle döndürür", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({
+      message: "HATALI ISTEK",
+      errors: [{ code: "1150", description: "SCHEMATRON_CHECK_RESULT_HAS_FAILED", detail: "Para birimi TRY olmayan belgelerde kur bilgisi zorunludur." }],
+    }, 422)));
+    const sonuc = await new NesEntegratorAdapter().belgeOnizle(config, belge);
+    expect(sonuc.basarili).toBe(false);
+    expect(sonuc.hataMesaji).toContain("kur bilgisi zorunludur");
+  });
+});

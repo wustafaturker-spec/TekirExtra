@@ -6,6 +6,7 @@ import type {
   GelenBelge,
   GonderimSonuc,
   MukellefDurum,
+  OnizlemeSonuc,
   UblBelge,
   EarsivIptalGirdi,
   EarsivRapor,
@@ -39,6 +40,12 @@ export interface EntegratorAdapter {
   baglantiTest(cfg: EntegratorConfig): Promise<BaglantiSonuc>;
   mukellefSorgula(cfg: EntegratorConfig, vknTckn: string): Promise<MukellefDurum>;
   belgeGonder(cfg: EntegratorConfig, belge: UblBelge): Promise<GonderimSonuc>;
+  /**
+   * Belgeyi göndermeden sağlayıcının denetiminden geçirir ve görünümünü
+   * döndürür (L). Önizleme ucu sunmayan sağlayıcıda tanımsız kalır; sihirbaz
+   * o durumda yalnız özet gösterir.
+   */
+  belgeOnizle?(cfg: EntegratorConfig, belge: UblBelge): Promise<OnizlemeSonuc>;
   durumSorgula(cfg: EntegratorConfig, belgeRef: string): Promise<BelgeDurumSonuc>;
   gelenBelgeleriCek(cfg: EntegratorConfig, sonrasi: Date): Promise<GelenBelge[]>;
   /**

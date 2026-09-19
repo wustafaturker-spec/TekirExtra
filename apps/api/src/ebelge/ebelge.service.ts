@@ -57,6 +57,36 @@ function gonderimTarihiGecerliMi(tarih: Date, simdi = new Date()): boolean {
 const TIP_GONDERILEMEZ =
   "Yalnızca satış ve alış iade faturaları e-belge olarak gönderilir; satış iadesinin faturasını müşteri keser.";
 
+/**
+ * Gönderimin ve önizlemenin (L) ortak ön koşulları. Türe özel eksik varsa ya
+ * da belge gönderilebilecek durumda değilse durdurur; türe özel özetleri döner.
+ */
+function gonderimKosullariniDenetle(
+  fatura: Parameters<typeof ihracatOzeti>[0] & Parameters<typeof internetSatisOzeti>[0] & Parameters<typeof iadeOzeti>[0] & {
+    durum: string;
+    cari: { vknTckn: string | null };
+  },
+) {
+  if (fatura.durum !== "kesin") {
+    throw new BadRequestException("Yalnızca kesinleşmiş faturalar gönderilebilir");
+  }
+  if (!ebelgeGonderilebilirTipMi(fatura.tip)) throw new BadRequestException(TIP_GONDERILEMEZ);
+  const ihracat = ihracatOzeti(fatura);
+  const internet = internetSatisOzeti(fatura);
+  const iade = iadeOzeti(fatura);
+  const engeller = [...ihracat.engeller, ...internet.engeller, ...iade.engeller];
+  if (engeller.length) {
+    throw new BadRequestException(engeller.map((e) => e.mesaj).join("; "));
+  }
+  if (!ihracat.ihracat && !fatura.cari.vknTckn) {
+    throw new BadRequestException("Alıcının geçerli bir VKN/TCKN bilgisi olmalıdır");
+  }
+  if (!gonderimTarihiGecerliMi(fatura.tarih)) {
+    throw new BadRequestException("Fatura tarihi bugün veya en fazla 7 gün önce olmalıdır");
+  }
+  return { ihracat, internet, iade };
+}
+
 @Injectable()
 export class EbelgeService {
   private readonly logger = new Logger(EbelgeService.name);
@@ -344,6 +374,115 @@ export class EbelgeService {
     );
   }
 
+  /**
+   * Belgenin kanalını belirler ve gönderilecek UBL'i üretir. Gönderim ile
+   * sihirbaz önizlemesi (L) aynı işlevi çağırır: önizlenen belge, gönderilecek
+   * belgenin kendisidir.
+   */
+  private async belgeUblHazirla(
+    adapter: ReturnType<BaglantilarService["adapterCoz"]>,
+    hazirlik: {
+      saglayici: string;
+      cfg: EntegratorConfig;
+      fatura: Parameters<typeof faturaUblUret>[0];
+      tenant: { unvan: string; vkn: string; vergiDairesi: string | null };
+      ihracat: ReturnType<typeof ihracatOzeti>;
+      internet: ReturnType<typeof internetSatisOzeti>;
+      iade: ReturnType<typeof iadeOzeti>;
+    },
+  ) {
+    // Kanal kararı lokal listeden verilir; gönderim başına entegratöre tam
+    // liste sorulması bloklanma sebebiydi (EBLG-10). Alıcı yurt dışıysa liste
+    // hiç sorulmaz: ihracat faturası e-Fatura kanalından, alıcının değil
+    // Ticaret Bakanlığı'nın kutusuna gider (tasarım belgesi §3.1 adım 1).
+    const mukellefiyet = hazirlik.ihracat.ihracat
+      ? { eFaturaMukellefi: true, postaKutusu: IHRACAT_POSTA_KUTUSU }
+      : await this.mukellefListesi.kanalBelirle(hazirlik.saglayici, hazirlik.cfg, hazirlik.fatura.cari.vknTckn!);
+    if (mukellefiyet.eFaturaMukellefi && !mukellefiyet.postaKutusu) {
+      throw new BadRequestException("Alıcı e-Fatura mükellefi ancak GİB posta kutusu (alias) bulunamadı");
+    }
+    const tur: EbelgeTur = mukellefiyet.eFaturaMukellefi ? "efatura" : "earsiv";
+
+    // Otomatik numaralandıran seride UBL'e tam numara değil yalnızca seri
+    // öneki yazılır; numarayı entegratör atar ve yanıtta döndürür (EBLG-16).
+    // Önek kanala göre seçilir: GİB e-Fatura ile e-Arşiv serilerinin aynı
+    // olmasına izin vermez, aynı önekle giden e-Arşiv belgesi şematronda
+    // reddedilir. Kanal ancak mükellefiyet sorgusundan sonra bilindiği için
+    // eksik önek burada, gönderimden hemen önce yakalanır.
+    const seriOneki = tur === "earsiv" ? hazirlik.cfg.earsivSeriOneki : hazirlik.cfg.belgeSeriOneki;
+    if (adapter.belgeNoAtar && tur === "earsiv" && hazirlik.cfg.belgeSeriOneki && !seriOneki) {
+      throw new BadRequestException(
+        "Alıcı e-Fatura mükellefi değil, belge e-Arşiv olarak düzenlenecek. Ayarlar > Entegratörler ekranında e-Fatura serisinden farklı bir e-Arşiv seri öneki tanımlayın.",
+      );
+    }
+    const saglayiciNumaralandirir = Boolean(adapter.belgeNoAtar && seriOneki);
+    const ublFatura = saglayiciNumaralandirir
+      ? { ...hazirlik.fatura, no: seriOneki! }
+      : hazirlik.fatura;
+
+    // Profil belge kanalına göre değişir: e-Arşiv'de GİB `EARSIVFATURA` bekler,
+    // e-Fatura profili (temel/ticari) yalnız e-Fatura kanalında geçerlidir.
+    const xml = faturaUblUret(
+      ublFatura,
+      {
+        unvan: hazirlik.tenant.unvan,
+        vkn: hazirlik.tenant.vkn,
+        vergiDairesi: hazirlik.tenant.vergiDairesi || undefined,
+      },
+      {
+        tur,
+        ihracat: hazirlik.ihracat.ublBilgisi,
+        internetSatisi: hazirlik.internet.ublBilgisi,
+        iadeReferanslari: hazirlik.iade.iade ? hazirlik.iade.referanslar : undefined,
+      },
+    );
+    return { mukellefiyet, tur, ublFatura, saglayiciNumaralandirir, xml };
+  }
+
+  /**
+   * Sihirbazın son adımı (L): belgeyi gönderilecek hâliyle üretir ve
+   * entegratörün önizleme ucundan geçirir. Kayıt, rezervasyon ya da numara
+   * oluşturmaz; önizleme ucu olmayan entegratörde yalnız kanal kararını döner.
+   */
+  async onizle(faturaId: string) {
+    const { tenantId } = aktifBaglam();
+    const hazirlik = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const fatura = await tx.fatura.findUnique({
+        where: { id: faturaId },
+        include: {
+          satirlar: { include: { stok: { select: { kod: true, ad: true, tip: true, gtipKodu: true, mensei: true } } } },
+          cari: { include: { adresler: true } },
+          iadeReferanslari: true,
+        },
+      });
+      if (!fatura) throw new NotFoundException("Fatura bulunamadı");
+      const ozetler = gonderimKosullariniDenetle(fatura);
+      const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } });
+      if (!baglanti) throw new BadRequestException("Aktif bir e-belge entegratör bağlantısı bulunamadı.");
+      const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
+      if (!tenant) throw new NotFoundException("Tenant bulunamadı");
+      return { fatura, tenant, saglayici: baglanti.saglayici, cfg: JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig, ...ozetler };
+    });
+
+    const adapter = this.baglantilarService.adapterCoz(hazirlik.saglayici);
+    const { tur, xml, ublFatura, mukellefiyet } = await this.belgeUblHazirla(adapter, hazirlik);
+    const kimlik = {
+      tur,
+      profil: /<cbc:ProfileID>([^<]*)</.exec(xml)?.[1],
+      tip: /<cbc:InvoiceTypeCode>([^<]*)</.exec(xml)?.[1],
+    };
+    if (!adapter.belgeOnizle) return { ...kimlik, destekleniyor: false as const };
+    this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "belgeOnizle", saglayici: hazirlik.saglayici });
+    const sonuc = await adapter.belgeOnizle(hazirlik.cfg, {
+      uuid: hazirlik.fatura.id,
+      belgeNo: ublFatura.no || "TASLAK",
+      xml,
+      tur,
+      aliciPostaKutusu: mukellefiyet.postaKutusu,
+    });
+    return { ...kimlik, destekleniyor: true as const, ...sonuc };
+  }
+
   async gonder(faturaId: string) {
     const { tenantId } = aktifBaglam();
     // Önce veritabanında tekil bir gönderim rezervasyonu oluşturulur. Böylece
@@ -360,23 +499,7 @@ export class EbelgeService {
       });
 
       if (!fatura) throw new NotFoundException("Fatura bulunamadı");
-      if (fatura.durum !== "kesin") {
-        throw new BadRequestException("Yalnızca kesinleşmiş faturalar gönderilebilir");
-      }
-      if (!ebelgeGonderilebilirTipMi(fatura.tip)) throw new BadRequestException(TIP_GONDERILEMEZ);
-      const ihracat = ihracatOzeti(fatura);
-      const internet = internetSatisOzeti(fatura);
-      const iade = iadeOzeti(fatura);
-      const engeller = [...ihracat.engeller, ...internet.engeller, ...iade.engeller];
-      if (engeller.length) {
-        throw new BadRequestException(engeller.map((e) => e.mesaj).join("; "));
-      }
-      if (!ihracat.ihracat && !fatura.cari.vknTckn) {
-        throw new BadRequestException("Alıcının geçerli bir VKN/TCKN bilgisi olmalıdır");
-      }
-      if (!gonderimTarihiGecerliMi(fatura.tarih)) {
-        throw new BadRequestException("Fatura tarihi bugün veya en fazla 7 gün önce olmalıdır");
-      }
+      const { ihracat, internet, iade } = gonderimKosullariniDenetle(fatura);
       if (fatura.ebelge && !["hata", "ret"].includes(fatura.ebelge.durum) && !takiliRezervasyonMu(fatura.ebelge)) {
         throw new ConflictException("Bu fatura için e-belge gönderim süreci zaten başlatılmış");
       }
@@ -449,51 +572,7 @@ export class EbelgeService {
 
     const adapter = this.baglantilarService.adapterCoz(hazirlik.saglayici);
     try {
-      // Kanal kararı lokal listeden verilir; gönderim başına entegratöre tam
-      // liste sorulması bloklanma sebebiydi (EBLG-10). Alıcı yurt dışıysa liste
-      // hiç sorulmaz: ihracat faturası e-Fatura kanalından, alıcının değil
-      // Ticaret Bakanlığı'nın kutusuna gider (tasarım belgesi §3.1 adım 1).
-      const mukellefiyet = hazirlik.ihracat.ihracat
-        ? { eFaturaMukellefi: true, postaKutusu: IHRACAT_POSTA_KUTUSU }
-        : await this.mukellefListesi.kanalBelirle(hazirlik.saglayici, hazirlik.cfg, hazirlik.fatura.cari.vknTckn!);
-      if (mukellefiyet.eFaturaMukellefi && !mukellefiyet.postaKutusu) {
-        throw new BadRequestException("Alıcı e-Fatura mükellefi ancak GİB posta kutusu (alias) bulunamadı");
-      }
-      const tur: EbelgeTur = mukellefiyet.eFaturaMukellefi ? "efatura" : "earsiv";
-
-      // Otomatik numaralandıran seride UBL'e tam numara değil yalnızca seri
-      // öneki yazılır; numarayı entegratör atar ve yanıtta döndürür (EBLG-16).
-      // Önek kanala göre seçilir: GİB e-Fatura ile e-Arşiv serilerinin aynı
-      // olmasına izin vermez, aynı önekle giden e-Arşiv belgesi şematronda
-      // reddedilir. Kanal ancak mükellefiyet sorgusundan sonra bilindiği için
-      // eksik önek burada, gönderimden hemen önce yakalanır.
-      const seriOneki = tur === "earsiv" ? hazirlik.cfg.earsivSeriOneki : hazirlik.cfg.belgeSeriOneki;
-      if (adapter.belgeNoAtar && tur === "earsiv" && hazirlik.cfg.belgeSeriOneki && !seriOneki) {
-        throw new BadRequestException(
-          "Alıcı e-Fatura mükellefi değil, belge e-Arşiv olarak düzenlenecek. Ayarlar > Entegratörler ekranında e-Fatura serisinden farklı bir e-Arşiv seri öneki tanımlayın.",
-        );
-      }
-      const saglayiciNumaralandirir = Boolean(adapter.belgeNoAtar && seriOneki);
-      const ublFatura = saglayiciNumaralandirir
-        ? { ...hazirlik.fatura, no: seriOneki! }
-        : hazirlik.fatura;
-
-      // Profil belge kanalına göre değişir: e-Arşiv'de GİB `EARSIVFATURA` bekler,
-      // e-Fatura profili (temel/ticari) yalnız e-Fatura kanalında geçerlidir.
-      const xml = faturaUblUret(
-        ublFatura,
-        {
-          unvan: hazirlik.tenant.unvan,
-          vkn: hazirlik.tenant.vkn,
-          vergiDairesi: hazirlik.tenant.vergiDairesi || undefined,
-        },
-        {
-          tur,
-          ihracat: hazirlik.ihracat.ublBilgisi,
-          internetSatisi: hazirlik.internet.ublBilgisi,
-          iadeReferanslari: hazirlik.iade.iade ? hazirlik.iade.referanslar : undefined,
-        },
-      );
+      const { mukellefiyet, tur, ublFatura, saglayiciNumaralandirir, xml } = await this.belgeUblHazirla(adapter, hazirlik);
 
       // Yeniden denemede önce sağlayıcıya sorulur: önceki denemede ağ çağrısı
       // başarılı olup kalıcılaştırma düşmüş olabilir. Belge oradaysa yeniden

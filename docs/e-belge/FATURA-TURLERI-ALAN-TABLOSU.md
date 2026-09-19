@@ -239,4 +239,4 @@ SGK · 801–811 → OZELMATRAH, IADE, SGK. IADE tipi TICARIFATURA profiliyle gi
 | I | Alıcı alias'ının UBL'e yazılması | e-Fatura |
 | J | İade faturasında `BillingReference` | Tüm iade tipleri — ✅ EBLG-58 (alış iadesi; TEVKIFATIADE açık) |
 | K | İstisna kod listesinin fatura tipine göre süzülmesi | Tüm türler — ✅ EBLG-59 |
-| L | Sihirbazın çok adımlı hale getirilmesi | Arayüz |
+| L | Sihirbazın çok adımlı hale getirilmesi | Arayüz — ✅ Kontrol → Bilgiler → Önizle ve gönder; son adım NES önizlemesi |

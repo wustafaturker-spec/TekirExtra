@@ -53,6 +53,28 @@ export class EbelgeController {
   @Post("gonder/:faturaId")
   @Roller("muhasebe")
   async gonder(@Param("faturaId") faturaId: string, @Body() govde: unknown) {
+    await this.sihirbazSeciminiKaydet(faturaId, govde);
+    return this.kuyrukService.kuyrugaEkle(faturaId);
+  }
+
+  /**
+   * L: sihirbazın son adımı. Seçimler gönderimdeki gibi kaydedilir, belge
+   * gönderilecek hâliyle üretilip entegratörün önizleme ucundan geçirilir;
+   * belge oluşmaz, numara harcanmaz.
+   */
+  @Post("onizle/:faturaId")
+  @Roller("muhasebe")
+  async onizle(@Param("faturaId") faturaId: string, @Body() govde: unknown) {
+    await this.sihirbazSeciminiKaydet(faturaId, govde);
+    return this.ebelgeService.onizle(faturaId);
+  }
+
+  /**
+   * Sihirbazda girilen türe özel alanları faturaya yazar ve eksik kalmışsa
+   * durdurur. Gönderim ile önizleme aynı yoldan geçer; önizlenen belge
+   * gönderilecek belgenin kendisidir.
+   */
+  private async sihirbazSeciminiKaydet(faturaId: string, govde: unknown) {
     const secim = ebelgeGonderSemasi.safeParse(govde ?? {});
     if (!secim.success) throw new BadRequestException(secim.error.issues.map((s) => s.message).join("; "));
     // İhracat alanları önizlemeden önce yazılır: eksikleri sihirbazda girilen
@@ -77,7 +99,6 @@ export class EbelgeController {
     if (secim.data.earsivGonderimSekli) {
       await this.ebelgeService.earsivGonderimSekliniKaydet(faturaId, secim.data.earsivGonderimSekli);
     }
-    return this.kuyrukService.kuyrugaEkle(faturaId);
   }
 
   /** EBLG-54: gümrük beyanname numarası; belge gönderildikten sonra da işlenir. */
