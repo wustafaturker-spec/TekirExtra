@@ -77,6 +77,8 @@ uyarır. Canlıda doğrulandı (`SNC2026000000018`, kg satırı `unitCode="KGM"`
 | Alıcı yanıtı takibi | — | Evet | Entegratör sorgusu (EBLG-13/34) | ✅ |
 | İade referansı | `cac:BillingReference` | İade tipinde | İade edilen fatura | ✅ (EBLG-58) — her fatura ayrı blok, 16 haneli no + `DocumentTypeCode` IADE |
 | Tevkifatlı faturanın iadesi | `InvoiceTypeCode` TEVKIFATIADE | Satırda tevkifat kodu olan iadede | Kural | ✅ (EBLG-61) — tevkifatsız: `WithholdingTaxTotal` yok (şematron reddeder), KDV yalnız tevkif dışı kısım, oran aynı; 100 + %20, 9/10 → 100 + 2 |
+| İstisnalı iade | `InvoiceTypeCode` IADE | Sıfır KDV'li satırı olan iadede | Kural | ✅ denendi (2026-09-19) — tip IADE kalır, kod satırda ve belge altında; tek başına (350) ve %20 satırla karışık (301) NES önizlemesinden geçti |
+| Yurt dışındaki tedarikçiye iade | — | Tedarikçinin fatura adresi yurt dışında | Kural | ⛔ e-belge ile kesilmez (karar 2026-09-19, `YURT_DISI_IADE_ENGELI`) — sihirbaz ilk adımda, sunucu gönderim ve önizlemede durdurur. Not: şematron IHRACAT/ISTISNA + serbest numaralı iade referansını kabul ediyordu; gerekirse bu yol açılabilir |
 
 ### 3.2 Temel e-Fatura (`TEMELFATURA`)
 

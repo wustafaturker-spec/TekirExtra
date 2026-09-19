@@ -11,6 +11,15 @@
 /** `cbc:DocumentTypeCode` değeri; GİB görünümü iade tablosunu buna bakarak basar. */
 export const IADE_BELGE_TUR_KODU = "IADE";
 
+/**
+ * Yurt dışındaki tedarikçiye iade e-belge ile kesilmez (karar 2026-09-19).
+ * Kanal alıcının ülkesinden türediği için belge ihracat faturasına düşerdi;
+ * iade edilen yabancı faturanın GİB numarası da yoktur. Sihirbaz ilk adımda,
+ * gönderim ve önizleme sunucuda bu mesajla durur.
+ */
+export const YURT_DISI_IADE_ENGELI =
+  "Tedarikçinin fatura adresi yurt dışında: yurt dışındaki tedarikçiye iade e-belge ile kesilmez, belgeyi e-belge dışında düzenleyin";
+
 /** Bir iade faturasında en çok kaç fatura referans verilebilir. */
 export const IADE_REFERANS_UST_SINIRI = 20;
 

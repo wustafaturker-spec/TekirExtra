@@ -11,7 +11,7 @@ import {
 } from "@nestjs/common";
 import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
 import type { BelgeDurumSonuc, EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
-import { type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi } from "@tekirextra/shared";
+import { type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { BildirimService } from "../bildirimler/bildirim.service";
@@ -75,6 +75,7 @@ function gonderimKosullariniDenetle(
   const ihracat = ihracatOzeti(fatura);
   const internet = internetSatisOzeti(fatura);
   const iade = iadeOzeti(fatura);
+  if (iade.iade && ihracat.ihracat) throw new BadRequestException(YURT_DISI_IADE_ENGELI);
   const engeller = [...ihracat.engeller, ...internet.engeller, ...iade.engeller].map((e) => e.mesaj);
   // EBLG-60: ihraç kayıtlı satış yurt içindeki ihracatçıya yapılır; alıcı yurt
   // dışındaysa belge ihracat faturasıdır, ikisi birden olamaz.
@@ -147,6 +148,9 @@ export class EbelgeService {
       const ihracat = ihracatOzeti(fatura);
       const internet = internetSatisOzeti(fatura);
       const iade = iadeOzeti(fatura);
+      if (iade.iade && ihracat.ihracat) {
+        return { gonderilebilir: false, neden: YURT_DISI_IADE_ENGELI, faturaNo: fatura.no, cari: fatura.cari.unvan, vknTckn: fatura.cari.vknTckn, saglayici: baglanti.saglayici };
+      }
       if (!ihracat.ihracat && !vknTcknKabulEdilebilirMi(fatura.cari.vknTckn, testOrtami)) {
         return { gonderilebilir: false, neden: "Alıcının geçerli bir VKN/TCKN bilgisi olmalıdır.", faturaNo: fatura.no, cari: fatura.cari.unvan, vknTckn: fatura.cari.vknTckn, saglayici: baglanti.saglayici };
       }

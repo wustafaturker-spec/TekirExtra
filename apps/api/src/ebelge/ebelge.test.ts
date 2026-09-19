@@ -745,6 +745,44 @@ describe("EbelgeService (EBLG-01..08)", () => {
     expect(mockFatura.sil).toHaveBeenCalledWith("fatura-taslak-1");
     expect(sonuc.basarili).toBe(true);
   });
+
+  describe("yurt dışındaki tedarikçiye iade", () => {
+    const yurtDisiIade = {
+      id: "fi1",
+      tip: "alis_iade",
+      durum: "kesin",
+      tarih: new Date(),
+      no: null,
+      cariId: "c-de",
+      satirlar: [{ birim: "adet", kdvOrani: 0, stok: { kod: "U1", ad: "Ürün 1", gtipKodu: "080222100000" } }],
+      cari: { vknTckn: null, unvan: "Lieferant GmbH", adresler: [{ tip: "fatura", ulke: "DE", adres: "Hauptstrasse 12", il: "Hamburg", ilce: null, postaKodu: "20095" }] },
+      iadeReferanslari: [{ sira: 1, belgeNo: "REA2026000000042", tarih: new Date("2026-01-10"), kaynakFaturaId: null }],
+      ihracatTeslimTarihi: new Date(),
+      ihracatTeslimSarti: null,
+      ihracatTasimaSekli: null,
+      gumrukBeyannameNo: null,
+      internetSatisi: false,
+      ebelge: null,
+    };
+    const tx = () => ({
+      fatura: { findUnique: vi.fn().mockResolvedValue(yurtDisiIade) },
+      baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "test" }) }) },
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", vergiDairesi: "Davutpaşa", adres: "Maltepe Mh.", ilce: "Zeytinburnu", il: "İstanbul" }) },
+    });
+
+    it("sihirbaz ilk adımda durur, ihracat faturasına düşürmez", async () => {
+      mockTenantIslem.mockImplementation((_tenantId: string, cb: any) => cb(tx()));
+      const bilgi = await service.wizardBilgisi("fi1");
+      expect(bilgi.gonderilebilir).toBe(false);
+      expect(bilgi.neden).toMatch(/yurt dışındaki tedarikçiye iade e-belge ile kesilmez/);
+    });
+
+    it("gönderim ve önizleme sunucuda da reddedilir", async () => {
+      mockTenantIslem.mockImplementation((_tenantId: string, cb: any) => cb(tx()));
+      await expect(service.gonder("fi1")).rejects.toThrow(/yurt dışındaki tedarikçiye iade/);
+      await expect(service.onizle("fi1")).rejects.toThrow(/yurt dışındaki tedarikçiye iade/);
+    });
+  });
 });
 
 /* ─── Entegratör çağrı disiplini (EBLG-11, 13, 14) ──────────────────────── */

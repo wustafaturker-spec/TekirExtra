@@ -1412,7 +1412,10 @@ export default function FaturaSayfasi() {
                 <Select aria-label="Fatura Tipi" value={tip} onChange={(e) => { setTip(e.target.value); setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 }]); }}>
                   <option value="satis">Satış Faturası</option>
                   <option value="alis">Alış Faturası</option>
-                  {yonBaglami === "alis" && <option value="alis_iade">Alış İade Faturası</option>}
+                  {/* Bağlantıyla açılan iade faturasında yön bağlamı boştur; seçenek yoksa
+                      tarayıcı ilk seçeneği ("Satış Faturası") gösterir. */}
+                  {(yonBaglami === "alis" || tip === "alis_iade") && <option value="alis_iade">Alış İade Faturası</option>}
+                  {tip === "satis_iade" && <option value="satis_iade">Satış İade Faturası</option>}
                   <option value="proforma">Proforma</option>
                 </Select>
               </Field>
