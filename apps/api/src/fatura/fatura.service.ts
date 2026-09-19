@@ -1056,6 +1056,16 @@ export class FaturaService {
           genelToplam: fatura.genelToplam,
           aciklama: fatura.aciklama ? `${fatura.aciklama} (Kopya)` : "Kopya",
           notlar: fatura.notlar,
+          // Toplamlar özgünden geldiği için onları belirleyen işaretler de
+          // gelmeli: ihraç kayıtlıda KDV tahsil edilmez, genel toplam matrahtır.
+          gelirTuru: fatura.gelirTuru,
+          depoId: fatura.depoId,
+          senaryo: fatura.senaryo,
+          efaturaProfili: fatura.efaturaProfili,
+          earsivGonderimSekli: fatura.earsivGonderimSekli,
+          ihracKayitliKodu: fatura.ihracKayitliKodu,
+          ihracatTeslimSarti: fatura.ihracatTeslimSarti,
+          ihracatTasimaSekli: fatura.ihracatTasimaSekli,
         },
       });
 
@@ -1082,6 +1092,9 @@ export class FaturaService {
             netKdvTutari: s.netKdvTutari,
             toplamTutar: s.toplamTutar,
             gibIstisnaKodu: s.gibIstisnaKodu,
+            tevkifatKodu: s.tevkifatKodu,
+            projeId: s.projeId,
+            projeAltKirilimId: s.projeAltKirilimId,
           },
         });
       }

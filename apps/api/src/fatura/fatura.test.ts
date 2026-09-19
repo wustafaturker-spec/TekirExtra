@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 import { FaturaService } from "./fatura.service";
 import { BadRequestException } from "@nestjs/common";
+import { _tumPolitikalariTemizle, registerEylemPolitikasi } from "../core/eylemler/eylem-kayit";
 
 vi.mock("../core/istek-baglami", () => ({
   aktifBaglam: () => ({
@@ -195,5 +196,35 @@ describe("FaturaService.iptal — e-belge kuralı (EBLG-22)", () => {
     await service.iptal("f1");
 
     expect(earsivBelgesiniIptalEt).not.toHaveBeenCalled();
+  });
+});
+
+describe("FaturaService.kopyala", () => {
+  it("toplamları belirleyen fatura ve satır işaretlerini kopyaya taşır", async () => {
+    registerEylemPolitikasi("fatura", { kopyala: () => true });
+    const olusanFatura = vi.fn().mockResolvedValue({ id: "kopya" });
+    const olusanSatir = vi.fn().mockResolvedValue({});
+    const tx = {
+      fatura: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "f1", tip: "satis", durum: "kesin", cariId: "c1", dovizCinsi: "TRY", kur: 1,
+          gelirTuru: "ticari_satis", depoId: "d1", senaryo: "ihrackayitli", efaturaProfili: "ticari",
+          earsivGonderimSekli: "elektronik", ihracKayitliKodu: "701", ihracatTeslimSarti: null, ihracatTasimaSekli: null,
+          aciklama: null, notlar: null,
+          satirlar: [{ stokId: "s1", miktar: 1, birimFiyat: 100, tevkifatKodu: "602", tevkifatPay: 9, tevkifatPayda: 10, projeId: "p1", projeAltKirilimId: null, gibIstisnaKodu: null }],
+        }),
+        create: olusanFatura,
+      },
+      faturaSatir: { create: olusanSatir },
+    };
+    const prisma = { tenantIslem: vi.fn((_t: string, cb: (tx: unknown) => unknown) => cb(tx)) } as any;
+    const service = new FaturaService(prisma, {} as any, {} as any, {} as any, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
+    vi.spyOn(service, "getir").mockResolvedValue({ id: "kopya" } as any);
+
+    await service.kopyala("f1");
+
+    expect(olusanFatura.mock.calls[0][0].data).toMatchObject({ durum: "taslak", ihracKayitliKodu: "701", senaryo: "ihrackayitli", efaturaProfili: "ticari", depoId: "d1" });
+    expect(olusanSatir.mock.calls[0][0].data).toMatchObject({ tevkifatKodu: "602", projeId: "p1" });
+    _tumPolitikalariTemizle();
   });
 });
