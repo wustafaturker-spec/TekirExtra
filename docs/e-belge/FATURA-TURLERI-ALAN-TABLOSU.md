@@ -75,6 +75,7 @@ uyarır. Canlıda doğrulandı (`SNC2026000000018`, kg satırı `unitCode="KGM"`
 | Alıcı posta kutusu (alias) | `PartyIdentification` BUYER_ALIAS | Evet | GİB mükellef listesi | ⚠️ liste sorgulanıyor, alias UBL'e yazılmıyor |
 | Alıcı yanıtı takibi | — | Evet | Entegratör sorgusu (EBLG-13/34) | ✅ |
 | İade referansı | `cac:BillingReference` | İade tipinde | İade edilen fatura | ✅ (EBLG-58) — her fatura ayrı blok, 16 haneli no + `DocumentTypeCode` IADE |
+| Tevkifatlı faturanın iadesi | `InvoiceTypeCode` TEVKIFATIADE | Satırda tevkifat kodu olan iadede | Kural | ✅ (EBLG-61) — tevkifatsız: `WithholdingTaxTotal` yok (şematron reddeder), KDV yalnız tevkif dışı kısım, oran aynı; 100 + %20, 9/10 → 100 + 2 |
 
 ### 3.2 Temel e-Fatura (`TEMELFATURA`)
 

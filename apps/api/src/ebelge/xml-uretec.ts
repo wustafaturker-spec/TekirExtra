@@ -127,6 +127,16 @@ export function faturaUblUret(
    * EARSIVFATURA, … olabilir" (NES önizlemesi, 2026-09-19). İadeye alıcının
    * kabul/ret yanıtı yoktur; carinin ticari profili iadede yok sayılır (EBLG-58).
    */
+  const iadeSenaryosu = fatura.senaryo === "iade" || fatura.senaryo === "tevkifatiade";
+  /*
+   * EBLG-61: tevkifatlı faturanın iadesi tevkifatsız düzenlenir — belgede
+   * yalnız satıcıya fiilen ödenmiş (tevkif dışı) KDV görünür, oran aynı kalır
+   * (100 + %20 KDV, 9/10 tevkifat → 100 + 2). Şematron bu tipte tevkifat
+   * bloğunu reddeder. Faturanın kendi hesabı zaten net KDV'yi taşır.
+   */
+  const tevkifatIade = fatura.senaryo === "tevkifatiade";
+  const belgeKdvi = (satir: { kdvTutari: unknown; netKdvTutari?: unknown }) =>
+    Number(tevkifatIade ? satir.netKdvTutari ?? satir.kdvTutari : satir.kdvTutari);
   const uuid = fatura.id;
   const no = fatura.no || "TASLAK";
 
@@ -174,7 +184,7 @@ export function faturaUblUret(
     const anahtar = `${oran}|${kod ?? ""}`;
     const grup = gruplar.get(anahtar) ?? { oran, kod, matrahKurus: 0, kdvKurus: 0 };
     grup.matrahKurus += Math.round(Number(satir.matrah) * 100);
-    grup.kdvKurus += Math.round(Number(satir.kdvTutari) * 100);
+    grup.kdvKurus += Math.round(belgeKdvi(satir) * 100);
     return gruplar.set(anahtar, grup);
   }, new Map<string, { oran: number; kod: string | null; matrahKurus: number; kdvKurus: number }>()).values()];
 
@@ -355,7 +365,7 @@ export function faturaUblUret(
     </cac:Delivery>`;
   };
 
-  const tevkifatBlogu = [...tevkifatGruplari.entries()]
+  const tevkifatBlogu = tevkifatIade ? "" : [...tevkifatGruplari.entries()]
     .filter(([kod]) => tevkifatKoduBul(kod))
     .map(([kod, deger]) => `  <cac:WithholdingTaxTotal>
     <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${deger.tutar.toFixed(2)}</cbc:TaxAmount>
@@ -380,7 +390,7 @@ export function faturaUblUret(
          xsi:schemaLocation="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2 UBL-Invoice-2.1.xsd">
   <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
   <cbc:CustomizationID>TR1.2</cbc:CustomizationID>
-  <cbc:ProfileID>${ihracat ? IHRACAT_PROFILI : earsiv ? "EARSIVFATURA" : fatura.efaturaProfili === "ticari" && fatura.senaryo !== "iade" ? "TICARIFATURA" : "TEMELFATURA"}</cbc:ProfileID>
+  <cbc:ProfileID>${ihracat ? IHRACAT_PROFILI : earsiv ? "EARSIVFATURA" : fatura.efaturaProfili === "ticari" && !iadeSenaryosu ? "TICARIFATURA" : "TEMELFATURA"}</cbc:ProfileID>
   <cbc:ID>${no}</cbc:ID>
   <cbc:CopyIndicator>false</cbc:CopyIndicator>
   <cbc:UUID>${uuid}</cbc:UUID>
@@ -486,7 +496,7 @@ ${aliciTckn && !ihracat ? `      <cac:Person>
   </cac:AccountingCustomerParty>
 ${yabanciAliciBlogu}${teslimatBlogu}
 ${kurBlogu}  <cac:TaxTotal>
-    <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${fatura.toplamKdv.toFixed(2)}</cbc:TaxAmount>
+    <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${(tevkifatIade ? Number(fatura.toplamNetKdv) : Number(fatura.toplamKdv)).toFixed(2)}</cbc:TaxAmount>
 ${kdvAltToplamlari.map((g) => `    <cac:TaxSubtotal>
       <cbc:TaxableAmount currencyID="${fatura.dovizCinsi}">${(g.matrahKurus / 100).toFixed(2)}</cbc:TaxableAmount>
       <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${(g.kdvKurus / 100).toFixed(2)}</cbc:TaxAmount>
@@ -528,10 +538,10 @@ ${tevkifatBlogu}
       <cbc:Amount currencyID="${fatura.dovizCinsi}">${Number(s.genelIskontoPayi).toFixed(2)}</cbc:Amount>
     </cac:AllowanceCharge>` : ""}
     <cac:TaxTotal>
-      <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${s.kdvTutari.toFixed(2)}</cbc:TaxAmount>
+      <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${belgeKdvi(s).toFixed(2)}</cbc:TaxAmount>
       <cac:TaxSubtotal>
         <cbc:TaxableAmount currencyID="${fatura.dovizCinsi}">${s.matrah.toFixed(2)}</cbc:TaxableAmount>
-        <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${s.kdvTutari.toFixed(2)}</cbc:TaxAmount>
+        <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${belgeKdvi(s).toFixed(2)}</cbc:TaxAmount>
         <cbc:Percent>${s.kdvOrani.toFixed(2)}</cbc:Percent>
         <cac:TaxCategory>
           ${altToplamKodu(s) ? `<cbc:TaxExemptionReasonCode>${escape(altToplamKodu(s))}</cbc:TaxExemptionReasonCode>

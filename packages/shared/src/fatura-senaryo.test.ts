@@ -14,6 +14,11 @@ describe("fatura senaryosu türetme", () => {
     expect(faturaSenaryosuTuret("alis_iade", [{ kdvOrani: 0, gibIstisnaKodu: "201" }])).toBe("iade");
   });
 
+  it("tevkifatlı iade TEVKIFATIADE olur (EBLG-61)", () => {
+    expect(faturaSenaryosuTuret("alis_iade", [{ kdvOrani: 20, tevkifatKodu: "602" }])).toBe("tevkifatiade");
+    expect(faturaSenaryosuTuret("alis_iade", [{ kdvOrani: 20 }])).toBe("iade");
+  });
+
   it("tevkifat önceliklidir", () => {
     expect(faturaSenaryosuTuret("satis", [{ kdvOrani: 20, tevkifatKodu: "602" }, { kdvOrani: 0, gibIstisnaKodu: "351" }])).toBe("tevkifat");
   });

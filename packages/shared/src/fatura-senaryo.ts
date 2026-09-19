@@ -1,13 +1,14 @@
 import { type IstisnaKodu, KDV_ISTISNA_KODLARI, ihracKayitliKoduBul, istisnaKoduBul, tevkifatKoduBul, tevkifatOraniAyristir } from "./gib-kodlari";
 
 /** UBL'e `InvoiceTypeCode` olarak yazılan GİB senaryosu (FTR-16). */
-export type FaturaSenaryosu = "satis" | "iade" | "tevkifat" | "istisna" | "ihrackayitli";
+export type FaturaSenaryosu = "satis" | "iade" | "tevkifat" | "tevkifatiade" | "istisna" | "ihrackayitli";
 
 /** GİB'in `InvoiceTypeCode` kod listesindeki karşılıkları. */
 const UBL_KARSILIGI: Record<FaturaSenaryosu, string> = {
   satis: "SATIS",
   iade: "IADE",
   tevkifat: "TEVKIFAT",
+  tevkifatiade: "TEVKIFATIADE",
   istisna: "ISTISNA",
   ihrackayitli: "IHRACKAYITLI",
 };
@@ -48,7 +49,12 @@ const istisnaSayilir = (kod: string | null | undefined) => Boolean(kod) && kod !
 export function faturaSenaryosuTuret(tip: string, satirlar: SenaryoSatirGirdi[], ihracKayitliKodu?: string | null): FaturaSenaryosu {
   // EBLG-60: ihraç kayıtlı satış faturada işaretlenir; satırlardan türemez.
   if (ihracKayitliKodu && tip === "satis") return "ihrackayitli";
-  if (satirlar.some((s) => Boolean(s.tevkifatKodu))) return "tevkifat";
+  /*
+   * EBLG-61: tevkifatlı faturanın iadesi TEVKIFATIADE'dir ve tevkifatsız
+   * düzenlenir — belgede yalnız satıcıya ödenmiş (tevkif dışı) KDV görünür.
+   * Şematron bu tipte tevkifat bloğunu reddeder (NES önizlemesi, 2026-09-19).
+   */
+  if (satirlar.some((s) => Boolean(s.tevkifatKodu))) return iadeTipi(tip) ? "tevkifatiade" : "tevkifat";
   if (iadeTipi(tip)) return "iade";
   if (satirlar.some((s) => Number(s.kdvOrani) === 0 && istisnaSayilir(s.gibIstisnaKodu))) return "istisna";
   return "satis";

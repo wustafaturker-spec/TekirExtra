@@ -626,3 +626,36 @@ describe("faturaUblUret — ihraç kayıtlı satış (EBLG-60)", () => {
     expect(xml).toContain('<cbc:PayableAmount currencyID="TRY">109660.29</cbc:PayableAmount>');
   });
 });
+
+describe("faturaUblUret — tevkifatlı faturanın iadesi (EBLG-61)", () => {
+  // 100 TL, %20 KDV, 602 (9/10): satıcıya ödenmiş KDV 2 TL; iade 100 + 2.
+  const fatura = {
+    id: "88888888-8888-4888-8888-888888888888", no: "TKR2026000000012", tarih: new Date("2026-09-19T12:00:00Z"),
+    tip: "alis_iade", senaryo: "tevkifatiade", efaturaProfili: "ticari", dovizCinsi: "TRY",
+    toplamKdv: 20, toplamTevkifat: 18, toplamNetKdv: 2, toplamMatrah: 100, toplamBrut: 100, genelToplam: 102, toplamSatirIskontosu: 0,
+    cari: { vknTckn: "1234567890", unvan: "Tedarikçi A.Ş." },
+    satirlar: [{
+      miktar: 1, birimFiyat: 100, iskontoTutari: 0, matrah: 100, kdvOrani: 20, kdvTutari: 20, netKdvTutari: 2,
+      tevkifatKodu: "602", tevkifatTutari: 18, tevkifatPay: 9, tevkifatPayda: 10, gibIstisnaKodu: null,
+      stok: { kod: "STK-1", ad: "Hizmet" },
+    }],
+  } as never;
+  const xml = faturaUblUret(fatura, { unvan: "Satıcı A.Ş.", vkn: "9876543210" }, {
+    iadeReferanslari: [{ belgeNo: "ABC2026000000001", tarih: new Date("2026-09-10T00:00:00Z") }],
+  });
+
+  it("TEVKIFATIADE tipinde, tevkifat bloğu olmadan, yalnız tevkif dışı KDV'yle yazar", () => {
+    expect(xml).toContain("<cbc:InvoiceTypeCode>TEVKIFATIADE</cbc:InvoiceTypeCode>");
+    expect(xml).not.toContain("WithholdingTaxTotal");
+    const belge = xml.slice(xml.indexOf("<cac:TaxTotal>"), xml.indexOf("</cac:TaxTotal>"));
+    expect(belge).toContain('<cbc:TaxAmount currencyID="TRY">2.00</cbc:TaxAmount>');
+    expect(belge).toContain("<cbc:Percent>20.00</cbc:Percent>");
+    expect(xml.slice(xml.indexOf("<cac:InvoiceLine>"))).toContain('<cbc:TaxAmount currencyID="TRY">2.00</cbc:TaxAmount>');
+    expect(xml).toContain('<cbc:PayableAmount currencyID="TRY">102.00</cbc:PayableAmount>');
+  });
+
+  it("iade gibi referans taşır ve TEMELFATURA gider", () => {
+    expect(xml).toContain("<cbc:DocumentTypeCode>IADE</cbc:DocumentTypeCode>");
+    expect(xml).toContain("<cbc:ProfileID>TEMELFATURA</cbc:ProfileID>");
+  });
+});

@@ -260,6 +260,7 @@ const SENARYO_ADLARI: Record<FaturaSenaryosu, string> = {
   satis: "Satış",
   iade: "İade",
   tevkifat: "Tevkifat",
+  tevkifatiade: "Tevkifatlı iade",
   istisna: "İstisna",
   ihrackayitli: "İhraç kayıtlı",
 };

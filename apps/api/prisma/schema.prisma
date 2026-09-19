@@ -1966,6 +1966,7 @@ enum FaturaSenaryo {
   satis
   iade
   tevkifat
+  tevkifatiade
   istisna
   ihrackayitli
 }
