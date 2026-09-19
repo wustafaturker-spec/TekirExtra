@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import type { BildirimTuru, DuzeltmeTuru } from "@prisma/client";
-import type { Rol } from "@tekirextra/shared";
+import { IHRAC_KAYITLI_UYARI_GUNU, type Rol, ihracKayitliSonTarih } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
@@ -281,6 +281,57 @@ export class BildirimUreticiService {
         birlesimAnahtari: `cek_senet:${gun}`,
         hedefYol: "/panel/kasa-banka/cek-senet",
         roller: HEDEF_ROLLER.cek_senet,
+      });
+    }
+
+    girdiler.push(...(await this.ihracKayitliOzetleri(gun)));
+    return girdiler;
+  }
+
+  /**
+   * EBLG-63: ihraç kaydıyla satılan malın süresinde ihraç edildiğini gösteren
+   * çıkış beyannamesi ihracatçıdan gelmediyse uyarır. Liste olayıdır, günlük
+   * özet üretilir; anahtar `vade:` önekiyle başlar ki tarama kapatabilsin.
+   * Süresi geçen kritik sayılır: tecil edilen KDV'nin ödenmesi gündeme gelir.
+   */
+  private async ihracKayitliOzetleri(gun: string): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const aciklar = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.fatura.findMany({
+        where: { ihracKayitliKodu: { not: null }, durum: "kesin", gumrukBeyannameNo: null },
+        select: { tarih: true },
+      }),
+    );
+    const bugun = gunAnahtari();
+    const sinir = new Date();
+    sinir.setDate(sinir.getDate() + IHRAC_KAYITLI_UYARI_GUNU);
+    const uyariSiniri = gunAnahtari(sinir);
+    const sonTarihler = aciklar.map((f) => ihracKayitliSonTarih(f.tarih));
+    const gecen = sonTarihler.filter((s) => s < bugun).length;
+    const yaklasan = sonTarihler.filter((s) => s >= bugun && s <= uyariSiniri).length;
+
+    const girdiler: BildirimGirdisi[] = [];
+    const hedefYol = "/panel/fatura?ihracKayitli=acik";
+    if (gecen) {
+      girdiler.push({
+        tur: "vade",
+        onem: "kritik",
+        baslik: "İhraç kayıtlı satışta süre doldu",
+        aciklama: `${gecen} ihraç kayıtlı satışın ihracat süresi geçti ve çıkış beyannamesi işlenmedi. İhracatçıdan beyannameyi isteyin; gerçekleşmediyse tecil edilen KDV için mali müşavirinize danışın.`,
+        birlesimAnahtari: `vade:ihrac-kayitli-gecen:${gun}`,
+        hedefYol,
+        roller: HEDEF_ROLLER.vade,
+      });
+    }
+    if (yaklasan) {
+      girdiler.push({
+        tur: "vade",
+        onem: "uyari",
+        baslik: "İhraç kayıtlı satışta süre doluyor",
+        aciklama: `${yaklasan} ihraç kayıtlı satışın ihracat süresi önümüzdeki ${IHRAC_KAYITLI_UYARI_GUNU} gün içinde doluyor; çıkış beyannamesi henüz işlenmedi.`,
+        birlesimAnahtari: `vade:ihrac-kayitli-yaklasan:${gun}`,
+        hedefYol,
+        roller: HEDEF_ROLLER.vade,
       });
     }
     return girdiler;

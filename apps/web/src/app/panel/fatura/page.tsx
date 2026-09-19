@@ -122,6 +122,9 @@ interface Fatura {
    */
   /** `takiliGonderim`: gönderim yarım kalmış, yeniden gönderilebilir (EBLG-37). */
   ebelge?: { id: string; durum: string; tur: string; entegratorRef?: string | null; takiliGonderim?: boolean; aliciYaniti?: "kabul" | "ret" | null; aliciYanitZamani?: string | null; aliciYanitNotu?: string | null } | null;
+  /** EBLG-63: ihraç kayıtlıda malın ihraç edilmesi gereken son gün; beyanname gelince takip biter. */
+  ihracKayitliSonTarih?: string | null;
+  gumrukBeyannameNo?: string | null;
   odemeOzeti?: { durum: "beklemede" | "odenmedi" | "kismi" | "odendi"; odenen: string; kalan: string };
 }
 
@@ -243,7 +246,7 @@ interface EbelgeWizardBilgisi {
   };
   not?: string;
 }
-interface KayitliGorunum { id: string; ad: string; yon: "satis" | "alis" | null; durum: string | null; ebelge: string | null; odeme: string | null; }
+interface KayitliGorunum { id: string; ad: string; yon: "satis" | "alis" | null; durum: string | null; ebelge: string | null; odeme: string | null; /** EBLG-63 */ ihracKayitli?: string | null; }
 const GORUNUM_ANAHTARI = "tekir_fatura_gorunumleri";
 
 /** FaturaTip enum'u; iade ve proforma da listede ayırt edilmeli. */
@@ -322,6 +325,8 @@ export default function FaturaSayfasi() {
   const [yonBaglami, setYonBaglami] = useState<"satis" | "alis" | null>(null);
   const [durumFiltresi, setDurumFiltresi] = useState<string | null>(null);
   const [ebelgeFiltresi, setEbelgeFiltresi] = useState<string | null>(null);
+  /** EBLG-63: "acik" → çıkış beyannamesi gelmemiş ihraç kayıtlı satışlar (sunucuda süzülür). */
+  const [ihracKayitliFiltresi, setIhracKayitliFiltresi] = useState<string | null>(null);
   const [odemeFiltresi, setOdemeFiltresi] = useState<string | null>(null);
   // Komut paleti ve derin bağlantılar fatura numarasıyla gelebilir; sunucu
   // tarafı arama olmadan aranan kayıt ilk sayfada olmayabilir.
@@ -508,6 +513,7 @@ export default function FaturaSayfasi() {
       if (yonBaglami) parametreler.set("yon", yonBaglami);
       if (durumFiltresi) parametreler.set("durum", durumFiltresi);
       if (ebelgeFiltresi) parametreler.set("ebelge", ebelgeFiltresi);
+      if (ihracKayitliFiltresi) parametreler.set("ihracKayitli", ihracKayitliFiltresi);
       if (aramaFiltresi) parametreler.set("arama", aramaFiltresi);
       if (imlec) parametreler.set("imlec", imlec);
       const sorgu = parametreler.size ? `?${parametreler.toString()}` : "";
@@ -523,7 +529,7 @@ export default function FaturaSayfasi() {
     } finally {
       if (istekSirasi === faturaYuklemeSirasi.current) setFaturaListesiYukleniyor(false);
     }
-  }, [yonBaglami, durumFiltresi, ebelgeFiltresi, aramaFiltresi]);
+  }, [yonBaglami, durumFiltresi, ebelgeFiltresi, ihracKayitliFiltresi, aramaFiltresi]);
 
   useEffect(() => {
     if (tokenAl()) {
@@ -578,6 +584,7 @@ export default function FaturaSayfasi() {
     setEbelgeFiltresi(parametreler.get("ebelge"));
     setAramaFiltresi(parametreler.get("arama"));
     setOdemeFiltresi(parametreler.get("odeme"));
+    setIhracKayitliFiltresi(parametreler.get("ihracKayitli"));
     const faturaId = parametreler.get("faturaId");
     setOdakFaturaId(faturaId);
     if (faturaId && parametreler.get("panel") === "ebelge") void ebelgeDetayAc(faturaId);
@@ -589,22 +596,23 @@ export default function FaturaSayfasi() {
 
   function filtreleriUygula(filtreler: Omit<KayitliGorunum, "id" | "ad">) {
     setHata("");
-    setYonBaglami(filtreler.yon); setDurumFiltresi(filtreler.durum); setEbelgeFiltresi(filtreler.ebelge); setOdemeFiltresi(filtreler.odeme);
+    setYonBaglami(filtreler.yon); setDurumFiltresi(filtreler.durum); setEbelgeFiltresi(filtreler.ebelge); setOdemeFiltresi(filtreler.odeme); setIhracKayitliFiltresi(filtreler.ihracKayitli ?? null);
     const parametreler = new URLSearchParams();
     if (filtreler.yon) parametreler.set("yon", filtreler.yon);
     if (filtreler.durum) parametreler.set("durum", filtreler.durum);
     if (filtreler.ebelge) parametreler.set("ebelge", filtreler.ebelge);
     if (filtreler.odeme) parametreler.set("odeme", filtreler.odeme);
+    if (filtreler.ihracKayitli) parametreler.set("ihracKayitli", filtreler.ihracKayitli);
     window.history.replaceState(null, "", "/panel/fatura" + (parametreler.size ? "?" + parametreler.toString() : ""));
   }
 
-  function filtreDegistir(alan: "durum" | "ebelge" | "odeme", deger: string) {
-    filtreleriUygula({ yon: yonBaglami, durum: alan === "durum" ? deger || null : durumFiltresi, ebelge: alan === "ebelge" ? deger || null : ebelgeFiltresi, odeme: alan === "odeme" ? deger || null : odemeFiltresi });
+  function filtreDegistir(alan: "durum" | "ebelge" | "odeme" | "ihracKayitli", deger: string) {
+    filtreleriUygula({ yon: yonBaglami, durum: alan === "durum" ? deger || null : durumFiltresi, ebelge: alan === "ebelge" ? deger || null : ebelgeFiltresi, odeme: alan === "odeme" ? deger || null : odemeFiltresi, ihracKayitli: alan === "ihracKayitli" ? deger || null : ihracKayitliFiltresi });
   }
 
   function gorunumKaydet(event: React.FormEvent) {
     event.preventDefault(); const ad = gorunumAdi.trim(); if (!ad) return;
-    const yeni: KayitliGorunum = { id: Date.now().toString(), ad, yon: yonBaglami, durum: durumFiltresi, ebelge: ebelgeFiltresi, odeme: odemeFiltresi };
+    const yeni: KayitliGorunum = { id: Date.now().toString(), ad, yon: yonBaglami, durum: durumFiltresi, ebelge: ebelgeFiltresi, odeme: odemeFiltresi, ihracKayitli: ihracKayitliFiltresi };
     const gorunumler = [...kayitliGorunumler.filter((g) => g.ad.toLocaleLowerCase("tr-TR") !== ad.toLocaleLowerCase("tr-TR")), yeni];
     setKayitliGorunumler(gorunumler); localStorage.setItem(GORUNUM_ANAHTARI, JSON.stringify(gorunumler));
     setGorunumAdi(""); setGorunumFormuAcik(false); setBasari("“" + ad + "” görünümü kaydedildi.");
@@ -1295,10 +1303,11 @@ export default function FaturaSayfasi() {
           <Field label="Fatura durumu"><Select aria-label="Fatura durumu" value={durumFiltresi ?? ""} onChange={(e) => filtreDegistir("durum", e.target.value)}><option value="">Tümü</option><option value="taslak">Taslak</option><option value="kesin">Kesinleşmiş</option></Select></Field>
           <Field label="e-Belge durumu"><Select aria-label="e-Belge durumu" value={ebelgeFiltresi ?? ""} onChange={(e) => filtreDegistir("ebelge", e.target.value)}><option value="">Tümü</option><option value="hata">Hata / Ret</option><option value="kuyrukta">Kuyrukta</option><option value="iletildi">İletildi</option><option value="kabul">Kabul</option></Select></Field>
           <Field label="Ödeme durumu"><Select aria-label="Ödeme durumu" value={odemeFiltresi ?? ""} onChange={(e) => filtreDegistir("odeme", e.target.value)}><option value="">Tümü</option><option value="acik">Ödenmedi / Kısmi</option></Select></Field>
+          <Field label="İhraç kayıtlı"><Select aria-label="İhraç kayıtlı" value={ihracKayitliFiltresi ?? ""} onChange={(e) => filtreDegistir("ihracKayitli", e.target.value)}><option value="">Tümü</option><option value="acik">Beyannamesi gelmemiş</option></Select></Field>
           <Field label="Kaydedilmiş görünüm"><Select aria-label="Kaydedilmiş görünüm" value="" onChange={(e) => { const gorunum = kayitliGorunumler.find((g) => g.id === e.target.value); if (gorunum) gorunumUygula(gorunum); }}><option value="">Görünüm seçin</option>{kayitliGorunumler.map((g) => <option value={g.id} key={g.id}>{g.ad}</option>)}</Select></Field>
         </div>
         <div className="saved-view-actions">
-          {(durumFiltresi || ebelgeFiltresi || odemeFiltresi) && <Button size="sm" type="button" onClick={() => filtreleriUygula({ yon: yonBaglami, durum: null, ebelge: null, odeme: null })}>Filtreleri temizle</Button>}
+          {(durumFiltresi || ebelgeFiltresi || odemeFiltresi || ihracKayitliFiltresi) && <Button size="sm" type="button" onClick={() => filtreleriUygula({ yon: yonBaglami, durum: null, ebelge: null, odeme: null, ihracKayitli: null })}>Filtreleri temizle</Button>}
           <Button size="sm" type="button" onClick={() => setGorunumFormuAcik((acik) => !acik)}>Görünümü kaydet</Button>
         </div>
         {gorunumFormuAcik && <form className="saved-view-form" onSubmit={gorunumKaydet}><Input autoFocus aria-label="Görünüm adı" value={gorunumAdi} onChange={(e) => setGorunumAdi(e.target.value)} placeholder="Örn. Takip edilecek tahsilatlar" required /><Button size="sm" variant="primary" type="submit">Kaydet</Button><Button size="sm" type="button" onClick={() => setGorunumFormuAcik(false)}>Vazgeç</Button></form>}
@@ -2314,7 +2323,18 @@ export default function FaturaSayfasi() {
                   <td style={{ fontWeight: 700 }} className="mono">{f.no || "(Taslak)"}</td>
                   <td>{f.cari.unvan}</td>
                   <td>{f.tarih}</td>
-                  <td>{TIP_ETIKETLERI[f.tip] ?? f.tip}</td>
+                  <td>
+                    {TIP_ETIKETLERI[f.tip] ?? f.tip}
+                    {/* EBLG-63: beyanname gelene kadar ihracat süresi gösterilir. */}
+                    {f.ihracKayitliSonTarih && !f.gumrukBeyannameNo && f.durum === "kesin" && (() => {
+                      const kalan = Math.ceil((new Date(`${f.ihracKayitliSonTarih}T23:59:59`).getTime() - Date.now()) / 86400000);
+                      return (
+                        <small className={kalan < 0 ? undefined : "muted"} style={{ display: "block", color: kalan < 0 ? "var(--danger)" : undefined }}>
+                          İhraç kayıtlı · son {new Date(`${f.ihracKayitliSonTarih}T00:00:00`).toLocaleDateString("tr-TR")} ({kalan < 0 ? `${-kalan} gün geçti` : `${kalan} gün`})
+                        </small>
+                      );
+                    })()}
+                  </td>
                   <td className="num">{tl(f.toplamMatrah)}</td>
                   <td className="num" style={{ fontWeight: 700 }}>{tl(f.genelToplam)}</td>
                   <td>

@@ -200,6 +200,12 @@ Kaynak: kullanıcının kabul edilmiş belgesi (M012026000000078, yalnız yereld
 geçer. 703 (ÖTV) desteklenmiyor. Yurt dışı alıcıya ihraç kayıtlı kesilemez.
 NES testte K072026000000059 kabul (2026-09-19).
 
+**Süre takibi (EBLG-63):** son gün = teslimi izleyen ay başından itibaren 3 ay
+(701 ve 702, kullanıcı kararı). İhracatçının çıkış beyannamesi faturaya işlenene
+kadar Faturalar › "İhraç kayıtlı: Beyannamesi gelmemiş" süzgecinde kalan gün
+görünür; Bildirim Merkezi süre dolmadan 15 gün kala uyarı, dolunca kritik özet
+üretir. Süre kuralı mali müşavirle doğrulanmalı.
+
 ---
 
 ## 4. Tevkifat ve istisna (türden bağımsız)

@@ -115,9 +115,11 @@ export class FaturaController {
     @Query("cariId") cariId?: string,
     @Query("baslangic") baslangic?: string,
     @Query("bitis") bitis?: string,
+    /** EBLG-63: "acik" → beyannamesi işlenmemiş ihraç kayıtlı satışlar. */
+    @Query("ihracKayitli") ihracKayitli?: string,
   ) {
     const adetSayi = sayfaAdedi(adet);
-    return this.faturaService.listele(arama, tip, durum, imlec, adetSayi, yon, ebelge, cariId, baslangic, bitis);
+    return this.faturaService.listele(arama, tip, durum, imlec, adetSayi, yon, ebelge, cariId, baslangic, bitis, ihracKayitli === "acik");
   }
 
   /** EBLG-35: fatura, e-Belge ve alıcı yanıtı durum geçmişi. */

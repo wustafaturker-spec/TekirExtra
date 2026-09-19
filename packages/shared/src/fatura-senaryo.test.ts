@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ihracKayitliSonTarih } from "./gib-kodlari";
 import { faturaSenaryosuTuret, ihracKayitliHatalari, izinliIstisnaKodlari, senaryoHatalari } from "./fatura-senaryo";
 
 // Kurallar GİB şematronundan (NES önizlemesiyle denendi, 2026-09-19 — EBLG-59).
@@ -48,5 +49,14 @@ describe("ihraç kayıtlı satış (EBLG-60)", () => {
     expect(ihracKayitliHatalari({ tip: "satis", ihracKayitliKodu: "703", satirlar: [{}] })).toHaveLength(1);
     expect(ihracKayitliHatalari({ tip: "alis", ihracKayitliKodu: "701", satirlar: [{}] })).toHaveLength(1);
     expect(ihracKayitliHatalari({ tip: "satis", ihracKayitliKodu: "702", satirlar: [{ tevkifatKodu: "602" }] })).toHaveLength(1);
+  });
+});
+
+describe("ihraç kayıtlı son tarihi (EBLG-63)", () => {
+  it("teslimi izleyen ay başından itibaren 3 ayın son günüdür", () => {
+    expect(ihracKayitliSonTarih("2026-09-19")).toBe("2026-12-31");
+    expect(ihracKayitliSonTarih("2026-09-01")).toBe("2026-12-31");
+    expect(ihracKayitliSonTarih("2026-11-30")).toBe("2027-02-28");
+    expect(ihracKayitliSonTarih(new Date("2026-12-15T00:00:00Z"))).toBe("2027-03-31");
   });
 });

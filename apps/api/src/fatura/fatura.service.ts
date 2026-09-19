@@ -1,3 +1,4 @@
+import { ihracKayitliSonTarih } from "@tekirextra/shared";
 import {
   BadRequestException,
   ConflictException,
@@ -235,6 +236,7 @@ export class FaturaService {
     cariId?: string,
     baslangic?: string,
     bitis?: string,
+    ihracKayitliAcik = false,
   ) {
     const { tenantId } = aktifBaglam();
     const ctx = aktifBaglam();
@@ -251,6 +253,8 @@ export class FaturaService {
       ...(tip ? { tip: tip as FaturaTip } : yon === "satis" ? { tip: { in: ["satis", "satis_iade", "proforma"] } } : yon === "alis" ? { tip: { in: ["alis", "alis_iade"] } } : {}),
       ...(durum ? { durum: durum as FaturaDurum } : {}),
       ...(ebelge ? { ebelge: { is: { durum: ebelge === "hata" ? { in: ["hata", "ret"] } : ebelge as BelgeDurum } } } : {}),
+      // EBLG-63: ihracatçıdan çıkış beyannamesi gelmemiş ihraç kayıtlı satışlar.
+      ...(ihracKayitliAcik ? { ihracKayitliKodu: { not: null }, durum: "kesin" as FaturaDurum, gumrukBeyannameNo: null } : {}),
       ...(aranan
         ? {
             // ARA-01: fatura numarası ve carinin unvan/kod/VKN bilgisi kendi
@@ -1529,6 +1533,8 @@ export class FaturaService {
       earsivGonderimSekli: k.earsivGonderimSekli,
       // EBLG-60: ihraç kayıtlı satış kodu; boşsa normal satış.
       ihracKayitliKodu: k.ihracKayitliKodu ?? null,
+      // EBLG-63: malın ihraç edilmesi gereken son gün; beyanname gelince takip biter.
+      ihracKayitliSonTarih: k.ihracKayitliKodu ? ihracKayitliSonTarih(k.tarih) : null,
       // EBLG-53/54: ihracat ve gümrük alanları; yurt içi faturada boş durur.
       ihracatTeslimTarihi: k.ihracatTeslimTarihi?.toISOString().slice(0, 10) ?? null,
       ihracatTeslimSarti: k.ihracatTeslimSarti ?? null,

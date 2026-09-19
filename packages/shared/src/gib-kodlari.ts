@@ -100,6 +100,20 @@ export const IHRAC_KAYITLI_KODLARI: readonly { kod: string; ad: string }[] = [
   { kod: "702", ad: "DİİB ve Geçici Kabul Rejimi Kapsamındaki Satışlar" },
 ];
 
+/**
+ * İhraç kayıtlı teslimde malın ihraç edilmesi gereken son gün (EBLG-63):
+ * teslimi izleyen ayın başından itibaren 3 ay. 19.09.2026 teslim → 31.12.2026.
+ * Karar (2026-09-19): 702 için de aynı süre, aksi söylenene kadar.
+ */
+export function ihracKayitliSonTarih(teslim: Date | string): string {
+  const t = typeof teslim === "string" ? new Date(`${teslim.slice(0, 10)}T00:00:00Z`) : teslim;
+  // Teslim ayı + 1 (izleyen ay) + 3 ayın son günü = teslim ayı + 4'ün 0. günü.
+  return new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 4, 0)).toISOString().slice(0, 10);
+}
+
+/** Son tarihe bu kadar gün kala Bildirim Merkezi uyarır. */
+export const IHRAC_KAYITLI_UYARI_GUNU = 15;
+
 export const ihracKayitliKoduBul = (kod: string | null | undefined) => IHRAC_KAYITLI_KODLARI.find((k) => k.kod === kod);
 
 export interface TevkifatKodu {

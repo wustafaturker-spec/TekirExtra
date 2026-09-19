@@ -9,6 +9,8 @@ interface TxSecenekleri {
   ebelgeler?: unknown[];
   satinAlmaTalepleri?: unknown[];
   cekSayisi?: number;
+  /** EBLG-63: beyannamesi gelmemiş ihraç kayıtlı faturaların tarihleri. */
+  ihracKayitlilar?: { tarih: Date }[];
   kritikStok?: number;
   taslakSayim?: number;
   donemler?: unknown[];
@@ -25,6 +27,7 @@ function servisKur(secenek: TxSecenekleri = {}) {
     ebelgeKayit: { findMany: vi.fn().mockResolvedValue(secenek.ebelgeler ?? []) },
     satinAlmaTalebi: { findMany: vi.fn().mockResolvedValue(secenek.satinAlmaTalepleri ?? []) },
     cekSenet: { count: vi.fn().mockResolvedValue(secenek.cekSayisi ?? 0) },
+    fatura: { findMany: vi.fn().mockResolvedValue(secenek.ihracKayitlilar ?? []) },
     sayim: { count: vi.fn().mockResolvedValue(secenek.taslakSayim ?? 0) },
     maliDonem: { findMany: vi.fn().mockResolvedValue(secenek.donemler ?? []) },
     bildirim: { findMany: vi.fn().mockResolvedValue(secenek.yukseltmeAdaylari ?? []), update: bildirimUpdate },
@@ -185,5 +188,28 @@ describe("BildirimUreticiService yükseltme", () => {
         }),
       }),
     );
+  });
+});
+
+describe("BildirimUreticiService — ihraç kayıtlı süresi (EBLG-63)", () => {
+  it("süresi geçeni kritik, yaklaşanı uyarı olarak günlük özetle bildirir", async () => {
+    const gunOnce = (gun: number) => { const t = new Date(); t.setUTCDate(t.getUTCDate() - gun); return t; };
+    // Son tarih teslimi izleyen ay başı + 3 ay: 200 gün önceki teslimin süresi geçmiştir,
+    // bugünkü teslimin süresi ise en az 3 ay sonradır.
+    const { servis, bildirimler } = servisKur({ ihracKayitlilar: [{ tarih: gunOnce(200) }, { tarih: new Date() }] });
+
+    await servis.tara();
+
+    const uretilen = bildirimler.uret.mock.calls.map(([g]) => g as { birlesimAnahtari: string; onem: string; hedefYol: string });
+    const gecen = uretilen.find((g) => g.birlesimAnahtari.startsWith("vade:ihrac-kayitli-gecen:"));
+    expect(gecen?.onem).toBe("kritik");
+    expect(gecen?.hedefYol).toBe("/panel/fatura?ihracKayitli=acik");
+    expect(uretilen.some((g) => g.birlesimAnahtari.startsWith("vade:ihrac-kayitli-yaklasan:"))).toBe(false);
+  });
+
+  it("açık ihraç kayıtlı satış yoksa bildirim açmaz", async () => {
+    const { servis, bildirimler } = servisKur();
+    await servis.tara();
+    expect(bildirimler.uret.mock.calls.some(([g]) => (g as { birlesimAnahtari: string }).birlesimAnahtari.includes("ihrac-kayitli"))).toBe(false);
   });
 });
