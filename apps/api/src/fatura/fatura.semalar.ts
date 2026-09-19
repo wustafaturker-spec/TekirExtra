@@ -88,8 +88,13 @@ const senaryolariDogrula = (
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["satirlar", hata.satirIndeksi, hata.alan], message: hata.mesaj });
   }
 };
-const faturaFinansalDogrula = (fatura: { satirlar?: Array<{ miktar?: string; birimFiyat?: string; iskontoOrani?: string; kdvOrani?: string; tevkifatKodu?: string | null; tevkifatOrani?: string | null; gibIstisnaKodu?: string | null }>; genelIskontoTutari?: string }, ctx: z.RefinementCtx) => {
+const faturaFinansalDogrula = (fatura: { satirlar?: Array<{ miktar?: string; birimFiyat?: string; iskontoOrani?: string; kdvOrani?: string; tevkifatKodu?: string | null; tevkifatOrani?: string | null; gibIstisnaKodu?: string | null }>; genelIskontoTutari?: string; dovizCinsi?: string; kur?: string }, ctx: z.RefinementCtx) => {
   senaryolariDogrula(fatura, ctx);
+  // EBLG-57: dövizli belgede 1 "tutar zaten TL" demektir; e-belgenin TL
+  // karşılığı ve cari/rapor tutarları yanlış çıkar (masraf ve gelirle aynı kural).
+  if (fatura.dovizCinsi !== undefined && fatura.dovizCinsi !== "TRY" && Number(fatura.kur ?? 1) === 1) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["kur"], message: "Dövizli faturada belge tarihindeki kur girilmelidir" });
+  }
   const araToplam = (fatura.satirlar ?? []).reduce((toplam, satir) => toplam + Number(satir.miktar ?? 0) * Number(satir.birimFiyat ?? 0) * (1 - Number(satir.iskontoOrani ?? 0) / 100), 0);
   if (Number(fatura.genelIskontoTutari ?? 0) > araToplam + 0.01) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["genelIskontoTutari"], message: "Genel iskonto tutarı ara toplamı aşamaz" });
 };

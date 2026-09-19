@@ -20,6 +20,15 @@ describe("fatura finansal doğrulamaları", () => {
     expect(sonuc.success).toBe(false);
   });
 
+  it("dövizli faturada kur 1 kabul etmez (EBLG-57)", () => {
+    const doviz = { ...temel, dovizCinsi: "EUR" };
+    expect(hataYollari(faturaOlusturSemasi.safeParse(doviz))).toEqual(["kur"]);
+    expect(hataYollari(faturaOlusturSemasi.safeParse({ ...doviz, kur: "1" }))).toEqual(["kur"]);
+    expect(faturaOlusturSemasi.safeParse({ ...doviz, kur: "47.85" }).success).toBe(true);
+    expect(hataYollari(faturaGuncelleSemasi.safeParse({ dovizCinsi: "USD" }))).toEqual(["kur"]);
+    expect(faturaGuncelleSemasi.safeParse({ aciklama: "yalnız not" }).success).toBe(true);
+  });
+
   it("güncellemede de aşırı genel iskontoyu reddeder", () => {
     const sonuc = faturaGuncelleSemasi.safeParse({ satirlar: [satir], genelIskontoTutari: "201" });
     expect(sonuc.success).toBe(false);

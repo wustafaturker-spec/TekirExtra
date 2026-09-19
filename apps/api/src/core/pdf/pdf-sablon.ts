@@ -18,7 +18,20 @@ export const paraBicim = (deger: string | number): string =>
 export const sayiBicim = (deger: string | number): string =>
   SAYI.format(Number(deger));
 
-export const tarihBicim = (deger: Date | string): string =>
+const KUR = new Intl.NumberFormat("tr-TR", { minimumFractionDigits: 4, maximumFractionDigits: 6 });
+
+/** Döviz kuru; `sayiBicim` üç haneye yuvarladığı için ayrı tutulur. */
+export const kurBicim = (deger: string | number): string =>
+  KUR.format(Number(deger));
+
+/**
+ * Dövizli belgedeki bir tutarın TL karşılığı, kuruşa yuvarlanmış (EBLG-57).
+ * Toplamlar ayrı ayrı çevrilir; e-belge görünümlerinin yaptığı da budur.
+ */
+export const tlKarsiligi = (deger: string | number, kur: string | number): number =>
+  Math.round(Number(deger) * Number(kur) * 100) / 100;
+
+export const tarihBicim =(deger: Date | string): string =>
   new Date(deger).toLocaleDateString("tr-TR");
 
 export const kacis = (deger: unknown): string =>

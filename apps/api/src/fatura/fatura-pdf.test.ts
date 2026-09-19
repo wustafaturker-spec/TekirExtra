@@ -65,3 +65,20 @@ describe("faturaPdfHtml — e-belge kimliği (EBLG-30)", () => {
     expect(profilAdi({ ebelge: null })).toBeNull();
   });
 });
+
+describe("faturaPdfHtml — TL karşılığı (EBLG-57)", () => {
+  it("dövizli faturada kuru ve toplamların TL karşılığını yazar", () => {
+    const html = faturaPdfHtml({ ...fatura, dovizCinsi: "USD", kur: "48.5343", toplamBrut: "18878.00", toplamMatrah: "18878.00", toplamKdv: "0.00", genelToplam: "18878.00" }, firma);
+    expect(html).toContain("18.878,00 USD");
+    expect(html).toContain("48,5343 TL");
+    // İhracat örneğindeki (M012026000000169) TL toplamıyla aynı sonuç.
+    expect(html).toContain("Genel Toplam (TL)");
+    expect(html).toContain("916.230,52 TL");
+  });
+
+  it("TL faturada TL karşılığı bloğu yoktur", () => {
+    const html = faturaPdfHtml(fatura, firma);
+    expect(html).not.toContain("(TL)");
+    expect(html).not.toContain("Döviz Kuru");
+  });
+});

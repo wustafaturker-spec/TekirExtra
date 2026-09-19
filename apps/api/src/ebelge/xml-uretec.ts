@@ -153,12 +153,11 @@ export function faturaUblUret(
    * kur `cac:PricingExchangeRate` içinde, ihracatta ayrıca `TaxCurrencyCode`
    * ve `cac:TaxExchangeRate` ile bildirilir.
    *
-   * **Açık iş:** NES bu hâli de "kur bilgisi zorunludur" diyerek reddediyor
-   * (2026-09-18 denemeleri: yalnız `TaxExchangeRate`, yalnız
-   * `PricingExchangeRate` ve ikisi birden — üçü de aynı yanıtı verdi). UBL-TR
-   * kılavuzu iki elemanı da "seçimli" sayar, aranan XPath repodaki kaynaklarda
-   * geçmiyor; entegratöre sorulmalı. Dövizli belge bu yüzden gönderilemiyor,
-   * TRY belgeler etkilenmiyor.
+   * NES kuru `PricingExchangeRate/CalculationRate`'ten okur (swagger'daki tek
+   * kur alanı `pricingExchangeCalculationRate`). Bu blok 2026-09-19'da NES
+   * önizleme ucunun şematron denetiminden geçti; blok çıkarılınca aynı uç
+   * "kur bilgisi zorunludur" dedi. 2026-09-18'deki redler bu blok henüz
+   * worker'a ulaşmadan yapılan gönderimlerdi (EBLG-57).
    */
   const dovizli = fatura.dovizCinsi !== IHRACAT_VERGI_PARA_BIRIMI;
   const kurSatirlari = `

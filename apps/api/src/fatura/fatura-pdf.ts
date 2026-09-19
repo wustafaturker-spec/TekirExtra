@@ -1,9 +1,11 @@
 import {
   kacis,
+  kurBicim,
   paraBicim,
   sayfaSablonu,
   sayiBicim,
   tarihBicim,
+  tlKarsiligi,
 } from "../core/pdf/pdf-sablon";
 import type { BelgeTemasi } from "../core/pdf/belge-temasi";
 
@@ -107,26 +109,32 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
     )
     .join("\n");
 
-  const toplamSatiri = (etiket: string, deger: string, kalin = false) =>
+  const toplamSatiri = (etiket: string, deger: string | number, kalin = false, birim = paraBirimi) =>
     `<tr${kalin ? ' style="font-weight:bold"' : ""}>
       <td style="padding:3px 8px">${etiket}</td>
-      <td class="sag" style="padding:3px 8px">${paraBicim(deger)} ${paraBirimi}</td>
+      <td class="sag" style="padding:3px 8px">${paraBicim(deger)} ${birim}</td>
     </tr>`;
 
+  const kalemler: { etiket: string; deger: string; kalin?: boolean }[] = [
+    { etiket: "Brüt Toplam", deger: f.toplamBrut },
+    ...(Number(f.toplamSatirIskontosu) > 0 ? [{ etiket: "Satır İskontoları", deger: `-${f.toplamSatirIskontosu}` }] : []),
+    ...(Number(f.genelIskontoToplam) > 0 ? [{ etiket: "Genel İskonto", deger: `-${f.genelIskontoToplam}` }] : []),
+    { etiket: "KDV Matrahı", deger: f.toplamMatrah },
+    { etiket: "Hesaplanan KDV", deger: f.toplamKdv },
+    ...(Number(f.toplamTevkifat) > 0 ? [{ etiket: "KDV Tevkifatı", deger: `-${f.toplamTevkifat}` }] : []),
+    { etiket: "Genel Toplam", deger: f.genelToplam, kalin: true },
+  ];
+  // EBLG-57: dövizli faturada toplamların TL karşılığı da gösterilir; ihracat
+  // faturasının resmî görünümü de kur satırının altında aynı toplamları TL verir.
+  const dovizli = f.dovizCinsi !== "TRY";
   const toplamlar = [
-    toplamSatiri("Brüt Toplam", f.toplamBrut),
-    Number(f.toplamSatirIskontosu) > 0
-      ? toplamSatiri("Satır İskontoları", `-${f.toplamSatirIskontosu}`)
-      : "",
-    Number(f.genelIskontoToplam) > 0
-      ? toplamSatiri("Genel İskonto", `-${f.genelIskontoToplam}`)
-      : "",
-    toplamSatiri("KDV Matrahı", f.toplamMatrah),
-    toplamSatiri("Hesaplanan KDV", f.toplamKdv),
-    Number(f.toplamTevkifat) > 0
-      ? toplamSatiri("KDV Tevkifatı", `-${f.toplamTevkifat}`)
-      : "",
-    toplamSatiri("Genel Toplam", f.genelToplam, true),
+    ...kalemler.map((k) => toplamSatiri(k.etiket, k.deger, k.kalin)),
+    ...(dovizli
+      ? [
+          `<tr><td style="padding:3px 8px;border-top:1px solid #e5e7eb">Döviz Kuru (1 ${kacis(f.dovizCinsi)})</td><td class="sag" style="padding:3px 8px;border-top:1px solid #e5e7eb">${kurBicim(f.kur)} TL</td></tr>`,
+          ...kalemler.map((k) => toplamSatiri(`${k.etiket} (TL)`, tlKarsiligi(k.deger, f.kur), k.kalin, "TL")),
+        ]
+      : []),
   ].join("");
 
   // EBLG-30: belge gönderildiyse kimliği çıktıda yer alır; taslakta ETTN'in
@@ -155,7 +163,7 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
           f.vadeTarihi ? ` &nbsp;•&nbsp; Vade: ${tarihBicim(f.vadeTarihi)}` : ""
         }${
           f.dovizCinsi !== "TRY"
-            ? `<br>Döviz: ${kacis(f.dovizCinsi)} (kur ${sayiBicim(f.kur)})`
+            ? `<br>Döviz: ${kacis(f.dovizCinsi)} (kur ${kurBicim(f.kur)})`
             : ""
         }${ebelgeKimligi}
       </div>

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { EBELGE_YEDEK_GORUNUM_NOTU, ebelgeYedekPdfHtml } from "./ebelge-pdf";
 import { gomuluXsltCikar } from "./ubl-gorunum";
 import { faturaUblUret } from "./xml-uretec";
+import { faturaUblOku } from "./ubl-oku";
 
 const FATURA = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -116,5 +117,26 @@ describe("kendi kestiğimiz belgenin görünümü (2026-09-17)", () => {
     } as never;
     expect(ebelgeYedekPdfHtml(fatura)).toContain(EBELGE_YEDEK_GORUNUM_NOTU);
     expect(ebelgeYedekPdfHtml(fatura, { kendiBelgemiz: true })).not.toContain(EBELGE_YEDEK_GORUNUM_NOTU);
+  });
+});
+
+describe("dövizli belgenin TL karşılığı (EBLG-57)", () => {
+  const dovizli = { ...(FATURA as object), dovizCinsi: "EUR", kur: 47.85 } as never;
+
+  it("kur UBL'den okunur ve toplamların TL karşılığı basılır", () => {
+    const fatura = faturaUblOku(faturaUblUret(dovizli, { unvan: "Satıcı A.Ş.", vkn: "9876543210" }));
+    expect(fatura.kur).toBe(47.85);
+    const html = ebelgeYedekPdfHtml(fatura, { kendiBelgemiz: true });
+    expect(html).toContain("120,00 EUR");
+    expect(html).toContain("47,8500 TL");
+    expect(html).toContain("Ödenecek Tutar (TL)");
+    expect(html).toContain("5.742,00 TL");
+  });
+
+  it("kuru olmayan belgede TL karşılığı uydurulmaz", () => {
+    const fatura = faturaUblOku(faturaUblUret(dovizli, { unvan: "Satıcı A.Ş.", vkn: "9876543210" })
+      .replace(/<cac:PricingExchangeRate>[\s\S]*?<\/cac:PricingExchangeRate>/, ""));
+    expect(fatura.kur).toBeUndefined();
+    expect(ebelgeYedekPdfHtml(fatura)).not.toContain("(TL)");
   });
 });

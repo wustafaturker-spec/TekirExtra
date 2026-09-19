@@ -46,6 +46,8 @@ export interface UblFatura {
   tarih: string;
   vadeTarihi?: string;
   dovizCinsi: string;
+  /** Dövizli belgede 1 döviz = kaç TL (`PricingExchangeRate`); TRY belgede yok. */
+  kur?: number;
   gonderen: { vknTckn: string; unvan: string; vergiDairesi?: string };
   alici: { vknTckn: string; unvan: string };
   toplamlar: UblToplamlar;
@@ -281,6 +283,7 @@ export function faturaUblOku(xml: string): UblFatura {
     tarih: metin(fatura.IssueDate),
     vadeTarihi: vadeTarihi || undefined,
     dovizCinsi: metin(fatura.DocumentCurrencyCode) || "TRY",
+    kur: kurOku(fatura),
     gonderen: partyOku(yol(fatura, "AccountingSupplierParty", "Party")),
     alici: partyOku(yol(fatura, "AccountingCustomerParty", "Party")),
     toplamlar: {
@@ -292,6 +295,19 @@ export function faturaUblOku(xml: string): UblFatura {
     },
     satirlar,
   };
+}
+
+/**
+ * Belgenin döviz kuru (EBLG-57). NES ve GİB örnekleri kuru
+ * `PricingExchangeRate`'e yazar; yalnız vergi kuru taşıyan belge için
+ * `TaxExchangeRate`'e düşülür. Kur yoksa ya da sıfırsa TL karşılığı bilinmez.
+ */
+function kurOku(fatura: unknown): number | undefined {
+  for (const alan of ["PricingExchangeRate", "TaxExchangeRate"]) {
+    const kur = sayi(yol(fatura, alan, "CalculationRate"));
+    if (kur > 0) return kur;
+  }
+  return undefined;
 }
 
 /** Sağlayıcının atadığı tam numara: 3 karakter seri + 4 hane yıl + 9 hane sıra. */

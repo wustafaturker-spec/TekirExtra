@@ -1,4 +1,4 @@
-import { kacis, paraBicim, sayfaSablonu, sayiBicim, tarihBicim } from "../core/pdf/pdf-sablon";
+import { kacis, kurBicim, paraBicim, sayfaSablonu, sayiBicim, tarihBicim, tlKarsiligi } from "../core/pdf/pdf-sablon";
 import type { BelgeTemasi } from "../core/pdf/belge-temasi";
 import { karekoduHtmlEkle } from "./karekod";
 import type { UblFatura } from "./ubl-oku";
@@ -54,11 +54,31 @@ export function ebelgeYedekPdfHtml(
     )
     .join("\n");
 
-  const toplamSatiri = (etiket: string, deger: number, kalin = false) =>
+  const toplamSatiri = (etiket: string, deger: number, kalin = false, birim = paraBirimi) =>
     `<tr${kalin ? ' style="font-weight:bold"' : ""}>
       <td style="padding:3px 8px">${etiket}</td>
-      <td class="sag" style="padding:3px 8px">${paraBicim(deger)} ${paraBirimi}</td>
+      <td class="sag" style="padding:3px 8px">${paraBicim(deger)} ${birim}</td>
     </tr>`;
+
+  const kalemler: { etiket: string; deger: number; kalin?: boolean }[] = [
+    { etiket: "Mal/Hizmet Toplamı", deger: f.toplamlar.satirToplami },
+    ...(f.toplamlar.iskontoToplami > 0 ? [{ etiket: "İskonto", deger: -f.toplamlar.iskontoToplami }] : []),
+    { etiket: "KDV Matrahı", deger: f.toplamlar.matrah },
+    { etiket: "Hesaplanan KDV", deger: f.toplamlar.kdv },
+    { etiket: "Ödenecek Tutar", deger: f.toplamlar.genelToplam, kalin: true },
+  ];
+  // EBLG-57: dövizli belgede kur ve toplamların TL karşılığı da basılır.
+  // Kur belgede yoksa TL karşılığı uydurulmaz, blok hiç çıkmaz.
+  const kur = f.dovizCinsi !== "TRY" ? f.kur : undefined;
+  const toplamlar = [
+    ...kalemler.map((k) => toplamSatiri(k.etiket, k.deger, k.kalin)),
+    ...(kur
+      ? [
+          `<tr><td style="padding:3px 8px;border-top:1px solid #e5e7eb">Döviz Kuru (1 ${kacis(f.dovizCinsi)})</td><td class="sag" style="padding:3px 8px;border-top:1px solid #e5e7eb">${kurBicim(kur)} TL</td></tr>`,
+          ...kalemler.map((k) => toplamSatiri(`${k.etiket} (TL)`, tlKarsiligi(k.deger, kur), k.kalin, "TL")),
+        ]
+      : []),
+  ].join("");
 
   const icerik = `
 <table style="width:100%;margin-bottom:12px;font-size:9pt">
@@ -92,11 +112,7 @@ export function ebelgeYedekPdfHtml(
   <tbody>${satirlar}</tbody>
 </table>
 <table style="margin-top:12px;margin-left:auto;border:1px solid #e5e7eb;border-radius:4px;font-size:9pt">
-  ${toplamSatiri("Mal/Hizmet Toplamı", f.toplamlar.satirToplami)}
-  ${f.toplamlar.iskontoToplami > 0 ? toplamSatiri("İskonto", -f.toplamlar.iskontoToplami) : ""}
-  ${toplamSatiri("KDV Matrahı", f.toplamlar.matrah)}
-  ${toplamSatiri("Hesaplanan KDV", f.toplamlar.kdv)}
-  ${toplamSatiri("Ödenecek Tutar", f.toplamlar.genelToplam, true)}
+  ${toplamlar}
 </table>
 ${secenekler.kendiBelgemiz ? "" : `<p style="margin-top:14px;color:#6b7280;font-size:8pt">${YEDEK_NOTU}</p>`}`;
 
