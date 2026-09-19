@@ -703,3 +703,64 @@ describe("faturaUblUret — satıcı bilgisi firma kartından (EBLG-62)", () => 
     expect(imza).toContain("<cbc:CitySubdivisionName>Zeytinburnu</cbc:CitySubdivisionName>");
   });
 });
+
+describe("faturaUblUret — KAMU senaryosu", () => {
+  const fatura = (ek: Record<string, unknown> = {}) => ({
+    id: "88888888-8888-4888-8888-888888888888",
+    no: "TKR2026000000008",
+    tarih: new Date("2026-09-19T12:00:00Z"),
+    tip: "satis", senaryo: "satis", efaturaProfili: "ticari",
+    dovizCinsi: "TRY", kur: 1,
+    toplamKdv: 20, toplamMatrah: 100, toplamBrut: 100, genelToplam: 120,
+    toplamSatirIskontosu: 0, genelIskontoToplam: 0,
+    cari: { vknTckn: "2222222105", unvan: "Kamu İhale Kurumu", adresler: [{ tip: "fatura", adres: "Mevlana Blv. 1", il: "Ankara", ilce: "Çankaya", postaKodu: null, ulke: "TR" }] },
+    satirlar: [{
+      miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20,
+      gibIstisnaKodu: null, birimFiyat: 100, birim: "adet",
+      stok: { kod: "STK-1", ad: "Ürün" },
+    }],
+    ...ek,
+  }) as never;
+  const satici = { unvan: "Satıcı A.Ş.", vkn: "9876543210" };
+  const kamu = { harcamaBirimiVkn: "1288331521", harcamaBirimiAdi: "Destek Hizmetleri Daire Başkanlığı", iban: "tr33 0006 1005 1978 6457 8413 26" };
+
+  it("profili KAMU yazar; ticari profil seçili olsa bile", () => {
+    const xml = faturaUblUret(fatura(), satici, { tur: "efatura", kamu });
+    expect(xml).toContain("<cbc:ProfileID>KAMU</cbc:ProfileID>");
+    expect(xml).toContain("<cbc:InvoiceTypeCode>SATIS</cbc:InvoiceTypeCode>");
+  });
+
+  it("harcama birimini BuyerCustomerParty'ye, IBAN'ı PaymentMeans'e yazar; alıcı yerinde kalır", () => {
+    const xml = faturaUblUret(fatura(), satici, { tur: "efatura", kamu });
+    const alici = xml.slice(xml.indexOf("<cac:AccountingCustomerParty>"), xml.indexOf("</cac:AccountingCustomerParty>"));
+    expect(alici).toContain('<cbc:ID schemeID="VKN">2222222105</cbc:ID>');
+    const harcama = xml.slice(xml.indexOf("<cac:BuyerCustomerParty>"), xml.indexOf("</cac:BuyerCustomerParty>"));
+    expect(harcama).toContain('<cbc:ID schemeID="VKN">1288331521</cbc:ID>');
+    expect(harcama).toContain("<cbc:Name>Destek Hizmetleri Daire Başkanlığı</cbc:Name>");
+    expect(harcama).toContain("<cbc:CityName>Ankara</cbc:CityName>");
+    const odeme = xml.slice(xml.indexOf("<cac:PaymentMeans>"), xml.indexOf("</cac:PaymentMeans>"));
+    expect(odeme).toContain("<cbc:PaymentMeansCode>ZZZ</cbc:PaymentMeansCode>");
+    expect(odeme).toContain("<cbc:ID>TR330006100519786457841326</cbc:ID>");
+    expect(odeme).toContain("<cbc:CurrencyCode>TRY</cbc:CurrencyCode>");
+    // UBL sırası: alıcı → harcama birimi → ödeme → vergi.
+    expect(xml.indexOf("</cac:AccountingCustomerParty>")).toBeLessThan(xml.indexOf("<cac:BuyerCustomerParty>"));
+    expect(xml.indexOf("</cac:BuyerCustomerParty>")).toBeLessThan(xml.indexOf("<cac:PaymentMeans>"));
+    expect(xml.indexOf("</cac:PaymentMeans>")).toBeLessThan(xml.indexOf("<cac:TaxTotal>"));
+  });
+
+  it("KAMU iadesinde tip IADE kalır, referanslar yazılır", () => {
+    const xml = faturaUblUret(fatura({ tip: "alis_iade", senaryo: "iade" }), satici, {
+      tur: "efatura", kamu, iadeReferanslari: [{ belgeNo: "KIK2026000000001", tarih: new Date("2026-09-10") }],
+    });
+    expect(xml).toContain("<cbc:ProfileID>KAMU</cbc:ProfileID>");
+    expect(xml).toContain("<cbc:InvoiceTypeCode>IADE</cbc:InvoiceTypeCode>");
+    expect(xml).toContain("<cbc:ID>KIK2026000000001</cbc:ID>");
+  });
+
+  it("kamu bilgisi yoksa hiçbir KAMU alanı yazılmaz; e-Arşiv'de yok sayılır", () => {
+    expect(faturaUblUret(fatura(), satici, { tur: "efatura" })).not.toContain("BuyerCustomerParty");
+    const earsiv = faturaUblUret(fatura(), satici, { tur: "earsiv", kamu });
+    expect(earsiv).toContain("<cbc:ProfileID>EARSIVFATURA</cbc:ProfileID>");
+    expect(earsiv).not.toContain("PayeeFinancialAccount");
+  });
+});

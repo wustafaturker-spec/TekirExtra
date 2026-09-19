@@ -61,6 +61,11 @@ export const cariOlusturSemasi = z.object({
   earsivGonderimSekli: z.enum(["elektronik", "kagit"]).optional(),
   riskLimiti: pozitifOndalik.optional(),
   notlar: z.string().max(2000).optional(),
+  /** KAMU senaryosu: GİB listesinde ÖZEL görünen kamu idaresi için elle işaret. */
+  kamuIdaresi: z.boolean().optional(),
+  /** Ödemeyi yapacak harcama birimi; sihirbazda varsayılan olarak gelir. */
+  harcamaBirimiVkn: z.string().regex(/^\d{10}$/, "Harcama birimi VKN'si 10 haneli olmalıdır").optional().nullable(),
+  harcamaBirimiAdi: z.string().max(200).optional().nullable(),
 });
 export const cariGuncelleSemasi = guncellemeSemasi(cariOlusturSemasi).extend({
   aktif: z.boolean().optional(),

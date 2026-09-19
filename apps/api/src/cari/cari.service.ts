@@ -833,6 +833,9 @@ export class CariService {
     earsivGonderimSekli: string;
     riskLimiti: Prisma.Decimal | null;
     eFaturaMukellefi: boolean | null;
+    kamuIdaresi: boolean;
+    harcamaBirimiVkn: string | null;
+    harcamaBirimiAdi: string | null;
     notlar: string | null;
     aktif: boolean;
   }) {
@@ -865,6 +868,10 @@ export class CariService {
       varsayilanVadeGun: k.varsayilanVadeGun,
       efaturaProfili: k.efaturaProfili,
       earsivGonderimSekli: k.earsivGonderimSekli,
+      // KAMU senaryosu (sihirbazda harcama biriminin varsayılanı).
+      kamuIdaresi: k.kamuIdaresi,
+      harcamaBirimiVkn: k.harcamaBirimiVkn,
+      harcamaBirimiAdi: k.harcamaBirimiAdi,
       riskLimiti: k.riskLimiti?.toFixed(2) ?? null,
       eFaturaMukellefi: k.eFaturaMukellefi,
       notlar: k.notlar,

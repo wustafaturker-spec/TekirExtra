@@ -11,7 +11,7 @@ import {
 } from "@nestjs/common";
 import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
 import type { BelgeDurumSonuc, EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
-import { type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI } from "@tekirextra/shared";
+import { type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { BildirimService } from "../bildirimler/bildirim.service";
@@ -163,6 +163,25 @@ export class EbelgeService {
       if (firmaEksigi.length) {
         return { gonderilebilir: false, neden: firmaEksigi.join("; "), faturaNo: fatura.no, cari: fatura.cari.unvan, vknTckn: fatura.cari.vknTckn, saglayici: baglanti.saglayici };
       }
+      // KAMU senaryosu: liste türü sihirbazda kanal kararından önce okunur.
+      // Harcama birimi faturada yoksa kartın varsayılanı, o da yoksa alıcının
+      // kendisi önerilir (genel bütçeli kurumda iki VKN aynıdır).
+      const listeTuru = ihracat.ihracat ? undefined : await this.mukellefListesi.listeTuru(fatura.cari.vknTckn);
+      const kamuMu = !ihracat.ihracat && kamuSenaryosuMu({ listeTuru, kartIsareti: fatura.cari.kamuIdaresi });
+      const kamuHesaplari = kamuMu
+        ? await tx.bankaHesap.findMany({
+            where: { tenantId, aktif: true, dovizCinsi: "TRY", iban: { not: null } },
+            orderBy: { ad: "asc" },
+            select: { id: true, ad: true, bankaAdi: true, iban: true },
+          })
+        : [];
+      const kamuBilgisi = kamuMu
+        ? {
+            harcamaBirimiVkn: fatura.kamuHarcamaBirimiVkn ?? fatura.cari.harcamaBirimiVkn ?? fatura.cari.vknTckn,
+            harcamaBirimiAdi: fatura.kamuHarcamaBirimiAdi ?? fatura.cari.harcamaBirimiAdi ?? fatura.cari.unvan,
+            iban: fatura.kamuIban ?? kamuHesaplari[0]?.iban ?? null,
+          }
+        : undefined;
       return {
         // Bağlantı, kimlik ve tarih kontrolleri geçti. Türe özel eksikler
         // (ihracat, internet satışı) kendi listelerinde döner: değerleri
@@ -228,6 +247,16 @@ export class EbelgeService {
               engeller: iade.engeller,
             }
           : undefined,
+        // KAMU senaryosu: harcama birimi ve IBAN sihirbazın Bilgiler adımında
+        // seçilir; gönderim aynı kuralı faturadaki değerlerle yeniden uygular.
+        kamu: kamuBilgisi
+          ? {
+              kaynak: listeTuru === MUKELLEF_TURU_KAMU ? ("liste" as const) : ("kart" as const),
+              ...kamuBilgisi,
+              hesaplar: kamuHesaplari,
+              engeller: kamuEngelleri(kamuBilgisi),
+            }
+          : undefined,
         // Kartta adres yoksa belgeye şehir uydurulmaz, alanlar "-" gider
         // (EBLG-55); belgeyi durdurmaz ama sihirbazda söylenir.
         adresEksik: ublAdresi(fatura.cari.adresler).eksik,
@@ -236,7 +265,9 @@ export class EbelgeService {
         birimUyarilari: fatura.satirlar
           .map((satir, index) => ({ sira: index + 1, stok: satir.stok.ad, birim: satir.birim }))
           .filter((satir) => !birimTanindiMi(satir.birim)),
-        not: ihracat.ihracat
+        not: kamuMu
+          ? "Alıcı kamu idaresi olduğu için belge KAMU senaryosuyla düzenlenir: ödemeyi yapacak harcama birimi ve ödemenin yapılacağı IBAN belgeye yazılır."
+          : ihracat.ihracat
           ? "Alıcı yurt dışı olduğu için belge ihracat faturası olarak düzenlenir: mükellefiyet sorgulanmaz, belge Ticaret Bakanlığı'nın posta kutusuna gider ve satırlar KDV'den istisna yazılır."
           : "Mükellefiyet kontrolü gönderim onayında tekrar doğrulanır.",
       };
@@ -305,6 +336,22 @@ export class EbelgeService {
    * kaydından okunur, ve yalnız aynı tedarikçinin kesinleşmiş alış faturası
    * seçilebilir. Elle girilen numara olduğu gibi (büyük harfle) saklanır.
    */
+  /** KAMU senaryosu: sihirbazda seçilen harcama birimi ve IBAN faturaya yazılır. */
+  async kamuBilgisiniKaydet(faturaId: string, bilgi: { harcamaBirimiVkn?: string | null; harcamaBirimiAdi?: string | null; iban?: string | null }) {
+    const { tenantId } = aktifBaglam();
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const sonuc = await tx.fatura.updateMany({
+        where: { id: faturaId, durum: "kesin" },
+        data: {
+          kamuHarcamaBirimiVkn: bilgi.harcamaBirimiVkn?.trim() || null,
+          kamuHarcamaBirimiAdi: bilgi.harcamaBirimiAdi?.trim() || null,
+          kamuIban: bilgi.iban ? ibanNormalize(bilgi.iban) : null,
+        },
+      });
+      if (sonuc.count !== 1) throw new NotFoundException("Kesinleşmiş fatura bulunamadı");
+    });
+  }
+
   async iadeReferanslariniKaydet(
     faturaId: string,
     referanslar: { kaynakFaturaId?: string | null; belgeNo?: string | null; tarih?: Date | null }[],
@@ -424,6 +471,23 @@ export class EbelgeService {
     }
     const tur: EbelgeTur = mukellefiyet.eFaturaMukellefi ? "efatura" : "earsiv";
 
+    // KAMU senaryosu: alıcı listede KAMU türündeyse ya da kartında işaretliyse.
+    // Kamu idaresi e-Fatura mükellefidir; e-Arşiv'e düşen belge KAMU olamaz.
+    const kamu = !hazirlik.ihracat.ihracat && kamuSenaryosuMu({
+      listeTuru: "kamu" in mukellefiyet && mukellefiyet.kamu ? MUKELLEF_TURU_KAMU : undefined,
+      kartIsareti: hazirlik.fatura.cari.kamuIdaresi,
+    });
+    let kamuBilgisi: { harcamaBirimiVkn: string; harcamaBirimiAdi: string; iban: string } | undefined;
+    if (kamu) {
+      if (tur !== "efatura") {
+        throw new BadRequestException("Alıcı kamu idaresi olarak işaretli ama GİB e-Fatura listesinde yok; KAMU senaryosu yalnız e-Fatura ile gönderilir");
+      }
+      const f = hazirlik.fatura;
+      const engeller = kamuEngelleri({ harcamaBirimiVkn: f.kamuHarcamaBirimiVkn, harcamaBirimiAdi: f.kamuHarcamaBirimiAdi, iban: f.kamuIban });
+      if (engeller.length) throw new BadRequestException(engeller.map((e) => e.mesaj).join("; "));
+      kamuBilgisi = { harcamaBirimiVkn: f.kamuHarcamaBirimiVkn!.trim(), harcamaBirimiAdi: f.kamuHarcamaBirimiAdi!.trim(), iban: f.kamuIban! };
+    }
+
     // Otomatik numaralandıran seride UBL'e tam numara değil yalnızca seri
     // öneki yazılır; numarayı entegratör atar ve yanıtta döndürür (EBLG-16).
     // Önek kanala göre seçilir: GİB e-Fatura ile e-Arşiv serilerinin aynı
@@ -451,6 +515,7 @@ export class EbelgeService {
         ihracat: hazirlik.ihracat.ublBilgisi,
         internetSatisi: hazirlik.internet.ublBilgisi,
         iadeReferanslari: hazirlik.iade.iade ? hazirlik.iade.referanslar : undefined,
+        kamu: kamuBilgisi,
       },
     );
     return { mukellefiyet, tur, ublFatura, saglayiciNumaralandirir, xml };

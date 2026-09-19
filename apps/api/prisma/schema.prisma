@@ -728,6 +728,11 @@ model CariHesap {
   varsayilanVadeGun       Int?       @map("varsayilan_vade_gun")
   riskLimiti              Decimal?   @map("risk_limiti") @db.Decimal(15, 2)
   eFaturaMukellefi        Boolean?   @map("e_fatura_mukellefi")
+  /// KAMU senaryosu: GİB listesinde ÖZEL görünen kamu idaresi için elle işaret;
+  /// harcama birimi sihirbazda varsayılan olarak gelir.
+  kamuIdaresi             Boolean    @default(false) @map("kamu_idaresi")
+  harcamaBirimiVkn        String?    @map("harcama_birimi_vkn")
+  harcamaBirimiAdi        String?    @map("harcama_birimi_adi")
   mukellefiyetSorguZamani DateTime?  @map("mukellefiyet_sorgu_zamani")
   /// Bu cariye kesilen e-Faturaların varsayılan profili (FTR-19); fatura
   /// üzerinde değiştirilebilir.
@@ -2082,6 +2087,10 @@ model Fatura {
   /// EBLG-60: ihraç kayıtlı satış kodu (701/702). Doluysa KDV hesaplanır ama
   /// tahsil edilmez; belge IHRACKAYITLI tipinde gider.
   ihracKayitliKodu     String?         @map("ihrac_kayitli_kodu")
+  /// KAMU senaryosu: ödemeyi yapacak harcama birimi ve ödemenin yapılacağı IBAN.
+  kamuHarcamaBirimiVkn String?         @map("kamu_harcama_birimi_vkn")
+  kamuHarcamaBirimiAdi String?         @map("kamu_harcama_birimi_adi")
+  kamuIban             String?         @map("kamu_iban")
   toplamNetKdv         Decimal         @map("toplam_net_kdv") @db.Decimal(15, 2)
   genelToplam          Decimal         @map("genel_toplam") @db.Decimal(15, 2)
   aciklama             String?
@@ -2263,6 +2272,9 @@ model GibMukellef {
   belgeTuru   GibBelgeTuru @map("belge_turu")
   postaKutusu String    @map("posta_kutusu")
   unvan       String?
+  /// Listedeki `<Type>`: "KAMU" ya da "OZEL". KAMU alıcıya belge KAMU
+  /// senaryosuyla gider; listeyi bu alanı taşımayan entegratörde boş kalır.
+  tur         String?
   guncellendi DateTime  @default(now())
 
   @@id([vknTckn, belgeTuru, postaKutusu])

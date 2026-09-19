@@ -22,6 +22,7 @@ import {
   faturaSenaryosuTuret,
   iadeEngelleri,
   ihracKayitliHatalari,
+  kamuEngelleri,
   IHRAC_KAYITLI_KODLARI,
   internetSatisEngelleri,
   izinliIstisnaKodlari,
@@ -244,6 +245,15 @@ interface EbelgeWizardBilgisi {
     adaylar: { id: string; no: string; tarih: string; genelToplam: string; dovizCinsi: string }[];
     engeller: { sira?: number; mesaj: string }[];
   };
+  /** KAMU senaryosu: alıcı listede KAMU ya da kartında işaretli. */
+  kamu?: {
+    kaynak: "liste" | "kart";
+    harcamaBirimiVkn: string | null;
+    harcamaBirimiAdi: string | null;
+    iban: string | null;
+    hesaplar: { id: string; ad: string; bankaAdi: string; iban: string }[];
+    engeller: { alan: string; mesaj: string }[];
+  };
   not?: string;
 }
 interface KayitliGorunum { id: string; ad: string; yon: "satis" | "alis" | null; durum: string | null; ebelge: string | null; odeme: string | null; /** EBLG-63 */ ihracKayitli?: string | null; }
@@ -385,6 +395,7 @@ export default function FaturaSayfasi() {
       elleNo: string;
       elleTarih: string;
     };
+    kamu: { harcamaBirimiVkn: string; harcamaBirimiAdi: string; iban: string };
     /** L: 1 kontrol, 2 türe özel bilgiler, 3 önizleme ve gönderim. */
     adim: 1 | 2 | 3;
     onizleme: EbelgeOnizleme | null;
@@ -1025,6 +1036,11 @@ export default function FaturaSayfasi() {
           elleNo: "",
           elleTarih: "",
         },
+        kamu: {
+          harcamaBirimiVkn: bilgi.kamu?.harcamaBirimiVkn ?? "",
+          harcamaBirimiAdi: bilgi.kamu?.harcamaBirimiAdi ?? "",
+          iban: bilgi.kamu?.iban ?? "",
+        },
         adim: 1,
         onizleme: null,
       });
@@ -1066,6 +1082,9 @@ export default function FaturaSayfasi() {
                   r.kaynakFaturaId ? { kaynakFaturaId: r.kaynakFaturaId } : { belgeNo: r.belgeNo, tarih: r.tarih },
                 ),
               }
+            : undefined,
+          kamu: w.bilgi.kamu
+            ? { harcamaBirimiVkn: w.kamu.harcamaBirimiVkn || null, harcamaBirimiAdi: w.kamu.harcamaBirimiAdi || null, iban: w.kamu.iban || null }
             : undefined,
         };
   }
@@ -1148,8 +1167,10 @@ export default function FaturaSayfasi() {
   const iadeEksikleri = ebelgeWizard?.bilgi.iade
     ? iadeEngelleri(ebelgeWizard.iade.referanslar, ebelgeWizard.fatura.tarih)
     : [];
+  // KAMU senaryosu: harcama birimi ve IBAN panelde seçilenlerle denetlenir.
+  const kamuEksikleri = ebelgeWizard?.bilgi.kamu ? kamuEngelleri(ebelgeWizard.kamu) : [];
   const wizardGonderilebilir = Boolean(
-    ebelgeWizard?.bilgi.gonderilebilir && ihracatEngelleri.length === 0 && internetEngelleri.length === 0 && iadeEksikleri.length === 0,
+    ebelgeWizard?.bilgi.gonderilebilir && ihracatEngelleri.length === 0 && internetEngelleri.length === 0 && iadeEksikleri.length === 0 && kamuEksikleri.length === 0,
   );
 
   async function odemeDetayAc(id: string) {
@@ -1925,6 +1946,40 @@ export default function FaturaSayfasi() {
                 )}
               </>
             )}
+            {ebelgeWizard.bilgi.kamu && (() => {
+              const kamu = ebelgeWizard.kamu;
+              const kamuGuncelle = (degisiklik: Partial<typeof kamu>) => setEbelgeWizard({ ...ebelgeWizard, kamu: { ...kamu, ...degisiklik } });
+              const hesaplar = ebelgeWizard.bilgi.kamu.hesaplar;
+              return (
+                <>
+                  <strong>KAMU senaryosu</strong>
+                  <p className="muted" style={{ margin: 0 }}>
+                    {ebelgeWizard.bilgi.kamu.kaynak === "liste"
+                      ? "Alıcı GİB listesinde kamu idaresi olarak kayıtlı."
+                      : "Alıcı, cari kartında kamu idaresi olarak işaretli."}{" "}
+                    Belgeye ödemeyi yapacak harcama birimi ve ödemenin yapılacağı IBAN yazılır.
+                  </p>
+                  <Field label="Harcama birimi VKN *">
+                    <Input value={kamu.harcamaBirimiVkn} inputMode="numeric" maxLength={10} onChange={(e) => kamuGuncelle({ harcamaBirimiVkn: e.target.value.replace(/\D/g, "") })} />
+                  </Field>
+                  <Field label="Harcama birimi adı *">
+                    <Input value={kamu.harcamaBirimiAdi} maxLength={200} onChange={(e) => kamuGuncelle({ harcamaBirimiAdi: e.target.value })} />
+                  </Field>
+                  <Field label="Ödemenin yapılacağı IBAN *">
+                    <Select value={kamu.iban} onChange={(e) => kamuGuncelle({ iban: e.target.value })}>
+                      <option value="">{hesaplar.length ? "Hesap seçin…" : "IBAN'lı TRY banka hesabı yok"}</option>
+                      {hesaplar.map((h) => <option key={h.id} value={h.iban}>{h.ad} · {h.bankaAdi} · {h.iban}</option>)}
+                    </Select>
+                  </Field>
+                  {kamuEksikleri.length > 0 && (
+                    <div className="approval-impact is-warning">
+                      <strong>KAMU faturasında eksik olanlar:</strong>
+                      <ul>{kamuEksikleri.map((e) => <li key={e.alan}>{e.mesaj}</li>)}</ul>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
             {ebelgeWizard.bilgi.iade && (() => {
               const iade = ebelgeWizard.iade;
               const iadeGuncelle = (degisiklik: Partial<typeof iade>) => setEbelgeWizard({ ...ebelgeWizard, iade: { ...iade, ...degisiklik } });
@@ -1988,7 +2043,7 @@ export default function FaturaSayfasi() {
                 </>
               );
             })()}
-            {ebelgeWizard.bilgi.internetSatisi && !ebelgeWizard.bilgi.ihracat && (
+            {ebelgeWizard.bilgi.internetSatisi && !ebelgeWizard.bilgi.ihracat && !ebelgeWizard.bilgi.kamu && (
               <>
                 <label className="check-row">
                   <input
@@ -2060,7 +2115,7 @@ export default function FaturaSayfasi() {
                 )}
               </>
             )}
-            {ebelgeWizard.bilgi.gonderilebilir && !ebelgeWizard.bilgi.ihracat && (
+            {ebelgeWizard.bilgi.gonderilebilir && !ebelgeWizard.bilgi.ihracat && !ebelgeWizard.bilgi.kamu && (
               <Field label="e-Arşiv olarak düzenlenirse teslim şekli">
                 <Select value={ebelgeWizard.earsivSekli} onChange={(e) => setEbelgeWizard({ ...ebelgeWizard, earsivSekli: e.target.value as "elektronik" | "kagit" })}>
                   <option value="elektronik">Elektronik — PDF e-postayla iletilir</option>

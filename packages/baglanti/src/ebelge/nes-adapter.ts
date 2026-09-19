@@ -350,10 +350,11 @@ function mukellefListesiAyristir(xml: string, belgeTuru: MukellefKaydi["belgeTur
     const vknTckn = govde.match(/<Identifier>([^<]*)<\/Identifier>/)?.[1]?.trim();
     if (!vknTckn) continue;
     const unvan = govde.match(/<Title>([^<]*)<\/Title>/)?.[1]?.trim();
+    const tur = govde.match(/<Type>([^<]*)<\/Type>/)?.[1]?.trim() || undefined;
     for (const etiket of govde.matchAll(/<Name>([^<]*)<\/Name>/g)) {
       const postaKutusu = etiket[1].trim();
       if (!postaKutusu) continue;
-      kayitlar.push({ vknTckn, belgeTuru, postaKutusu: xmlCoz(postaKutusu), unvan: unvan ? xmlCoz(unvan) : undefined });
+      kayitlar.push({ vknTckn, belgeTuru, postaKutusu: xmlCoz(postaKutusu), unvan: unvan ? xmlCoz(unvan) : undefined, tur });
     }
   }
   return kayitlar;

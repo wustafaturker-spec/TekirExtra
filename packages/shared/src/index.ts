@@ -15,3 +15,4 @@ export * from "./internet-satisi";
 export * from "./ihracat";
 export * from "./iade";
 export * from "./firma";
+export * from "./kamu";

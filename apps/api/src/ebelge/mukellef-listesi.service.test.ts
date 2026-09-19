@@ -63,7 +63,7 @@ describe("MukellefListesiService.kanalBelirle", () => {
 
     const sonuc = await servis.kanalBelirle("sovos", { saglayici: "sovos", kullaniciAdi: "u" }, "123");
 
-    expect(sonuc).toEqual({ vknTckn: "123", eFaturaMukellefi: true, postaKutusu: "urn:mail:defaultpk@alici.test" });
+    expect(sonuc).toEqual({ vknTckn: "123", eFaturaMukellefi: true, postaKutusu: "urn:mail:defaultpk@alici.test", kamu: false });
     expect(mukellefSorgula).not.toHaveBeenCalled();
   });
 
@@ -76,7 +76,7 @@ describe("MukellefListesiService.kanalBelirle", () => {
 
     const sonuc = await servis.kanalBelirle("sovos", { saglayici: "sovos", kullaniciAdi: "u" }, "123");
 
-    expect(sonuc).toEqual({ vknTckn: "123", eFaturaMukellefi: false, postaKutusu: undefined });
+    expect(sonuc).toEqual({ vknTckn: "123", eFaturaMukellefi: false, postaKutusu: undefined, kamu: false });
   });
 
   it("liste bayatsa gönderimi durdurur — yanlış kanal tahmini yasal hata olurdu", async () => {
@@ -119,8 +119,8 @@ describe("MukellefListesiService.senkronEt", () => {
 
   it("listeyi tek işlemde değiştirir ve mükerrer etiketi indirger", async () => {
     const mukellefListesiCek = vi.fn().mockResolvedValue([
-      { vknTckn: "1", belgeTuru: "efatura", postaKutusu: "urn:mail:a", unvan: "Alfa" },
-      { vknTckn: "1", belgeTuru: "efatura", postaKutusu: "urn:mail:a", unvan: "Alfa" },
+      { vknTckn: "1", belgeTuru: "efatura", postaKutusu: "urn:mail:a", unvan: "Alfa", tur: "KAMU" },
+      { vknTckn: "1", belgeTuru: "efatura", postaKutusu: "urn:mail:a", unvan: "Alfa", tur: "KAMU" },
       { vknTckn: "1", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:a", unvan: "Alfa" },
     ]);
     const { servis, gibMukellef } = servisKur({ adapter: { mukellefListesiCek }, senkron: null });
@@ -130,8 +130,8 @@ describe("MukellefListesiService.senkronEt", () => {
     expect(gibMukellef.deleteMany).toHaveBeenCalledBefore(gibMukellef.createMany as never);
     expect(gibMukellef.createMany).toHaveBeenCalledWith({
       data: [
-        { vknTckn: "1", belgeTuru: "efatura", postaKutusu: "urn:mail:a", unvan: "Alfa" },
-        { vknTckn: "1", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:a", unvan: "Alfa" },
+        { vknTckn: "1", belgeTuru: "efatura", postaKutusu: "urn:mail:a", unvan: "Alfa", tur: "KAMU" },
+        { vknTckn: "1", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:a", unvan: "Alfa", tur: null },
       ],
     });
     expect(sonuc.kayitSayisi).toBe(2);

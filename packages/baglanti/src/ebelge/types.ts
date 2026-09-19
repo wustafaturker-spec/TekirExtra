@@ -76,6 +76,8 @@ export interface MukellefDurum {
    * çağıran içindir. Tek etiket varsa doldurulmaz.
    */
   postaKutulari?: string[];
+  /** Alıcı GİB listesinde KAMU türünde mi; listeyi tür taşımadan veren entegratörde boş. */
+  kamu?: boolean;
 }
 
 /** ebelge modülünün ürettiği UBL-TR 1.2 belgesi — adaptör içeriğe dokunmaz (EBLG-03). */
@@ -205,6 +207,8 @@ export interface MukellefKaydi {
   belgeTuru: "efatura" | "eirsaliye";
   postaKutusu: string;
   unvan?: string;
+  /** Listedeki `<Type>` ("KAMU" / "OZEL"); KAMU alıcıya belge KAMU senaryosuyla gider. */
+  tur?: string;
 }
 
 /** Gelen zarf çekiminin tarih penceresi; kursör bu aralığı belirler (EBLG-11). */

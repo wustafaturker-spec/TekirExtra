@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import type { GibBelgeTuru } from "@prisma/client";
 import type { EntegratorConfig, MukellefDurum } from "@tekirextra/baglanti";
+import { MUKELLEF_TURU_KAMU } from "@tekirextra/shared";
 import { PrismaService } from "../core/prisma.service";
 import { MetricsService } from "../core/observability/metrics.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
@@ -85,7 +86,21 @@ export class MukellefListesiService {
       orderBy: { postaKutusu: "asc" },
     });
 
-    return { vknTckn, eFaturaMukellefi: Boolean(kayit), postaKutusu: kayit?.postaKutusu };
+    return { vknTckn, eFaturaMukellefi: Boolean(kayit), postaKutusu: kayit?.postaKutusu, kamu: kayit?.tur === MUKELLEF_TURU_KAMU };
+  }
+
+  /**
+   * Alıcının listedeki türü (KAMU senaryosu). Sihirbaz kanal kararından önce
+   * belgenin KAMU gidip gitmeyeceğini göstermek için okur; liste bayatsa ya da
+   * entegratör tür taşımıyorsa boş döner ve kart işareti belirleyici olur.
+   */
+  async listeTuru(vknTckn: string | null | undefined): Promise<string | undefined> {
+    if (!vknTckn) return undefined;
+    const kayit = await this.prisma.gibMukellef.findFirst({
+      where: { vknTckn, belgeTuru: "efatura", tur: { not: null } },
+      select: { tur: true },
+    });
+    return kayit?.tur ?? undefined;
   }
 
   async durum(): Promise<MukellefListesiDurumu> {
@@ -132,13 +147,14 @@ export class MukellefListesiService {
 
       // Aynı (vkn, etiket) çifti listede birden çok kez görünebilir; teklik
       // kısıtına takılmamak için yazımdan önce indirgenir.
-      const tekil = new Map<string, { vknTckn: string; belgeTuru: GibBelgeTuru; postaKutusu: string; unvan: string | null }>();
+      const tekil = new Map<string, { vknTckn: string; belgeTuru: GibBelgeTuru; postaKutusu: string; unvan: string | null; tur: string | null }>();
       for (const kayit of kayitlar) {
         tekil.set(`${kayit.vknTckn}|${kayit.belgeTuru}|${kayit.postaKutusu}`, {
           vknTckn: kayit.vknTckn,
           belgeTuru: kayit.belgeTuru,
           postaKutusu: kayit.postaKutusu,
           unvan: kayit.unvan ?? null,
+          tur: kayit.tur ?? null,
         });
       }
       const satirlar = [...tekil.values()];

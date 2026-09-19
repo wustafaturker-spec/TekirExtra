@@ -48,6 +48,14 @@ export const ebelgeGonderSemasi = z.object({
       gonderiTarihi: z.coerce.date().nullable().optional(),
     })
     .optional(),
+  /** KAMU senaryosu: ödemeyi yapacak harcama birimi ve ödemenin yapılacağı IBAN. */
+  kamu: z
+    .object({
+      harcamaBirimiVkn: z.string().max(10).nullable().optional(),
+      harcamaBirimiAdi: z.string().max(200).nullable().optional(),
+      iban: z.string().max(40).nullable().optional(),
+    })
+    .optional(),
   /**
    * EBLG-58: alış iadesinde iade edilen faturalar. Listeden seçilen fatura
    * kimliğiyle gelir; sistemde olmayan fatura numarası ve tarihiyle girilir.

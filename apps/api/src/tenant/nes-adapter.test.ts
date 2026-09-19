@@ -677,10 +677,10 @@ describe("NesEntegratorAdapter", () => {
       "https://apitest.nes.com.tr/edespatch/v1/users/zip/Pk",
     ]);
     expect(kayitlar).toEqual([
-      { vknTckn: "1234567802", belgeTuru: "efatura", postaKutusu: "urn:mail:eski_pk@turktelekom.com.tr", unvan: "TEST & KURUM - 02" },
-      { vknTckn: "1234567802", belgeTuru: "efatura", postaKutusu: "urn:mail:guncel_pk@mersel.io", unvan: "TEST & KURUM - 02" },
-      { vknTckn: "1234567802", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:eski_pk@turktelekom.com.tr", unvan: "TEST & KURUM - 02" },
-      { vknTckn: "1234567802", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:guncel_pk@mersel.io", unvan: "TEST & KURUM - 02" },
+      { vknTckn: "1234567802", belgeTuru: "efatura", postaKutusu: "urn:mail:eski_pk@turktelekom.com.tr", unvan: "TEST & KURUM - 02", tur: "OZEL" },
+      { vknTckn: "1234567802", belgeTuru: "efatura", postaKutusu: "urn:mail:guncel_pk@mersel.io", unvan: "TEST & KURUM - 02", tur: "OZEL" },
+      { vknTckn: "1234567802", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:eski_pk@turktelekom.com.tr", unvan: "TEST & KURUM - 02", tur: "OZEL" },
+      { vknTckn: "1234567802", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:guncel_pk@mersel.io", unvan: "TEST & KURUM - 02", tur: "OZEL" },
     ]);
   });
 

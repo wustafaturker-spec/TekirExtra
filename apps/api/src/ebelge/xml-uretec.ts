@@ -8,6 +8,9 @@ import {
   IHRACAT_PROFILI,
   IHRACAT_VERGI_PARA_BIRIMI,
   IADE_BELGE_TUR_KODU,
+  KAMU_ODEME_KODU,
+  KAMU_PROFILI,
+  ibanNormalize,
   type FirmaEbelgeBilgisi,
   birimUblKodu,
   gtipNormalize,
@@ -58,6 +61,13 @@ export interface InternetSatisUblBilgisi {
   teslimatAdresi?: { adres?: string | null; il?: string | null; ilce?: string | null; postaKodu?: string | null; ulke?: string | null };
 }
 
+/** KAMU senaryosu: ödemeyi yapacak harcama birimi ve ödemenin yapılacağı IBAN. */
+export interface KamuUblBilgisi {
+  harcamaBirimiVkn: string;
+  harcamaBirimiAdi: string;
+  iban: string;
+}
+
 export function faturaUblUret(
   fatura: Fatura & {
     satirlar: (FaturaSatir & {
@@ -77,6 +87,8 @@ export function faturaUblUret(
     internetSatisi?: InternetSatisUblBilgisi;
     /** EBLG-58: iade faturasında iade edilen faturalar; sırasıyla yazılır. */
     iadeReferanslari?: { belgeNo: string; tarih: Date }[];
+    /** Alıcı kamu idaresiyse; profil KAMU olur (SATIS ve IADE tiplerinde). */
+    kamu?: KamuUblBilgisi;
   } = {},
 ): string {
   // e-Arşiv, e-Fatura'dan üç noktada ayrılır: profil `EARSIVFATURA`, alıcı
@@ -306,6 +318,49 @@ export function faturaUblUret(
     : "";
 
   /*
+   * KAMU senaryosu (GİB kamu e-Fatura kılavuzu, şematron 14.09.2026 §4):
+   * ödemeyi yapacak harcama birimi `BuyerCustomerParty` içinde tek bir VKN ile,
+   * ödemenin yapılacağı IBAN `PaymentMeans/PayeeFinancialAccount` içinde
+   * durur. Alıcı (muhasebe birimi) `AccountingCustomerParty`'de kalır; genel
+   * bütçeli kurumda iki VKN aynıdır. Harcama biriminin adresi alıcınınkidir.
+   */
+  const kamu = earsiv || ihracat ? undefined : secenekler.kamu;
+  const kamuAliciBlogu = kamu
+    ? `
+  <cac:BuyerCustomerParty>
+    <cac:Party>
+      <cac:PartyIdentification>
+        <cbc:ID schemeID="VKN">${escape(kamu.harcamaBirimiVkn)}</cbc:ID>
+      </cac:PartyIdentification>
+      <cac:PartyName>
+        <cbc:Name>${escape(kamu.harcamaBirimiAdi)}</cbc:Name>
+      </cac:PartyName>
+      <cac:PostalAddress>${aliciAdres.adres ? `
+        <cbc:StreetName>${escape(aliciAdres.adres)}</cbc:StreetName>` : ""}
+        <cbc:CitySubdivisionName>${escape(aliciAdres.ilce)}</cbc:CitySubdivisionName>
+        <cbc:CityName>${escape(aliciAdres.il)}</cbc:CityName>
+        <cac:Country>
+          <cbc:IdentificationCode>${aliciAdres.ulkeKodu}</cbc:IdentificationCode>${aliciAdres.ulkeAdi ? `
+          <cbc:Name>${escape(aliciAdres.ulkeAdi)}</cbc:Name>` : ""}
+        </cac:Country>
+      </cac:PostalAddress>
+    </cac:Party>
+  </cac:BuyerCustomerParty>
+`
+    : "";
+  const kamuOdemeBlogu = kamu
+    ? `
+  <cac:PaymentMeans>
+    <cbc:PaymentMeansCode>${KAMU_ODEME_KODU}</cbc:PaymentMeansCode>
+    <cac:PayeeFinancialAccount>
+      <cbc:ID>${escape(ibanNormalize(kamu.iban))}</cbc:ID>
+      <cbc:CurrencyCode>TRY</cbc:CurrencyCode>
+    </cac:PayeeFinancialAccount>
+  </cac:PaymentMeans>
+`
+    : "";
+
+  /*
    * Fatura düzeyindeki teslimat bilgisi yalnız internet satışına aittir: malın
    * gönderildiği adres, kargo firması ve ödeme şekli (EBLG-56). İhracatta bu
    * bilgiler satır düzeyinde durur (GİB `IHRACAT.xml`), aşağıdaki
@@ -406,7 +461,7 @@ export function faturaUblUret(
          xsi:schemaLocation="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2 UBL-Invoice-2.1.xsd">
   <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
   <cbc:CustomizationID>TR1.2</cbc:CustomizationID>
-  <cbc:ProfileID>${ihracat ? IHRACAT_PROFILI : earsiv ? "EARSIVFATURA" : fatura.efaturaProfili === "ticari" && !iadeSenaryosu ? "TICARIFATURA" : "TEMELFATURA"}</cbc:ProfileID>
+  <cbc:ProfileID>${ihracat ? IHRACAT_PROFILI : kamu ? KAMU_PROFILI : earsiv ? "EARSIVFATURA" : fatura.efaturaProfili === "ticari" && !iadeSenaryosu ? "TICARIFATURA" : "TEMELFATURA"}</cbc:ProfileID>
   <cbc:ID>${no}</cbc:ID>
   <cbc:CopyIndicator>false</cbc:CopyIndicator>
   <cbc:UUID>${uuid}</cbc:UUID>
@@ -509,7 +564,7 @@ ${aliciTckn && !ihracat ? `      <cac:Person>
       </cac:Person>` : ""}
     </cac:Party>
   </cac:AccountingCustomerParty>
-${yabanciAliciBlogu}${teslimatBlogu}
+${yabanciAliciBlogu}${kamuAliciBlogu}${teslimatBlogu}${kamuOdemeBlogu}
 ${kurBlogu}  <cac:TaxTotal>
     <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${(tevkifatIade ? Number(fatura.toplamNetKdv) : Number(fatura.toplamKdv)).toFixed(2)}</cbc:TaxAmount>
 ${kdvAltToplamlari.map((g) => `    <cac:TaxSubtotal>

@@ -106,6 +106,10 @@ interface CariDetay extends Cari {
   efaturaProfili: "temel" | "ticari";
   /** Bu cariye kesilen e-Arşiv faturaların varsayılan teslim şekli (EBLG-26). */
   earsivGonderimSekli: "elektronik" | "kagit";
+  /** KAMU senaryosu: GİB listesinde ÖZEL görünen kamu idaresi için elle işaret. */
+  kamuIdaresi?: boolean;
+  harcamaBirimiVkn?: string | null;
+  harcamaBirimiAdi?: string | null;
   varsayilanIskonto: string | null;
   fiyatListesiId: string | null;
   eFaturaMukellefi: boolean | null;
@@ -423,7 +427,7 @@ export default function CariSayfasi() {
   async function finansGuncelle(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); if (!detay) return; const veri = new FormData(e.currentTarget);
     setHata(""); setBasari("");
-    try { await api(`/cari/${detay.id}`, { method: "PATCH", body: JSON.stringify({ riskLimiti: String(veri.get("riskLimiti") || "") || undefined, varsayilanVadeGun: veri.get("varsayilanVadeGun") === "" ? undefined : Number(veri.get("varsayilanVadeGun")), varsayilanIskonto: String(veri.get("varsayilanIskonto") || "") || undefined, fiyatListesiId: String(veri.get("fiyatListesiId") || "") || undefined, efaturaProfili: veri.get("efaturaProfili") as "temel" | "ticari", earsivGonderimSekli: veri.get("earsivGonderimSekli") as "elektronik" | "kagit" }) }); await detayAc(detay.id, true); setBasari("Risk ve finans koşulları güncellendi."); }
+    try { await api(`/cari/${detay.id}`, { method: "PATCH", body: JSON.stringify({ riskLimiti: String(veri.get("riskLimiti") || "") || undefined, varsayilanVadeGun: veri.get("varsayilanVadeGun") === "" ? undefined : Number(veri.get("varsayilanVadeGun")), varsayilanIskonto: String(veri.get("varsayilanIskonto") || "") || undefined, fiyatListesiId: String(veri.get("fiyatListesiId") || "") || undefined, efaturaProfili: veri.get("efaturaProfili") as "temel" | "ticari", earsivGonderimSekli: veri.get("earsivGonderimSekli") as "elektronik" | "kagit", kamuIdaresi: veri.get("kamuIdaresi") === "on", harcamaBirimiVkn: String(veri.get("harcamaBirimiVkn") || "").trim() || null, harcamaBirimiAdi: String(veri.get("harcamaBirimiAdi") || "").trim() || null }) }); await detayAc(detay.id, true); setBasari("Risk ve finans koşulları güncellendi."); }
     catch (h) { setHata(h instanceof Error ? h.message : "Finans bilgileri güncellenemedi"); }
   }
 
@@ -1040,6 +1044,9 @@ export default function CariSayfasi() {
                     <Field label="Fiyat listesi"><Select name="fiyatListesiId" defaultValue={detay.fiyatListesiId ?? ""}><option value="">Stok satış fiyatı</option>{fiyatListeleri.map((liste) => <option key={liste.id} value={liste.id}>{liste.ad} · {liste.dovizCinsi}</option>)}</Select></Field>
                     <Field label="e-Fatura profili"><Select name="efaturaProfili" defaultValue={detay.efaturaProfili}><option value="temel">TEMELFATURA</option><option value="ticari">TICARIFATURA — alıcı kabul/ret verir</option></Select></Field>
                     <Field label="e-Arşiv teslim şekli"><Select name="earsivGonderimSekli" defaultValue={detay.earsivGonderimSekli ?? "elektronik"}><option value="elektronik">Elektronik — PDF e-postayla</option><option value="kagit">Kâğıt — basılı teslim</option></Select></Field>
+                    <label className="check-row"><input type="checkbox" name="kamuIdaresi" defaultChecked={detay.kamuIdaresi ?? false} /> Kamu idaresi — e-Faturası KAMU senaryosuyla gider (GİB listesinde KAMU türündeyse işaretlemek gerekmez)</label>
+                    <Field label="Harcama birimi VKN (varsayılan)"><Input name="harcamaBirimiVkn" defaultValue={detay.harcamaBirimiVkn ?? ""} inputMode="numeric" pattern="\d{10}" maxLength={10} placeholder="Boşsa carinin VKN'si kullanılır" /></Field>
+                    <Field label="Harcama birimi adı (varsayılan)"><Input name="harcamaBirimiAdi" defaultValue={detay.harcamaBirimiAdi ?? ""} maxLength={200} placeholder="Boşsa carinin unvanı kullanılır" /></Field>
                     <div className="cari-finance-form__meta"><span>Son işlem <b>{detay.finansalOzet.sonIslemTarihi ?? "—"}</b></span><span>Son tahsilat <b>{detay.finansalOzet.sonTahsilatTarihi ?? "—"}</b></span><span>Son ödeme <b>{detay.finansalOzet.sonOdemeTarihi ?? "—"}</b></span></div>
                     <Button type="submit" size="sm" variant="primary">Finans koşullarını güncelle</Button>
                   </form>

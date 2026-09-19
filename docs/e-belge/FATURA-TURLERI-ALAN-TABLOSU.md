@@ -28,7 +28,7 @@ tablo ikisini birlikte gösterir.
 | 3 | e-Arşiv | `EARSIVFATURA` | SATIS / IADE | Alıcı GİB'de kayıtsız ya da nihai tüketici | Yok | ✅ |
 | 4 | İhracat | `IHRACAT` | SATIS | Alıcı yurt dışı | Yok (gümrük süreci ayrı) | ✅ |
 | 5 | Yolcu beraberi | `YOLCUBERABERIESYA` | SATIS | Tax-free yolcu satışı | Yok | ❌ |
-| 6 | Kamu iade | `KAMU` | IADE | Kamu kurumuna kesilen iade faturası | — | ❌ |
+| 6 | Kamu | `KAMU` | SATIS / TEVKIFAT / ISTISNA / IADE | Alıcı merkezi yönetim kamu idaresi (GİB listesinde `<Type>KAMU</Type>` ya da kartta işaret); IADE: kamu idaresinden alınan malın iadesi | Yok | ✅ (2026-09-20) |
 | 7 | Şarj | `EARSIVFATURA` / e-Fatura | `SARJ` | Elektrikli araç şarj hizmeti | Kanala göre | ❌ |
 | 8 | Şarjanlık | `EARSIVFATURA` / e-Fatura | `SARJANLIK` | Şarj ünitesi/işletmecilik | Kanala göre | ❌ |
 | 9 | İhraç kayıtlı | TEMEL/TICARI | IHRACKAYITLI | İhracatçıya ihraç kaydıyla teslim | Profile göre | ✅ (EBLG-60) |
@@ -166,10 +166,15 @@ yapının kalanı şematrondan geçiyor.
 
 | Alan | UBL | Zorunlu | Durum |
 |---|---|---|---|
-| Senaryo `KAMU`, tip `IADE` | `ProfileID` + `InvoiceTypeCode` | Evet | ❌ |
-| İade edilen fatura(lar): no, tarih, tür | `BillingReference/InvoiceDocumentReference` (birden çok olabilir) | Evet | ❌ |
-| Ödemeyi yapacak harcama birimi VKN | `BuyerCustomerParty/PartyIdentification` | Evet | ❌ |
-| Ödemenin yapılacağı IBAN | `PaymentMeans/PayeeFinancialAccount` | Evet | ❌ |
+| Senaryo `KAMU` (tip SATIS/TEVKIFAT/ISTISNA/IADE) | `ProfileID` + `InvoiceTypeCode` | Evet | ✅ — liste türünden ya da kart işaretinden türer (`kamuSenaryosuMu`), ticari profili de ezer |
+| İade edilen fatura(lar): no, tarih, tür | `BillingReference/InvoiceDocumentReference` (birden çok olabilir) | Evet | ✅ EBLG-58 altyapısı; `DocumentTypeCode` IADE NES'te kabul |
+| Ödemeyi yapacak harcama birimi VKN + adı | `BuyerCustomerParty/PartyIdentification[@schemeID=VKN]` + `PartyName` + alıcının adresi | Evet | ✅ — kartta varsayılan, sihirbazda faturaya yazılır; boşsa alıcının kendisi |
+| Ödemenin yapılacağı IBAN | `PaymentMeans` (`ZZZ`) `/PayeeFinancialAccount/ID` + `CurrencyCode` TRY | Evet | ✅ — Kasa/Banka'daki IBAN'lı TRY hesaplarından seçilir; şematron deseni + mod-97 |
+
+NES önizlemesi (2026-09-20): KAMU+SATIS, KAMU+TEVKIFAT, KAMU+IADE geçti. NES testte
+K072026000000062 (KAMU/SATIS) test kamu alıcısı 2222222105'e (`defaultpk@hmb.gov.tr`)
+1300 "BAŞARIYLA TAMAMLANDI" ile teslim edildi. Kamu alıcısı e-Fatura listesinde yoksa
+belge e-Arşiv'e düşürülmez, gönderim durur.
 
 ### 3.7 Şarj (`SARJ`) — şematron §1
 
@@ -248,7 +253,7 @@ SGK · 801–811 → OZELMATRAH, IADE, SGK. IADE tipi TICARIFATURA profiliyle gi
 | ~~B~~ | ~~e-Arşiv internet satışı alan grubu~~ — **bitti** (EBLG-56) | e-Arşiv |
 | ~~C~~ | ~~İhracat alan kümesi~~ — **bitti** (EBLG-53) | İhracat |
 | ~~D~~ | ~~Gümrük beyanname no~~ — **bitti** (EBLG-54): yalnız kayda işlenir | İhracat |
-| E | KAMU-IADE alan grubu | Kamu |
+| ~~E~~ | ~~KAMU-IADE alan grubu~~ — **bitti**, kamuya satışla birlikte (KAMU senaryosu) | Kamu |
 | F | SARJ / SARJANLIK alan grubu | Şarj |
 | G | Yolcu beraberi | Tax-free |
 | H | İhraç kayıtlı | İhracat zinciri — ✅ EBLG-60 |

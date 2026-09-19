@@ -274,6 +274,7 @@ export class SovosEntegratorAdapter implements EntegratorAdapter {
       const vknTckn = xmlDegeri(kullanici, ["Identifier"]);
       if (!vknTckn) continue;
       const unvan = xmlDegeri(kullanici, ["Title"]);
+      const tur = xmlDegeri(kullanici, ["Type"]) || undefined;
       for (const belge of [...kullanici.matchAll(/<(?:\w+:)?Document\s[^>]*type=["']([^"']+)["'][^>]*>([\s\S]*?)<\/(?:\w+:)?Document>/gi)]) {
         const tip = belge[1].toUpperCase();
         // Tek indirme e-Fatura ve e-İrsaliye kayıtlarının ikisini de getirir;
@@ -285,7 +286,7 @@ export class SovosEntegratorAdapter implements EntegratorAdapter {
           // yapılırsa zarf karşı tarafa ulaşmaz.
           if (xmlDegeri(etiket, ["DeletionTime"])) continue;
           const ad = xmlDegeri(etiket, ["Name"]);
-          if (ad) kayitlar.push({ vknTckn: xmlCoz(vknTckn), belgeTuru, postaKutusu: xmlCoz(ad), unvan: unvan ? xmlCoz(unvan) : undefined });
+          if (ad) kayitlar.push({ vknTckn: xmlCoz(vknTckn), belgeTuru, postaKutusu: xmlCoz(ad), unvan: unvan ? xmlCoz(unvan) : undefined, tur });
         }
       }
     }

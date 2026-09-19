@@ -746,6 +746,64 @@ describe("EbelgeService (EBLG-01..08)", () => {
     expect(sonuc.basarili).toBe(true);
   });
 
+  describe("KAMU senaryosu", () => {
+    const kamuFatura = (ek: Record<string, unknown> = {}) => ({
+      id: "fk1",
+      tip: "satis",
+      senaryo: "satis",
+      efaturaProfili: "temel",
+      durum: "kesin",
+      tarih: new Date(),
+      no: "TKR2026000000009",
+      cariId: "c-kamu",
+      dovizCinsi: "TRY",
+      kur: 1,
+      toplamBrut: 100, toplamMatrah: 100, toplamKdv: 20, genelToplam: 120, toplamSatirIskontosu: 0, genelIskontoToplam: 0,
+      satirlar: [{ miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20, birimFiyat: 100, birim: "adet", stok: { kod: "U1", ad: "Ürün 1" } }],
+      cari: { vknTckn: "2222222105", unvan: "Kamu İhale Kurumu", kamuIdaresi: true, adresler: [{ tip: "fatura", ulke: "TR", adres: "Mevlana Blv.", il: "Ankara", ilce: "Çankaya", postaKodu: null }] },
+      iadeReferanslari: [],
+      kamuHarcamaBirimiVkn: null,
+      kamuHarcamaBirimiAdi: null,
+      kamuIban: null,
+      ...ek,
+    });
+    const tx = (fatura: unknown) => ({
+      fatura: { findUnique: vi.fn().mockResolvedValue(fatura) },
+      baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "test" }) }) },
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", vergiDairesi: "Davutpaşa", adres: "Maltepe Mh.", ilce: "Zeytinburnu", il: "İstanbul" }) },
+    });
+
+    it("kartta işaretli kamu alıcısında harcama birimi ve IBAN yoksa önizlemez", async () => {
+      mockTenantIslem.mockImplementation((_tenantId: string, cb: any) => cb(tx(kamuFatura())));
+      await expect(service.onizle("fk1")).rejects.toThrow(/harcama biriminin 10 haneli VKN/);
+    });
+
+    it("bilgiler tamsa belgeyi KAMU profiliyle, harcama birimi ve IBAN'la üretir", async () => {
+      mockTenantIslem.mockImplementation((_tenantId: string, cb: any) => cb(tx(kamuFatura({
+        kamuHarcamaBirimiVkn: "2222222105", kamuHarcamaBirimiAdi: "Destek Hizmetleri", kamuIban: "TR330006100519786457841326",
+      }))));
+      const belgeOnizle = vi.fn().mockResolvedValue({ basarili: true, html: "<html/>" });
+      (mockAdapter as any).belgeOnizle = belgeOnizle;
+      try {
+        const sonuc = await service.onizle("fk1");
+        expect(sonuc.profil).toBe("KAMU");
+        const xml = belgeOnizle.mock.calls[0][1].xml as string;
+        expect(xml).toContain("<cac:BuyerCustomerParty>");
+        expect(xml).toContain("<cbc:ID>TR330006100519786457841326</cbc:ID>");
+      } finally {
+        delete (mockAdapter as any).belgeOnizle;
+      }
+    });
+
+    it("kamu alıcısı e-Fatura listesinde yoksa e-Arşiv'e düşürmez, durdurur", async () => {
+      mockTenantIslem.mockImplementation((_tenantId: string, cb: any) => cb(tx(kamuFatura({
+        kamuHarcamaBirimiVkn: "2222222105", kamuHarcamaBirimiAdi: "Destek Hizmetleri", kamuIban: "TR330006100519786457841326",
+      }))));
+      mockMukellefListesi.kanalBelirle.mockResolvedValueOnce({ vknTckn: "2222222105", eFaturaMukellefi: false });
+      await expect(service.onizle("fk1")).rejects.toThrow(/KAMU senaryosu yalnız e-Fatura/);
+    });
+  });
+
   describe("yurt dışındaki tedarikçiye iade", () => {
     const yurtDisiIade = {
       id: "fi1",
