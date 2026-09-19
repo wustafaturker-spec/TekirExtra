@@ -802,7 +802,9 @@ export default function FaturaSayfasi() {
   useEffect(() => {
     // Düzenlemede faturaya kaydedilmiş ticari fiyat korunur; güncel fiyat
     // listesi yalnız yeni faturada cari/tip seçimi değiştiğinde uygulanır.
-    if (duzenlenenId) return;
+    // Salt okunur açılan fatura da kayıtlıdır; duzenlenenId boş olsa bile
+    // fiyatları ezilmez.
+    if (duzenlenenId || acikFatura) return;
     if (cariId && satirlar.some((s) => s.stokId)) {
       const guncelleFiyatlar = async () => {
         const yeni = [...satirlar];
@@ -824,7 +826,7 @@ export default function FaturaSayfasi() {
       void guncelleFiyatlar();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cariId, tip, dovizCinsi, duzenlenenId]);
+  }, [cariId, tip, dovizCinsi, duzenlenenId, acikFatura]);
 
   async function kaydet(e: React.FormEvent) {
     e.preventDefault();
@@ -1513,7 +1515,7 @@ export default function FaturaSayfasi() {
                   const satirSonuc = sonuc.satirlar[index];
                   const seciliStok = stoklar.find((stok) => stok.id === s.stokId);
                   const kullanilabilir = Number(seciliStok?.kullanilabilirMiktar ?? 0);
-                  const stokYetersiz = tip === "satis" && seciliStok?.kullanilabilirMiktar !== undefined && Number(s.miktar) > kullanilabilir;
+                  const stokYetersiz = !saltOkunur && tip === "satis" && seciliStok?.kullanilabilirMiktar !== undefined && Number(s.miktar) > kullanilabilir;
                   return (
                     <Fragment key={index}>
                     <tr>
@@ -1852,7 +1854,7 @@ export default function FaturaSayfasi() {
               <strong>{ebelgeWizard.bilgi.cari}</strong>
               <span>{ebelgeWizard.fatura.no ?? "Numara gönderimde verilir"}</span>
             </div>
-            <ol aria-label="Sihirbaz adımları" className="ebelge-steps">
+            <ol aria-label="Sihirbaz adımları" className="ebelge-steps ebelge-steps--sihirbaz">
               {(["Kontrol", "Bilgiler", "Önizle ve gönder"] as const).map((baslik, index) => {
                 const sira = index + 1;
                 const durum = sira < ebelgeWizard.adim ? "tamam" : sira === ebelgeWizard.adim ? "suanki" : "bekliyor";
@@ -2308,7 +2310,7 @@ export default function FaturaSayfasi() {
           <tbody>
             {gorunenFaturalar.length === 0 ? (
               <tr>
-                <td colSpan={9} className="empty">Sistemde henüz kayıtlı fatura bulunmuyor.</td>
+                <td colSpan={9} className="empty">{durumFiltresi || ebelgeFiltresi || odemeFiltresi || ihracKayitliFiltresi || aramaFiltresi ? "Bu filtrelere uyan fatura yok." : "Sistemde henüz kayıtlı fatura bulunmuyor."}</td>
               </tr>
             ) : (
               gorunenFaturalar.map((f) => (

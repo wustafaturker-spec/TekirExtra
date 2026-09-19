@@ -41,7 +41,9 @@ export function ThemeConfiguratorDrawer() {
           position: "fixed",
           right: "20px",
           bottom: "30px",
-          zIndex: 990,
+          // Panellerin (quick-panel 80, önizleme 140…) altında kalır; yoksa sağ
+          // alttaki eylem düğmelerini örter.
+          zIndex: 70,
           width: "48px",
           height: "48px",
           borderRadius: "50%",

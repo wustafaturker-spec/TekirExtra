@@ -1589,7 +1589,10 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 .status-history__item small { color: var(--text-muted); font-size: 0.72rem; }
 
 /* e-Belge resmi durum adımları (EBLG-45): yatay şerit, dar ekranda sarar. */
-.ebelge-steps { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.9rem; }
+.ebelge-steps { display: flex; flex-wrap: wrap; gap: 0.5rem; list-style: none; margin: 0 0 0.9rem; padding: 0; }
+/* Sihirbazın üç adımı dar çekmecede de tek satırda kalır. */
+.ebelge-steps--sihirbaz { flex-wrap: nowrap; }
+.ebelge-steps--sihirbaz .ebelge-steps__item { flex: 1 1 0; min-width: 0; }
 .ebelge-steps__item {
   background: var(--surface-muted);
   border: 1px solid var(--border);
