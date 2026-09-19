@@ -13,6 +13,7 @@ import {
   ihracatIstisnaAciklamasi,
   ihracatIstisnaKodu,
   ihracatIstisnaKoduMu,
+  istisnaKoduBul,
   senaryoUblKodu,
   tevkifatKoduBul,
   odemeSekliUblKodu,
@@ -120,6 +121,11 @@ export function faturaUblUret(
       .replace(/'/g, "&apos;");
   };
 
+  /*
+   * Şematron: "Fatura tipi IADE iken fatura profili sadece TEMELFATURA,
+   * EARSIVFATURA, … olabilir" (NES önizlemesi, 2026-09-19). İadeye alıcının
+   * kabul/ret yanıtı yoktur; carinin ticari profili iadede yok sayılır (EBLG-58).
+   */
   const uuid = fatura.id;
   const no = fatura.no || "TASLAK";
 
@@ -138,6 +144,28 @@ export function faturaUblUret(
    * fatura `TaxTotal`'ındadır; satırlarda tekrar edilmez.
    */
   const ihracatIstisnasi = ihracat ? satirIstisnaKodu(fatura.satirlar[0]) : null;
+
+  /** İstisna kodunun belgeye yazılan açıklaması; şematron boş bırakılmasına izin vermez. */
+  const istisnaAciklamasi = (kod: string) =>
+    ihracatIstisnasi ? ihracatIstisnaAciklamasi(kod) : `${kod} ${istisnaKoduBul(kod)?.ad ?? ""}`.trim();
+
+  /*
+   * Belge düzeyindeki KDV alt toplamları oran ve istisna kodu başına ayrılır
+   * (EBLG-59). Şematron vergisi sıfır olan her alt toplamda kod ve açıklama
+   * arar, fatura tipini de bu koddan denetler ("201 için tip ISTISNA… olabilir");
+   * kod yalnız satırda durunca KDV'si sıfır her yurt içi belge dönüyordu (NES
+   * önizlemesi, 2026-09-19). Tutarlar kuruşta toplanır; satır matrahlarının
+   * toplamı belge matrahıdır (genel iskonto satırlara dağıtılmıştır).
+   */
+  const kdvAltToplamlari = [...fatura.satirlar.reduce((gruplar, satir) => {
+    const oran = Number(satir.kdvOrani);
+    const kod = oran === 0 ? satirIstisnaKodu(satir) : null;
+    const anahtar = `${oran}|${kod ?? ""}`;
+    const grup = gruplar.get(anahtar) ?? { oran, kod, matrahKurus: 0, kdvKurus: 0 };
+    grup.matrahKurus += Math.round(Number(satir.matrah) * 100);
+    grup.kdvKurus += Math.round(Number(satir.kdvTutari) * 100);
+    return gruplar.set(anahtar, grup);
+  }, new Map<string, { oran: number; kod: string | null; matrahKurus: number; kdvKurus: number }>()).values()];
 
   /**
    * Gerçek kişi alıcı. UBL-TR şematronu `schemeID="TCKN"` gördüğünde `cac:Person`
@@ -322,7 +350,7 @@ export function faturaUblUret(
     <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${deger.tutar.toFixed(2)}</cbc:TaxAmount>
     <cac:TaxSubtotal>
       <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${deger.tutar.toFixed(2)}</cbc:TaxAmount>
-      <cbc:Percent>${deger.oran.toFixed(2)}</cbc:Percent>
+      <cbc:Percent>${tevkifatYuzdesi(deger.oran)}</cbc:Percent>
       <cac:TaxCategory>
         <cac:TaxScheme>
           <cbc:TaxTypeCode>${kod}</cbc:TaxTypeCode>
@@ -341,7 +369,7 @@ export function faturaUblUret(
          xsi:schemaLocation="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2 UBL-Invoice-2.1.xsd">
   <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
   <cbc:CustomizationID>TR1.2</cbc:CustomizationID>
-  <cbc:ProfileID>${ihracat ? IHRACAT_PROFILI : earsiv ? "EARSIVFATURA" : fatura.efaturaProfili === "ticari" ? "TICARIFATURA" : "TEMELFATURA"}</cbc:ProfileID>
+  <cbc:ProfileID>${ihracat ? IHRACAT_PROFILI : earsiv ? "EARSIVFATURA" : fatura.efaturaProfili === "ticari" && fatura.senaryo !== "iade" ? "TICARIFATURA" : "TEMELFATURA"}</cbc:ProfileID>
   <cbc:ID>${no}</cbc:ID>
   <cbc:CopyIndicator>false</cbc:CopyIndicator>
   <cbc:UUID>${uuid}</cbc:UUID>
@@ -448,19 +476,20 @@ ${aliciTckn && !ihracat ? `      <cac:Person>
 ${yabanciAliciBlogu}${teslimatBlogu}
 ${kurBlogu}  <cac:TaxTotal>
     <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${fatura.toplamKdv.toFixed(2)}</cbc:TaxAmount>
-    <cac:TaxSubtotal>
-      <cbc:TaxableAmount currencyID="${fatura.dovizCinsi}">${fatura.toplamMatrah.toFixed(2)}</cbc:TaxableAmount>
-      <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${fatura.toplamKdv.toFixed(2)}</cbc:TaxAmount>
-      <cac:TaxCategory>${ihracatIstisnasi ? `
-        <cbc:TaxExemptionReasonCode>${ihracatIstisnasi}</cbc:TaxExemptionReasonCode>
-        <cbc:TaxExemptionReason>${escape(ihracatIstisnaAciklamasi(ihracatIstisnasi))}</cbc:TaxExemptionReason>` : ""}
+${kdvAltToplamlari.map((g) => `    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="${fatura.dovizCinsi}">${(g.matrahKurus / 100).toFixed(2)}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${(g.kdvKurus / 100).toFixed(2)}</cbc:TaxAmount>
+      <cbc:Percent>${g.oran.toFixed(2)}</cbc:Percent>
+      <cac:TaxCategory>${g.kod ? `
+        <cbc:TaxExemptionReasonCode>${escape(g.kod)}</cbc:TaxExemptionReasonCode>
+        <cbc:TaxExemptionReason>${escape(istisnaAciklamasi(g.kod))}</cbc:TaxExemptionReason>` : ""}
         <cac:TaxScheme>
           <cbc:Name>KDV</cbc:Name>
           <cbc:TaxTypeCode>0015</cbc:TaxTypeCode>
         </cac:TaxScheme>
       </cac:TaxCategory>
     </cac:TaxSubtotal>
-  </cac:TaxTotal>
+`).join("")}  </cac:TaxTotal>
 ${tevkifatBlogu}
   <cac:LegalMonetaryTotal>
     <cbc:LineExtensionAmount currencyID="${fatura.dovizCinsi}">${fatura.toplamBrut.toFixed(2)}</cbc:LineExtensionAmount>
@@ -494,7 +523,8 @@ ${tevkifatBlogu}
         <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${s.kdvTutari.toFixed(2)}</cbc:TaxAmount>
         <cbc:Percent>${s.kdvOrani.toFixed(2)}</cbc:Percent>
         <cac:TaxCategory>
-          ${satirIstisnaKodu(s) ? `<cbc:TaxExemptionReasonCode>${escape(satirIstisnaKodu(s))}</cbc:TaxExemptionReasonCode>` : ""}
+          ${satirIstisnaKodu(s) ? `<cbc:TaxExemptionReasonCode>${escape(satirIstisnaKodu(s))}</cbc:TaxExemptionReasonCode>
+          <cbc:TaxExemptionReason>${escape(istisnaAciklamasi(satirIstisnaKodu(s)!))}</cbc:TaxExemptionReason>` : ""}
           <cac:TaxScheme>
             <cbc:Name>KDV</cbc:Name>
             <cbc:TaxTypeCode>0015</cbc:TaxTypeCode>
@@ -535,6 +565,15 @@ export function belgeNoyuUbleYaz(xml: string, belgeNo: string): string {
   const desen = /(<cbc:ProfileID>[^<]*<\/cbc:ProfileID>\s*<cbc:ID>)([^<]*)(<\/cbc:ID>)/;
   if (!desen.test(xml)) return xml;
   return xml.replace(desen, (_tam, bas: string, _eski: string, son: string) => `${bas}${escapeXml(belgeNo)}${son}`);
+}
+
+/**
+ * Tevkifat yüzdesi. Şematron oranı kod listesindeki metinle karşılaştırır:
+ * "90" geçer, "90.00" "602 vergi tipinin yüzdesi '90.00' olamaz" diye döner
+ * (NES önizlemesi, 2026-09-19 — bu yüzden tevkifatlı belge hiç gidemiyordu).
+ */
+function tevkifatYuzdesi(oran: number): string {
+  return String(Math.round(oran * 100) / 100);
 }
 
 /** Tutarları kuruşta toplar; ondalıklı toplama `0.1 + 0.2` kaymasına düşmesin. */

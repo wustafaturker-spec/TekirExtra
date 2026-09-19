@@ -202,7 +202,13 @@ yapının kalanı şematrondan geçiyor.
 | Kod başına tek `WithholdingTaxTotal` bloğu | ✅ |
 | KDV sıfırsa istisna kodu zorunlu (istisna değilse `351`) | ✅ |
 | Kısmi istisna kodu `233` | ✅ (EBLG-51) |
-| İstisna kodları `ISTISNA/IADE/IHRACKAYITLI/SGK/YTBIADE` tiplerine göre süzülür | ❌ — liste bugün tipe göre süzülmüyor |
+| İstisna kodları `ISTISNA/IADE/IHRACKAYITLI/SGK/YTBIADE` tiplerine göre süzülür | ✅ (EBLG-59) — 351 SATIS kalır, iade IADE kalır, tevkifatlıda yalnız 351 |
+| İstisna kodu + açıklaması belge düzeyinde, oran/kod başına alt toplam | ✅ (EBLG-59) — önceden yalnız satırdaydı, 0 KDV'li yurt içi belge dönüyordu |
+| Tevkifat yüzdesi ondalıksız (`90`, `90.00` değil) | ✅ (EBLG-59) — önceden tevkifatlı belge hiç gidemiyordu |
+
+Şematronun tip × kod matrisi (NES önizlemesi, 2026-09-19): 201–350 → ISTISNA, IADE,
+IHRACKAYITLI, SGK, YTBIADE, YTBISTISNA · 351 → her tip · 701–703 → IHRACKAYITLI, IADE,
+SGK · 801–811 → OZELMATRAH, IADE, SGK. IADE tipi TICARIFATURA profiliyle gidemez.
 
 ---
 
@@ -232,5 +238,5 @@ yapının kalanı şematrondan geçiyor.
 | H | İhraç kayıtlı | İhracat zinciri |
 | I | Alıcı alias'ının UBL'e yazılması | e-Fatura |
 | J | İade faturasında `BillingReference` | Tüm iade tipleri — ✅ EBLG-58 (alış iadesi; TEVKIFATIADE açık) |
-| K | İstisna kod listesinin fatura tipine göre süzülmesi | Tüm türler |
+| K | İstisna kod listesinin fatura tipine göre süzülmesi | Tüm türler — ✅ EBLG-59 |
 | L | Sihirbazın çok adımlı hale getirilmesi | Arayüz |

@@ -545,3 +545,53 @@ describe("faturaUblUret — iade referansı (EBLG-58)", () => {
     expect(faturaUblUret(iadeFaturasi, satici)).not.toContain("BillingReference");
   });
 });
+
+describe("faturaUblUret — KDV alt toplamları ve istisna (EBLG-59)", () => {
+  const satir = (kdvOrani: number, gibIstisnaKodu: string | null, ek: Record<string, unknown> = {}) => ({
+    miktar: 1, birimFiyat: 100, iskontoTutari: 0, matrah: 100, kdvOrani, kdvTutari: kdvOrani, gibIstisnaKodu,
+    stok: { kod: "STK-1", ad: "Ürün" }, ...ek,
+  });
+  const fatura = (satirlar: unknown[], ek: Record<string, unknown> = {}) => ({
+    id: "66666666-6666-4666-8666-666666666666", no: "TKR2026000000010", tarih: new Date("2026-09-19T12:00:00Z"),
+    tip: "satis", senaryo: "istisna", dovizCinsi: "TRY",
+    toplamKdv: 20, toplamMatrah: 200, toplamBrut: 200, genelToplam: 220, toplamSatirIskontosu: 0,
+    cari: { vknTckn: "1234567890", unvan: "Alıcı A.Ş." }, satirlar, ...ek,
+  }) as never;
+  const satici = { unvan: "Satıcı A.Ş.", vkn: "9876543210" };
+  const belgeVergisi = (xml: string) => xml.slice(xml.indexOf("<cac:TaxTotal>"), xml.indexOf("</cac:TaxTotal>"));
+
+  it("istisna kodunu ve açıklamasını belge düzeyinde, oran başına alt toplamla yazar", () => {
+    const vergi = belgeVergisi(faturaUblUret(fatura([satir(20, null), satir(0, "301")]), satici));
+    const altToplamlar = vergi.match(/<cac:TaxSubtotal>[\s\S]*?<\/cac:TaxSubtotal>/g)!;
+    expect(altToplamlar).toHaveLength(2);
+    expect(altToplamlar[0]).toContain("<cbc:Percent>20.00</cbc:Percent>");
+    expect(altToplamlar[0]).not.toContain("TaxExemptionReasonCode");
+    expect(altToplamlar[1]).toContain("<cbc:TaxExemptionReasonCode>301</cbc:TaxExemptionReasonCode>");
+    expect(altToplamlar[1]).toContain("<cbc:TaxExemptionReason>301 11/1-a Mal İhracatı</cbc:TaxExemptionReason>");
+    expect(altToplamlar[1]).toContain('<cbc:TaxableAmount currencyID="TRY">100.00</cbc:TaxableAmount>');
+  });
+
+  it("aynı oran ve kodlu satırları tek alt toplamda kuruşuyla toplar", () => {
+    const vergi = belgeVergisi(faturaUblUret(fatura([satir(0, "351", { matrah: 0.1 }), satir(0, "351", { matrah: 0.2 })]), satici));
+    expect(vergi.match(/<cac:TaxSubtotal>/g)).toHaveLength(1);
+    expect(vergi).toContain('<cbc:TaxableAmount currencyID="TRY">0.30</cbc:TaxableAmount>');
+  });
+
+  it("satırda da istisna açıklamasını yazar", () => {
+    const xml = faturaUblUret(fatura([satir(0, "201")]), satici);
+    const satirVergisi = xml.slice(xml.indexOf("<cac:InvoiceLine>"));
+    expect(satirVergisi).toContain("<cbc:TaxExemptionReason>201 17/1 Kültür ve Eğitim Amacı Taşıyan İşlemler</cbc:TaxExemptionReason>");
+  });
+
+  it("tevkifat yüzdesini kod listesindeki gibi ondalıksız yazar", () => {
+    const xml = faturaUblUret(fatura([satir(20, null, { tevkifatKodu: "602", tevkifatTutari: 18, tevkifatPay: 9, tevkifatPayda: 10 })], { senaryo: "tevkifat" }), satici);
+    const tevkifat = xml.slice(xml.indexOf("<cac:WithholdingTaxTotal>"), xml.indexOf("</cac:WithholdingTaxTotal>"));
+    expect(tevkifat).toContain("<cbc:Percent>90</cbc:Percent>");
+  });
+
+  it("iade faturası carinin ticari profiline rağmen TEMELFATURA gider", () => {
+    const xml = faturaUblUret(fatura([satir(20, null)], { tip: "alis_iade", senaryo: "iade", efaturaProfili: "ticari" }), satici);
+    expect(xml).toContain("<cbc:ProfileID>TEMELFATURA</cbc:ProfileID>");
+    expect(faturaUblUret(fatura([satir(20, null)], { senaryo: "satis", efaturaProfili: "ticari" }), satici)).toContain("<cbc:ProfileID>TICARIFATURA</cbc:ProfileID>");
+  });
+});

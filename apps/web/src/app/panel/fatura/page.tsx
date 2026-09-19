@@ -13,7 +13,6 @@ import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
 import {
   GIB_KOD_LISTESI_SURUMU,
-  KDV_ISTISNA_KODLARI,
   ODEME_SEKILLERI,
   TASIMA_SEKILLERI,
   TESLIM_SARTLARI,
@@ -22,6 +21,7 @@ import {
   faturaSenaryosuTuret,
   iadeEngelleri,
   internetSatisEngelleri,
+  izinliIstisnaKodlari,
   senaryoHatalari,
   senaryoUblKodu,
   tevkifatKoduBul,
@@ -455,6 +455,8 @@ export default function FaturaSayfasi() {
     gibIstisnaKodu: s.gibIstisnaKodu,
   }));
   const turetilenSenaryo = faturaSenaryosuTuret(tip, senaryoSatirlari);
+  // EBLG-59: tevkifatlı faturada sıfır KDV satırı yalnız 351 alabilir; liste sunucudaki kuralla süzülür.
+  const istisnaSecenekleri = izinliIstisnaKodlari(senaryoSatirlari);
   const senaryoUyarilari = senaryoHatalari(senaryoSatirlari);
   const istisnaliSatirSayisi = senaryoSatirlari.filter((s) => Boolean(s.gibIstisnaKodu)).length;
   const tevkifatliSatirSayisi = senaryoSatirlari.filter((s) => Boolean(s.tevkifatKodu)).length;
@@ -1496,16 +1498,18 @@ export default function FaturaSayfasi() {
                                 onChange={(e) => satirGuncelle(index, "gibIstisnaKodu", e.target.value)}
                               >
                                 <option value="">{Number(s.kdvOrani) === 0 ? "Kod seçin" : "(KDV oranı sıfır değil)"}</option>
-                                <optgroup label="Tam istisna">
-                                  {KDV_ISTISNA_KODLARI.filter((k) => k.tur === "tam").map((k) => (
-                                    <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>
-                                  ))}
-                                </optgroup>
-                                <optgroup label="Kısmi istisna">
-                                  {KDV_ISTISNA_KODLARI.filter((k) => k.tur === "kismi").map((k) => (
-                                    <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>
-                                  ))}
-                                </optgroup>
+                                {/* Süzülen listede olmayan eski seçim görünür kalır; hatası satırda yazar. */}
+                                {s.gibIstisnaKodu && !istisnaSecenekleri.some((k) => k.kod === s.gibIstisnaKodu) && (
+                                  <option value={s.gibIstisnaKodu}>{s.gibIstisnaKodu} — bu faturada kullanılamaz</option>
+                                )}
+                                {(["tam", "kismi"] as const).map((tur) => {
+                                  const kodlar = istisnaSecenekleri.filter((k) => k.tur === tur);
+                                  return kodlar.length > 0 && (
+                                    <optgroup key={tur} label={tur === "tam" ? "Tam istisna" : "Kısmi istisna"}>
+                                      {kodlar.map((k) => <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>)}
+                                    </optgroup>
+                                  );
+                                })}
                               </Select>
                             </Field>
                             <Field label="Tevkifat kodu">

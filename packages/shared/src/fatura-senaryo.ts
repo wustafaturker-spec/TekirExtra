@@ -1,4 +1,4 @@
-import { istisnaKoduBul, tevkifatKoduBul, tevkifatOraniAyristir } from "./gib-kodlari";
+import { type IstisnaKodu, KDV_ISTISNA_KODLARI, istisnaKoduBul, tevkifatKoduBul, tevkifatOraniAyristir } from "./gib-kodlari";
 
 /** UBL'e `InvoiceTypeCode` olarak yazılan GİB senaryosu (FTR-16). */
 export type FaturaSenaryosu = "satis" | "iade" | "tevkifat" | "istisna";
@@ -25,17 +25,42 @@ export interface SenaryoSatirGirdi {
 const iadeTipi = (tip: string) => tip === "satis_iade" || tip === "alis_iade";
 
 /**
+ * "351 KDV - İstisna Olmayan Diğer" istisna değildir: şematron onu her tipte
+ * kabul eder, faturayı ISTISNA yapmaz (EBLG-59). 201–350 ise yalnız ISTISNA,
+ * IADE ve bizim desteklemediğimiz birkaç tipte geçer.
+ */
+export const ISTISNA_OLMAYAN_KOD = "351";
+
+const istisnaSayilir = (kod: string | null | undefined) => Boolean(kod) && kod !== ISTISNA_OLMAYAN_KOD;
+
+/**
  * Fatura senaryosunu satırlardan türetir (FTR-16).
  *
  * Kullanıcı senaryoyu seçmez: seçilen bir senaryo satırlarla çelişebilir ve
  * buradaki çelişkinin bedeli GİB'in reddettiği bir faturadır. Sıra isterde
- * yazıldığı gibidir — tevkifat, istisna, iade, sonra satış.
+ * yazıldığı gibidir — tevkifat, iade, istisna, sonra satış.
+ *
+ * EBLG-59 (GİB şematronu, NES önizlemesiyle denendi): iade, istisna kodu
+ * taşısa da IADE kalır — IADE tipi 201–350 kodlarını kabul eder ve iade
+ * referansı yalnız bu tipte anlamlıdır. 351 faturayı ISTISNA yapmaz.
  */
 export function faturaSenaryosuTuret(tip: string, satirlar: SenaryoSatirGirdi[]): FaturaSenaryosu {
   if (satirlar.some((s) => Boolean(s.tevkifatKodu))) return "tevkifat";
-  if (satirlar.some((s) => Number(s.kdvOrani) === 0 && Boolean(s.gibIstisnaKodu))) return "istisna";
   if (iadeTipi(tip)) return "iade";
+  if (satirlar.some((s) => Number(s.kdvOrani) === 0 && istisnaSayilir(s.gibIstisnaKodu))) return "istisna";
   return "satis";
+}
+
+/**
+ * Faturada seçilebilecek KDV istisna kodları (EBLG-59). Şematron 201–350'yi
+ * TEVKIFAT tipinde kabul etmez; satırlardan biri tevkifatlıysa sıfır KDV'li
+ * satırlar için yalnız 351 kalır. Arayüz listeyi, şema doğrulaması seçimi bu
+ * işlevle denetler.
+ */
+export function izinliIstisnaKodlari(satirlar: Pick<SenaryoSatirGirdi, "tevkifatKodu">[]): readonly IstisnaKodu[] {
+  return satirlar.some((s) => Boolean(s.tevkifatKodu))
+    ? KDV_ISTISNA_KODLARI.filter((k) => k.kod === ISTISNA_OLMAYAN_KOD)
+    : KDV_ISTISNA_KODLARI;
 }
 
 export interface SenaryoHatasi {
@@ -51,6 +76,7 @@ export interface SenaryoHatasi {
  */
 export function senaryoHatalari(satirlar: SenaryoSatirGirdi[]): SenaryoHatasi[] {
   const hatalar: SenaryoHatasi[] = [];
+  const tevkifatli = satirlar.some((s) => Boolean(s.tevkifatKodu));
 
   satirlar.forEach((satir, satirIndeksi) => {
     const kdvSifir = Number(satir.kdvOrani) === 0;
@@ -70,6 +96,12 @@ export function senaryoHatalari(satirlar: SenaryoSatirGirdi[]): SenaryoHatasi[] 
         hatalar.push({ satirIndeksi, alan: "gibIstisnaKodu", mesaj: `Tanımsız GİB istisna kodu: ${satir.gibIstisnaKodu}` });
       } else if (!kdvSifir) {
         hatalar.push({ satirIndeksi, alan: "gibIstisnaKodu", mesaj: "İstisna kodu yalnızca KDV oranı sıfır olan satırda kullanılabilir" });
+      } else if (tevkifatli && istisnaSayilir(satir.gibIstisnaKodu)) {
+        hatalar.push({
+          satirIndeksi,
+          alan: "gibIstisnaKodu",
+          mesaj: `Tevkifatlı faturada ${satir.gibIstisnaKodu} kullanılamaz; KDV'si sıfır satır için ${ISTISNA_OLMAYAN_KOD} seçin ya da istisnalı satırları ayrı faturaya alın`,
+        });
       }
     }
 
