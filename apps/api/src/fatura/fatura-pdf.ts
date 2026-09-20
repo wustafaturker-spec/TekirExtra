@@ -205,12 +205,25 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
       <td class="sag" style="padding:3px 8px">${paraBicim(deger)} ${birim}</td>
     </tr>`;
 
-  const kalemler: { etiket: string; deger: string; kalin?: boolean }[] = [
+  /*
+   * Özel matrah faturasında satırlar KDV'siz olduğu için toplam kutusundaki
+   * "KDV Matrahı / Hesaplanan KDV 0,00" ikilisi belgeyi yanlış anlatıyordu:
+   * matrah satış bedeli değil, KDV de sıfır değil — satış bedeline dahil.
+   * Bu belgede kutu satış bedelini ve özel matrah üzerinden hesaplanan KDV'yi
+   * gösterir; matrahın kendisi belge altındaki ibarede durur.
+   */
+  const ozelMatrah = ozelMatrahKoduBul(f.ozelMatrahKodu)
+    ? { kdv: ozelMatrahKdvsi(f.ozelMatrahTutari, f.ozelMatrahOrani) }
+    : null;
+
+  const kalemler: { etiket: string; deger: string | number; kalin?: boolean }[] = [
     { etiket: "Brüt Toplam", deger: f.toplamBrut },
     ...(Number(f.toplamSatirIskontosu) > 0 ? [{ etiket: "Satır İskontoları", deger: `-${f.toplamSatirIskontosu}` }] : []),
     ...(Number(f.genelIskontoToplam) > 0 ? [{ etiket: "Genel İskonto", deger: `-${f.genelIskontoToplam}` }] : []),
-    { etiket: "KDV Matrahı", deger: f.toplamMatrah },
-    { etiket: f.ihracKayitliKodu ? `Hesaplanan KDV (tahsil edilmez — ${kacis(f.ihracKayitliKodu)})` : "Hesaplanan KDV", deger: f.toplamKdv },
+    { etiket: ozelMatrah ? "Satış Bedeli (KDV dahil)" : "KDV Matrahı", deger: f.toplamMatrah },
+    ozelMatrah
+      ? { etiket: "Hesaplanan KDV (özel matrah)", deger: ozelMatrah.kdv }
+      : { etiket: f.ihracKayitliKodu ? `Hesaplanan KDV (tahsil edilmez — ${kacis(f.ihracKayitliKodu)})` : "Hesaplanan KDV", deger: f.toplamKdv },
     ...(Number(f.toplamTevkifat) > 0 ? [{ etiket: "KDV Tevkifatı", deger: `-${f.toplamTevkifat}` }] : []),
     { etiket: "Genel Toplam", deger: f.genelToplam, kalin: true },
   ];

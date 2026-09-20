@@ -168,7 +168,18 @@ describe("faturaPdfHtml — özel matrah", () => {
     expect(html).toContain("KDV matrahı 5.000,00 TL, oran %20, hesaplanan KDV 1.000,00 TL — satış bedeline dahildir.");
   });
 
+  it("toplam kutusunda satış bedelini ve özel matrah KDV'sini gösterir", () => {
+    const html = faturaPdfHtml({ ...fatura, ozelMatrahKodu: "812", ozelMatrahTutari: "5000.00", ozelMatrahOrani: "20.00" }, firma);
+    // Satırlar KDV'siz olduğu için kutu "Hesaplanan KDV 0,00" diyordu; belge
+    // altındaki ibareyle çelişiyordu.
+    expect(html).toContain("Satış Bedeli (KDV dahil)");
+    expect(html).toContain("Hesaplanan KDV (özel matrah)");
+    expect(html).not.toContain("<td style=\"padding:3px 8px\">KDV Matrahı</td>");
+  });
+
   it("özel matrahsız faturada blok yoktur", () => {
-    expect(faturaPdfHtml(fatura, firma)).not.toContain("Özel matrah");
+    const html = faturaPdfHtml(fatura, firma);
+    expect(html).not.toContain("Özel matrah");
+    expect(html).toContain("KDV Matrahı");
   });
 });
