@@ -15,6 +15,7 @@ import {
   sgkBelgeAlanlari,
   SGK_FATURA_TIPI,
   sarjPlakaNormalize,
+  SARJ_PROFILI,
   idisNormalize,
   IDIS_PROFILI,
   idisBelgesiMi,
@@ -623,7 +624,7 @@ export function faturaUblUret(
          xsi:schemaLocation="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2 UBL-Invoice-2.1.xsd">
   <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
   <cbc:CustomizationID>TR1.2</cbc:CustomizationID>
-  <cbc:ProfileID>${ihracat ? IHRACAT_PROFILI : yolcu ? YOLCU_BERABER_PROFILI : kamu ? KAMU_PROFILI : earsiv ? "EARSIVFATURA" : idis ? IDIS_PROFILI : fatura.efaturaProfili === "ticari" && !iadeSenaryosu && !sgk ? "TICARIFATURA" : "TEMELFATURA"}</cbc:ProfileID>
+  <cbc:ProfileID>${ihracat ? IHRACAT_PROFILI : yolcu ? YOLCU_BERABER_PROFILI : kamu ? KAMU_PROFILI : earsiv ? "EARSIVFATURA" : sarj ? SARJ_PROFILI : idis ? IDIS_PROFILI : fatura.efaturaProfili === "ticari" && !iadeSenaryosu && !sgk ? "TICARIFATURA" : "TEMELFATURA"}</cbc:ProfileID>
   <cbc:ID>${no}</cbc:ID>
   <cbc:CopyIndicator>false</cbc:CopyIndicator>
   <cbc:UUID>${uuid}</cbc:UUID>

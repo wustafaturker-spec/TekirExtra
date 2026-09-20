@@ -964,6 +964,8 @@ describe("faturaUblUret — şarj faturası (EBLG-71)", () => {
   it("tipi SARJ yazar, plakayı ve şarj süresini saatiyle bildirir", () => {
     const xml = faturaUblUret(sarjFaturasi(), firma, { tur: "efatura" });
     expect(xml).toContain("<cbc:InvoiceTypeCode>SARJ</cbc:InvoiceTypeCode>");
+    // NES şematronu: SARJ/SARJANLIK yalnız ENERJI profilinde kabul edilir.
+    expect(xml).toContain("<cbc:ProfileID>ENERJI</cbc:ProfileID>");
     expect(xml).toContain('schemeID="PLAKA">34ABC123<');
     expect(xml).toContain("<cbc:StartDate>2026-09-20</cbc:StartDate>");
     expect(xml).toContain("<cbc:StartTime>08:15:00</cbc:StartTime>");

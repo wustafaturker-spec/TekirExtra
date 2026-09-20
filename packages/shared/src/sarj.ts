@@ -17,6 +17,14 @@
 export const SARJ_TURLERI = ["sarj", "sarjanlik"] as const;
 export type SarjTuru = (typeof SARJ_TURLERI)[number];
 
+/**
+ * Şarj faturasının **profili**: NES şematronu SARJ/SARJANLIK tipini yalnız
+ * `ENERJI` profilinde kabul eder ("cbc:ProfileID değeri ENERJI olduğu durumda
+ * cbc:InvoiceTypeCode değeri SARJ veya SARJANLIK olmalıdır", 2026-09-20 test
+ * gönderimi). Belge e-Arşiv'e düşerse profil EARSIVFATURA kalır.
+ */
+export const SARJ_PROFILI = "ENERJI";
+
 /** UBL'e `InvoiceTypeCode` olarak yazılan karşılıkları. */
 export const SARJ_FATURA_TIPLERI: Record<SarjTuru, string> = {
   sarj: "SARJ",

@@ -29,8 +29,8 @@ tablo ikisini birlikte gösterir.
 | 4 | İhracat | `IHRACAT` | SATIS | Alıcı yurt dışı | Yok (gümrük süreci ayrı) | ✅ |
 | 5 | Yolcu beraberi | `YOLCUBERABERFATURA` | ISTISNA | Türkiye'de ikamet etmeyen yolcuya KDV'li satış; iade yetkili aracı kurumdan | Yok (gümrük onayı aracı kuruma gider) | ✅ (2026-09-20) |
 | 6 | Kamu | `KAMU` | SATIS / TEVKIFAT / ISTISNA / IADE | Alıcı merkezi yönetim kamu idaresi (GİB listesinde `<Type>KAMU</Type>` ya da kartta işaret); IADE: kamu idaresinden alınan malın iadesi | Yok | ✅ (2026-09-20) |
-| 7 | Şarj | `EARSIVFATURA` / e-Fatura | `SARJ` | Elektrikli araç şarj hizmeti | Kanala göre | ✅ (2026-09-20, EBLG-71) |
-| 8 | Şarjanlık | `EARSIVFATURA` / e-Fatura | `SARJANLIK` | Şarj ünitesi/işletmecilik | Kanala göre | ✅ (2026-09-20, EBLG-71) |
+| 7 | Şarj | `ENERJI` (e-Arşiv'de `EARSIVFATURA`) | `SARJ` | Elektrikli araç şarj hizmeti | Kanala göre | ✅ (2026-09-20, EBLG-71; K072026000000078, SNC2026000000020) |
+| 8 | Şarjanlık | `ENERJI` (e-Arşiv'de `EARSIVFATURA`) | `SARJANLIK` | Şarj ünitesi/işletmecilik | Kanala göre | ✅ (2026-09-20, EBLG-71; K072026000000079) |
 | 9 | İhraç kayıtlı | TEMEL/TICARI | IHRACKAYITLI | İhracatçıya ihraç kaydıyla teslim | Profile göre | ✅ (EBLG-60) |
 | 10 | SGK | `TEMELFATURA` (zorunlu) | `SGK` | Alıcı Sosyal Güvenlik Kurumu (VKN 7750409379) | Yok | ✅ (2026-09-20, EBLG-70) |
 
@@ -190,6 +190,7 @@ belge e-Arşiv'e düşürülmez, gönderim durur.
 
 | Alan | UBL | Zorunlu | Durum |
 |---|---|---|---|
+| Profil `ENERJI` (e-Arşiv'de `EARSIVFATURA`) | `ProfileID` | Evet | ✅ NES TEMELFATURA+SARJ'ı reddediyor (2026-09-20 bulgusu) |
 | Fatura tipi `SARJ` | `InvoiceTypeCode` | Evet | ✅ stok kartından türer (EBLG-71) |
 | Alıcı araç plakası | `AccountingCustomerParty/PartyIdentification` schemeID="PLAKA" | Evet | ✅ sihirbazda girilir; burada plaka kuralı gevşektir (il kodu aranmaz) |
 | Şarj başlangıç tarihi/saati, bitiş tarihi/saati | `cac:InvoicePeriod` (StartDate/StartTime/EndDate/EndTime) | Evet | ✅ sihirbazda girilir |
@@ -210,7 +211,7 @@ ISTISNA, TEVKIFAT, TEVKIFATIADE, IADE, IHRACKAYITLI).
 
 | Alan | UBL | Zorunlu | Durum |
 |---|---|---|---|
-| Profil `IDIS` (e-İrsaliyede `IDISIRSALIYE`) | `ProfileID` | Evet | ✅ sevkiyat no girilince (EBLG-72) |
+| Profil `IDIS` (e-İrsaliyede `IDISIRSALIYE`) | `ProfileID` | Evet | ✅ sevkiyat no girilince (EBLG-72); K072026000000080 ve GBZ2026000800009 kabul edildi |
 | Sevkiyat numarası (`SE-`/`ES-` + 7 rakam) | Satıcı `PartyIdentification` schemeID="SEVKIYATNO" | Evet | ✅ fatura formunda / taşıma panelinde |
 | Etiket numarası (2 harf + 7 rakam) | `Item/AdditionalItemIdentification` schemeID="ETIKETNO" | Evet (her satır) | ✅ satırda girilir |
 
