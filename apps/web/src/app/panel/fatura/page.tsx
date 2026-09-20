@@ -12,7 +12,7 @@ import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyal
 import { FaturaEkPaneli } from "@/components/fatura-ek-paneli";
 import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
-import { bugunTR, faturaHesapla, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, senaryoHatalari, senaryoUblKodu, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
+import { bugunTR, faturaHesapla, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, senaryoHatalari, senaryoUblKodu, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -238,6 +238,16 @@ interface EbelgeWizardBilgisi {
     araciKurum: { vkn?: string | null; etiket?: string | null; unvan?: string | null };
     engeller: { alan: string; mesaj: string }[];
   };
+  /** SGK faturası: alıcının VKN'si SGK'nınki (EBLG-70). */
+  sgk?: {
+    ilaveFaturaTipi: string | null;
+    mukellefKodu: string | null;
+    mukellefAdi: string | null;
+    dosyaNo: string | null;
+    donemBaslangic: string | null;
+    donemBitis: string | null;
+    engeller: { alan: string; mesaj: string }[];
+  };
   /** KAMU senaryosu: alıcı listede KAMU ya da kartında işaretli. */
   kamu?: {
     kaynak: "liste" | "kart";
@@ -270,6 +280,7 @@ const SENARYO_ADLARI: Record<FaturaSenaryosu, string> = {
   istisna: "İstisna",
   ihrackayitli: "İhraç kayıtlı",
   ozelmatrah: "Özel matrah",
+  sgk: "SGK",
 };
 
 /** BelgeDurum enum'u (EBLG-04). */
@@ -390,6 +401,7 @@ export default function FaturaSayfasi() {
       elleTarih: string;
     };
     kamu: { harcamaBirimiVkn: string; harcamaBirimiAdi: string; iban: string };
+    sgk: { ilaveFaturaTipi: string; mukellefKodu: string; mukellefAdi: string; dosyaNo: string; donemBaslangic: string; donemBitis: string };
     yolcu: {
       isaretli: boolean;
       ad: string; soyad: string; uyruk: string; pasaportNo: string; pasaportTarihi: string;
@@ -1102,6 +1114,14 @@ export default function FaturaSayfasi() {
           harcamaBirimiAdi: bilgi.kamu?.harcamaBirimiAdi ?? "",
           iban: bilgi.kamu?.iban ?? "",
         },
+        sgk: {
+          ilaveFaturaTipi: bilgi.sgk?.ilaveFaturaTipi ?? "",
+          mukellefKodu: bilgi.sgk?.mukellefKodu ?? "",
+          mukellefAdi: bilgi.sgk?.mukellefAdi ?? "",
+          dosyaNo: bilgi.sgk?.dosyaNo ?? "",
+          donemBaslangic: bilgi.sgk?.donemBaslangic ?? "",
+          donemBitis: bilgi.sgk?.donemBitis ?? "",
+        },
         adim: 1,
         onizleme: null,
       });
@@ -1156,6 +1176,16 @@ export default function FaturaSayfasi() {
                   bankaHesapNo: w.yolcu.bankaHesapNo || null, bankaAdi: w.yolcu.bankaAdi || null,
                 },
                 araciKurum: { vkn: w.yolcu.araciKurumVkn || null, etiket: w.yolcu.araciKurumEtiket || null, unvan: w.yolcu.araciKurumUnvan || null },
+              }
+            : undefined,
+          sgk: w.bilgi.sgk
+            ? {
+                ilaveFaturaTipi: w.sgk.ilaveFaturaTipi || null,
+                mukellefKodu: w.sgk.mukellefKodu || null,
+                mukellefAdi: w.sgk.mukellefAdi || null,
+                dosyaNo: w.sgk.dosyaNo || null,
+                donemBaslangic: w.sgk.donemBaslangic || null,
+                donemBitis: w.sgk.donemBitis || null,
               }
             : undefined,
           kamu: w.bilgi.kamu
@@ -1244,6 +1274,7 @@ export default function FaturaSayfasi() {
     : [];
   // KAMU senaryosu: harcama birimi ve IBAN panelde seçilenlerle denetlenir.
   const kamuEksikleri = ebelgeWizard?.bilgi.kamu ? kamuEngelleri(ebelgeWizard.kamu) : [];
+  const sgkEksikleri = ebelgeWizard?.bilgi.sgk ? sgkEngelleri(ebelgeWizard.sgk) : [];
   /**
    * Yolcu beraberi eksikleri panelde girilenlerle, sunucudaki kuralla hesaplanır.
    * İşaret konmamışsa tek eksik, VKN'si olmayan alıcıdır: o belge ancak yolcu
@@ -1272,7 +1303,7 @@ export default function FaturaSayfasi() {
         : []
     : [];
   const wizardGonderilebilir = Boolean(
-    ebelgeWizard?.bilgi.gonderilebilir && ihracatEngelleri.length === 0 && internetEngelleri.length === 0 && iadeEksikleri.length === 0 && kamuEksikleri.length === 0 && yolcuEksikleri.length === 0,
+    ebelgeWizard?.bilgi.gonderilebilir && ihracatEngelleri.length === 0 && internetEngelleri.length === 0 && iadeEksikleri.length === 0 && kamuEksikleri.length === 0 && sgkEksikleri.length === 0 && yolcuEksikleri.length === 0,
   );
 
   async function odemeDetayAc(id: string) {
@@ -2138,6 +2169,57 @@ export default function FaturaSayfasi() {
                     <div className="approval-impact is-warning">
                       <strong>Yolcu beraberi faturasında eksik olanlar:</strong>
                       <ul>{yolcuEksikleri.map((e, i) => <li key={i}>{e.mesaj}</li>)}</ul>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+            {ebelgeWizard.bilgi.sgk && (() => {
+              const sgk = ebelgeWizard.sgk;
+              const sgkGuncelle = (degisiklik: Partial<typeof sgk>) => setEbelgeWizard({ ...ebelgeWizard, sgk: { ...sgk, ...degisiklik } });
+              const tip = ilaveFaturaTipiBul(sgk.ilaveFaturaTipi);
+              return (
+                <>
+                  <strong>SGK faturası</strong>
+                  <p className="muted" style={{ margin: 0 }}>
+                    Alıcı Sosyal Güvenlik Kurumu (VKN {SGK_VKN}); belge SGK tipiyle ve Temel Fatura senaryosuyla düzenlenir.
+                    Sabit alanların varsayılanı Ayarlar › Firma'da durur.
+                  </p>
+                  <Field label="İlave fatura tipi *">
+                    <Select value={sgk.ilaveFaturaTipi} onChange={(e) => sgkGuncelle({ ilaveFaturaTipi: e.target.value })}>
+                      <option value="">Seçin…</option>
+                      {ILAVE_FATURA_TIPLERI.map((t) => <option key={t.kod} value={t.kod}>{t.kod} — {t.ad}</option>)}
+                    </Select>
+                  </Field>
+                  {tip?.mukellefKoduEtiketi && (
+                    <Field label={`${tip.mukellefKoduEtiketi} *`}>
+                      <Input value={sgk.mukellefKodu} maxLength={40} placeholder={SGK_TANIMSIZ_KOD} onChange={(e) => sgkGuncelle({ mukellefKodu: e.target.value })} />
+                    </Field>
+                  )}
+                  {tip?.mukellefAdiEtiketi && (
+                    <Field label={`${tip.mukellefAdiEtiketi} *`}>
+                      <Input value={sgk.mukellefAdi} maxLength={200} onChange={(e) => sgkGuncelle({ mukellefAdi: e.target.value })} />
+                    </Field>
+                  )}
+                  {tip?.dosyaNoEtiketi && (
+                    <Field label={`${tip.dosyaNoEtiketi} *`}>
+                      <Input value={sgk.dosyaNo} maxLength={40} placeholder={SGK_TANIMSIZ_KOD} onChange={(e) => sgkGuncelle({ dosyaNo: e.target.value })} />
+                    </Field>
+                  )}
+                  {tip?.donem && (
+                    <>
+                      <Field label="Dönem başlangıcı *">
+                        <Input type="date" value={sgk.donemBaslangic} onChange={(e) => sgkGuncelle({ donemBaslangic: e.target.value })} />
+                      </Field>
+                      <Field label="Dönem bitişi *">
+                        <Input type="date" value={sgk.donemBitis} onChange={(e) => sgkGuncelle({ donemBitis: e.target.value })} />
+                      </Field>
+                    </>
+                  )}
+                  {sgkEksikleri.length > 0 && (
+                    <div className="approval-impact is-warning">
+                      <strong>SGK faturasında eksik olanlar:</strong>
+                      <ul>{sgkEksikleri.map((e) => <li key={e.alan}>{e.mesaj}</li>)}</ul>
                     </div>
                   )}
                 </>

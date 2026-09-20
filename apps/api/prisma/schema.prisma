@@ -121,6 +121,11 @@ model Tenant {
   araciKurumVkn    String? @map("araci_kurum_vkn")
   araciKurumEtiket String? @map("araci_kurum_etiket")
   araciKurumUnvan  String? @map("araci_kurum_unvan")
+  /// SGK faturası: firmanın hangi grupta olduğu ve Kurum'da tanımlı kodu/adı.
+  /// Sağlık hizmeti sunucusunda sabittir, her faturada tekrar yazılmaz.
+  sgkIlaveFaturaTipi String? @map("sgk_ilave_fatura_tipi")
+  sgkMukellefKodu    String? @map("sgk_mukellef_kodu")
+  sgkMukellefAdi     String? @map("sgk_mukellef_adi")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -1990,6 +1995,7 @@ enum FaturaSenaryo {
   istisna
   ihrackayitli
   ozelmatrah
+  sgk
 }
 
 /// e-Fatura profili (FTR-19). TICARIFATURA alıcıya 8 gün içinde kabul/ret
@@ -2102,6 +2108,14 @@ model Fatura {
   ozelMatrahKodu       String?         @map("ozel_matrah_kodu")
   ozelMatrahTutari     Decimal?        @map("ozel_matrah_tutari") @db.Decimal(15, 2)
   ozelMatrahOrani      Decimal?        @map("ozel_matrah_orani") @db.Decimal(5, 2)
+  /// SGK faturası: ilave fatura tipi, Kurum'daki kod/ad, dosya no ve dönem.
+  /// Alıcının VKN'si SGK'nınki olduğunda sihirbazda toplanır.
+  sgkIlaveFaturaTipi   String?         @map("sgk_ilave_fatura_tipi")
+  sgkMukellefKodu      String?         @map("sgk_mukellef_kodu")
+  sgkMukellefAdi       String?         @map("sgk_mukellef_adi")
+  sgkDosyaNo           String?         @map("sgk_dosya_no")
+  sgkDonemBaslangic    DateTime?       @map("sgk_donem_baslangic") @db.Date
+  sgkDonemBitis        DateTime?       @map("sgk_donem_bitis") @db.Date
   /// Yolcu beraberi (tax-free): yolcu ve aracı kurum bilgisi; boşsa değildir.
   /// Biçim `YolcuBeraberiBilgisi` (packages/shared/src/yolcu-beraberi.ts).
   yolcuBeraberi        Json?           @map("yolcu_beraberi")

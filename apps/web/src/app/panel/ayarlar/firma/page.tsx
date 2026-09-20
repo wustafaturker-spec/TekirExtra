@@ -3,7 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiHata, tokenAl, tokenYaz } from "@/lib/api";
-import { Alert, Badge, Button, ButtonLabel, Card, Field, Input, PageHeader } from "@/components/ui";
+import { Alert, Badge, Button, ButtonLabel, Card, Field, Input, PageHeader, Select } from "@/components/ui";
+import { ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, SGK_TANIMSIZ_KOD } from "@tekirextra/shared";
 
 interface Logo {
   id: string;
@@ -32,6 +33,9 @@ interface Firma {
   araciKurumVkn: string | null;
   araciKurumEtiket: string | null;
   araciKurumUnvan: string | null;
+  sgkIlaveFaturaTipi: string | null;
+  sgkMukellefKodu: string | null;
+  sgkMukellefAdi: string | null;
   /** e-Belge gönderimini durduran eksikler; boşsa gönderilebilir. */
   ebelgeEksikleri: string[];
   abonelik: {
@@ -43,7 +47,7 @@ interface Firma {
   } | null;
 }
 
-const ILETISIM_ALANLARI = ["adres", "ilce", "il", "postaKodu", "telefon", "eposta", "webSitesi", "mersisNo", "ticaretSicilNo", "araciKurumVkn", "araciKurumEtiket", "araciKurumUnvan"] as const;
+const ILETISIM_ALANLARI = ["adres", "ilce", "il", "postaKodu", "telefon", "eposta", "webSitesi", "mersisNo", "ticaretSicilNo", "araciKurumVkn", "araciKurumEtiket", "araciKurumUnvan", "sgkIlaveFaturaTipi", "sgkMukellefKodu", "sgkMukellefAdi"] as const;
 type IletisimAlani = (typeof ILETISIM_ALANLARI)[number];
 const BOS_ILETISIM = Object.fromEntries(ILETISIM_ALANLARI.map((a) => [a, ""])) as Record<IletisimAlani, string>;
 const iletisimOku = (f: Firma) => Object.fromEntries(ILETISIM_ALANLARI.map((a) => [a, f[a] ?? ""])) as Record<IletisimAlani, string>;
@@ -57,6 +61,8 @@ export default function FirmaAyarlariSayfasi() {
   const [vergiDairesi, setVergiDairesi] = useState("");
   const [iletisim, setIletisim] = useState<Record<IletisimAlani, string>>(BOS_ILETISIM);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  // Mükellef kodu/adı yalnız sağlık gruplarında istenir; etiketleri de gruptan gelir.
+  const sgkTipi = ilaveFaturaTipiBul(iletisim.sgkIlaveFaturaTipi);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [islemde, setIslemde] = useState(false);
@@ -330,6 +336,31 @@ export default function FirmaAyarlariSayfasi() {
             <div className="row">
               <div style={{ flex: 1, minWidth: 260 }}>
                 <Field label="Aracı kurum unvanı"><Input value={iletisim.araciKurumUnvan} onChange={(e) => setIletisim({ ...iletisim, araciKurumUnvan: e.target.value })} maxLength={200} /></Field>
+              </div>
+            </div>
+            <h3 style={{ margin: "1rem 0 0", fontSize: "0.95rem" }}>SGK faturası</h3>
+            <p className="muted" style={{ margin: 0 }}>
+              Sosyal Güvenlik Kurumu'na kesilen faturada firmanın hangi grupta olduğu ve Kurum'da tanımlı kodu/adı bildirilir.
+              Sağlık hizmeti sunucusunda bu bilgiler sabittir; burada varsayılanı durur, dosya no ve dönem her faturada sihirbazda girilir.
+            </p>
+            <div className="row">
+              <div style={{ flex: 1, minWidth: 240 }}>
+                <Field label="İlave fatura tipi">
+                  <Select value={iletisim.sgkIlaveFaturaTipi} onChange={(e) => setIletisim({ ...iletisim, sgkIlaveFaturaTipi: e.target.value })}>
+                    <option value="">Tanımsız</option>
+                    {ILAVE_FATURA_TIPLERI.map((t) => <option key={t.kod} value={t.kod}>{t.kod} — {t.ad}</option>)}
+                  </Select>
+                </Field>
+              </div>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <Field label={sgkTipi?.mukellefKoduEtiketi ?? "Kurum'daki mükellef kodu"}>
+                  <Input value={iletisim.sgkMukellefKodu} onChange={(e) => setIletisim({ ...iletisim, sgkMukellefKodu: e.target.value })} maxLength={40} placeholder={SGK_TANIMSIZ_KOD} disabled={!sgkTipi?.mukellefKoduEtiketi} />
+                </Field>
+              </div>
+              <div style={{ flex: 2, minWidth: 240 }}>
+                <Field label={sgkTipi?.mukellefAdiEtiketi ?? "Kurum'daki mükellef adı"}>
+                  <Input value={iletisim.sgkMukellefAdi} onChange={(e) => setIletisim({ ...iletisim, sgkMukellefAdi: e.target.value })} maxLength={200} disabled={!sgkTipi?.mukellefAdiEtiketi} />
+                </Field>
               </div>
             </div>
             <div>

@@ -878,3 +878,60 @@ describe("faturaUblUret — özel matrah", () => {
     expect(xml).toContain('<cbc:PayableAmount currencyID="TRY">95500.00</cbc:PayableAmount>');
   });
 });
+
+describe("faturaUblUret — SGK faturası", () => {
+  const sgkFaturasi = (ek: Record<string, unknown> = {}) => ({
+    id: "13131313-1313-4131-8131-131313131313",
+    no: "TKR2026000000011",
+    tarih: new Date("2026-09-20T12:00:00Z"),
+    tip: "satis", senaryo: "sgk", efaturaProfili: "ticari",
+    sgkIlaveFaturaTipi: "SAGLIK_ECZ", sgkMukellefKodu: "15425689", sgkMukellefAdi: "DENEME ECZANESİ",
+    sgkDosyaNo: "798564",
+    sgkDonemBaslangic: new Date("2026-09-01T00:00:00Z"), sgkDonemBitis: new Date("2026-09-30T00:00:00Z"),
+    dovizCinsi: "TRY", kur: 1,
+    toplamKdv: 8, toplamMatrah: 100, toplamBrut: 100, genelToplam: 108,
+    toplamSatirIskontosu: 0, genelIskontoToplam: 0,
+    cari: { vknTckn: "7750409379", unvan: "SOSYAL GÜVENLİK KURUMU BAŞKANLIĞI", adresler: [] },
+    satirlar: [{
+      miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 8, kdvOrani: 8,
+      gibIstisnaKodu: null, birimFiyat: 100, birim: "adet",
+      stok: { kod: "ILAC-1", ad: "Reçeteli ilaç" },
+    }],
+    ...ek,
+  }) as never;
+  const xml = faturaUblUret(sgkFaturasi(), { unvan: "Deneme Eczanesi", vkn: "9876543210" }, { tur: "efatura" });
+
+  it("tipi SGK yazar ve profili Temel Fatura'ya çeker", () => {
+    // Kılavuz: "senaryo Temel Fatura Senaryosu üzerinden yürütülecektir".
+    expect(xml).toContain("<cbc:InvoiceTypeCode>SGK</cbc:InvoiceTypeCode>");
+    expect(xml).toContain("<cbc:ProfileID>TEMELFATURA</cbc:ProfileID>");
+  });
+
+  it("ilave fatura tipini hesap koduna, dönemi fatura dönemine yazar", () => {
+    expect(xml).toContain("<cbc:AccountingCost>SAGLIK_ECZ</cbc:AccountingCost>");
+    expect(xml).toContain("<cbc:StartDate>2026-09-01</cbc:StartDate>");
+    expect(xml).toContain("<cbc:EndDate>2026-09-30</cbc:EndDate>");
+  });
+
+  it("mükellef kodunu, adını ve dosya noyu ayrı ilave doküman referanslarına yazar", () => {
+    expect(xml).toContain("<cbc:DocumentTypeCode>MUKELLEF_KODU</cbc:DocumentTypeCode>");
+    expect(xml).toContain("<cbc:DocumentType>15425689</cbc:DocumentType>");
+    expect(xml).toContain("<cbc:DocumentTypeCode>MUKELLEF_ADI</cbc:DocumentTypeCode>");
+    expect(xml).toContain("<cbc:DocumentType>DENEME ECZANESİ</cbc:DocumentType>");
+    expect(xml).toContain("<cbc:DocumentTypeCode>DOSYA_NO</cbc:DocumentTypeCode>");
+    expect(xml).toContain("<cbc:DocumentType>798564</cbc:DocumentType>");
+    expect(xml).toContain("<cbc:DocumentDescription>Eczane sicil numarası</cbc:DocumentDescription>");
+  });
+
+  it("gruba girmeyen alanları yazmaz", () => {
+    // Mal/hizmet alımında mükellef kodu/adı ve dönem boş kalmalıdır.
+    const malHizmet = faturaUblUret(
+      sgkFaturasi({ sgkIlaveFaturaTipi: "MAL_HIZMET", sgkDosyaNo: "1136" }),
+      { unvan: "Deneme A.Ş.", vkn: "9876543210" }, { tur: "efatura" },
+    );
+    expect(malHizmet).toContain("<cbc:AccountingCost>MAL_HIZMET</cbc:AccountingCost>");
+    expect(malHizmet).toContain("<cbc:DocumentTypeCode>DOSYA_NO</cbc:DocumentTypeCode>");
+    expect(malHizmet).not.toContain("MUKELLEF_KODU");
+    expect(malHizmet).not.toContain("<cac:InvoicePeriod>");
+  });
+});

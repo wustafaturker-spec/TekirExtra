@@ -82,6 +82,17 @@ export const ebelgeGonderSemasi = z.object({
       iban: z.string().max(40).nullable().optional(),
     })
     .optional(),
+  /** SGK faturası: grup, Kurum'daki kod/ad, dosya no ve fatura dönemi (EBLG-70). */
+  sgk: z
+    .object({
+      ilaveFaturaTipi: z.string().max(20).nullable().optional(),
+      mukellefKodu: z.string().max(40).nullable().optional(),
+      mukellefAdi: z.string().max(200).nullable().optional(),
+      dosyaNo: z.string().max(40).nullable().optional(),
+      donemBaslangic: z.string().max(10).nullable().optional(),
+      donemBitis: z.string().max(10).nullable().optional(),
+    })
+    .optional(),
   /**
    * EBLG-58: alış iadesinde iade edilen faturalar. Listeden seçilen fatura
    * kimliğiyle gelir; sistemde olmayan fatura numarası ve tarihiyle girilir.

@@ -32,6 +32,7 @@ tablo ikisini birlikte gösterir.
 | 7 | Şarj | `EARSIVFATURA` / e-Fatura | `SARJ` | Elektrikli araç şarj hizmeti | Kanala göre | ❌ |
 | 8 | Şarjanlık | `EARSIVFATURA` / e-Fatura | `SARJANLIK` | Şarj ünitesi/işletmecilik | Kanala göre | ❌ |
 | 9 | İhraç kayıtlı | TEMEL/TICARI | IHRACKAYITLI | İhracatçıya ihraç kaydıyla teslim | Profile göre | ✅ (EBLG-60) |
+| 10 | SGK | `TEMELFATURA` (zorunlu) | `SGK` | Alıcı Sosyal Güvenlik Kurumu (VKN 7750409379) | Yok | ✅ (2026-09-20, EBLG-70) |
 
 **Kanal kararı sihirbaza değil, kurala aittir** (tasarım belgesi §3.1): alıcı
 yurt dışıysa → İhracat; yurt içi ve GİB'de kayıtlıysa → e-Fatura (ticari/temel

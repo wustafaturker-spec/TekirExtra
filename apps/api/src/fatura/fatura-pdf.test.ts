@@ -190,3 +190,28 @@ describe("faturaPdfHtml — özel matrah", () => {
     expect(html).toContain("KDV Matrahı");
   });
 });
+
+describe("faturaPdfHtml — SGK faturası", () => {
+  it("grubu, Kurum'daki kodu/adını, dosya noyu ve dönemi belge altına yazar", () => {
+    const html = faturaPdfHtml({
+      ...fatura,
+      sgkIlaveFaturaTipi: "SAGLIK_ECZ", sgkMukellefKodu: "15425689", sgkMukellefAdi: "DENEME ECZANESİ",
+      sgkDosyaNo: "798564", sgkDonemBaslangic: "2026-09-01", sgkDonemBitis: "2026-09-30",
+    }, firma);
+    expect(html).toContain("SAGLIK_ECZ — Eczane");
+    expect(html).toContain("Eczane sicil numarası: <strong>15425689</strong>");
+    expect(html).toContain("Evrak no: <strong>798564</strong>");
+    expect(html).toContain("01.09.2026 – 30.09.2026");
+  });
+
+  it("gruba girmeyen alanları basmaz", () => {
+    const html = faturaPdfHtml({ ...fatura, sgkIlaveFaturaTipi: "MAL_HIZMET", sgkDosyaNo: "1136", sgkMukellefKodu: "yazılmamalı" }, firma);
+    expect(html).toContain("MAL_HIZMET — Mal / hizmet alımı");
+    expect(html).not.toContain("yazılmamalı");
+    expect(html).not.toContain("Dönem:");
+  });
+
+  it("SGK dışındaki faturada blok yoktur", () => {
+    expect(faturaPdfHtml(fatura, firma)).not.toContain("SGK faturası");
+  });
+});

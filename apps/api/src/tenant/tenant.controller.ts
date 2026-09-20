@@ -1,4 +1,4 @@
-import { firmaEbelgeEksikleri } from "@tekirextra/shared";
+import { firmaEbelgeEksikleri, ILAVE_FATURA_TIPLERI } from "@tekirextra/shared";
 import {
   BadRequestException,
   Body,
@@ -42,6 +42,10 @@ const firmaGuncelleSemasi = z.object({
   araciKurumVkn: z.union([z.string().trim().regex(/^\d{10}$/, "Aracı kurum VKN'si 10 hanedir"), z.literal("")]).transform((d) => d || null).nullable().optional(),
   araciKurumEtiket: z.union([z.string().trim().regex(/^urn:mail:\S+@\S+$/, "Etiket urn:mail:…@… biçiminde olmalıdır"), z.literal("")]).transform((d) => d || null).nullable().optional(),
   araciKurumUnvan: serbestMetin(200),
+  // SGK faturası: firmanın grubu ve Kurum'da tanımlı kodu/adı (EBLG-70).
+  sgkIlaveFaturaTipi: z.union([z.enum(ILAVE_FATURA_TIPLERI.map((t) => t.kod) as [string, ...string[]]), z.literal("")]).transform((d) => d || null).nullable().optional(),
+  sgkMukellefKodu: serbestMetin(40),
+  sgkMukellefAdi: serbestMetin(200),
 });
 
 /** Firma ekranının okuduğu alanlar; e-belge eksikleri de bununla hesaplanır. */
@@ -49,6 +53,7 @@ const FIRMA_ALANLARI = {
   id: true, unvan: true, vkn: true, vergiDairesi: true,
   adres: true, ilce: true, il: true, postaKodu: true, telefon: true, eposta: true, webSitesi: true, mersisNo: true, ticaretSicilNo: true,
   araciKurumVkn: true, araciKurumEtiket: true, araciKurumUnvan: true,
+  sgkIlaveFaturaTipi: true, sgkMukellefKodu: true, sgkMukellefAdi: true,
   abonelik: { select: { planKodu: true, durum: true, faturaEpostasi: true, donemBaslangici: true, donemSonu: true } },
 } as const;
 

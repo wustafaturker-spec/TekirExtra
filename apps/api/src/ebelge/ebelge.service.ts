@@ -11,7 +11,7 @@ import {
 } from "@nestjs/common";
 import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
 import type { BelgeDurumSonuc, EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
-import { type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, YOLCU_BERABER_POSTA_KUTUSU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu } from "@tekirextra/shared";
+import { type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, YOLCU_BERABER_POSTA_KUTUSU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu, sgkEngelleri, sgkFaturasiMi, SGK_VKN } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { BildirimService } from "../bildirimler/bildirim.service";
@@ -211,6 +211,20 @@ export class EbelgeService {
             iban: fatura.kamuIban ?? kamuHesaplari[0]?.iban ?? null,
           }
         : undefined;
+      // SGK faturası: karar alıcının VKN'sinden gelir. Sabit alanların
+      // (grup, Kurum'daki kod ve ad) varsayılanı firma kartındadır; dosya no
+      // ve dönem her faturada sihirbazda girilir (EBLG-70).
+      const sgkMu = sgkFaturasiMi(fatura.cari.vknTckn) && fatura.tip === "satis";
+      const sgkBilgisi = sgkMu
+        ? {
+            ilaveFaturaTipi: fatura.sgkIlaveFaturaTipi ?? firma?.sgkIlaveFaturaTipi ?? null,
+            mukellefKodu: fatura.sgkMukellefKodu ?? firma?.sgkMukellefKodu ?? null,
+            mukellefAdi: fatura.sgkMukellefAdi ?? firma?.sgkMukellefAdi ?? null,
+            dosyaNo: fatura.sgkDosyaNo ?? null,
+            donemBaslangic: fatura.sgkDonemBaslangic ? fatura.sgkDonemBaslangic.toISOString().slice(0, 10) : null,
+            donemBitis: fatura.sgkDonemBitis ? fatura.sgkDonemBitis.toISOString().slice(0, 10) : null,
+          }
+        : undefined;
       return {
         // Bağlantı, kimlik ve tarih kontrolleri geçti. Türe özel eksikler
         // (ihracat, internet satışı) kendi listelerinde döner: değerleri
@@ -286,6 +300,10 @@ export class EbelgeService {
               engeller: kamuEngelleri(kamuBilgisi),
             }
           : undefined,
+        // SGK faturası: ilave fatura tipi, Kurum'daki kod/ad, dosya no ve dönem
+        // sihirbazın Bilgiler adımında toplanır; gönderim aynı kuralı
+        // faturadaki değerlerle yeniden uygular.
+        sgk: sgkBilgisi ? { ...sgkBilgisi, engeller: sgkEngelleri(sgkBilgisi) } : undefined,
         // Yolcu beraberi (tax-free): işaret sihirbazda konur, yolcu bilgisi
         // faturaya yazılır. Aracı kurum firma kartındaki varsayılandan gelir.
         yolcuBeraberi: yolcuOlabilir
@@ -309,6 +327,8 @@ export class EbelgeService {
           .filter((satir) => !birimTanindiMi(satir.birim)),
         not: yolcu.yolcuBeraberi
           ? "Yolcu beraberi satış: belge Gümrük Bakanlığı'na gider, gümrük çıkışında onaylanır ve KDV iadesini aracı kurum yapar. Satış iptali/iadesi ayrıca GİB'in Tax-Free Satış İptal/İade Bildirim Portalı'ndan bildirilmelidir."
+          : sgkMu
+          ? "Alıcı Sosyal Güvenlik Kurumu olduğu için belge SGK tipiyle ve Temel Fatura senaryosuyla düzenlenir: ilave fatura tipi, Kurum'daki mükellef kodu/adı, dosya no ve dönem belgeye yazılır."
           : kamuMu
           ? "Alıcı kamu idaresi olduğu için belge KAMU senaryosuyla düzenlenir: ödemeyi yapacak harcama birimi ve ödemenin yapılacağı IBAN belgeye yazılır."
           : ihracat.ihracat
@@ -408,6 +428,28 @@ export class EbelgeService {
           kamuHarcamaBirimiVkn: bilgi.harcamaBirimiVkn?.trim() || null,
           kamuHarcamaBirimiAdi: bilgi.harcamaBirimiAdi?.trim() || null,
           kamuIban: bilgi.iban ? ibanNormalize(bilgi.iban) : null,
+        },
+      });
+      if (sonuc.count !== 1) throw new NotFoundException("Kesinleşmiş fatura bulunamadı");
+    });
+  }
+
+  /** SGK faturası: sihirbazda girilen grup, kod/ad, dosya no ve dönem faturaya yazılır. */
+  async sgkBilgisiniKaydet(faturaId: string, bilgi: {
+    ilaveFaturaTipi?: string | null; mukellefKodu?: string | null; mukellefAdi?: string | null;
+    dosyaNo?: string | null; donemBaslangic?: string | null; donemBitis?: string | null;
+  }) {
+    const { tenantId } = aktifBaglam();
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const sonuc = await tx.fatura.updateMany({
+        where: { id: faturaId, durum: "kesin" },
+        data: {
+          sgkIlaveFaturaTipi: bilgi.ilaveFaturaTipi?.trim() || null,
+          sgkMukellefKodu: bilgi.mukellefKodu?.trim() || null,
+          sgkMukellefAdi: bilgi.mukellefAdi?.trim() || null,
+          sgkDosyaNo: bilgi.dosyaNo?.trim() || null,
+          sgkDonemBaslangic: bilgi.donemBaslangic ? new Date(`${bilgi.donemBaslangic}T00:00:00.000Z`) : null,
+          sgkDonemBitis: bilgi.donemBitis ? new Date(`${bilgi.donemBitis}T00:00:00.000Z`) : null,
         },
       });
       if (sonuc.count !== 1) throw new NotFoundException("Kesinleşmiş fatura bulunamadı");
@@ -553,6 +595,25 @@ export class EbelgeService {
       const engeller = kamuEngelleri({ harcamaBirimiVkn: f.kamuHarcamaBirimiVkn, harcamaBirimiAdi: f.kamuHarcamaBirimiAdi, iban: f.kamuIban });
       if (engeller.length) throw new BadRequestException(engeller.map((e) => e.mesaj).join("; "));
       kamuBilgisi = { harcamaBirimiVkn: f.kamuHarcamaBirimiVkn!.trim(), harcamaBirimiAdi: f.kamuHarcamaBirimiAdi!.trim(), iban: f.kamuIban! };
+    }
+
+    // SGK faturası: alıcının VKN'si SGK'nınki ise belge SGK tipiyle gider ve
+    // ek alanları eksiksiz olmalıdır. SGK e-Fatura mükellefidir; e-Arşiv'e
+    // düşen bir belge SGK olamaz.
+    if (sgkFaturasiMi(hazirlik.fatura.cari.vknTckn) && hazirlik.fatura.tip === "satis") {
+      if (tur !== "efatura") {
+        throw new BadRequestException(`Alıcı SGK (VKN ${SGK_VKN}) ancak GİB e-Fatura listesinde bulunamadı; SGK faturası yalnız e-Fatura ile gönderilir`);
+      }
+      const f = hazirlik.fatura;
+      const engeller = sgkEngelleri({
+        ilaveFaturaTipi: f.sgkIlaveFaturaTipi,
+        mukellefKodu: f.sgkMukellefKodu,
+        mukellefAdi: f.sgkMukellefAdi,
+        dosyaNo: f.sgkDosyaNo,
+        donemBaslangic: f.sgkDonemBaslangic?.toISOString(),
+        donemBitis: f.sgkDonemBitis?.toISOString(),
+      });
+      if (engeller.length) throw new BadRequestException(engeller.map((e) => e.mesaj).join("; "));
     }
 
     // Otomatik numaralandıran seride UBL'e tam numara değil yalnızca seri

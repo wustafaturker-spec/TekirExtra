@@ -1,7 +1,7 @@
 import { type IstisnaKodu, KDV_ISTISNA_KODLARI, ihracKayitliKoduBul, istisnaKoduBul, tevkifatKoduBul, tevkifatOraniAyristir } from "./gib-kodlari";
 
 /** UBL'e `InvoiceTypeCode` olarak yazılan GİB senaryosu (FTR-16). */
-export type FaturaSenaryosu = "satis" | "iade" | "tevkifat" | "tevkifatiade" | "istisna" | "ihrackayitli" | "ozelmatrah";
+export type FaturaSenaryosu = "satis" | "iade" | "tevkifat" | "tevkifatiade" | "istisna" | "ihrackayitli" | "ozelmatrah" | "sgk";
 
 /** GİB'in `InvoiceTypeCode` kod listesindeki karşılıkları. */
 const UBL_KARSILIGI: Record<FaturaSenaryosu, string> = {
@@ -12,6 +12,7 @@ const UBL_KARSILIGI: Record<FaturaSenaryosu, string> = {
   istisna: "ISTISNA",
   ihrackayitli: "IHRACKAYITLI",
   ozelmatrah: "OZELMATRAH",
+  sgk: "SGK",
 };
 
 export function senaryoUblKodu(senaryo: FaturaSenaryosu): string {
@@ -52,7 +53,12 @@ export function faturaSenaryosuTuret(
   satirlar: SenaryoSatirGirdi[],
   ihracKayitliKodu?: string | null,
   ozelMatrahKodu?: string | null,
+  sgkAlicisi?: boolean,
 ): FaturaSenaryosu {
+  // SGK'ya kesilen satış faturası kendi tipiyle gider (SGK e-Fatura Teknik
+  // Doküman); karar alıcının VKN'sinden gelir, satırlardan değil. İstisna ve
+  // tevkifat kodları bu tipte de taşınabilir, tip değişmez.
+  if (sgkAlicisi && tip === "satis") return "sgk";
   // Özel matrah da faturada işaretlenir; satırlar KDV'siz olduğu için
   // satırlardan türetilemez (KDV, özel matrah üzerinden belge düzeyinde durur).
   if (ozelMatrahKodu && tip === "satis") return "ozelmatrah";

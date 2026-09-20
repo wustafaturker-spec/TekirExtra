@@ -4,6 +4,7 @@ import {
   YOLCU_BERABER_ISTISNA_KODU,
   YOLCU_BERABER_PROFILI,
   ihracKayitliKoduBul,
+  ilaveFaturaTipiBul,
   ozelMatrahKdvsi,
   ozelMatrahKoduBul,
   senaryoUblKodu,
@@ -87,6 +88,13 @@ export interface FaturaPdfVerisi {
   ozelMatrahKodu?: string | null;
   ozelMatrahTutari?: string | null;
   ozelMatrahOrani?: string | null;
+  /** SGK faturası: grup, Kurum'daki kod/ad, dosya no ve dönem (EBLG-70). */
+  sgkIlaveFaturaTipi?: string | null;
+  sgkMukellefKodu?: string | null;
+  sgkMukellefAdi?: string | null;
+  sgkDosyaNo?: string | null;
+  sgkDonemBaslangic?: string | null;
+  sgkDonemBitis?: string | null;
   /** Yolcu beraberi (tax-free): yolcu ve aracı kurum; boşsa değildir. */
   yolcuBeraberi?: { yolcu?: YolcuBilgisi | null; araciKurum?: AraciKurum | null } | null;
 }
@@ -128,6 +136,24 @@ function ozelMatrahBilgisi(f: FaturaPdfVerisi): string {
   const paraBirimi = f.dovizCinsi === "TRY" ? "TL" : f.dovizCinsi;
   return `<p style="margin-top:10px;font-size:9pt">Özel matrah (KDV Kanunu 23): <strong>${kacis(`${tanim.kod} — ${tanim.ad}`)}</strong><br>`
     + `KDV, satış bedelinin tamamı üzerinden değil özel matrah üzerinden hesaplanmıştır: matrah ${paraBicim(f.ozelMatrahTutari ?? "0")} ${paraBirimi}, oran %${sayiBicim(f.ozelMatrahOrani ?? "0")}, hesaplanan KDV ${paraBicim(kdv)} ${paraBirimi}.</p>`;
+}
+
+/**
+ * SGK belge altı bilgisi: Kurum faturayı bu alanlarla eşleştirir, alıcı da
+ * belgede görebilmelidir (SGK e-Fatura Teknik Doküman §3).
+ */
+function sgkBilgisi(f: FaturaPdfVerisi): string {
+  const tip = ilaveFaturaTipiBul(f.sgkIlaveFaturaTipi);
+  if (!tip) return "";
+  const satirlar = [
+    `İlave fatura tipi: <strong>${kacis(`${tip.kod} — ${tip.ad}`)}</strong>`,
+    tip.mukellefKoduEtiketi && f.sgkMukellefKodu ? `${kacis(tip.mukellefKoduEtiketi)}: <strong>${kacis(f.sgkMukellefKodu)}</strong>` : "",
+    tip.mukellefAdiEtiketi && f.sgkMukellefAdi ? `${kacis(tip.mukellefAdiEtiketi)}: <strong>${kacis(f.sgkMukellefAdi)}</strong>` : "",
+    tip.dosyaNoEtiketi && f.sgkDosyaNo ? `${kacis(tip.dosyaNoEtiketi)}: <strong>${kacis(f.sgkDosyaNo)}</strong>` : "",
+    tip.donem && f.sgkDonemBaslangic && f.sgkDonemBitis
+      ? `Dönem: <strong>${tarihBicim(f.sgkDonemBaslangic)} – ${tarihBicim(f.sgkDonemBitis)}</strong>` : "",
+  ].filter(Boolean);
+  return `<p style="margin-top:10px;font-size:9pt">SGK faturası<br>${satirlar.join("<br>")}</p>`;
 }
 
 /**
@@ -287,6 +313,7 @@ ${f.ebelge?.tur === "earsiv" && f.earsivGonderimSekli !== "kagit" ? `<p style="m
 ${ihracKayitliIbaresi(f.ihracKayitliKodu)}
 ${kamuBilgisi(f)}
 ${ozelMatrahBilgisi(f)}
+${sgkBilgisi(f)}
 ${yolcuBeraberiBilgisi(f)}`;
 
   return sayfaSablonu({

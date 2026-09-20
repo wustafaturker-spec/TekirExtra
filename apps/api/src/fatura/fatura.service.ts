@@ -9,7 +9,7 @@ import {
   forwardRef,
 } from "@nestjs/common";
 import { Prisma, FaturaTip, FaturaDurum, BelgeDurum } from "@prisma/client";
-import { faturaHesapla, faturaSenaryosuTuret, metinNormalize, ozelMatrahKdvsi, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type KayitEylem } from "@tekirextra/shared";
+import { faturaHesapla, faturaSenaryosuTuret, metinNormalize, ozelMatrahKdvsi, sgkFaturasiMi, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type KayitEylem } from "@tekirextra/shared";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
@@ -553,7 +553,7 @@ export class FaturaService {
 
       const cari = await tx.cariHesap.findUnique({
         where: { id: girdi.cariId },
-        select: { varsayilanVadeGun: true, efaturaProfili: true, earsivGonderimSekli: true },
+        select: { varsayilanVadeGun: true, efaturaProfili: true, earsivGonderimSekli: true, vknTckn: true },
       });
 
       let hesaplananVadeTarihi: Date;
@@ -579,7 +579,7 @@ export class FaturaService {
             kdvOrani: Number(s.kdvOrani),
             tevkifatKodu: s.tevkifatKodu,
             gibIstisnaKodu: s.gibIstisnaKodu,
-          })), girdi.ihracKayitliKodu, girdi.ozelMatrahKodu),
+          })), girdi.ihracKayitliKodu, girdi.ozelMatrahKodu, sgkFaturasiMi(cari?.vknTckn)),
           // EBLG-60: ihraç kayıtlıda KDV hesaplanır ama tahsil edilmez.
           ihracKayitliKodu: girdi.ihracKayitliKodu ?? null,
           // Özel matrah: KDV satış bedeline dahildir, belge düzeyinde bildirilir.
@@ -791,7 +791,7 @@ export class FaturaService {
             kdvOrani: Number(s.kdvOrani),
             tevkifatKodu: s.tevkifatKodu,
             gibIstisnaKodu: s.gibIstisnaKodu,
-          })), birlesikGirdi.ihracKayitliKodu, birlesikGirdi.ozelMatrahKodu),
+          })), birlesikGirdi.ihracKayitliKodu, birlesikGirdi.ozelMatrahKodu, sgkFaturasiMi(fatura.cari?.vknTckn)),
           ihracKayitliKodu: birlesikGirdi.ihracKayitliKodu,
           ozelMatrahKodu: birlesikGirdi.ozelMatrahKodu ?? null,
           ozelMatrahTutari: birlesikGirdi.ozelMatrahKodu ? D(birlesikGirdi.ozelMatrahTutari ?? "0") : null,
@@ -1517,6 +1517,12 @@ export class FaturaService {
     ozelMatrahKodu?: string | null;
     ozelMatrahTutari?: Prisma.Decimal | null;
     ozelMatrahOrani?: Prisma.Decimal | null;
+    sgkIlaveFaturaTipi?: string | null;
+    sgkMukellefKodu?: string | null;
+    sgkMukellefAdi?: string | null;
+    sgkDosyaNo?: string | null;
+    sgkDonemBaslangic?: Date | null;
+    sgkDonemBitis?: Date | null;
     yolcuBeraberi?: unknown;
     depoId: string | null;
     dovizCinsi: string;
@@ -1590,6 +1596,13 @@ export class FaturaService {
       ozelMatrahKodu: k.ozelMatrahKodu ?? null,
       ozelMatrahTutari: k.ozelMatrahTutari ? D(k.ozelMatrahTutari).toFixed(2) : null,
       ozelMatrahOrani: k.ozelMatrahOrani ? D(k.ozelMatrahOrani).toFixed(2) : null,
+      // SGK faturası: grup, Kurum'daki kod/ad, dosya no ve dönem (EBLG-70).
+      sgkIlaveFaturaTipi: k.sgkIlaveFaturaTipi ?? null,
+      sgkMukellefKodu: k.sgkMukellefKodu ?? null,
+      sgkMukellefAdi: k.sgkMukellefAdi ?? null,
+      sgkDosyaNo: k.sgkDosyaNo ?? null,
+      sgkDonemBaslangic: k.sgkDonemBaslangic ? k.sgkDonemBaslangic.toISOString() : null,
+      sgkDonemBitis: k.sgkDonemBitis ? k.sgkDonemBitis.toISOString() : null,
       // Yolcu beraberi (tax-free): yolcu ve aracı kurum bilgisi; boşsa değildir.
       yolcuBeraberi: (k.yolcuBeraberi as Record<string, unknown> | null) ?? null,
       depoId: k.depoId,

@@ -12,6 +12,8 @@ import {
   ozelMatrahKdvsi,
   ozelMatrahKoduBul,
   ozelMatrahSatirPaylari,
+  sgkBelgeAlanlari,
+  SGK_FATURA_TIPI,
   KAMU_PROFILI,
   PASAPORT_TARIHI_BILINMIYOR,
   YOLCU_BERABER_FATURA_TIPI,
@@ -226,6 +228,32 @@ export function faturaUblUret(
    * özel matrahı, oranını ve kodunu taşır. Matrah satır tutarlarından değil
    * faturaya girilen tutardan gelir (ikinci elde alış ile satış farkı).
    */
+  /*
+   * SGK faturası (SGK e-Fatura Teknik Doküman §3.3): ilave fatura tipi hesap
+   * kodunda, Kurum'daki mükellef kodu/adı ve dosya no ayrı ilave doküman
+   * referanslarında, dönem `InvoicePeriod` içinde gider. Alanlar gruba göre
+   * değişir; gruba girmeyen alan belgeye hiç yazılmaz.
+   */
+  const sgk = fatura.senaryo === "sgk"
+    ? sgkBelgeAlanlari({
+        ilaveFaturaTipi: fatura.sgkIlaveFaturaTipi,
+        mukellefKodu: fatura.sgkMukellefKodu,
+        mukellefAdi: fatura.sgkMukellefAdi,
+        dosyaNo: fatura.sgkDosyaNo,
+        donemBaslangic: fatura.sgkDonemBaslangic?.toISOString(),
+        donemBitis: fatura.sgkDonemBitis?.toISOString(),
+      })
+    : null;
+  /** SGK'nın ilave doküman referansları: değer `DocumentType`, alan adı `DocumentTypeCode`. */
+  const sgkReferansi = (kod: string, alan: { deger: string; aciklama: string } | undefined) => alan ? `
+  <cac:AdditionalDocumentReference>
+    <cbc:ID>${escape(kod)}</cbc:ID>
+    <cbc:IssueDate>${tarihStr}</cbc:IssueDate>
+    <cbc:DocumentTypeCode>${kod}</cbc:DocumentTypeCode>
+    <cbc:DocumentType>${escape(alan.deger)}</cbc:DocumentType>
+    <cbc:DocumentDescription>${escape(alan.aciklama)}</cbc:DocumentDescription>
+  </cac:AdditionalDocumentReference>` : "";
+
   const ozelMatrah = fatura.senaryo === "ozelmatrah" && fatura.ozelMatrahKodu
     ? {
         kod: fatura.ozelMatrahKodu,
@@ -567,17 +595,22 @@ export function faturaUblUret(
          xsi:schemaLocation="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2 UBL-Invoice-2.1.xsd">
   <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
   <cbc:CustomizationID>TR1.2</cbc:CustomizationID>
-  <cbc:ProfileID>${ihracat ? IHRACAT_PROFILI : yolcu ? YOLCU_BERABER_PROFILI : kamu ? KAMU_PROFILI : earsiv ? "EARSIVFATURA" : fatura.efaturaProfili === "ticari" && !iadeSenaryosu ? "TICARIFATURA" : "TEMELFATURA"}</cbc:ProfileID>
+  <cbc:ProfileID>${ihracat ? IHRACAT_PROFILI : yolcu ? YOLCU_BERABER_PROFILI : kamu ? KAMU_PROFILI : earsiv ? "EARSIVFATURA" : fatura.efaturaProfili === "ticari" && !iadeSenaryosu && !sgk ? "TICARIFATURA" : "TEMELFATURA"}</cbc:ProfileID>
   <cbc:ID>${no}</cbc:ID>
   <cbc:CopyIndicator>false</cbc:CopyIndicator>
   <cbc:UUID>${uuid}</cbc:UUID>
   <cbc:IssueDate>${tarihStr}</cbc:IssueDate>
   <cbc:IssueTime>${saatStr}</cbc:IssueTime>
-  <cbc:InvoiceTypeCode>${ihracat ? IHRACAT_FATURA_TIPI : yolcu ? YOLCU_BERABER_FATURA_TIPI : senaryoUblKodu(fatura.senaryo)}</cbc:InvoiceTypeCode>${internet?.webAdresi ? `
+  <cbc:InvoiceTypeCode>${ihracat ? IHRACAT_FATURA_TIPI : yolcu ? YOLCU_BERABER_FATURA_TIPI : sgk ? SGK_FATURA_TIPI : senaryoUblKodu(fatura.senaryo)}</cbc:InvoiceTypeCode>${internet?.webAdresi ? `
   <cbc:Note>${escape(`İnternet satışı — ${internet.webAdresi}`)}</cbc:Note>` : ""}
   <cbc:DocumentCurrencyCode>${fatura.dovizCinsi}</cbc:DocumentCurrencyCode>${dovizli && ihracat ? `
   <cbc:TaxCurrencyCode>${IHRACAT_VERGI_PARA_BIRIMI}</cbc:TaxCurrencyCode>` : ""}
-  <cbc:LineCountNumeric>${fatura.satirlar.length}</cbc:LineCountNumeric>${fatura.siparisNo ? `
+${sgk ? `  <cbc:AccountingCost>${escape(sgk.ilaveFaturaTipi)}</cbc:AccountingCost>
+` : ""}  <cbc:LineCountNumeric>${fatura.satirlar.length}</cbc:LineCountNumeric>${sgk?.donem ? `
+  <cac:InvoicePeriod>
+    <cbc:StartDate>${sgk.donem.baslangic}</cbc:StartDate>
+    <cbc:EndDate>${sgk.donem.bitis}</cbc:EndDate>
+  </cac:InvoicePeriod>` : ""}${fatura.siparisNo ? `
   <cac:OrderReference>
     <cbc:ID>${escape(fatura.siparisNo)}</cbc:ID>${fatura.siparisTarihi ? `
     <cbc:IssueDate>${fatura.siparisTarihi.toISOString().slice(0, 10)}</cbc:IssueDate>` : ""}
@@ -587,7 +620,7 @@ ${earsiv ? `  <cac:AdditionalDocumentReference>
     <cbc:ID>${fatura.earsivGonderimSekli === "kagit" ? "KAGIT" : "ELEKTRONIK"}</cbc:ID>
     <cbc:IssueDate>${tarihStr}</cbc:IssueDate>
     <cbc:DocumentTypeCode>SEND_TYPE</cbc:DocumentTypeCode>
-  </cac:AdditionalDocumentReference>` : ""}${ihracat?.beyannameNo ? `
+  </cac:AdditionalDocumentReference>` : ""}${sgk ? `${sgkReferansi("MUKELLEF_KODU", sgk.mukellefKodu)}${sgkReferansi("MUKELLEF_ADI", sgk.mukellefAdi)}${sgkReferansi("DOSYA_NO", sgk.dosyaNo)}` : ""}${ihracat?.beyannameNo ? `
   <cac:AdditionalDocumentReference>
     <cbc:ID>${escape(ihracat.beyannameNo)}</cbc:ID>
     <cbc:IssueDate>${tarihStr}</cbc:IssueDate>
