@@ -726,7 +726,10 @@ export default function FaturaSayfasi() {
     if (!cariOzeti || vadeElleDegisti || duzenlenenId) return;
     const temel = new Date(`${tarih}T00:00:00`);
     temel.setDate(temel.getDate() + (cariOzeti.varsayilanVadeGun ?? 0));
-    setVadeTarihi(temel.toISOString().slice(0, 10));
+    // Tarih yerel gece yarısından kurulur; `toISOString` UTC'ye çevirdiği için
+    // Türkiye'de vade bir gün geriye kayıyordu (vade günü 0 olan caride fatura
+    // 20.09 iken vade 19.09 görünüyordu).
+    setVadeTarihi(`${temel.getFullYear()}-${String(temel.getMonth() + 1).padStart(2, "0")}-${String(temel.getDate()).padStart(2, "0")}`);
   }, [cariOzeti, tarih, vadeElleDegisti, duzenlenenId]);
 
   useEffect(() => {
@@ -1601,26 +1604,32 @@ export default function FaturaSayfasi() {
                   </Select>
                   {ozelMatrahKodu ? (
                     <>
-                      <Input
-                        type="number" min="0" max="100" step="0.01" value={ozelMatrahOrani}
-                        placeholder="KDV oranı (%)"
-                        onChange={(e) => setOzelMatrahOrani(e.target.value)}
-                      />
+                      {/* Üç kutu da etiketlidir: değer girilince placeholder
+                          kaybolduğu için hangisinin ne olduğu görünmez kalıyordu. */}
+                      <Field label="KDV oranı (%)">
+                        <Input
+                          type="number" min="0" max="100" step="0.01" value={ozelMatrahOrani}
+                          onChange={(e) => setOzelMatrahOrani(e.target.value)}
+                        />
+                      </Field>
                       {/* Satıcı "92.000'e aldım, 95.500'e satıyorum" diye düşünür;
                           farkın içindeki KDV'yi ayırmayı ondan beklemeyelim. */}
-                      <Input
-                        type="number" min="0" step="0.01" value={ozelMatrahFarki}
-                        placeholder="KDV dahil kâr farkı (alış ile satış arasındaki fark)"
-                        onChange={(e) => {
-                          setOzelMatrahFarki(e.target.value);
-                          setOzelMatrahTutari(e.target.value ? ozelMatrahTabani(e.target.value, ozelMatrahOrani || 0).toFixed(2) : "");
-                        }}
-                      />
-                      <Input
-                        type="number" min="0" step="0.01" value={ozelMatrahTutari}
-                        placeholder="KDV matrahı"
-                        onChange={(e) => { setOzelMatrahTutari(e.target.value); setOzelMatrahFarki(""); }}
-                      />
+                      <Field label="KDV dahil kâr farkı (alış ile satış arası)">
+                        <Input
+                          type="number" min="0" step="0.01" value={ozelMatrahFarki}
+                          placeholder="Örn. 3500"
+                          onChange={(e) => {
+                            setOzelMatrahFarki(e.target.value);
+                            setOzelMatrahTutari(e.target.value ? ozelMatrahTabani(e.target.value, ozelMatrahOrani || 0).toFixed(2) : "");
+                          }}
+                        />
+                      </Field>
+                      <Field label="KDV matrahı (özel matrah)">
+                        <Input
+                          type="number" min="0" step="0.01" value={ozelMatrahTutari}
+                          onChange={(e) => { setOzelMatrahTutari(e.target.value); setOzelMatrahFarki(""); }}
+                        />
+                      </Field>
                       <small className="muted">
                         Satırlara <strong>KDV hariç</strong> satış bedeli girilir; özel matrahın KDV'si ({ozelMatrahKdvsi(ozelMatrahTutari || 0, ozelMatrahOrani || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {dovizCinsi === "TRY" ? "TL" : dovizCinsi}) genel toplama eklenir.
                       </small>
