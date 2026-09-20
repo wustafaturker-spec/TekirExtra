@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
 import { AramaSecici } from "@/components/arama-secici";
+import { bugunTR } from "@tekirextra/shared";
 
 interface Kategori {
   id: string;
@@ -64,7 +65,7 @@ export default function GelirlerPage() {
 
   // Gelir Kaydı Form States
   const [kategoriId, setKategoriId] = useState("");
-  const [tarih, setTarih] = useState(new Date().toISOString().substring(0, 10));
+  const [tarih, setTarih] = useState(bugunTR());
   const [brutTutar, setBrutTutar] = useState("");
   const [stopajOrani, setStopajOrani] = useState("0");
   const [kdvOrani, setKdvOrani] = useState("0");

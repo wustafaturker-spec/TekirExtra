@@ -5,14 +5,15 @@ import { Alert, Badge, Button, Card, Field, Input, Select } from "@/components/u
 import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyalari";
 import { KiraEkPaneli } from "@/components/kira-ek-paneli";
 import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
+import { ayTR, bugunTR } from "@tekirextra/shared";
 
 interface Kategori { id: string; ad: string }
 interface Cari { id: string; unvan: string }
 interface Donem { id: string; kiraDonemi: string; durum: string; odemeDurumu: "odenmedi" | "kismi_odendi" | "odendi"; toplam: string; stopajTutari: string | null; odenenTutar: string }
 interface Sozlesme { id: string; kategoriId?: string; cariId?: string | null; baslik: string; tasinmazAdresi: string | null; kirayaVeren: string | null; vknTckn?: string | null; iban?: string | null; baslangicTarihi: string; bitisTarihi: string | null; odemeGunu: number; matrah: string; kdvOrani: string; stopajOrani: string; dovizCinsi: "TRY" | "USD" | "EUR"; aktif: boolean; cari: Cari | null; kategori: Kategori; masraflar: Donem[]; _count: { masraflar: number } }
 
-const bugun = () => new Date().toISOString().slice(0, 10);
-const buAy = () => new Date().toISOString().slice(0, 7);
+const bugun = () => bugunTR();
+const buAy = () => ayTR();
 const para = (n: string | number, d = "TRY") => Number(n).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + d;
 const tarih = (d: string) => new Date(d).toLocaleDateString("tr-TR");
 

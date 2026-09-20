@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiHata } from "@/lib/api";
 import { PersonelBelgeleri } from "@/components/personel-belgeleri";
+import { bugunTR } from "@tekirextra/shared";
 
 interface Bordro {
   id: string;
@@ -53,7 +54,7 @@ const para = (deger: string) => Number(deger).toLocaleString("tr-TR", {
 const tarih = (deger?: string | null) => deger
   ? new Intl.DateTimeFormat("tr-TR", { dateStyle: "long", timeZone: "UTC" }).format(new Date(deger))
   : "—";
-const bugun = () => new Date().toISOString().slice(0, 10);
+const bugun = () => bugunTR();
 
 export default function PersonelDetaySayfasi() {
   const { id } = useParams<{ id: string }>();

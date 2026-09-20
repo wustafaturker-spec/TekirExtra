@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { ayBasiTR, bugunTR } from "@tekirextra/shared";
 
 export default function MaliMusavirSayfasi() {
   const [baslangic, setBaslangic] = useState(
-    new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0]
+    ayBasiTR()
   );
-  const [bitis, setBitis] = useState(new Date().toISOString().split("T")[0]);
+  const [bitis, setBitis] = useState(bugunTR());
 
   const [kdvDonem, setKdvDonem] = useState({
     yil: new Date().getFullYear(),

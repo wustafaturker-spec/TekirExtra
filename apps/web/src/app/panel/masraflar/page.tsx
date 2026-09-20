@@ -6,6 +6,7 @@ import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { Alert, Badge, Button, ButtonLabel, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
 import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyalari";
 import { MasrafEkPaneli } from "@/components/masraf-ek-paneli";
+import { bugunTR } from "@tekirextra/shared";
 
 interface Kategori { id: string; ad: string; varsayilanKdvOrani: string | null; ustId: string | null; ust: { id: string; ad: string } | null; _count: { altlar: number; masraflar: number } }
 interface Cari { id: string; unvan: string }
@@ -14,7 +15,7 @@ interface KrediKarti extends Hesap { sonDortHane: string; aktif: boolean }
 interface MasrafOdeme { id: string; tutar: string; odemeTarihi: string; aciklama: string | null; kasa: { ad: string } | null; bankaHesap: { ad: string } | null; krediKarti: { ad: string; sonDortHane: string } | null }
 interface Masraf { id: string; tarih: string; belgeTuru: string; belgeNo: string | null; saticiUnvan: string | null; vknTckn?: string | null; aciklama?: string | null; matrah: string; kdvOrani: string; kdvTutari: string; toplam: string; stopajTutari?: string | null; odenenTutar: string; dovizCinsi: string; kur: string; durum: "taslak" | "onaylandi" | "iptal"; odemeDurumu: "odenmedi" | "kismi_odendi" | "odendi"; kategori: Kategori; cari: Cari | null; odemeler: MasrafOdeme[] }
 
-const bugun = () => new Date().toISOString().slice(0, 10);
+const bugun = () => bugunTR();
 const para = (n: string | number, d = "TRY") => Number(n).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + d;
 
 export default function MasraflarSayfasi() {

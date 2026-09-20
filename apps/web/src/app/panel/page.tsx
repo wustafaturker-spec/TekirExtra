@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiHata, tokenAl, tokenYaz } from "@/lib/api";
-import { paraBicimle } from "@tekirextra/shared";
+import { bugunTR, paraBicimle } from "@tekirextra/shared";
 import { Para, Tarih } from "@/components/ui";
 
 type Rol = "yonetici" | "muhasebe" | "satis" | "salt_okunur" | "mali_musavir" | "b2b_bayi" | "uretim_planlama" | "uretim_operatoru" | "depo" | "kalite" | "maliyet_muhasebesi";
@@ -150,13 +150,13 @@ export default function PanelSayfasi() {
 
       {/* Daily Strip (Satış & Tahsilat & Kurlar) */}
       <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "20px", marginBottom: "28px" }}>
-        <Link href={`/panel/fatura?yon=satis&baslangic=${new Date().toISOString().slice(0, 10)}&bitis=${new Date().toISOString().slice(0, 10)}`} style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "14px", border: "1px solid var(--border)", textDecoration: "none", boxShadow: "var(--shadow)", display: "block" }}>
+        <Link href={`/panel/fatura?yon=satis&baslangic=${bugunTR()}&bitis=${bugunTR()}`} style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "14px", border: "1px solid var(--border)", textDecoration: "none", boxShadow: "var(--shadow)", display: "block" }}>
           <div style={{ color: "var(--text-muted)", fontSize: "13px", fontWeight: "600", marginBottom: "6px" }}>Bugünkü Satış Hacmi</div>
           <div style={{ fontSize: "28px", fontWeight: "800", color: "var(--text)", marginBottom: "4px" }}>{gunluk ? para(gunluk.satis.toplam) : "—"}</div>
           <div style={{ fontSize: "12px", color: "var(--success)", fontWeight: "600" }}>{gunluk?.satis.adet ?? 0} adet kesinleşmiş satış faturası · Detayları Gör →</div>
         </Link>
 
-        <Link href={`/panel/kasa-banka?baslangic=${new Date().toISOString().slice(0, 10)}&bitis=${new Date().toISOString().slice(0, 10)}&tur=tahsilat`} style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "14px", border: "1px solid var(--border)", textDecoration: "none", boxShadow: "var(--shadow)", display: "block" }}>
+        <Link href={`/panel/kasa-banka?baslangic=${bugunTR()}&bitis=${bugunTR()}&tur=tahsilat`} style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "14px", border: "1px solid var(--border)", textDecoration: "none", boxShadow: "var(--shadow)", display: "block" }}>
           <div style={{ color: "var(--text-muted)", fontSize: "13px", fontWeight: "600", marginBottom: "6px" }}>Bugünkü Tahsilat</div>
           <div style={{ fontSize: "28px", fontWeight: "800", color: "var(--text)", marginBottom: "4px" }}>{gunluk ? para(gunluk.tahsilat.toplam) : "—"}</div>
           <div style={{ fontSize: "12px", color: "var(--accent)", fontWeight: "600" }}>{gunluk?.tahsilat.adet ?? 0} tahsilat kaydı · Detayları Gör →</div>

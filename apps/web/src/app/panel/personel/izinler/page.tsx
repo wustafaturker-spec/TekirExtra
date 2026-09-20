@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiHata } from "@/lib/api";
+import { bugunTR } from "@tekirextra/shared";
 
 interface Personel { id: string; personelNo: string; ad: string; soyad: string; durum?: string }
 interface IzinTuru { id: string; kod: string; ad: string; ucretli: boolean; bakiyeTakibi: boolean }
@@ -23,7 +24,7 @@ export default function IzinlerSayfasi() {
   const [bakiyeAcik, setBakiyeAcik] = useState(false);
   const [karar, setKarar] = useState<{ talep: Talep; islem: "reddet" | "iptal" } | null>(null);
   const [neden, setNeden] = useState("");
-  const bugun = new Date().toISOString().slice(0, 10);
+  const bugun = bugunTR();
   const [form, setForm] = useState({ personelId: "", izinTuruId: "", baslangicTarihi: bugun, bitisTarihi: bugun, aciklama: "" });
   const [bakiyeForm, setBakiyeForm] = useState({ personelId: "", izinTuruId: "", tip: "hak_edis", gun: "14", aciklama: "Yıllık izin hak edişi" });
   const yukle = useCallback(async () => { try { setHata(null); const [t, tur, p] = await Promise.all([api<Talep[]>("/personel/izinler"), api<IzinTuru[]>("/personel/izinler/turler"), api<Personel[]>("/personel")]); setTalepler(t); setTurler(tur); setPersoneller(p.filter((x) => x.durum === "aktif")); } catch (e) { setHata(e instanceof Error ? e.message : "İzin verileri alınamadı"); } }, []);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { bugunTR, gunTR } from "@tekirextra/shared";
 
-const iso = (tarih: Date) => tarih.toISOString().slice(0, 10);
+const iso = (tarih: Date) => gunTR(tarih);
 function kurOku(xml: string, doviz: "USD" | "EUR") {
   const blok = xml.match(new RegExp(`<Currency[^>]*CurrencyCode="${doviz}"[\\s\\S]*?<\\/Currency>`))?.[0];
   const deger = blok?.match(/<ForexBuying>([^<]+)<\/ForexBuying>/)?.[1];
@@ -9,7 +10,7 @@ function kurOku(xml: string, doviz: "USD" | "EUR") {
 }
 
 export async function GET(istek: NextRequest) {
-  const tarihMetni = istek.nextUrl.searchParams.get("tarih") ?? new Date().toISOString().slice(0, 10);
+  const tarihMetni = istek.nextUrl.searchParams.get("tarih") ?? bugunTR();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(tarihMetni)) return NextResponse.json({ message: "Geçersiz tarih" }, { status: 400 });
   const hedef = new Date(`${tarihMetni}T00:00:00.000Z`);
   for (let geri = 0; geri <= 10; geri++) {

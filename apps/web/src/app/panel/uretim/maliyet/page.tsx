@@ -4,11 +4,12 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Alert, Badge, Card, Field, Input, PageHeader, TableWrap } from "@/components/ui";
 import { api, tokenAl } from "@/lib/api";
+import { ayBasiTR, bugunTR } from "@tekirextra/shared";
 
 interface Satir { emirId: string; no: string; tarih: string; durum: string; stok: { kod: string; ad: string }; planlananMiktar: string; uretilenMiktar: string; kalemler: { malzeme: Kalem; operasyon: Kalem }; toplamlar: Kalem & { sapmaYuzdesi: string } }
 interface Kalem { planlanan: string; gerceklesen: string; sapma: string }
 interface Rapor { toplamlar: Kalem & { sapmaYuzdesi: string }; emirler: Satir[] }
-const bugun = () => new Date().toISOString().slice(0, 10); const ayBasi = () => bugun().slice(0, 8) + "01";
+const bugun = () => bugunTR(); const ayBasi = () => ayBasiTR();
 const sayi = (v: string | number) => Number(v).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function UretimMaliyetRaporu() {

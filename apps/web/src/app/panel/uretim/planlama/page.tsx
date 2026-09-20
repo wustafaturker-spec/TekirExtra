@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, TableWrap } from "@/components/ui";
 import { api, tokenAl } from "@/lib/api";
+import { gunEkleTR } from "@tekirextra/shared";
 
 interface Merkez { id: string; kod: string; ad: string; gunlukKapasiteDakika: number; verimlilikYuzdesi: string; saatlikMaliyet: string; aktif: boolean }
 interface Kapasite { isMerkezi: Merkez; kapasiteDakika: string; planlananDakika: string; dolulukYuzdesi: string; asimDakika: string; operasyonlar: { id: string; operasyonKodu: string; operasyonAdi: string; planlananDakika: string; planlananBaslangic: string; planlananBitis: string; uretimEmri: { id: string; no: string; durum: string; stok: { kod: string; ad: string } } }[] }
-const tarih = (gunFarki = 0) => { const d = new Date(); d.setDate(d.getDate() + gunFarki); return d.toISOString().slice(0, 10); };
+const tarih = (gunFarki = 0) => gunEkleTR(gunFarki);
 const sayi = (v: string | number) => Number(v).toLocaleString("tr-TR", { maximumFractionDigits: 2 });
 
 export default function UretimPlanlamaSayfasi() {

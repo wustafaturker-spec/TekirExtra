@@ -16,6 +16,7 @@ import {
   Select,
   TableWrap,
 } from "@/components/ui";
+import { bugunTR } from "@tekirextra/shared";
 
 interface DepoBilgi {
   id: string;
@@ -61,7 +62,7 @@ interface TransferDetay extends Omit<TransferOzet, "_count"> {
 const adet = (deger: string | number): string =>
   Number(deger).toLocaleString("tr-TR", { maximumFractionDigits: 3 });
 
-const bugun = () => new Date().toISOString().slice(0, 10);
+const bugun = () => bugunTR();
 
 /** Depolar arası transfer fişleri (STK-07). */
 export default function TransferlerSayfasi() {

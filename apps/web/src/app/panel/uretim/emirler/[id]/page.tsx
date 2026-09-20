@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select } from "@/components/ui";
 import { api, tokenAl } from "@/lib/api";
+import { bugunTR } from "@tekirextra/shared";
 
 type Durum = "taslak" | "planlandi" | "malzeme_bekliyor" | "hazir" | "uretimde" | "kismen_tamamlandi" | "kalite_bekliyor" | "beklemede" | "durduruldu" | "tamamlandi" | "iptal_talebi" | "iptal";
 interface Bildirim { id: string; uretilenMiktar: string; hurdaMiktari: string; hurdaNedeni?: string | null; yenidenIslemeMiktari: string; yenidenIslemeNedeni?: string | null; toplamMaliyet: string; bildirimTarihi: string; aciklama?: string | null }
@@ -75,7 +76,7 @@ export default function UretimEmriDetaySayfasi() {
     setBildirimMiktari(String(kalan));
     setLotNo(emir.no);
     setSeriNumaralari("");
-    setUretimTarihi(new Date().toISOString().slice(0, 10));
+    setUretimTarihi(bugunTR());
     setSonKullanmaTarihi("");
     setSarflar(Object.fromEntries(uygunluk.kalemler.map((k) => [k.kalemId, k.gerekenMiktar])));
     setBildirimAcik(true);

@@ -2,6 +2,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Badge, Button, Card, Field, Input, Select, TableWrap } from "@/components/ui";
 import { api, tokenAl } from "@/lib/api";
+import { bugunTR } from "@tekirextra/shared";
 
 interface Banka { id: string; ad: string; dovizCinsi: string; aktif: boolean }
 interface Cari { id: string; kod: string; unvan: string; dovizCinsi: string }
@@ -11,7 +12,7 @@ interface Hareket { id:string; tip:"harcama"|"iade"|"odeme"|"faiz"|"aidat"; tari
 interface Kart { id:string; ad:string; bankaAdi:string; sonDortHane:string; kartSahibi:string|null; limit:string; dovizCinsi:string; hesapKesimGunu:number; sonOdemeGunu:number; renk:string; aktif:boolean; borc:string; kullanilabilirLimit:string; kullanimOrani:string; bagliBankaHesap:{id:string;ad:string}|null; hareketler:Hareket[] }
 
 const para=(v:string|number,d="TRY")=>Number(v).toLocaleString("tr-TR",{minimumFractionDigits:2,maximumFractionDigits:2})+" "+d;
-const bugun=()=>new Date().toISOString().slice(0,10);
+const bugun=()=>bugunTR();
 
 export default function KrediKartlariSayfasi(){
   const [kartlar,setKartlar]=useState<Kart[]>([]),[bankalar,setBankalar]=useState<Banka[]>([]),[cariler,setCariler]=useState<Cari[]>([]),[faturalar,setFaturalar]=useState<Fatura[]>([]);

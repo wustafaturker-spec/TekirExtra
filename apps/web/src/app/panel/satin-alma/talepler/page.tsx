@@ -6,6 +6,7 @@ import { BelgeDosyalari, belgeDosyalariniYukle, KayitliEkSatiri, type KayitliEk 
 import { DepoSecici } from "@/components/depo-secici";
 import { api } from "@/lib/api";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap, Tabs } from "@/components/ui";
+import { gunEkleTR } from "@tekirextra/shared";
 
 type Durum = "taslak" | "onay_bekliyor" | "onaylandi" | "reddedildi" | "siparise_donustu" | "iptal";
 type Kapsam = "benim" | "onay" | "tum";
@@ -97,7 +98,7 @@ const ROL_ADI: Record<string, string> = { muhasebe: "Muhasebe", yonetici: "Yöne
 
 const tl = (v: string | number) => Number(v).toLocaleString("tr-TR", { style: "currency", currency: "TRY" });
 const sayi = (v: string, basamak = 2) => Number(v).toLocaleString("tr-TR", { maximumFractionDigits: basamak });
-const gunSonra = (gun: number) => new Date(Date.now() + gun * 86_400_000).toISOString().slice(0, 10);
+const gunSonra = (gun: number) => gunEkleTR(gun);
 const bosTalep = (): TalepFormu => ({ departmanId: "", ihtiyacTarihi: gunSonra(7), gerekce: "", butceAnahtari: "mal_alis", kalemler: [{ stokId: "", miktar: "1", tahminiBirimFiyat: "" }] });
 const bosTeklif = (): TeklifFormu => ({ tedarikciCariId: "", dovizCinsi: "TRY", kur: "1", teslimSuresiGun: "", gecerlilikTarihi: "", aciklama: "", fiyatlar: {} });
 

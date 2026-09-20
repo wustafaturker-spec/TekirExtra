@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
 import { api, tokenAl } from "@/lib/api";
 import { useDepolar } from "@/lib/depolar";
+import { bugunTR } from "@tekirextra/shared";
 
 interface Uretilebilir { id: string; ciktiMiktari: string; stok: { id: string; kod: string; ad: string; anaBirim: string; mevcutMiktar: string; takipTipi: string }; _count: { kalemler: number } }
 type EmirDurum = "taslak" | "planlandi" | "malzeme_bekliyor" | "hazir" | "uretimde" | "kismen_tamamlandi" | "kalite_bekliyor" | "beklemede" | "durduruldu" | "tamamlandi" | "iptal_talebi" | "iptal";
@@ -13,7 +14,7 @@ interface SatisIhtiyaci { id: string; siparis: { id: string; no: string | null; 
 interface DonemKilidi { id: string; yil: number; ay: number; aciklama?: string | null; kapatildiAt: string; kapatan: { adSoyad: string } }
 interface UretimOzeti { acikEmir: number; uretimde: number; malzemeBekleyen: number; kaliteBekleyen: number; geciken: number; uretilenMiktar: string; hurdaMiktari: string; yenidenIslemeMiktari: string; hurdaOrani: string }
 const durumAdi: Record<EmirDurum, string> = { taslak: "Taslak", planlandi: "Planlandı", malzeme_bekliyor: "Malzeme bekliyor", hazir: "Hazır", uretimde: "Üretimde", kismen_tamamlandi: "Kısmen tamamlandı", kalite_bekliyor: "Kalite bekliyor", beklemede: "Beklemede", durduruldu: "Durduruldu", tamamlandi: "Tamamlandı", iptal_talebi: "İptal talebi", iptal: "İptal" };
-const bugun = () => new Date().toISOString().slice(0, 10);
+const bugun = () => bugunTR();
 const sayi = (v: string | number) => Number(v).toLocaleString("tr-TR", { maximumFractionDigits: 3 });
 
 export default function UretimSayfasi() {

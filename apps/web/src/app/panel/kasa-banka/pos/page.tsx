@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { api, tumSayfalariAl } from "@/lib/api";
 import { Alert, Badge, Button, Card, Field, Input, Select, TableWrap } from "@/components/ui";
+import { bugunTR } from "@tekirextra/shared";
 
 interface Banka { id:string; ad:string; dovizCinsi:string }
 interface Baglanti { id:string; aile:string; saglayici:string; durum:string }
@@ -13,7 +14,7 @@ interface PosHesap { id:string; ad:string; saglayici:string; dovizCinsi:string; 
 interface Tahsilat { id:string; tutar:string; dovizCinsi:string; durum:"baslatildi"|"odendi"|"basarisiz"|"iptal"|"suresi_doldu"; odemeSayfasiUrl:string|null; makbuzYolu:string|null; hataMesaji:string|null; epostaGonderimTarihi:string|null; epostaHatasi:string|null; smsGonderimTarihi:string|null; smsHatasi:string|null; createdAt:string; odemeTarihi:string|null; sonKullanimTarihi:string|null; posHesap:{id:string;ad:string;saglayici:string}; cari:{id:string;kod:string;unvan:string}; fatura:{id:string;no:string|null}|null }
 interface ListeYaniti { kayitlar:Tahsilat[]; toplam:number; sayfa:number; adet:number; durumOzetleri:Record<string,number> }
 
-const bugun=()=>new Date().toISOString().slice(0,10);
+const bugun=()=>bugunTR();
 const para=(v:string|number,d="TRY")=>Number(v).toLocaleString("tr-TR",{minimumFractionDigits:2,maximumFractionDigits:2})+" "+d;
 const durumAdi:Record<string,string>={baslatildi:"Ödeme bekliyor",odendi:"Ödendi",basarisiz:"Başarısız",iptal:"İptal",suresi_doldu:"Süresi doldu"};
 const durumRengi=(d:string):"success"|"danger"|"warning"|"neutral"=>d==="odendi"?"success":d==="basarisiz"?"danger":d==="baslatildi"?"warning":"neutral";

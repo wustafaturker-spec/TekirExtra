@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Badge, Button, ButtonLabel, Card, Field, Input, Select, TableWrap } from "@/components/ui";
 import { api, tokenAl } from "@/lib/api";
+import { gunTR, yilBasiTR } from "@tekirextra/shared";
 
 interface Kategori { id: string; ad: string }
 interface Masraf { id: string; tarih: string; belgeTuru: string; belgeNo: string | null; saticiUnvan: string | null; aciklama: string | null; matrah: string; kdvTutari: string; stopajTutari: string | null; toplam: string; odenenTutar: string; dovizCinsi: string; kur: string; durum: "taslak" | "onaylandi" | "iptal"; odemeDurumu: "odenmedi" | "kismi_odendi" | "odendi"; kategori: Kategori; cari: { unvan: string } | null }
 
 const simdi = new Date();
-const yilBasi = `${simdi.getFullYear()}-01-01`; const bugun = simdi.toISOString().slice(0, 10);
+const yilBasi = yilBasiTR(simdi); const bugun = gunTR(simdi);
 const para = (n: number, d = "TRY") => n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + d;
 const ayAdi = (ay: string) => new Date(`${ay}-01T00:00:00`).toLocaleDateString("tr-TR", { month: "short", year: "2-digit" });
 

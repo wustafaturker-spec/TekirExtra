@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, tumSayfalariAl } from "@/lib/api";
 import { Alert, Badge, Button, ButtonLabel, Card, Field, Input, Select } from "@/components/ui";
+import { bugunTR, gunEkleTR } from "@tekirextra/shared";
 
 interface Fatura { id: string; no: string | null; tip: string; dovizCinsi: string; cari: { unvan: string }; genelToplam: string }
 interface Plan { id: string; ad: string; siklik: "haftalik" | "aylik" | "yillik"; aralik: number; sonrakiTarih: string; bitisTarihi: string | null; aktif: boolean; sonUretimTarihi: string | null; sablonFatura: Fatura; _count: { uretilenler: number } }
-const bugun = () => new Date().toISOString().slice(0, 10); const tarih = (d: string) => new Date(d).toLocaleDateString("tr-TR");
+const bugun = () => bugunTR(); const tarih = (d: string) => new Date(d).toLocaleDateString("tr-TR");
 const para = (n: string | number, d = "TRY") => Number(n).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + d;
 const tekrarMetni = (p: { aralik: number; siklik: string }) => p.aralik === 1 ? ({ haftalik: "Her hafta", aylik: "Her ay", yillik: "Her yıl" }[p.siklik] ?? p.siklik) : `Her ${p.aralik} ${p.siklik === "haftalik" ? "haftada" : p.siklik === "aylik" ? "ayda" : "yılda"}`;
 
@@ -15,7 +16,7 @@ export default function TekrarlayanFaturalarPage() {
   const [form, setForm] = useState({ ad: "", sablonFaturaId: "", siklik: "aylik", aralik: 1, sonrakiTarih: bugun(), bitisTarihi: "" });
   const yukle = useCallback(async () => { setYukleniyor(true); setHata(""); try { const [p, f] = await Promise.all([api<Plan[]>("/fatura/tekrarlayanlar"), tumSayfalariAl<Fatura>("/fatura")]); setPlanlar(p); setFaturalar(f); const secili = new URLSearchParams(window.location.search).get("sablonFaturaId"); if (secili && f.some((x) => x.id === secili)) { setForm((x) => ({ ...x, sablonFaturaId: secili, ad: x.ad || `${f.find((a) => a.id === secili)?.cari.unvan ?? "Fatura"} düzenli faturası` })); setFormAcik(true); } } catch (e) { setHata(e instanceof Error ? e.message : "Kayıtlar yüklenemedi"); } finally { setYukleniyor(false); } }, []);
   useEffect(() => { void yukle(); }, [yukle]);
-  const ozet = useMemo(() => ({ aktif: planlar.filter((p) => p.aktif).length, uretilen: planlar.reduce((t, p) => t + p._count.uretilenler, 0), aylik: planlar.filter((p) => p.aktif && p.siklik === "aylik").reduce((t, p) => t + Number(p.sablonFatura.genelToplam) / p.aralik, 0), yaklasan: planlar.filter((p) => p.aktif && p.sonrakiTarih.slice(0, 10) <= new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)).length }), [planlar]);
+  const ozet = useMemo(() => ({ aktif: planlar.filter((p) => p.aktif).length, uretilen: planlar.reduce((t, p) => t + p._count.uretilenler, 0), aylik: planlar.filter((p) => p.aktif && p.siklik === "aylik").reduce((t, p) => t + Number(p.sablonFatura.genelToplam) / p.aralik, 0), yaklasan: planlar.filter((p) => p.aktif && p.sonrakiTarih.slice(0, 10) <= gunEkleTR(7)).length }), [planlar]);
   const filtreli = useMemo(() => planlar.filter((p) => (durum === "tumu" || (durum === "aktif") === p.aktif) && `${p.ad} ${p.sablonFatura.cari.unvan} ${p.sablonFatura.no ?? ""}`.toLocaleLowerCase("tr-TR").includes(arama.toLocaleLowerCase("tr-TR"))), [planlar, durum, arama]);
   async function olustur(e: React.FormEvent) { e.preventDefault(); setHata(""); setMesaj(""); setIslemde("olustur"); try { await api("/fatura/tekrarlayanlar", { method: "POST", body: JSON.stringify({ ...form, bitisTarihi: form.bitisTarihi || null }) }); setMesaj("Tekrarlayan fatura planı oluşturuldu."); setForm({ ad: "", sablonFaturaId: "", siklik: "aylik", aralik: 1, sonrakiTarih: bugun(), bitisTarihi: "" }); setFormAcik(false); window.history.replaceState(null, "", "/panel/fatura/tekrarlayan"); await yukle(); } catch (e) { setHata(e instanceof Error ? e.message : "Plan oluşturulamadı"); } finally { setIslemde(""); } }
   async function durumDegistir(p: Plan) { setIslemde(p.id); setHata(""); try { await api(`/fatura/tekrarlayanlar/${p.id}`, { method: "PATCH", body: JSON.stringify({ aktif: !p.aktif }) }); setMesaj(p.aktif ? "Plan duraklatıldı." : "Plan etkinleştirildi."); await yukle(); } catch (e) { setHata(e instanceof Error ? e.message : "Plan durumu değiştirilemedi"); } finally { setIslemde(""); } }

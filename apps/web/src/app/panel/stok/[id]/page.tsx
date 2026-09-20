@@ -21,6 +21,7 @@ import {
   Tabs,
   TableWrap,
 } from "@/components/ui";
+import { bugunTR } from "@tekirextra/shared";
 
 /* ─── Tipler ─────────────────────────────────────────────────────────────── */
 
@@ -244,7 +245,7 @@ const tl = (deger: string | number): string =>
 const adet = (deger: string | number): string =>
   Number(deger).toLocaleString("tr-TR", { maximumFractionDigits: 3 });
 
-const bugun = () => new Date().toISOString().slice(0, 10);
+const bugun = () => bugunTR();
 
 const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
 

@@ -18,6 +18,7 @@ import {
   TableWrap,
 } from "@/components/ui";
 import { AramaSecici } from "@/components/arama-secici";
+import { bugunTR } from "@tekirextra/shared";
 
 /* ─── Tipler ─────────────────────────────────────────────────────────────── */
 
@@ -117,7 +118,7 @@ function uygunEylemler(k:CekSenet) {
 const para = (deger: string | number, doviz = "TRY"): string =>
   Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " " + doviz;
 
-const bugun = () => new Date().toISOString().slice(0, 10);
+const bugun = () => bugunTR();
 
 /** Vade günü dahil; saat farkını dışlamak için gün başına normalize edilir. */
 function vadeyeKalanGun(vade: string): number {

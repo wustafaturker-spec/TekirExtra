@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
+import { bugunTR, gunEkleTR } from "@tekirextra/shared";
 
 type Doviz = "USD" | "EUR";
 
@@ -16,8 +17,8 @@ interface KurGunu { tarih: string; isGunu: boolean; eksik: boolean; kurlar: KurH
 interface KurListesi { baslangic: string; bitis: string; geriBakisGun: number; eksikGunler: string[]; gunler: KurGunu[] }
 interface KurOlayi { tarih: string; dovizCinsi: Doviz; tur: "girildi" | "degistirildi" | "silindi"; eskiSatis: string | null; yeniSatis: string | null; gerekce: string; kullanici: string; zaman: string }
 
-const bugunIso = () => new Date().toISOString().slice(0, 10);
-const gunOnce = (gun: number) => new Date(Date.now() - gun * 86_400_000).toISOString().slice(0, 10);
+const bugunIso = () => bugunTR();
+const gunOnce = (gun: number) => gunEkleTR(-gun);
 const tarihGoster = (iso: string) => iso.split("-").reverse().join(".");
 const kur = (deger: string) => Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 4, maximumFractionDigits: 6 });
 const OLAY_ADI: Record<KurOlayi["tur"], string> = { girildi: "Girildi", degistirildi: "Değiştirildi", silindi: "Silindi" };
@@ -98,9 +99,10 @@ export default function DovizKurlariSayfasi() {
 
   const hucre = (g: KurGunu, h: KurHucresi) => {
     const gecerli = h.elle ?? h.tcmb;
-    if (!gecerli) return <td colSpan={2} className="muted">{g.isGunu ? "—" : "hafta sonu"}</td>;
+    if (!gecerli) return <td key={h.dovizCinsi} colSpan={2} className="muted">{g.isGunu ? "—" : "hafta sonu"}</td>;
+    // İki hücre tek dönüşten çıkıyor; anahtar listede React'in istediği yerde durmalı.
     return (
-      <>
+      <Fragment key={h.dovizCinsi}>
         <td className="num">{kur(gecerli.alis)}</td>
         <td className="num">
           {kur(gecerli.satis)}
@@ -111,7 +113,7 @@ export default function DovizKurlariSayfasi() {
             </div>
           )}
         </td>
-      </>
+      </Fragment>
     );
   };
 

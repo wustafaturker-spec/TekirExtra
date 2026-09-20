@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiHata } from "@/lib/api";
+import { bugunTR } from "@tekirextra/shared";
 
 type AvansDurum = "talep" | "onaylandi" | "odendi" | "kismen_mahsup" | "mahsup_edildi" | "reddedildi" | "iptal";
 interface Avans { id: string; tutar: string; tarih: string; aciklama?: string | null; durum: AvansDurum; kalanTutar: string; mahsupEdilenTutar: string; retNedeni?: string | null; personel: Personel }
@@ -21,13 +22,13 @@ export default function AvanslarSayfasi() {
   const [reddedilecek, setReddedilecek] = useState<Avans | null>(null);
   const [retNedeni, setRetNedeni] = useState("");
   const [hesaplar, setHesaplar] = useState<{ kasalar: Hesap[]; bankalar: Hesap[] }>({ kasalar: [], bankalar: [] });
-  const [talep, setTalep] = useState({ personelId: "", tutar: "", tarih: new Date().toISOString().slice(0, 10), aciklama: "" });
-  const [odeme, setOdeme] = useState({ kaynak: "", tarih: new Date().toISOString().slice(0, 10) });
+  const [talep, setTalep] = useState({ personelId: "", tutar: "", tarih: bugunTR(), aciklama: "" });
+  const [odeme, setOdeme] = useState({ kaynak: "", tarih: bugunTR() });
   const yukle = useCallback(async () => { try { setHata(null); const [a, p] = await Promise.all([api<Avans[]>("/personel/avanslar"), api<Personel[]>("/personel")]); setAvanslar(a); setPersoneller(p.filter((x) => x.durum === "aktif")); } catch (e) { setHata(e instanceof Error ? e.message : "Avans kayıtları alınamadı"); } }, []);
   useEffect(() => { void yukle(); }, [yukle]);
   const ozet = useMemo(() => ({ talepler: avanslar.filter((a) => a.durum === "talep").length, acik: avanslar.filter((a) => ["odendi", "kismen_mahsup"].includes(a.durum)).reduce((t, a) => t + Number(a.kalanTutar), 0), toplam: avanslar.reduce((t, a) => t + Number(a.tutar), 0) }), [avanslar]);
   const calistir = async (id: string, fn: () => Promise<unknown>) => { try { setIsleniyor(id); setHata(null); await fn(); await yukle(); return true; } catch (e) { setHata(e instanceof ApiHata ? e.message : "İşlem tamamlanamadı"); return false; } finally { setIsleniyor(null); } };
-  const olustur = async (e: React.FormEvent) => { e.preventDefault(); if (await calistir("yeni", () => api("/personel/avanslar", { method: "POST", body: JSON.stringify(talep) }))) { setTalepAcik(false); setTalep({ personelId: "", tutar: "", tarih: new Date().toISOString().slice(0, 10), aciklama: "" }); } };
+  const olustur = async (e: React.FormEvent) => { e.preventDefault(); if (await calistir("yeni", () => api("/personel/avanslar", { method: "POST", body: JSON.stringify(talep) }))) { setTalepAcik(false); setTalep({ personelId: "", tutar: "", tarih: bugunTR(), aciklama: "" }); } };
   const odemeAc = async (a: Avans) => { try { const [kasalar, bankalar] = await Promise.all([api<Hesap[]>("/kasa-banka/kasalar"), api<Hesap[]>("/kasa-banka/bankalar")]); setHesaplar({ kasalar: kasalar.filter((h) => h.aktif && h.dovizCinsi === "TRY"), bankalar: bankalar.filter((h) => h.aktif && h.dovizCinsi === "TRY") }); setOdenecek(a); } catch (e) { setHata(e instanceof Error ? e.message : "Hesaplar alınamadı"); } };
   const ode = async (e: React.FormEvent) => { e.preventDefault(); if (!odenecek) return; const [tur, hesapId] = odeme.kaynak.split(":"); if (await calistir(odenecek.id, () => api(`/personel/avanslar/${odenecek.id}/odemeler`, { method: "POST", body: JSON.stringify({ tarih: odeme.tarih, [tur === "kasa" ? "kasaId" : "bankaHesapId"]: hesapId }) }))) setOdenecek(null); };
   const reddet = async (e: React.FormEvent) => { e.preventDefault(); if (!reddedilecek) return; if (await calistir(reddedilecek.id, () => api(`/personel/avanslar/${reddedilecek.id}/reddet`, { method: "POST", body: JSON.stringify({ neden: retNedeni }) }))) { setReddedilecek(null); setRetNedeni(""); } };

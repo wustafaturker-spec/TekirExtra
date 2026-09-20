@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, TableWrap } from "@/components/ui";
+import { ayBasiTR, bugunTR, gunEkleTR, gunTR, yilBasiTR } from "@tekirextra/shared";
 
 interface GelirGiderOzet {
   toplamGelir: string;
@@ -47,8 +48,8 @@ interface GelirGiderRaporYaniti {
 }
 
 export default function GelirGiderRaporuSayfasi() {
-  const bugun = new Date().toISOString().substring(0, 10);
-  const buAyBaslangic = `${bugun.slice(0, 7)}-01`;
+  const bugun = bugunTR();
+  const buAyBaslangic = ayBasiTR();
 
   const [baslangic, setBaslangic] = useState(buAyBaslangic);
   const [bitis, setBitis] = useState(bugun);
@@ -81,21 +82,21 @@ export default function GelirGiderRaporuSayfasi() {
   const hizliTarihAyarla = (tur: "buAy" | "gecenAy" | "son30Gun" | "buYil") => {
     const simdi = new Date();
     if (tur === "buAy") {
-      setBaslangic(`${simdi.getFullYear()}-${String(simdi.getMonth() + 1).padStart(2, "0")}-01`);
-      setBitis(simdi.toISOString().substring(0, 10));
+      setBaslangic(ayBasiTR(simdi));
+      setBitis(gunTR(simdi));
     } else if (tur === "gecenAy") {
       const gecenAy = new Date(simdi.getFullYear(), simdi.getMonth() - 1, 1);
       const gecenAySon = new Date(simdi.getFullYear(), simdi.getMonth(), 0);
-      setBaslangic(gecenAy.toISOString().substring(0, 10));
-      setBitis(gecenAySon.toISOString().substring(0, 10));
+      setBaslangic(gunTR(gecenAy));
+      setBitis(gunTR(gecenAySon));
     } else if (tur === "son30Gun") {
       const once30 = new Date();
       once30.setDate(once30.getDate() - 30);
-      setBaslangic(once30.toISOString().substring(0, 10));
-      setBitis(simdi.toISOString().substring(0, 10));
+      setBaslangic(gunEkleTR(-30, simdi));
+      setBitis(gunTR(simdi));
     } else if (tur === "buYil") {
-      setBaslangic(`${simdi.getFullYear()}-01-01`);
-      setBitis(simdi.toISOString().substring(0, 10));
+      setBaslangic(yilBasiTR(simdi));
+      setBitis(gunTR(simdi));
     }
   };
 

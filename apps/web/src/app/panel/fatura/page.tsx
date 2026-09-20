@@ -12,33 +12,7 @@ import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyal
 import { FaturaEkPaneli } from "@/components/fatura-ek-paneli";
 import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
-import {
-  GIB_KOD_LISTESI_SURUMU,
-  ODEME_SEKILLERI,
-  TASIMA_SEKILLERI,
-  TESLIM_SARTLARI,
-  TEVKIFAT_KODLARI,
-  faturaHesapla,
-  faturaSenaryosuTuret,
-  iadeEngelleri,
-  ihracKayitliHatalari,
-  kamuEngelleri,
-  OZEL_MATRAH_KODLARI,
-  ozelMatrahHatalari,
-  ozelMatrahKdvsi,
-  ozelMatrahTabani,
-  ULKELER,
-  yolcuBeraberiEngelleri,
-  IHRAC_KAYITLI_KODLARI,
-  internetSatisEngelleri,
-  izinliIstisnaKodlari,
-  senaryoHatalari,
-  senaryoUblKodu,
-  tevkifatKoduBul,
-  tevkifatPayPayda,
-  type FaturaHesaplaSatirGirdi,
-  type FaturaSenaryosu,
-} from "@tekirextra/shared";
+import { bugunTR, faturaHesapla, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, senaryoHatalari, senaryoUblKodu, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -448,7 +422,7 @@ export default function FaturaSayfasi() {
   const [dovizCinsi, setDovizCinsi] = useState("TRY");
   const [kur, setKur] = useState("1");
   const [kurBilgisi, setKurBilgisi] = useState("");
-  const [tarih, setTarih] = useState(new Date().toISOString().substring(0, 10));
+  const [tarih, setTarih] = useState(bugunTR());
   const [vadeTarihi, setVadeTarihi] = useState("");
   const [vadeElleDegisti, setVadeElleDegisti] = useState(false);
   // Profil cari kartından gelir ama fatura üzerinde değiştirilebilir (FTR-19);
@@ -474,7 +448,7 @@ export default function FaturaSayfasi() {
     { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" },
   ]);
   const [stokVaryantlari, setStokVaryantlari] = useState<Record<string, StokVaryant[]>>({});
-  const bugun = new Date().toISOString().substring(0, 10);
+  const bugun = bugunTR();
   const formKirli = formAcik && (
     cariId !== "" || depoId !== "" || tip !== (yonBaglami ?? "satis") || tarih !== bugun
     || dovizCinsi !== "TRY" || kur !== "1" || aciklama.trim() !== "" || notlar.trim() !== "" || dosyalar.length > 0 || satirlar.length !== 1
@@ -687,7 +661,7 @@ export default function FaturaSayfasi() {
   }
   function gorunumUygula(gorunum: KayitliGorunum) { filtreleriUygula(gorunum); kullanimOlayi("gorunum_kullanildi"); }
   function formuSifirla() {
-    setCariId(""); setCariOzeti(null); setDepoId(""); setTip(yonBaglami ?? "satis"); setGelirTuru("ticari_satis"); setTarih(new Date().toISOString().substring(0, 10)); setDovizCinsi("TRY"); setKur("1");
+    setCariId(""); setCariOzeti(null); setDepoId(""); setTip(yonBaglami ?? "satis"); setGelirTuru("ticari_satis"); setTarih(bugunTR()); setDovizCinsi("TRY"); setKur("1");
     setAciklama(""); setKuruAciklamayaEkle(true); setFaturaNo("");
     setNotlar(""); setVadeTarihi(""); setVadeElleDegisti(false); setSiparisNo(""); setSiparisTarihi("");
     setEfaturaProfili("temel"); setProfilElleDegisti(false); setIhracKayitliKodu("");
@@ -740,6 +714,17 @@ export default function FaturaSayfasi() {
       .catch(() => { if (gecerli) setKurBilgisi("TCMB kuru alınamadı; manuel kur girin"); });
     return () => { gecerli = false; };
   }, [dovizCinsi, tarih]);
+
+  // Özel matrah faturasında satırlar KDV'siz olmak zorundadır (EBLG-69). Oran
+  // ürün kartından geldiği için kullanıcı her satırda elle sıfırlamak zorunda
+  // kalıyor, unutursa kaydederken kural hatası alıyordu; seçim yapıldığı anda
+  // ve sonradan eklenen satırlarda oran kendiliğinden sıfırlanır.
+  useEffect(() => {
+    if (!ozelMatrahSecili) return;
+    setSatirlar((eskiler) => eskiler.some((satir) => Number(satir.kdvOrani) !== 0)
+      ? eskiler.map((satir) => ({ ...satir, kdvOrani: 0 }))
+      : eskiler);
+  }, [ozelMatrahSecili, satirlar]);
 
   function satirEkle() {
     const yeniIndex = satirlar.length;
@@ -1631,7 +1616,7 @@ export default function FaturaSayfasi() {
                         />
                       </Field>
                       <small className="muted">
-                        Satırlara <strong>KDV hariç</strong> satış bedeli girilir; özel matrahın KDV'si ({ozelMatrahKdvsi(ozelMatrahTutari || 0, ozelMatrahOrani || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {dovizCinsi === "TRY" ? "TL" : dovizCinsi}) genel toplama eklenir.
+                        Satırlara <strong>KDV hariç</strong> satış bedeli girilir (satır KDV oranları sıfırlandı); özel matrahın KDV'si ({ozelMatrahKdvsi(ozelMatrahTutari || 0, ozelMatrahOrani || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {dovizCinsi === "TRY" ? "TL" : dovizCinsi}) genel toplama eklenir.
                       </small>
                     </>
                   ) : <small className="muted">İkinci el araç/taşınmaz, müzayede, bayi satışı gibi KDV'si satış bedelinin tamamı üzerinden hesaplanmayan işlemlerde seçilir.</small>}

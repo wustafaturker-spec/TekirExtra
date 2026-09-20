@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiHata } from "@/lib/api";
+import { bugunTR } from "@tekirextra/shared";
 
 type Durum = "hesaplandi" | "onay_bekliyor" | "onaylandi" | "kismen_odendi" | "reddedildi" | "odendi" | "iptal";
 interface Kalem { id: string; tip: "kazanc" | "kesinti"; kod: string; aciklama: string; tutar: string; manuel: boolean }
@@ -30,7 +31,7 @@ export default function BordroDetay() {
   const [kalem, setKalem] = useState({ tip: "kazanc" as "kazanc" | "kesinti", kod: "prim", aciklama: "", tutar: "" });
   const [retNedeni, setRetNedeni] = useState("");
   const [hesaplar, setHesaplar] = useState<{ kasalar: Hesap[]; bankalar: Hesap[] }>({ kasalar: [], bankalar: [] });
-  const [odeme, setOdeme] = useState({ kaynak: "", tutar: "", odemeTarihi: new Date().toISOString().slice(0, 10), aciklama: "" });
+  const [odeme, setOdeme] = useState({ kaynak: "", tutar: "", odemeTarihi: bugunTR(), aciklama: "" });
 
   const yukle = useCallback(async () => { try { setHata(null); setBordro(await api<Bordro>(`/personel/bordrolar/${id}`)); } catch (e) { setHata(e instanceof Error ? e.message : "Bordro alınamadı"); } }, [id]);
   useEffect(() => { void yukle(); }, [yukle]);

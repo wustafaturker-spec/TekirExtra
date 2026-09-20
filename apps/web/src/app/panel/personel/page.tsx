@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { api, ApiHata } from "@/lib/api";
 import Link from "next/link";
+import { bugunTR } from "@tekirextra/shared";
 
 interface Personel {
   id: string;
@@ -42,7 +43,7 @@ export default function PersonelSayfasi() {
     engellilikDerecesi: "",
     sgkTesvikOrani: 0,
     calismaTipi: "tam_zamanli",
-    girisTarihi: new Date().toISOString().split("T")[0],
+    girisTarihi: bugunTR(),
     cariOlustur: true,
   });
 
@@ -89,7 +90,7 @@ export default function PersonelSayfasi() {
       setModalAcik(false);
       setForm({
         ad: "", soyad: "", departman: "", unvan: "", netMaas: 30000, brutMaas: 0, engellilikDerecesi: "", sgkTesvikOrani: 0,
-        calismaTipi: "tam_zamanli", girisTarihi: new Date().toISOString().split("T")[0], cariOlustur: true,
+        calismaTipi: "tam_zamanli", girisTarihi: bugunTR(), cariOlustur: true,
       });
       await fetchPersonel();
     } catch (e) {

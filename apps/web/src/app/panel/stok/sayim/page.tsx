@@ -18,6 +18,7 @@ import {
   StatGrid,
   TableWrap,
 } from "@/components/ui";
+import { bugunTR } from "@tekirextra/shared";
 
 interface StokSatiri {
   id: string;
@@ -64,7 +65,7 @@ interface SayimDetay extends Omit<SayimOzet, "_count"> {
 const adet = (deger: string | number): string =>
   Number(deger).toLocaleString("tr-TR", { maximumFractionDigits: 3 });
 
-const bugun = () => new Date().toISOString().slice(0, 10);
+const bugun = () => bugunTR();
 
 export default function SayimSayfasi() {
   const [sayimlar, setSayimlar] = useState<SayimOzet[]>([]);

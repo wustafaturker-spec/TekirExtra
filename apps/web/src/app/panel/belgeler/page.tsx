@@ -11,7 +11,7 @@ import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyal
 import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { TasimaBilgisiPaneli } from "@/components/tasima-bilgisi-paneli";
-import { faturaHesapla, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
+import { bugunTR, faturaHesapla, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -174,7 +174,7 @@ export default function BelgelerSayfasi() {
   const [yon, setYon] = useState<Yon>("satis");
   const [cariId, setCariId] = useState("");
   const [depoId, setDepoId] = useState("");
-  const [tarih, setTarih] = useState(new Date().toISOString().substring(0, 10));
+  const [tarih, setTarih] = useState(bugunTR());
   const [gecerlilik, setGecerlilik] = useState("");
   const [aciklama, setAciklama] = useState("");
   // e-İrsaliye taşıma bilgileri (EBLG-23); yalnız irsaliyede sorulur.
