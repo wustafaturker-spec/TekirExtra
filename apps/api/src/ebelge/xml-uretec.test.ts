@@ -834,14 +834,15 @@ describe("faturaUblUret — özel matrah", () => {
     no: "TKR2026000000010",
     tarih: new Date("2026-09-20T12:00:00Z"),
     tip: "satis", senaryo: "ozelmatrah", efaturaProfili: "temel",
-    ozelMatrahKodu: "812", ozelMatrahTutari: 5000, ozelMatrahOrani: 20,
+    // Saha örneği: 92.000'e alınan araç 95.500'e satılır (satır KDV hariç).
+    ozelMatrahKodu: "812", ozelMatrahTutari: 3465.35, ozelMatrahOrani: 1,
     dovizCinsi: "TRY", kur: 1,
-    toplamKdv: 0, toplamMatrah: 250000, toplamBrut: 250000, genelToplam: 250000,
+    toplamKdv: 34.65, toplamMatrah: 95465.35, toplamBrut: 95465.35, genelToplam: 95500,
     toplamSatirIskontosu: 0, genelIskontoToplam: 0,
     cari: { vknTckn: "1234567890", unvan: "Alıcı A.Ş.", adresler: [] },
     satirlar: [{
-      miktar: 1, matrah: 250000, iskontoTutari: 0, kdvTutari: 0, kdvOrani: 0,
-      gibIstisnaKodu: null, birimFiyat: 250000, birim: "adet",
+      miktar: 1, matrah: 95465.35, iskontoTutari: 0, kdvTutari: 0, kdvOrani: 0,
+      gibIstisnaKodu: null, birimFiyat: 95465.35, birim: "adet",
       stok: { kod: "ARAC-1", ad: "2018 model binek araç" },
     }],
   } as never;
@@ -852,20 +853,28 @@ describe("faturaUblUret — özel matrah", () => {
     expect(xml).toContain("<cbc:ProfileID>TEMELFATURA</cbc:ProfileID>");
   });
 
-  it("KDV'yi yalnız belge düzeyinde, özel matrah ve koduyla bildirir", () => {
+  it("KDV'yi belge düzeyinde, özel matrah ve koduyla bildirir", () => {
     const vergi = xml.slice(xml.indexOf("<cac:TaxTotal>"), xml.indexOf("<cac:LegalMonetaryTotal>"));
-    expect(vergi).toContain('<cbc:TaxAmount currencyID="TRY">1000.00</cbc:TaxAmount>');
-    expect(vergi).toContain('<cbc:TaxableAmount currencyID="TRY">5000.00</cbc:TaxableAmount>');
-    expect(vergi).toContain("<cbc:Percent>20.00</cbc:Percent>");
+    expect(vergi).toContain('<cbc:TaxAmount currencyID="TRY">34.65</cbc:TaxAmount>');
+    expect(vergi).toContain('<cbc:TaxableAmount currencyID="TRY">3465.35</cbc:TaxableAmount>');
+    expect(vergi).toContain("<cbc:Percent>1.00</cbc:Percent>");
     expect(vergi).toContain("<cbc:TaxExemptionReasonCode>812</cbc:TaxExemptionReasonCode>");
     // Açıklamada kod tekrarlanmaz: entegratör görünümü kodu kendi ekliyor.
     expect(vergi).toContain("<cbc:TaxExemptionReason>KDV Uygulanmadan Alınan İkinci El Motorlu Kara Taşıtı veya Taşınmaz Teslimi</cbc:TaxExemptionReason>");
   });
 
-  it("satırlarda vergi bloğu yazmaz; ödenecek tutar satış bedelidir", () => {
+  it("satıra da kendi özel matrah payını yazar — alıcının görünümünde sütunlar dolsun", () => {
     const satir = xml.slice(xml.indexOf("<cac:InvoiceLine>"));
-    expect(satir).not.toContain("<cac:TaxTotal>");
-    expect(xml).toContain('<cbc:PayableAmount currencyID="TRY">250000.00</cbc:PayableAmount>');
-    expect(xml).toContain('<cbc:TaxInclusiveAmount currencyID="TRY">250000.00</cbc:TaxInclusiveAmount>');
+    expect(satir).toContain('<cbc:TaxableAmount currencyID="TRY">3465.35</cbc:TaxableAmount>');
+    expect(satir).toContain('<cbc:TaxAmount currencyID="TRY">34.65</cbc:TaxAmount>');
+    expect(satir).toContain("<cbc:TaxExemptionReasonCode>812</cbc:TaxExemptionReasonCode>");
+    // Satırın kendi tutarı KDV hariçtir.
+    expect(satir).toContain('<cbc:LineExtensionAmount currencyID="TRY">95465.35</cbc:LineExtensionAmount>');
+  });
+
+  it("ödenecek tutar satır toplamı artı özel matrah KDV'sidir", () => {
+    expect(xml).toContain('<cbc:TaxExclusiveAmount currencyID="TRY">95465.35</cbc:TaxExclusiveAmount>');
+    expect(xml).toContain('<cbc:TaxInclusiveAmount currencyID="TRY">95500.00</cbc:TaxInclusiveAmount>');
+    expect(xml).toContain('<cbc:PayableAmount currencyID="TRY">95500.00</cbc:PayableAmount>');
   });
 });

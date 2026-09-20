@@ -11,6 +11,7 @@ import {
   KAMU_ODEME_KODU,
   ozelMatrahKdvsi,
   ozelMatrahKoduBul,
+  ozelMatrahSatirPaylari,
   KAMU_PROFILI,
   PASAPORT_TARIHI_BILINMIYOR,
   YOLCU_BERABER_FATURA_TIPI,
@@ -231,6 +232,14 @@ export function faturaUblUret(
         tutar: Number(fatura.ozelMatrahTutari ?? 0),
         oran: Number(fatura.ozelMatrahOrani ?? 0),
         kdv: ozelMatrahKdvsi(Number(fatura.ozelMatrahTutari ?? 0), Number(fatura.ozelMatrahOrani ?? 0)),
+        // Alıcının gördüğü görünümde satırdaki "özel matrah nedeni/tutarı"
+        // sütunları satır düzeyindeki vergi bloğundan dolar (karar 2026-09-20);
+        // belgeye girilen tek matrah satırlara tutarları oranında bölünür.
+        paylar: ozelMatrahSatirPaylari(
+          fatura.satirlar.map((s) => Number(s.matrah)),
+          Number(fatura.ozelMatrahTutari ?? 0),
+          Number(fatura.ozelMatrahOrani ?? 0),
+        ),
       }
     : null;
   const altToplamKodu = (satir: Parameters<typeof satirIstisnaKodu>[0] & { kdvOrani: unknown }) =>
@@ -706,7 +715,23 @@ ${tevkifatBlogu}
       <cbc:ChargeIndicator>false</cbc:ChargeIndicator>
       <cbc:AllowanceChargeReason>Genel iskonto payı</cbc:AllowanceChargeReason>
       <cbc:Amount currencyID="${fatura.dovizCinsi}">${Number(s.genelIskontoPayi).toFixed(2)}</cbc:Amount>
-    </cac:AllowanceCharge>` : ""}${ozelMatrah ? "" : `
+    </cac:AllowanceCharge>` : ""}${ozelMatrah ? `
+    <cac:TaxTotal>
+      <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${ozelMatrah.paylar[index].kdv.toFixed(2)}</cbc:TaxAmount>
+      <cac:TaxSubtotal>
+        <cbc:TaxableAmount currencyID="${fatura.dovizCinsi}">${ozelMatrah.paylar[index].matrah.toFixed(2)}</cbc:TaxableAmount>
+        <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${ozelMatrah.paylar[index].kdv.toFixed(2)}</cbc:TaxAmount>
+        <cbc:Percent>${ozelMatrah.oran.toFixed(2)}</cbc:Percent>
+        <cac:TaxCategory>
+          <cbc:TaxExemptionReasonCode>${escape(ozelMatrah.kod)}</cbc:TaxExemptionReasonCode>
+          <cbc:TaxExemptionReason>${escape(istisnaAciklamasi(ozelMatrah.kod))}</cbc:TaxExemptionReason>
+          <cac:TaxScheme>
+            <cbc:Name>KDV</cbc:Name>
+            <cbc:TaxTypeCode>0015</cbc:TaxTypeCode>
+          </cac:TaxScheme>
+        </cac:TaxCategory>
+      </cac:TaxSubtotal>
+    </cac:TaxTotal>` : `
     <cac:TaxTotal>
       <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${belgeKdvi(s).toFixed(2)}</cbc:TaxAmount>
       <cac:TaxSubtotal>

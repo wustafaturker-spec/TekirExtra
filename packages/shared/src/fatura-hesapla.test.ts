@@ -129,3 +129,17 @@ describe("ihraç kayıtlı satış — KDV tahsil edilmez (EBLG-60)", () => {
     expect(sonuc.genelToplam).toBe(109660.29);
   });
 });
+
+describe("faturaHesapla — özel matrah", () => {
+  it("satır KDV'siz kalır, özel matrahın KDV'si genel toplama eklenir", () => {
+    // Saha örneği: satır 95.465,35 (KDV hariç), matrah 3.465,35, %1 → 34,65.
+    const sonuc = faturaHesapla({
+      satirlar: [{ stokId: "s1", miktar: 1, birimFiyat: 95465.35, kdvOrani: 0 }],
+      ozelMatrahKdvsi: 34.65,
+    });
+    expect(sonuc.toplamMatrah).toBe(95465.35);
+    expect(sonuc.toplamKdv).toBe(34.65);
+    expect(sonuc.toplamNetKdv).toBe(34.65);
+    expect(sonuc.genelToplam).toBe(95500);
+  });
+});

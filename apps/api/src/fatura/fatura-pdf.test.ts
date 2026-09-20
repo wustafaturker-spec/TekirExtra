@@ -162,18 +162,25 @@ describe("faturaPdfHtml — yolcu beraberi (tax-free)", () => {
 });
 
 describe("faturaPdfHtml — özel matrah", () => {
+  // Saha örneği: 92.000'e alınan araç 95.500'e satılır; satır KDV hariç.
+  const ozelMatrahFaturasi = {
+    ...fatura,
+    ozelMatrahKodu: "812", ozelMatrahTutari: "3465.35", ozelMatrahOrani: "1.00",
+    toplamBrut: "95465.35", toplamMatrah: "95465.35", toplamKdv: "34.65", genelToplam: "95500.00",
+  };
+
   it("kodu, matrahı ve hesaplanan KDV'yi belge altına yazar", () => {
-    const html = faturaPdfHtml({ ...fatura, ozelMatrahKodu: "812", ozelMatrahTutari: "5000.00", ozelMatrahOrani: "20.00" }, firma);
+    const html = faturaPdfHtml(ozelMatrahFaturasi, firma);
     expect(html).toContain("812 — KDV Uygulanmadan Alınan İkinci El Motorlu Kara Taşıtı veya Taşınmaz Teslimi");
-    expect(html).toContain("KDV matrahı 5.000,00 TL, oran %20, hesaplanan KDV 1.000,00 TL — satış bedeline dahildir.");
+    expect(html).toContain("matrah 3.465,35 TL, oran %1, hesaplanan KDV 34,65 TL");
   });
 
-  it("toplam kutusunda satış bedelini ve özel matrah KDV'sini gösterir", () => {
-    const html = faturaPdfHtml({ ...fatura, ozelMatrahKodu: "812", ozelMatrahTutari: "5000.00", ozelMatrahOrani: "20.00" }, firma);
-    // Satırlar KDV'siz olduğu için kutu "Hesaplanan KDV 0,00" diyordu; belge
-    // altındaki ibareyle çelişiyordu.
-    expect(html).toContain("Satış Bedeli (KDV dahil)");
-    expect(html).toContain("Hesaplanan KDV (özel matrah)");
+  it("toplam kutusunda mal/hizmet toplamını ve özel matrah KDV'sini gösterir", () => {
+    const html = faturaPdfHtml(ozelMatrahFaturasi, firma);
+    // "KDV Matrahı 95.465,35" demek belgenin matrahını yanlış anlatıyordu.
+    expect(html).toContain("Mal/Hizmet Toplamı");
+    expect(html).toContain("Hesaplanan KDV (özel matrah %1)");
+    expect(html).toContain("95.500,00 TL");
     expect(html).not.toContain("<td style=\"padding:3px 8px\">KDV Matrahı</td>");
   });
 

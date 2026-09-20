@@ -9,7 +9,7 @@ import {
   forwardRef,
 } from "@nestjs/common";
 import { Prisma, FaturaTip, FaturaDurum, BelgeDurum } from "@prisma/client";
-import { faturaHesapla, faturaSenaryosuTuret, metinNormalize, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type KayitEylem } from "@tekirextra/shared";
+import { faturaHesapla, faturaSenaryosuTuret, metinNormalize, ozelMatrahKdvsi, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type KayitEylem } from "@tekirextra/shared";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
@@ -1441,6 +1441,9 @@ export class FaturaService {
 
   private hesaplaFatura(girdi: {
     ihracKayitliKodu?: string | null;
+    ozelMatrahKodu?: string | null;
+    ozelMatrahTutari?: string | number | Prisma.Decimal | null;
+    ozelMatrahOrani?: string | number | Prisma.Decimal | null;
     satirlar: {
       stokId: string;
       miktar: string | number | Prisma.Decimal;
@@ -1475,6 +1478,11 @@ export class FaturaService {
       genelIskontoYuzdesi: girdi.genelIskontoYuzdesi ? Number(girdi.genelIskontoYuzdesi) : 0,
       genelIskontoTutari: girdi.genelIskontoTutari ? Number(girdi.genelIskontoTutari) : 0,
       kdvTahsilEdilmez: Boolean(girdi.ihracKayitliKodu),
+      // Özel matrahta satırlar KDV'siz girilir; KDV belgeye girilen matrahtan
+      // doğar ve genel toplama eklenir (karar 2026-09-20).
+      ozelMatrahKdvsi: girdi.ozelMatrahKodu
+        ? ozelMatrahKdvsi(girdi.ozelMatrahTutari?.toString(), girdi.ozelMatrahOrani?.toString())
+        : 0,
     });
   }
 

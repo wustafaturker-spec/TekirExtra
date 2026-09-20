@@ -17,6 +17,12 @@ export interface FaturaHesaplaGirdi {
    * tahsil edilmez. Net KDV sıfır, genel toplam matrahtır.
    */
   kdvTahsilEdilmez?: boolean;
+  /**
+   * Özel matrah faturasında (KDV K. 23) KDV satırlardan değil, belgeye girilen
+   * özel matrahtan doğar: satırlar KDV'siz yazılır, hesaplanan KDV toplam
+   * KDV'ye ve genel toplama eklenir (karar 2026-09-20). Tutar TL'dir.
+   */
+  ozelMatrahKdvsi?: number;
 }
 
 export interface FaturaHesaplaSatirSonuc {
@@ -136,9 +142,11 @@ export function faturaHesapla(girdi: FaturaHesaplaGirdi): FaturaHesaplaSonuc {
   const toplamBrut = Y(satirlar.reduce((t, s) => t + s.brutTutar, 0));
   const toplamSatirIskontosu = Y(satirlar.reduce((t, s) => t + s.iskontoTutari, 0));
   const toplamMatrah = Y(satirlar.reduce((t, s) => t + s.matrah, 0));
-  const toplamKdv = Y(satirlar.reduce((t, s) => t + s.kdvTutari, 0));
+  // Özel matrahın KDV'si satırlarda değil belgededir; toplamlara buradan girer.
+  const ozelMatrahKdvsi = Y(girdi.ozelMatrahKdvsi ?? 0);
+  const toplamKdv = Y(satirlar.reduce((t, s) => t + s.kdvTutari, 0) + ozelMatrahKdvsi);
   const toplamTevkifat = Y(satirlar.reduce((t, s) => t + s.tevkifatTutari, 0));
-  const toplamNetKdv = Y(satirlar.reduce((t, s) => t + s.netKdvTutari, 0));
+  const toplamNetKdv = Y(satirlar.reduce((t, s) => t + s.netKdvTutari, 0) + ozelMatrahKdvsi);
   const genelToplam = Y(toplamMatrah + toplamNetKdv);
 
   // KDV Oranlarına Göre Kırılım Detayları

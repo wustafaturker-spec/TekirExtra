@@ -26,6 +26,7 @@ import {
   OZEL_MATRAH_KODLARI,
   ozelMatrahHatalari,
   ozelMatrahKdvsi,
+  ozelMatrahTabani,
   ULKELER,
   yolcuBeraberiEngelleri,
   IHRAC_KAYITLI_KODLARI,
@@ -460,6 +461,8 @@ export default function FaturaSayfasi() {
   const [ozelMatrahKodu, setOzelMatrahKodu] = useState("");
   const [ozelMatrahTutari, setOzelMatrahTutari] = useState("");
   const [ozelMatrahOrani, setOzelMatrahOrani] = useState("20");
+  /** Yardımcı: KDV dahil kâr farkı; matrahı iç yüzdeyle buradan çözeriz. */
+  const [ozelMatrahFarki, setOzelMatrahFarki] = useState("");
   const [siparisNo, setSiparisNo] = useState("");
   const [siparisTarihi, setSiparisTarihi] = useState("");
   const [faturaNo, setFaturaNo] = useState("");
@@ -522,7 +525,15 @@ export default function FaturaSayfasi() {
   });
   // EBLG-60: ihraç kayıtlı yalnız satışta; tip değişince seçim yok sayılır.
   const ihracKayitli = tip === "satis" && ihracKayitliKodu ? ihracKayitliKodu : null;
-  const sonuc = faturaHesapla({ satirlar: girdiSatirlar, kdvTahsilEdilmez: Boolean(ihracKayitli) });
+  // Özel matrahta KDV satırlardan değil belgeye girilen matrahtan doğar ve
+  // genel toplama eklenir; ekrandaki özet sunucunun hesabıyla aynı olsun diye
+  // aynı girdi buraya da verilir (karar 2026-09-20).
+  const ozelMatrahSecili = tip === "satis" && ozelMatrahKodu ? ozelMatrahKodu : null;
+  const sonuc = faturaHesapla({
+    satirlar: girdiSatirlar,
+    kdvTahsilEdilmez: Boolean(ihracKayitli),
+    ozelMatrahKdvsi: ozelMatrahSecili ? ozelMatrahKdvsi(ozelMatrahTutari || 0, ozelMatrahOrani || 0) : 0,
+  });
 
   // Senaryo ve GİB kural hataları sunucudakiyle aynı işlevden gelir; kullanıcı
   // kaydetmeden önce ne göndereceğini görür (FTR-16, FTR-20).
@@ -532,8 +543,8 @@ export default function FaturaSayfasi() {
     tevkifatOrani: s.tevkifatOrani,
     gibIstisnaKodu: s.gibIstisnaKodu,
   }));
-  // Özel matrah da yalnız satışta; KDV satış bedeline dahildir.
-  const ozelMatrah = tip === "satis" && ozelMatrahKodu ? ozelMatrahKodu : null;
+  // Özel matrah yalnız satışta; satırlar KDV hariç girilir, KDV matrahtan doğar.
+  const ozelMatrah = ozelMatrahSecili;
   const turetilenSenaryo = faturaSenaryosuTuret(tip, senaryoSatirlari, ihracKayitli, ozelMatrah);
   const ozelMatrahUyarilari = ozelMatrahHatalari({
     tip,
@@ -541,7 +552,7 @@ export default function FaturaSayfasi() {
     ozelMatrahTutari,
     ozelMatrahOrani,
     satirlar: senaryoSatirlari,
-    genelToplam: sonuc.genelToplam,
+    satisBedeli: sonuc.toplamMatrah,
   });
   const ihracKayitliUyarilari = ihracKayitliHatalari({ tip, ihracKayitliKodu: ihracKayitli, satirlar: senaryoSatirlari });
   // EBLG-59: tevkifatlı faturada sıfır KDV satırı yalnız 351 alabilir; liste sunucudaki kuralla süzülür.
@@ -618,7 +629,7 @@ export default function FaturaSayfasi() {
         setDuzenlenenId(faturaDuzenlenebilir(fatura) ? fatura.id : null); setTip(fatura.tip); setFaturaNo(fatura.no ?? ""); setTarih(fatura.tarih.slice(0, 10)); setDovizCinsi(fatura.dovizCinsi); setVadeTarihi(fatura.vadeTarihi?.slice(0, 10) ?? ""); setSiparisNo(fatura.siparisNo ?? ""); setSiparisTarihi(fatura.siparisTarihi?.slice(0, 10) ?? ""); setVadeElleDegisti(true);
         setCariId(fatura.cari.id); setDepoId(fatura.depoId ?? ""); setAciklama(fatura.aciklama ?? ""); setNotlar(fatura.notlar ?? "");
         setEfaturaProfili(fatura.efaturaProfili ?? "temel"); setProfilElleDegisti(true); setIhracKayitliKodu(fatura.ihracKayitliKodu ?? "");
-        setOzelMatrahKodu(fatura.ozelMatrahKodu ?? ""); setOzelMatrahTutari(fatura.ozelMatrahTutari ?? ""); setOzelMatrahOrani(fatura.ozelMatrahOrani ?? "20");
+        setOzelMatrahKodu(fatura.ozelMatrahKodu ?? ""); setOzelMatrahTutari(fatura.ozelMatrahTutari ?? ""); setOzelMatrahOrani(fatura.ozelMatrahOrani ?? "20"); setOzelMatrahFarki("");
         setSatirlar(fatura.satirlar.map((satir) => ({
           stokId: satir.stokId, varyantId: satir.varyantId ?? undefined,
           miktar: Number(satir.miktar), birimFiyat: Number(satir.birimFiyat),
@@ -1591,20 +1602,30 @@ export default function FaturaSayfasi() {
                   {ozelMatrahKodu ? (
                     <>
                       <Input
-                        type="number" min="0" step="0.01" value={ozelMatrahTutari}
-                        placeholder="KDV matrahı (ikinci elde alış ile satış farkı)"
-                        onChange={(e) => setOzelMatrahTutari(e.target.value)}
-                      />
-                      <Input
                         type="number" min="0" max="100" step="0.01" value={ozelMatrahOrani}
                         placeholder="KDV oranı (%)"
                         onChange={(e) => setOzelMatrahOrani(e.target.value)}
                       />
+                      {/* Satıcı "92.000'e aldım, 95.500'e satıyorum" diye düşünür;
+                          farkın içindeki KDV'yi ayırmayı ondan beklemeyelim. */}
+                      <Input
+                        type="number" min="0" step="0.01" value={ozelMatrahFarki}
+                        placeholder="KDV dahil kâr farkı (alış ile satış arasındaki fark)"
+                        onChange={(e) => {
+                          setOzelMatrahFarki(e.target.value);
+                          setOzelMatrahTutari(e.target.value ? ozelMatrahTabani(e.target.value, ozelMatrahOrani || 0).toFixed(2) : "");
+                        }}
+                      />
+                      <Input
+                        type="number" min="0" step="0.01" value={ozelMatrahTutari}
+                        placeholder="KDV matrahı"
+                        onChange={(e) => { setOzelMatrahTutari(e.target.value); setOzelMatrahFarki(""); }}
+                      />
                       <small className="muted">
-                        Satırlar KDV'siz girilir; hesaplanan KDV {ozelMatrahKdvsi(ozelMatrahTutari || 0, ozelMatrahOrani || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {dovizCinsi === "TRY" ? "TL" : dovizCinsi} satış bedeline dahildir.
+                        Satırlara <strong>KDV hariç</strong> satış bedeli girilir; özel matrahın KDV'si ({ozelMatrahKdvsi(ozelMatrahTutari || 0, ozelMatrahOrani || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {dovizCinsi === "TRY" ? "TL" : dovizCinsi}) genel toplama eklenir.
                       </small>
                     </>
-                  ) : <small className="muted">İkinci el araç/taşınmaz, müzayede, bayi satışı gibi KDV'si satış bedeline dahil işlemlerde seçilir.</small>}
+                  ) : <small className="muted">İkinci el araç/taşınmaz, müzayede, bayi satışı gibi KDV'si satış bedelinin tamamı üzerinden hesaplanmayan işlemlerde seçilir.</small>}
                 </Field>
               )}
               {tip === "satis" && (

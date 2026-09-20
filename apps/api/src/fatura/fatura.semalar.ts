@@ -94,7 +94,7 @@ const senaryolariDogrula = (
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["satirlar", hata.satirIndeksi, hata.alan], message: hata.mesaj });
   }
 };
-const faturaFinansalDogrula = (fatura: { ozelMatrahKodu?: string | null; ozelMatrahTutari?: string | null; ozelMatrahOrani?: string | null; genelToplam?: string; satirlar?: Array<{ miktar?: string; birimFiyat?: string; iskontoOrani?: string; kdvOrani?: string; tevkifatKodu?: string | null; tevkifatOrani?: string | null; gibIstisnaKodu?: string | null }>; genelIskontoTutari?: string; dovizCinsi?: string; kur?: string; tip?: string; ihracKayitliKodu?: string | null }, ctx: z.RefinementCtx) => {
+const faturaFinansalDogrula = (fatura: { ozelMatrahKodu?: string | null; ozelMatrahTutari?: string | null; ozelMatrahOrani?: string | null; satirlar?: Array<{ miktar?: string; birimFiyat?: string; iskontoOrani?: string; kdvOrani?: string; tevkifatKodu?: string | null; tevkifatOrani?: string | null; gibIstisnaKodu?: string | null }>; genelIskontoTutari?: string; dovizCinsi?: string; kur?: string; tip?: string; ihracKayitliKodu?: string | null }, ctx: z.RefinementCtx) => {
   senaryolariDogrula(fatura, ctx);
   // Özel matrah: kod, matrah ve satır kuralları tek yerden (shared) denetlenir.
   if (fatura.ozelMatrahKodu && fatura.tip) {

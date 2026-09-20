@@ -127,7 +127,7 @@ function ozelMatrahBilgisi(f: FaturaPdfVerisi): string {
   const kdv = ozelMatrahKdvsi(f.ozelMatrahTutari, f.ozelMatrahOrani);
   const paraBirimi = f.dovizCinsi === "TRY" ? "TL" : f.dovizCinsi;
   return `<p style="margin-top:10px;font-size:9pt">Özel matrah (KDV Kanunu 23): <strong>${kacis(`${tanim.kod} — ${tanim.ad}`)}</strong><br>`
-    + `KDV matrahı ${paraBicim(f.ozelMatrahTutari ?? "0")} ${paraBirimi}, oran %${sayiBicim(f.ozelMatrahOrani ?? "0")}, hesaplanan KDV ${paraBicim(kdv)} ${paraBirimi} — satış bedeline dahildir.</p>`;
+    + `KDV, satış bedelinin tamamı üzerinden değil özel matrah üzerinden hesaplanmıştır: matrah ${paraBicim(f.ozelMatrahTutari ?? "0")} ${paraBirimi}, oran %${sayiBicim(f.ozelMatrahOrani ?? "0")}, hesaplanan KDV ${paraBicim(kdv)} ${paraBirimi}.</p>`;
 }
 
 /**
@@ -206,23 +206,20 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
     </tr>`;
 
   /*
-   * Özel matrah faturasında satırlar KDV'siz olduğu için toplam kutusundaki
-   * "KDV Matrahı / Hesaplanan KDV 0,00" ikilisi belgeyi yanlış anlatıyordu:
-   * matrah satış bedeli değil, KDV de sıfır değil — satış bedeline dahil.
-   * Bu belgede kutu satış bedelini ve özel matrah üzerinden hesaplanan KDV'yi
-   * gösterir; matrahın kendisi belge altındaki ibarede durur.
+   * Özel matrah faturasında satırlar KDV'siz olduğu için "KDV Matrahı" etiketi
+   * satır toplamını gösterirken belgenin KDV matrahı bambaşkaydı (kâr farkı).
+   * Saha örneğindeki gibi satır toplamı "Mal/Hizmet Toplamı" olur, KDV ise
+   * özel matrah üzerinden hesaplanıp toplama eklenir.
    */
-  const ozelMatrah = ozelMatrahKoduBul(f.ozelMatrahKodu)
-    ? { kdv: ozelMatrahKdvsi(f.ozelMatrahTutari, f.ozelMatrahOrani) }
-    : null;
+  const ozelMatrah = ozelMatrahKoduBul(f.ozelMatrahKodu);
 
   const kalemler: { etiket: string; deger: string | number; kalin?: boolean }[] = [
     { etiket: "Brüt Toplam", deger: f.toplamBrut },
     ...(Number(f.toplamSatirIskontosu) > 0 ? [{ etiket: "Satır İskontoları", deger: `-${f.toplamSatirIskontosu}` }] : []),
     ...(Number(f.genelIskontoToplam) > 0 ? [{ etiket: "Genel İskonto", deger: `-${f.genelIskontoToplam}` }] : []),
-    { etiket: ozelMatrah ? "Satış Bedeli (KDV dahil)" : "KDV Matrahı", deger: f.toplamMatrah },
+    { etiket: ozelMatrah ? "Mal/Hizmet Toplamı" : "KDV Matrahı", deger: f.toplamMatrah },
     ozelMatrah
-      ? { etiket: "Hesaplanan KDV (özel matrah)", deger: ozelMatrah.kdv }
+      ? { etiket: `Hesaplanan KDV (özel matrah %${sayiBicim(f.ozelMatrahOrani ?? "0")})`, deger: f.toplamKdv }
       : { etiket: f.ihracKayitliKodu ? `Hesaplanan KDV (tahsil edilmez — ${kacis(f.ihracKayitliKodu)})` : "Hesaplanan KDV", deger: f.toplamKdv },
     ...(Number(f.toplamTevkifat) > 0 ? [{ etiket: "KDV Tevkifatı", deger: `-${f.toplamTevkifat}` }] : []),
     { etiket: "Genel Toplam", deger: f.genelToplam, kalin: true },
