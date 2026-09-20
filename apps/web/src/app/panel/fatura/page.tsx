@@ -2379,7 +2379,7 @@ export default function FaturaSayfasi() {
                   {ebelgeWizard.bilgi.sarj.turu === "sarj" && (
                     <Field label="ESU rapor kimlikleri *">
                       {raporlar.map((rapor, index) => (
-                        <div className="stack" key={index}>
+                        <div className="sarj-rapor" key={index}>
                           <Input
                             aria-label={`${index + 1}. ESU rapor kimliği`}
                             value={rapor.raporId}

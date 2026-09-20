@@ -958,7 +958,11 @@ export default function BelgelerSayfasi() {
                 const st = stoklar.find((x) => x.id === s.stokId);
                 return (
                   <tr key={i}>
-                    <td>{st ? `${st.ad} (${st.kod})` : s.stokId}</td>
+                    <td>
+                      {st ? `${st.ad} (${st.kod})` : s.stokId}
+                      {/* EBLG-72: onaylı belgede etiket düzenlenemez ama belgeyle giden numara görünmelidir. */}
+                      {s.idisEtiketNo && <small className="muted"> · İDİS etiket {s.idisEtiketNo}</small>}
+                    </td>
                     <td className="num">{Number(s.miktar).toLocaleString("tr-TR")} {s.birim}</td>
                     {/* SAT-09/10: siparişin ne kadarı teslim edildi, ne kadarı bekliyor */}
                     {detay.tur === "siparis" && <>

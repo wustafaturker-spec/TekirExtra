@@ -2266,6 +2266,10 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 .between { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .grow { flex: 1; min-width: 0; }
 .stack { display: flex; flex-direction: column; gap: 1rem; }
+/* EBLG-71: ESU rapor satırı — GUID geniş, tarih dar, sil düğmesi kompakt. */
+.sarj-rapor{align-items:center;display:grid;gap:.4rem;grid-template-columns:minmax(0,1fr) 9.5rem auto;margin-bottom:.4rem}
+.sarj-rapor .btn{width:auto}
+@media(max-width:620px){.sarj-rapor{grid-template-columns:minmax(0,1fr) auto}.sarj-rapor>:nth-child(2){grid-column:1}}
 
 /* ─── Kimlik doğrulama / lobisi ──────────────────────────────────────────── */
 .auth-wrap {
