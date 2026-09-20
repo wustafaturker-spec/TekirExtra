@@ -300,6 +300,8 @@ export default function EkstreSayfasi() {
   async function eslestir(s: EkstreSatir) {
     const cari = cariAl(s);
     if (!cari) return;
+    const fatura = s.onerilenFaturalar.find((f) => f.id === seciliFatura[s.id]);
+    if (fatura && Math.abs(Number(s.tutar)) > Number(fatura.kalan) && !window.confirm(`Uyarı: Ekstre tutarı faturanın kalan ${para(fatura.kalan, s.bankaHesap.dovizCinsi)} bakiyesini aşıyor. Fazla ödeme ile eşleştirilsin mi?`)) return;
     setHata("");
     setBasari("");
     setIslemde(`eslestir-${s.id}`);
