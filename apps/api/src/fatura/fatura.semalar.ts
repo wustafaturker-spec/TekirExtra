@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { guncellemeSemasi } from "../core/sema";
-import { ihracKayitliHatalari, senaryoHatalari } from "@tekirextra/shared";
+import { ihracKayitliHatalari, ozelMatrahHatalari, senaryoHatalari } from "@tekirextra/shared";
 
 const pozitifOndalik = z
   .union([z.string(), z.number()])
@@ -61,6 +61,10 @@ const faturaOlusturGovde = z.object({
   earsivGonderimSekli: z.enum(["elektronik", "kagit"]).optional().nullable(),
   /** EBLG-60: ihraç kayıtlı satış kodu (701/702); doluysa KDV tahsil edilmez. */
   ihracKayitliKodu: z.string().optional().nullable(),
+  /** Özel matrah (KDV K. 23): kod, KDV'nin hesaplandığı matrah ve oranı. */
+  ozelMatrahKodu: z.string().optional().nullable(),
+  ozelMatrahTutari: pozitifOndalik.optional().nullable(),
+  ozelMatrahOrani: yuzde.optional().nullable(),
   /** STK-07: stok hareketlerinin işleneceği depo; boşsa varsayılan depo */
   depoId: z.string().uuid().optional().nullable(),
   dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
@@ -86,12 +90,24 @@ const senaryolariDogrula = (
     tevkifatOrani: satir.tevkifatOrani,
     gibIstisnaKodu: satir.gibIstisnaKodu,
   }));
-  for (const hata of senaryoHatalari(satirlar)) {
+  for (const hata of senaryoHatalari(satirlar, Boolean((fatura as { ozelMatrahKodu?: string | null }).ozelMatrahKodu))) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["satirlar", hata.satirIndeksi, hata.alan], message: hata.mesaj });
   }
 };
-const faturaFinansalDogrula = (fatura: { satirlar?: Array<{ miktar?: string; birimFiyat?: string; iskontoOrani?: string; kdvOrani?: string; tevkifatKodu?: string | null; tevkifatOrani?: string | null; gibIstisnaKodu?: string | null }>; genelIskontoTutari?: string; dovizCinsi?: string; kur?: string; tip?: string; ihracKayitliKodu?: string | null }, ctx: z.RefinementCtx) => {
+const faturaFinansalDogrula = (fatura: { ozelMatrahKodu?: string | null; ozelMatrahTutari?: string | null; ozelMatrahOrani?: string | null; genelToplam?: string; satirlar?: Array<{ miktar?: string; birimFiyat?: string; iskontoOrani?: string; kdvOrani?: string; tevkifatKodu?: string | null; tevkifatOrani?: string | null; gibIstisnaKodu?: string | null }>; genelIskontoTutari?: string; dovizCinsi?: string; kur?: string; tip?: string; ihracKayitliKodu?: string | null }, ctx: z.RefinementCtx) => {
   senaryolariDogrula(fatura, ctx);
+  // Özel matrah: kod, matrah ve satır kuralları tek yerden (shared) denetlenir.
+  if (fatura.ozelMatrahKodu && fatura.tip) {
+    for (const mesaj of ozelMatrahHatalari({
+      tip: fatura.tip,
+      ozelMatrahKodu: fatura.ozelMatrahKodu,
+      ozelMatrahTutari: fatura.ozelMatrahTutari,
+      ozelMatrahOrani: fatura.ozelMatrahOrani,
+      satirlar: (fatura.satirlar ?? []).map((s) => ({ kdvOrani: s.kdvOrani ?? 0, tevkifatKodu: s.tevkifatKodu })),
+    })) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ozelMatrahKodu"], message: mesaj });
+    }
+  }
   // Güncellemede tip gelmeyebilir; kural tam hâliyle serviste yeniden uygulanır.
   if (fatura.ihracKayitliKodu && fatura.tip) {
     for (const mesaj of ihracKayitliHatalari({ tip: fatura.tip, ihracKayitliKodu: fatura.ihracKayitliKodu, satirlar: fatura.satirlar ?? [] })) {

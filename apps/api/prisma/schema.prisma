@@ -1989,6 +1989,7 @@ enum FaturaSenaryo {
   tevkifatiade
   istisna
   ihrackayitli
+  ozelmatrah
 }
 
 /// e-Fatura profili (FTR-19). TICARIFATURA alıcıya 8 gün içinde kabul/ret
@@ -2096,6 +2097,11 @@ model Fatura {
   kamuHarcamaBirimiVkn String?         @map("kamu_harcama_birimi_vkn")
   kamuHarcamaBirimiAdi String?         @map("kamu_harcama_birimi_adi")
   kamuIban             String?         @map("kamu_iban")
+  /// Özel matrah (KDV K. 23): kod, KDV'nin hesaplandığı matrah ve oranı.
+  /// Satırlar KDV'siz durur; KDV yalnız belge düzeyinde bildirilir.
+  ozelMatrahKodu       String?         @map("ozel_matrah_kodu")
+  ozelMatrahTutari     Decimal?        @map("ozel_matrah_tutari") @db.Decimal(15, 2)
+  ozelMatrahOrani      Decimal?        @map("ozel_matrah_orani") @db.Decimal(5, 2)
   /// Yolcu beraberi (tax-free): yolcu ve aracı kurum bilgisi; boşsa değildir.
   /// Biçim `YolcuBeraberiBilgisi` (packages/shared/src/yolcu-beraberi.ts).
   yolcuBeraberi        Json?           @map("yolcu_beraberi")

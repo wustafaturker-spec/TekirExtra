@@ -1,7 +1,7 @@
 import { type IstisnaKodu, KDV_ISTISNA_KODLARI, ihracKayitliKoduBul, istisnaKoduBul, tevkifatKoduBul, tevkifatOraniAyristir } from "./gib-kodlari";
 
 /** UBL'e `InvoiceTypeCode` olarak yazılan GİB senaryosu (FTR-16). */
-export type FaturaSenaryosu = "satis" | "iade" | "tevkifat" | "tevkifatiade" | "istisna" | "ihrackayitli";
+export type FaturaSenaryosu = "satis" | "iade" | "tevkifat" | "tevkifatiade" | "istisna" | "ihrackayitli" | "ozelmatrah";
 
 /** GİB'in `InvoiceTypeCode` kod listesindeki karşılıkları. */
 const UBL_KARSILIGI: Record<FaturaSenaryosu, string> = {
@@ -11,6 +11,7 @@ const UBL_KARSILIGI: Record<FaturaSenaryosu, string> = {
   tevkifatiade: "TEVKIFATIADE",
   istisna: "ISTISNA",
   ihrackayitli: "IHRACKAYITLI",
+  ozelmatrah: "OZELMATRAH",
 };
 
 export function senaryoUblKodu(senaryo: FaturaSenaryosu): string {
@@ -46,7 +47,15 @@ const istisnaSayilir = (kod: string | null | undefined) => Boolean(kod) && kod !
  * taşısa da IADE kalır — IADE tipi 201–350 kodlarını kabul eder ve iade
  * referansı yalnız bu tipte anlamlıdır. 351 faturayı ISTISNA yapmaz.
  */
-export function faturaSenaryosuTuret(tip: string, satirlar: SenaryoSatirGirdi[], ihracKayitliKodu?: string | null): FaturaSenaryosu {
+export function faturaSenaryosuTuret(
+  tip: string,
+  satirlar: SenaryoSatirGirdi[],
+  ihracKayitliKodu?: string | null,
+  ozelMatrahKodu?: string | null,
+): FaturaSenaryosu {
+  // Özel matrah da faturada işaretlenir; satırlar KDV'siz olduğu için
+  // satırlardan türetilemez (KDV, özel matrah üzerinden belge düzeyinde durur).
+  if (ozelMatrahKodu && tip === "satis") return "ozelmatrah";
   // EBLG-60: ihraç kayıtlı satış faturada işaretlenir; satırlardan türemez.
   if (ihracKayitliKodu && tip === "satis") return "ihrackayitli";
   /*
@@ -83,14 +92,16 @@ export interface SenaryoHatasi {
  * Hem şema doğrulaması hem de arayüzün kaydetme öncesi özeti bu listeyi
  * kullanır, böylece iki taraf aynı kuralı ayrı ayrı yorumlamaz.
  */
-export function senaryoHatalari(satirlar: SenaryoSatirGirdi[]): SenaryoHatasi[] {
+export function senaryoHatalari(satirlar: SenaryoSatirGirdi[], ozelMatrah = false): SenaryoHatasi[] {
   const hatalar: SenaryoHatasi[] = [];
   const tevkifatli = satirlar.some((s) => Boolean(s.tevkifatKodu));
 
   satirlar.forEach((satir, satirIndeksi) => {
     const kdvSifir = Number(satir.kdvOrani) === 0;
 
-    if (kdvSifir && !satir.gibIstisnaKodu) {
+    // Özel matrah faturasında satırlar KDV'siz olmak zorundadır ve sebebi
+    // belge düzeyindeki özel matrah kodudur; satırda ayrıca kod aranmaz.
+    if (kdvSifir && !satir.gibIstisnaKodu && !ozelMatrah) {
       hatalar.push({
         satirIndeksi,
         alan: "gibIstisnaKodu",

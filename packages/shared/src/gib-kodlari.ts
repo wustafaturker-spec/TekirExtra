@@ -154,6 +154,37 @@ export const TEVKIFAT_KODLARI: readonly TevkifatKodu[] = [
   { kod: "650", ad: "DİĞERLERİ", oranlar: ["2/10", "5/10", "7/10", "9/10"] },
 ];
 
+/**
+ * Özel matrah kodları (UBL-TR Kod Listeleri v1.26, Nisan 2021). KDV Kanunu 23.
+ * madde: verginin matrahı satış bedeli değil, maddede sayılan özel matrahtır —
+ * ikinci elde alış ile satış farkı, müzayedede komisyon, bayi işlerinde sıfır.
+ */
+export interface OzelMatrahKodu {
+  kod: string;
+  ad: string;
+}
+
+export const OZEL_MATRAH_KODLARI: readonly OzelMatrahKodu[] = [
+  { kod: "801", ad: "Milli Piyango, Spor Toto vb. Oyunlar" },
+  { kod: "802", ad: "At Yarışları ve Diğer Müşterek Bahis ve Talih Oyunları" },
+  { kod: "803", ad: "Profesyonel Sanatçıların Yer Aldığı Gösteriler, Konserler, Profesyonel Sporcuların Katıldığı Sportif Faaliyetler, Maçlar, Yarışlar ve Yarışmalar" },
+  { kod: "804", ad: "Gümrük Depolarında ve Müzayede Mahallerinde Yapılan Satışlar" },
+  { kod: "805", ad: "Altından Mamül veya Altın İçeren Ziynet Eşyaları İle Sikke Altınların Teslimi" },
+  { kod: "806", ad: "Tütün Mamülleri" },
+  { kod: "807", ad: "Muzır Neşriyat Kapsamındaki Gazete, Dergi vb. Periyodik Yayınlar" },
+  { kod: "808", ad: "Gümüşten Mamul veya Gümüş İçeren Ziynet Eşyaları ile Sikke Gümüşlerin Teslimi" },
+  { kod: "809", ad: "Belediyeler Tarafından Yapılan Şehir İçi Yolcu Taşımacılığında Kullanılan Biletlerin ve Kartların Bayiler Tarafından Satışı" },
+  { kod: "810", ad: "Ön Ödemeli Elektronik Haberleşme Hizmetleri" },
+  { kod: "811", ad: "TŞOF Tarafından Araç Plakaları ile Sürücü Kurslarında Kullanılan Bir Kısım Evrakın Teslimi" },
+  { kod: "812", ad: "KDV Uygulanmadan Alınan İkinci El Motorlu Kara Taşıtı veya Taşınmaz Teslimi" },
+];
+
+const OZEL_MATRAH_HARITASI = new Map(OZEL_MATRAH_KODLARI.map((k) => [k.kod, k]));
+
+export function ozelMatrahKoduBul(kod: string | null | undefined): OzelMatrahKodu | undefined {
+  return kod ? OZEL_MATRAH_HARITASI.get(kod) : undefined;
+}
+
 const ISTISNA_HARITASI = new Map(KDV_ISTISNA_KODLARI.map((k) => [k.kod, k]));
 const TEVKIFAT_HARITASI = new Map(TEVKIFAT_KODLARI.map((k) => [k.kod, k]));
 

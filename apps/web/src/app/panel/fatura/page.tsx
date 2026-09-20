@@ -23,6 +23,9 @@ import {
   iadeEngelleri,
   ihracKayitliHatalari,
   kamuEngelleri,
+  OZEL_MATRAH_KODLARI,
+  ozelMatrahHatalari,
+  ozelMatrahKdvsi,
   ULKELER,
   yolcuBeraberiEngelleri,
   IHRAC_KAYITLI_KODLARI,
@@ -116,6 +119,10 @@ interface Fatura {
   efaturaProfili?: "temel" | "ticari";
   /** EBLG-60: ihraç kayıtlı satış kodu (701/702); doluysa KDV tahsil edilmez. */
   ihracKayitliKodu?: string | null;
+  /** Özel matrah (KDV K. 23): kod, KDV'nin hesaplandığı matrah ve oranı. */
+  ozelMatrahKodu?: string | null;
+  ozelMatrahTutari?: string | null;
+  ozelMatrahOrani?: string | null;
   /** Belge e-Arşiv olarak düzenlenirse teslim şekli (EBLG-26). */
   earsivGonderimSekli?: "elektronik" | "kagit";
   /**
@@ -287,6 +294,7 @@ const SENARYO_ADLARI: Record<FaturaSenaryosu, string> = {
   tevkifatiade: "Tevkifatlı iade",
   istisna: "İstisna",
   ihrackayitli: "İhraç kayıtlı",
+  ozelmatrah: "Özel matrah",
 };
 
 /** BelgeDurum enum'u (EBLG-04). */
@@ -448,6 +456,10 @@ export default function FaturaSayfasi() {
   const [profilElleDegisti, setProfilElleDegisti] = useState(false);
   /** EBLG-60: ihraç kayıtlı satış kodu; boşsa normal satış. */
   const [ihracKayitliKodu, setIhracKayitliKodu] = useState("");
+  /** Özel matrah (KDV K. 23): kod, KDV'nin hesaplandığı matrah ve oranı. */
+  const [ozelMatrahKodu, setOzelMatrahKodu] = useState("");
+  const [ozelMatrahTutari, setOzelMatrahTutari] = useState("");
+  const [ozelMatrahOrani, setOzelMatrahOrani] = useState("20");
   const [siparisNo, setSiparisNo] = useState("");
   const [siparisTarihi, setSiparisTarihi] = useState("");
   const [faturaNo, setFaturaNo] = useState("");
@@ -520,11 +532,21 @@ export default function FaturaSayfasi() {
     tevkifatOrani: s.tevkifatOrani,
     gibIstisnaKodu: s.gibIstisnaKodu,
   }));
-  const turetilenSenaryo = faturaSenaryosuTuret(tip, senaryoSatirlari, ihracKayitli);
+  // Özel matrah da yalnız satışta; KDV satış bedeline dahildir.
+  const ozelMatrah = tip === "satis" && ozelMatrahKodu ? ozelMatrahKodu : null;
+  const turetilenSenaryo = faturaSenaryosuTuret(tip, senaryoSatirlari, ihracKayitli, ozelMatrah);
+  const ozelMatrahUyarilari = ozelMatrahHatalari({
+    tip,
+    ozelMatrahKodu: ozelMatrah,
+    ozelMatrahTutari,
+    ozelMatrahOrani,
+    satirlar: senaryoSatirlari,
+    genelToplam: sonuc.genelToplam,
+  });
   const ihracKayitliUyarilari = ihracKayitliHatalari({ tip, ihracKayitliKodu: ihracKayitli, satirlar: senaryoSatirlari });
   // EBLG-59: tevkifatlı faturada sıfır KDV satırı yalnız 351 alabilir; liste sunucudaki kuralla süzülür.
   const istisnaSecenekleri = izinliIstisnaKodlari(senaryoSatirlari);
-  const senaryoUyarilari = senaryoHatalari(senaryoSatirlari);
+  const senaryoUyarilari = senaryoHatalari(senaryoSatirlari, Boolean(ozelMatrah));
   const istisnaliSatirSayisi = senaryoSatirlari.filter((s) => Boolean(s.gibIstisnaKodu)).length;
   const tevkifatliSatirSayisi = senaryoSatirlari.filter((s) => Boolean(s.tevkifatKodu)).length;
   // Profil yalnız bizim kestiğimiz belgelerde anlamlı; alış faturası bize gelir.
@@ -596,6 +618,7 @@ export default function FaturaSayfasi() {
         setDuzenlenenId(faturaDuzenlenebilir(fatura) ? fatura.id : null); setTip(fatura.tip); setFaturaNo(fatura.no ?? ""); setTarih(fatura.tarih.slice(0, 10)); setDovizCinsi(fatura.dovizCinsi); setVadeTarihi(fatura.vadeTarihi?.slice(0, 10) ?? ""); setSiparisNo(fatura.siparisNo ?? ""); setSiparisTarihi(fatura.siparisTarihi?.slice(0, 10) ?? ""); setVadeElleDegisti(true);
         setCariId(fatura.cari.id); setDepoId(fatura.depoId ?? ""); setAciklama(fatura.aciklama ?? ""); setNotlar(fatura.notlar ?? "");
         setEfaturaProfili(fatura.efaturaProfili ?? "temel"); setProfilElleDegisti(true); setIhracKayitliKodu(fatura.ihracKayitliKodu ?? "");
+        setOzelMatrahKodu(fatura.ozelMatrahKodu ?? ""); setOzelMatrahTutari(fatura.ozelMatrahTutari ?? ""); setOzelMatrahOrani(fatura.ozelMatrahOrani ?? "20");
         setSatirlar(fatura.satirlar.map((satir) => ({
           stokId: satir.stokId, varyantId: satir.varyantId ?? undefined,
           miktar: Number(satir.miktar), birimFiyat: Number(satir.birimFiyat),
@@ -873,6 +896,10 @@ export default function FaturaSayfasi() {
 
     // Eksik istisna kodu gibi senaryo hataları burada durdurulur; sunucuya
     // gitse de aynı kuraldan dönerdi (FTR-20).
+    if (ozelMatrahUyarilari.length > 0) {
+      setHata(ozelMatrahUyarilari[0]);
+      return;
+    }
     if (ihracKayitliUyarilari.length > 0) {
       setHata(ihracKayitliUyarilari[0]);
       kullanimOlayi("fatura_dogrulama_hatasi");
@@ -897,6 +924,9 @@ export default function FaturaSayfasi() {
           cariId,
           efaturaProfili,
           ihracKayitliKodu: ihracKayitli,
+          ozelMatrahKodu: ozelMatrah,
+          ozelMatrahTutari: ozelMatrah ? ozelMatrahTutari || "0" : null,
+          ozelMatrahOrani: ozelMatrah ? ozelMatrahOrani || "0" : null,
           // STK-07: boş bırakılırsa sunucu varsayılan depoyu kullanır
           depoId: depoId || null,
           tip,
@@ -1553,6 +1583,31 @@ export default function FaturaSayfasi() {
                 </Field>
               )}
               {tip === "satis" && (
+                <Field label="Özel matrah (KDV K. 23)">
+                  <Select aria-label="Özel matrah" value={ozelMatrahKodu} onChange={(e) => setOzelMatrahKodu(e.target.value)}>
+                    <option value="">Hayır — normal satış</option>
+                    {OZEL_MATRAH_KODLARI.map((k) => <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>)}
+                  </Select>
+                  {ozelMatrahKodu ? (
+                    <>
+                      <Input
+                        type="number" min="0" step="0.01" value={ozelMatrahTutari}
+                        placeholder="KDV matrahı (ikinci elde alış ile satış farkı)"
+                        onChange={(e) => setOzelMatrahTutari(e.target.value)}
+                      />
+                      <Input
+                        type="number" min="0" max="100" step="0.01" value={ozelMatrahOrani}
+                        placeholder="KDV oranı (%)"
+                        onChange={(e) => setOzelMatrahOrani(e.target.value)}
+                      />
+                      <small className="muted">
+                        Satırlar KDV'siz girilir; hesaplanan KDV {ozelMatrahKdvsi(ozelMatrahTutari || 0, ozelMatrahOrani || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {dovizCinsi === "TRY" ? "TL" : dovizCinsi} satış bedeline dahildir.
+                      </small>
+                    </>
+                  ) : <small className="muted">İkinci el araç/taşınmaz, müzayede, bayi satışı gibi KDV'si satış bedeline dahil işlemlerde seçilir.</small>}
+                </Field>
+              )}
+              {tip === "satis" && (
                 <Field label="İhraç kayıtlı satış">
                   <Select aria-label="İhraç kayıtlı satış" value={ihracKayitliKodu} onChange={(e) => setIhracKayitliKodu(e.target.value)}>
                     <option value="">Hayır — normal satış</option>
@@ -1814,7 +1869,7 @@ export default function FaturaSayfasi() {
               satırlardan türetip gösterir; geçersiz senaryo burada durdurulur. */}
           <div className="document-editor__section">
             <h4 className="document-editor__section-title">Senaryo özeti</h4>
-            <div className={`scenario-summary${senaryoUyarilari.length + ihracKayitliUyarilari.length > 0 ? " is-warning" : ""}`}>
+            <div className={`scenario-summary${senaryoUyarilari.length + ihracKayitliUyarilari.length + ozelMatrahUyarilari.length > 0 ? " is-warning" : ""}`}>
               <div>
                 <span>GİB senaryosu</span>
                 <strong>{SENARYO_ADLARI[turetilenSenaryo]} · {senaryoUblKodu(turetilenSenaryo)}</strong>
@@ -1837,6 +1892,11 @@ export default function FaturaSayfasi() {
                 <span>{sonuc.toplamTevkifat > 0 ? "Tevkifat sonrası tahsil edilecek" : "Tahsil edilecek"}</span>
                 <strong>{tl(sonuc.genelToplam)}</strong>
               </div>
+              {ozelMatrahUyarilari.length > 0 && (
+                <ul className="scenario-warnings">
+                  {ozelMatrahUyarilari.map((mesaj) => <li key={mesaj}>{mesaj}</li>)}
+                </ul>
+              )}
               {ihracKayitliUyarilari.length > 0 && (
                 <ul role="alert">{ihracKayitliUyarilari.map((mesaj) => <li key={mesaj}>{mesaj}</li>)}</ul>
               )}

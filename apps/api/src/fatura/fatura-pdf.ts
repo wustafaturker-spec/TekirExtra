@@ -4,6 +4,8 @@ import {
   YOLCU_BERABER_ISTISNA_KODU,
   YOLCU_BERABER_PROFILI,
   ihracKayitliKoduBul,
+  ozelMatrahKdvsi,
+  ozelMatrahKoduBul,
   senaryoUblKodu,
   ulkeAdi,
   type AraciKurum,
@@ -81,6 +83,10 @@ export interface FaturaPdfVerisi {
   kamuHarcamaBirimiVkn?: string | null;
   kamuHarcamaBirimiAdi?: string | null;
   kamuIban?: string | null;
+  /** Özel matrah (KDV K. 23): kod, matrah ve oran; KDV belge düzeyindedir. */
+  ozelMatrahKodu?: string | null;
+  ozelMatrahTutari?: string | null;
+  ozelMatrahOrani?: string | null;
   /** Yolcu beraberi (tax-free): yolcu ve aracı kurum; boşsa değildir. */
   yolcuBeraberi?: { yolcu?: YolcuBilgisi | null; araciKurum?: AraciKurum | null } | null;
 }
@@ -109,6 +115,19 @@ function kamuBilgisi(f: FaturaPdfVerisi): string {
     ? `${f.kamuHarcamaBirimiAdi}${f.kamuHarcamaBirimiVkn ? ` (VKN ${f.kamuHarcamaBirimiVkn})` : ""}`
     : f.kamuHarcamaBirimiVkn ?? "";
   return `<p style="margin-top:10px;font-size:9pt">${birim ? `Ödemeyi yapacak harcama birimi: <strong>${kacis(birim)}</strong><br>` : ""}Ödemenin yapılacağı IBAN: <strong>${kacis(ibanBicim(f.kamuIban))}</strong></p>`;
+}
+
+/**
+ * Özel matrah belge altı bilgisi: KDV satış bedeline dahildir ve yalnız özel
+ * matrah üzerinden hesaplanır — alıcı bunu belgede görmelidir.
+ */
+function ozelMatrahBilgisi(f: FaturaPdfVerisi): string {
+  const tanim = ozelMatrahKoduBul(f.ozelMatrahKodu);
+  if (!tanim) return "";
+  const kdv = ozelMatrahKdvsi(f.ozelMatrahTutari, f.ozelMatrahOrani);
+  const paraBirimi = f.dovizCinsi === "TRY" ? "TL" : f.dovizCinsi;
+  return `<p style="margin-top:10px;font-size:9pt">Özel matrah (KDV Kanunu 23): <strong>${kacis(`${tanim.kod} — ${tanim.ad}`)}</strong><br>`
+    + `KDV matrahı ${paraBicim(f.ozelMatrahTutari ?? "0")} ${paraBirimi}, oran %${sayiBicim(f.ozelMatrahOrani ?? "0")}, hesaplanan KDV ${paraBicim(kdv)} ${paraBirimi} — satış bedeline dahildir.</p>`;
 }
 
 /**
@@ -257,6 +276,7 @@ ${f.aciklama ? `<p style="margin-top:10px;color:#6b7280">${kacis(f.aciklama)}</p
 ${f.ebelge?.tur === "earsiv" && f.earsivGonderimSekli !== "kagit" ? `<p style="margin-top:10px;font-size:9pt">${EARSIV_ELEKTRONIK_IBARESI}</p>` : ""}
 ${ihracKayitliIbaresi(f.ihracKayitliKodu)}
 ${kamuBilgisi(f)}
+${ozelMatrahBilgisi(f)}
 ${yolcuBeraberiBilgisi(f)}`;
 
   return sayfaSablonu({

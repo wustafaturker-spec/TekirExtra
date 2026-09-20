@@ -9,6 +9,8 @@ import {
   IHRACAT_VERGI_PARA_BIRIMI,
   IADE_BELGE_TUR_KODU,
   KAMU_ODEME_KODU,
+  ozelMatrahKdvsi,
+  ozelMatrahKoduBul,
   KAMU_PROFILI,
   PASAPORT_TARIHI_BILINMIYOR,
   YOLCU_BERABER_FATURA_TIPI,
@@ -204,7 +206,10 @@ export function faturaUblUret(
 
   /** İstisna kodunun belgeye yazılan açıklaması; şematron boş bırakılmasına izin vermez. */
   const istisnaAciklamasi = (kod: string) =>
-    yolcu && kod === YOLCU_BERABER_ISTISNA_KODU ? YOLCU_BERABER_ISTISNA_ACIKLAMASI
+    // Entegratör görünümü kodu zaten "812-" diye yazıyor; açıklamada kodu
+    // tekrarlamak "812-812 …" çıkarıyordu.
+    ozelMatrahKoduBul(kod) ? ozelMatrahKoduBul(kod)!.ad
+    : yolcu && kod === YOLCU_BERABER_ISTISNA_KODU ? YOLCU_BERABER_ISTISNA_ACIKLAMASI
     : ihracatIstisnasi ? ihracatIstisnaAciklamasi(kod) : `${kod} ${(istisnaKoduBul(kod) ?? ihracKayitliKoduBul(kod))?.ad ?? ""}`.trim();
 
   /*
@@ -214,6 +219,20 @@ export function faturaUblUret(
    * satır kendi istisna kodunu korur.
    */
   const ihracKayitliKodu = fatura.senaryo === "ihrackayitli" ? fatura.ihracKayitliKodu : null;
+  /*
+   * Özel matrah (KDV K. 23, resmî `OZELMATRAH.xml`): satış bedeli KDV'yi zaten
+   * içerir, satırlarda vergi bloğu yoktur ve belge düzeyindeki tek alt toplam
+   * özel matrahı, oranını ve kodunu taşır. Matrah satır tutarlarından değil
+   * faturaya girilen tutardan gelir (ikinci elde alış ile satış farkı).
+   */
+  const ozelMatrah = fatura.senaryo === "ozelmatrah" && fatura.ozelMatrahKodu
+    ? {
+        kod: fatura.ozelMatrahKodu,
+        tutar: Number(fatura.ozelMatrahTutari ?? 0),
+        oran: Number(fatura.ozelMatrahOrani ?? 0),
+        kdv: ozelMatrahKdvsi(Number(fatura.ozelMatrahTutari ?? 0), Number(fatura.ozelMatrahOrani ?? 0)),
+      }
+    : null;
   const altToplamKodu = (satir: Parameters<typeof satirIstisnaKodu>[0] & { kdvOrani: unknown }) =>
     Number(satir.kdvOrani) === 0 ? satirIstisnaKodu(satir) : yolcu ? YOLCU_BERABER_ISTISNA_KODU : ihracKayitliKodu ?? null;
   /** Satırda tekrarlanacak kod; yolcu beraberinde resmî örnek kodu yalnız belge düzeyinde yazar. */
@@ -644,8 +663,11 @@ ${aliciTckn && !gtbAlici ? `      <cac:Person>
   </cac:AccountingCustomerParty>
 ${yabanciAliciBlogu}${yolcuBlogu}${kamuAliciBlogu}${teslimatBlogu}${kamuOdemeBlogu}
 ${kurBlogu}  <cac:TaxTotal>
-    <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${(tevkifatIade ? Number(fatura.toplamNetKdv) : Number(fatura.toplamKdv)).toFixed(2)}</cbc:TaxAmount>
-${kdvAltToplamlari.map((g) => `    <cac:TaxSubtotal>
+    <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${(ozelMatrah ? ozelMatrah.kdv : tevkifatIade ? Number(fatura.toplamNetKdv) : Number(fatura.toplamKdv)).toFixed(2)}</cbc:TaxAmount>
+${(ozelMatrah
+    ? [{ matrahKurus: Math.round(ozelMatrah.tutar * 100), kdvKurus: Math.round(ozelMatrah.kdv * 100), oran: ozelMatrah.oran, kod: ozelMatrah.kod }]
+    : kdvAltToplamlari
+  ).map((g) => `    <cac:TaxSubtotal>
       <cbc:TaxableAmount currencyID="${fatura.dovizCinsi}">${(g.matrahKurus / 100).toFixed(2)}</cbc:TaxableAmount>
       <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${(g.kdvKurus / 100).toFixed(2)}</cbc:TaxAmount>
       <cbc:Percent>${g.oran.toFixed(2)}</cbc:Percent>
@@ -684,7 +706,7 @@ ${tevkifatBlogu}
       <cbc:ChargeIndicator>false</cbc:ChargeIndicator>
       <cbc:AllowanceChargeReason>Genel iskonto payı</cbc:AllowanceChargeReason>
       <cbc:Amount currencyID="${fatura.dovizCinsi}">${Number(s.genelIskontoPayi).toFixed(2)}</cbc:Amount>
-    </cac:AllowanceCharge>` : ""}
+    </cac:AllowanceCharge>` : ""}${ozelMatrah ? "" : `
     <cac:TaxTotal>
       <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${belgeKdvi(s).toFixed(2)}</cbc:TaxAmount>
       <cac:TaxSubtotal>
@@ -700,7 +722,7 @@ ${tevkifatBlogu}
           </cac:TaxScheme>
         </cac:TaxCategory>
       </cac:TaxSubtotal>
-    </cac:TaxTotal>
+    </cac:TaxTotal>`}
     <cac:Item>
       <cbc:Name>${escape(s.stok.ad)}</cbc:Name>
       <cac:SellersItemIdentification>

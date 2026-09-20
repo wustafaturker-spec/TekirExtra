@@ -579,9 +579,13 @@ export class FaturaService {
             kdvOrani: Number(s.kdvOrani),
             tevkifatKodu: s.tevkifatKodu,
             gibIstisnaKodu: s.gibIstisnaKodu,
-          })), girdi.ihracKayitliKodu),
+          })), girdi.ihracKayitliKodu, girdi.ozelMatrahKodu),
           // EBLG-60: ihraç kayıtlıda KDV hesaplanır ama tahsil edilmez.
           ihracKayitliKodu: girdi.ihracKayitliKodu ?? null,
+          // Özel matrah: KDV satış bedeline dahildir, belge düzeyinde bildirilir.
+          ozelMatrahKodu: girdi.ozelMatrahKodu ?? null,
+          ozelMatrahTutari: girdi.ozelMatrahKodu ? D(girdi.ozelMatrahTutari ?? "0") : null,
+          ozelMatrahOrani: girdi.ozelMatrahKodu ? D(girdi.ozelMatrahOrani ?? "0") : null,
           efaturaProfili: girdi.efaturaProfili ?? cari?.efaturaProfili ?? "temel",
           earsivGonderimSekli: girdi.earsivGonderimSekli ?? cari?.earsivGonderimSekli ?? "elektronik",
           durum: "taslak",
@@ -687,6 +691,9 @@ export class FaturaService {
       efaturaProfili: girdi.efaturaProfili ?? (fatura.efaturaProfili as "temel" | "ticari"),
       earsivGonderimSekli: girdi.earsivGonderimSekli ?? (fatura.earsivGonderimSekli as "elektronik" | "kagit"),
       ihracKayitliKodu: girdi.ihracKayitliKodu !== undefined ? girdi.ihracKayitliKodu : fatura.ihracKayitliKodu,
+      ozelMatrahKodu: girdi.ozelMatrahKodu !== undefined ? girdi.ozelMatrahKodu : fatura.ozelMatrahKodu,
+      ozelMatrahTutari: girdi.ozelMatrahTutari !== undefined ? girdi.ozelMatrahTutari : fatura.ozelMatrahTutari?.toString(),
+      ozelMatrahOrani: girdi.ozelMatrahOrani !== undefined ? girdi.ozelMatrahOrani : fatura.ozelMatrahOrani?.toString(),
       depoId: girdi.depoId !== undefined ? girdi.depoId : fatura.depoId,
       dovizCinsi: girdi.dovizCinsi ?? (fatura.dovizCinsi as "TRY" | "USD" | "EUR"),
       kur: girdi.kur ?? fatura.kur,
@@ -784,8 +791,11 @@ export class FaturaService {
             kdvOrani: Number(s.kdvOrani),
             tevkifatKodu: s.tevkifatKodu,
             gibIstisnaKodu: s.gibIstisnaKodu,
-          })), birlesikGirdi.ihracKayitliKodu),
+          })), birlesikGirdi.ihracKayitliKodu, birlesikGirdi.ozelMatrahKodu),
           ihracKayitliKodu: birlesikGirdi.ihracKayitliKodu,
+          ozelMatrahKodu: birlesikGirdi.ozelMatrahKodu ?? null,
+          ozelMatrahTutari: birlesikGirdi.ozelMatrahKodu ? D(birlesikGirdi.ozelMatrahTutari ?? "0") : null,
+          ozelMatrahOrani: birlesikGirdi.ozelMatrahKodu ? D(birlesikGirdi.ozelMatrahOrani ?? "0") : null,
           efaturaProfili: birlesikGirdi.efaturaProfili,
           earsivGonderimSekli: birlesikGirdi.earsivGonderimSekli,
           no: birlesikGirdi.no ?? null,
@@ -1064,6 +1074,9 @@ export class FaturaService {
           efaturaProfili: fatura.efaturaProfili,
           earsivGonderimSekli: fatura.earsivGonderimSekli,
           ihracKayitliKodu: fatura.ihracKayitliKodu,
+          ozelMatrahKodu: fatura.ozelMatrahKodu,
+          ozelMatrahTutari: fatura.ozelMatrahTutari,
+          ozelMatrahOrani: fatura.ozelMatrahOrani,
           ihracatTeslimSarti: fatura.ihracatTeslimSarti,
           ihracatTasimaSekli: fatura.ihracatTasimaSekli,
         },
@@ -1493,6 +1506,9 @@ export class FaturaService {
     kamuHarcamaBirimiVkn?: string | null;
     kamuHarcamaBirimiAdi?: string | null;
     kamuIban?: string | null;
+    ozelMatrahKodu?: string | null;
+    ozelMatrahTutari?: Prisma.Decimal | null;
+    ozelMatrahOrani?: Prisma.Decimal | null;
     yolcuBeraberi?: unknown;
     depoId: string | null;
     dovizCinsi: string;
@@ -1562,6 +1578,10 @@ export class FaturaService {
       kamuHarcamaBirimiVkn: k.kamuHarcamaBirimiVkn ?? null,
       kamuHarcamaBirimiAdi: k.kamuHarcamaBirimiAdi ?? null,
       kamuIban: k.kamuIban ?? null,
+      // Özel matrah (KDV K. 23): kod, matrah ve oran; KDV belge düzeyindedir.
+      ozelMatrahKodu: k.ozelMatrahKodu ?? null,
+      ozelMatrahTutari: k.ozelMatrahTutari ? D(k.ozelMatrahTutari).toFixed(2) : null,
+      ozelMatrahOrani: k.ozelMatrahOrani ? D(k.ozelMatrahOrani).toFixed(2) : null,
       // Yolcu beraberi (tax-free): yolcu ve aracı kurum bilgisi; boşsa değildir.
       yolcuBeraberi: (k.yolcuBeraberi as Record<string, unknown> | null) ?? null,
       depoId: k.depoId,

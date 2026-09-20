@@ -827,3 +827,45 @@ describe("faturaUblUret — yolcu beraberi (tax-free)", () => {
     expect(xml).toContain('<cbc:PayableAmount currencyID="TRY">2400.00</cbc:PayableAmount>');
   });
 });
+
+describe("faturaUblUret — özel matrah", () => {
+  const fatura = {
+    id: "12121212-1212-4121-8121-121212121212",
+    no: "TKR2026000000010",
+    tarih: new Date("2026-09-20T12:00:00Z"),
+    tip: "satis", senaryo: "ozelmatrah", efaturaProfili: "temel",
+    ozelMatrahKodu: "812", ozelMatrahTutari: 5000, ozelMatrahOrani: 20,
+    dovizCinsi: "TRY", kur: 1,
+    toplamKdv: 0, toplamMatrah: 250000, toplamBrut: 250000, genelToplam: 250000,
+    toplamSatirIskontosu: 0, genelIskontoToplam: 0,
+    cari: { vknTckn: "1234567890", unvan: "Alıcı A.Ş.", adresler: [] },
+    satirlar: [{
+      miktar: 1, matrah: 250000, iskontoTutari: 0, kdvTutari: 0, kdvOrani: 0,
+      gibIstisnaKodu: null, birimFiyat: 250000, birim: "adet",
+      stok: { kod: "ARAC-1", ad: "2018 model binek araç" },
+    }],
+  } as never;
+  const xml = faturaUblUret(fatura, { unvan: "Satıcı A.Ş.", vkn: "9876543210" }, { tur: "efatura" });
+
+  it("tipi OZELMATRAH yazar, profili değiştirmez", () => {
+    expect(xml).toContain("<cbc:InvoiceTypeCode>OZELMATRAH</cbc:InvoiceTypeCode>");
+    expect(xml).toContain("<cbc:ProfileID>TEMELFATURA</cbc:ProfileID>");
+  });
+
+  it("KDV'yi yalnız belge düzeyinde, özel matrah ve koduyla bildirir", () => {
+    const vergi = xml.slice(xml.indexOf("<cac:TaxTotal>"), xml.indexOf("<cac:LegalMonetaryTotal>"));
+    expect(vergi).toContain('<cbc:TaxAmount currencyID="TRY">1000.00</cbc:TaxAmount>');
+    expect(vergi).toContain('<cbc:TaxableAmount currencyID="TRY">5000.00</cbc:TaxableAmount>');
+    expect(vergi).toContain("<cbc:Percent>20.00</cbc:Percent>");
+    expect(vergi).toContain("<cbc:TaxExemptionReasonCode>812</cbc:TaxExemptionReasonCode>");
+    // Açıklamada kod tekrarlanmaz: entegratör görünümü kodu kendi ekliyor.
+    expect(vergi).toContain("<cbc:TaxExemptionReason>KDV Uygulanmadan Alınan İkinci El Motorlu Kara Taşıtı veya Taşınmaz Teslimi</cbc:TaxExemptionReason>");
+  });
+
+  it("satırlarda vergi bloğu yazmaz; ödenecek tutar satış bedelidir", () => {
+    const satir = xml.slice(xml.indexOf("<cac:InvoiceLine>"));
+    expect(satir).not.toContain("<cac:TaxTotal>");
+    expect(xml).toContain('<cbc:PayableAmount currencyID="TRY">250000.00</cbc:PayableAmount>');
+    expect(xml).toContain('<cbc:TaxInclusiveAmount currencyID="TRY">250000.00</cbc:TaxInclusiveAmount>');
+  });
+});

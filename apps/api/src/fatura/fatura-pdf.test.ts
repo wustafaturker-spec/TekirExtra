@@ -160,3 +160,15 @@ describe("faturaPdfHtml — yolcu beraberi (tax-free)", () => {
     expect(faturaPdfHtml({ ...fatura, ebelge: { tur: "efatura" } }, firma)).not.toContain("Yolcu:");
   });
 });
+
+describe("faturaPdfHtml — özel matrah", () => {
+  it("kodu, matrahı ve hesaplanan KDV'yi belge altına yazar", () => {
+    const html = faturaPdfHtml({ ...fatura, ozelMatrahKodu: "812", ozelMatrahTutari: "5000.00", ozelMatrahOrani: "20.00" }, firma);
+    expect(html).toContain("812 — KDV Uygulanmadan Alınan İkinci El Motorlu Kara Taşıtı veya Taşınmaz Teslimi");
+    expect(html).toContain("KDV matrahı 5.000,00 TL, oran %20, hesaplanan KDV 1.000,00 TL — satış bedeline dahildir.");
+  });
+
+  it("özel matrahsız faturada blok yoktur", () => {
+    expect(faturaPdfHtml(fatura, firma)).not.toContain("Özel matrah");
+  });
+});
