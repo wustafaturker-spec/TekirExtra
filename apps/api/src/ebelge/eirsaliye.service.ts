@@ -99,6 +99,22 @@ export class EirsaliyeService {
     const dorse = b.dorsePlaka
       ? `<cac:TransportHandlingUnit><cac:TransportEquipment><cbc:ID schemeID="${dorseSchemeId(b.dorsePlaka)}">${esc(plakaNormalize(b.dorsePlaka))}</cbc:ID></cac:TransportEquipment></cac:TransportHandlingUnit>`
       : "";
+    /**
+     * Sipariş referansı (EBLG-74): belgeye elle girilen müşteri sipariş
+     * numarası, yoksa irsaliyenin türediği sipariş belgesinin numarası. UBL-TR
+     * `IssueDate`'i zorunlu tutar (fatura tarafında NES tarihsiz referansı
+     * reddetti), bu yüzden tarih yoksa belgenin tarihine düşülür. Şemadaki yeri
+     * `DespatchAdviceTypeCode` ile `AdditionalDocumentReference` arasıdır
+     * (GİB `DespatchAdvice.xml`).
+     */
+    const siparis = b.siparisNo?.trim()
+      ? { no: b.siparisNo.trim(), tarih: b.siparisTarihi ?? b.tarih }
+      : b.kaynakBelge?.tur === "siparis" && b.kaynakBelge.no
+        ? { no: b.kaynakBelge.no as string, tarih: b.kaynakBelge.tarih ?? b.tarih }
+        : null;
+    const siparisBlogu = siparis
+      ? `<cac:OrderReference><cbc:ID>${esc(siparis.no)}</cbc:ID><cbc:IssueDate>${new Date(siparis.tarih).toISOString().slice(0, 10)}</cbc:IssueDate></cac:OrderReference>`
+      : "";
     /** İDİS: sevkiyat numarası doluysa belge bu profille gider (EBLG-72). */
     const idis = idisBelgesiMi(b.idisSevkiyatNo) ? idisNormalize(b.idisSevkiyatNo) : null;
     const satirlar = b.satirlar
@@ -112,6 +128,7 @@ export class EirsaliyeService {
       + `<cbc:ID>${esc(b.no ?? b.id)}</cbc:ID><cbc:CopyIndicator>false</cbc:CopyIndicator><cbc:UUID>${b.id}</cbc:UUID>`
       + `<cbc:IssueDate>${tarih}</cbc:IssueDate><cbc:IssueTime>${saat}</cbc:IssueTime>`
       + `<cbc:DespatchAdviceTypeCode>SEVK</cbc:DespatchAdviceTypeCode><cbc:LineCountNumeric>${b.satirlar.length}</cbc:LineCountNumeric>`
+      + siparisBlogu
       + `<cac:Signature><cbc:ID schemeID="VKN_TCKN">${esc(tenant.vkn)}</cbc:ID><cac:SignatoryParty><cac:PartyIdentification><cbc:ID schemeID="VKN">${esc(tenant.vkn)}</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>${esc(tenant.unvan)}</cbc:Name></cac:PartyName>${firmaAdresi}</cac:SignatoryParty><cac:DigitalSignatureAttachment><cac:ExternalReference><cbc:URI>#Signature</cbc:URI></cac:ExternalReference></cac:DigitalSignatureAttachment></cac:Signature>`
       // İDİS'te sevkiyat numarası satıcının `PartyIdentification`'ına yazılır.
       + `<cac:DespatchSupplierParty>${taraf(tenant.vkn, tenant.unvan, firmaAdresi, idis ? `<cac:PartyIdentification><cbc:ID schemeID="SEVKIYATNO">${esc(idis)}</cbc:ID></cac:PartyIdentification>` : "")}</cac:DespatchSupplierParty>`
@@ -131,7 +148,7 @@ export class EirsaliyeService {
   async gonder(belgeId: string) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const belge = await tx.belge.findUnique({ where: { id: belgeId }, include: { cari: { include: { adresler: true } }, tasiyiciCari: { include: { adresler: true } }, satirlar: { include: { stok: true } }, eirsaliye: true } });
+      const belge = await tx.belge.findUnique({ where: { id: belgeId }, include: { cari: { include: { adresler: true } }, tasiyiciCari: { include: { adresler: true } }, satirlar: { include: { stok: true } }, eirsaliye: true, kaynakBelge: { select: { tur: true, no: true, tarih: true } } } });
       if (!belge) throw new NotFoundException("Belge bulunamadı");
       if (belge.tur !== "irsaliye" || belge.yon !== "satis") throw new BadRequestException("Yalnızca satış irsaliyesi e-İrsaliye olarak gönderilebilir");
       if (belge.durum !== "onaylandi") throw new BadRequestException("e-İrsaliye göndermek için belge onaylanmış olmalıdır");

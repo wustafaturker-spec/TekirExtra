@@ -310,6 +310,9 @@ export class BelgelerService {
               ? new Date(girdi.gecerlilikTarihi)
               : null,
           cariId: girdi.cariId,
+          // EBLG-74: müşterinin sipariş referansı; e-İrsaliyeye OrderReference olur.
+          siparisNo: girdi.siparisNo?.trim() || null,
+          siparisTarihi: girdi.siparisTarihi ? new Date(girdi.siparisTarihi) : null,
           depoId: girdi.depoId ?? null,
           dovizCinsi: girdi.dovizCinsi,
           kur: D(girdi.kur),
@@ -375,6 +378,8 @@ export class BelgelerService {
       soforAdi: girdi.soforAdi !== undefined ? girdi.soforAdi : mevcut.soforAdi,
       soforSoyadi: girdi.soforSoyadi !== undefined ? girdi.soforSoyadi : mevcut.soforSoyadi,
       soforTckn: girdi.soforTckn !== undefined ? girdi.soforTckn : mevcut.soforTckn,
+      siparisNo: girdi.siparisNo !== undefined ? girdi.siparisNo : mevcut.siparisNo,
+      siparisTarihi: girdi.siparisTarihi !== undefined ? girdi.siparisTarihi : mevcut.siparisTarihi,
       idisSevkiyatNo: girdi.idisSevkiyatNo !== undefined ? girdi.idisSevkiyatNo : mevcut.idisSevkiyatNo,
       satirlar:
         girdi.satirlar ??
@@ -426,6 +431,8 @@ export class BelgelerService {
             ? new Date(birlesik.gecerlilikTarihi)
             : null,
           cariId: birlesik.cariId,
+          siparisNo: birlesik.siparisNo?.trim() || null,
+          siparisTarihi: birlesik.siparisTarihi ? new Date(birlesik.siparisTarihi) : null,
           depoId: birlesik.depoId ?? null,
           dovizCinsi: birlesik.dovizCinsi,
           kur: D(birlesik.kur),
@@ -988,6 +995,9 @@ export class BelgelerService {
       dovizCinsi: "TRY" | "USD" | "EUR";
       kur: Prisma.Decimal;
       no: string | null;
+      /** EBLG-74: sipariş referansı zincirden faturaya taşınır. */
+      siparisNo?: string | null;
+      siparisTarihi?: Date | null;
       satirlar: BelgeSatirKaydi[];
     }[],
   ) {
@@ -1025,6 +1035,9 @@ export class BelgelerService {
         genelIskontoTutari: D(0),
         ...this.toplamAlanlari(hesap),
         aciklama: kaynakNolar ? `Belge zincirinden: ${kaynakNolar}` : null,
+        // EBLG-74: belgedeki müşteri sipariş referansı faturada da durur.
+        siparisNo: ilk.siparisNo ?? null,
+        siparisTarihi: ilk.siparisTarihi ?? null,
       },
     });
     for (const [i, s] of hesap.satirlar.entries()) {
@@ -1178,6 +1191,9 @@ export class BelgelerService {
     soforAdi?: string | null;
     soforSoyadi?: string | null;
     soforTckn?: string | null;
+    /** EBLG-74: müşterinin sipariş referansı. */
+    siparisNo?: string | null;
+    siparisTarihi?: Date | string | null;
     /** EBLG-72: İDİS sevkiyat numarası; doluysa e-İrsaliye IDISIRSALIYE gider. */
     idisSevkiyatNo?: string | null;
     kaynakBelgeId: string | null;
@@ -1214,6 +1230,10 @@ export class BelgelerService {
       soforAdi: k.soforAdi ?? null,
       soforSoyadi: k.soforSoyadi ?? null,
       soforTckn: k.soforTckn ?? null,
+      siparisNo: k.siparisNo ?? null,
+      siparisTarihi: k.siparisTarihi
+        ? (typeof k.siparisTarihi === "string" ? k.siparisTarihi : k.siparisTarihi.toISOString()).slice(0, 10)
+        : null,
       idisSevkiyatNo: k.idisSevkiyatNo ?? null,
       kaynakBelgeId: k.kaynakBelgeId,
       faturaId: k.faturaId,

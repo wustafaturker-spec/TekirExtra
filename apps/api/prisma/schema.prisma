@@ -3171,6 +3171,10 @@ model Belge {
   no                   String?
   tarih                DateTime         @db.Date
   gecerlilikTarihi     DateTime?        @map("gecerlilik_tarihi") @db.Date
+  /// Müşterinin sipariş referansı (EBLG-74). e-İrsaliyeye `OrderReference`
+  /// olarak yazılır; boşsa zincirdeki siparişin numarası ve tarihi kullanılır.
+  siparisNo            String?          @map("siparis_no")
+  siparisTarihi        DateTime?        @map("siparis_tarihi") @db.Date
   cariId               String           @map("cari_id") @db.Uuid
   /// STK-07: rezerv/yoldaki ve irsaliye stok etkisinin işleneceği depo
   depoId               String?          @map("depo_id") @db.Uuid

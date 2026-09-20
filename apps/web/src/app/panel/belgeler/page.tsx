@@ -99,6 +99,8 @@ interface BelgeDetay extends Belge {
   soforAdi?: string | null;
   soforSoyadi?: string | null;
   soforTckn?: string | null;
+  siparisNo?: string | null;
+  siparisTarihi?: string | null;
   idisSevkiyatNo?: string | null;
   aciklama: string | null;
   notlar: string | null;
@@ -186,6 +188,9 @@ export default function BelgelerSayfasi() {
   const [plaka, setPlaka] = useState("");
   /** EBLG-72: İDİS sevkiyat numarası; irsaliyede girilir. */
   const [idisSevkiyatNo, setIdisSevkiyatNo] = useState("");
+  /** EBLG-74: müşterinin sipariş referansı; e-İrsaliyeye OrderReference olur. */
+  const [siparisNo, setSiparisNo] = useState("");
+  const [siparisTarihi, setSiparisTarihi] = useState("");
   const [dorsePlaka, setDorsePlaka] = useState("");
   const [soforAdi, setSoforAdi] = useState("");
   const [soforSoyadi, setSoforSoyadi] = useState("");
@@ -401,6 +406,8 @@ export default function BelgelerSayfasi() {
                 idisSevkiyatNo: idisSevkiyatNo.trim() || null,
               }
             : {}),
+          siparisNo: siparisNo.trim() || null,
+          siparisTarihi: siparisTarihi || null,
           satirlar: satirlar.map((s) => ({
             stokId: s.stokId,
             varyantId: s.varyantId || null,
@@ -422,6 +429,7 @@ export default function BelgelerSayfasi() {
       setAciklama(""); setKuruAciklamayaEkle(true);
       setDosyalar([]);
       setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 }]);
+      setSiparisNo(""); setSiparisTarihi(""); setIdisSevkiyatNo("");
       void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Belge oluşturulamadı");
@@ -735,6 +743,15 @@ export default function BelgelerSayfasi() {
                     </Select>
                   </Field>
                 )}
+                {/* EBLG-74: müşterinin siparişi; boşsa zincirdeki sipariş belgesi yazılır. */}
+                <Field label="Müşteri Sipariş No">
+                  <Input value={siparisNo} onChange={(e) => setSiparisNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" />
+                  <small className="muted">Boşsa e-İrsaliyeye, irsaliyenin türediği sipariş belgesinin numarası yazılır.</small>
+                </Field>
+                <Field label="Müşteri Sipariş Tarihi">
+                  <Input type="date" value={siparisTarihi} onChange={(e) => setSiparisTarihi(e.target.value)} />
+                  {siparisNo.trim() && !siparisTarihi && <small className="muted">Boş bırakılırsa belgeye irsaliye tarihi yazılır (GİB tarihi zorunlu tutuyor).</small>}
+                </Field>
                 {/* EBLG-72: numara girilirse belge IDISIRSALIYE profiliyle gider. */}
                 <Field label="İDİS Sevkiyat Numarası">
                   <Input aria-label="İDİS sevkiyat numarası" value={idisSevkiyatNo} maxLength={20} placeholder="Örn. SE-0152457" onChange={(e) => setIdisSevkiyatNo(e.target.value)} />
@@ -936,6 +953,9 @@ export default function BelgelerSayfasi() {
               {" · "}Plaka {detay.plaka || "—"}
               {" · "}Şoför {[detay.soforAdi, detay.soforSoyadi].filter(Boolean).join(" ") || "—"}
               {detay.fiiliSevkZamani ? ` · Fiili sevk ${new Date(detay.fiiliSevkZamani).toLocaleString("tr-TR")}` : ""}
+              {/* EBLG-74: belgeyle giden sipariş referansı; boşsa zincirdeki sipariş yazılır. */}
+              {detay.siparisNo ? ` · Sipariş ${detay.siparisNo}${detay.siparisTarihi ? ` (${new Date(detay.siparisTarihi).toLocaleDateString("tr-TR")})` : ""}` : ""}
+              {detay.idisSevkiyatNo ? ` · İDİS sevkiyat ${detay.idisSevkiyatNo}` : ""}
             </p>
           )}
           {detay.tur === "irsaliye" && detay.yon === "satis" && detay.eirsaliye?.durum === "hata" && <div className="row-tight" style={{ margin: "0 0 1rem" }}><span className="muted">{detay.eirsaliye.hataMesaji ?? "Gönderim başarısız."}</span><Button size="sm" variant="primary" onClick={() => void eirsaliyeGonder(detay.id)}>Tekrar gönder</Button></div>}

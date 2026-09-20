@@ -78,6 +78,29 @@ describe("EirsaliyeService UBL", () => {
     expect(xml).not.toContain("ETIKETNO");
   });
 
+  // Sipariş referansı (EBLG-74); GİB `DespatchAdvice.xml` sırasına göre
+  // DespatchAdviceTypeCode ile AdditionalDocumentReference arasında durur.
+  it("belgeye girilen sipariş referansını yazar", () => {
+    const xml = ubl({ ...belge, siparisNo: "SIP-2026-993", siparisTarihi: "2026-09-15" });
+    expect(xml).toContain("<cac:OrderReference><cbc:ID>SIP-2026-993</cbc:ID><cbc:IssueDate>2026-09-15</cbc:IssueDate></cac:OrderReference>");
+    expect(xml.indexOf("<cac:OrderReference>")).toBeGreaterThan(xml.indexOf("<cbc:LineCountNumeric>"));
+    expect(xml.indexOf("<cac:OrderReference>")).toBeLessThan(xml.indexOf("<cac:Signature>"));
+  });
+
+  it("elle girilmediyse zincirdeki siparişin numarasını ve tarihini kullanır", () => {
+    const xml = ubl({ ...belge, kaynakBelge: { tur: "siparis", no: "SIP2026000006", tarih: "2026-09-18" } });
+    expect(xml).toContain("<cbc:ID>SIP2026000006</cbc:ID><cbc:IssueDate>2026-09-18</cbc:IssueDate>");
+  });
+
+  it("sipariş tarihi yoksa belgenin tarihine düşer — UBL-TR tarihi zorunlu tutuyor", () => {
+    const xml = ubl({ ...belge, siparisNo: "SIP-2026-994" });
+    expect(xml).toContain("<cbc:ID>SIP-2026-994</cbc:ID><cbc:IssueDate>2026-09-10</cbc:IssueDate>");
+  });
+
+  it("sipariş referansı yoksa bloğu hiç yazmaz", () => {
+    expect(ubl(belge)).not.toContain("OrderReference");
+  });
+
   it("alıcı tarafına karttaki adresi yazar (EBLG-55)", () => {
     const alici = ubl(belge).match(/<cac:DeliveryCustomerParty>[\s\S]*?<\/cac:DeliveryCustomerParty>/)![0];
 
