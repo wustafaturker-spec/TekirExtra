@@ -1046,3 +1046,53 @@ describe("faturaUblUret — İDİS (EBLG-72)", () => {
     expect(xml).toContain("<cbc:ProfileID>TICARIFATURA</cbc:ProfileID>");
   });
 });
+
+describe("faturaUblUret — vade ve sipariş referansı (EBLG-73)", () => {
+  const temel = (ek: Record<string, unknown> = {}) => ({
+    id: "16161616-1616-4161-8161-161616161616",
+    no: "TKR2026000000014",
+    tarih: new Date("2026-09-20T12:00:00Z"),
+    tip: "satis", senaryo: "satis", efaturaProfili: "ticari",
+    dovizCinsi: "TRY", kur: 1,
+    toplamKdv: 200, toplamMatrah: 1000, toplamBrut: 1000, genelToplam: 1200,
+    toplamSatirIskontosu: 0, genelIskontoToplam: 0,
+    cari: { vknTckn: "1234567890", unvan: "Alıcı A.Ş.", adresler: [] },
+    satirlar: [{
+      miktar: 1, matrah: 1000, iskontoTutari: 0, kdvTutari: 200, kdvOrani: 20,
+      gibIstisnaKodu: null, birimFiyat: 1000, birim: "adet",
+      stok: { kod: "URN-1", ad: "Ürün" },
+    }],
+    ...ek,
+  }) as never;
+  const firma = { unvan: "Deneme A.Ş.", vkn: "9876543210" };
+
+  it("vadeyi ödeme koşullarına yazar ve görünümde okunur nota çevirir", () => {
+    // GİB'in genel XSLT'si yalnız PaymentTerms/Note'u basar; tarih tek başına
+    // yazılırsa alıcının gördüğü sayfada vade görünmez.
+    const xml = faturaUblUret(temel({ vadeTarihi: new Date("2026-10-20T00:00:00Z") }), firma, { tur: "efatura" });
+    expect(xml).toContain("<cbc:PaymentDueDate>2026-10-20</cbc:PaymentDueDate>");
+    expect(xml).toContain("<cbc:Note>Son ödeme tarihi: 20.10.2026</cbc:Note>");
+  });
+
+  it("vade girilmemişse ödeme koşulu bloğunu hiç yazmaz", () => {
+    const xml = faturaUblUret(temel(), firma, { tur: "efatura" });
+    expect(xml).not.toContain("cac:PaymentTerms");
+  });
+
+  it("sipariş tarihi boşsa fatura tarihine düşer — tarihsiz referansı NES reddediyor", () => {
+    const xml = faturaUblUret(temel({ siparisNo: "SIP-2026-992" }), firma, { tur: "efatura" });
+    expect(xml).toContain("<cbc:ID>SIP-2026-992</cbc:ID>");
+    expect(xml).toContain("<cbc:IssueDate>2026-09-20</cbc:IssueDate>");
+  });
+
+  it("sipariş tarihi girildiyse onu yazar", () => {
+    const xml = faturaUblUret(temel({ siparisNo: "SIP-2026-991", siparisTarihi: new Date("2026-09-15T00:00:00Z") }), firma, { tur: "efatura" });
+    const referans = xml.slice(xml.indexOf("<cac:OrderReference>"), xml.indexOf("</cac:OrderReference>"));
+    expect(referans).toContain("<cbc:IssueDate>2026-09-15</cbc:IssueDate>");
+  });
+
+  it("e-Arşiv belgesinde de vade taşınır", () => {
+    const xml = faturaUblUret(temel({ vadeTarihi: new Date("2026-11-30T00:00:00Z") }), firma, { tur: "earsiv" });
+    expect(xml).toContain("<cbc:PaymentDueDate>2026-11-30</cbc:PaymentDueDate>");
+  });
+});

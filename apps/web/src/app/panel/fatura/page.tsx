@@ -1763,7 +1763,11 @@ export default function FaturaSayfasi() {
                 </Field>
               )}
               <Field label="Sipariş No"><Input value={siparisNo} onChange={(e) => setSiparisNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" /></Field>
-              <Field label="Sipariş Tarihi"><Input type="date" value={siparisTarihi} onChange={(e) => setSiparisTarihi(e.target.value)} /></Field>
+              <Field label="Sipariş Tarihi">
+                <Input type="date" value={siparisTarihi} onChange={(e) => setSiparisTarihi(e.target.value)} />
+                {/* EBLG-73: UBL'de sipariş tarihi zorunlu; boşsa belgeye fatura tarihi yazılır. */}
+                {siparisNo.trim() && !siparisTarihi && <small className="muted">Boş bırakılırsa e-Belgeye fatura tarihi yazılır (GİB sipariş tarihini zorunlu tutuyor).</small>}
+              </Field>
             <div>
               <DepoSecici deger={depoId} onChange={setDepoId} />
             </div>

@@ -152,6 +152,8 @@ export function faturaUblUret(
   // ISO Tarihleri
   const tarihStr = fatura.tarih.toISOString().slice(0, 10);
   const saatStr = "12:00:00";
+  /** Belge metinlerinde okunur gün: 20.09.2026. Tarih kolonları UTC gün başıdır. */
+  const gunBicim = (gun: Date) => gun.toISOString().slice(0, 10).split("-").reverse().join(".");
 
   // XML Karakter kaçırma yardımcısı
   const escape = (str?: string | null) => {
@@ -511,6 +513,21 @@ export function faturaUblUret(
   </cac:BuyerCustomerParty>
 `
     : "";
+  /**
+   * Vade (EBLG-73): faturadaki ödeme günü UBL-TR'de `cac:PaymentTerms`
+   * içindedir — GİB'in resmî ticari fatura örneği (`UBL-TR 1.2.1/XSLT/
+   * TicariFaturaOrnegi.xml`) vadeyi orada gösterir ve bloğun yeri
+   * `PaymentMeans` ile `TaxTotal` arasıdır. Gelen belgeden okurken de aynı
+   * yere bakıyoruz (`ubl-oku.ts`). Vade girilmemişse blok hiç yazılmaz.
+   */
+  const vadeBlogu = fatura.vadeTarihi
+    ? `
+  <cac:PaymentTerms>
+    <cbc:Note>Son ödeme tarihi: ${gunBicim(fatura.vadeTarihi)}</cbc:Note>
+    <cbc:PaymentDueDate>${fatura.vadeTarihi.toISOString().slice(0, 10)}</cbc:PaymentDueDate>
+  </cac:PaymentTerms>
+`
+    : "";
   const kamuOdemeBlogu = kamu
     ? `
   <cac:PaymentMeans>
@@ -646,9 +663,12 @@ ${sgk ? `  <cbc:AccountingCost>${escape(sgk.ilaveFaturaTipi)}</cbc:AccountingCos
     <cbc:EndDate>${anParcala(sarj.bitis)!.tarih}</cbc:EndDate>
     <cbc:EndTime>${anParcala(sarj.bitis)!.saat}</cbc:EndTime>
   </cac:InvoicePeriod>` : ""}${fatura.siparisNo ? `
+  <!-- Sipariş referansı (EBLG-73): tarih UBL-TR'de zorunludur; NES tarihsiz
+       OrderReference'ı "incomplete content" diye reddediyor (2026-09-20 denemesi),
+       bu yüzden tarih girilmemişse fatura tarihine düşülür. -->
   <cac:OrderReference>
-    <cbc:ID>${escape(fatura.siparisNo)}</cbc:ID>${fatura.siparisTarihi ? `
-    <cbc:IssueDate>${fatura.siparisTarihi.toISOString().slice(0, 10)}</cbc:IssueDate>` : ""}
+    <cbc:ID>${escape(fatura.siparisNo)}</cbc:ID>
+    <cbc:IssueDate>${(fatura.siparisTarihi ?? fatura.tarih).toISOString().slice(0, 10)}</cbc:IssueDate>
   </cac:OrderReference>` : ""}${iadeReferansBloklari}
 
 ${earsiv ? `  <cac:AdditionalDocumentReference>
@@ -748,7 +768,7 @@ ${aliciTckn && !gtbAlici ? `      <cac:Person>
       </cac:Person>` : ""}
     </cac:Party>
   </cac:AccountingCustomerParty>
-${yabanciAliciBlogu}${yolcuBlogu}${kamuAliciBlogu}${teslimatBlogu}${kamuOdemeBlogu}
+${yabanciAliciBlogu}${yolcuBlogu}${kamuAliciBlogu}${teslimatBlogu}${kamuOdemeBlogu}${vadeBlogu}
 ${kurBlogu}  <cac:TaxTotal>
     <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${(ozelMatrah ? ozelMatrah.kdv : tevkifatIade ? Number(fatura.toplamNetKdv) : Number(fatura.toplamKdv)).toFixed(2)}</cbc:TaxAmount>
 ${(ozelMatrah
