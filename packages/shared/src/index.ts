@@ -18,5 +18,7 @@ export * from "./firma";
 export * from "./kamu";
 export * from "./yolcu-beraberi";
 export * from "./ozel-matrah";
+export * from "./idis";
+export * from "./sarj";
 export * from "./sgk";
 export * from "./tarih";

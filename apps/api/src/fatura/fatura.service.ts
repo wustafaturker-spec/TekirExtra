@@ -9,7 +9,7 @@ import {
   forwardRef,
 } from "@nestjs/common";
 import { Prisma, FaturaTip, FaturaDurum, BelgeDurum } from "@prisma/client";
-import { faturaHesapla, faturaSenaryosuTuret, metinNormalize, ozelMatrahKdvsi, sgkFaturasiMi, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type KayitEylem } from "@tekirextra/shared";
+import { faturaHesapla, faturaSenaryosuTuret, idisNormalize, metinNormalize, ozelMatrahKdvsi, sarjTuruCoz, sgkFaturasiMi, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type KayitEylem } from "@tekirextra/shared";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
@@ -499,6 +499,8 @@ export class FaturaService {
         netKdvTutari: s.netKdvTutari.toFixed(2),
         toplamTutar: s.toplamTutar.toFixed(2),
         gibIstisnaKodu: s.gibIstisnaKodu,
+        idisEtiketNo: s.idisEtiketNo,
+        sarjUniteSeriNo: s.sarjUniteSeriNo,
       })),
       ebelge: kayit.ebelge && { ...kayit.ebelge, takiliGonderim: takiliRezervasyonMu(kayit.ebelge) },
       odemeOzeti: {
@@ -567,6 +569,19 @@ export class FaturaService {
         hesaplananVadeTarihi = new Date(girdi.tarih);
       }
 
+      // EBLG-71: şarj faturasının tipi satırdaki stok kartından türer; kartlar
+      // yalnız bu yüzden okunur.
+      const sarjKartlari = await tx.stokKart.findMany({
+        where: { id: { in: [...new Set(girdi.satirlar.map((satir) => satir.stokId))] } },
+        select: { id: true, sarjTuru: true },
+      });
+      const sarjTuru = sarjTuruCoz(girdi.satirlar.map((satir) => ({
+        sarjTuru: sarjKartlari.find((kart) => kart.id === satir.stokId)?.sarjTuru,
+      })));
+      if (sarjTuru.karisik) {
+        throw new BadRequestException("Şarj hizmeti ve şarj ünitesi satırları aynı faturada olamaz; belgenin tek bir tipi olmalıdır");
+      }
+
       // Fatura kafasını oluştur
       const fatura = await tx.fatura.create({
         data: {
@@ -579,9 +594,11 @@ export class FaturaService {
             kdvOrani: Number(s.kdvOrani),
             tevkifatKodu: s.tevkifatKodu,
             gibIstisnaKodu: s.gibIstisnaKodu,
-          })), girdi.ihracKayitliKodu, girdi.ozelMatrahKodu, sgkFaturasiMi(cari?.vknTckn)),
+          })), girdi.ihracKayitliKodu, girdi.ozelMatrahKodu, sgkFaturasiMi(cari?.vknTckn), sarjTuru.turu),
           // EBLG-60: ihraç kayıtlıda KDV hesaplanır ama tahsil edilmez.
           ihracKayitliKodu: girdi.ihracKayitliKodu ?? null,
+          // İDİS (EBLG-72): sevkiyat no doluysa belge IDIS profiliyle gider.
+          idisSevkiyatNo: girdi.idisSevkiyatNo ? idisNormalize(girdi.idisSevkiyatNo) : null,
           // Özel matrah: KDV satış bedeline dahildir, belge düzeyinde bildirilir.
           ozelMatrahKodu: girdi.ozelMatrahKodu ?? null,
           ozelMatrahTutari: girdi.ozelMatrahKodu ? D(girdi.ozelMatrahTutari ?? "0") : null,
@@ -642,6 +659,10 @@ export class FaturaService {
             netKdvTutari: D(s.netKdvTutari),
             toplamTutar: D(s.toplamTutar),
             gibIstisnaKodu: orijinalSatir.gibIstisnaKodu,
+            // İDİS etiket no ve şarj ünitesi seri no satır alanlarıdır
+            // (EBLG-71/72); biçim denetimi gönderimde yapılır.
+            idisEtiketNo: orijinalSatir.idisEtiketNo ? idisNormalize(orijinalSatir.idisEtiketNo) : null,
+            sarjUniteSeriNo: orijinalSatir.sarjUniteSeriNo?.trim() || null,
             projeId: orijinalSatir.projeId,
             projeAltKirilimId: orijinalSatir.projeAltKirilimId,
           },
@@ -691,6 +712,7 @@ export class FaturaService {
       efaturaProfili: girdi.efaturaProfili ?? (fatura.efaturaProfili as "temel" | "ticari"),
       earsivGonderimSekli: girdi.earsivGonderimSekli ?? (fatura.earsivGonderimSekli as "elektronik" | "kagit"),
       ihracKayitliKodu: girdi.ihracKayitliKodu !== undefined ? girdi.ihracKayitliKodu : fatura.ihracKayitliKodu,
+      idisSevkiyatNo: girdi.idisSevkiyatNo !== undefined ? girdi.idisSevkiyatNo : fatura.idisSevkiyatNo,
       ozelMatrahKodu: girdi.ozelMatrahKodu !== undefined ? girdi.ozelMatrahKodu : fatura.ozelMatrahKodu,
       ozelMatrahTutari: girdi.ozelMatrahTutari !== undefined ? girdi.ozelMatrahTutari : fatura.ozelMatrahTutari?.toString(),
       ozelMatrahOrani: girdi.ozelMatrahOrani !== undefined ? girdi.ozelMatrahOrani : fatura.ozelMatrahOrani?.toString(),
@@ -716,6 +738,8 @@ export class FaturaService {
           tevkifatPay: s.tevkifatPay,
           tevkifatPayda: s.tevkifatPayda,
           gibIstisnaKodu: s.gibIstisnaKodu,
+          idisEtiketNo: s.idisEtiketNo,
+          sarjUniteSeriNo: s.sarjUniteSeriNo,
           projeId: (s as any).projeId ?? undefined,
           projeAltKirilimId: (s as any).projeAltKirilimId ?? undefined,
         })),
@@ -775,10 +799,26 @@ export class FaturaService {
             netKdvTutari: D(s.netKdvTutari),
             toplamTutar: D(s.toplamTutar),
             gibIstisnaKodu: orijinalSatir.gibIstisnaKodu,
+            // İDİS etiket no ve şarj ünitesi seri no satır alanlarıdır
+            // (EBLG-71/72); biçim denetimi gönderimde yapılır.
+            idisEtiketNo: orijinalSatir.idisEtiketNo ? idisNormalize(orijinalSatir.idisEtiketNo) : null,
+            sarjUniteSeriNo: orijinalSatir.sarjUniteSeriNo?.trim() || null,
             projeId: orijinalSatir.projeId,
             projeAltKirilimId: orijinalSatir.projeAltKirilimId,
           },
         });
+      }
+
+      // EBLG-71: satırlar değiştiyse şarj türü de değişebilir.
+      const guncelSarjKartlari = await tx.stokKart.findMany({
+        where: { id: { in: [...new Set(birlesikGirdi.satirlar.map((satir) => satir.stokId))] } },
+        select: { id: true, sarjTuru: true },
+      });
+      const guncelSarjTuru = sarjTuruCoz(birlesikGirdi.satirlar.map((satir) => ({
+        sarjTuru: guncelSarjKartlari.find((kart) => kart.id === satir.stokId)?.sarjTuru,
+      })));
+      if (guncelSarjTuru.karisik) {
+        throw new BadRequestException("Şarj hizmeti ve şarj ünitesi satırları aynı faturada olamaz; belgenin tek bir tipi olmalıdır");
       }
 
       const guncellenen = await tx.fatura.update({
@@ -791,8 +831,9 @@ export class FaturaService {
             kdvOrani: Number(s.kdvOrani),
             tevkifatKodu: s.tevkifatKodu,
             gibIstisnaKodu: s.gibIstisnaKodu,
-          })), birlesikGirdi.ihracKayitliKodu, birlesikGirdi.ozelMatrahKodu, sgkFaturasiMi(fatura.cari?.vknTckn)),
+          })), birlesikGirdi.ihracKayitliKodu, birlesikGirdi.ozelMatrahKodu, sgkFaturasiMi(fatura.cari?.vknTckn), guncelSarjTuru.turu),
           ihracKayitliKodu: birlesikGirdi.ihracKayitliKodu,
+          idisSevkiyatNo: birlesikGirdi.idisSevkiyatNo ? idisNormalize(birlesikGirdi.idisSevkiyatNo) : null,
           ozelMatrahKodu: birlesikGirdi.ozelMatrahKodu ?? null,
           ozelMatrahTutari: birlesikGirdi.ozelMatrahKodu ? D(birlesikGirdi.ozelMatrahTutari ?? "0") : null,
           ozelMatrahOrani: birlesikGirdi.ozelMatrahKodu ? D(birlesikGirdi.ozelMatrahOrani ?? "0") : null,
@@ -1517,6 +1558,11 @@ export class FaturaService {
     ozelMatrahKodu?: string | null;
     ozelMatrahTutari?: Prisma.Decimal | null;
     ozelMatrahOrani?: Prisma.Decimal | null;
+    idisSevkiyatNo?: string | null;
+    sarjPlaka?: string | null;
+    sarjBaslangic?: Date | null;
+    sarjBitis?: Date | null;
+    sarjEsuRaporlari?: unknown;
     sgkIlaveFaturaTipi?: string | null;
     sgkMukellefKodu?: string | null;
     sgkMukellefAdi?: string | null;
@@ -1596,6 +1642,12 @@ export class FaturaService {
       ozelMatrahKodu: k.ozelMatrahKodu ?? null,
       ozelMatrahTutari: k.ozelMatrahTutari ? D(k.ozelMatrahTutari).toFixed(2) : null,
       ozelMatrahOrani: k.ozelMatrahOrani ? D(k.ozelMatrahOrani).toFixed(2) : null,
+      // İDİS ve şarj alanları (EBLG-71/72); PDF ve sihirbaz bunları okur.
+      idisSevkiyatNo: k.idisSevkiyatNo ?? null,
+      sarjPlaka: k.sarjPlaka ?? null,
+      sarjBaslangic: k.sarjBaslangic ? k.sarjBaslangic.toISOString() : null,
+      sarjBitis: k.sarjBitis ? k.sarjBitis.toISOString() : null,
+      sarjEsuRaporlari: (k.sarjEsuRaporlari as { raporId: string; tarih: string }[] | null) ?? null,
       // SGK faturası: grup, Kurum'daki kod/ad, dosya no ve dönem (EBLG-70).
       sgkIlaveFaturaTipi: k.sgkIlaveFaturaTipi ?? null,
       sgkMukellefKodu: k.sgkMukellefKodu ?? null,

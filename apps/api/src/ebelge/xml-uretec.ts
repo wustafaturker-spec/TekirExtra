@@ -14,6 +14,10 @@ import {
   ozelMatrahSatirPaylari,
   sgkBelgeAlanlari,
   SGK_FATURA_TIPI,
+  sarjPlakaNormalize,
+  idisNormalize,
+  IDIS_PROFILI,
+  idisBelgesiMi,
   KAMU_PROFILI,
   PASAPORT_TARIHI_BILINMIYOR,
   YOLCU_BERABER_FATURA_TIPI,
@@ -228,6 +232,30 @@ export function faturaUblUret(
    * özel matrahı, oranını ve kodunu taşır. Matrah satır tutarlarından değil
    * faturaya girilen tutardan gelir (ikinci elde alış ile satış farkı).
    */
+  /*
+   * Şarj faturası (14.09.2026 şematronu §1): tip SARJ ya da SARJANLIK, alıcı
+   * tarafında aracın plakası, şarj süresi `InvoicePeriod` içinde saatleriyle,
+   * SARJ'da ESU rapor kimlikleri ayrı ilave doküman referanslarında,
+   * SARJANLIK'ta satırda ünitenin seri numarası. e-Arşiv'de de geçerlidir.
+   */
+  const sarj = fatura.senaryo === "sarj" || fatura.senaryo === "sarjanlik"
+    ? {
+        tip: fatura.senaryo === "sarj" ? "SARJ" : "SARJANLIK",
+        plaka: sarjPlakaNormalize(fatura.sarjPlaka),
+        baslangic: fatura.sarjBaslangic,
+        bitis: fatura.sarjBitis,
+        raporlar: ((fatura.sarjEsuRaporlari as { raporId: string; tarih: string }[] | null) ?? []),
+      }
+    : null;
+  /** İDİS (GİB İDİS Teknik Kılavuzu v1.0): profil IDIS, sevkiyat no satıcıda, etiket no satırda. */
+  const idis = idisBelgesiMi(fatura.idisSevkiyatNo) ? idisNormalize(fatura.idisSevkiyatNo) : null;
+  /** Şarj süresinin tarih ve saat parçaları; UBL ikisini ayrı etikete ister. */
+  const anParcala = (an: Date | null | undefined) => {
+    if (!an) return null;
+    const metin = an.toISOString();
+    return { tarih: metin.slice(0, 10), saat: metin.slice(11, 19) };
+  };
+
   /*
    * SGK faturası (SGK e-Fatura Teknik Doküman §3.3): ilave fatura tipi hesap
    * kodunda, Kurum'daki mükellef kodu/adı ve dosya no ayrı ilave doküman
@@ -595,7 +623,7 @@ export function faturaUblUret(
          xsi:schemaLocation="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2 UBL-Invoice-2.1.xsd">
   <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
   <cbc:CustomizationID>TR1.2</cbc:CustomizationID>
-  <cbc:ProfileID>${ihracat ? IHRACAT_PROFILI : yolcu ? YOLCU_BERABER_PROFILI : kamu ? KAMU_PROFILI : earsiv ? "EARSIVFATURA" : fatura.efaturaProfili === "ticari" && !iadeSenaryosu && !sgk ? "TICARIFATURA" : "TEMELFATURA"}</cbc:ProfileID>
+  <cbc:ProfileID>${ihracat ? IHRACAT_PROFILI : yolcu ? YOLCU_BERABER_PROFILI : kamu ? KAMU_PROFILI : earsiv ? "EARSIVFATURA" : idis ? IDIS_PROFILI : fatura.efaturaProfili === "ticari" && !iadeSenaryosu && !sgk ? "TICARIFATURA" : "TEMELFATURA"}</cbc:ProfileID>
   <cbc:ID>${no}</cbc:ID>
   <cbc:CopyIndicator>false</cbc:CopyIndicator>
   <cbc:UUID>${uuid}</cbc:UUID>
@@ -610,6 +638,12 @@ ${sgk ? `  <cbc:AccountingCost>${escape(sgk.ilaveFaturaTipi)}</cbc:AccountingCos
   <cac:InvoicePeriod>
     <cbc:StartDate>${sgk.donem.baslangic}</cbc:StartDate>
     <cbc:EndDate>${sgk.donem.bitis}</cbc:EndDate>
+  </cac:InvoicePeriod>` : ""}${sarj && anParcala(sarj.baslangic) && anParcala(sarj.bitis) ? `
+  <cac:InvoicePeriod>
+    <cbc:StartDate>${anParcala(sarj.baslangic)!.tarih}</cbc:StartDate>
+    <cbc:StartTime>${anParcala(sarj.baslangic)!.saat}</cbc:StartTime>
+    <cbc:EndDate>${anParcala(sarj.bitis)!.tarih}</cbc:EndDate>
+    <cbc:EndTime>${anParcala(sarj.bitis)!.saat}</cbc:EndTime>
   </cac:InvoicePeriod>` : ""}${fatura.siparisNo ? `
   <cac:OrderReference>
     <cbc:ID>${escape(fatura.siparisNo)}</cbc:ID>${fatura.siparisTarihi ? `
@@ -620,7 +654,11 @@ ${earsiv ? `  <cac:AdditionalDocumentReference>
     <cbc:ID>${fatura.earsivGonderimSekli === "kagit" ? "KAGIT" : "ELEKTRONIK"}</cbc:ID>
     <cbc:IssueDate>${tarihStr}</cbc:IssueDate>
     <cbc:DocumentTypeCode>SEND_TYPE</cbc:DocumentTypeCode>
-  </cac:AdditionalDocumentReference>` : ""}${sgk ? `${sgkReferansi("MUKELLEF_KODU", sgk.mukellefKodu)}${sgkReferansi("MUKELLEF_ADI", sgk.mukellefAdi)}${sgkReferansi("DOSYA_NO", sgk.dosyaNo)}` : ""}${ihracat?.beyannameNo ? `
+  </cac:AdditionalDocumentReference>` : ""}${sgk ? `${sgkReferansi("MUKELLEF_KODU", sgk.mukellefKodu)}${sgkReferansi("MUKELLEF_ADI", sgk.mukellefAdi)}${sgkReferansi("DOSYA_NO", sgk.dosyaNo)}` : ""}${sarj ? sarj.raporlar.map((rapor) => `
+  <cac:AdditionalDocumentReference>
+    <cbc:ID schemeID="ESURaporID">${escape(rapor.raporId)}</cbc:ID>
+    <cbc:IssueDate>${escape(rapor.tarih)}</cbc:IssueDate>
+  </cac:AdditionalDocumentReference>`).join("") : ""}${ihracat?.beyannameNo ? `
   <cac:AdditionalDocumentReference>
     <cbc:ID>${escape(ihracat.beyannameNo)}</cbc:ID>
     <cbc:IssueDate>${tarihStr}</cbc:IssueDate>
@@ -656,6 +694,9 @@ ${saticiAdresi}
       </cac:PartyIdentification>` : ""}${supplier.ticaretSicilNo ? `
       <cac:PartyIdentification>
         <cbc:ID schemeID="TICARETSICILNO">${escape(supplier.ticaretSicilNo)}</cbc:ID>
+      </cac:PartyIdentification>` : ""}${idis ? `
+      <cac:PartyIdentification>
+        <cbc:ID schemeID="SEVKIYATNO">${escape(idis)}</cbc:ID>
       </cac:PartyIdentification>` : ""}
       <cac:PartyName>
         <cbc:Name>${escape(supplier.unvan)}</cbc:Name>
@@ -677,7 +718,10 @@ ${saticiAdresi}
     <cac:Party>
       <cac:PartyIdentification>
         <cbc:ID schemeID="${gtbAlici || !aliciTckn ? "VKN" : "TCKN"}">${gtbAlici ? GUMRUK_BAKANLIGI_VKN : fatura.cari.vknTckn}</cbc:ID>
-      </cac:PartyIdentification>
+      </cac:PartyIdentification>${sarj && sarj.plaka ? `
+      <cac:PartyIdentification>
+        <cbc:ID schemeID="PLAKA">${escape(sarj.plaka)}</cbc:ID>
+      </cac:PartyIdentification>` : ""}
 ${aliciTckn && !gtbAlici ? "" : `      <cac:PartyName>
         <cbc:Name>${escape(gtbAlici ? GUMRUK_BAKANLIGI_UNVAN : fatura.cari.unvan)}</cbc:Name>
       </cac:PartyName>`}
@@ -785,7 +829,13 @@ ${tevkifatBlogu}
       <cbc:Name>${escape(s.stok.ad)}</cbc:Name>
       <cac:SellersItemIdentification>
         <cbc:ID>${escape(s.stok.kod)}</cbc:ID>
-      </cac:SellersItemIdentification>${ihracat && menseiAdi(s.stok.mensei) ? `
+      </cac:SellersItemIdentification>${idis && s.idisEtiketNo ? `
+      <cac:AdditionalItemIdentification>
+        <cbc:ID schemeID="ETIKETNO">${escape(idisNormalize(s.idisEtiketNo))}</cbc:ID>
+      </cac:AdditionalItemIdentification>` : ""}${sarj?.tip === "SARJANLIK" && s.sarjUniteSeriNo ? `
+      <cac:ItemInstance>
+        <cbc:SerialID>${escape(s.sarjUniteSeriNo)}</cbc:SerialID>
+      </cac:ItemInstance>` : ""}${ihracat && menseiAdi(s.stok.mensei) ? `
       <cac:OriginCountry>
         <cbc:IdentificationCode>${ulkeKoduCoz(s.stok.mensei)}</cbc:IdentificationCode>
         <cbc:Name>${escape(menseiAdi(s.stok.mensei))}</cbc:Name>

@@ -29,8 +29,8 @@ tablo ikisini birlikte gösterir.
 | 4 | İhracat | `IHRACAT` | SATIS | Alıcı yurt dışı | Yok (gümrük süreci ayrı) | ✅ |
 | 5 | Yolcu beraberi | `YOLCUBERABERFATURA` | ISTISNA | Türkiye'de ikamet etmeyen yolcuya KDV'li satış; iade yetkili aracı kurumdan | Yok (gümrük onayı aracı kuruma gider) | ✅ (2026-09-20) |
 | 6 | Kamu | `KAMU` | SATIS / TEVKIFAT / ISTISNA / IADE | Alıcı merkezi yönetim kamu idaresi (GİB listesinde `<Type>KAMU</Type>` ya da kartta işaret); IADE: kamu idaresinden alınan malın iadesi | Yok | ✅ (2026-09-20) |
-| 7 | Şarj | `EARSIVFATURA` / e-Fatura | `SARJ` | Elektrikli araç şarj hizmeti | Kanala göre | ❌ |
-| 8 | Şarjanlık | `EARSIVFATURA` / e-Fatura | `SARJANLIK` | Şarj ünitesi/işletmecilik | Kanala göre | ❌ |
+| 7 | Şarj | `EARSIVFATURA` / e-Fatura | `SARJ` | Elektrikli araç şarj hizmeti | Kanala göre | ✅ (2026-09-20, EBLG-71) |
+| 8 | Şarjanlık | `EARSIVFATURA` / e-Fatura | `SARJANLIK` | Şarj ünitesi/işletmecilik | Kanala göre | ✅ (2026-09-20, EBLG-71) |
 | 9 | İhraç kayıtlı | TEMEL/TICARI | IHRACKAYITLI | İhracatçıya ihraç kaydıyla teslim | Profile göre | ✅ (EBLG-60) |
 | 10 | SGK | `TEMELFATURA` (zorunlu) | `SGK` | Alıcı Sosyal Güvenlik Kurumu (VKN 7750409379) | Yok | ✅ (2026-09-20, EBLG-70) |
 
@@ -190,10 +190,10 @@ belge e-Arşiv'e düşürülmez, gönderim durur.
 
 | Alan | UBL | Zorunlu | Durum |
 |---|---|---|---|
-| Fatura tipi `SARJ` | `InvoiceTypeCode` | Evet | ❌ |
-| Alıcı araç plakası | `AccountingCustomerParty/PartyIdentification` schemeID="PLAKA" | Evet | ❌ (plaka biçim kuralı hazır, EBLG-50) |
-| Şarj başlangıç tarihi/saati, bitiş tarihi/saati | `cac:InvoicePeriod` (StartDate/StartTime/EndDate/EndTime) | Evet | ❌ |
-| ESU rapor kimliği (GUID, birden çok olabilir) | `AdditionalDocumentReference` schemeID="ESURaporID" + tarih | Evet | ❌ |
+| Fatura tipi `SARJ` | `InvoiceTypeCode` | Evet | ✅ stok kartından türer (EBLG-71) |
+| Alıcı araç plakası | `AccountingCustomerParty/PartyIdentification` schemeID="PLAKA" | Evet | ✅ sihirbazda girilir; burada plaka kuralı gevşektir (il kodu aranmaz) |
+| Şarj başlangıç tarihi/saati, bitiş tarihi/saati | `cac:InvoicePeriod` (StartDate/StartTime/EndDate/EndTime) | Evet | ✅ sihirbazda girilir |
+| ESU rapor kimliği (GUID, birden çok olabilir) | `AdditionalDocumentReference` schemeID="ESURaporID" + tarih | Evet | ✅ sihirbazda girilir |
 
 ### 3.8 Şarjanlık (`SARJANLIK`) — şematron §1.4
 
@@ -201,9 +201,20 @@ belge e-Arşiv'e düşürülmez, gönderim durur.
 
 | Alan | UBL | Zorunlu | Durum |
 |---|---|---|---|
-| Şarj ünitesi seri numarası | `Item/ItemInstance/SerialID` | Evet | ❌ |
+| Şarj ünitesi seri numarası | `Item/ItemInstance/SerialID` | Evet | ✅ fatura satırında girilir (EBLG-71) |
 
-### 3.9 İhraç kayıtlı (`IHRACKAYITLI`)
+### 3.9 İDİS (`IDIS` / `IDISIRSALIYE`) — kılavuz v1.0 + şematron §2
+
+İDİS bir **profildir**, fatura tipi değil: tip normal kurallarla türer (SATIS,
+ISTISNA, TEVKIFAT, TEVKIFATIADE, IADE, IHRACKAYITLI).
+
+| Alan | UBL | Zorunlu | Durum |
+|---|---|---|---|
+| Profil `IDIS` (e-İrsaliyede `IDISIRSALIYE`) | `ProfileID` | Evet | ✅ sevkiyat no girilince (EBLG-72) |
+| Sevkiyat numarası (`SE-`/`ES-` + 7 rakam) | Satıcı `PartyIdentification` schemeID="SEVKIYATNO" | Evet | ✅ fatura formunda / taşıma panelinde |
+| Etiket numarası (2 harf + 7 rakam) | `Item/AdditionalItemIdentification` schemeID="ETIKETNO" | Evet (her satır) | ✅ satırda girilir |
+
+### 3.10 İhraç kayıtlı (`IHRACKAYITLI`)
 
 | Alan | UBL | Zorunlu | Durum |
 |---|---|---|---|
@@ -264,7 +275,7 @@ SGK · 801–811 → OZELMATRAH, IADE, SGK. IADE tipi TICARIFATURA profiliyle gi
 | ~~C~~ | ~~İhracat alan kümesi~~ — **bitti** (EBLG-53) | İhracat |
 | ~~D~~ | ~~Gümrük beyanname no~~ — **bitti** (EBLG-54): yalnız kayda işlenir | İhracat |
 | ~~E~~ | ~~KAMU-IADE alan grubu~~ — **bitti**, kamuya satışla birlikte (KAMU senaryosu) | Kamu |
-| F | SARJ / SARJANLIK alan grubu | Şarj |
+| ~~F~~ | ~~SARJ / SARJANLIK alan grubu~~ — **bitti** (2026-09-20, EBLG-71) | Şarj |
 | ~~G~~ | ~~Yolcu beraberi~~ — **bitti** (2026-09-20) | Tax-free |
 | H | İhraç kayıtlı | İhracat zinciri — ✅ EBLG-60 |
 | I | Alıcı alias'ının UBL'e yazılması | e-Fatura |

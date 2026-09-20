@@ -3,14 +3,18 @@ import {
   YOLCU_BERABER_ISTISNA_ACIKLAMASI,
   YOLCU_BERABER_ISTISNA_KODU,
   YOLCU_BERABER_PROFILI,
+  idisBelgesiMi,
+  idisNormalize,
   ihracKayitliKoduBul,
   ilaveFaturaTipiBul,
+  SARJ_TURU_ADLARI,
   ozelMatrahKdvsi,
   ozelMatrahKoduBul,
   senaryoUblKodu,
   ulkeAdi,
   type AraciKurum,
   type FaturaSenaryosu,
+  type SarjTuru,
   type YolcuBilgisi,
 } from "@tekirextra/shared";
 import {
@@ -49,6 +53,10 @@ export interface FaturaPdfSatiri {
   toplamTutar: string;
   /** FTR-11: satır bazlı GİB istisna kodu (ör. 301). */
   gibIstisnaKodu?: string | null;
+  /** EBLG-72: İDİS etiket numarası. */
+  idisEtiketNo?: string | null;
+  /** EBLG-71: SARJANLIK faturasında ünitenin seri numarası. */
+  sarjUniteSeriNo?: string | null;
 }
 
 export interface FaturaPdfVerisi {
@@ -97,6 +105,13 @@ export interface FaturaPdfVerisi {
   sgkDonemBitis?: string | null;
   /** Yolcu beraberi (tax-free): yolcu ve aracı kurum; boşsa değildir. */
   yolcuBeraberi?: { yolcu?: YolcuBilgisi | null; araciKurum?: AraciKurum | null } | null;
+  /** Şarj faturası (EBLG-71): plaka, şarj süresi ve ESU raporları. */
+  sarjPlaka?: string | null;
+  sarjBaslangic?: string | Date | null;
+  sarjBitis?: string | Date | null;
+  sarjEsuRaporlari?: { raporId: string; tarih: string }[] | null;
+  /** İDİS (EBLG-72): sevkiyat numarası; doluysa belge İDİS kapsamındadır. */
+  idisSevkiyatNo?: string | null;
 }
 
 /** EBLG-30: PDF'te gösterilen profil adı; UBL'deki ProfileID ile aynı ayrımdır. */
@@ -154,6 +169,44 @@ function sgkBilgisi(f: FaturaPdfVerisi): string {
       ? `Dönem: <strong>${tarihBicim(f.sgkDonemBaslangic)} – ${tarihBicim(f.sgkDonemBitis)}</strong>` : "",
   ].filter(Boolean);
   return `<p style="margin-top:10px;font-size:9pt">SGK faturası<br>${satirlar.join("<br>")}</p>`;
+}
+
+/**
+ * Şarj belge altı bilgisi (14.09.2026 şematronu §1): aracın plakası, şarjın
+ * süresi ve ESU raporları — alıcı belgede görebilmelidir.
+ */
+function sarjBilgisi(f: FaturaPdfVerisi): string {
+  const turu = f.senaryo === "sarj" || f.senaryo === "sarjanlik" ? (f.senaryo as SarjTuru) : null;
+  if (!turu) return "";
+  const an = (deger: string | Date | null | undefined) => {
+    if (!deger) return "";
+    const metin = typeof deger === "string" ? deger : deger.toISOString();
+    return `${tarihBicim(metin.slice(0, 10))} ${metin.slice(11, 16)}`;
+  };
+  const raporlar = (f.sarjEsuRaporlari ?? []).map((rapor) => rapor.raporId).filter(Boolean);
+  const satirlar = [
+    f.sarjPlaka ? `Şarj edilen araç: <strong>${kacis(f.sarjPlaka)}</strong>` : "",
+    f.sarjBaslangic && f.sarjBitis ? `Şarj süresi: <strong>${an(f.sarjBaslangic)} – ${an(f.sarjBitis)}</strong>` : "",
+    raporlar.length ? `ESU rapor kimliği: ${kacis(raporlar.join(", "))}` : "",
+    turu === "sarjanlik"
+      ? f.satirlar.map((satir, index) => satir.sarjUniteSeriNo ? `${index + 1}. satır ünite seri no: ${kacis(satir.sarjUniteSeriNo)}` : "").filter(Boolean).join("<br>")
+      : "",
+  ].filter(Boolean);
+  if (!satirlar.length) return "";
+  return `<p style="margin-top:10px;font-size:9pt">${kacis(SARJ_TURU_ADLARI[turu])}<br>${satirlar.join("<br>")}</p>`;
+}
+
+/**
+ * İDİS belge altı bilgisi (GİB İDİS Teknik Kılavuzu v1.0): sevkiyat numarası
+ * belge başına, etiket numarası satır başınadır.
+ */
+function idisBilgisi(f: FaturaPdfVerisi): string {
+  if (!idisBelgesiMi(f.idisSevkiyatNo)) return "";
+  const etiketler = f.satirlar
+    .map((satir, index) => satir.idisEtiketNo ? `${index + 1}. satır: ${kacis(idisNormalize(satir.idisEtiketNo))}` : "")
+    .filter(Boolean);
+  return `<p style="margin-top:10px;font-size:9pt">İDİS kapsamında teslim<br>Sevkiyat no: <strong>${kacis(idisNormalize(f.idisSevkiyatNo))}</strong>`
+    + `${etiketler.length ? `<br>Etiket numaraları: ${etiketler.join(", ")}` : ""}</p>`;
 }
 
 /**
@@ -314,6 +367,8 @@ ${ihracKayitliIbaresi(f.ihracKayitliKodu)}
 ${kamuBilgisi(f)}
 ${ozelMatrahBilgisi(f)}
 ${sgkBilgisi(f)}
+${sarjBilgisi(f)}
+${idisBilgisi(f)}
 ${yolcuBeraberiBilgisi(f)}`;
 
   return sayfaSablonu({

@@ -21,7 +21,7 @@ import {
   Tabs,
   TableWrap,
 } from "@/components/ui";
-import { bugunTR } from "@tekirextra/shared";
+import { bugunTR, SARJ_TURLERI, SARJ_TURU_ADLARI } from "@tekirextra/shared";
 
 /* ─── Tipler ─────────────────────────────────────────────────────────────── */
 
@@ -156,6 +156,7 @@ interface StokDetay {
   model: string | null;
   mensei: string | null;
   gtipKodu: string | null;
+  sarjTuru: string | null;
   ureticiUrunKodu: string | null;
   barkod: string | null;
   kategoriId: string | null;
@@ -568,6 +569,7 @@ function GenelSekmesi({
     model: detay.model ?? "",
     mensei: detay.mensei ?? "",
     gtipKodu: detay.gtipKodu ?? "",
+    sarjTuru: detay.sarjTuru ?? "",
     ureticiUrunKodu: detay.ureticiUrunKodu ?? "",
     kdvOrani: detay.kdvOrani,
     alisFiyati: detay.alisFiyati ?? "",
@@ -601,6 +603,7 @@ function GenelSekmesi({
       model: bosNull(form.model),
       mensei: bosNull(form.mensei),
       gtipKodu: bosNull(form.gtipKodu),
+      sarjTuru: bosNull(form.sarjTuru),
       ureticiUrunKodu: bosNull(form.ureticiUrunKodu),
       kdvOrani: form.kdvOrani || "20",
       alisFiyati: bosNull(form.alisFiyati),
@@ -683,6 +686,15 @@ function GenelSekmesi({
         <div className="stock-field">
           <Field label="Üretici Ürün Kodu">
             <Input {...alan("ureticiUrunKodu")} />
+          </Field>
+        </div>
+        <div className="stock-field">
+          {/* EBLG-71: işaretli kart satıra düşünce fatura SARJ/SARJANLIK tipiyle gider. */}
+          <Field label="Elektrikli araç şarjı">
+            <Select {...alan("sarjTuru")}>
+              <option value="">Şarj faturası değil</option>
+              {SARJ_TURLERI.map((tur) => <option key={tur} value={tur}>{SARJ_TURU_ADLARI[tur]}</option>)}
+            </Select>
           </Field>
         </div>
       </div>

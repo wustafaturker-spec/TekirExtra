@@ -3,7 +3,7 @@ import { EirsaliyeDurum, GelenEirsaliyeDurum, Prisma } from "@prisma/client";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import type { EntegratorConfig } from "@tekirextra/baglanti";
-import { birimUblKodu, dorseSchemeId, firmaEbelgeEksikleri, plakaNormalize, plakaSchemeId, ublAdresi } from "@tekirextra/shared";
+import { birimUblKodu, dorseSchemeId, firmaEbelgeEksikleri, idisBelgesiMi, IDIS_IRSALIYE_PROFILI, idisNormalize, plakaNormalize, plakaSchemeId, ublAdresi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
@@ -65,7 +65,9 @@ export class EirsaliyeService {
    * ile geri çevirir.
    *
    * `ProfileID` **TEMELIRSALIYE**'dir; `SEVK` belgenin türüdür
-   * (`DespatchAdviceTypeCode`), profili değil.
+   * (`DespatchAdviceTypeCode`), profili değil. İDİS kapsamındaki sevkiyatta
+   * profil **IDISIRSALIYE** olur ve sevkiyat/etiket numaraları eklenir
+   * (EBLG-72; GİB İDİS Teknik Kılavuzu v1.0 §3).
    */
   private ubl(b: any, tenant: any) {
     const tarih = new Date(b.tarih).toISOString().slice(0, 10);
@@ -79,8 +81,8 @@ export class EirsaliyeService {
     /** Karttaki adres (EBLG-55). */
     const kartAdresi = (a: ReturnType<typeof ublAdresi>) =>
       `<cac:PostalAddress>${a.adres ? `<cbc:StreetName>${esc(a.adres)}</cbc:StreetName>` : ""}<cbc:CitySubdivisionName>${esc(a.ilce)}</cbc:CitySubdivisionName><cbc:CityName>${esc(a.il)}</cbc:CityName>${a.postaKodu ? `<cbc:PostalZone>${esc(a.postaKodu)}</cbc:PostalZone>` : ""}<cac:Country><cbc:IdentificationCode>${a.ulkeKodu}</cbc:IdentificationCode>${a.ulkeAdi ? `<cbc:Name>${esc(a.ulkeAdi)}</cbc:Name>` : ""}</cac:Country></cac:PostalAddress>`;
-    const taraf = (vkn: string, unvan: string, adresBlogu = firmaAdresi) =>
-      `<cac:Party><cac:PartyIdentification><cbc:ID schemeID="${vkn.length === 11 ? "TCKN" : "VKN"}">${esc(vkn)}</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>${esc(unvan)}</cbc:Name></cac:PartyName>${adresBlogu}</cac:Party>`;
+    const taraf = (vkn: string, unvan: string, adresBlogu = firmaAdresi, ekKimlik = "") =>
+      `<cac:Party><cac:PartyIdentification><cbc:ID schemeID="${vkn.length === 11 ? "TCKN" : "VKN"}">${esc(vkn)}</cbc:ID></cac:PartyIdentification>${ekKimlik}<cac:PartyName><cbc:Name>${esc(unvan)}</cbc:Name></cac:PartyName>${adresBlogu}</cac:Party>`;
     // Taşıyan: cari seçilmediyse malı kendi aracımızla götürmüşüzdür.
     // Taşıyan cari ise kendi kart adresi, biz isek firma adresi yazılır (EBLG-62).
     const tasiyan = b.tasiyiciCari
@@ -97,19 +99,22 @@ export class EirsaliyeService {
     const dorse = b.dorsePlaka
       ? `<cac:TransportHandlingUnit><cac:TransportEquipment><cbc:ID schemeID="${dorseSchemeId(b.dorsePlaka)}">${esc(plakaNormalize(b.dorsePlaka))}</cbc:ID></cac:TransportEquipment></cac:TransportHandlingUnit>`
       : "";
+    /** İDİS: sevkiyat numarası doluysa belge bu profille gider (EBLG-72). */
+    const idis = idisBelgesiMi(b.idisSevkiyatNo) ? idisNormalize(b.idisSevkiyatNo) : null;
     const satirlar = b.satirlar
       .map(
         (s: any, i: number) =>
-          `<cac:DespatchLine><cbc:ID>${i + 1}</cbc:ID><cbc:DeliveredQuantity unitCode="${birimUblKodu(s.birim)}">${s.miktar}</cbc:DeliveredQuantity><cac:OrderLineReference><cbc:LineID>${i + 1}</cbc:LineID></cac:OrderLineReference><cac:Item><cbc:Name>${esc(s.stok.ad)}</cbc:Name><cac:SellersItemIdentification><cbc:ID>${esc(s.stok.kod)}</cbc:ID></cac:SellersItemIdentification></cac:Item></cac:DespatchLine>`,
+          `<cac:DespatchLine><cbc:ID>${i + 1}</cbc:ID><cbc:DeliveredQuantity unitCode="${birimUblKodu(s.birim)}">${s.miktar}</cbc:DeliveredQuantity><cac:OrderLineReference><cbc:LineID>${i + 1}</cbc:LineID></cac:OrderLineReference><cac:Item><cbc:Name>${esc(s.stok.ad)}</cbc:Name><cac:SellersItemIdentification><cbc:ID>${esc(s.stok.kod)}</cbc:ID></cac:SellersItemIdentification>${idis && s.idisEtiketNo ? `<cac:AdditionalItemIdentification><cbc:ID schemeID="ETIKETNO">${esc(idisNormalize(s.idisEtiketNo))}</cbc:ID></cac:AdditionalItemIdentification>` : ""}</cac:Item></cac:DespatchLine>`,
       )
       .join("");
     return `<?xml version="1.0" encoding="UTF-8"?><DespatchAdvice xmlns="urn:oasis:names:specification:ubl:schema:xsd:DespatchAdvice-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">`
-      + `<cbc:UBLVersionID>2.1</cbc:UBLVersionID><cbc:CustomizationID>TR1.2</cbc:CustomizationID><cbc:ProfileID>TEMELIRSALIYE</cbc:ProfileID>`
+      + `<cbc:UBLVersionID>2.1</cbc:UBLVersionID><cbc:CustomizationID>TR1.2</cbc:CustomizationID><cbc:ProfileID>${idis ? IDIS_IRSALIYE_PROFILI : "TEMELIRSALIYE"}</cbc:ProfileID>`
       + `<cbc:ID>${esc(b.no ?? b.id)}</cbc:ID><cbc:CopyIndicator>false</cbc:CopyIndicator><cbc:UUID>${b.id}</cbc:UUID>`
       + `<cbc:IssueDate>${tarih}</cbc:IssueDate><cbc:IssueTime>${saat}</cbc:IssueTime>`
       + `<cbc:DespatchAdviceTypeCode>SEVK</cbc:DespatchAdviceTypeCode><cbc:LineCountNumeric>${b.satirlar.length}</cbc:LineCountNumeric>`
       + `<cac:Signature><cbc:ID schemeID="VKN_TCKN">${esc(tenant.vkn)}</cbc:ID><cac:SignatoryParty><cac:PartyIdentification><cbc:ID schemeID="VKN">${esc(tenant.vkn)}</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>${esc(tenant.unvan)}</cbc:Name></cac:PartyName>${firmaAdresi}</cac:SignatoryParty><cac:DigitalSignatureAttachment><cac:ExternalReference><cbc:URI>#Signature</cbc:URI></cac:ExternalReference></cac:DigitalSignatureAttachment></cac:Signature>`
-      + `<cac:DespatchSupplierParty>${taraf(tenant.vkn, tenant.unvan)}</cac:DespatchSupplierParty>`
+      // İDİS'te sevkiyat numarası satıcının `PartyIdentification`'ına yazılır.
+      + `<cac:DespatchSupplierParty>${taraf(tenant.vkn, tenant.unvan, firmaAdresi, idis ? `<cac:PartyIdentification><cbc:ID schemeID="SEVKIYATNO">${esc(idis)}</cbc:ID></cac:PartyIdentification>` : "")}</cac:DespatchSupplierParty>`
       + `<cac:DeliveryCustomerParty>${taraf(b.cari.vknTckn ?? "", b.cari.unvan, kartAdresi(ublAdresi(b.cari.adresler)))}</cac:DeliveryCustomerParty>`
       // Fiili sevk zamanı `cac:Shipment` içinde bildirilir; taşıyan ve plaka
       // bilgisi kartta tutulmadığı için yazılmıyor.

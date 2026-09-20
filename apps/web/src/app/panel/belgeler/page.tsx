@@ -68,6 +68,8 @@ interface BelgeSatirForm {
   birimFiyat: number;
   iskontoOrani: number;
   kdvOrani: number;
+  /** EBLG-72: İDİS etiket numarası; İDİS irsaliyesinde her satırda zorunlu. */
+  idisEtiketNo?: string;
   lotNo?: string; seriNolar?: string; sonKullanmaTarihi?: string; uretimTarihi?: string;
 }
 
@@ -97,6 +99,7 @@ interface BelgeDetay extends Belge {
   soforAdi?: string | null;
   soforSoyadi?: string | null;
   soforTckn?: string | null;
+  idisSevkiyatNo?: string | null;
   aciklama: string | null;
   notlar: string | null;
   kaynakBelge: ZincirRef | null;
@@ -107,7 +110,7 @@ interface BelgeDetay extends Belge {
     ebelge: { tur: string; durum: string } | null;
     odemeOzeti: { durum: string; odenen: string; kalan: string };
   } | null;
-  satirlar: { id: string; stokId: string; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; teslimEdilenMiktar?: string; kalanMiktar?: string }[];
+  satirlar: { id: string; stokId: string; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; teslimEdilenMiktar?: string; kalanMiktar?: string; idisEtiketNo?: string | null }[];
   /** SAT-10: siparişin teslim geçmişi (iptal edilen irsaliyeler sayılmaz). */
   teslimatlar?: {
     id: string; no: string | null; durum: string; tarih: string;
@@ -181,6 +184,8 @@ export default function BelgelerSayfasi() {
   const [fiiliSevkZamani, setFiiliSevkZamani] = useState("");
   const [tasiyiciCariId, setTasiyiciCariId] = useState("");
   const [plaka, setPlaka] = useState("");
+  /** EBLG-72: İDİS sevkiyat numarası; irsaliyede girilir. */
+  const [idisSevkiyatNo, setIdisSevkiyatNo] = useState("");
   const [dorsePlaka, setDorsePlaka] = useState("");
   const [soforAdi, setSoforAdi] = useState("");
   const [soforSoyadi, setSoforSoyadi] = useState("");
@@ -393,6 +398,7 @@ export default function BelgelerSayfasi() {
                 soforAdi: soforAdi || null,
                 soforSoyadi: soforSoyadi || null,
                 soforTckn: soforTckn || null,
+                idisSevkiyatNo: idisSevkiyatNo.trim() || null,
               }
             : {}),
           satirlar: satirlar.map((s) => ({
@@ -403,6 +409,7 @@ export default function BelgelerSayfasi() {
             birimFiyat: String(s.birimFiyat),
             iskontoOrani: String(s.iskontoOrani),
             kdvOrani: String(s.kdvOrani),
+            idisEtiketNo: s.idisEtiketNo?.trim() || null,
             partiBilgileri: (() => { const stok = stoklar.find((x) => x.id === s.stokId); if (yon !== "alis" || !stok?.takipTipi || stok.takipTipi === "yok") return []; if (stok.takipTipi === "seri") return (s.seriNolar ?? "").split(/[\n,;]/).map((x) => x.trim()).filter(Boolean).map((seriNo) => ({ lotNo: s.lotNo || seriNo, seriNo, sonKullanmaTarihi: s.sonKullanmaTarihi || null, uretimTarihi: s.uretimTarihi || null, miktar: "1" })); return [{ lotNo: s.lotNo ?? "", seriNo: null, sonKullanmaTarihi: s.sonKullanmaTarihi || null, uretimTarihi: s.uretimTarihi || null, miktar: String(s.miktar) }]; })(),
           })),
         }),
@@ -728,6 +735,11 @@ export default function BelgelerSayfasi() {
                     </Select>
                   </Field>
                 )}
+                {/* EBLG-72: numara girilirse belge IDISIRSALIYE profiliyle gider. */}
+                <Field label="İDİS Sevkiyat Numarası">
+                  <Input aria-label="İDİS sevkiyat numarası" value={idisSevkiyatNo} maxLength={20} placeholder="Örn. SE-0152457" onChange={(e) => setIdisSevkiyatNo(e.target.value)} />
+                  <small className="muted">İnşaat demiri teslimlerinde girilir; satırlar etiket numarası ister.</small>
+                </Field>
                 <Field label="Plaka"><Input value={plaka} onChange={(e) => setPlaka(e.target.value)} onBlur={() => setPlaka((p) => plakaNormalize(p))} placeholder="34ABC123" /></Field>
                 <Field label="Dorse Plakası"><Input value={dorsePlaka} onChange={(e) => setDorsePlaka(e.target.value)} onBlur={() => setDorsePlaka((p) => plakaNormalize(p))} /></Field>
                 <Field label="Şoför Adı"><Input value={soforAdi} onChange={(e) => setSoforAdi(e.target.value)} /></Field>
@@ -781,6 +793,9 @@ export default function BelgelerSayfasi() {
                       />
                       {(stokVaryantlari[s.stokId]?.length ?? 0) > 0 && <Select aria-label="Varyant" required value={s.varyantId ?? ""} onChange={(e) => { const yeni = [...satirlar]; yeni[i] = { ...s, varyantId: e.target.value }; setSatirlar(yeni); }}><option value="">Varyant seçin</option>{stokVaryantlari[s.stokId].filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad} · Stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")}</option>)}</Select>}
                       {yon === "alis" && (() => { const takip = stoklar.find((x) => x.id === s.stokId)?.takipTipi; return takip && takip !== "yok" ? <div className="stack"><Input aria-label="Lot / Parti No" required placeholder="Lot / Parti No" value={s.lotNo ?? ""} onChange={(e) => void satirGuncelle(i, "lotNo", e.target.value)} />{takip === "seri" && <Input aria-label="Seri numaraları" required placeholder="Seri numaraları (virgülle)" value={s.seriNolar ?? ""} onChange={(e) => void satirGuncelle(i, "seriNolar", e.target.value)} />}<Input aria-label="Son kullanma tarihi" type="date" value={s.sonKullanmaTarihi ?? ""} onChange={(e) => void satirGuncelle(i, "sonKullanmaTarihi", e.target.value)} /></div> : null; })()}
+                      {tur === "irsaliye" && idisSevkiyatNo.trim() && (
+                        <Input aria-label={`${i + 1}. satır İDİS etiket numarası`} placeholder="İDİS etiket no (örn. CV0152457)" maxLength={20} value={s.idisEtiketNo ?? ""} onChange={(e) => satirGuncelle(i, "idisEtiketNo", e.target.value)} />
+                      )}
                     </td>
                     <td><Input className="document-line-number" aria-label="Miktar" type="number" min="0.01" step="any" inputMode="decimal" value={s.miktar} onChange={(e) => satirGuncelle(i, "miktar", Number(e.target.value))} required /></td>
                     <td><Input className="document-line-number" aria-label="Birim fiyat" type="number" min="0" step="any" inputMode="decimal" value={s.birimFiyat} onChange={(e) => satirGuncelle(i, "birimFiyat", Number(e.target.value))} required /></td>

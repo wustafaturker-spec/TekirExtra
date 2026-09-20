@@ -1009,6 +1009,9 @@ model StokKart {
   model            String?
   mensei           String?
   gtipKodu         String?       @map("gtip_kodu")
+  /// Elektrikli araç şarj faturası (EBLG-71): kart satıra düştüğünde belgenin
+  /// tipi buradan türer — `sarj` (şarj hizmeti) ya da `sarjanlik` (ünite).
+  sarjTuru         String?       @map("sarj_turu")
   ureticiUrunKodu  String?       @map("uretici_urun_kodu")
   /// Veritabanının ürettiği aksansız arama kolonu (20260904200000_aksansiz_arama).
   /// GENERATED ALWAYS olduğu için yalnız okunur; Prisma ile yazılmaz.
@@ -1996,6 +1999,8 @@ enum FaturaSenaryo {
   ihrackayitli
   ozelmatrah
   sgk
+  sarj
+  sarjanlik
 }
 
 /// e-Fatura profili (FTR-19). TICARIFATURA alıcıya 8 gün içinde kabul/ret
@@ -2108,6 +2113,15 @@ model Fatura {
   ozelMatrahKodu       String?         @map("ozel_matrah_kodu")
   ozelMatrahTutari     Decimal?        @map("ozel_matrah_tutari") @db.Decimal(15, 2)
   ozelMatrahOrani      Decimal?        @map("ozel_matrah_orani") @db.Decimal(5, 2)
+  /// Şarj faturası (EBLG-71): şarj edilen aracın plakası, şarjın başlangıç ve
+  /// bitiş anı, ESU rapor kimlikleri (`[{raporId, tarih}]`).
+  sarjPlaka            String?         @map("sarj_plaka")
+  sarjBaslangic        DateTime?       @map("sarj_baslangic")
+  sarjBitis            DateTime?       @map("sarj_bitis")
+  sarjEsuRaporlari     Json?           @map("sarj_esu_raporlari")
+  /// İDİS (EBLG-72): Darphane bildiriminden dönen sevkiyat numarası; doluysa
+  /// belge IDIS profiliyle gider.
+  idisSevkiyatNo       String?         @map("idis_sevkiyat_no")
   /// SGK faturası: ilave fatura tipi, Kurum'daki kod/ad, dosya no ve dönem.
   /// Alıcının VKN'si SGK'nınki olduğunda sihirbazda toplanır.
   sgkIlaveFaturaTipi   String?         @map("sgk_ilave_fatura_tipi")
@@ -2223,6 +2237,10 @@ model FaturaSatir {
   netKdvTutari      Decimal @map("net_kdv_tutari") @db.Decimal(15, 2)
   toplamTutar       Decimal @map("toplam_tutar") @db.Decimal(15, 2)
   gibIstisnaKodu    String? @map("gib_istisna_kodu")
+  /// İDİS etiket numarası (EBLG-72): 2 harf + 7 rakam, her satırda zorunlu.
+  idisEtiketNo      String? @map("idis_etiket_no")
+  /// SARJANLIK faturasında satırdaki şarj ünitesinin seri numarası (EBLG-71).
+  sarjUniteSeriNo   String? @map("sarj_unite_seri_no")
   projeId           String? @map("proje_id") @db.Uuid
   projeAltKirilimId String? @map("proje_alt_kirilim_id") @db.Uuid
 
@@ -3174,6 +3192,9 @@ model Belge {
   /// Malın fiilen yola çıktığı an; boşsa onay anı yazılır.
   fiiliSevkZamani      DateTime?        @map("fiili_sevk_zamani")
   /// Taşıyan nakliyeci/kargo firması. Boşsa malı kendi aracımızla götürdük.
+  /// İDİS (EBLG-72): sevkiyat numarası; doluysa e-İrsaliye IDISIRSALIYE
+  /// profiliyle gider.
+  idisSevkiyatNo       String?          @map("idis_sevkiyat_no")
   tasiyiciCariId       String?          @map("tasiyici_cari_id") @db.Uuid
   plaka                String?
   dorsePlaka           String?          @map("dorse_plaka")
@@ -3315,6 +3336,8 @@ model BelgeSatir {
   /// SAT-09: bu satırın türediği sipariş satırı. İrsaliye iptal edilince
   /// teslim edilen miktarın hangi satırdan düşeceğini bu bağ söyler.
   kaynakSatirId    String? @map("kaynak_satir_id") @db.Uuid
+  /// İDİS etiket numarası (EBLG-72); irsaliye satırında da zorunludur.
+  idisEtiketNo     String? @map("idis_etiket_no")
 
   belge             Belge        @relation(fields: [belgeId], references: [id], onDelete: Cascade)
   stok              StokKart     @relation(fields: [stokId], references: [id])

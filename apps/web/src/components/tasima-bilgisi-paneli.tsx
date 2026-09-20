@@ -16,7 +16,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, tumSayfalariAl } from "@/lib/api";
 import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
 import { eksikTasiyanAlanlari, tasiyanBelli } from "@/lib/tasima-bilgisi";
-import { PLAKA_HATA_MESAJI, plakaGecerliMi, plakaNormalize, plakaTuru } from "@tekirextra/shared";
+import { idisBelgesiMi, PLAKA_HATA_MESAJI, plakaGecerliMi, plakaNormalize, plakaTuru, sevkiyatNoGecerliMi } from "@tekirextra/shared";
 import { Alert, Button, Field, Input, Select } from "@/components/ui";
 
 interface Cari { id: string; unvan: string; vknTckn?: string | null }
@@ -32,6 +32,8 @@ interface BelgeTasima {
   soforAdi: string | null;
   soforSoyadi: string | null;
   soforTckn: string | null;
+  /** EBLG-72: İDİS sevkiyat numarası; Darphane bildiriminden sonra girilir. */
+  idisSevkiyatNo: string | null;
 }
 
 /** ISO zaman damgasını `datetime-local` alanının beklediği yerel metne çevirir. */
@@ -71,6 +73,7 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
   const [soforAdi, setSoforAdi] = useState("");
   const [soforSoyadi, setSoforSoyadi] = useState("");
   const [soforTckn, setSoforTckn] = useState("");
+  const [idisSevkiyatNo, setIdisSevkiyatNo] = useState("");
 
   const yukle = useCallback(async () => {
     setYukleniyor(true);
@@ -86,6 +89,7 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
       setSoforAdi(belge.soforAdi ?? "");
       setSoforSoyadi(belge.soforSoyadi ?? "");
       setSoforTckn(belge.soforTckn ?? "");
+      setIdisSevkiyatNo(belge.idisSevkiyatNo ?? "");
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Belgenin taşıma bilgisi okunamadı");
     } finally {
@@ -110,8 +114,11 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
   const secilenTasiyici = cariler.find((c) => c.id === tasiyiciCariId);
   const suanki = { tasiyiciCariId: tasiyiciCariId || null, soforAdi, soforSoyadi, plaka };
   const eksikler = eksikTasiyanAlanlari(suanki);
+  // EBLG-72: numara girildiyse biçimi tutmalı; boş bırakmak belgeyi İDİS dışı yapar.
+  const sevkiyatNoBozuk = idisBelgesiMi(idisSevkiyatNo) && !sevkiyatNoGecerliMi(idisSevkiyatNo);
   const gonderilebilir =
-    tasiyanBelli(suanki)
+    !sevkiyatNoBozuk
+    && tasiyanBelli(suanki)
     && !plakaBozuk
     && !dorseBozuk
     && !(tasiyiciCariId && secilenTasiyici && !secilenTasiyici.vknTckn);
@@ -141,6 +148,7 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
           soforAdi: soforAdi.trim() || null,
           soforSoyadi: soforSoyadi.trim() || null,
           soforTckn: soforTckn.trim() || null,
+          idisSevkiyatNo: idisSevkiyatNo.trim() || null,
         }),
       });
       if (!gonderilebilir) {
@@ -176,6 +184,7 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
             </Alert>
           ) : null}
           {(plakaBozuk || dorseBozuk) && <Alert tone="warning">{PLAKA_HATA_MESAJI}</Alert>}
+          {sevkiyatNoBozuk && <Alert tone="warning">Sevkiyat numarası SE-0000000 ya da ES-0000000 biçiminde olmalıdır.</Alert>}
           {tasiyiciCariId && secilenTasiyici && !secilenTasiyici.vknTckn && (
             <Alert tone="warning">Seçilen taşıyıcı carinin VKN/TCKN bilgisi yok; e-İrsaliye bu haliyle gönderilemez.</Alert>
           )}
@@ -183,6 +192,11 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
             <Field label="Fiili Sevk Tarihi ve Saati">
               <Input aria-label="Fiili sevk tarihi ve saati" type="datetime-local" value={fiiliSevkZamani} onChange={(e) => setFiiliSevkZamani(e.target.value)} />
               <small className="muted">Boş bırakılırsa onay anı yazılır.</small>
+            </Field>
+            {/* EBLG-72: numara Darphane bildiriminden döner, çoğu zaman onaydan sonra. */}
+            <Field label="İDİS Sevkiyat Numarası">
+              <Input aria-label="İDİS sevkiyat numarası" value={idisSevkiyatNo} maxLength={20} placeholder="Örn. SE-0152457" onChange={(e) => setIdisSevkiyatNo(e.target.value)} />
+              <small className="muted">İnşaat demiri teslimlerinde girilir; belge IDISIRSALIYE profiliyle gider ve satırlar etiket numarası ister.</small>
             </Field>
             <Field label="Taşıyan">
               <Select aria-label="Taşıyan" value={tasiyiciCariId} onChange={(e) => setTasiyiciCariId(e.target.value)}>

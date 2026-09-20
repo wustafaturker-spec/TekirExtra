@@ -57,6 +57,27 @@ describe("EirsaliyeService UBL", () => {
     expect(xml).toContain("<cbc:DespatchAdviceTypeCode>SEVK</cbc:DespatchAdviceTypeCode>");
   });
 
+  // GİB İDİS Teknik Kılavuzu v1.0 §3 (EBLG-72).
+  it("İDİS irsaliyesinde profili, sevkiyat ve etiket numaralarını yazar", () => {
+    const xml = ubl({
+      ...belge,
+      idisSevkiyatNo: "se-1345840",
+      satirlar: [{ miktar: "5", idisEtiketNo: "cv0152457", stok: { ad: "10 mm İnşaat Demiri", kod: "DEMIR-10" } }],
+    });
+
+    expect(xml).toContain("<cbc:ProfileID>IDISIRSALIYE</cbc:ProfileID>");
+    const gonderen = xml.slice(xml.indexOf("<cac:DespatchSupplierParty>"), xml.indexOf("</cac:DespatchSupplierParty>"));
+    expect(gonderen).toContain('<cbc:ID schemeID="SEVKIYATNO">SE-1345840</cbc:ID>');
+    expect(xml).toContain('<cac:AdditionalItemIdentification><cbc:ID schemeID="ETIKETNO">CV0152457</cbc:ID></cac:AdditionalItemIdentification>');
+  });
+
+  it("sevkiyat numarası yoksa irsaliye İDİS alanlarını taşımaz", () => {
+    const xml = ubl(belge);
+    expect(xml).toContain("<cbc:ProfileID>TEMELIRSALIYE</cbc:ProfileID>");
+    expect(xml).not.toContain("SEVKIYATNO");
+    expect(xml).not.toContain("ETIKETNO");
+  });
+
   it("alıcı tarafına karttaki adresi yazar (EBLG-55)", () => {
     const alici = ubl(belge).match(/<cac:DeliveryCustomerParty>[\s\S]*?<\/cac:DeliveryCustomerParty>/)![0];
 

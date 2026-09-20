@@ -1,7 +1,7 @@
 import { type IstisnaKodu, KDV_ISTISNA_KODLARI, ihracKayitliKoduBul, istisnaKoduBul, tevkifatKoduBul, tevkifatOraniAyristir } from "./gib-kodlari";
 
 /** UBL'e `InvoiceTypeCode` olarak yazılan GİB senaryosu (FTR-16). */
-export type FaturaSenaryosu = "satis" | "iade" | "tevkifat" | "tevkifatiade" | "istisna" | "ihrackayitli" | "ozelmatrah" | "sgk";
+export type FaturaSenaryosu = "satis" | "iade" | "tevkifat" | "tevkifatiade" | "istisna" | "ihrackayitli" | "ozelmatrah" | "sgk" | "sarj" | "sarjanlik";
 
 /** GİB'in `InvoiceTypeCode` kod listesindeki karşılıkları. */
 const UBL_KARSILIGI: Record<FaturaSenaryosu, string> = {
@@ -13,6 +13,8 @@ const UBL_KARSILIGI: Record<FaturaSenaryosu, string> = {
   ihrackayitli: "IHRACKAYITLI",
   ozelmatrah: "OZELMATRAH",
   sgk: "SGK",
+  sarj: "SARJ",
+  sarjanlik: "SARJANLIK",
 };
 
 export function senaryoUblKodu(senaryo: FaturaSenaryosu): string {
@@ -54,7 +56,11 @@ export function faturaSenaryosuTuret(
   ihracKayitliKodu?: string | null,
   ozelMatrahKodu?: string | null,
   sgkAlicisi?: boolean,
+  sarjTuru?: "sarj" | "sarjanlik" | null,
 ): FaturaSenaryosu {
+  // Şarj faturasının tipi satırdaki stok kartından türer (EBLG-71); kart
+  // "şarj hizmeti" ya da "şarj ünitesi" diyorsa belge o tiple gider.
+  if (sarjTuru && tip === "satis") return sarjTuru;
   // SGK'ya kesilen satış faturası kendi tipiyle gider (SGK e-Fatura Teknik
   // Doküman); karar alıcının VKN'sinden gelir, satırlardan değil. İstisna ve
   // tevkifat kodları bu tipte de taşınabilir, tip değişmez.

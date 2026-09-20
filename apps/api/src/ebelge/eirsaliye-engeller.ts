@@ -1,4 +1,4 @@
-import { PLAKA_HATA_MESAJI, plakaGecerliMi } from "@tekirextra/shared";
+import { idisEngelleri, PLAKA_HATA_MESAJI, plakaGecerliMi } from "@tekirextra/shared";
 
 /**
  * e-İrsaliye gönderim engelleri (EBLG-42).
@@ -16,7 +16,8 @@ export type EngelKodu =
   | "mukellef_degil"
   | "adres_yok"
   | "tasiyan_yok"
-  | "tasiyici_vkn_yok";
+  | "tasiyici_vkn_yok"
+  | "idis";
 
 export interface Engel {
   kod: EngelKodu;
@@ -37,6 +38,9 @@ export interface EirsaliyeAdayi {
   soforSoyadi: string | null;
   plaka: string | null;
   dorsePlaka?: string | null;
+  /** EBLG-72: doluysa belge IDISIRSALIYE profiliyle gider. */
+  idisSevkiyatNo?: string | null;
+  satirlar?: { idisEtiketNo?: string | null }[];
 }
 
 /** Şematron il, ilçe ve posta kodunun üçünü de dolu ister. */
@@ -82,6 +86,14 @@ export function gonderimEngelleri(belge: EirsaliyeAdayi, mukellef: MukellefDurum
   }
   if (belge.tasiyiciCariId && !belge.tasiyiciCari?.vknTckn) {
     engeller.push({ kod: "tasiyici_vkn_yok", mesaj: "Taşıyıcı cari kartında VKN/TCKN bilgisi bulunmalıdır" });
+  }
+  // İDİS: sevkiyat numarasının biçimi ve satır etiketleri faturadakiyle aynı
+  // kuraldan denetlenir (EBLG-72).
+  for (const engel of idisEngelleri({
+    sevkiyatNo: belge.idisSevkiyatNo,
+    satirlar: (belge.satirlar ?? []).map((satir, index) => ({ sira: index + 1, etiketNo: satir.idisEtiketNo })),
+  })) {
+    engeller.push({ kod: "idis", mesaj: engel.mesaj });
   }
   return engeller;
 }

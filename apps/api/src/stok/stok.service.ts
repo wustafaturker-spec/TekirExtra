@@ -229,6 +229,7 @@ export class StokService {
             model: girdi.model,
             mensei: girdi.mensei,
             gtipKodu: girdi.gtipKodu,
+            sarjTuru: girdi.sarjTuru,
             ureticiUrunKodu: girdi.ureticiUrunKodu,
             barkod: girdi.barkod,
             kategoriId: girdi.kategoriId,
@@ -445,6 +446,7 @@ export class StokService {
             model: girdi.model,
             mensei: girdi.mensei,
             gtipKodu: girdi.gtipKodu,
+            sarjTuru: girdi.sarjTuru,
             ureticiUrunKodu: girdi.ureticiUrunKodu,
             barkod: girdi.barkod,
             kategoriId: girdi.kategoriId,
@@ -1275,6 +1277,7 @@ export class StokService {
     model: string | null;
     mensei: string | null;
     gtipKodu: string | null;
+    sarjTuru: string | null;
     ureticiUrunKodu: string | null;
     barkod: string | null;
     kategoriId: string | null;
@@ -1308,6 +1311,7 @@ export class StokService {
       model: k.model,
       mensei: k.mensei,
       gtipKodu: k.gtipKodu,
+      sarjTuru: k.sarjTuru,
       ureticiUrunKodu: k.ureticiUrunKodu,
       barkod: k.barkod,
       kategoriId: k.kategoriId,

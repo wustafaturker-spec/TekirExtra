@@ -11,7 +11,7 @@ import {
 } from "@nestjs/common";
 import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
 import type { BelgeDurumSonuc, EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
-import { type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, YOLCU_BERABER_POSTA_KUTUSU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu, sgkEngelleri, sgkFaturasiMi, SGK_VKN } from "@tekirextra/shared";
+import { type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, YOLCU_BERABER_POSTA_KUTUSU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu, sgkEngelleri, sgkFaturasiMi, SGK_VKN, sarjEngelleri, sarjPlakaNormalize, idisEngelleri, idisNormalize, type SarjTuru } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { BildirimService } from "../bildirimler/bildirim.service";
@@ -147,6 +147,8 @@ export class EbelgeService {
           satirlar: {
             select: {
               birim: true,
+              idisEtiketNo: true,
+              sarjUniteSeriNo: true,
               kdvOrani: true,
               stok: { select: { kod: true, ad: true, tip: true, gtipKodu: true, mensei: true } },
             },
@@ -209,6 +211,19 @@ export class EbelgeService {
             harcamaBirimiVkn: fatura.kamuHarcamaBirimiVkn ?? fatura.cari.harcamaBirimiVkn ?? fatura.cari.vknTckn,
             harcamaBirimiAdi: fatura.kamuHarcamaBirimiAdi ?? fatura.cari.harcamaBirimiAdi ?? fatura.cari.unvan,
             iban: fatura.kamuIban ?? kamuHesaplari[0]?.iban ?? null,
+          }
+        : undefined;
+      // Şarj faturası (EBLG-71): tip satırdaki stok kartından türemiştir;
+      // sihirbaz plakayı, şarj süresini ve ESU raporlarını toplar.
+      const sarjTuru = fatura.senaryo === "sarj" || fatura.senaryo === "sarjanlik" ? (fatura.senaryo as SarjTuru) : null;
+      const sarjBilgisi = sarjTuru
+        ? {
+            turu: sarjTuru,
+            plaka: fatura.sarjPlaka ?? null,
+            baslangic: fatura.sarjBaslangic ? fatura.sarjBaslangic.toISOString().slice(0, 16) : null,
+            bitis: fatura.sarjBitis ? fatura.sarjBitis.toISOString().slice(0, 16) : null,
+            esuRaporlari: ((fatura.sarjEsuRaporlari as { raporId: string; tarih: string }[] | null) ?? []),
+            satirlar: fatura.satirlar.map((satir, index) => ({ sira: index + 1, stok: satir.stok.ad, uniteSeriNo: satir.sarjUniteSeriNo })),
           }
         : undefined;
       // SGK faturası: karar alıcının VKN'sinden gelir. Sabit alanların
@@ -304,6 +319,21 @@ export class EbelgeService {
         // sihirbazın Bilgiler adımında toplanır; gönderim aynı kuralı
         // faturadaki değerlerle yeniden uygular.
         sgk: sgkBilgisi ? { ...sgkBilgisi, engeller: sgkEngelleri(sgkBilgisi) } : undefined,
+        // Şarj faturası: plaka, şarj süresi ve ESU raporları sihirbazda
+        // girilir; ünite seri numarası satırda durur ve burada yalnız eksikse
+        // uyarılır (EBLG-71).
+        sarj: sarjBilgisi ? { ...sarjBilgisi, engeller: sarjEngelleri(sarjBilgisi) } : undefined,
+        // İDİS: sevkiyat no ve etiket no fatura formunda girilir; sihirbaz
+        // yalnız eksikleri gösterir (EBLG-72).
+        idis: fatura.idisSevkiyatNo
+          ? {
+              sevkiyatNo: fatura.idisSevkiyatNo,
+              engeller: idisEngelleri({
+                sevkiyatNo: fatura.idisSevkiyatNo,
+                satirlar: fatura.satirlar.map((satir, index) => ({ sira: index + 1, etiketNo: satir.idisEtiketNo })),
+              }),
+            }
+          : undefined,
         // Yolcu beraberi (tax-free): işaret sihirbazda konur, yolcu bilgisi
         // faturaya yazılır. Aracı kurum firma kartındaki varsayılandan gelir.
         yolcuBeraberi: yolcuOlabilir
@@ -327,6 +357,10 @@ export class EbelgeService {
           .filter((satir) => !birimTanindiMi(satir.birim)),
         not: yolcu.yolcuBeraberi
           ? "Yolcu beraberi satış: belge Gümrük Bakanlığı'na gider, gümrük çıkışında onaylanır ve KDV iadesini aracı kurum yapar. Satış iptali/iadesi ayrıca GİB'in Tax-Free Satış İptal/İade Bildirim Portalı'ndan bildirilmelidir."
+          : sarjTuru
+          ? "Belge şarj faturası olarak düzenlenir: satırdaki hizmet kartı şarj hizmeti/ünitesi olduğu için tip SARJ ya da SARJANLIK'tır; plaka ve şarj süresi belgeye yazılır."
+          : fatura.idisSevkiyatNo
+          ? "Sevkiyat numarası girildiği için belge İnşaat Demiri İzleme Sistemi (İDİS) profiliyle gider; her satırda etiket numarası bulunmalıdır."
           : sgkMu
           ? "Alıcı Sosyal Güvenlik Kurumu olduğu için belge SGK tipiyle ve Temel Fatura senaryosuyla düzenlenir: ilave fatura tipi, Kurum'daki mükellef kodu/adı, dosya no ve dönem belgeye yazılır."
           : kamuMu
@@ -428,6 +462,26 @@ export class EbelgeService {
           kamuHarcamaBirimiVkn: bilgi.harcamaBirimiVkn?.trim() || null,
           kamuHarcamaBirimiAdi: bilgi.harcamaBirimiAdi?.trim() || null,
           kamuIban: bilgi.iban ? ibanNormalize(bilgi.iban) : null,
+        },
+      });
+      if (sonuc.count !== 1) throw new NotFoundException("Kesinleşmiş fatura bulunamadı");
+    });
+  }
+
+  /** Şarj faturası: sihirbazda girilen plaka, şarj süresi ve ESU raporları faturaya yazılır. */
+  async sarjBilgisiniKaydet(faturaId: string, bilgi: {
+    plaka?: string | null; baslangic?: string | null; bitis?: string | null;
+    esuRaporlari?: { raporId: string; tarih: string }[] | null;
+  }) {
+    const { tenantId } = aktifBaglam();
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const sonuc = await tx.fatura.updateMany({
+        where: { id: faturaId, durum: "kesin" },
+        data: {
+          sarjPlaka: bilgi.plaka ? sarjPlakaNormalize(bilgi.plaka) : null,
+          sarjBaslangic: bilgi.baslangic ? new Date(`${bilgi.baslangic}:00.000Z`) : null,
+          sarjBitis: bilgi.bitis ? new Date(`${bilgi.bitis}:00.000Z`) : null,
+          sarjEsuRaporlari: bilgi.esuRaporlari?.length ? bilgi.esuRaporlari : Prisma.DbNull,
         },
       });
       if (sonuc.count !== 1) throw new NotFoundException("Kesinleşmiş fatura bulunamadı");
@@ -612,6 +666,30 @@ export class EbelgeService {
         dosyaNo: f.sgkDosyaNo,
         donemBaslangic: f.sgkDonemBaslangic?.toISOString(),
         donemBitis: f.sgkDonemBitis?.toISOString(),
+      });
+      if (engeller.length) throw new BadRequestException(engeller.map((e) => e.mesaj).join("; "));
+    }
+
+    // Şarj faturası (EBLG-71) ve İDİS belgesi (EBLG-72): eksik alanla belge
+    // şematrondan döner, gönderim burada durur.
+    const sarjSenaryosu = hazirlik.fatura.senaryo === "sarj" || hazirlik.fatura.senaryo === "sarjanlik"
+      ? (hazirlik.fatura.senaryo as SarjTuru) : null;
+    if (sarjSenaryosu) {
+      const f = hazirlik.fatura;
+      const engeller = sarjEngelleri({
+        turu: sarjSenaryosu,
+        plaka: f.sarjPlaka,
+        baslangic: f.sarjBaslangic?.toISOString(),
+        bitis: f.sarjBitis?.toISOString(),
+        esuRaporlari: (f.sarjEsuRaporlari as { raporId: string; tarih: string }[] | null) ?? [],
+        satirlar: f.satirlar.map((satir, index) => ({ sira: index + 1, uniteSeriNo: satir.sarjUniteSeriNo })),
+      });
+      if (engeller.length) throw new BadRequestException(engeller.map((e) => e.mesaj).join("; "));
+    }
+    if (idisNormalize(hazirlik.fatura.idisSevkiyatNo)) {
+      const engeller = idisEngelleri({
+        sevkiyatNo: hazirlik.fatura.idisSevkiyatNo,
+        satirlar: hazirlik.fatura.satirlar.map((satir, index) => ({ sira: index + 1, etiketNo: satir.idisEtiketNo })),
       });
       if (engeller.length) throw new BadRequestException(engeller.map((e) => e.mesaj).join("; "));
     }

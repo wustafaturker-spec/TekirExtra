@@ -82,6 +82,15 @@ export const ebelgeGonderSemasi = z.object({
       iban: z.string().max(40).nullable().optional(),
     })
     .optional(),
+  /** Şarj faturası: plaka, şarj süresi ve ESU rapor kimlikleri (EBLG-71). */
+  sarj: z
+    .object({
+      plaka: z.string().max(20).nullable().optional(),
+      baslangic: z.string().max(16).nullable().optional(),
+      bitis: z.string().max(16).nullable().optional(),
+      esuRaporlari: z.array(z.object({ raporId: z.string().max(40), tarih: z.string().max(10) })).max(50).optional(),
+    })
+    .optional(),
   /** SGK faturası: grup, Kurum'daki kod/ad, dosya no ve fatura dönemi (EBLG-70). */
   sgk: z
     .object({

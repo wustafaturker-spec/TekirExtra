@@ -8,6 +8,7 @@ import {
 import { BelgeTur, Prisma, ZincirBelgeDurum } from "@prisma/client";
 import {
   faturaHesapla,
+  idisNormalize,
   type FaturaHesaplaSatirGirdi,
   type KayitEylem,
 } from "@tekirextra/shared";
@@ -65,6 +66,8 @@ type BelgeSatirKaydi = {
   tevkifatTutari: Prisma.Decimal;
   netKdvTutari: Prisma.Decimal;
   toplamTutar: Prisma.Decimal;
+  /** EBLG-72: irsaliyedeki etiket numarası faturaya da taşınır. */
+  idisEtiketNo?: string | null;
 };
 
 @Injectable()
@@ -208,6 +211,7 @@ export class BelgelerService {
         kdvOrani: s.kdvOrani.toFixed(2),
         kdvTutari: s.kdvTutari.toFixed(2),
         toplamTutar: s.toplamTutar.toFixed(2),
+        idisEtiketNo: s.idisEtiketNo,
       })),
       // SAT-10: siparişin teslim geçmişi — hangi irsaliye, ne zaman, ne kadar.
       // İptal edilen irsaliye teslim sayılmaz, listede de yer almaz.
@@ -254,10 +258,12 @@ export class BelgelerService {
   }
 
   /** Taşıma alanları yalnız irsaliyede anlamlıdır; başka türde yazılmaz. */
-  private tasimaAlanlari(girdi: { tur?: string; fiiliSevkZamani?: string | null; tasiyiciCariId?: string | null; plaka?: string | null; dorsePlaka?: string | null; soforAdi?: string | null; soforSoyadi?: string | null; soforTckn?: string | null }) {
+  private tasimaAlanlari(girdi: { tur?: string; fiiliSevkZamani?: string | null; tasiyiciCariId?: string | null; plaka?: string | null; dorsePlaka?: string | null; soforAdi?: string | null; soforSoyadi?: string | null; soforTckn?: string | null; idisSevkiyatNo?: string | null }) {
     if (girdi.tur !== "irsaliye") return {};
     return {
       fiiliSevkZamani: girdi.fiiliSevkZamani ? new Date(girdi.fiiliSevkZamani) : null,
+      // EBLG-72: Darphane bildiriminden dönen sevkiyat numarası.
+      idisSevkiyatNo: girdi.idisSevkiyatNo ? idisNormalize(girdi.idisSevkiyatNo) : null,
       tasiyiciCariId: girdi.tasiyiciCariId ?? null,
       plaka: girdi.plaka ?? null,
       dorsePlaka: girdi.dorsePlaka ?? null,
@@ -369,6 +375,7 @@ export class BelgelerService {
       soforAdi: girdi.soforAdi !== undefined ? girdi.soforAdi : mevcut.soforAdi,
       soforSoyadi: girdi.soforSoyadi !== undefined ? girdi.soforSoyadi : mevcut.soforSoyadi,
       soforTckn: girdi.soforTckn !== undefined ? girdi.soforTckn : mevcut.soforTckn,
+      idisSevkiyatNo: girdi.idisSevkiyatNo !== undefined ? girdi.idisSevkiyatNo : mevcut.idisSevkiyatNo,
       satirlar:
         girdi.satirlar ??
         mevcut.satirlar.map((s) => ({
@@ -382,6 +389,7 @@ export class BelgelerService {
           kdvOrani: s.kdvOrani,
           tevkifatPay: null,
           tevkifatPayda: null,
+          idisEtiketNo: s.idisEtiketNo,
         })),
     };
 
@@ -1026,6 +1034,7 @@ export class BelgelerService {
           faturaId: fatura.id,
           stokId: s.stokId,
           varyantId: tumSatirlar[i].varyantId,
+          idisEtiketNo: tumSatirlar[i].idisEtiketNo ?? null,
           partiBilgileri: tumSatirlar[i].partiBilgileri ?? Prisma.JsonNull,
           miktar: D(s.miktar),
           birim: tumSatirlar[i].birim,
@@ -1051,7 +1060,7 @@ export class BelgelerService {
     tx: Prisma.TransactionClient,
     belgeId: string,
     hesapSatirlari: ReturnType<typeof faturaHesapla>["satirlar"],
-    girdiSatirlari: { birim?: string; varyantId?: string | null; partiBilgileri?: unknown[] }[],
+    girdiSatirlari: { birim?: string; varyantId?: string | null; partiBilgileri?: unknown[]; idisEtiketNo?: string | null }[],
   ): Promise<void> {
     const { tenantId } = aktifBaglam();
     for (const [i, s] of hesapSatirlari.entries()) {
@@ -1069,6 +1078,8 @@ export class BelgelerService {
           partiBilgileri: (girdiSatirlari[i]?.partiBilgileri ?? []) as Prisma.InputJsonValue,
           miktar: D(s.miktar),
           birim: girdiSatirlari[i]?.birim ?? "adet",
+          // EBLG-72: İDİS etiket numarası satırda taşınır.
+          idisEtiketNo: girdiSatirlari[i]?.idisEtiketNo ? idisNormalize(girdiSatirlari[i]!.idisEtiketNo!) : null,
           birimFiyat: D(s.birimFiyat),
           iskontoOrani: D(s.iskontoOrani),
           iskontoTutari: D(s.iskontoTutari),
@@ -1167,6 +1178,8 @@ export class BelgelerService {
     soforAdi?: string | null;
     soforSoyadi?: string | null;
     soforTckn?: string | null;
+    /** EBLG-72: İDİS sevkiyat numarası; doluysa e-İrsaliye IDISIRSALIYE gider. */
+    idisSevkiyatNo?: string | null;
     kaynakBelgeId: string | null;
     faturaId: string | null;
   }) {
@@ -1201,6 +1214,7 @@ export class BelgelerService {
       soforAdi: k.soforAdi ?? null,
       soforSoyadi: k.soforSoyadi ?? null,
       soforTckn: k.soforTckn ?? null,
+      idisSevkiyatNo: k.idisSevkiyatNo ?? null,
       kaynakBelgeId: k.kaynakBelgeId,
       faturaId: k.faturaId,
     };

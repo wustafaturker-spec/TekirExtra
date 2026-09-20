@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { guncellemeSemasi } from "../core/sema";
-import { ihracKayitliHatalari, ozelMatrahHatalari, senaryoHatalari } from "@tekirextra/shared";
+import { idisEngelleri, ihracKayitliHatalari, ozelMatrahHatalari, senaryoHatalari } from "@tekirextra/shared";
 
 const pozitifOndalik = z
   .union([z.string(), z.number()])
@@ -31,6 +31,10 @@ export const faturaSatirSemasi = z.object({
   /** Yalnız `650 Diğerleri` için anlamlı; diğer kodlarda oran tektir. */
   tevkifatOrani: z.string().max(10).optional().nullable(),
   gibIstisnaKodu: z.string().max(20).optional().nullable(),
+  /** İDİS etiket numarası (EBLG-72): 2 harf + 7 rakam. */
+  idisEtiketNo: z.string().max(20).optional().nullable(),
+  /** SARJANLIK faturasında şarj ünitesinin seri numarası (EBLG-71). */
+  sarjUniteSeriNo: z.string().max(60).optional().nullable(),
   projeId: z.string().uuid().optional().nullable(),
   projeAltKirilimId: z.string().uuid().optional().nullable(),
 });
@@ -61,6 +65,8 @@ const faturaOlusturGovde = z.object({
   earsivGonderimSekli: z.enum(["elektronik", "kagit"]).optional().nullable(),
   /** EBLG-60: ihraç kayıtlı satış kodu (701/702); doluysa KDV tahsil edilmez. */
   ihracKayitliKodu: z.string().optional().nullable(),
+  /** İDİS sevkiyat numarası (EBLG-72): doluysa belge IDIS profiliyle gider. */
+  idisSevkiyatNo: z.string().max(20).optional().nullable(),
   /** Özel matrah (KDV K. 23): kod, KDV'nin hesaplandığı matrah ve oranı. */
   ozelMatrahKodu: z.string().optional().nullable(),
   ozelMatrahTutari: pozitifOndalik.optional().nullable(),
@@ -94,8 +100,16 @@ const senaryolariDogrula = (
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["satirlar", hata.satirIndeksi, hata.alan], message: hata.mesaj });
   }
 };
-const faturaFinansalDogrula = (fatura: { ozelMatrahKodu?: string | null; ozelMatrahTutari?: string | null; ozelMatrahOrani?: string | null; satirlar?: Array<{ miktar?: string; birimFiyat?: string; iskontoOrani?: string; kdvOrani?: string; tevkifatKodu?: string | null; tevkifatOrani?: string | null; gibIstisnaKodu?: string | null }>; genelIskontoTutari?: string; dovizCinsi?: string; kur?: string; tip?: string; ihracKayitliKodu?: string | null }, ctx: z.RefinementCtx) => {
+const faturaFinansalDogrula = (fatura: { idisSevkiyatNo?: string | null; ozelMatrahKodu?: string | null; ozelMatrahTutari?: string | null; ozelMatrahOrani?: string | null; satirlar?: Array<{ miktar?: string; birimFiyat?: string; iskontoOrani?: string; kdvOrani?: string; tevkifatKodu?: string | null; tevkifatOrani?: string | null; gibIstisnaKodu?: string | null }>; genelIskontoTutari?: string; dovizCinsi?: string; kur?: string; tip?: string; ihracKayitliKodu?: string | null }, ctx: z.RefinementCtx) => {
   senaryolariDogrula(fatura, ctx);
+  // İDİS: sevkiyat no girilmişse biçimi ve her satırın etiket numarası burada
+  // denetlenir; gönderim aynı listeyi yeniden üretir (EBLG-72).
+  for (const engel of idisEngelleri({
+    sevkiyatNo: fatura.idisSevkiyatNo,
+    satirlar: (fatura.satirlar ?? []).map((satir, index) => ({ sira: index + 1, etiketNo: (satir as { idisEtiketNo?: string | null }).idisEtiketNo })),
+  })) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: [engel.alan === "sevkiyatNo" ? "idisSevkiyatNo" : "satirlar"], message: engel.mesaj });
+  }
   // Özel matrah: kod, matrah ve satır kuralları tek yerden (shared) denetlenir.
   if (fatura.ozelMatrahKodu && fatura.tip) {
     for (const mesaj of ozelMatrahHatalari({

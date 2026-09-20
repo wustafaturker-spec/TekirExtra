@@ -935,3 +935,112 @@ describe("faturaUblUret — SGK faturası", () => {
     expect(malHizmet).not.toContain("<cac:InvoicePeriod>");
   });
 });
+
+describe("faturaUblUret — şarj faturası (EBLG-71)", () => {
+  // 14.09.2026 şematronu §1: plaka ve şarj süresi iki türde de zorunlu, ESU
+  // raporu SARJ'da, ünite seri numarası SARJANLIK satırında aranır.
+  const sarjFaturasi = (ek: Record<string, unknown> = {}) => ({
+    id: "14141414-1414-4141-8141-141414141414",
+    no: "TKR2026000000012",
+    tarih: new Date("2026-09-20T12:00:00Z"),
+    tip: "satis", senaryo: "sarj", efaturaProfili: "temel",
+    sarjPlaka: "34ABC123",
+    sarjBaslangic: new Date("2026-09-20T08:15:00Z"),
+    sarjBitis: new Date("2026-09-20T09:40:00Z"),
+    sarjEsuRaporlari: [{ raporId: "3fa85f64-5717-4562-b3fc-2c963f66afa6", tarih: "2026-09-20" }],
+    dovizCinsi: "TRY", kur: 1,
+    toplamKdv: 20, toplamMatrah: 100, toplamBrut: 100, genelToplam: 120,
+    toplamSatirIskontosu: 0, genelIskontoToplam: 0,
+    cari: { vknTckn: "1234567890", unvan: "Alıcı A.Ş.", adresler: [] },
+    satirlar: [{
+      miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20,
+      gibIstisnaKodu: null, birimFiyat: 100, birim: "adet",
+      stok: { kod: "SARJ-1", ad: "Elektrikli araç şarjı" },
+    }],
+    ...ek,
+  }) as never;
+  const firma = { unvan: "Deneme Şarj A.Ş.", vkn: "9876543210" };
+
+  it("tipi SARJ yazar, plakayı ve şarj süresini saatiyle bildirir", () => {
+    const xml = faturaUblUret(sarjFaturasi(), firma, { tur: "efatura" });
+    expect(xml).toContain("<cbc:InvoiceTypeCode>SARJ</cbc:InvoiceTypeCode>");
+    expect(xml).toContain('schemeID="PLAKA">34ABC123<');
+    expect(xml).toContain("<cbc:StartDate>2026-09-20</cbc:StartDate>");
+    expect(xml).toContain("<cbc:StartTime>08:15:00</cbc:StartTime>");
+    expect(xml).toContain("<cbc:EndTime>09:40:00</cbc:EndTime>");
+  });
+
+  it("ESU rapor kimliğini ilave doküman referansına yazar", () => {
+    const xml = faturaUblUret(sarjFaturasi(), firma, { tur: "efatura" });
+    expect(xml).toContain('<cbc:ID schemeID="ESURaporID">3fa85f64-5717-4562-b3fc-2c963f66afa6</cbc:ID>');
+  });
+
+  it("SARJANLIK'ta ünite seri numarasını satıra yazar, ESU raporu aramaz", () => {
+    const xml = faturaUblUret(
+      sarjFaturasi({
+        senaryo: "sarjanlik",
+        sarjEsuRaporlari: null,
+        satirlar: [{
+          miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20,
+          gibIstisnaKodu: null, birimFiyat: 100, birim: "adet",
+          sarjUniteSeriNo: "ESU-000145",
+          stok: { kod: "UNITE-1", ad: "Şarj ünitesi" },
+        }],
+      }),
+      firma, { tur: "efatura" },
+    );
+    expect(xml).toContain("<cbc:InvoiceTypeCode>SARJANLIK</cbc:InvoiceTypeCode>");
+    expect(xml).toContain("<cbc:SerialID>ESU-000145</cbc:SerialID>");
+    expect(xml).not.toContain("ESURaporID");
+  });
+
+  it("e-Arşiv'de de aynı tiple gider", () => {
+    const xml = faturaUblUret(sarjFaturasi(), firma, { tur: "earsiv" });
+    expect(xml).toContain("<cbc:InvoiceTypeCode>SARJ</cbc:InvoiceTypeCode>");
+    expect(xml).toContain("<cbc:ProfileID>EARSIVFATURA</cbc:ProfileID>");
+  });
+});
+
+describe("faturaUblUret — İDİS (EBLG-72)", () => {
+  // GİB İDİS Teknik Kılavuzu v1.0 §2: profil IDIS, sevkiyat no satıcının
+  // PartyIdentification'ında, etiket no satırın AdditionalItemIdentification'ında.
+  const idisFaturasi = (ek: Record<string, unknown> = {}) => ({
+    id: "15151515-1515-4151-8151-151515151515",
+    no: "TKR2026000000013",
+    tarih: new Date("2026-09-20T12:00:00Z"),
+    tip: "satis", senaryo: "satis", efaturaProfili: "ticari",
+    idisSevkiyatNo: "SE-1345840",
+    dovizCinsi: "TRY", kur: 1,
+    toplamKdv: 5400, toplamMatrah: 27000, toplamBrut: 27000, genelToplam: 32400,
+    toplamSatirIskontosu: 0, genelIskontoToplam: 0,
+    cari: { vknTckn: "1234567890", unvan: "İnşaat A.Ş.", adresler: [] },
+    satirlar: [{
+      miktar: 1, matrah: 27000, iskontoTutari: 0, kdvTutari: 5400, kdvOrani: 20,
+      gibIstisnaKodu: null, birimFiyat: 27000, birim: "adet",
+      idisEtiketNo: "cv0152457",
+      stok: { kod: "DEMIR-10", ad: "10 mm İnşaat Demiri" },
+    }],
+    ...ek,
+  }) as never;
+  const firma = { unvan: "BBB Limited Şirketi", vkn: "9205121120" };
+
+  it("profili IDIS yapar ve ticari profili ezer", () => {
+    const xml = faturaUblUret(idisFaturasi(), firma, { tur: "efatura" });
+    expect(xml).toContain("<cbc:ProfileID>IDIS</cbc:ProfileID>");
+    // Fatura tipi normal kurallardan türer; İDİS profildir, tip değil.
+    expect(xml).toContain("<cbc:InvoiceTypeCode>SATIS</cbc:InvoiceTypeCode>");
+  });
+
+  it("sevkiyat numarasını satıcıya, etiket numarasını satıra büyük harfle yazar", () => {
+    const xml = faturaUblUret(idisFaturasi(), firma, { tur: "efatura" });
+    expect(xml).toContain('<cbc:ID schemeID="SEVKIYATNO">SE-1345840</cbc:ID>');
+    expect(xml).toContain('<cac:AdditionalItemIdentification>\n        <cbc:ID schemeID="ETIKETNO">CV0152457</cbc:ID>');
+  });
+
+  it("sevkiyat numarası yoksa İDİS alanlarını hiç yazmaz", () => {
+    const xml = faturaUblUret(idisFaturasi({ idisSevkiyatNo: null }), firma, { tur: "efatura" });
+    expect(xml).not.toContain("SEVKIYATNO");
+    expect(xml).not.toContain("ETIKETNO");
+    expect(xml).toContain("<cbc:ProfileID>TICARIFATURA</cbc:ProfileID>");
+  });
+});

@@ -35,6 +35,8 @@ export const belgeSatirSemasi = z.object({
   kdvOrani: pozitifOndalik.default("20"),
   tevkifatPay: z.number().int().min(1).max(10).optional().nullable(),
   tevkifatPayda: z.number().int().min(1).max(10).optional().nullable(),
+  /** İDİS etiket numarası (EBLG-72): 2 harf + 7 rakam; irsaliyede de zorunlu. */
+  idisEtiketNo: z.string().max(20).optional().nullable(),
 });
 
 export const belgeOlusturSemasi = z.object({
@@ -71,6 +73,8 @@ export const belgeOlusturSemasi = z.object({
   soforAdi: z.string().max(80).optional().nullable(),
   soforSoyadi: z.string().max(80).optional().nullable(),
   soforTckn: z.string().regex(/^\d{11}$/, "Şoför TCKN 11 haneli olmalıdır").optional().nullable(),
+  /** İDİS sevkiyat numarası (EBLG-72): doluysa e-İrsaliye IDISIRSALIYE profiliyle gider. */
+  idisSevkiyatNo: z.string().max(20).optional().nullable(),
   satirlar: z.array(belgeSatirSemasi).min(1, "Belgede en az bir satır bulunmalıdır"),
 });
 
@@ -109,6 +113,9 @@ export const topluFaturaSemasi = z.object({
  */
 export const tasimaBilgisiSemasi = belgeOlusturSemasi.pick({
   fiiliSevkZamani: true,
+  // Sevkiyat numarası Darphane bildiriminden döner; irsaliye onaylandıktan
+  // sonra girilebilmeli (EBLG-72).
+  idisSevkiyatNo: true,
   tasiyiciCariId: true,
   plaka: true,
   dorsePlaka: true,

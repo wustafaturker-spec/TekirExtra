@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SARJ_TURLERI } from "@tekirextra/shared";
 import { guncellemeSemasi } from "../core/sema";
 
 const pozitifOndalik = z
@@ -29,6 +30,8 @@ export const stokKartOlusturSemasi = z.object({
   model: z.string().max(120).optional().nullable(),
   mensei: z.string().max(60).optional().nullable(),
   gtipKodu: z.string().max(20).optional().nullable(),
+  /** EBLG-71: kart satıra düştüğünde fatura tipi buradan türer. */
+  sarjTuru: z.enum(SARJ_TURLERI).optional().nullable(),
   ureticiUrunKodu: z.string().max(64).optional().nullable(),
   barkod: z.string().max(120).optional().nullable(),
   kategoriId: z.string().uuid().optional().nullable(),
