@@ -26,7 +26,7 @@ describe("EirsaliyeService UBL", () => {
       adresler: [{ tip: "merkez", adres: "OSB 3. Cadde No:7", il: "Denizli", ilce: "Honaz", postaKodu: "20330", ulke: "TR" }],
     },
     teslimatAdresi: { adres: "OSB 3. Cadde No:7", il: "Denizli", ilce: "Honaz", postaKodu: "20330" },
-    fiiliSevkZamani: new Date("2026-09-10T07:45:00Z"),
+    fiiliSevkZamani: new Date("2026-09-10T07:45:00+03:00"),
     plaka: "34 ABC 123",
     dorsePlaka: "34 DR 4088",
     soforAdi: "Mehmet",

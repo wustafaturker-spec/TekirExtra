@@ -56,6 +56,13 @@ describe("ytbEngelleri (EBLG-78)", () => {
     expect(ytbEngelleri(belge([makineSatiri]))).toEqual([]);
   });
 
+  it("teşvik belge numarası 6 haneli sayı olmalıdır (şematron, NES testi 2026-09-22)", () => {
+    for (const ytbNo of ["B123456", "12345", "1234567", "12345A"]) {
+      expect(ytbEngelleri({ ...belge([makineSatiri]), ytbNo }).map((e) => e.alan)).toContain("ytbNo");
+    }
+    expect(ytbEngelleri({ ...belge([makineSatiri]), ytbNo: " 654321 " })).toEqual([]);
+  });
+
   it("teşvik belge tarihi zorunludur", () => {
     expect(ytbEngelleri({ ...belge([makineSatiri]), ytbTarihi: null }).map((e) => e.alan)).toContain("ytbTarihi");
   });

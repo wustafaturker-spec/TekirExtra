@@ -44,3 +44,16 @@ export function ayBasiTR(an: Date = new Date()): string {
 export function yilBasiTR(an: Date = new Date()): string {
   return `${gunTR(an).slice(0, 4)}-01-01`;
 }
+
+const TR_FARK_MS = 3 * 3_600_000;
+
+/**
+ * Anın Türkiye'deki tarih ve saati (`YYYY-MM-DD`, `HH:mm:ss`). UBL'e yazılan
+ * sevk ve dönem saatleri alıcının göreceği yerel saattir; `toISOString()`
+ * UTC yazar ve 09:30'da çıkan malı belgede 06:30'da çıkmış gösterirdi
+ * (NES testi 2026-09-22).
+ */
+export function anTR(an: Date): { tarih: string; saat: string } {
+  const metin = new Date(an.getTime() + TR_FARK_MS).toISOString();
+  return { tarih: metin.slice(0, 10), saat: metin.slice(11, 19) };
+}

@@ -1847,7 +1847,7 @@ export default function FaturaSayfasi() {
                 /* EBLG-78: teşvik belge numarası girilirse belge YATIRIMTESVIK
                    profiliyle gider; satırlarda harcama tipi istenir. */
                 <Field label="Yatırım teşvik belge no">
-                  <Input aria-label="Yatırım teşvik belge no" value={ytbNo} maxLength={40} placeholder="Örn. 123456" onChange={(e) => setYtbNo(e.target.value)} />
+                  <Input aria-label="Yatırım teşvik belge no" value={ytbNo} maxLength={6} inputMode="numeric" placeholder="6 hane, örn. 123456" onChange={(e) => setYtbNo(e.target.value)} />
                   <small className="muted">
                     {ytbNo.trim()
                       ? "Belge yatırım teşvik kapsamında gider; satır ayrıntılarında harcama tipini seçin."

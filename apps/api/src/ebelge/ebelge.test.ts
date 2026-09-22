@@ -959,7 +959,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
     it("irsaliye yerine geçen faturayı ibaresi ve sevk anıyla gönderir", async () => {
       mockAdapter.belgeGonder.mockClear();
       mockTenantIslem.mockImplementation((_t: string, cb: any) =>
-        cb(tx({ sevkiyatYontemi: "irsaliye_yerine", fiiliSevkZamani: new Date("2026-09-21T07:45:00Z") }, { eirsaliyeMukellefi: true })));
+        cb(tx({ sevkiyatYontemi: "irsaliye_yerine", fiiliSevkZamani: new Date("2026-09-21T07:45:00+03:00") }, { eirsaliyeMukellefi: true })));
 
       await expect(service.gonder("fs1")).resolves.toMatchObject({ basarili: true });
       const xml = mockAdapter.belgeGonder.mock.calls[0][1].xml as string;

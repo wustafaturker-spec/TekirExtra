@@ -959,8 +959,8 @@ describe("faturaUblUret — şarj faturası (EBLG-71)", () => {
     tarih: new Date("2026-09-20T12:00:00Z"),
     tip: "satis", senaryo: "sarj", efaturaProfili: "temel",
     sarjPlaka: "34ABC123",
-    sarjBaslangic: new Date("2026-09-20T08:15:00Z"),
-    sarjBitis: new Date("2026-09-20T09:40:00Z"),
+    sarjBaslangic: new Date("2026-09-20T08:15:00+03:00"),
+    sarjBitis: new Date("2026-09-20T09:40:00+03:00"),
     sarjEsuRaporlari: [{ raporId: "3fa85f64-5717-4562-b3fc-2c963f66afa6", tarih: "2026-09-20" }],
     dovizCinsi: "TRY", kur: 1,
     toplamKdv: 20, toplamMatrah: 100, toplamBrut: 100, genelToplam: 120,
@@ -1129,7 +1129,7 @@ describe("faturaUblUret — irsaliye yerine geçen fatura (EBLG-76)", () => {
   }) as never;
 
   it("fiili sevk anını Delivery/Despatch ile yazar", () => {
-    const xml = faturaUblUret(fatura({ sevkiyatYontemi: "irsaliye_yerine", fiiliSevkZamani: new Date("2026-09-21T07:45:00Z") }), satici);
+    const xml = faturaUblUret(fatura({ sevkiyatYontemi: "irsaliye_yerine", fiiliSevkZamani: new Date("2026-09-21T07:45:00+03:00") }), satici);
 
     expect(xml).toContain("<cbc:ActualDespatchDate>2026-09-21</cbc:ActualDespatchDate>");
     expect(xml).toContain("<cbc:ActualDespatchTime>07:45:00</cbc:ActualDespatchTime>");
@@ -1138,19 +1138,19 @@ describe("faturaUblUret — irsaliye yerine geçen fatura (EBLG-76)", () => {
   });
 
   it("ibareyi Note olarak yazar — GİB'in genel XSLT'si yalnız notu basar", () => {
-    const xml = faturaUblUret(fatura({ sevkiyatYontemi: "irsaliye_yerine", fiiliSevkZamani: new Date("2026-09-21T07:45:00Z") }), satici);
+    const xml = faturaUblUret(fatura({ sevkiyatYontemi: "irsaliye_yerine", fiiliSevkZamani: new Date("2026-09-21T07:45:00+03:00") }), satici);
 
     expect(xml).toContain("<cbc:Note>Mal e-Fatura beraberinde sevk edildiğinden ayrıca e-İrsaliye düzenlenmemiştir. Bu fatura irsaliye yerine geçer.</cbc:Note>");
   });
 
   it("e-Arşiv'e düşen belgede ibare o belgenin adını söyler", () => {
-    const xml = faturaUblUret(fatura({ sevkiyatYontemi: "irsaliye_yerine", fiiliSevkZamani: new Date("2026-09-21T07:45:00Z") }), satici, { tur: "earsiv" });
+    const xml = faturaUblUret(fatura({ sevkiyatYontemi: "irsaliye_yerine", fiiliSevkZamani: new Date("2026-09-21T07:45:00+03:00") }), satici, { tur: "earsiv" });
 
     expect(xml).toContain("Mal e-Arşiv faturası beraberinde sevk edildiğinden");
   });
 
   it("başka bir sevkiyat yolunda sevk bloğu ve ibare yazılmaz", () => {
-    const xml = faturaUblUret(fatura({ sevkiyatYontemi: "fatura_once", fiiliSevkZamani: new Date("2026-09-21T07:45:00Z") }), satici);
+    const xml = faturaUblUret(fatura({ sevkiyatYontemi: "fatura_once", fiiliSevkZamani: new Date("2026-09-21T07:45:00+03:00") }), satici);
 
     expect(xml).not.toContain("ActualDespatchDate");
     expect(xml).not.toContain("irsaliye yerine geçer");
@@ -1236,6 +1236,10 @@ describe("faturaUblUret — yatırım teşvik (EBLG-78)", () => {
     expect(xml).toContain("<cbc:CalculationSequenceNumeric>-1</cbc:CalculationSequenceNumeric>");
     expect(xml).toContain('<cbc:TaxAmount currencyID="TRY">300.00</cbc:TaxAmount>');
     expect(xml).toContain("<cbc:TaxExemptionReasonCode>308</cbc:TaxExemptionReasonCode>");
+    // Kalem de oranı ve tutarı taşır: şematron "Kalem Bazında KDV Oranı ve
+    // Değeri girilmelidir" diye reddediyordu (NES testi 2026-09-22).
+    const kalem = xml.slice(xml.indexOf("<cac:InvoiceLine>"));
+    expect(kalem).toMatch(/<cbc:TaxAmount currencyID="TRY">300\.00<\/cbc:TaxAmount>\s*<cbc:CalculationSequenceNumeric>-1<\/cbc:CalculationSequenceNumeric>\s*<cbc:Percent>20\.00<\/cbc:Percent>/);
     // Belge toplamı KDV'siz kalır.
     expect(xml).toContain('<cbc:PayableAmount currencyID="TRY">1500.00</cbc:PayableAmount>');
   });

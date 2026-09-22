@@ -3,7 +3,7 @@ import { EirsaliyeDurum, GelenEirsaliyeDurum, Prisma } from "@prisma/client";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import type { EntegratorConfig } from "@tekirextra/baglanti";
-import { birimUblKodu, dorseSchemeId, firmaEbelgeEksikleri, idisBelgesiMi, IDIS_IRSALIYE_PROFILI, idisNormalize, plakaNormalize, plakaSchemeId, ublAdresi } from "@tekirextra/shared";
+import { anTR, birimUblKodu, dorseSchemeId, firmaEbelgeEksikleri, idisBelgesiMi, IDIS_IRSALIYE_PROFILI, idisNormalize, plakaNormalize, plakaSchemeId, ublAdresi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
@@ -74,8 +74,8 @@ export class EirsaliyeService {
     // Fiili sevk zamanı belgeden gelir (EBLG-23); onayda boş bırakılmışsa onay
     // anıyla dolduruluyor, yine de yoksa belge tarihine düşülür.
     const sevk = new Date(b.fiiliSevkZamani ?? b.createdAt ?? b.tarih);
-    const sevkTarihi = sevk.toISOString().slice(0, 10);
-    const saat = sevk.toISOString().slice(11, 19);
+    // Türkiye saatiyle: UTC yazılırsa saat 3 saat geri, gece sevkinde gün de geri kayar.
+    const { tarih: sevkTarihi, saat } = anTR(sevk);
     /** Firma kartındaki adres (EBLG-62); önceden sabit "Merkez/Istanbul" yazılıyordu. */
     const firmaAdresi = `<cac:PostalAddress>${tenant.adres ? `<cbc:StreetName>${esc(tenant.adres)}</cbc:StreetName>` : ""}<cbc:CitySubdivisionName>${esc(tenant.ilce ?? "") || "-"}</cbc:CitySubdivisionName><cbc:CityName>${esc(tenant.il ?? "") || "-"}</cbc:CityName>${tenant.postaKodu ? `<cbc:PostalZone>${esc(tenant.postaKodu)}</cbc:PostalZone>` : ""}<cac:Country><cbc:IdentificationCode>TR</cbc:IdentificationCode><cbc:Name>Türkiye</cbc:Name></cac:Country></cac:PostalAddress>`;
     /** Karttaki adres (EBLG-55). */

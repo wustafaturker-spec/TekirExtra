@@ -42,7 +42,10 @@ export const YTB_MAKINE_HARCAMA_TIPI: YtbHarcamaTipi = "01";
 export const ytbHarcamaTipiBul = (kod: string | null | undefined) =>
   YTB_HARCAMA_TIPLERI.find((h) => h.kod === kod);
 
-export const ytbNormalize = (deger: string | null | undefined): string => (deger ?? "").trim();
+/** Teşvik belge numarası: 6 rakam (şematron). */
+export const YTB_NO_BICIMI = /^\d{6}$/;
+
+export const ytbNormalize =(deger: string | null | undefined): string => (deger ?? "").trim();
 
 /** Teşvik belge numarası girilmiş fatura YTB kapsamındadır. */
 export function ytbBelgesiMi(ytbNo: string | null | undefined): boolean {
@@ -91,6 +94,12 @@ export function ytbEngelleri(bilgi: YtbBilgisi): YtbEngel[] {
   if (!ytbBelgesiMi(bilgi.ytbNo)) return [];
   const engeller: YtbEngel[] = [];
   const satirlar = bilgi.satirlar ?? [];
+
+  // Kılavuz yalnız örnek verir (123456); biçimi GİB şematronu koyar ve NES
+  // testinde "6 Haneli Yatırım Teşvik Numarası olmalıdır" diye reddetti.
+  if (!YTB_NO_BICIMI.test(ytbNormalize(bilgi.ytbNo))) {
+    engeller.push({ alan: "ytbNo", mesaj: "Yatırım teşvik belge numarası 6 haneli bir sayı olmalıdır." });
+  }
 
   if (!bilgi.ytbTarihi) {
     engeller.push({ alan: "ytbTarihi", mesaj: "Yatırım teşvik belge tarihi zorunludur." });

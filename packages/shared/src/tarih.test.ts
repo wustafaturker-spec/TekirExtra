@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ayBasiTR, ayTR, gunEkleTR, gunTR, yilBasiTR } from "./tarih";
+import { anTR, ayBasiTR, ayTR, gunEkleTR, gunTR, yilBasiTR } from "./tarih";
 
 describe("tarih — Türkiye takvimi", () => {
   it("UTC'de dün olan an Türkiye'de bugündür", () => {
@@ -20,5 +20,15 @@ describe("tarih — Türkiye takvimi", () => {
 
   it("ay ve yıl sınırını doğru geçer", () => {
     expect(gunEkleTR(1, new Date("2026-12-31T21:30:00Z"))).toBe("2027-01-02");
+  });
+});
+
+describe("anTR — UBL'e yazılan yerel tarih ve saat", () => {
+  it("saati Türkiye saatiyle yazar, UTC ile değil", () => {
+    expect(anTR(new Date("2026-09-22T09:30:00+03:00"))).toEqual({ tarih: "2026-09-22", saat: "09:30:00" });
+  });
+
+  it("gece yarısından sonraki sevkin günü geri kaymaz", () => {
+    expect(anTR(new Date("2026-09-22T01:15:00+03:00"))).toEqual({ tarih: "2026-09-22", saat: "01:15:00" });
   });
 });

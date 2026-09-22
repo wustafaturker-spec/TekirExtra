@@ -1,5 +1,6 @@
 import { Fatura, FaturaSatir, CariHesap } from "@prisma/client";
 import {
+  anTR,
   GUMRUK_BAKANLIGI_IL,
   GUMRUK_BAKANLIGI_UNVAN,
   GUMRUK_BAKANLIGI_VKN,
@@ -262,12 +263,11 @@ export function faturaUblUret(
     : null;
   /** İDİS (GİB İDİS Teknik Kılavuzu v1.0): profil IDIS, sevkiyat no satıcıda, etiket no satırda. */
   const idis = idisBelgesiMi(fatura.idisSevkiyatNo) ? idisNormalize(fatura.idisSevkiyatNo) : null;
-  /** Şarj süresinin tarih ve saat parçaları; UBL ikisini ayrı etikete ister. */
-  const anParcala = (an: Date | null | undefined) => {
-    if (!an) return null;
-    const metin = an.toISOString();
-    return { tarih: metin.slice(0, 10), saat: metin.slice(11, 19) };
-  };
+  /**
+   * Anın tarih ve saat parçaları; UBL ikisini ayrı etikete ister. Türkiye
+   * saatiyle yazılır — alıcı belgede yerel saati okur.
+   */
+  const anParcala = (an: Date | null | undefined) => (an ? anTR(an) : null);
 
   /*
    * SGK faturası (SGK e-Fatura Teknik Doküman §3.3): ilave fatura tipi hesap
@@ -898,9 +898,12 @@ ${tevkifatBlogu}
       <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${belgeKdvi(s).toFixed(2)}</cbc:TaxAmount>
       <cac:TaxSubtotal>
         <cbc:TaxableAmount currencyID="${fatura.dovizCinsi}">${s.matrah.toFixed(2)}</cbc:TaxableAmount>
-        <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${belgeKdvi(s).toFixed(2)}</cbc:TaxAmount>
-${vazgecilenOran(s) > 0 ? `        <cbc:CalculationSequenceNumeric>${VAZGECILEN_KDV_SIRA_NO}</cbc:CalculationSequenceNumeric>
-` : ""}        <cbc:Percent>${s.kdvOrani.toFixed(2)}</cbc:Percent>
+${vazgecilenOran(s) > 0 ? `        <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${vazgecilenKdv(Number(s.matrah), vazgecilenOran(s)).toFixed(2)}</cbc:TaxAmount>
+        <cbc:CalculationSequenceNumeric>${VAZGECILEN_KDV_SIRA_NO}</cbc:CalculationSequenceNumeric>
+        <cbc:Percent>${vazgecilenOran(s).toFixed(2)}</cbc:Percent>
+` : `        <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${belgeKdvi(s).toFixed(2)}</cbc:TaxAmount>
+        <cbc:Percent>${s.kdvOrani.toFixed(2)}</cbc:Percent>
+`}
         <cac:TaxCategory>
           ${satirKodu(s) ? `<cbc:TaxExemptionReasonCode>${escape(satirKodu(s))}</cbc:TaxExemptionReasonCode>
           <cbc:TaxExemptionReason>${escape(istisnaAciklamasi(satirKodu(s)!))}</cbc:TaxExemptionReason>` : ""}
