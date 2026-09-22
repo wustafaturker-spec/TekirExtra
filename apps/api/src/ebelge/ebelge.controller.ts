@@ -128,7 +128,7 @@ export class EbelgeController {
     // kimlik ve tarih kontrollerini anlatır; ihracat ve internet satışı
     // listelerine bakılmazsa eksik belge kuyruğa girer ve hata orada patlar —
     // kullanıcı ise "gönderildi" görür.
-    const engeller = [...(wizard.ihracat?.engeller ?? []), ...(wizard.internetSatisi?.engeller ?? []), ...(wizard.iade?.engeller ?? []), ...(wizard.kamu?.engeller ?? []), ...(wizard.sgk?.engeller ?? []), ...(wizard.sarj?.engeller ?? []), ...(wizard.idis?.engeller ?? []), ...(wizard.yolcuBeraberi?.engeller ?? [])];
+    const engeller = [...(wizard.ihracat?.engeller ?? []), ...(wizard.internetSatisi?.engeller ?? []), ...(wizard.iade?.engeller ?? []), ...(wizard.kamu?.engeller ?? []), ...(wizard.sgk?.engeller ?? []), ...(wizard.sarj?.engeller ?? []), ...(wizard.idis?.engeller ?? []), ...(wizard.yolcuBeraberi?.engeller ?? []), ...(wizard.ytb?.engeller ?? []), ...(wizard.sevkiyat?.engeller ?? [])];
     if (engeller.length) throw new BadRequestException(engeller.map((e) => e.mesaj).join("; "));
     if (secim.data.earsivGonderimSekli) {
       await this.ebelgeService.earsivGonderimSekliniKaydet(faturaId, secim.data.earsivGonderimSekli);

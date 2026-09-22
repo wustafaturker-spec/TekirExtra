@@ -49,6 +49,9 @@ const SAYFA_TAVANI = 50;
 /** NES'e kendimizi tanıttığımız kaynak uygulama adı; zorunlu alandır. */
 const KAYNAK_UYGULAMA = "TekirExtra";
 
+/** Belgenin içeriğine itiraz eden, yeniden göndermekle değişmeyecek ret kodları. */
+const NES_KALICI_RET_KODLARI = [400, 422];
+
 /** Durum kodunu taşıyan hata; 404'ü diğer arızalardan ayırmak için gerekir. */
 class NesHatasi extends Error {
   constructor(readonly durum: number, mesaj: string) {
@@ -585,7 +588,13 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
         belgeNo: sonuc.documentNumber,
       };
     } catch (hata) {
-      return { basarili: false, hataMesaji: hata instanceof Error ? hata.message : "NES gönderimi başarısız" };
+      return {
+        basarili: false,
+        hataMesaji: hata instanceof Error ? hata.message : "NES gönderimi başarısız",
+        // 400/422 belgenin kendisine itirazdır (ör. SCHEMATRON_CHECK_RESULT_HAS_FAILED);
+        // yetki, zaman aşımı ve sunucu hataları geçici sayılır, yeniden denenir.
+        kalici: hata instanceof NesHatasi && NES_KALICI_RET_KODLARI.includes(hata.durum),
+      };
     }
   }
 

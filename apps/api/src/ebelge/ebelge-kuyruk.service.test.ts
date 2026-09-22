@@ -11,6 +11,7 @@ vi.mock("bullmq", () => ({
   Queue: class { add = bull.add; getJob = bull.getJob; getJobs = bull.getJobs; close = bull.close; on = bull.on; getWorkersCount = bull.getWorkersCount; },
   QueueEvents: class { on = vi.fn(); waitUntilReady = vi.fn(); close = vi.fn(); },
   Worker: class {},
+  UnrecoverableError: class extends Error { name = "UnrecoverableError"; },
 }));
 
 describe("EbelgeKuyrukService", () => {
@@ -77,6 +78,18 @@ describe("EbelgeKuyrukService", () => {
   it("başarısız entegratör sonucunu retry için hata olarak yükseltir", async () => {
     ebelge.gonder.mockResolvedValue({ basarili: false, hataMesaji: "sağlayıcı geçici olarak kapalı" });
     await expect((service as unknown as { isle(is: unknown): Promise<unknown> }).isle({ name: "ebelge-gonder", data: { tenantId: "tenant-1", userId: "user-1", rol: "muhasebe", faturaId: "fatura-3" } })).rejects.toThrow("sağlayıcı geçici olarak kapalı");
+  });
+
+  it("entegratörün kalıcı reddini yeniden denetmez, asıl sebep kalır", async () => {
+    ebelge.gonder.mockResolvedValue({ basarili: false, kalici: true, hataMesaji: "NES 422: HATALI ISTEK — SCHEMATRON_CHECK_RESULT_HAS_FAILED (ALICI EFATURA MUKELLEFIDIR)" });
+    const hata = await (service as unknown as { isle(is: unknown): Promise<unknown> }).isle({ name: "ebelge-gonder", data: { tenantId: "tenant-1", userId: "user-1", rol: "muhasebe", faturaId: "fatura-3" } }).catch((e: Error) => e);
+    expect(hata).toMatchObject({ name: "UnrecoverableError", message: expect.stringContaining("ALICI EFATURA MUKELLEFIDIR") });
+  });
+
+  it("kendi doğrulamamızın reddini de yeniden denetmez", async () => {
+    ebelge.gonder.mockRejectedValue(new BadRequestException("Sevkiyatın nasıl belgelendiğini seçin"));
+    const hata = await (service as unknown as { isle(is: unknown): Promise<unknown> }).isle({ name: "ebelge-gonder", data: { tenantId: "tenant-1", userId: "user-1", rol: "muhasebe", faturaId: "fatura-3" } }).catch((e: Error) => e);
+    expect(hata).toMatchObject({ name: "UnrecoverableError", message: "Sevkiyatın nasıl belgelendiğini seçin" });
   });
 
   it("durum sorgusunu tenant ve fatura bazında tekilleştirir", async () => {

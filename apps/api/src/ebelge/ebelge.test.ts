@@ -164,6 +164,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
   // gönderim akışını ölçtüğü için karar sabitlenir.
   const mockMukellefListesi = {
     kanalBelirle: vi.fn().mockResolvedValue({ vknTckn: "1234567890", eFaturaMukellefi: true, postaKutusu: "urn:mail:defaultpk@alici.test" }),
+    listeTuru: vi.fn().mockResolvedValue(null),
   } as any;
   const mockMetrics = { increment: vi.fn(), set: vi.fn() } as any;
 
@@ -947,6 +948,13 @@ describe("EbelgeService (EBLG-01..08)", () => {
       mockTenantIslem.mockImplementation((_t: string, cb: any) => cb(tx({ sevkiyatYontemi: null }, { eirsaliyeMukellefi: true })));
 
       await expect(service.gonder("fs1")).rejects.toThrow(/Sevkiyatın nasıl belgelendiğini seçin/);
+    });
+
+    it("sihirbaz aynı eksiği engel olarak bildirir; gönder ucu kuyruğa almadan durdurur", async () => {
+      mockTenantIslem.mockImplementation((_t: string, cb: any) => cb({ ...tx({ sevkiyatYontemi: null }, { eirsaliyeMukellefi: true }), belge: { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0) } }));
+
+      const bilgi = await service.wizardBilgisi("fs1");
+      expect(bilgi.sevkiyat?.engeller.map((e) => e.mesaj)).toEqual([expect.stringMatching(/Sevkiyatın nasıl belgelendiğini seçin/)]);
     });
 
     it("mükellef olmayan firmada hiç sormaz", async () => {

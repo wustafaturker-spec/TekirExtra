@@ -7,6 +7,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
   forwardRef,
 } from "@nestjs/common";
 import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
@@ -247,6 +248,11 @@ export class EbelgeService {
         where: { tenantId, cariId: fatura.cariId, tur: "irsaliye", yon: "satis", durum: "onaylandi", OR: [{ faturaId: null }, { faturaId }], eirsaliye: { is: { durum: { in: ["iletildi", "kabul", "kismi_kabul"] } } } },
         orderBy: { tarih: "desc" }, take: 50, select: { id: true, no: true, tarih: true, faturaId: true },
       }) : [];
+      // Gönderimdeki sayımın aynısı (bkz. `belgeUblHazirla`): bağlı irsaliyenin
+      // belge durumuna bakılmaz, yalnız e-İrsaliyesinin gitmiş olmasına.
+      const bagliIrsaliyeSayisi = sevkiyatSorulur && fatura.sevkiyatYontemi === "irsaliye"
+        ? await tx.belge.count({ where: { tenantId, faturaId: fatura.id, tur: "irsaliye", yon: "satis", eirsaliye: { is: { durum: { in: ["iletildi", "kabul", "kismi_kabul"] } } } } })
+        : 0;
       // Yolcu beraberi satış genel bir cariye kesilir; o carinin VKN'si yoktur.
       // Kimlik kontrolü bu yüzden satış faturasında durdurucu değil, eksik
       // olarak bildirilir: işaret konursa belge zaten Bakanlığa gider.
@@ -331,6 +337,15 @@ export class EbelgeService {
           yontem: fatura.sevkiyatYontemi,
           fiiliSevkZamani: fatura.fiiliSevkZamani?.toISOString() ?? null,
           adaylar: irsaliyeAdaylari,
+          // Gönder ucu kuyruğa almadan önce bunlara bakar; yoksa eksik belge
+          // kuyrukta düşer ve kullanıcı önce "gönderildi" görür.
+          engeller: sevkiyatEksikleri({
+            sorulur: sevkiyatSorulur,
+            mukellef: mukellefiyet.mukellef,
+            yontem: fatura.sevkiyatYontemi,
+            irsaliyeSayisi: bagliIrsaliyeSayisi,
+            fiiliSevkZamani: fatura.fiiliSevkZamani,
+          }).map((mesaj) => ({ mesaj })),
         },
         earsivGonderimSekli: fatura.earsivGonderimSekli,
         // EBLG-60: faturada işaretlenir; sihirbaz yalnız gösterir.
@@ -1018,9 +1033,10 @@ export class EbelgeService {
         } catch (hata) {
           // Sorgu çalışmazsa mükerrer belge ihtimalini eleyemeyiz. Körlemesine
           // göndermek aynı satış için ikinci belge düzenlemek olur; bu yüzden
-          // gönderim durdurulur ve sebep açıkça söylenir.
+          // gönderim durdurulur ve sebep açıkça söylenir. Sebep erişimdir,
+          // belge değil: kuyruk bu hatayı yeniden dener.
           const sebep = hata instanceof Error ? hata.message : "bilinmeyen hata";
-          throw new BadRequestException(
+          throw new ServiceUnavailableException(
             `Belgenin entegratörde zaten oluşup oluşmadığı kontrol edilemedi, mükerrer gönderim riski nedeniyle durduruldu: ${sebep}`,
           );
         }
@@ -1084,6 +1100,7 @@ export class EbelgeService {
         tur,
         ebelgeRef: gonderimResult.belgeRef,
         hataMesaji: gonderimResult.hataMesaji,
+        kalici: gonderimResult.kalici ?? false,
       };
     } catch (hata) {
       const mesaj = hata instanceof Error ? hata.message : "e-Belge gönderimi sırasında beklenmeyen hata";

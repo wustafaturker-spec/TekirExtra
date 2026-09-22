@@ -100,6 +100,12 @@ export interface GonderimSonuc {
    */
   belgeNo?: string;
   hataMesaji?: string;
+  /**
+   * Sağlayıcı belgeyi **içeriği yüzünden** reddetti (şema, şematron, iş
+   * kuralı). Aynı belgeyi yeniden göndermek sonucu değiştirmez; kuyruk
+   * denemeyi keser ve ilk sebep kayıtta kalır. Ağ/sunucu arızasında boştur.
+   */
+  kalici?: boolean;
 }
 
 /**

@@ -627,6 +627,17 @@ describe("NesEntegratorAdapter", () => {
     expect(sonuc.hataMesaji).toBe(
       "NES 422: HATALI ISTEK — SCHEMATRON_CHECK_RESULT_HAS_FAILED (ŞEMATRON KONTROL SONUCU HATALI)",
     );
+    // Belgeye itiraz: yeniden göndermek aynı sonucu verir.
+    expect(sonuc.kalici).toBe(true);
+  });
+
+  it("sunucu ve yetki hatalarını kalıcı saymaz, yeniden denenir", async () => {
+    for (const durum of [401, 429, 500, 503]) {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ message: "HATA" }, durum)));
+      const sonuc = await new NesEntegratorAdapter().belgeGonder(config, { uuid: "fatura-6", belgeNo: "SNC", xml: "<Invoice/>", tur: "earsiv" });
+      expect(sonuc.basarili).toBe(false);
+      expect(sonuc.kalici).toBe(false);
+    }
   });
 
   it("ProblemDetails biçimindeki hata sözlüğünü de okur", async () => {

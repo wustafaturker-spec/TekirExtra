@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, NotFoundException, ServiceUnavailableException, forwardRef } from "@nestjs/common";
-import { Job, Queue, QueueEvents, Worker } from "bullmq";
+import { Job, Queue, QueueEvents, UnrecoverableError, Worker } from "bullmq";
 import { PrismaClient } from "@prisma/client";
 import { uygulamaAcik, type EbelgeUygulamalari, type Rol } from "@tekirextra/shared";
 import { aktifBaglam, baglamlaCalistir } from "../core/istek-baglami";
@@ -97,7 +97,7 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
     });
     this.worker.on("completed", (is) => this.logger.log(JSON.stringify({ event: "ebelge_job_completed", jobId: is.id, tenantId: is.data.tenantId, faturaId: is.data.faturaId })));
     this.worker.on("failed", (is, hata) => this.logger.error(JSON.stringify({ event: "ebelge_job_failed", jobId: is?.id, tenantId: is?.data.tenantId, faturaId: is?.data.faturaId, attempt: is?.attemptsMade, error: hata.message })));
-    this.worker.on("failed", (is, hata) => { if (is && is.attemptsMade >= (is.opts.attempts || 1)) void this.deadLetteraTasi(is, hata); });
+    this.worker.on("failed", (is, hata) => { if (is && (is.attemptsMade >= (is.opts.attempts || 1) || hata instanceof UnrecoverableError)) void this.deadLetteraTasi(is, hata); });
     this.worker.on("error", (hata) => this.logger.error(`e-Belge worker hatası: ${hata.message}`));
     await this.worker.waitUntilReady();
     this.logger.log(`e-Belge worker hazır; concurrency=${this.worker.opts.concurrency}`);
@@ -311,8 +311,21 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
         }
       }
       if (is.name === GONDERIM_ISI) {
-        const sonuc = await this.ebelgeService.gonder(is.data.faturaId);
-        if (!sonuc.basarili) throw new Error(sonuc.hataMesaji || "Entegratör gönderimi başarısız");
+        // Kalıcı hata yeniden denenmez: entegratörün belgeye itirazı ya da
+        // bizim doğrulamamız aynı belgede aynı sonucu verir. Denemeye devam
+        // etmek boşa çağrıdır ve arada ayar değişirse ilk (asıl) sebebi başka
+        // bir mesajla ezer — kullanıcı neden reddedildiğini göremez.
+        let sonuc: Awaited<ReturnType<EbelgeService["gonder"]>>;
+        try {
+          sonuc = await this.ebelgeService.gonder(is.data.faturaId);
+        } catch (hata) {
+          if (hata instanceof BadRequestException || hata instanceof NotFoundException) throw new UnrecoverableError(hata.message);
+          throw hata;
+        }
+        if (!sonuc.basarili) {
+          const mesaj = sonuc.hataMesaji || "Entegratör gönderimi başarısız";
+          throw sonuc.kalici ? new UnrecoverableError(mesaj) : new Error(mesaj);
+        }
         return sonuc;
       }
       throw new Error(`Desteklenmeyen e-Belge işi: ${is.name}`);
