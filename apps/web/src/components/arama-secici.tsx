@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState, type Ref } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Ref } from "react";
+import { createPortal } from "react-dom";
 
 export interface AramaSecenegi {
   deger: string;
@@ -52,6 +53,8 @@ export function AramaSecici({
 }) {
   const listeId = useId();
   const kokRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuKonumu, setMenuKonumu] = useState<React.CSSProperties | null>(null);
   const secili = secenekler.find((secenek) => secenek.deger === deger);
   const [acik, setAcik] = useState(false);
   const [arama, setArama] = useState("");
@@ -96,11 +99,42 @@ export function AramaSecici({
 
   useEffect(() => {
     function disTiklama(event: MouseEvent) {
-      if (!kokRef.current?.contains(event.target as Node)) setAcik(false);
+      if (!kokRef.current?.contains(event.target as Node) && !menuRef.current?.contains(event.target as Node)) setAcik(false);
     }
     document.addEventListener("mousedown", disTiklama);
     return () => document.removeEventListener("mousedown", disTiklama);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!acik) return;
+    function konumlandir() {
+      const kontrol = kokRef.current?.querySelector(".combobox__control");
+      if (!kontrol) return;
+      const rect = kontrol.getBoundingClientRect();
+      const bosluk = 4;
+      const alttakiAlan = window.innerHeight - rect.bottom - bosluk;
+      const usttekiAlan = rect.top - bosluk;
+      const yukariAc = alttakiAlan < 180 && usttekiAlan > alttakiAlan;
+      setMenuKonumu({
+        position: "fixed",
+        left: rect.left,
+        right: "auto",
+        top: yukariAc ? "auto" : rect.bottom + bosluk,
+        bottom: yukariAc ? window.innerHeight - rect.top + bosluk : "auto",
+        width: rect.width,
+        minWidth: "auto",
+        maxHeight: Math.min(280, Math.max(80, yukariAc ? usttekiAlan : alttakiAlan)),
+        zIndex: 1200,
+      });
+    }
+    konumlandir();
+    window.addEventListener("resize", konumlandir);
+    window.addEventListener("scroll", konumlandir, true);
+    return () => {
+      window.removeEventListener("resize", konumlandir);
+      window.removeEventListener("scroll", konumlandir, true);
+    };
+  }, [acik]);
 
   function sec(secenek: AramaSecenegi) {
     if (kullanimAnahtari) {
@@ -180,8 +214,8 @@ export function AramaSecici({
         <span className="combobox__selected-meta">{secili.aciklama}</span>
       )}
 
-      {acik && (
-        <div className="combobox__menu" id={listeId} role="listbox">
+      {acik && menuKonumu && createPortal(
+        <div className="combobox__menu" id={listeId} role="listbox" ref={menuRef} style={menuKonumu}>
           {gorunenler.length === 0 ? (
             <div className="combobox__empty">{bosMesaj}</div>
           ) : (
@@ -214,7 +248,8 @@ export function AramaSecici({
               + {yeniKayit.etiket}
             </button>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
