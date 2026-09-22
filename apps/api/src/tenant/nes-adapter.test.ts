@@ -31,6 +31,7 @@ const KULLANICI_LISTESI = `<?xml version="1.0" encoding="utf-8"?>
     <Identifier>1234567802</Identifier>
     <Title>TEST &amp; KURUM - 02</Title>
     <Type>OZEL</Type>
+    <FirstCreationTime>2014-07-18T16:07:05</FirstCreationTime>
     <AccountType>OZELENTEGRASYON</AccountType>
     <Aliases>
       <Alias><Name>urn:mail:eski_pk@turktelekom.com.tr</Name><CreationTime>2014-07-18T16:07:05</CreationTime></Alias>
@@ -687,11 +688,12 @@ describe("NesEntegratorAdapter", () => {
       "https://apitest.nes.com.tr/einvoice/v1/users/zip/Pk",
       "https://apitest.nes.com.tr/edespatch/v1/users/zip/Pk",
     ]);
+    // FirstCreationTime bölgesizdir, GİB saatidir (TSİ): 16:07 → 13:07Z (CARI-23).
     expect(kayitlar).toEqual([
-      { vknTckn: "1234567802", belgeTuru: "efatura", postaKutusu: "urn:mail:eski_pk@turktelekom.com.tr", unvan: "TEST & KURUM - 02", tur: "OZEL" },
-      { vknTckn: "1234567802", belgeTuru: "efatura", postaKutusu: "urn:mail:guncel_pk@mersel.io", unvan: "TEST & KURUM - 02", tur: "OZEL" },
-      { vknTckn: "1234567802", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:eski_pk@turktelekom.com.tr", unvan: "TEST & KURUM - 02", tur: "OZEL" },
-      { vknTckn: "1234567802", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:guncel_pk@mersel.io", unvan: "TEST & KURUM - 02", tur: "OZEL" },
+      { vknTckn: "1234567802", belgeTuru: "efatura", postaKutusu: "urn:mail:eski_pk@turktelekom.com.tr", unvan: "TEST & KURUM - 02", tur: "OZEL", ilkKayitZamani: "2014-07-18T13:07:05.000Z" },
+      { vknTckn: "1234567802", belgeTuru: "efatura", postaKutusu: "urn:mail:guncel_pk@mersel.io", unvan: "TEST & KURUM - 02", tur: "OZEL", ilkKayitZamani: "2014-07-18T13:07:05.000Z" },
+      { vknTckn: "1234567802", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:eski_pk@turktelekom.com.tr", unvan: "TEST & KURUM - 02", tur: "OZEL", ilkKayitZamani: "2014-07-18T13:07:05.000Z" },
+      { vknTckn: "1234567802", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:guncel_pk@mersel.io", unvan: "TEST & KURUM - 02", tur: "OZEL", ilkKayitZamani: "2014-07-18T13:07:05.000Z" },
     ]);
   });
 

@@ -34,6 +34,7 @@ import { metinNormalize } from "@tekirextra/shared";
 import { EpostaService } from "../tenant/eposta.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { iptalCiftiMi, iptalEdilmisFaturalar } from "../fatura/iptal-cifti";
+import { cariEbelgeDurumlariniOku, cariEbelgeDurumuBul } from "../ebelge/cari-ebelge";
 import {
   kacis,
   paraBicim,
@@ -84,9 +85,12 @@ export class CariService {
     const sonrakiImlec = kayitlar.length > adet ? kayitlar[adet - 1].id : null;
     const sayfa = kayitlar.slice(0, adet);
     const bakiyeler = await this.bakiyeleriGetir(sayfa.map((k) => k.id));
+    // CARI-23: listede kısa e-Belge etiketi; tarih yalnız kartta.
+    const ebelge = sayfa.length ? await this.prisma.tenantIslem(tenantId, (tx) => cariEbelgeDurumlariniOku(tx, sayfa.map((k) => k.vknTckn))) : null;
     return {
       kayitlar: sayfa.map((k) => ({
         ...this.gorunum(k),
+        ebelgeTuru: cariEbelgeDurumuBul(ebelge!, k.vknTckn).tur,
         bakiyeler: bakiyeler.get(k.id) ?? [],
         izinliEylemler: this.eylemler(k, ctx.rol, k._count.hareketler),
       })),
@@ -114,8 +118,11 @@ export class CariService {
     const bakiyeler = (await this.bakiyeleriGetir([id])).get(id) ?? [];
     const tryBakiye = bakiyeler.reduce((toplam, b) => toplam + Number(b.bakiyeTry), 0);
     const risk = await this.riskOzeti(id, tryBakiye, kayit.riskLimiti);
+    // CARI-23: e-Fatura/e-Arşiv ve e-İrsaliye mükellefiyeti, GİB listesinden.
+    const ebelge = await this.prisma.tenantIslem(ctx.tenantId, (tx) => cariEbelgeDurumlariniOku(tx, [kayit.vknTckn]));
     return {
       ...this.gorunum(kayit),
+      ebelgeDurumu: { ...cariEbelgeDurumuBul(ebelge, kayit.vknTckn), listeGuncellendi: ebelge.listeGuncellendi },
       adresler: kayit.adresler,
       kisiler: kayit.kisiler,
       bankaHesaplari: kayit.bankaHesaplari,

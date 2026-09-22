@@ -147,7 +147,7 @@ export class MukellefListesiService {
 
       // Aynı (vkn, etiket) çifti listede birden çok kez görünebilir; teklik
       // kısıtına takılmamak için yazımdan önce indirgenir.
-      const tekil = new Map<string, { vknTckn: string; belgeTuru: GibBelgeTuru; postaKutusu: string; unvan: string | null; tur: string | null }>();
+      const tekil = new Map<string, { vknTckn: string; belgeTuru: GibBelgeTuru; postaKutusu: string; unvan: string | null; tur: string | null; ilkKayitZamani: Date | null }>();
       for (const kayit of kayitlar) {
         tekil.set(`${kayit.vknTckn}|${kayit.belgeTuru}|${kayit.postaKutusu}`, {
           vknTckn: kayit.vknTckn,
@@ -155,6 +155,7 @@ export class MukellefListesiService {
           postaKutusu: kayit.postaKutusu,
           unvan: kayit.unvan ?? null,
           tur: kayit.tur ?? null,
+          ilkKayitZamani: kayit.ilkKayitZamani ? new Date(kayit.ilkKayitZamani) : null,
         });
       }
       const satirlar = [...tekil.values()];

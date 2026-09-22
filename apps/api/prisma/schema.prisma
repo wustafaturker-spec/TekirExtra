@@ -2346,6 +2346,9 @@ model GibMukellef {
   /// Listedeki `<Type>`: "KAMU" ya da "OZEL". KAMU alıcıya belge KAMU
   /// senaryosuyla gider; listeyi bu alanı taşımayan entegratörde boş kalır.
   tur         String?
+  /// Mükellefin bu belge türüne GİB'deki ilk kaydı (`FirstCreationTime`);
+  /// cari kartında "e-Fatura mükellefi · GİB kaydı" olarak görünür (CARI-23).
+  ilkKayitZamani DateTime? @map("ilk_kayit_zamani")
   guncellendi DateTime  @default(now())
 
   @@id([vknTckn, belgeTuru, postaKutusu])

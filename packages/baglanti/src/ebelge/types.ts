@@ -215,6 +215,8 @@ export interface MukellefKaydi {
   unvan?: string;
   /** Listedeki `<Type>` ("KAMU" / "OZEL"); KAMU alıcıya belge KAMU senaryosuyla gider. */
   tur?: string;
+  /** Mükellefin bu belge türüne GİB'deki ilk kaydı (`FirstCreationTime`), ISO (CARI-23). */
+  ilkKayitZamani?: string;
 }
 
 /** Gelen zarf çekiminin tarih penceresi; kursör bu aralığı belirler (EBLG-11). */

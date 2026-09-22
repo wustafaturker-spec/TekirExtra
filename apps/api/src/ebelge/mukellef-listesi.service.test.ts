@@ -119,8 +119,8 @@ describe("MukellefListesiService.senkronEt", () => {
 
   it("listeyi tek işlemde değiştirir ve mükerrer etiketi indirger", async () => {
     const mukellefListesiCek = vi.fn().mockResolvedValue([
-      { vknTckn: "1", belgeTuru: "efatura", postaKutusu: "urn:mail:a", unvan: "Alfa", tur: "KAMU" },
-      { vknTckn: "1", belgeTuru: "efatura", postaKutusu: "urn:mail:a", unvan: "Alfa", tur: "KAMU" },
+      { vknTckn: "1", belgeTuru: "efatura", postaKutusu: "urn:mail:a", unvan: "Alfa", tur: "KAMU", ilkKayitZamani: "2014-07-18T13:07:05.000Z" },
+      { vknTckn: "1", belgeTuru: "efatura", postaKutusu: "urn:mail:a", unvan: "Alfa", tur: "KAMU", ilkKayitZamani: "2014-07-18T13:07:05.000Z" },
       { vknTckn: "1", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:a", unvan: "Alfa" },
     ]);
     const { servis, gibMukellef } = servisKur({ adapter: { mukellefListesiCek }, senkron: null });
@@ -130,8 +130,9 @@ describe("MukellefListesiService.senkronEt", () => {
     expect(gibMukellef.deleteMany).toHaveBeenCalledBefore(gibMukellef.createMany as never);
     expect(gibMukellef.createMany).toHaveBeenCalledWith({
       data: [
-        { vknTckn: "1", belgeTuru: "efatura", postaKutusu: "urn:mail:a", unvan: "Alfa", tur: "KAMU" },
-        { vknTckn: "1", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:a", unvan: "Alfa", tur: null },
+        // CARI-23: ilk kayıt zamanı cari kartında gösterilmek üzere saklanır.
+        { vknTckn: "1", belgeTuru: "efatura", postaKutusu: "urn:mail:a", unvan: "Alfa", tur: "KAMU", ilkKayitZamani: new Date("2014-07-18T13:07:05.000Z") },
+        { vknTckn: "1", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:a", unvan: "Alfa", tur: null, ilkKayitZamani: null },
       ],
     });
     expect(sonuc.kayitSayisi).toBe(2);

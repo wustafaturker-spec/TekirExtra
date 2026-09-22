@@ -354,13 +354,26 @@ function mukellefListesiAyristir(xml: string, belgeTuru: MukellefKaydi["belgeTur
     if (!vknTckn) continue;
     const unvan = govde.match(/<Title>([^<]*)<\/Title>/)?.[1]?.trim();
     const tur = govde.match(/<Type>([^<]*)<\/Type>/)?.[1]?.trim() || undefined;
+    const ilkKayitZamani = gibZamani(govde.match(/<FirstCreationTime>([^<]*)<\/FirstCreationTime>/)?.[1]);
     for (const etiket of govde.matchAll(/<Name>([^<]*)<\/Name>/g)) {
       const postaKutusu = etiket[1].trim();
       if (!postaKutusu) continue;
-      kayitlar.push({ vknTckn, belgeTuru, postaKutusu: xmlCoz(postaKutusu), unvan: unvan ? xmlCoz(unvan) : undefined, tur });
+      kayitlar.push({ vknTckn, belgeTuru, postaKutusu: xmlCoz(postaKutusu), unvan: unvan ? xmlCoz(unvan) : undefined, tur, ilkKayitZamani });
     }
   }
   return kayitlar;
+}
+
+/**
+ * Listedeki zaman damgası. Bölge bilgisi taşımayan değer GİB'in saati, yani
+ * Türkiye saatidir; UTC sanılırsa gece yarısına yakın kayıt bir gün kayar.
+ */
+function gibZamani(deger?: string): string | undefined {
+  const metin = deger?.trim();
+  if (!metin) return undefined;
+  const bolgeli = /(Z|[+-]\d{2}:?\d{2})$/.test(metin) ? metin : `${metin}+03:00`;
+  const an = new Date(bolgeli);
+  return Number.isNaN(an.getTime()) ? undefined : an.toISOString();
 }
 
 /** `urn:mail:defaultpk@nes.com.tr` → `nes.com.tr` */
