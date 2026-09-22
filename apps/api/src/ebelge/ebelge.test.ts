@@ -95,6 +95,33 @@ describe("faturaUblOku (EBLG-05 XML ayrıştırma)", () => {
   it("UBL olmayan içerikte hata fırlatır", () => {
     expect(() => faturaUblOku("<Baska></Baska>")).toThrow(/Invoice kökü/);
   });
+
+  /** EBLG-76: ibare notta, sevk anı Delivery/Despatch'te taşınır. */
+  it("irsaliye yerine geçen faturada notu ve fiili sevk anını okur", () => {
+    const xml = GELEN_UBL.replace(
+      "<cbc:IssueDate>2026-07-20</cbc:IssueDate>",
+      `<cbc:IssueDate>2026-07-20</cbc:IssueDate>
+  <cbc:Note>Mal e-Fatura beraberinde sevk edildiğinden ayrıca e-İrsaliye düzenlenmemiştir. Bu fatura irsaliye yerine geçer.</cbc:Note>
+  <cac:Delivery><cac:Despatch><cbc:ActualDespatchDate>2026-07-20</cbc:ActualDespatchDate><cbc:ActualDespatchTime>09:30:00</cbc:ActualDespatchTime></cac:Despatch></cac:Delivery>`,
+    );
+
+    const ubl = faturaUblOku(xml);
+
+    expect(ubl.notlar).toHaveLength(1);
+    expect(ubl.notlar[0]).toContain("irsaliye yerine geçer");
+    expect(ubl.sevk).toEqual({ tarih: "2026-07-20", saat: "09:30:00" });
+  });
+
+  it("sevk taşımayan teslimat bloğunu sevk sanmaz", () => {
+    const xml = GELEN_UBL.replace(
+      "<cbc:IssueDate>2026-07-20</cbc:IssueDate>",
+      `<cbc:IssueDate>2026-07-20</cbc:IssueDate>
+  <cac:Delivery><cbc:ActualDeliveryDate>2026-07-21</cbc:ActualDeliveryDate></cac:Delivery>`,
+    );
+
+    expect(faturaUblOku(xml).sevk).toBeUndefined();
+    expect(faturaUblOku(GELEN_UBL).notlar).toEqual([]);
+  });
 });
 
 describe("EbelgeService (EBLG-01..08)", () => {
@@ -173,7 +200,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
         update: vi.fn().mockResolvedValue({}),
       },
       tenant: {
-        findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", vergiDairesi: "Davutpaşa", adres: "Maltepe Mh. Çırpıcı Yol Sk. No:7", ilce: "Zeytinburnu", il: "İstanbul" }),
+        findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: false, vergiDairesi: "Davutpaşa", adres: "Maltepe Mh. Çırpıcı Yol Sk. No:7", ilce: "Zeytinburnu", il: "İstanbul" }),
       },
       ebelgeKayit: {
         create: vi.fn().mockResolvedValue({ id: "eb1" }),
@@ -246,7 +273,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
       },
       baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "t" }) }) },
       cariHesap: { update: vi.fn().mockResolvedValue({}) },
-      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", vergiDairesi: "Davutpaşa", adres: "Maltepe Mh. Çırpıcı Yol Sk. No:7", ilce: "Zeytinburnu", il: "İstanbul" }) },
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: false, vergiDairesi: "Davutpaşa", adres: "Maltepe Mh. Çırpıcı Yol Sk. No:7", ilce: "Zeytinburnu", il: "İstanbul" }) },
       ebelgeKayit: { create: vi.fn().mockResolvedValue({ id: "eb9" }), update: vi.fn().mockResolvedValue({ id: "eb9" }) },
       ebelgeArsiv: { upsert: vi.fn().mockResolvedValue({}) },
     };
@@ -280,7 +307,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
       },
       baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "t" }) }) },
       cariHesap: { update: vi.fn().mockResolvedValue({}) },
-      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", vergiDairesi: "Davutpaşa", adres: "Maltepe Mh. Çırpıcı Yol Sk. No:7", ilce: "Zeytinburnu", il: "İstanbul" }) },
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: false, vergiDairesi: "Davutpaşa", adres: "Maltepe Mh. Çırpıcı Yol Sk. No:7", ilce: "Zeytinburnu", il: "İstanbul" }) },
       ebelgeKayit: { create: vi.fn(), update: vi.fn() },
       ebelgeArsiv: { upsert: vi.fn() },
     };
@@ -311,7 +338,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
       baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "t", testOrtami }) }) },
       cariHesap: { update: vi.fn().mockResolvedValue({}) },
       // Gönderen VKN'si geçerli: böylece test yalnız alıcı kuralını ölçer.
-      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", vergiDairesi: "Davutpaşa", adres: "Maltepe Mh. Çırpıcı Yol Sk. No:7", ilce: "Zeytinburnu", il: "İstanbul" }) },
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: false, vergiDairesi: "Davutpaşa", adres: "Maltepe Mh. Çırpıcı Yol Sk. No:7", ilce: "Zeytinburnu", il: "İstanbul" }) },
       ebelgeKayit: { create: vi.fn().mockResolvedValue({ id: "eb1" }), update: vi.fn().mockResolvedValue({ id: "eb1" }) },
       ebelgeArsiv: { upsert: vi.fn().mockResolvedValue({}) },
     };
@@ -345,7 +372,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
       },
       baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "test" }) }) },
       cariHesap: { update: vi.fn().mockResolvedValue({}) },
-      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", vergiDairesi: "Davutpaşa", adres: "Maltepe Mh. Çırpıcı Yol Sk. No:7", ilce: "Zeytinburnu", il: "İstanbul" }) },
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: false, vergiDairesi: "Davutpaşa", adres: "Maltepe Mh. Çırpıcı Yol Sk. No:7", ilce: "Zeytinburnu", il: "İstanbul" }) },
       ebelgeKayit: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         create: vi.fn(),
@@ -443,7 +470,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
       },
       baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify(config) }) },
       cariHesap: { update: vi.fn().mockResolvedValue({}) },
-      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", vergiDairesi: "Davutpaşa", adres: "Maltepe Mh. Çırpıcı Yol Sk. No:7", ilce: "Zeytinburnu", il: "İstanbul" }) },
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: false, vergiDairesi: "Davutpaşa", adres: "Maltepe Mh. Çırpıcı Yol Sk. No:7", ilce: "Zeytinburnu", il: "İstanbul" }) },
       ebelgeKayit: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         create: vi.fn().mockResolvedValue({ id: "eb1" }),
@@ -770,7 +797,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
     const tx = (fatura: unknown) => ({
       fatura: { findUnique: vi.fn().mockResolvedValue(fatura) },
       baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "test" }) }) },
-      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", vergiDairesi: "Davutpaşa", adres: "Maltepe Mh.", ilce: "Zeytinburnu", il: "İstanbul" }) },
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: false, vergiDairesi: "Davutpaşa", adres: "Maltepe Mh.", ilce: "Zeytinburnu", il: "İstanbul" }) },
     });
 
     it("kartta işaretli kamu alıcısında harcama birimi ve IBAN yoksa önizlemez", async () => {
@@ -825,7 +852,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
     const tx = () => ({
       fatura: { findUnique: vi.fn().mockResolvedValue(yurtDisiIade) },
       baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "test" }) }) },
-      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", vergiDairesi: "Davutpaşa", adres: "Maltepe Mh.", ilce: "Zeytinburnu", il: "İstanbul" }) },
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: false, vergiDairesi: "Davutpaşa", adres: "Maltepe Mh.", ilce: "Zeytinburnu", il: "İstanbul" }) },
     });
 
     it("sihirbaz ilk adımda durur, ihracat faturasına düşürmez", async () => {
@@ -839,6 +866,112 @@ describe("EbelgeService (EBLG-01..08)", () => {
       mockTenantIslem.mockImplementation((_tenantId: string, cb: any) => cb(tx()));
       await expect(service.gonder("fi1")).rejects.toThrow(/yurt dışındaki tedarikçiye iade/);
       await expect(service.onizle("fi1")).rejects.toThrow(/yurt dışındaki tedarikçiye iade/);
+    });
+  });
+
+  /**
+   * EBLG-77: firmanın kendi kapsamı. e-Fatura uygulamasına kayıtlı olmayan
+   * firma, alıcı mükellef olsa bile e-Fatura kesemez; ikisi de kapalıysa belge
+   * hiç gönderilmez.
+   */
+  describe("firma e-belge kapsamı", () => {
+    const tx = (firma: Record<string, unknown>) => ({
+      fatura: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "fk1", tip: "satis", durum: "kesin", tarih: new Date(), no: "TKR2026000000031",
+          toplamBrut: 100, toplamMatrah: 100, toplamKdv: 20, genelToplam: 120,
+          dovizCinsi: "TRY", toplamSatirIskontosu: 0,
+          satirlar: [{ miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20, birimFiyat: 100, stok: { kod: "U1", ad: "Ürün 1", tip: "hizmet" } }],
+          cari: { vknTckn: "1234567890", unvan: "Müşteri", adresler: [] },
+        }),
+      },
+      baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "izibiz", sifreliConfig: JSON.stringify({ kullaniciAdi: "test" }) }) },
+      cariHesap: { update: vi.fn().mockResolvedValue({}) },
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", vergiDairesi: "Davutpaşa", adres: "Maltepe Mh.", ilce: "Zeytinburnu", il: "İstanbul", eirsaliyeMukellefi: false, ...firma }) },
+      belge: { findMany: vi.fn().mockResolvedValue([]) },
+      ebelgeKayit: { create: vi.fn().mockResolvedValue({ id: "eb1" }), update: vi.fn().mockResolvedValue({ id: "eb1" }) },
+      ebelgeArsiv: { upsert: vi.fn().mockResolvedValue({}) },
+      // Elle belirtilmemiş uygulama için liste sorgusu.
+      gibMukellef: { findFirst: vi.fn().mockResolvedValue(null) },
+      gibMukellefSenkron: { findUnique: vi.fn().mockResolvedValue(null) },
+    });
+
+    it("e-Arşiv kullanıcısında alıcı mükellef olsa bile belge e-Arşiv'e düşer", async () => {
+      mockMukellefListesi.kanalBelirle.mockClear();
+      mockTenantIslem.mockImplementation((_t: string, cb: any) => cb(tx({ efaturaMukellefi: false, earsivMukellefi: true })));
+
+      await expect(service.gonder("fk1")).resolves.toMatchObject({ basarili: true, tur: "earsiv" });
+      // Alıcının listesi hiç sorulmaz: kanal satıcının kapsamından çıkar.
+      expect(mockMukellefListesi.kanalBelirle).not.toHaveBeenCalled();
+    });
+
+    it("hiçbir uygulamaya kayıtlı olmayan firmada belge gönderilmez", async () => {
+      mockTenantIslem.mockImplementation((_t: string, cb: any) => cb(tx({ efaturaMukellefi: false, earsivMukellefi: false })));
+
+      await expect(service.gonder("fk1")).rejects.toThrow(/kağıt olarak düzenlenir/);
+    });
+
+    it("e-Fatura durumu bilinmiyorken mükellef alıcıya belge gönderilmez", async () => {
+      mockTenantIslem.mockImplementation((_t: string, cb: any) => cb(tx({ efaturaMukellefi: null, earsivMukellefi: true })));
+
+      await expect(service.gonder("fk1")).rejects.toThrow(/e-Fatura mükellefiyeti bilinmiyor/);
+    });
+  });
+
+  /**
+   * EBLG-76: sevkiyat denetimi. Firma e-İrsaliye mükellefiyse mal satışında
+   * yollardan biri seçilmeden belge gönderilmez; mükellef değilse kural hiç
+   * çalışmaz.
+   */
+  describe("sevkiyat ve irsaliye yerine geçen fatura", () => {
+    const tx = (fatura: Record<string, unknown>, firma: Record<string, unknown>) => ({
+      fatura: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "fs1", tip: "satis", durum: "kesin", tarih: new Date(), no: "TKR2026000000021",
+          toplamBrut: 100, toplamMatrah: 100, toplamKdv: 20, genelToplam: 120,
+          dovizCinsi: "TRY", toplamSatirIskontosu: 0,
+          satirlar: [{ miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20, birimFiyat: 100, stok: { kod: "U1", ad: "Ürün 1", tip: "urun" } }],
+          cari: { vknTckn: "1234567890", unvan: "Müşteri", adresler: [] },
+          ...fatura,
+        }),
+      },
+      baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "izibiz", sifreliConfig: JSON.stringify({ kullaniciAdi: "test" }) }) },
+      cariHesap: { update: vi.fn().mockResolvedValue({}) },
+      tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", efaturaMukellefi: true, earsivMukellefi: true, vergiDairesi: "Davutpaşa", adres: "Maltepe Mh.", ilce: "Zeytinburnu", il: "İstanbul", ...firma }) },
+      belge: { findMany: vi.fn().mockResolvedValue([]) },
+      ebelgeKayit: { create: vi.fn().mockResolvedValue({ id: "eb1" }), update: vi.fn().mockResolvedValue({ id: "eb1" }) },
+      ebelgeArsiv: { upsert: vi.fn().mockResolvedValue({}) },
+    });
+
+    it("mükellef firmada yol seçilmeden gönderimi durdurur", async () => {
+      mockTenantIslem.mockImplementation((_t: string, cb: any) => cb(tx({ sevkiyatYontemi: null }, { eirsaliyeMukellefi: true })));
+
+      await expect(service.gonder("fs1")).rejects.toThrow(/Sevkiyatın nasıl belgelendiğini seçin/);
+    });
+
+    it("mükellef olmayan firmada hiç sormaz", async () => {
+      mockAdapter.belgeGonder.mockClear();
+      mockTenantIslem.mockImplementation((_t: string, cb: any) => cb(tx({ sevkiyatYontemi: null }, { eirsaliyeMukellefi: false })));
+
+      await expect(service.gonder("fs1")).resolves.toMatchObject({ basarili: true });
+    });
+
+    it("irsaliye yerine geçen faturayı ibaresi ve sevk anıyla gönderir", async () => {
+      mockAdapter.belgeGonder.mockClear();
+      mockTenantIslem.mockImplementation((_t: string, cb: any) =>
+        cb(tx({ sevkiyatYontemi: "irsaliye_yerine", fiiliSevkZamani: new Date("2026-09-21T07:45:00Z") }, { eirsaliyeMukellefi: true })));
+
+      await expect(service.gonder("fs1")).resolves.toMatchObject({ basarili: true });
+      const xml = mockAdapter.belgeGonder.mock.calls[0][1].xml as string;
+      expect(xml).toContain("irsaliye yerine geçer");
+      expect(xml).toContain("<cbc:ActualDespatchTime>07:45:00</cbc:ActualDespatchTime>");
+    });
+
+    it("sevk anı yazılmamış irsaliye yerine faturayı göndermez", async () => {
+      mockTenantIslem.mockImplementation((_t: string, cb: any) =>
+        cb(tx({ sevkiyatYontemi: "irsaliye_yerine", fiiliSevkZamani: null }, { eirsaliyeMukellefi: true })));
+
+      await expect(service.gonder("fs1")).rejects.toThrow(/fiili sevk tarihi ve saati/);
     });
   });
 });

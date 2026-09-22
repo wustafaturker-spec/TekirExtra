@@ -544,6 +544,20 @@ describe("faturaUblUret — iade referansı (EBLG-58)", () => {
   it("referans verilmeyen belgeye blok yazmaz", () => {
     expect(faturaUblUret(iadeFaturasi, satici)).not.toContain("BillingReference");
   });
+
+  it("birden fazla e-İrsaliyeyi UBL sırasıyla faturaya yazar", () => {
+    const xml = faturaUblUret(iadeFaturasi, satici, {
+      iadeReferanslari: [{ belgeNo: "ABC2026000000001", tarih: new Date("2026-09-10") }],
+      irsaliyeReferanslari: [
+        { no: "IRS2026000000001", tarih: new Date("2026-09-11") },
+        { no: "IRS2026000000002", tarih: new Date("2026-09-12") },
+      ],
+    });
+    expect(xml.match(/<cac:DespatchDocumentReference>/g)).toHaveLength(2);
+    expect(xml).toContain("<cbc:ID>IRS2026000000001</cbc:ID><cbc:IssueDate>2026-09-11</cbc:IssueDate>");
+    expect(xml.indexOf("<cac:BillingReference>")).toBeLessThan(xml.indexOf("<cac:DespatchDocumentReference>"));
+    expect(xml.lastIndexOf("</cac:DespatchDocumentReference>")).toBeLessThan(xml.indexOf("<cac:Signature>"));
+  });
 });
 
 describe("faturaUblUret — KDV alt toplamları ve istisna (EBLG-59)", () => {
@@ -1094,5 +1108,144 @@ describe("faturaUblUret — vade ve sipariş referansı (EBLG-73)", () => {
   it("e-Arşiv belgesinde de vade taşınır", () => {
     const xml = faturaUblUret(temel({ vadeTarihi: new Date("2026-11-30T00:00:00Z") }), firma, { tur: "earsiv" });
     expect(xml).toContain("<cbc:PaymentDueDate>2026-11-30</cbc:PaymentDueDate>");
+  });
+});
+
+describe("faturaUblUret — irsaliye yerine geçen fatura (EBLG-76)", () => {
+  const satici = { unvan: "Satıcı A.Ş.", vkn: "9876543210" };
+  const fatura = (ekler: Record<string, unknown>) => ({
+    id: "77777777-7777-4777-8777-777777777777",
+    no: "TKR2026000000011",
+    tarih: new Date("2026-09-21T12:00:00Z"),
+    tip: "satis",
+    dovizCinsi: "TRY",
+    toplamKdv: 20, toplamMatrah: 100, toplamBrut: 100, genelToplam: 120, toplamSatirIskontosu: 0,
+    cari: { vknTckn: "1234567890", unvan: "Alıcı A.Ş." },
+    satirlar: [{
+      miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 20, kdvOrani: 20,
+      gibIstisnaKodu: null, birimFiyat: 100, stok: { kod: "STK-1", ad: "Ürün" },
+    }],
+    ...ekler,
+  }) as never;
+
+  it("fiili sevk anını Delivery/Despatch ile yazar", () => {
+    const xml = faturaUblUret(fatura({ sevkiyatYontemi: "irsaliye_yerine", fiiliSevkZamani: new Date("2026-09-21T07:45:00Z") }), satici);
+
+    expect(xml).toContain("<cbc:ActualDespatchDate>2026-09-21</cbc:ActualDespatchDate>");
+    expect(xml).toContain("<cbc:ActualDespatchTime>07:45:00</cbc:ActualDespatchTime>");
+    // Delivery, PaymentMeans/PaymentTerms bloklarından önce gelmeli.
+    expect(xml.indexOf("<cac:Delivery>")).toBeLessThan(xml.indexOf("<cac:TaxTotal>"));
+  });
+
+  it("ibareyi Note olarak yazar — GİB'in genel XSLT'si yalnız notu basar", () => {
+    const xml = faturaUblUret(fatura({ sevkiyatYontemi: "irsaliye_yerine", fiiliSevkZamani: new Date("2026-09-21T07:45:00Z") }), satici);
+
+    expect(xml).toContain("<cbc:Note>Mal e-Fatura beraberinde sevk edildiğinden ayrıca e-İrsaliye düzenlenmemiştir. Bu fatura irsaliye yerine geçer.</cbc:Note>");
+  });
+
+  it("e-Arşiv'e düşen belgede ibare o belgenin adını söyler", () => {
+    const xml = faturaUblUret(fatura({ sevkiyatYontemi: "irsaliye_yerine", fiiliSevkZamani: new Date("2026-09-21T07:45:00Z") }), satici, { tur: "earsiv" });
+
+    expect(xml).toContain("Mal e-Arşiv faturası beraberinde sevk edildiğinden");
+  });
+
+  it("başka bir sevkiyat yolunda sevk bloğu ve ibare yazılmaz", () => {
+    const xml = faturaUblUret(fatura({ sevkiyatYontemi: "fatura_once", fiiliSevkZamani: new Date("2026-09-21T07:45:00Z") }), satici);
+
+    expect(xml).not.toContain("ActualDespatchDate");
+    expect(xml).not.toContain("irsaliye yerine geçer");
+  });
+
+  it("sevk anı girilmemişse blok hiç yazılmaz", () => {
+    const xml = faturaUblUret(fatura({ sevkiyatYontemi: "irsaliye_yerine", fiiliSevkZamani: null }), satici);
+
+    expect(xml).not.toContain("ActualDespatchDate");
+    expect(xml).not.toContain("irsaliye yerine geçer");
+  });
+});
+
+describe("faturaUblUret — yatırım teşvik (EBLG-78)", () => {
+  const satici = { unvan: "Satıcı A.Ş.", vkn: "9876543210" };
+  const fatura = (ekler: Record<string, unknown>, satirEkleri: Record<string, unknown> = {}) => ({
+    id: "88888888-8888-4888-8888-888888888888",
+    no: "TKR2026000000012",
+    tarih: new Date("2026-09-21T12:00:00Z"),
+    tip: "satis",
+    senaryo: "satis",
+    dovizCinsi: "TRY",
+    toplamKdv: 300, toplamMatrah: 1500, toplamBrut: 1500, genelToplam: 1800, toplamSatirIskontosu: 0,
+    ytbNo: "123456",
+    ytbTarihi: new Date("2026-01-01T00:00:00Z"),
+    cari: { vknTckn: "1234567890", unvan: "Alıcı A.Ş." },
+    satirlar: [{
+      miktar: 15, matrah: 1500, iskontoTutari: 0, kdvTutari: 300, kdvOrani: 20,
+      gibIstisnaKodu: null, birimFiyat: 100,
+      ytbHarcamaTipi: "01", ytbMakineAdi: "CNC Torna", ytbMakineId: "412578", ytbMakineSiraNo: "74563",
+      stok: { kod: "STK-1", ad: "Ürün", kdvOrani: 20 },
+      ...satirEkleri,
+    }],
+    ...ekler,
+  }) as never;
+
+  it("teşvik numarası girilen faturayı YATIRIMTESVIK profiliyle gönderir", () => {
+    const xml = faturaUblUret(fatura({}), satici);
+
+    expect(xml).toContain("<cbc:ProfileID>YATIRIMTESVIK</cbc:ProfileID>");
+    expect(xml).toContain("<cbc:InvoiceTypeCode>SATIS</cbc:InvoiceTypeCode>");
+    expect(xml).toContain('<cbc:ID schemeID="YTBNO">123456</cbc:ID>');
+    expect(xml).toContain("<cbc:IssueDate>2026-01-01</cbc:IssueDate>");
+    // Şemada yeri AdditionalDocumentReference'tan öncedir.
+    expect(xml.indexOf("<cac:ContractDocumentReference>")).toBeLessThan(xml.indexOf("<cac:Signature>"));
+  });
+
+  it("e-Arşiv'e düşen belgede tipin başına YTB gelir, profil EARSIVFATURA kalır", () => {
+    const xml = faturaUblUret(fatura({}), satici, { tur: "earsiv" });
+
+    expect(xml).toContain("<cbc:ProfileID>EARSIVFATURA</cbc:ProfileID>");
+    expect(xml).toContain("<cbc:InvoiceTypeCode>YTBSATIS</cbc:InvoiceTypeCode>");
+  });
+
+  it("harcama tipini ve makine kimliklerini satıra yazar", () => {
+    const xml = faturaUblUret(fatura({}), satici);
+
+    expect(xml).toContain("<cbc:ItemClassificationCode>01</cbc:ItemClassificationCode>");
+    // Kılavuz v1.2: makine adı Name değil ModelName.
+    expect(xml).toContain("<cbc:ModelName>CNC Torna</cbc:ModelName>");
+    expect(xml).toContain("<cbc:SerialID>412578</cbc:SerialID>");
+    expect(xml).toContain("<cbc:ProductTraceID>74563</cbc:ProductTraceID>");
+  });
+
+  it("makine kimliklerini yalnız harcama tipi 01'de yazar", () => {
+    const xml = faturaUblUret(fatura({}, { ytbHarcamaTipi: "02" }), satici);
+
+    expect(xml).toContain("<cbc:ItemClassificationCode>02</cbc:ItemClassificationCode>");
+    expect(xml).not.toContain("<cbc:SerialID>");
+    expect(xml).not.toContain("<cbc:ProductTraceID>");
+  });
+
+  it("istisnalı belgede vazgeçilen KDV'yi yazar ve toplama katmaz", () => {
+    const xml = faturaUblUret(
+      fatura(
+        { senaryo: "istisna", toplamKdv: 0, genelToplam: 1500 },
+        { kdvOrani: 0, kdvTutari: 0, gibIstisnaKodu: "308" },
+      ),
+      satici,
+    );
+
+    // Alınmayan KDV alt toplamda görünür, -1 toplama katılmayacağını söyler.
+    expect(xml).toContain("<cbc:CalculationSequenceNumeric>-1</cbc:CalculationSequenceNumeric>");
+    expect(xml).toContain('<cbc:TaxAmount currencyID="TRY">300.00</cbc:TaxAmount>');
+    expect(xml).toContain("<cbc:TaxExemptionReasonCode>308</cbc:TaxExemptionReasonCode>");
+    // Belge toplamı KDV'siz kalır.
+    expect(xml).toContain('<cbc:PayableAmount currencyID="TRY">1500.00</cbc:PayableAmount>');
+  });
+
+  it("teşvik numarası olmayan faturaya hiçbir YTB alanı yazılmaz", () => {
+    const xml = faturaUblUret(fatura({ ytbNo: null, ytbTarihi: null }), satici);
+
+    expect(xml).not.toContain("YATIRIMTESVIK");
+    expect(xml).not.toContain("ContractDocumentReference");
+    expect(xml).not.toContain("ItemClassificationCode");
+    expect(xml).not.toContain("ModelName");
   });
 });

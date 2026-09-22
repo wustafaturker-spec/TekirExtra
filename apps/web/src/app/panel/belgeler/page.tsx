@@ -178,7 +178,16 @@ export default function BelgelerSayfasi() {
   const [tur, setTur] = useState<Tur>("teklif");
   const [yon, setYon] = useState<Yon>("satis");
   const [cariId, setCariId] = useState("");
+  const [faturaId, setFaturaId] = useState("");
+  const [sevkiyatFaturalari, setSevkiyatFaturalari] = useState<{ id: string; no: string | null; tarih: string }[]>([]);
   const [depoId, setDepoId] = useState("");
+  useEffect(() => {
+    setFaturaId("");
+    if (tur !== "irsaliye" || yon !== "satis" || !cariId) { setSevkiyatFaturalari([]); return; }
+    let aktif = true;
+    void api<{ id: string; no: string | null; tarih: string }[]>(`/belgeler/sevkiyat-bekleyen-faturalar?cariId=${encodeURIComponent(cariId)}`).then((sonuc) => { if (aktif) setSevkiyatFaturalari(sonuc); }).catch(() => { if (aktif) setSevkiyatFaturalari([]); });
+    return () => { aktif = false; };
+  }, [tur, yon, cariId]);
   const [tarih, setTarih] = useState(bugunTR());
   const [gecerlilik, setGecerlilik] = useState("");
   const [aciklama, setAciklama] = useState("");
@@ -389,6 +398,7 @@ export default function BelgelerSayfasi() {
           tarih,
           gecerlilikTarihi: tur === "teklif" && gecerlilik ? gecerlilik : undefined,
           cariId,
+          faturaId: tur === "irsaliye" && yon === "satis" ? faturaId || null : null,
           // STK-07: rezerv ve stok etkisi bu depoya işlenir
           depoId: depoId || null,
           dovizCinsi,
@@ -715,6 +725,14 @@ export default function BelgelerSayfasi() {
           {tur === "irsaliye" && (
             <div className="document-editor__section">
               <h4 className="document-editor__section-title">Sevkiyat</h4>
+              {/* EBLG-76: sevkten önce kesilmiş fatura; numarası e-İrsaliyeye yazılır. */}
+              {yon === "satis" && sevkiyatFaturalari.length > 0 && <Field label="Önceden düzenlenen fatura">
+                <Select value={faturaId} onChange={(e) => setFaturaId(e.target.value)}>
+                  <option value="">Bu sevkiyat için önceden fatura düzenlenmedi</option>
+                  {sevkiyatFaturalari.map((f) => <option key={f.id} value={f.id}>{f.no} · {new Date(f.tarih).toLocaleDateString("tr-TR")}</option>)}
+                </Select>
+                <small className="muted">Seçilen faturanın numarası ve tarihi e-İrsaliyeye yazılır.</small>
+              </Field>}
               <div className="document-fields document-fields--belge">
                 <Field label="Fiili Sevk Tarihi ve Saati">
                   <Input type="datetime-local" value={fiiliSevkZamani} onChange={(e) => setFiiliSevkZamani(e.target.value)} />

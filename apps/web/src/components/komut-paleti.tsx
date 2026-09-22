@@ -22,6 +22,8 @@ import { ArrowRight, CornerDownLeft, Search } from "lucide-react";
 import { api } from "@/lib/api";
 import { TUM_SAYFALAR, type MenuOge } from "@/lib/menu";
 import { rolMenuYoluGorebilir } from "@/lib/rol-yetkileri";
+import { ebelgeYoluGorunur } from "@/lib/ebelge-yollari";
+import type { EbelgeUygulamalari } from "@tekirextra/shared";
 
 interface PaletSonucu {
   anahtar: string;
@@ -39,8 +41,9 @@ interface FaturaKaydi { id: string; no: string | null; tip: string; genelToplam:
 const KAYIT_ARAMA_GECIKMESI = 220;
 const EN_FAZLA_SAYFA = 7;
 
-function sayfaSonuclari(rol: string | null, sorgu: string): PaletSonucu[] {
-  const gorunur = TUM_SAYFALAR.filter((sayfa) => rolMenuYoluGorebilir(rol, sayfa.href));
+function sayfaSonuclari(rol: string | null, sorgu: string, ebelgeUygulamalari: EbelgeUygulamalari | null): PaletSonucu[] {
+  // EBLG-77: menüde gizlenen e-belge ekranı palette de çıkmamalı.
+  const gorunur = TUM_SAYFALAR.filter((sayfa) => rolMenuYoluGorebilir(rol, sayfa.href) && ebelgeYoluGorunur(ebelgeUygulamalari, sayfa.href));
   if (!sorgu) {
     return gorunur.slice(0, EN_FAZLA_SAYFA).map((sayfa) => ({
       anahtar: `sayfa:${sayfa.href}`, baslik: sayfa.baslik, grup: "Sayfalar", href: sayfa.href, ikon: sayfa.ikon,
@@ -65,10 +68,13 @@ function sayfaSonuclari(rol: string | null, sorgu: string): PaletSonucu[] {
 
 export function KomutPaleti({
   rol,
+  ebelgeUygulamalari = null,
   acik,
   setAcik,
 }: {
   rol: string | null;
+  /** EBLG-77: kapalı e-belge uygulamasının sayfaları listelenmez. */
+  ebelgeUygulamalari?: EbelgeUygulamalari | null;
   acik: boolean;
   setAcik: (acik: boolean | ((onceki: boolean) => boolean)) => void;
 }) {
@@ -81,7 +87,7 @@ export function KomutPaleti({
   const listeRef = useRef<HTMLUListElement>(null);
   const tetikleyiciRef = useRef<HTMLElement | null>(null);
 
-  const sonuclar = useMemo(() => [...sayfaSonuclari(rol, sorgu.trim()), ...kayitlar], [rol, sorgu, kayitlar]);
+  const sonuclar = useMemo(() => [...sayfaSonuclari(rol, sorgu.trim(), ebelgeUygulamalari), ...kayitlar], [rol, sorgu, kayitlar, ebelgeUygulamalari]);
 
   const kapat = useCallback(() => {
     setAcik(false);

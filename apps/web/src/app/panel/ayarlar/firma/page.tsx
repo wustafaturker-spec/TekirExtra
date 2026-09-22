@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiHata, tokenAl, tokenYaz } from "@/lib/api";
 import { Alert, Badge, Button, ButtonLabel, Card, Field, Input, PageHeader, Select } from "@/components/ui";
-import { ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, SGK_TANIMSIZ_KOD } from "@tekirextra/shared";
+import { EBELGE_UYGULAMALARI, ebelgeKullanilmiyor, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, SGK_TANIMSIZ_KOD, type EbelgeUygulamaKodu, type EbelgeUygulamalari } from "@tekirextra/shared";
 
 interface Logo {
   id: string;
@@ -36,6 +36,11 @@ interface Firma {
   sgkIlaveFaturaTipi: string | null;
   sgkMukellefKodu: string | null;
   sgkMukellefAdi: string | null;
+  /** EBLG-77: firmanın kendi mükellefiyetleri; null "otomatik" demektir. */
+  efaturaMukellefi: boolean | null;
+  earsivMukellefi: boolean | null;
+  eirsaliyeMukellefi: boolean | null;
+  ebelgeUygulamalari?: EbelgeUygulamalari;
   /** e-Belge gönderimini durduran eksikler; boşsa gönderilebilir. */
   ebelgeEksikleri: string[];
   abonelik: {
@@ -54,11 +59,27 @@ const iletisimOku = (f: Firma) => Object.fromEntries(ILETISIM_ALANLARI.map((a) =
 
 const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
 
+/** Seçimin altındaki açıklama: geçerli durum ve nereden geldiği (EBLG-77). */
+function uygulamaAciklamasi(kod: EbelgeUygulamaKodu, uygulamalar: EbelgeUygulamalari | undefined): string {
+  const durum = uygulamalar?.[kod];
+  const deger = durum?.acik === null || durum === undefined
+    ? "Bilinmiyor"
+    : durum.acik ? "Kayıtlı" : "Kayıtlı değil";
+  const kaynak = durum?.kaynak === "elle" ? "firma ayarı" : durum?.kaynak === "entegrator" ? "GİB mükellef listesi" : "belirlenemedi";
+  const ek = kod === "eirsaliye"
+    ? " e-İrsaliye, e-Fatura'ya kayıtlı olmayı gerektirir."
+    : kod === "efatura"
+      ? " Kapalıysa alıcı mükellef olsa bile belge e-Arşiv olarak düzenlenir."
+      : "";
+  return `Geçerli durum: ${deger} (${kaynak}).${ek}`;
+}
+
 export default function FirmaAyarlariSayfasi() {
   const yonlendir = useRouter();
   const [firma, setFirma] = useState<Firma | null>(null);
   const [unvan, setUnvan] = useState("");
   const [vergiDairesi, setVergiDairesi] = useState("");
+  const [mukellefiyetler, setMukellefiyetler] = useState<Record<EbelgeUygulamaKodu, boolean | null>>({ efatura: null, earsiv: null, eirsaliye: null });
   const [iletisim, setIletisim] = useState<Record<IletisimAlani, string>>(BOS_ILETISIM);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   // Mükellef kodu/adı yalnız sağlık gruplarında istenir; etiketleri de gruptan gelir.
@@ -88,6 +109,7 @@ export default function FirmaAyarlariSayfasi() {
       setFirma(veri);
       setUnvan(veri.unvan);
       setVergiDairesi(veri.vergiDairesi ?? "");
+      setMukellefiyetler({ efatura: veri.efaturaMukellefi, earsiv: veri.earsivMukellefi, eirsaliye: veri.eirsaliyeMukellefi });
       setIletisim(iletisimOku(veri));
       if (veri.logo) {
         void yukleLogo(veri.logo.id);
@@ -123,6 +145,9 @@ export default function FirmaAyarlariSayfasi() {
         body: JSON.stringify({
           unvan: unvan || undefined,
           vergiDairesi: vergiDairesi || undefined,
+          efaturaMukellefi: mukellefiyetler.efatura,
+          earsivMukellefi: mukellefiyetler.earsiv,
+          eirsaliyeMukellefi: mukellefiyetler.eirsaliye,
           // Boş alan "sil" demektir; sunucu null olarak kaydeder.
           ...iletisim,
         }),
@@ -130,6 +155,7 @@ export default function FirmaAyarlariSayfasi() {
       setBasari("Firma bilgileri başarıyla güncellendi.");
       setFirma(guncel);
       setIletisim(iletisimOku(guncel));
+      void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Güncelleme hatası");
     } finally {
@@ -283,6 +309,27 @@ export default function FirmaAyarlariSayfasi() {
             <Field label="Vergi Dairesi">
               <Input value={vergiDairesi} onChange={(e) => setVergiDairesi(e.target.value)} placeholder="Ör. Kadıköy Vergi Dairesi" />
             </Field>
+            {/*
+              * EBLG-77: firma hangi e-belge uygulamalarına kayıtlı? Kapalı
+              * uygulamanın ekranları menüden kalkar, uçları reddedilir; ikisi
+              * de kapalıysa fatura kağıda basılır.
+              */}
+            {EBELGE_UYGULAMALARI.map((uygulama) => (
+              <Field key={uygulama.kod} label={`${uygulama.ad} mükellefiyeti`}>
+                <Select
+                  value={mukellefiyetler[uygulama.kod] === null ? "otomatik" : String(mukellefiyetler[uygulama.kod])}
+                  onChange={(e) => setMukellefiyetler({ ...mukellefiyetler, [uygulama.kod]: e.target.value === "otomatik" ? null : e.target.value === "true" })}
+                >
+                  <option value="otomatik">{uygulama.kod === "earsiv" ? "e-Fatura mükellefiyetini izle" : "GİB mükellef listesinden belirle"}</option>
+                  <option value="true">Evet, kayıtlıyız</option>
+                  <option value="false">Hayır, kayıtlı değiliz</option>
+                </Select>
+                <small className="muted">{uygulamaAciklamasi(uygulama.kod, firma?.ebelgeUygulamalari)}</small>
+              </Field>
+            ))}
+            {firma?.ebelgeUygulamalari && ebelgeKullanilmiyor(firma.ebelgeUygulamalari) && (
+              <Alert tone="warning">Firma e-Fatura ve e-Arşiv uygulamalarına kayıtlı değil; faturalar e-belge olarak gönderilmez, kendi şablonumuzla kağıda basılır.</Alert>
+            )}
             {/* EBLG-62: e-Fatura, e-Arşiv ve e-İrsaliye'nin satıcı tarafına ve PDF'lere yazılır. */}
             {firma && firma.ebelgeEksikleri.length > 0 && (
               <Alert tone="warning">{firma.ebelgeEksikleri.join(" ")} Bu bilgiler olmadan e-belge gönderilemez.</Alert>

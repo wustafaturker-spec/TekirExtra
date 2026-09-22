@@ -13,6 +13,7 @@ import {
 import { z } from "zod";
 import { Public } from "../auth/public.decorator";
 import { Roller } from "../auth/roller.decorator";
+import { ebelgeUygulamalariCozTenant } from "../ebelge/ebelge-uygulamalari.service";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import {
@@ -46,6 +47,10 @@ const firmaGuncelleSemasi = z.object({
   sgkIlaveFaturaTipi: z.union([z.enum(ILAVE_FATURA_TIPLERI.map((t) => t.kod) as [string, ...string[]]), z.literal("")]).transform((d) => d || null).nullable().optional(),
   sgkMukellefKodu: serbestMetin(40),
   sgkMukellefAdi: serbestMetin(200),
+  // EBLG-77: firmanın kendi e-belge mükellefiyetleri; null "otomatik" demektir.
+  efaturaMukellefi: z.boolean().nullable().optional(),
+  earsivMukellefi: z.boolean().nullable().optional(),
+  eirsaliyeMukellefi: z.boolean().nullable().optional(),
 });
 
 /** Firma ekranının okuduğu alanlar; e-belge eksikleri de bununla hesaplanır. */
@@ -54,6 +59,9 @@ const FIRMA_ALANLARI = {
   adres: true, ilce: true, il: true, postaKodu: true, telefon: true, eposta: true, webSitesi: true, mersisNo: true, ticaretSicilNo: true,
   araciKurumVkn: true, araciKurumEtiket: true, araciKurumUnvan: true,
   sgkIlaveFaturaTipi: true, sgkMukellefKodu: true, sgkMukellefAdi: true,
+  efaturaMukellefi: true,
+  earsivMukellefi: true,
+  eirsaliyeMukellefi: true,
   abonelik: { select: { planKodu: true, durum: true, faturaEpostasi: true, donemBaslangici: true, donemSonu: true } },
 } as const;
 
@@ -91,6 +99,8 @@ export class TenantController {
         select: FIRMA_ALANLARI,
       });
       if (!tenant) return null;
+      // EBLG-76/77: ekranda hem elle seçim hem listeden gelen geçerli durum gösterilir.
+      const ebelgeUygulamalari = await ebelgeUygulamalariCozTenant(tx, tenant);
 
       const logo = await tx.ek.findFirst({
         where: { sahipTur: "firma", sahipId: tenantId },
@@ -101,6 +111,7 @@ export class TenantController {
       // EBLG-62: e-belge gönderimini durduracak eksikler ekranda gösterilir.
       return {
         ...tenant,
+        ebelgeUygulamalari,
         logo,
         ebelgeEksikleri: firmaEbelgeEksikleri(tenant),
       };
@@ -131,6 +142,7 @@ export class TenantController {
       // EBLG-62: e-belge gönderimini durduracak eksikler ekranda gösterilir.
       return {
         ...tenant,
+        ebelgeUygulamalari: await ebelgeUygulamalariCozTenant(tx, tenant),
         logo,
         ebelgeEksikleri: firmaEbelgeEksikleri(tenant),
       };

@@ -500,6 +500,11 @@ export class FaturaService {
         toplamTutar: s.toplamTutar.toFixed(2),
         gibIstisnaKodu: s.gibIstisnaKodu,
         idisEtiketNo: s.idisEtiketNo,
+        // EBLG-78: yatırım teşvik harcama tipi ve makine kimlikleri.
+        ytbHarcamaTipi: s.ytbHarcamaTipi ?? null,
+        ytbMakineAdi: s.ytbMakineAdi ?? null,
+        ytbMakineId: s.ytbMakineId ?? null,
+        ytbMakineSiraNo: s.ytbMakineSiraNo ?? null,
         sarjUniteSeriNo: s.sarjUniteSeriNo,
       })),
       ebelge: kayit.ebelge && { ...kayit.ebelge, takiliGonderim: takiliRezervasyonMu(kayit.ebelge) },
@@ -599,6 +604,9 @@ export class FaturaService {
           ihracKayitliKodu: girdi.ihracKayitliKodu ?? null,
           // İDİS (EBLG-72): sevkiyat no doluysa belge IDIS profiliyle gider.
           idisSevkiyatNo: girdi.idisSevkiyatNo ? idisNormalize(girdi.idisSevkiyatNo) : null,
+          // EBLG-78: numara doluysa belge YATIRIMTESVIK profiliyle gider.
+          ytbNo: girdi.ytbNo?.trim() || null,
+          ytbTarihi: girdi.ytbTarihi ? new Date(girdi.ytbTarihi) : null,
           // Özel matrah: KDV satış bedeline dahildir, belge düzeyinde bildirilir.
           ozelMatrahKodu: girdi.ozelMatrahKodu ?? null,
           ozelMatrahTutari: girdi.ozelMatrahKodu ? D(girdi.ozelMatrahTutari ?? "0") : null,
@@ -663,6 +671,11 @@ export class FaturaService {
             // (EBLG-71/72); biçim denetimi gönderimde yapılır.
             idisEtiketNo: orijinalSatir.idisEtiketNo ? idisNormalize(orijinalSatir.idisEtiketNo) : null,
             sarjUniteSeriNo: orijinalSatir.sarjUniteSeriNo?.trim() || null,
+            // EBLG-78: yatırım teşvik harcama tipi ve makine kimlikleri.
+            ytbHarcamaTipi: orijinalSatir.ytbHarcamaTipi?.trim() || null,
+            ytbMakineAdi: orijinalSatir.ytbMakineAdi?.trim() || null,
+            ytbMakineId: orijinalSatir.ytbMakineId?.trim() || null,
+            ytbMakineSiraNo: orijinalSatir.ytbMakineSiraNo?.trim() || null,
             projeId: orijinalSatir.projeId,
             projeAltKirilimId: orijinalSatir.projeAltKirilimId,
           },
@@ -713,6 +726,8 @@ export class FaturaService {
       earsivGonderimSekli: girdi.earsivGonderimSekli ?? (fatura.earsivGonderimSekli as "elektronik" | "kagit"),
       ihracKayitliKodu: girdi.ihracKayitliKodu !== undefined ? girdi.ihracKayitliKodu : fatura.ihracKayitliKodu,
       idisSevkiyatNo: girdi.idisSevkiyatNo !== undefined ? girdi.idisSevkiyatNo : fatura.idisSevkiyatNo,
+      ytbNo: girdi.ytbNo !== undefined ? girdi.ytbNo : fatura.ytbNo,
+      ytbTarihi: girdi.ytbTarihi !== undefined ? girdi.ytbTarihi : fatura.ytbTarihi ?? null,
       ozelMatrahKodu: girdi.ozelMatrahKodu !== undefined ? girdi.ozelMatrahKodu : fatura.ozelMatrahKodu,
       ozelMatrahTutari: girdi.ozelMatrahTutari !== undefined ? girdi.ozelMatrahTutari : fatura.ozelMatrahTutari?.toString(),
       ozelMatrahOrani: girdi.ozelMatrahOrani !== undefined ? girdi.ozelMatrahOrani : fatura.ozelMatrahOrani?.toString(),
@@ -740,6 +755,10 @@ export class FaturaService {
           gibIstisnaKodu: s.gibIstisnaKodu,
           idisEtiketNo: s.idisEtiketNo,
           sarjUniteSeriNo: s.sarjUniteSeriNo,
+          ytbHarcamaTipi: s.ytbHarcamaTipi,
+          ytbMakineAdi: s.ytbMakineAdi,
+          ytbMakineId: s.ytbMakineId,
+          ytbMakineSiraNo: s.ytbMakineSiraNo,
           projeId: (s as any).projeId ?? undefined,
           projeAltKirilimId: (s as any).projeAltKirilimId ?? undefined,
         })),
@@ -803,6 +822,11 @@ export class FaturaService {
             // (EBLG-71/72); biçim denetimi gönderimde yapılır.
             idisEtiketNo: orijinalSatir.idisEtiketNo ? idisNormalize(orijinalSatir.idisEtiketNo) : null,
             sarjUniteSeriNo: orijinalSatir.sarjUniteSeriNo?.trim() || null,
+            // EBLG-78: yatırım teşvik harcama tipi ve makine kimlikleri.
+            ytbHarcamaTipi: orijinalSatir.ytbHarcamaTipi?.trim() || null,
+            ytbMakineAdi: orijinalSatir.ytbMakineAdi?.trim() || null,
+            ytbMakineId: orijinalSatir.ytbMakineId?.trim() || null,
+            ytbMakineSiraNo: orijinalSatir.ytbMakineSiraNo?.trim() || null,
             projeId: orijinalSatir.projeId,
             projeAltKirilimId: orijinalSatir.projeAltKirilimId,
           },
@@ -834,6 +858,9 @@ export class FaturaService {
           })), birlesikGirdi.ihracKayitliKodu, birlesikGirdi.ozelMatrahKodu, sgkFaturasiMi(fatura.cari?.vknTckn), guncelSarjTuru.turu),
           ihracKayitliKodu: birlesikGirdi.ihracKayitliKodu,
           idisSevkiyatNo: birlesikGirdi.idisSevkiyatNo ? idisNormalize(birlesikGirdi.idisSevkiyatNo) : null,
+          // EBLG-78: yatırım teşvik belge no/tarihi.
+          ytbNo: birlesikGirdi.ytbNo?.trim() || null,
+          ytbTarihi: birlesikGirdi.ytbTarihi ? new Date(birlesikGirdi.ytbTarihi) : null,
           ozelMatrahKodu: birlesikGirdi.ozelMatrahKodu ?? null,
           ozelMatrahTutari: birlesikGirdi.ozelMatrahKodu ? D(birlesikGirdi.ozelMatrahTutari ?? "0") : null,
           ozelMatrahOrani: birlesikGirdi.ozelMatrahKodu ? D(birlesikGirdi.ozelMatrahOrani ?? "0") : null,
@@ -1559,6 +1586,8 @@ export class FaturaService {
     ozelMatrahTutari?: Prisma.Decimal | null;
     ozelMatrahOrani?: Prisma.Decimal | null;
     idisSevkiyatNo?: string | null;
+    ytbNo?: string | null;
+    ytbTarihi?: Date | null;
     sarjPlaka?: string | null;
     sarjBaslangic?: Date | null;
     sarjBitis?: Date | null;
@@ -1644,6 +1673,9 @@ export class FaturaService {
       ozelMatrahOrani: k.ozelMatrahOrani ? D(k.ozelMatrahOrani).toFixed(2) : null,
       // İDİS ve şarj alanları (EBLG-71/72); PDF ve sihirbaz bunları okur.
       idisSevkiyatNo: k.idisSevkiyatNo ?? null,
+      // Yatırım teşvik belgesi (EBLG-78): numara doluysa belge YTB kapsamında.
+      ytbNo: k.ytbNo ?? null,
+      ytbTarihi: k.ytbTarihi ? k.ytbTarihi.toISOString().slice(0, 10) : null,
       sarjPlaka: k.sarjPlaka ?? null,
       sarjBaslangic: k.sarjBaslangic ? k.sarjBaslangic.toISOString() : null,
       sarjBitis: k.sarjBitis ? k.sarjBitis.toISOString() : null,

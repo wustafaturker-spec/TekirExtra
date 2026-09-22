@@ -45,6 +45,10 @@ export interface UblFatura {
   faturaTipKodu: string;
   tarih: string;
   vadeTarihi?: string;
+  /** Belge düzeyindeki serbest notlar (`cbc:Note`); ibareler burada taşınır. */
+  notlar: string[];
+  /** EBLG-76: irsaliye yerine geçen faturada fiili sevk anı. */
+  sevk?: { tarih: string; saat?: string };
   dovizCinsi: string;
   /** Dövizli belgede 1 döviz = kaç TL (`PricingExchangeRate`); TRY belgede yok. */
   kur?: number;
@@ -108,6 +112,15 @@ function dizi(deger: unknown): Dugum[] {
   if (Array.isArray(deger)) return deger.filter((d) => nesne(d) !== undefined) as Dugum[];
   const n = nesne(deger);
   return n ? [n] : [];
+}
+
+/**
+ * Tekrarlı metin elemanları (`cbc:Note` gibi). `dizi()` burada işe yaramaz:
+ * o yalnız nesne düğümleri döndürür, not ise çoğu belgede düz string gelir.
+ */
+function metinListesi(deger: unknown): string[] {
+  if (deger === undefined || deger === null) return [];
+  return (Array.isArray(deger) ? deger : [deger]).map(metin).filter(Boolean);
 }
 
 /** Düğümün metin değeri: düz string ya da öznitelikli düğümün `#text`i. */
@@ -275,6 +288,16 @@ export function faturaUblOku(xml: string): UblFatura {
     metin(yol(fatura, "PaymentTerms", "PaymentDueDate")) ||
     metin(yol(fatura, "PaymentTerms", "SettlementPeriod", "EndDate"));
 
+  /*
+   * EBLG-76: irsaliye yerine geçen faturada sevk anı `Delivery/Despatch`
+   * içindedir. Birden fazla `cac:Delivery` olabilir (internet satışının
+   * teslimat bloğu da aynı adı taşır), bu yüzden sevk taşıyan ilki alınır.
+   */
+  const sevkDugumu = dizi(fatura.Delivery)
+    .map((teslimat) => yol(teslimat, "Despatch"))
+    .find((despatch) => metin(yol(despatch, "ActualDespatchDate")));
+  const sevkTarihi = metin(yol(sevkDugumu, "ActualDespatchDate"));
+
   return {
     uuid: metin(fatura.UUID),
     belgeNo: metin(fatura.ID),
@@ -282,6 +305,8 @@ export function faturaUblOku(xml: string): UblFatura {
     faturaTipKodu: metin(fatura.InvoiceTypeCode) || "SATIS",
     tarih: metin(fatura.IssueDate),
     vadeTarihi: vadeTarihi || undefined,
+    notlar: metinListesi(fatura.Note),
+    sevk: sevkTarihi ? { tarih: sevkTarihi, saat: metin(yol(sevkDugumu, "ActualDespatchTime")) || undefined } : undefined,
     dovizCinsi: metin(fatura.DocumentCurrencyCode) || "TRY",
     kur: kurOku(fatura),
     gonderen: partyOku(yol(fatura, "AccountingSupplierParty", "Party")),

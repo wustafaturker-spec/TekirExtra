@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api, tokenAl, tokenYaz } from "@/lib/api";
 import { rolMenuYoluGorebilir } from "@/lib/rol-yetkileri";
+import { ebelgeYoluGorunur } from "@/lib/ebelge-yollari";
+import type { EbelgeUygulamalari } from "@tekirextra/shared";
 import { ThemeConfiguratorDrawer } from "@/components/theme-configurator-drawer";
 import { KomutPaleti } from "@/components/komut-paleti";
 import { AYARLAR, MENU, menuOgesiAktifMi, type MenuOge } from "@/lib/menu";
@@ -68,6 +70,8 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const router = useRouter();
   const [aktifArama, setAktifArama] = useState("");
   const [rol, setRol] = useState<string | null>(null);
+  // EBLG-77: firma kayıtlı olmadığı e-belge uygulamasının ekranlarını görmez.
+  const [ebelgeUygulamalari, setEbelgeUygulamalari] = useState<EbelgeUygulamalari | null>(null);
   const [menuAcik, setMenuAcik] = useState(false);
   const [sidebarDaraltildi, setSidebarDaraltildi] = useState(false);
   // İlk SSR çıktısı ile tarayıcı çıktısı aynı olmalı; kullanıcı tercihi mount sonrası okunur.
@@ -92,11 +96,12 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const mobilMenuRef = useRef<HTMLElement>(null);
   const bildirimTetikleyiciRef = useRef<HTMLButtonElement | null>(null);
   const bildirimPanelRef = useRef<HTMLElement>(null);
+  const menudeGorunur = (href: string) => rolMenuYoluGorebilir(rol, href) && ebelgeYoluGorunur(ebelgeUygulamalari, href);
   const gorunurMenu = MENU
-    .map((alan) => ({ ...alan, ogeler: alan.ogeler.filter((oge) => rolMenuYoluGorebilir(rol, oge.href)) }))
+    .map((alan) => ({ ...alan, ogeler: alan.ogeler.filter((oge) => menudeGorunur(oge.href)) }))
     .filter((alan) => alan.ogeler.length > 0);
-  const gorunurAyarlar = AYARLAR.filter((oge) => rolMenuYoluGorebilir(rol, oge.href));
-  const sayfaYetkili = rolMenuYoluGorebilir(rol, pathname);
+  const gorunurAyarlar = AYARLAR.filter((oge) => menudeGorunur(oge.href));
+  const sayfaYetkili = menudeGorunur(pathname);
 
   useEffect(() => { setAktifArama(window.location.search); }, [pathname]);
   useEffect(() => {
@@ -121,6 +126,9 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
       const bildirimleriYenile = () => api<{ rol: string }>("/auth/ben")
         .then(async (b) => {
           setRol(b.rol);
+          // Kapalı uygulamanın ekranları menüden kalkar (EBLG-77); istek
+          // düşerse menü olduğu gibi kalır, uçları guard korur.
+          void api<EbelgeUygulamalari>("/ebelge/uygulamalar").then(setEbelgeUygulamalari).catch(() => undefined);
           const [ozet, liste] = await Promise.all([
             api<BildirimOzeti>("/bildirimler/ozet"),
             api<{ kayitlar: BildirimTeslimati[] }>("/bildirimler?limit=8"),
@@ -419,7 +427,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
         </aside>
       )}
 
-      <KomutPaleti acik={paletAcik} rol={rol} setAcik={setPaletAcik} />
+      <KomutPaleti acik={paletAcik} ebelgeUygulamalari={ebelgeUygulamalari} rol={rol} setAcik={setPaletAcik} />
 
       <main className="app-main" id="ana-icerik" tabIndex={-1}>
         <div className="app-content">
@@ -430,8 +438,14 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
           ) : sayfaYetkili ? children : (
             <section aria-labelledby="yetkisiz-baslik" className="card empty-state" role="alert">
               <span aria-hidden="true" className="empty-state__icon">🔒</span>
-              <h1 id="yetkisiz-baslik">Bu sayfaya erişim yetkiniz yok</h1>
-              <p>Hesabınıza tanımlı rol bu modülü görüntülemeye izin vermiyor.</p>
+              {/* EBLG-77: kapalı uygulama rol eksikliğinden ayrı anlatılır. */}
+              {rolMenuYoluGorebilir(rol, pathname) ? (<>
+                <h1 id="yetkisiz-baslik">Bu ekran firmanızda kapalı</h1>
+                <p>Firma bu e-belge uygulamasına kayıtlı değil. Ayarlar &gt; Firma ekranından mükellefiyeti belirtebilirsiniz.</p>
+              </>) : (<>
+                <h1 id="yetkisiz-baslik">Bu sayfaya erişim yetkiniz yok</h1>
+                <p>Hesabınıza tanımlı rol bu modülü görüntülemeye izin vermiyor.</p>
+              </>)}
               <Link className="btn btn--primary" href={rol === "b2b_bayi" ? "/panel/b2b" : "/panel"}>Yetkili olduğum alana dön</Link>
             </section>
           )}

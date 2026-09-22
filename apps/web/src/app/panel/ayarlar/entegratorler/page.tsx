@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiHata, tokenAl, tokenYaz } from "@/lib/api";
+import { uygulamaAcik, type EbelgeUygulamalari } from "@tekirextra/shared";
 import { Alert, Badge, Button, ButtonLabel, Card, Field, Input, PageHeader } from "@/components/ui";
 
 interface Baglanti {
@@ -54,11 +55,15 @@ export default function EntegratorAyarlariSayfasi() {
   const [testOrtami, setTestOrtami] = useState(false);
   const [islemde, setIslemde] = useState<string | null>(null); // Yüklenme durumu için
   const [mukellefListesi, setMukellefListesi] = useState<MukellefListesi | null>(null);
+  // EBLG-77: mükellef listesi yalnız e-Fatura kanalında anlamlıdır; e-Arşiv
+  // kullanan firmada bölüm hiç gösterilmez (uç da guard ile kapalıdır).
+  const [ebelgeUygulamalari, setEbelgeUygulamalari] = useState<EbelgeUygulamalari | null>(null);
 
   const yukle = useCallback(async () => {
     try {
       setBaglantilar(await api<Baglanti[]>("/baglantilar"));
       // Liste durumu bağlantıdan bağımsız okunur; bağlantı yoksa uç boş döner.
+      setEbelgeUygulamalari(await api<EbelgeUygulamalari>("/ebelge/uygulamalar").catch(() => null));
       setMukellefListesi(await api<MukellefListesi>("/ebelge/mukellef-listesi").catch(() => null));
     } catch (h) {
       if (h instanceof ApiHata && h.durum === 401) {
@@ -206,6 +211,7 @@ export default function EntegratorAyarlariSayfasi() {
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
 
+      {(!ebelgeUygulamalari || uygulamaAcik(ebelgeUygulamalari, "efatura") || ebelgeUygulamalari.efatura.acik === null) && (
       <Card>
         <div className="between" style={{ alignItems: "flex-start" }}>
           <div>
@@ -240,6 +246,7 @@ export default function EntegratorAyarlariSayfasi() {
           </Button>
         </div>
       </Card>
+      )}
 
       <div className="stack">
         {SAGLAYICILAR.map((s) => {

@@ -38,6 +38,20 @@ export function ebelgeYedekPdfHtml(
   const paraBirimi = f.dovizCinsi === "TRY" ? "TL" : f.dovizCinsi;
   const profil = PROFIL_ADLARI[f.profilId] ?? f.profilId;
 
+  /*
+   * EBLG-76: irsaliye yerine geçen faturada ibare ve fiili sevk anı belgenin
+   * kendisinden okunur (`cbc:Note` + `Delivery/Despatch`), çünkü sevkin kanıtı
+   * faturadır. İbare belgede yoksa uydurulmaz; yalnız belgede yazan basılır.
+   */
+  // Okuyucu notları hep doldurur; yine de eksik alanı hataya çevirmiyoruz
+  // (ubl-oku'nun tolere edici çizgisi).
+  const sevkIbaresi = (f.notlar ?? []).find((not) => not.includes("irsaliye yerine geçer"));
+  const sevkNotu = f.sevk || sevkIbaresi
+    ? `<div class="kutu" style="margin-top:12px;font-size:9pt">
+        ${sevkIbaresi ? `<strong>${kacis(sevkIbaresi)}</strong>` : ""}${f.sevk ? `${sevkIbaresi ? "<br>" : ""}Fiili sevk: ${tarihBicim(f.sevk.tarih)}${f.sevk.saat ? ` ${kacis(f.sevk.saat.slice(0, 5))}` : ""}` : ""}
+      </div>`
+    : "";
+
   const satirlar = f.satirlar
     .map(
       (s) => `<tr>
@@ -114,7 +128,7 @@ export function ebelgeYedekPdfHtml(
 <table style="margin-top:12px;margin-left:auto;border:1px solid #e5e7eb;border-radius:4px;font-size:9pt">
   ${toplamlar}
 </table>
-${secenekler.kendiBelgemiz ? "" : `<p style="margin-top:14px;color:#6b7280;font-size:8pt">${YEDEK_NOTU}</p>`}`;
+${sevkNotu}${secenekler.kendiBelgemiz ? "" : `<p style="margin-top:14px;color:#6b7280;font-size:8pt">${YEDEK_NOTU}</p>`}`;
 
   const sayfa = sayfaSablonu({
     baslik: profil.toLocaleUpperCase("tr-TR"),

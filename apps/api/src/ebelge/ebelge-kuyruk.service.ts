@@ -1,9 +1,10 @@
 import { BadRequestException, Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, NotFoundException, ServiceUnavailableException, forwardRef } from "@nestjs/common";
 import { Job, Queue, QueueEvents, Worker } from "bullmq";
 import { PrismaClient } from "@prisma/client";
-import type { Rol } from "@tekirextra/shared";
+import { uygulamaAcik, type EbelgeUygulamalari, type Rol } from "@tekirextra/shared";
 import { aktifBaglam, baglamlaCalistir } from "../core/istek-baglami";
 import { MetricsService } from "../core/observability/metrics.service";
+import { ebelgeUygulamalariCozTenant } from "./ebelge-uygulamalari.service";
 import { EbelgeService } from "./ebelge.service";
 import { EirsaliyeService, eirsaliyeSorguKosulu } from "./eirsaliye.service";
 import { AZAMI_FATURA_SORGU_SURELERI, faturaSorguKosulu } from "./fatura-sorgu-kosulu";
@@ -353,20 +354,34 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
     if (!yonetimUrl) { this.logger.warn("Periyodik e-Belge işleri için DATABASE_URL_MIGRATE tanımlı değil"); this.zamanlamaCalisiyor = false; return; }
     const yonetim = new PrismaClient({ datasourceUrl: yonetimUrl });
     try {
-      const tenantlar = await yonetim.tenant.findMany({ where: { baglantilar: { some: { aile: "ebelge", durum: "aktif" } } }, select: { id: true } });
+      const tenantlar = await yonetim.tenant.findMany({
+        where: { baglantilar: { some: { aile: "ebelge", durum: "aktif" } } },
+        // EBLG-77: kapalı uygulamanın periyodik işi hiç açılmaz.
+        select: { id: true, vkn: true, efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: true },
+      });
+      const uygulamalar = new Map<string, EbelgeUygulamalari>();
+      for (const tenant of tenantlar) {
+        uygulamalar.set(tenant.id, await ebelgeUygulamalariCozTenant(yonetim, tenant));
+      }
 
       // Mükellef listesi kiracıdan bağımsız ve global; tur başına en fazla bir
-      // kez, o da günlük aralık dolduysa kuyruğa girer (EBLG-10).
-      if (tenantlar[0] && (await this.ebelgeService.mukellefSenkronVaktiGeldi())) {
-        await baglamlaCalistir({ tenantId: tenantlar[0].id, userId: SISTEM_KULLANICISI, rol: "muhasebe" }, () => this.mukellefSenkronKuyrugaEkle());
+      // kez, o da günlük aralık dolduysa kuyruğa girer (EBLG-10). Liste yalnız
+      // e-Fatura kanalında anlamlıdır: hiçbir kiracı e-Fatura kullanmıyorsa
+      // indirilmez. Durumu bilinmeyen kiracı için indirilir — bilinmezliği
+      // zaten listenin kendisi çözecek.
+      const listeKullanan = tenantlar.find((t) => uygulamalar.get(t.id)?.efatura.acik !== false);
+      if (listeKullanan && (await this.ebelgeService.mukellefSenkronVaktiGeldi())) {
+        await baglamlaCalistir({ tenantId: listeKullanan.id, userId: SISTEM_KULLANICISI, rol: "muhasebe" }, () => this.mukellefSenkronKuyrugaEkle());
       }
 
       for (const tenant of tenantlar) {
+        const tenantUygulamalari = uygulamalar.get(tenant.id);
         await baglamlaCalistir({ tenantId: tenant.id, userId: SISTEM_KULLANICISI, rol: "muhasebe" }, async () => {
           // Gelen belge taraması kursörle ilerler; aralık dolmadan yeni iş
           // açmak aynı tarih penceresini tekrar sorgulamak olurdu (EBLG-11).
+          // Gelen kutusu yalnız e-Fatura mükellefinde vardır (EBLG-77).
           const kursor = await yonetim.ebelgeGelenKursor.findUnique({ where: { tenantId: tenant.id }, select: { sonCekimAt: true } });
-          if (!kursor || Date.now() - kursor.sonCekimAt.getTime() >= GELEN_TARAMA_ARALIK_MS) {
+          if (tenantUygulamalari && uygulamaAcik(tenantUygulamalari, "efatura") && (!kursor || Date.now() - kursor.sonCekimAt.getTime() >= GELEN_TARAMA_ARALIK_MS)) {
             await this.gelenBelgeleriKuyrugaEkle();
           }
 
@@ -382,9 +397,11 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
           // EBLG-36: giden e-İrsaliye durumları da kiracı başına tek işte
           // sorgulanır. Kiracının yanıt süresi ayarı işte uygulanır; burada en
           // uzun süreyle yalnız iş açılıp açılmayacağına bakılır.
-          const bekleyenIrsaliye = await yonetim.eirsaliyeKayit.count({
-            where: eirsaliyeSorguKosulu(tenant.id, Date.now(), EIRSALIYE_AZAMI_YANIT_GUNU),
-          });
+          const bekleyenIrsaliye = tenantUygulamalari && uygulamaAcik(tenantUygulamalari, "eirsaliye")
+            ? await yonetim.eirsaliyeKayit.count({
+                where: eirsaliyeSorguKosulu(tenant.id, Date.now(), EIRSALIYE_AZAMI_YANIT_GUNU),
+              })
+            : 0;
           if (bekleyenIrsaliye > 0) await this.irsaliyeDurumlariKuyrugaEkle();
         });
       }

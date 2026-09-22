@@ -1,12 +1,14 @@
 /**
  * GİB UBL-TR kod listeleri (FTR-21).
  *
- * Kaynak: `docs/e-belge/.../UBL-TR Kod Listeleri` — belgenin kendi sürüm
- * numarası 1.17'dir (dosya adı 1.16 der). Kodlar UBL'e olduğu gibi yazıldığı
- * için liste dışı bir değer ne arayüzden ne API'den kabul edilir.
+ * Kaynak: GİB'in yayımladığı "UBL-TR Kod Listeleri" kılavuzu, **sürüm 1.43**
+ * (Temmuz 2026; `UBLTR_1.2.1_Kilavuzlar.zip` içinden). Liste 1.17'de kalmıştı;
+ * EBLG-78 ile tam istisna 329–344 ve kısmi istisna 241–242 eklendi, birkaç
+ * kodun adı kılavuzdaki tam metniyle değiştirildi. Kodlar UBL'e olduğu gibi
+ * yazıldığı için liste dışı bir değer ne arayüzden ne API'den kabul edilir.
  */
 
-export const GIB_KOD_LISTESI_SURUMU = "UBL-TR 1.17";
+export const GIB_KOD_LISTESI_SURUMU = "UBL-TR 1.43";
 
 export type IstisnaTuru = "kismi" | "tam";
 
@@ -58,6 +60,8 @@ export const KDV_ISTISNA_KODLARI: readonly IstisnaKodu[] = [
   { kod: "238", tur: "kismi", ad: "17/4-u Varlıkların Varlık Kiralama Şirketlerine Devri İle Bu Varlıkların Varlık Kiralama Şirketlerince Kiralanması ve Devralınan Kuruma Devri" },
   { kod: "239", tur: "kismi", ad: "17/4-y Taşınmazların Finansal Kiralama Şirketlerine Devri, Finansal Kiralama Şirketi Tarafından Devredene Kiralanması ve Devri" },
   { kod: "240", tur: "kismi", ad: "17/4-z Patentli Veya Faydalı Model Belgeli Buluşa İlişkin Gayri Maddi Hakların Kiralanması, Devri ve Satışı" },
+  { kod: "241", tur: "kismi", ad: "TürkAkım Gaz Boru Hattı Projesine İlişkin Anlaşmanın (9/b) Maddesinde Yer Alan Hizmetler" },
+  { kod: "242", tur: "kismi", ad: "KDV 17/4-ö md. Gümrük Antrepoları, Geçici Depolama Yerleri ile Gümrüklü Sahalarda, İthalat ve İhracat İşlemlerine konu mallar ile transit rejim kapsamında işlem gören mallar için verilen ardiye, depolama ve terminal hizmetleri" },
   { kod: "250", tur: "kismi", ad: "Diğerleri" },
   { kod: "301", tur: "tam", ad: "11/1-a Mal İhracatı" },
   { kod: "302", tur: "tam", ad: "11/1-a Hizmet İhracatı" },
@@ -65,7 +69,7 @@ export const KDV_ISTISNA_KODLARI: readonly IstisnaKodu[] = [
   { kod: "304", tur: "tam", ad: "13/a Deniz Hava ve Demiryolu Taşıma Araçlarının Teslimi İle İnşa, Tadil, Bakım ve Onarımları" },
   { kod: "305", tur: "tam", ad: "13/b Deniz ve Hava Taşıma Araçları İçin Liman Ve Hava Meydanlarında Yapılan Hizmetler" },
   { kod: "306", tur: "tam", ad: "13/c Petrol Aramaları ve Petrol Boru Hatlarının İnşa ve Modernizasyonuna İlişkin Yapılan Teslim ve Hizmetler" },
-  { kod: "307", tur: "tam", ad: "Zenginleştirme Ve Rafinaj Faaliyetlerine İlişkin Teslim Ve Hizmetler[KDVGUT- (II/8-4)]" },
+  { kod: "307", tur: "tam", ad: "13/c Maden Arama, Altın, Gümüş ve Platin Madenleri İçin İşletme, Zenginleştirme Ve Rafinaj Faaliyetlerine İlişkin Teslim Ve Hizmetler[KDVGUT-(II/8-4)]" },
   { kod: "308", tur: "tam", ad: "13/d Teşvikli Yatırım Mallarının Teslimi" },
   { kod: "309", tur: "tam", ad: "13/e Liman Ve Hava Meydanlarının İnşası, Yenilenmesi Ve Genişletilmesi" },
   { kod: "310", tur: "tam", ad: "13/f Ulusal Güvenlik Amaçlı Teslim ve Hizmetler" },
@@ -76,7 +80,7 @@ export const KDV_ISTISNA_KODLARI: readonly IstisnaKodu[] = [
   { kod: "315", tur: "tam", ad: "14/3 İhraç Konusu Eşyayı Taşıyan Kamyon, Çekici ve Yarı Romorklara Yapılan Motorin Teslimleri" },
   { kod: "316", tur: "tam", ad: "11/1-a Serbest Bölgelerdeki Müşteriler İçin Yapılan Fason Hizmetler" },
   { kod: "317", tur: "tam", ad: "17/4-s Engellilerin Eğitimleri, Meslekleri ve Günlük Yaşamlarına İlişkin Araç- Gereç ve Bilgisayar Programları" },
-  { kod: "318", tur: "tam", ad: "Yaptırılan Sağlık Tesislerine İlişkin Projeler ve 652 Sayılı Kanun Hükmünde Kararnameye Göre Kiralama Karşılığı Yaptırılan Eğitim Öğretim Tesislerine İlişkin Projelere İlişkin Teslim ve Hizmetler" },
+  { kod: "318", tur: "tam", ad: "Geçici 29 3996 Sayılı Kanuna Göre Yap-İşlet-Devret Modeli Çerçevesinde Gerçekleştirilecek Projeler, 3359 Sayılı Kanuna Göre Kiralama Karşılığı Yaptırılan Sağlık Tesislerine İlişkin Projeler ve 652 Sayılı Kanun Hükmünde Kararnameye Göre Kiralama Karşılığı Yaptırılan Eğitim Öğretim Tesislerine İlişkin Projelere İlişkin Teslim ve Hizmetler" },
   { kod: "319", tur: "tam", ad: "13/g Başbakanlık Merkez Teşkilatına Yapılan Araç Teslimleri" },
   { kod: "320", tur: "tam", ad: "Geçici 16 (6111 sayılı K.) İSMEP Kapsamında İstanbul İl Özel İdaresi'ne Bağlı Olarak Faaliyet Gösteren \"İstanbul Proje Koordinasyon Birimi\"ne Yapılacak Teslim ve Hizmetler" },
   { kod: "321", tur: "tam", ad: "Geçici 26 Birleşmiş Milletler (BM) ile Kuzey Atlantik Antlaşması Teşkilatı (NATO) Temsilcilikleri ve Bu Teşkilatlara Bağlı Program, Fon ve Özel İhtisas Kuruluşları ile İktisadi İşbirliği ve Kalkınma Teşkilatına (OECD) Resmi Kullanımları İçin Yapılacak Mal Teslimi ve Hizmet İfaları, Bunların Sosyal ve Ekonomik Yardım Amacıyla Bedelsiz Olarak Yapacakları Mal Teslimi ve Hizmet İfaları İle İlgili Bunlara Yapılan Mal Teslimi ve Hizmet İfaları" },
@@ -87,6 +91,23 @@ export const KDV_ISTISNA_KODLARI: readonly IstisnaKodu[] = [
   { kod: "326", tur: "tam", ad: "13/ı Gıda, Tarım ve Hayvancılık Bakanlığı Tarafından Tescil Edilmiş Gübrelerin Teslimi" },
   { kod: "327", tur: "tam", ad: "13/ı Gıda, Tarım ve Hayvancılık Bakanlığı Tarafından Tescil Edilmiş Gübrelerin İçeriğinde Bulunan Hammaddelerin Gübre Üreticilerine Teslimi" },
   { kod: "328", tur: "tam", ad: "13/i Konut veya İşyeri Teslimleri" },
+  { kod: "329", tur: "tam", ad: "Eğitimde Fırsatları Artırma ve Teknolojiyi İyileştirme Hareketi (FATİH) projesi Kapsamında Milli Eğitim Bakanlığına Yapılacak Mal Teslimi ve Hizmet İfası" },
+  { kod: "330", tur: "tam", ad: "KDV 13/j md. Organize Sanayi Bölgeleri ile Küçük Sanayi Sitelerinin İnşasına İlişkin Teslim ve Hizmetler" },
+  { kod: "331", tur: "tam", ad: "KDV 13/m md. Ar-Ge, Yenilik ve Tasarım Faaliyetlerinde Kullanılmak Üzere Yapılan Yeni Makina ve Teçhizat Teslimlerinde İstisna" },
+  { kod: "332", tur: "tam", ad: "KDV Geçici 39. Md. İmalat Sanayiinde Kullanılmak Üzere Yapılan Yeni Makina ve Teçhizat Teslimlerinde İstisna" },
+  { kod: "333", tur: "tam", ad: "KDV 13/k md. Kapsamında Genel ve Özel Bütçeli Kamu İdarelerine, İl Özel İdarelerine, Belediyelere ve Köylere bağışlanan Tesislerin İnşasına İlişkin İstisna" },
+  { kod: "334", tur: "tam", ad: "KDV 13/l md. Kapsamında Yabancılara Verilen Sağlık Hizmetlerinde İstisna" },
+  { kod: "335", tur: "tam", ad: "KDV 13/n Basılı Kitap ve Süreli Yayınların Teslimleri" },
+  { kod: "336", tur: "tam", ad: "Geçici 46 UEFA Müsabakaları Kapsamında Yapılacak Teslim ve Hizmetler" },
+  { kod: "337", tur: "tam", ad: "Türk Akım Gaz Boru Hattı Projesine İlişkin Anlaşmanın (9/h) Maddesi Kapsamındaki Gaz Taşıma Hizmetleri" },
+  { kod: "338", tur: "tam", ad: "İmalatçıların Mal İhracatları" },
+  /** EBLG-78: yatırım teşvik belgeli inşaat işlerinde kullanılır. */
+  { kod: "339", tur: "tam", ad: "İmalat Sanayii ile Turizme Yönelik Yatırım Teşvik Belgesi Kapsamındaki İnşaat İşlerine İlişkin Teslim ve Hizmetler" },
+  { kod: "340", tur: "tam", ad: "Elektrik Motorlu Taşıt Araçlarının Geliştirilmesine Yönelik Mühendislik Hizmetleri" },
+  { kod: "341", tur: "tam", ad: "Afetzedelere Bağışlanacak Konutların İnşasına İlişkin İstisna" },
+  { kod: "342", tur: "tam", ad: "Genel Bütçeli Kamu İdarelerine Bağışlanacak Taşınmazların İnşasına İlişkin İstisna" },
+  { kod: "343", tur: "tam", ad: "Genel Bütçeli Kamu İdarelerine Bağışlanacak Konutların Yabancı Devlet Kurum ve Kuruluşlarına Teslimine İlişkin İstisna" },
+  { kod: "344", tur: "tam", ad: "13/o Milli Savunma ve İç Güvenlik İhtiyaçlarında Kullanılmak Üzere Taşıt Teslimi" },
   { kod: "350", tur: "tam", ad: "Diğerleri" },
   { kod: "351", tur: "tam", ad: "KDV - İstisna Olmayan Diğer" },
 ];

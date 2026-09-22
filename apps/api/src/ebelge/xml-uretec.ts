@@ -19,6 +19,15 @@ import {
   idisNormalize,
   IDIS_PROFILI,
   idisBelgesiMi,
+  irsaliyeYerineIbaresi,
+  VAZGECILEN_KDV_SIRA_NO,
+  vazgecilenKdv,
+  YTB_MAKINE_HARCAMA_TIPI,
+  YTB_PROFILI,
+  ytbBelgesiMi,
+  ytbFaturaTipi,
+  ytbHarcamaTipiBul,
+  ytbNormalize,
   KAMU_PROFILI,
   PASAPORT_TARIHI_BILINMIYOR,
   YOLCU_BERABER_FATURA_TIPI,
@@ -88,7 +97,7 @@ export interface KamuUblBilgisi {
 export function faturaUblUret(
   fatura: Fatura & {
     satirlar: (FaturaSatir & {
-      stok: { kod: string; ad: string; tip?: string | null; gtipKodu?: string | null; mensei?: string | null };
+      stok: { kod: string; ad: string; tip?: string | null; gtipKodu?: string | null; mensei?: string | null; kdvOrani?: unknown };
     })[];
     /**
      * EBLG-55: alıcı adresi karttan gelir. Adresler okunmadan üretilen belgede
@@ -104,6 +113,7 @@ export function faturaUblUret(
     internetSatisi?: InternetSatisUblBilgisi;
     /** EBLG-58: iade faturasında iade edilen faturalar; sırasıyla yazılır. */
     iadeReferanslari?: { belgeNo: string; tarih: Date }[];
+    irsaliyeReferanslari?: { no: string; tarih: Date }[];
     /** Alıcı kamu idaresiyse; profil KAMU olur (SATIS ve IADE tiplerinde). */
     kamu?: KamuUblBilgisi;
     /** Yolcu beraberi (tax-free) satışı: yolcu ve aracı kurum. */
@@ -314,15 +324,34 @@ export function faturaUblUret(
    * önizlemesi, 2026-09-19). Tutarlar kuruşta toplanır; satır matrahlarının
    * toplamı belge matrahıdır (genel iskonto satırlara dağıtılmıştır).
    */
+  /*
+   * Yatırım teşvik (EBLG-78): teşvik belge numarası girilmiş fatura YTB
+   * kapsamındadır. İDİS gibi bir **profildir**, tip normal kurallarla türer;
+   * e-Arşiv'e düşerse tipin başına "YTB" gelir.
+   */
+  const ytb = ytbBelgesiMi(fatura.ytbNo) ? { no: ytbNormalize(fatura.ytbNo), tarih: fatura.ytbTarihi } : null;
+  /*
+   * "Vazgeçilen KDV" (kılavuz §2.1.4): istisnalı YTB faturasında KDV
+   * alınmasaydı doğacak tutar belgeye yazılır, ama fatura toplamına
+   * **eklenmez** — `CalculationSequenceNumeric = -1` bunu söyler. Oran satırın
+   * kendi oranı değildir (o sıfırdır), stok kartındaki normal orandır.
+   */
+  const vazgecilenOran = (satir: { kdvOrani: unknown; stok: { kdvOrani?: unknown } }) =>
+    ytb && fatura.senaryo === "istisna" && Number(satir.kdvOrani) === 0 ? Number(satir.stok.kdvOrani ?? 0) : 0;
+
   const kdvAltToplamlari = [...fatura.satirlar.reduce((gruplar, satir) => {
     const oran = Number(satir.kdvOrani);
     const kod = altToplamKodu(satir);
-    const anahtar = `${oran}|${kod ?? ""}`;
-    const grup = gruplar.get(anahtar) ?? { oran, kod, matrahKurus: 0, kdvKurus: 0 };
+    const vazgecilen = vazgecilenOran(satir);
+    // Vazgeçilen oran belge düzeyinde `Percent` olarak yazıldığı için gruplama
+    // anahtarına girer: aynı istisna kodundan farklı oranlı satırlar ayrılır.
+    const anahtar = `${oran}|${kod ?? ""}|${vazgecilen}`;
+    const grup = gruplar.get(anahtar) ?? { oran, kod, matrahKurus: 0, kdvKurus: 0, vazgecilenOran: vazgecilen, vazgecilenKurus: 0 };
     grup.matrahKurus += Math.round(Number(satir.matrah) * 100);
     grup.kdvKurus += Math.round(belgeKdvi(satir) * 100);
+    grup.vazgecilenKurus += Math.round(vazgecilenKdv(Number(satir.matrah), vazgecilen) * 100);
     return gruplar.set(anahtar, grup);
-  }, new Map<string, { oran: number; kod: string | null; matrahKurus: number; kdvKurus: number }>()).values()];
+  }, new Map<string, { oran: number; kod: string | null; matrahKurus: number; kdvKurus: number; vazgecilenOran: number; vazgecilenKurus: number }>()).values()];
 
   /**
    * Gerçek kişi alıcı. UBL-TR şematronu `schemeID="TCKN"` gördüğünde `cac:Person`
@@ -577,6 +606,27 @@ export function faturaUblUret(
 `
     : "";
 
+  /*
+   * İrsaliye yerine geçen fatura (EBLG-76): mal fatura beraberinde sevk
+   * edildiğinde ayrıca e-İrsaliye düzenlenmez, sevkin kanıtı faturanın
+   * kendisidir. Fiili sevk anı `cac:Delivery/cac:Despatch` ile, ibare ise
+   * `cbc:Note` ile gider — GİB'in genel XSLT'si sevk alanlarını basmaz, notu
+   * basar (EBLG-73'te vade tarihinde aynı tuzağa düşmüştük). Blok internet
+   * satışının `cac:Delivery`'sinden ayrı durur: o blok teslimat adresi ve
+   * kargoyu anlatır, bu blok sevk anını.
+   */
+  const irsaliyeYerine = fatura.sevkiyatYontemi === "irsaliye_yerine" ? anParcala(fatura.fiiliSevkZamani) : null;
+  const sevkBlogu = irsaliyeYerine
+    ? `
+  <cac:Delivery>
+    <cac:Despatch>
+      <cbc:ActualDespatchDate>${irsaliyeYerine.tarih}</cbc:ActualDespatchDate>
+      <cbc:ActualDespatchTime>${irsaliyeYerine.saat}</cbc:ActualDespatchTime>
+    </cac:Despatch>
+  </cac:Delivery>
+`
+    : "";
+
   /**
    * İhracatta teslimat satır düzeyinde bildirilir (GİB `IHRACAT.xml`): malın
    * teslim yeri, teslim şartı, GTİP (`RequiredCustomsID`) ve gönderilme şekli
@@ -641,14 +691,15 @@ export function faturaUblUret(
          xsi:schemaLocation="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2 UBL-Invoice-2.1.xsd">
   <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
   <cbc:CustomizationID>TR1.2</cbc:CustomizationID>
-  <cbc:ProfileID>${ihracat ? IHRACAT_PROFILI : yolcu ? YOLCU_BERABER_PROFILI : kamu ? KAMU_PROFILI : earsiv ? "EARSIVFATURA" : sarj ? SARJ_PROFILI : idis ? IDIS_PROFILI : fatura.efaturaProfili === "ticari" && !iadeSenaryosu && !sgk ? "TICARIFATURA" : "TEMELFATURA"}</cbc:ProfileID>
+  <cbc:ProfileID>${ihracat ? IHRACAT_PROFILI : yolcu ? YOLCU_BERABER_PROFILI : kamu ? KAMU_PROFILI : earsiv ? "EARSIVFATURA" : sarj ? SARJ_PROFILI : idis ? IDIS_PROFILI : ytb ? YTB_PROFILI : fatura.efaturaProfili === "ticari" && !iadeSenaryosu && !sgk ? "TICARIFATURA" : "TEMELFATURA"}</cbc:ProfileID>
   <cbc:ID>${no}</cbc:ID>
   <cbc:CopyIndicator>false</cbc:CopyIndicator>
   <cbc:UUID>${uuid}</cbc:UUID>
   <cbc:IssueDate>${tarihStr}</cbc:IssueDate>
   <cbc:IssueTime>${saatStr}</cbc:IssueTime>
-  <cbc:InvoiceTypeCode>${ihracat ? IHRACAT_FATURA_TIPI : yolcu ? YOLCU_BERABER_FATURA_TIPI : sgk ? SGK_FATURA_TIPI : senaryoUblKodu(fatura.senaryo)}</cbc:InvoiceTypeCode>${internet?.webAdresi ? `
-  <cbc:Note>${escape(`İnternet satışı — ${internet.webAdresi}`)}</cbc:Note>` : ""}
+  <cbc:InvoiceTypeCode>${ihracat ? IHRACAT_FATURA_TIPI : yolcu ? YOLCU_BERABER_FATURA_TIPI : sgk ? SGK_FATURA_TIPI : ytb ? ytbFaturaTipi(senaryoUblKodu(fatura.senaryo), earsiv ? "earsiv" : "efatura") : senaryoUblKodu(fatura.senaryo)}</cbc:InvoiceTypeCode>${internet?.webAdresi ? `
+  <cbc:Note>${escape(`İnternet satışı — ${internet.webAdresi}`)}</cbc:Note>` : ""}${irsaliyeYerine ? `
+  <cbc:Note>${escape(irsaliyeYerineIbaresi(earsiv ? "earsiv" : "efatura"))}</cbc:Note>` : ""}
   <cbc:DocumentCurrencyCode>${fatura.dovizCinsi}</cbc:DocumentCurrencyCode>${dovizli && ihracat ? `
   <cbc:TaxCurrencyCode>${IHRACAT_VERGI_PARA_BIRIMI}</cbc:TaxCurrencyCode>` : ""}
 ${sgk ? `  <cbc:AccountingCost>${escape(sgk.ilaveFaturaTipi)}</cbc:AccountingCost>
@@ -669,7 +720,14 @@ ${sgk ? `  <cbc:AccountingCost>${escape(sgk.ilaveFaturaTipi)}</cbc:AccountingCos
   <cac:OrderReference>
     <cbc:ID>${escape(fatura.siparisNo)}</cbc:ID>
     <cbc:IssueDate>${(fatura.siparisTarihi ?? fatura.tarih).toISOString().slice(0, 10)}</cbc:IssueDate>
-  </cac:OrderReference>` : ""}${iadeReferansBloklari}
+  </cac:OrderReference>` : ""}${iadeReferansBloklari}${(secenekler.irsaliyeReferanslari ?? []).map((i) => `
+  <cac:DespatchDocumentReference><cbc:ID>${escape(i.no)}</cbc:ID><cbc:IssueDate>${i.tarih.toISOString().slice(0, 10)}</cbc:IssueDate></cac:DespatchDocumentReference>`).join("")}${ytb ? `
+  <!-- EBLG-78: teşvik belge numarası ve tarihi; şemada yeri
+       DespatchDocumentReference ile AdditionalDocumentReference arasıdır. -->
+  <cac:ContractDocumentReference>
+    <cbc:ID schemeID="YTBNO">${escape(ytb.no)}</cbc:ID>${ytb.tarih ? `
+    <cbc:IssueDate>${new Date(ytb.tarih).toISOString().slice(0, 10)}</cbc:IssueDate>` : ""}
+  </cac:ContractDocumentReference>` : ""}
 
 ${earsiv ? `  <cac:AdditionalDocumentReference>
     <cbc:ID>${fatura.earsivGonderimSekli === "kagit" ? "KAGIT" : "ELEKTRONIK"}</cbc:ID>
@@ -768,16 +826,21 @@ ${aliciTckn && !gtbAlici ? `      <cac:Person>
       </cac:Person>` : ""}
     </cac:Party>
   </cac:AccountingCustomerParty>
-${yabanciAliciBlogu}${yolcuBlogu}${kamuAliciBlogu}${teslimatBlogu}${kamuOdemeBlogu}${vadeBlogu}
+${yabanciAliciBlogu}${yolcuBlogu}${kamuAliciBlogu}${teslimatBlogu}${sevkBlogu}${kamuOdemeBlogu}${vadeBlogu}
 ${kurBlogu}  <cac:TaxTotal>
     <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${(ozelMatrah ? ozelMatrah.kdv : tevkifatIade ? Number(fatura.toplamNetKdv) : Number(fatura.toplamKdv)).toFixed(2)}</cbc:TaxAmount>
 ${(ozelMatrah
     ? [{ matrahKurus: Math.round(ozelMatrah.tutar * 100), kdvKurus: Math.round(ozelMatrah.kdv * 100), oran: ozelMatrah.oran, kod: ozelMatrah.kod }]
     : kdvAltToplamlari
-  ).map((g) => `    <cac:TaxSubtotal>
+  ).map((g) => {
+    // EBLG-78: istisnalı YTB faturasında alt toplam, alınmayan KDV'yi taşır;
+    // `CalculationSequenceNumeric` -1 onun toplama katılmayacağını söyler.
+    const vazgecilen = "vazgecilenOran" in g && g.vazgecilenOran > 0;
+    return `    <cac:TaxSubtotal>
       <cbc:TaxableAmount currencyID="${fatura.dovizCinsi}">${(g.matrahKurus / 100).toFixed(2)}</cbc:TaxableAmount>
-      <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${(g.kdvKurus / 100).toFixed(2)}</cbc:TaxAmount>
-      <cbc:Percent>${g.oran.toFixed(2)}</cbc:Percent>
+      <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${((vazgecilen ? g.vazgecilenKurus : g.kdvKurus) / 100).toFixed(2)}</cbc:TaxAmount>${vazgecilen ? `
+      <cbc:CalculationSequenceNumeric>${VAZGECILEN_KDV_SIRA_NO}</cbc:CalculationSequenceNumeric>` : ""}
+      <cbc:Percent>${(vazgecilen ? g.vazgecilenOran : g.oran).toFixed(2)}</cbc:Percent>
       <cac:TaxCategory>${g.kod ? `
         <cbc:TaxExemptionReasonCode>${escape(g.kod)}</cbc:TaxExemptionReasonCode>
         <cbc:TaxExemptionReason>${escape(istisnaAciklamasi(g.kod))}</cbc:TaxExemptionReason>` : ""}
@@ -787,7 +850,8 @@ ${(ozelMatrah
         </cac:TaxScheme>
       </cac:TaxCategory>
     </cac:TaxSubtotal>
-`).join("")}  </cac:TaxTotal>
+`;
+  }).join("")}  </cac:TaxTotal>
 ${tevkifatBlogu}
   <cac:LegalMonetaryTotal>
     <cbc:LineExtensionAmount currencyID="${fatura.dovizCinsi}">${fatura.toplamBrut.toFixed(2)}</cbc:LineExtensionAmount>
@@ -835,7 +899,8 @@ ${tevkifatBlogu}
       <cac:TaxSubtotal>
         <cbc:TaxableAmount currencyID="${fatura.dovizCinsi}">${s.matrah.toFixed(2)}</cbc:TaxableAmount>
         <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${belgeKdvi(s).toFixed(2)}</cbc:TaxAmount>
-        <cbc:Percent>${s.kdvOrani.toFixed(2)}</cbc:Percent>
+${vazgecilenOran(s) > 0 ? `        <cbc:CalculationSequenceNumeric>${VAZGECILEN_KDV_SIRA_NO}</cbc:CalculationSequenceNumeric>
+` : ""}        <cbc:Percent>${s.kdvOrani.toFixed(2)}</cbc:Percent>
         <cac:TaxCategory>
           ${satirKodu(s) ? `<cbc:TaxExemptionReasonCode>${escape(satirKodu(s))}</cbc:TaxExemptionReasonCode>
           <cbc:TaxExemptionReason>${escape(istisnaAciklamasi(satirKodu(s)!))}</cbc:TaxExemptionReason>` : ""}
@@ -847,7 +912,9 @@ ${tevkifatBlogu}
       </cac:TaxSubtotal>
     </cac:TaxTotal>`}
     <cac:Item>
-      <cbc:Name>${escape(s.stok.ad)}</cbc:Name>
+      <cbc:Name>${escape(s.stok.ad)}</cbc:Name>${ytb && ytbNormalize(s.ytbMakineAdi) ? `
+      <!-- EBLG-78: makine adı kılavuz v1.2 ile Name'den ModelName'e taşındı. -->
+      <cbc:ModelName>${escape(ytbNormalize(s.ytbMakineAdi))}</cbc:ModelName>` : ""}
       <cac:SellersItemIdentification>
         <cbc:ID>${escape(s.stok.kod)}</cbc:ID>
       </cac:SellersItemIdentification>${idis && s.idisEtiketNo ? `
@@ -860,7 +927,14 @@ ${tevkifatBlogu}
       <cac:OriginCountry>
         <cbc:IdentificationCode>${ulkeKoduCoz(s.stok.mensei)}</cbc:IdentificationCode>
         <cbc:Name>${escape(menseiAdi(s.stok.mensei))}</cbc:Name>
-      </cac:OriginCountry>` : ""}
+      </cac:OriginCountry>` : ""}${ytb && ytbHarcamaTipiBul(s.ytbHarcamaTipi) ? `
+      <cac:CommodityClassification>
+        <cbc:ItemClassificationCode>${escape(s.ytbHarcamaTipi!)}</cbc:ItemClassificationCode>
+      </cac:CommodityClassification>` : ""}${ytb && s.ytbHarcamaTipi === YTB_MAKINE_HARCAMA_TIPI && (ytbNormalize(s.ytbMakineId) || ytbNormalize(s.ytbMakineSiraNo)) ? `
+      <cac:ItemInstance>${ytbNormalize(s.ytbMakineSiraNo) ? `
+        <cbc:ProductTraceID>${escape(ytbNormalize(s.ytbMakineSiraNo))}</cbc:ProductTraceID>` : ""}${ytbNormalize(s.ytbMakineId) ? `
+        <cbc:SerialID>${escape(ytbNormalize(s.ytbMakineId))}</cbc:SerialID>` : ""}
+      </cac:ItemInstance>` : ""}
     </cac:Item>
     <cac:Price>
       <cbc:PriceAmount currencyID="${fatura.dovizCinsi}">${s.birimFiyat.toFixed(4)}</cbc:PriceAmount>

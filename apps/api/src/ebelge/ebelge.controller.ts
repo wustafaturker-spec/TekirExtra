@@ -11,6 +11,8 @@ import {
 import type { Response } from "express";
 import { GelenEbelgeDurum } from "@prisma/client";
 import { Roller } from "../auth/roller.decorator";
+import { EbelgeUygulamasi } from "./ebelge-uygulamasi.decorator";
+import { EbelgeUygulamalariService } from "./ebelge-uygulamalari.service";
 import { EbelgeService } from "./ebelge.service";
 import { EbelgeKuyrukService } from "./ebelge-kuyruk.service";
 import { EbelgeGorunumService } from "./ebelge-gorunum.service";
@@ -24,9 +26,21 @@ export class EbelgeController {
     private readonly ebelgeService: EbelgeService,
     private readonly kuyrukService: EbelgeKuyrukService,
     private readonly gorunumService: EbelgeGorunumService,
+    private readonly uygulamalarService: EbelgeUygulamalariService,
   ) {}
 
+  /**
+   * EBLG-77: firmanın hangi e-belge uygulamalarına kayıtlı olduğu. Menü ve
+   * sihirbaz bunu okuyup kapalı yordamları hiç göstermez; uçları guard ayrıca
+   * korur. Rol kısıtı yoktur: menü her kullanıcıda doğru çizilmeli.
+   */
+  @Get("uygulamalar")
+  ebelgeUygulamalari() {
+    return this.uygulamalarService.uygulamalar();
+  }
+
   /** EBLG-27: gelen belgenin PDF görünümü; kaynak saklanan UBL'dir. */
+  @EbelgeUygulamasi("efatura")
   @Get("gelen/:id/pdf")
   async gelenPdf(@Param("id") id: string, @Res() res: Response) {
     this.pdfYanitla(res, await this.gorunumService.gelenPdf(id));
@@ -44,12 +58,14 @@ export class EbelgeController {
     res.send(pdf.buffer);
   }
 
+  @EbelgeUygulamasi("efatura", "earsiv")
   @Get("wizard/:faturaId")
   @Roller("muhasebe")
   async wizard(@Param("faturaId") faturaId: string) {
     return this.ebelgeService.wizardBilgisi(faturaId);
   }
 
+  @EbelgeUygulamasi("efatura", "earsiv")
   @Post("gonder/:faturaId")
   @Roller("muhasebe")
   async gonder(@Param("faturaId") faturaId: string, @Body() govde: unknown) {
@@ -62,6 +78,7 @@ export class EbelgeController {
    * gönderilecek hâliyle üretilip entegratörün önizleme ucundan geçirilir;
    * belge oluşmaz, numara harcanmaz.
    */
+  @EbelgeUygulamasi("efatura", "earsiv")
   @Post("onizle/:faturaId")
   @Roller("muhasebe")
   async onizle(@Param("faturaId") faturaId: string, @Body() govde: unknown) {
@@ -77,6 +94,7 @@ export class EbelgeController {
   private async sihirbazSeciminiKaydet(faturaId: string, govde: unknown) {
     const secim = ebelgeGonderSemasi.safeParse(govde ?? {});
     if (!secim.success) throw new BadRequestException(secim.error.issues.map((s) => s.message).join("; "));
+    if (secim.data.sevkiyat) await this.ebelgeService.sevkiyatBaglantisiniKaydet(faturaId, secim.data.sevkiyat);
     // İhracat alanları önizlemeden önce yazılır: eksikleri sihirbazda girilen
     // değerlerle değil, faturadaki son hâliyle denetleriz (EBLG-53).
     if (secim.data.ihracat) {
@@ -127,18 +145,22 @@ export class EbelgeController {
     return { kaydedildi: true };
   }
 
+  @EbelgeUygulamasi("efatura", "earsiv")
   @Get("kuyruk")
   @Roller("muhasebe")
   kuyrukListele() { return this.kuyrukService.listele(); }
 
+  @EbelgeUygulamasi("efatura", "earsiv")
   @Get("kuyruk/ozet")
   @Roller("muhasebe")
   kuyrukOzet() { return this.kuyrukService.ozet(); }
 
+  @EbelgeUygulamasi("efatura", "earsiv")
   @Post("kuyruk/:isId/yeniden-dene")
   @Roller("muhasebe")
   yenidenDene(@Param("isId") isId: string) { return this.kuyrukService.yenidenDene(isId); }
 
+  @EbelgeUygulamasi("efatura", "earsiv")
   @Post("sorgula/:faturaId")
   @Roller("muhasebe")
   async sorgula(@Param("faturaId") faturaId: string) {
@@ -146,6 +168,7 @@ export class EbelgeController {
     return this.kuyrukService.durumSorgulaKuyrugaEkle(faturaId);
   }
 
+  @EbelgeUygulamasi("earsiv")
   @Post("earsiv/:faturaId/iptal-bildir")
   @Roller("muhasebe")
   async earsivIptal(@Param("faturaId") faturaId: string, @Body() govde: unknown) {
@@ -154,6 +177,7 @@ export class EbelgeController {
     return this.ebelgeService.earsivIptalBildir(faturaId, sonuc.data);
   }
 
+  @EbelgeUygulamasi("earsiv")
   @Get("earsiv/raporlar")
   @Roller("muhasebe")
   async earsivRaporlar(@Query("baslangic") baslangic: string, @Query("bitis") bitis: string) {
@@ -162,6 +186,7 @@ export class EbelgeController {
     return this.ebelgeService.earsivRaporListele(sonuc.data.baslangic, sonuc.data.bitis);
   }
 
+  @EbelgeUygulamasi("earsiv")
   @Post("earsiv/raporlar/:uuid/durum")
   @Roller("muhasebe")
   async earsivRaporDurum(@Param("uuid") uuid: string) {
@@ -169,6 +194,7 @@ export class EbelgeController {
   }
 
   /** Rapor bölümünün GİB'e bildirilen tutarı; ekran satır bazında ister. */
+  @EbelgeUygulamasi("earsiv")
   @Get("earsiv/raporlar/:uuid/tutar")
   @Roller("muhasebe")
   async earsivRaporTutari(@Param("uuid") uuid: string) {
@@ -177,6 +203,7 @@ export class EbelgeController {
 
   // ─── GELEN KUTUSU (EBLG-05/06) ─────────────────────────────────────────────
 
+  @EbelgeUygulamasi("efatura")
   @Post("gelenleri-cek")
   @Roller("muhasebe")
   async gelenleriCek() {
@@ -188,18 +215,21 @@ export class EbelgeController {
 
   // ─── GİB MÜKELLEF LİSTESİ (EBLG-10) ────────────────────────────────────────
 
+  @EbelgeUygulamasi("efatura")
   @Get("mukellef-listesi")
   @Roller("muhasebe")
   mukellefListesiDurumu() {
     return this.ebelgeService.mukellefListesiDurumu();
   }
 
+  @EbelgeUygulamasi("efatura")
   @Post("mukellef-listesi/senkron")
   @Roller("muhasebe")
   mukellefListesiSenkron() {
     return this.ebelgeService.mukellefListesiSenkronEt();
   }
 
+  @EbelgeUygulamasi("efatura")
   @Post("gelen/xml-yukle")
   @Roller("muhasebe")
   async gelenXmlYukle(@Body() govde: unknown) {
@@ -212,6 +242,7 @@ export class EbelgeController {
     return this.ebelgeService.gelenXmlYukle(ayristirma.data.xml);
   }
 
+  @EbelgeUygulamasi("efatura")
   @Get("gelen")
   async gelenListele(@Query("durum") durum?: string) {
     if (durum && !GELEN_DURUMLARI.includes(durum as GelenEbelgeDurum)) {
@@ -222,11 +253,13 @@ export class EbelgeController {
     return this.ebelgeService.gelenListele(durum as GelenEbelgeDurum | undefined);
   }
 
+  @EbelgeUygulamasi("efatura")
   @Get("gelen/:id")
   async gelenGetir(@Param("id") id: string) {
     return this.ebelgeService.gelenGetir(id);
   }
 
+  @EbelgeUygulamasi("efatura")
   @Post("gelen/:id/onayla")
   @Roller("muhasebe")
   async gelenOnayla(@Param("id") id: string, @Body() govde: unknown) {
@@ -239,12 +272,14 @@ export class EbelgeController {
     return this.ebelgeService.gelenOnayla(id, ayristirma.data);
   }
 
+  @EbelgeUygulamasi("efatura")
   @Post("gelen/:id/taslak-iptal")
   @Roller("muhasebe")
   async gelenTaslakIptal(@Param("id") id: string) {
     return this.ebelgeService.gelenTaslakIptalEt(id);
   }
 
+  @EbelgeUygulamasi("efatura")
   @Post("gelen/:id/yanit")
   @Roller("muhasebe")
   async gelenYanit(@Param("id") id: string, @Body() govde: unknown) {

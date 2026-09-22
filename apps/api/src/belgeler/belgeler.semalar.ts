@@ -53,6 +53,7 @@ export const belgeOlusturSemasi = z.object({
   siparisNo: z.string().max(100).optional().nullable(),
   siparisTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)").optional().nullable(),
   cariId: z.string().uuid(),
+  faturaId: z.string().uuid().optional().nullable(),
   /** STK-07: rezerv/yoldaki ve stok etkisinin işleneceği depo; boşsa varsayılan */
   depoId: z.string().uuid().optional().nullable(),
   dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),

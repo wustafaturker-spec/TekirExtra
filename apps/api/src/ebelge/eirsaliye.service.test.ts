@@ -101,6 +101,12 @@ describe("EirsaliyeService UBL", () => {
     expect(ubl(belge)).not.toContain("OrderReference");
   });
 
+  it("önce düzenlenen faturanın numara ve tarihini e-İrsaliyeye yazar", () => {
+    const xml = ubl({ ...belge, fatura: { no: "FTR2026000000001", tarih: new Date("2026-09-09") } });
+    expect(xml).toContain("<cbc:ID>FTR2026000000001</cbc:ID><cbc:IssueDate>2026-09-09</cbc:IssueDate><cbc:DocumentType>FATURA</cbc:DocumentType>");
+    expect(xml.indexOf("<cac:AdditionalDocumentReference>")).toBeLessThan(xml.indexOf("<cac:Signature>"));
+  });
+
   it("alıcı tarafına karttaki adresi yazar (EBLG-55)", () => {
     const alici = ubl(belge).match(/<cac:DeliveryCustomerParty>[\s\S]*?<\/cac:DeliveryCustomerParty>/)![0];
 

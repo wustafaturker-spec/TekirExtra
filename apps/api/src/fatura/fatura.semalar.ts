@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { guncellemeSemasi } from "../core/sema";
-import { idisEngelleri, ihracKayitliHatalari, ozelMatrahHatalari, senaryoHatalari } from "@tekirextra/shared";
+import { idisEngelleri, ihracKayitliHatalari, ozelMatrahHatalari, senaryoHatalari, ytbEngelleri } from "@tekirextra/shared";
 
 const pozitifOndalik = z
   .union([z.string(), z.number()])
@@ -35,6 +35,11 @@ export const faturaSatirSemasi = z.object({
   idisEtiketNo: z.string().max(20).optional().nullable(),
   /** SARJANLIK faturasında şarj ünitesinin seri numarası (EBLG-71). */
   sarjUniteSeriNo: z.string().max(60).optional().nullable(),
+  /** EBLG-78: yatırım teşvik harcama tipi (01–04) ve makine-teçhizat bilgileri. */
+  ytbHarcamaTipi: z.string().max(2).optional().nullable(),
+  ytbMakineAdi: z.string().max(200).optional().nullable(),
+  ytbMakineId: z.string().max(60).optional().nullable(),
+  ytbMakineSiraNo: z.string().max(60).optional().nullable(),
   projeId: z.string().uuid().optional().nullable(),
   projeAltKirilimId: z.string().uuid().optional().nullable(),
 });
@@ -67,6 +72,9 @@ const faturaOlusturGovde = z.object({
   ihracKayitliKodu: z.string().optional().nullable(),
   /** İDİS sevkiyat numarası (EBLG-72): doluysa belge IDIS profiliyle gider. */
   idisSevkiyatNo: z.string().max(20).optional().nullable(),
+  /** EBLG-78: yatırım teşvik belge no/tarihi; no doluysa profil YATIRIMTESVIK. */
+  ytbNo: z.string().max(40).optional().nullable(),
+  ytbTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)").optional().nullable(),
   /** Özel matrah (KDV K. 23): kod, KDV'nin hesaplandığı matrah ve oranı. */
   ozelMatrahKodu: z.string().optional().nullable(),
   ozelMatrahTutari: pozitifOndalik.optional().nullable(),
@@ -100,7 +108,7 @@ const senaryolariDogrula = (
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["satirlar", hata.satirIndeksi, hata.alan], message: hata.mesaj });
   }
 };
-const faturaFinansalDogrula = (fatura: { idisSevkiyatNo?: string | null; ozelMatrahKodu?: string | null; ozelMatrahTutari?: string | null; ozelMatrahOrani?: string | null; satirlar?: Array<{ miktar?: string; birimFiyat?: string; iskontoOrani?: string; kdvOrani?: string; tevkifatKodu?: string | null; tevkifatOrani?: string | null; gibIstisnaKodu?: string | null }>; genelIskontoTutari?: string; dovizCinsi?: string; kur?: string; tip?: string; ihracKayitliKodu?: string | null }, ctx: z.RefinementCtx) => {
+const faturaFinansalDogrula = (fatura: { idisSevkiyatNo?: string | null; ytbNo?: string | null; ytbTarihi?: string | null; ozelMatrahKodu?: string | null; ozelMatrahTutari?: string | null; ozelMatrahOrani?: string | null; satirlar?: Array<{ miktar?: string; birimFiyat?: string; iskontoOrani?: string; kdvOrani?: string; tevkifatKodu?: string | null; tevkifatOrani?: string | null; gibIstisnaKodu?: string | null }>; genelIskontoTutari?: string; dovizCinsi?: string; kur?: string; tip?: string; ihracKayitliKodu?: string | null }, ctx: z.RefinementCtx) => {
   senaryolariDogrula(fatura, ctx);
   // İDİS: sevkiyat no girilmişse biçimi ve her satırın etiket numarası burada
   // denetlenir; gönderim aynı listeyi yeniden üretir (EBLG-72).
@@ -109,6 +117,30 @@ const faturaFinansalDogrula = (fatura: { idisSevkiyatNo?: string | null; ozelMat
     satirlar: (fatura.satirlar ?? []).map((satir, index) => ({ sira: index + 1, etiketNo: (satir as { idisEtiketNo?: string | null }).idisEtiketNo })),
   })) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: [engel.alan === "sevkiyatNo" ? "idisSevkiyatNo" : "satirlar"], message: engel.mesaj });
+  }
+  // EBLG-78: yatırım teşvik belge no girilmişse harcama tipi, istisna kodu ve
+  // makine kimlikleri burada denetlenir; gönderim aynı listeyi yeniden üretir.
+  for (const engel of ytbEngelleri({
+    ytbNo: fatura.ytbNo,
+    ytbTarihi: fatura.ytbTarihi,
+    satirlar: (fatura.satirlar ?? []).map((satir, index) => {
+      const ytb = satir as { ytbHarcamaTipi?: string | null; ytbMakineAdi?: string | null; ytbMakineId?: string | null; ytbMakineSiraNo?: string | null };
+      return {
+        sira: index + 1,
+        harcamaTipi: ytb.ytbHarcamaTipi,
+        makineAdi: ytb.ytbMakineAdi,
+        makineId: ytb.ytbMakineId,
+        makineSiraNo: ytb.ytbMakineSiraNo,
+        kdvOrani: Number(satir.kdvOrani ?? 0),
+        gibIstisnaKodu: satir.gibIstisnaKodu,
+      };
+    }),
+  })) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: engel.satirIndeksi === undefined ? [engel.alan === "ytbTarihi" ? "ytbTarihi" : "ytbNo"] : ["satirlar", engel.satirIndeksi],
+      message: engel.mesaj,
+    });
   }
   // Özel matrah: kod, matrah ve satır kuralları tek yerden (shared) denetlenir.
   if (fatura.ozelMatrahKodu && fatura.tip) {

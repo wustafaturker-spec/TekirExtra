@@ -80,6 +80,20 @@ export class BelgelerService {
     private readonly baglantilar: BaglantilarService,
   ) {}
 
+  /**
+   * EBLG-76: "fatura sevkten önce düzenlendi" denmiş, gönderilmiş faturalar.
+   * İrsaliye formunda bunlardan biri seçilir ve e-İrsaliyeye fatura referansı
+   * olarak yazılır.
+   */
+  async sevkiyatBekleyenFaturalar(cariId?: string) {
+    if (!cariId) return [];
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.fatura.findMany({
+      where: { tenantId, cariId, tip: "satis", durum: "kesin", sevkiyatYontemi: "fatura_once", ebelge: { is: { durum: { in: ["iletildi", "kabul"] } } } },
+      orderBy: { tarih: "desc" }, take: 50, select: { id: true, no: true, tarih: true },
+    }));
+  }
+
   // ─── CRUD ─────────────────────────────────────────────────────────────────
 
   async listele(
@@ -299,6 +313,11 @@ export class BelgelerService {
 
     const hesap = this.hesapla(girdi);
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      if (girdi.faturaId) {
+        if (girdi.tur !== "irsaliye" || girdi.yon !== "satis") throw new BadRequestException("Fatura bağlantısı yalnız satış irsaliyesinde kullanılabilir");
+        const fatura = await tx.fatura.findUnique({ where: { id: girdi.faturaId }, select: { tenantId: true, cariId: true, tip: true, durum: true, sevkiyatYontemi: true, no: true, ebelge: { select: { durum: true } } } });
+        if (!fatura || fatura.tenantId !== tenantId || fatura.cariId !== girdi.cariId || fatura.tip !== "satis" || fatura.durum !== "kesin" || fatura.sevkiyatYontemi !== "fatura_once" || !fatura.no || !fatura.ebelge || !["iletildi", "kabul"].includes(fatura.ebelge.durum)) throw new BadRequestException("Seçilen fatura bu müşteri için sevkten önce düzenlenmiş, gönderilmiş bir e-Belge olmalıdır");
+      }
       const belge = await tx.belge.create({
         data: {
           tenantId,
@@ -310,6 +329,7 @@ export class BelgelerService {
               ? new Date(girdi.gecerlilikTarihi)
               : null,
           cariId: girdi.cariId,
+          faturaId: girdi.faturaId ?? null,
           // EBLG-74: müşterinin sipariş referansı; e-İrsaliyeye OrderReference olur.
           siparisNo: girdi.siparisNo?.trim() || null,
           siparisTarihi: girdi.siparisTarihi ? new Date(girdi.siparisTarihi) : null,

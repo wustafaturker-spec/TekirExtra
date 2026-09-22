@@ -4,6 +4,9 @@ import {
   YOLCU_BERABER_ISTISNA_KODU,
   YOLCU_BERABER_PROFILI,
   idisBelgesiMi,
+  ytbBelgesiMi,
+  ytbHarcamaTipiBul,
+  ytbNormalize,
   idisNormalize,
   ihracKayitliKoduBul,
   ilaveFaturaTipiBul,
@@ -53,6 +56,11 @@ export interface FaturaPdfSatiri {
   toplamTutar: string;
   /** FTR-11: satır bazlı GİB istisna kodu (ör. 301). */
   gibIstisnaKodu?: string | null;
+  /** EBLG-78: yatırım teşvik harcama tipi ve makine kimlikleri. */
+  ytbHarcamaTipi?: string | null;
+  ytbMakineAdi?: string | null;
+  ytbMakineId?: string | null;
+  ytbMakineSiraNo?: string | null;
   /** EBLG-72: İDİS etiket numarası. */
   idisEtiketNo?: string | null;
   /** EBLG-71: SARJANLIK faturasında ünitenin seri numarası. */
@@ -115,6 +123,9 @@ export interface FaturaPdfVerisi {
   sarjEsuRaporlari?: { raporId: string; tarih: string }[] | null;
   /** İDİS (EBLG-72): sevkiyat numarası; doluysa belge İDİS kapsamındadır. */
   idisSevkiyatNo?: string | null;
+  /** Yatırım teşvik (EBLG-78): belge no doluysa fatura YTB kapsamındadır. */
+  ytbNo?: string | null;
+  ytbTarihi?: string | null;
 }
 
 /** EBLG-30: PDF'te gösterilen profil adı; UBL'deki ProfileID ile aynı ayrımdır. */
@@ -210,6 +221,29 @@ function idisBilgisi(f: FaturaPdfVerisi): string {
     .filter(Boolean);
   return `<p style="margin-top:10px;font-size:9pt">İDİS kapsamında teslim<br>Sevkiyat no: <strong>${kacis(idisNormalize(f.idisSevkiyatNo))}</strong>`
     + `${etiketler.length ? `<br>Etiket numaraları: ${etiketler.join(", ")}` : ""}</p>`;
+}
+
+/**
+ * Yatırım teşvik belge altı bilgisi (GİB YTB Fatura Teknik Kılavuzu v1.2):
+ * teşvik belgesi belge başına, harcama tipi ve makine kimlikleri satır
+ * başınadır. Kendi çıktımız bunları basar; e-belgede aynı alanlar UBL'de
+ * taşınır.
+ */
+function ytbBilgisi(f: FaturaPdfVerisi): string {
+  if (!ytbBelgesiMi(f.ytbNo)) return "";
+  const satirlar = f.satirlar
+    .map((satir, index) => {
+      const harcama = ytbHarcamaTipiBul(satir.ytbHarcamaTipi);
+      if (!harcama) return "";
+      const makine = [satir.ytbMakineAdi, satir.ytbMakineId ? `ID ${satir.ytbMakineId}` : "", satir.ytbMakineSiraNo ? `sıra ${satir.ytbMakineSiraNo}` : ""]
+        .filter(Boolean)
+        .join(", ");
+      return `${index + 1}. satır: ${kacis(`${harcama.kod} — ${harcama.ad}`)}${makine ? ` (${kacis(makine)})` : ""}`;
+    })
+    .filter(Boolean);
+  return `<p style="margin-top:10px;font-size:9pt">Yatırım teşvik belgesi kapsamında teslim<br>`
+    + `Teşvik belge no: <strong>${kacis(ytbNormalize(f.ytbNo))}</strong>${f.ytbTarihi ? ` (${tarihBicim(f.ytbTarihi)})` : ""}`
+    + `${satirlar.length ? `<br>${satirlar.join("<br>")}` : ""}</p>`;
 }
 
 /**
@@ -375,6 +409,7 @@ ${ozelMatrahBilgisi(f)}
 ${sgkBilgisi(f)}
 ${sarjBilgisi(f)}
 ${idisBilgisi(f)}
+${ytbBilgisi(f)}
 ${yolcuBeraberiBilgisi(f)}`;
 
   return sayfaSablonu({

@@ -50,6 +50,11 @@ export class BelgelerController {
     return this.belgelerService.listele(tur, yon, durum, arama, baslangic, bitis, imlec);
   }
 
+  @Get("sevkiyat-bekleyen-faturalar")
+  async sevkiyatBekleyenFaturalar(@Query("cariId") cariId?: string) {
+    return this.belgelerService.sevkiyatBekleyenFaturalar(cariId);
+  }
+
   /** EBLG-35: e-İrsaliye ve bağlı fatura durum geçmişi. */
   @Get(":id/durum-gecmisi")
   async durumGecmisi(@Param("id") id: string) {

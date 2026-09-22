@@ -1,4 +1,4 @@
-import { IADE_REFERANS_UST_SINIRI, odemeSekliGecerliMi, tasimaSekliGecerliMi, teslimSartiGecerliMi } from "@tekirextra/shared";
+import { IADE_REFERANS_UST_SINIRI, odemeSekliGecerliMi, SEVKIYAT_YONTEM_KODLARI, tasimaSekliGecerliMi, teslimSartiGecerliMi } from "@tekirextra/shared";
 import { z } from "zod";
 
 /** EBLG-05: onay ekranından gelen satır → stok kartı eşleştirmeleri. */
@@ -27,6 +27,18 @@ export const gelenYanitSemasi = z
 
 /** EBLG-26/53: sihirbazda seçilen e-Arşiv teslim şekli ve ihracat alanları; boşsa faturadaki kalır. */
 export const ebelgeGonderSemasi = z.object({
+  /**
+   * EBLG-76: sevkiyatın nasıl belgelendiği. `irsaliye` seçilen e-İrsaliyelere
+   * bağlanır, `fatura_once` sonra kesilecek irsaliyeyi bekler,
+   * `irsaliye_yerine` fiili sevk anını ister (fatura irsaliye yerine geçer).
+   */
+  sevkiyat: z
+    .object({
+      yontem: z.enum(SEVKIYAT_YONTEM_KODLARI),
+      irsaliyeIds: z.array(z.string().uuid()).max(50).default([]),
+      fiiliSevkZamani: z.iso.datetime({ offset: true, message: "Geçersiz sevk tarihi/saati" }).nullable().optional(),
+    })
+    .optional(),
   earsivGonderimSekli: z.enum(["elektronik", "kagit"]).optional(),
   ihracat: z
     .object({

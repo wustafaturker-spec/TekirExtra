@@ -2,11 +2,14 @@ import { BadRequestException, Body, Controller, Get, Param, Post, Query, Res } f
 import type { Response } from "express";
 import { GelenEirsaliyeDurum } from "@prisma/client";
 import { Roller } from "../auth/roller.decorator";
+import { EbelgeUygulamasi } from "./ebelge-uygulamasi.decorator";
 import { EbelgeGorunumService } from "./ebelge-gorunum.service";
 import { EirsaliyeService } from "./eirsaliye.service";
 import { gidenDurumSemasi, topluGonderSemasi } from "./eirsaliye.semalar";
 
 @Controller("ebelge/irsaliye")
+// EBLG-77: e-İrsaliye uygulamasına kayıtlı olmayan firmada tüm uçlar kapalı.
+@EbelgeUygulamasi("eirsaliye")
 export class EirsaliyeController {
   constructor(private readonly service: EirsaliyeService, private readonly gorunum: EbelgeGorunumService) {}
 

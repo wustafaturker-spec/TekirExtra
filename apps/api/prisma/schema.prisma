@@ -116,6 +116,12 @@ model Tenant {
   webSitesi      String? @map("web_sitesi")
   mersisNo       String? @map("mersis_no")
   ticaretSicilNo String? @map("ticaret_sicil_no")
+  /// EBLG-77: firmanın kendi e-belge mükellefiyetleri. null: GİB mükellef
+  /// listesinden belirlenir; true/false: firma ayarında elle söylenmiştir.
+  /// e-Arşiv listesi GİB'de yayınlanmadığı için otomatikte e-Faturayı izler.
+  efaturaMukellefi   Boolean? @map("efatura_mukellefi")
+  earsivMukellefi    Boolean? @map("earsiv_mukellefi")
+  eirsaliyeMukellefi Boolean? @map("eirsaliye_mukellefi")
   /// Yolcu beraberi (tax-free): KDV iadesini yapan aracı kurumun varsayılanı;
   /// sihirbazda faturaya özel değiştirilir.
   araciKurumVkn    String? @map("araci_kurum_vkn")
@@ -2060,6 +2066,19 @@ model Fatura {
   vadeTarihi           DateTime?       @map("vade_tarihi") @db.Date
   siparisNo            String?         @map("siparis_no")
   siparisTarihi        DateTime?       @map("siparis_tarihi") @db.Date
+  /// EBLG-78: yatırım teşvik belge numarası ve tarihi. Numara doluysa fatura
+  /// YATIRIMTESVIK profiliyle gider (e-Arşiv'de tip YTB önekli olur).
+  ytbNo                String?         @map("ytb_no")
+  ytbTarihi            DateTime?       @map("ytb_tarihi") @db.Date
+  /// EBLG-76: sevkiyatın nasıl belgelendiği. `irsaliye` seçilen e-İrsaliyelere
+  /// bağlanır, `fatura_once` sonradan kesilecek irsaliyeyi bekler,
+  /// `irsaliye_yerine` mal fatura beraberinde sevk edildiği için hiç irsaliye
+  /// düzenlenmediğini söyler. Boş: firma e-İrsaliye mükellefi değil ya da
+  /// sevkiyat hiç sorulmadı (yalnız hizmet satırı).
+  sevkiyatYontemi      String?         @map("sevkiyat_yontemi")
+  /// EBLG-76: irsaliye yerine geçen faturada malın fiilen sevk edildiği an;
+  /// belgeye `cac:Delivery/cac:Despatch` olarak yazılır.
+  fiiliSevkZamani      DateTime?       @map("fiili_sevk_zamani")
   cariId               String          @map("cari_id") @db.Uuid
   /// STK-07: stok hareketlerinin işleneceği depo; boşsa varsayılan depo
   depoId               String?         @map("depo_id") @db.Uuid
@@ -2241,6 +2260,12 @@ model FaturaSatir {
   idisEtiketNo      String? @map("idis_etiket_no")
   /// SARJANLIK faturasında satırdaki şarj ünitesinin seri numarası (EBLG-71).
   sarjUniteSeriNo   String? @map("sarj_unite_seri_no")
+  /// EBLG-78: yatırım teşvik harcama tipi (01–04) ve makine-teçhizat (01)
+  /// satırında Darphane değil E-TUYS listesinden gelen makine kimlikleri.
+  ytbHarcamaTipi    String? @map("ytb_harcama_tipi")
+  ytbMakineAdi      String? @map("ytb_makine_adi")
+  ytbMakineId       String? @map("ytb_makine_id")
+  ytbMakineSiraNo   String? @map("ytb_makine_sira_no")
   projeId           String? @map("proje_id") @db.Uuid
   projeAltKirilimId String? @map("proje_alt_kirilim_id") @db.Uuid
 

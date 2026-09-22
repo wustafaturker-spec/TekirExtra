@@ -12,7 +12,9 @@ import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyal
 import { FaturaEkPaneli } from "@/components/fatura-ek-paneli";
 import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
-import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, senaryoHatalari, senaryoUblKodu, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
+import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
+import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-alani";
+import { ebelgeKullanilmiyor, type EbelgeUygulamalari } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -76,6 +78,11 @@ interface FaturaSatir {
   projeAltKirilimId?: string;
   /** EBLG-72: İDİS etiket numarası; İDİS belgesinde her satırda zorunlu. */
   idisEtiketNo?: string;
+  /** EBLG-78: yatırım teşvik harcama tipi ve makine kimlikleri. */
+  ytbHarcamaTipi?: string;
+  ytbMakineAdi?: string;
+  ytbMakineId?: string;
+  ytbMakineSiraNo?: string;
   /** EBLG-71: SARJANLIK faturasında şarj ünitesinin seri numarası. */
   sarjUniteSeriNo?: string;
   lotNo?: string; seriNolar?: string; sonKullanmaTarihi?: string; uretimTarihi?: string;
@@ -106,6 +113,8 @@ interface Fatura {
   ozelMatrahOrani?: string | null;
   /** EBLG-72: Darphane bildiriminden dönen sevkiyat no; doluysa belge İDİS kapsamında. */
   idisSevkiyatNo?: string | null;
+  ytbNo?: string | null;
+  ytbTarihi?: string | null;
   /** Belge e-Arşiv olarak düzenlenirse teslim şekli (EBLG-26). */
   earsivGonderimSekli?: "elektronik" | "kagit";
   /**
@@ -132,7 +141,7 @@ interface FaturaDetay extends Fatura {
   gumrukBeyannameTarihi?: string | null;
   notlar?: string | null;
   depoId?: string | null;
-  satirlar: { stokId: string; varyantId?: string | null; stokKod: string; stokAd: string; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; gibIstisnaKodu?: string | null; tevkifatKodu?: string | null; tevkifatOrani?: string | null; idisEtiketNo?: string | null; sarjUniteSeriNo?: string | null }[];
+  satirlar: { stokId: string; varyantId?: string | null; stokKod: string; stokAd: string; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; gibIstisnaKodu?: string | null; tevkifatKodu?: string | null; tevkifatOrani?: string | null; idisEtiketNo?: string | null; sarjUniteSeriNo?: string | null; ytbHarcamaTipi?: string | null; ytbMakineAdi?: string | null; ytbMakineId?: string | null; ytbMakineSiraNo?: string | null }[];
   ebelge?: {
     id: string;
     durum: string;
@@ -183,6 +192,16 @@ type EbelgeOnizleme =
     };
 
 interface EbelgeWizardBilgisi {
+  /** EBLG-76: sevkiyatın nasıl belgelendiği; yalnız firma e-İrsaliye mükellefiyse sorulur. */
+  sevkiyat?: {
+    mukellef: boolean | null;
+    kaynak: string;
+    listeGuncel: boolean;
+    gerekli: boolean;
+    yontem: string | null;
+    fiiliSevkZamani: string | null;
+    adaylar: { id: string; no: string | null; tarih: string; faturaId: string | null }[];
+  };
   gonderilebilir: boolean;
   neden?: string;
   faturaNo?: string | null;
@@ -270,6 +289,12 @@ interface EbelgeWizardBilgisi {
   idis?: {
     sevkiyatNo: string;
     engeller: { alan: string; mesaj: string }[];
+  };
+  /** Yatırım teşvik (EBLG-78): alanlar fatura formunda, burada yalnız eksik gösterilir. */
+  ytb?: {
+    ytbNo: string;
+    ytbTarihi: string | null;
+    engeller: { alan: string; mesaj: string; satirIndeksi?: number }[];
   };
   /** KAMU senaryosu: alıcı listede KAMU ya da kartında işaretli. */
   kamu?: {
@@ -359,6 +384,9 @@ export default function FaturaSayfasi() {
   const [ekleriAcikFatura, setEkleriAcikFatura] = useState<Fatura | null>(null);
   const [epostaAdresi, setEpostaAdresi] = useState("");
   const [formAcik, setFormAcik] = useState(yeniSayfasi);
+  // EBLG-77: firma e-Fatura/e-Arşiv'e kayıtlı değilse fatura kağıda basılır;
+  // "e-Fatura Oluştur" düğmesi hiç gösterilmez.
+  const [ebelgeUygulamalari, setEbelgeUygulamalari] = useState<EbelgeUygulamalari | null>(null);
   const [duzenlenenId, setDuzenlenenId] = useState<string | null>(null);
   /** Satırdan açılan fatura; eylem çubuğu ve salt okunur kararı buna bakar. */
   const [acikFatura, setAcikFatura] = useState<FaturaDetay | null>(null);
@@ -380,7 +408,11 @@ export default function FaturaSayfasi() {
   const cariRef = useRef<HTMLInputElement | null>(null);
   const faturaBaslangicRef = useRef<number | null>(null);
   useEffect(() => { if (yeniSayfasi) { setFormAcik(true); faturaBaslangicRef.current = Date.now(); } }, [yeniSayfasi]);
+  // EBLG-77: kapalı uygulamanın düğmesi hiç çizilmesin diye bir kez okunur.
+  useEffect(() => { void api<EbelgeUygulamalari>("/ebelge/uygulamalar").then(setEbelgeUygulamalari).catch(() => undefined); }, []);
   const saltOkunur = acikFatura !== null && !faturaDuzenlenebilir(acikFatura);
+  /** EBLG-77: e-belge gönderimi yalnız e-Fatura ya da e-Arşiv açıkken mümkündür. */
+  const ebelgeGonderilebilirFirma = ebelgeUygulamalari === null || !ebelgeKullanilmiyor(ebelgeUygulamalari);
   const faturayiAc = (id: string) => router.push(`/panel/fatura/yeni?ac=${id}${yonBaglami ? `&yon=${yonBaglami}` : ""}`);
   // Eylemler başarıda mesaj yazıp listeyi tazeler; açık faturanın çubuğu da yeni
   // durumu (kesinleşti, e-belge kuyrukta, iptal…) göstersin diye fatura yeniden okunur.
@@ -408,6 +440,7 @@ export default function FaturaSayfasi() {
     fatura: Fatura;
     bilgi: EbelgeWizardBilgisi;
     earsivSekli: "elektronik" | "kagit";
+    sevkiyat: { yontem: SevkiyatYontemi | ""; irsaliyeIds: string[]; fiiliSevkZamani: string };
     ihracat: { teslimTarihi: string; teslimSarti: string; tasimaSekli: string };
     internet: {
       isaretli: boolean;
@@ -477,6 +510,9 @@ export default function FaturaSayfasi() {
   const [ozelMatrahFarki, setOzelMatrahFarki] = useState("");
   /** EBLG-72: İDİS sevkiyat numarası; doluysa belge IDIS profiliyle gider. */
   const [idisSevkiyatNo, setIdisSevkiyatNo] = useState("");
+  // EBLG-78: teşvik belge numarası girilirse fatura YATIRIMTESVIK profiliyle gider.
+  const [ytbNo, setYtbNo] = useState("");
+  const [ytbTarihi, setYtbTarihi] = useState("");
   const [siparisNo, setSiparisNo] = useState("");
   const [siparisTarihi, setSiparisTarihi] = useState("");
   const [faturaNo, setFaturaNo] = useState("");
@@ -659,6 +695,8 @@ export default function FaturaSayfasi() {
         setEfaturaProfili(fatura.efaturaProfili ?? "temel"); setProfilElleDegisti(true); setIhracKayitliKodu(fatura.ihracKayitliKodu ?? "");
         setOzelMatrahKodu(fatura.ozelMatrahKodu ?? ""); setOzelMatrahTutari(fatura.ozelMatrahTutari ?? ""); setOzelMatrahOrani(fatura.ozelMatrahOrani ?? "20"); setOzelMatrahFarki("");
         setIdisSevkiyatNo(fatura.idisSevkiyatNo ?? "");
+        setYtbNo(fatura.ytbNo ?? "");
+        setYtbTarihi(fatura.ytbTarihi ?? "");
         setSatirlar(fatura.satirlar.map((satir) => ({
           stokId: satir.stokId, varyantId: satir.varyantId ?? undefined,
           miktar: Number(satir.miktar), birimFiyat: Number(satir.birimFiyat),
@@ -667,6 +705,10 @@ export default function FaturaSayfasi() {
           tevkifatKodu: satir.tevkifatKodu ?? "",
           tevkifatOrani: satir.tevkifatOrani ?? "",
           idisEtiketNo: satir.idisEtiketNo ?? "",
+          ytbHarcamaTipi: satir.ytbHarcamaTipi ?? "",
+          ytbMakineAdi: satir.ytbMakineAdi ?? "",
+          ytbMakineId: satir.ytbMakineId ?? "",
+          ytbMakineSiraNo: satir.ytbMakineSiraNo ?? "",
           sarjUniteSeriNo: satir.sarjUniteSeriNo ?? "",
           projeId: (satir as any).projeId ?? (satir as any).proje?.id ?? undefined,
           projeAltKirilimId: (satir as any).projeAltKirilimId ?? (satir as any).projeAltKirilim?.id ?? undefined,
@@ -989,6 +1031,8 @@ export default function FaturaSayfasi() {
           ozelMatrahTutari: ozelMatrah ? ozelMatrahTutari || "0" : null,
           ozelMatrahOrani: ozelMatrah ? ozelMatrahOrani || "0" : null,
           idisSevkiyatNo: idisSevkiyatNo.trim() || null,
+          ytbNo: ytbNo.trim() || null,
+          ytbTarihi: ytbNo.trim() && ytbTarihi ? ytbTarihi : null,
           // STK-07: boş bırakılırsa sunucu varsayılan depoyu kullanır
           depoId: depoId || null,
           tip,
@@ -1013,6 +1057,10 @@ export default function FaturaSayfasi() {
             tevkifatKodu: s.tevkifatKodu || undefined,
             tevkifatOrani: s.tevkifatOrani || undefined,
             idisEtiketNo: s.idisEtiketNo?.trim() || undefined,
+            ytbHarcamaTipi: s.ytbHarcamaTipi?.trim() || undefined,
+            ytbMakineAdi: s.ytbMakineAdi?.trim() || undefined,
+            ytbMakineId: s.ytbMakineId?.trim() || undefined,
+            ytbMakineSiraNo: s.ytbMakineSiraNo?.trim() || undefined,
             sarjUniteSeriNo: s.sarjUniteSeriNo?.trim() || undefined,
             projeId: s.projeId || undefined,
             projeAltKirilimId: s.projeAltKirilimId || undefined,
@@ -1127,6 +1175,13 @@ export default function FaturaSayfasi() {
         fatura,
         bilgi,
         earsivSekli: bilgi.earsivGonderimSekli ?? "elektronik",
+        sevkiyat: {
+          yontem: (bilgi.sevkiyat?.yontem as SevkiyatYontemi | undefined) ?? "",
+          irsaliyeIds: bilgi.sevkiyat?.adaylar.filter((a) => a.faturaId === fatura.id).map((a) => a.id) ?? [],
+          // Sevk anı girilmemişse varsayılan "şimdi": mal fatura beraberinde
+          // çıktığı için sevk zamanı çoğunlukla gönderim anıdır.
+          fiiliSevkZamani: zamanAlaniDegeri(bilgi.sevkiyat?.fiiliSevkZamani) || zamanAlaniMetni(new Date()),
+        },
         ihracat: {
           teslimTarihi: bilgi.ihracat?.teslimTarihi?.slice(0, 10) ?? "",
           teslimSarti: bilgi.ihracat?.teslimSarti ?? "",
@@ -1190,6 +1245,13 @@ export default function FaturaSayfasi() {
   /** Sihirbazda girilenler; gönderim ve önizleme aynı gövdeyi yollar. */
   function wizardSecimi(w: NonNullable<typeof ebelgeWizard>) {
     return {
+          sevkiyat: w.bilgi.sevkiyat?.gerekli && w.bilgi.sevkiyat.mukellef && w.sevkiyat.yontem
+            ? {
+                yontem: w.sevkiyat.yontem,
+                irsaliyeIds: w.sevkiyat.yontem === "irsaliye" ? w.sevkiyat.irsaliyeIds : [],
+                fiiliSevkZamani: w.sevkiyat.yontem === "irsaliye_yerine" ? zamanAlaniIso(w.sevkiyat.fiiliSevkZamani) : null,
+              }
+            : undefined,
           earsivGonderimSekli: w.earsivSekli,
           // İhracat alanları yalnız ihracat faturasında gönderilir; sunucu
           // eksikleri kendi listesiyle yeniden denetler.
@@ -1361,6 +1423,8 @@ export default function FaturaSayfasi() {
     : [];
   /** İDİS eksikleri fatura formunda düzeltilir; sihirbaz yalnız gösterir (EBLG-72). */
   const idisEksikleri = ebelgeWizard?.bilgi.idis?.engeller ?? [];
+  /** EBLG-78: yatırım teşvik eksikleri; alanlar fatura ekranında düzeltilir. */
+  const ytbEksikleri = ebelgeWizard?.bilgi.ytb?.engeller ?? [];
   /**
    * Yolcu beraberi eksikleri panelde girilenlerle, sunucudaki kuralla hesaplanır.
    * İşaret konmamışsa tek eksik, VKN'si olmayan alıcıdır: o belge ancak yolcu
@@ -1388,8 +1452,24 @@ export default function FaturaSayfasi() {
         ? [{ mesaj: "Alıcının VKN/TCKN'si yok; bu fatura ancak yolcu beraberi (tax-free) olarak gönderilebilir" }]
         : []
     : [];
+  /*
+   * EBLG-76: sevkiyat eksikleri sunucudaki kuralın aynısıyla hesaplanır, ama
+   * sihirbazda girilen güncel değerlerle — kullanıcı seçimi yaptığı anda uyarı
+   * kalkar. Firma e-İrsaliye mükellefi değilse kural hiç çalışmaz.
+   */
+  const sevkiyatWizardEksikleri = ebelgeWizard?.bilgi.sevkiyat
+    ? sevkiyatEksikleri({
+        sorulur: ebelgeWizard.bilgi.sevkiyat.gerekli,
+        mukellef: ebelgeWizard.bilgi.sevkiyat.mukellef,
+        yontem: ebelgeWizard.sevkiyat.yontem || null,
+        irsaliyeSayisi: ebelgeWizard.sevkiyat.irsaliyeIds.length,
+        fiiliSevkZamani: ebelgeWizard.sevkiyat.fiiliSevkZamani || null,
+      })
+    : [];
+  /** İrsaliye yolunda seçilebilecek, gönderilmiş e-İrsaliyeler. */
+  const sevkiyatAdaylari = ebelgeWizard?.bilgi.sevkiyat?.adaylar ?? [];
   const wizardGonderilebilir = Boolean(
-    ebelgeWizard?.bilgi.gonderilebilir && ihracatEngelleri.length === 0 && internetEngelleri.length === 0 && iadeEksikleri.length === 0 && kamuEksikleri.length === 0 && sgkEksikleri.length === 0 && sarjEksikleri.length === 0 && idisEksikleri.length === 0 && yolcuEksikleri.length === 0,
+    ebelgeWizard?.bilgi.gonderilebilir && sevkiyatWizardEksikleri.length === 0 && ihracatEngelleri.length === 0 && internetEngelleri.length === 0 && iadeEksikleri.length === 0 && kamuEksikleri.length === 0 && sgkEksikleri.length === 0 && sarjEksikleri.length === 0 && idisEksikleri.length === 0 && ytbEksikleri.length === 0 && yolcuEksikleri.length === 0,
   );
 
   async function odemeDetayAc(id: string) {
@@ -1597,7 +1677,8 @@ export default function FaturaSayfasi() {
           {acikFatura && (
             <EylemCubugu etiket="Fatura eylemleri">
               {acikFatura.durum === "taslak" && <Button variant="primary" size="sm" type="button" onClick={() => void kesinlestirmeOzetiAc(acikFatura.id)}>🔒 Kesinleştir</Button>}
-              {!acikFatura.ebelge && acikFatura.durum === "kesin" && ["satis", "alis_iade"].includes(acikFatura.tip) && <Button variant="primary" size="sm" type="button" onClick={() => void ebelgeWizardAc(acikFatura)}>🧾 e-Fatura Oluştur</Button>}
+              {!acikFatura.ebelge && acikFatura.durum === "kesin" && ["satis", "alis_iade"].includes(acikFatura.tip) && ebelgeGonderilebilirFirma && <Button variant="primary" size="sm" type="button" onClick={() => void ebelgeWizardAc(acikFatura)}>🧾 e-Fatura Oluştur</Button>}
+              {!acikFatura.ebelge && acikFatura.durum === "kesin" && !ebelgeGonderilebilirFirma && <span className="muted">Firma e-Fatura/e-Arşiv'e kayıtlı değil; fatura kağıt olarak düzenlenir.</span>}
               {acikFatura.ebelge && <Button size="sm" type="button" onClick={() => void ebelgePdfAc(acikFatura.id)}>📄 e-Belge PDF</Button>}
               {acikFatura.durum !== "taslak" && <Button size="sm" type="button" onClick={() => void pdfAc(acikFatura.id)}>🖨 PDF</Button>}
               {acikFatura.durum !== "taslak" && <Button size="sm" type="button" onClick={() => setEpostaGonderilen(acikFatura)}>✉️ E-posta</Button>}
@@ -1760,6 +1841,23 @@ export default function FaturaSayfasi() {
                       ? "Belge İDİS kapsamında gider; satır ayrıntılarında etiket numaralarını girin."
                       : "İnşaat demiri teslimlerinde Darphane bildiriminden dönen numara yazılır; boşsa belge normal gider."}
                   </small>
+                </Field>
+              )}
+              {gidenBelge && (
+                /* EBLG-78: teşvik belge numarası girilirse belge YATIRIMTESVIK
+                   profiliyle gider; satırlarda harcama tipi istenir. */
+                <Field label="Yatırım teşvik belge no">
+                  <Input aria-label="Yatırım teşvik belge no" value={ytbNo} maxLength={40} placeholder="Örn. 123456" onChange={(e) => setYtbNo(e.target.value)} />
+                  <small className="muted">
+                    {ytbNo.trim()
+                      ? "Belge yatırım teşvik kapsamında gider; satır ayrıntılarında harcama tipini seçin."
+                      : "Yatırım teşvik belgeli teslimlerde E-TUYS'tan doğrulanan belge numarası yazılır; boşsa fatura normal gider."}
+                  </small>
+                </Field>
+              )}
+              {gidenBelge && ytbNo.trim() && (
+                <Field label="Yatırım teşvik belge tarihi (zorunlu)">
+                  <Input aria-label="Yatırım teşvik belge tarihi" type="date" value={ytbTarihi} onChange={(e) => setYtbTarihi(e.target.value)} />
                 </Field>
               )}
               <Field label="Sipariş No"><Input value={siparisNo} onChange={(e) => setSiparisNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" /></Field>
@@ -1933,6 +2031,34 @@ export default function FaturaSayfasi() {
                                 <Input aria-label="İDİS etiket numarası" value={s.idisEtiketNo ?? ""} maxLength={20} placeholder="Örn. CV0152457" onChange={(e) => satirGuncelle(index, "idisEtiketNo", e.target.value)} />
                               </Field>
                             )}
+                            {ytbNo.trim() && (
+                              /* EBLG-78: harcama tipi belgede en az bir satırda zorunlu;
+                                 makine kimlikleri yalnız 01'de istenir. */
+                              <Field label="Yatırım teşvik harcama tipi">
+                                <Select aria-label="Yatırım teşvik harcama tipi" value={s.ytbHarcamaTipi ?? ""} onChange={(e) => satirGuncelle(index, "ytbHarcamaTipi", e.target.value)}>
+                                  <option value="">Seçilmedi</option>
+                                  {YTB_HARCAMA_TIPLERI.map((h) => <option key={h.kod} value={h.kod}>{h.kod} — {h.ad}</option>)}
+                                </Select>
+                                <small className="muted">
+                                  {ytbHarcamaTipiBul(s.ytbHarcamaTipi)?.kdvsizOlabilir
+                                    ? `KDV'siz düzenlenecekse istisna kodu ${ytbHarcamaTipiBul(s.ytbHarcamaTipi)!.istisnaKodu} olmalıdır.`
+                                    : ytbHarcamaTipiBul(s.ytbHarcamaTipi)
+                                      ? "Bu harcama tipi KDV'siz düzenlenemez."
+                                      : "Belgede en az bir satırda harcama tipi bulunmalıdır."}
+                                </small>
+                              </Field>
+                            )}
+                            {ytbNo.trim() && s.ytbHarcamaTipi === YTB_MAKINE_HARCAMA_TIPI && (<>
+                              <Field label="Makine adı (zorunlu)">
+                                <Input aria-label="Makine adı" value={s.ytbMakineAdi ?? ""} maxLength={200} onChange={(e) => satirGuncelle(index, "ytbMakineAdi", e.target.value)} />
+                              </Field>
+                              <Field label="Makine ID (zorunlu)">
+                                <Input aria-label="Makine ID" value={s.ytbMakineId ?? ""} maxLength={60} placeholder="E-TUYS listesindeki makine kimliği" onChange={(e) => satirGuncelle(index, "ytbMakineId", e.target.value)} />
+                              </Field>
+                              <Field label="Makine teçhizat sıra no (zorunlu)">
+                                <Input aria-label="Makine teçhizat sıra no" value={s.ytbMakineSiraNo ?? ""} maxLength={60} placeholder="Teşvik listesindeki satır numarası" onChange={(e) => satirGuncelle(index, "ytbMakineSiraNo", e.target.value)} />
+                              </Field>
+                            </>)}
                             {sarjSecimi.turu === "sarjanlik" && (
                               <Field label="Şarj ünitesi seri numarası (zorunlu)">
                                 <Input aria-label="Şarj ünitesi seri numarası" value={s.sarjUniteSeriNo ?? ""} maxLength={60} onChange={(e) => satirGuncelle(index, "sarjUniteSeriNo", e.target.value)} />
@@ -2435,6 +2561,23 @@ export default function FaturaSayfasi() {
                 )}
               </>
             )}
+            {/* Yatırım teşvik (EBLG-78): alanlar fatura formunda; sihirbaz eksikleri gösterir. */}
+            {ebelgeWizard.bilgi.ytb && (
+              <>
+                <strong>Yatırım teşvik kapsamında teslim</strong>
+                <p className="muted" style={{ margin: 0 }}>
+                  Belge YATIRIMTESVIK profiliyle gider (e-Arşiv&apos;e düşerse tip YTB önekli olur); teşvik belgesi {ebelgeWizard.bilgi.ytb.ytbNo}
+                  {ebelgeWizard.bilgi.ytb.ytbTarihi ? `, ${new Date(ebelgeWizard.bilgi.ytb.ytbTarihi).toLocaleDateString("tr-TR")}` : ""}.
+                </p>
+                {ytbEksikleri.length > 0 && (
+                  <div className="approval-impact is-warning">
+                    <strong>Yatırım teşvik faturasında eksik olanlar:</strong>
+                    <ul>{ytbEksikleri.map((e, sira) => <li key={`${e.alan}-${sira}`}>{e.mesaj}</li>)}</ul>
+                    Teşvik belge bilgileri ve harcama tipi fatura ekranında düzeltilir.
+                  </div>
+                )}
+              </>
+            )}
             {ebelgeWizard.bilgi.kamu && (() => {
               const kamu = ebelgeWizard.kamu;
               const kamuGuncelle = (degisiklik: Partial<typeof kamu>) => setEbelgeWizard({ ...ebelgeWizard, kamu: { ...kamu, ...degisiklik } });
@@ -2614,6 +2757,62 @@ export default function FaturaSayfasi() {
             )}
             </>)}
             {ebelgeWizard.adim === 1 && (<>
+            {ebelgeWizard.bilgi.sevkiyat?.gerekli && (
+              <div className="approval-impact">
+                <strong>Sevkiyat ve e-İrsaliye</strong>
+                {/* EBLG-76: yol seçilmeden belge gönderilmez; üç yol birbirini dışlar. */}
+                {ebelgeWizard.bilgi.sevkiyat.mukellef === null ? (
+                  <p>Firmanın e-İrsaliye mükellefiyeti bilinmiyor. Firma ayarlarından belirtin ya da entegratör mükellef listesini güncelleyin.</p>
+                ) : (
+                  <div className="stack">
+                    {SEVKIYAT_YONTEMLERI.map((yol) => (
+                      <div key={yol.kod}>
+                        <label>
+                          <input
+                            type="radio"
+                            name="sevkiyat-yontemi"
+                            checked={ebelgeWizard.sevkiyat.yontem === yol.kod}
+                            onChange={() => setEbelgeWizard({ ...ebelgeWizard, sevkiyat: { ...ebelgeWizard.sevkiyat, yontem: yol.kod, irsaliyeIds: yol.kod === "irsaliye" ? ebelgeWizard.sevkiyat.irsaliyeIds : [] } })}
+                          />{" "}
+                          {yol.etiket}
+                        </label>
+                        {yol.kod === "irsaliye" && ebelgeWizard.sevkiyat.yontem === "irsaliye" && (
+                          <div className="stack" style={{ marginLeft: 24 }}>
+                            {sevkiyatAdaylari.length === 0
+                              ? <p className="muted">Bu müşteriye gönderilmiş, henüz faturaya bağlanmamış e-İrsaliye yok.</p>
+                              : sevkiyatAdaylari.map((a) => (
+                                <label key={a.id}>
+                                  <input
+                                    type="checkbox"
+                                    checked={ebelgeWizard.sevkiyat.irsaliyeIds.includes(a.id)}
+                                    onChange={(e) => setEbelgeWizard({ ...ebelgeWizard, sevkiyat: { ...ebelgeWizard.sevkiyat, irsaliyeIds: e.target.checked ? [...ebelgeWizard.sevkiyat.irsaliyeIds, a.id] : ebelgeWizard.sevkiyat.irsaliyeIds.filter((id) => id !== a.id) } })}
+                                  />{" "}
+                                  {a.no} · {new Date(a.tarih).toLocaleDateString("tr-TR")}
+                                </label>
+                              ))}
+                          </div>
+                        )}
+                        {yol.kod === "irsaliye_yerine" && ebelgeWizard.sevkiyat.yontem === "irsaliye_yerine" && (
+                          <div className="stack" style={{ marginLeft: 24 }}>
+                            <Field label="Fiili sevk tarihi ve saati">
+                              <Input
+                                aria-label="Fiili sevk tarihi ve saati"
+                                type="datetime-local"
+                                value={ebelgeWizard.sevkiyat.fiiliSevkZamani}
+                                onChange={(e) => setEbelgeWizard({ ...ebelgeWizard, sevkiyat: { ...ebelgeWizard.sevkiyat, fiiliSevkZamani: e.target.value } })}
+                              />
+                            </Field>
+                            {/* Belge e-Arşiv'e düşerse ibare o belgenin adını söyler; kararı sunucu verir. */}
+                            <p className="muted">Belgeye şu ibare yazılır: &quot;{irsaliyeYerineIbaresi()}&quot;</p>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {sevkiyatWizardEksikleri.map((eksik) => <p key={eksik} className="muted">{eksik}</p>)}
+              </div>
+            )}
             {ebelgeWizard.bilgi.aliciAdi?.tahmin && (
               <div className="approval-impact is-warning">
                 Carinin adı ve soyadı kartta girilmemiş; e-Arşiv&apos;e unvandan tahminle Ad: <strong>{ebelgeWizard.bilgi.aliciAdi.ad}</strong>, Soyad: <strong>{ebelgeWizard.bilgi.aliciAdi.soyad}</strong> yazılacak. Doğru değilse cari kartında düzeltin.
