@@ -906,6 +906,49 @@ describe("EbelgeService (EBLG-01..08)", () => {
       expect(mockMukellefListesi.kanalBelirle).not.toHaveBeenCalled();
     });
 
+    /*
+     * EBLG-80: yurt dışı alıcı. Hizmet satışı ya da e-Fatura kullanmayan firma
+     * ihracat e-Faturası kesemez; belge e-Arşiv ISTISNA olur, alıcı 2222222222.
+     */
+    const yurtDisiTx = (firma: Record<string, unknown>, stokTipi: string) => {
+      const temel = tx(firma);
+      return {
+        ...temel,
+        fatura: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "fk2", tip: "satis", durum: "kesin", tarih: new Date(), no: "TKR2026000000032", senaryo: "istisna",
+            toplamBrut: 100, toplamMatrah: 100, toplamKdv: 0, genelToplam: 100,
+            dovizCinsi: "TRY", toplamSatirIskontosu: 0,
+            satirlar: [{ miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 0, kdvOrani: 0, birimFiyat: 100, gibIstisnaKodu: null, stok: { kod: "U1", ad: "Kalem 1", tip: stokTipi } }],
+            cari: { vknTckn: null, unvan: "Muster GmbH", adresler: [{ tip: "fatura", adres: "Hauptstr. 1", il: "Berlin", ilce: "Mitte", postaKodu: "10115", ulke: "DE" }] },
+          }),
+        },
+      };
+    };
+
+    it("yalnız e-Arşiv kullanan firma yurt dışına mal satışını e-Arşiv istisna keser (EBLG-80)", async () => {
+      mockAdapter.belgeGonder.mockClear();
+      mockTenantIslem.mockImplementation((_t: string, cb: any) => cb(yurtDisiTx({ efaturaMukellefi: false, earsivMukellefi: true }, "urun")));
+
+      await expect(service.gonder("fk2")).resolves.toMatchObject({ basarili: true, tur: "earsiv" });
+      const { xml } = mockAdapter.belgeGonder.mock.calls[0][1];
+      expect(xml).toContain('<cbc:ID schemeID="VKN">2222222222</cbc:ID>');
+      expect(xml).toContain("<cbc:InvoiceTypeCode>ISTISNA</cbc:InvoiceTypeCode>");
+      expect(xml).toContain("<cbc:TaxExemptionReasonCode>301</cbc:TaxExemptionReasonCode>");
+    });
+
+    it("e-Fatura kullanan firmada da yurt dışına hizmet satışı e-Arşiv istisna 302 olur (EBLG-80)", async () => {
+      mockAdapter.belgeGonder.mockClear();
+      mockMukellefListesi.kanalBelirle.mockClear();
+      mockTenantIslem.mockImplementation((_t: string, cb: any) => cb(yurtDisiTx({ efaturaMukellefi: true, earsivMukellefi: true }, "hizmet")));
+
+      await expect(service.gonder("fk2")).resolves.toMatchObject({ basarili: true, tur: "earsiv" });
+      expect(mockMukellefListesi.kanalBelirle).not.toHaveBeenCalled();
+      const { xml } = mockAdapter.belgeGonder.mock.calls[0][1];
+      expect(xml).toContain("<cbc:TaxExemptionReasonCode>302</cbc:TaxExemptionReasonCode>");
+      expect(xml).not.toContain("IHRACAT");
+    });
+
     it("hiçbir uygulamaya kayıtlı olmayan firmada belge gönderilmez", async () => {
       mockTenantIslem.mockImplementation((_t: string, cb: any) => cb(tx({ efaturaMukellefi: false, earsivMukellefi: false })));
 

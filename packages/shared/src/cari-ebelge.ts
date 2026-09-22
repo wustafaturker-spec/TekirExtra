@@ -8,7 +8,8 @@
  * yanlış belge kesmek olurdu (EBLG-77 ile aynı ilke).
  */
 
-export type CariEbelgeTuru = "efatura" | "earsiv" | "bilinmiyor";
+/** `yurtdisi`: EBLG-80 — mal ihracatı ihracat e-Faturasıyla, hizmet e-Arşiv istisna ile kesilir. */
+export type CariEbelgeTuru = "efatura" | "earsiv" | "yurtdisi" | "bilinmiyor";
 
 export interface CariEbelgeDurumu {
   tur: CariEbelgeTuru;
@@ -34,10 +35,15 @@ const gun = (an: Date | string | null | undefined): string | null => {
 
 export function cariEbelgeDurumu(girdi: {
   vknTckn: string | null | undefined;
+  /** Alıcı yurt dışı mı (`yurtDisiAliciMi`, EBLG-80); GİB listesinden önce gelir. */
+  yurtDisi?: boolean;
   efatura: ListeKaydi | null;
   eirsaliye: ListeKaydi | null;
   listeGuncel: boolean;
 }): CariEbelgeDurumu {
+  if (girdi.yurtDisi) {
+    return { tur: "yurtdisi", efaturaKayitTarihi: null, eirsaliye: false, eirsaliyeKayitTarihi: null, kamu: false };
+  }
   if (!girdi.vknTckn?.trim()) {
     return { tur: "earsiv", efaturaKayitTarihi: null, eirsaliye: false, eirsaliyeKayitTarihi: null, kamu: false };
   }
@@ -57,5 +63,6 @@ export function cariEbelgeDurumu(girdi: {
 export const CARI_EBELGE_ETIKETI: Record<CariEbelgeTuru, string> = {
   efatura: "e-Fatura",
   earsiv: "e-Arşiv",
+  yurtdisi: "Yurt dışı",
   bilinmiyor: "?",
 };

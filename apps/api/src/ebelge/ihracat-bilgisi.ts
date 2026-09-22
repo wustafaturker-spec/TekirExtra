@@ -5,7 +5,9 @@ import {
   ihracatEngelleri,
   menseiUyarilari,
   ulkeAdi,
-  yurtDisiMi,
+  yurtDisiAliciMi,
+  yurtDisiEarsivEngelleri,
+  yurtDisiSatisTuru,
 } from "@tekirextra/shared";
 import type { IhracatUblBilgisi } from "./xml-uretec";
 
@@ -22,6 +24,7 @@ export interface IhracatFaturaGirdisi {
   ihracatTasimaSekli: string | null;
   gumrukBeyannameNo: string | null;
   cari: {
+    vknTckn?: string | null;
     adresler: { tip: string; ulke: string | null; adres: string | null; il: string | null; ilce: string | null; postaKodu: string | null }[];
   };
   satirlar: {
@@ -31,7 +34,12 @@ export interface IhracatFaturaGirdisi {
 }
 
 export interface IhracatOzeti {
+  /** Alıcı yurt dışı (EBLG-80); yurt içi kuralları (VKN, KAMU, iade…) kapanır. */
+  yurtDisi: boolean;
+  /** Belge ihracat e-Faturası olarak kesilir (mal, firma e-Fatura kullanıyor). */
   ihracat: boolean;
+  /** Belge e-Arşiv ISTISNA olarak kesilir: hizmet satışı ya da e-Fatura kullanmayan firma. */
+  yurtDisiEarsiv: boolean;
   ulkeKodu?: string;
   ulkeAdi?: string;
   engeller: IhracatEngeli[];
@@ -40,9 +48,13 @@ export interface IhracatOzeti {
   ublBilgisi?: IhracatUblBilgisi;
 }
 
-export function ihracatOzeti(fatura: IhracatFaturaGirdisi): IhracatOzeti {
+/**
+ * `efaturaAcik`: firma e-Fatura kullanıyor mu (EBLG-77). Bilinmiyorsa ihracat
+ * yolu varsayılır; kanal kararı zaten firma durumu bilinmeden belge göndermez.
+ */
+export function ihracatOzeti(fatura: IhracatFaturaGirdisi, secenek: { efaturaAcik?: boolean | null } = {}): IhracatOzeti {
   const ulkeKodu = aliciUlkeKodu(fatura.cari.adresler);
-  if (!yurtDisiMi(ulkeKodu)) return { ihracat: false, engeller: [], menseiEksikleri: [] };
+  if (!yurtDisiAliciMi({ ulkeKodu, vknTckn: fatura.cari.vknTckn })) return IHRACAT_DEGIL;
 
   const satirlar: IhracatSatirGirdi[] = fatura.satirlar.map((satir, index) => ({
     sira: index + 1,
@@ -53,6 +65,20 @@ export function ihracatOzeti(fatura: IhracatFaturaGirdisi): IhracatOzeti {
     kdvOrani: Number(satir.kdvOrani),
   }));
 
+  // EBLG-80: hizmet satırı olan fatura ya da e-Fatura kullanmayan firma
+  // ihracat e-Faturası kesemez; belge e-Arşiv ISTISNA (301/302) olur.
+  if (yurtDisiSatisTuru({ efaturaAcik: secenek.efaturaAcik !== false, stokTipleri: satirlar.map((s) => s.stokTipi) }) === "earsiv_istisna") {
+    return {
+      yurtDisi: true,
+      ihracat: false,
+      yurtDisiEarsiv: true,
+      ulkeKodu,
+      ulkeAdi: ulkeKodu ? ulkeAdi(ulkeKodu) : undefined,
+      engeller: yurtDisiEarsivEngelleri(ulkeKodu, satirlar),
+      menseiEksikleri: [],
+    };
+  }
+
   const bilgi = {
     teslimTarihi: fatura.ihracatTeslimTarihi,
     teslimSarti: fatura.ihracatTeslimSarti,
@@ -60,15 +86,17 @@ export function ihracatOzeti(fatura: IhracatFaturaGirdisi): IhracatOzeti {
   };
 
   return {
+    yurtDisi: true,
     ihracat: true,
+    yurtDisiEarsiv: false,
     ulkeKodu,
-    ulkeAdi: ulkeAdi(ulkeKodu),
+    ulkeAdi: ulkeKodu ? ulkeAdi(ulkeKodu) : undefined,
     engeller: ihracatEngelleri(ulkeKodu, bilgi, satirlar),
     menseiEksikleri: menseiUyarilari(satirlar),
     ublBilgisi: {
       // Adres UBL üreticisinin kendisi tarafından karttan okunur (EBLG-55);
       // burada yalnız ihracata özgü alanlar taşınır.
-      ulkeKodu: ulkeKodu!,
+      ulkeKodu: ulkeKodu ?? "",
       teslimTarihi: fatura.ihracatTeslimTarihi,
       teslimSarti: fatura.ihracatTeslimSarti,
       tasimaSekli: fatura.ihracatTasimaSekli,
@@ -76,3 +104,6 @@ export function ihracatOzeti(fatura: IhracatFaturaGirdisi): IhracatOzeti {
     },
   };
 }
+
+/** Yurt içi alıcı: hiçbir yurt dışı kuralı çalışmaz. */
+export const IHRACAT_DEGIL: IhracatOzeti = { yurtDisi: false, ihracat: false, yurtDisiEarsiv: false, engeller: [], menseiEksikleri: [] };

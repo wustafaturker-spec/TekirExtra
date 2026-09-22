@@ -1,6 +1,7 @@
 import { Fatura, FaturaSatir, CariHesap } from "@prisma/client";
 import {
   anTR,
+  YURT_DISI_ALICI_VKN,
   GUMRUK_BAKANLIGI_IL,
   GUMRUK_BAKANLIGI_UNVAN,
   GUMRUK_BAKANLIGI_VKN,
@@ -111,6 +112,8 @@ export function faturaUblUret(
   secenekler: {
     tur?: "efatura" | "earsiv";
     ihracat?: IhracatUblBilgisi;
+    /** EBLG-80: yurt dışı alıcıya e-Arşiv istisna; yalnız e-Arşiv kanalında geçerli. */
+    yurtDisiEarsiv?: boolean;
     internetSatisi?: InternetSatisUblBilgisi;
     /** EBLG-58: iade faturasında iade edilen faturalar; sırasıyla yazılır. */
     iadeReferanslari?: { belgeNo: string; tarih: Date }[];
@@ -138,6 +141,12 @@ export function faturaUblUret(
    * belge düzeyindeki vergi alt toplamı 501 koduyla işaretlenir.
    */
   const yolcu = earsiv || ihracat ? undefined : secenekler.yolcuBeraberi;
+  /*
+   * EBLG-80: yurt dışı alıcıya e-Arşiv faturası. Tip ISTISNA, alıcı kimliği
+   * GİB'in yurt dışı alıcı VKN'si (2222222222); unvan ve yabancı adres karttan
+   * gelir. Satır istisna kodu ihracattaki gibi maldan/hizmetten türer.
+   */
+  const yurtDisiIstisna = earsiv && !ihracat && Boolean(secenekler.yurtDisiEarsiv);
   const gtbAlici = Boolean(ihracat || yolcu);
   /**
    * Alıcı adresi (EBLG-55). Belgede tek bir adres görünür; hangisi olduğu
@@ -215,7 +224,7 @@ export function faturaUblUret(
    * istisna kodu seçtiyse (ör. 316 serbest bölge fason) o korunur.
    */
   const satirIstisnaKodu = (satir: { gibIstisnaKodu: string | null; stok: { tip?: string | null } }): string | null => {
-    if (!ihracat) return satir.gibIstisnaKodu;
+    if (!ihracat && !yurtDisiIstisna) return satir.gibIstisnaKodu;
     return ihracatIstisnaKoduMu(satir.gibIstisnaKodu) ? satir.gibIstisnaKodu : ihracatIstisnaKodu(satir.stok.tip);
   };
 
@@ -231,7 +240,7 @@ export function faturaUblUret(
     // tekrarlamak "812-812 …" çıkarıyordu.
     ozelMatrahKoduBul(kod) ? ozelMatrahKoduBul(kod)!.ad
     : yolcu && kod === YOLCU_BERABER_ISTISNA_KODU ? YOLCU_BERABER_ISTISNA_ACIKLAMASI
-    : ihracatIstisnasi ? ihracatIstisnaAciklamasi(kod) : `${kod} ${(istisnaKoduBul(kod) ?? ihracKayitliKoduBul(kod))?.ad ?? ""}`.trim();
+    : ihracatIstisnasi || (yurtDisiIstisna && (kod === "301" || kod === "302")) ? ihracatIstisnaAciklamasi(kod) : `${kod} ${(istisnaKoduBul(kod) ?? ihracKayitliKoduBul(kod))?.ad ?? ""}`.trim();
 
   /*
    * İhraç kayıtlı satış (EBLG-60): KDV hesaplanıp gösterilir ama tahsil
@@ -359,7 +368,9 @@ export function faturaUblUret(
    * (NES, 2026-09-10). Ad ve soyad kartta ayrı tutulur (CARI-21); boşsa
    * unvandan tahmin edilir.
    */
-  const aliciTckn = fatura.cari.vknTckn?.length === 11;
+  /** Belgeye yazılan alıcı kimliği; yurt dışı e-Arşiv'de kartta ne yazarsa yazsın GİB'in ortak numarası. */
+  const aliciKimligi = yurtDisiIstisna ? YURT_DISI_ALICI_VKN : fatura.cari.vknTckn;
+  const aliciTckn = aliciKimligi?.length === 11;
   const { ad: aliciAd, soyad: aliciSoyad } = adSoyadCoz(fatura.cari);
 
   /**
@@ -425,6 +436,9 @@ export function faturaUblUret(
    * olarak bildirilir (GİB `IHRACAT.xml`): kimliği `PARTYTYPE`/`EXPORT`'tur ve
    * kendi ülkesindeki vergi numarası `PartyLegalEntity` içinde durur.
    */
+  // Kartta yurt dışı alıcıyı işaretlemek için yazılmış ortak numaralar (EBLG-80)
+  // yabancı firmanın kendi şirket numarası değildir; belgeye yazılmaz.
+  const yabanciSirketNo = [YURT_DISI_ALICI_VKN, GUMRUK_BAKANLIGI_VKN].includes(fatura.cari.vknTckn ?? "") ? null : fatura.cari.vknTckn;
   const yabanciAliciBlogu = ihracat
     ? `
   <cac:BuyerCustomerParty>
@@ -446,8 +460,8 @@ export function faturaUblUret(
         </cac:Country>
       </cac:PostalAddress>
       <cac:PartyLegalEntity>
-        <cbc:RegistrationName>${escape(fatura.cari.unvan)}</cbc:RegistrationName>${fatura.cari.vknTckn ? `
-        <cbc:CompanyID>${escape(fatura.cari.vknTckn)}</cbc:CompanyID>` : ""}
+        <cbc:RegistrationName>${escape(fatura.cari.unvan)}</cbc:RegistrationName>${yabanciSirketNo ? `
+        <cbc:CompanyID>${escape(yabanciSirketNo)}</cbc:CompanyID>` : ""}
       </cac:PartyLegalEntity>
     </cac:Party>
   </cac:BuyerCustomerParty>
@@ -697,7 +711,7 @@ export function faturaUblUret(
   <cbc:UUID>${uuid}</cbc:UUID>
   <cbc:IssueDate>${tarihStr}</cbc:IssueDate>
   <cbc:IssueTime>${saatStr}</cbc:IssueTime>
-  <cbc:InvoiceTypeCode>${ihracat ? IHRACAT_FATURA_TIPI : yolcu ? YOLCU_BERABER_FATURA_TIPI : sgk ? SGK_FATURA_TIPI : ytb ? ytbFaturaTipi(senaryoUblKodu(fatura.senaryo), earsiv ? "earsiv" : "efatura") : senaryoUblKodu(fatura.senaryo)}</cbc:InvoiceTypeCode>${internet?.webAdresi ? `
+  <cbc:InvoiceTypeCode>${ihracat || yurtDisiIstisna ? IHRACAT_FATURA_TIPI : yolcu ? YOLCU_BERABER_FATURA_TIPI : sgk ? SGK_FATURA_TIPI : ytb ? ytbFaturaTipi(senaryoUblKodu(fatura.senaryo), earsiv ? "earsiv" : "efatura") : senaryoUblKodu(fatura.senaryo)}</cbc:InvoiceTypeCode>${internet?.webAdresi ? `
   <cbc:Note>${escape(`İnternet satışı — ${internet.webAdresi}`)}</cbc:Note>` : ""}${irsaliyeYerine ? `
   <cbc:Note>${escape(irsaliyeYerineIbaresi(earsiv ? "earsiv" : "efatura"))}</cbc:Note>` : ""}
   <cbc:DocumentCurrencyCode>${fatura.dovizCinsi}</cbc:DocumentCurrencyCode>${dovizli && ihracat ? `
@@ -796,7 +810,7 @@ ${saticiAdresi}
   <cac:AccountingCustomerParty>
     <cac:Party>
       <cac:PartyIdentification>
-        <cbc:ID schemeID="${gtbAlici || !aliciTckn ? "VKN" : "TCKN"}">${gtbAlici ? GUMRUK_BAKANLIGI_VKN : fatura.cari.vknTckn}</cbc:ID>
+        <cbc:ID schemeID="${gtbAlici || !aliciTckn ? "VKN" : "TCKN"}">${gtbAlici ? GUMRUK_BAKANLIGI_VKN : aliciKimligi}</cbc:ID>
       </cac:PartyIdentification>${sarj && sarj.plaka ? `
       <cac:PartyIdentification>
         <cbc:ID schemeID="PLAKA">${escape(sarj.plaka)}</cbc:ID>

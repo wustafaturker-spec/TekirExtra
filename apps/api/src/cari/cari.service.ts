@@ -79,7 +79,8 @@ export class CariService {
         orderBy: [{ kod: "asc" }, { id: "asc" }],
         take: adet + 1,
         ...(imlec ? { cursor: { id: imlec }, skip: 1 } : {}),
-        include: { _count: { select: { hareketler: true } } },
+        // CARI-23/EBLG-80: yurt dışı alıcı adres ülkesinden anlaşılır.
+        include: { _count: { select: { hareketler: true } }, adresler: { select: { tip: true, ulke: true } } },
       }),
     );
     const sonrakiImlec = kayitlar.length > adet ? kayitlar[adet - 1].id : null;
@@ -90,7 +91,7 @@ export class CariService {
     return {
       kayitlar: sayfa.map((k) => ({
         ...this.gorunum(k),
-        ebelgeTuru: cariEbelgeDurumuBul(ebelge!, k.vknTckn).tur,
+        ebelgeTuru: cariEbelgeDurumuBul(ebelge!, k).tur,
         bakiyeler: bakiyeler.get(k.id) ?? [],
         izinliEylemler: this.eylemler(k, ctx.rol, k._count.hareketler),
       })),
@@ -122,7 +123,7 @@ export class CariService {
     const ebelge = await this.prisma.tenantIslem(ctx.tenantId, (tx) => cariEbelgeDurumlariniOku(tx, [kayit.vknTckn]));
     return {
       ...this.gorunum(kayit),
-      ebelgeDurumu: { ...cariEbelgeDurumuBul(ebelge, kayit.vknTckn), listeGuncellendi: ebelge.listeGuncellendi },
+      ebelgeDurumu: { ...cariEbelgeDurumuBul(ebelge, kayit), listeGuncellendi: ebelge.listeGuncellendi },
       adresler: kayit.adresler,
       kisiler: kayit.kisiler,
       bankaHesaplari: kayit.bankaHesaplari,

@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { cariEbelgeDurumu, type CariEbelgeDurumu, type ListeKaydi } from "@tekirextra/shared";
+import { aliciUlkeKodu, cariEbelgeDurumu, yurtDisiAliciMi, type CariEbelgeDurumu, type ListeKaydi } from "@tekirextra/shared";
 
 /** Mükellef listesi bu süreden eskiyse durum "bilinmiyor" sayılır (EBLG-77 ile aynı). */
 const LISTE_TAZELIK_SURESI_MS = 48 * 60 * 60 * 1000;
@@ -50,6 +50,16 @@ export async function cariEbelgeDurumlariniOku(
   return { durumlar, listeGuncellendi: senkron?.sonSenkronAt ?? null };
 }
 
-/** Okumadan bir carinin durumu; VKN'siz cari boş anahtarla bulunur. */
-export const cariEbelgeDurumuBul = (okuma: CariEbelgeOkumasi, vknTckn: string | null | undefined): CariEbelgeDurumu =>
-  okuma.durumlar.get(vknTckn?.trim() ?? "") ?? okuma.durumlar.get("")!;
+/**
+ * Okumadan bir carinin durumu; VKN'siz cari boş anahtarla bulunur. Yurt dışı
+ * alıcı (EBLG-80: adres ülkesi ya da 2222222222/1460415308) listeden önce gelir.
+ */
+export function cariEbelgeDurumuBul(
+  okuma: CariEbelgeOkumasi,
+  cari: { vknTckn: string | null | undefined; adresler?: readonly { tip: string; ulke: string | null }[] },
+): CariEbelgeDurumu {
+  if (yurtDisiAliciMi({ ulkeKodu: aliciUlkeKodu(cari.adresler ?? []), vknTckn: cari.vknTckn })) {
+    return cariEbelgeDurumu({ vknTckn: cari.vknTckn, yurtDisi: true, efatura: null, eirsaliye: null, listeGuncel: false });
+  }
+  return okuma.durumlar.get(cari.vknTckn?.trim() ?? "") ?? okuma.durumlar.get("")!;
+}

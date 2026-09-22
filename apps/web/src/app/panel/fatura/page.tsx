@@ -247,6 +247,8 @@ interface EbelgeWizardBilgisi {
     engeller: { alan: string; mesaj: string }[];
     menseiEksikleri: { sira: number; stokAdi: string; mensei: string }[];
   };
+  /** EBLG-80: yurt dışı alıcıya e-Arşiv istisna (hizmet ya da e-Fatura kullanmayan firma). */
+  yurtDisiEarsiv?: { ulkeKodu?: string; ulkeAdi?: string; engeller: { alan: string; mesaj: string }[] };
   /**
    * EBLG-58: alış iadesinde iade edilen faturalar. Adaylar aynı tedarikçinin
    * GİB numaralı alış faturalarıdır; listede olmayan elle girilir.
@@ -2332,12 +2334,17 @@ export default function FaturaSayfasi() {
                 <strong>
                   {ebelgeWizard.bilgi.ihracat
                     ? `İhracat faturası — alıcı ${ebelgeWizard.bilgi.ihracat.ulkeAdi ?? ebelgeWizard.bilgi.ihracat.ulkeKodu} adresli`
+                    : ebelgeWizard.bilgi.yurtDisiEarsiv
+                      ? `e-Arşiv istisna (yurt dışı alıcı${ebelgeWizard.bilgi.yurtDisiEarsiv.ulkeAdi ? ` — ${ebelgeWizard.bilgi.yurtDisiEarsiv.ulkeAdi}` : ""}) — 301 mal / 302 hizmet`
                     : ebelgeWizard.bilgi.ihracKayitliKodu
                       ? `İhraç kayıtlı satış (${ebelgeWizard.bilgi.ihracKayitliKodu}) — KDV gösterilir, tahsil edilmez`
                       : "Mükellefiyet gönderim onayında sorgulanacak: e-Fatura / e-Arşiv"}
                 </strong>
               </div>
             </div>}
+            {ebelgeWizard.adim === 1 && Boolean(ebelgeWizard.bilgi.yurtDisiEarsiv?.engeller.length) && (
+              <Alert tone="warning">{ebelgeWizard.bilgi.yurtDisiEarsiv!.engeller.map((e) => e.mesaj).join(" ")}</Alert>
+            )}
             {ebelgeWizard.adim === 2 && (<>
             {ebelgeWizard.bilgi.ihracat && (
               <>

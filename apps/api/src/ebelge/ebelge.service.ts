@@ -32,7 +32,7 @@ import { SON_EBELGE_DURUMLARI, durumSorgusuEngeli } from "./durum-sorgusu";
 import { faturaSorguKosulu, faturaSorguSureleriniOku } from "./fatura-sorgu-kosulu";
 import { entegratorIptalBildirimi } from "./entegrator-iptal-bildirimi";
 import { belgeNoyuUbleYaz, faturaUblUret } from "./xml-uretec";
-import { ihracatOzeti } from "./ihracat-bilgisi";
+import { IHRACAT_DEGIL, ihracatOzeti } from "./ihracat-bilgisi";
 import { ebelgeGonderilebilirTipMi, iadeOzeti } from "./iade-bilgisi";
 import { internetSatisOzeti } from "./internet-satis-bilgisi";
 import { yolcuBeraberiOzeti } from "./yolcu-beraberi-bilgisi";
@@ -106,6 +106,8 @@ function gonderimKosullariniDenetle(
     cari: { vknTckn: string | null };
     ihracKayitliKodu?: string | null;
   },
+  /** EBLG-80: yurt dışı satışın ihracat mı e-Arşiv istisna mı olacağı buna bağlı. */
+  efaturaAcik: boolean | null,
 ) {
   if (fatura.durum !== "kesin") {
     throw new BadRequestException("Yalnızca kesinleşmiş faturalar gönderilebilir");
@@ -114,24 +116,25 @@ function gonderimKosullariniDenetle(
   // Yolcu beraberi işareti ihracat kanalını ezer: yolcunun kendi ülkesindeki
   // adresi belgeyi ihracat faturası yapmaz, satış yurt içinde yapılmıştır.
   const yolcu = yolcuBeraberiOzeti(fatura);
-  const ihracat = yolcu.yolcuBeraberi ? IHRACAT_YOK : ihracatOzeti(fatura);
+  const ihracat = yolcu.yolcuBeraberi ? IHRACAT_DEGIL : ihracatOzeti(fatura, { efaturaAcik });
   const internet = internetSatisOzeti(fatura);
   const iade = iadeOzeti(fatura);
-  if (iade.iade && ihracat.ihracat) throw new BadRequestException(YURT_DISI_IADE_ENGELI);
+  if (iade.iade && ihracat.yurtDisi) throw new BadRequestException(YURT_DISI_IADE_ENGELI);
   const engeller = [...ihracat.engeller, ...internet.engeller, ...iade.engeller, ...yolcu.engeller].map((e) => e.mesaj);
   if (yolcu.yolcuBeraberi && fatura.ihracKayitliKodu) {
     engeller.push("Yolcu beraberi satışta ihraç kayıtlı işareti bulunamaz");
   }
   // EBLG-60: ihraç kayıtlı satış yurt içindeki ihracatçıya yapılır; alıcı yurt
   // dışındaysa belge ihracat faturasıdır, ikisi birden olamaz.
-  if (ihracat.ihracat && fatura.ihracKayitliKodu) {
+  if (ihracat.yurtDisi && fatura.ihracKayitliKodu) {
     engeller.push("Alıcı yurt dışında; ihraç kayıtlı satış yurt içindeki ihracatçıya kesilir. Faturadaki ihraç kayıtlı işaretini kaldırın");
   }
   if (engeller.length) {
     throw new BadRequestException(engeller.join("; "));
   }
   // Yolcu beraberinde alıcı Gümrük Bakanlığı'dır; genel carinin VKN'si aranmaz.
-  if (!ihracat.ihracat && !yolcu.yolcuBeraberi && !fatura.cari.vknTckn) {
+  // Yurt dışı alıcının Türk VKN'si olmaz (EBLG-80); e-Arşiv'de 2222222222 yazılır.
+  if (!ihracat.yurtDisi && !yolcu.yolcuBeraberi && !fatura.cari.vknTckn) {
     throw new BadRequestException("Alıcının geçerli bir VKN/TCKN bilgisi olmalıdır");
   }
   if (!gonderimTarihiGecerliMi(fatura.tarih)) {
@@ -140,8 +143,6 @@ function gonderimKosullariniDenetle(
   return { ihracat, internet, iade, yolcu };
 }
 
-/** İhracat özetinin "ihracat değil" hâli; yolcu beraberi işareti kanalı ezer. */
-const IHRACAT_YOK: ReturnType<typeof ihracatOzeti> = { ihracat: false, engeller: [], menseiEksikleri: [] };
 
 @Injectable()
 export class EbelgeService {
@@ -234,7 +235,6 @@ export class EbelgeService {
       // İhracatta alıcının VKN'si yoktur; belgeye GİB'in yurt dışı alıcı
       // sabiti yazılır, kart üzerindeki kimlik hiç kullanılmaz.
       const yolcu = yolcuBeraberiOzeti(fatura);
-      const ihracat = yolcu.yolcuBeraberi ? IHRACAT_YOK : ihracatOzeti(fatura);
       const internet = internetSatisOzeti(fatura);
       const iade = iadeOzeti(fatura);
       const firma = await tx.tenant.findUnique({ where: { id: tenantId } });
@@ -243,6 +243,8 @@ export class EbelgeService {
       const uygulamalar = firma
         ? await ebelgeUygulamalariCozTenant(tx, firma)
         : ebelgeUygulamalariCoz({ elle: { efatura: null, earsiv: null, eirsaliye: null }, liste: { efatura: false, eirsaliye: false, guncel: false } });
+      // EBLG-80: yurt dışı satışın türü firmanın e-Fatura kullanımına bağlıdır.
+      const ihracat = yolcu.yolcuBeraberi ? IHRACAT_DEGIL : ihracatOzeti(fatura, { efaturaAcik: uygulamalar.efatura.acik });
       const mukellefiyet = { mukellef: uygulamalar.eirsaliye.acik, kaynak: uygulamalar.eirsaliye.kaynak };
       const irsaliyeAdaylari = sevkiyatSorulur && mukellefiyet.mukellef ? await tx.belge.findMany({
         where: { tenantId, cariId: fatura.cariId, tur: "irsaliye", yon: "satis", durum: "onaylandi", OR: [{ faturaId: null }, { faturaId }], eirsaliye: { is: { durum: { in: ["iletildi", "kabul", "kismi_kabul"] } } } },
@@ -257,11 +259,11 @@ export class EbelgeService {
       // Kimlik kontrolü bu yüzden satış faturasında durdurucu değil, eksik
       // olarak bildirilir: işaret konursa belge zaten Bakanlığa gider.
       const vknYok = !vknTcknKabulEdilebilirMi(fatura.cari.vknTckn, testOrtami);
-      const yolcuOlabilir = fatura.tip === "satis" && !ihracat.ihracat;
-      if (iade.iade && ihracat.ihracat) {
+      const yolcuOlabilir = fatura.tip === "satis" && !ihracat.yurtDisi;
+      if (iade.iade && ihracat.yurtDisi) {
         return { gonderilebilir: false, neden: YURT_DISI_IADE_ENGELI, faturaNo: fatura.no, cari: fatura.cari.unvan, vknTckn: fatura.cari.vknTckn, saglayici: baglanti.saglayici };
       }
-      if (!ihracat.ihracat && vknYok && !(yolcuOlabilir && (yolcu.yolcuBeraberi || !fatura.cari.vknTckn))) {
+      if (!ihracat.yurtDisi && vknYok && !(yolcuOlabilir && (yolcu.yolcuBeraberi || !fatura.cari.vknTckn))) {
         return { gonderilebilir: false, neden: "Alıcının geçerli bir VKN/TCKN bilgisi olmalıdır.", faturaNo: fatura.no, cari: fatura.cari.unvan, vknTckn: fatura.cari.vknTckn, saglayici: baglanti.saglayici };
       }
       if (!gonderimTarihiGecerliMi(fatura.tarih)) {
@@ -275,8 +277,8 @@ export class EbelgeService {
       // KAMU senaryosu: liste türü sihirbazda kanal kararından önce okunur.
       // Harcama birimi faturada yoksa kartın varsayılanı, o da yoksa alıcının
       // kendisi önerilir (genel bütçeli kurumda iki VKN aynıdır).
-      const listeTuru = ihracat.ihracat || yolcu.yolcuBeraberi ? undefined : await this.mukellefListesi.listeTuru(fatura.cari.vknTckn);
-      const kamuMu = !ihracat.ihracat && !yolcu.yolcuBeraberi && kamuSenaryosuMu({ listeTuru, kartIsareti: fatura.cari.kamuIdaresi });
+      const listeTuru = ihracat.yurtDisi || yolcu.yolcuBeraberi ? undefined : await this.mukellefListesi.listeTuru(fatura.cari.vknTckn);
+      const kamuMu = !ihracat.yurtDisi && !yolcu.yolcuBeraberi && kamuSenaryosuMu({ listeTuru, kartIsareti: fatura.cari.kamuIdaresi });
       const kamuHesaplari = kamuMu
         ? await tx.bankaHesap.findMany({
             where: { tenantId, aktif: true, dovizCinsi: "TRY", iban: { not: null } },
@@ -363,6 +365,10 @@ export class EbelgeService {
               engeller: ihracat.engeller,
               menseiEksikleri: ihracat.menseiEksikleri,
             }
+          : undefined,
+        // EBLG-80: yurt dışı alıcıya e-Arşiv istisna; gümrük alanları istenmez.
+        yurtDisiEarsiv: ihracat.yurtDisiEarsiv
+          ? { ulkeKodu: ihracat.ulkeKodu, ulkeAdi: ihracat.ulkeAdi, engeller: ihracat.engeller }
           : undefined,
         // TCKN'li alıcıda e-Arşiv'e yazılacak ad/soyad; kartta yoksa tahmin
         // edildiği sihirbazda gösterilir (CARI-21).
@@ -473,6 +479,8 @@ export class EbelgeService {
           ? "Alıcı kamu idaresi olduğu için belge KAMU senaryosuyla düzenlenir: ödemeyi yapacak harcama birimi ve ödemenin yapılacağı IBAN belgeye yazılır."
           : ihracat.ihracat
           ? "Alıcı yurt dışı olduğu için belge ihracat faturası olarak düzenlenir: mükellefiyet sorgulanmaz, belge Ticaret Bakanlığı'nın posta kutusuna gider ve satırlar KDV'den istisna yazılır."
+          : ihracat.yurtDisiEarsiv
+          ? "Alıcı yurt dışı; belge e-Arşiv istisna faturası olarak düzenlenir (hizmet satışı ya da firma e-Fatura kullanmıyor): alıcı kimliği 2222222222 yazılır, satırlar 301 (mal) / 302 (hizmet) ile KDV'den istisnadır."
           : "Mükellefiyet kontrolü gönderim onayında tekrar doğrulanır.",
       };
     });
@@ -739,7 +747,8 @@ export class EbelgeService {
     const uygulamalar = hazirlik.uygulamalar;
     // Alıcı listesi yalnız e-Fatura açıkken sorulur: e-Arşiv kullanıcısında
     // alıcının mükellefiyeti kanalı değiştirmez, liste de indirilmez.
-    const mukellefiyet = !uygulamaAcik(uygulamalar, "efatura")
+    // EBLG-80: yurt dışı alıcıya e-Arşiv istisna kesilirken de liste sorulmaz.
+    const mukellefiyet = !uygulamaAcik(uygulamalar, "efatura") || hazirlik.ihracat.yurtDisiEarsiv
       ? { eFaturaMukellefi: false, postaKutusu: undefined }
       : hazirlik.ihracat.ihracat
         ? { eFaturaMukellefi: true, postaKutusu: IHRACAT_POSTA_KUTUSU }
@@ -753,10 +762,13 @@ export class EbelgeService {
     if (mukellefiyet.eFaturaMukellefi && uygulamaAcik(uygulamalar, "efatura") && !mukellefiyet.postaKutusu) {
       throw new BadRequestException("Alıcı e-Fatura mükellefi ancak GİB posta kutusu (alias) bulunamadı");
     }
-    // İhracat ve yolcu beraberi yalnız e-Fatura kanalında tanımlıdır; firma
-    // e-Fatura mükellefi değilse bu belgeler zaten kesilemez.
+    // Yolcu beraberi yalnız e-Fatura kanalında tanımlıdır. İhracat e-Faturası
+    // da öyledir, ama e-Fatura kullanmayan firmada yurt dışı satış zaten
+    // e-Arşiv istisna yoluna düşer (EBLG-80); buraya ihracat olarak gelmez.
     if (!uygulamaAcik(uygulamalar, "efatura") && (hazirlik.ihracat.ihracat || hazirlik.yolcu.yolcuBeraberi)) {
-      throw new BadRequestException("İhracat ve yolcu beraberi faturası yalnız e-Fatura mükellefi firmada düzenlenebilir");
+      throw new BadRequestException(hazirlik.ihracat.ihracat
+        ? "Firmanın e-Fatura durumu bilinmeden ihracat faturası kesilemez"
+        : "Yolcu beraberi faturası yalnız e-Fatura mükellefi firmada düzenlenebilir");
     }
     const tur: EbelgeTur = ebelgeKanali({ uygulamalar, aliciEfaturaMukellefi: mukellefiyet.eFaturaMukellefi }) === "efatura" ? "efatura" : "earsiv";
     /*
@@ -782,7 +794,7 @@ export class EbelgeService {
 
     // KAMU senaryosu: alıcı listede KAMU türündeyse ya da kartında işaretliyse.
     // Kamu idaresi e-Fatura mükellefidir; e-Arşiv'e düşen belge KAMU olamaz.
-    const kamu = !hazirlik.ihracat.ihracat && !hazirlik.yolcu.yolcuBeraberi && kamuSenaryosuMu({
+    const kamu = !hazirlik.ihracat.yurtDisi && !hazirlik.yolcu.yolcuBeraberi && kamuSenaryosuMu({
       listeTuru: "kamu" in mukellefiyet && mukellefiyet.kamu ? MUKELLEF_TURU_KAMU : undefined,
       kartIsareti: hazirlik.fatura.cari.kamuIdaresi,
     });
@@ -871,6 +883,7 @@ export class EbelgeService {
       {
         tur,
         ihracat: hazirlik.ihracat.ublBilgisi,
+        yurtDisiEarsiv: hazirlik.ihracat.yurtDisiEarsiv,
         internetSatisi: hazirlik.internet.ublBilgisi,
         iadeReferanslari: hazirlik.iade.iade ? hazirlik.iade.referanslar : undefined,
         irsaliyeReferanslari: sevkiyat.irsaliyeler.filter((i): i is { no: string; tarih: Date } => Boolean(i.no)),
@@ -898,13 +911,13 @@ export class EbelgeService {
         },
       });
       if (!fatura) throw new NotFoundException("Fatura bulunamadı");
-      const ozetler = gonderimKosullariniDenetle(fatura);
-      const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } });
-      if (!baglanti) throw new BadRequestException("Aktif bir e-belge entegratör bağlantısı bulunamadı.");
       const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
       if (!tenant) throw new NotFoundException("Tenant bulunamadı");
       // EBLG-77: kanal kararı firmanın kendi mükellefiyetiyle başlar.
       const uygulamalar = await ebelgeUygulamalariCozTenant(tx, tenant);
+      const ozetler = gonderimKosullariniDenetle(fatura, uygulamalar.efatura.acik);
+      const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } });
+      if (!baglanti) throw new BadRequestException("Aktif bir e-belge entegratör bağlantısı bulunamadı.");
       return { fatura, tenant, uygulamalar, saglayici: baglanti.saglayici, cfg: JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig, ...ozetler };
     });
 
@@ -943,7 +956,11 @@ export class EbelgeService {
       });
 
       if (!fatura) throw new NotFoundException("Fatura bulunamadı");
-      const { ihracat, internet, iade, yolcu } = gonderimKosullariniDenetle(fatura);
+      const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
+      if (!tenant) throw new NotFoundException("Tenant bulunamadı");
+      // EBLG-77: kanal kararı firmanın kendi mükellefiyetiyle başlar.
+      const uygulamalar = await ebelgeUygulamalariCozTenant(tx, tenant);
+      const { ihracat, internet, iade, yolcu } = gonderimKosullariniDenetle(fatura, uygulamalar.efatura.acik);
       if (fatura.ebelge && !["hata", "ret"].includes(fatura.ebelge.durum) && !takiliRezervasyonMu(fatura.ebelge)) {
         throw new ConflictException("Bu fatura için e-belge gönderim süreci zaten başlatılmış");
       }
@@ -960,15 +977,13 @@ export class EbelgeService {
       }
 
       const baglantiConfig = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
-      const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
-      if (!tenant) throw new NotFoundException("Tenant bulunamadı");
       // Test bağlantısında kontrol hanesi aranmaz (EBLG-47); gönderen de alıcı da
       // o ortamda sentetik kimlik taşır, üretimde kural aynen sürer.
       const testOrtami = Boolean(baglantiConfig.testOrtami);
       if (!vknTcknKabulEdilebilirMi(tenant.vkn, testOrtami)) {
         throw new BadRequestException("Gönderen firmanın geçerli bir VKN/TCKN bilgisi olmalıdır");
       }
-      if (!ihracat.ihracat && !yolcu.yolcuBeraberi && !vknTcknKabulEdilebilirMi(fatura.cari.vknTckn, testOrtami)) {
+      if (!ihracat.yurtDisi && !yolcu.yolcuBeraberi && !vknTcknKabulEdilebilirMi(fatura.cari.vknTckn, testOrtami)) {
         throw new BadRequestException("Alıcının geçerli bir VKN/TCKN bilgisi olmalıdır");
       }
 
@@ -1004,8 +1019,7 @@ export class EbelgeService {
       return {
         fatura,
         tenant,
-        // EBLG-77: kanal kararı firmanın kendi mükellefiyetiyle başlar.
-        uygulamalar: await ebelgeUygulamalariCozTenant(tx, tenant),
+        uygulamalar,
         rezervasyonId: rezervasyon.id,
         yenidenDeneme,
         saglayici: baglanti.saglayici,

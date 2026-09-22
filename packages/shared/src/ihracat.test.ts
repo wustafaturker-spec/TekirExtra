@@ -8,6 +8,9 @@ import {
   ihracatIstisnaKodu,
   ihracatIstisnaKoduMu,
   menseiUyarilari,
+  yurtDisiAliciMi,
+  yurtDisiEarsivEngelleri,
+  yurtDisiSatisTuru,
 } from "./ihracat";
 
 const satir = (ek: Partial<Parameters<typeof menseiUyarilari>[0][number]> = {}) => ({
@@ -94,5 +97,30 @@ describe("menseiUyarilari", () => {
     expect(menseiUyarilari([satir({ sira: 3, mensei: "Zımbırtistan" })])).toEqual([
       { sira: 3, stokAdi: "Ürün", mensei: "Zımbırtistan" },
     ]);
+  });
+});
+
+describe("yurt dışı alıcı (EBLG-80)", () => {
+  it("adres ülkesi Türkiye dışıysa ya da kartta yurt dışı VKN'si varsa yurt dışıdır", () => {
+    expect(yurtDisiAliciMi({ ulkeKodu: "DE", vknTckn: null })).toBe(true);
+    expect(yurtDisiAliciMi({ ulkeKodu: undefined, vknTckn: "2222222222" })).toBe(true);
+    expect(yurtDisiAliciMi({ ulkeKodu: "TR", vknTckn: "1460415308" })).toBe(true);
+    expect(yurtDisiAliciMi({ ulkeKodu: "TR", vknTckn: "1234567802" })).toBe(false);
+    expect(yurtDisiAliciMi({ ulkeKodu: undefined, vknTckn: null })).toBe(false);
+  });
+
+  it("mal satışında e-Fatura kullanan firma ihracat faturası keser", () => {
+    expect(yurtDisiSatisTuru({ efaturaAcik: true, stokTipleri: ["urun", "urun"] })).toBe("ihracat");
+  });
+
+  it("e-Fatura kullanmayan firma, hizmet ya da karışık satış e-Arşiv istisna keser", () => {
+    expect(yurtDisiSatisTuru({ efaturaAcik: false, stokTipleri: ["urun"] })).toBe("earsiv_istisna");
+    expect(yurtDisiSatisTuru({ efaturaAcik: true, stokTipleri: ["hizmet"] })).toBe("earsiv_istisna");
+    expect(yurtDisiSatisTuru({ efaturaAcik: true, stokTipleri: ["urun", "hizmet"] })).toBe("earsiv_istisna");
+  });
+
+  it("e-Arşiv yolunda gümrük alanları istenmez; ülke ve sıfır KDV istenir", () => {
+    expect(yurtDisiEarsivEngelleri("DE", [satir({ gtipKodu: null })])).toEqual([]);
+    expect(yurtDisiEarsivEngelleri(undefined, [satir({ kdvOrani: 20 })]).map((e) => e.alan)).toEqual(["ulke", "kdv"]);
   });
 });

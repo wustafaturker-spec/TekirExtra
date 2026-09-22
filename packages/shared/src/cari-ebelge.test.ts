@@ -28,4 +28,8 @@ describe("cariEbelgeDurumu (CARI-23)", () => {
     expect(cariEbelgeDurumu({ vknTckn: "2222222105", efatura: { ilkKayitZamani: null, tur: "KAMU" }, eirsaliye: null, listeGuncel: true }))
       .toMatchObject({ tur: "efatura", kamu: true, efaturaKayitTarihi: null });
   });
+
+  it("yurt dışı alıcı listeye bakılmadan Yurt dışı olarak işaretlenir (EBLG-80)", () => {
+    expect(cariEbelgeDurumu({ vknTckn: "2222222222", yurtDisi: true, efatura: null, eirsaliye: null, listeGuncel: false }).tur).toBe("yurtdisi");
+  });
 });

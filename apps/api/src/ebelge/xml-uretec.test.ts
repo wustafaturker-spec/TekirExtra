@@ -327,6 +327,44 @@ describe("belgeNoyuUbleYaz (EBLG-16 arşivi)", () => {
     expect(xml).not.toContain("<cac:Person>");
   });
 
+  it("yurt dışı alıcıya e-Arşiv istisna faturası: 2222222222, ISTISNA, 301/302 (EBLG-80)", () => {
+    const xml = faturaUblUret({
+      id: "55555555-5555-4555-8555-555555555555",
+      no: "SNC",
+      tarih: new Date("2026-09-22T12:00:00Z"),
+      tip: "satis",
+      senaryo: "istisna",
+      efaturaProfili: "temel",
+      dovizCinsi: "TRY",
+      kur: 1,
+      toplamKdv: 0, toplamMatrah: 1500, toplamBrut: 1500, genelToplam: 1500,
+      toplamSatirIskontosu: 0, genelIskontoToplam: 0,
+      cari: {
+        // Kartta işaret olarak Bakanlığın numarası yazılmış olsa da belgeye
+        // GİB'in yurt dışı alıcı numarası gider.
+        vknTckn: "1460415308", unvan: "Muster GmbH",
+        adresler: [{ tip: "fatura", adres: "Hauptstr. 1", il: "Berlin", ilce: "Mitte", postaKodu: "10115", ulke: "DE" }],
+      },
+      satirlar: [
+        { miktar: 1, matrah: 1000, iskontoTutari: 0, kdvTutari: 0, kdvOrani: 0, gibIstisnaKodu: null, birimFiyat: 1000, birim: "adet", stok: { kod: "STK-9", ad: "Fındık", tip: "urun" } },
+        { miktar: 1, matrah: 500, iskontoTutari: 0, kdvTutari: 0, kdvOrani: 0, gibIstisnaKodu: null, birimFiyat: 500, birim: "adet", stok: { kod: "HZM-1", ad: "Danışmanlık", tip: "hizmet" } },
+      ],
+    } as never, { unvan: "Satıcı A.Ş.", vkn: "9876543210" }, { tur: "earsiv", yurtDisiEarsiv: true });
+
+    expect(xml).toContain("<cbc:ProfileID>EARSIVFATURA</cbc:ProfileID>");
+    expect(xml).toContain("<cbc:InvoiceTypeCode>ISTISNA</cbc:InvoiceTypeCode>");
+    const alici = xml.match(/<cac:AccountingCustomerParty>[\s\S]*?<\/cac:AccountingCustomerParty>/)![0];
+    expect(alici).toContain('<cbc:ID schemeID="VKN">2222222222</cbc:ID>');
+    expect(alici).toContain("<cbc:Name>Muster GmbH</cbc:Name>");
+    expect(alici).toContain("<cbc:IdentificationCode>DE</cbc:IdentificationCode>");
+    expect(xml).not.toContain("1460415308");
+    // Mal 301, hizmet 302; gümrük alanları yok.
+    expect(xml).toContain("<cbc:TaxExemptionReasonCode>301</cbc:TaxExemptionReasonCode>");
+    expect(xml).toContain("<cbc:TaxExemptionReasonCode>302</cbc:TaxExemptionReasonCode>");
+    expect(xml).not.toContain("INCOTERMS");
+    expect(xml).not.toContain("BuyerCustomerParty");
+  });
+
   it("ihracat satırına GTİP, menşei ve mal ihracatı istisna kodunu yazar (EBLG-53)", () => {
     const ubl = (stok: Record<string, unknown>) => faturaUblUret({
       id: "55555555-5555-4555-8555-555555555555",

@@ -58,6 +58,7 @@ function EbelgeMukellefiyeti({ durum }: { durum: CariEbelgeDurumu & { listeGunce
       <div className="row-tight">
         {durum.tur === "efatura" && <Badge variant="info">e-Fatura mükellefi</Badge>}
         {durum.tur === "earsiv" && <Badge variant="neutral">e-Arşiv</Badge>}
+        {durum.tur === "yurtdisi" && <Badge variant="accent">Yurt dışı</Badge>}
         {durum.tur === "bilinmiyor" && <Badge variant="warning">Mükellefiyet bilinmiyor</Badge>}
         {durum.kamu && <Badge variant="accent">Kamu</Badge>}
         <small className="muted">
@@ -65,10 +66,12 @@ function EbelgeMukellefiyeti({ durum }: { durum: CariEbelgeDurumu & { listeGunce
             ? gun(durum.efaturaKayitTarihi) ? `GİB kaydı: ${gun(durum.efaturaKayitTarihi)}` : "GİB kayıt tarihi listede yok"
             : durum.tur === "earsiv"
               ? "e-Fatura mükellefi değil; faturalar e-Arşiv olarak kesilir"
-              : "Mükellef listesi güncel değil; entegratör listesini güncelleyin"}
+              : durum.tur === "yurtdisi"
+                ? "Mal satışı ihracat e-Faturasıyla, hizmet satışı e-Arşiv istisna ile kesilir; firma e-Fatura kullanmıyorsa ikisi de e-Arşiv istisnadır"
+                : "Mükellef listesi güncel değil; entegratör listesini güncelleyin"}
         </small>
       </div>
-      {durum.tur !== "bilinmiyor" && (
+      {(durum.tur === "efatura" || durum.tur === "earsiv") && (
         <small className="muted">
           {durum.eirsaliye
             ? `e-İrsaliye mükellefi${gun(durum.eirsaliyeKayitTarihi) ? ` · kayıt: ${gun(durum.eirsaliyeKayitTarihi)}` : ""}`
@@ -1488,7 +1491,7 @@ export default function CariSayfasi() {
                     <td>{c.vknTckn || "—"}</td>
                     <td>
                       {c.ebelgeTuru && (
-                        <Badge variant={c.ebelgeTuru === "efatura" ? "info" : c.ebelgeTuru === "earsiv" ? "neutral" : "warning"}>
+                        <Badge variant={c.ebelgeTuru === "efatura" ? "info" : c.ebelgeTuru === "earsiv" ? "neutral" : c.ebelgeTuru === "yurtdisi" ? "accent" : "warning"}>
                           {CARI_EBELGE_ETIKETI[c.ebelgeTuru]}
                         </Badge>
                       )}

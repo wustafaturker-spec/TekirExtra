@@ -16,16 +16,19 @@ describe("cariEbelgeDurumlariniOku (CARI-23)", () => {
       { vknTckn: "1234567802", belgeTuru: "eirsaliye", tur: null, ilkKayitZamani: null },
     ], taze), ["1234567802", "9876543210", null]);
 
-    expect(cariEbelgeDurumuBul(okuma, "1234567802")).toMatchObject({ tur: "efatura", efaturaKayitTarihi: "2014-07-18", eirsaliye: true });
-    expect(cariEbelgeDurumuBul(okuma, "9876543210").tur).toBe("earsiv");
-    expect(cariEbelgeDurumuBul(okuma, null).tur).toBe("earsiv");
+    expect(cariEbelgeDurumuBul(okuma, { vknTckn: "1234567802" })).toMatchObject({ tur: "efatura", efaturaKayitTarihi: "2014-07-18", eirsaliye: true });
+    expect(cariEbelgeDurumuBul(okuma, { vknTckn: "9876543210" }).tur).toBe("earsiv");
+    expect(cariEbelgeDurumuBul(okuma, { vknTckn: null }).tur).toBe("earsiv");
     expect(okuma.listeGuncellendi).toBe(taze.sonSenkronAt);
+    // EBLG-80: yurt dışı adresli ya da ortak VKN'li alıcı listeden önce gelir.
+    expect(cariEbelgeDurumuBul(okuma, { vknTckn: null, adresler: [{ tip: "fatura", ulke: "DE" }] }).tur).toBe("yurtdisi");
+    expect(cariEbelgeDurumuBul(okuma, { vknTckn: "2222222222" }).tur).toBe("yurtdisi");
   });
 
   it("liste 48 saatten eskiyse bilinmiyor der", async () => {
     const eski = { sonSenkronAt: new Date(Date.now() - 49 * 3_600_000), kayitSayisi: 100 };
     const okuma = await cariEbelgeDurumlariniOku(tx([], eski), ["9876543210"]);
 
-    expect(cariEbelgeDurumuBul(okuma, "9876543210").tur).toBe("bilinmiyor");
+    expect(cariEbelgeDurumuBul(okuma, { vknTckn: "9876543210" }).tur).toBe("bilinmiyor");
   });
 });

@@ -134,6 +134,44 @@ export function ihracatFaturasiMi(adresler: readonly IhracatAdres[]): boolean {
   return yurtDisiMi(aliciUlkeKodu(adresler));
 }
 
+/**
+ * GİB'in e-Arşiv faturasında yurt dışı alıcı için kullanılan ortak VKN'si.
+ * Alıcının kimliği değildir: unvan, adres ve ülke karttan yazılır (EBLG-80).
+ */
+export const YURT_DISI_ALICI_VKN = "2222222222";
+
+/** Kartta görüldüğünde alıcıyı yurt dışı sayduran numaralar (EBLG-80). */
+const YURT_DISI_VKNLERI = new Set([YURT_DISI_ALICI_VKN, GUMRUK_BAKANLIGI_VKN]);
+
+/**
+ * Alıcı yurt dışı mı (EBLG-80): fatura adresinin ülkesi Türkiye dışıysa ya da
+ * kartta yurt dışı alıcı VKN'si (2222222222) veya Ticaret Bakanlığı VKN'si
+ * (1460415308) yazılıysa.
+ */
+export function yurtDisiAliciMi(girdi: { ulkeKodu: string | null | undefined; vknTckn: string | null | undefined }): boolean {
+  return yurtDisiMi(girdi.ulkeKodu) || YURT_DISI_VKNLERI.has((girdi.vknTckn ?? "").trim());
+}
+
+export type YurtDisiSatisTuru = "ihracat" | "earsiv_istisna";
+
+/**
+ * Yurt dışı alıcıya hangi belge kesilir (EBLG-80). İhracat e-Faturası
+ * gümrük beyannamesine bağlı **mal** ihracatı içindir ve yalnız e-Fatura
+ * kullanan firma düzenleyebilir; hizmet satırı olan fatura ya da e-Fatura
+ * kullanmayan firma e-Arşiv, tip ISTISNA keser (301 mal / 302 hizmet).
+ */
+export function yurtDisiSatisTuru(girdi: { efaturaAcik: boolean; stokTipleri: readonly (string | null | undefined)[] }): YurtDisiSatisTuru {
+  return girdi.efaturaAcik && girdi.stokTipleri.every((tip) => tip !== "hizmet") ? "ihracat" : "earsiv_istisna";
+}
+
+/**
+ * e-Arşiv istisna yolunun eksikleri: gümrük alanları istenmez, ama alıcının
+ * Türkiye dışı ülkesi ve satırların sıfır KDV'si şarttır.
+ */
+export function yurtDisiEarsivEngelleri(ulkeKodu: string | undefined, satirlar: readonly IhracatSatirGirdi[]): IhracatEngeli[] {
+  return ihracatEngelleri(ulkeKodu, {}, satirlar).filter((e) => e.alan === "ulke" || e.alan === "kdv");
+}
+
 export interface IhracatSatirGirdi {
   sira: number;
   stokAdi: string;
