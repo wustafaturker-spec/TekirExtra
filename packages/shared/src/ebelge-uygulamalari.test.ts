@@ -4,6 +4,7 @@ import {
   ebelgeKanali,
   ebelgeKullanilmiyor,
   ebelgeUygulamalariCoz,
+  mukellefiyetCelismeleri,
   uygulamaAcik,
 } from "./ebelge-uygulamalari";
 
@@ -101,5 +102,23 @@ describe("ebelgeKanali (EBLG-77)", () => {
 
     expect(ebelgeKanalEngelleri({ uygulamalar, aliciEfaturaMukellefi: false })).toEqual([]);
     expect(coz({ efatura: true }).earsiv.acik).toBe(true);
+  });
+});
+
+describe("mukellefiyetCelismeleri (EBLG-77)", () => {
+  it("listede kayıtlı firma e-Fatura'yı kapatırsa uyarır", () => {
+    const celismeler = mukellefiyetCelismeleri({ elle: { efatura: false, eirsaliye: null }, liste: { efatura: true, eirsaliye: false } });
+    expect(celismeler).toHaveLength(1);
+    expect(celismeler[0]).toContain("e-Fatura mükellefi görünüyor");
+  });
+
+  it("listede kayıtlı firma e-İrsaliye'yi kapatırsa uyarır; e-Fatura zaten kapalıysa ikinci uyarı yinelenmez", () => {
+    expect(mukellefiyetCelismeleri({ elle: { efatura: true, eirsaliye: false }, liste: { efatura: true, eirsaliye: true } })).toHaveLength(1);
+    expect(mukellefiyetCelismeleri({ elle: { efatura: false, eirsaliye: false }, liste: { efatura: true, eirsaliye: true } })).toHaveLength(1);
+  });
+
+  it("ayar listeyle uyumluysa ya da otomatikse uyarmaz", () => {
+    expect(mukellefiyetCelismeleri({ elle: { efatura: false, eirsaliye: false }, liste: { efatura: false, eirsaliye: false } })).toEqual([]);
+    expect(mukellefiyetCelismeleri({ elle: { efatura: null, eirsaliye: null }, liste: { efatura: true, eirsaliye: true } })).toEqual([]);
   });
 });

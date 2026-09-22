@@ -38,6 +38,8 @@ interface Firma {
   sgkMukellefAdi: string | null;
   /** EBLG-77: firmanın kendi mükellefiyetleri; null "otomatik" demektir. */
   efaturaMukellefi: boolean | null;
+  /** EBLG-77: elle "kayıtlı değiliz" denmiş ama GİB listesi aksini söylüyor. */
+  ebelgeCelismeleri?: string[];
   earsivMukellefi: boolean | null;
   eirsaliyeMukellefi: boolean | null;
   ebelgeUygulamalari?: EbelgeUygulamalari;
@@ -69,7 +71,7 @@ function uygulamaAciklamasi(kod: EbelgeUygulamaKodu, uygulamalar: EbelgeUygulama
   const ek = kod === "eirsaliye"
     ? " e-İrsaliye, e-Fatura'ya kayıtlı olmayı gerektirir."
     : kod === "efatura"
-      ? " Kapalıysa alıcı mükellef olsa bile belge e-Arşiv olarak düzenlenir."
+      ? " Kapalıysa belgeler e-Arşiv olarak düzenlenir; bunu yalnız firma GİB'de e-Fatura'ya gerçekten kayıtlı değilse seçin — entegratör ayara değil GİB listesine bakar."
       : "";
   return `Geçerli durum: ${deger} (${kaynak}).${ek}`;
 }
@@ -326,6 +328,10 @@ export default function FirmaAyarlariSayfasi() {
                 </Select>
                 <small className="muted">{uygulamaAciklamasi(uygulama.kod, firma?.ebelgeUygulamalari)}</small>
               </Field>
+            ))}
+            {/* Ayar "kayıtlı değiliz" derken GİB listesi aksini söylüyor: entegratör listeye bakar. */}
+            {firma?.ebelgeCelismeleri?.map((uyari) => (
+              <Alert key={uyari} tone="warning">{uyari}</Alert>
             ))}
             {firma?.ebelgeUygulamalari && ebelgeKullanilmiyor(firma.ebelgeUygulamalari) && (
               <Alert tone="warning">Firma e-Fatura ve e-Arşiv uygulamalarına kayıtlı değil; faturalar e-belge olarak gönderilmez, kendi şablonumuzla kağıda basılır.</Alert>

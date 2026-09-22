@@ -13,7 +13,7 @@ import {
 import { z } from "zod";
 import { Public } from "../auth/public.decorator";
 import { Roller } from "../auth/roller.decorator";
-import { ebelgeUygulamalariCozTenant } from "../ebelge/ebelge-uygulamalari.service";
+import { ebelgeUygulamalariCozTenant, mukellefiyetCelismeleriniOku } from "../ebelge/ebelge-uygulamalari.service";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import {
@@ -112,6 +112,7 @@ export class TenantController {
       return {
         ...tenant,
         ebelgeUygulamalari,
+        ebelgeCelismeleri: await mukellefiyetCelismeleriniOku(tx, tenant),
         logo,
         ebelgeEksikleri: firmaEbelgeEksikleri(tenant),
       };
@@ -143,6 +144,7 @@ export class TenantController {
       return {
         ...tenant,
         ebelgeUygulamalari: await ebelgeUygulamalariCozTenant(tx, tenant),
+        ebelgeCelismeleri: await mukellefiyetCelismeleriniOku(tx, tenant),
         logo,
         ebelgeEksikleri: firmaEbelgeEksikleri(tenant),
       };

@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ebelgeUygulamalariCoz, type EbelgeUygulamalari } from "@tekirextra/shared";
+import { ebelgeUygulamalariCoz, mukellefiyetCelismeleri, type EbelgeUygulamalari } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 
@@ -57,6 +57,21 @@ export async function ebelgeUygulamalariCozTenant(
   return ebelgeUygulamalariCoz({
     elle: { efatura: tenant.efaturaMukellefi, earsiv: tenant.earsivMukellefi, eirsaliye: tenant.eirsaliyeMukellefi },
     liste,
+  });
+}
+
+/**
+ * Firma ayarı "kayıtlı değiliz" derken GİB listesi aksini söylüyorsa firma
+ * kartında gösterilecek uyarılar. Liste yalnız bir ayar "hayır" ise sorulur.
+ */
+export async function mukellefiyetCelismeleriniOku(
+  tx: Prisma.TransactionClient,
+  tenant: { vkn: string; efaturaMukellefi: boolean | null; eirsaliyeMukellefi: boolean | null },
+): Promise<string[]> {
+  if (tenant.efaturaMukellefi !== false && tenant.eirsaliyeMukellefi !== false) return [];
+  return mukellefiyetCelismeleri({
+    elle: { efatura: tenant.efaturaMukellefi, eirsaliye: tenant.eirsaliyeMukellefi },
+    liste: await listeDurumu(tx, tenant.vkn),
   });
 }
 

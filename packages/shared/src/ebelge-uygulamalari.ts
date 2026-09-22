@@ -50,6 +50,27 @@ export function ebelgeUygulamalariCoz(girdi: {
   return { efatura, earsiv, eirsaliye };
 }
 
+/**
+ * Firma ayarında "kayıtlı değiliz" denmiş ama firmanın kendi VKN'si GİB
+ * listesinde görünüyor. Entegratör ve GİB listeye bakar, ayarımıza değil:
+ * e-Fatura'da bu ayarla mükellef alıcıya kesilen e-Arşiv belgesi
+ * "ALICI EFATURA MUKELLEFIDIR" diye reddedilir (NES testi 2026-09-22).
+ * Liste eski olsa da uyarılır — kayıt tek başına güçlü bir işarettir.
+ */
+export function mukellefiyetCelismeleri(girdi: {
+  elle: { efatura: boolean | null; eirsaliye: boolean | null };
+  liste: { efatura: boolean; eirsaliye: boolean };
+}): string[] {
+  const celismeler: string[] = [];
+  if (girdi.elle.efatura === false && girdi.liste.efatura) {
+    celismeler.push("Firmanız GİB listesinde e-Fatura mükellefi görünüyor. Bu ayarla e-Fatura mükellefi alıcılara kesilen faturalar e-Arşiv olarak gider ve GİB tarafından reddedilir.");
+  }
+  if (girdi.elle.eirsaliye === false && girdi.elle.efatura !== false && girdi.liste.eirsaliye) {
+    celismeler.push("Firmanız GİB listesinde e-İrsaliye mükellefi görünüyor. Bu ayarla sevkiyatlar için e-İrsaliye düzenlenmez ve faturada sevkiyat sorulmaz.");
+  }
+  return celismeler;
+}
+
 /** Uygulama kesin olarak açık mı? "Bilinmiyor" açık sayılmaz. */
 export function uygulamaAcik(uygulamalar: EbelgeUygulamalari, kod: EbelgeUygulamaKodu): boolean {
   return uygulamalar[kod].acik === true;
