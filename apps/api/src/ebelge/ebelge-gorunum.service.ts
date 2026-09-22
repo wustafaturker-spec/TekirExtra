@@ -1,7 +1,10 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import type { EntegratorConfig } from "@tekirextra/baglanti";
 import { aktifBaglam } from "../core/istek-baglami";
+import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
+import { BaglantilarService } from "../tenant/baglantilar.service";
 import { ebelgeYedekPdfHtml } from "./ebelge-pdf";
 import { eirsaliyeYedekPdfHtml } from "./eirsaliye-pdf";
 import { IrsaliyeUblOkumaHatasi, irsaliyeUblOku } from "./eirsaliye-ubl-oku";
@@ -15,10 +18,37 @@ import { gomuluXsltCikar } from "./ubl-gorunum";
  */
 @Injectable()
 export class EbelgeGorunumService {
+  private readonly logger = new Logger(EbelgeGorunumService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly pdf: PdfService,
+    private readonly baglantilar: BaglantilarService,
   ) {}
+
+  /**
+   * Gönderilmiş belgenin resmî görünümü (EBLG-75). Alıcının gördüğü tasarım
+   * entegratördedir — belgeye XSLT gömmüyoruz (EBLG-31 kararı) — bu yüzden
+   * kendi yedek görünümümüzü basmadan önce oradan indirmeyi deneriz.
+   * İndirilemezse `null` döner ve çağıran yedek görünüme düşer; belge
+   * görüntülemek entegratör erişilemediği için hiç başarısız olmamalı.
+   */
+  private async saglayicidanPdf(tur: "efatura" | "earsiv", uuid: string): Promise<Buffer | null> {
+    const { tenantId } = aktifBaglam();
+    try {
+      const baglanti = await this.prisma.tenantIslem(tenantId, (tx) =>
+        tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } }),
+      );
+      if (!baglanti) return null;
+      const adapter = this.baglantilar.adapterCoz(baglanti.saglayici);
+      if (!adapter.gidenBelgePdf) return null;
+      const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
+      return await adapter.gidenBelgePdf(cfg, uuid, tur);
+    } catch (hata) {
+      this.logger.warn({ event: "ebelge_saglayici_gorunumu_alinamadi", uuid, hata: hata instanceof Error ? hata.message : String(hata) });
+      return null;
+    }
+  }
 
   /** Belgenin gömülü görünümünü (EBLG-28) basmayı dener; yoksa `null`. */
   private async gomuluGorunumHtml(xml: string): Promise<string | null> {
@@ -84,7 +114,7 @@ export class EbelgeGorunumService {
     const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.ebelgeKayit.findUnique({
         where: { faturaId },
-        select: { fatura: { select: { no: true } }, arsiv: { select: { xmlIcerik: true } } },
+        select: { tur: true, fatura: { select: { no: true } }, arsiv: { select: { xmlIcerik: true } } },
       }),
     );
     if (!kayit?.arsiv) {
@@ -92,7 +122,12 @@ export class EbelgeGorunumService {
         "Bu fatura için arşivlenmiş e-belge bulunamadı; belge henüz gönderilmemiş olabilir",
       );
     }
-    return this.pdfUret(kayit.arsiv.xmlIcerik, `efatura-${kayit.fatura.no ?? faturaId}.pdf`, true);
+    const dosyaAdi = `efatura-${kayit.fatura.no ?? faturaId}.pdf`;
+    // EBLG-75: önce alıcının gördüğü resmî görünüm; yedek görünüm ancak
+    // entegratörden belge gelmezse basılır.
+    const saglayiciPdf = await this.saglayicidanPdf(kayit.tur === "earsiv" ? "earsiv" : "efatura", faturaId);
+    if (saglayiciPdf?.length) return { buffer: saglayiciPdf, dosyaAdi };
+    return this.pdfUret(kayit.arsiv.xmlIcerik, dosyaAdi, true);
   }
 
   /** EBLG-33: gelen e-İrsaliye — gönderenin görünümüyle, yoksa irsaliye yedek görünümüyle. */

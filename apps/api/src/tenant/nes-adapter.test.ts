@@ -710,6 +710,34 @@ describe("NesEntegratorAdapter", () => {
   });
 });
 
+describe("NES giden belge görünümü (EBLG-75)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const pdfYanit = () => {
+    const pdf = Buffer.from("%PDF-1.4 sahte");
+    return { ok: true, status: 200, arrayBuffer: async () => pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength) };
+  };
+
+  it("e-Faturayı giden belge ucundan indirir", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(pdfYanit());
+    vi.stubGlobal("fetch", fetchMock);
+    const pdf = await new NesEntegratorAdapter().gidenBelgePdf(config, "fatura-1", "efatura");
+    expect(pdf?.subarray(0, 5).toString()).toBe("%PDF-");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://apitest.nes.com.tr/einvoice/v1/outgoing/invoices/fatura-1/pdf");
+  });
+
+  it("e-Arşivde kendi ailesinin ucuna gider", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(pdfYanit());
+    vi.stubGlobal("fetch", fetchMock);
+    await new NesEntegratorAdapter().gidenBelgePdf(config, "fatura-2", "earsiv");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://apitest.nes.com.tr/earchive/v1/invoices/fatura-2/pdf");
+  });
+
+  it("belge bulunamazsa hata fırlatmaz — çağıran yedek görünüme düşer", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ message: "NOT_FOUND" }, 404)));
+    await expect(new NesEntegratorAdapter().gidenBelgePdf(config, "yok", "efatura")).resolves.toBeNull();
+  });
+});
+
 describe("NES önizleme (L)", () => {
   afterEach(() => vi.unstubAllGlobals());
   const belge = { uuid: "fatura-1", belgeNo: "K07", xml: "<Invoice/>", tur: "earsiv" as const };

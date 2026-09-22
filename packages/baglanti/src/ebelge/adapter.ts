@@ -74,6 +74,15 @@ export interface EntegratorAdapter {
    */
   belgeAra?(cfg: EntegratorConfig, kaynakKayitId: string, tur: UblBelge["tur"]): Promise<GonderimSonuc | undefined>;
 
+  /**
+   * Gönderilmiş belgenin **resmî görünümü** (EBLG-75): alıcının portalda
+   * gördüğü PDF'i sağlayıcıdan indirir. Belgeye görünüm gömmediğimiz için
+   * (bkz. EBLG-31 kararı) tasarımı sağlayıcı yapar; kendi yedek görünümümüz
+   * yalnız bu indirme başarısız olduğunda basılır. Uygulamayan sağlayıcıda
+   * tanımsız kalır.
+   */
+  gidenBelgePdf?(cfg: EntegratorConfig, uuid: string, tur: UblBelge["tur"]): Promise<Buffer | null>;
+
   /** Zarf durumlarını toplu sorgular (EBLG-14); sağlayıcı sınırına adaptör uyar. */
   durumSorgulaToplu?(cfg: EntegratorConfig, belgeRefleri: string[]): Promise<BelgeDurumSonuc[]>;
   yanitGonder(

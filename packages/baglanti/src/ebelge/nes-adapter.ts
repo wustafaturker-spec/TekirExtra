@@ -616,6 +616,31 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
   }
 
   /**
+   * Gönderilmiş belgenin resmî görünümü (EBLG-75). Belgeye XSLT gömmediğimiz
+   * için alıcının gördüğü tasarım NES'tedir; bu uç onu PDF olarak verir.
+   * Yollar ailelere göre ayrıdır: e-Faturada `/v1/outgoing/invoices/{uuid}/pdf`
+   * (swagger'da belgeli), e-Arşivde `/v1/invoices/{uuid}/pdf` (2026-09-20'de
+   * denenerek bulundu; e-Arşiv şeması repoda yok). `uuid` bizim fatura
+   * kimliğimizdir — UBL'e `cbc:UUID` olarak onu yazıyoruz.
+   */
+  async gidenBelgePdf(cfg: EntegratorConfig, uuid: string, tur: UblBelge["tur"]): Promise<Buffer | null> {
+    if (configDogrula(cfg)) return null;
+    const earsiv = tur === "earsiv";
+    try {
+      return await this.cagir<Buffer>(
+        cfg,
+        earsiv ? "earchive" : "einvoice",
+        earsiv ? `/v1/invoices/${uuid}/pdf` : `/v1/outgoing/invoices/${uuid}/pdf`,
+        { ikili: true },
+      );
+    } catch {
+      // Görünüm indirilemezse çağıran kendi yedek görünümünü basar; belge
+      // görüntülemek hiçbir zaman hata vermemeli.
+      return null;
+    }
+  }
+
+  /**
    * Yeniden denemeden önce belgenin sağlayıcıda zaten var olup olmadığına
    * bakar (EBLG-17). NES, UBL'deki `cbc:UUID` değerini belgenin kimliği olarak
    * saklar; biz oraya fatura kimliğimizi yazdığımız için `uuid` filtresiyle
