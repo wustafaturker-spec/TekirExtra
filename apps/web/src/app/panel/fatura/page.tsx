@@ -2757,7 +2757,8 @@ export default function FaturaSayfasi() {
             )}
             </>)}
             {ebelgeWizard.adim === 1 && (<>
-            {ebelgeWizard.bilgi.sevkiyat?.gerekli && (
+            {/* Firma e-İrsaliye mükellefi değilse (ya da e-Fatura kapalıysa, EBLG-77) soru hiç sorulmaz. */}
+            {ebelgeWizard.bilgi.sevkiyat?.gerekli && ebelgeWizard.bilgi.sevkiyat.mukellef !== false && (
               <div className="approval-impact">
                 <strong>Sevkiyat ve e-İrsaliye</strong>
                 {/* EBLG-76: yol seçilmeden belge gönderilmez; üç yol birbirini dışlar. */}
