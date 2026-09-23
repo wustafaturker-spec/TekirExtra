@@ -15,7 +15,7 @@ import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-alani";
-import { ebelgeKullanilmiyor, type EbelgeUygulamalari } from "@tekirextra/shared";
+import { ebelgeGitmemisMi, ebelgeKullanilmiyor, type EbelgeUygulamalari } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -125,6 +125,8 @@ interface Fatura {
    */
   /** `takiliGonderim`: gönderim yarım kalmış, yeniden gönderilebilir (EBLG-37). */
   ebelge?: { id: string; durum: string; tur: string; entegratorRef?: string | null; takiliGonderim?: boolean; aliciYaniti?: "kabul" | "ret" | null; aliciYanitZamani?: string | null; aliciYanitNotu?: string | null } | null;
+  /** Sunucunun rol ve durum politikası (fatura eylemleri). */
+  izinliEylemler?: string[];
   /** EBLG-63: ihraç kayıtlıda malın ihraç edilmesi gereken son gün; beyanname gelince takip biter. */
   ihracKayitliSonTarih?: string | null;
   gumrukBeyannameNo?: string | null;
@@ -1107,6 +1109,32 @@ export default function FaturaSayfasi() {
     }
   }
 
+  /**
+   * Kesin faturanın iptali: e-belgesiz (kâğıt) fatura, e-Arşiv (8 gün, EBLG-22)
+   * ve e-Belgesi entegratöre hiç ulaşmamış fatura (EBLG-81). Gönderilmiş
+   * e-Fatura iptal edilmez, iade faturası düzenlenir. Süre ve entegratör
+   * kontrolü sunucudadır.
+   */
+  function kesinIptalEdilebilir(fatura: Fatura) {
+    if (!fatura.izinliEylemler?.includes("iptal")) return false;
+    if (!fatura.ebelge) return true;
+    if (fatura.ebelge.durum === "iptal") return false;
+    return fatura.ebelge.tur === "earsiv" || ebelgeGitmemisMi({ faturaNo: fatura.no, ebelge: fatura.ebelge });
+  }
+
+  async function kesinIptalEt(fatura: Fatura) {
+    const gitmemis = ebelgeGitmemisMi({ faturaNo: fatura.no, ebelge: fatura.ebelge });
+    const uyari = gitmemis
+      ? "e-Belgesi entegratöre hiç ulaşmamış bu fatura iptal edilecek. Önce entegratöre belgenin oluşmadığı sorulur; stok ve cari için ters kayıt yazılır."
+      : fatura.ebelge
+        ? "Bu e-Arşiv faturası iptal edilecek ve iptal entegratöre bildirilecek. Bu işlem geri alınamaz; stok ve cari için ters kayıt yazılır."
+        : "Bu kesin fatura iptal edilecek; stok ve cari için ters kayıt yazılır.";
+    if (!window.confirm(`${uyari} Devam edilsin mi?`)) return;
+    setHata(""); setBasari("");
+    try { await api(`/fatura/${fatura.id}/iptal`, { method: "POST" }); setBasari("Fatura iptal edildi."); void yukle(); }
+    catch (h) { setHata(h instanceof Error ? h.message : "Fatura iptal edilemedi"); }
+  }
+
   async function iptalEt(id: string) {
     if (!window.confirm("Bu taslak faturayı iptal etmek istediğinize emin misiniz? Kayıt, iptal durumuyla korunacaktır.")) return;
     setHata(""); setBasari("");
@@ -1698,6 +1726,7 @@ export default function FaturaSayfasi() {
                 <Button size="sm" type="button" onClick={() => void odemeDetayAc(acikFatura.id)}>Ödeme ayrıntısı</Button>
                 {acikFatura.ebelge && <Button size="sm" type="button" onClick={() => void ebelgeDetayAc(acikFatura.id)}>e-Belge ayrıntısı</Button>}
                 {acikFatura.durum === "taslak" && <Button variant="danger" size="sm" type="button" onClick={() => void iptalEt(acikFatura.id)}>İptal et</Button>}
+                {acikFatura.durum === "kesin" && kesinIptalEdilebilir(acikFatura) && <Button variant="danger" size="sm" type="button" onClick={() => void kesinIptalEt(acikFatura)}>İptal et</Button>}
               </EylemMenusu>
             </EylemCubugu>
           )}

@@ -1121,6 +1121,46 @@ describe("EbelgeService.earsivBelgesiniIptalEt (EBLG-22)", () => {
   });
 });
 
+describe("EbelgeService.gitmemisBelgeyiKapat (EBLG-81)", () => {
+  const metrics = { increment: vi.fn(), set: vi.fn() } as any;
+
+  function kur(belgeAra: ReturnType<typeof vi.fn>) {
+    const earsivIptal = vi.fn();
+    const baglantilar = { adapterCoz: vi.fn().mockReturnValue({ belgeAra, earsivIptal }) } as any;
+    const tx = {
+      baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "u" }) }) },
+      ebelgeKayit: { update: vi.fn().mockResolvedValue({}) },
+    } as any;
+    const service = new EbelgeService({} as any, baglantilar, {} as any, {} as any, metrics, {} as any, {} as any, {} as any);
+    return { service, tx, earsivIptal };
+  }
+
+  it("belge entegratörde yoksa kaydı iptal eder, entegratöre iptal göndermez", async () => {
+    const belgeAra = vi.fn().mockResolvedValue(undefined);
+    const { service, tx, earsivIptal } = kur(belgeAra);
+
+    await service.gitmemisBelgeyiKapat(tx, { id: "f1" }, { id: "eb1", tur: "earsiv" });
+
+    expect(belgeAra).toHaveBeenCalledWith(expect.anything(), "f1", "earsiv");
+    expect(tx.ebelgeKayit.update).toHaveBeenCalledWith({ where: { id: "eb1" }, data: { durum: "iptal" } });
+    expect(earsivIptal).not.toHaveBeenCalled();
+  });
+
+  it("belge entegratörde oluşmuşsa durur", async () => {
+    const { service, tx } = kur(vi.fn().mockResolvedValue({ basarili: true, belgeRef: "x", belgeNo: "SNC2026000000009" }));
+
+    await expect(service.gitmemisBelgeyiKapat(tx, { id: "f1" }, { id: "eb1", tur: "earsiv" })).rejects.toThrow("SNC2026000000009");
+    expect(tx.ebelgeKayit.update).not.toHaveBeenCalled();
+  });
+
+  it("sorgu çalışmazsa körlemesine iptal etmez", async () => {
+    const { service, tx } = kur(vi.fn().mockRejectedValue(new Error("zaman aşımı")));
+
+    await expect(service.gitmemisBelgeyiKapat(tx, { id: "f1" }, { id: "eb1", tur: "efatura" })).rejects.toThrow("kontrol edilemedi");
+    expect(tx.ebelgeKayit.update).not.toHaveBeenCalled();
+  });
+});
+
 describe("EbelgeService — çağrı disiplini", () => {
   const cfg = JSON.stringify({ kullaniciAdi: "test" });
 

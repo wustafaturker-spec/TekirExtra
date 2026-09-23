@@ -1962,6 +1962,39 @@ export class EbelgeService {
    * GİB raporuna girmiş belge iptal edilmez — o noktadan sonra iptal bildirimi
    * raporlama üzerinden yürür ve uygulamanın doğrulayamayacağı bir süreçtir.
    */
+  /**
+   * e-Belgesi entegratöre hiç ulaşmamış kesin fatura (kayıt "hata", numara ve
+   * entegratör referansı yok) iptal edilebilir. GİB'de karşılığı olmadığı için
+   * entegratöre iptal gönderilmez; ama önceki denemede ağ çağrısı başarılı
+   * olup kalıcılaştırma düşmüş olabilir (EBLG-17), bu yüzden önce sağlayıcıya
+   * sorulur. Belge oradaysa ya da sorulamıyorsa iptal durur — körlemesine
+   * iptal, GİB'de canlı duran bir belgeyi bizde iptal göstermek olurdu.
+   */
+  async gitmemisBelgeyiKapat(
+    tx: Prisma.TransactionClient,
+    fatura: { id: string },
+    ebelge: { id: string; tur: EbelgeTur },
+  ): Promise<void> {
+    const { tenantId } = aktifBaglam();
+    const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } });
+    if (!baglanti) throw new BadRequestException("Aktif e-belge bağlantısı bulunamadı; belgenin entegratöre ulaşmadığı doğrulanamadan fatura iptal edilemez");
+    const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
+    const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
+    if (!adapter.belgeAra) throw new BadRequestException("Aktif entegratörde belge sorgusu yok; belgenin entegratöre ulaşmadığı doğrulanamadan fatura iptal edilemez");
+    this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "belgeAra", saglayici: baglanti.saglayici });
+    let mevcut: GonderimSonuc | undefined;
+    try {
+      mevcut = await adapter.belgeAra(cfg, fatura.id, ebelge.tur);
+    } catch (hata) {
+      const sebep = hata instanceof Error ? hata.message : "bilinmeyen hata";
+      throw new ServiceUnavailableException(`Belgenin entegratörde oluşup oluşmadığı kontrol edilemedi, iptal durduruldu: ${sebep}`);
+    }
+    if (mevcut) {
+      throw new ConflictException(`Belge entegratörde oluşmuş${mevcut.belgeNo ? ` (${mevcut.belgeNo})` : ""}; önce e-Belge durumunu sorgulayın, fatura numarasını alsın`);
+    }
+    await tx.ebelgeKayit.update({ where: { id: ebelge.id }, data: { durum: "iptal" } });
+  }
+
   async earsivBelgesiniIptalEt(
     tx: Prisma.TransactionClient,
     fatura: { id: string; no: string | null; tarih: Date; genelToplam: Prisma.Decimal },

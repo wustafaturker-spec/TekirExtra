@@ -1,4 +1,4 @@
-import { ihracKayitliSonTarih } from "@tekirextra/shared";
+import { ebelgeGitmemisMi, ihracKayitliSonTarih } from "@tekirextra/shared";
 import {
   BadRequestException,
   ConflictException,
@@ -947,7 +947,11 @@ export class FaturaService {
       // Kesilen e-Fatura iptal edilmez; düzeltme yolu iade faturasıdır.
       // e-Arşiv'de ise iptal normal mekanizmadır — belge GİB raporuna
       // girmediği sürece iptal edilebilir (EBLG-22).
-      if (fatura.ebelge && fatura.ebelge.tur !== "earsiv") {
+      // e-Belgesi entegratöre hiç ulaşmamış fatura (hata, numarasız, referanssız)
+      // kanaldan bağımsız iptal edilebilir: GİB'de karşılığı yoktur. Ulaşmadığı
+      // iptal anında entegratöre sorularak doğrulanır.
+      const gitmemisEbelge = Boolean(fatura.ebelge && ebelgeGitmemisMi({ faturaNo: fatura.no, ebelge: fatura.ebelge }));
+      if (fatura.ebelge && fatura.ebelge.tur !== "earsiv" && !gitmemisEbelge) {
         throw new BadRequestException("e-Fatura olarak gönderilmiş fatura iptal edilemez; iade faturası düzenleyin");
       }
 
@@ -969,7 +973,9 @@ export class FaturaService {
       // Entegratördeki iptal bu işlemin içinde yapılır: başarısız olursa
       // buradaki hata işlemi geri alır ve bizde iptal görünen ama GİB'de canlı
       // duran bir belge kalmaz.
-      if (fatura.ebelge && fatura.ebelge.durum !== "iptal") {
+      if (fatura.ebelge && gitmemisEbelge) {
+        await this.ebelge.gitmemisBelgeyiKapat(tx, fatura, fatura.ebelge);
+      } else if (fatura.ebelge && fatura.ebelge.durum !== "iptal") {
         await this.ebelge.earsivBelgesiniIptalEt(tx, fatura, fatura.ebelge);
       }
 
