@@ -41,6 +41,8 @@ export function IrsaliyeBaglaPaneli({ kaynak, onKapat, onBaglandi }: {
   const [faturaId, setFaturaId] = useState(kaynak.faturaId ?? "");
   const [secili, setSecili] = useState<string[]>(kaynak.irsaliyeId ? [kaynak.irsaliyeId] : []);
   const [farklar, setFarklar] = useState<Fark[] | null>(null);
+  /** EBLG-82: fatura tarihi irsaliyenin faturalama süresinden sonraysa. */
+  const [gecikmeler, setGecikmeler] = useState<string[]>([]);
 
   const yukle = useCallback(async () => {
     setYukleniyor(true);
@@ -61,11 +63,12 @@ export function IrsaliyeBaglaPaneli({ kaynak, onKapat, onBaglandi }: {
   useEffect(() => { void yukle(); }, [yukle]);
 
   useEffect(() => {
-    if (!faturaId || secili.length === 0) { setFarklar(null); return; }
+    if (!faturaId || secili.length === 0) { setFarklar(null); setGecikmeler([]); return; }
     let aktif = true;
     setFarklar(null);
-    api<{ farklar: Fark[] }>("/belgeler/irsaliye-bagla/karsilastir", { method: "POST", body: JSON.stringify({ faturaId, irsaliyeIds: secili }) })
-      .then((sonuc) => { if (aktif) setFarklar(sonuc.farklar); })
+    setGecikmeler([]);
+    api<{ farklar: Fark[]; gecikmeler?: string[] }>("/belgeler/irsaliye-bagla/karsilastir", { method: "POST", body: JSON.stringify({ faturaId, irsaliyeIds: secili }) })
+      .then((sonuc) => { if (aktif) { setFarklar(sonuc.farklar); setGecikmeler(sonuc.gecikmeler ?? []); } })
       .catch(() => { if (aktif) setFarklar(null); });
     return () => { aktif = false; };
   }, [faturaId, secili]);
@@ -157,6 +160,14 @@ export function IrsaliyeBaglaPaneli({ kaynak, onKapat, onBaglandi }: {
         </>
       )}
 
+      {gecikmeler.length > 0 && (
+        <Alert tone="warning">
+          <strong>Faturalama süresi</strong> — bağlamanıza engel değil:
+          <ul style={{ margin: "0.4rem 0 0", paddingLeft: "1.2rem" }}>
+            {gecikmeler.map((g, i) => <li key={i}>{g}</li>)}
+          </ul>
+        </Alert>
+      )}
       {farklar && farklar.length > 0 && (
         <Alert tone="warning">
           <strong>İrsaliye ile fatura kalemleri tutmuyor</strong> — bağlamanıza engel değil, kontrol edin:

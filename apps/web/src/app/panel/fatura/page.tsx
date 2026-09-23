@@ -15,7 +15,7 @@ import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-alani";
-import { ebelgeGitmemisMi, ebelgeKullanilmiyor, type EbelgeUygulamalari } from "@tekirextra/shared";
+import { ebelgeGitmemisMi, ebelgeKullanilmiyor, faturaGecikmeUyarilari, type EbelgeUygulamalari } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -203,7 +203,10 @@ interface EbelgeWizardBilgisi {
     gerekli: boolean;
     yontem: string | null;
     fiiliSevkZamani: string | null;
-    adaylar: { id: string; no: string | null; tarih: string; faturaId: string | null }[];
+    adaylar: { id: string; no: string | null; tarih: string; faturaId: string | null; sevkGunu?: string }[];
+    /** EBLG-82: faturalama süresi ayarı ve bağlı irsaliyelerin gecikme uyarıları. */
+    irsaliyeFaturaGunSayisi?: number;
+    gecikmeler?: string[];
   };
   gonderilebilir: boolean;
   neden?: string;
@@ -1501,6 +1504,25 @@ export default function FaturaSayfasi() {
     : [];
   /** İrsaliye yolunda seçilebilecek, gönderilmiş e-İrsaliyeler. */
   const sevkiyatAdaylari = ebelgeWizard?.bilgi.sevkiyat?.adaylar ?? [];
+  /**
+   * EBLG-82: fatura, bağlı irsaliyelerin faturalama süresinden sonra mı?
+   * Faturaya zaten bağlı olanları sunucu söyler; sihirbazda yeni seçilen
+   * e-İrsaliyeler burada aynı kuralla hesaplanır. Uyarıdır, engel değil.
+   */
+  const irsaliyeGecikmeUyarilari = (() => {
+    if (!ebelgeWizard) return [];
+    const sevkiyat = ebelgeWizard.bilgi.sevkiyat;
+    const secilenler = ebelgeWizard.sevkiyat.yontem === "irsaliye"
+      ? sevkiyatAdaylari.filter((a) => ebelgeWizard.sevkiyat.irsaliyeIds.includes(a.id) && a.faturaId !== ebelgeWizard.fatura.id && a.sevkGunu)
+      : [];
+    const yeniler = faturaGecikmeUyarilari({
+      faturaTarihi: ebelgeWizard.fatura.tarih,
+      yon: "satis",
+      irsaliyeler: secilenler.map((a) => ({ no: a.no, sevkGunu: a.sevkGunu as string })),
+      gunSayisi: sevkiyat?.irsaliyeFaturaGunSayisi,
+    });
+    return [...new Set([...(sevkiyat?.gecikmeler ?? []), ...yeniler])];
+  })();
   const wizardGonderilebilir = Boolean(
     ebelgeWizard?.bilgi.gonderilebilir && sevkiyatWizardEksikleri.length === 0 && ihracatEngelleri.length === 0 && internetEngelleri.length === 0 && iadeEksikleri.length === 0 && kamuEksikleri.length === 0 && sgkEksikleri.length === 0 && sarjEksikleri.length === 0 && idisEksikleri.length === 0 && ytbEksikleri.length === 0 && yolcuEksikleri.length === 0,
   );
@@ -2805,6 +2827,14 @@ export default function FaturaSayfasi() {
             )}
             </>)}
             {ebelgeWizard.adim === 1 && (<>
+            {irsaliyeGecikmeUyarilari.length > 0 && (
+              <Alert tone="warning">
+                <strong>Faturalama süresi</strong> — gönderime engel değil:
+                <ul style={{ margin: "0.4rem 0 0", paddingLeft: "1.2rem" }}>
+                  {irsaliyeGecikmeUyarilari.map((u) => <li key={u}>{u}</li>)}
+                </ul>
+              </Alert>
+            )}
             {/* Firma e-İrsaliye mükellefi değilse (ya da e-Fatura kapalıysa, EBLG-77) soru hiç sorulmaz. */}
             {ebelgeWizard.bilgi.sevkiyat?.gerekli && ebelgeWizard.bilgi.sevkiyat.mukellef !== false && (
               <div className="approval-impact">

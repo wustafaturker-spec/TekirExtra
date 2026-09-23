@@ -384,4 +384,29 @@ describe("BelgelerService", () => {
     expect(etki).toHaveBeenCalledTimes(1);
     expect(etki).toHaveBeenCalledWith(tx, "satis", [expect.objectContaining({ stokId: "stk1", miktar: D("40") })], -1, "d1");
   });
+
+  it("faturalanmayı bekleyen irsaliye süzgecini ve kalan süreyi uygular (EBLG-82)", async () => {
+    const irsaliye = (id: string, fatura: { durum: string } | null, tarih: string) => ({
+      id, tur: "irsaliye", yon: "satis", durum: fatura ? "kapandi" : "onaylandi", no: id,
+      tarih: new Date(`${tarih}T00:00:00Z`), fiiliSevkZamani: null, gecerlilikTarihi: null, cariId: "c1", depoId: "d1",
+      dovizCinsi: "TRY", kur: D(1), genelIskontoYuzdesi: D(0), genelIskontoTutari: D(0), toplamBrut: D(0),
+      toplamSatirIskontosu: D(0), genelIskontoToplam: D(0), toplamMatrah: D(0), toplamKdv: D(0),
+      toplamTevkifat: D(0), toplamNetKdv: D(0), genelToplam: D(0), aciklama: null, notlar: null, kaynakBelgeId: null,
+      faturaId: fatura ? "f1" : null, fatura, cari: { id: "c1", kod: "C1", unvan: "Müşteri" },
+    });
+    const findMany = vi.fn().mockResolvedValue([irsaliye("i1", null, "2020-01-01"), irsaliye("i2", { durum: "kesin" }, "2020-01-01")]);
+    const prisma = { tenantIslem: vi.fn((_t, calistir) => calistir({ belge: { findMany } })) } as any;
+    const servis = new BelgelerService(prisma, {} as any, {} as any, {} as any, {} as any, { getir: vi.fn().mockResolvedValue({ irsaliyeFaturaGunSayisi: 7 }) } as any);
+
+    const sonuc = await servis.listele("irsaliye", undefined, undefined, undefined, undefined, undefined, undefined, 50, true);
+
+    expect(findMany.mock.calls[0][0].where).toMatchObject({
+      tur: "irsaliye",
+      durum: { in: ["onaylandi", "kapandi"] },
+      AND: [{ OR: [{ faturaId: null }, { fatura: { is: { durum: { not: "kesin" } } } }] }],
+    });
+    expect(sonuc.kayitlar[0].faturalamaSuresi).toMatchObject({ sonGun: "2020-01-08", gecti: true });
+    // Kesin faturaya bağlı irsaliye faturalanmıştır.
+    expect(sonuc.kayitlar[1].faturalamaSuresi).toBeNull();
+  });
 });

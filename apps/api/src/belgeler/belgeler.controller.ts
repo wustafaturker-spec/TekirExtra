@@ -47,8 +47,9 @@ export class BelgelerController {
     @Query("baslangic") baslangic?: string,
     @Query("bitis") bitis?: string,
     @Query("imlec") imlec?: string,
+    @Query("faturaBekleyen") faturaBekleyen?: string,
   ) {
-    return this.belgelerService.listele(tur, yon, durum, arama, baslangic, bitis, imlec);
+    return this.belgelerService.listele(tur, yon, durum, arama, baslangic, bitis, imlec, undefined, faturaBekleyen === "1");
   }
 
   @Get("sevkiyat-bekleyen-faturalar")

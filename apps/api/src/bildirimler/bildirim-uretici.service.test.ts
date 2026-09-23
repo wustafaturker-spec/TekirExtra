@@ -17,6 +17,7 @@ interface TxSecenekleri {
   yukseltmeAdaylari?: { id: string }[];
   yoneticiler?: { id: string }[];
   mevcutTeslimatlar?: { userId: string }[];
+  bekleyenIrsaliyeler?: { yon: string; tarih: Date; fiiliSevkZamani: Date | null }[];
 }
 
 function servisKur(secenek: TxSecenekleri = {}) {
@@ -28,6 +29,7 @@ function servisKur(secenek: TxSecenekleri = {}) {
     satinAlmaTalebi: { findMany: vi.fn().mockResolvedValue(secenek.satinAlmaTalepleri ?? []) },
     cekSenet: { count: vi.fn().mockResolvedValue(secenek.cekSayisi ?? 0) },
     fatura: { findMany: vi.fn().mockResolvedValue(secenek.ihracKayitlilar ?? []) },
+    belge: { findMany: vi.fn().mockResolvedValue(secenek.bekleyenIrsaliyeler ?? []) },
     sayim: { count: vi.fn().mockResolvedValue(secenek.taslakSayim ?? 0) },
     maliDonem: { findMany: vi.fn().mockResolvedValue(secenek.donemler ?? []) },
     bildirim: { findMany: vi.fn().mockResolvedValue(secenek.yukseltmeAdaylari ?? []), update: bildirimUpdate },
@@ -211,5 +213,37 @@ describe("BildirimUreticiService — ihraç kayıtlı süresi (EBLG-63)", () => 
     const { servis, bildirimler } = servisKur();
     await servis.tara();
     expect(bildirimler.uret.mock.calls.some(([g]) => (g as { birlesimAnahtari: string }).birlesimAnahtari.includes("ihrac-kayitli"))).toBe(false);
+  });
+});
+
+describe("BildirimUreticiService — irsaliye faturalama süresi (EBLG-82)", () => {
+  const gunOnce = (gun: number) => new Date(Date.now() - gun * 86_400_000);
+  const anahtarlar = (uret: { mock: { calls: unknown[][] } }) =>
+    uret.mock.calls.map(([g]) => g as { birlesimAnahtari: string; onem: string; hedefYol: string });
+
+  it("satışta süresi geçeni kritik, yaklaşanı uyarı; alışta geçeni uyarı olarak bildirir", async () => {
+    const { servis, bildirimler } = servisKur({
+      bekleyenIrsaliyeler: [
+        { yon: "satis", tarih: gunOnce(10), fiiliSevkZamani: null },
+        { yon: "satis", tarih: gunOnce(6), fiiliSevkZamani: null },
+        { yon: "satis", tarih: gunOnce(1), fiiliSevkZamani: null },
+        { yon: "alis", tarih: gunOnce(9), fiiliSevkZamani: null },
+      ],
+    });
+
+    await servis.tara();
+
+    const uretilen = anahtarlar(bildirimler.uret);
+    const gecen = uretilen.find((g) => g.birlesimAnahtari.startsWith("vade:irsaliye-fatura-gecen:"));
+    expect(gecen?.onem).toBe("kritik");
+    expect(gecen?.hedefYol).toBe("/panel/belgeler?tur=irsaliye&yon=satis&faturaBekleyen=1");
+    expect(uretilen.find((g) => g.birlesimAnahtari.startsWith("vade:irsaliye-fatura-yaklasan:"))?.onem).toBe("uyari");
+    expect(uretilen.find((g) => g.birlesimAnahtari.startsWith("vade:irsaliye-fatura-alis:"))?.onem).toBe("uyari");
+  });
+
+  it("süresi içindeki alış irsaliyesi için hatırlatma açmaz", async () => {
+    const { servis, bildirimler } = servisKur({ bekleyenIrsaliyeler: [{ yon: "alis", tarih: gunOnce(6), fiiliSevkZamani: null }] });
+    await servis.tara();
+    expect(anahtarlar(bildirimler.uret).some((g) => g.birlesimAnahtari.includes("irsaliye-fatura"))).toBe(false);
   });
 });

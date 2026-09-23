@@ -12,7 +12,7 @@ import {
 } from "@nestjs/common";
 import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
 import type { BelgeDurumSonuc, EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
-import { type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, YOLCU_BERABER_POSTA_KUTUSU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu, sgkEngelleri, sgkFaturasiMi, SGK_VKN, sarjEngelleri, sarjPlakaNormalize, idisEngelleri, idisNormalize, ytbBelgesiMi, ytbEngelleri, ytbNormalize, type SarjTuru, type SevkiyatYontemi, sevkiyatEksikleri, sevkiyatSorulurMu, ebelgeKanali, ebelgeUygulamalariCoz, ebelgeKanalEngelleri, uygulamaAcik, type EbelgeUygulamalari } from "@tekirextra/shared";
+import { faturaGecikmeUyarilari, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeSevkGunu, type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, YOLCU_BERABER_POSTA_KUTUSU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu, sgkEngelleri, sgkFaturasiMi, SGK_VKN, sarjEngelleri, sarjPlakaNormalize, idisEngelleri, idisNormalize, ytbBelgesiMi, ytbEngelleri, ytbNormalize, type SarjTuru, type SevkiyatYontemi, sevkiyatEksikleri, sevkiyatSorulurMu, ebelgeKanali, ebelgeUygulamalariCoz, ebelgeKanalEngelleri, uygulamaAcik, type EbelgeUygulamalari } from "@tekirextra/shared";
 import { ebelgeUygulamalariCozTenant } from "./ebelge-uygulamalari.service";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
@@ -253,8 +253,22 @@ export class EbelgeService {
       const mukellefiyet = { mukellef: uygulamalar.eirsaliye.acik, kaynak: uygulamalar.eirsaliye.kaynak };
       const irsaliyeAdaylari = sevkiyatSorulur && mukellefiyet.mukellef ? await tx.belge.findMany({
         where: { tenantId, cariId: fatura.cariId, tur: "irsaliye", yon: "satis", OR: [{ durum: "onaylandi", faturaId: null }, { faturaId }], eirsaliye: { is: { durum: { in: ["iletildi", "kabul", "kismi_kabul"] } } } },
-        orderBy: { tarih: "desc" }, take: 50, select: { id: true, no: true, tarih: true, faturaId: true },
-      }) : [];
+        orderBy: { tarih: "desc" }, take: 50, select: { id: true, no: true, tarih: true, faturaId: true, fiiliSevkZamani: true },
+      }).then((adaylar) => adaylar.map(({ fiiliSevkZamani, ...a }) => ({ ...a, sevkGunu: irsaliyeSevkGunu({ fiiliSevkZamani, tarih: a.tarih }) }))) : [];
+      // EBLG-82: fatura irsaliyenin faturalama süresinden sonra düzenlendiyse
+      // sihirbaz uyarır (engel değil). Bağlı her irsaliye sayılır — kâğıt
+      // irsaliyeden dönüşen fatura da, sihirbazda seçilen e-İrsaliye de.
+      const ebelgeAyari = this.ayarlar ? await this.ayarlar.getir("ebelge", tx) : {};
+      const irsaliyeFaturaGunSayisi = Number(ebelgeAyari.irsaliyeFaturaGunSayisi) > 0 ? Number(ebelgeAyari.irsaliyeFaturaGunSayisi) : IRSALIYE_FATURA_GUN_SAYISI;
+      const bagliIrsaliyeler = fatura.tip === "satis"
+        ? await tx.belge.findMany({ where: { tenantId, faturaId: fatura.id, tur: "irsaliye" }, select: { no: true, tarih: true, fiiliSevkZamani: true } })
+        : [];
+      const irsaliyeGecikmeleri = faturaGecikmeUyarilari({
+        faturaTarihi: fatura.tarih.toISOString().slice(0, 10),
+        yon: "satis",
+        irsaliyeler: bagliIrsaliyeler.map((i) => ({ no: i.no, sevkGunu: irsaliyeSevkGunu(i) })),
+        gunSayisi: irsaliyeFaturaGunSayisi,
+      });
       // Gönderimdeki sayımın aynısı (bkz. `belgeUblHazirla`): bağlı irsaliyenin
       // belge durumuna bakılmaz, yalnız e-İrsaliyesinin gitmiş olmasına.
       const bagliIrsaliyeSayisi = sevkiyatSorulur && fatura.sevkiyatYontemi === "irsaliye"
@@ -344,6 +358,8 @@ export class EbelgeService {
           yontem: fatura.sevkiyatYontemi,
           fiiliSevkZamani: fatura.fiiliSevkZamani?.toISOString() ?? null,
           adaylar: irsaliyeAdaylari,
+          irsaliyeFaturaGunSayisi,
+          gecikmeler: irsaliyeGecikmeleri,
           // Gönder ucu kuyruğa almadan önce bunlara bakar; yoksa eksik belge
           // kuyrukta düşer ve kullanıcı önce "gönderildi" görür.
           engeller: sevkiyatEksikleri({

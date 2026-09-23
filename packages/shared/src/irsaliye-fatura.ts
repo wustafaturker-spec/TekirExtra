@@ -85,3 +85,78 @@ export function irsaliyeFaturaFarklari(irsaliye: KarsilastirmaSatiri[], fatura: 
   }
   return farklar;
 }
+
+/**
+ * EBLG-82: fatura, malın teslim tarihinden itibaren en geç 7 gün içinde
+ * düzenlenir (VUK 231/5); süresinde düzenlenmeyen fatura hiç düzenlenmemiş
+ * sayılır. Gün sayısı ayardır (`ebelge.irsaliyeFaturaGunSayisi`), varsayılan
+ * bu değer. Kural irsaliyenin türüne değil teslime bağlıdır: kâğıt irsaliye
+ * ve e-İrsaliye aynı takip edilir.
+ */
+export const IRSALIYE_FATURA_GUN_SAYISI = 7;
+
+/** Son güne bu kadar gün kala Bildirim Merkezi uyarır. */
+export const IRSALIYE_FATURA_UYARI_GUNU = 2;
+
+const GUN_MS = 86_400_000;
+const TR_FARK_MS = 3 * 3_600_000;
+
+/**
+ * Teslim günü (`YYYY-MM-DD`, Türkiye takvimi): fiili sevk anı, yoksa irsaliye
+ * tarihi. Sevk anı zaman damgasıdır, gece 00:00–03:00 arası sevk UTC'de bir
+ * önceki güne düşer; bu yüzden Türkiye saatine çevrilir. İrsaliye tarihi ise
+ * saatsiz tarihtir, olduğu gibi okunur.
+ */
+export function irsaliyeSevkGunu(belge: { fiiliSevkZamani?: Date | string | null; tarih: Date | string }): string {
+  if (belge.fiiliSevkZamani) {
+    const an = new Date(belge.fiiliSevkZamani);
+    if (!Number.isNaN(an.getTime())) return new Date(an.getTime() + TR_FARK_MS).toISOString().slice(0, 10);
+  }
+  return typeof belge.tarih === "string" ? belge.tarih.slice(0, 10) : belge.tarih.toISOString().slice(0, 10);
+}
+
+const gunSayisiOku = (gun: string) => Date.parse(`${gun}T00:00:00Z`) / GUN_MS;
+
+/** Faturanın en geç düzenlenebileceği gün: teslim günü + gün sayısı (1'inde sevk → 8'i). */
+export function irsaliyeFaturaSonGun(sevkGunu: string, gunSayisi = IRSALIYE_FATURA_GUN_SAYISI): string {
+  return new Date((gunSayisiOku(sevkGunu) + gunSayisi) * GUN_MS).toISOString().slice(0, 10);
+}
+
+export interface IrsaliyeFaturaSuresi {
+  sevkGunu: string;
+  sonGun: string;
+  /** Son güne kalan gün; son gün bugünse 0, geçmişse eksi. */
+  kalanGun: number;
+  gecti: boolean;
+  /** Süre dolmadı ama son güne `IRSALIYE_FATURA_UYARI_GUNU` ya da daha az kaldı. */
+  yaklasiyor: boolean;
+}
+
+export function irsaliyeFaturaSuresi(girdi: { sevkGunu: string; bugun: string; gunSayisi?: number }): IrsaliyeFaturaSuresi {
+  const sonGun = irsaliyeFaturaSonGun(girdi.sevkGunu, girdi.gunSayisi);
+  const kalanGun = Math.round(gunSayisiOku(sonGun) - gunSayisiOku(girdi.bugun));
+  return { sevkGunu: girdi.sevkGunu, sonGun, kalanGun, gecti: kalanGun < 0, yaklasiyor: kalanGun >= 0 && kalanGun <= IRSALIYE_FATURA_UYARI_GUNU };
+}
+
+/**
+ * Fatura tarihi bağlı irsaliyelerin süresinden sonraysa uyarı metinleri (engel
+ * değil: geç kalmış fatura da kesilmek zorundadır). Alışta yükümlülük
+ * tedarikçidedir, metin buna göre değişir.
+ */
+export function faturaGecikmeUyarilari(girdi: {
+  faturaTarihi: string;
+  yon: "satis" | "alis";
+  irsaliyeler: { no: string | null; sevkGunu: string }[];
+  gunSayisi?: number;
+}): string[] {
+  const gunSayisi = girdi.gunSayisi ?? IRSALIYE_FATURA_GUN_SAYISI;
+  const tr = (gun: string) => gun.split("-").reverse().join(".");
+  return girdi.irsaliyeler.flatMap((i) => {
+    const sonGun = irsaliyeFaturaSonGun(i.sevkGunu, gunSayisi);
+    if (girdi.faturaTarihi.slice(0, 10) <= sonGun) return [];
+    const ad = i.no ?? "İrsaliye";
+    return [girdi.yon === "satis"
+      ? `Fatura, ${ad} irsaliyesinin ${gunSayisi} günlük süresinden sonra düzenleniyor (son gün ${tr(sonGun)}).`
+      : `Tedarikçi faturası ${ad} irsaliyesinin ${gunSayisi} günlük süresinden sonra düzenlenmiş (son gün ${tr(sonGun)}).`];
+  });
+}

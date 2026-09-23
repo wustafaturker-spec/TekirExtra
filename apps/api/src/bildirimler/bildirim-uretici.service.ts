@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import type { BildirimTuru, DuzeltmeTuru } from "@prisma/client";
-import { IHRAC_KAYITLI_UYARI_GUNU, type Rol, ihracKayitliSonTarih } from "@tekirextra/shared";
+import { bugunTR, IHRAC_KAYITLI_UYARI_GUNU, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeFaturaSuresi, irsaliyeSevkGunu, type Rol, ihracKayitliSonTarih } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
@@ -285,6 +285,73 @@ export class BildirimUreticiService {
     }
 
     girdiler.push(...(await this.ihracKayitliOzetleri(gun)));
+    girdiler.push(...(await this.irsaliyeFaturaOzetleri(gun)));
+    return girdiler;
+  }
+
+  /**
+   * EBLG-82: fatura teslimden itibaren 7 gün içinde düzenlenir (VUK 231/5).
+   * Satışta süresi dolan kritik, dolmak üzere olan uyarıdır. Alışta faturayı
+   * tedarikçi keser; bizim için hatırlatmadır, yalnız süre dolunca ve uyarı
+   * önemiyle çıkar. Kesin faturaya bağlanan irsaliye faturalanmış sayılır;
+   * liste olayıdır, günlük özet üretilir (`vade:` öneki taramanın kapatması için).
+   */
+  private async irsaliyeFaturaOzetleri(gun: string): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const bekleyenler = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.belge.findMany({
+        where: {
+          tur: "irsaliye",
+          durum: { in: ["onaylandi", "kapandi"] },
+          OR: [{ faturaId: null }, { fatura: { is: { durum: { not: "kesin" } } } }],
+        },
+        select: { yon: true, tarih: true, fiiliSevkZamani: true },
+      }),
+    );
+    if (bekleyenler.length === 0) return [];
+    const ayar = this.ayarlar ? await this.ayarlar.getir("ebelge") : {};
+    const gunSayisi = Number(ayar.irsaliyeFaturaGunSayisi) > 0 ? Number(ayar.irsaliyeFaturaGunSayisi) : IRSALIYE_FATURA_GUN_SAYISI;
+    const bugun = bugunTR();
+    const sure = (b: (typeof bekleyenler)[number]) => irsaliyeFaturaSuresi({ sevkGunu: irsaliyeSevkGunu(b), bugun, gunSayisi });
+    const satis = bekleyenler.filter((b) => b.yon === "satis").map(sure);
+    const alisGecen = bekleyenler.filter((b) => b.yon === "alis").map(sure).filter((s) => s.gecti).length;
+    const satisGecen = satis.filter((s) => s.gecti).length;
+    const satisYaklasan = satis.filter((s) => s.yaklasiyor).length;
+
+    const girdiler: BildirimGirdisi[] = [];
+    if (satisGecen) {
+      girdiler.push({
+        tur: "vade",
+        onem: "kritik",
+        baslik: "İrsaliyenin faturalama süresi doldu",
+        aciklama: `${satisGecen} satış irsaliyesi ${gunSayisi} gün içinde faturalanmadı. Süresinde düzenlenmeyen fatura hiç düzenlenmemiş sayılır ve özel usulsüzlük cezası doğar; faturayı hemen düzenleyin.`,
+        birlesimAnahtari: `vade:irsaliye-fatura-gecen:${gun}`,
+        hedefYol: "/panel/belgeler?tur=irsaliye&yon=satis&faturaBekleyen=1",
+        roller: HEDEF_ROLLER.vade,
+      });
+    }
+    if (satisYaklasan) {
+      girdiler.push({
+        tur: "vade",
+        onem: "uyari",
+        baslik: "İrsaliyenin faturalama süresi doluyor",
+        aciklama: `${satisYaklasan} satış irsaliyesinin ${gunSayisi} günlük faturalama süresi önümüzdeki günlerde doluyor.`,
+        birlesimAnahtari: `vade:irsaliye-fatura-yaklasan:${gun}`,
+        hedefYol: "/panel/belgeler?tur=irsaliye&yon=satis&faturaBekleyen=1",
+        roller: HEDEF_ROLLER.vade,
+      });
+    }
+    if (alisGecen) {
+      girdiler.push({
+        tur: "vade",
+        onem: "uyari",
+        baslik: "Tedarikçiden fatura gelmedi",
+        aciklama: `${alisGecen} alış irsaliyesinin faturası ${gunSayisi} gün içinde gelmedi. Tedarikçiden faturayı isteyin; geldiyse irsaliyeyi faturaya bağlayın.`,
+        birlesimAnahtari: `vade:irsaliye-fatura-alis:${gun}`,
+        hedefYol: "/panel/belgeler?tur=irsaliye&yon=alis&faturaBekleyen=1",
+        roller: HEDEF_ROLLER.vade,
+      });
+    }
     return girdiler;
   }
 

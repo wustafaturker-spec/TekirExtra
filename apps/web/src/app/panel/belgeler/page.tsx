@@ -88,7 +88,11 @@ interface Belge {
   cari: { id: string; kod: string; unvan: string };
   faturaId: string | null;
   eirsaliye?: { durum: string; entegratorRef?: string | null; hataMesaji?: string | null } | null;
+  /** EBLG-82: faturalanmayı bekleyen irsaliyenin süresi; bekleyen değilse null. */
+  faturalamaSuresi?: FaturalamaSuresi | null;
 }
+
+interface FaturalamaSuresi { sevkGunu: string; sonGun: string; kalanGun: number; gecti: boolean; yaklasiyor: boolean }
 
 interface ZincirRef { id: string; tur: string; no: string | null; durum: string }
 interface BelgeDetay extends Belge {
@@ -131,6 +135,37 @@ function csvHucre(deger: string | number | null): string {
 /** SAT-10: satır bazında miktar yalnız siparişten irsaliyeye dönüşümde girilir. */
 function kismiTeslimVar(belge: { tur: string }, hedef: string) {
   return belge.tur === "siparis" && hedef === "irsaliye";
+}
+
+/** Belge durumu süzgecinde durum değil, "faturalanmayı bekleyen irsaliye" seçimi (EBLG-82). */
+const FATURA_BEKLEYEN = "fatura_bekleyen";
+
+const gunTRBicim = (gun: string) => gun.split("-").reverse().join(".");
+
+/** EBLG-82: irsaliyenin faturalama süresi rozeti. */
+function sureRozeti(sure: FaturalamaSuresi | null | undefined) {
+  if (!sure) return null;
+  if (sure.gecti) return <Badge variant="danger">⏰ Fatura süresi {-sure.kalanGun} gün geçti</Badge>;
+  if (sure.kalanGun === 0) return <Badge variant="warning">⏰ Fatura için son gün bugün</Badge>;
+  return <Badge variant={sure.yaklasiyor ? "warning" : "neutral"}>⏰ Fatura için {sure.kalanGun} gün</Badge>;
+}
+
+function FaturalamaSuresiNotu({ sure, yon }: { sure: FaturalamaSuresi; yon: string }) {
+  const sonGun = gunTRBicim(sure.sonGun);
+  if (sure.gecti) {
+    return (
+      <p style={{ margin: "0.4rem 0 0", fontSize: "0.85rem", color: "var(--danger)", fontWeight: 600 }}>
+        {yon === "satis"
+          ? `Faturalama süresi ${-sure.kalanGun} gün önce doldu (son gün ${sonGun}). Faturayı hemen düzenleyin.`
+          : `Tedarikçi faturasının süresi ${-sure.kalanGun} gün önce doldu (son gün ${sonGun}). Faturayı isteyin.`}
+      </p>
+    );
+  }
+  return (
+    <p className="muted" style={{ margin: "0.4rem 0 0", fontSize: "0.85rem", ...(sure.yaklasiyor ? { color: "var(--warning)", fontWeight: 600 } : {}) }}>
+      Fatura için son gün {sonGun} · {sure.kalanGun === 0 ? "bugün" : `${sure.kalanGun} gün kaldı`}
+    </p>
+  );
 }
 
 function durumRozet(durum: string) {
@@ -247,7 +282,8 @@ export default function BelgelerSayfasi() {
       const parametreler = new URLSearchParams();
       if (turFiltre !== "tumu") parametreler.set("tur", turFiltre);
       if (yonBaglami) parametreler.set("yon", yonBaglami);
-      if (durumFiltresi) parametreler.set("durum", durumFiltresi);
+      if (durumFiltresi === FATURA_BEKLEYEN) parametreler.set("faturaBekleyen", "1");
+      else if (durumFiltresi) parametreler.set("durum", durumFiltresi);
       if (imlec) parametreler.set("imlec", imlec);
       if (aramaSorgusu) parametreler.set("arama", aramaSorgusu);
       if (tarihBaslangic) parametreler.set("baslangic", tarihBaslangic);
@@ -298,7 +334,8 @@ export default function BelgelerSayfasi() {
     if (parametreler.get("yeni") === "1") setFormAcik(true);
     setTarihBaslangic(parametreler.get("baslangic") ?? "");
     setTarihBitis(parametreler.get("bitis") ?? "");
-    setDurumFiltresi(parametreler.get("durum"));
+    // Bildirim Merkezi faturalanmayı bekleyen irsaliyelere `faturaBekleyen=1` ile gelir (EBLG-82).
+    setDurumFiltresi(parametreler.get("faturaBekleyen") === "1" ? FATURA_BEKLEYEN : parametreler.get("durum"));
     // Başka ekrandan bir belgeye verilen bağlantı (ör. cari CRM'deki teklif) o belgeyi açar.
     const odak = parametreler.get("odak");
     if (odak && tokenAl()) void detayAc(odak);
@@ -616,7 +653,8 @@ export default function BelgelerSayfasi() {
 
   const gorunen = belgeler.filter((b) => {
     if (yonBaglami && b.yon !== yonBaglami) return false;
-    if (durumFiltresi && b.durum !== durumFiltresi) return false;
+    if (durumFiltresi === FATURA_BEKLEYEN) { if (!b.faturalamaSuresi) return false; }
+    else if (durumFiltresi && !durumFiltresi.split(",").includes(b.durum)) return false;
     if (tarihBaslangic && b.tarih < tarihBaslangic) return false;
     if (tarihBitis && b.tarih > tarihBitis) return false;
     if (!arama) return true;
@@ -905,6 +943,7 @@ export default function BelgelerSayfasi() {
               <p className="muted" style={{ fontSize: "0.85rem", margin: "0.3rem 0 0" }}>
                 {detay.cari.unvan} · {detay.tarih}{detay.gecerlilikTarihi ? ` · Geçerlilik: ${detay.gecerlilikTarihi}` : ""} · {tl(detay.genelToplam, detay.dovizCinsi)}
               </p>
+              {detay.faturalamaSuresi && <FaturalamaSuresiNotu sure={detay.faturalamaSuresi} yon={detay.yon} />}
             </div>
             <Button size="sm" onClick={() => setDetay(null)}>✖ Kapat</Button>
           </div>
@@ -1114,6 +1153,14 @@ export default function BelgelerSayfasi() {
               <div><dt>Genel toplam</dt><dd>{tl(donusumBekleyen.belge.genelToplam, donusumBekleyen.belge.dovizCinsi)}</dd></div>
               <div><dt>Kaynak referansı</dt><dd>{donusumBekleyen.belge.no ?? "Taslak belge"}</dd></div>
             </dl>
+            {/* EBLG-82: fatura bugünün tarihiyle oluşur; süre geçtiyse uyarı, engel değil. */}
+            {donusumBekleyen.hedef === "fatura" && donusumBekleyen.belge.faturalamaSuresi?.gecti && (
+              <Alert tone="warning">
+                {donusumBekleyen.belge.yon === "satis"
+                  ? `Fatura, ${donusumBekleyen.belge.no} irsaliyesinin faturalama süresinden sonra düzenleniyor (son gün ${gunTRBicim(donusumBekleyen.belge.faturalamaSuresi.sonGun)}). Süresinde düzenlenmeyen fatura hiç düzenlenmemiş sayılır; yine de kesilmesi gerekir.`
+                  : `Tedarikçi faturası ${donusumBekleyen.belge.no} irsaliyesinin faturalama süresinden sonra geliyor (son gün ${gunTRBicim(donusumBekleyen.belge.faturalamaSuresi.sonGun)}).`}
+              </Alert>
+            )}
             {/* SAT-10: teslim edilen miktar satır başına girilir; kalanı biten satır listede yer almaz. */}
             {kismiTeslimVar(donusumBekleyen.belge, donusumBekleyen.hedef) && (
               <TableWrap>
@@ -1164,7 +1211,7 @@ export default function BelgelerSayfasi() {
       <section className="saved-view-bar" aria-label="Belge görünümü ve filtreleri">
         <div className="saved-view-filters">
           <Field label="Yön" htmlFor="belge-yon-filtresi"><Select id="belge-yon-filtresi" value={yonBaglami ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: (e.target.value || null) as Yon | null, durum: durumFiltresi })}><option value="">Tümü</option><option value="satis">Satış</option><option value="alis">Satın alma</option></Select></Field>
-          <Field label="Belge durumu" htmlFor="belge-durum-filtresi"><Select id="belge-durum-filtresi" value={durumFiltresi ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: yonBaglami, durum: e.target.value || null })}><option value="">Tümü</option><option value="taslak">Taslak</option><option value="onaylandi">Onaylı</option><option value="kismen_kapandi">Kısmen teslim</option><option value="onaylandi,kismen_kapandi">Teslim bekleyen</option><option value="kapandi">Kapandı</option><option value="iptal">İptal</option></Select></Field>
+          <Field label="Belge durumu" htmlFor="belge-durum-filtresi"><Select id="belge-durum-filtresi" value={durumFiltresi ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: yonBaglami, durum: e.target.value || null })}><option value="">Tümü</option><option value="taslak">Taslak</option><option value="onaylandi">Onaylı</option><option value="kismen_kapandi">Kısmen teslim</option><option value="onaylandi,kismen_kapandi">Teslim bekleyen</option><option value="kapandi">Kapandı</option><option value="iptal">İptal</option><option value={FATURA_BEKLEYEN}>Faturalanmayı bekleyen irsaliye</option></Select></Field>
           <Field label="Başlangıç tarihi"><Input aria-label="Başlangıç tarihi" type="date" value={tarihBaslangic} onChange={(e) => tarihFiltresiDegistir("baslangic", e.target.value)} /></Field>
           <Field label="Bitiş tarihi"><Input aria-label="Bitiş tarihi" type="date" min={tarihBaslangic || undefined} value={tarihBitis} onChange={(e) => tarihFiltresiDegistir("bitis", e.target.value)} /></Field>
           <Field label="Kaydedilmiş görünüm"><Select aria-label="Kaydedilmiş görünüm" value="" onChange={(e) => { const gorunum = kayitliGorunumler.find((g) => g.id === e.target.value); if (gorunum) kayitliGorunumuUygula(gorunum); }}><option value="">Görünüm seçin</option>{kayitliGorunumler.map((g) => <option value={g.id} key={g.id}>{g.ad}</option>)}</Select></Field>
@@ -1234,7 +1281,7 @@ export default function BelgelerSayfasi() {
                   <td>{b.cari.unvan}</td>
                   <td>{b.tarih}</td>
                   <td className="num" style={{ fontWeight: 700 }}>{tl(b.genelToplam, b.dovizCinsi)}</td>
-                  <td>{durumRozet(b.durum)}</td>
+                  <td><span style={{ display: "inline-flex", gap: "0.3rem", flexWrap: "wrap" }}>{durumRozet(b.durum)}{sureRozeti(b.faturalamaSuresi)}</span></td>
                 </tr>
               ))
             )}

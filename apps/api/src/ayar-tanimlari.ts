@@ -92,8 +92,13 @@ registerModulAyar(
      * geç gelen yanıtı gelen tarama okur. Planlayıcı en fazla 60 güne bakar.
      */
     efaturaYanitGunSayisi: z.number().int().min(1).max(60),
+    /**
+     * İrsaliyenin kaç gün içinde faturalanması gerektiği (EBLG-82). VUK 231/5
+     * teslimden itibaren 7 gün der; mali müşavir değiştirebilsin diye ayar.
+     */
+    irsaliyeFaturaGunSayisi: z.number().int().min(1).max(30),
   }),
-  { earsivIptalGunSayisi: 8, eirsaliyeYanitGunSayisi: 10, efaturaYanitGunSayisi: 10 },
+  { earsivIptalGunSayisi: 8, eirsaliyeYanitGunSayisi: 10, efaturaYanitGunSayisi: 10, irsaliyeFaturaGunSayisi: 7 },
 );
 
 registerModulAyar(

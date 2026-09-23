@@ -9,8 +9,13 @@ import { BelgeTur, Prisma, ZincirBelgeDurum } from "@prisma/client";
 import {
   faturaHesapla,
   idisNormalize,
+  bugunTR,
+  faturaGecikmeUyarilari,
+  IRSALIYE_FATURA_GUN_SAYISI,
   IRSALIYE_FATURA_TIPI,
   irsaliyeFaturaFarklari,
+  irsaliyeFaturaSuresi,
+  irsaliyeSevkGunu,
   irsaliyeFaturaTipiUyarMi,
   type FaturaHesaplaSatirGirdi,
   type KayitEylem,
@@ -20,6 +25,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PdfService } from "../core/pdf/pdf.service";
 import { metinNormalize } from "@tekirextra/shared";
+import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { PrismaService } from "../core/prisma.service";
 import { DepoService } from "../stok/depo.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
@@ -81,7 +87,32 @@ export class BelgelerService {
     private readonly depoService: DepoService,
     private readonly donemKilidi: DonemKilidiService,
     private readonly baglantilar: BaglantilarService,
+    private readonly ayarlar?: AyarlarService,
   ) {}
+
+  // ─── FATURALAMA SÜRESİ (EBLG-82) ──────────────────────────────────────────
+
+  /** İrsaliyenin kaç gün içinde faturalanacağı; ayar yoksa 7 (VUK 231/5). */
+  async irsaliyeFaturaGunSayisi(tx?: Prisma.TransactionClient): Promise<number> {
+    const ayar = this.ayarlar ? await this.ayarlar.getir("ebelge", tx) : {};
+    const gun = Number(ayar.irsaliyeFaturaGunSayisi);
+    return Number.isInteger(gun) && gun > 0 ? gun : IRSALIYE_FATURA_GUN_SAYISI;
+  }
+
+  /**
+   * Faturalanmayı bekleyen irsaliyenin süresi; bekleyen değilse null. Kesin
+   * faturaya bağlı irsaliye faturalanmıştır. Taslak (ya da iptal edilmiş)
+   * faturaya bağlı olan hâlâ bekler: yasal süre düzenlenmiş faturaya bakar.
+   */
+  private faturalamaSuresi(
+    k: { tur: string; durum: string; tarih: Date; fiiliSevkZamani?: Date | null; fatura?: { durum: string } | null },
+    gunSayisi: number,
+    bugun: string,
+  ) {
+    if (k.tur !== "irsaliye" || !["onaylandi", "kapandi"].includes(k.durum)) return null;
+    if (k.fatura?.durum === "kesin") return null;
+    return irsaliyeFaturaSuresi({ sevkGunu: irsaliyeSevkGunu(k), bugun, gunSayisi });
+  }
 
   /**
    * EBLG-76: "fatura sevkten önce düzenlendi" denmiş, gönderilmiş faturalar.
@@ -108,6 +139,8 @@ export class BelgelerService {
     bitis?: string,
     imlec?: string,
     adet = 50,
+    /** EBLG-82: yalnız faturalanmayı bekleyen irsaliyeler. */
+    faturaBekleyen = false,
   ) {
     const ctx = aktifBaglam();
     const baslangicTarihi = baslangic ? new Date(baslangic) : null;
@@ -126,6 +159,13 @@ export class BelgelerService {
           })()
         : {}),
       ...(baslangicTarihi || bitisTarihi ? { tarih: { ...(baslangicTarihi ? { gte: baslangicTarihi } : {}), ...(bitisTarihi ? { lte: bitisTarihi } : {}) } } : {}),
+      ...(faturaBekleyen
+        ? {
+            tur: "irsaliye" as BelgeTur,
+            durum: { in: ["onaylandi", "kapandi"] as ZincirBelgeDurum[] },
+            AND: [{ OR: [{ faturaId: null }, { fatura: { is: { durum: { not: "kesin" } } } }] }],
+          }
+        : {}),
       ...(arama
         ? {
             OR: [
@@ -142,14 +182,17 @@ export class BelgelerService {
         orderBy: [{ tarih: "desc" }, { createdAt: "desc" }, { id: "desc" }],
         take: adet + 1,
         ...(imlec ? { cursor: { id: imlec }, skip: 1 } : {}),
-        include: { cari: { select: { id: true, kod: true, unvan: true } } },
+        include: { cari: { select: { id: true, kod: true, unvan: true } }, fatura: { select: { durum: true } } },
       }),
     );
     const sonrakiImlec = kayitlar.length > adet ? kayitlar[adet - 1].id : null;
+    const gunSayisi = kayitlar.some((k) => k.tur === "irsaliye") ? await this.irsaliyeFaturaGunSayisi() : IRSALIYE_FATURA_GUN_SAYISI;
+    const bugun = bugunTR();
     return {
       kayitlar: kayitlar.slice(0, adet).map((k) => ({
         ...this.gorunum(k),
         cari: k.cari,
+        faturalamaSuresi: this.faturalamaSuresi(k, gunSayisi, bugun),
         izinliEylemler: this.eylemler(k),
       })),
       sonrakiImlec,
@@ -195,6 +238,7 @@ export class BelgelerService {
       }),
     );
     if (!kayit) throw new NotFoundException("Belge bulunamadı");
+    const faturalamaSuresi = kayit.tur === "irsaliye" ? this.faturalamaSuresi(kayit, await this.irsaliyeFaturaGunSayisi(), bugunTR()) : null;
     const zincirBelgeleri = new Map<string, { id: string; tur: BelgeTur; no: string | null; durum: ZincirBelgeDurum }>();
     const zincireEkle = (belge: { id: string; tur: BelgeTur; no: string | null; durum: ZincirBelgeDurum } | null | undefined) => {
       if (belge) zincirBelgeleri.set(belge.id, { id: belge.id, tur: belge.tur, no: belge.no, durum: belge.durum });
@@ -270,6 +314,7 @@ export class BelgelerService {
         };
       })() : null,
       eirsaliye: kayit.eirsaliye,
+      faturalamaSuresi,
       izinliEylemler: this.eylemler(kayit),
     };
   }
@@ -1106,15 +1151,24 @@ export class BelgelerService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const fatura = await tx.fatura.findUnique({
         where: { id: faturaId },
-        select: { satirlar: { select: { stokId: true, varyantId: true, miktar: true, birim: true, stok: { select: { kod: true, ad: true, tip: true } } } } },
+        select: { tip: true, tarih: true, satirlar: { select: { stokId: true, varyantId: true, miktar: true, birim: true, stok: { select: { kod: true, ad: true, tip: true } } } } },
       });
       if (!fatura) throw new NotFoundException("Fatura bulunamadı");
       // Faturaya zaten bağlı irsaliyeler de hesaba girer: fatura çoğu zaman
       // birden çok sevkiyatı kapsar.
       const irsaliyeler = await tx.belge.findMany({
         where: { tenantId, tur: "irsaliye", OR: [{ id: { in: irsaliyeIds } }, { faturaId }] },
-        select: { satirlar: { select: { stokId: true, varyantId: true, miktar: true, birim: true, stok: { select: { kod: true, ad: true, tip: true } } } } },
+        select: { no: true, tarih: true, fiiliSevkZamani: true, satirlar: { select: { stokId: true, varyantId: true, miktar: true, birim: true, stok: { select: { kod: true, ad: true, tip: true } } } } },
       });
+      // EBLG-82: fatura tarihi irsaliyenin faturalama süresinden sonraysa uyarı.
+      const gecikmeler = fatura.tip === "satis" || fatura.tip === "alis"
+        ? faturaGecikmeUyarilari({
+            faturaTarihi: fatura.tarih.toISOString().slice(0, 10),
+            yon: fatura.tip,
+            irsaliyeler: irsaliyeler.map((i) => ({ no: i.no, sevkGunu: irsaliyeSevkGunu(i) })),
+            gunSayisi: await this.irsaliyeFaturaGunSayisi(tx),
+          })
+        : [];
       const satir = (s: { stokId: string; varyantId: string | null; miktar: Prisma.Decimal; birim: string; stok: { kod: string; ad: string; tip: string } }) => ({
         stokId: s.stokId,
         varyantId: s.varyantId,
@@ -1123,7 +1177,7 @@ export class BelgelerService {
         birim: s.birim,
         stokTipi: s.stok.tip,
       });
-      return { farklar: irsaliyeFaturaFarklari(irsaliyeler.flatMap((i) => i.satirlar.map(satir)), fatura.satirlar.map(satir)) };
+      return { gecikmeler, farklar: irsaliyeFaturaFarklari(irsaliyeler.flatMap((i) => i.satirlar.map(satir)), fatura.satirlar.map(satir)) };
     });
   }
 
