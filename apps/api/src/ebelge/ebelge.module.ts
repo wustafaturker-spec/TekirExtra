@@ -1,5 +1,6 @@
 import { Module, forwardRef } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
+import { BelgelerModule } from "../belgeler/belgeler.module";
 import { BildirimlerModule } from "../bildirimler/bildirimler.module";
 import { FaturaModule } from "../fatura/fatura.module";
 import { TenantModule } from "../tenant/tenant.module";
@@ -16,7 +17,7 @@ import { MukellefListesiService } from "./mukellef-listesi.service";
 @Module({
   // Gelen belgenin taslak alış faturasına dönüşü FaturaService üzerinden
   // yapılır; FaturaModule da e-belge kuyruğunu kullandığı için döngüsel.
-  imports: [TenantModule, BildirimlerModule, forwardRef(() => FaturaModule)],
+  imports: [TenantModule, BildirimlerModule, BelgelerModule, forwardRef(() => FaturaModule)],
   controllers: [EbelgeController, EirsaliyeController],
   providers: [
     EbelgeService, EbelgeKuyrukService, EbelgeGorunumService, EirsaliyeService, MukellefListesiService,

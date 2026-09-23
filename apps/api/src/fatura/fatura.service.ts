@@ -1259,52 +1259,11 @@ export class FaturaService {
         }
       }
 
-      // 1b. Belge zinciri çözümü (FTR-12): zincirden gelen faturada bağlı
-      // belgeler ve kaynakları yürünür; siparişlerin rezervi (satış) veya
-      // yoldakisi (alış) çözülür. Stok hareketlerinden ÖNCE yapılır ki
+      // 1b. Belge zinciri çözümü (FTR-12): bağlı siparişin rezervi (satış)
+      // veya yoldakisi (alış) çözülür. Stok hareketlerinden ÖNCE yapılır ki
       // kullanılabilir stok kontrolü (STK-17) rezervi çifte saymasın.
-      const bagliBelgeler = await tx.belge.findMany({
-        where: { faturaId: id },
-        select: {
-          id: true,
-          tur: true,
-          yon: true,
-          depoId: true,
-          kaynakBelgeId: true,
-          satirlar: { select: { stokId: true, varyantId: true, miktar: true } },
-        },
-      });
-      const gorulen = new Set<string>();
-      const kuyruk = [...bagliBelgeler];
-      while (kuyruk.length > 0) {
-        const b = kuyruk.pop();
-        if (!b || gorulen.has(b.id)) continue;
-        gorulen.add(b.id);
-        if (b.tur === "siparis") {
-          // Rezerv, siparişin kendi deposundan çözülür (STK-07)
-          await this.belgelerService.siparisEtkisiUygula(
-            tx,
-            b.yon,
-            b.satirlar,
-            -1,
-            b.depoId,
-          );
-        }
-        if (b.kaynakBelgeId && !gorulen.has(b.kaynakBelgeId)) {
-          const kaynak = await tx.belge.findUnique({
-            where: { id: b.kaynakBelgeId },
-            select: {
-              id: true,
-              tur: true,
-              yon: true,
-              depoId: true,
-              kaynakBelgeId: true,
-              satirlar: { select: { stokId: true, varyantId: true, miktar: true } },
-            },
-          });
-          if (kaynak) kuyruk.push(kaynak);
-        }
-      }
+      const bagliBelgeler = await tx.belge.findMany({ where: { faturaId: id }, select: { id: true } });
+      await this.belgelerService.zincirEtkisiniCoz(tx, bagliBelgeler.map((b) => b.id), -1);
 
       // 2. Stok Hareketlerinin Tetiklenmesi (FTR-03):
       // Satış/Alış_İade -> Çıkış hareketi (Stok azalır).

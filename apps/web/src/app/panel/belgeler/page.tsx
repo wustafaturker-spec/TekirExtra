@@ -11,6 +11,7 @@ import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyal
 import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { TasimaBilgisiPaneli } from "@/components/tasima-bilgisi-paneli";
+import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
 import { bugunTR, faturaHesapla, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
@@ -156,6 +157,8 @@ export default function BelgelerSayfasi() {
   useEffect(() => { if (yeniSayfasi) setFormAcik(true); }, [yeniSayfasi]);
   const [detay, setDetay] = useState<BelgeDetay | null>(null);
   const [tasimaPaneli, setTasimaPaneli] = useState<{ id: string; no: string | null } | null>(null);
+  /** FTR-26: irsaliyeyi var olan bir faturaya bağlama paneli. */
+  const [baglaPaneli, setBaglaPaneli] = useState<string | null>(null);
   const [secili, setSecili] = useState<Set<string>>(new Set());
   const [topluFaturaYukleniyor, setTopluFaturaYukleniyor] = useState(false);
   const [olusanFaturaId, setOlusanFaturaId] = useState<string | null>(null);
@@ -485,6 +488,20 @@ export default function BelgelerSayfasi() {
       void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Silme hatası");
+    }
+  }
+
+  /** FTR-26: irsaliye yeniden "onaylı" olur ve faturalanabilir listesine döner. */
+  async function faturaBaginiKaldir(id: string) {
+    if (!confirm("İrsaliyenin fatura bağı kaldırılsın mı? İrsaliye yeniden faturalanabilir hâle gelir; aynı malı ikinci kez faturalamamaya dikkat edin.")) return;
+    setHata(""); setBasari("");
+    try {
+      await api(`/belgeler/${id}/fatura-bagini-kaldir`, { method: "POST" });
+      setBasari("İrsaliyenin fatura bağı kaldırıldı.");
+      if (detay?.id === id) await detayAc(id);
+      void yukle();
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Bağ kaldırılamadı");
     }
   }
 
@@ -902,12 +919,15 @@ export default function BelgelerSayfasi() {
             {detay.tur === "irsaliye" && detay.durum !== "iptal" && (!detay.eirsaliye || detay.eirsaliye.durum === "hata") && (
               <Button size="sm" type="button" onClick={() => setTasimaPaneli({ id: detay.id, no: detay.no })}>🚚 Taşıma bilgisi</Button>
             )}
-            {detay.durum === "onaylandi" && detay.tur === "irsaliye" && detay.yon === "satis" && !detay.eirsaliye && <Button size="sm" type="button" onClick={() => void eirsaliyeGonder(detay.id)}>🚚 e-İrsaliye gönder</Button>}
+            {/* Faturalanmış (kapandı) irsaliye de sevk belgesidir; e-İrsaliyesi gönderilebilir (FTR-26). */}
+            {(detay.durum === "onaylandi" || detay.durum === "kapandi") && detay.tur === "irsaliye" && detay.yon === "satis" && !detay.eirsaliye && <Button size="sm" type="button" onClick={() => void eirsaliyeGonder(detay.id)}>🚚 e-İrsaliye gönder</Button>}
+            {detay.durum === "onaylandi" && detay.tur === "irsaliye" && !detay.fatura && <Button size="sm" type="button" onClick={() => setBaglaPaneli(detay.id)}>🔗 Faturaya bağla</Button>}
             <Button size="sm" type="button" onClick={() => void pdfAc(detay.id)}>🖨 PDF</Button>
             <EylemMenusu>
               <Button size="sm" type="button" onClick={() => void eylem(detay.id, "kopyala", "Belge kopyalandı (taslak).")}>📋 Kopyala</Button>
               {(detay.durum === "onaylandi" || detay.durum === "kismen_kapandi") && <Button variant="danger" size="sm" type="button" onClick={() => void eylem(detay.id, "iptal", "Belge iptal edildi.")}>İptal et</Button>}
               {detay.durum === "taslak" && <Button variant="danger" size="sm" type="button" onClick={() => void sil(detay.id)}>Sil</Button>}
+              {detay.tur === "irsaliye" && detay.fatura && (!detay.fatura.ebelge || ["hata", "ret"].includes(detay.fatura.ebelge.durum)) && <Button variant="danger" size="sm" type="button" onClick={() => void faturaBaginiKaldir(detay.id)}>Fatura bağını kaldır</Button>}
             </EylemMenusu>
           </EylemCubugu>
           <div className="document-timeline" aria-label="Belge yaşam döngüsü">
@@ -1037,6 +1057,14 @@ export default function BelgelerSayfasi() {
             </section>
           )}
         </Card>
+      )}
+
+      {baglaPaneli && (
+        <IrsaliyeBaglaPaneli
+          kaynak={{ irsaliyeId: baglaPaneli }}
+          onKapat={() => setBaglaPaneli(null)}
+          onBaglandi={(mesaj) => { const id = baglaPaneli; setBaglaPaneli(null); setHata(""); setBasari(mesaj); void detayAc(id); void yukle(); }}
+        />
       )}
 
       {tasimaPaneli && (

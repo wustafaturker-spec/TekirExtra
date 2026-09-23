@@ -110,6 +110,12 @@ export const topluFaturaSemasi = z.object({
   belgeIds: z.array(z.string().uuid()).min(1, "En az bir belge seçin"),
 });
 
+/** FTR-26: onaylı irsaliyeleri var olan bir faturaya bağlar. */
+export const irsaliyeBaglaSemasi = z.object({
+  faturaId: z.string().uuid("Geçersiz fatura"),
+  irsaliyeIds: z.array(z.string().uuid()).min(1, "Bağlanacak en az bir irsaliye seçin").max(100),
+});
+
 /**
  * Onaylanmış irsaliyede yalnız taşıma bilgileri düzenlenebilir (EBLG-23).
  * Mal yola çıkarken bilinen bilgiler bunlar; belgenin ticari içeriği kilitli

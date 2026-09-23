@@ -9,6 +9,9 @@ import { BelgeTur, Prisma, ZincirBelgeDurum } from "@prisma/client";
 import {
   faturaHesapla,
   idisNormalize,
+  IRSALIYE_FATURA_TIPI,
+  irsaliyeFaturaFarklari,
+  irsaliyeFaturaTipiUyarMi,
   type FaturaHesaplaSatirGirdi,
   type KayitEylem,
 } from "@tekirextra/shared";
@@ -597,7 +600,9 @@ export class BelgelerService {
       const guncel = await tx.belge.update({
         where: { id },
         data: {
-          durum: "onaylandi",
+          // FTR-26: faturası önceden düzenlenmiş irsaliye (EBLG-76 "fatura
+          // sevkten önce") onayla birlikte faturalanmış sayılır.
+          durum: irsaliye && belge.faturaId ? "kapandi" : "onaylandi",
           no,
           // Fiili sevk zamanı girilmediyse onay anı yazılır: mal onaylanan
           // irsaliyeyle yola çıkar (EBLG-23).
@@ -1002,6 +1007,196 @@ export class BelgelerService {
         });
       }
     }
+  }
+
+  /**
+   * Faturaya bağlı zincir belgelerinin sipariş etkisini çözer (FTR-12) ya da
+   * geri koyar (FTR-26 bağ kaldırma). Fatura kesinleşirken ve kesin faturaya
+   * sonradan irsaliye bağlanırken çağrılır; stok hareketlerinden ÖNCE
+   * çalışmalıdır ki kullanılabilir stok kontrolü (STK-17) rezervi çifte
+   * saymasın.
+   *
+   * Doğrudan faturalanan siparişin tüm satırları çözülür (kısmi teslimli
+   * sipariş faturaya atlayamaz). Siparişten türeyen irsaliyede ise yalnız
+   * **irsaliyenin taşıdığı miktar** çözülür: kısmi teslimde (SAT-09) aynı
+   * siparişin irsaliyeleri ayrı faturalara gider ve her biri kendi payını
+   * çözer. Siparişin tamamını çözmek rezervi ikinci faturada eksiye
+   * düşürüyordu.
+   */
+  async zincirEtkisiniCoz(
+    tx: Prisma.TransactionClient,
+    belgeIds: string[],
+    isaret: 1 | -1 = -1,
+  ): Promise<void> {
+    if (belgeIds.length === 0) return;
+    const belgeler = await tx.belge.findMany({
+      where: { id: { in: belgeIds } },
+      select: {
+        tur: true,
+        yon: true,
+        depoId: true,
+        kaynakBelge: { select: { tur: true, yon: true, depoId: true } },
+        satirlar: { select: { stokId: true, varyantId: true, miktar: true, kaynakSatirId: true } },
+      },
+    });
+    for (const b of belgeler) {
+      if (b.tur === "siparis") {
+        await this.siparisEtkisiUygula(tx, b.yon, b.satirlar, isaret, b.depoId);
+      } else if (b.tur === "irsaliye" && b.kaynakBelge?.tur === "siparis") {
+        const siparisSatirlari = b.satirlar.filter((s) => s.kaynakSatirId);
+        if (siparisSatirlari.length > 0) {
+          await this.siparisEtkisiUygula(tx, b.kaynakBelge.yon, siparisSatirlari, isaret, b.kaynakBelge.depoId);
+        }
+      }
+    }
+  }
+
+  // ─── SONRADAN FATURAYA BAĞLAMA (FTR-26) ───────────────────────────────────
+
+  /** İrsaliye detayındaki "Faturaya bağla" listesi. */
+  async baglanabilirFaturalar(irsaliyeId: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const belge = await tx.belge.findUnique({ where: { id: irsaliyeId }, select: { tur: true, yon: true, cariId: true, durum: true, faturaId: true } });
+      if (!belge) throw new NotFoundException("Belge bulunamadı");
+      if (belge.tur !== "irsaliye" || belge.durum !== "onaylandi" || belge.faturaId) return [];
+      const faturalar = await tx.fatura.findMany({
+        where: {
+          tenantId,
+          cariId: belge.cariId,
+          tip: IRSALIYE_FATURA_TIPI[belge.yon],
+          durum: { in: ["taslak", "kesin"] },
+          OR: [{ ebelge: { is: null } }, { ebelge: { is: { durum: { in: ["hata", "ret"] } } } }],
+        },
+        orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
+        take: 50,
+        select: { id: true, no: true, tarih: true, durum: true, genelToplam: true, dovizCinsi: true },
+      });
+      return faturalar.map((f) => ({ ...f, tarih: f.tarih.toISOString().slice(0, 10), genelToplam: f.genelToplam.toFixed(2) }));
+    });
+  }
+
+  /** Fatura detayındaki "İrsaliye bağla" listesi. */
+  async baglanabilirIrsaliyeler(faturaId: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const fatura = await tx.fatura.findUnique({ where: { id: faturaId }, select: { cariId: true, tip: true } });
+      if (!fatura) throw new NotFoundException("Fatura bulunamadı");
+      const yon = fatura.tip === "satis" ? "satis" : fatura.tip === "alis" ? "alis" : null;
+      if (!yon) return [];
+      const belgeler = await tx.belge.findMany({
+        where: {
+          tenantId,
+          cariId: fatura.cariId,
+          tur: "irsaliye",
+          yon,
+          OR: [{ durum: "onaylandi", faturaId: null }, { faturaId }],
+        },
+        orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
+        take: 100,
+        select: { id: true, no: true, tarih: true, faturaId: true, eirsaliye: { select: { durum: true } } },
+      });
+      return belgeler.map((b) => ({ id: b.id, no: b.no, tarih: b.tarih.toISOString().slice(0, 10), bagli: b.faturaId === faturaId, eirsaliyeDurumu: b.eirsaliye?.durum ?? null }));
+    });
+  }
+
+  /** Madde 8: bağlamadan önce gösterilen yumuşak karşılaştırma. */
+  async baglamaKarsilastir(faturaId: string, irsaliyeIds: string[]) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const fatura = await tx.fatura.findUnique({
+        where: { id: faturaId },
+        select: { satirlar: { select: { stokId: true, varyantId: true, miktar: true, birim: true, stok: { select: { kod: true, ad: true, tip: true } } } } },
+      });
+      if (!fatura) throw new NotFoundException("Fatura bulunamadı");
+      // Faturaya zaten bağlı irsaliyeler de hesaba girer: fatura çoğu zaman
+      // birden çok sevkiyatı kapsar.
+      const irsaliyeler = await tx.belge.findMany({
+        where: { tenantId, tur: "irsaliye", OR: [{ id: { in: irsaliyeIds } }, { faturaId }] },
+        select: { satirlar: { select: { stokId: true, varyantId: true, miktar: true, birim: true, stok: { select: { kod: true, ad: true, tip: true } } } } },
+      });
+      const satir = (s: { stokId: string; varyantId: string | null; miktar: Prisma.Decimal; birim: string; stok: { kod: string; ad: string; tip: string } }) => ({
+        stokId: s.stokId,
+        varyantId: s.varyantId,
+        ad: `${s.stok.kod} ${s.stok.ad}`,
+        miktar: s.miktar.toString(),
+        birim: s.birim,
+        stokTipi: s.stok.tip,
+      });
+      return { farklar: irsaliyeFaturaFarklari(irsaliyeler.flatMap((i) => i.satirlar.map(satir)), fatura.satirlar.map(satir)) };
+    });
+  }
+
+  async irsaliyeBagla(faturaId: string, irsaliyeIds: string[]) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, (tx) => this.irsaliyeBaglaTx(tx, tenantId, faturaId, irsaliyeIds));
+  }
+
+  /**
+   * İrsaliyeleri faturaya bağlar ve "kapandı" yapar. e-Fatura sihirbazının
+   * sevkiyat adımı (EBLG-76) da bu yoldan geçer. Kesin faturaya bağlanan
+   * irsaliyenin sipariş rezervi burada çözülür — kesinleştirme onu görmedi.
+   */
+  async irsaliyeBaglaTx(tx: Prisma.TransactionClient, tenantId: string, faturaId: string, irsaliyeIds: string[]) {
+    const ids = [...new Set(irsaliyeIds)];
+    if (ids.length === 0) throw new BadRequestException("Bağlanacak en az bir irsaliye seçin");
+    const fatura = await tx.fatura.findUnique({ where: { id: faturaId }, select: { cariId: true, tip: true, durum: true, sevkiyatYontemi: true, ebelge: { select: { durum: true } } } });
+    if (!fatura) throw new NotFoundException("Fatura bulunamadı");
+    if (fatura.durum !== "taslak" && fatura.durum !== "kesin") throw new BadRequestException("İptal edilmiş faturaya irsaliye bağlanamaz");
+    if (fatura.tip !== "satis" && fatura.tip !== "alis") throw new BadRequestException("İrsaliye yalnız satış veya alış faturasına bağlanır");
+    if (fatura.ebelge && !["hata", "ret"].includes(fatura.ebelge.durum)) throw new ConflictException("e-Belge olarak gönderilmiş faturaya irsaliye bağlanamaz");
+    const belgeler = await tx.belge.findMany({ where: { id: { in: ids }, tenantId }, select: { id: true, no: true, tur: true, yon: true, cariId: true, durum: true, faturaId: true, eirsaliye: { select: { durum: true } } } });
+    if (belgeler.length !== ids.length) throw new NotFoundException("Seçilen irsaliyelerden bazıları bulunamadı");
+    const yeniler: string[] = [];
+    for (const b of belgeler) {
+      const ad = b.no ?? "İrsaliye";
+      if (b.tur !== "irsaliye") throw new BadRequestException(`${ad} bir irsaliye değil`);
+      if (b.faturaId === faturaId) continue;
+      if (b.faturaId) throw new ConflictException(`${ad} başka bir faturaya bağlı`);
+      if (b.durum !== "onaylandi") throw new BadRequestException(`${ad} onaylı değil; yalnız onaylı irsaliye faturaya bağlanır`);
+      if (b.cariId !== fatura.cariId) throw new BadRequestException(`${ad} faturayla aynı cariye ait değil`);
+      if (!irsaliyeFaturaTipiUyarMi(b.yon, fatura.tip)) throw new BadRequestException(`${ad}: ${b.yon === "satis" ? "satış irsaliyesi satış" : "alış irsaliyesi alış"} faturasına bağlanır`);
+      // Belgeye DespatchDocumentReference yazılacak; gitmemiş e-İrsaliyenin
+      // GİB'de karşılığı yok (EBLG-76 sihirbazıyla aynı kural).
+      if (b.eirsaliye && !["iletildi", "kabul", "kismi_kabul"].includes(b.eirsaliye.durum)) throw new BadRequestException(`${ad} e-İrsaliye olarak henüz iletilmedi; önce gönderimi tamamlayın`);
+      yeniler.push(b.id);
+    }
+    if (yeniler.length === 0) return { baglanan: 0 };
+    const guncellenen = await tx.belge.updateMany({ where: { id: { in: yeniler }, faturaId: null, durum: "onaylandi" }, data: { faturaId, durum: "kapandi" } });
+    if (guncellenen.count !== yeniler.length) throw new ConflictException("Seçilen irsaliyelerden biri başka bir işlemde faturalanmış; listeyi yenileyip tekrar deneyin");
+    if (fatura.durum === "kesin") await this.zincirEtkisiniCoz(tx, yeniler, -1);
+    // Gönderilmiş e-İrsaliye bağlandıysa faturanın sevkiyat yolu bellidir.
+    if (fatura.tip === "satis" && belgeler.some((b) => yeniler.includes(b.id) && b.eirsaliye)) {
+      await tx.fatura.update({ where: { id: faturaId }, data: { sevkiyatYontemi: "irsaliye", fiiliSevkZamani: null } });
+    }
+    return { baglanan: yeniler.length };
+  }
+
+  async irsaliyeBaginiKaldir(irsaliyeId: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, (tx) => this.irsaliyeBaginiKaldirTx(tx, tenantId, irsaliyeId));
+  }
+
+  /**
+   * Bağı kaldırır, irsaliye yeniden "onaylı" olur ve faturalanabilir listesine
+   * döner. Kesin faturadaysa çözülen rezerv geri konur.
+   */
+  async irsaliyeBaginiKaldirTx(tx: Prisma.TransactionClient, tenantId: string, irsaliyeId: string) {
+    const belge = await tx.belge.findUnique({ where: { id: irsaliyeId }, select: { id: true, tur: true, faturaId: true, eirsaliye: { select: { durum: true } } } });
+    if (!belge || belge.tur !== "irsaliye") throw new NotFoundException("İrsaliye bulunamadı");
+    if (!belge.faturaId) return { kaldirildi: false };
+    const fatura = await tx.fatura.findUnique({ where: { id: belge.faturaId }, select: { id: true, durum: true, sevkiyatYontemi: true, ebelge: { select: { durum: true } } } });
+    if (!fatura) throw new NotFoundException("Fatura bulunamadı");
+    if (fatura.ebelge && !["hata", "ret"].includes(fatura.ebelge.durum)) throw new ConflictException("e-Belge olarak gönderilmiş faturanın irsaliye bağı kaldırılamaz");
+    // EBLG-76 "fatura sevkten önce": e-İrsaliye fatura referansıyla gitti.
+    if (fatura.sevkiyatYontemi === "fatura_once" && belge.eirsaliye) throw new ConflictException("Fatura referansıyla gönderilmiş e-İrsaliyenin bağı kaldırılamaz");
+    if (fatura.durum === "kesin") await this.zincirEtkisiniCoz(tx, [belge.id], 1);
+    await tx.belge.update({ where: { id: belge.id }, data: { faturaId: null, durum: "onaylandi" } });
+    if (fatura.sevkiyatYontemi === "irsaliye") {
+      const kalan = await tx.belge.count({ where: { tenantId, faturaId: fatura.id, tur: "irsaliye", eirsaliye: { isNot: null } } });
+      if (kalan === 0) await tx.fatura.update({ where: { id: fatura.id }, data: { sevkiyatYontemi: null } });
+    }
+    return { kaldirildi: true };
   }
 
   /** Belgelerin satırlarını birleştirip fatura TASLAĞI yazar (stok/cari etkisi kesinleştirmede). */

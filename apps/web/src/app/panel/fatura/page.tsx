@@ -10,6 +10,7 @@ import { BelgeOnizlemeEkrani } from "@/components/belge-onizleme-ekrani";
 import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
 import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyalari";
 import { FaturaEkPaneli } from "@/components/fatura-ek-paneli";
+import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
 import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
@@ -384,6 +385,8 @@ export default function FaturaSayfasi() {
   const [basari, setBasari] = useState("");
   const [epostaGonderilen, setEpostaGonderilen] = useState<Fatura | null>(null);
   const [ekleriAcikFatura, setEkleriAcikFatura] = useState<Fatura | null>(null);
+  /** FTR-26: faturaya sonradan irsaliye bağlama paneli. */
+  const [irsaliyeBaglaFaturaId, setIrsaliyeBaglaFaturaId] = useState<string | null>(null);
   const [epostaAdresi, setEpostaAdresi] = useState("");
   const [formAcik, setFormAcik] = useState(yeniSayfasi);
   // EBLG-77: firma e-Fatura/e-Arşiv'e kayıtlı değilse fatura kağıda basılır;
@@ -1688,6 +1691,7 @@ export default function FaturaSayfasi() {
               {(acikFatura.ebelge?.durum === "hata" || acikFatura.ebelge?.takiliGonderim) && <Button size="sm" type="button" onClick={() => void ebelgeYenidenGonder(acikFatura.id)}>Yeniden gönder</Button>}
               <Button size="sm" type="button" onClick={() => setEkleriAcikFatura(acikFatura)}>📎 Ekler</Button>
               <EylemMenusu>
+                {["satis", "alis"].includes(acikFatura.tip) && ["taslak", "kesin"].includes(acikFatura.durum) && (!acikFatura.ebelge || ["hata", "ret"].includes(acikFatura.ebelge.durum)) && <Button size="sm" type="button" onClick={() => setIrsaliyeBaglaFaturaId(acikFatura.id)}>🔗 İrsaliye bağla</Button>}
                 {acikFatura.tip === "proforma" && <Button size="sm" type="button" onClick={() => void satisaDonustur(acikFatura.id)}>➡️ Satışa Dönüştür</Button>}
                 <Button size="sm" type="button" onClick={() => void kopyala(acikFatura.id)}>📋 Kopyala</Button>
                 <Button size="sm" type="button" onClick={() => router.push(`/panel/fatura/tekrarlayan?sablonFaturaId=${acikFatura.id}`)}>↻ Tekrarla</Button>
@@ -2246,6 +2250,14 @@ export default function FaturaSayfasi() {
             </div>
           </form>
         </HizliKayitPaneli>
+      )}
+
+      {irsaliyeBaglaFaturaId && (
+        <IrsaliyeBaglaPaneli
+          kaynak={{ faturaId: irsaliyeBaglaFaturaId }}
+          onKapat={() => setIrsaliyeBaglaFaturaId(null)}
+          onBaglandi={(mesaj) => { setIrsaliyeBaglaFaturaId(null); setHata(""); setBasari(mesaj); void yukle(); }}
+        />
       )}
 
       {ekleriAcikFatura && <FaturaEkPaneli faturaId={ekleriAcikFatura.id} baslik={ekleriAcikFatura.no ?? "Taslak"} onKapat={() => setEkleriAcikFatura(null)} />}

@@ -19,6 +19,7 @@ import { coz } from "../core/kripto";
 import { BildirimService } from "../bildirimler/bildirim.service";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { MetricsService } from "../core/observability/metrics.service";
+import { BelgelerService } from "../belgeler/belgeler.service";
 import { PrismaService } from "../core/prisma.service";
 import { FaturaService } from "../fatura/fatura.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
@@ -157,6 +158,7 @@ export class EbelgeService {
     private readonly metrics: MetricsService,
     private readonly bildirimler: BildirimService,
     private readonly ayarlar: AyarlarService,
+    private readonly belgeler: BelgelerService,
   ) {}
 
   // ─── E-BELGE GÖNDERİMİ (EBLG-01/02/06/07) ──────────────────────────────────
@@ -182,12 +184,15 @@ export class EbelgeService {
       if (secim.yontem === "irsaliye_yerine" && (!sevkZamani || Number.isNaN(sevkZamani.getTime()))) {
         throw new BadRequestException("İrsaliye yerine geçen faturada fiili sevk tarihi ve saati zorunludur");
       }
-      const belgeler = await tx.belge.findMany({ where: { id: { in: ids }, tenantId, cariId: fatura.cariId, tur: "irsaliye", yon: "satis", durum: "onaylandi", OR: [{ faturaId: null }, { faturaId }] }, include: { eirsaliye: true } });
+      const belgeler = await tx.belge.findMany({ where: { id: { in: ids }, tenantId, cariId: fatura.cariId, tur: "irsaliye", yon: "satis", OR: [{ durum: "onaylandi", faturaId: null }, { faturaId }] }, include: { eirsaliye: true } });
       if (belgeler.length !== ids.length || belgeler.some((b) => !b.no || !b.eirsaliye || !["iletildi", "kabul", "kismi_kabul"].includes(b.eirsaliye.durum))) throw new BadRequestException("Yalnız aynı müşteriye gönderilmiş e-İrsaliyeler seçilebilir");
       // Yol değiştiyse önceki bağlantılar çözülür; irsaliye başka faturaya
-      // bağlanabilsin diye kaydı silmeden yalnız bağı kaldırıyoruz.
-      await tx.belge.updateMany({ where: { tenantId, faturaId, tur: "irsaliye", id: { notIn: ids }, eirsaliye: { isNot: null } }, data: { faturaId: null } });
-      if (ids.length) await tx.belge.updateMany({ where: { tenantId, id: { in: ids } }, data: { faturaId } });
+      // bağlanabilsin diye kaydı silmeden yalnız bağı kaldırıyoruz. Bağlama ve
+      // çözme FTR-26 yolundan geçer: irsaliye "kapandı"/"onaylı" olur, kesin
+      // faturada sipariş rezervi de izlenir.
+      const oncekiler = await tx.belge.findMany({ where: { tenantId, faturaId, tur: "irsaliye", id: { notIn: ids }, eirsaliye: { isNot: null } }, select: { id: true } });
+      for (const onceki of oncekiler) await this.belgeler.irsaliyeBaginiKaldirTx(tx, tenantId, onceki.id);
+      if (ids.length) await this.belgeler.irsaliyeBaglaTx(tx, tenantId, faturaId, ids);
       await tx.fatura.update({ where: { id: faturaId }, data: { sevkiyatYontemi: secim.yontem, fiiliSevkZamani: sevkZamani } });
     });
   }
@@ -247,7 +252,7 @@ export class EbelgeService {
       const ihracat = yolcu.yolcuBeraberi ? IHRACAT_DEGIL : ihracatOzeti(fatura, { efaturaAcik: uygulamalar.efatura.acik });
       const mukellefiyet = { mukellef: uygulamalar.eirsaliye.acik, kaynak: uygulamalar.eirsaliye.kaynak };
       const irsaliyeAdaylari = sevkiyatSorulur && mukellefiyet.mukellef ? await tx.belge.findMany({
-        where: { tenantId, cariId: fatura.cariId, tur: "irsaliye", yon: "satis", durum: "onaylandi", OR: [{ faturaId: null }, { faturaId }], eirsaliye: { is: { durum: { in: ["iletildi", "kabul", "kismi_kabul"] } } } },
+        where: { tenantId, cariId: fatura.cariId, tur: "irsaliye", yon: "satis", OR: [{ durum: "onaylandi", faturaId: null }, { faturaId }], eirsaliye: { is: { durum: { in: ["iletildi", "kabul", "kismi_kabul"] } } } },
         orderBy: { tarih: "desc" }, take: 50, select: { id: true, no: true, tarih: true, faturaId: true },
       }) : [];
       // Gönderimdeki sayımın aynısı (bkz. `belgeUblHazirla`): bağlı irsaliyenin

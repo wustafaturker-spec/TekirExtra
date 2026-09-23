@@ -1,5 +1,5 @@
 import { BadGatewayException, BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { EirsaliyeDurum, GelenEirsaliyeDurum, Prisma } from "@prisma/client";
+import { EirsaliyeDurum, GelenEirsaliyeDurum, Prisma, type ZincirBelgeDurum } from "@prisma/client";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import type { EntegratorConfig } from "@tekirextra/baglanti";
@@ -8,7 +8,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
-import { gonderimEngelleri, teslimatAdresiSec, type MukellefDurumu } from "./eirsaliye-engeller";
+import { gonderimEngelleri, IRSALIYE_GONDERILEBILIR_DURUMLAR, teslimatAdresiSec, type MukellefDurumu } from "./eirsaliye-engeller";
 import { irsaliyeUblOku } from "./eirsaliye-ubl-oku";
 import { MukellefListesiService } from "./mukellef-listesi.service";
 
@@ -154,7 +154,9 @@ export class EirsaliyeService {
       const belge = await tx.belge.findUnique({ where: { id: belgeId }, include: { cari: { include: { adresler: true } }, tasiyiciCari: { include: { adresler: true } }, satirlar: { include: { stok: true } }, eirsaliye: true, fatura: { select: { no: true, tarih: true } }, kaynakBelge: { select: { tur: true, no: true, tarih: true } } } });
       if (!belge) throw new NotFoundException("Belge bulunamadı");
       if (belge.tur !== "irsaliye" || belge.yon !== "satis") throw new BadRequestException("Yalnızca satış irsaliyesi e-İrsaliye olarak gönderilebilir");
-      if (belge.durum !== "onaylandi") throw new BadRequestException("e-İrsaliye göndermek için belge onaylanmış olmalıdır");
+      // Faturalanmış (kapandı) irsaliye de gönderilir: fatura sevkten önce
+      // kesilebilir ya da irsaliye faturaya bağlanabilir (EBLG-76, FTR-26).
+      if (!IRSALIYE_GONDERILEBILIR_DURUMLAR.includes(belge.durum)) throw new BadRequestException("e-İrsaliye göndermek için belge onaylanmış olmalıdır");
       if (belge.eirsaliye?.durum === "kabul" || belge.eirsaliye?.durum === "iletildi") return belge.eirsaliye;
       const { baglanti, cfg, adapter } = await this.baglanti(tx, tenantId);
       if (!adapter.irsaliyeGonder) throw new BadRequestException("Seçili entegratör e-İrsaliye gönderimini desteklemiyor");
@@ -266,7 +268,7 @@ export class EirsaliyeService {
           yon: "satis",
           // Kaydı olan her irsaliye defterde kalır; kaydı olmayanlardan yalnız
           // onaylı olanlar gönderilmeyi bekliyor sayılır.
-          OR: [{ eirsaliye: { isNot: null } }, { durum: "onaylandi" }],
+          OR: [{ eirsaliye: { isNot: null } }, { durum: { in: IRSALIYE_GONDERILEBILIR_DURUMLAR as ZincirBelgeDurum[] } }],
         },
         select: {
           id: true,

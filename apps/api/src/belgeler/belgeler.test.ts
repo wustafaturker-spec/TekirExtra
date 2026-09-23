@@ -286,4 +286,102 @@ describe("BelgelerService", () => {
     await servis.listele("siparis", "alis", "onaylandi");
     expect(findMany.mock.calls[1][0].where).toMatchObject({ durum: "onaylandi" });
   });
+
+  // ─── Sonradan faturaya bağlama (FTR-26) ───────────────────────────────────
+
+  function baglamaKurulumu(secenek: { fatura?: Record<string, unknown>; irsaliyeler?: Record<string, unknown>[]; guncellenen?: number } = {}) {
+    const fatura = { cariId: "c1", tip: "satis", durum: "kesin", sevkiyatYontemi: null, ebelge: null, ...secenek.fatura };
+    const irsaliyeler = secenek.irsaliyeler ?? [{ id: "i1", no: "IRS2026000000001", tur: "irsaliye", yon: "satis", cariId: "c1", durum: "onaylandi", faturaId: null, eirsaliye: null }];
+    const tx = {
+      fatura: { findUnique: vi.fn().mockResolvedValue(fatura), update: vi.fn() },
+      belge: {
+        findMany: vi.fn().mockResolvedValue(irsaliyeler),
+        updateMany: vi.fn().mockResolvedValue({ count: secenek.guncellenen ?? irsaliyeler.length }),
+      },
+    };
+    const servis = new BelgelerService({} as any, {} as any, {} as any, {} as any, {} as any);
+    const zincir = vi.spyOn(servis, "zincirEtkisiniCoz").mockResolvedValue();
+    return { servis, tx, zincir };
+  }
+
+  it("irsaliyeyi faturaya bağlar ve kapatır; kesin faturada sipariş rezervini çözer (FTR-26)", async () => {
+    const { servis, tx, zincir } = baglamaKurulumu();
+    await expect(servis.irsaliyeBaglaTx(tx as any, "t1", "f1", ["i1"])).resolves.toEqual({ baglanan: 1 });
+    expect(tx.belge.updateMany).toHaveBeenCalledWith({ where: { id: { in: ["i1"] }, faturaId: null, durum: "onaylandi" }, data: { faturaId: "f1", durum: "kapandi" } });
+    expect(zincir).toHaveBeenCalledWith(tx, ["i1"], -1);
+  });
+
+  it("taslak faturada rezerve dokunmaz; kesinleştirme çözer (FTR-26)", async () => {
+    const { servis, tx, zincir } = baglamaKurulumu({ fatura: { durum: "taslak" } });
+    await servis.irsaliyeBaglaTx(tx as any, "t1", "f1", ["i1"]);
+    expect(zincir).not.toHaveBeenCalled();
+  });
+
+  it("gönderilmiş e-Belgeye irsaliye bağlamaz (FTR-26)", async () => {
+    const { servis, tx } = baglamaKurulumu({ fatura: { ebelge: { durum: "iletildi" } } });
+    await expect(servis.irsaliyeBaglaTx(tx as any, "t1", "f1", ["i1"])).rejects.toThrow(ConflictException);
+  });
+
+  it("farklı cari, ters yön ve onaysız irsaliyeyi reddeder (FTR-26)", async () => {
+    const temel = { id: "i1", no: "IRS1", tur: "irsaliye", yon: "satis", cariId: "c1", durum: "onaylandi", faturaId: null, eirsaliye: null };
+    for (const fark of [{ cariId: "c2" }, { yon: "alis" }, { durum: "taslak" }]) {
+      const { servis, tx } = baglamaKurulumu({ irsaliyeler: [{ ...temel, ...fark }] });
+      await expect(servis.irsaliyeBaglaTx(tx as any, "t1", "f1", ["i1"])).rejects.toThrow();
+    }
+  });
+
+  it("gitmemiş e-İrsaliyeyi bağlamaz, gitmiş olanda faturanın sevkiyat yolunu yazar (FTR-26)", async () => {
+    const irs = (durum: string) => [{ id: "i1", no: "GBZ1", tur: "irsaliye", yon: "satis", cariId: "c1", durum: "onaylandi", faturaId: null, eirsaliye: { durum } }];
+    const hata = baglamaKurulumu({ irsaliyeler: irs("hata") });
+    await expect(hata.servis.irsaliyeBaglaTx(hata.tx as any, "t1", "f1", ["i1"])).rejects.toThrow("henüz iletilmedi");
+    const gitti = baglamaKurulumu({ irsaliyeler: irs("iletildi") });
+    await gitti.servis.irsaliyeBaglaTx(gitti.tx as any, "t1", "f1", ["i1"]);
+    expect(gitti.tx.fatura.update).toHaveBeenCalledWith({ where: { id: "f1" }, data: { sevkiyatYontemi: "irsaliye", fiiliSevkZamani: null } });
+  });
+
+  it("eşzamanlı faturalanan irsaliyede çakışma verir (FTR-26)", async () => {
+    const { servis, tx } = baglamaKurulumu({ guncellenen: 0 });
+    await expect(servis.irsaliyeBaglaTx(tx as any, "t1", "f1", ["i1"])).rejects.toThrow(ConflictException);
+  });
+
+  it("bağı kaldırınca irsaliyeyi açar ve kesin faturada rezervi geri koyar (FTR-26)", async () => {
+    const tx = {
+      belge: {
+        findUnique: vi.fn().mockResolvedValue({ id: "i1", tur: "irsaliye", faturaId: "f1", eirsaliye: null }),
+        update: vi.fn(),
+      },
+      fatura: { findUnique: vi.fn().mockResolvedValue({ id: "f1", durum: "kesin", sevkiyatYontemi: null, ebelge: null }) },
+    };
+    const servis = new BelgelerService({} as any, {} as any, {} as any, {} as any, {} as any);
+    const zincir = vi.spyOn(servis, "zincirEtkisiniCoz").mockResolvedValue();
+    await expect(servis.irsaliyeBaginiKaldirTx(tx as any, "t1", "i1")).resolves.toEqual({ kaldirildi: true });
+    expect(zincir).toHaveBeenCalledWith(tx, ["i1"], 1);
+    expect(tx.belge.update).toHaveBeenCalledWith({ where: { id: "i1" }, data: { faturaId: null, durum: "onaylandi" } });
+  });
+
+  it("gönderilmiş faturanın bağını kaldırmaz (FTR-26)", async () => {
+    const tx = {
+      belge: { findUnique: vi.fn().mockResolvedValue({ id: "i1", tur: "irsaliye", faturaId: "f1", eirsaliye: null }), update: vi.fn() },
+      fatura: { findUnique: vi.fn().mockResolvedValue({ id: "f1", durum: "kesin", sevkiyatYontemi: null, ebelge: { durum: "kabul" } }) },
+    };
+    const servis = new BelgelerService({} as any, {} as any, {} as any, {} as any, {} as any);
+    await expect(servis.irsaliyeBaginiKaldirTx(tx as any, "t1", "i1")).rejects.toThrow(ConflictException);
+    expect(tx.belge.update).not.toHaveBeenCalled();
+  });
+
+  it("siparişten türeyen irsaliyede yalnız irsaliye miktarını çözer (SAT-09 / FTR-26)", async () => {
+    const tx = {
+      belge: {
+        findMany: vi.fn().mockResolvedValue([
+          { tur: "irsaliye", yon: "satis", depoId: "d1", kaynakBelge: { tur: "siparis", yon: "satis", depoId: "d1" }, satirlar: [{ stokId: "stk1", varyantId: null, miktar: D("40"), kaynakSatirId: "s1" }] },
+          { tur: "irsaliye", yon: "satis", depoId: "d1", kaynakBelge: null, satirlar: [{ stokId: "stk2", varyantId: null, miktar: D("5"), kaynakSatirId: null }] },
+        ]),
+      },
+    };
+    const servis = new BelgelerService({} as any, {} as any, {} as any, {} as any, {} as any);
+    const etki = vi.spyOn(servis, "siparisEtkisiUygula").mockResolvedValue();
+    await servis.zincirEtkisiniCoz(tx as any, ["i1", "i2"], -1);
+    expect(etki).toHaveBeenCalledTimes(1);
+    expect(etki).toHaveBeenCalledWith(tx, "satis", [expect.objectContaining({ stokId: "stk1", miktar: D("40") })], -1, "d1");
+  });
 });

@@ -26,3 +26,4 @@ export * from "./cari-ebelge";
 export * from "./sevkiyat";
 export * from "./ebelge-uygulamalari";
 export * from "./ytb";
+export * from "./irsaliye-fatura";

@@ -24,6 +24,12 @@ export interface Engel {
   mesaj: string;
 }
 
+/**
+ * e-İrsaliye olarak gönderilebilen belge durumları. "Kapandı" faturalanmış
+ * demektir, sevk belgesi olarak hâlâ geçerlidir (FTR-26).
+ */
+export const IRSALIYE_GONDERILEBILIR_DURUMLAR: readonly string[] = ["onaylandi", "kapandi"];
+
 /** Mükellefiyet yerel GİB listesinden okunur; liste bayatsa "bilinmiyor". */
 export type MukellefDurumu = "mukellef" | "degil" | "bilinmiyor";
 
@@ -60,7 +66,7 @@ export function gonderimEngelleri(belge: EirsaliyeAdayi, mukellef: MukellefDurum
   if (belge.tur !== "irsaliye" || belge.yon !== "satis") {
     return [{ kod: "belge_turu", mesaj: "Yalnızca satış irsaliyesi e-İrsaliye olarak gönderilebilir" }];
   }
-  if (belge.durum !== "onaylandi") {
+  if (!IRSALIYE_GONDERILEBILIR_DURUMLAR.includes(belge.durum)) {
     engeller.push({ kod: "onaysiz", mesaj: "e-İrsaliye göndermek için belge onaylanmış olmalıdır" });
   }
   if (!belge.cari.vknTckn) {

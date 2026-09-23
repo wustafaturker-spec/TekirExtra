@@ -19,6 +19,7 @@ import {
   belgeDonusturSemasi,
   belgeGuncelleSemasi,
   belgeOlusturSemasi,
+  irsaliyeBaglaSemasi,
   tasimaBilgisiSemasi,
   topluFaturaSemasi,
 } from "./belgeler.semalar";
@@ -53,6 +54,39 @@ export class BelgelerController {
   @Get("sevkiyat-bekleyen-faturalar")
   async sevkiyatBekleyenFaturalar(@Query("cariId") cariId?: string) {
     return this.belgelerService.sevkiyatBekleyenFaturalar(cariId);
+  }
+
+  /** FTR-26: irsaliyenin bağlanabileceği faturalar. */
+  @Get(":id/baglanabilir-faturalar")
+  async baglanabilirFaturalar(@Param("id") id: string) {
+    return this.belgelerService.baglanabilirFaturalar(id);
+  }
+
+  /** FTR-26: faturaya bağlanabilecek (ve bağlı) irsaliyeler. */
+  @Get("baglanabilir-irsaliyeler/:faturaId")
+  async baglanabilirIrsaliyeler(@Param("faturaId") faturaId: string) {
+    return this.belgelerService.baglanabilirIrsaliyeler(faturaId);
+  }
+
+  /** FTR-26 madde 8: bağlamadan önce miktar/kalem farkları (uyarı). */
+  @Post("irsaliye-bagla/karsilastir")
+  @Roller("muhasebe")
+  async baglamaKarsilastir(@Body() govde: unknown) {
+    const { faturaId, irsaliyeIds } = ayristir(irsaliyeBaglaSemasi, govde);
+    return this.belgelerService.baglamaKarsilastir(faturaId, irsaliyeIds);
+  }
+
+  @Post("irsaliye-bagla")
+  @Roller("muhasebe")
+  async irsaliyeBagla(@Body() govde: unknown) {
+    const { faturaId, irsaliyeIds } = ayristir(irsaliyeBaglaSemasi, govde);
+    return this.belgelerService.irsaliyeBagla(faturaId, irsaliyeIds);
+  }
+
+  @Post(":id/fatura-bagini-kaldir")
+  @Roller("muhasebe")
+  async faturaBaginiKaldir(@Param("id") id: string) {
+    return this.belgelerService.irsaliyeBaginiKaldir(id);
   }
 
   /** EBLG-35: e-İrsaliye ve bağlı fatura durum geçmişi. */
