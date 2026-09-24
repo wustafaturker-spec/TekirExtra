@@ -22,6 +22,7 @@ import {
   irsaliyeBaglaSemasi,
   tasimaBilgisiSemasi,
   tedarikciBelgeNoSemasi,
+  matbuBelgeNoSemasi,
   topluFaturaSemasi,
 } from "./belgeler.semalar";
 
@@ -120,6 +121,13 @@ export class BelgelerController {
   @Roller("muhasebe", "satis")
   async tedarikciBelgeNo(@Param("id") id: string, @Body() govde: unknown) {
     return this.belgelerService.tedarikciBelgeNoGuncelle(id, ayristir(tedarikciBelgeNoSemasi, govde));
+  }
+
+  /** EBLG-83: kâğıt irsaliyenin matbu numarası onaydan sonra girilir. */
+  @Patch(":id/matbu-belge-no")
+  @Roller("muhasebe", "satis")
+  async matbuBelgeNo(@Param("id") id: string, @Body() govde: unknown) {
+    return this.belgelerService.matbuBelgeNoGuncelle(id, ayristir(matbuBelgeNoSemasi, govde));
   }
 
   @Patch(":id")

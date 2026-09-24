@@ -17,6 +17,7 @@ import {
   irsaliyeFaturaSuresi,
   irsaliyeSevkGunu,
   irsaliyeFaturaTipiUyarMi,
+  irsaliyeKanali,
   type FaturaHesaplaSatirGirdi,
   type KayitEylem,
 } from "@tekirextra/shared";
@@ -29,14 +30,16 @@ import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { PrismaService } from "../core/prisma.service";
 import { DepoService } from "../stok/depo.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
-import { BaglantilarService } from "../tenant/baglantilar.service";
 import { belgePdfHtml } from "./belge-pdf";
 import { durumGecmisiOku } from "../core/durum-gecmisi";
+import { ebelgeUygulamalariniOku, eirsaliyeAlicisiKayitliMi } from "../ebelge/ebelge-uygulamalari.service";
+import { belgeSirasiAl } from "./belge-sayac";
 import type {
   belgeGuncelleSemasi,
   belgeOlusturSemasi,
   tasimaBilgisiSemasi,
   tedarikciBelgeNoSemasi,
+  matbuBelgeNoSemasi,
   topluFaturaSemasi,
 } from "./belgeler.semalar";
 
@@ -53,6 +56,8 @@ const NO_ONEKLERI: Record<BelgeTur, string> = {
 
 /** FTR-27: alış irsaliyesinin iç serisi; giden e-İrsaliye serisiyle karışmaz. */
 const ALIS_IRSALIYE_ONEKI = "AIR";
+/** EBLG-83: kâğıt (matbu) satış irsaliyesinin iç serisi. */
+const KAGIT_IRSALIYE_ONEKI = "KIR";
 
 /** FTR-27: tedarikçinin irsaliye numarası yalnız alış irsaliyesinde tutulur. */
 function tedarikciBelgeNoYaz(tur: string, yon: string, deger: string | null | undefined): string | null {
@@ -95,7 +100,6 @@ export class BelgelerService {
     private readonly pdf: PdfService,
     private readonly depoService: DepoService,
     private readonly donemKilidi: DonemKilidiService,
-    private readonly baglantilar: BaglantilarService,
     private readonly ayarlar?: AyarlarService,
   ) {}
 
@@ -181,6 +185,7 @@ export class BelgelerService {
               { no: { contains: arama, mode: "insensitive" } },
               // FTR-27: alış irsaliyesi tedarikçinin numarasıyla da bulunur.
               { tedarikciBelgeNo: { contains: arama, mode: "insensitive" } },
+              { matbuBelgeNo: { contains: arama, mode: "insensitive" } },
               // ARA-01: cari tarafı aksansız `arama_normal` kolonundan aranır.
               { cari: { aramaNormal: { contains: metinNormalize(arama) } } },
             ],
@@ -450,6 +455,19 @@ export class BelgelerService {
       return this.gorunum(guncel);
     });
   }
+  /** EBLG-83: kâğıt irsaliyenin matbu numarası; ticari içeriğe dokunmaz. */
+  async matbuBelgeNoGuncelle(id: string, girdi: z.infer<typeof matbuBelgeNoSemasi>) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const belge = await tx.belge.findUnique({ where: { id }, select: { kagitIrsaliye: true, durum: true } });
+      if (!belge) throw new NotFoundException("Belge bulunamadı");
+      if (!belge.kagitIrsaliye) throw new BadRequestException("Matbu numara yalnızca kâğıt irsaliyede tutulur");
+      if (belge.durum === "iptal") throw new BadRequestException("İptal edilmiş belgenin matbu numarası değiştirilemez");
+      const guncel = await tx.belge.update({ where: { id }, data: { matbuBelgeNo: girdi.matbuBelgeNo?.trim() || null } });
+      return this.gorunum(guncel);
+    });
+  }
+
 
 
   async guncelle(id: string, girdi: z.infer<typeof belgeGuncelleSemasi>) {
@@ -657,24 +675,29 @@ export class BelgelerService {
 
       const yil = belge.tarih.getFullYear();
       const irsaliye = belge.tur === "irsaliye";
-      // FTR-27: yalnız satış irsaliyesi e-İrsaliye olarak gider. Alış irsaliyesi
-      // o serinin sayacını tüketirse giden seride boşluk kalır; kendi sayacı var.
-      const giden = irsaliye && belge.yon === "satis";
-      const sayacYonu = irsaliye ? belge.yon : "satis";
-      const sayac = await tx.belgeSayac.upsert({
-        where: { tenantId_tur_yon_yil: { tenantId, tur: belge.tur, yon: sayacYonu, yil } },
-        create: { tenantId, tur: belge.tur, yon: sayacYonu, yil, sonSira: 1 },
-        update: { sonSira: { increment: 1 } },
-      });
-      // Satış irsaliyesi e-İrsaliye olarak GİB'e gidebilir ve GİB belge
-      // numarasını 16 karakter bekler: 3 harf önek + 4 hane yıl + 9 hane sıra.
-      // Teklif, sipariş ve alış irsaliyesi dışarı çıkmayan iç belgeler, onların
-      // genişliği korunur. Önek de e-İrsaliye'de firmanın entegratörde tanımlı
-      // serisidir; sabit "IRS" yalnızca varsayılandır (EBLG-20).
-      const onek = giden
-        ? ((await this.baglantilar.irsaliyeSeriOneki(tx)) ?? NO_ONEKLERI.irsaliye)
-        : irsaliye ? ALIS_IRSALIYE_ONEKI : NO_ONEKLERI[belge.tur];
-      const no = `${onek}${yil}${String(sayac.sonSira).padStart(giden ? 9 : 6, "0")}`;
+      // EBLG-83: satış irsaliyesinin kanalı onayda belirlenir. e-İrsaliye
+      // numarası gönderimde verilir — hiç gönderilmeyen irsaliye giden seride
+      // boşluk bırakmasın. Kâğıt irsaliye kendi serisinden numaralanır.
+      let kagitIrsaliye = false;
+      let no: string | null;
+      if (irsaliye && belge.yon === "satis") {
+        const cari = await tx.cariHesap.findUnique({ where: { id: belge.cariId }, select: { vknTckn: true } });
+        const uygulamalar = await ebelgeUygulamalariniOku(tx, tenantId);
+        const karar = irsaliyeKanali({
+          firmaEirsaliye: uygulamalar.eirsaliye.acik,
+          aliciKayitli: uygulamalar.eirsaliye.acik ? await eirsaliyeAlicisiKayitliMi(tx, cari?.vknTckn ?? null) : false,
+        });
+        if ("hata" in karar) throw new BadRequestException(karar.hata);
+        kagitIrsaliye = karar.kanal === "kagit";
+        no = kagitIrsaliye
+          ? `${KAGIT_IRSALIYE_ONEKI}${yil}${String(await belgeSirasiAl(tx, { tenantId, tur: "irsaliye", yon: "satis", seri: KAGIT_IRSALIYE_ONEKI, yil })).padStart(6, "0")}`
+          : null;
+      } else {
+        // FTR-27: alış irsaliyesi giden seriyi tüketmez; kendi sayacı var.
+        // Teklif, sipariş ve alış irsaliyesi dışarı çıkmayan iç belgelerdir.
+        const sira = await belgeSirasiAl(tx, { tenantId, tur: belge.tur, yon: irsaliye ? belge.yon : "satis", yil });
+        no = `${irsaliye ? ALIS_IRSALIYE_ONEKI : NO_ONEKLERI[belge.tur]}${yil}${String(sira).padStart(6, "0")}`;
+      }
 
       // Otomatik rezervasyon (S-01): satış siparişi rezerv, alış yoldaki üretir
       if (belge.tur === "siparis") {
@@ -688,6 +711,7 @@ export class BelgelerService {
           // sevkten önce") onayla birlikte faturalanmış sayılır.
           durum: irsaliye && belge.faturaId ? "kapandi" : "onaylandi",
           no,
+          kagitIrsaliye,
           // Fiili sevk zamanı girilmediyse onay anı yazılır: mal onaylanan
           // irsaliyeyle yola çıkar (EBLG-23).
           ...(irsaliye && !belge.fiiliSevkZamani ? { fiiliSevkZamani: new Date() } : {}),
@@ -1506,6 +1530,9 @@ export class BelgelerService {
     idisSevkiyatNo?: string | null;
     /** FTR-27: alış irsaliyesinde tedarikçinin irsaliye numarası. */
     tedarikciBelgeNo?: string | null;
+    /** EBLG-83: kâğıt irsaliye ve matbu numarası. */
+    kagitIrsaliye?: boolean;
+    matbuBelgeNo?: string | null;
     kaynakBelgeId: string | null;
     faturaId: string | null;
   }) {
@@ -1546,6 +1573,8 @@ export class BelgelerService {
         : null,
       idisSevkiyatNo: k.idisSevkiyatNo ?? null,
       tedarikciBelgeNo: k.tedarikciBelgeNo ?? null,
+      kagitIrsaliye: k.kagitIrsaliye ?? false,
+      matbuBelgeNo: k.matbuBelgeNo ?? null,
       kaynakBelgeId: k.kaynakBelgeId,
       faturaId: k.faturaId,
     };

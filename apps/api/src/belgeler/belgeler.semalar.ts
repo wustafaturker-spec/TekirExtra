@@ -143,3 +143,8 @@ export const tasimaBilgisiSemasi = belgeOlusturSemasi.pick({
 export const tedarikciBelgeNoSemasi = z.object({
   tedarikciBelgeNo: z.string().max(50).nullable(),
 });
+
+/** EBLG-83: kâğıt irsaliyenin basımevi (matbu) numarası; onaydan sonra girilir. */
+export const matbuBelgeNoSemasi = z.object({
+  matbuBelgeNo: z.string().max(50).nullable(),
+});

@@ -299,7 +299,7 @@ export default function GidenEirsaliyeler() {
                 />
               </td>
               <td>
-                <strong>{s.belgeNo ?? "Numarasız"}</strong>
+                <strong>{s.belgeNo ?? "Numara gönderimde"}</strong>
                 <small>{Number(s.genelToplam).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL</small>
                 {s.entegratorRef && <small title={s.entegratorRef}>Ref: {s.entegratorRef.slice(0, 12)}…</small>}
               </td>

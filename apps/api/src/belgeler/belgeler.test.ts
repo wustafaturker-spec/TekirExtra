@@ -30,7 +30,7 @@ describe("BelgelerService", () => {
       faturaSatir: { create: vi.fn() },
     };
     const prisma = { tenantIslem: vi.fn((_tenantId, calistir) => calistir(tx)) } as any;
-    const service = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any, { irsaliyeSeriOneki: vi.fn() } as any);
+    const service = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
 
     await expect(service.topluFatura({ belgeIds: ["b1"] })).rejects.toThrow(ConflictException);
     expect(tx.belge.updateMany).toHaveBeenCalledWith({
@@ -55,7 +55,7 @@ describe("BelgelerService", () => {
     const prisma = {
       tenantIslem: vi.fn((_tenantId, calistir) => calistir({ belge: { findMany } })),
     } as any;
-    const service = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any, { irsaliyeSeriOneki: vi.fn() } as any);
+    const service = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
 
     const sonuc = await service.listele(undefined, undefined, undefined, undefined, undefined, undefined, undefined, 2);
 
@@ -128,7 +128,7 @@ describe("BelgelerService", () => {
       belgeSatir: { createMany: vi.fn(), update: vi.fn() },
     };
     const prisma = { tenantIslem: vi.fn((_tenantId: string, calistir: (tx: unknown) => unknown) => calistir(tx)) } as any;
-    const servis = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any, { irsaliyeSeriOneki: vi.fn() } as any);
+    const servis = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
     return { servis, tx, belge, satir };
   }
 
@@ -226,7 +226,7 @@ describe("BelgelerService", () => {
       belgeSatir: { update: vi.fn() },
     };
     const prisma = { tenantIslem: vi.fn((_tenantId: string, calistir: (tx: unknown) => unknown) => calistir(tx)) } as any;
-    const servis = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any, { irsaliyeSeriOneki: vi.fn() } as any);
+    const servis = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
 
     await servis.iptal("irs1");
 
@@ -265,7 +265,7 @@ describe("BelgelerService", () => {
       eirsaliye: null,
     };
     const prisma = { tenantIslem: vi.fn((_t: string, calistir: (tx: unknown) => unknown) => calistir({ belge: { findUnique: vi.fn().mockResolvedValue(kayit) } })) } as any;
-    const servis = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any, { irsaliyeSeriOneki: vi.fn() } as any);
+    const servis = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
 
     const detay = await servis.getir("sip1");
 
@@ -278,7 +278,7 @@ describe("BelgelerService", () => {
   it("virgüllü durum süzgecini çoklu duruma çevirir (SAT-10)", async () => {
     const findMany = vi.fn().mockResolvedValue([]);
     const prisma = { tenantIslem: vi.fn((_t: string, calistir: (tx: unknown) => unknown) => calistir({ belge: { findMany } })) } as any;
-    const servis = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any, { irsaliyeSeriOneki: vi.fn() } as any);
+    const servis = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
 
     await servis.listele("siparis", "alis", "onaylandi,kismen_kapandi");
     expect(findMany.mock.calls[0][0].where).toMatchObject({ durum: { in: ["onaylandi", "kismen_kapandi"] } });
@@ -299,7 +299,7 @@ describe("BelgelerService", () => {
         updateMany: vi.fn().mockResolvedValue({ count: secenek.guncellenen ?? irsaliyeler.length }),
       },
     };
-    const servis = new BelgelerService({} as any, {} as any, {} as any, {} as any, {} as any);
+    const servis = new BelgelerService({} as any, {} as any, {} as any, {} as any);
     const zincir = vi.spyOn(servis, "zincirEtkisiniCoz").mockResolvedValue();
     return { servis, tx, zincir };
   }
@@ -352,7 +352,7 @@ describe("BelgelerService", () => {
       },
       fatura: { findUnique: vi.fn().mockResolvedValue({ id: "f1", durum: "kesin", sevkiyatYontemi: null, ebelge: null }) },
     };
-    const servis = new BelgelerService({} as any, {} as any, {} as any, {} as any, {} as any);
+    const servis = new BelgelerService({} as any, {} as any, {} as any, {} as any);
     const zincir = vi.spyOn(servis, "zincirEtkisiniCoz").mockResolvedValue();
     await expect(servis.irsaliyeBaginiKaldirTx(tx as any, "t1", "i1")).resolves.toEqual({ kaldirildi: true });
     expect(zincir).toHaveBeenCalledWith(tx, ["i1"], 1);
@@ -364,7 +364,7 @@ describe("BelgelerService", () => {
       belge: { findUnique: vi.fn().mockResolvedValue({ id: "i1", tur: "irsaliye", faturaId: "f1", eirsaliye: null }), update: vi.fn() },
       fatura: { findUnique: vi.fn().mockResolvedValue({ id: "f1", durum: "kesin", sevkiyatYontemi: null, ebelge: { durum: "kabul" } }) },
     };
-    const servis = new BelgelerService({} as any, {} as any, {} as any, {} as any, {} as any);
+    const servis = new BelgelerService({} as any, {} as any, {} as any, {} as any);
     await expect(servis.irsaliyeBaginiKaldirTx(tx as any, "t1", "i1")).rejects.toThrow(ConflictException);
     expect(tx.belge.update).not.toHaveBeenCalled();
   });
@@ -378,7 +378,7 @@ describe("BelgelerService", () => {
         ]),
       },
     };
-    const servis = new BelgelerService({} as any, {} as any, {} as any, {} as any, {} as any);
+    const servis = new BelgelerService({} as any, {} as any, {} as any, {} as any);
     const etki = vi.spyOn(servis, "siparisEtkisiUygula").mockResolvedValue();
     await servis.zincirEtkisiniCoz(tx as any, ["i1", "i2"], -1);
     expect(etki).toHaveBeenCalledTimes(1);
@@ -396,7 +396,7 @@ describe("BelgelerService", () => {
     });
     const findMany = vi.fn().mockResolvedValue([irsaliye("i1", null, "2020-01-01"), irsaliye("i2", { durum: "kesin" }, "2020-01-01")]);
     const prisma = { tenantIslem: vi.fn((_t, calistir) => calistir({ belge: { findMany } })) } as any;
-    const servis = new BelgelerService(prisma, {} as any, {} as any, {} as any, {} as any, { getir: vi.fn().mockResolvedValue({ irsaliyeFaturaGunSayisi: 7 }) } as any);
+    const servis = new BelgelerService(prisma, {} as any, {} as any, {} as any, { getir: vi.fn().mockResolvedValue({ irsaliyeFaturaGunSayisi: 7 }) } as any);
 
     const sonuc = await servis.listele("irsaliye", undefined, undefined, undefined, undefined, undefined, undefined, 50, true);
 
@@ -410,8 +410,10 @@ describe("BelgelerService", () => {
     expect(sonuc.kayitlar[1].faturalamaSuresi).toBeNull();
   });
 
-  describe("FTR-27: irsaliye numarası yöne göre ayrılır", () => {
-    const onayla = async (yon: "satis" | "alis") => {
+  describe("irsaliye numarası onayda (FTR-27, EBLG-83)", () => {
+    /** Firma kapsamı ve alıcının GİB kaydı sahte; liste varsayılan olarak günceldir. */
+    const onayla = async (yon: "satis" | "alis", ortam: { firmaEirsaliye?: boolean | null; aliciKayitli?: boolean; listeGuncel?: boolean } = {}) => {
+      const { firmaEirsaliye = true, aliciKayitli = true, listeGuncel = true } = ortam;
       const taslak = {
         id: "i1", tur: "irsaliye", yon, durum: "taslak", no: null, tarih: new Date("2026-09-24"),
         gecerlilikTarihi: null, cariId: "c1", depoId: null, dovizCinsi: "TRY", kur: new Prisma.Decimal(1),
@@ -427,25 +429,51 @@ describe("BelgelerService", () => {
           update: vi.fn(({ data }) => Promise.resolve({ ...taslak, ...data })),
         },
         belgeSayac: { upsert: vi.fn().mockResolvedValue({ sonSira: 12 }) },
+        cariHesap: { findUnique: vi.fn().mockResolvedValue({ vknTckn: "1230460944" }) },
+        // Firma ayarı elle verilir; `null` ise GİB listesine bakılır.
+        tenant: { findUnique: vi.fn().mockResolvedValue({ vkn: "1234567801", efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: firmaEirsaliye }) },
+        gibMukellef: { findFirst: vi.fn(({ where }) => Promise.resolve(where?.vknTckn === "1230460944" && !aliciKayitli ? null : { vknTckn: "x" })) },
+        gibMukellefSenkron: { findUnique: vi.fn().mockResolvedValue({ sonSenkronAt: listeGuncel ? new Date() : new Date("2026-01-01") }) },
       };
       const prisma = { tenantIslem: vi.fn((_t, calistir) => calistir(tx)) } as any;
-      const irsaliyeSeriOneki = vi.fn().mockResolvedValue("GBZ");
-      const servis = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any, { irsaliyeSeriOneki } as any);
+      const servis = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
       const sonuc = await servis.onayla("i1");
-      return { sonuc, sayacAnahtari: tx.belgeSayac.upsert.mock.calls[0][0].where.tenantId_tur_yon_yil, irsaliyeSeriOneki };
+      return { sonuc, tx, sayacAnahtari: tx.belgeSayac.upsert.mock.calls[0]?.[0].where.tenantId_tur_yon_seri_yil };
     };
 
-    it("satış irsaliyesi giden e-İrsaliye serisinden 16 haneli numara alır", async () => {
-      const { sonuc, sayacAnahtari } = await onayla("satis");
-      expect(sonuc.no).toBe("GBZ2026000000012");
-      expect(sayacAnahtari).toMatchObject({ tur: "irsaliye", yon: "satis", yil: 2026 });
+    it("e-İrsaliye alıcısına kesilen satış irsaliyesi numarasız onaylanır; numara gönderimde verilir", async () => {
+      const { sonuc, tx } = await onayla("satis");
+      expect(sonuc.no).toBeNull();
+      expect(sonuc.kagitIrsaliye).toBe(false);
+      expect(tx.belgeSayac.upsert).not.toHaveBeenCalled();
     });
 
-    it("alış irsaliyesi giden seriye dokunmadan iç seriden numara alır", async () => {
-      const { sonuc, sayacAnahtari, irsaliyeSeriOneki } = await onayla("alis");
+    it("alıcı e-İrsaliye kullanıcısı değilse kâğıt irsaliyedir ve giden seriye dokunmaz", async () => {
+      const { sonuc, sayacAnahtari } = await onayla("satis", { aliciKayitli: false });
+      expect(sonuc.no).toBe("KIR2026000012");
+      expect(sonuc.kagitIrsaliye).toBe(true);
+      expect(sayacAnahtari).toMatchObject({ tur: "irsaliye", yon: "satis", seri: "KIR", yil: 2026 });
+    });
+
+    it("firma e-İrsaliye kullanıcısı değilse listeye bakmadan kâğıt irsaliye keser", async () => {
+      const { sonuc, tx } = await onayla("satis", { firmaEirsaliye: false, listeGuncel: false });
+      expect(sonuc.kagitIrsaliye).toBe(true);
+      expect(tx.gibMukellef.findFirst).not.toHaveBeenCalled();
+    });
+
+    it("alıcının kaydı bilinmiyorsa onaylamaz", async () => {
+      await expect(onayla("satis", { listeGuncel: false })).rejects.toThrow(/mükellef listesi güncel değil/);
+    });
+
+    it("firmanın kapsamı bilinmiyorsa onaylamaz", async () => {
+      await expect(onayla("satis", { firmaEirsaliye: null, listeGuncel: false })).rejects.toThrow(/kapsamı bilinmiyor/);
+    });
+
+    it("alış irsaliyesi iç seriden numara alır, kanal sorulmaz", async () => {
+      const { sonuc, sayacAnahtari, tx } = await onayla("alis", { listeGuncel: false });
       expect(sonuc.no).toBe("AIR2026000012");
-      expect(sayacAnahtari).toMatchObject({ tur: "irsaliye", yon: "alis", yil: 2026 });
-      expect(irsaliyeSeriOneki).not.toHaveBeenCalled();
+      expect(sayacAnahtari).toMatchObject({ tur: "irsaliye", yon: "alis", seri: "", yil: 2026 });
+      expect(tx.tenant.findUnique).not.toHaveBeenCalled();
     });
   });
 });

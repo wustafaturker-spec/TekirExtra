@@ -154,9 +154,36 @@ export function faturaGecikmeUyarilari(girdi: {
   return girdi.irsaliyeler.flatMap((i) => {
     const sonGun = irsaliyeFaturaSonGun(i.sevkGunu, gunSayisi);
     if (girdi.faturaTarihi.slice(0, 10) <= sonGun) return [];
-    const ad = i.no ?? "İrsaliye";
+    // EBLG-83: gönderilmemiş e-İrsaliyenin henüz numarası yoktur.
+    const ad = i.no ? `${i.no} irsaliyesinin` : "numarasız irsaliyenin";
     return [girdi.yon === "satis"
-      ? `Fatura, ${ad} irsaliyesinin ${gunSayisi} günlük süresinden sonra düzenleniyor (son gün ${tr(sonGun)}).`
-      : `Tedarikçi faturası ${ad} irsaliyesinin ${gunSayisi} günlük süresinden sonra düzenlenmiş (son gün ${tr(sonGun)}).`];
+      ? `Fatura, ${ad} ${gunSayisi} günlük süresinden sonra düzenleniyor (son gün ${tr(sonGun)}).`
+      : `Tedarikçi faturası ${ad} ${gunSayisi} günlük süresinden sonra düzenlenmiş (son gün ${tr(sonGun)}).`];
   });
+}
+
+/**
+ * EBLG-83: satış irsaliyesinin kanalı onayda belirlenir. e-İrsaliye yalnız
+ * e-İrsaliye kullanıcısı olan firmadan kullanıcı olan alıcıya düzenlenir;
+ * gerisi kâğıt (matbu) irsaliyedir ve giden e-İrsaliye serisinden numara
+ * almaz. Firma kapsamı ya da alıcının kaydı bilinmiyorsa karar verilmez —
+ * yanlış kanalda onaylanan irsaliye ya seride boşluk bırakır ya da
+ * e-İrsaliye düzenlenmesi gereken yerde kâğıda düşer.
+ */
+export type IrsaliyeKanali = "eirsaliye" | "kagit";
+
+export function irsaliyeKanali(girdi: {
+  /** Firmanın e-İrsaliye kapsamı (EBLG-77); `null` bilinmiyor. */
+  firmaEirsaliye: boolean | null;
+  /** Alıcı GİB e-İrsaliye listesinde mi; `null` liste güncel değil. */
+  aliciKayitli: boolean | null;
+}): { kanal: IrsaliyeKanali } | { hata: string } {
+  if (girdi.firmaEirsaliye === false) return { kanal: "kagit" };
+  if (girdi.firmaEirsaliye === null) {
+    return { hata: "Firmanın e-İrsaliye kapsamı bilinmiyor; irsaliyeyi onaylamadan önce firma kartında e-İrsaliye ayarını seçin ya da GİB mükellef listesini güncelleyin" };
+  }
+  if (girdi.aliciKayitli === null) {
+    return { hata: "GİB mükellef listesi güncel değil; alıcının e-İrsaliye kaydı bilinmeden irsaliye onaylanamaz. Ayarlar > Entegratörler ekranından listeyi güncelleyin" };
+  }
+  return { kanal: girdi.aliciKayitli ? "eirsaliye" : "kagit" };
 }

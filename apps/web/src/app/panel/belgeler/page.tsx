@@ -74,6 +74,27 @@ interface BelgeSatirForm {
   lotNo?: string; seriNolar?: string; sonKullanmaTarihi?: string; uretimTarihi?: string;
 }
 
+/** FTR-27 / EBLG-83: belgenin karşı ya da basılı numarası ve düzenleme ucu. */
+interface DisNumara { alan: "tedarikciBelgeNo" | "matbuBelgeNo"; yol: string; etiket: string }
+
+function disNumaraAlani(b: Belge): DisNumara | null {
+  if (b.tur !== "irsaliye") return null;
+  if (b.yon === "alis") return { alan: "tedarikciBelgeNo", yol: "tedarikci-belge-no", etiket: "Tedarikçi irsaliye no" };
+  if (b.kagitIrsaliye) return { alan: "matbuBelgeNo", yol: "matbu-belge-no", etiket: "Matbu irsaliye no" };
+  return null;
+}
+
+/** EBLG-83: onaylı e-İrsaliyenin numarası gönderimde verilir; o zamana dek numarasızdır. */
+function belgeNoGoster(b: Belge): string {
+  if (b.no) return b.no;
+  return b.durum === "taslak" ? "(Taslak)" : "(Numara gönderimde)";
+}
+
+/** EBLG-83: numara almış ama GİB'e ulaşmamış satış irsaliyesi iptalde seride boşluk bırakır. */
+function seriBoslukRiski(b: Belge): boolean {
+  return b.tur === "irsaliye" && b.yon === "satis" && !b.kagitIrsaliye && Boolean(b.no) && (!b.eirsaliye || b.eirsaliye.durum === "hata");
+}
+
 interface Belge {
   id: string;
   tur: string;
@@ -89,6 +110,9 @@ interface Belge {
   faturaId: string | null;
   /** FTR-27: alış irsaliyesinde tedarikçinin irsaliye numarası. */
   tedarikciBelgeNo?: string | null;
+  /** EBLG-83: e-İrsaliye düzenlenemeyen yere kesilen satış irsaliyesi ve matbu numarası. */
+  kagitIrsaliye?: boolean;
+  matbuBelgeNo?: string | null;
   eirsaliye?: { durum: string; entegratorRef?: string | null; hataMesaji?: string | null } | null;
   /** EBLG-82: faturalanmayı bekleyen irsaliyenin süresi; bekleyen değilse null. */
   faturalamaSuresi?: FaturalamaSuresi | null;
@@ -242,8 +266,8 @@ export default function BelgelerSayfasi() {
   const [siparisTarihi, setSiparisTarihi] = useState("");
   /** FTR-27: alış irsaliyesinde tedarikçinin numarası; bizim no'muz iç seridir. */
   const [tedarikciBelgeNo, setTedarikciBelgeNo] = useState("");
-  /** Detayda tedarikçi numarasını düzeltme; null = düzenlenmiyor. */
-  const [tedarikciNoTaslak, setTedarikciNoTaslak] = useState<string | null>(null);
+  /** Detayda tedarikçi/matbu numarasını düzeltme; null = düzenlenmiyor. */
+  const [disNoTaslak, setDisNoTaslak] = useState<string | null>(null);
   const [dorsePlaka, setDorsePlaka] = useState("");
   const [soforAdi, setSoforAdi] = useState("");
   const [soforSoyadi, setSoforSoyadi] = useState("");
@@ -571,11 +595,11 @@ export default function BelgelerSayfasi() {
     } catch (h) { setHata(h instanceof Error ? h.message : "e-İrsaliye gönderilemedi"); }
   }
 
-  async function tedarikciNoKaydet(id: string) {
+  async function disNoKaydet(id: string, alan: DisNumara) {
     setHata(""); setBasari("");
     try {
-      await api(`/belgeler/${id}/tedarikci-belge-no`, { method: "PATCH", body: JSON.stringify({ tedarikciBelgeNo: tedarikciNoTaslak?.trim() || null }) });
-      setTedarikciNoTaslak(null);
+      await api(`/belgeler/${id}/${alan.yol}`, { method: "PATCH", body: JSON.stringify({ [alan.alan]: disNoTaslak?.trim() || null }) });
+      setDisNoTaslak(null);
       await detayAc(id);
       void yukle();
     } catch (h) { setHata(h instanceof Error ? h.message : "Tedarikçi numarası kaydedilemedi"); }
@@ -634,7 +658,7 @@ export default function BelgelerSayfasi() {
 
   async function detayAc(id: string) {
     setHata("");
-    setTedarikciNoTaslak(null);
+    setDisNoTaslak(null);
     try {
       setDetay(await api<BelgeDetay>(`/belgeler/${id}`));
     } catch (h) {
@@ -677,7 +701,7 @@ export default function BelgelerSayfasi() {
     if (tarihBitis && b.tarih > tarihBitis) return false;
     if (!arama) return true;
     const q = arama.toLocaleLowerCase("tr");
-    return (b.no ?? "").toLocaleLowerCase("tr").includes(q) || (b.tedarikciBelgeNo ?? "").toLocaleLowerCase("tr").includes(q) || b.cari.unvan.toLocaleLowerCase("tr").includes(q);
+    return (b.no ?? "").toLocaleLowerCase("tr").includes(q) || (b.tedarikciBelgeNo ?? "").toLocaleLowerCase("tr").includes(q) || (b.matbuBelgeNo ?? "").toLocaleLowerCase("tr").includes(q) || b.cari.unvan.toLocaleLowerCase("tr").includes(q);
   });
   function csvIndir() {
     const basliklar = ["Belge No", "Tür", "Yön", "Cari", "Tarih", "Genel Toplam", "Döviz", "Durum"];
@@ -962,7 +986,7 @@ export default function BelgelerSayfasi() {
           <div className="between" style={{ alignItems: "flex-start" }}>
             <div>
               <h3 style={{ fontSize: "1.15rem", margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                {TUR_ADI[detay.tur]} {detay.no || "(Taslak)"} · {YON_ADI[detay.yon]} {durumRozet(detay.durum)}
+                {TUR_ADI[detay.tur]} {belgeNoGoster(detay)} · {YON_ADI[detay.yon]} {durumRozet(detay.durum)}
               </h3>
               <p className="muted" style={{ fontSize: "0.85rem", margin: "0.3rem 0 0" }}>
                 {detay.cari.unvan} · {detay.tarih}{detay.gecerlilikTarihi ? ` · Geçerlilik: ${detay.gecerlilikTarihi}` : ""} · {tl(detay.genelToplam, detay.dovizCinsi)}
@@ -983,12 +1007,14 @@ export default function BelgelerSayfasi() {
               <Button size="sm" type="button" onClick={() => setTasimaPaneli({ id: detay.id, no: detay.no })}>🚚 Taşıma bilgisi</Button>
             )}
             {/* Faturalanmış (kapandı) irsaliye de sevk belgesidir; e-İrsaliyesi gönderilebilir (FTR-26). */}
-            {(detay.durum === "onaylandi" || detay.durum === "kapandi") && detay.tur === "irsaliye" && detay.yon === "satis" && !detay.eirsaliye && <Button size="sm" type="button" onClick={() => void eirsaliyeGonder(detay.id)}>🚚 e-İrsaliye gönder</Button>}
+            {(detay.durum === "onaylandi" || detay.durum === "kapandi") && detay.tur === "irsaliye" && detay.yon === "satis" && !detay.kagitIrsaliye && !detay.eirsaliye && <Button size="sm" type="button" onClick={() => void eirsaliyeGonder(detay.id)}>🚚 e-İrsaliye gönder</Button>}
             {detay.durum === "onaylandi" && detay.tur === "irsaliye" && !detay.fatura && <Button size="sm" type="button" onClick={() => setBaglaPaneli(detay.id)}>🔗 Faturaya bağla</Button>}
             <Button size="sm" type="button" onClick={() => void pdfAc(detay.id)}>🖨 PDF</Button>
             <EylemMenusu>
               <Button size="sm" type="button" onClick={() => void eylem(detay.id, "kopyala", "Belge kopyalandı (taslak).")}>📋 Kopyala</Button>
               {(detay.durum === "onaylandi" || detay.durum === "kismen_kapandi") && <Button variant="danger" size="sm" type="button" onClick={() => void eylem(detay.id, "iptal", "Belge iptal edildi.")}>İptal et</Button>}
+              {/* EBLG-83: numara almış ama GİB'e ulaşmamış e-İrsaliye iptal edilirse numarası seride boş kalır. */}
+              {detay.durum === "onaylandi" && seriBoslukRiski(detay) && <small className="muted">İptal edilirse {detay.no} numarası e-İrsaliye serisinde boşluk bırakır.</small>}
               {detay.durum === "taslak" && <Button variant="danger" size="sm" type="button" onClick={() => void sil(detay.id)}>Sil</Button>}
               {detay.tur === "irsaliye" && detay.fatura && (!detay.fatura.ebelge || ["hata", "ret"].includes(detay.fatura.ebelge.durum)) && <Button variant="danger" size="sm" type="button" onClick={() => void faturaBaginiKaldir(detay.id)}>Fatura bağını kaldır</Button>}
             </EylemMenusu>
@@ -1059,23 +1085,29 @@ export default function BelgelerSayfasi() {
               {detay.idisSevkiyatNo ? ` · İDİS sevkiyat ${detay.idisSevkiyatNo}` : ""}
             </p>
           )}
-          {/* FTR-27: tedarikçinin numarası onaydan sonra da girilir (kâğıt irsaliye elden gelir). */}
-          {detay.tur === "irsaliye" && detay.yon === "alis" && (
-            <div className="row-tight" style={{ margin: "0 0 1rem", fontSize: "0.85rem" }}>
-              {tedarikciNoTaslak === null ? (
-                <>
-                  <span className="muted">Tedarikçi irsaliye no: {detay.tedarikciBelgeNo || "girilmedi"}</span>
-                  {detay.durum !== "iptal" && <Button size="sm" type="button" onClick={() => setTedarikciNoTaslak(detay.tedarikciBelgeNo ?? "")}>Düzenle</Button>}
-                </>
-              ) : (
-                <>
-                  <Input aria-label="Tedarikçi irsaliye numarası" value={tedarikciNoTaslak} maxLength={50} onChange={(e) => setTedarikciNoTaslak(e.target.value)} />
-                  <Button size="sm" variant="primary" type="button" onClick={() => void tedarikciNoKaydet(detay.id)}>Kaydet</Button>
-                  <Button size="sm" type="button" onClick={() => setTedarikciNoTaslak(null)}>Vazgeç</Button>
-                </>
-              )}
-            </div>
-          )}
+          {/* FTR-27 / EBLG-83: tedarikçinin ya da matbu irsaliyenin numarası onaydan sonra da girilir (kâğıt irsaliye elden gelir). */}
+          {(() => {
+            const alan = disNumaraAlani(detay);
+            if (!alan) return null;
+            const deger = detay[alan.alan] ?? null;
+            return (
+              <div className="row-tight" style={{ margin: "0 0 1rem", fontSize: "0.85rem" }}>
+                {detay.kagitIrsaliye && <Badge variant="warning">Kâğıt irsaliye</Badge>}
+                {disNoTaslak === null ? (
+                  <>
+                    <span className="muted">{alan.etiket}: {deger || "girilmedi"}</span>
+                    {detay.durum !== "iptal" && <Button size="sm" type="button" onClick={() => setDisNoTaslak(deger ?? "")}>Düzenle</Button>}
+                  </>
+                ) : (
+                  <>
+                    <Input aria-label={alan.etiket} value={disNoTaslak} maxLength={50} onChange={(e) => setDisNoTaslak(e.target.value)} />
+                    <Button size="sm" variant="primary" type="button" onClick={() => void disNoKaydet(detay.id, alan)}>Kaydet</Button>
+                    <Button size="sm" type="button" onClick={() => setDisNoTaslak(null)}>Vazgeç</Button>
+                  </>
+                )}
+              </div>
+            );
+          })()}
           {detay.tur === "irsaliye" && detay.yon === "satis" && detay.eirsaliye?.durum === "hata" && <div className="row-tight" style={{ margin: "0 0 1rem" }}><span className="muted">{detay.eirsaliye.hataMesaji ?? "Gönderim başarısız."}</span><Button size="sm" variant="primary" onClick={() => void eirsaliyeGonder(detay.id)}>Tekrar gönder</Button></div>}
           {/* EBLG-35: e-İrsaliye ve bağlı fatura durum geçmişi; durum değiştikçe yeniden yüklenir. */}
           {(detay.eirsaliye || detay.fatura) && (
@@ -1172,7 +1204,9 @@ export default function BelgelerSayfasi() {
               {onayBekleyen.tur === "siparis" && onayBekleyen.yon === "satis" && "Onayla birlikte ürün miktarları seçilen depoda rezerve edilecek."}
               {onayBekleyen.tur === "siparis" && onayBekleyen.yon === "alis" && "Onayla birlikte ürün miktarları seçilen depo için yoldaki stok olarak işaretlenecek."}
               {onayBekleyen.tur === "teklif" && "Teklif numara alacak; stok ve cari bakiyesi değişmeyecek."}
-              {onayBekleyen.tur === "irsaliye" && "İrsaliye numara alacak; stok ve cari etkisi fatura kesinleştiğinde oluşacak."}
+              {onayBekleyen.tur === "irsaliye" && (onayBekleyen.yon === "satis"
+                ? "Alıcı e-İrsaliye kullanıcısıysa numara e-İrsaliye gönderiminde verilir; değilse kâğıt irsaliye olarak iç seriden numaralanır. Stok ve cari etkisi fatura kesinleştiğinde oluşacak."
+                : "İrsaliye iç seriden numara alacak; stok ve cari etkisi fatura kesinleştiğinde oluşacak.")}
             </div>
             <div className="quick-panel__actions">
               <Button type="button" onClick={() => setOnayBekleyen(null)}>Vazgeç</Button>
@@ -1317,7 +1351,7 @@ export default function BelgelerSayfasi() {
                       <input aria-label={(b.no ?? "Taslak") + " belgesini seç"} type="checkbox" checked={secili.has(b.id)} disabled={topluFaturaYukleniyor || Boolean(secimUyumlulukAnahtari && faturaUyumlulukAnahtari(b) !== secimUyumlulukAnahtari)} onChange={() => seciliDegistir(b.id)} title={secimUyumlulukAnahtari && faturaUyumlulukAnahtari(b) !== secimUyumlulukAnahtari ? "Seçilen belgeler aynı cari, döviz, kur, yön ve depoda olmalıdır" : "Toplu faturalama için seç"} />
                     )}
                   </td>
-                  <td style={{ fontWeight: 700 }}>{b.no || "(Taslak)"}{b.tedarikciBelgeNo && <small className="muted" style={{ display: "block", fontWeight: 400 }}>Tedarikçi no {b.tedarikciBelgeNo}</small>}</td>
+                  <td style={{ fontWeight: 700 }}>{belgeNoGoster(b)}{b.tedarikciBelgeNo && <small className="muted" style={{ display: "block", fontWeight: 400 }}>Tedarikçi no {b.tedarikciBelgeNo}</small>}{b.matbuBelgeNo && <small className="muted" style={{ display: "block", fontWeight: 400 }}>Matbu no {b.matbuBelgeNo}</small>}</td>
                   <td>{TUR_ADI[b.tur]} · {YON_ADI[b.yon]}</td>
                   <td>{b.cari.unvan}</td>
                   <td>{b.tarih}</td>

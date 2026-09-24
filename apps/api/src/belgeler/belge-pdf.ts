@@ -21,6 +21,8 @@ export interface BelgePdfVerisi {
   tur: string;
   yon: string;
   durum: string;
+  /** EBLG-83: kâğıt irsaliyenin basımevi numarası. */
+  matbuBelgeNo?: string | null;
   no: string | null;
   tarih: string;
   gecerlilikTarihi: string | null;
@@ -89,7 +91,9 @@ export function belgePdfHtml(
       <div class="kutu">
         <strong>Sayın ${kacis(b.cari.unvan)}</strong> (${kacis(b.cari.kod)})<br>
         ${b.cari.vknTckn ? `VKN/TCKN: ${kacis(b.cari.vknTckn)}<br>` : ""}
-        Belge No: <strong>${kacis(b.no ?? "— TASLAK —")}</strong><br>
+        Belge No: <strong>${kacis(b.no ?? (b.durum === "taslak" ? "— TASLAK —" : "— e-İrsaliye gönderiminde verilir —"))}</strong><br>${
+          b.matbuBelgeNo ? `Matbu İrsaliye No: <strong>${kacis(b.matbuBelgeNo)}</strong><br>` : ""
+        }
         Tarih: ${tarihBicim(b.tarih)}${
           b.gecerlilikTarihi
             ? ` &nbsp;•&nbsp; Geçerlilik: ${tarihBicim(b.gecerlilikTarihi)}`

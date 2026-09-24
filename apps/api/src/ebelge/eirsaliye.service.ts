@@ -8,9 +8,13 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
+import { belgeSirasiAl, eirsaliyeNumarasi } from "../belgeler/belge-sayac";
 import { gonderimEngelleri, IRSALIYE_GONDERILEBILIR_DURUMLAR, teslimatAdresiSec, type MukellefDurumu } from "./eirsaliye-engeller";
 import { irsaliyeUblOku } from "./eirsaliye-ubl-oku";
 import { MukellefListesiService } from "./mukellef-listesi.service";
+
+/** Bağlantıda e-İrsaliye seri öneki tanımlı değilse (EBLG-20). */
+const VARSAYILAN_EIRSALIYE_ONEKI = "IRS";
 
 const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -154,6 +158,7 @@ export class EirsaliyeService {
       const belge = await tx.belge.findUnique({ where: { id: belgeId }, include: { cari: { include: { adresler: true } }, tasiyiciCari: { include: { adresler: true } }, satirlar: { include: { stok: true } }, eirsaliye: true, fatura: { select: { no: true, tarih: true } }, kaynakBelge: { select: { tur: true, no: true, tarih: true } } } });
       if (!belge) throw new NotFoundException("Belge bulunamadı");
       if (belge.tur !== "irsaliye" || belge.yon !== "satis") throw new BadRequestException("Yalnızca satış irsaliyesi e-İrsaliye olarak gönderilebilir");
+      if (belge.kagitIrsaliye) throw new BadRequestException("Kâğıt irsaliye e-İrsaliye olarak gönderilmez; firma ya da alıcı onay anında e-İrsaliye kullanıcısı değildi");
       // Faturalanmış (kapandı) irsaliye de gönderilir: fatura sevkten önce
       // kesilebilir ya da irsaliye faturaya bağlanabilir (EBLG-76, FTR-26).
       if (!IRSALIYE_GONDERILEBILIR_DURUMLAR.includes(belge.durum)) throw new BadRequestException("e-İrsaliye göndermek için belge onaylanmış olmalıdır");
@@ -183,8 +188,18 @@ export class EirsaliyeService {
       // EBLG-62: gönderen adresi belgede zorunlu; firma kartı eksikse durulur.
       const firmaEksigi = tenant ? firmaEbelgeEksikleri(tenant) : [];
       if (firmaEksigi.length) throw new BadRequestException(firmaEksigi.join("; "));
+      // EBLG-83: numara onayda değil burada, bütün engeller geçildikten sonra
+      // verilir; hiç gönderilmeyen irsaliye giden seride boşluk bırakmaz.
+      // Gönderim hata alırsa numara belgede kalır, yeniden gönderim aynı
+      // numarayla yapılır.
+      if (!belge.no) {
+        const yil = belge.tarih.getFullYear();
+        const sira = await belgeSirasiAl(tx, { tenantId, tur: "irsaliye", yon: "satis", yil });
+        belge.no = eirsaliyeNumarasi(cfg.eirsaliyeSeriOneki ?? VARSAYILAN_EIRSALIYE_ONEKI, yil, sira);
+        await tx.belge.update({ where: { id: belge.id }, data: { no: belge.no } });
+      }
       const xml = this.ubl({ ...belge, teslimatAdresi }, tenant);
-      const sonuc = await adapter.irsaliyeGonder(cfg, { uuid: belge.id, belgeNo: belge.no ?? belge.id, xml, aliciPostaKutusu });
+      const sonuc = await adapter.irsaliyeGonder(cfg, { uuid: belge.id, belgeNo: belge.no, xml, aliciPostaKutusu });
       return tx.eirsaliyeKayit.upsert({ where: { belgeId }, create: { tenantId, belgeId, durum: sonuc.basarili ? "iletildi" : "hata", entegratorRef: sonuc.belgeRef, xmlIcerik: xml, hataMesaji: sonuc.hataMesaji }, update: { durum: sonuc.basarili ? "iletildi" : "hata", entegratorRef: sonuc.belgeRef, xmlIcerik: xml, hataMesaji: sonuc.hataMesaji } });
     });
   }
@@ -266,6 +281,8 @@ export class EirsaliyeService {
         where: {
           tur: "irsaliye",
           yon: "satis",
+          // EBLG-83: kâğıt irsaliye e-İrsaliye defterine girmez.
+          kagitIrsaliye: false,
           // Kaydı olan her irsaliye defterde kalır; kaydı olmayanlardan yalnız
           // onaylı olanlar gönderilmeyi bekliyor sayılır.
           OR: [{ eirsaliye: { isNot: null } }, { durum: { in: IRSALIYE_GONDERILEBILIR_DURUMLAR as ZincirBelgeDurum[] } }],

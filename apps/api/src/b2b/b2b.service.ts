@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { Prisma, type Rol } from "@prisma/client";
 import { z } from "zod";
 import { PrismaService } from "../core/prisma.service";
+import { belgeSirasiAl } from "../belgeler/belge-sayac";
 import { b2bSiparisOlusturSemasi } from "./b2b.semalar";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 
@@ -84,8 +85,8 @@ export class B2bService {
         return { tenantId, stokId: stok.id, miktar, birim: stok.anaBirim, birimFiyat: hamBirimFiyat, iskontoOrani: iskonto, iskontoTutari, matrah, kdvOrani: stok.kdvOrani, kdvTutari, netKdvTutari: kdvTutari, toplamTutar: matrah.add(kdvTutari), fiyatListesiId: cari.fiyatListesi?.aktif ? cari.fiyatListesi.id : null };
       });
       const yil = new Date().getFullYear();
-      const sayac = await tx.belgeSayac.upsert({ where: { tenantId_tur_yon_yil: { tenantId, tur: "siparis", yon: "satis", yil } }, create: { tenantId, tur: "siparis", yil, sonSira: 1 }, update: { sonSira: { increment: 1 } } });
-      return tx.belge.create({ data: { tenantId, tur: "siparis", yon: "satis", durum: "onaylandi", no: `SIP${yil}${String(sayac.sonSira).padStart(6, "0")}`, tarih: new Date(), cariId, toplamBrut, toplamSatirIskontosu: toplamIskonto, genelIskontoToplam: D(0), toplamMatrah, toplamKdv, toplamNetKdv: toplamKdv, genelToplam: toplamMatrah.add(toplamKdv), b2bIdempotencyAnahtari: veri.idempotencyAnahtari, aciklama: veri.aciklama || "B2B Bayi Portalı Siparişi", satirlar: { create: belgeSatirlari } }, include: { satirlar: true } });
+      const sira = await belgeSirasiAl(tx, { tenantId, tur: "siparis", yon: "satis", yil });
+      return tx.belge.create({ data: { tenantId, tur: "siparis", yon: "satis", durum: "onaylandi", no: `SIP${yil}${String(sira).padStart(6, "0")}`, tarih: new Date(), cariId, toplamBrut, toplamSatirIskontosu: toplamIskonto, genelIskontoToplam: D(0), toplamMatrah, toplamKdv, toplamNetKdv: toplamKdv, genelToplam: toplamMatrah.add(toplamKdv), b2bIdempotencyAnahtari: veri.idempotencyAnahtari, aciklama: veri.aciklama || "B2B Bayi Portalı Siparişi", satirlar: { create: belgeSatirlari } }, include: { satirlar: true } });
     });
   }
 }

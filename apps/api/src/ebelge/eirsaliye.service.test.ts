@@ -246,3 +246,66 @@ describe("EirsaliyeService.topluGonder (EBLG-43)", () => {
     expect(servis.gonder).not.toHaveBeenCalled();
   });
 });
+
+describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
+  const firma = { unvan: "Satıcı A.Ş.", vkn: "1234567801", adres: "Maltepe Mh. No:7", ilce: "Zeytinburnu", il: "İstanbul", postaKodu: "34010", vergiDairesi: "Zeytinburnu" };
+  const taslakBelge = (ek: Record<string, unknown> = {}) => ({
+    id: "11111111-1111-4111-8111-111111111111", tur: "irsaliye", yon: "satis", durum: "onaylandi", no: null, kagitIrsaliye: false,
+    tarih: new Date("2026-09-24"), createdAt: new Date("2026-09-24T07:00:00Z"), fiiliSevkZamani: new Date("2026-09-24T09:00:00+03:00"),
+    cari: { unvan: "Alıcı A.Ş.", vknTckn: "1230460944", adresler: [{ tip: "merkez", adres: "OSB 3. Cadde No:7", il: "Denizli", ilce: "Honaz", postaKodu: "20330", ulke: "TR" }] },
+    tasiyiciCari: null, plaka: "34 ABC 123", soforAdi: "Mehmet", soforSoyadi: "Öztürk", soforTckn: "10000000078",
+    satirlar: [{ miktar: "5", stok: { ad: "Ürün", kod: "STK-1" } }], eirsaliye: null, fatura: null, kaynakBelge: null,
+    ...ek,
+  });
+
+  function kur(belge: ReturnType<typeof taslakBelge>, gonderim: { basarili: boolean; hataMesaji?: string } = { basarili: true }) {
+    const tx = {
+      belge: { findUnique: vi.fn().mockResolvedValue(belge), update: vi.fn().mockResolvedValue({}) },
+      belgeSayac: { upsert: vi.fn().mockResolvedValue({ sonSira: 800022 }) },
+      tenant: { findUnique: vi.fn().mockResolvedValue(firma) },
+      eirsaliyeKayit: { upsert: vi.fn(({ create }) => Promise.resolve(create)) },
+    };
+    const prisma = { tenantIslem: vi.fn((_t: string, calistir: (tx: unknown) => unknown) => calistir(tx)) } as never;
+    const mukellef = { kanalBelirle: vi.fn().mockResolvedValue({ vknTckn: "1230460944", eFaturaMukellefi: true, postaKutusu: "urn:mail:alici" }) } as never;
+    const servis = new EirsaliyeService(prisma, {} as never, mukellef);
+    const irsaliyeGonder = vi.fn().mockResolvedValue({ ...gonderim, belgeRef: gonderim.basarili ? "nes-uuid" : undefined });
+    vi.spyOn(servis as never, "baglanti").mockResolvedValue({ baglanti: { saglayici: "nes" }, cfg: { eirsaliyeSeriOneki: "GBZ" }, adapter: { irsaliyeGonder } } as never);
+    return { servis, tx, irsaliyeGonder };
+  }
+  const calistir = <T>(f: () => Promise<T>) => baglamlaCalistir({ tenantId: "t1", userId: "u1", rol: "muhasebe" }, f);
+
+  it("numarasız irsaliyeye numarayı gönderimde verir ve belgeye yazar", async () => {
+    const { servis, tx, irsaliyeGonder } = kur(taslakBelge());
+
+    await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
+
+    expect(tx.belgeSayac.upsert.mock.calls[0][0].where.tenantId_tur_yon_seri_yil).toEqual({ tenantId: "t1", tur: "irsaliye", yon: "satis", seri: "", yil: 2026 });
+    expect(tx.belge.update).toHaveBeenCalledWith({ where: { id: "11111111-1111-4111-8111-111111111111" }, data: { no: "GBZ2026000800022" } });
+    expect(irsaliyeGonder.mock.calls[0][1].belgeNo).toBe("GBZ2026000800022");
+    expect(irsaliyeGonder.mock.calls[0][1].xml).toContain("<cbc:ID>GBZ2026000800022</cbc:ID>");
+  });
+
+  it("hata almış irsaliyeyi aynı numarayla yeniden gönderir, sayacı ilerletmez", async () => {
+    const { servis, tx, irsaliyeGonder } = kur(taslakBelge({ no: "GBZ2026000800021", eirsaliye: { durum: "hata" } }));
+
+    await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
+
+    expect(tx.belgeSayac.upsert).not.toHaveBeenCalled();
+    expect(irsaliyeGonder.mock.calls[0][1].belgeNo).toBe("GBZ2026000800021");
+  });
+
+  it("engele takılan gönderim numara harcamaz", async () => {
+    const { servis, tx, irsaliyeGonder } = kur(taslakBelge({ cari: { unvan: "Alıcı A.Ş.", vknTckn: "1230460944", adresler: [] } }));
+
+    await expect(calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"))).rejects.toThrow(/adres/i);
+    expect(tx.belgeSayac.upsert).not.toHaveBeenCalled();
+    expect(irsaliyeGonder).not.toHaveBeenCalled();
+  });
+
+  it("kâğıt irsaliyeyi göndermez", async () => {
+    const { servis, irsaliyeGonder } = kur(taslakBelge({ kagitIrsaliye: true, no: "KIR2026000001" }));
+
+    await expect(calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"))).rejects.toThrow(/Kâğıt irsaliye/);
+    expect(irsaliyeGonder).not.toHaveBeenCalled();
+  });
+});

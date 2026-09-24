@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { faturaGecikmeUyarilari, irsaliyeFaturaFarklari, irsaliyeFaturaSonGun, irsaliyeFaturaSuresi, irsaliyeFaturaTipiUyarMi, irsaliyeSevkGunu } from "./irsaliye-fatura";
+import { faturaGecikmeUyarilari, irsaliyeFaturaFarklari, irsaliyeKanali, irsaliyeFaturaSonGun, irsaliyeFaturaSuresi, irsaliyeFaturaTipiUyarMi, irsaliyeSevkGunu } from "./irsaliye-fatura";
 
 const satir = (stokId: string, miktar: number, birim = "adet", ek: { varyantId?: string; stokTipi?: string } = {}) => ({ stokId, ad: stokId.toUpperCase(), miktar, birim, ...ek });
 
@@ -84,4 +84,25 @@ describe("irsaliye faturalama süresi (EBLG-82)", () => {
     expect(faturaGecikmeUyarilari({ faturaTarihi: "2026-09-09", yon: "satis", irsaliyeler })[0]).toContain("son gün 08.09.2026");
     expect(faturaGecikmeUyarilari({ faturaTarihi: "2026-09-09", yon: "alis", irsaliyeler })[0]).toContain("Tedarikçi faturası");
   });
+});
+
+describe("irsaliyeKanali (EBLG-83)", () => {
+  it("firma kullanıcı değilse alıcıya bakmadan kâğıttır", () => {
+    expect(irsaliyeKanali({ firmaEirsaliye: false, aliciKayitli: null })).toEqual({ kanal: "kagit" });
+  });
+
+  it("firma ve alıcı kullanıcıysa e-İrsaliyedir, alıcı değilse kâğıttır", () => {
+    expect(irsaliyeKanali({ firmaEirsaliye: true, aliciKayitli: true })).toEqual({ kanal: "eirsaliye" });
+    expect(irsaliyeKanali({ firmaEirsaliye: true, aliciKayitli: false })).toEqual({ kanal: "kagit" });
+  });
+
+  it("firma kapsamı ya da alıcının kaydı bilinmiyorsa karar vermez", () => {
+    expect(irsaliyeKanali({ firmaEirsaliye: null, aliciKayitli: true })).toHaveProperty("hata");
+    expect(irsaliyeKanali({ firmaEirsaliye: true, aliciKayitli: null })).toHaveProperty("hata");
+  });
+});
+
+it("numarasız irsaliyenin gecikme uyarısı numara uydurmaz (EBLG-83)", () => {
+  const [uyari] = faturaGecikmeUyarilari({ faturaTarihi: "2026-09-20", yon: "satis", irsaliyeler: [{ no: null, sevkGunu: "2026-09-01" }] });
+  expect(uyari).toContain("numarasız irsaliyenin");
 });

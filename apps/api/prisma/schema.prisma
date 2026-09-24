@@ -3206,6 +3206,12 @@ model Belge {
   /// FTR-27: alış irsaliyesinde tedarikçinin kendi irsaliye numarası. `no`
   /// bizim iç seri numaramızdır (AIR…); giden e-İrsaliye serisinden alınmaz.
   tedarikciBelgeNo       String?          @map("tedarikci_belge_no")
+  /// EBLG-83: satış irsaliyesi e-İrsaliye düzenlenemeyen yere (firma ya da
+  /// alıcı e-İrsaliye kullanıcısı değil) kesildiyse kâğıt irsaliyedir: iç
+  /// seriden (KIR…) numaralanır, e-İrsaliye olarak gönderilmez.
+  kagitIrsaliye          Boolean          @default(false) @map("kagit_irsaliye")
+  /// EBLG-83: kâğıt irsaliyenin basımevi (matbu) numarası; elle girilir.
+  matbuBelgeNo           String?          @map("matbu_belge_no")
   cariId                 String           @map("cari_id") @db.Uuid
   /// STK-07: rezerv/yoldaki ve irsaliye stok etkisinin işleneceği depo
   depoId                 String?          @map("depo_id") @db.Uuid
@@ -3395,10 +3401,13 @@ model BelgeSayac {
   /// e-İrsaliye serisinde boşluk bırakmasın. Diğer türler hep `satis` anahtarını
   /// kullanır (iç belgeler; alış/satış siparişi aynı SIP serisini paylaşır).
   yon      BelgeYon @default(satis)
+  /// EBLG-83: aynı tür ve yönde ayrı numara serisi; boş = türün varsayılanı
+  /// (satış irsaliyesinde giden e-İrsaliye serisi), "KIR" = kâğıt irsaliye.
+  seri     String   @default("")
   yil      Int
   sonSira  Int      @default(0) @map("son_sira")
 
-  @@unique([tenantId, tur, yon, yil])
+  @@unique([tenantId, tur, yon, seri, yil])
   @@map("belge_sayaclari")
 }
 

@@ -75,6 +75,22 @@ export async function mukellefiyetCelismeleriniOku(
   });
 }
 
+/**
+ * EBLG-83: alıcı GİB e-İrsaliye listesinde mi. Liste güncel değilse `null`
+ * döner — liste bayatken "kayıtlı değil" saymak irsaliyeyi yanlışlıkla kâğıda
+ * düşürürdü.
+ */
+export async function eirsaliyeAlicisiKayitliMi(tx: Prisma.TransactionClient, vknTckn: string | null): Promise<boolean | null> {
+  const [listeVar, senkron] = await Promise.all([
+    tx.gibMukellef.findFirst({ select: { vknTckn: true } }),
+    tx.gibMukellefSenkron.findUnique({ where: { id: "tek" }, select: { sonSenkronAt: true } }),
+  ]);
+  const guncel = Boolean(listeVar && senkron?.sonSenkronAt && Date.now() - senkron.sonSenkronAt.getTime() < LISTE_TAZELIK_SURESI_MS);
+  if (!guncel) return null;
+  if (!vknTckn) return false;
+  return Boolean(await tx.gibMukellef.findFirst({ where: { vknTckn, belgeTuru: "eirsaliye" }, select: { vknTckn: true } }));
+}
+
 async function listeDurumu(tx: Prisma.TransactionClient, vkn: string) {
   const [efaturaKaydi, eirsaliyeKaydi, listeVar, senkron] = await Promise.all([
     tx.gibMukellef.findFirst({ where: { vknTckn: vkn, belgeTuru: "efatura" }, select: { vknTckn: true } }),
