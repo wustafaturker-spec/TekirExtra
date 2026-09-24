@@ -52,6 +52,8 @@ export const belgeOlusturSemasi = z.object({
   /** Müşterinin sipariş referansı (EBLG-74); e-İrsaliyede OrderReference olur. */
   siparisNo: z.string().max(100).optional().nullable(),
   siparisTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)").optional().nullable(),
+  /** FTR-27: alış irsaliyesinde tedarikçinin irsaliye numarası; diğerlerinde yok sayılır. */
+  tedarikciBelgeNo: z.string().max(50).optional().nullable(),
   cariId: z.string().uuid(),
   faturaId: z.string().uuid().optional().nullable(),
   /** STK-07: rezerv/yoldaki ve stok etkisinin işleneceği depo; boşsa varsayılan */
@@ -132,4 +134,12 @@ export const tasimaBilgisiSemasi = belgeOlusturSemasi.pick({
   soforAdi: true,
   soforSoyadi: true,
   soforTckn: true,
+});
+
+/**
+ * FTR-27: tedarikçinin irsaliye numarası onaydan sonra da girilebilir —
+ * kâğıt irsaliye çoğu zaman mal teslim alındıktan sonra elden gelir.
+ */
+export const tedarikciBelgeNoSemasi = z.object({
+  tedarikciBelgeNo: z.string().max(50).nullable(),
 });

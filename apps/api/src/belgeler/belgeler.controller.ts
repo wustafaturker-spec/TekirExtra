@@ -21,6 +21,7 @@ import {
   belgeOlusturSemasi,
   irsaliyeBaglaSemasi,
   tasimaBilgisiSemasi,
+  tedarikciBelgeNoSemasi,
   topluFaturaSemasi,
 } from "./belgeler.semalar";
 
@@ -112,6 +113,13 @@ export class BelgelerController {
   @Roller("muhasebe", "satis")
   async tasimaBilgisi(@Param("id") id: string, @Body() govde: unknown) {
     return this.belgelerService.tasimaBilgisiGuncelle(id, ayristir(tasimaBilgisiSemasi, govde));
+  }
+
+  /** FTR-27: alış irsaliyesinde tedarikçinin numarası onaydan sonra da girilir. */
+  @Patch(":id/tedarikci-belge-no")
+  @Roller("muhasebe", "satis")
+  async tedarikciBelgeNo(@Param("id") id: string, @Body() govde: unknown) {
+    return this.belgelerService.tedarikciBelgeNoGuncelle(id, ayristir(tedarikciBelgeNoSemasi, govde));
   }
 
   @Patch(":id")

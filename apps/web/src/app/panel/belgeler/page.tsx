@@ -87,6 +87,8 @@ interface Belge {
   depoId?: string | null;
   cari: { id: string; kod: string; unvan: string };
   faturaId: string | null;
+  /** FTR-27: alış irsaliyesinde tedarikçinin irsaliye numarası. */
+  tedarikciBelgeNo?: string | null;
   eirsaliye?: { durum: string; entegratorRef?: string | null; hataMesaji?: string | null } | null;
   /** EBLG-82: faturalanmayı bekleyen irsaliyenin süresi; bekleyen değilse null. */
   faturalamaSuresi?: FaturalamaSuresi | null;
@@ -238,6 +240,10 @@ export default function BelgelerSayfasi() {
   /** EBLG-74: müşterinin sipariş referansı; e-İrsaliyeye OrderReference olur. */
   const [siparisNo, setSiparisNo] = useState("");
   const [siparisTarihi, setSiparisTarihi] = useState("");
+  /** FTR-27: alış irsaliyesinde tedarikçinin numarası; bizim no'muz iç seridir. */
+  const [tedarikciBelgeNo, setTedarikciBelgeNo] = useState("");
+  /** Detayda tedarikçi numarasını düzeltme; null = düzenlenmiyor. */
+  const [tedarikciNoTaslak, setTedarikciNoTaslak] = useState<string | null>(null);
   const [dorsePlaka, setDorsePlaka] = useState("");
   const [soforAdi, setSoforAdi] = useState("");
   const [soforSoyadi, setSoforSoyadi] = useState("");
@@ -458,6 +464,7 @@ export default function BelgelerSayfasi() {
             : {}),
           siparisNo: siparisNo.trim() || null,
           siparisTarihi: siparisTarihi || null,
+          tedarikciBelgeNo: tur === "irsaliye" && yon === "alis" ? tedarikciBelgeNo.trim() || null : null,
           satirlar: satirlar.map((s) => ({
             stokId: s.stokId,
             varyantId: s.varyantId || null,
@@ -479,7 +486,7 @@ export default function BelgelerSayfasi() {
       setAciklama(""); setKuruAciklamayaEkle(true);
       setDosyalar([]);
       setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 }]);
-      setSiparisNo(""); setSiparisTarihi(""); setIdisSevkiyatNo("");
+      setSiparisNo(""); setSiparisTarihi(""); setIdisSevkiyatNo(""); setTedarikciBelgeNo("");
       void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Belge oluşturulamadı");
@@ -564,6 +571,16 @@ export default function BelgelerSayfasi() {
     } catch (h) { setHata(h instanceof Error ? h.message : "e-İrsaliye gönderilemedi"); }
   }
 
+  async function tedarikciNoKaydet(id: string) {
+    setHata(""); setBasari("");
+    try {
+      await api(`/belgeler/${id}/tedarikci-belge-no`, { method: "PATCH", body: JSON.stringify({ tedarikciBelgeNo: tedarikciNoTaslak?.trim() || null }) });
+      setTedarikciNoTaslak(null);
+      await detayAc(id);
+      void yukle();
+    } catch (h) { setHata(h instanceof Error ? h.message : "Tedarikçi numarası kaydedilemedi"); }
+  }
+
   async function donusumOzetiAc(id: string, hedef: "siparis" | "irsaliye" | "fatura") {
     setHata("");
     try {
@@ -617,6 +634,7 @@ export default function BelgelerSayfasi() {
 
   async function detayAc(id: string) {
     setHata("");
+    setTedarikciNoTaslak(null);
     try {
       setDetay(await api<BelgeDetay>(`/belgeler/${id}`));
     } catch (h) {
@@ -659,7 +677,7 @@ export default function BelgelerSayfasi() {
     if (tarihBitis && b.tarih > tarihBitis) return false;
     if (!arama) return true;
     const q = arama.toLocaleLowerCase("tr");
-    return (b.no ?? "").toLocaleLowerCase("tr").includes(q) || b.cari.unvan.toLocaleLowerCase("tr").includes(q);
+    return (b.no ?? "").toLocaleLowerCase("tr").includes(q) || (b.tedarikciBelgeNo ?? "").toLocaleLowerCase("tr").includes(q) || b.cari.unvan.toLocaleLowerCase("tr").includes(q);
   });
   function csvIndir() {
     const basliklar = ["Belge No", "Tür", "Yön", "Cari", "Tarih", "Genel Toplam", "Döviz", "Durum"];
@@ -771,6 +789,12 @@ export default function BelgelerSayfasi() {
               <Field label="Belge Dövizi"><Select value={dovizCinsi} onChange={(e) => { setDovizCinsi(e.target.value); if (e.target.value === "TRY") setKur("1"); }}><option>TRY</option><option>USD</option><option>EUR</option></Select></Field>
               {dovizCinsi !== "TRY" && <Field label="Kur (1 döviz = TRY)"><Input type="number" min="0.000001" step="0.000001" value={kur} onChange={(e) => { setKur(e.target.value); setKurBilgisi("Manuel kur"); }} required /><small className="muted">{kurBilgisi || "TCMB EVDS kuru yükleniyor…"}</small></Field>}
               <div><DepoSecici deger={depoId} onChange={setDepoId} /></div>
+            {tur === "irsaliye" && yon === "alis" && (
+              <Field label="Tedarikçi İrsaliye No">
+                <Input aria-label="Tedarikçi irsaliye numarası" value={tedarikciBelgeNo} maxLength={50} placeholder="Opsiyonel" onChange={(e) => setTedarikciBelgeNo(e.target.value)} />
+                <small className="muted">Belge numaramız onayda iç seriden verilir; bu alan tedarikçinin numarasıdır.</small>
+              </Field>
+            )}
             {tur === "teklif" && (
                 <Field label="Geçerlilik Tarihi"><Input type="date" value={gecerlilik} onChange={(e) => setGecerlilik(e.target.value)} /></Field>
             )}
@@ -1035,6 +1059,23 @@ export default function BelgelerSayfasi() {
               {detay.idisSevkiyatNo ? ` · İDİS sevkiyat ${detay.idisSevkiyatNo}` : ""}
             </p>
           )}
+          {/* FTR-27: tedarikçinin numarası onaydan sonra da girilir (kâğıt irsaliye elden gelir). */}
+          {detay.tur === "irsaliye" && detay.yon === "alis" && (
+            <div className="row-tight" style={{ margin: "0 0 1rem", fontSize: "0.85rem" }}>
+              {tedarikciNoTaslak === null ? (
+                <>
+                  <span className="muted">Tedarikçi irsaliye no: {detay.tedarikciBelgeNo || "girilmedi"}</span>
+                  {detay.durum !== "iptal" && <Button size="sm" type="button" onClick={() => setTedarikciNoTaslak(detay.tedarikciBelgeNo ?? "")}>Düzenle</Button>}
+                </>
+              ) : (
+                <>
+                  <Input aria-label="Tedarikçi irsaliye numarası" value={tedarikciNoTaslak} maxLength={50} onChange={(e) => setTedarikciNoTaslak(e.target.value)} />
+                  <Button size="sm" variant="primary" type="button" onClick={() => void tedarikciNoKaydet(detay.id)}>Kaydet</Button>
+                  <Button size="sm" type="button" onClick={() => setTedarikciNoTaslak(null)}>Vazgeç</Button>
+                </>
+              )}
+            </div>
+          )}
           {detay.tur === "irsaliye" && detay.yon === "satis" && detay.eirsaliye?.durum === "hata" && <div className="row-tight" style={{ margin: "0 0 1rem" }}><span className="muted">{detay.eirsaliye.hataMesaji ?? "Gönderim başarısız."}</span><Button size="sm" variant="primary" onClick={() => void eirsaliyeGonder(detay.id)}>Tekrar gönder</Button></div>}
           {/* EBLG-35: e-İrsaliye ve bağlı fatura durum geçmişi; durum değiştikçe yeniden yüklenir. */}
           {(detay.eirsaliye || detay.fatura) && (
@@ -1276,7 +1317,7 @@ export default function BelgelerSayfasi() {
                       <input aria-label={(b.no ?? "Taslak") + " belgesini seç"} type="checkbox" checked={secili.has(b.id)} disabled={topluFaturaYukleniyor || Boolean(secimUyumlulukAnahtari && faturaUyumlulukAnahtari(b) !== secimUyumlulukAnahtari)} onChange={() => seciliDegistir(b.id)} title={secimUyumlulukAnahtari && faturaUyumlulukAnahtari(b) !== secimUyumlulukAnahtari ? "Seçilen belgeler aynı cari, döviz, kur, yön ve depoda olmalıdır" : "Toplu faturalama için seç"} />
                     )}
                   </td>
-                  <td style={{ fontWeight: 700 }}>{b.no || "(Taslak)"}</td>
+                  <td style={{ fontWeight: 700 }}>{b.no || "(Taslak)"}{b.tedarikciBelgeNo && <small className="muted" style={{ display: "block", fontWeight: 400 }}>Tedarikçi no {b.tedarikciBelgeNo}</small>}</td>
                   <td>{TUR_ADI[b.tur]} · {YON_ADI[b.yon]}</td>
                   <td>{b.cari.unvan}</td>
                   <td>{b.tarih}</td>

@@ -84,7 +84,7 @@ export class B2bService {
         return { tenantId, stokId: stok.id, miktar, birim: stok.anaBirim, birimFiyat: hamBirimFiyat, iskontoOrani: iskonto, iskontoTutari, matrah, kdvOrani: stok.kdvOrani, kdvTutari, netKdvTutari: kdvTutari, toplamTutar: matrah.add(kdvTutari), fiyatListesiId: cari.fiyatListesi?.aktif ? cari.fiyatListesi.id : null };
       });
       const yil = new Date().getFullYear();
-      const sayac = await tx.belgeSayac.upsert({ where: { tenantId_tur_yil: { tenantId, tur: "siparis", yil } }, create: { tenantId, tur: "siparis", yil, sonSira: 1 }, update: { sonSira: { increment: 1 } } });
+      const sayac = await tx.belgeSayac.upsert({ where: { tenantId_tur_yon_yil: { tenantId, tur: "siparis", yon: "satis", yil } }, create: { tenantId, tur: "siparis", yil, sonSira: 1 }, update: { sonSira: { increment: 1 } } });
       return tx.belge.create({ data: { tenantId, tur: "siparis", yon: "satis", durum: "onaylandi", no: `SIP${yil}${String(sayac.sonSira).padStart(6, "0")}`, tarih: new Date(), cariId, toplamBrut, toplamSatirIskontosu: toplamIskonto, genelIskontoToplam: D(0), toplamMatrah, toplamKdv, toplamNetKdv: toplamKdv, genelToplam: toplamMatrah.add(toplamKdv), b2bIdempotencyAnahtari: veri.idempotencyAnahtari, aciklama: veri.aciklama || "B2B Bayi Portalı Siparişi", satirlar: { create: belgeSatirlari } }, include: { satirlar: true } });
     });
   }

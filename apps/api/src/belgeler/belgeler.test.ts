@@ -409,4 +409,43 @@ describe("BelgelerService", () => {
     // Kesin faturaya bağlı irsaliye faturalanmıştır.
     expect(sonuc.kayitlar[1].faturalamaSuresi).toBeNull();
   });
+
+  describe("FTR-27: irsaliye numarası yöne göre ayrılır", () => {
+    const onayla = async (yon: "satis" | "alis") => {
+      const taslak = {
+        id: "i1", tur: "irsaliye", yon, durum: "taslak", no: null, tarih: new Date("2026-09-24"),
+        gecerlilikTarihi: null, cariId: "c1", depoId: null, dovizCinsi: "TRY", kur: new Prisma.Decimal(1),
+        genelIskontoYuzdesi: new Prisma.Decimal(0), genelIskontoTutari: new Prisma.Decimal(0),
+        toplamBrut: new Prisma.Decimal(0), toplamSatirIskontosu: new Prisma.Decimal(0), genelIskontoToplam: new Prisma.Decimal(0),
+        toplamMatrah: new Prisma.Decimal(0), toplamKdv: new Prisma.Decimal(0), toplamTevkifat: new Prisma.Decimal(0),
+        toplamNetKdv: new Prisma.Decimal(0), genelToplam: new Prisma.Decimal(0), aciklama: null, notlar: null,
+        fiiliSevkZamani: new Date("2026-09-24T09:00:00Z"), kaynakBelgeId: null, faturaId: null, satirlar: [],
+      };
+      const tx = {
+        belge: {
+          findUnique: vi.fn().mockResolvedValue(taslak),
+          update: vi.fn(({ data }) => Promise.resolve({ ...taslak, ...data })),
+        },
+        belgeSayac: { upsert: vi.fn().mockResolvedValue({ sonSira: 12 }) },
+      };
+      const prisma = { tenantIslem: vi.fn((_t, calistir) => calistir(tx)) } as any;
+      const irsaliyeSeriOneki = vi.fn().mockResolvedValue("GBZ");
+      const servis = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any, { irsaliyeSeriOneki } as any);
+      const sonuc = await servis.onayla("i1");
+      return { sonuc, sayacAnahtari: tx.belgeSayac.upsert.mock.calls[0][0].where.tenantId_tur_yon_yil, irsaliyeSeriOneki };
+    };
+
+    it("satış irsaliyesi giden e-İrsaliye serisinden 16 haneli numara alır", async () => {
+      const { sonuc, sayacAnahtari } = await onayla("satis");
+      expect(sonuc.no).toBe("GBZ2026000000012");
+      expect(sayacAnahtari).toMatchObject({ tur: "irsaliye", yon: "satis", yil: 2026 });
+    });
+
+    it("alış irsaliyesi giden seriye dokunmadan iç seriden numara alır", async () => {
+      const { sonuc, sayacAnahtari, irsaliyeSeriOneki } = await onayla("alis");
+      expect(sonuc.no).toBe("AIR2026000012");
+      expect(sayacAnahtari).toMatchObject({ tur: "irsaliye", yon: "alis", yil: 2026 });
+      expect(irsaliyeSeriOneki).not.toHaveBeenCalled();
+    });
+  });
 });
