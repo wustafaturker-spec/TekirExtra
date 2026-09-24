@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EIRSALIYE_YEDEK_GORUNUM_NOTU, eirsaliyeYedekPdfHtml } from "./eirsaliye-pdf";
-import { IrsaliyeUblOkumaHatasi, irsaliyeUblOku } from "./eirsaliye-ubl-oku";
+import { IrsaliyeUblOkumaHatasi, irsaliyeKarekodVerisi, irsaliyeUblOku } from "./eirsaliye-ubl-oku";
 import { gomuluXsltCikar } from "./ubl-gorunum";
 
 const XSLT = Buffer.from('<xsl:stylesheet version="2.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform"/>').toString("base64");
@@ -93,6 +93,14 @@ describe("irsaliyeUblOku (EBLG-33)", () => {
     expect(r.alici).toEqual({ vknTckn: "2222222222", unvan: "Müller GmbH", adres: "Hauptstr. 1 Berlin Almanya" });
     expect(eirsaliyeYedekPdfHtml(r)).toContain("Hauptstr. 1 Berlin Almanya");
     expect(r.gonderen.adres).toBe("Atatürk Cad. Kadıköy İstanbul");
+  });
+
+  it("karekod verisini GİB kılavuzundaki e-İrsaliye alanlarıyla üretir (EBLG-88)", () => {
+    const r = irsaliyeUblOku(IRSALIYE());
+    expect(Object.keys(irsaliyeKarekodVerisi(r)!)).toEqual(["vkntckn", "avkntckn", "senaryo", "tip", "tarih", "no", "ettn", "sevktarihi", "sevkzamani", "tasiyicivkn", "plaka"]);
+    expect(irsaliyeKarekodVerisi(r)).toMatchObject({ vkntckn: "4620553774", avkntckn: "1234567801", no: "TYH2026000000016", sevktarihi: "2026-09-11", sevkzamani: "07:45:00", tasiyicivkn: "1111111111" });
+    // Tam numarası olmayan belgede karekod basılmaz.
+    expect(irsaliyeKarekodVerisi({ ...r, belgeNo: "TYH" })).toBeNull();
   });
 
   it("fiili sevk yazılmamışsa belge tarihine düşer", () => {

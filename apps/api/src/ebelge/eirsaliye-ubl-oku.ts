@@ -172,3 +172,30 @@ export function irsaliyeUblOku(xml: string): UblIrsaliye {
     }),
   };
 }
+
+/** GİB belge numarası: 3 haneli seri + 4 hane yıl + 9 hane sıra. */
+const TAM_IRSALIYE_NO = /^[A-Z0-9]{3}\d{13}$/;
+
+/**
+ * EBLG-88: e-İrsaliye karekodu — GİB Karekod Standardı Kılavuzu v1.0 (Şubat
+ * 2023) e-İrsaliye tablosu, kılavuzdaki sırayla. Değerler gönderilen UBL'den
+ * okunur. Araçta karekodlu çıktı bulundurulur (mali müşavir, 2026-09-24).
+ * Tam numarası olmayan belgede karekod geçersiz olacağından `null` döner;
+ * plaka yoksa (taşıma başka firmadaysa) alan yazılmaz.
+ */
+export function irsaliyeKarekodVerisi(r: UblIrsaliye): Record<string, string> | null {
+  if (!TAM_IRSALIYE_NO.test(r.belgeNo)) return null;
+  return {
+    vkntckn: r.gonderen.vknTckn,
+    avkntckn: r.alici.vknTckn,
+    senaryo: r.profilId,
+    tip: r.tipKodu,
+    tarih: r.tarih,
+    no: r.belgeNo,
+    ettn: r.uuid,
+    sevktarihi: r.sevkTarihi,
+    sevkzamani: r.sevkSaati,
+    ...(r.tasiyici?.vknTckn ? { tasiyicivkn: r.tasiyici.vknTckn } : {}),
+    ...(r.plaka ? { plaka: r.plaka } : {}),
+  };
+}

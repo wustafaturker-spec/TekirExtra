@@ -7,7 +7,7 @@ import { PdfService } from "../core/pdf/pdf.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
 import { ebelgeYedekPdfHtml } from "./ebelge-pdf";
 import { eirsaliyeYedekPdfHtml, GIDEN_EIRSALIYE_NOTU } from "./eirsaliye-pdf";
-import { IrsaliyeUblOkumaHatasi, irsaliyeUblOku } from "./eirsaliye-ubl-oku";
+import { IrsaliyeUblOkumaHatasi, irsaliyeKarekodVerisi, irsaliyeUblOku } from "./eirsaliye-ubl-oku";
 import { karekodDataUri, karekoduHtmlEkle } from "./karekod";
 import { UblOkumaHatasi, faturaKarekodVerisi, faturaUblOku } from "./ubl-oku";
 import { gomuluXsltCikar } from "./ubl-gorunum";
@@ -152,10 +152,14 @@ export class EbelgeGorunumService {
       tx.eirsaliyeKayit.findUnique({ where: { belgeId }, select: { xmlIcerik: true, durum: true, belge: { select: { no: true } } } }),
     );
     if (!kayit?.xmlIcerik || kayit.durum === "hata") throw new NotFoundException("GİB'e iletilmiş e-İrsaliye bulunamadı");
-    return this.irsaliyePdf(kayit.xmlIcerik, `irsaliye-${kayit.belge.no}.pdf`, GIDEN_EIRSALIYE_NOTU);
+    return this.irsaliyePdf(kayit.xmlIcerik, `irsaliye-${kayit.belge.no}.pdf`, GIDEN_EIRSALIYE_NOTU, true);
   }
 
-  private async irsaliyePdf(xml: string, dosyaAdi: string, not?: string) {
+  /**
+   * `karekodlu` yalnız kendi gönderdiğimiz irsaliyede açıktır (EBLG-88): gelen
+   * belgenin karekodu göndereninin işidir (faturadaki EBLG-32 kuralı).
+   */
+  private async irsaliyePdf(xml: string, dosyaAdi: string, not?: string, karekodlu = false) {
     const html = await this.gomuluGorunumHtml(xml);
     if (html) return { buffer: await this.pdf.htmlToPdf(html, { yalitilmis: true }), dosyaAdi };
 
@@ -169,6 +173,8 @@ export class EbelgeGorunumService {
       throw hata;
     }
     const tema = await this.pdf.belgeTemasi();
-    return { buffer: await this.pdf.htmlToPdf(eirsaliyeYedekPdfHtml(irsaliye, { tema, not })), dosyaAdi };
+    const karekod = karekodlu ? irsaliyeKarekodVerisi(irsaliye) : null;
+    const yedek = eirsaliyeYedekPdfHtml(irsaliye, { tema, not });
+    return { buffer: await this.pdf.htmlToPdf(karekod ? karekoduHtmlEkle(yedek, karekodDataUri(karekod)) : yedek), dosyaAdi };
   }
 }

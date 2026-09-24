@@ -3,7 +3,7 @@ import { EirsaliyeDurum, GelenEirsaliyeDurum, Prisma, type ZincirBelgeDurum } fr
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import type { EntegratorConfig } from "@tekirextra/baglanti";
-import { anTR, birimUblKodu, gumrukSeferNotu, YURT_DISI_ALICI_VKN, dorseSchemeId, firmaEbelgeEksikleri, idisBelgesiMi, IDIS_IRSALIYE_PROFILI, idisNormalize, plakaNormalize, plakaSchemeId, ublAdresi } from "@tekirextra/shared";
+import { anTR, birimUblKodu, gumrukSeferNotu, ihracatFaturasiNotu, YURT_DISI_ALICI_VKN, dorseSchemeId, firmaEbelgeEksikleri, idisBelgesiMi, IDIS_IRSALIYE_PROFILI, idisNormalize, plakaNormalize, plakaSchemeId, ublAdresi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
@@ -140,8 +140,8 @@ export class EirsaliyeService {
       + `<cbc:ID>${esc(b.no ?? b.id)}</cbc:ID><cbc:CopyIndicator>false</cbc:CopyIndicator><cbc:UUID>${b.id}</cbc:UUID>`
       + `<cbc:IssueDate>${tarih}</cbc:IssueDate><cbc:IssueTime>${saat}</cbc:IssueTime>`
       + `<cbc:DespatchAdviceTypeCode>SEVK</cbc:DespatchAdviceTypeCode>`
-      // EBLG-87: gümrükten depoya sevkin açıklaması; şemada tür kodundan sonra gelir.
-      + (b.gumrukNotu ? `<cbc:Note>${esc(b.gumrukNotu)}</cbc:Note>` : "")
+      // EBLG-87/89: belgenin açıklamaları; şemada tür kodundan sonra gelir.
+      + ((b.notlar ?? []) as string[]).map((n) => `<cbc:Note>${esc(n)}</cbc:Note>`).join("")
       + `<cbc:LineCountNumeric>${b.satirlar.length}</cbc:LineCountNumeric>`
       + siparisBlogu + faturaBlogu
       + `<cac:Signature><cbc:ID schemeID="VKN_TCKN">${esc(tenant.vkn)}</cbc:ID><cac:SignatoryParty><cac:PartyIdentification><cbc:ID schemeID="VKN">${esc(tenant.vkn)}</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>${esc(tenant.unvan)}</cbc:Name></cac:PartyName>${firmaAdresi}</cac:SignatoryParty><cac:DigitalSignatureAttachment><cac:ExternalReference><cbc:URI>#Signature</cbc:URI></cac:ExternalReference></cac:DigitalSignatureAttachment></cac:Signature>`
@@ -214,10 +214,17 @@ export class EirsaliyeService {
       const cari = belge.gumrukDepoSevki && tenant
         ? { unvan: tenant.unvan, vknTckn: tenant.vkn, adresler: [{ tip: "merkez", adres: tenant.adres, il: tenant.il, ilce: tenant.ilce, postaKodu: tenant.postaKodu, ulke: "TR" }] }
         : yurtDisi ? { ...belge.cari, vknTckn: YURT_DISI_ALICI_VKN } : belge.cari;
-      const gumrukNotu = belge.gumrukDepoSevki && belge.gumrukBeyannameNo && belge.gumrukBeyannameTarihi && belge.gumrukSeferNo
-        ? gumrukSeferNotu({ beyannameNo: belge.gumrukBeyannameNo, beyannameTarihi: belge.gumrukBeyannameTarihi.toISOString(), seferNo: belge.gumrukSeferNo })
-        : undefined;
-      const xml = this.ubl({ ...belge, cari, teslimatAdresi, gumrukNotu, yuklemeAdresi: belge.gumrukDepoSevki ? irsaliyeYuklemeAdresi(belge) : undefined }, tenant);
+      const notlar: string[] = [];
+      if (belge.gumrukDepoSevki && belge.gumrukBeyannameNo && belge.gumrukBeyannameTarihi && belge.gumrukSeferNo) {
+        notlar.push(gumrukSeferNotu({ beyannameNo: belge.gumrukBeyannameNo, beyannameTarihi: belge.gumrukBeyannameTarihi.toISOString(), seferNo: belge.gumrukSeferNo }));
+      }
+      // EBLG-89: ihracat irsaliyesi önceden düzenlenmiş faturaya bağlıysa fatura
+      // açıklamada da anılır (mali müşavir önerisi, 2026-09-24). Fatura sonra
+      // kesilirse yazılamaz: gönderilmiş e-İrsaliye değiştirilemez.
+      if (yurtDisi && belge.fatura?.no) {
+        notlar.push(ihracatFaturasiNotu({ faturaNo: belge.fatura.no, faturaTarihi: belge.fatura.tarih.toISOString() }));
+      }
+      const xml = this.ubl({ ...belge, cari, teslimatAdresi, notlar, yuklemeAdresi: belge.gumrukDepoSevki ? irsaliyeYuklemeAdresi(belge) : undefined }, tenant);
       const sonuc = await adapter.irsaliyeGonder(cfg, { uuid: belge.id, belgeNo: belge.no, xml, aliciPostaKutusu });
       // EBLG-85: etiketsiz giden belgeyi alıcı GİB'den alamaz; çıktısı verilir.
       // Hata mesajı açıkça `null` yazılır: `undefined` alanı Prisma güncellemez

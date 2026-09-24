@@ -188,3 +188,12 @@ export function gumrukSeferNotu(girdi: { beyannameNo: string; beyannameTarihi: s
   const tarih = girdi.beyannameTarihi.slice(0, 10).split("-").reverse().join(".");
   return `${tarih} Tarih ve ${girdi.beyannameNo} Sayılı Gümrük Beyannamesi muhteviyatı malların gümrükten depoya kısım kısım taşınmasına ilişkin ${girdi.seferNo}. seferidir.`;
 }
+
+/**
+ * EBLG-89: ihracat irsaliyesinin bağlı olduğu ihracat faturası (mali müşavir
+ * önerisi, 2026-09-24; metin kalıbı kullanıcı onayıyla). `cbc:Note` olur.
+ */
+export function ihracatFaturasiNotu(girdi: { faturaNo: string; faturaTarihi: string }): string {
+  const tarih = girdi.faturaTarihi.slice(0, 10).split("-").reverse().join(".");
+  return `Bu irsaliye ${tarih} tarih ve ${girdi.faturaNo} numaralı ihracat faturasına istinaden düzenlenmiştir.`;
+}

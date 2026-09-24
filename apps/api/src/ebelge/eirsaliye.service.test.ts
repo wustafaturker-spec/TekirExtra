@@ -325,6 +325,7 @@ describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
     const { servis, tx, irsaliyeGonder } = kur(taslakBelge({
       cari: { unvan: "Müller GmbH", vknTckn: null, adresler: [{ tip: "fatura", adres: "Hauptstr. 1", il: "Berlin", ilce: "Mitte", postaKodu: "10115", ulke: "DE" }] },
       teslimatAdres: "Ambarlı Gümrük Müdürlüğü", teslimatIl: "İstanbul", teslimatIlce: "Avcılar", teslimatPostaKodu: "34315",
+      fatura: { no: "K072026000000090", tarih: new Date("2026-09-23") },
     }));
     const kanalBelirle = (servis as unknown as { mukellefListesi: { kanalBelirle: ReturnType<typeof vi.fn> } }).mukellefListesi.kanalBelirle;
 
@@ -340,6 +341,8 @@ describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
     expect(teslimat).toContain("Ambarlı Gümrük Müdürlüğü");
     expect(teslimat).toContain("<cbc:CityName>İstanbul</cbc:CityName>");
     expect(tx.eirsaliyeKayit.upsert.mock.calls[0][0].create.aliciKayitsiz).toBe(true);
+    // EBLG-89: bağlı ihracat faturası açıklamada anılır.
+    expect(xml).toContain("<cbc:Note>Bu irsaliye 23.09.2026 tarih ve K072026000000090 numaralı ihracat faturasına istinaden düzenlenmiştir.</cbc:Note>");
   });
 
   it("gümrükten depoya sevki firmanın kendisine, açıklama ve yükleme adresiyle gönderir (EBLG-87)", async () => {
