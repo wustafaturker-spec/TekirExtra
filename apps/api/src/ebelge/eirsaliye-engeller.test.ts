@@ -16,8 +16,7 @@ const belge = (degisiklik: Partial<EirsaliyeAdayi> = {}, cari: Partial<Eirsaliye
   ...degisiklik,
 });
 
-const kodlar = (b: EirsaliyeAdayi, mukellef: "mukellef" | "degil" | "bilinmiyor" = "mukellef") =>
-  gonderimEngelleri(b, mukellef).map((e) => e.kod);
+const kodlar = (b: EirsaliyeAdayi) => gonderimEngelleri(b).map((e) => e.kod);
 
 describe("gonderimEngelleri (EBLG-42)", () => {
   it("eksiksiz belgede engel bulmaz", () => {
@@ -33,16 +32,13 @@ describe("gonderimEngelleri (EBLG-42)", () => {
     expect(kodlar(belge({ durum: "taslak" }))).toContain("onaysiz");
   });
 
-  it("VKN yoksa mükellefiyeti ayrıca sormaz", () => {
-    expect(kodlar(belge({}, { vknTckn: null }), "degil")).toEqual(["vkn_yok"]);
+  it("VKN yoksa engeller", () => {
+    expect(kodlar(belge({}, { vknTckn: null }))).toEqual(["vkn_yok"]);
   });
 
-  it("mükellef olmayan cariyi engeller", () => {
-    expect(kodlar(belge(), "degil")).toEqual(["mukellef_degil"]);
-  });
-
-  it("mükellefiyet doğrulanamadığında engel saymaz", () => {
-    expect(kodlar(belge(), "bilinmiyor")).toEqual([]);
+  // EBLG-83: kayıtlı olmayan alıcıya da e-İrsaliye gider (NES testinde 2026-09-24).
+  it("alıcının e-İrsaliye kaydını engel saymaz", () => {
+    expect(kodlar(belge())).toEqual([]);
   });
 
   it("posta kodu eksik adresi kabul etmez", () => {

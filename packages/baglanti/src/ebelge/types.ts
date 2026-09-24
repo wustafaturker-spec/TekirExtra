@@ -195,7 +195,11 @@ export interface EarsivRaporTutari {
   iptal: EarsivRaporToplami[];
 }
 
-export interface EirsaliyeBelge { uuid: string; belgeNo: string; xml: string; aliciPostaKutusu: string }
+/**
+ * `aliciPostaKutusu` yoksa alıcı GİB e-İrsaliye listesinde değildir; NES belgeyi
+ * alıcı etiketi olmadan kabul eder (EBLG-83), Sovos kabul etmez.
+ */
+export interface EirsaliyeBelge { uuid: string; belgeNo: string; xml: string; aliciPostaKutusu?: string }
 export interface GelenEirsaliye { uuid: string; belgeNo: string; gonderenVkn: string; gonderenUnvan: string; tarih: Date; xml: string; /** Sağlayıcı bildiriyorsa entegratörde verilmiş karar (EBLG-34). */ yanit?: GelenYanit }
 
 /**

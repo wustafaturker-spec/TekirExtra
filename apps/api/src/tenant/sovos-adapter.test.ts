@@ -122,6 +122,14 @@ describe("SovosEntegratorAdapter", () => {
     expect(fetchMock.mock.calls[1][1].body).toContain("<startDate>2026-08-11</startDate>");
   });
 
+  it("alıcı etiketi olmadan e-İrsaliye göndermez — Sovos kayıtlı olmayan alıcıyı kabul etmiyor (EBLG-83)", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const sonuc = await new SovosEntegratorAdapter().irsaliyeGonder(config, { uuid: "irs-1", belgeNo: "IRS2026000000001", xml: "<DespatchAdvice/>" });
+    expect(sonuc.basarili).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("e-İrsaliyeyi DESPATCH olarak gönderir ve 1300 durumunu kabul eder", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, text: async () => `<Envelope><Body><sendDesUBLResponse><EnvUUID>irs-zarf-1</EnvUUID></sendDesUBLResponse></Body></Envelope>` })

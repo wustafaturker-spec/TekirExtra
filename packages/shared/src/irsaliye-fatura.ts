@@ -163,27 +163,19 @@ export function faturaGecikmeUyarilari(girdi: {
 }
 
 /**
- * EBLG-83: satış irsaliyesinin kanalı onayda belirlenir. e-İrsaliye yalnız
- * e-İrsaliye kullanıcısı olan firmadan kullanıcı olan alıcıya düzenlenir;
- * gerisi kâğıt (matbu) irsaliyedir ve giden e-İrsaliye serisinden numara
- * almaz. Firma kapsamı ya da alıcının kaydı bilinmiyorsa karar verilmez —
- * yanlış kanalda onaylanan irsaliye ya seride boşluk bırakır ya da
- * e-İrsaliye düzenlenmesi gereken yerde kâğıda düşer.
+ * EBLG-83: satış irsaliyesinin kanalı onayda belirlenir ve yalnız firmanın
+ * kapsamına bağlıdır. e-İrsaliye kullanıcısı firma her alıcıya e-İrsaliye
+ * düzenler — alıcının GİB listesinde olması gerekmez, kayıtlı olmayana belge
+ * alıcı etiketi olmadan gider (NES testinde kabul edildi, 2026-09-24).
+ * Kullanıcı olmayan firmanın irsaliyesi kâğıttır ve giden e-İrsaliye
+ * serisinden numara almaz. Kapsam bilinmiyorsa karar verilmez: yanlış kanalda
+ * onaylanan belge ya seride boşluk bırakır ya da kâğıda düşer.
  */
 export type IrsaliyeKanali = "eirsaliye" | "kagit";
 
-export function irsaliyeKanali(girdi: {
-  /** Firmanın e-İrsaliye kapsamı (EBLG-77); `null` bilinmiyor. */
-  firmaEirsaliye: boolean | null;
-  /** Alıcı GİB e-İrsaliye listesinde mi; `null` liste güncel değil. */
-  aliciKayitli: boolean | null;
-}): { kanal: IrsaliyeKanali } | { hata: string } {
-  if (girdi.firmaEirsaliye === false) return { kanal: "kagit" };
-  if (girdi.firmaEirsaliye === null) {
+export function irsaliyeKanali(firmaEirsaliye: boolean | null): { kanal: IrsaliyeKanali } | { hata: string } {
+  if (firmaEirsaliye === null) {
     return { hata: "Firmanın e-İrsaliye kapsamı bilinmiyor; irsaliyeyi onaylamadan önce firma kartında e-İrsaliye ayarını seçin ya da GİB mükellef listesini güncelleyin" };
   }
-  if (girdi.aliciKayitli === null) {
-    return { hata: "GİB mükellef listesi güncel değil; alıcının e-İrsaliye kaydı bilinmeden irsaliye onaylanamaz. Ayarlar > Entegratörler ekranından listeyi güncelleyin" };
-  }
-  return { kanal: girdi.aliciKayitli ? "eirsaliye" : "kagit" };
+  return { kanal: firmaEirsaliye ? "eirsaliye" : "kagit" };
 }

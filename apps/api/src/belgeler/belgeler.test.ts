@@ -411,9 +411,9 @@ describe("BelgelerService", () => {
   });
 
   describe("irsaliye numarası onayda (FTR-27, EBLG-83)", () => {
-    /** Firma kapsamı ve alıcının GİB kaydı sahte; liste varsayılan olarak günceldir. */
-    const onayla = async (yon: "satis" | "alis", ortam: { firmaEirsaliye?: boolean | null; aliciKayitli?: boolean; listeGuncel?: boolean } = {}) => {
-      const { firmaEirsaliye = true, aliciKayitli = true, listeGuncel = true } = ortam;
+    /** Firmanın e-İrsaliye ayarı elle verilir; `null` ise GİB listesine bakılır. */
+    const onayla = async (yon: "satis" | "alis", ortam: { firmaEirsaliye?: boolean | null; listeGuncel?: boolean } = {}) => {
+      const { firmaEirsaliye = true, listeGuncel = true } = ortam;
       const taslak = {
         id: "i1", tur: "irsaliye", yon, durum: "taslak", no: null, tarih: new Date("2026-09-24"),
         gecerlilikTarihi: null, cariId: "c1", depoId: null, dovizCinsi: "TRY", kur: new Prisma.Decimal(1),
@@ -429,10 +429,8 @@ describe("BelgelerService", () => {
           update: vi.fn(({ data }) => Promise.resolve({ ...taslak, ...data })),
         },
         belgeSayac: { upsert: vi.fn().mockResolvedValue({ sonSira: 12 }) },
-        cariHesap: { findUnique: vi.fn().mockResolvedValue({ vknTckn: "1230460944" }) },
-        // Firma ayarı elle verilir; `null` ise GİB listesine bakılır.
         tenant: { findUnique: vi.fn().mockResolvedValue({ vkn: "1234567801", efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: firmaEirsaliye }) },
-        gibMukellef: { findFirst: vi.fn(({ where }) => Promise.resolve(where?.vknTckn === "1230460944" && !aliciKayitli ? null : { vknTckn: "x" })) },
+        gibMukellef: { findFirst: vi.fn().mockResolvedValue(null) },
         gibMukellefSenkron: { findUnique: vi.fn().mockResolvedValue({ sonSenkronAt: listeGuncel ? new Date() : new Date("2026-01-01") }) },
       };
       const prisma = { tenantIslem: vi.fn((_t, calistir) => calistir(tx)) } as any;
@@ -441,28 +439,18 @@ describe("BelgelerService", () => {
       return { sonuc, tx, sayacAnahtari: tx.belgeSayac.upsert.mock.calls[0]?.[0].where.tenantId_tur_yon_seri_yil };
     };
 
-    it("e-İrsaliye alıcısına kesilen satış irsaliyesi numarasız onaylanır; numara gönderimde verilir", async () => {
+    it("e-İrsaliye kullanıcısı firmada satış irsaliyesi numarasız onaylanır; numara gönderimde verilir", async () => {
       const { sonuc, tx } = await onayla("satis");
       expect(sonuc.no).toBeNull();
       expect(sonuc.kagitIrsaliye).toBe(false);
       expect(tx.belgeSayac.upsert).not.toHaveBeenCalled();
     });
 
-    it("alıcı e-İrsaliye kullanıcısı değilse kâğıt irsaliyedir ve giden seriye dokunmaz", async () => {
-      const { sonuc, sayacAnahtari } = await onayla("satis", { aliciKayitli: false });
+    it("firma e-İrsaliye kullanıcısı değilse kâğıt irsaliye keser ve giden seriye dokunmaz", async () => {
+      const { sonuc, sayacAnahtari } = await onayla("satis", { firmaEirsaliye: false, listeGuncel: false });
       expect(sonuc.no).toBe("KIR2026000012");
       expect(sonuc.kagitIrsaliye).toBe(true);
       expect(sayacAnahtari).toMatchObject({ tur: "irsaliye", yon: "satis", seri: "KIR", yil: 2026 });
-    });
-
-    it("firma e-İrsaliye kullanıcısı değilse listeye bakmadan kâğıt irsaliye keser", async () => {
-      const { sonuc, tx } = await onayla("satis", { firmaEirsaliye: false, listeGuncel: false });
-      expect(sonuc.kagitIrsaliye).toBe(true);
-      expect(tx.gibMukellef.findFirst).not.toHaveBeenCalled();
-    });
-
-    it("alıcının kaydı bilinmiyorsa onaylamaz", async () => {
-      await expect(onayla("satis", { listeGuncel: false })).rejects.toThrow(/mükellef listesi güncel değil/);
     });
 
     it("firmanın kapsamı bilinmiyorsa onaylamaz", async () => {

@@ -13,7 +13,6 @@ export type EngelKodu =
   | "belge_turu"
   | "onaysiz"
   | "vkn_yok"
-  | "mukellef_degil"
   | "adres_yok"
   | "tasiyan_yok"
   | "tasiyici_vkn_yok"
@@ -29,9 +28,6 @@ export interface Engel {
  * demektir, sevk belgesi olarak hâlâ geçerlidir (FTR-26).
  */
 export const IRSALIYE_GONDERILEBILIR_DURUMLAR: readonly string[] = ["onaylandi", "kapandi"];
-
-/** Mükellefiyet yerel GİB listesinden okunur; liste bayatsa "bilinmiyor". */
-export type MukellefDurumu = "mukellef" | "degil" | "bilinmiyor";
 
 export interface EirsaliyeAdayi {
   tur: string;
@@ -61,7 +57,7 @@ export function teslimatAdresiSec<T extends { tip: string; il: string | null; il
  * Belgeyi gönderime engel olan eksikler. Boş dizi "gönderilebilir" demektir.
  * Sıra `gonder` içindeki denetim sırasıyla aynıdır.
  */
-export function gonderimEngelleri(belge: EirsaliyeAdayi, mukellef: MukellefDurumu): Engel[] {
+export function gonderimEngelleri(belge: EirsaliyeAdayi): Engel[] {
   const engeller: Engel[] = [];
   if (belge.tur !== "irsaliye" || belge.yon !== "satis") {
     return [{ kod: "belge_turu", mesaj: "Yalnızca satış irsaliyesi e-İrsaliye olarak gönderilebilir" }];
@@ -69,10 +65,10 @@ export function gonderimEngelleri(belge: EirsaliyeAdayi, mukellef: MukellefDurum
   if (!IRSALIYE_GONDERILEBILIR_DURUMLAR.includes(belge.durum)) {
     engeller.push({ kod: "onaysiz", mesaj: "e-İrsaliye göndermek için belge onaylanmış olmalıdır" });
   }
+  // EBLG-83: alıcının e-İrsaliye kullanıcısı olması gerekmez; kayıtlı
+  // olmayana belge alıcı etiketi olmadan gider (NES testinde 2026-09-24).
   if (!belge.cari.vknTckn) {
     engeller.push({ kod: "vkn_yok", mesaj: "Cari VKN/TCKN bilgisi eksik" });
-  } else if (mukellef === "degil") {
-    engeller.push({ kod: "mukellef_degil", mesaj: "Cari e-İrsaliye alıcısı olarak tanımlı değil" });
   }
   if (!teslimatAdresiSec(belge.cari.adresler)) {
     engeller.push({ kod: "adres_yok", mesaj: "e-İrsaliye teslimat adresi ister; cari kartına il, ilçe ve posta kodu dolu bir sevk adresi ekleyin" });

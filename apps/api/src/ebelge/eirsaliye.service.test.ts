@@ -258,7 +258,7 @@ describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
     ...ek,
   });
 
-  function kur(belge: ReturnType<typeof taslakBelge>, gonderim: { basarili: boolean; hataMesaji?: string } = { basarili: true }) {
+  function kur(belge: ReturnType<typeof taslakBelge>, gonderim: { basarili: boolean; hataMesaji?: string } = { basarili: true }, aliciKayitli = true) {
     const tx = {
       belge: { findUnique: vi.fn().mockResolvedValue(belge), update: vi.fn().mockResolvedValue({}) },
       belgeSayac: { upsert: vi.fn().mockResolvedValue({ sonSira: 800022 }) },
@@ -266,7 +266,7 @@ describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
       eirsaliyeKayit: { upsert: vi.fn(({ create }) => Promise.resolve(create)) },
     };
     const prisma = { tenantIslem: vi.fn((_t: string, calistir: (tx: unknown) => unknown) => calistir(tx)) } as never;
-    const mukellef = { kanalBelirle: vi.fn().mockResolvedValue({ vknTckn: "1230460944", eFaturaMukellefi: true, postaKutusu: "urn:mail:alici" }) } as never;
+    const mukellef = { kanalBelirle: vi.fn().mockResolvedValue(aliciKayitli ? { vknTckn: "1230460944", eFaturaMukellefi: true, postaKutusu: "urn:mail:alici" } : { vknTckn: "1230460944", eFaturaMukellefi: false }) } as never;
     const servis = new EirsaliyeService(prisma, {} as never, mukellef);
     const irsaliyeGonder = vi.fn().mockResolvedValue({ ...gonderim, belgeRef: gonderim.basarili ? "nes-uuid" : undefined });
     vi.spyOn(servis as never, "baglanti").mockResolvedValue({ baglanti: { saglayici: "nes" }, cfg: { eirsaliyeSeriOneki: "GBZ" }, adapter: { irsaliyeGonder } } as never);
@@ -300,6 +300,15 @@ describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
     await expect(calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"))).rejects.toThrow(/adres/i);
     expect(tx.belgeSayac.upsert).not.toHaveBeenCalled();
     expect(irsaliyeGonder).not.toHaveBeenCalled();
+  });
+
+  it("GİB listesinde olmayan alıcıya alıcı etiketi olmadan gönderir", async () => {
+    const { servis, irsaliyeGonder } = kur(taslakBelge(), { basarili: true }, false);
+
+    await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
+
+    expect(irsaliyeGonder).toHaveBeenCalledOnce();
+    expect(irsaliyeGonder.mock.calls[0][1].aliciPostaKutusu).toBeUndefined();
   });
 
   it("kâğıt irsaliyeyi göndermez", async () => {

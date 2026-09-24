@@ -110,7 +110,7 @@ interface Belge {
   faturaId: string | null;
   /** FTR-27: alış irsaliyesinde tedarikçinin irsaliye numarası. */
   tedarikciBelgeNo?: string | null;
-  /** EBLG-83: e-İrsaliye düzenlenemeyen yere kesilen satış irsaliyesi ve matbu numarası. */
+  /** EBLG-83: e-İrsaliye kullanıcısı olmayan firmanın satış irsaliyesi ve matbu numarası. */
   kagitIrsaliye?: boolean;
   matbuBelgeNo?: string | null;
   eirsaliye?: { durum: string; entegratorRef?: string | null; hataMesaji?: string | null } | null;
@@ -1205,7 +1205,7 @@ export default function BelgelerSayfasi() {
               {onayBekleyen.tur === "siparis" && onayBekleyen.yon === "alis" && "Onayla birlikte ürün miktarları seçilen depo için yoldaki stok olarak işaretlenecek."}
               {onayBekleyen.tur === "teklif" && "Teklif numara alacak; stok ve cari bakiyesi değişmeyecek."}
               {onayBekleyen.tur === "irsaliye" && (onayBekleyen.yon === "satis"
-                ? "Alıcı e-İrsaliye kullanıcısıysa numara e-İrsaliye gönderiminde verilir; değilse kâğıt irsaliye olarak iç seriden numaralanır. Stok ve cari etkisi fatura kesinleştiğinde oluşacak."
+                ? "Firma e-İrsaliye kullanıcısıysa numara e-İrsaliye gönderiminde verilir; değilse kâğıt irsaliye olarak iç seriden numaralanır. Stok ve cari etkisi fatura kesinleştiğinde oluşacak."
                 : "İrsaliye iç seriden numara alacak; stok ve cari etkisi fatura kesinleştiğinde oluşacak.")}
             </div>
             <div className="quick-panel__actions">

@@ -392,6 +392,8 @@ export class SovosEntegratorAdapter implements EntegratorAdapter {
   }
 
   async irsaliyeGonder(cfg: EntegratorConfig, belge: EirsaliyeBelge): Promise<GonderimSonuc> {
+    // Sovos kayıtlı olmayan alıcıya e-İrsaliye göndermez (WS API v1.3, "Güvenlik").
+    if (!belge.aliciPostaKutusu) return { basarili: false, hataMesaji: "Sovos, GİB e-İrsaliye listesinde olmayan alıcıya e-İrsaliye göndermiyor" };
     try { const xml=await this.irsaliyeSoap(cfg,"sendDesUBL",`<des:sendDesUBLRequest><des:VKN_TCKN>${xmlKacir(cfg.vknTckn!)}</des:VKN_TCKN><des:SenderIdentifier>${xmlKacir(cfg.gondericiBirimEtiketi!)}</des:SenderIdentifier><des:ReceiverIdentifier>${xmlKacir(belge.aliciPostaKutusu)}</des:ReceiverIdentifier><des:DocType>DESPATCH</des:DocType><des:DocData>${tekDosyaZipBase64(`${belge.uuid}.xml`,belge.xml)}</des:DocData></des:sendDesUBLRequest>`); const ref=xmlDegeri(xml,["EnvUUID","UUID"]); return ref?{basarili:true,belgeRef:ref}:{basarili:false,hataMesaji:"Sovos e-İrsaliye referansı dönmedi"}; } catch(hata){return{basarili:false,hataMesaji:hata instanceof Error?hata.message:"e-İrsaliye gönderilemedi"};}
   }
 

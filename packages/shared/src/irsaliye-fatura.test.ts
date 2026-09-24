@@ -87,18 +87,13 @@ describe("irsaliye faturalama süresi (EBLG-82)", () => {
 });
 
 describe("irsaliyeKanali (EBLG-83)", () => {
-  it("firma kullanıcı değilse alıcıya bakmadan kâğıttır", () => {
-    expect(irsaliyeKanali({ firmaEirsaliye: false, aliciKayitli: null })).toEqual({ kanal: "kagit" });
+  it("e-İrsaliye kullanıcısı firmada her irsaliye e-İrsaliyedir, değilse kâğıttır", () => {
+    expect(irsaliyeKanali(true)).toEqual({ kanal: "eirsaliye" });
+    expect(irsaliyeKanali(false)).toEqual({ kanal: "kagit" });
   });
 
-  it("firma ve alıcı kullanıcıysa e-İrsaliyedir, alıcı değilse kâğıttır", () => {
-    expect(irsaliyeKanali({ firmaEirsaliye: true, aliciKayitli: true })).toEqual({ kanal: "eirsaliye" });
-    expect(irsaliyeKanali({ firmaEirsaliye: true, aliciKayitli: false })).toEqual({ kanal: "kagit" });
-  });
-
-  it("firma kapsamı ya da alıcının kaydı bilinmiyorsa karar vermez", () => {
-    expect(irsaliyeKanali({ firmaEirsaliye: null, aliciKayitli: true })).toHaveProperty("hata");
-    expect(irsaliyeKanali({ firmaEirsaliye: true, aliciKayitli: null })).toHaveProperty("hata");
+  it("firmanın kapsamı bilinmiyorsa karar vermez", () => {
+    expect(irsaliyeKanali(null)).toHaveProperty("hata");
   });
 });
 

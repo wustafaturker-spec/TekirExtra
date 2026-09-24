@@ -9,7 +9,7 @@ import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
 import { belgeSirasiAl, eirsaliyeNumarasi } from "../belgeler/belge-sayac";
-import { gonderimEngelleri, IRSALIYE_GONDERILEBILIR_DURUMLAR, teslimatAdresiSec, type MukellefDurumu } from "./eirsaliye-engeller";
+import { gonderimEngelleri, IRSALIYE_GONDERILEBILIR_DURUMLAR, teslimatAdresiSec } from "./eirsaliye-engeller";
 import { irsaliyeUblOku } from "./eirsaliye-ubl-oku";
 import { MukellefListesiService } from "./mukellef-listesi.service";
 
@@ -172,17 +172,16 @@ export class EirsaliyeService {
       // Kalan ön koşullar ekranın gösterdiğiyle aynı kuraldan gelir (EBLG-42);
       // taşıyan bilgisi irsaliye onayında değil burada zorunludur (EBLG-23):
       // kâğıt irsaliye kesen firma engellenmesin, GİB'e giden belge eksik gitmesin.
+      // EBLG-83: kayıtlı alıcıya kendi posta kutusuna gider; kayıtlı olmayana
+      // da e-İrsaliye düzenlenir, belge alıcı etiketi olmadan gönderilir.
       const aliciPostaKutusu = mukellef.eFaturaMukellefi ? mukellef.postaKutusu : undefined;
-      const engeller = gonderimEngelleri(
-        { ...belge, cari: { vknTckn: belge.cari.vknTckn, adresler: belge.cari.adresler } },
-        aliciPostaKutusu ? "mukellef" : "degil",
-      );
+      const engeller = gonderimEngelleri({ ...belge, cari: { vknTckn: belge.cari.vknTckn, adresler: belge.cari.adresler } });
       // Malın fiilen nereye gittiği e-İrsaliye'nin varlık sebebi; uydurulmuş
       // bir adres yazmaktansa gönderim durur. Engel listesi boşsa adres de
       // posta kutusu da vardır; ikisi de burada daraltılır.
       const teslimatAdresi = teslimatAdresiSec(belge.cari.adresler as { tip: string; adres: string; il: string | null; ilce: string | null; postaKodu: string | null }[]);
-      if (engeller.length > 0 || !aliciPostaKutusu || !teslimatAdresi) {
-        throw new BadRequestException(engeller[0]?.mesaj ?? "Cari e-İrsaliye alıcısı olarak tanımlı değil");
+      if (engeller.length > 0 || !teslimatAdresi) {
+        throw new BadRequestException(engeller[0]?.mesaj ?? "e-İrsaliye teslimat adresi bulunamadı");
       }
       const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
       // EBLG-62: gönderen adresi belgede zorunlu; firma kartı eksikse durulur.
@@ -308,19 +307,10 @@ export class EirsaliyeService {
         take: 500,
       });
 
-      // Mükellefiyet tek sorguda çözülür; satır başına entegratör çağrısı
-      // kabul edilemez (bkz. entegratör çağrı disiplini).
-      const vknler = [...new Set(belgeler.map((b) => b.cari.vknTckn).filter((v): v is string => Boolean(v)))];
-      const mukellefler = mukellefDurumu.taze && vknler.length > 0
-        ? await this.prisma.gibMukellef.findMany({ where: { vknTckn: { in: vknler }, belgeTuru: "eirsaliye" }, select: { vknTckn: true } })
-        : [];
-      const mukellefKumesi = new Set(mukellefler.map((m) => m.vknTckn));
-
       const satirlar = belgeler.map((b) => {
-        const mukellef: MukellefDurumu = !mukellefDurumu.taze ? "bilinmiyor" : b.cari.vknTckn && mukellefKumesi.has(b.cari.vknTckn) ? "mukellef" : "degil";
         const gonderildi = Boolean(b.eirsaliye);
         // Gönderilmiş belgede engel aramak anlamsız; defterde durumu konuşulur.
-        const engeller = gonderildi && b.eirsaliye?.durum !== "hata" ? [] : gonderimEngelleri(b, mukellef);
+        const engeller = gonderildi && b.eirsaliye?.durum !== "hata" ? [] : gonderimEngelleri(b);
         return {
           belgeId: b.id,
           belgeNo: b.no,

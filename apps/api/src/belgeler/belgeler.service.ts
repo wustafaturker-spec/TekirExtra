@@ -32,7 +32,7 @@ import { DepoService } from "../stok/depo.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { belgePdfHtml } from "./belge-pdf";
 import { durumGecmisiOku } from "../core/durum-gecmisi";
-import { ebelgeUygulamalariniOku, eirsaliyeAlicisiKayitliMi } from "../ebelge/ebelge-uygulamalari.service";
+import { ebelgeUygulamalariniOku } from "../ebelge/ebelge-uygulamalari.service";
 import { belgeSirasiAl } from "./belge-sayac";
 import type {
   belgeGuncelleSemasi,
@@ -681,12 +681,7 @@ export class BelgelerService {
       let kagitIrsaliye = false;
       let no: string | null;
       if (irsaliye && belge.yon === "satis") {
-        const cari = await tx.cariHesap.findUnique({ where: { id: belge.cariId }, select: { vknTckn: true } });
-        const uygulamalar = await ebelgeUygulamalariniOku(tx, tenantId);
-        const karar = irsaliyeKanali({
-          firmaEirsaliye: uygulamalar.eirsaliye.acik,
-          aliciKayitli: uygulamalar.eirsaliye.acik ? await eirsaliyeAlicisiKayitliMi(tx, cari?.vknTckn ?? null) : false,
-        });
+        const karar = irsaliyeKanali((await ebelgeUygulamalariniOku(tx, tenantId)).eirsaliye.acik);
         if ("hata" in karar) throw new BadRequestException(karar.hata);
         kagitIrsaliye = karar.kanal === "kagit";
         no = kagitIrsaliye
