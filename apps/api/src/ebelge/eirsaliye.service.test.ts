@@ -292,6 +292,8 @@ describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
 
     expect(tx.belgeSayac.upsert).not.toHaveBeenCalled();
     expect(irsaliyeGonder.mock.calls[0][1].belgeNo).toBe("GBZ2026000800021");
+    // Başarılı yeniden gönderim önceki hatayı temizler.
+    expect(tx.eirsaliyeKayit.upsert.mock.calls[0][0].update.hataMesaji).toBeNull();
   });
 
   it("engele takılan gönderim numara harcamaz", async () => {

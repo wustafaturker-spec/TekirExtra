@@ -205,7 +205,9 @@ export class EirsaliyeService {
       const xml = this.ubl({ ...belge, cari, teslimatAdresi }, tenant);
       const sonuc = await adapter.irsaliyeGonder(cfg, { uuid: belge.id, belgeNo: belge.no, xml, aliciPostaKutusu });
       // EBLG-85: etiketsiz giden belgeyi alıcı GİB'den alamaz; çıktısı verilir.
-      const kayit = { durum: sonuc.basarili ? ("iletildi" as const) : ("hata" as const), entegratorRef: sonuc.belgeRef, xmlIcerik: xml, hataMesaji: sonuc.hataMesaji, aliciKayitsiz: !aliciPostaKutusu };
+      // Hata mesajı açıkça `null` yazılır: `undefined` alanı Prisma güncellemez
+      // ve başarılı yeniden gönderim önceki hatayı göstermeye devam ederdi.
+      const kayit = { durum: sonuc.basarili ? ("iletildi" as const) : ("hata" as const), entegratorRef: sonuc.belgeRef, xmlIcerik: xml, hataMesaji: sonuc.hataMesaji ?? null, aliciKayitsiz: !aliciPostaKutusu };
       return tx.eirsaliyeKayit.upsert({ where: { belgeId }, create: { tenantId, belgeId, ...kayit }, update: kayit });
     });
   }
