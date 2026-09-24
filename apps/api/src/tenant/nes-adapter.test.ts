@@ -641,6 +641,16 @@ describe("NesEntegratorAdapter", () => {
     }
   });
 
+  it("e-İrsaliyede de 400/422'yi kalıcı, sunucu ve ağ hatasını geçici sayar (EBLG-94)", async () => {
+    const irsaliye = { uuid: "irs-1", belgeNo: "GBZ2026000800030", xml: "<DespatchAdvice/>" };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ message: "SCHEMATRON" }, 422)));
+    expect((await new NesEntegratorAdapter().irsaliyeGonder(config, irsaliye)).kalici).toBe(true);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ message: "HATA" }, 503)));
+    expect((await new NesEntegratorAdapter().irsaliyeGonder(config, irsaliye)).kalici).toBe(false);
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
+    expect((await new NesEntegratorAdapter().irsaliyeGonder(config, irsaliye)).kalici).toBe(false);
+  });
+
   it("ProblemDetails biçimindeki hata sözlüğünü de okur", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({
       title: "One or more validation errors occurred.",

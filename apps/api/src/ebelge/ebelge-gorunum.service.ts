@@ -7,6 +7,7 @@ import { PdfService } from "../core/pdf/pdf.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
 import { ebelgeYedekPdfHtml } from "./ebelge-pdf";
 import { eirsaliyeYedekPdfHtml, GIDEN_EIRSALIYE_NOTU } from "./eirsaliye-pdf";
+import { numaraBoslukTaslakHtml, type NumaraBosluklari } from "./eirsaliye-bosluk";
 import { IrsaliyeUblOkumaHatasi, irsaliyeKarekodVerisi, irsaliyeUblOku } from "./eirsaliye-ubl-oku";
 import { karekodDataUri, karekoduHtmlEkle } from "./karekod";
 import { UblOkumaHatasi, faturaKarekodVerisi, faturaUblOku } from "./ubl-oku";
@@ -159,6 +160,11 @@ export class EbelgeGorunumService {
    * `karekodlu` yalnız kendi gönderdiğimiz irsaliyede açıktır (EBLG-88): gelen
    * belgenin karekodu göndereninin işidir (faturadaki EBLG-32 kuralı).
    */
+  /** EBLG-93: boşta kalan numaralar için dilekçe ve tutanak taslağı. */
+  async numaraBoslukTaslakPdf(veri: NumaraBosluklari, firma: Parameters<typeof numaraBoslukTaslakHtml>[1]) {
+    return { buffer: await this.pdf.htmlToPdf(numaraBoslukTaslakHtml(veri, firma, new Date())), dosyaAdi: `eirsaliye-numara-atlama-${veri.seriOneki}-${veri.yil}.pdf` };
+  }
+
   private async irsaliyePdf(xml: string, dosyaAdi: string, not?: string, karekodlu = false) {
     const html = await this.gomuluGorunumHtml(xml);
     if (html) return { buffer: await this.pdf.htmlToPdf(html, { yalitilmis: true }), dosyaAdi };

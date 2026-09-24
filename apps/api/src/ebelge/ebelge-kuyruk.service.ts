@@ -6,7 +6,7 @@ import { aktifBaglam, baglamlaCalistir } from "../core/istek-baglami";
 import { MetricsService } from "../core/observability/metrics.service";
 import { ebelgeUygulamalariCozTenant } from "./ebelge-uygulamalari.service";
 import { EbelgeService } from "./ebelge.service";
-import { EirsaliyeService, eirsaliyeSorguKosulu } from "./eirsaliye.service";
+import { EirsaliyeService, eirsaliyeSorguKosulu, eirsaliyeYenidenDenemeKosulu } from "./eirsaliye.service";
 import { AZAMI_FATURA_SORGU_SURELERI, faturaSorguKosulu } from "./fatura-sorgu-kosulu";
 
 const KUYRUK_ADI = "tekirextra-ebelge";
@@ -289,7 +289,9 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
       if (is.name === DURUM_TOPLU_ISI) return this.ebelgeService.durumlariTopluSorgula();
       if (is.name === EIRSALIYE_DURUM_TOPLU_ISI) {
         if (!this.eirsaliyeService) throw new Error("e-İrsaliye servisi worker'a bağlanmamış");
-        return this.eirsaliyeService.durumlariTopluSorgula();
+        const durum = await this.eirsaliyeService.durumlariTopluSorgula();
+        // EBLG-94: geçici hatayla düşen gönderimler aynı işte, aynı numarayla yeniden denenir.
+        return { ...durum, yenidenDeneme: await this.eirsaliyeService.geciciHatalariYenidenGonder() };
       }
       if (is.name === MUKELLEF_SENKRON_ISI) return this.ebelgeService.mukellefListesiSenkronEt();
       if (is.name === EARSIV_RAPOR_ISI) {
@@ -412,7 +414,7 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
           // uzun süreyle yalnız iş açılıp açılmayacağına bakılır.
           const bekleyenIrsaliye = tenantUygulamalari && uygulamaAcik(tenantUygulamalari, "eirsaliye")
             ? await yonetim.eirsaliyeKayit.count({
-                where: eirsaliyeSorguKosulu(tenant.id, Date.now(), EIRSALIYE_AZAMI_YANIT_GUNU),
+                where: { OR: [eirsaliyeSorguKosulu(tenant.id, Date.now(), EIRSALIYE_AZAMI_YANIT_GUNU), eirsaliyeYenidenDenemeKosulu(tenant.id, Date.now())] },
               })
             : 0;
           if (bekleyenIrsaliye > 0) await this.irsaliyeDurumlariKuyrugaEkle();

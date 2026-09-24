@@ -14,7 +14,7 @@ import { TasimaBilgisiPaneli } from "@/components/tasima-bilgisi-paneli";
 import type { DepoOzet } from "@/lib/depolar";
 import { BOS_TESLIMAT_ADRESI, TeslimatAdresiAlanlari, teslimatAdresiGovdesi, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
 import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
-import { bugunTR, eirsaliyeIptalUyarisi, faturaHesapla, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
+import { bugunTR, faturaHesapla, irsaliyeIptalUyarisi, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -97,10 +97,6 @@ function firmaGonderir(b: Belge): boolean {
   return b.tur === "irsaliye" && (b.yon === "satis" || Boolean(b.gumrukDepoSevki));
 }
 
-/** EBLG-83: numara almış ama GİB'e ulaşmamış satış irsaliyesi iptalde seride boşluk bırakır. */
-function seriBoslukRiski(b: Belge): boolean {
-  return firmaGonderir(b) && !b.kagitIrsaliye && Boolean(b.no) && (!b.eirsaliye || b.eirsaliye.durum === "hata");
-}
 
 interface Belge {
   id: string;
@@ -130,7 +126,7 @@ interface Belge {
   yuklemeIlce?: string | null;
   yuklemePostaKodu?: string | null;
   /** EBLG-85: `aliciKayitsiz` — alıcı GİB listesinde değildi, çıktısı verilir. */
-  eirsaliye?: { durum: string; entegratorRef?: string | null; hataMesaji?: string | null; aliciKayitsiz?: boolean } | null;
+  eirsaliye?: { durum: string; entegratorRef?: string | null; hataMesaji?: string | null; aliciKayitsiz?: boolean; geciciHata?: boolean; yenidenDenemeSayisi?: number } | null;
   /** EBLG-82: faturalanmayı bekleyen irsaliyenin süresi; bekleyen değilse null. */
   faturalamaSuresi?: FaturalamaSuresi | null;
 }
@@ -568,9 +564,9 @@ export default function BelgelerSayfasi() {
     setHata("");
     setBasari("");
     try {
-      await api(`/belgeler/${id}/iptal`, { method: "POST", body: JSON.stringify({ gibUyarisiOnaylandi: true }) });
+      await api(`/belgeler/${id}/iptal`, { method: "POST", body: JSON.stringify({ uyariOnaylandi: true }) });
       setIptalUyarisi(null);
-      setBasari("İrsaliye programda iptal edildi; belge GİB'de geçerli kalır.");
+      setBasari("İrsaliye programda iptal edildi.");
       if (detay?.id === id) await detayAc(id);
       void yukle();
     } catch (h) {
@@ -1106,9 +1102,7 @@ export default function BelgelerSayfasi() {
             <Button size="sm" type="button" onClick={() => void pdfAc(detay.id)}>🖨 PDF</Button>
             <EylemMenusu>
               <Button size="sm" type="button" onClick={() => void eylem(detay.id, "kopyala", "Belge kopyalandı (taslak).")}>📋 Kopyala</Button>
-              {(detay.durum === "onaylandi" || detay.durum === "kismen_kapandi") && <Button variant="danger" size="sm" type="button" onClick={() => { const metin = detay.tur === "irsaliye" ? eirsaliyeIptalUyarisi(detay.eirsaliye) : null; if (metin) setIptalUyarisi({ id: detay.id, metin }); else void eylem(detay.id, "iptal", "Belge iptal edildi."); }}>İptal et</Button>}
-              {/* EBLG-83: numara almış ama GİB'e ulaşmamış e-İrsaliye iptal edilirse numarası seride boş kalır. */}
-              {detay.durum === "onaylandi" && seriBoslukRiski(detay) && <small className="muted">İptal edilirse {detay.no} numarası e-İrsaliye serisinde boşluk bırakır.</small>}
+              {(detay.durum === "onaylandi" || detay.durum === "kismen_kapandi") && <Button variant="danger" size="sm" type="button" onClick={() => { const metin = irsaliyeIptalUyarisi(detay); if (metin) setIptalUyarisi({ id: detay.id, metin }); else void eylem(detay.id, "iptal", "Belge iptal edildi."); }}>İptal et</Button>}
               {detay.durum === "taslak" && <Button variant="danger" size="sm" type="button" onClick={() => void sil(detay.id)}>Sil</Button>}
               {detay.tur === "irsaliye" && detay.fatura && (!detay.fatura.ebelge || ["hata", "ret"].includes(detay.fatura.ebelge.durum)) && <Button variant="danger" size="sm" type="button" onClick={() => void faturaBaginiKaldir(detay.id)}>Fatura bağını kaldır</Button>}
             </EylemMenusu>
@@ -1221,7 +1215,7 @@ export default function BelgelerSayfasi() {
               <Button size="sm" type="button" onClick={() => void apiPdfAc(`/ebelge/irsaliye/giden/${detay.id}/pdf`).catch((h: unknown) => setHata(h instanceof Error ? h.message : "e-İrsaliye çıktısı açılamadı"))}>🖨 e-İrsaliye çıktısı</Button>
             </div>
           )}
-          {firmaGonderir(detay) && detay.eirsaliye?.durum === "hata" && <div className="row-tight" style={{ margin: "0 0 1rem" }}><span className="muted">{detay.eirsaliye.hataMesaji ?? "Gönderim başarısız."}</span><Button size="sm" variant="primary" onClick={() => void eirsaliyeGonder(detay.id)}>Tekrar gönder</Button></div>}
+          {firmaGonderir(detay) && detay.eirsaliye?.durum === "hata" && <div className="row-tight" style={{ margin: "0 0 1rem" }}><span className="muted">{detay.eirsaliye.hataMesaji ?? "Gönderim başarısız."}{detay.eirsaliye.geciciHata && (detay.eirsaliye.yenidenDenemeSayisi ?? 0) < 3 ? ` Geçici bir hata; aynı numarayla kendiliğinden yeniden denenecek (${detay.eirsaliye.yenidenDenemeSayisi ?? 0}/3).` : ""}</span><Button size="sm" variant="primary" onClick={() => void eirsaliyeGonder(detay.id)}>Tekrar gönder</Button></div>}
           {/* EBLG-35: e-İrsaliye ve bağlı fatura durum geçmişi; durum değiştikçe yeniden yüklenir. */}
           {(detay.eirsaliye || detay.fatura) && (
             <DurumGecmisi
@@ -1317,7 +1311,7 @@ export default function BelgelerSayfasi() {
           <Alert tone="warning">{iptalUyarisi.metin}</Alert>
           <div className="quick-panel__actions">
             <Button type="button" onClick={() => setIptalUyarisi(null)}>Vazgeç</Button>
-            <Button type="button" variant="danger" onClick={() => void gibUyarisiylaIptal()}>Anladım, programda iptal et</Button>
+            <Button type="button" variant="danger" onClick={() => void gibUyarisiylaIptal()}>Anladım, iptal et</Button>
           </div>
         </HizliKayitPaneli>
       )}

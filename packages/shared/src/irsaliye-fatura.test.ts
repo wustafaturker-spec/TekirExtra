@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eirsaliyeIptalUyarisi, faturaGecikmeUyarilari, gumrukSeferNotu, ihracatFaturasiNotu, irsaliyeFaturaFarklari, irsaliyeKanali, irsaliyeFaturaSonGun, irsaliyeFaturaSuresi, irsaliyeFaturaTipiUyarMi, irsaliyeSevkGunu } from "./irsaliye-fatura";
+import { eirsaliyeIptalUyarisi, faturaGecikmeUyarilari, irsaliyeIptalUyarisi, gumrukSeferNotu, ihracatFaturasiNotu, irsaliyeFaturaFarklari, irsaliyeKanali, irsaliyeFaturaSonGun, irsaliyeFaturaSuresi, irsaliyeFaturaTipiUyarMi, irsaliyeSevkGunu } from "./irsaliye-fatura";
 
 const satir = (stokId: string, miktar: number, birim = "adet", ek: { varyantId?: string; stokTipi?: string } = {}) => ({ stokId, ad: stokId.toUpperCase(), miktar, birim, ...ek });
 
@@ -122,5 +122,25 @@ describe("eirsaliyeIptalUyarisi (EBLG-90)", () => {
     expect(eirsaliyeIptalUyarisi(null)).toBeNull();
     expect(eirsaliyeIptalUyarisi({ durum: "hata" })).toBeNull();
     expect(eirsaliyeIptalUyarisi({ durum: "ret" })).toBeNull();
+  });
+});
+
+describe("irsaliyeIptalUyarisi (EBLG-92)", () => {
+  const b = { tur: "irsaliye", yon: "satis", no: "GBZ2026000800002", kagitIrsaliye: false };
+  it("numara almış ama GİB'e ulaşmamış belgede boşluğu uyarır", () => {
+    expect(irsaliyeIptalUyarisi({ ...b, eirsaliye: null })).toContain("GBZ2026000800002 numarası");
+    expect(irsaliyeIptalUyarisi({ ...b, eirsaliye: { durum: "hata" } })).toContain("dilekçe");
+  });
+  it("GİB'e ulaşmış belgede EBLG-90 uyarısını verir", () => {
+    expect(irsaliyeIptalUyarisi({ ...b, eirsaliye: { durum: "iletildi" } })).toContain("RET yanıtı");
+  });
+  it("numarasız, iç serili, kâğıt ya da reddedilmiş belgede uyarmaz", () => {
+    expect(irsaliyeIptalUyarisi({ ...b, no: null })).toBeNull();
+    expect(irsaliyeIptalUyarisi({ ...b, yon: "alis", no: "AIR2026000001" })).toBeNull();
+    expect(irsaliyeIptalUyarisi({ ...b, kagitIrsaliye: true, no: "KIR2026000001" })).toBeNull();
+    expect(irsaliyeIptalUyarisi({ ...b, eirsaliye: { durum: "ret" } })).toBeNull();
+  });
+  it("gümrükten depoya sevk de giden seridir", () => {
+    expect(irsaliyeIptalUyarisi({ ...b, yon: "alis", gumrukDepoSevki: true })).toContain("boşluk");
   });
 });

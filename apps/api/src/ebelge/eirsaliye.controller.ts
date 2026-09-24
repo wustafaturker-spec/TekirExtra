@@ -7,6 +7,13 @@ import { EbelgeGorunumService } from "./ebelge-gorunum.service";
 import { EirsaliyeService } from "./eirsaliye.service";
 import { gidenDurumSemasi, topluGonderSemasi } from "./eirsaliye.semalar";
 
+/** Yıl sorgusu; verilmezse bu yıl. */
+function yilCoz(yil?: string): number {
+  const deger = yil ? Number(yil) : new Date().getFullYear();
+  if (!Number.isInteger(deger) || deger < 2000 || deger > 2100) throw new BadRequestException("Geçersiz yıl");
+  return deger;
+}
+
 @Controller("ebelge/irsaliye")
 // EBLG-77: e-İrsaliye uygulamasına kayıtlı olmayan firmada tüm uçlar kapalı.
 @EbelgeUygulamasi("eirsaliye")
@@ -21,6 +28,23 @@ export class EirsaliyeController {
     res.setHeader("Content-Disposition", `inline; filename="${pdf.dosyaAdi}"`);
     res.send(pdf.buffer);
   }
+  /** EBLG-93: giden seride boşta kalan numaralar. */
+  @Get("numara-bosluklari")
+  async numaraBosluklari(@Query("yil") yil?: string) {
+    return (await this.service.numaraBosluklari(yilCoz(yil))).veri;
+  }
+
+  /** EBLG-93: GİB'e verilecek dilekçe ve iç tutanak taslağı (PDF). */
+  @Get("numara-bosluklari/taslak")
+  async numaraBoslukTaslak(@Query("yil") yil: string | undefined, @Res() res: Response) {
+    const { veri, firma } = await this.service.numaraBosluklari(yilCoz(yil));
+    if (veri.bosluklar.length === 0) throw new BadRequestException("Bu yıl için boşta kalan numara yok");
+    const pdf = await this.gorunum.numaraBoslukTaslakPdf(veri, firma);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${pdf.dosyaAdi}"`);
+    res.send(pdf.buffer);
+  }
+
   /** EBLG-85: giden e-İrsaliyenin çıktısı; kayıtlı olmayan alıcıya bu verilir. */
   @Get("giden/:belgeId/pdf")
   async gidenPdf(@Param("belgeId") belgeId: string, @Res() res: Response) {

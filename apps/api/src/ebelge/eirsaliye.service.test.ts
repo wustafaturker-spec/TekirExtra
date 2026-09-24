@@ -1,7 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import { baglamlaCalistir } from "../core/istek-baglami";
-import { EirsaliyeService, eirsaliyeSorguKosulu } from "./eirsaliye.service";
+import { EirsaliyeService, eirsaliyeSorguKosulu, eirsaliyeYenidenDenemeKosulu } from "./eirsaliye.service";
 
 /**
  * Üretilen DespatchAdvice'ın yapısı. Aşağıdaki kuralların hepsi NES test
@@ -369,6 +369,18 @@ describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
     expect(bosaltma).toContain("<cbc:CitySubdivisionName>Gebze</cbc:CitySubdivisionName>");
   });
 
+  it("geçici hatayı kaydeder, içerik hatasını kaydetmez; otomatik deneme sayacı işler (EBLG-94)", async () => {
+    const gecici = kur(taslakBelge(), { basarili: false, hataMesaji: "NES'e ulaşılamadı" });
+    await calistir(() => gecici.servis.gonder("11111111-1111-4111-8111-111111111111", { otomatik: true }));
+    const kayit = gecici.tx.eirsaliyeKayit.upsert.mock.calls[0][0];
+    expect(kayit.create).toMatchObject({ durum: "hata", geciciHata: true, yenidenDenemeSayisi: 1 });
+    expect(kayit.update.yenidenDenemeSayisi).toEqual({ increment: 1 });
+
+    const icerik = kur(taslakBelge(), { basarili: false, hataMesaji: "SCHEMATRON", kalici: true } as never);
+    await calistir(() => icerik.servis.gonder("11111111-1111-4111-8111-111111111111"));
+    expect(icerik.tx.eirsaliyeKayit.upsert.mock.calls[0][0].create).toMatchObject({ geciciHata: false, yenidenDenemeSayisi: 0 });
+  });
+
   it("kâğıt irsaliyeyi göndermez", async () => {
     const { servis, irsaliyeGonder } = kur(taslakBelge({ kagitIrsaliye: true, no: "KIR2026000001" }));
 
@@ -382,5 +394,30 @@ describe("eirsaliyeSorguKosulu (EBLG-85)", () => {
     const kosul = eirsaliyeSorguKosulu("t1", Date.now(), 10);
     expect(JSON.stringify(kosul.AND)).toContain('"durum":"iletildi","aliciKayitsiz":false');
     expect(JSON.stringify(kosul.AND)).toContain('{"durum":"kuyrukta"}');
+  });
+});
+
+describe("e-İrsaliye otomatik yeniden deneme (EBLG-94)", () => {
+  it("yalnız geçici hatalı, hakkı kalmış, aralığı geçmiş ve iptal edilmemiş kaydı dener", () => {
+    const simdi = Date.parse("2026-09-24T12:00:00Z");
+    const kosul = eirsaliyeYenidenDenemeKosulu("t1", simdi);
+    expect(kosul).toMatchObject({ tenantId: "t1", durum: "hata", geciciHata: true, yenidenDenemeSayisi: { lt: 3 }, belge: { durum: { not: "iptal" } } });
+    expect((kosul.updatedAt as { lt: Date }).lt.getTime()).toBe(simdi - 15 * 60 * 1000);
+  });
+
+  it("aynı numarayla yeniden gönderir; engele takılan denemeyi de sayar", async () => {
+    const update = vi.fn();
+    const tx = { eirsaliyeKayit: { findMany: vi.fn().mockResolvedValue([{ id: "k1", belgeId: "b1" }, { id: "k2", belgeId: "b2" }]), update } };
+    const prisma = { tenantIslem: vi.fn((_t: string, calistir: (tx: unknown) => unknown) => calistir(tx)) } as never;
+    const servis = new EirsaliyeService(prisma, {} as never, {} as never);
+    const gonder = vi.spyOn(servis, "gonder")
+      .mockResolvedValueOnce({ durum: "iletildi" } as never)
+      .mockRejectedValueOnce(new BadRequestException("Cari VKN/TCKN bilgisi eksik"));
+
+    const sonuc = await baglamlaCalistir({ tenantId: "t1", userId: "u1", rol: "muhasebe" }, () => servis.geciciHatalariYenidenGonder());
+
+    expect(gonder).toHaveBeenNthCalledWith(1, "b1", { otomatik: true });
+    expect(sonuc).toEqual({ denenen: 2, basarili: 1, basarisiz: 1 });
+    expect(update).toHaveBeenCalledWith({ where: { id: "k2" }, data: { yenidenDenemeSayisi: { increment: 1 }, hataMesaji: "Cari VKN/TCKN bilgisi eksik" } });
   });
 });

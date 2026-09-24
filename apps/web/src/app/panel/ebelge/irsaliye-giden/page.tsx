@@ -20,6 +20,16 @@ type Durum = "gonderilmedi" | "kuyrukta" | "iletildi" | "kabul" | "kismi_kabul" 
 
 interface Engel { kod: string; mesaj: string }
 
+/** EBLG-93: `GET /ebelge/irsaliye/numara-bosluklari` yanıtı. */
+interface NumaraBosluklari {
+  seriOneki: string;
+  yil: number;
+  ilk: string | null;
+  son: string | null;
+  bosluklar: { no: string; neden: "atlanmis" | "iptal_gonderilmedi"; belgeId?: string; tarih?: string }[];
+  bekleyenler: { no: string; belgeId: string; tarih: string; durum: string }[];
+}
+
 interface Satir {
   belgeId: string;
   belgeNo: string | null;
@@ -35,6 +45,8 @@ interface Satir {
   gonderimZamani: string | null;
   /** EBLG-85: alıcı GİB listesinde değildi; belge ona GİB üzerinden ulaşmaz. */
   aliciKayitsiz: boolean;
+  /** EBLG-94: geçici hatada kalan otomatik yeniden deneme hakkı; yoksa null. */
+  otomatikDenemeKalan: number | null;
   engeller: Engel[];
   gonderilebilir: boolean;
   mukellefDogrulandi: boolean;
@@ -97,6 +109,9 @@ export default function GidenEirsaliyeler() {
   const [yukleniyor, setYukleniyor] = useState(true);
   const [islemde, setIslemde] = useState("");
   const [hata, setHata] = useState("");
+  /** EBLG-93: giden seride boşta kalan numaralar; isteğe bağlı denetlenir. */
+  const [bosluk, setBosluk] = useState<NumaraBosluklari | null>(null);
+  const [boslukYili, setBoslukYili] = useState(String(new Date().getFullYear()));
   const [basari, setBasari] = useState("");
   const [basarisizlar, setBasarisizlar] = useState<{ belgeNo: string | null; hata: string }[]>([]);
 
@@ -249,6 +264,42 @@ export default function GidenEirsaliyeler() {
       <div className={ozet.sorunlu ? "is-warning" : ""}><span>Hata / ret</span><strong>{ozet.sorunlu}</strong><small>{ozet.sorunlu ? "İnceleme gerekiyor" : "Sorunlu belge yok"}</small></div>
     </section>
 
+    {/* EBLG-93: numaralar kesintisiz olmalı; boşluk için GİB'e dilekçe ve iç tutanak gerekir. */}
+    <Card>
+      <div className="between" style={{ alignItems: "flex-end", gap: "0.75rem", flexWrap: "wrap" }}>
+        <div>
+          <strong>Boşta kalan numaralar</strong>
+          <p className="muted" style={{ margin: "0.2rem 0 0", fontSize: "0.85rem" }}>e-İrsaliye numaraları kesintisiz olmalıdır; atlanan numara için GİB'e dilekçe verilir ve tutanak düzenlenir.</p>
+        </div>
+        <div className="row-tight">
+          <Input aria-label="Yıl" type="number" style={{ width: 90 }} value={boslukYili} onChange={(e) => setBoslukYili(e.target.value)} />
+          <Button size="sm" onClick={() => void api<NumaraBosluklari>(`/ebelge/irsaliye/numara-bosluklari?yil=${boslukYili}`).then(setBosluk).catch((h: unknown) => setHata(h instanceof Error ? h.message : "Numaralar denetlenemedi"))}>Denetle</Button>
+          {bosluk && bosluk.bosluklar.length > 0 && (
+            <Button size="sm" variant="primary" onClick={() => void apiPdfAc(`/ebelge/irsaliye/numara-bosluklari/taslak?yil=${bosluk.yil}`).catch((h: unknown) => setHata(h instanceof Error ? h.message : "Taslak açılamadı"))}>Dilekçe ve tutanak taslağı</Button>
+          )}
+        </div>
+      </div>
+      {bosluk && (
+        <div className="stack" style={{ marginTop: "0.75rem", fontSize: "0.85rem" }}>
+          {bosluk.ilk === null ? (
+            <span className="muted">{bosluk.yil} yılında {bosluk.seriOneki} serisinde numara kullanılmamış.</span>
+          ) : (
+            <>
+              <span className="muted">{bosluk.seriOneki} serisi, {bosluk.ilk} – {bosluk.son} aralığı denetlendi.</span>
+              {bosluk.bosluklar.length === 0
+                ? <Badge variant="success">Boşta kalan numara yok</Badge>
+                : <div className="stack" style={{ gap: "0.2rem" }}>{bosluk.bosluklar.map((b) => <span key={b.no}><strong>{b.no}</strong> — {b.neden === "atlanmis" ? "hiçbir belgede kullanılmamış" : "GİB'e iletilmeden iptal edilmiş"}</span>)}</div>}
+              {bosluk.bekleyenler.length > 0 && (
+                <Alert tone="warning">
+                  Numara almış ama GİB'e ulaşmamış {bosluk.bekleyenler.length} belge var ({bosluk.bekleyenler.map((b) => b.no).join(", ")}). Gönderilmezse bu numaralar da boşluk olur.
+                </Alert>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </Card>
+
     <Card className="incoming-filter">
       <div className="incoming-filter__grid">
         <Field label="Belge veya cari ara"><Input value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Belge no, cari, VKN veya entegratör referansı…" /></Field>
@@ -315,6 +366,7 @@ export default function GidenEirsaliyeler() {
                 {s.belgeDurumu === "iptal" && s.durum === "ret" && <small className="incoming-reason">Programda iptal; alıcı reddetti — GİB'de geçersiz.</small>}
                 {s.aliciKayitsiz && s.durum !== "hata" && <small className="incoming-reason">Alıcı e-İrsaliye kullanıcısı değil: çıktısını verin ya da e-postayla iletin; yanıt beklenmez.</small>}
                 {s.hataMesaji && <small className="incoming-reason">{s.hataMesaji}</small>}
+                {s.otomatikDenemeKalan ? <small className="incoming-reason">Geçici hata; aynı numarayla kendiliğinden yeniden denenecek ({s.otomatikDenemeKalan} hak kaldı).</small> : null}
                 {s.engeller.map((e) => <small className="incoming-reason" key={e.kod}>{e.mesaj}</small>)}
               </td>
               <td>

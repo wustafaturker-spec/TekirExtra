@@ -242,14 +242,19 @@ describe("BelgelerService", () => {
 
     it("onaylanınca programda iptal eder", async () => {
       const { servis, tx } = kur({ durum: "iletildi", aliciKayitsiz: false });
-      await servis.iptal("irs1", { gibUyarisiOnaylandi: true });
+      await servis.iptal("irs1", { uyariOnaylandi: true });
       expect(tx.belge.update).toHaveBeenCalledWith({ where: { id: "irs1" }, data: { durum: "iptal" } });
     });
 
-    it("GİB'e ulaşmamış ya da reddedilmiş irsaliyede onay istemez", async () => {
-      await kur({ durum: "hata", aliciKayitsiz: false }).servis.iptal("irs1");
+    it("alıcının reddettiği irsaliyede onay istemez", async () => {
       await kur({ durum: "ret", aliciKayitsiz: false }).servis.iptal("irs1");
-      await kur(null).servis.iptal("irs1");
+    });
+
+    // EBLG-92: numara almış ama GİB'e ulaşmamış belgenin numarası seride boşluk kalır.
+    it("numara almış ama GİB'e ulaşmamış irsaliyede boşluk onayı ister", async () => {
+      await expect(kur({ durum: "hata", aliciKayitsiz: false }).servis.iptal("irs1")).rejects.toThrow(/boşluk/);
+      await expect(kur(null).servis.iptal("irs1")).rejects.toThrow(/GBZ2026000800030 numarası/);
+      await kur(null).servis.iptal("irs1", { uyariOnaylandi: true });
     });
   });
 
@@ -277,7 +282,8 @@ describe("BelgelerService", () => {
     it("irsaliyenin taşıdığı rezervi çözer; siparişi yeniden açmaz", async () => {
       const { servis, tx, siparisEtkisi } = kur("iptal");
 
-      await servis.iptal("irs1");
+      // Numara almış ama GİB'e ulaşmamış irsaliye: boşluk uyarısı onaylanır (EBLG-92).
+      await servis.iptal("irs1", { uyariOnaylandi: true });
 
       expect(siparisEtkisi).toHaveBeenCalledWith(tx, "satis", [expect.objectContaining({ stokId: "stk1", miktar: D("4") })], -1, "d1");
       expect(tx.belge.update).not.toHaveBeenCalledWith(expect.objectContaining({ where: { id: "sip1" } }));
@@ -286,7 +292,8 @@ describe("BelgelerService", () => {
     it("sipariş açıksa rezerve dokunmaz; miktar siparişin kalanına döner", async () => {
       const { servis, siparisEtkisi } = kur("kismen_kapandi");
 
-      await servis.iptal("irs1");
+      // Numara almış ama GİB'e ulaşmamış irsaliye: boşluk uyarısı onaylanır (EBLG-92).
+      await servis.iptal("irs1", { uyariOnaylandi: true });
 
       expect(siparisEtkisi).not.toHaveBeenCalled();
     });

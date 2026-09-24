@@ -18,7 +18,7 @@ import {
   irsaliyeSevkGunu,
   irsaliyeFaturaTipiUyarMi,
   irsaliyeKanali,
-  eirsaliyeIptalUyarisi,
+  irsaliyeIptalUyarisi,
   type FaturaHesaplaSatirGirdi,
   type KayitEylem,
 } from "@tekirextra/shared";
@@ -268,7 +268,7 @@ export class BelgelerService {
               kasaBankaHarekets: { select: { tutar: true } },
             },
           },
-          eirsaliye: { select: { durum: true, entegratorRef: true, hataMesaji: true, aliciKayitsiz: true } },
+          eirsaliye: { select: { durum: true, entegratorRef: true, hataMesaji: true, aliciKayitsiz: true, geciciHata: true, yenidenDenemeSayisi: true } },
         },
       }),
     );
@@ -765,7 +765,7 @@ export class BelgelerService {
     });
   }
 
-  async iptal(id: string, secenekler: { gibUyarisiOnaylandi?: boolean } = {}) {
+  async iptal(id: string, secenekler: { uyariOnaylandi?: boolean } = {}) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const belge = await tx.belge.findUnique({
@@ -779,12 +779,13 @@ export class BelgelerService {
         );
       }
       // EBLG-90: GİB'e ulaşmış e-İrsaliye satıcı tarafından iptal edilemez.
-      // Programda iptal engellenmez (stok/rezerv düzeltilebilmeli), ama
-      // kullanıcı yasal yolu gördüğünü onaylamadan yapılmaz; belge GİB'de
-      // geçerli kalır ve ekranda öyle gösterilir.
-      const gibUyarisi = belge.tur === "irsaliye" ? eirsaliyeIptalUyarisi(belge.eirsaliye) : null;
-      if (gibUyarisi && !secenekler.gibUyarisiOnaylandi) {
-        throw new BadRequestException(`${gibUyarisi} İptal için bu uyarının onaylanması gerekir.`);
+      // EBLG-92: numara almış ama GİB'e ulaşmamış belgenin numarası seride
+      // boşluk kalır. İkisinde de iptal engellenmez (stok/rezerv
+      // düzeltilebilmeli), ama kullanıcı yasal yolu gördüğünü onaylamadan
+      // yapılmaz.
+      const uyari = irsaliyeIptalUyarisi(belge);
+      if (uyari && !secenekler.uyariOnaylandi) {
+        throw new BadRequestException(`${uyari} İptal için bu uyarının onaylanması gerekir.`);
       }
       // Onaylı siparişin rezervi/yoldakisi çözülür. Kısmen teslim edilmiş
       // siparişte teslim edilenin etkisi zincire geçtiği için yalnız kalan

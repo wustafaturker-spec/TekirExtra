@@ -864,7 +864,9 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
         ? { basarili: true, belgeRef: sonuc.uuid }
         : { basarili: false, hataMesaji: "NES e-İrsaliye referansı dönmedi" };
     } catch (hata) {
-      return { basarili: false, hataMesaji: hata instanceof Error ? hata.message : "e-İrsaliye gönderilemedi" };
+      // EBLG-94: faturadaki kural — 400/422 belgenin içeriğine itirazdır, yeniden
+      // denenmez; ağ, yetki, zaman aşımı ve sunucu hataları aynı numarayla yeniden denenir.
+      return { basarili: false, kalici: hata instanceof NesHatasi && NES_KALICI_RET_KODLARI.includes(hata.durum), hataMesaji: hata instanceof Error ? hata.message : "e-İrsaliye gönderilemedi" };
     }
   }
 

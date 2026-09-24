@@ -3316,23 +3316,27 @@ enum GelenEirsaliyeDurum {
 
 /// Elektronik irsaliye yalnız sevk belgesidir; stok etkisi faturada doğar.
 model EirsaliyeKayit {
-  id              String         @id @default(uuid()) @db.Uuid
-  tenantId        String         @map("tenant_id") @db.Uuid
-  belgeId         String         @unique @map("belge_id") @db.Uuid
-  durum           EirsaliyeDurum @default(kuyrukta)
-  entegratorRef   String?        @map("entegrator_ref")
-  xmlIcerik       String?        @map("xml_icerik")
-  hataMesaji      String?        @map("hata_mesaji")
+  id                  String         @id @default(uuid()) @db.Uuid
+  tenantId            String         @map("tenant_id") @db.Uuid
+  belgeId             String         @unique @map("belge_id") @db.Uuid
+  durum               EirsaliyeDurum @default(kuyrukta)
+  entegratorRef       String?        @map("entegrator_ref")
+  xmlIcerik           String?        @map("xml_icerik")
+  hataMesaji          String?        @map("hata_mesaji")
   /// EBLG-85: alıcı GİB e-İrsaliye listesinde değildi, belge alıcı etiketi
   /// olmadan (GİB sanal alıcısına) gitti. Alıcı yanıt veremez; çıktısı
   /// düzenleyen tarafından verilir.
-  aliciKayitsiz   Boolean        @default(false) @map("alici_kayitsiz")
+  aliciKayitsiz       Boolean        @default(false) @map("alici_kayitsiz")
+  /// EBLG-94: son gönderim geçici bir hatayla düştü (ağ, entegratörün 5xx/429
+  /// yanıtı); kuyruk işçisi aynı numarayla kendiliğinden yeniden dener.
+  geciciHata          Boolean        @default(false) @map("gecici_hata")
+  yenidenDenemeSayisi Int            @default(0) @map("yeniden_deneme_sayisi")
   /// Durumun en son sorgulandığı an; aynı irsaliye 2 saat dolmadan tekrar sorulmaz (EBLG-36).
-  sonDurumSorguAt DateTime?      @map("son_durum_sorgu_at")
-  createdAt       DateTime       @default(now()) @map("created_at")
-  updatedAt       DateTime       @updatedAt @map("updated_at")
-  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  belge           Belge          @relation(fields: [belgeId], references: [id], onDelete: Cascade)
+  sonDurumSorguAt     DateTime?      @map("son_durum_sorgu_at")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+  tenant              Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  belge               Belge          @relation(fields: [belgeId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, durum, sonDurumSorguAt])
   @@map("eirsaliye_kayitlari")

@@ -9,6 +9,7 @@ import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
 import { belgeSirasiAl, eirsaliyeNumarasi } from "../belgeler/belge-sayac";
+import { numaraBosluklariniBul } from "./eirsaliye-bosluk";
 import { eirsaliyeYurtDisiMi, gonderimEngelleri, IRSALIYE_GONDERILEBILIR_DURUMLAR, irsaliyeTeslimatAdresi, irsaliyeYuklemeAdresi } from "./eirsaliye-engeller";
 import { irsaliyeUblOku } from "./eirsaliye-ubl-oku";
 import { MukellefListesiService } from "./mukellef-listesi.service";
@@ -33,6 +34,27 @@ export function eirsaliyeSorguKosulu(tenantId: string, simdi: number, yanitGunSa
     OR: [{ sonDurumSorguAt: null }, { sonDurumSorguAt: { lt: new Date(simdi - DURUM_SORGU_ARALIK_MS) } }],
     // EBLG-85: kayıtlı olmayan alıcı yanıt veremez; iletilen belgesi beklenmez.
     AND: [{ OR: [{ durum: "kuyrukta" }, { durum: "iletildi", aliciKayitsiz: false, createdAt: { gte: new Date(simdi - yanitGunSayisi * 86_400_000) } }] }],
+  };
+}
+
+/** EBLG-94: geçici hatayla düşen gönderim en çok bu kadar, bu aralıkla kendiliğinden yeniden denenir. */
+export const EIRSALIYE_AZAMI_YENIDEN_DENEME = 3;
+const EIRSALIYE_YENIDEN_DENEME_ARALIK_MS = Number(process.env.EIRSALIYE_YENIDEN_DENEME_ARALIK_MS || 15 * 60 * 1_000);
+
+/**
+ * EBLG-94: kendiliğinden yeniden gönderilecek e-İrsaliyeler — geçici hatayla
+ * düşmüş (ağ, entegratörün 5xx/yetki/zaman aşımı; 400/422 içerik hatası
+ * değil), deneme hakkı kalmış, son denemesinin üzerinden aralık geçmiş ve
+ * programda iptal edilmemiş. Numara belgede kaldığı için aynı numarayla gider.
+ */
+export function eirsaliyeYenidenDenemeKosulu(tenantId: string, simdi: number): Prisma.EirsaliyeKayitWhereInput {
+  return {
+    tenantId,
+    durum: "hata",
+    geciciHata: true,
+    yenidenDenemeSayisi: { lt: EIRSALIYE_AZAMI_YENIDEN_DENEME },
+    updatedAt: { lt: new Date(simdi - EIRSALIYE_YENIDEN_DENEME_ARALIK_MS) },
+    belge: { durum: { not: "iptal" } },
   };
 }
 
@@ -160,7 +182,8 @@ export class EirsaliyeService {
       + `${satirlar}</DespatchAdvice>`;
   }
 
-  async gonder(belgeId: string) {
+  /** `otomatik`: kuyruk işçisinin yeniden denemesi (EBLG-94); elle gönderim sayacı sıfırlar. */
+  async gonder(belgeId: string, secenekler: { otomatik?: boolean } = {}) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const belge = await tx.belge.findUnique({ where: { id: belgeId }, include: { cari: { include: { adresler: true } }, tasiyiciCari: { include: { adresler: true } }, satirlar: { include: { stok: true } }, eirsaliye: true, fatura: { select: { no: true, tarih: true } }, kaynakBelge: { select: { tur: true, no: true, tarih: true } }, depo: true } });
@@ -229,8 +252,13 @@ export class EirsaliyeService {
       // EBLG-85: etiketsiz giden belgeyi alıcı GİB'den alamaz; çıktısı verilir.
       // Hata mesajı açıkça `null` yazılır: `undefined` alanı Prisma güncellemez
       // ve başarılı yeniden gönderim önceki hatayı göstermeye devam ederdi.
-      const kayit = { durum: sonuc.basarili ? ("iletildi" as const) : ("hata" as const), entegratorRef: sonuc.belgeRef, xmlIcerik: xml, hataMesaji: sonuc.hataMesaji ?? null, aliciKayitsiz: !aliciPostaKutusu };
-      return tx.eirsaliyeKayit.upsert({ where: { belgeId }, create: { tenantId, belgeId, ...kayit }, update: kayit });
+      // EBLG-94: içerik hatası (kalıcı) dışındaki başarısızlık kendiliğinden yeniden denenir.
+      const kayit = { durum: sonuc.basarili ? ("iletildi" as const) : ("hata" as const), entegratorRef: sonuc.belgeRef, xmlIcerik: xml, hataMesaji: sonuc.hataMesaji ?? null, aliciKayitsiz: !aliciPostaKutusu, geciciHata: !sonuc.basarili && !sonuc.kalici };
+      return tx.eirsaliyeKayit.upsert({
+        where: { belgeId },
+        create: { tenantId, belgeId, ...kayit, yenidenDenemeSayisi: secenekler.otomatik ? 1 : 0 },
+        update: { ...kayit, yenidenDenemeSayisi: secenekler.otomatik ? { increment: 1 } : 0 },
+      });
     });
   }
 
@@ -347,7 +375,7 @@ export class EirsaliyeService {
           depo: { select: { adres: true, il: true, ilce: true, postaKodu: true } },
           cari: { select: { unvan: true, vknTckn: true, adresler: { select: { tip: true, il: true, ilce: true, postaKodu: true, ulke: true } } } },
           tasiyiciCari: { select: { vknTckn: true } },
-          eirsaliye: { select: { durum: true, entegratorRef: true, hataMesaji: true, sonDurumSorguAt: true, createdAt: true, aliciKayitsiz: true } },
+          eirsaliye: { select: { durum: true, entegratorRef: true, hataMesaji: true, sonDurumSorguAt: true, createdAt: true, aliciKayitsiz: true, geciciHata: true, yenidenDenemeSayisi: true } },
         },
         orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
         take: 500,
@@ -373,6 +401,8 @@ export class EirsaliyeService {
           gonderimZamani: b.eirsaliye?.createdAt.toISOString() ?? null,
           // EBLG-85: alıcı GİB'den alamaz; çıktısı düzenleyen tarafından verilir.
           aliciKayitsiz: b.eirsaliye?.aliciKayitsiz ?? false,
+          // EBLG-94: geçici hatada kalan otomatik yeniden deneme hakkı; yoksa null.
+          otomatikDenemeKalan: b.eirsaliye?.durum === "hata" && b.eirsaliye.geciciHata ? Math.max(0, EIRSALIYE_AZAMI_YENIDEN_DENEME - b.eirsaliye.yenidenDenemeSayisi) : null,
           engeller,
           gonderilebilir: engeller.length === 0 && (!gonderildi || b.eirsaliye?.durum === "hata"),
           mukellefDogrulandi: mukellefDurumu.taze,
@@ -435,6 +465,51 @@ export class EirsaliyeService {
       }
     }
     return { gonderilen, basarisiz };
+  }
+
+  /** EBLG-93: giden e-İrsaliye serisinde boşta kalan numaralar ve firma bilgisi (taslak için). */
+  async numaraBosluklari(yil: number) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" }, select: { sifreliConfig: true } });
+      const seriOneki = (baglanti ? (JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig).eirsaliyeSeriOneki : undefined) ?? VARSAYILAN_EIRSALIYE_ONEKI;
+      const [belgeler, sayac, firma] = await Promise.all([
+        tx.belge.findMany({
+          where: { tur: "irsaliye", no: { startsWith: `${seriOneki}${yil}` } },
+          select: { id: true, no: true, durum: true, tarih: true, eirsaliye: { select: { durum: true } } },
+        }),
+        tx.belgeSayac.findUnique({ where: { tenantId_tur_yon_seri_yil: { tenantId, tur: "irsaliye", yon: "satis", seri: "", yil } }, select: { sonSira: true } }),
+        tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true, vkn: true, vergiDairesi: true, adres: true, ilce: true, il: true } }),
+      ]);
+      const veri = numaraBosluklariniBul({ seriOneki, yil, sayacSonSira: sayac?.sonSira ?? null, belgeler: belgeler.map((b) => ({ ...b, no: b.no! })) });
+      return { veri, firma: firma! };
+    });
+  }
+
+  /**
+   * EBLG-94: geçici hatayla düşmüş gönderimleri aynı numarayla yeniden dener.
+   * Gönderim bu arada başka bir engele takılırsa (ör. carinin adresi silindi)
+   * deneme yine sayılır; yoksa her turda aynı kayıt denenirdi.
+   */
+  async geciciHatalariYenidenGonder(): Promise<{ denenen: number; basarili: number; basarisiz: number }> {
+    const { tenantId } = aktifBaglam();
+    const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.eirsaliyeKayit.findMany({ where: eirsaliyeYenidenDenemeKosulu(tenantId, Date.now()), select: { id: true, belgeId: true }, orderBy: { updatedAt: "asc" }, take: 50 }),
+    );
+    let basarili = 0;
+    for (const kayit of kayitlar) {
+      try {
+        const sonuc = await this.gonder(kayit.belgeId, { otomatik: true });
+        if (sonuc.durum !== "hata") basarili += 1;
+      } catch (hata) {
+        await this.prisma.tenantIslem(tenantId, (tx) => tx.eirsaliyeKayit.update({
+          where: { id: kayit.id },
+          data: { yenidenDenemeSayisi: { increment: 1 }, hataMesaji: hata instanceof Error ? hata.message : String(hata) },
+        }));
+        this.logger.warn(JSON.stringify({ event: "eirsaliye_yeniden_deneme_engellendi", tenantId, belgeId: kayit.belgeId, hata: hata instanceof Error ? hata.message : String(hata) }));
+      }
+    }
+    return { denenen: kayitlar.length, basarili, basarisiz: kayitlar.length - basarili };
   }
 
   async gelenleriCek() {

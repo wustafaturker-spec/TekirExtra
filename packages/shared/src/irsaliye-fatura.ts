@@ -212,3 +212,26 @@ export function eirsaliyeIptalUyarisi(eirsaliye: { durum: string; aliciKayitsiz?
     ? "Bu belge Sanal Alıcı (GİB) üzerinden iletilmiştir ve alıcı tarafından sistem üzerinden reddedilemez. Sevkiyat fiilen gerçekleşmeyecekse, ticari ve yasal kayıtlarınızın doğruluğu için işlemin iptal edildiğini alıcıya yazılı olarak (KEP, noter vb.) bildirmeniz gerekebilir. Programda yalnız stok ve rezerv düzeltilir; belge GİB'de geçerli kalır."
     : "Bu belge GİB'e iletilmiştir; e-İrsaliyede satıcı tarafından iptal seçeneği yoktur. Mal henüz yola çıkmadıysa alıcınızdan bu irsaliyeye sistem üzerinden RET yanıtı vermesini isteyin; alıcı reddedince belge geçersiz olur. Programda yalnız stok ve rezerv düzeltilir; belge alıcı reddedene kadar GİB'de geçerli kalır.";
 }
+
+/**
+ * EBLG-92: iptalde gösterilecek uyarı. GİB'e ulaşmış belgede EBLG-90 uyarısı;
+ * giden seriden numara almış ama GİB'e ulaşmamış (hiç gönderilmemiş ya da
+ * hata almış) belgede numara seride boşluk kalır — müteselsillik zorunludur
+ * (213 VUK, 509 Sıra No'lu Tebliğ), boşluk için GİB'e dilekçe ya da tutanak
+ * gerekir (mali müşavir, 2026-09-24). İç seriler (AIR, KIR) uyarı gerektirmez.
+ */
+export function irsaliyeIptalUyarisi(b: {
+  tur: string;
+  yon: string;
+  no: string | null;
+  kagitIrsaliye?: boolean | null;
+  gumrukDepoSevki?: boolean | null;
+  eirsaliye?: { durum: string; aliciKayitsiz?: boolean | null } | null;
+}): string | null {
+  if (b.tur !== "irsaliye") return null;
+  const gib = eirsaliyeIptalUyarisi(b.eirsaliye);
+  if (gib) return gib;
+  const gidenSeri = (b.yon === "satis" || Boolean(b.gumrukDepoSevki)) && !b.kagitIrsaliye;
+  if (!gidenSeri || !b.no || (b.eirsaliye && b.eirsaliye.durum !== "hata")) return null;
+  return `Bu belgeye ${b.no} numarası verilmiş ama belge GİB'e ulaşmamıştır. İptal ederseniz bu numara e-İrsaliye serisinde boşluk (atlama) olarak kalır. Mevzuat gereği numaralar kesintisiz olmalıdır; boşluk için İnteraktif Vergi Dairesi üzerinden GİB'e dilekçe vermeniz ve bir numara atlama tespit tutanağı düzenlemeniz gerekir (taslakları "Boşta kalan numaralar" raporundan alabilirsiniz).`;
+}

@@ -161,9 +161,9 @@ export class BelgelerController {
   @Post(":id/iptal")
   @Roller("muhasebe", "satis")
   async iptal(@Param("id") id: string, @Body() govde: unknown) {
-    // EBLG-90: GİB'e ulaşmış e-İrsaliyenin iptali açık onay ister.
-    const gibUyarisiOnaylandi = (govde as { gibUyarisiOnaylandi?: unknown } | undefined)?.gibUyarisiOnaylandi === true;
-    return this.belgelerService.iptal(id, { gibUyarisiOnaylandi });
+    // EBLG-90/92: GİB'e ulaşmış ya da numara almış e-İrsaliyenin iptali açık onay ister.
+    const uyariOnaylandi = (govde as { uyariOnaylandi?: unknown } | undefined)?.uyariOnaylandi === true;
+    return this.belgelerService.iptal(id, { uyariOnaylandi });
   }
 
   @Post(":id/donustur")
