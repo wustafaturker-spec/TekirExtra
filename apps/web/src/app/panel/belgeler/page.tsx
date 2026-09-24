@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { api, ApiHata, tokenAl, tumSayfalariAl } from "@/lib/api";
+import { api, ApiHata, apiPdfAc, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import { AramaSecici } from "@/components/arama-secici";
 import { DepoSecici } from "@/components/depo-secici";
@@ -11,6 +11,7 @@ import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyal
 import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { TasimaBilgisiPaneli } from "@/components/tasima-bilgisi-paneli";
+import { BOS_TESLIMAT_ADRESI, TeslimatAdresiAlanlari, teslimatAdresiGovdesi, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
 import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
 import { bugunTR, faturaHesapla, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
@@ -113,7 +114,8 @@ interface Belge {
   /** EBLG-83: e-İrsaliye kullanıcısı olmayan firmanın satış irsaliyesi ve matbu numarası. */
   kagitIrsaliye?: boolean;
   matbuBelgeNo?: string | null;
-  eirsaliye?: { durum: string; entegratorRef?: string | null; hataMesaji?: string | null } | null;
+  /** EBLG-85: `aliciKayitsiz` — alıcı GİB listesinde değildi, çıktısı verilir. */
+  eirsaliye?: { durum: string; entegratorRef?: string | null; hataMesaji?: string | null; aliciKayitsiz?: boolean } | null;
   /** EBLG-82: faturalanmayı bekleyen irsaliyenin süresi; bekleyen değilse null. */
   faturalamaSuresi?: FaturalamaSuresi | null;
 }
@@ -133,6 +135,11 @@ interface BelgeDetay extends Belge {
   siparisNo?: string | null;
   siparisTarihi?: string | null;
   idisSevkiyatNo?: string | null;
+  /** EBLG-84: irsaliyeye özel teslimat adresi (ihracatta gümrük kapısı). */
+  teslimatAdres?: string | null;
+  teslimatIl?: string | null;
+  teslimatIlce?: string | null;
+  teslimatPostaKodu?: string | null;
   aciklama: string | null;
   notlar: string | null;
   kaynakBelge: ZincirRef | null;
@@ -266,6 +273,8 @@ export default function BelgelerSayfasi() {
   const [siparisTarihi, setSiparisTarihi] = useState("");
   /** FTR-27: alış irsaliyesinde tedarikçinin numarası; bizim no'muz iç seridir. */
   const [tedarikciBelgeNo, setTedarikciBelgeNo] = useState("");
+  /** EBLG-84: irsaliyeye özel teslimat adresi; ihracatta gümrük kapısı. */
+  const [teslimat, setTeslimat] = useState<TeslimatAdresi>(BOS_TESLIMAT_ADRESI);
   /** Detayda tedarikçi/matbu numarasını düzeltme; null = düzenlenmiyor. */
   const [disNoTaslak, setDisNoTaslak] = useState<string | null>(null);
   const [dorsePlaka, setDorsePlaka] = useState("");
@@ -484,6 +493,7 @@ export default function BelgelerSayfasi() {
                 soforSoyadi: soforSoyadi || null,
                 soforTckn: soforTckn || null,
                 idisSevkiyatNo: idisSevkiyatNo.trim() || null,
+                ...teslimatAdresiGovdesi(teslimat),
               }
             : {}),
           siparisNo: siparisNo.trim() || null,
@@ -510,7 +520,7 @@ export default function BelgelerSayfasi() {
       setAciklama(""); setKuruAciklamayaEkle(true);
       setDosyalar([]);
       setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 }]);
-      setSiparisNo(""); setSiparisTarihi(""); setIdisSevkiyatNo(""); setTedarikciBelgeNo("");
+      setSiparisNo(""); setSiparisTarihi(""); setIdisSevkiyatNo(""); setTedarikciBelgeNo(""); setTeslimat(BOS_TESLIMAT_ADRESI);
       void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Belge oluşturulamadı");
@@ -873,6 +883,8 @@ export default function BelgelerSayfasi() {
                   <Input type="date" value={siparisTarihi} onChange={(e) => setSiparisTarihi(e.target.value)} />
                   {siparisNo.trim() && !siparisTarihi && <small className="muted">Boş bırakılırsa belgeye irsaliye tarihi yazılır (GİB tarihi zorunlu tutuyor).</small>}
                 </Field>
+                {/* EBLG-84: satış irsaliyesinde malın gideceği yer; ihracatta gümrük kapısı. */}
+                {yon === "satis" && <TeslimatAdresiAlanlari deger={teslimat} onChange={setTeslimat} cariId={cariId || null} />}
                 {/* EBLG-72: numara girilirse belge IDISIRSALIYE profiliyle gider. */}
                 <Field label="İDİS Sevkiyat Numarası">
                   <Input aria-label="İDİS sevkiyat numarası" value={idisSevkiyatNo} maxLength={20} placeholder="Örn. SE-0152457" onChange={(e) => setIdisSevkiyatNo(e.target.value)} />
@@ -1083,6 +1095,7 @@ export default function BelgelerSayfasi() {
               {/* EBLG-74: belgeyle giden sipariş referansı; boşsa zincirdeki sipariş yazılır. */}
               {detay.siparisNo ? ` · Sipariş ${detay.siparisNo}${detay.siparisTarihi ? ` (${new Date(detay.siparisTarihi).toLocaleDateString("tr-TR")})` : ""}` : ""}
               {detay.idisSevkiyatNo ? ` · İDİS sevkiyat ${detay.idisSevkiyatNo}` : ""}
+              {detay.teslimatAdres ? ` · Teslimat ${detay.teslimatAdres}, ${[detay.teslimatIlce, detay.teslimatIl].filter(Boolean).join(" / ")} ${detay.teslimatPostaKodu ?? ""}` : ""}
             </p>
           )}
           {/* FTR-27 / EBLG-83: tedarikçinin ya da matbu irsaliyenin numarası onaydan sonra da girilir (kâğıt irsaliye elden gelir). */}
@@ -1108,6 +1121,14 @@ export default function BelgelerSayfasi() {
               </div>
             );
           })()}
+          {/* EBLG-85: GİB'e iletilmiş e-İrsaliyenin çıktısı; kayıtlı olmayan alıcıya bu verilir. */}
+          {detay.tur === "irsaliye" && detay.yon === "satis" && detay.eirsaliye && detay.eirsaliye.durum !== "hata" && (
+            <div className="row-tight" style={{ margin: "0 0 1rem", fontSize: "0.85rem" }}>
+              {detay.eirsaliye.aliciKayitsiz && <Badge variant="warning">Alıcı e-İrsaliye kullanıcısı değil</Badge>}
+              {detay.eirsaliye.aliciKayitsiz && <span className="muted">Belge alıcıya GİB üzerinden ulaşmaz; çıktısını verin ya da e-postayla iletin. Alıcı yanıt veremez.</span>}
+              <Button size="sm" type="button" onClick={() => void apiPdfAc(`/ebelge/irsaliye/giden/${detay.id}/pdf`).catch((h: unknown) => setHata(h instanceof Error ? h.message : "e-İrsaliye çıktısı açılamadı"))}>🖨 e-İrsaliye çıktısı</Button>
+            </div>
+          )}
           {detay.tur === "irsaliye" && detay.yon === "satis" && detay.eirsaliye?.durum === "hata" && <div className="row-tight" style={{ margin: "0 0 1rem" }}><span className="muted">{detay.eirsaliye.hataMesaji ?? "Gönderim başarısız."}</span><Button size="sm" variant="primary" onClick={() => void eirsaliyeGonder(detay.id)}>Tekrar gönder</Button></div>}
           {/* EBLG-35: e-İrsaliye ve bağlı fatura durum geçmişi; durum değiştikçe yeniden yüklenir. */}
           {(detay.eirsaliye || detay.fatura) && (

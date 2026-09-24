@@ -3212,6 +3212,12 @@ model Belge {
   kagitIrsaliye          Boolean          @default(false) @map("kagit_irsaliye")
   /// EBLG-83: kâğıt irsaliyenin basımevi (matbu) numarası; elle girilir.
   matbuBelgeNo           String?          @map("matbu_belge_no")
+  /// EBLG-84: irsaliyeye özel teslimat adresi (ihracatta gümrük kapısı).
+  /// Doluysa carinin sevk adresinin önüne geçer; Türkiye'de bir adrestir.
+  teslimatAdres          String?          @map("teslimat_adres")
+  teslimatIl             String?          @map("teslimat_il")
+  teslimatIlce           String?          @map("teslimat_ilce")
+  teslimatPostaKodu      String?          @map("teslimat_posta_kodu")
   cariId                 String           @map("cari_id") @db.Uuid
   /// STK-07: rezerv/yoldaki ve irsaliye stok etkisinin işleneceği depo
   depoId                 String?          @map("depo_id") @db.Uuid
@@ -3291,6 +3297,10 @@ model EirsaliyeKayit {
   entegratorRef   String?        @map("entegrator_ref")
   xmlIcerik       String?        @map("xml_icerik")
   hataMesaji      String?        @map("hata_mesaji")
+  /// EBLG-85: alıcı GİB e-İrsaliye listesinde değildi, belge alıcı etiketi
+  /// olmadan (GİB sanal alıcısına) gitti. Alıcı yanıt veremez; çıktısı
+  /// düzenleyen tarafından verilir.
+  aliciKayitsiz   Boolean        @default(false) @map("alici_kayitsiz")
   /// Durumun en son sorgulandığı an; aynı irsaliye 2 saat dolmadan tekrar sorulmaz (EBLG-36).
   sonDurumSorguAt DateTime?      @map("son_durum_sorgu_at")
   createdAt       DateTime       @default(now()) @map("created_at")

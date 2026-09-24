@@ -95,11 +95,17 @@ function kimlik(party: unknown): string {
 }
 
 function adresMetni(adres: unknown): string {
+  // Yabancı adreste ülke yazılmazsa "Mitte Berlin" gibi eksik kalır (EBLG-84);
+  // Türkiye adresine ülke eklenmez.
+  const ulkeKodu = metin(yol(adres, "Country", "IdentificationCode"));
+  const ulkeAdi = metin(yol(adres, "Country", "Name"));
+  const yabanci = ulkeKodu ? ulkeKodu !== "TR" : Boolean(ulkeAdi) && !/^t[üu]rkiye$/i.test(ulkeAdi);
   return [
     metin(yol(adres, "StreetName")),
     metin(yol(adres, "BuildingNumber")),
     metin(yol(adres, "CitySubdivisionName")),
     metin(yol(adres, "CityName")),
+    yabanci ? ulkeAdi || ulkeKodu : "",
   ]
     .filter(Boolean)
     .join(" ");

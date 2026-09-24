@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api } from "@/lib/api";
+import { api, apiPdfAc } from "@/lib/api";
 import { EbelgeAdimSeridi } from "@/components/durum-gecmisi";
 import { TasimaBilgisiPaneli } from "@/components/tasima-bilgisi-paneli";
 import { Alert, Badge, Button, Card, Field, Input, Select, TableWrap } from "@/components/ui";
@@ -32,6 +32,8 @@ interface Satir {
   hataMesaji: string | null;
   sonDurumSorguAt: string | null;
   gonderimZamani: string | null;
+  /** EBLG-85: alıcı GİB listesinde değildi; belge ona GİB üzerinden ulaşmaz. */
+  aliciKayitsiz: boolean;
   engeller: Engel[];
   gonderilebilir: boolean;
   mukellefDogrulandi: boolean;
@@ -307,6 +309,7 @@ export default function GidenEirsaliyeler() {
               <td><strong>{gun(s.tarih)}</strong><small>{an(s.fiiliSevkZamani) ?? "Fiili sevk girilmemiş"}</small></td>
               <td>
                 <Badge variant={DURUM_TONU[s.durum]}>{DURUM_ADI[s.durum]}</Badge>
+                {s.aliciKayitsiz && s.durum !== "hata" && <small className="incoming-reason">Alıcı e-İrsaliye kullanıcısı değil: çıktısını verin ya da e-postayla iletin; yanıt beklenmez.</small>}
                 {s.hataMesaji && <small className="incoming-reason">{s.hataMesaji}</small>}
                 {s.engeller.map((e) => <small className="incoming-reason" key={e.kod}>{e.mesaj}</small>)}
               </td>
@@ -323,6 +326,10 @@ export default function GidenEirsaliyeler() {
                     </Button>
                   )}
                   {s.durum !== "gonderilmedi" && <Button size="sm" onClick={() => void detayAc(s.belgeId)}>İncele</Button>}
+                  {/* EBLG-85: GİB'e iletilmiş belgenin çıktısı; kayıtlı olmayan alıcıya bu verilir. */}
+                  {s.durum !== "gonderilmedi" && s.durum !== "hata" && (
+                    <Button size="sm" onClick={() => void apiPdfAc(`/ebelge/irsaliye/giden/${s.belgeId}/pdf`).catch((h: unknown) => setHata(h instanceof Error ? h.message : "e-İrsaliye çıktısı açılamadı"))}>🖨 Çıktı</Button>
+                  )}
                   <a className="btn btn--ghost btn--sm" href={`/panel/belgeler?odak=${s.belgeId}`}>Belgeyi aç</a>
                 </div>
               </td>

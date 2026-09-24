@@ -21,6 +21,14 @@ export class EirsaliyeController {
     res.setHeader("Content-Disposition", `inline; filename="${pdf.dosyaAdi}"`);
     res.send(pdf.buffer);
   }
+  /** EBLG-85: giden e-İrsaliyenin çıktısı; kayıtlı olmayan alıcıya bu verilir. */
+  @Get("giden/:belgeId/pdf")
+  async gidenPdf(@Param("belgeId") belgeId: string, @Res() res: Response) {
+    const pdf = await this.gorunum.gidenIrsaliyePdf(belgeId);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${pdf.dosyaAdi}"`);
+    res.send(pdf.buffer);
+  }
   @Post(":belgeId/gonder") @Roller("muhasebe") gonder(@Param("belgeId") id: string) { return this.service.gonder(id); }
   @Post(":belgeId/sorgula") @Roller("muhasebe") durum(@Param("belgeId") id: string) { return this.service.durum(id); }
   @Post("gelenleri-cek") @Roller("muhasebe") gelenleriCek() { return this.service.gelenleriCek(); }

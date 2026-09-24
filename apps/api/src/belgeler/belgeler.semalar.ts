@@ -81,6 +81,14 @@ export const belgeOlusturSemasi = z.object({
   soforTckn: z.string().regex(/^\d{11}$/, "Şoför TCKN 11 haneli olmalıdır").optional().nullable(),
   /** İDİS sevkiyat numarası (EBLG-72): doluysa e-İrsaliye IDISIRSALIYE profiliyle gider. */
   idisSevkiyatNo: z.string().max(20).optional().nullable(),
+  /**
+   * EBLG-84: irsaliyeye özel teslimat adresi; ihracatta malın çıkacağı gümrük
+   * kapısı. Doluysa carinin sevk adresinin önüne geçer.
+   */
+  teslimatAdres: z.string().max(500).optional().nullable(),
+  teslimatIl: z.string().max(60).optional().nullable(),
+  teslimatIlce: z.string().max(60).optional().nullable(),
+  teslimatPostaKodu: z.string().max(10).optional().nullable(),
   satirlar: z.array(belgeSatirSemasi).min(1, "Belgede en az bir satır bulunmalıdır"),
 });
 
@@ -128,6 +136,11 @@ export const tasimaBilgisiSemasi = belgeOlusturSemasi.pick({
   // Sevkiyat numarası Darphane bildiriminden döner; irsaliye onaylandıktan
   // sonra girilebilmeli (EBLG-72).
   idisSevkiyatNo: true,
+  // EBLG-84: gümrük kapısı çoğu zaman mal yüklenirken belli olur.
+  teslimatAdres: true,
+  teslimatIl: true,
+  teslimatIlce: true,
+  teslimatPostaKodu: true,
   tasiyiciCariId: true,
   plaka: true,
   dorsePlaka: true,

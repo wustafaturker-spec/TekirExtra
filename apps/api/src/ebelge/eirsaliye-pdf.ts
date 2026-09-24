@@ -13,7 +13,11 @@ const YEDEK_NOTU =
 
 const satirIfSatir = (etiket: string, deger: string) => (deger ? `${etiket}: ${kacis(deger)}<br>` : "");
 
-export function eirsaliyeYedekPdfHtml(r: UblIrsaliye, secenekler: { tema?: BelgeTemasi } = {}): string {
+/** EBLG-85: giden e-İrsaliyenin çıktısı; kayıtlı olmayan alıcıya bu verilir. */
+export const GIDEN_EIRSALIYE_NOTU =
+  "Bu çıktı, GİB'e gönderilen e-İrsaliyenin verilerinden TekirExtra tarafından oluşturulmuştur. Alıcı e-İrsaliye kullanıcısı değilse belge kendisine bu çıktıyla ya da elektronik ortamda iletilir.";
+
+export function eirsaliyeYedekPdfHtml(r: UblIrsaliye, secenekler: { tema?: BelgeTemasi; not?: string } = {}): string {
   const satirlar = r.satirlar
     .map(
       (s) => `<tr>
@@ -45,7 +49,7 @@ export function eirsaliyeYedekPdfHtml(r: UblIrsaliye, secenekler: { tema?: Belge
     <td style="vertical-align:top;width:46%">
       <div class="kutu">
         <strong>Sayın ${kacis(r.alici.unvan)}</strong><br>
-        ${satirIfSatir("VKN/TCKN", r.alici.vknTckn)}
+        ${satirIfSatir("VKN/TCKN", r.alici.vknTckn)}${r.alici.adres ? `${kacis(r.alici.adres)}<br>` : ""}
         İrsaliye No: <strong>${kacis(r.belgeNo)}</strong><br>
         Tarih: ${r.tarih ? tarihBicim(r.tarih) : ""}${r.saat ? ` ${kacis(r.saat)}` : ""}<br>
         ETTN: ${kacis(r.uuid)}<br>
@@ -73,7 +77,7 @@ export function eirsaliyeYedekPdfHtml(r: UblIrsaliye, secenekler: { tema?: Belge
   <tbody>${satirlar}</tbody>
 </table>
 ${r.notlar.length ? `<p style="margin-top:12px;font-size:9pt">${r.notlar.map(kacis).join("<br>")}</p>` : ""}
-<p style="margin-top:14px;color:#6b7280;font-size:8pt">${YEDEK_NOTU}</p>`;
+<p style="margin-top:14px;color:#6b7280;font-size:8pt">${secenekler.not ?? YEDEK_NOTU}</p>`;
 
   return sayfaSablonu({
     baslik: "e-İRSALİYE",

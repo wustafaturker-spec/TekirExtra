@@ -1,7 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import { baglamlaCalistir } from "../core/istek-baglami";
-import { EirsaliyeService } from "./eirsaliye.service";
+import { EirsaliyeService, eirsaliyeSorguKosulu } from "./eirsaliye.service";
 
 /**
  * Üretilen DespatchAdvice'ın yapısı. Aşağıdaki kuralların hepsi NES test
@@ -311,10 +311,47 @@ describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
     expect(irsaliyeGonder.mock.calls[0][1].aliciPostaKutusu).toBeUndefined();
   });
 
+  it("listede olmayan alıcıya giden belgeyi 'alıcı kayıtlı değil' diye işaretler (EBLG-85)", async () => {
+    const { servis, tx } = kur(taslakBelge(), { basarili: true }, false);
+
+    await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
+
+    expect(tx.eirsaliyeKayit.upsert.mock.calls[0][0].create.aliciKayitsiz).toBe(true);
+  });
+
+  it("yurt dışı alıcıya 2222222222 ve gümrük kapısıyla gönderir, listeye bakmaz (EBLG-84)", async () => {
+    const { servis, tx, irsaliyeGonder } = kur(taslakBelge({
+      cari: { unvan: "Müller GmbH", vknTckn: null, adresler: [{ tip: "fatura", adres: "Hauptstr. 1", il: "Berlin", ilce: "Mitte", postaKodu: "10115", ulke: "DE" }] },
+      teslimatAdres: "Ambarlı Gümrük Müdürlüğü", teslimatIl: "İstanbul", teslimatIlce: "Avcılar", teslimatPostaKodu: "34315",
+    }));
+    const kanalBelirle = (servis as unknown as { mukellefListesi: { kanalBelirle: ReturnType<typeof vi.fn> } }).mukellefListesi.kanalBelirle;
+
+    await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
+
+    expect(kanalBelirle).not.toHaveBeenCalled();
+    const { xml, aliciPostaKutusu } = irsaliyeGonder.mock.calls[0][1];
+    expect(aliciPostaKutusu).toBeUndefined();
+    const alici = xml.slice(xml.indexOf("<cac:DeliveryCustomerParty>"), xml.indexOf("</cac:DeliveryCustomerParty>"));
+    expect(alici).toContain('<cbc:ID schemeID="VKN">2222222222</cbc:ID>');
+    expect(alici).toContain("Müller GmbH");
+    const teslimat = xml.slice(xml.indexOf("<cac:DeliveryAddress>"), xml.indexOf("</cac:DeliveryAddress>"));
+    expect(teslimat).toContain("Ambarlı Gümrük Müdürlüğü");
+    expect(teslimat).toContain("<cbc:CityName>İstanbul</cbc:CityName>");
+    expect(tx.eirsaliyeKayit.upsert.mock.calls[0][0].create.aliciKayitsiz).toBe(true);
+  });
+
   it("kâğıt irsaliyeyi göndermez", async () => {
     const { servis, irsaliyeGonder } = kur(taslakBelge({ kagitIrsaliye: true, no: "KIR2026000001" }));
 
     await expect(calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"))).rejects.toThrow(/Kâğıt irsaliye/);
     expect(irsaliyeGonder).not.toHaveBeenCalled();
+  });
+});
+
+describe("eirsaliyeSorguKosulu (EBLG-85)", () => {
+  it("kayıtlı olmayan alıcının iletilen belgesini yanıt için sorgulamaz", () => {
+    const kosul = eirsaliyeSorguKosulu("t1", Date.now(), 10);
+    expect(JSON.stringify(kosul.AND)).toContain('"durum":"iletildi","aliciKayitsiz":false');
+    expect(JSON.stringify(kosul.AND)).toContain('{"durum":"kuyrukta"}');
   });
 });

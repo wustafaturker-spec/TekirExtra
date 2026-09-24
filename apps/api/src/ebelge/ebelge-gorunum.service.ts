@@ -6,7 +6,7 @@ import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
 import { ebelgeYedekPdfHtml } from "./ebelge-pdf";
-import { eirsaliyeYedekPdfHtml } from "./eirsaliye-pdf";
+import { eirsaliyeYedekPdfHtml, GIDEN_EIRSALIYE_NOTU } from "./eirsaliye-pdf";
 import { IrsaliyeUblOkumaHatasi, irsaliyeUblOku } from "./eirsaliye-ubl-oku";
 import { karekodDataUri, karekoduHtmlEkle } from "./karekod";
 import { UblOkumaHatasi, faturaKarekodVerisi, faturaUblOku } from "./ubl-oku";
@@ -137,14 +137,31 @@ export class EbelgeGorunumService {
       tx.gelenEirsaliye.findUnique({ where: { id }, select: { belgeNo: true, xmlIcerik: true } }),
     );
     if (!belge) throw new NotFoundException("Gelen e-İrsaliye bulunamadı");
-    const dosyaAdi = `gelen-irsaliye-${belge.belgeNo}.pdf`;
+    return this.irsaliyePdf(belge.xmlIcerik, `gelen-irsaliye-${belge.belgeNo}.pdf`);
+  }
 
-    const html = await this.gomuluGorunumHtml(belge.xmlIcerik);
+  /**
+   * EBLG-85: giden e-İrsaliyenin çıktısı; kaynak GİB'e gönderilen UBL'dir.
+   * Kayıtlı olmayan alıcı belgeyi GİB'den alamaz, düzenleyen bu çıktıyı verir.
+   * Kendi UBL'imize görünüm gömülmez (EBLG-31), bu yüzden hep irsaliye
+   * görünümüyle basılır.
+   */
+  async gidenIrsaliyePdf(belgeId: string) {
+    const { tenantId } = aktifBaglam();
+    const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.eirsaliyeKayit.findUnique({ where: { belgeId }, select: { xmlIcerik: true, durum: true, belge: { select: { no: true } } } }),
+    );
+    if (!kayit?.xmlIcerik || kayit.durum === "hata") throw new NotFoundException("GİB'e iletilmiş e-İrsaliye bulunamadı");
+    return this.irsaliyePdf(kayit.xmlIcerik, `irsaliye-${kayit.belge.no}.pdf`, GIDEN_EIRSALIYE_NOTU);
+  }
+
+  private async irsaliyePdf(xml: string, dosyaAdi: string, not?: string) {
+    const html = await this.gomuluGorunumHtml(xml);
     if (html) return { buffer: await this.pdf.htmlToPdf(html, { yalitilmis: true }), dosyaAdi };
 
     let irsaliye;
     try {
-      irsaliye = irsaliyeUblOku(belge.xmlIcerik);
+      irsaliye = irsaliyeUblOku(xml);
     } catch (hata) {
       if (hata instanceof IrsaliyeUblOkumaHatasi) {
         throw new NotFoundException(`Belge görüntülenemiyor: ${hata.message}`);
@@ -152,6 +169,6 @@ export class EbelgeGorunumService {
       throw hata;
     }
     const tema = await this.pdf.belgeTemasi();
-    return { buffer: await this.pdf.htmlToPdf(eirsaliyeYedekPdfHtml(irsaliye, { tema })), dosyaAdi };
+    return { buffer: await this.pdf.htmlToPdf(eirsaliyeYedekPdfHtml(irsaliye, { tema, not })), dosyaAdi };
   }
 }

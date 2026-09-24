@@ -3,13 +3,13 @@ import { EirsaliyeDurum, GelenEirsaliyeDurum, Prisma, type ZincirBelgeDurum } fr
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import type { EntegratorConfig } from "@tekirextra/baglanti";
-import { anTR, birimUblKodu, dorseSchemeId, firmaEbelgeEksikleri, idisBelgesiMi, IDIS_IRSALIYE_PROFILI, idisNormalize, plakaNormalize, plakaSchemeId, ublAdresi } from "@tekirextra/shared";
+import { anTR, birimUblKodu, YURT_DISI_ALICI_VKN, dorseSchemeId, firmaEbelgeEksikleri, idisBelgesiMi, IDIS_IRSALIYE_PROFILI, idisNormalize, plakaNormalize, plakaSchemeId, ublAdresi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
 import { belgeSirasiAl, eirsaliyeNumarasi } from "../belgeler/belge-sayac";
-import { gonderimEngelleri, IRSALIYE_GONDERILEBILIR_DURUMLAR, teslimatAdresiSec } from "./eirsaliye-engeller";
+import { eirsaliyeYurtDisiMi, gonderimEngelleri, IRSALIYE_GONDERILEBILIR_DURUMLAR, irsaliyeTeslimatAdresi } from "./eirsaliye-engeller";
 import { irsaliyeUblOku } from "./eirsaliye-ubl-oku";
 import { MukellefListesiService } from "./mukellef-listesi.service";
 
@@ -31,7 +31,8 @@ export function eirsaliyeSorguKosulu(tenantId: string, simdi: number, yanitGunSa
     tenantId,
     entegratorRef: { not: null },
     OR: [{ sonDurumSorguAt: null }, { sonDurumSorguAt: { lt: new Date(simdi - DURUM_SORGU_ARALIK_MS) } }],
-    AND: [{ OR: [{ durum: "kuyrukta" }, { durum: "iletildi", createdAt: { gte: new Date(simdi - yanitGunSayisi * 86_400_000) } }] }],
+    // EBLG-85: kayıtlı olmayan alıcı yanıt veremez; iletilen belgesi beklenmez.
+    AND: [{ OR: [{ durum: "kuyrukta" }, { durum: "iletildi", aliciKayitsiz: false, createdAt: { gte: new Date(simdi - yanitGunSayisi * 86_400_000) } }] }],
   };
 }
 
@@ -158,28 +159,31 @@ export class EirsaliyeService {
       const belge = await tx.belge.findUnique({ where: { id: belgeId }, include: { cari: { include: { adresler: true } }, tasiyiciCari: { include: { adresler: true } }, satirlar: { include: { stok: true } }, eirsaliye: true, fatura: { select: { no: true, tarih: true } }, kaynakBelge: { select: { tur: true, no: true, tarih: true } } } });
       if (!belge) throw new NotFoundException("Belge bulunamadı");
       if (belge.tur !== "irsaliye" || belge.yon !== "satis") throw new BadRequestException("Yalnızca satış irsaliyesi e-İrsaliye olarak gönderilebilir");
-      if (belge.kagitIrsaliye) throw new BadRequestException("Kâğıt irsaliye e-İrsaliye olarak gönderilmez; firma ya da alıcı onay anında e-İrsaliye kullanıcısı değildi");
+      if (belge.kagitIrsaliye) throw new BadRequestException("Kâğıt irsaliye e-İrsaliye olarak gönderilmez; firma onay anında e-İrsaliye kullanıcısı değildi");
       // Faturalanmış (kapandı) irsaliye de gönderilir: fatura sevkten önce
       // kesilebilir ya da irsaliye faturaya bağlanabilir (EBLG-76, FTR-26).
       if (!IRSALIYE_GONDERILEBILIR_DURUMLAR.includes(belge.durum)) throw new BadRequestException("e-İrsaliye göndermek için belge onaylanmış olmalıdır");
       if (belge.eirsaliye?.durum === "kabul" || belge.eirsaliye?.durum === "iletildi") return belge.eirsaliye;
       const { baglanti, cfg, adapter } = await this.baglanti(tx, tenantId);
       if (!adapter.irsaliyeGonder) throw new BadRequestException("Seçili entegratör e-İrsaliye gönderimini desteklemiyor");
-      if (!belge.cari.vknTckn) throw new BadRequestException("Cari VKN/TCKN bilgisi eksik");
+      // EBLG-84: yurt dışı alıcının Türk VKN'si yoktur; belgeye GİB'in yurt dışı
+      // alıcı VKN'si yazılır ve GİB listesine bakılmaz (alıcı hiç kayıtlı olamaz).
+      const yurtDisi = eirsaliyeYurtDisiMi(belge);
+      if (!belge.cari.vknTckn && !yurtDisi) throw new BadRequestException("Cari VKN/TCKN bilgisi eksik");
       // e-İrsaliye kaydı GİB'de e-Fatura'dan ayrıdır; lokal liste sorgusu da
       // "eirsaliye" türüyle yapılır (EBLG-10).
-      const mukellef = await this.mukellefListesi.kanalBelirle(baglanti.saglayici, cfg, belge.cari.vknTckn, "eirsaliye");
+      const mukellef = yurtDisi ? undefined : await this.mukellefListesi.kanalBelirle(baglanti.saglayici, cfg, belge.cari.vknTckn!, "eirsaliye");
       // Kalan ön koşullar ekranın gösterdiğiyle aynı kuraldan gelir (EBLG-42);
       // taşıyan bilgisi irsaliye onayında değil burada zorunludur (EBLG-23):
       // kâğıt irsaliye kesen firma engellenmesin, GİB'e giden belge eksik gitmesin.
       // EBLG-83: kayıtlı alıcıya kendi posta kutusuna gider; kayıtlı olmayana
       // da e-İrsaliye düzenlenir, belge alıcı etiketi olmadan gönderilir.
-      const aliciPostaKutusu = mukellef.eFaturaMukellefi ? mukellef.postaKutusu : undefined;
+      const aliciPostaKutusu = mukellef?.eFaturaMukellefi ? mukellef.postaKutusu : undefined;
       const engeller = gonderimEngelleri({ ...belge, cari: { vknTckn: belge.cari.vknTckn, adresler: belge.cari.adresler } });
       // Malın fiilen nereye gittiği e-İrsaliye'nin varlık sebebi; uydurulmuş
-      // bir adres yazmaktansa gönderim durur. Engel listesi boşsa adres de
-      // posta kutusu da vardır; ikisi de burada daraltılır.
-      const teslimatAdresi = teslimatAdresiSec(belge.cari.adresler as { tip: string; adres: string; il: string | null; ilce: string | null; postaKodu: string | null }[]);
+      // bir adres yazmaktansa gönderim durur. Engel listesi boşsa adres
+      // vardır; burada daraltılır. İrsaliyeye girilen adres önce gelir (EBLG-84).
+      const teslimatAdresi = irsaliyeTeslimatAdresi({ ...belge, cari: { vknTckn: belge.cari.vknTckn, adresler: belge.cari.adresler as { tip: string; adres: string; il: string | null; ilce: string | null; postaKodu: string | null; ulke: string | null }[] } });
       if (engeller.length > 0 || !teslimatAdresi) {
         throw new BadRequestException(engeller[0]?.mesaj ?? "e-İrsaliye teslimat adresi bulunamadı");
       }
@@ -197,9 +201,12 @@ export class EirsaliyeService {
         belge.no = eirsaliyeNumarasi(cfg.eirsaliyeSeriOneki ?? VARSAYILAN_EIRSALIYE_ONEKI, yil, sira);
         await tx.belge.update({ where: { id: belge.id }, data: { no: belge.no } });
       }
-      const xml = this.ubl({ ...belge, teslimatAdresi }, tenant);
+      const cari = yurtDisi ? { ...belge.cari, vknTckn: YURT_DISI_ALICI_VKN } : belge.cari;
+      const xml = this.ubl({ ...belge, cari, teslimatAdresi }, tenant);
       const sonuc = await adapter.irsaliyeGonder(cfg, { uuid: belge.id, belgeNo: belge.no, xml, aliciPostaKutusu });
-      return tx.eirsaliyeKayit.upsert({ where: { belgeId }, create: { tenantId, belgeId, durum: sonuc.basarili ? "iletildi" : "hata", entegratorRef: sonuc.belgeRef, xmlIcerik: xml, hataMesaji: sonuc.hataMesaji }, update: { durum: sonuc.basarili ? "iletildi" : "hata", entegratorRef: sonuc.belgeRef, xmlIcerik: xml, hataMesaji: sonuc.hataMesaji } });
+      // EBLG-85: etiketsiz giden belgeyi alıcı GİB'den alamaz; çıktısı verilir.
+      const kayit = { durum: sonuc.basarili ? ("iletildi" as const) : ("hata" as const), entegratorRef: sonuc.belgeRef, xmlIcerik: xml, hataMesaji: sonuc.hataMesaji, aliciKayitsiz: !aliciPostaKutusu };
+      return tx.eirsaliyeKayit.upsert({ where: { belgeId }, create: { tenantId, belgeId, ...kayit }, update: kayit });
     });
   }
 
@@ -299,9 +306,13 @@ export class EirsaliyeService {
           soforSoyadi: true,
           plaka: true,
           genelToplam: true,
-          cari: { select: { unvan: true, vknTckn: true, adresler: { select: { tip: true, il: true, ilce: true, postaKodu: true } } } },
+          teslimatAdres: true,
+          teslimatIl: true,
+          teslimatIlce: true,
+          teslimatPostaKodu: true,
+          cari: { select: { unvan: true, vknTckn: true, adresler: { select: { tip: true, il: true, ilce: true, postaKodu: true, ulke: true } } } },
           tasiyiciCari: { select: { vknTckn: true } },
-          eirsaliye: { select: { durum: true, entegratorRef: true, hataMesaji: true, sonDurumSorguAt: true, createdAt: true } },
+          eirsaliye: { select: { durum: true, entegratorRef: true, hataMesaji: true, sonDurumSorguAt: true, createdAt: true, aliciKayitsiz: true } },
         },
         orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
         take: 500,
@@ -324,6 +335,8 @@ export class EirsaliyeService {
           hataMesaji: b.eirsaliye?.hataMesaji ?? null,
           sonDurumSorguAt: b.eirsaliye?.sonDurumSorguAt?.toISOString() ?? null,
           gonderimZamani: b.eirsaliye?.createdAt.toISOString() ?? null,
+          // EBLG-85: alıcı GİB'den alamaz; çıktısı düzenleyen tarafından verilir.
+          aliciKayitsiz: b.eirsaliye?.aliciKayitsiz ?? false,
           engeller,
           gonderilebilir: engeller.length === 0 && (!gonderildi || b.eirsaliye?.durum === "hata"),
           mukellefDogrulandi: mukellefDurumu.taze,

@@ -18,6 +18,7 @@ import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
 import { eksikTasiyanAlanlari, tasiyanBelli } from "@/lib/tasima-bilgisi";
 import { idisBelgesiMi, PLAKA_HATA_MESAJI, plakaGecerliMi, plakaNormalize, plakaTuru, sevkiyatNoGecerliMi } from "@tekirextra/shared";
 import { Alert, Button, Field, Input, Select } from "@/components/ui";
+import { BOS_TESLIMAT_ADRESI, TeslimatAdresiAlanlari, teslimatAdresiGovdesi, teslimatAdresiEksik, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
 
 interface Cari { id: string; unvan: string; vknTckn?: string | null }
 interface AracKarti { id: string; plaka: string; dorsePlaka: string | null; aciklama: string | null }
@@ -34,6 +35,12 @@ interface BelgeTasima {
   soforTckn: string | null;
   /** EBLG-72: İDİS sevkiyat numarası; Darphane bildiriminden sonra girilir. */
   idisSevkiyatNo: string | null;
+  cariId: string;
+  /** EBLG-84: irsaliyeye özel teslimat adresi (ihracatta gümrük kapısı). */
+  teslimatAdres: string | null;
+  teslimatIl: string | null;
+  teslimatIlce: string | null;
+  teslimatPostaKodu: string | null;
 }
 
 /** ISO zaman damgasını `datetime-local` alanının beklediği yerel metne çevirir. */
@@ -74,6 +81,9 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
   const [soforSoyadi, setSoforSoyadi] = useState("");
   const [soforTckn, setSoforTckn] = useState("");
   const [idisSevkiyatNo, setIdisSevkiyatNo] = useState("");
+  const [cariId, setCariId] = useState<string | null>(null);
+  // EBLG-84: panel bütün alanları yazar; adres de yüklenip geri gönderilmeli.
+  const [teslimat, setTeslimat] = useState<TeslimatAdresi>(BOS_TESLIMAT_ADRESI);
 
   const yukle = useCallback(async () => {
     setYukleniyor(true);
@@ -90,6 +100,8 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
       setSoforSoyadi(belge.soforSoyadi ?? "");
       setSoforTckn(belge.soforTckn ?? "");
       setIdisSevkiyatNo(belge.idisSevkiyatNo ?? "");
+      setCariId(belge.cariId);
+      setTeslimat({ teslimatAdres: belge.teslimatAdres ?? "", teslimatIl: belge.teslimatIl ?? "", teslimatIlce: belge.teslimatIlce ?? "", teslimatPostaKodu: belge.teslimatPostaKodu ?? "" });
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Belgenin taşıma bilgisi okunamadı");
     } finally {
@@ -118,6 +130,7 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
   const sevkiyatNoBozuk = idisBelgesiMi(idisSevkiyatNo) && !sevkiyatNoGecerliMi(idisSevkiyatNo);
   const gonderilebilir =
     !sevkiyatNoBozuk
+    && !teslimatAdresiEksik(teslimat)
     && tasiyanBelli(suanki)
     && !plakaBozuk
     && !dorseBozuk
@@ -149,6 +162,7 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
           soforSoyadi: soforSoyadi.trim() || null,
           soforTckn: soforTckn.trim() || null,
           idisSevkiyatNo: idisSevkiyatNo.trim() || null,
+          ...teslimatAdresiGovdesi(teslimat),
         }),
       });
       if (!gonderilebilir) {
@@ -157,7 +171,9 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
         setKaydedildiUyarisi(
           eksikler.length > 0
             ? `Kaydedildi. e-İrsaliye için hâlâ ${eksikler.join(", ")} gerekiyor — şoför TCKN'si bunların yerine geçmez.`
-            : "Kaydedildi. Seçilen taşıyıcı carinin VKN/TCKN bilgisi girilmeden e-İrsaliye gönderilemez.",
+            : teslimatAdresiEksik(teslimat)
+              ? "Kaydedildi. Teslimat adresinin adres, il, ilçe ve posta kodu birlikte girilmeden e-İrsaliye gönderilemez."
+              : "Kaydedildi. Seçilen taşıyıcı carinin VKN/TCKN bilgisi girilmeden e-İrsaliye gönderilemez.",
         );
         return;
       }
@@ -198,6 +214,7 @@ export function TasimaBilgisiPaneli({ belgeId, belgeNo, onKapat, onKaydedildi }:
               <Input aria-label="İDİS sevkiyat numarası" value={idisSevkiyatNo} maxLength={20} placeholder="Örn. SE-0152457" onChange={(e) => setIdisSevkiyatNo(e.target.value)} />
               <small className="muted">İnşaat demiri teslimlerinde girilir; belge IDISIRSALIYE profiliyle gider ve satırlar etiket numarası ister.</small>
             </Field>
+            <TeslimatAdresiAlanlari deger={teslimat} onChange={setTeslimat} cariId={cariId} />
             <Field label="Taşıyan">
               <Select aria-label="Taşıyan" value={tasiyiciCariId} onChange={(e) => setTasiyiciCariId(e.target.value)}>
                 <option value="">Kendi aracımızla</option>

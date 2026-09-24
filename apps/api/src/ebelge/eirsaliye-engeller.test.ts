@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gonderimEngelleri, teslimatAdresiSec, type EirsaliyeAdayi } from "./eirsaliye-engeller";
+import { gonderimEngelleri, irsaliyeTeslimatAdresi, teslimatAdresiSec, type EirsaliyeAdayi } from "./eirsaliye-engeller";
 
 const tamAdres = { tip: "sevk", il: "İstanbul", ilce: "Kadıköy", postaKodu: "34710" };
 
@@ -94,5 +94,33 @@ describe("plaka engelleri (şematron 14.09.2026 §3)", () => {
   it("biçime uymayan araç ve dorse plakasını engeller", () => {
     const engeller = gonderimEngelleri({ ...temel, plaka: "34.ABC.123", dorsePlaka: "dorse plaka!" }, "mukellef");
     expect(engeller.filter((e) => e.kod === "plaka_bicimi")).toHaveLength(2);
+  });
+});
+
+describe("ihracat e-İrsaliyesi ve teslimat adresi (EBLG-84)", () => {
+  const yabanciAdres = { tip: "fatura", il: "Berlin", ilce: "Mitte", postaKodu: "10115", ulke: "DE" };
+  const gumrukKapisi = { teslimatAdres: "Ambarlı Gümrük Müdürlüğü", teslimatIl: "İstanbul", teslimatIlce: "Avcılar", teslimatPostaKodu: "34315" };
+
+  it("yurt dışı alıcıda VKN aramaz ama gümrük kapısını ister", () => {
+    const engeller = gonderimEngelleri(belge({}, { vknTckn: null, adresler: [yabanciAdres] }));
+    expect(engeller.map((e) => e.kod)).toEqual(["adres_yok"]);
+    expect(engeller[0].mesaj).toContain("gümrük kapısı");
+  });
+
+  it("gümrük kapısı girilmiş ihracat irsaliyesini engellemez", () => {
+    expect(kodlar(belge(gumrukKapisi, { vknTckn: null, adresler: [yabanciAdres] }))).toEqual([]);
+  });
+
+  it("kartta 2222222222 yazan alıcıyı yurt dışı sayar", () => {
+    expect(kodlar(belge({}, { vknTckn: "2222222222", adresler: [] }))).toEqual(["adres_yok"]);
+  });
+
+  it("irsaliyeye girilen adres carinin sevk adresinin önüne geçer", () => {
+    expect(irsaliyeTeslimatAdresi(belge(gumrukKapisi))).toEqual({ adres: "Ambarlı Gümrük Müdürlüğü", il: "İstanbul", ilce: "Avcılar", postaKodu: "34315" });
+    expect(irsaliyeTeslimatAdresi(belge())).toEqual(tamAdres);
+  });
+
+  it("yarım girilen teslimat adresine carinin adresiyle devam etmez", () => {
+    expect(kodlar(belge({ teslimatAdres: "Ambarlı", teslimatIl: "İstanbul" }))).toEqual(["adres_yok"]);
   });
 });

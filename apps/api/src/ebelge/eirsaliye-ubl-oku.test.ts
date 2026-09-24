@@ -85,6 +85,16 @@ describe("irsaliyeUblOku (EBLG-33)", () => {
     ]);
   });
 
+  it("yabancı alıcının adresini ülkesiyle okur, Türkiye adresine ülke eklemez (EBLG-84)", () => {
+    const xml = IRSALIYE()
+      .replace('<cbc:ID schemeID="VKN">1234567801</cbc:ID></cac:PartyIdentification>\n    <cac:PartyName><cbc:Name>ErpClub Test Kurum 01</cbc:Name></cac:PartyName>',
+        '<cbc:ID schemeID="VKN">2222222222</cbc:ID></cac:PartyIdentification>\n    <cac:PartyName><cbc:Name>Müller GmbH</cbc:Name></cac:PartyName><cac:PostalAddress><cbc:StreetName>Hauptstr. 1</cbc:StreetName><cbc:CityName>Berlin</cbc:CityName><cac:Country><cbc:IdentificationCode>DE</cbc:IdentificationCode><cbc:Name>Almanya</cbc:Name></cac:Country></cac:PostalAddress>');
+    const r = irsaliyeUblOku(xml);
+    expect(r.alici).toEqual({ vknTckn: "2222222222", unvan: "Müller GmbH", adres: "Hauptstr. 1 Berlin Almanya" });
+    expect(eirsaliyeYedekPdfHtml(r)).toContain("Hauptstr. 1 Berlin Almanya");
+    expect(r.gonderen.adres).toBe("Atatürk Cad. Kadıköy İstanbul");
+  });
+
   it("fiili sevk yazılmamışsa belge tarihine düşer", () => {
     const r = irsaliyeUblOku(IRSALIYE().replace(/<cac:Despatch>.*<\/cac:Despatch>/, ""));
     expect(r.sevkTarihi).toBe("2026-09-10");

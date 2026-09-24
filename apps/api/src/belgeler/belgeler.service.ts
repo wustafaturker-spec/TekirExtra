@@ -249,7 +249,7 @@ export class BelgelerService {
               kasaBankaHarekets: { select: { tutar: true } },
             },
           },
-          eirsaliye: { select: { durum: true, entegratorRef: true, hataMesaji: true } },
+          eirsaliye: { select: { durum: true, entegratorRef: true, hataMesaji: true, aliciKayitsiz: true } },
         },
       }),
     );
@@ -336,7 +336,7 @@ export class BelgelerService {
   }
 
   /** Taşıma alanları yalnız irsaliyede anlamlıdır; başka türde yazılmaz. */
-  private tasimaAlanlari(girdi: { tur?: string; fiiliSevkZamani?: string | null; tasiyiciCariId?: string | null; plaka?: string | null; dorsePlaka?: string | null; soforAdi?: string | null; soforSoyadi?: string | null; soforTckn?: string | null; idisSevkiyatNo?: string | null }) {
+  private tasimaAlanlari(girdi: { tur?: string; fiiliSevkZamani?: string | null; tasiyiciCariId?: string | null; plaka?: string | null; dorsePlaka?: string | null; soforAdi?: string | null; soforSoyadi?: string | null; soforTckn?: string | null; idisSevkiyatNo?: string | null; teslimatAdres?: string | null; teslimatIl?: string | null; teslimatIlce?: string | null; teslimatPostaKodu?: string | null }) {
     if (girdi.tur !== "irsaliye") return {};
     return {
       fiiliSevkZamani: girdi.fiiliSevkZamani ? new Date(girdi.fiiliSevkZamani) : null,
@@ -348,6 +348,11 @@ export class BelgelerService {
       soforAdi: girdi.soforAdi ?? null,
       soforSoyadi: girdi.soforSoyadi ?? null,
       soforTckn: girdi.soforTckn ?? null,
+      // EBLG-84: irsaliyeye özel teslimat adresi (ihracatta gümrük kapısı).
+      teslimatAdres: girdi.teslimatAdres?.trim() || null,
+      teslimatIl: girdi.teslimatIl?.trim() || null,
+      teslimatIlce: girdi.teslimatIlce?.trim() || null,
+      teslimatPostaKodu: girdi.teslimatPostaKodu?.trim() || null,
     };
   }
 
@@ -1525,6 +1530,11 @@ export class BelgelerService {
     idisSevkiyatNo?: string | null;
     /** FTR-27: alış irsaliyesinde tedarikçinin irsaliye numarası. */
     tedarikciBelgeNo?: string | null;
+    /** EBLG-84: irsaliyeye özel teslimat adresi. */
+    teslimatAdres?: string | null;
+    teslimatIl?: string | null;
+    teslimatIlce?: string | null;
+    teslimatPostaKodu?: string | null;
     /** EBLG-83: kâğıt irsaliye ve matbu numarası. */
     kagitIrsaliye?: boolean;
     matbuBelgeNo?: string | null;
@@ -1568,6 +1578,10 @@ export class BelgelerService {
         : null,
       idisSevkiyatNo: k.idisSevkiyatNo ?? null,
       tedarikciBelgeNo: k.tedarikciBelgeNo ?? null,
+      teslimatAdres: k.teslimatAdres ?? null,
+      teslimatIl: k.teslimatIl ?? null,
+      teslimatIlce: k.teslimatIlce ?? null,
+      teslimatPostaKodu: k.teslimatPostaKodu ?? null,
       kagitIrsaliye: k.kagitIrsaliye ?? false,
       matbuBelgeNo: k.matbuBelgeNo ?? null,
       kaynakBelgeId: k.kaynakBelgeId,
