@@ -18,6 +18,7 @@ import {
   irsaliyeSevkGunu,
   irsaliyeFaturaTipiUyarMi,
   irsaliyeKanali,
+  eirsaliyeIptalUyarisi,
   type FaturaHesaplaSatirGirdi,
   type KayitEylem,
 } from "@tekirextra/shared";
@@ -764,18 +765,26 @@ export class BelgelerService {
     });
   }
 
-  async iptal(id: string) {
+  async iptal(id: string, secenekler: { gibUyarisiOnaylandi?: boolean } = {}) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const belge = await tx.belge.findUnique({
         where: { id },
-        include: { satirlar: true },
+        include: { satirlar: true, eirsaliye: { select: { durum: true, aliciKayitsiz: true } } },
       });
       if (!belge) throw new NotFoundException("Belge bulunamadı");
       if (belge.durum === "kapandi" || belge.durum === "iptal") {
         throw new BadRequestException(
           "Kapanmış veya iptal edilmiş belge iptal edilemez",
         );
+      }
+      // EBLG-90: GİB'e ulaşmış e-İrsaliye satıcı tarafından iptal edilemez.
+      // Programda iptal engellenmez (stok/rezerv düzeltilebilmeli), ama
+      // kullanıcı yasal yolu gördüğünü onaylamadan yapılmaz; belge GİB'de
+      // geçerli kalır ve ekranda öyle gösterilir.
+      const gibUyarisi = belge.tur === "irsaliye" ? eirsaliyeIptalUyarisi(belge.eirsaliye) : null;
+      if (gibUyarisi && !secenekler.gibUyarisiOnaylandi) {
+        throw new BadRequestException(`${gibUyarisi} İptal için bu uyarının onaylanması gerekir.`);
       }
       // Onaylı siparişin rezervi/yoldakisi çözülür. Kısmen teslim edilmiş
       // siparişte teslim edilenin etkisi zincire geçtiği için yalnız kalan

@@ -14,7 +14,7 @@ import { TasimaBilgisiPaneli } from "@/components/tasima-bilgisi-paneli";
 import type { DepoOzet } from "@/lib/depolar";
 import { BOS_TESLIMAT_ADRESI, TeslimatAdresiAlanlari, teslimatAdresiGovdesi, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
 import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
-import { bugunTR, faturaHesapla, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
+import { bugunTR, eirsaliyeIptalUyarisi, faturaHesapla, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -247,6 +247,8 @@ export default function BelgelerSayfasi() {
   const [olusanFaturaId, setOlusanFaturaId] = useState<string | null>(null);
   const [yonBaglami, setYonBaglami] = useState<Yon | null>(null);
   const [onayBekleyen, setOnayBekleyen] = useState<BelgeDetay | null>(null);
+  /** EBLG-90: GİB'e ulaşmış e-İrsaliyenin iptalinde yasal yolu hatırlatan onay. */
+  const [iptalUyarisi, setIptalUyarisi] = useState<{ id: string; metin: string } | null>(null);
   const [donusumBekleyen, setDonusumBekleyen] = useState<{ belge: BelgeDetay; hedef: "siparis" | "irsaliye" | "fatura" } | null>(null);
   /** SAT-10: siparişten irsaliyeye dönüşümde satır başına teslim miktarı. */
   const [teslimMiktarlari, setTeslimMiktarlari] = useState<Record<string, string>>({});
@@ -557,6 +559,22 @@ export default function BelgelerSayfasi() {
       void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Belge oluşturulamadı");
+    }
+  }
+
+  async function gibUyarisiylaIptal() {
+    if (!iptalUyarisi) return;
+    const { id } = iptalUyarisi;
+    setHata("");
+    setBasari("");
+    try {
+      await api(`/belgeler/${id}/iptal`, { method: "POST", body: JSON.stringify({ gibUyarisiOnaylandi: true }) });
+      setIptalUyarisi(null);
+      setBasari("İrsaliye programda iptal edildi; belge GİB'de geçerli kalır.");
+      if (detay?.id === id) await detayAc(id);
+      void yukle();
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "İptal başarısız");
     }
   }
 
@@ -1088,7 +1106,7 @@ export default function BelgelerSayfasi() {
             <Button size="sm" type="button" onClick={() => void pdfAc(detay.id)}>🖨 PDF</Button>
             <EylemMenusu>
               <Button size="sm" type="button" onClick={() => void eylem(detay.id, "kopyala", "Belge kopyalandı (taslak).")}>📋 Kopyala</Button>
-              {(detay.durum === "onaylandi" || detay.durum === "kismen_kapandi") && <Button variant="danger" size="sm" type="button" onClick={() => void eylem(detay.id, "iptal", "Belge iptal edildi.")}>İptal et</Button>}
+              {(detay.durum === "onaylandi" || detay.durum === "kismen_kapandi") && <Button variant="danger" size="sm" type="button" onClick={() => { const metin = detay.tur === "irsaliye" ? eirsaliyeIptalUyarisi(detay.eirsaliye) : null; if (metin) setIptalUyarisi({ id: detay.id, metin }); else void eylem(detay.id, "iptal", "Belge iptal edildi."); }}>İptal et</Button>}
               {/* EBLG-83: numara almış ama GİB'e ulaşmamış e-İrsaliye iptal edilirse numarası seride boş kalır. */}
               {detay.durum === "onaylandi" && seriBoslukRiski(detay) && <small className="muted">İptal edilirse {detay.no} numarası e-İrsaliye serisinde boşluk bırakır.</small>}
               {detay.durum === "taslak" && <Button variant="danger" size="sm" type="button" onClick={() => void sil(detay.id)}>Sil</Button>}
@@ -1211,8 +1229,19 @@ export default function BelgelerSayfasi() {
               adres={`/belgeler/${detay.id}/durum-gecmisi`}
               // Şerit yalnız e-İrsaliye gönderilmiş irsaliyede anlamlı; teklif
               // ve siparişin resmi bir e-Belge akışı yoktur.
-              akis={detay.tur === "irsaliye" && detay.eirsaliye ? { tur: "eirsaliye", durum: detay.durum === "iptal" ? "iptal" : detay.eirsaliye.durum } : undefined}
+              // EBLG-90: programda iptal GİB'deki belgeyi iptal etmez; şerit GİB durumunu gösterir.
+              akis={detay.tur === "irsaliye" && detay.eirsaliye ? { tur: "eirsaliye", durum: detay.eirsaliye.durum } : undefined}
             />
+          )}
+          {detay.tur === "irsaliye" && detay.durum === "iptal" && detay.eirsaliye && (
+            (GIB_ULASMIS_EIRSALIYE_DURUMLARI as readonly string[]).includes(detay.eirsaliye.durum) ? (
+              <p className="muted" style={{ margin: "0 0 1rem", fontSize: "0.85rem" }}>
+                <Badge variant="warning">GİB'de geçerli — programda iptal</Badge>{" "}
+                {detay.eirsaliye.aliciKayitsiz ? "Alıcı sistemden reddedemez; gerekirse iptali yazılı (KEP, noter) bildirin." : "Alıcı reddi bekleniyor; alıcıdan RET yanıtı vermesini isteyin."}
+              </p>
+            ) : detay.eirsaliye.durum === "ret" ? (
+              <p className="muted" style={{ margin: "0 0 1rem", fontSize: "0.85rem" }}><Badge variant="neutral">Alıcı reddetti — belge GİB'de geçersiz</Badge></p>
+            ) : null
           )}
           <TableWrap>
             <thead>
@@ -1281,6 +1310,16 @@ export default function BelgelerSayfasi() {
           onKapat={() => setTasimaPaneli(null)}
           onKaydedildi={(mesaj) => { const id = tasimaPaneli.id; setTasimaPaneli(null); setHata(""); setBasari(mesaj); void detayAc(id); void yukle(); }}
         />
+      )}
+
+      {iptalUyarisi && (
+        <HizliKayitPaneli baslik="İrsaliyeyi programda iptal et" onKapat={() => setIptalUyarisi(null)}>
+          <Alert tone="warning">{iptalUyarisi.metin}</Alert>
+          <div className="quick-panel__actions">
+            <Button type="button" onClick={() => setIptalUyarisi(null)}>Vazgeç</Button>
+            <Button type="button" variant="danger" onClick={() => void gibUyarisiylaIptal()}>Anladım, programda iptal et</Button>
+          </div>
+        </HizliKayitPaneli>
       )}
 
       {onayBekleyen && (

@@ -160,8 +160,10 @@ export class BelgelerController {
 
   @Post(":id/iptal")
   @Roller("muhasebe", "satis")
-  async iptal(@Param("id") id: string) {
-    return this.belgelerService.iptal(id);
+  async iptal(@Param("id") id: string, @Body() govde: unknown) {
+    // EBLG-90: GİB'e ulaşmış e-İrsaliyenin iptali açık onay ister.
+    const gibUyarisiOnaylandi = (govde as { gibUyarisiOnaylandi?: unknown } | undefined)?.gibUyarisiOnaylandi === true;
+    return this.belgelerService.iptal(id, { gibUyarisiOnaylandi });
   }
 
   @Post(":id/donustur")

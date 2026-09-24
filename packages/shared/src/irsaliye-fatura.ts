@@ -197,3 +197,18 @@ export function ihracatFaturasiNotu(girdi: { faturaNo: string; faturaTarihi: str
   const tarih = girdi.faturaTarihi.slice(0, 10).split("-").reverse().join(".");
   return `Bu irsaliye ${tarih} tarih ve ${girdi.faturaNo} numaralı ihracat faturasına istinaden düzenlenmiştir.`;
 }
+
+/**
+ * EBLG-90: GİB'e ulaşmış e-İrsaliye satıcı tarafından iptal edilemez (mali
+ * müşavir, 2026-09-24). Programda iptal engellenmez — stok ve rezerv
+ * düzeltilebilmeli — ama kullanıcı yasal yolu bilerek onaylar. GİB'e hiç
+ * ulaşmamış (hata) ya da alıcının reddettiği belgede uyarı gerekmez.
+ */
+export const GIB_ULASMIS_EIRSALIYE_DURUMLARI = ["kuyrukta", "iletildi", "kabul", "kismi_kabul"] as const;
+
+export function eirsaliyeIptalUyarisi(eirsaliye: { durum: string; aliciKayitsiz?: boolean | null } | null | undefined): string | null {
+  if (!eirsaliye || !(GIB_ULASMIS_EIRSALIYE_DURUMLARI as readonly string[]).includes(eirsaliye.durum)) return null;
+  return eirsaliye.aliciKayitsiz
+    ? "Bu belge Sanal Alıcı (GİB) üzerinden iletilmiştir ve alıcı tarafından sistem üzerinden reddedilemez. Sevkiyat fiilen gerçekleşmeyecekse, ticari ve yasal kayıtlarınızın doğruluğu için işlemin iptal edildiğini alıcıya yazılı olarak (KEP, noter vb.) bildirmeniz gerekebilir. Programda yalnız stok ve rezerv düzeltilir; belge GİB'de geçerli kalır."
+    : "Bu belge GİB'e iletilmiştir; e-İrsaliyede satıcı tarafından iptal seçeneği yoktur. Mal henüz yola çıkmadıysa alıcınızdan bu irsaliyeye sistem üzerinden RET yanıtı vermesini isteyin; alıcı reddedince belge geçersiz olur. Programda yalnız stok ve rezerv düzeltilir; belge alıcı reddedene kadar GİB'de geçerli kalır.";
+}

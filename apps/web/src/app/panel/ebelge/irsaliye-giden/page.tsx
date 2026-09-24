@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, apiPdfAc } from "@/lib/api";
+import { GIB_ULASMIS_EIRSALIYE_DURUMLARI } from "@tekirextra/shared";
 import { EbelgeAdimSeridi } from "@/components/durum-gecmisi";
 import { TasimaBilgisiPaneli } from "@/components/tasima-bilgisi-paneli";
 import { Alert, Badge, Button, Card, Field, Input, Select, TableWrap } from "@/components/ui";
@@ -309,6 +310,9 @@ export default function GidenEirsaliyeler() {
               <td><strong>{gun(s.tarih)}</strong><small>{an(s.fiiliSevkZamani) ?? "Fiili sevk girilmemiş"}</small></td>
               <td>
                 <Badge variant={DURUM_TONU[s.durum]}>{DURUM_ADI[s.durum]}</Badge>
+                {/* EBLG-90: programda iptal GİB'deki belgeyi iptal etmez. */}
+                {s.belgeDurumu === "iptal" && (GIB_ULASMIS_EIRSALIYE_DURUMLARI as readonly string[]).includes(s.durum) && <small className="incoming-reason">GİB'de geçerli — programda iptal{s.aliciKayitsiz ? "" : "; alıcı reddi bekleniyor"}.</small>}
+                {s.belgeDurumu === "iptal" && s.durum === "ret" && <small className="incoming-reason">Programda iptal; alıcı reddetti — GİB'de geçersiz.</small>}
                 {s.aliciKayitsiz && s.durum !== "hata" && <small className="incoming-reason">Alıcı e-İrsaliye kullanıcısı değil: çıktısını verin ya da e-postayla iletin; yanıt beklenmez.</small>}
                 {s.hataMesaji && <small className="incoming-reason">{s.hataMesaji}</small>}
                 {s.engeller.map((e) => <small className="incoming-reason" key={e.kod}>{e.mesaj}</small>)}

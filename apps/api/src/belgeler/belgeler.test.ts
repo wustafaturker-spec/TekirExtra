@@ -220,6 +220,39 @@ describe("BelgelerService", () => {
     });
   });
 
+  describe("GİB'e ulaşmış e-İrsaliyenin programda iptali (EBLG-90)", () => {
+    const kur = (eirsaliye: { durum: string; aliciKayitsiz: boolean } | null) => {
+      const irsaliye = {
+        id: "irs1", tur: "irsaliye", yon: "satis", durum: "onaylandi", no: "GBZ2026000800030", tarih: new Date("2026-09-24"),
+        gecerlilikTarihi: null, cariId: "c1", depoId: null, dovizCinsi: "TRY", kur: D(1), genelIskontoYuzdesi: D(0), genelIskontoTutari: D(0),
+        toplamBrut: D(0), toplamSatirIskontosu: D(0), genelIskontoToplam: D(0), toplamMatrah: D(0), toplamKdv: D(0), toplamTevkifat: D(0),
+        toplamNetKdv: D(0), genelToplam: D(0), aciklama: null, notlar: null, kaynakBelgeId: null, faturaId: null, satirlar: [], eirsaliye,
+      };
+      const tx = { belge: { findUnique: vi.fn().mockResolvedValue(irsaliye), update: vi.fn().mockResolvedValue({ ...irsaliye, durum: "iptal" }) }, belgeSatir: { update: vi.fn() } };
+      const prisma = { tenantIslem: vi.fn((_t: string, calistir: (tx: unknown) => unknown) => calistir(tx)) } as any;
+      return { servis: new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any), tx };
+    };
+
+    it("onay olmadan iptal etmez; mesaj alıcıya göre yasal yolu söyler", async () => {
+      const kayitli = kur({ durum: "iletildi", aliciKayitsiz: false });
+      await expect(kayitli.servis.iptal("irs1")).rejects.toThrow(/RET yanıtı/);
+      expect(kayitli.tx.belge.update).not.toHaveBeenCalled();
+      await expect(kur({ durum: "kabul", aliciKayitsiz: true }).servis.iptal("irs1")).rejects.toThrow(/KEP/);
+    });
+
+    it("onaylanınca programda iptal eder", async () => {
+      const { servis, tx } = kur({ durum: "iletildi", aliciKayitsiz: false });
+      await servis.iptal("irs1", { gibUyarisiOnaylandi: true });
+      expect(tx.belge.update).toHaveBeenCalledWith({ where: { id: "irs1" }, data: { durum: "iptal" } });
+    });
+
+    it("GİB'e ulaşmamış ya da reddedilmiş irsaliyede onay istemez", async () => {
+      await kur({ durum: "hata", aliciKayitsiz: false }).servis.iptal("irs1");
+      await kur({ durum: "ret", aliciKayitsiz: false }).servis.iptal("irs1");
+      await kur(null).servis.iptal("irs1");
+    });
+  });
+
   describe("iptal edilmiş siparişin irsaliyesi iptal edilince", () => {
     /** Sipariş 10 onaylandı, 4'ü irsaliyeyle teslim edildi; sipariş iptali yalnız 6'yı çözdü. */
     const kur = (siparisDurumu: string) => {

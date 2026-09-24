@@ -86,6 +86,7 @@ export class BildirimUreticiService {
     const girdiler = [
       ...(await this.duzeltmeKayitlari()),
       ...(await this.ebelgeHatalari()),
+      ...(await this.eirsaliyeYanitlari()),
       ...(await this.vadeOzetleri()),
       ...(await this.stokOzetleri()),
       ...(await this.donemKontrolleri()),
@@ -239,6 +240,48 @@ export class BildirimUreticiService {
       sonTarih: this.sla("kritik"),
       roller: HEDEF_ROLLER.ebelge,
     }))];
+  }
+
+  /**
+   * EBLG-91: alıcının e-İrsaliyeye verdiği RET ya da kısmi kabul (mali
+   * müşavir, 2026-09-24). Stok ve sipariş kendiliğinden değişmez — stok
+   * hareketi irsaliyede değil faturada doğar; kullanıcı yönlendirilir. RET
+   * irsaliye iptal edilince, kısmi kabul irsaliye kesin faturaya bağlanınca
+   * tespit edilmez ve bildirim kapanır.
+   */
+  private async eirsaliyeYanitlari(): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.eirsaliyeKayit.findMany({
+        where: {
+          OR: [
+            { durum: "ret", belge: { durum: { not: "iptal" } } },
+            { durum: "kismi_kabul", belge: { durum: { not: "iptal" }, OR: [{ faturaId: null }, { fatura: { is: { durum: { not: "kesin" } } } }] } },
+          ],
+        },
+        select: { id: true, durum: true, hataMesaji: true, belgeId: true, belge: { select: { no: true, cari: { select: { unvan: true } } } } },
+        orderBy: { updatedAt: "desc" },
+        take: 200,
+      }),
+    );
+    return kayitlar.map((kayit) => {
+      const ret = kayit.durum === "ret";
+      const onem = ret ? ("kritik" as const) : ("uyari" as const);
+      return {
+        tur: "ebelge" as const,
+        onem,
+        baslik: ret ? "Alıcı e-İrsaliyeyi reddetti" : "Alıcı e-İrsaliyeyi kısmen kabul etti",
+        aciklama: `${kayit.belge.no ?? "Numarasız irsaliye"} · ${kayit.belge.cari.unvan} — ${ret
+          ? "Belge GİB'de geçersiz oldu. İrsaliyeyi programda iptal edip doğru bilgilerle yenisini düzenleyin."
+          : "Faturayı alıcının kabul ettiği miktarla kesin."}${kayit.hataMesaji ? ` Alıcı notu: ${kayit.hataMesaji}` : ""}`,
+        birlesimAnahtari: `ebelge:irsaliye:${kayit.id}`,
+        kaynakTur: "belge",
+        kaynakRef: kayit.belgeId,
+        hedefYol: `/panel/belgeler?odak=${kayit.belgeId}`,
+        sonTarih: this.sla(onem),
+        roller: HEDEF_ROLLER.ebelge,
+      };
+    });
   }
 
   private async vadeOzetleri(): Promise<BildirimGirdisi[]> {

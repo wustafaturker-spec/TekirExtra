@@ -18,6 +18,8 @@ interface TxSecenekleri {
   yoneticiler?: { id: string }[];
   mevcutTeslimatlar?: { userId: string }[];
   bekleyenIrsaliyeler?: { yon: string; tarih: Date; fiiliSevkZamani: Date | null }[];
+  /** EBLG-91: alıcının RET ya da kısmi kabul verdiği e-İrsaliyeler. */
+  eirsaliyeYanitlari?: unknown[];
 }
 
 function servisKur(secenek: TxSecenekleri = {}) {
@@ -26,6 +28,7 @@ function servisKur(secenek: TxSecenekleri = {}) {
   const tx = {
     duzeltmeKaydi: { findMany: vi.fn().mockResolvedValue(secenek.duzeltmeler ?? []) },
     ebelgeKayit: { findMany: vi.fn().mockResolvedValue(secenek.ebelgeler ?? []) },
+    eirsaliyeKayit: { findMany: vi.fn().mockResolvedValue(secenek.eirsaliyeYanitlari ?? []) },
     satinAlmaTalebi: { findMany: vi.fn().mockResolvedValue(secenek.satinAlmaTalepleri ?? []) },
     cekSenet: { count: vi.fn().mockResolvedValue(secenek.cekSayisi ?? 0) },
     fatura: { findMany: vi.fn().mockResolvedValue(secenek.ihracKayitlilar ?? []) },
@@ -73,6 +76,29 @@ describe("BildirimUreticiService.tara", () => {
     expect(Date.now() - kosul[0].updatedAt.lte.getTime()).toBeGreaterThanOrEqual(HATA_YERLESME_MS);
     expect(kosul[1]).toEqual({ durum: "ret" });
     expect(JSON.stringify(kosul)).not.toContain('"in":["hata","ret"]');
+  });
+
+  it("alıcının RET ve kısmi kabul yanıtını irsaliye başına bildirir (EBLG-91)", async () => {
+    const { servis, bildirimler, tx } = servisKur({
+      eirsaliyeYanitlari: [
+        { id: "k1", durum: "ret", hataMesaji: "Miktar yanlış", belgeId: "b1", belge: { no: "GBZ2026000800030", cari: { unvan: "Alıcı A.Ş." } } },
+        { id: "k2", durum: "kismi_kabul", hataMesaji: null, belgeId: "b2", belge: { no: "GBZ2026000800031", cari: { unvan: "Alıcı A.Ş." } } },
+      ],
+    });
+
+    await servis.tara();
+
+    expect(bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({
+      tur: "ebelge", onem: "kritik", birlesimAnahtari: "ebelge:irsaliye:k1", hedefYol: "/panel/belgeler?odak=b1",
+      aciklama: expect.stringContaining("İrsaliyeyi programda iptal edip"),
+    }));
+    expect(bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({
+      onem: "uyari", birlesimAnahtari: "ebelge:irsaliye:k2", aciklama: expect.stringContaining("kabul ettiği miktarla"),
+    }));
+    // RET iptal edilince, kısmi kabul kesin faturaya bağlanınca tespit edilmez; bildirim kapanır.
+    const kosul = JSON.stringify(tx.eirsaliyeKayit.findMany.mock.calls[0][0].where);
+    expect(kosul).toContain('"durum":"ret","belge":{"durum":{"not":"iptal"}}');
+    expect(kosul).toContain('"fatura":{"is":{"durum":{"not":"kesin"}}}');
   });
 
   it("kritik bildirime son tarih verir, uyarı seviyesine vermez", async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { faturaGecikmeUyarilari, gumrukSeferNotu, ihracatFaturasiNotu, irsaliyeFaturaFarklari, irsaliyeKanali, irsaliyeFaturaSonGun, irsaliyeFaturaSuresi, irsaliyeFaturaTipiUyarMi, irsaliyeSevkGunu } from "./irsaliye-fatura";
+import { eirsaliyeIptalUyarisi, faturaGecikmeUyarilari, gumrukSeferNotu, ihracatFaturasiNotu, irsaliyeFaturaFarklari, irsaliyeKanali, irsaliyeFaturaSonGun, irsaliyeFaturaSuresi, irsaliyeFaturaTipiUyarMi, irsaliyeSevkGunu } from "./irsaliye-fatura";
 
 const satir = (stokId: string, miktar: number, birim = "adet", ek: { varyantId?: string; stokTipi?: string } = {}) => ({ stokId, ad: stokId.toUpperCase(), miktar, birim, ...ek });
 
@@ -110,4 +110,17 @@ it("gümrükten depoya sevkin açıklamasını müşavirin verdiği kalıpla yaz
 it("ihracat irsaliyesinin açıklamasına bağlı faturayı yazar (EBLG-89)", () => {
   expect(ihracatFaturasiNotu({ faturaNo: "K072026000000090", faturaTarihi: "2026-09-23T00:00:00.000Z" }))
     .toBe("Bu irsaliye 23.09.2026 tarih ve K072026000000090 numaralı ihracat faturasına istinaden düzenlenmiştir.");
+});
+
+describe("eirsaliyeIptalUyarisi (EBLG-90)", () => {
+  it("GİB'e ulaşmış belgede alıcıya göre uyarır", () => {
+    expect(eirsaliyeIptalUyarisi({ durum: "iletildi", aliciKayitsiz: false })).toContain("RET yanıtı");
+    expect(eirsaliyeIptalUyarisi({ durum: "kabul", aliciKayitsiz: true })).toContain("KEP");
+  });
+
+  it("gönderilmemiş, GİB'e ulaşmamış ya da reddedilmiş belgede uyarmaz", () => {
+    expect(eirsaliyeIptalUyarisi(null)).toBeNull();
+    expect(eirsaliyeIptalUyarisi({ durum: "hata" })).toBeNull();
+    expect(eirsaliyeIptalUyarisi({ durum: "ret" })).toBeNull();
+  });
 });
