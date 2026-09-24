@@ -762,10 +762,15 @@ export class BelgelerService {
    * SAT-09: iptal edilen irsaliyenin miktarlarını sipariş satırlarından düşer ve
    * kaynak siparişi kalan durumuna göre yeniden açar. Faturaya bağlanmış sipariş
    * (kapandı) bu yoldan geri açılmaz; orada teslim birikimi zaten yoktur.
+   *
+   * Sipariş zaten iptal edildiyse yeniden açılmaz; ama iptal yalnız teslim
+   * edilmemiş kısmın rezervini/yoldakisini çözmüştü — irsaliyenin taşıdığı
+   * kısım kesin faturayı bekliyordu. İrsaliye de iptal edilince o kısım burada
+   * çözülür; yoksa stokta kalıcı olarak rezerve görünürdü.
    */
   private async teslimGeriAl(
     tx: Prisma.TransactionClient,
-    satirlar: { miktar: Prisma.Decimal; kaynakSatirId: string | null }[],
+    satirlar: { stokId: string; varyantId: string | null; miktar: Prisma.Decimal; kaynakSatirId: string | null }[],
     kaynakBelgeId: string | null,
   ): Promise<void> {
     const bagliSatirlar = satirlar.filter((s) => s.kaynakSatirId);
@@ -781,7 +786,11 @@ export class BelgelerService {
       where: { id: kaynakBelgeId },
       include: { satirlar: { select: { miktar: true, teslimEdilenMiktar: true } } },
     });
-    if (!siparis || siparis.tur !== "siparis" || siparis.faturaId || siparis.durum === "iptal") return;
+    if (!siparis || siparis.tur !== "siparis" || siparis.faturaId) return;
+    if (siparis.durum === "iptal") {
+      await this.siparisEtkisiUygula(tx, siparis.yon, bagliSatirlar, -1, siparis.depoId);
+      return;
+    }
     const teslimVar = siparis.satirlar.some((s) => s.teslimEdilenMiktar.greaterThan(0));
     const tamamlandi = siparis.satirlar.every((s) => s.teslimEdilenMiktar.greaterThanOrEqualTo(s.miktar));
     await tx.belge.update({

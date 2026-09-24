@@ -181,6 +181,45 @@ describe("BelgelerService", () => {
     await expect(servis.donustur("sip1", "fatura", { kalemler: [{ satirId: "s1", miktar: "40" }] })).rejects.toThrow(/yalnız siparişten irsaliyeye/);
   });
 
+  describe("iptal edilmiş siparişin irsaliyesi iptal edilince", () => {
+    /** Sipariş 10 onaylandı, 4'ü irsaliyeyle teslim edildi; sipariş iptali yalnız 6'yı çözdü. */
+    const kur = (siparisDurumu: string) => {
+      const irsaliye = {
+        id: "irs1", tur: "irsaliye", yon: "satis", durum: "onaylandi", no: "GBZ2026000800001", tarih: new Date("2026-09-24"),
+        gecerlilikTarihi: null, cariId: "c1", depoId: null, dovizCinsi: "TRY", kur: D(1), genelIskontoYuzdesi: D(0), genelIskontoTutari: D(0),
+        toplamBrut: D(0), toplamSatirIskontosu: D(0), genelIskontoToplam: D(0), toplamMatrah: D(0), toplamKdv: D(0), toplamTevkifat: D(0),
+        toplamNetKdv: D(0), genelToplam: D(0), aciklama: null, notlar: null, kaynakBelgeId: "sip1", faturaId: null,
+        satirlar: [{ stokId: "stk1", varyantId: null, miktar: D("4"), kaynakSatirId: "s1" }],
+      };
+      const siparis = { id: "sip1", tur: "siparis", yon: "satis", durum: siparisDurumu, depoId: "d1", faturaId: null, satirlar: [{ miktar: D("10"), teslimEdilenMiktar: D("0") }] };
+      const tx = {
+        belge: { findUnique: vi.fn().mockResolvedValueOnce(irsaliye).mockResolvedValueOnce(siparis), update: vi.fn().mockResolvedValue({ ...irsaliye, durum: "iptal" }) },
+        belgeSatir: { update: vi.fn() },
+      };
+      const prisma = { tenantIslem: vi.fn((_t: string, calistir: (tx: unknown) => unknown) => calistir(tx)) } as any;
+      const servis = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
+      const siparisEtkisi = vi.spyOn(servis, "siparisEtkisiUygula").mockResolvedValue();
+      return { servis, tx, siparisEtkisi };
+    };
+
+    it("irsaliyenin taşıdığı rezervi çözer; siparişi yeniden açmaz", async () => {
+      const { servis, tx, siparisEtkisi } = kur("iptal");
+
+      await servis.iptal("irs1");
+
+      expect(siparisEtkisi).toHaveBeenCalledWith(tx, "satis", [expect.objectContaining({ stokId: "stk1", miktar: D("4") })], -1, "d1");
+      expect(tx.belge.update).not.toHaveBeenCalledWith(expect.objectContaining({ where: { id: "sip1" } }));
+    });
+
+    it("sipariş açıksa rezerve dokunmaz; miktar siparişin kalanına döner", async () => {
+      const { servis, siparisEtkisi } = kur("kismen_kapandi");
+
+      await servis.iptal("irs1");
+
+      expect(siparisEtkisi).not.toHaveBeenCalled();
+    });
+  });
+
   it("iptal edilen irsaliyenin miktarını siparişten düşer ve siparişi yeniden açar (SAT-09)", async () => {
     const irsaliye = {
       id: "irs1",
