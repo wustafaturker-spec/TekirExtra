@@ -179,3 +179,12 @@ export function irsaliyeKanali(firmaEirsaliye: boolean | null): { kanal: Irsaliy
   }
   return { kanal: firmaEirsaliye ? "eirsaliye" : "kagit" };
 }
+
+/**
+ * EBLG-87: gümrükten depoya kısım kısım sevk irsaliyesinin açıklaması
+ * (mali müşavir, 2026-09-24). e-İrsaliyeye `cbc:Note` olarak yazılır.
+ */
+export function gumrukSeferNotu(girdi: { beyannameNo: string; beyannameTarihi: string; seferNo: number }): string {
+  const tarih = girdi.beyannameTarihi.slice(0, 10).split("-").reverse().join(".");
+  return `${tarih} Tarih ve ${girdi.beyannameNo} Sayılı Gümrük Beyannamesi muhteviyatı malların gümrükten depoya kısım kısım taşınmasına ilişkin ${girdi.seferNo}. seferidir.`;
+}

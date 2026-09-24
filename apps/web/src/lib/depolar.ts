@@ -10,6 +10,10 @@ export interface DepoOzet {
   kod: string;
   ad: string;
   adres?: string | null;
+  /** EBLG-87: e-İrsaliyede boşaltma adresi olarak kullanılır. */
+  il?: string | null;
+  ilce?: string | null;
+  postaKodu?: string | null;
   sorumlu?: string | null;
   varsayilan: boolean;
   aktif: boolean;

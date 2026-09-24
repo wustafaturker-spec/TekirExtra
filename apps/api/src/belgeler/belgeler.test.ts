@@ -181,6 +181,45 @@ describe("BelgelerService", () => {
     await expect(servis.donustur("sip1", "fatura", { kalemler: [{ satirId: "s1", miktar: "40" }] })).rejects.toThrow(/yalnız siparişten irsaliyeye/);
   });
 
+  describe("gümrükten depoya sevkin onayı (EBLG-87)", () => {
+    const onayla = async (ek: Record<string, unknown>, oncekiEnBuyuk: number | null) => {
+      const taslak = {
+        id: "i1", tur: "irsaliye", yon: "alis", durum: "taslak", no: null, tarih: new Date("2026-09-24"), gecerlilikTarihi: null, cariId: "c1", depoId: null,
+        dovizCinsi: "TRY", kur: D(1), genelIskontoYuzdesi: D(0), genelIskontoTutari: D(0), toplamBrut: D(0), toplamSatirIskontosu: D(0), genelIskontoToplam: D(0),
+        toplamMatrah: D(0), toplamKdv: D(0), toplamTevkifat: D(0), toplamNetKdv: D(0), genelToplam: D(0), aciklama: null, notlar: null,
+        fiiliSevkZamani: new Date("2026-09-24T09:00:00Z"), kaynakBelgeId: null, faturaId: null, satirlar: [],
+        gumrukDepoSevki: true, gumrukBeyannameNo: "26341300IM000123", gumrukBeyannameTarihi: new Date("2026-09-20"), ...ek,
+      };
+      const tx = {
+        belge: { findUnique: vi.fn().mockResolvedValue(taslak), update: vi.fn(({ data }) => Promise.resolve({ ...taslak, ...data })), aggregate: vi.fn().mockResolvedValue({ _max: { gumrukSeferNo: oncekiEnBuyuk } }) },
+        belgeSayac: { upsert: vi.fn().mockResolvedValue({ sonSira: 7 }) },
+        tenant: { findUnique: vi.fn().mockResolvedValue({ vkn: "1234567801", efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: true }) },
+        gibMukellef: { findFirst: vi.fn() },
+        gibMukellefSenkron: { findUnique: vi.fn() },
+      };
+      const prisma = { tenantIslem: vi.fn((_t, calistir) => calistir(tx)) } as any;
+      const servis = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
+      return { sonuc: await servis.onayla("i1"), tx };
+    };
+
+    it("aynı beyannamenin sonraki sefer numarasını verir; e-İrsaliye numarası gönderime kalır", async () => {
+      const { sonuc, tx } = await onayla({}, 2);
+      expect(sonuc.gumrukSeferNo).toBe(3);
+      expect(sonuc.no).toBeNull();
+      expect(tx.belge.aggregate).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ gumrukBeyannameNo: "26341300IM000123", durum: { not: "iptal" } }),
+      }));
+    });
+
+    it("beyannamenin ilk seferi 1'dir", async () => {
+      expect((await onayla({}, null)).sonuc.gumrukSeferNo).toBe(1);
+    });
+
+    it("beyanname girilmeden onaylamaz", async () => {
+      await expect(onayla({ gumrukBeyannameNo: null }, null)).rejects.toThrow(/beyanname/);
+    });
+  });
+
   describe("iptal edilmiş siparişin irsaliyesi iptal edilince", () => {
     /** Sipariş 10 onaylandı, 4'ü irsaliyeyle teslim edildi; sipariş iptali yalnız 6'yı çözdü. */
     const kur = (siparisDurumu: string) => {

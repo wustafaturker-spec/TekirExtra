@@ -20,7 +20,12 @@ export default function DepolarSayfasi() {
   const [kod, setKod] = useState("");
   const [ad, setAd] = useState("");
   const [adres, setAdres] = useState("");
+  const [il, setIl] = useState("");
+  const [ilce, setIlce] = useState("");
+  const [postaKodu, setPostaKodu] = useState("");
   const [sorumlu, setSorumlu] = useState("");
+  /** EBLG-87: mevcut deponun adresini düzenleme; null = düzenlenmiyor. */
+  const [adresDuzenleme, setAdresDuzenleme] = useState<{ id: string; adres: string; il: string; ilce: string; postaKodu: string } | null>(null);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
 
@@ -46,6 +51,9 @@ export default function DepolarSayfasi() {
           kod: kod.trim().toUpperCase(),
           ad: ad.trim(),
           adres: adres.trim() || null,
+          il: il.trim() || null,
+          ilce: ilce.trim() || null,
+          postaKodu: postaKodu.trim() || null,
           sorumlu: sorumlu.trim() || null,
         }),
       });
@@ -53,10 +61,31 @@ export default function DepolarSayfasi() {
       setKod("");
       setAd("");
       setAdres("");
+      setIl("");
+      setIlce("");
+      setPostaKodu("");
       setSorumlu("");
       await yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Depo eklenemedi");
+    }
+  }
+
+  async function adresKaydet() {
+    if (!adresDuzenleme) return;
+    setHata("");
+    setBasari("");
+    try {
+      const { id, ...alanlar } = adresDuzenleme;
+      await api(`/depo/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(Object.fromEntries(Object.entries(alanlar).map(([k, v]) => [k, v.trim() || null]))),
+      });
+      setBasari("Depo adresi güncellendi.");
+      setAdresDuzenleme(null);
+      await yukle();
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Depo adresi kaydedilemedi");
     }
   }
 
@@ -137,6 +166,16 @@ export default function DepolarSayfasi() {
               <Input value={adres} onChange={(e) => setAdres(e.target.value)} />
             </Field>
           </div>
+          {/* EBLG-87: gümrükten depoya sevk irsaliyesinde boşaltma adresi olur. */}
+          <div style={{ flex: 1, minWidth: 120 }}>
+            <Field label="İl"><Input value={il} onChange={(e) => setIl(e.target.value)} /></Field>
+          </div>
+          <div style={{ flex: 1, minWidth: 120 }}>
+            <Field label="İlçe"><Input value={ilce} onChange={(e) => setIlce(e.target.value)} /></Field>
+          </div>
+          <div style={{ flex: 1, minWidth: 100 }}>
+            <Field label="Posta Kodu"><Input value={postaKodu} onChange={(e) => setPostaKodu(e.target.value)} maxLength={10} /></Field>
+          </div>
           <div style={{ flex: 1, minWidth: 160 }}>
             <Field label="Sorumlu">
               <Input value={sorumlu} onChange={(e) => setSorumlu(e.target.value)} />
@@ -180,7 +219,24 @@ export default function DepolarSayfasi() {
                     {d.ad}{" "}
                     {d.varsayilan && <Badge variant="accent">Varsayılan</Badge>}
                   </td>
-                  <td className="muted">{d.adres ?? "—"}</td>
+                  <td className="muted">
+                    {adresDuzenleme?.id === d.id ? (
+                      <div className="stack" style={{ gap: "0.3rem" }}>
+                        <Input aria-label="Adres" value={adresDuzenleme.adres} onChange={(e) => setAdresDuzenleme({ ...adresDuzenleme, adres: e.target.value })} />
+                        <div className="row-tight">
+                          <Input aria-label="İl" placeholder="İl" value={adresDuzenleme.il} onChange={(e) => setAdresDuzenleme({ ...adresDuzenleme, il: e.target.value })} />
+                          <Input aria-label="İlçe" placeholder="İlçe" value={adresDuzenleme.ilce} onChange={(e) => setAdresDuzenleme({ ...adresDuzenleme, ilce: e.target.value })} />
+                          <Input aria-label="Posta kodu" placeholder="Posta kodu" maxLength={10} value={adresDuzenleme.postaKodu} onChange={(e) => setAdresDuzenleme({ ...adresDuzenleme, postaKodu: e.target.value })} />
+                        </div>
+                        <div className="row-tight">
+                          <Button size="sm" variant="primary" onClick={() => void adresKaydet()}>Kaydet</Button>
+                          <Button size="sm" onClick={() => setAdresDuzenleme(null)}>Vazgeç</Button>
+                        </div>
+                      </div>
+                    ) : (
+                      [d.adres, d.ilce, d.il, d.postaKodu].filter(Boolean).join(", ") || "—"
+                    )}
+                  </td>
                   <td className="muted">{d.sorumlu ?? "—"}</td>
                   <td className="num">{d.hareketSayisi}</td>
                   <td>
@@ -190,6 +246,9 @@ export default function DepolarSayfasi() {
                   </td>
                   <td>
                     <div className="row-tight">
+                      <Button size="sm" onClick={() => setAdresDuzenleme({ id: d.id, adres: d.adres ?? "", il: d.il ?? "", ilce: d.ilce ?? "", postaKodu: d.postaKodu ?? "" })}>
+                        Adres
+                      </Button>
                       {!d.varsayilan && (
                         <Button size="sm" onClick={() => void varsayilanYap(d)}>
                           Varsayılan yap

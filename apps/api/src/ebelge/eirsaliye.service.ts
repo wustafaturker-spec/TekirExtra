@@ -3,13 +3,13 @@ import { EirsaliyeDurum, GelenEirsaliyeDurum, Prisma, type ZincirBelgeDurum } fr
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import type { EntegratorConfig } from "@tekirextra/baglanti";
-import { anTR, birimUblKodu, YURT_DISI_ALICI_VKN, dorseSchemeId, firmaEbelgeEksikleri, idisBelgesiMi, IDIS_IRSALIYE_PROFILI, idisNormalize, plakaNormalize, plakaSchemeId, ublAdresi } from "@tekirextra/shared";
+import { anTR, birimUblKodu, gumrukSeferNotu, YURT_DISI_ALICI_VKN, dorseSchemeId, firmaEbelgeEksikleri, idisBelgesiMi, IDIS_IRSALIYE_PROFILI, idisNormalize, plakaNormalize, plakaSchemeId, ublAdresi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
 import { belgeSirasiAl, eirsaliyeNumarasi } from "../belgeler/belge-sayac";
-import { eirsaliyeYurtDisiMi, gonderimEngelleri, IRSALIYE_GONDERILEBILIR_DURUMLAR, irsaliyeTeslimatAdresi } from "./eirsaliye-engeller";
+import { eirsaliyeYurtDisiMi, gonderimEngelleri, IRSALIYE_GONDERILEBILIR_DURUMLAR, irsaliyeTeslimatAdresi, irsaliyeYuklemeAdresi } from "./eirsaliye-engeller";
 import { irsaliyeUblOku } from "./eirsaliye-ubl-oku";
 import { MukellefListesiService } from "./mukellef-listesi.service";
 
@@ -83,6 +83,10 @@ export class EirsaliyeService {
     const { tarih: sevkTarihi, saat } = anTR(sevk);
     /** Firma kartındaki adres (EBLG-62); önceden sabit "Merkez/Istanbul" yazılıyordu. */
     const firmaAdresi = `<cac:PostalAddress>${tenant.adres ? `<cbc:StreetName>${esc(tenant.adres)}</cbc:StreetName>` : ""}<cbc:CitySubdivisionName>${esc(tenant.ilce ?? "") || "-"}</cbc:CitySubdivisionName><cbc:CityName>${esc(tenant.il ?? "") || "-"}</cbc:CityName>${tenant.postaKodu ? `<cbc:PostalZone>${esc(tenant.postaKodu)}</cbc:PostalZone>` : ""}<cac:Country><cbc:IdentificationCode>TR</cbc:IdentificationCode><cbc:Name>Türkiye</cbc:Name></cac:Country></cac:PostalAddress>`;
+    /** EBLG-87: yükleme adresi (gümrük); şemada `Despatch` içinde sevk saatinden sonra. */
+    const yuklemeAdresi = b.yuklemeAdresi
+      ? `<cac:DespatchAddress><cbc:StreetName>${esc(b.yuklemeAdresi.adres)}</cbc:StreetName><cbc:CitySubdivisionName>${esc(b.yuklemeAdresi.ilce)}</cbc:CitySubdivisionName><cbc:CityName>${esc(b.yuklemeAdresi.il)}</cbc:CityName><cbc:PostalZone>${esc(b.yuklemeAdresi.postaKodu)}</cbc:PostalZone><cac:Country><cbc:Name>Türkiye</cbc:Name></cac:Country></cac:DespatchAddress>`
+      : "";
     /** Karttaki adres (EBLG-55). */
     const kartAdresi = (a: ReturnType<typeof ublAdresi>) =>
       `<cac:PostalAddress>${a.adres ? `<cbc:StreetName>${esc(a.adres)}</cbc:StreetName>` : ""}<cbc:CitySubdivisionName>${esc(a.ilce)}</cbc:CitySubdivisionName><cbc:CityName>${esc(a.il)}</cbc:CityName>${a.postaKodu ? `<cbc:PostalZone>${esc(a.postaKodu)}</cbc:PostalZone>` : ""}<cac:Country><cbc:IdentificationCode>${a.ulkeKodu}</cbc:IdentificationCode>${a.ulkeAdi ? `<cbc:Name>${esc(a.ulkeAdi)}</cbc:Name>` : ""}</cac:Country></cac:PostalAddress>`;
@@ -135,7 +139,10 @@ export class EirsaliyeService {
       + `<cbc:UBLVersionID>2.1</cbc:UBLVersionID><cbc:CustomizationID>TR1.2</cbc:CustomizationID><cbc:ProfileID>${idis ? IDIS_IRSALIYE_PROFILI : "TEMELIRSALIYE"}</cbc:ProfileID>`
       + `<cbc:ID>${esc(b.no ?? b.id)}</cbc:ID><cbc:CopyIndicator>false</cbc:CopyIndicator><cbc:UUID>${b.id}</cbc:UUID>`
       + `<cbc:IssueDate>${tarih}</cbc:IssueDate><cbc:IssueTime>${saat}</cbc:IssueTime>`
-      + `<cbc:DespatchAdviceTypeCode>SEVK</cbc:DespatchAdviceTypeCode><cbc:LineCountNumeric>${b.satirlar.length}</cbc:LineCountNumeric>`
+      + `<cbc:DespatchAdviceTypeCode>SEVK</cbc:DespatchAdviceTypeCode>`
+      // EBLG-87: gümrükten depoya sevkin açıklaması; şemada tür kodundan sonra gelir.
+      + (b.gumrukNotu ? `<cbc:Note>${esc(b.gumrukNotu)}</cbc:Note>` : "")
+      + `<cbc:LineCountNumeric>${b.satirlar.length}</cbc:LineCountNumeric>`
       + siparisBlogu + faturaBlogu
       + `<cac:Signature><cbc:ID schemeID="VKN_TCKN">${esc(tenant.vkn)}</cbc:ID><cac:SignatoryParty><cac:PartyIdentification><cbc:ID schemeID="VKN">${esc(tenant.vkn)}</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>${esc(tenant.unvan)}</cbc:Name></cac:PartyName>${firmaAdresi}</cac:SignatoryParty><cac:DigitalSignatureAttachment><cac:ExternalReference><cbc:URI>#Signature</cbc:URI></cac:ExternalReference></cac:DigitalSignatureAttachment></cac:Signature>`
       // İDİS'te sevkiyat numarası satıcının `PartyIdentification`'ına yazılır.
@@ -149,16 +156,16 @@ export class EirsaliyeService {
       // Taşıyan: nakliyeci/kargo carisi seçildiyse o, seçilmediyse malı kendi
       // aracıyla götüren firma. Şoför ve plaka `ShipmentStage`'te taşınır;
       // GİB `DriverPerson` ya da `CarrierParty`'den en az birini ister.
-      + `<cac:Shipment><cbc:ID>1</cbc:ID>${sevkiyatAsamasi}<cac:Delivery><cac:DeliveryAddress><cbc:StreetName>${esc(b.teslimatAdresi.adres)}</cbc:StreetName><cbc:CitySubdivisionName>${esc(b.teslimatAdresi.ilce)}</cbc:CitySubdivisionName><cbc:CityName>${esc(b.teslimatAdresi.il)}</cbc:CityName><cbc:PostalZone>${esc(b.teslimatAdresi.postaKodu)}</cbc:PostalZone><cac:Country><cbc:Name>Türkiye</cbc:Name></cac:Country></cac:DeliveryAddress><cac:CarrierParty><cac:PartyIdentification><cbc:ID schemeID="${tasiyan.vknTckn.length === 11 ? "TCKN" : "VKN"}">${esc(tasiyan.vknTckn)}</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>${esc(tasiyan.unvan)}</cbc:Name></cac:PartyName>${tasiyan.adres}</cac:CarrierParty><cac:Despatch><cbc:ActualDespatchDate>${sevkTarihi}</cbc:ActualDespatchDate><cbc:ActualDespatchTime>${saat}</cbc:ActualDespatchTime></cac:Despatch></cac:Delivery>${dorse}</cac:Shipment>`
+      + `<cac:Shipment><cbc:ID>1</cbc:ID>${sevkiyatAsamasi}<cac:Delivery><cac:DeliveryAddress><cbc:StreetName>${esc(b.teslimatAdresi.adres)}</cbc:StreetName><cbc:CitySubdivisionName>${esc(b.teslimatAdresi.ilce)}</cbc:CitySubdivisionName><cbc:CityName>${esc(b.teslimatAdresi.il)}</cbc:CityName><cbc:PostalZone>${esc(b.teslimatAdresi.postaKodu)}</cbc:PostalZone><cac:Country><cbc:Name>Türkiye</cbc:Name></cac:Country></cac:DeliveryAddress><cac:CarrierParty><cac:PartyIdentification><cbc:ID schemeID="${tasiyan.vknTckn.length === 11 ? "TCKN" : "VKN"}">${esc(tasiyan.vknTckn)}</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>${esc(tasiyan.unvan)}</cbc:Name></cac:PartyName>${tasiyan.adres}</cac:CarrierParty><cac:Despatch><cbc:ActualDespatchDate>${sevkTarihi}</cbc:ActualDespatchDate><cbc:ActualDespatchTime>${saat}</cbc:ActualDespatchTime>${yuklemeAdresi}</cac:Despatch></cac:Delivery>${dorse}</cac:Shipment>`
       + `${satirlar}</DespatchAdvice>`;
   }
 
   async gonder(belgeId: string) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const belge = await tx.belge.findUnique({ where: { id: belgeId }, include: { cari: { include: { adresler: true } }, tasiyiciCari: { include: { adresler: true } }, satirlar: { include: { stok: true } }, eirsaliye: true, fatura: { select: { no: true, tarih: true } }, kaynakBelge: { select: { tur: true, no: true, tarih: true } } } });
+      const belge = await tx.belge.findUnique({ where: { id: belgeId }, include: { cari: { include: { adresler: true } }, tasiyiciCari: { include: { adresler: true } }, satirlar: { include: { stok: true } }, eirsaliye: true, fatura: { select: { no: true, tarih: true } }, kaynakBelge: { select: { tur: true, no: true, tarih: true } }, depo: true } });
       if (!belge) throw new NotFoundException("Belge bulunamadı");
-      if (belge.tur !== "irsaliye" || belge.yon !== "satis") throw new BadRequestException("Yalnızca satış irsaliyesi e-İrsaliye olarak gönderilebilir");
+      if (belge.tur !== "irsaliye" || (belge.yon !== "satis" && !belge.gumrukDepoSevki)) throw new BadRequestException("Yalnızca satış irsaliyesi ve gümrükten depoya sevk irsaliyesi e-İrsaliye olarak gönderilebilir");
       if (belge.kagitIrsaliye) throw new BadRequestException("Kâğıt irsaliye e-İrsaliye olarak gönderilmez; firma onay anında e-İrsaliye kullanıcısı değildi");
       // Faturalanmış (kapandı) irsaliye de gönderilir: fatura sevkten önce
       // kesilebilir ya da irsaliye faturaya bağlanabilir (EBLG-76, FTR-26).
@@ -169,10 +176,14 @@ export class EirsaliyeService {
       // EBLG-84: yurt dışı alıcının Türk VKN'si yoktur; belgeye GİB'in yurt dışı
       // alıcı VKN'si yazılır ve GİB listesine bakılmaz (alıcı hiç kayıtlı olamaz).
       const yurtDisi = eirsaliyeYurtDisiMi(belge);
-      if (!belge.cari.vknTckn && !yurtDisi) throw new BadRequestException("Cari VKN/TCKN bilgisi eksik");
+      const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
+      // EBLG-87: gümrükten depoya sevkte satıcı da alıcı da firmanın kendisidir;
+      // belge firmanın kendi e-İrsaliye posta kutusuna gider.
+      const aliciVkn = belge.gumrukDepoSevki ? tenant?.vkn : belge.cari.vknTckn;
+      if (!aliciVkn && !yurtDisi) throw new BadRequestException(belge.gumrukDepoSevki ? "Firma kartında VKN eksik" : "Cari VKN/TCKN bilgisi eksik");
       // e-İrsaliye kaydı GİB'de e-Fatura'dan ayrıdır; lokal liste sorgusu da
       // "eirsaliye" türüyle yapılır (EBLG-10).
-      const mukellef = yurtDisi ? undefined : await this.mukellefListesi.kanalBelirle(baglanti.saglayici, cfg, belge.cari.vknTckn!, "eirsaliye", belge.cari.eirsaliyePostaKutusu);
+      const mukellef = yurtDisi ? undefined : await this.mukellefListesi.kanalBelirle(baglanti.saglayici, cfg, aliciVkn!, "eirsaliye", belge.gumrukDepoSevki ? undefined : belge.cari.eirsaliyePostaKutusu);
       // Kalan ön koşullar ekranın gösterdiğiyle aynı kuraldan gelir (EBLG-42);
       // taşıyan bilgisi irsaliye onayında değil burada zorunludur (EBLG-23):
       // kâğıt irsaliye kesen firma engellenmesin, GİB'e giden belge eksik gitmesin.
@@ -187,7 +198,6 @@ export class EirsaliyeService {
       if (engeller.length > 0 || !teslimatAdresi) {
         throw new BadRequestException(engeller[0]?.mesaj ?? "e-İrsaliye teslimat adresi bulunamadı");
       }
-      const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
       // EBLG-62: gönderen adresi belgede zorunlu; firma kartı eksikse durulur.
       const firmaEksigi = tenant ? firmaEbelgeEksikleri(tenant) : [];
       if (firmaEksigi.length) throw new BadRequestException(firmaEksigi.join("; "));
@@ -201,8 +211,13 @@ export class EirsaliyeService {
         belge.no = eirsaliyeNumarasi(cfg.eirsaliyeSeriOneki ?? VARSAYILAN_EIRSALIYE_ONEKI, yil, sira);
         await tx.belge.update({ where: { id: belge.id }, data: { no: belge.no } });
       }
-      const cari = yurtDisi ? { ...belge.cari, vknTckn: YURT_DISI_ALICI_VKN } : belge.cari;
-      const xml = this.ubl({ ...belge, cari, teslimatAdresi }, tenant);
+      const cari = belge.gumrukDepoSevki && tenant
+        ? { unvan: tenant.unvan, vknTckn: tenant.vkn, adresler: [{ tip: "merkez", adres: tenant.adres, il: tenant.il, ilce: tenant.ilce, postaKodu: tenant.postaKodu, ulke: "TR" }] }
+        : yurtDisi ? { ...belge.cari, vknTckn: YURT_DISI_ALICI_VKN } : belge.cari;
+      const gumrukNotu = belge.gumrukDepoSevki && belge.gumrukBeyannameNo && belge.gumrukBeyannameTarihi && belge.gumrukSeferNo
+        ? gumrukSeferNotu({ beyannameNo: belge.gumrukBeyannameNo, beyannameTarihi: belge.gumrukBeyannameTarihi.toISOString(), seferNo: belge.gumrukSeferNo })
+        : undefined;
+      const xml = this.ubl({ ...belge, cari, teslimatAdresi, gumrukNotu, yuklemeAdresi: belge.gumrukDepoSevki ? irsaliyeYuklemeAdresi(belge) : undefined }, tenant);
       const sonuc = await adapter.irsaliyeGonder(cfg, { uuid: belge.id, belgeNo: belge.no, xml, aliciPostaKutusu });
       // EBLG-85: etiketsiz giden belgeyi alıcı GİB'den alamaz; çıktısı verilir.
       // Hata mesajı açıkça `null` yazılır: `undefined` alanı Prisma güncellemez
@@ -288,12 +303,15 @@ export class EirsaliyeService {
       const belgeler = await tx.belge.findMany({
         where: {
           tur: "irsaliye",
-          yon: "satis",
           // EBLG-83: kâğıt irsaliye e-İrsaliye defterine girmez.
           kagitIrsaliye: false,
-          // Kaydı olan her irsaliye defterde kalır; kaydı olmayanlardan yalnız
-          // onaylı olanlar gönderilmeyi bekliyor sayılır.
-          OR: [{ eirsaliye: { isNot: null } }, { durum: { in: IRSALIYE_GONDERILEBILIR_DURUMLAR as ZincirBelgeDurum[] } }],
+          AND: [
+            // EBLG-87: gümrükten depoya sevk alış irsaliyesidir ama firma gönderir.
+            { OR: [{ yon: "satis" }, { gumrukDepoSevki: true }] },
+            // Kaydı olan her irsaliye defterde kalır; kaydı olmayanlardan yalnız
+            // onaylı olanlar gönderilmeyi bekliyor sayılır.
+            { OR: [{ eirsaliye: { isNot: null } }, { durum: { in: IRSALIYE_GONDERILEBILIR_DURUMLAR as ZincirBelgeDurum[] } }] },
+          ],
         },
         select: {
           id: true,
@@ -312,6 +330,14 @@ export class EirsaliyeService {
           teslimatIl: true,
           teslimatIlce: true,
           teslimatPostaKodu: true,
+          gumrukDepoSevki: true,
+          gumrukBeyannameNo: true,
+          gumrukBeyannameTarihi: true,
+          yuklemeAdres: true,
+          yuklemeIl: true,
+          yuklemeIlce: true,
+          yuklemePostaKodu: true,
+          depo: { select: { adres: true, il: true, ilce: true, postaKodu: true } },
           cari: { select: { unvan: true, vknTckn: true, adresler: { select: { tip: true, il: true, ilce: true, postaKodu: true, ulke: true } } } },
           tasiyiciCari: { select: { vknTckn: true } },
           eirsaliye: { select: { durum: true, entegratorRef: true, hataMesaji: true, sonDurumSorguAt: true, createdAt: true, aliciKayitsiz: true } },
@@ -332,6 +358,7 @@ export class EirsaliyeService {
           belgeDurumu: b.durum,
           genelToplam: b.genelToplam.toFixed(2),
           cari: { unvan: b.cari.unvan, vknTckn: b.cari.vknTckn },
+          gumrukDepoSevki: b.gumrukDepoSevki,
           durum: b.eirsaliye?.durum ?? ("gonderilmedi" as const),
           entegratorRef: b.eirsaliye?.entegratorRef ?? null,
           hataMesaji: b.eirsaliye?.hataMesaji ?? null,
@@ -411,14 +438,20 @@ export class EirsaliyeService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const mevcutlar = await tx.gelenEirsaliye.findMany({ where: { uuid: { in: gelen.map((g) => g.uuid) } }, select: { uuid: true } });
       const mevcutUuid = new Set(mevcutlar.map((x) => x.uuid));
-      await Promise.all(gelen.map((g) => tx.gelenEirsaliye.upsert({ where: { tenantId_uuid: { tenantId, uuid: g.uuid } }, create: { tenantId, uuid: g.uuid, belgeNo: g.belgeNo, gonderenVkn: g.gonderenVkn, gonderenUnvan: g.gonderenUnvan, tarih: g.tarih, xmlIcerik: g.xml }, update: { belgeNo: g.belgeNo, gonderenVkn: g.gonderenVkn, gonderenUnvan: g.gonderenUnvan, tarih: g.tarih, xmlIcerik: g.xml } })));
+      // EBLG-87: firmanın kendine gönderdiği belge (gümrükten depoya sevk) kendi
+      // kutusuna da düşer; yanıt istemez, bekleyenlere girmez.
+      const kendiVkn = (await tx.tenant.findUnique({ where: { id: tenantId }, select: { vkn: true } }))?.vkn;
+      await Promise.all(gelen.map((g) => {
+        const kendiSevkimiz = Boolean(kendiVkn) && g.gonderenVkn === kendiVkn;
+        return tx.gelenEirsaliye.upsert({ where: { tenantId_uuid: { tenantId, uuid: g.uuid } }, create: { tenantId, uuid: g.uuid, belgeNo: g.belgeNo, gonderenVkn: g.gonderenVkn, gonderenUnvan: g.gonderenUnvan, tarih: g.tarih, xmlIcerik: g.xml, kendiSevkimiz }, update: { belgeNo: g.belgeNo, gonderenVkn: g.gonderenVkn, gonderenUnvan: g.gonderenUnvan, tarih: g.tarih, xmlIcerik: g.xml, kendiSevkimiz } });
+      }));
       // EBLG-34: portalda ya da başka bir yerde verilmiş karar yanıt bekleyen kayda yazılır; yerel kararın üzerine yazılmaz.
       await Promise.all(gelen.filter((g) => g.yanit).map((g) => tx.gelenEirsaliye.updateMany({ where: { tenantId, uuid: g.uuid, durum: "yeni" }, data: { durum: g.yanit!.karar, yanitGerekcesi: g.yanit!.not ?? null } })));
       return { toplam: gelen.length, yeni: gelen.filter((g) => !mevcutUuid.has(g.uuid)).length, kontrolTarihi: new Date().toISOString() };
     });
   }
 
-  async gelenListele(durum?: GelenEirsaliyeDurum) { const { tenantId } = aktifBaglam(); return this.prisma.tenantIslem(tenantId, (tx) => tx.gelenEirsaliye.findMany({ where: durum ? { durum } : undefined, select: { id: true, uuid: true, belgeNo: true, gonderenVkn: true, gonderenUnvan: true, tarih: true, durum: true, yanitRef: true, yanitBelgeNo: true, yanitGerekcesi: true, createdAt: true, updatedAt: true }, orderBy: [{ tarih: "desc" }, { createdAt: "desc" }] })); }
+  async gelenListele(durum?: GelenEirsaliyeDurum) { const { tenantId } = aktifBaglam(); return this.prisma.tenantIslem(tenantId, (tx) => tx.gelenEirsaliye.findMany({ where: durum ? { durum, ...(durum === "yeni" ? { kendiSevkimiz: false } : {}) } : undefined, select: { kendiSevkimiz: true, id: true, uuid: true, belgeNo: true, gonderenVkn: true, gonderenUnvan: true, tarih: true, durum: true, yanitRef: true, yanitBelgeNo: true, yanitGerekcesi: true, createdAt: true, updatedAt: true }, orderBy: [{ tarih: "desc" }, { createdAt: "desc" }] })); }
 
   async gelenDetay(id: string) {
     const { tenantId } = aktifBaglam();
@@ -440,6 +473,7 @@ export class EirsaliyeService {
     const { kayit, cfg, adapter } = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const kayit = await tx.gelenEirsaliye.findUnique({ where: { id } }); if (!kayit) throw new NotFoundException("Gelen e-İrsaliye bulunamadı");
       if (kayit.durum !== "yeni") throw new BadRequestException("Bu e-İrsaliyeye daha önce yanıt verilmiş");
+      if (kayit.kendiSevkimiz) throw new BadRequestException("Bu belge firmanın kendi gönderdiği sevk irsaliyesi; yanıt verilmez");
       return { kayit, ...(await this.baglanti(tx, tenantId)) };
     });
     if (!adapter.irsaliyeYanitiGonder) throw new BadRequestException("Entegratör e-İrsaliye yanıtını desteklemiyor");

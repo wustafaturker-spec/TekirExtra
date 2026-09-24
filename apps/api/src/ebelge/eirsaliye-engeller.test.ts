@@ -124,3 +124,30 @@ describe("ihracat e-İrsaliyesi ve teslimat adresi (EBLG-84)", () => {
     expect(kodlar(belge({ teslimatAdres: "Ambarlı", teslimatIl: "İstanbul" }))).toEqual(["adres_yok"]);
   });
 });
+
+describe("gümrükten depoya sevk (EBLG-87)", () => {
+  const depo = { adres: "Organize San. 5. Cad. No:3", il: "Kocaeli", ilce: "Gebze", postaKodu: "41400" };
+  const yukleme = { yuklemeAdres: "Ambarlı Gümrük Müdürlüğü", yuklemeIl: "İstanbul", yuklemeIlce: "Avcılar", yuklemePostaKodu: "34315" };
+  const beyanname = { gumrukBeyannameNo: "26341300IM000123", gumrukBeyannameTarihi: "2026-09-20" };
+  const yabanciTedarikci = { vknTckn: null, adresler: [{ tip: "fatura", il: "Berlin", ilce: "Mitte", postaKodu: "10115", ulke: "DE" }] };
+
+  it("alış irsaliyesini gönderir; yabancı tedarikçiyi yurt dışı alıcı saymaz, boşaltma adresini depodan alır", () => {
+    const b = belge({ yon: "alis", gumrukDepoSevki: true, ...beyanname, ...yukleme, depo }, yabanciTedarikci);
+    expect(kodlar(b)).toEqual([]);
+    expect(irsaliyeTeslimatAdresi(b)).toEqual(depo);
+  });
+
+  it("beyanname ve yükleme adresi olmadan göndermez", () => {
+    expect(kodlar(belge({ yon: "alis", gumrukDepoSevki: true, depo }, yabanciTedarikci))).toEqual(["gumruk", "gumruk"]);
+  });
+
+  it("deponun adresi eksikse boşaltma adresini ister", () => {
+    const engeller = gonderimEngelleri(belge({ yon: "alis", gumrukDepoSevki: true, ...beyanname, ...yukleme, depo: { ...depo, postaKodu: null } }, yabanciTedarikci));
+    expect(engeller.map((e) => e.kod)).toEqual(["adres_yok"]);
+    expect(engeller[0].mesaj).toContain("depo kartına");
+  });
+
+  it("gümrük işareti olmayan alış irsaliyesi yine gönderilmez", () => {
+    expect(kodlar(belge({ yon: "alis" }))).toEqual(["belge_turu"]);
+  });
+});

@@ -11,9 +11,10 @@ import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyal
 import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { TasimaBilgisiPaneli } from "@/components/tasima-bilgisi-paneli";
+import type { DepoOzet } from "@/lib/depolar";
 import { BOS_TESLIMAT_ADRESI, TeslimatAdresiAlanlari, teslimatAdresiGovdesi, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
 import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
-import { bugunTR, faturaHesapla, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
+import { bugunTR, faturaHesapla, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -91,9 +92,14 @@ function belgeNoGoster(b: Belge): string {
   return b.durum === "taslak" ? "(Taslak)" : "(Numara gönderimde)";
 }
 
+/** EBLG-87: e-İrsaliyesini firmanın gönderdiği irsaliye — satış ya da gümrükten depoya sevk. */
+function firmaGonderir(b: Belge): boolean {
+  return b.tur === "irsaliye" && (b.yon === "satis" || Boolean(b.gumrukDepoSevki));
+}
+
 /** EBLG-83: numara almış ama GİB'e ulaşmamış satış irsaliyesi iptalde seride boşluk bırakır. */
 function seriBoslukRiski(b: Belge): boolean {
-  return b.tur === "irsaliye" && b.yon === "satis" && !b.kagitIrsaliye && Boolean(b.no) && (!b.eirsaliye || b.eirsaliye.durum === "hata");
+  return firmaGonderir(b) && !b.kagitIrsaliye && Boolean(b.no) && (!b.eirsaliye || b.eirsaliye.durum === "hata");
 }
 
 interface Belge {
@@ -114,6 +120,15 @@ interface Belge {
   /** EBLG-83: e-İrsaliye kullanıcısı olmayan firmanın satış irsaliyesi ve matbu numarası. */
   kagitIrsaliye?: boolean;
   matbuBelgeNo?: string | null;
+  /** EBLG-87: ithal malın gümrükten depoya kısım kısım taşınması; firma e-İrsaliye gönderir. */
+  gumrukDepoSevki?: boolean;
+  gumrukBeyannameNo?: string | null;
+  gumrukBeyannameTarihi?: string | null;
+  gumrukSeferNo?: number | null;
+  yuklemeAdres?: string | null;
+  yuklemeIl?: string | null;
+  yuklemeIlce?: string | null;
+  yuklemePostaKodu?: string | null;
   /** EBLG-85: `aliciKayitsiz` — alıcı GİB listesinde değildi, çıktısı verilir. */
   eirsaliye?: { durum: string; entegratorRef?: string | null; hataMesaji?: string | null; aliciKayitsiz?: boolean } | null;
   /** EBLG-82: faturalanmayı bekleyen irsaliyenin süresi; bekleyen değilse null. */
@@ -275,6 +290,12 @@ export default function BelgelerSayfasi() {
   const [tedarikciBelgeNo, setTedarikciBelgeNo] = useState("");
   /** EBLG-84: irsaliyeye özel teslimat adresi; ihracatta gümrük kapısı. */
   const [teslimat, setTeslimat] = useState<TeslimatAdresi>(BOS_TESLIMAT_ADRESI);
+  /** EBLG-87: alış irsaliyesinde gümrükten depoya kısım kısım sevk. */
+  const [gumrukDepo, setGumrukDepo] = useState(false);
+  const [beyannameNo, setBeyannameNo] = useState("");
+  const [beyannameTarihi, setBeyannameTarihi] = useState("");
+  /** Yükleme (gümrük) adresi; alan adları teslimat bileşeniyle aynı kalıpta. */
+  const [yukleme, setYukleme] = useState<TeslimatAdresi>(BOS_TESLIMAT_ADRESI);
   /** Detayda tedarikçi/matbu numarasını düzeltme; null = düzenlenmiyor. */
   const [disNoTaslak, setDisNoTaslak] = useState<string | null>(null);
   const [dorsePlaka, setDorsePlaka] = useState("");
@@ -498,6 +519,17 @@ export default function BelgelerSayfasi() {
             : {}),
           siparisNo: siparisNo.trim() || null,
           siparisTarihi: siparisTarihi || null,
+          ...(tur === "irsaliye" && yon === "alis"
+            ? {
+                gumrukDepoSevki: gumrukDepo,
+                gumrukBeyannameNo: gumrukDepo ? beyannameNo.trim() || null : null,
+                gumrukBeyannameTarihi: gumrukDepo ? beyannameTarihi || null : null,
+                yuklemeAdres: gumrukDepo ? yukleme.teslimatAdres.trim() || null : null,
+                yuklemeIl: gumrukDepo ? yukleme.teslimatIl.trim() || null : null,
+                yuklemeIlce: gumrukDepo ? yukleme.teslimatIlce.trim() || null : null,
+                yuklemePostaKodu: gumrukDepo ? yukleme.teslimatPostaKodu.trim() || null : null,
+              }
+            : {}),
           tedarikciBelgeNo: tur === "irsaliye" && yon === "alis" ? tedarikciBelgeNo.trim() || null : null,
           satirlar: satirlar.map((s) => ({
             stokId: s.stokId,
@@ -521,6 +553,7 @@ export default function BelgelerSayfasi() {
       setDosyalar([]);
       setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 }]);
       setSiparisNo(""); setSiparisTarihi(""); setIdisSevkiyatNo(""); setTedarikciBelgeNo(""); setTeslimat(BOS_TESLIMAT_ADRESI);
+      setGumrukDepo(false); setBeyannameNo(""); setBeyannameTarihi(""); setYukleme(BOS_TESLIMAT_ADRESI);
       void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Belge oluşturulamadı");
@@ -665,6 +698,17 @@ export default function BelgelerSayfasi() {
       setTopluFaturaYukleniyor(false);
     }
   }
+
+  // EBLG-87: boşaltma adresi seçilen deponun (yoksa varsayılan deponun) adresidir; irsaliyede değiştirilebilir.
+  useEffect(() => {
+    if (!gumrukDepo) return;
+    void api<DepoOzet[]>("/depo")
+      .then((depolar) => {
+        const d = depolar.find((x) => x.id === depoId) ?? depolar.find((x) => x.varsayilan);
+        if (d) setTeslimat({ teslimatAdres: d.adres ?? "", teslimatIl: d.il ?? "", teslimatIlce: d.ilce ?? "", teslimatPostaKodu: d.postaKodu ?? "" });
+      })
+      .catch(() => undefined);
+  }, [gumrukDepo, depoId]);
 
   async function detayAc(id: string) {
     setHata("");
@@ -883,8 +927,28 @@ export default function BelgelerSayfasi() {
                   <Input type="date" value={siparisTarihi} onChange={(e) => setSiparisTarihi(e.target.value)} />
                   {siparisNo.trim() && !siparisTarihi && <small className="muted">Boş bırakılırsa belgeye irsaliye tarihi yazılır (GİB tarihi zorunlu tutuyor).</small>}
                 </Field>
-                {/* EBLG-84: satış irsaliyesinde malın gideceği yer; ihracatta gümrük kapısı. */}
-                {yon === "satis" && <TeslimatAdresiAlanlari deger={teslimat} onChange={setTeslimat} cariId={cariId || null} />}
+                {/* EBLG-87: ithal mal gümrükten depoya kısım kısım taşınırken firma e-İrsaliye düzenler. */}
+                {yon === "alis" && (
+                  <Field label="Gümrükten Depoya Sevk">
+                    <label className="row-tight">
+                      <input type="checkbox" checked={gumrukDepo} onChange={(e) => setGumrukDepo(e.target.checked)} />
+                      <span>İthal malın gümrükten depoya kısım kısım taşınması</span>
+                    </label>
+                    <small className="muted">Firma e-İrsaliye düzenler; satıcı da alıcı da firmanın kendisidir. Açıklama ve sefer numarası kendiliğinden yazılır.</small>
+                  </Field>
+                )}
+                {yon === "alis" && gumrukDepo && (
+                  <>
+                    <Field label="Gümrük Beyanname No"><Input aria-label="Gümrük beyanname numarası" value={beyannameNo} maxLength={40} onChange={(e) => setBeyannameNo(e.target.value)} /></Field>
+                    <Field label="Beyanname Tarihi"><Input aria-label="Gümrük beyanname tarihi" type="date" value={beyannameTarihi} onChange={(e) => setBeyannameTarihi(e.target.value)} /></Field>
+                    <Field label="Yükleme Adresi (Gümrük)"><Input aria-label="Yükleme adresi" value={yukleme.teslimatAdres} maxLength={500} onChange={(e) => setYukleme({ ...yukleme, teslimatAdres: e.target.value })} /></Field>
+                    <Field label="Yükleme İli"><Input aria-label="Yükleme ili" value={yukleme.teslimatIl} maxLength={60} onChange={(e) => setYukleme({ ...yukleme, teslimatIl: e.target.value })} /></Field>
+                    <Field label="Yükleme İlçesi"><Input aria-label="Yükleme ilçesi" value={yukleme.teslimatIlce} maxLength={60} onChange={(e) => setYukleme({ ...yukleme, teslimatIlce: e.target.value })} /></Field>
+                    <Field label="Yükleme Posta Kodu"><Input aria-label="Yükleme posta kodu" value={yukleme.teslimatPostaKodu} maxLength={10} onChange={(e) => setYukleme({ ...yukleme, teslimatPostaKodu: e.target.value })} /></Field>
+                  </>
+                )}
+                {/* EBLG-84: satış irsaliyesinde malın gideceği yer; ihracatta gümrük kapısı. EBLG-87: gümrükten sevkte boşaltma (depo) adresi. */}
+                {(yon === "satis" || gumrukDepo) && <TeslimatAdresiAlanlari deger={teslimat} onChange={setTeslimat} cariId={yon === "satis" ? cariId || null : null} />}
                 {/* EBLG-72: numara girilirse belge IDISIRSALIYE profiliyle gider. */}
                 <Field label="İDİS Sevkiyat Numarası">
                   <Input aria-label="İDİS sevkiyat numarası" value={idisSevkiyatNo} maxLength={20} placeholder="Örn. SE-0152457" onChange={(e) => setIdisSevkiyatNo(e.target.value)} />
@@ -1019,7 +1083,7 @@ export default function BelgelerSayfasi() {
               <Button size="sm" type="button" onClick={() => setTasimaPaneli({ id: detay.id, no: detay.no })}>🚚 Taşıma bilgisi</Button>
             )}
             {/* Faturalanmış (kapandı) irsaliye de sevk belgesidir; e-İrsaliyesi gönderilebilir (FTR-26). */}
-            {(detay.durum === "onaylandi" || detay.durum === "kapandi") && detay.tur === "irsaliye" && detay.yon === "satis" && !detay.kagitIrsaliye && !detay.eirsaliye && <Button size="sm" type="button" onClick={() => void eirsaliyeGonder(detay.id)}>🚚 e-İrsaliye gönder</Button>}
+            {(detay.durum === "onaylandi" || detay.durum === "kapandi") && firmaGonderir(detay) && !detay.kagitIrsaliye && !detay.eirsaliye && <Button size="sm" type="button" onClick={() => void eirsaliyeGonder(detay.id)}>🚚 e-İrsaliye gönder</Button>}
             {detay.durum === "onaylandi" && detay.tur === "irsaliye" && !detay.fatura && <Button size="sm" type="button" onClick={() => setBaglaPaneli(detay.id)}>🔗 Faturaya bağla</Button>}
             <Button size="sm" type="button" onClick={() => void pdfAc(detay.id)}>🖨 PDF</Button>
             <EylemMenusu>
@@ -1095,7 +1159,17 @@ export default function BelgelerSayfasi() {
               {/* EBLG-74: belgeyle giden sipariş referansı; boşsa zincirdeki sipariş yazılır. */}
               {detay.siparisNo ? ` · Sipariş ${detay.siparisNo}${detay.siparisTarihi ? ` (${new Date(detay.siparisTarihi).toLocaleDateString("tr-TR")})` : ""}` : ""}
               {detay.idisSevkiyatNo ? ` · İDİS sevkiyat ${detay.idisSevkiyatNo}` : ""}
-              {detay.teslimatAdres ? ` · Teslimat ${detay.teslimatAdres}, ${[detay.teslimatIlce, detay.teslimatIl].filter(Boolean).join(" / ")} ${detay.teslimatPostaKodu ?? ""}` : ""}
+              {detay.teslimatAdres ? ` · ${detay.gumrukDepoSevki ? "Boşaltma" : "Teslimat"} ${detay.teslimatAdres}, ${[detay.teslimatIlce, detay.teslimatIl].filter(Boolean).join(" / ")} ${detay.teslimatPostaKodu ?? ""}` : ""}
+              {detay.gumrukDepoSevki && detay.yuklemeAdres ? ` · Yükleme ${detay.yuklemeAdres}, ${[detay.yuklemeIlce, detay.yuklemeIl].filter(Boolean).join(" / ")} ${detay.yuklemePostaKodu ?? ""}` : ""}
+            </p>
+          )}
+          {/* EBLG-87: e-İrsaliyeye yazılan açıklama; sefer numarası onayda verilir. */}
+          {detay.tur === "irsaliye" && detay.gumrukDepoSevki && (
+            <p className="muted" style={{ margin: "0 0 1rem", fontSize: "0.85rem" }}>
+              <Badge variant="info">Gümrükten depoya sevk</Badge>{" "}
+              {detay.gumrukBeyannameNo && detay.gumrukBeyannameTarihi && detay.gumrukSeferNo
+                ? gumrukSeferNotu({ beyannameNo: detay.gumrukBeyannameNo, beyannameTarihi: detay.gumrukBeyannameTarihi, seferNo: detay.gumrukSeferNo })
+                : `Beyanname ${detay.gumrukBeyannameNo ?? "girilmedi"}; sefer numarası onayda verilir.`}
             </p>
           )}
           {/* FTR-27 / EBLG-83: tedarikçinin ya da matbu irsaliyenin numarası onaydan sonra da girilir (kâğıt irsaliye elden gelir). */}
@@ -1122,14 +1196,14 @@ export default function BelgelerSayfasi() {
             );
           })()}
           {/* EBLG-85: GİB'e iletilmiş e-İrsaliyenin çıktısı; kayıtlı olmayan alıcıya bu verilir. */}
-          {detay.tur === "irsaliye" && detay.yon === "satis" && detay.eirsaliye && detay.eirsaliye.durum !== "hata" && (
+          {firmaGonderir(detay) && detay.eirsaliye && detay.eirsaliye.durum !== "hata" && (
             <div className="row-tight" style={{ margin: "0 0 1rem", fontSize: "0.85rem" }}>
               {detay.eirsaliye.aliciKayitsiz && <Badge variant="warning">Alıcı e-İrsaliye kullanıcısı değil</Badge>}
               {detay.eirsaliye.aliciKayitsiz && <span className="muted">Belge alıcıya GİB üzerinden ulaşmaz; çıktısını verin ya da e-postayla iletin. Alıcı yanıt veremez.</span>}
               <Button size="sm" type="button" onClick={() => void apiPdfAc(`/ebelge/irsaliye/giden/${detay.id}/pdf`).catch((h: unknown) => setHata(h instanceof Error ? h.message : "e-İrsaliye çıktısı açılamadı"))}>🖨 e-İrsaliye çıktısı</Button>
             </div>
           )}
-          {detay.tur === "irsaliye" && detay.yon === "satis" && detay.eirsaliye?.durum === "hata" && <div className="row-tight" style={{ margin: "0 0 1rem" }}><span className="muted">{detay.eirsaliye.hataMesaji ?? "Gönderim başarısız."}</span><Button size="sm" variant="primary" onClick={() => void eirsaliyeGonder(detay.id)}>Tekrar gönder</Button></div>}
+          {firmaGonderir(detay) && detay.eirsaliye?.durum === "hata" && <div className="row-tight" style={{ margin: "0 0 1rem" }}><span className="muted">{detay.eirsaliye.hataMesaji ?? "Gönderim başarısız."}</span><Button size="sm" variant="primary" onClick={() => void eirsaliyeGonder(detay.id)}>Tekrar gönder</Button></div>}
           {/* EBLG-35: e-İrsaliye ve bağlı fatura durum geçmişi; durum değiştikçe yeniden yüklenir. */}
           {(detay.eirsaliye || detay.fatura) && (
             <DurumGecmisi
@@ -1225,7 +1299,8 @@ export default function BelgelerSayfasi() {
               {onayBekleyen.tur === "siparis" && onayBekleyen.yon === "satis" && "Onayla birlikte ürün miktarları seçilen depoda rezerve edilecek."}
               {onayBekleyen.tur === "siparis" && onayBekleyen.yon === "alis" && "Onayla birlikte ürün miktarları seçilen depo için yoldaki stok olarak işaretlenecek."}
               {onayBekleyen.tur === "teklif" && "Teklif numara alacak; stok ve cari bakiyesi değişmeyecek."}
-              {onayBekleyen.tur === "irsaliye" && (onayBekleyen.yon === "satis"
+              {onayBekleyen.tur === "irsaliye" && firmaGonderir(onayBekleyen) && onayBekleyen.gumrukDepoSevki && "Aynı beyannamenin sefer numarası onayda verilir. "}
+              {onayBekleyen.tur === "irsaliye" && (firmaGonderir(onayBekleyen)
                 ? "Firma e-İrsaliye kullanıcısıysa numara e-İrsaliye gönderiminde verilir; değilse kâğıt irsaliye olarak iç seriden numaralanır. Stok ve cari etkisi fatura kesinleştiğinde oluşacak."
                 : "İrsaliye iç seriden numara alacak; stok ve cari etkisi fatura kesinleştiğinde oluşacak.")}
             </div>

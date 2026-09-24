@@ -342,6 +342,30 @@ describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
     expect(tx.eirsaliyeKayit.upsert.mock.calls[0][0].create.aliciKayitsiz).toBe(true);
   });
 
+  it("gümrükten depoya sevki firmanın kendisine, açıklama ve yükleme adresiyle gönderir (EBLG-87)", async () => {
+    const { servis, irsaliyeGonder } = kur(taslakBelge({
+      yon: "alis", no: "GBZ2026000800030", gumrukDepoSevki: true,
+      gumrukBeyannameNo: "26341300IM000123", gumrukBeyannameTarihi: new Date("2026-09-20"), gumrukSeferNo: 2,
+      yuklemeAdres: "Ambarlı Gümrük Müdürlüğü", yuklemeIl: "İstanbul", yuklemeIlce: "Avcılar", yuklemePostaKodu: "34315",
+      depo: { adres: "Organize San. 5. Cad. No:3", il: "Kocaeli", ilce: "Gebze", postaKodu: "41400" },
+      cari: { unvan: "Müller GmbH", vknTckn: null, adresler: [{ tip: "fatura", adres: "Hauptstr. 1", il: "Berlin", ilce: "Mitte", postaKodu: "10115", ulke: "DE" }] },
+    }));
+    const kanalBelirle = (servis as unknown as { mukellefListesi: { kanalBelirle: ReturnType<typeof vi.fn> } }).mukellefListesi.kanalBelirle;
+
+    await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
+
+    // Alıcı firmanın kendisi: kendi VKN'si için posta kutusu sorulur.
+    expect(kanalBelirle.mock.calls[0][2]).toBe("1234567801");
+    const { xml } = irsaliyeGonder.mock.calls[0][1];
+    const alici = xml.slice(xml.indexOf("<cac:DeliveryCustomerParty>"), xml.indexOf("</cac:DeliveryCustomerParty>"));
+    expect(alici).toContain('<cbc:ID schemeID="VKN">1234567801</cbc:ID>');
+    expect(alici).toContain("Satıcı A.Ş.");
+    expect(xml).toContain("<cbc:Note>20.09.2026 Tarih ve 26341300IM000123 Sayılı Gümrük Beyannamesi muhteviyatı malların gümrükten depoya kısım kısım taşınmasına ilişkin 2. seferidir.</cbc:Note><cbc:LineCountNumeric>");
+    expect(xml).toMatch(/<cbc:ActualDespatchTime>[^<]*<\/cbc:ActualDespatchTime><cac:DespatchAddress><cbc:StreetName>Ambarlı Gümrük Müdürlüğü<\/cbc:StreetName>/);
+    const bosaltma = xml.slice(xml.indexOf("<cac:DeliveryAddress>"), xml.indexOf("</cac:DeliveryAddress>"));
+    expect(bosaltma).toContain("<cbc:CitySubdivisionName>Gebze</cbc:CitySubdivisionName>");
+  });
+
   it("kâğıt irsaliyeyi göndermez", async () => {
     const { servis, irsaliyeGonder } = kur(taslakBelge({ kagitIrsaliye: true, no: "KIR2026000001" }));
 

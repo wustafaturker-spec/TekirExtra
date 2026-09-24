@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { faturaGecikmeUyarilari, irsaliyeFaturaFarklari, irsaliyeKanali, irsaliyeFaturaSonGun, irsaliyeFaturaSuresi, irsaliyeFaturaTipiUyarMi, irsaliyeSevkGunu } from "./irsaliye-fatura";
+import { faturaGecikmeUyarilari, gumrukSeferNotu, irsaliyeFaturaFarklari, irsaliyeKanali, irsaliyeFaturaSonGun, irsaliyeFaturaSuresi, irsaliyeFaturaTipiUyarMi, irsaliyeSevkGunu } from "./irsaliye-fatura";
 
 const satir = (stokId: string, miktar: number, birim = "adet", ek: { varyantId?: string; stokTipi?: string } = {}) => ({ stokId, ad: stokId.toUpperCase(), miktar, birim, ...ek });
 
@@ -100,4 +100,9 @@ describe("irsaliyeKanali (EBLG-83)", () => {
 it("numarasız irsaliyenin gecikme uyarısı numara uydurmaz (EBLG-83)", () => {
   const [uyari] = faturaGecikmeUyarilari({ faturaTarihi: "2026-09-20", yon: "satis", irsaliyeler: [{ no: null, sevkGunu: "2026-09-01" }] });
   expect(uyari).toContain("numarasız irsaliyenin");
+});
+
+it("gümrükten depoya sevkin açıklamasını müşavirin verdiği kalıpla yazar (EBLG-87)", () => {
+  expect(gumrukSeferNotu({ beyannameNo: "26341300IM000123", beyannameTarihi: "2026-09-20", seferNo: 2 }))
+    .toBe("20.09.2026 Tarih ve 26341300IM000123 Sayılı Gümrük Beyannamesi muhteviyatı malların gümrükten depoya kısım kısım taşınmasına ilişkin 2. seferidir.");
 });

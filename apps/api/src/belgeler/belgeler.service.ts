@@ -59,6 +59,24 @@ const ALIS_IRSALIYE_ONEKI = "AIR";
 /** EBLG-83: kâğıt (matbu) satış irsaliyesinin iç serisi. */
 const KAGIT_IRSALIYE_ONEKI = "KIR";
 
+/** EBLG-87: gümrükten depoya sevk alanları yalnız alış irsaliyesinde yazılır. */
+function gumrukDepoAlanlari(tur: string, yon: string, g: {
+  gumrukDepoSevki?: boolean; gumrukBeyannameNo?: string | null; gumrukBeyannameTarihi?: string | Date | null;
+  yuklemeAdres?: string | null; yuklemeIl?: string | null; yuklemeIlce?: string | null; yuklemePostaKodu?: string | null;
+}) {
+  const acik = tur === "irsaliye" && yon === "alis" && Boolean(g.gumrukDepoSevki);
+  const metin = (v?: string | null) => (acik ? v?.trim() || null : null);
+  return {
+    gumrukDepoSevki: acik,
+    gumrukBeyannameNo: metin(g.gumrukBeyannameNo),
+    gumrukBeyannameTarihi: acik && g.gumrukBeyannameTarihi ? new Date(g.gumrukBeyannameTarihi) : null,
+    yuklemeAdres: metin(g.yuklemeAdres),
+    yuklemeIl: metin(g.yuklemeIl),
+    yuklemeIlce: metin(g.yuklemeIlce),
+    yuklemePostaKodu: metin(g.yuklemePostaKodu),
+  };
+}
+
 /** FTR-27: tedarikçinin irsaliye numarası yalnız alış irsaliyesinde tutulur. */
 function tedarikciBelgeNoYaz(tur: string, yon: string, deger: string | null | undefined): string | null {
   return tur === "irsaliye" && yon === "alis" ? deger?.trim() || null : null;
@@ -403,6 +421,7 @@ export class BelgelerService {
           siparisNo: girdi.siparisNo?.trim() || null,
           siparisTarihi: girdi.siparisTarihi ? new Date(girdi.siparisTarihi) : null,
           tedarikciBelgeNo: tedarikciBelgeNoYaz(girdi.tur, girdi.yon, girdi.tedarikciBelgeNo),
+          ...gumrukDepoAlanlari(girdi.tur, girdi.yon, girdi),
           depoId: girdi.depoId ?? null,
           dovizCinsi: girdi.dovizCinsi,
           kur: D(girdi.kur),
@@ -503,6 +522,13 @@ export class BelgelerService {
       siparisNo: girdi.siparisNo !== undefined ? girdi.siparisNo : mevcut.siparisNo,
       siparisTarihi: girdi.siparisTarihi !== undefined ? girdi.siparisTarihi : mevcut.siparisTarihi,
       tedarikciBelgeNo: girdi.tedarikciBelgeNo !== undefined ? girdi.tedarikciBelgeNo : mevcut.tedarikciBelgeNo,
+      gumrukDepoSevki: girdi.gumrukDepoSevki ?? mevcut.gumrukDepoSevki,
+      gumrukBeyannameNo: girdi.gumrukBeyannameNo !== undefined ? girdi.gumrukBeyannameNo : mevcut.gumrukBeyannameNo,
+      gumrukBeyannameTarihi: girdi.gumrukBeyannameTarihi !== undefined ? girdi.gumrukBeyannameTarihi : mevcut.gumrukBeyannameTarihi,
+      yuklemeAdres: girdi.yuklemeAdres !== undefined ? girdi.yuklemeAdres : mevcut.yuklemeAdres,
+      yuklemeIl: girdi.yuklemeIl !== undefined ? girdi.yuklemeIl : mevcut.yuklemeIl,
+      yuklemeIlce: girdi.yuklemeIlce !== undefined ? girdi.yuklemeIlce : mevcut.yuklemeIlce,
+      yuklemePostaKodu: girdi.yuklemePostaKodu !== undefined ? girdi.yuklemePostaKodu : mevcut.yuklemePostaKodu,
       idisSevkiyatNo: girdi.idisSevkiyatNo !== undefined ? girdi.idisSevkiyatNo : mevcut.idisSevkiyatNo,
       satirlar:
         girdi.satirlar ??
@@ -557,6 +583,7 @@ export class BelgelerService {
           siparisNo: birlesik.siparisNo?.trim() || null,
           siparisTarihi: birlesik.siparisTarihi ? new Date(birlesik.siparisTarihi) : null,
           tedarikciBelgeNo: tedarikciBelgeNoYaz(mevcut.tur, mevcut.yon, birlesik.tedarikciBelgeNo),
+          ...gumrukDepoAlanlari(mevcut.tur, mevcut.yon, birlesik),
           depoId: birlesik.depoId ?? null,
           dovizCinsi: birlesik.dovizCinsi,
           kur: D(birlesik.kur),
@@ -685,7 +712,9 @@ export class BelgelerService {
       // boşluk bırakmasın. Kâğıt irsaliye kendi serisinden numaralanır.
       let kagitIrsaliye = false;
       let no: string | null;
-      if (irsaliye && belge.yon === "satis") {
+      // EBLG-87: gümrükten depoya sevk alış irsaliyesidir ama firma düzenler;
+      // numarası satış irsaliyesininki gibi kanaldan gelir.
+      if (irsaliye && (belge.yon === "satis" || belge.gumrukDepoSevki)) {
         const karar = irsaliyeKanali((await ebelgeUygulamalariniOku(tx, tenantId)).eirsaliye.acik);
         if ("hata" in karar) throw new BadRequestException(karar.hata);
         kagitIrsaliye = karar.kanal === "kagit";
@@ -704,9 +733,23 @@ export class BelgelerService {
         await this.siparisEtkisiUygula(tx, belge.yon, belge.satirlar, +1, belge.depoId);
       }
 
+      // EBLG-87: aynı beyannamenin kaçıncı seferi; iptal edilenler sayılmaz.
+      let gumrukSeferNo: number | null = null;
+      if (irsaliye && belge.gumrukDepoSevki) {
+        if (!belge.gumrukBeyannameNo || !belge.gumrukBeyannameTarihi) {
+          throw new BadRequestException("Gümrükten depoya sevk irsaliyesi onaylanmadan önce gümrük beyannamesinin numarası ve tarihi girilmelidir");
+        }
+        const enSon = await tx.belge.aggregate({
+          where: { tur: "irsaliye", gumrukDepoSevki: true, gumrukBeyannameNo: belge.gumrukBeyannameNo, durum: { not: "iptal" }, id: { not: id } },
+          _max: { gumrukSeferNo: true },
+        });
+        gumrukSeferNo = (enSon._max.gumrukSeferNo ?? 0) + 1;
+      }
+
       const guncel = await tx.belge.update({
         where: { id },
         data: {
+          ...(gumrukSeferNo ? { gumrukSeferNo } : {}),
           // FTR-26: faturası önceden düzenlenmiş irsaliye (EBLG-76 "fatura
           // sevkten önce") onayla birlikte faturalanmış sayılır.
           durum: irsaliye && belge.faturaId ? "kapandi" : "onaylandi",
@@ -1544,6 +1587,15 @@ export class BelgelerService {
     teslimatIl?: string | null;
     teslimatIlce?: string | null;
     teslimatPostaKodu?: string | null;
+    /** EBLG-87: gümrükten depoya kısım kısım sevk. */
+    gumrukDepoSevki?: boolean;
+    gumrukBeyannameNo?: string | null;
+    gumrukBeyannameTarihi?: Date | string | null;
+    gumrukSeferNo?: number | null;
+    yuklemeAdres?: string | null;
+    yuklemeIl?: string | null;
+    yuklemeIlce?: string | null;
+    yuklemePostaKodu?: string | null;
     /** EBLG-83: kâğıt irsaliye ve matbu numarası. */
     kagitIrsaliye?: boolean;
     matbuBelgeNo?: string | null;
@@ -1591,6 +1643,16 @@ export class BelgelerService {
       teslimatIl: k.teslimatIl ?? null,
       teslimatIlce: k.teslimatIlce ?? null,
       teslimatPostaKodu: k.teslimatPostaKodu ?? null,
+      gumrukDepoSevki: k.gumrukDepoSevki ?? false,
+      gumrukBeyannameNo: k.gumrukBeyannameNo ?? null,
+      gumrukBeyannameTarihi: k.gumrukBeyannameTarihi
+        ? (typeof k.gumrukBeyannameTarihi === "string" ? k.gumrukBeyannameTarihi : k.gumrukBeyannameTarihi.toISOString()).slice(0, 10)
+        : null,
+      gumrukSeferNo: k.gumrukSeferNo ?? null,
+      yuklemeAdres: k.yuklemeAdres ?? null,
+      yuklemeIl: k.yuklemeIl ?? null,
+      yuklemeIlce: k.yuklemeIlce ?? null,
+      yuklemePostaKodu: k.yuklemePostaKodu ?? null,
       kagitIrsaliye: k.kagitIrsaliye ?? false,
       matbuBelgeNo: k.matbuBelgeNo ?? null,
       kaynakBelgeId: k.kaynakBelgeId,

@@ -18,6 +18,8 @@ describe("EirsaliyeService gelen yanıt (EBLG-34)", () => {
   };
   const tx = {
     baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ saglayici: "nes" }) }) },
+    // EBLG-87: firmanın kendi VKN'si; kendi gönderdiği sevkin gelen kopyasını ayırt eder.
+    tenant: { findUnique: vi.fn().mockResolvedValue({ vkn: "1234567801" }) },
     gelenEirsaliye: {
       findMany: vi.fn().mockResolvedValue([]),
       findUnique: vi.fn(),
@@ -66,5 +68,21 @@ describe("EirsaliyeService gelen yanıt (EBLG-34)", () => {
 
     expect(adapter.irsaliyeYanitiGonder).toHaveBeenCalledTimes(2);
     expect(tx.gelenEirsaliye.update).toHaveBeenCalledWith({ where: { id: "irs-kayit" }, data: { durum: "kabul", yanitRef: "ra-1", yanitBelgeNo: "YNT2026000000003", yanitGerekcesi: null } });
+  });
+
+  it("firmanın kendi gönderdiği sevki 'kendi sevkimiz' diye işaretler (EBLG-87)", async () => {
+    adapter.gelenIrsaliyeleriCek.mockResolvedValue([gelen("u1"), gelen("u2", { gonderenVkn: "1234567801" })]);
+
+    await service.gelenleriCek();
+
+    const kayitlar = tx.gelenEirsaliye.upsert.mock.calls.map((c) => [c[0].create.uuid, c[0].create.kendiSevkimiz]);
+    expect(kayitlar).toEqual([["u1", false], ["u2", true]]);
+  });
+
+  it("kendi sevkimize yanıt vermez (EBLG-87)", async () => {
+    tx.gelenEirsaliye.findUnique.mockResolvedValue({ id: "irs-kayit", uuid: "u1", durum: "yeni", xmlIcerik: "<DespatchAdvice/>", kendiSevkimiz: true });
+
+    await expect(service.gelenYanit("irs-kayit", "kabul")).rejects.toThrow(/kendi gönderdiği/);
+    expect(adapter.irsaliyeYanitiGonder).not.toHaveBeenCalled();
   });
 });

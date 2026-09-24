@@ -89,6 +89,17 @@ export const belgeOlusturSemasi = z.object({
   teslimatIl: z.string().max(60).optional().nullable(),
   teslimatIlce: z.string().max(60).optional().nullable(),
   teslimatPostaKodu: z.string().max(10).optional().nullable(),
+  /**
+   * EBLG-87: ithal malın gümrükten depoya kısım kısım taşınması. Yalnız alış
+   * irsaliyesinde geçerlidir; firma e-İrsaliye olarak gönderir.
+   */
+  gumrukDepoSevki: z.boolean().optional(),
+  gumrukBeyannameNo: z.string().max(40).optional().nullable(),
+  gumrukBeyannameTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)").optional().nullable(),
+  yuklemeAdres: z.string().max(500).optional().nullable(),
+  yuklemeIl: z.string().max(60).optional().nullable(),
+  yuklemeIlce: z.string().max(60).optional().nullable(),
+  yuklemePostaKodu: z.string().max(10).optional().nullable(),
   satirlar: z.array(belgeSatirSemasi).min(1, "Belgede en az bir satır bulunmalıdır"),
 });
 

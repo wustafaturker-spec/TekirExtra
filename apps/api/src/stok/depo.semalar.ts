@@ -11,6 +11,10 @@ export const depoOlusturSemasi = z.object({
   kod: z.string().min(1).max(32),
   ad: z.string().min(2).max(120),
   adres: z.string().max(500).optional().nullable(),
+  /** EBLG-87: e-İrsaliyede boşaltma adresi; GİB il, ilçe ve posta kodunu ayrı ister. */
+  il: z.string().max(60).optional().nullable(),
+  ilce: z.string().max(60).optional().nullable(),
+  postaKodu: z.string().max(10).optional().nullable(),
   sorumlu: z.string().max(120).optional().nullable(),
   varsayilan: z.boolean().default(false),
 });

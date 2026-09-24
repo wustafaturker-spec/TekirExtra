@@ -1356,6 +1356,11 @@ model Depo {
   kod        String
   ad         String
   adres      String?
+  /// EBLG-87: e-İrsaliyede boşaltma adresi olarak kullanılır; GİB il, ilçe
+  /// ve posta kodunu ayrı alanlarda ister.
+  il         String?
+  ilce       String?
+  postaKodu  String?  @map("posta_kodu")
   sorumlu    String?
   /// Depo seçilmeyen akışların (ve arayüzün) kullandığı depo; kiracıda tek olur
   varsayilan Boolean  @default(false)
@@ -3226,6 +3231,19 @@ model Belge {
   teslimatIl             String?          @map("teslimat_il")
   teslimatIlce           String?          @map("teslimat_ilce")
   teslimatPostaKodu      String?          @map("teslimat_posta_kodu")
+  /// EBLG-87: ithal malın gümrükten depoya kısım kısım taşınması. Alış
+  /// irsaliyesidir ama firma düzenler ve e-İrsaliye olarak gönderir; satıcı
+  /// da alıcı da firmanın kendisidir. Teslimat adresi = boşaltma (depo).
+  gumrukDepoSevki        Boolean          @default(false) @map("gumruk_depo_sevki")
+  gumrukBeyannameNo      String?          @map("gumruk_beyanname_no")
+  gumrukBeyannameTarihi  DateTime?        @map("gumruk_beyanname_tarihi") @db.Date
+  /// Aynı beyannamenin kaçıncı seferi; onayda verilir.
+  gumrukSeferNo          Int?             @map("gumruk_sefer_no")
+  /// Yükleme adresi (gümrük); e-İrsaliyede `Despatch/DespatchAddress`.
+  yuklemeAdres           String?          @map("yukleme_adres")
+  yuklemeIl              String?          @map("yukleme_il")
+  yuklemeIlce            String?          @map("yukleme_ilce")
+  yuklemePostaKodu       String?          @map("yukleme_posta_kodu")
   cariId                 String           @map("cari_id") @db.Uuid
   /// STK-07: rezerv/yoldaki ve irsaliye stok etkisinin işleneceği depo
   depoId                 String?          @map("depo_id") @db.Uuid
@@ -3358,6 +3376,9 @@ model GelenEirsaliye {
   /// Yanıt belgesinin numarası; sağlayıcı atar (EBLG-24).
   yanitBelgeNo   String?             @map("yanit_belge_no")
   yanitGerekcesi String?             @map("yanit_gerekcesi")
+  /// EBLG-87: firmanın kendi gönderdiği belge (gümrükten depoya sevk, alıcı da
+  /// firma). Yanıt istenmez, bekleyenlere girmez.
+  kendiSevkimiz  Boolean             @default(false) @map("kendi_sevkimiz")
   createdAt      DateTime            @default(now()) @map("created_at")
   updatedAt      DateTime            @updatedAt @map("updated_at")
   tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
