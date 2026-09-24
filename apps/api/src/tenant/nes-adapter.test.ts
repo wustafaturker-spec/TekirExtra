@@ -690,10 +690,10 @@ describe("NesEntegratorAdapter", () => {
     ]);
     // FirstCreationTime bölgesizdir, GİB saatidir (TSİ): 16:07 → 13:07Z (CARI-23).
     expect(kayitlar).toEqual([
-      { vknTckn: "1234567802", belgeTuru: "efatura", postaKutusu: "urn:mail:eski_pk@turktelekom.com.tr", unvan: "TEST & KURUM - 02", tur: "OZEL", ilkKayitZamani: "2014-07-18T13:07:05.000Z" },
-      { vknTckn: "1234567802", belgeTuru: "efatura", postaKutusu: "urn:mail:guncel_pk@mersel.io", unvan: "TEST & KURUM - 02", tur: "OZEL", ilkKayitZamani: "2014-07-18T13:07:05.000Z" },
-      { vknTckn: "1234567802", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:eski_pk@turktelekom.com.tr", unvan: "TEST & KURUM - 02", tur: "OZEL", ilkKayitZamani: "2014-07-18T13:07:05.000Z" },
-      { vknTckn: "1234567802", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:guncel_pk@mersel.io", unvan: "TEST & KURUM - 02", tur: "OZEL", ilkKayitZamani: "2014-07-18T13:07:05.000Z" },
+      { vknTckn: "1234567802", belgeTuru: "efatura", postaKutusu: "urn:mail:eski_pk@turktelekom.com.tr", unvan: "TEST & KURUM - 02", tur: "OZEL", ilkKayitZamani: "2014-07-18T13:07:05.000Z", kutuKayitZamani: "2014-07-18T13:07:05.000Z" },
+      { vknTckn: "1234567802", belgeTuru: "efatura", postaKutusu: "urn:mail:guncel_pk@mersel.io", unvan: "TEST & KURUM - 02", tur: "OZEL", ilkKayitZamani: "2014-07-18T13:07:05.000Z", kutuKayitZamani: "2025-05-26T10:31:39.000Z" },
+      { vknTckn: "1234567802", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:eski_pk@turktelekom.com.tr", unvan: "TEST & KURUM - 02", tur: "OZEL", ilkKayitZamani: "2014-07-18T13:07:05.000Z", kutuKayitZamani: "2014-07-18T13:07:05.000Z" },
+      { vknTckn: "1234567802", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:guncel_pk@mersel.io", unvan: "TEST & KURUM - 02", tur: "OZEL", ilkKayitZamani: "2014-07-18T13:07:05.000Z", kutuKayitZamani: "2025-05-26T10:31:39.000Z" },
     ]);
   });
 

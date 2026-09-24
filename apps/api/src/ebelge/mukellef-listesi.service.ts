@@ -5,6 +5,7 @@ import { MUKELLEF_TURU_KAMU } from "@tekirextra/shared";
 import { PrismaService } from "../core/prisma.service";
 import { MetricsService } from "../core/observability/metrics.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
+import { postaKutusuSecimi } from "./posta-kutusu-secimi";
 
 /** Senkron durumu tek satırda tutulur; tablonun anahtarı sabittir. */
 const SENKRON_ID = "tek";
@@ -63,6 +64,8 @@ export class MukellefListesiService {
     cfg: EntegratorConfig,
     vknTckn: string,
     belgeTuru: GibBelgeTuru = "efatura",
+    /** EBLG-86: cari kartında elle seçilen kutu; listede durduğu sürece geçerli. */
+    elleSecilenKutu?: string | null,
   ): Promise<MukellefDurum> {
     const adapter = this.baglantilarService.adapterCoz(saglayici);
     if (!adapter.mukellefListesiCek) {
@@ -79,14 +82,17 @@ export class MukellefListesiService {
       );
     }
 
-    // Bir VKN'nin birden çok etiketi olabilir; sıralama deterministik olsun ki
-    // aynı alıcıya her seferinde aynı kutuya gönderilsin.
-    const kayit = await this.prisma.gibMukellef.findFirst({
-      where: { vknTckn, belgeTuru },
-      orderBy: { postaKutusu: "asc" },
-    });
-
-    return { vknTckn, eFaturaMukellefi: Boolean(kayit), postaKutusu: kayit?.postaKutusu, kamu: kayit?.tur === MUKELLEF_TURU_KAMU };
+    // Bir VKN'nin birden çok etiketi olabilir (GİB test VKN'lerinde yüzlerce).
+    // "Alfabetik ilk" teslim edilmeyen bir kutuyu seçiyordu; seçim canlı
+    // sorgudakiyle aynı kuraldan geçer, elle seçilen kutu önce gelir (EBLG-86).
+    const secim = await postaKutusuSecimi(this.prisma, vknTckn, belgeTuru, elleSecilenKutu, cfg.gondericiBirimEtiketi);
+    return {
+      vknTckn,
+      eFaturaMukellefi: Boolean(secim.secilen),
+      postaKutusu: secim.secilen,
+      postaKutulari: secim.adaylar.length > 1 ? secim.adaylar.map((a) => a.postaKutusu) : undefined,
+      kamu: secim.tur === MUKELLEF_TURU_KAMU,
+    };
   }
 
   /**
@@ -147,7 +153,7 @@ export class MukellefListesiService {
 
       // Aynı (vkn, etiket) çifti listede birden çok kez görünebilir; teklik
       // kısıtına takılmamak için yazımdan önce indirgenir.
-      const tekil = new Map<string, { vknTckn: string; belgeTuru: GibBelgeTuru; postaKutusu: string; unvan: string | null; tur: string | null; ilkKayitZamani: Date | null }>();
+      const tekil = new Map<string, { vknTckn: string; belgeTuru: GibBelgeTuru; postaKutusu: string; unvan: string | null; tur: string | null; ilkKayitZamani: Date | null; kutuKayitZamani: Date | null }>();
       for (const kayit of kayitlar) {
         tekil.set(`${kayit.vknTckn}|${kayit.belgeTuru}|${kayit.postaKutusu}`, {
           vknTckn: kayit.vknTckn,
@@ -156,6 +162,7 @@ export class MukellefListesiService {
           unvan: kayit.unvan ?? null,
           tur: kayit.tur ?? null,
           ilkKayitZamani: kayit.ilkKayitZamani ? new Date(kayit.ilkKayitZamani) : null,
+          kutuKayitZamani: kayit.kutuKayitZamani ? new Date(kayit.kutuKayitZamani) : null,
         });
       }
       const satirlar = [...tekil.values()];

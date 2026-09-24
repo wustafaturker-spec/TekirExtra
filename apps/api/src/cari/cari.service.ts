@@ -35,6 +35,7 @@ import { EpostaService } from "../tenant/eposta.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { iptalCiftiMi, iptalEdilmisFaturalar } from "../fatura/iptal-cifti";
 import { cariEbelgeDurumlariniOku, cariEbelgeDurumuBul } from "../ebelge/cari-ebelge";
+import { kendiGbEtiketi, postaKutusuSecimi } from "../ebelge/posta-kutusu-secimi";
 import {
   kacis,
   paraBicim,
@@ -99,6 +100,42 @@ export class CariService {
     };
   }
 
+  /**
+   * EBLG-86: alıcının GİB posta kutuları ve gönderimde kullanılacak olanı.
+   * Gönderim aynı işlevi kullanır; kartta görünen kutu gönderilen kutudur.
+   */
+  private async postaKutulari(cari: { vknTckn: string | null; efaturaPostaKutusu: string | null; eirsaliyePostaKutusu: string | null }) {
+    const vkn = cari.vknTckn?.trim();
+    if (!vkn) return null;
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kendiEtiketimiz = await kendiGbEtiketi(tx, tenantId);
+      return {
+        efatura: await postaKutusuSecimi(tx, vkn, "efatura", cari.efaturaPostaKutusu, kendiEtiketimiz),
+        eirsaliye: await postaKutusuSecimi(tx, vkn, "eirsaliye", cari.eirsaliyePostaKutusu, kendiEtiketimiz),
+      };
+    });
+  }
+
+  /** EBLG-86: kutuyu elle seç ya da seçimi kaldır (`null` → kurala dönülür). */
+  async postaKutusuSec(id: string, girdi: { belgeTuru: "efatura" | "eirsaliye"; postaKutusu: string | null }) {
+    const { tenantId } = aktifBaglam();
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const cari = await tx.cariHesap.findUnique({ where: { id }, select: { vknTckn: true } });
+      if (!cari) throw new NotFoundException("Cari bulunamadı");
+      const kutu = girdi.postaKutusu?.trim() || null;
+      if (kutu) {
+        const listede = cari.vknTckn && (await tx.gibMukellef.findFirst({ where: { vknTckn: cari.vknTckn.trim(), belgeTuru: girdi.belgeTuru, postaKutusu: kutu }, select: { vknTckn: true } }));
+        if (!listede) throw new BadRequestException("Seçilen posta kutusu alıcının GİB listesinde yok");
+      }
+      await tx.cariHesap.update({
+        where: { id },
+        data: girdi.belgeTuru === "efatura" ? { efaturaPostaKutusu: kutu } : { eirsaliyePostaKutusu: kutu },
+      });
+    });
+    return this.getir(id);
+  }
+
   async getir(id: string) {
     const ctx = aktifBaglam();
     const kayit = await this.prisma.tenantIslem(ctx.tenantId, (tx) =>
@@ -121,9 +158,11 @@ export class CariService {
     const risk = await this.riskOzeti(id, tryBakiye, kayit.riskLimiti);
     // CARI-23: e-Fatura/e-Arşiv ve e-İrsaliye mükellefiyeti, GİB listesinden.
     const ebelge = await this.prisma.tenantIslem(ctx.tenantId, (tx) => cariEbelgeDurumlariniOku(tx, [kayit.vknTckn]));
+    const postaKutulari = await this.postaKutulari(kayit);
     return {
       ...this.gorunum(kayit),
       ebelgeDurumu: { ...cariEbelgeDurumuBul(ebelge, kayit), listeGuncellendi: ebelge.listeGuncellendi },
+      postaKutulari,
       adresler: kayit.adresler,
       kisiler: kayit.kisiler,
       bankaHesaplari: kayit.bankaHesaplari,

@@ -7,10 +7,10 @@ const metrics = { increment: vi.fn(), set: vi.fn() } as never;
 function servisKur(secenekler: {
   adapter: Record<string, unknown>;
   senkron?: { sonSenkronAt: Date | null; kayitSayisi?: number; durum?: string } | null;
-  mukellef?: { postaKutusu: string } | null;
+  mukellefler?: { postaKutusu: string; kutuKayitZamani?: Date | null; tur?: string | null }[];
 }) {
   const gibMukellef = {
-    findFirst: vi.fn().mockResolvedValue(secenekler.mukellef ?? null),
+    findMany: vi.fn().mockResolvedValue((secenekler.mukellefler ?? []).map((m) => ({ kutuKayitZamani: null, tur: null, ...m }))),
     deleteMany: vi.fn(),
     createMany: vi.fn(),
   };
@@ -50,7 +50,7 @@ describe("MukellefListesiService.kanalBelirle", () => {
 
     expect(sonuc.eFaturaMukellefi).toBe(true);
     expect(mukellefSorgula).toHaveBeenCalledOnce();
-    expect(gibMukellef.findFirst).not.toHaveBeenCalled();
+    expect(gibMukellef.findMany).not.toHaveBeenCalled();
   });
 
   it("taze listede kanal kararını lokalden verir; entegratöre gitmez", async () => {
@@ -58,7 +58,7 @@ describe("MukellefListesiService.kanalBelirle", () => {
     const { servis } = servisKur({
       adapter: { mukellefSorgula, mukellefListesiCek: vi.fn() },
       senkron: { sonSenkronAt: saatlerOnce(2) },
-      mukellef: { postaKutusu: "urn:mail:defaultpk@alici.test" },
+      mukellefler: [{ postaKutusu: "urn:mail:defaultpk@alici.test" }],
     });
 
     const sonuc = await servis.kanalBelirle("sovos", { saglayici: "sovos", kullaniciAdi: "u" }, "123");
@@ -71,7 +71,7 @@ describe("MukellefListesiService.kanalBelirle", () => {
     const { servis } = servisKur({
       adapter: { mukellefSorgula: vi.fn(), mukellefListesiCek: vi.fn() },
       senkron: { sonSenkronAt: saatlerOnce(2) },
-      mukellef: null,
+      mukellefler: [],
     });
 
     const sonuc = await servis.kanalBelirle("sovos", { saglayici: "sovos", kullaniciAdi: "u" }, "123");
@@ -83,7 +83,7 @@ describe("MukellefListesiService.kanalBelirle", () => {
     const { servis } = servisKur({
       adapter: { mukellefSorgula: vi.fn(), mukellefListesiCek: vi.fn() },
       senkron: { sonSenkronAt: saatlerOnce(72) },
-      mukellef: { postaKutusu: "urn:mail:pk" },
+      mukellefler: [{ postaKutusu: "urn:mail:pk" }],
     });
 
     await expect(servis.kanalBelirle("sovos", { saglayici: "sovos", kullaniciAdi: "u" }, "123")).rejects.toThrow(
@@ -103,14 +103,45 @@ describe("MukellefListesiService.kanalBelirle", () => {
     const { servis, gibMukellef } = servisKur({
       adapter: { mukellefSorgula: vi.fn(), mukellefListesiCek: vi.fn() },
       senkron: { sonSenkronAt: saatlerOnce(1) },
-      mukellef: null,
+      mukellefler: [],
     });
 
     await servis.kanalBelirle("sovos", { saglayici: "sovos", kullaniciAdi: "u" }, "123", "eirsaliye");
 
-    expect(gibMukellef.findFirst).toHaveBeenCalledWith(
+    expect(gibMukellef.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { vknTckn: "123", belgeTuru: "eirsaliye" } }),
     );
+  });
+
+  // EBLG-86: alfabetik ilk kutu (2026-09-24, GİB test VKN'si) teslim edilmeyen
+  // bir entegratörün kutusuydu; seçim canlı sorgudaki kuraldan geçer.
+  describe("birden çok posta kutusu (EBLG-86)", () => {
+    const kutular = [
+      { postaKutusu: "urn:mail:06ebfd19_pk@vadi.com.tr", kutuKayitZamani: new Date("2016-03-24T13:43:12Z") },
+      { postaKutusu: "urn:mail:defaultpk@eski.com.tr", kutuKayitZamani: new Date("2018-01-01T00:00:00Z") },
+      { postaKutusu: "urn:mail:defaultpk@yeni.com.tr", kutuKayitZamani: new Date("2025-07-22T12:59:26Z") },
+      { postaKutusu: "urn:mail:merkezpk@nes.com.tr", kutuKayitZamani: new Date("2020-01-01T00:00:00Z") },
+      { postaKutusu: "urn:mail:defaultpk@nes.com.tr", kutuKayitZamani: new Date("2021-03-25T11:30:41Z") },
+    ];
+    const kur = () => servisKur({ adapter: { mukellefSorgula: vi.fn(), mukellefListesiCek: vi.fn() }, senkron: { sonSenkronAt: saatlerOnce(1) }, mukellefler: kutular });
+
+    it("kendi entegratörümüzdeki defaultpk kutusunu seçer ve adayları döner", async () => {
+      const sonuc = await kur().servis.kanalBelirle("nes", { saglayici: "nes", gondericiBirimEtiketi: "urn:mail:defaultgb@nes.com.tr" }, "123");
+      expect(sonuc.postaKutusu).toBe("urn:mail:defaultpk@nes.com.tr");
+      expect(sonuc.postaKutulari).toHaveLength(5);
+    });
+
+    it("kendi entegratörümüzde kutu yoksa en yeni defaultpk kutusunu seçer", async () => {
+      const sonuc = await kur().servis.kanalBelirle("nes", { saglayici: "nes", gondericiBirimEtiketi: "urn:mail:defaultgb@baska.com" }, "123");
+      expect(sonuc.postaKutusu).toBe("urn:mail:defaultpk@yeni.com.tr");
+    });
+
+    it("cari kartında elle seçilen kutu listede durdukça kuralın önüne geçer", async () => {
+      const cfg = { saglayici: "nes" as const, gondericiBirimEtiketi: "urn:mail:defaultgb@nes.com.tr" };
+      expect((await kur().servis.kanalBelirle("nes", cfg, "123", "efatura", "urn:mail:06ebfd19_pk@vadi.com.tr")).postaKutusu).toBe("urn:mail:06ebfd19_pk@vadi.com.tr");
+      // Listeden düşen elle seçim yok sayılır; kurala dönülür.
+      expect((await kur().servis.kanalBelirle("nes", cfg, "123", "efatura", "urn:mail:silinmis@x.com")).postaKutusu).toBe("urn:mail:defaultpk@nes.com.tr");
+    });
   });
 });
 
@@ -121,7 +152,7 @@ describe("MukellefListesiService.senkronEt", () => {
     const mukellefListesiCek = vi.fn().mockResolvedValue([
       { vknTckn: "1", belgeTuru: "efatura", postaKutusu: "urn:mail:a", unvan: "Alfa", tur: "KAMU", ilkKayitZamani: "2014-07-18T13:07:05.000Z" },
       { vknTckn: "1", belgeTuru: "efatura", postaKutusu: "urn:mail:a", unvan: "Alfa", tur: "KAMU", ilkKayitZamani: "2014-07-18T13:07:05.000Z" },
-      { vknTckn: "1", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:a", unvan: "Alfa" },
+      { vknTckn: "1", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:a", unvan: "Alfa", kutuKayitZamani: "2019-01-02T10:38:23.000Z" },
     ]);
     const { servis, gibMukellef } = servisKur({ adapter: { mukellefListesiCek }, senkron: null });
 
@@ -131,8 +162,9 @@ describe("MukellefListesiService.senkronEt", () => {
     expect(gibMukellef.createMany).toHaveBeenCalledWith({
       data: [
         // CARI-23: ilk kayıt zamanı cari kartında gösterilmek üzere saklanır.
-        { vknTckn: "1", belgeTuru: "efatura", postaKutusu: "urn:mail:a", unvan: "Alfa", tur: "KAMU", ilkKayitZamani: new Date("2014-07-18T13:07:05.000Z") },
-        { vknTckn: "1", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:a", unvan: "Alfa", tur: null, ilkKayitZamani: null },
+        { vknTckn: "1", belgeTuru: "efatura", postaKutusu: "urn:mail:a", unvan: "Alfa", tur: "KAMU", ilkKayitZamani: new Date("2014-07-18T13:07:05.000Z"), kutuKayitZamani: null },
+        // EBLG-86: kutunun kayıt zamanı kutu seçiminde en yeniyi ayırt eder.
+        { vknTckn: "1", belgeTuru: "eirsaliye", postaKutusu: "urn:mail:a", unvan: "Alfa", tur: null, ilkKayitZamani: null, kutuKayitZamani: new Date("2019-01-02T10:38:23.000Z") },
       ],
     });
     expect(sonuc.kayitSayisi).toBe(2);

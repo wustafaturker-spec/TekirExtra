@@ -1,4 +1,5 @@
 import type { EntegratorAdapter } from "./adapter";
+import { gibZamani } from "./posta-kutusu";
 import { tekDosyaZipBase64, zipIlkXml } from "./zip";
 import { createHash, randomUUID } from "node:crypto";
 import type { BelgeDurum } from "@tekirextra/shared";
@@ -286,7 +287,8 @@ export class SovosEntegratorAdapter implements EntegratorAdapter {
           // yapılırsa zarf karşı tarafa ulaşmaz.
           if (xmlDegeri(etiket, ["DeletionTime"])) continue;
           const ad = xmlDegeri(etiket, ["Name"]);
-          if (ad) kayitlar.push({ vknTckn: xmlCoz(vknTckn), belgeTuru, postaKutusu: xmlCoz(ad), unvan: unvan ? xmlCoz(unvan) : undefined, tur });
+          // EBLG-86: kutunun GİB kayıt zamanı kutu seçiminde en yeniyi ayırt eder.
+          if (ad) kayitlar.push({ vknTckn: xmlCoz(vknTckn), belgeTuru, postaKutusu: xmlCoz(ad), unvan: unvan ? xmlCoz(unvan) : undefined, tur, kutuKayitZamani: gibZamani(xmlDegeri(etiket, ["CreationTime"]) ?? undefined) });
         }
       }
     }

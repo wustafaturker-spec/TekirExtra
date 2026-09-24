@@ -221,6 +221,8 @@ export interface MukellefKaydi {
   tur?: string;
   /** Mükellefin bu belge türüne GİB'deki ilk kaydı (`FirstCreationTime`), ISO (CARI-23). */
   ilkKayitZamani?: string;
+  /** Bu posta kutusunun GİB kayıt zamanı (`Alias/CreationTime`), ISO; kutu seçiminde kullanılır (EBLG-86). */
+  kutuKayitZamani?: string;
 }
 
 /** Gelen zarf çekiminin tarih penceresi; kursör bu aralığı belirler (EBLG-11). */

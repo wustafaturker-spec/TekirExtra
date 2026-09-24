@@ -221,6 +221,9 @@ describe("EbelgeService (EBLG-01..08)", () => {
       "izibiz",
       expect.any(Object),
       "1234567890",
+      "efatura",
+      // EBLG-86: carinin elle seçtiği kutu (yoksa kural seçer).
+      undefined,
     );
     expect(mockAdapter.mukellefSorgula).not.toHaveBeenCalled();
     expect(mockAdapter.belgeGonder).toHaveBeenCalled();

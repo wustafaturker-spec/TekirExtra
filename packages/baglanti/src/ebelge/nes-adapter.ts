@@ -1,4 +1,5 @@
 import type { EntegratorAdapter } from "./adapter";
+import { gibZamani, postaKutusuSec } from "./posta-kutusu";
 import { zipIlkXmlBuffer } from "./zip";
 import { randomUUID } from "node:crypto";
 import type { BelgeDurum } from "@tekirextra/shared";
@@ -355,66 +356,16 @@ function mukellefListesiAyristir(xml: string, belgeTuru: MukellefKaydi["belgeTur
     const unvan = govde.match(/<Title>([^<]*)<\/Title>/)?.[1]?.trim();
     const tur = govde.match(/<Type>([^<]*)<\/Type>/)?.[1]?.trim() || undefined;
     const ilkKayitZamani = gibZamani(govde.match(/<FirstCreationTime>([^<]*)<\/FirstCreationTime>/)?.[1]);
-    for (const etiket of govde.matchAll(/<Name>([^<]*)<\/Name>/g)) {
-      const postaKutusu = etiket[1].trim();
+    // Her `Alias` kutunun adını ve GİB kayıt zamanını taşır; zaman kutu
+    // seçiminde (EBLG-86) en yeni kaydı ayırt etmek için saklanır.
+    for (const etiket of govde.matchAll(/<Alias>([\s\S]*?)<\/Alias>/g)) {
+      const postaKutusu = etiket[1].match(/<Name>([^<]*)<\/Name>/)?.[1]?.trim();
       if (!postaKutusu) continue;
-      kayitlar.push({ vknTckn, belgeTuru, postaKutusu: xmlCoz(postaKutusu), unvan: unvan ? xmlCoz(unvan) : undefined, tur, ilkKayitZamani });
+      const kutuKayitZamani = gibZamani(etiket[1].match(/<CreationTime>([^<]*)<\/CreationTime>/)?.[1]);
+      kayitlar.push({ vknTckn, belgeTuru, postaKutusu: xmlCoz(postaKutusu), unvan: unvan ? xmlCoz(unvan) : undefined, tur, ilkKayitZamani, kutuKayitZamani });
     }
   }
   return kayitlar;
-}
-
-/**
- * Listedeki zaman damgası. Bölge bilgisi taşımayan değer GİB'in saati, yani
- * Türkiye saatidir; UTC sanılırsa gece yarısına yakın kayıt bir gün kayar.
- */
-function gibZamani(deger?: string): string | undefined {
-  const metin = deger?.trim();
-  if (!metin) return undefined;
-  const bolgeli = /(Z|[+-]\d{2}:?\d{2})$/.test(metin) ? metin : `${metin}+03:00`;
-  const an = new Date(bolgeli);
-  return Number.isNaN(an.getTime()) ? undefined : an.toISOString();
-}
-
-/** `urn:mail:defaultpk@nes.com.tr` → `nes.com.tr` */
-function etiketAlanAdi(etiket?: string): string | undefined {
-  const i = etiket?.lastIndexOf("@") ?? -1;
-  return i > 0 ? etiket!.slice(i + 1).toLowerCase() : undefined;
-}
-
-/** `urn:mail:defaultpk@nes.com.tr` → `defaultpk` */
-function etiketYerelAdi(etiket: string): string {
-  return (/^urn:mail:([^@]+)/.exec(etiket)?.[1] ?? "").toLowerCase();
-}
-
-/**
- * Alıcının posta kutusunu seçer. Tek etiket varsa soru yoktur; gerçek
- * firmaların neredeyse tamamı bu durumdadır.
- *
- * Birden çoksa veriden çıkarılabilecek en güvenilir sinyal, etiketin **bizim
- * entegratörümüzün alan adında** olmasıdır: alıcı da aynı entegratördeyse
- * teslimat oradan yürür. Bu küme içinde GİB'in birincil kutu adlandırması olan
- * `defaultpk` tercih edilir, kalan eşitlik en yeni kayıtla bozulur.
- *
- * Denenip elenen iki kural: "listenin ilki" (API sırası rastgele) ve "en yeni
- * etiket" — GİB test VKN'lerinde yıllar içinde her entegratörden etiket birikir;
- * Kurum 02'nin 225 etiketinin 57'si `defaultpk` ve en yenisi yürürlükteki kutu
- * değil. Seçim bu yüzden bir tahmindir; adayların tamamı `postaKutulari` ile
- * döner ki çağıran gerektiğinde kullanıcıya sorabilsin.
- */
-function postaKutusuSec(
-  etiketler: { alias?: string; creationTime?: string }[],
-  kendiEtiketimiz?: string,
-): string | undefined {
-  const adaylar = etiketler.filter((e) => e.alias);
-  if (adaylar.length <= 1) return adaylar[0]?.alias;
-  const bizimAlan = etiketAlanAdi(kendiEtiketimiz);
-  const ayniEntegrator = bizimAlan ? adaylar.filter((e) => etiketAlanAdi(e.alias) === bizimAlan) : [];
-  const havuz = ayniEntegrator.length ? ayniEntegrator : adaylar;
-  const varsayilanlar = havuz.filter((e) => etiketYerelAdi(e.alias!) === "defaultpk");
-  return (varsayilanlar.length ? varsayilanlar : havuz)
-    .slice()
-    .sort((a, b) => (b.creationTime ?? "").localeCompare(a.creationTime ?? ""))[0]?.alias;
 }
 
 function configDogrula(cfg: EntegratorConfig): string | undefined {
@@ -542,7 +493,7 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
       // etiketlerinde vardır), o yüzden seçim kuralı adaptörde (postaKutusuSec)
       // ve adayların tamamı çağırana açılır.
       const etiketler = (kullanici?.aliases ?? []).filter((etiket) => etiket.alias);
-      const postaKutusu = postaKutusuSec(etiketler, cfg.gondericiBirimEtiketi);
+      const postaKutusu = postaKutusuSec(etiketler.map((e) => ({ postaKutusu: e.alias!, kayitZamani: e.creationTime })), cfg.gondericiBirimEtiketi);
       return {
         vknTckn,
         eFaturaMukellefi: Boolean(postaKutusu),

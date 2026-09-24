@@ -777,7 +777,7 @@ export class EbelgeService {
         // VKN'nin yolcu beraberi için ayrı posta kutusu etiketi vardır.
         : hazirlik.yolcu.yolcuBeraberi
           ? { eFaturaMukellefi: true, postaKutusu: YOLCU_BERABER_POSTA_KUTUSU }
-          : await this.mukellefListesi.kanalBelirle(hazirlik.saglayici, hazirlik.cfg, hazirlik.fatura.cari.vknTckn!);
+          : await this.mukellefListesi.kanalBelirle(hazirlik.saglayici, hazirlik.cfg, hazirlik.fatura.cari.vknTckn!, "efatura", hazirlik.fatura.cari.efaturaPostaKutusu);
     const kanalEngelleri = ebelgeKanalEngelleri({ uygulamalar, aliciEfaturaMukellefi: mukellefiyet.eFaturaMukellefi });
     if (kanalEngelleri.length) throw new BadRequestException(kanalEngelleri.join(" "));
     if (mukellefiyet.eFaturaMukellefi && uygulamaAcik(uygulamalar, "efatura") && !mukellefiyet.postaKutusu) {

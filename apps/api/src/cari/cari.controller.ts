@@ -21,6 +21,7 @@ import {
   cariOlusturSemasi,
   cariGuncelleSemasi,
   adresSemasi,
+  postaKutusuSecimSemasi,
   bankaHesapSemasi,
   etiketSemasi,
   kisiSemasi,
@@ -129,6 +130,15 @@ export class CariController {
   @HttpCode(204)
   async sil(@Param("id") id: string) {
     await this.cariService.sil(id);
+  }
+
+  /** EBLG-86: alıcının GİB posta kutusunu elle seç; `null` kurala döndürür. */
+  @Patch(":id/posta-kutusu")
+  @Roller("muhasebe")
+  async postaKutusuSec(@Param("id") id: string, @Body() govde: unknown) {
+    const ayristirma = postaKutusuSecimSemasi.safeParse(govde);
+    if (!ayristirma.success) throw new BadRequestException(ayristirma.error.issues.map((s) => s.message).join("; "));
+    return this.cariService.postaKutusuSec(id, ayristirma.data);
   }
 
   @Post(":id/adresler")

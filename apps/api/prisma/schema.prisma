@@ -724,6 +724,11 @@ model CariHesap {
   sektor                  String?
   temsilciUserId          String?             @map("temsilci_user_id") @db.Uuid
   vknTckn                 String?             @map("vkn_tckn")
+  /// EBLG-86: alıcının GİB'de birden çok posta kutusu varsa elle seçilen kutu.
+  /// Listede durduğu sürece seçim kuralının önüne geçer; listeden düşerse
+  /// kurala dönülür.
+  efaturaPostaKutusu      String?             @map("efatura_posta_kutusu")
+  eirsaliyePostaKutusu    String?             @map("eirsaliye_posta_kutusu")
   /// Veritabanının ürettiği aksansız arama kolonu (20260904200000_aksansiz_arama).
   /// GENERATED ALWAYS olduğu için yalnız okunur; Prisma ile yazılmaz.
   aramaNormal             String?             @map("arama_normal")
@@ -2337,19 +2342,22 @@ enum GibBelgeTuru {
 /// olurdu, bu yüzden tablo global tutulur ve RLS uygulanmaz. Bir VKN'nin birden
 /// çok posta kutusu etiketi olabildiğinden teklik (vkn, etiket) çiftindedir.
 model GibMukellef {
-  vknTckn        String       @map("vkn_tckn")
+  vknTckn         String       @map("vkn_tckn")
   /// e-Fatura ve e-İrsaliye kayıtları GİB'de ayrıdır; bir firma e-Fatura
   /// mükellefi olup e-İrsaliye kullanmıyor olabilir.
-  belgeTuru      GibBelgeTuru @map("belge_turu")
-  postaKutusu    String       @map("posta_kutusu")
-  unvan          String?
+  belgeTuru       GibBelgeTuru @map("belge_turu")
+  postaKutusu     String       @map("posta_kutusu")
+  unvan           String?
   /// Listedeki `<Type>`: "KAMU" ya da "OZEL". KAMU alıcıya belge KAMU
   /// senaryosuyla gider; listeyi bu alanı taşımayan entegratörde boş kalır.
-  tur            String?
+  tur             String?
   /// Mükellefin bu belge türüne GİB'deki ilk kaydı (`FirstCreationTime`);
   /// cari kartında "e-Fatura mükellefi · GİB kaydı" olarak görünür (CARI-23).
-  ilkKayitZamani DateTime?    @map("ilk_kayit_zamani")
-  guncellendi    DateTime     @default(now())
+  ilkKayitZamani  DateTime?    @map("ilk_kayit_zamani")
+  /// Bu posta kutusunun GİB kayıt zamanı (`Alias/CreationTime`); kutu
+  /// seçiminde en yeni kaydı ayırt eder (EBLG-86).
+  kutuKayitZamani DateTime?    @map("kutu_kayit_zamani")
+  guncellendi     DateTime     @default(now())
 
   @@id([vknTckn, belgeTuru, postaKutusu])
   @@index([vknTckn, belgeTuru])

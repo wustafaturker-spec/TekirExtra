@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { api, apiDosyaIndir, tokenAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
+import { PostaKutusuSecimleri, type PostaKutusuSecimi } from "@/components/posta-kutusu-secimi";
 import { CARI_EBELGE_ETIKETI, type CariEbelgeDurumu, type CariEbelgeTuru } from "@tekirextra/shared";
 import {
   Alert,
@@ -152,6 +153,8 @@ interface CariDetay extends Cari {
   fiyatListesiId: string | null;
   eFaturaMukellefi: boolean | null;
   ebelgeDurumu?: CariEbelgeDurumu & { listeGuncellendi: string | null };
+  /** EBLG-86: alıcının GİB posta kutuları ve gönderimde kullanılacak olan. */
+  postaKutulari?: { efatura: PostaKutusuSecimi; eirsaliye: PostaKutusuSecimi } | null;
   bankaHesaplari: BankaHesap[];
   etiketler: Etiket[];
   adresler: CariAdres[];
@@ -975,6 +978,8 @@ export default function CariSayfasi() {
                 <p style={{ color: "var(--danger)", fontSize: "0.85rem", margin: "0.3rem 0 0" }}>Blokaj nedeni: {detay.karaListeNotu}</p>
               )}
               {detay.ebelgeDurumu && <EbelgeMukellefiyeti durum={detay.ebelgeDurumu} />}
+              {/* EBLG-86: birden çok kutusu olan alıcıda gönderilecek kutu; yetkiyi sunucu denetler. */}
+              <PostaKutusuSecimleri cariId={detay.id} secimler={detay.postaKutulari} duzenlenebilir onDegisti={() => void detayAc(detay.id, true)} />
             </div>
           </div>
           <EylemCubugu etiket="Cari eylemleri">

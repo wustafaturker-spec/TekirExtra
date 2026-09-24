@@ -172,7 +172,7 @@ export class EirsaliyeService {
       if (!belge.cari.vknTckn && !yurtDisi) throw new BadRequestException("Cari VKN/TCKN bilgisi eksik");
       // e-İrsaliye kaydı GİB'de e-Fatura'dan ayrıdır; lokal liste sorgusu da
       // "eirsaliye" türüyle yapılır (EBLG-10).
-      const mukellef = yurtDisi ? undefined : await this.mukellefListesi.kanalBelirle(baglanti.saglayici, cfg, belge.cari.vknTckn!, "eirsaliye");
+      const mukellef = yurtDisi ? undefined : await this.mukellefListesi.kanalBelirle(baglanti.saglayici, cfg, belge.cari.vknTckn!, "eirsaliye", belge.cari.eirsaliyePostaKutusu);
       // Kalan ön koşullar ekranın gösterdiğiyle aynı kuraldan gelir (EBLG-42);
       // taşıyan bilgisi irsaliye onayında değil burada zorunludur (EBLG-23):
       // kâğıt irsaliye kesen firma engellenmesin, GİB'e giden belge eksik gitmesin.

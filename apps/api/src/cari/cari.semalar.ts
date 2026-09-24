@@ -77,6 +77,12 @@ export const cariGuncelleSemasi = guncellemeSemasi(cariOlusturSemasi).extend({
   ticaretSicilNo: z.string().max(32).optional().nullable(),
 });
 
+/** EBLG-86: alıcının GİB posta kutusunu elle seçme; `null` seçimi kaldırır. */
+export const postaKutusuSecimSemasi = z.object({
+  belgeTuru: z.enum(["efatura", "eirsaliye"]),
+  postaKutusu: z.string().max(200).nullable(),
+});
+
 export const adresSemasi = z.object({
   tip: z.enum(["fatura", "sevk", "merkez", "sube", "depo"]),
   baslik: z.string().min(1).max(80),
