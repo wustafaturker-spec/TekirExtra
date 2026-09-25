@@ -3,7 +3,7 @@ import { EirsaliyeDurum, GelenEirsaliyeDurum, Prisma, type ZincirBelgeDurum } fr
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import type { EntegratorConfig } from "@tekirextra/baglanti";
-import { anTR, birimUblKodu, bugunTR, eirsaliyeYanitSuresi, gumrukSeferNotu, ihracatFaturasiNotu, YURT_DISI_ALICI_VKN, dorseSchemeId, firmaEbelgeEksikleri, idisBelgesiMi, IDIS_IRSALIYE_PROFILI, idisNormalize, plakaNormalize, plakaSchemeId, ublAdresi } from "@tekirextra/shared";
+import { anTR, birimUblKodu, bugunTR, eirsaliyeYanitSuresi, muhtelifMusteriMi, gumrukSeferNotu, ihracatFaturasiNotu, YURT_DISI_ALICI_VKN, dorseSchemeId, firmaEbelgeEksikleri, idisBelgesiMi, IDIS_IRSALIYE_PROFILI, idisNormalize, plakaNormalize, plakaSchemeId, ublAdresi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
@@ -206,7 +206,10 @@ export class EirsaliyeService {
       if (!aliciVkn && !yurtDisi) throw new BadRequestException(belge.gumrukDepoSevki ? "Firma kartında VKN eksik" : "Cari VKN/TCKN bilgisi eksik");
       // e-İrsaliye kaydı GİB'de e-Fatura'dan ayrıdır; lokal liste sorgusu da
       // "eirsaliye" türüyle yapılır (EBLG-10).
-      const mukellef = yurtDisi ? undefined : await this.mukellefListesi.kanalBelirle(baglanti.saglayici, cfg, aliciVkn!, "eirsaliye", belge.gumrukDepoSevki ? undefined : belge.cari.eirsaliyePostaKutusu);
+      // EBLG-95: "Muhtelif Müşteriler" (5555555555) GİB'de kayıtlı bir alıcı
+      // değildir; belge alıcı etiketi olmadan gider, çıktısı araçta bulunur.
+      const muhtelif = !belge.gumrukDepoSevki && muhtelifMusteriMi(belge.cari);
+      const mukellef = yurtDisi || muhtelif ? undefined : await this.mukellefListesi.kanalBelirle(baglanti.saglayici, cfg, aliciVkn!, "eirsaliye", belge.gumrukDepoSevki ? undefined : belge.cari.eirsaliyePostaKutusu);
       // Kalan ön koşullar ekranın gösterdiğiyle aynı kuraldan gelir (EBLG-42);
       // taşıyan bilgisi irsaliye onayında değil burada zorunludur (EBLG-23):
       // kâğıt irsaliye kesen firma engellenmesin, GİB'e giden belge eksik gitmesin.

@@ -521,11 +521,48 @@ describe("BelgelerService", () => {
     expect(findMany.mock.calls[0][0].where).toMatchObject({
       tur: "irsaliye",
       durum: { in: ["onaylandi", "kapandi"] },
-      AND: [{ OR: [{ faturaId: null }, { fatura: { is: { durum: { not: "kesin" } } } }] }],
+      AND: [
+        { OR: [{ faturaId: null }, { fatura: { is: { durum: { not: "kesin" } } } }] },
+        // EBLG-95: muhtelif irsaliye takibe girmez; VKN'siz cari düşmemeli.
+        { cari: { OR: [{ vknTckn: null }, { vknTckn: { not: "5555555555" } }] } },
+      ],
     });
     expect(sonuc.kayitlar[0].faturalamaSuresi).toMatchObject({ sonGun: "2020-01-08", gecti: true });
     // Kesin faturaya bağlı irsaliye faturalanmıştır.
     expect(sonuc.kayitlar[1].faturalamaSuresi).toBeNull();
+  });
+
+  it("muhtelif müşteri irsaliyesine faturalama süresi hesaplamaz (EBLG-95)", async () => {
+    const muhtelif = {
+      id: "m1", tur: "irsaliye", yon: "satis", durum: "onaylandi", no: "m1",
+      tarih: new Date("2020-01-01T00:00:00Z"), fiiliSevkZamani: null, gecerlilikTarihi: null, cariId: "c9", depoId: "d1",
+      dovizCinsi: "TRY", kur: D(1), genelIskontoYuzdesi: D(0), genelIskontoTutari: D(0), toplamBrut: D(0),
+      toplamSatirIskontosu: D(0), genelIskontoToplam: D(0), toplamMatrah: D(0), toplamKdv: D(0),
+      toplamTevkifat: D(0), toplamNetKdv: D(0), genelToplam: D(0), aciklama: null, notlar: null, kaynakBelgeId: null,
+      faturaId: null, fatura: null, cari: { id: "c9", kod: "MUHTELIF", unvan: "Muhtelif Müşteriler", vknTckn: "5555555555" },
+    };
+    const findMany = vi.fn().mockResolvedValue([muhtelif]);
+    const prisma = { tenantIslem: vi.fn((_t, calistir) => calistir({ belge: { findMany } })) } as any;
+    const servis = new BelgelerService(prisma, {} as any, {} as any, {} as any, { getir: vi.fn().mockResolvedValue({ irsaliyeFaturaGunSayisi: 7 }) } as any);
+
+    const sonuc = await servis.listele("irsaliye");
+
+    expect(sonuc.kayitlar[0].faturalamaSuresi).toBeNull();
+  });
+
+  it("muhtelif müşteri belgesini dönüştürmez ve faturaya bağlamaz (EBLG-95)", async () => {
+    const tx = {
+      belge: {
+        findUnique: vi.fn().mockResolvedValue({ id: "m1", tur: "irsaliye", durum: "onaylandi", satirlar: [], cari: { vknTckn: "5555555555" } }),
+        findMany: vi.fn().mockResolvedValue([{ id: "m1", no: "GBZ2026000800040", tur: "irsaliye", yon: "satis", cariId: "c9", durum: "onaylandi", faturaId: null, cari: { vknTckn: "5555555555" }, eirsaliye: { durum: "iletildi" } }]),
+      },
+      fatura: { findUnique: vi.fn().mockResolvedValue({ cariId: "c9", tip: "satis", durum: "taslak", sevkiyatYontemi: null, ebelge: null }) },
+    };
+    const prisma = { tenantIslem: vi.fn((_t, calistir) => calistir(tx)) } as any;
+    const servis = new BelgelerService(prisma, {} as any, {} as any, {} as any, {} as any);
+
+    await expect(servis.donustur("m1", "fatura")).rejects.toThrow(/Muhtelif Müşteriler belgesi dönüştürülemez/);
+    await expect(servis.irsaliyeBaglaTx(tx as any, "t1", "f1", ["m1"])).rejects.toThrow(/faturaya bağlanmaz/);
   });
 
   describe("irsaliye numarası onayda (FTR-27, EBLG-83)", () => {

@@ -107,6 +107,13 @@ export class CariController {
     return this.cariService.olustur(ayristirma.data);
   }
 
+  /** EBLG-95: "Muhtelif Müşteriler" sistem carisini getirir, yoksa açar. */
+  @Post("muhtelif-musteri")
+  @Roller("muhasebe", "satis")
+  async muhtelifMusteri() {
+    return this.cariService.muhtelifMusteriCarisi();
+  }
+
   @Post(":id/kopyala")
   @Roller("muhasebe", "satis")
   async kopyala(@Param("id") id: string) {

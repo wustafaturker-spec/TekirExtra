@@ -29,7 +29,7 @@ import { PdfService } from "../core/pdf/pdf.service";
 import { cariDavranisAnalizi } from "./cari-analiz";
 import { gercekKisiUnvani } from "./ad-soyad";
 import { ebelgeTestOrtamiMi, vknTcknKabulEdilebilirMi } from "../ebelge/vkn-kabulu";
-import { vknTcknGecerliMi } from "@tekirextra/shared";
+import { MUHTELIF_MUSTERI_KOD, MUHTELIF_MUSTERI_UNVAN, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi, vknTcknGecerliMi } from "@tekirextra/shared";
 import { metinNormalize } from "@tekirextra/shared";
 import { EpostaService } from "../tenant/eposta.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
@@ -277,8 +277,43 @@ export class CariService {
     }
   }
 
+  /**
+   * EBLG-95: "Muhtelif Müşteriler" sistem carisi. İlk ihtiyaçta açılır, kiracıda
+   * tektir. Adresi firmanın adresinden kopyalanır: muhtelif irsaliyenin alıcı
+   * ve teslimat adresi, irsaliyeye ayrıca adres girilmediyse firmanın adresidir.
+   */
+  async muhtelifMusteriCarisi() {
+    const { tenantId } = aktifBaglam();
+    const kayit = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const mevcut = await tx.cariHesap.findFirst({ where: { vknTckn: MUHTELIF_MUSTERI_VKN }, orderBy: { createdAt: "asc" } });
+      if (mevcut) return mevcut.aktif ? mevcut : tx.cariHesap.update({ where: { id: mevcut.id }, data: { aktif: true } });
+      const firma = await tx.tenant.findUnique({ where: { id: tenantId }, select: { adres: true, il: true, ilce: true, postaKodu: true } });
+      const kodVar = await tx.cariHesap.findFirst({ where: { kod: MUHTELIF_MUSTERI_KOD }, select: { id: true } });
+      return tx.cariHesap.create({
+        data: {
+          tenantId,
+          kod: kodVar ? `${MUHTELIF_MUSTERI_KOD}-GIB` : MUHTELIF_MUSTERI_KOD,
+          unvan: MUHTELIF_MUSTERI_UNVAN,
+          tip: "musteri",
+          vknTckn: MUHTELIF_MUSTERI_VKN,
+          notlar: "Sistem carisi (EBLG-95): müşterisi sevkiyat başında belli olmayan dağıtım irsaliyeleri içindir. Teslim edilen her müşteriye ayrıca fatura ya da irsaliye kesilir.",
+          ...(firma?.adres ? { adresler: { create: [{ tenantId, tip: "merkez", baslik: "Firma adresi", adres: firma.adres, il: firma.il, ilce: firma.ilce, postaKodu: firma.postaKodu }] } } : {}),
+        },
+      });
+    });
+    return this.gorunum(kayit);
+  }
+
+  /** EBLG-95: muhtelif müşteri kimliği yalnız sistem carisinde bulunur. */
+  private muhtelifKimligiEngelle(vknTckn: string | null | undefined) {
+    if (muhtelifMusteriMi({ vknTckn })) {
+      throw new BadRequestException(`${MUHTELIF_MUSTERI_VKN} GİB'in "Muhtelif Müşteriler" kimliğidir; bu cari sistemde tektir, irsaliyede "Muhtelif müşteriler" seçeneğiyle açılır`);
+    }
+  }
+
   async olustur(girdi: CariOlusturGirdisi) {
     const { tenantId } = aktifBaglam();
+    this.muhtelifKimligiEngelle(girdi.vknTckn);
     const kimlik = this.kisiKimligi(girdi.kisiTipi, girdi.ad, girdi.soyad);
     await this.vknTcknDogrula(tenantId, girdi.vknTckn);
     try {
@@ -312,6 +347,7 @@ export class CariService {
 
   async kopyala(id: string) {
     const { tenantId } = aktifBaglam();
+    if (muhtelifMusteriMi(await this.getir(id))) throw new BadRequestException("Muhtelif Müşteriler sistem carisi kopyalanamaz");
     const cari = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.cariHesap.findUnique({
         where: { id },
@@ -446,8 +482,15 @@ export class CariService {
 
   async guncelle(id: string, girdi: z.infer<typeof cariGuncelleSemasi>) {
     const { tenantId } = aktifBaglam();
-    await this.vknTcknDogrula(tenantId, girdi.vknTckn);
     const mevcut = await this.getir(id);
+    // EBLG-95: sistem carisinin kimliği sabittir; adres, iletişim gibi alanları değişebilir.
+    if (muhtelifMusteriMi(mevcut)) {
+      const kimlikAlani = (["unvan", "ad", "soyad", "kisiTipi", "vknTckn", "tip"] as const).find((alan) => girdi[alan] !== undefined && girdi[alan] !== mevcut[alan]);
+      if (kimlikAlani) throw new BadRequestException("Muhtelif Müşteriler sistem carisinin unvanı, türü ve kimliği değiştirilemez");
+    } else {
+      this.muhtelifKimligiEngelle(girdi.vknTckn);
+    }
+    await this.vknTcknDogrula(tenantId, muhtelifMusteriMi(mevcut) ? undefined : girdi.vknTckn);
     // Kimlik kuralı yalnız kimlik alanlarından biri değişirken uygulanır; başka
     // alanı güncelleyen istek, ad/soyadı henüz girilmemiş eski kayıtta kırılmasın.
     const kimlikDegisiyor = girdi.unvan !== undefined || girdi.ad !== undefined || girdi.soyad !== undefined || girdi.kisiTipi !== undefined;
@@ -480,6 +523,7 @@ export class CariService {
   /** AYR-05: hareketi olan cari silinemez — pasife alınır. */
   async sil(id: string) {
     const { tenantId } = aktifBaglam();
+    if (muhtelifMusteriMi(await this.getir(id))) throw new BadRequestException("Muhtelif Müşteriler sistem carisi silinemez");
     const hareketSayisi = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.cariHareket.count({ where: { cariId: id } }),
     );

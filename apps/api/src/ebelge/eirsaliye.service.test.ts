@@ -321,6 +321,23 @@ describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
     expect(tx.eirsaliyeKayit.upsert.mock.calls[0][0].create.aliciKayitsiz).toBe(true);
   });
 
+  it("muhtelif müşteri irsaliyesini 5555555555 ile ve alıcı etiketi olmadan gönderir, listeye bakmaz (EBLG-95)", async () => {
+    const { servis, tx, irsaliyeGonder } = kur(taslakBelge({
+      cari: { unvan: "Muhtelif Müşteriler", vknTckn: "5555555555", adresler: [{ tip: "merkez", adres: "Deneme Mah. Örnek Sk. No:1", il: "İstanbul", ilce: "Kadıköy", postaKodu: "34710", ulke: "TR" }] },
+    }));
+    const kanalBelirle = (servis as unknown as { mukellefListesi: { kanalBelirle: ReturnType<typeof vi.fn> } }).mukellefListesi.kanalBelirle;
+
+    await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
+
+    expect(kanalBelirle).not.toHaveBeenCalled();
+    const { xml, aliciPostaKutusu } = irsaliyeGonder.mock.calls[0][1];
+    expect(aliciPostaKutusu).toBeUndefined();
+    const alici = xml.slice(xml.indexOf("<cac:DeliveryCustomerParty>"), xml.indexOf("</cac:DeliveryCustomerParty>"));
+    expect(alici).toContain('<cbc:ID schemeID="VKN">5555555555</cbc:ID>');
+    expect(alici).toContain("<cbc:Name>Muhtelif Müşteriler</cbc:Name>");
+    expect(tx.eirsaliyeKayit.upsert.mock.calls[0][0].create.aliciKayitsiz).toBe(true);
+  });
+
   it("yurt dışı alıcıya 2222222222 ve gümrük kapısıyla gönderir, listeye bakmaz (EBLG-84)", async () => {
     const { servis, tx, irsaliyeGonder } = kur(taslakBelge({
       cari: { unvan: "Müller GmbH", vknTckn: null, adresler: [{ tip: "fatura", adres: "Hauptstr. 1", il: "Berlin", ilce: "Mitte", postaKodu: "10115", ulke: "DE" }] },

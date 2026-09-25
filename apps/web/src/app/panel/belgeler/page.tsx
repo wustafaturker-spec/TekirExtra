@@ -14,7 +14,7 @@ import { TasimaBilgisiPaneli } from "@/components/tasima-bilgisi-paneli";
 import type { DepoOzet } from "@/lib/depolar";
 import { BOS_TESLIMAT_ADRESI, TeslimatAdresiAlanlari, teslimatAdresiGovdesi, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
 import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
-import { bugunTR, faturaHesapla, irsaliyeIptalUyarisi, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
+import { bugunTR, faturaHesapla, muhtelifMusteriMi, irsaliyeIptalUyarisi, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -262,6 +262,16 @@ export default function BelgelerSayfasi() {
   const [tur, setTur] = useState<Tur>("teklif");
   const [yon, setYon] = useState<Yon>("satis");
   const [cariId, setCariId] = useState("");
+  /** EBLG-95: müşterisi sevkiyat başında belli olmayan dağıtım için sistem carisi. */
+  async function muhtelifSec() {
+    try {
+      const cari = await api<Cari>("/cari/muhtelif-musteri", { method: "POST" });
+      setCariler((liste) => (liste.some((c) => c.id === cari.id) ? liste : [...liste, cari]));
+      setCariId(cari.id);
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : "Muhtelif müşteriler carisi açılamadı");
+    }
+  }
   const [faturaId, setFaturaId] = useState("");
   const [sevkiyatFaturalari, setSevkiyatFaturalari] = useState<{ id: string; no: string | null; tarih: string }[]>([]);
   const [depoId, setDepoId] = useState("");
@@ -874,6 +884,9 @@ export default function BelgelerSayfasi() {
                   }))}
                 />
               </Field>
+              {tur === "irsaliye" && yon === "satis" && (muhtelifMusteriMi(cariler.find((c) => c.id === cariId))
+                ? <small className="muted">Muhtelif müşteriler irsaliyesi (GİB 5555555555): dağıtımda teslim ettiğiniz her müşteriye ayrıca fatura ya da irsaliye kesin. Bu irsaliye faturaya bağlanmaz ve 7 gün takibine girmez.</small>
+                : <Button type="button" size="sm" variant="ghost" onClick={() => void muhtelifSec()}>Müşteri belli değil: Muhtelif müşteriler</Button>)}
               </div>
               <Field label="Belge Türü"><Select value={tur} onChange={(e) => setTur(e.target.value as Tur)}><option value="teklif">Teklif</option><option value="siparis">Sipariş</option><option value="irsaliye">İrsaliye</option></Select></Field>
               <Field label="Yön"><Select value={yon} onChange={(e) => setYon(e.target.value as Yon)}><option value="satis">Satış</option><option value="alis">Alış</option></Select></Field>

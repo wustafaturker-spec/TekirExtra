@@ -26,7 +26,7 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PdfService } from "../core/pdf/pdf.service";
-import { metinNormalize } from "@tekirextra/shared";
+import { metinNormalize, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi } from "@tekirextra/shared";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { PrismaService } from "../core/prisma.service";
 import { DepoService } from "../stok/depo.service";
@@ -137,11 +137,13 @@ export class BelgelerService {
    * faturaya bağlı olan hâlâ bekler: yasal süre düzenlenmiş faturaya bakar.
    */
   private faturalamaSuresi(
-    k: { tur: string; durum: string; tarih: Date; fiiliSevkZamani?: Date | null; fatura?: { durum: string } | null },
+    k: { tur: string; durum: string; tarih: Date; fiiliSevkZamani?: Date | null; fatura?: { durum: string } | null; cari?: { vknTckn?: string | null } | null },
     gunSayisi: number,
     bugun: string,
   ) {
     if (k.tur !== "irsaliye" || !["onaylandi", "kapandi"].includes(k.durum)) return null;
+    // EBLG-95: muhtelif irsaliyenin faturası teslim edilen müşterilere ayrı ayrı kesilir.
+    if (muhtelifMusteriMi(k.cari)) return null;
     if (k.fatura?.durum === "kesin") return null;
     return irsaliyeFaturaSuresi({ sevkGunu: irsaliyeSevkGunu(k), bugun, gunSayisi });
   }
@@ -195,7 +197,11 @@ export class BelgelerService {
         ? {
             tur: "irsaliye" as BelgeTur,
             durum: { in: ["onaylandi", "kapandi"] as ZincirBelgeDurum[] },
-            AND: [{ OR: [{ faturaId: null }, { fatura: { is: { durum: { not: "kesin" } } } }] }],
+            AND: [
+              { OR: [{ faturaId: null }, { fatura: { is: { durum: { not: "kesin" } } } }] },
+              // EBLG-95: muhtelif irsaliye faturalama takibine girmez.
+              { cari: { OR: [{ vknTckn: null }, { vknTckn: { not: MUHTELIF_MUSTERI_VKN } }] } },
+            ],
           }
         : {}),
       ...(arama
@@ -217,7 +223,7 @@ export class BelgelerService {
         orderBy: [{ tarih: "desc" }, { createdAt: "desc" }, { id: "desc" }],
         take: adet + 1,
         ...(imlec ? { cursor: { id: imlec }, skip: 1 } : {}),
-        include: { cari: { select: { id: true, kod: true, unvan: true } }, fatura: { select: { durum: true } } },
+        include: { cari: { select: { id: true, kod: true, unvan: true, vknTckn: true } }, fatura: { select: { durum: true } } },
       }),
     );
     const sonrakiImlec = kayitlar.length > adet ? kayitlar[adet - 1].id : null;
@@ -869,9 +875,14 @@ export class BelgelerService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const belge = await tx.belge.findUnique({
         where: { id },
-        include: { satirlar: true },
+        include: { satirlar: true, cari: { select: { vknTckn: true } } },
       });
       if (!belge) throw new NotFoundException("Belge bulunamadı");
+      // EBLG-95: muhtelif irsaliye siparişten oluşmaz ve faturaya dönüşmez;
+      // teslim edilen her müşteriye ayrıca fatura ya da irsaliye kesilir.
+      if (muhtelifMusteriMi(belge.cari)) {
+        throw new BadRequestException("Muhtelif Müşteriler belgesi dönüştürülemez; teslim edilen her müşteriye kendi adına fatura ya da irsaliye kesin");
+      }
       // Kısmen teslim edilmiş sipariş kalanı için yeniden dönüştürülebilir.
       const kismenAcik = belge.tur === "siparis" && belge.durum === "kismen_kapandi";
       if (belge.durum !== "onaylandi" && !kismenAcik) {
@@ -1324,13 +1335,14 @@ export class BelgelerService {
     if (fatura.durum !== "taslak" && fatura.durum !== "kesin") throw new BadRequestException("İptal edilmiş faturaya irsaliye bağlanamaz");
     if (fatura.tip !== "satis" && fatura.tip !== "alis") throw new BadRequestException("İrsaliye yalnız satış veya alış faturasına bağlanır");
     if (fatura.ebelge && !["hata", "ret"].includes(fatura.ebelge.durum)) throw new ConflictException("e-Belge olarak gönderilmiş faturaya irsaliye bağlanamaz");
-    const belgeler = await tx.belge.findMany({ where: { id: { in: ids }, tenantId }, select: { id: true, no: true, tur: true, yon: true, cariId: true, durum: true, faturaId: true, eirsaliye: { select: { durum: true } } } });
+    const belgeler = await tx.belge.findMany({ where: { id: { in: ids }, tenantId }, select: { id: true, no: true, tur: true, yon: true, cariId: true, durum: true, faturaId: true, cari: { select: { vknTckn: true } }, eirsaliye: { select: { durum: true } } } });
     if (belgeler.length !== ids.length) throw new NotFoundException("Seçilen irsaliyelerden bazıları bulunamadı");
     const yeniler: string[] = [];
     for (const b of belgeler) {
       const ad = b.no ?? "İrsaliye";
       if (b.tur !== "irsaliye") throw new BadRequestException(`${ad} bir irsaliye değil`);
       if (b.faturaId === faturaId) continue;
+      if (muhtelifMusteriMi(b.cari)) throw new BadRequestException(`${ad} Muhtelif Müşteriler irsaliyesidir; faturaya bağlanmaz, teslim edilen her müşteriye ayrı fatura kesilir`);
       if (b.faturaId) throw new ConflictException(`${ad} başka bir faturaya bağlı`);
       if (b.durum !== "onaylandi") throw new BadRequestException(`${ad} onaylı değil; yalnız onaylı irsaliye faturaya bağlanır`);
       if (b.cariId !== fatura.cariId) throw new BadRequestException(`${ad} faturayla aynı cariye ait değil`);

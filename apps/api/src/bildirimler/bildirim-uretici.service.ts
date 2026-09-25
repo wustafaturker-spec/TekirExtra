@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import type { BildirimTuru, DuzeltmeTuru } from "@prisma/client";
-import { bugunTR, EIRSALIYE_YANIT_GUN_SAYISI, eirsaliyeYanitSuresi, gunEkleTR, IHRAC_KAYITLI_UYARI_GUNU, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeFaturaSuresi, irsaliyeSevkGunu, type Rol, ihracKayitliSonTarih } from "@tekirextra/shared";
+import { bugunTR, EIRSALIYE_YANIT_GUN_SAYISI, MUHTELIF_MUSTERI_VKN, eirsaliyeYanitSuresi, gunEkleTR, IHRAC_KAYITLI_UYARI_GUNU, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeFaturaSuresi, irsaliyeSevkGunu, type Rol, ihracKayitliSonTarih } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
@@ -384,6 +384,8 @@ export class BildirimUreticiService {
           tur: "irsaliye",
           durum: { in: ["onaylandi", "kapandi"] },
           OR: [{ faturaId: null }, { fatura: { is: { durum: { not: "kesin" } } } }],
+          // EBLG-95: muhtelif irsaliyenin faturası müşterilere ayrı ayrı kesilir; takibe girmez.
+          cari: { OR: [{ vknTckn: null }, { vknTckn: { not: MUHTELIF_MUSTERI_VKN } }] },
         },
         select: { yon: true, tarih: true, fiiliSevkZamani: true },
       }),
