@@ -31,5 +31,7 @@ export function firmaEbelgeEksikleri(firma: FirmaEbelgeBilgisi): string[] {
   if (bos(firma.ilce)) eksik.push("ilçe");
   if (bos(firma.il)) eksik.push("il");
   if (bos(firma.vergiDairesi)) eksik.push("vergi dairesi");
-  return eksik.length ? [`Firma bilgisinde ${eksik.join(", ")} eksik; Ayarlar › Firma ekranından tamamlayın`] : [];
+  // Kullanıcı carinin (alıcının) adresini girip bu uyarıyı almaya devam etti
+  // (2026-09-25); eksik olanın satıcının kendi adresi olduğu açıkça söylenir.
+  return eksik.length ? [`Firmanızın (satıcının) bilgilerinde ${eksik.join(", ")} eksik; bu, carinin adresi değil, belgeyi kesen firmanın bilgisidir. Ayarlar › Firma ekranından tamamlayın.`] : [];
 }
