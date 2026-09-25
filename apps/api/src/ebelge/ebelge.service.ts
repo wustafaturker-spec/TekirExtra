@@ -50,7 +50,8 @@ export type EslesmeKaynagi =
 const YEDI_GUN_MS = 7 * 24 * 60 * 60 * 1_000;
 
 /** Ekrandaki "Yenile" düğmesinin kiracı başına asgari aralığı (EBLG-11). */
-const ELLE_TAZELEME_ARALIK_MS = Number(process.env.EBLG_ELLE_TAZELEME_ARALIK_MS || 60 * 60 * 1_000);
+// Kullanım anında okunur: modül yüklenirken `.env` henüz yüklenmemiş olur.
+const elleTazelemeAralikMs = () => Number(process.env.EBLG_ELLE_TAZELEME_ARALIK_MS || 60 * 60 * 1_000);
 
 /** Anı Türkiye takvimindeki güne indirger (YYYY-AA-GG). */
 const istanbulGunu = (an: Date): string => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Istanbul" }).format(an);
@@ -1338,9 +1339,10 @@ export class EbelgeService {
     const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.ebelgeGelenKursor.findUnique({ where: { tenantId } }),
     );
-    if (kayit?.sonTetiklemeAt && simdi.getTime() - kayit.sonTetiklemeAt.getTime() < ELLE_TAZELEME_ARALIK_MS) {
-      const kalanDk = Math.ceil((ELLE_TAZELEME_ARALIK_MS - (simdi.getTime() - kayit.sonTetiklemeAt.getTime())) / 60_000);
-      throw new BadRequestException(`Gelen belge kutusu saatte bir tazelenebilir; ${kalanDk} dakika sonra tekrar deneyin`);
+    if (kayit?.sonTetiklemeAt && simdi.getTime() - kayit.sonTetiklemeAt.getTime() < elleTazelemeAralikMs()) {
+      const kalanDk = Math.ceil((elleTazelemeAralikMs() - (simdi.getTime() - kayit.sonTetiklemeAt.getTime())) / 60_000);
+      const aralikDk = Math.round(elleTazelemeAralikMs() / 60_000);
+      throw new BadRequestException(`Gelen belge kutusu ${aralikDk === 60 ? "saatte" : `${aralikDk} dakikada`} bir tazelenebilir; ${kalanDk} dakika sonra tekrar deneyin`);
     }
     await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.ebelgeGelenKursor.upsert({

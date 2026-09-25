@@ -1384,9 +1384,16 @@ describe("EbelgeService — çağrı disiplini", () => {
       },
     };
     const { service } = kur(tx, {});
-
-    await expect(service.elleTazelemeIzniAl()).rejects.toThrow(/saatte bir tazelenebilir/);
-    expect(tx.ebelgeGelenKursor.upsert).not.toHaveBeenCalled();
+    vi.stubEnv("EBLG_ELLE_TAZELEME_ARALIK_MS", "3600000");
+    try {
+      await expect(service.elleTazelemeIzniAl()).rejects.toThrow(/saatte bir tazelenebilir/);
+      expect(tx.ebelgeGelenKursor.upsert).not.toHaveBeenCalled();
+      // Aralık `.env`'den kullanım anında okunur; kısaltılmış aralıkta 10 dk önceki tetikleme engel değildir.
+      vi.stubEnv("EBLG_ELLE_TAZELEME_ARALIK_MS", "300000");
+      await expect(service.elleTazelemeIzniAl()).resolves.toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("bir saat geçtiyse elle tazelemeye izin verir ve tetikleme anını işaretler", async () => {

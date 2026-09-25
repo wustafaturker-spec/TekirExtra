@@ -34,7 +34,9 @@ export type EbelgeIsTuru =
  * "job sıklığı olarak minimum 1 saat ayarlanmalıdır, böylece günde toplam
  * 24 çağrıdan fazla otomatik olarak yapılmamalıdır" diyor (EBLG-11).
  */
-const GELEN_TARAMA_ARALIK_MS = Number(process.env.EBLG_GELEN_ARALIK_MS || 60 * 60 * 1_000);
+// Kullanım anında okunur: modül yüklenirken `.env` henüz ConfigModule ile
+// yüklenmemiş olur ve dosyadaki değer sessizce yok sayılırdı.
+const gelenTaramaAralikMs = () => Number(process.env.EBLG_GELEN_ARALIK_MS || 60 * 60 * 1_000);
 
 export interface EbelgeKuyrukVerisi {
   tenantId: string;
@@ -396,7 +398,7 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
           // açmak aynı tarih penceresini tekrar sorgulamak olurdu (EBLG-11).
           // Gelen kutusu yalnız e-Fatura mükellefinde vardır (EBLG-77).
           const kursor = await yonetim.ebelgeGelenKursor.findUnique({ where: { tenantId: tenant.id }, select: { sonCekimAt: true } });
-          if (tenantUygulamalari && uygulamaAcik(tenantUygulamalari, "efatura") && (!kursor || Date.now() - kursor.sonCekimAt.getTime() >= GELEN_TARAMA_ARALIK_MS)) {
+          if (tenantUygulamalari && uygulamaAcik(tenantUygulamalari, "efatura") && (!kursor || Date.now() - kursor.sonCekimAt.getTime() >= gelenTaramaAralikMs())) {
             await this.gelenBelgeleriKuyrugaEkle();
           }
 
