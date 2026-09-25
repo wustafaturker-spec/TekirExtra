@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EIRSALIYE_YEDEK_GORUNUM_NOTU, eirsaliyeYedekPdfHtml } from "./eirsaliye-pdf";
-import { IrsaliyeUblOkumaHatasi, irsaliyeKarekodVerisi, irsaliyeUblOku } from "./eirsaliye-ubl-oku";
+import { gelenSevkTarihi, IrsaliyeUblOkumaHatasi, irsaliyeKarekodVerisi, irsaliyeUblOku } from "./eirsaliye-ubl-oku";
 import { gomuluXsltCikar } from "./ubl-gorunum";
 
 const XSLT = Buffer.from('<xsl:stylesheet version="2.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform"/>').toString("base64");
@@ -137,5 +137,17 @@ describe("eirsaliyeYedekPdfHtml (EBLG-33)", () => {
   it("belgeden gelen metni kaçışlar", () => {
     expect(html).toContain("Kablo &lt;3m&gt;");
     expect(html).not.toContain("Kablo <3m>");
+  });
+});
+
+describe("gelenSevkTarihi (EBLG-96)", () => {
+  const yedek = new Date("2026-09-10T00:00:00Z");
+
+  it("yanıt süresi için belge tarihini değil fiilî sevk gününü okur", () => {
+    expect(gelenSevkTarihi(IRSALIYE(), yedek).toISOString().slice(0, 10)).toBe("2026-09-11");
+  });
+
+  it("okunamayan XML'de belge tarihine düşer", () => {
+    expect(gelenSevkTarihi("<bozuk", yedek)).toBe(yedek);
   });
 });

@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import type { BildirimTuru, DuzeltmeTuru } from "@prisma/client";
-import { bugunTR, IHRAC_KAYITLI_UYARI_GUNU, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeFaturaSuresi, irsaliyeSevkGunu, type Rol, ihracKayitliSonTarih } from "@tekirextra/shared";
+import { bugunTR, EIRSALIYE_YANIT_GUN_SAYISI, eirsaliyeYanitSuresi, gunEkleTR, IHRAC_KAYITLI_UYARI_GUNU, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeFaturaSuresi, irsaliyeSevkGunu, type Rol, ihracKayitliSonTarih } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
@@ -87,6 +87,7 @@ export class BildirimUreticiService {
       ...(await this.duzeltmeKayitlari()),
       ...(await this.ebelgeHatalari()),
       ...(await this.eirsaliyeYanitlari()),
+      ...(await this.gelenEirsaliyeYanitSureleri()),
       ...(await this.vadeOzetleri()),
       ...(await this.stokOzetleri()),
       ...(await this.donemKontrolleri()),
@@ -281,6 +282,42 @@ export class BildirimUreticiService {
         sonTarih: this.sla(onem),
         roller: HEDEF_ROLLER.ebelge,
       };
+    });
+  }
+
+  /**
+   * EBLG-96: gelen e-İrsaliyeye yanıt fiilî sevkten itibaren 7 gün içinde
+   * verilir; süresinde yanıtlanmayan belge tam teslim alınmış sayılır (GİB
+   * SSS 57). Son 2 gün kala belge başına uyarı; yanıt verilince ya da süre
+   * dolunca tespit edilmez ve bildirim kapanır. Son tarih süre sonudur, her
+   * taramada aynı hesaplandığı için tazelenmez.
+   */
+  private async gelenEirsaliyeYanitSureleri(): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const bugun = bugunTR();
+    const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.gelenEirsaliye.findMany({
+        where: { durum: "yeni", kendiSevkimiz: false, sevkTarihi: { gte: new Date(`${gunEkleTR(-EIRSALIYE_YANIT_GUN_SAYISI)}T00:00:00Z`) } },
+        select: { id: true, belgeNo: true, gonderenUnvan: true, sevkTarihi: true },
+        take: 200,
+      }),
+    );
+    return kayitlar.flatMap((kayit) => {
+      const sure = eirsaliyeYanitSuresi({ sevkGunu: kayit.sevkTarihi.toISOString().slice(0, 10), bugun });
+      if (!sure.yaklasiyor) return [];
+      const sonGun = sure.sonGun.split("-").reverse().join(".");
+      return [{
+        tur: "ebelge" as const,
+        onem: "uyari" as const,
+        baslik: "Gelen e-İrsaliyenin yanıt süresi doluyor",
+        aciklama: `${kayit.belgeNo} · ${kayit.gonderenUnvan} — yanıt için son gün ${sonGun}. Süresinde yanıt verilmezse mal tam teslim alınmış sayılır; eksik ya da hatalı teslimatı bu tarihe kadar bildirin.`,
+        birlesimAnahtari: `ebelge:gelen-irsaliye-yanit:${kayit.id}`,
+        kaynakTur: "gelen_eirsaliye",
+        kaynakRef: kayit.id,
+        hedefYol: "/panel/ebelge/irsaliye-gelen",
+        sonTarih: new Date(`${sure.sonGun}T23:59:59+03:00`),
+        roller: HEDEF_ROLLER.ebelge,
+      }];
     });
   }
 

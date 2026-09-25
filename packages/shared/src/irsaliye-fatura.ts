@@ -139,6 +139,18 @@ export function irsaliyeFaturaSuresi(girdi: { sevkGunu: string; bugun: string; g
 }
 
 /**
+ * EBLG-96: gelen e-İrsaliyeye yanıt, belgedeki fiilî sevk tarihinden
+ * (`ActualDespatchDate`, yoksa `IssueDate`) itibaren 7 gün içinde verilir; süre
+ * belgenin oluşturulma ya da bize ulaşma tarihinden sayılmaz. Süresinde yanıt
+ * verilmeyen belgede alıcı malı tam teslim almış sayılır (GİB e-İrsaliye SSS 57).
+ */
+export const EIRSALIYE_YANIT_GUN_SAYISI = 7;
+
+export function eirsaliyeYanitSuresi(girdi: { sevkGunu: string; bugun: string }): IrsaliyeFaturaSuresi {
+  return irsaliyeFaturaSuresi({ ...girdi, gunSayisi: EIRSALIYE_YANIT_GUN_SAYISI });
+}
+
+/**
  * Fatura tarihi bağlı irsaliyelerin süresinden sonraysa uyarı metinleri (engel
  * değil: geç kalmış fatura da kesilmek zorundadır). Alışta yükümlülük
  * tedarikçidedir, metin buna göre değişir.

@@ -3374,6 +3374,8 @@ model GelenEirsaliye {
   gonderenVkn    String              @map("gonderen_vkn")
   gonderenUnvan  String              @map("gonderen_unvan")
   tarih          DateTime            @db.Date
+  /// EBLG-96: belgedeki fiilî sevk günü; yanıt süresi (7 gün) buradan sayılır.
+  sevkTarihi     DateTime            @map("sevk_tarihi") @db.Date
   xmlIcerik      String              @map("xml_icerik")
   durum          GelenEirsaliyeDurum @default(yeni)
   yanitRef       String?             @map("yanit_ref")

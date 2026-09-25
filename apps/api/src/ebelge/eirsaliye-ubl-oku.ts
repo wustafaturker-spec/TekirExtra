@@ -199,3 +199,17 @@ export function irsaliyeKarekodVerisi(r: UblIrsaliye): Record<string, string> | 
     ...(r.plaka ? { plaka: r.plaka } : {}),
   };
 }
+
+/**
+ * EBLG-96: gelen e-İrsaliyenin fiilî sevk günü. Yanıt süresi bu günden sayılır;
+ * XML okunamazsa ya da tarih geçersizse entegratörün verdiği belge tarihine düşülür.
+ */
+export function gelenSevkTarihi(xml: string, yedek: Date): Date {
+  try {
+    const gun = irsaliyeUblOku(xml).sevkTarihi;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(gun)) return new Date(`${gun}T00:00:00Z`);
+  } catch {
+    // okunamayan XML: belge tarihi kullanılır
+  }
+  return yedek;
+}

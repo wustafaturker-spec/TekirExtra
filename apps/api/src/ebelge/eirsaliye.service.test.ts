@@ -421,3 +421,32 @@ describe("e-İrsaliye otomatik yeniden deneme (EBLG-94)", () => {
     expect(update).toHaveBeenCalledWith({ where: { id: "k2" }, data: { yenidenDenemeSayisi: { increment: 1 }, hataMesaji: "Cari VKN/TCKN bilgisi eksik" } });
   });
 });
+
+describe("EirsaliyeService.gelenYanit süre (EBLG-96)", () => {
+  function servisKur(sevkTarihi: string) {
+    const kayit = { id: "g1", uuid: "u1", durum: "yeni", kendiSevkimiz: false, sevkTarihi: new Date(`${sevkTarihi}T00:00:00Z`), xmlIcerik: "<x/>" };
+    const prisma = {
+      tenantIslem: vi.fn((_t: string, calistir: (tx: unknown) => unknown) =>
+        calistir({ gelenEirsaliye: { findUnique: vi.fn().mockResolvedValue(kayit) } }),
+      ),
+    } as never;
+    const servis = new EirsaliyeService(prisma, {} as never, {} as never, {} as never, {} as never);
+    const baglanti = vi.fn();
+    (servis as unknown as { baglanti: unknown }).baglanti = baglanti;
+    return { servis, baglanti };
+  }
+
+  it("fiilî sevkten 7 gün geçmişse yanıtı entegratöre gitmeden reddeder", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-26T09:00:00+03:00"));
+    try {
+      const { servis, baglanti } = servisKur("2026-09-18");
+      await expect(
+        baglamlaCalistir({ tenantId: "t1", userId: "u1", rol: "muhasebe" }, () => servis.gelenYanit("g1", "kabul")),
+      ).rejects.toThrow("Yanıt süresi 25.09.2026 tarihinde doldu");
+      expect(baglanti).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

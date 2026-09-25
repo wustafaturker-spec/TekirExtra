@@ -3,7 +3,7 @@ import { EirsaliyeDurum, GelenEirsaliyeDurum, Prisma, type ZincirBelgeDurum } fr
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import type { EntegratorConfig } from "@tekirextra/baglanti";
-import { anTR, birimUblKodu, gumrukSeferNotu, ihracatFaturasiNotu, YURT_DISI_ALICI_VKN, dorseSchemeId, firmaEbelgeEksikleri, idisBelgesiMi, IDIS_IRSALIYE_PROFILI, idisNormalize, plakaNormalize, plakaSchemeId, ublAdresi } from "@tekirextra/shared";
+import { anTR, birimUblKodu, bugunTR, eirsaliyeYanitSuresi, gumrukSeferNotu, ihracatFaturasiNotu, YURT_DISI_ALICI_VKN, dorseSchemeId, firmaEbelgeEksikleri, idisBelgesiMi, IDIS_IRSALIYE_PROFILI, idisNormalize, plakaNormalize, plakaSchemeId, ublAdresi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
@@ -11,7 +11,7 @@ import { BaglantilarService } from "../tenant/baglantilar.service";
 import { belgeSirasiAl, eirsaliyeNumarasi } from "../belgeler/belge-sayac";
 import { numaraBosluklariniBul } from "./eirsaliye-bosluk";
 import { eirsaliyeYurtDisiMi, gonderimEngelleri, IRSALIYE_GONDERILEBILIR_DURUMLAR, irsaliyeTeslimatAdresi, irsaliyeYuklemeAdresi } from "./eirsaliye-engeller";
-import { irsaliyeUblOku } from "./eirsaliye-ubl-oku";
+import { gelenSevkTarihi, irsaliyeUblOku } from "./eirsaliye-ubl-oku";
 import { MukellefListesiService } from "./mukellef-listesi.service";
 
 /** Bağlantıda e-İrsaliye seri öneki tanımlı değilse (EBLG-20). */
@@ -525,7 +525,8 @@ export class EirsaliyeService {
       const kendiVkn = (await tx.tenant.findUnique({ where: { id: tenantId }, select: { vkn: true } }))?.vkn;
       await Promise.all(gelen.map((g) => {
         const kendiSevkimiz = Boolean(kendiVkn) && g.gonderenVkn === kendiVkn;
-        return tx.gelenEirsaliye.upsert({ where: { tenantId_uuid: { tenantId, uuid: g.uuid } }, create: { tenantId, uuid: g.uuid, belgeNo: g.belgeNo, gonderenVkn: g.gonderenVkn, gonderenUnvan: g.gonderenUnvan, tarih: g.tarih, xmlIcerik: g.xml, kendiSevkimiz }, update: { belgeNo: g.belgeNo, gonderenVkn: g.gonderenVkn, gonderenUnvan: g.gonderenUnvan, tarih: g.tarih, xmlIcerik: g.xml, kendiSevkimiz } });
+        const sevkTarihi = gelenSevkTarihi(g.xml, g.tarih);
+        return tx.gelenEirsaliye.upsert({ where: { tenantId_uuid: { tenantId, uuid: g.uuid } }, create: { tenantId, uuid: g.uuid, belgeNo: g.belgeNo, gonderenVkn: g.gonderenVkn, gonderenUnvan: g.gonderenUnvan, tarih: g.tarih, sevkTarihi, xmlIcerik: g.xml, kendiSevkimiz }, update: { belgeNo: g.belgeNo, gonderenVkn: g.gonderenVkn, gonderenUnvan: g.gonderenUnvan, tarih: g.tarih, sevkTarihi, xmlIcerik: g.xml, kendiSevkimiz } });
       }));
       // EBLG-34: portalda ya da başka bir yerde verilmiş karar yanıt bekleyen kayda yazılır; yerel kararın üzerine yazılmaz.
       await Promise.all(gelen.filter((g) => g.yanit).map((g) => tx.gelenEirsaliye.updateMany({ where: { tenantId, uuid: g.uuid, durum: "yeni" }, data: { durum: g.yanit!.karar, yanitGerekcesi: g.yanit!.not ?? null } })));
@@ -533,7 +534,7 @@ export class EirsaliyeService {
     });
   }
 
-  async gelenListele(durum?: GelenEirsaliyeDurum) { const { tenantId } = aktifBaglam(); return this.prisma.tenantIslem(tenantId, (tx) => tx.gelenEirsaliye.findMany({ where: durum ? { durum, ...(durum === "yeni" ? { kendiSevkimiz: false } : {}) } : undefined, select: { kendiSevkimiz: true, id: true, uuid: true, belgeNo: true, gonderenVkn: true, gonderenUnvan: true, tarih: true, durum: true, yanitRef: true, yanitBelgeNo: true, yanitGerekcesi: true, createdAt: true, updatedAt: true }, orderBy: [{ tarih: "desc" }, { createdAt: "desc" }] })); }
+  async gelenListele(durum?: GelenEirsaliyeDurum) { const { tenantId } = aktifBaglam(); return this.prisma.tenantIslem(tenantId, (tx) => tx.gelenEirsaliye.findMany({ where: durum ? { durum, ...(durum === "yeni" ? { kendiSevkimiz: false } : {}) } : undefined, select: { kendiSevkimiz: true, id: true, uuid: true, belgeNo: true, gonderenVkn: true, gonderenUnvan: true, tarih: true, sevkTarihi: true, durum: true, yanitRef: true, yanitBelgeNo: true, yanitGerekcesi: true, createdAt: true, updatedAt: true }, orderBy: [{ tarih: "desc" }, { createdAt: "desc" }] })); }
 
   async gelenDetay(id: string) {
     const { tenantId } = aktifBaglam();
@@ -556,6 +557,9 @@ export class EirsaliyeService {
       const kayit = await tx.gelenEirsaliye.findUnique({ where: { id } }); if (!kayit) throw new NotFoundException("Gelen e-İrsaliye bulunamadı");
       if (kayit.durum !== "yeni") throw new BadRequestException("Bu e-İrsaliyeye daha önce yanıt verilmiş");
       if (kayit.kendiSevkimiz) throw new BadRequestException("Bu belge firmanın kendi gönderdiği sevk irsaliyesi; yanıt verilmez");
+      // EBLG-96: yanıt fiilî sevkten itibaren 7 gün içinde verilir; süresi geçen belge tam teslim alınmış sayılır.
+      const sure = eirsaliyeYanitSuresi({ sevkGunu: kayit.sevkTarihi.toISOString().slice(0, 10), bugun: bugunTR() });
+      if (sure.gecti) throw new BadRequestException(`Yanıt süresi ${sure.sonGun.split("-").reverse().join(".")} tarihinde doldu; belge tam teslim alınmış sayılır`);
       return { kayit, ...(await this.baglanti(tx, tenantId)) };
     });
     if (!adapter.irsaliyeYanitiGonder) throw new BadRequestException("Entegratör e-İrsaliye yanıtını desteklemiyor");

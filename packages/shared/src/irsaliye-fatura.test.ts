@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eirsaliyeIptalUyarisi, faturaGecikmeUyarilari, irsaliyeIptalUyarisi, gumrukSeferNotu, ihracatFaturasiNotu, irsaliyeFaturaFarklari, irsaliyeKanali, irsaliyeFaturaSonGun, irsaliyeFaturaSuresi, irsaliyeFaturaTipiUyarMi, irsaliyeSevkGunu } from "./irsaliye-fatura";
+import { eirsaliyeIptalUyarisi, eirsaliyeYanitSuresi, faturaGecikmeUyarilari, irsaliyeIptalUyarisi, gumrukSeferNotu, ihracatFaturasiNotu, irsaliyeFaturaFarklari, irsaliyeKanali, irsaliyeFaturaSonGun, irsaliyeFaturaSuresi, irsaliyeFaturaTipiUyarMi, irsaliyeSevkGunu } from "./irsaliye-fatura";
 
 const satir = (stokId: string, miktar: number, birim = "adet", ek: { varyantId?: string; stokTipi?: string } = {}) => ({ stokId, ad: stokId.toUpperCase(), miktar, birim, ...ek });
 
@@ -142,5 +142,13 @@ describe("irsaliyeIptalUyarisi (EBLG-92)", () => {
   });
   it("gümrükten depoya sevk de giden seridir", () => {
     expect(irsaliyeIptalUyarisi({ ...b, yon: "alis", gumrukDepoSevki: true })).toContain("boşluk");
+  });
+});
+
+describe("eirsaliyeYanitSuresi (EBLG-96)", () => {
+  it("yanıt fiilî sevk gününden itibaren 7 gün içinde verilir, son gün dahil", () => {
+    expect(eirsaliyeYanitSuresi({ sevkGunu: "2026-09-18", bugun: "2026-09-25" })).toMatchObject({ sonGun: "2026-09-25", kalanGun: 0, gecti: false, yaklasiyor: true });
+    expect(eirsaliyeYanitSuresi({ sevkGunu: "2026-09-18", bugun: "2026-09-22" })).toMatchObject({ kalanGun: 3, yaklasiyor: false });
+    expect(eirsaliyeYanitSuresi({ sevkGunu: "2026-09-18", bugun: "2026-09-26" })).toMatchObject({ kalanGun: -1, gecti: true, yaklasiyor: false });
   });
 });

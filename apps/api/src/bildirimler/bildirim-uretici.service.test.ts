@@ -20,6 +20,8 @@ interface TxSecenekleri {
   bekleyenIrsaliyeler?: { yon: string; tarih: Date; fiiliSevkZamani: Date | null }[];
   /** EBLG-91: alıcının RET ya da kısmi kabul verdiği e-İrsaliyeler. */
   eirsaliyeYanitlari?: unknown[];
+  /** EBLG-96: yanıt bekleyen gelen e-İrsaliyeler. */
+  gelenIrsaliyeler?: { id: string; belgeNo: string; gonderenUnvan: string; sevkTarihi: Date }[];
 }
 
 function servisKur(secenek: TxSecenekleri = {}) {
@@ -29,6 +31,7 @@ function servisKur(secenek: TxSecenekleri = {}) {
     duzeltmeKaydi: { findMany: vi.fn().mockResolvedValue(secenek.duzeltmeler ?? []) },
     ebelgeKayit: { findMany: vi.fn().mockResolvedValue(secenek.ebelgeler ?? []) },
     eirsaliyeKayit: { findMany: vi.fn().mockResolvedValue(secenek.eirsaliyeYanitlari ?? []) },
+    gelenEirsaliye: { findMany: vi.fn().mockResolvedValue(secenek.gelenIrsaliyeler ?? []) },
     satinAlmaTalebi: { findMany: vi.fn().mockResolvedValue(secenek.satinAlmaTalepleri ?? []) },
     cekSenet: { count: vi.fn().mockResolvedValue(secenek.cekSayisi ?? 0) },
     fatura: { findMany: vi.fn().mockResolvedValue(secenek.ihracKayitlilar ?? []) },
@@ -99,6 +102,31 @@ describe("BildirimUreticiService.tara", () => {
     const kosul = JSON.stringify(tx.eirsaliyeKayit.findMany.mock.calls[0][0].where);
     expect(kosul).toContain('"durum":"ret","belge":{"durum":{"not":"iptal"}}');
     expect(kosul).toContain('"fatura":{"is":{"durum":{"not":"kesin"}}}');
+  });
+
+  it("yanıt süresi dolmak üzere olan gelen e-İrsaliyeyi son günle bildirir (EBLG-96)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-24T10:00:00+03:00"));
+    try {
+      const { servis, bildirimler, tx } = servisKur({
+        gelenIrsaliyeler: [
+          { id: "g1", belgeNo: "TYH2026000000020", gonderenUnvan: "Tedarikçi A.Ş.", sevkTarihi: new Date("2026-09-18T00:00:00Z") },
+          { id: "g2", belgeNo: "TYH2026000000021", gonderenUnvan: "Tedarikçi A.Ş.", sevkTarihi: new Date("2026-09-22T00:00:00Z") },
+        ],
+      });
+
+      await servis.tara();
+
+      const girdiler = bildirimler.uret.mock.calls.map(([g]) => g).filter((g) => g.birlesimAnahtari.startsWith("ebelge:gelen-irsaliye-yanit:"));
+      expect(girdiler).toEqual([expect.objectContaining({
+        onem: "uyari", birlesimAnahtari: "ebelge:gelen-irsaliye-yanit:g1", aciklama: expect.stringContaining("son gün 25.09.2026"),
+        sonTarih: new Date("2026-09-25T23:59:59+03:00"),
+      })]);
+      // Yanıtlanan, kendi sevkimiz olan ve süresi dolmuş belge taranmaz.
+      expect(tx.gelenEirsaliye.findMany.mock.calls[0][0].where).toMatchObject({ durum: "yeni", kendiSevkimiz: false, sevkTarihi: { gte: new Date("2026-09-17T00:00:00Z") } });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("kritik bildirime son tarih verir, uyarı seviyesine vermez", async () => {

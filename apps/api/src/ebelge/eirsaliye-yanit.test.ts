@@ -35,7 +35,7 @@ describe("EirsaliyeService gelen yanıt (EBLG-34)", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    tx.gelenEirsaliye.findUnique.mockResolvedValue({ id: "irs-kayit", uuid: "u1", durum: "yeni", xmlIcerik: "<DespatchAdvice/>" });
+    tx.gelenEirsaliye.findUnique.mockResolvedValue({ id: "irs-kayit", uuid: "u1", durum: "yeni", sevkTarihi: new Date(), xmlIcerik: "<DespatchAdvice/>" });
   });
 
   it("taramada entegratördeki kararı yalnız yanıt bekleyen kayda yazar", async () => {
@@ -80,7 +80,7 @@ describe("EirsaliyeService gelen yanıt (EBLG-34)", () => {
   });
 
   it("kendi sevkimize yanıt vermez (EBLG-87)", async () => {
-    tx.gelenEirsaliye.findUnique.mockResolvedValue({ id: "irs-kayit", uuid: "u1", durum: "yeni", xmlIcerik: "<DespatchAdvice/>", kendiSevkimiz: true });
+    tx.gelenEirsaliye.findUnique.mockResolvedValue({ id: "irs-kayit", uuid: "u1", durum: "yeni", sevkTarihi: new Date(), xmlIcerik: "<DespatchAdvice/>", kendiSevkimiz: true });
 
     await expect(service.gelenYanit("irs-kayit", "kabul")).rejects.toThrow(/kendi gönderdiği/);
     expect(adapter.irsaliyeYanitiGonder).not.toHaveBeenCalled();
