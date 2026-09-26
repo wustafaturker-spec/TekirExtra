@@ -784,3 +784,29 @@ describe("NES önizleme (L)", () => {
     expect(sonuc.hataMesaji).toContain("kur bilgisi zorunludur");
   });
 });
+
+describe("NesEntegratorAdapter.seriTanimlari (EBLG-97)", () => {
+  it("dört seri ailesini okur; otomatik seriyi isPortal'dan, pasifliği activeStatus'tan çıkarır", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (adres: string) => {
+      if (adres.includes("/einvoice/")) return yanit([{ serie: "K07", isPortal: true, activeStatus: "Active" }]);
+      if (adres.includes("/earchive/")) return yanit({ data: [{ serie: "SNC", isPortal: true }] });
+      if (adres.includes("/answerseries")) return yanit([{ serie: "YNT", isPortal: true, activeStatus: "Active" }]);
+      return yanit([{ serie: "IRS", isPortal: true, activeStatus: "Active" }, { serie: "GBZ", isPortal: false, activeStatus: "Active" }, { serie: "ESK", isPortal: false, activeStatus: "Passive" }]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const seriler = await new NesEntegratorAdapter().seriTanimlari(config);
+
+    expect(seriler).toEqual([
+      { tur: "efatura", seri: "K07", otomatik: true, aktif: true, durum: "Active" },
+      { tur: "earsiv", seri: "SNC", otomatik: true, aktif: true },
+      { tur: "eirsaliye", seri: "IRS", otomatik: true, aktif: true, durum: "Active" },
+      { tur: "eirsaliye", seri: "GBZ", otomatik: false, aktif: true, durum: "Active" },
+      { tur: "eirsaliye", seri: "ESK", otomatik: false, aktif: false, durum: "Passive" },
+      { tur: "eirsaliye_yanit", seri: "YNT", otomatik: true, aktif: true, durum: "Active" },
+    ]);
+    expect(fetchMock.mock.calls.map(([adres]) => new URL(String(adres)).pathname)).toEqual([
+      "/einvoice/v1/definitions/series", "/earchive/v1/definitions/series", "/edespatch/v1/definitions/series", "/edespatch/v1/answerseries",
+    ]);
+  });
+});

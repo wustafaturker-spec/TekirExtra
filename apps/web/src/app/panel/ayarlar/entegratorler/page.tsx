@@ -342,8 +342,9 @@ export default function EntegratorAyarlariSayfasi() {
                         <Field label="Otomatik Seri Öneki (e-Arşiv)">
                           <Input name="earsivSeriOneki" defaultValue={ayar("earsivSeriOneki")} maxLength={8} placeholder="GİB e-Fatura serisinden farklı olmasını ister" />
                         </Field>
-                        <Field label="e-İrsaliye Seri Öneki">
-                          <Input name="eirsaliyeSeriOneki" defaultValue={ayar("eirsaliyeSeriOneki")} maxLength={3} placeholder="IRS — entegratörde elle numaralandırılan seri olmalı" />
+                        <Field label="e-İrsaliye Seri Öneki (elle numaralı)">
+                          <Input name="eirsaliyeSeriOneki" defaultValue={ayar("eirsaliyeSeriOneki")} maxLength={3} placeholder="Ör. TX2 — zorunlu; otomatik seri olamaz" />
+                          <small className="muted">Numarayı program verir; seri entegratörde elle numaralı tanımlı olmalı. Etkinleştirmede entegratördeki serilerle karşılaştırılır.</small>
                         </Field>
                         <Field label="e-İrsaliye Yanıt Seri Öneki">
                           <Input name="eirsaliyeYanitSeriOneki" defaultValue={ayar("eirsaliyeYanitSeriOneki")} maxLength={3} placeholder="YNT — numarayı entegratör atar" />

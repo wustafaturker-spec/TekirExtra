@@ -110,6 +110,43 @@ describe("BaglantilarService bağlantı testi", () => {
   });
 });
 
+describe("BaglantilarService seri denetimi (EBLG-97)", () => {
+  const IRS_OTOMATIK = [{ tur: "eirsaliye", seri: "IRS", otomatik: true, aktif: true }, { tur: "eirsaliye", seri: "GBZ", otomatik: false, aktif: true }];
+  function kur(config: Record<string, unknown>) {
+    const update = vi.fn().mockResolvedValue({ id: "b1", aile: "ebelge", saglayici: "nes", durum: "aktif", sifreliConfig: sifrele(JSON.stringify({ saglayici: "nes", ...config })) });
+    const updateMany = vi.fn();
+    const kayit = { id: "b1", aile: "ebelge", saglayici: "nes", durum: "pasif", sifreliConfig: sifrele(JSON.stringify({ saglayici: "nes", ...config })) };
+    const tx = {
+      baglanti: { findUnique: async () => kayit, update, updateMany },
+      tenant: { findUnique: async () => ({ vkn: "1234567802", efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: true }) },
+      gibMukellef: { findFirst: async () => null, count: async () => 0 },
+      gibMukellefSenkron: { findFirst: async () => null },
+    };
+    const prisma = { tenantIslem: vi.fn(async (_t, cb) => cb(tx)) } as never;
+    const servis = new BaglantilarService(prisma);
+    vi.spyOn(servis, "adapterCoz").mockReturnValue({ baglantiTest: async () => ({ basarili: true, mesaj: "NES REST bağlantısı doğrulandı" }), seriTanimlari: async () => IRS_OTOMATIK } as never);
+    return { servis, update };
+  }
+
+  it("otomatik e-İrsaliye serisiyle bağlantıyı etkinleştirmez", async () => {
+    const { servis, update } = kur({ eirsaliyeSeriOneki: "IRS" });
+    await expect(baglamda(() => servis.aktifEt("b1"))).rejects.toThrow(/IRS entegratörde otomatik numaralı/);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("elle numaralı seriyle etkinleştirir", async () => {
+    const { servis, update } = kur({ eirsaliyeSeriOneki: "GBZ" });
+    await baglamda(() => servis.aktifEt("b1"));
+    expect(update).toHaveBeenCalledWith({ where: { id: "b1" }, data: { durum: "aktif" } });
+  });
+
+  it("bağlantı testi seri hatasını başarısızlık olarak bildirir", async () => {
+    const { servis } = kur({});
+    const sonuc = await baglamda(() => servis.test("b1"));
+    expect(sonuc).toMatchObject({ basarili: false, mesaj: expect.stringContaining("e-İrsaliye seri öneki girilmemiş") });
+  });
+});
+
 describe("BaglantilarService güncelleme (EBLG-01b)", () => {
   const ESKI = { kullaniciAdi: "test01@nes.com.tr", apiAnahtari: "gizli-anahtar", belgeSeriOneki: "K07", earsivSeriOneki: "SNC", testOrtami: true };
 

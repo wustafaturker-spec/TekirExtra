@@ -17,6 +17,7 @@ import type {
   ZarfAraligi,
   GelenZarfSonucu,
   GelenYanit,
+  SeriTanimi,
 } from "./types";
 
 /**
@@ -38,6 +39,12 @@ export interface EntegratorAdapter {
   readonly belgeNoAtar?: boolean;
 
   baglantiTest(cfg: EntegratorConfig): Promise<BaglantiSonuc>;
+  /**
+   * EBLG-97: hesapta tanımlı belge serileri. Bağlantı etkinleştirilirken
+   * yapılandırmadaki önekler buna karşı denetlenir; seri listesi sunmayan
+   * sağlayıcıda tanımsız kalır ve denetim yapılmaz.
+   */
+  seriTanimlari?(cfg: EntegratorConfig): Promise<SeriTanimi[]>;
   mukellefSorgula(cfg: EntegratorConfig, vknTckn: string): Promise<MukellefDurum>;
   belgeGonder(cfg: EntegratorConfig, belge: UblBelge): Promise<GonderimSonuc>;
   /**

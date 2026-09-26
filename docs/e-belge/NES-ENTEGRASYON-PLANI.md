@@ -331,8 +331,9 @@ entegratöre gidilmeden yakalanır.
 **`isPortal: true`** olanlardır ve yıl bazlı `counters` taşırlar; `isPortal:
 false` seriler için numarayı bizim üretmemiz beklenir. Doğrulanan e-Arşiv
 serisi: **`SNC`**. Aynı ayrım e-Fatura tarafında da geçerli (`K07`
-`isPortal: true`). **Kalan iş:** bağlantı kaydedilirken önek bu listeye karşı
-doğrulanabilir; şimdilik yanlış önek gönderim anında anlaşılıyor.
+`isPortal: true`). **Yapıldı (EBLG-97, 2026-09-25):** bağlantı etkinleştirilirken ve test
+edilirken önekler bu listeye karşı doğrulanıyor; e-İrsaliye serisi elle
+numaralı (`isPortal: false`), diğerleri otomatik olmalı.
 
 ### Biten gönderim işi yeniden kuyruğa alınmıyordu
 

@@ -59,6 +59,20 @@ export interface EntegratorConfig {
   testOrtami?: boolean;
 }
 
+/**
+ * EBLG-97: entegratörde tanımlı bir belge serisi. `otomatik` seride numarayı
+ * entegratör verir (e-Fatura, e-Arşiv, e-İrsaliye yanıtı); elle numaralı
+ * seride numarayı biz veririz (e-İrsaliye).
+ */
+export interface SeriTanimi {
+  tur: "efatura" | "earsiv" | "eirsaliye" | "eirsaliye_yanit";
+  seri: string;
+  otomatik: boolean;
+  aktif: boolean;
+  /** Entegratörün ham durumu (NES: Active, Passive, Deleted); mesajda kullanılır. */
+  durum?: string;
+}
+
 export interface BaglantiSonuc {
   basarili: boolean;
   mesaj?: string;

@@ -19,6 +19,7 @@ import type {
   GelenEirsaliye,
   MukellefKaydi,
   GelenYanit,
+  SeriTanimi,
 } from "./types";
 
 /**
@@ -480,6 +481,29 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
     } catch (hata) {
       return { basarili: false, mesaj: hata instanceof Error ? hata.message : "NES bağlantısı kurulamadı" };
     }
+  }
+
+  /**
+   * EBLG-97: seri tanımları. Otomatik seri NES'te `isPortal: true` olandır
+   * (numarayı NES verir); `isPortal: false` seride 16 haneli numarayı biz
+   * göndeririz. e-İrsaliye yanıtı ayrı bir seri ailesindedir (`answerseries`).
+   */
+  async seriTanimlari(cfg: EntegratorConfig): Promise<SeriTanimi[]> {
+    const kaynaklar: [SeriTanimi["tur"], Aile, string][] = [
+      ["efatura", "einvoice", "/v1/definitions/series"],
+      ["earsiv", "earchive", "/v1/definitions/series"],
+      ["eirsaliye", "edespatch", "/v1/definitions/series"],
+      ["eirsaliye_yanit", "edespatch", "/v1/answerseries"],
+    ];
+    const sonuc: SeriTanimi[] = [];
+    for (const [tur, aile, yol] of kaynaklar) {
+      const yanit = await this.cagir<{ serie?: string; isPortal?: boolean; activeStatus?: string }[] | { data?: { serie?: string; isPortal?: boolean; activeStatus?: string }[] }>(cfg, aile, yol);
+      const liste = Array.isArray(yanit) ? yanit : yanit?.data ?? [];
+      for (const s of liste) {
+        if (s.serie) sonuc.push({ tur, seri: s.serie, otomatik: s.isPortal === true, aktif: !s.activeStatus || s.activeStatus === "Active", ...(s.activeStatus ? { durum: s.activeStatus } : {}) });
+      }
+    }
+    return sonuc;
   }
 
   async mukellefSorgula(cfg: EntegratorConfig, vknTckn: string): Promise<MukellefDurum> {

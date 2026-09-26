@@ -8,7 +8,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
-import { belgeSirasiAl, eirsaliyeNumarasi } from "../belgeler/belge-sayac";
+import { belgeSirasiAl, eirsaliyeNumarasi, eirsaliyeNumarasiniGeriAl, eirsaliyeNumarasiSerbestMi, seriHatasiAciklamasi } from "../belgeler/belge-sayac";
 import { numaraBosluklariniBul } from "./eirsaliye-bosluk";
 import { eirsaliyeYurtDisiMi, gonderimEngelleri, IRSALIYE_GONDERILEBILIR_DURUMLAR, irsaliyeTeslimatAdresi, irsaliyeYuklemeAdresi } from "./eirsaliye-engeller";
 import { gelenSevkTarihi, irsaliyeUblOku } from "./eirsaliye-ubl-oku";
@@ -231,10 +231,20 @@ export class EirsaliyeService {
       // verilir; hiç gönderilmeyen irsaliye giden seride boşluk bırakmaz.
       // Gönderim hata alırsa numara belgede kalır, yeniden gönderim aynı
       // numarayla yapılır.
+      // EBLG-97: önek boşken sessizce varsayılan IRS kullanılıyordu; o seri
+      // entegratörde otomatik numaralı olabiliyor ve belge reddediliyordu.
+      const seriOneki = cfg.eirsaliyeSeriOneki?.trim();
+      if (!seriOneki) throw new BadRequestException("Entegratör bağlantısında e-İrsaliye seri öneki girilmemiş; Ayarlar › Entegratörler'de entegratörde elle numaralı bir e-İrsaliye serisi yazın");
+      // EBLG-97: seri yanlış ayarlandığı için entegratöre hiç ulaşmamış belgenin
+      // numarası, önek düzeltildikten sonra yeni seriden yeniden verilir.
+      if (belge.no && eirsaliyeNumarasiSerbestMi(belge.no, seriOneki, belge.eirsaliye)) {
+        await eirsaliyeNumarasiniGeriAl(tx, { tenantId, yil: belge.tarih.getFullYear(), no: belge.no });
+        belge.no = null;
+      }
       if (!belge.no) {
         const yil = belge.tarih.getFullYear();
         const sira = await belgeSirasiAl(tx, { tenantId, tur: "irsaliye", yon: "satis", yil });
-        belge.no = eirsaliyeNumarasi(cfg.eirsaliyeSeriOneki ?? VARSAYILAN_EIRSALIYE_ONEKI, yil, sira);
+        belge.no = eirsaliyeNumarasi(seriOneki, yil, sira);
         await tx.belge.update({ where: { id: belge.id }, data: { no: belge.no } });
       }
       const cari = belge.gumrukDepoSevki && tenant
@@ -256,7 +266,7 @@ export class EirsaliyeService {
       // Hata mesajı açıkça `null` yazılır: `undefined` alanı Prisma güncellemez
       // ve başarılı yeniden gönderim önceki hatayı göstermeye devam ederdi.
       // EBLG-94: içerik hatası (kalıcı) dışındaki başarısızlık kendiliğinden yeniden denenir.
-      const kayit = { durum: sonuc.basarili ? ("iletildi" as const) : ("hata" as const), entegratorRef: sonuc.belgeRef, xmlIcerik: xml, hataMesaji: sonuc.hataMesaji ?? null, aliciKayitsiz: !aliciPostaKutusu, geciciHata: !sonuc.basarili && !sonuc.kalici };
+      const kayit = { durum: sonuc.basarili ? ("iletildi" as const) : ("hata" as const), entegratorRef: sonuc.belgeRef, xmlIcerik: xml, hataMesaji: seriHatasiAciklamasi(sonuc.hataMesaji) ?? null, aliciKayitsiz: !aliciPostaKutusu, geciciHata: !sonuc.basarili && !sonuc.kalici };
       return tx.eirsaliyeKayit.upsert({
         where: { belgeId },
         create: { tenantId, belgeId, ...kayit, yenidenDenemeSayisi: secenekler.otomatik ? 1 : 0 },

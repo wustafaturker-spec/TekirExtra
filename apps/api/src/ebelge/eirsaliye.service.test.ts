@@ -258,10 +258,10 @@ describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
     ...ek,
   });
 
-  function kur(belge: ReturnType<typeof taslakBelge>, gonderim: { basarili: boolean; hataMesaji?: string } = { basarili: true }, aliciKayitli = true) {
+  function kur(belge: ReturnType<typeof taslakBelge>, gonderim: { basarili: boolean; hataMesaji?: string; kalici?: boolean } = { basarili: true }, aliciKayitli = true, cfg: Record<string, unknown> = { eirsaliyeSeriOneki: "GBZ" }) {
     const tx = {
       belge: { findUnique: vi.fn().mockResolvedValue(belge), update: vi.fn().mockResolvedValue({}) },
-      belgeSayac: { upsert: vi.fn().mockResolvedValue({ sonSira: 800022 }) },
+      belgeSayac: { upsert: vi.fn().mockResolvedValue({ sonSira: 800022 }), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       tenant: { findUnique: vi.fn().mockResolvedValue(firma) },
       eirsaliyeKayit: { upsert: vi.fn(({ create }) => Promise.resolve(create)) },
     };
@@ -269,7 +269,7 @@ describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
     const mukellef = { kanalBelirle: vi.fn().mockResolvedValue(aliciKayitli ? { vknTckn: "1230460944", eFaturaMukellefi: true, postaKutusu: "urn:mail:alici" } : { vknTckn: "1230460944", eFaturaMukellefi: false }) } as never;
     const servis = new EirsaliyeService(prisma, {} as never, mukellef);
     const irsaliyeGonder = vi.fn().mockResolvedValue({ ...gonderim, belgeRef: gonderim.basarili ? "nes-uuid" : undefined });
-    vi.spyOn(servis as never, "baglanti").mockResolvedValue({ baglanti: { saglayici: "nes" }, cfg: { eirsaliyeSeriOneki: "GBZ" }, adapter: { irsaliyeGonder } } as never);
+    vi.spyOn(servis as never, "baglanti").mockResolvedValue({ baglanti: { saglayici: "nes" }, cfg, adapter: { irsaliyeGonder } } as never);
     return { servis, tx, irsaliyeGonder };
   }
   const calistir = <T>(f: () => Promise<T>) => baglamlaCalistir({ tenantId: "t1", userId: "u1", rol: "muhasebe" }, f);
@@ -294,6 +294,44 @@ describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
     expect(irsaliyeGonder.mock.calls[0][1].belgeNo).toBe("GBZ2026000800021");
     // Başarılı yeniden gönderim önceki hatayı temizler.
     expect(tx.eirsaliyeKayit.upsert.mock.calls[0][0].update.hataMesaji).toBeNull();
+  });
+
+  it("bağlantıda e-İrsaliye öneki yoksa varsayılan seriye düşmez, numara harcamadan durur (EBLG-97)", async () => {
+    const { servis, tx, irsaliyeGonder } = kur(taslakBelge(), { basarili: true }, true, {});
+
+    await expect(calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"))).rejects.toThrow(/e-İrsaliye seri öneki girilmemiş/);
+    expect(tx.belgeSayac.upsert).not.toHaveBeenCalled();
+    expect(irsaliyeGonder).not.toHaveBeenCalled();
+  });
+
+  it("yanlış seriden numara almış, entegratöre ulaşmamış belgeyi yeni seriden numaralar ve sayacı geri alır (EBLG-97)", async () => {
+    const { servis, tx, irsaliyeGonder } = kur(taslakBelge({ no: "IRS2026000000001", eirsaliye: { durum: "hata", entegratorRef: null } }), { basarili: true }, true, { eirsaliyeSeriOneki: "TX2" });
+    tx.belgeSayac.upsert.mockResolvedValue({ sonSira: 1 });
+
+    await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
+
+    expect(tx.belgeSayac.updateMany).toHaveBeenCalledWith({
+      where: { tenantId: "t1", tur: "irsaliye", yon: "satis", seri: "", yil: 2026, sonSira: 1 },
+      data: { sonSira: { decrement: 1 } },
+    });
+    expect(irsaliyeGonder.mock.calls[0][1].belgeNo).toBe("TX22026000000001");
+  });
+
+  it("entegratöre ulaşmış belgenin numarasına önek değişse de dokunmaz (EBLG-97)", async () => {
+    const { servis, tx, irsaliyeGonder } = kur(taslakBelge({ no: "GBZ2026000800021", eirsaliye: { durum: "hata", entegratorRef: "nes-uuid" } }), { basarili: true }, true, { eirsaliyeSeriOneki: "TX2" });
+
+    await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
+
+    expect(tx.belgeSayac.updateMany).not.toHaveBeenCalled();
+    expect(irsaliyeGonder.mock.calls[0][1].belgeNo).toBe("GBZ2026000800021");
+  });
+
+  it("otomatik seri reddine yapılacak işi ekler (EBLG-97)", async () => {
+    const { servis, tx } = kur(taslakBelge(), { basarili: false, kalici: true, hataMesaji: "NES 422: HATALI ISTEK — SCHEMATRON_CHECK_RESULT_HAS_FAILED (OTOMATIK NUMARALANDIRILAN SERIDIR! 16 HANELI NUMARA VERILEMEZ : GBZ2026000800022)" });
+
+    await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
+
+    expect(tx.eirsaliyeKayit.upsert.mock.calls[0][0].create.hataMesaji).toContain("elle numaralı bir seri yazıp bağlantıyı yeniden etkinleştirin");
   });
 
   it("engele takılan gönderim numara harcamaz", async () => {

@@ -16,6 +16,8 @@ import { z } from "zod";
 import { coz, sifrele } from "../core/kripto";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
+import { ebelgeUygulamalariniOku } from "../ebelge/ebelge-uygulamalari.service";
+import { seriEngelleri } from "./seri-dogrulama";
 
 /**
  * Gerçek entegratör adaptörü bulunan sağlayıcılar. Buradaki bir sağlayıcı
@@ -260,8 +262,34 @@ export class BaglantilarService {
     return this.gorunum(kayit);
   }
 
+  /**
+   * EBLG-97: bağlantıdaki seri öneklerini entegratördeki tanımlarla
+   * karşılaştırır. Seri listesi sunmayan sağlayıcıda denetim yapılmaz.
+   */
+  private async seriDenetimi(kayit: Baglanti): Promise<string[]> {
+    if (kayit.aile !== "ebelge" || !GERCEK_ADAPTORLER[kayit.saglayici]) return [];
+    const adapter = this.adapterCoz(kayit.saglayici);
+    if (!adapter.seriTanimlari) return [];
+    const { tenantId } = aktifBaglam();
+    const cfg = JSON.parse(coz(kayit.sifreliConfig)) as EntegratorConfig;
+    const eirsaliyeKullanicisi = (await this.prisma.tenantIslem(tenantId, (tx) => ebelgeUygulamalariniOku(tx, tenantId))).eirsaliye.acik;
+    let tanimlar;
+    try {
+      tanimlar = await adapter.seriTanimlari(cfg);
+    } catch (hata) {
+      return [`Entegratördeki seri tanımları okunamadı: ${hata instanceof Error ? hata.message : String(hata)}`];
+    }
+    return seriEngelleri(cfg, tanimlar, { eirsaliyeKullanicisi });
+  }
+
   async aktifEt(id: string): Promise<BaglantiGorunumu> {
     const { tenantId } = aktifBaglam();
+    // EBLG-97: seri önekleri entegratöre uymayan bağlantı etkinleştirilmez;
+    // hata aksi hâlde ilk gönderimde şematron reddi olarak dönüyordu.
+    const onKayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.findUnique({ where: { id } }));
+    if (!onKayit) throw new NotFoundException("Bağlantı bulunamadı");
+    const engeller = await this.seriDenetimi(onKayit);
+    if (engeller.length) throw new BadRequestException(`Bağlantı etkinleştirilemedi: ${engeller.join("; ")}`);
     const kayit = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const hedef = await tx.baglanti.findUnique({ where: { id } });
       if (!hedef) throw new NotFoundException("Bağlantı bulunamadı");
@@ -298,6 +326,11 @@ export class BaglantilarService {
     const sonuc = ["pazaryeri", "pos", "sms", "banka"].includes(kayit.aile)
       ? { basarili: bicimGecerli, mesaj: bicimGecerli ? "Kimlik biçimi doğrulandı; canlı test ilk işlem sırasında yapılacaktır" : "Sağlayıcı için zorunlu kimlik alanları eksik" }
       : await this.adapterCoz(kayit.saglayici).baglantiTest(config);
+    // EBLG-97: kimlik doğrulandıysa seri önekleri de denetlenir.
+    if (sonuc.basarili) {
+      const engeller = await this.seriDenetimi(kayit);
+      if (engeller.length) Object.assign(sonuc, { basarili: false, mesaj: `${sonuc.mesaj ?? "Bağlantı doğrulandı"}; ancak ${engeller.join("; ")}` });
+    }
 
     // Test yalnızca sonucu raporlar, bağlantıyı **aktifleştirmez**.
     // Aktifleştirme ayrı bir eylemdir (`aktifEt`) ve e-Belgede tek aktif
