@@ -20,6 +20,9 @@ export const bankaHesapOlusturSemasi = z.object({
   sube: z.string().max(100).optional().nullable(),
   hesapNo: z.string().max(50).optional().nullable(),
   iban: z.string().max(34).optional().nullable(),
+  // EBLG-101: firma tasarımının banka tablosu.
+  swift: z.union([z.string().trim().toUpperCase().regex(/^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/, "SWIFT kodu 8 ya da 11 karakterdir"), z.literal("")]).transform((d) => d || null).nullable().optional(),
+  faturadaGoster: z.boolean().optional(),
   dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
 });
 

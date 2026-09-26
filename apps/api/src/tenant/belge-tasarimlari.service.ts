@@ -5,7 +5,9 @@ import { XMLValidator } from "fast-xml-parser";
 import { z } from "zod";
 import { coz, sifrele } from "../core/kripto";
 import { aktifBaglam } from "../core/istek-baglami";
+import { PdfService } from "../core/pdf/pdf.service";
 import { PrismaService } from "../core/prisma.service";
+import { firmaTasarimiUret } from "../ebelge/firma-tasarimi/firma-tasarimi";
 import { BaglantilarService } from "./baglantilar.service";
 
 export const TASARIM_TURLERI = ["efatura", "earsiv", "eirsaliye"] as const satisfies readonly TasarimTuru[];
@@ -24,19 +26,27 @@ const adAnahtari = (ad: string) => ad.toLocaleLowerCase("tr").replace(/ı/g, "i"
 /** NES'e yüklenen XSLT'ler 300 KB'ı buluyor (logo + karekod gömülü); sınır bunun üstünde. */
 const AZAMI_XSLT_BOYU = 1_500_000;
 
+/** NES tasarım adı sınırı. */
+export const AZAMI_TASARIM_ADI = 30;
+
 export const tasarimYukleSemasi = z.object({
   tur: z.enum(TASARIM_TURLERI),
-  baslik: z.string().trim().min(3, "Tasarım adı en az 3 karakter olmalıdır").max(60, "Tasarım adı en çok 60 karakter olabilir"),
+  baslik: z.string().trim().min(3, "Tasarım adı en az 3 karakter olmalıdır").max(AZAMI_TASARIM_ADI, `Tasarım adı en çok ${AZAMI_TASARIM_ADI} karakter olabilir`),
   xslt: z.string().min(1, "XSLT dosyası boş").max(AZAMI_XSLT_BOYU, "XSLT dosyası 1,5 MB'tan büyük olamaz"),
 });
+
+export const firmaTasarimiSemasi = z.object({ tur: z.enum(TASARIM_TURLERI) });
+
+/** EBLG-101: yüklenen firma tasarımlarının adı; NES'te silme yok, her yenileme yeni sürümdür. */
+const FIRMA_TASARIM_ONEKI = { efatura: "EFATURA", earsiv: "EARSIV", eirsaliye: "EIRSALIYE" } as const satisfies Record<TasarimTuru, string>;
 
 export const tasarimOnizleSemasi = z.object({ tur: z.enum(TASARIM_TURLERI), tasarimId: z.string().uuid() });
 
 /** Boş metin "entegratörün varsayılanı" demektir. */
 export const tasarimSecimSemasi = z.object({
-  efatura: z.string().trim().max(60).optional(),
-  earsiv: z.string().trim().max(60).optional(),
-  eirsaliye: z.string().trim().max(60).optional(),
+  efatura: z.string().trim().max(AZAMI_TASARIM_ADI).optional(),
+  earsiv: z.string().trim().max(AZAMI_TASARIM_ADI).optional(),
+  eirsaliye: z.string().trim().max(AZAMI_TASARIM_ADI).optional(),
 });
 
 /**
@@ -66,6 +76,7 @@ export class BelgeTasarimlariService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly baglantilar: BaglantilarService,
+    private readonly pdf: PdfService,
   ) {}
 
   async listele(id: string, tur: TasarimTuru): Promise<{ destekleniyor: boolean; secili: string | null; tasarimlar: BelgeTasarimi[] }> {
@@ -102,6 +113,44 @@ export class BelgeTasarimlariService {
     const sonuc = await adapter.tasarimOnizle(cfg, girdi.tur, girdi.tasarimId, ornek.xml);
     if (!sonuc.basarili || !sonuc.html) throw new BadRequestException(sonuc.hataMesaji ?? "Tasarım önizlenemedi");
     return { html: sonuc.html, belgeNo: ornek.belgeNo };
+  }
+
+  /**
+   * EBLG-101: firmanın tasarımını (EMSA düzeni) firma kartından üretir,
+   * entegratöre sürümlü adla yükler ve bu tür için seçer. Firma bilgisi
+   * değiştiğinde yeniden çağrılır; eski sürümler entegratörde kalır.
+   */
+  async firmaTasarimiOlustur(id: string, tur: TasarimTuru): Promise<{ tasarim: BelgeTasarimi; boyut: number; logoKondu: boolean }> {
+    const { kayit, cfg, adapter } = await this.hazirla(id);
+    if (!adapter.tasarimYukle || !adapter.tasarimlariListele) throw new BadRequestException("Bu entegratör tasarım yüklemeyi desteklemiyor");
+    const { tenantId } = aktifBaglam();
+    const [firma, hesaplar] = await this.prisma.tenantIslem(tenantId, (tx) =>
+      Promise.all([
+        tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true, vkn: true, eposta: true, telefon: true, webSitesi: true, belgeMarkaAdi: true, belgeMarkaAlt: true, belgeEkBilgi: true, belgeRozetleri: true } }),
+        tx.bankaHesap.findMany({ where: { aktif: true, faturadaGoster: true, iban: { not: null } }, orderBy: [{ bankaAdi: "asc" }, { createdAt: "asc" }], select: { bankaAdi: true, sube: true, swift: true, iban: true, hesapNo: true, dovizCinsi: true } }),
+      ]),
+    );
+    if (!firma) throw new NotFoundException("Firma bulunamadı");
+    const logoDataUri = await this.pdf.firmaLogoDataUri();
+    const xslt = firmaTasarimiUret(tur === "eirsaliye" ? "irsaliye" : "fatura", {
+      ...firma,
+      markaAdi: firma.belgeMarkaAdi,
+      markaAlt: firma.belgeMarkaAlt,
+      ekBilgi: firma.belgeEkBilgi,
+      rozetler: Array.isArray(firma.belgeRozetleri) ? firma.belgeRozetleri.filter((r): r is string => typeof r === "string") : [],
+      logoDataUri,
+      bankaHesaplari: hesaplar.map((h) => ({ ...h, iban: h.iban!, dovizCinsi: String(h.dovizCinsi) })),
+    });
+    const hata = xsltDenetle(xslt);
+    if (hata) throw new BadRequestException(`Üretilen tasarım geçersiz: ${hata}`);
+
+    // NES tasarım adını 30 karakterle sınırlar (2026-09-27 canlıda: "Title 30 karakterden fazla olamaz").
+    const onek = `TX${firma.vkn}-${FIRMA_TASARIM_ONEKI[tur]}-v`;
+    const mevcut = await this.entegrator(() => adapter.tasarimlariListele!(cfg, tur), kayit);
+    const surum = 1 + Math.max(0, ...mevcut.filter((t) => t.baslik.startsWith(onek)).map((t) => Number(t.baslik.slice(onek.length))).filter(Number.isInteger));
+    const tasarim = await this.entegrator(() => adapter.tasarimYukle!(cfg, tur, { baslik: `${onek}${surum}`, xslt }), kayit);
+    await this.sec(id, { [tur]: tasarim.baslik });
+    return { tasarim, boyut: Buffer.byteLength(xslt), logoKondu: xslt.includes('class="logo"') };
   }
 
   /**

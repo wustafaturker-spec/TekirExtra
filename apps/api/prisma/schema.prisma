@@ -114,6 +114,13 @@ model Tenant {
   telefon            String?  @map("telefon")
   eposta             String?  @map("eposta")
   webSitesi          String?  @map("web_sitesi")
+  /// EBLG-101: entegratöre yüklenen firma tasarımının üst şeridi. Boşsa ünvan yazılır.
+  belgeMarkaAdi      String?  @map("belge_marka_adi")
+  belgeMarkaAlt      String?  @map("belge_marka_alt")
+  /// EBLG-101: satıcı bilgilerinin altında ve alt satırda basılan serbest ek bilgi (ör. sertifika no).
+  belgeEkBilgi       String?  @map("belge_ek_bilgi")
+  /// EBLG-101: sağ üstte basılan rozet görselleri (data URI dizisi, en çok 3).
+  belgeRozetleri     Json?    @map("belge_rozetleri")
   mersisNo           String?  @map("mersis_no")
   ticaretSicilNo     String?  @map("ticaret_sicil_no")
   /// EBLG-77: firmanın kendi e-belge mükellefiyetleri. null: GİB mükellef
@@ -2506,6 +2513,10 @@ model BankaHesap {
   sube           String?
   hesapNo        String?    @map("hesap_no")
   iban           String?
+  /// EBLG-101: firma tasarımındaki banka tablosunda basılır.
+  swift          String?
+  /// EBLG-101: hesap firma tasarımının banka tablosunda gösterilir; iç hesaplar faturaya çıkmaz.
+  faturadaGoster Boolean    @default(false) @map("faturada_goster")
   dovizCinsi     DovizCinsi @default(TRY) @map("doviz_cinsi")
   aktif          Boolean    @default(true)
   /// KSB-06: bu hesabın ekstre dosyasındaki sütun eşlemesi. Bir kez kurulur,

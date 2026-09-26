@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api } from "@/lib/api";
 import { Alert, Badge, Button, Field, Input, Segmented, Select, Table } from "@/components/ui";
+import { FirmaTasarimi } from "./FirmaTasarimi";
 
 type TasarimTuru = "efatura" | "earsiv" | "eirsaliye";
 
@@ -109,8 +110,11 @@ export function BelgeTasarimlari({ baglantiId, turler }: { baglantiId: string; t
             </Button>
           </div>
 
+          {/* EBLG-101: firmaya özel tasarımı üretip yükler ve seçer. */}
+          <FirmaTasarimi baglantiId={baglantiId} tur={tur} onYuklendi={() => void yukle()} />
+
           {onizleme && (
-            <div style={{ marginBottom: "1rem" }}>
+            <div style={{ margin: "1rem 0" }}>
               <div className="between" style={{ alignItems: "center", marginBottom: "0.5rem" }}>
                 <span style={{ fontSize: "0.85rem" }}><strong>{onizleme.baslik}</strong> <span className="muted">· son belgeniz {onizleme.belgeNo} ile</span></span>
                 <Button size="sm" onClick={() => setOnizleme(null)}>Kapat</Button>
@@ -150,7 +154,7 @@ export function BelgeTasarimlari({ baglantiId, turler }: { baglantiId: string; t
 
           <form onSubmit={(e) => void tasarimYukle(e)} style={{ marginTop: "1rem" }}>
             <div className="row-tight" style={{ alignItems: "flex-end", gap: "0.75rem", flexWrap: "wrap" }}>
-              <Field label="Yeni tasarım adı"><Input name="baslik" required minLength={3} maxLength={60} placeholder={`Ör. Firma ${TUR_ADI[tur]}`} /></Field>
+              <Field label="Yeni tasarım adı"><Input name="baslik" required minLength={3} maxLength={30} placeholder={`Ör. Firma ${TUR_ADI[tur]}`} /></Field>
               <Field label="XSLT dosyası"><Input name="dosya" type="file" accept=".xslt,.xsl,.xml" required /></Field>
               <Button type="submit" size="sm" disabled={islemde !== null}>{islemde === "yukle" ? "Yükleniyor..." : "Entegratöre Yükle"}</Button>
             </div>

@@ -22,8 +22,9 @@ import {
   baglantiGuncelleSemasi,
   baglantiOlusturSemasi,
 } from "./baglantilar.service";
-import { BelgeTasarimlariService, TASARIM_TURLERI, tasarimOnizleSemasi, tasarimSecimSemasi, tasarimYukleSemasi } from "./belge-tasarimlari.service";
+import { BelgeTasarimlariService, TASARIM_TURLERI, firmaTasarimiSemasi, tasarimOnizleSemasi, tasarimSecimSemasi, tasarimYukleSemasi } from "./belge-tasarimlari.service";
 import { KayitService, kayitSemasi } from "./kayit.service";
+import { AZAMI_ROZET_BOYU, AZAMI_ROZET_SAYISI } from "../ebelge/firma-tasarimi/firma-tasarimi";
 
 /** Boş metin "sil" demektir; alan null olarak kaydedilir. */
 const serbestMetin = (sinir: number) => z.string().trim().max(sinir).transform((d) => d || null).nullable().optional();
@@ -53,6 +54,14 @@ const firmaGuncelleSemasi = z.object({
   efaturaMukellefi: z.boolean().nullable().optional(),
   earsivMukellefi: z.boolean().nullable().optional(),
   eirsaliyeMukellefi: z.boolean().nullable().optional(),
+  // EBLG-101: entegratöre yüklenen firma tasarımının firmaya ait parçaları.
+  belgeMarkaAdi: serbestMetin(40),
+  belgeMarkaAlt: serbestMetin(80),
+  belgeEkBilgi: serbestMetin(160),
+  belgeRozetleri: z
+    .array(z.string().regex(/^data:image\/(png|jpe?g|gif|svg\+xml|webp);base64,[A-Za-z0-9+/=]+$/, "Rozet bir görsel olmalıdır").max(AZAMI_ROZET_BOYU, "Rozet görseli en çok 60 KB olabilir"))
+    .max(AZAMI_ROZET_SAYISI, `En çok ${AZAMI_ROZET_SAYISI} rozet eklenebilir`)
+    .optional(),
 });
 
 /** Firma ekranının okuduğu alanlar; e-belge eksikleri de bununla hesaplanır. */
@@ -64,6 +73,7 @@ const FIRMA_ALANLARI = {
   efaturaMukellefi: true,
   earsivMukellefi: true,
   eirsaliyeMukellefi: true,
+  belgeMarkaAdi: true, belgeMarkaAlt: true, belgeEkBilgi: true, belgeRozetleri: true,
   abonelik: { select: { planKodu: true, durum: true, faturaEpostasi: true, donemBaslangici: true, donemSonu: true } },
 } as const;
 
@@ -218,6 +228,14 @@ export class TenantController {
     const ayristirma = tasarimOnizleSemasi.safeParse(govde);
     if (!ayristirma.success) throw new BadRequestException("Geçersiz önizleme isteği");
     return this.tasarimlar.onizle(id, ayristirma.data);
+  }
+
+  @Post("baglantilar/:id/tasarimlar/firma-tasarimi")
+  @Roller("yonetici")
+  firmaTasarimiOlustur(@Param("id") id: string, @Body() govde: unknown) {
+    const ayristirma = firmaTasarimiSemasi.safeParse(govde);
+    if (!ayristirma.success) throw new BadRequestException("Geçersiz belge türü");
+    return this.tasarimlar.firmaTasarimiOlustur(id, ayristirma.data.tur);
   }
 
   @Patch("baglantilar/:id/tasarim-secimi")

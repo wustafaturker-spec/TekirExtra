@@ -83,8 +83,9 @@ describe("BelgeTasarimlariService (EBLG-99)", () => {
     expect(xsltDenetle("<Invoice xmlns='urn:x'/>")).toMatch(/XSLT değil/);
   });
 
-  it("tasarım adını 3–60 karakterle sınırlar", () => {
+  it("tasarım adını 3–30 karakterle sınırlar (NES sınırı)", () => {
     expect(tasarimYukleSemasi.safeParse({ tur: "efatura", baslik: "ab", xslt: XSLT }).success).toBe(false);
     expect(tasarimYukleSemasi.safeParse({ tur: "efatura", baslik: "Firma e-Fatura", xslt: XSLT }).success).toBe(true);
+    expect(tasarimYukleSemasi.safeParse({ tur: "efatura", baslik: "x".repeat(31), xslt: XSLT }).success).toBe(false);
   });
 });

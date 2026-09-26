@@ -212,6 +212,8 @@ export class KasaBankaService {
             sube: girdi.sube,
             hesapNo: girdi.hesapNo,
             iban: girdi.iban,
+            swift: girdi.swift,
+            faturadaGoster: girdi.faturadaGoster,
             dovizCinsi: girdi.dovizCinsi,
           },
         }),
