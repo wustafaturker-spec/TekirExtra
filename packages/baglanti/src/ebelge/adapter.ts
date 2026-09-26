@@ -18,6 +18,8 @@ import type {
   GelenZarfSonucu,
   GelenYanit,
   SeriTanimi,
+  TasarimTuru,
+  BelgeTasarimi,
 } from "./types";
 
 /**
@@ -45,6 +47,15 @@ export interface EntegratorAdapter {
    * sağlayıcıda tanımsız kalır ve denetim yapılmaz.
    */
   seriTanimlari?(cfg: EntegratorConfig): Promise<SeriTanimi[]>;
+  /**
+   * EBLG-99: entegratörde tanımlı belge tasarımları (XSLT). Tasarım yönetimi
+   * sunmayan sağlayıcıda tanımsız kalır; ayar ekranı "desteklenmiyor" der.
+   */
+  tasarimlariListele?(cfg: EntegratorConfig, tur: TasarimTuru): Promise<BelgeTasarimi[]>;
+  /** EBLG-99: yeni tasarım yükler; varsayılan yapmaz (seçim belge başına gönderilir). */
+  tasarimYukle?(cfg: EntegratorConfig, tur: TasarimTuru, girdi: { baslik: string; xslt: string }): Promise<BelgeTasarimi>;
+  /** EBLG-99: tasarımı verilen UBL ile çizer; entegratörün HTML'ini döndürür. */
+  tasarimOnizle?(cfg: EntegratorConfig, tur: TasarimTuru, tasarimId: string, ublXml: string): Promise<OnizlemeSonuc>;
   mukellefSorgula(cfg: EntegratorConfig, vknTckn: string): Promise<MukellefDurum>;
   belgeGonder(cfg: EntegratorConfig, belge: UblBelge): Promise<GonderimSonuc>;
   /**

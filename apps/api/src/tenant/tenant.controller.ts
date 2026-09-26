@@ -9,6 +9,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from "@nestjs/common";
 import { z } from "zod";
 import { Public } from "../auth/public.decorator";
@@ -21,6 +22,7 @@ import {
   baglantiGuncelleSemasi,
   baglantiOlusturSemasi,
 } from "./baglantilar.service";
+import { BelgeTasarimlariService, TASARIM_TURLERI, tasarimOnizleSemasi, tasarimSecimSemasi, tasarimYukleSemasi } from "./belge-tasarimlari.service";
 import { KayitService, kayitSemasi } from "./kayit.service";
 
 /** Boş metin "sil" demektir; alan null olarak kaydedilir. */
@@ -71,6 +73,7 @@ export class TenantController {
     private readonly kayit: KayitService,
     private readonly baglantilar: BaglantilarService,
     private readonly prisma: PrismaService,
+    private readonly tasarimlar: BelgeTasarimlariService,
   ) {}
 
   /** Self-servis firma kaydı (KLN-07) — kimliksiz erişilir. */
@@ -188,6 +191,41 @@ export class TenantController {
   @Roller("yonetici")
   baglantiAktifEt(@Param("id") id: string) {
     return this.baglantilar.aktifEt(id);
+  }
+
+  // ─── ENTEGRATÖR BELGE TASARIMLARI (EBLG-99) ────────────────────────────────
+
+  @Get("baglantilar/:id/tasarimlar")
+  @Roller("yonetici")
+  tasarimListesi(@Param("id") id: string, @Query("tur") tur: string) {
+    const ayristirma = z.enum(TASARIM_TURLERI).safeParse(tur);
+    if (!ayristirma.success) throw new BadRequestException("Geçersiz belge türü");
+    return this.tasarimlar.listele(id, ayristirma.data);
+  }
+
+  @Post("baglantilar/:id/tasarimlar")
+  @Roller("yonetici")
+  tasarimYukle(@Param("id") id: string, @Body() govde: unknown) {
+    const ayristirma = tasarimYukleSemasi.safeParse(govde);
+    if (!ayristirma.success) throw new BadRequestException(ayristirma.error.issues[0]?.message ?? "Geçersiz tasarım");
+    return this.tasarimlar.yukle(id, ayristirma.data);
+  }
+
+  @Post("baglantilar/:id/tasarimlar/onizle")
+  @Roller("yonetici")
+  @HttpCode(200)
+  tasarimOnizle(@Param("id") id: string, @Body() govde: unknown) {
+    const ayristirma = tasarimOnizleSemasi.safeParse(govde);
+    if (!ayristirma.success) throw new BadRequestException("Geçersiz önizleme isteği");
+    return this.tasarimlar.onizle(id, ayristirma.data);
+  }
+
+  @Patch("baglantilar/:id/tasarim-secimi")
+  @Roller("yonetici")
+  tasarimSec(@Param("id") id: string, @Body() govde: unknown) {
+    const ayristirma = tasarimSecimSemasi.safeParse(govde);
+    if (!ayristirma.success) throw new BadRequestException("Geçersiz tasarım seçimi");
+    return this.tasarimlar.sec(id, ayristirma.data);
   }
 
   @Delete("baglantilar/:id")

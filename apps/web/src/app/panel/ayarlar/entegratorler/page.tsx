@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiHata, tokenAl, tokenYaz } from "@/lib/api";
 import { uygulamaAcik, type EbelgeUygulamalari } from "@tekirextra/shared";
 import { Alert, Badge, Button, ButtonLabel, Card, Field, Input, PageHeader } from "@/components/ui";
+import { BelgeTasarimlari } from "./BelgeTasarimlari";
 
 interface Baglanti {
   id: string;
@@ -298,6 +299,14 @@ export default function EntegratorAyarlariSayfasi() {
                   </div>
                 )}
               </div>
+
+              {/* EBLG-99: tasarım yönetimi; desteklemeyen sağlayıcıda bileşen bunu kendisi söyler. */}
+              {baglanti && !formAcik && (sovos || nes) && (
+                <BelgeTasarimlari
+                  baglantiId={baglanti.id}
+                  turler={(["efatura", "earsiv", "eirsaliye"] as const).filter((t) => !ebelgeUygulamalari || ebelgeUygulamalari[t].acik !== false)}
+                />
+              )}
 
               {formAcik && (
                 <form

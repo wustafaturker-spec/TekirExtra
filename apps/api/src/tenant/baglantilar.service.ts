@@ -74,6 +74,12 @@ export const baglantiOlusturSemasi = z.object({
 const GIZLI_ALANLAR = ["kullaniciAdi", "parola", "apiAnahtari"] as const;
 
 /**
+ * EBLG-99: tasarım seçimi bağlantı formunda değil, tasarım bölümünde yönetilir;
+ * form config'i baştan yazdığı için düzenlemede kayıtlı değer korunur.
+ */
+const TASARIM_ALANLARI = ["efaturaTasarimi", "earsivTasarimi", "eirsaliyeTasarimi"] as const;
+
+/**
  * Düzenleme formunun kayıtlı değerle açtığı gizli olmayan ayarlar. İzin
  * listesidir: config'e sonradan eklenen bir alan buraya yazılmadıkça
  * arayüze dönmez.
@@ -107,6 +113,8 @@ export interface BaglantiGorunumu {
   testOrtami: boolean;
   /** Düzenleme formunun kayıtlı değerle açtığı gizli olmayan ayarlar (EBLG-01b). */
   ayarlar: Partial<Record<(typeof GORUNUR_AYARLAR)[number], string>>;
+  /** EBLG-99: belge türü başına seçili entegratör tasarımı; boşsa entegratörün varsayılanı. */
+  tasarimlar: Partial<Record<(typeof TASARIM_ALANLARI)[number], string>>;
 }
 
 function maskele(deger: string): string {
@@ -250,6 +258,9 @@ export class BaglantilarService {
       for (const alan of GIZLI_ALANLAR) {
         if (!config[alan] && onceki[alan]) config[alan] = onceki[alan];
       }
+      for (const alan of TASARIM_ALANLARI) {
+        if (onceki[alan]) config[alan] = onceki[alan];
+      }
 
       return tx.baglanti.update({
         where: { id },
@@ -372,6 +383,12 @@ export class BaglantilarService {
         GORUNUR_AYARLAR.flatMap((alan) => {
           // NES adresi test seçiminden türer (EBLG-01a); eski kayıtta kalmış değer gösterilmez.
           if (k.saglayici === "nes" && alan === "servisAdresi") return [];
+          const deger = (config as Record<string, unknown>)[alan];
+          return typeof deger === "string" && deger !== "" ? [[alan, deger]] : [];
+        }),
+      ),
+      tasarimlar: Object.fromEntries(
+        TASARIM_ALANLARI.flatMap((alan) => {
           const deger = (config as Record<string, unknown>)[alan];
           return typeof deger === "string" && deger !== "" ? [[alan, deger]] : [];
         }),

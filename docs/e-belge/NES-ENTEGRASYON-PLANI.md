@@ -806,3 +806,17 @@ tanımlı değil, NES'e sorulmalı.
 
 Birim testleri sözleşmeyi doğrular, gerçek ortam davranışını değil; canlıda
 denenmemiş uçlar için bu ayrım geçerlidir.
+
+
+## Belge tasarımları (EBLG-99, 2026-09-26)
+
+Alıcının gördüğü görünüm NES'teki tasarımdır (XSLT); NES onu imzalı UBL'e
+`AdditionalDocumentReference` eki olarak kendisi gömer (K072026000000098,
+299 KB'lık EMSA XSLT'si). Uçlar üç ailede aynı:
+`GET/POST /{einvoice,earchive,edespatch}/v1/definitions/documenttemplates`
+(yükleme: çok parçalı `Title`, `IsDefault`, `File`), `…/{id}/preview` (çok
+parçalı `file` = UBL; yanıt `text/html`), `…/{id}/setdefault`. Ortak test
+hesaplarında onlarca başka firmanın tasarımı var ve varsayılanı herkes
+değiştirebiliyor; bu yüzden tasarım belge başına `DocumentTemplate`
+(`/v1/uploads/document`) ve önizlemede `DocumentTemplateTitle` ile adıyla
+istenir.

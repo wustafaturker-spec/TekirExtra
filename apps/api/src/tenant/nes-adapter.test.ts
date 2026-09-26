@@ -160,6 +160,44 @@ describe("NesEntegratorAdapter", () => {
     expect(istek.body.get("SourceAppRecordId")).toBe("fatura-1");
   });
 
+  it("seçili tasarımı belge türüne göre adıyla ister; seçim yoksa alanı hiç göndermez (EBLG-99)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(yanit({ uuid: "belge-1" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const tasarimli = { ...config, efaturaTasarimi: "TEKIR_EFATURA", earsivTasarimi: "TEKIR_EARSIV", eirsaliyeTasarimi: "TEKIR_IRS" };
+    const adapter = new NesEntegratorAdapter();
+
+    await adapter.belgeGonder(tasarimli, { uuid: "f-1", belgeNo: "K07", xml: "<Invoice/>", tur: "efatura", aliciPostaKutusu: "urn:mail:pk@alici.test" });
+    await adapter.belgeGonder(tasarimli, { uuid: "f-2", belgeNo: "SNC", xml: "<Invoice/>", tur: "earsiv" });
+    await adapter.irsaliyeGonder(tasarimli, { uuid: "i-1", belgeNo: "TK02026000000001", xml: "<DespatchAdvice/>", aliciPostaKutusu: "urn:mail:pk@alici.test" });
+    await adapter.belgeGonder(config, { uuid: "f-3", belgeNo: "K07", xml: "<Invoice/>", tur: "efatura", aliciPostaKutusu: "urn:mail:pk@alici.test" });
+
+    expect(fetchMock.mock.calls.map((c) => c[1].body.get("DocumentTemplate"))).toEqual(["TEKIR_EFATURA", "TEKIR_EARSIV", "TEKIR_IRS", null]);
+  });
+
+  it("tasarımları listeler, yüklerken varsayılan yapmaz, önizlemeyi HTML olarak okur (EBLG-99)", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(yanit([{ id: "t-1", title: "EMSA_EFATURA", isDefault: true }, { id: "t-2", title: "Sade", isDefault: false }]))
+      .mockResolvedValueOnce(yanit({ id: "t-3", title: "TEKIR_IRS", isDefault: false }, 201))
+      .mockResolvedValueOnce(yanit("<!DOCTYPE HTML><html>fatura</html>"));
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = new NesEntegratorAdapter();
+
+    expect(await adapter.tasarimlariListele(config, "efatura")).toEqual([
+      { id: "t-1", baslik: "EMSA_EFATURA", varsayilan: true },
+      { id: "t-2", baslik: "Sade", varsayilan: false },
+    ]);
+    expect(await adapter.tasarimYukle(config, "eirsaliye", { baslik: "TEKIR_IRS", xslt: "<xsl:stylesheet/>" })).toEqual({ id: "t-3", baslik: "TEKIR_IRS", varsayilan: false });
+    expect(await adapter.tasarimOnizle(config, "earsiv", "t-9", "<Invoice/>")).toEqual({ basarili: true, html: "<!DOCTYPE HTML><html>fatura</html>" });
+
+    const [[listeAdres], [yuklemeAdres, yukleme], [onizlemeAdres, onizleme]] = fetchMock.mock.calls;
+    expect(listeAdres).toBe("https://apitest.nes.com.tr/einvoice/v1/definitions/documenttemplates");
+    expect(yuklemeAdres).toBe("https://apitest.nes.com.tr/edespatch/v1/definitions/documenttemplates");
+    expect(yukleme.body.get("Title")).toBe("TEKIR_IRS");
+    expect(yukleme.body.get("IsDefault")).toBe("false");
+    expect(onizlemeAdres).toBe("https://apitest.nes.com.tr/earchive/v1/definitions/documenttemplates/t-9/preview");
+    expect(onizleme.headers.accept).toBe("text/html");
+  });
+
   it("otomatik seride entegratörün attığı numarayı geri döndürür", async () => {
     // Seri otomatikse UBL'e yalnız önek yazılır, numarayı NES atar (EBLG-16).
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ uuid: "belge-9", documentNumber: "K072026000000014" })));

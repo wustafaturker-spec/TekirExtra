@@ -20,6 +20,8 @@ import type {
   MukellefKaydi,
   GelenYanit,
   SeriTanimi,
+  TasarimTuru,
+  BelgeTasarimi,
 } from "./types";
 
 /**
@@ -44,6 +46,8 @@ export function nesKokAdresi(cfg: Pick<EntegratorConfig, "testOrtami">): string 
 const EARSIV_ONEKI = "EARSIV:";
 
 const SAYFA_BOYUTU = 100;
+
+const TASARIM_AILESI: Record<TasarimTuru, Aile> = { efatura: "einvoice", earsiv: "earchive", eirsaliye: "edespatch" };
 
 /** Gelen tarama sonsuz döngüye girmesin diye sayfa tavanı (EBLG-11). */
 const SAYFA_TAVANI = 50;
@@ -261,8 +265,11 @@ export function nesBelgeDurumu(gidenDurum?: string, yanit?: string): BelgeDurum 
  * SourceAppRecordId belge UUID'mizi taşır: aynı belge iki kez gönderilirse
  * NES tarafında hangi kaydımıza ait olduğu izlenebilir kalır.
  */
-function yuklemeFormu(belge: { uuid: string; xml: string }, gonderen: string, alici?: string): FormData {
+function yuklemeFormu(belge: { uuid: string; xml: string }, gonderen: string, alici?: string, tasarim?: string): FormData {
   const form = new FormData();
+  // EBLG-99: tasarım belge başına adıyla istenir; hesabın varsayılanına
+  // bırakılmaz (ortak test hesabında başkaları değiştirebiliyor).
+  if (tasarim) form.set("DocumentTemplate", tasarim);
   form.set("File", new Blob([belge.xml], { type: "application/xml" }), `${belge.uuid}.xml`);
   form.set("SenderAlias", gonderen);
   if (alici) form.set("ReceiverAlias", alici);
@@ -448,6 +455,8 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
       govde?: unknown;
       metin?: boolean;
       ikili?: boolean;
+      /** Metin yanıtın türü XML değilse (tasarım önizlemesi HTML döner). */
+      kabul?: string;
     } = {},
   ): Promise<T> {
     const form = secenekler.govde instanceof FormData;
@@ -455,7 +464,7 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
       method: secenekler.metot ?? "GET",
       headers: {
         authorization: `Bearer ${cfg.apiAnahtari}`,
-        accept: secenekler.ikili ? "application/zip" : secenekler.metin ? "application/xml" : "application/json",
+        accept: secenekler.kabul ?? (secenekler.ikili ? "application/zip" : secenekler.metin ? "application/xml" : "application/json"),
         // FormData'nın sınır (boundary) başlığını fetch kendisi kurar; elle
         // content-type yazmak gövdeyi okunamaz hâle getirir.
         ...(!form && secenekler.govde !== undefined ? { "content-type": "application/json" } : {}),
@@ -557,6 +566,37 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
     return zipIlkXmlBuffer(await this.cagir<Buffer>(cfg, aile, "/v1/users/zip/Pk", { ikili: true }));
   }
 
+  /**
+   * EBLG-99: hesaptaki belge tasarımları. Uçlar üç ailede de aynıdır
+   * (`/v1/definitions/documenttemplates`); yükleme çok parçalı form ister,
+   * önizleme HTML'i doğrudan metin olarak döner (2026-09-26 denendi).
+   */
+  async tasarimlariListele(cfg: EntegratorConfig, tur: TasarimTuru): Promise<BelgeTasarimi[]> {
+    const liste = await this.cagir<{ id?: string; title?: string; isDefault?: boolean }[]>(cfg, TASARIM_AILESI[tur], "/v1/definitions/documenttemplates");
+    return (liste ?? []).flatMap((t) => (t.id && t.title ? [{ id: t.id, baslik: t.title, varsayilan: t.isDefault === true }] : []));
+  }
+
+  async tasarimYukle(cfg: EntegratorConfig, tur: TasarimTuru, girdi: { baslik: string; xslt: string }): Promise<BelgeTasarimi> {
+    const form = new FormData();
+    form.set("Title", girdi.baslik);
+    form.set("IsDefault", "false");
+    form.set("File", new Blob([girdi.xslt], { type: "application/xml" }), `${girdi.baslik}.xslt`);
+    const t = await this.cagir<{ id?: string; title?: string; isDefault?: boolean }>(cfg, TASARIM_AILESI[tur], "/v1/definitions/documenttemplates", { metot: "POST", govde: form });
+    if (!t?.id) throw new Error("NES tasarım yükleme yanıtında kimlik dönmedi");
+    return { id: t.id, baslik: t.title ?? girdi.baslik, varsayilan: t.isDefault === true };
+  }
+
+  async tasarimOnizle(cfg: EntegratorConfig, tur: TasarimTuru, tasarimId: string, ublXml: string): Promise<OnizlemeSonuc> {
+    const form = new FormData();
+    form.set("file", new Blob([ublXml], { type: "application/xml" }), "onizleme.xml");
+    try {
+      const html = await this.cagir<string>(cfg, TASARIM_AILESI[tur], `/v1/definitions/documenttemplates/${encodeURIComponent(tasarimId)}/preview`, { metot: "POST", govde: form, metin: true, kabul: "text/html" });
+      return html ? { basarili: true, html } : { basarili: false, hataMesaji: "NES önizleme yanıtında görünüm dönmedi" };
+    } catch (hata) {
+      return { basarili: false, hataMesaji: hata instanceof Error ? hata.message : "NES tasarım önizlemesi başarısız" };
+    }
+  }
+
   async belgeGonder(cfg: EntegratorConfig, belge: UblBelge): Promise<GonderimSonuc> {
     const hata = configDogrula(cfg);
     if (hata) return { basarili: false, hataMesaji: hata };
@@ -567,7 +607,7 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
     try {
       const sonuc = await this.cagir<{ uuid?: string; documentNumber?: string }>(cfg, aile, "/v1/uploads/document", {
         metot: "POST",
-        govde: yuklemeFormu(belge, cfg.gondericiBirimEtiketi!, belge.aliciPostaKutusu),
+        govde: yuklemeFormu(belge, cfg.gondericiBirimEtiketi!, belge.aliciPostaKutusu, belge.tur === "earsiv" ? cfg.earsivTasarimi : cfg.efaturaTasarimi),
       });
       if (!sonuc?.uuid) return { basarili: false, hataMesaji: "NES yükleme yanıtında belge UUID'si dönmedi" };
       return {
@@ -599,6 +639,9 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
     const aile: Aile = belge.tur === "earsiv" ? "earchive" : "einvoice";
     const form = new FormData();
     form.set("File", new Blob([belge.xml], { type: "application/xml" }), `${belge.uuid}.xml`);
+    // EBLG-99: önizleme, gönderimde istenecek tasarımla çizilir.
+    const tasarim = belge.tur === "earsiv" ? cfg.earsivTasarimi : cfg.efaturaTasarimi;
+    if (tasarim) form.set("DocumentTemplateTitle", tasarim);
     try {
       const sonuc = await this.cagir<{ content?: string; errorMessage?: string | null }>(cfg, aile, "/v1/uploads/document/preview", {
         metot: "POST",
@@ -882,7 +925,7 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
     try {
       const sonuc = await this.cagir<{ uuid?: string }>(cfg, "edespatch", "/v1/uploads/document", {
         metot: "POST",
-        govde: yuklemeFormu(belge, cfg.gondericiBirimEtiketi!, belge.aliciPostaKutusu),
+        govde: yuklemeFormu(belge, cfg.gondericiBirimEtiketi!, belge.aliciPostaKutusu, cfg.eirsaliyeTasarimi),
       });
       return sonuc?.uuid
         ? { basarili: true, belgeRef: sonuc.uuid }

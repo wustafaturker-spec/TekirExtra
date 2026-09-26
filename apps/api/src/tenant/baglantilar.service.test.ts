@@ -193,6 +193,14 @@ describe("BaglantilarService güncelleme (EBLG-01b)", () => {
     expect(JSON.stringify(sonuc)).not.toContain("sovos-kullanici");
   });
 
+  it("tasarım seçimini düzenlemede korur ve görünümde gösterir (EBLG-99)", async () => {
+    const { servis, saklanan } = kurulum("nes", { ...ESKI, efaturaTasarimi: "TEKIR_EFATURA" });
+    const sonuc = await baglamda(() => servis.guncelle("b1", { config: { belgeSeriOneki: "K07", earsivSeriOneki: "SNC", testOrtami: true } }));
+
+    expect(saklanan().efaturaTasarimi).toBe("TEKIR_EFATURA");
+    expect(sonuc.tasarimlar).toEqual({ efaturaTasarimi: "TEKIR_EFATURA" });
+  });
+
   it("güncelleme gövdesinde kullanıcı adı zorunlu değildir", () => {
     expect(baglantiGuncelleSemasi.safeParse({ config: { belgeSeriOneki: "K07" } }).success).toBe(true);
   });

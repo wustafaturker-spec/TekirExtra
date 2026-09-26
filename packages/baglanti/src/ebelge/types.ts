@@ -57,6 +57,27 @@ export interface EntegratorConfig {
    * `servisAdresi` okunmaz (EBLG-01a).
    */
   testOrtami?: boolean;
+  /**
+   * EBLG-99: belge türü başına entegratörde tanımlı tasarımın (XSLT) başlığı.
+   * Doluysa her gönderimde belgeyle birlikte istenir; boşsa entegratörün
+   * varsayılan tasarımı uygulanır. Varsayılana güvenilmez: ortak test
+   * hesabında başka firmalar onu değiştirebiliyor (K072026000000098 EMSA
+   * tasarımıyla çıktı, 2026-09-26).
+   */
+  efaturaTasarimi?: string;
+  earsivTasarimi?: string;
+  eirsaliyeTasarimi?: string;
+}
+
+/** EBLG-99: tasarımı ayrı yönetilen belge türleri. */
+export type TasarimTuru = "efatura" | "earsiv" | "eirsaliye";
+
+/** EBLG-99: entegratörde tanımlı bir belge tasarımı (XSLT). */
+export interface BelgeTasarimi {
+  id: string;
+  baslik: string;
+  /** Entegratörde varsayılan tasarım; belgede tasarım istenmezse bu uygulanır. */
+  varsayilan: boolean;
 }
 
 /**
