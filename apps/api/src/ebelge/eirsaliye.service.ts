@@ -8,7 +8,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
-import { belgeSirasiAl, eirsaliyeNumarasi, eirsaliyeNumarasiniGeriAl, eirsaliyeNumarasiSerbestMi, seriHatasiAciklamasi } from "../belgeler/belge-sayac";
+import { eirsaliyeNumarasi, eirsaliyeNumarasiniGeriAl, eirsaliyeNumarasiSerbestMi, eirsaliyeSayacSonSira, eirsaliyeSirasiAl, seriHatasiAciklamasi } from "../belgeler/belge-sayac";
 import { numaraBosluklariniBul } from "./eirsaliye-bosluk";
 import { eirsaliyeYurtDisiMi, gonderimEngelleri, IRSALIYE_GONDERILEBILIR_DURUMLAR, irsaliyeTeslimatAdresi, irsaliyeYuklemeAdresi } from "./eirsaliye-engeller";
 import { gelenSevkTarihi, irsaliyeUblOku } from "./eirsaliye-ubl-oku";
@@ -243,7 +243,7 @@ export class EirsaliyeService {
       }
       if (!belge.no) {
         const yil = belge.tarih.getFullYear();
-        const sira = await belgeSirasiAl(tx, { tenantId, tur: "irsaliye", yon: "satis", yil });
+        const sira = await eirsaliyeSirasiAl(tx, { tenantId, onek: seriOneki, yil });
         belge.no = eirsaliyeNumarasi(seriOneki, yil, sira);
         await tx.belge.update({ where: { id: belge.id }, data: { no: belge.no } });
       }
@@ -491,10 +491,10 @@ export class EirsaliyeService {
           where: { tur: "irsaliye", no: { startsWith: `${seriOneki}${yil}` } },
           select: { id: true, no: true, durum: true, tarih: true, eirsaliye: { select: { durum: true } } },
         }),
-        tx.belgeSayac.findUnique({ where: { tenantId_tur_yon_seri_yil: { tenantId, tur: "irsaliye", yon: "satis", seri: "", yil } }, select: { sonSira: true } }),
+        eirsaliyeSayacSonSira(tx, { tenantId, onek: seriOneki, yil }),
         tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true, vkn: true, vergiDairesi: true, adres: true, ilce: true, il: true } }),
       ]);
-      const veri = numaraBosluklariniBul({ seriOneki, yil, sayacSonSira: sayac?.sonSira ?? null, belgeler: belgeler.map((b) => ({ ...b, no: b.no! })) });
+      const veri = numaraBosluklariniBul({ seriOneki, yil, sayacSonSira: sayac, belgeler: belgeler.map((b) => ({ ...b, no: b.no! })) });
       return { veri, firma: firma! };
     });
   }

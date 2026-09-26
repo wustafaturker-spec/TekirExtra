@@ -260,8 +260,13 @@ describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
 
   function kur(belge: ReturnType<typeof taslakBelge>, gonderim: { basarili: boolean; hataMesaji?: string; kalici?: boolean } = { basarili: true }, aliciKayitli = true, cfg: Record<string, unknown> = { eirsaliyeSeriOneki: "GBZ" }) {
     const tx = {
-      belge: { findUnique: vi.fn().mockResolvedValue(belge), update: vi.fn().mockResolvedValue({}) },
-      belgeSayac: { upsert: vi.fn().mockResolvedValue({ sonSira: 800022 }), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      belge: { findUnique: vi.fn().mockResolvedValue(belge), update: vi.fn().mockResolvedValue({}), findMany: vi.fn().mockResolvedValue([]) },
+      belgeSayac: {
+        findUnique: vi.fn().mockResolvedValue({ id: "sayac-1" }),
+        create: vi.fn().mockResolvedValue({}),
+        update: vi.fn().mockResolvedValue({ sonSira: 800022 }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
       tenant: { findUnique: vi.fn().mockResolvedValue(firma) },
       eirsaliyeKayit: { upsert: vi.fn(({ create }) => Promise.resolve(create)) },
     };
@@ -279,7 +284,7 @@ describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
 
     await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
 
-    expect(tx.belgeSayac.upsert.mock.calls[0][0].where.tenantId_tur_yon_seri_yil).toEqual({ tenantId: "t1", tur: "irsaliye", yon: "satis", seri: "", yil: 2026 });
+    expect(tx.belgeSayac.update.mock.calls[0][0].where.tenantId_tur_yon_seri_yil).toEqual({ tenantId: "t1", tur: "irsaliye", yon: "satis", seri: "EIRS:GBZ", yil: 2026 });
     expect(tx.belge.update).toHaveBeenCalledWith({ where: { id: "11111111-1111-4111-8111-111111111111" }, data: { no: "GBZ2026000800022" } });
     expect(irsaliyeGonder.mock.calls[0][1].belgeNo).toBe("GBZ2026000800022");
     expect(irsaliyeGonder.mock.calls[0][1].xml).toContain("<cbc:ID>GBZ2026000800022</cbc:ID>");
@@ -290,7 +295,7 @@ describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
 
     await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
 
-    expect(tx.belgeSayac.upsert).not.toHaveBeenCalled();
+    expect(tx.belgeSayac.update).not.toHaveBeenCalled();
     expect(irsaliyeGonder.mock.calls[0][1].belgeNo).toBe("GBZ2026000800021");
     // Başarılı yeniden gönderim önceki hatayı temizler.
     expect(tx.eirsaliyeKayit.upsert.mock.calls[0][0].update.hataMesaji).toBeNull();
@@ -300,21 +305,44 @@ describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
     const { servis, tx, irsaliyeGonder } = kur(taslakBelge(), { basarili: true }, true, {});
 
     await expect(calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"))).rejects.toThrow(/e-İrsaliye seri öneki girilmemiş/);
-    expect(tx.belgeSayac.upsert).not.toHaveBeenCalled();
+    expect(tx.belgeSayac.update).not.toHaveBeenCalled();
     expect(irsaliyeGonder).not.toHaveBeenCalled();
   });
 
   it("yanlış seriden numara almış, entegratöre ulaşmamış belgeyi yeni seriden numaralar ve sayacı geri alır (EBLG-97)", async () => {
     const { servis, tx, irsaliyeGonder } = kur(taslakBelge({ no: "IRS2026000000001", eirsaliye: { durum: "hata", entegratorRef: null } }), { basarili: true }, true, { eirsaliyeSeriOneki: "TX2" });
-    tx.belgeSayac.upsert.mockResolvedValue({ sonSira: 1 });
+    tx.belgeSayac.update.mockResolvedValue({ sonSira: 1 });
 
     await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
 
     expect(tx.belgeSayac.updateMany).toHaveBeenCalledWith({
-      where: { tenantId: "t1", tur: "irsaliye", yon: "satis", seri: "", yil: 2026, sonSira: 1 },
+      where: { tenantId: "t1", tur: "irsaliye", yon: "satis", seri: { in: ["EIRS:IRS", ""] }, yil: 2026, sonSira: 1 },
       data: { sonSira: { decrement: 1 } },
     });
     expect(irsaliyeGonder.mock.calls[0][1].belgeNo).toBe("TX22026000000001");
+  });
+
+  it("yeni önek 1'den başlar, başka serinin sırasını devam ettirmez", async () => {
+    // TEKİREXTRA2: önek IRS→TK0 değişince yeni seri 002'den başlamıştı (2026-09-26).
+    const { servis, tx, irsaliyeGonder } = kur(taslakBelge(), { basarili: true }, true, { eirsaliyeSeriOneki: "TK0" });
+    tx.belgeSayac.findUnique.mockResolvedValue(null);
+    tx.belgeSayac.update.mockResolvedValue({ sonSira: 1 });
+
+    await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
+
+    expect(tx.belge.findMany.mock.calls[0][0].where).toEqual({ tenantId: "t1", tur: "irsaliye", no: { startsWith: "TK02026" } });
+    expect(tx.belgeSayac.create).toHaveBeenCalledWith({ data: { tenantId: "t1", tur: "irsaliye", yon: "satis", seri: "EIRS:TK0", yil: 2026, sonSira: 0 } });
+    expect(irsaliyeGonder.mock.calls[0][1].belgeNo).toBe("TK02026000000001");
+  });
+
+  it("sayacı olmayan önek o seride kesilmiş belgelerin en büyük sırasından devam eder", async () => {
+    const { servis, tx } = kur(taslakBelge());
+    tx.belgeSayac.findUnique.mockResolvedValue(null);
+    tx.belge.findMany.mockResolvedValue([{ no: "GBZ2026000800029" }, { no: "GBZ2026000800007" }, { no: "GBZ2026001" }]);
+
+    await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
+
+    expect(tx.belgeSayac.create.mock.calls[0][0].data.sonSira).toBe(800029);
   });
 
   it("entegratöre ulaşmış belgenin numarasına önek değişse de dokunmaz (EBLG-97)", async () => {
@@ -338,7 +366,7 @@ describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
     const { servis, tx, irsaliyeGonder } = kur(taslakBelge({ cari: { unvan: "Alıcı A.Ş.", vknTckn: "1230460944", adresler: [] } }));
 
     await expect(calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"))).rejects.toThrow(/adres/i);
-    expect(tx.belgeSayac.upsert).not.toHaveBeenCalled();
+    expect(tx.belgeSayac.update).not.toHaveBeenCalled();
     expect(irsaliyeGonder).not.toHaveBeenCalled();
   });
 

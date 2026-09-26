@@ -19,6 +19,45 @@ export async function belgeSirasiAl(
   return sayac.sonSira;
 }
 
+/**
+ * e-İrsaliye sayacının seri anahtarı. GİB'de sıra seri (önek) ve yıl
+ * başınadır; sayaç önekten bağımsız tutulunca önek değişince yeni seri 1'den
+ * değil eski serinin kaldığı yerden başlıyordu (TEKİREXTRA2: IRS→TK0, TK0
+ * serisi 002'den başladı, 2026-09-26). Kâğıt irsaliyenin "KIR" anahtarıyla
+ * çakışmasın diye ön ek taşır.
+ */
+export const eirsaliyeSayacSerisi = (onek: string) => `EIRS:${onek}`;
+
+const EIRSALIYE_NO_BOYU = 16;
+
+/**
+ * e-İrsaliye sırasını önek + yıl sayacından alır. Önek ilk kez kullanılıyorsa
+ * sayaç o önek ve yılla kesilmiş belgelerin en büyük sırasından başlar (seri
+ * başka entegratörden ya da eski sayaçtan devralınmış olabilir); belge yoksa
+ * 1'den.
+ */
+export async function eirsaliyeSirasiAl(tx: Prisma.TransactionClient, girdi: { tenantId: string; onek: string; yil: number }): Promise<number> {
+  const anahtar = { tenantId: girdi.tenantId, tur: "irsaliye" as const, yon: "satis" as const, seri: eirsaliyeSayacSerisi(girdi.onek), yil: girdi.yil };
+  const mevcut = await tx.belgeSayac.findUnique({ where: { tenantId_tur_yon_seri_yil: anahtar }, select: { id: true } });
+  if (!mevcut) {
+    const onEk = `${girdi.onek}${girdi.yil}`;
+    const belgeler = await tx.belge.findMany({ where: { tenantId: girdi.tenantId, tur: "irsaliye", no: { startsWith: onEk } }, select: { no: true } });
+    const son = Math.max(0, ...belgeler.flatMap((b) => (b.no && b.no.length === EIRSALIYE_NO_BOYU ? [Number(b.no.slice(onEk.length))] : [])).filter(Number.isInteger));
+    await tx.belgeSayac.create({ data: { ...anahtar, sonSira: son } });
+  }
+  const sayac = await tx.belgeSayac.update({ where: { tenantId_tur_yon_seri_yil: anahtar }, data: { sonSira: { increment: 1 } } });
+  return sayac.sonSira;
+}
+
+/** EBLG-93: seri sayacının son verdiği sıra (yoksa null). */
+export async function eirsaliyeSayacSonSira(tx: Prisma.TransactionClient, girdi: { tenantId: string; onek: string; yil: number }): Promise<number | null> {
+  const sayac = await tx.belgeSayac.findUnique({
+    where: { tenantId_tur_yon_seri_yil: { tenantId: girdi.tenantId, tur: "irsaliye", yon: "satis", seri: eirsaliyeSayacSerisi(girdi.onek), yil: girdi.yil } },
+    select: { sonSira: true },
+  });
+  return sayac?.sonSira ?? null;
+}
+
 /** GİB e-İrsaliye numarası 16 karakterdir: 3 harf önek + 4 hane yıl + 9 hane sıra. */
 export function eirsaliyeNumarasi(onek: string, yil: number, sira: number): string {
   return `${onek}${yil}${String(sira).padStart(9, "0")}`;
@@ -45,9 +84,11 @@ export function eirsaliyeNumarasiSerbestMi(
  */
 export async function eirsaliyeNumarasiniGeriAl(tx: Prisma.TransactionClient, girdi: { tenantId: string; yil: number; no: string }): Promise<void> {
   const sira = Number(girdi.no.slice(-9));
-  if (!Number.isInteger(sira) || sira < 1) return;
+  if (!Number.isInteger(sira) || sira < 1 || girdi.no.length !== EIRSALIYE_NO_BOYU) return;
+  // Numara kendi öneki sayacından verilmişti; eski (önekten bağımsız) sayaçla
+  // verilmiş numaralar için boş anahtar da denenir.
   await tx.belgeSayac.updateMany({
-    where: { tenantId: girdi.tenantId, tur: "irsaliye", yon: "satis", seri: "", yil: girdi.yil, sonSira: sira },
+    where: { tenantId: girdi.tenantId, tur: "irsaliye", yon: "satis", seri: { in: [eirsaliyeSayacSerisi(girdi.no.slice(0, 3)), ""] }, yil: girdi.yil, sonSira: sira },
     data: { sonSira: { decrement: 1 } },
   });
 }
