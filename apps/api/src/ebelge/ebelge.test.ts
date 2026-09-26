@@ -1382,6 +1382,7 @@ describe("EbelgeService — çağrı disiplini", () => {
         findUnique: vi.fn().mockResolvedValue({ sonCekimAt: new Date(), sonTetiklemeAt: new Date(Date.now() - 10 * 60_000) }),
         upsert: vi.fn(),
       },
+      baglanti: { findFirst: vi.fn().mockResolvedValue({ id: "b-1" }) },
     };
     const { service } = kur(tx, {});
     vi.stubEnv("EBLG_ELLE_TAZELEME_ARALIK_MS", "3600000");
@@ -1403,12 +1404,25 @@ describe("EbelgeService — çağrı disiplini", () => {
         findUnique: vi.fn().mockResolvedValue({ sonCekimAt: new Date(), sonTetiklemeAt: new Date(Date.now() - 90 * 60_000) }),
         upsert,
       },
+      baglanti: { findFirst: vi.fn().mockResolvedValue({ id: "b-1" }) },
     };
     const { service } = kur(tx, {});
 
     await service.elleTazelemeIzniAl();
 
     expect(upsert.mock.calls[0][0].update.sonTetiklemeAt).toBeInstanceOf(Date);
+  });
+
+  it("aktif bağlantı yoksa elle tazelemeyi sebebiyle reddeder, iş açılmaz (EBLG-98)", async () => {
+    const upsert = vi.fn();
+    const tx = {
+      ebelgeGelenKursor: { findUnique: vi.fn().mockResolvedValue(null), upsert },
+      baglanti: { findFirst: vi.fn().mockResolvedValue(null) },
+    };
+    const { service } = kur(tx, {});
+
+    await expect(service.elleTazelemeIzniAl()).rejects.toThrow(/Aktif e-belge bağlantısı yok/);
+    expect(upsert).not.toHaveBeenCalled();
   });
 });
 

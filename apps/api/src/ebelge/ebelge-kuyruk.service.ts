@@ -38,6 +38,16 @@ export type EbelgeIsTuru =
 // yüklenmemiş olur ve dosyadaki değer sessizce yok sayılırdı.
 const gelenTaramaAralikMs = () => Number(process.env.EBLG_GELEN_ARALIK_MS || 60 * 60 * 1_000);
 
+/**
+ * Kiracı başına tekrarlanan işler (EBLG-98). Bunlardan biri dead-letter'a
+ * düşünce eskiden süresiz duruyordu: planlayıcı da "Tazele" düğmesi de yeni
+ * iş açmıyordu ve gelen kutusu bir gün boyunca sessizce güncellenmedi
+ * (bağlantı pasifken düşen gelen işi, 2026-09-25). Artık kayıt bekleme
+ * süresi dolunca planlayıcıca, kullanıcı isteyince hemen temizlenir.
+ */
+const PERIYODIK_ISLER = new Set<string>([GELEN_ISI, DURUM_TOPLU_ISI, EIRSALIYE_DURUM_TOPLU_ISI, MUKELLEF_SENKRON_ISI]);
+const deadLetterBeklemeMs = () => Number(process.env.EBELGE_DEAD_LETTER_BEKLEME_MS || 60 * 60 * 1_000);
+
 export interface EbelgeKuyrukVerisi {
   tenantId: string;
   userId: string;
@@ -153,9 +163,10 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
     return this.tekrarlanabilirIsEkle(DURUM_ISI, jobId, { faturaId });
   }
 
-  async gelenBelgeleriKuyrugaEkle() {
+  /** `elle`: kullanıcı "Tazele" dedi; eski dead-letter kaydı beklenmeden temizlenir (EBLG-98). */
+  async gelenBelgeleriKuyrugaEkle(elle = false) {
     const baglam = aktifBaglam();
-    return this.tekrarlanabilirIsEkle(GELEN_ISI, gelenIsKimligi(baglam.tenantId));
+    return this.tekrarlanabilirIsEkle(GELEN_ISI, gelenIsKimligi(baglam.tenantId), {}, { elle });
   }
 
   async durumlariTopluKuyrugaEkle() {
@@ -287,15 +298,26 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
       return { atlandi: true, neden: "dead-letter kaydı mevcut" };
     }
     return baglamlaCalistir({ tenantId: is.data.tenantId, userId: is.data.userId, rol: is.data.rol }, async () => {
-      if (is.name === GELEN_ISI) return this.ebelgeService.gelenBelgeleriCek();
-      if (is.name === DURUM_TOPLU_ISI) return this.ebelgeService.durumlariTopluSorgula();
+      // EBLG-98: kiracı işinde bizim tarafın reddi (ör. bağlantı bu arada
+      // pasife çekildi) yeniden denemeyle düzelmez; iş atlanır, sonraki tur
+      // bağlantı aktifse yine açılır. Dead-letter'a düşürmek işi durdururdu.
+      if (is.name === GELEN_ISI || is.name === DURUM_TOPLU_ISI || is.name === MUKELLEF_SENKRON_ISI) {
+        try {
+          if (is.name === GELEN_ISI) return await this.ebelgeService.gelenBelgeleriCek();
+          if (is.name === DURUM_TOPLU_ISI) return await this.ebelgeService.durumlariTopluSorgula();
+          return await this.ebelgeService.mukellefListesiSenkronEt();
+        } catch (hata) {
+          if (!(hata instanceof BadRequestException || hata instanceof NotFoundException)) throw hata;
+          this.logger.warn(JSON.stringify({ event: "ebelge_kiraci_isi_atlandi", jobId: is.id, tenantId: is.data.tenantId, type: is.name, neden: hata.message }));
+          return { atlandi: true, neden: hata.message };
+        }
+      }
       if (is.name === EIRSALIYE_DURUM_TOPLU_ISI) {
         if (!this.eirsaliyeService) throw new Error("e-İrsaliye servisi worker'a bağlanmamış");
         const durum = await this.eirsaliyeService.durumlariTopluSorgula();
         // EBLG-94: geçici hatayla düşen gönderimler aynı işte, aynı numarayla yeniden denenir.
         return { ...durum, yenidenDeneme: await this.eirsaliyeService.geciciHatalariYenidenGonder() };
       }
-      if (is.name === MUKELLEF_SENKRON_ISI) return this.ebelgeService.mukellefListesiSenkronEt();
       if (is.name === EARSIV_RAPOR_ISI) {
         if (!is.data.raporUuid) throw new Error("Kuyruk işinde e-Arşiv rapor UUID bilgisi eksik");
         const sonuc = await this.ebelgeService.earsivRaporDurum(is.data.raporUuid);
@@ -336,10 +358,18 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  private async tekrarlanabilirIsEkle(isTuru: EbelgeIsTuru, jobId: string, ek: { faturaId?: string; raporUuid?: string } = {}) {
+  private async tekrarlanabilirIsEkle(isTuru: EbelgeIsTuru, jobId: string, ek: { faturaId?: string; raporUuid?: string } = {}, secenek: { elle?: boolean } = {}) {
     const baglam = aktifBaglam();
     const deadLetterIsi = await this.deadLetter.getJob(`dead-${jobId}`);
-    if (deadLetterIsi) return { isId: deadLetterIsi.id, durum: "dead-letter", tekrar: true };
+    if (deadLetterIsi) {
+      // Dead-letter aynı hatayı entegratöre tekrar tekrar sormamak için var;
+      // periyodik işte ise süresiz beklemek işi kalıcı olarak durdurur (EBLG-98).
+      const dustugu = Date.parse(deadLetterIsi.data?.deadLetterZamani ?? "") || deadLetterIsi.timestamp || 0;
+      const temizle = PERIYODIK_ISLER.has(isTuru) && (secenek.elle || Date.now() - dustugu >= deadLetterBeklemeMs());
+      if (!temizle) return { isId: deadLetterIsi.id, durum: "dead-letter", tekrar: true };
+      await deadLetterIsi.remove();
+      this.metrics.increment("ebelge_queue_jobs_total", { result: "dead_letter_retry", type: isTuru });
+    }
     const mevcut = await this.kuyruk.getJob(jobId);
     if (mevcut) {
       const durum = await mevcut.getState();

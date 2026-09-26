@@ -1336,9 +1336,15 @@ export class EbelgeService {
   async elleTazelemeIzniAl(): Promise<void> {
     const { tenantId } = aktifBaglam();
     const simdi = new Date();
-    const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.ebelgeGelenKursor.findUnique({ where: { tenantId } }),
+    const [kayit, baglanti] = await this.prisma.tenantIslem(tenantId, (tx) =>
+      Promise.all([
+        tx.ebelgeGelenKursor.findUnique({ where: { tenantId } }),
+        tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" }, select: { id: true } }),
+      ]),
     );
+    // EBLG-98: bağlantı pasifken iş kuyruğa girip boşa düşüyordu; kullanıcı
+    // "tazelendi" sanıyordu. Sebep burada söylenir.
+    if (!baglanti) throw new BadRequestException("Aktif e-belge bağlantısı yok; gelen kutusu tazelenemez. Bağlantıyı Ayarlar > Entegratörler'den etkinleştirin");
     if (kayit?.sonTetiklemeAt && simdi.getTime() - kayit.sonTetiklemeAt.getTime() < elleTazelemeAralikMs()) {
       const kalanDk = Math.ceil((elleTazelemeAralikMs() - (simdi.getTime() - kayit.sonTetiklemeAt.getTime())) / 60_000);
       const aralikDk = Math.round(elleTazelemeAralikMs() / 60_000);

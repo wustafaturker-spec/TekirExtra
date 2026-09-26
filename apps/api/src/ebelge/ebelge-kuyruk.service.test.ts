@@ -124,11 +124,50 @@ describe("EbelgeKuyrukService", () => {
     expect(bull.add).not.toHaveBeenCalled();
   });
 
-  it("dead-letter işi periyodik planlayıcı tarafından otomatik yeniden oluşturulmaz", async () => {
-    bull.getJob.mockResolvedValueOnce({ id: "dead-gelen-belge-tenant-1" });
+  it("planlayıcı taze dead-letter kaydını bekler, gelen işini yeniden açmaz", async () => {
+    const remove = vi.fn();
+    bull.getJob.mockResolvedValueOnce({ id: "dead-gelen-belge-tenant-1", data: { deadLetterZamani: new Date(Date.now() - 10 * 60_000).toISOString() }, remove });
     const sonuc = await baglamlaCalistir({ tenantId: "tenant-1", userId: "system", rol: "muhasebe" }, () => service.gelenBelgeleriKuyrugaEkle());
     expect(sonuc).toEqual({ isId: "dead-gelen-belge-tenant-1", durum: "dead-letter", tekrar: true });
+    expect(remove).not.toHaveBeenCalled();
     expect(bull.add).not.toHaveBeenCalled();
+  });
+
+  it("bekleme süresi dolan dead-letter kaydını temizleyip periyodik işi yeniden açar (EBLG-98)", async () => {
+    // Bağlantı pasifken düşen gelen işi kutuyu bir gün boyunca durdurmuştu (2026-09-25).
+    const remove = vi.fn();
+    bull.getJob.mockResolvedValueOnce({ id: "dead-ebelge-durum-toplu-tenant-1", data: { deadLetterZamani: new Date(Date.now() - 2 * 3_600_000).toISOString() }, remove });
+    const sonuc = await baglamlaCalistir({ tenantId: "tenant-1", userId: "system", rol: "muhasebe" }, () => service.durumlariTopluKuyrugaEkle());
+    expect(remove).toHaveBeenCalled();
+    expect(bull.add).toHaveBeenCalledWith("ebelge-durum-toplu", expect.anything(), { jobId: "ebelge-durum-toplu-tenant-1" });
+    expect(sonuc).toMatchObject({ durum: "waiting", tekrar: false });
+  });
+
+  it("elle tazeleme taze dead-letter kaydını da temizler (EBLG-98)", async () => {
+    const remove = vi.fn();
+    bull.getJob.mockResolvedValueOnce({ id: "dead-gelen-belge-tenant-1", data: { deadLetterZamani: new Date().toISOString() }, remove });
+    const sonuc = await baglamlaCalistir({ tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" }, () => service.gelenBelgeleriKuyrugaEkle(true));
+    expect(remove).toHaveBeenCalled();
+    expect(sonuc).toMatchObject({ isId: "gelen-belge-tenant-1", durum: "waiting", tekrar: false });
+  });
+
+  it("periyodik olmayan işin dead-letter kaydı süre dolsa da beklenir", async () => {
+    const remove = vi.fn();
+    bull.getJob.mockResolvedValueOnce({ id: "dead-earsiv-rapor-tenant-1-r-1", data: { deadLetterZamani: new Date(Date.now() - 24 * 3_600_000).toISOString() }, remove });
+    const sonuc = await baglamlaCalistir({ tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" }, () => service.earsivRaporKuyrugaEkle("r-1"));
+    expect(sonuc).toMatchObject({ durum: "dead-letter" });
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it("bağlantısı pasife çekilen kiracının gelen işini yeniden denemeden atlar (EBLG-98)", async () => {
+    ebelge.gelenBelgeleriCek.mockRejectedValue(new BadRequestException("Aktif e-belge bağlantısı bulunamadı"));
+    const sonuc = await (service as unknown as { isle(is: unknown): Promise<unknown> }).isle({ id: "gelen-belge-tenant-1", name: "gelen-belge-cek", data: { tenantId: "tenant-1", userId: "user-1", rol: "muhasebe", isTuru: "gelen-belge-cek" } });
+    expect(sonuc).toEqual({ atlandi: true, neden: "Aktif e-belge bağlantısı bulunamadı" });
+  });
+
+  it("gelen işinde entegratör hatası yeniden deneme için yükselir", async () => {
+    ebelge.gelenBelgeleriCek.mockRejectedValue(new Error("NES 503"));
+    await expect((service as unknown as { isle(is: unknown): Promise<unknown> }).isle({ id: "gelen-belge-tenant-1", name: "gelen-belge-cek", data: { tenantId: "tenant-1", userId: "user-1", rol: "muhasebe", isTuru: "gelen-belge-cek" } })).rejects.toThrow("NES 503");
   });
 
   it("worker durum ve gelen belge işlerini doğru servis metoduna yönlendirir", async () => {

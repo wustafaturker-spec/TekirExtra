@@ -210,7 +210,7 @@ export class EbelgeController {
     // Elle tazeleme korunur ama saatlik sınıra tabidir (EBLG-11): son
     // kullanıcı ekranı doğrudan entegratör API'sini sürmemelidir.
     await this.ebelgeService.elleTazelemeIzniAl();
-    return this.kuyrukService.gelenBelgeleriKuyrugaEkle();
+    return this.kuyrukService.gelenBelgeleriKuyrugaEkle(true);
   }
 
   // ─── GİB MÜKELLEF LİSTESİ (EBLG-10) ────────────────────────────────────────
