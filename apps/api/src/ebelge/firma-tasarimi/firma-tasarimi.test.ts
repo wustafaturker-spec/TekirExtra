@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { xsltDenetle } from "../../tenant/belge-tasarimlari.service";
-import { AZAMI_LOGO_BOYU, firmaTasarimiUret, type FirmaTasarimVerisi } from "./firma-tasarimi";
+import { AZAMI_LOGO_BOYU, firmaTasarimiUret, gorselOlcusu, type FirmaTasarimVerisi } from "./firma-tasarimi";
 
 const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
@@ -51,6 +51,39 @@ describe("firmaTasarimiUret (EBLG-101)", () => {
     const x = firmaTasarimiUret("fatura", { ...FIRMA, bankaHesaplari: [] });
     // Belgenin kendi PaymentMeans dalı durur; yedek dal boştur.
     expect(x).toContain("</table></xsl:when><xsl:otherwise></xsl:otherwise></xsl:choose><xsl:if test=\"$iyg!=''\">");
+  });
+
+  it("ihracat faturasında şartları, kalem kap bilgisini ve TL karşılıklarını basar (EBLG-102)", () => {
+    const x = firmaTasarimiUret("fatura", FIRMA);
+    // Kur ve TL sütunu İngilizce düzende de ihracatta açıktır.
+    expect(x).toContain("$kur &gt; 0 and (not($en) or /*/cbc:ProfileID='IHRACAT')");
+    // Teslim yeri belge düzeyinde yoksa ilk satırın teslim adresinden okunur.
+    expect(x).toContain("/*/cac:InvoiceLine[1]/cac:Delivery/cac:DeliveryAddress[normalize-space(concat(cbc:StreetName,cbc:CityName))!='']");
+    expect(x).toContain("'TESLİM ŞARTI|INCOTERMS'");
+    expect(x).toContain("'GÖNDERİLME ŞEKLİ|MODE OF TRANSPORT'");
+    expect(x).toContain("cac:TransportHandlingUnit/cac:ActualPackage");
+    expect(x).toContain("<xsl:when test=\"$k='BX'\">");
+    expect(x).toContain("<xsl:when test=\"$k='3'\">");
+  });
+
+  it("yatay logoyu oranına göre genişletir, kare logoda düzeni değiştirmez (EBLG-104)", () => {
+    // 300×105 PNG başlığı: IHDR'de en ve boy.
+    const png = (en: number, boy: number) => {
+      const b = Buffer.alloc(33);
+      b.writeUInt32BE(0x89504e47, 0); b.writeUInt32BE(0x0d0a1a0a, 4); b.writeUInt32BE(13, 8); b.write("IHDR", 12, "ascii");
+      b.writeUInt32BE(en, 16); b.writeUInt32BE(boy, 20);
+      return `data:image/png;base64,${b.toString("base64")}`;
+    };
+    expect(gorselOlcusu(png(300, 105))).toEqual({ en: 300, boy: 105 });
+    const yatay = firmaTasarimiUret("fatura", { ...FIRMA, logoDataUri: png(300, 105) });
+    expect(yatay).toContain('<td style="width:54.4mm"><img class="logo"');
+    expect(yatay).toContain('style="object-fit:contain;width:51.4mm;height:18mm"');
+    expect(yatay).toContain('<td style="width:30.6mm"><img class="lg"');
+    const kare = firmaTasarimiUret("irsaliye", { ...FIRMA, logoDataUri: png(200, 200) });
+    expect(kare).toContain('<td style="width:24mm"><img class="logo" alt="TEKİR" src="data:image/png;base64,');
+    expect(kare).toContain('<td style="width:15mm"><img class="lg"');
+    // Logo yoksa hücre genişliği yine kare düzenindedir.
+    expect(firmaTasarimiUret("fatura", { ...FIRMA, logoDataUri: null })).toContain('<td style="width:24mm"></td>');
   });
 
   it("uzun markayı küçültür, marka yoksa ünvanı yazar; büyük logoyu koymaz", () => {

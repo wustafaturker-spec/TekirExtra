@@ -107,17 +107,69 @@ function rozetler(liste: string[] | undefined): string {
   return `<div style="text-align:right">${gecerli.map((r) => `<img alt="" src="${r}" style="height:15mm;max-width:21mm;display:inline-block;margin-left:1.5mm"/>`).join("")}</div>`;
 }
 
+/**
+ * Görselin piksel ölçüsü (PNG IHDR, JPEG SOF, GIF, WebP VP8/VP8L/VP8X başlığından);
+ * SVG ya da okunamayan görselde undefined.
+ */
+export function gorselOlcusu(dataUri: string): { en: number; boy: number } | undefined {
+  const b = Buffer.from(dataUri.slice(dataUri.indexOf(",") + 1), "base64");
+  if (b.length > 24 && b.readUInt32BE(0) === 0x89504e47) return { en: b.readUInt32BE(16), boy: b.readUInt32BE(20) };
+  if (b.length > 10 && b.toString("ascii", 0, 3) === "GIF") return { en: b.readUInt16LE(6), boy: b.readUInt16LE(8) };
+  if (b.length > 30 && b.toString("ascii", 0, 4) === "RIFF" && b.toString("ascii", 8, 12) === "WEBP") {
+    const tur = b.toString("ascii", 12, 16);
+    if (tur === "VP8 ") return { en: b.readUInt16LE(26) & 0x3fff, boy: b.readUInt16LE(28) & 0x3fff };
+    if (tur === "VP8L") { const v = b.readUInt32LE(21); return { en: (v & 0x3fff) + 1, boy: ((v >> 14) & 0x3fff) + 1 }; }
+    if (tur === "VP8X") return { en: b.readUIntLE(24, 3) + 1, boy: b.readUIntLE(27, 3) + 1 };
+  }
+  if (b.length > 4 && b[0] === 0xff && b[1] === 0xd8) {
+    let i = 2;
+    while (i + 9 < b.length) {
+      if (b[i] !== 0xff) return undefined;
+      const isaret = b[i + 1]!;
+      if (isaret >= 0xc0 && isaret <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(isaret)) return { en: b.readUInt16BE(i + 7), boy: b.readUInt16BE(i + 5) };
+      i += 2 + b.readUInt16BE(i + 2);
+    }
+  }
+  return undefined;
+}
+
+/**
+ * EBLG-104: EMSA düzeninde logo kare bir kutudadır (ilk sayfa 21 mm, baskıda
+ * 17 mm; devam sayfası 12 mm). Yatay logo o kutuda ufalır: en/boy oranı
+ * 1,3'ten büyükse logo sabit yükseklikte oranına göre genişler, hücre de
+ * onunla birlikte açılır. Kare ya da ölçüsü okunamayan logoda düzen aynıdır.
+ */
+const YATAY_LOGO_ORANI = 1.3;
+function logoYerlesimi(logo: string | null) {
+  const kare = { gen: "24mm", kucukGen: "15mm", stil: "object-fit:contain", kucukStil: "object-fit:contain" };
+  const olcu = logo ? gorselOlcusu(logo) : undefined;
+  if (!olcu || !olcu.boy || olcu.en / olcu.boy <= YATAY_LOGO_ORANI) return kare;
+  const oran = olcu.en / olcu.boy;
+  const mm = (deger: number) => `${Math.round(deger * 10) / 10}mm`;
+  const en = Math.min(60, 18 * oran);
+  const kucukEn = Math.min(36, 10 * oran);
+  return {
+    gen: mm(en + 3),
+    kucukGen: mm(kucukEn + 2),
+    stil: `object-fit:contain;width:${mm(en)};height:${mm(en / oran)}`,
+    kucukStil: `object-fit:contain;width:${mm(kucukEn)};height:${mm(kucukEn / oran)}`,
+  };
+}
+
 export function firmaTasarimiUret(tur: "fatura" | "irsaliye", veri: FirmaTasarimVerisi): string {
   const unvan = veri.unvan.trim();
   const marka = (veri.markaAdi?.trim() || unvan);
   const markaAlt = veri.markaAlt?.trim() ?? "";
   const ekBilgi = veri.ekBilgi?.trim() ?? "";
   const logo = gorselMi(veri.logoDataUri, AZAMI_LOGO_BOYU) ? veri.logoDataUri : null;
+  const yerlesim = logoYerlesimi(logo);
   const iletisim = [veri.eposta, veri.telefon, veri.webSitesi].map((d) => d?.trim()).filter(Boolean).join(" · ");
   const degerler: Record<string, string> = {
     YORUM: `TekirExtra firma tasarımı · ${kacis(unvan).replace(/--/g, "–")} · EBLG-101 (G20 onaylı kurumsal düzen v3)`,
-    LOGO: logo ? `<img class="logo" alt="${kacis(marka)}" src="${logo}" style="object-fit:contain"/>` : "",
-    LOGO_KUCUK: logo ? `<img class="lg" alt="${kacis(marka)}" src="${logo}" style="object-fit:contain"/>` : "",
+    LOGO: logo ? `<img class="logo" alt="${kacis(marka)}" src="${logo}" style="${yerlesim.stil}"/>` : "",
+    LOGO_KUCUK: logo ? `<img class="lg" alt="${kacis(marka)}" src="${logo}" style="${yerlesim.kucukStil}"/>` : "",
+    LOGO_GEN: yerlesim.gen,
+    LOGO_KUCUK_GEN: yerlesim.kucukGen,
     MARKA: kacis(marka),
     MARKA_STIL: markaStili(marka, MARKA_PUNTO),
     MARKA2_STIL: markaStili(marka, 11.3),
