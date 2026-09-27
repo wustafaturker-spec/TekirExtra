@@ -15,6 +15,7 @@ import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, KAP_CINSLERI, kapEksigiVarMi, SIK_KAP_CINSLERI, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-alani";
+import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
 import { ebelgeGitmemisMi, ebelgeKullanilmiyor, faturaGecikmeUyarilari, type EbelgeUygulamalari } from "@tekirextra/shared";
 import {
   Alert,
@@ -57,6 +58,8 @@ interface Stok {
   kullanilabilirMiktar?: string;
   alisFiyati: string | null;
   satisFiyati: string | null;
+  alisFiyatiDoviz?: string;
+  satisFiyatiDoviz?: string;
   kdvOrani: string;
   takipTipi?: "yok" | "lot" | "seri";
   /** EBLG-71: doluysa bu kartı taşıyan fatura şarj faturası olur. */
@@ -87,12 +90,15 @@ interface FaturaSatir {
   /** EBLG-71: SARJANLIK faturasında şarj ünitesinin seri numarası. */
   sarjUniteSeriNo?: string;
   lotNo?: string; seriNolar?: string; sonKullanmaTarihi?: string; uretimTarihi?: string;
+  /** FTR-28: ürünün fiyatı başka dövizdeydi, fiyat yazılmadı; elle fiyat girilince kalkar. Sunucuya gitmez. */
+  dovizUyarisi?: string;
 }
 
 interface Fatura {
   id: string;
   no: string | null;
   tip: string;
+  dovizCinsi: string;
   tarih: string;
   vadeTarihi?: string | null;
   siparisNo?: string | null;
@@ -359,8 +365,8 @@ const ODEME_DURUMLARI: Record<string, { baslik: string; renk: "info" | "success"
   odendi: { baslik: "Ödendi", renk: "success" },
 };
 
-const tl = (deger: string | number): string =>
-  Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL";
+/** Tutar ve para birimi; para birimi verilmezse TL (cari TRY bakiyesi, risk). */
+const tl = (deger: string | number, doviz: string | null | undefined = "TRY"): string => paraBicimi(deger, doviz);
 
 /** EBLG-103: sihirbazda kalem başına girilen kap bilgisi (alanlar metin olarak tutulur). */
 interface IhracatKapSatiri { id: string; kapCinsi: string; kapNo: string; kapAdet: string }
@@ -545,6 +551,8 @@ export default function FaturaSayfasi() {
     { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" },
   ]);
   const [stokVaryantlari, setStokVaryantlari] = useState<Record<string, StokVaryant[]>>({});
+  /** FTR-28: belge dövizi değişti, kalem fiyatları hâlâ eski dövizde; kullanıcı onayı bekleniyor. */
+  const [bekleyenCevrim, setBekleyenCevrim] = useState<{ eskiDoviz: string; eskiKur: number } | null>(null);
   const bugun = bugunTR();
   const formKirli = formAcik && (
     cariId !== "" || depoId !== "" || tip !== (yonBaglami ?? "satis") || tarih !== bugun
@@ -866,9 +874,52 @@ export default function FaturaSayfasi() {
     setAcikSatir(null);
   }
 
+  /**
+   * FTR-28: ürün/varyant fiyatı belge dövizinde gelir. Fiyat başka dövizdeyse
+   * satıra yazılmaz (kullanıcı kararı: eklemeyi engelle), satır uyarıyla işaretlenir.
+   */
+  async function kalemFiyatiGetir(stokId: string, varyantId?: string): Promise<Pick<FaturaSatir, "birimFiyat" | "iskontoOrani" | "dovizUyarisi"> | null> {
+    const p = new URLSearchParams({ cariId, tip, dovizCinsi, belgeKuru: dovizCinsi === "TRY" ? "1" : kur || "1" });
+    if (varyantId) p.set("varyantId", varyantId);
+    try {
+      const t = await api<{ kaynakFiyat: number; kaynakDoviz: string; iskontoOrani: number }>(`/stok/${stokId}/tavsiye-fiyat?${p}`);
+      const uyari = dovizUyumsuzlugu(t.kaynakDoviz, dovizCinsi);
+      return { birimFiyat: uyari ? 0 : t.kaynakFiyat, iskontoOrani: t.iskontoOrani, dovizUyarisi: uyari };
+    } catch (err) {
+      console.error("Tavsiye fiyat alınamadı", err);
+      return null;
+    }
+  }
+
+  /** FTR-28: kalem varken belge dövizi değişirse fiyatlar onayla yeni dövize çevrilir. */
+  function belgeDoviziDegistir(yeniDoviz: string) {
+    if (yeniDoviz === dovizCinsi) return;
+    if (satirlar.some((s) => s.birimFiyat > 0)) setBekleyenCevrim((onceki) => onceki ?? { eskiDoviz: dovizCinsi, eskiKur: dovizCinsi === "TRY" ? 1 : Number(kur) || 0 });
+    // Yeni kur yüklenene kadar çeviri onayı kapalı kalsın; kur efekti bilgiyi yeniden yazar.
+    setKurBilgisi("");
+    setDovizCinsi(yeniDoviz);
+    if (yeniDoviz === "TRY") setKur("1");
+  }
+
+  const yeniKurHazir = dovizCinsi === "TRY" || (kurBilgisi !== "" && Number(kur) > 0);
+  function kalemleriCevir() {
+    if (!bekleyenCevrim) return;
+    const yeniKur = dovizCinsi === "TRY" ? 1 : Number(kur);
+    setSatirlar((eskiler) => eskiler.map((s) => ({ ...s, birimFiyat: fiyatCevir(s.birimFiyat, bekleyenCevrim.eskiKur, yeniKur) })));
+    setBekleyenCevrim(null);
+  }
+  function dovizDegisiminiGeriAl() {
+    if (!bekleyenCevrim) return;
+    setDovizCinsi(bekleyenCevrim.eskiDoviz);
+    setKur(String(bekleyenCevrim.eskiKur || 1));
+    setBekleyenCevrim(null);
+  }
+
   async function satirGuncelle(index: number, alan: keyof FaturaSatir, deger: string | number) {
     const yeni = [...satirlar];
     yeni[index] = { ...yeni[index], [alan]: deger };
+    // Elle girilen fiyat belge dövizindedir; uyumsuzluk uyarısı kalkar.
+    if (alan === "birimFiyat") yeni[index].dovizUyarisi = undefined;
 
     // Eğer stok seçildiyse varsayılan fiyatları yükleyelim
     if (alan === "stokId") {
@@ -877,16 +928,10 @@ export default function FaturaSayfasi() {
       if (stok) {
         yeni[index].kdvOrani = Number(stok.kdvOrani || 20);
       }
+      yeni[index].dovizUyarisi = undefined;
       if (deger) {
-        try {
-          const tavsiye = await api<{ birimFiyat: number; iskontoOrani: number }>(
-            `/stok/${deger}/tavsiye-fiyat?cariId=${cariId}&tip=${tip}&dovizCinsi=${dovizCinsi}`
-          );
-          yeni[index].birimFiyat = tavsiye.birimFiyat;
-          yeni[index].iskontoOrani = tavsiye.iskontoOrani;
-        } catch (err) {
-          console.error("Tavsiye fiyat alınamadı", err);
-        }
+        const fiyat = await kalemFiyatiGetir(String(deger));
+        if (fiyat) yeni[index] = { ...yeni[index], ...fiyat };
       }
     }
     setSatirlar(yeni);
@@ -943,6 +988,9 @@ export default function FaturaSayfasi() {
           kdvOrani: yeniStokKdv,
           alisFiyati: tip.startsWith("alis") && yeniStokFiyat ? yeniStokFiyat : null,
           satisFiyati: !tip.startsWith("alis") && yeniStokFiyat ? yeniStokFiyat : null,
+          // FTR-28: hızlı kartta fiyat, girildiği belgenin dövizindedir.
+          alisFiyatiDoviz: dovizCinsi,
+          satisFiyatiDoviz: dovizCinsi,
         }),
       });
       setStoklar((eskiler) => [yeni, ...eskiler]);
@@ -1010,6 +1058,18 @@ export default function FaturaSayfasi() {
       setHata(!cariId ? "Lütfen bir cari hesap seçin." : "Lütfen tüm satırlarda ürün/hizmet seçimi yapın.");
       kullanimOlayi("fatura_dogrulama_hatasi");
       requestAnimationFrame(() => (!cariId ? cariRef.current : urunRefleri.current[eksikSatirlar[0]])?.focus());
+      return;
+    }
+
+    // FTR-28: kalemler belge dövizinde olmalı.
+    if (bekleyenCevrim) {
+      setHata(`Belge dövizi değişti; önce kalem fiyatlarını ${paraBirimiEtiketi(dovizCinsi)}'ye çevirin ya da değişikliği geri alın.`);
+      return;
+    }
+    const uyumsuz = satirlar.findIndex((s) => s.dovizUyarisi);
+    if (uyumsuz >= 0) {
+      setHata(`Satır ${uyumsuz + 1}: ${satirlar[uyumsuz].dovizUyarisi}`);
+      requestAnimationFrame(() => urunRefleri.current[uyumsuz]?.focus());
       return;
     }
 
@@ -1730,7 +1790,7 @@ export default function FaturaSayfasi() {
             <Button size="sm" onClick={() => { setEpostaGonderilen(null); setEpostaAdresi(""); }}>✖ Vazgeç</Button>
           </div>
           <p className="muted" style={{ fontSize: "0.9rem", margin: 0 }}>
-            {epostaGonderilen.no} · {epostaGonderilen.cari.unvan} · {tl(epostaGonderilen.genelToplam)}
+            {epostaGonderilen.no} · {epostaGonderilen.cari.unvan} · {tl(epostaGonderilen.genelToplam, epostaGonderilen.dovizCinsi)}
           </p>
           {epostaGonderilen.ebelge?.tur === "earsiv" && epostaGonderilen.earsivGonderimSekli === "kagit" && (
             <div className="approval-impact is-warning">
@@ -1842,10 +1902,17 @@ export default function FaturaSayfasi() {
                 <Input aria-label="Fatura Tarihi" type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} required />
               </Field>
               <Field label="Fatura Dövizi">
-                <Select value={dovizCinsi} onChange={(e) => { setDovizCinsi(e.target.value); if (e.target.value === "TRY") setKur("1"); }}>
+                <Select value={dovizCinsi} onChange={(e) => belgeDoviziDegistir(e.target.value)}>
                   <option value="TRY">TRY — Türk Lirası</option><option value="USD">USD — Amerikan Doları</option><option value="EUR">EUR — Euro</option>
                 </Select>
               </Field>
+              {bekleyenCevrim && (
+                <Alert tone="warning">
+                  Kalem fiyatları {paraBirimiEtiketi(bekleyenCevrim.eskiDoviz)} cinsinden girildi. {paraBirimiEtiketi(dovizCinsi)} faturada kullanmak için kalemleri {yeniKurHazir ? `${dovizCinsi === "TRY" ? "1" : kur} kuruyla` : "yeni kur yüklenince"} {paraBirimiEtiketi(dovizCinsi)}'ye çevirin.{" "}
+                  <Button size="sm" type="button" variant="primary" disabled={!yeniKurHazir || !(bekleyenCevrim.eskiKur > 0)} onClick={kalemleriCevir}>Kalemleri {paraBirimiEtiketi(dovizCinsi)}'ye çevir</Button>{" "}
+                  <Button size="sm" type="button" onClick={dovizDegisiminiGeriAl}>Vazgeç ({paraBirimiEtiketi(bekleyenCevrim.eskiDoviz)} kalsın)</Button>
+                </Alert>
+              )}
               {dovizCinsi !== "TRY" && <Field label="Kur (1 döviz = TRY)"><Input type="number" min="0.000001" step="0.000001" value={kur} onChange={(e) => { setKur(e.target.value); setKurBilgisi("Manuel kur"); }} required /><small className="muted">{kurBilgisi || "TCMB EVDS kuru yükleniyor…"}</small></Field>}
               <Field label="Vade Tarihi">
                 <Input aria-label="Vade Tarihi" type="date" value={vadeTarihi} onChange={(e) => { setVadeTarihi(e.target.value); setVadeElleDegisti(true); }} />
@@ -2030,15 +2097,16 @@ export default function FaturaSayfasi() {
                               stok.barkod && `Barkod: ${stok.barkod}`,
                               stok.kullanilabilirMiktar !== undefined && `Stok: ${Number(stok.kullanilabilirMiktar).toLocaleString("tr-TR")} ${stok.anaBirim ?? "adet"}`,
                               tip.startsWith("alis")
-                                ? stok.alisFiyati && `Alış: ${tl(stok.alisFiyati)}`
-                                : stok.satisFiyati && `Satış: ${tl(stok.satisFiyati)}`,
+                                ? stok.alisFiyati && `Alış: ${tl(stok.alisFiyati, stok.alisFiyatiDoviz)}`
+                                : stok.satisFiyati && `Satış: ${tl(stok.satisFiyati, stok.satisFiyatiDoviz)}`,
                               `KDV %${Number(stok.kdvOrani)}`,
                             ].filter(Boolean).join(" · "),
                             aramaMetni: [stok.kod, stok.barkod, ...(stok.tedarikciUrunKodlari ?? [])].filter(Boolean).join(" "),
                           }))}
                         />
-                        {(stokVaryantlari[s.stokId]?.length ?? 0) > 0 && <Select aria-label="Varyant" required value={s.varyantId ?? ""} onChange={(e) => { const varyant = stokVaryantlari[s.stokId].find((v) => v.id === e.target.value); const yeni = [...satirlar]; yeni[index] = { ...s, varyantId: e.target.value, ...(varyant ? { birimFiyat: Number(tip.startsWith("alis") ? varyant.alisFiyati ?? s.birimFiyat : varyant.satisFiyati ?? s.birimFiyat) } : {}) }; setSatirlar(yeni); }}><option value="">Varyant seçin</option>{stokVaryantlari[s.stokId].filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad} · Stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")}</option>)}</Select>}
+                        {(stokVaryantlari[s.stokId]?.length ?? 0) > 0 && <Select aria-label="Varyant" required value={s.varyantId ?? ""} onChange={(e) => { const varyantId = e.target.value; setSatirlar((eskiler) => eskiler.map((x, i) => i === index ? { ...x, varyantId } : x)); if (varyantId) void kalemFiyatiGetir(s.stokId, varyantId).then((fiyat) => { if (fiyat) setSatirlar((eskiler) => eskiler.map((x, i) => i === index && x.varyantId === varyantId ? { ...x, ...fiyat } : x)); }); }}><option value="">Varyant seçin</option>{stokVaryantlari[s.stokId].filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad} · Stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")}</option>)}</Select>}
                         {satirDogrulamaHatalari.includes(index) && <p className="field-error" id={`fatura-satir-${index}-hatasi`} role="alert">Bu satır için ürün veya hizmet seçin.</p>}
+                        {s.dovizUyarisi && <p className="field-error" role="alert">{s.dovizUyarisi}</p>}
                         {seciliStok && (
                           <span className={`document-line-stock${stokYetersiz ? " is-warning" : ""}`}>
                             {stokYetersiz
@@ -2051,7 +2119,7 @@ export default function FaturaSayfasi() {
                       <td className="invoice-line__field" data-label="Birim fiyat"><Input className="document-line-number" aria-label="Birim fiyat" type="number" min="0" step="any" inputMode="decimal" value={s.birimFiyat} onChange={(e) => satirGuncelle(index, "birimFiyat", Number(e.target.value))} required /></td>
                       <td className="invoice-line__field" data-label="İskonto %"><Input className="document-line-number" aria-label="İskonto yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.iskontoOrani} onChange={(e) => satirGuncelle(index, "iskontoOrani", Number(e.target.value))} /></td>
                       <td className="invoice-line__field" data-label="KDV %"><Input className="document-line-number" aria-label="KDV yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.kdvOrani} onChange={(e) => satirGuncelle(index, "kdvOrani", Number(e.target.value))} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); satirEkle(); } }} required /></td>
-                      <td className="num document-line-total invoice-line__total" data-label="Tutar">{satirSonuc ? tl(satirSonuc.toplamTutar) : "0,00 TL"}</td>
+                      <td className="num document-line-total invoice-line__total" data-label="Tutar">{tl(satirSonuc ? satirSonuc.toplamTutar : 0, dovizCinsi)}</td>
                       <td className="center invoice-line__action">
                         <Button aria-expanded={acikSatir === index} aria-label="Satır ayrıntıları" title="Satır ayrıntıları" size="sm" type="button" onClick={() => setAcikSatir(acikSatir === index ? null : index)}>⋯</Button>
                       </td>
@@ -2205,21 +2273,21 @@ export default function FaturaSayfasi() {
               <Button type="button" onClick={satirEkle}>+ Satır ekle</Button>
               <div className="document-totals">
                 <div className="document-total-line">
-                  <span>Brüt toplam</span><span>{tl(sonuc.toplamBrut)}</span>
+                  <span>Brüt toplam</span><span>{tl(sonuc.toplamBrut, dovizCinsi)}</span>
                 </div>
                 <div className="document-total-line is-discount">
-                  <span>Toplam iskonto</span><span>-{tl(sonuc.toplamSatirIskontosu)}</span>
+                  <span>Toplam iskonto</span><span>-{tl(sonuc.toplamSatirIskontosu, dovizCinsi)}</span>
                 </div>
                 <div className="document-total-line is-tax">
-                  <span>{ihracKayitli ? "Hesaplanan KDV (tahsil edilmez)" : "KDV toplamı"}</span><span>{tl(sonuc.toplamKdv)}</span>
+                  <span>{ihracKayitli ? "Hesaplanan KDV (tahsil edilmez)" : "KDV toplamı"}</span><span>{tl(sonuc.toplamKdv, dovizCinsi)}</span>
                 </div>
                 {sonuc.toplamTevkifat > 0 && (
                   <div className="document-total-line is-discount">
-                    <span>Tevkifat</span><span>-{tl(sonuc.toplamTevkifat)}</span>
+                    <span>Tevkifat</span><span>-{tl(sonuc.toplamTevkifat, dovizCinsi)}</span>
                   </div>
                 )}
                 <div className="document-total-line is-grand">
-                  <span>Ödenecek</span><span>{tl(sonuc.genelToplam)}</span>
+                  <span>Ödenecek</span><span>{tl(sonuc.genelToplam, dovizCinsi)}</span>
                 </div>
               </div>
             </div>
@@ -2273,7 +2341,7 @@ export default function FaturaSayfasi() {
               </div>
               <div>
                 <span>{sonuc.toplamTevkifat > 0 ? "Tevkifat sonrası tahsil edilecek" : "Tahsil edilecek"}</span>
-                <strong>{tl(sonuc.genelToplam)}</strong>
+                <strong>{tl(sonuc.genelToplam, dovizCinsi)}</strong>
               </div>
               {ozelMatrahUyarilari.length > 0 && (
                 <ul className="scenario-warnings">
@@ -2378,13 +2446,13 @@ export default function FaturaSayfasi() {
               <dl>
                 <div><dt>Kalem</dt><dd>{fatura.satirlar.length}</dd></div>
                 <div><dt>Toplam miktar</dt><dd>{toplamMiktar.toLocaleString("tr-TR")}</dd></div>
-                <div><dt>Matrah</dt><dd>{tl(fatura.toplamMatrah)}</dd></div>
-                <div><dt>KDV</dt><dd>{tl(fatura.toplamKdv)}</dd></div>
-                <div><dt>Genel toplam</dt><dd>{tl(fatura.genelToplam)}</dd></div>
+                <div><dt>Matrah</dt><dd>{tl(fatura.toplamMatrah, fatura.dovizCinsi)}</dd></div>
+                <div><dt>KDV</dt><dd>{tl(fatura.toplamKdv, fatura.dovizCinsi)}</dd></div>
+                <div><dt>Genel toplam</dt><dd>{tl(fatura.genelToplam, fatura.dovizCinsi)}</dd></div>
               </dl>
               <div className="approval-effects">
                 <div><span>Stok</span><strong>{proforma ? "Değişmeyecek" : `${toplamMiktar.toLocaleString("tr-TR")} birim ${satisYonlu ? "azalacak" : "artacak"}`}</strong></div>
-                <div><span>Cari hesap</span><strong>{proforma ? "Değişmeyecek" : `${tl(fatura.genelToplam)} ${satisYonlu ? "borç" : "alacak"} yazılacak`}</strong></div>
+                <div><span>Cari hesap</span><strong>{proforma ? "Değişmeyecek" : `${tl(fatura.genelToplam, fatura.dovizCinsi)} ${satisYonlu ? "borç" : "alacak"} yazılacak`}</strong></div>
                 <div><span>e-Belge</span><strong>{proforma ? "Oluşmayacak" : "Kesinleştirme sonrası ayrıca wizard ile oluşturulacak"}</strong></div>
                 <div><span>Tahmini risk</span><strong>{fatura.tip === "satis" ? tl(tahminiRisk) : "Değişmeyecek"}</strong></div>
               </div>
@@ -3164,9 +3232,9 @@ export default function FaturaSayfasi() {
               <span>{TIP_ETIKETLERI[odemeDetayi.tip] ?? odemeDetayi.tip}</span>
             </div>
             <dl>
-              <div><dt>Fatura toplamı</dt><dd>{tl(odemeDetayi.genelToplam)}</dd></div>
-              <div><dt>Ödenen</dt><dd>{tl(odemeDetayi.odemeOzeti.odenen)}</dd></div>
-              <div><dt>Kalan</dt><dd>{tl(odemeDetayi.odemeOzeti.kalan)}</dd></div>
+              <div><dt>Fatura toplamı</dt><dd>{tl(odemeDetayi.genelToplam, odemeDetayi.dovizCinsi)}</dd></div>
+              <div><dt>Ödenen</dt><dd>{tl(odemeDetayi.odemeOzeti.odenen, odemeDetayi.dovizCinsi)}</dd></div>
+              <div><dt>Kalan</dt><dd>{tl(odemeDetayi.odemeOzeti.kalan, odemeDetayi.dovizCinsi)}</dd></div>
             </dl>
             <div className="status-history">
               <div className="status-history__item is-complete">
@@ -3185,7 +3253,7 @@ export default function FaturaSayfasi() {
               {odemeDetayi.odemeOzeti.hareketler.length === 0 && (
                 <div className="status-history__item">
                   <span />
-                  <div><strong>Henüz ödeme eşleştirilmedi</strong><small>Kalan {tl(odemeDetayi.odemeOzeti.kalan)}</small></div>
+                  <div><strong>Henüz ödeme eşleştirilmedi</strong><small>Kalan {tl(odemeDetayi.odemeOzeti.kalan, odemeDetayi.dovizCinsi)}</small></div>
                 </div>
               )}
             </div>
@@ -3246,8 +3314,8 @@ export default function FaturaSayfasi() {
                       );
                     })()}
                   </td>
-                  <td className="num">{tl(f.toplamMatrah)}</td>
-                  <td className="num" style={{ fontWeight: 700 }}>{tl(f.genelToplam)}</td>
+                  <td className="num">{tl(f.toplamMatrah, f.dovizCinsi)}</td>
+                  <td className="num" style={{ fontWeight: 700 }}>{tl(f.genelToplam, f.dovizCinsi)}</td>
                   <td>
                     {f.durum === "taslak" ? <Badge variant="warning">📝 Taslak</Badge> : f.durum === "iptal" ? <Badge variant="danger">İptal</Badge> : <Badge variant="success">🔒 Kesinleşti</Badge>}
                   </td>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { api, ApiHata, apiPdfAc, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
+import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
 import { AramaSecici } from "@/components/arama-secici";
 import { DepoSecici } from "@/components/depo-secici";
 import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
@@ -74,6 +75,8 @@ interface BelgeSatirForm {
   /** EBLG-72: İDİS etiket numarası; İDİS irsaliyesinde her satırda zorunlu. */
   idisEtiketNo?: string;
   lotNo?: string; seriNolar?: string; sonKullanmaTarihi?: string; uretimTarihi?: string;
+  /** FTR-28: ürünün fiyatı başka dövizdeydi, fiyat yazılmadı; elle fiyat girilince kalkar. Sunucuya gitmez. */
+  dovizUyarisi?: string;
 }
 
 /** FTR-27 / EBLG-83: belgenin karşı ya da basılı numarası ve düzenleme ucu. */
@@ -169,8 +172,8 @@ interface BelgeDetay extends Belge {
   }[];
 }
 
-const tl = (d: string | number, doviz = "TL"): string =>
-  Number(d).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " " + doviz;
+/** Tutar ve para birimi (FTR-28: TRY "TL" yazılır, diğerleri kodla). */
+const tl = (d: string | number, doviz: string | null | undefined = "TRY"): string => paraBicimi(d, doviz);
 const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
 function csvHucre(deger: string | number | null): string {
   return "\"" + String(deger ?? "").replaceAll("\"", "\"\"") + "\"";
@@ -324,6 +327,8 @@ export default function BelgelerSayfasi() {
     { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 },
   ]);
   const [stokVaryantlari, setStokVaryantlari] = useState<Record<string, StokVaryant[]>>({});
+  /** FTR-28: belge dövizi değişti, kalem fiyatları hâlâ eski dövizde; kullanıcı onayı bekleniyor. */
+  const [bekleyenCevrim, setBekleyenCevrim] = useState<{ eskiDoviz: string; eskiKur: number } | null>(null);
 
   const girdiSatirlar: FaturaHesaplaSatirGirdi[] = satirlar.map((s) => ({
     stokId: s.stokId || "gecici-id",
@@ -467,22 +472,54 @@ export default function BelgelerSayfasi() {
     if (satirlar.length === 1) return;
     setSatirlar(satirlar.filter((_, idx) => idx !== i));
   }
+  /**
+   * FTR-28: ürün/varyant fiyatı belge dövizinde gelir. Fiyat başka dövizdeyse
+   * satıra yazılmaz (kullanıcı kararı: eklemeyi engelle), satır uyarıyla işaretlenir.
+   * Eskiden belge dövizi uca hiç gönderilmiyordu; fiyat her belgede TRY sayılıyordu.
+   */
+  async function kalemFiyatiGetir(stokId: string, varyantId?: string): Promise<Pick<BelgeSatirForm, "birimFiyat" | "iskontoOrani" | "dovizUyarisi"> | null> {
+    const p = new URLSearchParams({ cariId, tip: yon, dovizCinsi, belgeKuru: dovizCinsi === "TRY" ? "1" : kur || "1" });
+    if (varyantId) p.set("varyantId", varyantId);
+    try {
+      const t = await api<{ kaynakFiyat: number; kaynakDoviz: string; iskontoOrani: number }>(`/stok/${stokId}/tavsiye-fiyat?${p}`);
+      const uyari = dovizUyumsuzlugu(t.kaynakDoviz, dovizCinsi);
+      return { birimFiyat: uyari ? 0 : t.kaynakFiyat, iskontoOrani: t.iskontoOrani, dovizUyarisi: uyari };
+    } catch {
+      return null; /* tavsiye alınamazsa manuel */
+    }
+  }
+
+  /** FTR-28: kalem varken belge dövizi değişirse fiyatlar onayla yeni dövize çevrilir. */
+  function belgeDoviziDegistir(yeniDoviz: string) {
+    if (yeniDoviz === dovizCinsi) return;
+    if (satirlar.some((s) => s.birimFiyat > 0)) setBekleyenCevrim((onceki) => onceki ?? { eskiDoviz: dovizCinsi, eskiKur: dovizCinsi === "TRY" ? 1 : Number(kur) || 0 });
+    setKurBilgisi("");
+    setDovizCinsi(yeniDoviz);
+    if (yeniDoviz === "TRY") setKur("1");
+  }
+  const yeniKurHazir = dovizCinsi === "TRY" || (kurBilgisi !== "" && Number(kur) > 0);
+  function kalemleriCevir() {
+    if (!bekleyenCevrim) return;
+    const yeniKur = dovizCinsi === "TRY" ? 1 : Number(kur);
+    setSatirlar((eskiler) => eskiler.map((s) => ({ ...s, birimFiyat: fiyatCevir(s.birimFiyat, bekleyenCevrim.eskiKur, yeniKur) })));
+    setBekleyenCevrim(null);
+  }
+  function dovizDegisiminiGeriAl() {
+    if (!bekleyenCevrim) return;
+    setDovizCinsi(bekleyenCevrim.eskiDoviz);
+    setKur(String(bekleyenCevrim.eskiKur || 1));
+    setBekleyenCevrim(null);
+  }
+
   async function satirGuncelle(i: number, alan: keyof BelgeSatirForm, deger: string | number) {
     const yeni = [...satirlar];
     yeni[i] = { ...yeni[i], [alan]: deger };
-    if (alan === "stokId") yeni[i].varyantId = undefined;
+    // Elle girilen fiyat belge dövizindedir; uyumsuzluk uyarısı kalkar.
+    if (alan === "birimFiyat") yeni[i].dovizUyarisi = undefined;
+    if (alan === "stokId") { yeni[i].varyantId = undefined; yeni[i].dovizUyarisi = undefined; }
     if (alan === "stokId" && deger) {
-      const stok = stoklar.find((s) => s.id === deger);
-      void stok;
-      try {
-        const t = await api<{ birimFiyat: number; iskontoOrani: number }>(
-          `/stok/${deger}/tavsiye-fiyat?cariId=${cariId}&tip=${yon}`,
-        );
-        yeni[i].birimFiyat = t.birimFiyat;
-        yeni[i].iskontoOrani = t.iskontoOrani;
-      } catch {
-        /* tavsiye alınamazsa manuel */
-      }
+      const fiyat = await kalemFiyatiGetir(String(deger));
+      if (fiyat) yeni[i] = { ...yeni[i], ...fiyat };
     }
     setSatirlar(yeni);
   }
@@ -493,6 +530,10 @@ export default function BelgelerSayfasi() {
     setBasari("");
     if (!cariId) { setHata("Lütfen bir cari hesap seçin."); return; }
     if (satirlar.some((s) => !s.stokId)) { setHata("Lütfen tüm satırlarda ürün/hizmet seçin."); return; }
+    // FTR-28: kalemler belge dövizinde olmalı.
+    if (bekleyenCevrim) { setHata(`Belge dövizi değişti; önce kalem fiyatlarını ${paraBirimiEtiketi(dovizCinsi)}'ye çevirin ya da değişikliği geri alın.`); return; }
+    const uyumsuz = satirlar.findIndex((s) => s.dovizUyarisi);
+    if (uyumsuz >= 0) { setHata(`Satır ${uyumsuz + 1}: ${satirlar[uyumsuz].dovizUyarisi}`); return; }
     try {
       const kurAciklamasi = kuruAciklamayaEkle && dovizCinsi !== "TRY" ? `Döviz kuru: 1 ${dovizCinsi} = ${Number(kur).toLocaleString("tr-TR", { minimumFractionDigits: 4, maximumFractionDigits: 6 })} TRY${kurBilgisi ? ` (${kurBilgisi})` : ""}` : "";
       const kullaniciAciklamasi = aciklama.split("\n").filter((satir) => !satir.startsWith("Döviz kuru:")).join("\n").trim();
@@ -891,7 +932,14 @@ export default function BelgelerSayfasi() {
               <Field label="Belge Türü"><Select value={tur} onChange={(e) => setTur(e.target.value as Tur)}><option value="teklif">Teklif</option><option value="siparis">Sipariş</option><option value="irsaliye">İrsaliye</option></Select></Field>
               <Field label="Yön"><Select value={yon} onChange={(e) => setYon(e.target.value as Yon)}><option value="satis">Satış</option><option value="alis">Alış</option></Select></Field>
               <Field label="Tarih"><Input type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} required /></Field>
-              <Field label="Belge Dövizi"><Select value={dovizCinsi} onChange={(e) => { setDovizCinsi(e.target.value); if (e.target.value === "TRY") setKur("1"); }}><option>TRY</option><option>USD</option><option>EUR</option></Select></Field>
+              <Field label="Belge Dövizi"><Select value={dovizCinsi} onChange={(e) => belgeDoviziDegistir(e.target.value)}><option>TRY</option><option>USD</option><option>EUR</option></Select></Field>
+              {bekleyenCevrim && (
+                <Alert tone="warning">
+                  Kalem fiyatları {paraBirimiEtiketi(bekleyenCevrim.eskiDoviz)} cinsinden girildi. {paraBirimiEtiketi(dovizCinsi)} belgede kullanmak için kalemleri {yeniKurHazir ? `${dovizCinsi === "TRY" ? "1" : kur} kuruyla` : "yeni kur yüklenince"} {paraBirimiEtiketi(dovizCinsi)}'ye çevirin.{" "}
+                  <Button size="sm" type="button" variant="primary" disabled={!yeniKurHazir || !(bekleyenCevrim.eskiKur > 0)} onClick={kalemleriCevir}>Kalemleri {paraBirimiEtiketi(dovizCinsi)}'ye çevir</Button>{" "}
+                  <Button size="sm" type="button" onClick={dovizDegisiminiGeriAl}>Vazgeç ({paraBirimiEtiketi(bekleyenCevrim.eskiDoviz)} kalsın)</Button>
+                </Alert>
+              )}
               {dovizCinsi !== "TRY" && <Field label="Kur (1 döviz = TRY)"><Input type="number" min="0.000001" step="0.000001" value={kur} onChange={(e) => { setKur(e.target.value); setKurBilgisi("Manuel kur"); }} required /><small className="muted">{kurBilgisi || "TCMB EVDS kuru yükleniyor…"}</small></Field>}
               <div><DepoSecici deger={depoId} onChange={setDepoId} /></div>
             {tur === "irsaliye" && yon === "alis" && (
@@ -1032,7 +1080,8 @@ export default function BelgelerSayfasi() {
                           aramaMetni: [stok.kod, ...(stok.tedarikciUrunKodlari ?? [])].join(" "),
                         }))}
                       />
-                      {(stokVaryantlari[s.stokId]?.length ?? 0) > 0 && <Select aria-label="Varyant" required value={s.varyantId ?? ""} onChange={(e) => { const yeni = [...satirlar]; yeni[i] = { ...s, varyantId: e.target.value }; setSatirlar(yeni); }}><option value="">Varyant seçin</option>{stokVaryantlari[s.stokId].filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad} · Stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")}</option>)}</Select>}
+                      {(stokVaryantlari[s.stokId]?.length ?? 0) > 0 && <Select aria-label="Varyant" required value={s.varyantId ?? ""} onChange={(e) => { const varyantId = e.target.value; setSatirlar((eskiler) => eskiler.map((x, j) => j === i ? { ...x, varyantId } : x)); if (varyantId) void kalemFiyatiGetir(s.stokId, varyantId).then((fiyat) => { if (fiyat) setSatirlar((eskiler) => eskiler.map((x, j) => j === i && x.varyantId === varyantId ? { ...x, ...fiyat } : x)); }); }}><option value="">Varyant seçin</option>{stokVaryantlari[s.stokId].filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad} · Stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")}</option>)}</Select>}
+                      {s.dovizUyarisi && <p className="field-error" role="alert">{s.dovizUyarisi}</p>}
                       {yon === "alis" && (() => { const takip = stoklar.find((x) => x.id === s.stokId)?.takipTipi; return takip && takip !== "yok" ? <div className="stack"><Input aria-label="Lot / Parti No" required placeholder="Lot / Parti No" value={s.lotNo ?? ""} onChange={(e) => void satirGuncelle(i, "lotNo", e.target.value)} />{takip === "seri" && <Input aria-label="Seri numaraları" required placeholder="Seri numaraları (virgülle)" value={s.seriNolar ?? ""} onChange={(e) => void satirGuncelle(i, "seriNolar", e.target.value)} />}<Input aria-label="Son kullanma tarihi" type="date" value={s.sonKullanmaTarihi ?? ""} onChange={(e) => void satirGuncelle(i, "sonKullanmaTarihi", e.target.value)} /></div> : null; })()}
                       {tur === "irsaliye" && idisSevkiyatNo.trim() && (
                         <Input aria-label={`${i + 1}. satır İDİS etiket numarası`} placeholder="İDİS etiket no (örn. CV0152457)" maxLength={20} value={s.idisEtiketNo ?? ""} onChange={(e) => satirGuncelle(i, "idisEtiketNo", e.target.value)} />
@@ -1042,7 +1091,7 @@ export default function BelgelerSayfasi() {
                     <td><Input className="document-line-number" aria-label="Birim fiyat" type="number" min="0" step="any" inputMode="decimal" value={s.birimFiyat} onChange={(e) => satirGuncelle(i, "birimFiyat", Number(e.target.value))} required /></td>
                     <td><Input className="document-line-number" aria-label="İskonto yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.iskontoOrani} onChange={(e) => satirGuncelle(i, "iskontoOrani", Number(e.target.value))} /></td>
                     <td><Input className="document-line-number" aria-label="KDV yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.kdvOrani} onChange={(e) => satirGuncelle(i, "kdvOrani", Number(e.target.value))} required /></td>
-                    <td className="num document-line-total">{ss ? tl(ss.toplamTutar) : "0,00 TL"}</td>
+                    <td className="num document-line-total">{tl(ss ? ss.toplamTutar : 0, dovizCinsi)}</td>
                     <td className="center"><Button aria-label="Satırı sil" title="Satırı sil" variant="danger" size="sm" type="button" onClick={() => satirSil(i)}>×</Button></td>
                   </tr>
                 );
@@ -1053,9 +1102,9 @@ export default function BelgelerSayfasi() {
             <div className="document-summary-row">
               <Button type="button" onClick={satirEkle}>+ Satır ekle</Button>
               <div className="document-totals">
-                <div className="document-total-line"><span>Brüt toplam</span><span>{tl(sonuc.toplamBrut)}</span></div>
-                <div className="document-total-line is-tax"><span>KDV toplamı</span><span>{tl(sonuc.toplamKdv)}</span></div>
-                <div className="document-total-line is-grand"><span>Genel toplam</span><span>{tl(sonuc.genelToplam)}</span></div>
+                <div className="document-total-line"><span>Brüt toplam</span><span>{tl(sonuc.toplamBrut, dovizCinsi)}</span></div>
+                <div className="document-total-line is-tax"><span>KDV toplamı</span><span>{tl(sonuc.toplamKdv, dovizCinsi)}</span></div>
+                <div className="document-total-line is-grand"><span>Genel toplam</span><span>{tl(sonuc.genelToplam, dovizCinsi)}</span></div>
               </div>
             </div>
           </div>
@@ -1270,7 +1319,7 @@ export default function BelgelerSayfasi() {
                       <td className="num">{Number(s.teslimEdilenMiktar ?? 0).toLocaleString("tr-TR")}</td>
                       <td className="num">{Number(s.kalanMiktar ?? s.miktar) > 0 ? <strong>{Number(s.kalanMiktar ?? s.miktar).toLocaleString("tr-TR")}</strong> : "—"}</td>
                     </>}
-                    <td className="num">{tl(s.birimFiyat)}</td>
+                    <td className="num">{tl(s.birimFiyat, detay.dovizCinsi)}</td>
                     <td className="num">%{Number(s.iskontoOrani)}</td>
                     <td className="num">%{Number(s.kdvOrani)}</td>
                   </tr>
