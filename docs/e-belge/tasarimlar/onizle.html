@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>XSLT Önizleme</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 0; background: #f3f4f6; }
+  header { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; padding: .75rem 1rem; background: #fff; border-bottom: 1px solid #ddd; }
+  label { display: flex; gap: .4rem; align-items: center; }
+  #hata { color: #b91c1c; }
+  iframe { display: block; width: 100%; height: calc(100vh - 60px); border: 0; background: #fff; }
+</style>
+</head>
+<body>
+<header>
+  <label>XSLT <input id="xslt" type="file" accept=".xslt,.xsl,.xml"></label>
+  <label>UBL XML <input id="xml" type="file" accept=".xml"></label>
+  <span id="hata"></span>
+</header>
+<!-- Karekodu betik çizer; çıktı ayrı kökende, betiğe izinli ama bu sayfaya erişimsiz çalışır. -->
+<iframe id="cikti" sandbox="allow-scripts"></iframe>
+<script>
+  const oku = (girdi) => girdi.files[0] ? girdi.files[0].text() : Promise.resolve(null);
+  async function ciz() {
+    const hata = document.getElementById("hata");
+    hata.textContent = "";
+    const [xslt, xml] = await Promise.all([oku(document.getElementById("xslt")), oku(document.getElementById("xml"))]);
+    if (!xslt || !xml) return;
+    try {
+      const ayristir = (metin) => {
+        const belge = new DOMParser().parseFromString(metin, "application/xml");
+        const bozuk = belge.querySelector("parsererror");
+        if (bozuk) throw new Error(bozuk.textContent.trim().split("\n")[0]);
+        return belge;
+      };
+      const islemci = new XSLTProcessor();
+      islemci.importStylesheet(ayristir(xslt));
+      const sonuc = islemci.transformToDocument(ayristir(xml));
+      if (!sonuc || !sonuc.documentElement) throw new Error("Dönüşüm boş sonuç verdi");
+      // XMLSerializer betiklerdeki && işaretini bozar; HTML olarak aktarılır.
+      document.getElementById("cikti").srcdoc = "<!DOCTYPE html>" + sonuc.documentElement.outerHTML;
+    } catch (e) {
+      hata.textContent = "Hata: " + e.message;
+    }
+  }
+  document.getElementById("xslt").addEventListener("change", ciz);
+  document.getElementById("xml").addEventListener("change", ciz);
+</script>
+</body>
+</html>
