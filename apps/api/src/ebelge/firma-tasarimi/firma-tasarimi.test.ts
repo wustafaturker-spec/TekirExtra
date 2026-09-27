@@ -79,6 +79,21 @@ describe("firmaTasarimiUret (EBLG-101)", () => {
     expect(x.match(/\[not\(\$ea_int and starts-with\(normalize-space\(\.\),'İnternet satışı — '\)\)\]/g)).toHaveLength(7);
   });
 
+  it("faturada senaryoya özgü bilgileri, tevkifat kod-oranını ve istisna sebebini basar (EBLG-108)", () => {
+    const x = firmaTasarimiUret("fatura", FIRMA);
+    for (const etiket of [
+      "FATURA MUHATABI|INVOICE ADDRESSEE", "İADE EDİLEN FATURA|RETURNED INVOICE", "TEŞVİK BELGESİ|INVESTMENT INCENTIVE", "ŞARJ DÖNEMİ|CHARGING PERIOD",
+      "PASAPORT|PASSPORT", "UYRUK|NATIONALITY", "İADE HESABI|REFUND ACCOUNT", "ARACI KURUM|TAX-FREE AGENT",
+      "ARAÇ PLAKASI|VEHICLE PLATE", "ESU RAPOR NO|CHARGING REPORT", "ÖDEME HESABI (IBAN)|PAYMENT ACCOUNT", "SGK DOSYA NO|SGK FILE NO", "İDİS SEVKİYAT NO|İDİS SHIPMENT NO",
+    ]) expect(x).toContain(`'${etiket}'`);
+    expect(x).toContain('<xsl:call-template name="senaryo-bilgi"/>');
+    expect(x).toContain("cac:Item/cbc:ModelName[normalize-space(.)!='']");
+    expect(x).toContain("cac:Item/cac:AdditionalItemIdentification/cbc:ID[@schemeID='ETIKETNO']");
+    // Tevkifat toplamında kod ve oran; şablonun tanımadığı istisna kodunda UBL'deki sebep metni.
+    expect(x).toContain('<xsl:for-each select="cac:WithholdingTaxTotal/cac:TaxSubtotal"><span class="l alt" style="display:block">');
+    expect(x).toContain('<xsl:variable name="ist_metin" select="normalize-space(cbc:TaxExemptionReason)"/>');
+  });
+
   it("e-İrsaliyede şoför kimliğini, İDİS numaralarını ve yükleme yerini basar (EBLG-107)", () => {
     const x = firmaTasarimiUret("irsaliye", FIRMA);
     // GİB kılavuzu şoför TCKN'sini NationalityID'de taşır; maskeli basılır.
