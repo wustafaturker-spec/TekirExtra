@@ -2401,6 +2401,10 @@ model EbelgeGelenKursor {
   tenantId       String    @id @map("tenant_id") @db.Uuid
   sonCekimAt     DateTime  @map("son_cekim_at")
   sonTetiklemeAt DateTime? @map("son_tetikleme_at")
+  /// EBLG-109: gelen e-İrsaliye taramasının son başarılı çalıştığı an; planlayıcı
+  /// taramayı `EBLG_GELEN_ARALIK_MS` dolmadan yeniden açmaz. Pencere bundan değil,
+  /// son gelen kayıttan türetilir (`EirsaliyeService.gelenleriCek`).
+  irsaliyeSonCekimAt DateTime? @map("irsaliye_son_cekim_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
   @@map("ebelge_gelen_kursor")

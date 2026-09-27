@@ -673,7 +673,17 @@ export class EirsaliyeService {
         if (g.yanit) await tx.gelenEirsaliye.updateMany({ where: { tenantId, uuid: g.uuid, durum: "yeni" }, data: { durum: g.yanit.karar, yanitGerekcesi: g.yanit.not ?? null } });
       });
     }
-    return { toplam: gelen.length, yeni, kontrolTarihi: new Date().toISOString() };
+    // EBLG-109: planlayıcı taramayı bu andan itibaren aralık dolunca yeniden açar.
+    // Kursör satırı e-Faturayla ortaktır; yoksa e-Faturanın ilk penceresiyle açılır.
+    const simdi = new Date();
+    await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.ebelgeGelenKursor.upsert({
+        where: { tenantId },
+        create: { tenantId, sonCekimAt: new Date(simdi.getTime() - Number(process.env.EBLG_ILK_GELEN_PENCERE_GUN || 7) * 86_400_000), irsaliyeSonCekimAt: simdi },
+        update: { irsaliyeSonCekimAt: simdi },
+      }),
+    );
+    return { toplam: gelen.length, yeni, kontrolTarihi: simdi.toISOString() };
   }
 
   async gelenListele(durum?: GelenEirsaliyeDurum) { const { tenantId } = aktifBaglam(); return this.prisma.tenantIslem(tenantId, (tx) => tx.gelenEirsaliye.findMany({ where: durum ? { durum, ...(durum === "yeni" ? { kendiSevkimiz: false } : {}) } : undefined, select: { kendiSevkimiz: true, id: true, uuid: true, belgeNo: true, gonderenVkn: true, gonderenUnvan: true, tarih: true, sevkTarihi: true, durum: true, yanitRef: true, yanitBelgeNo: true, yanitGerekcesi: true, createdAt: true, updatedAt: true }, orderBy: [{ tarih: "desc" }, { createdAt: "desc" }] })); }

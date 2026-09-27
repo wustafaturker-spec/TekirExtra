@@ -17,6 +17,8 @@ const EARSIV_RAPOR_ISI = "earsiv-raporla";
 const DURUM_TOPLU_ISI = "ebelge-durum-toplu";
 const MUKELLEF_SENKRON_ISI = "gib-mukellef-senkron";
 const EIRSALIYE_DURUM_TOPLU_ISI = "eirsaliye-durum-toplu";
+/** EBLG-109: gelen e-İrsaliye taraması; eskiden yalnız elle ("Gelenleri kontrol et") yapılırdı. */
+const EIRSALIYE_GELEN_ISI = "eirsaliye-gelen-cek";
 const DEAD_LETTER_KUYRUGU = `${KUYRUK_ADI}-dead-letter`;
 const SISTEM_KULLANICISI = "00000000-0000-0000-0000-000000000000";
 
@@ -27,7 +29,8 @@ export type EbelgeIsTuru =
   | typeof EARSIV_RAPOR_ISI
   | typeof DURUM_TOPLU_ISI
   | typeof MUKELLEF_SENKRON_ISI
-  | typeof EIRSALIYE_DURUM_TOPLU_ISI;
+  | typeof EIRSALIYE_DURUM_TOPLU_ISI
+  | typeof EIRSALIYE_GELEN_ISI;
 
 /**
  * Gelen belge taraması bu aralıktan sık çalışmaz. Sağlayıcı kılavuzu
@@ -45,7 +48,7 @@ const gelenTaramaAralikMs = () => Number(process.env.EBLG_GELEN_ARALIK_MS || 60 
  * (bağlantı pasifken düşen gelen işi, 2026-09-25). Artık kayıt bekleme
  * süresi dolunca planlayıcıca, kullanıcı isteyince hemen temizlenir.
  */
-const PERIYODIK_ISLER = new Set<string>([GELEN_ISI, DURUM_TOPLU_ISI, EIRSALIYE_DURUM_TOPLU_ISI, MUKELLEF_SENKRON_ISI]);
+const PERIYODIK_ISLER = new Set<string>([GELEN_ISI, DURUM_TOPLU_ISI, EIRSALIYE_DURUM_TOPLU_ISI, EIRSALIYE_GELEN_ISI, MUKELLEF_SENKRON_ISI]);
 const deadLetterBeklemeMs = () => Number(process.env.EBELGE_DEAD_LETTER_BEKLEME_MS || 60 * 60 * 1_000);
 
 export interface EbelgeKuyrukVerisi {
@@ -74,6 +77,7 @@ const earsivRaporIsKimligi = (tenantId: string, uuid: string) => `earsiv-rapor-$
 const durumTopluIsKimligi = (tenantId: string) => `ebelge-durum-toplu-${tenantId}`;
 const mukellefSenkronIsKimligi = () => "gib-mukellef-senkron";
 const eirsaliyeDurumTopluIsKimligi = (tenantId: string) => `eirsaliye-durum-toplu-${tenantId}`;
+const eirsaliyeGelenIsKimligi = (tenantId: string) => `eirsaliye-gelen-${tenantId}`;
 
 /** Planlayıcının iş açarken baktığı en uzun irsaliye yanıt süresi; kiracının kendi süresi işte uygulanır. */
 const EIRSALIYE_AZAMI_YANIT_GUNU = 60;
@@ -180,6 +184,12 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
     return this.tekrarlanabilirIsEkle(EIRSALIYE_DURUM_TOPLU_ISI, eirsaliyeDurumTopluIsKimligi(baglam.tenantId));
   }
 
+  /** EBLG-109: kiracının gelen e-İrsaliye taraması. */
+  async gelenIrsaliyeleriKuyrugaEkle() {
+    const baglam = aktifBaglam();
+    return this.tekrarlanabilirIsEkle(EIRSALIYE_GELEN_ISI, eirsaliyeGelenIsKimligi(baglam.tenantId));
+  }
+
   async mukellefSenkronKuyrugaEkle() {
     const baglam = aktifBaglam();
     return this.tekrarlanabilirIsEkle(MUKELLEF_SENKRON_ISI, mukellefSenkronIsKimligi());
@@ -268,6 +278,7 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
       if (dlq.data.isTuru === GELEN_ISI) return this.gelenBelgeleriKuyrugaEkle();
       if (dlq.data.isTuru === DURUM_TOPLU_ISI) return this.durumlariTopluKuyrugaEkle();
       if (dlq.data.isTuru === EIRSALIYE_DURUM_TOPLU_ISI) return this.irsaliyeDurumlariKuyrugaEkle();
+      if (dlq.data.isTuru === EIRSALIYE_GELEN_ISI) return this.gelenIrsaliyeleriKuyrugaEkle();
       if (dlq.data.isTuru === MUKELLEF_SENKRON_ISI) return this.mukellefSenkronKuyrugaEkle();
       if (dlq.data.isTuru === EARSIV_RAPOR_ISI) {
         if (!dlq.data.raporUuid) throw new NotFoundException("Dead-letter işi rapor bilgisi eksik");
@@ -283,6 +294,7 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
     if ((veri.isTuru || is.name) === GELEN_ISI) return this.gelenBelgeleriKuyrugaEkle();
     if ((veri.isTuru || is.name) === DURUM_TOPLU_ISI) return this.durumlariTopluKuyrugaEkle();
     if ((veri.isTuru || is.name) === EIRSALIYE_DURUM_TOPLU_ISI) return this.irsaliyeDurumlariKuyrugaEkle();
+    if ((veri.isTuru || is.name) === EIRSALIYE_GELEN_ISI) return this.gelenIrsaliyeleriKuyrugaEkle();
     if ((veri.isTuru || is.name) === MUKELLEF_SENKRON_ISI) return this.mukellefSenkronKuyrugaEkle();
     if ((veri.isTuru || is.name) === EARSIV_RAPOR_ISI) {
       if (!veri.raporUuid) throw new NotFoundException("Kuyruk işi rapor bilgisi eksik");
@@ -307,6 +319,17 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
           if (is.name === DURUM_TOPLU_ISI) return await this.ebelgeService.durumlariTopluSorgula();
           return await this.ebelgeService.mukellefListesiSenkronEt();
         } catch (hata) {
+          if (!(hata instanceof BadRequestException || hata instanceof NotFoundException)) throw hata;
+          this.logger.warn(JSON.stringify({ event: "ebelge_kiraci_isi_atlandi", jobId: is.id, tenantId: is.data.tenantId, type: is.name, neden: hata.message }));
+          return { atlandi: true, neden: hata.message };
+        }
+      }
+      if (is.name === EIRSALIYE_GELEN_ISI) {
+        if (!this.eirsaliyeService) throw new Error("e-İrsaliye servisi worker'a bağlanmamış");
+        try {
+          return await this.eirsaliyeService.gelenleriCek();
+        } catch (hata) {
+          // GELEN_ISI ile aynı kural: bizim taraftaki ret (bağlantı pasif vb.) yeniden denemeyle düzelmez.
           if (!(hata instanceof BadRequestException || hata instanceof NotFoundException)) throw hata;
           this.logger.warn(JSON.stringify({ event: "ebelge_kiraci_isi_atlandi", jobId: is.id, tenantId: is.data.tenantId, type: is.name, neden: hata.message }));
           return { atlandi: true, neden: hata.message };
@@ -427,7 +450,7 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
           // Gelen belge taraması kursörle ilerler; aralık dolmadan yeni iş
           // açmak aynı tarih penceresini tekrar sorgulamak olurdu (EBLG-11).
           // Gelen kutusu yalnız e-Fatura mükellefinde vardır (EBLG-77).
-          const kursor = await yonetim.ebelgeGelenKursor.findUnique({ where: { tenantId: tenant.id }, select: { sonCekimAt: true } });
+          const kursor = await yonetim.ebelgeGelenKursor.findUnique({ where: { tenantId: tenant.id }, select: { sonCekimAt: true, irsaliyeSonCekimAt: true } });
           if (tenantUygulamalari && uygulamaAcik(tenantUygulamalari, "efatura") && (!kursor || Date.now() - kursor.sonCekimAt.getTime() >= gelenTaramaAralikMs())) {
             await this.gelenBelgeleriKuyrugaEkle();
           }
@@ -450,6 +473,12 @@ export class EbelgeKuyrukService implements OnModuleInit, OnModuleDestroy {
               })
             : 0;
           if (bekleyenIrsaliye > 0) await this.irsaliyeDurumlariKuyrugaEkle();
+
+          // EBLG-109: gelen e-İrsaliye de e-Faturadaki aralıkla taranır; müşteriden
+          // gelen irsaliye eskiden biri "Gelenleri kontrol et"e basana kadar görünmezdi.
+          if (tenantUygulamalari && uygulamaAcik(tenantUygulamalari, "eirsaliye") && (!kursor?.irsaliyeSonCekimAt || Date.now() - kursor.irsaliyeSonCekimAt.getTime() >= gelenTaramaAralikMs())) {
+            await this.gelenIrsaliyeleriKuyrugaEkle();
+          }
         });
       }
       this.metrics.increment("ebelge_schedule_runs_total", { result: "success" });

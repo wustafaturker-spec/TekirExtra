@@ -20,6 +20,7 @@ describe("EirsaliyeService gelen yanıt (EBLG-34)", () => {
     baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ saglayici: "nes" }) }) },
     // EBLG-87: firmanın kendi VKN'si; kendi gönderdiği sevkin gelen kopyasını ayırt eder.
     tenant: { findUnique: vi.fn().mockResolvedValue({ vkn: "1234567801" }) },
+    ebelgeGelenKursor: { upsert: vi.fn().mockResolvedValue({}) },
     gelenEirsaliye: {
       findFirst: vi.fn().mockResolvedValue(null),
       findMany: vi.fn().mockResolvedValue([]),
@@ -93,6 +94,22 @@ describe("EirsaliyeService gelen yanıt (EBLG-34)", () => {
     expect(tx.gelenEirsaliye.upsert.mock.calls.map((c) => c[0].create.uuid)).toEqual(["u2"]);
     expect(tx.gelenEirsaliye.updateMany).toHaveBeenCalledWith({ where: { tenantId: "t1-uuid", uuid: "u1", durum: "yeni" }, data: { durum: "kabul", yanitGerekcesi: null } });
     expect(sonuc).toMatchObject({ toplam: 2, yeni: 1 });
+  });
+
+  it("tarama bitince gelen e-İrsaliye kursörünü yazar (EBLG-109)", async () => {
+    adapter.gelenIrsaliyeleriCek.mockResolvedValue([]);
+    await service.gelenleriCek();
+    const arg = tx.ebelgeGelenKursor.upsert.mock.calls[0][0];
+    expect(arg.where).toEqual({ tenantId: "t1-uuid" });
+    expect(arg.update.irsaliyeSonCekimAt).toBeInstanceOf(Date);
+    // Satır yoksa e-Faturanın kursörü ilk pencereyle açılır, "şimdi"yle değil.
+    expect(arg.create.sonCekimAt.getTime()).toBeLessThan(arg.create.irsaliyeSonCekimAt.getTime() - 86_400_000);
+  });
+
+  it("entegratöre ulaşılamazsa kursörü ilerletmez", async () => {
+    adapter.gelenIrsaliyeleriCek.mockRejectedValue(new TypeError("fetch failed"));
+    await expect(service.gelenleriCek()).rejects.toThrow();
+    expect(tx.ebelgeGelenKursor.upsert).not.toHaveBeenCalled();
   });
 
   it("entegratöre ulaşılamazsa anlamlı hata döner", async () => {

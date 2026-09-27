@@ -117,6 +117,22 @@ describe("EbelgeKuyrukService", () => {
     await expect((service as unknown as { isle(is: unknown): Promise<unknown> }).isle(is)).rejects.toThrow("NES 503");
   });
 
+  it("gelen e-İrsaliye taramasını kiracı başına tek işte açar (EBLG-109)", async () => {
+    const sonuc = await baglamlaCalistir({ tenantId: "tenant-1", userId: "system", rol: "muhasebe" }, () => service.gelenIrsaliyeleriKuyrugaEkle());
+    expect(sonuc).toMatchObject({ isId: "eirsaliye-gelen-tenant-1", durum: "waiting" });
+    expect(bull.add).toHaveBeenCalledWith("eirsaliye-gelen-cek", expect.objectContaining({ isTuru: "eirsaliye-gelen-cek" }), { jobId: "eirsaliye-gelen-tenant-1" });
+  });
+
+  it("gelen e-İrsaliye işinde bizim taraftaki reddi atlar, entegratör hatasını yeniden denemeye bırakır (EBLG-109)", async () => {
+    const eirsaliye = { gelenleriCek: vi.fn().mockRejectedValue(new BadRequestException("Aktif e-belge entegratör bağlantısı bulunamadı")) };
+    const irsaliyeli = new EbelgeKuyrukService(ebelge as never, metrics as never, eirsaliye as never);
+    const is = { id: "eirsaliye-gelen-tenant-1", name: "eirsaliye-gelen-cek", data: { tenantId: "tenant-1", userId: "system", rol: "muhasebe", isTuru: "eirsaliye-gelen-cek" } };
+    const isle = (irsaliyeli as unknown as { isle(is: unknown): Promise<unknown> }).isle.bind(irsaliyeli);
+    await expect(isle(is)).resolves.toMatchObject({ atlandi: true });
+    eirsaliye.gelenleriCek.mockRejectedValue(new Error("fetch failed"));
+    await expect(isle(is)).rejects.toThrow("fetch failed");
+  });
+
   it("devam eden gelen belge senkronunu ikinci kez oluşturmaz", async () => {
     bull.getJob.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "gelen-belge-tenant-1", getState: vi.fn().mockResolvedValue("active") });
     const sonuc = await baglamlaCalistir({ tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" }, () => service.gelenBelgeleriKuyrugaEkle());
