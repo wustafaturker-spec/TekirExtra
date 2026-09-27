@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, apiPdfAc } from "@/lib/api";
-import { GIB_ULASMIS_EIRSALIYE_DURUMLARI } from "@tekirextra/shared";
+import { GIB_ULASMIS_EIRSALIYE_DURUMLARI, eirsaliyeAsamaAciklamasi, eirsaliyeAsamasi } from "@tekirextra/shared";
 import { EbelgeAdimSeridi } from "@/components/durum-gecmisi";
 import { TasimaBilgisiPaneli } from "@/components/tasima-bilgisi-paneli";
 import { Alert, Badge, Button, Card, Field, Input, Select, TableWrap } from "@/components/ui";
@@ -19,6 +19,9 @@ import { Alert, Badge, Button, Card, Field, Input, Select, TableWrap } from "@/c
 type Durum = "gonderilmedi" | "kuyrukta" | "iletildi" | "kabul" | "kismi_kabul" | "ret" | "hata";
 
 interface Engel { kod: string; mesaj: string }
+
+/** EBLG-106: entegratörün belge üzerindeki işlem kaydı. */
+interface GecmisKaydi { zaman: string; kullanici?: string; mesaj: string; tur?: string }
 
 /** EBLG-93: `GET /ebelge/irsaliye/numara-bosluklari` yanıtı. */
 interface NumaraBosluklari {
@@ -40,6 +43,8 @@ interface Satir {
   cari: { unvan: string; vknTckn: string | null };
   durum: Durum;
   entegratorRef: string | null;
+  /** EBLG-106: entegratörün kendi durum adı; `kuyrukta` belgenin gerçek aşaması. */
+  entegratorDurumu: string | null;
   hataMesaji: string | null;
   sonDurumSorguAt: string | null;
   gonderimZamani: string | null;
@@ -53,11 +58,19 @@ interface Satir {
 }
 
 interface Detay {
+  /** Sunucu döndürmez; panel açılırken eklenir. */
+  belgeId: string;
   belgeNo: string | null;
   tarih: string;
   cariUnvan: string;
   durum: Durum;
   entegratorRef: string | null;
+  entegratorDurumu: string | null;
+  /** EBLG-106: taslakta kalan belgede alıcının GİB e-İrsaliye kutuları. */
+  aliciPostaKutulari: string[] | null;
+  karttakiPostaKutusu: string | null;
+  /** Entegratörün canlı sorgusundaki kutular; `null` → sorgulanamadı. */
+  canliPostaKutulari: string[] | null;
   hataMesaji: string | null;
   xmlIcerik: string | null;
   sonDurumSorguAt: string | null;
@@ -91,6 +104,11 @@ const DURUM_TONU: Record<Durum, "neutral" | "info" | "success" | "warning" | "da
 const tasiyanEngeli = (e: Engel) => e.kod === "tasiyan_yok" || e.kod === "tasiyici_vkn_yok";
 const tasimaGirilebilir = (s: Satir) => s.belgeDurumu !== "iptal" && (s.durum === "gonderilmedi" || s.durum === "hata");
 
+/** EBLG-106: entegratörün taslakta bıraktığı belge kendiliğinden ilerlemez; ayrı gösterilir. */
+const taslakta = (s: { durum: Durum; entegratorDurumu: string | null }) => s.durum === "kuyrukta" && eirsaliyeAsamasi(s.entegratorDurumu) === "taslak";
+const durumAdi = (s: { durum: Durum; entegratorDurumu: string | null }) => (taslakta(s) ? "Taslakta, etiket bekliyor" : DURUM_ADI[s.durum]);
+const durumTonu = (s: { durum: Durum; entegratorDurumu: string | null }) => (taslakta(s) ? "warning" : DURUM_TONU[s.durum]);
+
 const gun = (v: string) => new Date(v).toLocaleDateString("tr-TR");
 const an = (v: string | null) => (v ? new Date(v).toLocaleString("tr-TR") : null);
 const SAYFA_ADEDI = 15;
@@ -114,6 +132,9 @@ export default function GidenEirsaliyeler() {
   const [boslukYili, setBoslukYili] = useState(String(new Date().getFullYear()));
   const [basari, setBasari] = useState("");
   const [basarisizlar, setBasarisizlar] = useState<{ belgeNo: string | null; hata: string }[]>([]);
+  const [etiket, setEtiket] = useState("");
+  const [kartaKaydet, setKartaKaydet] = useState(true);
+  const [gecmis, setGecmis] = useState<GecmisKaydi[] | null>(null);
 
   const yukle = useCallback(async () => {
     setYukleniyor(true);
@@ -141,8 +162,8 @@ export default function GidenEirsaliyeler() {
   const ozet = useMemo(() => ({
     toplam: liste.length,
     bekleyen: liste.filter((s) => s.durum === "gonderilmedi").length,
-    yolda: liste.filter((s) => s.durum === "kuyrukta" || s.durum === "iletildi").length,
-    sorunlu: liste.filter((s) => s.durum === "hata" || s.durum === "ret").length,
+    yolda: liste.filter((s) => (s.durum === "kuyrukta" && !taslakta(s)) || s.durum === "iletildi").length,
+    sorunlu: liste.filter((s) => s.durum === "hata" || s.durum === "ret" || taslakta(s)).length,
   }), [liste]);
 
   const sayfaAdedi = Math.max(1, Math.ceil(filtreli.length / SAYFA_ADEDI));
@@ -210,9 +231,38 @@ export default function GidenEirsaliyeler() {
   async function detayAc(belgeId: string) {
     setHata("");
     try {
-      setDetay(await api<Detay>(`/ebelge/irsaliye/giden/${belgeId}`));
+      const yeni = await api<Omit<Detay, "belgeId">>(`/ebelge/irsaliye/giden/${belgeId}`);
+      setDetay({ ...yeni, belgeId });
+      setGecmis(null);
+      setEtiket(yeni.karttakiPostaKutusu ?? "");
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Belge ayrıntısı açılamadı");
+    }
+  }
+
+  /** EBLG-106: taslağa alıcı etiketi verip gönderir; sunucu durumu hemen sorar. */
+  async function taslakGonder(belgeId: string) {
+    setIslemde(belgeId); setHata(""); setBasari(""); setBasarisizlar([]);
+    try {
+      await api(`/ebelge/irsaliye/giden/${belgeId}/taslak-gonder`, { method: "POST", body: JSON.stringify({ postaKutusu: etiket, kartaKaydet }) });
+      setDetay(null);
+      setBasari(`${detay?.belgeNo ?? "Belge"} ${etiket} etiketiyle gönderildi.${kartaKaydet ? " Etiket cari kartına da kaydedildi." : ""}`);
+      await yukle();
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Taslak gönderilemedi");
+    } finally {
+      setIslemde("");
+    }
+  }
+
+  async function gecmisGetir(belgeId: string) {
+    setIslemde("gecmis"); setHata("");
+    try {
+      setGecmis(await api<GecmisKaydi[]>(`/ebelge/irsaliye/giden/${belgeId}/entegrator-gecmisi`));
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "İşlem geçmişi alınamadı");
+    } finally {
+      setIslemde("");
     }
   }
 
@@ -360,7 +410,8 @@ export default function GidenEirsaliyeler() {
               <td><strong>{s.cari.unvan}</strong><small>{s.cari.vknTckn ? `VKN/TCKN ${s.cari.vknTckn}` : "VKN/TCKN yok"}</small></td>
               <td><strong>{gun(s.tarih)}</strong><small>{an(s.fiiliSevkZamani) ?? "Fiili sevk girilmemiş"}</small></td>
               <td>
-                <Badge variant={DURUM_TONU[s.durum]}>{DURUM_ADI[s.durum]}</Badge>
+                <Badge variant={durumTonu(s)}>{durumAdi(s)}</Badge>
+                {s.durum === "kuyrukta" && eirsaliyeAsamaAciklamasi(s.entegratorDurumu) && <small className="incoming-reason">{eirsaliyeAsamaAciklamasi(s.entegratorDurumu)}</small>}
                 {/* EBLG-90: programda iptal GİB'deki belgeyi iptal etmez. */}
                 {s.belgeDurumu === "iptal" && (GIB_ULASMIS_EIRSALIYE_DURUMLARI as readonly string[]).includes(s.durum) && <small className="incoming-reason">GİB'de geçerli — programda iptal{s.aliciKayitsiz ? "" : "; alıcı reddi bekleniyor"}.</small>}
                 {s.belgeDurumu === "iptal" && s.durum === "ret" && <small className="incoming-reason">Programda iptal; alıcı reddetti — GİB'de geçersiz.</small>}
@@ -381,9 +432,10 @@ export default function GidenEirsaliyeler() {
                       🚚 Taşıma bilgisi
                     </Button>
                   )}
-                  {s.durum !== "gonderilmedi" && <Button size="sm" onClick={() => void detayAc(s.belgeId)}>İncele</Button>}
+                  {taslakta(s) && gonderebilir && <Button size="sm" variant="primary" onClick={() => void detayAc(s.belgeId)}>Etiket seç ve gönder</Button>}
+                  {s.durum !== "gonderilmedi" && !taslakta(s) && <Button size="sm" onClick={() => void detayAc(s.belgeId)}>İncele</Button>}
                   {/* EBLG-85: GİB'e iletilmiş belgenin çıktısı; kayıtlı olmayan alıcıya bu verilir. */}
-                  {s.durum !== "gonderilmedi" && s.durum !== "hata" && (
+                  {s.durum !== "gonderilmedi" && s.durum !== "hata" && !taslakta(s) && (
                     <Button size="sm" onClick={() => void apiPdfAc(`/ebelge/irsaliye/giden/${s.belgeId}/pdf`).catch((h: unknown) => setHata(h instanceof Error ? h.message : "e-İrsaliye çıktısı açılamadı"))}>🖨 Çıktı</Button>
                   )}
                   <a className="btn btn--ghost btn--sm" href={`/panel/belgeler?odak=${s.belgeId}`}>Belgeyi aç</a>
@@ -414,7 +466,7 @@ export default function GidenEirsaliyeler() {
             <div>
               <span>GİDEN E-İRSALİYE</span>
               <h2>{detay.belgeNo ?? "Numarasız belge"}</h2>
-              <Badge variant={DURUM_TONU[detay.durum]}>{DURUM_ADI[detay.durum]}</Badge>
+              <Badge variant={durumTonu(detay)}>{durumAdi(detay)}</Badge>
             </div>
             <button aria-label="Kapat" onClick={() => setDetay(null)}>×</button>
           </header>
@@ -425,6 +477,49 @@ export default function GidenEirsaliyeler() {
             <div><span>Entegratör referansı</span><strong>{detay.entegratorRef ?? "—"}</strong><small>{detay.entegratorRef ? "Entegratördeki karşılık" : "Referans oluşmadı"}</small></div>
           </section>
           {detay.hataMesaji && <div className="incoming-info"><span>Hata / yanıt açıklaması</span><strong>{detay.hataMesaji}</strong></div>}
+          {detay.durum === "kuyrukta" && eirsaliyeAsamaAciklamasi(detay.entegratorDurumu) && <div className="incoming-info"><span>Entegratördeki aşama</span><strong>{eirsaliyeAsamaAciklamasi(detay.entegratorDurumu)}</strong></div>}
+          {/* EBLG-106: entegratör etiketi kabul etmediyse belge taslakta bekler; etiket buradan verilir. */}
+          {taslakta(detay) && gonderebilir && (
+            <div className="incoming-info stack">
+              <span>Alıcı posta kutusu</span>
+              {detay.aliciPostaKutulari?.length ? (
+                <>
+                  <Select aria-label="Alıcı posta kutusu" value={etiket} onChange={(e) => setEtiket(e.target.value)}>
+                    <option value="">Posta kutusu seçin…</option>
+                    {detay.aliciPostaKutulari.map((k) => {
+                      // Toplu listede olup entegratörün canlı sorgusunda olmayan kutu belgeyi yine taslağa düşürür.
+                      const gecersiz = detay.canliPostaKutulari !== null && !detay.canliPostaKutulari.includes(k);
+                      return <option key={k} value={k} disabled={gecersiz}>{k}{k === detay.karttakiPostaKutusu ? " (cari kartında seçili)" : ""}{gecersiz ? " — entegratör listesinde yok" : ""}</option>;
+                    })}
+                  </Select>
+                  <label className="row-tight" style={{ fontSize: "0.85rem" }}>
+                    <input type="checkbox" checked={kartaKaydet} onChange={(e) => setKartaKaydet(e.target.checked)} />
+                    Cari kartına da kaydet; sonraki irsaliyeler bu kutuya gitsin
+                  </label>
+                  <Button variant="primary" disabled={!etiket || islemde !== ""} onClick={() => void taslakGonder(detay.belgeId)}>
+                    {islemde ? "Gönderiliyor…" : "Etiketle gönder"}
+                  </Button>
+                </>
+              ) : <strong>Alıcının GİB e-İrsaliye listesinde posta kutusu yok; mükellef listesini güncelleyin.</strong>}
+            </div>
+          )}
+          {detay.entegratorRef && (
+            <div className="incoming-info stack">
+              <div className="between">
+                <span>Entegratör işlem geçmişi</span>
+                <Button size="sm" disabled={islemde === "gecmis"} onClick={() => void gecmisGetir(detay.belgeId)}>{islemde === "gecmis" ? "Getiriliyor…" : gecmis ? "Yenile" : "Getir"}</Button>
+              </div>
+              {gecmis && (gecmis.length === 0
+                ? <small className="muted">Entegratör bu belge için kayıt döndürmedi.</small>
+                : <ul style={{ margin: 0, paddingLeft: "1rem", fontSize: "0.85rem" }}>
+                    {gecmis.map((k, i) => (
+                      <li key={i} style={{ color: k.tur === "Error" ? "var(--danger)" : k.tur === "Warning" ? "var(--warning)" : undefined }}>
+                        <small className="muted">{an(k.zaman)}{k.kullanici ? ` · ${k.kullanici}` : ""}</small> {k.mesaj}
+                      </li>
+                    ))}
+                  </ul>)}
+            </div>
+          )}
           <footer>
             <small>Belge UBL'i entegratöre gönderilen içeriktir.</small>
             <div><Button disabled={!detay.xmlIcerik} onClick={xmlIndir}>XML indir</Button></div>

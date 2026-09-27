@@ -2,8 +2,8 @@ import { BadGatewayException, BadRequestException, ConflictException, Injectable
 import { EirsaliyeDurum, GelenEirsaliyeDurum, Prisma, type ZincirBelgeDurum } from "@prisma/client";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { durumAciklamasi } from "./durum-aciklamasi";
-import type { EntegratorConfig } from "@tekirextra/baglanti";
-import { anTR, birimUblKodu, bugunTR, eirsaliyeYanitSuresi, muhtelifMusteriMi, gumrukSeferNotu, ihracatFaturasiNotu, YURT_DISI_ALICI_VKN, dorseSchemeId, firmaEbelgeEksikleri, idisBelgesiMi, IDIS_IRSALIYE_PROFILI, idisNormalize, plakaNormalize, plakaSchemeId, ublAdresi } from "@tekirextra/shared";
+import { postaKutusuSec, type EntegratorConfig } from "@tekirextra/baglanti";
+import { anTR, birimUblKodu, bugunTR, eirsaliyeYanitSuresi, muhtelifMusteriMi, gumrukSeferNotu, ihracatFaturasiNotu, YURT_DISI_ALICI_VKN, dorseSchemeId, firmaEbelgeEksikleri, idisBelgesiMi, IDIS_IRSALIYE_PROFILI, idisNormalize, plakaNormalize, plakaSchemeId, ublAdresi, eirsaliyeAsamasi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
@@ -13,6 +13,7 @@ import { numaraBosluklariniBul } from "./eirsaliye-bosluk";
 import { eirsaliyeYurtDisiMi, gonderimEngelleri, IRSALIYE_GONDERILEBILIR_DURUMLAR, irsaliyeTeslimatAdresi, irsaliyeYuklemeAdresi } from "./eirsaliye-engeller";
 import { gelenSevkTarihi, irsaliyeUblOku } from "./eirsaliye-ubl-oku";
 import { MukellefListesiService } from "./mukellef-listesi.service";
+import { kendiGbEtiketi, postaKutusuSecimi } from "./posta-kutusu-secimi";
 
 /** Bağlantıda e-İrsaliye seri öneki tanımlı değilse (EBLG-20). */
 const VARSAYILAN_EIRSALIYE_ONEKI = "IRS";
@@ -70,16 +71,14 @@ export class EirsaliyeService {
   ) {}
 
   /** Durum sonucunun kayda yazılan hâli. Açıklama yalnız dikkat gerektiren durumda tutulur. */
-  private durumVerisi(kayitId: string, sonuc: { durum: string; detay?: string; hamDurum?: string }) {
+  private durumVerisi(sonuc: { durum: string; detay?: string; hamDurum?: string }) {
     const detay = sonuc.detay?.trim() || null;
-    // Bekleyen irsaliyenin entegratördeki gerçek aşaması loga düşer: tanınmayan
-    // ad da `kuyrukta` sayıldığından ekrandan ayırt edilemez.
-    if (sonuc.durum === "kuyrukta") {
-      this.logger.log(JSON.stringify({ event: "eirsaliye_kuyrukta", kayitId, hamDurum: sonuc.hamDurum ?? null }));
-    }
     return {
       durum: sonuc.durum as EirsaliyeDurum,
-      hataMesaji: ["hata", "ret", "kismi_kabul"].includes(sonuc.durum) ? detay : null,
+      // EBLG-106: `kuyrukta` taslakta kalanı GİB'de bekleyenden ayırmaz; ham ad saklanır.
+      entegratorDurumu: sonuc.hamDurum ?? null,
+      // Taslakta kalan belgede açıklama entegratörün gerekçesidir (EBLG-106).
+      hataMesaji: ["hata", "ret", "kismi_kabul"].includes(sonuc.durum) || eirsaliyeAsamasi(sonuc.hamDurum) === "taslak" ? detay : null,
       sonDurumSorguAt: new Date(),
     };
   }
@@ -198,7 +197,10 @@ export class EirsaliyeService {
       // Faturalanmış (kapandı) irsaliye de gönderilir: fatura sevkten önce
       // kesilebilir ya da irsaliye faturaya bağlanabilir (EBLG-76, FTR-26).
       if (!IRSALIYE_GONDERILEBILIR_DURUMLAR.includes(belge.durum)) throw new BadRequestException("e-İrsaliye göndermek için belge onaylanmış olmalıdır");
-      if (belge.eirsaliye?.durum === "kabul" || belge.eirsaliye?.durum === "iletildi") return belge.eirsaliye;
+      // Entegratöre ulaşmış belge ikinci kez yüklenmez; yükleme artık `kuyrukta`
+      // yazdığından (EBLG-106) yalnız `iletildi`/`kabul`'e bakmak yetmez.
+      // Taslakta kalan belge `taslakGonder` ile ilerletilir.
+      if (belge.eirsaliye?.entegratorRef && belge.eirsaliye.durum !== "hata") return belge.eirsaliye;
       const { baglanti, cfg, adapter } = await this.baglanti(tx, tenantId);
       if (!adapter.irsaliyeGonder) throw new BadRequestException("Seçili entegratör e-İrsaliye gönderimini desteklemiyor");
       // EBLG-84: yurt dışı alıcının Türk VKN'si yoktur; belgeye GİB'in yurt dışı
@@ -220,7 +222,7 @@ export class EirsaliyeService {
       // kâğıt irsaliye kesen firma engellenmesin, GİB'e giden belge eksik gitmesin.
       // EBLG-83: kayıtlı alıcıya kendi posta kutusuna gider; kayıtlı olmayana
       // da e-İrsaliye düzenlenir, belge alıcı etiketi olmadan gönderilir.
-      const aliciPostaKutusu = mukellef?.eFaturaMukellefi ? mukellef.postaKutusu : undefined;
+      let aliciPostaKutusu = mukellef?.eFaturaMukellefi ? mukellef.postaKutusu : undefined;
       const engeller = gonderimEngelleri({ ...belge, cari: { vknTckn: belge.cari.vknTckn, adresler: belge.cari.adresler } });
       // Malın fiilen nereye gittiği e-İrsaliye'nin varlık sebebi; uydurulmuş
       // bir adres yazmaktansa gönderim durur. Engel listesi boşsa adres
@@ -266,6 +268,20 @@ export class EirsaliyeService {
         notlar.push(ihracatFaturasiNotu({ faturaNo: belge.fatura.no, faturaTarihi: belge.fatura.tarih.toISOString() }));
       }
       const xml = this.ubl({ ...belge, cari, teslimatAdresi, notlar, yuklemeAdresi: belge.gumrukDepoSevki ? irsaliyeYuklemeAdresi(belge) : undefined }, tenant);
+      // EBLG-106: NES'in toplu listesinde olup canlı sorgusunda olmayan kutu
+      // (2026-09-27: 1234567801'in nes.com.tr kutuları) hata vermeden boşaltılır,
+      // belge taslakta kalır. Birden çok kutusu olan alıcıda seçim canlı listeyle
+      // doğrulanır; tek kutulu alıcıda (gerçek firmaların çoğu) ek çağrı yapılmaz.
+      if (aliciPostaKutusu && mukellef?.postaKutulari && adapter.irsaliyePostaKutulariSorgula) {
+        const canli = await adapter.irsaliyePostaKutulariSorgula(cfg, aliciVkn!).catch(() => null);
+        if (canli?.length && !canli.includes(aliciPostaKutusu)) {
+          const { adaylar } = await postaKutusuSecimi(tx, aliciVkn!, "eirsaliye", null, cfg.gondericiBirimEtiketi);
+          const gecerli = adaylar.filter((a) => canli.includes(a.postaKutusu));
+          const yeni = postaKutusuSec(gecerli.length ? gecerli : canli.map((k) => ({ postaKutusu: k })), cfg.gondericiBirimEtiketi);
+          this.logger.warn(JSON.stringify({ event: "eirsaliye_posta_kutusu_degisti", tenantId, belgeNo: belge.no, eski: aliciPostaKutusu, yeni }));
+          aliciPostaKutusu = yeni;
+        }
+      }
       const sonuc = await adapter.irsaliyeGonder(cfg, { uuid: belge.id, belgeNo: belge.no, xml, aliciPostaKutusu });
       // Seçilen kutu belgede saklanmaz; entegratörde farklı kutu görünürse iz buradadır.
       this.logger.log(JSON.stringify({ event: "eirsaliye_gonderildi", tenantId, belgeNo: belge.no, aliciPostaKutusu: aliciPostaKutusu ?? null, basarili: sonuc.basarili }));
@@ -273,7 +289,9 @@ export class EirsaliyeService {
       // Hata mesajı açıkça `null` yazılır: `undefined` alanı Prisma güncellemez
       // ve başarılı yeniden gönderim önceki hatayı göstermeye devam ederdi.
       // EBLG-94: içerik hatası (kalıcı) dışındaki başarısızlık kendiliğinden yeniden denenir.
-      const kayit = { durum: sonuc.basarili ? ("iletildi" as const) : ("hata" as const), entegratorRef: sonuc.belgeRef, xmlIcerik: xml, hataMesaji: seriHatasiAciklamasi(sonuc.hataMesaji) ?? null, aliciKayitsiz: !aliciPostaKutusu, geciciHata: !sonuc.basarili && !sonuc.kalici };
+      // EBLG-106: yüklemenin kabulü GİB'e iletim değildir; NES geçersiz etiketli
+      // belgeyi taslakta bile bırakabilir. İlerleyişi durum sorgusu söyler.
+      const kayit = { durum: sonuc.basarili ? ("kuyrukta" as const) : ("hata" as const), entegratorDurumu: null, entegratorRef: sonuc.belgeRef, xmlIcerik: xml, hataMesaji: seriHatasiAciklamasi(sonuc.hataMesaji) ?? null, aliciKayitsiz: !aliciPostaKutusu, geciciHata: !sonuc.basarili && !sonuc.kalici };
       return tx.eirsaliyeKayit.upsert({
         where: { belgeId },
         create: { tenantId, belgeId, ...kayit, yenidenDenemeSayisi: secenekler.otomatik ? 1 : 0 },
@@ -297,7 +315,55 @@ export class EirsaliyeService {
         // Ulaşılamayan entegratör belgeyi hatalı yapmaz (EBLG-36); kullanıcıya söylenir.
         throw new BadGatewayException(`e-İrsaliye durumu sorgulanamadı: ${hata instanceof Error ? hata.message : String(hata)}`);
       }
-      return tx.eirsaliyeKayit.update({ where: { id: kayit.id }, data: this.durumVerisi(kayit.id, sonuc) });
+      return tx.eirsaliyeKayit.update({ where: { id: kayit.id }, data: this.durumVerisi(sonuc) });
+    });
+  }
+
+  /**
+   * EBLG-106: alıcının GİB e-İrsaliye posta kutuları. Taslakta kalan belgeye
+   * etiket bu listeden seçilir; gümrükten depoya sevkte alıcı firmanın kendisidir.
+   */
+  private async aliciPostaKutulari(tx: Prisma.TransactionClient, tenantId: string, belge: { gumrukDepoSevki: boolean; cari: { vknTckn: string | null; eirsaliyePostaKutusu: string | null } }) {
+    const vkn = belge.gumrukDepoSevki ? (await tx.tenant.findUnique({ where: { id: tenantId }, select: { vkn: true } }))?.vkn : belge.cari.vknTckn?.trim();
+    if (!vkn) return { vkn: null, adaylar: [] as string[], kartta: null as string | null };
+    const secim = await postaKutusuSecimi(tx, vkn, "eirsaliye", belge.gumrukDepoSevki ? null : belge.cari.eirsaliyePostaKutusu, await kendiGbEtiketi(tx, tenantId));
+    return { vkn, adaylar: secim.adaylar.map((a) => a.postaKutusu), kartta: secim.elleSecilenGecersiz ? null : secim.elleSecilen };
+  }
+
+  /**
+   * EBLG-106: entegratörün alıcı etiketini kabul etmeyip taslakta bıraktığı
+   * irsaliyeye etiket verir ve taslağı gönderir. Etiket alıcının GİB listesinden
+   * seçilir; `kartaKaydet` ile cari kartına da yazılır ki sonraki irsaliye aynı
+   * kutuya gitsin. Durum hemen sorulur: kullanıcı ilerleyişi aynı ekranda görür.
+   */
+  async taslakGonder(belgeId: string, girdi: { postaKutusu: string; kartaKaydet?: boolean }) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kayit = await tx.eirsaliyeKayit.findFirst({
+        where: { belgeId },
+        include: { belge: { select: { no: true, cariId: true, gumrukDepoSevki: true, cari: { select: { vknTckn: true, eirsaliyePostaKutusu: true } } } } },
+      });
+      if (!kayit?.entegratorRef) throw new NotFoundException("e-İrsaliye gönderim kaydı bulunamadı");
+      if (eirsaliyeAsamasi(kayit.entegratorDurumu) !== "taslak") throw new BadRequestException("Belge entegratörde taslakta değil; önce durumunu sorgulayın");
+      const { cfg, adapter } = await this.baglanti(tx, tenantId);
+      if (!adapter.irsaliyeTaslaginiGonder) throw new BadRequestException("Seçili entegratör taslak gönderimini desteklemiyor");
+      const { vkn, adaylar } = await this.aliciPostaKutulari(tx, tenantId, kayit.belge);
+      if (!adaylar.includes(girdi.postaKutusu)) throw new BadRequestException("Seçilen posta kutusu alıcının GİB e-İrsaliye listesinde yok");
+      // Toplu listede olup entegratörün canlı sorgusunda olmayan kutu belgeyi yine taslağa düşürür.
+      const canli = vkn && adapter.irsaliyePostaKutulariSorgula ? await adapter.irsaliyePostaKutulariSorgula(cfg, vkn).catch(() => null) : null;
+      if (canli && !canli.includes(girdi.postaKutusu)) throw new BadRequestException("Seçilen posta kutusu entegratörün güncel listesinde yok; başka bir kutu seçin");
+      try {
+        await adapter.irsaliyeTaslaginiGonder(cfg, kayit.entegratorRef, girdi.postaKutusu);
+      } catch (hata) {
+        throw new BadGatewayException(`Taslak gönderilemedi: ${hata instanceof Error ? hata.message : String(hata)}`);
+      }
+      this.logger.log(JSON.stringify({ event: "eirsaliye_gonderildi", tenantId, belgeNo: kayit.belge.no, aliciPostaKutusu: girdi.postaKutusu, basarili: true, taslak: true }));
+      if (girdi.kartaKaydet && !kayit.belge.gumrukDepoSevki) {
+        await tx.cariHesap.update({ where: { id: kayit.belge.cariId }, data: { eirsaliyePostaKutusu: girdi.postaKutusu } });
+      }
+      // Taslak gönderildi; sorgu başarısız olsa bile eski `Waiting` yazılı kalmamalı.
+      const sonuc = await adapter.irsaliyeDurumSorgula?.(cfg, kayit.entegratorRef).catch(() => null);
+      return tx.eirsaliyeKayit.update({ where: { id: kayit.id }, data: sonuc ? this.durumVerisi(sonuc) : { entegratorDurumu: null } });
     });
   }
 
@@ -331,7 +397,7 @@ export class EirsaliyeService {
     for (const kayit of hazirlik.kayitlar) {
       try {
         const sonuc = await hazirlik.adapter.irsaliyeDurumSorgula!(hazirlik.cfg, kayit.entegratorRef!);
-        await this.prisma.tenantIslem(tenantId, (tx) => tx.eirsaliyeKayit.update({ where: { id: kayit.id }, data: this.durumVerisi(kayit.id, sonuc) }));
+        await this.prisma.tenantIslem(tenantId, (tx) => tx.eirsaliyeKayit.update({ where: { id: kayit.id }, data: this.durumVerisi(sonuc) }));
         guncellenen += 1;
       } catch (hata) {
         atlanan += 1;
@@ -395,7 +461,7 @@ export class EirsaliyeService {
           depo: { select: { adres: true, il: true, ilce: true, postaKodu: true } },
           cari: { select: { unvan: true, vknTckn: true, adresler: { select: { tip: true, il: true, ilce: true, postaKodu: true, ulke: true } } } },
           tasiyiciCari: { select: { vknTckn: true } },
-          eirsaliye: { select: { durum: true, entegratorRef: true, hataMesaji: true, sonDurumSorguAt: true, createdAt: true, aliciKayitsiz: true, geciciHata: true, yenidenDenemeSayisi: true } },
+          eirsaliye: { select: { durum: true, entegratorRef: true, entegratorDurumu: true, hataMesaji: true, sonDurumSorguAt: true, createdAt: true, aliciKayitsiz: true, geciciHata: true, yenidenDenemeSayisi: true } },
         },
         orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
         take: 500,
@@ -416,6 +482,8 @@ export class EirsaliyeService {
           gumrukDepoSevki: b.gumrukDepoSevki,
           durum: b.eirsaliye?.durum ?? ("gonderilmedi" as const),
           entegratorRef: b.eirsaliye?.entegratorRef ?? null,
+          // EBLG-106: `kuyrukta` belgenin entegratördeki aşaması (taslak / GİB'de).
+          entegratorDurumu: b.eirsaliye?.entegratorDurumu ?? null,
           hataMesaji: b.eirsaliye?.hataMesaji ?? null,
           sonDurumSorguAt: b.eirsaliye?.sonDurumSorguAt?.toISOString() ?? null,
           gonderimZamani: b.eirsaliye?.createdAt.toISOString() ?? null,
@@ -441,20 +509,49 @@ export class EirsaliyeService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const kayit = await tx.eirsaliyeKayit.findUnique({
         where: { belgeId },
-        select: { durum: true, entegratorRef: true, hataMesaji: true, xmlIcerik: true, sonDurumSorguAt: true, createdAt: true, belge: { select: { no: true, tarih: true, cari: { select: { unvan: true } } } } },
+        select: { durum: true, entegratorRef: true, entegratorDurumu: true, hataMesaji: true, xmlIcerik: true, sonDurumSorguAt: true, createdAt: true, belge: { select: { no: true, tarih: true, gumrukDepoSevki: true, cari: { select: { unvan: true, vknTckn: true, eirsaliyePostaKutusu: true } } } } },
       });
       if (!kayit) throw new NotFoundException("Bu belge için e-İrsaliye kaydı bulunamadı");
+      // EBLG-106: taslakta kalan belgeye etiket seçtirmek için alıcının kutuları.
+      const kutular = eirsaliyeAsamasi(kayit.entegratorDurumu) === "taslak" ? await this.aliciPostaKutulari(tx, tenantId, kayit.belge) : null;
+      // Canlı sorgu yalnız taslakta yapılır; entegratöre ulaşılamazsa toplu liste yeter.
+      let canliPostaKutulari: string[] | null = null;
+      if (kutular?.vkn) {
+        const { cfg, adapter } = await this.baglanti(tx, tenantId);
+        canliPostaKutulari = adapter.irsaliyePostaKutulariSorgula ? await adapter.irsaliyePostaKutulariSorgula(cfg, kutular.vkn).catch(() => null) : null;
+      }
       return {
         belgeNo: kayit.belge.no,
         tarih: kayit.belge.tarih.toISOString().slice(0, 10),
         cariUnvan: kayit.belge.cari.unvan,
         durum: kayit.durum,
         entegratorRef: kayit.entegratorRef,
+        entegratorDurumu: kayit.entegratorDurumu,
+        aliciPostaKutulari: kutular?.adaylar ?? null,
+        karttakiPostaKutusu: kutular?.kartta ?? null,
+        /** EBLG-106: entegratörün canlı sorgusundaki kutular; `null` → sorgulanamadı. */
+        canliPostaKutulari,
         hataMesaji: kayit.hataMesaji,
         xmlIcerik: kayit.xmlIcerik,
         sonDurumSorguAt: kayit.sonDurumSorguAt?.toISOString() ?? null,
         gonderimZamani: kayit.createdAt.toISOString(),
       };
+    });
+  }
+
+  /** EBLG-106: giden irsaliyenin entegratördeki işlem geçmişi; neden taslakta kaldığı burada yazar. */
+  async gidenEntegratorGecmisi(belgeId: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kayit = await tx.eirsaliyeKayit.findUnique({ where: { belgeId }, select: { entegratorRef: true } });
+      if (!kayit?.entegratorRef) throw new NotFoundException("Belge entegratöre ulaşmamış; işlem geçmişi yok");
+      const { cfg, adapter } = await this.baglanti(tx, tenantId);
+      if (!adapter.irsaliyeGecmisi) throw new BadRequestException("Seçili entegratör işlem geçmişi vermiyor");
+      try {
+        return await adapter.irsaliyeGecmisi(cfg, kayit.entegratorRef);
+      } catch (hata) {
+        throw new BadGatewayException(`İşlem geçmişi alınamadı: ${hata instanceof Error ? hata.message : String(hata)}`);
+      }
     });
   }
 

@@ -28,5 +28,6 @@ export * from "./sevkiyat";
 export * from "./ebelge-uygulamalari";
 export * from "./ytb";
 export * from "./irsaliye-fatura";
+export * from "./eirsaliye-asama";
 export * from "./muhtelif-musteri";
 export * from "./ebelge-iptal";

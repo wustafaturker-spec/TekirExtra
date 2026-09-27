@@ -820,3 +820,34 @@ hesaplarında onlarca başka firmanın tasarımı var ve varsayılanı herkes
 değiştirebiliyor; bu yüzden tasarım belge başına `DocumentTemplate`
 (`/v1/uploads/document`) ve önizlemede `DocumentTemplateTitle` ile adıyla
 istenir.
+
+## Taslakta kalan e-İrsaliye (EBLG-106, 2026-09-27)
+
+TEKİREXTRA2'nin TK02026000000002…006 irsaliyeleri NES'te `outgoingStatus:
+Waiting`, `outgoingEnvelope: null` kaldı; portalda alıcı etiketi boş, belge
+taslak listesindeydi. Log kanıtı: `ReceiverAlias = urn:mail:defaultpk@nes.com.tr`
+gönderildi. Bu kutu NES'in kendi `/edespatch/v1/users/zip/Pk` dosyasında
+1234567801 altında silinme damgasız duruyor, ama portalın etiket listesinde
+yok. NES geçersiz saydığı etiketi hata vermeden boşaltıp `IsDirectSend`'e
+rağmen belgeyi taslakta bırakıyor. İşlem geçmişi
+(`/v1/outgoing/despatches/{uuid}/histories`) yalnız "Belge kaydedildi." (Info)
+yazıyor, gerekçe vermiyor. **Kök neden:** canlı sorgu `/edespatch/v1/users/{vkn}/Pk`
+aynı VKN için 10 kutu döner, ZIP 13; yalnız ZIP'te olan üç kutu
+(`defaultpk@nes.com.tr`, `merkezpk@nes.com.tr`, `postestkurum1pk@pos.com.tr`)
+portalda da yok ve NES bunları kabul etmiyor. Kutu kuralı "bizim entegratörün
+kutusu önce" dediği için tam bunu seçiyordu. Artık birden çok kutulu alıcıda
+seçim yüklemeden önce canlı listeyle doğrulanıyor; listede yoksa kural canlı
+kutular arasından yeniden seçiyor (log: `eirsaliye_posta_kutusu_degisti`). Tek
+kutulu alıcıda ek çağrı yok.
+
+Şema (`docs/e-belge/edespatch-v1.swagger.taged.json`, 118 uç) taslak için iki uç
+veriyor: `PUT /v1/outgoing/despatches/{uuid}/receiveralias`
+(`{ uuid, receiverAlias }`) ve `POST /v1/uploads/draft/send` (UUID dizisi, en
+çok 25). `OutgoingStatus` 16 değer alır; ham ad `eirsaliye_kayitlari.entegrator_durumu`
+sütununda saklanır, anlamı `eirsaliyeAsamasi` (shared) verir: `Waiting` taslak,
+`WaitingToBe*` entegratörde, `EnvelopeIsWaitingToBe*ByGib` GİB'de.
+
+Yüklemenin kabulü artık `iletildi` yazmaz, `kuyrukta` yazar; ilerleyişi durum
+sorgusu söyler. Entegratör referansı olan ve hata almamış belge ikinci kez
+yüklenmez. Taslaktaki belgeye giden irsaliye ekranından alıcının GİB
+listesindeki bir kutu seçilip gönderilir; istenirse kutu cari kartına yazılır.

@@ -290,6 +290,48 @@ describe("EirsaliyeService.gonder numara (EBLG-83)", () => {
     expect(irsaliyeGonder.mock.calls[0][1].xml).toContain("<cbc:ID>GBZ2026000800022</cbc:ID>");
   });
 
+  it("yükleme kabulünü iletim saymaz; belge durum sorgusuna kadar kuyrukta kalır (EBLG-106)", async () => {
+    const { servis, tx } = kur(taslakBelge());
+
+    await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
+
+    expect(tx.eirsaliyeKayit.upsert.mock.calls[0][0].create).toMatchObject({ durum: "kuyrukta", entegratorRef: "nes-uuid", entegratorDurumu: null });
+  });
+
+  it("birden çok kutulu alıcıda seçilen kutu canlı listede yoksa canlıdakiyle gönderir (EBLG-106)", async () => {
+    const { servis, tx, irsaliyeGonder } = kur(taslakBelge());
+    const NES = "urn:mail:defaultpk@nes.com.tr";
+    const TICARI = "urn:mail:defaultpki@ticari1as_edesp.com.tr";
+    (servis as unknown as { mukellefListesi: unknown }).mukellefListesi = { kanalBelirle: vi.fn().mockResolvedValue({ vknTckn: "1230460944", eFaturaMukellefi: true, postaKutusu: NES, postaKutulari: [NES, TICARI] }) };
+    Object.assign(tx, { gibMukellef: { findMany: vi.fn().mockResolvedValue([{ postaKutusu: NES, kutuKayitZamani: new Date("2025-07-30"), tur: "OZEL" }, { postaKutusu: TICARI, kutuKayitZamani: new Date("2025-02-05"), tur: "OZEL" }]) } });
+    const irsaliyePostaKutulariSorgula = vi.fn().mockResolvedValue([TICARI, "urn:mail:baska@x"]);
+    vi.spyOn(servis as never, "baglanti").mockResolvedValue({ baglanti: { saglayici: "nes" }, cfg: { eirsaliyeSeriOneki: "GBZ", gondericiBirimEtiketi: "urn:mail:defaultgb@nes.com.tr" }, adapter: { irsaliyeGonder, irsaliyePostaKutulariSorgula } } as never);
+
+    await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
+
+    expect(irsaliyePostaKutulariSorgula).toHaveBeenCalledWith(expect.anything(), "1230460944");
+    expect(irsaliyeGonder.mock.calls[0][1].aliciPostaKutusu).toBe(TICARI);
+  });
+
+  it("tek kutulu alıcıda canlı sorgu yapmaz", async () => {
+    const { servis, irsaliyeGonder } = kur(taslakBelge());
+    const irsaliyePostaKutulariSorgula = vi.fn();
+    vi.spyOn(servis as never, "baglanti").mockResolvedValue({ baglanti: { saglayici: "nes" }, cfg: { eirsaliyeSeriOneki: "GBZ" }, adapter: { irsaliyeGonder, irsaliyePostaKutulariSorgula } } as never);
+
+    await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"));
+
+    expect(irsaliyePostaKutulariSorgula).not.toHaveBeenCalled();
+    expect(irsaliyeGonder.mock.calls[0][1].aliciPostaKutusu).toBe("urn:mail:alici");
+  });
+
+  it("entegratöre ulaşmış belgeyi ikinci kez yüklemez (EBLG-106)", async () => {
+    const mevcut = { durum: "kuyrukta", entegratorRef: "nes-uuid", entegratorDurumu: "Waiting" };
+    const { servis, irsaliyeGonder } = kur(taslakBelge({ no: "GBZ2026000800021", eirsaliye: mevcut }));
+
+    expect(await calistir(() => servis.gonder("11111111-1111-4111-8111-111111111111"))).toBe(mevcut);
+    expect(irsaliyeGonder).not.toHaveBeenCalled();
+  });
+
   it("hata almış irsaliyeyi aynı numarayla yeniden gönderir, sayacı ilerletmez", async () => {
     const { servis, tx, irsaliyeGonder } = kur(taslakBelge({ no: "GBZ2026000800021", eirsaliye: { durum: "hata" } }));
 
@@ -531,5 +573,56 @@ describe("EirsaliyeService.gelenYanit süre (EBLG-96)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("EirsaliyeService.taslakGonder (EBLG-106)", () => {
+  const ETIKET = "urn:mail:defaultpki@ticari1as_edesp.com.tr";
+  function kur(kayit: Record<string, unknown>, adaylar = [ETIKET, "urn:mail:defaultpk@nilvera.com"], canli?: string[]) {
+    const tx = {
+      eirsaliyeKayit: {
+        findFirst: vi.fn().mockResolvedValue({ id: "k1", entegratorRef: "nes-uuid", entegratorDurumu: "Waiting", belge: { no: "TK02026000000006", cariId: "c1", gumrukDepoSevki: false, cari: { vknTckn: "1234567801", eirsaliyePostaKutusu: null } }, ...kayit }),
+        update: vi.fn(({ data }) => Promise.resolve(data)),
+      },
+      cariHesap: { update: vi.fn() },
+    };
+    const prisma = { tenantIslem: vi.fn((_t: string, calistir: (tx: unknown) => unknown) => calistir(tx)) } as never;
+    const servis = new EirsaliyeService(prisma, {} as never, {} as never);
+    const irsaliyeTaslaginiGonder = vi.fn().mockResolvedValue(undefined);
+    const irsaliyeDurumSorgula = vi.fn().mockResolvedValue({ belgeRef: "nes-uuid", durum: "kuyrukta", hamDurum: "WaitingToBeSend" });
+    const irsaliyePostaKutulariSorgula = canli ? vi.fn().mockResolvedValue(canli) : undefined;
+    vi.spyOn(servis as never, "baglanti").mockResolvedValue({ cfg: {}, adapter: { irsaliyeTaslaginiGonder, irsaliyeDurumSorgula, irsaliyePostaKutulariSorgula } } as never);
+    vi.spyOn(servis as never, "aliciPostaKutulari").mockResolvedValue({ vkn: "1234567801", adaylar, kartta: null } as never);
+    return { servis, tx, irsaliyeTaslaginiGonder };
+  }
+  const calistir = <T>(f: () => Promise<T>) => baglamlaCalistir({ tenantId: "t1", userId: "u1", rol: "muhasebe" }, f);
+
+  it("etiketi verip taslağı gönderir, kartı günceller, yeni aşamayı yazar", async () => {
+    const { servis, tx, irsaliyeTaslaginiGonder } = kur({});
+
+    const sonuc = await calistir(() => servis.taslakGonder("b1", { postaKutusu: ETIKET, kartaKaydet: true }));
+
+    expect(irsaliyeTaslaginiGonder).toHaveBeenCalledWith({}, "nes-uuid", ETIKET);
+    expect(tx.cariHesap.update).toHaveBeenCalledWith({ where: { id: "c1" }, data: { eirsaliyePostaKutusu: ETIKET } });
+    expect(sonuc).toMatchObject({ durum: "kuyrukta", entegratorDurumu: "WaitingToBeSend" });
+  });
+
+  it("taslakta olmayan belgeye dokunmaz", async () => {
+    const { servis, irsaliyeTaslaginiGonder } = kur({ entegratorDurumu: "EnvelopeIsWaitingToBeSendedToReceiverByGib" });
+    await expect(calistir(() => servis.taslakGonder("b1", { postaKutusu: ETIKET }))).rejects.toThrow(/taslakta değil/);
+    expect(irsaliyeTaslaginiGonder).not.toHaveBeenCalled();
+  });
+
+  it("alıcının GİB listesinde olmayan kutuyu kabul etmez, kartı değiştirmez", async () => {
+    const { servis, tx, irsaliyeTaslaginiGonder } = kur({});
+    await expect(calistir(() => servis.taslakGonder("b1", { postaKutusu: "urn:mail:uydurma@x", kartaKaydet: true }))).rejects.toThrow(/listesinde yok/);
+    expect(irsaliyeTaslaginiGonder).not.toHaveBeenCalled();
+    expect(tx.cariHesap.update).not.toHaveBeenCalled();
+  });
+
+  it("toplu listede olup entegratörün canlı sorgusunda olmayan kutuyu kabul etmez", async () => {
+    const { servis, irsaliyeTaslaginiGonder } = kur({}, ["urn:mail:defaultpk@nes.com.tr", ETIKET], [ETIKET]);
+    await expect(calistir(() => servis.taslakGonder("b1", { postaKutusu: "urn:mail:defaultpk@nes.com.tr" }))).rejects.toThrow(/güncel listesinde yok/);
+    expect(irsaliyeTaslaginiGonder).not.toHaveBeenCalled();
   });
 });

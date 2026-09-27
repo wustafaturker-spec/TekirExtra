@@ -15,7 +15,7 @@ import type {
   EarsivIptalGirdi,
   EarsivRapor,
   EarsivRaporTutari,
-  EirsaliyeBelge,
+  EirsaliyeBelge, EntegratorGecmisKaydi,
   GelenEirsaliye,
   MukellefKaydi,
   GelenYanit,
@@ -961,6 +961,13 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
       errorDescription?: string;
     }>(cfg, "edespatch", `/v1/outgoing/despatches/${encodeURIComponent(belgeRef)}`);
     const zarf = nesBelgeDurumu(irsaliye?.outgoingStatus);
+    // EBLG-106: taslakta kalan belgenin nedeni yalnız işlem geçmişinde yazar
+    // (ör. alıcı etiketinin düşürülmesi); son uyarı/hata mesajları detay olur.
+    if (irsaliye?.outgoingStatus === "Waiting") {
+      const gecmis = await this.irsaliyeGecmisi(cfg, belgeRef).catch(() => []);
+      const uyarilar = gecmis.filter((k) => k.tur === "Warning" || k.tur === "Error").slice(-3).map((k) => k.mesaj);
+      return { belgeRef, durum: zarf, hamDurum: "Waiting", ...(uyarilar.length ? { detay: uyarilar.join(" · ") } : {}) };
+    }
     if (zarf === "hata") {
       return { belgeRef, durum: "hata", detay: irsaliye?.outgoingEnvelope?.description || irsaliye?.errorDescription };
     }
@@ -987,6 +994,43 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
       }
     }
     return { belgeRef, durum: zarf, hamDurum: irsaliye?.outgoingStatus };
+  }
+
+  async irsaliyeGecmisi(cfg: EntegratorConfig, belgeRef: string): Promise<EntegratorGecmisKaydi[]> {
+    const yanit = await this.cagir<{ data?: { createdAt?: string; userName?: string; message?: string; entryType?: string }[] }>(
+      cfg,
+      "edespatch",
+      `/v1/outgoing/despatches/${encodeURIComponent(belgeRef)}/histories`,
+      { sorgu: { page: 1, pageSize: 100 } },
+    );
+    return (yanit?.data ?? [])
+      .filter((k) => k.message)
+      .map((k) => ({ zaman: k.createdAt ?? "", kullanici: k.userName || undefined, mesaj: k.message!, tur: k.entryType }))
+      .sort((a, b) => a.zaman.localeCompare(b.zaman));
+  }
+
+  async irsaliyePostaKutulariSorgula(cfg: EntegratorConfig, vknTckn: string): Promise<string[]> {
+    try {
+      const kullanici = await this.cagir<{ aliases?: { alias?: string }[] }>(cfg, "edespatch", `/v1/users/${encodeURIComponent(vknTckn)}/Pk`);
+      return (kullanici?.aliases ?? []).flatMap((e) => (e.alias ? [e.alias] : []));
+    } catch (hata) {
+      if (hata instanceof NesHatasi && hata.durum === 404) return [];
+      throw hata;
+    }
+  }
+
+  /**
+   * EBLG-106: NES geçersiz saydığı `ReceiverAlias`'ı sessizce boşaltıp belgeyi
+   * `Waiting` (taslak) bırakır; `IsDirectSend` bu durumda işlemez. Etiket
+   * taslağa ayrı uçla yazılır, ardından taslak gönderilir (e-İrsaliye
+   * swagger'ı: `docs/e-belge/edespatch-v1.swagger.taged.json`).
+   */
+  async irsaliyeTaslaginiGonder(cfg: EntegratorConfig, belgeRef: string, aliciPostaKutusu: string): Promise<void> {
+    await this.cagir(cfg, "edespatch", `/v1/outgoing/despatches/${encodeURIComponent(belgeRef)}/receiveralias`, {
+      metot: "PUT",
+      govde: { uuid: belgeRef, receiverAlias: aliciPostaKutusu },
+    });
+    await this.cagir(cfg, "edespatch", "/v1/uploads/draft/send", { metot: "POST", govde: [belgeRef] });
   }
 
   async gelenIrsaliyeleriCek(cfg: EntegratorConfig, sonrasi: Date): Promise<GelenEirsaliye[]> {

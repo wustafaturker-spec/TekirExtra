@@ -11,7 +11,7 @@ import type {
   EarsivIptalGirdi,
   EarsivRapor,
   EarsivRaporTutari,
-  EirsaliyeBelge,
+  EirsaliyeBelge, EntegratorGecmisKaydi,
   GelenEirsaliye,
   MukellefKaydi,
   ZarfAraligi,
@@ -129,6 +129,20 @@ export interface EntegratorAdapter {
     cfg: EntegratorConfig,
     belgeRef: string,
   ): Promise<Omit<BelgeDurumSonuc, "durum"> & { durum: BelgeDurumSonuc["durum"] | "kismi_kabul" }>;
+  /**
+   * EBLG-106: entegratörün alıcı etiketini kabul etmeyip taslakta bıraktığı
+   * irsaliyeye etiket verir ve taslağı gönderir (resmîleştirir). Hata
+   * fırlatır; belge taslakta kalır, yeniden denenebilir.
+   */
+  irsaliyeTaslaginiGonder?(cfg: EntegratorConfig, belgeRef: string, aliciPostaKutusu: string): Promise<void>;
+  /** EBLG-106: giden irsaliyenin entegratördeki işlem geçmişi, eskiden yeniye. */
+  irsaliyeGecmisi?(cfg: EntegratorConfig, belgeRef: string): Promise<EntegratorGecmisKaydi[]>;
+  /**
+   * EBLG-106: alıcının entegratörün canlı sorgusundaki e-İrsaliye posta
+   * kutuları; kayıtlı değilse boş dizi. Toplu liste ile ayrışabildiği için
+   * taslak düzeltmede kutu bununla doğrulanır.
+   */
+  irsaliyePostaKutulariSorgula?(cfg: EntegratorConfig, vknTckn: string): Promise<string[]>;
   gelenIrsaliyeleriCek?(cfg: EntegratorConfig, sonrasi: Date): Promise<GelenEirsaliye[]>;
   /**
    * EBLG-34: gelen faturaya entegratörde verilmiş kabul/ret kararı; karar

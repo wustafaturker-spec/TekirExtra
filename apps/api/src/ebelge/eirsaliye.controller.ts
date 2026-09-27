@@ -5,7 +5,7 @@ import { Roller } from "../auth/roller.decorator";
 import { EbelgeUygulamasi } from "./ebelge-uygulamasi.decorator";
 import { EbelgeGorunumService } from "./ebelge-gorunum.service";
 import { EirsaliyeService } from "./eirsaliye.service";
-import { gidenDurumSemasi, topluGonderSemasi } from "./eirsaliye.semalar";
+import { gidenDurumSemasi, topluGonderSemasi, taslakGonderSemasi } from "./eirsaliye.semalar";
 
 /** Yıl sorgusu; verilmezse bu yıl. */
 function yilCoz(yil?: string): number {
@@ -59,8 +59,10 @@ export class EirsaliyeController {
 
   // ─── Giden e-İrsaliyeler (EBLG-41…43) ─────────────────────────────────────
   @Get("giden") gidenListele(@Query("durum") durum?: string) { return this.service.gidenListele(gidenDurumSemasi.parse(durum)); }
+  @Get("giden/:belgeId/entegrator-gecmisi") gidenEntegratorGecmisi(@Param("belgeId") belgeId: string) { return this.service.gidenEntegratorGecmisi(belgeId); }
   @Get("giden/:belgeId") gidenDetay(@Param("belgeId") belgeId: string) { return this.service.gidenDetay(belgeId); }
   @Post("giden/toplu-gonder") @Roller("muhasebe") topluGonder(@Body() govde: unknown) { return this.service.topluGonder(topluGonderSemasi.parse(govde).belgeIdler); }
+  @Post("giden/:belgeId/taslak-gonder") @Roller("muhasebe") taslakGonder(@Param("belgeId") belgeId: string, @Body() govde: unknown) { return this.service.taslakGonder(belgeId, taslakGonderSemasi.parse(govde)); }
   @Post("giden/durumlari-sorgula") @Roller("muhasebe") durumlariSorgula() { return this.service.durumlariTopluSorgula(); }
   @Get("gelen") gelenListele(@Query("durum") durum?: string) { if (durum && !["yeni", "kabul", "ret"].includes(durum)) throw new BadRequestException("Geçersiz gelen e-İrsaliye durumu"); return this.service.gelenListele(durum as GelenEirsaliyeDurum | undefined); }
   @Get("gelen/:id") gelenDetay(@Param("id") id: string) { return this.service.gelenDetay(id); }

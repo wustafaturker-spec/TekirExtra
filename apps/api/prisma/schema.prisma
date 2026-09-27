@@ -3347,6 +3347,10 @@ model EirsaliyeKayit {
   /// yanıtı); kuyruk işçisi aynı numarayla kendiliğinden yeniden dener.
   geciciHata          Boolean        @default(false) @map("gecici_hata")
   yenidenDenemeSayisi Int            @default(0) @map("yeniden_deneme_sayisi")
+  /// EBLG-106: entegratörün kendi durum adı (NES `outgoingStatus`). `kuyrukta`
+  /// taslakta kalan ile GİB'de bekleyen belgeyi ayırt etmez; anlamı
+  /// `eirsaliyeAsamasi` (shared) verir.
+  entegratorDurumu    String?        @map("entegrator_durumu")
   /// Durumun en son sorgulandığı an; aynı irsaliye 2 saat dolmadan tekrar sorulmaz (EBLG-36).
   sonDurumSorguAt     DateTime?      @map("son_durum_sorgu_at")
   createdAt           DateTime       @default(now()) @map("created_at")

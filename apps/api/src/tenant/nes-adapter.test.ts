@@ -81,7 +81,7 @@ describe("NesEntegratorAdapter e-İrsaliye durum sorgusu (EBLG-36)", () => {
 
   it("yanıt beklenirken zarf durumunu döner", async () => {
     nes({ ...iletilmis, despatchAnswer: "Waiting" });
-    expect(await new NesEntegratorAdapter().irsaliyeDurumSorgula(config, REF)).toEqual({ belgeRef: REF, durum: "iletildi" });
+    expect(await new NesEntegratorAdapter().irsaliyeDurumSorgula(config, REF)).toEqual({ belgeRef: REF, durum: "iletildi", hamDurum: "EnvelopeHasBeenTransferredToReceiverSuccessfully" });
   });
 
   it("yalnız teslim alınan satırlarla gelen yanıtı kabul sayar", async () => {
@@ -110,13 +110,75 @@ describe("NesEntegratorAdapter e-İrsaliye durum sorgusu (EBLG-36)", () => {
 
   it("başka irsaliyeye ait yanıtı benimsemez", async () => {
     const fetchMock = nes(yanitlanmis, [{ id: "yanit-9", outgoingDespatch: { id: "baska-irsaliye" } }], yanitXml(satir("0", "5")));
-    expect(await new NesEntegratorAdapter().irsaliyeDurumSorgula(config, REF)).toEqual({ belgeRef: REF, durum: "iletildi" });
+    expect(await new NesEntegratorAdapter().irsaliyeDurumSorgula(config, REF)).toEqual({ belgeRef: REF, durum: "iletildi", hamDurum: "EnvelopeHasBeenTransferredToReceiverSuccessfully" });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("NES'e ulaşılamazsa hata durumuna çevirmez, fırlatır", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ message: "Beklenmeyen sunucu hatası" }, 500)));
     await expect(new NesEntegratorAdapter().irsaliyeDurumSorgula(config, REF)).rejects.toThrow();
+  });
+
+  it("taslakta kalan irsaliyeyi kuyrukta sayar, NES'in ham durumunu taşır (EBLG-106)", async () => {
+    nes({ outgoingStatus: "Waiting", recordStatus: "Waiting", outgoingEnvelope: null });
+    expect(await new NesEntegratorAdapter().irsaliyeDurumSorgula(config, REF)).toEqual({ belgeRef: REF, durum: "kuyrukta", hamDurum: "Waiting" });
+  });
+
+  it("taslaktaki irsaliyenin gerekçesini işlem geçmişinin uyarılarından okur (EBLG-106)", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (adres: string) => {
+      if (adres.includes("/histories")) {
+        return yanit({ data: [
+          { createdAt: "2026-09-27T13:03:06+03:00", userName: "api", message: "Belge yüklendi", entryType: "Info" },
+          { createdAt: "2026-09-27T13:03:07+03:00", userName: "api", message: "Alıcı etiketi bulunamadı", entryType: "Warning" },
+        ] });
+      }
+      return yanit({ outgoingStatus: "Waiting", outgoingEnvelope: null });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await new NesEntegratorAdapter().irsaliyeDurumSorgula(config, REF)).toEqual({ belgeRef: REF, durum: "kuyrukta", hamDurum: "Waiting", detay: "Alıcı etiketi bulunamadı" });
+    expect(String(fetchMock.mock.calls[1][0])).toContain(`/edespatch/v1/outgoing/despatches/${REF}/histories?page=1&pageSize=100`);
+  });
+
+  it("işlem geçmişini eskiden yeniye sıralar", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(yanit({ data: [
+      { createdAt: "2026-09-27T13:05:00+03:00", message: "İkinci", entryType: "Info" },
+      { createdAt: "2026-09-27T13:03:00+03:00", userName: "portal", message: "Birinci", entryType: "Info" },
+      { createdAt: "2026-09-27T13:04:00+03:00", message: "" },
+    ] })));
+    expect(await new NesEntegratorAdapter().irsaliyeGecmisi(config, REF)).toEqual([
+      { zaman: "2026-09-27T13:03:00+03:00", kullanici: "portal", mesaj: "Birinci", tur: "Info" },
+      { zaman: "2026-09-27T13:05:00+03:00", kullanici: undefined, mesaj: "İkinci", tur: "Info" },
+    ]);
+  });
+
+  it("canlı e-İrsaliye kutu sorgusu edespatch ailesine gider; kayıtsız alıcıda boş döner", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(yanit({ aliases: [{ alias: "urn:mail:a@x" }, { alias: "urn:mail:b@y" }] })).mockResolvedValueOnce(yanit({ message: "Bulunamadı" }, 404));
+    vi.stubGlobal("fetch", fetchMock);
+    const nes = new NesEntegratorAdapter();
+    expect(await nes.irsaliyePostaKutulariSorgula(config, "1234567801")).toEqual(["urn:mail:a@x", "urn:mail:b@y"]);
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/edespatch/v1/users/1234567801/Pk");
+    expect(await nes.irsaliyePostaKutulariSorgula(config, "9999999999")).toEqual([]);
+  });
+
+  it("taslağa alıcı etiketini yazar, sonra taslağı gönderir (EBLG-106)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(yanit(""));
+    vi.stubGlobal("fetch", fetchMock);
+    await new NesEntegratorAdapter().irsaliyeTaslaginiGonder(config, REF, "urn:mail:defaultpki@ticari1as_edesp.com.tr");
+
+    const [[etiketAdresi, etiketIstegi], [gonderAdresi, gonderIstegi]] = fetchMock.mock.calls;
+    expect(String(etiketAdresi)).toContain(`/edespatch/v1/outgoing/despatches/${REF}/receiveralias`);
+    expect(etiketIstegi.method).toBe("PUT");
+    expect(JSON.parse(etiketIstegi.body)).toEqual({ uuid: REF, receiverAlias: "urn:mail:defaultpki@ticari1as_edesp.com.tr" });
+    expect(String(gonderAdresi)).toContain("/edespatch/v1/uploads/draft/send");
+    expect(JSON.parse(gonderIstegi.body)).toEqual([REF]);
+  });
+
+  it("etiket güncellenemezse taslağı göndermeye çalışmaz", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(yanit({ message: "Geçersiz etiket" }, 422));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(new NesEntegratorAdapter().irsaliyeTaslaginiGonder(config, REF, "urn:mail:yok@x")).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 
