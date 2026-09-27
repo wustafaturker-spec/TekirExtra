@@ -13,12 +13,20 @@ const belge = (degisiklik: Partial<EirsaliyeAdayi> = {}, cari: Partial<Eirsaliye
   soforAdi: "Ali",
   soforSoyadi: "Veli",
   plaka: "34ABC01",
+  dorsePlaka: null,
+  idisSevkiyatNo: null,
+  satirlar: [{ idisEtiketNo: null }],
   ...degisiklik,
 });
 
 const kodlar = (b: EirsaliyeAdayi) => gonderimEngelleri(b).map((e) => e.kod);
 
 describe("gonderimEngelleri (EBLG-42)", () => {
+  it("İDİS irsaliyesinde etiketi eksik satırı listede de engel sayar (GBZ…011)", () => {
+    const engeller = gonderimEngelleri(belge({ idisSevkiyatNo: "SE-1345840", satirlar: [{ idisEtiketNo: "CV0152457" }, { idisEtiketNo: null }] }));
+    expect(engeller).toEqual([{ kod: "idis", mesaj: "2. satırda İDİS etiket numarası girilmelidir" }]);
+  });
+
   it("eksiksiz belgede engel bulmaz", () => {
     expect(kodlar(belge())).toEqual([]);
   });
@@ -70,6 +78,7 @@ describe("plaka engelleri (şematron 14.09.2026 §3)", () => {
     cari: { vknTckn: "1234567890", adresler: [{ tip: "sevk", il: "Denizli", ilce: "Honaz", postaKodu: "20330" }] },
     tasiyiciCariId: null, tasiyiciCari: null,
     soforAdi: "Mehmet", soforSoyadi: "Öztürk", plaka: "34ABC123", dorsePlaka: null,
+    idisSevkiyatNo: null, satirlar: [],
   };
 
   it("geçerli plakada engel üretmez", () => {

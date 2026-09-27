@@ -57,10 +57,12 @@ export interface EirsaliyeAdayi {
   soforAdi: string | null;
   soforSoyadi: string | null;
   plaka: string | null;
-  dorsePlaka?: string | null;
+  // Zorunlu: isteğe bağlıyken giden listesi bu alanları seçmeyi unutmuş, İDİS ve
+  // dorse denetimi listede sessizce atlanmış, gönderimde patlamıştı (GBZ…011, 2026-09-27).
+  dorsePlaka: string | null;
   /** EBLG-72: doluysa belge IDISIRSALIYE profiliyle gider. */
-  idisSevkiyatNo?: string | null;
-  satirlar?: { idisEtiketNo?: string | null }[];
+  idisSevkiyatNo: string | null;
+  satirlar: { idisEtiketNo: string | null }[];
 }
 
 /** Şematron il, ilçe ve posta kodunun üçünü de dolu ister. */
@@ -168,7 +170,7 @@ export function gonderimEngelleri(belge: EirsaliyeAdayi): Engel[] {
   // kuraldan denetlenir (EBLG-72).
   for (const engel of idisEngelleri({
     sevkiyatNo: belge.idisSevkiyatNo,
-    satirlar: (belge.satirlar ?? []).map((satir, index) => ({ sira: index + 1, etiketNo: satir.idisEtiketNo })),
+    satirlar: belge.satirlar.map((satir, index) => ({ sira: index + 1, etiketNo: satir.idisEtiketNo })),
   })) {
     engeller.push({ kod: "idis", mesaj: engel.mesaj });
   }

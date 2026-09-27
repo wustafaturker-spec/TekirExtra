@@ -446,6 +446,10 @@ export class EirsaliyeService {
           soforAdi: true,
           soforSoyadi: true,
           plaka: true,
+          dorsePlaka: true,
+          idisSevkiyatNo: true,
+          // Gönderimdeki denetim satırları aynı sırayla görür; mesajdaki satır no tutar.
+          satirlar: { select: { idisEtiketNo: true } },
           genelToplam: true,
           teslimatAdres: true,
           teslimatIl: true,
