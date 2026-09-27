@@ -907,12 +907,15 @@ export default function FaturaSayfasi() {
     const yeniKur = dovizCinsi === "TRY" ? 1 : Number(kur);
     setSatirlar((eskiler) => eskiler.map((s) => ({ ...s, birimFiyat: fiyatCevir(s.birimFiyat, bekleyenCevrim.eskiKur, yeniKur) })));
     setBekleyenCevrim(null);
+    // Kaydetmede gösterilen "önce çevirin" uyarısı artık geçersiz.
+    setHata("");
   }
   function dovizDegisiminiGeriAl() {
     if (!bekleyenCevrim) return;
     setDovizCinsi(bekleyenCevrim.eskiDoviz);
     setKur(String(bekleyenCevrim.eskiKur || 1));
     setBekleyenCevrim(null);
+    setHata("");
   }
 
   async function satirGuncelle(index: number, alan: keyof FaturaSatir, deger: string | number) {
