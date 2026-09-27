@@ -143,7 +143,13 @@ export interface EntegratorAdapter {
    * taslak düzeltmede kutu bununla doğrulanır.
    */
   irsaliyePostaKutulariSorgula?(cfg: EntegratorConfig, vknTckn: string): Promise<string[]>;
-  gelenIrsaliyeleriCek?(cfg: EntegratorConfig, sonrasi: Date): Promise<GelenEirsaliye[]>;
+  /**
+   * `bilinenler`: elimizde olan belgelerin UUID'leri. Bunların XML'i yeniden
+   * indirilmez; entegratör liste satırında karar veriyorsa belge `xml: ""` ile
+   * yalnız karar için döner. Ortak test VKN'sinde günde yüzlerce belge düştüğü
+   * için örtüşen pencere böylece ucuz kalır.
+   */
+  gelenIrsaliyeleriCek?(cfg: EntegratorConfig, sonrasi: Date, bilinenler?: ReadonlySet<string>): Promise<GelenEirsaliye[]>;
   /**
    * EBLG-34: gelen faturaya entegratörde verilmiş kabul/ret kararı; karar
    * yoksa `null`. Yanıt göndermeden önce sorulur — belge portalda ya da aynı

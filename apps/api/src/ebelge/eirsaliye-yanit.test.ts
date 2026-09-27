@@ -21,6 +21,7 @@ describe("EirsaliyeService gelen yanıt (EBLG-34)", () => {
     // EBLG-87: firmanın kendi VKN'si; kendi gönderdiği sevkin gelen kopyasını ayırt eder.
     tenant: { findUnique: vi.fn().mockResolvedValue({ vkn: "1234567801" }) },
     gelenEirsaliye: {
+      findFirst: vi.fn().mockResolvedValue(null),
       findMany: vi.fn().mockResolvedValue([]),
       findUnique: vi.fn(),
       upsert: vi.fn().mockResolvedValue({}),
@@ -77,6 +78,26 @@ describe("EirsaliyeService gelen yanıt (EBLG-34)", () => {
 
     const kayitlar = tx.gelenEirsaliye.upsert.mock.calls.map((c) => [c[0].create.uuid, c[0].create.kendiSevkimiz]);
     expect(kayitlar).toEqual([["u1", false], ["u2", true]]);
+  });
+
+  it("pencereyi son gelen kaydından bir gün geriden açar, bilinen belgeyi yeniden yazmaz", async () => {
+    tx.gelenEirsaliye.findFirst.mockResolvedValueOnce({ createdAt: new Date("2026-09-26T10:00:00Z") });
+    tx.gelenEirsaliye.findMany.mockResolvedValueOnce([{ uuid: "u1" }]);
+    adapter.gelenIrsaliyeleriCek.mockResolvedValue([gelen("u1", { xml: "", yanit: { karar: "kabul" } }), gelen("u2")]);
+
+    const sonuc = await service.gelenleriCek();
+
+    const [, sonrasi, bilinenler] = adapter.gelenIrsaliyeleriCek.mock.calls[0];
+    expect(sonrasi).toEqual(new Date("2026-09-25T10:00:00Z"));
+    expect([...bilinenler]).toEqual(["u1"]);
+    expect(tx.gelenEirsaliye.upsert.mock.calls.map((c) => c[0].create.uuid)).toEqual(["u2"]);
+    expect(tx.gelenEirsaliye.updateMany).toHaveBeenCalledWith({ where: { tenantId: "t1-uuid", uuid: "u1", durum: "yeni" }, data: { durum: "kabul", yanitGerekcesi: null } });
+    expect(sonuc).toMatchObject({ toplam: 2, yeni: 1 });
+  });
+
+  it("entegratöre ulaşılamazsa anlamlı hata döner", async () => {
+    adapter.gelenIrsaliyeleriCek.mockRejectedValue(new TypeError("fetch failed"));
+    await expect(service.gelenleriCek()).rejects.toThrow(/gelen e-İrsaliyeler alınamadı: fetch failed/);
   });
 
   it("kendi sevkimize yanıt vermez (EBLG-87)", async () => {

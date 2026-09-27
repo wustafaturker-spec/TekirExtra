@@ -629,26 +629,51 @@ export class EirsaliyeService {
     return { denenen: kayitlar.length, basarili, basarisiz: kayitlar.length - basarili };
   }
 
+  /**
+   * Gelen e-İrsaliyeleri çeker. Pencere, kiracıya en son düşen gelen kaydından
+   * bir gün geriden başlar (kayıt yoksa `EBLG_ILK_GELEN_PENCERE_GUN`, 7 gün);
+   * eskiden her seferinde 30 gün istenirdi ve ortak test VKN'sinde (1234567802)
+   * istek 5 dakikayı aşıp tek işlemdeki toplu yazma zaman aşımına düşüyordu
+   * (2026-09-27). Bilinen belgelerin XML'i yeniden indirilmez; her belge kendi
+   * işleminde yazılır, yarıda kalan çekimde yazılanlar korunur.
+   */
   async gelenleriCek() {
     const { tenantId } = aktifBaglam();
-    const { cfg, adapter } = await this.prisma.tenantIslem(tenantId, (tx) => this.baglanti(tx, tenantId));
-    if (!adapter.gelenIrsaliyeleriCek) throw new BadRequestException("Entegratör gelen e-İrsaliye akışını desteklemiyor");
-    const gelen = await adapter.gelenIrsaliyeleriCek(cfg, new Date(Date.now() - 30 * 86400000));
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const mevcutlar = await tx.gelenEirsaliye.findMany({ where: { uuid: { in: gelen.map((g) => g.uuid) } }, select: { uuid: true } });
-      const mevcutUuid = new Set(mevcutlar.map((x) => x.uuid));
-      // EBLG-87: firmanın kendine gönderdiği belge (gümrükten depoya sevk) kendi
-      // kutusuna da düşer; yanıt istemez, bekleyenlere girmez.
+    const { cfg, adapter, sonrasi, bilinenler, kendiVkn } = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const { cfg, adapter } = await this.baglanti(tx, tenantId);
+      const son = await tx.gelenEirsaliye.findFirst({ orderBy: { createdAt: "desc" }, select: { createdAt: true } });
+      const sonrasi = son
+        ? new Date(son.createdAt.getTime() - 86_400_000)
+        : new Date(Date.now() - Number(process.env.EBLG_ILK_GELEN_PENCERE_GUN || 7) * 86_400_000);
+      // Pencerede entegratörde oluşan belge ancak ondan sonra çekilmiş olabilir.
+      const kayitlar = await tx.gelenEirsaliye.findMany({ where: { createdAt: { gte: sonrasi } }, select: { uuid: true } });
       const kendiVkn = (await tx.tenant.findUnique({ where: { id: tenantId }, select: { vkn: true } }))?.vkn;
-      await Promise.all(gelen.map((g) => {
-        const kendiSevkimiz = Boolean(kendiVkn) && g.gonderenVkn === kendiVkn;
-        const sevkTarihi = gelenSevkTarihi(g.xml, g.tarih);
-        return tx.gelenEirsaliye.upsert({ where: { tenantId_uuid: { tenantId, uuid: g.uuid } }, create: { tenantId, uuid: g.uuid, belgeNo: g.belgeNo, gonderenVkn: g.gonderenVkn, gonderenUnvan: g.gonderenUnvan, tarih: g.tarih, sevkTarihi, xmlIcerik: g.xml, kendiSevkimiz }, update: { belgeNo: g.belgeNo, gonderenVkn: g.gonderenVkn, gonderenUnvan: g.gonderenUnvan, tarih: g.tarih, sevkTarihi, xmlIcerik: g.xml, kendiSevkimiz } });
-      }));
-      // EBLG-34: portalda ya da başka bir yerde verilmiş karar yanıt bekleyen kayda yazılır; yerel kararın üzerine yazılmaz.
-      await Promise.all(gelen.filter((g) => g.yanit).map((g) => tx.gelenEirsaliye.updateMany({ where: { tenantId, uuid: g.uuid, durum: "yeni" }, data: { durum: g.yanit!.karar, yanitGerekcesi: g.yanit!.not ?? null } })));
-      return { toplam: gelen.length, yeni: gelen.filter((g) => !mevcutUuid.has(g.uuid)).length, kontrolTarihi: new Date().toISOString() };
+      return { cfg, adapter, sonrasi, bilinenler: new Set(kayitlar.map((k) => k.uuid)), kendiVkn };
     });
+    if (!adapter.gelenIrsaliyeleriCek) throw new BadRequestException("Entegratör gelen e-İrsaliye akışını desteklemiyor");
+    let gelen;
+    try {
+      gelen = await adapter.gelenIrsaliyeleriCek(cfg, sonrasi, bilinenler);
+    } catch (hata) {
+      throw new BadGatewayException(`Entegratörden gelen e-İrsaliyeler alınamadı: ${hata instanceof Error ? hata.message : String(hata)}`);
+    }
+    let yeni = 0;
+    for (const g of gelen) {
+      await this.prisma.tenantIslem(tenantId, async (tx) => {
+        if (!bilinenler.has(g.uuid)) {
+          // EBLG-87: firmanın kendine gönderdiği belge (gümrükten depoya sevk) kendi
+          // kutusuna da düşer; yanıt istemez, bekleyenlere girmez.
+          const kendiSevkimiz = Boolean(kendiVkn) && g.gonderenVkn === kendiVkn;
+          const sevkTarihi = gelenSevkTarihi(g.xml, g.tarih);
+          const veri = { belgeNo: g.belgeNo, gonderenVkn: g.gonderenVkn, gonderenUnvan: g.gonderenUnvan, tarih: g.tarih, sevkTarihi, xmlIcerik: g.xml, kendiSevkimiz };
+          await tx.gelenEirsaliye.upsert({ where: { tenantId_uuid: { tenantId, uuid: g.uuid } }, create: { tenantId, uuid: g.uuid, ...veri }, update: veri });
+          yeni += 1;
+        }
+        // EBLG-34: portalda ya da başka bir yerde verilmiş karar yanıt bekleyen kayda yazılır; yerel kararın üzerine yazılmaz.
+        if (g.yanit) await tx.gelenEirsaliye.updateMany({ where: { tenantId, uuid: g.uuid, durum: "yeni" }, data: { durum: g.yanit.karar, yanitGerekcesi: g.yanit.not ?? null } });
+      });
+    }
+    return { toplam: gelen.length, yeni, kontrolTarihi: new Date().toISOString() };
   }
 
   async gelenListele(durum?: GelenEirsaliyeDurum) { const { tenantId } = aktifBaglam(); return this.prisma.tenantIslem(tenantId, (tx) => tx.gelenEirsaliye.findMany({ where: durum ? { durum, ...(durum === "yeni" ? { kendiSevkimiz: false } : {}) } : undefined, select: { kendiSevkimiz: true, id: true, uuid: true, belgeNo: true, gonderenVkn: true, gonderenUnvan: true, tarih: true, sevkTarihi: true, durum: true, yanitRef: true, yanitBelgeNo: true, yanitGerekcesi: true, createdAt: true, updatedAt: true }, orderBy: [{ tarih: "desc" }, { createdAt: "desc" }] })); }

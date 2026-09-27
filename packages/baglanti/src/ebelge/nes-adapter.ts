@@ -1033,7 +1033,7 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
     await this.cagir(cfg, "edespatch", "/v1/uploads/draft/send", { metot: "POST", govde: [belgeRef] });
   }
 
-  async gelenIrsaliyeleriCek(cfg: EntegratorConfig, sonrasi: Date): Promise<GelenEirsaliye[]> {
+  async gelenIrsaliyeleriCek(cfg: EntegratorConfig, sonrasi: Date, bilinenler?: ReadonlySet<string>): Promise<GelenEirsaliye[]> {
     const hata = configDogrula(cfg);
     if (hata) throw new Error(hata);
     const bitis = new Date();
@@ -1052,7 +1052,10 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
       for (const satir of satirlar) {
         if (!satir.id || gorulen.has(satir.id)) continue;
         gorulen.add(satir.id);
-        const xml = await this.cagir<string>(cfg, "edespatch", `/v1/incoming/despatches/${encodeURIComponent(satir.id)}/xml`, {
+        const bilinen = bilinenler?.has(satir.id) ?? false;
+        // Bilinen belgede yalnız karar işe yarar; karar yoksa satır atlanır.
+        if (bilinen && !nesGelenYanit(satir)) continue;
+        const xml = bilinen ? "" : await this.cagir<string>(cfg, "edespatch", `/v1/incoming/despatches/${encodeURIComponent(satir.id)}/xml`, {
           metin: true,
         });
         // NES gelen irsaliyede göndereni `despatchSupplierParty` altında

@@ -124,6 +124,25 @@ describe("NesEntegratorAdapter e-İrsaliye durum sorgusu (EBLG-36)", () => {
     expect(await new NesEntegratorAdapter().irsaliyeDurumSorgula(config, REF)).toEqual({ belgeRef: REF, durum: "kuyrukta", hamDurum: "Waiting" });
   });
 
+  it("gelen taramada bilinen belgenin XML'ini indirmez, yalnız kararını döner", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (adres: string) => {
+      if (adres.includes("/incoming/despatches?")) {
+        return yanit({ data: [
+          { id: "bilinen-1", documentNumber: "A1", despatchAnswer: "AllAccepted" },
+          { id: "bilinen-2", documentNumber: "A2" },
+          { id: "yeni-1", documentNumber: "A3", despatchSupplierParty: { partyIdentification: "1234567801" } },
+        ] });
+      }
+      return yanit("<DespatchAdvice/>");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const sonuc = await new NesEntegratorAdapter().gelenIrsaliyeleriCek(config, new Date("2026-09-26"), new Set(["bilinen-1", "bilinen-2"]));
+
+    expect(sonuc.map((g) => [g.uuid, g.xml])).toEqual([["bilinen-1", ""], ["yeni-1", "<DespatchAdvice/>"]]);
+    expect(fetchMock.mock.calls.filter((c) => String(c[0]).endsWith("/xml")).map((c) => String(c[0]))).toEqual([expect.stringContaining("/incoming/despatches/yeni-1/xml")]);
+  });
+
   it("taslaktaki irsaliyenin gerekçesini işlem geçmişinin uyarılarından okur (EBLG-106)", async () => {
     const fetchMock = vi.fn().mockImplementation(async (adres: string) => {
       if (adres.includes("/histories")) {
