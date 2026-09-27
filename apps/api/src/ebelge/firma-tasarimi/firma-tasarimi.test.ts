@@ -94,6 +94,13 @@ describe("firmaTasarimiUret (EBLG-101)", () => {
     expect(x).toContain('<xsl:variable name="ist_metin" select="normalize-space(cbc:TaxExemptionReason)"/>');
   });
 
+  it("özel matrah faturasında KDV matrahı yerine özel matrahı basar (EBLG-111)", () => {
+    const x = firmaTasarimiUret("fatura", FIRMA);
+    expect(x).toContain("<xsl:when test=\"/*/cbc:InvoiceTypeCode='OZELMATRAH'\"><xsl:value-of select=\"sum(cac:TaxTotal/cac:TaxSubtotal[cac:TaxCategory/cac:TaxScheme/cbc:TaxTypeCode='0015']/cbc:TaxableAmount)\"/>");
+    expect(x).toContain("ÖZEL MATRAH (KDV MATRAHI)<i>SPECIAL VAT BASE</i>");
+    expect(x).toContain("<xsl:otherwise>Özel matrah</xsl:otherwise>");
+  });
+
   it("e-İrsaliyede şoför kimliğini, İDİS numaralarını ve yükleme yerini basar (EBLG-107)", () => {
     const x = firmaTasarimiUret("irsaliye", FIRMA);
     // GİB kılavuzu şoför TCKN'sini NationalityID'de taşır; maskeli basılır.

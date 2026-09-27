@@ -112,6 +112,20 @@ describe("faturaUblOku (EBLG-05 XML ayrıştırma)", () => {
     expect(ubl.sevk).toEqual({ tarih: "2026-07-20", saat: "09:30:00" });
   });
 
+  it("özel matrah faturasında KDV'nin hesaplandığı tutarı ayrıca okur (EBLG-111)", () => {
+    const xml = GELEN_UBL
+      .replace("<cbc:IssueDate>2026-07-20</cbc:IssueDate>", "<cbc:IssueDate>2026-07-20</cbc:IssueDate>\n  <cbc:InvoiceTypeCode>OZELMATRAH</cbc:InvoiceTypeCode>")
+      .replace(
+        '<cac:TaxTotal><cbc:TaxAmount currencyID="TRY">180.00</cbc:TaxAmount></cac:TaxTotal>',
+        '<cac:TaxTotal><cbc:TaxAmount currencyID="TRY">20.00</cbc:TaxAmount><cac:TaxSubtotal><cbc:TaxableAmount currencyID="TRY">100.00</cbc:TaxableAmount><cbc:TaxAmount currencyID="TRY">20.00</cbc:TaxAmount><cac:TaxCategory><cac:TaxScheme><cbc:TaxTypeCode>0015</cbc:TaxTypeCode></cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal></cac:TaxTotal>',
+      );
+
+    const { toplamlar } = faturaUblOku(xml);
+
+    expect(toplamlar).toMatchObject({ matrah: 900, ozelMatrah: 100, kdv: 20 });
+    expect(faturaUblOku(GELEN_UBL).toplamlar.ozelMatrah).toBeUndefined();
+  });
+
   it("sevk taşımayan teslimat bloğunu sevk sanmaz", () => {
     const xml = GELEN_UBL.replace(
       "<cbc:IssueDate>2026-07-20</cbc:IssueDate>",

@@ -77,7 +77,10 @@ export function ebelgeYedekPdfHtml(
   const kalemler: { etiket: string; deger: number; kalin?: boolean }[] = [
     { etiket: "Mal/Hizmet Toplamı", deger: f.toplamlar.satirToplami },
     ...(f.toplamlar.iskontoToplami > 0 ? [{ etiket: "İskonto", deger: -f.toplamlar.iskontoToplami }] : []),
-    { etiket: "KDV Matrahı", deger: f.toplamlar.matrah },
+    // EBLG-111: özel matrahta KDV satış bedelinden değil özel matrahtan hesaplanır.
+    f.toplamlar.ozelMatrah !== undefined
+      ? { etiket: "Özel Matrah (KDV Matrahı)", deger: f.toplamlar.ozelMatrah }
+      : { etiket: "KDV Matrahı", deger: f.toplamlar.matrah },
     { etiket: "Hesaplanan KDV", deger: f.toplamlar.kdv },
     { etiket: "Ödenecek Tutar", deger: f.toplamlar.genelToplam, kalin: true },
   ];

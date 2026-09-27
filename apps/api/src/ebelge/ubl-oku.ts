@@ -33,6 +33,11 @@ export interface UblToplamlar {
   satirToplami: number;
   iskontoToplami: number;
   matrah: number;
+  /**
+   * EBLG-111: özel matrah faturasında KDV'nin hesaplandığı tutar (KDV alt
+   * toplamının `TaxableAmount`'u); satış bedelinden (`matrah`) farklıdır.
+   */
+  ozelMatrah?: number;
   kdv: number;
   genelToplam: number;
 }
@@ -315,6 +320,7 @@ export function faturaUblOku(xml: string): UblFatura {
       satirToplami,
       iskontoToplami: sayi(parasal?.AllowanceTotalAmount),
       matrah,
+      ...(metin(fatura.InvoiceTypeCode) === "OZELMATRAH" && kdvBasligi ? { ozelMatrah: sayi(kdvBasligi.TaxableAmount) } : {}),
       kdv: kdvToplam,
       genelToplam: genelToplam || matrah + kdvToplam,
     },
