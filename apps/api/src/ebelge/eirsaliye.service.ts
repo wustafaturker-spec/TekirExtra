@@ -70,8 +70,13 @@ export class EirsaliyeService {
   ) {}
 
   /** Durum sonucunun kayda yazılan hâli. Açıklama yalnız dikkat gerektiren durumda tutulur. */
-  private durumVerisi(sonuc: { durum: string; detay?: string }) {
+  private durumVerisi(kayitId: string, sonuc: { durum: string; detay?: string; hamDurum?: string }) {
     const detay = sonuc.detay?.trim() || null;
+    // Bekleyen irsaliyenin entegratördeki gerçek aşaması loga düşer: tanınmayan
+    // ad da `kuyrukta` sayıldığından ekrandan ayırt edilemez.
+    if (sonuc.durum === "kuyrukta") {
+      this.logger.log(JSON.stringify({ event: "eirsaliye_kuyrukta", kayitId, hamDurum: sonuc.hamDurum ?? null }));
+    }
     return {
       durum: sonuc.durum as EirsaliyeDurum,
       hataMesaji: ["hata", "ret", "kismi_kabul"].includes(sonuc.durum) ? detay : null,
@@ -262,6 +267,8 @@ export class EirsaliyeService {
       }
       const xml = this.ubl({ ...belge, cari, teslimatAdresi, notlar, yuklemeAdresi: belge.gumrukDepoSevki ? irsaliyeYuklemeAdresi(belge) : undefined }, tenant);
       const sonuc = await adapter.irsaliyeGonder(cfg, { uuid: belge.id, belgeNo: belge.no, xml, aliciPostaKutusu });
+      // Seçilen kutu belgede saklanmaz; entegratörde farklı kutu görünürse iz buradadır.
+      this.logger.log(JSON.stringify({ event: "eirsaliye_gonderildi", tenantId, belgeNo: belge.no, aliciPostaKutusu: aliciPostaKutusu ?? null, basarili: sonuc.basarili }));
       // EBLG-85: etiketsiz giden belgeyi alıcı GİB'den alamaz; çıktısı verilir.
       // Hata mesajı açıkça `null` yazılır: `undefined` alanı Prisma güncellemez
       // ve başarılı yeniden gönderim önceki hatayı göstermeye devam ederdi.
@@ -290,7 +297,7 @@ export class EirsaliyeService {
         // Ulaşılamayan entegratör belgeyi hatalı yapmaz (EBLG-36); kullanıcıya söylenir.
         throw new BadGatewayException(`e-İrsaliye durumu sorgulanamadı: ${hata instanceof Error ? hata.message : String(hata)}`);
       }
-      return tx.eirsaliyeKayit.update({ where: { id: kayit.id }, data: this.durumVerisi(sonuc) });
+      return tx.eirsaliyeKayit.update({ where: { id: kayit.id }, data: this.durumVerisi(kayit.id, sonuc) });
     });
   }
 
@@ -324,7 +331,7 @@ export class EirsaliyeService {
     for (const kayit of hazirlik.kayitlar) {
       try {
         const sonuc = await hazirlik.adapter.irsaliyeDurumSorgula!(hazirlik.cfg, kayit.entegratorRef!);
-        await this.prisma.tenantIslem(tenantId, (tx) => tx.eirsaliyeKayit.update({ where: { id: kayit.id }, data: this.durumVerisi(sonuc) }));
+        await this.prisma.tenantIslem(tenantId, (tx) => tx.eirsaliyeKayit.update({ where: { id: kayit.id }, data: this.durumVerisi(kayit.id, sonuc) }));
         guncellenen += 1;
       } catch (hata) {
         atlanan += 1;

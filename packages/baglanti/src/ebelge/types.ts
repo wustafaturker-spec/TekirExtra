@@ -169,6 +169,11 @@ export interface BelgeDurumSonuc {
    * kez geldiğinde hata değil "zaten iptal" demek için gerekir.
    */
   iptalEdilmis?: boolean;
+  /**
+   * Sağlayıcının kendi durum adı. Tanınmayan ad `kuyrukta` sayıldığından
+   * belgenin gerçekte nerede beklediği yalnız bundan anlaşılır.
+   */
+  hamDurum?: string;
 }
 
 /**

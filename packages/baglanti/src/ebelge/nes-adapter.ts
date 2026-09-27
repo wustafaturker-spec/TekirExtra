@@ -986,7 +986,7 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
         if (karar) return { belgeRef, ...karar };
       }
     }
-    return { belgeRef, durum: zarf };
+    return { belgeRef, durum: zarf, hamDurum: irsaliye?.outgoingStatus };
   }
 
   async gelenIrsaliyeleriCek(cfg: EntegratorConfig, sonrasi: Date): Promise<GelenEirsaliye[]> {
