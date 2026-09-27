@@ -66,6 +66,19 @@ describe("firmaTasarimiUret (EBLG-101)", () => {
     expect(x).toContain("<xsl:when test=\"$k='3'\">");
   });
 
+  it("e-Arşivde gönderim şeklini ve internet satışı bilgilerini basar (EBLG-105)", () => {
+    const x = firmaTasarimiUret("fatura", FIRMA);
+    // Üçüncü sütun e-Arşivde ihracat şartı olmasa da açılır.
+    expect(x).toContain("cbc:Note[starts-with(normalize-space(.),'##SART:')] or $ihr_sart or $ea");
+    expect(x).toContain("cac:AdditionalDocumentReference[cbc:DocumentTypeCode='SEND_TYPE']");
+    for (const etiket of ["SATIŞ YERİ|SOLD ONLINE AT", "ÖDEME ŞEKLİ|PAYMENT METHOD", "ÖDEME TARİHİ|PAYMENT DATE", "TAŞIYICI|CARRIER", "GÖNDERİ TARİHİ|DISPATCH DATE"]) {
+      expect(x).toContain(`'${etiket}'`);
+    }
+    // İnternet satışında ödeme tarihi vade değildir; web adresi notu serbest notlarda tekrarlanmaz.
+    expect(x).toContain("/*/cac:PaymentMeans[not($ea_int) or cac:PayeeFinancialAccount]/cbc:PaymentDueDate");
+    expect(x.match(/\[not\(\$ea_int and starts-with\(normalize-space\(\.\),'İnternet satışı — '\)\)\]/g)).toHaveLength(7);
+  });
+
   it("yatay logoyu oranına göre genişletir, kare logoda düzeni değiştirmez (EBLG-104)", () => {
     // 300×105 PNG başlığı: IHDR'de en ve boy.
     const png = (en: number, boy: number) => {
