@@ -79,6 +79,16 @@ describe("firmaTasarimiUret (EBLG-101)", () => {
     expect(x.match(/\[not\(\$ea_int and starts-with\(normalize-space\(\.\),'İnternet satışı — '\)\)\]/g)).toHaveLength(7);
   });
 
+  it("e-İrsaliyede şoför kimliğini, İDİS numaralarını ve yükleme yerini basar (EBLG-107)", () => {
+    const x = firmaTasarimiUret("irsaliye", FIRMA);
+    // GİB kılavuzu şoför TCKN'sini NationalityID'de taşır; maskeli basılır.
+    expect(x).toContain("(cbc:NationalityID | cac:IdentityDocumentReference/cbc:ID)[normalize-space(.)!=''][1]\"> · TCKN ********");
+    expect(x).toContain("cbc:ID[@schemeID='SEVKIYATNO'][1]");
+    expect(x).toContain("cac:AdditionalItemIdentification/cbc:ID[@schemeID='ETIKETNO']");
+    expect(x).toContain("<xsl:when test=\"$k='IDISIRSALIYE'\">İDİS İRSALİYE</xsl:when>");
+    expect(x.match(/<xsl:call-template name="yukleme-yeri"\/>/g)).toHaveLength(2);
+  });
+
   it("yatay logoyu oranına göre genişletir, kare logoda düzeni değiştirmez (EBLG-104)", () => {
     // 300×105 PNG başlığı: IHDR'de en ve boy.
     const png = (en: number, boy: number) => {
