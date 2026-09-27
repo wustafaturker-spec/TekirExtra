@@ -17,6 +17,8 @@ export interface PostaKutusuSecimi {
   kuralSecimi?: string;
   elleSecilen: string | null;
   elleSecilenGecersiz: boolean;
+  /** EBLG-110: toplu listede olup entegratörün güncel listesinde olmayan kutular; seçilemez. */
+  entegratordeYok?: string[];
 }
 
 const BELGE_ADI = { efatura: "e-Fatura", eirsaliye: "e-İrsaliye" } as const;
@@ -61,7 +63,11 @@ export function PostaKutusuSecimleri({ cariId, secimler, duzenlenebilir, onDegis
               <Badge variant={elle ? "info" : "neutral"}>{elle ? "Elle seçildi" : "Otomatik"}</Badge>
             </div>
             {s.elleSecilenGecersiz && (
-              <Alert tone="warning">Elle seçilen {s.elleSecilen} kutusu artık alıcının GİB listesinde yok; otomatik seçime dönüldü.</Alert>
+              <Alert tone="warning">
+                {s.entegratordeYok?.includes(s.elleSecilen!)
+                  ? `Elle seçilen ${s.elleSecilen} kutusu entegratörün güncel listesinde yok; bu kutuya giden e-İrsaliye taslakta kalır. Gönderimde otomatik seçim kullanılır.`
+                  : `Elle seçilen ${s.elleSecilen} kutusu artık alıcının GİB listesinde yok; otomatik seçime dönüldü.`}
+              </Alert>
             )}
             {duzenlenebilir && (
               <Select
@@ -71,7 +77,10 @@ export function PostaKutusuSecimleri({ cariId, secimler, duzenlenebilir, onDegis
                 onChange={(e) => void sec(tur, e.target.value || null)}
               >
                 <option value="">Otomatik — {s.kuralSecimi ?? "seçilemedi"}</option>
-                {s.adaylar.map((a) => <option key={a.postaKutusu} value={a.postaKutusu}>{a.postaKutusu} · {tarih(a.kayitZamani)}</option>)}
+                {s.adaylar.map((a) => {
+                  const yok = s.entegratordeYok?.includes(a.postaKutusu) ?? false;
+                  return <option key={a.postaKutusu} value={a.postaKutusu} disabled={yok}>{a.postaKutusu} · {tarih(a.kayitZamani)}{yok ? " — entegratör listesinde yok" : ""}</option>;
+                })}
               </Select>
             )}
           </div>

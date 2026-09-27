@@ -35,7 +35,8 @@ import { EpostaService } from "../tenant/eposta.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { iptalCiftiMi, iptalEdilmisFaturalar } from "../fatura/iptal-cifti";
 import { cariEbelgeDurumlariniOku, cariEbelgeDurumuBul } from "../ebelge/cari-ebelge";
-import { kendiGbEtiketi, postaKutusuSecimi } from "../ebelge/posta-kutusu-secimi";
+import { canliIrsaliyeKutulari, kendiGbEtiketi, postaKutusuSecimi } from "../ebelge/posta-kutusu-secimi";
+import { BaglantilarService } from "../tenant/baglantilar.service";
 import {
   kacis,
   paraBicim,
@@ -60,6 +61,7 @@ export class CariService {
     private readonly pdf: PdfService,
     private readonly eposta: EpostaService,
     private readonly donemKilidi: DonemKilidiService,
+    private readonly baglantilar: BaglantilarService,
   ) {}
 
   async listele(arama?: string, imlec?: string, adet = 50, tip?: string, durum?: string, bakiye?: string) {
@@ -110,9 +112,16 @@ export class CariService {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const kendiEtiketimiz = await kendiGbEtiketi(tx, tenantId);
+      let eirsaliye = await postaKutusuSecimi(tx, vkn, "eirsaliye", cari.eirsaliyePostaKutusu, kendiEtiketimiz);
+      // EBLG-110: çok kutulu alıcıda kart gönderimle aynı kutuyu göstersin; gönderim
+      // entegratörün canlı listesinde olmayan kutuyu zaten değiştiriyor (EBLG-106).
+      if (eirsaliye.adaylar.length > 1) {
+        const canli = await canliIrsaliyeKutulari(tx, tenantId, (s) => this.baglantilar.adapterCoz(s), vkn);
+        if (canli) eirsaliye = await postaKutusuSecimi(tx, vkn, "eirsaliye", cari.eirsaliyePostaKutusu, kendiEtiketimiz, canli);
+      }
       return {
         efatura: await postaKutusuSecimi(tx, vkn, "efatura", cari.efaturaPostaKutusu, kendiEtiketimiz),
-        eirsaliye: await postaKutusuSecimi(tx, vkn, "eirsaliye", cari.eirsaliyePostaKutusu, kendiEtiketimiz),
+        eirsaliye,
       };
     });
   }
@@ -127,6 +136,12 @@ export class CariService {
       if (kutu) {
         const listede = cari.vknTckn && (await tx.gibMukellef.findFirst({ where: { vknTckn: cari.vknTckn.trim(), belgeTuru: girdi.belgeTuru, postaKutusu: kutu }, select: { vknTckn: true } }));
         if (!listede) throw new BadRequestException("Seçilen posta kutusu alıcının GİB listesinde yok");
+        if (girdi.belgeTuru === "eirsaliye") {
+          const canli = await canliIrsaliyeKutulari(tx, tenantId, (s) => this.baglantilar.adapterCoz(s), cari.vknTckn!.trim());
+          if (canli?.length && !canli.includes(kutu)) {
+            throw new BadRequestException("Seçilen posta kutusu entegratörün güncel listesinde yok; bu kutuya gönderilen e-İrsaliye taslakta kalır. Başka bir kutu seçin");
+          }
+        }
       }
       await tx.cariHesap.update({
         where: { id },
