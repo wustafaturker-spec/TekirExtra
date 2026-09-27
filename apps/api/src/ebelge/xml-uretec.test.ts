@@ -403,6 +403,41 @@ describe("belgeNoyuUbleYaz (EBLG-16 arşivi)", () => {
     expect(hizmet).not.toContain("RequiredCustomsID");
   });
 
+  it("ihracat satırına kap cinsini, numarasını ve adedini resmî örnekteki yerine yazar (EBLG-103)", () => {
+    const ubl = (kap: Record<string, unknown>) => faturaUblUret({
+      id: "55555555-5555-4555-8555-555555555556",
+      no: "TKR2026000000006",
+      tarih: new Date("2026-09-18T12:00:00Z"),
+      tip: "satis", senaryo: "istisna", efaturaProfili: "temel",
+      dovizCinsi: "TRY", kur: 1,
+      toplamKdv: 0, toplamMatrah: 100, toplamBrut: 100, genelToplam: 100,
+      toplamSatirIskontosu: 0, genelIskontoToplam: 0,
+      cari: {
+        vknTckn: null, unvan: "Muster GmbH",
+        adresler: [{ tip: "fatura", adres: null, il: "Berlin", ilce: "Mitte", postaKodu: null, ulke: "DE" }],
+      },
+      satirlar: [{
+        miktar: 1, matrah: 100, iskontoTutari: 0, kdvTutari: 0, kdvOrani: 0,
+        gibIstisnaKodu: null, birimFiyat: 100, birim: "adet", ...kap,
+        stok: { kod: "STK-9", ad: "Fındık", tip: "urun", gtipKodu: "080222100000", mensei: "TR" },
+      }],
+    } as never, { unvan: "Satıcı A.Ş.", vkn: "9876543210" }, {
+      tur: "efatura",
+      ihracat: { ulkeKodu: "DE", teslimTarihi: new Date("2026-09-20T00:00:00Z"), tasimaSekli: "3" },
+    });
+
+    const tam = ubl({ ihracatKapCinsi: "CN", ihracatKapNo: "UACU2451999", ihracatKapAdet: 1 });
+    expect(tam.replace(/\s+/g, "")).toContain(
+      "</cac:ShipmentStage><cac:TransportHandlingUnit><cac:ActualPackage><cbc:ID>UACU2451999</cbc:ID><cbc:Quantity>1</cbc:Quantity>"
+        + "<cbc:PackagingTypeCode>CN</cbc:PackagingTypeCode></cac:ActualPackage></cac:TransportHandlingUnit></cac:Shipment>",
+    );
+
+    // Numarasız kapta yalnız adet ve cins gider; cinssiz kap hiç yazılmaz.
+    const numarasiz = ubl({ ihracatKapCinsi: "BX", ihracatKapNo: null, ihracatKapAdet: 20 });
+    expect(numarasiz.replace(/\s+/g, "")).toContain("<cac:ActualPackage><cbc:Quantity>20</cbc:Quantity><cbc:PackagingTypeCode>BX</cbc:PackagingTypeCode>");
+    expect(ubl({ ihracatKapCinsi: null, ihracatKapAdet: 2 })).not.toContain("TransportHandlingUnit");
+  });
+
   it("yurt içi faturaya ihracat alanlarından hiçbirini karıştırmaz", () => {
     const xml = faturaUblUret({
       id: "66666666-6666-4666-8666-666666666666",

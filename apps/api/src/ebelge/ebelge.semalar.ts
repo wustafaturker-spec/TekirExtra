@@ -1,4 +1,4 @@
-import { IADE_REFERANS_UST_SINIRI, odemeSekliGecerliMi, SEVKIYAT_YONTEM_KODLARI, tasimaSekliGecerliMi, teslimSartiGecerliMi } from "@tekirextra/shared";
+import { AZAMI_KAP_ADEDI, IADE_REFERANS_UST_SINIRI, KAP_NO_UZUNLUGU, kapCinsiGecerliMi, odemeSekliGecerliMi, SEVKIYAT_YONTEM_KODLARI, tasimaSekliGecerliMi, teslimSartiGecerliMi } from "@tekirextra/shared";
 import { z } from "zod";
 
 /** EBLG-05: onay ekranından gelen satır → stok kartı eşleştirmeleri. */
@@ -45,6 +45,18 @@ export const ebelgeGonderSemasi = z.object({
       teslimTarihi: z.coerce.date().nullable().optional(),
       teslimSarti: z.string().refine(teslimSartiGecerliMi, "Tanımsız teslim şartı").nullable().optional(),
       tasimaSekli: z.string().refine(tasimaSekliGecerliMi, "Tanımsız taşıma şekli").nullable().optional(),
+      /** EBLG-103: kalem bazında kap bilgisi; listede olmayan satır olduğu gibi kalır. */
+      satirlar: z
+        .array(
+          z.object({
+            id: z.string().uuid(),
+            kapCinsi: z.string().refine(kapCinsiGecerliMi, "Tanımsız kap cinsi").nullable().optional(),
+            kapNo: z.string().trim().max(KAP_NO_UZUNLUGU, `Kap numarası en çok ${KAP_NO_UZUNLUGU} karakter olabilir`).nullable().optional(),
+            kapAdet: z.number().int("Kap adedi tam sayı olmalıdır").min(1, "Kap adedi en az 1 olmalıdır").max(AZAMI_KAP_ADEDI).nullable().optional(),
+          }),
+        )
+        .max(1000)
+        .optional(),
     })
     .optional(),
   /** EBLG-56: internet satışı işareti ve alan grubu; işaret kalkarsa alanlar temizlenir. */

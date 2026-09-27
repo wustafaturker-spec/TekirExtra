@@ -8,6 +8,7 @@
  */
 
 import { belgeAdresiSec } from "./adres";
+import { kapEksigiVarMi, type KalemKapBilgisi } from "./kap-cinsleri";
 import { ulkeKoduCoz, yurtDisiMi } from "./ulke";
 
 /**
@@ -172,7 +173,7 @@ export function yurtDisiEarsivEngelleri(ulkeKodu: string | undefined, satirlar: 
   return ihracatEngelleri(ulkeKodu, {}, satirlar).filter((e) => e.alan === "ulke" || e.alan === "kdv");
 }
 
-export interface IhracatSatirGirdi {
+export interface IhracatSatirGirdi extends KalemKapBilgisi {
   sira: number;
   stokAdi: string;
   stokTipi?: string | null;
@@ -188,7 +189,7 @@ export interface IhracatBilgisi {
 }
 
 export interface IhracatEngeli {
-  alan: "ulke" | "teslimTarihi" | "gtip" | "kdv" | "teslimSarti" | "tasimaSekli";
+  alan: "ulke" | "teslimTarihi" | "gtip" | "kdv" | "teslimSarti" | "tasimaSekli" | "kap";
   mesaj: string;
 }
 
@@ -230,6 +231,14 @@ export function ihracatEngelleri(
     engeller.push({
       alan: "kdv",
       mesaj: `İhracat KDV'den istisnadır; şu satırların KDV oranı sıfırlanmalıdır: ${kdvli.map((s) => `${s.sira}. ${s.stokAdi}`).join(", ")}`,
+    });
+  }
+
+  const kapsiz = satirlar.filter(kapEksigiVarMi);
+  if (kapsiz.length) {
+    engeller.push({
+      alan: "kap",
+      mesaj: `Kap numarası ya da adedi girilen şu satırlarda kap cinsi seçilmelidir: ${kapsiz.map((s) => `${s.sira}. ${s.stokAdi}`).join(", ")}`,
     });
   }
 

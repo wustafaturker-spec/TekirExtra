@@ -2283,6 +2283,11 @@ model FaturaSatir {
   ytbMakineAdi      String? @map("ytb_makine_adi")
   ytbMakineId       String? @map("ytb_makine_id")
   ytbMakineSiraNo   String? @map("ytb_makine_sira_no")
+  /// EBLG-103: ihracat faturasında kalemin kabı (cinsi UN/ECE Rec. 21 kodu,
+  /// numarası ve adedi); sihirbazda girilir, UBL'e ActualPackage olarak gider.
+  ihracatKapCinsi   String? @map("ihracat_kap_cinsi")
+  ihracatKapNo      String? @map("ihracat_kap_no")
+  ihracatKapAdet    Int?    @map("ihracat_kap_adet")
   projeId           String? @map("proje_id") @db.Uuid
   projeAltKirilimId String? @map("proje_alt_kirilim_id") @db.Uuid
 

@@ -89,6 +89,20 @@ describe("ihracatEngelleri", () => {
     const engeller = ihracatEngelleri("DE", { teslimTarihi: new Date(), teslimSarti: "XXX", tasimaSekli: "9" }, [satir()]);
     expect(engeller.map((e) => e.alan)).toEqual(["teslimSarti", "tasimaSekli"]);
   });
+
+  it("kap isteğe bağlıdır; numara ya da adet girilmişse kap cinsi ister (EBLG-103)", () => {
+    const bilgi = { teslimTarihi: new Date() };
+    expect(ihracatEngelleri("DE", bilgi, [satir(), satir({ sira: 2, kapCinsi: "BX", kapAdet: 3, kapNo: "K-1" })])).toEqual([]);
+    const engeller = ihracatEngelleri("DE", bilgi, [
+      satir({ sira: 1, kapAdet: 2 }),
+      satir({ sira: 2, stokAdi: "Koli", kapNo: "K-2", kapCinsi: "ZZZ" }),
+      satir({ sira: 3, kapCinsi: "PX" }),
+    ]);
+    expect(engeller.map((e) => e.alan)).toEqual(["kap"]);
+    expect(engeller[0]!.mesaj).toContain("1. Ürün, 2. Koli");
+    // e-Arşiv istisna yolunda kap bilgisi hiç aranmaz.
+    expect(yurtDisiEarsivEngelleri("DE", [satir({ kapAdet: 2 })])).toEqual([]);
+  });
 });
 
 describe("menseiUyarilari", () => {

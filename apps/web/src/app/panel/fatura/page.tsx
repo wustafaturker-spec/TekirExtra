@@ -13,7 +13,7 @@ import { FaturaEkPaneli } from "@/components/fatura-ek-paneli";
 import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
 import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
-import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
+import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, KAP_CINSLERI, kapEksigiVarMi, SIK_KAP_CINSLERI, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-alani";
 import { ebelgeGitmemisMi, ebelgeKullanilmiyor, faturaGecikmeUyarilari, type EbelgeUygulamalari } from "@tekirextra/shared";
 import {
@@ -250,6 +250,8 @@ interface EbelgeWizardBilgisi {
     teslimSarti?: string | null;
     tasimaSekli?: string | null;
     beyannameNo?: string | null;
+    /** EBLG-103: kap bilgisi kalem bazında girilir. */
+    satirlar: { id: string; sira: number; stokAdi: string; miktar: number; birim: string; kapCinsi: string | null; kapNo: string | null; kapAdet: number | null }[];
     engeller: { alan: string; mesaj: string }[];
     menseiEksikleri: { sira: number; stokAdi: string; mensei: string }[];
   };
@@ -360,6 +362,15 @@ const ODEME_DURUMLARI: Record<string, { baslik: string; renk: "info" | "success"
 const tl = (deger: string | number): string =>
   Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL";
 
+/** EBLG-103: sihirbazda kalem başına girilen kap bilgisi (alanlar metin olarak tutulur). */
+interface IhracatKapSatiri { id: string; kapCinsi: string; kapNo: string; kapAdet: string }
+
+/** Boş ya da geçersiz adet `null` olur; sunucu tam sayıyı ayrıca denetler. */
+const kapAdediSayisi = (metin: string): number | null => {
+  const sayi = Number(metin.trim());
+  return metin.trim() && Number.isInteger(sayi) && sayi > 0 ? sayi : null;
+};
+
 const KAYDEDILMEMIS_DEGISIKLIK_UYARISI = "Bu faturadaki kaydedilmemiş değişiklikler silinecek. Formdan ayrılmak istiyor musunuz?";
 
 // Taslak ya da e-belgesi oluşmamış kesin fatura düzenlenebilir (FTR-05); diğerleri salt okunur açılır.
@@ -451,7 +462,7 @@ export default function FaturaSayfasi() {
     bilgi: EbelgeWizardBilgisi;
     earsivSekli: "elektronik" | "kagit";
     sevkiyat: { yontem: SevkiyatYontemi | ""; irsaliyeIds: string[]; fiiliSevkZamani: string };
-    ihracat: { teslimTarihi: string; teslimSarti: string; tasimaSekli: string };
+    ihracat: { teslimTarihi: string; teslimSarti: string; tasimaSekli: string; satirlar: IhracatKapSatiri[] };
     internet: {
       isaretli: boolean;
       webAdresi: string;
@@ -1222,6 +1233,12 @@ export default function FaturaSayfasi() {
           teslimTarihi: bilgi.ihracat?.teslimTarihi?.slice(0, 10) ?? "",
           teslimSarti: bilgi.ihracat?.teslimSarti ?? "",
           tasimaSekli: bilgi.ihracat?.tasimaSekli ?? "",
+          satirlar: bilgi.ihracat?.satirlar.map((s) => ({
+            id: s.id,
+            kapCinsi: s.kapCinsi ?? "",
+            kapNo: s.kapNo ?? "",
+            kapAdet: s.kapAdet != null ? String(s.kapAdet) : "",
+          })) ?? [],
         },
         internet: {
           isaretli: bilgi.internetSatisi?.isaretli ?? false,
@@ -1296,6 +1313,12 @@ export default function FaturaSayfasi() {
                 teslimTarihi: w.ihracat.teslimTarihi || null,
                 teslimSarti: w.ihracat.teslimSarti || null,
                 tasimaSekli: w.ihracat.tasimaSekli || null,
+                satirlar: w.ihracat.satirlar.map((s) => ({
+                  id: s.id,
+                  kapCinsi: s.kapCinsi || null,
+                  kapNo: s.kapNo.trim() || null,
+                  kapAdet: kapAdediSayisi(s.kapAdet),
+                })),
               }
             : undefined,
           // İnternet satışı işareti her gönderimde yazılır; kutu kaldırıldıysa
@@ -1415,8 +1438,15 @@ export default function FaturaSayfasi() {
    * burada gevşetmek kuralı atlatmaz.
    */
   const ihracatEngelleri = ebelgeWizard?.bilgi.ihracat?.engeller.filter(
-    (engel) => !(engel.alan === "teslimTarihi" && ebelgeWizard.ihracat.teslimTarihi),
+    (engel) => !(engel.alan === "teslimTarihi" && ebelgeWizard.ihracat.teslimTarihi) && engel.alan !== "kap",
   ) ?? [];
+  /** Kap eksiği panelde girilen değerlerle yeniden hesaplanır; kural sunucudakiyle aynı işlevdir. */
+  const kapEksikSatirlari = ebelgeWizard?.bilgi.ihracat
+    ? ebelgeWizard.bilgi.ihracat.satirlar.filter((satir) => {
+        const girilen = ebelgeWizard.ihracat.satirlar.find((s) => s.id === satir.id);
+        return girilen && kapEksigiVarMi({ kapCinsi: girilen.kapCinsi, kapNo: girilen.kapNo, kapAdet: kapAdediSayisi(girilen.kapAdet) });
+      })
+    : [];
   /**
    * İnternet satışı eksikleri panelde girilen değerlerle yeniden hesaplanır —
    * kural sunucudakiyle aynı işlevden gelir. Gönderim kaydettikten sonra aynı
@@ -2436,6 +2466,60 @@ export default function FaturaSayfasi() {
                     {TASIMA_SEKILLERI.map((t) => <option key={t.kod} value={t.kod}>{t.ad}</option>)}
                   </Select>
                 </Field>
+                {ebelgeWizard.bilgi.ihracat.satirlar.length > 0 && (() => {
+                  const kapSatirlari = ebelgeWizard.ihracat.satirlar;
+                  const kapGuncelle = (id: string, degisiklik: Partial<IhracatKapSatiri>) => setEbelgeWizard({
+                    ...ebelgeWizard,
+                    ihracat: { ...ebelgeWizard.ihracat, satirlar: kapSatirlari.map((s) => (s.id === id ? { ...s, ...degisiklik } : s)) },
+                  });
+                  const ilkCins = kapSatirlari.find((s) => s.kapCinsi)?.kapCinsi ?? "";
+                  return (
+                    <Field label="Kap bilgisi (isteğe bağlı)">
+                      <small className="muted">
+                        Kalemin bulunduğu kabın cinsi, numarası ve adedi belgeye kalem bazında yazılır. Numara ya da adet giren satırda kap cinsi de seçilmelidir.
+                      </small>
+                      <div className="kap-listesi">
+                        {ebelgeWizard.bilgi.ihracat!.satirlar.map((satir) => {
+                          const girilen = kapSatirlari.find((s) => s.id === satir.id);
+                          if (!girilen) return null;
+                          return (
+                            <div className="kap-listesi__kalem" key={satir.id}>
+                              <strong>{satir.sira}. {satir.stokAdi}</strong> <small className="muted">· {satir.miktar.toLocaleString("tr-TR")} {satir.birim}</small>
+                              <div className="kap-listesi__alanlar">
+                                <Select aria-label={`${satir.sira}. satır kap cinsi`} value={girilen.kapCinsi} onChange={(e) => kapGuncelle(satir.id, { kapCinsi: e.target.value })}>
+                                  <option value="">Kap cinsi —</option>
+                                  <optgroup label="Sık kullanılanlar">
+                                    {SIK_KAP_CINSLERI.map((k) => <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>)}
+                                  </optgroup>
+                                  <optgroup label="Tüm kodlar (UN/ECE Rec. 21)">
+                                    {KAP_CINSLERI.map((k) => <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>)}
+                                  </optgroup>
+                                </Select>
+                                <Input aria-label={`${satir.sira}. satır kap numarası`} placeholder="Kap no" maxLength={35} value={girilen.kapNo} onChange={(e) => kapGuncelle(satir.id, { kapNo: e.target.value })} />
+                                <Input aria-label={`${satir.sira}. satır kap adedi`} placeholder="Adet" type="number" min={1} step={1} inputMode="numeric" value={girilen.kapAdet} onChange={(e) => kapGuncelle(satir.id, { kapAdet: e.target.value })} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {ilkCins && kapSatirlari.some((s) => s.kapCinsi !== ilkCins) && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEbelgeWizard({ ...ebelgeWizard, ihracat: { ...ebelgeWizard.ihracat, satirlar: kapSatirlari.map((s) => ({ ...s, kapCinsi: ilkCins })) } })}
+                        >
+                          Kap cinsini ({ilkCins}) tüm kalemlere uygula
+                        </Button>
+                      )}
+                    </Field>
+                  );
+                })()}
+                {kapEksikSatirlari.length > 0 && (
+                  <div className="approval-impact is-warning">
+                    Kap numarası ya da adedi girilen şu satırlarda kap cinsi seçilmelidir: {kapEksikSatirlari.map((s) => `${s.sira}. ${s.stokAdi}`).join(", ")}
+                  </div>
+                )}
                 {ihracatEngelleri.length > 0 && (
                   <div className="approval-impact is-warning">
                     <strong>Gönderimi engelleyen eksikler:</strong>

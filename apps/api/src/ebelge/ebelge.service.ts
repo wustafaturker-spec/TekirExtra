@@ -210,7 +210,12 @@ export class EbelgeService {
           cari: { include: { adresler: true } },
           satirlar: {
             select: {
+              id: true,
+              miktar: true,
               birim: true,
+              ihracatKapCinsi: true,
+              ihracatKapNo: true,
+              ihracatKapAdet: true,
               idisEtiketNo: true,
               sarjUniteSeriNo: true,
               kdvOrani: true,
@@ -384,6 +389,17 @@ export class EbelgeService {
               teslimSarti: fatura.ihracatTeslimSarti,
               tasimaSekli: fatura.ihracatTasimaSekli,
               beyannameNo: fatura.gumrukBeyannameNo,
+              // EBLG-103: kap bilgisi kalem bazında girilir.
+              satirlar: fatura.satirlar.map((satir, index) => ({
+                id: satir.id,
+                sira: index + 1,
+                stokAdi: satir.stok.ad,
+                miktar: Number(satir.miktar),
+                birim: satir.birim,
+                kapCinsi: satir.ihracatKapCinsi,
+                kapNo: satir.ihracatKapNo,
+                kapAdet: satir.ihracatKapAdet,
+              })),
               engeller: ihracat.engeller,
               menseiEksikleri: ihracat.menseiEksikleri,
             }
@@ -527,19 +543,36 @@ export class EbelgeService {
    */
   async ihracatBilgisiniKaydet(
     faturaId: string,
-    bilgi: { teslimTarihi?: Date | null; teslimSarti?: string | null; tasimaSekli?: string | null },
+    bilgi: {
+      teslimTarihi?: Date | null;
+      teslimSarti?: string | null;
+      tasimaSekli?: string | null;
+      satirlar?: { id: string; kapCinsi?: string | null; kapNo?: string | null; kapAdet?: number | null }[];
+    },
   ) {
     const { tenantId } = aktifBaglam();
-    await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.fatura.update({
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      await tx.fatura.update({
         where: { id: faturaId },
         data: {
           ihracatTeslimTarihi: bilgi.teslimTarihi ?? null,
           ihracatTeslimSarti: bilgi.teslimSarti ?? null,
           ihracatTasimaSekli: bilgi.tasimaSekli ?? null,
         },
-      }),
-    );
+      });
+      // EBLG-103: kap bilgisi kalem bazındadır; satır başka faturanınsa yazılmaz.
+      for (const satir of bilgi.satirlar ?? []) {
+        const sonuc = await tx.faturaSatir.updateMany({
+          where: { id: satir.id, faturaId },
+          data: {
+            ihracatKapCinsi: satir.kapCinsi || null,
+            ihracatKapNo: satir.kapNo?.trim() || null,
+            ihracatKapAdet: satir.kapAdet ?? null,
+          },
+        });
+        if (sonuc.count !== 1) throw new BadRequestException("Kap bilgisi girilen satır bu faturaya ait değil");
+      }
+    });
   }
 
   /**

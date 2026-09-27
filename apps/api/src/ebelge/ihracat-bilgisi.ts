@@ -29,6 +29,9 @@ export interface IhracatFaturaGirdisi {
   };
   satirlar: {
     kdvOrani: unknown;
+    ihracatKapCinsi?: string | null;
+    ihracatKapNo?: string | null;
+    ihracatKapAdet?: number | null;
     stok: { ad: string; tip?: string | null; gtipKodu?: string | null; mensei?: string | null };
   }[];
 }
@@ -63,6 +66,9 @@ export function ihracatOzeti(fatura: IhracatFaturaGirdisi, secenek: { efaturaAci
     gtipKodu: satir.stok.gtipKodu,
     mensei: satir.stok.mensei,
     kdvOrani: Number(satir.kdvOrani),
+    kapCinsi: satir.ihracatKapCinsi,
+    kapNo: satir.ihracatKapNo,
+    kapAdet: satir.ihracatKapAdet,
   }));
 
   // EBLG-80: hizmet satırı olan fatura ya da e-Fatura kullanmayan firma

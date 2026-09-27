@@ -645,11 +645,23 @@ export function faturaUblUret(
    * İhracatta teslimat satır düzeyinde bildirilir (GİB `IHRACAT.xml`): malın
    * teslim yeri, teslim şartı, GTİP (`RequiredCustomsID`) ve gönderilme şekli
    * aynı `cac:Delivery` altında toplanır. GTİP satırın stok kartından gelir,
-   * bu yüzden blok satır başına üretilir.
+   * kap (cinsi, numarası, adedi — EBLG-103) sihirbazda satıra girilir; bu
+   * yüzden blok satır başına üretilir.
    */
-  const ihracatSatirTeslimati = (gtip: string | undefined) => {
+  const ihracatSatirTeslimati = (gtip: string | undefined, satir: Pick<FaturaSatir, "ihracatKapCinsi" | "ihracatKapNo" | "ihracatKapAdet">) => {
     if (!ihracat) return "";
-    const gonderim = ihracat.tasimaSekli || gtip
+    const kapNo = satir.ihracatKapNo?.trim();
+    const kap = satir.ihracatKapCinsi
+      ? `
+        <cac:TransportHandlingUnit>
+          <cac:ActualPackage>${kapNo ? `
+            <cbc:ID>${escape(kapNo)}</cbc:ID>` : ""}${satir.ihracatKapAdet != null ? `
+            <cbc:Quantity>${satir.ihracatKapAdet}</cbc:Quantity>` : ""}
+            <cbc:PackagingTypeCode>${escape(satir.ihracatKapCinsi)}</cbc:PackagingTypeCode>
+          </cac:ActualPackage>
+        </cac:TransportHandlingUnit>`
+      : "";
+    const gonderim = ihracat.tasimaSekli || gtip || kap
       ? `
       <cac:Shipment>
         <cbc:ID>1</cbc:ID>${gtip ? `
@@ -658,7 +670,7 @@ export function faturaUblUret(
         </cac:GoodsItem>` : ""}${ihracat.tasimaSekli ? `
         <cac:ShipmentStage>
           <cbc:TransportModeCode>${escape(ihracat.tasimaSekli)}</cbc:TransportModeCode>
-        </cac:ShipmentStage>` : ""}
+        </cac:ShipmentStage>` : ""}${kap}
       </cac:Shipment>`
       : "";
     return `
@@ -881,7 +893,7 @@ ${tevkifatBlogu}
   <cac:InvoiceLine>
     <cbc:ID>${index + 1}</cbc:ID>
     <cbc:InvoicedQuantity unitCode="${birimUblKodu(s.birim)}">${s.miktar.toFixed(3)}</cbc:InvoicedQuantity>
-    <cbc:LineExtensionAmount currencyID="${fatura.dovizCinsi}">${s.matrah.toFixed(2)}</cbc:LineExtensionAmount>${ihracatSatirTeslimati(gtipNormalize(s.stok.gtipKodu))}
+    <cbc:LineExtensionAmount currencyID="${fatura.dovizCinsi}">${s.matrah.toFixed(2)}</cbc:LineExtensionAmount>${ihracatSatirTeslimati(gtipNormalize(s.stok.gtipKodu), s)}
     <cac:AllowanceCharge>
       <cbc:ChargeIndicator>false</cbc:ChargeIndicator>
       ${Number(s.iskontoOrani ?? 0) > 0 ? `<cbc:MultiplierFactorNumeric>${(Number(s.iskontoOrani) / 100).toFixed(4)}</cbc:MultiplierFactorNumeric>` : ""}
