@@ -1769,6 +1769,15 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 .document-lines .table td:last-child { padding-right: 0; }
 .document-lines .table .combobox { min-width: 0; }
 .document-line-col--product { width: auto; }
+/* SAT-14: eşleşme raporunun süzgeci tek satırda. */
+.despatch-report__filters { align-items: end; display: grid; gap: 0.8rem; grid-template-columns: 170px 170px minmax(220px, 1fr) auto; }
+@media (max-width: 760px) { .despatch-report__filters { grid-template-columns: 1fr; } }
+/* SAT-12: gelen e-İrsaliyeyi alış irsaliyesine işleme penceresi. */
+.despatch-match { width: min(900px, 100%); max-height: 92vh; display: flex; flex-direction: column; }
+.despatch-match__body { display: grid; gap: 0.8rem; overflow: auto; padding: 1rem 1.4rem; }
+.despatch-match__table td { vertical-align: top; }
+.despatch-match__table td small { display: block; margin-top: 0.2rem; }
+.despatch-match > footer { border-top: 1px solid var(--border); padding: 0.9rem 1.4rem; }
 /* FTR-30: faturada teslim yeri kendi satırında, tam genişlikte. */
 .invoice-delivery { border-top: 1px solid var(--border); display: grid; gap: 0.8rem; grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); padding-top: 0.8rem; }
 .invoice-delivery__title { font-size: 0.8rem; grid-column: 1 / -1; margin: 0; }

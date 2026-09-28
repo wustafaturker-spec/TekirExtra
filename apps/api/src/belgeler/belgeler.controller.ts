@@ -19,6 +19,8 @@ import {
   belgeDonusturSemasi,
   belgeGuncelleSemasi,
   belgeOlusturSemasi,
+  eslesmeRaporuSemasi,
+  gelenIrsaliyeIsleSemasi,
   irsaliyeBaglaSemasi,
   tasimaBilgisiSemasi,
   tedarikciBelgeNoSemasi,
@@ -57,6 +59,25 @@ export class BelgelerController {
   @Get("sevkiyat-bekleyen-faturalar")
   async sevkiyatBekleyenFaturalar(@Query("cariId") cariId?: string) {
     return this.belgelerService.sevkiyatBekleyenFaturalar(cariId);
+  }
+
+  /** SAT-14: faturası gelmemiş irsaliyeler, işlenmemiş e-İrsaliyeler, irsaliyesiz alış faturaları. */
+  @Get("irsaliye-fatura-eslesmesi")
+  async eslesmeRaporu(@Query() sorgu: unknown) {
+    return this.belgelerService.eslesmeRaporu(ayristir(eslesmeRaporuSemasi, sorgu));
+  }
+
+  /** SAT-12: gelen e-İrsaliyenin satırları ve stok kartı önerileri. */
+  @Get("gelen-eirsaliye/:id/eslesme")
+  async gelenEirsaliyeEslesmesi(@Param("id") id: string) {
+    return this.belgelerService.gelenEirsaliyeEslesmesi(id);
+  }
+
+  /** SAT-12: gelen e-İrsaliyeden onaylı alış irsaliyesi. */
+  @Post("gelen-eirsaliye/:id/alis-irsaliyesi")
+  @Roller("muhasebe")
+  async gelenEirsaliyedenAlisIrsaliyesi(@Param("id") id: string, @Body() govde: unknown) {
+    return this.belgelerService.gelenEirsaliyedenAlisIrsaliyesi(id, ayristir(gelenIrsaliyeIsleSemasi, govde));
   }
 
   /** FTR-26: irsaliyenin bağlanabileceği faturalar. */

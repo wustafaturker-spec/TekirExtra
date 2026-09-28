@@ -74,6 +74,22 @@ interface GelenSatir {
     | null;
 }
 
+type IrsaliyeEslesmeDurumu = "bulundu" | "baska_faturada" | "islenmemis_eirsaliye" | "yok";
+const IRSALIYE_ESLESME_METNI: Record<IrsaliyeEslesmeDurumu, string> = {
+  bulundu: "alış irsaliyesiyle eşleşti, bağlanacak",
+  baska_faturada: "eşleşen irsaliye başka bir faturaya bağlı",
+  islenmemis_eirsaliye: "e-İrsaliyesi geldi ama alış irsaliyesine işlenmemiş",
+  yok: "bizde bu numaralı irsaliye yok",
+};
+
+interface IrsaliyeBagi {
+  baglanan: { id: string; no: string | null; tedarikciNo: string }[];
+  bulunamayan: { no: string; durum: IrsaliyeEslesmeDurumu }[];
+  farklar: { mesaj: string }[];
+  gecikmeler: string[];
+  baglamaHatasi: string | null;
+}
+
 interface GelenDetay {
   id: string;
   uuid: string;
@@ -87,6 +103,8 @@ interface GelenDetay {
   yanitGerekce: string | null;
   faturaId: string | null;
   yanitGerekiyor: boolean;
+  /** SAT-13: faturada adı geçen irsaliyelerin bizdeki karşılığı; işlenince bağlanır. */
+  irsaliyeEslesmesi?: { no: string; durum: IrsaliyeEslesmeDurumu; irsaliyeNo: string | null }[];
   cari: { id: string; kod: string; unvan: string; karaListe: boolean } | null;
   dovizCinsi: string;
   belgeToplamlari: {
@@ -173,6 +191,8 @@ export default function GelenKutusuSayfasi() {
 
   // Yeni cari hesap onay kontrolü
   const [yeniCariOnay, setYeniCariOnay] = useState(false);
+  /** SAT-13: son işlemede irsaliyelerin bağlanma sonucu (uyarılar dahil). */
+  const [irsaliyeSonucu, setIrsaliyeSonucu] = useState<string[]>([]);
 
   const listeYukle = useCallback(async () => {
     try {
@@ -199,6 +219,7 @@ export default function GelenKutusuSayfasi() {
   const detayAc = useCallback(async (id: string) => {
     setHata("");
     setBasari("");
+    setIrsaliyeSonucu([]);
     setRetAcik(false);
     setRetGerekce("");
     setYeniCariOnay(false);
@@ -356,7 +377,7 @@ export default function GelenKutusuSayfasi() {
     setBasari("");
     setIslemde("onayla");
     try {
-      const s = await api<{ faturaId: string; toplamFarki: string | null }>(
+      const s = await api<{ faturaId: string; toplamFarki: string | null; irsaliyeBagi: IrsaliyeBagi | null }>(
         `/ebelge/gelen/${detay.id}/onayla`,
         {
           method: "POST",
@@ -369,6 +390,9 @@ export default function GelenKutusuSayfasi() {
           }),
         },
       );
+      await detayAc(detay.id);
+      await listeYukle();
+      // Detay yeniden yüklenince mesajlar temizlenir; sonuç ondan sonra yazılır.
       setBasari(
         `Taslak alış faturası oluşturuldu.${
           s.toplamFarki
@@ -376,8 +400,15 @@ export default function GelenKutusuSayfasi() {
             : ""
         }`,
       );
-      await detayAc(detay.id);
-      await listeYukle();
+      const b = s.irsaliyeBagi;
+      const sonuc = b ? [
+        ...(b.baglanan.length ? [`${b.baglanan.length} irsaliye faturaya bağlandı: ${b.baglanan.map((x) => `${x.tedarikciNo} → ${x.no ?? "alış irsaliyesi"}`).join(", ")}.`] : []),
+        ...b.bulunamayan.map((x) => `${x.no}: ${IRSALIYE_ESLESME_METNI[x.durum]}.`),
+        ...(b.baglamaHatasi ? [`İrsaliyeler bağlanamadı: ${b.baglamaHatasi}`] : []),
+        ...b.farklar.map((f) => `Fark — ${f.mesaj}`),
+        ...b.gecikmeler,
+      ] : [];
+      setIrsaliyeSonucu(sonuc);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Belge faturaya işlenemedi");
     } finally {
@@ -955,6 +986,25 @@ export default function GelenKutusuSayfasi() {
           </tbody>
         </TableWrap>
 
+        {(detay.irsaliyeEslesmesi?.length ?? 0) > 0 && detay.durum === "beklemede" && (
+          <div style={{ padding: "0.8rem 1.25rem 0" }}>
+            <strong style={{ fontSize: "0.85rem" }}>Faturada adı geçen irsaliyeler</strong>
+            <ul className="muted" style={{ margin: "0.3rem 0 0", paddingLeft: "1.1rem", fontSize: "0.85rem" }}>
+              {detay.irsaliyeEslesmesi!.map((i) => (
+                <li key={i.no}>
+                  <strong>{i.no}</strong>{i.irsaliyeNo ? ` (${i.irsaliyeNo})` : ""} — {IRSALIYE_ESLESME_METNI[i.durum]}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {irsaliyeSonucu.length > 0 && (
+          <div style={{ padding: "0.8rem 1.25rem 0" }}>
+            <Alert tone={irsaliyeSonucu.some((m) => !m.includes("faturaya bağlandı")) ? "warning" : "success"}>
+              {irsaliyeSonucu.map((m, i) => <div key={i}>{m}</div>)}
+            </Alert>
+          </div>
+        )}
         <div className="between" style={{ padding: "1rem 1.25rem" }}>
           <span className="muted" style={{ fontSize: "0.9rem" }}>
             {detay.durum === "islendi"

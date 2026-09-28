@@ -80,8 +80,8 @@ describe("irsaliyeUblOku (EBLG-33)", () => {
       notlar: ["Kırılacak eşya & dikkat"],
     });
     expect(r.satirlar).toEqual([
-      { sira: "1", stokKodu: "KBL-3", ad: "Kablo <3m>", miktar: "5", birim: "C62", birimAdi: "adet", aciklama: "" },
-      { sira: "2", stokKodu: "", ad: "Somun", miktar: "12.5", birim: "KGM", birimAdi: "kg", aciklama: "" },
+      { sira: "1", stokKodu: "KBL-3", ad: "Kablo <3m>", miktar: "5", birim: "C62", birimAdi: "adet", aciklama: "", saticiUrunKodu: "KBL-3", aliciUrunKodu: undefined, ureticiUrunKodu: undefined, barkod: undefined },
+      { sira: "2", stokKodu: "", ad: "Somun", miktar: "12.5", birim: "KGM", birimAdi: "kg", aciklama: "", saticiUrunKodu: undefined, aliciUrunKodu: undefined, ureticiUrunKodu: undefined, barkod: undefined },
     ]);
   });
 

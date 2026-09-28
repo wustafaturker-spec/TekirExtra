@@ -92,6 +92,17 @@ describe("faturaUblOku (EBLG-05 XML ayrıştırma)", () => {
     expect(s.barkod).toBe("8690000000017");
   });
 
+  it("faturanın dayandığı irsaliye numaralarını okur (SAT-13)", () => {
+    expect(faturaUblOku(GELEN_UBL).irsaliyeler).toEqual([]);
+    const xml = GELEN_UBL.replace(
+      "<cbc:IssueDate>2026-07-20</cbc:IssueDate>",
+      `<cbc:IssueDate>2026-07-20</cbc:IssueDate>
+  <cac:DespatchDocumentReference><cbc:ID>ABC2026000000012</cbc:ID><cbc:IssueDate>2026-07-18</cbc:IssueDate></cac:DespatchDocumentReference>
+  <cac:DespatchDocumentReference><cbc:ID>ABC2026000000013</cbc:ID></cac:DespatchDocumentReference>`,
+    );
+    expect(faturaUblOku(xml).irsaliyeler).toEqual([{ no: "ABC2026000000012", tarih: "2026-07-18" }, { no: "ABC2026000000013", tarih: undefined }]);
+  });
+
   it("UBL olmayan içerikte hata fırlatır", () => {
     expect(() => faturaUblOku("<Baska></Baska>")).toThrow(/Invoice kökü/);
   });

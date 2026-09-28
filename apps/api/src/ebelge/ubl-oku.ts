@@ -54,6 +54,11 @@ export interface UblFatura {
   notlar: string[];
   /** EBLG-76: irsaliye yerine geçen faturada fiili sevk anı. */
   sevk?: { tarih: string; saat?: string };
+  /**
+   * SAT-12: faturanın dayandığı irsaliyeler (`cac:DespatchDocumentReference`).
+   * Gelen faturayı işlerken alış irsaliyeleriyle bu numaralarla eşleşilir.
+   */
+  irsaliyeler: { no: string; tarih?: string }[];
   dovizCinsi: string;
   /** Dövizli belgede 1 döviz = kaç TL (`PricingExchangeRate`); TRY belgede yok. */
   kur?: number;
@@ -312,6 +317,9 @@ export function faturaUblOku(xml: string): UblFatura {
     vadeTarihi: vadeTarihi || undefined,
     notlar: metinListesi(fatura.Note),
     sevk: sevkTarihi ? { tarih: sevkTarihi, saat: metin(yol(sevkDugumu, "ActualDespatchTime")) || undefined } : undefined,
+    irsaliyeler: dizi(fatura.DespatchDocumentReference)
+      .map((r) => ({ no: metin(r.ID), tarih: metin(r.IssueDate) || undefined }))
+      .filter((r) => r.no),
     dovizCinsi: metin(fatura.DocumentCurrencyCode) || "TRY",
     kur: kurOku(fatura),
     gonderen: partyOku(yol(fatura, "AccountingSupplierParty", "Party")),

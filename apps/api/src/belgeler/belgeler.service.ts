@@ -37,9 +37,14 @@ import { ebelgeUygulamalariniOku } from "../ebelge/ebelge-uygulamalari.service";
 import { belgeSirasiAl } from "./belge-sayac";
 import { anaBirimMiktari, satirBirimleriniDogrula } from "../stok/birim-cevrim";
 import { teslimYeriniIrsaliyedenDoldur } from "../fatura/teslim-yeri";
+import { irsaliyeUblOku, type UblIrsaliye } from "../ebelge/eirsaliye-ubl-oku";
+import { tedarikciCariBulVeyaOlustur } from "../cari/tedarikci-cari";
+import { eslesmeRaporu, faturaIrsaliyeAdaylari, irsaliyeAlisFiyati, irsaliyeSatirOnerileri } from "./irsaliye-eslesme";
+import { belgeOlusturSemasi } from "./belgeler.semalar";
 import type {
   belgeGuncelleSemasi,
-  belgeOlusturSemasi,
+  eslesmeRaporuSemasi,
+  gelenIrsaliyeIsleSemasi,
   tasimaBilgisiSemasi,
   tedarikciBelgeNoSemasi,
   matbuBelgeNoSemasi,
@@ -1247,6 +1252,135 @@ export class BelgelerService {
       belgePdfHtml(belge, { ...firma, tema }),
     );
     return { buffer, dosyaAdi: `belge-${belge.no ?? "taslak"}.pdf` };
+  }
+
+  // ─── GELEN e-İRSALİYE → ALIŞ İRSALİYESİ (SAT-12/13/14) ──────────────────
+
+  /**
+   * SAT-12: gelen e-İrsaliyenin satırları ve stok kartı önerileri. Belgeden
+   * daha önce alış irsaliyesi oluşturulduysa o da döner.
+   */
+  async gelenEirsaliyeEslesmesi(gelenId: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kayit = await tx.gelenEirsaliye.findUnique({ where: { id: gelenId }, include: { alisIrsaliyesi: { select: { id: true, no: true, durum: true } } } });
+      if (!kayit) throw new NotFoundException("Gelen e-İrsaliye bulunamadı");
+      const cari = await tx.cariHesap.findFirst({ where: { tenantId, vknTckn: kayit.gonderenVkn }, select: { id: true, kod: true, unvan: true } });
+      let ubl: UblIrsaliye;
+      try { ubl = irsaliyeUblOku(kayit.xmlIcerik); } catch { throw new BadRequestException("Belgenin XML'i okunamadı"); }
+      return {
+        id: kayit.id, belgeNo: kayit.belgeNo, tarih: kayit.tarih.toISOString().slice(0, 10), gonderenUnvan: kayit.gonderenUnvan, gonderenVkn: kayit.gonderenVkn,
+        yanit: kayit.durum, kendiSevkimiz: kayit.kendiSevkimiz, cari, alisIrsaliyesi: kayit.alisIrsaliyesi,
+        satirlar: await irsaliyeSatirOnerileri(tx, tenantId, ubl.satirlar, cari?.id ?? null),
+      };
+    });
+  }
+
+  /**
+   * SAT-12: gelen e-İrsaliyeden onaylı alış irsaliyesi oluşturur. Tedarikçinin
+   * irsaliye numarası `tedarikciBelgeNo`'ya yazılır; fiyat tedarikçi/kart alış
+   * fiyatıdır. Reddedilen ya da firmanın kendi sevki olan belgeden oluşmaz.
+   */
+  async gelenEirsaliyedenAlisIrsaliyesi(gelenId: string, girdi: z.infer<typeof gelenIrsaliyeIsleSemasi>) {
+    const { tenantId } = aktifBaglam();
+    const hazirlik = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kayit = await tx.gelenEirsaliye.findUnique({ where: { id: gelenId }, include: { alisIrsaliyesi: { select: { no: true } } } });
+      if (!kayit) throw new NotFoundException("Gelen e-İrsaliye bulunamadı");
+      if (kayit.alisIrsaliyesi) throw new ConflictException(`Bu e-İrsaliyeden zaten alış irsaliyesi oluşturulmuş (${kayit.alisIrsaliyesi.no ?? "taslak"})`);
+      if (kayit.durum === "ret") throw new BadRequestException("Reddedilen e-İrsaliyeden alış irsaliyesi oluşturulmaz");
+      if (kayit.kendiSevkimiz) throw new BadRequestException("Firmanın kendi gönderdiği sevk irsaliyesidir; alış irsaliyesi zaten firmada düzenlenmiştir");
+      let ubl: UblIrsaliye;
+      try { ubl = irsaliyeUblOku(kayit.xmlIcerik); } catch { throw new BadRequestException("Belgenin XML'i okunamadı"); }
+      if (ubl.satirlar.length === 0) throw new BadRequestException("Belgede irsaliye satırı bulunamadı");
+      const eslesme = new Map(girdi.satirEslesmeleri.map((e) => [e.siraNo, e.stokId]));
+      const eksik = ubl.satirlar.map((s, i) => ({ sira: i + 1, ad: s.ad })).filter((s) => !eslesme.get(s.sira));
+      if (eksik.length > 0) throw new BadRequestException(`Şu satırlar bir stok kartıyla eşleştirilmedi: ${eksik.map((s) => `${s.sira}. ${s.ad}`).join(", ")}`);
+
+      const mevcutCari = await tx.cariHesap.findFirst({ where: { tenantId, vknTckn: kayit.gonderenVkn }, select: { id: true } });
+      if (!mevcutCari && !girdi.yeniCariOnay) {
+        throw new BadRequestException(`Gönderen firma (${kayit.gonderenUnvan} - VKN: ${kayit.gonderenVkn}) sisteminizde kayıtlı bir cari hesap değil. Lütfen yeni cari hesap açılmasını onaylayın.`);
+      }
+      const cariId = mevcutCari?.id ?? await tedarikciCariBulVeyaOlustur(tx, tenantId, kayit.gonderenVkn, kayit.gonderenUnvan);
+      const satirlar = [];
+      for (const [i, s] of ubl.satirlar.entries()) {
+        const stokId = eslesme.get(i + 1) as string;
+        const kart = await tx.stokKart.findUnique({ where: { id: stokId }, select: { anaBirim: true, kdvOrani: true } });
+        if (!kart) throw new BadRequestException(`${i + 1}. satırın stok kartı bulunamadı`);
+        satirlar.push({
+          stokId,
+          miktar: String(Number(s.miktar) || 0),
+          // Belgenin birimi (koli, kg…) kartta tanımlı olmalı; yoksa kaydetme söyler (STK-10).
+          birim: s.birimAdi || kart.anaBirim,
+          birimFiyat: await irsaliyeAlisFiyati(tx, stokId, cariId),
+          kdvOrani: kart.kdvOrani.toString(),
+        });
+      }
+      // Birimi kartta olmayan satır burada durur; işlem geri alınır, yeni cari de açılmamış olur.
+      await satirBirimleriniDogrula(tx, satirlar);
+      return { kayit, cariId, satirlar };
+    });
+
+    const { kayit } = hazirlik;
+    const belge = await this.olustur(belgeOlusturSemasi.parse({
+      tur: "irsaliye",
+      yon: "alis",
+      tarih: kayit.tarih.toISOString().slice(0, 10),
+      cariId: hazirlik.cariId,
+      tedarikciBelgeNo: kayit.belgeNo,
+      aciklama: `Gelen e-İrsaliye ${kayit.belgeNo} — ${kayit.gonderenUnvan}`,
+      satirlar: hazirlik.satirlar,
+    }));
+    try {
+      // Bağ onaydan önce kurulur: tekillik aynı belgeden ikinci irsaliyeyi durdurur.
+      await this.prisma.tenantIslem(tenantId, (tx) => tx.belge.update({ where: { id: belge.id }, data: { gelenEirsaliyeId: kayit.id, fiiliSevkZamani: kayit.sevkTarihi } }));
+    } catch (hata) {
+      await this.sil(belge.id).catch(() => undefined);
+      if (hata instanceof Prisma.PrismaClientKnownRequestError && hata.code === "P2002") throw new ConflictException("Bu e-İrsaliyeden başka bir işlemde alış irsaliyesi oluşturuldu");
+      throw hata;
+    }
+    try {
+      return await this.onayla(belge.id);
+    } catch (hata) {
+      await this.prisma.tenantIslem(tenantId, (tx) => tx.belge.update({ where: { id: belge.id }, data: { gelenEirsaliyeId: null } })).catch(() => undefined);
+      await this.sil(belge.id).catch(() => undefined);
+      throw hata;
+    }
+  }
+
+  /**
+   * SAT-13: gelen e-Faturadan oluşan alış faturasına, faturada adı geçen
+   * irsaliyeleri bağlar. Başka faturaya bağlı olan ya da bizde bulunmayan
+   * numaralar ve miktar/ürün farkları kullanıcıya dönülür; bağlama hatası
+   * faturanın oluşmasını engellemez.
+   */
+  async gelenFaturaIrsaliyeleriniBagla(faturaId: string, cariId: string, nolar: string[]) {
+    const { tenantId } = aktifBaglam();
+    const { eslesen, bulunamayan } = await this.prisma.tenantIslem(tenantId, (tx) => faturaIrsaliyeAdaylari(tx, tenantId, cariId, nolar));
+    const baskaFaturada = eslesen.filter((e) => e.faturaId && e.faturaId !== faturaId);
+    const baglanacak = eslesen.filter((e) => !e.faturaId);
+    let baglamaHatasi: string | null = null;
+    if (baglanacak.length > 0) {
+      try {
+        await this.irsaliyeBagla(faturaId, baglanacak.map((e) => e.id));
+      } catch (hata) {
+        baglamaHatasi = hata instanceof Error ? hata.message : "İrsaliyeler bağlanamadı";
+      }
+    }
+    const baglanan = baglamaHatasi ? [] : baglanacak;
+    const karsilastirma = baglanan.length > 0 ? await this.baglamaKarsilastir(faturaId, []) : { farklar: [], gecikmeler: [] };
+    return {
+      baglanan: baglanan.map((e) => ({ id: e.id, no: e.no, tedarikciNo: e.tedarikciNo })),
+      bulunamayan: [...bulunamayan, ...baskaFaturada.map((e) => ({ no: e.tedarikciNo, durum: "baska_faturada" as const }))],
+      farklar: karsilastirma.farklar,
+      gecikmeler: karsilastirma.gecikmeler,
+      baglamaHatasi,
+    };
+  }
+
+  /** SAT-14: eşleşmeyen alış irsaliyeleri, gelen e-İrsaliyeler ve faturalar. */
+  async eslesmeRaporu(suzgec: z.infer<typeof eslesmeRaporuSemasi>) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => eslesmeRaporu(tx, tenantId, suzgec, await this.irsaliyeFaturaGunSayisi(tx), bugunTR()));
   }
 
   // ─── YARDIMCILAR ─────────────────────────────────────────────────────────

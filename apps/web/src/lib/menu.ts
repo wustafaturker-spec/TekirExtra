@@ -117,6 +117,7 @@ export const MENU: MenuAlani[] = [
       { href: "/panel/satin-alma/talepler", ikon: ShoppingBag, baslik: "Satın Alma Talepleri", eslesme: "onek", esanlamlilar: ["talep", "onay", "teklif", "tedarikçi teklifi"] },
       { href: "/panel/belgeler?tur=siparis&yon=alis", ikon: ClipboardCheck, baslik: "Satın Alma Siparişleri", eslesme: "tam", esanlamlilar: ["sipariş", "tedarikçi siparişi", "mal kabul", "teslim bekleyen"] },
       { href: "/panel/fatura?yon=alis", ikon: FileText, baslik: "Alış Faturaları", eslesme: "tam", esanlamlilar: ["gelen fatura", "tedarikçi faturası"] },
+      { href: "/panel/satin-alma/irsaliye-eslesme", ikon: ClipboardCheck, baslik: "İrsaliye–Fatura Eşleşmesi", eslesme: "tam", esanlamlilar: ["faturası gelmemiş irsaliye", "gelen e-irsaliye", "irsaliyesiz fatura", "eşleşmeyen"] },
       { href: "/panel/masraflar", ikon: Receipt, baslik: "Masraflar", eslesme: "tam", esanlamlilar: ["gider", "fiş", "harcama"] },
       { href: "/panel/masraflar/kiralar", ikon: Building2, baslik: "Kira Sözleşmeleri", eslesme: "tam", esanlamlilar: ["kira", "stopaj"] },
       { href: "/panel/masraflar/raporlar", ikon: ChartColumn, baslik: "Masraf Raporları", eslesme: "tam" },

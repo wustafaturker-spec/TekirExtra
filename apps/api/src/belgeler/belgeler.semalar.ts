@@ -177,3 +177,16 @@ export const tedarikciBelgeNoSemasi = z.object({
 export const matbuBelgeNoSemasi = z.object({
   matbuBelgeNo: z.string().max(50).nullable(),
 });
+
+/** SAT-12: gelen e-İrsaliyeden alış irsaliyesi — her satırın stok kartı. */
+export const gelenIrsaliyeIsleSemasi = z.object({
+  satirEslesmeleri: z.array(z.object({ siraNo: z.number().int().min(1), stokId: z.string().uuid() })).min(1),
+  yeniCariOnay: z.boolean().optional(),
+});
+
+/** SAT-14: eşleşmeyen alış belgeleri raporu. */
+export const eslesmeRaporuSemasi = z.object({
+  baslangic: z.string().date("Geçersiz başlangıç tarihi"),
+  bitis: z.string().date("Geçersiz bitiş tarihi"),
+  cariId: z.string().uuid().optional(),
+});

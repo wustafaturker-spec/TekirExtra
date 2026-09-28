@@ -690,11 +690,11 @@ export class EirsaliyeService {
     return { toplam: gelen.length, yeni, kontrolTarihi: simdi.toISOString() };
   }
 
-  async gelenListele(durum?: GelenEirsaliyeDurum) { const { tenantId } = aktifBaglam(); return this.prisma.tenantIslem(tenantId, (tx) => tx.gelenEirsaliye.findMany({ where: durum ? { durum, ...(durum === "yeni" ? { kendiSevkimiz: false } : {}) } : undefined, select: { kendiSevkimiz: true, id: true, uuid: true, belgeNo: true, gonderenVkn: true, gonderenUnvan: true, tarih: true, sevkTarihi: true, durum: true, yanitRef: true, yanitBelgeNo: true, yanitGerekcesi: true, createdAt: true, updatedAt: true }, orderBy: [{ tarih: "desc" }, { createdAt: "desc" }] })); }
+  async gelenListele(durum?: GelenEirsaliyeDurum) { const { tenantId } = aktifBaglam(); return this.prisma.tenantIslem(tenantId, (tx) => tx.gelenEirsaliye.findMany({ where: durum ? { durum, ...(durum === "yeni" ? { kendiSevkimiz: false } : {}) } : undefined, select: { kendiSevkimiz: true, id: true, uuid: true, belgeNo: true, gonderenVkn: true, gonderenUnvan: true, tarih: true, sevkTarihi: true, durum: true, yanitRef: true, yanitBelgeNo: true, yanitGerekcesi: true, createdAt: true, updatedAt: true, alisIrsaliyesi: { select: { id: true, no: true } } }, orderBy: [{ tarih: "desc" }, { createdAt: "desc" }] })); }
 
   async gelenDetay(id: string) {
     const { tenantId } = aktifBaglam();
-    const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.gelenEirsaliye.findUnique({ where: { id } }));
+    const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.gelenEirsaliye.findUnique({ where: { id }, include: { alisIrsaliyesi: { select: { id: true, no: true } } } }));
     if (!kayit) throw new NotFoundException("Gelen e-İrsaliye bulunamadı");
     try {
       // Detay ekranı ve yedek PDF görünümü (EBLG-33) aynı okuyucuyu kullanır.

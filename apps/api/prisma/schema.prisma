@@ -3249,6 +3249,10 @@ model Belge {
   /// FTR-27: alış irsaliyesinde tedarikçinin kendi irsaliye numarası. `no`
   /// bizim iç seri numaramızdır (AIR…); giden e-İrsaliye serisinden alınmaz.
   tedarikciBelgeNo       String?          @map("tedarikci_belge_no")
+  /// SAT-12: alış irsaliyesi gelen e-İrsaliyeden oluşturulduysa kaynağı.
+  /// Tekildir: aynı e-İrsaliyeden ikinci irsaliye açılmaz.
+  gelenEirsaliyeId       String?          @unique @map("gelen_eirsaliye_id") @db.Uuid
+  gelenEirsaliye         GelenEirsaliye?  @relation(fields: [gelenEirsaliyeId], references: [id], onDelete: SetNull)
   /// EBLG-83: satış irsaliyesi e-İrsaliye düzenlenemeyen yere (firma ya da
   /// alıcı e-İrsaliye kullanıcısı değil) kesildiyse kâğıt irsaliyedir: iç
   /// seriden (KIR…) numaralanır, e-İrsaliye olarak gönderilmez.
@@ -3422,6 +3426,8 @@ model GelenEirsaliye {
   createdAt      DateTime            @default(now()) @map("created_at")
   updatedAt      DateTime            @updatedAt @map("updated_at")
   tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// SAT-12: bu e-İrsaliyeden oluşturulan alış irsaliyesi.
+  alisIrsaliyesi Belge?
 
   @@unique([tenantId, uuid])
   @@index([tenantId, durum, tarih])

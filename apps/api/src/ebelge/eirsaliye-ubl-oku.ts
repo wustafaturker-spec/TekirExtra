@@ -21,6 +21,11 @@ export interface UblIrsaliyeSatir {
   birim: string;
   birimAdi: string;
   aciklama: string;
+  /** SAT-12: stok kartıyla eşleştirme için ürün kimlikleri. */
+  saticiUrunKodu?: string;
+  aliciUrunKodu?: string;
+  ureticiUrunKodu?: string;
+  barkod?: string;
 }
 
 export interface UblIrsaliye {
@@ -168,6 +173,10 @@ export function irsaliyeUblOku(xml: string): UblIrsaliye {
         birim,
         birimAdi: birimAdi(birim),
         aciklama: metin(s.Note),
+        saticiUrunKodu: metin(yol(s, "Item", "SellersItemIdentification", "ID")) || undefined,
+        aliciUrunKodu: metin(yol(s, "Item", "BuyersItemIdentification", "ID")) || undefined,
+        ureticiUrunKodu: metin(yol(s, "Item", "ManufacturersItemIdentification", "ID")) || undefined,
+        barkod: metin(yol(s, "Item", "StandardItemIdentification", "ID")) || undefined,
       };
     }),
   };

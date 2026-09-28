@@ -1,3 +1,6 @@
+import { stokKartiBul } from "./stok-eslesme";
+import { faturaIrsaliyeAdaylari } from "../belgeler/irsaliye-eslesme";
+import { tedarikciCariBulVeyaOlustur } from "../cari/tedarikci-cari";
 import {
   BadGatewayException,
   BadRequestException,
@@ -1725,9 +1728,21 @@ export class EbelgeService {
 
     const satirlar = await this.eslesmeOner(tenantId, ubl.satirlar, cari?.id ?? null);
 
+    // SAT-13: faturada adı geçen irsaliyelerin bizdeki karşılığı (işlerken bağlanır).
+    const irsaliyeEslesmesi = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const nolar = ubl.irsaliyeler.map((i) => i.no);
+      if (!cari) return nolar.map((no) => ({ no, durum: "yok" as const, irsaliyeNo: null }));
+      const { eslesen, bulunamayan } = await faturaIrsaliyeAdaylari(tx, tenantId, cari.id, nolar);
+      return [
+        ...eslesen.map((e) => ({ no: e.tedarikciNo, durum: e.faturaId && e.faturaId !== kayit.faturaId ? "baska_faturada" as const : "bulundu" as const, irsaliyeNo: e.no })),
+        ...bulunamayan.map((b) => ({ no: b.no, durum: b.durum, irsaliyeNo: null })),
+      ];
+    });
+
     return {
       id: kayit.id,
       uuid: kayit.uuid,
+      irsaliyeEslesmesi,
       belgeNo: kayit.belgeNo,
       gonderenVkn: kayit.gonderenVkn,
       gonderenUnvan: kayit.gonderenUnvan,
@@ -1864,9 +1879,19 @@ export class EbelgeService {
       throw hata;
     }
 
+    // SAT-13: faturada adı geçen irsaliyeler (DespatchDocumentReference)
+    // bizdeki alış irsaliyelerine bağlanır; sorun faturayı geri almaz, söylenir.
+    const irsaliyeBagi = ubl.irsaliyeler.length > 0
+      ? await this.belgeler.gelenFaturaIrsaliyeleriniBagla(fatura.id, cariId, ubl.irsaliyeler.map((i) => i.no)).catch((hata: unknown) => ({
+          baglanan: [], bulunamayan: [], farklar: [], gecikmeler: [], baglamaHatasi: hata instanceof Error ? hata.message : "İrsaliyeler bağlanamadı",
+        }))
+      : null;
+
     return {
       gelenEbelgeId: id,
       faturaId: fatura.id,
+      irsaliyeNolari: ubl.irsaliyeler.map((i) => i.no),
+      irsaliyeBagi,
       belgeToplami: ubl.toplamlar.genelToplam.toFixed(2),
       hesaplananToplam: fatura.genelToplam,
       /** Belge ile hesaplanan toplam tutmuyorsa kullanıcıya gösterilir. */
@@ -2266,76 +2291,7 @@ export class EbelgeService {
       const sonuc = [];
 
       for (const s of satirlar) {
-        let stokId: string | null = null;
-        let kaynak: EslesmeKaynagi = null;
-
-        if (s.aliciUrunKodu) {
-          const k = await tx.stokKart.findFirst({
-            where: { tenantId, kod: s.aliciUrunKodu, aktif: true },
-            select: { id: true },
-          });
-          if (k) {
-            stokId = k.id;
-            kaynak = "alici_urun_kodu";
-          }
-        }
-
-        if (!stokId && s.barkod) {
-          const barkodKaydi = await tx.stokBarkod.findFirst({
-            where: { tenantId, barkod: s.barkod },
-            select: { stokId: true },
-          });
-          if (barkodKaydi) {
-            stokId = barkodKaydi.stokId;
-            kaynak = "barkod";
-          } else {
-            const k = await tx.stokKart.findFirst({
-              where: { tenantId, barkod: s.barkod, aktif: true },
-              select: { id: true },
-            });
-            if (k) {
-              stokId = k.id;
-              kaynak = "barkod";
-            }
-          }
-        }
-
-        if (!stokId && s.saticiUrunKodu) {
-          const ted = await tx.stokTedarikci.findFirst({
-            where: {
-              tenantId,
-              tedarikciUrunKodu: s.saticiUrunKodu,
-              ...(cariId ? { cariId } : {}),
-            },
-            select: { stokId: true },
-          });
-          if (ted) {
-            stokId = ted.stokId;
-            kaynak = "tedarikci_urun_kodu";
-          }
-        }
-
-        if (!stokId && s.ureticiUrunKodu) {
-          const k = await tx.stokKart.findFirst({
-            where: { tenantId, ureticiUrunKodu: s.ureticiUrunKodu, aktif: true },
-            select: { id: true },
-          });
-          if (k) {
-            stokId = k.id;
-            kaynak = "uretici_urun_kodu";
-          }
-        }
-
-        if (!stokId && s.ad) {
-          const k = await tx.stokKart.findFirst({
-            where: { tenantId, ad: { equals: s.ad, mode: "insensitive" }, aktif: true },
-            select: { id: true },
-          });
-          if (k) {
-            stokId = k.id;
-            kaynak = "ad";
-          }
-        }
+        const { stokId, kaynak } = await stokKartiBul(tx, tenantId, s, cariId);
 
         const stok = stokId
           ? await tx.stokKart.findUnique({
@@ -2383,30 +2339,7 @@ export class EbelgeService {
     vkn: string,
     unvan: string,
   ): Promise<string> {
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const mevcut = await tx.cariHesap.findFirst({
-        where: { tenantId, vknTckn: vkn },
-        select: { id: true },
-      });
-      if (mevcut) return mevcut.id;
-
-      // Kod çakışabilir (aynı VKN'li kayıt silinip yeniden açılmışsa vb.)
-      let kod = `TED-${vkn}`;
-      let sayac = 1;
-      while (
-        await tx.cariHesap.findUnique({
-          where: { tenantId_kod: { tenantId, kod } },
-          select: { id: true },
-        })
-      ) {
-        kod = `TED-${vkn}-${++sayac}`;
-      }
-
-      const yeni = await tx.cariHesap.create({
-        data: { tenantId, kod, unvan, vknTckn: vkn, tip: "tedarikci" },
-      });
-      return yeni.id;
-    });
+    return this.prisma.tenantIslem(tenantId, (tx) => tedarikciCariBulVeyaOlustur(tx, tenantId, vkn, unvan));
   }
 
   /**
