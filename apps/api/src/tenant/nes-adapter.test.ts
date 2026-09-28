@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NesEntegratorAdapter, nesBelgeDurumu, tekDosyaZipBase64, type EntegratorConfig } from "@tekirextra/baglanti";
+import { NesEntegratorAdapter, nesBelgeDurumu, nesFaturaDurumu, tekDosyaZipBase64, type EntegratorConfig } from "@tekirextra/baglanti";
 
 const config: EntegratorConfig = {
   saglayici: "nes",
@@ -373,6 +373,7 @@ describe("NesEntegratorAdapter", () => {
       belgeRef: "belge-1",
       durum: "ret",
       detay: "Sipariş edilmeyen ürün",
+      hamDurum: "EnvelopeHasBeenTransferredToReceiverSuccessfully",
     });
   });
 
@@ -382,6 +383,15 @@ describe("NesEntegratorAdapter", () => {
     expect(nesBelgeDurumu(undefined, undefined)).toBe("kuyrukta");
     expect(nesBelgeDurumu("XmlParseError", "None")).toBe("hata");
     expect(nesBelgeDurumu("EnvelopeSystemResponseIsBeingWaitedFromReceiver", "Waiting")).toBe("iletildi");
+  });
+
+  it("faturada GİB'in alıcıya teslimini bekleyen zarfı (1200) iletildi sayar, irsaliyede kuyrukta bırakır (EBLG-112)", () => {
+    // Canlı karşılığı: K072026000000101 ihracat faturası GTB'ye teslim beklerken
+    // bir gün kuyrukta göründü; GİB denetiminden geçmiş belge bu değil.
+    expect(nesFaturaDurumu("EnvelopeIsWaitingToBeSendedToReceiverByGib", "None")).toBe("iletildi");
+    expect(nesBelgeDurumu("EnvelopeIsWaitingToBeSendedToReceiverByGib")).toBe("kuyrukta");
+    expect(nesFaturaDurumu("EnvelopeIsWaitingToBeProcessedByGib", "None")).toBe("kuyrukta");
+    expect(nesFaturaDurumu("EnvelopeIsWaitingToBeSendedToReceiverByGib", "Rejected")).toBe("ret");
   });
 
   it("çok etiketli mükellefte kendi entegratörümüzdeki varsayılan kutuyu seçer", async () => {

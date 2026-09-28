@@ -2326,6 +2326,9 @@ model EbelgeKayit {
   /// Zarf durumunun en son sorgulandığı an; aynı zarf 2 saat dolmadan tekrar
   /// sorgulanmaz (EBLG-14).
   sonDurumSorguAt  DateTime?   @map("son_durum_sorgu_at")
+  /// Entegratörün ham durum adı. `iletildi` temel faturanın GİB'de alıcıya
+  /// teslimi bekleyip beklemediği (NES 1200) yalnız bundan anlaşılır.
+  entegratorDurumu String?     @map("entegrator_durumu")
   /// Alıcının bizim kestiğimiz ticari faturaya verdiği yanıt (EBLG-13).
   aliciYaniti      AliciYanit? @map("alici_yaniti")
   aliciYanitZamani DateTime?   @map("alici_yanit_zamani")

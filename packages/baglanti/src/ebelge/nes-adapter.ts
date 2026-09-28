@@ -259,6 +259,20 @@ export function nesBelgeDurumu(gidenDurum?: string, yanit?: string): BelgeDurum 
 }
 
 /**
+ * GİB zarfı işledi (1200 "ZARF BAŞARIYLA İŞLENDİ"), alıcıya teslimi bekliyor.
+ * Belge GİB denetiminden geçmiştir; faturada `iletildi` sayılır. Teslimde
+ * hata çıkabileceği için sorgu sürer (bkz. `faturaSorguKosulu`). İrsaliye
+ * bu aşamayı `kuyrukta` + ham adla gösterir (EBLG-106), ona dokunulmaz.
+ */
+export const NES_GIB_ALICIYA_ILETIYOR = "EnvelopeIsWaitingToBeSendedToReceiverByGib";
+
+/** Giden faturanın durumu: irsaliyeden tek farkı 1200'ün `iletildi` sayılması. */
+export function nesFaturaDurumu(gidenDurum?: string, yanit?: string): BelgeDurum {
+  const durum = nesBelgeDurumu(gidenDurum, yanit);
+  return durum === "kuyrukta" && gidenDurum === NES_GIB_ALICIYA_ILETIYOR ? "iletildi" : durum;
+}
+
+/**
  * Yükleme çok parçalı gövde ister. UBL-TR üretimi ebelge modülünde bittiği
  * için adaptör XML'e dokunmaz, yalnızca zarflar (EBLG-03).
  *
@@ -757,10 +771,11 @@ export class NesEntegratorAdapter implements EntegratorAdapter {
       outgoingEnvelope?: { description?: string };
       incomingAnswer?: { answerNote?: string; errorDescription?: string };
     }>(cfg, "einvoice", `/v1/outgoing/invoices/${encodeURIComponent(belgeRef)}`);
-    const durum = nesBelgeDurumu(fatura?.outgoingStatus, fatura?.documentAnswer);
+    const durum = nesFaturaDurumu(fatura?.outgoingStatus, fatura?.documentAnswer);
     return {
       belgeRef,
       durum,
+      hamDurum: fatura?.outgoingStatus,
       // Retteki açıklama alıcının notu olarak saklanır; not yoksa zarf
       // açıklamasına ("BASARIYLA TAMAMLANDI") düşülürse ret gerekçesi diye
       // o görünür.

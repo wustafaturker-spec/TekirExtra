@@ -1242,10 +1242,16 @@ export class EbelgeService {
     kayit: { id: string; faturaId: string; durum: string; aliciYanitNotu: string | null },
     sonuc: BelgeDurumSonuc,
   ) {
+    // Tanınmayan sağlayıcı durumu `kuyrukta` sayılır; belgenin gerçekte nerede
+    // beklediği (ör. NES taslağı) yalnız ham addan anlaşılır.
+    if (sonuc.durum === "kuyrukta") {
+      this.logger.log(JSON.stringify({ event: "ebelge_kuyrukta", faturaId: kayit.faturaId, hamDurum: sonuc.hamDurum ?? null, detay: sonuc.detay ?? null }));
+    }
     const guncel = await tx.ebelgeKayit.update({
       where: { id: kayit.id },
       data: {
         durum: sonuc.iptalEdilmis ? "iptal" : sonuc.durum,
+        entegratorDurumu: sonuc.hamDurum ?? null,
         ...durumAciklamasi(sonuc, kayit.aliciYanitNotu),
         sonDurumSorguAt: new Date(),
       },

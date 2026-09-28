@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { NES_GIB_ALICIYA_ILETIYOR } from "@tekirextra/baglanti";
 
 /**
  * Aynı zarf bu süre dolmadan yeniden sorgulanmaz (EBLG-14). Sağlayıcı kılavuzu
@@ -36,6 +37,9 @@ export function faturaSorguSureleriniOku(ayarlar: Record<string, unknown>): Fatu
  * - `kuyrukta` (referanslı) belge GİB sonucu gelene kadar sorulur;
  * - temel e-Fatura `iletildi` olunca durur: alıcının yanıtı yoktur, öğrenilecek
  *   başka durum kalmaz;
+ * - GİB'in alıcıya teslimini bekleyen (NES 1200) e-Fatura `iletildi` sayılır
+ *   ama teslimde hata çıkabilir; profilden bağımsız, ticari yanıt süresince
+ *   sorulur (EBLG-112);
  * - ticari e-Fatura alıcı yanıtı için gönderimden itibaren `efaturaYanitGunSayisi`
  *   gün sorulur (mevzuat 8 gün, 2 gün teslim payı); geç yanıtı gelen tarama okur;
  * - e-Arşiv, iptal edilebildiği sürece sorulur ki entegratör tarafındaki iptal
@@ -56,6 +60,12 @@ export function faturaSorguKosulu(tenantId: string, simdi: number, sureler: Fatu
             durum: "iletildi",
             tur: "efatura",
             fatura: { efaturaProfili: "ticari" },
+            createdAt: { gte: new Date(simdi - sureler.efaturaYanitGunSayisi * GUN_MS) },
+          },
+          {
+            durum: "iletildi",
+            tur: "efatura",
+            entegratorDurumu: NES_GIB_ALICIYA_ILETIYOR,
             createdAt: { gte: new Date(simdi - sureler.efaturaYanitGunSayisi * GUN_MS) },
           },
           {
