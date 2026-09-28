@@ -2096,6 +2096,13 @@ model Fatura {
   /// EBLG-76: irsaliye yerine geçen faturada malın fiilen sevk edildiği an;
   /// belgeye `cac:Delivery/cac:Despatch` olarak yazılır.
   fiiliSevkZamani       DateTime?           @map("fiili_sevk_zamani")
+  /// FTR-30: malın teslim edildiği yer. e-İrsaliyeden faturalanırsa irsaliyeye
+  /// fiilen yazılan adres gelir; yoksa cari adreslerinden seçilir ya da elle
+  /// girilir. Belgeye `cac:Delivery/cac:DeliveryAddress` olarak yazılır.
+  teslimatAdres         String?             @map("teslimat_adres")
+  teslimatIl            String?             @map("teslimat_il")
+  teslimatIlce          String?             @map("teslimat_ilce")
+  teslimatPostaKodu     String?             @map("teslimat_posta_kodu")
   cariId                String              @map("cari_id") @db.Uuid
   /// STK-07: stok hareketlerinin işleneceği depo; boşsa varsayılan depo
   depoId                String?             @map("depo_id") @db.Uuid

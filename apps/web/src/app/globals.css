@@ -1769,6 +1769,10 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 .document-lines .table td:last-child { padding-right: 0; }
 .document-lines .table .combobox { min-width: 0; }
 .document-line-col--product { width: auto; }
+/* FTR-30: faturada teslim yeri kendi satırında, tam genişlikte. */
+.invoice-delivery { border-top: 1px solid var(--border); display: grid; gap: 0.8rem; grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); padding-top: 0.8rem; }
+.invoice-delivery__title { font-size: 0.8rem; grid-column: 1 / -1; margin: 0; }
+.invoice-delivery__full { grid-column: 1 / -1; }
 .document-line-col--quantity { width: 92px; }
 /* STK-10: miktarın altında satırın birimi; ek birim varsa seçilir. */
 .document-line-qty { display: grid; gap: 0.2rem; }

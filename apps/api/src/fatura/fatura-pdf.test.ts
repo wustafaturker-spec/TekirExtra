@@ -23,6 +23,12 @@ const fatura: FaturaPdfVerisi = {
 const firma = { unvan: "Satıcı A.Ş.", vkn: "1234567801", vergiDairesi: null };
 
 describe("faturaPdfHtml — e-Arşiv ibaresi (EBLG-26)", () => {
+  it("teslim yerini başlıkta yazar; yarım adreste yazmaz (FTR-30)", () => {
+    const html = faturaPdfHtml({ ...fatura, teslimatAdres: "Liman Cd. 5", teslimatIl: "İzmir", teslimatIlce: "Konak", teslimatPostaKodu: "35250" }, firma);
+    expect(html).toContain("Teslim Yeri: Liman Cd. 5 35250 Konak/İzmir");
+    expect(faturaPdfHtml({ ...fatura, teslimatAdres: "Liman Cd. 5" }, firma)).not.toContain("Teslim Yeri");
+  });
+
   it("elektronik iletilen e-Arşivde ibareyi yazar", () => {
     const html = faturaPdfHtml({ ...fatura, ebelge: { tur: "earsiv" }, earsivGonderimSekli: "elektronik" }, firma);
     expect(html).toContain(EARSIV_ELEKTRONIK_IBARESI);

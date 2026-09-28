@@ -28,6 +28,7 @@ import { faturaPdfHtml } from "./fatura-pdf";
 import { durumGecmisiOku } from "../core/durum-gecmisi";
 import { takiliRezervasyonMu } from "../ebelge/takili-rezervasyon";
 import { birimKatsayisiBul, satirBirimleriniDogrula } from "../stok/birim-cevrim";
+import { teslimYeriUyarisi, teslimYeriVerisi, teslimYeriniCariyeKaydet } from "./teslim-yeri";
 import type {
   faturaOlusturSemasi,
   faturaGuncelleSemasi,
@@ -180,6 +181,7 @@ export class FaturaService {
             const yeni = await tx.fatura.create({ data: {
               tenantId, tip: s.tip, durum: "taslak", tarih, vadeTarihi,
               cariId: s.cariId, depoId: s.depoId, dovizCinsi: s.dovizCinsi, kur: s.kur,
+              teslimatAdres: s.teslimatAdres, teslimatIl: s.teslimatIl, teslimatIlce: s.teslimatIlce, teslimatPostaKodu: s.teslimatPostaKodu,
               genelIskontoYuzdesi: s.genelIskontoYuzdesi, genelIskontoTutari: s.genelIskontoTutari,
               toplamBrut: s.toplamBrut, toplamSatirIskontosu: s.toplamSatirIskontosu,
               genelIskontoToplam: s.genelIskontoToplam, toplamMatrah: s.toplamMatrah,
@@ -471,9 +473,12 @@ export class FaturaService {
       new Prisma.Decimal(0),
     ).add(kayit.krediKartiHareketleri.reduce((toplam, hareket) => toplam.add(hareket.cariOdemeTutari ?? 0), D(0)));
     const kalan = Prisma.Decimal.max(kayit.genelToplam.sub(odenen), 0);
+    // FTR-30: bağlı irsaliyelerin teslim yerleri farklıysa ekranda söylenir.
+    const teslimUyarisi = await this.prisma.tenantIslem(ctx.tenantId, (tx) => teslimYeriUyarisi(tx, kayit));
 
     return {
       ...this.gorunum(kayit),
+      teslimYeriUyarisi: teslimUyarisi,
       cari: kayit.cari,
       satirlar: kayit.satirlar.map((s) => ({
         id: s.id,
@@ -589,6 +594,8 @@ export class FaturaService {
         throw new BadRequestException("Şarj hizmeti ve şarj ünitesi satırları aynı faturada olamaz; belgenin tek bir tipi olmalıdır");
       }
 
+      if (girdi.teslimatAdresiniCariyeKaydet) await teslimYeriniCariyeKaydet(tx, tenantId, girdi.cariId, girdi);
+
       // Fatura kafasını oluştur
       const fatura = await tx.fatura.create({
         data: {
@@ -624,6 +631,7 @@ export class FaturaService {
           cariId: girdi.cariId,
           // STK-07: boş bırakılırsa depo kesinleştirmede varsayılana çözülür
           depoId: girdi.depoId ?? null,
+          ...teslimYeriVerisi(girdi),
           dovizCinsi: girdi.dovizCinsi,
           kur: D(girdi.kur),
           genelIskontoYuzdesi: D(girdi.genelIskontoYuzdesi),
@@ -722,6 +730,10 @@ export class FaturaService {
       ozelMatrahTutari: girdi.ozelMatrahTutari !== undefined ? girdi.ozelMatrahTutari : fatura.ozelMatrahTutari?.toString(),
       ozelMatrahOrani: girdi.ozelMatrahOrani !== undefined ? girdi.ozelMatrahOrani : fatura.ozelMatrahOrani?.toString(),
       depoId: girdi.depoId !== undefined ? girdi.depoId : fatura.depoId,
+      teslimatAdres: girdi.teslimatAdres !== undefined ? girdi.teslimatAdres : fatura.teslimatAdres,
+      teslimatIl: girdi.teslimatIl !== undefined ? girdi.teslimatIl : fatura.teslimatIl,
+      teslimatIlce: girdi.teslimatIlce !== undefined ? girdi.teslimatIlce : fatura.teslimatIlce,
+      teslimatPostaKodu: girdi.teslimatPostaKodu !== undefined ? girdi.teslimatPostaKodu : fatura.teslimatPostaKodu,
       dovizCinsi: girdi.dovizCinsi ?? (fatura.dovizCinsi as "TRY" | "USD" | "EUR"),
       kur: girdi.kur ?? fatura.kur,
       genelIskontoYuzdesi: girdi.genelIskontoYuzdesi ?? fatura.genelIskontoYuzdesi,
@@ -837,6 +849,8 @@ export class FaturaService {
         throw new BadRequestException("Şarj hizmeti ve şarj ünitesi satırları aynı faturada olamaz; belgenin tek bir tipi olmalıdır");
       }
 
+      if (girdi.teslimatAdresiniCariyeKaydet) await teslimYeriniCariyeKaydet(tx, tenantId, birlesikGirdi.cariId, birlesikGirdi);
+
       const guncellenen = await tx.fatura.update({
         where: { id },
         data: {
@@ -863,6 +877,7 @@ export class FaturaService {
           vadeTarihi: birlesikGirdi.vadeTarihi ? new Date(birlesikGirdi.vadeTarihi) : null,
           cariId: birlesikGirdi.cariId,
           depoId: birlesikGirdi.depoId ?? null,
+          ...teslimYeriVerisi(birlesikGirdi),
           dovizCinsi: birlesikGirdi.dovizCinsi,
           kur: D(birlesikGirdi.kur),
           genelIskontoYuzdesi: D(birlesikGirdi.genelIskontoYuzdesi),
@@ -1224,6 +1239,10 @@ export class FaturaService {
           // gelmeli: ihraç kayıtlıda KDV tahsil edilmez, genel toplam matrahtır.
           gelirTuru: fatura.gelirTuru,
           depoId: fatura.depoId,
+          teslimatAdres: fatura.teslimatAdres,
+          teslimatIl: fatura.teslimatIl,
+          teslimatIlce: fatura.teslimatIlce,
+          teslimatPostaKodu: fatura.teslimatPostaKodu,
           senaryo: fatura.senaryo,
           efaturaProfili: fatura.efaturaProfili,
           earsivGonderimSekli: fatura.earsivGonderimSekli,
@@ -1656,6 +1675,10 @@ export class FaturaService {
     sgkDonemBitis?: Date | null;
     yolcuBeraberi?: unknown;
     depoId: string | null;
+    teslimatAdres: string | null;
+    teslimatIl: string | null;
+    teslimatIlce: string | null;
+    teslimatPostaKodu: string | null;
     dovizCinsi: string;
     kur: Prisma.Decimal;
     genelIskontoYuzdesi: Prisma.Decimal;
@@ -1746,6 +1769,10 @@ export class FaturaService {
       // Yolcu beraberi (tax-free): yolcu ve aracı kurum bilgisi; boşsa değildir.
       yolcuBeraberi: (k.yolcuBeraberi as Record<string, unknown> | null) ?? null,
       depoId: k.depoId,
+      teslimatAdres: k.teslimatAdres,
+      teslimatIl: k.teslimatIl,
+      teslimatIlce: k.teslimatIlce,
+      teslimatPostaKodu: k.teslimatPostaKodu,
       dovizCinsi: k.dovizCinsi,
       kur: D(k.kur).toFixed(4),
       genelIskontoYuzdesi: D(k.genelIskontoYuzdesi).toFixed(2),

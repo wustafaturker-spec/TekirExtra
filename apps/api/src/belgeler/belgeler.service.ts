@@ -36,6 +36,7 @@ import { durumGecmisiOku } from "../core/durum-gecmisi";
 import { ebelgeUygulamalariniOku } from "../ebelge/ebelge-uygulamalari.service";
 import { belgeSirasiAl } from "./belge-sayac";
 import { anaBirimMiktari, satirBirimleriniDogrula } from "../stok/birim-cevrim";
+import { teslimYeriniIrsaliyedenDoldur } from "../fatura/teslim-yeri";
 import type {
   belgeGuncelleSemasi,
   belgeOlusturSemasi,
@@ -1010,6 +1011,8 @@ export class BelgelerService {
           where: { id },
           data: { durum: "kapandi", faturaId: fatura.id },
         });
+        // FTR-30: irsaliyenin teslim yeri faturaya geçer.
+        await teslimYeriniIrsaliyedenDoldur(tx, fatura.id);
         return { donusenTur: "fatura" as const, faturaId: fatura.id };
       }
 
@@ -1222,6 +1225,7 @@ export class BelgelerService {
           "Seçilen belgelerden biri başka bir işlemde faturalanmış; listeyi yenileyip tekrar deneyin",
         );
       }
+      await teslimYeriniIrsaliyedenDoldur(tx, fatura.id);
       return { faturaId: fatura.id, birlesenBelge: belgeler.length };
     });
   }
@@ -1456,6 +1460,8 @@ export class BelgelerService {
     const guncellenen = await tx.belge.updateMany({ where: { id: { in: yeniler }, faturaId: null, durum: "onaylandi" }, data: { faturaId, durum: "kapandi" } });
     if (guncellenen.count !== yeniler.length) throw new ConflictException("Seçilen irsaliyelerden biri başka bir işlemde faturalanmış; listeyi yenileyip tekrar deneyin");
     if (fatura.durum === "kesin") await this.zincirEtkisiniCoz(tx, yeniler, -1);
+    // FTR-30: teslim yeri boşsa ilk irsaliyeninki yazılır (belge henüz gitmedi).
+    await teslimYeriniIrsaliyedenDoldur(tx, faturaId);
     // Gönderilmiş e-İrsaliye bağlandıysa faturanın sevkiyat yolu bellidir.
     if (fatura.tip === "satis" && belgeler.some((b) => yeniler.includes(b.id) && b.eirsaliye)) {
       await tx.fatura.update({ where: { id: faturaId }, data: { sevkiyatYontemi: "irsaliye", fiiliSevkZamani: null } });

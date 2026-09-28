@@ -18,6 +18,7 @@ import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-al
 import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
 import { birimKisaAdi } from "@tekirextra/shared";
 import { BirimSecimi, birimKatsayisi, SatirBirimi } from "@/components/birim-secimi";
+import { BOS_TESLIMAT_ADRESI, faturaTeslimYeriEksik, TeslimatAdresiAlanlari, teslimatAdresiGovdesi, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
 import { ebelgeGitmemisMi, ebelgeKullanilmiyor, faturaGecikmeUyarilari, faturaGeriAlmaEngeli, type EbelgeUygulamalari } from "@tekirextra/shared";
 import {
   Alert,
@@ -109,6 +110,12 @@ interface Fatura {
   vadeTarihi?: string | null;
   siparisNo?: string | null;
   siparisTarihi?: string | null;
+  /** FTR-30: teslim yeri; bağlı irsaliyeler farklıysa sunucu uyarı döner. */
+  teslimatAdres?: string | null;
+  teslimatIl?: string | null;
+  teslimatIlce?: string | null;
+  teslimatPostaKodu?: string | null;
+  teslimYeriUyarisi?: string | null;
   aciklama?: string | null;
   durum: string;
   toplamMatrah: string;
@@ -549,6 +556,9 @@ export default function FaturaSayfasi() {
   const [ytbNo, setYtbNo] = useState("");
   const [ytbTarihi, setYtbTarihi] = useState("");
   const [siparisNo, setSiparisNo] = useState("");
+  /** FTR-30: teslim yeri ve elle girileni cariye kaydetme isteği. */
+  const [teslimat, setTeslimat] = useState<TeslimatAdresi>(BOS_TESLIMAT_ADRESI);
+  const [teslimatiCariyeKaydet, setTeslimatiCariyeKaydet] = useState(false);
   const [siparisTarihi, setSiparisTarihi] = useState("");
   const [faturaNo, setFaturaNo] = useState("");
   const [aciklama, setAciklama] = useState("");
@@ -728,6 +738,7 @@ export default function FaturaSayfasi() {
       void api<FaturaDetay>(`/fatura/${duzenleId}`).then((fatura) => {
         setAcikFatura(fatura);
         setDuzenlenenId(faturaDuzenlenebilir(fatura) ? fatura.id : null); setTip(fatura.tip); setFaturaNo(fatura.no ?? ""); setTarih(fatura.tarih.slice(0, 10)); setDovizCinsi(fatura.dovizCinsi); setVadeTarihi(fatura.vadeTarihi?.slice(0, 10) ?? ""); setSiparisNo(fatura.siparisNo ?? ""); setSiparisTarihi(fatura.siparisTarihi?.slice(0, 10) ?? ""); setVadeElleDegisti(true);
+        setTeslimat({ teslimatAdres: fatura.teslimatAdres ?? "", teslimatIl: fatura.teslimatIl ?? "", teslimatIlce: fatura.teslimatIlce ?? "", teslimatPostaKodu: fatura.teslimatPostaKodu ?? "" }); setTeslimatiCariyeKaydet(false);
         setCariId(fatura.cari.id); setDepoId(fatura.depoId ?? ""); setAciklama(fatura.aciklama ?? ""); setNotlar(fatura.notlar ?? "");
         setEfaturaProfili(fatura.efaturaProfili ?? "temel"); setProfilElleDegisti(true); setIhracKayitliKodu(fatura.ihracKayitliKodu ?? "");
         setOzelMatrahKodu(fatura.ozelMatrahKodu ?? ""); setOzelMatrahTutari(fatura.ozelMatrahTutari ?? ""); setOzelMatrahOrani(fatura.ozelMatrahOrani ?? "20"); setOzelMatrahFarki("");
@@ -800,6 +811,7 @@ export default function FaturaSayfasi() {
     setCariId(""); setCariOzeti(null); setDepoId(""); setTip(yonBaglami ?? "satis"); setGelirTuru("ticari_satis"); setTarih(bugunTR()); setDovizCinsi("TRY"); setKur("1");
     setAciklama(""); setKuruAciklamayaEkle(true); setFaturaNo("");
     setNotlar(""); setVadeTarihi(""); setVadeElleDegisti(false); setSiparisNo(""); setSiparisTarihi("");
+    setTeslimat(BOS_TESLIMAT_ADRESI); setTeslimatiCariyeKaydet(false);
     setEfaturaProfili("temel"); setProfilElleDegisti(false); setIhracKayitliKodu(""); setIdisSevkiyatNo("");
     setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" }]); setAcikSatir(null);
     setDosyalar([]);
@@ -1149,6 +1161,8 @@ export default function FaturaSayfasi() {
           vadeTarihi: vadeTarihi || null,
           siparisNo: siparisNo.trim() || null,
           siparisTarihi: siparisTarihi || null,
+          ...teslimatAdresiGovdesi(teslimat),
+          teslimatAdresiniCariyeKaydet: teslimatiCariyeKaydet && !faturaTeslimYeriEksik(teslimat) && Boolean(teslimat.teslimatAdres.trim()),
           aciklama: kayitAciklamasi || null,
           notlar: notlar.trim() || null,
           satirlar: satirlar.map((s) => ({
@@ -2063,6 +2077,20 @@ export default function FaturaSayfasi() {
                 {/* EBLG-73: UBL'de sipariş tarihi zorunlu; boşsa belgeye fatura tarihi yazılır. */}
                 {siparisNo.trim() && !siparisTarihi && <small className="muted">Boş bırakılırsa e-Belgeye fatura tarihi yazılır (GİB sipariş tarihini zorunlu tutuyor).</small>}
               </Field>
+              {/* FTR-30: teslim yeri — irsaliyeden gelir, cari adresinden seçilir ya da elle girilir. */}
+              {(tip === "satis" || teslimat.teslimatAdres) && (
+                <div className="invoice-delivery">
+                  <h4 className="invoice-delivery__title">Teslim yeri</h4>
+                  <TeslimatAdresiAlanlari deger={teslimat} onChange={setTeslimat} cariId={cariId || null} kullanim="fatura" disabled={saltOkunur} />
+                  {!saltOkunur && teslimat.teslimatAdres.trim() && !faturaTeslimYeriEksik(teslimat) && (
+                    <label className="row invoice-delivery__full" style={{ gap: "0.4rem", alignItems: "center" }}>
+                      <input type="checkbox" checked={teslimatiCariyeKaydet} onChange={(e) => setTeslimatiCariyeKaydet(e.target.checked)} />
+                      <span>Bu adresi carinin sevk adreslerine ekle</span>
+                    </label>
+                  )}
+                  {acikFatura?.teslimYeriUyarisi && <div className="invoice-delivery__full"><Alert tone="warning">{acikFatura.teslimYeriUyarisi}</Alert></div>}
+                </div>
+              )}
             <div>
               <DepoSecici deger={depoId} onChange={setDepoId} />
             </div>

@@ -55,6 +55,7 @@ import {
   ulkeKoduCoz,
 } from "@tekirextra/shared";
 import { adSoyadCoz } from "../cari/ad-soyad";
+import { faturaTeslimYeri } from "../fatura/teslim-yeri";
 
 /*
  * Giden belgeye görünüm (XSLT) gömülmez — karar 2026-09-17, EBLG-31 iptal.
@@ -185,6 +186,18 @@ export function faturaUblUret(
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&apos;");
   };
+
+  /** `cac:DeliveryAddress` — internet satışı ve faturanın teslim yeri (FTR-30) aynı biçimle yazılır. */
+  const teslimatAdresiXml = (a: NonNullable<ReturnType<typeof ublAdresi>>) => `    <cac:DeliveryAddress>${a.adres ? `
+      <cbc:StreetName>${escape(a.adres)}</cbc:StreetName>` : ""}
+      <cbc:CitySubdivisionName>${escape(a.ilce)}</cbc:CitySubdivisionName>
+      <cbc:CityName>${escape(a.il)}</cbc:CityName>${a.postaKodu ? `
+      <cbc:PostalZone>${escape(a.postaKodu)}</cbc:PostalZone>` : ""}
+      <cac:Country>
+        <cbc:IdentificationCode>${a.ulkeKodu}</cbc:IdentificationCode>${a.ulkeAdi ? `
+        <cbc:Name>${escape(a.ulkeAdi)}</cbc:Name>` : ""}
+      </cac:Country>
+    </cac:DeliveryAddress>`;
 
   /*
    * Şematron: "Fatura tipi IADE iken fatura profili sadece TEMELFATURA,
@@ -593,16 +606,7 @@ export function faturaUblUret(
     ? `
   <cac:Delivery>${internet.gonderiTarihi ? `
     <cbc:ActualDeliveryDate>${internet.gonderiTarihi.toISOString().slice(0, 10)}</cbc:ActualDeliveryDate>` : ""}${teslimatAdresi ? `
-    <cac:DeliveryAddress>${teslimatAdresi.adres ? `
-      <cbc:StreetName>${escape(teslimatAdresi.adres)}</cbc:StreetName>` : ""}
-      <cbc:CitySubdivisionName>${escape(teslimatAdresi.ilce)}</cbc:CitySubdivisionName>
-      <cbc:CityName>${escape(teslimatAdresi.il)}</cbc:CityName>${teslimatAdresi.postaKodu ? `
-      <cbc:PostalZone>${escape(teslimatAdresi.postaKodu)}</cbc:PostalZone>` : ""}
-      <cac:Country>
-        <cbc:IdentificationCode>${teslimatAdresi.ulkeKodu}</cbc:IdentificationCode>${teslimatAdresi.ulkeAdi ? `
-        <cbc:Name>${escape(teslimatAdresi.ulkeAdi)}</cbc:Name>` : ""}
-      </cac:Country>
-    </cac:DeliveryAddress>` : ""}${internet.tasiyiciUnvan ? `
+${teslimatAdresiXml(teslimatAdresi)}` : ""}${internet.tasiyiciUnvan ? `
     <cac:CarrierParty>${internet.tasiyiciVkn ? `
       <cac:PartyIdentification>
         <cbc:ID schemeID="${internet.tasiyiciVkn.length === 11 ? "TCKN" : "VKN"}">${escape(internet.tasiyiciVkn)}</cbc:ID>
@@ -630,13 +634,22 @@ export function faturaUblUret(
    * kargoyu anlatır, bu blok sevk anını.
    */
   const irsaliyeYerine = fatura.sevkiyatYontemi === "irsaliye_yerine" ? anParcala(fatura.fiiliSevkZamani) : null;
-  const sevkBlogu = irsaliyeYerine
+  /*
+   * FTR-30: faturanın teslim yeri. İnternet satışında yukarıdaki blok onu zaten
+   * taşır; ihracatta teslim satır düzeyinde (gümrük/Incoterms), yolcu
+   * beraberinde mal yolcuya elden verilir — bu üçünde ayrıca yazılmaz. UBL'de
+   * DeliveryAddress, Despatch'ten önce gelir.
+   */
+  const genelTeslim = !internet && !ihracat && !yolcu ? faturaTeslimYeri(fatura) : undefined;
+  const genelTeslimAdresi = genelTeslim ? ublAdresi([{ tip: "sevk", ...genelTeslim, ulke: "TR" }]) : undefined;
+  const sevkBlogu = irsaliyeYerine || genelTeslimAdresi
     ? `
-  <cac:Delivery>
+  <cac:Delivery>${genelTeslimAdresi ? `
+${teslimatAdresiXml(genelTeslimAdresi)}` : ""}${irsaliyeYerine ? `
     <cac:Despatch>
       <cbc:ActualDespatchDate>${irsaliyeYerine.tarih}</cbc:ActualDespatchDate>
       <cbc:ActualDespatchTime>${irsaliyeYerine.saat}</cbc:ActualDespatchTime>
-    </cac:Despatch>
+    </cac:Despatch>` : ""}
   </cac:Delivery>
 `
     : "";

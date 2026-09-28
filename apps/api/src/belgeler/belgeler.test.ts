@@ -409,7 +409,8 @@ describe("BelgelerService", () => {
 
   function baglamaKurulumu(secenek: { fatura?: Record<string, unknown>; irsaliyeler?: Record<string, unknown>[]; guncellenen?: number } = {}) {
     const fatura = { cariId: "c1", tip: "satis", durum: "kesin", sevkiyatYontemi: null, ebelge: null, ...secenek.fatura };
-    const irsaliyeler = secenek.irsaliyeler ?? [{ id: "i1", no: "IRS2026000000001", tur: "irsaliye", yon: "satis", cariId: "c1", durum: "onaylandi", faturaId: null, eirsaliye: null }];
+    const irsaliyeler = (secenek.irsaliyeler ?? [{ id: "i1", no: "IRS2026000000001", tur: "irsaliye", yon: "satis", cariId: "c1", durum: "onaylandi", faturaId: null, eirsaliye: null }])
+      .map((b) => ({ cari: { vknTckn: "1111111111", adresler: [] }, ...b }));
     const tx = {
       fatura: { findUnique: vi.fn().mockResolvedValue(fatura), update: vi.fn() },
       belge: {
@@ -427,6 +428,24 @@ describe("BelgelerService", () => {
     await expect(servis.irsaliyeBaglaTx(tx as any, "t1", "f1", ["i1"])).resolves.toEqual({ baglanan: 1 });
     expect(tx.belge.updateMany).toHaveBeenCalledWith({ where: { id: { in: ["i1"] }, faturaId: null, durum: "onaylandi" }, data: { faturaId: "f1", durum: "kapandi" } });
     expect(zincir).toHaveBeenCalledWith(tx, ["i1"], -1);
+  });
+
+  it("teslim yeri boş faturaya ilk irsaliyenin teslim yerini yazar (FTR-30)", async () => {
+    const { servis, tx } = baglamaKurulumu({
+      fatura: { durum: "taslak", teslimatAdres: null, teslimatIl: null, teslimatIlce: null },
+      irsaliyeler: [{ id: "i1", no: "GBZ1", tur: "irsaliye", yon: "satis", cariId: "c1", durum: "onaylandi", faturaId: null, eirsaliye: null, teslimatAdres: "Liman Cd. 5", teslimatIl: "İzmir", teslimatIlce: "Konak", teslimatPostaKodu: "35250" }],
+    });
+    await servis.irsaliyeBaglaTx(tx as any, "t1", "f1", ["i1"]);
+    expect(tx.fatura.update).toHaveBeenCalledWith({ where: { id: "f1" }, data: { teslimatAdres: "Liman Cd. 5", teslimatIl: "İzmir", teslimatIlce: "Konak", teslimatPostaKodu: "35250" } });
+  });
+
+  it("elle girilmiş teslim yerini irsaliyeyle ezmez (FTR-30)", async () => {
+    const { servis, tx } = baglamaKurulumu({
+      fatura: { durum: "taslak", teslimatAdres: "Depo 2", teslimatIl: "Ankara", teslimatIlce: "Sincan" },
+      irsaliyeler: [{ id: "i1", no: "GBZ1", tur: "irsaliye", yon: "satis", cariId: "c1", durum: "onaylandi", faturaId: null, eirsaliye: null, teslimatAdres: "Liman Cd. 5", teslimatIl: "İzmir", teslimatIlce: "Konak", teslimatPostaKodu: "35250" }],
+    });
+    await servis.irsaliyeBaglaTx(tx as any, "t1", "f1", ["i1"]);
+    expect(tx.fatura.update).not.toHaveBeenCalled();
   });
 
   it("taslak faturada rezerve dokunmaz; kesinleştirme çözer (FTR-26)", async () => {

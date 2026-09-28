@@ -1,5 +1,6 @@
 import { type InternetSatisEngeli, internetSatisEngelleri } from "@tekirextra/shared";
 import { teslimatAdresiSec } from "./eirsaliye-engeller";
+import { faturaTeslimYeri } from "../fatura/teslim-yeri";
 import type { InternetSatisUblBilgisi } from "./xml-uretec";
 
 /**
@@ -20,6 +21,11 @@ export interface InternetSatisFaturaGirdisi {
   internetGonderiTarihi: Date | null;
   siparisNo: string | null;
   siparisTarihi: Date | null;
+  /** FTR-30: faturaya girilen teslim yeri carinin adresinin önüne geçer. */
+  teslimatAdres?: string | null;
+  teslimatIl?: string | null;
+  teslimatIlce?: string | null;
+  teslimatPostaKodu?: string | null;
   cari: {
     adresler: { tip: string; adres: string | null; il: string | null; ilce: string | null; postaKodu: string | null; ulke: string | null }[];
   };
@@ -37,7 +43,8 @@ export interface InternetSatisOzeti {
 }
 
 export function internetSatisOzeti(fatura: InternetSatisFaturaGirdisi): InternetSatisOzeti {
-  const teslimat = teslimatAdresiSec(fatura.cari.adresler);
+  const faturadaki = faturaTeslimYeri(fatura);
+  const teslimat = faturadaki ? { ...faturadaki, ulke: "TR" } : teslimatAdresiSec(fatura.cari.adresler);
   if (!fatura.internetSatisi) {
     return { internetSatisi: false, teslimatAdresiVar: Boolean(teslimat), engeller: [] };
   }

@@ -81,6 +81,13 @@ const faturaOlusturGovde = z.object({
   ozelMatrahOrani: yuzde.optional().nullable(),
   /** STK-07: stok hareketlerinin işleneceği depo; boşsa varsayılan depo */
   depoId: z.string().uuid().optional().nullable(),
+  /** FTR-30: teslim yeri; adres, il ve ilçe birlikte girilir. */
+  teslimatAdres: z.string().trim().max(500).optional().nullable(),
+  teslimatIl: z.string().trim().max(60).optional().nullable(),
+  teslimatIlce: z.string().trim().max(60).optional().nullable(),
+  teslimatPostaKodu: z.string().trim().max(10).optional().nullable(),
+  /** FTR-30: elle girilen teslim yeri carinin sevk adreslerine de eklensin. Saklanmaz. */
+  teslimatAdresiniCariyeKaydet: z.boolean().optional(),
   dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
   kur: pozitifOndalik.default("1"),
   genelIskontoYuzdesi: yuzde.default("0"),
@@ -108,8 +115,13 @@ const senaryolariDogrula = (
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["satirlar", hata.satirIndeksi, hata.alan], message: hata.mesaj });
   }
 };
-const faturaFinansalDogrula = (fatura: { idisSevkiyatNo?: string | null; ytbNo?: string | null; ytbTarihi?: string | null; ozelMatrahKodu?: string | null; ozelMatrahTutari?: string | null; ozelMatrahOrani?: string | null; satirlar?: Array<{ miktar?: string; birimFiyat?: string; iskontoOrani?: string; kdvOrani?: string; tevkifatKodu?: string | null; tevkifatOrani?: string | null; gibIstisnaKodu?: string | null }>; genelIskontoTutari?: string; dovizCinsi?: string; kur?: string; tip?: string; ihracKayitliKodu?: string | null }, ctx: z.RefinementCtx) => {
+const faturaFinansalDogrula = (fatura: { teslimatAdres?: string | null; teslimatIl?: string | null; teslimatIlce?: string | null; teslimatPostaKodu?: string | null; idisSevkiyatNo?: string | null; ytbNo?: string | null; ytbTarihi?: string | null; ozelMatrahKodu?: string | null; ozelMatrahTutari?: string | null; ozelMatrahOrani?: string | null; satirlar?: Array<{ miktar?: string; birimFiyat?: string; iskontoOrani?: string; kdvOrani?: string; tevkifatKodu?: string | null; tevkifatOrani?: string | null; gibIstisnaKodu?: string | null }>; genelIskontoTutari?: string; dovizCinsi?: string; kur?: string; tip?: string; ihracKayitliKodu?: string | null }, ctx: z.RefinementCtx) => {
   senaryolariDogrula(fatura, ctx);
+  // FTR-30: yarım teslim yeri belgeye yazılamaz (il ve ilçe GİB adresinde zorunlu).
+  const teslim = [fatura.teslimatAdres, fatura.teslimatIl, fatura.teslimatIlce, fatura.teslimatPostaKodu];
+  if (teslim.some((x) => x?.trim()) && !(fatura.teslimatAdres?.trim() && fatura.teslimatIl?.trim() && fatura.teslimatIlce?.trim())) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["teslimatAdres"], message: "Teslim yerinde adres, il ve ilçe birlikte girilmelidir" });
+  }
   // İDİS: sevkiyat no girilmişse biçimi ve her satırın etiket numarası burada
   // denetlenir; gönderim aynı listeyi yeniden üretir (EBLG-72).
   for (const engel of idisEngelleri({

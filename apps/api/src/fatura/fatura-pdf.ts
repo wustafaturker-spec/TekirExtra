@@ -76,6 +76,11 @@ export interface FaturaPdfVerisi {
   /** Sipariş referansı (EBLG-73); e-Belgede `OrderReference` olarak gider. */
   siparisNo?: string | null;
   siparisTarihi?: string | Date | null;
+  /** FTR-30: teslim yeri; e-Belgede `cac:Delivery/cac:DeliveryAddress`. */
+  teslimatAdres?: string | null;
+  teslimatIl?: string | null;
+  teslimatIlce?: string | null;
+  teslimatPostaKodu?: string | null;
   dovizCinsi: string;
   kur: string;
   toplamBrut: string;
@@ -380,6 +385,10 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
         }${
           /* EBLG-73: sipariş referansı e-Belgeye yazılıyor, kendi çıktımızda da görünmeliydi. */
           f.siparisNo ? `<br>Sipariş No: ${kacis(f.siparisNo)}${f.siparisTarihi ? ` (${tarihBicim(f.siparisTarihi)})` : ""}` : ""
+        }${
+          f.teslimatAdres && f.teslimatIl && f.teslimatIlce
+            ? `<br>Teslim Yeri: ${kacis(f.teslimatAdres)} ${f.teslimatPostaKodu ? `${kacis(f.teslimatPostaKodu)} ` : ""}${kacis(f.teslimatIlce)}/${kacis(f.teslimatIl)}`
+            : ""
         }${
           f.dovizCinsi !== "TRY"
             ? `<br>Döviz: ${kacis(f.dovizCinsi)} (kur ${kurBicim(f.kur)})`

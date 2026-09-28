@@ -1210,6 +1210,20 @@ describe("faturaUblUret — irsaliye yerine geçen fatura (EBLG-76)", () => {
     expect(xml.indexOf("<cac:Delivery>")).toBeLessThan(xml.indexOf("<cac:TaxTotal>"));
   });
 
+  it("faturanın teslim yerini DeliveryAddress olarak Despatch'ten önce yazar (FTR-30)", () => {
+    const teslim = { teslimatAdres: "Liman Cd. 5", teslimatIl: "İzmir", teslimatIlce: "Konak", teslimatPostaKodu: "35250" };
+    const xml = faturaUblUret(fatura({ ...teslim, sevkiyatYontemi: "irsaliye_yerine", fiiliSevkZamani: new Date("2026-09-21T07:45:00+03:00") }), satici);
+
+    expect(xml.match(/<cac:Delivery>/g)).toHaveLength(1);
+    expect(xml).toContain("<cbc:StreetName>Liman Cd. 5</cbc:StreetName>");
+    expect(xml).toContain("<cbc:CitySubdivisionName>Konak</cbc:CitySubdivisionName>");
+    expect(xml).toContain("<cbc:PostalZone>35250</cbc:PostalZone>");
+    expect(xml.indexOf("<cac:DeliveryAddress>")).toBeLessThan(xml.indexOf("<cac:Despatch>"));
+    // Teslim yeri yalnızsa da blok yazılır; boşsa hiç yazılmaz.
+    expect(faturaUblUret(fatura(teslim), satici)).toContain("<cac:DeliveryAddress>");
+    expect(faturaUblUret(fatura({}), satici)).not.toContain("<cac:Delivery>");
+  });
+
   it("ibareyi Note olarak yazar — GİB'in genel XSLT'si yalnız notu basar", () => {
     const xml = faturaUblUret(fatura({ sevkiyatYontemi: "irsaliye_yerine", fiiliSevkZamani: new Date("2026-09-21T07:45:00+03:00") }), satici);
 
