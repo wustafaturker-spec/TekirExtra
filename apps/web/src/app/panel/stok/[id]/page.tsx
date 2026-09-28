@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { useDepolar } from "@/lib/depolar";
 import { DepoSecici } from "@/components/depo-secici";
+import { BirimSecimi } from "@/components/birim-secimi";
 import {
   Alert,
   Badge,
@@ -161,6 +162,8 @@ interface StokDetay {
   barkod: string | null;
   kategoriId: string | null;
   anaBirim: string;
+  /** Hareket görmüş kartın ana birimi değişmez (STK-01). */
+  anaBirimKilitli: boolean;
   kdvOrani: string;
   alisFiyati: string | null;
   satisFiyati: string | null;
@@ -571,6 +574,7 @@ function GenelSekmesi({
     gtipKodu: detay.gtipKodu ?? "",
     sarjTuru: detay.sarjTuru ?? "",
     ureticiUrunKodu: detay.ureticiUrunKodu ?? "",
+    anaBirim: detay.anaBirim,
     kdvOrani: detay.kdvOrani,
     alisFiyati: detay.alisFiyati ?? "",
     satisFiyati: detay.satisFiyati ?? "",
@@ -605,6 +609,8 @@ function GenelSekmesi({
       gtipKodu: bosNull(form.gtipKodu),
       sarjTuru: bosNull(form.sarjTuru),
       ureticiUrunKodu: bosNull(form.ureticiUrunKodu),
+      // Kilitli kartta birim hiç gönderilmez; sunucu da reddeder.
+      ...(detay.anaBirimKilitli ? {} : { anaBirim: form.anaBirim }),
       kdvOrani: form.kdvOrani || "20",
       alisFiyati: bosNull(form.alisFiyati),
       satisFiyati: bosNull(form.satisFiyati),
@@ -656,6 +662,12 @@ function GenelSekmesi({
               ))}
             </Select>
           </Field>
+        </div>
+        <div className="stock-field">
+          <Field label="Birim *">
+            <BirimSecimi value={form.anaBirim} onChange={(birim) => setForm((f) => ({ ...f, anaBirim: birim }))} disabled={detay.anaBirimKilitli} haric={detay.birimler.map((b) => b.ad)} required />
+          </Field>
+          {detay.anaBirimKilitli && <small className="muted">Stok hareketi olduğu için değiştirilemez.</small>}
         </div>
         <div className="stock-field stock-field--full"><Field label="Açıklama"><Input {...alan("aciklama")} placeholder="Ürünle ilgili kısa açıklama veya kullanım notu" /></Field></div>
       </div>
@@ -1109,7 +1121,7 @@ function BirimlerSekmesi({
         <div className="row">
           <div style={{ flex: 1, minWidth: 160 }}>
             <Field label="Birim Adı *">
-              <Input value={ad} onChange={(e) => setAd(e.target.value)} placeholder="koli" />
+              <BirimSecimi value={ad} onChange={setAd} haric={[detay.anaBirim, ...detay.birimler.map((b) => b.ad)]} />
             </Field>
           </div>
           <div style={{ flex: 1, minWidth: 160 }}>

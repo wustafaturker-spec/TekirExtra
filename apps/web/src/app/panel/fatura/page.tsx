@@ -16,6 +16,8 @@ import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, KAP_CINSLERI, kapEksigiVarMi, SIK_KAP_CINSLERI, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-alani";
 import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
+import { birimKisaAdi } from "@tekirextra/shared";
+import { BirimSecimi, birimKatsayisi, SatirBirimi } from "@/components/birim-secimi";
 import { ebelgeGitmemisMi, ebelgeKullanilmiyor, faturaGecikmeUyarilari, faturaGeriAlmaEngeli, type EbelgeUygulamalari } from "@tekirextra/shared";
 import {
   Alert,
@@ -55,6 +57,8 @@ interface Stok {
   barkod?: string | null;
   tedarikciUrunKodlari?: string[];
   anaBirim?: string;
+  /** STK-10: satırda seçilebilen ek birimler. */
+  birimler?: { ad: string; katsayi: string }[];
   kullanilabilirMiktar?: string;
   alisFiyati: string | null;
   satisFiyati: string | null;
@@ -72,6 +76,8 @@ interface FaturaSatir {
   stokId: string;
   varyantId?: string;
   miktar: number;
+  /** STK-01/10: kartın ana birimi ya da ek birimi; boşsa ana birim. */
+  birim?: string;
   birimFiyat: number;
   iskontoOrani: number;
   kdvOrani: number;
@@ -462,6 +468,7 @@ export default function FaturaSayfasi() {
   const [yeniStokAd, setYeniStokAd] = useState("");
   const [yeniStokBarkod, setYeniStokBarkod] = useState("");
   const [yeniStokKdv, setYeniStokKdv] = useState("20");
+  const [yeniStokBirim, setYeniStokBirim] = useState("adet");
   const [yeniStokFiyat, setYeniStokFiyat] = useState("");
   const [kesinlestirmeOzeti, setKesinlestirmeOzeti] = useState<KesinlestirmeOzeti | null>(null);
   const [ebelgeWizard, setEbelgeWizard] = useState<{
@@ -729,7 +736,7 @@ export default function FaturaSayfasi() {
         setYtbTarihi(fatura.ytbTarihi ?? "");
         setSatirlar(fatura.satirlar.map((satir) => ({
           stokId: satir.stokId, varyantId: satir.varyantId ?? undefined,
-          miktar: Number(satir.miktar), birimFiyat: Number(satir.birimFiyat),
+          miktar: Number(satir.miktar), birim: satir.birim, birimFiyat: Number(satir.birimFiyat),
           iskontoOrani: Number(satir.iskontoOrani), kdvOrani: Number(satir.kdvOrani),
           gibIstisnaKodu: satir.gibIstisnaKodu ?? "",
           tevkifatKodu: satir.tevkifatKodu ?? "",
@@ -929,6 +936,7 @@ export default function FaturaSayfasi() {
     if (alan === "stokId") {
       yeni[index].varyantId = undefined;
       const stok = stoklar.find((s) => s.id === deger);
+      yeni[index].birim = stok?.anaBirim;
       if (stok) {
         yeni[index].kdvOrani = Number(stok.kdvOrani || 20);
       }
@@ -939,6 +947,16 @@ export default function FaturaSayfasi() {
       }
     }
     setSatirlar(yeni);
+  }
+
+  /** STK-10: ek birime geçince fiyat birim başına ölçeklenir (1 koli = 12 adet → fiyat × 12). */
+  function satirBirimiDegistir(index: number, birim: string) {
+    setSatirlar((eskiler) => eskiler.map((satir, i) => {
+      if (i !== index) return satir;
+      const stok = stoklar.find((x) => x.id === satir.stokId);
+      const oran = birimKatsayisi(stok, birim) / birimKatsayisi(stok, satir.birim);
+      return { ...satir, birim, birimFiyat: Number((satir.birimFiyat * oran).toFixed(4)) };
+    }));
   }
 
   function urunSec(index: number, deger: string) {
@@ -990,6 +1008,7 @@ export default function FaturaSayfasi() {
           tip: "urun",
           barkod: yeniStokBarkod || null,
           kdvOrani: yeniStokKdv,
+          anaBirim: yeniStokBirim,
           alisFiyati: tip.startsWith("alis") && yeniStokFiyat ? yeniStokFiyat : null,
           satisFiyati: !tip.startsWith("alis") && yeniStokFiyat ? yeniStokFiyat : null,
           // FTR-28: hızlı kartta fiyat, girildiği belgenin dövizindedir.
@@ -1003,6 +1022,7 @@ export default function FaturaSayfasi() {
           ? {
               ...satir,
               stokId: yeni.id,
+              birim: yeni.anaBirim,
               kdvOrani: Number(yeni.kdvOrani),
               birimFiyat: Number(tip.startsWith("alis") ? yeni.alisFiyati ?? 0 : yeni.satisFiyati ?? 0),
             }
@@ -1012,6 +1032,7 @@ export default function FaturaSayfasi() {
       setYeniStokKod("");
       setYeniStokAd("");
       setYeniStokBarkod("");
+      setYeniStokBirim("adet");
       setYeniStokKdv("20");
       setYeniStokFiyat("");
       setBasari(`${yeni.ad} oluşturuldu ve satıra seçildi.`);
@@ -1134,7 +1155,7 @@ export default function FaturaSayfasi() {
             stokId: s.stokId,
             varyantId: s.varyantId || null,
             miktar: String(s.miktar),
-            birim: "adet",
+            birim: s.birim || stoklar.find((stok) => stok.id === s.stokId)?.anaBirim || "adet",
             birimFiyat: String(s.birimFiyat),
             iskontoOrani: String(s.iskontoOrani),
             kdvOrani: String(s.kdvOrani),
@@ -2089,7 +2110,7 @@ export default function FaturaSayfasi() {
                   const satirSonuc = sonuc.satirlar[index];
                   const seciliStok = stoklar.find((stok) => stok.id === s.stokId);
                   const kullanilabilir = Number(seciliStok?.kullanilabilirMiktar ?? 0);
-                  const stokYetersiz = !saltOkunur && tip === "satis" && seciliStok?.kullanilabilirMiktar !== undefined && Number(s.miktar) > kullanilabilir;
+                  const stokYetersiz = !saltOkunur && tip === "satis" && seciliStok?.kullanilabilirMiktar !== undefined && Number(s.miktar) * birimKatsayisi(seciliStok, s.birim) > kullanilabilir;
                   return (
                     <Fragment key={index}>
                     <tr>
@@ -2117,7 +2138,7 @@ export default function FaturaSayfasi() {
                             aciklama: [
                               stok.kod,
                               stok.barkod && `Barkod: ${stok.barkod}`,
-                              stok.kullanilabilirMiktar !== undefined && `Stok: ${Number(stok.kullanilabilirMiktar).toLocaleString("tr-TR")} ${stok.anaBirim ?? "adet"}`,
+                              stok.kullanilabilirMiktar !== undefined && `Stok: ${Number(stok.kullanilabilirMiktar).toLocaleString("tr-TR")} ${birimKisaAdi(stok.anaBirim ?? "adet")}`,
                               tip.startsWith("alis")
                                 ? stok.alisFiyati && `Alış: ${tl(stok.alisFiyati, stok.alisFiyatiDoviz)}`
                                 : stok.satisFiyati && `Satış: ${tl(stok.satisFiyati, stok.satisFiyatiDoviz)}`,
@@ -2132,12 +2153,12 @@ export default function FaturaSayfasi() {
                         {seciliStok && (
                           <span className={`document-line-stock${stokYetersiz ? " is-warning" : ""}`}>
                             {stokYetersiz
-                              ? `Yetersiz stok: ${kullanilabilir.toLocaleString("tr-TR")} ${seciliStok.anaBirim ?? "adet"} kullanılabilir`
-                              : `Stok: ${kullanilabilir.toLocaleString("tr-TR")} ${seciliStok.anaBirim ?? "adet"}`}
+                              ? `Yetersiz stok: ${kullanilabilir.toLocaleString("tr-TR")} ${birimKisaAdi(seciliStok.anaBirim ?? "adet")} kullanılabilir`
+                              : `Stok: ${kullanilabilir.toLocaleString("tr-TR")} ${birimKisaAdi(seciliStok.anaBirim ?? "adet")}`}
                           </span>
                         )}
                       </td>
-                      <td className="invoice-line__field" data-label="Miktar"><Input className="document-line-number" aria-label="Miktar" type="number" min="0.01" step="any" inputMode="decimal" ref={(eleman) => { miktarRefleri.current[index] = eleman; }} value={s.miktar} onChange={(e) => satirGuncelle(index, "miktar", Number(e.target.value))} required /></td>
+                      <td className="invoice-line__field" data-label="Miktar"><div className="document-line-qty"><Input className="document-line-number" aria-label="Miktar" type="number" min="0.01" step="any" inputMode="decimal" ref={(eleman) => { miktarRefleri.current[index] = eleman; }} value={s.miktar} onChange={(e) => satirGuncelle(index, "miktar", Number(e.target.value))} required /><SatirBirimi stok={s.stokId ? seciliStok : undefined} value={s.birim} onChange={(birim) => satirBirimiDegistir(index, birim)} disabled={saltOkunur} /></div></td>
                       <td className="invoice-line__field" data-label="Birim fiyat"><Input className="document-line-number" aria-label="Birim fiyat" type="number" min="0" step="any" inputMode="decimal" value={s.birimFiyat} onChange={(e) => satirGuncelle(index, "birimFiyat", Number(e.target.value))} required /></td>
                       <td className="invoice-line__field" data-label="İskonto %"><Input className="document-line-number" aria-label="İskonto yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.iskontoOrani} onChange={(e) => satirGuncelle(index, "iskontoOrani", Number(e.target.value))} /></td>
                       <td className="invoice-line__field" data-label="KDV %"><Input className="document-line-number" aria-label="KDV yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.kdvOrani} onChange={(e) => satirGuncelle(index, "kdvOrani", Number(e.target.value))} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); satirEkle(); } }} required /></td>
@@ -2401,7 +2422,7 @@ export default function FaturaSayfasi() {
       )}
       <UrunSecimModali acik={urunModali !== null} baslangicStokId={urunModali?.stokId} stoklar={stoklar} cariId={cariId} tip={tip.startsWith("alis") ? "alis" : "satis"} belgeDovizi={dovizCinsi} belgeKuru={kur} belgeTarihi={tarih} onKapat={() => setUrunModali(null)} onEkle={(urun) => {
         setSatirlar((eskiler) => {
-          const satir = { stokId: urun.stokId, varyantId: urun.varyantId, miktar: urun.miktar, birimFiyat: urun.birimFiyat, iskontoOrani: urun.iskontoOrani, kdvOrani: urun.kdvOrani, gibIstisnaKodu: "" };
+          const satir = { stokId: urun.stokId, varyantId: urun.varyantId, miktar: urun.miktar, birim: urun.birim, birimFiyat: urun.birimFiyat, iskontoOrani: urun.iskontoOrani, kdvOrani: urun.kdvOrani, gibIstisnaKodu: "" };
           if (urunModali == null || urunModali.satir >= eskiler.length) return [...eskiler, satir];
           return eskiler.map((x, i) => i === urunModali.satir ? satir : x);
         });
@@ -2441,6 +2462,7 @@ export default function FaturaSayfasi() {
             <Field label="Stok kodu"><Input value={yeniStokKod} onChange={(e) => setYeniStokKod(e.target.value)} required placeholder="STK-001" /></Field>
             <Field label="Barkod"><Input value={yeniStokBarkod} onChange={(e) => setYeniStokBarkod(e.target.value)} /></Field>
             <Field label={tip.startsWith("alis") ? "Alış fiyatı (TRY)" : "Satış fiyatı (TRY)"}><Input className="record-number" type="number" min="0" step="0.0001" inputMode="decimal" value={yeniStokFiyat} onChange={(e) => setYeniStokFiyat(e.target.value)} placeholder="0,00" /></Field>
+            <Field label="Birim"><BirimSecimi value={yeniStokBirim} onChange={setYeniStokBirim} required /></Field>
             <Field label="KDV (%)"><Input className="record-number" type="number" min="0" max="100" inputMode="decimal" value={yeniStokKdv} onChange={(e) => setYeniStokKdv(e.target.value)} required /></Field>
             <div className="quick-panel__actions">
               <Button type="button" onClick={() => setHizliPanel(null)}>Vazgeç</Button>

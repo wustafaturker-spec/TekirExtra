@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { VARSAYILAN_BIRIM_KODU, birimTanindiMi, birimUblKodu } from "./birim-kodu";
+import { BIRIMLER, VARSAYILAN_BIRIM_KODU, birimCoz, birimEtiketi, birimTanindiMi, birimUblKodu } from "./birim-kodu";
 
 describe("birimUblKodu", () => {
   it("yaygın birimleri GİB koduna çevirir", () => {
@@ -30,5 +30,28 @@ describe("birimUblKodu", () => {
     expect(birimUblKodu(null)).toBe("C62");
     expect(birimUblKodu("")).toBe("C62");
     expect(birimTanindiMi(null)).toBe(false);
+  });
+});
+
+describe("BIRIMLER", () => {
+  it("her seçeneğin ayrı bir GİB kodu vardır", () => {
+    const kodlar = BIRIMLER.map((b) => birimUblKodu(b.ad));
+    expect(BIRIMLER.every((b) => birimTanindiMi(b.ad))).toBe(true);
+    expect(new Set(kodlar).size).toBe(kodlar.length);
+  });
+
+  it("serbest yazımı listedeki ada çevirir", () => {
+    expect(birimCoz("Kg.")).toBe("kg");
+    expect(birimCoz("lt")).toBe("litre");
+    expect(birimCoz("tane")).toBe("adet");
+    expect(birimCoz("M²")).toBe("m2");
+    expect(birimCoz("takım")).toBe("set");
+    expect(birimCoz("xyz")).toBeNull();
+    expect(birimCoz("")).toBeNull();
+  });
+
+  it("etiket listede yoksa adı olduğu gibi verir", () => {
+    expect(birimEtiketi("m2")).toBe("Metrekare (m²)");
+    expect(birimEtiketi("bilinmez")).toBe("bilinmez");
   });
 });

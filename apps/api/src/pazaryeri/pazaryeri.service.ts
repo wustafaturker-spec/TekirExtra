@@ -77,7 +77,7 @@ export class PazaryeriService {
     for (const istek of siparisler) {
       try {
         const siparis = await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriSiparis.findUnique({
-          where: { id: istek.siparisId }, include: { satirlar: true },
+          where: { id: istek.siparisId }, include: { satirlar: { include: { stok: { select: { anaBirim: true } } } } },
         }));
         if (!siparis) throw new NotFoundException("Sipariş bulunamadı");
         if (siparis.faturaId) { sonuclar.push({ siparisId: siparis.id, faturaId: siparis.faturaId }); continue; }
@@ -92,7 +92,7 @@ export class PazaryeriService {
           tip: "satis", tarih: siparis.siparisTarihi.toISOString().slice(0, 10), cariId: istek.cariId,
           dovizCinsi: siparis.dovizCinsi, kur: kur.toString(), genelIskontoYuzdesi: "0", genelIskontoTutari: "0",
           aciklama: `Pazaryeri siparişi ${siparis.siparisNo}`,
-          satirlar: siparis.satirlar.map((s) => ({ stokId: s.stokId!, varyantId: s.varyantId, miktar: s.miktar.toString(), birim: "adet", birimFiyat: s.birimFiyat.toString(), iskontoOrani: "0", kdvOrani: s.kdvOrani.toString() })),
+          satirlar: siparis.satirlar.map((s) => ({ stokId: s.stokId!, varyantId: s.varyantId, miktar: s.miktar.toString(), birim: s.stok?.anaBirim ?? "adet", birimFiyat: s.birimFiyat.toString(), iskontoOrani: "0", kdvOrani: s.kdvOrani.toString() })),
         });
         await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriSiparis.update({ where: { id: siparis.id }, data: { cariId: istek.cariId, faturaId: fatura.id, durum: "faturalandi", hataMesaji: null } }));
         sonuclar.push({ siparisId: siparis.id, faturaId: fatura.id });

@@ -1769,7 +1769,11 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 .document-lines .table td:last-child { padding-right: 0; }
 .document-lines .table .combobox { min-width: 0; }
 .document-line-col--product { width: auto; }
-.document-line-col--quantity { width: 78px; }
+.document-line-col--quantity { width: 92px; }
+/* STK-10: miktarın altında satırın birimi; ek birim varsa seçilir. */
+.document-line-qty { display: grid; gap: 0.2rem; }
+.document-line-unit { color: var(--text-muted); font-size: 0.72rem; text-align: right; }
+select.document-line-unit { background-position: right 0.35rem center; color: var(--text); font-size: 0.72rem; padding: 0.2rem 1.3rem 0.2rem 0.4rem; text-align: left; }
 .document-line-col--price { width: 108px; }
 .document-line-col--rate { width: 70px; }
 .document-line-col--exception { width: 82px; }
@@ -1891,7 +1895,6 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 }
 .record-fields--stock-main { grid-template-columns: 2fr 1fr 1fr; }
 .record-fields--stock-main > :first-child { grid-column: span 2; }
-.record-fields--stock-main > :last-child { grid-column: span 2; }
 .record-fields--stock-price { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .record-fields--cari-main { grid-template-columns: 2fr repeat(2, minmax(0, 1fr)); }
 .record-fields--cari-main > :first-child { grid-column: span 2; }
@@ -2944,7 +2947,7 @@ a.document-timeline__step:not([aria-disabled="true"]) { cursor: pointer; }
 .stock-editor__section strong { font-size: .78rem; }
 .stock-editor__section small { color: var(--text-muted); font-size: .65rem; }
 .stock-editor__grid { align-items: flex-end; background: var(--surface-2); border: 1px solid var(--border); border-radius: .7rem; display: grid; gap: .8rem; padding: .85rem; }
-.stock-editor__grid--basic { grid-template-columns: minmax(260px,2fr) minmax(150px,.8fr) minmax(180px,1fr); }
+.stock-editor__grid--basic { grid-template-columns: minmax(260px,2fr) minmax(150px,.8fr) minmax(180px,1fr) minmax(150px,.8fr); }
 .stock-editor__grid--identity { grid-template-columns: repeat(4,minmax(130px,1fr)); }
 .stock-editor__grid--pricing { grid-template-columns: minmax(110px,.45fr) repeat(2,minmax(230px,1fr)); }
 .stock-editor__grid--planning { grid-template-columns: repeat(5,minmax(115px,1fr)); }

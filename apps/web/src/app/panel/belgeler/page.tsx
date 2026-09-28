@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { api, ApiHata, apiPdfAc, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
+import { birimKatsayisi, SatirBirimi } from "@/components/birim-secimi";
 import { AramaSecici } from "@/components/arama-secici";
 import { DepoSecici } from "@/components/depo-secici";
 import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
@@ -62,13 +63,15 @@ interface BelgeGorunumu {
 const GORUNUM_ANAHTARI = "tekir_belge_gorunumleri";
 
 interface Cari { id: string; kod?: string; unvan: string; vknTckn?: string | null; telefon?: string | null }
-interface Stok { id: string; kod: string; ad: string; tedarikciUrunKodlari?: string[]; takipTipi?: "yok" | "lot" | "seri" }
+interface Stok { id: string; kod: string; ad: string; tedarikciUrunKodlari?: string[]; takipTipi?: "yok" | "lot" | "seri"; anaBirim?: string; birimler?: { ad: string; katsayi: string }[] }
 interface StokVaryant { id: string; kod: string; ad: string; aktif: boolean; mevcutMiktar: string }
 
 interface BelgeSatirForm {
   stokId: string;
   varyantId?: string;
   miktar: number;
+  /** STK-01/10: kartın ana birimi ya da ek birimi; boşsa ana birim. */
+  birim?: string;
   birimFiyat: number;
   iskontoOrani: number;
   kdvOrani: number;
@@ -535,12 +538,22 @@ export default function BelgelerSayfasi() {
     setHata("");
   }
 
+  /** STK-10: ek birime geçince fiyat birim başına ölçeklenir (1 koli = 12 adet → fiyat × 12). */
+  function satirBirimiDegistir(i: number, birim: string) {
+    setSatirlar((eskiler) => eskiler.map((satir, j) => {
+      if (j !== i) return satir;
+      const stok = stoklar.find((x) => x.id === satir.stokId);
+      const oran = birimKatsayisi(stok, birim) / birimKatsayisi(stok, satir.birim);
+      return { ...satir, birim, birimFiyat: Number((satir.birimFiyat * oran).toFixed(4)) };
+    }));
+  }
+
   async function satirGuncelle(i: number, alan: keyof BelgeSatirForm, deger: string | number) {
     const yeni = [...satirlar];
     yeni[i] = { ...yeni[i], [alan]: deger };
     // Elle girilen fiyat belge dövizindedir; uyumsuzluk uyarısı kalkar.
     if (alan === "birimFiyat") yeni[i].dovizUyarisi = undefined;
-    if (alan === "stokId") { yeni[i].varyantId = undefined; yeni[i].dovizUyarisi = undefined; yeni[i].kaynakSatirId = undefined; }
+    if (alan === "stokId") { yeni[i].varyantId = undefined; yeni[i].dovizUyarisi = undefined; yeni[i].kaynakSatirId = undefined; yeni[i].birim = stoklar.find((x) => x.id === deger)?.anaBirim; }
     if (alan === "stokId" && deger) {
       const fiyat = await kalemFiyatiGetir(String(deger));
       if (fiyat) yeni[i] = { ...yeni[i], ...fiyat };
@@ -607,7 +620,7 @@ export default function BelgelerSayfasi() {
             stokId: s.stokId,
             varyantId: s.varyantId || null,
             miktar: String(s.miktar),
-            birim: "adet",
+            birim: s.birim || stoklar.find((stok) => stok.id === s.stokId)?.anaBirim || "adet",
             birimFiyat: String(s.birimFiyat),
             iskontoOrani: String(s.iskontoOrani),
             kdvOrani: String(s.kdvOrani),
@@ -664,7 +677,7 @@ export default function BelgelerSayfasi() {
       const seriNolar = partiler.map((p) => p.seriNo).filter(Boolean);
       return {
         stokId: x.stokId, varyantId: x.varyantId ?? undefined,
-        miktar: Number(x.miktar), birimFiyat: Number(x.birimFiyat), iskontoOrani: Number(x.iskontoOrani), kdvOrani: Number(x.kdvOrani),
+        miktar: Number(x.miktar), birim: x.birim, birimFiyat: Number(x.birimFiyat), iskontoOrani: Number(x.iskontoOrani), kdvOrani: Number(x.kdvOrani),
         idisEtiketNo: x.idisEtiketNo ?? undefined, kaynakSatirId: x.kaynakSatirId ?? undefined,
         lotNo: partiler[0]?.lotNo, seriNolar: seriNolar.length ? seriNolar.join("\n") : undefined,
         sonKullanmaTarihi: partiler[0]?.sonKullanmaTarihi ?? undefined, uretimTarihi: partiler[0]?.uretimTarihi ?? undefined,
@@ -1164,7 +1177,7 @@ export default function BelgelerSayfasi() {
                         <Input aria-label={`${i + 1}. satır İDİS etiket numarası`} placeholder="İDİS etiket no (örn. CV0152457)" maxLength={20} value={s.idisEtiketNo ?? ""} onChange={(e) => satirGuncelle(i, "idisEtiketNo", e.target.value)} />
                       )}
                     </td>
-                    <td><Input className="document-line-number" aria-label="Miktar" type="number" min="0.01" step="any" inputMode="decimal" value={s.miktar} onChange={(e) => satirGuncelle(i, "miktar", Number(e.target.value))} required /></td>
+                    <td><div className="document-line-qty"><Input className="document-line-number" aria-label="Miktar" type="number" min="0.01" step="any" inputMode="decimal" value={s.miktar} onChange={(e) => satirGuncelle(i, "miktar", Number(e.target.value))} required /><SatirBirimi stok={stoklar.find((x) => x.id === s.stokId)} value={s.birim} onChange={(birim) => satirBirimiDegistir(i, birim)} /></div></td>
                     <td><Input className="document-line-number" aria-label="Birim fiyat" type="number" min="0" step="any" inputMode="decimal" value={s.birimFiyat} onChange={(e) => satirGuncelle(i, "birimFiyat", Number(e.target.value))} required /></td>
                     <td><Input className="document-line-number" aria-label="İskonto yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.iskontoOrani} onChange={(e) => satirGuncelle(i, "iskontoOrani", Number(e.target.value))} /></td>
                     <td><Input className="document-line-number" aria-label="KDV yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.kdvOrani} onChange={(e) => satirGuncelle(i, "kdvOrani", Number(e.target.value))} required /></td>
@@ -1206,7 +1219,7 @@ export default function BelgelerSayfasi() {
 
       <UrunSecimModali acik={urunModali !== null} baslangicStokId={urunModali?.stokId} stoklar={stoklar} cariId={cariId} tip={yon} belgeDovizi={dovizCinsi} belgeKuru={kur} belgeTarihi={tarih} onKapat={() => setUrunModali(null)} onEkle={(urun) => {
         setSatirlar((eskiler) => {
-          const satir: BelgeSatirForm = { stokId: urun.stokId, varyantId: urun.varyantId, miktar: urun.miktar, birimFiyat: urun.birimFiyat, iskontoOrani: urun.iskontoOrani, kdvOrani: urun.kdvOrani };
+          const satir: BelgeSatirForm = { stokId: urun.stokId, varyantId: urun.varyantId, miktar: urun.miktar, birim: urun.birim, birimFiyat: urun.birimFiyat, iskontoOrani: urun.iskontoOrani, kdvOrani: urun.kdvOrani };
           if (urunModali == null || urunModali.satir >= eskiler.length) return [...eskiler, satir];
           return eskiler.map((x, i) => i === urunModali.satir ? satir : x);
         });

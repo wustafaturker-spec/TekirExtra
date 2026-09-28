@@ -67,3 +67,63 @@ export function birimUblKodu(birim: string | null | undefined): string {
 export function birimTanindiMi(birim: string | null | undefined): boolean {
   return Boolean(birim) && sadelestir(birim!) in KODLAR;
 }
+
+/**
+ * Stok kartında ve belge satırında seçilebilen birimler (STK-01/STK-10).
+ * `ad` saklanan değerdir; gelen e-faturanın birim adlarıyla (ubl-oku) aynıdır.
+ * Hepsinin GİB kodu vardır, böylece giden belgeye yanlışlıkla adet gitmez.
+ */
+export const BIRIMLER: readonly { ad: string; etiket: string }[] = [
+  { ad: "adet", etiket: "Adet" },
+  { ad: "kg", etiket: "Kilogram (kg)" },
+  { ad: "gram", etiket: "Gram (g)" },
+  { ad: "ton", etiket: "Ton" },
+  { ad: "litre", etiket: "Litre (lt)" },
+  { ad: "ml", etiket: "Mililitre (ml)" },
+  { ad: "metre", etiket: "Metre (m)" },
+  { ad: "cm", etiket: "Santimetre (cm)" },
+  { ad: "mm", etiket: "Milimetre (mm)" },
+  { ad: "km", etiket: "Kilometre (km)" },
+  { ad: "m2", etiket: "Metrekare (m²)" },
+  { ad: "m3", etiket: "Metreküp (m³)" },
+  { ad: "paket", etiket: "Paket" },
+  { ad: "kutu", etiket: "Kutu" },
+  { ad: "koli", etiket: "Koli" },
+  { ad: "çift", etiket: "Çift" },
+  { ad: "set", etiket: "Set / Takım" },
+  { ad: "düzine", etiket: "Düzine" },
+  { ad: "rulo", etiket: "Rulo" },
+  { ad: "çuval", etiket: "Çuval" },
+  { ad: "palet", etiket: "Palet" },
+  { ad: "şişe", etiket: "Şişe" },
+  { ad: "varil", etiket: "Varil" },
+  { ad: "saat", etiket: "Saat" },
+  { ad: "gün", etiket: "Gün" },
+  { ad: "ay", etiket: "Ay" },
+  { ad: "yıl", etiket: "Yıl" },
+  { ad: "kwh", etiket: "Kilovatsaat (kWh)" },
+];
+
+/**
+ * Serbest yazılmış birimi listedeki ada çevirir ("Kg." → "kg", "lt" → "litre",
+ * "tane" → "adet"); karşılığı yoksa null. Excel içe aktarma ve API girdisi
+ * bununla sadeleşir.
+ */
+export function birimCoz(birim: string | null | undefined): string | null {
+  if (!birim) return null;
+  const kod = KODLAR[sadelestir(birim)];
+  if (!kod) return null;
+  return BIRIMLER.find((b) => KODLAR[sadelestir(b.ad)] === kod)?.ad ?? null;
+}
+
+/** Ekranda gösterilecek kısa ad; listede yoksa olduğu gibi döner. */
+export function birimEtiketi(birim: string | null | undefined): string {
+  if (!birim) return "";
+  return BIRIMLER.find((b) => b.ad === birim)?.etiket ?? birim;
+}
+
+/** Dar alanlar (belge satırı, stok miktarı) için kısa yazım: "m2" → "m²". */
+export function birimKisaAdi(birim: string | null | undefined): string {
+  if (!birim) return "";
+  return birim.replace(/^m2$/, "m²").replace(/^m3$/, "m³").replace(/^kwh$/, "kWh");
+}

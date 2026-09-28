@@ -27,6 +27,7 @@ import { ornekFatura } from "./sablon-onizleme";
 import { faturaPdfHtml } from "./fatura-pdf";
 import { durumGecmisiOku } from "../core/durum-gecmisi";
 import { takiliRezervasyonMu } from "../ebelge/takili-rezervasyon";
+import { birimKatsayisiBul, satirBirimleriniDogrula } from "../stok/birim-cevrim";
 import type {
   faturaOlusturSemasi,
   faturaGuncelleSemasi,
@@ -557,6 +558,7 @@ export class FaturaService {
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       await this.cariTipiniDogrula(tx, girdi.cariId, girdi.tip);
+      await satirBirimleriniDogrula(tx, girdi.satirlar);
 
       const cari = await tx.cariHesap.findUnique({
         where: { id: girdi.cariId },
@@ -820,6 +822,8 @@ export class FaturaService {
           },
         });
       }
+
+      if (girdi.satirlar) await satirBirimleriniDogrula(tx, girdi.satirlar);
 
       // EBLG-71: satırlar değiştiyse şarj türü de değişebilir.
       const guncelSarjKartlari = await tx.stokKart.findMany({
@@ -1369,21 +1373,24 @@ export class FaturaService {
         for (const s of fatura.satirlar) {
           const tip =
             fatura.tip === "satis" || fatura.tip === "alis_iade" ? "cikis" : "giris";
+          // STK-10: ek birimle (koli) girilen satır stoğa ana birimle (adet)
+          // yazılır; birim fiyat da ana birim başına düşer.
+          const katsayi = await birimKatsayisiBul(tx, s.stokId, s.birim);
 
           const hareketSonucu = await this.stokService.hareketEkle(tx, {
             stokId: s.stokId,
             varyantId: s.varyantId,
             depoId,
             tip,
-            miktar: s.miktar,
+            miktar: s.miktar.mul(katsayi),
             girilenBirim: s.birim,
             girilenMiktar: s.miktar,
-            birimMaliyet: s.birimFiyat,
+            birimMaliyet: s.birimFiyat.div(katsayi).toDecimalPlaces(4),
             tarih: new Date(fatura.tarih),
             aciklama: `${faturaNo || fatura.id} nolu fatura hareketi`,
             kaynakTur: "fatura",
             kaynakRef: fatura.id,
-            partiler: this.partiBilgileriniOku(s.partiBilgileri),
+            partiler: this.partiBilgileriniOku(s.partiBilgileri).map((p) => ({ ...p, miktar: p.miktar.mul(katsayi) })),
           });
           // Eksi stok politikası "uyar" ise kesinleştirme sürer, uyarı döner (STK-17)
           if (hareketSonucu.eksiStokUyarisi) {

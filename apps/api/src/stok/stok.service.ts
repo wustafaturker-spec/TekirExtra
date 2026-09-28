@@ -33,6 +33,7 @@ import type {
 
 import { stokExcelOku } from "../core/excel-yardimci";
 import { iptalCiftiMi, iptalEdilmisFaturalar } from "../fatura/iptal-cifti";
+import { birimKatsayisiBul } from "./birim-cevrim";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal => new Prisma.Decimal(deger);
 
@@ -111,6 +112,7 @@ export class StokService {
         include: {
           kategori: { select: { id: true, ad: true } },
           tedarikciler: { select: { tedarikciUrunKodu: true } },
+          birimler: { select: { ad: true, katsayi: true }, orderBy: { katsayi: "asc" } },
           _count: { select: { hareketler: true } },
         },
       }),
@@ -124,6 +126,8 @@ export class StokService {
         ...this.gorunum(k),
         kategori: k.kategori,
         tedarikciUrunKodlari: k.tedarikciler.map((tedarikci) => tedarikci.tedarikciUrunKodu).filter((kod): kod is string => Boolean(kod)),
+        // STK-10: belge satırında seçilebilen ek birimler.
+        birimler: k.birimler.map((b) => ({ ad: b.ad, katsayi: b.katsayi.toString() })),
         izinliEylemler: this.eylemler(k, ctx.rol, k._count.hareketler),
       })),
       sonrakiImlec,
@@ -157,6 +161,9 @@ export class StokService {
       barkodlar: kayit.barkodlar,
       tedarikciler: kayit.tedarikciler,
       varyantlar: kayit.varyantlar,
+      // Hareket görmüş kartın ana birimi değişirse eski miktarlar yeni
+      // birimle okunur; bu yüzden kilitlenir (STK-01).
+      anaBirimKilitli: kayit._count.hareketler > 0,
       izinliEylemler: this.eylemler(kayit, ctx.rol, kayit._count.hareketler),
     };
   }
@@ -432,6 +439,14 @@ export class StokService {
       const partiSayisi = await this.prisma.tenantIslem(tenantId, (tx) => tx.stokParti.count({ where: { stokId: id } }));
       if (partiSayisi > 0) throw new BadRequestException("Parti hareketi bulunan kartın takip tipi değiştirilemez");
     }
+    if (girdi.anaBirim && girdi.anaBirim !== mevcut.anaBirim) {
+      if (mevcut.anaBirimKilitli) {
+        throw new BadRequestException("Stok hareketi bulunan kartın ana birimi değiştirilemez; eski miktarlar yeni birimle okunurdu");
+      }
+      if (mevcut.birimler.some((b) => b.ad === girdi.anaBirim)) {
+        throw new BadRequestException(`'${girdi.anaBirim}' bu kartta ek birim olarak tanımlı; önce ek birimi silin`);
+      }
+    }
     try {
       const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
         tx.stokKart.update({
@@ -544,7 +559,10 @@ export class StokService {
 
   async birimEkle(stokId: string, girdi: z.infer<typeof stokBirimSemasi>) {
     const { tenantId } = aktifBaglam();
-    await this.getir(stokId);
+    const kart = await this.getir(stokId);
+    if (kart.anaBirim === girdi.ad) {
+      throw new BadRequestException(`'${girdi.ad}' bu kartın ana birimi; ek birim olarak eklenemez`);
+    }
     try {
       return await this.prisma.tenantIslem(tenantId, (tx) =>
         tx.stokBirim.create({
@@ -571,9 +589,19 @@ export class StokService {
 
   async birimSil(stokId: string, birimId: string) {
     const { tenantId } = aktifBaglam();
-    await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.stokBirim.delete({ where: { id: birimId, stokId } }),
-    );
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const birim = await tx.stokBirim.findFirst({ where: { id: birimId, stokId } });
+      if (!birim) throw new NotFoundException("Birim bulunamadı");
+      // Belgede kullanılan ek birim silinirse o satırlar stoğa çevrilemez.
+      const [fatura, belge] = await Promise.all([
+        tx.faturaSatir.count({ where: { stokId, birim: birim.ad } }),
+        tx.belgeSatir.count({ where: { stokId, birim: birim.ad } }),
+      ]);
+      if (fatura + belge > 0) {
+        throw new BadRequestException(`'${birim.ad}' birimi fatura veya belge satırlarında kullanılıyor; silinemez`);
+      }
+      await tx.stokBirim.delete({ where: { id: birimId } });
+    });
   }
 
   /**
@@ -881,19 +909,7 @@ export class StokService {
     stokId: string,
     birim: string,
   ): Promise<Prisma.Decimal> {
-    const kart = await tx.stokKart.findUnique({
-      where: { id: stokId },
-      select: { anaBirim: true, ad: true },
-    });
-    if (!kart) throw new NotFoundException("Stok kartı bulunamadı");
-    if (kart.anaBirim === birim) return D(1);
-    const ek = await tx.stokBirim.findFirst({ where: { stokId, ad: birim } });
-    if (!ek) {
-      throw new BadRequestException(
-        `'${kart.ad}' ürününde '${birim}' birimi tanımlı değil`,
-      );
-    }
-    return D(ek.katsayi);
+    return birimKatsayisiBul(tx, stokId, birim);
   }
 
   /** Eksi stok politikasını mevcut transaction içinden okur (STK-17). */
@@ -1345,6 +1361,7 @@ export class StokService {
     if (urunler.length === 0) {
       throw new BadRequestException("Excel dosyasında aktarılabilir ürün bulunamadı");
     }
+    StokService.excelBirimleriniDogrula(urunler);
 
     const kodlar = [...new Set(urunler.map((urun) => urun.kod))];
     const mevcutlar = await this.prisma.tenantIslem(tenantId, (tx) =>
@@ -1371,8 +1388,21 @@ export class StokService {
   async excelImport(buffer: Buffer): Promise<{ eklenen: number }> {
     const { tenantId } = aktifBaglam();
     const urunler = await stokExcelOku(buffer);
+    StokService.excelBirimleriniDogrula(urunler);
 
     await this.prisma.tenantIslem(tenantId, async (tx) => {
+      // Hareketi olan kartın ana birimi Excel'le de değişmez (STK-01).
+      const mevcutlar = await tx.stokKart.findMany({
+        where: { kod: { in: urunler.map((u) => u.kod) } },
+        select: { kod: true, anaBirim: true, _count: { select: { hareketler: true } } },
+      });
+      const kilitli = urunler.filter((u) => {
+        const m = mevcutlar.find((k) => k.kod === u.kod);
+        return u.birim && m && m.anaBirim !== u.birim && m._count.hareketler > 0;
+      });
+      if (kilitli.length > 0) {
+        throw new BadRequestException(`Stok hareketi olan ürünlerin birimi değiştirilemez: ${kilitli.map((u) => `${u.satirNo}. satır ${u.kod}`).join(", ")}`);
+      }
       for (const u of urunler) {
         await tx.stokKart.upsert({
           where: { tenantId_kod: { tenantId, kod: u.kod } },
@@ -1385,6 +1415,7 @@ export class StokService {
             kdvOrani: u.kdvOrani,
             alisFiyati: u.alisFiyati,
             satisFiyati: u.satisFiyati,
+            anaBirim: u.birim ?? "adet",
             mevcutMiktar: 0,
             ortalamaMaliyet: 0,
           },
@@ -1395,11 +1426,20 @@ export class StokService {
             kdvOrani: u.kdvOrani,
             alisFiyati: u.alisFiyati,
             satisFiyati: u.satisFiyati,
+            ...(u.birim ? { anaBirim: u.birim } : {}),
           },
         });
       }
     });
 
     return { eklenen: urunler.length };
+  }
+
+  /** Excel'de yazılan birim listede yoksa hangi satır olduğu söylenir. */
+  private static excelBirimleriniDogrula(urunler: { satirNo: number; birimHam: string | null; birim: string | null }[]) {
+    const hatali = urunler.filter((u) => u.birimHam && !u.birim);
+    if (hatali.length > 0) {
+      throw new BadRequestException(`Tanınmayan birim: ${hatali.map((u) => `${u.satirNo}. satır '${u.birimHam}'`).join(", ")}. Açıklamalar sayfasındaki birimlerden birini yazın`);
+    }
   }
 }

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, apiPdfAc, tokenAl } from "@/lib/api";
+import { BirimSecimi } from "@/components/birim-secimi";
+import { birimCoz } from "@tekirextra/shared";
 import { EbelgeAdimSeridi } from "@/components/durum-gecmisi";
 import {
   Alert,
@@ -115,25 +117,6 @@ const para = (deger: string | number, dovizCinsi = "TRY"): string =>
 const adet = (deger: string | number): string =>
   Number(deger).toLocaleString("tr-TR", { maximumFractionDigits: 3 });
 
-const STANDART_BIRIMLER = [
-  "adet",
-  "kg",
-  "gram",
-  "ton",
-  "litre",
-  "metre",
-  "cm",
-  "m2",
-  "m3",
-  "paket",
-  "kutu",
-  "koli",
-  "palet",
-  "saat",
-  "gun",
-  "ay",
-  "hizmet",
-] as const;
 
 const ESLESME_ETIKETI: Record<string, string> = {
   alici_urun_kodu: "ürün kodumuz",
@@ -305,7 +288,7 @@ export default function GelenKutusuSayfasi() {
     setYeniTip("urun");
     // Gelen e-faturadaki birim standart listede varsa onu kullan, yoksa "adet" olarak varsay
     const belgedekiBirim = (satir.birim ?? "").trim().toLowerCase();
-    const esleseBirim = STANDART_BIRIMLER.find((b) => b === belgedekiBirim) ?? "adet";
+    const esleseBirim = birimCoz(belgedekiBirim) ?? "adet";
     setYeniBirim(esleseBirim);
     setYeniKdv(satir.kdvOrani);
   }
@@ -928,13 +911,7 @@ export default function GelenKutusuSayfasi() {
                           </div>
                           <div style={{ flex: 1, minWidth: 110 }}>
                             <Field label="Ana Birim *">
-                              <Select value={yeniBirim} onChange={(e) => setYeniBirim(e.target.value)}>
-                                {STANDART_BIRIMLER.map((b) => (
-                                  <option key={b} value={b}>
-                                    {b}
-                                  </option>
-                                ))}
-                              </Select>
+                              <BirimSecimi value={yeniBirim} onChange={setYeniBirim} required />
                             </Field>
                           </div>
                           <div style={{ flex: 1, minWidth: 90 }}>

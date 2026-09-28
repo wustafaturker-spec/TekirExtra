@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, tokenAl } from "@/lib/api";
+import { BirimSecimi } from "@/components/birim-secimi";
 import {
   Alert,
   Badge,
@@ -35,7 +36,7 @@ interface StokKart {
 
 interface ExcelOnizleme {
   toplam: number; eklenecek: number; guncellenecek: number; kirpildi: boolean;
-  satirlar: Array<{ kod: string; ad: string; tip: string; barkod: string | null; kdvOrani: number; alisFiyati: number | null; satisFiyati: number | null; islem: "ekle" | "guncelle" }>;
+  satirlar: Array<{ kod: string; ad: string; tip: string; barkod: string | null; kdvOrani: number; alisFiyati: number | null; satisFiyati: number | null; birim: string | null; islem: "ekle" | "guncelle" }>;
 }
 
 const tl = (deger: string | number): string =>
@@ -64,6 +65,7 @@ export default function StokSayfasi() {
   const [tip, setTip] = useState("urun");
   const [barkod, setBarkod] = useState("");
   const [kdvOrani, setKdvOrani] = useState("20");
+  const [anaBirim, setAnaBirim] = useState("adet");
   const [alisFiyati, setAlisFiyati] = useState("");
   const [satisFiyati, setSatisFiyati] = useState("");
   const [alisFiyatiDoviz, setAlisFiyatiDoviz] = useState("TRY");
@@ -111,6 +113,7 @@ export default function StokSayfasi() {
           ad,
           tip,
           barkod: barkod || null,
+          anaBirim,
           kdvOrani: kdvOrani || "20",
           alisFiyati: alisFiyati || null,
           satisFiyati: satisFiyati || null,
@@ -124,6 +127,7 @@ export default function StokSayfasi() {
       setAd("");
       setBarkod("");
       setKdvOrani("20");
+      setAnaBirim("adet");
       setAlisFiyati("");
       setSatisFiyati("");
       setAlisFiyatiDoviz("TRY"); setSatisFiyatiDoviz("TRY");
@@ -196,9 +200,9 @@ export default function StokSayfasi() {
             <div><Badge variant="success">{excelOnizleme.eklenecek} yeni</Badge> <Badge variant="warning">{excelOnizleme.guncellenecek} güncelleme</Badge></div>
           </div>
           <TableWrap>
-            <thead><tr><th>İşlem</th><th>Kod</th><th>Ad</th><th>Tip</th><th>KDV</th><th className="num">Alış</th><th className="num">Satış</th></tr></thead>
+            <thead><tr><th>İşlem</th><th>Kod</th><th>Ad</th><th>Tip</th><th>Birim</th><th>KDV</th><th className="num">Alış</th><th className="num">Satış</th></tr></thead>
             <tbody>{excelOnizleme.satirlar.map((satir, index) => (
-              <tr key={`${satir.kod}-${index}`}><td><Badge variant={satir.islem === "ekle" ? "success" : "warning"}>{satir.islem === "ekle" ? "Yeni" : "Güncelle"}</Badge></td><td className="mono">{satir.kod}</td><td>{satir.ad}</td><td>{satir.tip}</td><td>%{satir.kdvOrani}</td><td className="num">{satir.alisFiyati == null ? "—" : tl(satir.alisFiyati)}</td><td className="num">{satir.satisFiyati == null ? "—" : tl(satir.satisFiyati)}</td></tr>
+              <tr key={`${satir.kod}-${index}`}><td><Badge variant={satir.islem === "ekle" ? "success" : "warning"}>{satir.islem === "ekle" ? "Yeni" : "Güncelle"}</Badge></td><td className="mono">{satir.kod}</td><td>{satir.ad}</td><td>{satir.tip}</td><td>{satir.birim ?? "adet"}</td><td>%{satir.kdvOrani}</td><td className="num">{satir.alisFiyati == null ? "—" : tl(satir.alisFiyati)}</td><td className="num">{satir.satisFiyati == null ? "—" : tl(satir.satisFiyati)}</td></tr>
             ))}</tbody>
           </TableWrap>
           {excelOnizleme.kirpildi && <p className="muted">İlk 20 satır gösteriliyor.</p>}
@@ -219,6 +223,7 @@ export default function StokSayfasi() {
               <Field label="Ürün/Hizmet adı"><Input value={ad} onChange={(e) => setAd(e.target.value)} required placeholder="Örn. Taşınabilir monitör" /></Field>
               <Field label="Stok kodu"><Input value={kod} onChange={(e) => setKod(e.target.value)} required placeholder="STK-001" /></Field>
               <Field label="Tür"><Select value={tip} onChange={(e) => setTip(e.target.value)}><option value="urun">Ürün</option><option value="hizmet">Hizmet</option></Select></Field>
+              <Field label="Birim"><BirimSecimi value={anaBirim} onChange={setAnaBirim} required /></Field>
               <Field label="Barkod"><Input value={barkod} onChange={(e) => setBarkod(e.target.value)} placeholder="8690..." /></Field>
             </div>
           </div>

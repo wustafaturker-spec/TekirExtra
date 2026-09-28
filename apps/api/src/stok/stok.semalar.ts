@@ -1,10 +1,24 @@
 import { z } from "zod";
-import { SARJ_TURLERI } from "@tekirextra/shared";
+import { SARJ_TURLERI, birimCoz } from "@tekirextra/shared";
 import { guncellemeSemasi } from "../core/sema";
 
 const pozitifOndalik = z
   .string()
   .regex(/^\d{1,13}(\.\d{1,6})?$/, "Pozitif sayısal değer gerekli");
+
+/**
+ * Birim listeden gelir (STK-01); "Kg.", "lt" gibi yazımlar listedeki ada
+ * çevrilir, karşılığı olmayan birim reddedilir — GİB koduna düşmeyen birim
+ * giden belgeye adet olarak yazılıyordu.
+ */
+export const birimAlani = z.string().min(1).max(20).transform((birim, ctx) => {
+  const ad = birimCoz(birim);
+  if (!ad) {
+    ctx.addIssue({ code: "custom", message: `'${birim}' birimi tanınmıyor; listeden bir birim seçin` });
+    return z.NEVER;
+  }
+  return ad;
+});
 
 export const STOK_TIPLERI = ["urun", "hizmet", "sarf"] as const;
 
@@ -35,7 +49,7 @@ export const stokKartOlusturSemasi = z.object({
   ureticiUrunKodu: z.string().max(64).optional().nullable(),
   barkod: z.string().max(120).optional().nullable(),
   kategoriId: z.string().uuid().optional().nullable(),
-  anaBirim: z.string().min(1).max(20).default("adet"),
+  anaBirim: birimAlani.default("adet"),
   kdvOrani: pozitifOndalik.default("20"),
   alisFiyati: pozitifOndalik.optional().nullable(),
   satisFiyati: pozitifOndalik.optional().nullable(),
@@ -60,7 +74,7 @@ export const kategoriSemasi = z.object({
 });
 
 export const stokBirimSemasi = z.object({
-  ad: z.string().min(1).max(20),
+  ad: birimAlani,
   katsayi: pozitifOndalik,
 });
 

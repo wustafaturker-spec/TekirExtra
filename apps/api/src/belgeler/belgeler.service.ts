@@ -35,6 +35,7 @@ import { belgePdfHtml } from "./belge-pdf";
 import { durumGecmisiOku } from "../core/durum-gecmisi";
 import { ebelgeUygulamalariniOku } from "../ebelge/ebelge-uygulamalari.service";
 import { belgeSirasiAl } from "./belge-sayac";
+import { anaBirimMiktari, satirBirimleriniDogrula } from "../stok/birim-cevrim";
 import type {
   belgeGuncelleSemasi,
   belgeOlusturSemasi,
@@ -442,6 +443,7 @@ export class BelgelerService {
           ...this.tasimaAlanlari(girdi),
         },
       });
+      await satirBirimleriniDogrula(tx, girdi.satirlar);
       await this.satirlariYaz(tx, belge.id, hesap.satirlar, girdi.satirlar);
       return this.gorunum(belge);
     });
@@ -586,6 +588,7 @@ export class BelgelerService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       await this.teslimFarkiniUygula(tx, mevcut.satirlar, birlesik.satirlar);
       await tx.belgeSatir.deleteMany({ where: { belgeId: id } });
+      if (girdi.satirlar) await satirBirimleriniDogrula(tx, girdi.satirlar);
       await this.satirlariYaz(tx, id, hesap.satirlar, birlesik.satirlar);
       const belge = await tx.belge.update({
         where: { id },
@@ -924,7 +927,7 @@ export class BelgelerService {
    */
   private async teslimGeriAl(
     tx: Prisma.TransactionClient,
-    satirlar: { stokId: string; varyantId: string | null; miktar: Prisma.Decimal; kaynakSatirId: string | null }[],
+    satirlar: { stokId: string; varyantId: string | null; miktar: Prisma.Decimal; birim: string; kaynakSatirId: string | null }[],
     kaynakBelgeId: string | null,
   ): Promise<void> {
     const bagliSatirlar = satirlar.filter((s) => s.kaynakSatirId);
@@ -1253,13 +1256,15 @@ export class BelgelerService {
   async siparisEtkisiUygula(
     tx: Prisma.TransactionClient,
     yon: "satis" | "alis",
-    satirlar: { stokId: string; varyantId?: string | null; miktar: Prisma.Decimal }[],
+    satirlar: { stokId: string; varyantId?: string | null; miktar: Prisma.Decimal; birim: string }[],
     isaret: 1 | -1,
     depoId?: string | null,
   ): Promise<void> {
     const alan = yon === "satis" ? "rezerveMiktar" : "yoldakiMiktar";
     const hedefDepoId = await this.depoService.depoCozumle(tx, depoId);
-    for (const s of satirlar) {
+    for (const satir of satirlar) {
+      // STK-10: rezerv ve yoldaki ana birimle tutulur (3 koli → 36 adet).
+      const s = { ...satir, miktar: await anaBirimMiktari(tx, satir) };
       await tx.stokKart.update({
         where: { id: s.stokId },
         data: {
@@ -1312,7 +1317,7 @@ export class BelgelerService {
         yon: true,
         depoId: true,
         kaynakBelge: { select: { tur: true, yon: true, depoId: true } },
-        satirlar: { select: { stokId: true, varyantId: true, miktar: true, kaynakSatirId: true } },
+        satirlar: { select: { stokId: true, varyantId: true, miktar: true, birim: true, kaynakSatirId: true } },
       },
     });
     for (const b of belgeler) {

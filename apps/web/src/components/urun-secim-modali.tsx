@@ -3,9 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { Button, Field, Input, Select } from "@/components/ui";
+import { birimKatsayisi, SatirBirimi } from "@/components/birim-secimi";
+import { birimKisaAdi } from "@tekirextra/shared";
 
 export interface UrunSecimStok {
   id: string; kod: string; ad: string; anaBirim?: string; kdvOrani?: string;
+  /** STK-10: ek birimler (1 koli = 12 adet). */
+  birimler?: { ad: string; katsayi: string }[];
   kullanilabilirMiktar?: string; mevcutMiktar?: string; aciklama?: string | null;
 }
 interface Varyant { id: string; kod: string; ad: string; mevcutMiktar: string; aktif: boolean }
@@ -15,7 +19,7 @@ interface Tavsiye {
   belgeKuru: number; urunKuru: number | null; cevrilebilir: boolean; fiyatKaynagi: string; iskontoOrani: number;
 }
 export interface UrunSecimSonucu {
-  stokId: string; varyantId?: string; miktar: number; birimFiyat: number;
+  stokId: string; varyantId?: string; miktar: number; birim: string; birimFiyat: number;
   iskontoOrani: number; kdvOrani: number; kaynakDoviz: string; kaynakFiyat: number; urunKuru: number;
 }
 
@@ -32,6 +36,7 @@ export function UrunSecimModali({ acik, baslangicStokId, stoklar, cariId, tip, b
   const [listeler, setListeler] = useState<FiyatListesi[]>([]);
   const [fiyatListesiId, setFiyatListesiId] = useState("");
   const [miktar, setMiktar] = useState("1");
+  const [birim, setBirim] = useState("");
   const [urunKuru, setUrunKuru] = useState("1");
   const [fiyat, setFiyat] = useState<Tavsiye | null>(null);
   const [birimFiyat, setBirimFiyat] = useState("0");
@@ -70,6 +75,7 @@ export function UrunSecimModali({ acik, baslangicStokId, stoklar, cariId, tip, b
     if (!acik) return;
     setStokId(baslangicStokId ?? ""); setVaryantId(""); setMiktar("1"); setFiyat(null); setHata("");
     const secili = stoklar.find((s) => s.id === baslangicStokId);
+    setBirim(secili?.anaBirim ?? "adet");
     if (secili) setKdv(secili.kdvOrani ?? "20");
   }, [acik, baslangicStokId, stoklar]);
   useEffect(() => {
@@ -89,14 +95,21 @@ export function UrunSecimModali({ acik, baslangicStokId, stoklar, cariId, tip, b
     if (kaynakKur) p.set("urunKuru", kaynakKur);
     try {
       const t = await api<Tavsiye>(`/stok/${stokId}/tavsiye-fiyat?${p}`);
-      setFiyat(t); setBirimFiyat(String(t.kaynakFiyat)); setFiyatDovizi(t.kaynakDoviz); setIskonto(String(t.iskontoOrani));
+      // Tavsiye fiyat ana birim başınadır; seçili ek birime ölçeklenir.
+      setFiyat(t); setBirimFiyat(String(Number((t.kaynakFiyat * birimKatsayisi(seciliStok, birim)).toFixed(4)))); setFiyatDovizi(t.kaynakDoviz); setIskonto(String(t.iskontoOrani));
       if (t.kaynakDoviz === "TRY") setUrunKuru("1");
       setHata(t.cevrilebilir ? "" : `${t.kaynakDoviz} fiyatını ${belgeDovizi} para birimine çevirmek için ürün kurunu girin.`);
     } catch (e) { setHata(e instanceof Error ? e.message : "Fiyat alınamadı"); }
   }
 
   function stokSec(id: string) {
-    const s = stoklar.find((x) => x.id === id); setStokId(id); setVaryantId(""); setKdv(s?.kdvOrani ?? "20");
+    const s = stoklar.find((x) => x.id === id); setStokId(id); setVaryantId(""); setKdv(s?.kdvOrani ?? "20"); setBirim(s?.anaBirim ?? "adet");
+  }
+  const seciliStok = stoklar.find((s) => s.id === stokId);
+  function birimDegistir(yeni: string) {
+    const oran = birimKatsayisi(seciliStok, yeni) / birimKatsayisi(seciliStok, birim);
+    setBirimFiyat(String(Number((Number(birimFiyat) * oran).toFixed(4))));
+    setBirim(yeni);
   }
   function fiyatDoviziDegistir(yeniDoviz: string) {
     const kaynakKur = tcmbKurlari[fiyatDovizi]; const hedefKur = tcmbKurlari[yeniDoviz];
@@ -110,14 +123,14 @@ export function UrunSecimModali({ acik, baslangicStokId, stoklar, cariId, tip, b
       <header><div><small>ÜRÜN / HİZMETLER</small><h3>{stok ? `${stok.kod} ${stok.ad}` : "Ürün seçin"}</h3></div><button type="button" aria-label="Kapat" onClick={onKapat}>×</button></header>
       {!stok ? <div className="product-picker__search">
         <Input autoFocus value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Kod, barkod veya ürün adıyla ara" />
-        <div className="product-picker__results">{sonuclar.map((s) => <button type="button" key={s.id} onClick={() => stokSec(s.id)}><strong>{s.ad}</strong><span>{s.kod}</span><em>{Number(s.kullanilabilirMiktar ?? s.mevcutMiktar ?? 0).toLocaleString("tr-TR")} {s.anaBirim ?? "adet"}</em></button>)}{!sonuclar.length && <p>Aramayla eşleşen ürün bulunamadı.</p>}</div>
+        <div className="product-picker__results">{sonuclar.map((s) => <button type="button" key={s.id} onClick={() => stokSec(s.id)}><strong>{s.ad}</strong><span>{s.kod}</span><em>{Number(s.kullanilabilirMiktar ?? s.mevcutMiktar ?? 0).toLocaleString("tr-TR")} {birimKisaAdi(s.anaBirim ?? "adet")}</em></button>)}{!sonuclar.length && <p>Aramayla eşleşen ürün bulunamadı.</p>}</div>
       </div> : <div className="product-picker__body">
         {fiyat && <p className="product-picker__notice">Orijinal ürün fiyatı: <strong>{Number(fiyat.kaynakFiyat).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} {fiyat.kaynakDoviz}</strong>{kurTarihi && ` · TCMB döviz alış kuru: ${kurTarihi}`}</p>}
         {kurDurumu === "yukleniyor" && <p className="product-picker__notice">TCMB döviz alış kurları yükleniyor…</p>}
         {kurDurumu === "hata" && <p className="product-picker__notice is-warning" role="alert">TCMB kurları alınamadı: {kurHatasi}. <button type="button" onClick={() => void kurlariYukle()}>Tekrar dene</button></p>}
         {kurDurumu === "hazir" && <div className="product-picker__rates"><span>USD alış <strong>{tcmbKurlari.USD?.toLocaleString("tr-TR", { minimumFractionDigits: 4 })}</strong></span><span>EUR alış <strong>{tcmbKurlari.EUR?.toLocaleString("tr-TR", { minimumFractionDigits: 4 })}</strong></span><small>{kurTarihi}</small></div>}
         <div className="product-picker__grid">
-          <Field label="Miktar"><Input autoFocus type="number" min="0.000001" step="any" value={miktar} onChange={(e) => setMiktar(e.target.value)} /></Field>
+          <Field label="Miktar"><div className="document-line-qty"><Input autoFocus type="number" min="0.000001" step="any" value={miktar} onChange={(e) => setMiktar(e.target.value)} /><SatirBirimi stok={seciliStok} value={birim} onChange={birimDegistir} /></div></Field>
           {varyantlar.length > 0 && <Field label="Varyant"><Select value={varyantId} onChange={(e) => { setVaryantId(e.target.value); void fiyatGetir(urunKuru, e.target.value, fiyatListesiId); }}><option value="">Ana ürün</option>{varyantlar.map((v) => <option value={v.id} key={v.id}>{v.kod} — {v.ad} (stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")})</option>)}</Select></Field>}
           <Field label="Fiyat listesi"><Select value={fiyatListesiId} onChange={(e) => { setFiyatListesiId(e.target.value); void fiyatGetir(urunKuru, varyantId, e.target.value); }}><option value="">Cari / ürün varsayılanı</option>{listeler.map((l) => <option value={l.id} key={l.id}>{l.ad} ({l.dovizCinsi})</option>)}</Select></Field>
           <Field label="Fiyat para birimi"><Select value={fiyatDovizi} onChange={(e) => fiyatDoviziDegistir(e.target.value)}><option>TRY</option><option>USD</option><option>EUR</option></Select></Field>
@@ -129,7 +142,7 @@ export function UrunSecimModali({ acik, baslangicStokId, stoklar, cariId, tip, b
         </div>
         {hata && <p className="product-picker__notice is-warning" role="alert">{hata}</p>}
         <div className="product-picker__total"><span>TOPLAM</span><strong>{(Number(miktar) * belgeyeCevrilmisFiyat * (1 - Number(iskonto) / 100)).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {belgeDovizi}</strong></div>
-        <footer><Button type="button" onClick={() => { setStokId(""); setFiyat(null); }}>Başka ürün seç</Button><Button variant="primary" type="button" disabled={Number(miktar) <= 0 || !Number.isFinite(belgeyeCevrilmisFiyat)} onClick={() => onEkle({ stokId, varyantId: varyantId || undefined, miktar: Number(miktar), birimFiyat: belgeyeCevrilmisFiyat, iskontoOrani: Number(iskonto), kdvOrani: Number(kdv), kaynakDoviz: fiyatDovizi, kaynakFiyat: Number(birimFiyat), urunKuru: tcmbKurlari[fiyatDovizi] ?? Number(urunKuru) })}>+ Ekle</Button></footer>
+        <footer><Button type="button" onClick={() => { setStokId(""); setFiyat(null); }}>Başka ürün seç</Button><Button variant="primary" type="button" disabled={Number(miktar) <= 0 || !Number.isFinite(belgeyeCevrilmisFiyat)} onClick={() => onEkle({ stokId, varyantId: varyantId || undefined, miktar: Number(miktar), birim: birim || seciliStok?.anaBirim || "adet", birimFiyat: belgeyeCevrilmisFiyat, iskontoOrani: Number(iskonto), kdvOrani: Number(kdv), kaynakDoviz: fiyatDovizi, kaynakFiyat: Number(birimFiyat), urunKuru: tcmbKurlari[fiyatDovizi] ?? Number(urunKuru) })}>+ Ekle</Button></footer>
       </div>}
     </section>
   </div>;
