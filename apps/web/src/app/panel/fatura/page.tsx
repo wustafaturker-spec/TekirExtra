@@ -16,7 +16,7 @@ import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, KAP_CINSLERI, kapEksigiVarMi, SIK_KAP_CINSLERI, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-alani";
 import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
-import { ebelgeGitmemisMi, ebelgeKullanilmiyor, faturaGecikmeUyarilari, type EbelgeUygulamalari } from "@tekirextra/shared";
+import { ebelgeGitmemisMi, ebelgeKullanilmiyor, faturaGecikmeUyarilari, faturaGeriAlmaEngeli, type EbelgeUygulamalari } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -380,8 +380,9 @@ const kapAdediSayisi = (metin: string): number | null => {
 const KAYDEDILMEMIS_DEGISIKLIK_UYARISI = "Bu faturadaki kaydedilmemiş değişiklikler silinecek. Formdan ayrılmak istiyor musunuz?";
 
 // Taslak ya da e-belgesi oluşmamış kesin fatura düzenlenebilir (FTR-05); diğerleri salt okunur açılır.
+/** FTR-29: yalnız taslak düzenlenir; gönderilmemiş kesin fatura önce taslağa geri alınır. */
 function faturaDuzenlenebilir(fatura: { durum: string; ebelge?: unknown }): boolean {
-  return fatura.durum === "taslak" || (fatura.durum === "kesin" && !fatura.ebelge);
+  return fatura.durum === "taslak" && !fatura.ebelge;
 }
 
 function FaturaDurumRozeti({ fatura }: { fatura: Fatura }) {
@@ -1212,6 +1213,21 @@ export default function FaturaSayfasi() {
     catch (h) { setHata(h instanceof Error ? h.message : "Fatura iptal edilemedi"); }
   }
 
+  /** FTR-29: stok ve cari ters kayıtla geri alınır, fatura taslakta düzenlenir; numara korunur. */
+  async function taslagaGeriAl(fatura: FaturaDetay) {
+    const ebelgeNotu = fatura.ebelge ? " Entegratöre ulaşmamış e-Belge kaydı, önce entegratöre sorularak silinir." : "";
+    if (!window.confirm(`Fatura taslağa geri alınacak: stok ve cari hareketleri ters kayıtla kaldırılır, numarası korunur.${ebelgeNotu} Düzelttikten sonra yeniden kesinleştirmeniz gerekir. Devam edilsin mi?`)) return;
+    setHata(""); setBasari("");
+    try {
+      await api(`/fatura/${fatura.id}/taslaga-geri-al`, { method: "POST" });
+      const guncel = await api<FaturaDetay>(`/fatura/${fatura.id}`);
+      setAcikFatura(guncel);
+      setDuzenlenenId(guncel.id);
+      setBasari("Fatura taslağa geri alındı; düzenleyip yeniden kesinleştirebilirsiniz.");
+      void yukle();
+    } catch (h) { setHata(h instanceof Error ? h.message : "Fatura taslağa geri alınamadı"); }
+  }
+
   async function iptalEt(id: string) {
     if (!window.confirm("Bu taslak faturayı iptal etmek istediğinize emin misiniz? Kayıt, iptal durumuyla korunacaktır.")) return;
     setHata(""); setBasari("");
@@ -1827,6 +1843,7 @@ export default function FaturaSayfasi() {
               {acikFatura.durum === "taslak" && <Button variant="primary" size="sm" type="button" onClick={() => void kesinlestirmeOzetiAc(acikFatura.id)}>🔒 Kesinleştir</Button>}
               {!acikFatura.ebelge && acikFatura.durum === "kesin" && ["satis", "alis_iade"].includes(acikFatura.tip) && ebelgeGonderilebilirFirma && <Button variant="primary" size="sm" type="button" onClick={() => void ebelgeWizardAc(acikFatura)}>🧾 e-Fatura Oluştur</Button>}
               {!acikFatura.ebelge && acikFatura.durum === "kesin" && !ebelgeGonderilebilirFirma && <span className="muted">Firma e-Fatura/e-Arşiv'e kayıtlı değil; fatura kağıt olarak düzenlenir.</span>}
+              {faturaGeriAlmaEngeli(acikFatura) === null && <Button size="sm" type="button" onClick={() => void taslagaGeriAl(acikFatura)}>↩ Taslağa geri al</Button>}
               {acikFatura.ebelge && <Button size="sm" type="button" onClick={() => void ebelgePdfAc(acikFatura.id)}>📄 e-Belge PDF</Button>}
               {acikFatura.durum !== "taslak" && <Button size="sm" type="button" onClick={() => void pdfAc(acikFatura.id)}>🖨 PDF</Button>}
               {acikFatura.durum !== "taslak" && <Button size="sm" type="button" onClick={() => setEpostaGonderilen(acikFatura)}>✉️ E-posta</Button>}
@@ -1849,6 +1866,8 @@ export default function FaturaSayfasi() {
             <p className="document-editor__note">
               {acikFatura?.durum === "iptal"
                 ? "Bu fatura iptal edildiği için değiştirilemez."
+                : acikFatura && faturaGeriAlmaEngeli(acikFatura) === null
+                ? "Kesinleşmiş fatura doğrudan değiştirilemez. Düzeltmek için \"Taslağa geri al\" düğmesini kullanın."
                 : "Bu faturanın e-belgesi oluşturulduğu için değiştirilemez; düzeltme iade faturasıyla yapılır."}
             </p>
           )}

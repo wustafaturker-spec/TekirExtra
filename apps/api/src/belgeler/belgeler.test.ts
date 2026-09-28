@@ -567,7 +567,7 @@ describe("BelgelerService", () => {
 
   describe("irsaliye numarası onayda (FTR-27, EBLG-83)", () => {
     /** Firmanın e-İrsaliye ayarı elle verilir; `null` ise GİB listesine bakılır. */
-    const onayla = async (yon: "satis" | "alis", ortam: { firmaEirsaliye?: boolean | null; listeGuncel?: boolean } = {}) => {
+    const onayla = async (yon: "satis" | "alis", ortam: { firmaEirsaliye?: boolean | null; listeGuncel?: boolean; belge?: Record<string, unknown> } = {}) => {
       const { firmaEirsaliye = true, listeGuncel = true } = ortam;
       const taslak = {
         id: "i1", tur: "irsaliye", yon, durum: "taslak", no: null, tarih: new Date("2026-09-24"),
@@ -577,6 +577,7 @@ describe("BelgelerService", () => {
         toplamMatrah: new Prisma.Decimal(0), toplamKdv: new Prisma.Decimal(0), toplamTevkifat: new Prisma.Decimal(0),
         toplamNetKdv: new Prisma.Decimal(0), genelToplam: new Prisma.Decimal(0), aciklama: null, notlar: null,
         fiiliSevkZamani: new Date("2026-09-24T09:00:00Z"), kaynakBelgeId: null, faturaId: null, satirlar: [],
+        kagitIrsaliye: false, ...ortam.belge,
       };
       const tx = {
         belge: {
@@ -617,6 +618,82 @@ describe("BelgelerService", () => {
       expect(sonuc.no).toBe("AIR2026000012");
       expect(sayacAnahtari).toMatchObject({ tur: "irsaliye", yon: "alis", seri: "", yil: 2026 });
       expect(tx.tenant.findUnique).not.toHaveBeenCalled();
+    });
+
+    it("taslağa geri alınmış irsaliye numarasını ve kanalını korur, sayaca dokunmaz (FTR-29)", async () => {
+      const eirsaliye = await onayla("satis", { belge: { no: "GBZ2026000800031" } });
+      expect(eirsaliye.sonuc).toMatchObject({ no: "GBZ2026000800031", kagitIrsaliye: false });
+      expect(eirsaliye.tx.belgeSayac.upsert).not.toHaveBeenCalled();
+      expect(eirsaliye.tx.tenant.findUnique).not.toHaveBeenCalled();
+
+      const kagit = await onayla("satis", { belge: { no: "KIR2026000004", kagitIrsaliye: true } });
+      expect(kagit.sonuc).toMatchObject({ no: "KIR2026000004", kagitIrsaliye: true });
+      expect(kagit.tx.belgeSayac.upsert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("irsaliyeyi taslağa geri alma (FTR-29)", () => {
+    const geriAl = async (belge: Record<string, unknown>) => {
+      const tx = {
+        belge: {
+          findUnique: vi.fn().mockResolvedValue({ id: "i1", tur: "irsaliye", tarih: new Date("2026-09-24"), ...belge }),
+          update: vi.fn(({ data }) => Promise.resolve({ id: "i1", ...belge, ...data })),
+        },
+      };
+      const prisma = { tenantIslem: vi.fn((_t, calistir) => calistir(tx)) } as any;
+      const servis = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
+      vi.spyOn(servis as any, "gorunum").mockImplementation((b) => b);
+      return { sonuc: servis.taslagaGeriAl("i1"), tx };
+    };
+
+    it("gönderilmemiş ya da entegratöre ulaşmamış onaylı irsaliyeyi yalnız durumunu değiştirerek geri alır", async () => {
+      for (const eirsaliye of [null, { durum: "hata", entegratorRef: null }]) {
+        const { sonuc, tx } = await geriAl({ durum: "onaylandi", no: "GBZ2026000800031", eirsaliye });
+        await expect(sonuc).resolves.toMatchObject({ durum: "taslak", no: "GBZ2026000800031" });
+        expect(tx.belge.update).toHaveBeenCalledWith({ where: { id: "i1" }, data: { durum: "taslak" } });
+      }
+    });
+
+    describe("taslak düzenlenirken sipariş teslimi (FTR-29)", () => {
+      const kur = (siparisSatiri: Record<string, unknown>) => {
+        const tx = {
+          belgeSatir: {
+            findMany: vi.fn()
+              .mockResolvedValueOnce([{ id: "ss1", miktar: new Prisma.Decimal(10), teslimEdilenMiktar: new Prisma.Decimal(4), belge: { id: "sip1", tur: "siparis", durum: "kismen_kapandi", faturaId: null }, ...siparisSatiri }])
+              .mockResolvedValueOnce([{ miktar: new Prisma.Decimal(10), teslimEdilenMiktar: new Prisma.Decimal(10) }]),
+            update: vi.fn(),
+          },
+          belge: { update: vi.fn() },
+        };
+        const servis = new BelgelerService({} as any, {} as any, {} as any, {} as any);
+        const uygula = (eski: unknown[], yeni: unknown[]) => (servis as any).teslimFarkiniUygula(tx, eski, yeni);
+        return { tx, uygula };
+      };
+
+      it("miktar farkını sipariş satırına yazar ve siparişin durumunu yeniden hesaplar", async () => {
+        const { tx, uygula } = kur({});
+        await uygula([{ kaynakSatirId: "ss1", miktar: "4.000" }], [{ kaynakSatirId: "ss1", miktar: "10" }]);
+        expect(tx.belgeSatir.update.mock.calls[0][0]).toMatchObject({ where: { id: "ss1" } });
+        expect(tx.belgeSatir.update.mock.calls[0][0].data.teslimEdilenMiktar.increment.toString()).toBe("6");
+        expect(tx.belge.update).toHaveBeenCalledWith({ where: { id: "sip1" }, data: { durum: "kapandi" } });
+      });
+
+      it("sipariş miktarını aşan teslime ve yabancı sipariş satırına izin vermez", async () => {
+        await expect(kur({}).uygula([{ kaynakSatirId: "ss1", miktar: "4" }], [{ kaynakSatirId: "ss1", miktar: "11" }])).rejects.toThrow(/aşamaz/);
+        await expect(kur({}).uygula([{ kaynakSatirId: "ss1", miktar: "4" }], [{ kaynakSatirId: "baska", miktar: "1" }])).rejects.toThrow(/bağlanamaz/);
+      });
+
+      it("silinen bağlı satırın teslimini geri alır; iptal edilmiş siparişte değiştirmez", async () => {
+        const { tx, uygula } = kur({});
+        await uygula([{ kaynakSatirId: "ss1", miktar: "4" }], [{ kaynakSatirId: null, miktar: "4" }]);
+        expect(tx.belgeSatir.update.mock.calls[0][0].data.teslimEdilenMiktar.increment.toString()).toBe("-4");
+        await expect(kur({ belge: { id: "sip1", tur: "siparis", durum: "iptal", faturaId: null } }).uygula([{ kaynakSatirId: "ss1", miktar: "4" }], [{ kaynakSatirId: "ss1", miktar: "3" }])).rejects.toThrow(/değiştirilemez/);
+      });
+    });
+
+    it("gönderilmiş e-İrsaliyede ve faturaya bağlı irsaliyede geri almaz", async () => {
+      await expect((await geriAl({ durum: "onaylandi", eirsaliye: { durum: "iletildi", entegratorRef: "u" } })).sonuc).rejects.toThrow(/gönderilmiş/);
+      await expect((await geriAl({ durum: "kapandi", eirsaliye: null })).sonuc).rejects.toThrow(/bağını kaldırın/);
     });
   });
 });

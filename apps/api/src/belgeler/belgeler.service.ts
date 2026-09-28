@@ -26,7 +26,7 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PdfService } from "../core/pdf/pdf.service";
-import { metinNormalize, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi } from "@tekirextra/shared";
+import { irsaliyeGeriAlmaEngeli, metinNormalize, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi } from "@tekirextra/shared";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { PrismaService } from "../core/prisma.service";
 import { DepoService } from "../stok/depo.service";
@@ -314,6 +314,8 @@ export class BelgelerService {
         kdvTutari: s.kdvTutari.toFixed(2),
         toplamTutar: s.toplamTutar.toFixed(2),
         idisEtiketNo: s.idisEtiketNo,
+        // FTR-29: taslak düzenlenirken sipariş bağı korunsun diye ekrana gider.
+        kaynakSatirId: s.kaynakSatirId,
       })),
       // SAT-10: siparişin teslim geçmişi — hangi irsaliye, ne zaman, ne kadar.
       // İptal edilen irsaliye teslim sayılmaz, listede de yer almaz.
@@ -537,6 +539,10 @@ export class BelgelerService {
       yuklemeIlce: girdi.yuklemeIlce !== undefined ? girdi.yuklemeIlce : mevcut.yuklemeIlce,
       yuklemePostaKodu: girdi.yuklemePostaKodu !== undefined ? girdi.yuklemePostaKodu : mevcut.yuklemePostaKodu,
       idisSevkiyatNo: girdi.idisSevkiyatNo !== undefined ? girdi.idisSevkiyatNo : mevcut.idisSevkiyatNo,
+      teslimatAdres: girdi.teslimatAdres !== undefined ? girdi.teslimatAdres : mevcut.teslimatAdres,
+      teslimatIl: girdi.teslimatIl !== undefined ? girdi.teslimatIl : mevcut.teslimatIl,
+      teslimatIlce: girdi.teslimatIlce !== undefined ? girdi.teslimatIlce : mevcut.teslimatIlce,
+      teslimatPostaKodu: girdi.teslimatPostaKodu !== undefined ? girdi.teslimatPostaKodu : mevcut.teslimatPostaKodu,
       satirlar:
         girdi.satirlar ??
         mevcut.satirlar.map((s) => ({
@@ -551,6 +557,7 @@ export class BelgelerService {
           tevkifatPay: null,
           tevkifatPayda: null,
           idisEtiketNo: s.idisEtiketNo,
+          kaynakSatirId: s.kaynakSatirId,
         })),
     };
 
@@ -577,6 +584,7 @@ export class BelgelerService {
 
     const hesap = this.hesapla(birlesik);
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      await this.teslimFarkiniUygula(tx, mevcut.satirlar, birlesik.satirlar);
       await tx.belgeSatir.deleteMany({ where: { belgeId: id } });
       await this.satirlariYaz(tx, id, hesap.satirlar, birlesik.satirlar);
       const belge = await tx.belge.update({
@@ -599,10 +607,66 @@ export class BelgelerService {
           ...this.toplamAlanlari(hesap),
           aciklama: birlesik.aciklama,
           notlar: birlesik.notlar,
+          // Taşıma, İDİS ve teslimat alanları önceden hesaplanıp yazılmıyordu;
+          // taslağa geri alınmış irsaliyenin düzeltmesi kaybolurdu (FTR-29).
+          ...this.tasimaAlanlari({
+            ...birlesik,
+            tur: mevcut.tur,
+          }),
         },
       });
       return this.gorunum(belge);
     });
+  }
+
+  /**
+   * FTR-29: taslak irsaliyenin siparişe bağlı satırları düzenlenince sipariş
+   * satırındaki teslim birikimi farkı kadar düzeltilir (SAT-09). Bağ yalnız
+   * belgenin zaten taşıdığı sipariş satırlarıyla sürer; teslim sipariş
+   * miktarını aşamaz, sipariş durumu kalana göre yeniden açılır ya da kapanır.
+   * İptal edilmiş ya da faturalanmış siparişin satırında miktar değişmez.
+   */
+  private async teslimFarkiniUygula(
+    tx: Prisma.TransactionClient,
+    eskiSatirlar: { kaynakSatirId?: string | null; miktar: Prisma.Decimal | string }[],
+    yeniSatirlar: { kaynakSatirId?: string | null; miktar: Prisma.Decimal | string }[],
+  ): Promise<void> {
+    const topla = (satirlar: typeof eskiSatirlar) => {
+      const harita = new Map<string, Prisma.Decimal>();
+      for (const s of satirlar) {
+        if (s.kaynakSatirId) harita.set(s.kaynakSatirId, (harita.get(s.kaynakSatirId) ?? D(0)).add(D(s.miktar)));
+      }
+      return harita;
+    };
+    const eski = topla(eskiSatirlar);
+    const yeni = topla(yeniSatirlar);
+    for (const kaynak of yeni.keys()) {
+      if (!eski.has(kaynak)) throw new BadRequestException("Satır, belgenin bağlı olmadığı bir sipariş satırına bağlanamaz");
+    }
+    if (eski.size === 0) return;
+    const kaynaklar = await tx.belgeSatir.findMany({
+      where: { id: { in: [...eski.keys()] } },
+      select: { id: true, miktar: true, teslimEdilenMiktar: true, belge: { select: { id: true, tur: true, durum: true, faturaId: true } } },
+    });
+    const siparisler = new Set<string>();
+    for (const kaynak of kaynaklar) {
+      if (kaynak.belge.tur !== "siparis") continue;
+      const fark = (yeni.get(kaynak.id) ?? D(0)).sub(eski.get(kaynak.id)!);
+      if (fark.isZero()) continue;
+      if (kaynak.belge.durum === "iptal" || kaynak.belge.faturaId) {
+        throw new BadRequestException("İptal edilmiş ya da faturalanmış siparişten gelen satırın miktarı değiştirilemez");
+      }
+      const teslim = kaynak.teslimEdilenMiktar.add(fark);
+      if (teslim.greaterThan(kaynak.miktar)) throw new BadRequestException("Teslim edilen miktar sipariş miktarını aşamaz");
+      await tx.belgeSatir.update({ where: { id: kaynak.id }, data: { teslimEdilenMiktar: { increment: fark } } });
+      siparisler.add(kaynak.belge.id);
+    }
+    for (const siparisId of siparisler) {
+      const satirlar = await tx.belgeSatir.findMany({ where: { belgeId: siparisId }, select: { miktar: true, teslimEdilenMiktar: true } });
+      const teslimVar = satirlar.some((s) => s.teslimEdilenMiktar.greaterThan(0));
+      const tamamlandi = satirlar.every((s) => s.teslimEdilenMiktar.greaterThanOrEqualTo(s.miktar));
+      await tx.belge.update({ where: { id: siparisId }, data: { durum: tamamlandi ? "kapandi" : teslimVar ? "kismen_kapandi" : "onaylandi" } });
+    }
   }
 
   async sil(id: string): Promise<void> {
@@ -721,7 +785,13 @@ export class BelgelerService {
       let no: string | null;
       // EBLG-87: gümrükten depoya sevk alış irsaliyesidir ama firma düzenler;
       // numarası satış irsaliyesininki gibi kanaldan gelir.
-      if (irsaliye && (belge.yon === "satis" || belge.gumrukDepoSevki)) {
+      if (irsaliye && belge.no) {
+        // FTR-29: taslağa geri alınmış irsaliye numarasını ve kanalını korur;
+        // yeni numara seride boşluk bırakırdı. Numarasız geri alınan
+        // e-İrsaliye (hiç gönderilmemiş) aşağıdaki yoldan yine numarasız kalır.
+        no = belge.no;
+        kagitIrsaliye = belge.kagitIrsaliye;
+      } else if (irsaliye && (belge.yon === "satis" || belge.gumrukDepoSevki)) {
         const karar = irsaliyeKanali((await ebelgeUygulamalariniOku(tx, tenantId)).eirsaliye.acik);
         if ("hata" in karar) throw new BadRequestException(karar.hata);
         kagitIrsaliye = karar.kanal === "kagit";
@@ -814,6 +884,31 @@ export class BelgelerService {
         data: { durum: "iptal" },
       });
       return this.gorunum(guncel);
+    });
+  }
+
+  /**
+   * FTR-29: onaylanmış, e-İrsaliyesi GİB'e ulaşmamış irsaliyeyi düzeltmek için
+   * taslağa geri alır. İrsaliye onayı stok ve rezerv yazmaz (teslim birikimi
+   * dönüştürmede yazılır, taslakta da geçerlidir); bu yüzden yalnız durum
+   * değişir. Numara, kâğıt/e-İrsaliye kanalı ve e-İrsaliye kaydı korunur:
+   * yeniden onayda aynı numara kullanılır, gönderim XML'i belgeden yeniden
+   * üretir.
+   */
+  async taslagaGeriAl(id: string) {
+    const { tenantId } = aktifBaglam();
+    const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.belge.findUnique({ where: { id }, select: { tarih: true } }));
+    if (!kayit) throw new NotFoundException("Belge bulunamadı");
+    await this.donemKilidi.tarihDogrula(tenantId, kayit.tarih, "irsaliyeyi taslağa geri alma");
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const belge = await tx.belge.findUnique({
+        where: { id },
+        include: { eirsaliye: { select: { durum: true, entegratorRef: true } } },
+      });
+      if (!belge) throw new NotFoundException("Belge bulunamadı");
+      const engel = irsaliyeGeriAlmaEngeli(belge);
+      if (engel) throw new BadRequestException(engel);
+      return this.gorunum(await tx.belge.update({ where: { id }, data: { durum: "taslak" } }));
     });
   }
 
@@ -1479,7 +1574,7 @@ export class BelgelerService {
     tx: Prisma.TransactionClient,
     belgeId: string,
     hesapSatirlari: ReturnType<typeof faturaHesapla>["satirlar"],
-    girdiSatirlari: { birim?: string; varyantId?: string | null; partiBilgileri?: unknown[]; idisEtiketNo?: string | null }[],
+    girdiSatirlari: { birim?: string; varyantId?: string | null; partiBilgileri?: unknown[]; idisEtiketNo?: string | null; kaynakSatirId?: string | null }[],
   ): Promise<void> {
     const { tenantId } = aktifBaglam();
     for (const [i, s] of hesapSatirlari.entries()) {
@@ -1499,6 +1594,7 @@ export class BelgelerService {
           birim: girdiSatirlari[i]?.birim ?? "adet",
           // EBLG-72: İDİS etiket numarası satırda taşınır.
           idisEtiketNo: girdiSatirlari[i]?.idisEtiketNo ? idisNormalize(girdiSatirlari[i]!.idisEtiketNo!) : null,
+          kaynakSatirId: girdiSatirlari[i]?.kaynakSatirId ?? null,
           birimFiyat: D(s.birimFiyat),
           iskontoOrani: D(s.iskontoOrani),
           iskontoTutari: D(s.iskontoTutari),

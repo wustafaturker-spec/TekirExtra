@@ -37,6 +37,11 @@ export const belgeSatirSemasi = z.object({
   tevkifatPayda: z.number().int().min(1).max(10).optional().nullable(),
   /** İDİS etiket numarası (EBLG-72): 2 harf + 7 rakam; irsaliyede de zorunlu. */
   idisEtiketNo: z.string().max(20).optional().nullable(),
+  /**
+   * FTR-29: taslak düzenlenirken satırın türediği sipariş satırı korunur.
+   * Yalnız belgenin zaten bağlı olduğu satırlar verilebilir (sunucu denetler).
+   */
+  kaynakSatirId: z.string().uuid().optional().nullable(),
 });
 
 export const belgeOlusturSemasi = z.object({

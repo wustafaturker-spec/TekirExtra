@@ -1,4 +1,4 @@
-import { ebelgeGitmemisMi, ihracKayitliSonTarih } from "@tekirextra/shared";
+import { ebelgeGitmemisMi, faturaGeriAlmaEngeli, ihracKayitliSonTarih } from "@tekirextra/shared";
 import {
   BadRequestException,
   ConflictException,
@@ -691,26 +691,14 @@ export class FaturaService {
     const fatura = await this.getir(id);
     await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih ?? fatura.tarih, "fatura güncelleme");
 
-    const kesinDuzenleme = fatura.durum === "kesin" && !fatura.ebelge;
-    if ((fatura.durum !== "taslak" && !kesinDuzenleme) || fatura.ebelge) {
-      throw new BadRequestException("Yalnızca e-Belgesi gönderilmemiş faturalar güncellenebilir");
-    }
-
-    // Kesinleşmiş ancak henüz e-belgeye dönüşmemiş faturanın stok yönünü,
-    // deposunu veya cari bağlantısını değiştirmek mevcut hareketleri bozar.
-    // Tutar/iskonto/vergi ve açıklama düzeltmeleri serbest; stok etkisi doğuran
-    // alanlar sabit tutulur. Cari hareketi aşağıda aynı transaction'da güncellenir.
-    if (kesinDuzenleme) {
-      if (girdi.tip !== undefined && girdi.tip !== fatura.tip) throw new BadRequestException("Gönderilmemiş kesin faturada fatura tipi değiştirilemez");
-      if (girdi.cariId !== undefined && girdi.cariId !== fatura.cari.id) throw new BadRequestException("Gönderilmemiş kesin faturada cari değiştirilemez");
-      if (girdi.depoId !== undefined && (girdi.depoId ?? null) !== (fatura.depoId ?? null)) throw new BadRequestException("Gönderilmemiş kesin faturada depo değiştirilemez");
-      if (girdi.dovizCinsi !== undefined && girdi.dovizCinsi !== fatura.dovizCinsi) throw new BadRequestException("Gönderilmemiş kesin faturada döviz değiştirilemez");
-      if (girdi.kur !== undefined && Number(girdi.kur) !== Number(fatura.kur)) throw new BadRequestException("Gönderilmemiş kesin faturada kur değiştirilemez");
-      if (girdi.satirlar) {
-        const eski = fatura.satirlar.map((s) => `${s.stokId}|${s.varyantId ?? ""}|${s.miktar}|${s.birim}`).join(";");
-        const yeni = girdi.satirlar.map((s) => `${s.stokId}|${s.varyantId ?? ""}|${s.miktar}|${s.birim}`).join(";");
-        if (eski !== yeni) throw new BadRequestException("Gönderilmemiş kesin faturada stok ve miktar değiştirilemez; yeni taslak oluşturun");
-      }
+    // FTR-29: kesin fatura yerinde düzenlenmez; gönderilmemişse önce taslağa
+    // geri alınır (stok ve cari ters kayıtla düzelir), taslakta düzenlenir.
+    if (fatura.durum !== "taslak" || fatura.ebelge) {
+      throw new BadRequestException(
+        fatura.durum === "kesin" && !faturaGeriAlmaEngeli(fatura)
+          ? "Kesinleşmiş fatura düzenlenmez; önce taslağa geri alın"
+          : "Yalnızca e-Belgesi gönderilmemiş taslak faturalar güncellenebilir",
+      );
     }
 
     // Tam güncelleme için girdiyi tamamla
@@ -888,21 +876,6 @@ export class FaturaService {
         },
       });
 
-      if (kesinDuzenleme) {
-        await tx.cariHareket.updateMany({
-          where: { tenantId, kaynakTur: "fatura", kaynakRef: id },
-          data: {
-            tutar: D(hesaplanan.genelToplam),
-            dovizCinsi: birlesikGirdi.dovizCinsi,
-            kur: D(birlesikGirdi.kur),
-            tutarTry: D(hesaplanan.genelToplam).mul(D(birlesikGirdi.kur)).toDecimalPlaces(2),
-            tarih: new Date(birlesikGirdi.tarih),
-            vadeTarihi: birlesikGirdi.vadeTarihi ? new Date(birlesikGirdi.vadeTarihi) : null,
-            aciklama: `${fatura.no ?? "Fatura"} nolu fatura hareketi`,
-          },
-        });
-      }
-
       return this.gorunum(guncellenen);
     });
   }
@@ -980,11 +953,7 @@ export class FaturaService {
       }
 
       if (fatura.tip !== "proforma") {
-        const hareketler = await tx.stokHareket.findMany({
-          where: { kaynakTur: "fatura", kaynakRef: id },
-          include: { partiler: { include: { parti: true } } },
-          orderBy: { createdAt: "asc" },
-        });
+        const hareketler = await this.sonKesinlestirmeHareketleri(tx, id);
         for (const hareket of hareketler) {
           await this.stokService.hareketEkle(tx, {
             stokId: hareket.stokId,
@@ -1030,6 +999,113 @@ export class FaturaService {
         });
       }
       return tx.fatura.update({ where: { id }, data: { durum: "iptal" } });
+    });
+  }
+
+  /**
+   * FTR-29: e-Belgesi GİB'de karşılığı olan bir belgeye dönüşmemiş kesin
+   * faturayı taslağa geri alır. Kesinleştirmenin etkileri ters kayıtla
+   * kaldırılır (cari hareketleri yalnız eklemeli tutulur): stok ve cari ters
+   * hareketi faturanın tarihine yazılır ki dönem raporlarında sıfırlansın,
+   * çözülen sipariş rezervi geri konur. Numara, seri ve sıra korunur; yeniden
+   * kesinleştirmede aynı numara kullanılır. Entegratöre ulaşmamış e-Belge kaydı
+   * önce sağlayıcıya sorularak doğrulanır, sonra silinir — düzeltilen belge
+   * gönderimde baştan üretilir.
+   */
+  async taslagaGeriAl(id: string) {
+    const { tenantId } = aktifBaglam();
+    const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.fatura.findUnique({ where: { id }, select: { tarih: true } }));
+    if (!kayit) throw new NotFoundException("Fatura bulunamadı");
+    await this.donemKilidi.tarihDogrula(tenantId, kayit.tarih, "faturayı taslağa geri alma");
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const fatura = await tx.fatura.findUnique({
+        where: { id },
+        include: { ebelge: { select: { id: true, tur: true, durum: true, entegratorRef: true } } },
+      });
+      if (!fatura) throw new NotFoundException("Fatura bulunamadı");
+      const engel = faturaGeriAlmaEngeli(fatura);
+      if (engel) throw new BadRequestException(engel);
+
+      const [kasaBankaSayisi, posSayisi, krediKartiSayisi] = await Promise.all([
+        tx.kasaBankaHareket.count({ where: { faturaId: id } }),
+        tx.posTahsilat.count({ where: { faturaId: id } }),
+        tx.krediKartiHareket.count({ where: { tenantId, faturaId: id } }),
+      ]);
+      if (kasaBankaSayisi + posSayisi + krediKartiSayisi > 0) {
+        throw new BadRequestException("Tahsilat veya ödeme bağlı fatura taslağa geri alınamaz; önce finans hareketini geri alın");
+      }
+
+      if (fatura.ebelge) {
+        await this.ebelge.entegratoreUlasmadiginiDogrula(tx, fatura, fatura.ebelge, "fatura taslağa geri alınamaz", "geri alma durduruldu");
+        await tx.ebelgeKayit.delete({ where: { id: fatura.ebelge.id } });
+      }
+
+      const etiket = `${fatura.no || fatura.id} nolu fatura taslağa geri alma ters hareketi`;
+      for (const hareket of await this.sonKesinlestirmeHareketleri(tx, id)) {
+        await this.stokService.hareketEkle(tx, {
+          stokId: hareket.stokId,
+          varyantId: hareket.varyantId,
+          depoId: hareket.depoId,
+          tip: hareket.tip === "cikis" ? "giris" : "cikis",
+          miktar: hareket.miktar.abs(),
+          girilenBirim: hareket.girilenBirim,
+          girilenMiktar: hareket.girilenMiktar,
+          birimMaliyet: hareket.maliyet,
+          tarih: hareket.tarih,
+          aciklama: etiket,
+          kaynakTur: "fatura_geri_alma",
+          kaynakRef: fatura.id,
+          partiler: hareket.partiler.map((parti) => ({
+            lotNo: parti.parti.lotNo,
+            seriNo: parti.parti.seriNo,
+            sonKullanmaTarihi: parti.parti.sonKullanmaTarihi?.toISOString().slice(0, 10) ?? null,
+            uretimTarihi: parti.parti.uretimTarihi?.toISOString().slice(0, 10) ?? null,
+            miktar: parti.miktar.abs(),
+          })),
+        });
+      }
+
+      await tx.cariHareket.create({
+        data: {
+          tenantId,
+          cariId: fatura.cariId,
+          tip: fatura.tip === "satis" || fatura.tip === "alis_iade" ? "alacak" : "borc",
+          tutar: fatura.genelToplam,
+          dovizCinsi: fatura.dovizCinsi,
+          kur: fatura.kur,
+          tutarTry: fatura.genelToplam.mul(fatura.kur).toDecimalPlaces(2),
+          tarih: fatura.tarih,
+          vadeTarihi: fatura.vadeTarihi,
+          aciklama: etiket,
+          kaynakTur: "fatura_geri_alma",
+          kaynakRef: fatura.id,
+        },
+      });
+
+      // Kesinleştirmede çözülen bağlı irsaliyelerin sipariş rezervi geri konur;
+      // yeniden kesinleştirmede yine çözülür (FTR-26 bağ kaldırmayla aynı).
+      const bagliBelgeler = await tx.belge.findMany({ where: { faturaId: id }, select: { id: true } });
+      await this.belgelerService.zincirEtkisiniCoz(tx, bagliBelgeler.map((b) => b.id), 1);
+
+      return this.gorunum(await tx.fatura.update({ where: { id }, data: { durum: "taslak" } }));
+    });
+  }
+
+  /**
+   * Faturanın son kesinleştirmesinin stok hareketleri. Taslağa geri alınıp
+   * yeniden kesinleştirilen faturada önceki turun hareketleri ters kaydıyla
+   * zaten kapanmıştır; iptal ya da yeni geri alma yalnız sonuncuyu çevirmeli.
+   */
+  private async sonKesinlestirmeHareketleri(tx: Prisma.TransactionClient, faturaId: string) {
+    const sonGeriAlma = await tx.stokHareket.findFirst({
+      where: { kaynakTur: "fatura_geri_alma", kaynakRef: faturaId },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+    return tx.stokHareket.findMany({
+      where: { kaynakTur: "fatura", kaynakRef: faturaId, ...(sonGeriAlma ? { createdAt: { gt: sonGeriAlma.createdAt } } : {}) },
+      include: { partiler: { include: { parti: true } } },
+      orderBy: { createdAt: "asc" },
     });
   }
 
@@ -1227,7 +1303,13 @@ export class FaturaService {
       // 1. Numara Serisi Üretimi (FTR-06):
       // Alış faturalarında numara el ile girilir, satış faturalarında sayaç artırılarak otomatik üretilir.
       // Alış iadesini biz keseriz (EBLG-58); numarası satıştaki gibi kendi serimizden gelir.
-      if (fatura.tip === "satis" || fatura.tip === "satis_iade" || fatura.tip === "alis_iade") {
+      // FTR-29: taslağa geri alınıp yeniden kesinleştirilen fatura önceki
+      // numarasını korur; yeni sıra almak seride boşluk bırakırdı.
+      const oncekiNumara = fatura.no && fatura.sira !== null ? fatura.no : null;
+      if (oncekiNumara) {
+        faturaNo = oncekiNumara;
+        seriKod = fatura.seri ?? seriKod;
+      } else if (fatura.tip === "satis" || fatura.tip === "satis_iade" || fatura.tip === "alis_iade") {
         // Entegratör otomatik seri kullanıyorsa numarayı o atar (EBLG-16);
         // burada sayaç ilerletilmez. Reddedilen belge böylece seride boşluk
         // bırakmaz, numara gönderim yanıtından gelir.
@@ -1259,7 +1341,9 @@ export class FaturaService {
           fatura.sira = guncelSeri.sonSira;
         }
       } else {
-        // Alış faturası ise el ile girilen numara zorunlu olmalı
+        // Alış faturası ise el ile girilen numara zorunlu olmalı; taslağa
+        // geri alınmış faturada önceki numara kullanılır (FTR-29).
+        faturaNo = faturaNo ?? fatura.no;
         if (!faturaNo) {
           throw new BadRequestException("Alış faturaları için belge numarası girmelisiniz");
         }

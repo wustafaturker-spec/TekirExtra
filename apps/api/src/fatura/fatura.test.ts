@@ -114,6 +114,94 @@ describe("FaturaService (FTR-14 - maksIskontoYuzdesi)", () => {
   });
 });
 
+describe("FaturaService.taslagaGeriAl (FTR-29)", () => {
+  const mockTenantIslem = vi.fn();
+  const mockPrisma = { tenantIslem: mockTenantIslem } as any;
+  const tarih = new Date("2026-09-20T00:00:00Z");
+
+  function kur(ebelge: unknown, fatura: Record<string, unknown> = {}) {
+    const entegratoreUlasmadiginiDogrula = vi.fn();
+    const hareketEkle = vi.fn();
+    const zincirEtkisiniCoz = vi.fn();
+    const tx = {
+      fatura: {
+        findUnique: vi.fn().mockResolvedValue({ id: "f1", no: "TKR2026000000007", sira: 7, seri: "TKR", durum: "kesin", tip: "satis", tarih, vadeTarihi: null, genelToplam: new Prisma.Decimal("900.00"), cariId: "c1", dovizCinsi: "TRY", kur: new Prisma.Decimal("1"), ebelge, ...fatura }),
+        update: vi.fn().mockResolvedValue({ id: "f1", durum: "taslak" }),
+      },
+      kasaBankaHareket: { count: vi.fn().mockResolvedValue(0) },
+      posTahsilat: { count: vi.fn().mockResolvedValue(0) },
+      krediKartiHareket: { count: vi.fn().mockResolvedValue(0) },
+      stokHareket: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) },
+      cariHareket: { create: vi.fn().mockResolvedValue({}) },
+      ebelgeKayit: { delete: vi.fn().mockResolvedValue({}) },
+      belge: { findMany: vi.fn().mockResolvedValue([{ id: "irs1" }]) },
+    } as any;
+    mockTenantIslem.mockImplementation((_t: string, cb: (t: unknown) => unknown) => cb(tx));
+    const service = new FaturaService(
+      mockPrisma, { hareketEkle } as any, {} as any, {} as any, {} as any, { zincirEtkisiniCoz } as any,
+      { tarihDogrula: vi.fn() } as any, {} as any, { entegratoreUlasmadiginiDogrula } as any,
+    );
+    vi.spyOn(service as any, "gorunum").mockImplementation((f) => f);
+    return { service, tx, entegratoreUlasmadiginiDogrula, hareketEkle, zincirEtkisiniCoz };
+  }
+
+  it("stok ve cariyi fatura tarihinde ters kayıtla geri alır, rezervi geri koyar, numarayı korur", async () => {
+    const { service, tx, hareketEkle, zincirEtkisiniCoz } = kur(null);
+    tx.stokHareket.findMany.mockResolvedValue([{
+      stokId: "s1", varyantId: null, depoId: "d1", tip: "cikis", tarih,
+      miktar: new Prisma.Decimal("-5"), girilenBirim: "adet", girilenMiktar: new Prisma.Decimal("5"),
+      maliyet: new Prisma.Decimal("0"), partiler: [],
+    }]);
+
+    await service.taslagaGeriAl("f1");
+
+    const stok = hareketEkle.mock.calls[0][1];
+    expect(stok).toMatchObject({ tip: "giris", tarih, kaynakTur: "fatura_geri_alma", kaynakRef: "f1" });
+    expect(stok.miktar.toString()).toBe("5");
+    expect(tx.cariHareket.create.mock.calls[0][0].data).toMatchObject({ tip: "alacak", tarih, kaynakTur: "fatura_geri_alma" });
+    expect(zincirEtkisiniCoz).toHaveBeenCalledWith(tx, ["irs1"], 1);
+    // Numara, seri ve sıra yazılmaz: yeniden kesinleştirmede aynısı kullanılır.
+    expect(tx.fatura.update).toHaveBeenCalledWith({ where: { id: "f1" }, data: { durum: "taslak" } });
+  });
+
+  it("yalnız son kesinleştirmenin hareketlerini çevirir", async () => {
+    const { service, tx } = kur(null);
+    const onceki = new Date("2026-09-21T10:00:00Z");
+    tx.stokHareket.findFirst.mockResolvedValue({ createdAt: onceki });
+
+    await service.taslagaGeriAl("f1");
+
+    expect(tx.stokHareket.findMany.mock.calls[0][0].where).toMatchObject({ kaynakTur: "fatura", createdAt: { gt: onceki } });
+  });
+
+  it("entegratöre ulaşmamış e-Belgeyi sağlayıcıya sorup siler", async () => {
+    const ebelge = { id: "eb1", tur: "efatura", durum: "hata", entegratorRef: null };
+    const { service, tx, entegratoreUlasmadiginiDogrula } = kur(ebelge);
+
+    await service.taslagaGeriAl("f1");
+
+    expect(entegratoreUlasmadiginiDogrula).toHaveBeenCalled();
+    expect(tx.ebelgeKayit.delete).toHaveBeenCalledWith({ where: { id: "eb1" } });
+  });
+
+  it("belge entegratörde çıkarsa hiçbir şeyi değiştirmez", async () => {
+    const { service, tx, entegratoreUlasmadiginiDogrula, hareketEkle } = kur({ id: "eb1", tur: "efatura", durum: "hata", entegratorRef: null });
+    entegratoreUlasmadiginiDogrula.mockRejectedValue(new Error("Belge entegratörde oluşmuş"));
+
+    await expect(service.taslagaGeriAl("f1")).rejects.toThrow("oluşmuş");
+    expect(tx.ebelgeKayit.delete).not.toHaveBeenCalled();
+    expect(hareketEkle).not.toHaveBeenCalled();
+  });
+
+  it("gönderilmiş ya da reddedilmiş e-Belgede ve tahsilat bağlıyken geri almaz", async () => {
+    await expect(kur({ id: "eb1", tur: "efatura", durum: "iletildi", entegratorRef: "u" }).service.taslagaGeriAl("f1")).rejects.toThrow("gönderilmiş");
+    await expect(kur({ id: "eb1", tur: "efatura", durum: "hata", entegratorRef: "u" }).service.taslagaGeriAl("f1")).rejects.toThrow("reddedilmiş");
+    const { service, tx } = kur(null);
+    tx.kasaBankaHareket.count.mockResolvedValue(1);
+    await expect(service.taslagaGeriAl("f1")).rejects.toThrow("Tahsilat veya ödeme");
+  });
+});
+
 describe("FaturaService.iptal — e-belge kuralı (EBLG-22)", () => {
   const mockTenantIslem = vi.fn();
   const mockPrisma = { tenantIslem: mockTenantIslem } as any;
@@ -127,7 +215,7 @@ describe("FaturaService.iptal — e-belge kuralı (EBLG-22)", () => {
       kasaBankaHareket: { count: vi.fn().mockResolvedValue(0) },
       posTahsilat: { count: vi.fn().mockResolvedValue(0) },
       krediKartiHareket: { count: vi.fn().mockResolvedValue(0) },
-      stokHareket: { findMany: vi.fn().mockResolvedValue([]) },
+      stokHareket: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) },
       cariHareket: { create: vi.fn().mockResolvedValue({}) },
       cariHesap: { update: vi.fn().mockResolvedValue({}) },
       belge: { updateMany: vi.fn().mockResolvedValue({}) },

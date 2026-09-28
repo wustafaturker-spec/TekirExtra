@@ -31,3 +31,4 @@ export * from "./irsaliye-fatura";
 export * from "./eirsaliye-asama";
 export * from "./muhtelif-musteri";
 export * from "./ebelge-iptal";
+export * from "./taslaga-geri-al";

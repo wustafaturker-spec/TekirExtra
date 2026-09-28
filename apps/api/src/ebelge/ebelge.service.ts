@@ -2038,24 +2038,39 @@ export class EbelgeService {
     fatura: { id: string },
     ebelge: { id: string; tur: EbelgeTur },
   ): Promise<void> {
+    await this.entegratoreUlasmadiginiDogrula(tx, fatura, ebelge, "fatura iptal edilemez", "iptal durduruldu");
+    await tx.ebelgeKayit.update({ where: { id: ebelge.id }, data: { durum: "iptal" } });
+  }
+
+  /**
+   * Belgenin entegratörde oluşmadığını sağlayıcıya sorarak doğrular; oluşmuşsa
+   * ya da sorulamıyorsa hata fırlatır. Gitmemiş belgenin iptali (EBLG-81) ve
+   * taslağa geri alınması (FTR-29) bunu kullanır.
+   */
+  async entegratoreUlasmadiginiDogrula(
+    tx: Prisma.TransactionClient,
+    fatura: { id: string },
+    ebelge: { tur: EbelgeTur },
+    engel: string,
+    durdu: string,
+  ): Promise<void> {
     const { tenantId } = aktifBaglam();
     const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } });
-    if (!baglanti) throw new BadRequestException("Aktif e-belge bağlantısı bulunamadı; belgenin entegratöre ulaşmadığı doğrulanamadan fatura iptal edilemez");
+    if (!baglanti) throw new BadRequestException(`Aktif e-belge bağlantısı bulunamadı; belgenin entegratöre ulaşmadığı doğrulanamadan ${engel}`);
     const cfg = JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig;
     const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
-    if (!adapter.belgeAra) throw new BadRequestException("Aktif entegratörde belge sorgusu yok; belgenin entegratöre ulaşmadığı doğrulanamadan fatura iptal edilemez");
+    if (!adapter.belgeAra) throw new BadRequestException(`Aktif entegratörde belge sorgusu yok; belgenin entegratöre ulaşmadığı doğrulanamadan ${engel}`);
     this.metrics.increment("ebelge_entegrator_cagri_total", { metot: "belgeAra", saglayici: baglanti.saglayici });
     let mevcut: GonderimSonuc | undefined;
     try {
       mevcut = await adapter.belgeAra(cfg, fatura.id, ebelge.tur);
     } catch (hata) {
       const sebep = hata instanceof Error ? hata.message : "bilinmeyen hata";
-      throw new ServiceUnavailableException(`Belgenin entegratörde oluşup oluşmadığı kontrol edilemedi, iptal durduruldu: ${sebep}`);
+      throw new ServiceUnavailableException(`Belgenin entegratörde oluşup oluşmadığı kontrol edilemedi, ${durdu}: ${sebep}`);
     }
     if (mevcut) {
       throw new ConflictException(`Belge entegratörde oluşmuş${mevcut.belgeNo ? ` (${mevcut.belgeNo})` : ""}; önce e-Belge durumunu sorgulayın, fatura numarasını alsın`);
     }
-    await tx.ebelgeKayit.update({ where: { id: ebelge.id }, data: { durum: "iptal" } });
   }
 
   async earsivBelgesiniIptalEt(

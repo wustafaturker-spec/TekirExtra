@@ -158,6 +158,13 @@ export class BelgelerController {
     return this.belgelerService.onayla(id);
   }
 
+  /** FTR-29: gönderilmemiş onaylı irsaliyeyi düzeltmek için taslağa geri alır. */
+  @Post(":id/taslaga-geri-al")
+  @Roller("muhasebe", "satis")
+  async taslagaGeriAl(@Param("id") id: string) {
+    return this.belgelerService.taslagaGeriAl(id);
+  }
+
   @Post(":id/iptal")
   @Roller("muhasebe", "satis")
   async iptal(@Param("id") id: string, @Body() govde: unknown) {

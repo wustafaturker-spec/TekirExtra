@@ -171,6 +171,13 @@ export class FaturaController {
     return this.faturaService.iptal(id);
   }
 
+  /** FTR-29: gönderilmemiş kesin faturayı düzeltmek için taslağa geri alır. */
+  @Post(":id/taslaga-geri-al")
+  @Roller("muhasebe")
+  async taslagaGeriAl(@Param("id") id: string) {
+    return this.faturaService.taslagaGeriAl(id);
+  }
+
   @Post(":id/kesinlestir")
   @Roller("muhasebe")
   async kesinlestir(

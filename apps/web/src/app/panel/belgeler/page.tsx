@@ -15,7 +15,7 @@ import { TasimaBilgisiPaneli } from "@/components/tasima-bilgisi-paneli";
 import type { DepoOzet } from "@/lib/depolar";
 import { BOS_TESLIMAT_ADRESI, TeslimatAdresiAlanlari, teslimatAdresiGovdesi, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
 import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
-import { bugunTR, faturaHesapla, muhtelifMusteriMi, irsaliyeIptalUyarisi, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
+import { bugunTR, faturaHesapla, muhtelifMusteriMi, irsaliyeGeriAlmaEngeli, irsaliyeIptalUyarisi, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -77,6 +77,8 @@ interface BelgeSatirForm {
   lotNo?: string; seriNolar?: string; sonKullanmaTarihi?: string; uretimTarihi?: string;
   /** FTR-28: ürünün fiyatı başka dövizdeydi, fiyat yazılmadı; elle fiyat girilince kalkar. Sunucuya gitmez. */
   dovizUyarisi?: string;
+  /** FTR-29: taslak düzenlenirken satırın türediği sipariş satırı; ürün değişince bağ düşer. */
+  kaynakSatirId?: string;
 }
 
 /** FTR-27 / EBLG-83: belgenin karşı ya da basılı numarası ve düzenleme ucu. */
@@ -134,6 +136,14 @@ interface Belge {
   faturalamaSuresi?: FaturalamaSuresi | null;
 }
 
+/** ISO zaman damgasını `datetime-local` alanının beklediği yerel metne çevirir. */
+function yerelZaman(iso: string): string {
+  const zaman = new Date(iso);
+  if (Number.isNaN(zaman.getTime())) return "";
+  const ikiHane = (sayi: number) => String(sayi).padStart(2, "0");
+  return `${zaman.getFullYear()}-${ikiHane(zaman.getMonth() + 1)}-${ikiHane(zaman.getDate())}T${ikiHane(zaman.getHours())}:${ikiHane(zaman.getMinutes())}`;
+}
+
 interface FaturalamaSuresi { sevkGunu: string; sonGun: string; kalanGun: number; gecti: boolean; yaklasiyor: boolean }
 
 interface ZincirRef { id: string; tur: string; no: string | null; durum: string }
@@ -164,7 +174,7 @@ interface BelgeDetay extends Belge {
     ebelge: { tur: string; durum: string } | null;
     odemeOzeti: { durum: string; odenen: string; kalan: string };
   } | null;
-  satirlar: { id: string; stokId: string; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; teslimEdilenMiktar?: string; kalanMiktar?: string; idisEtiketNo?: string | null }[];
+  satirlar: { id: string; stokId: string; varyantId?: string | null; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; teslimEdilenMiktar?: string; kalanMiktar?: string; idisEtiketNo?: string | null; kaynakSatirId?: string | null; partiBilgileri?: { lotNo: string; seriNo?: string | null; sonKullanmaTarihi?: string | null; uretimTarihi?: string | null }[] }[];
   /** SAT-10: siparişin teslim geçmişi (iptal edilen irsaliyeler sayılmaz). */
   teslimatlar?: {
     id: string; no: string | null; durum: string; tarih: string;
@@ -236,6 +246,16 @@ export default function BelgelerSayfasi() {
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [formAcik, setFormAcik] = useState(yeniSayfasi);
+  /** FTR-29: formda düzenlenen taslağın kimliği; null ise yeni belge. */
+  const [duzenlenenId, setDuzenlenenId] = useState<string | null>(null);
+  /** Taslak forma yüklenirken kayıtlı kur, TCMB kuruyla ezilmesin. */
+  const yuklenenKurRef = useRef<string | null>(null);
+  /**
+   * Taslaktaki özgün sevk zamanı. `datetime-local` dakika hassasiyetindedir;
+   * alana dokunulmadıysa saniyeler kırpılmasın diye özgün değer geri yazılır
+   * (taşıma panelindeki kuralla aynı).
+   */
+  const ozgunSevkZamaniRef = useRef<{ yerel: string; iso: string } | null>(null);
   useEffect(() => { if (yeniSayfasi) setFormAcik(true); }, [yeniSayfasi]);
   const [detay, setDetay] = useState<BelgeDetay | null>(null);
   const [tasimaPaneli, setTasimaPaneli] = useState<{ id: string; no: string | null } | null>(null);
@@ -341,6 +361,7 @@ export default function BelgelerSayfasi() {
 
   useEffect(() => {
     if (dovizCinsi === "TRY") { setKur("1"); setKurBilgisi(""); return; }
+    if (yuklenenKurRef.current) { setKur(yuklenenKurRef.current); setKurBilgisi("Belgede kayıtlı kur"); yuklenenKurRef.current = null; return; }
     let gecerli = true;
     api<{ kaynak: string; kurTarihi: string; oncekiIsGunuKullanildi: boolean; kurlar: Record<string, number> }>(`/doviz-kurlari?tarih=${tarih}&tip=alis`)
       .then((veri) => { if (gecerli && veri.kurlar[dovizCinsi]) { setKur(String(veri.kurlar[dovizCinsi])); setKurBilgisi(`${veri.kaynak === "TCMB_XML" ? "TCMB" : "TCMB EVDS"} · ${veri.kurTarihi}${veri.oncekiIsGunuKullanildi ? " (önceki iş günü)" : ""}`); } })
@@ -519,7 +540,7 @@ export default function BelgelerSayfasi() {
     yeni[i] = { ...yeni[i], [alan]: deger };
     // Elle girilen fiyat belge dövizindedir; uyumsuzluk uyarısı kalkar.
     if (alan === "birimFiyat") yeni[i].dovizUyarisi = undefined;
-    if (alan === "stokId") { yeni[i].varyantId = undefined; yeni[i].dovizUyarisi = undefined; }
+    if (alan === "stokId") { yeni[i].varyantId = undefined; yeni[i].dovizUyarisi = undefined; yeni[i].kaynakSatirId = undefined; }
     if (alan === "stokId" && deger) {
       const fiyat = await kalemFiyatiGetir(String(deger));
       if (fiyat) yeni[i] = { ...yeni[i], ...fiyat };
@@ -542,15 +563,14 @@ export default function BelgelerSayfasi() {
       const kullaniciAciklamasi = aciklama.split("\n").filter((satir) => !satir.startsWith("Döviz kuru:")).join("\n").trim();
       const kayitAciklamasi = [kullaniciAciklamasi, kurAciklamasi].filter(Boolean).join("\n");
       if (kayitAciklamasi.length > 500) { setHata("Açıklama, döviz kuru bilgisiyle birlikte 500 karakteri aşamaz."); return; }
-      const kayit = await api<Belge>("/belgeler", {
-        method: "POST",
+      const kayit = await api<Belge>(duzenlenenId ? `/belgeler/${duzenlenenId}` : "/belgeler", {
+        method: duzenlenenId ? "PATCH" : "POST",
         body: JSON.stringify({
-          tur,
-          yon,
+          // Tür ve yön taslakta değişmez; önceden düzenlenmiş fatura bağı yalnız oluştururken kurulur.
+          ...(duzenlenenId ? {} : { tur, yon, faturaId: tur === "irsaliye" && yon === "satis" ? faturaId || null : null }),
           tarih,
           gecerlilikTarihi: tur === "teklif" && gecerlilik ? gecerlilik : undefined,
           cariId,
-          faturaId: tur === "irsaliye" && yon === "satis" ? faturaId || null : null,
           // STK-07: rezerv ve stok etkisi bu depoya işlenir
           depoId: depoId || null,
           dovizCinsi,
@@ -558,7 +578,7 @@ export default function BelgelerSayfasi() {
           aciklama: kayitAciklamasi || null,
           ...(tur === "irsaliye"
             ? {
-                fiiliSevkZamani: fiiliSevkZamani ? new Date(fiiliSevkZamani).toISOString() : null,
+                fiiliSevkZamani: duzenlenenId && ozgunSevkZamaniRef.current?.yerel === fiiliSevkZamani ? ozgunSevkZamaniRef.current.iso : fiiliSevkZamani ? new Date(fiiliSevkZamani).toISOString() : null,
                 tasiyiciCariId: tasiyiciCariId || null,
                 plaka: plaka || null,
                 dorsePlaka: dorsePlaka || null,
@@ -592,12 +612,15 @@ export default function BelgelerSayfasi() {
             iskontoOrani: String(s.iskontoOrani),
             kdvOrani: String(s.kdvOrani),
             idisEtiketNo: s.idisEtiketNo?.trim() || null,
+            ...(duzenlenenId ? { kaynakSatirId: s.kaynakSatirId ?? null } : {}),
             partiBilgileri: (() => { const stok = stoklar.find((x) => x.id === s.stokId); if (yon !== "alis" || !stok?.takipTipi || stok.takipTipi === "yok") return []; if (stok.takipTipi === "seri") return (s.seriNolar ?? "").split(/[\n,;]/).map((x) => x.trim()).filter(Boolean).map((seriNo) => ({ lotNo: s.lotNo || seriNo, seriNo, sonKullanmaTarihi: s.sonKullanmaTarihi || null, uretimTarihi: s.uretimTarihi || null, miktar: "1" })); return [{ lotNo: s.lotNo ?? "", seriNo: null, sonKullanmaTarihi: s.sonKullanmaTarihi || null, uretimTarihi: s.uretimTarihi || null, miktar: String(s.miktar) }]; })(),
           })),
         }),
       });
       if (dosyalar.length > 0) await belgeDosyalariniYukle("belge", kayit.id, dosyalar);
-      setBasari(`${TUR_ADI[tur]} taslağı oluşturuldu.`);
+      setBasari(duzenlenenId ? `${TUR_ADI[tur]} taslağı güncellendi.` : `${TUR_ADI[tur]} taslağı oluşturuldu.`);
+      if (duzenlenenId && detay?.id === duzenlenenId) await detayAc(duzenlenenId);
+      setDuzenlenenId(null);
       setFormAcik(false);
       setCariId("");
       setGecerlilik("");
@@ -608,8 +631,59 @@ export default function BelgelerSayfasi() {
       setGumrukDepo(false); setBeyannameNo(""); setBeyannameTarihi(""); setYukleme(BOS_TESLIMAT_ADRESI);
       void yukle();
     } catch (h) {
-      setHata(h instanceof Error ? h.message : "Belge oluşturulamadı");
+      setHata(h instanceof Error ? h.message : duzenlenenId ? "Belge güncellenemedi" : "Belge oluşturulamadı");
     }
+  }
+
+  /**
+   * FTR-29: taslak belgeyi forma yükler. Kur belgede kayıtlı olandır (TCMB'den
+   * yeniden alınmaz); sipariş bağı satırlarda taşınır, ürün değişirse düşer.
+   */
+  function taslagiDuzenle(d: BelgeDetay) {
+    setHata(""); setBasari("");
+    setDuzenlenenId(d.id);
+    setTur(d.tur as Tur); setYon(d.yon as Yon);
+    setCariId(d.cari.id); setDepoId(d.depoId ?? ""); setTarih(d.tarih.slice(0, 10));
+    setGecerlilik(d.gecerlilikTarihi?.slice(0, 10) ?? "");
+    if (d.dovizCinsi !== "TRY" && d.kur) yuklenenKurRef.current = d.kur;
+    setDovizCinsi(d.dovizCinsi); setKur(d.kur ?? "1"); setBekleyenCevrim(null);
+    setAciklama(d.aciklama ?? ""); setKuruAciklamayaEkle(d.dovizCinsi !== "TRY" && (d.aciklama ?? "").includes("Döviz kuru:"));
+    setSiparisNo(d.siparisNo ?? ""); setSiparisTarihi(d.siparisTarihi?.slice(0, 10) ?? "");
+    const yerelSevk = d.fiiliSevkZamani ? yerelZaman(d.fiiliSevkZamani) : "";
+    ozgunSevkZamaniRef.current = d.fiiliSevkZamani ? { yerel: yerelSevk, iso: d.fiiliSevkZamani } : null;
+    setFiiliSevkZamani(yerelSevk);
+    setTasiyiciCariId(d.tasiyiciCariId ?? ""); setPlaka(d.plaka ?? ""); setDorsePlaka(d.dorsePlaka ?? "");
+    setSoforAdi(d.soforAdi ?? ""); setSoforSoyadi(d.soforSoyadi ?? ""); setSoforTckn(d.soforTckn ?? "");
+    setIdisSevkiyatNo(d.idisSevkiyatNo ?? ""); setTedarikciBelgeNo(d.tedarikciBelgeNo ?? "");
+    setTeslimat({ teslimatAdres: d.teslimatAdres ?? "", teslimatIl: d.teslimatIl ?? "", teslimatIlce: d.teslimatIlce ?? "", teslimatPostaKodu: d.teslimatPostaKodu ?? "" });
+    setGumrukDepo(Boolean(d.gumrukDepoSevki)); setBeyannameNo(d.gumrukBeyannameNo ?? ""); setBeyannameTarihi(d.gumrukBeyannameTarihi?.slice(0, 10) ?? "");
+    setYukleme({ teslimatAdres: d.yuklemeAdres ?? "", teslimatIl: d.yuklemeIl ?? "", teslimatIlce: d.yuklemeIlce ?? "", teslimatPostaKodu: d.yuklemePostaKodu ?? "" });
+    setDosyalar([]);
+    setSatirlar(d.satirlar.map((x) => {
+      const partiler = x.partiBilgileri ?? [];
+      const seriNolar = partiler.map((p) => p.seriNo).filter(Boolean);
+      return {
+        stokId: x.stokId, varyantId: x.varyantId ?? undefined,
+        miktar: Number(x.miktar), birimFiyat: Number(x.birimFiyat), iskontoOrani: Number(x.iskontoOrani), kdvOrani: Number(x.kdvOrani),
+        idisEtiketNo: x.idisEtiketNo ?? undefined, kaynakSatirId: x.kaynakSatirId ?? undefined,
+        lotNo: partiler[0]?.lotNo, seriNolar: seriNolar.length ? seriNolar.join("\n") : undefined,
+        sonKullanmaTarihi: partiler[0]?.sonKullanmaTarihi ?? undefined, uretimTarihi: partiler[0]?.uretimTarihi ?? undefined,
+      };
+    }));
+    setFormAcik(true);
+  }
+
+  function duzenlemedenVazgec() {
+    setDuzenlenenId(null);
+    setFormAcik(false);
+    setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 }]);
+    setCariId(""); setAciklama(""); setTarih(bugunTR());
+  }
+
+  /** FTR-29: onaylı, e-İrsaliyesi GİB'e ulaşmamış irsaliyeyi taslağa geri alır; numara korunur. */
+  async function irsaliyeyiTaslagaGeriAl(d: BelgeDetay) {
+    if (!window.confirm("İrsaliye taslağa geri alınacak; numarası korunur. Düzelttikten sonra yeniden onaylamanız gerekir. Devam edilsin mi?")) return;
+    await eylem(d.id, "taslaga-geri-al", "İrsaliye taslağa geri alındı; \"Düzenle\" ile değiştirebilirsiniz.");
   }
 
   async function gibUyarisiylaIptal() {
@@ -906,7 +980,7 @@ export default function BelgelerSayfasi() {
       {formAcik && (
         <div className="document-editor">
           <div className="document-editor__head">
-            <h3>Yeni {TUR_ADI[tur].toLocaleLowerCase("tr")}</h3>
+            <h3>{duzenlenenId ? `${TUR_ADI[tur]} taslağını düzenle` : `Yeni ${TUR_ADI[tur].toLocaleLowerCase("tr")}`}</h3>
             <span className="badge badge--warning">Taslak</span>
           </div>
 
@@ -932,8 +1006,8 @@ export default function BelgelerSayfasi() {
                 ? <small className="muted">Muhtelif müşteriler irsaliyesi (GİB 5555555555): dağıtımda teslim ettiğiniz her müşteriye ayrıca fatura ya da irsaliye kesin. Bu irsaliye faturaya bağlanmaz ve 7 gün takibine girmez.</small>
                 : <Button type="button" size="sm" variant="ghost" onClick={() => void muhtelifSec()}>Müşteri belli değil: Muhtelif müşteriler</Button>)}
               </div>
-              <Field label="Belge Türü"><Select value={tur} onChange={(e) => setTur(e.target.value as Tur)}><option value="teklif">Teklif</option><option value="siparis">Sipariş</option><option value="irsaliye">İrsaliye</option></Select></Field>
-              <Field label="Yön"><Select value={yon} onChange={(e) => setYon(e.target.value as Yon)}><option value="satis">Satış</option><option value="alis">Alış</option></Select></Field>
+              <Field label="Belge Türü"><Select value={tur} disabled={Boolean(duzenlenenId)} onChange={(e) => setTur(e.target.value as Tur)}><option value="teklif">Teklif</option><option value="siparis">Sipariş</option><option value="irsaliye">İrsaliye</option></Select></Field>
+              <Field label="Yön"><Select value={yon} disabled={Boolean(duzenlenenId)} onChange={(e) => setYon(e.target.value as Yon)}><option value="satis">Satış</option><option value="alis">Alış</option></Select></Field>
               <Field label="Tarih"><Input type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} required /></Field>
               <Field label="Belge Dövizi"><Select value={dovizCinsi} onChange={(e) => belgeDoviziDegistir(e.target.value)}><option>TRY</option><option>USD</option><option>EUR</option></Select></Field>
               {bekleyenCevrim && (
@@ -1123,7 +1197,10 @@ export default function BelgelerSayfasi() {
             <BelgeDosyalari dosyalar={dosyalar} onChange={setDosyalar} />
           </div>
 
-          <div className="document-editor__actions"><Button variant="primary" onClick={kaydet}>Taslak belgeyi kaydet</Button></div>
+          <div className="document-editor__actions">
+            {duzenlenenId && <Button type="button" onClick={duzenlemedenVazgec}>Vazgeç</Button>}
+            <Button variant="primary" onClick={kaydet}>{duzenlenenId ? "Değişiklikleri kaydet" : "Taslak belgeyi kaydet"}</Button>
+          </div>
         </div>
       )}
 
@@ -1152,6 +1229,8 @@ export default function BelgelerSayfasi() {
           </div>
           <EylemCubugu etiket="Belge eylemleri">
             {detay.durum === "taslak" && <Button variant="primary" size="sm" type="button" onClick={() => void onayOzetiAc(detay.id)}>✅ Onayla</Button>}
+            {detay.durum === "taslak" && <Button size="sm" type="button" onClick={() => taslagiDuzenle(detay)}>✏️ Düzenle</Button>}
+            {detay.tur === "irsaliye" && irsaliyeGeriAlmaEngeli(detay) === null && <Button size="sm" type="button" onClick={() => void irsaliyeyiTaslagaGeriAl(detay)}>↩ Taslağa geri al</Button>}
             {(detay.durum === "onaylandi" || detay.durum === "kismen_kapandi") && DONUSUM[detay.tur]?.map((hedef) => (
               hedef === "fatura" && detay.durum !== "onaylandi" ? null : (
                 <Button key={hedef} variant={hedef === "fatura" ? "primary" : undefined} size="sm" type="button" onClick={() => void donusumOzetiAc(detay.id, hedef)}>→ {hedef === "fatura" ? "Fatura" : TUR_ADI[hedef]}</Button>

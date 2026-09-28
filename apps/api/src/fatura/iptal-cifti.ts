@@ -3,10 +3,11 @@ import type { Prisma } from "@prisma/client";
 /**
  * İptal edilmiş faturanın cari ve stok hareketlerini üreten kaynak türleri
  * (CARI-22, STK-22): faturanın kendi hareketi, iptalin ters hareketi ve ters
- * hareketin telafisi. Hepsinin `kaynakRef`'i fatura kimliğidir ve toplamları
+ * hareketin telafisi; taslağa geri alınıp yeniden kesinleştirilmiş faturada
+ * geri almanın ters hareketi de (FTR-29). Hepsinin `kaynakRef`'i fatura kimliğidir ve toplamları
  * sıfırdır; bu yüzden birlikte gizlendiklerinde bakiye değişmez.
  */
-export const IPTAL_CIFTI_KAYNAKLARI: readonly string[] = ["fatura", "fatura_iptal", "fatura_iptal_duzeltme"];
+export const IPTAL_CIFTI_KAYNAKLARI: readonly string[] = ["fatura", "fatura_iptal", "fatura_iptal_duzeltme", "fatura_geri_alma"];
 
 interface KaynakliHareket {
   kaynakTur: string;
