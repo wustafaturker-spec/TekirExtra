@@ -8,7 +8,7 @@
  * görünen kutu gönderilen kutudur.
  */
 import { useState } from "react";
-import { Alert, Badge, Select } from "@/components/ui";
+import { Alert, Badge, Button, Select } from "@/components/ui";
 import { api } from "@/lib/api";
 
 export interface PostaKutusuSecimi {
@@ -67,6 +67,14 @@ export function PostaKutusuSecimleri({ cariId, secimler, duzenlenebilir, onDegis
                 {s.entegratordeYok?.includes(s.elleSecilen!)
                   ? `Elle seçilen ${s.elleSecilen} kutusu entegratörün güncel listesinde yok; bu kutuya giden e-İrsaliye taslakta kalır. Gönderimde otomatik seçim kullanılır.`
                   : `Elle seçilen ${s.elleSecilen} kutusu artık alıcının GİB listesinde yok; otomatik seçime dönüldü.`}
+                {/* Liste zaten "Otomatik" gösterdiği için oradan seçmek değişiklik
+                    sayılmaz ve eski kayıt silinemezdi; kaldırma burada yapılır. */}
+                {duzenlenebilir && (
+                  <>
+                    {" "}
+                    <Button size="sm" type="button" disabled={kaydediliyor} onClick={() => void sec(tur, null)}>Elle seçimi kaldır</Button>
+                  </>
+                )}
               </Alert>
             )}
             {duzenlenebilir && (
