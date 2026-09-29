@@ -657,7 +657,9 @@ export default function FaturaSayfasi() {
     };
   });
   // EBLG-60: ihraç kayıtlı yalnız satışta; tip değişince seçim yok sayılır.
-  const ihracKayitli = tip === "satis" && ihracKayitliKodu ? ihracKayitliKodu : null;
+  // EBLG-114: alış faturası kodu yalnız gelen ihraç kayıtlı e-Faturadan alır;
+  // alışta seçim alanı yoktur, kayıttaki kod hesaba girer.
+  const ihracKayitli = (tip === "satis" || tip === "alis") && ihracKayitliKodu ? ihracKayitliKodu : null;
   // Özel matrahta KDV satırlardan değil belgeye girilen matrahtan doğar ve
   // genel toplama eklenir; ekrandaki özet sunucunun hesabıyla aynı olsun diye
   // aynı girdi buraya da verilir (karar 2026-09-20).
@@ -1587,6 +1589,22 @@ export default function FaturaSayfasi() {
     } catch (h) { setHata(h instanceof Error ? h.message : "Beyanname bilgisi kaydedilemedi"); }
   }
 
+  /** EBLG-114: ihraç kayıtlı alışın beyannamesi; kaydedince açık fatura tazelenir. */
+  async function alisBeyannameKaydet(faturaId: string) {
+    if (!beyanname) return;
+    setHata(""); setBasari("");
+    try {
+      await api(`/ebelge/gumruk-beyannamesi/${faturaId}`, {
+        method: "POST",
+        body: JSON.stringify({ no: beyanname.no.trim() || null, tarih: beyanname.tarih || null }),
+      });
+      setBeyanname(null);
+      setBasari("Gümrük beyannamesi alış faturasına işlendi; ihracat takibi kapandı.");
+      setAcikFatura(await api<FaturaDetay>(`/fatura/${faturaId}`));
+      void yukle();
+    } catch (h) { setHata(h instanceof Error ? h.message : "Beyanname bilgisi kaydedilemedi"); }
+  }
+
   /**
    * Sunucunun ihracat engelleri panel açıldığı andaki faturayı yansıtır; fiili
    * ihracat tarihi panelde girildiği için o engel kullanıcı tarihi doldurunca
@@ -2486,11 +2504,34 @@ export default function FaturaSayfasi() {
               {sonuc.kdvDetaylari.map((k) => (
                 <div className="invoice-summary__line is-tax" key={k.kdvOrani}><span>{ihracKayitli ? "Hesaplanan " : ""}KDV %{k.kdvOrani}{sonuc.kdvDetaylari.length > 1 && <small> · matrah {tl(k.matrah, dovizCinsi)}</small>}</span><span>{tl(k.kdvTutari, dovizCinsi)}</span></div>
               ))}
-              {ihracKayitli && <small className="muted">İhraç kayıtlı: KDV hesaplanır, tahsil edilmez.</small>}
+              {ihracKayitli && <small className="muted">{tip === "alis" ? "İhraç kayıtlı alış: KDV hesaplanır, satıcıya ödenmez ve cariye girmez." : "İhraç kayıtlı: KDV hesaplanır, tahsil edilmez."}</small>}
               {sonuc.toplamTevkifat > 0 && <div className="invoice-summary__line is-discount"><span>Tevkifat</span><span>-{tl(sonuc.toplamTevkifat, dovizCinsi)}</span></div>}
               <div className="invoice-summary__line is-grand"><span>Ödenecek</span><span>{tl(sonuc.genelToplam, dovizCinsi)}</span></div>
               {dovizCinsi !== "TRY" && Number(kur) > 0 && <small className="muted invoice-summary__tl">≈ {tl(sonuc.genelToplam * Number(kur), "TRY")} · kur {Number(kur).toLocaleString("tr-TR", { maximumFractionDigits: 4 })}</small>}
             </div>
+            {/* EBLG-114: ihraç kayıtlı alışta ihracatçı biziz; mal 3 ay içinde ihraç edilmeli. */}
+            {tip === "alis" && ihracKayitli && acikFatura?.durum === "kesin" && (
+              <div className={`invoice-summary${!acikFatura.gumrukBeyannameNo ? " is-warning" : ""}`}>
+                <h4>İhracat takibi</h4>
+                {acikFatura.ihracKayitliSonTarih && <div className="invoice-summary__line"><span>İhraç için son gün</span><strong>{new Date(`${acikFatura.ihracKayitliSonTarih}T00:00:00`).toLocaleDateString("tr-TR")}</strong></div>}
+                {beyanname ? (
+                  <fieldset className="stack" style={{ border: 0, gap: ".5rem", margin: 0, padding: 0 }}>
+                    <Field label="Gümrük beyanname numarası"><Input value={beyanname.no} onChange={(e) => setBeyanname({ ...beyanname, no: e.target.value })} placeholder="26060100EX123456" /></Field>
+                    <Field label="Beyanname tarihi"><Input type="date" value={beyanname.tarih} onChange={(e) => setBeyanname({ ...beyanname, tarih: e.target.value })} /></Field>
+                    <div className="invoice-summary__actions">
+                      <Button type="button" size="sm" onClick={() => setBeyanname(null)}>Vazgeç</Button>
+                      <Button type="button" size="sm" variant="primary" onClick={() => void alisBeyannameKaydet(acikFatura.id)}>Kaydet</Button>
+                    </div>
+                  </fieldset>
+                ) : (
+                  <>
+                    <div className="invoice-summary__line"><span>Gümrük beyannamesi</span><strong>{acikFatura.gumrukBeyannameNo ?? "Girilmedi"}</strong></div>
+                    <Button type="button" size="sm" onClick={() => setBeyanname({ no: acikFatura.gumrukBeyannameNo ?? "", tarih: acikFatura.gumrukBeyannameTarihi ?? "" })}>{acikFatura.gumrukBeyannameNo ? "Beyannameyi düzenle" : "Beyanname gir"}</Button>
+                    {!acikFatura.gumrukBeyannameNo && <small className="muted">Süresinde ihraç edilmezse ödenmeyen KDV ihracatçıdan aranır.</small>}
+                  </>
+                )}
+              </div>
+            )}
             {/* Gelen alış faturasını biz göndermediğimiz için senaryosu gösterilmez. */}
             {tip !== "alis" && (
             <div className="invoice-summary">

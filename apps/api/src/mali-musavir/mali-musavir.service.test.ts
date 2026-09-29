@@ -62,4 +62,16 @@ describe("MaliMusavirService", () => {
     expect(ozet.indirilecekKdv).toBe(0);
     expect(ozet.odenecekKdv).toBe(200);
   });
+
+  it("ihraç kayıtlı alışın KDV'sini indirilecek KDV'ye katmaz (EBLG-114)", async () => {
+    mockPrisma.fatura.findMany.mockResolvedValueOnce([
+      { tip: "satis", toplamKdv: 200, ihracKayitliKodu: null },
+      { tip: "alis", toplamKdv: 50, ihracKayitliKodu: null },
+      { tip: "alis", toplamKdv: 80, ihracKayitliKodu: "701" },
+    ]);
+    const ozet = await service.kdvOzetRaporu("tenant-1", new Date("2026-08-01"), new Date("2026-08-31"));
+    expect(ozet.indirilecekKdv).toBe(50);
+    expect(ozet.ihracKayitliAlisKdv).toBe(80);
+    expect(ozet.odenecekKdv).toBe(150);
+  });
 });

@@ -48,12 +48,14 @@ export class MaliMusavirService {
 
   async kdvOzetRaporu(tenantId: string, baslangicTarihi: Date, bitisTarihi: Date) {
     const faturalar = await this.prisma.tenantIslem(tenantId, (tx) => tx.fatura.findMany({ where: { tenantId, tarih: { gte: baslangicTarihi, lte: bitisTarihi }, durum: "kesin" } }));
-    let hesaplananKdv = 0, indirilecekKdv = 0;
+    let hesaplananKdv = 0, indirilecekKdv = 0, ihracKayitliAlisKdv = 0;
     for (const f of faturalar) {
       if (f.tip === "satis") hesaplananKdv += Number(f.toplamKdv);
+      // EBLG-114: ihraç kayıtlı alışta KDV satıcıya ödenmez, indirilemez.
+      else if (f.tip === "alis" && f.ihracKayitliKodu) ihracKayitliAlisKdv += Number(f.toplamKdv);
       else if (f.tip === "alis") indirilecekKdv += Number(f.toplamKdv);
     }
     const netKdv = hesaplananKdv - indirilecekKdv;
-    return { baslangicTarihi, bitisTarihi, hesaplananKdv, indirilecekKdv, odenecekKdv: netKdv > 0 ? netKdv : 0, devredenKdv: netKdv < 0 ? Math.abs(netKdv) : 0 };
+    return { baslangicTarihi, bitisTarihi, hesaplananKdv, indirilecekKdv, ihracKayitliAlisKdv, odenecekKdv: netKdv > 0 ? netKdv : 0, devredenKdv: netKdv < 0 ? Math.abs(netKdv) : 0 };
   }
 }

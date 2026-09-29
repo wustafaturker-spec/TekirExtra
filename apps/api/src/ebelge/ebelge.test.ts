@@ -651,6 +651,46 @@ describe("EbelgeService (EBLG-01..08)", () => {
     expect(sonuc.toplamFarki).toBeNull(); // belge toplamı ile hesaplanan uyuşuyor
   });
 
+  describe("gelen ihraç kayıtlı fatura (EBLG-114)", () => {
+    const ihracKayitliUbl = (kod: string | null) => GELEN_UBL
+      .replace("<cbc:IssueDate>2026-07-20</cbc:IssueDate>", "<cbc:IssueDate>2026-07-20</cbc:IssueDate>\n  <cbc:InvoiceTypeCode>IHRACKAYITLI</cbc:InvoiceTypeCode>")
+      .replaceAll(
+        "<cac:TaxCategory><cac:TaxScheme>",
+        `<cac:TaxCategory>${kod ? `<cbc:TaxExemptionReasonCode>${kod}</cbc:TaxExemptionReasonCode>` : ""}<cac:TaxScheme>`,
+      );
+    const txKur = (xml: string) => ({
+      gelenEbelge: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "gelen-1", durum: "beklemede", belgeNo: "GIB2026000000001", gonderenVkn: "1234567890",
+          gonderenUnvan: "Tedarikçi A.Ş.", tarih: new Date("2026-07-20"), xmlIcerik: xml,
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      stokKart: { findMany: vi.fn().mockResolvedValue([{ id: "11111111-1111-4111-8111-111111111111" }]) },
+      cariHesap: { findFirst: vi.fn().mockResolvedValue({ id: "cari-1" }) },
+    });
+    const eslesme = { satirEslesmeleri: [{ siraNo: 1, stokId: "11111111-1111-4111-8111-111111111111" }] };
+
+    it("kodu alış faturasına aktarır; KDV cariye girmez", async () => {
+      const mockTx = txKur(ihracKayitliUbl("701"));
+      mockTenantIslem.mockImplementation((_tenantId: string, cb: any) => cb(mockTx));
+      mockFatura.olustur.mockResolvedValue({ id: "fatura-1", genelToplam: "900.00" });
+
+      await service.gelenOnayla("gelen-1", eslesme);
+
+      expect(mockFatura.olustur).toHaveBeenCalledWith(expect.objectContaining({ tip: "alis", ihracKayitliKodu: "701" }));
+    });
+
+    it("tanınan kodu olmayan ihraç kayıtlı belgeyi işlemez", async () => {
+      const mockTx = txKur(ihracKayitliUbl(null));
+      mockTenantIslem.mockImplementation((_tenantId: string, cb: any) => cb(mockTx));
+      mockFatura.olustur.mockClear();
+
+      await expect(service.gelenOnayla("gelen-1", eslesme)).rejects.toThrow(/ihraç kayıtlı kodu/);
+      expect(mockFatura.olustur).not.toHaveBeenCalled();
+    });
+  });
+
   it("gelen taramada entegratörde verilmiş kararı yanıtı olmayan kayda yazar (EBLG-34)", async () => {
     mockAdapter.gelenBelgeleriCek.mockResolvedValueOnce([
       { uuid: "uuid-1", belgeNo: "GIB2026000000001", gonderenVkn: "1234567890", gonderenUnvan: "Tedarikçi A.Ş.", tarih: new Date("2026-07-20"), xml: GELEN_UBL, yanit: { karar: "ret", not: "Portalda reddedildi" } },

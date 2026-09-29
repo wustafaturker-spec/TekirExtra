@@ -439,49 +439,59 @@ export class BildirimUreticiService {
 
   /**
    * EBLG-63: ihraç kaydıyla satılan malın süresinde ihraç edildiğini gösteren
-   * çıkış beyannamesi ihracatçıdan gelmediyse uyarır. Liste olayıdır, günlük
-   * özet üretilir; anahtar `vade:` önekiyle başlar ki tarama kapatabilsin.
-   * Süresi geçen kritik sayılır: tecil edilen KDV'nin ödenmesi gündeme gelir.
+   * çıkış beyannamesi ihracatçıdan gelmediyse uyarır. EBLG-114: ihraç kayıtlı
+   * alışta ihracatçı firmadır; beyanname girilmemiş alışlar ayrı bildirimle
+   * izlenir. Liste olayıdır, günlük özet üretilir; anahtar `vade:` önekiyle
+   * başlar ki tarama kapatabilsin. Süresi geçen kritik sayılır: tecil edilen
+   * KDV'nin ödenmesi gündeme gelir.
    */
   private async ihracKayitliOzetleri(gun: string): Promise<BildirimGirdisi[]> {
     const { tenantId } = aktifBaglam();
     const aciklar = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.fatura.findMany({
-        where: { ihracKayitliKodu: { not: null }, durum: "kesin", gumrukBeyannameNo: null },
-        select: { tarih: true },
+        where: { ihracKayitliKodu: { not: null }, durum: "kesin", gumrukBeyannameNo: null, tip: { in: ["satis", "alis"] } },
+        select: { tarih: true, tip: true },
       }),
     );
     const bugun = gunAnahtari();
     const sinir = new Date();
     sinir.setDate(sinir.getDate() + IHRAC_KAYITLI_UYARI_GUNU);
     const uyariSiniri = gunAnahtari(sinir);
-    const sonTarihler = aciklar.map((f) => ihracKayitliSonTarih(f.tarih));
-    const gecen = sonTarihler.filter((s) => s < bugun).length;
-    const yaklasan = sonTarihler.filter((s) => s >= bugun && s <= uyariSiniri).length;
 
     const girdiler: BildirimGirdisi[] = [];
-    const hedefYol = "/panel/fatura?ihracKayitli=acik";
-    if (gecen) {
-      girdiler.push({
-        tur: "vade",
-        onem: "kritik",
-        baslik: "İhraç kayıtlı satışta süre doldu",
-        aciklama: `${gecen} ihraç kayıtlı satışın ihracat süresi geçti ve çıkış beyannamesi işlenmedi. İhracatçıdan beyannameyi isteyin; gerçekleşmediyse tecil edilen KDV için mali müşavirinize danışın.`,
-        birlesimAnahtari: `vade:ihrac-kayitli-gecen:${gun}`,
-        hedefYol,
-        roller: HEDEF_ROLLER.vade,
-      });
-    }
-    if (yaklasan) {
-      girdiler.push({
-        tur: "vade",
-        onem: "uyari",
-        baslik: "İhraç kayıtlı satışta süre doluyor",
-        aciklama: `${yaklasan} ihraç kayıtlı satışın ihracat süresi önümüzdeki ${IHRAC_KAYITLI_UYARI_GUNU} gün içinde doluyor; çıkış beyannamesi henüz işlenmedi.`,
-        birlesimAnahtari: `vade:ihrac-kayitli-yaklasan:${gun}`,
-        hedefYol,
-        roller: HEDEF_ROLLER.vade,
-      });
+    for (const yon of ["satis", "alis"] as const) {
+      const sonTarihler = aciklar.filter((f) => f.tip === yon).map((f) => ihracKayitliSonTarih(f.tarih));
+      const gecen = sonTarihler.filter((s) => s < bugun).length;
+      const yaklasan = sonTarihler.filter((s) => s >= bugun && s <= uyariSiniri).length;
+      const satis = yon === "satis";
+      const hedefYol = satis ? "/panel/fatura?ihracKayitli=acik" : "/panel/fatura?yon=alis&ihracKayitli=acik";
+      const anahtar = satis ? "ihrac-kayitli" : "ihrac-kayitli-alis";
+      if (gecen) {
+        girdiler.push({
+          tur: "vade",
+          onem: "kritik",
+          baslik: satis ? "İhraç kayıtlı satışta süre doldu" : "İhraç kayıtlı alışta ihracat süresi doldu",
+          aciklama: satis
+            ? `${gecen} ihraç kayıtlı satışın ihracat süresi geçti ve çıkış beyannamesi işlenmedi. İhracatçıdan beyannameyi isteyin; gerçekleşmediyse tecil edilen KDV için mali müşavirinize danışın.`
+            : `${gecen} ihraç kayıtlı alışta malın ihraç süresi geçti ve gümrük beyannamesi işlenmedi. İhraç edildiyse beyannameyi alış faturasına girin; edilmediyse ödenmeyen KDV firmadan aranır, mali müşavirinize danışın.`,
+          birlesimAnahtari: `vade:${anahtar}-gecen:${gun}`,
+          hedefYol,
+          roller: HEDEF_ROLLER.vade,
+        });
+      }
+      if (yaklasan) {
+        girdiler.push({
+          tur: "vade",
+          onem: "uyari",
+          baslik: satis ? "İhraç kayıtlı satışta süre doluyor" : "İhraç kayıtlı alışta ihracat süresi doluyor",
+          aciklama: satis
+            ? `${yaklasan} ihraç kayıtlı satışın ihracat süresi önümüzdeki ${IHRAC_KAYITLI_UYARI_GUNU} gün içinde doluyor; çıkış beyannamesi henüz işlenmedi.`
+            : `${yaklasan} ihraç kayıtlı alışta malı ihraç etmeniz gereken süre önümüzdeki ${IHRAC_KAYITLI_UYARI_GUNU} gün içinde doluyor; gümrük beyannamesi henüz işlenmedi.`,
+          birlesimAnahtari: `vade:${anahtar}-yaklasan:${gun}`,
+          hedefYol,
+          roller: HEDEF_ROLLER.vade,
+        });
+      }
     }
     return girdiler;
   }

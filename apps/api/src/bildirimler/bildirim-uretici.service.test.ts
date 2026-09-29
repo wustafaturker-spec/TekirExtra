@@ -10,7 +10,7 @@ interface TxSecenekleri {
   satinAlmaTalepleri?: unknown[];
   cekSayisi?: number;
   /** EBLG-63: beyannamesi gelmemiş ihraç kayıtlı faturaların tarihleri. */
-  ihracKayitlilar?: { tarih: Date }[];
+  ihracKayitlilar?: { tarih: Date; tip: string }[];
   kritikStok?: number;
   taslakSayim?: number;
   donemler?: unknown[];
@@ -252,7 +252,7 @@ describe("BildirimUreticiService — ihraç kayıtlı süresi (EBLG-63)", () => 
     const gunOnce = (gun: number) => { const t = new Date(); t.setUTCDate(t.getUTCDate() - gun); return t; };
     // Son tarih teslimi izleyen ay başı + 3 ay: 200 gün önceki teslimin süresi geçmiştir,
     // bugünkü teslimin süresi ise en az 3 ay sonradır.
-    const { servis, bildirimler } = servisKur({ ihracKayitlilar: [{ tarih: gunOnce(200) }, { tarih: new Date() }] });
+    const { servis, bildirimler } = servisKur({ ihracKayitlilar: [{ tarih: gunOnce(200), tip: "satis" }, { tarih: new Date(), tip: "satis" }] });
 
     await servis.tara();
 
@@ -261,6 +261,19 @@ describe("BildirimUreticiService — ihraç kayıtlı süresi (EBLG-63)", () => 
     expect(gecen?.onem).toBe("kritik");
     expect(gecen?.hedefYol).toBe("/panel/fatura?ihracKayitli=acik");
     expect(uretilen.some((g) => g.birlesimAnahtari.startsWith("vade:ihrac-kayitli-yaklasan:"))).toBe(false);
+  });
+
+  it("ihraç kayıtlı alışı satıştan ayrı bildirir; ihracatçı firmadır (EBLG-114)", async () => {
+    const gunOnce = (gun: number) => { const t = new Date(); t.setUTCDate(t.getUTCDate() - gun); return t; };
+    const { servis, bildirimler } = servisKur({ ihracKayitlilar: [{ tarih: gunOnce(200), tip: "alis" }] });
+
+    await servis.tara();
+
+    const uretilen = bildirimler.uret.mock.calls.map(([g]) => g as { birlesimAnahtari: string; baslik: string; hedefYol: string });
+    const alis = uretilen.find((g) => g.birlesimAnahtari.startsWith("vade:ihrac-kayitli-alis-gecen:"));
+    expect(alis?.baslik).toBe("İhraç kayıtlı alışta ihracat süresi doldu");
+    expect(alis?.hedefYol).toBe("/panel/fatura?yon=alis&ihracKayitli=acik");
+    expect(uretilen.some((g) => g.birlesimAnahtari.startsWith("vade:ihrac-kayitli-gecen:"))).toBe(false);
   });
 
   it("açık ihraç kayıtlı satış yoksa bildirim açmaz", async () => {

@@ -163,9 +163,11 @@ export function senaryoHatalari(satirlar: SenaryoSatirGirdi[], ozelMatrah = fals
 }
 
 /**
- * İhraç kayıtlı satışın fatura düzeyindeki kuralları (EBLG-60). Kod yalnız
- * satış faturasında anlamlıdır; tevkifatla birlikte olamaz, çünkü KDV zaten
- * tahsil edilmez. Şema doğrulaması ile fatura ekranı aynı listeyi kullanır.
+ * İhraç kayıtlı teslimin fatura düzeyindeki kuralları (EBLG-60). Kod satış
+ * faturasında (biz teslim ederiz) ve gelen ihraç kayıtlı e-Faturadan oluşan
+ * alış faturasında (EBLG-114, ihracatçı biziz) anlamlıdır; iadede değil.
+ * Tevkifatla birlikte olamaz, çünkü KDV zaten tahsil edilmez. Şema doğrulaması
+ * ile fatura ekranı aynı listeyi kullanır.
  */
 export function ihracKayitliHatalari(fatura: {
   tip: string;
@@ -175,7 +177,7 @@ export function ihracKayitliHatalari(fatura: {
   if (!fatura.ihracKayitliKodu) return [];
   const hatalar: string[] = [];
   if (!ihracKayitliKoduBul(fatura.ihracKayitliKodu)) hatalar.push(`Tanımsız ihraç kayıtlı kodu: ${fatura.ihracKayitliKodu}`);
-  if (fatura.tip !== "satis") hatalar.push("İhraç kayıtlı yalnız satış faturasında seçilebilir");
+  if (fatura.tip !== "satis" && fatura.tip !== "alis") hatalar.push("İhraç kayıtlı yalnız satış ve alış faturasında olabilir");
   if (fatura.satirlar.some((s) => Boolean(s.tevkifatKodu))) {
     hatalar.push("İhraç kayıtlı satışta KDV tahsil edilmez; tevkifat uygulanamaz");
   }

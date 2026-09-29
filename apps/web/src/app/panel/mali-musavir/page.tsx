@@ -16,7 +16,10 @@ export default function MaliMusavirSayfasi() {
   const [kdvOzet, setKdvOzet] = useState<{
     hesaplananKdv: number;
     indirilecekKdv: number;
-    odenecekVeIndirilecekFark: number;
+    /** EBLG-114: ihraç kayıtlı alışların KDV'si; ödenmediği için indirilmez. */
+    ihracKayitliAlisKdv?: number;
+    odenecekKdv: number;
+    devredenKdv: number;
   } | null>(null);
   const [kdvYukleniyor, setKdvYukleniyor] = useState(false);
 
@@ -146,12 +149,18 @@ export default function MaliMusavirSayfasi() {
                 <span className="text-slate-600">İndirilecek KDV (Alış):</span>
                 <span className="font-semibold text-slate-900">{kdvOzet.indirilecekKdv.toLocaleString("tr-TR")} ₺</span>
               </div>
+              {(kdvOzet.ihracKayitliAlisKdv ?? 0) > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-slate-600">İhraç kayıtlı alış KDV'si (indirilmez):</span>
+                  <span className="text-slate-600">{(kdvOzet.ihracKayitliAlisKdv ?? 0).toLocaleString("tr-TR")} ₺</span>
+                </div>
+              )}
               <div className="border-t pt-2 flex justify-between font-bold">
-                <span className={kdvOzet.odenecekVeIndirilecekFark > 0 ? "text-amber-700" : "text-green-700"}>
-                  {kdvOzet.odenecekVeIndirilecekFark > 0 ? "Tahmini Ödenecek KDV:" : "Sonraki Döneme Devreden KDV:"}
+                <span className={kdvOzet.odenecekKdv > 0 ? "text-amber-700" : "text-green-700"}>
+                  {kdvOzet.odenecekKdv > 0 ? "Tahmini Ödenecek KDV:" : "Sonraki Döneme Devreden KDV:"}
                 </span>
-                <span className={kdvOzet.odenecekVeIndirilecekFark > 0 ? "text-amber-700" : "text-green-700"}>
-                  {Math.abs(kdvOzet.odenecekVeIndirilecekFark).toLocaleString("tr-TR")} ₺
+                <span className={kdvOzet.odenecekKdv > 0 ? "text-amber-700" : "text-green-700"}>
+                  {(kdvOzet.odenecekKdv > 0 ? kdvOzet.odenecekKdv : kdvOzet.devredenKdv).toLocaleString("tr-TR")} ₺
                 </span>
               </div>
             </div>

@@ -47,7 +47,9 @@ describe("ihraç kayıtlı satış (EBLG-60)", () => {
   it("yalnız satışta, tevkifatsız ve tanımlı kodla kabul eder", () => {
     expect(ihracKayitliHatalari({ tip: "satis", ihracKayitliKodu: "701", satirlar: [{}] })).toEqual([]);
     expect(ihracKayitliHatalari({ tip: "satis", ihracKayitliKodu: "703", satirlar: [{}] })).toHaveLength(1);
-    expect(ihracKayitliHatalari({ tip: "alis", ihracKayitliKodu: "701", satirlar: [{}] })).toHaveLength(1);
+    // EBLG-114: gelen ihraç kayıtlı e-Faturadan oluşan alış faturası kodu taşır; iade taşımaz.
+    expect(ihracKayitliHatalari({ tip: "alis", ihracKayitliKodu: "701", satirlar: [{}] })).toEqual([]);
+    expect(ihracKayitliHatalari({ tip: "satis_iade", ihracKayitliKodu: "701", satirlar: [{}] })).toHaveLength(1);
     expect(ihracKayitliHatalari({ tip: "satis", ihracKayitliKodu: "702", satirlar: [{ tevkifatKodu: "602" }] })).toHaveLength(1);
   });
 });

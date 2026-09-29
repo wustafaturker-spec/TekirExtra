@@ -59,6 +59,12 @@ export interface UblFatura {
    * Gelen faturayı işlerken alış irsaliyeleriyle bu numaralarla eşleşilir.
    */
   irsaliyeler: { no: string; tarih?: string }[];
+  /**
+   * Belgedeki KDV istisna kodları (`TaxCategory/TaxExemptionReasonCode`),
+   * başlık ve satır alt toplamlarından tekilleştirilmiş. EBLG-114: ihraç
+   * kayıtlı belgenin kodu (701/702) buradan okunur.
+   */
+  istisnaKodlari: string[];
   dovizCinsi: string;
   /** Dövizli belgede 1 döviz = kaç TL (`PricingExchangeRate`); TRY belgede yok. */
   kur?: number;
@@ -320,6 +326,12 @@ export function faturaUblOku(xml: string): UblFatura {
     irsaliyeler: dizi(fatura.DespatchDocumentReference)
       .map((r) => ({ no: metin(r.ID), tarih: metin(r.IssueDate) || undefined }))
       .filter((r) => r.no),
+    istisnaKodlari: [...new Set(
+      [fatura, ...dizi(fatura.InvoiceLine)]
+        .flatMap((dugum) => dizi(yol(dugum.TaxTotal, "TaxSubtotal")))
+        .map((alt) => metin(yol(alt, "TaxCategory", "TaxExemptionReasonCode")))
+        .filter(Boolean),
+    )],
     dovizCinsi: metin(fatura.DocumentCurrencyCode) || "TRY",
     kur: kurOku(fatura),
     gonderen: partyOku(yol(fatura, "AccountingSupplierParty", "Party")),

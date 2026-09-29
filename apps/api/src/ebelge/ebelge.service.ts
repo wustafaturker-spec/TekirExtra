@@ -15,7 +15,7 @@ import {
 } from "@nestjs/common";
 import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
 import type { BelgeDurumSonuc, EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
-import { faturaGecikmeUyarilari, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeSevkGunu, type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, YOLCU_BERABER_POSTA_KUTUSU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu, sgkEngelleri, sgkFaturasiMi, SGK_VKN, sarjEngelleri, sarjPlakaNormalize, idisEngelleri, idisNormalize, ytbBelgesiMi, ytbEngelleri, ytbNormalize, type SarjTuru, type SevkiyatYontemi, sevkiyatEksikleri, sevkiyatSorulurMu, ebelgeKanali, ebelgeUygulamalariCoz, ebelgeKanalEngelleri, uygulamaAcik, type EbelgeUygulamalari } from "@tekirextra/shared";
+import { faturaGecikmeUyarilari, ihracKayitliKoduBul, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeSevkGunu, type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, YOLCU_BERABER_POSTA_KUTUSU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu, sgkEngelleri, sgkFaturasiMi, SGK_VKN, sarjEngelleri, sarjPlakaNormalize, idisEngelleri, idisNormalize, ytbBelgesiMi, ytbEngelleri, ytbNormalize, type SarjTuru, type SevkiyatYontemi, sevkiyatEksikleri, sevkiyatSorulurMu, ebelgeKanali, ebelgeUygulamalariCoz, ebelgeKanalEngelleri, uygulamaAcik, type EbelgeUygulamalari } from "@tekirextra/shared";
 import { ebelgeUygulamalariCozTenant } from "./ebelge-uygulamalari.service";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
@@ -104,6 +104,21 @@ function ytbGirdisi(fatura: {
       gibIstisnaKodu: satir.gibIstisnaKodu,
     })),
   };
+}
+
+/**
+ * EBLG-114: gelen `IHRACKAYITLI` faturanın ihraç kayıtlı kodu. Tanımsız kodla
+ * gelen belge işlenmez: kodsuz işlenirse KDV yeniden cariye eklenirdi.
+ */
+function gelenIhracKayitliKodu(ubl: Pick<UblFatura, "faturaTipKodu" | "istisnaKodlari">): string | null {
+  if (ubl.faturaTipKodu.toUpperCase() !== "IHRACKAYITLI") return null;
+  const kod = ubl.istisnaKodlari.find((k) => ihracKayitliKoduBul(k));
+  if (!kod) {
+    throw new BadRequestException(
+      `Belge ihraç kayıtlı ama tanınan bir ihraç kayıtlı kodu taşımıyor (${ubl.istisnaKodlari.join(", ") || "kod yok"}); faturaya işlenemez`,
+    );
+  }
+  return kod;
 }
 
 function gonderimKosullariniDenetle(
@@ -1834,6 +1849,10 @@ export class EbelgeService {
       throw new BadRequestException("Eşleştirilen stok kartlarından biri bulunamadı");
     }
 
+    // EBLG-114: ihraç kayıtlı gelen faturada KDV hesaplanır ama ödenmez; kod
+    // alış faturasına geçer ve KDV cariye/genel toplama girmez.
+    const ihracKayitliKodu = gelenIhracKayitliKodu(ubl);
+
     const mevcutCari = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.cariHesap.findFirst({
         where: { tenantId, vknTckn: kayit.gonderenVkn },
@@ -1869,6 +1888,7 @@ export class EbelgeService {
       genelIskontoTutari: "0",
       aciklama: `Gelen e-Fatura ${kayit.belgeNo} — ${kayit.gonderenUnvan}`,
       notlar: null,
+      ihracKayitliKodu,
       satirlar: ubl.satirlar.map((s) => ({
         stokId: eslesme.get(s.siraNo) as string,
         miktar: s.miktar.toFixed(3),
