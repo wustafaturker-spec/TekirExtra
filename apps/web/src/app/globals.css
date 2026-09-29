@@ -1511,7 +1511,10 @@ h1, h2, h3, h4 { margin: 0; font-weight: 700; color: var(--text); }
 }
 .document-timeline {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  /* Adım sayısı belgeye göre değişir (irsaliyede e-İrsaliye adımıyla 7);
+     sığmayan şerit alta düşmez, yana kayar. */
+  grid-auto-columns: minmax(105px, 1fr);
+  grid-auto-flow: column;
   margin: 1.1rem 0;
   overflow-x: auto;
 }
@@ -1933,6 +1936,13 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 .customer-context--tedarikci > div:nth-child(3) { border-right: 0; }
 /* Ek dosya bileşeninin kendi başlığı katlanır grubun içinde numara almaz. */
 .form-grubu .document-attachments .document-editor__section-title::before { display: none; }
+/* Belge detayının salt okunur bilgi alanları (etiket üstte, değer altta). */
+.belge-bilgileri { display: grid; gap: .85rem 1.25rem; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0 0 .5rem; }
+.belge-bilgileri > div { min-width: 0; }
+.belge-bilgileri dt { color: var(--text-muted); font-size: .75rem; font-weight: 600; margin-bottom: .15rem; }
+.belge-bilgileri dd { font-size: .9rem; margin: 0; overflow-wrap: anywhere; }
+.belge-bilgileri__genis { grid-column: 1 / -1; }
+@media (max-width: 760px) { .belge-bilgileri { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .cari-onizleme__ad { font-size: 1rem; font-weight: 800; margin-bottom: .5rem; overflow-wrap: anywhere; }
 /* Kartın içine gömülü düzenleyici: kendi çerçevesini çizmez. */
 .document-editor--gomulu { background: none; border: 0; box-shadow: none; margin: 1rem 0 0; }

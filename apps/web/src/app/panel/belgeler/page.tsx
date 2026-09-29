@@ -185,6 +185,12 @@ interface BelgeDetay extends Belge {
   teslimatPostaKodu?: string | null;
   aciklama: string | null;
   notlar: string | null;
+  /** Detay kartının tutar özeti; sunucu belgenin tüm skaler alanlarını döner. */
+  toplamBrut?: string;
+  toplamSatirIskontosu?: string;
+  genelIskontoToplam?: string;
+  toplamMatrah?: string;
+  toplamKdv?: string;
   kaynakBelge: ZincirRef | null;
   turetilenler: ZincirRef[];
   zincirBelgeleri?: ZincirRef[];
@@ -193,7 +199,7 @@ interface BelgeDetay extends Belge {
     ebelge: { tur: string; durum: string } | null;
     odemeOzeti: { durum: string; odenen: string; kalan: string };
   } | null;
-  satirlar: { id: string; stokId: string; varyantId?: string | null; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; teslimEdilenMiktar?: string; kalanMiktar?: string; idisEtiketNo?: string | null; kaynakSatirId?: string | null; partiBilgileri?: { lotNo: string; seriNo?: string | null; sonKullanmaTarihi?: string | null; uretimTarihi?: string | null }[] }[];
+  satirlar: { id: string; stokId: string; varyantId?: string | null; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; toplamTutar?: string; stok?: { kod: string; ad: string }; teslimEdilenMiktar?: string; kalanMiktar?: string; idisEtiketNo?: string | null; kaynakSatirId?: string | null; partiBilgileri?: { lotNo: string; seriNo?: string | null; sonKullanmaTarihi?: string | null; uretimTarihi?: string | null }[] }[];
   /** SAT-10: siparişin teslim geçmişi (iptal edilen irsaliyeler sayılmaz). */
   teslimatlar?: {
     id: string; no: string | null; durum: string; tarih: string;
@@ -1547,13 +1553,8 @@ export default function BelgelerSayfasi() {
                 {TUR_ADI[detay.tur]} {belgeNoGoster(detay)} · {YON_ADI[detay.yon]} {durumRozet(detay.durum)}
               </h3>
               <p className="muted" style={{ fontSize: "0.85rem", margin: "0.3rem 0 0" }}>
-                {detay.cari.unvan} · {detay.tarih}{detay.gecerlilikTarihi ? ` · Geçerlilik: ${detay.gecerlilikTarihi}` : ""} · {tl(detay.genelToplam, detay.dovizCinsi)}
-                {detay.ilgiliKisi ? ` · İlgili: ${detay.ilgiliKisi}${detay.ilgiliKisiGorevi ? ` (${detay.ilgiliKisiGorevi})` : ""}` : ""}
-                {kosulSatirlari(detay).map((satir) => ` · ${satir}`).join("")}
-                {detay.talepNo ? ` · Talep ref. ${detay.talepNo}${detay.talepTarihi ? ` (${new Date(detay.talepTarihi).toLocaleDateString("tr-TR")})` : ""}` : ""}
-                {detay.siparisNo ? ` · Sipariş ref. ${detay.siparisNo}${detay.siparisTarihi ? ` (${new Date(detay.siparisTarihi).toLocaleDateString("tr-TR")})` : ""}` : ""}
+                {detay.cari.unvan} · {gunTRBicim(detay.tarih.slice(0, 10))} · {tl(detay.genelToplam, detay.dovizCinsi)}
               </p>
-              {detay.faturalamaSuresi && <FaturalamaSuresiNotu sure={detay.faturalamaSuresi} yon={detay.yon} />}
             </div>
             <Button size="sm" onClick={() => setDetay(null)}>✖ Kapat</Button>
           </div>
@@ -1583,28 +1584,6 @@ export default function BelgelerSayfasi() {
               {detay.tur === "irsaliye" && detay.fatura && (!detay.fatura.ebelge || ["hata", "ret"].includes(detay.fatura.ebelge.durum)) && <Button variant="danger" size="sm" type="button" onClick={() => void faturaBaginiKaldir(detay.id)}>Fatura bağını kaldır</Button>}
             </EylemMenusu>
           </EylemCubugu>
-          {surumler.length > 1 && (
-            <div style={{ margin: "0 0 1rem" }}>
-              <h4 style={{ margin: "0 0 0.4rem", fontSize: "0.95rem" }}>Sürüm geçmişi</h4>
-              <TableWrap>
-                <thead><tr><th>Sürüm</th><th>Tarih</th><th>Durum</th><th style={{ textAlign: "right" }}>Genel toplam</th><th /></tr></thead>
-                <tbody>
-                  {surumler.map((s) => (
-                    <tr key={s.id} style={s.id === detay.id ? { fontWeight: 700 } : undefined}>
-                      <td>{s.noMetni ?? "(Taslak)"}</td>
-                      <td>{new Date(s.tarih).toLocaleDateString("tr-TR")}</td>
-                      <td>{durumRozet(s.durum)}</td>
-                      <td style={{ textAlign: "right" }}>{tl(s.genelToplam, s.dovizCinsi)}</td>
-                      <td style={{ textAlign: "right" }}>
-                        {s.id !== detay.id && <Button size="sm" variant="ghost" type="button" onClick={() => void detayAc(s.id)}>Aç</Button>}
-                        <Button size="sm" variant="ghost" type="button" onClick={() => void pdfAc(s.id)}>🖨 PDF</Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </TableWrap>
-            </div>
-          )}
           <div className="document-timeline" aria-label="Belge yaşam döngüsü">
             {(["teklif", "siparis", "irsaliye"] as const).map((adim) => {
               const tamZincirKaydi = detay.zincirBelgeleri?.find((belge) => belge.tur === adim);
@@ -1660,128 +1639,220 @@ export default function BelgelerSayfasi() {
               <div className="document-timeline__step" aria-disabled="true"><span /><strong>Tahsilat/Ödeme</strong><small>Bekliyor</small></div>
             )}
           </div>
-          {detay.tur === "irsaliye" && (
-            <p className="muted" style={{ margin: "0 0 1rem", fontSize: "0.85rem" }}>
-              Sevkiyat: {detay.tasiyiciCariId ? (cariler.find((c) => c.id === detay.tasiyiciCariId)?.unvan ?? "Taşıyıcı cari") : "Kendi aracımızla"}
-              {" · "}Plaka {detay.plaka || "—"}
-              {" · "}Şoför {[detay.soforAdi, detay.soforSoyadi].filter(Boolean).join(" ") || "—"}
-              {detay.fiiliSevkZamani ? ` · Fiili sevk ${new Date(detay.fiiliSevkZamani).toLocaleString("tr-TR")}` : ""}
-              {detay.idisSevkiyatNo ? ` · İDİS sevkiyat ${detay.idisSevkiyatNo}` : ""}
-              {detay.teslimatAdres ? ` · ${detay.gumrukDepoSevki ? "Boşaltma" : "Teslimat"} ${detay.teslimatAdres}, ${[detay.teslimatIlce, detay.teslimatIl].filter(Boolean).join(" / ")} ${detay.teslimatPostaKodu ?? ""}` : ""}
-              {detay.gumrukDepoSevki && detay.yuklemeAdres ? ` · Yükleme ${detay.yuklemeAdres}, ${[detay.yuklemeIlce, detay.yuklemeIl].filter(Boolean).join(" / ")} ${detay.yuklemePostaKodu ?? ""}` : ""}
-            </p>
-          )}
-          {/* EBLG-87: e-İrsaliyeye yazılan açıklama; sefer numarası onayda verilir. */}
-          {detay.tur === "irsaliye" && detay.gumrukDepoSevki && (
-            <p className="muted" style={{ margin: "0 0 1rem", fontSize: "0.85rem" }}>
-              <Badge variant="info">Gümrükten depoya sevk</Badge>{" "}
-              {detay.gumrukBeyannameNo && detay.gumrukBeyannameTarihi && detay.gumrukSeferNo
-                ? gumrukSeferNotu({ beyannameNo: detay.gumrukBeyannameNo, beyannameTarihi: detay.gumrukBeyannameTarihi, seferNo: detay.gumrukSeferNo })
-                : `Beyanname ${detay.gumrukBeyannameNo ?? "girilmedi"}; sefer numarası onayda verilir.`}
-            </p>
-          )}
-          {/* FTR-27 / EBLG-83: tedarikçinin ya da matbu irsaliyenin numarası onaydan sonra da girilir (kâğıt irsaliye elden gelir). */}
-          {(() => {
-            const alan = disNumaraAlani(detay);
-            if (!alan) return null;
-            const deger = detay[alan.alan] ?? null;
-            return (
-              <div className="row-tight" style={{ margin: "0 0 1rem", fontSize: "0.85rem" }}>
-                {detay.kagitIrsaliye && <Badge variant="warning">Kâğıt irsaliye</Badge>}
-                {disNoTaslak === null ? (
-                  <>
-                    <span className="muted">{alan.etiket}: {deger || "girilmedi"}</span>
-                    {detay.durum !== "iptal" && <Button size="sm" type="button" onClick={() => setDisNoTaslak(deger ?? "")}>Düzenle</Button>}
-                  </>
-                ) : (
-                  <>
-                    <Input aria-label={alan.etiket} value={disNoTaslak} maxLength={50} onChange={(e) => setDisNoTaslak(e.target.value)} />
-                    <Button size="sm" variant="primary" type="button" onClick={() => void disNoKaydet(detay.id, alan)}>Kaydet</Button>
-                    <Button size="sm" type="button" onClick={() => setDisNoTaslak(null)}>Vazgeç</Button>
-                  </>
-                )}
-              </div>
-            );
-          })()}
-          {/* EBLG-85: GİB'e iletilmiş e-İrsaliyenin çıktısı; kayıtlı olmayan alıcıya bu verilir. */}
-          {firmaGonderir(detay) && detay.eirsaliye && detay.eirsaliye.durum !== "hata" && (
-            <div className="row-tight" style={{ margin: "0 0 1rem", fontSize: "0.85rem" }}>
-              {detay.eirsaliye.aliciKayitsiz && <Badge variant="warning">Alıcı e-İrsaliye kullanıcısı değil</Badge>}
-              {detay.eirsaliye.aliciKayitsiz && <span className="muted">Belge alıcıya GİB üzerinden ulaşmaz; çıktısını verin ya da e-postayla iletin. Alıcı yanıt veremez.</span>}
-              <Button size="sm" type="button" onClick={() => void apiPdfAc(`/ebelge/irsaliye/giden/${detay.id}/pdf`).catch((h: unknown) => setHata(h instanceof Error ? h.message : "e-İrsaliye çıktısı açılamadı"))}>🖨 e-İrsaliye çıktısı</Button>
-            </div>
-          )}
-          {firmaGonderir(detay) && detay.eirsaliye?.durum === "hata" && <div className="row-tight" style={{ margin: "0 0 1rem" }}><span className="muted">{detay.eirsaliye.hataMesaji ?? "Gönderim başarısız."}{detay.eirsaliye.geciciHata && (detay.eirsaliye.yenidenDenemeSayisi ?? 0) < 3 ? ` Geçici bir hata; aynı numarayla kendiliğinden yeniden denenecek (${detay.eirsaliye.yenidenDenemeSayisi ?? 0}/3).` : ""}</span><Button size="sm" variant="primary" onClick={() => void eirsaliyeGonder(detay.id)}>Tekrar gönder</Button></div>}
-          {/* EBLG-35: e-İrsaliye ve bağlı fatura durum geçmişi; durum değiştikçe yeniden yüklenir. */}
-          {(detay.eirsaliye || detay.fatura) && (
-            <DurumGecmisi
-              key={`${detay.id}-${detay.eirsaliye?.durum ?? ""}-${detay.fatura?.durum ?? ""}-${detay.fatura?.ebelge?.durum ?? ""}`}
-              adres={`/belgeler/${detay.id}/durum-gecmisi`}
-              // Şerit yalnız e-İrsaliye gönderilmiş irsaliyede anlamlı; teklif
-              // ve siparişin resmi bir e-Belge akışı yoktur.
-              // EBLG-90: programda iptal GİB'deki belgeyi iptal etmez; şerit GİB durumunu gösterir.
-              akis={detay.tur === "irsaliye" && detay.eirsaliye ? { tur: "eirsaliye", durum: detay.eirsaliye.durum } : undefined}
-            />
-          )}
-          {detay.tur === "irsaliye" && detay.durum === "iptal" && detay.eirsaliye && (
-            (GIB_ULASMIS_EIRSALIYE_DURUMLARI as readonly string[]).includes(detay.eirsaliye.durum) ? (
-              <p className="muted" style={{ margin: "0 0 1rem", fontSize: "0.85rem" }}>
-                <Badge variant="warning">GİB'de geçerli — programda iptal</Badge>{" "}
-                {detay.eirsaliye.aliciKayitsiz ? "Alıcı sistemden reddedemez; gerekirse iptali yazılı (KEP, noter) bildirin." : "Alıcı reddi bekleniyor; alıcıdan RET yanıtı vermesini isteyin."}
-              </p>
-            ) : detay.eirsaliye.durum === "ret" ? (
-              <p className="muted" style={{ margin: "0 0 1rem", fontSize: "0.85rem" }}><Badge variant="neutral">Alıcı reddetti — belge GİB'de geçersiz</Badge></p>
-            ) : null
-          )}
-          <TableWrap>
-            <thead>
-              <tr><th>Ürün</th><th className="num">Miktar</th>{detay.tur === "siparis" && <><th className="num">Teslim</th><th className="num">Kalan</th></>}<th className="num">Birim Fiyat</th><th className="num">İskonto %</th><th className="num">KDV %</th></tr>
-            </thead>
-            <tbody>
-              {detay.satirlar.map((s, i) => {
-                const st = stoklar.find((x) => x.id === s.stokId);
+          <div className="document-editor invoice-editor document-editor--gomulu">
+          <div className="invoice-layout">
+          <div className="invoice-layout__main">
+            <div className="document-editor__section">
+              <h4 className="document-editor__section-title">Belge bilgileri</h4>
+              <dl className="belge-bilgileri">
+                <div><dt>{detay.yon === "alis" ? "Tedarikçi" : "Müşteri"}</dt><dd>{detay.cari.unvan} <small className="muted">{detay.cari.kod}</small></dd></div>
+                <div><dt>Tarih</dt><dd>{gunTRBicim(detay.tarih.slice(0, 10))}</dd></div>
+                {detay.gecerlilikTarihi && <div><dt>Geçerlilik</dt><dd>{gunTRBicim(detay.gecerlilikTarihi.slice(0, 10))}</dd></div>}
+                {detay.dovizCinsi !== "TRY" && <div><dt>Döviz</dt><dd>{detay.dovizCinsi}{detay.kur ? ` · kur ${Number(detay.kur).toLocaleString("tr-TR")}` : ""}</dd></div>}
+                {detay.ilgiliKisi && <div><dt>İlgili kişi</dt><dd>{detay.ilgiliKisi}{detay.ilgiliKisiGorevi ? ` (${detay.ilgiliKisiGorevi})` : ""}</dd></div>}
+                {detay.talepNo && <div><dt>Talep ref.</dt><dd>{detay.talepNo}{detay.talepTarihi ? ` · ${new Date(detay.talepTarihi).toLocaleDateString("tr-TR")}` : ""}</dd></div>}
+                {detay.siparisNo && <div><dt>Sipariş ref.</dt><dd>{detay.siparisNo}{detay.siparisTarihi ? ` · ${new Date(detay.siparisTarihi).toLocaleDateString("tr-TR")}` : ""}</dd></div>}
+                {kosulSatirlari(detay).map((satir) => {
+                  const [etiket, ...deger] = satir.split(": ");
+                  return <div key={satir}><dt>{etiket}</dt><dd>{deger.join(": ")}</dd></div>;
+                })}
+                {detay.aciklama && <div className="belge-bilgileri__genis"><dt>Açıklama</dt><dd>{detay.aciklama}</dd></div>}
+                {detay.notlar && <div className="belge-bilgileri__genis"><dt>Notlar</dt><dd>{detay.notlar}</dd></div>}
+              </dl>
+              {/* FTR-27 / EBLG-83: tedarikçinin ya da matbu irsaliyenin numarası onaydan sonra da girilir (kâğıt irsaliye elden gelir). */}
+              {(() => {
+                const alan = disNumaraAlani(detay);
+                if (!alan) return null;
+                const deger = detay[alan.alan] ?? null;
                 return (
-                  <tr key={i}>
-                    <td>
-                      {st ? `${st.ad} (${st.kod})` : s.stokId}
-                      {/* EBLG-72: onaylı belgede etiket düzenlenemez ama belgeyle giden numara görünmelidir. */}
-                      {s.idisEtiketNo && <small className="muted"> · İDİS etiket {s.idisEtiketNo}</small>}
-                    </td>
-                    <td className="num">{Number(s.miktar).toLocaleString("tr-TR")} {s.birim}</td>
-                    {/* SAT-09/10: siparişin ne kadarı teslim edildi, ne kadarı bekliyor */}
-                    {detay.tur === "siparis" && <>
-                      <td className="num">{Number(s.teslimEdilenMiktar ?? 0).toLocaleString("tr-TR")}</td>
-                      <td className="num">{Number(s.kalanMiktar ?? s.miktar) > 0 ? <strong>{Number(s.kalanMiktar ?? s.miktar).toLocaleString("tr-TR")}</strong> : "—"}</td>
-                    </>}
-                    <td className="num">{tl(s.birimFiyat, detay.dovizCinsi)}</td>
-                    <td className="num">%{Number(s.iskontoOrani)}</td>
-                    <td className="num">%{Number(s.kdvOrani)}</td>
-                  </tr>
+                  <div className="row-tight" style={{ margin: "0 0 1rem", fontSize: "0.85rem" }}>
+                    {detay.kagitIrsaliye && <Badge variant="warning">Kâğıt irsaliye</Badge>}
+                    {disNoTaslak === null ? (
+                      <>
+                        <span className="muted">{alan.etiket}: {deger || "girilmedi"}</span>
+                        {detay.durum !== "iptal" && <Button size="sm" type="button" onClick={() => setDisNoTaslak(deger ?? "")}>Düzenle</Button>}
+                      </>
+                    ) : (
+                      <>
+                        <Input aria-label={alan.etiket} value={disNoTaslak} maxLength={50} onChange={(e) => setDisNoTaslak(e.target.value)} />
+                        <Button size="sm" variant="primary" type="button" onClick={() => void disNoKaydet(detay.id, alan)}>Kaydet</Button>
+                        <Button size="sm" type="button" onClick={() => setDisNoTaslak(null)}>Vazgeç</Button>
+                      </>
+                    )}
+                  </div>
                 );
-              })}
-            </tbody>
-          </TableWrap>
-          {/* SAT-10: hangi irsaliye, ne zaman, ne kadar teslim etti */}
-          {detay.tur === "siparis" && (detay.teslimatlar?.length ?? 0) > 0 && (
-            <section aria-label="Teslim geçmişi">
-              <h3>Teslim geçmişi</h3>
+              })()}
+            </div>
+            {detay.tur === "irsaliye" && (
+              <div className="document-editor__section">
+                <h4 className="document-editor__section-title">Sevkiyat ve taşıma</h4>
+                <dl className="belge-bilgileri">
+                  <div><dt>Taşıyan</dt><dd>{detay.tasiyiciCariId ? (cariler.find((c) => c.id === detay.tasiyiciCariId)?.unvan ?? "Taşıyıcı cari") : "Kendi aracımızla"}</dd></div>
+                  <div><dt>Plaka</dt><dd>{detay.plaka || "—"}{detay.dorsePlaka ? ` · dorse ${detay.dorsePlaka}` : ""}</dd></div>
+                  <div><dt>Şoför</dt><dd>{[detay.soforAdi, detay.soforSoyadi].filter(Boolean).join(" ") || "—"}</dd></div>
+                  {detay.fiiliSevkZamani && <div><dt>Fiili sevk</dt><dd>{new Date(detay.fiiliSevkZamani).toLocaleString("tr-TR")}</dd></div>}
+                  {detay.idisSevkiyatNo && <div><dt>İDİS sevkiyat</dt><dd>{detay.idisSevkiyatNo}</dd></div>}
+                  {detay.teslimatAdres && <div className="belge-bilgileri__genis"><dt>{detay.gumrukDepoSevki ? "Boşaltma adresi" : "Teslimat adresi"}</dt><dd>{detay.teslimatAdres}, {[detay.teslimatIlce, detay.teslimatIl].filter(Boolean).join(" / ")} {detay.teslimatPostaKodu ?? ""}</dd></div>}
+                  {detay.gumrukDepoSevki && detay.yuklemeAdres && <div className="belge-bilgileri__genis"><dt>Yükleme adresi</dt><dd>{detay.yuklemeAdres}, {[detay.yuklemeIlce, detay.yuklemeIl].filter(Boolean).join(" / ")} {detay.yuklemePostaKodu ?? ""}</dd></div>}
+                </dl>
+              {/* EBLG-87: e-İrsaliyeye yazılan açıklama; sefer numarası onayda verilir. */}
+              {detay.tur === "irsaliye" && detay.gumrukDepoSevki && (
+                <p className="muted" style={{ margin: "0 0 1rem", fontSize: "0.85rem" }}>
+                  <Badge variant="info">Gümrükten depoya sevk</Badge>{" "}
+                  {detay.gumrukBeyannameNo && detay.gumrukBeyannameTarihi && detay.gumrukSeferNo
+                    ? gumrukSeferNotu({ beyannameNo: detay.gumrukBeyannameNo, beyannameTarihi: detay.gumrukBeyannameTarihi, seferNo: detay.gumrukSeferNo })
+                    : `Beyanname ${detay.gumrukBeyannameNo ?? "girilmedi"}; sefer numarası onayda verilir.`}
+                </p>
+              )}
+              </div>
+            )}
+            <div className="document-editor__section">
+              <h4 className="document-editor__section-title">Kalemler</h4>
               <TableWrap>
                 <thead>
-                  <tr><th>İrsaliye</th><th>Tarih</th><th>Durum</th><th>Teslim edilenler</th></tr>
+                  <tr><th>Ürün</th><th className="num">Miktar</th>{detay.tur === "siparis" && <><th className="num">Teslim</th><th className="num">Kalan</th></>}<th className="num">Birim Fiyat</th><th className="num">İskonto %</th><th className="num">KDV %</th><th className="num">Tutar</th></tr>
                 </thead>
                 <tbody>
-                  {detay.teslimatlar?.map((t) => (
-                    <tr key={t.id}>
-                      <td><Button size="sm" type="button" onClick={() => void detayAc(t.id)}>{t.no ?? "Taslak irsaliye"}</Button></td>
-                      <td>{t.tarih}</td>
-                      <td>{durumRozet(t.durum)}</td>
-                      <td>{t.kalemler.map((k) => `${k.stokKod}: ${Number(k.miktar).toLocaleString("tr-TR")} ${k.birim}`).join(" · ")}</td>
-                    </tr>
-                  ))}
+                  {detay.satirlar.map((s, i) => {
+                    const st = s.stok ?? stoklar.find((x) => x.id === s.stokId);
+                    return (
+                      <tr key={i}>
+                        <td>
+                          {st ? `${st.ad} (${st.kod})` : s.stokId}
+                          {/* EBLG-72: onaylı belgede etiket düzenlenemez ama belgeyle giden numara görünmelidir. */}
+                          {s.idisEtiketNo && <small className="muted"> · İDİS etiket {s.idisEtiketNo}</small>}
+                        </td>
+                        <td className="num">{Number(s.miktar).toLocaleString("tr-TR")} {s.birim}</td>
+                        {/* SAT-09/10: siparişin ne kadarı teslim edildi, ne kadarı bekliyor */}
+                        {detay.tur === "siparis" && <>
+                          <td className="num">{Number(s.teslimEdilenMiktar ?? 0).toLocaleString("tr-TR")}</td>
+                          <td className="num">{Number(s.kalanMiktar ?? s.miktar) > 0 ? <strong>{Number(s.kalanMiktar ?? s.miktar).toLocaleString("tr-TR")}</strong> : "—"}</td>
+                        </>}
+                        <td className="num">{tl(s.birimFiyat, detay.dovizCinsi)}</td>
+                        <td className="num">%{Number(s.iskontoOrani)}</td>
+                        <td className="num">%{Number(s.kdvOrani)}</td>
+                        <td className="num">{s.toplamTutar != null ? tl(s.toplamTutar, detay.dovizCinsi) : "—"}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </TableWrap>
-            </section>
-          )}
+            </div>
+            {/* SAT-10: hangi irsaliye, ne zaman, ne kadar teslim etti */}
+            {detay.tur === "siparis" && (detay.teslimatlar?.length ?? 0) > 0 && (
+              <div className="document-editor__section" aria-label="Teslim geçmişi">
+                <h4 className="document-editor__section-title">Teslim geçmişi</h4>
+                <TableWrap>
+                  <thead>
+                    <tr><th>İrsaliye</th><th>Tarih</th><th>Durum</th><th>Teslim edilenler</th></tr>
+                  </thead>
+                  <tbody>
+                    {detay.teslimatlar?.map((t) => (
+                      <tr key={t.id}>
+                        <td><Button size="sm" type="button" onClick={() => void detayAc(t.id)}>{t.no ?? "Taslak irsaliye"}</Button></td>
+                        <td>{t.tarih}</td>
+                        <td>{durumRozet(t.durum)}</td>
+                        <td>{t.kalemler.map((k) => `${k.stokKod}: ${Number(k.miktar).toLocaleString("tr-TR")} ${k.birim}`).join(" · ")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </TableWrap>
+              </div>
+            )}
+            {surumler.length > 1 && (
+              <div className="document-editor__section">
+                <h4 className="document-editor__section-title">Sürüm geçmişi</h4>
+                <TableWrap>
+                  <thead><tr><th>Sürüm</th><th>Tarih</th><th>Durum</th><th style={{ textAlign: "right" }}>Genel toplam</th><th /></tr></thead>
+                  <tbody>
+                    {surumler.map((s) => (
+                      <tr key={s.id} style={s.id === detay.id ? { fontWeight: 700 } : undefined}>
+                        <td>{s.noMetni ?? "(Taslak)"}</td>
+                        <td>{new Date(s.tarih).toLocaleDateString("tr-TR")}</td>
+                        <td>{durumRozet(s.durum)}</td>
+                        <td style={{ textAlign: "right" }}>{tl(s.genelToplam, s.dovizCinsi)}</td>
+                        <td style={{ textAlign: "right" }}>
+                          {s.id !== detay.id && <Button size="sm" variant="ghost" type="button" onClick={() => void detayAc(s.id)}>Aç</Button>}
+                          <Button size="sm" variant="ghost" type="button" onClick={() => void pdfAc(s.id)}>🖨 PDF</Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </TableWrap>
+              </div>
+            )}
+            {/* EBLG-35: e-İrsaliye ve bağlı fatura durum geçmişi; durum değiştikçe yeniden yüklenir. */}
+            {(detay.eirsaliye || detay.fatura) && (
+              <div className="document-editor__section">
+                <DurumGecmisi
+                  key={`${detay.id}-${detay.eirsaliye?.durum ?? ""}-${detay.fatura?.durum ?? ""}-${detay.fatura?.ebelge?.durum ?? ""}`}
+                  adres={`/belgeler/${detay.id}/durum-gecmisi`}
+                  // Şerit yalnız e-İrsaliye gönderilmiş irsaliyede anlamlı; teklif
+                  // ve siparişin resmi bir e-Belge akışı yoktur.
+                  // EBLG-90: programda iptal GİB'deki belgeyi iptal etmez; şerit GİB durumunu gösterir.
+                  akis={detay.tur === "irsaliye" && detay.eirsaliye ? { tur: "eirsaliye", durum: detay.eirsaliye.durum } : undefined}
+                />
+              </div>
+            )}
+          </div>
+          <aside className="invoice-layout__side" aria-label="Belge özeti">
+            <div className="invoice-summary">
+              <h4>Tutarlar</h4>
+              {detay.toplamBrut != null && <div className="invoice-summary__line"><span>Brüt toplam</span><strong>{tl(detay.toplamBrut, detay.dovizCinsi)}</strong></div>}
+              {Number(detay.toplamSatirIskontosu ?? 0) > 0 && <div className="invoice-summary__line"><span>Satır iskontosu</span><strong>−{tl(detay.toplamSatirIskontosu!, detay.dovizCinsi)}</strong></div>}
+              {Number(detay.genelIskontoToplam ?? 0) > 0 && <div className="invoice-summary__line"><span>Genel iskonto</span><strong>−{tl(detay.genelIskontoToplam!, detay.dovizCinsi)}</strong></div>}
+              {detay.toplamMatrah != null && <div className="invoice-summary__line"><span>Matrah</span><strong>{tl(detay.toplamMatrah, detay.dovizCinsi)}</strong></div>}
+              {detay.toplamKdv != null && <div className="invoice-summary__line"><span>KDV</span><strong>{tl(detay.toplamKdv, detay.dovizCinsi)}</strong></div>}
+              <div className="invoice-summary__line is-grand"><span>Genel toplam</span><span>{tl(detay.genelToplam, detay.dovizCinsi)}</span></div>
+              <small className="muted">{detay.satirlar.length} kalem</small>
+            </div>
+            {detay.faturalamaSuresi && (
+              <div className={`invoice-summary${detay.faturalamaSuresi.gecti || detay.faturalamaSuresi.yaklasiyor ? " is-warning" : ""}`}>
+                <h4>Faturalama süresi</h4>
+                {sureRozeti(detay.faturalamaSuresi)}
+                <FaturalamaSuresiNotu sure={detay.faturalamaSuresi} yon={detay.yon} />
+              </div>
+            )}
+            {firmaGonderir(detay) && (
+              <div className={`invoice-summary${detay.eirsaliye?.durum === "hata" || detay.eirsaliye?.aliciKayitsiz ? " is-warning" : ""}`}>
+                <h4>e-İrsaliye</h4>
+                <div className="invoice-summary__line"><span>Durum</span><strong>{detay.eirsaliye ? (EBELGE_DURUM_ADI[detay.eirsaliye.durum] ?? detay.eirsaliye.durum) : detay.kagitIrsaliye ? "Kâğıt irsaliye" : "Gönderilmedi"}</strong></div>
+                {/* EBLG-85: GİB'e iletilmiş e-İrsaliyenin çıktısı; kayıtlı olmayan alıcıya bu verilir. */}
+                {detay.eirsaliye && detay.eirsaliye.durum !== "hata" && (
+                  <div className="stack" style={{ gap: "0.5rem", fontSize: "0.85rem" }}>
+                {detay.eirsaliye.aliciKayitsiz && <Badge variant="warning">Alıcı e-İrsaliye kullanıcısı değil</Badge>}
+                {detay.eirsaliye.aliciKayitsiz && <span className="muted">Belge alıcıya GİB üzerinden ulaşmaz; çıktısını verin ya da e-postayla iletin. Alıcı yanıt veremez.</span>}
+                <Button size="sm" type="button" onClick={() => void apiPdfAc(`/ebelge/irsaliye/giden/${detay.id}/pdf`).catch((h: unknown) => setHata(h instanceof Error ? h.message : "e-İrsaliye çıktısı açılamadı"))}>🖨 e-İrsaliye çıktısı</Button>
+                  </div>
+                )}
+                {detay.eirsaliye?.durum === "hata" && (
+                  <div className="stack" style={{ gap: "0.5rem", fontSize: "0.85rem" }}><span className="muted">{detay.eirsaliye.hataMesaji ?? "Gönderim başarısız."}{detay.eirsaliye.geciciHata && (detay.eirsaliye.yenidenDenemeSayisi ?? 0) < 3 ? ` Geçici bir hata; aynı numarayla kendiliğinden yeniden denenecek (${detay.eirsaliye.yenidenDenemeSayisi ?? 0}/3).` : ""}</span><Button size="sm" variant="primary" onClick={() => void eirsaliyeGonder(detay.id)}>Tekrar gönder</Button></div>
+                )}
+            {detay.tur === "irsaliye" && detay.durum === "iptal" && detay.eirsaliye && (
+              (GIB_ULASMIS_EIRSALIYE_DURUMLARI as readonly string[]).includes(detay.eirsaliye.durum) ? (
+                <p className="muted" style={{ margin: "0 0 1rem", fontSize: "0.85rem" }}>
+                  <Badge variant="warning">GİB'de geçerli — programda iptal</Badge>{" "}
+                  {detay.eirsaliye.aliciKayitsiz ? "Alıcı sistemden reddedemez; gerekirse iptali yazılı (KEP, noter) bildirin." : "Alıcı reddi bekleniyor; alıcıdan RET yanıtı vermesini isteyin."}
+                </p>
+              ) : detay.eirsaliye.durum === "ret" ? (
+                <p className="muted" style={{ margin: "0 0 1rem", fontSize: "0.85rem" }}><Badge variant="neutral">Alıcı reddetti — belge GİB'de geçersiz</Badge></p>
+              ) : null
+            )}
+              </div>
+            )}
+            {detay.fatura && (
+              <div className="invoice-summary">
+                <h4>Fatura</h4>
+                <div className="invoice-summary__line"><span>Numara</span><strong>{detay.fatura.no ?? "Taslak"}</strong></div>
+                {detay.fatura.ebelge && <div className="invoice-summary__line"><span>e-Belge</span><strong>{EBELGE_DURUM_ADI[detay.fatura.ebelge.durum] ?? detay.fatura.ebelge.durum}</strong></div>}
+                <div className="invoice-summary__line"><span>{detay.yon === "alis" ? "Ödeme" : "Tahsilat"}</span><strong>{ODEME_DURUM_ADI[detay.fatura.odemeOzeti.durum] ?? detay.fatura.odemeOzeti.durum}</strong></div>
+                {Number(detay.fatura.odemeOzeti.kalan) > 0 && <div className="invoice-summary__line"><span>Kalan</span><strong>{tl(detay.fatura.odemeOzeti.kalan)}</strong></div>}
+                <a className="btn btn--ghost btn--sm" href={"/panel/fatura?faturaId=" + detay.fatura.id}>Faturayı aç</a>
+              </div>
+            )}
+          </aside>
+          </div>
+          </div>
         </Card>
       )}
 
