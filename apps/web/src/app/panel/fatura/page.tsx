@@ -162,6 +162,8 @@ interface Fatura {
 }
 
 interface FaturaDetay extends Fatura {
+  /** Gelen e-Faturadan oluşan alış faturası; orijinal görünüm gelen kutusundan açılır. */
+  gelenEbelge?: { id: string; belgeNo: string } | null;
   cari: { id: string; kod: string; unvan: string; vknTckn: string | null; eFaturaMukellefi: boolean | null };
   dovizCinsi: string;
   /** EBLG-53/54: ihracat ve gümrük alanları; yurt içi faturada boş. */
@@ -1794,11 +1796,13 @@ export default function FaturaSayfasi() {
     setHata("");
     setBasari("");
     try {
-      const yanit = await api<{ alici: string }>(`/fatura/${id}/pdf-gonder`, {
+      const yanit = await api<{ alici: string; belge?: "ebelge" | "sistem" }>(`/fatura/${id}/pdf-gonder`, {
         method: "POST",
         body: JSON.stringify(eposta.trim() === "" ? {} : { eposta: eposta.trim() }),
       });
-      setBasari(`Fatura PDF'i ${yanit.alici} adresine gönderildi.`);
+      setBasari(yanit.belge === "ebelge"
+        ? `Faturanın GİB'e giden e-Belge görünümü ${yanit.alici} adresine gönderildi.`
+        : `Fatura PDF'i ${yanit.alici} adresine gönderildi.`);
       setEpostaGonderilen(null);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "E-posta gönderilemedi");
@@ -1824,6 +1828,16 @@ export default function FaturaSayfasi() {
       await apiPdfAc(`/ebelge/giden/${faturaId}/pdf`);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "e-Belge PDF açılamadı");
+    }
+  }
+
+  /** Alış faturasının dayandığı gelen e-Faturanın gönderenin tasarımıyla görünümü. */
+  async function gelenPdfAc(gelenId: string) {
+    setHata("");
+    try {
+      await apiPdfAc(`/ebelge/gelen/${gelenId}/pdf`);
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Orijinal e-Fatura açılamadı");
     }
   }
 
@@ -1937,6 +1951,11 @@ export default function FaturaSayfasi() {
               Bu e-Arşiv fatura GİB&apos;e kâğıt olarak teslim edilecek şekilde bildirildi. E-postayla göndermek yalnız bilgi amaçlı bir kopya olur.
             </div>
           )}
+          <p className="muted" style={{ fontSize: "0.85rem", margin: 0 }}>
+            {epostaGonderilen.ebelge && !["hata", "kuyrukta"].includes(epostaGonderilen.ebelge.durum)
+              ? "Ek: faturanın GİB'e giden e-Belge görünümü (entegratörün PDF'i)."
+              : "Ek: sistemin fatura çıktısı (bu faturanın gönderilmiş bir e-Belgesi yok)."}
+          </p>
           <Field label="Alıcı E-posta">
             <Input
               type="email"
@@ -1966,6 +1985,7 @@ export default function FaturaSayfasi() {
               {!acikFatura.ebelge && acikFatura.durum === "kesin" && !ebelgeGonderilebilirFirma && <span className="muted">Firma e-Fatura/e-Arşiv'e kayıtlı değil; fatura kağıt olarak düzenlenir.</span>}
               {faturaGeriAlmaEngeli(acikFatura) === null && <Button size="sm" type="button" onClick={() => void taslagaGeriAl(acikFatura)}>↩ Taslağa geri al</Button>}
               {acikFatura.ebelge && <Button size="sm" type="button" onClick={() => void ebelgePdfAc(acikFatura.id)}>📄 e-Belge PDF</Button>}
+              {acikFatura.gelenEbelge && <Button size="sm" type="button" onClick={() => void gelenPdfAc(acikFatura.gelenEbelge!.id)}>📄 Orijinal e-Fatura</Button>}
               {acikFatura.durum !== "taslak" && <Button size="sm" type="button" onClick={() => void pdfAc(acikFatura.id)}>🖨 PDF</Button>}
               {acikFatura.durum !== "taslak" && <Button size="sm" type="button" onClick={() => setEpostaGonderilen(acikFatura)}>✉️ E-posta</Button>}
               {acikFatura.ebelge?.entegratorRef && ["kuyrukta", "iletildi"].includes(acikFatura.ebelge.durum) && <Button size="sm" type="button" onClick={() => void ebelgeSorgula(acikFatura.id)}>Sorgula</Button>}

@@ -26,6 +26,6 @@ import { MukellefListesiService } from "./mukellef-listesi.service";
     // çalışır ama dekoratörsüz uçlara hiç dokunmaz.
     { provide: APP_GUARD, useClass: EbelgeUygulamasiGuard },
   ],
-  exports: [EbelgeService, EbelgeKuyrukService, MukellefListesiService, EbelgeUygulamalariService],
+  exports: [EbelgeService, EbelgeKuyrukService, EbelgeGorunumService, MukellefListesiService, EbelgeUygulamalariService],
 })
 export class EbelgeModule {}

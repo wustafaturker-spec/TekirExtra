@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 import { FaturaService } from "./fatura.service";
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { _tumPolitikalariTemizle, registerEylemPolitikasi } from "../core/eylemler/eylem-kayit";
 
 vi.mock("../core/istek-baglami", () => ({
@@ -341,5 +341,43 @@ describe("FaturaService.kopyala", () => {
     expect(olusanFatura.mock.calls[0][0].data).toMatchObject({ durum: "taslak", ihracKayitliKodu: "701", senaryo: "ihrackayitli", efaturaProfili: "ticari", depoId: "d1" });
     expect(olusanSatir.mock.calls[0][0].data).toMatchObject({ tevkifatKodu: "602", projeId: "p1" });
     _tumPolitikalariTemizle();
+  });
+});
+
+describe("FaturaService.pdfGonder — e-posta eki", () => {
+  const kur = (ebelge: { durum: string; tur: string } | null, gorunum: { gidenPdf: ReturnType<typeof vi.fn> }) => {
+    const ekliIletiGonder = vi.fn().mockResolvedValue(undefined);
+    const service = new FaturaService(
+      {} as any, {} as any, {} as any, {} as any, { ekliIletiGonder } as any, {} as any,
+      {} as any, {} as any, {} as any, gorunum as any,
+    );
+    vi.spyOn(service, "getir").mockResolvedValue({ id: "f1", no: "K072026000000110", durum: "kesin", cariId: "c1", cari: { unvan: "Alıcı A.Ş." }, ebelge } as any);
+    const sistemPdf = vi.spyOn(service, "pdfUret").mockResolvedValue({ buffer: Buffer.from("sistem"), dosyaAdi: "fatura-K07.pdf" });
+    return { service, ekliIletiGonder, sistemPdf };
+  };
+
+  it("GİB'e gitmiş faturada resmî e-Belge görünümünü ekler", async () => {
+    const gorunum = { gidenPdf: vi.fn().mockResolvedValue({ buffer: Buffer.from("resmi"), dosyaAdi: "efatura-K07.pdf" }) };
+    const { service, ekliIletiGonder, sistemPdf } = kur({ durum: "iletildi", tur: "efatura" }, gorunum);
+
+    const sonuc = await service.pdfGonder("f1", "alici@example.com");
+
+    expect(sonuc.belge).toBe("ebelge");
+    expect(sistemPdf).not.toHaveBeenCalled();
+    const ileti = ekliIletiGonder.mock.calls[0][0];
+    expect(ileti.ekler[0]).toMatchObject({ dosyaAdi: "efatura-K07.pdf", icerik: Buffer.from("resmi") });
+    expect(ileti.metin).toContain("e-Faturanız");
+  });
+
+  it("e-Belgesi olmayan ya da arşivi bulunmayan faturada sistem PDF'ine düşer", async () => {
+    const yok = { gidenPdf: vi.fn() };
+    const bos = kur(null, yok);
+    expect((await bos.service.pdfGonder("f1", "alici@example.com")).belge).toBe("sistem");
+    expect(yok.gidenPdf).not.toHaveBeenCalled();
+
+    const arsivsiz = { gidenPdf: vi.fn().mockRejectedValue(new NotFoundException("arşiv yok")) };
+    const hata = kur({ durum: "iletildi", tur: "earsiv" }, arsivsiz);
+    expect((await hata.service.pdfGonder("f1", "alici@example.com")).belge).toBe("sistem");
+    expect(hata.sistemPdf).toHaveBeenCalled();
   });
 });

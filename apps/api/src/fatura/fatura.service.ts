@@ -21,6 +21,7 @@ import { EpostaService } from "../tenant/eposta.service";
 import { BelgelerService } from "../belgeler/belgeler.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
 import { EbelgeService } from "../ebelge/ebelge.service";
+import { EbelgeGorunumService } from "../ebelge/ebelge-gorunum.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { renkNormalize, sablonNormalize } from "../core/pdf/belge-temasi";
 import { ornekFatura } from "./sablon-onizleme";
@@ -51,6 +52,7 @@ export class FaturaService {
     private readonly donemKilidi: DonemKilidiService,
     private readonly baglantilar: BaglantilarService,
     @Inject(forwardRef(() => EbelgeService)) private readonly ebelge: EbelgeService,
+    @Inject(forwardRef(() => EbelgeGorunumService)) private readonly ebelgeGorunum: EbelgeGorunumService,
   ) {}
 
   private async cariTipiniDogrula(tx: Prisma.TransactionClient, cariId: string, tip: string): Promise<void> {
@@ -454,6 +456,8 @@ export class FaturaService {
             },
           },
           ebelge: true,
+          // Gelen e-Faturadan oluşan alış faturası; orijinal görünüm buradan açılır.
+          gelenEbelge: { select: { id: true, belgeNo: true } },
           kasaBankaHarekets: {
             orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
             include: {
@@ -482,6 +486,7 @@ export class FaturaService {
     return {
       ...this.gorunum(kayit),
       teslimYeriUyarisi: teslimUyarisi,
+      gelenEbelge: kayit.gelenEbelge,
       cari: kayit.cari,
       satirlar: kayit.satirlar.map((s) => ({
         id: s.id,
@@ -1577,14 +1582,33 @@ export class FaturaService {
         "Alıcı e-postası yok: cari kartına e-posta ekleyin veya adres belirtin",
       );
     }
-    const { buffer, dosyaAdi } = await this.pdfUret(id);
+    // GİB'e gitmiş faturada müşteriye resmî belgenin görünümü gider; bizim
+    // şablonumuz yalnız e-Belgesi olmayan (kâğıt) faturanın çıktısıdır.
+    const resmi = await this.resmiGorunum(id, fatura.ebelge);
+    const { buffer, dosyaAdi } = resmi ?? (await this.pdfUret(id));
+    const belgeAdi = resmi ? (fatura.ebelge?.tur === "earsiv" ? "e-Arşiv faturanız" : "e-Faturanız") : "faturanız";
     await this.eposta.ekliIletiGonder({
       alici,
       konu: `Fatura ${fatura.no}`,
-      metin: `Sayın ${fatura.cari.unvan},\n\n${fatura.no} numaralı faturanız ekte yer almaktadır.\n\nİyi çalışmalar dileriz.`,
+      metin: `Sayın ${fatura.cari.unvan},\n\n${fatura.no} numaralı ${belgeAdi} ekte yer almaktadır.\n\nİyi çalışmalar dileriz.`,
       ekler: [{ dosyaAdi, icerik: buffer, mime: "application/pdf" }],
     });
-    return { gonderildi: true, alici };
+    return { gonderildi: true, alici, belge: resmi ? "ebelge" as const : "sistem" as const };
+  }
+
+  /**
+   * Gönderilmiş e-Belgenin resmî görünümü (entegratörün PDF'i, alınamazsa
+   * arşivdeki UBL'den basılan görünüm). Belge gönderilmemiş ya da hata
+   * almışsa `null`: o faturanın resmî bir e-Belgesi yoktur.
+   */
+  private async resmiGorunum(faturaId: string, ebelge: { durum: string } | null | undefined) {
+    if (!ebelge || ebelge.durum === "hata" || ebelge.durum === "kuyrukta") return null;
+    try {
+      return await this.ebelgeGorunum.gidenPdf(faturaId);
+    } catch (hata) {
+      if (hata instanceof NotFoundException) return null;
+      throw hata;
+    }
   }
 
   // ─── PRIVATE YARDIMCILAR ──────────────────────────────────────────────────
