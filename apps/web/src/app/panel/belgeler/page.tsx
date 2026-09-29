@@ -19,7 +19,7 @@ import { BOS_TESLIMAT_ADRESI, TeslimatAdresiAlanlari, teslimatAdresiEksik, tesli
 import { FormGrubu } from "@/components/form-grubu";
 import { AlanIpucu } from "@/components/alan-ipucu";
 import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
-import { belgeNoMetni, bugunTR, EN_UZUN_VADE_GUN, revizyonEngeli, faturaHesapla, kosulSatirlari, muhtelifMusteriMi, referansFarkiUyarisi, TESLIM_SARTLARI, irsaliyeGeriAlmaEngeli, irsaliyeIptalUyarisi, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
+import { belgeNoMetni, bugunTR, vadeTarihiHesapla, EN_UZUN_VADE_GUN, revizyonEngeli, faturaHesapla, kosulSatirlari, muhtelifMusteriMi, referansFarkiUyarisi, TESLIM_SARTLARI, irsaliyeGeriAlmaEngeli, irsaliyeIptalUyarisi, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -1049,12 +1049,18 @@ export default function BelgelerSayfasi() {
   const tasimaDolu = [plaka, dorsePlaka, soforAdi, soforSoyadi, fiiliSevkZamani, tasiyiciCariId].filter((d) => d.trim()).length;
   /** Kaydetmeyi ya da e-İrsaliye gönderimini engelleyecek eksikler. */
   const eirsaliyeGidecek = tur === "irsaliye" && (yon === "satis" || gumrukDepo);
+  /** Teklifin geçerliliğine bugünden kalan gün; tarih yoksa null. */
+  const gecerlilikKalanGun = gecerlilik ? Math.round((Date.parse(gecerlilik) - Date.parse(bugunTR())) / 86_400_000) : null;
   const kontrolListesi = [
     !cariId && (yon === "satis" ? "Müşteri seçilmedi" : "Tedarikçi seçilmedi"),
     satirlar.some((s) => !s.stokId) && "Ürünü seçilmemiş satır var",
+    // İrsaliyede fiyatsız satır olağandır; teklif ve siparişte fiyat unutulmuş olabilir.
+    tur !== "irsaliye" && satirlar.some((s) => s.stokId && !(Number(s.birimFiyat) > 0)) && "Birim fiyatı sıfır olan satır var",
     dovizCinsi !== "TRY" && !(Number(kur) > 0) && "Döviz kuru girilmedi",
     eirsaliyeGidecek && !tasiyiciCariId && !(soforAdi.trim() && soforSoyadi.trim() && plaka.trim()) && "e-İrsaliye için taşıyıcı firma ya da şoför adı, soyadı ve plaka gerekli",
     eirsaliyeGidecek && teslimatAdresiEksik(teslimat) && "Teslimat adresinin dört alanı da dolu olmalı",
+    tur === "teklif" && gecerlilik && tarih && gecerlilik < tarih && "Geçerlilik tarihi teklif tarihinden önce",
+    tur === "teklif" && talepMukerrerleri.length > 0 && `Bu talep numarasıyla ${talepMukerrerleri.length} teklif daha var (${talepMukerrerleri.map((t) => t.no ?? "taslak").join(", ")})`,
   ].filter((e): e is string => Boolean(e));
 
   // Ctrl+S (macOS'ta Cmd+S) açık formu kaydeder.
@@ -1156,7 +1162,15 @@ export default function BelgelerSayfasi() {
               </Field>
             )}
             {tur === "teklif" && (
-                <Field label="Geçerlilik Tarihi"><Input type="date" value={gecerlilik} onChange={(e) => setGecerlilik(e.target.value)} /></Field>
+                <Field label="Geçerlilik Tarihi">
+                  <Input type="date" value={gecerlilik} onChange={(e) => setGecerlilik(e.target.value)} />
+                  <div className="vade-cipleri" role="group" aria-label="Hızlı geçerlilik seçimi">
+                    {[7, 15, 30].map((gun) => {
+                      const hedef = tarih ? vadeTarihiHesapla(tarih, gun) : null;
+                      return <button type="button" key={gun} className={`vade-cipi${hedef && gecerlilik === hedef ? " is-active" : ""}`} disabled={!hedef} onClick={() => { if (hedef) setGecerlilik(hedef); }}>{gun} gün</button>;
+                    })}
+                  </div>
+                </Field>
             )}
             </div>
           </div>
@@ -1380,9 +1394,12 @@ export default function BelgelerSayfasi() {
               <>
                 <Field label="Ödeme Vadesi (gün)">
                   <Input aria-label="Ödeme vadesi gün" type="number" min={0} max={EN_UZUN_VADE_GUN} step={1} value={vadeGun} placeholder="0 = peşin" onChange={(e) => setVadeGun(e.target.value)} />
-                  <small className="muted">Faturada vade tarihi, fatura tarihine bu gün eklenerek yazılır.</small>
+                  <div className="vade-cipleri" role="group" aria-label="Hızlı vade seçimi">
+                    {[0, 30, 60, 90].map((gun) => <button type="button" key={gun} className={`vade-cipi${vadeGun !== "" && Number(vadeGun) === gun ? " is-active" : ""}`} onClick={() => setVadeGun(String(gun))}>{gun === 0 ? "Peşin" : `${gun} gün`}</button>)}
+                  </div>
+                  <AlanIpucu>Faturada vade tarihi, fatura tarihine bu gün eklenerek yazılır.</AlanIpucu>
                 </Field>
-                <Field label="Teslim Süresi">
+                <Field label="Teslim Süresi" className="document-fields__genis">
                   <Input aria-label="Teslim süresi" value={teslimSuresi} maxLength={200} placeholder="Örn. Siparişten itibaren 15 iş günü" onChange={(e) => setTeslimSuresi(e.target.value)} />
                 </Field>
                 <Field label="Teslim Şekli">
@@ -1452,6 +1469,19 @@ export default function BelgelerSayfasi() {
               <div className="invoice-summary__line is-grand"><span>Genel toplam</span><span>{tl(sonuc.genelToplam, dovizCinsi)}</span></div>
               {dovizCinsi !== "TRY" && Number(kur) > 0 && <small className="muted invoice-summary__tl">≈ {tl(sonuc.genelToplam * Number(kur), "TRY")} · kur {Number(kur).toLocaleString("tr-TR", { maximumFractionDigits: 4 })}</small>}
             </div>
+            {(tur === "teklif" || tur === "siparis") && (
+              <div className="invoice-summary">
+                <h4>Koşullar</h4>
+                {tur === "teklif" && (
+                  <div className="invoice-summary__line"><span>Geçerlilik</span><strong>{gecerlilik
+                    ? `${new Date(gecerlilik).toLocaleDateString("tr-TR")}${gecerlilikKalanGun !== null ? (gecerlilikKalanGun < 0 ? " · süresi geçti" : ` · ${gecerlilikKalanGun} gün`) : ""}`
+                    : "Belirtilmedi"}</strong></div>
+                )}
+                <div className="invoice-summary__line"><span>Ödeme</span><strong>{vadeGun === "" ? "Belirtilmedi" : Number(vadeGun) === 0 ? "Peşin" : `${vadeGun} gün vadeli`}</strong></div>
+                <div className="invoice-summary__line"><span>Teslim süresi</span><strong>{teslimSuresi.trim() || "—"}</strong></div>
+                <div className="invoice-summary__line"><span>Teslim şekli</span><strong>{teslimSekli || "—"}</strong></div>
+              </div>
+            )}
             {tur === "irsaliye" && eirsaliyeGidecek && (
               <div className="invoice-summary">
                 <h4>Taşıma</h4>

@@ -1916,6 +1916,7 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 .invoice-editor .document-line-col--total { width: 108px; }
 .invoice-notes { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; margin-bottom: 1rem; }
 .invoice-notes--tek { grid-template-columns: 1fr; }
+.document-fields__genis { grid-column: span 2; }
 .document-fields__tam { align-items: center; display: flex; gap: .6rem; grid-column: 1 / -1; }
 .document-fields__tam .alan-ipucu { margin-top: 0; }
 .document-attachments.is-dragging { background: var(--accent-soft); border-radius: .6rem; outline: 2px dashed var(--accent); outline-offset: 4px; }
@@ -1962,6 +1963,7 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 }
 @media (max-width: 760px) {
   .invoice-head-fields, .invoice-notes { grid-template-columns: 1fr; }
+  .document-fields__genis { grid-column: auto; }
   .invoice-line__index { display: none; }
 }
 .detail-page > .stat-grid,
