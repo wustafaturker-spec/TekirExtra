@@ -26,7 +26,7 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PdfService } from "../core/pdf/pdf.service";
-import { birlesikReferanslar, ilgiliKisiTemizle, ilkIlgiliKisi, irsaliyeGeriAlmaEngeli, metinNormalize, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi } from "@tekirextra/shared";
+import { birlesikReferanslar, ilgiliKisiTemizle, ilkIlgiliKisi, ilkKosullar, vadeTarihiHesapla, irsaliyeGeriAlmaEngeli, metinNormalize, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi } from "@tekirextra/shared";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { PrismaService } from "../core/prisma.service";
 import { DepoService } from "../stok/depo.service";
@@ -449,6 +449,11 @@ export class BelgelerService {
         const fatura = await tx.fatura.findUnique({ where: { id: girdi.faturaId }, select: { tenantId: true, cariId: true, tip: true, durum: true, sevkiyatYontemi: true, no: true, ebelge: { select: { durum: true } } } });
         if (!fatura || fatura.tenantId !== tenantId || fatura.cariId !== girdi.cariId || fatura.tip !== "satis" || fatura.durum !== "kesin" || fatura.sevkiyatYontemi !== "fatura_once" || !fatura.no || !fatura.ebelge || !["iletildi", "kabul"].includes(fatura.ebelge.durum)) throw new BadRequestException("Seçilen fatura bu müşteri için sevkten önce düzenlenmiş, gönderilmiş bir e-Belge olmalıdır");
       }
+      // FTR-33: vade girilmediyse (alan hiç gönderilmediyse) teklif ve
+      // siparişte carinin varsayılan vadesi kullanılır.
+      const varsayilanVade = girdi.odemeVadeGun === undefined && (girdi.tur === "teklif" || girdi.tur === "siparis")
+        ? (await tx.cariHesap.findUnique({ where: { id: girdi.cariId }, select: { varsayilanVadeGun: true } }))?.varsayilanVadeGun ?? null
+        : null;
       const belge = await tx.belge.create({
         data: {
           tenantId,
@@ -467,6 +472,9 @@ export class BelgelerService {
           talepNo: girdi.talepNo?.trim() || null,
           talepTarihi: girdi.talepTarihi ? new Date(girdi.talepTarihi) : null,
           ...ilgiliKisiTemizle(girdi),
+          odemeVadeGun: girdi.odemeVadeGun !== undefined ? girdi.odemeVadeGun : varsayilanVade,
+          teslimSuresi: girdi.teslimSuresi?.trim() || null,
+          teslimSekli: girdi.teslimSekli || null,
           tedarikciBelgeNo: tedarikciBelgeNoYaz(girdi.tur, girdi.yon, girdi.tedarikciBelgeNo),
           ...gumrukDepoAlanlari(girdi.tur, girdi.yon, girdi),
           depoId: girdi.depoId ?? null,
@@ -573,6 +581,9 @@ export class BelgelerService {
       talepTarihi: girdi.talepTarihi !== undefined ? girdi.talepTarihi : mevcut.talepTarihi,
       ilgiliKisi: girdi.ilgiliKisi !== undefined ? girdi.ilgiliKisi : mevcut.ilgiliKisi,
       ilgiliKisiGorevi: girdi.ilgiliKisiGorevi !== undefined ? girdi.ilgiliKisiGorevi : mevcut.ilgiliKisiGorevi,
+      odemeVadeGun: girdi.odemeVadeGun !== undefined ? girdi.odemeVadeGun : mevcut.odemeVadeGun,
+      teslimSuresi: girdi.teslimSuresi !== undefined ? girdi.teslimSuresi : mevcut.teslimSuresi,
+      teslimSekli: girdi.teslimSekli !== undefined ? girdi.teslimSekli : mevcut.teslimSekli,
       tedarikciBelgeNo: girdi.tedarikciBelgeNo !== undefined ? girdi.tedarikciBelgeNo : mevcut.tedarikciBelgeNo,
       gumrukDepoSevki: girdi.gumrukDepoSevki ?? mevcut.gumrukDepoSevki,
       gumrukBeyannameNo: girdi.gumrukBeyannameNo !== undefined ? girdi.gumrukBeyannameNo : mevcut.gumrukBeyannameNo,
@@ -644,6 +655,9 @@ export class BelgelerService {
           talepNo: birlesik.talepNo?.trim() || null,
           talepTarihi: birlesik.talepTarihi ? new Date(birlesik.talepTarihi) : null,
           ...ilgiliKisiTemizle(birlesik),
+          odemeVadeGun: birlesik.odemeVadeGun ?? null,
+          teslimSuresi: birlesik.teslimSuresi?.trim() || null,
+          teslimSekli: birlesik.teslimSekli || null,
           tedarikciBelgeNo: tedarikciBelgeNoYaz(mevcut.tur, mevcut.yon, birlesik.tedarikciBelgeNo),
           ...gumrukDepoAlanlari(mevcut.tur, mevcut.yon, birlesik),
           depoId: birlesik.depoId ?? null,
@@ -772,6 +786,10 @@ export class BelgelerService {
           // referansı ise o satışa özgüdür, kopyalanmaz).
           ilgiliKisi: belge.ilgiliKisi,
           ilgiliKisiGorevi: belge.ilgiliKisiGorevi,
+          // FTR-33: koşullar da kopyada kalır.
+          odemeVadeGun: belge.odemeVadeGun,
+          teslimSuresi: belge.teslimSuresi,
+          teslimSekli: belge.teslimSekli,
           notlar: belge.notlar,
           kaynakBelgeId: null,
           faturaId: null,
@@ -1107,6 +1125,10 @@ export class BelgelerService {
           // FTR-32: ilgili kişi de taşınır.
           ilgiliKisi: belge.ilgiliKisi,
           ilgiliKisiGorevi: belge.ilgiliKisiGorevi,
+          // FTR-33: teklif koşulları da taşınır (irsaliye üzerinden faturaya).
+          odemeVadeGun: belge.odemeVadeGun,
+          teslimSuresi: belge.teslimSuresi,
+          teslimSekli: belge.teslimSekli,
           kaynakBelgeId: belge.id,
         },
       });
@@ -1655,24 +1677,30 @@ export class BelgelerService {
   }
 
   /**
-   * FTR-31/32: sonradan bağlanan irsaliyelerin müşteri referansları ve ilgili
-   * kişisi faturada boş olan alanları doldurur; elle girilmiş değer ezilmez.
+   * FTR-31/32/33: sonradan bağlanan irsaliyelerin müşteri referansları, ilgili
+   * kişisi ve koşulları (vade, teslim şartı) faturada boş olan alanları
+   * doldurur; elle girilmiş değer ezilmez.
    */
   private async referanslariIrsaliyedenDoldur(tx: Prisma.TransactionClient, faturaId: string) {
-    const fatura = await tx.fatura.findUnique({ where: { id: faturaId }, select: { siparisNo: true, talepNo: true, ilgiliKisi: true } });
-    if (!fatura || (fatura.siparisNo && fatura.talepNo && fatura.ilgiliKisi)) return;
+    const fatura = await tx.fatura.findUnique({ where: { id: faturaId }, select: { tarih: true, siparisNo: true, talepNo: true, ilgiliKisi: true, vadeTarihi: true, ihracatTeslimSarti: true } });
+    if (!fatura || (fatura.siparisNo && fatura.talepNo && fatura.ilgiliKisi && fatura.vadeTarihi && fatura.ihracatTeslimSarti)) return;
     const bagli = await tx.belge.findMany({
       where: { faturaId },
-      select: { siparisNo: true, siparisTarihi: true, talepNo: true, talepTarihi: true, ilgiliKisi: true, ilgiliKisiGorevi: true },
+      select: { siparisNo: true, siparisTarihi: true, talepNo: true, talepTarihi: true, ilgiliKisi: true, ilgiliKisiGorevi: true, odemeVadeGun: true, teslimSuresi: true, teslimSekli: true },
       orderBy: { tarih: "asc" },
     });
     const r = birlesikReferanslar(bagli);
     const kisi = ilkIlgiliKisi(bagli);
+    const kosullar = ilkKosullar(bagli);
+    const vade = kosullar.odemeVadeGun != null ? vadeTarihiHesapla(fatura.tarih.toISOString(), kosullar.odemeVadeGun) : null;
     const data = {
       ...(!fatura.siparisNo && r.siparisNo ? { siparisNo: r.siparisNo, siparisTarihi: r.siparisTarihi as Date | null } : {}),
       ...(!fatura.talepNo && r.talepNo ? { talepNo: r.talepNo, talepTarihi: r.talepTarihi as Date | null } : {}),
       // FTR-32: ilgili kişi de aynı kuralla gelir.
       ...(!fatura.ilgiliKisi && kisi.ilgiliKisi ? kisi : {}),
+      // FTR-33: vade ve teslim şartı da yalnız boşsa gelir.
+      ...(!fatura.vadeTarihi && vade ? { vadeTarihi: new Date(vade) } : {}),
+      ...(!fatura.ihracatTeslimSarti && kosullar.teslimSekli ? { ihracatTeslimSarti: kosullar.teslimSekli } : {}),
     };
     if (Object.keys(data).length) await tx.fatura.update({ where: { id: faturaId }, data });
   }
@@ -1723,6 +1751,9 @@ export class BelgelerService {
       /** FTR-32: ilgili kişi; birleşen belgelerde ilk dolu olan alınır. */
       ilgiliKisi?: string | null;
       ilgiliKisiGorevi?: string | null;
+      /** FTR-33: vade günü ve teslim şekli; ilk dolu olanlar alınır. */
+      odemeVadeGun?: number | null;
+      teslimSekli?: string | null;
       satirlar: BelgeSatirKaydi[];
     }[],
   ) {
@@ -1746,6 +1777,8 @@ export class BelgelerService {
     });
     const kaynakNolar = belgeler.map((b) => b.no).filter(Boolean).join(", ");
     const referanslar = birlesikReferanslar(belgeler);
+    const kosullar = ilkKosullar(belgeler);
+    const vade = vadeTarihiHesapla(bugunTR(), kosullar.odemeVadeGun);
     const fatura = await tx.fatura.create({
       data: {
         tenantId,
@@ -1768,6 +1801,10 @@ export class BelgelerService {
         talepNo: referanslar.talepNo,
         talepTarihi: referanslar.talepTarihi as Date | null,
         ...ilkIlgiliKisi(belgeler),
+        // FTR-33: vade tarihi = fatura tarihi + teklifteki vade günü; teslim
+        // şekli yalnız ihracat faturasında kullanılan teslim şartına gider.
+        vadeTarihi: vade ? new Date(vade) : null,
+        ihracatTeslimSarti: kosullar.teslimSekli,
       },
     });
     for (const [i, s] of hesap.satirlar.entries()) {
@@ -1931,6 +1968,10 @@ export class BelgelerService {
     /** FTR-32: müşteri tarafında ilgili kişi. */
     ilgiliKisi?: string | null;
     ilgiliKisiGorevi?: string | null;
+    /** FTR-33: teklif koşulları. */
+    odemeVadeGun?: number | null;
+    teslimSuresi?: string | null;
+    teslimSekli?: string | null;
     /** EBLG-72: İDİS sevkiyat numarası; doluysa e-İrsaliye IDISIRSALIYE gider. */
     idisSevkiyatNo?: string | null;
     /** FTR-27: alış irsaliyesinde tedarikçinin irsaliye numarası. */
@@ -1993,6 +2034,9 @@ export class BelgelerService {
       talepNo: k.talepNo ?? null,
       ilgiliKisi: k.ilgiliKisi ?? null,
       ilgiliKisiGorevi: k.ilgiliKisiGorevi ?? null,
+      odemeVadeGun: k.odemeVadeGun ?? null,
+      teslimSuresi: k.teslimSuresi ?? null,
+      teslimSekli: k.teslimSekli ?? null,
       talepTarihi: k.talepTarihi
         ? (typeof k.talepTarihi === "string" ? k.talepTarihi : k.talepTarihi.toISOString()).slice(0, 10)
         : null,

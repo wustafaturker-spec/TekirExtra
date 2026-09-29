@@ -34,3 +34,4 @@ export * from "./ebelge-iptal";
 export * from "./taslaga-geri-al";
 export * from "./musteri-referansi";
 export * from "./ilgili-kisi";
+export * from "./teklif-kosullari";

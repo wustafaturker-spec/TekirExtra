@@ -3260,6 +3260,12 @@ model Belge {
   /// elle yazılır; belgeye kopyalanır, kart değişse de çıktı değişmez.
   ilgiliKisi             String?          @map("ilgili_kisi")
   ilgiliKisiGorevi       String?          @map("ilgili_kisi_gorevi")
+  /// FTR-33: teklif koşulları. Vade günü faturaya vade tarihi olarak geçer
+  /// (fatura tarihi + gün); teslim şekli Incoterms kodudur, ihracat
+  /// faturasının boş teslim şartını doldurur. Teslim süresi serbest metindir.
+  odemeVadeGun           Int?             @map("odeme_vade_gun")
+  teslimSuresi           String?          @map("teslim_suresi")
+  teslimSekli            String?          @map("teslim_sekli")
   /// FTR-27: alış irsaliyesinde tedarikçinin kendi irsaliye numarası. `no`
   /// bizim iç seri numaramızdır (AIR…); giden e-İrsaliye serisinden alınmaz.
   tedarikciBelgeNo       String?          @map("tedarikci_belge_no")

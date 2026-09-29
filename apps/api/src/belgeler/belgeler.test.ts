@@ -1,6 +1,7 @@
 import { ConflictException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
+import { bugunTR, vadeTarihiHesapla } from "@tekirextra/shared";
 import { BelgelerService } from "./belgeler.service";
 
 vi.mock("../core/istek-baglami", () => ({
@@ -39,7 +40,7 @@ describe("BelgelerService", () => {
     });
   });
 
-  it("toplu faturada ilk dolu referansları ve ilgili kişiyi faturaya yazar (FTR-31/32)", async () => {
+  it("toplu faturada ilk dolu referansları, ilgili kişiyi ve koşulları faturaya yazar (FTR-31/32/33)", async () => {
     const belge = (id: string, ek: Record<string, unknown>) => ({
       id, no: id, durum: "onaylandi", tur: "irsaliye", cariId: "c1", dovizCinsi: "TRY",
       kur: new Prisma.Decimal(1), yon: "satis", depoId: "d1", satirlar: [], ...ek,
@@ -47,8 +48,8 @@ describe("BelgelerService", () => {
     const tx = {
       belge: {
         findMany: vi.fn().mockResolvedValue([
-          belge("i1", { siparisNo: null, talepNo: "RFQ-1", talepTarihi: new Date("2026-09-01") }),
-          belge("i2", { siparisNo: "PO-2", siparisTarihi: new Date("2026-09-10"), talepNo: "RFQ-1", ilgiliKisi: "Ali Er", ilgiliKisiGorevi: "Depo" }),
+          belge("i1", { siparisNo: null, talepNo: "RFQ-1", talepTarihi: new Date("2026-09-01"), teslimSekli: "EXW" }),
+          belge("i2", { siparisNo: "PO-2", siparisTarihi: new Date("2026-09-10"), talepNo: "RFQ-1", ilgiliKisi: "Ali Er", ilgiliKisiGorevi: "Depo", odemeVadeGun: 30 }),
         ]),
         updateMany: vi.fn().mockResolvedValue({ count: 2 }),
       },
@@ -63,6 +64,9 @@ describe("BelgelerService", () => {
     expect(tx.fatura.create.mock.calls[0][0].data).toMatchObject({
       siparisNo: "PO-2", siparisTarihi: new Date("2026-09-10"), talepNo: "RFQ-1", talepTarihi: new Date("2026-09-01"),
       ilgiliKisi: "Ali Er", ilgiliKisiGorevi: "Depo",
+      // FTR-33: vade = bugün + 30 gün; teslim şekli ihracat teslim şartına gider.
+      vadeTarihi: new Date(vadeTarihiHesapla(bugunTR(), 30)!),
+      ihracatTeslimSarti: "EXW",
     });
   });
 
@@ -179,9 +183,9 @@ describe("BelgelerService", () => {
     expect(tx.belge.update).toHaveBeenCalledWith({ where: { id: "sip1" }, data: { durum: "kismen_kapandi" } });
   });
 
-  it("müşterinin talep/sipariş referansını ve ilgili kişisini yeni belgeye kopyalar (FTR-31/32)", async () => {
+  it("müşterinin referanslarını, ilgili kişisini ve koşulları yeni belgeye kopyalar (FTR-31/32/33)", async () => {
     const { servis, tx, belge } = siparisKurulumu();
-    Object.assign(belge, { siparisNo: "PO-7", siparisTarihi: new Date("2026-09-12"), talepNo: "RFQ-3", talepTarihi: new Date("2026-09-01"), ilgiliKisi: "Ayşe Kaya", ilgiliKisiGorevi: "Satınalma" });
+    Object.assign(belge, { siparisNo: "PO-7", siparisTarihi: new Date("2026-09-12"), talepNo: "RFQ-3", talepTarihi: new Date("2026-09-01"), ilgiliKisi: "Ayşe Kaya", ilgiliKisiGorevi: "Satınalma", odemeVadeGun: 45, teslimSuresi: "10 iş günü", teslimSekli: "FOB" });
 
     await servis.donustur("sip1", "irsaliye");
 
@@ -189,6 +193,8 @@ describe("BelgelerService", () => {
       siparisNo: "PO-7", siparisTarihi: new Date("2026-09-12"), talepNo: "RFQ-3", talepTarihi: new Date("2026-09-01"),
       // FTR-32: ilgili kişi de taşınır.
       ilgiliKisi: "Ayşe Kaya", ilgiliKisiGorevi: "Satınalma",
+      // FTR-33: koşullar da taşınır.
+      odemeVadeGun: 45, teslimSuresi: "10 iş günü", teslimSekli: "FOB",
     });
   });
 

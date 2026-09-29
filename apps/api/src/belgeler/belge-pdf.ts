@@ -8,7 +8,7 @@ import {
   type FirmaIletisimi,
 } from "../core/pdf/pdf-sablon";
 import type { BelgeTemasi } from "../core/pdf/belge-temasi";
-import { ilgiliKisiMetni } from "@tekirextra/shared";
+import { ilgiliKisiMetni, kosulSatirlari } from "@tekirextra/shared";
 
 /** Zincir belgeleri PDF şablonu (FTR-12, T-02; kağıt/PDF irsaliye). */
 
@@ -35,6 +35,10 @@ export interface BelgePdfVerisi {
   /** FTR-32: müşteri tarafında ilgili kişi. */
   ilgiliKisi?: string | null;
   ilgiliKisiGorevi?: string | null;
+  /** FTR-33: teklif koşulları. */
+  odemeVadeGun?: number | null;
+  teslimSuresi?: string | null;
+  teslimSekli?: string | null;
   dovizCinsi: string;
   kur: string;
   toplamBrut: string;
@@ -116,7 +120,7 @@ export function belgePdfHtml(
           b.dovizCinsi !== "TRY"
             ? `<br>Döviz: ${kacis(b.dovizCinsi)} (kur ${sayiBicim(b.kur)})`
             : ""
-        }
+        }${kosulSatirlari(b).map((satir) => `<br>${kacis(satir)}`).join("")}
       </div>
     </td>
   </tr>

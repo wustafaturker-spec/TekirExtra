@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PLAKA_HATA_MESAJI, plakaGecerliMi, plakaNormalize } from "@tekirextra/shared";
+import { EN_UZUN_VADE_GUN, PLAKA_HATA_MESAJI, plakaGecerliMi, plakaNormalize, teslimSekliGecerliMi } from "@tekirextra/shared";
 import { guncellemeSemasi } from "../core/sema";
 
 /** Plaka alanı: boşluk/küçük harf düzeltilir, biçim GİB kuralıyla sınanır. */
@@ -63,6 +63,10 @@ export const belgeOlusturSemasi = z.object({
   /** FTR-32: müşteri tarafında ilgili kişi; cari kişisinden kopyalanır ya da elle yazılır. */
   ilgiliKisi: z.string().max(120).optional().nullable(),
   ilgiliKisiGorevi: z.string().max(120).optional().nullable(),
+  /** FTR-33: teklif koşulları; zincir boyunca faturaya taşınır. */
+  odemeVadeGun: z.number().int("Vade tam gün olmalıdır").min(0, "Vade negatif olamaz").max(EN_UZUN_VADE_GUN, `Vade en çok ${EN_UZUN_VADE_GUN} gün olabilir`).optional().nullable(),
+  teslimSuresi: z.string().max(200).optional().nullable(),
+  teslimSekli: z.string().optional().nullable().refine(teslimSekliGecerliMi, "Teslim şekli Incoterms listesinden seçilmelidir"),
   /** FTR-27: alış irsaliyesinde tedarikçinin irsaliye numarası; diğerlerinde yok sayılır. */
   tedarikciBelgeNo: z.string().max(50).optional().nullable(),
   cariId: z.string().uuid(),

@@ -17,7 +17,7 @@ import { TasimaBilgisiPaneli } from "@/components/tasima-bilgisi-paneli";
 import type { DepoOzet } from "@/lib/depolar";
 import { BOS_TESLIMAT_ADRESI, TeslimatAdresiAlanlari, teslimatAdresiGovdesi, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
 import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
-import { bugunTR, faturaHesapla, muhtelifMusteriMi, referansFarkiUyarisi, irsaliyeGeriAlmaEngeli, irsaliyeIptalUyarisi, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
+import { bugunTR, EN_UZUN_VADE_GUN, faturaHesapla, kosulSatirlari, muhtelifMusteriMi, referansFarkiUyarisi, TESLIM_SARTLARI, irsaliyeGeriAlmaEngeli, irsaliyeIptalUyarisi, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -63,7 +63,7 @@ interface BelgeGorunumu {
 
 const GORUNUM_ANAHTARI = "tekir_belge_gorunumleri";
 
-interface Cari { id: string; kod?: string; unvan: string; vknTckn?: string | null; telefon?: string | null }
+interface Cari { id: string; kod?: string; unvan: string; vknTckn?: string | null; telefon?: string | null; varsayilanVadeGun?: number | null }
 interface Stok { id: string; kod: string; ad: string; tedarikciUrunKodlari?: string[]; takipTipi?: "yok" | "lot" | "seri"; anaBirim?: string; birimler?: { ad: string; katsayi: string }[] }
 interface StokVaryant { id: string; kod: string; ad: string; aktif: boolean; mevcutMiktar: string }
 
@@ -169,6 +169,9 @@ interface BelgeDetay extends Belge {
   talepTarihi?: string | null;
   ilgiliKisi?: string | null;
   ilgiliKisiGorevi?: string | null;
+  odemeVadeGun?: number | null;
+  teslimSuresi?: string | null;
+  teslimSekli?: string | null;
   idisSevkiyatNo?: string | null;
   /** EBLG-84: irsaliyeye özel teslimat adresi (ihracatta gümrük kapısı). */
   teslimatAdres?: string | null;
@@ -333,6 +336,10 @@ export default function BelgelerSayfasi() {
   const [talepTarihi, setTalepTarihi] = useState("");
   /** FTR-32: müşteri tarafında ilgili kişi; cari kişisinden kopyalanır ya da elle yazılır. */
   const [ilgili, setIlgili] = useState<IlgiliKisiDegeri>(BOS_ILGILI_KISI);
+  /** FTR-33: teklif koşulları; teklif ve siparişte girilir, faturaya taşınır. */
+  const [vadeGun, setVadeGun] = useState("");
+  const [teslimSuresi, setTeslimSuresi] = useState("");
+  const [teslimSekli, setTeslimSekli] = useState("");
   /** FTR-31: aynı cariye aynı talep numarasıyla açılmış diğer teklifler. */
   const [talepMukerrerleri, setTalepMukerrerleri] = useState<{ id: string; no: string | null; tarih: string }[]>([]);
 
@@ -349,6 +356,13 @@ export default function BelgelerSayfasi() {
     }, 400);
     return () => { aktif = false; clearTimeout(zamanlayici); };
   }, [tur, yon, cariId, talepNo, duzenlenenId]);
+
+  // FTR-33: yeni teklif/siparişte vade, seçilen carinin varsayılan vadesiyle dolar.
+  useEffect(() => {
+    if (duzenlenenId || (tur !== "teklif" && tur !== "siparis")) return;
+    const gun = cariler.find((c) => c.id === cariId)?.varsayilanVadeGun;
+    setVadeGun(gun != null ? String(gun) : "");
+  }, [cariId, tur, duzenlenenId, cariler]);
   /** FTR-27: alış irsaliyesinde tedarikçinin numarası; bizim no'muz iç seridir. */
   const [tedarikciBelgeNo, setTedarikciBelgeNo] = useState("");
   /** EBLG-84: irsaliyeye özel teslimat adresi; ihracatta gümrük kapısı. */
@@ -636,6 +650,10 @@ export default function BelgelerSayfasi() {
           talepNo: yon === "satis" ? talepNo.trim() || null : null,
           talepTarihi: yon === "satis" ? talepTarihi || null : null,
           ...ilgiliKisiGovdesi(yon === "satis" ? ilgili : BOS_ILGILI_KISI),
+          // İrsaliyede koşullar formda sorulmaz; zincirden gelen değer korunur.
+          ...(tur === "teklif" || tur === "siparis"
+            ? { odemeVadeGun: vadeGun.trim() === "" ? null : Number(vadeGun), teslimSuresi: teslimSuresi.trim() || null, teslimSekli: teslimSekli || null }
+            : {}),
           ...(tur === "irsaliye" && yon === "alis"
             ? {
                 gumrukDepoSevki: gumrukDepo,
@@ -672,7 +690,7 @@ export default function BelgelerSayfasi() {
       setAciklama(""); setKuruAciklamayaEkle(true);
       setDosyalar([]);
       setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 }]);
-      setSiparisNo(""); setSiparisTarihi(""); setTalepNo(""); setTalepTarihi(""); setIlgili(BOS_ILGILI_KISI); setIdisSevkiyatNo(""); setTedarikciBelgeNo(""); setTeslimat(BOS_TESLIMAT_ADRESI);
+      setSiparisNo(""); setSiparisTarihi(""); setTalepNo(""); setTalepTarihi(""); setIlgili(BOS_ILGILI_KISI); setVadeGun(""); setTeslimSuresi(""); setTeslimSekli(""); setIdisSevkiyatNo(""); setTedarikciBelgeNo(""); setTeslimat(BOS_TESLIMAT_ADRESI);
       setGumrukDepo(false); setBeyannameNo(""); setBeyannameTarihi(""); setYukleme(BOS_TESLIMAT_ADRESI);
       void yukle();
     } catch (h) {
@@ -696,6 +714,7 @@ export default function BelgelerSayfasi() {
     setSiparisNo(d.siparisNo ?? ""); setSiparisTarihi(d.siparisTarihi?.slice(0, 10) ?? "");
     setTalepNo(d.talepNo ?? ""); setTalepTarihi(d.talepTarihi?.slice(0, 10) ?? "");
     setIlgili({ ilgiliKisi: d.ilgiliKisi ?? "", ilgiliKisiGorevi: d.ilgiliKisiGorevi ?? "" });
+    setVadeGun(d.odemeVadeGun != null ? String(d.odemeVadeGun) : ""); setTeslimSuresi(d.teslimSuresi ?? ""); setTeslimSekli(d.teslimSekli ?? "");
     const yerelSevk = d.fiiliSevkZamani ? yerelZaman(d.fiiliSevkZamani) : "";
     ozgunSevkZamaniRef.current = d.fiiliSevkZamani ? { yerel: yerelSevk, iso: d.fiiliSevkZamani } : null;
     setFiiliSevkZamani(yerelSevk);
@@ -1078,6 +1097,24 @@ export default function BelgelerSayfasi() {
             {tur === "teklif" && (
                 <Field label="Geçerlilik Tarihi"><Input type="date" value={gecerlilik} onChange={(e) => setGecerlilik(e.target.value)} /></Field>
             )}
+            {/* FTR-33: teklif koşulları; vade faturada vade tarihine, teslim şekli ihracatta teslim şartına dönüşür. */}
+            {(tur === "teklif" || tur === "siparis") && (
+              <>
+                <Field label="Ödeme Vadesi (gün)">
+                  <Input aria-label="Ödeme vadesi gün" type="number" min={0} max={EN_UZUN_VADE_GUN} step={1} value={vadeGun} placeholder="0 = peşin" onChange={(e) => setVadeGun(e.target.value)} />
+                  <small className="muted">Faturada vade tarihi, fatura tarihine bu gün eklenerek yazılır.</small>
+                </Field>
+                <Field label="Teslim Süresi">
+                  <Input aria-label="Teslim süresi" value={teslimSuresi} maxLength={200} placeholder="Örn. Siparişten itibaren 15 iş günü" onChange={(e) => setTeslimSuresi(e.target.value)} />
+                </Field>
+                <Field label="Teslim Şekli">
+                  <Select aria-label="Teslim şekli" value={teslimSekli} onChange={(e) => setTeslimSekli(e.target.value)}>
+                    <option value="">Belirtilmedi</option>
+                    {TESLIM_SARTLARI.map((t) => <option key={t.kod} value={t.kod}>{t.ad}</option>)}
+                  </Select>
+                </Field>
+              </>
+            )}
             {/* FTR-31: müşterinin talep ve sipariş referansı; zincir boyunca faturaya kadar taşınır. */}
             {yon === "satis" && (
               <>
@@ -1290,6 +1327,7 @@ export default function BelgelerSayfasi() {
               <p className="muted" style={{ fontSize: "0.85rem", margin: "0.3rem 0 0" }}>
                 {detay.cari.unvan} · {detay.tarih}{detay.gecerlilikTarihi ? ` · Geçerlilik: ${detay.gecerlilikTarihi}` : ""} · {tl(detay.genelToplam, detay.dovizCinsi)}
                 {detay.ilgiliKisi ? ` · İlgili: ${detay.ilgiliKisi}${detay.ilgiliKisiGorevi ? ` (${detay.ilgiliKisiGorevi})` : ""}` : ""}
+                {kosulSatirlari(detay).map((satir) => ` · ${satir}`).join("")}
                 {detay.talepNo ? ` · Talep ref. ${detay.talepNo}${detay.talepTarihi ? ` (${new Date(detay.talepTarihi).toLocaleDateString("tr-TR")})` : ""}` : ""}
                 {detay.siparisNo ? ` · Sipariş ref. ${detay.siparisNo}${detay.siparisTarihi ? ` (${new Date(detay.siparisTarihi).toLocaleDateString("tr-TR")})` : ""}` : ""}
               </p>
