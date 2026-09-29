@@ -180,6 +180,19 @@ export class BelgelerController {
     return this.belgelerService.kopyala(id);
   }
 
+  /** FTR-34: onaylı teklifin yeni sürümünü açar. */
+  @Post(":id/revize")
+  @Roller("muhasebe", "satis")
+  async revizeEt(@Param("id") id: string) {
+    return this.belgelerService.revizeEt(id);
+  }
+
+  /** FTR-34: teklifin bütün sürümleri. */
+  @Get(":id/surumler")
+  async surumler(@Param("id") id: string) {
+    return this.belgelerService.surumler(id);
+  }
+
   @Post(":id/onayla")
   @Roller("muhasebe", "satis")
   async onayla(@Param("id") id: string) {

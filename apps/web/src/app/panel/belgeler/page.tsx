@@ -17,7 +17,7 @@ import { TasimaBilgisiPaneli } from "@/components/tasima-bilgisi-paneli";
 import type { DepoOzet } from "@/lib/depolar";
 import { BOS_TESLIMAT_ADRESI, TeslimatAdresiAlanlari, teslimatAdresiGovdesi, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
 import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
-import { bugunTR, EN_UZUN_VADE_GUN, faturaHesapla, kosulSatirlari, muhtelifMusteriMi, referansFarkiUyarisi, TESLIM_SARTLARI, irsaliyeGeriAlmaEngeli, irsaliyeIptalUyarisi, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
+import { belgeNoMetni, bugunTR, EN_UZUN_VADE_GUN, revizyonEngeli, faturaHesapla, kosulSatirlari, muhtelifMusteriMi, referansFarkiUyarisi, TESLIM_SARTLARI, irsaliyeGeriAlmaEngeli, irsaliyeIptalUyarisi, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -97,7 +97,7 @@ function disNumaraAlani(b: Belge): DisNumara | null {
 
 /** EBLG-83: onaylı e-İrsaliyenin numarası gönderimde verilir; o zamana dek numarasızdır. */
 function belgeNoGoster(b: Belge): string {
-  if (b.no) return b.no;
+  if (b.no) return belgeNoMetni(b.no, b.revizyonNo);
   return b.durum === "taslak" ? "(Taslak)" : "(Numara gönderimde)";
 }
 
@@ -122,6 +122,9 @@ interface Belge {
   faturaId: string | null;
   /** FTR-27: alış irsaliyesinde tedarikçinin irsaliye numarası. */
   tedarikciBelgeNo?: string | null;
+  /** FTR-34: teklif sürümü; 0 ilk sürüm. */
+  revizyonNo?: number;
+  revizyonKokId?: string | null;
   /** FTR-31: müşterinin talep ve sipariş referansı (toplu faturalama uyarısı). */
   siparisNo?: string | null;
   talepNo?: string | null;
@@ -244,6 +247,7 @@ function durumRozet(durum: string) {
   if (durum === "onaylandi") return <Badge variant="info">✅ Onaylı</Badge>;
   if (durum === "kismen_kapandi") return <Badge variant="warning">📦 Kısmen teslim</Badge>;
   if (durum === "kapandi") return <Badge variant="neutral">🔗 Kapandı</Badge>;
+  if (durum === "revize_edildi") return <Badge variant="neutral">🗂 Revize edildi</Badge>;
   return <Badge variant="danger">İptal</Badge>;
 }
 
@@ -272,6 +276,15 @@ export default function BelgelerSayfasi() {
   const ozgunSevkZamaniRef = useRef<{ yerel: string; iso: string } | null>(null);
   useEffect(() => { if (yeniSayfasi) setFormAcik(true); }, [yeniSayfasi]);
   const [detay, setDetay] = useState<BelgeDetay | null>(null);
+  /** FTR-34: açık teklifin sürümleri; tek sürümde gösterilmez. */
+  const [surumler, setSurumler] = useState<{ id: string; noMetni: string | null; revizyonNo: number; durum: string; tarih: string; genelToplam: string; dovizCinsi: string }[]>([]);
+  useEffect(() => {
+    if (!detay || detay.tur !== "teklif") { setSurumler([]); return; }
+    let aktif = true;
+    void api<typeof surumler>(`/belgeler/${detay.id}/surumler`).then((s) => { if (aktif) setSurumler(s); }).catch(() => { if (aktif) setSurumler([]); });
+    return () => { aktif = false; };
+    // Durum değişince (revize, iptal) liste yenilenir.
+  }, [detay?.id, detay?.tur, detay?.durum]); // eslint-disable-line react-hooks/exhaustive-deps
   const [tasimaPaneli, setTasimaPaneli] = useState<{ id: string; no: string | null } | null>(null);
   /** FTR-26: irsaliyeyi var olan bir faturaya bağlama paneli. */
   const [baglaPaneli, setBaglaPaneli] = useState<string | null>(null);
@@ -918,6 +931,21 @@ export default function BelgelerSayfasi() {
       .catch(() => undefined);
   }, [gumrukDepo, depoId]);
 
+  /** FTR-34: yeni sürümü açar ve taslak formunda düzenlemeye getirir. */
+  async function revizeEt(id: string) {
+    setHata(""); setBasari("");
+    try {
+      const yeni = await api<{ id: string }>(`/belgeler/${id}/revize`, { method: "POST" });
+      const d = await api<BelgeDetay>(`/belgeler/${yeni.id}`);
+      setDetay(d);
+      taslagiDuzenle(d);
+      setBasari(`${belgeNoGoster(d)} taslak olarak açıldı; düzenleyip onaylayın. Önceki sürüm "revize edildi" oldu.`);
+      void yukle();
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Teklif revize edilemedi");
+    }
+  }
+
   async function detayAc(id: string) {
     setHata("");
     setDisNoTaslak(null);
@@ -1351,6 +1379,8 @@ export default function BelgelerSayfasi() {
             {/* Faturalanmış (kapandı) irsaliye de sevk belgesidir; e-İrsaliyesi gönderilebilir (FTR-26). */}
             {(detay.durum === "onaylandi" || detay.durum === "kapandi") && firmaGonderir(detay) && !detay.kagitIrsaliye && !detay.eirsaliye && <Button size="sm" type="button" onClick={() => void eirsaliyeGonder(detay.id)}>🚚 e-İrsaliye gönder</Button>}
             {detay.durum === "onaylandi" && detay.tur === "irsaliye" && !detay.fatura && <Button size="sm" type="button" onClick={() => setBaglaPaneli(detay.id)}>🔗 Faturaya bağla</Button>}
+            {/* FTR-34: onaylı, siparişe dönüşmemiş teklif yeni sürümle değiştirilir. */}
+            {revizyonEngeli(detay) === null && <Button size="sm" type="button" onClick={() => void revizeEt(detay.id)}>📝 Revize et</Button>}
             <Button size="sm" type="button" onClick={() => void pdfAc(detay.id)}>🖨 PDF</Button>
             <EylemMenusu>
               <Button size="sm" type="button" onClick={() => void eylem(detay.id, "kopyala", "Belge kopyalandı (taslak).")}>📋 Kopyala</Button>
@@ -1359,6 +1389,28 @@ export default function BelgelerSayfasi() {
               {detay.tur === "irsaliye" && detay.fatura && (!detay.fatura.ebelge || ["hata", "ret"].includes(detay.fatura.ebelge.durum)) && <Button variant="danger" size="sm" type="button" onClick={() => void faturaBaginiKaldir(detay.id)}>Fatura bağını kaldır</Button>}
             </EylemMenusu>
           </EylemCubugu>
+          {surumler.length > 1 && (
+            <div style={{ margin: "0 0 1rem" }}>
+              <h4 style={{ margin: "0 0 0.4rem", fontSize: "0.95rem" }}>Sürüm geçmişi</h4>
+              <TableWrap>
+                <thead><tr><th>Sürüm</th><th>Tarih</th><th>Durum</th><th style={{ textAlign: "right" }}>Genel toplam</th><th /></tr></thead>
+                <tbody>
+                  {surumler.map((s) => (
+                    <tr key={s.id} style={s.id === detay.id ? { fontWeight: 700 } : undefined}>
+                      <td>{s.noMetni ?? "(Taslak)"}</td>
+                      <td>{new Date(s.tarih).toLocaleDateString("tr-TR")}</td>
+                      <td>{durumRozet(s.durum)}</td>
+                      <td style={{ textAlign: "right" }}>{tl(s.genelToplam, s.dovizCinsi)}</td>
+                      <td style={{ textAlign: "right" }}>
+                        {s.id !== detay.id && <Button size="sm" variant="ghost" type="button" onClick={() => void detayAc(s.id)}>Aç</Button>}
+                        <Button size="sm" variant="ghost" type="button" onClick={() => void pdfAc(s.id)}>🖨 PDF</Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </TableWrap>
+            </div>
+          )}
           <div className="document-timeline" aria-label="Belge yaşam döngüsü">
             {(["teklif", "siparis", "irsaliye"] as const).map((adim) => {
               const tamZincirKaydi = detay.zincirBelgeleri?.find((belge) => belge.tur === adim);
@@ -1665,7 +1717,7 @@ export default function BelgelerSayfasi() {
       <section className="saved-view-bar" aria-label="Belge görünümü ve filtreleri">
         <div className="saved-view-filters">
           <Field label="Yön" htmlFor="belge-yon-filtresi"><Select id="belge-yon-filtresi" value={yonBaglami ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: (e.target.value || null) as Yon | null, durum: durumFiltresi })}><option value="">Tümü</option><option value="satis">Satış</option><option value="alis">Satın alma</option></Select></Field>
-          <Field label="Belge durumu" htmlFor="belge-durum-filtresi"><Select id="belge-durum-filtresi" value={durumFiltresi ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: yonBaglami, durum: e.target.value || null })}><option value="">Tümü</option><option value="taslak">Taslak</option><option value="onaylandi">Onaylı</option><option value="kismen_kapandi">Kısmen teslim</option><option value="onaylandi,kismen_kapandi">Teslim bekleyen</option><option value="kapandi">Kapandı</option><option value="iptal">İptal</option><option value={FATURA_BEKLEYEN}>Faturalanmayı bekleyen irsaliye</option></Select></Field>
+          <Field label="Belge durumu" htmlFor="belge-durum-filtresi"><Select id="belge-durum-filtresi" value={durumFiltresi ?? ""} onChange={(e) => gorunumuUygula({ tur: turFiltre, yon: yonBaglami, durum: e.target.value || null })}><option value="">Tümü</option><option value="taslak">Taslak</option><option value="onaylandi">Onaylı</option><option value="kismen_kapandi">Kısmen teslim</option><option value="onaylandi,kismen_kapandi">Teslim bekleyen</option><option value="kapandi">Kapandı</option><option value="revize_edildi">Revize edildi</option><option value="iptal">İptal</option><option value={FATURA_BEKLEYEN}>Faturalanmayı bekleyen irsaliye</option></Select></Field>
           <Field label="Başlangıç tarihi"><Input aria-label="Başlangıç tarihi" type="date" value={tarihBaslangic} onChange={(e) => tarihFiltresiDegistir("baslangic", e.target.value)} /></Field>
           <Field label="Bitiş tarihi"><Input aria-label="Bitiş tarihi" type="date" min={tarihBaslangic || undefined} value={tarihBitis} onChange={(e) => tarihFiltresiDegistir("bitis", e.target.value)} /></Field>
           <Field label="Kaydedilmiş görünüm"><Select aria-label="Kaydedilmiş görünüm" value="" onChange={(e) => { const gorunum = kayitliGorunumler.find((g) => g.id === e.target.value); if (gorunum) kayitliGorunumuUygula(gorunum); }}><option value="">Görünüm seçin</option>{kayitliGorunumler.map((g) => <option value={g.id} key={g.id}>{g.ad}</option>)}</Select></Field>

@@ -35,3 +35,4 @@ export * from "./taslaga-geri-al";
 export * from "./musteri-referansi";
 export * from "./ilgili-kisi";
 export * from "./teklif-kosullari";
+export * from "./teklif-revizyonu";

@@ -8,7 +8,7 @@ import {
   type FirmaIletisimi,
 } from "../core/pdf/pdf-sablon";
 import type { BelgeTemasi } from "../core/pdf/belge-temasi";
-import { ilgiliKisiMetni, kosulSatirlari } from "@tekirextra/shared";
+import { belgeNoMetni, ilgiliKisiMetni, kosulSatirlari } from "@tekirextra/shared";
 
 /** Zincir belgeleri PDF şablonu (FTR-12, T-02; kağıt/PDF irsaliye). */
 
@@ -35,6 +35,8 @@ export interface BelgePdfVerisi {
   /** FTR-32: müşteri tarafında ilgili kişi. */
   ilgiliKisi?: string | null;
   ilgiliKisiGorevi?: string | null;
+  /** FTR-34: teklif sürümü; 0 ilk sürüm. */
+  revizyonNo?: number;
   /** FTR-33: teklif koşulları. */
   odemeVadeGun?: number | null;
   teslimSuresi?: string | null;
@@ -105,7 +107,9 @@ export function belgePdfHtml(
         <strong>Sayın ${kacis(b.cari.unvan)}</strong> (${kacis(b.cari.kod)})<br>
         ${ilgiliKisiMetni(b) ? `İlgili: ${kacis(ilgiliKisiMetni(b)!)}<br>` : ""}
         ${b.cari.vknTckn ? `VKN/TCKN: ${kacis(b.cari.vknTckn)}<br>` : ""}
-        Belge No: <strong>${kacis(b.no ?? (b.durum === "taslak" ? "— TASLAK —" : "— e-İrsaliye gönderiminde verilir —"))}</strong><br>${
+        Belge No: <strong>${kacis(b.no ? belgeNoMetni(b.no, b.revizyonNo) : (b.durum === "taslak" ? "— TASLAK —" : "— e-İrsaliye gönderiminde verilir —"))}</strong><br>${
+          b.durum === "revize_edildi" ? `<strong>Bu sürüm revize edilmiştir, geçerli değildir.</strong><br>` : ""
+        }${
           b.matbuBelgeNo ? `Matbu İrsaliye No: <strong>${kacis(b.matbuBelgeNo)}</strong><br>` : ""
         }
         Tarih: ${tarihBicim(b.tarih)}${

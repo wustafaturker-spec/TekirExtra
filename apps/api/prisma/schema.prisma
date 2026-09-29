@@ -3199,6 +3199,8 @@ enum ZincirBelgeDurum {
   kismen_kapandi
   kapandi
   iptal
+  /// FTR-34: teklifin yeni sürümü açıldı; salt okunur, dönüştürülemez.
+  revize_edildi
 }
 
 /// Stok düşümü HER ZAMAN faturada (S-01 2026-07-13); irsaliye yalnız sevk
@@ -3266,6 +3268,10 @@ model Belge {
   odemeVadeGun           Int?             @map("odeme_vade_gun")
   teslimSuresi           String?          @map("teslim_suresi")
   teslimSekli            String?          @map("teslim_sekli")
+  /// FTR-34: teklif revizyonu. Sürümler aynı numarayı taşır (Rev.1, Rev.2…);
+  /// `revizyonKokId` ilk sürümün kimliğidir, ilk sürümde boştur.
+  revizyonNo             Int              @default(0) @map("revizyon_no")
+  revizyonKokId          String?          @map("revizyon_kok_id") @db.Uuid
   /// FTR-27: alış irsaliyesinde tedarikçinin kendi irsaliye numarası. `no`
   /// bizim iç seri numaramızdır (AIR…); giden e-İrsaliye serisinden alınmaz.
   tedarikciBelgeNo       String?          @map("tedarikci_belge_no")
@@ -3339,14 +3345,18 @@ model Belge {
   depo            Depo?            @relation(fields: [depoId], references: [id])
   kaynakBelge     Belge?           @relation("BelgeZinciri", fields: [kaynakBelgeId], references: [id])
   turetilenler    Belge[]          @relation("BelgeZinciri")
+  revizyonKoku    Belge?           @relation("TeklifRevizyonu", fields: [revizyonKokId], references: [id], onDelete: Restrict)
+  revizyonlar     Belge[]          @relation("TeklifRevizyonu")
   fatura          Fatura?          @relation(fields: [faturaId], references: [id])
   satirlar        BelgeSatir[]
   /// SAT-06: bu sipariş bir satın alma talebinden oluştuysa.
   satinAlmaTalebi SatinAlmaTalebi?
   eirsaliye       EirsaliyeKayit?
 
-  @@unique([tenantId, no])
+  /// FTR-34: teklif sürümleri aynı numarayı paylaşır.
+  @@unique([tenantId, no, revizyonNo])
   @@unique([tenantId, b2bIdempotencyAnahtari])
+  @@index([tenantId, revizyonKokId])
   @@index([tenantId, tur, durum])
   @@index([tenantId, cariId])
   @@map("belgeler")

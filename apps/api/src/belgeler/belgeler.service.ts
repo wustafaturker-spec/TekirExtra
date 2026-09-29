@@ -26,7 +26,7 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PdfService } from "../core/pdf/pdf.service";
-import { birlesikReferanslar, ilgiliKisiTemizle, ilkIlgiliKisi, ilkKosullar, vadeTarihiHesapla, irsaliyeGeriAlmaEngeli, metinNormalize, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi } from "@tekirextra/shared";
+import { belgeNoMetni, birlesikReferanslar, revizyonEngeli, ilgiliKisiTemizle, ilkIlgiliKisi, ilkKosullar, vadeTarihiHesapla, irsaliyeGeriAlmaEngeli, metinNormalize, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi } from "@tekirextra/shared";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { PrismaService } from "../core/prisma.service";
 import { DepoService } from "../stok/depo.service";
@@ -265,14 +265,15 @@ export class BelgelerService {
           tur: "teklif",
           cariId: sorgu.cariId,
           talepNo: { equals: sorgu.talepNo, mode: "insensitive" },
-          durum: { not: "iptal" },
+          // FTR-34: aynı teklifin eski sürümleri mükerrer sayılmaz.
+          durum: { notIn: ["iptal", "revize_edildi"] },
           ...(sorgu.haricId ? { id: { not: sorgu.haricId } } : {}),
         },
-        select: { id: true, no: true, tarih: true, durum: true },
+        select: { id: true, no: true, revizyonNo: true, tarih: true, durum: true },
         orderBy: { tarih: "desc" },
         take: 10,
       });
-      return teklifler.map((t) => ({ ...t, tarih: t.tarih.toISOString().slice(0, 10) }));
+      return teklifler.map((t) => ({ ...t, no: t.no ? belgeNoMetni(t.no, t.revizyonNo) : null, tarih: t.tarih.toISOString().slice(0, 10) }));
     });
   }
 
@@ -736,9 +737,94 @@ export class BelgelerService {
     if (belge.durum !== "taslak") {
       throw new BadRequestException("Yalnızca taslak belgeler silinebilir");
     }
-    await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.belge.delete({ where: { id } }),
-    );
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      await tx.belge.delete({ where: { id } });
+      await this.oncekiSurumuGeriAc(tx, belge);
+    });
+  }
+
+  /**
+   * FTR-34: taslak sürümden vazgeçilirse (silme ya da iptal) önceki sürüm
+   * yeniden onaylı olur; aksi hâlde teklifin geçerli sürümü kalmazdı.
+   */
+  private async oncekiSurumuGeriAc(
+    tx: Prisma.TransactionClient,
+    belge: { tur: string; durum: string; revizyonNo?: number; revizyonKokId?: string | null },
+  ) {
+    if (belge.tur !== "teklif" || belge.durum !== "taslak" || !belge.revizyonNo || !belge.revizyonKokId) return;
+    const kok = belge.revizyonKokId;
+    await tx.belge.updateMany({
+      where: {
+        OR: [{ id: kok }, { revizyonKokId: kok }],
+        revizyonNo: belge.revizyonNo - 1,
+        durum: "revize_edildi",
+      },
+      data: { durum: "onaylandi" },
+    });
+  }
+
+  /**
+   * FTR-34: onaylı teklifin yeni sürümünü açar. Yeni sürüm aynı numarayı ve
+   * bir sonraki revizyon numarasını taşır, taslak olarak başlar ve her
+   * alanıyla kopyalanır; önceki sürüm "revize edildi" olur.
+   */
+  async revizeEt(id: string) {
+    const { tenantId } = aktifBaglam();
+    const bugun = bugunTR();
+    await this.donemKilidi.tarihDogrula(tenantId, bugun, "teklif revizyonu");
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const belge = await tx.belge.findUnique({ where: { id }, include: { satirlar: true } });
+      if (!belge) throw new NotFoundException("Belge bulunamadı");
+      const engel = revizyonEngeli(belge);
+      if (engel) throw new BadRequestException(engel);
+      // Eşzamanlı ikinci revizyonu önler: yalnız hâlâ onaylı olan sürüm devredilir.
+      const devir = await tx.belge.updateMany({ where: { id, durum: "onaylandi" }, data: { durum: "revize_edildi" } });
+      if (devir.count !== 1) throw new ConflictException("Teklif başka bir işlemde değişti; sayfayı yenileyip tekrar deneyin");
+      const {
+        id: _id, createdAt: _c, updatedAt: _u, satirlar, durum: _d, tarih: _t, kaynakBelgeId: _k, faturaId: _f,
+        b2bIdempotencyAnahtari: _b, gelenEirsaliyeId: _g, ...alanlar
+      } = belge;
+      const yeni = await tx.belge.create({
+        data: {
+          ...(alanlar as Omit<Prisma.BelgeUncheckedCreateInput, "id">),
+          durum: "taslak",
+          tarih: new Date(bugun),
+          revizyonNo: belge.revizyonNo + 1,
+          revizyonKokId: belge.revizyonKokId ?? belge.id,
+          kaynakBelgeId: null,
+          faturaId: null,
+        } as Prisma.BelgeUncheckedCreateInput,
+      });
+      await tx.belgeSatir.createMany({
+        data: satirlar.map(({ id: _sid, belgeId: _bid, kaynakSatirId: _ks, teslimEdilenMiktar: _te, partiBilgileri, ...satir }) => ({
+          ...satir,
+          partiBilgileri: partiBilgileri ?? Prisma.JsonNull,
+          belgeId: yeni.id,
+        })) as Prisma.BelgeSatirCreateManyInput[],
+      });
+      return this.gorunum(yeni);
+    });
+  }
+
+  /** FTR-34: teklifin bütün sürümleri, eskiden yeniye. */
+  async surumler(id: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const belge = await tx.belge.findUnique({ where: { id }, select: { id: true, revizyonKokId: true } });
+      if (!belge) throw new NotFoundException("Belge bulunamadı");
+      const kok = belge.revizyonKokId ?? belge.id;
+      const surumler = await tx.belge.findMany({
+        where: { OR: [{ id: kok }, { revizyonKokId: kok }] },
+        select: { id: true, no: true, revizyonNo: true, durum: true, tarih: true, genelToplam: true, dovizCinsi: true },
+        orderBy: { revizyonNo: "asc" },
+      });
+      return surumler.map((b) => ({
+        ...b,
+        noMetni: b.no ? belgeNoMetni(b.no, b.revizyonNo) : null,
+        tarih: b.tarih.toISOString().slice(0, 10),
+        genelToplam: b.genelToplam.toFixed(2),
+      }));
+    });
   }
 
   async kopyala(id: string) {
@@ -854,7 +940,10 @@ export class BelgelerService {
       let no: string | null;
       // EBLG-87: gümrükten depoya sevk alış irsaliyesidir ama firma düzenler;
       // numarası satış irsaliyesininki gibi kanaldan gelir.
-      if (irsaliye && belge.no) {
+      if (belge.tur === "teklif" && belge.no) {
+        // FTR-34: teklifin yeni sürümü ilk sürümün numarasını taşır.
+        no = belge.no;
+      } else if (irsaliye && belge.no) {
         // FTR-29: taslağa geri alınmış irsaliye numarasını ve kanalını korur;
         // yeni numara seride boşluk bırakırdı. Numarasız geri alınan
         // e-İrsaliye (hiç gönderilmemiş) aşağıdaki yoldan yine numarasız kalır.
@@ -923,6 +1012,9 @@ export class BelgelerService {
           "Kapanmış veya iptal edilmiş belge iptal edilemez",
         );
       }
+      if (belge.durum === "revize_edildi") {
+        throw new BadRequestException("Teklifin eski sürümü iptal edilemez; son sürümü iptal edin");
+      }
       // EBLG-90: GİB'e ulaşmış e-İrsaliye satıcı tarafından iptal edilemez.
       // EBLG-92: numara almış ama GİB'e ulaşmamış belgenin numarası seride
       // boşluk kalır. İkisinde de iptal engellenmez (stok/rezerv
@@ -952,6 +1044,7 @@ export class BelgelerService {
         where: { id },
         data: { durum: "iptal" },
       });
+      await this.oncekiSurumuGeriAc(tx, belge);
       return this.gorunum(guncel);
     });
   }
@@ -1048,6 +1141,9 @@ export class BelgelerService {
         throw new BadRequestException("Muhtelif Müşteriler belgesi dönüştürülemez; teslim edilen her müşteriye kendi adına fatura ya da irsaliye kesin");
       }
       // Kısmen teslim edilmiş sipariş kalanı için yeniden dönüştürülebilir.
+      if (belge.durum === "revize_edildi") {
+        throw new BadRequestException("Teklifin daha yeni bir sürümü var; yalnız son sürüm siparişe dönüştürülür");
+      }
       const kismenAcik = belge.tur === "siparis" && belge.durum === "kismen_kapandi";
       if (belge.durum !== "onaylandi" && !kismenAcik) {
         throw new BadRequestException(
@@ -1323,7 +1419,7 @@ export class BelgelerService {
     const buffer = await this.pdf.htmlToPdf(
       belgePdfHtml(belge, { ...firma, tema }),
     );
-    return { buffer, dosyaAdi: `belge-${belge.no ?? "taslak"}.pdf` };
+    return { buffer, dosyaAdi: `belge-${belge.no ? `${belge.no}${belge.revizyonNo ? `-Rev${belge.revizyonNo}` : ""}` : "taslak"}.pdf` };
   }
 
   // ─── GELEN e-İRSALİYE → ALIŞ İRSALİYESİ (SAT-12/13/14) ──────────────────
@@ -1968,6 +2064,9 @@ export class BelgelerService {
     /** FTR-32: müşteri tarafında ilgili kişi. */
     ilgiliKisi?: string | null;
     ilgiliKisiGorevi?: string | null;
+    /** FTR-34: teklif sürümü; ilk sürüm 0. */
+    revizyonNo?: number;
+    revizyonKokId?: string | null;
     /** FTR-33: teklif koşulları. */
     odemeVadeGun?: number | null;
     teslimSuresi?: string | null;
@@ -2035,6 +2134,8 @@ export class BelgelerService {
       ilgiliKisi: k.ilgiliKisi ?? null,
       ilgiliKisiGorevi: k.ilgiliKisiGorevi ?? null,
       odemeVadeGun: k.odemeVadeGun ?? null,
+      revizyonNo: k.revizyonNo ?? 0,
+      revizyonKokId: k.revizyonKokId ?? null,
       teslimSuresi: k.teslimSuresi ?? null,
       teslimSekli: k.teslimSekli ?? null,
       talepTarihi: k.talepTarihi

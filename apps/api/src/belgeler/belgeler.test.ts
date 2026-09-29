@@ -762,3 +762,73 @@ describe("BelgelerService", () => {
     });
   });
 });
+
+describe("teklif revizyonu (FTR-34)", () => {
+  const D = (d: string | number) => new Prisma.Decimal(d);
+  const teklif = (ek: Record<string, unknown> = {}) => ({
+    id: "t1", tenantId: "t1", tur: "teklif", yon: "satis", durum: "onaylandi", no: "TKF2026000012", revizyonNo: 0, revizyonKokId: null,
+    tarih: new Date("2026-09-20"), cariId: "c1", kaynakBelgeId: null, faturaId: null, b2bIdempotencyAnahtari: null, gelenEirsaliyeId: null,
+    createdAt: new Date(), updatedAt: new Date(), talepNo: "RFQ-1", odemeVadeGun: 30, genelToplam: D(120), kur: D(1),
+    gecerlilikTarihi: null, depoId: null, dovizCinsi: "TRY", genelIskontoYuzdesi: D(0), genelIskontoTutari: D(0), toplamBrut: D(100),
+    toplamSatirIskontosu: D(0), genelIskontoToplam: D(0), toplamMatrah: D(100), toplamKdv: D(20), toplamTevkifat: D(0), toplamNetKdv: D(20),
+    aciklama: null, notlar: null,
+    satirlar: [{ id: "s1", belgeId: "t1", tenantId: "t1", stokId: "k1", miktar: D(2), birimFiyat: D(50), partiBilgileri: null, kaynakSatirId: null, teslimEdilenMiktar: D(0) }],
+    ...ek,
+  });
+  function kur(belge: Record<string, unknown>, devredilen = 1) {
+    const tx = {
+      belge: {
+        findUnique: vi.fn().mockResolvedValue(belge),
+        updateMany: vi.fn().mockResolvedValue({ count: devredilen }),
+        create: vi.fn().mockImplementation(({ data }) => Promise.resolve({ ...data, id: "t2" })),
+        delete: vi.fn(),
+      },
+      belgeSatir: { createMany: vi.fn() },
+    };
+    const prisma = { tenantIslem: vi.fn((_t: string, cb: (tx: unknown) => unknown) => cb(tx)) } as any;
+    const servis = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
+    return { servis, tx };
+  }
+
+  it("aynı numarayla yeni taslak sürüm açar, öncekini revize edildi yapar", async () => {
+    const { servis, tx } = kur(teklif());
+
+    const yeni = await servis.revizeEt("t1");
+
+    expect(tx.belge.updateMany).toHaveBeenCalledWith({ where: { id: "t1", durum: "onaylandi" }, data: { durum: "revize_edildi" } });
+    const veri = tx.belge.create.mock.calls[0][0].data;
+    expect(veri).toMatchObject({ no: "TKF2026000012", revizyonNo: 1, revizyonKokId: "t1", durum: "taslak", talepNo: "RFQ-1", odemeVadeGun: 30 });
+    expect(veri.id).toBeUndefined();
+    expect(tx.belgeSatir.createMany.mock.calls[0][0].data[0]).toMatchObject({ belgeId: "t2", stokId: "k1" });
+    expect(tx.belgeSatir.createMany.mock.calls[0][0].data[0].id).toBeUndefined();
+    expect(yeni).toMatchObject({ revizyonNo: 1 });
+  });
+
+  it("ikinci revizyonda kökü korur", async () => {
+    const { servis, tx } = kur(teklif({ id: "t2", revizyonNo: 1, revizyonKokId: "t1" }));
+    await servis.revizeEt("t2");
+    expect(tx.belge.create.mock.calls[0][0].data).toMatchObject({ revizyonNo: 2, revizyonKokId: "t1" });
+  });
+
+  it("siparişe dönüşmüş teklifi ve eşzamanlı değişmiş teklifi revize etmez", async () => {
+    await expect(kur(teklif({ durum: "kapandi" })).servis.revizeEt("t1")).rejects.toThrow(/Siparişe dönüşmüş/);
+    await expect(kur(teklif(), 0).servis.revizeEt("t1")).rejects.toThrow(ConflictException);
+  });
+
+  it("taslak sürüm silinince önceki sürümü yeniden onaylı yapar", async () => {
+    const { servis, tx } = kur(teklif({ id: "t2", durum: "taslak", revizyonNo: 1, revizyonKokId: "t1" }));
+    vi.spyOn(servis, "getir").mockResolvedValue(teklif({ id: "t2", durum: "taslak", revizyonNo: 1, revizyonKokId: "t1" }) as any);
+
+    await servis.sil("t2");
+
+    expect(tx.belge.updateMany).toHaveBeenCalledWith({
+      where: { OR: [{ id: "t1" }, { revizyonKokId: "t1" }], revizyonNo: 0, durum: "revize_edildi" },
+      data: { durum: "onaylandi" },
+    });
+  });
+
+  it("eski sürümü siparişe dönüştürmez", async () => {
+    const { servis } = kur({ ...teklif({ durum: "revize_edildi" }), cari: { vknTckn: "1234567890" } });
+    await expect(servis.donustur("t1", "siparis")).rejects.toThrow(/yalnız son sürüm/);
+  });
+});

@@ -29,7 +29,7 @@ import { PdfService } from "../core/pdf/pdf.service";
 import { cariDavranisAnalizi } from "./cari-analiz";
 import { gercekKisiUnvani } from "./ad-soyad";
 import { ebelgeTestOrtamiMi, vknTcknKabulEdilebilirMi } from "../ebelge/vkn-kabulu";
-import { MUHTELIF_MUSTERI_KOD, MUHTELIF_MUSTERI_UNVAN, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi, vknTcknGecerliMi } from "@tekirextra/shared";
+import { belgeNoMetni, MUHTELIF_MUSTERI_KOD, MUHTELIF_MUSTERI_UNVAN, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi, vknTcknGecerliMi } from "@tekirextra/shared";
 import { metinNormalize } from "@tekirextra/shared";
 import { EpostaService } from "../tenant/eposta.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
@@ -681,10 +681,11 @@ export class CariService {
       const [etkilesimler, gorevler, teklifler, kullanicilar] = await Promise.all([
         tx.crmEtkilesim.findMany({ where: { cariId }, orderBy: { tarih: "desc" }, include: { user: { select: { id: true, adSoyad: true } } } }),
         tx.crmGorev.findMany({ where: { cariId }, orderBy: [{ durum: "asc" }, { sonTarih: "asc" }, { createdAt: "desc" }], include: { atanan: { select: { id: true, adSoyad: true } } } }),
-        tx.belge.findMany({ where: { cariId, tur: "teklif" }, orderBy: { tarih: "desc" }, select: { id: true, no: true, tarih: true, gecerlilikTarihi: true, durum: true, genelToplam: true, dovizCinsi: true } }),
+        tx.belge.findMany({ where: { cariId, tur: "teklif" }, orderBy: { tarih: "desc" }, select: { id: true, no: true, revizyonNo: true, tarih: true, gecerlilikTarihi: true, durum: true, genelToplam: true, dovizCinsi: true } }),
         tx.user.findMany({ where: { aktif: true }, orderBy: { adSoyad: "asc" }, select: { id: true, adSoyad: true, rol: true } }),
       ]);
-      return { etkilesimler, gorevler, teklifler, kullanicilar };
+      // FTR-34: teklif sürümleri "Rev.N" ekiyle görünür.
+      return { etkilesimler, gorevler, teklifler: teklifler.map((t) => ({ ...t, no: t.no ? belgeNoMetni(t.no, t.revizyonNo) : null })), kullanicilar };
     });
   }
 
