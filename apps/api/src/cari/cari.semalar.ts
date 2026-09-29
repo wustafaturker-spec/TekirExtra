@@ -1,3 +1,4 @@
+import { EKSTRE_TURLERI } from "@tekirextra/shared";
 import { z } from "zod";
 import { guncellemeSemasi } from "../core/sema";
 
@@ -148,12 +149,23 @@ export const crmGorevSemasi = z.object({
 
 export const crmGorevDurumSemasi = z.object({ durum: z.enum(["acik", "tamamlandi", "iptal"]) });
 
+/** CARI-24/25/26: ekstre uçlarının sorgu parametreleri. */
+export const ekstreSorguSemasi = z.object({
+  tur: z.enum(EKSTRE_TURLERI, "Ekstre türü standart, ayrintili ya da doviz olmalıdır").optional(),
+  doviz: z.enum(["USD", "EUR"], "Çevrilecek döviz USD ya da EUR olmalıdır").optional(),
+  mutabakat: z.enum(["0", "1"]).optional(),
+});
+
 export const ekstreEpostaSemasi = z.object({
   baslangic: z.string().date().optional(),
   bitis: z.string().date().optional(),
   alici: z.email("Geçerli bir alıcı e-posta adresi girilmelidir").optional(),
   /** CARI-22: iptal edilmiş faturanın hareketleri ekte de gösterilsin mi? */
   iptalleriGoster: z.boolean().optional(),
+  /** CARI-24/25/26: ekstre türü, döviz ekstresinde çevrilecek döviz, mutabakat metni. */
+  tur: z.enum(EKSTRE_TURLERI).optional(),
+  hedefDoviz: z.enum(["USD", "EUR"]).optional(),
+  mutabakat: z.boolean().optional(),
 }).refine((g) => !g.baslangic || !g.bitis || g.baslangic <= g.bitis, { message: "Başlangıç tarihi bitiş tarihinden sonra olamaz", path: ["bitis"] });
 
 export type CariOlusturGirdisi = z.infer<typeof cariOlusturSemasi>;

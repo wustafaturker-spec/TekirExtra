@@ -5,7 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { api, apiDosyaIndir, tokenAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import { PostaKutusuSecimleri, type PostaKutusuSecimi } from "@/components/posta-kutusu-secimi";
-import { CARI_EBELGE_ETIKETI, type CariEbelgeDurumu, type CariEbelgeTuru } from "@tekirextra/shared";
+import { Bakiye, CariEkstreTablosu, type EkstreVeri } from "@/components/cari-ekstre-tablosu";
+import { CARI_EBELGE_ETIKETI, EKSTRE_TURU_ADLARI, EKSTRE_TURLERI, type CariEbelgeDurumu, type CariEbelgeTuru, type EkstreTuru } from "@tekirextra/shared";
 import {
   Alert,
   Avatar,
@@ -174,33 +175,6 @@ interface CariDetay extends Cari {
   };
 }
 
-interface EkstreSatir {
-  tarih: string;
-  vadeTarihi: string | null;
-  tip: "borc" | "alacak";
-  aciklama: string | null;
-  dovizCinsi: string;
-  tutar: string;
-  kur: string;
-  tutarTry: string;
-  yuruyenBakiye: string;
-  kaynakTur: string;
-  /** İptal edilmiş faturanın hareketi (CARI-22); yalnız iptaller gösterilince gelir. */
-  iptal?: boolean;
-  makbuzYolu: string | null;
-  odemeYontemi: null | { tur: "kredi_karti"; kartAdi: string; bankaAdi: string; sonDortHane: string; taksitSayisi: number; komisyonTutari: string; karttanCekilenToplam: string; fatura: { id: string; no: string | null } | null };
-}
-
-interface EkstreVeri {
-  cari: { id: string; kod: string; unvan: string; eposta?: string | null };
-  devirBakiyesi: string;
-  donemBorc: string;
-  donemAlacak: string;
-  donemSonuBakiyesi: string;
-  dovizOzet: { dovizCinsi: string; devir: string; borc: string; alacak: string; bakiye: string }[];
-  satirlar: EkstreSatir[];
-}
-
 interface CrmVeri {
   etkilesimler: { id: string; tip: string; konu: string; aciklama: string | null; tarih: string; user: { id: string; adSoyad: string } }[];
   gorevler: { id: string; baslik: string; aciklama: string | null; sonTarih: string; hatirlatmaTarihi: string | null; oncelik: string; durum: string; tamamlanmaZamani: string | null; atanan: { id: string; adSoyad: string } }[];
@@ -261,6 +235,10 @@ export default function CariSayfasi() {
   const [ekstreEposta, setEkstreEposta] = useState("");
   const [ekstreIslemde, setEkstreIslemde] = useState(false);
   const [ekstreIptaller, setEkstreIptaller] = useState(false);
+  /** CARI-24/25/26: ekstre türü, döviz ekstresinde gösterim ("" = her döviz ayrı) ve mutabakat metni. */
+  const [ekstreTuru, setEkstreTuru] = useState<EkstreTuru>("standart");
+  const [ekstreDoviz, setEkstreDoviz] = useState<"" | "USD" | "EUR">("");
+  const [ekstreMutabakat, setEkstreMutabakat] = useState(false);
   const [filtreTip, setFiltreTip] = useState<FiltreTip>("tumu");
   const [kayitliGorunumler, setKayitliGorunumler] = useState<CariGorunumu[]>([]);
   const [gorunumFormuAcik, setGorunumFormuAcik] = useState(false);
@@ -429,7 +407,8 @@ export default function CariSayfasi() {
     try {
       const [cDetay, cEkstre, cCrm, cAnaliz] = await Promise.all([
         api<CariDetay>(`/cari/${id}`),
-        api<EkstreVeri>(`/cari/${id}/ekstre`).catch(() => null),
+        // Seçili ekstre türü korunur; tarih süzgeci yeni caride sıfırdan başlar.
+        api<EkstreVeri>(`/cari/${id}/ekstre?${new URLSearchParams({ ...(ekstreTuru !== "standart" ? { tur: ekstreTuru } : {}), ...(ekstreTuru === "doviz" && ekstreDoviz ? { doviz: ekstreDoviz } : {}) })}`).catch(() => null),
         api<CrmVeri>(`/cari/${id}/crm`).catch(() => null),
         api<CariAnalizi>(`/cari/${id}/davranis-analizi`).catch(() => null),
       ]);
@@ -445,23 +424,38 @@ export default function CariSayfasi() {
     }
   }
 
-  async function ekstreFiltrele(iptaller = ekstreIptaller) {
+  /** Ekstre sorgusu; ekran, PDF ve Excel aynı parametrelerle istenir. */
+  function ekstreSorgusu(s: { iptaller?: boolean; tur?: EkstreTuru; doviz?: "" | "USD" | "EUR" } = {}) {
+    const qs = new URLSearchParams();
+    const tur = s.tur ?? ekstreTuru; const doviz = s.doviz ?? ekstreDoviz;
+    if (ekstreBaslangic) qs.set("baslangic", ekstreBaslangic);
+    if (ekstreBitis) qs.set("bitis", ekstreBitis);
+    if (s.iptaller ?? ekstreIptaller) qs.set("iptaller", "1");
+    if (tur !== "standart") qs.set("tur", tur);
+    if (tur === "doviz" && doviz) qs.set("doviz", doviz);
+    return qs;
+  }
+
+  async function ekstreFiltrele(s: { iptaller?: boolean; tur?: EkstreTuru; doviz?: "" | "USD" | "EUR" } = {}) {
     if (!detay) return;
     if (ekstreBaslangic && ekstreBitis && ekstreBaslangic > ekstreBitis) { setHata("Başlangıç tarihi bitiş tarihinden sonra olamaz."); return; }
     setEkstreIslemde(true); setHata("");
-    try { const qs = new URLSearchParams(); if (ekstreBaslangic) qs.set("baslangic", ekstreBaslangic); if (ekstreBitis) qs.set("bitis", ekstreBitis); if (iptaller) qs.set("iptaller", "1"); setEkstre(await api<EkstreVeri>(`/cari/${detay.id}/ekstre?${qs}`)); }
+    try { setEkstre(await api<EkstreVeri>(`/cari/${detay.id}/ekstre?${ekstreSorgusu(s)}`)); }
     catch (h) { setHata(h instanceof Error ? h.message : "Ekstre yüklenemedi"); }
     finally { setEkstreIslemde(false); }
   }
 
   function ekstreYolu(uzanti: "pdf" | "excel") {
-    if (!detay) return ""; const qs = new URLSearchParams(); if (ekstreBaslangic) qs.set("baslangic", ekstreBaslangic); if (ekstreBitis) qs.set("bitis", ekstreBitis); if (ekstreIptaller) qs.set("iptaller", "1"); return `/cari/${detay.id}/ekstre/${uzanti}?${qs}`;
+    if (!detay) return "";
+    const qs = ekstreSorgusu();
+    if (uzanti === "pdf" && ekstreMutabakat) qs.set("mutabakat", "1");
+    return `/cari/${detay.id}/ekstre/${uzanti}?${qs}`;
   }
 
   async function ekstreGonder() {
     if (!detay || !ekstreEposta) return;
     setEkstreIslemde(true); setHata(""); setBasari("");
-    try { const sonuc = await api<{ mesaj: string }>(`/cari/${detay.id}/ekstre/eposta`, { method: "POST", body: JSON.stringify({ baslangic: ekstreBaslangic || undefined, bitis: ekstreBitis || undefined, alici: ekstreEposta, iptalleriGoster: ekstreIptaller }) }); setBasari(sonuc.mesaj); }
+    try { const sonuc = await api<{ mesaj: string }>(`/cari/${detay.id}/ekstre/eposta`, { method: "POST", body: JSON.stringify({ baslangic: ekstreBaslangic || undefined, bitis: ekstreBitis || undefined, alici: ekstreEposta, iptalleriGoster: ekstreIptaller, tur: ekstreTuru, hedefDoviz: ekstreTuru === "doviz" && ekstreDoviz ? ekstreDoviz : undefined, mutabakat: ekstreMutabakat }) }); setBasari(sonuc.mesaj); }
     catch (h) { setHata(h instanceof Error ? h.message : "Ekstre gönderilemedi"); }
     finally { setEkstreIslemde(false); }
   }
@@ -1188,58 +1182,46 @@ export default function CariSayfasi() {
 
           {aktifSekme === "ekstre" && (
             <Card aria-labelledby="cari-detay-tab-ekstre" className="cari-statement" id="cari-detay-panel-ekstre" role="tabpanel" tabIndex={0}>
-              <div className="expense-entry__section-head"><span className="expense-entry__step">01</span><div><h3>Cari hesap ekstresi</h3><p>Tarih aralığına göre devir bakiyeli hesap dökümü</p></div></div>
+              <div className="expense-entry__section-head"><span className="expense-entry__step">01</span><div><h3>Cari hesap ekstresi</h3><p>Standart, kalem ayrıntılı ya da döviz bazlı hesap dökümü</p></div></div>
+              {/* CARI-24/25/26: ekstre türü; ekran, PDF, Excel ve e-posta aynı seçimle üretilir. */}
+              <div className="cari-statement__turler" role="radiogroup" aria-label="Ekstre türü">
+                {EKSTRE_TURLERI.map((t) => (
+                  <button key={t} type="button" role="radio" aria-checked={ekstreTuru === t} className={`cari-statement__tur${ekstreTuru === t ? " is-active" : ""}`} disabled={ekstreIslemde} onClick={() => { setEkstreTuru(t); void ekstreFiltrele({ tur: t }); }}>
+                    <strong>{EKSTRE_TURU_ADLARI[t]}</strong>
+                    <small>{t === "standart" ? "Belge no, hareket türü ve ödeme şekliyle" : t === "ayrintili" ? "Faturaların kalemleri, miktar ve fiyatlarıyla" : "Döviz cinsinden bakiye ve kur"}</small>
+                  </button>
+                ))}
+              </div>
               <div className="cari-statement__toolbar">
                 <Field label="Başlangıç"><Input type="date" value={ekstreBaslangic} onChange={(e) => setEkstreBaslangic(e.target.value)} /></Field>
                 <Field label="Bitiş"><Input type="date" value={ekstreBitis} onChange={(e) => setEkstreBitis(e.target.value)} /></Field>
+                {ekstreTuru === "doviz" && (
+                  <Field label="Gösterim">
+                    <Select aria-label="Döviz ekstresi gösterimi" value={ekstreDoviz} disabled={ekstreIslemde} onChange={(e) => { const d = e.target.value as "" | "USD" | "EUR"; setEkstreDoviz(d); void ekstreFiltrele({ doviz: d }); }}>
+                      <option value="">Her döviz ayrı bölüm</option>
+                      <option value="USD">Tümü USD cinsinden</option>
+                      <option value="EUR">Tümü EUR cinsinden</option>
+                    </Select>
+                  </Field>
+                )}
                 <Button disabled={ekstreIslemde} onClick={() => void ekstreFiltrele()}>Uygula</Button>
-                <label className="check-row"><input type="checkbox" checked={ekstreIptaller} disabled={ekstreIslemde} onChange={(e) => { setEkstreIptaller(e.target.checked); void ekstreFiltrele(e.target.checked); }} /> İptalleri de göster</label>
-                <div className="cari-statement__exports"><Button disabled={!detay} onClick={() => detay && void apiDosyaIndir(ekstreYolu("pdf"), `ekstre-${detay.kod}.pdf`)}>PDF indir</Button><Button disabled={!detay} onClick={() => detay && void apiDosyaIndir(ekstreYolu("excel"), `ekstre-${detay.kod}.xlsx`)}>Excel indir</Button></div>
+                <div className="cari-statement__secenekler">
+                  <label className="check-row"><input type="checkbox" checked={ekstreIptaller} disabled={ekstreIslemde} onChange={(e) => { setEkstreIptaller(e.target.checked); void ekstreFiltrele({ iptaller: e.target.checked }); }} /> İptalleri de göster</label>
+                  <label className="check-row"><input type="checkbox" checked={ekstreMutabakat} onChange={(e) => setEkstreMutabakat(e.target.checked)} /> PDF'e mutabakat metni ekle</label>
+                </div>
+                <div className="cari-statement__exports"><Button disabled={!detay} onClick={() => detay && void apiDosyaIndir(ekstreYolu("pdf"), `ekstre-${detay.kod}-${ekstreTuru}.pdf`)}>PDF indir</Button><Button disabled={!detay} onClick={() => detay && void apiDosyaIndir(ekstreYolu("excel"), `ekstre-${detay.kod}-${ekstreTuru}.xlsx`)}>Excel indir</Button></div>
               </div>
               <div className="cari-statement__mail"><Field label="Gönderilecek e-posta"><Input type="email" value={ekstreEposta} onChange={(e) => setEkstreEposta(e.target.value)} placeholder="muhasebe@firma.com" /></Field><Button variant="primary" disabled={!ekstreEposta || ekstreIslemde} onClick={() => void ekstreGonder()}>{ekstreIslemde ? "İşleniyor…" : "PDF + Excel e-posta gönder"}</Button></div>
               {!ekstre ? (
                 <p className="subtle" style={{ fontSize: "0.85rem" }}>Ekstre yükleniyor...</p>
               ) : (
-                <><div className="cari-statement__summary"><div><span>Devir bakiyesi</span><strong>{tl(ekstre.devirBakiyesi)}</strong></div><div><span>Dönem borç</span><strong>{tl(ekstre.donemBorc)}</strong></div><div><span>Dönem alacak</span><strong>{tl(ekstre.donemAlacak)}</strong></div><div><span>Dönem sonu</span><strong>{tl(ekstre.donemSonuBakiyesi)}</strong></div></div>
-                {ekstre.dovizOzet.length > 0 && <div className="cari-statement__currency-summary">
-                  <strong>Döviz bazında bakiye</strong>
-                  <TableWrap className="cari-statement__currency-table"><thead><tr><th>Döviz</th><th className="num">Devir</th><th className="num">Dönem borç</th><th className="num">Dönem alacak</th><th className="num">Bakiye</th></tr></thead><tbody>{ekstre.dovizOzet.map((ozet) => <tr key={ozet.dovizCinsi}><td><b>{ozet.dovizCinsi}</b></td><td className="num">{Number(ozet.devir).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</td><td className="num">{Number(ozet.borc).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</td><td className="num">{Number(ozet.alacak).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</td><td className={`num money ${Number(ozet.bakiye) > 0 ? "pos" : Number(ozet.bakiye) < 0 ? "neg" : ""}`}>{Number(ozet.bakiye).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {ozet.dovizCinsi}</td></tr>)}</tbody></TableWrap>
-                </div>}
-                {ekstre.satirlar.length === 0 ? <p className="empty">Seçilen tarih aralığında hareket bulunmuyor.</p> : <TableWrap>
-                  <thead>
-                    <tr>
-                      <th>Tarih</th>
-                      <th>Vade Tarihi</th>
-                      <th>Açıklama</th>
-                      <th className="num">Borç</th>
-                      <th className="num">Alacak</th>
-                      <th className="num">Borç (TL)</th>
-                      <th className="num">Alacak (TL)</th>
-                      <th className="num">Bakiye (TL)</th>
-                      <th>Belge</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ekstre.satirlar.map((row, idx) => {
-                      const borcVal = row.tip === "borc" ? Number(row.tutarTry) : 0;
-                      const alacakVal = row.tip === "alacak" ? Number(row.tutarTry) : 0;
-                      const bakiyeNum = Number(row.yuruyenBakiye);
-                      return (
-                        <tr key={idx} style={row.iptal ? { opacity: 0.6 } : undefined}>
-                          <td>{row.tarih}</td>
-                          <td>{row.vadeTarihi || "—"}</td>
-                          <td><div className="stack" style={{ gap: ".25rem" }}><span>{row.aciklama || "—"}{row.iptal && <> <Badge variant="neutral">İptal</Badge></>}</span>{row.odemeYontemi?.tur === "kredi_karti" && <div className="row-tight"><Badge variant="neutral">Kredi kartı</Badge><small>{row.odemeYontemi.bankaAdi} · {row.odemeYontemi.kartAdi} · •••• {row.odemeYontemi.sonDortHane} · {row.odemeYontemi.taksitSayisi > 1 ? `${row.odemeYontemi.taksitSayisi} taksit` : "tek çekim"}{Number(row.odemeYontemi.komisyonTutari) > 0 ? ` · komisyon/vade farkı ${tl(row.odemeYontemi.komisyonTutari)}` : ""}{row.odemeYontemi.fatura?.no ? ` · Fatura ${row.odemeYontemi.fatura.no}` : ""}</small></div>}</div></td>
-                          <td className="num" style={{ color: borcVal > 0 ? "var(--danger)" : undefined }}>{row.tip === "borc" ? `${Number(row.tutar).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${row.dovizCinsi}` : "—"}</td>
-                          <td className="num" style={{ color: alacakVal > 0 ? "var(--success)" : undefined }}>{row.tip === "alacak" ? `${Number(row.tutar).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${row.dovizCinsi}` : "—"}</td>
-                          <td className="num" style={{ color: borcVal > 0 ? "var(--danger)" : undefined }}>{borcVal > 0 ? tl(borcVal) : "—"}</td>
-                          <td className="num" style={{ color: alacakVal > 0 ? "var(--success)" : undefined }}>{alacakVal > 0 ? tl(alacakVal) : "—"}</td>
-                          <td className={`num money ${bakiyeNum > 0 ? "pos" : bakiyeNum < 0 ? "neg" : ""}`}>{tl(bakiyeNum)}</td>
-                          <td>{row.makbuzYolu ? <a className="btn btn--ghost btn--sm" href={`${apiBase()}${row.makbuzYolu}`} target="_blank" rel="noreferrer">Makbuz PDF</a> : "—"}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </TableWrap>}</>
+                <>
+                  <CariEkstreTablosu v={ekstre} />
+                  {ekstre.tur !== "doviz" && ekstre.dovizOzet.some((o) => o.dovizCinsi !== "TRY") && <div className="cari-statement__currency-summary">
+                    <strong>Döviz bazında bakiye</strong>
+                    <TableWrap className="cari-statement__currency-table"><thead><tr><th>Döviz</th><th className="num">Devir</th><th className="num">Dönem borç</th><th className="num">Dönem alacak</th><th className="num">Bakiye</th></tr></thead><tbody>{ekstre.dovizOzet.map((ozet) => <tr key={ozet.dovizCinsi}><td><b>{ozet.dovizCinsi}</b></td><td className="num">{Number(ozet.devir).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</td><td className="num">{Number(ozet.borc).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</td><td className="num">{Number(ozet.alacak).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</td><td className="num"><Bakiye deger={ozet.bakiye} birim={ozet.dovizCinsi === "TRY" ? "TL" : ozet.dovizCinsi} /></td></tr>)}</tbody></TableWrap>
+                  </div>}
+                </>
               )}
             </Card>
           )}

@@ -30,11 +30,20 @@ import {
   crmGorevDurumSemasi,
   crmGorevSemasi,
   ekstreEpostaSemasi,
+  ekstreSorguSemasi,
 } from "./cari.semalar";
 import { sayfaAdedi } from "../core/sayfalama";
 import { AbonelikService } from "../tenant/abonelik.service";
 import { excelDosyasiniDogrula, type YuklemeDosyasi } from "../core/guvenlik/dosya-dogrulama";
 import { iptalleriGoster } from "../fatura/iptal-cifti";
+
+/** CARI-24/25/26: sorgudan ekstre türü, çevrilecek döviz ve mutabakat işareti. */
+function ekstreSecenekleri(sorgu: unknown) {
+  const sonuc = ekstreSorguSemasi.safeParse(sorgu ?? {});
+  if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((s) => s.message).join("; "));
+  const tur = sonuc.data.tur ?? "standart";
+  return { tur, hedefDoviz: tur === "doviz" ? sonuc.data.doviz : undefined, mutabakat: sonuc.data.mutabakat === "1" };
+}
 
 @Controller("cari")
 export class CariController {
@@ -283,8 +292,9 @@ export class CariController {
     @Query("baslangic") baslangic?: string,
     @Query("bitis") bitis?: string,
     @Query("iptaller") iptaller?: string,
+    @Query() sorgu?: unknown,
   ) {
-    return this.cariService.ekstre(id, baslangic, bitis, iptalleriGoster(iptaller));
+    return this.cariService.ekstre(id, baslangic, bitis, iptalleriGoster(iptaller), ekstreSecenekleri(sorgu));
   }
 
   @Post("excel-aktar")
@@ -303,8 +313,9 @@ export class CariController {
     @Query("baslangic") baslangic?: string,
     @Query("bitis") bitis?: string,
     @Query("iptaller") iptaller?: string,
+    @Query() sorgu?: unknown,
   ) {
-    const buffer = await this.cariService.ekstrePdf(id, baslangic, bitis, iptalleriGoster(iptaller));
+    const buffer = await this.cariService.ekstrePdf(id, baslangic, bitis, iptalleriGoster(iptaller), ekstreSecenekleri(sorgu));
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition",
@@ -320,8 +331,9 @@ export class CariController {
     @Query("baslangic") baslangic?: string,
     @Query("bitis") bitis?: string,
     @Query("iptaller") iptaller?: string,
+    @Query() sorgu?: unknown,
   ) {
-    const buffer = await this.cariService.ekstreExcel(id, baslangic, bitis, iptalleriGoster(iptaller));
+    const buffer = await this.cariService.ekstreExcel(id, baslangic, bitis, iptalleriGoster(iptaller), ekstreSecenekleri(sorgu));
     res.setHeader(
       "Content-Type",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -338,6 +350,8 @@ export class CariController {
   async ekstreEposta(@Param("id") id: string, @Body() govde: unknown) {
     const sonuc = ekstreEpostaSemasi.safeParse(govde);
     if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((s) => s.message).join("; "));
-    return this.cariService.ekstreEpostaGonder(id, sonuc.data.baslangic, sonuc.data.bitis, sonuc.data.alici, sonuc.data.iptalleriGoster ?? false);
+    return this.cariService.ekstreEpostaGonder(id, sonuc.data.baslangic, sonuc.data.bitis, sonuc.data.alici, sonuc.data.iptalleriGoster ?? false, {
+      tur: sonuc.data.tur, hedefDoviz: sonuc.data.tur === "doviz" ? sonuc.data.hedefDoviz : undefined, mutabakat: sonuc.data.mutabakat,
+    });
   }
 }

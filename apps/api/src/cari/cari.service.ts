@@ -24,7 +24,7 @@ import type {
   crmGorevSemasi,
 } from "./cari.semalar";
 import { yaslandir } from "./yaslandirma";
-import { cariExcelOku, cariEkstreExcelYaz } from "../core/excel-yardimci";
+import { cariExcelOku } from "../core/excel-yardimci";
 import { PdfService } from "../core/pdf/pdf.service";
 import { cariDavranisAnalizi } from "./cari-analiz";
 import { gercekKisiUnvani } from "./ad-soyad";
@@ -34,15 +34,19 @@ import { metinNormalize } from "@tekirextra/shared";
 import { EpostaService } from "../tenant/eposta.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { iptalCiftiMi, iptalEdilmisFaturalar } from "../fatura/iptal-cifti";
+import { ekstreAyrintilari, hedefDovizTutari, kurCozucu } from "./cari-ekstre";
+import { ekstrePdfHtml } from "./cari-ekstre-pdf";
+import { ekstreExcelYaz } from "./cari-ekstre-excel";
+import { ekstreAciklamasi, type EkstreTuru } from "@tekirextra/shared";
+
+/** CARI-24/25/26: ekstrenin türü; dövizde isteğe bağlı çevrilecek döviz. */
+export interface EkstreSecenekleri {
+  tur?: EkstreTuru;
+  hedefDoviz?: "USD" | "EUR";
+}
 import { cariEbelgeDurumlariniOku, cariEbelgeDurumuBul } from "../ebelge/cari-ebelge";
 import { canliIrsaliyeKutulari, kendiGbEtiketi, postaKutusuSecimi } from "../ebelge/posta-kutusu-secimi";
 import { BaglantilarService } from "../tenant/baglantilar.service";
-import {
-  kacis,
-  paraBicim,
-  sayfaSablonu,
-  tarihBicim,
-} from "../core/pdf/pdf-sablon";
 
 const D = (deger: string | number): Prisma.Decimal => new Prisma.Decimal(deger);
 
@@ -762,8 +766,14 @@ export class CariService {
   }
 
   /** Ekstre (CARI-04): tarih aralığı + yürüyen bakiye (TRY). */
-  async ekstre(cariId: string, baslangic?: string, bitis?: string, iptalleriGosterilsin = false) {
+  /**
+   * CARI-24/25/26: cari ekstresi. `tur` standart, ayrıntılı (fatura kalemleri)
+   * ya da döviz; dövizde `hedefDoviz` verilirse tüm hareketler o dövize
+   * çevrilir, verilmezse her döviz kendi bölümünde listelenir.
+   */
+  async ekstre(cariId: string, baslangic?: string, bitis?: string, iptalleriGosterilsin = false, secenekler: EkstreSecenekleri = {}) {
     const { tenantId } = aktifBaglam();
+    const tur = secenekler.tur ?? "standart";
     const cari = await this.getir(cariId);
     const bitisTarihi = bitis ? new Date(`${bitis}T23:59:59.999`) : undefined;
     const baslangicTarihi = baslangic ? new Date(`${baslangic}T00:00:00.000`) : undefined;
@@ -778,7 +788,7 @@ export class CariService {
         },
         orderBy: [{ tarih: "asc" }, { createdAt: "asc" }],
       }),
-      baslangicTarihi ? tx.cariHareket.findMany({ where: { cariId, tarih: { lt: baslangicTarihi } }, select: { tip: true, tutarTry: true, dovizCinsi: true, tutar: true, kaynakTur: true, kaynakRef: true } }) : Promise.resolve([]),
+      baslangicTarihi ? tx.cariHareket.findMany({ where: { cariId, tarih: { lt: baslangicTarihi } }, select: { id: true, tip: true, tutarTry: true, dovizCinsi: true, tutar: true, kur: true, tarih: true, kaynakTur: true, kaynakRef: true } }) : Promise.resolve([]),
     ]));
     // CARI-22: iptal edilmiş faturanın hareketi ile ters hareketi birbirini
     // sıfırlar ve varsayılan olarak gösterilmez. Devirden de düşülür; yoksa
@@ -801,6 +811,8 @@ export class CariService {
       select: { id: true, makbuzAnahtari: true },
     })) : [];
     const posMakbuzHaritasi = new Map(posTahsilatlari.map((p) => [p.id, `/pos/makbuz/${tenantId}/${p.id}/${p.makbuzAnahtari}`]));
+    // CARI-24/25: hareket türü, belge no, ödeme şekli ve (ayrıntılıda) kalemler.
+    const ayrintilar = await this.prisma.tenantIslem(tenantId, (tx) => ekstreAyrintilari(tx, tenantId, hareketler, tur === "ayrintili"));
     const devirBakiyesi = oncekiHareketler.reduce((toplam, h) => h.tip === "borc" ? toplam.add(h.tutarTry) : toplam.sub(h.tutarTry), new Prisma.Decimal(0));
     let bakiye = devirBakiyesi;
     let donemBorc = new Prisma.Decimal(0); let donemAlacak = new Prisma.Decimal(0);
@@ -818,11 +830,18 @@ export class CariService {
       bakiye =
         h.tip === "borc" ? bakiye.add(h.tutarTry) : bakiye.sub(h.tutarTry);
       const kartHareketi = h.kaynakTur === "kredi_karti" && h.kaynakRef ? krediKartiHaritasi.get(h.kaynakRef) : undefined;
+      const ayrinti = ayrintilar.get(h.id);
       return {
+        id: h.id,
         tarih: h.tarih.toISOString().slice(0, 10),
         vadeTarihi: h.vadeTarihi?.toISOString().slice(0, 10) ?? null,
         tip: h.tip,
-        aciklama: h.aciklama,
+        hareketTuru: ayrinti?.hareketTuru ?? "Diğer",
+        belgeNo: ayrinti?.belgeNo ?? null,
+        odemeSekli: ayrinti?.odemeSekli ?? null,
+        ...(ayrinti?.fatura ? { fatura: ayrinti.fatura } : {}),
+        // Faturanın otomatik açıklaması belge no'yu tekrarlar, gösterilmez.
+        aciklama: ekstreAciklamasi(h.aciklama, h.kaynakTur) || null,
         kaynakTur: h.kaynakTur,
         iptal: iptalCiftiMi(h, iptaller),
         makbuzYolu: h.kaynakTur === "pos_tahsilat" && h.kaynakRef ? posMakbuzHaritasi.get(h.kaynakRef) ?? null : null,
@@ -843,14 +862,63 @@ export class CariService {
         yuruyenBakiye: bakiye.toFixed(2),
       };
     });
-    const dovizOzet = [...dovizOzetleri.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([dovizCinsi, ozet]) => ({
+    // TL önce, dövizler alfabetik.
+    const dovizOzet = [...dovizOzetleri.entries()].sort(([a], [b]) => (a === "TRY" ? -1 : b === "TRY" ? 1 : a.localeCompare(b))).map(([dovizCinsi, ozet]) => ({
       dovizCinsi,
       devir: ozet.devir.toFixed(2),
       borc: ozet.borc.toFixed(2),
       alacak: ozet.alacak.toFixed(2),
       bakiye: ozet.devir.add(ozet.borc).sub(ozet.alacak).toFixed(2),
     }));
-    return { cari: { id: cari.id, kod: cari.kod, unvan: cari.unvan, eposta: cari.eposta }, devirBakiyesi: devirBakiyesi.toFixed(2), donemBorc: donemBorc.toFixed(2), donemAlacak: donemAlacak.toFixed(2), donemSonuBakiyesi: bakiye.toFixed(2), dovizOzet, satirlar };
+    // CARI-26: her döviz kendi bölümünde, bakiye o dövizde yürür.
+    const dovizBolumleri = tur === "doviz" && !secenekler.hedefDoviz
+      ? dovizOzet.map((ozet) => {
+          let dovizBakiye = new Prisma.Decimal(ozet.devir);
+          return {
+            ...ozet,
+            satirlar: satirlar.filter((s) => s.dovizCinsi === ozet.dovizCinsi).map((s) => {
+              dovizBakiye = s.tip === "borc" ? dovizBakiye.add(s.tutar) : dovizBakiye.sub(s.tutar);
+              return { ...s, yuruyenDovizBakiye: dovizBakiye.toFixed(2) };
+            }),
+          };
+        })
+      : undefined;
+    // CARI-26 çevirme modu: tüm hareketler seçilen dövize, hareketin kendi
+    // dövizindeyse tutarıyla, değilse o günün kuruyla çevrilir.
+    const cevrilmis = tur === "doviz" && secenekler.hedefDoviz
+      ? await this.prisma.tenantIslem(tenantId, async (tx) => {
+          const hedef = secenekler.hedefDoviz!;
+          const tarihler = [...oncekiHareketler, ...hareketler].filter((h) => h.dovizCinsi !== hedef).map((h) => h.tarih.getTime());
+          const kur = tarihler.length
+            ? await kurCozucu(tx, tenantId, hedef, new Date(Math.min(...tarihler)), new Date(Math.max(...tarihler)))
+            : () => new Prisma.Decimal(1);
+          const devir = oncekiHareketler.reduce((t, h) => {
+            const { tutar } = hedefDovizTutari(h, hedef, kur);
+            return h.tip === "borc" ? t.add(tutar) : t.sub(tutar);
+          }, new Prisma.Decimal(0));
+          let yuruyen = devir; let borc = new Prisma.Decimal(0); let alacak = new Prisma.Decimal(0);
+          const cevrilenler = hareketler.map((h, i) => {
+            const { tutar, kur: cevrimKuru } = hedefDovizTutari(h, hedef, kur);
+            if (h.tip === "borc") { borc = borc.add(tutar); yuruyen = yuruyen.add(tutar); } else { alacak = alacak.add(tutar); yuruyen = yuruyen.sub(tutar); }
+            return { ...satirlar[i], hedefTutar: tutar.toFixed(2), cevrimKuru: cevrimKuru?.toFixed(4) ?? null, yuruyenDovizBakiye: yuruyen.toFixed(2) };
+          });
+          return { dovizCinsi: hedef, devir: devir.toFixed(2), borc: borc.toFixed(2), alacak: alacak.toFixed(2), bakiye: yuruyen.toFixed(2), satirlar: cevrilenler };
+        })
+      : undefined;
+    const adres = cari.adresler?.find((a: { tip: string }) => a.tip === "fatura") ?? cari.adresler?.find((a: { tip: string }) => a.tip === "merkez") ?? cari.adresler?.[0];
+    return {
+      cari: {
+        id: cari.id, kod: cari.kod, unvan: cari.unvan, eposta: cari.eposta, vknTckn: cari.vknTckn, vergiDairesi: cari.vergiDairesi,
+        adres: adres ? [adres.adres, [adres.ilce, adres.il].filter(Boolean).join(" / ")].filter(Boolean).join(" ") : null,
+      },
+      tur,
+      baslangic: baslangic ?? null,
+      bitis: bitis ?? null,
+      devirBakiyesi: devirBakiyesi.toFixed(2), donemBorc: donemBorc.toFixed(2), donemAlacak: donemAlacak.toFixed(2), donemSonuBakiyesi: bakiye.toFixed(2),
+      dovizOzet, satirlar,
+      ...(dovizBolumleri ? { dovizBolumleri } : {}),
+      ...(cevrilmis ? { cevrilmis } : {}),
+    };
   }
 
   // Yaşlandırma raporu RPR-06 araç setine taşındı: cari.yaslandirma (CARI-12).
@@ -1017,76 +1085,40 @@ export class CariService {
     return { eklenen: cariler.length };
   }
 
-  async ekstreExcel(cariId: string, baslangic?: string, bitis?: string, iptalleriGosterilsin = false): Promise<Buffer> {
-    const data = await this.ekstre(cariId, baslangic, bitis, iptalleriGosterilsin);
-    const hareketSatirlari = data.satirlar.map((s) => ({
-      tarih: new Date(s.tarih),
-      aciklama: `${s.aciklama || ""}${s.iptal ? " (iptal)" : ""}`,
-      borc: s.tip === "borc" ? s.tutarTry : "",
-      alacak: s.tip === "alacak" ? s.tutarTry : "",
-      bakiye: s.yuruyenBakiye,
-    }));
-    const mapped = baslangic
-      ? [{ tarih: new Date(baslangic), aciklama: "DEVİR BAKİYESİ", borc: Number(data.devirBakiyesi) > 0 ? data.devirBakiyesi : "", alacak: Number(data.devirBakiyesi) < 0 ? String(Math.abs(Number(data.devirBakiyesi))) : "", bakiye: data.devirBakiyesi }, ...hareketSatirlari]
-      : hareketSatirlari;
-
-    return cariEkstreExcelYaz(data.cari, mapped);
+  async ekstreExcel(cariId: string, baslangic?: string, bitis?: string, iptalleriGosterilsin = false, secenekler: EkstreSecenekleri = {}): Promise<Buffer> {
+    return ekstreExcelYaz(await this.ekstre(cariId, baslangic, bitis, iptalleriGosterilsin, secenekler));
   }
 
-  /** Ekstre PDF çıktısı (CARI-04, T-02 altyapısıyla). */
+  /**
+   * Ekstre PDF çıktısı (CARI-04; CARI-24/25/26 tasarımı). Mutabakat metni ve
+   * imza alanı isteğe bağlıdır.
+   */
   async ekstrePdf(
     cariId: string,
     baslangic?: string,
     bitis?: string,
     iptalleriGosterilsin = false,
+    secenekler: EkstreSecenekleri & { mutabakat?: boolean } = {},
   ): Promise<Buffer> {
-    const data = await this.ekstre(cariId, baslangic, bitis, iptalleriGosterilsin);
-    const aralik =
-      baslangic || bitis
-        ? ` — dönem: ${baslangic ? tarihBicim(baslangic) : "…"} – ${bitis ? tarihBicim(bitis) : "…"}`
-        : "";
-    const devirSatiri = baslangic ? `<tr><td class="orta">${tarihBicim(baslangic)}</td><td><b>DEVİR BAKİYESİ</b></td><td></td><td></td><td class="sag"><b>${paraBicim(data.devirBakiyesi)}</b></td></tr>` : "";
-    const satirlar = devirSatiri + data.satirlar
-      .map(
-        (s) => `<tr>
-  <td class="orta">${tarihBicim(s.tarih)}</td>
-  <td>${kacis(`${s.aciklama ?? ""}${s.iptal ? " (iptal)" : ""}`)}</td>
-  <td class="sag">${s.tip === "borc" ? paraBicim(s.tutarTry) : ""}</td>
-  <td class="sag">${s.tip === "alacak" ? paraBicim(s.tutarTry) : ""}</td>
-  <td class="sag">${paraBicim(s.yuruyenBakiye)}</td>
-</tr>`,
-      )
-      .join("\n");
-    const sonBakiye = data.donemSonuBakiyesi;
-    const icerik = `<table class="veri">
-  <thead><tr>
-    <th>Tarih</th><th>Açıklama</th>
-    <th class="sag">Borç</th><th class="sag">Alacak</th><th class="sag">Bakiye</th>
-  </tr></thead>
-  <tbody>${
-    satirlar ||
-    `<tr><td class="orta" colspan="5">Dönemde hareket bulunamadı</td></tr>`
-  }</tbody>
-</table>
-<p style="margin-top:10px;text-align:right;font-weight:bold">
-  Dönem sonu bakiyesi: ${paraBicim(sonBakiye)} TL
-</p>`;
-    const tema = await this.pdf.belgeTemasi();
-    return this.pdf.htmlToPdf(
-      sayfaSablonu({
-        baslik: "CARİ HESAP EKSTRESİ",
-        altBaslik: `${data.cari.kod} — ${data.cari.unvan}${aralik}`,
-        icerik,
-        tema,
-      }),
-    );
+    const { tenantId } = aktifBaglam();
+    const [data, firma, tema] = await Promise.all([
+      this.ekstre(cariId, baslangic, bitis, iptalleriGosterilsin, secenekler),
+      this.prisma.tenantIslem(tenantId, (tx) => tx.tenant.findUnique({
+        where: { id: tenantId },
+        select: { unvan: true, vkn: true, vergiDairesi: true, adres: true, ilce: true, il: true, postaKodu: true, telefon: true, eposta: true, webSitesi: true, mersisNo: true, ticaretSicilNo: true },
+      })),
+      this.pdf.belgeTemasi(),
+    ]);
+    if (!firma) throw new NotFoundException("Firma bulunamadı");
+    const { html, yatay } = ekstrePdfHtml(data, firma, { tema, mutabakat: secenekler.mutabakat });
+    return this.pdf.htmlToPdf(html, { yatay, sayfaNumarasi: true });
   }
 
-  async ekstreEpostaGonder(cariId: string, baslangic?: string, bitis?: string, alici?: string, iptalleriGosterilsin = false) {
+  async ekstreEpostaGonder(cariId: string, baslangic?: string, bitis?: string, alici?: string, iptalleriGosterilsin = false, secenekler: EkstreSecenekleri & { mutabakat?: boolean } = {}) {
     const cari = await this.getir(cariId);
     const hedef = alici ?? cari.eposta;
     if (!hedef) throw new BadRequestException("Cari kartında e-posta adresi bulunmuyor");
-    const [pdf, excel] = await Promise.all([this.ekstrePdf(cariId, baslangic, bitis, iptalleriGosterilsin), this.ekstreExcel(cariId, baslangic, bitis, iptalleriGosterilsin)]);
+    const [pdf, excel] = await Promise.all([this.ekstrePdf(cariId, baslangic, bitis, iptalleriGosterilsin, secenekler), this.ekstreExcel(cariId, baslangic, bitis, iptalleriGosterilsin, secenekler)]);
     const donem = baslangic || bitis ? `${baslangic ?? "başlangıç"} - ${bitis ?? "bugün"}` : "tüm dönem";
     await this.eposta.ekliIletiGonder({ alici: hedef, konu: `${cari.unvan} cari hesap ekstresi`, metin: `Sayın Yetkili,\n\n${donem} cari hesap ekstreniz PDF ve Excel formatında ekte sunulmuştur.\n\nSaygılarımızla`, ekler: [{ dosyaAdi: `ekstre-${cari.kod}.pdf`, icerik: pdf, mime: "application/pdf" }, { dosyaAdi: `ekstre-${cari.kod}.xlsx`, icerik: excel, mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }] });
     return { mesaj: `Ekstre ${hedef} adresine gönderildi` };

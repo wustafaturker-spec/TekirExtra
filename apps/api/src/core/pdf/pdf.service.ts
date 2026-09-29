@@ -80,7 +80,7 @@ export class PdfService implements OnModuleDestroy {
 
   async htmlToPdf(
     html: string,
-    secenekler?: { yatay?: boolean; yalitilmis?: boolean },
+    secenekler?: { yatay?: boolean; yalitilmis?: boolean; sayfaNumarasi?: boolean },
   ): Promise<Buffer> {
     const tarayici = await this.tarayiciAl();
     // Yalıtılmış kip yabancı kaynaklı HTML içindir (EBLG-29): betik çalışmaz,
@@ -97,6 +97,14 @@ export class PdfService implements OnModuleDestroy {
         landscape: secenekler?.yatay ?? false,
         printBackground: true,
         margin: { top: "14mm", bottom: "14mm", left: "12mm", right: "12mm" },
+        // CARI-24: çok sayfalı raporlarda "Sayfa X / Y"; alt kenar boşluğuna basılır.
+        ...(secenekler?.sayfaNumarasi
+          ? {
+              displayHeaderFooter: true,
+              headerTemplate: "<span></span>",
+              footerTemplate: `<div style="width:100%;font-size:7pt;color:#9ca3af;padding:0 12mm;text-align:right;font-family:Arial,sans-serif">Sayfa <span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
+            }
+          : {}),
       });
     } finally {
       await sayfa.close();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as ExcelJS from "exceljs";
-import { cariExcelOku, stokExcelOku, cariEkstreExcelYaz, stokExcelSablonYaz } from "./excel-yardimci";
+import { cariExcelOku, stokExcelOku, stokExcelSablonYaz } from "./excel-yardimci";
 
 describe("ExcelYardimci (CARI-04/07, STK-05)", () => {
   it("cariExcelOku excel belgesindeki cari satirlarini okur (CARI-07)", async () => {
@@ -49,20 +49,5 @@ describe("ExcelYardimci (CARI-04/07, STK-05)", () => {
     expect(workbook.getWorksheet("Açıklamalar")).toBeDefined();
   });
 
-  it("cariEkstreExcelYaz cari ekstre verilerini excel tablosuna yazar (CARI-04)", async () => {
-    const cari = { kod: "C01", unvan: "Test Müşterisi" };
-    const hareketler = [
-      {
-        tarih: new Date("2026-07-01"),
-        aciklama: "Devir borç",
-        borc: "100.00",
-        alacak: "",
-        bakiye: "100.00",
-      },
-    ];
 
-    const buffer = await cariEkstreExcelYaz(cari, hareketler);
-    expect(buffer).toBeInstanceOf(Buffer);
-    expect(buffer.length).toBeGreaterThan(0);
-  });
 });
