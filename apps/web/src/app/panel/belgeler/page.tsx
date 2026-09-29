@@ -1194,7 +1194,7 @@ export default function BelgelerSayfasi() {
             </div>
           </div>
 
-          <div className="document-editor__section document-lines">
+          <div className="document-editor__section document-lines invoice-lines">
             <div className="between"><h4 className="document-editor__section-title">Belge kalemleri</h4><Button type="button" variant="primary" onClick={() => setUrunModali({ satir: satirlar.findIndex((s) => !s.stokId) >= 0 ? satirlar.findIndex((s) => !s.stokId) : satirlar.length })}>+ Ürün çağır</Button></div>
             <TableWrap>
             <colgroup>
@@ -1225,7 +1225,7 @@ export default function BelgelerSayfasi() {
                 return (
                   <tr key={i}>
                     <td className="num invoice-line__index">{i + 1}</td>
-                    <td>
+                    <td className="invoice-line__product">
                       <AramaSecici
                         ariaLabel={`${i + 1}. satır ürün veya hizmet seçimi`}
                         deger={s.stokId}
@@ -1252,12 +1252,12 @@ export default function BelgelerSayfasi() {
                         <Input aria-label={`${i + 1}. satır İDİS etiket numarası`} placeholder="İDİS etiket no (örn. CV0152457)" maxLength={20} value={s.idisEtiketNo ?? ""} onChange={(e) => satirGuncelle(i, "idisEtiketNo", e.target.value)} />
                       )}
                     </td>
-                    <td><div className="document-line-qty"><Input className="document-line-number" aria-label="Miktar" type="number" min="0.01" step="any" inputMode="decimal" value={s.miktar} onChange={(e) => satirGuncelle(i, "miktar", Number(e.target.value))} required /><SatirBirimi stok={stoklar.find((x) => x.id === s.stokId)} value={s.birim} onChange={(birim) => satirBirimiDegistir(i, birim)} /></div></td>
-                    <td><Input className="document-line-number" aria-label="Birim fiyat" type="number" min="0" step="any" inputMode="decimal" value={s.birimFiyat} onChange={(e) => satirGuncelle(i, "birimFiyat", Number(e.target.value))} required /></td>
-                    <td><Input className="document-line-number" aria-label="İskonto yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.iskontoOrani} onChange={(e) => satirGuncelle(i, "iskontoOrani", Number(e.target.value))} /></td>
-                    <td><Input className="document-line-number" aria-label="KDV yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.kdvOrani} onChange={(e) => satirGuncelle(i, "kdvOrani", Number(e.target.value))} required /></td>
-                    <td className="num document-line-total">{tl(ss ? ss.toplamTutar : 0, dovizCinsi)}{ss && ss.kdvTutari > 0 && <small className="invoice-line__tax">KDV {tl(ss.kdvTutari, dovizCinsi)}</small>}</td>
-                    <td className="center"><Button aria-label="Satırı sil" title="Satırı sil" variant="danger" size="sm" type="button" onClick={() => satirSil(i)}>×</Button></td>
+                    <td className="invoice-line__field" data-label="Miktar"><div className="document-line-qty"><Input className="document-line-number" aria-label="Miktar" type="number" min="0.01" step="any" inputMode="decimal" value={s.miktar} onChange={(e) => satirGuncelle(i, "miktar", Number(e.target.value))} required /><SatirBirimi stok={stoklar.find((x) => x.id === s.stokId)} value={s.birim} onChange={(birim) => satirBirimiDegistir(i, birim)} /></div></td>
+                    <td className="invoice-line__field" data-label="Birim fiyat"><Input className="document-line-number" aria-label="Birim fiyat" type="number" min="0" step="any" inputMode="decimal" value={s.birimFiyat} onChange={(e) => satirGuncelle(i, "birimFiyat", Number(e.target.value))} required /></td>
+                    <td className="invoice-line__field" data-label="İskonto %"><Input className="document-line-number" aria-label="İskonto yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.iskontoOrani} onChange={(e) => satirGuncelle(i, "iskontoOrani", Number(e.target.value))} /></td>
+                    <td className="invoice-line__field" data-label="KDV %"><Input className="document-line-number" aria-label="KDV yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.kdvOrani} onChange={(e) => satirGuncelle(i, "kdvOrani", Number(e.target.value))} required /></td>
+                    <td className="num document-line-total invoice-line__total" data-label="Satır toplamı">{tl(ss ? ss.toplamTutar : 0, dovizCinsi)}{ss && ss.kdvTutari > 0 && <small className="invoice-line__tax">KDV {tl(ss.kdvTutari, dovizCinsi)}</small>}</td>
+                    <td className="center invoice-line__action"><Button aria-label="Satırı sil" title="Satırı sil" variant="danger" size="sm" type="button" onClick={() => satirSil(i)}>×</Button></td>
                   </tr>
                 );
               })}
