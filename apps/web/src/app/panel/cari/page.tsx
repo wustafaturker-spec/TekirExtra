@@ -5,8 +5,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { api, apiDosyaIndir, tokenAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import { PostaKutusuSecimleri, type PostaKutusuSecimi } from "@/components/posta-kutusu-secimi";
+import { FormGrubu } from "@/components/form-grubu";
 import { Bakiye, CariEkstreTablosu, type EkstreVeri } from "@/components/cari-ekstre-tablosu";
-import { CARI_EBELGE_ETIKETI, EKSTRE_TURU_ADLARI, EKSTRE_TURLERI, type CariEbelgeDurumu, type CariEbelgeTuru, type EkstreTuru } from "@tekirextra/shared";
+import { CARI_EBELGE_ETIKETI, EKSTRE_TURU_ADLARI, EKSTRE_TURLERI, vknTcknGecerliMi, type CariEbelgeDurumu, type CariEbelgeTuru, type EkstreTuru } from "@tekirextra/shared";
 import {
   Alert,
   Avatar,
@@ -213,6 +214,19 @@ type FiltreTip = "tumu" | "musteri" | "tedarikci" | "bloke";
 interface CariGorunumu { id: string; ad: string; filtreTip: FiltreTip; }
 const GORUNUM_ANAHTARI = "tekir_cari_gorunumleri";
 
+/** Cari kartında e-Belge ve iletişim için eksik bilgiler (sağ panel). */
+// Kontrol hanesi burada sorulmaz: kayıtlı cari sunucudan geçmiştir (test ortamının
+// sentetik kimlikleri ve yurt dışı/muhtelif özel numaraları kontrol hanesi tutmaz).
+function cariKartEksikleri(d: { eposta?: string | null; vknTckn?: string | null; vergiDairesi: string | null; kisiTipi: string; adresler: unknown[] }): string[] {
+  const vkn = d.vknTckn?.trim() ?? "";
+  return [
+    !vkn && "VKN/TCKN yok: e-Fatura/e-Arşiv düzenlenemez",
+    d.kisiTipi !== "gercek" && !d.vergiDairesi?.trim() && "Vergi dairesi girilmedi",
+    d.adresler.length === 0 && "Adres yok: belgelerde alıcı adresi boş kalır (Adresler sekmesi)",
+    !d.eposta?.trim() && "E-posta yok: fatura, ekstre ve ödeme bağlantısı gönderilemez",
+  ].filter((e): e is string => Boolean(e));
+}
+
 export default function CariSayfasi() {
   const pathname = usePathname(); const router = useRouter(); const yeniSayfasi = pathname.endsWith("/yeni");
   const detayId = !yeniSayfasi ? pathname.match(/^\/panel\/cari\/([^/]+)$/)?.[1] ?? null : null;
@@ -258,6 +272,7 @@ export default function CariSayfasi() {
   const [kisaAd, setKisaAd] = useState("");
   const [tip, setTip] = useState("musteri");
   const [kisiTipi, setKisiTipi] = useState("tuzel");
+  const cariFormRef = useRef<HTMLFormElement>(null);
   const [sektor, setSektor] = useState("");
   const [temsilciUserId, setTemsilciUserId] = useState("");
   // Vergi / resmi
@@ -867,6 +882,34 @@ export default function CariSayfasi() {
   const tedarikciSayisi = cariler.filter((c) => c.tip === "tedarikci" || c.tip === "her_ikisi").length;
   const blokeSayisi = cariler.filter((c) => c.karaListe === true).length;
 
+  /** Yeni cari formunda VKN/TCKN'nin anlık durumu (sağ panel). */
+  const vknDurumu = !vknTckn.trim()
+    ? { metin: "Girilmedi", sinif: "" }
+    : vknTcknGecerliMi(vknTckn.trim())
+      ? { metin: `${vknTckn.trim()} · geçerli`, sinif: "is-positive" }
+      : { metin: `${vknTckn.trim()} · kontrol hanesi tutmuyor`, sinif: "is-negative" };
+  /** Kaydetmeden önce giderilmesi ya da bilinmesi gerekenler. */
+  const cariKontrolListesi = [
+    (kisiTipi === "gercek" ? !(ad.trim() && soyad.trim()) : !unvan.trim()) && (kisiTipi === "gercek" ? "Ad ve soyad girilmedi" : "Ünvan girilmedi"),
+    !kod.trim() && "Cari kodu girilmedi",
+    vknTckn.trim() && !vknTcknGecerliMi(vknTckn.trim()) && `${kisiTipi === "gercek" ? "TCKN" : "VKN"} kontrol hanesi tutmuyor; yalnız e-Belge test ortamında kaydedilir`,
+    !vknTckn.trim() && "VKN/TCKN yok: e-Fatura/e-Arşiv düzenlemek için gerekir",
+    !eposta.trim() && "E-posta yok: fatura, ekstre ve ödeme bağlantısı gönderilemez",
+  ].filter((e): e is string => Boolean(e));
+
+  // Ctrl+S (macOS'ta Cmd+S) yeni cari formunu gönderir.
+  useEffect(() => {
+    if (!formAcik) return;
+    const dinle = (olay: KeyboardEvent) => {
+      if ((olay.ctrlKey || olay.metaKey) && olay.key.toLowerCase() === "s") {
+        olay.preventDefault();
+        cariFormRef.current?.requestSubmit();
+      }
+    };
+    window.addEventListener("keydown", dinle);
+    return () => window.removeEventListener("keydown", dinle);
+  }, [formAcik]);
+
   return (
     <div className={yeniSayfasi ? "create-page" : detaySayfasi ? "detail-page" : undefined}>
       <PageHeader
@@ -889,70 +932,102 @@ export default function CariSayfasi() {
       <Alert tone="success">{basari}</Alert>
 
       {formAcik && (
-        <form className="document-editor record-editor--wide" onSubmit={kaydet}>
+        <form ref={cariFormRef} className="document-editor invoice-editor" onSubmit={kaydet}>
           <div className="document-editor__head">
             <h3>Yeni cari hesap</h3>
             <span className="badge badge--warning">Yeni</span>
           </div>
-
+          <div className="invoice-layout">
+          <div className="invoice-layout__main">
           <div className="document-editor__section">
             <h4 className="document-editor__section-title">Temel bilgiler</h4>
-            <div className="record-fields record-fields--cari-main">
+            <div className="document-fields document-fields--belge">
+              {/* Kişi tipi ünvan ile ad-soyad arasında seçim yaptırdığı için önce gelir. */}
+              <Field label="Kişi tipi"><Select value={kisiTipi} onChange={(e) => setKisiTipi(e.target.value)}><option value="tuzel">Tüzel kişi</option><option value="gercek">Gerçek kişi</option></Select></Field>
               {kisiTipi === "gercek" ? (
                 <>
                   <Field label="Ad"><Input value={ad} onChange={(e) => setAd(e.target.value)} required placeholder="Ayşe Nur" /></Field>
                   <Field label="Soyad"><Input value={soyad} onChange={(e) => setSoyad(e.target.value)} required placeholder="Yılmaz" /></Field>
                 </>
               ) : (
-                <Field label="Ünvan"><Input value={unvan} onChange={(e) => setUnvan(e.target.value)} required placeholder="Teknoloji A.Ş." /></Field>
+                <Field label="Ünvan" className="document-fields__genis"><Input value={unvan} onChange={(e) => setUnvan(e.target.value)} required placeholder="Teknoloji A.Ş." /></Field>
               )}
               <Field label="Cari kodu"><Input value={kod} onChange={(e) => setKod(e.target.value)} required placeholder="CARI-001" /></Field>
-              <Field label="Cari tipi"><Select value={tip} onChange={(e) => setTip(e.target.value)}>{Object.entries(TIP_ETIKETLERI).map(([deger, ad]) => (<option key={deger} value={deger}>{ad}</option>))}</Select></Field>
-              <Field label="Kısa ad"><Input value={kisaAd} onChange={(e) => setKisaAd(e.target.value)} placeholder="Teknoloji" /></Field>
-              <Field label="Kişi tipi"><Select value={kisiTipi} onChange={(e) => setKisiTipi(e.target.value)}><option value="tuzel">Tüzel kişi</option><option value="gercek">Gerçek kişi</option></Select></Field>
-              <Field label="Sektör"><Input value={sektor} onChange={(e) => setSektor(e.target.value)} placeholder="Perakende" /></Field>
-              <Field label="Müşteri temsilcisi"><Select value={temsilciUserId} onChange={(e) => setTemsilciUserId(e.target.value)}><option value="">Seçiniz (İsteğe bağlı)</option>{crm?.kullanicilar?.map((u) => <option key={u.id} value={u.id}>{u.adSoyad}</option>)}</Select></Field>
+              <Field label="Cari tipi"><Select value={tip} onChange={(e) => setTip(e.target.value)}>{Object.entries(TIP_ETIKETLERI).map(([deger, etiket]) => (<option key={deger} value={deger}>{etiket}</option>))}</Select></Field>
+              <Field label={kisiTipi === "gercek" ? "TCKN" : "VKN"}><Input value={vknTckn} onChange={(e) => setVknTckn(e.target.value.replace(/\D/g, ""))} inputMode="numeric" maxLength={11} placeholder={kisiTipi === "gercek" ? "11 hane" : "10 hane"} /></Field>
+              <Field label="Vergi dairesi"><Input value={vergiDairesi} onChange={(e) => setVergiDairesi(e.target.value)} /></Field>
+              <Field label="E-posta"><Input type="email" value={eposta} onChange={(e) => setEposta(e.target.value)} placeholder="muhasebe@firma.com" /></Field>
+              <Field label="Telefon"><Input value={telefon} onChange={(e) => setTelefon(e.target.value)} /></Field>
             </div>
           </div>
 
-          <details className="record-disclosure">
-            <summary>Vergi ve resmi bilgiler</summary>
-            <div className="record-fields record-fields--four">
-              <Field label="VKN / TCKN"><Input value={vknTckn} onChange={(e) => setVknTckn(e.target.value)} placeholder="10-11 hane" /></Field>
-              <Field label="Vergi dairesi"><Input value={vergiDairesi} onChange={(e) => setVergiDairesi(e.target.value)} /></Field>
+          {/* Seyrek kullanılan alanlar katlanır gruplarda; dolu grup açık gelir. */}
+          <FormGrubu baslik="Resmî ve ticari bilgiler" aciklama="Kısa ad, sektör, temsilci, MERSİS, ticaret sicil, KVKK" doluSayisi={[kisaAd, sektor, temsilciUserId, mersisNo, ticaretSicilNo, kvkkOnayTarihi].filter((d) => d.trim()).length}>
+            <div className="document-fields document-fields--belge">
+              <Field label="Kısa ad"><Input value={kisaAd} onChange={(e) => setKisaAd(e.target.value)} placeholder="Teknoloji" /></Field>
+              <Field label="Sektör"><Input value={sektor} onChange={(e) => setSektor(e.target.value)} placeholder="Perakende" /></Field>
+              <Field label="Müşteri temsilcisi"><Select value={temsilciUserId} onChange={(e) => setTemsilciUserId(e.target.value)}><option value="">Seçiniz (İsteğe bağlı)</option>{crm?.kullanicilar?.map((u) => <option key={u.id} value={u.id}>{u.adSoyad}</option>)}</Select></Field>
               <Field label="MERSİS no"><Input value={mersisNo} onChange={(e) => setMersisNo(e.target.value)} placeholder="16 hane" /></Field>
               <Field label="Ticaret sicil no"><Input value={ticaretSicilNo} onChange={(e) => setTicaretSicilNo(e.target.value)} /></Field>
               <Field label="KVKK onay tarihi"><Input type="date" value={kvkkOnayTarihi} onChange={(e) => setKvkkOnayTarihi(e.target.value)} /></Field>
             </div>
-          </details>
-
-          <details className="record-disclosure">
-            <summary>İletişim ve banka bilgileri</summary>
-            <div className="record-fields record-fields--four">
-              <Field label="E-posta"><Input type="email" value={eposta} onChange={(e) => setEposta(e.target.value)} /></Field>
-              <Field label="Telefon"><Input value={telefon} onChange={(e) => setTelefon(e.target.value)} /></Field>
+          </FormGrubu>
+          <FormGrubu baslik="İletişim ve banka" aciklama="Web sitesi, faks, ana IBAN ve cari notları" doluSayisi={[webSitesi, faks, anaIban, notlar].filter((d) => d.trim()).length}>
+            <div className="document-fields document-fields--belge">
               <Field label="Web sitesi"><Input value={webSitesi} onChange={(e) => setWebSitesi(e.target.value)} placeholder="https://..." /></Field>
               <Field label="Faks"><Input value={faks} onChange={(e) => setFaks(e.target.value)} /></Field>
-              <Field label="Ana IBAN"><Input value={anaIban} onChange={(e) => setAnaIban(e.target.value)} placeholder="TR..." maxLength={34} /></Field>
-              <Field label="Cari Notları"><Input value={notlar} onChange={(e) => setNotlar(e.target.value)} placeholder="Özel açıklamalar..." /></Field>
+              <Field label="Ana IBAN" className="document-fields__genis"><Input value={anaIban} onChange={(e) => setAnaIban(e.target.value)} placeholder="TR..." maxLength={34} /></Field>
+              <Field label="Cari notları" className="document-fields__genis"><Input value={notlar} onChange={(e) => setNotlar(e.target.value)} placeholder="Özel açıklamalar..." /></Field>
             </div>
-          </details>
-
-          <details className="record-disclosure">
-            <summary>Finans ve satış koşulları</summary>
-            <div className="record-fields record-fields--four">
+          </FormGrubu>
+          <FormGrubu baslik="Finans ve satış koşulları" aciklama="Fiyat listesi, iskonto, vade, risk limiti, e-Belge tercihleri" doluSayisi={[fiyatListesiId, varsayilanIskonto, varsayilanVadeGun, riskLimiti].filter((d) => d.trim()).length + (efaturaProfili === "ticari" ? 1 : 0) + (earsivGonderimSekli === "kagit" ? 1 : 0)}>
+            <div className="document-fields document-fields--belge">
               <Field label="Fiyat listesi"><Select value={fiyatListesiId} onChange={(e) => setFiyatListesiId(e.target.value)}><option value="">Stok satış fiyatı</option>{fiyatListeleri.map((l) => (<option key={l.id} value={l.id}>{l.ad} ({l.dovizCinsi})</option>))}</Select></Field>
               <Field label="Varsayılan iskonto (%)"><Input className="record-number" type="number" step="0.01" min="0" max="100" inputMode="decimal" value={varsayilanIskonto} onChange={(e) => setVarsayilanIskonto(e.target.value)} placeholder="0" /></Field>
-              <Field label="Varsayılan vade (gün)"><Input className="record-number" type="number" min="0" max="365" inputMode="numeric" value={varsayilanVadeGun} onChange={(e) => setVarsayilanVadeGun(e.target.value)} placeholder="0" /></Field>
+              <Field label="Varsayılan vade (gün)">
+                <Input className="record-number" type="number" min="0" max="365" inputMode="numeric" value={varsayilanVadeGun} onChange={(e) => setVarsayilanVadeGun(e.target.value)} placeholder="0" />
+                <div className="vade-cipleri" role="group" aria-label="Hızlı vade seçimi">
+                  {[0, 30, 60, 90].map((gun) => <button type="button" key={gun} className={`vade-cipi${varsayilanVadeGun !== "" && Number(varsayilanVadeGun) === gun ? " is-active" : ""}`} onClick={() => setVarsayilanVadeGun(String(gun))}>{gun === 0 ? "Peşin" : `${gun} gün`}</button>)}
+                </div>
+              </Field>
               <Field label="Risk limiti (TL)"><Input className="record-number" type="number" min="0" step="0.01" inputMode="decimal" value={riskLimiti} onChange={(e) => setRiskLimiti(e.target.value)} placeholder="0,00" /></Field>
               {/* FTR-19: faturanın profili buradan gelir, fatura üzerinde değiştirilebilir. */}
               <Field label="e-Fatura profili"><Select value={efaturaProfili} onChange={(e) => setEfaturaProfili(e.target.value as "temel" | "ticari")}><option value="temel">TEMELFATURA</option><option value="ticari">TICARIFATURA</option></Select></Field>
               {/* EBLG-26: e-Belge sihirbazında fatura bazında değiştirilebilir. */}
               <Field label="e-Arşiv teslim şekli"><Select value={earsivGonderimSekli} onChange={(e) => setEarsivGonderimSekli(e.target.value as "elektronik" | "kagit")}><option value="elektronik">Elektronik</option><option value="kagit">Kâğıt</option></Select></Field>
             </div>
-          </details>
+          </FormGrubu>
+          </div>
 
-          <div className="document-editor__actions"><Button variant="primary" type="submit">Cari hesabı kaydet</Button></div>
+          {/* Sayfa kaydırılsa da görünen özet: önizleme, doğrulama, kontrol listesi ve kaydet. */}
+          <aside className="invoice-layout__side" aria-label="Cari özeti">
+            <div className="invoice-summary">
+              <h4>Cari önizleme</h4>
+              <div className="cari-onizleme__ad">{(kisiTipi === "gercek" ? [ad, soyad].filter((d) => d.trim()).join(" ") : unvan.trim()) || "Ünvan girilmedi"}</div>
+              <div className="invoice-summary__line"><span>Kod</span><strong>{kod.trim() || "—"}</strong></div>
+              <div className="invoice-summary__line"><span>Tip</span><strong>{TIP_ETIKETLERI[tip] ?? tip} · {kisiTipi === "gercek" ? "Gerçek kişi" : "Tüzel kişi"}</strong></div>
+              <div className="invoice-summary__line"><span>{kisiTipi === "gercek" ? "TCKN" : "VKN"}</span><strong className={vknDurumu.sinif}>{vknDurumu.metin}</strong></div>
+              <small className="muted invoice-summary__tl">e-Fatura / e-Arşiv mükellefiyeti kayıttan sonra GİB listesinden belirlenir.</small>
+            </div>
+            <div className="invoice-summary">
+              <h4>Koşullar</h4>
+              <div className="invoice-summary__line"><span>Vade</span><strong>{varsayilanVadeGun === "" ? "Tanımsız" : Number(varsayilanVadeGun) === 0 ? "Peşin" : `${varsayilanVadeGun} gün`}</strong></div>
+              <div className="invoice-summary__line"><span>İskonto</span><strong>{varsayilanIskonto ? `%${varsayilanIskonto}` : "—"}</strong></div>
+              <div className="invoice-summary__line"><span>Risk limiti</span><strong>{riskLimiti ? tl(riskLimiti) : "Tanımsız"}</strong></div>
+              <div className="invoice-summary__line"><span>e-Fatura profili</span><strong>{efaturaProfili === "ticari" ? "TICARIFATURA" : "TEMELFATURA"}</strong></div>
+            </div>
+            {cariKontrolListesi.length > 0 && (
+              <div className="invoice-summary is-warning" role="status">
+                <h4>Kontrol listesi</h4>
+                <ul>{cariKontrolListesi.map((e) => <li key={e}>{e}</li>)}</ul>
+              </div>
+            )}
+            <div className="invoice-summary__actions">
+              <Button variant="primary" type="submit">Cari hesabı kaydet</Button>
+              <small className="muted">Kısayol: Ctrl+S</small>
+            </div>
+          </aside>
+          </div>
         </form>
       )}
 
@@ -1001,41 +1076,12 @@ export default function CariSayfasi() {
 
           {aktifSekme === "genel" && (
             <div aria-labelledby="cari-detay-tab-genel" id="cari-detay-panel-genel" role="tabpanel" tabIndex={0}>
-              <StatGrid>
-                {(() => {
-                  const bakiyeNum = detay.bakiyeler.reduce((toplam, b) => toplam + Number(b.bakiyeTry), 0);
-                  return (
-                    <Stat
-                      label="Toplam Bakiye"
-                      value={tl(bakiyeNum)}
-                      tone={bakiyeNum > 0 ? "success" : bakiyeNum < 0 ? "danger" : "default"}
-                      hint={bakiyeNum > 0 ? "Tüm dövizler · Alacaklıyız" : bakiyeNum < 0 ? "Tüm dövizler · Borçluyuz" : "Tüm dövizler · Bakiye sıfır"}
-                    />
-                  );
-                })()}
-                <Stat
-                  label="Vadesi Geçmiş"
-                  value={tl(detay.finansalOzet.vadesiGecmisBakiye)}
-                  tone={Number(detay.finansalOzet.vadesiGecmisBakiye) > 0 ? "danger" : "default"}
-                  hint="Açık kalemler"
-                />
-                <Stat
-                  label="Vade Süresi"
-                  value={detay.varsayilanVadeGun ? `${detay.varsayilanVadeGun} Gün` : "—"}
-                  hint="Varsayılan vade"
-                />
-                <Stat
-                  label="Risk Durumu"
-                  value={detay.risk.asim ? "Limit Aşımı" : "Normal"}
-                  tone={detay.risk.asim ? "danger" : "accent"}
-                  hint={detay.risk.limit ? `Limit: ${tl(detay.risk.limit)}` : "Limit Tanımsız"}
-                />
-              </StatGrid>
-              {detay.bakiyeler.some((b) => b.dovizCinsi !== "TRY") && <div className="cari-currency-balances"><span>Döviz bakiyeleri</span>{detay.bakiyeler.filter((b) => b.dovizCinsi !== "TRY").map((b) => <strong key={b.dovizCinsi}>{Number(b.bakiye).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {b.dovizCinsi}<small>TL karşılığı {tl(b.bakiyeTry)}</small></strong>)}</div>}
-
-              <Card className="cari-identity-card">
-                <div className="expense-entry__section-head"><span className="expense-entry__step">01</span><div><h3>Cari kimlik ve resmî bilgiler</h3><p>Ticari sınıflandırma, vergi ve sicil bilgilerini tek noktadan yönetin</p></div></div>
-                <form className="cari-identity-form" onSubmit={cariKimligiGuncelle}>
+              <div className="document-editor invoice-editor document-editor--gomulu">
+              <div className="invoice-layout">
+              <div className="invoice-layout__main">
+              <div className="document-editor__section">
+                <h4 className="document-editor__section-title">Kimlik ve resmî bilgiler</h4>
+                <form className="cari-kart-form" onSubmit={cariKimligiGuncelle}>
                   {(detayKisiTipi ?? detay.kisiTipi) === "gercek" ? (
                     <>
                       <Field label="Ad"><Input name="ad" defaultValue={detay.ad ?? ""} required /></Field>
@@ -1054,29 +1100,26 @@ export default function CariSayfasi() {
                   <Field label="MERSİS no"><Input name="mersisNo" defaultValue={detay.mersisNo ?? ""} inputMode="numeric" maxLength={16} pattern="[0-9]{16}" title="MERSİS numarası 16 rakam olmalıdır" placeholder="16 hane" /></Field>
                   <Field label="Ticaret sicil no"><Input name="ticaretSicilNo" defaultValue={detay.ticaretSicilNo ?? ""} /></Field>
                   <Field label="KVKK onay tarihi"><Input name="kvkkOnayTarihi" type="date" defaultValue={detay.kvkkOnayTarihi ?? ""} /></Field>
-                  <div className="cari-identity-form__actions"><span>Cari kodu <b>{detay.kod}</b></span><Button type="submit" size="sm" variant="primary">Bilgileri güncelle</Button></div>
+                  <div className="cari-kart-form__alt"><span className="muted">Cari kodu <b>{detay.kod}</b></span><Button type="submit" size="sm" variant="primary">Kimlik bilgilerini güncelle</Button></div>
                 </form>
-              </Card>
+              </div>
 
-              <div className="row">
-                <Card className="grow" style={{ flex: 1, minWidth: 280 }}>
-                  <div className="card__title">📨 İletişim &amp; Notlar</div>
-                  <form className="stack" onSubmit={iletisimGuncelle}>
+              <div className="document-editor__section">
+                <h4 className="document-editor__section-title">İletişim ve notlar</h4>
+                <form className="cari-kart-form" onSubmit={iletisimGuncelle}>
                     <Field label="E-posta"><Input name="eposta" type="email" defaultValue={detay.eposta ?? ""} placeholder="odeme@firma.com" /></Field>
                     <Field label="Telefon"><Input name="telefon" defaultValue={detay.telefon ?? ""} maxLength={32} /></Field>
                     <Field label="Web sitesi"><Input name="webSitesi" type="url" defaultValue={detay.webSitesi ?? ""} placeholder="https://..." /></Field>
                     <Field label="Faks"><Input name="faks" defaultValue={detay.faks ?? ""} maxLength={32} /></Field>
                     <Field label="Ana IBAN"><Input name="iban" defaultValue={detay.iban ?? ""} placeholder="TR..." maxLength={34} /></Field>
                     <Field label="Cari Notları"><Input name="notlar" defaultValue={detay.notlar ?? ""} placeholder="Özel açıklamalar..." /></Field>
-                    <Button type="submit" size="sm" variant="primary">İletişim &amp; notları güncelle</Button>
-                  </form>
-                  {!detay.eposta && <p style={{ color: "var(--danger)", fontSize: ".82rem" }}>Ödeme bağlantısı göndermek için e-posta eklenmelidir.</p>}
-                </Card>
-                <Card className="grow cari-finance-card" style={{ flex: 2, minWidth: 340 }}>
-                  <div className="expense-entry__section-head"><span className="expense-entry__step">₺</span><div><h3>Risk &amp; finans koşulları</h3><p>Satış ve tahsilat süreçlerinde kullanılacak ticari kurallar</p></div></div>
-                  <div className="cari-risk-summary"><div><span>Mevcut risk</span><strong>{tl(detay.risk.mevcutRisk)}</strong></div><div><span>Çek / senet riski</span><strong>{tl(detay.risk.cekSenetRiski)}</strong></div><div><span>Kalan limit</span><strong className={detay.risk.asim ? "is-negative" : "is-positive"}>{detay.risk.kalanLimit === null ? "Tanımsız" : tl(detay.risk.kalanLimit)}</strong></div></div>
-                  {detay.risk.asim && <div className="cari-risk-alert">Risk limiti aşılmış durumda. Yeni vadeli işlem öncesinde finans onayı alın.</div>}
-                  <form className="cari-finance-form" onSubmit={finansGuncelle}>
+                  <div className="cari-kart-form__alt"><span /><Button type="submit" size="sm" variant="primary">İletişim ve notları güncelle</Button></div>
+                </form>
+              </div>
+
+              <div className="document-editor__section">
+                <h4 className="document-editor__section-title">Risk ve finans koşulları</h4>
+                <form className="cari-kart-form" onSubmit={finansGuncelle}>
                     <Field label="Risk limiti (TL)"><Input name="riskLimiti" type="number" min="0" step="0.01" defaultValue={detay.riskLimiti ?? ""} placeholder="Limit tanımlayın" /></Field>
                     <Field label="Varsayılan vade (gün)"><Input name="varsayilanVadeGun" type="number" min="0" max="365" defaultValue={detay.varsayilanVadeGun ?? ""} /></Field>
                     <Field label="Varsayılan iskonto (%)"><Input name="varsayilanIskonto" type="number" min="0" max="100" step="0.01" defaultValue={detay.varsayilanIskonto ?? ""} /></Field>
@@ -1086,13 +1129,12 @@ export default function CariSayfasi() {
                     <label className="check-row"><input type="checkbox" name="kamuIdaresi" defaultChecked={detay.kamuIdaresi ?? false} /> Kamu idaresi — e-Faturası KAMU senaryosuyla gider (GİB listesinde KAMU türündeyse işaretlemek gerekmez)</label>
                     <Field label="Harcama birimi VKN (varsayılan)"><Input name="harcamaBirimiVkn" defaultValue={detay.harcamaBirimiVkn ?? ""} inputMode="numeric" pattern="\d{10}" maxLength={10} placeholder="Boşsa carinin VKN'si kullanılır" /></Field>
                     <Field label="Harcama birimi adı (varsayılan)"><Input name="harcamaBirimiAdi" defaultValue={detay.harcamaBirimiAdi ?? ""} maxLength={200} placeholder="Boşsa carinin unvanı kullanılır" /></Field>
-                    <div className="cari-finance-form__meta"><span>Son işlem <b>{detay.finansalOzet.sonIslemTarihi ?? "—"}</b></span><span>Son tahsilat <b>{detay.finansalOzet.sonTahsilatTarihi ?? "—"}</b></span><span>Son ödeme <b>{detay.finansalOzet.sonOdemeTarihi ?? "—"}</b></span></div>
-                    <Button type="submit" size="sm" variant="primary">Finans koşullarını güncelle</Button>
-                  </form>
-                </Card>
+                  <div className="cari-kart-form__alt"><span /><Button type="submit" size="sm" variant="primary">Finans koşullarını güncelle</Button></div>
+                </form>
+              </div>
 
-                <Card className="grow cari-tag-studio" style={{ flex: 1, minWidth: 320 }}>
-                  <div className="expense-entry__section-head"><span className="expense-entry__step">🏷</span><div><h3>Etiket Tasarım Stüdyosu</h3><p>Etiketlerinizi tasarlayın ve bu cari hesaba atayın</p></div></div>
+              <FormGrubu baslik="Etiketler" aciklama="Cariyi sınıflandıran renkli etiketler" doluSayisi={detay.etiketler.length}>
+                <div className="cari-tag-studio">
                   <div className="cari-tag-studio__assigned">
                     <span className="cari-tag-studio__label">Bu cariye atanmış etiketler</span>
                     {detay.etiketler.length === 0 && <span className="subtle" style={{ fontSize: "0.78rem" }}>Henüz etiket atanmadı</span>}
@@ -1120,7 +1162,52 @@ export default function CariSayfasi() {
                     <Button disabled={!yeniEtiket.trim()} size="sm" type="submit" variant="primary">Oluştur ve cariye ata</Button>
                   </form>
                   {etiketler.length > 0 && <details className="cari-tag-library"><summary>Etiket kütüphanesini yönet <span>{etiketler.length}</span></summary><div>{etiketler.map((e) => <div className="cari-tag-library__row" key={e.id}><span className="cari-tag" style={{ backgroundColor: `${e.renk || "#64748B"}18`, borderColor: e.renk || "#64748B", color: e.renk || "#64748B" }}><i style={{ backgroundColor: e.renk || "#64748B" }} />{e.ad}</span><small>{e._count?.atamalar ?? 0} cari</small><Button aria-label={`${e.ad} etiketini sistemden sil`} size="sm" variant="danger" onClick={() => void etiketiSistemdenSil(e)}>Sil</Button></div>)}</div></details>}
-                </Card>
+                </div>
+              </FormGrubu>
+              </div>
+
+              {/* Sekme kaydırılsa da görünen finansal durum, risk ve eksikler. */}
+              <aside className="invoice-layout__side" aria-label="Cari finansal durumu">
+                <div className="invoice-summary">
+                  <h4>Finansal durum</h4>
+                  {(() => {
+                    const toplam = detay.bakiyeler.reduce((t, b) => t + Number(b.bakiyeTry), 0);
+                    return (
+                      <div className="invoice-summary__line is-grand" style={{ marginTop: 0, borderTop: 0, paddingTop: 0 }}>
+                        <span>{toplam > 0 ? "Alacaklıyız" : toplam < 0 ? "Borçluyuz" : "Bakiye"}</span>
+                        <span className={toplam > 0 ? "is-positive" : toplam < 0 ? "is-negative" : ""}>{tl(Math.abs(toplam))}</span>
+                      </div>
+                    );
+                  })()}
+                  {detay.bakiyeler.filter((b) => b.dovizCinsi !== "TRY" && Number(b.bakiye) !== 0).map((b) => (
+                    <div className="invoice-summary__line" key={b.dovizCinsi}><span>{b.dovizCinsi} bakiye</span><strong>{Number(b.bakiye).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {b.dovizCinsi}</strong></div>
+                  ))}
+                  <div className="invoice-summary__line"><span>Vadesi geçmiş</span><strong className={Number(detay.finansalOzet.vadesiGecmisBakiye) > 0 ? "is-negative" : ""}>{tl(detay.finansalOzet.vadesiGecmisBakiye)}</strong></div>
+                  <div className="invoice-summary__line"><span>Varsayılan vade</span><strong>{detay.varsayilanVadeGun ? `${detay.varsayilanVadeGun} gün` : "Tanımsız"}</strong></div>
+                </div>
+                <div className={`invoice-summary${detay.risk.asim ? " is-warning" : ""}`}>
+                  <h4>Risk</h4>
+                  <div className="invoice-summary__line"><span>Mevcut risk</span><strong>{tl(detay.risk.mevcutRisk)}</strong></div>
+                  <div className="invoice-summary__line"><span>Çek / senet riski</span><strong>{tl(detay.risk.cekSenetRiski)}</strong></div>
+                  <div className="invoice-summary__line"><span>Risk limiti</span><strong>{detay.risk.limit ? tl(detay.risk.limit) : "Tanımsız"}</strong></div>
+                  <div className="invoice-summary__line"><span>Kalan limit</span><strong className={detay.risk.asim ? "is-negative" : ""}>{detay.risk.kalanLimit === null ? "—" : tl(detay.risk.kalanLimit)}</strong></div>
+                  {detay.risk.asim && <small className="muted">Limit aşıldı; yeni vadeli işlemden önce finans onayı alın.</small>}
+                </div>
+                <div className="invoice-summary">
+                  <h4>Son hareketler</h4>
+                  <div className="invoice-summary__line"><span>Son işlem</span><strong>{detay.finansalOzet.sonIslemTarihi ?? "—"}</strong></div>
+                  <div className="invoice-summary__line"><span>Son tahsilat</span><strong>{detay.finansalOzet.sonTahsilatTarihi ?? "—"}</strong></div>
+                  <div className="invoice-summary__line"><span>Son ödeme</span><strong>{detay.finansalOzet.sonOdemeTarihi ?? "—"}</strong></div>
+                  <Button size="sm" type="button" onClick={() => setAktifSekme("ekstre")}>📊 Ekstreyi aç</Button>
+                </div>
+                {cariKartEksikleri(detay).length > 0 && (
+                  <div className="invoice-summary is-warning" role="status">
+                    <h4>Eksikler</h4>
+                    <ul>{cariKartEksikleri(detay).map((e) => <li key={e}>{e}</li>)}</ul>
+                  </div>
+                )}
+              </aside>
+              </div>
               </div>
             </div>
           )}

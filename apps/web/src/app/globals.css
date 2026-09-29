@@ -1931,6 +1931,16 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 .customer-context--tedarikci > div:nth-child(3) { border-right: 0; }
 /* Ek dosya bileşeninin kendi başlığı katlanır grubun içinde numara almaz. */
 .form-grubu .document-attachments .document-editor__section-title::before { display: none; }
+.cari-onizleme__ad { font-size: 1rem; font-weight: 800; margin-bottom: .5rem; overflow-wrap: anywhere; }
+/* Kartın içine gömülü düzenleyici: kendi çerçevesini çizmez. */
+.document-editor--gomulu { background: none; border: 0; box-shadow: none; margin: 1rem 0 0; }
+.document-editor--gomulu .invoice-layout { padding-right: 0; }
+.document-editor--gomulu .document-editor__section, .document-editor--gomulu .form-grubu { margin-left: 0; }
+.document-editor--gomulu .invoice-layout__side { margin-top: 0; }
+.cari-kart-form { display: grid; gap: 1rem; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.cari-kart-form__alt { align-items: center; display: flex; flex-wrap: wrap; gap: .75rem; grid-column: 1 / -1; justify-content: space-between; }
+.cari-kart-form .check-row { grid-column: 1 / -1; }
+@media (max-width: 760px) { .cari-kart-form { grid-template-columns: 1fr; } }
 .invoice-summary { background: var(--surface); border: 1px solid var(--border); border-radius: .85rem; box-shadow: var(--shadow-sm); padding: .9rem 1rem; }
 .invoice-summary h4 { color: var(--text-muted); font-size: .72rem; letter-spacing: .04em; margin: 0 0 .6rem; text-transform: uppercase; }
 .invoice-summary__line { align-items: baseline; display: flex; font-size: .84rem; font-variant-numeric: tabular-nums; gap: .5rem; justify-content: space-between; margin-bottom: .35rem; }
