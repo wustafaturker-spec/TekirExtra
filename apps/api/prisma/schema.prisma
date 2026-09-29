@@ -2469,6 +2469,12 @@ model GelenEbelge {
   yanit         GelenEbelgeYanit?
   yanitGerekce  String?           @map("yanit_gerekce")
   yanitZamani   DateTime?         @map("yanit_zamani")
+  /// Listenin özeti; belge kaydedilirken XML'den yazılır, liste XML okumaz.
+  /// NULL: henüz hesaplanmadı (liste ilk açılışta tamamlar).
+  satirSayisi   Int?              @map("satir_sayisi")
+  genelToplam   Decimal?          @map("genel_toplam") @db.Decimal(18, 2)
+  dovizCinsi    String?           @map("doviz_cinsi")
+  okunabilir    Boolean?
   createdAt     DateTime          @default(now()) @map("created_at")
   updatedAt     DateTime          @updatedAt @map("updated_at")
 

@@ -121,6 +121,20 @@ function gelenIhracKayitliKodu(ubl: Pick<UblFatura, "faturaTipKodu" | "istisnaKo
   return kod;
 }
 
+/**
+ * Gelen belgenin liste özeti; kayıt anında XML'den çıkarılıp tabloya yazılır.
+ * Liste XML'e dokunmaz: yüzlerce belgenin gömülü tasarım ve eklerle MB'larca
+ * XML'ini her çağrıda ayrıştırmak API'yi bellek yetersizliğinden düşürüyordu.
+ */
+function gelenOzeti(xml: string) {
+  try {
+    const ubl = faturaUblOku(xml);
+    return { satirSayisi: ubl.satirlar.length, genelToplam: ubl.toplamlar.genelToplam.toFixed(2), dovizCinsi: ubl.dovizCinsi, okunabilir: true };
+  } catch {
+    return { satirSayisi: 0, genelToplam: null, dovizCinsi: null, okunabilir: false };
+  }
+}
+
 function gonderimKosullariniDenetle(
   fatura: Parameters<typeof ihracatOzeti>[0] & Parameters<typeof internetSatisOzeti>[0] & Parameters<typeof iadeOzeti>[0] & Parameters<typeof yolcuBeraberiOzeti>[0] & {
     durum: string;
@@ -1513,10 +1527,11 @@ export class EbelgeService {
             tarih: b.tarih,
             profilId,
             xmlIcerik: b.xml,
+            ...gelenOzeti(b.xml),
           },
           // Yalnızca entegratör tarafındaki gövde tazelenir; durum/yanıt
           // bizim iş akışımıza ait olduğu için korunur.
-          update: { xmlIcerik: b.xml, profilId },
+          update: { xmlIcerik: b.xml, profilId, ...gelenOzeti(b.xml) },
         });
         // EBLG-34: belge portalda ya da başka bir yerde yanıtlanmışsa karar
         // yanıtı olmayan kayda yazılır; yerel kararın üzerine yazılmaz.
@@ -1664,8 +1679,9 @@ export class EbelgeService {
           tarih: gecerliTarih,
           profilId: ubl.profilId,
           xmlIcerik,
+          ...gelenOzeti(xmlIcerik),
         },
-        update: { xmlIcerik, profilId: ubl.profilId },
+        update: { xmlIcerik, profilId: ubl.profilId, ...gelenOzeti(xmlIcerik) },
       }),
     );
 
@@ -1696,12 +1712,29 @@ export class EbelgeService {
       return tx.gelenEbelge.findMany({
         where: durum ? { durum } : undefined,
         orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
-        include: { fatura: { select: { id: true, no: true, durum: true } } },
+        // XML bilerek seçilmez; özet sütunları yeter.
+        select: {
+          id: true, uuid: true, belgeNo: true, gonderenVkn: true, gonderenUnvan: true, tarih: true, profilId: true,
+          durum: true, yanit: true, yanitGerekce: true, faturaId: true,
+          satirSayisi: true, genelToplam: true, dovizCinsi: true, okunabilir: true,
+          fatura: { select: { id: true, no: true, durum: true } },
+        },
       });
     });
 
+    // Özeti henüz yazılmamış (göçten önce gelmiş, doldurulamamış) belgeler
+    // birer birer tamamlanır; aynı anda yalnız bir XML bellekte durur.
+    for (const k of kayitlar.filter((x) => x.okunabilir === null)) {
+      const ozet = await this.prisma.tenantIslem(tenantId, async (tx) => {
+        const xml = await tx.gelenEbelge.findUnique({ where: { id: k.id }, select: { xmlIcerik: true } });
+        const hesap = gelenOzeti(xml?.xmlIcerik ?? "");
+        await tx.gelenEbelge.update({ where: { id: k.id }, data: hesap });
+        return hesap;
+      });
+      Object.assign(k, { ...ozet, genelToplam: ozet.genelToplam === null ? null : new Prisma.Decimal(ozet.genelToplam) });
+    }
+
     return kayitlar.map((k) => {
-      const ubl = this.ublCoz(k.xmlIcerik);
       return {
         id: k.id,
         uuid: k.uuid,
@@ -1715,10 +1748,10 @@ export class EbelgeService {
         yanitGerekce: k.yanitGerekce,
         faturaId: k.faturaId,
         fatura: k.fatura,
-        satirSayisi: ubl?.satirlar.length ?? 0,
-        genelToplam: ubl ? ubl.toplamlar.genelToplam.toFixed(2) : null,
-        dovizCinsi: ubl?.dovizCinsi ?? "TRY",
-        okunabilir: ubl !== null,
+        satirSayisi: k.satirSayisi ?? 0,
+        genelToplam: k.genelToplam ? k.genelToplam.toFixed(2) : null,
+        dovizCinsi: k.dovizCinsi ?? "TRY",
+        okunabilir: k.okunabilir ?? false,
       };
     });
   }
@@ -2304,15 +2337,6 @@ export class EbelgeService {
     return kayit;
   }
 
-  /** Listeleme sırasında bozuk XML tek belgeyi düşürsün, listeyi değil. */
-  private ublCoz(xml: string): UblFatura | null {
-    try {
-      return faturaUblOku(xml);
-    } catch {
-      return null;
-    }
-  }
-
   /**
    * Satır başına otomatik stok eşleştirme. Sıra, en güvenilir ipucundan en
    * zayıfına doğrudur: bizim ürün kodumuz → barkod → tedarikçinin bizde kayıtlı
@@ -2411,6 +2435,7 @@ export class EbelgeService {
             gonderenUnvan: ubl.gonderen.unvan,
             tarih: new Date(ubl.tarih),
             profilId: ubl.profilId,
+            ...gelenOzeti(xmlIcerik),
           },
         });
       }
@@ -2425,6 +2450,7 @@ export class EbelgeService {
           tarih: new Date(ubl.tarih),
           profilId: ubl.profilId,
           xmlIcerik,
+          ...gelenOzeti(xmlIcerik),
           durum: "beklemede",
         },
       });
