@@ -1046,6 +1046,7 @@ export default function BelgelerSayfasi() {
   const kosulDolu = [vadeGun, teslimSuresi, teslimSekli].filter((d) => d.trim()).length;
   const referansDolu = [talepNo, talepTarihi, ilgili.ilgiliKisi, siparisNo, siparisTarihi].filter((d) => d.trim()).length;
   const notDolu = (aciklama.trim() ? 1 : 0) + dosyalar.length;
+  const tasimaDolu = [plaka, dorsePlaka, soforAdi, soforSoyadi, fiiliSevkZamani, tasiyiciCariId].filter((d) => d.trim()).length;
   /** Kaydetmeyi ya da e-İrsaliye gönderimini engelleyecek eksikler. */
   const eirsaliyeGidecek = tur === "irsaliye" && (yon === "satis" || gumrukDepo);
   const kontrolListesi = [
@@ -1151,7 +1152,7 @@ export default function BelgelerSayfasi() {
             {tur === "irsaliye" && yon === "alis" && (
               <Field label="Tedarikçi İrsaliye No">
                 <Input aria-label="Tedarikçi irsaliye numarası" value={tedarikciBelgeNo} maxLength={50} placeholder="Opsiyonel" onChange={(e) => setTedarikciBelgeNo(e.target.value)} />
-                <small className="muted">Belge numaramız onayda iç seriden verilir; bu alan tedarikçinin numarasıdır.</small>
+                <AlanIpucu>Belge numaramız onayda iç seriden verilir; bu alan tedarikçinin numarasıdır.</AlanIpucu>
               </Field>
             )}
             {tur === "teklif" && (
@@ -1229,7 +1230,31 @@ export default function BelgelerSayfasi() {
             </div>
           </div>
 
-          {tur === "irsaliye" && (
+          {/* Gümrükten depoya sevkte e-İrsaliyeyi firma düzenler; alanları ayrı grupta. */}
+          {tur === "irsaliye" && yon === "alis" && (
+            <FormGrubu baslik="Gümrükten depoya sevk" aciklama="İthal malın gümrükten depoya kısım kısım taşınması; e-İrsaliyeyi firma düzenler" doluSayisi={gumrukDepo ? 1 : 0}>
+              <div className="document-fields document-fields--belge">
+                {/* EBLG-87: ithal mal gümrükten depoya kısım kısım taşınırken firma e-İrsaliye düzenler. */}
+                  <div className="document-fields__tam">
+                    <label className="check-row">
+                      <input type="checkbox" checked={gumrukDepo} onChange={(e) => setGumrukDepo(e.target.checked)} />
+                      <span>Bu irsaliye ithal malın gümrükten depoya taşınmasıdır</span>
+                    </label>
+                    <AlanIpucu>Firma e-İrsaliye düzenler; satıcı da alıcı da firmanın kendisidir. Açıklama ve sefer numarası kendiliğinden yazılır.</AlanIpucu>
+                  </div>
+                {gumrukDepo && (<>
+                    <Field label="Gümrük Beyanname No"><Input aria-label="Gümrük beyanname numarası" value={beyannameNo} maxLength={40} onChange={(e) => setBeyannameNo(e.target.value)} /></Field>
+                    <Field label="Beyanname Tarihi"><Input aria-label="Gümrük beyanname tarihi" type="date" value={beyannameTarihi} onChange={(e) => setBeyannameTarihi(e.target.value)} /></Field>
+                    <Field label="Yükleme Adresi (Gümrük)"><Input aria-label="Yükleme adresi" value={yukleme.teslimatAdres} maxLength={500} onChange={(e) => setYukleme({ ...yukleme, teslimatAdres: e.target.value })} /></Field>
+                    <Field label="Yükleme İli"><Input aria-label="Yükleme ili" value={yukleme.teslimatIl} maxLength={60} onChange={(e) => setYukleme({ ...yukleme, teslimatIl: e.target.value })} /></Field>
+                    <Field label="Yükleme İlçesi"><Input aria-label="Yükleme ilçesi" value={yukleme.teslimatIlce} maxLength={60} onChange={(e) => setYukleme({ ...yukleme, teslimatIlce: e.target.value })} /></Field>
+                    <Field label="Yükleme Posta Kodu"><Input aria-label="Yükleme posta kodu" value={yukleme.teslimatPostaKodu} maxLength={10} onChange={(e) => setYukleme({ ...yukleme, teslimatPostaKodu: e.target.value })} /></Field>
+                </>)}
+              </div>
+            </FormGrubu>
+          )}
+          {/* Giden e-İrsaliyede taşıma zorunlu ve açık; tedarikçinin irsaliyesinde isteğe bağlı kayıt. */}
+          {tur === "irsaliye" && eirsaliyeGidecek && (
             <div className="document-editor__section">
               <h4 className="document-editor__section-title">Sevkiyat ve taşıma</h4>
               {/* EBLG-76: sevkten önce kesilmiş fatura; numarası e-İrsaliyeye yazılır. */}
@@ -1268,31 +1293,13 @@ export default function BelgelerSayfasi() {
                     </Select>
                   </Field>
                 )}
-                {/* EBLG-87: ithal mal gümrükten depoya kısım kısım taşınırken firma e-İrsaliye düzenler. */}
-                {yon === "alis" && (
-                  <Field label="Gümrükten Depoya Sevk">
-                    <label className="row-tight">
-                      <input type="checkbox" checked={gumrukDepo} onChange={(e) => setGumrukDepo(e.target.checked)} />
-                      <span>İthal malın gümrükten depoya kısım kısım taşınması</span>
-                    </label>
-                    <AlanIpucu>Firma e-İrsaliye düzenler; satıcı da alıcı da firmanın kendisidir. Açıklama ve sefer numarası kendiliğinden yazılır.</AlanIpucu>
-                  </Field>
-                )}
-                {yon === "alis" && gumrukDepo && (
-                  <>
-                    <Field label="Gümrük Beyanname No"><Input aria-label="Gümrük beyanname numarası" value={beyannameNo} maxLength={40} onChange={(e) => setBeyannameNo(e.target.value)} /></Field>
-                    <Field label="Beyanname Tarihi"><Input aria-label="Gümrük beyanname tarihi" type="date" value={beyannameTarihi} onChange={(e) => setBeyannameTarihi(e.target.value)} /></Field>
-                    <Field label="Yükleme Adresi (Gümrük)"><Input aria-label="Yükleme adresi" value={yukleme.teslimatAdres} maxLength={500} onChange={(e) => setYukleme({ ...yukleme, teslimatAdres: e.target.value })} /></Field>
-                    <Field label="Yükleme İli"><Input aria-label="Yükleme ili" value={yukleme.teslimatIl} maxLength={60} onChange={(e) => setYukleme({ ...yukleme, teslimatIl: e.target.value })} /></Field>
-                    <Field label="Yükleme İlçesi"><Input aria-label="Yükleme ilçesi" value={yukleme.teslimatIlce} maxLength={60} onChange={(e) => setYukleme({ ...yukleme, teslimatIlce: e.target.value })} /></Field>
-                    <Field label="Yükleme Posta Kodu"><Input aria-label="Yükleme posta kodu" value={yukleme.teslimatPostaKodu} maxLength={10} onChange={(e) => setYukleme({ ...yukleme, teslimatPostaKodu: e.target.value })} /></Field>
-                  </>
-                )}
+                {yon === "satis" && (<>
                 {/* EBLG-72: numara girilirse belge IDISIRSALIYE profiliyle gider. */}
                 <Field label="İDİS Sevkiyat Numarası">
                   <Input aria-label="İDİS sevkiyat numarası" value={idisSevkiyatNo} maxLength={20} placeholder="Örn. SE-0152457" onChange={(e) => setIdisSevkiyatNo(e.target.value)} />
                   <AlanIpucu>İnşaat demiri teslimlerinde girilir; satırlar etiket numarası ister.</AlanIpucu>
                 </Field>
+                </>)}
                 <Field label="Plaka"><Input value={plaka} onChange={(e) => setPlaka(e.target.value)} onBlur={() => setPlaka((p) => plakaNormalize(p))} placeholder="34ABC123" /></Field>
                 <Field label="Dorse Plakası"><Input value={dorsePlaka} onChange={(e) => setDorsePlaka(e.target.value)} onBlur={() => setDorsePlaka((p) => plakaNormalize(p))} /></Field>
                 <Field label="Şoför Adı"><Input value={soforAdi} onChange={(e) => setSoforAdi(e.target.value)} /></Field>
@@ -1301,6 +1308,59 @@ export default function BelgelerSayfasi() {
               </div>
               <small className="muted">e-İrsaliye gönderiminde taşıyıcı firma ya da şoför adı, soyadı ve plaka zorunludur. Plaka boşluksuz yazılır (GİB kuralı): 34ABC123.</small>
             </div>
+          )}
+          {tur === "irsaliye" && !eirsaliyeGidecek && (
+            <FormGrubu baslik="Taşıma bilgisi" aciklama="İsteğe bağlı: malı getiren taşıyıcı, araç ve şoför" doluSayisi={tasimaDolu}>
+              {/* EBLG-76: sevkten önce kesilmiş fatura; numarası e-İrsaliyeye yazılır. */}
+              {yon === "satis" && sevkiyatFaturalari.length > 0 && <Field label="Önceden düzenlenen fatura">
+                <Select value={faturaId} onChange={(e) => setFaturaId(e.target.value)}>
+                  <option value="">Bu sevkiyat için önceden fatura düzenlenmedi</option>
+                  {sevkiyatFaturalari.map((f) => <option key={f.id} value={f.id}>{f.no} · {new Date(f.tarih).toLocaleDateString("tr-TR")}</option>)}
+                </Select>
+                <small className="muted">Seçilen faturanın numarası ve tarihi e-İrsaliyeye yazılır.</small>
+              </Field>}
+              <div className="document-fields document-fields--belge">
+                <Field label="Fiili Sevk Tarihi ve Saati">
+                  <Input type="datetime-local" value={fiiliSevkZamani} onChange={(e) => setFiiliSevkZamani(e.target.value)} />
+                  <small className="muted">Boş bırakılırsa onay anı yazılır.</small>
+                </Field>
+                <Field label="Taşıyan">
+                  <Select value={tasiyiciCariId} onChange={(e) => setTasiyiciCariId(e.target.value)}>
+                    <option value="">Kendi aracımızla</option>
+                    {cariler.map((c) => <option key={c.id} value={c.id}>{c.unvan}</option>)}
+                  </Select>
+                  <small className="muted">Nakliyeci ya da kargo firmasını cari kartından seçin.</small>
+                </Field>
+                {araclar.length > 0 && (
+                  <Field label="Kayıtlı Araç">
+                    <Select value="" onChange={(e) => { const a = araclar.find((x) => x.id === e.target.value); if (a) { setPlaka(a.plaka); setDorsePlaka(a.dorsePlaka ?? ""); } }}>
+                      <option value="">Seçin — alanlara yazılır</option>
+                      {araclar.map((a) => <option key={a.id} value={a.id}>{a.plaka}{a.aciklama ? ` — ${a.aciklama}` : ""}</option>)}
+                    </Select>
+                  </Field>
+                )}
+                {soforKartlari.length > 0 && (
+                  <Field label="Kayıtlı Şoför">
+                    <Select value="" onChange={(e) => { const k = soforKartlari.find((x) => x.id === e.target.value); if (k) { setSoforAdi(k.ad); setSoforSoyadi(k.soyad); setSoforTckn(k.tckn ?? ""); } }}>
+                      <option value="">Seçin — alanlara yazılır</option>
+                      {soforKartlari.map((k) => <option key={k.id} value={k.id}>{k.ad} {k.soyad}</option>)}
+                    </Select>
+                  </Field>
+                )}
+                {yon === "satis" && (<>
+                {/* EBLG-72: numara girilirse belge IDISIRSALIYE profiliyle gider. */}
+                <Field label="İDİS Sevkiyat Numarası">
+                  <Input aria-label="İDİS sevkiyat numarası" value={idisSevkiyatNo} maxLength={20} placeholder="Örn. SE-0152457" onChange={(e) => setIdisSevkiyatNo(e.target.value)} />
+                  <AlanIpucu>İnşaat demiri teslimlerinde girilir; satırlar etiket numarası ister.</AlanIpucu>
+                </Field>
+                </>)}
+                <Field label="Plaka"><Input value={plaka} onChange={(e) => setPlaka(e.target.value)} onBlur={() => setPlaka((p) => plakaNormalize(p))} placeholder="34ABC123" /></Field>
+                <Field label="Dorse Plakası"><Input value={dorsePlaka} onChange={(e) => setDorsePlaka(e.target.value)} onBlur={() => setDorsePlaka((p) => plakaNormalize(p))} /></Field>
+                <Field label="Şoför Adı"><Input value={soforAdi} onChange={(e) => setSoforAdi(e.target.value)} /></Field>
+                <Field label="Şoför Soyadı"><Input value={soforSoyadi} onChange={(e) => setSoforSoyadi(e.target.value)} /></Field>
+                <Field label="Şoför TCKN"><Input value={soforTckn} onChange={(e) => setSoforTckn(e.target.value)} maxLength={11} /></Field>
+              </div>
+            </FormGrubu>
           )}
 
           {/* Seyrek kullanılan alanlar katlanır gruplarda; dolu grup açık gelir. */}
@@ -1392,7 +1452,7 @@ export default function BelgelerSayfasi() {
               <div className="invoice-summary__line is-grand"><span>Genel toplam</span><span>{tl(sonuc.genelToplam, dovizCinsi)}</span></div>
               {dovizCinsi !== "TRY" && Number(kur) > 0 && <small className="muted invoice-summary__tl">≈ {tl(sonuc.genelToplam * Number(kur), "TRY")} · kur {Number(kur).toLocaleString("tr-TR", { maximumFractionDigits: 4 })}</small>}
             </div>
-            {tur === "irsaliye" && (
+            {tur === "irsaliye" && eirsaliyeGidecek && (
               <div className="invoice-summary">
                 <h4>Taşıma</h4>
                 <div className="invoice-summary__line"><span>Taşıyan</span><strong>{tasiyiciCariId ? (cariler.find((c) => c.id === tasiyiciCariId)?.unvan ?? "Taşıyıcı cari") : "Kendi aracımızla"}</strong></div>
