@@ -6,6 +6,7 @@ import { bosTutucuylaCalistir } from "./core/istek-baglami";
 import { randomUUID } from "node:crypto";
 import { MetricsService } from "./core/observability/metrics.service";
 import { ObservabilityExceptionFilter } from "./core/observability/exception.filter";
+import { rotaEtiketi } from "./core/observability/rota-etiketi";
 import { structuredLogger } from "./core/observability/structured-logger";
 import { DagitikRateLimiter } from "./core/guvenlik/rate-limiter";
 
@@ -22,16 +23,16 @@ async function bootstrap(): Promise<void> {
     bosTutucuylaCalistir(next),
   );
   app.use(cookieParser());
-  app.use((req: { headers: Record<string, string | string[] | undefined>; path?: string; method: string }, res: { setHeader: (name: string, value: string) => void; on: (event: string, cb: () => void) => void; statusCode: number }, next: () => void) => {
+  app.use((req: { headers: Record<string, string | string[] | undefined>; path?: string; method: string; route?: { path?: unknown }; baseUrl?: string }, res: { setHeader: (name: string, value: string) => void; on: (event: string, cb: () => void) => void; statusCode: number }, next: () => void) => {
     const requestId = String(req.headers["x-request-id"] ?? randomUUID());
     req.headers["x-request-id"] = requestId;
     res.setHeader("X-Request-ID", requestId);
     const started = Date.now();
     res.on("finish", () => {
       const durationMs = Date.now() - started;
-      const route = req.path ?? "unknown";
-      metrics.observeHttp(durationMs, { method: req.method, route, status: res.statusCode });
-      structuredLogger.info("http_request", { requestId, method: req.method, path: route, statusCode: res.statusCode, durationMs });
+      // Günlüğe gerçek yol, metriğe rota kalıbı yazılır (sayaç tablosu sınırlı kalsın).
+      metrics.observeHttp(durationMs, { method: req.method, route: rotaEtiketi(req), status: res.statusCode });
+      structuredLogger.info("http_request", { requestId, method: req.method, path: req.path ?? "unknown", statusCode: res.statusCode, durationMs });
     });
     next();
   });
@@ -48,7 +49,7 @@ async function bootstrap(): Promise<void> {
     res.setHeader("RateLimit-Reset", String(Math.ceil(sonuc.sifirlamaMs / 1000)));
     if (!sonuc.izinli) {
       res.setHeader("Retry-After", String(Math.max(1, Math.ceil((sonuc.sifirlamaMs - simdi) / 1000))));
-      metrics.increment("rate_limit_rejections_total", { path: req.path ?? "unknown" });
+      metrics.increment("rate_limit_rejections_total", { path: rotaEtiketi(req) });
       structuredLogger.warn("rate_limit_rejected", { path: req.path, ip: anahtar, source: sonuc.kaynak });
       return res.status(429).json({ mesaj: "Çok fazla istek. Lütfen daha sonra tekrar deneyin." });
     }
