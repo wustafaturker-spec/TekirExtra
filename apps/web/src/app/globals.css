@@ -1901,8 +1901,8 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 .invoice-layout__side { display: grid; gap: .75rem; margin-top: 1rem; position: sticky; top: 1rem; }
 .invoice-head-fields { grid-template-columns: minmax(240px, 2fr) repeat(2, minmax(150px, 1fr)); }
 .invoice-head-fields > .field:first-child { grid-row: span 1; }
-.vade-cipleri { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .35rem; }
-.vade-cipi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-pill); color: var(--text-muted); cursor: pointer; font-size: .7rem; padding: .15rem .55rem; }
+.vade-cipleri { display: flex; flex-wrap: wrap; gap: .22rem; margin-top: .35rem; }
+.vade-cipi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-pill); color: var(--text-muted); cursor: pointer; font-size: .66rem; padding: .12rem .42rem; white-space: nowrap; }
 .vade-cipi:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
 .vade-cipi.is-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); font-weight: 700; }
 .invoice-lines__footer { align-items: center; display: flex; flex-wrap: wrap; gap: .75rem; margin-top: .75rem; }
@@ -1921,6 +1921,10 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 .alan-ipucu summary::-webkit-details-marker { display: none; }
 .alan-ipucu[open] summary { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); }
 .alan-ipucu small { color: var(--text-muted); display: block; font-size: .72rem; margin-top: .3rem; }
+.customer-context--tedarikci { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.customer-context--tedarikci > div:nth-child(3) { border-right: 0; }
+/* Ek dosya bileşeninin kendi başlığı katlanır grubun içinde numara almaz. */
+.form-grubu .document-attachments .document-editor__section-title::before { display: none; }
 .invoice-summary { background: var(--surface); border: 1px solid var(--border); border-radius: .85rem; box-shadow: var(--shadow-sm); padding: .9rem 1rem; }
 .invoice-summary h4 { color: var(--text-muted); font-size: .72rem; letter-spacing: .04em; margin: 0 0 .6rem; text-transform: uppercase; }
 .invoice-summary__line { align-items: baseline; display: flex; font-size: .84rem; font-variant-numeric: tabular-nums; gap: .5rem; justify-content: space-between; margin-bottom: .35rem; }

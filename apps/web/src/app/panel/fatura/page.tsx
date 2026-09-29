@@ -1174,6 +1174,9 @@ export default function FaturaSayfasi() {
           siparisNo: siparisNo.trim() || null,
           siparisTarihi: siparisTarihi || null,
           talepNo: talepNo.trim() || null,
+          // Alış faturasında tedarikçinin numarası taslakta da tutulur; kesinleştirmede
+          // sunucu bunu kullanır. Alış iadesi ve satış kendi serimizden numaralanır.
+          ...(tip === "alis" ? { no: faturaNo.trim() || null } : {}),
           talepTarihi: talepTarihi || null,
           ...ilgiliKisiGovdesi(ilgili),
           ...teslimatAdresiGovdesi(teslimat),
@@ -1986,6 +1989,12 @@ export default function FaturaSayfasi() {
                   <option value="proforma">Proforma</option>
                 </Select>
               </Field>
+              {tip === "alis" && (
+                <Field label="Tedarikçi fatura no">
+                  <Input aria-label="Tedarikçi fatura no" value={faturaNo} onChange={(e) => setFaturaNo(e.target.value)} maxLength={100} placeholder="Tedarikçinin belge numarası" />
+                  {!saltOkunur && !faturaNo.trim() && <small className="muted">Kesinleştirmede zorunlu</small>}
+                </Field>
+              )}
               <Field label="Fatura Tarihi">
                 <Input aria-label="Fatura Tarihi" type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} required />
               </Field>
@@ -2027,13 +2036,14 @@ export default function FaturaSayfasi() {
               )}
             </div>
             {cariOzeti && (
-              <div className={`customer-context${cariOzeti.risk.asim ? " is-warning" : ""}`}>
+              <div className={`customer-context${tip.startsWith("alis") ? " customer-context--tedarikci" : ""}${cariOzeti.risk.asim && !tip.startsWith("alis") ? " is-warning" : ""}`}>
                 <div><span>TRY bakiye</span><strong>{tl(cariOzeti.bakiyeler.find((b) => b.dovizCinsi === "TRY")?.bakiye ?? 0)}</strong></div>
-                <div><span>Mevcut risk</span><strong>{tl(cariOzeti.risk.mevcutRisk)}</strong></div>
-                <div><span>Kullanılabilir limit</span><strong>{cariOzeti.risk.kalanLimit === null ? "Limit yok" : tl(cariOzeti.risk.kalanLimit)}</strong></div>
+                {/* Risk ve limit müşteri kavramıdır; tedarikçide gösterilmez. */}
+                {!tip.startsWith("alis") && <div><span>Mevcut risk</span><strong>{tl(cariOzeti.risk.mevcutRisk)}</strong></div>}
+                {!tip.startsWith("alis") && <div><span>Kullanılabilir limit</span><strong>{cariOzeti.risk.kalanLimit === null ? "Limit yok" : tl(cariOzeti.risk.kalanLimit)}</strong></div>}
                 <div><span>Varsayılan vade</span><strong>{cariOzeti.varsayilanVadeGun ? `${cariOzeti.varsayilanVadeGun} gün` : "Tanımsız"}</strong></div>
                 <div><span>e-Belge</span><strong>{cariOzeti.eFaturaMukellefi ? "e-Fatura" : "e-Arşiv"}</strong></div>
-                {cariOzeti.risk.asim && <p>Risk limiti aşılmış. Kesinleştirmeden önce cari durumunu kontrol edin.</p>}
+                {cariOzeti.risk.asim && !tip.startsWith("alis") && <p>Risk limiti aşılmış. Kesinleştirmeden önce cari durumunu kontrol edin.</p>}
               </div>
             )}
           </div>
@@ -2280,10 +2290,10 @@ export default function FaturaSayfasi() {
           </div>
 
           {/* Seyrek kullanılan alanlar katlanır gruplarda; dolu grup açık gelir. */}
-          <FormGrubu baslik="Referanslar ve ilgili kişi" aciklama="Müşteri sipariş ve talep numarası, ilgili kişi" doluSayisi={referansDolu} gizli={saltOkunur && referansDolu === 0}>
+          <FormGrubu baslik={tip.startsWith("alis") ? "Referanslar" : "Referanslar ve ilgili kişi"} aciklama={tip.startsWith("alis") ? "Satın alma siparişimizin numarası ve tarihi" : "Müşteri sipariş ve talep numarası, ilgili kişi"} doluSayisi={referansDolu} gizli={saltOkunur && referansDolu === 0}>
             <div className="document-fields">
-              <Field label="Müşteri Sipariş No"><Input value={siparisNo} onChange={(e) => setSiparisNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" /></Field>
-              <Field label="Müşteri Sipariş Tarihi">
+              <Field label={tip.startsWith("alis") ? "Satın alma sipariş no" : "Müşteri Sipariş No"}><Input value={siparisNo} onChange={(e) => setSiparisNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" /></Field>
+              <Field label={tip.startsWith("alis") ? "Satın alma sipariş tarihi" : "Müşteri Sipariş Tarihi"}>
                 <Input type="date" value={siparisTarihi} onChange={(e) => setSiparisTarihi(e.target.value)} />
                 {/* EBLG-73: UBL'de sipariş tarihi zorunlu; boşsa belgeye fatura tarihi yazılır. */}
                 {siparisNo.trim() && !siparisTarihi && <small className="muted">Boş bırakılırsa e-Belgeye fatura tarihi yazılır (GİB sipariş tarihini zorunlu tutuyor).</small>}
@@ -2304,7 +2314,7 @@ export default function FaturaSayfasi() {
               )}
             </div>
           </FormGrubu>
-          <FormGrubu baslik="Teslimat ve depo" aciklama="Teslim yeri ve stok çıkışının yapılacağı depo" doluSayisi={teslimatDolu} gizli={saltOkunur && teslimatDolu === 0}>
+          <FormGrubu baslik={tip.startsWith("alis") ? "Giriş deposu" : "Teslimat ve depo"} aciklama={tip.startsWith("alis") ? "Malın stoğa gireceği depo" : "Teslim yeri ve stok çıkışının yapılacağı depo"} doluSayisi={teslimatDolu} gizli={saltOkunur && teslimatDolu === 0}>
               {/* FTR-30: teslim yeri — irsaliyeden gelir, cari adresinden seçilir ya da elle girilir. */}
               {(tip === "satis" || teslimat.teslimatAdres) && (
                 <div className="invoice-delivery">
@@ -2325,106 +2335,109 @@ export default function FaturaSayfasi() {
             </div>
             </div>
           </FormGrubu>
+          {/* Özel durum alanlarının hepsi satışa ya da giden belgeye özgü; alışta grup yok. */}
+          {(tip === "satis" || gidenBelge) && (
           <FormGrubu baslik="Özel durumlar" aciklama="e-Fatura profili, özel matrah, ihraç kayıtlı, İDİS, yatırım teşvik" doluSayisi={ozelDolu} gizli={saltOkunur && ozelDolu === 0}>
-            <div className="document-fields">
-              {gidenBelge && (
-                <Field label="e-Fatura Profili">
-                  <Select
-                    aria-label="e-Fatura Profili"
-                    value={efaturaProfili}
-                    onChange={(e) => { setEfaturaProfili(e.target.value as "temel" | "ticari"); setProfilElleDegisti(true); }}
-                  >
-                    <option value="temel">TEMELFATURA — alıcı yanıt veremez</option>
-                    <option value="ticari">TICARIFATURA — alıcı 8 gün içinde kabul/ret verir</option>
-                  </Select>
-                  <AlanIpucu>
-                    {cariOzeti ? `Cari varsayılanı: ${(cariOzeti.efaturaProfili ?? "temel") === "ticari" ? "TICARIFATURA" : "TEMELFATURA"}` : "Cari seçilince varsayılanı gelir"}
-                  </AlanIpucu>
-                </Field>
-              )}
-              {tip === "satis" && (
-                <Field label="Özel matrah (KDV K. 23)">
-                  <Select aria-label="Özel matrah" value={ozelMatrahKodu} onChange={(e) => setOzelMatrahKodu(e.target.value)}>
-                    <option value="">Hayır — normal satış</option>
-                    {OZEL_MATRAH_KODLARI.map((k) => <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>)}
-                  </Select>
-                  {ozelMatrahKodu ? (
-                    <>
-                      {/* Üç kutu da etiketlidir: değer girilince placeholder
-                          kaybolduğu için hangisinin ne olduğu görünmez kalıyordu. */}
-                      <Field label="KDV oranı (%)">
-                        <Input
-                          type="number" min="0" max="100" step="0.01" value={ozelMatrahOrani}
-                          onChange={(e) => setOzelMatrahOrani(e.target.value)}
-                        />
-                      </Field>
-                      {/* Satıcı "92.000'e aldım, 95.500'e satıyorum" diye düşünür;
-                          farkın içindeki KDV'yi ayırmayı ondan beklemeyelim. */}
-                      <Field label="KDV dahil kâr farkı (alış ile satış arası)">
-                        <Input
-                          type="number" min="0" step="0.01" value={ozelMatrahFarki}
-                          placeholder="Örn. 3500"
-                          onChange={(e) => {
-                            setOzelMatrahFarki(e.target.value);
-                            setOzelMatrahTutari(e.target.value ? ozelMatrahTabani(e.target.value, ozelMatrahOrani || 0).toFixed(2) : "");
-                          }}
-                        />
-                      </Field>
-                      <Field label="KDV matrahı (özel matrah)">
-                        <Input
-                          type="number" min="0" step="0.01" value={ozelMatrahTutari}
-                          onChange={(e) => { setOzelMatrahTutari(e.target.value); setOzelMatrahFarki(""); }}
-                        />
-                      </Field>
-                      <small className="muted">
-                        Satırlara <strong>KDV hariç</strong> satış bedeli girilir (satır KDV oranları sıfırlandı); özel matrahın KDV'si ({ozelMatrahKdvsi(ozelMatrahTutari || 0, ozelMatrahOrani || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {dovizCinsi === "TRY" ? "TL" : dovizCinsi}) genel toplama eklenir.
-                      </small>
-                    </>
-                  ) : <AlanIpucu>İkinci el araç/taşınmaz, müzayede, bayi satışı gibi KDV'si satış bedelinin tamamı üzerinden hesaplanmayan işlemlerde seçilir.</AlanIpucu>}
-                </Field>
-              )}
-              {tip === "satis" && (
-                <Field label="İhraç kayıtlı satış">
-                  <Select aria-label="İhraç kayıtlı satış" value={ihracKayitliKodu} onChange={(e) => setIhracKayitliKodu(e.target.value)}>
-                    <option value="">Hayır — normal satış</option>
-                    {IHRAC_KAYITLI_KODLARI.map((k) => <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>)}
-                  </Select>
-                  <AlanIpucu>
-                    {ihracKayitliKodu ? "KDV hesaplanır ve belgede görünür ama tahsil edilmez; ödenecek tutar matrahtır." : "İhracatçıya ihraç kaydıyla teslimde seçilir."}
-                  </AlanIpucu>
-                </Field>
-              )}
-              {gidenBelge && (
-                /* EBLG-72: sevkiyat numarası Darphane bildiriminden döner; girilirse
-                   belge İDİS profiliyle gider ve her satır etiket numarası ister. */
-                <Field label="İDİS sevkiyat numarası">
-                  <Input aria-label="İDİS sevkiyat numarası" value={idisSevkiyatNo} maxLength={20} placeholder="Örn. SE-0152457" onChange={(e) => setIdisSevkiyatNo(e.target.value)} />
-                  <AlanIpucu>
-                    {idisSevkiyatNo.trim()
-                      ? "Belge İDİS kapsamında gider; satır ayrıntılarında etiket numaralarını girin."
-                      : "İnşaat demiri teslimlerinde Darphane bildiriminden dönen numara yazılır; boşsa belge normal gider."}
-                  </AlanIpucu>
-                </Field>
-              )}
-              {gidenBelge && (
-                /* EBLG-78: teşvik belge numarası girilirse belge YATIRIMTESVIK
-                   profiliyle gider; satırlarda harcama tipi istenir. */
-                <Field label="Yatırım teşvik belge no">
-                  <Input aria-label="Yatırım teşvik belge no" value={ytbNo} maxLength={6} inputMode="numeric" placeholder="6 hane, örn. 123456" onChange={(e) => setYtbNo(e.target.value)} />
-                  <AlanIpucu>
-                    {ytbNo.trim()
-                      ? "Belge yatırım teşvik kapsamında gider; satır ayrıntılarında harcama tipini seçin."
-                      : "Yatırım teşvik belgeli teslimlerde E-TUYS'tan doğrulanan belge numarası yazılır; boşsa fatura normal gider."}
-                  </AlanIpucu>
-                </Field>
-              )}
-              {gidenBelge && ytbNo.trim() && (
-                <Field label="Yatırım teşvik belge tarihi (zorunlu)">
-                  <Input aria-label="Yatırım teşvik belge tarihi" type="date" value={ytbTarihi} onChange={(e) => setYtbTarihi(e.target.value)} />
-                </Field>
-              )}
-            </div>
-          </FormGrubu>
+              <div className="document-fields">
+                {gidenBelge && (
+                  <Field label="e-Fatura Profili">
+                    <Select
+                      aria-label="e-Fatura Profili"
+                      value={efaturaProfili}
+                      onChange={(e) => { setEfaturaProfili(e.target.value as "temel" | "ticari"); setProfilElleDegisti(true); }}
+                    >
+                      <option value="temel">TEMELFATURA — alıcı yanıt veremez</option>
+                      <option value="ticari">TICARIFATURA — alıcı 8 gün içinde kabul/ret verir</option>
+                    </Select>
+                    <AlanIpucu>
+                      {cariOzeti ? `Cari varsayılanı: ${(cariOzeti.efaturaProfili ?? "temel") === "ticari" ? "TICARIFATURA" : "TEMELFATURA"}` : "Cari seçilince varsayılanı gelir"}
+                    </AlanIpucu>
+                  </Field>
+                )}
+                {tip === "satis" && (
+                  <Field label="Özel matrah (KDV K. 23)">
+                    <Select aria-label="Özel matrah" value={ozelMatrahKodu} onChange={(e) => setOzelMatrahKodu(e.target.value)}>
+                      <option value="">Hayır — normal satış</option>
+                      {OZEL_MATRAH_KODLARI.map((k) => <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>)}
+                    </Select>
+                    {ozelMatrahKodu ? (
+                      <>
+                        {/* Üç kutu da etiketlidir: değer girilince placeholder
+                            kaybolduğu için hangisinin ne olduğu görünmez kalıyordu. */}
+                        <Field label="KDV oranı (%)">
+                          <Input
+                            type="number" min="0" max="100" step="0.01" value={ozelMatrahOrani}
+                            onChange={(e) => setOzelMatrahOrani(e.target.value)}
+                          />
+                        </Field>
+                        {/* Satıcı "92.000'e aldım, 95.500'e satıyorum" diye düşünür;
+                            farkın içindeki KDV'yi ayırmayı ondan beklemeyelim. */}
+                        <Field label="KDV dahil kâr farkı (alış ile satış arası)">
+                          <Input
+                            type="number" min="0" step="0.01" value={ozelMatrahFarki}
+                            placeholder="Örn. 3500"
+                            onChange={(e) => {
+                              setOzelMatrahFarki(e.target.value);
+                              setOzelMatrahTutari(e.target.value ? ozelMatrahTabani(e.target.value, ozelMatrahOrani || 0).toFixed(2) : "");
+                            }}
+                          />
+                        </Field>
+                        <Field label="KDV matrahı (özel matrah)">
+                          <Input
+                            type="number" min="0" step="0.01" value={ozelMatrahTutari}
+                            onChange={(e) => { setOzelMatrahTutari(e.target.value); setOzelMatrahFarki(""); }}
+                          />
+                        </Field>
+                        <small className="muted">
+                          Satırlara <strong>KDV hariç</strong> satış bedeli girilir (satır KDV oranları sıfırlandı); özel matrahın KDV'si ({ozelMatrahKdvsi(ozelMatrahTutari || 0, ozelMatrahOrani || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {dovizCinsi === "TRY" ? "TL" : dovizCinsi}) genel toplama eklenir.
+                        </small>
+                      </>
+                    ) : <AlanIpucu>İkinci el araç/taşınmaz, müzayede, bayi satışı gibi KDV'si satış bedelinin tamamı üzerinden hesaplanmayan işlemlerde seçilir.</AlanIpucu>}
+                  </Field>
+                )}
+                {tip === "satis" && (
+                  <Field label="İhraç kayıtlı satış">
+                    <Select aria-label="İhraç kayıtlı satış" value={ihracKayitliKodu} onChange={(e) => setIhracKayitliKodu(e.target.value)}>
+                      <option value="">Hayır — normal satış</option>
+                      {IHRAC_KAYITLI_KODLARI.map((k) => <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>)}
+                    </Select>
+                    <AlanIpucu>
+                      {ihracKayitliKodu ? "KDV hesaplanır ve belgede görünür ama tahsil edilmez; ödenecek tutar matrahtır." : "İhracatçıya ihraç kaydıyla teslimde seçilir."}
+                    </AlanIpucu>
+                  </Field>
+                )}
+                {gidenBelge && (
+                  /* EBLG-72: sevkiyat numarası Darphane bildiriminden döner; girilirse
+                     belge İDİS profiliyle gider ve her satır etiket numarası ister. */
+                  <Field label="İDİS sevkiyat numarası">
+                    <Input aria-label="İDİS sevkiyat numarası" value={idisSevkiyatNo} maxLength={20} placeholder="Örn. SE-0152457" onChange={(e) => setIdisSevkiyatNo(e.target.value)} />
+                    <AlanIpucu>
+                      {idisSevkiyatNo.trim()
+                        ? "Belge İDİS kapsamında gider; satır ayrıntılarında etiket numaralarını girin."
+                        : "İnşaat demiri teslimlerinde Darphane bildiriminden dönen numara yazılır; boşsa belge normal gider."}
+                    </AlanIpucu>
+                  </Field>
+                )}
+                {gidenBelge && (
+                  /* EBLG-78: teşvik belge numarası girilirse belge YATIRIMTESVIK
+                     profiliyle gider; satırlarda harcama tipi istenir. */
+                  <Field label="Yatırım teşvik belge no">
+                    <Input aria-label="Yatırım teşvik belge no" value={ytbNo} maxLength={6} inputMode="numeric" placeholder="6 hane, örn. 123456" onChange={(e) => setYtbNo(e.target.value)} />
+                    <AlanIpucu>
+                      {ytbNo.trim()
+                        ? "Belge yatırım teşvik kapsamında gider; satır ayrıntılarında harcama tipini seçin."
+                        : "Yatırım teşvik belgeli teslimlerde E-TUYS'tan doğrulanan belge numarası yazılır; boşsa fatura normal gider."}
+                    </AlanIpucu>
+                  </Field>
+                )}
+                {gidenBelge && ytbNo.trim() && (
+                  <Field label="Yatırım teşvik belge tarihi (zorunlu)">
+                    <Input aria-label="Yatırım teşvik belge tarihi" type="date" value={ytbTarihi} onChange={(e) => setYtbTarihi(e.target.value)} />
+                  </Field>
+                )}
+              </div>
+            </FormGrubu>
+          )}
           <FormGrubu baslik="Açıklama, notlar ve ekler" aciklama="Faturada görünen açıklama, iç notlar ve dosyalar" doluSayisi={notDolu} gizli={saltOkunur && notDolu === 0}>
             <div className="invoice-notes">
             <Field label="Fatura açıklaması">
@@ -2454,6 +2467,8 @@ export default function FaturaSayfasi() {
               <div className="invoice-summary__line is-grand"><span>Ödenecek</span><span>{tl(sonuc.genelToplam, dovizCinsi)}</span></div>
               {dovizCinsi !== "TRY" && Number(kur) > 0 && <small className="muted invoice-summary__tl">≈ {tl(sonuc.genelToplam * Number(kur), "TRY")} · kur {Number(kur).toLocaleString("tr-TR", { maximumFractionDigits: 4 })}</small>}
             </div>
+            {/* Gelen alış faturasını biz göndermediğimiz için senaryosu gösterilmez. */}
+            {tip !== "alis" && (
             <div className="invoice-summary">
               <h4>GİB senaryosu</h4>
             <div className={`scenario-summary${senaryoUyarilari.length + ihracKayitliUyarilari.length + ozelMatrahUyarilari.length + idisUyarilari.length + sarjUyarilari.length > 0 ? " is-warning" : ""}`}>
@@ -2515,6 +2530,7 @@ export default function FaturaSayfasi() {
             </div>
               <small className="muted">GİB kod listesi: {GIB_KOD_LISTESI_SURUMU}</small>
             </div>
+            )}
             {eksikler.length > 0 && (
               <div className="invoice-summary is-warning" role="status">
                 <h4>Kaydetmeden önce</h4>
