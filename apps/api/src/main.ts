@@ -68,7 +68,9 @@ async function bootstrap(): Promise<void> {
     next();
   });
   app.enableShutdownHooks();
-  app.getHttpAdapter().getInstance().on?.("close", () => { void rateLimiter.kapat(); });
+  // `close` HTTP sunucusunda yayılır, Express uygulamasında değil; açık kalan
+  // Redis istemcisi kapanıştan sonra süreci ayakta tutuyordu.
+  app.getHttpServer().on("close", () => { void rateLimiter.kapat(); });
   const port = Number(process.env.PORT ?? 3001);
   await app.listen(port);
   // eslint-disable-next-line no-console
