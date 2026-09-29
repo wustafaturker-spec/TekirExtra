@@ -58,6 +58,15 @@ export class EbelgeController {
     res.send(pdf.buffer);
   }
 
+  /** EBLG-113: taşıyıcı VKN'si bir cari kartıyla eşleşiyor mu; sihirbaz ipucu. */
+  @EbelgeUygulamasi("earsiv")
+  @Get("tasiyici-cari")
+  @Roller("muhasebe")
+  async tasiyiciCari(@Query("vkn") vkn?: string) {
+    if (!vkn || !/^\d{10,11}$/.test(vkn)) throw new BadRequestException("VKN 10 ya da 11 haneli olmalıdır");
+    return this.ebelgeService.tasiyiciCari(vkn);
+  }
+
   @EbelgeUygulamasi("efatura", "earsiv")
   @Get("wizard/:faturaId")
   @Roller("muhasebe")

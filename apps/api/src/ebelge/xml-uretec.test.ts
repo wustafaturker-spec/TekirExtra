@@ -553,6 +553,23 @@ describe("belgeNoyuUbleYaz (EBLG-16 arşivi)", () => {
     const tasiyici = earsiv.match(/<cac:CarrierParty>[\s\S]*?<\/cac:CarrierParty>/)![0];
     expect(tasiyici).toContain("<cac:PostalAddress>");
     expect(tasiyici).toContain('<cbc:ID schemeID="VKN">1234567890</cbc:ID>');
+    expect(tasiyici).toContain("<cbc:CityName/>");
+    // VKN bir cari kartıyla eşleşince kartın adresi yazılır (EBLG-113).
+    const kartli = faturaUblUret(fatura, satici, {
+      tur: "earsiv",
+      internetSatisi: {
+        ...internetSatisi,
+        tasiyiciAdresleri: [
+          { tip: "sevk", adres: "Depo Yolu 1", il: "Kocaeli", ilce: "Gebze", postaKodu: null, ulke: "TR" },
+          { tip: "merkez", adres: "Kargo Sok. 5", il: "İstanbul", ilce: "Esenyurt", postaKodu: "34510", ulke: "TR" },
+        ],
+      },
+    }).match(/<cac:CarrierParty>[\s\S]*?<\/cac:CarrierParty>/)![0];
+    expect(kartli).toContain("<cbc:StreetName>Kargo Sok. 5</cbc:StreetName>");
+    expect(kartli).toContain("<cbc:CitySubdivisionName>Esenyurt</cbc:CitySubdivisionName>");
+    expect(kartli).toContain("<cbc:CityName>İstanbul</cbc:CityName>");
+    expect(kartli).toContain("<cbc:PostalZone>34510</cbc:PostalZone>");
+    expect(kartli).toContain("<cbc:IdentificationCode>TR</cbc:IdentificationCode>");
     // VKN'siz taşıyıcıda da PartyIdentification zorunlu (GİB ISTISNA-1.xml gibi boş ID).
     const vknsiz = faturaUblUret(fatura, satici, { tur: "earsiv", internetSatisi: { ...internetSatisi, tasiyiciVkn: null } });
     expect(vknsiz).toContain("<cac:PartyIdentification>\n        <cbc:ID/>");

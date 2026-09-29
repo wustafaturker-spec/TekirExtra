@@ -38,6 +38,7 @@ import { entegratorIptalBildirimi } from "./entegrator-iptal-bildirimi";
 import { belgeNoyuUbleYaz, faturaUblUret } from "./xml-uretec";
 import { IHRACAT_DEGIL, ihracatOzeti } from "./ihracat-bilgisi";
 import { ebelgeGonderilebilirTipMi, iadeOzeti } from "./iade-bilgisi";
+import { tasiyiciAdresiniBagla, tasiyiciCariBul, tasiyiciCariOzeti } from "./tasiyici-cari";
 import { internetSatisOzeti } from "./internet-satis-bilgisi";
 import { yolcuBeraberiOzeti } from "./yolcu-beraberi-bilgisi";
 
@@ -204,6 +205,12 @@ export class EbelgeService {
   /** Gönderim öncesi wizard önizlemesi. Fatura kesinleşmiş olabilir ancak
    * bu çağrı e-belge kaydı oluşturmaz ve dış sisteme belge göndermez; yalnızca
    * mükellefiyet/bağlantı kontrolünü yapar. */
+  /** EBLG-113: sihirbazda yazılan taşıyıcı VKN'sinin eşleştiği cari kartı. */
+  async tasiyiciCari(vkn: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => ({ cari: tasiyiciCariOzeti(await tasiyiciCariBul(tx, vkn)) }));
+  }
+
   async wizardBilgisi(faturaId: string) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
@@ -981,6 +988,7 @@ export class EbelgeService {
       // EBLG-77: kanal kararı firmanın kendi mükellefiyetiyle başlar.
       const uygulamalar = await ebelgeUygulamalariCozTenant(tx, tenant);
       const ozetler = gonderimKosullariniDenetle(fatura, uygulamalar.efatura.acik);
+      await tasiyiciAdresiniBagla(tx, ozetler.internet);
       const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } });
       if (!baglanti) throw new BadRequestException("Aktif bir e-belge entegratör bağlantısı bulunamadı.");
       return { fatura, tenant, uygulamalar, saglayici: baglanti.saglayici, cfg: JSON.parse(coz(baglanti.sifreliConfig)) as EntegratorConfig, ...ozetler };
@@ -1026,6 +1034,7 @@ export class EbelgeService {
       // EBLG-77: kanal kararı firmanın kendi mükellefiyetiyle başlar.
       const uygulamalar = await ebelgeUygulamalariCozTenant(tx, tenant);
       const { ihracat, internet, iade, yolcu } = gonderimKosullariniDenetle(fatura, uygulamalar.efatura.acik);
+      await tasiyiciAdresiniBagla(tx, internet);
       if (fatura.ebelge && !["hata", "ret"].includes(fatura.ebelge.durum) && !takiliRezervasyonMu(fatura.ebelge)) {
         throw new ConflictException("Bu fatura için e-belge gönderim süreci zaten başlatılmış");
       }

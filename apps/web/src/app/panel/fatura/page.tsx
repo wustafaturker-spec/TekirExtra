@@ -222,6 +222,9 @@ type EbelgeOnizleme =
       hataMesaji?: string;
     };
 
+/** EBLG-113: taşıyıcı VKN'sinin eşleştiği cari kartı; adres ondan yazılır. */
+type TasiyiciCari = { id: string; kod: string; unvan: string; il: string | null; ilce: string | null };
+
 interface EbelgeWizardBilgisi {
   /** EBLG-76: sevkiyatın nasıl belgelendiği; yalnız firma e-İrsaliye mükellefiyse sorulur. */
   sevkiyat?: {
@@ -487,6 +490,8 @@ export default function FaturaSayfasi() {
   const [yeniStokBirim, setYeniStokBirim] = useState("adet");
   const [yeniStokFiyat, setYeniStokFiyat] = useState("");
   const [kesinlestirmeOzeti, setKesinlestirmeOzeti] = useState<KesinlestirmeOzeti | null>(null);
+  /** EBLG-113: sihirbazda yazılan taşıyıcı VKN'sinin eşleştiği kart; `vkn` sorgulananı tutar. */
+  const [tasiyiciCari, setTasiyiciCari] = useState<{ vkn: string; cari: TasiyiciCari | null } | null>(null);
   const [ebelgeWizard, setEbelgeWizard] = useState<{
     fatura: Fatura;
     bilgi: EbelgeWizardBilgisi;
@@ -524,6 +529,25 @@ export default function FaturaSayfasi() {
     /** Önizleme ayrı, tam ekran katmanda açık mı. */
     tamEkran?: boolean;
   } | null>(null);
+  // EBLG-113: taşıyıcı VKN'si yazıldıkça eşleşen cari kartı aranır; unvan
+  // boşsa karttan dolar. Adresi gönderimde sunucu aynı kuralla karttan alır.
+  const wizardTasiyiciVkn = ebelgeWizard?.internet.isaretli ? ebelgeWizard.internet.tasiyiciVkn : "";
+  useEffect(() => {
+    if (!/^\d{10,11}$/.test(wizardTasiyiciVkn)) return;
+    let iptal = false;
+    const zamanlayici = setTimeout(() => {
+      void api<{ cari: TasiyiciCari | null }>(`/ebelge/tasiyici-cari?vkn=${wizardTasiyiciVkn}`).then(({ cari }) => {
+        if (iptal) return;
+        setTasiyiciCari({ vkn: wizardTasiyiciVkn, cari });
+        if (cari) {
+          setEbelgeWizard((w) => w && w.internet.tasiyiciVkn === wizardTasiyiciVkn && !w.internet.tasiyiciUnvan.trim()
+            ? { ...w, internet: { ...w.internet, tasiyiciUnvan: cari.unvan } }
+            : w);
+        }
+      }).catch(() => undefined);
+    }, 300);
+    return () => { iptal = true; clearTimeout(zamanlayici); };
+  }, [wizardTasiyiciVkn]);
   /** EBLG-54: gümrük beyanname panelinin taslak değerleri. */
   const [beyanname, setBeyanname] = useState<{ no: string; tarih: string } | null>(null);
   const [ebelgeDetayi, setEbelgeDetayi] = useState<FaturaDetay | null>(null);
@@ -3123,6 +3147,14 @@ export default function FaturaSayfasi() {
                         onChange={(e) => setEbelgeWizard({ ...ebelgeWizard, internet: { ...ebelgeWizard.internet, tasiyiciVkn: e.target.value.replace(/\D/g, "") } })}
                       />
                     </Field>
+                    {tasiyiciCari?.vkn === ebelgeWizard.internet.tasiyiciVkn && (
+                      <small className="muted">
+                        {tasiyiciCari.cari
+                          ? `Adres ${tasiyiciCari.cari.kod} · ${tasiyiciCari.cari.unvan} kartından alınacak${tasiyiciCari.cari.il ? `: ${[tasiyiciCari.cari.ilce, tasiyiciCari.cari.il].filter(Boolean).join(" / ")}` : " (kartta adres yok, boş gider)"}.`
+                          : "Bu numarayla kayıtlı cari yok; kargo firmasının adresi boş gider."}
+                        {tasiyiciCari.vkn.length === 11 && " 11 haneli numara TCKN olarak yazılır; şirketlerin VKN'si 10 hanelidir."}
+                      </small>
+                    )}
                     <Field label="Gönderi tarihi (varsa)">
                       <Input
                         type="date"

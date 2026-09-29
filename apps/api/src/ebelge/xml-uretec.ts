@@ -51,6 +51,7 @@ import {
   tevkifatKoduBul,
   odemeSekliUblKodu,
   ublAdresi,
+  type BelgeAdresGirdi,
   ulkeAdi,
   ulkeKoduCoz,
   type MusteriReferanslari,
@@ -89,6 +90,8 @@ export interface InternetSatisUblBilgisi {
   tasiyiciUnvan?: string | null;
   tasiyiciVkn?: string | null;
   gonderiTarihi?: Date | null;
+  /** EBLG-113: taşıyıcı VKN'siyle eşleşen cari kartının adresleri. */
+  tasiyiciAdresleri?: BelgeAdresGirdi[];
   /** Malın gönderildiği adres; cari kartının sevk adresidir. */
   teslimatAdresi?: { adres?: string | null; il?: string | null; ilce?: string | null; postaKodu?: string | null; ulke?: string | null };
 }
@@ -609,11 +612,34 @@ export function faturaUblUret(
    * gönderildiği adres, kargo firması ve ödeme şekli (EBLG-56). İhracatta bu
    * bilgiler satır düzeyinde durur (GİB `IHRACAT.xml`), aşağıdaki
    * `ihracatSatirTeslimati` onu üretir. UBL-TR `PartyType` kimliği ve posta
-   * adresini zorunlu tutar; kargo firmasının adresini bilmediğimiz için GİB'in
+   * adresini zorunlu tutar; kargo firmasının VKN'si bir cari kartıyla
+   * eşleşirse o kartın adresi yazılır (EBLG-113), eşleşmezse GİB'in
    * `ISTISNA-1.xml` örneğindeki gibi boş il/ilçe ile yazılır. Ödeme şekli
    * (`PaymentMeans`) şemada bütün `Delivery`'lerden sonra gelir; irsaliye
    * yerine geçen faturanın sevk bloğu araya girebildiği için ayrı tutulur.
    */
+  const tasiyiciAdresXml = (adresler: BelgeAdresGirdi[] | undefined) => {
+    if (!adresler?.length) {
+      return `      <cac:PostalAddress>
+        <cbc:CitySubdivisionName/>
+        <cbc:CityName/>
+        <cac:Country>
+          <cbc:Name>Türkiye</cbc:Name>
+        </cac:Country>
+      </cac:PostalAddress>`;
+    }
+    const a = ublAdresi(adresler);
+    return `      <cac:PostalAddress>${a.adres ? `
+        <cbc:StreetName>${escape(a.adres)}</cbc:StreetName>` : ""}
+        <cbc:CitySubdivisionName>${escape(a.ilce)}</cbc:CitySubdivisionName>
+        <cbc:CityName>${escape(a.il)}</cbc:CityName>${a.postaKodu ? `
+        <cbc:PostalZone>${escape(a.postaKodu)}</cbc:PostalZone>` : ""}
+        <cac:Country>
+          <cbc:IdentificationCode>${a.ulkeKodu}</cbc:IdentificationCode>${a.ulkeAdi ? `
+          <cbc:Name>${escape(a.ulkeAdi)}</cbc:Name>` : ""}
+        </cac:Country>
+      </cac:PostalAddress>`;
+  };
   const teslimatBlogu = internet
     ? `
   <cac:Delivery>${internet.gonderiTarihi ? `
@@ -627,13 +653,7 @@ ${teslimatAdresiXml(teslimatAdresi)}` : ""}${internet.tasiyiciUnvan ? `
       <cac:PartyName>
         <cbc:Name>${escape(internet.tasiyiciUnvan)}</cbc:Name>
       </cac:PartyName>
-      <cac:PostalAddress>
-        <cbc:CitySubdivisionName/>
-        <cbc:CityName/>
-        <cac:Country>
-          <cbc:Name>Türkiye</cbc:Name>
-        </cac:Country>
-      </cac:PostalAddress>
+${tasiyiciAdresXml(internet.tasiyiciAdresleri)}
     </cac:CarrierParty>` : ""}
   </cac:Delivery>
 `
