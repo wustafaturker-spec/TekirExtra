@@ -600,27 +600,43 @@ export function faturaUblUret(
    * Fatura düzeyindeki teslimat bilgisi yalnız internet satışına aittir: malın
    * gönderildiği adres, kargo firması ve ödeme şekli (EBLG-56). İhracatta bu
    * bilgiler satır düzeyinde durur (GİB `IHRACAT.xml`), aşağıdaki
-   * `ihracatSatirTeslimati` onu üretir.
+   * `ihracatSatirTeslimati` onu üretir. UBL-TR `PartyType` kimliği ve posta
+   * adresini zorunlu tutar; kargo firmasının adresini bilmediğimiz için GİB'in
+   * `ISTISNA-1.xml` örneğindeki gibi boş il/ilçe ile yazılır. Ödeme şekli
+   * (`PaymentMeans`) şemada bütün `Delivery`'lerden sonra gelir; irsaliye
+   * yerine geçen faturanın sevk bloğu araya girebildiği için ayrı tutulur.
    */
   const teslimatBlogu = internet
     ? `
   <cac:Delivery>${internet.gonderiTarihi ? `
     <cbc:ActualDeliveryDate>${internet.gonderiTarihi.toISOString().slice(0, 10)}</cbc:ActualDeliveryDate>` : ""}${teslimatAdresi ? `
 ${teslimatAdresiXml(teslimatAdresi)}` : ""}${internet.tasiyiciUnvan ? `
-    <cac:CarrierParty>${internet.tasiyiciVkn ? `
-      <cac:PartyIdentification>
-        <cbc:ID schemeID="${internet.tasiyiciVkn.length === 11 ? "TCKN" : "VKN"}">${escape(internet.tasiyiciVkn)}</cbc:ID>
-      </cac:PartyIdentification>` : ""}
+    <cac:CarrierParty>
+      <cac:PartyIdentification>${internet.tasiyiciVkn ? `
+        <cbc:ID schemeID="${internet.tasiyiciVkn.length === 11 ? "TCKN" : "VKN"}">${escape(internet.tasiyiciVkn)}</cbc:ID>` : `
+        <cbc:ID/>`}
+      </cac:PartyIdentification>
       <cac:PartyName>
         <cbc:Name>${escape(internet.tasiyiciUnvan)}</cbc:Name>
       </cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:CitySubdivisionName/>
+        <cbc:CityName/>
+        <cac:Country>
+          <cbc:Name>Türkiye</cbc:Name>
+        </cac:Country>
+      </cac:PostalAddress>
     </cac:CarrierParty>` : ""}
-  </cac:Delivery>${internet.odemeSekli ? `
+  </cac:Delivery>
+`
+    : "";
+  const internetOdemeBlogu = internet?.odemeSekli
+    ? `
   <cac:PaymentMeans>
     <cbc:PaymentMeansCode>${odemeSekliUblKodu(internet.odemeSekli)}</cbc:PaymentMeansCode>${internet.odemeTarihi ? `
     <cbc:PaymentDueDate>${internet.odemeTarihi.toISOString().slice(0, 10)}</cbc:PaymentDueDate>` : ""}${internet.odemeAracisi ? `
     <cbc:InstructionNote>${escape(internet.odemeAracisi)}</cbc:InstructionNote>` : ""}
-  </cac:PaymentMeans>` : ""}
+  </cac:PaymentMeans>
 `
     : "";
 
@@ -865,7 +881,7 @@ ${aliciTckn && !gtbAlici ? `      <cac:Person>
       </cac:Person>` : ""}
     </cac:Party>
   </cac:AccountingCustomerParty>
-${yabanciAliciBlogu}${yolcuBlogu}${kamuAliciBlogu}${teslimatBlogu}${sevkBlogu}${kamuOdemeBlogu}${vadeBlogu}
+${yabanciAliciBlogu}${yolcuBlogu}${kamuAliciBlogu}${teslimatBlogu}${sevkBlogu}${internetOdemeBlogu}${kamuOdemeBlogu}${vadeBlogu}
 ${kurBlogu}  <cac:TaxTotal>
     <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${(ozelMatrah ? ozelMatrah.kdv : tevkifatIade ? Number(fatura.toplamNetKdv) : Number(fatura.toplamKdv)).toFixed(2)}</cbc:TaxAmount>
 ${(ozelMatrah

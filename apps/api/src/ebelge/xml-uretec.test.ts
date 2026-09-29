@@ -549,6 +549,24 @@ describe("belgeNoyuUbleYaz (EBLG-16 arşivi)", () => {
     expect(earsiv).toContain("<cbc:PaymentMeansCode>48</cbc:PaymentMeansCode>");
     expect(earsiv).toContain("<cbc:PaymentDueDate>2026-09-15</cbc:PaymentDueDate>");
     expect(earsiv).toContain("<cbc:InstructionNote>iyzico</cbc:InstructionNote>");
+    // UBL-TR PartyType posta adresini zorunlu tutar; NES yoksa şema hatası verir.
+    const tasiyici = earsiv.match(/<cac:CarrierParty>[\s\S]*?<\/cac:CarrierParty>/)![0];
+    expect(tasiyici).toContain("<cac:PostalAddress>");
+    expect(tasiyici).toContain('<cbc:ID schemeID="VKN">1234567890</cbc:ID>');
+    // VKN'siz taşıyıcıda da PartyIdentification zorunlu (GİB ISTISNA-1.xml gibi boş ID).
+    const vknsiz = faturaUblUret(fatura, satici, { tur: "earsiv", internetSatisi: { ...internetSatisi, tasiyiciVkn: null } });
+    expect(vknsiz).toContain("<cac:PartyIdentification>\n        <cbc:ID/>");
+
+    // İrsaliye yerine geçen internet satışında sevk bloğu da Delivery'dir;
+    // ikisi de PaymentMeans'ten önce gelmeli (NES FAILED_XML_SCHEMA_CHECK).
+    const sevkli = faturaUblUret(
+      { ...(fatura as object), sevkiyatYontemi: "irsaliye_yerine", fiiliSevkZamani: new Date("2026-09-21T07:45:00+03:00") } as never,
+      satici,
+      { tur: "earsiv", internetSatisi },
+    );
+    expect(sevkli.match(/<cac:Delivery>/g)).toHaveLength(2);
+    expect(sevkli.lastIndexOf("</cac:Delivery>")).toBeLessThan(sevkli.indexOf("<cac:PaymentMeans>"));
+
 
     // e-Fatura kanalında grup istenmez; sipariş referansı iş bilgisi olarak kalır.
     const efatura = faturaUblUret(fatura, satici, { tur: "efatura", internetSatisi });
