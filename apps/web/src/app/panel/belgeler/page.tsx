@@ -66,7 +66,7 @@ interface BelgeGorunumu {
 const GORUNUM_ANAHTARI = "tekir_belge_gorunumleri";
 
 interface Cari { id: string; kod?: string; unvan: string; vknTckn?: string | null; telefon?: string | null; varsayilanVadeGun?: number | null }
-interface Stok { id: string; kod: string; ad: string; tedarikciUrunKodlari?: string[]; takipTipi?: "yok" | "lot" | "seri"; anaBirim?: string; birimler?: { ad: string; katsayi: string }[] }
+interface Stok { id: string; kod: string; ad: string; tip?: string; kullanilabilirMiktar?: string; tedarikciUrunKodlari?: string[]; takipTipi?: "yok" | "lot" | "seri"; anaBirim?: string; birimler?: { ad: string; katsayi: string }[] }
 interface StokVaryant { id: string; kod: string; ad: string; aktif: boolean; mevcutMiktar: string }
 
 interface BelgeSatirForm {
@@ -1049,6 +1049,18 @@ export default function BelgelerSayfasi() {
   const tasimaDolu = [plaka, dorsePlaka, soforAdi, soforSoyadi, fiiliSevkZamani, tasiyiciCariId].filter((d) => d.trim()).length;
   /** Kaydetmeyi ya da e-İrsaliye gönderimini engelleyecek eksikler. */
   const eirsaliyeGidecek = tur === "irsaliye" && (yon === "satis" || gumrukDepo);
+  /**
+   * Satış teklifi/siparişinde satırın miktarı kullanılabilir stoğu aşıyor mu.
+   * İrsaliyede sorulmaz: siparişten gelen irsaliyenin rezervi kullanılabilirden
+   * zaten düşülmüştür, uyarı yanlış alarm olurdu.
+   */
+  function satirStokYetersiz(s: BelgeSatirForm): boolean {
+    if (yon !== "satis" || (tur !== "teklif" && tur !== "siparis")) return false;
+    const stok = stoklar.find((x) => x.id === s.stokId);
+    if (!stok || stok.tip === "hizmet" || stok.kullanilabilirMiktar === undefined) return false;
+    return Number(s.miktar) * birimKatsayisi(stok, s.birim) > Number(stok.kullanilabilirMiktar);
+  }
+  const yetersizStokSatiri = satirlar.filter((s) => satirStokYetersiz(s)).length;
   /** Teklifin geçerliliğine bugünden kalan gün; tarih yoksa null. */
   const gecerlilikKalanGun = gecerlilik ? Math.round((Date.parse(gecerlilik) - Date.parse(bugunTR())) / 86_400_000) : null;
   const kontrolListesi = [
@@ -1060,6 +1072,7 @@ export default function BelgelerSayfasi() {
     eirsaliyeGidecek && !tasiyiciCariId && !(soforAdi.trim() && soforSoyadi.trim() && plaka.trim()) && "e-İrsaliye için taşıyıcı firma ya da şoför adı, soyadı ve plaka gerekli",
     eirsaliyeGidecek && teslimatAdresiEksik(teslimat) && "Teslimat adresinin dört alanı da dolu olmalı",
     tur === "teklif" && gecerlilik && tarih && gecerlilik < tarih && "Geçerlilik tarihi teklif tarihinden önce",
+    yetersizStokSatiri > 0 && `${yetersizStokSatiri} satırda kullanılabilir stok yetersiz${tur === "siparis" ? "; onayda rezerv stoğu aşar" : ""}`,
     tur === "teklif" && talepMukerrerleri.length > 0 && `Bu talep numarasıyla ${talepMukerrerleri.length} teklif daha var (${talepMukerrerleri.map((t) => t.no ?? "taslak").join(", ")})`,
   ].filter((e): e is string => Boolean(e));
 
@@ -1221,6 +1234,13 @@ export default function BelgelerSayfasi() {
                       />
                       {(stokVaryantlari[s.stokId]?.length ?? 0) > 0 && <Select aria-label="Varyant" required value={s.varyantId ?? ""} onChange={(e) => { const varyantId = e.target.value; setSatirlar((eskiler) => eskiler.map((x, j) => j === i ? { ...x, varyantId } : x)); if (varyantId) void kalemFiyatiGetir(s.stokId, varyantId).then((fiyat) => { if (fiyat) setSatirlar((eskiler) => eskiler.map((x, j) => j === i && x.varyantId === varyantId ? { ...x, ...fiyat } : x)); }); }}><option value="">Varyant seçin</option>{stokVaryantlari[s.stokId].filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad} · Stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")}</option>)}</Select>}
                       {s.dovizUyarisi && <p className="field-error" role="alert">{s.dovizUyarisi}</p>}
+                      {(() => {
+                        // Satışta kullanılabilir stok satırın altında görünür; teklif ve siparişte yetersizse uyarır.
+                        const stok = stoklar.find((x) => x.id === s.stokId);
+                        if (yon !== "satis" || !stok || stok.tip === "hizmet" || stok.kullanilabilirMiktar === undefined) return null;
+                        const yetersiz = satirStokYetersiz(s);
+                        return <span className={`document-line-stock${yetersiz ? " is-warning" : ""}`}>{yetersiz ? "Yetersiz stok: " : "Stok: "}{Number(stok.kullanilabilirMiktar).toLocaleString("tr-TR")} {stok.anaBirim ?? "adet"} kullanılabilir</span>;
+                      })()}
                       {yon === "alis" && (() => { const takip = stoklar.find((x) => x.id === s.stokId)?.takipTipi; return takip && takip !== "yok" ? <div className="stack"><Input aria-label="Lot / Parti No" required placeholder="Lot / Parti No" value={s.lotNo ?? ""} onChange={(e) => void satirGuncelle(i, "lotNo", e.target.value)} />{takip === "seri" && <Input aria-label="Seri numaraları" required placeholder="Seri numaraları (virgülle)" value={s.seriNolar ?? ""} onChange={(e) => void satirGuncelle(i, "seriNolar", e.target.value)} />}<Input aria-label="Son kullanma tarihi" type="date" value={s.sonKullanmaTarihi ?? ""} onChange={(e) => void satirGuncelle(i, "sonKullanmaTarihi", e.target.value)} /></div> : null; })()}
                       {tur === "irsaliye" && idisSevkiyatNo.trim() && (
                         <Input aria-label={`${i + 1}. satır İDİS etiket numarası`} placeholder="İDİS etiket no (örn. CV0152457)" maxLength={20} value={s.idisEtiketNo ?? ""} onChange={(e) => satirGuncelle(i, "idisEtiketNo", e.target.value)} />
@@ -1467,11 +1487,14 @@ export default function BelgelerSayfasi() {
                 <div className="invoice-summary__line is-tax" key={d.kdvOrani}><span>KDV %{d.kdvOrani}</span><span>{tl(d.kdvTutari, dovizCinsi)}</span></div>
               ))}
               <div className="invoice-summary__line is-grand"><span>Genel toplam</span><span>{tl(sonuc.genelToplam, dovizCinsi)}</span></div>
+              {/* Siparişin onayda stoğa etkisi; kullanıcı ne olacağını önceden görsün. */}
+              {tur === "siparis" && <small className="muted invoice-summary__tl">Onaylanınca {yon === "satis" ? "kalemler stokta rezerve edilir" : "kalemler yoldaki stok olarak görünür"}.</small>}
               {dovizCinsi !== "TRY" && Number(kur) > 0 && <small className="muted invoice-summary__tl">≈ {tl(sonuc.genelToplam * Number(kur), "TRY")} · kur {Number(kur).toLocaleString("tr-TR", { maximumFractionDigits: 4 })}</small>}
             </div>
             {(tur === "teklif" || tur === "siparis") && (
               <div className="invoice-summary">
                 <h4>Koşullar</h4>
+                {tur === "siparis" && yon === "satis" && <div className="invoice-summary__line"><span>Müşteri sipariş no</span><strong>{siparisNo.trim() || "—"}</strong></div>}
                 {tur === "teklif" && (
                   <div className="invoice-summary__line"><span>Geçerlilik</span><strong>{gecerlilik
                     ? `${new Date(gecerlilik).toLocaleDateString("tr-TR")}${gecerlilikKalanGun !== null ? (gecerlilikKalanGun < 0 ? " · süresi geçti" : ` · ${gecerlilikKalanGun} gün`) : ""}`

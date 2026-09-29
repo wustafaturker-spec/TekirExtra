@@ -1913,7 +1913,9 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 .invoice-editor .document-editor__section, .invoice-editor .form-grubu { margin-left: 1rem; margin-right: .9rem; }
 .invoice-editor .document-line-col--price { width: 96px; }
 .invoice-editor .document-line-col--rate { width: 62px; }
-.invoice-editor .document-line-col--total { width: 108px; }
+.invoice-editor .document-line-col--total { width: 132px; }
+/* Milyonluk tutarlar kesilmesin. */
+.invoice-editor .document-line-total { overflow: visible; text-overflow: clip; white-space: nowrap; }
 .invoice-notes { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; margin-bottom: 1rem; }
 .invoice-notes--tek { grid-template-columns: 1fr; }
 .document-fields__genis { grid-column: span 2; }
