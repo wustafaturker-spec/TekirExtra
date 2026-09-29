@@ -110,6 +110,9 @@ interface Fatura {
   vadeTarihi?: string | null;
   siparisNo?: string | null;
   siparisTarihi?: string | null;
+  /** FTR-31: müşterinin talep referansı; zincirden gelir ya da elle girilir. */
+  talepNo?: string | null;
+  talepTarihi?: string | null;
   /** FTR-30: teslim yeri; bağlı irsaliyeler farklıysa sunucu uyarı döner. */
   teslimatAdres?: string | null;
   teslimatIl?: string | null;
@@ -560,6 +563,8 @@ export default function FaturaSayfasi() {
   const [teslimat, setTeslimat] = useState<TeslimatAdresi>(BOS_TESLIMAT_ADRESI);
   const [teslimatiCariyeKaydet, setTeslimatiCariyeKaydet] = useState(false);
   const [siparisTarihi, setSiparisTarihi] = useState("");
+  const [talepNo, setTalepNo] = useState("");
+  const [talepTarihi, setTalepTarihi] = useState("");
   const [faturaNo, setFaturaNo] = useState("");
   const [aciklama, setAciklama] = useState("");
   const [kuruAciklamayaEkle, setKuruAciklamayaEkle] = useState(true);
@@ -737,7 +742,7 @@ export default function FaturaSayfasi() {
     if (yeniSayfasi && duzenleId) {
       void api<FaturaDetay>(`/fatura/${duzenleId}`).then((fatura) => {
         setAcikFatura(fatura);
-        setDuzenlenenId(faturaDuzenlenebilir(fatura) ? fatura.id : null); setTip(fatura.tip); setFaturaNo(fatura.no ?? ""); setTarih(fatura.tarih.slice(0, 10)); setDovizCinsi(fatura.dovizCinsi); setVadeTarihi(fatura.vadeTarihi?.slice(0, 10) ?? ""); setSiparisNo(fatura.siparisNo ?? ""); setSiparisTarihi(fatura.siparisTarihi?.slice(0, 10) ?? ""); setVadeElleDegisti(true);
+        setDuzenlenenId(faturaDuzenlenebilir(fatura) ? fatura.id : null); setTip(fatura.tip); setFaturaNo(fatura.no ?? ""); setTarih(fatura.tarih.slice(0, 10)); setDovizCinsi(fatura.dovizCinsi); setVadeTarihi(fatura.vadeTarihi?.slice(0, 10) ?? ""); setSiparisNo(fatura.siparisNo ?? ""); setSiparisTarihi(fatura.siparisTarihi?.slice(0, 10) ?? ""); setTalepNo(fatura.talepNo ?? ""); setTalepTarihi(fatura.talepTarihi?.slice(0, 10) ?? ""); setVadeElleDegisti(true);
         setTeslimat({ teslimatAdres: fatura.teslimatAdres ?? "", teslimatIl: fatura.teslimatIl ?? "", teslimatIlce: fatura.teslimatIlce ?? "", teslimatPostaKodu: fatura.teslimatPostaKodu ?? "" }); setTeslimatiCariyeKaydet(false);
         setCariId(fatura.cari.id); setDepoId(fatura.depoId ?? ""); setAciklama(fatura.aciklama ?? ""); setNotlar(fatura.notlar ?? "");
         setEfaturaProfili(fatura.efaturaProfili ?? "temel"); setProfilElleDegisti(true); setIhracKayitliKodu(fatura.ihracKayitliKodu ?? "");
@@ -810,7 +815,7 @@ export default function FaturaSayfasi() {
   function formuSifirla() {
     setCariId(""); setCariOzeti(null); setDepoId(""); setTip(yonBaglami ?? "satis"); setGelirTuru("ticari_satis"); setTarih(bugunTR()); setDovizCinsi("TRY"); setKur("1");
     setAciklama(""); setKuruAciklamayaEkle(true); setFaturaNo("");
-    setNotlar(""); setVadeTarihi(""); setVadeElleDegisti(false); setSiparisNo(""); setSiparisTarihi("");
+    setNotlar(""); setVadeTarihi(""); setVadeElleDegisti(false); setSiparisNo(""); setSiparisTarihi(""); setTalepNo(""); setTalepTarihi("");
     setTeslimat(BOS_TESLIMAT_ADRESI); setTeslimatiCariyeKaydet(false);
     setEfaturaProfili("temel"); setProfilElleDegisti(false); setIhracKayitliKodu(""); setIdisSevkiyatNo("");
     setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" }]); setAcikSatir(null);
@@ -1161,6 +1166,8 @@ export default function FaturaSayfasi() {
           vadeTarihi: vadeTarihi || null,
           siparisNo: siparisNo.trim() || null,
           siparisTarihi: siparisTarihi || null,
+          talepNo: talepNo.trim() || null,
+          talepTarihi: talepTarihi || null,
           ...teslimatAdresiGovdesi(teslimat),
           teslimatAdresiniCariyeKaydet: teslimatiCariyeKaydet && !faturaTeslimYeriEksik(teslimat) && Boolean(teslimat.teslimatAdres.trim()),
           aciklama: kayitAciklamasi || null,
@@ -2071,12 +2078,22 @@ export default function FaturaSayfasi() {
                   <Input aria-label="Yatırım teşvik belge tarihi" type="date" value={ytbTarihi} onChange={(e) => setYtbTarihi(e.target.value)} />
                 </Field>
               )}
-              <Field label="Sipariş No"><Input value={siparisNo} onChange={(e) => setSiparisNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" /></Field>
-              <Field label="Sipariş Tarihi">
+              <Field label="Müşteri Sipariş No"><Input value={siparisNo} onChange={(e) => setSiparisNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" /></Field>
+              <Field label="Müşteri Sipariş Tarihi">
                 <Input type="date" value={siparisTarihi} onChange={(e) => setSiparisTarihi(e.target.value)} />
                 {/* EBLG-73: UBL'de sipariş tarihi zorunlu; boşsa belgeye fatura tarihi yazılır. */}
                 {siparisNo.trim() && !siparisTarihi && <small className="muted">Boş bırakılırsa e-Belgeye fatura tarihi yazılır (GİB sipariş tarihini zorunlu tutuyor).</small>}
               </Field>
+              {/* FTR-31: müşterinin talep referansı; sipariş no boşsa e-Belgeye o yazılır. */}
+              {(tip === "satis" || tip === "proforma" || talepNo) && (
+                <>
+                  <Field label="Müşteri Talep No">
+                    <Input aria-label="Müşteri talep numarası" value={talepNo} onChange={(e) => setTalepNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" />
+                    {talepNo.trim() && <small className="muted">{siparisNo.trim() ? "e-Belgede not olarak yazılır." : "Sipariş no boş olduğu için e-Belgede sipariş referansı olarak yazılır."}</small>}
+                  </Field>
+                  <Field label="Talep Tarihi"><Input aria-label="Müşteri talep tarihi" type="date" value={talepTarihi} onChange={(e) => setTalepTarihi(e.target.value)} /></Field>
+                </>
+              )}
               {/* FTR-30: teslim yeri — irsaliyeden gelir, cari adresinden seçilir ya da elle girilir. */}
               {(tip === "satis" || teslimat.teslimatAdres) && (
                 <div className="invoice-delivery">

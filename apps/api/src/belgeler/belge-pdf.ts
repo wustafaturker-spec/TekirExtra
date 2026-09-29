@@ -26,6 +26,11 @@ export interface BelgePdfVerisi {
   no: string | null;
   tarih: string;
   gecerlilikTarihi: string | null;
+  /** FTR-31: müşterinin talep ve sipariş referansları. */
+  talepNo?: string | null;
+  talepTarihi?: string | null;
+  siparisNo?: string | null;
+  siparisTarihi?: string | null;
   dovizCinsi: string;
   kur: string;
   toplamBrut: string;
@@ -98,6 +103,10 @@ export function belgePdfHtml(
           b.gecerlilikTarihi
             ? ` &nbsp;•&nbsp; Geçerlilik: ${tarihBicim(b.gecerlilikTarihi)}`
             : ""
+        }${
+          b.talepNo ? `<br>Talep Ref.: ${kacis(b.talepNo)}${b.talepTarihi ? ` (${tarihBicim(b.talepTarihi)})` : ""}` : ""
+        }${
+          b.siparisNo ? `<br>Sipariş Ref.: ${kacis(b.siparisNo)}${b.siparisTarihi ? ` (${tarihBicim(b.siparisTarihi)})` : ""}` : ""
         }${
           b.dovizCinsi !== "TRY"
             ? `<br>Döviz: ${kacis(b.dovizCinsi)} (kur ${sayiBicim(b.kur)})`

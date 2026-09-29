@@ -3,7 +3,7 @@ import { EirsaliyeDurum, GelenEirsaliyeDurum, Prisma, type ZincirBelgeDurum } fr
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import { postaKutusuSec, type EntegratorConfig } from "@tekirextra/baglanti";
-import { anTR, birimUblKodu, bugunTR, eirsaliyeYanitSuresi, muhtelifMusteriMi, gumrukSeferNotu, ihracatFaturasiNotu, YURT_DISI_ALICI_VKN, dorseSchemeId, firmaEbelgeEksikleri, idisBelgesiMi, IDIS_IRSALIYE_PROFILI, idisNormalize, plakaNormalize, plakaSchemeId, ublAdresi, eirsaliyeAsamasi } from "@tekirextra/shared";
+import { anTR, birimUblKodu, bugunTR, eirsaliyeYanitSuresi, muhtelifMusteriMi, gumrukSeferNotu, ihracatFaturasiNotu, YURT_DISI_ALICI_VKN, dorseSchemeId, firmaEbelgeEksikleri, idisBelgesiMi, IDIS_IRSALIYE_PROFILI, idisNormalize, plakaNormalize, plakaSchemeId, ublAdresi, eirsaliyeAsamasi, referansNotlari, siparisReferansi } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
@@ -135,15 +135,17 @@ export class EirsaliyeService {
       ? `<cac:TransportHandlingUnit><cac:TransportEquipment><cbc:ID schemeID="${dorseSchemeId(b.dorsePlaka)}">${esc(plakaNormalize(b.dorsePlaka))}</cbc:ID></cac:TransportEquipment></cac:TransportHandlingUnit>`
       : "";
     /**
-     * Sipariş referansı (EBLG-74): belgeye elle girilen müşteri sipariş
-     * numarası, yoksa irsaliyenin türediği sipariş belgesinin numarası. UBL-TR
+     * Sipariş referansı (EBLG-74, FTR-31): müşterinin sipariş numarası, yoksa
+     * talep numarası, o da yoksa irsaliyenin türediği sipariş belgesinin
+     * numarası. İkisi de doluysa talep referansı nota yazılır. UBL-TR
      * `IssueDate`'i zorunlu tutar (fatura tarafında NES tarihsiz referansı
      * reddetti), bu yüzden tarih yoksa belgenin tarihine düşülür. Şemadaki yeri
      * `DespatchAdviceTypeCode` ile `AdditionalDocumentReference` arasıdır
      * (GİB `DespatchAdvice.xml`).
      */
-    const siparis = b.siparisNo?.trim()
-      ? { no: b.siparisNo.trim(), tarih: b.siparisTarihi ?? b.tarih }
+    const musteriReferansi = siparisReferansi(b);
+    const siparis = musteriReferansi
+      ? { no: musteriReferansi.no, tarih: musteriReferansi.tarih ?? b.tarih }
       : b.kaynakBelge?.tur === "siparis" && b.kaynakBelge.no
         ? { no: b.kaynakBelge.no as string, tarih: b.kaynakBelge.tarih ?? b.tarih }
         : null;
@@ -267,6 +269,7 @@ export class EirsaliyeService {
       if (yurtDisi && belge.fatura?.no) {
         notlar.push(ihracatFaturasiNotu({ faturaNo: belge.fatura.no, faturaTarihi: belge.fatura.tarih.toISOString() }));
       }
+      notlar.push(...referansNotlari(belge));
       const xml = this.ubl({ ...belge, cari, teslimatAdresi, notlar, yuklemeAdresi: belge.gumrukDepoSevki ? irsaliyeYuklemeAdresi(belge) : undefined }, tenant);
       // EBLG-106: NES'in toplu listesinde olup canlı sorgusunda olmayan kutu
       // (2026-09-27: 1234567801'in nes.com.tr kutuları) hata vermeden boşaltılır,

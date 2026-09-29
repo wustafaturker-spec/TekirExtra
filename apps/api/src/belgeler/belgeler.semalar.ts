@@ -57,6 +57,9 @@ export const belgeOlusturSemasi = z.object({
   /** Müşterinin sipariş referansı (EBLG-74); e-İrsaliyede OrderReference olur. */
   siparisNo: z.string().max(100).optional().nullable(),
   siparisTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)").optional().nullable(),
+  /** FTR-31: müşterinin talep (teklif isteği) referansı; zincir boyunca taşınır. */
+  talepNo: z.string().max(100).optional().nullable(),
+  talepTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)").optional().nullable(),
   /** FTR-27: alış irsaliyesinde tedarikçinin irsaliye numarası; diğerlerinde yok sayılır. */
   tedarikciBelgeNo: z.string().max(50).optional().nullable(),
   cariId: z.string().uuid(),
@@ -132,6 +135,13 @@ export const belgeDonusturSemasi = z.object({
 });
 
 /** FTR-13: bekleyen sipariş/irsaliyeleri tek faturada birleştirme. */
+/** FTR-31: mükerrer talep sorgusu; `haricId` düzenlenen teklifin kendisidir. */
+export const talepMukerrerSemasi = z.object({
+  cariId: z.string().uuid(),
+  talepNo: z.string().trim().min(1).max(100),
+  haricId: z.string().uuid().optional(),
+});
+
 export const topluFaturaSemasi = z.object({
   belgeIds: z.array(z.string().uuid()).min(1, "En az bir belge seçin"),
 });

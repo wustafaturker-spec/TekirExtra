@@ -20,6 +20,7 @@ import {
   belgeGuncelleSemasi,
   belgeOlusturSemasi,
   eslesmeRaporuSemasi,
+  talepMukerrerSemasi,
   gelenIrsaliyeIsleSemasi,
   irsaliyeBaglaSemasi,
   tasimaBilgisiSemasi,
@@ -59,6 +60,12 @@ export class BelgelerController {
   @Get("sevkiyat-bekleyen-faturalar")
   async sevkiyatBekleyenFaturalar(@Query("cariId") cariId?: string) {
     return this.belgelerService.sevkiyatBekleyenFaturalar(cariId);
+  }
+
+  /** FTR-31: aynı cariye aynı talep numarasıyla açılmış diğer teklifler (uyarı içindir). */
+  @Get("talep-mukerrer")
+  async talepMukerrer(@Query() sorgu: unknown) {
+    return this.belgelerService.talepMukerrer(ayristir(talepMukerrerSemasi, sorgu));
   }
 
   /** SAT-14: faturası gelmemiş irsaliyeler, işlenmemiş e-İrsaliyeler, irsaliyesiz alış faturaları. */

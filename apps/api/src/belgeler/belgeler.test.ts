@@ -39,6 +39,32 @@ describe("BelgelerService", () => {
     });
   });
 
+  it("toplu faturada ilk dolu referansları faturaya yazar (FTR-31)", async () => {
+    const belge = (id: string, ek: Record<string, unknown>) => ({
+      id, no: id, durum: "onaylandi", tur: "irsaliye", cariId: "c1", dovizCinsi: "TRY",
+      kur: new Prisma.Decimal(1), yon: "satis", depoId: "d1", satirlar: [], ...ek,
+    });
+    const tx = {
+      belge: {
+        findMany: vi.fn().mockResolvedValue([
+          belge("i1", { siparisNo: null, talepNo: "RFQ-1", talepTarihi: new Date("2026-09-01") }),
+          belge("i2", { siparisNo: "PO-2", siparisTarihi: new Date("2026-09-10"), talepNo: "RFQ-1" }),
+        ]),
+        updateMany: vi.fn().mockResolvedValue({ count: 2 }),
+      },
+      fatura: { create: vi.fn().mockResolvedValue({ id: "f1" }), findUnique: vi.fn().mockResolvedValue(null) },
+      faturaSatir: { create: vi.fn() },
+    };
+    const prisma = { tenantIslem: vi.fn((_tenantId, calistir) => calistir(tx)) } as any;
+    const service = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
+
+    await service.topluFatura({ belgeIds: ["i1", "i2"] });
+
+    expect(tx.fatura.create.mock.calls[0][0].data).toMatchObject({
+      siparisNo: "PO-2", siparisTarihi: new Date("2026-09-10"), talepNo: "RFQ-1", talepTarihi: new Date("2026-09-01"),
+    });
+  });
+
   it("sonraki sayfa imlecini son döndürülen belgeye koyar", async () => {
     const belge = (id: string) => ({
       id, tur: "siparis", yon: "satis", durum: "onaylandi", no: id,
@@ -150,6 +176,17 @@ describe("BelgelerService", () => {
     // Teslim edilen sipariş satırında birikir, sipariş kısmen kapanır
     expect(tx.belgeSatir.update).toHaveBeenCalledWith({ where: { id: "s1" }, data: { teslimEdilenMiktar: { increment: expect.anything() } } });
     expect(tx.belge.update).toHaveBeenCalledWith({ where: { id: "sip1" }, data: { durum: "kismen_kapandi" } });
+  });
+
+  it("müşterinin talep ve sipariş referansını yeni belgeye kopyalar (FTR-31)", async () => {
+    const { servis, tx, belge } = siparisKurulumu();
+    Object.assign(belge, { siparisNo: "PO-7", siparisTarihi: new Date("2026-09-12"), talepNo: "RFQ-3", talepTarihi: new Date("2026-09-01") });
+
+    await servis.donustur("sip1", "irsaliye");
+
+    expect(tx.belge.create.mock.calls[0][0].data).toMatchObject({
+      siparisNo: "PO-7", siparisTarihi: new Date("2026-09-12"), talepNo: "RFQ-3", talepTarihi: new Date("2026-09-01"),
+    });
   });
 
   it("kalan miktarı aşan teslimi reddeder (SAT-09)", async () => {

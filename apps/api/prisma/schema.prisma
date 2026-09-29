@@ -2083,6 +2083,9 @@ model Fatura {
   vadeTarihi            DateTime?           @map("vade_tarihi") @db.Date
   siparisNo             String?             @map("siparis_no")
   siparisTarihi         DateTime?           @map("siparis_tarihi") @db.Date
+  /// FTR-31: müşterinin talep referansı; zincirden gelir ya da elle girilir.
+  talepNo               String?             @map("talep_no")
+  talepTarihi           DateTime?           @map("talep_tarihi") @db.Date
   /// EBLG-78: yatırım teşvik belge numarası ve tarihi. Numara doluysa fatura
   /// YATIRIMTESVIK profiliyle gider (e-Arşiv'de tip YTB önekli olur).
   ytbNo                 String?             @map("ytb_no")
@@ -3246,6 +3249,10 @@ model Belge {
   /// olarak yazılır; boşsa zincirdeki siparişin numarası ve tarihi kullanılır.
   siparisNo              String?          @map("siparis_no")
   siparisTarihi          DateTime?        @map("siparis_tarihi") @db.Date
+  /// FTR-31: müşterinin talep (teklif isteği) referansı. Teklifte girilir,
+  /// zincir boyunca kopyalanır; sipariş numarası yoksa `OrderReference` olur.
+  talepNo                String?          @map("talep_no")
+  talepTarihi            DateTime?        @map("talep_tarihi") @db.Date
   /// FTR-27: alış irsaliyesinde tedarikçinin kendi irsaliye numarası. `no`
   /// bizim iç seri numaramızdır (AIR…); giden e-İrsaliye serisinden alınmaz.
   tedarikciBelgeNo       String?          @map("tedarikci_belge_no")

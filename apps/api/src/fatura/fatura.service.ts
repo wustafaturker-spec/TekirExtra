@@ -265,6 +265,9 @@ export class FaturaService {
             OR: [
               { aramaNormal: { contains: aranan } },
               { cari: { aramaNormal: { contains: aranan } } },
+              // FTR-31: müşterinin talep ve sipariş numarasıyla da bulunur.
+              { siparisNo: { contains: arama, mode: "insensitive" } },
+              { talepNo: { contains: arama, mode: "insensitive" } },
             ],
           }
         : {}),
@@ -626,8 +629,10 @@ export class FaturaService {
           no: girdi.no ?? null,
           tarih: new Date(girdi.tarih),
           vadeTarihi: hesaplananVadeTarihi,
-          siparisNo: girdi.siparisNo ?? null,
+          siparisNo: girdi.siparisNo || null,
           siparisTarihi: girdi.siparisTarihi ? new Date(girdi.siparisTarihi) : null,
+          talepNo: girdi.talepNo || null,
+          talepTarihi: girdi.talepTarihi ? new Date(girdi.talepTarihi) : null,
           cariId: girdi.cariId,
           // STK-07: boş bırakılırsa depo kesinleştirmede varsayılana çözülür
           depoId: girdi.depoId ?? null,
@@ -719,6 +724,8 @@ export class FaturaService {
       vadeTarihi: girdi.vadeTarihi !== undefined ? girdi.vadeTarihi : fatura.vadeTarihi,
       siparisNo: girdi.siparisNo !== undefined ? girdi.siparisNo : fatura.siparisNo,
       siparisTarihi: girdi.siparisTarihi !== undefined ? (girdi.siparisTarihi ? new Date(girdi.siparisTarihi) : null) : fatura.siparisTarihi,
+      talepNo: girdi.talepNo !== undefined ? girdi.talepNo : fatura.talepNo,
+      talepTarihi: girdi.talepTarihi !== undefined ? (girdi.talepTarihi ? new Date(girdi.talepTarihi) : null) : fatura.talepTarihi,
       cariId: girdi.cariId ?? fatura.cariId,
       efaturaProfili: girdi.efaturaProfili ?? (fatura.efaturaProfili as "temel" | "ticari"),
       earsivGonderimSekli: girdi.earsivGonderimSekli ?? (fatura.earsivGonderimSekli as "elektronik" | "kagit"),
@@ -875,6 +882,12 @@ export class FaturaService {
           no: birlesikGirdi.no ?? null,
           tarih: new Date(birlesikGirdi.tarih),
           vadeTarihi: birlesikGirdi.vadeTarihi ? new Date(birlesikGirdi.vadeTarihi) : null,
+          // Sipariş referansı güncellemede hiç yazılmıyordu; FTR-31 ile düzeldi.
+          siparisNo: birlesikGirdi.siparisNo || null,
+          // Mevcut faturanın tarihleri görünümden metin olarak gelir.
+          siparisTarihi: birlesikGirdi.siparisTarihi ? new Date(birlesikGirdi.siparisTarihi) : null,
+          talepNo: birlesikGirdi.talepNo || null,
+          talepTarihi: birlesikGirdi.talepTarihi ? new Date(birlesikGirdi.talepTarihi) : null,
           cariId: birlesikGirdi.cariId,
           depoId: birlesikGirdi.depoId ?? null,
           ...teslimYeriVerisi(birlesikGirdi),
@@ -1644,6 +1657,8 @@ export class FaturaService {
     vadeTarihi: Date | null;
     siparisNo: string | null;
     siparisTarihi: Date | null;
+    talepNo: string | null;
+    talepTarihi: Date | null;
     cariId: string;
     senaryo: string;
     efaturaProfili: string;
@@ -1728,6 +1743,8 @@ export class FaturaService {
       vadeTarihi: k.vadeTarihi?.toISOString().slice(0, 10) ?? null,
       siparisNo: k.siparisNo,
       siparisTarihi: k.siparisTarihi?.toISOString().slice(0, 10) ?? null,
+      talepNo: k.talepNo,
+      talepTarihi: k.talepTarihi?.toISOString().slice(0, 10) ?? null,
       cariId: k.cariId,
       senaryo: k.senaryo,
       efaturaProfili: k.efaturaProfili,

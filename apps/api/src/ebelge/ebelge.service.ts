@@ -839,7 +839,13 @@ export class EbelgeService {
       const irsaliyeler = hazirlik.fatura.sevkiyatYontemi === "irsaliye"
         ? await tx.belge.findMany({ where: { tenantId, faturaId: hazirlik.fatura.id, tur: "irsaliye", yon: "satis", eirsaliye: { is: { durum: { in: ["iletildi", "kabul", "kismi_kabul"] } } } }, select: { no: true, tarih: true }, orderBy: { tarih: "asc" } })
         : [];
-      return { irsaliyeler, mukellef: hazirlik.uygulamalar.eirsaliye.acik };
+      // FTR-31: faturaya bağlı zincir belgelerinin müşteri referansları.
+      const bagliReferanslar = await tx.belge.findMany({
+        where: { tenantId, faturaId: hazirlik.fatura.id },
+        select: { siparisNo: true, talepNo: true },
+        orderBy: { tarih: "asc" },
+      });
+      return { irsaliyeler, bagliReferanslar, mukellef: hazirlik.uygulamalar.eirsaliye.acik };
     });
     const sevkiyatEngelleri = sevkiyatEksikleri({
       sorulur: sevkiyatSorulurMu(hazirlik.fatura),
@@ -945,6 +951,7 @@ export class EbelgeService {
         internetSatisi: hazirlik.internet.ublBilgisi,
         iadeReferanslari: hazirlik.iade.iade ? hazirlik.iade.referanslar : undefined,
         irsaliyeReferanslari: sevkiyat.irsaliyeler.filter((i): i is { no: string; tarih: Date } => Boolean(i.no)),
+        bagliReferanslar: sevkiyat.bagliReferanslar,
         kamu: kamuBilgisi,
         yolcuBeraberi: hazirlik.yolcu.bilgi,
       },

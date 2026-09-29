@@ -16,7 +16,7 @@ import { TasimaBilgisiPaneli } from "@/components/tasima-bilgisi-paneli";
 import type { DepoOzet } from "@/lib/depolar";
 import { BOS_TESLIMAT_ADRESI, TeslimatAdresiAlanlari, teslimatAdresiGovdesi, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
 import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
-import { bugunTR, faturaHesapla, muhtelifMusteriMi, irsaliyeGeriAlmaEngeli, irsaliyeIptalUyarisi, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
+import { bugunTR, faturaHesapla, muhtelifMusteriMi, referansFarkiUyarisi, irsaliyeGeriAlmaEngeli, irsaliyeIptalUyarisi, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -121,6 +121,9 @@ interface Belge {
   faturaId: string | null;
   /** FTR-27: alış irsaliyesinde tedarikçinin irsaliye numarası. */
   tedarikciBelgeNo?: string | null;
+  /** FTR-31: müşterinin talep ve sipariş referansı (toplu faturalama uyarısı). */
+  siparisNo?: string | null;
+  talepNo?: string | null;
   /** EBLG-83: e-İrsaliye kullanıcısı olmayan firmanın satış irsaliyesi ve matbu numarası. */
   kagitIrsaliye?: boolean;
   matbuBelgeNo?: string | null;
@@ -161,6 +164,8 @@ interface BelgeDetay extends Belge {
   soforTckn?: string | null;
   siparisNo?: string | null;
   siparisTarihi?: string | null;
+  talepNo?: string | null;
+  talepTarihi?: string | null;
   idisSevkiyatNo?: string | null;
   /** EBLG-84: irsaliyeye özel teslimat adresi (ihracatta gümrük kapısı). */
   teslimatAdres?: string | null;
@@ -320,6 +325,25 @@ export default function BelgelerSayfasi() {
   /** EBLG-74: müşterinin sipariş referansı; e-İrsaliyeye OrderReference olur. */
   const [siparisNo, setSiparisNo] = useState("");
   const [siparisTarihi, setSiparisTarihi] = useState("");
+  /** FTR-31: müşterinin talep (teklif isteği) referansı; zincir boyunca taşınır. */
+  const [talepNo, setTalepNo] = useState("");
+  const [talepTarihi, setTalepTarihi] = useState("");
+  /** FTR-31: aynı cariye aynı talep numarasıyla açılmış diğer teklifler. */
+  const [talepMukerrerleri, setTalepMukerrerleri] = useState<{ id: string; no: string | null; tarih: string }[]>([]);
+
+  // FTR-31: aynı cariye aynı talep numarasıyla açılmış teklif varsa uyarılır; kayıt engellenmez.
+  useEffect(() => {
+    const aranan = talepNo.trim();
+    if (tur !== "teklif" || yon !== "satis" || !cariId || !aranan) { setTalepMukerrerleri([]); return; }
+    let aktif = true;
+    const zamanlayici = setTimeout(() => {
+      const sorgu = new URLSearchParams({ cariId, talepNo: aranan, ...(duzenlenenId ? { haricId: duzenlenenId } : {}) });
+      void api<{ id: string; no: string | null; tarih: string }[]>(`/belgeler/talep-mukerrer?${sorgu}`)
+        .then((sonuc) => { if (aktif) setTalepMukerrerleri(sonuc); })
+        .catch(() => { if (aktif) setTalepMukerrerleri([]); });
+    }, 400);
+    return () => { aktif = false; clearTimeout(zamanlayici); };
+  }, [tur, yon, cariId, talepNo, duzenlenenId]);
   /** FTR-27: alış irsaliyesinde tedarikçinin numarası; bizim no'muz iç seridir. */
   const [tedarikciBelgeNo, setTedarikciBelgeNo] = useState("");
   /** EBLG-84: irsaliyeye özel teslimat adresi; ihracatta gümrük kapısı. */
@@ -604,6 +628,8 @@ export default function BelgelerSayfasi() {
             : {}),
           siparisNo: siparisNo.trim() || null,
           siparisTarihi: siparisTarihi || null,
+          talepNo: yon === "satis" ? talepNo.trim() || null : null,
+          talepTarihi: yon === "satis" ? talepTarihi || null : null,
           ...(tur === "irsaliye" && yon === "alis"
             ? {
                 gumrukDepoSevki: gumrukDepo,
@@ -640,7 +666,7 @@ export default function BelgelerSayfasi() {
       setAciklama(""); setKuruAciklamayaEkle(true);
       setDosyalar([]);
       setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 }]);
-      setSiparisNo(""); setSiparisTarihi(""); setIdisSevkiyatNo(""); setTedarikciBelgeNo(""); setTeslimat(BOS_TESLIMAT_ADRESI);
+      setSiparisNo(""); setSiparisTarihi(""); setTalepNo(""); setTalepTarihi(""); setIdisSevkiyatNo(""); setTedarikciBelgeNo(""); setTeslimat(BOS_TESLIMAT_ADRESI);
       setGumrukDepo(false); setBeyannameNo(""); setBeyannameTarihi(""); setYukleme(BOS_TESLIMAT_ADRESI);
       void yukle();
     } catch (h) {
@@ -662,6 +688,7 @@ export default function BelgelerSayfasi() {
     setDovizCinsi(d.dovizCinsi); setKur(d.kur ?? "1"); setBekleyenCevrim(null);
     setAciklama(d.aciklama ?? ""); setKuruAciklamayaEkle(d.dovizCinsi !== "TRY" && (d.aciklama ?? "").includes("Döviz kuru:"));
     setSiparisNo(d.siparisNo ?? ""); setSiparisTarihi(d.siparisTarihi?.slice(0, 10) ?? "");
+    setTalepNo(d.talepNo ?? ""); setTalepTarihi(d.talepTarihi?.slice(0, 10) ?? "");
     const yerelSevk = d.fiiliSevkZamani ? yerelZaman(d.fiiliSevkZamani) : "";
     ozgunSevkZamaniRef.current = d.fiiliSevkZamani ? { yerel: yerelSevk, iso: d.fiiliSevkZamani } : null;
     setFiiliSevkZamani(yerelSevk);
@@ -931,6 +958,8 @@ export default function BelgelerSayfasi() {
   const faturaUyumlulukAnahtari = (b: Belge) => [b.cari.id, b.dovizCinsi, b.kur ?? "", b.yon, b.depoId ?? ""].join("|");
   const seciliIlkBelge = belgeler.find((belge) => secili.has(belge.id));
   const secimUyumlulukAnahtari = seciliIlkBelge ? faturaUyumlulukAnahtari(seciliIlkBelge) : null;
+  // FTR-31: birleşecek belgelerin müşteri referansları farklıysa faturalamadan önce söylenir.
+  const topluReferansUyarisi = secili.size > 1 ? referansFarkiUyarisi(belgeler.filter((b) => secili.has(b.id))) : null;
   const gorunenFaturalanabilirlerinTumu = gorunen.filter(faturalanabilir);
   const gorunenFaturaGruplari = new Set(gorunenFaturalanabilirlerinTumu.map(faturaUyumlulukAnahtari));
   const gorunenTopluSecimeUygun = secimUyumlulukAnahtari !== null || gorunenFaturaGruplari.size <= 1;
@@ -985,6 +1014,7 @@ export default function BelgelerSayfasi() {
       />
 
       <Alert tone="error">{hata}</Alert>
+      <Alert tone="warning">{topluReferansUyarisi}</Alert>
       <Alert tone="success">{basari && <>
         {basari}
         {olusanFaturaId && <a className="btn btn--ghost btn--sm" href={`/panel/fatura?faturaId=${olusanFaturaId}`}>Taslak faturayı aç</a>}
@@ -1041,6 +1071,30 @@ export default function BelgelerSayfasi() {
             {tur === "teklif" && (
                 <Field label="Geçerlilik Tarihi"><Input type="date" value={gecerlilik} onChange={(e) => setGecerlilik(e.target.value)} /></Field>
             )}
+            {/* FTR-31: müşterinin talep ve sipariş referansı; zincir boyunca faturaya kadar taşınır. */}
+            {yon === "satis" && (
+              <>
+                <Field label="Müşteri Talep No">
+                  <Input aria-label="Müşteri talep numarası" value={talepNo} onChange={(e) => setTalepNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" />
+                  {tur === "teklif" && talepMukerrerleri.length > 0 && (
+                    <small className="muted" role="status">⚠ Bu müşteriye aynı talep numarasıyla açılmış teklif var: {talepMukerrerleri.map((t) => `${t.no ?? "taslak"} (${new Date(t.tarih).toLocaleDateString("tr-TR")})`).join(", ")}.</small>
+                  )}
+                </Field>
+                <Field label="Talep Tarihi"><Input aria-label="Müşteri talep tarihi" type="date" value={talepTarihi} onChange={(e) => setTalepTarihi(e.target.value)} /></Field>
+              </>
+            )}
+            {yon === "satis" && (tur === "siparis" || tur === "irsaliye") && (
+              <>
+                <Field label="Müşteri Sipariş No">
+                  <Input aria-label="Müşteri sipariş numarası" value={siparisNo} onChange={(e) => setSiparisNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" />
+                  {tur === "irsaliye" && yon === "satis" && <small className="muted">e-İrsaliyeye yazılır; boşsa talep numarası, o da yoksa irsaliyenin türediği sipariş belgesinin numarası gider.</small>}
+                </Field>
+                <Field label="Müşteri Sipariş Tarihi">
+                  <Input aria-label="Müşteri sipariş tarihi" type="date" value={siparisTarihi} onChange={(e) => setSiparisTarihi(e.target.value)} />
+                  {tur === "irsaliye" && siparisNo.trim() && !siparisTarihi && <small className="muted">Boş bırakılırsa belgeye irsaliye tarihi yazılır (GİB tarihi zorunlu tutuyor).</small>}
+                </Field>
+              </>
+            )}
             </div>
           </div>
 
@@ -1083,15 +1137,6 @@ export default function BelgelerSayfasi() {
                     </Select>
                   </Field>
                 )}
-                {/* EBLG-74: müşterinin siparişi; boşsa zincirdeki sipariş belgesi yazılır. */}
-                <Field label="Müşteri Sipariş No">
-                  <Input value={siparisNo} onChange={(e) => setSiparisNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" />
-                  <small className="muted">Boşsa e-İrsaliyeye, irsaliyenin türediği sipariş belgesinin numarası yazılır.</small>
-                </Field>
-                <Field label="Müşteri Sipariş Tarihi">
-                  <Input type="date" value={siparisTarihi} onChange={(e) => setSiparisTarihi(e.target.value)} />
-                  {siparisNo.trim() && !siparisTarihi && <small className="muted">Boş bırakılırsa belgeye irsaliye tarihi yazılır (GİB tarihi zorunlu tutuyor).</small>}
-                </Field>
                 {/* EBLG-87: ithal mal gümrükten depoya kısım kısım taşınırken firma e-İrsaliye düzenler. */}
                 {yon === "alis" && (
                   <Field label="Gümrükten Depoya Sevk">
@@ -1235,6 +1280,8 @@ export default function BelgelerSayfasi() {
               </h3>
               <p className="muted" style={{ fontSize: "0.85rem", margin: "0.3rem 0 0" }}>
                 {detay.cari.unvan} · {detay.tarih}{detay.gecerlilikTarihi ? ` · Geçerlilik: ${detay.gecerlilikTarihi}` : ""} · {tl(detay.genelToplam, detay.dovizCinsi)}
+                {detay.talepNo ? ` · Talep ref. ${detay.talepNo}${detay.talepTarihi ? ` (${new Date(detay.talepTarihi).toLocaleDateString("tr-TR")})` : ""}` : ""}
+                {detay.siparisNo ? ` · Sipariş ref. ${detay.siparisNo}${detay.siparisTarihi ? ` (${new Date(detay.siparisTarihi).toLocaleDateString("tr-TR")})` : ""}` : ""}
               </p>
               {detay.faturalamaSuresi && <FaturalamaSuresiNotu sure={detay.faturalamaSuresi} yon={detay.yon} />}
             </div>
@@ -1325,8 +1372,6 @@ export default function BelgelerSayfasi() {
               {" · "}Plaka {detay.plaka || "—"}
               {" · "}Şoför {[detay.soforAdi, detay.soforSoyadi].filter(Boolean).join(" ") || "—"}
               {detay.fiiliSevkZamani ? ` · Fiili sevk ${new Date(detay.fiiliSevkZamani).toLocaleString("tr-TR")}` : ""}
-              {/* EBLG-74: belgeyle giden sipariş referansı; boşsa zincirdeki sipariş yazılır. */}
-              {detay.siparisNo ? ` · Sipariş ${detay.siparisNo}${detay.siparisTarihi ? ` (${new Date(detay.siparisTarihi).toLocaleDateString("tr-TR")})` : ""}` : ""}
               {detay.idisSevkiyatNo ? ` · İDİS sevkiyat ${detay.idisSevkiyatNo}` : ""}
               {detay.teslimatAdres ? ` · ${detay.gumrukDepoSevki ? "Boşaltma" : "Teslimat"} ${detay.teslimatAdres}, ${[detay.teslimatIlce, detay.teslimatIl].filter(Boolean).join(" / ")} ${detay.teslimatPostaKodu ?? ""}` : ""}
               {detay.gumrukDepoSevki && detay.yuklemeAdres ? ` · Yükleme ${detay.yuklemeAdres}, ${[detay.yuklemeIlce, detay.yuklemeIl].filter(Boolean).join(" / ")} ${detay.yuklemePostaKodu ?? ""}` : ""}

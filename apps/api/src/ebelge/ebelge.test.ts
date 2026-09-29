@@ -199,6 +199,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
 
   it("gonder kanalı lokal mükellef listesinden belirler, UBL uretir ve gönderir (EBLG-01/02/03/10)", async () => {
     const mockTx = {
+      belge: { findMany: vi.fn().mockResolvedValue([]) },
       fatura: {
         findUnique: vi.fn().mockResolvedValue({
           id: "f1",
@@ -284,6 +285,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
     mockMukellefListesi.kanalBelirle.mockClear();
     mockAdapter.belgeGonder.mockClear();
     const mockTx = {
+      belge: { findMany: vi.fn().mockResolvedValue([]) },
       fatura: {
         findUnique: vi.fn().mockResolvedValue({
           id: "f9", tip: "satis", durum: "kesin", tarih: new Date(), no: "TKR2026000000009",
@@ -323,6 +325,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
   it("ihracat faturasında fiili ihracat tarihi ve GTİP eksikse göndermez (EBLG-53)", async () => {
     mockAdapter.belgeGonder.mockClear();
     const mockTx = {
+      belge: { findMany: vi.fn().mockResolvedValue([]) },
       fatura: {
         findUnique: vi.fn().mockResolvedValue({
           id: "f10", tip: "satis", durum: "kesin", tarih: new Date(), no: "TKR2026000000010",
@@ -354,6 +357,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
    */
   function sentetikVknTx(testOrtami: boolean) {
     return {
+      belge: { findMany: vi.fn().mockResolvedValue([]) },
       fatura: {
         findUnique: vi.fn().mockResolvedValue({
           id: "f1", tip: "satis", durum: "kesin", tarih: new Date(), no: null,
@@ -389,6 +393,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
   /** Yeniden deneme senaryosu için ortak tx: fatura zaten hatalı bir e-belge kaydına sahip. */
   function yenidenDenemeTx(ebelge: Record<string, unknown> = { id: "eb1", durum: "hata" }) {
     return {
+      belge: { findMany: vi.fn().mockResolvedValue([]) },
       fatura: {
         findUnique: vi.fn().mockResolvedValue({
           id: "f1", tip: "satis", durum: "kesin", tarih: new Date(), no: "TKR2026000000001",
@@ -487,6 +492,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
   /** e-Arşiv kanalı: alıcı e-Fatura mükellefi değil, kayıt ilk kez yaratılıyor. */
   function earsivTx(config: Record<string, unknown>) {
     return {
+      belge: { findMany: vi.fn().mockResolvedValue([]) },
       fatura: {
         findUnique: vi.fn().mockResolvedValue({
           id: "f1", tip: "satis", durum: "kesin", tarih: new Date(), no: null,
@@ -824,6 +830,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
       ...ek,
     });
     const tx = (fatura: unknown) => ({
+      belge: { findMany: vi.fn().mockResolvedValue([]) },
       fatura: { findUnique: vi.fn().mockResolvedValue(fatura) },
       baglanti: { findFirst: vi.fn().mockResolvedValue({ saglayici: "nes", sifreliConfig: JSON.stringify({ kullaniciAdi: "test" }) }) },
       tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Bizim Firma", vkn: "1111111114", efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: false, vergiDairesi: "Davutpaşa", adres: "Maltepe Mh.", ilce: "Zeytinburnu", il: "İstanbul" }) },

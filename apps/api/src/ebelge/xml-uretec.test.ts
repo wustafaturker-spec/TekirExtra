@@ -567,7 +567,6 @@ describe("belgeNoyuUbleYaz (EBLG-16 arşivi)", () => {
     expect(sevkli.match(/<cac:Delivery>/g)).toHaveLength(2);
     expect(sevkli.lastIndexOf("</cac:Delivery>")).toBeLessThan(sevkli.indexOf("<cac:PaymentMeans>"));
 
-
     // e-Fatura kanalında grup istenmez; sipariş referansı iş bilgisi olarak kalır.
     const efatura = faturaUblUret(fatura, satici, { tur: "efatura", internetSatisi });
     expect(efatura).toContain("<cac:OrderReference>");
@@ -1199,6 +1198,29 @@ describe("faturaUblUret — vade ve sipariş referansı (EBLG-73)", () => {
   it("e-Arşiv belgesinde de vade taşınır", () => {
     const xml = faturaUblUret(temel({ vadeTarihi: new Date("2026-11-30T00:00:00Z") }), firma, { tur: "earsiv" });
     expect(xml).toContain("<cbc:PaymentDueDate>2026-11-30</cbc:PaymentDueDate>");
+  });
+
+  it("sipariş numarası yoksa talep numarasını OrderReference'a yazar (FTR-31)", () => {
+    const xml = faturaUblUret(temel({ talepNo: "RFQ-44", talepTarihi: new Date("2026-09-05T00:00:00Z") }), firma, { tur: "efatura" });
+    const referans = xml.slice(xml.indexOf("<cac:OrderReference>"), xml.indexOf("</cac:OrderReference>"));
+    expect(referans).toContain("<cbc:ID>RFQ-44</cbc:ID>");
+    expect(referans).toContain("<cbc:IssueDate>2026-09-05</cbc:IssueDate>");
+    expect(xml).not.toContain("Müşteri talep ref.");
+  });
+
+  it("ikisi de varsa sipariş OrderReference'a, talep ve diğer belgelerinki nota gider (FTR-31)", () => {
+    const xml = faturaUblUret(
+      temel({ siparisNo: "PO-1", siparisTarihi: new Date("2026-09-15T00:00:00Z"), talepNo: "RFQ-44", talepTarihi: new Date("2026-09-05T00:00:00Z") }),
+      firma,
+      { tur: "efatura", bagliReferanslar: [{ siparisNo: "PO-1", talepNo: "RFQ-44" }, { siparisNo: "PO-2", talepNo: "RFQ-44" }] },
+    );
+    expect(xml.match(/<cac:OrderReference>/g)).toHaveLength(1);
+    expect(xml).toContain("<cbc:ID>PO-1</cbc:ID>");
+    expect(xml).toContain("<cbc:Note>Müşteri talep ref.: RFQ-44 (05.09.2026)</cbc:Note>");
+    expect(xml).toContain("<cbc:Note>Diğer sipariş ref.: PO-2</cbc:Note>");
+    expect(xml).not.toContain("Diğer talep ref.");
+    // Notlar şemada Note bölümünde, OrderReference'tan önce durur.
+    expect(xml.indexOf("Diğer sipariş ref.")).toBeLessThan(xml.indexOf("<cac:OrderReference>"));
   });
 });
 

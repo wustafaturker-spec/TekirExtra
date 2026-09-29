@@ -53,6 +53,9 @@ import {
   ublAdresi,
   ulkeAdi,
   ulkeKoduCoz,
+  type MusteriReferanslari,
+  referansNotlari,
+  siparisReferansi,
 } from "@tekirextra/shared";
 import { adSoyadCoz } from "../cari/ad-soyad";
 import { faturaTeslimYeri } from "../fatura/teslim-yeri";
@@ -119,6 +122,11 @@ export function faturaUblUret(
     /** EBLG-58: iade faturasında iade edilen faturalar; sırasıyla yazılır. */
     iadeReferanslari?: { belgeNo: string; tarih: Date }[];
     irsaliyeReferanslari?: { no: string; tarih: Date }[];
+    /**
+     * FTR-31: faturaya bağlı zincir belgelerinin müşteri referansları. Tek
+     * `OrderReference`'a sığmayan farklı numaralar nota yazılır.
+     */
+    bagliReferanslar?: MusteriReferanslari[];
     /** Alıcı kamu idaresiyse; profil KAMU olur (SATIS ve IADE tiplerinde). */
     kamu?: KamuUblBilgisi;
     /** Yolcu beraberi (tax-free) satışı: yolcu ve aracı kurum. */
@@ -640,6 +648,9 @@ ${teslimatAdresiXml(teslimatAdresi)}` : ""}${internet.tasiyiciUnvan ? `
 `
     : "";
 
+  // FTR-31: OrderReference'a müşterinin sipariş numarası, yoksa talep numarası.
+  const siparis = siparisReferansi(fatura);
+
   /*
    * İrsaliye yerine geçen fatura (EBLG-76): mal fatura beraberinde sevk
    * edildiğinde ayrıca e-İrsaliye düzenlenmez, sevkin kanıtı faturanın
@@ -754,7 +765,8 @@ ${teslimatAdresiXml(genelTeslimAdresi)}` : ""}${irsaliyeYerine ? `
   <cbc:IssueTime>${saatStr}</cbc:IssueTime>
   <cbc:InvoiceTypeCode>${ihracat || yurtDisiIstisna ? IHRACAT_FATURA_TIPI : yolcu ? YOLCU_BERABER_FATURA_TIPI : sgk ? SGK_FATURA_TIPI : ytb ? ytbFaturaTipi(senaryoUblKodu(fatura.senaryo), earsiv ? "earsiv" : "efatura") : senaryoUblKodu(fatura.senaryo)}</cbc:InvoiceTypeCode>${internet?.webAdresi ? `
   <cbc:Note>${escape(`İnternet satışı — ${internet.webAdresi}`)}</cbc:Note>` : ""}${irsaliyeYerine ? `
-  <cbc:Note>${escape(irsaliyeYerineIbaresi(earsiv ? "earsiv" : "efatura"))}</cbc:Note>` : ""}
+  <cbc:Note>${escape(irsaliyeYerineIbaresi(earsiv ? "earsiv" : "efatura"))}</cbc:Note>` : ""}${referansNotlari(fatura, secenekler.bagliReferanslar).map((not) => `
+  <cbc:Note>${escape(not)}</cbc:Note>`).join("")}
   <cbc:DocumentCurrencyCode>${fatura.dovizCinsi}</cbc:DocumentCurrencyCode>${dovizli && ihracat ? `
   <cbc:TaxCurrencyCode>${IHRACAT_VERGI_PARA_BIRIMI}</cbc:TaxCurrencyCode>` : ""}
 ${sgk ? `  <cbc:AccountingCost>${escape(sgk.ilaveFaturaTipi)}</cbc:AccountingCost>
@@ -768,13 +780,14 @@ ${sgk ? `  <cbc:AccountingCost>${escape(sgk.ilaveFaturaTipi)}</cbc:AccountingCos
     <cbc:StartTime>${anParcala(sarj.baslangic)!.saat}</cbc:StartTime>
     <cbc:EndDate>${anParcala(sarj.bitis)!.tarih}</cbc:EndDate>
     <cbc:EndTime>${anParcala(sarj.bitis)!.saat}</cbc:EndTime>
-  </cac:InvoicePeriod>` : ""}${fatura.siparisNo ? `
-  <!-- Sipariş referansı (EBLG-73): tarih UBL-TR'de zorunludur; NES tarihsiz
-       OrderReference'ı "incomplete content" diye reddediyor (2026-09-20 denemesi),
-       bu yüzden tarih girilmemişse fatura tarihine düşülür. -->
+  </cac:InvoicePeriod>` : ""}${siparis ? `
+  <!-- Sipariş referansı (EBLG-73, FTR-31): müşterinin sipariş numarası, yoksa
+       talep numarası. Tarih UBL-TR'de zorunludur; NES tarihsiz OrderReference'ı
+       "incomplete content" diye reddediyor (2026-09-20 denemesi), bu yüzden
+       tarih girilmemişse fatura tarihine düşülür. -->
   <cac:OrderReference>
-    <cbc:ID>${escape(fatura.siparisNo)}</cbc:ID>
-    <cbc:IssueDate>${(fatura.siparisTarihi ?? fatura.tarih).toISOString().slice(0, 10)}</cbc:IssueDate>
+    <cbc:ID>${escape(siparis.no)}</cbc:ID>
+    <cbc:IssueDate>${new Date(siparis.tarih ?? fatura.tarih).toISOString().slice(0, 10)}</cbc:IssueDate>
   </cac:OrderReference>` : ""}${iadeReferansBloklari}${(secenekler.irsaliyeReferanslari ?? []).map((i) => `
   <cac:DespatchDocumentReference><cbc:ID>${escape(i.no)}</cbc:ID><cbc:IssueDate>${i.tarih.toISOString().slice(0, 10)}</cbc:IssueDate></cac:DespatchDocumentReference>`).join("")}${ytb ? `
   <!-- EBLG-78: teşvik belge numarası ve tarihi; şemada yeri
