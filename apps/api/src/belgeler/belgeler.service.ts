@@ -26,7 +26,7 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PdfService } from "../core/pdf/pdf.service";
-import { birlesikReferanslar, irsaliyeGeriAlmaEngeli, metinNormalize, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi } from "@tekirextra/shared";
+import { birlesikReferanslar, ilgiliKisiTemizle, ilkIlgiliKisi, irsaliyeGeriAlmaEngeli, metinNormalize, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi } from "@tekirextra/shared";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { PrismaService } from "../core/prisma.service";
 import { DepoService } from "../stok/depo.service";
@@ -466,6 +466,7 @@ export class BelgelerService {
           siparisTarihi: girdi.siparisTarihi ? new Date(girdi.siparisTarihi) : null,
           talepNo: girdi.talepNo?.trim() || null,
           talepTarihi: girdi.talepTarihi ? new Date(girdi.talepTarihi) : null,
+          ...ilgiliKisiTemizle(girdi),
           tedarikciBelgeNo: tedarikciBelgeNoYaz(girdi.tur, girdi.yon, girdi.tedarikciBelgeNo),
           ...gumrukDepoAlanlari(girdi.tur, girdi.yon, girdi),
           depoId: girdi.depoId ?? null,
@@ -570,6 +571,8 @@ export class BelgelerService {
       siparisTarihi: girdi.siparisTarihi !== undefined ? girdi.siparisTarihi : mevcut.siparisTarihi,
       talepNo: girdi.talepNo !== undefined ? girdi.talepNo : mevcut.talepNo,
       talepTarihi: girdi.talepTarihi !== undefined ? girdi.talepTarihi : mevcut.talepTarihi,
+      ilgiliKisi: girdi.ilgiliKisi !== undefined ? girdi.ilgiliKisi : mevcut.ilgiliKisi,
+      ilgiliKisiGorevi: girdi.ilgiliKisiGorevi !== undefined ? girdi.ilgiliKisiGorevi : mevcut.ilgiliKisiGorevi,
       tedarikciBelgeNo: girdi.tedarikciBelgeNo !== undefined ? girdi.tedarikciBelgeNo : mevcut.tedarikciBelgeNo,
       gumrukDepoSevki: girdi.gumrukDepoSevki ?? mevcut.gumrukDepoSevki,
       gumrukBeyannameNo: girdi.gumrukBeyannameNo !== undefined ? girdi.gumrukBeyannameNo : mevcut.gumrukBeyannameNo,
@@ -640,6 +643,7 @@ export class BelgelerService {
           siparisTarihi: birlesik.siparisTarihi ? new Date(birlesik.siparisTarihi) : null,
           talepNo: birlesik.talepNo?.trim() || null,
           talepTarihi: birlesik.talepTarihi ? new Date(birlesik.talepTarihi) : null,
+          ...ilgiliKisiTemizle(birlesik),
           tedarikciBelgeNo: tedarikciBelgeNoYaz(mevcut.tur, mevcut.yon, birlesik.tedarikciBelgeNo),
           ...gumrukDepoAlanlari(mevcut.tur, mevcut.yon, birlesik),
           depoId: birlesik.depoId ?? null,
@@ -764,6 +768,10 @@ export class BelgelerService {
           toplamNetKdv: belge.toplamNetKdv,
           genelToplam: belge.genelToplam,
           aciklama: belge.aciklama ? `${belge.aciklama} (Kopya)` : "Kopya",
+          // FTR-32: ilgili kişi müşteriye aittir, kopyada da kalır (talep/sipariş
+          // referansı ise o satışa özgüdür, kopyalanmaz).
+          ilgiliKisi: belge.ilgiliKisi,
+          ilgiliKisiGorevi: belge.ilgiliKisiGorevi,
           notlar: belge.notlar,
           kaynakBelgeId: null,
           faturaId: null,
@@ -1096,6 +1104,9 @@ export class BelgelerService {
           siparisTarihi: belge.siparisTarihi,
           talepNo: belge.talepNo,
           talepTarihi: belge.talepTarihi,
+          // FTR-32: ilgili kişi de taşınır.
+          ilgiliKisi: belge.ilgiliKisi,
+          ilgiliKisiGorevi: belge.ilgiliKisiGorevi,
           kaynakBelgeId: belge.id,
         },
       });
@@ -1644,21 +1655,24 @@ export class BelgelerService {
   }
 
   /**
-   * FTR-31: sonradan bağlanan irsaliyelerin müşteri referansları faturada
-   * boş olan alanları doldurur; elle girilmiş numara ezilmez.
+   * FTR-31/32: sonradan bağlanan irsaliyelerin müşteri referansları ve ilgili
+   * kişisi faturada boş olan alanları doldurur; elle girilmiş değer ezilmez.
    */
   private async referanslariIrsaliyedenDoldur(tx: Prisma.TransactionClient, faturaId: string) {
-    const fatura = await tx.fatura.findUnique({ where: { id: faturaId }, select: { siparisNo: true, talepNo: true } });
-    if (!fatura || (fatura.siparisNo && fatura.talepNo)) return;
+    const fatura = await tx.fatura.findUnique({ where: { id: faturaId }, select: { siparisNo: true, talepNo: true, ilgiliKisi: true } });
+    if (!fatura || (fatura.siparisNo && fatura.talepNo && fatura.ilgiliKisi)) return;
     const bagli = await tx.belge.findMany({
       where: { faturaId },
-      select: { siparisNo: true, siparisTarihi: true, talepNo: true, talepTarihi: true },
+      select: { siparisNo: true, siparisTarihi: true, talepNo: true, talepTarihi: true, ilgiliKisi: true, ilgiliKisiGorevi: true },
       orderBy: { tarih: "asc" },
     });
     const r = birlesikReferanslar(bagli);
+    const kisi = ilkIlgiliKisi(bagli);
     const data = {
       ...(!fatura.siparisNo && r.siparisNo ? { siparisNo: r.siparisNo, siparisTarihi: r.siparisTarihi as Date | null } : {}),
       ...(!fatura.talepNo && r.talepNo ? { talepNo: r.talepNo, talepTarihi: r.talepTarihi as Date | null } : {}),
+      // FTR-32: ilgili kişi de aynı kuralla gelir.
+      ...(!fatura.ilgiliKisi && kisi.ilgiliKisi ? kisi : {}),
     };
     if (Object.keys(data).length) await tx.fatura.update({ where: { id: faturaId }, data });
   }
@@ -1706,6 +1720,9 @@ export class BelgelerService {
       siparisTarihi?: Date | null;
       talepNo?: string | null;
       talepTarihi?: Date | null;
+      /** FTR-32: ilgili kişi; birleşen belgelerde ilk dolu olan alınır. */
+      ilgiliKisi?: string | null;
+      ilgiliKisiGorevi?: string | null;
       satirlar: BelgeSatirKaydi[];
     }[],
   ) {
@@ -1750,6 +1767,7 @@ export class BelgelerService {
         siparisTarihi: referanslar.siparisTarihi as Date | null,
         talepNo: referanslar.talepNo,
         talepTarihi: referanslar.talepTarihi as Date | null,
+        ...ilkIlgiliKisi(belgeler),
       },
     });
     for (const [i, s] of hesap.satirlar.entries()) {
@@ -1910,6 +1928,9 @@ export class BelgelerService {
     /** FTR-31: müşterinin talep referansı. */
     talepNo?: string | null;
     talepTarihi?: Date | string | null;
+    /** FTR-32: müşteri tarafında ilgili kişi. */
+    ilgiliKisi?: string | null;
+    ilgiliKisiGorevi?: string | null;
     /** EBLG-72: İDİS sevkiyat numarası; doluysa e-İrsaliye IDISIRSALIYE gider. */
     idisSevkiyatNo?: string | null;
     /** FTR-27: alış irsaliyesinde tedarikçinin irsaliye numarası. */
@@ -1970,6 +1991,8 @@ export class BelgelerService {
         ? (typeof k.siparisTarihi === "string" ? k.siparisTarihi : k.siparisTarihi.toISOString()).slice(0, 10)
         : null,
       talepNo: k.talepNo ?? null,
+      ilgiliKisi: k.ilgiliKisi ?? null,
+      ilgiliKisiGorevi: k.ilgiliKisiGorevi ?? null,
       talepTarihi: k.talepTarihi
         ? (typeof k.talepTarihi === "string" ? k.talepTarihi : k.talepTarihi.toISOString()).slice(0, 10)
         : null,

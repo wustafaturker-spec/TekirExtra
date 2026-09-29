@@ -8,6 +8,7 @@ import {
   type FirmaIletisimi,
 } from "../core/pdf/pdf-sablon";
 import type { BelgeTemasi } from "../core/pdf/belge-temasi";
+import { ilgiliKisiMetni } from "@tekirextra/shared";
 
 /** Zincir belgeleri PDF şablonu (FTR-12, T-02; kağıt/PDF irsaliye). */
 
@@ -31,6 +32,9 @@ export interface BelgePdfVerisi {
   talepTarihi?: string | null;
   siparisNo?: string | null;
   siparisTarihi?: string | null;
+  /** FTR-32: müşteri tarafında ilgili kişi. */
+  ilgiliKisi?: string | null;
+  ilgiliKisiGorevi?: string | null;
   dovizCinsi: string;
   kur: string;
   toplamBrut: string;
@@ -95,6 +99,7 @@ export function belgePdfHtml(
     <td style="vertical-align:top;width:46%">
       <div class="kutu">
         <strong>Sayın ${kacis(b.cari.unvan)}</strong> (${kacis(b.cari.kod)})<br>
+        ${ilgiliKisiMetni(b) ? `İlgili: ${kacis(ilgiliKisiMetni(b)!)}<br>` : ""}
         ${b.cari.vknTckn ? `VKN/TCKN: ${kacis(b.cari.vknTckn)}<br>` : ""}
         Belge No: <strong>${kacis(b.no ?? (b.durum === "taslak" ? "— TASLAK —" : "— e-İrsaliye gönderiminde verilir —"))}</strong><br>${
           b.matbuBelgeNo ? `Matbu İrsaliye No: <strong>${kacis(b.matbuBelgeNo)}</strong><br>` : ""

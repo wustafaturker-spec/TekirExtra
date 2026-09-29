@@ -60,6 +60,9 @@ export const belgeOlusturSemasi = z.object({
   /** FTR-31: müşterinin talep (teklif isteği) referansı; zincir boyunca taşınır. */
   talepNo: z.string().max(100).optional().nullable(),
   talepTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)").optional().nullable(),
+  /** FTR-32: müşteri tarafında ilgili kişi; cari kişisinden kopyalanır ya da elle yazılır. */
+  ilgiliKisi: z.string().max(120).optional().nullable(),
+  ilgiliKisiGorevi: z.string().max(120).optional().nullable(),
   /** FTR-27: alış irsaliyesinde tedarikçinin irsaliye numarası; diğerlerinde yok sayılır. */
   tedarikciBelgeNo: z.string().max(50).optional().nullable(),
   cariId: z.string().uuid(),

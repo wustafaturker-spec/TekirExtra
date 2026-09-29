@@ -2086,6 +2086,9 @@ model Fatura {
   /// FTR-31: müşterinin talep referansı; zincirden gelir ya da elle girilir.
   talepNo               String?             @map("talep_no")
   talepTarihi           DateTime?           @map("talep_tarihi") @db.Date
+  /// FTR-32: müşteri tarafında ilgili kişi; zincirden gelir ya da elle girilir.
+  ilgiliKisi            String?             @map("ilgili_kisi")
+  ilgiliKisiGorevi      String?             @map("ilgili_kisi_gorevi")
   /// EBLG-78: yatırım teşvik belge numarası ve tarihi. Numara doluysa fatura
   /// YATIRIMTESVIK profiliyle gider (e-Arşiv'de tip YTB önekli olur).
   ytbNo                 String?             @map("ytb_no")
@@ -3253,6 +3256,10 @@ model Belge {
   /// zincir boyunca kopyalanır; sipariş numarası yoksa `OrderReference` olur.
   talepNo                String?          @map("talep_no")
   talepTarihi            DateTime?        @map("talep_tarihi") @db.Date
+  /// FTR-32: müşteri tarafında ilgili kişi. Cari kişilerinden seçilir ya da
+  /// elle yazılır; belgeye kopyalanır, kart değişse de çıktı değişmez.
+  ilgiliKisi             String?          @map("ilgili_kisi")
+  ilgiliKisiGorevi       String?          @map("ilgili_kisi_gorevi")
   /// FTR-27: alış irsaliyesinde tedarikçinin kendi irsaliye numarası. `no`
   /// bizim iç seri numaramızdır (AIR…); giden e-İrsaliye serisinden alınmaz.
   tedarikciBelgeNo       String?          @map("tedarikci_belge_no")

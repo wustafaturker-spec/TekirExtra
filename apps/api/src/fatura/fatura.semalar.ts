@@ -60,6 +60,9 @@ const faturaOlusturGovde = z.object({
   /** FTR-31: müşterinin talep referansı; sipariş numarası yoksa e-Belgede OrderReference olur. */
   talepNo: z.string().trim().max(100).optional().nullable(),
   talepTarihi: tarihSemasi.optional().nullable(),
+  /** FTR-32: müşteri tarafında ilgili kişi. */
+  ilgiliKisi: z.string().trim().max(120).optional().nullable(),
+  ilgiliKisiGorevi: z.string().trim().max(120).optional().nullable(),
   cariId: z.string().uuid(),
   /**
    * e-Fatura profili (FTR-19). Boş bırakılırsa cari kartındaki varsayılan

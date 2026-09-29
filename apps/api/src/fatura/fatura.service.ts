@@ -1,4 +1,4 @@
-import { ebelgeGitmemisMi, faturaGeriAlmaEngeli, ihracKayitliSonTarih } from "@tekirextra/shared";
+import { ebelgeGitmemisMi, faturaGeriAlmaEngeli, ihracKayitliSonTarih, ilgiliKisiTemizle } from "@tekirextra/shared";
 import {
   BadRequestException,
   ConflictException,
@@ -633,6 +633,7 @@ export class FaturaService {
           siparisTarihi: girdi.siparisTarihi ? new Date(girdi.siparisTarihi) : null,
           talepNo: girdi.talepNo || null,
           talepTarihi: girdi.talepTarihi ? new Date(girdi.talepTarihi) : null,
+          ...ilgiliKisiTemizle(girdi),
           cariId: girdi.cariId,
           // STK-07: boş bırakılırsa depo kesinleştirmede varsayılana çözülür
           depoId: girdi.depoId ?? null,
@@ -726,6 +727,8 @@ export class FaturaService {
       siparisTarihi: girdi.siparisTarihi !== undefined ? (girdi.siparisTarihi ? new Date(girdi.siparisTarihi) : null) : fatura.siparisTarihi,
       talepNo: girdi.talepNo !== undefined ? girdi.talepNo : fatura.talepNo,
       talepTarihi: girdi.talepTarihi !== undefined ? (girdi.talepTarihi ? new Date(girdi.talepTarihi) : null) : fatura.talepTarihi,
+      ilgiliKisi: girdi.ilgiliKisi !== undefined ? girdi.ilgiliKisi : fatura.ilgiliKisi,
+      ilgiliKisiGorevi: girdi.ilgiliKisiGorevi !== undefined ? girdi.ilgiliKisiGorevi : fatura.ilgiliKisiGorevi,
       cariId: girdi.cariId ?? fatura.cariId,
       efaturaProfili: girdi.efaturaProfili ?? (fatura.efaturaProfili as "temel" | "ticari"),
       earsivGonderimSekli: girdi.earsivGonderimSekli ?? (fatura.earsivGonderimSekli as "elektronik" | "kagit"),
@@ -888,6 +891,7 @@ export class FaturaService {
           siparisTarihi: birlesikGirdi.siparisTarihi ? new Date(birlesikGirdi.siparisTarihi) : null,
           talepNo: birlesikGirdi.talepNo || null,
           talepTarihi: birlesikGirdi.talepTarihi ? new Date(birlesikGirdi.talepTarihi) : null,
+          ...ilgiliKisiTemizle(birlesikGirdi),
           cariId: birlesikGirdi.cariId,
           depoId: birlesikGirdi.depoId ?? null,
           ...teslimYeriVerisi(birlesikGirdi),
@@ -1659,6 +1663,8 @@ export class FaturaService {
     siparisTarihi: Date | null;
     talepNo: string | null;
     talepTarihi: Date | null;
+    ilgiliKisi: string | null;
+    ilgiliKisiGorevi: string | null;
     cariId: string;
     senaryo: string;
     efaturaProfili: string;
@@ -1744,6 +1750,8 @@ export class FaturaService {
       siparisNo: k.siparisNo,
       siparisTarihi: k.siparisTarihi?.toISOString().slice(0, 10) ?? null,
       talepNo: k.talepNo,
+      ilgiliKisi: k.ilgiliKisi,
+      ilgiliKisiGorevi: k.ilgiliKisiGorevi,
       talepTarihi: k.talepTarihi?.toISOString().slice(0, 10) ?? null,
       cariId: k.cariId,
       senaryo: k.senaryo,

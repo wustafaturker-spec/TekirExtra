@@ -19,6 +19,7 @@ import {
   type FaturaSenaryosu,
   type SarjTuru,
   type YolcuBilgisi,
+  ilgiliKisiMetni,
 } from "@tekirextra/shared";
 import {
   kacis,
@@ -79,6 +80,9 @@ export interface FaturaPdfVerisi {
   /** FTR-31: müşterinin talep referansı. */
   talepNo?: string | null;
   talepTarihi?: string | Date | null;
+  /** FTR-32: müşteri tarafında ilgili kişi. */
+  ilgiliKisi?: string | null;
+  ilgiliKisiGorevi?: string | null;
   /** FTR-30: teslim yeri; e-Belgede `cac:Delivery/cac:DeliveryAddress`. */
   teslimatAdres?: string | null;
   teslimatIl?: string | null;
@@ -381,6 +385,7 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
     <td style="vertical-align:top;width:46%">
       <div class="kutu">
         <strong>Sayın ${kacis(f.cari.unvan)}</strong> (${kacis(f.cari.kod)})<br>
+        ${ilgiliKisiMetni(f) ? `İlgili: ${kacis(ilgiliKisiMetni(f)!)}<br>` : ""}
         ${f.cari.vknTckn ? `VKN/TCKN: ${kacis(f.cari.vknTckn)}<br>` : ""}
         Fatura No: <strong>${kacis(f.no ?? "— TASLAK —")}</strong><br>
         Tarih: ${tarihBicim(f.tarih)}${

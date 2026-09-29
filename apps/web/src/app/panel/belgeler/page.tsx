@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { BOS_ILGILI_KISI, IlgiliKisiAlanlari, ilgiliKisiGovdesi, type IlgiliKisiDegeri } from "@/components/ilgili-kisi-alanlari";
 import { api, ApiHata, apiPdfAc, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
@@ -166,6 +167,8 @@ interface BelgeDetay extends Belge {
   siparisTarihi?: string | null;
   talepNo?: string | null;
   talepTarihi?: string | null;
+  ilgiliKisi?: string | null;
+  ilgiliKisiGorevi?: string | null;
   idisSevkiyatNo?: string | null;
   /** EBLG-84: irsaliyeye özel teslimat adresi (ihracatta gümrük kapısı). */
   teslimatAdres?: string | null;
@@ -328,6 +331,8 @@ export default function BelgelerSayfasi() {
   /** FTR-31: müşterinin talep (teklif isteği) referansı; zincir boyunca taşınır. */
   const [talepNo, setTalepNo] = useState("");
   const [talepTarihi, setTalepTarihi] = useState("");
+  /** FTR-32: müşteri tarafında ilgili kişi; cari kişisinden kopyalanır ya da elle yazılır. */
+  const [ilgili, setIlgili] = useState<IlgiliKisiDegeri>(BOS_ILGILI_KISI);
   /** FTR-31: aynı cariye aynı talep numarasıyla açılmış diğer teklifler. */
   const [talepMukerrerleri, setTalepMukerrerleri] = useState<{ id: string; no: string | null; tarih: string }[]>([]);
 
@@ -630,6 +635,7 @@ export default function BelgelerSayfasi() {
           siparisTarihi: siparisTarihi || null,
           talepNo: yon === "satis" ? talepNo.trim() || null : null,
           talepTarihi: yon === "satis" ? talepTarihi || null : null,
+          ...ilgiliKisiGovdesi(yon === "satis" ? ilgili : BOS_ILGILI_KISI),
           ...(tur === "irsaliye" && yon === "alis"
             ? {
                 gumrukDepoSevki: gumrukDepo,
@@ -666,7 +672,7 @@ export default function BelgelerSayfasi() {
       setAciklama(""); setKuruAciklamayaEkle(true);
       setDosyalar([]);
       setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 }]);
-      setSiparisNo(""); setSiparisTarihi(""); setTalepNo(""); setTalepTarihi(""); setIdisSevkiyatNo(""); setTedarikciBelgeNo(""); setTeslimat(BOS_TESLIMAT_ADRESI);
+      setSiparisNo(""); setSiparisTarihi(""); setTalepNo(""); setTalepTarihi(""); setIlgili(BOS_ILGILI_KISI); setIdisSevkiyatNo(""); setTedarikciBelgeNo(""); setTeslimat(BOS_TESLIMAT_ADRESI);
       setGumrukDepo(false); setBeyannameNo(""); setBeyannameTarihi(""); setYukleme(BOS_TESLIMAT_ADRESI);
       void yukle();
     } catch (h) {
@@ -689,6 +695,7 @@ export default function BelgelerSayfasi() {
     setAciklama(d.aciklama ?? ""); setKuruAciklamayaEkle(d.dovizCinsi !== "TRY" && (d.aciklama ?? "").includes("Döviz kuru:"));
     setSiparisNo(d.siparisNo ?? ""); setSiparisTarihi(d.siparisTarihi?.slice(0, 10) ?? "");
     setTalepNo(d.talepNo ?? ""); setTalepTarihi(d.talepTarihi?.slice(0, 10) ?? "");
+    setIlgili({ ilgiliKisi: d.ilgiliKisi ?? "", ilgiliKisiGorevi: d.ilgiliKisiGorevi ?? "" });
     const yerelSevk = d.fiiliSevkZamani ? yerelZaman(d.fiiliSevkZamani) : "";
     ozgunSevkZamaniRef.current = d.fiiliSevkZamani ? { yerel: yerelSevk, iso: d.fiiliSevkZamani } : null;
     setFiiliSevkZamani(yerelSevk);
@@ -1081,6 +1088,8 @@ export default function BelgelerSayfasi() {
                   )}
                 </Field>
                 <Field label="Talep Tarihi"><Input aria-label="Müşteri talep tarihi" type="date" value={talepTarihi} onChange={(e) => setTalepTarihi(e.target.value)} /></Field>
+                {/* FTR-32: talebi gönderen kişi; zincirde faturaya kadar taşınır. */}
+                <IlgiliKisiAlanlari deger={ilgili} onChange={setIlgili} cariId={cariId || null} />
               </>
             )}
             {yon === "satis" && (tur === "siparis" || tur === "irsaliye") && (
@@ -1280,6 +1289,7 @@ export default function BelgelerSayfasi() {
               </h3>
               <p className="muted" style={{ fontSize: "0.85rem", margin: "0.3rem 0 0" }}>
                 {detay.cari.unvan} · {detay.tarih}{detay.gecerlilikTarihi ? ` · Geçerlilik: ${detay.gecerlilikTarihi}` : ""} · {tl(detay.genelToplam, detay.dovizCinsi)}
+                {detay.ilgiliKisi ? ` · İlgili: ${detay.ilgiliKisi}${detay.ilgiliKisiGorevi ? ` (${detay.ilgiliKisiGorevi})` : ""}` : ""}
                 {detay.talepNo ? ` · Talep ref. ${detay.talepNo}${detay.talepTarihi ? ` (${new Date(detay.talepTarihi).toLocaleDateString("tr-TR")})` : ""}` : ""}
                 {detay.siparisNo ? ` · Sipariş ref. ${detay.siparisNo}${detay.siparisTarihi ? ` (${new Date(detay.siparisTarihi).toLocaleDateString("tr-TR")})` : ""}` : ""}
               </p>
