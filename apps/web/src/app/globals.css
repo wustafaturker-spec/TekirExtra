@@ -1893,6 +1893,70 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 .create-page > .card:not(.expense-entry):not(.create-page__keep),
 .create-page > .table-wrap { display: none; }
 .create-page > .document-editor { margin-inline: auto; max-width: 1180px; }
+/* ─── Satış/alış fatura formu: iki sütun + yapışkan özet paneli ───────────── */
+.create-page > .document-editor.invoice-editor { max-width: 1480px; }
+.invoice-layout { align-items: start; display: grid; gap: 0 .25rem; grid-template-columns: minmax(0, 1fr) 290px; padding-right: 1rem; }
+/* Ortak fieldset `display: contents` kullanır; burada ızgaranın tek hücresi olmalı. */
+.document-editor__fieldset.invoice-layout__main { display: block; min-width: 0; }
+.invoice-layout__side { display: grid; gap: .75rem; margin-top: 1rem; position: sticky; top: 1rem; }
+.invoice-head-fields { grid-template-columns: minmax(240px, 2fr) repeat(2, minmax(150px, 1fr)); }
+.invoice-head-fields > .field:first-child { grid-row: span 1; }
+.vade-cipleri { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .35rem; }
+.vade-cipi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-pill); color: var(--text-muted); cursor: pointer; font-size: .7rem; padding: .15rem .55rem; }
+.vade-cipi:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.vade-cipi.is-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); font-weight: 700; }
+.invoice-lines__footer { align-items: center; display: flex; flex-wrap: wrap; gap: .75rem; margin-top: .75rem; }
+.invoice-line-col--index { width: 34px; }
+.invoice-line__index { color: var(--text-subtle); font-size: .75rem; }
+.invoice-line__tax { color: var(--info); display: block; font-size: .7rem; font-weight: 400; }
+/* Sağ panel yer kapladığı için kalem sütunları biraz daha dar; ürün adı sığsın. */
+.invoice-editor .document-editor__section, .invoice-editor .form-grubu { margin-left: 1rem; margin-right: .9rem; }
+.invoice-editor .document-line-col--price { width: 96px; }
+.invoice-editor .document-line-col--rate { width: 62px; }
+.invoice-editor .document-line-col--total { width: 108px; }
+.invoice-notes { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; margin-bottom: 1rem; }
+.document-attachments.is-dragging { background: var(--accent-soft); border-radius: .6rem; outline: 2px dashed var(--accent); outline-offset: 4px; }
+.alan-ipucu { display: inline-block; margin-top: .25rem; }
+.alan-ipucu summary { align-items: center; background: var(--surface-2); border: 1px solid var(--border); border-radius: 50%; color: var(--text-muted); cursor: pointer; display: inline-flex; font-size: .68rem; font-weight: 700; height: 1.1rem; justify-content: center; list-style: none; width: 1.1rem; }
+.alan-ipucu summary::-webkit-details-marker { display: none; }
+.alan-ipucu[open] summary { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); }
+.alan-ipucu small { color: var(--text-muted); display: block; font-size: .72rem; margin-top: .3rem; }
+.invoice-summary { background: var(--surface); border: 1px solid var(--border); border-radius: .85rem; box-shadow: var(--shadow-sm); padding: .9rem 1rem; }
+.invoice-summary h4 { color: var(--text-muted); font-size: .72rem; letter-spacing: .04em; margin: 0 0 .6rem; text-transform: uppercase; }
+.invoice-summary__line { align-items: baseline; display: flex; font-size: .84rem; font-variant-numeric: tabular-nums; gap: .5rem; justify-content: space-between; margin-bottom: .35rem; }
+.invoice-summary__line small { color: var(--text-subtle); font-size: .68rem; }
+.invoice-summary__line.is-discount { color: var(--danger); }
+.invoice-summary__line.is-tax { color: var(--info); }
+.invoice-summary__line.is-grand { border-top: 1px solid var(--border-strong); font-size: 1.1rem; font-weight: 800; margin: .55rem 0 0; padding-top: .55rem; }
+.invoice-summary__tl { display: block; margin-top: .3rem; text-align: right; }
+.invoice-summary.is-warning { background: var(--warning-soft); border-color: var(--warning); }
+.invoice-summary.is-warning ul { font-size: .8rem; margin: 0; padding-left: 1rem; }
+.invoice-summary__actions { display: grid; gap: .35rem; text-align: center; }
+.invoice-summary__actions .btn { width: 100%; }
+/* Senaryo özeti dar panelde satır satır okunur. */
+.invoice-layout__side .scenario-summary { background: none; border: 0; display: block; margin: 0 0 .4rem; padding: 0; }
+.invoice-layout__side .scenario-summary > div { align-items: baseline; border-bottom: 1px dashed var(--border); border-right: 0; display: flex; gap: .5rem; justify-content: space-between; padding: .35rem 0; }
+.invoice-layout__side .scenario-summary > div span { margin: 0; }
+.invoice-layout__side .scenario-summary ul { margin-top: .5rem; }
+/* Katlanır form grubu: bölüm numarasını belge düzenleyicisinin sayacından alır. */
+.form-grubu { background: var(--surface-subtle, rgba(127,127,127,.035)); border: 1px solid var(--border); border-radius: .85rem; counter-increment: editor-section; margin: 1rem 1.25rem; }
+.form-grubu__bas { align-items: center; background: none; border: 0; color: var(--text); cursor: pointer; display: flex; gap: .7rem; padding: .85rem 1.1rem; text-align: left; width: 100%; }
+.form-grubu__bas::before { align-items: center; background: var(--surface-2); border: 1px solid var(--border); border-radius: .55rem; color: var(--text-muted); content: counter(editor-section, decimal-leading-zero); display: inline-flex; flex: 0 0 2rem; font-size: .7rem; font-weight: 800; height: 2rem; justify-content: center; }
+.form-grubu.is-open .form-grubu__bas::before { background: var(--accent); border-color: var(--accent); color: #fff; }
+.form-grubu__ok { color: var(--text-subtle); font-size: .75rem; order: 3; margin-left: auto; transition: transform .15s; }
+.form-grubu.is-open .form-grubu__ok { transform: rotate(90deg); }
+.form-grubu__baslik { display: grid; gap: .1rem; }
+.form-grubu__baslik strong { font-size: .95rem; }
+.form-grubu__baslik small { color: var(--text-muted); font-size: .72rem; }
+.form-grubu__govde { padding: 0 1.1rem 1.1rem; }
+@media (max-width: 1100px) {
+  .invoice-layout { grid-template-columns: 1fr; padding: 0 0 1rem; }
+  .invoice-layout__side { margin: 0 1.25rem; position: static; }
+}
+@media (max-width: 760px) {
+  .invoice-head-fields, .invoice-notes { grid-template-columns: 1fr; }
+  .invoice-line__index { display: none; }
+}
 .detail-page > .stat-grid,
 .detail-page > .saved-view-bar,
 .detail-page > .toolbar,

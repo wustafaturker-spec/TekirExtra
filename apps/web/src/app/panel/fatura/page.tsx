@@ -10,6 +10,8 @@ import { DepoSecici } from "@/components/depo-secici";
 import { BelgeOnizlemeEkrani } from "@/components/belge-onizleme-ekrani";
 import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
 import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyalari";
+import { FormGrubu } from "@/components/form-grubu";
+import { AlanIpucu } from "@/components/alan-ipucu";
 import { FaturaEkPaneli } from "@/components/fatura-ek-paneli";
 import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
 import { UrunSecimModali } from "@/components/urun-secim-modali";
@@ -17,7 +19,7 @@ import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, KAP_CINSLERI, kapEksigiVarMi, SIK_KAP_CINSLERI, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-alani";
 import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
-import { birimKisaAdi } from "@tekirextra/shared";
+import { birimKisaAdi, vadeTarihiHesapla } from "@tekirextra/shared";
 import { BirimSecimi, birimKatsayisi, SatirBirimi } from "@/components/birim-secimi";
 import { BOS_TESLIMAT_ADRESI, faturaTeslimYeriEksik, TeslimatAdresiAlanlari, teslimatAdresiGovdesi, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
 import { ebelgeGitmemisMi, ebelgeKullanilmiyor, faturaGecikmeUyarilari, faturaGeriAlmaEngeli, type EbelgeUygulamalari } from "@tekirextra/shared";
@@ -1803,6 +1805,32 @@ export default function FaturaSayfasi() {
         ? "Alış Faturaları"
         : "Fatura Yönetimi";
 
+  // Katlanır grupların "dolu" sayıları; salt okunur görünümde boş grup gizlenir.
+  const referansDolu = [siparisNo, siparisTarihi, talepNo, talepTarihi, ilgili.ilgiliKisi].filter((d) => d.trim()).length;
+  const teslimatDolu = (teslimat.teslimatAdres.trim() ? 1 : 0) + (depoId ? 1 : 0);
+  const ozelDolu = [ozelMatrahKodu, ihracKayitliKodu, idisSevkiyatNo.trim(), ytbNo.trim()].filter(Boolean).length + (gidenBelge && efaturaProfili === "ticari" ? 1 : 0);
+  const notDolu = [aciklama.trim(), notlar.trim()].filter(Boolean).length + dosyalar.length;
+  /** Kaydetmeden önce giderilmesi gereken eksikler; sunucu da aynı kuralları uygular. */
+  const eksikler = saltOkunur ? [] : [
+    !cariId && (tip.startsWith("alis") ? "Tedarikçi seçilmedi" : "Müşteri seçilmedi"),
+    satirlar.some((s) => !s.stokId) && "Ürünü seçilmemiş satır var",
+    satirlar.some((s) => s.stokId && !(Number(s.birimFiyat) > 0)) && "Birim fiyatı sıfır olan satır var",
+    dovizCinsi !== "TRY" && !(Number(kur) > 0) && "Döviz kuru girilmedi",
+  ].filter((e): e is string => Boolean(e));
+
+  // Ctrl+S (macOS'ta Cmd+S) düzenlenebilir formu kaydeder.
+  useEffect(() => {
+    if (!formAcik || saltOkunur) return;
+    const dinle = (olay: KeyboardEvent) => {
+      if ((olay.ctrlKey || olay.metaKey) && olay.key.toLowerCase() === "s") {
+        olay.preventDefault();
+        void kaydet({ preventDefault() {} } as React.FormEvent);
+      }
+    };
+    window.addEventListener("keydown", dinle);
+    return () => window.removeEventListener("keydown", dinle);
+  });
+
   return (
     <div className={yeniSayfasi ? "create-page" : undefined}>
       <PageHeader
@@ -1881,7 +1909,7 @@ export default function FaturaSayfasi() {
       )}
 
       {formAcik && (
-        <div className="document-editor">
+        <div className="document-editor invoice-editor">
           <div className="document-editor__head">
           <h3>{acikFatura ? `${saltOkunur ? "Fatura" : "Faturayı düzenle"} · ${acikFatura.no ?? (acikFatura.durum === "taslak" ? "Taslak" : acikFatura.durum === "kesin" ? "numara bekliyor" : "numarasız")}` :`Yeni ${tip.startsWith("alis") ? (tip === "alis_iade" ? "alış iade" : "alış") : tip === "proforma" ? "proforma" : "satış"} faturası`}</h3>
             <div className="row-tight">{acikFatura ? <FaturaDurumRozeti fatura={acikFatura} /> : <span className="badge badge--warning">Taslak</span>}{!yeniSayfasi && <Button size="sm" type="button" onClick={faturaFormunuAcKapat}>Vazgeç</Button>}</div>
@@ -1919,10 +1947,11 @@ export default function FaturaSayfasi() {
                 : "Bu faturanın e-belgesi oluşturulduğu için değiştirilemez; düzeltme iade faturasıyla yapılır."}
             </p>
           )}
-          <fieldset className="document-editor__fieldset" disabled={saltOkunur}>
+          <div className="invoice-layout" key={acikFatura?.id ?? "yeni"}>
+          <fieldset className="document-editor__fieldset invoice-layout__main" disabled={saltOkunur}>
           <div className="document-editor__section">
-            <h4 className="document-editor__section-title">Cari ve belge bilgileri</h4>
-            <div className="document-fields">
+            <h4 className="document-editor__section-title">{tip.startsWith("alis") ? "Tedarikçi" : "Müşteri"} ve belge bilgileri</h4>
+            <div className="document-fields invoice-head-fields">
               <Field label={tip.startsWith("alis") ? "Tedarikçi" : "Müşteri"}>
                 <AramaSecici
                   ariaLabel={tip.startsWith("alis") ? "Tedarikçi ara" : "Müşteri ara"}
@@ -1957,19 +1986,20 @@ export default function FaturaSayfasi() {
                   <option value="proforma">Proforma</option>
                 </Select>
               </Field>
-              {tip === "satis" && (
-                <Field label="Fatura Kategorisi / Gelir Türü">
-                  <Select aria-label="Fatura Kategorisi" value={gelirTuru} onChange={(e) => setGelirTuru(e.target.value)}>
-                    <option value="ticari_satis">🛒 Esas Ticari Satış Hasılatı</option>
-                    <option value="kira_geliri">🏢 Faaliyet Dışı Kira Geliri</option>
-                    <option value="varlik_satisi">🚜 Faaliyet Dışı Varlık / Demirbaş Satışı</option>
-                    <option value="yansitma">🔄 Yansıtma / Masraf Aktarımı</option>
-                    <option value="hizmet_diger">🌐 Diğer Faaliyet Dışı Gelirler</option>
-                  </Select>
-                </Field>
-              )}
               <Field label="Fatura Tarihi">
                 <Input aria-label="Fatura Tarihi" type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} required />
+              </Field>
+              <Field label="Vade Tarihi">
+                <Input aria-label="Vade Tarihi" type="date" value={vadeTarihi} onChange={(e) => { setVadeTarihi(e.target.value); setVadeElleDegisti(true); }} />
+                {!saltOkunur && (
+                  <div className="vade-cipleri" role="group" aria-label="Hızlı vade seçimi">
+                    {[0, 30, 60, 90].map((gun) => {
+                      const hedef = tarih ? vadeTarihiHesapla(tarih, gun) : null;
+                      return <button type="button" key={gun} className={`vade-cipi${hedef && vadeTarihi === hedef ? " is-active" : ""}`} disabled={!hedef} onClick={() => { if (hedef) { setVadeTarihi(hedef); setVadeElleDegisti(true); } }}>{gun === 0 ? "Peşin" : `${gun} gün`}</button>;
+                    })}
+                  </div>
+                )}
+                {cariOzeti?.varsayilanVadeGun != null && <small className="muted">Cari varsayılanı: {cariOzeti.varsayilanVadeGun} gün</small>}
               </Field>
               <Field label="Fatura Dövizi">
                 <Select value={dovizCinsi} onChange={(e) => belgeDoviziDegistir(e.target.value)}>
@@ -1984,146 +2014,17 @@ export default function FaturaSayfasi() {
                 </Alert>
               )}
               {dovizCinsi !== "TRY" && <Field label="Kur (1 döviz = TRY)"><Input type="number" min="0.000001" step="0.000001" value={kur} onChange={(e) => { setKur(e.target.value); setKurBilgisi("Manuel kur"); }} required /><small className="muted">{kurBilgisi || "TCMB EVDS kuru yükleniyor…"}</small></Field>}
-              <Field label="Vade Tarihi">
-                <Input aria-label="Vade Tarihi" type="date" value={vadeTarihi} onChange={(e) => { setVadeTarihi(e.target.value); setVadeElleDegisti(true); }} />
-                {cariOzeti?.varsayilanVadeGun != null && <small className="muted">Cari varsayılanı: {cariOzeti.varsayilanVadeGun} gün</small>}
-              </Field>
-              {gidenBelge && (
-                <Field label="e-Fatura Profili">
-                  <Select
-                    aria-label="e-Fatura Profili"
-                    value={efaturaProfili}
-                    onChange={(e) => { setEfaturaProfili(e.target.value as "temel" | "ticari"); setProfilElleDegisti(true); }}
-                  >
-                    <option value="temel">TEMELFATURA — alıcı yanıt veremez</option>
-                    <option value="ticari">TICARIFATURA — alıcı 8 gün içinde kabul/ret verir</option>
-                  </Select>
-                  <small className="muted">
-                    {cariOzeti ? `Cari varsayılanı: ${(cariOzeti.efaturaProfili ?? "temel") === "ticari" ? "TICARIFATURA" : "TEMELFATURA"}` : "Cari seçilince varsayılanı gelir"}
-                  </small>
-                </Field>
-              )}
               {tip === "satis" && (
-                <Field label="Özel matrah (KDV K. 23)">
-                  <Select aria-label="Özel matrah" value={ozelMatrahKodu} onChange={(e) => setOzelMatrahKodu(e.target.value)}>
-                    <option value="">Hayır — normal satış</option>
-                    {OZEL_MATRAH_KODLARI.map((k) => <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>)}
+                <Field label="Fatura Kategorisi / Gelir Türü">
+                  <Select aria-label="Fatura Kategorisi" value={gelirTuru} onChange={(e) => setGelirTuru(e.target.value)}>
+                    <option value="ticari_satis">🛒 Esas Ticari Satış Hasılatı</option>
+                    <option value="kira_geliri">🏢 Faaliyet Dışı Kira Geliri</option>
+                    <option value="varlik_satisi">🚜 Faaliyet Dışı Varlık / Demirbaş Satışı</option>
+                    <option value="yansitma">🔄 Yansıtma / Masraf Aktarımı</option>
+                    <option value="hizmet_diger">🌐 Diğer Faaliyet Dışı Gelirler</option>
                   </Select>
-                  {ozelMatrahKodu ? (
-                    <>
-                      {/* Üç kutu da etiketlidir: değer girilince placeholder
-                          kaybolduğu için hangisinin ne olduğu görünmez kalıyordu. */}
-                      <Field label="KDV oranı (%)">
-                        <Input
-                          type="number" min="0" max="100" step="0.01" value={ozelMatrahOrani}
-                          onChange={(e) => setOzelMatrahOrani(e.target.value)}
-                        />
-                      </Field>
-                      {/* Satıcı "92.000'e aldım, 95.500'e satıyorum" diye düşünür;
-                          farkın içindeki KDV'yi ayırmayı ondan beklemeyelim. */}
-                      <Field label="KDV dahil kâr farkı (alış ile satış arası)">
-                        <Input
-                          type="number" min="0" step="0.01" value={ozelMatrahFarki}
-                          placeholder="Örn. 3500"
-                          onChange={(e) => {
-                            setOzelMatrahFarki(e.target.value);
-                            setOzelMatrahTutari(e.target.value ? ozelMatrahTabani(e.target.value, ozelMatrahOrani || 0).toFixed(2) : "");
-                          }}
-                        />
-                      </Field>
-                      <Field label="KDV matrahı (özel matrah)">
-                        <Input
-                          type="number" min="0" step="0.01" value={ozelMatrahTutari}
-                          onChange={(e) => { setOzelMatrahTutari(e.target.value); setOzelMatrahFarki(""); }}
-                        />
-                      </Field>
-                      <small className="muted">
-                        Satırlara <strong>KDV hariç</strong> satış bedeli girilir (satır KDV oranları sıfırlandı); özel matrahın KDV'si ({ozelMatrahKdvsi(ozelMatrahTutari || 0, ozelMatrahOrani || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {dovizCinsi === "TRY" ? "TL" : dovizCinsi}) genel toplama eklenir.
-                      </small>
-                    </>
-                  ) : <small className="muted">İkinci el araç/taşınmaz, müzayede, bayi satışı gibi KDV'si satış bedelinin tamamı üzerinden hesaplanmayan işlemlerde seçilir.</small>}
                 </Field>
               )}
-              {tip === "satis" && (
-                <Field label="İhraç kayıtlı satış">
-                  <Select aria-label="İhraç kayıtlı satış" value={ihracKayitliKodu} onChange={(e) => setIhracKayitliKodu(e.target.value)}>
-                    <option value="">Hayır — normal satış</option>
-                    {IHRAC_KAYITLI_KODLARI.map((k) => <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>)}
-                  </Select>
-                  <small className="muted">
-                    {ihracKayitliKodu ? "KDV hesaplanır ve belgede görünür ama tahsil edilmez; ödenecek tutar matrahtır." : "İhracatçıya ihraç kaydıyla teslimde seçilir."}
-                  </small>
-                </Field>
-              )}
-              {gidenBelge && (
-                /* EBLG-72: sevkiyat numarası Darphane bildiriminden döner; girilirse
-                   belge İDİS profiliyle gider ve her satır etiket numarası ister. */
-                <Field label="İDİS sevkiyat numarası">
-                  <Input aria-label="İDİS sevkiyat numarası" value={idisSevkiyatNo} maxLength={20} placeholder="Örn. SE-0152457" onChange={(e) => setIdisSevkiyatNo(e.target.value)} />
-                  <small className="muted">
-                    {idisSevkiyatNo.trim()
-                      ? "Belge İDİS kapsamında gider; satır ayrıntılarında etiket numaralarını girin."
-                      : "İnşaat demiri teslimlerinde Darphane bildiriminden dönen numara yazılır; boşsa belge normal gider."}
-                  </small>
-                </Field>
-              )}
-              {gidenBelge && (
-                /* EBLG-78: teşvik belge numarası girilirse belge YATIRIMTESVIK
-                   profiliyle gider; satırlarda harcama tipi istenir. */
-                <Field label="Yatırım teşvik belge no">
-                  <Input aria-label="Yatırım teşvik belge no" value={ytbNo} maxLength={6} inputMode="numeric" placeholder="6 hane, örn. 123456" onChange={(e) => setYtbNo(e.target.value)} />
-                  <small className="muted">
-                    {ytbNo.trim()
-                      ? "Belge yatırım teşvik kapsamında gider; satır ayrıntılarında harcama tipini seçin."
-                      : "Yatırım teşvik belgeli teslimlerde E-TUYS'tan doğrulanan belge numarası yazılır; boşsa fatura normal gider."}
-                  </small>
-                </Field>
-              )}
-              {gidenBelge && ytbNo.trim() && (
-                <Field label="Yatırım teşvik belge tarihi (zorunlu)">
-                  <Input aria-label="Yatırım teşvik belge tarihi" type="date" value={ytbTarihi} onChange={(e) => setYtbTarihi(e.target.value)} />
-                </Field>
-              )}
-              <Field label="Müşteri Sipariş No"><Input value={siparisNo} onChange={(e) => setSiparisNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" /></Field>
-              <Field label="Müşteri Sipariş Tarihi">
-                <Input type="date" value={siparisTarihi} onChange={(e) => setSiparisTarihi(e.target.value)} />
-                {/* EBLG-73: UBL'de sipariş tarihi zorunlu; boşsa belgeye fatura tarihi yazılır. */}
-                {siparisNo.trim() && !siparisTarihi && <small className="muted">Boş bırakılırsa e-Belgeye fatura tarihi yazılır (GİB sipariş tarihini zorunlu tutuyor).</small>}
-              </Field>
-              {/* FTR-31: müşterinin talep referansı; sipariş no boşsa e-Belgeye o yazılır. */}
-              {(tip === "satis" || tip === "proforma" || talepNo) && (
-                <>
-                  <Field label="Müşteri Talep No">
-                    <Input aria-label="Müşteri talep numarası" value={talepNo} onChange={(e) => setTalepNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" />
-                    {talepNo.trim() && <small className="muted">{siparisNo.trim() ? "e-Belgede not olarak yazılır." : "Sipariş no boş olduğu için e-Belgede sipariş referansı olarak yazılır."}</small>}
-                  </Field>
-                  <Field label="Talep Tarihi"><Input aria-label="Müşteri talep tarihi" type="date" value={talepTarihi} onChange={(e) => setTalepTarihi(e.target.value)} /></Field>
-                </>
-              )}
-              {/* FTR-32: müşteri tarafında ilgili kişi; zincirden gelir, faturada da değişir. */}
-              {(tip === "satis" || tip === "proforma" || ilgili.ilgiliKisi) && (
-                <IlgiliKisiAlanlari deger={ilgili} onChange={setIlgili} cariId={cariId || null} />
-              )}
-              {/* FTR-30: teslim yeri — irsaliyeden gelir, cari adresinden seçilir ya da elle girilir. */}
-              {(tip === "satis" || teslimat.teslimatAdres) && (
-                <div className="invoice-delivery">
-                  <h4 className="invoice-delivery__title">Teslim yeri</h4>
-                  <TeslimatAdresiAlanlari deger={teslimat} onChange={setTeslimat} cariId={cariId || null} kullanim="fatura" disabled={saltOkunur} />
-                  {!saltOkunur && teslimat.teslimatAdres.trim() && !faturaTeslimYeriEksik(teslimat) && (
-                    <label className="row invoice-delivery__full" style={{ gap: "0.4rem", alignItems: "center" }}>
-                      <input type="checkbox" checked={teslimatiCariyeKaydet} onChange={(e) => setTeslimatiCariyeKaydet(e.target.checked)} />
-                      <span>Bu adresi carinin sevk adreslerine ekle</span>
-                    </label>
-                  )}
-                  {acikFatura?.teslimYeriUyarisi && <div className="invoice-delivery__full"><Alert tone="warning">{acikFatura.teslimYeriUyarisi}</Alert></div>}
-                </div>
-              )}
-            <div>
-              <DepoSecici deger={depoId} onChange={setDepoId} />
-            </div>
-            <Field label="Notlar">
-              <textarea className="input" value={notlar} onChange={(e) => setNotlar(e.target.value)} maxLength={2000} rows={3} placeholder="İç notlar (isteğe bağlı)" />
-            </Field>
             </div>
             {cariOzeti && (
               <div className={`customer-context${cariOzeti.risk.asim ? " is-warning" : ""}`}>
@@ -2138,9 +2039,10 @@ export default function FaturaSayfasi() {
           </div>
 
           <div className="document-editor__section document-lines invoice-lines">
-            <div className="between"><h4 className="document-editor__section-title">Fatura kalemleri</h4><Button type="button" variant="primary" onClick={() => setUrunModali({ satir: satirlar.findIndex((s) => !s.stokId) >= 0 ? satirlar.findIndex((s) => !s.stokId) : satirlar.length })}>+ Ürün çağır</Button></div>
+            <div className="between"><h4 className="document-editor__section-title">Fatura kalemleri</h4>{!saltOkunur && <Button type="button" variant="primary" onClick={() => setUrunModali({ satir: satirlar.findIndex((s) => !s.stokId) >= 0 ? satirlar.findIndex((s) => !s.stokId) : satirlar.length })}>+ Ürün çağır</Button>}</div>
             <TableWrap>
               <colgroup>
+                <col className="invoice-line-col--index" />
                 <col className="document-line-col--product" />
                 <col className="document-line-col--quantity" />
                 <col className="document-line-col--price" />
@@ -2151,12 +2053,13 @@ export default function FaturaSayfasi() {
               </colgroup>
               <thead>
                 <tr>
+                  <th className="num invoice-line__index">#</th>
                   <th>Ürün/Hizmet</th>
                   <th className="num">Miktar</th>
                   <th className="num">Birim fiyat</th>
                   <th className="num">İsk. %</th>
                   <th className="num">KDV %</th>
-                  <th className="num">Tutar</th>
+                  <th className="num">Satır toplamı</th>
                   <th><span className="sr-only">İşlem</span></th>
                 </tr>
               </thead>
@@ -2169,6 +2072,7 @@ export default function FaturaSayfasi() {
                   return (
                     <Fragment key={index}>
                     <tr>
+                      <td className="num invoice-line__index">{index + 1}</td>
                       <td className="invoice-line__product">
                         <AramaSecici
                           ariaLabel={`${index + 1}. satır ürün veya hizmet seçimi`}
@@ -2217,14 +2121,14 @@ export default function FaturaSayfasi() {
                       <td className="invoice-line__field" data-label="Birim fiyat"><Input className="document-line-number" aria-label="Birim fiyat" type="number" min="0" step="any" inputMode="decimal" value={s.birimFiyat} onChange={(e) => satirGuncelle(index, "birimFiyat", Number(e.target.value))} required /></td>
                       <td className="invoice-line__field" data-label="İskonto %"><Input className="document-line-number" aria-label="İskonto yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.iskontoOrani} onChange={(e) => satirGuncelle(index, "iskontoOrani", Number(e.target.value))} /></td>
                       <td className="invoice-line__field" data-label="KDV %"><Input className="document-line-number" aria-label="KDV yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.kdvOrani} onChange={(e) => satirGuncelle(index, "kdvOrani", Number(e.target.value))} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); satirEkle(); } }} required /></td>
-                      <td className="num document-line-total invoice-line__total" data-label="Tutar">{tl(satirSonuc ? satirSonuc.toplamTutar : 0, dovizCinsi)}</td>
+                      <td className="num document-line-total invoice-line__total" data-label="Satır toplamı">{tl(satirSonuc ? satirSonuc.toplamTutar : 0, dovizCinsi)}{satirSonuc && satirSonuc.kdvTutari > 0 && <small className="invoice-line__tax">KDV {tl(satirSonuc.kdvTutari, dovizCinsi)}</small>}</td>
                       <td className="center invoice-line__action">
                         <Button aria-expanded={acikSatir === index} aria-label="Satır ayrıntıları" title="Satır ayrıntıları" size="sm" type="button" onClick={() => setAcikSatir(acikSatir === index ? null : index)}>⋯</Button>
                       </td>
                     </tr>
                     {acikSatir === index && (
                       <tr className="document-line-detail">
-                        <td colSpan={7}>
+                        <td colSpan={8}>
                           <div className="document-line-detail__content">
                             <Field label={Number(s.kdvOrani) === 0 ? "GİB istisna kodu (zorunlu)" : "GİB istisna kodu"}>
                               <Select
@@ -2367,45 +2271,191 @@ export default function FaturaSayfasi() {
               </tbody>
             </TableWrap>
 
-            <div className="document-summary-row">
-              <Button type="button" onClick={satirEkle}>+ Satır ekle</Button>
-              <div className="document-totals">
-                <div className="document-total-line">
-                  <span>Brüt toplam</span><span>{tl(sonuc.toplamBrut, dovizCinsi)}</span>
-                </div>
-                <div className="document-total-line is-discount">
-                  <span>Toplam iskonto</span><span>-{tl(sonuc.toplamSatirIskontosu, dovizCinsi)}</span>
-                </div>
-                <div className="document-total-line is-tax">
-                  <span>{ihracKayitli ? "Hesaplanan KDV (tahsil edilmez)" : "KDV toplamı"}</span><span>{tl(sonuc.toplamKdv, dovizCinsi)}</span>
-                </div>
-                {sonuc.toplamTevkifat > 0 && (
-                  <div className="document-total-line is-discount">
-                    <span>Tevkifat</span><span>-{tl(sonuc.toplamTevkifat, dovizCinsi)}</span>
-                  </div>
-                )}
-                <div className="document-total-line is-grand">
-                  <span>Ödenecek</span><span>{tl(sonuc.genelToplam, dovizCinsi)}</span>
-                </div>
+            {!saltOkunur && (
+              <div className="invoice-lines__footer">
+                <Button type="button" onClick={satirEkle}>+ Satır ekle</Button>
+                <small className="muted">Son sütunda Enter yeni satır açar · Ctrl+S taslağı kaydeder</small>
               </div>
-            </div>
+            )}
           </div>
 
-          <div className="document-editor__section document-description">
+          {/* Seyrek kullanılan alanlar katlanır gruplarda; dolu grup açık gelir. */}
+          <FormGrubu baslik="Referanslar ve ilgili kişi" aciklama="Müşteri sipariş ve talep numarası, ilgili kişi" doluSayisi={referansDolu} gizli={saltOkunur && referansDolu === 0}>
+            <div className="document-fields">
+              <Field label="Müşteri Sipariş No"><Input value={siparisNo} onChange={(e) => setSiparisNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" /></Field>
+              <Field label="Müşteri Sipariş Tarihi">
+                <Input type="date" value={siparisTarihi} onChange={(e) => setSiparisTarihi(e.target.value)} />
+                {/* EBLG-73: UBL'de sipariş tarihi zorunlu; boşsa belgeye fatura tarihi yazılır. */}
+                {siparisNo.trim() && !siparisTarihi && <small className="muted">Boş bırakılırsa e-Belgeye fatura tarihi yazılır (GİB sipariş tarihini zorunlu tutuyor).</small>}
+              </Field>
+              {/* FTR-31: müşterinin talep referansı; sipariş no boşsa e-Belgeye o yazılır. */}
+              {(tip === "satis" || tip === "proforma" || talepNo) && (
+                <>
+                  <Field label="Müşteri Talep No">
+                    <Input aria-label="Müşteri talep numarası" value={talepNo} onChange={(e) => setTalepNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" />
+                    {talepNo.trim() && <small className="muted">{siparisNo.trim() ? "e-Belgede not olarak yazılır." : "Sipariş no boş olduğu için e-Belgede sipariş referansı olarak yazılır."}</small>}
+                  </Field>
+                  <Field label="Talep Tarihi"><Input aria-label="Müşteri talep tarihi" type="date" value={talepTarihi} onChange={(e) => setTalepTarihi(e.target.value)} /></Field>
+                </>
+              )}
+              {/* FTR-32: müşteri tarafında ilgili kişi; zincirden gelir, faturada da değişir. */}
+              {(tip === "satis" || tip === "proforma" || ilgili.ilgiliKisi) && (
+                <IlgiliKisiAlanlari deger={ilgili} onChange={setIlgili} cariId={cariId || null} />
+              )}
+            </div>
+          </FormGrubu>
+          <FormGrubu baslik="Teslimat ve depo" aciklama="Teslim yeri ve stok çıkışının yapılacağı depo" doluSayisi={teslimatDolu} gizli={saltOkunur && teslimatDolu === 0}>
+              {/* FTR-30: teslim yeri — irsaliyeden gelir, cari adresinden seçilir ya da elle girilir. */}
+              {(tip === "satis" || teslimat.teslimatAdres) && (
+                <div className="invoice-delivery">
+                  <h4 className="invoice-delivery__title">Teslim yeri</h4>
+                  <TeslimatAdresiAlanlari deger={teslimat} onChange={setTeslimat} cariId={cariId || null} kullanim="fatura" disabled={saltOkunur} />
+                  {!saltOkunur && teslimat.teslimatAdres.trim() && !faturaTeslimYeriEksik(teslimat) && (
+                    <label className="row invoice-delivery__full" style={{ gap: "0.4rem", alignItems: "center" }}>
+                      <input type="checkbox" checked={teslimatiCariyeKaydet} onChange={(e) => setTeslimatiCariyeKaydet(e.target.checked)} />
+                      <span>Bu adresi carinin sevk adreslerine ekle</span>
+                    </label>
+                  )}
+                  {acikFatura?.teslimYeriUyarisi && <div className="invoice-delivery__full"><Alert tone="warning">{acikFatura.teslimYeriUyarisi}</Alert></div>}
+                </div>
+              )}
+            <div className="document-fields">
+            <div>
+              <DepoSecici deger={depoId} onChange={setDepoId} />
+            </div>
+            </div>
+          </FormGrubu>
+          <FormGrubu baslik="Özel durumlar" aciklama="e-Fatura profili, özel matrah, ihraç kayıtlı, İDİS, yatırım teşvik" doluSayisi={ozelDolu} gizli={saltOkunur && ozelDolu === 0}>
+            <div className="document-fields">
+              {gidenBelge && (
+                <Field label="e-Fatura Profili">
+                  <Select
+                    aria-label="e-Fatura Profili"
+                    value={efaturaProfili}
+                    onChange={(e) => { setEfaturaProfili(e.target.value as "temel" | "ticari"); setProfilElleDegisti(true); }}
+                  >
+                    <option value="temel">TEMELFATURA — alıcı yanıt veremez</option>
+                    <option value="ticari">TICARIFATURA — alıcı 8 gün içinde kabul/ret verir</option>
+                  </Select>
+                  <AlanIpucu>
+                    {cariOzeti ? `Cari varsayılanı: ${(cariOzeti.efaturaProfili ?? "temel") === "ticari" ? "TICARIFATURA" : "TEMELFATURA"}` : "Cari seçilince varsayılanı gelir"}
+                  </AlanIpucu>
+                </Field>
+              )}
+              {tip === "satis" && (
+                <Field label="Özel matrah (KDV K. 23)">
+                  <Select aria-label="Özel matrah" value={ozelMatrahKodu} onChange={(e) => setOzelMatrahKodu(e.target.value)}>
+                    <option value="">Hayır — normal satış</option>
+                    {OZEL_MATRAH_KODLARI.map((k) => <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>)}
+                  </Select>
+                  {ozelMatrahKodu ? (
+                    <>
+                      {/* Üç kutu da etiketlidir: değer girilince placeholder
+                          kaybolduğu için hangisinin ne olduğu görünmez kalıyordu. */}
+                      <Field label="KDV oranı (%)">
+                        <Input
+                          type="number" min="0" max="100" step="0.01" value={ozelMatrahOrani}
+                          onChange={(e) => setOzelMatrahOrani(e.target.value)}
+                        />
+                      </Field>
+                      {/* Satıcı "92.000'e aldım, 95.500'e satıyorum" diye düşünür;
+                          farkın içindeki KDV'yi ayırmayı ondan beklemeyelim. */}
+                      <Field label="KDV dahil kâr farkı (alış ile satış arası)">
+                        <Input
+                          type="number" min="0" step="0.01" value={ozelMatrahFarki}
+                          placeholder="Örn. 3500"
+                          onChange={(e) => {
+                            setOzelMatrahFarki(e.target.value);
+                            setOzelMatrahTutari(e.target.value ? ozelMatrahTabani(e.target.value, ozelMatrahOrani || 0).toFixed(2) : "");
+                          }}
+                        />
+                      </Field>
+                      <Field label="KDV matrahı (özel matrah)">
+                        <Input
+                          type="number" min="0" step="0.01" value={ozelMatrahTutari}
+                          onChange={(e) => { setOzelMatrahTutari(e.target.value); setOzelMatrahFarki(""); }}
+                        />
+                      </Field>
+                      <small className="muted">
+                        Satırlara <strong>KDV hariç</strong> satış bedeli girilir (satır KDV oranları sıfırlandı); özel matrahın KDV'si ({ozelMatrahKdvsi(ozelMatrahTutari || 0, ozelMatrahOrani || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {dovizCinsi === "TRY" ? "TL" : dovizCinsi}) genel toplama eklenir.
+                      </small>
+                    </>
+                  ) : <AlanIpucu>İkinci el araç/taşınmaz, müzayede, bayi satışı gibi KDV'si satış bedelinin tamamı üzerinden hesaplanmayan işlemlerde seçilir.</AlanIpucu>}
+                </Field>
+              )}
+              {tip === "satis" && (
+                <Field label="İhraç kayıtlı satış">
+                  <Select aria-label="İhraç kayıtlı satış" value={ihracKayitliKodu} onChange={(e) => setIhracKayitliKodu(e.target.value)}>
+                    <option value="">Hayır — normal satış</option>
+                    {IHRAC_KAYITLI_KODLARI.map((k) => <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>)}
+                  </Select>
+                  <AlanIpucu>
+                    {ihracKayitliKodu ? "KDV hesaplanır ve belgede görünür ama tahsil edilmez; ödenecek tutar matrahtır." : "İhracatçıya ihraç kaydıyla teslimde seçilir."}
+                  </AlanIpucu>
+                </Field>
+              )}
+              {gidenBelge && (
+                /* EBLG-72: sevkiyat numarası Darphane bildiriminden döner; girilirse
+                   belge İDİS profiliyle gider ve her satır etiket numarası ister. */
+                <Field label="İDİS sevkiyat numarası">
+                  <Input aria-label="İDİS sevkiyat numarası" value={idisSevkiyatNo} maxLength={20} placeholder="Örn. SE-0152457" onChange={(e) => setIdisSevkiyatNo(e.target.value)} />
+                  <AlanIpucu>
+                    {idisSevkiyatNo.trim()
+                      ? "Belge İDİS kapsamında gider; satır ayrıntılarında etiket numaralarını girin."
+                      : "İnşaat demiri teslimlerinde Darphane bildiriminden dönen numara yazılır; boşsa belge normal gider."}
+                  </AlanIpucu>
+                </Field>
+              )}
+              {gidenBelge && (
+                /* EBLG-78: teşvik belge numarası girilirse belge YATIRIMTESVIK
+                   profiliyle gider; satırlarda harcama tipi istenir. */
+                <Field label="Yatırım teşvik belge no">
+                  <Input aria-label="Yatırım teşvik belge no" value={ytbNo} maxLength={6} inputMode="numeric" placeholder="6 hane, örn. 123456" onChange={(e) => setYtbNo(e.target.value)} />
+                  <AlanIpucu>
+                    {ytbNo.trim()
+                      ? "Belge yatırım teşvik kapsamında gider; satır ayrıntılarında harcama tipini seçin."
+                      : "Yatırım teşvik belgeli teslimlerde E-TUYS'tan doğrulanan belge numarası yazılır; boşsa fatura normal gider."}
+                  </AlanIpucu>
+                </Field>
+              )}
+              {gidenBelge && ytbNo.trim() && (
+                <Field label="Yatırım teşvik belge tarihi (zorunlu)">
+                  <Input aria-label="Yatırım teşvik belge tarihi" type="date" value={ytbTarihi} onChange={(e) => setYtbTarihi(e.target.value)} />
+                </Field>
+              )}
+            </div>
+          </FormGrubu>
+          <FormGrubu baslik="Açıklama, notlar ve ekler" aciklama="Faturada görünen açıklama, iç notlar ve dosyalar" doluSayisi={notDolu} gizli={saltOkunur && notDolu === 0}>
+            <div className="invoice-notes">
             <Field label="Fatura açıklaması">
-              <textarea className="textarea document-description__input" value={aciklama} onChange={(e) => setAciklama(e.target.value)} maxLength={500} rows={5} placeholder="Faturada gösterilecek açıklamayı yazın (isteğe bağlı)" />
+              <textarea className="textarea document-description__input" value={aciklama} onChange={(e) => setAciklama(e.target.value)} maxLength={500} rows={3} placeholder="Faturada gösterilecek açıklamayı yazın (isteğe bağlı)" />
               {dovizCinsi !== "TRY" && <label className="check-row"><input type="checkbox" checked={kuruAciklamayaEkle} onChange={(e) => setKuruAciklamayaEkle(e.target.checked)} /> Döviz kurunu açıklamaya ekle</label>}
             </Field>
-          </div>
-
-          <div className="document-editor__section">
+            <Field label="Notlar">
+              <textarea className="input" value={notlar} onChange={(e) => setNotlar(e.target.value)} maxLength={2000} rows={3} placeholder="İç notlar (isteğe bağlı)" />
+            </Field>
+            </div>
             <BelgeDosyalari dosyalar={dosyalar} onChange={setDosyalar} />
-          </div>
+          </FormGrubu>
+          </fieldset>
 
-          {/* FTR-20: kaydetmeden önceki son kontrol. Ne göndereceğimizi
-              satırlardan türetip gösterir; geçersiz senaryo burada durdurulur. */}
-          <div className="document-editor__section">
-            <h4 className="document-editor__section-title">Senaryo özeti</h4>
+          {/* Sayfa kaydırılsa da görünen özet: toplamlar, senaryo, eksikler ve kaydet. */}
+          <aside className="invoice-layout__side" aria-label="Fatura özeti">
+            <div className="invoice-summary">
+              <h4>Fatura özeti</h4>
+              <div className="invoice-summary__line"><span>Brüt toplam</span><span>{tl(sonuc.toplamBrut, dovizCinsi)}</span></div>
+              {sonuc.toplamSatirIskontosu > 0 && <div className="invoice-summary__line is-discount"><span>İskonto</span><span>-{tl(sonuc.toplamSatirIskontosu, dovizCinsi)}</span></div>}
+              <div className="invoice-summary__line"><span>Matrah</span><span>{tl(sonuc.toplamMatrah, dovizCinsi)}</span></div>
+              {sonuc.kdvDetaylari.map((k) => (
+                <div className="invoice-summary__line is-tax" key={k.kdvOrani}><span>{ihracKayitli ? "Hesaplanan " : ""}KDV %{k.kdvOrani}{sonuc.kdvDetaylari.length > 1 && <small> · matrah {tl(k.matrah, dovizCinsi)}</small>}</span><span>{tl(k.kdvTutari, dovizCinsi)}</span></div>
+              ))}
+              {ihracKayitli && <small className="muted">İhraç kayıtlı: KDV hesaplanır, tahsil edilmez.</small>}
+              {sonuc.toplamTevkifat > 0 && <div className="invoice-summary__line is-discount"><span>Tevkifat</span><span>-{tl(sonuc.toplamTevkifat, dovizCinsi)}</span></div>}
+              <div className="invoice-summary__line is-grand"><span>Ödenecek</span><span>{tl(sonuc.genelToplam, dovizCinsi)}</span></div>
+              {dovizCinsi !== "TRY" && Number(kur) > 0 && <small className="muted invoice-summary__tl">≈ {tl(sonuc.genelToplam * Number(kur), "TRY")} · kur {Number(kur).toLocaleString("tr-TR", { maximumFractionDigits: 4 })}</small>}
+            </div>
+            <div className="invoice-summary">
+              <h4>GİB senaryosu</h4>
             <div className={`scenario-summary${senaryoUyarilari.length + ihracKayitliUyarilari.length + ozelMatrahUyarilari.length + idisUyarilari.length + sarjUyarilari.length > 0 ? " is-warning" : ""}`}>
               <div>
                 <span>GİB senaryosu</span>
@@ -2463,16 +2513,22 @@ export default function FaturaSayfasi() {
                 </ul>
               )}
             </div>
-            <small className="muted">GİB kod listesi: {GIB_KOD_LISTESI_SURUMU}</small>
-          </div>
-
-          </fieldset>
-
-          {!saltOkunur && (
-            <div className="document-editor__actions">
-              <Button variant="primary" onClick={kaydet}>{duzenlenenId ? "Değişiklikleri kaydet" : "Taslak faturayı kaydet"}</Button>
+              <small className="muted">GİB kod listesi: {GIB_KOD_LISTESI_SURUMU}</small>
             </div>
-          )}
+            {eksikler.length > 0 && (
+              <div className="invoice-summary is-warning" role="status">
+                <h4>Kaydetmeden önce</h4>
+                <ul>{eksikler.map((e) => <li key={e}>{e}</li>)}</ul>
+              </div>
+            )}
+            {!saltOkunur && (
+              <div className="invoice-summary__actions">
+                <Button variant="primary" onClick={kaydet}>{duzenlenenId ? "Değişiklikleri kaydet" : "Taslak faturayı kaydet"}</Button>
+                <small className="muted">Kısayol: Ctrl+S</small>
+              </div>
+            )}
+          </aside>
+          </div>
         </div>
       )}
       <UrunSecimModali acik={urunModali !== null} baslangicStokId={urunModali?.stokId} stoklar={stoklar} cariId={cariId} tip={tip.startsWith("alis") ? "alis" : "satis"} belgeDovizi={dovizCinsi} belgeKuru={kur} belgeTarihi={tarih} onKapat={() => setUrunModali(null)} onEkle={(urun) => {

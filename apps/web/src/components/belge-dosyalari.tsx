@@ -8,6 +8,7 @@ const MAKS_BOYUT = 10 * 1024 * 1024;
 
 export function BelgeDosyalari({ dosyalar, onChange }: { dosyalar: File[]; onChange: (dosyalar: File[]) => void }) {
   const [onizleme, setOnizleme] = useState<{ dosya: File; url: string } | null>(null);
+  const [surukleniyor, setSurukleniyor] = useState(false);
   useEffect(() => () => { if (onizleme) URL.revokeObjectURL(onizleme.url); }, [onizleme]);
   function secildi(liste: FileList | null) {
     if (!liste) return;
@@ -18,7 +19,13 @@ export function BelgeDosyalari({ dosyalar, onChange }: { dosyalar: File[]; onCha
   }
 
   return (
-    <div className="document-attachments">
+    <div
+      className={`document-attachments${surukleniyor ? " is-dragging" : ""}`}
+      // Dosyalar alanın üstüne sürüklenip bırakılabilir; seçim düğmesiyle aynı kurala tabidir.
+      onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setSurukleniyor(true); } }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setSurukleniyor(false); }}
+      onDrop={(e) => { e.preventDefault(); setSurukleniyor(false); secildi(e.dataTransfer.files); }}
+    >
       <div className="document-attachments__head">
         <div><h4 className="document-editor__section-title">Belge ekleri</h4><small>Fiş, sözleşme, tarama veya destekleyici dosyaları ekleyebilirsiniz.</small></div>
         <Field label="Dosya seç">
@@ -32,7 +39,7 @@ export function BelgeDosyalari({ dosyalar, onChange }: { dosyalar: File[]; onCha
           <div className="row-tight"><Button size="sm" type="button" onClick={() => setOnizleme({ dosya, url: URL.createObjectURL(dosya) })}>Görüntüle</Button><Button aria-label={`${dosya.name} dosyasını kaldır`} size="sm" type="button" onClick={() => onChange(dosyalar.filter((_, i) => i !== index))}>Kaldır</Button></div>
         </div>)}
       </div>}
-      <small className="muted">Her dosya en fazla 10 MB olabilir. Birden fazla dosya seçebilirsiniz.</small>
+      <small className="muted">Dosyaları bu alana sürükleyip bırakabilir ya da seçebilirsiniz. Her dosya en fazla 10 MB olabilir.</small>
       {onizleme && <BelgeOnizleme dosyaAdi={onizleme.dosya.name} mimeTip={onizleme.dosya.type} url={onizleme.url} blob={onizleme.dosya} onKapat={() => setOnizleme(null)} />}
     </div>
   );
