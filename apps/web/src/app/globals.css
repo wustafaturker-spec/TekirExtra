@@ -1915,6 +1915,7 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 .invoice-editor .document-line-col--rate { width: 62px; }
 .invoice-editor .document-line-col--total { width: 108px; }
 .invoice-notes { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; margin-bottom: 1rem; }
+.invoice-notes--tek { grid-template-columns: 1fr; }
 .document-attachments.is-dragging { background: var(--accent-soft); border-radius: .6rem; outline: 2px dashed var(--accent); outline-offset: 4px; }
 .alan-ipucu { display: inline-block; margin-top: .25rem; }
 .alan-ipucu summary { align-items: center; background: var(--surface-2); border: 1px solid var(--border); border-radius: 50%; color: var(--text-muted); cursor: pointer; display: inline-flex; font-size: .68rem; font-weight: 700; height: 1.1rem; justify-content: center; list-style: none; width: 1.1rem; }

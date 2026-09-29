@@ -15,7 +15,9 @@ import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { TasimaBilgisiPaneli } from "@/components/tasima-bilgisi-paneli";
 import type { DepoOzet } from "@/lib/depolar";
-import { BOS_TESLIMAT_ADRESI, TeslimatAdresiAlanlari, teslimatAdresiGovdesi, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
+import { BOS_TESLIMAT_ADRESI, TeslimatAdresiAlanlari, teslimatAdresiEksik, teslimatAdresiGovdesi, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
+import { FormGrubu } from "@/components/form-grubu";
+import { AlanIpucu } from "@/components/alan-ipucu";
 import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
 import { belgeNoMetni, bugunTR, EN_UZUN_VADE_GUN, revizyonEngeli, faturaHesapla, kosulSatirlari, muhtelifMusteriMi, referansFarkiUyarisi, TESLIM_SARTLARI, irsaliyeGeriAlmaEngeli, irsaliyeIptalUyarisi, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
@@ -1039,6 +1041,34 @@ export default function BelgelerSayfasi() {
     });
   }
 
+  // Katlanır grupların "dolu" sayıları.
+  const teslimatDolu = [teslimat.teslimatAdres, teslimat.teslimatIl, teslimat.teslimatIlce, teslimat.teslimatPostaKodu].filter((d) => d.trim()).length;
+  const kosulDolu = [vadeGun, teslimSuresi, teslimSekli].filter((d) => d.trim()).length;
+  const referansDolu = [talepNo, talepTarihi, ilgili.ilgiliKisi, siparisNo, siparisTarihi].filter((d) => d.trim()).length;
+  const notDolu = (aciklama.trim() ? 1 : 0) + dosyalar.length;
+  /** Kaydetmeyi ya da e-İrsaliye gönderimini engelleyecek eksikler. */
+  const eirsaliyeGidecek = tur === "irsaliye" && (yon === "satis" || gumrukDepo);
+  const kontrolListesi = [
+    !cariId && (yon === "satis" ? "Müşteri seçilmedi" : "Tedarikçi seçilmedi"),
+    satirlar.some((s) => !s.stokId) && "Ürünü seçilmemiş satır var",
+    dovizCinsi !== "TRY" && !(Number(kur) > 0) && "Döviz kuru girilmedi",
+    eirsaliyeGidecek && !tasiyiciCariId && !(soforAdi.trim() && soforSoyadi.trim() && plaka.trim()) && "e-İrsaliye için taşıyıcı firma ya da şoför adı, soyadı ve plaka gerekli",
+    eirsaliyeGidecek && teslimatAdresiEksik(teslimat) && "Teslimat adresinin dört alanı da dolu olmalı",
+  ].filter((e): e is string => Boolean(e));
+
+  // Ctrl+S (macOS'ta Cmd+S) açık formu kaydeder.
+  useEffect(() => {
+    if (!formAcik) return;
+    const dinle = (olay: KeyboardEvent) => {
+      if ((olay.ctrlKey || olay.metaKey) && olay.key.toLowerCase() === "s") {
+        olay.preventDefault();
+        void kaydet({ preventDefault() {} } as React.FormEvent);
+      }
+    };
+    window.addEventListener("keydown", dinle);
+    return () => window.removeEventListener("keydown", dinle);
+  });
+
   return (
     <div className={yeniSayfasi ? "create-page" : undefined}>
       <PageHeader
@@ -1075,15 +1105,17 @@ export default function BelgelerSayfasi() {
       </>}</Alert>
 
       {formAcik && (
-        <div className="document-editor">
+        <div className="document-editor invoice-editor">
           <div className="document-editor__head">
             <h3>{duzenlenenId ? `${TUR_ADI[tur]} taslağını düzenle` : `Yeni ${TUR_ADI[tur].toLocaleLowerCase("tr")}`}</h3>
             <span className="badge badge--warning">Taslak</span>
           </div>
 
+          <div className="invoice-layout" key={duzenlenenId ?? "yeni"}>
+          <div className="invoice-layout__main">
           <div className="document-editor__section">
             <h4 className="document-editor__section-title">Cari ve belge bilgileri</h4>
-            <div className="document-fields document-fields--belge">
+            <div className="document-fields document-fields--belge invoice-head-fields">
               <div>
               <Field label={yon === "satis" ? "Müşteri" : "Tedarikçi"}>
                 <AramaSecici
@@ -1125,56 +1157,81 @@ export default function BelgelerSayfasi() {
             {tur === "teklif" && (
                 <Field label="Geçerlilik Tarihi"><Input type="date" value={gecerlilik} onChange={(e) => setGecerlilik(e.target.value)} /></Field>
             )}
-            {/* FTR-33: teklif koşulları; vade faturada vade tarihine, teslim şekli ihracatta teslim şartına dönüşür. */}
-            {(tur === "teklif" || tur === "siparis") && (
-              <>
-                <Field label="Ödeme Vadesi (gün)">
-                  <Input aria-label="Ödeme vadesi gün" type="number" min={0} max={EN_UZUN_VADE_GUN} step={1} value={vadeGun} placeholder="0 = peşin" onChange={(e) => setVadeGun(e.target.value)} />
-                  <small className="muted">Faturada vade tarihi, fatura tarihine bu gün eklenerek yazılır.</small>
-                </Field>
-                <Field label="Teslim Süresi">
-                  <Input aria-label="Teslim süresi" value={teslimSuresi} maxLength={200} placeholder="Örn. Siparişten itibaren 15 iş günü" onChange={(e) => setTeslimSuresi(e.target.value)} />
-                </Field>
-                <Field label="Teslim Şekli">
-                  <Select aria-label="Teslim şekli" value={teslimSekli} onChange={(e) => setTeslimSekli(e.target.value)}>
-                    <option value="">Belirtilmedi</option>
-                    {TESLIM_SARTLARI.map((t) => <option key={t.kod} value={t.kod}>{t.ad}</option>)}
-                  </Select>
-                </Field>
-              </>
-            )}
-            {/* FTR-31: müşterinin talep ve sipariş referansı; zincir boyunca faturaya kadar taşınır. */}
-            {yon === "satis" && (
-              <>
-                <Field label="Müşteri Talep No">
-                  <Input aria-label="Müşteri talep numarası" value={talepNo} onChange={(e) => setTalepNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" />
-                  {tur === "teklif" && talepMukerrerleri.length > 0 && (
-                    <small className="muted" role="status">⚠ Bu müşteriye aynı talep numarasıyla açılmış teklif var: {talepMukerrerleri.map((t) => `${t.no ?? "taslak"} (${new Date(t.tarih).toLocaleDateString("tr-TR")})`).join(", ")}.</small>
-                  )}
-                </Field>
-                <Field label="Talep Tarihi"><Input aria-label="Müşteri talep tarihi" type="date" value={talepTarihi} onChange={(e) => setTalepTarihi(e.target.value)} /></Field>
-                {/* FTR-32: talebi gönderen kişi; zincirde faturaya kadar taşınır. */}
-                <IlgiliKisiAlanlari deger={ilgili} onChange={setIlgili} cariId={cariId || null} />
-              </>
-            )}
-            {yon === "satis" && (tur === "siparis" || tur === "irsaliye") && (
-              <>
-                <Field label="Müşteri Sipariş No">
-                  <Input aria-label="Müşteri sipariş numarası" value={siparisNo} onChange={(e) => setSiparisNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" />
-                  {tur === "irsaliye" && yon === "satis" && <small className="muted">e-İrsaliyeye yazılır; boşsa talep numarası, o da yoksa irsaliyenin türediği sipariş belgesinin numarası gider.</small>}
-                </Field>
-                <Field label="Müşteri Sipariş Tarihi">
-                  <Input aria-label="Müşteri sipariş tarihi" type="date" value={siparisTarihi} onChange={(e) => setSiparisTarihi(e.target.value)} />
-                  {tur === "irsaliye" && siparisNo.trim() && !siparisTarihi && <small className="muted">Boş bırakılırsa belgeye irsaliye tarihi yazılır (GİB tarihi zorunlu tutuyor).</small>}
-                </Field>
-              </>
-            )}
+            </div>
+          </div>
+
+          <div className="document-editor__section document-lines">
+            <div className="between"><h4 className="document-editor__section-title">Belge kalemleri</h4><Button type="button" variant="primary" onClick={() => setUrunModali({ satir: satirlar.findIndex((s) => !s.stokId) >= 0 ? satirlar.findIndex((s) => !s.stokId) : satirlar.length })}>+ Ürün çağır</Button></div>
+            <TableWrap>
+            <colgroup>
+              <col className="invoice-line-col--index" />
+              <col className="document-line-col--product" />
+              <col className="document-line-col--quantity" />
+              <col className="document-line-col--price" />
+              <col className="document-line-col--rate" />
+              <col className="document-line-col--rate" />
+              <col className="document-line-col--total" />
+              <col className="document-line-col--action" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th className="num invoice-line__index">#</th>
+                <th>Ürün/Hizmet</th>
+                <th className="num">Miktar</th>
+                <th className="num">Birim fiyat</th>
+                <th className="num">İsk. %</th>
+                <th className="num">KDV %</th>
+                <th className="num">Satır toplamı</th>
+                <th><span className="sr-only">İşlem</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {satirlar.map((s, i) => {
+                const ss = sonuc.satirlar[i];
+                return (
+                  <tr key={i}>
+                    <td className="num invoice-line__index">{i + 1}</td>
+                    <td>
+                      <AramaSecici
+                        ariaLabel={`${i + 1}. satır ürün veya hizmet seçimi`}
+                        deger={s.stokId}
+                        onChange={(deger) => { if (deger) setUrunModali({ satir: i, stokId: deger }); }}
+                        placeholder="Kod veya ürün adıyla ara"
+                        secenekler={stoklar.map((stok) => ({
+                          deger: stok.id,
+                          baslik: stok.ad,
+                          aciklama: stok.kod,
+                          aramaMetni: [stok.kod, ...(stok.tedarikciUrunKodlari ?? [])].join(" "),
+                        }))}
+                      />
+                      {(stokVaryantlari[s.stokId]?.length ?? 0) > 0 && <Select aria-label="Varyant" required value={s.varyantId ?? ""} onChange={(e) => { const varyantId = e.target.value; setSatirlar((eskiler) => eskiler.map((x, j) => j === i ? { ...x, varyantId } : x)); if (varyantId) void kalemFiyatiGetir(s.stokId, varyantId).then((fiyat) => { if (fiyat) setSatirlar((eskiler) => eskiler.map((x, j) => j === i && x.varyantId === varyantId ? { ...x, ...fiyat } : x)); }); }}><option value="">Varyant seçin</option>{stokVaryantlari[s.stokId].filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad} · Stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")}</option>)}</Select>}
+                      {s.dovizUyarisi && <p className="field-error" role="alert">{s.dovizUyarisi}</p>}
+                      {yon === "alis" && (() => { const takip = stoklar.find((x) => x.id === s.stokId)?.takipTipi; return takip && takip !== "yok" ? <div className="stack"><Input aria-label="Lot / Parti No" required placeholder="Lot / Parti No" value={s.lotNo ?? ""} onChange={(e) => void satirGuncelle(i, "lotNo", e.target.value)} />{takip === "seri" && <Input aria-label="Seri numaraları" required placeholder="Seri numaraları (virgülle)" value={s.seriNolar ?? ""} onChange={(e) => void satirGuncelle(i, "seriNolar", e.target.value)} />}<Input aria-label="Son kullanma tarihi" type="date" value={s.sonKullanmaTarihi ?? ""} onChange={(e) => void satirGuncelle(i, "sonKullanmaTarihi", e.target.value)} /></div> : null; })()}
+                      {tur === "irsaliye" && idisSevkiyatNo.trim() && (
+                        <Input aria-label={`${i + 1}. satır İDİS etiket numarası`} placeholder="İDİS etiket no (örn. CV0152457)" maxLength={20} value={s.idisEtiketNo ?? ""} onChange={(e) => satirGuncelle(i, "idisEtiketNo", e.target.value)} />
+                      )}
+                    </td>
+                    <td><div className="document-line-qty"><Input className="document-line-number" aria-label="Miktar" type="number" min="0.01" step="any" inputMode="decimal" value={s.miktar} onChange={(e) => satirGuncelle(i, "miktar", Number(e.target.value))} required /><SatirBirimi stok={stoklar.find((x) => x.id === s.stokId)} value={s.birim} onChange={(birim) => satirBirimiDegistir(i, birim)} /></div></td>
+                    <td><Input className="document-line-number" aria-label="Birim fiyat" type="number" min="0" step="any" inputMode="decimal" value={s.birimFiyat} onChange={(e) => satirGuncelle(i, "birimFiyat", Number(e.target.value))} required /></td>
+                    <td><Input className="document-line-number" aria-label="İskonto yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.iskontoOrani} onChange={(e) => satirGuncelle(i, "iskontoOrani", Number(e.target.value))} /></td>
+                    <td><Input className="document-line-number" aria-label="KDV yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.kdvOrani} onChange={(e) => satirGuncelle(i, "kdvOrani", Number(e.target.value))} required /></td>
+                    <td className="num document-line-total">{tl(ss ? ss.toplamTutar : 0, dovizCinsi)}{ss && ss.kdvTutari > 0 && <small className="invoice-line__tax">KDV {tl(ss.kdvTutari, dovizCinsi)}</small>}</td>
+                    <td className="center"><Button aria-label="Satırı sil" title="Satırı sil" variant="danger" size="sm" type="button" onClick={() => satirSil(i)}>×</Button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            </TableWrap>
+
+            <div className="invoice-lines__footer">
+              <Button type="button" onClick={satirEkle}>+ Satır ekle</Button>
+              <small className="muted">Ctrl+S taslağı kaydeder</small>
             </div>
           </div>
 
           {tur === "irsaliye" && (
             <div className="document-editor__section">
-              <h4 className="document-editor__section-title">Sevkiyat</h4>
+              <h4 className="document-editor__section-title">Sevkiyat ve taşıma</h4>
               {/* EBLG-76: sevkten önce kesilmiş fatura; numarası e-İrsaliyeye yazılır. */}
               {yon === "satis" && sevkiyatFaturalari.length > 0 && <Field label="Önceden düzenlenen fatura">
                 <Select value={faturaId} onChange={(e) => setFaturaId(e.target.value)}>
@@ -1218,7 +1275,7 @@ export default function BelgelerSayfasi() {
                       <input type="checkbox" checked={gumrukDepo} onChange={(e) => setGumrukDepo(e.target.checked)} />
                       <span>İthal malın gümrükten depoya kısım kısım taşınması</span>
                     </label>
-                    <small className="muted">Firma e-İrsaliye düzenler; satıcı da alıcı da firmanın kendisidir. Açıklama ve sefer numarası kendiliğinden yazılır.</small>
+                    <AlanIpucu>Firma e-İrsaliye düzenler; satıcı da alıcı da firmanın kendisidir. Açıklama ve sefer numarası kendiliğinden yazılır.</AlanIpucu>
                   </Field>
                 )}
                 {yon === "alis" && gumrukDepo && (
@@ -1231,12 +1288,10 @@ export default function BelgelerSayfasi() {
                     <Field label="Yükleme Posta Kodu"><Input aria-label="Yükleme posta kodu" value={yukleme.teslimatPostaKodu} maxLength={10} onChange={(e) => setYukleme({ ...yukleme, teslimatPostaKodu: e.target.value })} /></Field>
                   </>
                 )}
-                {/* EBLG-84: satış irsaliyesinde malın gideceği yer; ihracatta gümrük kapısı. EBLG-87: gümrükten sevkte boşaltma (depo) adresi. */}
-                {(yon === "satis" || gumrukDepo) && <TeslimatAdresiAlanlari deger={teslimat} onChange={setTeslimat} cariId={yon === "satis" ? cariId || null : null} />}
                 {/* EBLG-72: numara girilirse belge IDISIRSALIYE profiliyle gider. */}
                 <Field label="İDİS Sevkiyat Numarası">
                   <Input aria-label="İDİS sevkiyat numarası" value={idisSevkiyatNo} maxLength={20} placeholder="Örn. SE-0152457" onChange={(e) => setIdisSevkiyatNo(e.target.value)} />
-                  <small className="muted">İnşaat demiri teslimlerinde girilir; satırlar etiket numarası ister.</small>
+                  <AlanIpucu>İnşaat demiri teslimlerinde girilir; satırlar etiket numarası ister.</AlanIpucu>
                 </Field>
                 <Field label="Plaka"><Input value={plaka} onChange={(e) => setPlaka(e.target.value)} onBlur={() => setPlaka((p) => plakaNormalize(p))} placeholder="34ABC123" /></Field>
                 <Field label="Dorse Plakası"><Input value={dorsePlaka} onChange={(e) => setDorsePlaka(e.target.value)} onBlur={() => setDorsePlaka((p) => plakaNormalize(p))} /></Field>
@@ -1248,90 +1303,116 @@ export default function BelgelerSayfasi() {
             </div>
           )}
 
-          <div className="document-editor__section document-lines">
-            <div className="between"><h4 className="document-editor__section-title">Belge kalemleri</h4><Button type="button" variant="primary" onClick={() => setUrunModali({ satir: satirlar.findIndex((s) => !s.stokId) >= 0 ? satirlar.findIndex((s) => !s.stokId) : satirlar.length })}>+ Ürün çağır</Button></div>
-            <TableWrap>
-            <colgroup>
-              <col className="document-line-col--product" />
-              <col className="document-line-col--quantity" />
-              <col className="document-line-col--price" />
-              <col className="document-line-col--rate" />
-              <col className="document-line-col--rate" />
-              <col className="document-line-col--total" />
-              <col className="document-line-col--action" />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Ürün/Hizmet</th>
-                <th className="num">Miktar</th>
-                <th className="num">Birim fiyat</th>
-                <th className="num">İsk. %</th>
-                <th className="num">KDV %</th>
-                <th className="num">Tutar</th>
-                <th><span className="sr-only">İşlem</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {satirlar.map((s, i) => {
-                const ss = sonuc.satirlar[i];
-                return (
-                  <tr key={i}>
-                    <td>
-                      <AramaSecici
-                        ariaLabel={`${i + 1}. satır ürün veya hizmet seçimi`}
-                        deger={s.stokId}
-                        onChange={(deger) => { if (deger) setUrunModali({ satir: i, stokId: deger }); }}
-                        placeholder="Kod veya ürün adıyla ara"
-                        secenekler={stoklar.map((stok) => ({
-                          deger: stok.id,
-                          baslik: stok.ad,
-                          aciklama: stok.kod,
-                          aramaMetni: [stok.kod, ...(stok.tedarikciUrunKodlari ?? [])].join(" "),
-                        }))}
-                      />
-                      {(stokVaryantlari[s.stokId]?.length ?? 0) > 0 && <Select aria-label="Varyant" required value={s.varyantId ?? ""} onChange={(e) => { const varyantId = e.target.value; setSatirlar((eskiler) => eskiler.map((x, j) => j === i ? { ...x, varyantId } : x)); if (varyantId) void kalemFiyatiGetir(s.stokId, varyantId).then((fiyat) => { if (fiyat) setSatirlar((eskiler) => eskiler.map((x, j) => j === i && x.varyantId === varyantId ? { ...x, ...fiyat } : x)); }); }}><option value="">Varyant seçin</option>{stokVaryantlari[s.stokId].filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad} · Stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")}</option>)}</Select>}
-                      {s.dovizUyarisi && <p className="field-error" role="alert">{s.dovizUyarisi}</p>}
-                      {yon === "alis" && (() => { const takip = stoklar.find((x) => x.id === s.stokId)?.takipTipi; return takip && takip !== "yok" ? <div className="stack"><Input aria-label="Lot / Parti No" required placeholder="Lot / Parti No" value={s.lotNo ?? ""} onChange={(e) => void satirGuncelle(i, "lotNo", e.target.value)} />{takip === "seri" && <Input aria-label="Seri numaraları" required placeholder="Seri numaraları (virgülle)" value={s.seriNolar ?? ""} onChange={(e) => void satirGuncelle(i, "seriNolar", e.target.value)} />}<Input aria-label="Son kullanma tarihi" type="date" value={s.sonKullanmaTarihi ?? ""} onChange={(e) => void satirGuncelle(i, "sonKullanmaTarihi", e.target.value)} /></div> : null; })()}
-                      {tur === "irsaliye" && idisSevkiyatNo.trim() && (
-                        <Input aria-label={`${i + 1}. satır İDİS etiket numarası`} placeholder="İDİS etiket no (örn. CV0152457)" maxLength={20} value={s.idisEtiketNo ?? ""} onChange={(e) => satirGuncelle(i, "idisEtiketNo", e.target.value)} />
-                      )}
-                    </td>
-                    <td><div className="document-line-qty"><Input className="document-line-number" aria-label="Miktar" type="number" min="0.01" step="any" inputMode="decimal" value={s.miktar} onChange={(e) => satirGuncelle(i, "miktar", Number(e.target.value))} required /><SatirBirimi stok={stoklar.find((x) => x.id === s.stokId)} value={s.birim} onChange={(birim) => satirBirimiDegistir(i, birim)} /></div></td>
-                    <td><Input className="document-line-number" aria-label="Birim fiyat" type="number" min="0" step="any" inputMode="decimal" value={s.birimFiyat} onChange={(e) => satirGuncelle(i, "birimFiyat", Number(e.target.value))} required /></td>
-                    <td><Input className="document-line-number" aria-label="İskonto yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.iskontoOrani} onChange={(e) => satirGuncelle(i, "iskontoOrani", Number(e.target.value))} /></td>
-                    <td><Input className="document-line-number" aria-label="KDV yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.kdvOrani} onChange={(e) => satirGuncelle(i, "kdvOrani", Number(e.target.value))} required /></td>
-                    <td className="num document-line-total">{tl(ss ? ss.toplamTutar : 0, dovizCinsi)}</td>
-                    <td className="center"><Button aria-label="Satırı sil" title="Satırı sil" variant="danger" size="sm" type="button" onClick={() => satirSil(i)}>×</Button></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            </TableWrap>
-
-            <div className="document-summary-row">
-              <Button type="button" onClick={satirEkle}>+ Satır ekle</Button>
-              <div className="document-totals">
-                <div className="document-total-line"><span>Brüt toplam</span><span>{tl(sonuc.toplamBrut, dovizCinsi)}</span></div>
-                <div className="document-total-line is-tax"><span>KDV toplamı</span><span>{tl(sonuc.toplamKdv, dovizCinsi)}</span></div>
-                <div className="document-total-line is-grand"><span>Genel toplam</span><span>{tl(sonuc.genelToplam, dovizCinsi)}</span></div>
+          {/* Seyrek kullanılan alanlar katlanır gruplarda; dolu grup açık gelir. */}
+          {tur === "irsaliye" && (yon === "satis" || gumrukDepo) && (
+            <FormGrubu baslik={gumrukDepo ? "Boşaltma adresi" : "Teslimat adresi"} aciklama={gumrukDepo ? "Malın boşaltılacağı depo adresi" : "Boşsa carinin sevk adresi yazılır; ihracatta gümrük kapısı"} doluSayisi={teslimatDolu}>
+              <div className="document-fields document-fields--belge">
+                {/* EBLG-84: satış irsaliyesinde malın gideceği yer; ihracatta gümrük kapısı. EBLG-87: gümrükten sevkte boşaltma (depo) adresi. */}
+                {(yon === "satis" || gumrukDepo) && <TeslimatAdresiAlanlari deger={teslimat} onChange={setTeslimat} cariId={yon === "satis" ? cariId || null : null} />}
               </div>
-            </div>
-          </div>
-
-          <div className="document-editor__section document-description">
+            </FormGrubu>
+          )}
+          {(tur === "teklif" || tur === "siparis") && (
+            <FormGrubu baslik="Ödeme ve teslim koşulları" aciklama="Vade, teslim süresi ve teslim şekli; faturaya taşınır" doluSayisi={kosulDolu}>
+              <div className="document-fields document-fields--belge">
+            {/* FTR-33: teklif koşulları; vade faturada vade tarihine, teslim şekli ihracatta teslim şartına dönüşür. */}
+            {(tur === "teklif" || tur === "siparis") && (
+              <>
+                <Field label="Ödeme Vadesi (gün)">
+                  <Input aria-label="Ödeme vadesi gün" type="number" min={0} max={EN_UZUN_VADE_GUN} step={1} value={vadeGun} placeholder="0 = peşin" onChange={(e) => setVadeGun(e.target.value)} />
+                  <small className="muted">Faturada vade tarihi, fatura tarihine bu gün eklenerek yazılır.</small>
+                </Field>
+                <Field label="Teslim Süresi">
+                  <Input aria-label="Teslim süresi" value={teslimSuresi} maxLength={200} placeholder="Örn. Siparişten itibaren 15 iş günü" onChange={(e) => setTeslimSuresi(e.target.value)} />
+                </Field>
+                <Field label="Teslim Şekli">
+                  <Select aria-label="Teslim şekli" value={teslimSekli} onChange={(e) => setTeslimSekli(e.target.value)}>
+                    <option value="">Belirtilmedi</option>
+                    {TESLIM_SARTLARI.map((t) => <option key={t.kod} value={t.kod}>{t.ad}</option>)}
+                  </Select>
+                </Field>
+              </>
+            )}
+              </div>
+            </FormGrubu>
+          )}
+          {yon === "satis" && (
+            <FormGrubu baslik="Referanslar ve ilgili kişi" aciklama="Müşteri talep ve sipariş numarası, ilgili kişi" doluSayisi={referansDolu}>
+              <div className="document-fields document-fields--belge">
+            {/* FTR-31: müşterinin talep ve sipariş referansı; zincir boyunca faturaya kadar taşınır. */}
+            {yon === "satis" && (
+              <>
+                <Field label="Müşteri Talep No">
+                  <Input aria-label="Müşteri talep numarası" value={talepNo} onChange={(e) => setTalepNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" />
+                  {tur === "teklif" && talepMukerrerleri.length > 0 && (
+                    <small className="muted" role="status">⚠ Bu müşteriye aynı talep numarasıyla açılmış teklif var: {talepMukerrerleri.map((t) => `${t.no ?? "taslak"} (${new Date(t.tarih).toLocaleDateString("tr-TR")})`).join(", ")}.</small>
+                  )}
+                </Field>
+                <Field label="Talep Tarihi"><Input aria-label="Müşteri talep tarihi" type="date" value={talepTarihi} onChange={(e) => setTalepTarihi(e.target.value)} /></Field>
+                {/* FTR-32: talebi gönderen kişi; zincirde faturaya kadar taşınır. */}
+                <IlgiliKisiAlanlari deger={ilgili} onChange={setIlgili} cariId={cariId || null} />
+              </>
+            )}
+            {yon === "satis" && (tur === "siparis" || tur === "irsaliye") && (
+              <>
+                <Field label="Müşteri Sipariş No">
+                  <Input aria-label="Müşteri sipariş numarası" value={siparisNo} onChange={(e) => setSiparisNo(e.target.value)} maxLength={100} placeholder="Opsiyonel" />
+                  {tur === "irsaliye" && yon === "satis" && <small className="muted">e-İrsaliyeye yazılır; boşsa talep numarası, o da yoksa irsaliyenin türediği sipariş belgesinin numarası gider.</small>}
+                </Field>
+                <Field label="Müşteri Sipariş Tarihi">
+                  <Input aria-label="Müşteri sipariş tarihi" type="date" value={siparisTarihi} onChange={(e) => setSiparisTarihi(e.target.value)} />
+                  {tur === "irsaliye" && siparisNo.trim() && !siparisTarihi && <small className="muted">Boş bırakılırsa belgeye irsaliye tarihi yazılır (GİB tarihi zorunlu tutuyor).</small>}
+                </Field>
+              </>
+            )}
+              </div>
+            </FormGrubu>
+          )}
+          <FormGrubu baslik="Açıklama ve ekler" aciklama={`${TUR_ADI[tur]} üzerinde görünen açıklama ve dosyalar`} doluSayisi={notDolu}>
+            <div className="invoice-notes invoice-notes--tek">
             <Field label={`${TUR_ADI[tur]} açıklaması`}>
-              <textarea className="textarea document-description__input" value={aciklama} onChange={(e) => setAciklama(e.target.value)} maxLength={500} rows={5} placeholder={`${TUR_ADI[tur]} üzerinde gösterilecek açıklamayı yazın (isteğe bağlı)`} />
+              <textarea className="textarea document-description__input" value={aciklama} onChange={(e) => setAciklama(e.target.value)} maxLength={500} rows={3} placeholder={`${TUR_ADI[tur]} üzerinde gösterilecek açıklamayı yazın (isteğe bağlı)`} />
               {dovizCinsi !== "TRY" && <label className="check-row"><input type="checkbox" checked={kuruAciklamayaEkle} onChange={(e) => setKuruAciklamayaEkle(e.target.checked)} /> Döviz kurunu açıklamaya ekle</label>}
             </Field>
-          </div>
-
-          <div className="document-editor__section">
+            </div>
             <BelgeDosyalari dosyalar={dosyalar} onChange={setDosyalar} />
+          </FormGrubu>
           </div>
 
-          <div className="document-editor__actions">
-            {duzenlenenId && <Button type="button" onClick={duzenlemedenVazgec}>Vazgeç</Button>}
-            <Button variant="primary" onClick={kaydet}>{duzenlenenId ? "Değişiklikleri kaydet" : "Taslak belgeyi kaydet"}</Button>
+          {/* Sayfa kaydırılsa da görünen özet: toplamlar, taşıma, kontrol listesi ve kaydet. */}
+          <aside className="invoice-layout__side" aria-label="Belge özeti">
+            <div className="invoice-summary">
+              <h4>{TUR_ADI[tur]} özeti</h4>
+              <div className="invoice-summary__line"><span>Kalem</span><span>{satirlar.filter((s) => s.stokId).length}</span></div>
+              <div className="invoice-summary__line"><span>Brüt toplam</span><span>{tl(sonuc.toplamBrut, dovizCinsi)}</span></div>
+              {sonuc.toplamSatirIskontosu > 0 && <div className="invoice-summary__line is-discount"><span>İskonto</span><span>-{tl(sonuc.toplamSatirIskontosu, dovizCinsi)}</span></div>}
+              {sonuc.kdvDetaylari.map((d) => (
+                <div className="invoice-summary__line is-tax" key={d.kdvOrani}><span>KDV %{d.kdvOrani}</span><span>{tl(d.kdvTutari, dovizCinsi)}</span></div>
+              ))}
+              <div className="invoice-summary__line is-grand"><span>Genel toplam</span><span>{tl(sonuc.genelToplam, dovizCinsi)}</span></div>
+              {dovizCinsi !== "TRY" && Number(kur) > 0 && <small className="muted invoice-summary__tl">≈ {tl(sonuc.genelToplam * Number(kur), "TRY")} · kur {Number(kur).toLocaleString("tr-TR", { maximumFractionDigits: 4 })}</small>}
+            </div>
+            {tur === "irsaliye" && (
+              <div className="invoice-summary">
+                <h4>Taşıma</h4>
+                <div className="invoice-summary__line"><span>Taşıyan</span><strong>{tasiyiciCariId ? (cariler.find((c) => c.id === tasiyiciCariId)?.unvan ?? "Taşıyıcı cari") : "Kendi aracımızla"}</strong></div>
+                <div className="invoice-summary__line"><span>Plaka</span><strong>{plaka || "—"}{dorsePlaka ? ` / ${dorsePlaka}` : ""}</strong></div>
+                <div className="invoice-summary__line"><span>Şoför</span><strong>{[soforAdi, soforSoyadi].filter(Boolean).join(" ") || "—"}</strong></div>
+                <div className="invoice-summary__line"><span>Fiili sevk</span><strong>{fiiliSevkZamani ? new Date(fiiliSevkZamani).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" }) : "Onay anı"}</strong></div>
+              </div>
+            )}
+            {kontrolListesi.length > 0 && (
+              <div className="invoice-summary is-warning" role="status">
+                <h4>Kontrol listesi</h4>
+                <ul>{kontrolListesi.map((e) => <li key={e}>{e}</li>)}</ul>
+              </div>
+            )}
+            <div className="invoice-summary__actions">
+              <Button variant="primary" onClick={kaydet}>{duzenlenenId ? "Değişiklikleri kaydet" : "Taslak belgeyi kaydet"}</Button>
+              {duzenlenenId && <Button type="button" onClick={duzenlemedenVazgec}>Vazgeç</Button>}
+              <small className="muted">Kısayol: Ctrl+S</small>
+            </div>
+          </aside>
           </div>
         </div>
       )}
