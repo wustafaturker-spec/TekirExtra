@@ -9,6 +9,7 @@ import { StokService } from "../stok/stok.service";
 import { maliyetDagit, planlananOperasyonMaliyeti } from "./uretim-maliyet";
 import { kapasiteGunu, operasyonlariPlanla } from "./uretim-takvim";
 import type { isMerkeziKaydetSemasi, kaliteKararSemasi, operasyonBaslatSemasi, operasyonBekletSemasi, operasyonTamamlaSemasi, receteKaydetSemasi, sarfDuzeltmeSemasi, uretimBildirimiSemasi, uretimDonemKilidiSemasi, uretimEmriListeSemasi, uretimEmriKapatSemasi, uretimEmriOlusturSemasi, vardiyaKaydetSemasi, yenidenIslemeTamamlaSemasi } from "./uretim.semalar";
+import { satirVaryantlariniDogrula } from "../stok/varyant-secimi";
 
 const D = (v: string | number | Prisma.Decimal) => new Prisma.Decimal(v);
 
@@ -218,6 +219,9 @@ export class UretimService {
         if (!kart || kart.tip === "hizmet") throw new BadRequestException("Geçersiz yan/ortak ürün stok kartı");
         await this.stokService.varyantDogrula(tx, cikti.stokId, cikti.varyantId);
       }
+      // Varyantlı malzeme/yan ürün varyantsız girilemez: sarf ve giriş o varyantın stoğunda olur.
+      await receteVaryantlariniDogrula(tx, "Malzeme listesi", girdi.kalemler.map((k) => ({ stokId: k.malzemeStokId, varyantId: k.malzemeVaryantId })));
+      await receteVaryantlariniDogrula(tx, "Yan/ortak ürünler", girdi.ciktilar);
       await this.donguDenetle(tx, stokId, girdi.kalemler.map((k) => k.malzemeStokId));
       if (girdi.yanUrunMaliyetYontemi === "satis_degeri" && girdi.ciktilar.length) {
         const kartlar = await tx.stokKart.findMany({ where: { id: { in: [stokId, ...girdi.ciktilar.map((c) => c.stokId)] } }, select: { kod: true, satisFiyati: true, satisFiyatiDoviz: true } });
@@ -763,3 +767,13 @@ export class UretimService {
     return receteler.filter((r) => !gorulen.has(r.stokId) && gorulen.add(r.stokId));
   }
 }
+
+async function receteVaryantlariniDogrula(tx: Prisma.TransactionClient, bolum: string, satirlar: { stokId: string; varyantId?: string | null }[]) {
+  try {
+    await satirVaryantlariniDogrula(tx, satirlar);
+  } catch (hata) {
+    if (hata instanceof BadRequestException) throw new BadRequestException(`${bolum}: ${hata.message}`);
+    throw hata;
+  }
+}
+

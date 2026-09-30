@@ -365,6 +365,7 @@ describe("UretimService profesyonel emir akışı", () => {
   it("döngüsel reçeteyi kaydetmez ve yolu gösterir", async () => {
     prisma.stokKart.findUnique = vi.fn().mockResolvedValue({ id: "x", tip: "urun" });
     (service as any).stokService = { varyantDogrula: vi.fn() };
+    prisma.stokVaryant = { findMany: vi.fn().mockResolvedValue([]) };
     // A'nın reçetesine B giriyor; B'nin reçetesinde C, C'nin reçetesinde A var.
     prisma.urunRecetesiKalem = { findMany: vi.fn()
       .mockResolvedValueOnce([{ malzemeStokId: "C", recete: { stokId: "B" } }])
@@ -372,6 +373,17 @@ describe("UretimService profesyonel emir akışı", () => {
     prisma.stokKart.findMany = vi.fn().mockResolvedValue([{ id: "A", kod: "A-01" }, { id: "B", kod: "B-01" }, { id: "C", kod: "C-01" }]);
 
     await expect(service.receteKaydet("A", { ciktiMiktari: "1", kaliteKontrolGerekli: false, yanUrunMaliyetYontemi: "sifir", kalemler: [{ malzemeStokId: "B", miktar: "1", fireOrani: "0" }], ciktilar: [], operasyonlar: [] })).rejects.toThrow("Döngüsel reçete: A-01 → B-01 → C-01 → A-01");
+    expect(prisma.urunRecetesi.create).not.toHaveBeenCalled();
+  });
+
+  it("varyantlı malzeme ya da yan ürün reçeteye varyantsız girilemez", async () => {
+    prisma.stokKart.findUnique = vi.fn().mockResolvedValue({ id: "x", tip: "urun" });
+    (service as any).stokService = { varyantDogrula: vi.fn() };
+    prisma.stokVaryant = { findMany: vi.fn().mockResolvedValue([{ id: "v1", stokId: "B" }]) };
+    const girdi = { ciktiMiktari: "1", kaliteKontrolGerekli: false, yanUrunMaliyetYontemi: "sifir" as const, ciktilar: [], operasyonlar: [] };
+
+    await expect(service.receteKaydet("A", { ...girdi, kalemler: [{ malzemeStokId: "B", miktar: "1", fireOrani: "0" }] })).rejects.toThrow("Malzeme listesi: 1. satırda varyant seçilmedi");
+    await expect(service.receteKaydet("A", { ...girdi, kalemler: [{ malzemeStokId: "C", miktar: "1", fireOrani: "0" }], ciktilar: [{ stokId: "B", tip: "yan_urun", miktar: "1" }] })).rejects.toThrow("Yan/ortak ürünler: 1. satırda varyant seçilmedi");
     expect(prisma.urunRecetesi.create).not.toHaveBeenCalled();
   });
 
