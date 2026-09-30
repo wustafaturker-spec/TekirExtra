@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { UretimService } from "./uretim.service";
+import { kapasiteGunu, UretimService } from "./uretim.service";
+import { maliyetDagit } from "./uretim-maliyet";
 
 vi.mock("../core/istek-baglami", () => ({
   aktifBaglam: () => ({ tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" }),
@@ -165,9 +166,9 @@ describe("UretimService profesyonel emir akışı", () => {
 
   it("iş merkezi kapasitesini verimlilik ve planlanan operasyon yüküyle hesaplar", async () => {
     prisma.isMerkezi.findMany.mockResolvedValue([{ id: "merkez-1", kod: "KESIM", ad: "Kesim", gunlukKapasiteDakika: 480, verimlilikYuzdesi: D(80), saatlikMaliyet: D(0), aktif: true }]);
-    prisma.uretimEmriOperasyonu.findMany.mockResolvedValue([{ id: "op-1", isMerkeziId: "merkez-1", planlananDakika: D(300), planlananBaslangic: new Date("2026-08-22T08:00:00Z"), planlananBitis: new Date("2026-08-22T13:00:00Z"), uretimEmri: { id: "emir-1", no: "URT-1", durum: "planlandi", stok: { kod: "M-1", ad: "Mamul" } } }]);
+    prisma.uretimEmriOperasyonu.findMany.mockResolvedValue([{ id: "op-1", isMerkeziId: "merkez-1", planlananDakika: D(300), planlananBaslangic: new Date("2026-08-24T08:00:00Z"), planlananBitis: new Date("2026-08-24T13:00:00Z"), uretimEmri: { id: "emir-1", no: "URT-1", durum: "planlandi", stok: { kod: "M-1", ad: "Mamul" } } }]);
 
-    const [sonuc] = await service.kapasite("2026-08-22", "2026-08-22");
+    const [sonuc] = await service.kapasite("2026-08-24", "2026-08-24");
 
     expect(sonuc).toMatchObject({ kapasiteDakika: "384.00", planlananDakika: "300.00", dolulukYuzdesi: "78.13", asimDakika: "0.00" });
   });
@@ -308,5 +309,80 @@ describe("UretimService profesyonel emir akışı", () => {
     await service.rezerveEt("emir-1");
 
     expect(prisma.stokDepoBakiye.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { stokId: "malzeme-1", depo: { aktif: true, kod: { not: "KARANTINA" } } } }));
+  });
+
+  it("kapasitede cumartesi yarım gün, pazar hiç sayılmaz", () => {
+    // 24.08.2026 pazartesi … 30.08.2026 pazar: 5 tam + cumartesi yarım
+    expect(kapasiteGunu(new Date("2026-08-24T00:00:00"), new Date("2026-08-30T23:59:59.999")).toString()).toBe("5.5");
+    expect(kapasiteGunu(new Date("2026-08-29T00:00:00"), new Date("2026-08-29T23:59:59.999")).toString()).toBe("0.5");
+    expect(kapasiteGunu(new Date("2026-08-30T00:00:00"), new Date("2026-08-30T23:59:59.999")).toString()).toBe("0");
+  });
+
+  it("reçeteyi hazırlayan kullanıcı onaylayamaz", async () => {
+    prisma.urunRecetesi.findFirst.mockResolvedValue({ id: "recete-2", stokId: "mamul-1", durum: "taslak", yururlukBaslangic: null, olusturanUserId: "user-1" });
+
+    await expect(service.receteOnayla("mamul-1", "recete-2")).rejects.toThrow("Reçeteyi hazırlayan onaylayamaz");
+    expect(prisma.urunRecetesi.update).not.toHaveBeenCalled();
+  });
+
+  it("döngüsel reçeteyi kaydetmez ve yolu gösterir", async () => {
+    prisma.stokKart.findUnique = vi.fn().mockResolvedValue({ id: "x", tip: "urun" });
+    (service as any).stokService = { varyantDogrula: vi.fn() };
+    // A'nın reçetesine B giriyor; B'nin reçetesinde C, C'nin reçetesinde A var.
+    prisma.urunRecetesiKalem = { findMany: vi.fn()
+      .mockResolvedValueOnce([{ malzemeStokId: "C", recete: { stokId: "B" } }])
+      .mockResolvedValueOnce([{ malzemeStokId: "A", recete: { stokId: "C" } }]) };
+    prisma.stokKart.findMany = vi.fn().mockResolvedValue([{ id: "A", kod: "A-01" }, { id: "B", kod: "B-01" }, { id: "C", kod: "C-01" }]);
+
+    await expect(service.receteKaydet("A", { ciktiMiktari: "1", kaliteKontrolGerekli: false, yanUrunMaliyetYontemi: "sifir", kalemler: [{ malzemeStokId: "B", miktar: "1", fireOrani: "0" }], ciktilar: [], operasyonlar: [] })).rejects.toThrow("Döngüsel reçete: A-01 → B-01 → C-01 → A-01");
+    expect(prisma.urunRecetesi.create).not.toHaveBeenCalled();
+  });
+
+  it("planlanan bitiş girilmezse operasyon planının bittiği gün olur", async () => {
+    prisma.urunRecetesi.findFirst.mockResolvedValue({ id: "recete-1", aktif: true, kaliteKontrolGerekli: false, ciktiMiktari: D(1), ciktilar: [],
+      kalemler: [{ malzemeStokId: "malzeme-1", malzemeVaryantId: null, miktar: D(1), fireOrani: D(0), malzeme: { ortalamaMaliyet: D(1) } }],
+      operasyonlar: [{ isMerkeziId: "m-1", sira: 1, operasyonKodu: "KES", operasyonAdi: "Kesim", hazirlikDakika: D(0), cevrimDakika: D(60), isMerkezi: { saatlikMaliyet: D(0) } }] });
+
+    // 20 adet × 60 dk = 20 saat: 08:00'de başlayıp ertesi gün 04:00'te biter
+    const emir = await service.emirOlustur({ stokId: "11111111-1111-4111-8111-111111111111", hedefDepoId: "22222222-2222-4222-8222-222222222222", planlananMiktar: "20", tarih: "2026-08-24", aciklama: null });
+    expect(emir.planlananBitis).toEqual(new Date("2026-08-25"));
+
+    const elle = await service.emirOlustur({ stokId: "11111111-1111-4111-8111-111111111111", hedefDepoId: "22222222-2222-4222-8222-222222222222", planlananMiktar: "1", tarih: "2026-08-24", planlananBitis: "2026-08-31", aciklama: null });
+    expect(elle.planlananBitis).toEqual(new Date("2026-08-31"));
+  });
+
+  it("maliyet sapmasında planı üretilen miktara oranlar", async () => {
+    prisma.uretimEmri.findUnique.mockResolvedValue({
+      id: "emir-1", no: "URT-1", tarih: new Date("2026-08-24"), durum: "tamamlandi", planlananMiktar: D(10), uretilenMiktar: D(6), stok: { kod: "M-1", ad: "Mamul", anaBirim: "adet" },
+      kalemler: [{ planlananMiktar: D(20), planlananBirimMaliyet: D(10), sarfEdilenMiktar: D(12), birimMaliyet: D(10), malzeme: { kod: "H-1", ad: "Hammadde" } }],
+      operasyonlar: [{ planlananDakika: D(35), gerceklesenDakika: D(30), saatlikMaliyet: D(600), isMerkezi: { kod: "KES", ad: "Kesim" } }],
+      bildirimler: [{ sarflar: [{ miktar: D(12), birimMaliyet: D(10) }] }],
+    });
+
+    const sonuc = await service.maliyet("emir-1");
+
+    // Plan 6 adet için: malzeme 200×0,6=120, operasyon 350×0,6=210
+    expect(sonuc.kalemler.malzeme).toEqual({ planlanan: "120.0000", gerceklesen: "120.0000", sapma: "0.0000" });
+    expect(sonuc.kalemler.operasyon).toEqual({ planlanan: "210.0000", gerceklesen: "300.0000", sapma: "90.0000" });
+  });
+});
+
+describe("maliyetDagit", () => {
+  const c = (miktar: number, birimMaliyet: number | null, satisFiyati: number | null) => ({ miktar: D(miktar), birimMaliyet: birimMaliyet == null ? null : D(birimMaliyet), satisFiyati: satisFiyati == null ? null : D(satisFiyati) });
+
+  it("sıfır yönteminde tüm maliyet ana ürüne kalır; toplam sıfırsa birim maliyet sıfırdır", () => {
+    expect(maliyetDagit({ toplam: D(100), mamulMiktar: D(4), mamulSatisFiyati: null, yontem: "sifir", ciktilar: [c(2, null, null)] })).toEqual({ mamulBirimMaliyeti: D(25), ciktiBirimMaliyetleri: [D(0)] });
+    expect(maliyetDagit({ toplam: D(0), mamulMiktar: D(4), mamulSatisFiyati: null, yontem: "sifir", ciktilar: [] }).mamulBirimMaliyeti).toEqual(D(0));
+  });
+
+  it("sabit değerde yan ürün tutarı ana üründen düşülür, toplamı aşarsa orantılı küçülür", () => {
+    expect(maliyetDagit({ toplam: D(100), mamulMiktar: D(4), mamulSatisFiyati: null, yontem: "sabit_deger", ciktilar: [c(2, 10, null)] })).toEqual({ mamulBirimMaliyeti: D(20), ciktiBirimMaliyetleri: [D(10)] });
+    expect(maliyetDagit({ toplam: D(100), mamulMiktar: D(4), mamulSatisFiyati: null, yontem: "sabit_deger", ciktilar: [c(2, 100, null)] })).toEqual({ mamulBirimMaliyeti: D(0), ciktiBirimMaliyetleri: [D(50)] });
+  });
+
+  it("satış değerinde toplam miktar × fiyat ağırlığıyla bölünür", () => {
+    // Ana: 4 × 30 = 120, yan: 2 × 40 = 80 → %60 / %40
+    expect(maliyetDagit({ toplam: D(100), mamulMiktar: D(4), mamulSatisFiyati: D(30), yontem: "satis_degeri", ciktilar: [c(2, null, 40)] })).toEqual({ mamulBirimMaliyeti: D(15), ciktiBirimMaliyetleri: [D(20)] });
+    expect(() => maliyetDagit({ toplam: D(100), mamulMiktar: D(4), mamulSatisFiyati: null, yontem: "satis_degeri", ciktilar: [c(2, null, 40)] })).toThrow("satış fiyatı");
   });
 });

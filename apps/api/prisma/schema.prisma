@@ -548,6 +548,13 @@ enum UretimCiktiTip {
   ortak_urun
 }
 
+/// Yan/ortak ürünün üretim maliyetinden alacağı pay; reçete sürümü başına seçilir.
+enum YanUrunMaliyetYontemi {
+  sifir
+  sabit_deger
+  satis_degeri
+}
+
 /// Gerçek/tüzel kişi ayrımı (CARI-13)
 enum KisiTip {
   gercek
@@ -1430,6 +1437,9 @@ model UrunRecetesi {
   onayZamani           DateTime?   @map("onay_zamani")
   degisiklikNedeni     String?     @map("degisiklik_nedeni")
   kaliteKontrolGerekli Boolean     @default(false) @map("kalite_kontrol_gerekli")
+  /// Sürümü kaydeden kullanıcı; kendi hazırladığı sürümü onaylayamaz.
+  olusturanUserId      String?     @map("olusturan_user_id") @db.Uuid
+  yanUrunMaliyetYontemi YanUrunMaliyetYontemi @default(sifir) @map("yan_urun_maliyet_yontemi")
   createdAt            DateTime    @default(now()) @map("created_at")
   updatedAt            DateTime    @updatedAt @map("updated_at")
 
@@ -1452,6 +1462,8 @@ model UrunRecetesiCikti {
   varyantId     String?           @map("varyant_id") @db.Uuid
   tip           UretimCiktiTip
   miktar        Decimal           @db.Decimal(15, 3)
+  /// Sabit değer yönteminde çıktının birim maliyeti; ana ürün maliyetinden düşülür.
+  birimMaliyet  Decimal?          @map("birim_maliyet") @db.Decimal(15, 4)
   tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   recete        UrunRecetesi      @relation(fields: [receteId], references: [id], onDelete: Cascade)
   stok          StokKart          @relation("ReceteCiktiStok", fields: [stokId], references: [id])
@@ -1535,6 +1547,8 @@ model UretimEmri {
   toplamMaliyet        Decimal         @default(0) @map("toplam_maliyet") @db.Decimal(15, 4)
   planlananMaliyet     Decimal         @default(0) @map("planlanan_maliyet") @db.Decimal(15, 4)
   tarih                DateTime        @db.Date
+  /// Emrin bitmesi gereken gün; gecikme bu tarihe göre ölçülür.
+  planlananBitis       DateTime?       @map("planlanan_bitis") @db.Date
   aciklama             String?
   durum                UretimEmriDurum @default(taslak)
   tamamlanmaTarihi     DateTime?       @map("tamamlanma_tarihi")
@@ -1875,7 +1889,12 @@ model UretimBildirimi {
   hurdaNedeni          String?  @map("hurda_nedeni")
   yenidenIslemeMiktari Decimal  @default(0) @map("yeniden_isleme_miktari") @db.Decimal(15, 3)
   yenidenIslemeNedeni  String?  @map("yeniden_isleme_nedeni")
+  /// Bu bildirimde sarf edilen malzemenin maliyeti.
   toplamMaliyet        Decimal  @default(0) @map("toplam_maliyet") @db.Decimal(15, 4)
+  /// Planlanan operasyon maliyetinin bu bildirime düşen payı (standart maliyet).
+  operasyonMaliyeti    Decimal  @default(0) @map("operasyon_maliyeti") @db.Decimal(15, 4)
+  /// Ana ürünün stoğa girdiği birim maliyet (yan ürün payı düşülmüş).
+  mamulBirimMaliyeti   Decimal? @map("mamul_birim_maliyeti") @db.Decimal(15, 4)
   bildirimTarihi       DateTime @map("bildirim_tarihi")
   aciklama             String?
   createdAt            DateTime @default(now()) @map("created_at")

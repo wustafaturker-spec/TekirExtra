@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+const sifirVeyaPozitif = z.union([z.string(), z.number()]).transform(String).refine((v) => /^\d{1,11}(\.\d{1,4})?$/.test(v), "Geçerli, negatif olmayan tutar gerekli");
+
 const pozitif = z.union([z.string(), z.number()]).transform(String).refine((v) => /^\d{1,13}(\.\d{1,6})?$/.test(v) && Number(v) > 0, "Pozitif miktar gerekli");
 
 export const receteKaydetSemasi = z.object({
@@ -8,6 +10,8 @@ export const receteKaydetSemasi = z.object({
   degisiklikNedeni: z.string().min(3).max(500).optional().nullable(),
   yururlukBaslangic: z.string().date().optional().nullable(),
   kaliteKontrolGerekli: z.boolean().default(false),
+  /** Yan/ortak ürünlerin üretim maliyetinden alacağı pay. */
+  yanUrunMaliyetYontemi: z.enum(["sifir", "sabit_deger", "satis_degeri"]).default("sifir"),
   kalemler: z.array(z.object({
     malzemeStokId: z.string().uuid(),
     malzemeVaryantId: z.string().uuid().optional().nullable(),
@@ -16,12 +20,20 @@ export const receteKaydetSemasi = z.object({
   })).min(1, "En az bir reçete kalemi gerekli"),
   ciktilar: z.array(z.object({
     stokId: z.string().uuid(), varyantId: z.string().uuid().optional().nullable(), tip: z.enum(["yan_urun", "ortak_urun"]), miktar: pozitif,
+    /** Sabit değer yönteminde birim maliyet (0 kabul edilir). */
+    birimMaliyet: sifirVeyaPozitif.optional().nullable(),
   })).max(20).optional().default([]),
   operasyonlar: z.array(z.object({
     isMerkeziId: z.string().uuid(), operasyonKodu: z.string().trim().min(1).max(30), operasyonAdi: z.string().trim().min(1).max(120),
     hazirlikDakika: z.union([z.string(), z.number()]).transform(String).refine((v) => Number(v) >= 0, "Hazırlık süresi negatif olamaz"),
     cevrimDakika: z.union([z.string(), z.number()]).transform(String).refine((v) => Number(v) >= 0, "Çevrim süresi negatif olamaz"),
   })).max(100).optional().default([]),
+}).superRefine((girdi, ctx) => {
+  if (girdi.yanUrunMaliyetYontemi === "sabit_deger") {
+    girdi.ciktilar.forEach((c, i) => {
+      if (c.birimMaliyet == null) ctx.addIssue({ code: "custom", path: ["ciktilar", i, "birimMaliyet"], message: "Sabit değer yönteminde her yan/ortak ürüne birim maliyet girin" });
+    });
+  }
 });
 
 export const isMerkeziKaydetSemasi = z.object({
@@ -80,8 +92,10 @@ export const uretimEmriOlusturSemasi = z.object({
   hedefDepoId: z.string().uuid(),
   planlananMiktar: pozitif,
   tarih: z.string().date(),
+  /** Boşsa operasyon planının bittiği gün (operasyon yoksa emir tarihi). */
+  planlananBitis: z.string().date().optional().nullable(),
   aciklama: z.string().max(500).optional().nullable(),
-});
+}).refine((g) => !g.planlananBitis || g.planlananBitis >= g.tarih, { path: ["planlananBitis"], message: "Planlanan bitiş emir tarihinden önce olamaz" });
 
 export const uretimDonemKilidiSemasi = z.object({
   yil: z.coerce.number().int().min(2020).max(2100),
