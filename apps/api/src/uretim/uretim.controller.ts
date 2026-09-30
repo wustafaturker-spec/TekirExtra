@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query } from "@nestjs/common";
 import type { z } from "zod";
 import { Roller } from "../auth/roller.decorator";
-import { isMerkeziKaydetSemasi, kaliteKararSemasi, operasyonBaslatSemasi, operasyonBekletSemasi, operasyonTamamlaSemasi, receteKaydetSemasi, sarfDuzeltmeSemasi, uretimBildirimiSemasi, uretimDonemKilidiSemasi, uretimEmriListeSemasi, uretimEmriOlusturSemasi, uretimTamamlaSemasi, vardiyaKaydetSemasi, yenidenIslemeTamamlaSemasi } from "./uretim.semalar";
+import { isMerkeziKaydetSemasi, kaliteKararSemasi, operasyonBaslatSemasi, operasyonBekletSemasi, operasyonTamamlaSemasi, receteKaydetSemasi, sarfDuzeltmeSemasi, uretimBildirimiSemasi, uretimDonemKilidiSemasi, uretimEmriListeSemasi, uretimEmriKapatSemasi, uretimEmriOlusturSemasi, vardiyaKaydetSemasi, yenidenIslemeTamamlaSemasi } from "./uretim.semalar";
 import { UretimService } from "./uretim.service";
 
 function ayristir<T extends z.ZodType>(sema: T, govde: unknown): z.infer<T> {
@@ -53,6 +53,6 @@ export class UretimController {
   @Post("emirler/:id/operasyonlar/:operasyonId/tamamla") @Roller("uretim_operatoru") operasyonTamamla(@Param("id") id: string, @Param("operasyonId") operasyonId: string, @Body() govde: unknown) { return this.service.operasyonTamamla(id, operasyonId, ayristir(operasyonTamamlaSemasi, govde)); }
   @Post("emirler/:id/bildirimler") @Roller("uretim_operatoru") bildir(@Param("id") id: string, @Body() govde: unknown) { return this.service.bildir(id, ayristir(uretimBildirimiSemasi, govde)); }
   @Post("emirler/:id/sarf-duzeltmeleri") @Roller("uretim_operatoru", "depo") sarfDuzelt(@Param("id") id: string, @Body() govde: unknown) { return this.service.sarfDuzelt(id, ayristir(sarfDuzeltmeSemasi, govde)); }
-  @Post("emirler/:id/tamamla") @Roller("uretim_operatoru") tamamla(@Param("id") id: string, @Body() govde: unknown) { return this.service.tamamla(id, ayristir(uretimTamamlaSemasi, govde)); }
+  @Post("emirler/:id/kapat") @Roller("uretim_planlama") kapat(@Param("id") id: string, @Body() govde: unknown) { return this.service.kapat(id, ayristir(uretimEmriKapatSemasi, govde)); }
   @Post("emirler/:id/iptal") @Roller("uretim_planlama") iptal(@Param("id") id: string) { return this.service.iptal(id); }
 }

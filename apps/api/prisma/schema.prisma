@@ -1540,6 +1540,8 @@ model UretimEmri {
   tamamlanmaTarihi     DateTime?       @map("tamamlanma_tarihi")
   kaliteKontrolGerekli Boolean         @default(false) @map("kalite_kontrol_gerekli")
   satisSiparisSatirId  String?         @map("satis_siparis_satir_id") @db.Uuid
+  /// Emir kalan miktar üretilmeden kapatıldıysa nedeni; boşsa emir tam üretildi.
+  kapanisNedeni        String?         @map("kapanis_nedeni")
   createdAt            DateTime        @default(now()) @map("created_at")
   updatedAt            DateTime        @updatedAt @map("updated_at")
 

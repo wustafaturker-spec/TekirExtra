@@ -108,7 +108,12 @@ export const uretimTamamlaSemasi = z.object({
   }
 });
 
-export const uretimBildirimiSemasi = uretimTamamlaSemasi.and(z.object({
+/** Başlamış emri kalan miktarı üretmeden kapatır; neden denetim için zorunlu. */
+export const uretimEmriKapatSemasi = z.object({
+  neden: z.string().trim().min(3, "Kapatma nedeni en az 3 karakter olmalıdır").max(250),
+});
+
+export const uretimBildirimiSemasi =uretimTamamlaSemasi.and(z.object({
   idempotencyAnahtari: z.string().uuid(),
   uretilenMiktar: pozitif,
   hurdaMiktari: z.union([z.string(), z.number()]).transform(String).refine((v) => /^\d{1,13}(\.\d{1,6})?$/.test(v), "Geçerli hurda miktarı gerekli").default("0"),

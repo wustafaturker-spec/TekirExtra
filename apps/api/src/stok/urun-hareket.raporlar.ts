@@ -8,7 +8,8 @@ const TARIH = [{ alan: "baslangic", ad: "Başlangıç", tip: "tarih" as const },
 const HAREKET_ADI: Record<string, string> = { giris: "Giriş", cikis: "Çıkış", sayim_duzeltme: "Sayım düzeltme", fire: "Fire", zayi: "Zayi", numune: "Numune", promosyon: "Promosyon", acilis: "Açılış", transfer_cikis: "Transfer çıkış", transfer_giris: "Transfer giriş" };
 
 function hareketGrubu(h: { tip: string; kaynakTur: string }) {
-  if (h.kaynakTur === "uretim_sarf" || h.kaynakTur === "uretim_giris") return "uretim";
+  // Sarf, mamul/yan ürün girişi, kalite ve sarf düzeltmeleri hep `uretim_` önekli.
+  if (h.kaynakTur.startsWith("uretim_")) return "uretim";
   if (h.tip === "fire" || h.tip === "zayi") return "fire";
   if (h.tip.startsWith("transfer_")) return "transfer";
   if (h.tip === "sayim_duzeltme") return "sayim";

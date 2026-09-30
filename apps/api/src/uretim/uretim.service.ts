@@ -2,12 +2,19 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
-import { metinNormalize } from "@tekirextra/shared";
+import { bugunTR, metinNormalize } from "@tekirextra/shared";
 import { PrismaService } from "../core/prisma.service";
 import { StokService } from "../stok/stok.service";
-import type { isMerkeziKaydetSemasi, kaliteKararSemasi, operasyonBaslatSemasi, operasyonBekletSemasi, operasyonTamamlaSemasi, receteKaydetSemasi, sarfDuzeltmeSemasi, uretimBildirimiSemasi, uretimDonemKilidiSemasi, uretimEmriListeSemasi, uretimEmriOlusturSemasi, uretimTamamlaSemasi, vardiyaKaydetSemasi, yenidenIslemeTamamlaSemasi } from "./uretim.semalar";
+import type { isMerkeziKaydetSemasi, kaliteKararSemasi, operasyonBaslatSemasi, operasyonBekletSemasi, operasyonTamamlaSemasi, receteKaydetSemasi, sarfDuzeltmeSemasi, uretimBildirimiSemasi, uretimDonemKilidiSemasi, uretimEmriListeSemasi, uretimEmriKapatSemasi, uretimEmriOlusturSemasi, vardiyaKaydetSemasi, yenidenIslemeTamamlaSemasi } from "./uretim.semalar";
 
 const D = (v: string | number | Prisma.Decimal) => new Prisma.Decimal(v);
+
+/** Operasyonu yürütebilen roller; küçük işletmede yönetici de tezgâhta çalışır. */
+const OPERATOR_ROLLERI: ("uretim_operatoru" | "yonetici")[] = ["uretim_operatoru", "yonetici"];
+
+/** Kalite bekleyen mamulün deposu; kabul edilmemiş stok ayrılmaz ve sarf edilmez. */
+const KARANTINA_DEPO_KODU = "KARANTINA";
+const sarfaUygunDepo = { aktif: true, kod: { not: KARANTINA_DEPO_KODU } };
 
 @Injectable()
 export class UretimService {
@@ -59,7 +66,7 @@ export class UretimService {
 
   async operatorler() {
     const { tenantId } = aktifBaglam();
-    return this.prisma.tenantIslem(tenantId, (tx) => tx.user.findMany({ where: { aktif: true, rol: "uretim_operatoru" }, select: { id: true, adSoyad: true, eposta: true }, orderBy: { adSoyad: "asc" } }));
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.user.findMany({ where: { aktif: true, rol: { in: OPERATOR_ROLLERI } }, select: { id: true, adSoyad: true, eposta: true }, orderBy: { adSoyad: "asc" } }));
   }
 
   async uretimBekleyenSatisSiparisleri() {
@@ -119,7 +126,7 @@ export class UretimService {
     if (sonGun < ilkGun || sonGun.getTime() - ilkGun.getTime() > 93 * 86400000) throw new BadRequestException("Kapasite aralığı en fazla 93 gün olabilir");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const merkezler = await tx.isMerkezi.findMany({ where: { aktif: true }, orderBy: { kod: "asc" } });
-      const operasyonlar = await tx.uretimEmriOperasyonu.findMany({ where: { durum: { notIn: ["iptal", "tamamlandi"] }, planlananBaslangic: { lte: sonGun }, planlananBitis: { gte: ilkGun } }, include: { uretimEmri: { select: { id: true, no: true, durum: true, stok: { select: { kod: true, ad: true } } } } }, orderBy: { planlananBaslangic: "asc" } });
+      const operasyonlar = await tx.uretimEmriOperasyonu.findMany({ where: { durum: { notIn: ["iptal", "tamamlandi"] }, uretimEmri: { durum: { notIn: ["iptal", "tamamlandi"] } }, planlananBaslangic: { lte: sonGun }, planlananBitis: { gte: ilkGun } }, include: { uretimEmri: { select: { id: true, no: true, durum: true, stok: { select: { kod: true, ad: true } } } } }, orderBy: { planlananBaslangic: "asc" } });
       return merkezler.map((merkez) => {
         const etkinKapasite = D(merkez.gunlukKapasiteDakika).mul(merkez.verimlilikYuzdesi).div(100);
         const merkezOperasyonlari = operasyonlar.filter((o) => o.isMerkeziId === merkez.id);
@@ -219,8 +226,16 @@ export class UretimService {
       if (!surum) throw new NotFoundException("Reçete sürümü bulunamadı");
       if (!["taslak", "onay_bekliyor"].includes(surum.durum)) throw new BadRequestException("Yalnız taslak veya onay bekleyen reçete etkinleştirilebilir");
       const simdi = new Date();
-      await tx.urunRecetesi.updateMany({ where: { stokId, durum: "aktif", id: { not: surumId } }, data: { durum: "pasif", aktif: false, yururlukBitis: simdi } });
-      return tx.urunRecetesi.update({ where: { id: surumId }, data: { durum: "aktif", aktif: true, onaylayanUserId: userId, onayZamani: simdi, yururlukBaslangic: surum.yururlukBaslangic ?? simdi, yururlukBitis: null }, include: { kalemler: true } });
+      const bugun = new Date(bugunTR());
+      const baslangic = surum.yururlukBaslangic ?? bugun;
+      if (baslangic > bugun) {
+        // İleri tarihli sürüm: eskisi yeni sürüm yürürlüğe girene kadar geçerli
+        // kalır, yoksa aradaki günlerde emir açılamaz.
+        await tx.urunRecetesi.updateMany({ where: { stokId, durum: "aktif", id: { not: surumId } }, data: { yururlukBitis: new Date(baslangic.getTime() - 86400000) } });
+      } else {
+        await tx.urunRecetesi.updateMany({ where: { stokId, durum: "aktif", id: { not: surumId } }, data: { durum: "pasif", aktif: false, yururlukBitis: simdi } });
+      }
+      return tx.urunRecetesi.update({ where: { id: surumId }, data: { durum: "aktif", aktif: true, onaylayanUserId: userId, onayZamani: simdi, yururlukBaslangic: baslangic, yururlukBitis: null }, include: { kalemler: true } });
     });
   }
 
@@ -252,8 +267,8 @@ export class UretimService {
 
       const kalemler = await Promise.all(emir.kalemler.map(async (kalem) => {
         const bakiyeSatirlari = kalem.malzemeVaryantId
-          ? await tx.stokVaryantDepoBakiye.findMany({ where: { varyantId: kalem.malzemeVaryantId, depo: { aktif: true } }, include: { depo: { select: { id: true, kod: true, ad: true, varsayilan: true } } } })
-          : await tx.stokDepoBakiye.findMany({ where: { stokId: kalem.malzemeStokId, depo: { aktif: true } }, include: { depo: { select: { id: true, kod: true, ad: true, varsayilan: true } } } });
+          ? await tx.stokVaryantDepoBakiye.findMany({ where: { varyantId: kalem.malzemeVaryantId, depo: sarfaUygunDepo }, include: { depo: { select: { id: true, kod: true, ad: true, varsayilan: true } } } })
+          : await tx.stokDepoBakiye.findMany({ where: { stokId: kalem.malzemeStokId, depo: sarfaUygunDepo }, include: { depo: { select: { id: true, kod: true, ad: true, varsayilan: true } } } });
         const depolar = bakiyeSatirlari.map((b) => {
           const mevcut = D(b.mevcutMiktar);
           const rezerve = D(b.rezerveMiktar);
@@ -341,8 +356,8 @@ export class UretimService {
         if (kalan.isZero()) continue;
 
         const bakiyeler = kalem.malzemeVaryantId
-          ? await tx.stokVaryantDepoBakiye.findMany({ where: { varyantId: kalem.malzemeVaryantId, depo: { aktif: true } }, include: { depo: true } })
-          : await tx.stokDepoBakiye.findMany({ where: { stokId: kalem.malzemeStokId, depo: { aktif: true } }, include: { depo: true } });
+          ? await tx.stokVaryantDepoBakiye.findMany({ where: { varyantId: kalem.malzemeVaryantId, depo: sarfaUygunDepo }, include: { depo: true } })
+          : await tx.stokDepoBakiye.findMany({ where: { stokId: kalem.malzemeStokId, depo: sarfaUygunDepo }, include: { depo: true } });
         const adaylar = bakiyeler.map((b) => ({ ...b, kullanilabilir: Prisma.Decimal.max(D(0), D(b.mevcutMiktar).sub(b.rezerveMiktar)) })).filter((b) => b.kullanilabilir.gt(0)).sort((a, b) => Number(b.depo.varsayilan) - Number(a.depo.varsayilan) || b.kullanilabilir.comparedTo(a.kullanilabilir));
 
         for (const aday of adaylar) {
@@ -393,7 +408,7 @@ export class UretimService {
       if (!["uretimde", "kismen_tamamlandi"].includes(operasyon.uretimEmri.durum)) throw new BadRequestException("Operasyon için üretim emri başlatılmış olmalıdır");
       const tamamlanmayanOnceki = await tx.uretimEmriOperasyonu.count({ where: { uretimEmriId: emirId, sira: { lt: operasyon.sira }, durum: { not: "tamamlandi" } } });
       if (tamamlanmayanOnceki) throw new BadRequestException("Önce önceki operasyonlar tamamlanmalıdır");
-      const [vardiya, operator] = await Promise.all([tx.uretimVardiya.findFirst({ where: { id: girdi.vardiyaId, aktif: true } }), tx.user.findFirst({ where: { id: girdi.operatorId, aktif: true, rol: "uretim_operatoru" } })]);
+      const [vardiya, operator] = await Promise.all([tx.uretimVardiya.findFirst({ where: { id: girdi.vardiyaId, aktif: true } }), tx.user.findFirst({ where: { id: girdi.operatorId, aktif: true, rol: { in: OPERATOR_ROLLERI } } })]);
       if (!vardiya) throw new BadRequestException("Aktif üretim vardiyası bulunamadı");
       if (!operator) throw new BadRequestException("Aktif üretim operatörü bulunamadı");
       const simdi = new Date();
@@ -480,7 +495,7 @@ export class UretimService {
         if (!uretilen.isInteger() || seriler.length !== uretilen.toNumber()) throw new BadRequestException(`Seri takibinde ${uretilen.toFixed(0)} benzersiz seri numarası gerekli`);
         partiler = seriler.map((seriNo) => ({ lotNo: girdi.lotNo ?? emir.no, seriNo, sonKullanmaTarihi: girdi.sonKullanmaTarihi, uretimTarihi, miktar: D(1) }));
       }
-      const karantinaDepo = emir.kaliteKontrolGerekli ? await tx.depo.upsert({ where: { tenantId_kod: { tenantId, kod: "KARANTINA" } }, create: { tenantId, kod: "KARANTINA", ad: "Kalite Karantina Deposu", aktif: true, varsayilan: false }, update: { aktif: true } }) : null;
+      const karantinaDepo = emir.kaliteKontrolGerekli ? await tx.depo.upsert({ where: { tenantId_kod: { tenantId, kod: KARANTINA_DEPO_KODU } }, create: { tenantId, kod: KARANTINA_DEPO_KODU, ad: "Kalite Karantina Deposu", aktif: true, varsayilan: false }, update: { aktif: true } }) : null;
       const girisDepoId = karantinaDepo?.id ?? emir.hedefDepoId;
       await this.stokService.hareketEkle(tx, { stokId: emir.stokId, depoId: girisDepoId, tip: "giris", miktar: uretilen, girilenBirim: emir.stok.anaBirim, girilenMiktar: uretilen, birimMaliyet, tarih: new Date(girdi.bildirimTarihi ?? Date.now()), aciklama: karantinaDepo ? `${emir.no} kalite karantina girişi` : `${emir.no} üretim bildirimi girişi`, kaynakTur: "uretim_bildirimi_giris", kaynakRef: girdi.idempotencyAnahtari, partiler });
       for (const cikti of emir.ciktilar ?? []) {
@@ -495,51 +510,6 @@ export class UretimService {
       await tx.uretimEmri.update({ where: { id, tenantId }, data: { durum: karantinaDepo ? "kalite_bekliyor" : tamamlandi ? "tamamlandi" : "kismen_tamamlandi", uretilenMiktar: { increment: uretilen }, hurdaMiktari: { increment: D(girdi.hurdaMiktari) }, yenidenIslemeMiktari: { increment: D(girdi.yenidenIslemeMiktari) }, toplamMaliyet: { increment: toplamMaliyet }, tamamlanmaTarihi: !karantinaDepo && tamamlandi ? new Date() : null } });
       if (tamamlandi && !karantinaDepo) await this.emirRezervasyonlariniCoz(tx, id);
       return bildirim;
-    });
-  }
-
-  async tamamla(id: string, girdi: z.infer<typeof uretimTamamlaSemasi>) {
-    const { tenantId } = aktifBaglam();
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const emir = await tx.uretimEmri.findUnique({ where: { id, tenantId }, include: { stok: true, kalemler: { include: { malzeme: true, rezervasyonlar: true } } } });
-      if (!emir) throw new NotFoundException("Üretim emri bulunamadı");
-      if (emir.durum !== "uretimde") throw new BadRequestException("Yalnız üretimde olan emir tamamlanabilir");
-      let toplamMaliyet = D(0);
-      for (const kalem of emir.kalemler) {
-        const aktifRezervasyonlar = kalem.rezervasyonlar.map((r) => ({ ...r, aktifMiktar: this.aktifRezervMiktari(r) })).filter((r) => r.aktifMiktar.gt(0));
-        const bakiyeler = kalem.malzemeVaryantId
-          ? await tx.stokVaryantDepoBakiye.findMany({ where: { varyantId: kalem.malzemeVaryantId, depo: { aktif: true } }, include: { depo: true } })
-          : await tx.stokDepoBakiye.findMany({ where: { stokId: kalem.malzemeStokId, depo: { aktif: true } }, include: { depo: true } });
-        const uygun = aktifRezervasyonlar.length
-          ? aktifRezervasyonlar.map((r) => ({ depoId: r.depoId, depoAd: "Rezerve depo", varsayilan: false, kullanilabilir: r.aktifMiktar, rezervasyonId: r.id }))
-          : bakiyeler.map((b) => ({ depoId: b.depoId, depoAd: b.depo.ad, varsayilan: b.depo.varsayilan, kullanilabilir: D(b.mevcutMiktar).sub(D(b.rezerveMiktar)), rezervasyonId: null as string | null })).filter((b) => b.kullanilabilir.gt(0)).sort((a, b) => Number(b.varsayilan) - Number(a.varsayilan) || b.kullanilabilir.comparedTo(a.kullanilabilir));
-        const toplam = uygun.reduce((t, b) => t.add(b.kullanilabilir), D(0));
-        if (toplam.lt(kalem.planlananMiktar)) throw new BadRequestException(`${kalem.malzeme.ad} için yeterli kullanılabilir stok yok (gereken ${kalem.planlananMiktar.toFixed(3)}, mevcut ${toplam.toFixed(3)})`);
-        let kalan = D(kalem.planlananMiktar);
-        for (const kaynak of uygun) {
-          if (kalan.lte(0)) break;
-          const sarf = Prisma.Decimal.min(kalan, kaynak.kullanilabilir);
-          if (kaynak.rezervasyonId) await this.rezervasyonBakiyesiCoz(tx, kalem, kaynak.depoId, sarf, kaynak.rezervasyonId, "sarf");
-          await this.stokService.hareketEkle(tx, { stokId: kalem.malzemeStokId, varyantId: kalem.malzemeVaryantId, depoId: kaynak.depoId, tip: "cikis", miktar: sarf, girilenBirim: kalem.malzeme.anaBirim, girilenMiktar: sarf, birimMaliyet: D(0), tarih: emir.tarih, aciklama: `${emir.no} üretim sarfı`, kaynakTur: "uretim_sarf", kaynakRef: emir.id });
-          kalan = kalan.sub(sarf);
-        }
-        toplamMaliyet = toplamMaliyet.add(kalem.planlananMiktar.mul(kalem.malzeme.ortalamaMaliyet));
-        await tx.uretimEmriKalem.update({ where: { id: kalem.id, tenantId }, data: { sarfEdilenMiktar: kalem.planlananMiktar, birimMaliyet: kalem.malzeme.ortalamaMaliyet } });
-      }
-      const birimMaliyet = toplamMaliyet.div(emir.planlananMiktar).toDecimalPlaces(4);
-      const uretimTarihi = girdi.uretimTarihi ?? emir.tarih.toISOString().slice(0, 10);
-      let partiler: NonNullable<Parameters<StokService["hareketEkle"]>[1]["partiler"]> = [];
-      if (emir.stok.takipTipi === "lot") {
-        partiler = [{ lotNo: girdi.lotNo ?? emir.no, sonKullanmaTarihi: girdi.sonKullanmaTarihi, uretimTarihi, miktar: emir.planlananMiktar }];
-      } else if (emir.stok.takipTipi === "seri") {
-        const seriNumaralari = [...(girdi.seriNumaralari ?? []), ...(girdi.seriNo ? [girdi.seriNo] : [])];
-        if (!emir.planlananMiktar.isInteger() || seriNumaralari.length !== emir.planlananMiktar.toNumber()) {
-          throw new BadRequestException(`Seri takibinde üretilen her adet için ayrı seri numarası gerekli (${emir.planlananMiktar.toFixed(0)} adet)`);
-        }
-        partiler = seriNumaralari.map((seriNo) => ({ lotNo: girdi.lotNo ?? emir.no, seriNo, sonKullanmaTarihi: girdi.sonKullanmaTarihi, uretimTarihi, miktar: D(1) }));
-      }
-      await this.stokService.hareketEkle(tx, { stokId: emir.stokId, depoId: emir.hedefDepoId, tip: "giris", miktar: emir.planlananMiktar, girilenBirim: emir.stok.anaBirim, girilenMiktar: emir.planlananMiktar, birimMaliyet, tarih: emir.tarih, aciklama: `${emir.no} üretim girişi`, kaynakTur: "uretim_giris", kaynakRef: emir.id, partiler });
-      return tx.uretimEmri.update({ where: { id, tenantId }, data: { durum: "tamamlandi", uretilenMiktar: emir.planlananMiktar, toplamMaliyet, tamamlanmaTarihi: new Date() } });
     });
   }
 
@@ -581,6 +551,8 @@ export class UretimService {
         await tx.uretimEmri.update({ where: { id: emir.id, tenantId }, data: {
           durum: tamamlandi ? "tamamlandi" : girdi.karar === "red" ? "malzeme_bekliyor" : "kismen_tamamlandi",
           uretilenMiktar: kabulEdilen,
+          // Reddedilen mamul karantinadan çıkıp yok edilir; hurda oranına girer.
+          ...(girdi.karar === "red" ? { hurdaMiktari: { increment: kontrol.miktar } } : {}),
           tamamlanmaTarihi: tamamlandi ? new Date() : null,
         } });
         if (tamamlandi) await this.emirRezervasyonlariniCoz(tx, emir.id);
@@ -637,8 +609,38 @@ export class UretimService {
       await this.emirRezervasyonlariniCoz(tx, id);
       const sonuc = await tx.uretimEmri.updateMany({ where: { id, tenantId, durum: emir.durum }, data: { durum: "iptal" } });
       if (sonuc.count !== 1) throw new BadRequestException("Üretim emrinin durumu başka bir işlem tarafından değiştirildi");
+      await this.acikOperasyonlariIptalEt(tx, id);
       return tx.uretimEmri.findUniqueOrThrow({ where: { id, tenantId } });
     });
+  }
+
+  /**
+   * Başlamış emri kalan miktarı üretmeden kapatır: üretilen kadarıyla
+   * tamamlanır (hiç bildirim yoksa iptal olur), kalan malzeme ayrımı çözülür, açık operasyonlar iptal edilir.
+   * Kalite kararı bekleyen ya da operasyonu süren emir kapatılmaz; o işin
+   * sonucu stok ve maliyeti değiştirir.
+   */
+  async kapat(id: string, girdi: z.infer<typeof uretimEmriKapatSemasi>) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const emir = await tx.uretimEmri.findUnique({ where: { id, tenantId } });
+      if (!emir) throw new NotFoundException("Üretim emri bulunamadı");
+      if (!["uretimde", "kismen_tamamlandi", "malzeme_bekliyor"].includes(emir.durum)) throw new BadRequestException("Yalnız üretimi süren ya da kalite reddinden dönen emir kapatılabilir");
+      // Hiç bildirim ya da ek sarf yoksa ne mamul girdi ne malzeme çıktı: emir iptal sayılır.
+      const bildirimVar = (await tx.uretimBildirimi.count({ where: { uretimEmriId: id } })) + (await tx.uretimSarfDuzeltme.count({ where: { uretimEmriId: id } })) > 0;
+      const suren = await tx.uretimEmriOperasyonu.count({ where: { uretimEmriId: id, durum: "devam_ediyor" } });
+      if (suren) throw new BadRequestException("Süren operasyon var; önce bekletin ya da tamamlayın");
+      const sonuc = await tx.uretimEmri.updateMany({ where: { id, tenantId, durum: emir.durum }, data: { durum: bildirimVar ? "tamamlandi" : "iptal", tamamlanmaTarihi: bildirimVar ? new Date() : null, kapanisNedeni: girdi.neden } });
+      if (sonuc.count !== 1) throw new BadRequestException("Üretim emrinin durumu başka bir işlem tarafından değiştirildi");
+      await this.emirRezervasyonlariniCoz(tx, id);
+      await this.acikOperasyonlariIptalEt(tx, id);
+      return tx.uretimEmri.findUniqueOrThrow({ where: { id, tenantId } });
+    });
+  }
+
+  /** Bitmemiş operasyonlar kapasite yükünde kalmasın diye iptal edilir. */
+  private async acikOperasyonlariIptalEt(tx: Prisma.TransactionClient, emirId: string) {
+    await tx.uretimEmriOperasyonu.updateMany({ where: { uretimEmriId: emirId, durum: { in: ["planlandi", "hazir", "beklemede"] } }, data: { durum: "iptal" } });
   }
 
   private async uretimDonemiAcikOlmali(tx: Prisma.TransactionClient, tarih: Date) {
@@ -687,6 +689,10 @@ export class UretimService {
 
   async uretilebilirUrunler() {
     const { tenantId } = aktifBaglam();
-    return this.prisma.tenantIslem(tenantId, (tx) => tx.urunRecetesi.findMany({ where: { aktif: true, durum: "aktif", stok: { aktif: true } }, orderBy: { stok: { ad: "asc" } }, include: { stok: { select: { id: true, kod: true, ad: true, anaBirim: true, mevcutMiktar: true, takipTipi: true } }, _count: { select: { kalemler: true } } } }));
+    const receteler = await this.prisma.tenantIslem(tenantId, (tx) => tx.urunRecetesi.findMany({ where: { aktif: true, durum: "aktif", stok: { aktif: true } }, orderBy: [{ stok: { ad: "asc" } }, { surum: "desc" }], include: { stok: { select: { id: true, kod: true, ad: true, anaBirim: true, mevcutMiktar: true, takipTipi: true } }, _count: { select: { kalemler: true } } } }));
+    // İleri tarihli sürüm onaylıyken aynı ürünün iki aktif sürümü olur; liste
+    // ürün başına tek satırdır, emir açılışı tarihe uyan sürümü kendisi seçer.
+    const gorulen = new Set<string>();
+    return receteler.filter((r) => !gorulen.has(r.stokId) && gorulen.add(r.stokId));
   }
 }

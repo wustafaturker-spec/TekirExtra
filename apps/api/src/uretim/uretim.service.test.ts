@@ -48,7 +48,8 @@ describe("UretimService profesyonel emir akışı", () => {
       stokDepoBakiye: { findMany: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }), upsert: vi.fn(), update: vi.fn() },
       stokVaryantDepoBakiye: { findMany: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }), update: vi.fn() },
       uretimMalzemeRezervasyon: { upsert: vi.fn(), update: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
-      uretimBildirimi: { findUnique: vi.fn(), create: vi.fn() },
+      uretimBildirimi: { findUnique: vi.fn(), create: vi.fn(), count: vi.fn().mockResolvedValue(0) },
+      uretimSarfDuzeltme: { count: vi.fn().mockResolvedValue(0) },
       uretimEmriKalem: { update: vi.fn() },
       uretimKaliteKontrol: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }), count: vi.fn().mockResolvedValue(0), findUniqueOrThrow: vi.fn() },
       uretimDonemKilidi: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn(), upsert: vi.fn(), deleteMany: vi.fn() },
@@ -233,8 +234,79 @@ describe("UretimService profesyonel emir akışı", () => {
     expect(hareketEkle).toHaveBeenCalledTimes(1);
     expect(prisma.uretimEmri.update).toHaveBeenLastCalledWith({
       where: { id: "emir-1", tenantId: "tenant-1" },
-      data: { durum: "malzeme_bekliyor", uretilenMiktar: D(3), tamamlanmaTarihi: null },
+      data: { durum: "malzeme_bekliyor", uretilenMiktar: D(3), tamamlanmaTarihi: null, hurdaMiktari: { increment: D(2) } },
     });
     expect(prisma.uretimEmriKalem.update).toHaveBeenCalledWith({ where: { id: "kalem-1", tenantId: "tenant-1" }, data: { ekIhtiyacMiktari: { increment: D(4) } } });
+  });
+
+  it("kısmen üretilmiş emri üretilen kadarıyla kapatır, ayrımı çözer, bekleyen operasyonları iptal eder", async () => {
+    prisma.uretimEmri.findUnique.mockResolvedValue({ id: "emir-1", durum: "kismen_tamamlandi", uretilenMiktar: D(80), planlananMiktar: D(100) });
+    prisma.uretimBildirimi.count.mockResolvedValue(2);
+    prisma.uretimMalzemeRezervasyon.findMany.mockResolvedValue([{ id: "rez-1", depoId: "depo-1", rezerveMiktar: D(20), sarfEdilenMiktar: D(16), cozulenMiktar: D(0), uretimEmriKalem: { malzemeStokId: "malzeme-1", malzemeVaryantId: null } }]);
+
+    await service.kapat("emir-1", { neden: "Sipariş miktarı düşürüldü" });
+
+    expect(prisma.uretimEmri.updateMany).toHaveBeenCalledWith({ where: { id: "emir-1", tenantId: "tenant-1", durum: "kismen_tamamlandi" }, data: expect.objectContaining({ durum: "tamamlandi", kapanisNedeni: "Sipariş miktarı düşürüldü" }) });
+    expect(prisma.uretimMalzemeRezervasyon.update).toHaveBeenCalledWith({ where: { id: "rez-1" }, data: { cozulenMiktar: { increment: D(4) } } });
+    expect(prisma.uretimEmriOperasyonu.updateMany).toHaveBeenCalledWith({ where: { uretimEmriId: "emir-1", durum: { in: ["planlandi", "hazir", "beklemede"] } }, data: { durum: "iptal" } });
+  });
+
+  it("hiç bildirimi olmayan başlamış emri kapatınca iptal eder", async () => {
+    prisma.uretimEmri.findUnique.mockResolvedValue({ id: "emir-1", durum: "uretimde", uretilenMiktar: D(0), planlananMiktar: D(10) });
+
+    await service.kapat("emir-1", { neden: "Müşteri vazgeçti" });
+
+    expect(prisma.uretimEmri.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ durum: "iptal", tamamlanmaTarihi: null }) }));
+  });
+
+  it("süren operasyonu olan ya da kalite bekleyen emri kapatmaz", async () => {
+    prisma.uretimEmri.findUnique.mockResolvedValue({ id: "emir-1", durum: "uretimde", uretilenMiktar: D(5), planlananMiktar: D(10) });
+    prisma.uretimEmriOperasyonu.count.mockResolvedValue(1);
+    await expect(service.kapat("emir-1", { neden: "Deneme" })).rejects.toThrow("Süren operasyon var");
+
+    prisma.uretimEmri.findUnique.mockResolvedValue({ id: "emir-1", durum: "kalite_bekliyor", uretilenMiktar: D(5), planlananMiktar: D(10) });
+    await expect(service.kapat("emir-1", { neden: "Deneme" })).rejects.toThrow("kapatılabilir");
+    expect(prisma.uretimEmri.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("iptal edilen emrin operasyonlarını da iptal eder", async () => {
+    prisma.uretimEmri.findUnique.mockResolvedValue({ id: "emir-1", durum: "planlandi" });
+
+    await service.iptal("emir-1");
+
+    expect(prisma.uretimEmriOperasyonu.updateMany).toHaveBeenCalledWith({ where: { uretimEmriId: "emir-1", durum: { in: ["planlandi", "hazir", "beklemede"] } }, data: { durum: "iptal" } });
+  });
+
+  it("kapasite yüküne kapanmış emirlerin operasyonlarını katmaz", async () => {
+    await service.kapasite("2026-08-22", "2026-08-22");
+
+    expect(prisma.uretimEmriOperasyonu.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ uretimEmri: { durum: { notIn: ["iptal", "tamamlandi"] } } }) }));
+  });
+
+  it("ileri tarihli sürüm onaylanınca eski sürüm o tarihe kadar geçerli kalır", async () => {
+    prisma.urunRecetesi.findFirst.mockResolvedValue({ id: "recete-2", stokId: "mamul-1", durum: "taslak", yururlukBaslangic: new Date("2099-01-10") });
+    prisma.urunRecetesi.update.mockResolvedValue({ id: "recete-2", durum: "aktif" });
+
+    await service.receteOnayla("mamul-1", "recete-2");
+
+    expect(prisma.urunRecetesi.updateMany).toHaveBeenCalledWith({ where: { stokId: "mamul-1", durum: "aktif", id: { not: "recete-2" } }, data: { yururlukBitis: new Date("2099-01-09") } });
+    expect(prisma.urunRecetesi.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ yururlukBaslangic: new Date("2099-01-10") }) }));
+  });
+
+  it("üretilebilir ürünleri ürün başına tek satır listeler", async () => {
+    prisma.urunRecetesi.findMany.mockResolvedValue([{ id: "r-3", stokId: "mamul-1", surum: 3 }, { id: "r-2", stokId: "mamul-1", surum: 2 }, { id: "r-9", stokId: "mamul-2", surum: 1 }]);
+
+    const sonuc = await service.uretilebilirUrunler();
+
+    expect(sonuc.map((r: { id: string }) => r.id)).toEqual(["r-3", "r-9"]);
+  });
+
+  it("karantina deposundaki stoğu ayırmaz", async () => {
+    prisma.uretimEmri.findUnique.mockResolvedValue({ id: "emir-1", durum: "planlandi", kalemler: [{ id: "kalem-1", malzemeStokId: "malzeme-1", malzemeVaryantId: null, planlananMiktar: D(1), sarfEdilenMiktar: D(0), malzeme: { ad: "Yarı mamul" }, rezervasyonlar: [] }] });
+    prisma.stokDepoBakiye.findMany.mockResolvedValue([]);
+
+    await service.rezerveEt("emir-1");
+
+    expect(prisma.stokDepoBakiye.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { stokId: "malzeme-1", depo: { aktif: true, kod: { not: "KARANTINA" } } } }));
   });
 });
