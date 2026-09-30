@@ -197,7 +197,7 @@ export const matbuBelgeNoSemasi = z.object({
 
 /** SAT-12: gelen e-İrsaliyeden alış irsaliyesi — her satırın stok kartı. */
 export const gelenIrsaliyeIsleSemasi = z.object({
-  satirEslesmeleri: z.array(z.object({ siraNo: z.number().int().min(1), stokId: z.string().uuid() })).min(1),
+  satirEslesmeleri: z.array(z.object({ siraNo: z.number().int().min(1), stokId: z.string().uuid(), varyantId: z.string().uuid().nullish() })).min(1),
   yeniCariOnay: z.boolean().optional(),
 });
 

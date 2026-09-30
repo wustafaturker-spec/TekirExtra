@@ -9,7 +9,8 @@
 import { useEffect, useState } from "react";
 import { api, tumSayfalariAl } from "@/lib/api";
 import { AramaSecici } from "@/components/arama-secici";
-import { Alert, Badge, Button } from "@/components/ui";
+import { Alert, Badge, Button, Select } from "@/components/ui";
+import { type ListeVaryanti, varyantDegeriCoz, varyantSecenekleri } from "@/lib/varyant-secimi";
 
 interface Oneri {
   siraNo: number;
@@ -19,6 +20,7 @@ interface Oneri {
   miktar: string;
   birim: string;
   onerilenStokId: string | null;
+  onerilenVaryantId?: string | null;
   onerilenStok: { id: string; kod: string; ad: string; anaBirim: string; birimler: string[] } | null;
   eslesmeKaynagi: string | null;
 }
@@ -33,7 +35,9 @@ interface Eslesme {
   alisIrsaliyesi: { id: string; no: string | null } | null;
   satirlar: Oneri[];
 }
-interface Stok { id: string; kod: string; ad: string; anaBirim: string; birimler?: { ad: string }[] }
+interface Stok { id: string; kod: string; ad: string; anaBirim: string; birimler?: { ad: string }[]; varyantlar?: ListeVaryanti[] }
+/** Satırın seçimi; varyantlı kartta varyant da seçilmeden satır eşleşmiş sayılmaz. */
+interface Secim { stokId: string; varyantId?: string }
 
 export function GelenIrsaliyeIsle({ gelenId, onKapat, onTamam }: {
   gelenId: string;
@@ -43,7 +47,7 @@ export function GelenIrsaliyeIsle({ gelenId, onKapat, onTamam }: {
 }) {
   const [veri, setVeri] = useState<Eslesme | null>(null);
   const [stoklar, setStoklar] = useState<Stok[]>([]);
-  const [secim, setSecim] = useState<Record<number, string>>({});
+  const [secim, setSecim] = useState<Record<number, Secim>>({});
   const [yeniCariOnay, setYeniCariOnay] = useState(false);
   const [hata, setHata] = useState("");
   const [islemde, setIslemde] = useState(false);
@@ -51,15 +55,20 @@ export function GelenIrsaliyeIsle({ gelenId, onKapat, onTamam }: {
   useEffect(() => {
     void api<Eslesme>(`/belgeler/gelen-eirsaliye/${gelenId}/eslesme`).then((v) => {
       setVeri(v);
-      setSecim(Object.fromEntries(v.satirlar.filter((s) => s.onerilenStokId).map((s) => [s.siraNo, s.onerilenStokId as string])));
+      setSecim(Object.fromEntries(v.satirlar.filter((s) => s.onerilenStokId).map((s) => [s.siraNo, { stokId: s.onerilenStokId as string, varyantId: s.onerilenVaryantId ?? undefined }])));
     }).catch((e: unknown) => setHata(e instanceof Error ? e.message : "Belge okunamadı"));
     void tumSayfalariAl<Stok>("/stok").then(setStoklar).catch(() => undefined);
   }, [gelenId]);
 
-  const eksik = veri ? veri.satirlar.filter((s) => !secim[s.siraNo]).length : 0;
+  const varyantlariAl = (stokId?: string) => stoklar.find((x) => x.id === stokId)?.varyantlar ?? [];
+  const satirTamam = (siraNo: number) => {
+    const x = secim[siraNo];
+    return Boolean(x?.stokId) && (Boolean(x.varyantId) || varyantlariAl(x.stokId).length === 0);
+  };
+  const eksik = veri ? veri.satirlar.filter((s) => !satirTamam(s.siraNo)).length : 0;
   /** Belgedeki birim seçilen kartta yoksa kaydetme reddeder; önceden söylenir. */
   const birimUyarisi = (s: Oneri) => {
-    const stok = stoklar.find((x) => x.id === secim[s.siraNo]);
+    const stok = stoklar.find((x) => x.id === secim[s.siraNo]?.stokId);
     if (!stok || !s.birim || s.birim === stok.anaBirim || stok.birimler?.some((b) => b.ad === s.birim)) return null;
     return `Belgedeki birim '${s.birim}', kartın birimi '${stok.anaBirim}'. Karta '${s.birim}' ek birimini (katsayısıyla) ekleyin.`;
   };
@@ -70,7 +79,7 @@ export function GelenIrsaliyeIsle({ gelenId, onKapat, onTamam }: {
     try {
       const b = await api<{ id: string; no: string | null }>(`/belgeler/gelen-eirsaliye/${gelenId}/alis-irsaliyesi`, {
         method: "POST",
-        body: JSON.stringify({ satirEslesmeleri: veri.satirlar.map((s) => ({ siraNo: s.siraNo, stokId: secim[s.siraNo] })), yeniCariOnay }),
+        body: JSON.stringify({ satirEslesmeleri: veri.satirlar.map((s) => ({ siraNo: s.siraNo, stokId: secim[s.siraNo]?.stokId, varyantId: secim[s.siraNo]?.varyantId ?? null })), yeniCariOnay }),
       });
       onTamam(b.no, b.id);
     } catch (e) {
@@ -99,6 +108,8 @@ export function GelenIrsaliyeIsle({ gelenId, onKapat, onTamam }: {
               <tbody>
                 {veri.satirlar.map((s) => {
                   const uyari = birimUyarisi(s);
+                  const x = secim[s.siraNo];
+                  const varyantlar = varyantlariAl(x?.stokId);
                   return (
                     <tr key={s.siraNo}>
                       <td>{s.siraNo}</td>
@@ -107,12 +118,19 @@ export function GelenIrsaliyeIsle({ gelenId, onKapat, onTamam }: {
                       <td>
                         <AramaSecici
                           ariaLabel={`${s.siraNo}. satır stok kartı`}
-                          deger={secim[s.siraNo] ?? ""}
-                          onChange={(deger) => setSecim((x) => ({ ...x, [s.siraNo]: deger }))}
-                          placeholder="Kod veya ürün adıyla ara"
-                          secenekler={stoklar.map((k) => ({ deger: k.id, baslik: k.ad, aciklama: `${k.kod} · ${k.anaBirim}`, aramaMetni: k.kod }))}
+                          deger={x ? (x.varyantId ? `${x.stokId}::${x.varyantId}` : x.stokId) : ""}
+                          onChange={(deger) => setSecim((eski) => ({ ...eski, [s.siraNo]: varyantDegeriCoz(deger) }))}
+                          placeholder="Kod, barkod veya ürün adıyla ara"
+                          secenekler={[...stoklar.map((k) => ({ deger: k.id, baslik: k.ad, aciklama: `${k.kod} · ${k.anaBirim}${k.varyantlar?.length ? ` · ${k.varyantlar.length} varyant` : ""}`, aramaMetni: k.kod })), ...varyantSecenekleri(stoklar)]}
                         />
-                        {s.onerilenStokId && secim[s.siraNo] === s.onerilenStokId && <Badge variant="info">otomatik eşleşti</Badge>}
+                        {varyantlar.length > 0 && x && (
+                          <Select aria-label={`${s.siraNo}. satır varyantı`} value={x.varyantId ?? ""} onChange={(e) => { const varyantId = e.target.value || undefined; setSecim((eski) => ({ ...eski, [s.siraNo]: { stokId: x.stokId, varyantId } })); }}>
+                            <option value="">Varyant seçin</option>
+                            {varyantlar.map((v) => <option key={v.id} value={v.id}>{v.ad} · {v.kod}</option>)}
+                          </Select>
+                        )}
+                        {s.onerilenStokId && x?.stokId === s.onerilenStokId && (!s.onerilenVaryantId || x.varyantId === s.onerilenVaryantId) && <Badge variant="info">otomatik eşleşti</Badge>}
+                        {varyantlar.length > 0 && x && !x.varyantId && <small className="field-error">Bu ürünün varyantları var; satırın varyantını seçin.</small>}
                         {uyari && <small className="field-error">{uyari}</small>}
                       </td>
                     </tr>

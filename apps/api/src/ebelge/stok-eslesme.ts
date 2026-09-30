@@ -20,9 +20,14 @@ export async function stokKartiBul(
   tenantId: string,
   kimlik: UrunKimligi,
   cariId: string | null,
-): Promise<{ stokId: string | null; kaynak: EslesmeKaynagi }> {
+): Promise<{ stokId: string | null; varyantId: string | null; kaynak: EslesmeKaynagi }> {
   let stokId: string | null = null;
   let kaynak: EslesmeKaynagi = null;
+
+  // Bizim kodumuz ya da barkod bir varyantınsa satır doğrudan o varyanta düşer;
+  // varyantlı kartın satırı varyantsız kaydedilemez.
+  const varyant = await varyantBul(tx, tenantId, kimlik);
+  if (varyant) return varyant;
 
   if (kimlik.aliciUrunKodu) {
     const k = await tx.stokKart.findFirst({
@@ -92,5 +97,17 @@ export async function stokKartiBul(
     }
   }
 
-  return { stokId, kaynak };
+  return { stokId, varyantId: null, kaynak };
+}
+
+async function varyantBul(tx: Prisma.TransactionClient, tenantId: string, kimlik: UrunKimligi) {
+  if (kimlik.aliciUrunKodu) {
+    const v = await tx.stokVaryant.findFirst({ where: { tenantId, kod: kimlik.aliciUrunKodu, aktif: true, stok: { aktif: true } }, select: { id: true, stokId: true } });
+    if (v) return { stokId: v.stokId, varyantId: v.id, kaynak: "alici_urun_kodu" as const };
+  }
+  if (kimlik.barkod) {
+    const v = await tx.stokVaryant.findFirst({ where: { tenantId, barkod: kimlik.barkod, aktif: true, stok: { aktif: true } }, select: { id: true, stokId: true } });
+    if (v) return { stokId: v.stokId, varyantId: v.id, kaynak: "barkod" as const };
+  }
+  return null;
 }

@@ -1468,6 +1468,7 @@ export class BelgelerService {
       try { ubl = irsaliyeUblOku(kayit.xmlIcerik); } catch { throw new BadRequestException("Belgenin XML'i okunamadı"); }
       if (ubl.satirlar.length === 0) throw new BadRequestException("Belgede irsaliye satırı bulunamadı");
       const eslesme = new Map(girdi.satirEslesmeleri.map((e) => [e.siraNo, e.stokId]));
+      const varyantlar = new Map(girdi.satirEslesmeleri.map((e) => [e.siraNo, e.varyantId ?? null]));
       const eksik = ubl.satirlar.map((s, i) => ({ sira: i + 1, ad: s.ad })).filter((s) => !eslesme.get(s.sira));
       if (eksik.length > 0) throw new BadRequestException(`Şu satırlar bir stok kartıyla eşleştirilmedi: ${eksik.map((s) => `${s.sira}. ${s.ad}`).join(", ")}`);
 
@@ -1483,6 +1484,7 @@ export class BelgelerService {
         if (!kart) throw new BadRequestException(`${i + 1}. satırın stok kartı bulunamadı`);
         satirlar.push({
           stokId,
+          varyantId: varyantlar.get(i + 1),
           miktar: String(Number(s.miktar) || 0),
           // Belgenin birimi (koli, kg…) kartta tanımlı olmalı; yoksa kaydetme söyler (STK-10).
           birim: s.birimAdi || kart.anaBirim,

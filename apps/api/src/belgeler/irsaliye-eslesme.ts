@@ -14,7 +14,7 @@ export const belgeNoSadelestir = (no: string | null | undefined) => (no ?? "").r
 export async function irsaliyeSatirOnerileri(tx: Prisma.TransactionClient, tenantId: string, satirlar: UblIrsaliyeSatir[], cariId: string | null) {
   const sonuc = [];
   for (const [i, s] of satirlar.entries()) {
-    const { stokId, kaynak } = await stokKartiBul(tx, tenantId, { ...s, ad: s.ad }, cariId);
+    const { stokId, varyantId, kaynak } = await stokKartiBul(tx, tenantId, { ...s, ad: s.ad }, cariId);
     const stok = stokId
       ? await tx.stokKart.findUnique({ where: { id: stokId }, select: { id: true, kod: true, ad: true, anaBirim: true, birimler: { select: { ad: true } } } })
       : null;
@@ -26,6 +26,7 @@ export async function irsaliyeSatirOnerileri(tx: Prisma.TransactionClient, tenan
       miktar: s.miktar,
       birim: s.birimAdi || s.birim,
       onerilenStokId: stok?.id ?? null,
+      onerilenVaryantId: stok ? varyantId : null,
       onerilenStok: stok ? { id: stok.id, kod: stok.kod, ad: stok.ad, anaBirim: stok.anaBirim, birimler: stok.birimler.map((b) => b.ad) } : null,
       eslesmeKaynagi: kaynak,
     });

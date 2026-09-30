@@ -46,6 +46,13 @@ interface OnerilenStok {
   ad: string;
   anaBirim: string;
   kdvOrani: string;
+  varyantlar?: KartVaryanti[];
+}
+
+interface KartVaryanti {
+  id: string;
+  kod: string;
+  ad: string;
 }
 
 interface GelenSatir {
@@ -64,6 +71,7 @@ interface GelenSatir {
   kdvTutari: string;
   matrah: string;
   onerilenStokId: string | null;
+  onerilenVaryantId?: string | null;
   onerilenStok: OnerilenStok | null;
   eslesmeKaynagi:
     | "alici_urun_kodu"
@@ -122,6 +130,9 @@ interface StokSecenek {
   kod: string;
   ad: string;
   anaBirim: string;
+  varyantlar?: KartVaryanti[];
+  /** Varyantlı kartta satırın varyantı; seçilmeden satır eşleşmiş sayılmaz. */
+  varyantId?: string;
 }
 
 /* ─── Yardımcılar ────────────────────────────────────────────────────────── */
@@ -237,6 +248,8 @@ export default function GelenKutusuSayfasi() {
               kod: s.onerilenStok.kod,
               ad: s.onerilenStok.ad,
               anaBirim: s.onerilenStok.anaBirim,
+              varyantlar: s.onerilenStok.varyantlar,
+              varyantId: s.onerilenVaryantId ?? undefined,
             }
           : null;
       }
@@ -268,7 +281,10 @@ export default function GelenKutusuSayfasi() {
   }, [seciciSira, seciciArama]);
 
   const eksikSatirlar = useMemo(
-    () => (detay ? detay.satirlar.filter((s) => !eslesme[s.siraNo]) : []),
+    () => (detay ? detay.satirlar.filter((s) => {
+      const k = eslesme[s.siraNo];
+      return !k || (!k.varyantId && (k.varyantlar?.length ?? 0) > 0);
+    }) : []),
     [detay, eslesme],
   );
 
@@ -385,6 +401,7 @@ export default function GelenKutusuSayfasi() {
             satirEslesmeleri: detay.satirlar.map((sa) => ({
               siraNo: sa.siraNo,
               stokId: eslesme[sa.siraNo]?.id,
+              varyantId: eslesme[sa.siraNo]?.varyantId ?? null,
             })),
             yeniCariOnay,
           }),
@@ -851,6 +868,27 @@ export default function GelenKutusuSayfasi() {
                             Değiştir
                           </Button>
                         )}
+                        {(secili.varyantlar?.length ?? 0) > 0 && (
+                          <Select
+                            aria-label={`${s.siraNo}. satır varyantı`}
+                            value={secili.varyantId ?? ""}
+                            disabled={!islenebilir}
+                            onChange={(e) => {
+                              const varyantId = e.target.value || undefined;
+                              setEslesme((x) => ({ ...x, [s.siraNo]: { ...secili, varyantId } }));
+                            }}
+                          >
+                            <option value="">Varyant seçin</option>
+                            {secili.varyantlar!.map((v) => (
+                              <option key={v.id} value={v.id}>
+                                {v.ad} · {v.kod}
+                              </option>
+                            ))}
+                          </Select>
+                        )}
+                        {islenebilir && (secili.varyantlar?.length ?? 0) > 0 && !secili.varyantId && (
+                          <small className="field-error">Bu ürünün varyantları var; satırın varyantını seçin.</small>
+                        )}
                       </div>
                     ) : (
                       <div className="row-tight">
@@ -889,20 +927,36 @@ export default function GelenKutusuSayfasi() {
                               Sonuç yok.
                             </p>
                           ) : (
-                            seciciSonuc.map((k) => (
+                            seciciSonuc.flatMap((k) => [
                               <button
                                 key={k.id}
                                 type="button"
                                 className="btn btn--ghost btn--block btn--sm"
                                 style={{ justifyContent: "flex-start", marginBottom: "0.25rem" }}
                                 onClick={() => {
-                                  setEslesme((e) => ({ ...e, [s.siraNo]: k }));
+                                  setEslesme((e) => ({ ...e, [s.siraNo]: { ...k, varyantId: undefined } }));
                                   setSeciciSira(null);
                                 }}
                               >
                                 <code className="mono">{k.kod}</code>&nbsp;{k.ad}
-                              </button>
-                            ))
+                                {(k.varyantlar?.length ?? 0) > 0 && <span className="muted">&nbsp;· {k.varyantlar!.length} varyant</span>}
+                              </button>,
+                              // Varyant doğrudan da seçilebilir; satır o varyantla eşleşir.
+                              ...(k.varyantlar ?? []).map((v) => (
+                                <button
+                                  key={v.id}
+                                  type="button"
+                                  className="btn btn--ghost btn--block btn--sm"
+                                  style={{ justifyContent: "flex-start", marginBottom: "0.25rem", paddingLeft: "1.5rem" }}
+                                  onClick={() => {
+                                    setEslesme((e) => ({ ...e, [s.siraNo]: { ...k, varyantId: v.id } }));
+                                    setSeciciSira(null);
+                                  }}
+                                >
+                                  ↳&nbsp;<code className="mono">{v.kod}</code>&nbsp;{v.ad}
+                                </button>
+                              )),
+                            ])
                           )}
                         </div>
                         <Button size="sm" onClick={() => setSeciciSira(null)}>

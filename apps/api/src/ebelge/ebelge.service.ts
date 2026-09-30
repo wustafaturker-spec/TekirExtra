@@ -1840,7 +1840,7 @@ export class EbelgeService {
    */
   async gelenOnayla(
     id: string,
-    girdi: { satirEslesmeleri: { siraNo: number; stokId: string }[]; yeniCariOnay?: boolean },
+    girdi: { satirEslesmeleri: { siraNo: number; stokId: string; varyantId?: string | null }[]; yeniCariOnay?: boolean },
   ) {
     const { tenantId } = aktifBaglam();
 
@@ -1864,6 +1864,7 @@ export class EbelgeService {
 
     // Tüm satırlar eşleşmeden fatura üretilmez (S-01).
     const eslesme = new Map(girdi.satirEslesmeleri.map((e) => [e.siraNo, e.stokId]));
+    const varyantlar = new Map(girdi.satirEslesmeleri.map((e) => [e.siraNo, e.varyantId ?? null]));
     const eksik = ubl.satirlar.filter((s) => !eslesme.get(s.siraNo));
     if (eksik.length > 0) {
       throw new BadRequestException(
@@ -1924,6 +1925,7 @@ export class EbelgeService {
       ihracKayitliKodu,
       satirlar: ubl.satirlar.map((s) => ({
         stokId: eslesme.get(s.siraNo) as string,
+        varyantId: varyantlar.get(s.siraNo),
         miktar: s.miktar.toFixed(3),
         birim: s.birim,
         birimFiyat: s.birimFiyat.toFixed(4),
@@ -2351,12 +2353,16 @@ export class EbelgeService {
       const sonuc = [];
 
       for (const s of satirlar) {
-        const { stokId, kaynak } = await stokKartiBul(tx, tenantId, s, cariId);
+        const { stokId, varyantId, kaynak } = await stokKartiBul(tx, tenantId, s, cariId);
 
         const stok = stokId
           ? await tx.stokKart.findUnique({
               where: { id: stokId },
-              select: { id: true, kod: true, ad: true, anaBirim: true, kdvOrani: true },
+              select: {
+                id: true, kod: true, ad: true, anaBirim: true, kdvOrani: true,
+                // Varyantlı kartta satırın varyantı ekranda seçilir.
+                varyantlar: { where: { aktif: true }, orderBy: { kod: "asc" }, select: { id: true, kod: true, ad: true } },
+              },
             })
           : null;
 
@@ -2376,6 +2382,7 @@ export class EbelgeService {
           kdvTutari: s.kdvTutari.toFixed(2),
           matrah: s.matrah.toFixed(2),
           onerilenStokId: stok?.id ?? null,
+          onerilenVaryantId: stok ? varyantId : null,
           onerilenStok: stok
             ? {
                 id: stok.id,
@@ -2383,6 +2390,7 @@ export class EbelgeService {
                 ad: stok.ad,
                 anaBirim: stok.anaBirim,
                 kdvOrani: stok.kdvOrani.toFixed(2),
+                varyantlar: stok.varyantlar,
               }
             : null,
           eslesmeKaynagi: kaynak,

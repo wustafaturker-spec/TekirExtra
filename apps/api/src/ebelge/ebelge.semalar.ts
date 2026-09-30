@@ -8,6 +8,7 @@ export const gelenOnaySemasi = z.object({
       z.object({
         siraNo: z.number().int().min(1),
         stokId: z.string().uuid(),
+        varyantId: z.string().uuid().nullish(),
       }),
     )
     .min(1, "En az bir satır eşleştirmesi gerekli"),

@@ -98,6 +98,8 @@ export class StokService {
               { barkodlar: { some: { barkod: { contains: arama } } } },
               // STK-18: tedarikcinin urun koduyla da bul
               { tedarikciler: { some: { tedarikciUrunKodu: { contains: arama, mode: "insensitive" } } } },
+              // Varyant kodu/barkoduyla da ana kart bulunur.
+              { varyantlar: { some: { aktif: true, OR: [{ kod: { contains: arama, mode: "insensitive" } }, { barkod: { contains: arama } }] } } },
             ],
           }
         : {}),
