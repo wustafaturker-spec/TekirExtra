@@ -200,7 +200,7 @@ interface BelgeDetay extends Belge {
     ebelge: { tur: string; durum: string } | null;
     odemeOzeti: { durum: string; odenen: string; kalan: string };
   } | null;
-  satirlar: { id: string; stokId: string; varyantId?: string | null; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; toplamTutar?: string; stok?: { kod: string; ad: string }; teslimEdilenMiktar?: string; kalanMiktar?: string; idisEtiketNo?: string | null; kaynakSatirId?: string | null; partiBilgileri?: { lotNo: string; seriNo?: string | null; sonKullanmaTarihi?: string | null; uretimTarihi?: string | null }[] }[];
+  satirlar: { id: string; stokId: string; varyantId?: string | null; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; toplamTutar?: string; stok?: { kod: string; ad: string }; satirKod?: string; satirAd?: string; satirAciklama?: string | null; teslimEdilenMiktar?: string; kalanMiktar?: string; idisEtiketNo?: string | null; kaynakSatirId?: string | null; partiBilgileri?: { lotNo: string; seriNo?: string | null; sonKullanmaTarihi?: string | null; uretimTarihi?: string | null }[] }[];
   /** SAT-10: siparişin teslim geçmişi (iptal edilen irsaliyeler sayılmaz). */
   teslimatlar?: {
     id: string; no: string | null; durum: string; tarih: string;
@@ -216,6 +216,12 @@ function csvHucre(deger: string | number | null): string {
 }
 
 /** SAT-10: satır bazında miktar yalnız siparişten irsaliyeye dönüşümde girilir. */
+/** Varyantlı satır ana kart yerine varyantın adı/koduyla görünür (API satirAd/satirKod). */
+function satirEtiketi(s: { stokId: string; satirAd?: string; satirKod?: string }, st?: { ad: string; kod: string }) {
+  if (s.satirAd && s.satirKod) return `${s.satirAd} (${s.satirKod})`;
+  return st ? `${st.ad} (${st.kod})` : s.stokId;
+}
+
 function kismiTeslimVar(belge: { tur: string }, hedef: string) {
   return belge.tur === "siparis" && hedef === "irsaliye";
 }
@@ -1721,7 +1727,8 @@ export default function BelgelerSayfasi() {
                     return (
                       <tr key={i}>
                         <td>
-                          {st ? `${st.ad} (${st.kod})` : s.stokId}
+                          {satirEtiketi(s, st)}
+                          {s.satirAciklama && <small className="muted"> · {s.satirAciklama}</small>}
                           {/* EBLG-72: onaylı belgede etiket düzenlenemez ama belgeyle giden numara görünmelidir. */}
                           {s.idisEtiketNo && <small className="muted"> · İDİS etiket {s.idisEtiketNo}</small>}
                         </td>
@@ -1948,7 +1955,7 @@ export default function BelgelerSayfasi() {
                     const girilen = Number(teslimMiktarlari[s.id] ?? 0);
                     return (
                       <tr key={s.id}>
-                        <td>{st ? `${st.ad} (${st.kod})` : s.stokId}</td>
+                        <td>{satirEtiketi(s, st)}</td>
                         <td className="num">{Number(s.miktar).toLocaleString("tr-TR")} {s.birim}</td>
                         <td className="num">{kalan.toLocaleString("tr-TR")}</td>
                         <td className="num">
