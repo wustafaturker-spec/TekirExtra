@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { varyantAdiEsit, varyantliAdAyir } from "@tekirextra/shared";
 import type { EslesmeKaynagi } from "./ebelge.service";
 
 /** Belge satırının ürün kimlikleri (UBL `Item` altındaki tanımlayıcılar). */
@@ -12,7 +13,7 @@ export interface UrunKimligi {
 
 /**
  * Gelen belge satırını stok kartıyla eşler: bizim kodumuz, barkod, tedarikçi
- * kodu (cariye özgü), üretici kodu, son olarak birebir ad. Gelen e-Fatura ve
+ * kodu (cariye özgü), üretici kodu, "Ürün — Varyant" adı, son olarak birebir ad. Gelen e-Fatura ve
  * gelen e-İrsaliye (SAT-12) aynı sırayı kullanır.
  */
 export async function stokKartiBul(
@@ -86,6 +87,11 @@ export async function stokKartiBul(
     }
   }
 
+  if (!stokId) {
+    const varyant = await varyantAdiylaBul(tx, tenantId, kimlik.ad);
+    if (varyant) return varyant;
+  }
+
   if (!stokId && kimlik.ad) {
     const k = await tx.stokKart.findFirst({
       where: { tenantId, ad: { equals: kimlik.ad, mode: "insensitive" }, aktif: true },
@@ -110,4 +116,20 @@ async function varyantBul(tx: Prisma.TransactionClient, tenantId: string, kimlik
     if (v) return { stokId: v.stokId, varyantId: v.id, kaynak: "barkod" as const };
   }
   return null;
+}
+
+/**
+ * "Ürün — Varyant" adlı satır: ürün adı tutan aktif kartın, aynı nitelik
+ * değerlerini taşıyan aktif varyantı (değerlerin sırası önemsiz).
+ */
+async function varyantAdiylaBul(tx: Prisma.TransactionClient, tenantId: string, ad?: string) {
+  const parca = ad ? varyantliAdAyir(ad) : null;
+  if (!parca) return null;
+  const adaylar = await tx.stokVaryant.findMany({
+    where: { tenantId, aktif: true, stok: { aktif: true, ad: { equals: parca.stokAd, mode: "insensitive" } } },
+    orderBy: { kod: "asc" },
+    select: { id: true, stokId: true, ad: true },
+  });
+  const v = adaylar.find((x) => varyantAdiEsit(x.ad, parca.varyantAd));
+  return v ? { stokId: v.stokId, varyantId: v.id, kaynak: "ad" as const } : null;
 }

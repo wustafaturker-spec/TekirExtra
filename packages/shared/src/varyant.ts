@@ -19,6 +19,29 @@ export function varyantliAd(stokAd: string, varyant?: VaryantOzet | null): strin
   return varyant ? `${stokAd} — ${varyant.ad}` : stokAd;
 }
 
+/**
+ * `varyantliAd`ın tersi: "Ürün — Varyant" adını ürün ve varyant adına ayırır.
+ * Gelen belgede satır adı bu biçimde gelir (ör. kendi firmamızın diğer
+ * hesabından); ayraç yoksa null.
+ */
+export function varyantliAdAyir(ad: string): { stokAd: string; varyantAd: string } | null {
+  const i = ad.lastIndexOf(" — ");
+  if (i <= 0) return null;
+  const stokAd = ad.slice(0, i).trim();
+  const varyantAd = ad.slice(i + 3).trim();
+  return stokAd && varyantAd ? { stokAd, varyantAd } : null;
+}
+
+/**
+ * İki varyant adı aynı nitelik değerlerini mi taşıyor? Sıra ve büyük/küçük harf
+ * önemsizdir: "150x45 / Mavi" ile "Mavi / 150x45" aynı varyanttır (firmalar
+ * nitelikleri farklı sırada tanımlayabilir).
+ */
+export function varyantAdiEsit(a: string, b: string): boolean {
+  const parcala = (ad: string) => ad.split("/").map((p) => p.trim().toLocaleLowerCase("tr-TR")).filter(Boolean).sort().join("|");
+  return parcala(a) === parcala(b);
+}
+
 /** Satır kodu: varyant varsa varyant kodu (satılan kalemin kendisi). */
 export function varyantliKod(stokKod: string, varyant?: VaryantOzet | null): string {
   return varyant?.kod || stokKod;

@@ -11,6 +11,7 @@ import { api, tumSayfalariAl } from "@/lib/api";
 import { AramaSecici } from "@/components/arama-secici";
 import { Alert, Badge, Button, Select } from "@/components/ui";
 import { type ListeVaryanti, varyantDegeriCoz, varyantSecenekleri } from "@/lib/varyant-secimi";
+import { varyantAdiEsit, varyantliAdAyir } from "@tekirextra/shared";
 
 interface Oneri {
   siraNo: number;
@@ -64,6 +65,14 @@ export function GelenIrsaliyeIsle({ gelenId, onKapat, onTamam }: {
   const satirTamam = (siraNo: number) => {
     const x = secim[siraNo];
     return Boolean(x?.stokId) && (Boolean(x.varyantId) || varyantlariAl(x.stokId).length === 0);
+  };
+  /** Kart seçilince satır adındaki varyant ("Ürün — 150x45 / Mavi") kartta varsa o da seçilir. */
+  const satirSecimi = (deger: string, satirAdi: string): Secim => {
+    const secim = varyantDegeriCoz(deger);
+    if (secim.varyantId) return secim;
+    const varyantAd = varyantliAdAyir(satirAdi)?.varyantAd;
+    const varyant = varyantAd ? varyantlariAl(secim.stokId).find((v) => varyantAdiEsit(v.ad, varyantAd)) : undefined;
+    return { stokId: secim.stokId, varyantId: varyant?.id };
   };
   const eksik = veri ? veri.satirlar.filter((s) => !satirTamam(s.siraNo)).length : 0;
   /** Belgedeki birim seçilen kartta yoksa kaydetme reddeder; önceden söylenir. */
@@ -119,7 +128,7 @@ export function GelenIrsaliyeIsle({ gelenId, onKapat, onTamam }: {
                         <AramaSecici
                           ariaLabel={`${s.siraNo}. satır stok kartı`}
                           deger={x ? (x.varyantId ? `${x.stokId}::${x.varyantId}` : x.stokId) : ""}
-                          onChange={(deger) => setSecim((eski) => ({ ...eski, [s.siraNo]: varyantDegeriCoz(deger) }))}
+                          onChange={(deger) => setSecim((eski) => ({ ...eski, [s.siraNo]: satirSecimi(deger, s.ad) }))}
                           placeholder="Kod, barkod veya ürün adıyla ara"
                           secenekler={[...stoklar.map((k) => ({ deger: k.id, baslik: k.ad, aciklama: `${k.kod} · ${k.anaBirim}${k.varyantlar?.length ? ` · ${k.varyantlar.length} varyant` : ""}`, aramaMetni: k.kod })), ...varyantSecenekleri(stoklar)]}
                         />

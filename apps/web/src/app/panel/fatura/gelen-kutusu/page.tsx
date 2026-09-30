@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, apiPdfAc, tokenAl } from "@/lib/api";
 import { BirimSecimi } from "@/components/birim-secimi";
-import { birimCoz } from "@tekirextra/shared";
+import { birimCoz, varyantAdiEsit, varyantliAdAyir } from "@tekirextra/shared";
 import { EbelgeAdimSeridi } from "@/components/durum-gecmisi";
 import {
   Alert,
@@ -311,8 +311,9 @@ export default function GelenKutusuSayfasi() {
 
   function seciciAc(sira: number, satir: GelenSatir) {
     setSeciciSira(sira);
-    // Aramayı belgedeki adla başlatmak eşleştirmeyi hızlandırır.
-    setSeciciArama(satir.ad);
+    // Aramayı belgedeki adla başlatmak eşleştirmeyi hızlandırır; "Ürün — Varyant"
+    // adında yalnız ürün adı aranır (kart adı varyantı içermez).
+    setSeciciArama(varyantliAdAyir(satir.ad)?.stokAd ?? satir.ad);
     setSeciciSonuc([]);
     setYeniKartSira(null);
   }
@@ -934,7 +935,10 @@ export default function GelenKutusuSayfasi() {
                                 className="btn btn--ghost btn--block btn--sm"
                                 style={{ justifyContent: "flex-start", marginBottom: "0.25rem" }}
                                 onClick={() => {
-                                  setEslesme((e) => ({ ...e, [s.siraNo]: { ...k, varyantId: undefined } }));
+                                  // Satır adındaki varyant ("Ürün — 150x45 / Mavi") kartta varsa o seçilir.
+                                  const varyantAd = varyantliAdAyir(s.ad)?.varyantAd;
+                                  const varyantId = varyantAd ? k.varyantlar?.find((v) => varyantAdiEsit(v.ad, varyantAd))?.id : undefined;
+                                  setEslesme((e) => ({ ...e, [s.siraNo]: { ...k, varyantId } }));
                                   setSeciciSira(null);
                                 }}
                               >

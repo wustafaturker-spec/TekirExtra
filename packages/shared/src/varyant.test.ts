@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { kodParcasi, varyantAciklamasi, varyantKombinasyonlari, varyantliAd, varyantliKod } from "./varyant";
+import { kodParcasi, varyantAciklamasi, varyantKombinasyonlari, varyantliAd, varyantAdiEsit, varyantliAdAyir, varyantliKod } from "./varyant";
 
 describe("varyant adlandırma", () => {
   it("satır adı, kodu ve açıklaması varyanttan gelir", () => {
@@ -23,5 +23,17 @@ describe("varyant adlandırma", () => {
     expect(liste.map((v) => v.kod)).toEqual(["TSH-001-SIYAH-S", "TSH-001-SIYAH-M", "TSH-001-BEYAZ-S", "TSH-001-BEYAZ-M"]);
     expect(liste[1]).toEqual({ kod: "TSH-001-SIYAH-M", ad: "Siyah / M", nitelikler: { Renk: "Siyah", Beden: "M" } });
     expect(varyantKombinasyonlari("X", [])).toEqual([]);
+  });
+});
+
+describe("varyantliAdAyir", () => {
+  it("varyantliAd'ın ürettiği adı geri ayırır; ayraç yoksa null", () => {
+    expect(varyantliAdAyir(varyantliAd("APLİKATÖRLÜ SÜNGER", { ad: "150x45 / Mavi" } as never))).toEqual({ stokAd: "APLİKATÖRLÜ SÜNGER", varyantAd: "150x45 / Mavi" });
+    expect(varyantliAdAyir("SİLFIX MUMLU BEZ")).toBeNull();
+  });
+
+  it("varyant adı karşılaştırması sıra ve harf büyüklüğünden bağımsız", () => {
+    expect(varyantAdiEsit("150x45 / Mavi", "mavi / 150X45")).toBe(true);
+    expect(varyantAdiEsit("150x45 / Mavi", "150x50 / Mavi")).toBe(false);
   });
 });
