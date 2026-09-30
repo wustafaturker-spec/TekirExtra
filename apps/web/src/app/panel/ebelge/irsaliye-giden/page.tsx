@@ -240,6 +240,20 @@ export default function GidenEirsaliyeler() {
     }
   }
 
+  /** Tek belgenin durumunu aralık beklemeden entegratöre sorar. */
+  async function durumSorgula(belgeId: string) {
+    setIslemde("tek-sorgu"); setHata(""); setBasari("");
+    try {
+      await api(`/ebelge/irsaliye/${belgeId}/sorgula`, { method: "POST" });
+      await detayAc(belgeId);
+      await yukle();
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Durum sorgulanamadı");
+    } finally {
+      setIslemde("");
+    }
+  }
+
   /** EBLG-106: taslağa alıcı etiketi verip gönderir; sunucu durumu hemen sorar. */
   async function taslakGonder(belgeId: string) {
     setIslemde(belgeId); setHata(""); setBasari(""); setBasarisizlar([]);
@@ -473,7 +487,12 @@ export default function GidenEirsaliyeler() {
           <EbelgeAdimSeridi akis={{ tur: "eirsaliye", durum: detay.durum }} />
           <section className="incoming-drawer__summary">
             <div><span>Alıcı</span><strong>{detay.cariUnvan}</strong><small>{gun(detay.tarih)}</small></div>
-            <div><span>Gönderim</span><strong>{an(detay.gonderimZamani)}</strong><small>{an(detay.sonDurumSorguAt) ? `Son sorgu ${an(detay.sonDurumSorguAt)}` : "Henüz sorgulanmadı"}</small></div>
+            <div>
+              <span>Gönderim</span><strong>{an(detay.gonderimZamani)}</strong><small>{an(detay.sonDurumSorguAt) ? `Son sorgu ${an(detay.sonDurumSorguAt)}` : "Henüz sorgulanmadı"}</small>
+              {detay.entegratorRef && gonderebilir && (
+                <Button size="sm" disabled={islemde === "tek-sorgu"} onClick={() => void durumSorgula(detay.belgeId)}>{islemde === "tek-sorgu" ? "Sorgulanıyor…" : "↻ Durumu sorgula"}</Button>
+              )}
+            </div>
             <div><span>Entegratör referansı</span><strong>{detay.entegratorRef ?? "—"}</strong><small>{detay.entegratorRef ? "Entegratördeki karşılık" : "Referans oluşmadı"}</small></div>
           </section>
           {detay.hataMesaji && <div className="incoming-info"><span>Hata / yanıt açıklaması</span><strong>{detay.hataMesaji}</strong></div>}

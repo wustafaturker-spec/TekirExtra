@@ -24,15 +24,33 @@ const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 const DURUM_SORGU_ARALIK_MS = Number(process.env.EBLG_DURUM_SORGU_ARALIK_MS || 2 * 60 * 60 * 1_000);
 
 /**
+ * GİB sonucu beklenen (`kuyrukta`) yeni irsaliye daha sık sorulur: iletim
+ * genellikle dakikalar sürer ve 2 saatlik aralık belgeyi saatlerce "kuyrukta"
+ * gösteriyordu. [belgenin yaşı, sorgu aralığı]; sonrası `DURUM_SORGU_ARALIK_MS`.
+ */
+const KUYRUK_SORGU_BASAMAKLARI: [number, number][] = [
+  [60 * 60 * 1_000, 5 * 60 * 1_000],
+  [24 * 60 * 60 * 1_000, 30 * 60 * 1_000],
+];
+
+/**
  * EBLG-36: otomatik sorgulanacak giden e-İrsaliyeler. `kuyrukta` irsaliye GİB
- * sonucu gelene kadar, `iletildi` irsaliye alıcı yanıtı için gönderimden
- * itibaren `yanitGunSayisi` gün sorgulanır. Planlayıcı da aynı koşulu kullanır.
+ * sonucu gelene kadar (ilk gün daha sık), `iletildi` irsaliye alıcı yanıtı için
+ * gönderimden itibaren `yanitGunSayisi` gün sorgulanır. Planlayıcı da aynı koşulu kullanır.
  */
 export function eirsaliyeSorguKosulu(tenantId: string, simdi: number, yanitGunSayisi: number): Prisma.EirsaliyeKayitWhereInput {
   return {
     tenantId,
     entegratorRef: { not: null },
-    OR: [{ sonDurumSorguAt: null }, { sonDurumSorguAt: { lt: new Date(simdi - DURUM_SORGU_ARALIK_MS) } }],
+    OR: [
+      { sonDurumSorguAt: null },
+      { sonDurumSorguAt: { lt: new Date(simdi - DURUM_SORGU_ARALIK_MS) } },
+      ...KUYRUK_SORGU_BASAMAKLARI.map(([yas, aralik]) => ({
+        durum: "kuyrukta" as const,
+        createdAt: { gte: new Date(simdi - yas) },
+        sonDurumSorguAt: { lt: new Date(simdi - aralik) },
+      })),
+    ],
     // EBLG-85: kayıtlı olmayan alıcı yanıt veremez; iletilen belgesi beklenmez.
     AND: [{ OR: [{ durum: "kuyrukta" }, { durum: "iletildi", aliciKayitsiz: false, createdAt: { gte: new Date(simdi - yanitGunSayisi * 86_400_000) } }] }],
   };
@@ -373,7 +391,7 @@ export class EirsaliyeService {
   /**
    * EBLG-36: bekleyen giden e-İrsaliyelerin durumunu sorgular. NES'te toplu
    * durum ucu yoktur; irsaliye başına bir çağrı yapılır, her birinin ardından
-   * `sonDurumSorguAt` yazılır ki aynı irsaliye 2 saat dolmadan yeniden sorulmasın.
+   * `sonDurumSorguAt` yazılır ki aynı irsaliye aralığı dolmadan yeniden sorulmasın.
    * Çağrısı başarısız olan irsaliyeye dokunulmaz, sonraki turda yeniden denenir.
    */
   async durumlariTopluSorgula(): Promise<{ sorgulanan: number; guncellenen: number; atlanan: number }> {

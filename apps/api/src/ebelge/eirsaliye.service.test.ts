@@ -520,6 +520,20 @@ describe("eirsaliyeSorguKosulu (EBLG-85)", () => {
     expect(JSON.stringify(kosul.AND)).toContain('"durum":"iletildi","aliciKayitsiz":false');
     expect(JSON.stringify(kosul.AND)).toContain('{"durum":"kuyrukta"}');
   });
+
+  it("GİB sonucu beklenen yeni irsaliyeyi ilk saat 5, ilk gün 30 dakikada bir sorar; sonrası 2 saat", () => {
+    const simdi = Date.parse("2026-09-30T19:10:00Z");
+    const dk = 60_000;
+    const aralik = (kosul: ReturnType<typeof eirsaliyeSorguKosulu>) =>
+      (kosul.OR as { durum?: string; createdAt?: { gte: Date }; sonDurumSorguAt: { lt: Date } | null }[])
+        .map((k) => [k.durum ?? "hepsi", k.createdAt ? (simdi - k.createdAt.gte.getTime()) / dk : null, k.sonDurumSorguAt ? (simdi - k.sonDurumSorguAt.lt.getTime()) / dk : null]);
+    expect(aralik(eirsaliyeSorguKosulu("t1", simdi, 10))).toEqual([
+      ["hepsi", null, null],
+      ["hepsi", null, 120],
+      ["kuyrukta", 60, 5],
+      ["kuyrukta", 1440, 30],
+    ]);
+  });
 });
 
 describe("e-İrsaliye otomatik yeniden deneme (EBLG-94)", () => {
