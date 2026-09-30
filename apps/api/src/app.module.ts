@@ -22,6 +22,7 @@ import { PosModule } from "./pos/pos.module";
 import { MasraflarModule } from "./masraflar/masraflar.module";
 import { DovizModule } from "./doviz/doviz.module";
 import { UretimModule } from "./uretim/uretim.module";
+import { CalismaTakvimiModule } from "./calisma-takvimi/calisma-takvimi.module";
 import { ObservabilityModule } from "./core/observability/observability.module";
 import { PersonelModule } from "./personel/personel.module";
 import { MaliMusavirModule } from "./mali-musavir/mali-musavir.module";
@@ -65,6 +66,7 @@ import { SatinAlmaModule } from "./satin-alma/satin-alma.module";
     BildirimlerModule,
     DovizModule,
     UretimModule,
+    CalismaTakvimiModule,
     ObservabilityModule,
     PersonelModule,
     MaliMusavirModule,

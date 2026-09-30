@@ -195,6 +195,7 @@ export const AYARLAR: MenuOge[] = [
   { href: "/panel/ayarlar/fatura-serileri", ikon: FileText, baslik: "Fatura Serileri", eslesme: "tam" },
   { href: "/panel/ayarlar/doviz-kurlari", ikon: ChartColumn, baslik: "Döviz Kurları", eslesme: "tam", esanlamlilar: ["kur", "tcmb", "usd", "eur", "elle kur"] },
   { href: "/panel/ayarlar/depolar", ikon: Boxes, baslik: "Depolar", eslesme: "tam" },
+  { href: "/panel/ayarlar/calisma-takvimi", ikon: CalendarRange, baslik: "Çalışma Takvimi", eslesme: "tam", esanlamlilar: ["tatil", "bayram", "resmî tatil", "mesai", "başlangıç saati"] },
   { href: "/panel/ayarlar/araclar", ikon: Truck, baslik: "Araçlar ve Şoförler", eslesme: "tam", esanlamlilar: ["plaka", "dorse", "şoför", "sevkiyat", "e-irsaliye"] },
   { href: "/panel/ayarlar/entegratorler", ikon: Plug, baslik: "e-Belge Ayarları", eslesme: "tam", esanlamlilar: ["sovos", "izibiz", "entegratör"] },
   { href: "/panel/ayarlar/pazaryerleri", ikon: Store, baslik: "Pazaryeri Ayarları", eslesme: "tam" },

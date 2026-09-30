@@ -4,6 +4,7 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { bugunTR, metinNormalize } from "@tekirextra/shared";
 import { PrismaService } from "../core/prisma.service";
+import { CalismaTakvimiService } from "../calisma-takvimi/calisma-takvimi.service";
 import { StokService } from "../stok/stok.service";
 import { maliyetDagit, planlananOperasyonMaliyeti } from "./uretim-maliyet";
 import { kapasiteGunu, operasyonlariPlanla } from "./uretim-takvim";
@@ -30,7 +31,7 @@ function gecikmeKosulu(): Prisma.UretimEmriWhereInput {
 
 @Injectable()
 export class UretimService {
-  constructor(private readonly prisma: PrismaService, private readonly stokService: StokService) {}
+  constructor(private readonly prisma: PrismaService, private readonly stokService: StokService, private readonly takvim?: CalismaTakvimiService) {}
 
   async ozet() {
     const { tenantId } = aktifBaglam();
@@ -137,12 +138,13 @@ export class UretimService {
     if (sonGun < ilkGun || sonGun.getTime() - ilkGun.getTime() > 93 * 86400000) throw new BadRequestException("Kapasite aralığı en fazla 93 gün olabilir");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const merkezler = await tx.isMerkezi.findMany({ where: { aktif: true }, orderBy: { kod: "asc" } });
+      const tatiller = await this.takvim?.tatilHaritasi(tx, ilkGun, sonGun);
       const operasyonlar = await tx.uretimEmriOperasyonu.findMany({ where: { durum: { notIn: ["iptal", "tamamlandi"] }, uretimEmri: { durum: { notIn: ["iptal", "tamamlandi"] } }, planlananBaslangic: { lte: sonGun }, planlananBitis: { gte: ilkGun } }, include: { uretimEmri: { select: { id: true, no: true, durum: true, stok: { select: { kod: true, ad: true } } } } }, orderBy: { planlananBaslangic: "asc" } });
       return merkezler.map((merkez) => {
         const etkinKapasite = D(merkez.gunlukKapasiteDakika).mul(merkez.verimlilikYuzdesi).div(100);
         const merkezOperasyonlari = operasyonlar.filter((o) => o.isMerkeziId === merkez.id);
         const yuk = merkezOperasyonlari.reduce((t, o) => t.add(o.planlananDakika), D(0));
-        const kapasite = etkinKapasite.mul(kapasiteGunu(ilkGun, sonGun));
+        const kapasite = etkinKapasite.mul(kapasiteGunu(ilkGun, sonGun, tatiller));
         return { isMerkezi: merkez, baslangic: ilkGun, bitis: sonGun, kapasiteDakika: kapasite.toFixed(2), planlananDakika: yuk.toFixed(2), dolulukYuzdesi: kapasite.isZero() ? "0.00" : yuk.mul(100).div(kapasite).toFixed(2), asimDakika: Prisma.Decimal.max(D(0), yuk.sub(kapasite)).toFixed(2), operasyonlar: merkezOperasyonlari };
       });
     });
@@ -346,9 +348,11 @@ export class UretimService {
         create: { tenantId, yil, sonSira: 1 },
         update: { sonSira: { increment: 1 } },
       });
-      // Operasyonlar iş merkezlerinin takvimine yerleşir: günlük etkin
-      // kapasite kadar, cumartesi yarım gün, pazar yok (kapasite hesabıyla aynı).
-      const takvim = operasyonlariPlanla(new Date(`${girdi.tarih}T08:00:00`), recete.operasyonlar.map((o) => ({ o, dakika: D(o.hazirlikDakika).add(D(o.cevrimDakika).mul(girdi.planlananMiktar)).toDecimalPlaces(2), gunlukKapasiteDakika: o.isMerkezi.gunlukKapasiteDakika, verimlilikYuzdesi: o.isMerkezi.verimlilikYuzdesi })));
+      // Operasyonlar firmanın çalışma takvimine yerleşir: ayardaki başlangıç
+      // saatinden günlük etkin kapasite kadar; cumartesi yarım, pazar ve
+      // tatiller yok, arife yarım (kapasite hesabıyla aynı).
+      const takvimAyari = this.takvim ? { baslangicSaati: await this.takvim.gunBaslangicSaati(tx), tatiller: await this.takvim.tatilHaritasi(tx, emirTarihi, new Date(emirTarihi.getTime() + 730 * 86400000)) } : {};
+      const takvim = operasyonlariPlanla(new Date(`${girdi.tarih}T00:00:00`), recete.operasyonlar.map((o) => ({ o, dakika: D(o.hazirlikDakika).add(D(o.cevrimDakika).mul(girdi.planlananMiktar)).toDecimalPlaces(2), gunlukKapasiteDakika: o.isMerkezi.gunlukKapasiteDakika, verimlilikYuzdesi: o.isMerkezi.verimlilikYuzdesi })), takvimAyari);
       const operasyonlar = takvim.map(({ o, dakika, baslangic, bitis }) => ({ tenantId, isMerkeziId: o.isMerkeziId, sira: o.sira, operasyonKodu: o.operasyonKodu, operasyonAdi: o.operasyonAdi, planlananDakika: dakika, saatlikMaliyet: o.isMerkezi.saatlikMaliyet, planlananBaslangic: baslangic, planlananBitis: bitis }));
       const planlananMalzeme = recete.kalemler.reduce((t, k) => t.add(k.miktar.mul(oran).mul(D(1).add(k.fireOrani.div(100))).mul(k.malzeme.ortalamaMaliyet)), D(0));
       const planlananOperasyon = operasyonlar.reduce((t, o) => t.add(D(o.planlananDakika).mul(o.saatlikMaliyet).div(60)), D(0));

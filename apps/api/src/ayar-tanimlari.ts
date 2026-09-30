@@ -119,3 +119,12 @@ registerModulAyar(
   }),
   { onayEsigi: 25_000, miktarToleransYuzde: 1, fiyatToleransYuzde: 1 },
 );
+
+registerModulAyar(
+  "calisma_takvimi",
+  z.object({
+    /// Üretim günü bu saatte başlar; operasyonlar buradan itibaren planlanır.
+    gunBaslangicSaati: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Saat SS:DD biçiminde olmalıdır"),
+  }),
+  { gunBaslangicSaati: "08:00" },
+);
