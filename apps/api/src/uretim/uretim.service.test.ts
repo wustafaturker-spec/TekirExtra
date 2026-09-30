@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { kapasiteGunu, UretimService } from "./uretim.service";
+import { UretimService } from "./uretim.service";
+import { kapasiteGunu, operasyonlariPlanla } from "./uretim-takvim";
 import { maliyetDagit } from "./uretim-maliyet";
 
 vi.mock("../core/istek-baglami", () => ({
@@ -318,6 +319,25 @@ describe("UretimService profesyonel emir akışı", () => {
     expect(kapasiteGunu(new Date("2026-08-30T00:00:00"), new Date("2026-08-30T23:59:59.999")).toString()).toBe("0");
   });
 
+  it("operasyonları iş günü takvimine yerleştirir: cumartesi yarım, pazar yok", () => {
+    const [kesim, paket] = operasyonlariPlanla(new Date("2026-08-28T00:00:00"), [
+      // Cuma 480 + cumartesi 240 + pazartesi 280 = 1000 dk
+      { dakika: D(1000), gunlukKapasiteDakika: 480, verimlilikYuzdesi: D(100) },
+      // Verimlilik %50: günde 240 dk; pazartesi 280. dakikadan sonra yer yok → salı
+      { dakika: D(60), gunlukKapasiteDakika: 480, verimlilikYuzdesi: D(50) },
+    ]);
+    expect(kesim.baslangic).toEqual(new Date("2026-08-28T08:00:00"));
+    expect(kesim.bitis).toEqual(new Date("2026-08-31T12:40:00"));
+    expect(paket.baslangic).toEqual(new Date("2026-09-01T08:00:00"));
+    expect(paket.bitis).toEqual(new Date("2026-09-01T09:00:00"));
+  });
+
+  it("pazar başlayan emrin ilk operasyonu pazartesi 08:00'de başlar", () => {
+    const [op] = operasyonlariPlanla(new Date("2026-08-30T00:00:00"), [{ dakika: D(30), gunlukKapasiteDakika: 480, verimlilikYuzdesi: D(100) }]);
+    expect(op.baslangic).toEqual(new Date("2026-08-31T08:00:00"));
+    expect(op.bitis).toEqual(new Date("2026-08-31T08:30:00"));
+  });
+
   it("reçeteyi hazırlayan kullanıcı onaylayamaz", async () => {
     prisma.urunRecetesi.findFirst.mockResolvedValue({ id: "recete-2", stokId: "mamul-1", durum: "taslak", yururlukBaslangic: null, olusturanUserId: "user-1" });
 
@@ -341,11 +361,11 @@ describe("UretimService profesyonel emir akışı", () => {
   it("planlanan bitiş girilmezse operasyon planının bittiği gün olur", async () => {
     prisma.urunRecetesi.findFirst.mockResolvedValue({ id: "recete-1", aktif: true, kaliteKontrolGerekli: false, ciktiMiktari: D(1), ciktilar: [],
       kalemler: [{ malzemeStokId: "malzeme-1", malzemeVaryantId: null, miktar: D(1), fireOrani: D(0), malzeme: { ortalamaMaliyet: D(1) } }],
-      operasyonlar: [{ isMerkeziId: "m-1", sira: 1, operasyonKodu: "KES", operasyonAdi: "Kesim", hazirlikDakika: D(0), cevrimDakika: D(60), isMerkezi: { saatlikMaliyet: D(0) } }] });
+      operasyonlar: [{ isMerkeziId: "m-1", sira: 1, operasyonKodu: "KES", operasyonAdi: "Kesim", hazirlikDakika: D(0), cevrimDakika: D(60), isMerkezi: { saatlikMaliyet: D(0), gunlukKapasiteDakika: 480, verimlilikYuzdesi: D(100) } }] });
 
-    // 20 adet × 60 dk = 20 saat: 08:00'de başlayıp ertesi gün 04:00'te biter
+    // 20 adet × 60 dk = 1200 dk, günde 480 dk: pazartesi, salı, çarşamba öğlene kadar
     const emir = await service.emirOlustur({ stokId: "11111111-1111-4111-8111-111111111111", hedefDepoId: "22222222-2222-4222-8222-222222222222", planlananMiktar: "20", tarih: "2026-08-24", aciklama: null });
-    expect(emir.planlananBitis).toEqual(new Date("2026-08-25"));
+    expect(emir.planlananBitis).toEqual(new Date("2026-08-26"));
 
     const elle = await service.emirOlustur({ stokId: "11111111-1111-4111-8111-111111111111", hedefDepoId: "22222222-2222-4222-8222-222222222222", planlananMiktar: "1", tarih: "2026-08-24", planlananBitis: "2026-08-31", aciklama: null });
     expect(elle.planlananBitis).toEqual(new Date("2026-08-31"));

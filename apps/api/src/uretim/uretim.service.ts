@@ -6,6 +6,7 @@ import { bugunTR, metinNormalize } from "@tekirextra/shared";
 import { PrismaService } from "../core/prisma.service";
 import { StokService } from "../stok/stok.service";
 import { maliyetDagit, planlananOperasyonMaliyeti } from "./uretim-maliyet";
+import { kapasiteGunu, operasyonlariPlanla } from "./uretim-takvim";
 import type { isMerkeziKaydetSemasi, kaliteKararSemasi, operasyonBaslatSemasi, operasyonBekletSemasi, operasyonTamamlaSemasi, receteKaydetSemasi, sarfDuzeltmeSemasi, uretimBildirimiSemasi, uretimDonemKilidiSemasi, uretimEmriListeSemasi, uretimEmriKapatSemasi, uretimEmriOlusturSemasi, vardiyaKaydetSemasi, yenidenIslemeTamamlaSemasi } from "./uretim.semalar";
 
 const D = (v: string | number | Prisma.Decimal) => new Prisma.Decimal(v);
@@ -26,15 +27,6 @@ function gecikmeKosulu(): Prisma.UretimEmriWhereInput {
   return { OR: [{ planlananBitis: { lt: bugun } }, { planlananBitis: null, tarih: { lt: bugun } }] };
 }
 
-/** Aralıktaki çalışma günü sayısı: hafta içi tam, cumartesi yarım, pazar yok. */
-export function kapasiteGunu(ilk: Date, son: Date): Prisma.Decimal {
-  let toplam = D(0);
-  for (let gun = new Date(ilk); gun <= son; gun = new Date(gun.getTime() + 86400000)) {
-    const haftaGunu = gun.getDay();
-    toplam = toplam.add(haftaGunu === 0 ? 0 : haftaGunu === 6 ? 0.5 : 1);
-  }
-  return toplam;
-}
 
 @Injectable()
 export class UretimService {
@@ -343,7 +335,7 @@ export class UretimService {
         const planlanan = siparisSatiri.uretimEmirleri.reduce((toplam, emir) => toplam.add(emir.planlananMiktar), D(0));
         if (planlanan.add(girdi.planlananMiktar).gt(siparisSatiri.miktar)) throw new BadRequestException(`${siparisSatiri.belge.no ?? "Satış siparişi"} için kalan üretim ihtiyacı aşılamaz`);
       }
-      const recete = await tx.urunRecetesi.findFirst({ where: { stokId: girdi.stokId, durum: "aktif", aktif: true, OR: [{ yururlukBaslangic: null }, { yururlukBaslangic: { lte: emirTarihi } }], AND: [{ OR: [{ yururlukBitis: null }, { yururlukBitis: { gte: emirTarihi } }] }] }, orderBy: { surum: "desc" }, include: { kalemler: { include: { malzeme: { select: { ortalamaMaliyet: true } } } }, ciktilar: true, operasyonlar: { orderBy: { sira: "asc" }, include: { isMerkezi: { select: { saatlikMaliyet: true } } } } } });
+      const recete = await tx.urunRecetesi.findFirst({ where: { stokId: girdi.stokId, durum: "aktif", aktif: true, OR: [{ yururlukBaslangic: null }, { yururlukBaslangic: { lte: emirTarihi } }], AND: [{ OR: [{ yururlukBitis: null }, { yururlukBitis: { gte: emirTarihi } }] }] }, orderBy: { surum: "desc" }, include: { kalemler: { include: { malzeme: { select: { ortalamaMaliyet: true } } } }, ciktilar: true, operasyonlar: { orderBy: { sira: "asc" }, include: { isMerkezi: { select: { saatlikMaliyet: true, gunlukKapasiteDakika: true, verimlilikYuzdesi: true } } } } } });
       if (!recete?.kalemler.length) throw new BadRequestException("Bu stok kartında üretim tarihinde geçerli, onaylı reçete yok");
       const depo = await tx.depo.findFirst({ where: { id: girdi.hedefDepoId, aktif: true } });
       if (!depo) throw new BadRequestException("Hedef depo bulunamadı");
@@ -354,14 +346,10 @@ export class UretimService {
         create: { tenantId, yil, sonSira: 1 },
         update: { sonSira: { increment: 1 } },
       });
-      let operasyonBaslangici = new Date(`${girdi.tarih}T08:00:00`);
-      const operasyonlar = recete.operasyonlar.map((o) => {
-        const dakika = D(o.hazirlikDakika).add(D(o.cevrimDakika).mul(girdi.planlananMiktar)).toDecimalPlaces(2);
-        const baslangic = operasyonBaslangici;
-        const bitis = new Date(baslangic.getTime() + dakika.toNumber() * 60000);
-        operasyonBaslangici = bitis;
-        return { tenantId, isMerkeziId: o.isMerkeziId, sira: o.sira, operasyonKodu: o.operasyonKodu, operasyonAdi: o.operasyonAdi, planlananDakika: dakika, saatlikMaliyet: o.isMerkezi.saatlikMaliyet, planlananBaslangic: baslangic, planlananBitis: bitis };
-      });
+      // Operasyonlar iş merkezlerinin takvimine yerleşir: günlük etkin
+      // kapasite kadar, cumartesi yarım gün, pazar yok (kapasite hesabıyla aynı).
+      const takvim = operasyonlariPlanla(new Date(`${girdi.tarih}T08:00:00`), recete.operasyonlar.map((o) => ({ o, dakika: D(o.hazirlikDakika).add(D(o.cevrimDakika).mul(girdi.planlananMiktar)).toDecimalPlaces(2), gunlukKapasiteDakika: o.isMerkezi.gunlukKapasiteDakika, verimlilikYuzdesi: o.isMerkezi.verimlilikYuzdesi })));
+      const operasyonlar = takvim.map(({ o, dakika, baslangic, bitis }) => ({ tenantId, isMerkeziId: o.isMerkeziId, sira: o.sira, operasyonKodu: o.operasyonKodu, operasyonAdi: o.operasyonAdi, planlananDakika: dakika, saatlikMaliyet: o.isMerkezi.saatlikMaliyet, planlananBaslangic: baslangic, planlananBitis: bitis }));
       const planlananMalzeme = recete.kalemler.reduce((t, k) => t.add(k.miktar.mul(oran).mul(D(1).add(k.fireOrani.div(100))).mul(k.malzeme.ortalamaMaliyet)), D(0));
       const planlananOperasyon = operasyonlar.reduce((t, o) => t.add(D(o.planlananDakika).mul(o.saatlikMaliyet).div(60)), D(0));
       const planlananMaliyet = planlananMalzeme.add(planlananOperasyon).toDecimalPlaces(4);
