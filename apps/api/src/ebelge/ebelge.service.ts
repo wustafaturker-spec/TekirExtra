@@ -1006,7 +1006,7 @@ export class EbelgeService {
       const fatura = await tx.fatura.findUnique({
         where: { id: faturaId },
         include: {
-          satirlar: { include: { stok: { select: { kod: true, ad: true, tip: true, gtipKodu: true, mensei: true, kdvOrani: true } } } },
+          satirlar: { include: { stok: { select: { kod: true, ad: true, tip: true, gtipKodu: true, mensei: true, kdvOrani: true } }, varyant: { select: { kod: true, ad: true, nitelikler: true } } } },
           cari: { include: { adresler: true } },
           iadeReferanslari: true,
         },
@@ -1050,7 +1050,7 @@ export class EbelgeService {
       const fatura = await tx.fatura.findUnique({
         where: { id: faturaId },
         include: {
-          satirlar: { include: { stok: { select: { kod: true, ad: true, tip: true, gtipKodu: true, mensei: true, kdvOrani: true } } } },
+          satirlar: { include: { stok: { select: { kod: true, ad: true, tip: true, gtipKodu: true, mensei: true, kdvOrani: true } }, varyant: { select: { kod: true, ad: true, nitelikler: true } } } },
           cari: { include: { adresler: true } },
           ebelge: true,
           iadeReferanslari: true,

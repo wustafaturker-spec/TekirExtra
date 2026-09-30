@@ -54,6 +54,9 @@ export interface BelgePdfVerisi {
   satirlar: {
     stokKod: string;
     stokAd: string;
+    satirKod?: string;
+    satirAd?: string;
+    satirAciklama?: string;
     miktar: string;
     birim: string;
     birimFiyat: string;
@@ -81,8 +84,8 @@ export function belgePdfHtml(
     .map(
       (s, i) => `<tr>
   <td class="orta">${i + 1}</td>
-  <td>${kacis(s.stokKod)}</td>
-  <td>${kacis(s.stokAd)}</td>
+  <td>${kacis(s.satirKod ?? s.stokKod)}</td>
+  <td>${kacis(s.satirAd ?? s.stokAd)}${s.satirAciklama ? `<br><span style="color:#6b7280;font-size:8pt">${kacis(s.satirAciklama)}</span>` : ""}</td>
   <td class="sag">${sayiBicim(s.miktar)} ${kacis(s.birim)}</td>
   <td class="sag">${paraBicim(s.birimFiyat)}</td>
   <td class="sag">${Number(s.iskontoOrani) > 0 ? `%${sayiBicim(s.iskontoOrani)}` : ""}</td>

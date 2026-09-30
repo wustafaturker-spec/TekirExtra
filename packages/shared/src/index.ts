@@ -38,3 +38,4 @@ export * from "./teklif-kosullari";
 export * from "./teklif-revizyonu";
 export * from "./cari-ekstre";
 export * from "./resmi-tatiller";
+export * from "./varyant";

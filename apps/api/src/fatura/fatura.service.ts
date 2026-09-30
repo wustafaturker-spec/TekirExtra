@@ -1,4 +1,4 @@
-import { ebelgeGitmemisMi, faturaGeriAlmaEngeli, ihracKayitliSonTarih, ilgiliKisiTemizle } from "@tekirextra/shared";
+import { ebelgeGitmemisMi, faturaGeriAlmaEngeli, ihracKayitliSonTarih, ilgiliKisiTemizle, varyantAciklamasi, varyantliAd, varyantliKod } from "@tekirextra/shared";
 import {
   BadRequestException,
   ConflictException,
@@ -29,6 +29,7 @@ import { faturaPdfHtml } from "./fatura-pdf";
 import { durumGecmisiOku } from "../core/durum-gecmisi";
 import { takiliRezervasyonMu } from "../ebelge/takili-rezervasyon";
 import { birimKatsayisiBul, satirBirimleriniDogrula } from "../stok/birim-cevrim";
+import { satirVaryantlariniDogrula } from "../stok/varyant-secimi";
 import { teslimYeriUyarisi, teslimYeriVerisi, teslimYeriniCariyeKaydet } from "./teslim-yeri";
 import type {
   faturaOlusturSemasi,
@@ -496,6 +497,10 @@ export class FaturaService {
         partiBilgileri: s.partiBilgileri,
         stokKod: s.stok.kod,
         stokAd: s.stok.ad,
+        // Varyantlı satırın belgede görünen kodu/adı/nitelikleri (PDF, liste).
+        satirKod: varyantliKod(s.stok.kod, s.varyant),
+        satirAd: varyantliAd(s.stok.ad, s.varyant),
+        satirAciklama: varyantAciklamasi(s.varyant),
         miktar: s.miktar.toFixed(3),
         birim: s.birim,
         birimFiyat: s.birimFiyat.toFixed(4),
@@ -572,6 +577,7 @@ export class FaturaService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       await this.cariTipiniDogrula(tx, girdi.cariId, girdi.tip);
       await satirBirimleriniDogrula(tx, girdi.satirlar);
+      await satirVaryantlariniDogrula(tx, girdi.satirlar);
 
       const cari = await tx.cariHesap.findUnique({
         where: { id: girdi.cariId },
@@ -851,6 +857,7 @@ export class FaturaService {
       }
 
       if (girdi.satirlar) await satirBirimleriniDogrula(tx, girdi.satirlar);
+      if (girdi.satirlar) await satirVaryantlariniDogrula(tx, girdi.satirlar);
 
       // EBLG-71: satırlar değiştiyse şarj türü de değişebilir.
       const guncelSarjKartlari = await tx.stokKart.findMany({

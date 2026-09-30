@@ -22,7 +22,7 @@ import {
   Tabs,
   TableWrap,
 } from "@/components/ui";
-import { bugunTR, SARJ_TURLERI, SARJ_TURU_ADLARI } from "@tekirextra/shared";
+import { bugunTR, SARJ_TURLERI, SARJ_TURU_ADLARI, varyantKombinasyonlari } from "@tekirextra/shared";
 
 /* ─── Tipler ─────────────────────────────────────────────────────────────── */
 
@@ -861,15 +861,78 @@ function PartilerSekmesi({ detay, partiler }: { detay: StokDetay; partiler: Part
   return <Card title="Seri / Lot izlenebilirliği"><p className="muted">Çıkışlar son kullanma tarihi en yakın partiden (FEFO) otomatik karşılanır.</p><TableWrap><thead><tr><th>Lot / Seri</th><th>Varyant</th><th>Depo</th><th>Üretim</th><th>Son kullanma</th><th>Giren</th><th>Kalan</th></tr></thead><tbody>{partiler.map((p) => <tr key={p.id}><td><strong>{p.lotNo}</strong>{p.seriNo && <><br /><small>{p.seriNo}</small></>}</td><td>{p.varyant ? `${p.varyant.kod} — ${p.varyant.ad}` : "—"}</td><td>{p.depo.ad}</td><td>{p.uretimTarihi?.slice(0, 10) ?? "—"}</td><td>{p.sonKullanmaTarihi?.slice(0, 10) ?? "—"}</td><td>{adet(p.ilkMiktar)} {detay.anaBirim}</td><td><strong>{adet(p.kalanMiktar)} {detay.anaBirim}</strong></td></tr>)}{!partiler.length && <tr><td colSpan={7}>Henüz seri/lot girişi yok.</td></tr>}</tbody></TableWrap></Card>;
 }
 
+interface VaryantTaslagi { secili: boolean; kod: string; ad: string; nitelikler: Record<string, string>; barkod: string; satisFiyati: string; mevcut: boolean }
+
+/**
+ * Varyantlar: nitelik ve değerlerden tüm kombinasyonlar hazırlanır (Renk ×
+ * Beden), kod/ad önerilir ve düzeltilebilir, seçilenler tek işlemde açılır.
+ * Mevcut varyantların barkod ve fiyatı satırda düzenlenir.
+ */
 function VaryantlarSekmesi({ detay, onIslem }: { detay: StokDetay; onIslem: (islem: () => Promise<unknown>, mesaj: string) => Promise<boolean> }) {
-  const [form, setForm] = useState({ kod: "", ad: "", nitelikler: "", barkod: "", alisFiyati: "", satisFiyati: "" });
-  async function ekle(e: React.FormEvent) {
-    e.preventDefault();
-    const nitelikler = Object.fromEntries(form.nitelikler.split(",").map((x) => x.trim()).filter(Boolean).map((x) => { const [anahtar, ...deger] = x.split(":"); return [anahtar.trim(), deger.join(":").trim()]; }).filter(([, v]) => v));
-    const basarili = await onIslem(() => api(`/stok/${detay.id}/varyantlar`, { method: "POST", body: JSON.stringify({ kod: form.kod, ad: form.ad, nitelikler, barkod: form.barkod || null, alisFiyati: form.alisFiyati || null, satisFiyati: form.satisFiyati || null }) }), "Varyant eklendi.");
-    if (basarili) setForm({ kod: "", ad: "", nitelikler: "", barkod: "", alisFiyati: "", satisFiyati: "" });
+  const mevcutlar = detay.varyantlar ?? [];
+  // Önceki varyantların nitelik adları hazır gelir; aynı düzende devam edilir.
+  const oncekiAdlar = [...new Set(mevcutlar.flatMap((v) => Object.keys(v.nitelikler ?? {})))];
+  const [nitelikler, setNitelikler] = useState<{ ad: string; degerler: string }[]>(oncekiAdlar.length ? oncekiAdlar.map((ad) => ({ ad, degerler: "" })) : [{ ad: "Renk", degerler: "" }, { ad: "Beden", degerler: "" }]);
+  const [taslaklar, setTaslaklar] = useState<VaryantTaslagi[]>([]);
+  const [duzenlenen, setDuzenlenen] = useState<{ id: string; barkod: string; alisFiyati: string; satisFiyati: string } | null>(null);
+  const ayniNitelik = (a: Record<string, string>, b: Record<string, string>) => Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([k, d]) => b[k]?.toLocaleLowerCase("tr-TR") === d.toLocaleLowerCase("tr-TR"));
+
+  function hazirla() {
+    const oneriler = varyantKombinasyonlari(detay.kod, nitelikler.map((n) => ({ ad: n.ad, degerler: n.degerler.split(",") })));
+    setTaslaklar(oneriler.map((o) => {
+      const mevcut = mevcutlar.some((v) => v.kod === o.kod || ayniNitelik(v.nitelikler ?? {}, o.nitelikler));
+      return { ...o, secili: !mevcut, barkod: "", satisFiyati: "", mevcut };
+    }));
   }
-  return <div className="stack"><Card title="Yeni varyant"><form className="form-grid" onSubmit={ekle}><Field label="Varyant kodu"><Input required value={form.kod} onChange={(e) => setForm({ ...form, kod: e.target.value })} /></Field><Field label="Ad"><Input required value={form.ad} onChange={(e) => setForm({ ...form, ad: e.target.value })} /></Field><Field label="Nitelikler"><Input required placeholder="Renk: Siyah, Beden: M" value={form.nitelikler} onChange={(e) => setForm({ ...form, nitelikler: e.target.value })} /></Field><Field label="Barkod"><Input value={form.barkod} onChange={(e) => setForm({ ...form, barkod: e.target.value })} /></Field><Field label="Alış fiyatı"><Input type="number" min="0" step="0.0001" value={form.alisFiyati} onChange={(e) => setForm({ ...form, alisFiyati: e.target.value })} /></Field><Field label="Satış fiyatı"><Input type="number" min="0" step="0.0001" value={form.satisFiyati} onChange={(e) => setForm({ ...form, satisFiyati: e.target.value })} /></Field><div><Button type="submit">Varyant ekle</Button></div></form></Card><Card title="Varyantlar"><TableWrap><thead><tr><th>Kod</th><th>Ad / Nitelikler</th><th>Barkod</th><th>Stok</th><th>Satış</th><th>Durum</th></tr></thead><tbody>{(detay.varyantlar ?? []).map((v) => <tr key={v.id}><td>{v.kod}</td><td><strong>{v.ad}</strong><br /><small>{Object.entries(v.nitelikler).map(([k, d]) => `${k}: ${d}`).join(" · ")}</small></td><td>{v.barkod ?? "—"}</td><td>{adet(v.mevcutMiktar)} {detay.anaBirim}</td><td>{v.satisFiyati ? tl(v.satisFiyati) : "Kart fiyatı"}</td><td><Button variant="ghost" size="sm" onClick={() => void onIslem(() => api(`/stok/${detay.id}/varyantlar/${v.id}`, { method: "PATCH", body: JSON.stringify({ aktif: !v.aktif }) }), v.aktif ? "Varyant pasifleştirildi." : "Varyant etkinleştirildi.")}>{v.aktif ? "Aktif" : "Pasif"}</Button></td></tr>)}</tbody></TableWrap></Card></div>;
+  const taslakDegistir = (i: number, alan: Partial<VaryantTaslagi>) => setTaslaklar((eski) => eski.map((t, x) => x === i ? { ...t, ...alan } : t));
+  const secilenler = taslaklar.filter((t) => t.secili && !t.mevcut);
+  async function olustur() {
+    const tamam = await onIslem(() => api(`/stok/${detay.id}/varyantlar/toplu`, { method: "POST", body: JSON.stringify({ varyantlar: secilenler.map((t) => ({ kod: t.kod.trim(), ad: t.ad.trim(), nitelikler: t.nitelikler, barkod: t.barkod.trim() || null, satisFiyati: t.satisFiyati || null })) }) }), `${secilenler.length} varyant oluşturuldu.`);
+    if (tamam) setTaslaklar([]);
+  }
+  async function kaydet() {
+    if (!duzenlenen) return;
+    const tamam = await onIslem(() => api(`/stok/${detay.id}/varyantlar/${duzenlenen.id}`, { method: "PATCH", body: JSON.stringify({ barkod: duzenlenen.barkod.trim() || null, alisFiyati: duzenlenen.alisFiyati || null, satisFiyati: duzenlenen.satisFiyati || null }) }), "Varyant güncellendi.");
+    if (tamam) setDuzenlenen(null);
+  }
+
+  return <div className="stack">
+    <Card title="Varyant üret" actions={<Button size="sm" onClick={() => setNitelikler((eski) => [...eski, { ad: "", degerler: "" }])}>+ Nitelik</Button>}>
+      <p className="muted">Her niteliğin değerlerini virgülle yazın; tüm kombinasyonlar hazırlanır. Örn. Renk: Siyah, Beyaz · Beden: S, M, L → 6 varyant.</p>
+      <div className="form-grid">
+        {nitelikler.map((n, i) => <div key={i} className="row-tight">
+          <Field label="Nitelik"><Input value={n.ad} maxLength={40} onChange={(e) => setNitelikler((eski) => eski.map((x, k) => k === i ? { ...x, ad: e.target.value } : x))} placeholder="Renk" /></Field>
+          <Field label="Değerler (virgülle)"><Input value={n.degerler} onChange={(e) => setNitelikler((eski) => eski.map((x, k) => k === i ? { ...x, degerler: e.target.value } : x))} placeholder="Siyah, Beyaz, Kırmızı" /></Field>
+          {nitelikler.length > 1 && <Button size="sm" variant="danger" onClick={() => setNitelikler((eski) => eski.filter((_, k) => k !== i))}>Sil</Button>}
+        </div>)}
+        <div><Button variant="primary" onClick={hazirla}>Kombinasyonları hazırla</Button></div>
+      </div>
+    </Card>
+    {!!taslaklar.length && <Card title={`Önizleme — ${secilenler.length} / ${taslaklar.length} seçili`} actions={<Button variant="primary" disabled={!secilenler.length} onClick={() => void olustur()}>Seçilenleri oluştur ({secilenler.length})</Button>} pad={false}>
+      <TableWrap><thead><tr><th /><th>Kod</th><th>Ad</th><th>Barkod</th><th className="num">Satış fiyatı</th></tr></thead><tbody>
+        {taslaklar.map((t, i) => <tr key={i}>
+          <td><input type="checkbox" aria-label={`${t.ad} seç`} disabled={t.mevcut} checked={t.secili && !t.mevcut} onChange={(e) => taslakDegistir(i, { secili: e.target.checked })} /></td>
+          <td>{t.mevcut ? <><strong>{t.kod}</strong><br /><Badge variant="neutral">Zaten var</Badge></> : <Input value={t.kod} maxLength={64} onChange={(e) => taslakDegistir(i, { kod: e.target.value })} />}</td>
+          <td>{t.mevcut ? t.ad : <Input value={t.ad} maxLength={160} onChange={(e) => taslakDegistir(i, { ad: e.target.value })} />}</td>
+          <td>{!t.mevcut && <Input value={t.barkod} maxLength={120} onChange={(e) => taslakDegistir(i, { barkod: e.target.value })} placeholder="İsteğe bağlı" />}</td>
+          <td>{!t.mevcut && <Input type="number" min="0" step="0.0001" value={t.satisFiyati} onChange={(e) => taslakDegistir(i, { satisFiyati: e.target.value })} placeholder="Kart fiyatı" />}</td>
+        </tr>)}
+      </tbody></TableWrap>
+    </Card>}
+    <Card title={`Varyantlar (${mevcutlar.length})`} pad={false}><TableWrap><thead><tr><th>Kod</th><th>Ad / Nitelikler</th><th>Barkod</th><th>Stok</th><th className="num">Alış</th><th className="num">Satış</th><th>Durum</th><th /></tr></thead><tbody>
+      {mevcutlar.map((v) => duzenlenen?.id === v.id
+        ? <tr key={v.id}><td>{v.kod}</td><td><strong>{v.ad}</strong></td>
+            <td><Input value={duzenlenen.barkod} maxLength={120} onChange={(e) => setDuzenlenen({ ...duzenlenen, barkod: e.target.value })} /></td><td>{adet(v.mevcutMiktar)} {detay.anaBirim}</td>
+            <td><Input type="number" min="0" step="0.0001" value={duzenlenen.alisFiyati} onChange={(e) => setDuzenlenen({ ...duzenlenen, alisFiyati: e.target.value })} placeholder="Kart fiyatı" /></td>
+            <td><Input type="number" min="0" step="0.0001" value={duzenlenen.satisFiyati} onChange={(e) => setDuzenlenen({ ...duzenlenen, satisFiyati: e.target.value })} placeholder="Kart fiyatı" /></td>
+            <td /><td><div className="row-tight"><Button size="sm" variant="primary" onClick={() => void kaydet()}>Kaydet</Button><Button size="sm" onClick={() => setDuzenlenen(null)}>Vazgeç</Button></div></td></tr>
+        : <tr key={v.id}><td>{v.kod}</td><td><strong>{v.ad}</strong><br /><small>{Object.entries(v.nitelikler ?? {}).map(([k, d]) => `${k}: ${d}`).join(" · ")}</small></td><td>{v.barkod ?? "—"}</td><td>{adet(v.mevcutMiktar)} {detay.anaBirim}</td>
+            <td className="num">{v.alisFiyati ? tl(v.alisFiyati) : "Kart fiyatı"}</td><td className="num">{v.satisFiyati ? tl(v.satisFiyati) : "Kart fiyatı"}</td>
+            <td><Button variant="ghost" size="sm" onClick={() => void onIslem(() => api(`/stok/${detay.id}/varyantlar/${v.id}`, { method: "PATCH", body: JSON.stringify({ aktif: !v.aktif }) }), v.aktif ? "Varyant pasifleştirildi." : "Varyant etkinleştirildi.")}>{v.aktif ? "Aktif" : "Pasif"}</Button></td>
+            <td><Button size="sm" onClick={() => setDuzenlenen({ id: v.id, barkod: v.barkod ?? "", alisFiyati: v.alisFiyati ?? "", satisFiyati: v.satisFiyati ?? "" })}>Düzenle</Button></td></tr>)}
+      {!mevcutlar.length && <tr><td colSpan={8}>Henüz varyant yok. Yukarıdan nitelik ve değerleri girip kombinasyonları hazırlayın.</td></tr>}
+    </tbody></TableWrap></Card>
+  </div>;
 }
 
 function HareketlerSekmesi({

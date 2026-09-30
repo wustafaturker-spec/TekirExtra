@@ -12,6 +12,7 @@ import { DepoSecici } from "@/components/depo-secici";
 import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
 import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyalari";
 import { UrunSecimModali } from "@/components/urun-secim-modali";
+import { varyantDegeriCoz, varyantSecenekleri } from "@/lib/varyant-secimi";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { TasimaBilgisiPaneli } from "@/components/tasima-bilgisi-paneli";
 import type { DepoOzet } from "@/lib/depolar";
@@ -66,8 +67,8 @@ interface BelgeGorunumu {
 const GORUNUM_ANAHTARI = "tekir_belge_gorunumleri";
 
 interface Cari { id: string; kod?: string; unvan: string; vknTckn?: string | null; telefon?: string | null; varsayilanVadeGun?: number | null }
-interface Stok { id: string; kod: string; ad: string; tip?: string; kullanilabilirMiktar?: string; tedarikciUrunKodlari?: string[]; takipTipi?: "yok" | "lot" | "seri"; anaBirim?: string; birimler?: { ad: string; katsayi: string }[] }
-interface StokVaryant { id: string; kod: string; ad: string; aktif: boolean; mevcutMiktar: string }
+interface Stok { id: string; kod: string; ad: string; tip?: string; kullanilabilirMiktar?: string; tedarikciUrunKodlari?: string[]; takipTipi?: "yok" | "lot" | "seri"; anaBirim?: string; birimler?: { ad: string; katsayi: string }[]; barkod?: string | null; varyantlar?: StokVaryant[] }
+interface StokVaryant { id: string; kod: string; ad: string; aktif: boolean; mevcutMiktar: string; barkod?: string | null; nitelikler?: unknown }
 
 interface BelgeSatirForm {
   stokId: string;
@@ -408,12 +409,14 @@ export default function BelgelerSayfasi() {
   const [dovizCinsi, setDovizCinsi] = useState("TRY");
   const [kur, setKur] = useState("1");
   const [kurBilgisi, setKurBilgisi] = useState("");
-  const [urunModali, setUrunModali] = useState<{ satir: number; stokId?: string } | null>(null);
+  const [urunModali, setUrunModali] = useState<{ satir: number; stokId?: string; varyantId?: string } | null>(null);
   const [dosyalar, setDosyalar] = useState<File[]>([]);
   const [satirlar, setSatirlar] = useState<BelgeSatirForm[]>([
     { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20 },
   ]);
-  const [stokVaryantlari, setStokVaryantlari] = useState<Record<string, StokVaryant[]>>({});
+  const [stokVaryantlari] = useState<Record<string, StokVaryant[]>>({});
+  // Satırın varyantları stok listesinden gelir; kayıtlı belge açılınca da görünür.
+  const varyantlariAl = (stokId: string): StokVaryant[] => stoklar.find((x) => x.id === stokId)?.varyantlar ?? stokVaryantlari[stokId] ?? [];
   /** FTR-28: belge dövizi değişti, kalem fiyatları hâlâ eski dövizde; kullanıcı onayı bekleniyor. */
   const [bekleyenCevrim, setBekleyenCevrim] = useState<{ eskiDoviz: string; eskiKur: number } | null>(null);
 
@@ -1229,16 +1232,16 @@ export default function BelgelerSayfasi() {
                       <AramaSecici
                         ariaLabel={`${i + 1}. satır ürün veya hizmet seçimi`}
                         deger={s.stokId}
-                        onChange={(deger) => { if (deger) setUrunModali({ satir: i, stokId: deger }); }}
+                        onChange={(deger) => { if (deger) setUrunModali({ satir: i, ...varyantDegeriCoz(deger) }); }}
                         placeholder="Kod veya ürün adıyla ara"
-                        secenekler={stoklar.map((stok) => ({
+                        secenekler={[...stoklar.map((stok) => ({
                           deger: stok.id,
                           baslik: stok.ad,
                           aciklama: stok.kod,
-                          aramaMetni: [stok.kod, ...(stok.tedarikciUrunKodlari ?? [])].join(" "),
-                        }))}
+                          aramaMetni: [stok.kod, stok.barkod, ...(stok.tedarikciUrunKodlari ?? [])].filter(Boolean).join(" "),
+                        })), ...varyantSecenekleri(stoklar)]}
                       />
-                      {(stokVaryantlari[s.stokId]?.length ?? 0) > 0 && <Select aria-label="Varyant" required value={s.varyantId ?? ""} onChange={(e) => { const varyantId = e.target.value; setSatirlar((eskiler) => eskiler.map((x, j) => j === i ? { ...x, varyantId } : x)); if (varyantId) void kalemFiyatiGetir(s.stokId, varyantId).then((fiyat) => { if (fiyat) setSatirlar((eskiler) => eskiler.map((x, j) => j === i && x.varyantId === varyantId ? { ...x, ...fiyat } : x)); }); }}><option value="">Varyant seçin</option>{stokVaryantlari[s.stokId].filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad} · Stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")}</option>)}</Select>}
+                      {varyantlariAl(s.stokId).length > 0 && <Select aria-label="Varyant" required value={s.varyantId ?? ""} onChange={(e) => { const varyantId = e.target.value; setSatirlar((eskiler) => eskiler.map((x, j) => j === i ? { ...x, varyantId } : x)); if (varyantId) void kalemFiyatiGetir(s.stokId, varyantId).then((fiyat) => { if (fiyat) setSatirlar((eskiler) => eskiler.map((x, j) => j === i && x.varyantId === varyantId ? { ...x, ...fiyat } : x)); }); }}><option value="">Varyant seçin</option>{varyantlariAl(s.stokId).filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.ad} · {v.kod} · Stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")}</option>)}</Select>}
                       {s.dovizUyarisi && <p className="field-error" role="alert">{s.dovizUyarisi}</p>}
                       {(() => {
                         // Satışta kullanılabilir stok satırın altında görünür; teklif ve siparişte yetersizse uyarır.
@@ -1536,7 +1539,7 @@ export default function BelgelerSayfasi() {
         </div>
       )}
 
-      <UrunSecimModali acik={urunModali !== null} baslangicStokId={urunModali?.stokId} stoklar={stoklar} cariId={cariId} tip={yon} belgeDovizi={dovizCinsi} belgeKuru={kur} belgeTarihi={tarih} onKapat={() => setUrunModali(null)} onEkle={(urun) => {
+      <UrunSecimModali acik={urunModali !== null} baslangicStokId={urunModali?.stokId} baslangicVaryantId={urunModali?.varyantId} stoklar={stoklar} cariId={cariId} tip={yon} belgeDovizi={dovizCinsi} belgeKuru={kur} belgeTarihi={tarih} onKapat={() => setUrunModali(null)} onEkle={(urun) => {
         setSatirlar((eskiler) => {
           const satir: BelgeSatirForm = { stokId: urun.stokId, varyantId: urun.varyantId, miktar: urun.miktar, birim: urun.birim, birimFiyat: urun.birimFiyat, iskontoOrani: urun.iskontoOrani, kdvOrani: urun.kdvOrani };
           if (urunModali == null || urunModali.satir >= eskiler.length) return [...eskiler, satir];

@@ -26,7 +26,7 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PdfService } from "../core/pdf/pdf.service";
-import { belgeNoMetni, birlesikReferanslar, revizyonEngeli, ilgiliKisiTemizle, ilkIlgiliKisi, ilkKosullar, vadeTarihiHesapla, irsaliyeGeriAlmaEngeli, metinNormalize, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi } from "@tekirextra/shared";
+import { belgeNoMetni, birlesikReferanslar, revizyonEngeli, ilgiliKisiTemizle, ilkIlgiliKisi, ilkKosullar, vadeTarihiHesapla, irsaliyeGeriAlmaEngeli, metinNormalize, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi, varyantAciklamasi, varyantliAd, varyantliKod } from "@tekirextra/shared";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { PrismaService } from "../core/prisma.service";
 import { DepoService } from "../stok/depo.service";
@@ -36,6 +36,7 @@ import { durumGecmisiOku } from "../core/durum-gecmisi";
 import { ebelgeUygulamalariniOku } from "../ebelge/ebelge-uygulamalari.service";
 import { belgeSirasiAl } from "./belge-sayac";
 import { anaBirimMiktari, satirBirimleriniDogrula } from "../stok/birim-cevrim";
+import { satirVaryantlariniDogrula } from "../stok/varyant-secimi";
 import { teslimYeriniIrsaliyedenDoldur } from "../fatura/teslim-yeri";
 import { irsaliyeUblOku, type UblIrsaliye } from "../ebelge/eirsaliye-ubl-oku";
 import { tedarikciCariBulVeyaOlustur } from "../cari/tedarikci-cari";
@@ -338,6 +339,10 @@ export class BelgelerService {
         partiBilgileri: s.partiBilgileri,
         stokKod: s.stok.kod,
         stokAd: s.stok.ad,
+        // Varyantlı satırın belgede görünen kodu/adı/nitelikleri (PDF, liste).
+        satirKod: varyantliKod(s.stok.kod, s.varyant),
+        satirAd: varyantliAd(s.stok.ad, s.varyant),
+        satirAciklama: varyantAciklamasi(s.varyant),
         miktar: s.miktar.toFixed(3),
         // SAT-09: siparişte ne kadarı teslim edildi, ne kadarı bekliyor
         teslimEdilenMiktar: s.teslimEdilenMiktar.toFixed(3),
@@ -490,6 +495,7 @@ export class BelgelerService {
         },
       });
       await satirBirimleriniDogrula(tx, girdi.satirlar);
+      await satirVaryantlariniDogrula(tx, girdi.satirlar);
       await this.satirlariYaz(tx, belge.id, hesap.satirlar, girdi.satirlar);
       return this.gorunum(belge);
     });
@@ -642,6 +648,7 @@ export class BelgelerService {
       await this.teslimFarkiniUygula(tx, mevcut.satirlar, birlesik.satirlar);
       await tx.belgeSatir.deleteMany({ where: { belgeId: id } });
       if (girdi.satirlar) await satirBirimleriniDogrula(tx, girdi.satirlar);
+      if (girdi.satirlar) await satirVaryantlariniDogrula(tx, girdi.satirlar);
       await this.satirlariYaz(tx, id, hesap.satirlar, birlesik.satirlar);
       const belge = await tx.belge.update({
         where: { id },

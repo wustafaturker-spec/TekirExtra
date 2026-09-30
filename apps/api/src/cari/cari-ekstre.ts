@@ -6,7 +6,7 @@
  */
 import { BadRequestException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { hareketTuruEtiketi } from "@tekirextra/shared";
+import { hareketTuruEtiketi, varyantliAd, varyantliKod } from "@tekirextra/shared";
 import { KUR_GERI_BAKIS_GUN } from "../doviz/kur-coz";
 
 export interface EkstreHareketi {
@@ -81,7 +81,7 @@ export async function ekstreAyrintilari(
       ? tx.faturaSatir.findMany({
           where: { tenantId, faturaId: { in: faturaIds } },
           // Satırlarda sıra alanı yok; fatura PDF'i gibi kayıt sırasıyla okunur.
-          select: { faturaId: true, miktar: true, birim: true, birimFiyat: true, iskontoOrani: true, matrah: true, stok: { select: { kod: true, ad: true } } },
+          select: { faturaId: true, miktar: true, birim: true, birimFiyat: true, iskontoOrani: true, matrah: true, stok: { select: { kod: true, ad: true } }, varyant: { select: { kod: true, ad: true } } },
         })
       : [],
     kasaIds.length
@@ -153,8 +153,9 @@ export async function ekstreAyrintilari(
               dovizCinsi: kalemli.dovizCinsi,
               kur: kalemli.kur.toFixed(4),
               kalemler: (kalemHaritasi.get(kalemli.id) ?? []).map((s) => ({
-                stokKod: s.stok.kod,
-                stokAd: s.stok.ad,
+                // Ekstrede satılan kalem görünür: varyantlıysa varyant kodu/adı.
+                stokKod: varyantliKod(s.stok.kod, s.varyant),
+                stokAd: varyantliAd(s.stok.ad, s.varyant),
                 miktar: s.miktar.toString(),
                 birim: s.birim,
                 birimFiyat: s.birimFiyat.toString(),

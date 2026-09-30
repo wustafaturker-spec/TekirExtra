@@ -3,7 +3,7 @@ import { EirsaliyeDurum, GelenEirsaliyeDurum, Prisma, type ZincirBelgeDurum } fr
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import { postaKutusuSec, type EntegratorConfig } from "@tekirextra/baglanti";
-import { anTR, birimUblKodu, bugunTR, eirsaliyeYanitSuresi, muhtelifMusteriMi, gumrukSeferNotu, ihracatFaturasiNotu, YURT_DISI_ALICI_VKN, dorseSchemeId, firmaEbelgeEksikleri, idisBelgesiMi, IDIS_IRSALIYE_PROFILI, idisNormalize, plakaNormalize, plakaSchemeId, ublAdresi, eirsaliyeAsamasi, referansNotlari, siparisReferansi } from "@tekirextra/shared";
+import { anTR, birimUblKodu, bugunTR, eirsaliyeYanitSuresi, muhtelifMusteriMi, gumrukSeferNotu, ihracatFaturasiNotu, YURT_DISI_ALICI_VKN, dorseSchemeId, firmaEbelgeEksikleri, idisBelgesiMi, IDIS_IRSALIYE_PROFILI, idisNormalize, plakaNormalize, plakaSchemeId, ublAdresi, eirsaliyeAsamasi, referansNotlari, siparisReferansi, varyantAciklamasi, varyantliAd, varyantliKod } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
@@ -160,7 +160,7 @@ export class EirsaliyeService {
     const satirlar = b.satirlar
       .map(
         (s: any, i: number) =>
-          `<cac:DespatchLine><cbc:ID>${i + 1}</cbc:ID><cbc:DeliveredQuantity unitCode="${birimUblKodu(s.birim)}">${s.miktar}</cbc:DeliveredQuantity><cac:OrderLineReference><cbc:LineID>${i + 1}</cbc:LineID></cac:OrderLineReference><cac:Item><cbc:Name>${esc(s.stok.ad)}</cbc:Name><cac:SellersItemIdentification><cbc:ID>${esc(s.stok.kod)}</cbc:ID></cac:SellersItemIdentification>${idis && s.idisEtiketNo ? `<cac:AdditionalItemIdentification><cbc:ID schemeID="ETIKETNO">${esc(idisNormalize(s.idisEtiketNo))}</cbc:ID></cac:AdditionalItemIdentification>` : ""}</cac:Item></cac:DespatchLine>`,
+          `<cac:DespatchLine><cbc:ID>${i + 1}</cbc:ID><cbc:DeliveredQuantity unitCode="${birimUblKodu(s.birim)}">${s.miktar}</cbc:DeliveredQuantity><cac:OrderLineReference><cbc:LineID>${i + 1}</cbc:LineID></cac:OrderLineReference><cac:Item>${varyantAciklamasi(s.varyant) ? `<cbc:Description>${esc(varyantAciklamasi(s.varyant))}</cbc:Description>` : ""}<cbc:Name>${esc(varyantliAd(s.stok.ad, s.varyant))}</cbc:Name><cac:SellersItemIdentification><cbc:ID>${esc(varyantliKod(s.stok.kod, s.varyant))}</cbc:ID></cac:SellersItemIdentification>${idis && s.idisEtiketNo ? `<cac:AdditionalItemIdentification><cbc:ID schemeID="ETIKETNO">${esc(idisNormalize(s.idisEtiketNo))}</cbc:ID></cac:AdditionalItemIdentification>` : ""}</cac:Item></cac:DespatchLine>`,
       )
       .join("");
     return `<?xml version="1.0" encoding="UTF-8"?><DespatchAdvice xmlns="urn:oasis:names:specification:ubl:schema:xsd:DespatchAdvice-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">`
@@ -192,7 +192,7 @@ export class EirsaliyeService {
   async gonder(belgeId: string, secenekler: { otomatik?: boolean } = {}) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const belge = await tx.belge.findUnique({ where: { id: belgeId }, include: { cari: { include: { adresler: true } }, tasiyiciCari: { include: { adresler: true } }, satirlar: { include: { stok: true } }, eirsaliye: true, fatura: { select: { no: true, tarih: true } }, kaynakBelge: { select: { tur: true, no: true, tarih: true } }, depo: true } });
+      const belge = await tx.belge.findUnique({ where: { id: belgeId }, include: { cari: { include: { adresler: true } }, tasiyiciCari: { include: { adresler: true } }, satirlar: { include: { stok: true, varyant: { select: { kod: true, ad: true, nitelikler: true } } } }, eirsaliye: true, fatura: { select: { no: true, tarih: true } }, kaynakBelge: { select: { tur: true, no: true, tarih: true } }, depo: true } });
       if (!belge) throw new NotFoundException("Belge bulunamadı");
       if (belge.tur !== "irsaliye" || (belge.yon !== "satis" && !belge.gumrukDepoSevki)) throw new BadRequestException("Yalnızca satış irsaliyesi ve gümrükten depoya sevk irsaliyesi e-İrsaliye olarak gönderilebilir");
       if (belge.kagitIrsaliye) throw new BadRequestException("Kâğıt irsaliye e-İrsaliye olarak gönderilmez; firma onay anında e-İrsaliye kullanıcısı değildi");

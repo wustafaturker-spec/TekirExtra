@@ -123,6 +123,11 @@ export const stokVaryantSemasi = z.object({
   satisFiyati: pozitifOndalik.optional().nullable(),
 });
 
+/** Kombinasyon üretecinden gelen varyantlar tek seferde, hep ya da hiç oluşturulur. */
+export const stokVaryantTopluSemasi = z.object({
+  varyantlar: z.array(stokVaryantSemasi).min(1, "En az bir varyant seçin").max(200, "Tek seferde en fazla 200 varyant oluşturulabilir"),
+});
+
 export const stokVaryantGuncelleSemasi = stokVaryantSemasi.partial().extend({ aktif: z.boolean().optional() });
 
 export const stokFiyatSemasi = z.object({

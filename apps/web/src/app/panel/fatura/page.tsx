@@ -15,6 +15,7 @@ import { AlanIpucu } from "@/components/alan-ipucu";
 import { FaturaEkPaneli } from "@/components/fatura-ek-paneli";
 import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
 import { UrunSecimModali } from "@/components/urun-secim-modali";
+import { varyantDegeriCoz, varyantSecenekleri } from "@/lib/varyant-secimi";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, KAP_CINSLERI, kapEksigiVarMi, SIK_KAP_CINSLERI, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-alani";
@@ -72,8 +73,10 @@ interface Stok {
   takipTipi?: "yok" | "lot" | "seri";
   /** EBLG-71: doluysa bu kartı taşıyan fatura şarj faturası olur. */
   sarjTuru?: string | null;
+  /** Aktif varyantlar: satırda seçim ve varyant kodu/barkoduyla arama. */
+  varyantlar?: StokVaryant[];
 }
-interface StokVaryant { id: string; kod: string; ad: string; barkod: string | null; satisFiyati: string | null; alisFiyati: string | null; mevcutMiktar: string; aktif: boolean }
+interface StokVaryant { id: string; kod: string; ad: string; barkod: string | null; satisFiyati?: string | null; alisFiyati?: string | null; mevcutMiktar: string; aktif: boolean; nitelikler?: unknown }
 interface Proje { id: string; kod: string; ad: string; durum: string; altKirilimlar?: { id: string; kod: string; ad: string }[] }
 
 interface FaturaSatir {
@@ -557,7 +560,7 @@ export default function FaturaSayfasi() {
   const [sonrakiFaturaImleci, setSonrakiFaturaImleci] = useState<string | null>(null);
   const [cariDogrulamaHatasi, setCariDogrulamaHatasi] = useState("");
   const [satirDogrulamaHatalari, setSatirDogrulamaHatalari] = useState<number[]>([]);
-  const [urunModali, setUrunModali] = useState<{ satir: number; stokId?: string } | null>(null);
+  const [urunModali, setUrunModali] = useState<{ satir: number; stokId?: string; varyantId?: string } | null>(null);
   const [faturaListesiYukleniyor, setFaturaListesiYukleniyor] = useState(false);
   const [faturaFiltreleriHazir, setFaturaFiltreleriHazir] = useState(false);
 
@@ -607,6 +610,8 @@ export default function FaturaSayfasi() {
     { stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" },
   ]);
   const [stokVaryantlari, setStokVaryantlari] = useState<Record<string, StokVaryant[]>>({});
+  // Satırın varyantları stok listesinden gelir; kayıtlı belge açılınca da görünür.
+  const varyantlariAl = (stokId: string): StokVaryant[] => stoklar.find((x) => x.id === stokId)?.varyantlar ?? stokVaryantlari[stokId] ?? [];
   /** FTR-28: belge dövizi değişti, kalem fiyatları hâlâ eski dövizde; kullanıcı onayı bekleniyor. */
   const [bekleyenCevrim, setBekleyenCevrim] = useState<{ eskiDoviz: string; eskiKur: number } | null>(null);
   const bugun = bugunTR();
@@ -2153,7 +2158,7 @@ export default function FaturaSayfasi() {
                           deger={s.stokId}
                           kullanimAnahtari="tekir_son_urunler"
                           inputRef={(eleman) => { urunRefleri.current[index] = eleman; }}
-                          onChange={(deger) => { if (deger) { setUrunModali({ satir: index, stokId: deger }); setSatirDogrulamaHatalari((hatalar) => hatalar.filter((satirIndex) => satirIndex !== index)); } }}
+                          onChange={(deger) => { if (deger) { setUrunModali({ satir: index, ...varyantDegeriCoz(deger) }); setSatirDogrulamaHatalari((hatalar) => hatalar.filter((satirIndex) => satirIndex !== index)); } }}
                           onSecim={(deger) => requestAnimationFrame(() => {
                             if (s.stokId === deger) urunRefleri.current[index]?.focus();
                             else miktarRefleri.current[index]?.focus();
@@ -2163,7 +2168,7 @@ export default function FaturaSayfasi() {
                             etiket: "Yeni ürün oluştur",
                             onClick: () => { setHizliHata(""); setHizliStokSatir(index); setHizliPanel("stok"); },
                           }}
-                          secenekler={stoklar.map((stok) => ({
+                          secenekler={[...stoklar.map((stok) => ({
                             deger: stok.id,
                             baslik: stok.ad,
                             aciklama: [
@@ -2176,9 +2181,9 @@ export default function FaturaSayfasi() {
                               `KDV %${Number(stok.kdvOrani)}`,
                             ].filter(Boolean).join(" · "),
                             aramaMetni: [stok.kod, stok.barkod, ...(stok.tedarikciUrunKodlari ?? [])].filter(Boolean).join(" "),
-                          }))}
+                          })), ...varyantSecenekleri(stoklar)]}
                         />
-                        {(stokVaryantlari[s.stokId]?.length ?? 0) > 0 && <Select aria-label="Varyant" required value={s.varyantId ?? ""} onChange={(e) => { const varyantId = e.target.value; setSatirlar((eskiler) => eskiler.map((x, i) => i === index ? { ...x, varyantId } : x)); if (varyantId) void kalemFiyatiGetir(s.stokId, varyantId).then((fiyat) => { if (fiyat) setSatirlar((eskiler) => eskiler.map((x, i) => i === index && x.varyantId === varyantId ? { ...x, ...fiyat } : x)); }); }}><option value="">Varyant seçin</option>{stokVaryantlari[s.stokId].filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad} · Stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")}</option>)}</Select>}
+                        {varyantlariAl(s.stokId).length > 0 && <Select aria-label="Varyant" required value={s.varyantId ?? ""} onChange={(e) => { const varyantId = e.target.value; setSatirlar((eskiler) => eskiler.map((x, i) => i === index ? { ...x, varyantId } : x)); if (varyantId) void kalemFiyatiGetir(s.stokId, varyantId).then((fiyat) => { if (fiyat) setSatirlar((eskiler) => eskiler.map((x, i) => i === index && x.varyantId === varyantId ? { ...x, ...fiyat } : x)); }); }}><option value="">Varyant seçin</option>{varyantlariAl(s.stokId).filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.ad} · {v.kod} · Stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")}</option>)}</Select>}
                         {satirDogrulamaHatalari.includes(index) && <p className="field-error" id={`fatura-satir-${index}-hatasi`} role="alert">Bu satır için ürün veya hizmet seçin.</p>}
                         {s.dovizUyarisi && <p className="field-error" role="alert">{s.dovizUyarisi}</p>}
                         {seciliStok && (
@@ -2632,7 +2637,7 @@ export default function FaturaSayfasi() {
           </div>
         </div>
       )}
-      <UrunSecimModali acik={urunModali !== null} baslangicStokId={urunModali?.stokId} stoklar={stoklar} cariId={cariId} tip={tip.startsWith("alis") ? "alis" : "satis"} belgeDovizi={dovizCinsi} belgeKuru={kur} belgeTarihi={tarih} onKapat={() => setUrunModali(null)} onEkle={(urun) => {
+      <UrunSecimModali acik={urunModali !== null} baslangicStokId={urunModali?.stokId} baslangicVaryantId={urunModali?.varyantId} stoklar={stoklar} cariId={cariId} tip={tip.startsWith("alis") ? "alis" : "satis"} belgeDovizi={dovizCinsi} belgeKuru={kur} belgeTarihi={tarih} onKapat={() => setUrunModali(null)} onEkle={(urun) => {
         setSatirlar((eskiler) => {
           const satir = { stokId: urun.stokId, varyantId: urun.varyantId, miktar: urun.miktar, birim: urun.birim, birimFiyat: urun.birimFiyat, iskontoOrani: urun.iskontoOrani, kdvOrani: urun.kdvOrani, gibIstisnaKodu: "" };
           if (urunModali == null || urunModali.satir >= eskiler.length) return [...eskiler, satir];

@@ -11,6 +11,9 @@ export interface UrunSecimStok {
   /** STK-10: ek birimler (1 koli = 12 adet). */
   birimler?: { ad: string; katsayi: string }[];
   kullanilabilirMiktar?: string; mevcutMiktar?: string; aciklama?: string | null;
+  barkod?: string | null;
+  /** Aktif varyantlar: aramada varyant kodu/barkodu ürünü bulur ve varyantı seçer. */
+  varyantlar?: { id: string; kod: string; barkod?: string | null }[];
 }
 interface Varyant { id: string; kod: string; ad: string; mevcutMiktar: string; aktif: boolean }
 interface FiyatListesi { id: string; ad: string; dovizCinsi: string; aktif: boolean }
@@ -23,9 +26,11 @@ export interface UrunSecimSonucu {
   iskontoOrani: number; kdvOrani: number; kaynakDoviz: string; kaynakFiyat: number; urunKuru: number;
 }
 
-export function UrunSecimModali({ acik, baslangicStokId, stoklar, cariId, tip, belgeDovizi, belgeKuru, belgeTarihi, onKapat, onEkle }: {
+export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, stoklar, cariId, tip, belgeDovizi, belgeKuru, belgeTarihi, onKapat, onEkle }: {
   acik: boolean; stoklar: UrunSecimStok[]; cariId?: string; tip: string; belgeDovizi: string; belgeKuru: string;
   baslangicStokId?: string;
+  /** Satır araması bir varyantı bulduysa pencere o varyant seçili açılır. */
+  baslangicVaryantId?: string;
   belgeTarihi: string;
   onKapat: () => void; onEkle: (sonuc: UrunSecimSonucu) => void;
 }) {
@@ -51,7 +56,7 @@ export function UrunSecimModali({ acik, baslangicStokId, stoklar, cariId, tip, b
   const stok = stoklar.find((s) => s.id === stokId);
   const sonuclar = useMemo(() => {
     const q = arama.trim().toLocaleLowerCase("tr-TR");
-    return (q ? stoklar.filter((s) => `${s.kod} ${s.ad}`.toLocaleLowerCase("tr-TR").includes(q)) : stoklar).slice(0, 12);
+    return (q ? stoklar.filter((s) => [s.kod, s.ad, s.barkod, ...(s.varyantlar ?? []).flatMap((v) => [v.kod, v.barkod])].filter(Boolean).join(" ").toLocaleLowerCase("tr-TR").includes(q)) : stoklar).slice(0, 12);
   }, [arama, stoklar]);
 
   useEffect(() => { if (acik) void api<FiyatListesi[]>("/fiyat-listeleri").then((x) => setListeler(x.filter((l) => l.aktif))).catch(() => setListeler([])); }, [acik]);
@@ -73,15 +78,21 @@ export function UrunSecimModali({ acik, baslangicStokId, stoklar, cariId, tip, b
   useEffect(() => { if (acik) void kurlariYukle(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [acik, belgeTarihi]);
   useEffect(() => {
     if (!acik) return;
-    setStokId(baslangicStokId ?? ""); setVaryantId(""); setMiktar("1"); setFiyat(null); setHata("");
+    setStokId(baslangicStokId ?? ""); setVaryantId(baslangicVaryantId ?? ""); setMiktar("1"); setFiyat(null); setHata("");
     const secili = stoklar.find((s) => s.id === baslangicStokId);
     setBirim(secili?.anaBirim ?? "adet");
     if (secili) setKdv(secili.kdvOrani ?? "20");
-  }, [acik, baslangicStokId, stoklar]);
+  }, [acik, baslangicStokId, baslangicVaryantId, stoklar]);
   useEffect(() => {
     if (!stokId) { setVaryantlar([]); return; }
-    void api<{ varyantlar: Varyant[] }>(`/stok/${stokId}`).then((x) => setVaryantlar((x.varyantlar ?? []).filter((v) => v.aktif))).catch(() => setVaryantlar([]));
-    void fiyatGetir("1", "", fiyatListesiId);
+    // Seçili varyant bu ürüne ait değilse (ürün değişti) bırakılır; fiyat varyanta göre gelir.
+    void api<{ varyantlar: Varyant[] }>(`/stok/${stokId}`).then((x) => {
+      const liste = (x.varyantlar ?? []).filter((v) => v.aktif);
+      setVaryantlar(liste);
+      const gecerli = liste.some((v) => v.id === varyantId) ? varyantId : "";
+      setVaryantId(gecerli);
+      void fiyatGetir("1", gecerli, fiyatListesiId);
+    }).catch(() => { setVaryantlar([]); void fiyatGetir("1", "", fiyatListesiId); });
     // Yeni ürün seçildiğinde o ürünün başlangıç fiyatı yüklenir.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stokId]);
@@ -103,7 +114,11 @@ export function UrunSecimModali({ acik, baslangicStokId, stoklar, cariId, tip, b
   }
 
   function stokSec(id: string) {
-    const s = stoklar.find((x) => x.id === id); setStokId(id); setVaryantId(""); setKdv(s?.kdvOrani ?? "20"); setBirim(s?.anaBirim ?? "adet");
+    // Aranan metin bir varyantın kodu/barkoduysa o varyant hazır seçilir.
+    const q = arama.trim().toLocaleLowerCase("tr-TR");
+    const s = stoklar.find((x) => x.id === id);
+    const eslesen = q ? s?.varyantlar?.find((v) => [v.kod, v.barkod].some((d) => d?.toLocaleLowerCase("tr-TR") === q)) : undefined;
+    setStokId(id); setVaryantId(eslesen?.id ?? ""); setKdv(s?.kdvOrani ?? "20"); setBirim(s?.anaBirim ?? "adet");
   }
   const seciliStok = stoklar.find((s) => s.id === stokId);
   function birimDegistir(yeni: string) {
@@ -131,7 +146,7 @@ export function UrunSecimModali({ acik, baslangicStokId, stoklar, cariId, tip, b
         {kurDurumu === "hazir" && <div className="product-picker__rates"><span>USD alış <strong>{tcmbKurlari.USD?.toLocaleString("tr-TR", { minimumFractionDigits: 4 })}</strong></span><span>EUR alış <strong>{tcmbKurlari.EUR?.toLocaleString("tr-TR", { minimumFractionDigits: 4 })}</strong></span><small>{kurTarihi}</small></div>}
         <div className="product-picker__grid">
           <Field label="Miktar"><div className="document-line-qty"><Input autoFocus type="number" min="0.000001" step="any" value={miktar} onChange={(e) => setMiktar(e.target.value)} /><SatirBirimi stok={seciliStok} value={birim} onChange={birimDegistir} /></div></Field>
-          {varyantlar.length > 0 && <Field label="Varyant"><Select value={varyantId} onChange={(e) => { setVaryantId(e.target.value); void fiyatGetir(urunKuru, e.target.value, fiyatListesiId); }}><option value="">Ana ürün</option>{varyantlar.map((v) => <option value={v.id} key={v.id}>{v.kod} — {v.ad} (stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")})</option>)}</Select></Field>}
+          {varyantlar.length > 0 && <Field label="Varyant"><Select required value={varyantId} onChange={(e) => { setVaryantId(e.target.value); void fiyatGetir(urunKuru, e.target.value, fiyatListesiId); }}><option value="">Varyant seçin</option>{varyantlar.map((v) => <option value={v.id} key={v.id}>{v.kod} — {v.ad} (stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")})</option>)}</Select></Field>}
           <Field label="Fiyat listesi"><Select value={fiyatListesiId} onChange={(e) => { setFiyatListesiId(e.target.value); void fiyatGetir(urunKuru, varyantId, e.target.value); }}><option value="">Cari / ürün varsayılanı</option>{listeler.map((l) => <option value={l.id} key={l.id}>{l.ad} ({l.dovizCinsi})</option>)}</Select></Field>
           <Field label="Fiyat para birimi"><Select value={fiyatDovizi} onChange={(e) => fiyatDoviziDegistir(e.target.value)}><option>TRY</option><option>USD</option><option>EUR</option></Select></Field>
           <Field label={`Ürün kuru (${fiyatDovizi} → TRY)`}><Input type="number" min="0.000001" step="0.000001" disabled={fiyatDovizi === "TRY"} value={fiyatDovizi === "TRY" ? "1" : String(tcmbKurlari[fiyatDovizi] ?? urunKuru)} onChange={(e) => { setUrunKuru(e.target.value); setTcmbKurlari((k) => ({ ...k, [fiyatDovizi]: Number(e.target.value) })); }} /></Field>
@@ -142,7 +157,7 @@ export function UrunSecimModali({ acik, baslangicStokId, stoklar, cariId, tip, b
         </div>
         {hata && <p className="product-picker__notice is-warning" role="alert">{hata}</p>}
         <div className="product-picker__total"><span>TOPLAM</span><strong>{(Number(miktar) * belgeyeCevrilmisFiyat * (1 - Number(iskonto) / 100)).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {belgeDovizi}</strong></div>
-        <footer><Button type="button" onClick={() => { setStokId(""); setFiyat(null); }}>Başka ürün seç</Button><Button variant="primary" type="button" disabled={Number(miktar) <= 0 || !Number.isFinite(belgeyeCevrilmisFiyat)} onClick={() => onEkle({ stokId, varyantId: varyantId || undefined, miktar: Number(miktar), birim: birim || seciliStok?.anaBirim || "adet", birimFiyat: belgeyeCevrilmisFiyat, iskontoOrani: Number(iskonto), kdvOrani: Number(kdv), kaynakDoviz: fiyatDovizi, kaynakFiyat: Number(birimFiyat), urunKuru: tcmbKurlari[fiyatDovizi] ?? Number(urunKuru) })}>+ Ekle</Button></footer>
+        <footer><Button type="button" onClick={() => { setStokId(""); setFiyat(null); }}>Başka ürün seç</Button><Button variant="primary" type="button" disabled={Number(miktar) <= 0 || !Number.isFinite(belgeyeCevrilmisFiyat) || (varyantlar.length > 0 && !varyantId)} onClick={() => onEkle({ stokId, varyantId: varyantId || undefined, miktar: Number(miktar), birim: birim || seciliStok?.anaBirim || "adet", birimFiyat: belgeyeCevrilmisFiyat, iskontoOrani: Number(iskonto), kdvOrani: Number(kdv), kaynakDoviz: fiyatDovizi, kaynakFiyat: Number(birimFiyat), urunKuru: tcmbKurlari[fiyatDovizi] ?? Number(urunKuru) })}>+ Ekle</Button></footer>
       </div>}
     </section>
   </div>;

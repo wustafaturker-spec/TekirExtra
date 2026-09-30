@@ -38,6 +38,7 @@ import {
   stokTedarikciSemasi,
   stokVaryantGuncelleSemasi,
   stokVaryantSemasi,
+  stokVaryantTopluSemasi,
   stokFiyatSemasi,
 } from "./stok.semalar";
 
@@ -308,6 +309,14 @@ export class StokController {
     const sonuc = stokVaryantSemasi.safeParse(govde);
     if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((s) => s.message).join("; "));
     return this.stokService.varyantEkle(id, sonuc.data);
+  }
+
+  @Post(":id/varyantlar/toplu")
+  @Roller("muhasebe")
+  async varyantlariTopluEkle(@Param("id") id: string, @Body() govde: unknown) {
+    const sonuc = stokVaryantTopluSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((s) => s.message).join("; "));
+    return this.stokService.varyantlariTopluEkle(id, sonuc.data.varyantlar);
   }
 
   @Patch(":id/varyantlar/:varyantId")

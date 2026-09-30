@@ -113,6 +113,8 @@ export class StokService {
           kategori: { select: { id: true, ad: true } },
           tedarikciler: { select: { tedarikciUrunKodu: true } },
           birimler: { select: { ad: true, katsayi: true }, orderBy: { katsayi: "asc" } },
+          // Belge satırında varyant seçimi ve varyant kodu/barkoduyla arama için.
+          varyantlar: { where: { aktif: true }, orderBy: { kod: "asc" }, select: { id: true, kod: true, ad: true, barkod: true, nitelikler: true, mevcutMiktar: true, aktif: true } },
           _count: { select: { hareketler: true } },
         },
       }),
@@ -128,6 +130,7 @@ export class StokService {
         tedarikciUrunKodlari: k.tedarikciler.map((tedarikci) => tedarikci.tedarikciUrunKodu).filter((kod): kod is string => Boolean(kod)),
         // STK-10: belge satırında seçilebilen ek birimler.
         birimler: k.birimler.map((b) => ({ ad: b.ad, katsayi: b.katsayi.toString() })),
+        varyantlar: k.varyantlar.map((v) => ({ ...v, mevcutMiktar: v.mevcutMiktar.toString() })),
         izinliEylemler: this.eylemler(k, ctx.rol, k._count.hareketler),
       })),
       sonrakiImlec,
@@ -181,6 +184,32 @@ export class StokService {
       if (hata instanceof Prisma.PrismaClientKnownRequestError && hata.code === "P2002") throw new ConflictException("Varyant kodu veya barkodu zaten kullanımda");
       throw hata;
     }
+  }
+
+  /**
+   * Birden çok varyantı tek işlemde açar. Kod ya da barkod çakışırsa hiçbiri
+   * oluşmaz ve çakışanlar adıyla bildirilir; kullanıcı listeyi düzeltip yineler.
+   */
+  async varyantlariTopluEkle(stokId: string, varyantlar: z.infer<typeof stokVaryantSemasi>[]) {
+    const { tenantId } = aktifBaglam();
+    await this.getir(stokId);
+    const kodlar = varyantlar.map((v) => v.kod);
+    const barkodlar = varyantlar.map((v) => v.barkod).filter((b): b is string => !!b);
+    const tekrar = [...kodlar, ...barkodlar].filter((d, i, dizi) => dizi.indexOf(d) !== i);
+    if (tekrar.length) throw new ConflictException(`Listede tekrar eden kod/barkod: ${[...new Set(tekrar)].join(", ")}`);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const cakisan = await tx.stokVaryant.findMany({ where: { tenantId, OR: [{ kod: { in: kodlar } }, ...(barkodlar.length ? [{ barkod: { in: barkodlar } }] : [])] }, select: { kod: true, barkod: true } });
+      const kartCakisan = barkodlar.length ? await tx.stokKart.findMany({ where: { tenantId, barkod: { in: barkodlar } }, select: { barkod: true } }) : [];
+      if (cakisan.length || kartCakisan.length) {
+        const adlar = [...cakisan.map((c) => (kodlar.includes(c.kod) ? c.kod : c.barkod)), ...kartCakisan.map((k) => k.barkod)];
+        throw new ConflictException(`Zaten kullanımda: ${[...new Set(adlar)].join(", ")}`);
+      }
+      const olusan = [];
+      for (const v of varyantlar) {
+        olusan.push(await tx.stokVaryant.create({ data: { tenantId, stokId, kod: v.kod, ad: v.ad, nitelikler: v.nitelikler, barkod: v.barkod, alisFiyati: v.alisFiyati ? D(v.alisFiyati) : null, satisFiyati: v.satisFiyati ? D(v.satisFiyati) : null } }));
+      }
+      return olusan;
+    });
   }
 
   async fiyatListele(stokId: string) {

@@ -47,6 +47,10 @@ const TIP_BASLIKLARI: Record<string, string> = {
 export interface FaturaPdfSatiri {
   stokKod: string;
   stokAd: string;
+  /** Varyantlı satırda varyant kodu/adı ve nitelikleri; yoksa ana kart. */
+  satirKod?: string;
+  satirAd?: string;
+  satirAciklama?: string;
   miktar: string;
   birim: string;
   birimFiyat: string;
@@ -310,8 +314,8 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
     .map(
       (s, i) => `<tr>
   <td class="orta">${i + 1}</td>
-  <td>${kacis(s.stokKod)}</td>
-  <td>${kacis(s.stokAd)}${
+  <td>${kacis(s.satirKod ?? s.stokKod)}</td>
+  <td>${kacis(s.satirAd ?? s.stokAd)}${s.satirAciklama ? `<br><span style="color:#6b7280;font-size:8pt">${kacis(s.satirAciklama)}</span>` : ""}${
     s.gibIstisnaKodu
       ? `<br><span style="color:#6b7280;font-size:8pt">KDV istisna kodu: ${kacis(s.gibIstisnaKodu)}</span>`
       : ""

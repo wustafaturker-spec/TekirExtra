@@ -118,6 +118,19 @@ describe("faturaUblUret", () => {
   };
   const saglayici = { unvan: "Satıcı A.Ş.", vkn: "1234567801" };
 
+  it("varyantlı satırda ad, kod ve nitelik açıklaması varyanttan gelir", () => {
+    const varyantli = { ...earsivFaturasi, satirlar: [{ ...earsivFaturasi.satirlar[0], stok: { kod: "TSH-001", ad: "Tişört" }, varyant: { kod: "TSH-001-SIYAH-M", ad: "Siyah / M", nitelikler: { Renk: "Siyah", Beden: "M" } } }] };
+    const item = faturaUblUret(varyantli as never, saglayici, { tur: "earsiv" }).match(/<cac:Item>[\s\S]*?<\/cac:Item>/)![0];
+
+    // UBL-TR ItemType sırası: Description, Name, …, SellersItemIdentification.
+    expect(item).toMatch(/<cbc:Description>Renk: Siyah, Beden: M<\/cbc:Description>\s*<cbc:Name>Tişört — Siyah \/ M<\/cbc:Name>/);
+    expect(item).toContain("<cac:SellersItemIdentification>\n        <cbc:ID>TSH-001-SIYAH-M</cbc:ID>");
+
+    const sade = faturaUblUret(earsivFaturasi as never, saglayici, { tur: "earsiv" }).match(/<cac:Item>[\s\S]*?<\/cac:Item>/)![0];
+    expect(sade).not.toContain("<cbc:Description>");
+    expect(sade).toContain("<cbc:Name>Ürün</cbc:Name>");
+  });
+
   it("e-Arşiv kanalında EARSIVFATURA profilini ve gönderim şeklini yazar", () => {
     const xml = faturaUblUret(earsivFaturasi as never, saglayici, { tur: "earsiv" });
 

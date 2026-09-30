@@ -57,6 +57,9 @@ import {
   type MusteriReferanslari,
   referansNotlari,
   siparisReferansi,
+  varyantAciklamasi,
+  varyantliAd,
+  varyantliKod,
 } from "@tekirextra/shared";
 import { adSoyadCoz } from "../cari/ad-soyad";
 import { faturaTeslimYeri } from "../fatura/teslim-yeri";
@@ -107,6 +110,8 @@ export function faturaUblUret(
   fatura: Fatura & {
     satirlar: (FaturaSatir & {
       stok: { kod: string; ad: string; tip?: string | null; gtipKodu?: string | null; mensei?: string | null; kdvOrani?: unknown };
+      /** Varyantlı satır: ad, kod ve nitelik açıklaması varyanttan gelir. */
+      varyant?: { kod: string; ad: string; nitelikler: unknown } | null;
     })[];
     /**
      * EBLG-55: alıcı adresi karttan gelir. Adresler okunmadan üretilen belgede
@@ -1002,12 +1007,13 @@ ${vazgecilenOran(s) > 0 ? `        <cbc:TaxAmount currencyID="${fatura.dovizCins
         </cac:TaxCategory>
       </cac:TaxSubtotal>
     </cac:TaxTotal>`}
-    <cac:Item>
-      <cbc:Name>${escape(s.stok.ad)}</cbc:Name>${ytb && ytbNormalize(s.ytbMakineAdi) ? `
+    <cac:Item>${varyantAciklamasi(s.varyant) ? `
+      <cbc:Description>${escape(varyantAciklamasi(s.varyant))}</cbc:Description>` : ""}
+      <cbc:Name>${escape(varyantliAd(s.stok.ad, s.varyant))}</cbc:Name>${ytb && ytbNormalize(s.ytbMakineAdi) ? `
       <!-- EBLG-78: makine adı kılavuz v1.2 ile Name'den ModelName'e taşındı. -->
       <cbc:ModelName>${escape(ytbNormalize(s.ytbMakineAdi))}</cbc:ModelName>` : ""}
       <cac:SellersItemIdentification>
-        <cbc:ID>${escape(s.stok.kod)}</cbc:ID>
+        <cbc:ID>${escape(varyantliKod(s.stok.kod, s.varyant))}</cbc:ID>
       </cac:SellersItemIdentification>${idis && s.idisEtiketNo ? `
       <cac:AdditionalItemIdentification>
         <cbc:ID schemeID="ETIKETNO">${escape(idisNormalize(s.idisEtiketNo))}</cbc:ID>
