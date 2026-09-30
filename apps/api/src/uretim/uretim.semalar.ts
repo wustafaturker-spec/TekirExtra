@@ -88,6 +88,8 @@ export const sarfDuzeltmeSemasi = z.object({
 
 export const uretimEmriOlusturSemasi = z.object({
   stokId: z.string().uuid(),
+  /** Varyantlı mamulde zorunlu; siparişten açılan emirde sipariş satırının varyantıdır. */
+  varyantId: z.string().uuid().optional().nullable(),
   satisSiparisSatirId: z.string().uuid().optional().nullable(),
   hedefDepoId: z.string().uuid(),
   planlananMiktar: pozitif,

@@ -1192,6 +1192,7 @@ model StokVaryant {
   uretimMalzemeleri  UretimEmriKalem[]
   receteCiktilari    UrunRecetesiCikti[]
   uretimCiktilari    UretimEmriCikti[]
+  uretimEmirleri     UretimEmri[]
 
   @@unique([tenantId, kod])
   @@unique([tenantId, barkod])
@@ -1423,25 +1424,25 @@ model StokDepoBakiye {
 
 /// Stok kartına bağlı, tanımlanması isteğe bağlı ürün reçetesi.
 model UrunRecetesi {
-  id                   String      @id @default(uuid()) @db.Uuid
-  tenantId             String      @map("tenant_id") @db.Uuid
-  stokId               String      @map("stok_id") @db.Uuid
-  surum                Int         @default(1)
-  durum                ReceteDurum @default(taslak)
-  ciktiMiktari         Decimal     @default(1) @map("cikti_miktari") @db.Decimal(15, 3)
-  aciklama             String?
-  aktif                Boolean     @default(true)
-  yururlukBaslangic    DateTime?   @map("yururluk_baslangic") @db.Date
-  yururlukBitis        DateTime?   @map("yururluk_bitis") @db.Date
-  onaylayanUserId      String?     @map("onaylayan_user_id") @db.Uuid
-  onayZamani           DateTime?   @map("onay_zamani")
-  degisiklikNedeni     String?     @map("degisiklik_nedeni")
-  kaliteKontrolGerekli Boolean     @default(false) @map("kalite_kontrol_gerekli")
+  id                    String                @id @default(uuid()) @db.Uuid
+  tenantId              String                @map("tenant_id") @db.Uuid
+  stokId                String                @map("stok_id") @db.Uuid
+  surum                 Int                   @default(1)
+  durum                 ReceteDurum           @default(taslak)
+  ciktiMiktari          Decimal               @default(1) @map("cikti_miktari") @db.Decimal(15, 3)
+  aciklama              String?
+  aktif                 Boolean               @default(true)
+  yururlukBaslangic     DateTime?             @map("yururluk_baslangic") @db.Date
+  yururlukBitis         DateTime?             @map("yururluk_bitis") @db.Date
+  onaylayanUserId       String?               @map("onaylayan_user_id") @db.Uuid
+  onayZamani            DateTime?             @map("onay_zamani")
+  degisiklikNedeni      String?               @map("degisiklik_nedeni")
+  kaliteKontrolGerekli  Boolean               @default(false) @map("kalite_kontrol_gerekli")
   /// Sürümü kaydeden kullanıcı; kendi hazırladığı sürümü onaylayamaz.
-  olusturanUserId      String?     @map("olusturan_user_id") @db.Uuid
+  olusturanUserId       String?               @map("olusturan_user_id") @db.Uuid
   yanUrunMaliyetYontemi YanUrunMaliyetYontemi @default(sifir) @map("yan_urun_maliyet_yontemi")
-  createdAt            DateTime    @default(now()) @map("created_at")
-  updatedAt            DateTime    @updatedAt @map("updated_at")
+  createdAt             DateTime              @default(now()) @map("created_at")
+  updatedAt             DateTime              @updatedAt @map("updated_at")
 
   stok           StokKart            @relation("MamulRecetesi", fields: [stokId], references: [id], onDelete: Cascade)
   kalemler       UrunRecetesiKalem[]
@@ -1560,6 +1561,8 @@ model UretimEmri {
   updatedAt            DateTime        @updatedAt @map("updated_at")
 
   stok               StokKart               @relation("UretilecekStok", fields: [stokId], references: [id])
+  varyantId          String?                @map("varyant_id") @db.Uuid
+  varyant            StokVaryant?           @relation(fields: [varyantId], references: [id])
   recete             UrunRecetesi?          @relation(fields: [receteId], references: [id], onDelete: Restrict)
   hedefDepo          Depo                   @relation(fields: [hedefDepoId], references: [id])
   kalemler           UretimEmriKalem[]
@@ -1571,6 +1574,7 @@ model UretimEmri {
   ciktilar           UretimEmriCikti[]
 
   @@unique([tenantId, no])
+  @@index([tenantId, varyantId])
   @@index([tenantId, tarih])
   @@index([tenantId, receteId])
   @@index([tenantId, satisSiparisSatirId])
@@ -2435,14 +2439,14 @@ model GibMukellefSenkron {
 /// Gelen belge çekiminin tarih kursörü (EBLG-11). Bu ana kadarki aralık bir
 /// daha sorgulanmaz; elle tazelemenin saatlik sınırı da bu satırdan okunur.
 model EbelgeGelenKursor {
-  tenantId       String    @id @map("tenant_id") @db.Uuid
-  sonCekimAt     DateTime  @map("son_cekim_at")
-  sonTetiklemeAt DateTime? @map("son_tetikleme_at")
+  tenantId           String    @id @map("tenant_id") @db.Uuid
+  sonCekimAt         DateTime  @map("son_cekim_at")
+  sonTetiklemeAt     DateTime? @map("son_tetikleme_at")
   /// EBLG-109: gelen e-İrsaliye taramasının son başarılı çalıştığı an; planlayıcı
   /// taramayı `EBLG_GELEN_ARALIK_MS` dolmadan yeniden açmaz. Pencere bundan değil,
   /// son gelen kayıttan türetilir (`EirsaliyeService.gelenleriCek`).
   irsaliyeSonCekimAt DateTime? @map("irsaliye_son_cekim_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
 
   @@map("ebelge_gelen_kursor")
 }

@@ -46,7 +46,7 @@ describe("UretimService profesyonel emir akışı", () => {
         count: vi.fn(),
       },
       stokKart: { update: vi.fn() },
-      stokVaryant: { update: vi.fn() },
+      stokVaryant: { update: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
       stokDepoBakiye: { findMany: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }), upsert: vi.fn(), update: vi.fn() },
       stokVaryantDepoBakiye: { findMany: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }), update: vi.fn() },
       uretimMalzemeRezervasyon: { upsert: vi.fn(), update: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
@@ -385,6 +385,16 @@ describe("UretimService profesyonel emir akışı", () => {
     await expect(service.receteKaydet("A", { ...girdi, kalemler: [{ malzemeStokId: "B", miktar: "1", fireOrani: "0" }] })).rejects.toThrow("Malzeme listesi: 1. satırda varyant seçilmedi");
     await expect(service.receteKaydet("A", { ...girdi, kalemler: [{ malzemeStokId: "C", miktar: "1", fireOrani: "0" }], ciktilar: [{ stokId: "B", tip: "yan_urun", miktar: "1" }] })).rejects.toThrow("Yan/ortak ürünler: 1. satırda varyant seçilmedi");
     expect(prisma.urunRecetesi.create).not.toHaveBeenCalled();
+  });
+
+  it("varyantlı mamulün emri varyantsız açılmaz; varyant emre yazılır", async () => {
+    prisma.stokVaryant.findMany.mockResolvedValue([{ id: "11111111-1111-4111-8111-111111111111", stokId: "22222222-2222-4222-8222-222222222222" }]);
+    const girdi = { stokId: "22222222-2222-4222-8222-222222222222", hedefDepoId: "33333333-3333-4333-8333-333333333333", planlananMiktar: "5", tarih: "2026-10-01" };
+    await expect(service.emirOlustur(girdi)).rejects.toThrow("üretilecek varyantı seçin");
+    expect(prisma.uretimEmri.create).not.toHaveBeenCalled();
+
+    await service.emirOlustur({ ...girdi, varyantId: "11111111-1111-4111-8111-111111111111" });
+    expect(prisma.uretimEmri.create.mock.calls[0][0].data.varyantId).toBe("11111111-1111-4111-8111-111111111111");
   });
 
   it("planlanan bitiş girilmezse operasyon planının bittiği gün olur", async () => {
