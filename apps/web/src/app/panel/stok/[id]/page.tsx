@@ -32,7 +32,7 @@ interface Kategori {
   ust: { id: string; ad: string } | null;
 }
 
-function ReceteSekmesi({ stokId, anaBirim, recete, stoklar, isMerkezleri, onKaydedildi, onSilindi, onHata }: { stokId: string; anaBirim: string; recete: Recete | null; stoklar: StokOzet[]; isMerkezleri: IsMerkezi[]; onKaydedildi: () => Promise<void>; onSilindi: () => Promise<void>; onHata: (mesaj: string) => void }) {
+function ReceteSekmesi({ stokId, anaBirim, recete, stoklar, isMerkezleri, varyantlar, kapsam, ozelVaryantlar, onKapsamDegis, onKaydedildi, onSilindi, onHata }: { stokId: string; anaBirim: string; recete: Recete | null; stoklar: StokOzet[]; isMerkezleri: IsMerkezi[]; varyantlar: Varyant[]; kapsam: string; ozelVaryantlar: OzelReceteliVaryant[]; onKapsamDegis: (varyantId: string) => void; onKaydedildi: () => Promise<void>; onSilindi: () => Promise<void>; onHata: (mesaj: string) => void }) {
   const [ciktiMiktari, setCiktiMiktari] = useState("1");
   const [aciklama, setAciklama] = useState("");
   const [degisiklikNedeni, setDegisiklikNedeni] = useState("");
@@ -45,26 +45,39 @@ function ReceteSekmesi({ stokId, anaBirim, recete, stoklar, isMerkezleri, onKayd
   /** Varyantlı malzeme/yan ürün satırında hangi renk/beden kullanıldığı seçilir (sarf ve giriş o varyantta olur). */
   const varyantlariAl = (id: string) => (stoklar.find((s) => s.id === id)?.varyantlar ?? []).filter((v) => v.aktif !== false);
   const [kaydediliyor, setKaydediliyor] = useState(false);
-  useEffect(() => {
+  /** Formu bir reçeteyle doldurur (kapsamın kendi reçetesi ya da kopyalanan genel reçete). */
+  const formuDoldur = (recete: Recete | null) => {
     setCiktiMiktari(recete?.ciktiMiktari ?? "1"); setAciklama(recete?.aciklama ?? "");
     setKalemler(recete?.kalemler?.length ? recete.kalemler.map((k) => ({ malzemeStokId: k.malzemeStokId, malzemeVaryantId: k.malzemeVaryantId ?? undefined, miktar: k.miktar, fireOrani: k.fireOrani })) : [{ malzemeStokId: "", miktar: "1", fireOrani: "0" }]);
     setOperasyonlar(recete?.operasyonlar?.map((o) => ({ isMerkeziId: o.isMerkeziId, operasyonKodu: o.operasyonKodu, operasyonAdi: o.operasyonAdi, hazirlikDakika: o.hazirlikDakika, cevrimDakika: o.cevrimDakika })) ?? []);
     setKaliteKontrolGerekli(recete?.kaliteKontrolGerekli ?? false);
     setYanUrunYontemi(recete?.yanUrunMaliyetYontemi ?? "sifir");
     setCiktilar(recete?.ciktilar?.map((c) => ({ stokId: c.stokId, varyantId: c.varyantId ?? undefined, tip: c.tip, miktar: c.miktar, birimMaliyet: c.birimMaliyet ?? "0" })) ?? []);
-  }, [recete]);
+  };
+  useEffect(() => { formuDoldur(recete); }, [recete]);
+  const kapsamVaryanti = varyantlar.find((v) => v.id === kapsam) ?? null;
+  const kapsamSorgusu = kapsam ? `?varyantId=${kapsam}` : "";
+  /** Varyanta özel reçeteye genel reçeteden başlanır; kaydedilince bu varyantın taslağı olur. */
+  async function geneldenKopyala() {
+    onHata("");
+    try {
+      const genel = await api<Recete | null>(`/uretim/receteler/${stokId}`);
+      if (!genel?.id) { onHata("Kopyalanacak genel reçete yok"); return; }
+      formuDoldur(genel);
+    } catch (h) { onHata(h instanceof Error ? h.message : "Genel reçete okunamadı"); }
+  }
   async function kaydet(event: React.FormEvent) {
     event.preventDefault(); onHata(""); setKaydediliyor(true);
     try {
-      await api(`/uretim/receteler/${stokId}`, { method: "POST", body: JSON.stringify({ ciktiMiktari, aciklama: aciklama || null, degisiklikNedeni: degisiklikNedeni || null, yururlukBaslangic: yururlukBaslangic || null, kaliteKontrolGerekli, yanUrunMaliyetYontemi: yanUrunYontemi, kalemler: kalemler.map((k) => ({ ...k, malzemeVaryantId: k.malzemeVaryantId || null })), ciktilar: ciktilar.map((c) => ({ ...c, varyantId: c.varyantId || null, birimMaliyet: yanUrunYontemi === "sabit_deger" ? c.birimMaliyet : null })), operasyonlar }) });
+      await api(`/uretim/receteler/${stokId}`, { method: "POST", body: JSON.stringify({ varyantId: kapsam || null, ciktiMiktari, aciklama: aciklama || null, degisiklikNedeni: degisiklikNedeni || null, yururlukBaslangic: yururlukBaslangic || null, kaliteKontrolGerekli, yanUrunMaliyetYontemi: yanUrunYontemi, kalemler: kalemler.map((k) => ({ ...k, malzemeVaryantId: k.malzemeVaryantId || null })), ciktilar: ciktilar.map((c) => ({ ...c, varyantId: c.varyantId || null, birimMaliyet: yanUrunYontemi === "sabit_deger" ? c.birimMaliyet : null })), operasyonlar }) });
       setDegisiklikNedeni("");
       await onKaydedildi();
     } catch (h) { onHata(h instanceof Error ? h.message : "Reçete kaydedilemedi"); }
     finally { setKaydediliyor(false); }
   }
   async function sil() {
-    if (!window.confirm("Bu ürün reçetesi kaldırılacak. Devam edilsin mi?")) return;
-    try { await api(`/uretim/receteler/${stokId}`, { method: "DELETE" }); await onSilindi(); }
+    if (!window.confirm(kapsamVaryanti ? `${kapsamVaryanti.ad} varyantının özel reçetesi arşivlenecek; varyant bundan sonra genel reçeteyle üretilir. Devam edilsin mi?` : "Bu ürün reçetesi kaldırılacak. Devam edilsin mi?")) return;
+    try { await api(`/uretim/receteler/${stokId}${kapsamSorgusu}`, { method: "DELETE" }); await onSilindi(); }
     catch (h) { onHata(h instanceof Error ? h.message : "Reçete kaldırılamadı"); }
   }
   async function onayla() {
@@ -88,8 +101,15 @@ function ReceteSekmesi({ stokId, anaBirim, recete, stoklar, isMerkezleri, onKayd
   return <div className="recipe-workspace">
     <section className="recipe-hero">
       <div><span className="recipe-eyebrow">ÜRETİM TANIMI</span><h2>Ürün reçetesi</h2><p>Bir üretim çevriminde tüketilecek malzemeleri, fire paylarını ve tahmini maliyeti yönetin.</p></div>
-      <div className="recipe-health"><span className={recete?.durum === "aktif" ? "is-ready" : ""} />{recete ? `v${recete.surum} · ${recete.durum === "aktif" ? "Aktif" : recete.durum === "taslak" ? "Taslak" : "Onay bekliyor"}` : "Henüz kaydedilmedi"}</div>
+      <div className="recipe-health"><span className={recete?.durum === "aktif" ? "is-ready" : ""} />{kapsamVaryanti ? `${kapsamVaryanti.ad} · ` : ""}{recete ? `v${recete.surum} · ${recete.durum === "aktif" ? "Aktif" : recete.durum === "taslak" ? "Taslak" : "Onay bekliyor"}` : "Henüz kaydedilmedi"}</div>
     </section>
+    {varyantlar.length > 0 && <section className="recipe-setup">
+      <div><h3>Reçete kapsamı</h3><p>Varyantlar farklı malzeme, miktar ya da operasyonla üretiliyorsa varyanta özel reçete tanımlayın. Özel reçetesi olmayan varyant genel reçeteyle üretilir.</p></div>
+      <div className="recipe-setup__fields">
+        <Field label="Kapsam"><Select value={kapsam} onChange={(e) => onKapsamDegis(e.target.value)}><option value="">Genel — tüm varyantlar</option>{varyantlar.filter((v) => v.aktif).map((v) => { const ozel = ozelVaryantlar.find((o) => o.varyantId === v.id); return <option key={v.id} value={v.id}>{v.ad} · {v.kod} — {ozel ? `özel reçete (v${ozel.surum}, ${({ aktif: "aktif", taslak: "taslak", onay_bekliyor: "onay bekliyor" } as Record<string, string>)[ozel.durum] ?? ozel.durum})` : "genel reçeteyle"}</option>; })}</Select></Field>
+        {kapsam && !recete && <div className="row-tight"><span className="muted">Bu varyantın kendi reçetesi yok; şu an genel reçeteyle üretilir.</span><Button type="button" onClick={() => void geneldenKopyala()}>Genel reçeteden kopyala</Button></div>}
+      </div>
+    </section>}
     <form className="recipe-form" onSubmit={kaydet}>
       <section className="recipe-setup">
         <div><h3>Reçete bilgileri</h3><p>Hesaplamaların baz aldığı standart üretim çıktısı.</p></div>
@@ -142,6 +162,7 @@ interface StokFiyat { id: string; varyantId: string | null; tip: "alis" | "satis
 type YanUrunYontemi = "sifir" | "sabit_deger" | "satis_degeri";
 interface Recete { id: string; surum: number; durum: "taslak" | "onay_bekliyor" | "aktif" | "pasif" | "arsiv"; ciktiMiktari: string; aciklama: string | null; kaliteKontrolGerekli: boolean; onaylayabilir?: boolean; yanUrunMaliyetYontemi?: YanUrunYontemi; ciktilar?: { id: string; stokId: string; varyantId: string | null; tip: "yan_urun" | "ortak_urun"; miktar: string; birimMaliyet: string | null }[]; operasyonlar?: { id: string; isMerkeziId: string; operasyonKodu: string; operasyonAdi: string; hazirlikDakika: string; cevrimDakika: string }[]; kalemler?: { id: string; malzemeStokId: string; malzemeVaryantId: string | null; miktar: string; fireOrani: string; malzeme: { id: string; kod: string; ad: string; anaBirim: string; mevcutMiktar: string; ortalamaMaliyet: string } }[] }
 interface IsMerkezi { id: string; kod: string; ad: string; aktif: boolean; saatlikMaliyet?: string }
+interface OzelReceteliVaryant { varyantId: string; durum: string; surum: number }
 interface StokOzet { id: string; kod: string; ad: string; tip: string; anaBirim: string; mevcutMiktar: string; ortalamaMaliyet?: string; varyantlar?: { id: string; kod: string; ad: string; mevcutMiktar: string; aktif?: boolean }[] }
 
 interface Hareket {
@@ -281,6 +302,9 @@ export default function StokDetaySayfasi() {
   const [partiler, setPartiler] = useState<Parti[]>([]);
   const [fiyatlar, setFiyatlar] = useState<StokFiyat[]>([]);
   const [recete, setRecete] = useState<Recete | null>(null);
+  /** Reçete sekmesinde düzenlenen kapsam: boş = genel reçete, dolu = o varyantın özel reçetesi. */
+  const [receteKapsami, setReceteKapsami] = useState("");
+  const [ozelReceteliVaryantlar, setOzelReceteliVaryantlar] = useState<OzelReceteliVaryant[]>([]);
   const [isMerkezleri, setIsMerkezleri] = useState<IsMerkezi[]>([]);
   const [tumStoklar, setTumStoklar] = useState<StokOzet[]>([]);
   const [kategoriler, setKategoriler] = useState<Kategori[]>([]);
@@ -323,10 +347,14 @@ export default function StokDetaySayfasi() {
   const fiyatlariYukle = useCallback(async () => { try { setFiyatlar(await api<StokFiyat[]>(`/stok/${id}/fiyatlar`)); } catch { setFiyatlar([]); } }, [id]);
   const receteyiYukle = useCallback(async () => {
     try {
-      const veri = await api<Recete | null>(`/uretim/receteler/${id}`);
+      const [veri, ozel] = await Promise.all([
+        api<Recete | null>(`/uretim/receteler/${id}${receteKapsami ? `?varyantId=${receteKapsami}` : ""}`),
+        api<OzelReceteliVaryant[]>(`/uretim/receteler/${id}/ozel-varyantlar`).catch(() => []),
+      ]);
       setRecete(veri?.id ? { ...veri, kalemler: Array.isArray(veri.kalemler) ? veri.kalemler : [] } : null);
+      setOzelReceteliVaryantlar(ozel);
     } catch { setRecete(null); }
-  }, [id]);
+  }, [id, receteKapsami]);
 
   useEffect(() => {
     if (!tokenAl()) return;
@@ -335,12 +363,13 @@ export default function StokDetaySayfasi() {
     void depoBakiyeleriYukle();
     void partileriYukle();
     void fiyatlariYukle();
-    void receteyiYukle();
     void api<IsMerkezi[]>("/uretim/is-merkezleri").then((v) => setIsMerkezleri(v.filter((m) => m.aktif))).catch(() => setIsMerkezleri([]));
     void tumSayfalariAl<StokOzet>("/stok").then(setTumStoklar).catch(() => {});
     void api<Kategori[]>("/stok/kategoriler").then(setKategoriler).catch(() => {});
     void tumSayfalariAl<CariOzet>("/cari").then(setCariler).catch(() => {});
-  }, [yukle, hareketleriYukle, depoBakiyeleriYukle, partileriYukle, fiyatlariYukle, receteyiYukle]);
+  }, [yukle, hareketleriYukle, depoBakiyeleriYukle, partileriYukle, fiyatlariYukle]);
+  // Reçete kapsamı (genel/varyant) değişince yalnız reçete yeniden okunur.
+  useEffect(() => { if (tokenAl()) void receteyiYukle(); }, [receteyiYukle]);
 
   /** Alt kayıt ekleme/silme sonrası ortak akış. */
   async function islem(calistir: () => Promise<unknown>, basariMesaji: string) {
@@ -471,7 +500,7 @@ export default function StokDetaySayfasi() {
         </TabPanel>
       )}
 
-      {aktifSekme === "recete" && <TabPanel idPrefix="stok-detay" value="recete"><ReceteSekmesi stokId={id} anaBirim={detay.anaBirim} recete={recete} stoklar={tumStoklar.filter((s) => s.id !== id && s.tip !== "hizmet")} isMerkezleri={isMerkezleri} onKaydedildi={async () => { await receteyiYukle(); setBasari("Yeni reçete sürümü taslak olarak kaydedildi."); }} onSilindi={async () => { await receteyiYukle(); setBasari("Ürün reçetesi arşivlendi."); }} onHata={setHata} /></TabPanel>}
+      {aktifSekme === "recete" && <TabPanel idPrefix="stok-detay" value="recete"><ReceteSekmesi stokId={id} anaBirim={detay.anaBirim} recete={recete} stoklar={tumStoklar.filter((s) => s.id !== id && s.tip !== "hizmet")} isMerkezleri={isMerkezleri} varyantlar={detay.varyantlar ?? []} kapsam={receteKapsami} ozelVaryantlar={ozelReceteliVaryantlar} onKapsamDegis={setReceteKapsami} onKaydedildi={async () => { await receteyiYukle(); setBasari("Yeni reçete sürümü taslak olarak kaydedildi."); }} onSilindi={async () => { await receteyiYukle(); setBasari("Ürün reçetesi arşivlendi."); }} onHata={setHata} /></TabPanel>}
       {aktifSekme === "fiyatlar" && <TabPanel idPrefix="stok-detay" value="fiyatlar"><Card title="Dövizli ürün fiyatları"><form className="form-grid" onSubmit={fiyatEkle}><Field label="Tip"><Select value={fiyatTipi} onChange={(e) => setFiyatTipi(e.target.value as "alis" | "satis")}><option value="satis">Satış</option><option value="alis">Alış</option></Select></Field><Field label="Varyant"><Select value={fiyatVaryantId} onChange={(e) => setFiyatVaryantId(e.target.value)}><option value="">Kart fiyatı</option>{(detay.varyantlar ?? []).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad}</option>)}</Select></Field><Field label="Döviz"><Select value={fiyatDovizi} onChange={(e) => setFiyatDovizi(e.target.value)}><option>TRY</option><option>USD</option><option>EUR</option></Select></Field><Field label="Tutar"><Input type="number" min="0" step="0.0001" value={fiyatTutar} onChange={(e) => setFiyatTutar(e.target.value)} required /></Field><div><Button type="submit" variant="primary">Fiyat kaydet</Button></div></form><TableWrap><thead><tr><th>Tip</th><th>Varyant</th><th>Döviz</th><th className="num">Tutar</th><th>Durum</th><th /></tr></thead><tbody>{fiyatlar.map((f) => <tr key={f.id}><td>{f.tip === "alis" ? "Alış" : "Satış"}</td><td>{f.varyantId ? detay.varyantlar?.find((v) => v.id === f.varyantId)?.kod ?? f.varyantId : "Kart"}</td><td>{f.dovizCinsi}</td><td className="num">{Number(f.tutar).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} {f.dovizCinsi}</td><td>{f.aktif ? "Aktif" : "Pasif"}</td><td><Button size="sm" variant="danger" type="button" onClick={() => void fiyatSil(f.id)}>Sil</Button></td></tr>)}{!fiyatlar.length && <tr><td colSpan={6}>Henüz dövizli fiyat tanımlanmamış.</td></tr>}</tbody></TableWrap></Card></TabPanel>}
 
       {aktifSekme === "hareketler" && (

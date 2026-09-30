@@ -1193,6 +1193,7 @@ model StokVaryant {
   receteCiktilari    UrunRecetesiCikti[]
   uretimCiktilari    UretimEmriCikti[]
   uretimEmirleri     UretimEmri[]
+  urunReceteleri     UrunRecetesi[]
 
   @@unique([tenantId, kod])
   @@unique([tenantId, barkod])
@@ -1445,12 +1446,16 @@ model UrunRecetesi {
   updatedAt             DateTime              @updatedAt @map("updated_at")
 
   stok           StokKart            @relation("MamulRecetesi", fields: [stokId], references: [id], onDelete: Cascade)
+  /// Boşsa genel reçete; doluysa yalnız bu varyantın üretiminde kullanılır.
+  varyantId      String?             @map("varyant_id") @db.Uuid
+  varyant        StokVaryant?        @relation(fields: [varyantId], references: [id])
   kalemler       UrunRecetesiKalem[]
   uretimEmirleri UretimEmri[]
   operasyonlar   ReceteOperasyonu[]
   ciktilar       UrunRecetesiCikti[]
 
   @@unique([tenantId, stokId, surum])
+  @@index([tenantId, stokId, varyantId])
   @@index([tenantId])
   @@map("urun_receteleri")
 }

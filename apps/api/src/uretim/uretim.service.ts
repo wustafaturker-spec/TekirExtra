@@ -186,10 +186,11 @@ export class UretimService {
     return { emirId: emir.id, no: emir.no, tarih: emir.tarih, durum: emir.durum, stok: emir.stok, planlananMiktar: emir.planlananMiktar, uretilenMiktar: emir.uretilenMiktar, planOrani: planOrani.toFixed(4), kalemler: { malzeme: { planlanan: planlananMalzeme.toFixed(4), gerceklesen: gerceklesenMalzeme.toFixed(4), sapma: gerceklesenMalzeme.sub(planlananMalzeme).toFixed(4) }, operasyon: { planlanan: planlananOperasyon.toFixed(4), gerceklesen: gerceklesenOperasyon.toFixed(4), sapma: gerceklesenOperasyon.sub(planlananOperasyon).toFixed(4) } }, toplamlar: { planlanan: planlanan.toFixed(4), gerceklesen: gerceklesen.toFixed(4), sapma: sapma.toFixed(4), sapmaYuzdesi: planlanan.isZero() ? "0.00" : sapma.mul(100).div(planlanan).toFixed(2) } };
   }
 
-  async receteGetir(stokId: string) {
+  /** Kapsamın (genel ya da tek varyant) güncel reçetesi; varyantId boşsa genel reçete. */
+  async receteGetir(stokId: string, varyantId: string | null = null) {
     const { tenantId, userId } = aktifBaglam();
     const recete = await this.prisma.tenantIslem(tenantId, (tx) => tx.urunRecetesi.findFirst({
-      where: { stokId, durum: { in: ["taslak", "onay_bekliyor", "aktif"] } },
+      where: { stokId, varyantId, durum: { in: ["taslak", "onay_bekliyor", "aktif"] } },
       orderBy: { surum: "desc" },
       include: { ciktilar: { orderBy: { id: "asc" }, include: { stok: { select: { id: true, kod: true, ad: true, anaBirim: true } } } }, operasyonlar: { orderBy: { sira: "asc" }, include: { isMerkezi: true } }, kalemler: { orderBy: { id: "asc" }, include: { malzeme: { select: { id: true, kod: true, ad: true, anaBirim: true, mevcutMiktar: true, ortalamaMaliyet: true } }, malzemeVaryant: { select: { id: true, kod: true, ad: true } } } } },
     }));
@@ -197,9 +198,21 @@ export class UretimService {
     return recete && { ...recete, onaylayabilir: recete.olusturanUserId !== userId };
   }
 
+  /** Kendi reçetesi (taslak, onay bekleyen ya da aktif) olan varyantlar ve durumları. */
+  async ozelReceteliVaryantlar(stokId: string) {
+    const { tenantId } = aktifBaglam();
+    const receteler = await this.prisma.tenantIslem(tenantId, (tx) => tx.urunRecetesi.findMany({
+      where: { stokId, varyantId: { not: null }, durum: { in: ["taslak", "onay_bekliyor", "aktif"] } },
+      orderBy: { surum: "desc" },
+      select: { varyantId: true, durum: true, surum: true },
+    }));
+    const gorulen = new Set<string>();
+    return receteler.filter((r) => !gorulen.has(r.varyantId!) && gorulen.add(r.varyantId!));
+  }
+
   async receteSurumleri(stokId: string) {
     const { tenantId } = aktifBaglam();
-    return this.prisma.tenantIslem(tenantId, (tx) => tx.urunRecetesi.findMany({ where: { stokId }, orderBy: { surum: "desc" }, include: { operasyonlar: { orderBy: { sira: "asc" }, include: { isMerkezi: true } }, kalemler: { include: { malzeme: { select: { id: true, kod: true, ad: true, anaBirim: true } } } }, _count: { select: { uretimEmirleri: true } } } }));
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.urunRecetesi.findMany({ where: { stokId }, orderBy: { surum: "desc" }, include: { varyant: { select: { id: true, kod: true, ad: true } }, operasyonlar: { orderBy: { sira: "asc" }, include: { isMerkezi: true } }, kalemler: { include: { malzeme: { select: { id: true, kod: true, ad: true, anaBirim: true } } } }, _count: { select: { uretimEmirleri: true } } } }));
   }
 
   async receteKaydet(stokId: string, girdi: z.infer<typeof receteKaydetSemasi>) {
@@ -207,6 +220,8 @@ export class UretimService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const mamul = await tx.stokKart.findUnique({ where: { id: stokId } });
       if (!mamul || mamul.tip === "hizmet") throw new BadRequestException("Reçete yalnız stoklu ürünlere tanımlanabilir");
+      // Varyanta özel reçete yalnız bu ürünün aktif varyantına tanımlanır.
+      await this.stokService.varyantDogrula(tx, stokId, girdi.varyantId);
       if (girdi.kalemler.some((k) => k.malzemeStokId === stokId)) throw new BadRequestException("Ürün kendi reçetesinde malzeme olamaz");
       for (const kalem of girdi.kalemler) {
         const malzeme = await tx.stokKart.findUnique({ where: { id: kalem.malzemeStokId } });
@@ -235,15 +250,15 @@ export class UretimService {
       }
       const son = await tx.urunRecetesi.findFirst({ where: { stokId }, orderBy: { surum: "desc" }, select: { surum: true } });
       return tx.urunRecetesi.create({
-        data: { tenantId, stokId, surum: (son?.surum ?? 0) + 1, durum: "taslak", aktif: false, ciktiMiktari: D(girdi.ciktiMiktari), aciklama: girdi.aciklama, degisiklikNedeni: girdi.degisiklikNedeni, yururlukBaslangic: girdi.yururlukBaslangic ? new Date(girdi.yururlukBaslangic) : null, kaliteKontrolGerekli: girdi.kaliteKontrolGerekli, olusturanUserId: userId, yanUrunMaliyetYontemi: girdi.yanUrunMaliyetYontemi, kalemler: { create: girdi.kalemler.map((k) => ({ tenantId, malzemeStokId: k.malzemeStokId, malzemeVaryantId: k.malzemeVaryantId, miktar: D(k.miktar), fireOrani: D(k.fireOrani) })) }, ciktilar: { create: girdi.ciktilar.map((c) => ({ tenantId, stokId: c.stokId, varyantId: c.varyantId, tip: c.tip, miktar: D(c.miktar), birimMaliyet: girdi.yanUrunMaliyetYontemi === "sabit_deger" && c.birimMaliyet != null ? D(c.birimMaliyet) : null })) }, operasyonlar: { create: girdi.operasyonlar.map((o, index) => ({ tenantId, isMerkeziId: o.isMerkeziId, sira: index + 1, operasyonKodu: o.operasyonKodu, operasyonAdi: o.operasyonAdi, hazirlikDakika: D(o.hazirlikDakika), cevrimDakika: D(o.cevrimDakika) })) } },
+        data: { tenantId, stokId, varyantId: girdi.varyantId ?? null, surum: (son?.surum ?? 0) + 1, durum: "taslak", aktif: false, ciktiMiktari: D(girdi.ciktiMiktari), aciklama: girdi.aciklama, degisiklikNedeni: girdi.degisiklikNedeni, yururlukBaslangic: girdi.yururlukBaslangic ? new Date(girdi.yururlukBaslangic) : null, kaliteKontrolGerekli: girdi.kaliteKontrolGerekli, olusturanUserId: userId, yanUrunMaliyetYontemi: girdi.yanUrunMaliyetYontemi, kalemler: { create: girdi.kalemler.map((k) => ({ tenantId, malzemeStokId: k.malzemeStokId, malzemeVaryantId: k.malzemeVaryantId, miktar: D(k.miktar), fireOrani: D(k.fireOrani) })) }, ciktilar: { create: girdi.ciktilar.map((c) => ({ tenantId, stokId: c.stokId, varyantId: c.varyantId, tip: c.tip, miktar: D(c.miktar), birimMaliyet: girdi.yanUrunMaliyetYontemi === "sabit_deger" && c.birimMaliyet != null ? D(c.birimMaliyet) : null })) }, operasyonlar: { create: girdi.operasyonlar.map((o, index) => ({ tenantId, isMerkeziId: o.isMerkeziId, sira: index + 1, operasyonKodu: o.operasyonKodu, operasyonAdi: o.operasyonAdi, hazirlikDakika: D(o.hazirlikDakika), cevrimDakika: D(o.cevrimDakika) })) } },
         include: { kalemler: true },
       });
     });
   }
 
-  async receteSil(stokId: string) {
+  async receteSil(stokId: string, varyantId: string | null = null) {
     const { tenantId } = aktifBaglam();
-    await this.prisma.tenantIslem(tenantId, (tx) => tx.urunRecetesi.updateMany({ where: { stokId, durum: { in: ["taslak", "onay_bekliyor", "aktif"] } }, data: { durum: "arsiv", aktif: false, yururlukBitis: new Date() } }));
+    await this.prisma.tenantIslem(tenantId, (tx) => tx.urunRecetesi.updateMany({ where: { stokId, varyantId, durum: { in: ["taslak", "onay_bekliyor", "aktif"] } }, data: { durum: "arsiv", aktif: false, yururlukBitis: new Date() } }));
   }
 
   async receteOnayla(stokId: string, surumId: string) {
@@ -260,9 +275,9 @@ export class UretimService {
       if (baslangic > bugun) {
         // İleri tarihli sürüm: eskisi yeni sürüm yürürlüğe girene kadar geçerli
         // kalır, yoksa aradaki günlerde emir açılamaz.
-        await tx.urunRecetesi.updateMany({ where: { stokId, durum: "aktif", id: { not: surumId } }, data: { yururlukBitis: new Date(baslangic.getTime() - 86400000) } });
+        await tx.urunRecetesi.updateMany({ where: { stokId, varyantId: surum.varyantId, durum: "aktif", id: { not: surumId } }, data: { yururlukBitis: new Date(baslangic.getTime() - 86400000) } });
       } else {
-        await tx.urunRecetesi.updateMany({ where: { stokId, durum: "aktif", id: { not: surumId } }, data: { durum: "pasif", aktif: false, yururlukBitis: simdi } });
+        await tx.urunRecetesi.updateMany({ where: { stokId, varyantId: surum.varyantId, durum: "aktif", id: { not: surumId } }, data: { durum: "pasif", aktif: false, yururlukBitis: simdi } });
       }
       return tx.urunRecetesi.update({ where: { id: surumId }, data: { durum: "aktif", aktif: true, onaylayanUserId: userId, onayZamani: simdi, yururlukBaslangic: baslangic, yururlukBitis: null }, include: { kalemler: true } });
     });
@@ -280,7 +295,7 @@ export class UretimService {
 
   async emirGetir(id: string) {
     const { tenantId } = aktifBaglam();
-    const emir = await this.prisma.tenantIslem(tenantId, (tx) => tx.uretimEmri.findUnique({ where: { id, tenantId }, include: { stok: true, varyant: { select: { id: true, kod: true, ad: true } }, hedefDepo: true, operasyonlar: { orderBy: { sira: "asc" }, include: { isMerkezi: true, vardiya: true, operator: { select: { id: true, adSoyad: true } }, duruslar: { orderBy: { baslangic: "desc" } } } }, bildirimler: { orderBy: { bildirimTarihi: "desc" }, include: { sarflar: true } }, sarfDuzeltmeleri: { orderBy: { createdAt: "desc" }, include: { depo: { select: { kod: true, ad: true } }, uretimEmriKalem: { include: { malzeme: { select: { kod: true, ad: true, anaBirim: true } } } } } }, kalemler: { include: { malzeme: true, malzemeVaryant: true } } } }));
+    const emir = await this.prisma.tenantIslem(tenantId, (tx) => tx.uretimEmri.findUnique({ where: { id, tenantId }, include: { stok: true, varyant: { select: { id: true, kod: true, ad: true } }, recete: { select: { surum: true, varyantId: true } }, hedefDepo: true, operasyonlar: { orderBy: { sira: "asc" }, include: { isMerkezi: true, vardiya: true, operator: { select: { id: true, adSoyad: true } }, duruslar: { orderBy: { baslangic: "desc" } } } }, bildirimler: { orderBy: { bildirimTarihi: "desc" }, include: { sarflar: true } }, sarfDuzeltmeleri: { orderBy: { createdAt: "desc" }, include: { depo: { select: { kod: true, ad: true } }, uretimEmriKalem: { include: { malzeme: { select: { kod: true, ad: true, anaBirim: true } } } } } }, kalemler: { include: { malzeme: true, malzemeVaryant: true } } } }));
     if (!emir) throw new NotFoundException("Üretim emri bulunamadı");
     return { ...emir, operasyonlar: emir.operasyonlar.map(({ duruslar, ...operasyon }) => ({ ...operasyon, durus: duruslar })) };
   }
@@ -351,8 +366,10 @@ export class UretimService {
         if (hata instanceof BadRequestException) throw new BadRequestException("Bu ürünün varyantları var; üretilecek varyantı seçin (ya da varyant bu ürüne ait değil / pasif)");
         throw hata;
       }
-      const recete = await tx.urunRecetesi.findFirst({ where: { stokId: girdi.stokId, durum: "aktif", aktif: true, OR: [{ yururlukBaslangic: null }, { yururlukBaslangic: { lte: emirTarihi } }], AND: [{ OR: [{ yururlukBitis: null }, { yururlukBitis: { gte: emirTarihi } }] }] }, orderBy: { surum: "desc" }, include: { kalemler: { include: { malzeme: { select: { ortalamaMaliyet: true } } } }, ciktilar: true, operasyonlar: { orderBy: { sira: "asc" }, include: { isMerkezi: { select: { saatlikMaliyet: true, gunlukKapasiteDakika: true, verimlilikYuzdesi: true } } } } } });
-      if (!recete?.kalemler.length) throw new BadRequestException("Bu stok kartında üretim tarihinde geçerli, onaylı reçete yok");
+      // Varyantın kendi onaylı reçetesi varsa o, yoksa genel reçete kullanılır.
+      const receteBul = (varyantId: string | null) => tx.urunRecetesi.findFirst({ where: { stokId: girdi.stokId, varyantId, durum: "aktif", aktif: true, OR: [{ yururlukBaslangic: null }, { yururlukBaslangic: { lte: emirTarihi } }], AND: [{ OR: [{ yururlukBitis: null }, { yururlukBitis: { gte: emirTarihi } }] }] }, orderBy: { surum: "desc" }, include: { kalemler: { include: { malzeme: { select: { ortalamaMaliyet: true } } } }, ciktilar: true, operasyonlar: { orderBy: { sira: "asc" }, include: { isMerkezi: { select: { saatlikMaliyet: true, gunlukKapasiteDakika: true, verimlilikYuzdesi: true } } } } } });
+      const recete = (girdi.varyantId ? await receteBul(girdi.varyantId) : null) ?? await receteBul(null);
+      if (!recete?.kalemler.length) throw new BadRequestException(girdi.varyantId ? "Bu varyant için üretim tarihinde geçerli, onaylı reçete yok (ne varyanta özel ne genel)" : "Bu stok kartında üretim tarihinde geçerli, onaylı reçete yok");
       const depo = await tx.depo.findFirst({ where: { id: girdi.hedefDepoId, aktif: true } });
       if (!depo) throw new BadRequestException("Hedef depo bulunamadı");
       const oran = D(girdi.planlananMiktar).div(recete.ciktiMiktari);
@@ -773,8 +790,16 @@ export class UretimService {
     const receteler = await this.prisma.tenantIslem(tenantId, (tx) => tx.urunRecetesi.findMany({ where: { aktif: true, durum: "aktif", stok: { aktif: true } }, orderBy: [{ stok: { ad: "asc" } }, { surum: "desc" }], include: { stok: { select: { id: true, kod: true, ad: true, anaBirim: true, mevcutMiktar: true, takipTipi: true, varyantlar: { where: { aktif: true }, orderBy: { kod: "asc" }, select: { id: true, kod: true, ad: true, mevcutMiktar: true } } } }, _count: { select: { kalemler: true } } } }));
     // İleri tarihli sürüm onaylıyken aynı ürünün iki aktif sürümü olur; liste
     // ürün başına tek satırdır, emir açılışı tarihe uyan sürümü kendisi seçer.
-    const gorulen = new Set<string>();
-    return receteler.filter((r) => !gorulen.has(r.stokId) && gorulen.add(r.stokId));
+    // Varyanta özel reçeteler kartın satırında toplanır: form genel reçete yoksa
+    // yalnız kendi reçetesi olan varyantları üretilebilir gösterir.
+    const kartlar = new Map<string, (typeof receteler)[number] & { genelRecete: boolean; receteliVaryantIdleri: string[] }>();
+    for (const r of receteler) {
+      const kart = kartlar.get(r.stokId) ?? { ...r, genelRecete: false, receteliVaryantIdleri: [] };
+      if (r.varyantId) { if (!kart.receteliVaryantIdleri.includes(r.varyantId)) kart.receteliVaryantIdleri.push(r.varyantId); }
+      else kart.genelRecete = true;
+      kartlar.set(r.stokId, kart);
+    }
+    return [...kartlar.values()];
   }
 }
 

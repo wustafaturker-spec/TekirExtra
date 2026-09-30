@@ -5,6 +5,8 @@ const sifirVeyaPozitif = z.union([z.string(), z.number()]).transform(String).ref
 const pozitif = z.union([z.string(), z.number()]).transform(String).refine((v) => /^\d{1,13}(\.\d{1,6})?$/.test(v) && Number(v) > 0, "Pozitif miktar gerekli");
 
 export const receteKaydetSemasi = z.object({
+  /** Boşsa genel reçete; doluysa yalnız bu varyantın üretiminde kullanılır. */
+  varyantId: z.string().uuid().optional().nullable(),
   ciktiMiktari: pozitif.default("1"),
   aciklama: z.string().max(500).optional().nullable(),
   degisiklikNedeni: z.string().min(3).max(500).optional().nullable(),
@@ -143,3 +145,6 @@ export const uretimBildirimiSemasi =uretimTamamlaSemasi.and(z.object({
   if (Number(girdi.hurdaMiktari) > 0 && !girdi.hurdaNedeni) ctx.addIssue({ code: "custom", path: ["hurdaNedeni"], message: "Hurda miktarı için neden gerekli" });
   if (Number(girdi.yenidenIslemeMiktari) > 0 && !girdi.yenidenIslemeNedeni) ctx.addIssue({ code: "custom", path: ["yenidenIslemeNedeni"], message: "Yeniden işleme miktarı için neden gerekli" });
 });
+
+/** Reçete uçlarında kapsam: `?varyantId=` boşsa genel reçete. */
+export const receteKapsamSemasi = z.object({ varyantId: z.string().uuid().optional() });

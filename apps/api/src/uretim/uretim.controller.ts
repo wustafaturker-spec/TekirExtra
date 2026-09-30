@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query } from "@nestjs/common";
 import type { z } from "zod";
 import { Roller } from "../auth/roller.decorator";
-import { isMerkeziKaydetSemasi, kaliteKararSemasi, operasyonBaslatSemasi, operasyonBekletSemasi, operasyonTamamlaSemasi, receteKaydetSemasi, sarfDuzeltmeSemasi, uretimBildirimiSemasi, uretimDonemKilidiSemasi, uretimEmriListeSemasi, uretimEmriKapatSemasi, uretimEmriOlusturSemasi, vardiyaKaydetSemasi, yenidenIslemeTamamlaSemasi } from "./uretim.semalar";
+import { isMerkeziKaydetSemasi, kaliteKararSemasi, operasyonBaslatSemasi, operasyonBekletSemasi, operasyonTamamlaSemasi, receteKapsamSemasi, receteKaydetSemasi, sarfDuzeltmeSemasi, uretimBildirimiSemasi, uretimDonemKilidiSemasi, uretimEmriListeSemasi, uretimEmriKapatSemasi, uretimEmriOlusturSemasi, vardiyaKaydetSemasi, yenidenIslemeTamamlaSemasi } from "./uretim.semalar";
 import { UretimService } from "./uretim.service";
 
 function ayristir<T extends z.ZodType>(sema: T, govde: unknown): z.infer<T> {
@@ -34,10 +34,11 @@ export class UretimController {
   @Post("kalite-kontrolleri/:id/yeniden-isleme-tamamla") @Roller("uretim_operatoru") yenidenIslemeTamamla(@Param("id") id: string, @Body() govde: unknown) { return this.service.yenidenIslemeTamamla(id, ayristir(yenidenIslemeTamamlaSemasi, govde)); }
 
   @Get("urunler") urunler() { return this.service.uretilebilirUrunler(); }
-  @Get("receteler/:stokId") recete(@Param("stokId") stokId: string) { return this.service.receteGetir(stokId); }
+  @Get("receteler/:stokId") recete(@Param("stokId") stokId: string, @Query() sorgu: unknown) { return this.service.receteGetir(stokId, ayristir(receteKapsamSemasi, sorgu).varyantId ?? null); }
+  @Get("receteler/:stokId/ozel-varyantlar") ozelReceteliVaryantlar(@Param("stokId") stokId: string) { return this.service.ozelReceteliVaryantlar(stokId); }
   @Get("receteler/:stokId/surumler") receteSurumleri(@Param("stokId") stokId: string) { return this.service.receteSurumleri(stokId); }
   @Post("receteler/:stokId") @Roller("uretim_planlama") receteKaydet(@Param("stokId") stokId: string, @Body() govde: unknown) { return this.service.receteKaydet(stokId, ayristir(receteKaydetSemasi, govde)); }
-  @Delete("receteler/:stokId") @Roller("uretim_planlama") @HttpCode(204) async receteSil(@Param("stokId") stokId: string) { await this.service.receteSil(stokId); }
+  @Delete("receteler/:stokId") @Roller("uretim_planlama") @HttpCode(204) async receteSil(@Param("stokId") stokId: string, @Query() sorgu: unknown) { await this.service.receteSil(stokId, ayristir(receteKapsamSemasi, sorgu).varyantId ?? null); }
   @Post("receteler/:stokId/surumler/:surumId/onayla") @Roller("uretim_planlama") receteOnayla(@Param("stokId") stokId: string, @Param("surumId") surumId: string) { return this.service.receteOnayla(stokId, surumId); }
 
   @Get("emirler") emirler(@Query() sorgu: unknown) { return this.service.emirleriListele(ayristir(uretimEmriListeSemasi, sorgu)); }

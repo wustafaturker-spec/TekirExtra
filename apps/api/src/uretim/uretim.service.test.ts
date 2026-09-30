@@ -110,7 +110,7 @@ describe("UretimService profesyonel emir akışı", () => {
 
     await service.receteOnayla("mamul-1", "recete-2");
 
-    expect(prisma.urunRecetesi.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { stokId: "mamul-1", durum: "aktif", id: { not: "recete-2" } }, data: expect.objectContaining({ durum: "pasif", aktif: false }) }));
+    expect(prisma.urunRecetesi.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { stokId: "mamul-1", varyantId: undefined, durum: "aktif", id: { not: "recete-2" } }, data: expect.objectContaining({ durum: "pasif", aktif: false }) }));
     expect(prisma.urunRecetesi.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "recete-2" }, data: expect.objectContaining({ durum: "aktif", aktif: true, onaylayanUserId: "user-1" }) }));
   });
 
@@ -395,6 +395,28 @@ describe("UretimService profesyonel emir akışı", () => {
 
     await service.emirOlustur({ ...girdi, varyantId: "11111111-1111-4111-8111-111111111111" });
     expect(prisma.uretimEmri.create.mock.calls[0][0].data.varyantId).toBe("11111111-1111-4111-8111-111111111111");
+  });
+
+  it("varyanta özel reçete onaylanınca yalnız o varyantın eski reçetesi pasife düşer", async () => {
+    prisma.urunRecetesi.findFirst.mockResolvedValue({ id: "recete-v2", stokId: "mamul-1", varyantId: "v-mavi", durum: "taslak", yururlukBaslangic: null });
+    prisma.urunRecetesi.update.mockResolvedValue({ id: "recete-v2", durum: "aktif" });
+    await service.receteOnayla("mamul-1", "recete-v2");
+    expect(prisma.urunRecetesi.updateMany.mock.calls[0][0].where).toEqual({ stokId: "mamul-1", varyantId: "v-mavi", durum: "aktif", id: { not: "recete-v2" } });
+  });
+
+  it("emir varyantın kendi reçetesini, yoksa genel reçeteyi kullanır", async () => {
+    const genel = await prisma.urunRecetesi.findFirst();
+    const V = "11111111-1111-4111-8111-111111111111";
+    prisma.stokVaryant.findMany.mockResolvedValue([{ id: V, stokId: "22222222-2222-4222-8222-222222222222" }]);
+    const girdi = { stokId: "22222222-2222-4222-8222-222222222222", varyantId: V, hedefDepoId: "33333333-3333-4333-8333-333333333333", planlananMiktar: "5", tarih: "2026-10-01" };
+
+    prisma.urunRecetesi.findFirst.mockImplementation(async ({ where }: { where: { varyantId: string | null } }) => (where.varyantId === V ? { ...genel, id: "recete-mavi" } : genel));
+    await service.emirOlustur(girdi);
+    expect(prisma.uretimEmri.create.mock.calls[0][0].data.receteId).toBe("recete-mavi");
+
+    prisma.urunRecetesi.findFirst.mockImplementation(async ({ where }: { where: { varyantId: string | null } }) => (where.varyantId === null ? genel : null));
+    await service.emirOlustur(girdi);
+    expect(prisma.uretimEmri.create.mock.calls[1][0].data.receteId).toBe(genel.id);
   });
 
   it("planlanan bitiş girilmezse operasyon planının bittiği gün olur", async () => {
