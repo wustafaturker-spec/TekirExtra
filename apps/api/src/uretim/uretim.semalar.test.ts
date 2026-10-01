@@ -62,3 +62,14 @@ describe("uretimEmriListeSemasi", () => {
     expect(uretimEmriListeSemasi.safeParse({ durum: "bilinmeyen" }).success).toBe(false);
   });
 });
+
+describe("iş merkezi saatlik maliyet kırılımı", () => {
+  it("işçilik, makine ve genel gider ayrı alınır", () => {
+    const sonuc = isMerkeziKaydetSemasi.parse({ kod: "m", ad: "Montaj", iscilikSaatlik: "300", makineSaatlik: "100", genelGiderSaatlik: "50" });
+    expect([sonuc.iscilikSaatlik, sonuc.makineSaatlik, sonuc.genelGiderSaatlik]).toEqual([300, 100, 50]);
+  });
+  it("yalnız toplam gönderen eski istemcide toplam işçilik sayılır", () => {
+    const sonuc = isMerkeziKaydetSemasi.parse({ kod: "m", ad: "Montaj", saatlikMaliyet: "250" });
+    expect([sonuc.iscilikSaatlik, sonuc.makineSaatlik, sonuc.genelGiderSaatlik]).toEqual([250, 0, 0]);
+  });
+});

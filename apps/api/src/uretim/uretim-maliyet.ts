@@ -61,3 +61,28 @@ export function maliyetDagit(girdi: {
 export function planlananOperasyonMaliyeti(operasyonlar: { planlananDakika: Prisma.Decimal; saatlikMaliyet: Prisma.Decimal; durum?: string }[]) {
   return operasyonlar.filter((o) => o.durum !== "iptal").reduce((t, o) => t.add(D(o.planlananDakika).mul(o.saatlikMaliyet).div(60)), D(0));
 }
+
+export type ReceteGiderYontemi = "malzeme_yuzdesi" | "birim_basi" | "emir_basi";
+
+/**
+ * Reçete ek giderinin tutarı. `malzeme` aynı miktarın malzeme maliyeti
+ * (planda standart, bildirimde gerçek sarf); emir başı gider üretilen
+ * miktara oranla dağıtılır ki kısmi bildirimler toplamı aşmasın.
+ */
+export function ekGiderTutari(
+  gider: { yontem: ReceteGiderYontemi; deger: Prisma.Decimal },
+  girdi: { malzeme: Prisma.Decimal; miktar: Prisma.Decimal; emirMiktari: Prisma.Decimal },
+): Prisma.Decimal {
+  const deger = D(gider.deger);
+  const tutar =
+    gider.yontem === "malzeme_yuzdesi" ? girdi.malzeme.mul(deger).div(100)
+    : gider.yontem === "birim_basi" ? deger.mul(girdi.miktar)
+    : girdi.emirMiktari.isZero() ? D(0) : deger.mul(girdi.miktar).div(girdi.emirMiktari);
+  return tutar.toDecimalPlaces(4);
+}
+
+/** Operasyonun saatlik kırılımıyla tutarları: dakika × saatlik / 60. */
+export function operasyonKirilimi(o: { dakika: Prisma.Decimal; iscilikSaatlik: Prisma.Decimal; makineSaatlik: Prisma.Decimal; genelGiderSaatlik: Prisma.Decimal }) {
+  const tutar = (saatlik: Prisma.Decimal) => D(o.dakika).mul(saatlik).div(60);
+  return { iscilik: tutar(o.iscilikSaatlik), makine: tutar(o.makineSaatlik), genelGider: tutar(o.genelGiderSaatlik) };
+}

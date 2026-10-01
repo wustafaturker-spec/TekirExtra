@@ -6,13 +6,15 @@ import { bugunTR, metinNormalize } from "@tekirextra/shared";
 import { PrismaService } from "../core/prisma.service";
 import { CalismaTakvimiService } from "../calisma-takvimi/calisma-takvimi.service";
 import { StokService } from "../stok/stok.service";
-import { maliyetDagit, planlananOperasyonMaliyeti } from "./uretim-maliyet";
+import { ekGiderTutari, maliyetDagit, operasyonKirilimi, planlananOperasyonMaliyeti } from "./uretim-maliyet";
 import { kapasiteGunu, operasyonlariPlanla } from "./uretim-takvim";
 import { duzMiktar, emirMalzemeMiktari, receteBirimKatsayisi } from "./recete-miktar";
 import type { isMerkeziKaydetSemasi, kaliteKararSemasi, operasyonBaslatSemasi, operasyonBekletSemasi, operasyonTamamlaSemasi, receteKaydetSemasi, sarfDuzeltmeSemasi, uretimBildirimiSemasi, uretimDonemKilidiSemasi, uretimEmriListeSemasi, uretimEmriKapatSemasi, uretimEmriOlusturSemasi, vardiyaKaydetSemasi, yenidenIslemeTamamlaSemasi } from "./uretim.semalar";
 import { satirVaryantlariniDogrula } from "../stok/varyant-secimi";
 
 const D = (v: string | number | Prisma.Decimal) => new Prisma.Decimal(v);
+/** Saatlik maliyet kırılımın toplamıdır; operasyon hesabı toplamı kullanır. */
+const isMerkeziMaliyetleri = (g: z.infer<typeof isMerkeziKaydetSemasi>) => ({ ...g, verimlilikYuzdesi: D(g.verimlilikYuzdesi), iscilikSaatlik: D(g.iscilikSaatlik), makineSaatlik: D(g.makineSaatlik), genelGiderSaatlik: D(g.genelGiderSaatlik), saatlikMaliyet: D(g.iscilikSaatlik).add(g.makineSaatlik).add(g.genelGiderSaatlik) });
 /** Reçete satırı ekrana: küçük miktarlar üstel yazılmaz; `birim` boşsa ana birim. */
 const receteKalemGorunumu = <T extends { miktar: Prisma.Decimal; girilenMiktar: Prisma.Decimal | null; fireOrani: Prisma.Decimal }>(k: T) => ({ ...k, miktar: duzMiktar(k.miktar), girilenMiktar: duzMiktar(k.girilenMiktar), fireOrani: duzMiktar(k.fireOrani) });
 
@@ -123,13 +125,13 @@ export class UretimService {
 
   async isMerkeziOlustur(girdi: z.infer<typeof isMerkeziKaydetSemasi>) {
     const { tenantId } = aktifBaglam();
-    return this.prisma.tenantIslem(tenantId, (tx) => tx.isMerkezi.create({ data: { tenantId, ...girdi, verimlilikYuzdesi: D(girdi.verimlilikYuzdesi), saatlikMaliyet: D(girdi.saatlikMaliyet) } }));
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.isMerkezi.create({ data: { tenantId, ...isMerkeziMaliyetleri(girdi) } }));
   }
 
   async isMerkeziGuncelle(id: string, girdi: z.infer<typeof isMerkeziKaydetSemasi>) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const sonuc = await tx.isMerkezi.updateMany({ where: { id }, data: { ...girdi, verimlilikYuzdesi: D(girdi.verimlilikYuzdesi), saatlikMaliyet: D(girdi.saatlikMaliyet) } });
+      const sonuc = await tx.isMerkezi.updateMany({ where: { id }, data: isMerkeziMaliyetleri(girdi) });
       if (sonuc.count !== 1) throw new NotFoundException("İş merkezi bulunamadı");
       return tx.isMerkezi.findUniqueOrThrow({ where: { id } });
     });
@@ -156,7 +158,7 @@ export class UretimService {
 
   async maliyet(id: string) {
     const { tenantId } = aktifBaglam();
-    const emir = await this.prisma.tenantIslem(tenantId, (tx) => tx.uretimEmri.findUnique({ where: { id, tenantId }, include: { stok: { select: { kod: true, ad: true, anaBirim: true, takipTipi: true } }, kalemler: { include: { malzeme: { select: { kod: true, ad: true } } } }, operasyonlar: { include: { isMerkezi: { select: { kod: true, ad: true } } } }, bildirimler: { include: { sarflar: true } } } }));
+    const emir = await this.prisma.tenantIslem(tenantId, (tx) => tx.uretimEmri.findUnique({ where: { id, tenantId }, include: { stok: { select: { kod: true, ad: true, anaBirim: true, takipTipi: true } }, kalemler: { include: { malzeme: { select: { kod: true, ad: true } } } }, operasyonlar: { include: { isMerkezi: { select: { kod: true, ad: true } } } }, giderler: { orderBy: { sira: "asc" } }, bildirimler: { include: { sarflar: true } } } }));
     if (!emir) throw new NotFoundException("Üretim emri bulunamadı");
     return this.maliyetOzeti(emir);
   }
@@ -166,7 +168,7 @@ export class UretimService {
     const ilkGun = baslangic && /^\d{4}-\d{2}-\d{2}$/.test(baslangic) ? new Date(`${baslangic}T00:00:00`) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     const sonGun = bitis && /^\d{4}-\d{2}-\d{2}$/.test(bitis) ? new Date(`${bitis}T23:59:59.999`) : new Date();
     if (sonGun < ilkGun || sonGun.getTime() - ilkGun.getTime() > 366 * 86400000) throw new BadRequestException("Maliyet raporu aralığı en fazla 366 gün olabilir");
-    const emirler = await this.prisma.tenantIslem(tenantId, (tx) => tx.uretimEmri.findMany({ where: { tenantId, tarih: { gte: ilkGun, lte: sonGun }, durum: { not: "iptal" } }, orderBy: { tarih: "desc" }, include: { stok: { select: { kod: true, ad: true, anaBirim: true } }, kalemler: { include: { malzeme: { select: { kod: true, ad: true } } } }, operasyonlar: { include: { isMerkezi: { select: { kod: true, ad: true } } } }, bildirimler: { include: { sarflar: true } } } }));
+    const emirler = await this.prisma.tenantIslem(tenantId, (tx) => tx.uretimEmri.findMany({ where: { tenantId, tarih: { gte: ilkGun, lte: sonGun }, durum: { not: "iptal" } }, orderBy: { tarih: "desc" }, include: { stok: { select: { kod: true, ad: true, anaBirim: true } }, kalemler: { include: { malzeme: { select: { kod: true, ad: true } } } }, operasyonlar: { include: { isMerkezi: { select: { kod: true, ad: true } } } }, giderler: { orderBy: { sira: "asc" } }, bildirimler: { include: { sarflar: true } } } }));
     const satirlar = emirler.map((emir) => this.maliyetOzeti(emir));
     const toplamlar = satirlar.reduce((t, s) => ({ planlanan: t.planlanan.add(s.toplamlar.planlanan), gerceklesen: t.gerceklesen.add(s.toplamlar.gerceklesen) }), { planlanan: D(0), gerceklesen: D(0) });
     return { baslangic: ilkGun, bitis: sonGun, toplamlar: { planlanan: toplamlar.planlanan.toFixed(4), gerceklesen: toplamlar.gerceklesen.toFixed(4), sapma: toplamlar.gerceklesen.sub(toplamlar.planlanan).toFixed(4), sapmaYuzdesi: toplamlar.planlanan.isZero() ? "0.00" : toplamlar.gerceklesen.sub(toplamlar.planlanan).mul(100).div(toplamlar.planlanan).toFixed(2) }, emirler: satirlar };
@@ -183,10 +185,32 @@ export class UretimService {
       : emir.kalemler.reduce((t: Prisma.Decimal, k: any) => t.add(D(k.sarfEdilenMiktar).mul(k.birimMaliyet)), D(0));
     const planlananOperasyon = emir.operasyonlar.reduce((t: Prisma.Decimal, o: any) => t.add(D(o.planlananDakika).mul(o.saatlikMaliyet).div(60)), D(0)).mul(planOrani);
     const gerceklesenOperasyon = emir.operasyonlar.reduce((t: Prisma.Decimal, o: any) => t.add(D(o.gerceklesenDakika).mul(o.saatlikMaliyet).div(60)), D(0));
-    const planlanan = planlananMalzeme.add(planlananOperasyon);
-    const gerceklesen = gerceklesenMalzeme.add(gerceklesenOperasyon);
+    // Operasyonun işçilik / makine / genel gider kırılımı (emirdeki saatlik kopya).
+    const kirilim = (alan: "planlananDakika" | "gerceklesenDakika") => emir.operasyonlar.reduce((t: { iscilik: Prisma.Decimal; makine: Prisma.Decimal; genelGider: Prisma.Decimal }, o: any) => {
+      const k = operasyonKirilimi({ dakika: D(o[alan]), iscilikSaatlik: D(o.iscilikSaatlik ?? 0), makineSaatlik: D(o.makineSaatlik ?? 0), genelGiderSaatlik: D(o.genelGiderSaatlik ?? 0) });
+      return { iscilik: t.iscilik.add(k.iscilik), makine: t.makine.add(k.makine), genelGider: t.genelGider.add(k.genelGider) };
+    }, { iscilik: D(0), makine: D(0), genelGider: D(0) });
+    const planKirilim = kirilim("planlananDakika");
+    const gercekKirilim = kirilim("gerceklesenDakika");
+    const planlananEkGider = (emir.giderler ?? []).reduce((t: Prisma.Decimal, g: any) => t.add(g.planlananTutar), D(0)).mul(planOrani);
+    const gerceklesenEkGider = (emir.giderler ?? []).reduce((t: Prisma.Decimal, g: any) => t.add(g.gerceklesenTutar), D(0));
+    const planlanan = planlananMalzeme.add(planlananOperasyon).add(planlananEkGider);
+    const gerceklesen = gerceklesenMalzeme.add(gerceklesenOperasyon).add(gerceklesenEkGider);
     const sapma = gerceklesen.sub(planlanan);
-    return { emirId: emir.id, no: emir.no, tarih: emir.tarih, durum: emir.durum, stok: emir.stok, planlananMiktar: emir.planlananMiktar, uretilenMiktar: emir.uretilenMiktar, planOrani: planOrani.toFixed(4), kalemler: { malzeme: { planlanan: planlananMalzeme.toFixed(4), gerceklesen: gerceklesenMalzeme.toFixed(4), sapma: gerceklesenMalzeme.sub(planlananMalzeme).toFixed(4) }, operasyon: { planlanan: planlananOperasyon.toFixed(4), gerceklesen: gerceklesenOperasyon.toFixed(4), sapma: gerceklesenOperasyon.sub(planlananOperasyon).toFixed(4) } }, toplamlar: { planlanan: planlanan.toFixed(4), gerceklesen: gerceklesen.toFixed(4), sapma: sapma.toFixed(4), sapmaYuzdesi: planlanan.isZero() ? "0.00" : sapma.mul(100).div(planlanan).toFixed(2) } };
+    const kalem = (p: Prisma.Decimal, g: Prisma.Decimal) => ({ planlanan: p.toFixed(4), gerceklesen: g.toFixed(4), sapma: g.sub(p).toFixed(4) });
+    return {
+      emirId: emir.id, no: emir.no, tarih: emir.tarih, durum: emir.durum, stok: emir.stok, planlananMiktar: emir.planlananMiktar, uretilenMiktar: emir.uretilenMiktar, planOrani: planOrani.toFixed(4),
+      kalemler: {
+        malzeme: kalem(planlananMalzeme, gerceklesenMalzeme),
+        operasyon: kalem(planlananOperasyon, gerceklesenOperasyon),
+        iscilik: kalem(planKirilim.iscilik.mul(planOrani), gercekKirilim.iscilik),
+        makine: kalem(planKirilim.makine.mul(planOrani), gercekKirilim.makine),
+        genelGider: kalem(planKirilim.genelGider.mul(planOrani), gercekKirilim.genelGider),
+        ekGider: kalem(planlananEkGider, gerceklesenEkGider),
+      },
+      ekGiderler: (emir.giderler ?? []).map((g: any) => ({ ad: g.ad, yontem: g.yontem, deger: D(g.deger).toFixed(), ...kalem(D(g.planlananTutar).mul(planOrani), D(g.gerceklesenTutar)) })),
+      toplamlar: { planlanan: planlanan.toFixed(4), gerceklesen: gerceklesen.toFixed(4), sapma: sapma.toFixed(4), sapmaYuzdesi: planlanan.isZero() ? "0.00" : sapma.mul(100).div(planlanan).toFixed(2) },
+    };
   }
 
   /** Kapsamın (genel ya da tek varyant) güncel reçetesi; varyantId boşsa genel reçete. */
@@ -195,7 +219,7 @@ export class UretimService {
     const recete = await this.prisma.tenantIslem(tenantId, (tx) => tx.urunRecetesi.findFirst({
       where: { stokId, varyantId, durum: { in: ["taslak", "onay_bekliyor", "aktif"] } },
       orderBy: { surum: "desc" },
-      include: { ciktilar: { orderBy: { id: "asc" }, include: { stok: { select: { id: true, kod: true, ad: true, anaBirim: true } } } }, operasyonlar: { orderBy: { sira: "asc" }, include: { isMerkezi: true } }, kalemler: { orderBy: { id: "asc" }, include: { malzeme: { select: { id: true, kod: true, ad: true, anaBirim: true, mevcutMiktar: true, ortalamaMaliyet: true } }, malzemeVaryant: { select: { id: true, kod: true, ad: true } } } } },
+      include: { ciktilar: { orderBy: { id: "asc" }, include: { stok: { select: { id: true, kod: true, ad: true, anaBirim: true } } } }, operasyonlar: { orderBy: { sira: "asc" }, include: { isMerkezi: true } }, giderler: { orderBy: { sira: "asc" } }, kalemler: { orderBy: { id: "asc" }, include: { malzeme: { select: { id: true, kod: true, ad: true, anaBirim: true, mevcutMiktar: true, ortalamaMaliyet: true } }, malzemeVaryant: { select: { id: true, kod: true, ad: true } } } } },
     }));
     // Dört göz: sürümü hazırlayan onay düğmesini görmez.
     return recete && { ...recete, kalemler: recete.kalemler.map(receteKalemGorunumu), onaylayabilir: recete.olusturanUserId !== userId };
@@ -215,7 +239,7 @@ export class UretimService {
 
   async receteSurumleri(stokId: string) {
     const { tenantId } = aktifBaglam();
-    return this.prisma.tenantIslem(tenantId, (tx) => tx.urunRecetesi.findMany({ where: { stokId }, orderBy: { surum: "desc" }, include: { varyant: { select: { id: true, kod: true, ad: true } }, operasyonlar: { orderBy: { sira: "asc" }, include: { isMerkezi: true } }, kalemler: { include: { malzeme: { select: { id: true, kod: true, ad: true, anaBirim: true } } } }, _count: { select: { uretimEmirleri: true } } } })).then((surumler) => surumler.map((r) => ({ ...r, kalemler: r.kalemler.map(receteKalemGorunumu) })));
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.urunRecetesi.findMany({ where: { stokId }, orderBy: { surum: "desc" }, include: { varyant: { select: { id: true, kod: true, ad: true } }, operasyonlar: { orderBy: { sira: "asc" }, include: { isMerkezi: true } }, giderler: { orderBy: { sira: "asc" } }, kalemler: { include: { malzeme: { select: { id: true, kod: true, ad: true, anaBirim: true } } } }, _count: { select: { uretimEmirleri: true } } } })).then((surumler) => surumler.map((r) => ({ ...r, kalemler: r.kalemler.map(receteKalemGorunumu) })));
   }
 
   async receteKaydet(stokId: string, girdi: z.infer<typeof receteKaydetSemasi>) {
@@ -259,8 +283,8 @@ export class UretimService {
       }
       const son = await tx.urunRecetesi.findFirst({ where: { stokId }, orderBy: { surum: "desc" }, select: { surum: true } });
       return tx.urunRecetesi.create({
-        data: { tenantId, stokId, varyantId: girdi.varyantId ?? null, surum: (son?.surum ?? 0) + 1, durum: "taslak", aktif: false, ciktiMiktari: D(girdi.ciktiMiktari), aciklama: girdi.aciklama, degisiklikNedeni: girdi.degisiklikNedeni, yururlukBaslangic: girdi.yururlukBaslangic ? new Date(girdi.yururlukBaslangic) : null, kaliteKontrolGerekli: girdi.kaliteKontrolGerekli, olusturanUserId: userId, yanUrunMaliyetYontemi: girdi.yanUrunMaliyetYontemi, kalemler: { create: kalemVerileri }, ciktilar: { create: girdi.ciktilar.map((c) => ({ tenantId, stokId: c.stokId, varyantId: c.varyantId, tip: c.tip, miktar: D(c.miktar), birimMaliyet: girdi.yanUrunMaliyetYontemi === "sabit_deger" && c.birimMaliyet != null ? D(c.birimMaliyet) : null })) }, operasyonlar: { create: girdi.operasyonlar.map((o, index) => ({ tenantId, isMerkeziId: o.isMerkeziId, sira: index + 1, operasyonKodu: o.operasyonKodu, operasyonAdi: o.operasyonAdi, hazirlikDakika: D(o.hazirlikDakika), cevrimDakika: D(o.cevrimDakika) })) } },
-        include: { kalemler: true },
+        data: { tenantId, stokId, varyantId: girdi.varyantId ?? null, surum: (son?.surum ?? 0) + 1, durum: "taslak", aktif: false, ciktiMiktari: D(girdi.ciktiMiktari), aciklama: girdi.aciklama, degisiklikNedeni: girdi.degisiklikNedeni, yururlukBaslangic: girdi.yururlukBaslangic ? new Date(girdi.yururlukBaslangic) : null, kaliteKontrolGerekli: girdi.kaliteKontrolGerekli, olusturanUserId: userId, yanUrunMaliyetYontemi: girdi.yanUrunMaliyetYontemi, kalemler: { create: kalemVerileri }, ciktilar: { create: girdi.ciktilar.map((c) => ({ tenantId, stokId: c.stokId, varyantId: c.varyantId, tip: c.tip, miktar: D(c.miktar), birimMaliyet: girdi.yanUrunMaliyetYontemi === "sabit_deger" && c.birimMaliyet != null ? D(c.birimMaliyet) : null })) }, operasyonlar: { create: girdi.operasyonlar.map((o, index) => ({ tenantId, isMerkeziId: o.isMerkeziId, sira: index + 1, operasyonKodu: o.operasyonKodu, operasyonAdi: o.operasyonAdi, hazirlikDakika: D(o.hazirlikDakika), cevrimDakika: D(o.cevrimDakika) })) }, giderler: { create: girdi.giderler.map((g, index) => ({ tenantId, sira: index + 1, ad: g.ad, yontem: g.yontem, deger: D(g.deger) })) } },
+        include: { kalemler: true, giderler: true },
       });
     });
   }
@@ -376,7 +400,7 @@ export class UretimService {
         throw hata;
       }
       // Varyantın kendi onaylı reçetesi varsa o, yoksa genel reçete kullanılır.
-      const receteBul = (varyantId: string | null) => tx.urunRecetesi.findFirst({ where: { stokId: girdi.stokId, varyantId, durum: "aktif", aktif: true, OR: [{ yururlukBaslangic: null }, { yururlukBaslangic: { lte: emirTarihi } }], AND: [{ OR: [{ yururlukBitis: null }, { yururlukBitis: { gte: emirTarihi } }] }] }, orderBy: { surum: "desc" }, include: { kalemler: { include: { malzeme: { select: { kod: true, anaBirim: true, ortalamaMaliyet: true } } } }, ciktilar: true, operasyonlar: { orderBy: { sira: "asc" }, include: { isMerkezi: { select: { saatlikMaliyet: true, gunlukKapasiteDakika: true, verimlilikYuzdesi: true } } } } } });
+      const receteBul = (varyantId: string | null) => tx.urunRecetesi.findFirst({ where: { stokId: girdi.stokId, varyantId, durum: "aktif", aktif: true, OR: [{ yururlukBaslangic: null }, { yururlukBaslangic: { lte: emirTarihi } }], AND: [{ OR: [{ yururlukBitis: null }, { yururlukBitis: { gte: emirTarihi } }] }] }, orderBy: { surum: "desc" }, include: { kalemler: { include: { malzeme: { select: { kod: true, anaBirim: true, ortalamaMaliyet: true } } } }, ciktilar: true, giderler: { orderBy: { sira: "asc" } }, operasyonlar: { orderBy: { sira: "asc" }, include: { isMerkezi: { select: { saatlikMaliyet: true, iscilikSaatlik: true, makineSaatlik: true, genelGiderSaatlik: true, gunlukKapasiteDakika: true, verimlilikYuzdesi: true } } } } } });
       const recete = (girdi.varyantId ? await receteBul(girdi.varyantId) : null) ?? await receteBul(null);
       if (!recete?.kalemler.length) throw new BadRequestException(girdi.varyantId ? "Bu varyant için üretim tarihinde geçerli, onaylı reçete yok (ne varyanta özel ne genel)" : "Bu stok kartında üretim tarihinde geçerli, onaylı reçete yok");
       const depo = await tx.depo.findFirst({ where: { id: girdi.hedefDepoId, aktif: true } });
@@ -398,14 +422,18 @@ export class UretimService {
       // tatiller yok, arife yarım (kapasite hesabıyla aynı).
       const takvimAyari = this.takvim ? { baslangicSaati: await this.takvim.gunBaslangicSaati(tx), tatiller: await this.takvim.tatilHaritasi(tx, emirTarihi, new Date(emirTarihi.getTime() + 730 * 86400000)) } : {};
       const takvim = operasyonlariPlanla(new Date(`${girdi.tarih}T00:00:00`), recete.operasyonlar.map((o) => ({ o, dakika: D(o.hazirlikDakika).add(D(o.cevrimDakika).mul(girdi.planlananMiktar)).toDecimalPlaces(2), gunlukKapasiteDakika: o.isMerkezi.gunlukKapasiteDakika, verimlilikYuzdesi: o.isMerkezi.verimlilikYuzdesi })), takvimAyari);
-      const operasyonlar = takvim.map(({ o, dakika, baslangic, bitis }) => ({ tenantId, isMerkeziId: o.isMerkeziId, sira: o.sira, operasyonKodu: o.operasyonKodu, operasyonAdi: o.operasyonAdi, planlananDakika: dakika, saatlikMaliyet: o.isMerkezi.saatlikMaliyet, planlananBaslangic: baslangic, planlananBitis: bitis }));
+      const operasyonlar = takvim.map(({ o, dakika, baslangic, bitis }) => ({ tenantId, isMerkeziId: o.isMerkeziId, sira: o.sira, operasyonKodu: o.operasyonKodu, operasyonAdi: o.operasyonAdi, planlananDakika: dakika, saatlikMaliyet: o.isMerkezi.saatlikMaliyet, iscilikSaatlik: o.isMerkezi.iscilikSaatlik, makineSaatlik: o.isMerkezi.makineSaatlik, genelGiderSaatlik: o.isMerkezi.genelGiderSaatlik, planlananBaslangic: baslangic, planlananBitis: bitis }));
       const planlananMalzeme = recete.kalemler.reduce((t, k) => t.add(k.miktar.mul(oran).mul(D(1).add(k.fireOrani.div(100))).mul(k.malzeme.ortalamaMaliyet)), D(0));
       const planlananOperasyon = operasyonlar.reduce((t, o) => t.add(D(o.planlananDakika).mul(o.saatlikMaliyet).div(60)), D(0));
-      const planlananMaliyet = planlananMalzeme.add(planlananOperasyon).toDecimalPlaces(4);
+      // Ek giderler emre kopyalanır; plan standart malzeme maliyetiyle hesaplanır.
+      const planlananMiktar = D(girdi.planlananMiktar);
+      const giderler = (recete.giderler ?? []).map((g) => ({ tenantId, sira: g.sira, ad: g.ad, yontem: g.yontem, deger: g.deger, planlananTutar: ekGiderTutari(g, { malzeme: planlananMalzeme, miktar: planlananMiktar, emirMiktari: planlananMiktar }) }));
+      const planlananEkGider = giderler.reduce((t, g) => t.add(g.planlananTutar), D(0));
+      const planlananMaliyet = planlananMalzeme.add(planlananOperasyon).add(planlananEkGider).toDecimalPlaces(4);
       // Girilmediyse operasyon planının bittiği gün; operasyon yoksa emir günü.
       const sonOperasyon = operasyonlar.at(-1)?.planlananBitis;
       const planlananBitis = girdi.planlananBitis ? new Date(girdi.planlananBitis) : sonOperasyon ? new Date(tarihTR(sonOperasyon)) : emirTarihi;
-      return tx.uretimEmri.create({ data: { tenantId, no: `URT-${yil}-${String(sayac.sonSira).padStart(6, "0")}`, stokId: girdi.stokId, varyantId: girdi.varyantId ?? null, receteId: recete.id, hedefDepoId: girdi.hedefDepoId, satisSiparisSatirId: girdi.satisSiparisSatirId, planlananMiktar: D(girdi.planlananMiktar), planlananMaliyet, planlananBitis, kaliteKontrolGerekli: recete.kaliteKontrolGerekli, tarih: emirTarihi, aciklama: girdi.aciklama, kalemler: { create: malzemeIhtiyaclari.map(({ k, miktar }) => ({ tenantId, malzemeStokId: k.malzemeStokId, malzemeVaryantId: k.malzemeVaryantId, planlananMiktar: miktar, planlananBirimMaliyet: k.malzeme.ortalamaMaliyet })) }, ciktilar: { create: (recete.ciktilar ?? []).map((c) => ({ tenantId, receteCiktiId: c.id, stokId: c.stokId, varyantId: c.varyantId, tip: c.tip, planlananMiktar: c.miktar.mul(oran).toDecimalPlaces(3) })) }, operasyonlar: { create: operasyonlar } }, include: { kalemler: true, operasyonlar: true, ciktilar: true, satisSiparisSatiri: { include: { belge: true } } } });
+      return tx.uretimEmri.create({ data: { tenantId, no: `URT-${yil}-${String(sayac.sonSira).padStart(6, "0")}`, stokId: girdi.stokId, varyantId: girdi.varyantId ?? null, receteId: recete.id, hedefDepoId: girdi.hedefDepoId, satisSiparisSatirId: girdi.satisSiparisSatirId, planlananMiktar: D(girdi.planlananMiktar), planlananMaliyet, planlananBitis, kaliteKontrolGerekli: recete.kaliteKontrolGerekli, tarih: emirTarihi, aciklama: girdi.aciklama, kalemler: { create: malzemeIhtiyaclari.map(({ k, miktar }) => ({ tenantId, malzemeStokId: k.malzemeStokId, malzemeVaryantId: k.malzemeVaryantId, planlananMiktar: miktar, planlananBirimMaliyet: k.malzeme.ortalamaMaliyet })) }, ciktilar: { create: (recete.ciktilar ?? []).map((c) => ({ tenantId, receteCiktiId: c.id, stokId: c.stokId, varyantId: c.varyantId, tip: c.tip, planlananMiktar: c.miktar.mul(oran).toDecimalPlaces(3) })) }, operasyonlar: { create: operasyonlar }, giderler: { create: giderler } }, include: { kalemler: true, operasyonlar: true, ciktilar: true, giderler: true, satisSiparisSatiri: { include: { belge: true } } } });
     });
   }
 
@@ -529,7 +557,7 @@ export class UretimService {
         if (onceki.uretimEmriId !== id) throw new BadRequestException("Bildirim anahtarı başka bir üretim emrinde kullanılmış");
         return onceki;
       }
-      const emir = await tx.uretimEmri.findUnique({ where: { id, tenantId }, include: { stok: true, recete: { select: { yanUrunMaliyetYontemi: true } }, operasyonlar: { select: { planlananDakika: true, saatlikMaliyet: true, durum: true } }, ciktilar: { include: { stok: true, receteCikti: { select: { birimMaliyet: true } } } }, kalemler: { include: { malzeme: true, rezervasyonlar: true } } } });
+      const emir = await tx.uretimEmri.findUnique({ where: { id, tenantId }, include: { stok: true, recete: { select: { yanUrunMaliyetYontemi: true } }, operasyonlar: { select: { planlananDakika: true, saatlikMaliyet: true, durum: true } }, giderler: true, ciktilar: { include: { stok: true, receteCikti: { select: { birimMaliyet: true } } } }, kalemler: { include: { malzeme: true, rezervasyonlar: true } } } });
       if (!emir) throw new NotFoundException("Üretim emri bulunamadı");
       if (!["uretimde", "kismen_tamamlandi"].includes(emir.durum)) throw new BadRequestException("Yalnız üretimde olan emre bildirim girilebilir");
       const uretilen = D(girdi.uretilenMiktar);
@@ -561,9 +589,14 @@ export class UretimService {
       // (standart maliyet; gerçek süre farkı sapma raporunda görünür). Saatlik
       // maliyet ya da operasyon yoksa pay sıfırdır.
       const operasyonMaliyeti = planlananOperasyonMaliyeti(emir.operasyonlar).mul(uretilen).div(emir.planlananMiktar).toDecimalPlaces(4);
+      // Reçete ek giderleri: yüzde bu bildirimin gerçek malzemesine, birim başı
+      // üretilene, emir başı üretilen orana göre uygulanır.
+      const ekGiderler = (emir.giderler ?? []).map((g) => ({ id: g.id, tutar: ekGiderTutari(g, { malzeme: toplamMaliyet, miktar: uretilen, emirMiktari: D(emir.planlananMiktar) }) }));
+      const ekGiderMaliyeti = ekGiderler.reduce((t, g) => t.add(g.tutar), D(0));
+      for (const g of ekGiderler) if (!g.tutar.isZero()) await tx.uretimEmriGider.update({ where: { id: g.id }, data: { gerceklesenTutar: { increment: g.tutar } } });
       const ciktiMiktarlari = (emir.ciktilar ?? []).map((c) => D(c.planlananMiktar).mul(uretilen).div(emir.planlananMiktar).toDecimalPlaces(3));
       const dagitim = maliyetDagit({
-        toplam: toplamMaliyet.add(operasyonMaliyeti),
+        toplam: toplamMaliyet.add(operasyonMaliyeti).add(ekGiderMaliyeti),
         mamulMiktar: uretilen,
         mamulSatisFiyati: emir.stok.satisFiyatiDoviz === "TRY" ? emir.stok.satisFiyati : null,
         yontem: emir.recete?.yanUrunMaliyetYontemi ?? "sifir",
@@ -588,9 +621,9 @@ export class UretimService {
         await tx.uretimEmriCikti.update({ where: { id: cikti.id }, data: { uretilenMiktar: { increment: miktar } } });
       }
       const tamamlandi = yeniToplam.eq(emir.planlananMiktar);
-      const bildirim = await tx.uretimBildirimi.create({ data: { tenantId, uretimEmriId: id, idempotencyAnahtari: girdi.idempotencyAnahtari, uretilenMiktar: uretilen, hurdaMiktari: D(girdi.hurdaMiktari), hurdaNedeni: girdi.hurdaNedeni, yenidenIslemeMiktari: D(girdi.yenidenIslemeMiktari), yenidenIslemeNedeni: girdi.yenidenIslemeNedeni, toplamMaliyet, operasyonMaliyeti, mamulBirimMaliyeti: birimMaliyet, bildirimTarihi: new Date(girdi.bildirimTarihi ?? Date.now()), aciklama: girdi.aciklama, sarflar: { create: sarfKayitlari.map((s) => ({ tenantId, ...s })) } }, include: { sarflar: true } });
+      const bildirim = await tx.uretimBildirimi.create({ data: { tenantId, uretimEmriId: id, idempotencyAnahtari: girdi.idempotencyAnahtari, uretilenMiktar: uretilen, hurdaMiktari: D(girdi.hurdaMiktari), hurdaNedeni: girdi.hurdaNedeni, yenidenIslemeMiktari: D(girdi.yenidenIslemeMiktari), yenidenIslemeNedeni: girdi.yenidenIslemeNedeni, toplamMaliyet, operasyonMaliyeti, ekGiderMaliyeti, mamulBirimMaliyeti: birimMaliyet, bildirimTarihi: new Date(girdi.bildirimTarihi ?? Date.now()), aciklama: girdi.aciklama, sarflar: { create: sarfKayitlari.map((s) => ({ tenantId, ...s })) } }, include: { sarflar: true } });
       if (karantinaDepo) await tx.uretimKaliteKontrol.create({ data: { tenantId, uretimEmriId: id, uretimBildirimiId: bildirim.id, karantinaDepoId: karantinaDepo.id, miktar: uretilen } });
-      await tx.uretimEmri.update({ where: { id, tenantId }, data: { durum: karantinaDepo ? "kalite_bekliyor" : tamamlandi ? "tamamlandi" : "kismen_tamamlandi", uretilenMiktar: { increment: uretilen }, hurdaMiktari: { increment: D(girdi.hurdaMiktari) }, yenidenIslemeMiktari: { increment: D(girdi.yenidenIslemeMiktari) }, toplamMaliyet: { increment: toplamMaliyet }, tamamlanmaTarihi: !karantinaDepo && tamamlandi ? new Date() : null } });
+      await tx.uretimEmri.update({ where: { id, tenantId }, data: { durum: karantinaDepo ? "kalite_bekliyor" : tamamlandi ? "tamamlandi" : "kismen_tamamlandi", uretilenMiktar: { increment: uretilen }, hurdaMiktari: { increment: D(girdi.hurdaMiktari) }, yenidenIslemeMiktari: { increment: D(girdi.yenidenIslemeMiktari) }, toplamMaliyet: { increment: toplamMaliyet.add(ekGiderMaliyeti) }, tamamlanmaTarihi: !karantinaDepo && tamamlandi ? new Date() : null } });
       if (tamamlandi && !karantinaDepo) await this.emirRezervasyonlariniCoz(tx, id);
       return bildirim;
     });

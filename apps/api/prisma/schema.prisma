@@ -555,6 +555,14 @@ enum YanUrunMaliyetYontemi {
   satis_degeri
 }
 
+/// Reçete ek giderinin hesap biçimi: malzeme maliyetinin yüzdesi, üretilen
+/// birim başına TL ya da emir başına sabit TL.
+enum ReceteGiderYontemi {
+  malzeme_yuzdesi
+  birim_basi
+  emir_basi
+}
+
 /// Gerçek/tüzel kişi ayrımı (CARI-13)
 enum KisiTip {
   gercek
@@ -1473,6 +1481,7 @@ model UrunRecetesi {
   uretimEmirleri UretimEmri[]
   operasyonlar   ReceteOperasyonu[]
   ciktilar       UrunRecetesiCikti[]
+  giderler       ReceteGider[]
 
   @@unique([tenantId, stokId, surum])
   @@index([tenantId, stokId, varyantId])
@@ -1502,18 +1511,18 @@ model UrunRecetesiCikti {
 }
 
 model UrunRecetesiKalem {
-  id               String  @id @default(uuid()) @db.Uuid
-  tenantId         String  @map("tenant_id") @db.Uuid
-  receteId         String  @map("recete_id") @db.Uuid
-  malzemeStokId    String  @map("malzeme_stok_id") @db.Uuid
-  malzemeVaryantId String? @map("malzeme_varyant_id") @db.Uuid
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  receteId         String   @map("recete_id") @db.Uuid
+  malzemeStokId    String   @map("malzeme_stok_id") @db.Uuid
+  malzemeVaryantId String?  @map("malzeme_varyant_id") @db.Uuid
   /// Ana birim karşılığı; ton kartına mg girilebildiği için 12 basamak.
-  miktar           Decimal @db.Decimal(24, 12)
+  miktar           Decimal  @db.Decimal(24, 12)
   /// Girilen birim (kartın ek birimi ya da aynı ölçü ailesinden, ör. kg kartında mg); boşsa ana birim.
   birim            String?
   /// `birim` cinsinden girilen miktar; ekranda bu gösterilir.
   girilenMiktar    Decimal? @map("girilen_miktar") @db.Decimal(20, 8)
-  fireOrani        Decimal @default(0) @map("fire_orani") @db.Decimal(10, 6)
+  fireOrani        Decimal  @default(0) @map("fire_orani") @db.Decimal(10, 6)
 
   recete         UrunRecetesi @relation(fields: [receteId], references: [id], onDelete: Cascade)
   malzeme        StokKart     @relation("ReceteMalzemesi", fields: [malzemeStokId], references: [id])
@@ -1531,7 +1540,11 @@ model IsMerkezi {
   ad                   String
   gunlukKapasiteDakika Int      @default(480) @map("gunluk_kapasite_dakika")
   verimlilikYuzdesi    Decimal  @default(100) @map("verimlilik_yuzdesi") @db.Decimal(5, 2)
+  /// İşçilik + makine + genel gider; operasyon maliyeti bununla hesaplanır.
   saatlikMaliyet       Decimal  @default(0) @map("saatlik_maliyet") @db.Decimal(15, 4)
+  iscilikSaatlik       Decimal  @default(0) @map("iscilik_saatlik") @db.Decimal(15, 4)
+  makineSaatlik        Decimal  @default(0) @map("makine_saatlik") @db.Decimal(15, 4)
+  genelGiderSaatlik    Decimal  @default(0) @map("genel_gider_saatlik") @db.Decimal(15, 4)
   aktif                Boolean  @default(true)
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
@@ -1602,6 +1615,7 @@ model UretimEmri {
   sarfDuzeltmeleri   UretimSarfDuzeltme[]
   satisSiparisSatiri BelgeSatir?            @relation(fields: [satisSiparisSatirId], references: [id], onDelete: SetNull)
   ciktilar           UretimEmriCikti[]
+  giderler           UretimEmriGider[]
 
   @@unique([tenantId, no])
   @@index([tenantId, varyantId])
@@ -1643,6 +1657,10 @@ model UretimEmriOperasyonu {
   planlananDakika    Decimal              @map("planlanan_dakika") @db.Decimal(12, 2)
   gerceklesenDakika  Decimal              @default(0) @map("gerceklesen_dakika") @db.Decimal(12, 2)
   saatlikMaliyet     Decimal              @default(0) @map("saatlik_maliyet") @db.Decimal(15, 4)
+  /// Emir açılırken iş merkezinden kopyalanan kırılım (toplamı saatlikMaliyet).
+  iscilikSaatlik     Decimal              @default(0) @map("iscilik_saatlik") @db.Decimal(15, 4)
+  makineSaatlik      Decimal              @default(0) @map("makine_saatlik") @db.Decimal(15, 4)
+  genelGiderSaatlik  Decimal              @default(0) @map("genel_gider_saatlik") @db.Decimal(15, 4)
   planlananBaslangic DateTime             @map("planlanan_baslangic")
   planlananBitis     DateTime             @map("planlanan_bitis")
   fiiliBaslangic     DateTime?            @map("fiili_baslangic")
@@ -1927,6 +1945,8 @@ model UretimBildirimi {
   toplamMaliyet        Decimal  @default(0) @map("toplam_maliyet") @db.Decimal(15, 4)
   /// Planlanan operasyon maliyetinin bu bildirime düşen payı (standart maliyet).
   operasyonMaliyeti    Decimal  @default(0) @map("operasyon_maliyeti") @db.Decimal(15, 4)
+  /// Reçete ek giderlerinin bu bildirime düşen payı.
+  ekGiderMaliyeti      Decimal  @default(0) @map("ek_gider_maliyeti") @db.Decimal(15, 4)
   /// Ana ürünün stoğa girdiği birim maliyet (yan ürün payı düşülmüş).
   mamulBirimMaliyeti   Decimal? @map("mamul_birim_maliyeti") @db.Decimal(15, 4)
   bildirimTarihi       DateTime @map("bildirim_tarihi")
@@ -4524,4 +4544,41 @@ model BildirimKullaniciAyari {
 
   @@unique([tenantId, userId])
   @@map("bildirim_kullanici_ayarlari")
+}
+
+/// Reçetenin süreye bağlı olmayan ek gideri (enerji, ambalaj, genel gider payı…).
+model ReceteGider {
+  id       String             @id @default(uuid()) @db.Uuid
+  tenantId String             @map("tenant_id") @db.Uuid
+  receteId String             @map("recete_id") @db.Uuid
+  sira     Int
+  ad       String
+  yontem   ReceteGiderYontemi
+  /// Yüzde ya da TL (yönteme göre).
+  deger    Decimal            @db.Decimal(15, 4)
+
+  recete UrunRecetesi @relation(fields: [receteId], references: [id], onDelete: Cascade)
+
+  @@unique([receteId, sira])
+  @@index([tenantId])
+  @@map("recete_giderleri")
+}
+
+/// Emir açılırken reçeteden kopyalanan ek gider; plan ve gerçekleşen ayrı izlenir.
+model UretimEmriGider {
+  id               String             @id @default(uuid()) @db.Uuid
+  tenantId         String             @map("tenant_id") @db.Uuid
+  uretimEmriId     String             @map("uretim_emri_id") @db.Uuid
+  sira             Int
+  ad               String
+  yontem           ReceteGiderYontemi
+  deger            Decimal            @db.Decimal(15, 4)
+  planlananTutar   Decimal            @default(0) @map("planlanan_tutar") @db.Decimal(15, 4)
+  gerceklesenTutar Decimal            @default(0) @map("gerceklesen_tutar") @db.Decimal(15, 4)
+
+  uretimEmri UretimEmri @relation(fields: [uretimEmriId], references: [id], onDelete: Cascade)
+
+  @@unique([uretimEmriId, sira])
+  @@index([tenantId])
+  @@map("uretim_emri_giderleri")
 }

@@ -30,12 +30,21 @@ export const receteKaydetSemasi = z.object({
     /** Sabit değer yönteminde birim maliyet (0 kabul edilir). */
     birimMaliyet: sifirVeyaPozitif.optional().nullable(),
   })).max(20).optional().default([]),
+  /** Süreye bağlı olmayan ek giderler (enerji, ambalaj, genel gider payı…). */
+  giderler: z.array(z.object({
+    ad: z.string().trim().min(1).max(120),
+    yontem: z.enum(["malzeme_yuzdesi", "birim_basi", "emir_basi"]),
+    deger: z.union([z.string(), z.number()]).transform(String).refine((v) => /^\d{1,11}(\.\d{1,4})?$/.test(v), "Ek gider değeri negatif olmayan, en çok 4 ondalıklı olmalı"),
+  })).max(30).optional().default([]),
   operasyonlar: z.array(z.object({
     isMerkeziId: z.string().uuid(), operasyonKodu: z.string().trim().min(1).max(30), operasyonAdi: z.string().trim().min(1).max(120),
     hazirlikDakika: z.union([z.string(), z.number()]).transform(String).refine((v) => Number(v) >= 0, "Hazırlık süresi negatif olamaz"),
     cevrimDakika: z.union([z.string(), z.number()]).transform(String).refine((v) => Number(v) >= 0, "Çevrim süresi negatif olamaz"),
   })).max(100).optional().default([]),
 }).superRefine((girdi, ctx) => {
+  girdi.giderler.forEach((g, i) => {
+    if (g.yontem === "malzeme_yuzdesi" && Number(g.deger) > 1000) ctx.addIssue({ code: "custom", path: ["giderler", i, "deger"], message: "Malzeme yüzdesi en çok %1000 olabilir" });
+  });
   if (girdi.yanUrunMaliyetYontemi === "sabit_deger") {
     girdi.ciktilar.forEach((c, i) => {
       if (c.birimMaliyet == null) ctx.addIssue({ code: "custom", path: ["ciktilar", i, "birimMaliyet"], message: "Sabit değer yönteminde her yan/ortak ürüne birim maliyet girin" });
@@ -46,8 +55,15 @@ export const receteKaydetSemasi = z.object({
 export const isMerkeziKaydetSemasi = z.object({
   kod: z.string().trim().min(1).max(30).transform((v) => v.toUpperCase()), ad: z.string().trim().min(2).max(120),
   gunlukKapasiteDakika: z.coerce.number().int().min(1).max(1440).default(480),
-  verimlilikYuzdesi: z.coerce.number().min(1).max(200).default(100), saatlikMaliyet: z.coerce.number().min(0).default(0), aktif: z.boolean().default(true),
-});
+  verimlilikYuzdesi: z.coerce.number().min(1).max(200).default(100),
+  /** Saatlik maliyet kırılımı; toplamı operasyon maliyetidir. */
+  iscilikSaatlik: z.coerce.number().min(0).default(0),
+  makineSaatlik: z.coerce.number().min(0).default(0),
+  genelGiderSaatlik: z.coerce.number().min(0).default(0),
+  /** Eski istemciler: yalnız toplam gönderilirse işçilik sayılır. */
+  saatlikMaliyet: z.coerce.number().min(0).optional(),
+  aktif: z.boolean().default(true),
+}).transform(({ saatlikMaliyet, ...g }) => (g.iscilikSaatlik + g.makineSaatlik + g.genelGiderSaatlik === 0 && saatlikMaliyet ? { ...g, iscilikSaatlik: saatlikMaliyet } : g));
 
 export const operasyonTamamlaSemasi = z.object({
   gerceklesenDakika: z.coerce.number().positive().max(100000).optional(),

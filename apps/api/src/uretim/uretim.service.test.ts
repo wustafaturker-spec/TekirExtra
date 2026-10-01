@@ -165,6 +165,29 @@ describe("UretimService profesyonel emir akışı", () => {
     expect(prisma.uretimBildirimi.create).not.toHaveBeenCalled();
   });
 
+  it("bildirim ek giderleri mamul maliyetine ve emir toplamına katar", async () => {
+    const hareketEkle = vi.fn();
+    service = new UretimService(prisma, { hareketEkle } as any);
+    prisma.uretimBildirimi.findUnique.mockResolvedValue(null);
+    prisma.uretimBildirimi.create.mockImplementation(({ data }: { data: unknown }) => Promise.resolve({ id: "b-1", ...(data as object) }));
+    prisma.uretimEmriGider = { update: vi.fn() };
+    prisma.uretimEmri.findUnique.mockResolvedValue({
+      id: "emir-1", no: "URT-1", durum: "uretimde", stokId: "mamul-1", varyantId: null, hedefDepoId: "depo-1", kaliteKontrolGerekli: false,
+      planlananMiktar: D(10), uretilenMiktar: D(0), stok: { anaBirim: "adet", takipTipi: "yok", satisFiyati: null, satisFiyatiDoviz: "TRY" }, recete: { yanUrunMaliyetYontemi: "sifir" },
+      kalemler: [], ciktilar: [],
+      operasyonlar: [{ planlananDakika: D(60), saatlikMaliyet: D(120), durum: "planlandi" }],
+      giderler: [{ id: "g-1", yontem: "birim_basi", deger: D(2), planlananTutar: D(20) }, { id: "g-2", yontem: "emir_basi", deger: D(100), planlananTutar: D(100) }],
+    });
+
+    // 4 / 10 adet: operasyon 120 × 0,4 = 48; ek gider 2 × 4 + 100 × 0,4 = 48 → birim (48 + 48) / 4 = 24
+    const bildirim = await service.bildir("emir-1", { idempotencyAnahtari: "11111111-1111-4111-8111-111111111111", uretilenMiktar: "4", hurdaMiktari: "0", yenidenIslemeMiktari: "0", sarflar: [] } as any);
+
+    expect(bildirim.ekGiderMaliyeti.toFixed()).toBe("48");
+    expect(hareketEkle.mock.calls[0][1].birimMaliyet.toFixed()).toBe("24");
+    expect(prisma.uretimEmriGider.update.mock.calls.map((c: any) => [c[0].where.id, c[0].data.gerceklesenTutar.increment.toFixed()])).toEqual([["g-1", "8"], ["g-2", "40"]]);
+    expect(prisma.uretimEmri.update.mock.calls.at(-1)[0].data.toplamMaliyet.increment.toFixed()).toBe("48");
+  });
+
   it("iş merkezi kapasitesini verimlilik ve planlanan operasyon yüküyle hesaplar", async () => {
     prisma.isMerkezi.findMany.mockResolvedValue([{ id: "merkez-1", kod: "KESIM", ad: "Kesim", gunlukKapasiteDakika: 480, verimlilikYuzdesi: D(80), saatlikMaliyet: D(0), aktif: true }]);
     prisma.uretimEmriOperasyonu.findMany.mockResolvedValue([{ id: "op-1", isMerkeziId: "merkez-1", planlananDakika: D(300), planlananBaslangic: new Date("2026-08-24T08:00:00Z"), planlananBitis: new Date("2026-08-24T13:00:00Z"), uretimEmri: { id: "emir-1", no: "URT-1", durum: "planlandi", stok: { kod: "M-1", ad: "Mamul" } } }]);
@@ -198,14 +221,23 @@ describe("UretimService profesyonel emir akışı", () => {
     prisma.uretimEmri.findUnique.mockResolvedValue({
       id: "emir-1", no: "URT-1", tarih: new Date("2026-08-22"), durum: "tamamlandi", planlananMiktar: D(10), uretilenMiktar: D(10), stok: { kod: "M-1", ad: "Mamul", anaBirim: "adet" },
       kalemler: [{ planlananMiktar: D(20), planlananBirimMaliyet: D(5), sarfEdilenMiktar: D(22), birimMaliyet: D(5), malzeme: { kod: "H-1", ad: "Hammadde" } }],
-      operasyonlar: [{ planlananDakika: D(60), gerceklesenDakika: D(75), saatlikMaliyet: D(120), isMerkezi: { kod: "KESIM", ad: "Kesim" } }],
+      operasyonlar: [{ planlananDakika: D(60), gerceklesenDakika: D(75), saatlikMaliyet: D(120), iscilikSaatlik: D(80), makineSaatlik: D(30), genelGiderSaatlik: D(10), isMerkezi: { kod: "KESIM", ad: "Kesim" } }],
+      giderler: [{ ad: "Enerji", yontem: "birim_basi", deger: D(2), planlananTutar: D(20), gerceklesenTutar: D(22) }],
       bildirimler: [{ sarflar: [{ miktar: D(22), birimMaliyet: D(5) }] }],
     });
 
     const sonuc = await service.maliyet("emir-1");
 
-    expect(sonuc.kalemler).toEqual({ malzeme: { planlanan: "100.0000", gerceklesen: "110.0000", sapma: "10.0000" }, operasyon: { planlanan: "120.0000", gerceklesen: "150.0000", sapma: "30.0000" } });
-    expect(sonuc.toplamlar).toEqual({ planlanan: "220.0000", gerceklesen: "260.0000", sapma: "40.0000", sapmaYuzdesi: "18.18" });
+    expect(sonuc.kalemler).toEqual({
+      malzeme: { planlanan: "100.0000", gerceklesen: "110.0000", sapma: "10.0000" },
+      operasyon: { planlanan: "120.0000", gerceklesen: "150.0000", sapma: "30.0000" },
+      iscilik: { planlanan: "80.0000", gerceklesen: "100.0000", sapma: "20.0000" },
+      makine: { planlanan: "30.0000", gerceklesen: "37.5000", sapma: "7.5000" },
+      genelGider: { planlanan: "10.0000", gerceklesen: "12.5000", sapma: "2.5000" },
+      ekGider: { planlanan: "20.0000", gerceklesen: "22.0000", sapma: "2.0000" },
+    });
+    expect(sonuc.ekGiderler).toEqual([{ ad: "Enerji", yontem: "birim_basi", deger: "2", planlanan: "20.0000", gerceklesen: "22.0000", sapma: "2.0000" }]);
+    expect(sonuc.toplamlar).toEqual({ planlanan: "240.0000", gerceklesen: "282.0000", sapma: "42.0000", sapmaYuzdesi: "17.50" });
   });
 
   it("kalite kabulünde karantina stoğunu hedef depoya aktarır", async () => {
@@ -417,6 +449,24 @@ describe("UretimService profesyonel emir akışı", () => {
     prisma.urunRecetesi.findFirst.mockImplementation(async ({ where }: { where: { varyantId: string | null } }) => (where.varyantId === null ? genel : null));
     await service.emirOlustur(girdi);
     expect(prisma.uretimEmri.create.mock.calls[1][0].data.receteId).toBe(genel.id);
+  });
+
+  it("emir reçete ek giderlerini kopyalar, operasyon kırılımını alır ve planlanan maliyete katar", async () => {
+    prisma.urunRecetesi.findFirst.mockResolvedValue({ id: "recete-1", aktif: true, kaliteKontrolGerekli: false, ciktiMiktari: D(1), ciktilar: [],
+      kalemler: [{ malzemeStokId: "malzeme-1", malzemeVaryantId: null, miktar: D(2), fireOrani: D(0), malzeme: { kod: "H-1", anaBirim: "kg", ortalamaMaliyet: D(10) } }],
+      giderler: [
+        { sira: 1, ad: "Enerji", yontem: "malzeme_yuzdesi", deger: D(10) },
+        { sira: 2, ad: "Ambalaj", yontem: "birim_basi", deger: D("1.5") },
+        { sira: 3, ad: "Kalıp", yontem: "emir_basi", deger: D(40) },
+      ],
+      operasyonlar: [{ isMerkeziId: "m-1", sira: 1, operasyonKodu: "MON", operasyonAdi: "Montaj", hazirlikDakika: D(0), cevrimDakika: D(6), isMerkezi: { saatlikMaliyet: D(450), iscilikSaatlik: D(300), makineSaatlik: D(100), genelGiderSaatlik: D(50), gunlukKapasiteDakika: 480, verimlilikYuzdesi: D(100) } }] });
+
+    // 10 adet: malzeme 10×2×10 = 200; operasyon 60 dk × 450 = 450; ek: %10 → 20, 1,5×10 → 15, emir başı 40
+    await service.emirOlustur({ stokId: "11111111-1111-4111-8111-111111111111", hedefDepoId: "22222222-2222-4222-8222-222222222222", planlananMiktar: "10", tarih: "2026-08-24", aciklama: null });
+    const data = prisma.uretimEmri.create.mock.calls[0][0].data;
+    expect(data.giderler.create.map((g: { ad: string; planlananTutar: Prisma.Decimal }) => [g.ad, g.planlananTutar.toFixed()])).toEqual([["Enerji", "20"], ["Ambalaj", "15"], ["Kalıp", "40"]]);
+    expect(data.operasyonlar.create[0]).toMatchObject({ iscilikSaatlik: D(300), makineSaatlik: D(100), genelGiderSaatlik: D(50) });
+    expect(data.planlananMaliyet.toFixed()).toBe("725");
   });
 
   it("planlanan bitiş girilmezse operasyon planının bittiği gün olur", async () => {
