@@ -98,6 +98,8 @@ export class StokService {
               { barkodlar: { some: { barkod: { contains: arama } } } },
               // STK-18: tedarikcinin urun koduyla da bul
               { tedarikciler: { some: { tedarikciUrunKodu: { contains: arama, mode: "insensitive" } } } },
+              // STK-23: tedarikçinin varyant koduyla da
+              { tedarikciler: { some: { varyantKodlari: { some: { tedarikciUrunKodu: { contains: arama, mode: "insensitive" } } } } } },
               // Varyant kodu/barkoduyla da ana kart bulunur.
               { varyantlar: { some: { aktif: true, OR: [{ kod: { contains: arama, mode: "insensitive" } }, { barkod: { contains: arama } }] } } },
             ],
@@ -113,7 +115,7 @@ export class StokService {
         ...(imlec ? { cursor: { id: imlec }, skip: 1 } : {}),
         include: {
           kategori: { select: { id: true, ad: true } },
-          tedarikciler: { select: { tedarikciUrunKodu: true } },
+          tedarikciler: { select: { tedarikciUrunKodu: true, varyantKodlari: { select: { tedarikciUrunKodu: true } } } },
           birimler: { select: { ad: true, katsayi: true }, orderBy: { katsayi: "asc" } },
           // Belge satırında varyant seçimi ve varyant kodu/barkoduyla arama için.
           varyantlar: { where: { aktif: true }, orderBy: { kod: "asc" }, select: { id: true, kod: true, ad: true, barkod: true, nitelikler: true, mevcutMiktar: true, aktif: true } },
@@ -129,7 +131,7 @@ export class StokService {
       kayitlar: sayfa.map((k) => ({
         ...this.gorunum(k),
         kategori: k.kategori,
-        tedarikciUrunKodlari: k.tedarikciler.map((tedarikci) => tedarikci.tedarikciUrunKodu).filter((kod): kod is string => Boolean(kod)),
+        tedarikciUrunKodlari: k.tedarikciler.flatMap((t) => [t.tedarikciUrunKodu, ...t.varyantKodlari.map((v) => v.tedarikciUrunKodu)]).filter((kod): kod is string => Boolean(kod)),
         // STK-10: belge satırında seçilebilen ek birimler.
         birimler: k.birimler.map((b) => ({ ad: b.ad, katsayi: b.katsayi.toString() })),
         varyantlar: k.varyantlar.map((v) => ({ ...v, mevcutMiktar: v.mevcutMiktar.toString() })),
@@ -149,7 +151,10 @@ export class StokService {
           birimler: true,
           barkodlar: true,
           tedarikciler: {
-            include: { cari: { select: { id: true, kod: true, unvan: true } } },
+            include: {
+              cari: { select: { id: true, kod: true, unvan: true } },
+              varyantKodlari: { select: { id: true, varyantId: true, tedarikciUrunKodu: true } },
+            },
           },
           varyantlar: { orderBy: [{ aktif: "desc" }, { kod: "asc" }], include: { depoBakiyeleri: { include: { depo: { select: { id: true, kod: true, ad: true } } } } } },
           _count: { select: { hareketler: true } },
@@ -1106,7 +1111,7 @@ export class StokService {
           data: { varsayilan: false },
         });
       }
-      return tx.stokTedarikci.upsert({
+      const tedarikci = await tx.stokTedarikci.upsert({
         where: { tenantId_stokId_cariId: { tenantId, stokId, cariId: girdi.cariId } },
         create: {
           tenantId,
@@ -1126,7 +1131,24 @@ export class StokService {
           varsayilan: girdi.varsayilan,
         },
       });
+      if (girdi.varyantKodlari) {
+        await this.varyantlarKartin(tx, stokId, girdi.varyantKodlari.map((k) => k.varyantId));
+        await tx.stokTedarikciVaryant.deleteMany({ where: { stokTedarikciId: tedarikci.id } });
+        // Aynı varyanta iki kod verilirse sonuncusu geçerli.
+        const tekil = new Map(girdi.varyantKodlari.map((k) => [k.varyantId, k.tedarikciUrunKodu]));
+        await tx.stokTedarikciVaryant.createMany({
+          data: [...tekil].map(([varyantId, tedarikciUrunKodu]) => ({ tenantId, stokTedarikciId: tedarikci.id, varyantId, tedarikciUrunKodu })),
+        });
+      }
+      return tedarikci;
     });
+  }
+
+  private async varyantlarKartin(tx: Prisma.TransactionClient, stokId: string, varyantIdleri: string[]) {
+    const tekil = [...new Set(varyantIdleri)];
+    if (!tekil.length) return;
+    const sayi = await tx.stokVaryant.count({ where: { id: { in: tekil }, stokId } });
+    if (sayi !== tekil.length) throw new BadRequestException("Varyant bu stok kartına ait değil");
   }
 
   async tedarikciSil(stokId: string, tedarikciId: string) {

@@ -112,6 +112,8 @@ export const stokTedarikciSemasi = z.object({
   dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
   tedarikSuresiGun: z.number().int().min(0).max(365).optional().nullable(),
   varsayilan: z.boolean().default(false),
+  /** STK-23: verilirse tedarikçinin varyant kodları bu listeyle değiştirilir. */
+  varyantKodlari: z.array(z.object({ varyantId: z.string().uuid(), tedarikciUrunKodu: z.string().trim().min(1).max(64) })).optional(),
 });
 
 export const stokVaryantSemasi = z.object({

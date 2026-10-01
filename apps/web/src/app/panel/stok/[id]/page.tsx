@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { useDepolar } from "@/lib/depolar";
@@ -156,6 +156,8 @@ interface Tedarikci {
   tedarikSuresiGun: number | null;
   varsayilan: boolean;
   cari: { id: string; kod: string; unvan: string };
+  /** STK-23: tedarikçinin varyant başına kodu. */
+  varyantKodlari?: { id: string; varyantId: string; tedarikciUrunKodu: string }[];
 }
 interface Varyant { id: string; kod: string; ad: string; nitelikler: Record<string, string>; barkod: string | null; alisFiyati: string | null; satisFiyati: string | null; mevcutMiktar: string; aktif: boolean }
 interface StokFiyat { id: string; varyantId: string | null; tip: "alis" | "satis"; dovizCinsi: string; tutar: string; aktif: boolean }
@@ -577,10 +579,10 @@ export default function StokDetaySayfasi() {
         <TabPanel idPrefix="stok-detay" value="tedarikciler"><TedarikcilerSekmesi
           detay={detay}
           cariler={cariler}
-          onEkle={(govde) =>
+          onEkle={(govde, mesaj) =>
             islem(
               () => api(`/stok/${id}/tedarikciler`, { method: "POST", body: JSON.stringify(govde) }),
-              "Tedarikçi eklendi.",
+              mesaj ?? "Tedarikçi eklendi.",
             )
           }
           onSil={(tedarikciId) =>
@@ -1482,9 +1484,34 @@ function TedarikcilerSekmesi({
 }: {
   detay: StokDetay;
   cariler: CariOzet[];
-  onEkle: (govde: Record<string, unknown>) => Promise<boolean>;
+  onEkle: (govde: Record<string, unknown>, mesaj?: string) => Promise<boolean>;
   onSil: (tedarikciId: string) => void;
 }) {
+  // STK-23: varyantlı kartta tedarikçinin varyant başına kodu.
+  const varyantlar = (detay.varyantlar ?? []).filter((v) => v.aktif);
+  const [kodDuzenlenen, setKodDuzenlenen] = useState<string | null>(null);
+  const [varyantKodlari, setVaryantKodlari] = useState<Record<string, string>>({});
+
+  function kodlariAc(t: Tedarikci) {
+    setKodDuzenlenen(t.id);
+    setVaryantKodlari(Object.fromEntries((t.varyantKodlari ?? []).map((k) => [k.varyantId, k.tedarikciUrunKodu])));
+  }
+
+  async function kodlariKaydet(t: Tedarikci) {
+    const kaydedildi = await onEkle({
+      cariId: t.cariId,
+      tedarikciUrunKodu: t.tedarikciUrunKodu,
+      alisFiyati: t.alisFiyati,
+      dovizCinsi: t.dovizCinsi,
+      tedarikSuresiGun: t.tedarikSuresiGun,
+      varsayilan: t.varsayilan,
+      varyantKodlari: Object.entries(varyantKodlari)
+        .map(([varyantId, kod]) => ({ varyantId, tedarikciUrunKodu: kod.trim() }))
+        .filter((k) => k.tedarikciUrunKodu !== ""),
+    }, "Varyant kodları kaydedildi.");
+    if (kaydedildi) setKodDuzenlenen(null);
+  }
+
   const [cariId, setCariId] = useState("");
   const [urunKodu, setUrunKodu] = useState("");
   const [alisFiyati, setAlisFiyati] = useState("");
@@ -1584,6 +1611,7 @@ function TedarikcilerSekmesi({
             <tr>
               <th>Cari</th>
               <th>Tedarikçi Ürün Kodu</th>
+              {varyantlar.length > 0 && <th>Varyant Kodları</th>}
               <th className="num">Alış Fiyatı</th>
               <th className="num">Tedarik Süresi</th>
               <th className="center">Eylem</th>
@@ -1592,13 +1620,14 @@ function TedarikcilerSekmesi({
           <tbody>
             {detay.tedarikciler.length === 0 ? (
               <tr>
-                <td colSpan={5} className="empty">
+                <td colSpan={varyantlar.length > 0 ? 6 : 5} className="empty">
                   Bu ürüne bağlı tedarikçi yok.
                 </td>
               </tr>
             ) : (
               detay.tedarikciler.map((t) => (
-                <tr key={t.id}>
+                <Fragment key={t.id}>
+                <tr>
                   <td>
                     <div className="cell-entity__name">
                       {t.cari.unvan} {t.varsayilan && <Badge variant="accent">Varsayılan</Badge>}
@@ -1606,6 +1635,20 @@ function TedarikcilerSekmesi({
                     <div className="cell-entity__meta">{t.cari.kod}</div>
                   </td>
                   <td className="mono">{t.tedarikciUrunKodu ?? "—"}</td>
+                  {varyantlar.length > 0 && (
+                    <td>
+                      {(t.varyantKodlari ?? []).length > 0 ? (
+                        <div className="cell-entity__meta">
+                          {(t.varyantKodlari ?? []).map((k) => `${varyantlar.find((v) => v.id === k.varyantId)?.ad ?? "?"}: ${k.tedarikciUrunKodu}`).join(" · ")}
+                        </div>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                      <Button size="sm" variant="ghost" onClick={() => (kodDuzenlenen === t.id ? setKodDuzenlenen(null) : kodlariAc(t))}>
+                        {kodDuzenlenen === t.id ? "Kapat" : "Düzenle"}
+                      </Button>
+                    </td>
+                  )}
                   <td className="num">
                     {t.alisFiyati
                       ? `${Number(t.alisFiyati).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${t.dovizCinsi}`
@@ -1618,6 +1661,31 @@ function TedarikcilerSekmesi({
                     </Button>
                   </td>
                 </tr>
+                {kodDuzenlenen === t.id && (
+                  <tr>
+                    <td colSpan={6} style={{ whiteSpace: "normal" }}>
+                      <p className="muted" style={{ margin: "0 0 0.6rem" }}>
+                        {t.cari.unvan} bu varyantları kendi koduyla faturalıyorsa yazın; gelen e-Fatura ve e-İrsaliye satırı doğrudan o varyanta düşer. Boş bırakılan varyantta kart düzeyindeki kod geçerlidir.
+                      </p>
+                      <div className="form-grid">
+                        {varyantlar.map((v) => (
+                          <Field key={v.id} label={`${v.kod} — ${v.ad}`}>
+                            <Input
+                              value={varyantKodlari[v.id] ?? ""}
+                              maxLength={64}
+                              onChange={(e) => setVaryantKodlari((eski) => ({ ...eski, [v.id]: e.target.value }))}
+                            />
+                          </Field>
+                        ))}
+                        <div className="row-tight">
+                          <Button variant="primary" size="sm" onClick={() => void kodlariKaydet(t)}>Kaydet</Button>
+                          <Button size="sm" onClick={() => setKodDuzenlenen(null)}>Vazgeç</Button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))
             )}
           </tbody>

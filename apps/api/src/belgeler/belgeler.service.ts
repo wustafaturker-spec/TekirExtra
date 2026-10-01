@@ -41,6 +41,7 @@ import { teslimYeriniIrsaliyedenDoldur } from "../fatura/teslim-yeri";
 import { irsaliyeUblOku, type UblIrsaliye } from "../ebelge/eirsaliye-ubl-oku";
 import { tedarikciCariBulVeyaOlustur } from "../cari/tedarikci-cari";
 import { eslesmeRaporu, faturaIrsaliyeAdaylari, irsaliyeAlisFiyati, irsaliyeSatirOnerileri } from "./irsaliye-eslesme";
+import { tedarikciVaryantKodlariniOgren } from "../ebelge/stok-eslesme";
 import { belgeOlusturSemasi } from "./belgeler.semalar";
 import type {
   belgeGuncelleSemasi,
@@ -1494,7 +1495,7 @@ export class BelgelerService {
       }
       // Birimi kartta olmayan satır burada durur; işlem geri alınır, yeni cari de açılmamış olur.
       await satirBirimleriniDogrula(tx, satirlar);
-      return { kayit, cariId, satirlar };
+      return { kayit, cariId, satirlar, saticiKodlari: ubl.satirlar.map((s) => s.saticiUrunKodu ?? null) };
     });
 
     const { kayit } = hazirlik;
@@ -1515,13 +1516,19 @@ export class BelgelerService {
       if (hata instanceof Prisma.PrismaClientKnownRequestError && hata.code === "P2002") throw new ConflictException("Bu e-İrsaliyeden başka bir işlemde alış irsaliyesi oluşturuldu");
       throw hata;
     }
+    let onayli;
     try {
-      return await this.onayla(belge.id);
+      onayli = await this.onayla(belge.id);
     } catch (hata) {
       await this.prisma.tenantIslem(tenantId, (tx) => tx.belge.update({ where: { id: belge.id }, data: { gelenEirsaliyeId: null } })).catch(() => undefined);
       await this.sil(belge.id).catch(() => undefined);
       throw hata;
     }
+    // STK-23: varyanta bağlanan satırın satıcı kodu öğrenilir; hata irsaliyeyi geri almaz.
+    await this.prisma.tenantIslem(tenantId, (tx) =>
+      tedarikciVaryantKodlariniOgren(tx, tenantId, hazirlik.cariId, hazirlik.saticiKodlari.map((saticiUrunKodu, i) => ({ saticiUrunKodu, stokId: hazirlik.satirlar[i].stokId, varyantId: hazirlik.satirlar[i].varyantId }))),
+    ).catch(() => undefined);
+    return onayli;
   }
 
   /**

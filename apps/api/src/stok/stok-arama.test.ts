@@ -21,10 +21,11 @@ describe("StokService arama", () => {
         OR: expect.arrayContaining([
           { aramaNormal: { contains: "ted-urun-42" } },
           { tedarikciler: { some: { tedarikciUrunKodu: { contains: "TED-URUN-42", mode: "insensitive" } } } },
+          { tedarikciler: { some: { varyantKodlari: { some: { tedarikciUrunKodu: { contains: "TED-URUN-42", mode: "insensitive" } } } } } },
         ]),
       }),
       include: expect.objectContaining({
-        tedarikciler: { select: { tedarikciUrunKodu: true } },
+        tedarikciler: { select: { tedarikciUrunKodu: true, varyantKodlari: { select: { tedarikciUrunKodu: true } } } },
       }),
     }));
   });

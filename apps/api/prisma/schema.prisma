@@ -1194,6 +1194,7 @@ model StokVaryant {
   uretimCiktilari    UretimEmriCikti[]
   uretimEmirleri     UretimEmri[]
   urunReceteleri     UrunRecetesi[]
+  tedarikciKodlari   StokTedarikciVaryant[]
 
   @@unique([tenantId, kod])
   @@unique([tenantId, barkod])
@@ -1250,9 +1251,28 @@ model StokTedarikci {
   stok StokKart  @relation(fields: [stokId], references: [id], onDelete: Cascade)
   cari CariHesap @relation(fields: [cariId], references: [id])
 
+  varyantKodlari StokTedarikciVaryant[]
+
   @@unique([tenantId, stokId, cariId])
   @@index([tenantId, cariId])
   @@map("stok_tedarikcileri")
+}
+
+/// Tedarikçinin varyant başına ürün kodu (STK-23). Fiyat ve tedarik süresi
+/// tedarikçi satırında kalır; kod gelen belgede satırı doğrudan varyanta düşürür.
+model StokTedarikciVaryant {
+  id                String @id @default(uuid()) @db.Uuid
+  tenantId          String @map("tenant_id") @db.Uuid
+  stokTedarikciId   String @map("stok_tedarikci_id") @db.Uuid
+  varyantId         String @map("varyant_id") @db.Uuid
+  tedarikciUrunKodu String @map("tedarikci_urun_kodu")
+
+  stokTedarikci StokTedarikci @relation(fields: [stokTedarikciId], references: [id], onDelete: Cascade)
+  varyant       StokVaryant   @relation(fields: [varyantId], references: [id], onDelete: Cascade)
+
+  @@unique([stokTedarikciId, varyantId])
+  @@index([tenantId, tedarikciUrunKodu])
+  @@map("stok_tedarikci_varyant_kodlari")
 }
 
 /// Ek birimler (STK-10): 1 <ad> = <katsayi> ana birim (ör. 1 koli = 12 adet).
