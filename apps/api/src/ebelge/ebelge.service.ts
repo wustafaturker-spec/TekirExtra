@@ -1,4 +1,4 @@
-import { stokKartiBul, tedarikciVaryantKodlariniOgren } from "./stok-eslesme";
+import { stokKartiBul, tedarikciKodlariniOgren } from "./stok-eslesme";
 import { faturaIrsaliyeAdaylari } from "../belgeler/irsaliye-eslesme";
 import { tedarikciCariBulVeyaOlustur } from "../cari/tedarikci-cari";
 import {
@@ -1950,9 +1950,9 @@ export class EbelgeService {
       throw hata;
     }
 
-    // STK-23: varyanta bağlanan satırın satıcı kodu öğrenilir; hata faturayı geri almaz.
+    // STK-23: bağlanan satırın satıcı kodu (varyant ya da kart düzeyinde) öğrenilir; hata faturayı geri almaz.
     await this.prisma.tenantIslem(tenantId, (tx) =>
-      tedarikciVaryantKodlariniOgren(tx, tenantId, cariId, ubl.satirlar.map((s) => ({ saticiUrunKodu: s.saticiUrunKodu, stokId: eslesme.get(s.siraNo) as string, varyantId: varyantlar.get(s.siraNo) }))),
+      tedarikciKodlariniOgren(tx, tenantId, cariId, ubl.satirlar.map((s) => ({ saticiUrunKodu: s.saticiUrunKodu, stokId: eslesme.get(s.siraNo) as string, varyantId: varyantlar.get(s.siraNo) }))),
     ).catch((hata: unknown) => this.logger.warn(JSON.stringify({ event: "tedarikci_varyant_kodu_ogrenilemedi", gelenEbelgeId: id, hata: hata instanceof Error ? hata.message : String(hata) })));
 
     // SAT-13: faturada adı geçen irsaliyeler (DespatchDocumentReference)

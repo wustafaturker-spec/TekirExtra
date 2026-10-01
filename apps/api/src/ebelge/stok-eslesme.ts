@@ -143,26 +143,32 @@ async function varyantAdiylaBul(tx: Prisma.TransactionClient, tenantId: string, 
 }
 
 /**
- * STK-23: gelen belgede varyanta bağlanan satırın satıcı kodunu o tedarikçinin
- * varyant kodu olarak öğrenir; sonraki belge kendiliğinden eşleşir. Tedarikçi
- * kartta yoksa fiyatsız eklenir. Öğrenilmeyenler:
- * - kart düzeyinde zaten kayıtlı kod (tedarikçi tüm varyantlara aynı kodu veriyor),
- * - aynı belgede iki ayrı varyanta bağlanan kod (belirsiz).
- * Kod aynı tedarikçide başka varyanttaysa yeni varyanta taşınır (kullanıcı düzeltti).
+ * Gelen belgede bağlanan satırın satıcı kodunu o tedarikçinin kodu olarak
+ * öğrenir; sonraki belge kendiliğinden eşleşir. Tedarikçi kartta yoksa fiyatsız
+ * eklenir.
+ * - Varyanta bağlanan satır (STK-23): kod varyant koduna yazılır; kart
+ *   düzeyinde zaten kayıtlıysa (tedarikçi tüm varyantlara aynı kodu veriyor)
+ *   öğrenilmez.
+ * - Varyantsız satır: kod kartın tedarikçi koduna yazılır; kartta bu tedarikçi
+ *   için başka bir kod varsa üzerine yazılmaz (elle girilen kod korunur).
+ * Aynı belgede iki ayrı karta/varyanta bağlanan kod belirsizdir, öğrenilmez.
+ * Kod aynı tedarikçide başka kart ya da varyanttaysa oradan kaldırılır
+ * (kullanıcı eşleşmeyi düzeltti).
  */
-export async function tedarikciVaryantKodlariniOgren(
+export async function tedarikciKodlariniOgren(
   tx: Prisma.TransactionClient,
   tenantId: string,
   cariId: string,
   satirlar: { saticiUrunKodu?: string | null; stokId: string; varyantId?: string | null }[],
 ): Promise<number> {
-  const adaylar = new Map<string, { stokId: string; varyantId: string } | null>();
+  const adaylar = new Map<string, { stokId: string; varyantId: string | null } | null>();
   for (const s of satirlar) {
     const kod = s.saticiUrunKodu?.trim();
-    if (!kod || !s.varyantId) continue;
+    if (!kod || !s.stokId) continue;
+    const varyantId = s.varyantId ?? null;
     const onceki = adaylar.get(kod);
-    if (onceki === undefined) adaylar.set(kod, { stokId: s.stokId, varyantId: s.varyantId });
-    else if (onceki && onceki.varyantId !== s.varyantId) adaylar.set(kod, null);
+    if (onceki === undefined) adaylar.set(kod, { stokId: s.stokId, varyantId });
+    else if (onceki && (onceki.stokId !== s.stokId || onceki.varyantId !== varyantId)) adaylar.set(kod, null);
   }
 
   let ogrenilen = 0;
@@ -171,13 +177,26 @@ export async function tedarikciVaryantKodlariniOgren(
     const tedarikci =
       (await tx.stokTedarikci.findFirst({ where: { tenantId, stokId: hedef.stokId, cariId }, select: { id: true, tedarikciUrunKodu: true } })) ??
       (await tx.stokTedarikci.create({ data: { tenantId, stokId: hedef.stokId, cariId }, select: { id: true, tedarikciUrunKodu: true } }));
-    if (tedarikci.tedarikciUrunKodu === kod) continue;
-    await tx.stokTedarikciVaryant.deleteMany({ where: { stokTedarikciId: tedarikci.id, tedarikciUrunKodu: kod, varyantId: { not: hedef.varyantId } } });
-    await tx.stokTedarikciVaryant.upsert({
-      where: { stokTedarikciId_varyantId: { stokTedarikciId: tedarikci.id, varyantId: hedef.varyantId } },
-      create: { tenantId, stokTedarikciId: tedarikci.id, varyantId: hedef.varyantId, tedarikciUrunKodu: kod },
-      update: { tedarikciUrunKodu: kod },
-    });
+
+    if (hedef.varyantId) {
+      if (tedarikci.tedarikciUrunKodu === kod) continue;
+      await tx.stokTedarikci.updateMany({ where: { tenantId, cariId, tedarikciUrunKodu: kod, stokId: { not: hedef.stokId } }, data: { tedarikciUrunKodu: null } });
+      await tx.stokTedarikciVaryant.deleteMany({ where: { tenantId, tedarikciUrunKodu: kod, stokTedarikci: { cariId }, varyantId: { not: hedef.varyantId } } });
+      await tx.stokTedarikciVaryant.upsert({
+        where: { stokTedarikciId_varyantId: { stokTedarikciId: tedarikci.id, varyantId: hedef.varyantId } },
+        create: { tenantId, stokTedarikciId: tedarikci.id, varyantId: hedef.varyantId, tedarikciUrunKodu: kod },
+        update: { tedarikciUrunKodu: kod },
+      });
+      ogrenilen++;
+      continue;
+    }
+
+    // Kod bu tedarikçide başka kartta ya da bir varyantta kalırsa (varyant kodu
+    // önce eşleşir) düzeltme tutmaz; hedef kart kodu zaten taşısa da temizlenir.
+    await tx.stokTedarikci.updateMany({ where: { tenantId, cariId, tedarikciUrunKodu: kod, stokId: { not: hedef.stokId } }, data: { tedarikciUrunKodu: null } });
+    await tx.stokTedarikciVaryant.deleteMany({ where: { tenantId, tedarikciUrunKodu: kod, stokTedarikci: { cariId } } });
+    if (tedarikci.tedarikciUrunKodu) continue;
+    await tx.stokTedarikci.update({ where: { id: tedarikci.id }, data: { tedarikciUrunKodu: kod } });
     ogrenilen++;
   }
   return ogrenilen;

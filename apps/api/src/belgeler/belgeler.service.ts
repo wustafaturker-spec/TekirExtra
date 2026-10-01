@@ -41,7 +41,7 @@ import { teslimYeriniIrsaliyedenDoldur } from "../fatura/teslim-yeri";
 import { irsaliyeUblOku, type UblIrsaliye } from "../ebelge/eirsaliye-ubl-oku";
 import { tedarikciCariBulVeyaOlustur } from "../cari/tedarikci-cari";
 import { eslesmeRaporu, faturaIrsaliyeAdaylari, irsaliyeAlisFiyati, irsaliyeSatirOnerileri } from "./irsaliye-eslesme";
-import { tedarikciVaryantKodlariniOgren } from "../ebelge/stok-eslesme";
+import { tedarikciKodlariniOgren } from "../ebelge/stok-eslesme";
 import { belgeOlusturSemasi } from "./belgeler.semalar";
 import type {
   belgeGuncelleSemasi,
@@ -1524,9 +1524,9 @@ export class BelgelerService {
       await this.sil(belge.id).catch(() => undefined);
       throw hata;
     }
-    // STK-23: varyanta bağlanan satırın satıcı kodu öğrenilir; hata irsaliyeyi geri almaz.
+    // STK-23: bağlanan satırın satıcı kodu (varyant ya da kart düzeyinde) öğrenilir; hata irsaliyeyi geri almaz.
     await this.prisma.tenantIslem(tenantId, (tx) =>
-      tedarikciVaryantKodlariniOgren(tx, tenantId, hazirlik.cariId, hazirlik.saticiKodlari.map((saticiUrunKodu, i) => ({ saticiUrunKodu, stokId: hazirlik.satirlar[i].stokId, varyantId: hazirlik.satirlar[i].varyantId }))),
+      tedarikciKodlariniOgren(tx, tenantId, hazirlik.cariId, hazirlik.saticiKodlari.map((saticiUrunKodu, i) => ({ saticiUrunKodu, stokId: hazirlik.satirlar[i].stokId, varyantId: hazirlik.satirlar[i].varyantId }))),
     ).catch(() => undefined);
     return onayli;
   }

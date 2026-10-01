@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Prisma } from "@prisma/client";
-import { stokKartiBul, tedarikciVaryantKodlariniOgren } from "./stok-eslesme";
+import { stokKartiBul, tedarikciKodlariniOgren } from "./stok-eslesme";
 
 type Where = { kod?: string; barkod?: string; stok?: { ad?: { equals: string } } };
 
@@ -46,42 +46,65 @@ describe("gelen belge satırı → stok kartı/varyant", () => {
   });
 });
 
-describe("tedarikçi varyant kodunu öğrenme (STK-23)", () => {
+describe("tedarikçi kodunu öğrenme (STK-23)", () => {
   function sahteTx(kartKodu: string | null) {
     const yazilan: { varyantId: string; kod: string }[] = [];
+    const kartaYazilan: { id: string; kod: string }[] = [];
     const silinen: unknown[] = [];
+    const bosaltilan: unknown[] = [];
     const tx = {
       stokTedarikci: {
         findFirst: async () => ({ id: "t1", tedarikciUrunKodu: kartKodu }),
         create: async () => ({ id: "t1", tedarikciUrunKodu: null }),
+        updateMany: async (a: unknown) => { bosaltilan.push(a); return { count: 0 }; },
+        update: async ({ where, data }: { where: { id: string }; data: { tedarikciUrunKodu: string } }) => { kartaYazilan.push({ id: where.id, kod: data.tedarikciUrunKodu }); return {}; },
       },
       stokTedarikciVaryant: {
         deleteMany: async (a: unknown) => { silinen.push(a); return { count: 0 }; },
         upsert: async ({ create }: { create: { varyantId: string; tedarikciUrunKodu: string } }) => { yazilan.push({ varyantId: create.varyantId, kod: create.tedarikciUrunKodu }); return {}; },
       },
     } as unknown as Prisma.TransactionClient;
-    return { tx, yazilan, silinen };
+    return { tx, yazilan, kartaYazilan, silinen, bosaltilan };
   }
 
-  it("varyanta bağlanan satırın kodunu öğrenir; varyantsız satırı atlar", async () => {
-    const { tx, yazilan, silinen } = sahteTx(null);
-    const n = await tedarikciVaryantKodlariniOgren(tx, "t", "c1", [
+  it("varyanta bağlanan satırın kodunu varyanta, varyantsız satırınkini karta yazar", async () => {
+    const { tx, yazilan, kartaYazilan, silinen } = sahteTx(null);
+    const n = await tedarikciKodlariniOgren(tx, "t", "c1", [
       { saticiUrunKodu: "A-S", stokId: "k1", varyantId: "v1" },
       { saticiUrunKodu: "B", stokId: "k2", varyantId: null },
     ]);
-    expect(n).toBe(1);
+    expect(n).toBe(2);
     expect(yazilan).toEqual([{ varyantId: "v1", kod: "A-S" }]);
-    expect(silinen).toHaveLength(1); // aynı kod başka varyanttaysa taşınır
+    expect(kartaYazilan).toEqual([{ id: "t1", kod: "B" }]);
+    expect(silinen).toHaveLength(2); // kod başka varyanttaysa taşınır / karta düzeltildiyse varyanttan silinir
   });
 
-  it("aynı kod iki ayrı varyanta bağlıysa ya da kart düzeyindeki kodsa öğrenmez", async () => {
+  it("aynı kod iki ayrı varyanta bağlıysa ya da kart düzeyindeki kodsa varyanta öğrenmez", async () => {
     const iki = sahteTx(null);
-    expect(await tedarikciVaryantKodlariniOgren(iki.tx, "t", "c1", [
+    expect(await tedarikciKodlariniOgren(iki.tx, "t", "c1", [
       { saticiUrunKodu: "A", stokId: "k1", varyantId: "v1" },
       { saticiUrunKodu: "A", stokId: "k1", varyantId: "v2" },
     ])).toBe(0);
     const kart = sahteTx("A");
-    expect(await tedarikciVaryantKodlariniOgren(kart.tx, "t", "c1", [{ saticiUrunKodu: "A", stokId: "k1", varyantId: "v1" }])).toBe(0);
+    expect(await tedarikciKodlariniOgren(kart.tx, "t", "c1", [{ saticiUrunKodu: "A", stokId: "k1", varyantId: "v1" }])).toBe(0);
     expect(kart.yazilan).toEqual([]);
+  });
+
+  it("aynı kod iki ayrı karta bağlıysa karta öğrenmez", async () => {
+    const { tx, kartaYazilan, bosaltilan } = sahteTx(null);
+    expect(await tedarikciKodlariniOgren(tx, "t", "c1", [
+      { saticiUrunKodu: "A", stokId: "k1" },
+      { saticiUrunKodu: "A", stokId: "k2" },
+    ])).toBe(0);
+    expect(kartaYazilan).toEqual([]);
+    expect(bosaltilan).toEqual([]);
+  });
+
+  it("kartta bu tedarikçinin başka kodu varsa üzerine yazmaz; kodu başka karttan yine de kaldırır", async () => {
+    const { tx, kartaYazilan, bosaltilan, silinen } = sahteTx("ESKI");
+    expect(await tedarikciKodlariniOgren(tx, "t", "c1", [{ saticiUrunKodu: "YENI", stokId: "k1" }])).toBe(0);
+    expect(kartaYazilan).toEqual([]);
+    expect(bosaltilan).toEqual([{ where: { tenantId: "t", cariId: "c1", tedarikciUrunKodu: "YENI", stokId: { not: "k1" } }, data: { tedarikciUrunKodu: null } }]);
+    expect(silinen).toHaveLength(1);
   });
 });
