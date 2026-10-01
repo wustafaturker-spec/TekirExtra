@@ -77,6 +77,7 @@ export const BIRIMLER: readonly { ad: string; etiket: string }[] = [
   { ad: "adet", etiket: "Adet" },
   { ad: "kg", etiket: "Kilogram (kg)" },
   { ad: "gram", etiket: "Gram (g)" },
+  { ad: "mg", etiket: "Miligram (mg)" },
   { ad: "ton", etiket: "Ton" },
   { ad: "litre", etiket: "Litre (lt)" },
   { ad: "ml", etiket: "Mililitre (ml)" },
@@ -126,4 +127,35 @@ export function birimEtiketi(birim: string | null | undefined): string {
 export function birimKisaAdi(birim: string | null | undefined): string {
   if (!birim) return "";
   return birim.replace(/^m2$/, "m²").replace(/^m3$/, "m³").replace(/^kwh$/, "kWh");
+}
+
+/**
+ * Aynı ölçü ailesindeki birimlerin ortak tabana oranı (kütle kg, hacim litre,
+ * uzunluk metre). Reçetede kartta ek birim tanımlamadan kg malzemeyi g/mg,
+ * litreyi ml ile girmek için.
+ */
+const OLCU_AILELERI: readonly Record<string, string>[] = [
+  { ton: "1000", kg: "1", gram: "0.001", mg: "0.000001" },
+  { m3: "1000", litre: "1", ml: "0.001" },
+  { km: "1000", metre: "1", cm: "0.01", mm: "0.001" },
+];
+
+/** Ana birimle aynı ölçü ailesindeki birimler (ana birim dahil); aile yoksa yalnız ana birim. */
+export function olcuAilesi(anaBirim: string): string[] {
+  const aile = OLCU_AILELERI.find((a) => anaBirim in a);
+  return aile ? Object.keys(aile) : [anaBirim];
+}
+
+/**
+ * `birim`in 1'i kaç `anaBirim` eder; aynı aileden değilse null. Ondalık metin
+ * döner (ör. kg kartında mg → "0.000001"), hesap çağıranda kayıpsız yapılır.
+ */
+export function olcuKatsayisi(anaBirim: string, birim: string): string | null {
+  if (anaBirim === birim) return "1";
+  const aile = OLCU_AILELERI.find((a) => anaBirim in a && birim in a);
+  if (!aile) return null;
+  const [ana, hedef] = [Number(aile[anaBirim]), Number(aile[birim])];
+  // Oranlar 10'un kuvvetleri: kayan nokta artığı olmadan yazılır.
+  const oran = hedef / ana;
+  return oran >= 1 ? String(Math.round(oran)) : `0.${"0".repeat(Math.round(-Math.log10(oran)) - 1)}1`;
 }

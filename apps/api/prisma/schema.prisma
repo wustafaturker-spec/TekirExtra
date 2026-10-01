@@ -1507,8 +1507,13 @@ model UrunRecetesiKalem {
   receteId         String  @map("recete_id") @db.Uuid
   malzemeStokId    String  @map("malzeme_stok_id") @db.Uuid
   malzemeVaryantId String? @map("malzeme_varyant_id") @db.Uuid
-  miktar           Decimal @db.Decimal(15, 3)
-  fireOrani        Decimal @default(0) @map("fire_orani") @db.Decimal(5, 2)
+  /// Ana birim karşılığı; ton kartına mg girilebildiği için 12 basamak.
+  miktar           Decimal @db.Decimal(24, 12)
+  /// Girilen birim (kartın ek birimi ya da aynı ölçü ailesinden, ör. kg kartında mg); boşsa ana birim.
+  birim            String?
+  /// `birim` cinsinden girilen miktar; ekranda bu gösterilir.
+  girilenMiktar    Decimal? @map("girilen_miktar") @db.Decimal(20, 8)
+  fireOrani        Decimal @default(0) @map("fire_orani") @db.Decimal(10, 6)
 
   recete         UrunRecetesi @relation(fields: [receteId], references: [id], onDelete: Cascade)
   malzeme        StokKart     @relation("ReceteMalzemesi", fields: [malzemeStokId], references: [id])

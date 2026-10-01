@@ -4,6 +4,8 @@ const sifirVeyaPozitif = z.union([z.string(), z.number()]).transform(String).ref
 
 const pozitif = z.union([z.string(), z.number()]).transform(String).refine((v) => /^\d{1,13}(\.\d{1,6})?$/.test(v) && Number(v) > 0, "Pozitif miktar gerekli");
 
+const receteMiktari = z.union([z.string(), z.number()]).transform(String).refine((v) => /^\d{1,12}(\.\d{1,8})?$/.test(v) && Number(v) > 0, "Pozitif, en çok 8 ondalıklı miktar gerekli");
+
 export const receteKaydetSemasi = z.object({
   /** Boşsa genel reçete; doluysa yalnız bu varyantın üretiminde kullanılır. */
   varyantId: z.string().uuid().optional().nullable(),
@@ -17,8 +19,11 @@ export const receteKaydetSemasi = z.object({
   kalemler: z.array(z.object({
     malzemeStokId: z.string().uuid(),
     malzemeVaryantId: z.string().uuid().optional().nullable(),
-    miktar: pozitif,
-    fireOrani: z.union([z.string(), z.number()]).transform(String).refine((v) => Number(v) >= 0 && Number(v) <= 100, "Fire oranı 0-100 arasında olmalı").default("0"),
+    /** `birim` cinsinden; kg kimyasalın mg sarfı için 8 basamak. */
+    miktar: receteMiktari,
+    /** Boşsa malzemenin ana birimi; aynı ölçü ailesinden (g, mg, ml…) ya da kartın ek birimi. */
+    birim: z.string().trim().min(1).max(20).optional().nullable(),
+    fireOrani: z.union([z.string(), z.number()]).transform(String).refine((v) => /^\d{1,3}(\.\d{1,6})?$/.test(v) && Number(v) <= 100, "Fire oranı 0-100 arasında, en çok 6 ondalıklı olmalı").default("0"),
   })).min(1, "En az bir reçete kalemi gerekli"),
   ciktilar: z.array(z.object({
     stokId: z.string().uuid(), varyantId: z.string().uuid().optional().nullable(), tip: z.enum(["yan_urun", "ortak_urun"]), miktar: pozitif,

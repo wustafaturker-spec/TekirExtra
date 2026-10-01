@@ -3037,9 +3037,10 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 .recipe-materials th { background: var(--surface-2); color: var(--text-muted); font-size: .65rem; letter-spacing: .035em; text-transform: uppercase; }
 .recipe-materials td { vertical-align: middle; }
 .recipe-materials td:first-child { min-width: 235px; }
-.recipe-materials td:nth-child(2) { width: 115px; }
-.recipe-materials td:nth-child(3) { width: 70px; }
-.recipe-materials td:nth-child(4) { width: 110px; }
+.recipe-materials td:nth-child(2) { width: 140px; }
+.recipe-materials td:nth-child(3) { width: 96px; }
+.recipe-materials td:nth-child(3) .select { min-width: 84px; }
+.recipe-materials td:nth-child(4) { width: 150px; }
 .recipe-stock { color: var(--text-subtle); display: block; font-size: .64rem; margin-top: .3rem; }
 .recipe-unit { background: var(--surface-2); border: 1px solid var(--border); border-radius: .4rem; color: var(--text-muted); display: inline-block; font-size: .68rem; font-weight: 700; padding: .35rem .5rem; }
 .recipe-percent { align-items: center; display: flex; gap: .3rem; }

@@ -22,7 +22,7 @@ import {
   Tabs,
   TableWrap,
 } from "@/components/ui";
-import { bugunTR, SARJ_TURLERI, SARJ_TURU_ADLARI, varyantKombinasyonlari } from "@tekirextra/shared";
+import { birimKisaAdi, bugunTR, olcuAilesi, olcuKatsayisi, SARJ_TURLERI, SARJ_TURU_ADLARI, varyantKombinasyonlari } from "@tekirextra/shared";
 
 /* ─── Tipler ─────────────────────────────────────────────────────────────── */
 
@@ -38,7 +38,7 @@ function ReceteSekmesi({ stokId, anaBirim, recete, stoklar, isMerkezleri, varyan
   const [degisiklikNedeni, setDegisiklikNedeni] = useState("");
   const [yururlukBaslangic, setYururlukBaslangic] = useState("");
   const [kaliteKontrolGerekli, setKaliteKontrolGerekli] = useState(false);
-  const [kalemler, setKalemler] = useState<{ malzemeStokId: string; malzemeVaryantId?: string; miktar: string; fireOrani: string }[]>([{ malzemeStokId: "", miktar: "1", fireOrani: "0" }]);
+  const [kalemler, setKalemler] = useState<{ malzemeStokId: string; malzemeVaryantId?: string; miktar: string; birim?: string; fireOrani: string }[]>([{ malzemeStokId: "", miktar: "1", fireOrani: "0" }]);
   const [operasyonlar, setOperasyonlar] = useState<{ isMerkeziId: string; operasyonKodu: string; operasyonAdi: string; hazirlikDakika: string; cevrimDakika: string }[]>([]);
   const [yanUrunYontemi, setYanUrunYontemi] = useState<YanUrunYontemi>("sifir");
   const [ciktilar, setCiktilar] = useState<{ stokId: string; varyantId?: string; tip: "yan_urun" | "ortak_urun"; miktar: string; birimMaliyet: string }[]>([]);
@@ -48,7 +48,7 @@ function ReceteSekmesi({ stokId, anaBirim, recete, stoklar, isMerkezleri, varyan
   /** Formu bir reçeteyle doldurur (kapsamın kendi reçetesi ya da kopyalanan genel reçete). */
   const formuDoldur = (recete: Recete | null) => {
     setCiktiMiktari(recete?.ciktiMiktari ?? "1"); setAciklama(recete?.aciklama ?? "");
-    setKalemler(recete?.kalemler?.length ? recete.kalemler.map((k) => ({ malzemeStokId: k.malzemeStokId, malzemeVaryantId: k.malzemeVaryantId ?? undefined, miktar: k.miktar, fireOrani: k.fireOrani })) : [{ malzemeStokId: "", miktar: "1", fireOrani: "0" }]);
+    setKalemler(recete?.kalemler?.length ? recete.kalemler.map((k) => ({ malzemeStokId: k.malzemeStokId, malzemeVaryantId: k.malzemeVaryantId ?? undefined, miktar: k.girilenMiktar ?? k.miktar, birim: k.birim ?? undefined, fireOrani: k.fireOrani })) : [{ malzemeStokId: "", miktar: "1", fireOrani: "0" }]);
     setOperasyonlar(recete?.operasyonlar?.map((o) => ({ isMerkeziId: o.isMerkeziId, operasyonKodu: o.operasyonKodu, operasyonAdi: o.operasyonAdi, hazirlikDakika: o.hazirlikDakika, cevrimDakika: o.cevrimDakika })) ?? []);
     setKaliteKontrolGerekli(recete?.kaliteKontrolGerekli ?? false);
     setYanUrunYontemi(recete?.yanUrunMaliyetYontemi ?? "sifir");
@@ -69,7 +69,7 @@ function ReceteSekmesi({ stokId, anaBirim, recete, stoklar, isMerkezleri, varyan
   async function kaydet(event: React.FormEvent) {
     event.preventDefault(); onHata(""); setKaydediliyor(true);
     try {
-      await api(`/uretim/receteler/${stokId}`, { method: "POST", body: JSON.stringify({ varyantId: kapsam || null, ciktiMiktari, aciklama: aciklama || null, degisiklikNedeni: degisiklikNedeni || null, yururlukBaslangic: yururlukBaslangic || null, kaliteKontrolGerekli, yanUrunMaliyetYontemi: yanUrunYontemi, kalemler: kalemler.map((k) => ({ ...k, malzemeVaryantId: k.malzemeVaryantId || null })), ciktilar: ciktilar.map((c) => ({ ...c, varyantId: c.varyantId || null, birimMaliyet: yanUrunYontemi === "sabit_deger" ? c.birimMaliyet : null })), operasyonlar }) });
+      await api(`/uretim/receteler/${stokId}`, { method: "POST", body: JSON.stringify({ varyantId: kapsam || null, ciktiMiktari, aciklama: aciklama || null, degisiklikNedeni: degisiklikNedeni || null, yururlukBaslangic: yururlukBaslangic || null, kaliteKontrolGerekli, yanUrunMaliyetYontemi: yanUrunYontemi, kalemler: kalemler.map((k) => ({ ...k, malzemeVaryantId: k.malzemeVaryantId || null, birim: k.birim || null })), ciktilar: ciktilar.map((c) => ({ ...c, varyantId: c.varyantId || null, birimMaliyet: yanUrunYontemi === "sabit_deger" ? c.birimMaliyet : null })), operasyonlar }) });
       setDegisiklikNedeni("");
       await onKaydedildi();
     } catch (h) { onHata(h instanceof Error ? h.message : "Reçete kaydedilemedi"); }
@@ -87,9 +87,16 @@ function ReceteSekmesi({ stokId, anaBirim, recete, stoklar, isMerkezleri, varyan
     catch (h) { onHata(h instanceof Error ? h.message : "Reçete onaylanamadı"); }
     finally { setKaydediliyor(false); }
   }
+  /** Satırın seçebileceği birimler: ana birim, aynı ölçü ailesi (kg → g, mg) ve kartın ek birimleri. */
+  const receteBirimleri = (malzeme: StokOzet | undefined) => malzeme ? [...new Set([...olcuAilesi(malzeme.anaBirim), ...(malzeme.birimler ?? []).map((b) => b.ad)])] : [];
+  const anaBirimKatsayisi = (malzeme: StokOzet | undefined, birim: string | undefined) => {
+    if (!malzeme || !birim || birim === malzeme.anaBirim) return 1;
+    return Number(olcuKatsayisi(malzeme.anaBirim, birim) ?? malzeme.birimler?.find((b) => b.ad === birim)?.katsayi ?? 1);
+  };
   const satirHesapla = (kalem: typeof kalemler[number]) => {
     const malzeme = stoklar.find((s) => s.id === kalem.malzemeStokId);
-    const net = Number(kalem.miktar) || 0;
+    // Maliyet ve fire ana birimde: 6,98 mg × 0,000001 = 0,00000698 kg.
+    const net = (Number(kalem.miktar) || 0) * anaBirimKatsayisi(malzeme, kalem.birim);
     const brut = net * (1 + (Number(kalem.fireOrani) || 0) / 100);
     const birimMaliyet = Number(malzeme?.ortalamaMaliyet ?? 0);
     return { malzeme, brut, birimMaliyet, toplam: brut * birimMaliyet };
@@ -120,7 +127,7 @@ function ReceteSekmesi({ stokId, anaBirim, recete, stoklar, isMerkezleri, varyan
       </section>
       <section className="recipe-materials">
         <div className="recipe-section-head"><div><h3>Malzeme listesi</h3><p>Maliyetler stok kartlarındaki güncel ortalama maliyetten hesaplanır.</p></div><Button type="button" onClick={() => setKalemler((eski) => [...eski, { malzemeStokId: "", miktar: "1", fireOrani: "0" }])}>+ Malzeme ekle</Button></div>
-        <TableWrap><thead><tr><th>Malzeme</th><th className="num">Net miktar</th><th>Birim</th><th className="num">Fire</th><th className="num">Birim maliyet</th><th className="num">Satır maliyeti</th><th /></tr></thead><tbody>{kalemler.map((kalem, index) => { const hesap = satirHesapla(kalem); return <tr key={index}><td><Select required value={kalem.malzemeStokId} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, malzemeStokId: e.target.value, malzemeVaryantId: undefined } : k))}><option value="">Malzeme seçin</option>{stoklar.map((s) => <option key={s.id} value={s.id}>{s.kod} — {s.ad}</option>)}</Select>{varyantlariAl(kalem.malzemeStokId).length > 0 && <Select aria-label="Malzeme varyantı" required value={kalem.malzemeVaryantId ?? ""} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, malzemeVaryantId: e.target.value || undefined } : k))}><option value="">Varyant seçin</option>{varyantlariAl(kalem.malzemeStokId).map((v) => <option key={v.id} value={v.id}>{v.ad} · {v.kod} · Stok {adet(v.mevcutMiktar)}</option>)}</Select>}{hesap.malzeme && <small className="recipe-stock">Kullanılabilir stok: {adet(hesap.malzeme.mevcutMiktar)} {hesap.malzeme.anaBirim}</small>}</td><td><Input aria-label="Reçete miktarı" required type="number" min="0.001" step="0.001" value={kalem.miktar} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, miktar: e.target.value } : k))} /></td><td><span className="recipe-unit">{hesap.malzeme?.anaBirim ?? "—"}</span></td><td><div className="recipe-percent"><Input aria-label="Fire oranı" required type="number" min="0" max="100" step="0.01" value={kalem.fireOrani} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, fireOrani: e.target.value } : k))} /><span>%</span></div></td><td className="num recipe-money">{tl(hesap.birimMaliyet)}</td><td className="num"><strong>{tl(hesap.toplam)}</strong>{Number(kalem.fireOrani) > 0 && <small className="recipe-stock">Fire dahil {adet(hesap.brut)} {hesap.malzeme?.anaBirim}</small>}</td><td><Button type="button" size="sm" variant="danger" disabled={kalemler.length === 1} onClick={() => setKalemler((eski) => eski.filter((_, i) => i !== index))}>Sil</Button></td></tr>; })}</tbody></TableWrap>
+        <TableWrap><thead><tr><th>Malzeme</th><th className="num">Net miktar</th><th>Birim</th><th className="num">Fire</th><th className="num">Birim maliyet</th><th className="num">Satır maliyeti</th><th /></tr></thead><tbody>{kalemler.map((kalem, index) => { const hesap = satirHesapla(kalem); return <tr key={index}><td><Select required value={kalem.malzemeStokId} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, malzemeStokId: e.target.value, malzemeVaryantId: undefined, birim: undefined } : k))}><option value="">Malzeme seçin</option>{stoklar.map((s) => <option key={s.id} value={s.id}>{s.kod} — {s.ad}</option>)}</Select>{varyantlariAl(kalem.malzemeStokId).length > 0 && <Select aria-label="Malzeme varyantı" required value={kalem.malzemeVaryantId ?? ""} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, malzemeVaryantId: e.target.value || undefined } : k))}><option value="">Varyant seçin</option>{varyantlariAl(kalem.malzemeStokId).map((v) => <option key={v.id} value={v.id}>{v.ad} · {v.kod} · Stok {adet(v.mevcutMiktar)}</option>)}</Select>}{hesap.malzeme && <small className="recipe-stock">Kullanılabilir stok: {adet(hesap.malzeme.mevcutMiktar)} {hesap.malzeme.anaBirim}</small>}</td><td><Input aria-label="Reçete miktarı" required type="number" min="0.00000001" step="any" value={kalem.miktar} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, miktar: e.target.value } : k))} /></td><td>{receteBirimleri(hesap.malzeme).length > 1 ? <Select aria-label="Reçete birimi" value={kalem.birim || hesap.malzeme?.anaBirim} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, birim: e.target.value === hesap.malzeme?.anaBirim ? undefined : e.target.value } : k))}>{receteBirimleri(hesap.malzeme).map((b) => <option key={b} value={b}>{birimKisaAdi(b)}</option>)}</Select> : <span className="recipe-unit">{hesap.malzeme ? birimKisaAdi(hesap.malzeme.anaBirim) : "—"}</span>}</td><td><div className="recipe-percent"><Input aria-label="Fire oranı" required type="number" min="0" max="100" step="0.000001" value={kalem.fireOrani} onChange={(e) => setKalemler((eski) => eski.map((k, i) => i === index ? { ...k, fireOrani: e.target.value } : k))} /><span>%</span></div></td><td className="num recipe-money">{tl(hesap.birimMaliyet)}</td><td className="num"><strong>{tl(hesap.toplam)}</strong>{(Number(kalem.fireOrani) > 0 || (kalem.birim && kalem.birim !== hesap.malzeme?.anaBirim)) && <small className="recipe-stock">{Number(kalem.fireOrani) > 0 ? "Fire dahil " : ""}{inceMiktar(hesap.brut)} {birimKisaAdi(hesap.malzeme?.anaBirim)}</small>}</td><td><Button type="button" size="sm" variant="danger" disabled={kalemler.length === 1} onClick={() => setKalemler((eski) => eski.filter((_, i) => i !== index))}>Sil</Button></td></tr>; })}</tbody></TableWrap>
       </section>
       <section className="recipe-materials">
         <div className="recipe-section-head"><div><h3>Yan / ortak ürünler</h3><p>Üretimde ana ürünle birlikte çıkan ürünler; maliyetten alacakları pay aşağıda seçilir.</p></div><Button type="button" onClick={() => setCiktilar((eski) => [...eski, { stokId: "", tip: "yan_urun", miktar: "1", birimMaliyet: "0" }])}>+ Yan ürün ekle</Button></div>
@@ -162,10 +169,10 @@ interface Tedarikci {
 interface Varyant { id: string; kod: string; ad: string; nitelikler: Record<string, string>; barkod: string | null; alisFiyati: string | null; satisFiyati: string | null; mevcutMiktar: string; aktif: boolean }
 interface StokFiyat { id: string; varyantId: string | null; tip: "alis" | "satis"; dovizCinsi: string; tutar: string; aktif: boolean }
 type YanUrunYontemi = "sifir" | "sabit_deger" | "satis_degeri";
-interface Recete { id: string; surum: number; durum: "taslak" | "onay_bekliyor" | "aktif" | "pasif" | "arsiv"; ciktiMiktari: string; aciklama: string | null; kaliteKontrolGerekli: boolean; onaylayabilir?: boolean; yanUrunMaliyetYontemi?: YanUrunYontemi; ciktilar?: { id: string; stokId: string; varyantId: string | null; tip: "yan_urun" | "ortak_urun"; miktar: string; birimMaliyet: string | null }[]; operasyonlar?: { id: string; isMerkeziId: string; operasyonKodu: string; operasyonAdi: string; hazirlikDakika: string; cevrimDakika: string }[]; kalemler?: { id: string; malzemeStokId: string; malzemeVaryantId: string | null; miktar: string; fireOrani: string; malzeme: { id: string; kod: string; ad: string; anaBirim: string; mevcutMiktar: string; ortalamaMaliyet: string } }[] }
+interface Recete { id: string; surum: number; durum: "taslak" | "onay_bekliyor" | "aktif" | "pasif" | "arsiv"; ciktiMiktari: string; aciklama: string | null; kaliteKontrolGerekli: boolean; onaylayabilir?: boolean; yanUrunMaliyetYontemi?: YanUrunYontemi; ciktilar?: { id: string; stokId: string; varyantId: string | null; tip: "yan_urun" | "ortak_urun"; miktar: string; birimMaliyet: string | null }[]; operasyonlar?: { id: string; isMerkeziId: string; operasyonKodu: string; operasyonAdi: string; hazirlikDakika: string; cevrimDakika: string }[]; kalemler?: { id: string; malzemeStokId: string; malzemeVaryantId: string | null; miktar: string; birim: string | null; girilenMiktar: string | null; fireOrani: string; malzeme: { id: string; kod: string; ad: string; anaBirim: string; mevcutMiktar: string; ortalamaMaliyet: string } }[] }
 interface IsMerkezi { id: string; kod: string; ad: string; aktif: boolean; saatlikMaliyet?: string }
 interface OzelReceteliVaryant { varyantId: string; durum: string; surum: number }
-interface StokOzet { id: string; kod: string; ad: string; tip: string; anaBirim: string; mevcutMiktar: string; ortalamaMaliyet?: string; varyantlar?: { id: string; kod: string; ad: string; mevcutMiktar: string; aktif?: boolean }[] }
+interface StokOzet { id: string; kod: string; ad: string; tip: string; anaBirim: string; mevcutMiktar: string; ortalamaMaliyet?: string; birimler?: { ad: string; katsayi: string }[]; varyantlar?: { id: string; kod: string; ad: string; mevcutMiktar: string; aktif?: boolean }[] }
 
 interface Hareket {
   id: string;
@@ -286,6 +293,10 @@ const tl = (deger: string | number): string =>
 
 const adet = (deger: string | number): string =>
   Number(deger).toLocaleString("tr-TR", { maximumFractionDigits: 3 });
+
+/** Reçetedeki küçük ana birim miktarı (ör. 0,00000698 kg); 3 basamakta 0 görünmesin. */
+const inceMiktar = (deger: number): string =>
+  deger.toLocaleString("tr-TR", { maximumFractionDigits: 12 });
 
 const bugun = () => bugunTR();
 
