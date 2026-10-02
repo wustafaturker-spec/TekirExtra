@@ -13,7 +13,7 @@
  * çevir" ile açılış bakiyesine dönüştürülür; açılış fişinin kendisi hesap
  * ekstresi ekranından değiştirilir.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, apiDosyaIndir } from "@/lib/api";
 import { GeriAlmaFormu, type GeriAlmaYontemi } from "@/components/geri-alma-formu";
 import { Alert, Badge, Button, ButtonLabel, EylemCubugu, Field, Para, Tarih } from "@/components/ui";
@@ -49,6 +49,7 @@ const TIP_ADI: Record<string, string> = {
 const KAYNAK_ADI: Record<string, string> = {
   manuel: "Elle girilen fiş",
   acilis: "Açılış (devir) fişi",
+  doviz_islem: "Döviz alım/satımı",
   fatura_kapama: "Fatura kapama fişi",
   ters_kayit: "Ters kayıt",
   masraf: "Masraflar",
@@ -62,6 +63,12 @@ const KAYNAK_ADI: Record<string, string> = {
   personel_maas_iptal: "Personel & İK (maaş iptali)",
   personel_avans: "Personel & İK (avans)",
 };
+
+interface DovizIslemi {
+  cikanTutar: string; cikanDoviz: string; cikanKur: string; cikanTry: string;
+  girenTutar: string; girenDoviz: string; girenKur: string; girenTry: string;
+  farkTry: string; bankaMasrafId: string | null;
+}
 
 const virmanMi = (h: DefterHareketi) => h.tip === "virman_gelis" || h.tip === "virman_gidis";
 const hesapAdi = (h: DefterHareketi) => h.kasa?.ad ?? h.bankaHesap?.ad ?? h.posHesap?.ad ?? "—";
@@ -83,6 +90,31 @@ export function FisAyrintisi({
   const [cevirNedeni, setCevirNedeni] = useState("");
   const [cevirHata, setCevirHata] = useState("");
   const [cevriliyor, setCevriliyor] = useState(false);
+  // P1-2a: döviz alım/satımı bacağı ise işlemin kurları ve kambiyo farkı.
+  const dovizIslemId = hareket.kaynakTur === "doviz_islem" ? hareket.kaynakRef : null;
+  const [dovizIslem, setDovizIslem] = useState<DovizIslemi | null>(null);
+  const [dovizGeriAlAcik, setDovizGeriAlAcik] = useState(false);
+  const [dovizNedeni, setDovizNedeni] = useState("");
+  useEffect(() => {
+    if (!dovizIslemId) return;
+    let iptal = false;
+    api<DovizIslemi>(`/kasa-banka/doviz-islemleri/${dovizIslemId}`).then((d) => { if (!iptal) setDovizIslem(d); }).catch(() => undefined);
+    return () => { iptal = true; };
+  }, [dovizIslemId]);
+
+  async function dovizIsleminiGeriAl(e: React.FormEvent) {
+    e.preventDefault();
+    setCevriliyor(true);
+    setCevirHata("");
+    try {
+      await api(`/kasa-banka/doviz-islemleri/${dovizIslemId}/geri-al`, { method: "POST", body: JSON.stringify({ neden: dovizNedeni }) });
+      onGeriAlindi("Döviz alım/satımı geri alındı; iki bacak, kambiyo kaydı ve banka masrafı silindi.");
+    } catch (err) {
+      setCevirHata(err instanceof Error ? err.message : "Döviz işlemi geri alınamadı");
+    } finally {
+      setCevriliyor(false);
+    }
+  }
 
   const karsi = hareket.karsiHareketId ? hareketler.find((h) => h.id === hareket.karsiHareketId) ?? null : null;
   const ters = hareketler.find((h) => h.kaynakTur === "ters_kayit" && (h.kaynakRef === hareket.id || (karsi && h.kaynakRef === karsi.id)));
@@ -119,6 +151,7 @@ export function FisAyrintisi({
             Makbuz PDF
           </Button>
         )}
+        {dovizIslemId && <Button size="sm" variant="danger" onClick={() => setDovizGeriAlAcik(true)} disabled={dovizGeriAlAcik}>Döviz işlemini geri al</Button>}
         {acilis && hesap && <ButtonLabel as="a" size="sm" href={`/panel/kasa-banka/hesap-ekstresi?hesap=${hesap}`}>Açılışı değiştir</ButtonLabel>}
         {acilisaCevrilebilir && (
           <Button size="sm" onClick={() => { setCevirAcik(true); setGeriAlAcik(false); }} disabled={cevirAcik}>Açılış fişine çevir</Button>
@@ -172,13 +205,34 @@ export function FisAyrintisi({
           Bu kayıt <Tarih deger={asil.tarih} /> tarihli {TIP_ADI[asil.tip]?.toLocaleLowerCase("tr-TR") ?? "fişin"} ters kaydıdır; asıl fiş kapalı dönemde olduğu için silinmedi.
         </Alert>
       )}
+      {dovizIslem && (
+        <dl className="slip-detail__facts">
+          <div><dt>Çıkan</dt><dd><Para deger={dovizIslem.cikanTutar} dovizCinsi={dovizIslem.cikanDoviz} />{dovizIslem.cikanDoviz !== "TRY" && <small> · TCMB alış {Number(dovizIslem.cikanKur).toLocaleString("tr-TR", { maximumFractionDigits: 4 })} → <Para deger={dovizIslem.cikanTry} dovizCinsi="TRY" /></small>}</dd></div>
+          <div><dt>Giren</dt><dd><Para deger={dovizIslem.girenTutar} dovizCinsi={dovizIslem.girenDoviz} />{dovizIslem.girenDoviz !== "TRY" && <small> · TCMB alış {Number(dovizIslem.girenKur).toLocaleString("tr-TR", { maximumFractionDigits: 4 })} → <Para deger={dovizIslem.girenTry} dovizCinsi="TRY" /></small>}</dd></div>
+          <div><dt>Kambiyo {Number(dovizIslem.farkTry) < 0 ? "zararı" : "kârı"}</dt><dd><Para deger={Math.abs(Number(dovizIslem.farkTry))} dovizCinsi="TRY" />{dovizIslem.bankaMasrafId ? " · banka masrafı ayrıca yazıldı" : ""}</dd></div>
+        </dl>
+      )}
+      {dovizGeriAlAcik && (
+        <form className="undo-form" onSubmit={dovizIsleminiGeriAl}>
+          <h3>Döviz işlemini geri al</h3>
+          <p>İki bacak, kambiyo kârı/zararı kaydı ve varsa banka masrafı birlikte silinir; görüntüsü denetim izine yazılır. Mali dönemi kapalıysa geri alınmaz. Bacaklardan biri banka ekstresine bağlıysa önce o eşleşme geri alınmalıdır.</p>
+          <Field label="Gerekçe">
+            <textarea autoFocus className="input" required minLength={3} maxLength={300} rows={2} value={dovizNedeni} onChange={(e) => setDovizNedeni(e.target.value)} placeholder="Ör. Tutar yanlış girilmişti" />
+          </Field>
+          {cevirHata && <Alert tone="error">{cevirHata}</Alert>}
+          <footer>
+            <Button type="button" onClick={() => setDovizGeriAlAcik(false)} disabled={cevriliyor}>Vazgeç</Button>
+            <Button type="submit" variant="danger" disabled={cevriliyor || dovizNedeni.trim().length < 3}>{cevriliyor ? "Geri alınıyor…" : "Geri al"}</Button>
+          </footer>
+        </form>
+      )}
       {acilis && (
         <p className="slip-detail__note">
           Açılış fişi hesabın dönem başı bakiyesidir: bakiyeye girer, tahsilat/ödeme sayılmaz ve makbuz numarası almaz. Tutarını ya da
           tarihini hesap ekstresi ekranındaki <strong>Açılış bakiyesi</strong> bölümünden değiştirebilirsiniz.
         </p>
       )}
-      {!elleGirilen && !acilis && hareket.kaynakTur !== "ters_kayit" && (
+      {!elleGirilen && !acilis && !dovizIslemId && hareket.kaynakTur !== "ters_kayit" && (
         <p className="slip-detail__note">
           Bu kayıt <strong>{KAYNAK_ADI[hareket.kaynakTur] ?? "başka bir modül"}</strong> tarafından oluşturuldu. Düzeltme ve geri alma o ekrandan yapılır.
         </p>

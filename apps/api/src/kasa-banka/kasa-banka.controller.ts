@@ -26,8 +26,10 @@ import { KasaBankaService, type HesapTuru } from "./kasa-banka.service";
 import { BankaEntegrasyonService } from "./banka-entegrasyon.service";
 import { z } from "zod";
 import { CekBordroService } from "./cek-bordro.service";
+import { DovizIslemService } from "./doviz-islem.service";
 import {
   acilisSemasi,
+  dovizIslemSemasi,
   bankaAcilisliOlusturSemasi,
   bankaHesapGuncelleSemasi,
   kasaAcilisliOlusturSemasi,
@@ -58,6 +60,7 @@ const EKSTRE_DURUMLARI: EkstreSatirDurum[] = ["beklemede", "eslesti", "yoksayild
 export class KasaBankaController {
   constructor(
     private readonly service: KasaBankaService,
+    private readonly dovizIslem: DovizIslemService,
     private readonly ekstre: EkstreService,
     private readonly ekstreEslestirme: EkstreEslestirmeService,
     private readonly bankaEntegrasyon: BankaEntegrasyonService,
@@ -291,6 +294,25 @@ export class KasaBankaController {
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="${dosya.dosyaAdi}"`);
     res.send(dosya.buffer);
+  }
+
+  // ─── DÖVİZ ALIM/SATIMI (P1-2a) ─────────────────────────────────────────────
+
+  @Post("doviz-islemleri")
+  @Roller("muhasebe")
+  dovizIslemOlustur(@Body() govde: unknown) {
+    return this.dovizIslem.olustur(ayristir(dovizIslemSemasi, govde));
+  }
+
+  @Get("doviz-islemleri/:id")
+  dovizIslemGetir(@Param("id", ParseUUIDPipe) id: string) {
+    return this.dovizIslem.getir(id);
+  }
+
+  @Post("doviz-islemleri/:id/geri-al")
+  @Roller("muhasebe")
+  dovizIslemGeriAl(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
+    return this.dovizIslem.geriAl(id, ayristir(geriAlmaSemasi, govde).neden);
   }
 
   @Get("makbuz-serileri")

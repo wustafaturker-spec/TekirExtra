@@ -26,6 +26,7 @@ import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
 import { kuralAnahtari, kuralBul, satirYonu } from "./ekstre-kural";
 import { metniNormalle } from "./ekstre-oku";
 import { OdemeTalimatiService } from "./odeme-talimati.service";
+import { DovizIslemService } from "./doviz-islem.service";
 import { KasaBankaService } from "./kasa-banka.service";
 import type { ekstreEslestirSemasi, ekstreKuralGuncelleSemasi } from "./kasa-banka.semalar";
 import { KrediKartiService } from "./kredi-karti.service";
@@ -44,6 +45,7 @@ export class EkstreEslestirmeService {
     private readonly krediKarti: KrediKartiService,
     private readonly donemKilidi: DonemKilidiService,
     private readonly odemeTalimati: OdemeTalimatiService,
+    private readonly dovizIslem: DovizIslemService,
   ) {}
 
   // ─── ÖNERİLER ──────────────────────────────────────────────────────────────
@@ -96,6 +98,11 @@ export class EkstreEslestirmeService {
           .map(({ _yakinlik, ...c }) => c),
         kartlar,
         virmanHesaplari: [...kasalar.map((k) => ({ tur: "kasa" as const, ...k })), ...bankalar.map((b) => ({ tur: "banka" as const, id: b.id, ad: b.ad, bankaAdi: b.bankaAdi }))],
+        // P1-2a: döviz alım/satımının karşı tarafı olabilecek, başka dövizdeki hesaplar.
+        dovizHesaplari: [
+          ...(await tx.kasa.findMany({ where: { aktif: true, dovizCinsi: { not: doviz } }, select: { id: true, ad: true, dovizCinsi: true }, orderBy: { ad: "asc" } })).map((k) => ({ tur: "kasa" as const, ...k })),
+          ...(await tx.bankaHesap.findMany({ where: { aktif: true, dovizCinsi: { not: doviz } }, select: { id: true, ad: true, dovizCinsi: true }, orderBy: { ad: "asc" } })).map((b) => ({ tur: "banka" as const, ...b })),
+        ],
         masrafKategorileri: masrafKategorileri.map((k) => ({ ...k, varsayilanKdvOrani: k.varsayilanKdvOrani?.toFixed(2) ?? null })),
         gelirKategorileri,
         // ENT-07: bu hesaptan aynı tutarda gönderilmiş/onaylı ödeme talimatları.
@@ -213,6 +220,18 @@ export class EkstreEslestirmeService {
           hareketIdleri.push(...(await this.odemeTalimati.gerceklestirTx(tx, tenantId, girdi.talimatId, tarih, null)).hareketIdleri);
           break;
         }
+        case "doviz_islem": {
+          // Satır işlemin bu hesaptaki bacağıdır: giriş satırı giren, çıkış satırı çıkan taraftır.
+          const karsi = { kasaId: girdi.karsiKasaId ?? null, bankaHesapId: girdi.karsiBankaHesapId ?? null };
+          const islem = await this.dovizIslem.olusturTx(tx, tenantId, {
+            kaynakKasaId: giris ? karsi.kasaId : null, kaynakBankaHesapId: giris ? karsi.bankaHesapId : satir.bankaHesapId,
+            hedefKasaId: giris ? null : karsi.kasaId, hedefBankaHesapId: giris ? satir.bankaHesapId : karsi.bankaHesapId,
+            cikanTutar: giris ? girdi.karsiTutar : mutlak.toFixed(2), girenTutar: giris ? mutlak.toFixed(2) : girdi.karsiTutar,
+            tarih, aciklama: girdi.aciklama || aciklama, masrafHesabi: "cikan",
+          });
+          hareketIdleri.push(giris ? islem.gelisHareketId : islem.gidisHareketId);
+          break;
+        }
         case "virman": {
           const karsi = { kasaId: girdi.karsiKasaId ?? null, bankaHesapId: girdi.karsiBankaHesapId ?? null };
           const virman = {
@@ -281,6 +300,9 @@ export class EkstreEslestirmeService {
       const idler = hareketler.map((h) => h.id);
       if (tur === "mevcut_fis") {
         await tx.kasaBankaHareket.updateMany({ where: { id: { in: idler } }, data: { ekstreSatirId: null } });
+      } else if (tur === "doviz_islem") {
+        const islemId = hareketler.find((h) => h.kaynakTur === "doviz_islem")?.kaynakRef;
+        if (islemId) await this.dovizIslem.geriAlTx(tx, tenantId, islemId, neden, id);
       } else if (tur === "pos") {
         await this.posMutabakatiniSil(tx, tenantId, idler);
       } else if (tur !== "cek" && tur !== "kredi_karti") {

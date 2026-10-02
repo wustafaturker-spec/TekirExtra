@@ -13,7 +13,7 @@ import { api } from "@/lib/api";
 import { AramaSecici } from "@/components/arama-secici";
 import { Alert, Badge, Button, Field, Input, Para, Segmented, Select, Tarih } from "@/components/ui";
 
-export type EslesmeTuru = "cari" | "mevcut_fis" | "masraf" | "gelir" | "virman" | "cek" | "kredi_karti" | "pos" | "odeme_talimati";
+export type EslesmeTuru = "cari" | "mevcut_fis" | "masraf" | "gelir" | "virman" | "cek" | "kredi_karti" | "pos" | "odeme_talimati" | "doviz_islem";
 
 export interface EkstreSatiri {
   id: string;
@@ -54,6 +54,7 @@ interface Oneriler {
   cekler: Array<{ id: string; tur: string; portfoyNo: string; cekNo: string | null; vadeTarihi: string; tutar: string; durum: string; borclu: string; banka: string | null; tamEslesme: boolean; cari: { unvan: string } | null }>;
   kartlar: Array<{ id: string; ad: string; bankaAdi: string; sonDortHane: string; borc: string }>;
   virmanHesaplari: Array<{ tur: "kasa" | "banka"; id: string; ad: string; bankaAdi?: string }>;
+  dovizHesaplari: Array<{ tur: "kasa" | "banka"; id: string; ad: string; dovizCinsi: string }>;
   masrafKategorileri: Array<{ id: string; ad: string; varsayilanKdvOrani: string | null }>;
   gelirKategorileri: Array<{ id: string; ad: string }>;
   /** ENT-07: aynı tutarda bankaya gönderilmiş/onaylı ödeme talimatları. */
@@ -72,6 +73,7 @@ export const ESLESME_ADI: Record<EslesmeTuru, string> = {
   kredi_karti: "Kredi kartı ödemesi",
   pos: "POS mutabakatı",
   odeme_talimati: "Ödeme talimatı",
+  doviz_islem: "Döviz alım/satımı",
 };
 
 const KAYNAK_ADI: Record<string, string> = { iban: "IBAN eşleşti", vkn: "VKN eşleşti", unvan: "Unvan eşleşti", kural: "Kayıtlı kural" };
@@ -130,14 +132,15 @@ export function EslestirmePaneli({
   const [talimatId, setTalimatId] = useState("");
   const [posHesapId, setPosHesapId] = useState("");
   const [brutTutar, setBrutTutar] = useState("");
+  const [karsiTutar, setKarsiTutar] = useState("");
   const [kuralKaydet, setKuralKaydet] = useState(false);
   const [kuralMetni, setKuralMetni] = useState("");
   const [kuralTumHesaplar, setKuralTumHesaplar] = useState(false);
   const [uygulananKural, setUygulananKural] = useState<string | null>(null);
 
   const turler: EslesmeTuru[] = giris
-    ? ["cari", "mevcut_fis", "gelir", "virman", "cek", ...(posHesaplari.some((p) => p.aktif && p.dovizCinsi === doviz) ? ["pos" as const] : [])]
-    : ["cari", "mevcut_fis", "masraf", "virman", "cek", "kredi_karti", "odeme_talimati"];
+    ? ["cari", "mevcut_fis", "gelir", "virman", ...(oneriler?.dovizHesaplari.length ? ["doviz_islem" as const] : []), "cek", ...(posHesaplari.some((p) => p.aktif && p.dovizCinsi === doviz) ? ["pos" as const] : [])]
+    : ["cari", "mevcut_fis", "masraf", "virman", ...(oneriler?.dovizHesaplari.length ? ["doviz_islem" as const] : []), "cek", "kredi_karti", "odeme_talimati"];
 
   // Satır değişince her şey sıfırlanır ve öneriler yeniden alınır.
   useEffect(() => {
@@ -163,7 +166,7 @@ export function EslestirmePaneli({
         // Bankadan gelen çıkışların çoğu banka masrafıdır; o kategori varsa öne alınır.
         const bankaMasrafi = o.masrafKategorileri.find((k) => k.ad.toLocaleLowerCase("tr-TR").includes("banka"));
         setKategoriId((giris ? o.gelirKategorileri[0]?.id : (bankaMasrafi ?? o.masrafKategorileri[0])?.id) ?? "");
-        setKarsiHesap("");
+        setKarsiHesap(""); setKarsiTutar("");
         setCekId(o.cekler.find((c) => c.tamEslesme)?.id ?? "");
         setKartId(o.kartlar[0]?.id ?? "");
         // ENT-07: açıklamada numarası geçen talimat en güçlü öneridir.
@@ -237,6 +240,7 @@ export function EslestirmePaneli({
       case "kredi_karti": return Boolean(kartId);
       case "odeme_talimati": return Boolean(talimatId);
       case "pos": return Boolean(posHesapId) && komisyon >= 0;
+      case "doviz_islem": return Boolean(karsiHesap) && Number(karsiTutar) > 0;
     }
   })() && (!kuralKaydet || kuralMetni.trim().length >= 3);
 
@@ -263,6 +267,7 @@ export function EslestirmePaneli({
         cek: { tur, cekSenetId: cekId },
         kredi_karti: { tur, krediKartiId: kartId },
         odeme_talimati: { tur, talimatId },
+        doviz_islem: { tur, karsiKasaId: hesapTuru === "kasa" ? hesapId : null, karsiBankaHesapId: hesapTuru === "banka" ? hesapId : null, karsiTutar: Number(karsiTutar).toFixed(2), aciklama: aciklama || null },
       }[tur];
       await api(`/kasa-banka/ekstre/satirlar/${satir.id}/eslestir`, { method: "POST", body: JSON.stringify({ ...govde, ...ortak }) });
       onDegisti(`Satır ${ESLESME_ADI[tur].toLocaleLowerCase("tr-TR")} olarak işlendi.${kuralDestekli && kuralKaydet ? " Kural kaydedildi; benzer satırlarda öneri hazır gelecek." : ""}`);
@@ -484,6 +489,34 @@ export function EslestirmePaneli({
                 <p className="match-panel__note">Virmanın iki bacağı oluşur. Karşı hesabın ekstresi yüklendiğinde oradaki satır bu virmana “Mevcut fiş” olarak bağlanır; ikinci kez virman üretilmez.</p>
               </div>
             )}
+
+            {tur === "doviz_islem" && (() => {
+              const karsi = oneriler.dovizHesaplari.find((h) => `${h.tur}:${h.id}` === karsiHesap);
+              const k = Number(karsiTutar);
+              // Bilgi: TL'li tarafa göre 1 döviz kaç TL; iki döviz arasında çapraz kur.
+              const kur = karsi && k > 0 ? (karsi.dovizCinsi === "TRY" ? k / mutlak : doviz === "TRY" ? mutlak / k : giris ? mutlak / k : k / mutlak) : null;
+              const kurMetni = karsi && kur ? (karsi.dovizCinsi === "TRY" ? `1 ${doviz} = ${kur.toLocaleString("tr-TR", { maximumFractionDigits: 4 })} TL` : doviz === "TRY" ? `1 ${karsi.dovizCinsi} = ${kur.toLocaleString("tr-TR", { maximumFractionDigits: 4 })} TL` : giris ? `1 ${karsi.dovizCinsi} = ${kur.toLocaleString("tr-TR", { maximumFractionDigits: 4 })} ${doviz}` : `1 ${doviz} = ${kur.toLocaleString("tr-TR", { maximumFractionDigits: 4 })} ${karsi.dovizCinsi}`) : null;
+              return (
+                <div className="match-panel__section">
+                  <Field label={giris ? "Bozdurulan / satılan hesap" : "Alınan dövizin girdiği hesap"}>
+                    <Select value={karsiHesap} onChange={(e) => setKarsiHesap(e.target.value)}>
+                      <option value="">Seçin…</option>
+                      {oneriler.dovizHesaplari.map((h) => <option key={`${h.tur}:${h.id}`} value={`${h.tur}:${h.id}`}>{h.tur === "kasa" ? "Kasa · " : "Banka · "}{h.ad} · {h.dovizCinsi}</option>)}
+                    </Select>
+                  </Field>
+                  <Field label={karsi ? `${giris ? "Karşı hesaptan çıkan" : "Karşı hesaba giren"} tutar (${karsi.dovizCinsi})` : "Karşı tutar"}>
+                    <Input type="number" inputMode="decimal" min="0.01" step="any" value={karsiTutar} onChange={(e) => setKarsiTutar(e.target.value)} />
+                  </Field>
+                  <Field label="Açıklama">
+                    <Input value={aciklama} maxLength={500} onChange={(e) => setAciklama(e.target.value)} placeholder={satir.aciklama} />
+                  </Field>
+                  <p className="match-panel__note">
+                    {kurMetni ? <>Banka kuru: <strong>{kurMetni}</strong>. </> : null}
+                    İki bacak birlikte yazılır; döviz bacağı işlem günü TCMB alış kuruyla değerlenir, fark kambiyo kârı ya da zararı olarak kaydedilir. Karşı hesabın ekstresindeki satır “Mevcut fiş” ile bağlanır.
+                  </p>
+                </div>
+              );
+            })()}
 
             {tur === "cek" && (
               <div className="match-panel__section">

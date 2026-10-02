@@ -898,6 +898,7 @@ export class KasaBankaService {
     if (h.masraf || h.kaynakTur === "masraf") return "Masraflar ekranı";
     if (h.posTahsilat || h.kaynakTur === "pos_tahsilat") return "POS tahsilatı";
     if (h.kaynakTur === "pos_iade") return "POS Hesapları ekranı (iade)";
+    if (h.kaynakTur === "doviz_islem") return "Döviz alım/satımı (fiş ayrıntısındaki \"Döviz işlemini geri al\")";
     if (h.kaynakTur === "pos_mutabakat") return "POS mutabakatı (Banka Ekstresi ekranı)";
     if (h.krediKartiOdemesi || h.kaynakTur === "kredi_karti_ekstre") return "Kredi Kartları ekranı";
     if (h.gelirKaydi || h.kaynakTur === "faturasiz_gelir") return "Faaliyet Dışı Gelirler ekranı";
@@ -1359,7 +1360,7 @@ export class KasaBankaService {
   }
 
   /** Hesabın işlem içindeki güncel bakiyesi (POS hesabı ve hesapsız girdi için null). */
-  private async hesapBakiyesi(tx: Prisma.TransactionClient, hesap: { kasaId?: string | null; bankaHesapId?: string | null }): Promise<Prisma.Decimal | null> {
+  async hesapBakiyesi(tx: Prisma.TransactionClient, hesap: { kasaId?: string | null; bankaHesapId?: string | null }): Promise<Prisma.Decimal | null> {
     if (!hesap.kasaId && !hesap.bankaHesapId) return null;
     const gruplar = await tx.kasaBankaHareket.groupBy({ by: ["tip"], where: hesap.kasaId ? { kasaId: hesap.kasaId } : { bankaHesapId: hesap.bankaHesapId! }, _sum: { tutar: true } });
     return gruplar.reduce((t, g) => (girisMi(g.tip) ? t.add(g._sum.tutar ?? 0) : t.sub(g._sum.tutar ?? 0)), D(0));
@@ -1370,7 +1371,7 @@ export class KasaBankaService {
    * düşürdüyse) onay ister; 409 işlemi geri sarar, kullanıcı onaylayınca aynı
    * istek `eksiBakiyeOnay` ile yinelenir. Engel değil, uyarıdır.
    */
-  private async eksiBakiyeDenetle(tx: Prisma.TransactionClient, hesap: { kasaId?: string | null; bankaHesapId?: string | null }, once: Prisma.Decimal | null, onay?: boolean) {
+  async eksiBakiyeDenetle(tx: Prisma.TransactionClient, hesap: { kasaId?: string | null; bankaHesapId?: string | null }, once: Prisma.Decimal | null, onay?: boolean) {
     if (onay || once === null) return;
     const sonra = await this.hesapBakiyesi(tx, hesap);
     if (!sonra || !sonra.isNegative() || !sonra.lt(once)) return;

@@ -101,6 +101,25 @@ export const virmanOlusturSemasi = z.object({
   path: ["hedefKasaId"],
 });
 
+/** P1-2a: farklı dövizdeki iki hesap arasında döviz alım/satımı. */
+export const dovizIslemSemasi = z.object({
+  kaynakKasaId: z.string().uuid().optional().nullable(),
+  kaynakBankaHesapId: z.string().uuid().optional().nullable(),
+  hedefKasaId: z.string().uuid().optional().nullable(),
+  hedefBankaHesapId: z.string().uuid().optional().nullable(),
+  /** Çıkan hesabın dövizinde. */
+  cikanTutar: pozitifOndalik,
+  /** Giren hesabın dövizinde (bankanın yatırdığı gerçek tutar). */
+  girenTutar: pozitifOndalik,
+  tarih: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)"),
+  aciklama: z.string().max(500).optional().nullable(),
+  /** Bankanın ayrıca kestiği masraf; hangi hesaptan kesildiği. */
+  masrafTutar: pozitifOndalik.optional().nullable(),
+  masrafHesabi: z.enum(["cikan", "giren"]).default("cikan"),
+  eksiBakiyeOnay: z.boolean().optional(),
+}).refine((d) => [d.kaynakKasaId, d.kaynakBankaHesapId].filter(Boolean).length === 1, { message: "Çıkan hesap olarak bir kasa ya da banka hesabı seçin", path: ["kaynakKasaId"] })
+  .refine((d) => [d.hedefKasaId, d.hedefBankaHesapId].filter(Boolean).length === 1, { message: "Giren hesap olarak bir kasa ya da banka hesabı seçin", path: ["hedefKasaId"] });
+
 /* ─── BANKA EKSTRESİ (KSB-06) ────────────────────────────────────────────── */
 
 /** Sütun indisleri; boş bırakılan alanlar dosyada yok demektir. */
@@ -182,6 +201,15 @@ export const ekstreEslestirSemasi = z.discriminatedUnion("tur", [
   }).refine((d) => Boolean(d.karsiKasaId) !== Boolean(d.karsiBankaHesapId), { message: "Karşı hesap olarak bir kasa ya da bir banka hesabı seçin", path: ["karsiKasaId"] }),
   z.object({ tur: z.literal("cek"), cekSenetId: z.uuid(), ...eslestirOrtak }),
   z.object({ tur: z.literal("kredi_karti"), krediKartiId: z.uuid(), ...eslestirOrtak }),
+  /** P1-2a: satır döviz alım/satımının bir bacağı; karşı hesap ve karşı dövizdeki tutar girilir. */
+  z.object({
+    tur: z.literal("doviz_islem"),
+    karsiKasaId: z.uuid().optional().nullable(),
+    karsiBankaHesapId: z.uuid().optional().nullable(),
+    karsiTutar: pozitifOndalik,
+    aciklama: z.string().trim().max(500).optional().nullable(),
+    ...eslestirOrtak,
+  }).refine((d) => Boolean(d.karsiKasaId) !== Boolean(d.karsiBankaHesapId), { message: "Karşı hesap olarak bir kasa ya da bir banka hesabı seçin", path: ["karsiKasaId"] }),
   /** ENT-07: bankaya gönderilmiş ödeme talimatının gerçekleşmesi. */
   z.object({ tur: z.literal("odeme_talimati"), talimatId: z.uuid(), ...eslestirOrtak }),
 ]);

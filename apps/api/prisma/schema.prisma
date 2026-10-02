@@ -2993,6 +2993,39 @@ model PosTahsilat {
   @@map("pos_tahsilatlari")
 }
 
+/// P1-2a: farklı dövizdeki iki kasa/banka hesabı arasında döviz alım/satımı.
+/// Döviz bacağı işlem günü TCMB alış kuruyla, TL bacağı bankanın gerçek
+/// tutarıyla değerlenir; TL karşılıkları arasındaki fark kambiyo kârı (gelir
+/// kaydı) ya da zararı (masraf) olarak yazılır. Bacaklar `kaynak_tur =
+/// 'doviz_islem'`, `kaynak_ref = id` olan virman hareketleridir.
+model DovizIslemi {
+  id              String     @id @default(uuid()) @db.Uuid
+  tenantId        String     @map("tenant_id") @db.Uuid
+  tarih           DateTime   @db.Date
+  cikanTutar      Decimal    @map("cikan_tutar") @db.Decimal(15, 2)
+  cikanDoviz      DovizCinsi @map("cikan_doviz")
+  cikanKur        Decimal    @map("cikan_kur") @db.Decimal(15, 6)
+  cikanTry        Decimal    @map("cikan_try") @db.Decimal(15, 2)
+  girenTutar      Decimal    @map("giren_tutar") @db.Decimal(15, 2)
+  girenDoviz      DovizCinsi @map("giren_doviz")
+  girenKur        Decimal    @map("giren_kur") @db.Decimal(15, 6)
+  girenTry        Decimal    @map("giren_try") @db.Decimal(15, 2)
+  /// girenTry − cikanTry: artı kambiyo kârı, eksi kambiyo zararı.
+  farkTry         Decimal    @map("fark_try") @db.Decimal(15, 2)
+  gidisHareketId  String     @unique @map("gidis_hareket_id") @db.Uuid
+  gelisHareketId  String     @unique @map("gelis_hareket_id") @db.Uuid
+  kambiyoGelirId  String?    @unique @map("kambiyo_gelir_id") @db.Uuid
+  kambiyoMasrafId String?    @unique @map("kambiyo_masraf_id") @db.Uuid
+  /// Bankanın ayrıca kestiği komisyon/BSMV (ödenmiş masraf).
+  bankaMasrafId   String?    @unique @map("banka_masraf_id") @db.Uuid
+  aciklama        String?
+  userId          String?    @map("user_id") @db.Uuid
+  createdAt       DateTime   @default(now()) @map("created_at")
+
+  @@index([tenantId, tarih])
+  @@map("doviz_islemleri")
+}
+
 /// P1-6: ödenmiş POS tahsilatının (tam/kısmi) iadesi. Kayıt bazlıdır; iade
 /// sağlayıcı ya da banka panelinden ayrıca yapılır.
 model PosIade {
@@ -3024,6 +3057,8 @@ enum EkstreEslesmeTuru {
   kredi_karti
   pos
   odeme_talimati
+  /// P1-2a: farklı dövizdeki iki hesap arasında döviz alım/satımı.
+  doviz_islem
 }
 
 enum EkstreKuralYonu {

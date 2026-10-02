@@ -4566,3 +4566,11 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .pos-refund .link-button { background: none; border: 0; color: var(--accent-text); cursor: pointer; font-size: inherit; padding: 0; text-decoration: underline; }
 .pos-page > *, .pos-settlement > * { min-width: 0; }
 .pos-settlement .pos-section-head { flex-wrap: wrap; gap: .3rem 1rem; }
+
+/* ─── P1-2a: döviz alım/satımı önizlemesi ──────────────────────────────── */
+.fx-exchange-preview { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); display: grid; gap: .6rem; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: .8rem; padding: .7rem .8rem; }
+.fx-exchange-preview span { color: var(--text-muted); display: block; font-size: .66rem; }
+.fx-exchange-preview strong { display: block; font-size: .82rem; font-variant-numeric: tabular-nums; margin-top: .15rem; }
+.fx-exchange-preview .is-gain strong { color: var(--success); }
+.fx-exchange-preview .is-loss strong { color: var(--danger); }
+@media (max-width: 620px) { .fx-exchange-preview { grid-template-columns: 1fr; } }
