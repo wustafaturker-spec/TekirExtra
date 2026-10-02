@@ -31,6 +31,7 @@ import type {
   kasaGuncelleSemasi,
   virmanOlusturSemasi,
   posHesapOlusturSemasi,
+  posHesapGuncelleSemasi,
   posBankaAktarimSemasi,
 } from "./kasa-banka.semalar";
 
@@ -283,10 +284,28 @@ export class KasaBankaService {
 
   async posHesapOlustur(girdi: z.infer<typeof posHesapOlusturSemasi>) {
     const { tenantId } = aktifBaglam();
+    if (girdi.saglayici === "banka") girdi = { ...girdi, baglantiId: null };
+    else if (!girdi.baglantiId) throw new BadRequestException("Sanal POS hesabı için sağlayıcı bağlantısı seçin");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       if (girdi.baglantiId) { const b = await tx.baglanti.findFirst({ where: { id: girdi.baglantiId, aile: "pos" } }); if (!b) throw new BadRequestException("POS bağlantısı bulunamadı"); if (b.saglayici !== girdi.saglayici) throw new BadRequestException("POS hesabı ile bağlantı sağlayıcısı uyuşmuyor"); }
       if (girdi.varsayilanBankaHesapId) { const b = await tx.bankaHesap.findUnique({ where: { id: girdi.varsayilanBankaHesapId } }); if (!b || b.dovizCinsi !== girdi.dovizCinsi) throw new BadRequestException("Varsayılan banka hesabı aynı döviz cinsinde olmalıdır"); }
-      return tx.posHesap.create({ data: { tenantId, ...girdi } });
+      return tx.posHesap.create({ data: { tenantId, ...girdi, komisyonOrani: girdi.komisyonOrani ? D(girdi.komisyonOrani) : undefined } });
+    });
+  }
+
+  /** P1-6: POS hesabının adı, banka hesabı, valör günü ve komisyon oranı. */
+  async posHesapGuncelle(id: string, girdi: z.infer<typeof posHesapGuncelleSemasi>) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const pos = await tx.posHesap.findUnique({ where: { id } });
+      if (!pos) throw new NotFoundException("POS hesabı bulunamadı");
+      if (girdi.varsayilanBankaHesapId) { const b = await tx.bankaHesap.findUnique({ where: { id: girdi.varsayilanBankaHesapId } }); if (!b || b.dovizCinsi !== pos.dovizCinsi) throw new BadRequestException("Banka hesabı POS hesabıyla aynı döviz cinsinde olmalıdır"); }
+      if (pos.saglayici === "banka" && girdi.varsayilanBankaHesapId === null) throw new BadRequestException("Banka POS'unun bağlı banka hesabı kaldırılamaz");
+      try {
+        return await tx.posHesap.update({ where: { id }, data: { ...girdi, komisyonOrani: girdi.komisyonOrani ? D(girdi.komisyonOrani) : undefined } });
+      } catch {
+        throw new BadRequestException(`'${girdi.ad}' adında POS hesabı zaten mevcut`);
+      }
     });
   }
 
@@ -878,6 +897,7 @@ export class KasaBankaService {
     if (h.ekstreSatir && h.ekstreSatir.eslesmeTuru !== "mevcut_fis") return "Banka Ekstresi ekranı (satırın eşleşmesini geri alın)";
     if (h.masraf || h.kaynakTur === "masraf") return "Masraflar ekranı";
     if (h.posTahsilat || h.kaynakTur === "pos_tahsilat") return "POS tahsilatı";
+    if (h.kaynakTur === "pos_iade") return "POS Hesapları ekranı (iade)";
     if (h.kaynakTur === "pos_mutabakat") return "POS mutabakatı (Banka Ekstresi ekranı)";
     if (h.krediKartiOdemesi || h.kaynakTur === "kredi_karti_ekstre") return "Kredi Kartları ekranı";
     if (h.gelirKaydi || h.kaynakTur === "faturasiz_gelir") return "Faaliyet Dışı Gelirler ekranı";

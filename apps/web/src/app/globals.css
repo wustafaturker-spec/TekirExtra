@@ -4541,3 +4541,28 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .account-statement__table td.is-out { color: var(--danger); }
 .opening-panel__form > .segmented { justify-self: start; }
 @media (max-width: 620px) { .opening-panel__form > .segmented { justify-self: stretch; } }
+
+/* ─── P1-6: banka POS'u, bankaya geçecekler, iade ───────────────────────── */
+.pos-settlement { display: grid; gap: .7rem; }
+.pos-settlement .pos-section-head small { color: var(--text-muted); font-size: .74rem; }
+.pos-settlement__account { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 5px 18px rgba(15,23,42,.04); overflow: hidden; }
+.pos-settlement__account > header { align-items: center; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: .6rem 1rem; justify-content: space-between; padding: .8rem 1rem; }
+.pos-settlement__account > header strong, .pos-settlement__account > header small { display: block; }
+.pos-settlement__account > header small { color: var(--text-muted); font-size: .74rem; margin-top: .15rem; }
+.pos-settlement__total { text-align: right; }
+.pos-settlement__total strong { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.pos-settlement__account .table-wrap { border: 0; border-radius: 0; }
+.pos-settlement__account tr.is-due > td { background: color-mix(in srgb, var(--warning-soft) 45%, var(--surface)); }
+.pos-settlement__account td .badge { margin-left: .35rem; }
+.pos-form__error { grid-column: 1 / -1; }
+.pos-form__wide { grid-column: span 2; }
+.pos-refund { color: var(--text-muted); display: block; font-size: .72rem; margin-top: .2rem; }
+.pos-account-grid article > div:last-child > .pos-actions { justify-content: flex-end; }
+@media (max-width: 760px) {
+  .pos-form__wide { grid-column: auto; }
+  .pos-settlement__total { text-align: left; }
+  .pos-account-grid article > div:last-child > .pos-actions { justify-content: flex-start; }
+}
+.pos-refund .link-button { background: none; border: 0; color: var(--accent-text); cursor: pointer; font-size: inherit; padding: 0; text-decoration: underline; }
+.pos-page > *, .pos-settlement > * { min-width: 0; }
+.pos-settlement .pos-section-head { flex-wrap: wrap; gap: .3rem 1rem; }

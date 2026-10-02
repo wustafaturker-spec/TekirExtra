@@ -42,6 +42,7 @@ import {
   makbuzSerisiSemasi,
   virmanOlusturSemasi,
   posHesapOlusturSemasi,
+  posHesapGuncelleSemasi,
   posBankaAktarimSemasi,
 } from "./kasa-banka.semalar";
 
@@ -171,6 +172,12 @@ export class KasaBankaController {
     const ayristirma = posHesapOlusturSemasi.safeParse(govde);
     if (!ayristirma.success) throw new BadRequestException(ayristirma.error.issues.map((i) => `${i.path.join(".") || "alan"}: ${i.message}`).join("; "));
     return this.service.posHesapOlustur(ayristirma.data);
+  }
+
+  @Patch("pos-hesaplari/:id")
+  @Roller("muhasebe")
+  posHesapGuncelle(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
+    return this.service.posHesapGuncelle(id, ayristir(posHesapGuncelleSemasi, govde));
   }
 
   @Post("pos-hesaplari/bankaya-aktar")

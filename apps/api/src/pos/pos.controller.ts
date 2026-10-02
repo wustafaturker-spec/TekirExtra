@@ -1,7 +1,9 @@
-import { BadRequestException, Body, Controller, Get, Header, HttpCode, HttpException, Param, Post, Query, Res } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Header, HttpCode, HttpException, Param, ParseUUIDPipe, Post, Query, Res } from "@nestjs/common";
 import type { Response } from "express";
 import { Roller } from "../auth/roller.decorator"; import { Public } from "../auth/public.decorator";
-import { posTahsilatBaslatSemasi, posTahsilatListeSemasi } from "./pos.semalar"; import { PosService } from "./pos.service";
+import { posIadeSemasi, posNedenSemasi, posSlipSemasi, posTahsilatBaslatSemasi, posTahsilatListeSemasi } from "./pos.semalar"; import type { z } from "zod";
+
+function ayristir<T extends z.ZodType>(sema: T, govde: unknown): z.infer<T> { const s = sema.safeParse(govde); if (!s.success) throw new BadRequestException(s.error.issues.map((i) => i.message).join("; ")); return s.data; } import { PosService } from "./pos.service";
 
 export function odemeSonucSayfasi(basarili: boolean, tekrar = false, makbuzUrl?: string): string {
   const baslik = basarili ? "Ödeme başarıyla tamamlandı" : "Ödeme tamamlanamadı";
@@ -20,6 +22,13 @@ export function odemeSonucSayfasi(basarili: boolean, tekrar = false, makbuzUrl?:
   @Post("tahsilatlar/:id/eposta") @Roller("yonetici", "muhasebe") epostaYenidenGonder(@Param("id") id: string) { return this.service.epostaYenidenGonder(id); }
   @Post("tahsilatlar/:id/sms") @Roller("yonetici", "muhasebe") smsYenidenGonder(@Param("id") id: string) { return this.service.smsYenidenGonder(id); }
   @Post("tahsilatlar/:id/yeniden-dene") @Roller("yonetici", "muhasebe") yenidenDene(@Param("id") id: string) { return this.service.yenidenDene(id); }
+  // P1-6: iptal, banka POS slibi, iade ve bankaya geçecekler.
+  @Post("tahsilatlar/:id/iptal") @Roller("yonetici", "muhasebe") iptal(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) { return this.service.iptal(id, ayristir(posNedenSemasi, govde).neden); }
+  @Post("slip") @Roller("yonetici", "muhasebe") slipGir(@Body() govde: unknown) { return this.service.slipGir(ayristir(posSlipSemasi, govde)); }
+  @Post("tahsilatlar/:id/slip-geri-al") @Roller("yonetici", "muhasebe") slipGeriAl(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) { return this.service.slipGeriAl(id, ayristir(posNedenSemasi, govde).neden); }
+  @Post("tahsilatlar/:id/iade") @Roller("yonetici", "muhasebe") iade(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) { return this.service.iade(id, ayristir(posIadeSemasi, govde)); }
+  @Post("iadeler/:id/geri-al") @Roller("yonetici", "muhasebe") iadeGeriAl(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) { return this.service.iadeGeriAl(id, ayristir(posNedenSemasi, govde).neden); }
+  @Get("bankaya-gececekler") @Roller("yonetici", "muhasebe", "salt_okunur") bankayaGececekler() { return this.service.bankayaGececekler(); }
   @Post("iyzico/callback/:tenantId/:tahsilatId") @Public()
   async callback(@Param("tenantId") tenantId: string, @Param("tahsilatId") tahsilatId: string, @Body() govde: unknown, @Res() yanit: Response) {
     yanit.setHeader("Content-Type", "text/html; charset=utf-8");

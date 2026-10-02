@@ -2933,6 +2933,10 @@ model PosHesap {
   varsayilanBankaHesapId String?    @map("varsayilan_banka_hesap_id") @db.Uuid
   dovizCinsi             DovizCinsi @default(TRY) @map("doviz_cinsi")
   aktif                  Boolean    @default(true)
+  /// P1-6: tahsilatın bankaya geçtiği gün sayısı (1 = ertesi gün, 30 = bloke).
+  valorGun               Int        @default(1) @map("valor_gun")
+  /// P1-6: aktarımda önerilen komisyon oranı (%); kullanıcı aktarımda düzeltir.
+  komisyonOrani          Decimal    @default(0) @map("komisyon_orani") @db.Decimal(5, 2)
   createdAt              DateTime   @default(now()) @map("created_at")
   updatedAt              DateTime   @updatedAt @map("updated_at")
 
@@ -2969,6 +2973,12 @@ model PosTahsilat {
   smsGonderimTarihi    DateTime?         @map("sms_gonderim_tarihi")
   smsGorevId           String?           @map("sms_gorev_id")
   smsHatasi            String?           @map("sms_hatasi")
+  /// P1-6: "baglanti" = sanal POS ödeme bağlantısı, "slip" = banka POS'u slibi (elle girilir).
+  kanal                String            @default("baglanti")
+  slipNo               String?           @map("slip_no")
+  iptalNedeni          String?           @map("iptal_nedeni")
+  /// P1-6: ödeme, bağlantı süresi dolduktan ya da iptal edildikten sonra geldi.
+  gecOdeme             Boolean           @default(false) @map("gec_odeme")
   createdAt            DateTime          @default(now()) @map("created_at")
   updatedAt            DateTime          @updatedAt @map("updated_at")
 
@@ -2977,9 +2987,30 @@ model PosTahsilat {
   cari     CariHesap         @relation(fields: [cariId], references: [id])
   fatura   Fatura?           @relation(fields: [faturaId], references: [id])
   hareket  KasaBankaHareket? @relation(fields: [hareketId], references: [id])
+  iadeler  PosIade[]
 
   @@index([tenantId, durum, createdAt])
   @@map("pos_tahsilatlari")
+}
+
+/// P1-6: ödenmiş POS tahsilatının (tam/kısmi) iadesi. Kayıt bazlıdır; iade
+/// sağlayıcı ya da banka panelinden ayrıca yapılır.
+model PosIade {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  posTahsilatId String   @map("pos_tahsilat_id") @db.Uuid
+  tutar         Decimal  @db.Decimal(15, 2)
+  tarih         DateTime @db.Date
+  neden         String
+  hareketId     String   @unique @map("hareket_id") @db.Uuid
+  userId        String?  @map("user_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  posTahsilat PosTahsilat      @relation(fields: [posTahsilatId], references: [id], onDelete: Cascade)
+  hareket     KasaBankaHareket @relation(fields: [hareketId], references: [id])
+
+  @@index([tenantId, posTahsilatId])
+  @@map("pos_iadeleri")
 }
 
 /// KSB-06: ekstre satırının eşleştiği kayıt türü.
@@ -3137,6 +3168,7 @@ model KasaBankaHareket {
   ekstreSatir       BankaEkstreSatir?  @relation(fields: [ekstreSatirId], references: [id], onDelete: SetNull)
   pazaryeriKesinti  PazaryeriKesinti?
   posTahsilat       PosTahsilat?
+  posIade           PosIade?
   masraf            Masraf?
   krediKartiOdemesi KrediKartiHareket?
   gelirKaydi        GelirKaydi?

@@ -30,10 +30,23 @@ export const bankaHesapGuncelleSemasi = guncellemeSemasi(bankaHesapOlusturSemasi
   aktif: z.boolean().optional(),
 });
 
+/** P1-6: "banka" = fiziksel banka POS'u (bağlantısız; slip elle girilir, bankaya valörle geçer). */
+const posAyarlari = {
+  valorGun: z.number().int().min(0, "Valör günü eksi olamaz").max(365).optional(),
+  komisyonOrani: z.string().regex(/^\d{1,2}(\.\d{1,2})?$/, "Komisyon oranı 0-99,99 arası olmalıdır").optional(),
+};
 export const posHesapOlusturSemasi = z.object({
-  ad: z.string().min(2).max(100), saglayici: z.enum(["iyzico", "paytr"]),
+  ad: z.string().min(2).max(100), saglayici: z.enum(["iyzico", "paytr", "banka"]),
   baglantiId: z.string().uuid().optional().nullable(), varsayilanBankaHesapId: z.string().uuid().optional().nullable(),
   dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+  ...posAyarlari,
+}).refine((d) => d.saglayici !== "banka" || Boolean(d.varsayilanBankaHesapId), { message: "Banka POS'u için paranın geçeceği banka hesabını seçin", path: ["varsayilanBankaHesapId"] });
+
+export const posHesapGuncelleSemasi = z.object({
+  ad: z.string().min(2).max(100).optional(),
+  varsayilanBankaHesapId: z.string().uuid().optional().nullable(),
+  aktif: z.boolean().optional(),
+  ...posAyarlari,
 });
 
 export const posBankaAktarimSemasi = z.object({
