@@ -189,6 +189,20 @@ describe("Excel ekstresi (KSB-06)", () => {
     expect(satirlar.map((s) => [s.tutar, s.aciklama])).toEqual([[1500.5, "EFT ANADOLU KİMYA"], [-12.5, "EFT ÜCRETİ"]]);
   });
 
+  it("binlerce satırlık dosyayı doğrusal sürede okur (sütun sayısı bir kez hesaplanır)", async () => {
+    const { ekstreDosyasiOku } = await import("./ekstre-oku");
+    const ExcelJS = await import("exceljs");
+    const kitap = new ExcelJS.Workbook();
+    const sayfa = kitap.addWorksheet("Hareketler");
+    sayfa.addRow(["Tarih", "Açıklama", "Tutar", "Bakiye"]);
+    for (let i = 0; i < 6000; i++) sayfa.addRow([new Date(Date.UTC(2026, 0, 1 + (i % 300))), `EFT ${i}`, i, i * 2]);
+    const dosya = Buffer.from(await kitap.xlsx.writeBuffer());
+    const basla = Date.now();
+    const tablo = await ekstreDosyasiOku(dosya);
+    expect(tablo).toHaveLength(6001);
+    expect(Date.now() - basla).toBeLessThan(5000);
+  }, 20000);
+
   it("bozuk .xlsx için anlaşılır hata verir", async () => {
     const { ekstreDosyasiOku } = await import("./ekstre-oku");
     await expect(ekstreDosyasiOku(Buffer.from([0x50, 0x4b, 0x03, 0x04, 1, 2, 3]))).rejects.toThrow("Excel dosyası okunamadı");

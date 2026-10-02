@@ -167,6 +167,9 @@ export function excelMi(buffer: Buffer): boolean {
  * noktalı ondalıkla yazılır (tarih/tutar çözücüleri ikisini de anlar). Sütun
  * eşlemesi CSV'deki gibi kullanıcıdan alınır.
  */
+/** Bir banka ekstresi dosyasında beklenen en fazla satır (yıllık hareket bile bunun altında kalır). */
+const EXCEL_EN_FAZLA_SATIR = 50_000;
+
 export async function ekstreDosyasiOku(buffer: Buffer): Promise<string[][]> {
   if (!excelMi(buffer)) return ekstreTabloOku(buffer);
   const kitap = new ExcelJS.Workbook();
@@ -177,10 +180,16 @@ export async function ekstreDosyasiOku(buffer: Buffer): Promise<string[][]> {
   }
   const sayfa = kitap.worksheets[0];
   if (!sayfa) throw new EkstreOkumaHatasi("Excel dosyasında çalışma sayfası yok");
+  if (sayfa.actualRowCount > EXCEL_EN_FAZLA_SATIR) {
+    throw new EkstreOkumaHatasi(`Excel dosyasında ${sayfa.actualRowCount.toLocaleString("tr-TR")} satır var; en fazla ${EXCEL_EN_FAZLA_SATIR.toLocaleString("tr-TR")} satırlık ekstre yüklenebilir, dönemi bölün`);
+  }
+  // `columnCount` her çağrıda bütün satırları gezer; döngü içinde okunursa
+  // okuma satır sayısının karesiyle büyür ve büyük dosyada API kilitlenir.
+  const sutunSayisi = sayfa.columnCount;
   const tablo: string[][] = [];
   sayfa.eachRow({ includeEmpty: true }, (satir) => {
     const hucreler: string[] = [];
-    for (let i = 1; i <= sayfa.columnCount; i++) hucreler.push(hucreMetni(satir.getCell(i).value));
+    for (let i = 1; i <= sutunSayisi; i++) hucreler.push(hucreMetni(satir.getCell(i).value));
     tablo.push(hucreler);
   });
   while (tablo.length && tablo[tablo.length - 1].every((h) => !h.trim())) tablo.pop();
