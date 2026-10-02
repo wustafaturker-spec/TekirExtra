@@ -413,7 +413,8 @@ describe("KasaBankaService çek/senet son işlemi geri alma (KSB-08)", () => {
     const tx = {
       $queryRaw: vi.fn().mockResolvedValue([]),
       cekSenet: { findUnique: vi.fn().mockResolvedValue(kayit), delete: vi.fn(), update: vi.fn() },
-      cekSenetOlay: { update: vi.fn(), create: vi.fn() },
+      cekSenetOlay: { update: vi.fn(), create: vi.fn(), findFirst: vi.fn().mockResolvedValue(null) },
+      cekSenetBordro: { findUnique: vi.fn() },
       cariHareket: { findMany: vi.fn(async ({ where }) => (where.kaynakTur === "cek_senet_geri_alma" ? [] : cariler)), deleteMany: vi.fn(), create: vi.fn() },
       kasaBankaHareket: {
         findMany: vi.fn(async ({ where }) => (where.kaynakTur === "ters_kayit" ? [] : fisler)),
@@ -431,6 +432,23 @@ describe("KasaBankaService çek/senet son işlemi geri alma (KSB-08)", () => {
     return { tx, service };
   }
   const cariKaydi = { id: "c1", cariId: "cari-1", tip: "borc", tutar: D("1000"), dovizCinsi: "TRY", kur: D("1"), tutarTry: D("1000"), aciklama: "Ciro" };
+
+  it("bordroyla yapılmış işlem tek evrak olarak geri alınmaz; bordro geri alması geçer (KSB-11)", async () => {
+    const kayit = cek("tahsile_verildi", { oncekiDurum: "portfoyde", yeniDurum: "tahsile_verildi", bordroId: "b1" });
+    const { tx, service } = hazirla(kayit);
+    tx.cekSenetBordro.findUnique.mockResolvedValue({ no: "BRD2026-000003" });
+    await expect(service.cekSenetSonIslemiGeriAl("cs1", "Deneme")).rejects.toThrow("BRD2026-000003 bordrosuyla");
+
+    tx.cekSenetOlay.findFirst.mockResolvedValue({ bankaHesapId: null });
+    await expect(service.cekSonIslemiGeriAlTx(tx as never, "t1", "u1", "cs1", "Bordro geri alındı", "b1")).resolves.toMatchObject({ durum: "portfoyde" });
+  });
+
+  it("tahsil geri alınıp çek bankaya dönünce önceki olayın banka hesabı geri gelir (KSB-11)", async () => {
+    const { tx, service } = hazirla(cek("tahsil_edildi", { oncekiDurum: "tahsile_verildi", yeniDurum: "tahsil_edildi" }), false, [], [{ id: "f1" }]);
+    tx.cekSenetOlay.findFirst.mockResolvedValue({ bankaHesapId: "banka-A" });
+    await service.cekSenetSonIslemiGeriAl("cs1", "Banka iade etti");
+    expect(tx.cekSenet.update.mock.calls[0][0].data).toMatchObject({ durum: "tahsile_verildi", bankaHesapId: "banka-A" });
+  });
 
   it("açık dönemde yalnız kaydı olan evrakı cari hareketiyle siler", async () => {
     const { tx, service } = hazirla(cek("portfoyde", { oncekiDurum: null, yeniDurum: "portfoyde" }), false, [cariKaydi]);

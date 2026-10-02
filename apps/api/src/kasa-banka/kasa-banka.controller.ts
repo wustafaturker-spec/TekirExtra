@@ -26,6 +26,7 @@ import { KasaBankaService } from "./kasa-banka.service";
 import { BankaEntegrasyonService } from "./banka-entegrasyon.service";
 import { z } from "zod";
 import { OdemeTalimatiService } from "./odeme-talimati.service";
+import { CekBordroService } from "./cek-bordro.service";
 import {
   bankaHesapGuncelleSemasi,
   bankaHesapOlusturSemasi,
@@ -60,6 +61,7 @@ export class KasaBankaController {
     private readonly ekstreEslestirme: EkstreEslestirmeService,
     private readonly bankaEntegrasyon: BankaEntegrasyonService,
     private readonly odemeTalimati: OdemeTalimatiService,
+    private readonly cekBordro: CekBordroService,
   ) {}
 
   @Get("odeme-talimatlari")
@@ -300,7 +302,9 @@ export class KasaBankaController {
   @Roller("muhasebe")
   async cekSenetGeriAl(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
     const { neden } = ayristir(geriAlmaSemasi, govde);
-    return this.service.cekSenetSonIslemiGeriAl(id, neden);
+    const sonuc = await this.service.cekSenetSonIslemiGeriAl(id, neden);
+    if (sonuc.silindi) await this.cekBordro.silinenEvrakGorunumleriniTemizle(id);
+    return sonuc;
   }
 
   @Get("cek-senet/:id")

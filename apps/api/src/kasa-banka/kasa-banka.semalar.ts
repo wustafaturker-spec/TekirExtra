@@ -229,6 +229,8 @@ export const cekSenetGuncelleSemasi = z
      */
     hesapKasaId: z.string().uuid().optional().nullable(),
     hesapBankaHesapId: z.string().uuid().optional().nullable(),
+    /** KSB-11: tahsile/teminata verilirken çekin bırakıldığı banka hesabı. */
+    bankaHesapId: z.string().uuid().optional().nullable(),
     islemTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)").optional(),
     fizikselKonum: z.string().max(150).optional().nullable(),
   })

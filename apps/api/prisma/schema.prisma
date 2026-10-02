@@ -188,6 +188,8 @@ model Tenant {
   personelSayaci            PersonelSayac?
   uretimSayaclari           UretimSayac[]
   makbuzSerileri            MakbuzSeri[]
+  cekSenetBordrolari        CekSenetBordro[]
+  cekSenetBordroSayaclari   CekSenetBordroSayac[]
   uretimBildirimleri        UretimBildirimi[]
   isMerkezleri              IsMerkezi[]
   kaliteKontrolleri         UretimKaliteKontrol[]
@@ -805,6 +807,7 @@ model CariHesap {
   faturas               Fatura[]
   cekSenetleri          CekSenet[]          @relation("CekSenetCari")
   ceklerCiro            CekSenet[]          @relation("CekSenetCiro")
+  cekBordrolari         CekSenetBordro[]
   kasaBankaHareketleri  KasaBankaHareket[]
   gelirKayitlari        GelirKaydi[]
   stokTedarikcilikleri  StokTedarikci[]
@@ -2661,6 +2664,9 @@ model BankaHesap {
   masrafOdemeleri    MasrafOdeme[]
   gelirKayitlari     GelirKaydi[]
   krediKartlari      KrediKarti[]
+  /// KSB-11: bu hesapta tahsilde/teminatta duran çekler.
+  bankadakiCekler    CekSenet[]
+  cekBordrolari      CekSenetBordro[]
 
   @@unique([tenantId, ad])
   @@map("banka_hesaplari")
@@ -3091,33 +3097,102 @@ model CekSenet {
   ciroCariId    String?       @map("ciro_cari_id") @db.Uuid
   aciklama      String?
   fizikselKonum String?       @map("fiziksel_konum")
+  /// KSB-11: tahsile/teminata verildiği banka hesabı (bankadayken dolu).
+  bankaHesapId  String?       @map("banka_hesap_id") @db.Uuid
+  /// KSB-11: ön ve arka yüz görüntüsü (ekler tablosunda, MinIO'da).
+  onYuzEkId     String?       @map("on_yuz_ek_id") @db.Uuid
+  arkaYuzEkId   String?       @map("arka_yuz_ek_id") @db.Uuid
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
-  cari     CariHesap?     @relation("CekSenetCari", fields: [cariId], references: [id])
-  ciroCari CariHesap?     @relation("CekSenetCiro", fields: [ciroCariId], references: [id])
-  olaylar  CekSenetOlay[]
+  cari       CariHesap?     @relation("CekSenetCari", fields: [cariId], references: [id])
+  ciroCari   CariHesap?     @relation("CekSenetCiro", fields: [ciroCariId], references: [id])
+  bankaHesap BankaHesap?    @relation(fields: [bankaHesapId], references: [id])
+  onYuzEk    Ek?            @relation("CekOnYuz", fields: [onYuzEkId], references: [id], onDelete: SetNull)
+  arkaYuzEk  Ek?            @relation("CekArkaYuz", fields: [arkaYuzEkId], references: [id], onDelete: SetNull)
+  olaylar    CekSenetOlay[]
 
   @@unique([tenantId, portfoyNo])
   @@map("cek_senetler")
 }
 
-model CekSenetOlay {
-  id          String         @id @default(uuid()) @db.Uuid
-  tenantId    String         @map("tenant_id") @db.Uuid
-  cekSenetId  String         @map("cek_senet_id") @db.Uuid
-  oncekiDurum CekSenetDurum? @map("onceki_durum")
-  yeniDurum   CekSenetDurum  @map("yeni_durum")
-  islemTarihi DateTime       @map("islem_tarihi") @db.Date
-  aciklama    String?
-  userId      String         @map("user_id") @db.Uuid
-  /// KSB-08: bu olay sonradan geri alındı (etkisi silindi ya da ters kaydı atıldı).
-  geriAlindi  Boolean        @default(false) @map("geri_alindi")
-  /// KSB-08: bu olay, önceki bir olayın geri alınmasıdır; kendisi geri alınamaz.
-  geriAlma    Boolean        @default(false) @map("geri_alma")
-  createdAt   DateTime       @default(now()) @map("created_at")
+/// KSB-11: çek/senet bordrosu — birden çok evrakın tek seferde girişi,
+/// cirosu, bankaya verilmesi ya da kendi çeklerimizin çıkışı. Numaralı
+/// belgedir; bütün olarak geri alınır, geri alınan bordronun numarası yanar.
+model CekSenetBordro {
+  id             String              @id @default(uuid()) @db.Uuid
+  tenantId       String              @map("tenant_id") @db.Uuid
+  no             String
+  tur            CekSenetBordroTur
+  durum          CekSenetBordroDurum @default(aktif)
+  tarih          DateTime            @db.Date
+  cariId         String?             @map("cari_id") @db.Uuid
+  bankaHesapId   String?             @map("banka_hesap_id") @db.Uuid
+  dovizCinsi     DovizCinsi          @default(TRY) @map("doviz_cinsi")
+  toplam         Decimal             @db.Decimal(15, 2)
+  adet           Int
+  /// Tutar ağırlıklı ortalama vade.
+  ortalamaVade   DateTime            @map("ortalama_vade") @db.Date
+  aciklama       String?
+  userId         String?             @map("user_id") @db.Uuid
+  geriAlmaNedeni String?             @map("geri_alma_nedeni")
+  createdAt      DateTime            @default(now()) @map("created_at")
 
-  cekSenet CekSenet @relation(fields: [cekSenetId], references: [id], onDelete: Cascade)
+  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cari       CariHesap?     @relation(fields: [cariId], references: [id])
+  bankaHesap BankaHesap?    @relation(fields: [bankaHesapId], references: [id])
+  olaylar    CekSenetOlay[]
+
+  @@unique([tenantId, no])
+  @@index([tenantId, tarih])
+  @@map("cek_senet_bordrolari")
+}
+
+model CekSenetBordroSayac {
+  tenantId String @map("tenant_id") @db.Uuid
+  yil      Int
+  sonSira  Int    @default(0) @map("son_sira")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, yil])
+  @@map("cek_senet_bordro_sayaclari")
+}
+
+enum CekSenetBordroTur {
+  giris
+  ciro
+  tahsile
+  teminata
+  borc_cikis
+}
+
+enum CekSenetBordroDurum {
+  aktif
+  geri_alindi
+}
+
+model CekSenetOlay {
+  id           String         @id @default(uuid()) @db.Uuid
+  tenantId     String         @map("tenant_id") @db.Uuid
+  cekSenetId   String         @map("cek_senet_id") @db.Uuid
+  oncekiDurum  CekSenetDurum? @map("onceki_durum")
+  yeniDurum    CekSenetDurum  @map("yeni_durum")
+  islemTarihi  DateTime       @map("islem_tarihi") @db.Date
+  aciklama     String?
+  userId       String         @map("user_id") @db.Uuid
+  /// KSB-08: bu olay sonradan geri alındı (etkisi silindi ya da ters kaydı atıldı).
+  geriAlindi   Boolean        @default(false) @map("geri_alindi")
+  /// KSB-08: bu olay, önceki bir olayın geri alınmasıdır; kendisi geri alınamaz.
+  geriAlma     Boolean        @default(false) @map("geri_alma")
+  /// KSB-11: olayın yapıldığı bordro.
+  bordroId     String?        @map("bordro_id") @db.Uuid
+  /// KSB-11: olayla çekin girdiği banka hesabı (geri almada önceki hesap buradan döner).
+  bankaHesapId String?        @map("banka_hesap_id") @db.Uuid
+  createdAt    DateTime       @default(now()) @map("created_at")
+
+  cekSenet CekSenet        @relation(fields: [cekSenetId], references: [id], onDelete: Cascade)
+  bordro   CekSenetBordro? @relation(fields: [bordroId], references: [id])
 
   @@index([tenantId, cekSenetId, createdAt])
   @@map("cek_senet_olaylari")
@@ -3134,6 +3209,7 @@ enum EkSahipTur {
   kira_sozlesme
   personel
   satin_alma_teklif
+  cek_senet
 }
 
 enum PersonelBelgeTuru {
@@ -3383,6 +3459,8 @@ model Ek {
   createdAt      DateTime   @default(now()) @map("created_at")
 
   personelBelgesi PersonelBelgesi?
+  cekOnYuzleri    CekSenet[]       @relation("CekOnYuz")
+  cekArkaYuzleri  CekSenet[]       @relation("CekArkaYuz")
 
   @@index([tenantId, sahipTur, sahipId])
   @@map("ekler")

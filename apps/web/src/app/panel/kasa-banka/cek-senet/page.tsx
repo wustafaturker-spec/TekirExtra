@@ -19,6 +19,7 @@ import {
 } from "@/components/ui";
 import { AramaSecici } from "@/components/arama-secici";
 import { bugunTR } from "@tekirextra/shared";
+import { CekGorunumu } from "./cek-gorunumu";
 import { GeriAlmaFormu, type GeriAlmaYontemi } from "@/components/geri-alma-formu";
 
 /* ─── Tipler ─────────────────────────────────────────────────────────────── */
@@ -57,7 +58,11 @@ interface CekSenet {
   fizikselKonum: string | null;
   cari: CariOzet | null;
   ciroCari: CariOzet | null;
-  olaylar?: { id:string; oncekiDurum:string|null; yeniDurum:string; islemTarihi:string; aciklama:string|null; createdAt:string; geriAlindi?:boolean; geriAlma?:boolean }[];
+  /** KSB-11: bankadaki çekin hesabı ve evrak görüntüleri. */
+  bankaHesap?: { id: string; ad: string } | null;
+  onYuzEkId?: string | null;
+  arkaYuzEkId?: string | null;
+  olaylar?: { id:string; oncekiDurum:string|null; yeniDurum:string; islemTarihi:string; aciklama:string|null; createdAt:string; geriAlindi?:boolean; geriAlma?:boolean; bordro?: { id: string; no: string; tur: string } | null }[];
 }
 
 interface PortfoyOzet { acik:{adet:number;toplamTry:string;dovizler:Record<string,string>}; geciken:{adet:number;toplamTry:string}; yaklasan:{adet:number;toplamTry:string}; bankada:{adet:number;toplamTry:string}; ciro:{adet:number;toplamTry:string}; karsiliksiz:{adet:number;toplamTry:string} }
@@ -202,7 +207,7 @@ export default function CekSenetSayfasi() {
 
   return (
     <div className="cheque-page">
-      <section className="cheque-hero"><div><span>PORTFÖY & RİSK YÖNETİMİ</span><h1>Çek ve senet çalışma alanı</h1><p>{yon === "alinan" ? "Müşteri çeklerini yönetin, bankaya teslim süreçlerini takip edin ve tahsilat riskini görünür tutun." : "Verilen çek ve senetleri vade, lehtar ve ödeme riskiyle birlikte yönetin."}</p></div><div><ButtonLabel as="a" href="/panel/kasa-banka">← Kasa & Banka</ButtonLabel><Button variant="primary" onClick={() => setFormAcik(!formAcik)}>{formAcik ? "Vazgeç" : yon === "alinan" ? "+ Çek/Senet Al" : "+ Çek/Senet Ver"}</Button></div></section>
+      <section className="cheque-hero"><div><span>PORTFÖY & RİSK YÖNETİMİ</span><h1>Çek ve senet çalışma alanı</h1><p>{yon === "alinan" ? "Müşteri çeklerini yönetin, bankaya teslim süreçlerini takip edin ve tahsilat riskini görünür tutun." : "Verilen çek ve senetleri vade, lehtar ve ödeme riskiyle birlikte yönetin."}</p></div><div><ButtonLabel as="a" href="/panel/kasa-banka">← Kasa & Banka</ButtonLabel><ButtonLabel as="a" href="/panel/kasa-banka/cek-senet/bordrolar">Bordrolar</ButtonLabel><Button variant="primary" onClick={() => setFormAcik(!formAcik)}>{formAcik ? "Vazgeç" : yon === "alinan" ? "+ Çek/Senet Al" : "+ Çek/Senet Ver"}</Button></div></section>
 
       <div className="cheque-switcher">
         <Segmented<Yon>
@@ -404,7 +409,11 @@ export default function CekSenetSayfasi() {
                 <p className="muted" style={{ margin: ".35rem 0 0" }}>{detay.cari?.unvan ?? detay.borclu} · {para(detay.tutar, detay.dovizCinsi)} · {detay.fizikselKonum ?? "Konum belirtilmedi"}</p>
               </div>
               <div className="row-tight">
-                {sonIslem && !geriAlAcik && (
+                {/* KSB-11: bordroyla yapılan işlem bordrodan bütün olarak geri alınır. */}
+                {sonIslem?.bordro && (
+                  <ButtonLabel as="a" href={`/panel/kasa-banka/cek-senet/bordrolar?bordro=${sonIslem.bordro.id}`}>{sonIslem.bordro.no} bordrosunu aç</ButtonLabel>
+                )}
+                {sonIslem && !sonIslem.bordro && !geriAlAcik && (
                   <Button size="sm" variant="danger" onClick={() => setGeriAlAcik(true)}>
                     {sonIslem.oncekiDurum ? "Son işlemi geri al" : "Kaydı geri al"}
                   </Button>
@@ -430,6 +439,7 @@ export default function CekSenetSayfasi() {
                 }}
               />
             )}
+            <CekGorunumu cekId={detay.id} onYuzEkId={detay.onYuzEkId ?? null} arkaYuzEkId={detay.arkaYuzEkId ?? null} onDegisti={() => void detayAc(detay.id).then(() => yukle())} />
             <div className="stack" style={{ gap: ".65rem" }}>
               {detay.olaylar?.map((o) => (
                 <div key={o.id} className={`between cheque-history__event${o.geriAlindi ? " is-undone" : ""}`}>
@@ -437,6 +447,7 @@ export default function CekSenetSayfasi() {
                     <strong>{DURUMLAR[o.yeniDurum]?.baslik ?? o.yeniDurum}</strong>{" "}
                     {o.geriAlma && <Badge variant="warning">Geri alma</Badge>}
                     {o.geriAlindi && <Badge variant="neutral">Geri alındı</Badge>}
+                    {o.bordro && <a className="cheque-history__bordro" href={`/panel/kasa-banka/cek-senet/bordrolar?bordro=${o.bordro.id}`}>{o.bordro.no}</a>}
                     <div className="muted" style={{ fontSize: ".82rem" }}>
                       {o.oncekiDurum ? `${DURUMLAR[o.oncekiDurum]?.baslik ?? o.oncekiDurum} durumundan geçildi` : "Başlangıç kaydı"}{o.aciklama ? ` · ${o.aciklama}` : ""}
                     </div>
