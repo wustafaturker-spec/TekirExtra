@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { ConflictException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { KasaBankaService } from "./kasa-banka.service";
 
@@ -297,6 +298,98 @@ describe("KasaBankaService dönem kilidi", () => {
 
     await expect(service.cekSenetGuncelle("cs1", { durum: "tahsil_edildi", hesapKasaId: "k1", islemTarihi: "2026-09-10" })).rejects.toThrow("kapalı");
     await expect(service.cekSenetGuncelle("cs1", { durum: "tahsile_verildi", islemTarihi: "2026-09-10" })).resolves.toBeDefined();
+  });
+});
+
+describe("KasaBankaService fiş geri alma (KSB-08)", () => {
+  const D = (d: string) => new Prisma.Decimal(d);
+  const hareket = (ek: Record<string, unknown> = {}) => ({
+    id: "h1", tip: "tahsilat", kasaId: "k1", bankaHesapId: null, posHesapId: null, tutar: D("500"), dovizCinsi: "TRY", kur: D("1"), tutarTry: D("500"),
+    tarih: new Date("2026-09-10"), aciklama: "Tahsilat", cariId: "cari-1", faturaId: "f1", faturaKarsiligi: D("500"), faturaMahsubu: D("500"),
+    karsiHareketId: null, kaynakTur: "fatura_kapama", kaynakRef: "f1",
+    ekstreSatir: null, posTahsilat: null, masraf: null, krediKartiOdemesi: null, gelirKaydi: null, pazaryeriKesinti: null, ...ek,
+  });
+  const cariHareket = { id: "ch1", cariId: "cari-1", tip: "alacak", tutar: D("500"), dovizCinsi: "TRY", kur: D("1"), tutarTry: D("500"), aciklama: "Tahsilat", kaynakRef: "h1" };
+
+  function hazirla(kayitlar: Record<string, ReturnType<typeof hareket>>, donemKapali = false, tersVar = false) {
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      kasaBankaHareket: {
+        findUnique: vi.fn(async ({ where }) => kayitlar[where.id] ?? null),
+        findFirst: vi.fn().mockResolvedValue(tersVar ? { id: "ters" } : null),
+        deleteMany: vi.fn(),
+        create: vi.fn(async ({ data }) => ({ id: `ters-${data.kaynakRef}`, ...data })),
+        update: vi.fn(),
+      },
+      cariHareket: { findMany: vi.fn().mockResolvedValue([cariHareket]), deleteMany: vi.fn(), create: vi.fn() },
+      bankaEkstreSatir: { update: vi.fn() },
+      auditLog: { create: vi.fn() },
+    };
+    const donemKilidi = {
+      tarihDogrula: vi.fn(async (_t: string, tarih: Date | string) => {
+        const gun = typeof tarih === "string" ? tarih : tarih.toISOString().slice(0, 10);
+        if (donemKapali && gun.startsWith("2026-09")) throw new ConflictException("Eylül 2026 mali dönemi kapalı");
+      }),
+    };
+    const service = new KasaBankaService({ tenantIslem: vi.fn((_t, cb) => cb(tx)) } as any, {} as any, donemKilidi as any);
+    return { tx, service };
+  }
+
+  it("açık dönemde fişi cari hareketiyle siler ve görüntüsünü denetim izine yazar", async () => {
+    const { tx, service } = hazirla({ h1: hareket({ ekstreSatir: { id: "es1" } }) });
+
+    await expect(service.hareketGeriAl("h1", "Yanlış cari")).resolves.toEqual({ yontem: "silindi", hareketIdleri: ["h1"] });
+    expect(tx.cariHareket.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["ch1"] } } });
+    expect(tx.kasaBankaHareket.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["h1"] } } });
+    expect(tx.bankaEkstreSatir.update).toHaveBeenCalledWith({ where: { id: "es1" }, data: { durum: "beklemede", cariId: null, faturaId: null, hareketId: null } });
+    expect(tx.auditLog.create.mock.calls[0][0].data).toMatchObject({ islem: "kasa_banka_fisi_silindi", varlikId: "h1", detay: expect.objectContaining({ neden: "Yanlış cari" }) });
+  });
+
+  it("kapalı dönemde bugün tarihli ters kayıt atar ve fatura mahsubunu geri açar", async () => {
+    const { tx, service } = hazirla({ h1: hareket() }, true);
+
+    const sonuc = await service.hareketGeriAl("h1", "Mükerrer giriş");
+
+    expect(sonuc.yontem).toBe("ters_kayit");
+    expect(tx.kasaBankaHareket.deleteMany).not.toHaveBeenCalled();
+    expect(tx.kasaBankaHareket.create.mock.calls[0][0].data).toMatchObject({ tip: "tediye", tutar: D("500"), faturaId: "f1", faturaMahsubu: D("-500"), kaynakTur: "ters_kayit", kaynakRef: "h1" });
+    expect(tx.cariHareket.create.mock.calls[0][0].data).toMatchObject({ tip: "borc", tutar: D("500"), kaynakRef: "ters-h1" });
+  });
+
+  it("virmanın iki bacağını birlikte geri alır", async () => {
+    const { tx, service } = hazirla({
+      g1: hareket({ id: "g1", tip: "virman_gidis", kaynakTur: "manuel", faturaId: null, cariId: null, karsiHareketId: "g2" }),
+      g2: hareket({ id: "g2", tip: "virman_gelis", kasaId: "k2", kaynakTur: "manuel", faturaId: null, cariId: null, karsiHareketId: "g1" }),
+    });
+    tx.cariHareket.findMany.mockResolvedValue([]);
+
+    await expect(service.hareketGeriAl("g1", "Yanlış hesap")).resolves.toEqual({ yontem: "silindi", hareketIdleri: ["g1", "g2"] });
+  });
+
+  it("başka modülün ürettiği fişi geri almaz, kaynağını söyler", async () => {
+    const { service } = hazirla({ h1: hareket({ kaynakTur: "masraf", masraf: { id: "m1" } }) });
+
+    await expect(service.hareketGeriAl("h1", "Deneme")).rejects.toThrow("Masraflar ekranı");
+  });
+
+  it("aynı fişi ikinci kez geri almaz", async () => {
+    const { service } = hazirla({ h1: hareket() }, true, true);
+
+    await expect(service.hareketGeriAl("h1", "Deneme")).rejects.toThrow("zaten geri alındı");
+  });
+
+  it("düzeltmede eski fişi geri alıp yenisini aynı işlemde yazar", async () => {
+    const { tx, service } = hazirla({ h1: hareket({ faturaId: null, faturaKarsiligi: null, faturaMahsubu: null, kaynakTur: "manuel" }) });
+    Object.assign(tx, {
+      kasa: { findUnique: vi.fn().mockResolvedValue({ aktif: true, dovizCinsi: "TRY" }) },
+      cariHesap: { findFirst: vi.fn().mockResolvedValue({ id: "cari-1" }) },
+    });
+    tx.kasaBankaHareket.create.mockImplementation(async ({ data }) => ({ id: "yeni", ...data }));
+
+    const sonuc = await service.hareketDuzelt("h1", "Tutar hatalı", { kasaId: "k1", tip: "tahsilat", tutar: "450", dovizCinsi: "TRY", tarih: "2026-10-02", cariId: "cari-1" });
+
+    expect(sonuc.geriAlma.yontem).toBe("silindi");
+    expect(sonuc.hareket).toMatchObject({ id: "yeni", tutar: D("450") });
   });
 });
 

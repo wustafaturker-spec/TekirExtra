@@ -50,10 +50,15 @@ export type FisTipi = "tahsilat" | "tediye";
 
 export interface FisBaslangici {
   tip?: FisTipi;
+  /** `kasa:<id>` ya da `banka:<id>` */
+  hesapAnahtari?: string;
+  tarih?: string;
   cariId?: string;
   faturaId?: string | null;
   tutar?: string;
   aciklama?: string;
+  /** KSB-08: düzeltilen fiş; kayıtta eskisi geri alınır, yenisi aynı işlemde yazılır. */
+  duzeltilenId?: string;
 }
 
 const bugun = () => {
@@ -137,8 +142,10 @@ export function OdemeFisi({
   onKaydedildi: (mesaj: string) => void;
 }) {
   const [tip, setTip] = useState<FisTipi>(baslangic.tip ?? "tahsilat");
-  const [hesapAnahtari, setHesapAnahtari] = useState("");
-  const [tarih, setTarih] = useState(bugun);
+  const [hesapAnahtari, setHesapAnahtari] = useState(baslangic.hesapAnahtari ?? "");
+  const [tarih, setTarih] = useState(baslangic.tarih ?? bugun());
+  const [duzeltmeNedeni, setDuzeltmeNedeni] = useState("");
+  const duzeltme = Boolean(baslangic.duzeltilenId);
   const [tutar, setTutar] = useState(baslangic.tutar ?? "");
   const [cariId, setCariId] = useState(baslangic.cariId ?? "");
   const [aciklama, setAciklama] = useState(baslangic.aciklama ?? "");
@@ -167,7 +174,8 @@ export function OdemeFisi({
     let iptal = false;
     setFaturalar(null);
     setFaturaHatasi("");
-    api<AcikFatura[]>(`/kasa-banka/acik-faturalar?cariId=${cariId}&tip=${tip}`)
+    const haric = baslangic.duzeltilenId ? `&haricHareketId=${baslangic.duzeltilenId}` : "";
+    api<AcikFatura[]>(`/kasa-banka/acik-faturalar?cariId=${cariId}&tip=${tip}${haric}`)
       .then((liste) => {
         if (iptal) return;
         setFaturalar(liste);
@@ -175,7 +183,7 @@ export function OdemeFisi({
       })
       .catch((e) => { if (!iptal) { setFaturalar([]); setFaturaHatasi(e instanceof Error ? e.message : "Açık faturalar yüklenemedi"); } });
     return () => { iptal = true; };
-  }, [cariId, tip]);
+  }, [cariId, tip, baslangic.duzeltilenId]);
 
   // İşlem günü TCMB satış kuru (sunucunun varsayılanıyla aynı kaynak).
   const kurGerekli = caprazDoviz || dovizliHesap;
@@ -235,29 +243,32 @@ export function OdemeFisi({
     setHata("");
     try {
       const capraz = caprazDoviz && kapama;
-      const yanit = await api<KayitYaniti>("/kasa-banka/hareketler", {
-        method: "POST",
-        body: JSON.stringify({
-          kasaId: hesap.tur === "kasa" ? hesap.id : null,
-          bankaHesapId: hesap.tur === "banka" ? hesap.id : null,
-          tip,
-          tutar,
-          dovizCinsi: hesap.dovizCinsi,
-          tarih,
-          aciklama: aciklama || null,
-          cariId: cariId || null,
-          faturaId: fatura?.id ?? null,
-          ...(capraz ? { faturaKarsiligi: kapama.karsilik.toFixed(2) } : {}),
-          // Dövizli hesaptan TL faturaya: girilen kur hareketin kendi kurudur.
-          ...(capraz && fatura?.dovizCinsi === "TRY" ? { kur: sayi(kurMetni).toFixed(6) } : {}),
-        }),
-      });
-      const islemAdi = tip === "tahsilat" ? "Tahsilat" : "Ödeme";
+      const fis = {
+        kasaId: hesap.tur === "kasa" ? hesap.id : null,
+        bankaHesapId: hesap.tur === "banka" ? hesap.id : null,
+        tip,
+        tutar,
+        dovizCinsi: hesap.dovizCinsi,
+        tarih,
+        aciklama: aciklama || null,
+        cariId: cariId || null,
+        faturaId: fatura?.id ?? null,
+        ...(capraz ? { faturaKarsiligi: kapama.karsilik.toFixed(2) } : {}),
+        // Dövizli hesaptan TL faturaya: girilen kur hareketin kendi kurudur.
+        ...(capraz && fatura?.dovizCinsi === "TRY" ? { kur: sayi(kurMetni).toFixed(6) } : {}),
+      };
+      const yanit = duzeltme
+        ? (await api<{ hareket: KayitYaniti }>(`/kasa-banka/hareketler/${baslangic.duzeltilenId}/duzelt`, {
+            method: "POST",
+            body: JSON.stringify({ neden: duzeltmeNedeni, yeni: fis }),
+          })).hareket
+        : await api<KayitYaniti>("/kasa-banka/hareketler", { method: "POST", body: JSON.stringify(fis) });
+      const islemAdi = duzeltme ? "Fiş düzeltildi" : tip === "tahsilat" ? "Tahsilat kaydedildi" : "Ödeme kaydedildi";
       const k = yanit.faturaKapama;
       const ayrinti = k && fatura
         ? ` ${fatura.no ?? "Faturaya"} ${Number(k.mahsup).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${k.dovizCinsi} mahsup edildi${Number(k.avans) > 0 ? `; ${Number(k.avans).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${k.dovizCinsi} carinin avansı olarak kaldı` : ""}.`
         : "";
-      onKaydedildi(`${islemAdi} kaydedildi.${ayrinti}`);
+      onKaydedildi(`${islemAdi}.${ayrinti}`);
     } catch (err) {
       setHata(err instanceof Error ? err.message : "Fiş kaydedilemedi");
     } finally {
@@ -265,11 +276,26 @@ export function OdemeFisi({
     }
   }
 
-  const tahminiBakiye = hesap ? sayi(hesap.bakiye) + (tip === "tahsilat" ? 1 : -1) * sayi(tutar) : 0;
-  const kaydedilebilir = Boolean(hesap && sayi(tutar) > 0 && tarih && (!fatura || kapama));
+  // Düzeltmede eski fiş geri alınacağı için onun bakiyeye etkisi önce düşülür.
+  const eskiEtki = duzeltme && hesap && `${hesap.tur}:${hesap.id}` === baslangic.hesapAnahtari
+    ? (baslangic.tip === "tediye" ? -1 : 1) * sayi(baslangic.tutar ?? "0")
+    : 0;
+  const tahminiBakiye = hesap ? sayi(hesap.bakiye) - eskiEtki + (tip === "tahsilat" ? 1 : -1) * sayi(tutar) : 0;
+  const kaydedilebilir = Boolean(hesap && sayi(tutar) > 0 && tarih && (!fatura || kapama) && (!duzeltme || duzeltmeNedeni.trim().length >= 3));
 
   return (
     <form className="payment-slip" onSubmit={kaydet}>
+      {duzeltme && (
+        <div className="payment-slip__correction">
+          <Alert tone="warning">
+            Düzeltme kaydedilince eski fiş geri alınır (dönemi açıksa silinir, kapalıysa ters kaydı atılır) ve bu form yeni fiş olarak
+            aynı işlemde yazılır. Fatura mahsubu ve cari bakiyesi yeniden hesaplanır.
+          </Alert>
+          <Field label="Düzeltme gerekçesi">
+            <Input required minLength={3} maxLength={300} value={duzeltmeNedeni} onChange={(e) => setDuzeltmeNedeni(e.target.value)} placeholder="Ör. Tutar yanlış girilmişti" />
+          </Field>
+        </div>
+      )}
       <div className="payment-slip__type">
         <Segmented
           ariaLabel="İşlem tipi"
@@ -479,7 +505,7 @@ export function OdemeFisi({
       <footer>
         <Button type="button" onClick={onKapat} disabled={kaydediliyor}>Vazgeç</Button>
         <Button type="submit" variant="primary" disabled={kaydediliyor || !kaydedilebilir}>
-          {kaydediliyor ? "Kaydediliyor…" : tip === "tahsilat" ? "Tahsilatı kaydet" : "Ödemeyi kaydet"}
+          {kaydediliyor ? "Kaydediliyor…" : duzeltme ? "Düzeltmeyi kaydet" : tip === "tahsilat" ? "Tahsilatı kaydet" : "Ödemeyi kaydet"}
         </Button>
       </footer>
     </form>

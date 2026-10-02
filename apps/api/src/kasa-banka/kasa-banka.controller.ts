@@ -6,6 +6,7 @@ import {
   Get,
   HttpCode,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -197,10 +198,10 @@ export class KasaBankaController {
 
   /** KSB-07: tahsilat/ödeme fişinde carinin kalanı olan faturaları. */
   @Get("acik-faturalar")
-  acikFaturalar(@Query("cariId") cariId?: string, @Query("tip") tip?: string) {
-    const girdi = z.object({ cariId: z.uuid(), tip: z.enum(["tahsilat", "tediye"]) }).safeParse({ cariId, tip });
+  acikFaturalar(@Query("cariId") cariId?: string, @Query("tip") tip?: string, @Query("haricHareketId") haricHareketId?: string) {
+    const girdi = z.object({ cariId: z.uuid(), tip: z.enum(["tahsilat", "tediye"]), haricHareketId: z.uuid().optional() }).safeParse({ cariId, tip, haricHareketId });
     if (!girdi.success) throw new BadRequestException("Cari ve işlem tipi (tahsilat/tediye) gereklidir");
-    return this.service.acikFaturalar(girdi.data.cariId, girdi.data.tip);
+    return this.service.acikFaturalar(girdi.data.cariId, girdi.data.tip, girdi.data.haricHareketId);
   }
 
   @Post("hareketler")
@@ -213,6 +214,29 @@ export class KasaBankaController {
       );
     }
     return this.service.hareketEkle(ayristirma.data);
+  }
+
+  /** KSB-08: fişi geri alır (açık dönemde siler, kapalı dönemde ters kayıt). */
+  @Post("hareketler/:id/geri-al")
+  @Roller("muhasebe")
+  async hareketGeriAl(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
+    const { neden } = ayristir(geriAlmaSemasi, govde);
+    return this.service.hareketGeriAl(id, neden);
+  }
+
+  /** KSB-08: fişi geri alıp düzeltilmiş hâlini aynı işlemde yazar. */
+  @Post("hareketler/:id/duzelt")
+  @Roller("muhasebe")
+  async hareketDuzelt(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
+    const { neden, yeni } = ayristir(geriAlmaSemasi.extend({ yeni: kasaBankaHareketOlusturSemasi }), govde);
+    return this.service.hareketDuzelt(id, neden, yeni);
+  }
+
+  @Post("virman/:id/duzelt")
+  @Roller("muhasebe")
+  async virmanDuzelt(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
+    const { neden, yeni } = ayristir(geriAlmaSemasi.extend({ yeni: virmanOlusturSemasi }), govde);
+    return this.service.virmanDuzelt(id, neden, yeni);
   }
 
   @Get("hareketler/:id/makbuz")
@@ -383,4 +407,15 @@ export class KasaBankaController {
   async ekstreGeriAl(@Param("id") id: string) {
     return this.ekstre.geriAl(id);
   }
+}
+
+/** KSB-08: geri alma ve düzeltmede gerekçe zorunludur; denetim izine yazılır. */
+const geriAlmaSemasi = z.object({
+  neden: z.string().trim().min(3, "Geri alma gerekçesi en az 3 karakter olmalıdır").max(300),
+});
+
+function ayristir<T extends z.ZodType>(sema: T, govde: unknown): z.infer<T> {
+  const sonuc = sema.safeParse(govde);
+  if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((i) => i.message).join("; "));
+  return sonuc.data;
 }

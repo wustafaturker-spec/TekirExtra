@@ -4058,3 +4058,29 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 .treasury-kpis > a.is-warning { background: color-mix(in srgb, var(--warning-soft) 45%, var(--surface)); }
 @media (max-width: 1100px) { .treasury-kpis > .is-lead { grid-column: span 2; } }
 @media (max-width: 620px) { .treasury-kpis > .is-lead { grid-column: auto; } }
+
+/* ─── Kasa/banka fiş ayrıntısı (KSB-08) ─────────────────────────────────── */
+.slip-detail { display: grid; gap: 1rem; padding: 0 1.2rem 1.2rem; }
+.slip-detail .action-bar { margin: 0 -1.2rem; padding-inline: 1.2rem; }
+.slip-detail__hero { display: grid; gap: .35rem; justify-items: start; }
+.slip-detail__hero > div { display: flex; flex-wrap: wrap; gap: .35rem; }
+.slip-detail__hero > strong { font-size: 1.6rem; letter-spacing: -.03em; }
+.slip-detail__hero > small { color: var(--text-muted); font-size: .7rem; }
+.slip-detail__facts { border: 1px solid var(--border); border-radius: var(--radius); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; overflow: hidden; }
+.slip-detail__facts > div { border-bottom: 1px solid var(--border); display: grid; gap: .15rem; padding: .6rem .8rem; }
+.slip-detail__facts > div:nth-child(odd) { border-right: 1px solid var(--border); }
+.slip-detail__facts dt { color: var(--text-subtle); font-size: .62rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.slip-detail__facts dd { font-size: .76rem; margin: 0; overflow-wrap: anywhere; }
+.slip-detail__note { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-muted); font-size: .72rem; margin: 0; padding: .7rem .85rem; }
+.slip-detail__undo { background: color-mix(in srgb, var(--danger-soft) 35%, var(--surface)); border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--border)); border-radius: var(--radius); display: grid; gap: .7rem; padding: .9rem 1rem; }
+.slip-detail__undo h3 { color: var(--danger); font-size: .82rem; margin: 0; }
+.slip-detail__undo p { color: var(--text-muted); font-size: .72rem; margin: 0; }
+.slip-detail__undo footer { display: flex; gap: .5rem; justify-content: flex-end; }
+.treasury-register .row-link.is-reversed td { color: var(--text-subtle); }
+.treasury-register .row-link.is-reversed strong.treasury-in, .treasury-register .row-link.is-reversed strong.treasury-out { text-decoration: line-through; }
+.payment-slip__correction { display: grid; gap: .6rem; }
+@media (max-width: 620px) {
+  .slip-detail__facts { grid-template-columns: 1fr; }
+  .slip-detail__facts > div:nth-child(odd) { border-right: 0; }
+  .slip-detail__undo footer { flex-direction: column-reverse; }
+}
