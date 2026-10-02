@@ -170,3 +170,27 @@ describe("ekstreSatirlariOku (KSB-06)", () => {
     expect(bir).toEqual(iki);
   });
 });
+
+describe("Excel ekstresi (KSB-06)", () => {
+  it(".xlsx dosyasını tarih ve tutar hücreleriyle birlikte tabloya çevirir", async () => {
+    const { ekstreDosyasiOku, ekstreSatirlariOku, excelMi } = await import("./ekstre-oku");
+    const ExcelJS = await import("exceljs");
+    const kitap = new ExcelJS.Workbook();
+    const sayfa = kitap.addWorksheet("Hesap Hareketleri");
+    sayfa.addRow(["Tarih", "Açıklama", "Tutar", "Bakiye"]);
+    sayfa.addRow([new Date(Date.UTC(2026, 9, 1)), "EFT ANADOLU KİMYA", 1500.5, 10500.5]);
+    sayfa.addRow([new Date(Date.UTC(2026, 9, 2)), { richText: [{ text: "EFT " }, { text: "ÜCRETİ" }] }, -12.5, 10488]);
+    const dosya = Buffer.from(await kitap.xlsx.writeBuffer());
+
+    expect(excelMi(dosya)).toBe(true);
+    const tablo = await ekstreDosyasiOku(dosya);
+    expect(tablo[1]).toEqual(["2026-10-01", "EFT ANADOLU KİMYA", "1500.5", "10500.5"]);
+    const { satirlar } = ekstreSatirlariOku(tablo, { baslikSatiri: 0, tarih: 0, aciklama: 1, tutar: 2, bakiye: 3 });
+    expect(satirlar.map((s) => [s.tutar, s.aciklama])).toEqual([[1500.5, "EFT ANADOLU KİMYA"], [-12.5, "EFT ÜCRETİ"]]);
+  });
+
+  it("bozuk .xlsx için anlaşılır hata verir", async () => {
+    const { ekstreDosyasiOku } = await import("./ekstre-oku");
+    await expect(ekstreDosyasiOku(Buffer.from([0x50, 0x4b, 0x03, 0x04, 1, 2, 3]))).rejects.toThrow("Excel dosyası okunamadı");
+  });
+});

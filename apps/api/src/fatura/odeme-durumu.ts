@@ -102,6 +102,6 @@ export function kurFarkiTry(
 ): string {
   const karsilik = hareket.faturaKarsiligi ?? D(0);
   const mahsup = hareket.faturaMahsubu ?? D(0);
-  if (!karsilik.isPositive() || !mahsup.isPositive()) return "0.00";
+  if (!karsilik.gt(0) || !mahsup.gt(0)) return "0.00";
   return hareket.tutarTry.mul(mahsup).div(karsilik).sub(mahsup.mul(faturaKuru)).toFixed(2);
 }

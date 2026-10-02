@@ -15,7 +15,7 @@ import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
 import { kurCoz, kurZorunlu } from "../doviz/kur-coz";
 import { makbuzPdfHtml } from "./makbuz-pdf";
-import { FATURA_ODEME_SECIMI, beklenenOdemeTipi, faturaKilitleVeKalaniGetir, faturaOdemeDurumu, mahsupAyir } from "../fatura/odeme-durumu";
+import { beklenenOdemeTipi, faturaKilitleVeKalaniGetir, faturaOdemeDurumu, mahsupAyir } from "../fatura/odeme-durumu";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import type {
   bankaHesapGuncelleSemasi,
@@ -316,7 +316,7 @@ export class KasaBankaService {
     // Düzeltilen fiş yeniden girileceği için onun mahsubu sayılmaz; kapattığı fatura listede kalır.
     return faturalar
       .map((f) => ({ f, odeme: faturaOdemeDurumu({ ...f, kasaBankaHarekets: f.kasaBankaHarekets.filter((h) => h.id !== haricHareketId) }) }))
-      .filter(({ odeme }) => odeme.kalan.isPositive())
+      .filter(({ odeme }) => odeme.kalan.gt(0))
       .map(({ f, odeme }) => ({
         id: f.id,
         no: f.no,
@@ -338,7 +338,8 @@ export class KasaBankaService {
   }
 
   /** Tahsilat/tediye fişini verilen işlemin içinde yazar (ekleme ve düzeltme ortak). */
-  private async hareketOlustur(tx: Prisma.TransactionClient, tenantId: string, girdi: z.infer<typeof kasaBankaHareketOlusturSemasi>) {
+  /** Ekstre eşleştirmesi de kullanır (aynı işlem içinde). */
+  async hareketOlustur(tx: Prisma.TransactionClient, tenantId: string, girdi: z.infer<typeof kasaBankaHareketOlusturSemasi>) {
     const tutar = D(girdi.tutar);
     {
       const hesap = girdi.kasaId ? await tx.kasa.findUnique({ where: { id: girdi.kasaId } }) : girdi.bankaHesapId ? await tx.bankaHesap.findUnique({ where: { id: girdi.bankaHesapId } }) : await tx.posHesap.findUnique({ where: { id: girdi.posHesapId! } });
@@ -435,7 +436,7 @@ export class KasaBankaService {
     if (faturaDovizi === "TRY") return tutarTry;
     const faturaDoviziKuru = await kurZorunlu(tx, faturaDovizi, tarih);
     const karsilik = tutarTry.div(faturaDoviziKuru).toDecimalPlaces(2);
-    if (!karsilik.isPositive()) throw new BadRequestException("Ödemenin fatura dövizindeki karşılığı hesaplanamadı");
+    if (!karsilik.gt(0)) throw new BadRequestException("Ödemenin fatura dövizindeki karşılığı hesaplanamadı");
     return karsilik;
   }
 
@@ -463,7 +464,8 @@ export class KasaBankaService {
   }
 
   /** Virmanın iki bacağını verilen işlemin içinde yazar (ekleme ve düzeltme ortak). */
-  private async virmanOlustur(tx: Prisma.TransactionClient, tenantId: string, girdi: z.infer<typeof virmanOlusturSemasi>, dovizCinsi: DovizCinsi, tutar: Prisma.Decimal) {
+  /** Ekstre eşleştirmesi de kullanır (aynı işlem içinde). */
+  async virmanOlustur(tx: Prisma.TransactionClient, tenantId: string, girdi: z.infer<typeof virmanOlusturSemasi>, dovizCinsi: DovizCinsi, tutar: Prisma.Decimal) {
     {
       const tarih = new Date(girdi.tarih); const kur = dovizCinsi === "TRY" ? D(1) : await kurZorunlu(tx, dovizCinsi, tarih); const tutarTry = tutar.mul(kur).toDecimalPlaces(2);
       // 1. Kaynak hesaptan para çıkışı (virman_gidis)
@@ -556,7 +558,7 @@ export class KasaBankaService {
     kaynakDenetimi = true,
   ): Promise<{ yontem: "silindi" | "ters_kayit"; hareketIdleri: string[] }> {
     const iliskiler = {
-      ekstreSatir: { select: { id: true } },
+      ekstreSatir: { select: { id: true, eslesmeTuru: true } },
       posTahsilat: { select: { id: true } },
       masraf: { select: { id: true } },
       krediKartiOdemesi: { select: { id: true } },
@@ -595,14 +597,14 @@ export class KasaBankaService {
     const goruntu = { neden, hareketler: bacaklar, cariHareketleri };
 
     if (!kapali) {
-      // Ekstreden üretilmiş fiş silinince satır yeniden onaya düşer.
-      for (const bacak of bacaklar) {
-        if (bacak.ekstreSatir) {
-          await tx.bankaEkstreSatir.update({ where: { id: bacak.ekstreSatir.id }, data: { durum: "beklemede", cariId: null, faturaId: null, hareketId: null } });
-        }
-      }
       await tx.cariHareket.deleteMany({ where: { id: { in: cariHareketleri.map((c) => c.id) } } });
       await tx.kasaBankaHareket.deleteMany({ where: { id: { in: idler } } });
+      // "Mevcut fişle eşle" ile bağlanmış satırın son fişi gidince satır yeniden onaya düşer.
+      for (const satirId of new Set(bacaklar.map((b) => b.ekstreSatir?.id).filter((x): x is string => Boolean(x)))) {
+        if (!(await tx.kasaBankaHareket.count({ where: { ekstreSatirId: satirId } }))) {
+          await tx.bankaEkstreSatir.update({ where: { id: satirId }, data: { durum: "beklemede", cariId: null, faturaId: null, eslesmeTuru: null } });
+        }
+      }
       await this.geriAlmaIzi(tx, tenantId, "kasa_banka_fisi_silindi", id, goruntu);
       return { yontem: "silindi", hareketIdleri: idler };
     }
@@ -759,7 +761,10 @@ export class KasaBankaService {
   }
 
   /** Fişi başka bir modül ürettiyse o modülün adı (geri alma oradan yapılır). */
-  private static kaynakModulu(h: { tip: string; kaynakTur: string; ekstreSatir: unknown; posTahsilat: unknown; masraf: unknown; krediKartiOdemesi: unknown; gelirKaydi: unknown; pazaryeriKesinti: unknown }): string | null {
+  private static kaynakModulu(h: { tip: string; kaynakTur: string; ekstreSatir: { eslesmeTuru: string | null } | null; posTahsilat: unknown; masraf: unknown; krediKartiOdemesi: unknown; gelirKaydi: unknown; pazaryeriKesinti: unknown }): string | null {
+    // Ekstre eşleştirmesinin ürettiği kayıt (bir satıra birden çok fiş olabilir) ekstreden geri alınır;
+    // yalnız elle girilip sonradan ekstreye bağlanan fiş buradan geri alınabilir.
+    if (h.ekstreSatir && h.ekstreSatir.eslesmeTuru !== "mevcut_fis") return "Banka Ekstresi ekranı (satırın eşleşmesini geri alın)";
     if (h.masraf || h.kaynakTur === "masraf") return "Masraflar ekranı";
     if (h.posTahsilat || h.kaynakTur === "pos_tahsilat") return "POS tahsilatı";
     if (h.kaynakTur === "pos_mutabakat") return "POS mutabakatı (Banka Ekstresi ekranı)";
@@ -800,8 +805,8 @@ export class KasaBankaService {
       const banka = await tx.bankaHesap.findUnique({ where: { id: bankaId } });
       if (!banka || !banka.aktif || banka.dovizCinsi !== pos.dovizCinsi) throw new BadRequestException("Aktif ve aynı döviz cinsinde banka hesabı seçilmelidir");
       const ekstreSatir = girdi.ekstreSatirId ? await tx.bankaEkstreSatir.findUnique({ where: { id: girdi.ekstreSatirId } }) : null;
-      if (girdi.ekstreSatirId && (!ekstreSatir || ekstreSatir.durum !== "beklemede" || ekstreSatir.hareketId)) throw new BadRequestException("Onay bekleyen ekstre satırı bulunamadı");
-      if (ekstreSatir && (ekstreSatir.bankaHesapId !== bankaId || !ekstreSatir.tutar.isPositive() || !ekstreSatir.tutar.equals(net))) throw new BadRequestException("Ekstre satırı banka hesabı veya net aktarım tutarıyla uyuşmuyor");
+      if (girdi.ekstreSatirId && (!ekstreSatir || ekstreSatir.durum !== "beklemede" || await tx.kasaBankaHareket.count({ where: { ekstreSatirId: ekstreSatir.id } }))) throw new BadRequestException("Onay bekleyen ekstre satırı bulunamadı");
+      if (ekstreSatir && (ekstreSatir.bankaHesapId !== bankaId || !ekstreSatir.tutar.gt(0) || !ekstreSatir.tutar.equals(net))) throw new BadRequestException("Ekstre satırı banka hesabı veya net aktarım tutarıyla uyuşmuyor");
       const bakiyeGruplari = await tx.kasaBankaHareket.groupBy({ by: ["tip"], where: { posHesapId: pos.id }, _sum: { tutar: true } });
       let kullanilabilir = D(0);
       for (const grup of bakiyeGruplari) kullanilabilir = grup.tip === "tahsilat" || grup.tip === "virman_gelis" ? kullanilabilir.add(grup._sum.tutar ?? 0) : kullanilabilir.sub(grup._sum.tutar ?? 0);
@@ -814,7 +819,7 @@ export class KasaBankaService {
       const gidis = await tx.kasaBankaHareket.create({ data: { ...ortak, posHesapId: pos.id, tip: "virman_gidis", tutar: net, tutarTry: try_(net) } });
       const gelis = await tx.kasaBankaHareket.create({ data: { ...ortak, bankaHesapId: bankaId, tip: "virman_gelis", tutar: net, tutarTry: try_(net), karsiHareketId: gidis.id } });
       await tx.kasaBankaHareket.update({ where: { id: gidis.id }, data: { karsiHareketId: gelis.id } });
-      const komisyonHareketi = komisyon.isPositive() ? await tx.kasaBankaHareket.create({ data: { ...ortak, posHesapId: pos.id, tip: "tediye", tutar: komisyon, tutarTry: try_(komisyon), kaynakRef: gidis.id, aciklama: `${pos.ad} komisyon/kesinti` } }) : null;
+      const komisyonHareketi = komisyon.gt(0) ? await tx.kasaBankaHareket.create({ data: { ...ortak, posHesapId: pos.id, tip: "tediye", tutar: komisyon, tutarTry: try_(komisyon), kaynakRef: gidis.id, aciklama: `${pos.ad} komisyon/kesinti` } }) : null;
       const komisyonMasrafi = komisyonHareketi ? await (async () => {
         const kategori = await tx.masrafKategori.upsert({
           where: { tenantId_ad: { tenantId, ad: "Banka ve POS Komisyonları" } },
@@ -843,7 +848,10 @@ export class KasaBankaService {
           },
         });
       })() : null;
-      if (ekstreSatir) await tx.bankaEkstreSatir.update({ where: { id: ekstreSatir.id }, data: { durum: "eslesti", hareketId: gelis.id } });
+      if (ekstreSatir) {
+        await tx.bankaEkstreSatir.update({ where: { id: ekstreSatir.id }, data: { durum: "eslesti", eslesmeTuru: "pos" } });
+        await tx.kasaBankaHareket.update({ where: { id: gelis.id }, data: { ekstreSatirId: ekstreSatir.id } });
+      }
       return { gidis, gelis, komisyonHareketi, komisyonMasrafi, brutTutar: brut.toFixed(2), netTutar: net.toFixed(2), komisyonTutar: komisyon.toFixed(2) };
     });
   }
@@ -1209,7 +1217,7 @@ export class KasaBankaService {
     }
   }
 
-  private async virmanKurallariniDenetle(girdi: z.infer<typeof virmanOlusturSemasi>): Promise<DovizCinsi> {
+  async virmanKurallariniDenetle(girdi: z.infer<typeof virmanOlusturSemasi>): Promise<DovizCinsi> {
     const { tenantId } = aktifBaglam();
 
     let kaynakDoviz: DovizCinsi | undefined;

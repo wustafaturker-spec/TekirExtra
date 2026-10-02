@@ -129,7 +129,7 @@ export class KrediKartiService {
         await tx.krediKartiHareket.delete({ where: { id } }); // taksitler zincirleme silinir
         if (h.bankaHareket) {
           if (h.bankaHareket.ekstreSatir) {
-            await tx.bankaEkstreSatir.update({ where: { id: h.bankaHareket.ekstreSatir.id }, data: { durum: "beklemede", cariId: null, faturaId: null, hareketId: null } });
+            await tx.bankaEkstreSatir.update({ where: { id: h.bankaHareket.ekstreSatir.id }, data: { durum: "beklemede", cariId: null, faturaId: null, eslesmeTuru: null } });
           }
           await tx.kasaBankaHareket.delete({ where: { id: h.bankaHareket.id } });
         }

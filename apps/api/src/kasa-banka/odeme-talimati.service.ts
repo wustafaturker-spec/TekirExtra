@@ -17,7 +17,7 @@ export class OdemeTalimatiService {
     const { tenantId, userId } = aktifBaglam();
     const hesap = await this.prisma.tenantIslem(tenantId, (tx) => tx.bankaHesap.findUnique({ where: { id: girdi.bankaHesapId } }));
     if (!hesap?.aktif) throw new NotFoundException("Aktif banka hesabı bulunamadı");
-    const tutar = new Prisma.Decimal(girdi.tutar); if (!tutar.isPositive()) throw new BadRequestException("Tutar sıfırdan büyük olmalıdır");
+    const tutar = new Prisma.Decimal(girdi.tutar); if (!tutar.gt(0)) throw new BadRequestException("Tutar sıfırdan büyük olmalıdır");
     return this.prisma.tenantIslem(tenantId, (tx) => tx.bankaOdemeTalimati.create({ data: { tenantId, bankaHesapId: hesap.id, aliciUnvan: girdi.aliciUnvan, aliciIban: girdi.aliciIban.replace(/\s/g, "").toUpperCase(), tutar, dovizCinsi: hesap.dovizCinsi, aciklama: girdi.aciklama, olusturanUserId: userId } }));
   }
 

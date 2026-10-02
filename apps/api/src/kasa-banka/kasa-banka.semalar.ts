@@ -121,9 +121,55 @@ export const ekstreYukleSemasi = z.object({
   eslemeyiKaydet: z.boolean().default(true),
 });
 
-export const ekstreEslestirSemasi = z.object({
-  cariId: z.string().uuid(),
-  faturaId: z.string().uuid().optional().nullable(),
+/** KSB-06: "benzer satırlar için kural kaydet" seçeneği. */
+const ekstreKuralGirdisi = z.object({
+  /** Açıklamada aranacak metin parçası (ör. "EFT UCRETI"). */
+  anahtar: z.string().trim().min(3, "Kural metni en az 3 karakter olmalıdır").max(120),
+  /** true: firmanın bütün banka hesaplarında geçerli. */
+  tumHesaplar: z.boolean().default(false),
+});
+
+const eslestirOrtak = {
+  /** Kural önerisiyle eşleştirildiyse kullanım sayacı artar. */
+  kuralId: z.uuid().optional().nullable(),
+  kural: ekstreKuralGirdisi.optional().nullable(),
+};
+
+/**
+ * KSB-06: ekstre satırını eşleştirme; `tur` alanına göre ayrışır.
+ * Tutarlar hesabın dövizindedir; işaret satırdan gelir.
+ */
+export const ekstreEslestirSemasi = z.discriminatedUnion("tur", [
+  z.object({
+    tur: z.literal("cari"),
+    cariId: z.uuid(),
+    /** Faturalara dağıtım; toplamı satırı aşamaz, kalan cariye avans olarak işlenir. */
+    dagitim: z.array(z.object({ faturaId: z.uuid(), tutar: pozitifOndalik })).max(50).default([]),
+    ...eslestirOrtak,
+  }),
+  z.object({ tur: z.literal("mevcut_fis"), hareketIdleri: z.array(z.uuid()).min(1).max(20), ...eslestirOrtak }),
+  z.object({
+    tur: z.literal("masraf"),
+    kategoriId: z.uuid(),
+    kdvOrani: z.string().regex(/^\d{1,2}(\.\d{1,2})?$/, "Geçerli KDV oranı girin").default("0"),
+    aciklama: z.string().trim().max(500).optional().nullable(),
+    ...eslestirOrtak,
+  }),
+  z.object({ tur: z.literal("gelir"), kategoriId: z.uuid(), aciklama: z.string().trim().max(500).optional().nullable(), ...eslestirOrtak }),
+  z.object({
+    tur: z.literal("virman"),
+    karsiKasaId: z.uuid().optional().nullable(),
+    karsiBankaHesapId: z.uuid().optional().nullable(),
+    aciklama: z.string().trim().max(500).optional().nullable(),
+    ...eslestirOrtak,
+  }).refine((d) => Boolean(d.karsiKasaId) !== Boolean(d.karsiBankaHesapId), { message: "Karşı hesap olarak bir kasa ya da bir banka hesabı seçin", path: ["karsiKasaId"] }),
+  z.object({ tur: z.literal("cek"), cekSenetId: z.uuid(), ...eslestirOrtak }),
+  z.object({ tur: z.literal("kredi_karti"), krediKartiId: z.uuid(), ...eslestirOrtak }),
+]);
+
+export const ekstreKuralGuncelleSemasi = z.object({
+  aktif: z.boolean().optional(),
+  anahtar: z.string().trim().min(3).max(120).optional(),
 });
 
 /** Paranın gireceği/çıkacağı durumlar: alınanda tahsil, verilende ödeme. */

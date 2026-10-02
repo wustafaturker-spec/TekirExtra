@@ -515,6 +515,25 @@ saklanmaz, istendiğinde XML'den üretilir.
 >   (fişi *ve* onun cari hareketini siler) vardır.
 > - Kapsam dışı: **OFX** (Türkiye'de bankaların çoğu vermiyor) ve otomatik banka
 >   bağlantısı — o ENT-06.
+>
+> **KSB-06 genişletme (karar 2026-10-02).** Satır yedi biçimde eşleşir: cari
+> (birden çok faturaya dağıtım; dağıtılmayan kısım carinin avansı), **mevcut fiş**
+> (elle girilmiş fiş(ler) bağlanır, yeni kayıt üretilmez; toplam satıra eşit
+> olmalı), **masraf** (kategori + KDV oranı, ödenmiş masraf kaydı), **faaliyet
+> dışı gelir**, **virman** (yalnız bu hesabın bacağı bağlanır; karşı hesabın
+> satırı aynı virmana "mevcut fiş" olarak bağlanır), **çek/senet** (tahsil/ödeme)
+> ve **kredi kartı ekstre ödemesi**; POS mutabakatı da aynı panelden yapılır.
+> Bir satıra birden çok hareket bağlanabilir (`kasa_banka_hareketleri.ekstre_satir_id`).
+> Geri alma türe göre çalışır: mevcut fiş yalnız bağdan çözülür, üretilen kayıtlar
+> silinir, çek ve kart kendi geri almasıyla geri alınır.
+> - **Kurallar** ("açıklamada X geçen giriş/çıkış → şununla eşleştir") yalnız öneri
+>   üretir, satır kullanıcı onayıyla işlenir; eşleştirirken "kural kaydet" ile
+>   öğretilir, ekstre ekranındaki Kurallar penceresinden pasife alınır/silinir.
+>   Karşılaştırma aksansız ve noktalamasızdır.
+> - **Bakiye mutabakatı**: ekstredeki bakiye sütunundan gün sonu banka bakiyesi
+>   (satır sırasından bağımsız) çıkarılıp sistem bakiyesiyle karşılaştırılır; fark,
+>   bekleyen ve yoksayılan satırlarla açıklanan ve açıklanamayan kısma ayrılır.
+> - **Excel (.xlsx)** ekstre CSV ile aynı sütun eşlemesiyle okunur; eski .xls okunmaz.
 
 ### 3.6 Raporlama (RPR)
 

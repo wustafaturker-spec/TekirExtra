@@ -2681,34 +2681,34 @@ model KrediKarti {
 }
 
 model KrediKartiHareket {
-  id              String                @id @default(uuid()) @db.Uuid
-  tenantId        String                @map("tenant_id") @db.Uuid
-  krediKartiId    String                @map("kredi_karti_id") @db.Uuid
-  tip             KrediKartiHareketTipi
-  tarih           DateTime              @db.Date
-  aciklama        String
-  tutar           Decimal               @db.Decimal(15, 2)
+  id                  String                @id @default(uuid()) @db.Uuid
+  tenantId            String                @map("tenant_id") @db.Uuid
+  krediKartiId        String                @map("kredi_karti_id") @db.Uuid
+  tip                 KrediKartiHareketTipi
+  tarih               DateTime              @db.Date
+  aciklama            String
+  tutar               Decimal               @db.Decimal(15, 2)
   /// Karttan çekilen toplamın cari borca uygulanan bölümü.
-  cariOdemeTutari Decimal?              @map("cari_odeme_tutari") @db.Decimal(15, 2)
+  cariOdemeTutari     Decimal?              @map("cari_odeme_tutari") @db.Decimal(15, 2)
   /// KSB-07: cari ödemenin bağlı faturaya mahsup edilen kısmı (en fazla kalan).
-  faturaMahsubu   Decimal?              @map("fatura_mahsubu") @db.Decimal(15, 2)
-  komisyonTutari  Decimal               @default(0) @map("komisyon_tutari") @db.Decimal(15, 2)
-  taksitSayisi    Int                   @default(1) @map("taksit_sayisi")
-  ilkTaksitTarihi DateTime?             @map("ilk_taksit_tarihi") @db.Date
-  belgeNo         String?               @map("belge_no")
-  cariId          String?               @map("cari_id") @db.Uuid
-  faturaId        String?               @map("fatura_id") @db.Uuid
-  bankaHareketId  String?               @unique @map("banka_hareket_id") @db.Uuid
+  faturaMahsubu       Decimal?              @map("fatura_mahsubu") @db.Decimal(15, 2)
+  komisyonTutari      Decimal               @default(0) @map("komisyon_tutari") @db.Decimal(15, 2)
+  taksitSayisi        Int                   @default(1) @map("taksit_sayisi")
+  ilkTaksitTarihi     DateTime?             @map("ilk_taksit_tarihi") @db.Date
+  belgeNo             String?               @map("belge_no")
+  cariId              String?               @map("cari_id") @db.Uuid
+  faturaId            String?               @map("fatura_id") @db.Uuid
+  bankaHareketId      String?               @unique @map("banka_hareket_id") @db.Uuid
   /// KSB-08: bu kayıt, kapalı dönemdeki bir hareketin ters kaydıdır.
-  geriAlinanHareketId String?           @unique @map("geri_alinan_hareket_id") @db.Uuid
-  createdAt       DateTime              @default(now()) @map("created_at")
-  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  krediKarti      KrediKarti            @relation(fields: [krediKartiId], references: [id], onDelete: Cascade)
-  cari            CariHesap?            @relation(fields: [cariId], references: [id])
-  fatura          Fatura?               @relation(fields: [faturaId], references: [id])
-  bankaHareket    KasaBankaHareket?     @relation(fields: [bankaHareketId], references: [id])
-  taksitler       KrediKartiTaksit[]
-  masrafOdemesi   MasrafOdeme?
+  geriAlinanHareketId String?               @unique @map("geri_alinan_hareket_id") @db.Uuid
+  createdAt           DateTime              @default(now()) @map("created_at")
+  tenant              Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  krediKarti          KrediKarti            @relation(fields: [krediKartiId], references: [id], onDelete: Cascade)
+  cari                CariHesap?            @relation(fields: [cariId], references: [id])
+  fatura              Fatura?               @relation(fields: [faturaId], references: [id])
+  bankaHareket        KasaBankaHareket?     @relation(fields: [bankaHareketId], references: [id])
+  taksitler           KrediKartiTaksit[]
+  masrafOdemesi       MasrafOdeme?
 
   @@index([tenantId, krediKartiId, tarih])
   @@index([tenantId, cariId])
@@ -2846,6 +2846,49 @@ model PosTahsilat {
   @@map("pos_tahsilatlari")
 }
 
+/// KSB-06: ekstre satırının eşleştiği kayıt türü.
+enum EkstreEslesmeTuru {
+  cari
+  mevcut_fis
+  masraf
+  gelir
+  virman
+  cek
+  kredi_karti
+  pos
+}
+
+enum EkstreKuralYonu {
+  giris
+  cikis
+}
+
+/// KSB-06: "açıklamada X geçen giriş/çıkış → şununla eşleştir" önerisi.
+/// Kural yalnız öneri üretir; satır kullanıcı onayıyla işlenir.
+model EkstreKurali {
+  id                String            @id @default(uuid()) @db.Uuid
+  tenantId          String            @map("tenant_id") @db.Uuid
+  /// null: firmanın bütün banka hesaplarında geçerli.
+  bankaHesapId      String?           @map("banka_hesap_id") @db.Uuid
+  /// Açıklama + karşı unvanda aranan, aksansız büyük harfe indirgenmiş metin.
+  anahtar           String
+  yon               EkstreKuralYonu
+  eslesmeTuru       EkstreEslesmeTuru @map("eslesme_turu")
+  cariId            String?           @map("cari_id") @db.Uuid
+  masrafKategoriId  String?           @map("masraf_kategori_id") @db.Uuid
+  gelirKategoriId   String?           @map("gelir_kategori_id") @db.Uuid
+  hedefKasaId       String?           @map("hedef_kasa_id") @db.Uuid
+  hedefBankaHesapId String?           @map("hedef_banka_hesap_id") @db.Uuid
+  aktif             Boolean           @default(true)
+  kullanimSayisi    Int               @default(0) @map("kullanim_sayisi")
+  sonKullanim       DateTime?         @map("son_kullanim")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  @@index([tenantId, aktif])
+  @@map("ekstre_kurallari")
+}
+
 enum EkstreSatirDurum {
   beklemede
   eslesti
@@ -2874,32 +2917,35 @@ model BankaEkstre {
 /// KSB-06: ekstredeki tek bir hareket. Onaylanana kadar muhasebeye
 /// dokunmaz; eşleştirilince KasaBankaHareket üretir (hareketId dolar).
 model BankaEkstreSatir {
-  id           String           @id @default(uuid()) @db.Uuid
-  tenantId     String           @map("tenant_id") @db.Uuid
-  ekstreId     String           @map("ekstre_id") @db.Uuid
-  bankaHesapId String           @map("banka_hesap_id") @db.Uuid
-  tarih        DateTime         @db.Date
+  id           String             @id @default(uuid()) @db.Uuid
+  tenantId     String             @map("tenant_id") @db.Uuid
+  ekstreId     String             @map("ekstre_id") @db.Uuid
+  bankaHesapId String             @map("banka_hesap_id") @db.Uuid
+  tarih        DateTime           @db.Date
   /// İşaretli: artı = hesaba giriş (tahsilat), eksi = çıkış (tediye).
-  tutar        Decimal          @db.Decimal(15, 2)
+  tutar        Decimal            @db.Decimal(15, 2)
   aciklama     String
-  dekontNo     String?          @map("dekont_no")
-  karsiIban    String?          @map("karsi_iban")
-  karsiUnvan   String?          @map("karsi_unvan")
-  bakiye       Decimal?         @db.Decimal(15, 2)
-  durum        EkstreSatirDurum @default(beklemede)
-  cariId       String?          @map("cari_id") @db.Uuid
-  faturaId     String?          @map("fatura_id") @db.Uuid
-  hareketId    String?          @unique @map("hareket_id") @db.Uuid
+  dekontNo     String?            @map("dekont_no")
+  karsiIban    String?            @map("karsi_iban")
+  karsiUnvan   String?            @map("karsi_unvan")
+  bakiye       Decimal?           @db.Decimal(15, 2)
+  durum        EkstreSatirDurum   @default(beklemede)
+  cariId       String?            @map("cari_id") @db.Uuid
+  faturaId     String?            @map("fatura_id") @db.Uuid
+  /// KSB-06: satır neyle eşleşti; geri almanın ne yapacağını belirler
+  /// (mevcut fiş yalnız bağdan çözülür, üretilen kayıtlar silinir).
+  eslesmeTuru  EkstreEslesmeTuru? @map("eslesme_turu")
   /// tarih+tutar+açıklama+dekont özeti; aynı satırın tekrar yüklenmesini önler.
-  satirOzeti   String           @map("satir_ozeti")
-  createdAt    DateTime         @default(now()) @map("created_at")
-  updatedAt    DateTime         @updatedAt @map("updated_at")
+  satirOzeti   String             @map("satir_ozeti")
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
 
-  ekstre     BankaEkstre       @relation(fields: [ekstreId], references: [id], onDelete: Cascade)
-  bankaHesap BankaHesap        @relation(fields: [bankaHesapId], references: [id], onDelete: Cascade)
-  cari       CariHesap?        @relation(fields: [cariId], references: [id])
-  fatura     Fatura?           @relation(fields: [faturaId], references: [id])
-  hareket    KasaBankaHareket? @relation(fields: [hareketId], references: [id])
+  ekstre     BankaEkstre        @relation(fields: [ekstreId], references: [id], onDelete: Cascade)
+  bankaHesap BankaHesap         @relation(fields: [bankaHesapId], references: [id], onDelete: Cascade)
+  cari       CariHesap?         @relation(fields: [cariId], references: [id])
+  fatura     Fatura?            @relation(fields: [faturaId], references: [id])
+  /// Bir satır birden çok harekete bağlanabilir (çoklu fatura dağıtımı, virman).
+  hareketler KasaBankaHareket[]
 
   @@unique([tenantId, bankaHesapId, satirOzeti])
   @@index([tenantId, durum])
@@ -2932,6 +2978,8 @@ model KasaBankaHareket {
   kaynakRef         String?             @map("kaynak_ref")
   projeId           String?             @map("proje_id") @db.Uuid
   projeAltKirilimId String?             @map("proje_alt_kirilim_id") @db.Uuid
+  /// KSB-06: hareketin eşleştiği banka ekstresi satırı.
+  ekstreSatirId     String?             @map("ekstre_satir_id") @db.Uuid
   createdAt         DateTime            @default(now()) @map("created_at")
 
   kasa              Kasa?              @relation(fields: [kasaId], references: [id])
@@ -2941,7 +2989,7 @@ model KasaBankaHareket {
   fatura            Fatura?            @relation(fields: [faturaId], references: [id])
   proje             Proje?             @relation(fields: [projeId], references: [id])
   projeAltKirilim   ProjeAltKirilim?   @relation(fields: [projeAltKirilimId], references: [id])
-  ekstreSatir       BankaEkstreSatir?
+  ekstreSatir       BankaEkstreSatir?  @relation(fields: [ekstreSatirId], references: [id], onDelete: SetNull)
   pazaryeriKesinti  PazaryeriKesinti?
   posTahsilat       PosTahsilat?
   masraf            Masraf?
@@ -2950,6 +2998,7 @@ model KasaBankaHareket {
 
   @@index([tenantId, tarih])
   @@index([tenantId, projeId])
+  @@index([tenantId, ekstreSatirId])
   @@map("kasa_banka_hareketleri")
 }
 

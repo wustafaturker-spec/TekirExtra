@@ -183,17 +183,19 @@ describe("KasaBankaService (KSB-01..07)", () => {
   it("POS mutabakatini bekleyen banka ekstre satirina baglar", async () => {
     const create = vi.fn().mockResolvedValueOnce({ id: "gidis" }).mockResolvedValueOnce({ id: "gelis" }).mockResolvedValueOnce({ id: "komisyon" });
     const ekstreGuncelle = vi.fn().mockResolvedValue({});
+    const hareketGuncelle = vi.fn().mockResolvedValue({});
     const tx = {
       posHesap: { findUnique: vi.fn().mockResolvedValue({ id: "pos-1", ad: "PayTR POS", aktif: true, dovizCinsi: "TRY", varsayilanBankaHesapId: "banka-1" }) },
       bankaHesap: { findUnique: vi.fn().mockResolvedValue({ id: "banka-1", aktif: true, dovizCinsi: "TRY" }) },
-      bankaEkstreSatir: { findUnique: vi.fn().mockResolvedValue({ id: "ekstre-1", bankaHesapId: "banka-1", durum: "beklemede", hareketId: null, tutar: new Prisma.Decimal(96) }), update: ekstreGuncelle },
-      kasaBankaHareket: { groupBy: vi.fn().mockResolvedValue([{ tip: "tahsilat", _sum: { tutar: new Prisma.Decimal(100) } }]), create, update: vi.fn().mockResolvedValue({}) },
+      bankaEkstreSatir: { findUnique: vi.fn().mockResolvedValue({ id: "ekstre-1", bankaHesapId: "banka-1", durum: "beklemede", tutar: new Prisma.Decimal(96) }), update: ekstreGuncelle },
+      kasaBankaHareket: { groupBy: vi.fn().mockResolvedValue([{ tip: "tahsilat", _sum: { tutar: new Prisma.Decimal(100) } }]), create, update: hareketGuncelle, count: vi.fn().mockResolvedValue(0) },
       masrafKategori: { upsert: vi.fn().mockResolvedValue({ id: "kategori-1" }) },
       masraf: { create: vi.fn().mockResolvedValue({ id: "masraf-1" }) },
     };
     mockTenantIslem.mockImplementation((_tenantId, cb) => cb(tx));
     await service.posBankayaAktar({ posHesapId: "11111111-1111-4111-8111-111111111111", ekstreSatirId: "22222222-2222-4222-8222-222222222222", brutTutar: "100.00", komisyonTutar: "4.00", tarih: "2026-08-11" });
-    expect(ekstreGuncelle).toHaveBeenCalledWith({ where: { id: "ekstre-1" }, data: { durum: "eslesti", hareketId: "gelis" } });
+    expect(ekstreGuncelle).toHaveBeenCalledWith({ where: { id: "ekstre-1" }, data: { durum: "eslesti", eslesmeTuru: "pos" } });
+    expect(hareketGuncelle).toHaveBeenCalledWith({ where: { id: "gelis" }, data: { ekstreSatirId: "ekstre-1" } });
   });
 });
 
@@ -318,6 +320,7 @@ describe("KasaBankaService fiş geri alma (KSB-08)", () => {
         findUnique: vi.fn(async ({ where }) => kayitlar[where.id] ?? null),
         findFirst: vi.fn().mockResolvedValue(tersVar ? { id: "ters" } : null),
         deleteMany: vi.fn(),
+        count: vi.fn().mockResolvedValue(0),
         create: vi.fn(async ({ data }) => ({ id: `ters-${data.kaynakRef}`, ...data })),
         update: vi.fn(),
       },
@@ -336,12 +339,13 @@ describe("KasaBankaService fiş geri alma (KSB-08)", () => {
   }
 
   it("açık dönemde fişi cari hareketiyle siler ve görüntüsünü denetim izine yazar", async () => {
-    const { tx, service } = hazirla({ h1: hareket({ ekstreSatir: { id: "es1" } }) });
+    const { tx, service } = hazirla({ h1: hareket({ ekstreSatir: { id: "es1", eslesmeTuru: "mevcut_fis" } }) });
 
     await expect(service.hareketGeriAl("h1", "Yanlış cari")).resolves.toEqual({ yontem: "silindi", hareketIdleri: ["h1"] });
     expect(tx.cariHareket.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["ch1"] } } });
     expect(tx.kasaBankaHareket.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["h1"] } } });
-    expect(tx.bankaEkstreSatir.update).toHaveBeenCalledWith({ where: { id: "es1" }, data: { durum: "beklemede", cariId: null, faturaId: null, hareketId: null } });
+    // Ekstre satırına elle bağlanmış son fiş gidince satır yeniden onaya düşer.
+    expect(tx.bankaEkstreSatir.update).toHaveBeenCalledWith({ where: { id: "es1" }, data: { durum: "beklemede", cariId: null, faturaId: null, eslesmeTuru: null } });
     expect(tx.auditLog.create.mock.calls[0][0].data).toMatchObject({ islem: "kasa_banka_fisi_silindi", varlikId: "h1", detay: expect.objectContaining({ neden: "Yanlış cari" }) });
   });
 
@@ -364,6 +368,12 @@ describe("KasaBankaService fiş geri alma (KSB-08)", () => {
     tx.cariHareket.findMany.mockResolvedValue([]);
 
     await expect(service.hareketGeriAl("g1", "Yanlış hesap")).resolves.toEqual({ yontem: "silindi", hareketIdleri: ["g1", "g2"] });
+  });
+
+  it("ekstre eşleştirmesinin ürettiği fişi defterden geri almaz, ekstreye yönlendirir", async () => {
+    const { service } = hazirla({ h1: hareket({ ekstreSatir: { id: "es1", eslesmeTuru: "cari" } }) });
+
+    await expect(service.hareketGeriAl("h1", "Deneme")).rejects.toThrow("Banka Ekstresi");
   });
 
   it("başka modülün ürettiği fişi geri almaz, kaynağını söyler", async () => {

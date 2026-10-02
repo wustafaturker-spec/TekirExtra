@@ -20,6 +20,7 @@ import { ekstreDosyasiniDogrula, type YuklemeDosyasi } from "../core/guvenlik/do
 import { EkstreSatirDurum } from "@prisma/client";
 import { Roller } from "../auth/roller.decorator";
 import { EkstreService } from "./ekstre.service";
+import { EkstreEslestirmeService } from "./ekstre-eslestirme.service";
 import { KasaBankaService } from "./kasa-banka.service";
 import { BankaEntegrasyonService } from "./banka-entegrasyon.service";
 import { z } from "zod";
@@ -30,6 +31,7 @@ import {
   cekSenetGuncelleSemasi,
   cekSenetOlusturSemasi,
   ekstreEslestirSemasi,
+  ekstreKuralGuncelleSemasi,
   ekstreYukleSemasi,
   geriAlmaSemasi,
   kasaBankaHareketOlusturSemasi,
@@ -53,6 +55,7 @@ export class KasaBankaController {
   constructor(
     private readonly service: KasaBankaService,
     private readonly ekstre: EkstreService,
+    private readonly ekstreEslestirme: EkstreEslestirmeService,
     private readonly bankaEntegrasyon: BankaEntegrasyonService,
     private readonly odemeTalimati: OdemeTalimatiService,
   ) {}
@@ -393,28 +396,52 @@ export class KasaBankaController {
     );
   }
 
+  /** KSB-06: ekstre bakiyesi ile sistem bakiyesinin karşılaştırması. */
+  @Get("ekstre/mutabakat/:bankaHesapId")
+  ekstreMutabakat(@Param("bankaHesapId", ParseUUIDPipe) bankaHesapId: string) {
+    return this.ekstre.mutabakat(bankaHesapId);
+  }
+
+  /** KSB-06: seçilen satır için bütün eşleme türlerinin önerileri. */
+  @Get("ekstre/satirlar/:id/oneriler")
+  ekstreOneriler(@Param("id", ParseUUIDPipe) id: string) {
+    return this.ekstreEslestirme.oneriler(id);
+  }
+
   @Post("ekstre/satirlar/:id/eslestir")
   @Roller("muhasebe")
-  async ekstreEslestir(@Param("id") id: string, @Body() govde: unknown) {
-    const ayristirma = ekstreEslestirSemasi.safeParse(govde);
-    if (!ayristirma.success) {
-      throw new BadRequestException(
-        ayristirma.error.issues.map((i) => i.message).join("; "),
-      );
-    }
-    return this.ekstre.eslestir(id, ayristirma.data);
+  ekstreEslestir(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
+    return this.ekstreEslestirme.eslestir(id, ayristir(ekstreEslestirSemasi, govde));
   }
 
   @Post("ekstre/satirlar/:id/yoksay")
   @Roller("muhasebe")
-  async ekstreYoksay(@Param("id") id: string) {
-    return this.ekstre.yoksay(id);
+  ekstreYoksay(@Param("id", ParseUUIDPipe) id: string) {
+    return this.ekstreEslestirme.yoksay(id);
   }
 
   @Post("ekstre/satirlar/:id/geri-al")
   @Roller("muhasebe")
-  async ekstreGeriAl(@Param("id") id: string) {
-    return this.ekstre.geriAl(id);
+  ekstreGeriAl(@Param("id", ParseUUIDPipe) id: string) {
+    return this.ekstreEslestirme.geriAl(id);
+  }
+
+  @Get("ekstre/kurallar")
+  ekstreKurallari() {
+    return this.ekstreEslestirme.kurallar();
+  }
+
+  @Patch("ekstre/kurallar/:id")
+  @Roller("muhasebe")
+  ekstreKuralGuncelle(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
+    return this.ekstreEslestirme.kuralGuncelle(id, ayristir(ekstreKuralGuncelleSemasi, govde));
+  }
+
+  @Delete("ekstre/kurallar/:id")
+  @Roller("muhasebe")
+  @HttpCode(204)
+  ekstreKuralSil(@Param("id", ParseUUIDPipe) id: string) {
+    return this.ekstreEslestirme.kuralSil(id);
   }
 }
 

@@ -1,781 +1,311 @@
 "use client";
 
-import { type FormEvent, useCallback, useEffect, useState } from "react";
-import { api, tokenAl } from "@/lib/api";
-import {
-  Alert,
-  Badge,
-  Button,
-  ButtonLabel,
-  Card,
-  EylemMenusu,
-  Field,
-  Input,
-  PageHeader,
-  SearchInput,
-  Segmented,
-  Select,
-  Stat,
-  StatGrid,
-  TableWrap,
-} from "@/components/ui";
+/**
+ * Banka ekstresi çalışma alanı (KSB-06).
+ *
+ * Solda satır listesi, sağda seçilen satırın eşleştirme paneli. Banka hesabı
+ * seçilince üstte bakiye mutabakatı görünür: ekstreye göre bakiye, sistemdeki
+ * bakiye ve farkın ne kadarının bekleyen/yoksayılan satırlardan geldiği.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
+import { Alert, Badge, Button, Input, Para, Segmented, Select, Tarih } from "@/components/ui";
+import { EkstreYukleme, type BankaHesap } from "./ekstre-yukleme";
+import { ESLESME_ADI, EslestirmePaneli, type EkstreSatiri, type PosHesabi } from "./ekstre-panel";
 
-/* ─── Tipler ─────────────────────────────────────────────────────────────── */
+type Suzgec = "beklemede" | "eslesti" | "yoksayildi" | "hepsi";
 
-interface BankaHesap {
-  id: string;
-  ad: string;
-  bankaAdi: string;
-  dovizCinsi: string;
+interface Mutabakat {
+  bakiyeSutunuVar: boolean;
+  son: { tarih: string; banka: string; sistem: string; fark: string; bekleyen: string; yoksayilan: string } | null;
+  farkBaslangici: string | null;
+  acilisBakiyesiEksikOlabilir: boolean;
+  aciklanmayanFark: string;
 }
 
-interface PosHesap {
+interface KuralSatiri {
   id: string;
-  ad: string;
-  saglayici: string;
-  dovizCinsi: string;
-  bakiye: string;
+  anahtar: string;
+  yon: "giris" | "cikis";
+  eslesmeTuru: keyof typeof ESLESME_ADI;
   aktif: boolean;
+  kullanimSayisi: number;
+  hesapAdi: string | null;
+  hedefAdi: string | null;
 }
-
-interface SutunEslemesi {
-  baslikSatiri: number;
-  tarih: number;
-  aciklama: number;
-  tutar?: number | null;
-  borc?: number | null;
-  alacak?: number | null;
-  dekontNo?: number | null;
-  karsiIban?: number | null;
-  karsiUnvan?: number | null;
-  bakiye?: number | null;
-}
-
-interface Onizleme {
-  bankaHesapId: string;
-  bankaHesapAdi: string;
-  basliklar: string[];
-  ornekSatirlar: string[][];
-  toplamSatir: number;
-  esleme: SutunEslemesi;
-  eslemeKayitli: boolean;
-}
-
-interface OnerilenFatura {
-  id: string;
-  no: string | null;
-  tarih: string;
-  genelToplam: string;
-  odenen: string;
-  kalan: string;
-  tamEslesme: boolean;
-}
-
-interface CariOzet {
-  id: string;
-  kod: string;
-  unvan: string;
-}
-
-interface EkstreSatir {
-  id: string;
-  bankaHesap: { id: string; ad: string; dovizCinsi: string };
-  tarih: string;
-  tutar: string;
-  yon: "tahsilat" | "tediye";
-  aciklama: string;
-  dekontNo: string | null;
-  karsiIban: string | null;
-  karsiUnvan: string | null;
-  bakiye: string | null;
-  durum: "beklemede" | "eslesti" | "yoksayildi";
-  cari: CariOzet | null;
-  fatura: { id: string; no: string | null; genelToplam: string } | null;
-  hareketId: string | null;
-  onerilenCari: CariOzet | null;
-  cariEslesmeKaynagi: "iban" | "vkn" | "unvan" | null;
-  onerilenFaturalar: OnerilenFatura[];
-}
-
-/* ─── Yardımcılar ────────────────────────────────────────────────────────── */
-
-const para = (deger: string | number, doviz = "TRY"): string =>
-  `${Number(deger).toLocaleString("tr-TR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })} ${doviz === "TRY" ? "₺" : doviz}`;
-
-const KAYNAK_ETIKETI: Record<string, string> = {
-  iban: "IBAN",
-  vkn: "VKN",
-  unvan: "ünvan",
-};
-
-/** Eşlemede seçilebilecek alanlar; tarih ve açıklama zorunlu. */
-const ESLEME_ALANLARI: { anahtar: keyof SutunEslemesi; baslik: string; zorunlu?: boolean }[] = [
-  { anahtar: "tarih", baslik: "Tarih *", zorunlu: true },
-  { anahtar: "aciklama", baslik: "Açıklama *", zorunlu: true },
-  { anahtar: "tutar", baslik: "Tutar (işaretli)" },
-  { anahtar: "borc", baslik: "Borç (çıkış)" },
-  { anahtar: "alacak", baslik: "Alacak (giriş)" },
-  { anahtar: "dekontNo", baslik: "Dekont / Referans" },
-  { anahtar: "karsiIban", baslik: "Karşı IBAN" },
-  { anahtar: "karsiUnvan", baslik: "Karşı Ünvan" },
-  { anahtar: "bakiye", baslik: "Bakiye" },
-];
-
-/* ─── Sayfa ──────────────────────────────────────────────────────────────── */
 
 export default function EkstreSayfasi() {
   const [hesaplar, setHesaplar] = useState<BankaHesap[]>([]);
-  const [posHesaplar, setPosHesaplar] = useState<PosHesap[]>([]);
-  const [satirlar, setSatirlar] = useState<EkstreSatir[]>([]);
-  const [suzgec, setSuzgec] = useState<"beklemede" | "eslesti" | "yoksayildi" | "hepsi">(
-    "beklemede",
-  );
+  const [posHesaplari, setPosHesaplari] = useState<PosHesabi[]>([]);
+  const [cariler, setCariler] = useState<Array<{ id: string; unvan: string }>>([]);
+  const [satirlar, setSatirlar] = useState<EkstreSatiri[]>([]);
+  const [yukleniyor, setYukleniyor] = useState(true);
+  const [seciliId, setSeciliId] = useState<string | null>(null);
+  const [suzgec, setSuzgec] = useState<Suzgec>("beklemede");
   const [bankaFiltresi, setBankaFiltresi] = useState("");
-  const [yonFiltresi, setYonFiltresi] = useState<"hepsi" | "tahsilat" | "tediye">("hepsi");
+  const [yonFiltresi, setYonFiltresi] = useState<"" | "tahsilat" | "tediye">("");
   const [arama, setArama] = useState("");
-  const [tarihBaslangic, setTarihBaslangic] = useState("");
-  const [tarihBitis, setTarihBitis] = useState("");
+  const [baslangic, setBaslangic] = useState("");
+  const [bitis, setBitis] = useState("");
+  const [mutabakat, setMutabakat] = useState<Mutabakat | null>(null);
+  const [yuklemeAcik, setYuklemeAcik] = useState(false);
+  const [kurallarAcik, setKurallarAcik] = useState(false);
+  const [kurallar, setKurallar] = useState<KuralSatiri[]>([]);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
-  const [islemde, setIslemde] = useState<string | null>(null);
-
-  // Yükleme sihirbazı
-  const [yuklemeAcik, setYuklemeAcik] = useState(false);
-  const [secilenHesap, setSecilenHesap] = useState("");
-  const [dosya, setDosya] = useState<File | null>(null);
-  const [onizleme, setOnizleme] = useState<Onizleme | null>(null);
-  const [esleme, setEsleme] = useState<SutunEslemesi | null>(null);
-  const [eslemeyiKaydet, setEslemeyiKaydet] = useState(true);
-
-  // Satır başına seçimler
-  const [seciliCari, setSeciliCari] = useState<Record<string, CariOzet>>({});
-  const [seciliFatura, setSeciliFatura] = useState<Record<string, string>>({});
-  const [cariSecici, setCariSecici] = useState<string | null>(null);
-  const [cariArama, setCariArama] = useState("");
-  const [cariSonuc, setCariSonuc] = useState<CariOzet[]>([]);
-  const [mutabakat, setMutabakat] = useState<EkstreSatir | null>(null);
+  const listeRef = useRef<HTMLDivElement>(null);
 
   const listeYukle = useCallback(async () => {
+    const qs = new URLSearchParams();
+    if (suzgec !== "hepsi") qs.set("durum", suzgec);
+    if (bankaFiltresi) qs.set("bankaHesapId", bankaFiltresi);
+    if (yonFiltresi) qs.set("yon", yonFiltresi);
+    if (arama.trim()) qs.set("arama", arama.trim());
+    if (baslangic) qs.set("baslangic", baslangic);
+    if (bitis) qs.set("bitis", bitis);
     try {
-      const qs = new URLSearchParams();
-      if (suzgec !== "hepsi") qs.set("durum", suzgec);
-      if (bankaFiltresi) qs.set("bankaHesapId", bankaFiltresi);
-      if (arama.trim()) qs.set("arama", arama.trim());
-      if (tarihBaslangic) qs.set("baslangic", tarihBaslangic);
-      if (tarihBitis) qs.set("bitis", tarihBitis);
-      if (yonFiltresi !== "hepsi") qs.set("yon", yonFiltresi);
-      const yol =
-        suzgec === "hepsi"
-          ? `/kasa-banka/ekstre/satirlar?${qs}`
-          : `/kasa-banka/ekstre/satirlar?${qs}`;
-      setSatirlar(await api<EkstreSatir[]>(yol));
-    } catch (h) {
-      setHata(h instanceof Error ? h.message : "Ekstre satırları yüklenemedi");
+      const liste = await api<EkstreSatiri[]>(`/kasa-banka/ekstre/satirlar?${qs}`);
+      setSatirlar(liste);
+      setSeciliId((onceki) => (onceki && liste.some((s) => s.id === onceki) ? onceki : liste[0]?.id ?? null));
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : "Ekstre satırları yüklenemedi");
+    } finally {
+      setYukleniyor(false);
     }
-  }, [suzgec, bankaFiltresi, yonFiltresi, arama, tarihBaslangic, tarihBitis]);
+  }, [suzgec, bankaFiltresi, yonFiltresi, arama, baslangic, bitis]);
+
+  const mutabakatYukle = useCallback(async () => {
+    if (!bankaFiltresi) { setMutabakat(null); return; }
+    try {
+      setMutabakat(await api<Mutabakat>(`/kasa-banka/ekstre/mutabakat/${bankaFiltresi}`));
+    } catch {
+      setMutabakat(null);
+    }
+  }, [bankaFiltresi]);
 
   useEffect(() => {
     if (!tokenAl()) return;
-    void listeYukle();
-  }, [listeYukle]);
-
+    const zamanlayici = setTimeout(() => void listeYukle(), arama ? 250 : 0);
+    return () => clearTimeout(zamanlayici);
+  }, [listeYukle, arama]);
+  useEffect(() => { if (tokenAl()) void mutabakatYukle(); }, [mutabakatYukle]);
   useEffect(() => {
     if (!tokenAl()) return;
-    void Promise.all([api<BankaHesap[]>("/kasa-banka/bankalar"), api<PosHesap[]>("/kasa-banka/pos-hesaplari")])
-      .then(([bankalar, poslar]) => { setHesaplar(bankalar); setPosHesaplar(poslar); })
+    void Promise.all([api<BankaHesap[]>("/kasa-banka/bankalar"), api<PosHesabi[]>("/kasa-banka/pos-hesaplari"), tumSayfalariAl<{ id: string; unvan: string }>("/cari")])
+      .then(([b, p, c]) => { setHesaplar(b); setPosHesaplari(p); setCariler(c); })
       .catch(() => undefined);
   }, []);
 
-  // Cari seçici araması
-  useEffect(() => {
-    if (cariSecici === null) return;
-    let iptal = false;
-    const zamanlayici = setTimeout(() => {
-      void api<{ kayitlar: CariOzet[] }>(
-        `/cari${cariArama.trim() ? `?arama=${encodeURIComponent(cariArama.trim())}` : ""}`,
-      )
-        .then((v) => {
-          if (!iptal) setCariSonuc(v.kayitlar.slice(0, 25));
-        })
-        .catch(() => {
-          if (!iptal) setCariSonuc([]);
-        });
-    }, 250);
-    return () => {
-      iptal = true;
-      clearTimeout(zamanlayici);
-    };
-  }, [cariSecici, cariArama]);
+  const secili = satirlar.find((s) => s.id === seciliId) ?? null;
+  const ozet = useMemo(() => ({
+    bekleyen: satirlar.filter((s) => s.durum === "beklemede").length,
+    kuralli: satirlar.filter((s) => s.durum === "beklemede" && s.kuralOnerisi).length,
+  }), [satirlar]);
 
-  /* ─── Yükleme akışı ────────────────────────────────────────────────────── */
-
-  async function onizle() {
-    if (!dosya || !secilenHesap) return;
+  /** İşlemden sonra listeyi tazeler ve sıradaki bekleyen satıra geçer. */
+  async function islemSonrasi(mesaj: string) {
+    setBasari(mesaj);
     setHata("");
-    setBasari("");
-    setIslemde("onizle");
-    try {
-      const govde = new FormData();
-      govde.append("dosya", dosya);
-      govde.append("bankaHesapId", secilenHesap);
-      // FormData'da Content-Type'ı tarayıcı sınır bilgisiyle kendisi kurmalı
-      const yanit = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1"}/kasa-banka/ekstre/onizle`,
-        {
-          method: "POST",
-          credentials: "include",
-          headers: { Authorization: `Bearer ${tokenAl() ?? ""}` },
-          body: govde,
-        },
-      );
-      const veri = await yanit.json();
-      if (!yanit.ok) throw new Error(veri.message ?? "Önizleme başarısız");
-      setOnizleme(veri as Onizleme);
-      setEsleme((veri as Onizleme).esleme);
-    } catch (h) {
-      setHata(h instanceof Error ? h.message : "Dosya okunamadı");
-    } finally {
-      setIslemde(null);
+    const sira = satirlar.findIndex((s) => s.id === seciliId);
+    const sonraki = satirlar.slice(sira + 1).find((s) => s.durum === "beklemede") ?? satirlar.slice(0, Math.max(sira, 0)).find((s) => s.durum === "beklemede");
+    if (sonraki) setSeciliId(sonraki.id);
+    await Promise.all([listeYukle(), mutabakatYukle()]);
+  }
+
+  function klavye(e: React.KeyboardEvent) {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    const i = satirlar.findIndex((s) => s.id === seciliId);
+    const yeni = satirlar[Math.min(Math.max(i + (e.key === "ArrowDown" ? 1 : -1), 0), satirlar.length - 1)];
+    if (yeni) {
+      setSeciliId(yeni.id);
+      listeRef.current?.querySelector<HTMLElement>(`[data-satir="${yeni.id}"]`)?.focus();
     }
   }
 
-  async function yukle() {
-    if (!dosya || !onizleme || !esleme) return;
-    setHata("");
-    setBasari("");
-    setIslemde("yukle");
-    try {
-      const govde = new FormData();
-      govde.append("dosya", dosya);
-      govde.append(
-        "veri",
-        JSON.stringify({ bankaHesapId: onizleme.bankaHesapId, esleme, eslemeyiKaydet }),
-      );
-      const yanit = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1"}/kasa-banka/ekstre/yukle`,
-        {
-          method: "POST",
-          credentials: "include",
-          headers: { Authorization: `Bearer ${tokenAl() ?? ""}` },
-          body: govde,
-        },
-      );
-      const veri = await yanit.json();
-      if (!yanit.ok) throw new Error(veri.message ?? "Yükleme başarısız");
+  async function kurallariAc() {
+    setKurallarAcik(true);
+    try { setKurallar(await api<KuralSatiri[]>("/kasa-banka/ekstre/kurallar")); } catch (e) { setHata(e instanceof Error ? e.message : "Kurallar yüklenemedi"); }
+  }
 
-      setBasari(
-        `${veri.okunanSatir} hareket okundu; ${veri.yeniSatir} yeni satır eklendi` +
-          (veri.yinelenenSatir > 0
-            ? `, ${veri.yinelenenSatir} satır daha önce yüklenmişti (atlandı)`
-            : "") +
-          (veri.atlananSatir > 0 ? `, ${veri.atlananSatir} veri dışı satır atlandı` : "") +
-          ".",
-      );
-      yuklemeyiKapat();
-      setSuzgec("beklemede");
+  async function kuralDegistir(k: KuralSatiri, islem: "aktif" | "sil") {
+    try {
+      if (islem === "sil") await api(`/kasa-banka/ekstre/kurallar/${k.id}`, { method: "DELETE" });
+      else await api(`/kasa-banka/ekstre/kurallar/${k.id}`, { method: "PATCH", body: JSON.stringify({ aktif: !k.aktif }) });
+      setKurallar(await api<KuralSatiri[]>("/kasa-banka/ekstre/kurallar"));
       await listeYukle();
-    } catch (h) {
-      setHata(h instanceof Error ? h.message : "Yükleme başarısız");
-    } finally {
-      setIslemde(null);
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : "Kural güncellenemedi");
     }
   }
 
-  function yuklemeyiKapat() {
-    setYuklemeAcik(false);
-    setDosya(null);
-    setOnizleme(null);
-    setEsleme(null);
-  }
-
-  /* ─── Satır eylemleri ──────────────────────────────────────────────────── */
-
-  function cariAl(s: EkstreSatir): CariOzet | null {
-    return seciliCari[s.id] ?? s.onerilenCari ?? s.cari ?? null;
-  }
-
-  async function eslestir(s: EkstreSatir) {
-    const cari = cariAl(s);
-    if (!cari) return;
-    const fatura = s.onerilenFaturalar.find((f) => f.id === seciliFatura[s.id]);
-    if (fatura && Math.abs(Number(s.tutar)) > Number(fatura.kalan) && !window.confirm(`Uyarı: Ekstre tutarı faturanın kalan ${para(fatura.kalan, s.bankaHesap.dovizCinsi)} bakiyesini aşıyor. Fazla ödeme ile eşleştirilsin mi?`)) return;
-    setHata("");
-    setBasari("");
-    setIslemde(`eslestir-${s.id}`);
-    try {
-      await api(`/kasa-banka/ekstre/satirlar/${s.id}/eslestir`, {
-        method: "POST",
-        body: JSON.stringify({
-          cariId: cari.id,
-          faturaId: seciliFatura[s.id] || null,
-        }),
-      });
-      setBasari(
-        `${para(s.tutar, s.bankaHesap.dovizCinsi)} tutarlı hareket ${cari.unvan} carisine ${
-          s.yon === "tahsilat" ? "tahsilat" : "tediye"
-        } fişi olarak işlendi.`,
-      );
-      await listeYukle();
-    } catch (h) {
-      setHata(h instanceof Error ? h.message : "Eşleştirme başarısız");
-    } finally {
-      setIslemde(null);
-    }
-  }
-
-  async function satirEylemi(s: EkstreSatir, eylem: "yoksay" | "geri-al") {
-    setHata("");
-    setBasari("");
-    setIslemde(`${eylem}-${s.id}`);
-    try {
-      await api(`/kasa-banka/ekstre/satirlar/${s.id}/${eylem}`, { method: "POST" });
-      setBasari(
-        eylem === "yoksay"
-          ? "Satır yoksayıldı."
-          : "Eşleştirme geri alındı; oluşan fiş ve cari hareketi silindi.",
-      );
-      await listeYukle();
-    } catch (h) {
-      setHata(h instanceof Error ? h.message : "İşlem başarısız");
-    } finally {
-      setIslemde(null);
-    }
-  }
-
-  async function posMutabakatiYap(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault(); if (!mutabakat) return; const f = new FormData(e.currentTarget);
-    setHata(""); setBasari(""); setIslemde(`pos-${mutabakat.id}`);
-    try {
-      const sonuc = await api<{ netTutar: string; komisyonTutar: string }>("/kasa-banka/pos-hesaplari/bankaya-aktar", { method: "POST", body: JSON.stringify({ posHesapId: f.get("posHesapId"), bankaHesapId: mutabakat.bankaHesap.id, ekstreSatirId: mutabakat.id, brutTutar: f.get("brutTutar"), komisyonTutar: f.get("komisyonTutar") || "0", tarih: mutabakat.tarih.slice(0, 10), aciklama: mutabakat.aciklama }) });
-      setBasari(`${sonuc.netTutar} ${mutabakat.bankaHesap.dovizCinsi} sağlayıcı ödemesi POS hesabıyla mutabık hale getirildi; ${sonuc.komisyonTutar} komisyon işlendi.`);
-      setMutabakat(null); await listeYukle();
-    } catch (h) { setHata(h instanceof Error ? h.message : "POS mutabakatı yapılamadı"); }
-    finally { setIslemde(null); }
-  }
-
-  /* ─── Görünüm ──────────────────────────────────────────────────────────── */
-
-  const bekleyen = satirlar.filter((s) => s.durum === "beklemede").length;
-  const eslesenTutar = satirlar
-    .filter((s) => s.durum === "eslesti")
-    .reduce((t, s) => t + Math.abs(Number(s.tutar)), 0);
+  const seciliHesap = hesaplar.find((h) => h.id === bankaFiltresi);
+  const fark = mutabakat?.son ? Number(mutabakat.son.fark) : 0;
 
   return (
     <div className="statement-page">
-      <section className="statement-hero"><div><span>BANKA MUTABAKAT MERKEZİ</span><h1>Banka ekstresi çalışma alanı</h1><p>Ekstreleri içeri alın, cari ve faturalarla eşleştirin; banka hareketlerini güvenli biçimde muhasebeleştirin.</p></div><div><ButtonLabel as="a" href="/panel/kasa-banka">← Kasa & Banka</ButtonLabel><Button variant="primary" onClick={() => setYuklemeAcik(!yuklemeAcik)} disabled={islemde !== null}>{yuklemeAcik ? "Vazgeç" : "+ Ekstre yükle"}</Button></div></section>
+      <section className="statement-hero">
+        <div>
+          <span>BANKA MUTABAKAT MERKEZİ</span>
+          <h1>Banka ekstresi çalışma alanı</h1>
+          <p>Ekstreleri içeri alın; her satırı cari, fatura, masraf, gelir, virman, çek ya da kart ödemesiyle eşleştirin. Banka bakiyesiyle sistem bakiyesi aynı kalsın.</p>
+        </div>
+        <div>
+          <Button onClick={() => void kurallariAc()}>Kurallar</Button>
+          <Button variant="primary" onClick={() => setYuklemeAcik(true)}>Ekstre yükle</Button>
+        </div>
+      </section>
 
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
 
       {yuklemeAcik && (
-        <Card style={{ marginBottom: "1.5rem" }} className="stack">
-          <div className="card__title" style={{ margin: 0 }}>
-            Ekstre Dosyası Yükle
-          </div>
-
-          {!onizleme ? (
-            <>
-              <p className="muted" style={{ fontSize: "0.875rem", margin: 0 }}>
-                Bankanızın internet şubesinden hesap hareketlerini <strong>CSV</strong>{" "}
-                olarak indirin. Sütun düzeni bankadan bankaya değiştiği için ilk
-                yüklemede hangi sütunun ne olduğunu siz eşlersiniz; eşleme hesaba
-                kaydedilir ve sonraki yüklemelerde sorulmaz.
-              </p>
-              <div className="row">
-                <div style={{ flex: 1, minWidth: 200 }}>
-                  <Field label="Banka Hesabı *">
-                    <Select
-                      value={secilenHesap}
-                      onChange={(e) => setSecilenHesap(e.target.value)}
-                    >
-                      <option value="">Seçiniz...</option>
-                      {hesaplar.map((h) => (
-                        <option key={h.id} value={h.id}>
-                          {h.ad} — {h.bankaAdi} ({h.dovizCinsi})
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                </div>
-                <div style={{ flex: 2, minWidth: 240 }}>
-                  <Field label="Ekstre Dosyası (CSV) *">
-                    <Input
-                      type="file"
-                      accept=".csv,.txt,text/csv"
-                      onChange={(e) => setDosya(e.target.files?.[0] ?? null)}
-                    />
-                  </Field>
-                </div>
-              </div>
-              <div className="row-tight">
-                <Button
-                  variant="primary"
-                  onClick={() => void onizle()}
-                  disabled={!dosya || !secilenHesap || islemde !== null}
-                >
-                  {islemde === "onizle" ? "Okunuyor..." : "Dosyayı Oku"}
-                </Button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="row-tight">
-                <Badge variant="info">{onizleme.bankaHesapAdi}</Badge>
-                <Badge variant="neutral">{onizleme.toplamSatir} satır</Badge>
-                {onizleme.eslemeKayitli ? (
-                  <Badge variant="success">KAYITLI EŞLEME KULLANILIYOR</Badge>
-                ) : (
-                  <Badge variant="warning">EŞLEME TAHMİN EDİLDİ — KONTROL EDİN</Badge>
-                )}
-              </div>
-
-              <div style={{ overflowX: "auto" }}>
-                <TableWrap>
-                  <thead>
-                    <tr>
-                      {onizleme.basliklar.map((b, i) => (
-                        <th key={i}>
-                          <div style={{ fontSize: "0.7rem", opacity: 0.6 }}>sütun {i}</div>
-                          {b || <em>(boş)</em>}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {onizleme.ornekSatirlar.map((satir, i) => (
-                      <tr key={i}>
-                        {onizleme.basliklar.map((_, j) => (
-                          <td key={j} className="mono" style={{ fontSize: "0.8rem" }}>
-                            {satir[j] ?? ""}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </TableWrap>
-              </div>
-
-              <p className="muted" style={{ fontSize: "0.85rem", margin: 0 }}>
-                Tutar tek sütunda işaretli geliyorsa <strong>Tutar</strong>'ı seçin;
-                banka ayrı sütunlar veriyorsa <strong>Borç</strong> ve{" "}
-                <strong>Alacak</strong>'ın ikisini birden seçin.
-              </p>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
-                  gap: "0.75rem",
-                }}
-              >
-                {ESLEME_ALANLARI.map((alan) => (
-                  <Field key={alan.anahtar} label={alan.baslik}>
-                    <Select
-                      value={
-                        esleme?.[alan.anahtar] === null ||
-                        esleme?.[alan.anahtar] === undefined
-                          ? ""
-                          : String(esleme[alan.anahtar])
-                      }
-                      onChange={(e) =>
-                        setEsleme((m) =>
-                          m
-                            ? {
-                                ...m,
-                                [alan.anahtar]:
-                                  e.target.value === "" ? null : Number(e.target.value),
-                              }
-                            : m,
-                        )
-                      }
-                    >
-                      <option value="">— yok —</option>
-                      {onizleme.basliklar.map((b, i) => (
-                        <option key={i} value={i}>
-                          {i}: {b || "(boş)"}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                ))}
-              </div>
-
-              <label className="row-tight" style={{ fontSize: "0.9rem", cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={eslemeyiKaydet}
-                  onChange={(e) => setEslemeyiKaydet(e.target.checked)}
-                />
-                Bu eşlemeyi hesaba kaydet (sonraki yüklemede sorulmasın)
-              </label>
-
-              <div className="row-tight">
-                <Button
-                  variant="primary"
-                  onClick={() => void yukle()}
-                  disabled={islemde !== null}
-                >
-                  {islemde === "yukle" ? "Yükleniyor..." : "Satırları Aktar"}
-                </Button>
-                <Button onClick={() => setOnizleme(null)}>← Dosya Seçimine Dön</Button>
-              </div>
-            </>
-          )}
-        </Card>
+        <EkstreYukleme
+          hesaplar={hesaplar}
+          varsayilanHesap={bankaFiltresi}
+          onKapat={() => setYuklemeAcik(false)}
+          onYuklendi={async (mesaj, hesapId) => {
+            setYuklemeAcik(false);
+            setBasari(mesaj);
+            setSuzgec("beklemede");
+            setBankaFiltresi(hesapId);
+          }}
+        />
       )}
 
-      <div className="statement-kpis"><StatGrid>
-        <Stat label="Onay Bekleyen" value={bekleyen} tone={bekleyen > 0 ? "accent" : "default"} />
-        <Stat label="Görüntülenen Satır" value={satirlar.length} />
-        <Stat label="Eşleşen Tutar" value={para(eslesenTutar)} tone="success" />
-        <Stat label="Cari bulunamayan" value={satirlar.filter(s=>s.durum==="beklemede"&&!cariAl(s)).length} tone="danger" />
-      </StatGrid></div>
-
-      <Card className="statement-filter"><div className="statement-filter__head"><div><span>EKSTRE FİLTRELERİ</span><strong>Mutabakat görünümünü daraltın</strong></div><small>{satirlar.length} kayıt gösteriliyor</small></div><div className="statement-filter__grid">
-        <Select aria-label="Banka hesabı" value={bankaFiltresi} onChange={e=>setBankaFiltresi(e.target.value)}><option value="">Tüm banka hesapları</option>{hesaplar.map(h=><option key={h.id} value={h.id}>{h.ad} · {h.dovizCinsi}</option>)}</Select>
-        <Select aria-label="Hareket yönü" value={yonFiltresi} onChange={e=>setYonFiltresi(e.target.value as typeof yonFiltresi)}><option value="hepsi">Giriş ve çıkış</option><option value="tahsilat">Girişler / tahsilat</option><option value="tediye">Çıkışlar / tediye</option></Select>
-        <Input aria-label="Ekstre ara" value={arama} onChange={e=>setArama(e.target.value)} placeholder="Açıklama, dekont, IBAN veya cari ara…" />
-        <Input aria-label="Başlangıç tarihi" type="date" value={tarihBaslangic} onChange={e=>setTarihBaslangic(e.target.value)} />
-        <Input aria-label="Bitiş tarihi" type="date" value={tarihBitis} onChange={e=>setTarihBitis(e.target.value)} />
-        {(bankaFiltresi||yonFiltresi!=="hepsi"||arama||tarihBaslangic||tarihBitis)&&<Button size="sm" onClick={()=>{setBankaFiltresi("");setYonFiltresi("hepsi");setArama("");setTarihBaslangic("");setTarihBitis("");}}>Temizle</Button>}
-      </div><div className="statement-filter__tabs">
-        <Segmented
+      <div className="statement-toolbar">
+        <Select aria-label="Banka hesabı" value={bankaFiltresi} onChange={(e) => setBankaFiltresi(e.target.value)}>
+          <option value="">Tüm banka hesapları</option>
+          {hesaplar.map((h) => <option key={h.id} value={h.id}>{h.ad} · {h.dovizCinsi}</option>)}
+        </Select>
+        <Segmented<Suzgec>
+          ariaLabel="Satır durumu"
           value={suzgec}
           onChange={setSuzgec}
           items={[
-            { deger: "beklemede", baslik: "Onay Bekleyen" },
-            { deger: "eslesti", baslik: "Eşleşmiş" },
+            { deger: "beklemede", baslik: `Bekleyen${suzgec === "beklemede" && ozet.bekleyen ? ` (${ozet.bekleyen})` : ""}` },
+            { deger: "eslesti", baslik: "Eşleşen" },
             { deger: "yoksayildi", baslik: "Yoksayılan" },
             { deger: "hepsi", baslik: "Tümü" },
           ]}
         />
-      </div></Card>
+        <Select aria-label="Hareket yönü" value={yonFiltresi} onChange={(e) => setYonFiltresi(e.target.value as typeof yonFiltresi)}>
+          <option value="">Giriş ve çıkış</option>
+          <option value="tahsilat">Yalnız girişler</option>
+          <option value="tediye">Yalnız çıkışlar</option>
+        </Select>
+        <Input aria-label="Ekstre ara" value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Açıklama, dekont, IBAN, cari…" />
+        <Input aria-label="Başlangıç tarihi" type="date" value={baslangic} onChange={(e) => setBaslangic(e.target.value)} />
+        <Input aria-label="Bitiş tarihi" type="date" value={bitis} onChange={(e) => setBitis(e.target.value)} />
+      </div>
 
-      {mutabakat && <Card style={{ marginBottom: "1rem" }}><form className="stack" onSubmit={posMutabakatiYap}><div className="between"><div><h3 style={{ margin: 0 }}>POS sağlayıcı ödemesi</h3><p className="muted" style={{ marginBottom: 0 }}>Bankaya gelen net tutar: {para(mutabakat.tutar, mutabakat.bankaHesap.dovizCinsi)}. Brüt tahsilat eksi komisyon bu net tutara eşit olmalıdır.</p></div><Button onClick={() => setMutabakat(null)}>Vazgeç</Button></div><div className="row"><Field label="POS hesabı"><Select name="posHesapId" required><option value="">Hesap seçin</option>{posHesaplar.filter((p) => p.aktif && p.dovizCinsi === mutabakat.bankaHesap.dovizCinsi).map((p) => <option key={p.id} value={p.id}>{p.ad} · {p.saglayici} · bakiye {p.bakiye}</option>)}</Select></Field><Field label="Brüt sağlayıcı alacağı"><Input name="brutTutar" type="number" min="0.01" step="0.01" required defaultValue={mutabakat.tutar} /></Field><Field label="Komisyon / kesinti"><Input name="komisyonTutar" type="number" min="0" step="0.01" defaultValue="0" /></Field></div><Button type="submit" variant="primary" disabled={islemde !== null}>POS → banka mutabakatını işle</Button></form></Card>}
+      {seciliHesap && mutabakat && (
+        <section className={`reconcile${!mutabakat.son ? "" : fark === 0 ? " is-ok" : " is-off"}`} aria-label="Bakiye mutabakatı">
+          {!mutabakat.bakiyeSutunuVar || !mutabakat.son ? (
+            <p>Bu hesabın ekstrelerinde bakiye sütunu yok. Mutabakat için yüklemede <strong>Bakiye</strong> sütununu eşleyin.</p>
+          ) : (
+            <>
+              <div><span>Bankaya göre bakiye</span><strong><Para deger={mutabakat.son.banka} dovizCinsi={seciliHesap.dovizCinsi} /></strong><small><Tarih deger={mutabakat.son.tarih} /> gün sonu</small></div>
+              <div><span>Sistemdeki bakiye</span><strong><Para deger={mutabakat.son.sistem} dovizCinsi={seciliHesap.dovizCinsi} /></strong><small>aynı gün sonu</small></div>
+              <div className="reconcile__diff">
+                <span>Fark</span>
+                <strong><Para deger={mutabakat.son.fark} dovizCinsi={seciliHesap.dovizCinsi} /></strong>
+                <small>{fark === 0 ? "Hesap mutabık" : mutabakat.farkBaslangici ? <>ilk kez <Tarih deger={mutabakat.farkBaslangici} /> günü açıldı</> : "fark ilk günden beri var"}</small>
+              </div>
+              {fark !== 0 && (
+                <div className="reconcile__why">
+                  <span>Farkın kaynağı</span>
+                  <ul>
+                    {Number(mutabakat.son.bekleyen) !== 0 && <li>Onay bekleyen satırlar: <Para deger={mutabakat.son.bekleyen} dovizCinsi={seciliHesap.dovizCinsi} /></li>}
+                    {Number(mutabakat.son.yoksayilan) !== 0 && <li>Yoksayılan satırlar: <Para deger={mutabakat.son.yoksayilan} dovizCinsi={seciliHesap.dovizCinsi} /></li>}
+                    {Number(mutabakat.aciklanmayanFark) !== 0 && <li>Açıklanamayan: <Para deger={mutabakat.aciklanmayanFark} dovizCinsi={seciliHesap.dovizCinsi} />{mutabakat.acilisBakiyesiEksikOlabilir ? " — hesabın açılış bakiyesi girilmemiş olabilir" : " — ekstrede olmayan elle girilmiş fiş olabilir"}</li>}
+                  </ul>
+                </div>
+              )}
+            </>
+          )}
+        </section>
+      )}
 
-      <Card className="statement-register" pad={false}>
-        <TableWrap>
-          <thead>
-            <tr>
-              <th>Tarih</th>
-              <th>Açıklama</th>
-              <th className="num">Tutar</th>
-              <th style={{ minWidth: 300 }}>Cari / Fatura</th>
-              <th className="num">İşlem</th>
-            </tr>
-          </thead>
-          <tbody>
-            {satirlar.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="empty">
-                  Bu görünümde satır yok. Ekstre yükleyerek başlayın.
-                </td>
-              </tr>
-            ) : (
-              satirlar.map((s) => {
-                const cari = cariAl(s);
-                const bekliyor = s.durum === "beklemede";
-                return (
-                  <tr key={s.id}>
-                    <td>{s.tarih}</td>
-                    <td>
-                      <div>{s.aciklama}</div>
-                      <div className="muted mono" style={{ fontSize: "0.78rem" }}>
-                        {[
-                          s.dekontNo && `dekont: ${s.dekontNo}`,
-                          s.karsiIban && s.karsiIban,
-                          s.bankaHesap.ad,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </div>
-                    </td>
-                    <td
-                      className="num"
-                      style={{
-                        fontWeight: 700,
-                        color: s.yon === "tahsilat" ? "var(--success)" : "var(--danger)",
-                      }}
-                    >
-                      {para(s.tutar, s.bankaHesap.dovizCinsi)}
-                      <div className="muted" style={{ fontWeight: 400, fontSize: "0.75rem" }}>
-                        {s.yon === "tahsilat" ? "tahsilat" : "tediye"}
-                      </div>
-                    </td>
-                    <td>
-                      {s.durum === "yoksayildi" ? (
-                        <Badge variant="neutral">YOKSAYILDI</Badge>
-                      ) : s.durum === "eslesti" ? (
-                        <div>
-                          <Badge variant="success">İŞLENDİ</Badge>{" "}
-                          {s.cari && (
-                            <>
-                              <code className="mono">{s.cari.kod}</code> {s.cari.unvan}
-                            </>
-                          )}
-                          {s.fatura && (
-                            <div className="muted" style={{ fontSize: "0.8rem" }}>
-                              Fatura: {s.fatura.no ?? "(taslak)"} —{" "}
-                              {para(s.fatura.genelToplam)}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="stack" style={{ gap: "0.4rem" }}>
-                          <div className="row-tight" style={{ flexWrap: "wrap" }}>
-                            {cari ? (
-                              <>
-                                <span>
-                                  <code className="mono">{cari.kod}</code> {cari.unvan}
-                                </span>
-                                {s.cariEslesmeKaynagi &&
-                                  cari.id === s.onerilenCari?.id &&
-                                  !seciliCari[s.id] && (
-                                    <Badge variant="info">
-                                      oto: {KAYNAK_ETIKETI[s.cariEslesmeKaynagi]}
-                                    </Badge>
-                                  )}
-                                <Button
-                                  size="sm"
-                                  onClick={() => {
-                                    setCariSecici(s.id);
-                                    setCariArama("");
-                                  }}
-                                >
-                                  Değiştir
-                                </Button>
-                              </>
-                            ) : (
-                              <>
-                                <Badge variant="danger">CARİ BULUNAMADI</Badge>
-                                <Button
-                                  size="sm"
-                                  onClick={() => {
-                                    setCariSecici(s.id);
-                                    setCariArama("");
-                                  }}
-                                >
-                                  Cari Seç
-                                </Button>
-                              </>
-                            )}
-                          </div>
+      <div className="statement-workspace">
+        <div className="statement-list" ref={listeRef} onKeyDown={klavye} role="listbox" aria-label="Ekstre satırları" aria-activedescendant={seciliId ?? undefined}>
+          <header>
+            <strong>{satirlar.length} satır</strong>
+            {suzgec === "beklemede" && ozet.kuralli > 0 && <Badge variant="info">{ozet.kuralli} satırda kural önerisi var</Badge>}
+          </header>
+          {yukleniyor && <p className="statement-list__empty">Satırlar yükleniyor…</p>}
+          {!yukleniyor && satirlar.length === 0 && (
+            <div className="statement-list__empty">
+              {suzgec === "beklemede" ? <><strong>Bekleyen satır yok.</strong><span>Yeni ekstre yükleyerek devam edebilirsiniz.</span></> : "Filtreye uyan satır yok."}
+            </div>
+          )}
+          {satirlar.map((s) => {
+            const giris = s.yon === "tahsilat";
+            return (
+              <div
+                key={s.id}
+                id={s.id}
+                data-satir={s.id}
+                role="option"
+                aria-selected={s.id === seciliId}
+                tabIndex={0}
+                className={`statement-row${s.id === seciliId ? " is-selected" : ""}`}
+                onClick={() => setSeciliId(s.id)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSeciliId(s.id); } }}
+              >
+                <span className="statement-row__date"><Tarih deger={s.tarih} /></span>
+                <span className="statement-row__text">
+                  <strong>{s.aciklama}</strong>
+                  <small>
+                    {!bankaFiltresi && `${s.bankaHesap.ad} · `}
+                    {s.durum === "eslesti" && s.eslesmeTuru ? ESLESME_ADI[s.eslesmeTuru] + (s.hareketler[0]?.cari ? ` · ${s.hareketler[0].cari.unvan}` : s.hareketler[0]?.kategori ? ` · ${s.hareketler[0].kategori}` : "")
+                      : s.durum === "yoksayildi" ? "Yoksayıldı"
+                      : s.kuralOnerisi ? `Kural önerisi: ${ESLESME_ADI[s.kuralOnerisi.eslesmeTuru]}`
+                      : s.karsiUnvan ?? "Onay bekliyor"}
+                  </small>
+                </span>
+                <span className={`statement-row__amount ${giris ? "is-in" : "is-out"}`}>
+                  {giris ? "+" : "−"}<Para deger={Math.abs(Number(s.tutar))} dovizCinsi={s.bankaHesap.dovizCinsi} />
+                </span>
+                <span className={`statement-row__dot is-${s.durum}${s.durum === "beklemede" && s.kuralOnerisi ? " has-rule" : ""}`} aria-hidden="true" />
+              </div>
+            );
+          })}
+        </div>
 
-                          {cari && s.onerilenFaturalar.length > 0 && (
-                            <Select
-                              value={seciliFatura[s.id] ?? ""}
-                              onChange={(e) =>
-                                setSeciliFatura((f) => ({ ...f, [s.id]: e.target.value }))
-                              }
-                            >
-                              <option value="">Fatura bağlama (yalnız bakiyeye işle)</option>
-                              {s.onerilenFaturalar.map((f) => (
-                                <option key={f.id} value={f.id}>
-                                  {f.tamEslesme ? "✓ " : ""}
-                                  {f.no ?? "(no yok)"} · {f.tarih} · kalan {f.kalan}
-                                </option>
-                              ))}
-                            </Select>
-                          )}
+        {secili ? (
+          <EslestirmePaneli satir={secili} cariler={cariler} posHesaplari={posHesaplari} onDegisti={(m) => void islemSonrasi(m)} />
+        ) : (
+          <aside className="match-panel match-panel--empty"><p>Eşleştirmek için soldan bir satır seçin.</p></aside>
+        )}
+      </div>
 
-                          {cariSecici === s.id && (
-                            <div
-                              style={{
-                                padding: "0.75rem",
-                                border: "1px dashed var(--border-strong)",
-                                borderRadius: "var(--radius-sm)",
-                              }}
-                            >
-                              <SearchInput
-                                value={cariArama}
-                                onChange={(e) => setCariArama(e.target.value)}
-                                placeholder="Cari adı, kodu veya VKN..."
-                                autoFocus
-                              />
-                              <div
-                                style={{ maxHeight: 180, overflowY: "auto", marginTop: "0.5rem" }}
-                              >
-                                {cariSonuc.length === 0 ? (
-                                  <p className="muted" style={{ fontSize: "0.85rem", margin: 0 }}>
-                                    Sonuç yok.
-                                  </p>
-                                ) : (
-                                  cariSonuc.map((c) => (
-                                    <button
-                                      key={c.id}
-                                      type="button"
-                                      className="btn btn--ghost btn--block btn--sm"
-                                      style={{
-                                        justifyContent: "flex-start",
-                                        marginBottom: "0.25rem",
-                                      }}
-                                      onClick={() => {
-                                        setSeciliCari((v) => ({ ...v, [s.id]: c }));
-                                        // Cari değişti; önceki fatura seçimi geçersiz.
-                                        setSeciliFatura((f) => ({ ...f, [s.id]: "" }));
-                                        setCariSecici(null);
-                                      }}
-                                    >
-                                      <code className="mono">{c.kod}</code>&nbsp;{c.unvan}
-                                    </button>
-                                  ))
-                                )}
-                              </div>
-                              <Button size="sm" onClick={() => setCariSecici(null)}>
-                                Kapat
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                    <td className="num">
-                      <div className="row-tight statement-row-actions" style={{ justifyContent: "flex-end" }}>
-                        {bekliyor && (
-                          <>
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              onClick={() => void eslestir(s)}
-                              disabled={!cari || islemde !== null}
-                            >
-                              {islemde === `eslestir-${s.id}` ? "İşleniyor..." : "Eşleştir"}
-                            </Button>
-                            {/* Birincil iş eşleştirme; seyrek eylemler satırı kalabalıklaştırmasın. */}
-                            <EylemMenusu>
-                              {s.yon === "tahsilat" && <Button size="sm" type="button" onClick={() => setMutabakat(s)} disabled={islemde !== null}>POS ödemesi</Button>}
-                              <Button
-                                size="sm"
-                                type="button"
-                                onClick={() => void satirEylemi(s, "yoksay")}
-                                disabled={islemde !== null}
-                              >
-                                Yoksay
-                              </Button>
-                            </EylemMenusu>
-                          </>
-                        )}
-                        {!bekliyor && (
-                          <Button
-                            size="sm"
-                            onClick={() => void satirEylemi(s, "geri-al")}
-                            disabled={islemde !== null}
-                          >
-                            {islemde === `geri-al-${s.id}` ? "..." : "Geri Al"}
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </TableWrap>
-      </Card>
+      {kurallarAcik && (
+        <div className="treasury-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setKurallarAcik(false); }}>
+          <section className="treasury-modal" role="dialog" aria-label="Eşleme kuralları">
+            <header>
+              <div><span>BANKA EKSTRESİ</span><h2>Eşleme kuralları</h2></div>
+              <button onClick={() => setKurallarAcik(false)} aria-label="Kapat">×</button>
+            </header>
+            <div className="rule-list">
+              <p className="match-panel__note">Kurallar yalnız öneri üretir; satır yine sizin onayınızla işlenir. Eşleştirirken “Benzer satırlar için kural kaydet” ile yeni kural eklenir.</p>
+              {kurallar.length === 0 && <p className="statement-list__empty">Henüz kural yok.</p>}
+              {kurallar.map((k) => (
+                <div key={k.id} className={`rule-list__row${k.aktif ? "" : " is-passive"}`}>
+                  <div>
+                    <strong>“{k.anahtar}”</strong>
+                    <small>{k.yon === "giris" ? "Giriş" : "Çıkış"} → {ESLESME_ADI[k.eslesmeTuru]}{k.hedefAdi ? ` · ${k.hedefAdi}` : ""} · {k.hesapAdi ?? "tüm hesaplar"} · {k.kullanimSayisi} kez kullanıldı</small>
+                  </div>
+                  <div className="row-tight">
+                    <Button size="sm" onClick={() => void kuralDegistir(k, "aktif")}>{k.aktif ? "Pasife al" : "Etkinleştir"}</Button>
+                    <Button size="sm" variant="danger" onClick={() => void kuralDegistir(k, "sil")}>Sil</Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

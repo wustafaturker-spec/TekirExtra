@@ -9,6 +9,7 @@
  * eşleme banka hesabına kaydedilir).
  */
 import { createHash } from "node:crypto";
+import * as ExcelJS from "exceljs";
 
 export interface SutunEslemesi {
   /** Başlık satırının 0-tabanlı indisi; veri bir sonraki satırdan başlar. */
@@ -153,6 +154,51 @@ export function tutarCoz(ham: string): number | null {
   const d = Number(s);
   if (!Number.isFinite(d)) return null;
   return negatif ? -d : d;
+}
+
+/** .xlsx dosyaları ZIP kabıdır; ilk dört bayt `PK\x03\x04`. */
+export function excelMi(buffer: Buffer): boolean {
+  return buffer.length > 4 && buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04;
+}
+
+/**
+ * KSB-06: ekstre dosyasını tabloya çevirir; CSV/TXT ya da Excel (.xlsx).
+ * Excel'de ilk çalışma sayfası okunur; tarih hücreleri `yyyy-aa-gg`, sayılar
+ * noktalı ondalıkla yazılır (tarih/tutar çözücüleri ikisini de anlar). Sütun
+ * eşlemesi CSV'deki gibi kullanıcıdan alınır.
+ */
+export async function ekstreDosyasiOku(buffer: Buffer): Promise<string[][]> {
+  if (!excelMi(buffer)) return ekstreTabloOku(buffer);
+  const kitap = new ExcelJS.Workbook();
+  try {
+    await kitap.xlsx.load(buffer as unknown as ArrayBuffer);
+  } catch {
+    throw new EkstreOkumaHatasi("Excel dosyası okunamadı; dosyanın .xlsx biçiminde olduğundan emin olun (eski .xls desteklenmez)");
+  }
+  const sayfa = kitap.worksheets[0];
+  if (!sayfa) throw new EkstreOkumaHatasi("Excel dosyasında çalışma sayfası yok");
+  const tablo: string[][] = [];
+  sayfa.eachRow({ includeEmpty: true }, (satir) => {
+    const hucreler: string[] = [];
+    for (let i = 1; i <= sayfa.columnCount; i++) hucreler.push(hucreMetni(satir.getCell(i).value));
+    tablo.push(hucreler);
+  });
+  while (tablo.length && tablo[tablo.length - 1].every((h) => !h.trim())) tablo.pop();
+  if (tablo.length === 0) throw new EkstreOkumaHatasi("Excel dosyası boş");
+  return tablo;
+}
+
+function hucreMetni(deger: ExcelJS.CellValue): string {
+  if (deger === null || deger === undefined) return "";
+  if (deger instanceof Date) return deger.toISOString().slice(0, 10);
+  if (typeof deger === "number") return String(deger);
+  if (typeof deger === "string" || typeof deger === "boolean") return String(deger).trim();
+  if (typeof deger === "object") {
+    if ("richText" in deger) return deger.richText.map((p) => p.text).join("").trim();
+    if ("result" in deger) return hucreMetni(deger.result as ExcelJS.CellValue);
+    if ("text" in deger) return String(deger.text).trim();
+  }
+  return String(deger);
 }
 
 /** `gg.aa.yyyy`, `gg/aa/yyyy`, `yyyy-aa-gg` (+ isteğe bağlı saat). */

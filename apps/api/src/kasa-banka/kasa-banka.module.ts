@@ -1,6 +1,7 @@
 import { Module, OnModuleInit } from "@nestjs/common";
 import { registerEylemPolitikasi } from "../core/eylemler/eylem-kayit";
 import { EkstreService } from "./ekstre.service";
+import { EkstreEslestirmeService } from "./ekstre-eslestirme.service";
 import { KasaBankaController } from "./kasa-banka.controller";
 import { KasaBankaService } from "./kasa-banka.service";
 import { BankaWebhookController } from "./banka-webhook.controller";
@@ -13,7 +14,7 @@ import { KrediKartiService } from "./kredi-karti.service";
 @Module({
   imports: [AuthModule],
   controllers: [KasaBankaController, BankaWebhookController, KrediKartiController],
-  providers: [KasaBankaService, EkstreService, BankaEntegrasyonService, OdemeTalimatiService, KrediKartiService],
+  providers: [KasaBankaService, EkstreService, EkstreEslestirmeService, BankaEntegrasyonService, OdemeTalimatiService, KrediKartiService],
   exports: [KasaBankaService, EkstreService],
 })
 export class KasaBankaModule implements OnModuleInit {

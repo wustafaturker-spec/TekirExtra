@@ -66,8 +66,10 @@ export function excelDosyasiniDogrula(dosya: YuklemeDosyasi): void {
 
 export function ekstreDosyasiniDogrula(dosya: YuklemeDosyasi): void {
   const uzanti = dosya.originalname.toLocaleLowerCase("tr-TR");
+  // KSB-06: Excel ekstresi (.xlsx) ZIP imzasıyla kabul edilir; eski .xls desteklenmez.
+  if (uzanti.endsWith(".xlsx")) return excelDosyasiniDogrula(dosya);
   if (!uzanti.endsWith(".csv") && !uzanti.endsWith(".txt")) {
-    throw new BadRequestException("Banka ekstresi yalnızca .csv veya .txt biçiminde yüklenebilir");
+    throw new BadRequestException("Banka ekstresi .csv, .txt ya da .xlsx biçiminde yüklenebilir");
   }
   if (!metinMi(dosya.buffer)) {
     throw new BadRequestException("Banka ekstresi geçerli bir metin/CSV dosyası değil");

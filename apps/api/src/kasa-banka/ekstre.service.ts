@@ -7,40 +7,32 @@
  */
 import {
   BadRequestException,
-  ConflictException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { EkstreSatirDurum, Prisma } from "@prisma/client";
-import { kurZorunlu } from "../doviz/kur-coz";
 import { createHash } from "node:crypto";
 import { aktifBaglam } from "../core/istek-baglami";
 import { metinNormalize } from "@tekirextra/shared";
 import { PrismaService } from "../core/prisma.service";
-import { KasaBankaService } from "./kasa-banka.service";
+import { kuralBul } from "./ekstre-kural";
+import { mutabakatHesapla } from "./ekstre-mutabakat";
 import {
   EkstreOkumaHatasi,
   type SutunEslemesi,
   ekstreSatirlariOku,
-  ekstreTabloOku,
+  ekstreDosyasiOku,
   eslemeTahminEt,
-  metniNormalle,
 } from "./ekstre-oku";
-import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
-import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal =>
   new Prisma.Decimal(deger);
 
-/** Bir satır için bulunan cari ve hangi ipucuyla bulunduğu. */
-export type CariEslesmeKaynagi = "iban" | "vkn" | "unvan" | null;
 
 @Injectable()
 export class EkstreService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly kasaBanka: KasaBankaService,
-    private readonly donemKilidi: DonemKilidiService,
   ) {}
 
   async webhookHareketleriniAl(tenantId: string, bankaHesapId: string, baglantiId: string, hareketler: Array<{ id: string; tarih: string; tutar: number; aciklama: string; dekontNo?: string; karsiIban?: string; karsiUnvan?: string; bakiye?: number }>) {
@@ -69,7 +61,7 @@ export class EkstreService {
 
     let tablo: string[][];
     try {
-      tablo = ekstreTabloOku(dosya);
+      tablo = await ekstreDosyasiOku(dosya);
     } catch (hata) {
       throw new BadRequestException(
         hata instanceof EkstreOkumaHatasi ? hata.message : "Dosya okunamadı",
@@ -108,7 +100,7 @@ export class EkstreService {
 
     let tablo: string[][];
     try {
-      tablo = ekstreTabloOku(dosya);
+      tablo = await ekstreDosyasiOku(dosya);
     } catch (hata) {
       throw new BadRequestException(
         hata instanceof EkstreOkumaHatasi ? hata.message : "Dosya okunamadı",
@@ -180,15 +172,20 @@ export class EkstreService {
 
   // ─── KUTU ──────────────────────────────────────────────────────────────────
 
-  /** Ekstre satırları + bekleyenler için cari/fatura önerisi. */
+  /**
+   * Ekstre satırları ve bağlı hareketlerin özeti. Liste hafiftir: ayrıntılı
+   * öneriler (cari, fatura, mevcut fiş, çek…) seçilen satır için
+   * `EkstreEslestirmeService.oneriler` ile alınır. Bekleyen satıra uyan
+   * kayıtlı kural varsa önerisi burada döner.
+   */
   async satirListele(durum?: EkstreSatirDurum, bankaHesapId?: string, arama?: string, baslangic?: string, bitis?: string, yon?: "tahsilat" | "tediye") {
     const { tenantId } = aktifBaglam();
-
-    const satirlar = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.bankaEkstreSatir.findMany({
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const satirlar = await tx.bankaEkstreSatir.findMany({
         where: {
           durum: durum ?? undefined,
           bankaHesapId: bankaHesapId || undefined,
+          ...(yon ? { tutar: yon === "tediye" ? { lt: 0 } : { gte: 0 } } : {}),
           ...(baslangic || bitis ? { tarih: { ...(baslangic ? { gte: new Date(baslangic) } : {}), ...(bitis ? { lte: new Date(bitis) } : {}) } } : {}),
           ...(arama ? { OR: [
             { aciklama: { contains: arama, mode: "insensitive" } },
@@ -199,22 +196,27 @@ export class EkstreService {
           ] } : {}),
         },
         orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
+        take: 1000,
         include: {
           cari: { select: { id: true, kod: true, unvan: true } },
           fatura: { select: { id: true, no: true, genelToplam: true } },
           bankaHesap: { select: { id: true, ad: true, dovizCinsi: true } },
+          hareketler: {
+            orderBy: { createdAt: "asc" },
+            select: {
+              id: true, tip: true, tutar: true, dovizCinsi: true, kaynakTur: true, aciklama: true,
+              cari: { select: { id: true, unvan: true } }, fatura: { select: { id: true, no: true } },
+              kasa: { select: { ad: true } }, bankaHesap: { select: { ad: true } },
+              masraf: { select: { kategori: { select: { ad: true } } } },
+              gelirKaydi: { select: { kategori: { select: { ad: true } } } },
+            },
+          },
         },
-      }),
-    );
-
-    const sonuc = [];
-    for (const s of satirlar) {
-      const oneri =
-        s.durum === "beklemede"
-          ? await this.oneriHesapla(tenantId, s)
-          : { cari: null, cariEslesmeKaynagi: null as CariEslesmeKaynagi, faturalar: [] };
-
-      sonuc.push({
+      });
+      const kurallar = satirlar.some((s) => s.durum === "beklemede")
+        ? await tx.ekstreKurali.findMany({ where: { aktif: true }, orderBy: [{ kullanimSayisi: "desc" }, { createdAt: "asc" }] })
+        : [];
+      return satirlar.map((s) => ({
         id: s.id,
         bankaHesap: s.bankaHesap,
         tarih: s.tarih.toISOString().slice(0, 10),
@@ -227,143 +229,35 @@ export class EkstreService {
         karsiUnvan: s.karsiUnvan,
         bakiye: s.bakiye?.toFixed(2) ?? null,
         durum: s.durum,
+        eslesmeTuru: s.eslesmeTuru,
         cari: s.cari,
-        fatura: s.fatura
-          ? { ...s.fatura, genelToplam: s.fatura.genelToplam.toFixed(2) }
-          : null,
-        hareketId: s.hareketId,
-        onerilenCari: oneri.cari,
-        cariEslesmeKaynagi: oneri.cariEslesmeKaynagi,
-        onerilenFaturalar: oneri.faturalar,
-      });
-    }
-    return yon ? sonuc.filter((s) => s.yon === yon) : sonuc;
+        fatura: s.fatura ? { ...s.fatura, genelToplam: s.fatura.genelToplam.toFixed(2) } : null,
+        hareketler: s.hareketler.map((h) => ({
+          id: h.id, tip: h.tip, tutar: h.tutar.toFixed(2), dovizCinsi: h.dovizCinsi, kaynakTur: h.kaynakTur, aciklama: h.aciklama,
+          cari: h.cari, fatura: h.fatura, hesap: h.kasa?.ad ?? h.bankaHesap?.ad ?? null,
+          kategori: h.masraf?.kategori.ad ?? h.gelirKaydi?.kategori.ad ?? null,
+        })),
+        kuralOnerisi: s.durum === "beklemede" ? kuralBul(kurallar, s) : null,
+      }));
+    });
   }
 
   /**
-   * Satırı cariyle (ve istenirse faturayla) eşleştirir: tahsilat/tediye fişi
-   * üretilir, cari bakiyesi güncellenir.
+   * KSB-06: ekstredeki bakiye ile sistemdeki hesap bakiyesinin gün gün
+   * karşılaştırması; farkın başladığı gün ve açıklanan/açıklanamayan kısmı.
    */
-  async eslestir(id: string, girdi: { cariId: string; faturaId?: string | null }) {
+  async mutabakat(bankaHesapId: string) {
     const { tenantId } = aktifBaglam();
-
-    const satir = await this.satirTazele(tenantId, id);
-    if (satir.durum === "eslesti") {
-      throw new ConflictException("Bu satır zaten eşleştirilmiş");
-    }
-
-    const tutar = satir.tutar;
-    const tip = tutar.isNegative() ? "tediye" : "tahsilat";
-    const kur = satir.bankaHesap.dovizCinsi === "TRY" ? "1" : await this.prisma.tenantIslem(tenantId, async (tx) => (await kurZorunlu(tx, satir.bankaHesap.dovizCinsi, satir.tarih, "satis", tenantId)).toFixed(6));
-
-    await this.prisma.tenantIslem(tenantId, async (tx) => {
-      const cari = await tx.cariHesap.findUnique({
-        where: { id: girdi.cariId },
-        select: { id: true },
-      });
-      if (!cari) throw new NotFoundException("Cari hesap bulunamadı");
-
-      if (girdi.faturaId) {
-        const fatura = await tx.fatura.findUnique({
-          where: { id: girdi.faturaId },
-          select: { id: true, cariId: true, durum: true },
-        });
-        if (!fatura) throw new NotFoundException("Fatura bulunamadı");
-        if (fatura.cariId !== girdi.cariId) {
-          throw new BadRequestException("Seçilen fatura bu cariye ait değil");
-        }
-        if (fatura.durum !== "kesin") {
-          throw new BadRequestException(
-            "Yalnızca kesinleşmiş faturalar ödemeyle kapatılabilir",
-          );
-        }
-      }
-    });
-
-    // Satır önce sahiplenilir: eşzamanlı iki eşleştirme (çift tıklama, iki
-    // kullanıcı) ikisi birden fiş üretemez, ikincisi burada durur.
-    const sahiplenme = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.bankaEkstreSatir.updateMany({
-        where: { id, durum: { not: "eslesti" }, hareketId: null },
-        data: { durum: "eslesti", cariId: girdi.cariId, faturaId: girdi.faturaId ?? null },
-      }),
-    );
-    if (sahiplenme.count !== 1) {
-      throw new ConflictException("Bu satır az önce başka bir işlemle eşleştirildi; listeyi yenileyin");
-    }
-    const sahiplenmeyiBirak = () =>
-      this.prisma.tenantIslem(tenantId, (tx) =>
-        tx.bankaEkstreSatir.update({ where: { id }, data: { durum: satir.durum, cariId: null, faturaId: null } }),
-      ).catch(() => undefined);
-
-    // Fiş üretimi mevcut KSB-02 yoluyla yapılır; cari hareketi de o üretir.
-    const hareket = await this.kasaBanka.hareketEkle({
-      kasaId: null,
-      bankaHesapId: satir.bankaHesapId,
-      tip,
-      tutar: tutar.abs().toFixed(2),
-      dovizCinsi: satir.bankaHesap.dovizCinsi,
-      kur,
-      tarih: satir.tarih.toISOString().slice(0, 10),
-      aciklama: satir.aciklama.slice(0, 500),
-      cariId: girdi.cariId,
-      faturaId: girdi.faturaId ?? null,
-    }).catch(async (hata) => {
-      await sahiplenmeyiBirak();
-      throw hata;
-    });
-
-    try {
-      return await this.prisma.tenantIslem(tenantId, (tx) =>
-        tx.bankaEkstreSatir.update({ where: { id }, data: { hareketId: hareket.id } }),
-      );
-    } catch (hata) {
-      // Bağ kurulamadıysa ortada sahipsiz fiş kalmasın.
-      await this.hareketGeriAl(tenantId, hareket.id).catch(() => undefined);
-      await sahiplenmeyiBirak();
-      throw hata;
-    }
-  }
-
-  /** Banka masrafı, faiz gibi cariyle ilgisi olmayan satırları listeden düşürür. */
-  async yoksay(id: string) {
-    const { tenantId } = aktifBaglam();
-    const satir = await this.satirTazele(tenantId, id);
-    if (satir.durum === "eslesti") {
-      throw new BadRequestException(
-        "Eşleştirilmiş satır yoksayılamaz; önce eşleştirmeyi geri alın",
-      );
-    }
-    const sonuc = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.bankaEkstreSatir.updateMany({ where: { id, durum: { not: "eslesti" } }, data: { durum: "yoksayildi" } }),
-    );
-    if (sonuc.count !== 1) throw new ConflictException("Bu satır az önce eşleştirildi; listeyi yenileyin");
-    return this.satirTazele(tenantId, id);
-  }
-
-  /**
-   * Yanlış eşleştirmeyi bozar: üretilen fişi ve onun cari hareketini siler,
-   * satırı yeniden onaya düşürür.
-   */
-  async geriAl(id: string) {
-    const { tenantId } = aktifBaglam();
-    const satir = await this.satirTazele(tenantId, id);
-
-    if (satir.durum === "beklemede") {
-      throw new BadRequestException("Bu satır zaten onay bekliyor");
-    }
-    if (satir.hareketId) {
-      // Fişi ve cari hareketini siler; kapalı dönemin kaydı bozulamaz.
-      await this.donemKilidi.tarihDogrula(tenantId, satir.tarih, "ekstre eşleşmesini geri alma");
-      await this.hareketGeriAl(tenantId, satir.hareketId);
-    }
-
-    return this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.bankaEkstreSatir.update({
-        where: { id },
-        data: { durum: "beklemede", cariId: null, faturaId: null, hareketId: null },
-      }),
-    );
+    const hesap = await this.hesapGetir(tenantId, bankaHesapId);
+    const [satirlar, hareketler] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
+      tx.bankaEkstreSatir.findMany({ where: { bankaHesapId }, orderBy: [{ tarih: "asc" }, { createdAt: "asc" }], select: { tarih: true, tutar: true, bakiye: true, durum: true } }),
+      tx.kasaBankaHareket.findMany({ where: { bankaHesapId }, select: { tarih: true, tip: true, tutar: true } }),
+    ]));
+    return {
+      bankaHesap: { id: hesap.id, ad: hesap.ad, dovizCinsi: hesap.dovizCinsi },
+      bakiyeSutunuVar: satirlar.some((s) => s.bakiye !== null),
+      ...mutabakatHesapla(satirlar, hareketler),
+    };
   }
 
   // ─── YARDIMCILAR ───────────────────────────────────────────────────────────
@@ -374,186 +268,5 @@ export class EkstreService {
     );
     if (!hesap) throw new NotFoundException("Banka hesabı bulunamadı");
     return hesap;
-  }
-
-  private async satirTazele(tenantId: string, id: string) {
-    const satir = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.bankaEkstreSatir.findUnique({
-        where: { id },
-        include: { bankaHesap: { select: { dovizCinsi: true } } },
-      }),
-    );
-    if (!satir) throw new NotFoundException("Ekstre satırı bulunamadı");
-
-    // Fiş elle silinmişse satır kilitli kalmasın.
-    if (satir.durum === "eslesti" && satir.hareketId) {
-      const hareket = await this.prisma.tenantIslem(tenantId, (tx) =>
-        tx.kasaBankaHareket.findUnique({
-          where: { id: satir.hareketId as string },
-          select: { id: true },
-        }),
-      );
-      if (!hareket) {
-        await this.prisma.tenantIslem(tenantId, (tx) =>
-          tx.bankaEkstreSatir.update({
-            where: { id },
-            data: { durum: "beklemede", hareketId: null },
-          }),
-        );
-        return { ...satir, durum: "beklemede" as EkstreSatirDurum, hareketId: null };
-      }
-    }
-    return satir;
-  }
-
-  /** Fişi ve onun ürettiği cari hareketini birlikte siler. */
-  private async hareketGeriAl(tenantId: string, hareketId: string) {
-    await this.prisma.tenantIslem(tenantId, async (tx) => {
-      const hareket = await tx.kasaBankaHareket.findUnique({ where: { id: hareketId }, select: { id: true, kaynakTur: true, karsiHareketId: true } });
-      if (hareket?.kaynakTur === "pos_mutabakat") {
-        const gidisId = hareket.karsiHareketId;
-        if (gidisId) {
-          const komisyonHareketleri = await tx.kasaBankaHareket.findMany({ where: { kaynakTur: "pos_mutabakat", kaynakRef: gidisId }, select: { id: true } });
-          const komisyonHareketIds = komisyonHareketleri.map((kayit) => kayit.id);
-          if (komisyonHareketIds.length > 0) {
-            await tx.masrafOdeme.deleteMany({ where: { tenantId, hareketId: { in: komisyonHareketIds } } });
-            await tx.masraf.deleteMany({ where: { hareketId: { in: komisyonHareketIds } } });
-            await tx.kasaBankaHareket.deleteMany({ where: { id: { in: komisyonHareketIds } } });
-          }
-        }
-        await tx.kasaBankaHareket.deleteMany({ where: { id: { in: [hareket.id, ...(gidisId ? [gidisId] : [])] } } });
-        return;
-      }
-      await tx.cariHareket.deleteMany({
-        where: { kaynakTur: "kasa_banka", kaynakRef: hareketId },
-      });
-      await tx.kasaBankaHareket.deleteMany({ where: { id: hareketId } });
-    });
-  }
-
-  /**
-   * Cari önerisi: karşı IBAN → açıklamadaki VKN → açıklamada geçen unvan.
-   * Cari bulunursa o carinin **açık** faturalarından tutarı tutanlar önerilir.
-   */
-  private async oneriHesapla(
-    tenantId: string,
-    satir: { tutar: Prisma.Decimal; aciklama: string; karsiIban: string | null; karsiUnvan: string | null; bankaHesap?: { dovizCinsi: string } },
-  ) {
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
-      let cari: { id: string; kod: string; unvan: string } | null = null;
-      let kaynak: CariEslesmeKaynagi = null;
-
-      const sec = { id: true, kod: true, unvan: true };
-
-      if (satir.karsiIban) {
-        const iban = satir.karsiIban.replace(/\s/g, "").toUpperCase();
-        const bankaKaydi = await tx.cariBankaHesap.findFirst({
-          where: { tenantId, iban },
-          select: { cari: { select: sec } },
-        });
-        if (bankaKaydi) {
-          cari = bankaKaydi.cari;
-          kaynak = "iban";
-        } else {
-          const c = await tx.cariHesap.findFirst({ where: { tenantId, iban }, select: sec });
-          if (c) {
-            cari = c;
-            kaynak = "iban";
-          }
-        }
-      }
-
-      // Açıklamada VKN/TCKN geçiyorsa en güvenilir ikinci ipucudur.
-      if (!cari) {
-        const adaylar = satir.aciklama.match(/\d{10,11}/g) ?? [];
-        for (const aday of adaylar) {
-          const c = await tx.cariHesap.findFirst({
-            where: { tenantId, vknTckn: aday },
-            select: sec,
-          });
-          if (c) {
-            cari = c;
-            kaynak = "vkn";
-            break;
-          }
-        }
-      }
-
-      // Son çare: açıklama ya da karşı unvan alanında cari unvanı geçiyor mu?
-      // Karşılaştırma ASCII'ye indirgenerek yapılır — bankalar açıklamayı
-      // aksansız yazıyor ("TEDARIK MALZEME AS"), kayıt aksanlı olabiliyor.
-      if (!cari) {
-        const metin = metniNormalle(`${satir.aciklama} ${satir.karsiUnvan ?? ""}`);
-        const cariler = await tx.cariHesap.findMany({
-          where: { tenantId, aktif: true },
-          select: sec,
-        });
-        // En uzun eşleşen unvan kazanır ("ABC" ile "ABC Ltd." ikisi de geçerse).
-        let enIyi: { id: string; kod: string; unvan: string } | null = null;
-        let enIyiUzunluk = 0;
-        for (const c of cariler) {
-          const unvan = metniNormalle(c.unvan);
-          if (unvan.length >= 4 && metin.includes(unvan) && unvan.length > enIyiUzunluk) {
-            enIyi = c;
-            enIyiUzunluk = unvan.length;
-          }
-        }
-        if (enIyi) {
-          cari = enIyi;
-          kaynak = "unvan";
-        }
-      }
-
-      if (!cari) return { cari: null, cariEslesmeKaynagi: null, faturalar: [] };
-
-      const faturalar = await this.acikFaturalar(tx, tenantId, cari.id, satir.tutar, satir.bankaHesap?.dovizCinsi);
-      return { cari, cariEslesmeKaynagi: kaynak, faturalar };
-    });
-  }
-
-  /**
-   * Carinin ödenmemiş kesin faturaları; tutarı ekstre satırıyla birebir tutan
-   * fatura başa alınır. Para girişi satış, çıkış alış faturasını kapatır.
-   */
-  private async acikFaturalar(
-    tx: Prisma.TransactionClient,
-    tenantId: string,
-    cariId: string,
-    tutar: Prisma.Decimal,
-    hesapDovizi?: string,
-  ) {
-    const girisMi = !tutar.isNegative();
-    const tipler = girisMi
-      ? (["satis", "alis_iade"] as const)
-      : (["alis", "satis_iade"] as const);
-
-    const faturalar = await tx.fatura.findMany({
-      where: { tenantId, cariId, durum: "kesin", tip: { in: [...tipler] } },
-      orderBy: { tarih: "desc" },
-      take: 50,
-      select: { id: true, no: true, tarih: true, durum: true, dovizCinsi: true, genelToplam: true, ...FATURA_ODEME_SECIMI },
-    });
-    if (faturalar.length === 0) return [];
-
-    // KSB-07: kalan, faturanın dövizinde ortak ödeme durumundan gelir.
-    const mutlak = tutar.abs();
-    const acik = faturalar
-      .map((f) => ({ ...f, ...faturaOdemeDurumu(f) }))
-      .filter((f) => f.kalan.greaterThan(0));
-
-    return acik
-      .map((f) => ({
-        id: f.id,
-        no: f.no,
-        tarih: f.tarih.toISOString().slice(0, 10),
-        dovizCinsi: f.dovizCinsi,
-        genelToplam: f.genelToplam.toFixed(2),
-        odenen: f.odenen.toFixed(2),
-        kalan: f.kalan.toFixed(2),
-        /** Kalan tutar ekstre satırıyla aynı dövizde birebir aynıysa güçlü öneri. */
-        tamEslesme: (!hesapDovizi || f.dovizCinsi === hesapDovizi) && f.kalan.equals(mutlak),
-      }))
-      .sort((a, b) => Number(b.tamEslesme) - Number(a.tamEslesme))
-      .slice(0, 10);
   }
 }

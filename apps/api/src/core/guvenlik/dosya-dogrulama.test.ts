@@ -22,9 +22,11 @@ describe("dosyaIceriginiDogrula", () => {
     expect(() => excelDosyasiniDogrula({ originalname: "aktarim.xlsx", buffer: Buffer.from("sahte") })).toThrow("geçerli");
   });
 
-  it("ekstrede yalnızca metin tabanlı CSV/TXT kabul eder", () => {
+  it("ekstrede metin tabanlı CSV/TXT ve imzası doğru Excel (.xlsx) kabul eder", () => {
     expect(() => ekstreDosyasiniDogrula({ originalname: "ekstre.csv", buffer: Buffer.from("Tarih;Tutar\n01.01.2026;10") })).not.toThrow();
-    expect(() => ekstreDosyasiniDogrula({ originalname: "ekstre.xlsx", buffer: Buffer.from("metin") })).toThrow(".csv veya .txt");
+    expect(() => ekstreDosyasiniDogrula({ originalname: "ekstre.xlsx", buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04, 0]) })).not.toThrow();
+    expect(() => ekstreDosyasiniDogrula({ originalname: "ekstre.xlsx", buffer: Buffer.from("metin") })).toThrow("Excel");
+    expect(() => ekstreDosyasiniDogrula({ originalname: "ekstre.xls", buffer: Buffer.from("metin") })).toThrow(".xlsx");
     expect(() => ekstreDosyasiniDogrula({ originalname: "ekstre.csv", buffer: Buffer.from([1, 0, 2]) })).toThrow("geçerli");
   });
 });
