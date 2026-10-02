@@ -69,10 +69,10 @@ export class ProjelerService {
       }),
     );
 
-    // Her bir projenin anlık gelir/gider finansal özetlerini hesaplayalım
-    const sonuclar = await Promise.all(
-      projeler.map(async (p) => {
-        const finans = await this.projeFinansOzeti(p.id);
+    // Bütün projelerin tutarları tek seferde toplanır (proje başına sorgu atılmaz).
+    const tutarlar = await this.finansTutarlari("projeId", projeler.map((p) => p.id));
+    const sonuclar = projeler.map((p) => {
+        const finans = ProjelerService.finansOzeti(tutarlar.get(p.id)!);
         return {
           ...p,
           hedefGelir: p.hedefGelir.toString(),
@@ -83,8 +83,7 @@ export class ProjelerService {
           gelirButceOrani: Number(p.hedefGelir) > 0 ? Math.round((Number(finans.toplamGelir) / Number(p.hedefGelir)) * 100) : null,
           giderButceOrani: Number(p.hedefGider) > 0 ? Math.round((Number(finans.toplamGider) / Number(p.hedefGider)) * 100) : null,
         };
-      }),
-    );
+      });
 
     return sonuclar;
   }
@@ -121,150 +120,101 @@ export class ProjelerService {
     };
   }
 
-  /** Ana kârlılık tahakkuk esaslıdır. Kasa/banka hareketleri çift sayımı
-   * önlemek için toplamdan ayrılır ve nakit özeti olarak ayrıca döndürülür. */
-  private async projeFinansOzeti(projeId: string) {
+  /**
+   * Proje kârlılığı tahakkuk esaslıdır ve **KDV hariç, TL'ye çevrilmiş**
+   * tutarlarla hesaplanır: fatura satırının matrahı × fatura kuru (yalnız
+   * kesinleşmiş faturalar; iadeler düşülür), masrafın matrahı × kuru, gelir
+   * kaydının brütü × kuru. Kasa/banka hareketleri çift sayımı önlemek için
+   * toplama girmez, nakit özeti olarak ayrıca döner.
+   */
+  private async finansTutarlari(alan: "projeId" | "projeAltKirilimId", idler: string[]) {
     const { tenantId } = aktifBaglam();
-
-    const [faturaGelirleri, faturaGiderleri, masraflar, gelirKayitlari, finansHareketleri] =
-      await Promise.all([
-        // Satış Faturası Satırları (gelir)
-        this.prisma.tenantIslem(tenantId, (tx) =>
-          tx.faturaSatir.aggregate({
-            where: { projeId, fatura: { tip: "satis", durum: { not: "iptal" } } },
-            _sum: { toplamTutar: true },
-          }),
-        ),
-        // Alış Faturası Satırları (gider)
-        this.prisma.tenantIslem(tenantId, (tx) =>
-          tx.faturaSatir.aggregate({
-            where: { projeId, fatura: { tip: "alis", durum: { not: "iptal" } } },
-            _sum: { toplamTutar: true },
-          }),
-        ),
-        // Onaylanmış Masraf Kayıtları (gider)
-        this.prisma.tenantIslem(tenantId, (tx) =>
-          tx.masraf.aggregate({
-            where: { projeId, durum: "onaylandi" },
-            _sum: { toplam: true },
-          }),
-        ),
-        // Gelir Kayıtları (gelir)
-        this.prisma.tenantIslem(tenantId, (tx) =>
-          tx.gelirKaydi.aggregate({
-            where: { projeId, tenantId },
-            _sum: { netTutarTry: true },
-          }),
-        ),
-        // Doğrudan Kasa/Banka Giriş-Çıkışları
-        this.prisma.tenantIslem(tenantId, (tx) =>
-          tx.kasaBankaHareket.groupBy({
-            by: ["tip"],
-            where: { projeId },
-            _sum: { tutarTry: true },
-          }),
-        ),
-      ]);
-
-    const satisFaturaGeliri = Number(faturaGelirleri._sum.toplamTutar ?? 0);
-    const ekstraGelir = Number(gelirKayitlari._sum.netTutarTry ?? 0);
-    const alisFaturaGideri = Number(faturaGiderleri._sum.toplamTutar ?? 0);
-    const masrafGideri = Number(masraflar._sum.toplam ?? 0);
-
-    let kasaTahsilat = 0;
-    let kasaTediye = 0;
-    for (const h of finansHareketleri) {
-      if (h.tip === "tahsilat") kasaTahsilat += Number(h._sum.tutarTry ?? 0);
-      if (h.tip === "tediye") kasaTediye += Number(h._sum.tutarTry ?? 0);
+    const bos = () => ({ satis: D(0), satisIade: D(0), alis: D(0), alisIade: D(0), masraf: D(0), gelir: D(0), tahsilat: D(0), tediye: D(0) });
+    const sonuc = new Map(idler.map((id) => [id, bos()]));
+    if (idler.length === 0) return sonuc;
+    const kosul = { [alan]: { in: idler } };
+    const [satirlar, masraflar, gelirler, nakit] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
+      tx.faturaSatir.findMany({
+        where: { ...kosul, fatura: { durum: "kesin", tip: { in: ["satis", "satis_iade", "alis", "alis_iade"] } } },
+        select: { projeId: true, projeAltKirilimId: true, matrah: true, fatura: { select: { tip: true, kur: true } } },
+      }),
+      tx.masraf.findMany({ where: { ...kosul, durum: "onaylandi" }, select: { projeId: true, projeAltKirilimId: true, matrah: true, kur: true } }),
+      tx.gelirKaydi.findMany({ where: kosul, select: { projeId: true, projeAltKirilimId: true, brutTutar: true, kur: true } }),
+      alan === "projeId"
+        ? tx.kasaBankaHareket.groupBy({ by: ["projeId", "tip"], where: { projeId: { in: idler } }, _sum: { tutarTry: true } })
+        : Promise.resolve([]),
+    ]));
+    const anahtar = (r: { projeId: string | null; projeAltKirilimId: string | null }) => r[alan] ?? "";
+    const try_ = (tutar: Prisma.Decimal, kur: Prisma.Decimal) => tutar.mul(kur);
+    for (const s of satirlar) {
+      const t = sonuc.get(anahtar(s));
+      if (!t) continue;
+      const alanAdi = ({ satis: "satis", satis_iade: "satisIade", alis: "alis", alis_iade: "alisIade" } as const)[s.fatura.tip as "satis" | "satis_iade" | "alis" | "alis_iade"];
+      t[alanAdi] = t[alanAdi].add(try_(s.matrah, s.fatura.kur));
     }
+    for (const m of masraflar) { const t = sonuc.get(anahtar(m)); if (t) t.masraf = t.masraf.add(try_(m.matrah, m.kur)); }
+    for (const g of gelirler) { const t = sonuc.get(anahtar(g)); if (t) t.gelir = t.gelir.add(try_(g.brutTutar, g.kur)); }
+    for (const n of nakit) {
+      const t = sonuc.get(n.projeId ?? "");
+      if (!t) continue;
+      if (n.tip === "tahsilat") t.tahsilat = t.tahsilat.add(n._sum.tutarTry ?? 0);
+      if (n.tip === "tediye") t.tediye = t.tediye.add(n._sum.tutarTry ?? 0);
+    }
+    return sonuc;
+  }
 
-    const toplamGelir = (satisFaturaGeliri + ekstraGelir).toFixed(2);
-    const toplamGider = (alisFaturaGideri + masrafGideri).toFixed(2);
-    const netKarZarar = (Number(toplamGelir) - Number(toplamGider)).toFixed(2);
-
+  private static finansOzeti(t: { satis: Prisma.Decimal; satisIade: Prisma.Decimal; alis: Prisma.Decimal; alisIade: Prisma.Decimal; masraf: Prisma.Decimal; gelir: Prisma.Decimal; tahsilat: Prisma.Decimal; tediye: Prisma.Decimal }) {
+    const satisNet = t.satis.sub(t.satisIade);
+    const alisNet = t.alis.sub(t.alisIade);
+    const toplamGelir = satisNet.add(t.gelir);
+    const toplamGider = alisNet.add(t.masraf);
+    const f = (d: Prisma.Decimal) => d.toFixed(2);
     return {
-      toplamGelir,
-      toplamGider,
-      netKarZarar,
+      toplamGelir: f(toplamGelir),
+      toplamGider: f(toplamGider),
+      netKarZarar: f(toplamGelir.sub(toplamGider)),
       esas: "tahakkuk" as const,
-      nakitOzet: {
-        tahsilat: kasaTahsilat.toFixed(2),
-        tediye: kasaTediye.toFixed(2),
-        netNakitAkisi: (kasaTahsilat - kasaTediye).toFixed(2),
-      },
+      kdvHaric: true as const,
+      nakitOzet: { tahsilat: f(t.tahsilat), tediye: f(t.tediye), netNakitAkisi: f(t.tahsilat.sub(t.tediye)) },
       detay: {
-        satisFaturaGeliri: satisFaturaGeliri.toFixed(2),
-        ekstraGelir: ekstraGelir.toFixed(2),
-        kasaTahsilat: kasaTahsilat.toFixed(2),
-        alisFaturaGideri: alisFaturaGideri.toFixed(2),
-        masrafGideri: masrafGideri.toFixed(2),
-        kasaTediye: kasaTediye.toFixed(2),
+        satisFaturaGeliri: f(t.satis),
+        satisIadesi: f(t.satisIade),
+        ekstraGelir: f(t.gelir),
+        alisFaturaGideri: f(t.alis),
+        alisIadesi: f(t.alisIade),
+        masrafGideri: f(t.masraf),
+        kasaTahsilat: f(t.tahsilat),
+        kasaTediye: f(t.tediye),
       },
     };
   }
 
-  /**
-   * Analitik yevmiye / maliyet alt kırılımları bazında gerçekleşen harcama & gelir dağılımı.
-   */
-  private async analitikYevmiyeKirilimlari(projeId: string, altKirilimlar: any[]) {
-    const { tenantId } = aktifBaglam();
+  private async projeFinansOzeti(projeId: string) {
+    const tutarlar = await this.finansTutarlari("projeId", [projeId]);
+    return ProjelerService.finansOzeti(tutarlar.get(projeId)!);
+  }
 
-    const kirilimDetaylari = await Promise.all(
-      altKirilimlar.map(async (k) => {
-        const [satisFaturalari, alisFaturalari, masraflar, gelirler] = await Promise.all([
-          this.prisma.tenantIslem(tenantId, (tx) =>
-            tx.faturaSatir.aggregate({
-              where: { projeAltKirilimId: k.id, fatura: { tip: "satis", durum: { not: "iptal" } } },
-              _sum: { toplamTutar: true },
-            }),
-          ),
-          this.prisma.tenantIslem(tenantId, (tx) =>
-            tx.faturaSatir.aggregate({
-              where: { projeAltKirilimId: k.id, fatura: { tip: "alis", durum: { not: "iptal" } } },
-              _sum: { toplamTutar: true },
-            }),
-          ),
-          this.prisma.tenantIslem(tenantId, (tx) =>
-            tx.masraf.aggregate({
-              where: { projeAltKirilimId: k.id, durum: "onaylandi" },
-              _sum: { toplam: true },
-            }),
-          ),
-          this.prisma.tenantIslem(tenantId, (tx) =>
-            tx.gelirKaydi.aggregate({
-              where: { projeAltKirilimId: k.id, tenantId },
-              _sum: { netTutarTry: true },
-            }),
-          ),
-        ]);
-
-        const gerceklesenGelir = Number(satisFaturalari._sum.toplamTutar ?? 0) + Number(gelirler._sum.netTutarTry ?? 0);
-        const gerceklesenGider = Number(alisFaturalari._sum.toplamTutar ?? 0) + Number(masraflar._sum.toplam ?? 0);
-        const netTutar = gerceklesenGelir - gerceklesenGider;
-        const gerceklesenTutar = (k.tip === "gelir"
-          ? gerceklesenGelir
-          : k.tip === "gider"
-            ? gerceklesenGider
-            : Math.abs(netTutar)).toFixed(2);
-
-        const butce = Number(k.butceTutari);
-        const gerceklesen = Number(gerceklesenTutar);
-        const sapma = (butce - gerceklesen).toFixed(2);
-
-        return {
-          ...k,
-          butceTutari: k.butceTutari.toString(),
-          gerceklesenTutar,
-          gerceklesenGelir: gerceklesenGelir.toFixed(2),
-          gerceklesenGider: gerceklesenGider.toFixed(2),
-          netTutar: netTutar.toFixed(2),
-          sapma,
-          kullanimOrani: butce > 0 ? Math.round((gerceklesen / butce) * 100) : null,
-        };
-      }),
-    );
-
-    return kirilimDetaylari;
+  /** Analitik yevmiye / maliyet alt kırılımları bazında gerçekleşen gelir ve gider (KDV hariç, TL). */
+  private async analitikYevmiyeKirilimlari(_projeId: string, altKirilimlar: Array<{ id: string; tip: string; butceTutari: Prisma.Decimal } & Record<string, unknown>>) {
+    const tutarlar = await this.finansTutarlari("projeAltKirilimId", altKirilimlar.map((k) => k.id));
+    return altKirilimlar.map((k) => {
+      const t = tutarlar.get(k.id)!;
+      const gelir = t.satis.sub(t.satisIade).add(t.gelir);
+      const gider = t.alis.sub(t.alisIade).add(t.masraf);
+      const net = gelir.sub(gider);
+      const gerceklesen = k.tip === "gelir" ? gelir : k.tip === "gider" ? gider : net.abs();
+      const butce = D(k.butceTutari.toString());
+      return {
+        ...k,
+        butceTutari: k.butceTutari.toString(),
+        gerceklesenTutar: gerceklesen.toFixed(2),
+        gerceklesenGelir: gelir.toFixed(2),
+        gerceklesenGider: gider.toFixed(2),
+        netTutar: net.toFixed(2),
+        sapma: butce.sub(gerceklesen).toFixed(2),
+        kullanimOrani: butce.gt(0) ? gerceklesen.div(butce).mul(100).toDecimalPlaces(0).toNumber() : null,
+      };
+    });
   }
 
   async olustur(girdi: z.infer<typeof projeOlusturSemasi>) {

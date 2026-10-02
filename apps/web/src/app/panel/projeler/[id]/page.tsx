@@ -79,6 +79,8 @@ interface ProjeDetay {
     netKarZarar: string;
     detay: {
       satisFaturaGeliri: string;
+      satisIadesi: string;
+      alisIadesi: string;
       ekstraGelir: string;
       kasaTahsilat: string;
       alisFaturaGideri: string;
@@ -365,44 +367,75 @@ export default function ProjeDetaySayfasi() {
             <Stat label="Tanımlı Maliyet Merkezleri" value={proje.analitikKirilimlar.length.toString()} hint="Analitik Yevmiye Kırılımları" />
           </StatGrid>
 
-          <Card title="📊 Gelir ve Gider Kaynağı Detayları">
+          <Card title="Kârlılık dökümü" actions={<small className="muted">KDV hariç · belge kuruyla TL · yalnız kesinleşmiş faturalar</small>}>
             <TableWrap>
               <thead>
                 <tr>
-                  <th>İşlem Türü</th>
-                  <th>Kategori / Modül</th>
+                  <th>Kalem</th>
+                  <th>Kaynak</th>
                   <th className="num">Tutar (TL)</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td><strong>Satış Faturaları Geliri</strong></td>
-                  <td>Proje seçili onaylı satış faturaları</td>
+                  <td><strong>Satış faturaları</strong></td>
+                  <td>Projeye bağlı satış faturası satırlarının matrahı</td>
                   <td className="num" style={{ color: "var(--success)" }}>{tl(proje.finansalOzet.detay.satisFaturaGeliri)}</td>
                 </tr>
+                {Number(proje.finansalOzet.detay.satisIadesi) > 0 && (
+                  <tr>
+                    <td><strong>Satış iadeleri</strong></td>
+                    <td>Gelirden düşülür</td>
+                    <td className="num" style={{ color: "var(--danger)" }}>−{tl(proje.finansalOzet.detay.satisIadesi)}</td>
+                  </tr>
+                )}
                 <tr>
-                  <td><strong>Faaliyet Dışı Gelirler</strong></td>
-                  <td>Projeye işlenen ekstra gelir kayıtları</td>
+                  <td><strong>Faaliyet dışı gelirler</strong></td>
+                  <td>Projeye işlenen gelir kayıtları (brüt)</td>
                   <td className="num" style={{ color: "var(--success)" }}>{tl(proje.finansalOzet.detay.ekstraGelir)}</td>
                 </tr>
+                <tr className="table-subtotal">
+                  <td colSpan={2}><strong>Toplam gelir</strong></td>
+                  <td className="num"><strong>{tl(proje.finansalOzet.toplamGelir)}</strong></td>
+                </tr>
                 <tr>
-                  <td><strong>Doğrudan Kasa/Banka Tahsilatları</strong></td>
-                  <td>Proje koduyla girilen tahsilat hareketleri</td>
+                  <td><strong>Alış faturaları</strong></td>
+                  <td>Projeye bağlı alış faturası satırlarının matrahı</td>
+                  <td className="num" style={{ color: "var(--danger)" }}>{tl(proje.finansalOzet.detay.alisFaturaGideri)}</td>
+                </tr>
+                {Number(proje.finansalOzet.detay.alisIadesi) > 0 && (
+                  <tr>
+                    <td><strong>Alış iadeleri</strong></td>
+                    <td>Giderden düşülür</td>
+                    <td className="num" style={{ color: "var(--success)" }}>−{tl(proje.finansalOzet.detay.alisIadesi)}</td>
+                  </tr>
+                )}
+                <tr>
+                  <td><strong>Masraflar</strong></td>
+                  <td>Projeye bağlı onaylı masrafların matrahı</td>
+                  <td className="num" style={{ color: "var(--danger)" }}>{tl(proje.finansalOzet.detay.masrafGideri)}</td>
+                </tr>
+                <tr className="table-subtotal">
+                  <td colSpan={2}><strong>Toplam gider</strong></td>
+                  <td className="num"><strong>{tl(proje.finansalOzet.toplamGider)}</strong></td>
+                </tr>
+                <tr className="table-subtotal">
+                  <td colSpan={2}><strong>Net kâr / zarar</strong></td>
+                  <td className="num" style={{ color: karZararNum >= 0 ? "var(--success)" : "var(--danger)" }}><strong>{tl(proje.finansalOzet.netKarZarar)}</strong></td>
+                </tr>
+              </tbody>
+            </TableWrap>
+          </Card>
+
+          <Card title="Nakit hareketleri (bilgi)" actions={<small className="muted">Kârlılığa eklenmez; faturaların tahsilatı/ödemesi zaten yukarıda sayılır</small>}>
+            <TableWrap>
+              <tbody>
+                <tr>
+                  <td><strong>Proje koduyla girilen tahsilatlar</strong></td>
                   <td className="num" style={{ color: "var(--success)" }}>{tl(proje.finansalOzet.detay.kasaTahsilat)}</td>
                 </tr>
                 <tr>
-                  <td><strong>Alış Faturaları Gideri</strong></td>
-                  <td>Proje &amp; analitik seçili alış faturası satırları</td>
-                  <td className="num" style={{ color: "var(--danger)" }}>{tl(proje.finansalOzet.detay.alisFaturaGideri)}</td>
-                </tr>
-                <tr>
-                  <td><strong>Onaylanan Masraf Kayıtları</strong></td>
-                  <td>Projeye bağlanan masraf harcamaları</td>
-                  <td className="num" style={{ color: "var(--danger)" }}>{tl(proje.finansalOzet.detay.masrafGideri)}</td>
-                </tr>
-                <tr>
-                  <td><strong>Doğrudan Kasa/Banka Ödemeleri</strong></td>
-                  <td>Proje koduyla yapılan tediye ve harcamalar</td>
+                  <td><strong>Proje koduyla yapılan ödemeler</strong></td>
                   <td className="num" style={{ color: "var(--danger)" }}>{tl(proje.finansalOzet.detay.kasaTediye)}</td>
                 </tr>
               </tbody>
