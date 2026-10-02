@@ -264,3 +264,39 @@ describe("KasaBankaService fatura kapama (KSB-07)", () => {
     expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("KasaBankaService dönem kilidi", () => {
+  const kapali = () => ({ tarihDogrula: vi.fn().mockRejectedValue(new Error("Eylül 2026 mali dönemi kapalı")) });
+
+  it("kapalı döneme virman yazmaz", async () => {
+    const tenantIslem = vi.fn();
+    const service = new KasaBankaService({ tenantIslem } as any, {} as any, kapali() as any);
+
+    await expect(service.virmanEkle({ kaynakKasaId: "k1", hedefKasaId: "k2", tutar: "10", tarih: "2026-09-10" })).rejects.toThrow("kapalı");
+    expect(tenantIslem).not.toHaveBeenCalled();
+  });
+
+  it("kapalı döneme POS aktarımı ve çek kaydı yazmaz", async () => {
+    const tenantIslem = vi.fn();
+    const service = new KasaBankaService({ tenantIslem } as any, {} as any, kapali() as any);
+
+    await expect(service.posBankayaAktar({ posHesapId: "p1", brutTutar: "100", komisyonTutar: "2", tarih: "2026-09-10" })).rejects.toThrow("kapalı");
+    await expect(service.cekSenetOlustur({ tur: "cek", yon: "alinan", portfoyNo: "P1", cekNo: "C1", islemTarihi: "2026-09-10", vadeTarihi: "2026-12-10", tutar: "100", dovizCinsi: "TRY", kur: "1", borclu: "Müşteri" })).rejects.toThrow("kapalı");
+    expect(tenantIslem).not.toHaveBeenCalled();
+  });
+
+  it("çek tahsilini kapalı döneme yazmaz ama yalnız konum değişikliğine izin verir", async () => {
+    const donemKilidi = kapali();
+    const cek = { id: "cs1", yon: "alinan", durum: "portfoyde", tutar: new Prisma.Decimal("100"), kur: new Prisma.Decimal("1"), dovizCinsi: "TRY", tur: "cek", portfoyNo: "P1", borclu: "M", cari: null, aciklama: null };
+    const tx = {
+      cekSenet: { findUnique: vi.fn().mockResolvedValue(cek), updateMany: vi.fn().mockResolvedValue({ count: 1 }), update: vi.fn().mockResolvedValue(cek) },
+      kasa: { findUnique: vi.fn().mockResolvedValue({ dovizCinsi: "TRY" }) },
+      cekSenetOlay: { create: vi.fn() },
+    };
+    const service = new KasaBankaService({ tenantIslem: vi.fn((_t, cb) => cb(tx)) } as any, {} as any, donemKilidi as any);
+
+    await expect(service.cekSenetGuncelle("cs1", { durum: "tahsil_edildi", hesapKasaId: "k1", islemTarihi: "2026-09-10" })).rejects.toThrow("kapalı");
+    await expect(service.cekSenetGuncelle("cs1", { durum: "tahsile_verildi", islemTarihi: "2026-09-10" })).resolves.toBeDefined();
+  });
+});
+

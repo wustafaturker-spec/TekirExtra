@@ -27,6 +27,7 @@ import {
   metniNormalle,
 } from "./ekstre-oku";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
+import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal =>
   new Prisma.Decimal(deger);
@@ -39,6 +40,7 @@ export class EkstreService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly kasaBanka: KasaBankaService,
+    private readonly donemKilidi: DonemKilidiService,
   ) {}
 
   async webhookHareketleriniAl(tenantId: string, bankaHesapId: string, baglantiId: string, hareketler: Array<{ id: string; tarih: string; tutar: number; aciklama: string; dekontNo?: string; karsiIban?: string; karsiUnvan?: string; bakiye?: number }>) {
@@ -278,6 +280,22 @@ export class EkstreService {
       }
     });
 
+    // Satır önce sahiplenilir: eşzamanlı iki eşleştirme (çift tıklama, iki
+    // kullanıcı) ikisi birden fiş üretemez, ikincisi burada durur.
+    const sahiplenme = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.bankaEkstreSatir.updateMany({
+        where: { id, durum: { not: "eslesti" }, hareketId: null },
+        data: { durum: "eslesti", cariId: girdi.cariId, faturaId: girdi.faturaId ?? null },
+      }),
+    );
+    if (sahiplenme.count !== 1) {
+      throw new ConflictException("Bu satır az önce başka bir işlemle eşleştirildi; listeyi yenileyin");
+    }
+    const sahiplenmeyiBirak = () =>
+      this.prisma.tenantIslem(tenantId, (tx) =>
+        tx.bankaEkstreSatir.update({ where: { id }, data: { durum: satir.durum, cariId: null, faturaId: null } }),
+      ).catch(() => undefined);
+
     // Fiş üretimi mevcut KSB-02 yoluyla yapılır; cari hareketi de o üretir.
     const hareket = await this.kasaBanka.hareketEkle({
       kasaId: null,
@@ -290,23 +308,19 @@ export class EkstreService {
       aciklama: satir.aciklama.slice(0, 500),
       cariId: girdi.cariId,
       faturaId: girdi.faturaId ?? null,
+    }).catch(async (hata) => {
+      await sahiplenmeyiBirak();
+      throw hata;
     });
 
     try {
       return await this.prisma.tenantIslem(tenantId, (tx) =>
-        tx.bankaEkstreSatir.update({
-          where: { id },
-          data: {
-            durum: "eslesti",
-            cariId: girdi.cariId,
-            faturaId: girdi.faturaId ?? null,
-            hareketId: hareket.id,
-          },
-        }),
+        tx.bankaEkstreSatir.update({ where: { id }, data: { hareketId: hareket.id } }),
       );
     } catch (hata) {
       // Bağ kurulamadıysa ortada sahipsiz fiş kalmasın.
       await this.hareketGeriAl(tenantId, hareket.id).catch(() => undefined);
+      await sahiplenmeyiBirak();
       throw hata;
     }
   }
@@ -320,9 +334,11 @@ export class EkstreService {
         "Eşleştirilmiş satır yoksayılamaz; önce eşleştirmeyi geri alın",
       );
     }
-    return this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.bankaEkstreSatir.update({ where: { id }, data: { durum: "yoksayildi" } }),
+    const sonuc = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.bankaEkstreSatir.updateMany({ where: { id, durum: { not: "eslesti" } }, data: { durum: "yoksayildi" } }),
     );
+    if (sonuc.count !== 1) throw new ConflictException("Bu satır az önce eşleştirildi; listeyi yenileyin");
+    return this.satirTazele(tenantId, id);
   }
 
   /**
@@ -337,6 +353,8 @@ export class EkstreService {
       throw new BadRequestException("Bu satır zaten onay bekliyor");
     }
     if (satir.hareketId) {
+      // Fişi ve cari hareketini siler; kapalı dönemin kaydı bozulamaz.
+      await this.donemKilidi.tarihDogrula(tenantId, satir.tarih, "ekstre eşleşmesini geri alma");
       await this.hareketGeriAl(tenantId, satir.hareketId);
     }
 

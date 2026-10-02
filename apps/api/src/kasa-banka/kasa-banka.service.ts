@@ -452,6 +452,7 @@ export class KasaBankaService {
     const { tenantId } = aktifBaglam();
     const tutar = D(girdi.tutar);
 
+    await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "virman");
     // Kasa ve banka hesaplarının para birimlerini kontrol et (Aynı birim olmalı)
     const dovizCinsi = await this.virmanKurallariniDenetle(girdi);
 
@@ -504,6 +505,7 @@ export class KasaBankaService {
 
   async posBankayaAktar(girdi: z.infer<typeof posBankaAktarimSemasi>) {
     const { tenantId } = aktifBaglam(); const brut = D(girdi.brutTutar); const komisyon = D(girdi.komisyonTutar); const net = brut.sub(komisyon);
+    await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "POS hesabından bankaya aktarım");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const pos = await tx.posHesap.findUnique({ where: { id: girdi.posHesapId } });
       if (!pos || !pos.aktif) throw new NotFoundException("Aktif POS hesabı bulunamadı");
@@ -628,6 +630,8 @@ export class KasaBankaService {
 
   async cekSenetOlustur(girdi: z.infer<typeof cekSenetOlusturSemasi>) {
     const { tenantId, userId } = aktifBaglam();
+    // Kayıt cari hareketi yazar; işlem tarihi kapalı döneme düşemez.
+    await this.donemKilidi.tarihDogrula(tenantId, girdi.islemTarihi, "çek/senet kaydı");
     const tutar = D(girdi.tutar);
     const kur = D(girdi.kur);
     const tutarTry = tutar.mul(kur).toDecimalPlaces(2);
@@ -705,6 +709,11 @@ export class KasaBankaService {
     const fisYazilacak = girdi.durum === "tahsil_edildi" || girdi.durum === "odendi";
     if (fisYazilacak) await this.islemHesabiniDenetle(girdi, CS.dovizCinsi);
     const islemTarihi = girdi.islemTarihi ? new Date(girdi.islemTarihi) : new Date();
+    // Tahsil/ödeme fiş, ciro/karşılıksız/iade cari hareketi yazar; yalnız konum
+    // değiştiren geçişler (bankaya verme, portföye dönme) kapalı dönemi etkilemez.
+    if (["tahsil_edildi", "odendi", "ciro_edildi", "karsiliksiz", "iade_edildi"].includes(girdi.durum)) {
+      await this.donemKilidi.tarihDogrula(tenantId, islemTarihi, "çek/senet işlemi");
+    }
     const varsayilanKonum: Record<string, string> = { portfoyde: "Şirket portföyü", tahsile_verildi: "Bankada tahsilde", teminata_verildi: "Bankada teminatta", ciro_edildi: "Ciro edilen caride", tahsil_edildi: "Tahsil edildi", odendi: "Ödendi", karsiliksiz: "Karşılıksız işlem dosyası", iade_edildi: "İade edildi" };
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
