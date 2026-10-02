@@ -2269,7 +2269,9 @@ model Fatura {
   satirlar              FaturaSatir[]
   ebelge                EbelgeKayit?
   gelenEbelge           GelenEbelge?
-  kasaBankaHarekets     KasaBankaHareket[]
+  kasaBankaHarekets     KasaBankaHareket[]    @relation("HareketFaturasi")
+  /// KSB-07: bu kur farkı faturasının kapattığı ödeme kur farkları.
+  kurFarkiOdemeleri     KasaBankaHareket[]    @relation("KurFarkiFaturasi")
   zincirBelgeleri       Belge[]
   ekstreSatirlari       BankaEkstreSatir[]
   tekrarlayanSablon     TekrarlayanFatura[]   @relation("TekrarlayanFaturaSablon")
@@ -2980,13 +2982,18 @@ model KasaBankaHareket {
   projeAltKirilimId String?             @map("proje_alt_kirilim_id") @db.Uuid
   /// KSB-06: hareketin eşleştiği banka ekstresi satırı.
   ekstreSatirId     String?             @map("ekstre_satir_id") @db.Uuid
+  kurFarkiFaturaId  String?             @map("kur_farki_fatura_id") @db.Uuid
+  /// KSB-07: kur farkı için fatura gerekmediğine karar verildi (ör. önemsiz tutar).
+  kurFarkiKapandi   Boolean             @default(false) @map("kur_farki_kapandi")
   createdAt         DateTime            @default(now()) @map("created_at")
 
   kasa              Kasa?              @relation(fields: [kasaId], references: [id])
   bankaHesap        BankaHesap?        @relation(fields: [bankaHesapId], references: [id])
   posHesap          PosHesap?          @relation(fields: [posHesapId], references: [id])
   cari              CariHesap?         @relation(fields: [cariId], references: [id])
-  fatura            Fatura?            @relation(fields: [faturaId], references: [id])
+  fatura            Fatura?            @relation("HareketFaturasi", fields: [faturaId], references: [id])
+  /// KSB-07: gerçekleşen kur farkını faturalayan (ya da karşı taraftan gelen) kur farkı faturası.
+  kurFarkiFatura    Fatura?            @relation("KurFarkiFaturasi", fields: [kurFarkiFaturaId], references: [id], onDelete: SetNull)
   proje             Proje?             @relation(fields: [projeId], references: [id])
   projeAltKirilim   ProjeAltKirilim?   @relation(fields: [projeAltKirilimId], references: [id])
   ekstreSatir       BankaEkstreSatir?  @relation(fields: [ekstreSatirId], references: [id], onDelete: SetNull)

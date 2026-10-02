@@ -14,6 +14,7 @@
 import {
   Archive,
   ArrowLeftRight,
+  Coins,
   BadgeCheck,
   Bell,
   BookUser,
@@ -146,6 +147,7 @@ export const MENU: MenuAlani[] = [
       { href: "/panel/kasa-banka/pos", ikon: Terminal, baslik: "POS Hesapları", eslesme: "tam", esanlamlilar: ["sanal pos", "iyzico", "paytr"] },
       { href: "/panel/kasa-banka/cek-senet", ikon: ScrollText, baslik: "Çek & Senetler", eslesme: "tam", esanlamlilar: ["portföy", "vade", "ciro"] },
       { href: "/panel/kasa-banka/ekstre", ikon: FileSpreadsheet, baslik: "Banka Ekstresi", eslesme: "tam", esanlamlilar: ["mutabakat", "eşleştirme", "csv"] },
+      { href: "/panel/kasa-banka/kur-farki", ikon: Coins, baslik: "Kur Farkı", eslesme: "tam", esanlamlilar: ["kur farkı faturası", "değerleme", "revalüasyon", "döviz"] },
       { href: "/panel/projeler", ikon: FolderKanban, baslik: "Projeler & Analitik Yevmiye", eslesme: "tam", esanlamlilar: ["maliyet merkezi"] },
     ],
   },

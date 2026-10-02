@@ -917,7 +917,7 @@ export default function CariSayfasi() {
         subtitle={detaySayfasi ? "Cari bilgileri, finansal durum, CRM ve iletişim kayıtları." : yeniSayfasi ? "Yeni müşteri, tedarikçi veya diğer cari kartını oluşturun." : "Müşterileriniz, tedarikçileriniz ve diğer cari ortaklarınızı buradan yönetin."}
         actions={
           <>
-            {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/kur-farki">💱 Kur Farkı Değerleme</ButtonLabel>}
+            {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/kasa-banka/kur-farki">💱 Kur Farkı</ButtonLabel>}
             {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/raporlar">📈 Raporlar</ButtonLabel>}
             {!yeniSayfasi && !detaySayfasi && <ButtonLabel>
               📥 Excel&apos;den İçe Aktar

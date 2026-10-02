@@ -564,6 +564,7 @@ export class KasaBankaService {
       krediKartiOdemesi: { select: { id: true } },
       gelirKaydi: { select: { id: true } },
       pazaryeriKesinti: { select: { id: true } },
+      kurFarkiFatura: { select: { no: true, tip: true, durum: true } },
     } as const;
     const kilitleVeOku = async (hareketId: string) => {
       // Eşzamanlı iki geri alma aynı fişi iki kez işleyemez.
@@ -590,6 +591,13 @@ export class KasaBankaService {
     const idler = bacaklar.map((b) => b.id);
     if (await tx.kasaBankaHareket.findFirst({ where: { kaynakTur: "ters_kayit", kaynakRef: { in: idler } }, select: { id: true } })) {
       throw new ConflictException("Bu fiş zaten geri alındı");
+    }
+    // KSB-07: kur farkı faturalanmış ödeme geri alınırsa fatura sahipsiz kalır.
+    const kurFarkiFaturasi = bacaklar.map((b) => b.kurFarkiFatura).find((f) => f && f.durum !== "iptal");
+    if (kurFarkiFaturasi) {
+      throw new BadRequestException(kurFarkiFaturasi.tip === "satis"
+        ? `Bu fişin kur farkı ${kurFarkiFaturasi.no ? `${kurFarkiFaturasi.no} numaralı faturayla` : "taslak bir faturayla"} faturalandı; önce kur farkı faturasını ${kurFarkiFaturasi.durum === "taslak" ? "silin" : "iptal edin"}`
+        : `Bu fişin kur farkı ${kurFarkiFaturasi.no ? `${kurFarkiFaturasi.no} numaralı ` : ""}gelen faturayla eşleştirildi; önce Kur farkı ekranından eşleşmeyi geri alın`);
     }
 
     const cariHareketleri = await tx.cariHareket.findMany({ where: { kaynakTur: "kasa_banka", kaynakRef: { in: idler } } });

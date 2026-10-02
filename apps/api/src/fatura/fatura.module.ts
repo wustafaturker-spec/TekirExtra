@@ -7,6 +7,8 @@ import { EbelgeModule } from "../ebelge/ebelge.module";
 import { TenantModule } from "../tenant/tenant.module";
 import { FaturaController } from "./fatura.controller";
 import { FaturaService } from "./fatura.service";
+import { KurFarkiController } from "./kur-farki.controller";
+import { KurFarkiService } from "./kur-farki.service";
 
 @Module({
   imports: [
@@ -15,8 +17,8 @@ import { FaturaService } from "./fatura.service";
     BelgelerModule,
     forwardRef(() => EbelgeModule),
   ],
-  controllers: [FaturaController],
-  providers: [FaturaService],
+  controllers: [FaturaController, KurFarkiController],
+  providers: [FaturaService, KurFarkiService],
   exports: [FaturaService],
 })
 export class FaturaModule implements OnModuleInit {
