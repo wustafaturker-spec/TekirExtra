@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { BildirimUreticiService } from "./bildirim-uretici.service";
 import { HATA_YERLESME_MS } from "../ebelge/yerlesmis-hata";
 
@@ -22,6 +22,8 @@ interface TxSecenekleri {
   eirsaliyeYanitlari?: unknown[];
   /** EBLG-96: yanıt bekleyen gelen e-İrsaliyeler. */
   gelenIrsaliyeler?: { id: string; belgeNo: string; gonderenUnvan: string; sevkTarihi: Date }[];
+  /** KSB-10: ekstresi hesaplanacak kredi kartları. */
+  kartlar?: unknown[];
 }
 
 function servisKur(secenek: TxSecenekleri = {}) {
@@ -34,6 +36,8 @@ function servisKur(secenek: TxSecenekleri = {}) {
     gelenEirsaliye: { findMany: vi.fn().mockResolvedValue(secenek.gelenIrsaliyeler ?? []) },
     satinAlmaTalebi: { findMany: vi.fn().mockResolvedValue(secenek.satinAlmaTalepleri ?? []) },
     cekSenet: { count: vi.fn().mockResolvedValue(secenek.cekSayisi ?? 0) },
+    krediKarti: { findMany: vi.fn().mockResolvedValue(secenek.kartlar ?? []) },
+    personelTatilGunu: { findMany: vi.fn().mockResolvedValue([]) },
     fatura: { findMany: vi.fn().mockResolvedValue(secenek.ihracKayitlilar ?? []) },
     belge: { findMany: vi.fn().mockResolvedValue(secenek.bekleyenIrsaliyeler ?? []) },
     sayim: { count: vi.fn().mockResolvedValue(secenek.taslakSayim ?? 0) },
@@ -48,6 +52,37 @@ function servisKur(secenek: TxSecenekleri = {}) {
   const rapor = { vadesiGecenler: vi.fn().mockResolvedValue({ alacaklar: [], borclar: [], toplamAlacak: "0.00", toplamBorc: "0.00" }) };
   return { servis: new BildirimUreticiService(prisma, bildirimler as never, rapor as never), bildirimler, rapor, tx, teslimatCreateMany, bildirimUpdate };
 }
+
+describe("kart ekstresi bildirimi (KSB-10)", () => {
+  // Kesim 23, son ödeme 3: 23.09 ekstresinin son ödeme günü 5 Ekim (3 Ekim cumartesi).
+  const kart = (odeme?: number) => ({
+    id: "kk", ad: "Şirket kartı", sonDortHane: "1234", dovizCinsi: "TRY", limit: 50000, hesapKesimGunu: 23, sonOdemeGunu: 3, asgariOdemeOrani: null, aktif: true, ekstreler: [],
+    hareketler: [
+      { id: "h1", tip: "harcama", tarih: new Date("2026-09-10"), tutar: 1000, aciklama: "Yakıt", taksitSayisi: 1, geriAlinanHareketId: null, ekstreId: null, taksitler: [] },
+      ...(odeme ? [{ id: "h2", tip: "odeme", tarih: new Date("2026-09-25"), tutar: odeme, aciklama: "Ödeme", taksitSayisi: 1, geriAlinanHareketId: null, ekstreId: null, taksitler: [] }] : []),
+    ],
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("son ödeme gününe 3 gün kala uyarır, asgari ödenmeden geçince kritik bildirir, ödenince üretmez", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-02T09:00:00+03:00"));
+    let { servis, bildirimler } = servisKur({ kartlar: [kart()] });
+    await servis.tara();
+    expect(bildirimler.uret.mock.calls.map(([g]) => g).find((g) => g.birlesimAnahtari.startsWith("vade:kart:"))).toMatchObject({
+      onem: "uyari", birlesimAnahtari: "vade:kart:kk:2026-09-23:yaklasiyor", hedefYol: "/panel/kasa-banka/kredi-kartlari?kart=kk",
+    });
+
+    vi.setSystemTime(new Date("2026-10-07T09:00:00+03:00"));
+    ({ servis, bildirimler } = servisKur({ kartlar: [kart(100)] }));
+    await servis.tara();
+    expect(bildirimler.uret.mock.calls.map(([g]) => g).find((g) => g.birlesimAnahtari.startsWith("vade:kart:"))).toMatchObject({ onem: "kritik", birlesimAnahtari: "vade:kart:kk:2026-09-23:gecikti" });
+
+    ({ servis, bildirimler } = servisKur({ kartlar: [kart(1000)] }));
+    await servis.tara();
+    expect(bildirimler.uret.mock.calls.some(([g]) => g.birlesimAnahtari.startsWith("vade:kart:"))).toBe(false);
+  });
+});
 
 describe("BildirimUreticiService.tara", () => {
   it("dış sistem kaynaklı düzeltmeyi entegrasyon, kendi kaydımızı düzeltme bildirimi yapar", async () => {

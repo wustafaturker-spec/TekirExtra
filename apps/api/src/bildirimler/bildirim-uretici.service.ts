@@ -8,10 +8,14 @@ import { ENTEGRATOR_IPTAL_ANAHTAR_ONEKI, entegratorIptalBildirimi } from "../ebe
 import { yerlesmisHataKosulu } from "../ebelge/yerlesmis-hata";
 import { VARSAYILAN_ONAY_ESIGI, onaylayabilecekRoller } from "../satin-alma/satin-alma.hesap";
 import { RaporService } from "../rapor/rapor.service";
+import { ekstreOzeti } from "../kasa-banka/kart-ekstre";
+import { kartEkstreleriniOku } from "../kasa-banka/kart-ekstre-oku";
 import { BildirimService, type BildirimGirdisi } from "./bildirim.service";
 
 const KRITIK_SLA_SAATI = 24;
 const CEK_UYARI_GUNU = 7;
+/** KSB-10: kart ekstresinin son ödeme gününe bu kadar gün kala hatırlatılır. */
+const KART_UYARI_GUNU = 3;
 
 /** Türe göre hedef roller — bildirim, işi yapan rolün önüne düşmelidir. */
 const HEDEF_ROLLER: Record<BildirimTuru, Rol[]> = {
@@ -364,8 +368,47 @@ export class BildirimUreticiService {
       });
     }
 
+    girdiler.push(...(await this.kartEkstreUyarilari()));
     girdiler.push(...(await this.ihracKayitliOzetleri(gun)));
     girdiler.push(...(await this.irsaliyeFaturaOzetleri(gun)));
+    return girdiler;
+  }
+
+  /**
+   * KSB-10: son kesilen kart ekstresi. Son ödeme günü yaklaşırken uyarı,
+   * asgari ödenmeden geçince kritik bildirim; anahtar duruma göre ayrıldığı
+   * için "yaklaşıyor"dan "gecikti"ye geçiş yeni bildirimdir. Ekstre ödenince
+   * tarama onu artık üretmez ve bildirim kapanır (`vade:` öneki).
+   */
+  private async kartEkstreUyarilari(): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const bugun = bugunTR();
+    const kartlar = await this.prisma.tenantIslem(tenantId, (tx) => kartEkstreleriniOku(tx, bugun));
+    const girdiler: BildirimGirdisi[] = [];
+    for (const { kart, donemler } of kartlar) {
+      const ekstre = ekstreOzeti(donemler).sonKesilen;
+      if (!ekstre || ekstre.kalan.lte(0)) continue;
+      const kartAdi = `${kart.ad} •••• ${kart.sonDortHane}`;
+      const sonOdeme = ekstre.sonOdemeTarihi.split("-").reverse().join(".");
+      const para = (d: { toFixed: (n: number) => string }) => `${Number(d.toFixed(2)).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${kart.dovizCinsi}`;
+      const ortak = { tur: "vade" as const, kaynakTur: "kredi_karti_ekstre", kaynakRef: kart.id, hedefYol: `/panel/kasa-banka/kredi-kartlari?kart=${kart.id}`, roller: HEDEF_ROLLER.vade };
+      if (ekstre.durum === "gecikti") {
+        girdiler.push({
+          ...ortak, onem: "kritik", baslik: "Kart ekstresi gecikti",
+          aciklama: `${kartAdi} ekstresinin son ödeme günü ${sonOdeme} geçti; asgari ödemeden ${para(ekstre.asgariKalan)} eksik, toplam kalan ${para(ekstre.kalan)}. Gecikme faizi işler.`,
+          birlesimAnahtari: `vade:kart:${kart.id}:${ekstre.kesimTarihi}:gecikti`,
+        });
+      } else if (ekstre.durum === "bekliyor" || ekstre.durum === "kismi") {
+        const kalanGun = Math.round((Date.parse(ekstre.sonOdemeTarihi) - Date.parse(bugun)) / 86_400_000);
+        if (kalanGun > KART_UYARI_GUNU) continue;
+        girdiler.push({
+          ...ortak, onem: "uyari", baslik: "Kart ekstresinin son ödeme günü yaklaşıyor",
+          aciklama: `${kartAdi}: ${para(ekstre.kalan)} ekstre borcunun son ödeme günü ${sonOdeme}${kalanGun === 0 ? " (bugün)" : ` (${kalanGun} gün kaldı)`}; asgari ${para(ekstre.asgariKalan)}.`,
+          birlesimAnahtari: `vade:kart:${kart.id}:${ekstre.kesimTarihi}:yaklasiyor`,
+          sonTarih: new Date(`${ekstre.sonOdemeTarihi}T23:59:59+03:00`),
+        });
+      }
+    }
     return girdiler;
   }
 

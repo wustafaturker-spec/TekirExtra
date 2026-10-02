@@ -1,56 +1,227 @@
 "use client";
+
+/**
+ * Şirket kredi kartları (KSB-10). Kart seçilince "bu dönem" paneli son
+ * kesilen ekstreyi (dönem borcu, asgari, son ödeme günü) ve açık dönemi
+ * gösterir; altında dönem ekstreleri gezilir. Limit aşan işlem onayla geçer.
+ */
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Badge, Button, Card, Field, Input, Select, TableWrap } from "@/components/ui";
-import { api, tokenAl } from "@/lib/api";
-import { bugunTR } from "@tekirextra/shared";
-import { GeriAlmaFormu, type GeriAlmaYontemi } from "@/components/geri-alma-formu";
+import { Alert, Badge, Button, Card, Field, Input, Para, Select, Tarih } from "@/components/ui";
+import { api, ApiHata, tokenAl } from "@/lib/api";
+import { EkstrePaneli } from "./ekstre-paneli";
+import { CariOdemeFormu, EkstreOdemeFormu, HareketFormu, KartAyarFormu, type Gonder } from "./islem-formlari";
+import { ayAdi, DURUM, type Banka, type Kart } from "./tipler";
 
-interface Banka { id: string; ad: string; dovizCinsi: string; aktif: boolean }
-interface Cari { id: string; kod: string; unvan: string; dovizCinsi: string }
-interface Fatura { id: string; no: string|null; tarih: string; genelToplam: string; dovizCinsi: string; odemeOzeti?: { durum:string; kalan:string } }
-interface Taksit { id:string; sira:number; vadeTarihi:string; tutar:string }
-interface Hareket { id:string; tip:"harcama"|"iade"|"odeme"|"faiz"|"aidat"; tarih:string; aciklama:string; tutar:string; cariOdemeTutari:string|null; komisyonTutari:string; taksitSayisi:number; belgeNo:string|null; cari:{id:string;kod:string;unvan:string}|null; fatura:{id:string;no:string|null}|null; taksitler:Taksit[]; geriAlinanHareketId:string|null; masrafOdemesi:{id:string}|null }
-interface Kart { id:string; ad:string; bankaAdi:string; sonDortHane:string; kartSahibi:string|null; limit:string; dovizCinsi:string; hesapKesimGunu:number; sonOdemeGunu:number; renk:string; aktif:boolean; borc:string; kullanilabilirLimit:string; kullanimOrani:string; bagliBankaHesap:{id:string;ad:string}|null; hareketler:Hareket[] }
+type Islem = "cari" | "hareket" | "ekstre" | "ayar" | null;
 
-const para=(v:string|number,d="TRY")=>Number(v).toLocaleString("tr-TR",{minimumFractionDigits:2,maximumFractionDigits:2})+" "+d;
-const bugun=()=>bugunTR();
+export default function KrediKartlariSayfasi() {
+  const [kartlar, setKartlar] = useState<Kart[]>([]);
+  const [bankalar, setBankalar] = useState<Banka[]>([]);
+  const [secili, setSecili] = useState("");
+  const [islem, setIslem] = useState<Islem>(null);
+  const [kartFormu, setKartFormu] = useState(false);
+  const [hata, setHata] = useState("");
+  const [basari, setBasari] = useState("");
+  const [limitOnayi, setLimitOnayi] = useState<{ yol: string; govde: Record<string, unknown>; mesaj: string; uyari: string } | null>(null);
+  const [yenile, setYenile] = useState(0);
 
-export default function KrediKartlariSayfasi(){
-  const [kartlar,setKartlar]=useState<Kart[]>([]),[bankalar,setBankalar]=useState<Banka[]>([]),[cariler,setCariler]=useState<Cari[]>([]),[faturalar,setFaturalar]=useState<Fatura[]>([]);
-  const [secili,setSecili]=useState(""),[seciliHareket,setSeciliHareket]=useState<string|null>(null),[hareketGeriAl,setHareketGeriAl]=useState(false),[seciliCari,setSeciliCari]=useState(""),[kartFormu,setKartFormu]=useState(false),[islemFormu,setIslemFormu]=useState<"cari"|"harcama"|"ekstre"|null>(null),[hata,setHata]=useState(""),[basari,setBasari]=useState("");
-  const yukle=useCallback(async()=>{const[k,b,c]=await Promise.all([api<Kart[]>("/kasa-banka/kredi-kartlari"),api<Banka[]>("/kasa-banka/bankalar"),api<{kayitlar:Cari[]}>("/cari?adet=100")]);setKartlar(k);setBankalar(b.filter(x=>x.aktif));setCariler(c.kayitlar.filter(x=>x.dovizCinsi===(k.find(a=>a.id===secili)??k[0])?.dovizCinsi));setSecili(s=>s||k[0]?.id||"");},[secili]);
-  useEffect(()=>{if(tokenAl())void yukle().catch(e=>setHata(e instanceof Error?e.message:"Kartlar yüklenemedi"));},[yukle]);
-  useEffect(()=>{if(!seciliCari){setFaturalar([]);return;}void api<{kayitlar:Fatura[]}>(`/fatura?cariId=${seciliCari}&yon=alis&durum=kesin&adet=100`).then(x=>setFaturalar(x.kayitlar.filter(f=>f.odemeOzeti?.durum!=="odendi"))).catch(()=>setFaturalar([]));},[seciliCari]);
-  const aktifKart=kartlar.find(k=>k.id===secili)??kartlar[0];
-  const ozet=useMemo(()=>({limit:kartlar.reduce((t,k)=>t+Number(k.limit),0),borc:kartlar.reduce((t,k)=>t+Number(k.borc),0),uygun:kartlar.reduce((t,k)=>t+Number(k.kullanilabilirLimit),0)}),[kartlar]);
-  const tamamla=async(mesaj:string)=>{setBasari(mesaj);setIslemFormu(null);await yukle();};
-  async function kartEkle(e:FormEvent<HTMLFormElement>){e.preventDefault();const f=new FormData(e.currentTarget);setHata("");try{await api("/kasa-banka/kredi-kartlari",{method:"POST",body:JSON.stringify({ad:f.get("ad"),bankaAdi:f.get("bankaAdi"),sonDortHane:f.get("sonDortHane"),kartSahibi:f.get("kartSahibi")||null,limit:f.get("limit"),dovizCinsi:f.get("dovizCinsi"),hesapKesimGunu:Number(f.get("hesapKesimGunu")),sonOdemeGunu:Number(f.get("sonOdemeGunu")),bagliBankaHesapId:f.get("bagliBankaHesapId")||null,renk:f.get("renk")})});setKartFormu(false);await tamamla("Kredi kartı hesabı oluşturuldu.");}catch(x){setHata(x instanceof Error?x.message:"Kart oluşturulamadı");}}
-  async function cariOde(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!aktifKart)return;const f=new FormData(e.currentTarget);setHata("");try{await api("/kasa-banka/kredi-kartlari/cari-odemeler",{method:"POST",body:JSON.stringify({krediKartiId:aktifKart.id,cariId:f.get("cariId"),faturaId:f.get("faturaId")||null,tarih:f.get("tarih"),cariOdemeTutari:f.get("cariOdemeTutari"),komisyonTutari:f.get("komisyonTutari")||"0",taksitSayisi:Number(f.get("taksitSayisi")||1),ilkTaksitTarihi:f.get("ilkTaksitTarihi"),aciklama:f.get("aciklama"),belgeNo:f.get("belgeNo")||null})});setSeciliCari("");await tamamla("Cari borç kredi kartına aktarıldı ve taksit planı oluşturuldu.");}catch(x){setHata(x instanceof Error?x.message:"Cari ödeme işlenemedi");}}
-  async function hareketEkle(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!aktifKart)return;const f=new FormData(e.currentTarget);setHata("");try{await api("/kasa-banka/kredi-kartlari/hareketler",{method:"POST",body:JSON.stringify({krediKartiId:aktifKart.id,tip:f.get("tip"),tarih:f.get("tarih"),aciklama:f.get("aciklama"),tutar:f.get("tutar"),taksitSayisi:Number(f.get("taksitSayisi")||1),belgeNo:f.get("belgeNo")||null})});await tamamla("Kart hareketi işlendi.");}catch(x){setHata(x instanceof Error?x.message:"Hareket işlenemedi");}}
-  async function ekstreOde(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!aktifKart)return;const f=new FormData(e.currentTarget);setHata("");try{await api("/kasa-banka/kredi-kartlari/ekstre-odemeler",{method:"POST",body:JSON.stringify({krediKartiId:aktifKart.id,bankaHesapId:f.get("bankaHesapId"),tarih:f.get("tarih"),tutar:f.get("tutar"),aciklama:f.get("aciklama"),belgeNo:f.get("belgeNo")||null})});await tamamla("Kart ekstresi banka hesabından ödendi.");}catch(x){setHata(x instanceof Error?x.message:"Ekstre ödemesi işlenemedi");}}
-  return <div className="cc-page">
-    <header className="cc-header"><div><span>FİNANS YÖNETİMİ</span><h1>Şirket kredi kartları</h1><p>Cari ödemeleri, gerçek taksit vadelerini ve kart ekstrelerini tek merkezden yönetin.</p></div><Button variant="primary" onClick={()=>setKartFormu(v=>!v)}>+ Yeni kart hesabı</Button></header>
-    <Alert tone="error">{hata}</Alert><Alert tone="success">{basari}</Alert>
-    <section className="cc-summary"><div className="cc-summary__lead"><span>Toplam kart borcu</span><strong>{para(ozet.borc)}</strong><small>{kartlar.length} kurumsal kart hesabı</small></div><div><span>Toplam limit</span><strong>{para(ozet.limit)}</strong><small>Tanımlı kart limitleri</small></div><div><span>Kullanılabilir limit</span><strong>{para(ozet.uygun)}</strong><small>Toplam harcama kapasitesi</small></div><div><span>Limit kullanımı</span><strong>%{ozet.limit?((ozet.borc/ozet.limit)*100).toFixed(1):"0,0"}</strong><div className="cc-progress"><i style={{width:`${Math.min(100,ozet.limit?ozet.borc/ozet.limit*100:0)}%`}}/></div></div></section>
-    {kartFormu&&<Card className="cc-form-card"><h2>Yeni kart hesabı</h2><form className="cc-form-grid" onSubmit={kartEkle}><Field label="Kart hesap adı"><Input name="ad" required/></Field><Field label="Banka"><Input name="bankaAdi" required/></Field><Field label="Son 4 hane"><Input name="sonDortHane" required maxLength={4} pattern="[0-9]{4}"/></Field><Field label="Kart sahibi"><Input name="kartSahibi"/></Field><Field label="Kart limiti"><Input name="limit" required type="number" min="0.01" step="0.01"/></Field><Field label="Para birimi"><Select name="dovizCinsi"><option>TRY</option><option>USD</option><option>EUR</option></Select></Field><Field label="Hesap kesim günü"><Input name="hesapKesimGunu" required type="number" min="1" max="31"/></Field><Field label="Son ödeme günü"><Input name="sonOdemeGunu" required type="number" min="1" max="31"/></Field><Field label="Ödeme banka hesabı"><Select name="bagliBankaHesapId"><option value="">Bağlı hesap yok</option>{bankalar.map(b=><option key={b.id} value={b.id}>{b.ad} · {b.dovizCinsi}</option>)}</Select></Field><Field label="Kart rengi"><Select name="renk"><option value="lacivert">Lacivert</option><option value="turkuaz">Turkuaz</option><option value="mor">Mor</option><option value="bordo">Bordo</option></Select></Field><Button type="submit" variant="primary">Kart hesabını oluştur</Button></form></Card>}
-    <section className="cc-layout"><div className="cc-wallet"><div className="cc-section-title"><div><h2>Kart portföyü</h2><p>Detaylarını görmek için bir kart seçin.</p></div></div>{kartlar.map(k=><button type="button" className={`cc-card cc-card--${k.renk}${aktifKart?.id===k.id?" is-active":""}`} key={k.id} onClick={()=>{setSecili(k.id);setIslemFormu(null);}}><div className="cc-card__top"><span>{k.bankaAdi}</span><i>◒</i></div><strong>•••• •••• •••• {k.sonDortHane}</strong><div className="cc-card__foot"><span>{k.ad}<small>{k.kartSahibi??"Kurumsal kart"}</small></span><span><small>Güncel borç</small>{para(k.borc,k.dovizCinsi)}</span></div></button>)}</div>
-      <div className="cc-detail">{aktifKart?<><div className="cc-detail__head"><div><span>{aktifKart.bankaAdi} · •••• {aktifKart.sonDortHane}</span><h2>{aktifKart.ad}</h2><p>Kesim günü {aktifKart.hesapKesimGunu} · Son ödeme günü {aktifKart.sonOdemeGunu} · {aktifKart.bagliBankaHesap?.ad??"Ödeme hesabı tanımsız"}</p></div><div className="row-tight"><Button variant="primary" onClick={()=>setIslemFormu("cari")}>Cari borcu öde</Button><Button onClick={()=>setIslemFormu("harcama")}>Diğer hareket</Button><Button onClick={()=>setIslemFormu("ekstre")}>Ekstre öde</Button></div></div><div className="cc-detail__metrics"><div><span>Güncel borç</span><strong>{para(aktifKart.borc,aktifKart.dovizCinsi)}</strong></div><div><span>Kullanılabilir</span><strong>{para(aktifKart.kullanilabilirLimit,aktifKart.dovizCinsi)}</strong></div><div><span>Limit kullanımı</span><strong>%{aktifKart.kullanimOrani}</strong></div></div>
-      {islemFormu==="cari"&&<form className="cc-transaction" onSubmit={cariOde}><Field label="Cari"><Select name="cariId" required value={seciliCari} onChange={e=>setSeciliCari(e.target.value)}><option value="">Cari seçin</option>{cariler.filter(c=>c.dovizCinsi===aktifKart.dovizCinsi).map(c=><option key={c.id} value={c.id}>{c.kod} · {c.unvan}</option>)}</Select></Field><Field label="Açık alış faturası"><Select name="faturaId"><option value="">Yalnız cari bakiyesine işle</option>{faturalar.map(f=><option key={f.id} value={f.id}>{f.no??"Numarasız"} · kalan {para(f.odemeOzeti?.kalan??f.genelToplam,f.dovizCinsi)}</option>)}</Select></Field><Field label="Cari ödeme tutarı"><Input name="cariOdemeTutari" type="number" min="0.01" step="0.01" required/></Field><Field label="Komisyon / vade farkı"><Input name="komisyonTutari" type="number" min="0" step="0.01" defaultValue="0"/></Field><Field label="Taksit sayısı"><Input name="taksitSayisi" type="number" min="1" max="36" defaultValue="1" required/></Field><Field label="İlk taksit tarihi"><Input name="ilkTaksitTarihi" type="date" defaultValue={bugun()} required/></Field><Field label="İşlem tarihi"><Input name="tarih" type="date" defaultValue={bugun()} required/></Field><Field label="Açıklama"><Input name="aciklama" required placeholder="Cari kredi kartı ödemesi"/></Field><Field label="Belge no"><Input name="belgeNo"/></Field><Button type="submit" variant="primary">Cari borcu kartla öde</Button></form>}
-      {islemFormu==="harcama"&&<form className="cc-transaction" onSubmit={hareketEkle}><Field label="İşlem türü"><Select name="tip"><option value="harcama">Diğer harcama</option><option value="iade">İade</option><option value="faiz">Faiz</option><option value="aidat">Kart aidatı</option></Select></Field><Field label="Tarih"><Input name="tarih" type="date" required defaultValue={bugun()}/></Field><Field label="Tutar"><Input name="tutar" type="number" min="0.01" step="0.01" required/></Field><Field label="Taksit"><Input name="taksitSayisi" type="number" min="1" max="36" defaultValue="1"/></Field><Field label="Açıklama"><Input name="aciklama" required/></Field><Field label="Belge no"><Input name="belgeNo"/></Field><Button type="submit" variant="primary">Hareketi kaydet</Button></form>}
-      {islemFormu==="ekstre"&&<form className="cc-transaction" onSubmit={ekstreOde}><Field label="Banka hesabı"><Select name="bankaHesapId" required defaultValue={aktifKart.bagliBankaHesap?.id??""}><option value="">Hesap seçin</option>{bankalar.filter(b=>b.dovizCinsi===aktifKart.dovizCinsi).map(b=><option key={b.id} value={b.id}>{b.ad}</option>)}</Select></Field><Field label="Ödeme tutarı"><Input name="tutar" type="number" min="0.01" max={aktifKart.borc} step="0.01" required defaultValue={aktifKart.borc}/></Field><Field label="Ödeme tarihi"><Input name="tarih" type="date" defaultValue={bugun()} required/></Field><Field label="Açıklama"><Input name="aciklama" defaultValue={`${aktifKart.ad} ekstre ödemesi`} required/></Field><Field label="Dekont no"><Input name="belgeNo"/></Field><Button type="submit" variant="primary">Bankadan ekstreyi öde</Button></form>}
-      <TableWrap><thead><tr><th>Tarih</th><th>İşlem</th><th>Açıklama / Cari</th><th>Taksit planı</th><th className="num">Tutar</th></tr></thead><tbody>{aktifKart.hareketler.map(h=><tr key={h.id} className={`row-link${aktifKart.hareketler.some(x=>x.geriAlinanHareketId===h.id)?" is-reversed":""}${seciliHareket===h.id?" is-selected":""}`} tabIndex={0} aria-label="Hareket ayrıntısını aç" onClick={()=>{setSeciliHareket(h.id);setHareketGeriAl(false)}} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();setSeciliHareket(h.id);setHareketGeriAl(false)}}}><td>{h.tarih.slice(0,10)}</td><td><Badge variant={["odeme","iade"].includes(h.tip)?"success":h.tip==="harcama"?"neutral":"warning"}>{h.tip}</Badge></td><td><strong>{h.aciklama}</strong>{h.cari&&<small className="cc-installment">{h.cari.kod} · {h.cari.unvan}{h.fatura?.no?` · Fatura ${h.fatura.no}`:""}</small>}{Number(h.komisyonTutari)>0&&<small className="cc-installment">Cari {para(h.cariOdemeTutari??0,aktifKart.dovizCinsi)} + komisyon {para(h.komisyonTutari,aktifKart.dovizCinsi)}</small>}</td><td>{h.taksitler.length?h.taksitler.map(t=><small className="cc-installment" key={t.id}>{t.sira}/{h.taksitSayisi} · {t.vadeTarihi.slice(0,10)} · {para(t.tutar,aktifKart.dovizCinsi)}</small>):"—"}</td><td className={`num cc-amount ${["odeme","iade"].includes(h.tip)?"is-credit":""}`}>{["odeme","iade"].includes(h.tip)?"−":"+"}{para(h.tutar,aktifKart.dovizCinsi)}</td></tr>)}{!aktifKart.hareketler.length&&<tr><td colSpan={5}>Bu karta ait hareket bulunmuyor.</td></tr>}</tbody></TableWrap>{(() => { const h = aktifKart.hareketler.find(x => x.id === seciliHareket); if (!h) return null;
-        const ters = aktifKart.hareketler.find(x => x.geriAlinanHareketId === h.id);
-        const geriAlinabilir = !h.geriAlinanHareketId && !ters && !h.masrafOdemesi;
-        return <div className="cc-movement-detail">
-          <div className="between"><div><strong>{h.aciklama}</strong><small>{h.tarih.slice(0, 10)} · {h.tip}{h.cari ? ` · ${h.cari.unvan}` : ""} · {para(h.tutar, aktifKart.dovizCinsi)}</small></div>
-            <div className="row-tight">{geriAlinabilir && !hareketGeriAl && <Button size="sm" variant="danger" onClick={() => setHareketGeriAl(true)}>Geri al</Button>}<Button size="sm" onClick={() => { setSeciliHareket(null); setHareketGeriAl(false); }}>Kapat</Button></div></div>
-          {h.geriAlinanHareketId && <Alert tone="warning">Bu kayıt, kapalı dönemdeki bir hareketin ters kaydıdır.</Alert>}
-          {ters && <Alert tone="warning">Bu hareket {ters.tarih.slice(0, 10)} tarihli ters kayıtla geri alındı.</Alert>}
-          {h.masrafOdemesi && <p className="slip-detail__note">Bu harcama Masraflar ekranında kartla ödendi; düzeltme ve geri alma oradan yapılır.</p>}
-          {hareketGeriAl && <GeriAlmaFormu<{ yontem: GeriAlmaYontemi }> baslik="Hareketi geri al" uc={`/kasa-banka/kredi-kartlari/hareketler/${h.id}/geri-al`}
-            aciklama={<>{h.tip === "odeme" && "Ekstre ödemesinin banka fişi de geri alınır."}{h.cari && " Cariye yazılan ödeme de geri alınır."}{h.taksitler.length > 1 && " Taksit planı kaldırılır."}</>}
-            onVazgec={() => setHareketGeriAl(false)}
-            onTamam={async (sonuc) => { setSeciliHareket(null); setHareketGeriAl(false); setBasari(sonuc.yontem === "silindi" ? "Kredi kartı hareketi geri alındı ve silindi." : "Dönem kapalı olduğu için bugün tarihli ters hareket atıldı; vadesi gelmemiş taksitler plandan düştü."); await yukle(); }} />}
-        </div>; })()}</>:<div className="cc-empty">Detayları görüntülenecek bir kart seçin.</div>}</div></section>
-  </div>;
+  const yukle = useCallback(async () => {
+    const [k, b] = await Promise.all([api<Kart[]>("/kasa-banka/kredi-kartlari"), api<Banka[]>("/kasa-banka/bankalar")]);
+    setKartlar(k);
+    setBankalar(b.filter((x) => x.aktif));
+    setSecili((s) => s || new URLSearchParams(location.search).get("kart") || k[0]?.id || "");
+  }, []);
+  useEffect(() => { if (tokenAl()) void yukle().catch((e) => setHata(e instanceof Error ? e.message : "Kartlar yüklenemedi")); }, [yukle]);
+
+  const mesaj = useCallback((metin: string, hataMi = false) => {
+    if (hataMi) { setHata(metin); return; }
+    setHata("");
+    setBasari(metin);
+    setYenile((x) => x + 1);
+    void yukle();
+  }, [yukle]);
+
+  /** İşlemi gönderir; limit aşımında (409) onay ister, onaylanınca aynı isteği onayla yineler. */
+  const gonder: Gonder = useCallback(async (yol, govde, basariMesaji, method = "POST") => {
+    setHata("");
+    try {
+      await api(yol, { method, body: JSON.stringify(govde) });
+      setLimitOnayi(null);
+      setIslem(null);
+      mesaj(basariMesaji);
+      return true;
+    } catch (e) {
+      if (e instanceof ApiHata && e.durum === 409 && !govde.limitAsimiOnay && /limit/i.test(e.message)) {
+        setLimitOnayi({ yol, govde, mesaj: basariMesaji, uyari: e.message });
+        return false;
+      }
+      setHata(e instanceof Error ? e.message : "İşlem yapılamadı");
+      return false;
+    }
+  }, [mesaj]);
+
+  async function kartEkle(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    const oran = f.get("asgariOdemeOrani");
+    if (await gonder("/kasa-banka/kredi-kartlari", {
+      ad: f.get("ad"), bankaAdi: f.get("bankaAdi"), sonDortHane: f.get("sonDortHane"), kartSahibi: f.get("kartSahibi") || null, limit: f.get("limit"),
+      dovizCinsi: f.get("dovizCinsi"), hesapKesimGunu: Number(f.get("hesapKesimGunu")), sonOdemeGunu: Number(f.get("sonOdemeGunu")),
+      bagliBankaHesapId: f.get("bagliBankaHesapId") || null, renk: f.get("renk"), asgariOdemeOrani: oran ? Number(oran) : null,
+    }, "Kredi kartı hesabı oluşturuldu.")) setKartFormu(false);
+  }
+
+  const aktifKart = kartlar.find((k) => k.id === secili) ?? kartlar[0];
+  const ozet = useMemo(() => {
+    const tl = kartlar.filter((k) => k.dovizCinsi === "TRY");
+    const odenecek = tl.filter((k) => k.sonEkstre && Number(k.sonEkstre.kalan) > 0);
+    const enYakin = odenecek.map((k) => k.sonEkstre!.sonOdemeTarihi).sort()[0] ?? null;
+    return {
+      borc: tl.reduce((t, k) => t + Number(k.borc), 0),
+      limit: tl.reduce((t, k) => t + Number(k.limit), 0),
+      uygun: tl.reduce((t, k) => t + Number(k.kullanilabilirLimit), 0),
+      odenecek: odenecek.reduce((t, k) => t + Number(k.sonEkstre!.kalan), 0),
+      gecikmis: tl.filter((k) => k.sonEkstre?.durum === "gecikti").length,
+      enYakin,
+    };
+  }, [kartlar]);
+
+  return (
+    <div className="cc-page">
+      <header className="cc-header">
+        <div>
+          <span>FİNANS YÖNETİMİ</span>
+          <h1>Şirket kredi kartları</h1>
+          <p>Dönem ekstrelerini, son ödeme günlerini, taksitleri ve kart giderlerini tek merkezden yönetin.</p>
+        </div>
+        <Button variant="primary" onClick={() => setKartFormu((v) => !v)}>+ Yeni kart hesabı</Button>
+      </header>
+
+      <Alert tone="error">{hata}</Alert>
+      <Alert tone="success">{basari}</Alert>
+      {limitOnayi && (
+        <div className="cc-limit-warning" role="alert">
+          <p><strong>Kart limiti aşılıyor.</strong> {limitOnayi.uyari}</p>
+          <div className="row-tight">
+            <Button size="sm" onClick={() => setLimitOnayi(null)}>Vazgeç</Button>
+            <Button size="sm" variant="primary" onClick={() => void gonder(limitOnayi.yol, { ...limitOnayi.govde, limitAsimiOnay: true }, limitOnayi.mesaj)}>Yine de kaydet</Button>
+          </div>
+        </div>
+      )}
+
+      <section className="cc-summary">
+        <div className="cc-summary__lead">
+          <span>Bu dönem ödenecek</span>
+          <strong><Para deger={ozet.odenecek} dovizCinsi="TRY" /></strong>
+          <small>{ozet.enYakin ? <>En yakın son ödeme <Tarih deger={ozet.enYakin} />{ozet.gecikmis ? ` · ${ozet.gecikmis} kart gecikmiş` : ""}</> : "Ödenmemiş kesilmiş ekstre yok"}</small>
+        </div>
+        <div><span>Toplam kart borcu</span><strong><Para deger={ozet.borc} dovizCinsi="TRY" /></strong><small>İleri taksitler dahil</small></div>
+        <div><span>Kullanılabilir limit</span><strong><Para deger={ozet.uygun} dovizCinsi="TRY" /></strong><small>Toplam limit <Para deger={ozet.limit} dovizCinsi="TRY" /></small></div>
+        <div>
+          <span>Limit kullanımı</span>
+          <strong>%{ozet.limit ? ((ozet.borc / ozet.limit) * 100).toLocaleString("tr-TR", { maximumFractionDigits: 1 }) : "0"}</strong>
+          <div className="cc-progress"><i style={{ width: `${Math.min(100, ozet.limit ? (ozet.borc / ozet.limit) * 100 : 0)}%` }} /></div>
+        </div>
+      </section>
+
+      {kartFormu && (
+        <Card className="cc-form-card">
+          <h2>Yeni kart hesabı</h2>
+          <form className="cc-form-grid" onSubmit={kartEkle}>
+            <Field label="Kart hesap adı"><Input name="ad" required /></Field>
+            <Field label="Banka"><Input name="bankaAdi" required /></Field>
+            <Field label="Son 4 hane"><Input name="sonDortHane" required maxLength={4} pattern="[0-9]{4}" /></Field>
+            <Field label="Kart sahibi"><Input name="kartSahibi" /></Field>
+            <Field label="Kart limiti"><Input name="limit" required type="number" min="0.01" step="0.01" /></Field>
+            <Field label="Para birimi"><Select name="dovizCinsi"><option>TRY</option><option>USD</option><option>EUR</option></Select></Field>
+            <Field label="Hesap kesim günü"><Input name="hesapKesimGunu" required type="number" min="1" max="31" /></Field>
+            <Field label="Son ödeme günü"><Input name="sonOdemeGunu" required type="number" min="1" max="31" /></Field>
+            <Field label="Asgari ödeme oranı (%)"><Input name="asgariOdemeOrani" type="number" min="1" max="100" step="any" placeholder="Boş: limite göre %20/%40" /></Field>
+            <Field label="Ödeme banka hesabı">
+              <Select name="bagliBankaHesapId"><option value="">Bağlı hesap yok</option>{bankalar.map((b) => <option key={b.id} value={b.id}>{b.ad} · {b.dovizCinsi}</option>)}</Select>
+            </Field>
+            <Field label="Kart rengi">
+              <Select name="renk"><option value="lacivert">Lacivert</option><option value="turkuaz">Turkuaz</option><option value="mor">Mor</option><option value="bordo">Bordo</option></Select>
+            </Field>
+            <div className="cc-form-actions"><Button type="button" onClick={() => setKartFormu(false)}>Vazgeç</Button><Button type="submit" variant="primary">Kart hesabını oluştur</Button></div>
+          </form>
+        </Card>
+      )}
+
+      <section className="cc-layout">
+        <div className="cc-wallet">
+          <div className="cc-section-title"><div><h2>Kart portföyü</h2><p>Ayrıntı için bir kart seçin.</p></div></div>
+          {kartlar.map((k) => (
+            <button type="button" className={`cc-card cc-card--${k.renk}${aktifKart?.id === k.id ? " is-active" : ""}${k.aktif ? "" : " is-passive"}`} key={k.id} onClick={() => { setSecili(k.id); setIslem(null); setLimitOnayi(null); }}>
+              <div className="cc-card__top"><span>{k.bankaAdi}</span>{k.sonEkstre && Number(k.sonEkstre.kalan) > 0 ? <em className={`is-${DURUM[k.sonEkstre.durum].ton}`}>{k.sonEkstre.durum === "gecikti" ? "Gecikti" : <>Son ödeme <Tarih deger={k.sonEkstre.sonOdemeTarihi} /></>}</em> : <i>◒</i>}</div>
+              <strong>•••• •••• •••• {k.sonDortHane}</strong>
+              <div className="cc-card__foot">
+                <span>{k.ad}<small>{k.aktif ? k.kartSahibi ?? "Kurumsal kart" : "Pasif kart"}</small></span>
+                <span><small>Güncel borç</small><Para deger={k.borc} dovizCinsi={k.dovizCinsi} /></span>
+              </div>
+            </button>
+          ))}
+          {!kartlar.length && <p className="cc-empty">Henüz kart hesabı yok.</p>}
+        </div>
+
+        <div className="cc-detail">
+          {aktifKart ? (
+            <>
+              <div className="cc-detail__head">
+                <div>
+                  <span>{aktifKart.bankaAdi} · •••• {aktifKart.sonDortHane}</span>
+                  <h2>{aktifKart.ad}</h2>
+                  <p>Kesim günü {aktifKart.hesapKesimGunu} · son ödeme günü {aktifKart.sonOdemeGunu} · asgari %{aktifKart.asgariOdemeOrani ? Number(aktifKart.asgariOdemeOrani) : Number(aktifKart.limit) <= 50000 ? 20 : 40} · {aktifKart.bagliBankaHesap?.ad ?? "ödeme hesabı tanımsız"}</p>
+                </div>
+                <div className="row-tight">
+                  <Button variant="primary" onClick={() => setIslem("ekstre")}>Ekstre öde</Button>
+                  <Button onClick={() => setIslem("cari")}>Cari borcu öde</Button>
+                  <Button onClick={() => setIslem("hareket")}>Harcama / gider</Button>
+                  <Button onClick={() => setIslem("ayar")}>Ayarlar</Button>
+                </div>
+              </div>
+
+              <div className="cc-period-panel">
+                <div className={`cc-period-panel__main is-${aktifKart.sonEkstre ? DURUM[aktifKart.sonEkstre.durum].ton : "neutral"}`}>
+                  {aktifKart.sonEkstre ? (
+                    <>
+                      <span>Son ekstre · {ayAdi(aktifKart.sonEkstre.kesimTarihi)} <Badge variant={DURUM[aktifKart.sonEkstre.durum].ton}>{DURUM[aktifKart.sonEkstre.durum].ad}</Badge></span>
+                      <strong><Para deger={aktifKart.sonEkstre.kalan} dovizCinsi={aktifKart.dovizCinsi} /></strong>
+                      <small>
+                        kalan · dönem borcu <Para deger={aktifKart.sonEkstre.donemBorcu} dovizCinsi={aktifKart.dovizCinsi} /> · asgari kalan <Para deger={aktifKart.sonEkstre.asgariKalan} dovizCinsi={aktifKart.dovizCinsi} /> · son ödeme <Tarih deger={aktifKart.sonEkstre.sonOdemeTarihi} />
+                      </small>
+                    </>
+                  ) : <><span>Son ekstre</span><strong>—</strong><small>Henüz kesilmiş ekstre yok</small></>}
+                </div>
+                <div>
+                  <span>Açık dönem{aktifKart.acikDonem ? ` · kesim ${new Date(`${aktifKart.acikDonem.kesimTarihi}T00:00:00Z`).toLocaleDateString("tr-TR", { timeZone: "UTC" })}` : ""}</span>
+                  <strong><Para deger={aktifKart.acikDonem?.harcamalar ?? 0} dovizCinsi={aktifKart.dovizCinsi} /></strong>
+                  <small>Bu döneme düşen harcama ve taksitler</small>
+                </div>
+                <div>
+                  <span>Kullanılabilir limit</span>
+                  <strong><Para deger={aktifKart.kullanilabilirLimit} dovizCinsi={aktifKart.dovizCinsi} /></strong>
+                  <small>Borç <Para deger={aktifKart.borc} dovizCinsi={aktifKart.dovizCinsi} /> · %{Number(aktifKart.kullanimOrani).toLocaleString("tr-TR")}</small>
+                </div>
+              </div>
+              {aktifKart.gelecekTaksitler.length > 0 && (
+                <p className="cc-future">
+                  Gelecek ekstrelere düşecek taksitler:{" "}
+                  {aktifKart.gelecekTaksitler.slice(0, 6).map((g, i) => <span key={g.kesimTarihi}>{i ? " · " : ""}{ayAdi(g.kesimTarihi)} <b><Para deger={g.tutar} dovizCinsi={aktifKart.dovizCinsi} /></b></span>)}
+                  {aktifKart.gelecekTaksitler.length > 6 && ` · +${aktifKart.gelecekTaksitler.length - 6} dönem`}
+                </p>
+              )}
+
+              {islem === "ekstre" && <EkstreOdemeFormu key={aktifKart.id} kart={aktifKart} bankalar={bankalar} gonder={gonder} />}
+              {islem === "cari" && <CariOdemeFormu key={aktifKart.id} kart={aktifKart} gonder={gonder} />}
+              {islem === "hareket" && <HareketFormu key={aktifKart.id} kart={aktifKart} gonder={gonder} />}
+              {islem === "ayar" && <KartAyarFormu key={aktifKart.id} kart={aktifKart} bankalar={bankalar} gonder={gonder} onKapat={() => setIslem(null)} />}
+
+              <EkstrePaneli kart={aktifKart} yenile={yenile} onMesaj={mesaj} />
+            </>
+          ) : <div className="cc-empty">Ayrıntıları görüntülenecek bir kart seçin.</div>}
+        </div>
+      </section>
+    </div>
+  );
 }

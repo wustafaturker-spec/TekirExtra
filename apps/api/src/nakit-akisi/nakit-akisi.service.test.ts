@@ -42,11 +42,17 @@ function kurulum() {
         { id: "ks2", baslik: "Ofis", kirayaVeren: "Ev sahibi 2", odemeGunu: 20, matrah: 2000, kdvOrani: 0, stopajOrani: 0, dovizCinsi: "TRY", baslangicTarihi: g("2026-01-01"), bitisTarihi: null, cariId: null, cari: null, masraflar: [{ kiraDonemi: g("2026-09-01") }] },
       ]),
     },
-    krediKartiTaksit: {
-      findMany: vi.fn().mockResolvedValue([
-        { id: "tk1", sira: 2, vadeTarihi: g("2026-09-30"), tutar: 250, hareket: { aciklama: "Laptop", taksitSayisi: 3, krediKarti: { ad: "Şirket kartı", dovizCinsi: "TRY" } } },
-      ]),
+    // KSB-10: kart borcu ekstrenin son ödeme gününde çıkar (kesim 23, son ödeme 3).
+    krediKarti: {
+      findMany: vi.fn().mockResolvedValue([{
+        id: "kk", ad: "Şirket kartı", sonDortHane: "1234", dovizCinsi: "TRY", limit: 50000, hesapKesimGunu: 23, sonOdemeGunu: 3, asgariOdemeOrani: null, aktif: true, ekstreler: [],
+        hareketler: [{
+          id: "h1", tip: "harcama", tarih: g("2026-08-30"), tutar: 750, aciklama: "Laptop", taksitSayisi: 3, geriAlinanHareketId: null, ekstreId: null,
+          taksitler: [1, 2, 3].map((sira) => ({ id: `t${sira}`, sira, vadeTarihi: g(["2026-08-30", "2026-09-30", "2026-10-30"][sira - 1]), tutar: 250, ekstreId: null })),
+        }],
+      }]),
     },
+    personelTatilGunu: { findMany: vi.fn().mockResolvedValue([]) },
     personelBordro: {
       findMany: vi.fn((args: { where: { durum?: { in?: string[] } } }) =>
         Promise.resolve(
@@ -105,7 +111,9 @@ describe("NakitAkisiService", () => {
     expect(bul("Ofis · FŞ-1")).toMatchObject([{ kaynak: "masraf", yon: "cikis", tutar: 100, vade: "2026-09-12" }]);
     expect(bul("Kira · Depo")).toMatchObject([{ kaynak: "kira", yon: "cikis", tutar: 1000, vade: "2026-09-15" }]);
     expect(bul("Kira · Ofis")).toEqual([]); // Eylül masrafı kayıtlı, Ekim ödemesi ufuk dışı
-    expect(bul("Laptop")).toMatchObject([{ kaynak: "kart_taksit", yon: "cikis", tutar: 250, vade: "2026-09-30" }]);
+    // Açık dönem (kesim 23.09) 3 Ekim cumartesi → 5 Ekim. Sonraki taksitler kendi
+    // ekstrelerinin son ödeme gününde (3 Kasım, 3 Aralık) çıkar; 30 günlük ufkun dışında.
+    expect(bul("Şirket kartı").map((k: { vade: string; tutar: number; kaynak: string }) => [k.kaynak, k.vade, k.tutar])).toEqual([["kart_ekstre", "2026-10-05", 250]]);
     expect(bul("Ödeme talimatı")).toMatchObject([{ kaynak: "odeme_talimati", yon: "cikis", tutar: 450, vade: "2026-09-11" }]);
   });
 

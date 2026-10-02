@@ -17,7 +17,7 @@ export type KalemKaynak =
   | "cek_senet"
   | "masraf"
   | "kira"
-  | "kart_taksit"
+  | "kart_ekstre"
   | "bordro"
   | "tekrarlayan_fatura"
   | "odeme_talimati";

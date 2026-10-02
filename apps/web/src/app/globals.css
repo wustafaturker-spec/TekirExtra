@@ -4243,3 +4243,71 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
   .fx-toolbar > .input, .fx-toolbar > .segmented { flex-basis: 100%; }
   .fx-selection { position: static; }
 }
+
+/* KSB-10: kart dönem ekstresi. */
+.cc-card__top em { background: rgba(255,255,255,.14); border-radius: 999px; font-size: .6rem; font-style: normal; padding: .15rem .5rem; }
+.cc-card__top em.is-danger { background: #dc2626; }
+.cc-card.is-passive { opacity: .6; }
+.cc-limit-warning { align-items: center; background: var(--warning-soft); border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--border)); border-radius: var(--radius); display: flex; flex-wrap: wrap; gap: .8rem; justify-content: space-between; padding: .7rem .9rem; }
+.cc-limit-warning p { font-size: .78rem; margin: 0; }
+.cc-period-panel { display: grid; gap: .6rem; grid-template-columns: 1.5fr 1fr 1fr; margin: 1rem 0 .6rem; }
+.cc-period-panel > div { background: var(--surface-2); border: 1px solid var(--border); border-radius: .7rem; display: grid; gap: .3rem; padding: .8rem .9rem; }
+.cc-period-panel > div > span { align-items: center; color: var(--text-muted); display: flex; flex-wrap: wrap; font-size: .64rem; font-weight: 700; gap: .4rem; }
+.cc-period-panel strong { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.cc-period-panel small { color: var(--text-muted); font-size: .64rem; line-height: 1.45; }
+.cc-period-panel__main { background: linear-gradient(145deg, color-mix(in srgb, var(--accent-soft) 55%, var(--surface)), var(--surface)) !important; border-color: color-mix(in srgb, var(--accent) 25%, var(--border)) !important; }
+.cc-period-panel__main strong { color: var(--accent-text); font-size: 1.35rem; }
+.cc-period-panel__main.is-danger { background: color-mix(in srgb, var(--danger-soft) 55%, var(--surface)) !important; border-color: color-mix(in srgb, var(--danger) 35%, var(--border)) !important; }
+.cc-period-panel__main.is-danger strong { color: var(--danger); }
+.cc-period-panel__main.is-success strong { color: var(--success); }
+.cc-future { color: var(--text-muted); font-size: .7rem; margin: 0 0 1rem; }
+.cc-future b { color: var(--text); font-variant-numeric: tabular-nums; }
+.cc-note { color: var(--text-muted); font-size: .7rem; grid-column: 1 / -1; line-height: 1.45; margin: 0; }
+.cc-check { align-items: center; align-self: end; display: flex; font-size: .78rem; gap: .4rem; }
+.cc-pay__options { display: grid; gap: .5rem; grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.cc-pay__options > label { align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: .6rem; cursor: pointer; display: grid; gap: .2rem .5rem; grid-template-columns: auto 1fr; padding: .55rem .7rem; }
+.cc-pay__options > label.is-selected { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent); }
+.cc-pay__options label > span { font-size: .74rem; font-weight: 700; }
+.cc-pay__options small { color: var(--text-muted); display: block; font-size: .62rem; font-weight: 500; }
+.cc-pay__options b { font-size: .8rem; font-variant-numeric: tabular-nums; grid-column: 2; }
+.cc-statement { border-top: 1px solid var(--border); display: grid; gap: .8rem; padding-top: 1rem; }
+.cc-statement__strip { display: flex; gap: .5rem; overflow-x: auto; padding-bottom: .3rem; }
+.cc-period { background: var(--surface); border: 1px solid var(--border); border-radius: .65rem; cursor: pointer; display: grid; flex: 0 0 150px; gap: .2rem; padding: .55rem .7rem; text-align: left; }
+.cc-period > span { color: var(--text-muted); font-size: .64rem; font-weight: 700; text-transform: capitalize; }
+.cc-period strong { font-size: .82rem; font-variant-numeric: tabular-nums; }
+.cc-period small { font-size: .6rem; font-weight: 700; }
+.cc-period small.is-success { color: var(--success); } .cc-period small.is-danger { color: var(--danger); } .cc-period small.is-warning { color: var(--warning); } .cc-period small.is-info { color: var(--info); } .cc-period small.is-neutral { color: var(--text-muted); }
+.cc-period.is-gelecek { border-style: dashed; }
+.cc-period.is-acik { background: var(--surface-2); }
+.cc-period.is-selected { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent); }
+.cc-statement__head { align-items: flex-start; display: flex; justify-content: space-between; gap: 1rem; }
+.cc-statement__head > div > span { color: var(--accent-text); font-size: .6rem; font-weight: 800; letter-spacing: .12em; }
+.cc-statement__head h3 { font-size: 1rem; margin: .2rem 0; text-transform: capitalize; }
+.cc-statement__head p { color: var(--text-muted); font-size: .68rem; margin: 0; }
+.cc-statement__sums { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin: 0; }
+.cc-statement__sums > div { border: 1px solid var(--border); border-radius: .55rem; padding: .5rem .65rem; }
+.cc-statement__sums dt { color: var(--text-muted); font-size: .6rem; }
+.cc-statement__sums dd { font-size: .82rem; font-variant-numeric: tabular-nums; font-weight: 700; margin: .15rem 0 0; }
+.cc-statement__sums dd.is-credit { color: var(--success); }
+.cc-statement__sums .is-total { background: var(--surface-2); }
+.cc-reconcile { align-items: end; background: color-mix(in srgb, var(--info-soft) 45%, var(--surface)); border: 1px solid color-mix(in srgb, var(--info) 30%, var(--border)); border-radius: .7rem; display: grid; gap: .6rem; grid-template-columns: 2fr 1fr 1fr auto auto; padding: .75rem .85rem; }
+.cc-reconcile strong { display: block; font-size: .78rem; }
+.cc-reconcile small { color: var(--text-muted); display: block; font-size: .64rem; line-height: 1.4; margin-top: .15rem; }
+.cc-reconcile__diff { display: grid; font-size: .64rem; gap: .15rem; padding-bottom: .45rem; }
+.cc-reconcile__diff > span { color: var(--text-muted); }
+.cc-reconcile__diff b { font-size: .82rem; font-variant-numeric: tabular-nums; }
+.cc-reconcile__diff.is-off b { color: var(--warning); }
+.cc-reconciled { align-items: center; background: color-mix(in srgb, var(--success-soft) 45%, var(--surface)); border: 1px solid color-mix(in srgb, var(--success) 30%, var(--border)); border-radius: .7rem; display: flex; flex-wrap: wrap; font-size: .74rem; gap: .6rem; justify-content: space-between; padding: .6rem .85rem; }
+.cc-payment-row > td { background: color-mix(in srgb, var(--success-soft) 25%, transparent); }
+.cc-page { padding-bottom: 5.5rem; }
+/* Eski .cc-summary span kuralı tutar bileşenine (<Para>) taşmasın. */
+.cc-summary .para, .cc-period-panel .para { color: inherit; display: inline; font-size: inherit; font-weight: inherit; letter-spacing: inherit; }
+@media (max-width: 1100px) {
+  .cc-period-panel { grid-template-columns: 1fr 1fr; }
+  .cc-period-panel__main { grid-column: 1 / -1; }
+  .cc-reconcile { grid-template-columns: 1fr 1fr; }
+  .cc-reconcile > div:first-child { grid-column: 1 / -1; }
+}
+@media (max-width: 620px) {
+  .cc-period-panel, .cc-reconcile { grid-template-columns: 1fr; }
+}

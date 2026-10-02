@@ -58,7 +58,7 @@ const KAYNAK_ADLARI: Record<string, string> = {
   cek_senet: "Çek/senet",
   masraf: "Masraf",
   kira: "Kira",
-  kart_taksit: "Kart taksiti",
+  kart_ekstre: "Kart ekstresi",
   bordro: "Bordro",
   tekrarlayan_fatura: "Tekrarlayan fatura",
   odeme_talimati: "Ödeme talimatı",

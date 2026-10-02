@@ -167,6 +167,7 @@ model Tenant {
   krediKartlari             KrediKarti[]
   krediKartiHareketleri     KrediKartiHareket[]
   krediKartiTaksitleri      KrediKartiTaksit[]
+  krediKartiEkstreleri      KrediKartiEkstre[]
   personeller               Personel[]
   personelBordrolari        PersonelBordro[]
   personelAvanslari         PersonelAvans[]
@@ -2685,6 +2686,8 @@ model KrediKarti {
   hesapKesimGunu    Int                 @map("hesap_kesim_gunu")
   sonOdemeGunu      Int                 @map("son_odeme_gunu")
   bagliBankaHesapId String?             @map("bagli_banka_hesap_id") @db.Uuid
+  /// KSB-10: asgari ödeme oranı (%). Boşsa limite göre: 50.000'e kadar %20, üstü %40.
+  asgariOdemeOrani  Decimal?            @map("asgari_odeme_orani") @db.Decimal(5, 2)
   renk              String              @default("lacivert")
   aktif             Boolean             @default(true)
   createdAt         DateTime            @default(now()) @map("created_at")
@@ -2693,6 +2696,7 @@ model KrediKarti {
   bagliBankaHesap   BankaHesap?         @relation(fields: [bagliBankaHesapId], references: [id])
   hareketler        KrediKartiHareket[]
   masrafOdemeleri   MasrafOdeme[]
+  ekstreler         KrediKartiEkstre[]
 
   @@unique([tenantId, ad])
   @@index([tenantId, aktif])
@@ -2720,6 +2724,8 @@ model KrediKartiHareket {
   bankaHareketId      String?               @unique @map("banka_hareket_id") @db.Uuid
   /// KSB-08: bu kayıt, kapalı dönemdeki bir hareketin ters kaydıdır.
   geriAlinanHareketId String?               @unique @map("geri_alinan_hareket_id") @db.Uuid
+  /// KSB-10: taksitsiz kalemin (faiz, aidat, iade, ters kayıt) girdiği kesinleşmiş ekstre.
+  ekstreId            String?               @map("ekstre_id") @db.Uuid
   createdAt           DateTime              @default(now()) @map("created_at")
   tenant              Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   krediKarti          KrediKarti            @relation(fields: [krediKartiId], references: [id], onDelete: Cascade)
@@ -2728,11 +2734,38 @@ model KrediKartiHareket {
   bankaHareket        KasaBankaHareket?     @relation(fields: [bankaHareketId], references: [id])
   taksitler           KrediKartiTaksit[]
   masrafOdemesi       MasrafOdeme?
+  ekstre              KrediKartiEkstre?     @relation(fields: [ekstreId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, krediKartiId, tarih])
   @@index([tenantId, cariId])
   @@index([tenantId, faturaId])
   @@map("kredi_karti_hareketleri")
+}
+
+/// KSB-10: bankanın kestiği, kullanıcının banka tutarıyla kesinleştirdiği
+/// dönem ekstresi. Kesinleşen ekstrenin kalemleri damgalanır; sonradan
+/// geçmiş tarihe girilen kalem bir sonraki açık döneme düşer.
+model KrediKartiEkstre {
+  id                String              @id @default(uuid()) @db.Uuid
+  tenantId          String              @map("tenant_id") @db.Uuid
+  krediKartiId      String              @map("kredi_karti_id") @db.Uuid
+  kesimTarihi       DateTime            @map("kesim_tarihi") @db.Date
+  sonOdemeTarihi    DateTime            @map("son_odeme_tarihi") @db.Date
+  /// Kesinleştirme anında hesaplanan dönem borcu (devreden dahil).
+  hesaplananTutar   Decimal             @map("hesaplanan_tutar") @db.Decimal(15, 2)
+  /// Bankanın ekstresindeki dönem borcu; bundan sonra borç bu tutardan yürür.
+  bankaTutari       Decimal             @map("banka_tutari") @db.Decimal(15, 2)
+  bankaAsgariTutari Decimal?            @map("banka_asgari_tutari") @db.Decimal(15, 2)
+  userId            String?             @map("user_id") @db.Uuid
+  createdAt         DateTime            @default(now()) @map("created_at")
+  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  krediKarti        KrediKarti          @relation(fields: [krediKartiId], references: [id], onDelete: Cascade)
+  taksitler         KrediKartiTaksit[]
+  hareketler        KrediKartiHareket[]
+
+  @@unique([krediKartiId, kesimTarihi])
+  @@index([tenantId, krediKartiId])
+  @@map("kredi_karti_ekstreleri")
 }
 
 model KrediKartiTaksit {
@@ -2742,9 +2775,12 @@ model KrediKartiTaksit {
   sira       Int
   vadeTarihi DateTime          @map("vade_tarihi") @db.Date
   tutar      Decimal           @db.Decimal(15, 2)
+  /// KSB-10: taksitin girdiği kesinleşmiş ekstre.
+  ekstreId   String?           @map("ekstre_id") @db.Uuid
   createdAt  DateTime          @default(now()) @map("created_at")
   tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   hareket    KrediKartiHareket @relation(fields: [hareketId], references: [id], onDelete: Cascade)
+  ekstre     KrediKartiEkstre? @relation(fields: [ekstreId], references: [id], onDelete: SetNull)
 
   @@unique([hareketId, sira])
   @@index([tenantId, vadeTarihi])
@@ -3255,6 +3291,8 @@ model Masraf {
   stopajTutari      Decimal?          @map("stopaj_tutari") @db.Decimal(15, 2)
   projeId           String?           @map("proje_id") @db.Uuid
   projeAltKirilimId String?           @map("proje_alt_kirilim_id") @db.Uuid
+  /// KSB-10: "kredi_karti" — kart ekranından girilen gider; kart hareketiyle birlikte geri alınır.
+  kaynakTur         String            @default("manuel") @map("kaynak_tur")
   createdAt         DateTime          @default(now()) @map("created_at")
   updatedAt         DateTime          @updatedAt @map("updated_at")
 

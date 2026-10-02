@@ -1,3 +1,5 @@
+import { ekstreOzeti } from "../kasa-banka/kart-ekstre";
+import { kartEkstreleriniOku } from "../kasa-banka/kart-ekstre-oku";
 import { Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "../core/prisma.service";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -169,18 +171,27 @@ export class NakitAkisiService {
         }
       }
 
-      // NAK-06: kredi kartı taksitleri (geçmiş vadeler ekstre ödemesiyle kapanmış sayılır).
-      const taksitler = await tx.krediKartiTaksit.findMany({
-        where: { tenantId, vadeTarihi: { gte: bugunTarih, lte: sonTarih }, hareket: { tip: "harcama" } },
-        select: { id: true, sira: true, vadeTarihi: true, tutar: true, hareket: { select: { aciklama: true, taksitSayisi: true, krediKarti: { select: { ad: true, dovizCinsi: true } } } } },
-      });
-      for (const t of taksitler) {
-        ekle({
-          kaynak: "kart_taksit", kaynakId: t.id, yon: "cikis", vade: isoGun(t.vadeTarihi),
-          dovizCinsi: t.hareket.krediKarti.dovizCinsi, dovizTutar: Number(t.tutar),
-          aciklama: `${t.hareket.krediKarti.ad} · ${t.hareket.aciklama} (${t.sira}/${t.hareket.taksitSayisi})`,
-          baglanti: "/panel/kasa-banka/kredi-kartlari",
-        });
+      // NAK-06 / KSB-10: kart borcu ekstrenin son ödeme gününde çıkar — son
+      // kesilen ekstrenin kalanı (gecikmişse bugün), açık dönemin birikeni ve
+      // ileri dönemlere düşen taksitler. Taksit günü nakit çıkışı değildir.
+      for (const { kart, donemler } of await kartEkstreleriniOku(tx, bugun)) {
+        const { sonKesilen, acik, gelecek } = ekstreOzeti(donemler);
+        const satirlar: Array<{ kesim: string; sonOdeme: string; tutar: number; etiket: string; tahmin: boolean }> = [];
+        const kesilenKalan = sonKesilen ? Number(sonKesilen.kalan) : 0;
+        if (sonKesilen && kesilenKalan > 0) satirlar.push({ kesim: sonKesilen.kesimTarihi, sonOdeme: sonKesilen.sonOdemeTarihi, tutar: kesilenKalan, etiket: "ekstre", tahmin: false });
+        // Açık dönem borcu son ekstrenin kalanını da taşır; o kısım yukarıda sayıldı.
+        const acikTutar = acik ? Number(acik.donemBorcu) - kesilenKalan : 0;
+        if (acik && acikTutar > 0.005) satirlar.push({ kesim: acik.kesimTarihi, sonOdeme: acik.sonOdemeTarihi, tutar: acikTutar, etiket: "açık dönem", tahmin: true });
+        for (const d of gelecek) satirlar.push({ kesim: d.kesimTarihi, sonOdeme: d.sonOdemeTarihi, tutar: Number(d.harcamalar), etiket: "taksitler", tahmin: true });
+        for (const satir of satirlar) {
+          const vade = satir.sonOdeme < bugun ? bugun : satir.sonOdeme;
+          if (vade > ufukSonu || satir.tutar <= 0) continue;
+          ekle({
+            kaynak: "kart_ekstre", kaynakId: `${kart.id}:${satir.kesim}`, yon: "cikis", vade, dovizCinsi: kart.dovizCinsi, dovizTutar: satir.tutar, tahmin: satir.tahmin,
+            aciklama: `${kart.ad} •••• ${kart.sonDortHane} · ${satir.etiket} (kesim ${satir.kesim.split("-").reverse().join(".")})`,
+            baglanti: "/panel/kasa-banka/kredi-kartlari",
+          });
+        }
       }
 
       // NAK-07: bordro — açık bordroların kalanı, sonraki aylar son dönemin tekrarı.
