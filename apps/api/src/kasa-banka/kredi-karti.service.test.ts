@@ -1,3 +1,4 @@
+import { ConflictException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 import { KrediKartiService } from "./kredi-karti.service";
@@ -60,3 +61,54 @@ describe("KrediKartiService", () => {
     expect(tx.cariHareket.create.mock.calls[0][0].data).toMatchObject({ tutar: D("500"), kur: D("1"), tutarTry: D("500") });
   });
 });
+
+describe("KrediKartiService hareket geri alma (KSB-08)", () => {
+  const D = (deger: string) => new Prisma.Decimal(deger);
+  function hazirla(hareket: Record<string, unknown>, donemKapali = false) {
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      krediKartiHareket: {
+        findUnique: vi.fn(async ({ where }) => (where.id ? { id: "kk1", krediKartiId: "kart-1", tip: "harcama", tarih: new Date("2026-09-10"), aciklama: "Yakıt", tutar: D("500"), cariId: null, faturaId: null, faturaMahsubu: null, geriAlinanHareketId: null, masrafOdemesi: null, taksitler: [], bankaHareket: null, ...hareket } : null)),
+        delete: vi.fn(),
+        create: vi.fn(async ({ data }) => ({ id: "ters", ...data })),
+      },
+      krediKartiTaksit: { deleteMany: vi.fn() },
+      cariHareket: { findMany: vi.fn().mockResolvedValue([]), deleteMany: vi.fn(), create: vi.fn() },
+      kasaBankaHareket: { delete: vi.fn(), create: vi.fn(async ({ data }) => ({ id: "banka-ters", ...data })) },
+      bankaEkstreSatir: { update: vi.fn() },
+      auditLog: { create: vi.fn() },
+    };
+    const donemKilidi = { tarihDogrula: vi.fn(async (_t: string, tarih: Date | string) => {
+      const gun = typeof tarih === "string" ? tarih : tarih.toISOString().slice(0, 10);
+      if (donemKapali && gun.startsWith("2026-09")) throw new ConflictException("kapalı");
+    }) };
+    const service = new KrediKartiService({ tenantIslem: vi.fn((_t, cb) => cb(tx)) } as any, donemKilidi as any);
+    return { tx, service };
+  }
+
+  it("açık dönemde hareketi ve ekstre ödemesinin banka fişini siler", async () => {
+    const { tx, service } = hazirla({ tip: "odeme", bankaHareket: { id: "b1", ekstreSatir: { id: "es1" } } });
+
+    await expect(service.hareketGeriAl("kk1", "Mükerrer")).resolves.toEqual({ yontem: "silindi" });
+    expect(tx.krediKartiHareket.delete).toHaveBeenCalledWith({ where: { id: "kk1" } });
+    expect(tx.kasaBankaHareket.delete).toHaveBeenCalledWith({ where: { id: "b1" } });
+    expect(tx.bankaEkstreSatir.update).toHaveBeenCalled();
+    expect(tx.auditLog.create.mock.calls[0][0].data).toMatchObject({ islem: "kredi_karti_hareketi_silindi", varlikId: "kk1" });
+  });
+
+  it("kapalı dönemdeki ekstre ödemesine ters hareket ve banka ters fişi atar", async () => {
+    const { tx, service } = hazirla({ tip: "odeme", bankaHareket: { id: "b1", bankaHesapId: "banka-1", tip: "tediye", tutar: D("500"), dovizCinsi: "TRY", kur: D("1"), tutarTry: D("500"), aciklama: "Ekstre", ekstreSatir: null } }, true);
+
+    await expect(service.hareketGeriAl("kk1", "Banka iade etti")).resolves.toEqual({ yontem: "ters_kayit" });
+    expect(tx.kasaBankaHareket.create.mock.calls[0][0].data).toMatchObject({ tip: "tahsilat", kaynakTur: "ters_kayit", kaynakRef: "b1" });
+    expect(tx.krediKartiHareket.create.mock.calls[0][0].data).toMatchObject({ tip: "harcama", geriAlinanHareketId: "kk1", bankaHareketId: "banka-ters" });
+    expect(tx.krediKartiTaksit.deleteMany).toHaveBeenCalled();
+  });
+
+  it("masraftan kartla ödenen harcamayı buradan geri almaz", async () => {
+    const { service } = hazirla({ masrafOdemesi: { id: "mo1" } });
+
+    await expect(service.hareketGeriAl("kk1", "Deneme")).rejects.toThrow("Masraflar");
+  });
+});
+

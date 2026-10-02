@@ -552,6 +552,8 @@ export class KasaBankaService {
     id: string,
     neden: string,
     beklenen?: "tahsilat_tediye" | "virman",
+    /** false: fişi başka modül (çek/senet) kendi geri almasının parçası olarak geri alıyor. */
+    kaynakDenetimi = true,
   ): Promise<{ yontem: "silindi" | "ters_kayit"; hareketIdleri: string[] }> {
     const iliskiler = {
       ekstreSatir: { select: { id: true } },
@@ -579,7 +581,7 @@ export class KasaBankaService {
       const karsi = await kilitleVeOku(hareket.karsiHareketId);
       if (karsi) bacaklar.push(karsi);
     }
-    for (const bacak of bacaklar) {
+    for (const bacak of kaynakDenetimi ? bacaklar : []) {
       const kaynak = KasaBankaService.kaynakModulu(bacak);
       if (kaynak) throw new BadRequestException(`Bu kayıt ${kaynak} tarafından oluşturuldu; geri almayı oradan yapın`);
     }
@@ -659,6 +661,101 @@ export class KasaBankaService {
     }
     await this.geriAlmaIzi(tx, tenantId, "kasa_banka_fisi_ters_kayit", id, { ...goruntu, tersHareketler: [...yeniIdler.values()] });
     return { yontem: "ters_kayit", hareketIdleri: [...yeniIdler.values()] };
+  }
+
+  private static readonly VARSAYILAN_KONUM: Record<string, string> = { portfoyde: "Şirket portföyü", tahsile_verildi: "Bankada tahsilde", teminata_verildi: "Bankada teminatta", ciro_edildi: "Ciro edilen caride", tahsil_edildi: "Tahsil edildi", odendi: "Ödendi", karsiliksiz: "Karşılıksız işlem dosyası", iade_edildi: "İade edildi", verildi: "Lehtara teslim" };
+
+  /**
+   * KSB-08: çek/senedin son işlemini geri alır. Son işlem kayıtsa ve dönemi
+   * açıksa evrak cari hareketiyle silinir; bir durum geçişiyse evrak önceki
+   * durumuna döner ve geçişin yazdığı fiş/cari hareketi geri alınır. Dönem
+   * kapalıysa kayıtlar silinmez, bugün tarihli ters kayıt atılır.
+   */
+  async cekSenetSonIslemiGeriAl(id: string, neden: string) {
+    const { tenantId, userId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      await tx.$queryRaw`SELECT id FROM cek_senetler WHERE id = ${id}::uuid FOR UPDATE`;
+      const cs = await tx.cekSenet.findUnique({
+        where: { id },
+        include: { olaylar: { where: { geriAlindi: false, geriAlma: false }, orderBy: { createdAt: "desc" }, take: 1 } },
+      });
+      if (!cs) throw new NotFoundException("Çek/Senet bulunamadı");
+      const son = cs.olaylar[0];
+      if (!son) throw new BadRequestException("Geri alınacak işlem kalmadı");
+      if (son.oncekiDurum && cs.durum !== son.yeniDurum) throw new ConflictException("Çek/senet başka bir işlemle güncellendi; ekranı yenileyin");
+
+      const kapali = await this.donemKapaliMi(tenantId, son.islemTarihi);
+      const bugun = bugunTR();
+      if (kapali) await this.donemKilidi.tarihDogrula(tenantId, bugun, "ters kayıt");
+
+      // Bu evrakın henüz geri alınmamış cari hareketleri (tür bazında).
+      const acikCariHareketleri = async (kaynakTur: string) => {
+        const kayitlar = await tx.cariHareket.findMany({ where: { kaynakTur, kaynakRef: id } });
+        const tersler = await tx.cariHareket.findMany({ where: { kaynakTur: "cek_senet_geri_alma", kaynakRef: { in: kayitlar.map((k) => k.id) } }, select: { kaynakRef: true } });
+        const geriAlinan = new Set(tersler.map((t) => t.kaynakRef));
+        return kayitlar.filter((k) => !geriAlinan.has(k.id));
+      };
+      const cariEtkisiniGeriAl = async (kayitlar: Awaited<ReturnType<typeof acikCariHareketleri>>) => {
+        if (!kapali) {
+          await tx.cariHareket.deleteMany({ where: { id: { in: kayitlar.map((k) => k.id) } } });
+          return;
+        }
+        for (const k of kayitlar) {
+          await tx.cariHareket.create({
+            data: {
+              tenantId, cariId: k.cariId, tip: k.tip === "borc" ? "alacak" : "borc", tutar: k.tutar, dovizCinsi: k.dovizCinsi, kur: k.kur, tutarTry: k.tutarTry,
+              tarih: new Date(bugun), aciklama: `Geri alma: ${k.aciklama ?? "çek/senet"} — ${neden}`.slice(0, 500), kaynakTur: "cek_senet_geri_alma", kaynakRef: k.id,
+            },
+          });
+        }
+      };
+      const iz = (islem: string, ek: Record<string, unknown> = {}) => this.geriAlmaIzi(tx, tenantId, islem, id, { neden, cekSenet: { ...cs, olaylar: undefined }, olay: son, ...ek });
+
+      // Son işlem evrakın kaydıysa: açık dönemde evrak tamamen silinir.
+      if (!son.oncekiDurum) {
+        const cariler = await acikCariHareketleri("cek_senet");
+        if (!kapali) {
+          await cariEtkisiniGeriAl(cariler);
+          await iz("cek_senet_kaydi_silindi", { cariHareketleri: cariler });
+          await tx.cekSenet.delete({ where: { id } });
+          return { yontem: "silindi" as const, silindi: true, durum: null };
+        }
+        await cariEtkisiniGeriAl(cariler);
+        await tx.cekSenet.update({ where: { id }, data: { durum: "iade_edildi", fizikselKonum: "Kayıt geri alındı" } });
+        await tx.cekSenetOlay.update({ where: { id: son.id }, data: { geriAlindi: true } });
+        await tx.cekSenetOlay.create({ data: { tenantId, cekSenetId: id, oncekiDurum: cs.durum, yeniDurum: "iade_edildi", islemTarihi: new Date(bugun), aciklama: `Kayıt geri alındı (ters kayıt): ${neden}`, userId, geriAlma: true } });
+        await iz("cek_senet_kaydi_ters_kayit", { cariHareketleri: cariler });
+        return { yontem: "ters_kayit" as const, silindi: false, durum: "iade_edildi" };
+      }
+
+      // Durum geçişi: geçişin yazdığı fiş ve cari hareketleri geri alınır.
+      let fisler: string[] = [];
+      if (son.yeniDurum === "tahsil_edildi" || son.yeniDurum === "odendi") {
+        const adaylar = await tx.kasaBankaHareket.findMany({ where: { kaynakTur: "cek_senet", kaynakRef: id }, select: { id: true } });
+        const tersler = await tx.kasaBankaHareket.findMany({ where: { kaynakTur: "ters_kayit", kaynakRef: { in: adaylar.map((a) => a.id) } }, select: { kaynakRef: true } });
+        const geriAlinan = new Set(tersler.map((t) => t.kaynakRef));
+        fisler = adaylar.map((a) => a.id).filter((f) => !geriAlinan.has(f));
+        for (const fis of fisler) await this.geriAlIslem(tx, tenantId, fis, neden, "tahsilat_tediye", false);
+      }
+      const cariTuru = son.yeniDurum === "ciro_edildi" ? "cek_senet_ciro" : son.yeniDurum === "karsiliksiz" || son.yeniDurum === "iade_edildi" ? "cek_senet_ters" : null;
+      const cariler = cariTuru ? await acikCariHareketleri(cariTuru) : [];
+      await cariEtkisiniGeriAl(cariler);
+
+      await tx.cekSenet.update({
+        where: { id },
+        data: {
+          durum: son.oncekiDurum,
+          fizikselKonum: KasaBankaService.VARSAYILAN_KONUM[son.oncekiDurum] ?? cs.fizikselKonum,
+          ...(son.yeniDurum === "ciro_edildi" ? { ciroCariId: null } : {}),
+        },
+      });
+      await tx.cekSenetOlay.update({ where: { id: son.id }, data: { geriAlindi: true } });
+      await tx.cekSenetOlay.create({
+        data: { tenantId, cekSenetId: id, oncekiDurum: son.yeniDurum, yeniDurum: son.oncekiDurum, islemTarihi: kapali ? new Date(bugun) : son.islemTarihi, aciklama: `Geri alındı: ${neden}`.slice(0, 500), userId, geriAlma: true },
+      });
+      await iz(kapali ? "cek_senet_islemi_ters_kayit" : "cek_senet_islemi_geri_alindi", { fisler, cariHareketleri: cariler });
+      return { yontem: kapali ? "ters_kayit" as const : "silindi" as const, silindi: false, durum: son.oncekiDurum };
+    });
   }
 
   /** Fişi başka bir modül ürettiyse o modülün adı (geri alma oradan yapılır). */
@@ -903,7 +1000,7 @@ export class KasaBankaService {
     if (["tahsil_edildi", "odendi", "ciro_edildi", "karsiliksiz", "iade_edildi"].includes(girdi.durum)) {
       await this.donemKilidi.tarihDogrula(tenantId, islemTarihi, "çek/senet işlemi");
     }
-    const varsayilanKonum: Record<string, string> = { portfoyde: "Şirket portföyü", tahsile_verildi: "Bankada tahsilde", teminata_verildi: "Bankada teminatta", ciro_edildi: "Ciro edilen caride", tahsil_edildi: "Tahsil edildi", odendi: "Ödendi", karsiliksiz: "Karşılıksız işlem dosyası", iade_edildi: "İade edildi" };
+    const varsayilanKonum = KasaBankaService.VARSAYILAN_KONUM;
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const hak = await tx.cekSenet.updateMany({ where: { id, durum: CS.durum }, data: { durum: girdi.durum } });

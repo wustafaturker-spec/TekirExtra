@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { bugunTR } from "@tekirextra/shared";
 import { Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -34,7 +35,7 @@ export class KrediKartiService {
     const kartlar = await this.prisma.tenantIslem(tenantId, (tx) => tx.krediKarti.findMany({
       where: { tenantId },
       orderBy: [{ aktif: "desc" }, { ad: "asc" }],
-      include: { bagliBankaHesap: { select: { id: true, ad: true } }, hareketler: { orderBy: [{ tarih: "desc" }, { createdAt: "desc" }], include: { cari: { select: { id: true, kod: true, unvan: true } }, fatura: { select: { id: true, no: true } }, taksitler: { orderBy: { sira: "asc" } } } } },
+      include: { bagliBankaHesap: { select: { id: true, ad: true } }, hareketler: { orderBy: [{ tarih: "desc" }, { createdAt: "desc" }], include: { cari: { select: { id: true, kod: true, unvan: true } }, fatura: { select: { id: true, no: true } }, taksitler: { orderBy: { sira: "asc" } }, masrafOdemesi: { select: { id: true } } } } },
     }));
     return kartlar.map((kart) => {
       const borc = kart.hareketler.reduce((t, h) => t.add(["harcama", "faiz", "aidat"].includes(h.tip) ? h.tutar : h.tutar.negated()), D(0)); const net = Prisma.Decimal.max(0, borc);
@@ -96,5 +97,87 @@ export class KrediKartiService {
       const hareket = await tx.krediKartiHareket.create({ data: { tenantId, krediKartiId: kart.id, tip: "odeme", tarih, aciklama: girdi.aciklama, tutar, taksitSayisi: 1, belgeNo: girdi.belgeNo, bankaHareketId: bankaHareket.id } });
       await tx.kasaBankaHareket.update({ where: { id: bankaHareket.id }, data: { kaynakRef: hareket.id } }); return hareket;
     });
+  }
+
+  /**
+   * KSB-08: kredi kartı hareketini geri alır. Açık dönemde hareket; taksitleri,
+   * cari hareketi ve (ekstre ödemesiyse) banka fişiyle birlikte silinir ve
+   * görüntüsü denetim izine yazılır. Kapalı dönemde bugün tarihli ters hareket
+   * atılır, vadesi gelmemiş taksitler plandan düşer. Masraf ekranından kartla
+   * ödenen harcama oradan geri alınır.
+   */
+  async hareketGeriAl(id: string, neden: string) {
+    const { tenantId, userId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      await tx.$queryRaw`SELECT id FROM kredi_karti_hareketleri WHERE id = ${id}::uuid FOR UPDATE`;
+      const h = await tx.krediKartiHareket.findUnique({
+        where: { id },
+        include: { masrafOdemesi: { select: { id: true } }, taksitler: true, bankaHareket: { include: { ekstreSatir: { select: { id: true } } } } },
+      });
+      if (!h) throw new NotFoundException("Kredi kartı hareketi bulunamadı");
+      if (h.geriAlinanHareketId) throw new BadRequestException("Ters kayıt geri alınamaz; gerekiyorsa işlemi yeniden girin");
+      if (h.masrafOdemesi) throw new BadRequestException("Bu harcama Masraflar ekranında kartla ödendi; ödemeyi oradan geri alın");
+      if (await tx.krediKartiHareket.findUnique({ where: { geriAlinanHareketId: id }, select: { id: true } })) throw new ConflictException("Bu hareket zaten geri alındı");
+
+      const cariHareketleri = await tx.cariHareket.findMany({ where: { kaynakTur: "kredi_karti", kaynakRef: id } });
+      const iz = (islem: string, ek: Record<string, unknown> = {}) => tx.auditLog.create({
+        data: { tenantId, userId, islem, varlik: "kredi-kartlari", varlikId: id, detay: JSON.parse(JSON.stringify({ neden, hareket: h, cariHareketleri, ...ek })) as Prisma.InputJsonValue },
+      });
+
+      if (!(await this.donemKapaliMi(tenantId, h.tarih))) {
+        await tx.cariHareket.deleteMany({ where: { id: { in: cariHareketleri.map((c) => c.id) } } });
+        await tx.krediKartiHareket.delete({ where: { id } }); // taksitler zincirleme silinir
+        if (h.bankaHareket) {
+          if (h.bankaHareket.ekstreSatir) {
+            await tx.bankaEkstreSatir.update({ where: { id: h.bankaHareket.ekstreSatir.id }, data: { durum: "beklemede", cariId: null, faturaId: null, hareketId: null } });
+          }
+          await tx.kasaBankaHareket.delete({ where: { id: h.bankaHareket.id } });
+        }
+        await iz("kredi_karti_hareketi_silindi");
+        return { yontem: "silindi" as const };
+      }
+
+      const bugun = bugunTR();
+      await this.donemKilidi.tarihDogrula(tenantId, bugun, "ters kayıt");
+      const tarih = new Date(bugun);
+      // Ödeme ve iade borcu azaltmıştı, tersi borcu geri yazar; diğerleri iadeyle sıfırlanır.
+      const tersTip = h.tip === "odeme" || h.tip === "iade" ? "harcama" : "iade";
+      const bankaTersi = h.bankaHareket
+        ? await tx.kasaBankaHareket.create({
+          data: {
+            tenantId, bankaHesapId: h.bankaHareket.bankaHesapId, tip: h.bankaHareket.tip === "tediye" ? "tahsilat" : "tediye",
+            tutar: h.bankaHareket.tutar, dovizCinsi: h.bankaHareket.dovizCinsi, kur: h.bankaHareket.kur, tutarTry: h.bankaHareket.tutarTry, tarih,
+            aciklama: `Ters kayıt: ${h.bankaHareket.aciklama ?? "kredi kartı ekstre ödemesi"} — ${neden}`.slice(0, 500), kaynakTur: "ters_kayit", kaynakRef: h.bankaHareket.id,
+          },
+        })
+        : null;
+      const ters = await tx.krediKartiHareket.create({
+        data: {
+          tenantId, krediKartiId: h.krediKartiId, tip: tersTip, tarih, aciklama: `Ters kayıt: ${h.aciklama} — ${neden}`.slice(0, 200), tutar: h.tutar, taksitSayisi: 1,
+          cariId: h.cariId, faturaId: h.faturaId, faturaMahsubu: h.faturaMahsubu?.negated() ?? null, bankaHareketId: bankaTersi?.id ?? null, geriAlinanHareketId: h.id,
+        },
+      });
+      await tx.krediKartiTaksit.deleteMany({ where: { hareketId: h.id, vadeTarihi: { gte: tarih } } });
+      for (const c of cariHareketleri) {
+        await tx.cariHareket.create({
+          data: {
+            tenantId, cariId: c.cariId, tip: c.tip === "borc" ? "alacak" : "borc", tutar: c.tutar, dovizCinsi: c.dovizCinsi, kur: c.kur, tutarTry: c.tutarTry, tarih,
+            aciklama: `Ters kayıt: ${c.aciklama ?? "kredi kartı"}`.slice(0, 500), kaynakTur: "kredi_karti", kaynakRef: ters.id,
+          },
+        });
+      }
+      await iz("kredi_karti_hareketi_ters_kayit", { tersHareketId: ters.id });
+      return { yontem: "ters_kayit" as const };
+    });
+  }
+
+  private async donemKapaliMi(tenantId: string, tarih: Date): Promise<boolean> {
+    try {
+      await this.donemKilidi.tarihDogrula(tenantId, tarih, "geri alma");
+      return false;
+    } catch (hata) {
+      if (hata instanceof ConflictException) return true;
+      throw hata;
+    }
   }
 }

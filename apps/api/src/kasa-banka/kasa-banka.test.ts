@@ -393,3 +393,60 @@ describe("KasaBankaService fiş geri alma (KSB-08)", () => {
   });
 });
 
+describe("KasaBankaService çek/senet son işlemi geri alma (KSB-08)", () => {
+  const D = (d: string) => new Prisma.Decimal(d);
+  const cek = (durum: string, olay: Record<string, unknown>) => ({
+    id: "cs1", yon: "alinan", durum, tur: "cek", portfoyNo: "P1", tutar: D("1000"), kur: D("1"), dovizCinsi: "TRY", fizikselKonum: "x",
+    olaylar: [{ id: "o1", islemTarihi: new Date("2026-09-10"), ...olay }],
+  });
+  function hazirla(kayit: ReturnType<typeof cek>, donemKapali = false, cariler: unknown[] = [], fisler: unknown[] = []) {
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      cekSenet: { findUnique: vi.fn().mockResolvedValue(kayit), delete: vi.fn(), update: vi.fn() },
+      cekSenetOlay: { update: vi.fn(), create: vi.fn() },
+      cariHareket: { findMany: vi.fn(async ({ where }) => (where.kaynakTur === "cek_senet_geri_alma" ? [] : cariler)), deleteMany: vi.fn(), create: vi.fn() },
+      kasaBankaHareket: {
+        findMany: vi.fn(async ({ where }) => (where.kaynakTur === "ters_kayit" ? [] : fisler)),
+        findUnique: vi.fn(async ({ where }) => ({ id: where.id, tip: "tahsilat", kaynakTur: "cek_senet", tarih: new Date("2026-09-10"), karsiHareketId: null, ekstreSatir: null })),
+        findFirst: vi.fn().mockResolvedValue(null),
+        deleteMany: vi.fn(),
+      },
+      auditLog: { create: vi.fn() },
+    };
+    const donemKilidi = { tarihDogrula: vi.fn(async (_t: string, tarih: Date | string) => {
+      const gun = typeof tarih === "string" ? tarih : tarih.toISOString().slice(0, 10);
+      if (donemKapali && gun.startsWith("2026-09")) throw new ConflictException("kapalı");
+    }) };
+    const service = new KasaBankaService({ tenantIslem: vi.fn((_t, cb) => cb(tx)) } as any, {} as any, donemKilidi as any);
+    return { tx, service };
+  }
+  const cariKaydi = { id: "c1", cariId: "cari-1", tip: "borc", tutar: D("1000"), dovizCinsi: "TRY", kur: D("1"), tutarTry: D("1000"), aciklama: "Ciro" };
+
+  it("açık dönemde yalnız kaydı olan evrakı cari hareketiyle siler", async () => {
+    const { tx, service } = hazirla(cek("portfoyde", { oncekiDurum: null, yeniDurum: "portfoyde" }), false, [cariKaydi]);
+
+    await expect(service.cekSenetSonIslemiGeriAl("cs1", "Yanlış giriş")).resolves.toMatchObject({ yontem: "silindi", silindi: true });
+    expect(tx.cariHareket.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["c1"] } } });
+    expect(tx.cekSenet.delete).toHaveBeenCalledWith({ where: { id: "cs1" } });
+  });
+
+  it("tahsili geri alınca tahsil fişini siler ve evrakı portföye döndürür", async () => {
+    const { tx, service } = hazirla(cek("tahsil_edildi", { oncekiDurum: "portfoyde", yeniDurum: "tahsil_edildi" }), false, [], [{ id: "f1" }]);
+
+    await expect(service.cekSenetSonIslemiGeriAl("cs1", "Banka iade etti")).resolves.toMatchObject({ durum: "portfoyde" });
+    expect(tx.kasaBankaHareket.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["f1"] } } });
+    expect(tx.cekSenet.update.mock.calls[0][0].data).toMatchObject({ durum: "portfoyde", fizikselKonum: "Şirket portföyü" });
+    expect(tx.cekSenetOlay.update).toHaveBeenCalledWith({ where: { id: "o1" }, data: { geriAlindi: true } });
+    expect(tx.cekSenetOlay.create.mock.calls[0][0].data).toMatchObject({ oncekiDurum: "tahsil_edildi", yeniDurum: "portfoyde", geriAlma: true });
+  });
+
+  it("kapalı dönemdeki ciroyu ters cari hareketiyle geri alır ve ciro carisini boşaltır", async () => {
+    const { tx, service } = hazirla(cek("ciro_edildi", { oncekiDurum: "portfoyde", yeniDurum: "ciro_edildi" }), true, [cariKaydi]);
+
+    await expect(service.cekSenetSonIslemiGeriAl("cs1", "Tedarikçi iade etti")).resolves.toMatchObject({ yontem: "ters_kayit" });
+    expect(tx.cariHareket.deleteMany).not.toHaveBeenCalled();
+    expect(tx.cariHareket.create.mock.calls[0][0].data).toMatchObject({ tip: "alacak", tutar: D("1000"), kaynakTur: "cek_senet_geri_alma", kaynakRef: "c1" });
+    expect(tx.cekSenet.update.mock.calls[0][0].data).toMatchObject({ durum: "portfoyde", ciroCariId: null });
+  });
+});
+

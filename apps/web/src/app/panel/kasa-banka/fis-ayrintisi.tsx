@@ -10,8 +10,9 @@
  * kayıt atılır.
  */
 import { useState } from "react";
-import { api, apiDosyaIndir } from "@/lib/api";
-import { Alert, Badge, Button, EylemCubugu, Field, Para, Tarih } from "@/components/ui";
+import { apiDosyaIndir } from "@/lib/api";
+import { GeriAlmaFormu, type GeriAlmaYontemi } from "@/components/geri-alma-formu";
+import { Alert, Badge, Button, EylemCubugu, Para, Tarih } from "@/components/ui";
 
 export interface DefterHareketi {
   id: string;
@@ -71,9 +72,6 @@ export function FisAyrintisi({
   onGeriAlindi: (mesaj: string) => void;
 }) {
   const [geriAlAcik, setGeriAlAcik] = useState(false);
-  const [neden, setNeden] = useState("");
-  const [isleniyor, setIsleniyor] = useState(false);
-  const [hata, setHata] = useState("");
 
   const karsi = hareket.karsiHareketId ? hareketler.find((h) => h.id === hareket.karsiHareketId) ?? null : null;
   const ters = hareketler.find((h) => h.kaynakTur === "ters_kayit" && (h.kaynakRef === hareket.id || (karsi && h.kaynakRef === karsi.id)));
@@ -81,25 +79,6 @@ export function FisAyrintisi({
   const elleGirilen = hareket.kaynakTur === "manuel" || hareket.kaynakTur === "fatura_kapama";
   const degistirilebilir = elleGirilen && !ters;
   const makbuzlu = hareket.tip === "tahsilat" || hareket.tip === "tediye";
-
-  async function geriAl(e: React.FormEvent) {
-    e.preventDefault();
-    setIsleniyor(true);
-    setHata("");
-    try {
-      const sonuc = await api<{ yontem: "silindi" | "ters_kayit" }>(`/kasa-banka/hareketler/${hareket.id}/geri-al`, {
-        method: "POST",
-        body: JSON.stringify({ neden }),
-      });
-      onGeriAlindi(sonuc.yontem === "silindi"
-        ? `Fiş geri alındı ve silindi${virmanMi(hareket) ? " (virmanın iki bacağı birlikte)" : ""}; cari ve fatura bakiyeleri güncellendi.`
-        : "Fişin dönemi kapalı olduğu için bugün tarihli ters kayıt atıldı; asıl kayıt değişmedi.");
-    } catch (err) {
-      setHata(err instanceof Error ? err.message : "Fiş geri alınamadı");
-    } finally {
-      setIsleniyor(false);
-    }
-  }
 
   return (
     <div className="slip-detail">
@@ -111,8 +90,8 @@ export function FisAyrintisi({
         )}
         {degistirilebilir && (
           <>
-            <Button size="sm" onClick={() => onDuzelt(hareket)} disabled={isleniyor}>Düzelt</Button>
-            <Button size="sm" variant="danger" onClick={() => setGeriAlAcik(true)} disabled={geriAlAcik || isleniyor}>Geri al</Button>
+            <Button size="sm" onClick={() => onDuzelt(hareket)} disabled={geriAlAcik}>Düzelt</Button>
+            <Button size="sm" variant="danger" onClick={() => setGeriAlAcik(true)} disabled={geriAlAcik}>Geri al</Button>
           </>
         )}
       </EylemCubugu>
@@ -162,35 +141,18 @@ export function FisAyrintisi({
       )}
 
       {geriAlAcik && (
-        <form className="slip-detail__undo" onSubmit={geriAl}>
-          <h3>Fişi geri al</h3>
-          <p>
-            Açık dönemdeki fiş, cari hareketiyle birlikte silinir ve görüntüsü denetim izine yazılır. Dönemi kapanmışsa kayıt
-            değişmez; bugün tarihli ters kayıt atılır.
-            {hareket.fatura && " Faturanın kalanı yeniden açılır."}
+        <GeriAlmaFormu<{ yontem: GeriAlmaYontemi }>
+          baslik="Fişi geri al"
+          uc={`/kasa-banka/hareketler/${hareket.id}/geri-al`}
+          aciklama={<>
+            {hareket.fatura && "Faturanın kalanı yeniden açılır."}
             {virmanMi(hareket) && " Virmanın iki bacağı birlikte geri alınır."}
-          </p>
-          <Field label="Gerekçe">
-            <textarea
-              autoFocus
-              className="input"
-              required
-              minLength={3}
-              maxLength={300}
-              rows={2}
-              value={neden}
-              onChange={(e) => setNeden(e.target.value)}
-              placeholder="Ör. Mükerrer giriş, yanlış cari seçildi"
-            />
-          </Field>
-          {hata && <Alert tone="error">{hata}</Alert>}
-          <footer>
-            <Button type="button" onClick={() => { setGeriAlAcik(false); setHata(""); }} disabled={isleniyor}>Vazgeç</Button>
-            <Button type="submit" variant="danger" disabled={isleniyor || neden.trim().length < 3}>
-              {isleniyor ? "Geri alınıyor…" : "Fişi geri al"}
-            </Button>
-          </footer>
-        </form>
+          </>}
+          onVazgec={() => setGeriAlAcik(false)}
+          onTamam={(sonuc) => onGeriAlindi(sonuc.yontem === "silindi"
+            ? `Fiş geri alındı ve silindi${virmanMi(hareket) ? " (virmanın iki bacağı birlikte)" : ""}; cari ve fatura bakiyeleri güncellendi.`
+            : "Fişin dönemi kapalı olduğu için bugün tarihli ters kayıt atıldı; asıl kayıt değişmedi.")}
+        />
       )}
     </div>
   );

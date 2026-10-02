@@ -208,3 +208,8 @@ export const cekSenetGuncelleSemasi = z
     message: "Karşılıksız/iade işlemi için açıklama zorunludur",
     path: ["aciklama"],
   });
+
+/** KSB-08: geri alma ve düzeltmede gerekçe zorunludur; denetim izine yazılır. */
+export const geriAlmaSemasi = z.object({
+  neden: z.string().trim().min(3, "Geri alma gerekçesi en az 3 karakter olmalıdır").max(300),
+});

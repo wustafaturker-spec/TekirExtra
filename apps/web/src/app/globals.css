@@ -4072,15 +4072,23 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 .slip-detail__facts dt { color: var(--text-subtle); font-size: .62rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .slip-detail__facts dd { font-size: .76rem; margin: 0; overflow-wrap: anywhere; }
 .slip-detail__note { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-muted); font-size: .72rem; margin: 0; padding: .7rem .85rem; }
-.slip-detail__undo { background: color-mix(in srgb, var(--danger-soft) 35%, var(--surface)); border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--border)); border-radius: var(--radius); display: grid; gap: .7rem; padding: .9rem 1rem; }
-.slip-detail__undo h3 { color: var(--danger); font-size: .82rem; margin: 0; }
-.slip-detail__undo p { color: var(--text-muted); font-size: .72rem; margin: 0; }
-.slip-detail__undo footer { display: flex; gap: .5rem; justify-content: flex-end; }
+.undo-form { background: color-mix(in srgb, var(--danger-soft) 35%, var(--surface)); border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--border)); border-radius: var(--radius); display: grid; gap: .7rem; padding: .9rem 1rem; }
+.undo-form h3 { color: var(--danger); font-size: .82rem; margin: 0; }
+.undo-form p { color: var(--text-muted); font-size: .72rem; margin: 0; }
+.undo-form footer { display: flex; gap: .5rem; justify-content: flex-end; }
 .treasury-register .row-link.is-reversed td { color: var(--text-subtle); }
 .treasury-register .row-link.is-reversed strong.treasury-in, .treasury-register .row-link.is-reversed strong.treasury-out { text-decoration: line-through; }
 .payment-slip__correction { display: grid; gap: .6rem; }
 @media (max-width: 620px) {
   .slip-detail__facts { grid-template-columns: 1fr; }
   .slip-detail__facts > div:nth-child(odd) { border-right: 0; }
-  .slip-detail__undo footer { flex-direction: column-reverse; }
+  .undo-form footer { flex-direction: column-reverse; }
 }
+.cheque-history { border-color: var(--accent); margin-top: 1.5rem; }
+.cheque-history__event { border: 1px solid var(--border); border-radius: var(--radius); padding: .8rem 1rem; }
+.cheque-history__event.is-undone strong { color: var(--text-subtle); text-decoration: line-through; }
+.cc-movement-detail { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); display: grid; gap: .7rem; margin-top: .8rem; padding: .85rem 1rem; }
+.cc-movement-detail strong, .cc-movement-detail small { display: block; }
+.cc-movement-detail small { color: var(--text-muted); font-size: .68rem; margin-top: .15rem; }
+tr.row-link.is-selected > td { background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface)); }
+tr.row-link.is-reversed > td { color: var(--text-subtle); }

@@ -2699,6 +2699,8 @@ model KrediKartiHareket {
   cariId          String?               @map("cari_id") @db.Uuid
   faturaId        String?               @map("fatura_id") @db.Uuid
   bankaHareketId  String?               @unique @map("banka_hareket_id") @db.Uuid
+  /// KSB-08: bu kayıt, kapalı dönemdeki bir hareketin ters kaydıdır.
+  geriAlinanHareketId String?           @unique @map("geri_alinan_hareket_id") @db.Uuid
   createdAt       DateTime              @default(now()) @map("created_at")
   tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   krediKarti      KrediKarti            @relation(fields: [krediKartiId], references: [id], onDelete: Cascade)
@@ -2996,6 +2998,10 @@ model CekSenetOlay {
   islemTarihi DateTime       @map("islem_tarihi") @db.Date
   aciklama    String?
   userId      String         @map("user_id") @db.Uuid
+  /// KSB-08: bu olay sonradan geri alındı (etkisi silindi ya da ters kaydı atıldı).
+  geriAlindi  Boolean        @default(false) @map("geri_alindi")
+  /// KSB-08: bu olay, önceki bir olayın geri alınmasıdır; kendisi geri alınamaz.
+  geriAlma    Boolean        @default(false) @map("geri_alma")
   createdAt   DateTime       @default(now()) @map("created_at")
 
   cekSenet CekSenet @relation(fields: [cekSenetId], references: [id], onDelete: Cascade)

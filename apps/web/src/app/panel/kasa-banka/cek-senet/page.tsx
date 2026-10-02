@@ -19,6 +19,7 @@ import {
 } from "@/components/ui";
 import { AramaSecici } from "@/components/arama-secici";
 import { bugunTR } from "@tekirextra/shared";
+import { GeriAlmaFormu, type GeriAlmaYontemi } from "@/components/geri-alma-formu";
 
 /* ─── Tipler ─────────────────────────────────────────────────────────────── */
 
@@ -56,7 +57,7 @@ interface CekSenet {
   fizikselKonum: string | null;
   cari: CariOzet | null;
   ciroCari: CariOzet | null;
-  olaylar?: { id:string; oncekiDurum:string|null; yeniDurum:string; islemTarihi:string; aciklama:string|null; createdAt:string }[];
+  olaylar?: { id:string; oncekiDurum:string|null; yeniDurum:string; islemTarihi:string; aciklama:string|null; createdAt:string; geriAlindi?:boolean; geriAlma?:boolean }[];
 }
 
 interface PortfoyOzet { acik:{adet:number;toplamTry:string;dovizler:Record<string,string>}; geciken:{adet:number;toplamTry:string}; yaklasan:{adet:number;toplamTry:string}; bankada:{adet:number;toplamTry:string}; ciro:{adet:number;toplamTry:string}; karsiliksiz:{adet:number;toplamTry:string} }
@@ -142,6 +143,7 @@ export default function CekSenetSayfasi() {
   const [vadeBitis, setVadeBitis] = useState("");
   const [ozet, setOzet] = useState<PortfoyOzet|null>(null);
   const [detay, setDetay] = useState<CekSenet|null>(null);
+  const [geriAlAcik, setGeriAlAcik] = useState(false);
   const [formAcik, setFormAcik] = useState(false);
   const [islemYapilan, setIslemYapilan] = useState<{ kayit: CekSenet; durum: string } | null>(null);
   const [hata, setHata] = useState("");
@@ -176,7 +178,7 @@ export default function CekSenetSayfasi() {
     void api<Hesap[]>("/kasa-banka/bankalar").then(setBankalar).catch(() => {});
   }, []);
 
-  async function detayAc(id:string){try{setDetay(await api<CekSenet>(`/kasa-banka/cek-senet/${id}`));}catch(h){setHata(h instanceof Error?h.message:"Detay yüklenemedi");}}
+  async function detayAc(id:string){setGeriAlAcik(false);try{setDetay(await api<CekSenet>(`/kasa-banka/cek-senet/${id}`));}catch(h){setHata(h instanceof Error?h.message:"Detay yüklenemedi");}}
 
   async function durumGuncelle(govde: Record<string, unknown>) {
     if (!islemYapilan) return;
@@ -391,10 +393,62 @@ export default function CekSenetSayfasi() {
         </TableWrap>
       </Card>
 
-      {detay&&<Card className="stack" style={{marginTop:"1.5rem",borderColor:"var(--accent)"}}>
-        <div className="between"><div><div className="card__title" style={{margin:0}}>{detay.portfoyNo} · İşlem geçmişi</div><p className="muted" style={{margin:".35rem 0 0"}}>{detay.cari?.unvan??detay.borclu} · {para(detay.tutar,detay.dovizCinsi)} · {detay.fizikselKonum??"Konum belirtilmedi"}</p></div><Button size="sm" onClick={()=>setDetay(null)}>Kapat</Button></div>
-        <div className="stack" style={{gap:".65rem"}}>{detay.olaylar?.map(o=><div key={o.id} className="between" style={{padding:".8rem 1rem",border:"1px solid var(--border)",borderRadius:"10px"}}><div><strong>{DURUMLAR[o.yeniDurum]?.baslik??o.yeniDurum}</strong><div className="muted" style={{fontSize:".82rem"}}>{o.oncekiDurum?`${DURUMLAR[o.oncekiDurum]?.baslik??o.oncekiDurum} durumundan geçildi`:"Başlangıç kaydı"}{o.aciklama?` · ${o.aciklama}`:""}</div></div><span className="mono">{new Date(o.createdAt).toLocaleString("tr-TR")}</span></div>)}{!detay.olaylar?.length&&<p className="empty">İşlem geçmişi bulunamadı.</p>}</div>
-      </Card>}
+      {detay && (() => {
+        // KSB-08: geri alınabilecek son işlem — geri alınmamış, kendisi geri alma olmayan en yeni olay.
+        const sonIslem = detay.olaylar?.find((o) => !o.geriAlindi && !o.geriAlma);
+        return (
+          <Card className="stack cheque-history">
+            <div className="between">
+              <div>
+                <div className="card__title" style={{ margin: 0 }}>{detay.portfoyNo} · İşlem geçmişi</div>
+                <p className="muted" style={{ margin: ".35rem 0 0" }}>{detay.cari?.unvan ?? detay.borclu} · {para(detay.tutar, detay.dovizCinsi)} · {detay.fizikselKonum ?? "Konum belirtilmedi"}</p>
+              </div>
+              <div className="row-tight">
+                {sonIslem && !geriAlAcik && (
+                  <Button size="sm" variant="danger" onClick={() => setGeriAlAcik(true)}>
+                    {sonIslem.oncekiDurum ? "Son işlemi geri al" : "Kaydı geri al"}
+                  </Button>
+                )}
+                <Button size="sm" onClick={() => { setDetay(null); setGeriAlAcik(false); }}>Kapat</Button>
+              </div>
+            </div>
+            {geriAlAcik && sonIslem && (
+              <GeriAlmaFormu<{ yontem: GeriAlmaYontemi; silindi: boolean }>
+                baslik={sonIslem.oncekiDurum ? "Son işlemi geri al" : "Kaydı geri al"}
+                uc={`/kasa-banka/cek-senet/${detay.id}/geri-al`}
+                aciklama={sonIslem.oncekiDurum
+                  ? <>Evrak <strong>{DURUMLAR[sonIslem.oncekiDurum]?.baslik ?? sonIslem.oncekiDurum}</strong> durumuna döner; bu işlemin yazdığı tahsil/ödeme fişi ve cari hareketi de geri alınır.</>
+                  : "Evrak ve carisine yazılan hareket kaldırılır."}
+                onVazgec={() => setGeriAlAcik(false)}
+                onTamam={async (sonuc) => {
+                  setGeriAlAcik(false);
+                  setBasari(sonuc.silindi ? "Çek/senet kaydı geri alındı ve silindi."
+                    : sonuc.yontem === "ters_kayit" ? "Dönem kapalı olduğu için bugün tarihli ters kayıt atıldı; evrakın son işlemi geri alındı."
+                    : "Son işlem geri alındı; evrak önceki durumuna döndü.");
+                  if (sonuc.silindi) setDetay(null); else await detayAc(detay.id);
+                  await yukle();
+                }}
+              />
+            )}
+            <div className="stack" style={{ gap: ".65rem" }}>
+              {detay.olaylar?.map((o) => (
+                <div key={o.id} className={`between cheque-history__event${o.geriAlindi ? " is-undone" : ""}`}>
+                  <div>
+                    <strong>{DURUMLAR[o.yeniDurum]?.baslik ?? o.yeniDurum}</strong>{" "}
+                    {o.geriAlma && <Badge variant="warning">Geri alma</Badge>}
+                    {o.geriAlindi && <Badge variant="neutral">Geri alındı</Badge>}
+                    <div className="muted" style={{ fontSize: ".82rem" }}>
+                      {o.oncekiDurum ? `${DURUMLAR[o.oncekiDurum]?.baslik ?? o.oncekiDurum} durumundan geçildi` : "Başlangıç kaydı"}{o.aciklama ? ` · ${o.aciklama}` : ""}
+                    </div>
+                  </div>
+                  <span className="mono">{new Date(o.createdAt).toLocaleString("tr-TR")}</span>
+                </div>
+              ))}
+              {!detay.olaylar?.length && <p className="empty">İşlem geçmişi bulunamadı.</p>}
+            </div>
+          </Card>
+        );
+      })()}
 
       {islemYapilan && (
         <DurumKarti

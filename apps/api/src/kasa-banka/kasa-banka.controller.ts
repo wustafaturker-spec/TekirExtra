@@ -31,6 +31,7 @@ import {
   cekSenetOlusturSemasi,
   ekstreEslestirSemasi,
   ekstreYukleSemasi,
+  geriAlmaSemasi,
   kasaBankaHareketOlusturSemasi,
   kasaGuncelleSemasi,
   kasaOlusturSemasi,
@@ -278,6 +279,14 @@ export class KasaBankaController {
     return this.service.cekSenetOzet(yon);
   }
 
+  /** KSB-08: çek/senedin son işlemini geri alır. */
+  @Post("cek-senet/:id/geri-al")
+  @Roller("muhasebe")
+  async cekSenetGeriAl(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
+    const { neden } = ayristir(geriAlmaSemasi, govde);
+    return this.service.cekSenetSonIslemiGeriAl(id, neden);
+  }
+
   @Get("cek-senet/:id")
   async cekSenetGetir(@Param("id") id: string) {
     return this.service.cekSenetGetir(id);
@@ -408,11 +417,6 @@ export class KasaBankaController {
     return this.ekstre.geriAl(id);
   }
 }
-
-/** KSB-08: geri alma ve düzeltmede gerekçe zorunludur; denetim izine yazılır. */
-const geriAlmaSemasi = z.object({
-  neden: z.string().trim().min(3, "Geri alma gerekçesi en az 3 karakter olmalıdır").max(300),
-});
 
 function ayristir<T extends z.ZodType>(sema: T, govde: unknown): z.infer<T> {
   const sonuc = sema.safeParse(govde);
