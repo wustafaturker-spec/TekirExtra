@@ -2690,6 +2690,8 @@ model KrediKartiHareket {
   tutar           Decimal               @db.Decimal(15, 2)
   /// Karttan çekilen toplamın cari borca uygulanan bölümü.
   cariOdemeTutari Decimal?              @map("cari_odeme_tutari") @db.Decimal(15, 2)
+  /// KSB-07: cari ödemenin bağlı faturaya mahsup edilen kısmı (en fazla kalan).
+  faturaMahsubu   Decimal?              @map("fatura_mahsubu") @db.Decimal(15, 2)
   komisyonTutari  Decimal               @default(0) @map("komisyon_tutari") @db.Decimal(15, 2)
   taksitSayisi    Int                   @default(1) @map("taksit_sayisi")
   ilkTaksitTarihi DateTime?             @map("ilk_taksit_tarihi") @db.Date
@@ -2917,6 +2919,12 @@ model KasaBankaHareket {
   aciklama          String?
   cariId            String?             @map("cari_id") @db.Uuid
   faturaId          String?             @map("fatura_id") @db.Uuid
+  /// KSB-07: ödemenin bağlı faturanın dövizindeki tam karşılığı; cari hareketi
+  /// bu tutarla fatura dövizinde yazılır. Aynı dövizde `tutar`a eşittir.
+  faturaKarsiligi   Decimal?            @map("fatura_karsiligi") @db.Decimal(15, 2)
+  /// KSB-07: karşılığın faturaya mahsup edilen kısmı (en fazla kalan); artanı
+  /// carinin avansı olarak bakiyede kalır. Faturanın kalanı yalnız bundan hesaplanır.
+  faturaMahsubu     Decimal?            @map("fatura_mahsubu") @db.Decimal(15, 2)
   karsiHareketId    String?             @map("karsi_hareket_id") @db.Uuid
   kaynakTur         String              @default("manuel") @map("kaynak_tur")
   kaynakRef         String?             @map("kaynak_ref")

@@ -10,6 +10,12 @@ vi.mock("../core/istek-baglami", () => ({
   }),
 }));
 
+// Fatura dövizinin işlem günü kuru: 1 USD = 30 TL.
+vi.mock("../doviz/kur-coz", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../doviz/kur-coz")>()),
+  kurZorunlu: vi.fn(async (_tx: unknown, doviz: string) => new Prisma.Decimal(doviz === "USD" ? "30" : "1")),
+}));
+
 describe("KasaBankaService (KSB-01..07)", () => {
   const mockTenantIslem = vi.fn();
   const mockPrisma = {
@@ -89,8 +95,10 @@ describe("KasaBankaService (KSB-01..07)", () => {
           dovizCinsi: "TRY",
           genelToplam: new Prisma.Decimal("500.00"),
           kasaBankaHarekets: [],
+          krediKartiHareketleri: [],
         }),
       },
+      $queryRaw: vi.fn().mockResolvedValue([]),
       kasaBankaHareket: {
         create: vi.fn().mockResolvedValue({ id: "h1" }),
       },
@@ -128,6 +136,8 @@ describe("KasaBankaService (KSB-01..07)", () => {
         aciklama: undefined,
         cariId: "cari-1",
         faturaId: "fatura-1",
+        faturaKarsiligi: new Prisma.Decimal("500.00"),
+        faturaMahsubu: new Prisma.Decimal("500.00"),
         kaynakTur: "fatura_kapama",
         kaynakRef: "fatura-1",
       },
@@ -183,5 +193,74 @@ describe("KasaBankaService (KSB-01..07)", () => {
     mockTenantIslem.mockImplementation((_tenantId, cb) => cb(tx));
     await service.posBankayaAktar({ posHesapId: "11111111-1111-4111-8111-111111111111", ekstreSatirId: "22222222-2222-4222-8222-222222222222", brutTutar: "100.00", komisyonTutar: "4.00", tarih: "2026-08-11" });
     expect(ekstreGuncelle).toHaveBeenCalledWith({ where: { id: "ekstre-1" }, data: { durum: "eslesti", hareketId: "gelis" } });
+  });
+});
+
+describe("KasaBankaService fatura kapama (KSB-07)", () => {
+  const mockTenantIslem = vi.fn();
+  const service = new KasaBankaService({ tenantIslem: mockTenantIslem } as any, {} as any, { tarihDogrula: vi.fn() } as any);
+
+  const kur = (deger: string) => new Prisma.Decimal(deger);
+  const islem = (fatura: Record<string, unknown>, hesapDovizi = "TRY") => {
+    const tx = {
+      bankaHesap: { findUnique: vi.fn().mockResolvedValue({ aktif: true, dovizCinsi: hesapDovizi }) },
+      cariHesap: { findFirst: vi.fn().mockResolvedValue({ id: "cari-1" }) },
+      fatura: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "fatura-1", no: "K07-1", tip: "satis", durum: "kesin", cariId: "cari-1",
+          dovizCinsi: "TRY", kur: kur("1"), krediKartiHareketleri: [], kasaBankaHarekets: [], ...fatura,
+        }),
+      },
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      kasaBankaHareket: { create: vi.fn(async ({ data }) => ({ id: "h1", ...data })) },
+      cariHareket: { create: vi.fn().mockResolvedValue({}) },
+    };
+    mockTenantIslem.mockImplementation((_t, cb) => cb(tx));
+    return tx;
+  };
+  const tahsilat = { bankaHesapId: "banka-1", tip: "tahsilat" as const, tarih: "2026-10-02", cariId: "cari-1", faturaId: "fatura-1" };
+
+  it("USD faturayı TL ile kapatınca cari hareketi USD karşılıkla yazar", async () => {
+    const tx = islem({ dovizCinsi: "USD", kur: kur("29.5"), genelToplam: kur("1000") });
+
+    const sonuc = await service.hareketEkle({ ...tahsilat, tutar: "30000", dovizCinsi: "TRY" });
+
+    expect(tx.kasaBankaHareket.create.mock.calls[0][0].data).toMatchObject({ faturaKarsiligi: kur("1000"), faturaMahsubu: kur("1000") });
+    expect(tx.cariHareket.create.mock.calls[0][0].data).toMatchObject({ dovizCinsi: "USD", tutar: kur("1000"), kur: kur("30"), tutarTry: kur("30000") });
+    expect(sonuc.faturaKapama).toEqual({ dovizCinsi: "USD", karsilik: "1000.00", mahsup: "1000.00", avans: "0.00" });
+  });
+
+  it("kullanıcının girdiği karşılık (banka kuru) TCMB kurunun yerine geçer", async () => {
+    const tx = islem({ dovizCinsi: "USD", kur: kur("29.5"), genelToplam: kur("1000") });
+
+    await service.hareketEkle({ ...tahsilat, tutar: "30000", dovizCinsi: "TRY", faturaKarsiligi: "985.22" });
+
+    expect(tx.kasaBankaHareket.create.mock.calls[0][0].data).toMatchObject({ faturaKarsiligi: kur("985.22"), faturaMahsubu: kur("985.22") });
+    expect(tx.cariHareket.create.mock.calls[0][0].data).toMatchObject({ dovizCinsi: "USD", tutar: kur("985.22") });
+  });
+
+  it("kalanı aşan ödemede kalan kadar mahsup eder, artanı avans bırakır", async () => {
+    const tx = islem({ genelToplam: kur("500"), kasaBankaHarekets: [{ faturaMahsubu: kur("200") }] });
+
+    const sonuc = await service.hareketEkle({ ...tahsilat, tutar: "450", dovizCinsi: "TRY" });
+
+    expect(tx.kasaBankaHareket.create.mock.calls[0][0].data).toMatchObject({ faturaKarsiligi: kur("450"), faturaMahsubu: kur("300") });
+    // Cariye ödemenin tamamı yazılır; 150 TL carinin avansı olarak kalır.
+    expect(tx.cariHareket.create.mock.calls[0][0].data).toMatchObject({ tutar: kur("450") });
+    expect(sonuc.faturaKapama).toMatchObject({ mahsup: "300.00", avans: "150.00" });
+  });
+
+  it("kapanmış faturaya ödeme bağlanmasını reddeder", async () => {
+    islem({ genelToplam: kur("500"), kasaBankaHarekets: [{ faturaMahsubu: kur("500") }] });
+
+    await expect(service.hareketEkle({ ...tahsilat, tutar: "10", dovizCinsi: "TRY" })).rejects.toThrow("zaten kapanmış");
+  });
+
+  it("faturayı satır kilidiyle okur (eşzamanlı iki ödeme aynı kalanı kullanamaz)", async () => {
+    const tx = islem({ genelToplam: kur("500") });
+
+    await service.hareketEkle({ ...tahsilat, tutar: "100", dovizCinsi: "TRY" });
+
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
   });
 });

@@ -195,6 +195,14 @@ export class KasaBankaController {
     return this.service.hareketListele(kasaId, bankaHesapId, posHesapId);
   }
 
+  /** KSB-07: tahsilat/ödeme fişinde carinin kalanı olan faturaları. */
+  @Get("acik-faturalar")
+  acikFaturalar(@Query("cariId") cariId?: string, @Query("tip") tip?: string) {
+    const girdi = z.object({ cariId: z.uuid(), tip: z.enum(["tahsilat", "tediye"]) }).safeParse({ cariId, tip });
+    if (!girdi.success) throw new BadRequestException("Cari ve işlem tipi (tahsilat/tediye) gereklidir");
+    return this.service.acikFaturalar(girdi.data.cariId, girdi.data.tip);
+  }
+
   @Post("hareketler")
   @Roller("muhasebe")
   async hareketEkle(@Body() govde: unknown) {

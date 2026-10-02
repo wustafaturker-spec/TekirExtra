@@ -200,6 +200,11 @@ interface FaturaDetay extends Fatura {
       tip: string;
       tutar: string;
       dovizCinsi: string;
+      /** KSB-07: faturaya mahsup edilen (fatura dövizinde) ve artan avans. */
+      mahsup: string;
+      avans: string;
+      /** Bilgi: mahsubun ödeme günü TL değeri ile fatura kurundaki TL değeri farkı. */
+      kurFarkiTry: string;
       tarih: string;
       aciklama: string | null;
       hesap: string;
@@ -1753,7 +1758,6 @@ export default function FaturaSayfasi() {
       islem,
       cariId: fatura.cari.id,
       faturaId: fatura.id,
-      tutar: fatura.odemeOzeti.kalan,
       aciklama: `${fatura.no ?? "Fatura"} ${islem === "tahsilat" ? "tahsilatı" : "ödemesi"}`,
     });
     window.location.href = `/panel/kasa-banka?${parametreler.toString()}`;
@@ -3514,8 +3518,12 @@ export default function FaturaSayfasi() {
                 <div className="status-history__item is-complete" key={hareket.id}>
                   <span />
                   <div>
-                    <strong>{hareket.tip === "tahsilat" ? "Tahsilat" : "Ödeme"} · {Number(hareket.tutar).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {hareket.dovizCinsi}</strong>
+                    <strong>{hareket.tip === "tahsilat" ? "Tahsilat" : hareket.tip === "kredi_karti" ? "Kredi kartı" : "Ödeme"} · {tl(hareket.tutar, hareket.dovizCinsi)}</strong>
                     <small>{hareket.tarih} · {hareket.hesap}{hareket.aciklama ? ` · ${hareket.aciklama}` : ""}</small>
+                    {(hareket.dovizCinsi !== odemeDetayi.dovizCinsi || Number(hareket.avans) > 0) && (
+                      <small>Faturaya mahsup {tl(hareket.mahsup, odemeDetayi.dovizCinsi)}{Number(hareket.avans) > 0 ? ` · avans ${tl(hareket.avans, odemeDetayi.dovizCinsi)}` : ""}</small>
+                    )}
+                    {Number(hareket.kurFarkiTry) !== 0 && <small>Kur farkı {tl(hareket.kurFarkiTry, "TRY")} (bilgi)</small>}
                   </div>
                 </div>
               ))}

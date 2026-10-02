@@ -8,6 +8,7 @@ import { takiliRezervasyonKosulu } from "../ebelge/takili-rezervasyon";
 import { yerlesmisHataKosulu } from "../ebelge/yerlesmis-hata";
 import { VARSAYILAN_TOLERANS_YUZDE, farkAciklamasi, ucluEslestir } from "../satin-alma/uclu-eslestirme";
 import type { duzeltmeListeSemasi } from "./duzeltmeler.semalar";
+import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
 
 type ListeGirdisi = z.infer<typeof duzeltmeListeSemasi>;
 type Tespit = {
@@ -104,7 +105,7 @@ export class DuzeltmelerService {
         tx.stokDepoBakiye.findMany({ where: { mevcutMiktar: { lt: 0 } }, select: { id: true, mevcutMiktar: true, stok: { select: { kod: true, ad: true } }, depo: { select: { ad: true } } }, take: 2_000 }),
         tx.sayim.findMany({ where: { durum: "taslak" }, select: { id: true, tarih: true, aciklama: true, depo: { select: { ad: true } }, kalemler: { select: { sistemMiktar: true, fiiliMiktar: true } } }, take: 2_000 }),
         tx.cekSenet.findMany({ where: { vadeTarihi: { lt: bugun }, durum: { in: ["portfoyde", "tahsile_verildi", "teminata_verildi", "ciro_edildi", "verildi"] } }, select: { id: true, portfoyNo: true, vadeTarihi: true, tutar: true, durum: true }, take: 2_000 }),
-        tx.fatura.findMany({ where: { durum: "kesin" }, select: { id: true, no: true, genelToplam: true, kasaBankaHarekets: { select: { tutar: true } }, krediKartiHareketleri: { select: { cariOdemeTutari: true } } }, take: 2_000 }),
+        tx.fatura.findMany({ where: { durum: "kesin" }, select: { id: true, no: true, durum: true, genelToplam: true, ...FATURA_ODEME_SECIMI }, take: 2_000 }),
         // SAT-11: kaynağı olan kesin alış faturaları üçlü eşleştirmeye girer.
         tx.fatura.findMany({
           where: { tip: "alis", durum: "kesin", zincirBelgeleri: { some: { durum: { not: "iptal" } } } },
@@ -143,8 +144,8 @@ export class DuzeltmelerService {
         return farklar.length > 0 ? [{ fatura, farklar }] : [];
       });
       const odemesiAsanFaturalar = faturalar.flatMap((fatura) => {
-        const odenen = fatura.kasaBankaHarekets.reduce((toplam, hareket) => toplam + Number(hareket.tutar), 0)
-          + fatura.krediKartiHareketleri.reduce((toplam, hareket) => toplam + Number(hareket.cariOdemeTutari ?? 0), 0);
+        // Yeni ödemeler kalan kadar mahsup edilir; aşım yalnız eski kayıtlarda kalabilir.
+        const odenen = Number(faturaOdemeDurumu(fatura).odenen);
         return odenen > Number(fatura.genelToplam) + 0.01 ? [{ ...fatura, odenen }] : [];
       });
       const farkliTaslakSayimlar = sayimlar.flatMap((sayim) => {

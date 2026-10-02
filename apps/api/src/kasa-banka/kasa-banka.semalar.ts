@@ -55,6 +55,12 @@ export const kasaBankaHareketOlusturSemasi = z.object({
   aciklama: z.string().max(500).optional().nullable(),
   cariId: z.string().uuid().optional().nullable(),
   faturaId: z.string().uuid().optional().nullable(), // fatura kapama için (KSB-07)
+  /**
+   * KSB-07: hesap dövizi faturanınkinden farklıysa ödemenin fatura dövizindeki
+   * karşılığı (bankanın uyguladığı kurla). Boşsa işlem günü kuruyla hesaplanır;
+   * aynı dövizde yok sayılır.
+   */
+  faturaKarsiligi: pozitifOndalik.optional().nullable(),
 }).refine((data) => [data.kasaId, data.bankaHesapId, data.posHesapId].filter(Boolean).length === 1, {
   message: "Kasa, banka veya POS hesaplarından yalnızca biri seçilmelidir",
   path: ["kasaId"],

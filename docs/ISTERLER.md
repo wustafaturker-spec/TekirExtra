@@ -477,6 +477,22 @@ saklanmaz, istendiğinde XML'den üretilir.
 | KSB-06 | Banka ekstresi (CSV/OFX) içe aktarılıp hareketlerle eşleştirilebilmelidir (otomatik banka bağlantısı için bkz. ENT-06). | G — ✅ 2026-08-05 (CSV; OFX kapsam dışı) |
 | KSB-07 | Fatura üzerinden doğrudan tahsilat/ödeme kaydı oluşturulabilmelidir (kapama). | Z |
 
+> **KSB-07 kapama kuralı (karar 2026-10-02).** Faturanın ödeme durumu tek
+> kaynaktan hesaplanır (`apps/api/src/fatura/odeme-durumu.ts`): kalan yalnız
+> ödemelerin **fatura dövizindeki mahsubundan** (`faturaMahsubu`) çıkar;
+> kasa/banka, POS ve kredi kartı ödemeleri birlikte sayılır.
+> - **Farklı dövizle kapama serbesttir** (ör. USD fatura TL bankadan). Fişte
+>   ödemenin fatura dövizindeki karşılığı işlem günü TCMB satış kuruyla önerilir;
+>   banka farklı kur uyguladıysa kullanıcı kuru düzeltir. Cari hareketi faturanın
+>   dövizinde yazılır, böylece cari tek dövizde netleşir.
+> - **Fazla ödeme avanstır:** faturaya en fazla kalan kadar mahsup edilir, aşan
+>   kısım carinin avansı (alacağı/borcu) olarak bakiyede kalır. Kapanmış faturaya
+>   yeni ödeme bağlanamaz.
+> - Aynı faturaya eşzamanlı iki ödeme satır kilidiyle sıraya girer.
+> - Kur farkı (mahsubun ödeme günü TL değeri − fatura kurundaki TL değeri) şimdilik
+>   yalnız **bilgi** olarak gösterilir; muhasebe kaydı ayrı karardır (finans
+>   raporu P1-2).
+
 > **KSB-06 uygulama notu (2026-08-05).** Ekran: `/panel/kasa-banka/ekstre`.
 > Akış gelen e-Belge kutusuyla aynı: satırlar önce **muhasebeye dokunmadan**
 > `BankaEkstreSatir` kutusuna düşer, onayla `KasaBankaHareket` üretilir.

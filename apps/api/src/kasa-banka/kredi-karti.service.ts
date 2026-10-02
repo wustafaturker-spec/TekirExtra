@@ -4,6 +4,8 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
+import { faturaKilitleVeKalaniGetir, mahsupAyir } from "../fatura/odeme-durumu";
+import { kurZorunlu } from "../doviz/kur-coz";
 import type { krediKartiCariOdemeSemasi, krediKartiEkstreOdemeSemasi, krediKartiHareketSemasi, krediKartiOlusturSemasi } from "./kredi-karti.semalar";
 
 const D = (deger: Prisma.Decimal.Value) => new Prisma.Decimal(deger);
@@ -63,17 +65,21 @@ export class KrediKartiService {
       const [kart, cari] = await Promise.all([tx.krediKarti.findUnique({ where: { id: girdi.krediKartiId, tenantId } }), tx.cariHesap.findUnique({ where: { id: girdi.cariId } })]);
       if (!kart?.aktif) throw new NotFoundException("Aktif kredi kartı hesabı bulunamadı"); if (!cari?.aktif) throw new NotFoundException("Aktif cari hesap bulunamadı");
       if (kart.dovizCinsi !== cari.dovizCinsi) throw new BadRequestException("Kart ve cari hesabın para birimleri aynı olmalıdır");
+      // KSB-07: faturaya kalan kadar mahsup edilir, artanı tedarikçide avans kalır.
+      let faturaMahsubu: Prisma.Decimal | null = null;
       if (girdi.faturaId) {
-        const fatura = await tx.fatura.findUnique({ where: { id: girdi.faturaId }, include: { kasaBankaHarekets: { select: { tutar: true } }, krediKartiHareketleri: { select: { cariOdemeTutari: true } } } });
-        if (!fatura || fatura.cariId !== cari.id || fatura.durum !== "kesin" || !["alis", "satis_iade"].includes(fatura.tip)) throw new BadRequestException("Yalnızca seçili carinin kesinleşmiş alış borcu ödenebilir");
+        const fatura = await faturaKilitleVeKalaniGetir(tx, girdi.faturaId);
+        if (fatura.cariId !== cari.id || fatura.durum !== "kesin" || !["alis", "satis_iade"].includes(fatura.tip)) throw new BadRequestException("Yalnızca seçili carinin kesinleşmiş alış borcu ödenebilir");
         if (fatura.dovizCinsi !== kart.dovizCinsi) throw new BadRequestException("Fatura ve kart para birimleri aynı olmalıdır");
-        const onceki = fatura.kasaBankaHarekets.reduce((t, h) => t.add(h.tutar), D(0)).add(fatura.krediKartiHareketleri.reduce((t, h) => t.add(h.cariOdemeTutari ?? 0), D(0))); const kalan = Prisma.Decimal.max(fatura.genelToplam.sub(onceki), 0);
-        if (cariTutar.gt(kalan)) throw new BadRequestException(`Ödeme kalan ${kalan.toFixed(2)} ${fatura.dovizCinsi} tutarını aşamaz`);
+        if (fatura.kalan.isZero()) throw new BadRequestException(`${fatura.no ?? "Fatura"} zaten kapanmış; ödemeyi faturaya bağlamadan cariye işleyin`);
+        faturaMahsubu = mahsupAyir(cariTutar, fatura.kalan).mahsup;
       }
-      const hareket = await tx.krediKartiHareket.create({ data: { tenantId, krediKartiId: kart.id, tip: "harcama", tarih, aciklama: girdi.aciklama, tutar: toplam, cariOdemeTutari: cariTutar, komisyonTutari: komisyon, taksitSayisi: girdi.taksitSayisi, ilkTaksitTarihi: new Date(girdi.ilkTaksitTarihi), belgeNo: girdi.belgeNo, cariId: cari.id, faturaId: girdi.faturaId } });
+      const hareket = await tx.krediKartiHareket.create({ data: { tenantId, krediKartiId: kart.id, tip: "harcama", tarih, aciklama: girdi.aciklama, tutar: toplam, cariOdemeTutari: cariTutar, faturaMahsubu, komisyonTutari: komisyon, taksitSayisi: girdi.taksitSayisi, ilkTaksitTarihi: new Date(girdi.ilkTaksitTarihi), belgeNo: girdi.belgeNo, cariId: cari.id, faturaId: girdi.faturaId } });
       await tx.krediKartiTaksit.createMany({ data: taksitVerileri(tenantId, hareket.id, toplam, girdi.taksitSayisi, new Date(girdi.ilkTaksitTarihi)) });
       const kartBilgisi = `${kart.ad} •••• ${kart.sonDortHane}${girdi.taksitSayisi > 1 ? ` · ${girdi.taksitSayisi} taksit` : " · tek çekim"}${komisyon.gt(0) ? ` · ${komisyon.toFixed(2)} ${kart.dovizCinsi} komisyon/vade farkı` : ""}`;
-      await tx.cariHareket.create({ data: { tenantId, cariId: cari.id, tip: "borc", tutar: cariTutar, dovizCinsi: kart.dovizCinsi, kur: 1, tutarTry: cariTutar, tarih, aciklama: `${girdi.aciklama} · Kredi kartı: ${kartBilgisi}`, kaynakTur: "kredi_karti", kaynakRef: hareket.id } });
+      // Dövizli kartta TL karşılığı işlem günü kuruyla hesaplanır; kur 1 varsayılmaz.
+      const kur = kart.dovizCinsi === "TRY" ? D(1) : await kurZorunlu(tx, kart.dovizCinsi, tarih);
+      await tx.cariHareket.create({ data: { tenantId, cariId: cari.id, tip: "borc", tutar: cariTutar, dovizCinsi: kart.dovizCinsi, kur, tutarTry: cariTutar.mul(kur).toDecimalPlaces(2), tarih, aciklama: `${girdi.aciklama} · Kredi kartı: ${kartBilgisi}`, kaynakTur: "kredi_karti", kaynakRef: hareket.id } });
       return hareket;
     });
   }
@@ -85,7 +91,8 @@ export class KrediKartiService {
       const [kart, banka] = await Promise.all([tx.krediKarti.findUnique({ where: { id: girdi.krediKartiId, tenantId }, include: { hareketler: { select: { tip: true, tutar: true } } } }), tx.bankaHesap.findUnique({ where: { id: girdi.bankaHesapId } })]);
       if (!kart?.aktif || !banka?.aktif) throw new NotFoundException("Aktif kredi kartı veya banka hesabı bulunamadı"); if (kart.dovizCinsi !== banka.dovizCinsi) throw new BadRequestException("Kart ve banka hesabı para birimleri aynı olmalıdır");
       const borc = kart.hareketler.reduce((t, h) => t.add(["harcama", "faiz", "aidat"].includes(h.tip) ? h.tutar : h.tutar.negated()), D(0)); if (tutar.gt(Prisma.Decimal.max(0, borc))) throw new BadRequestException(`Ödeme güncel ${Prisma.Decimal.max(0, borc).toFixed(2)} ${kart.dovizCinsi} kart borcunu aşamaz`);
-      const bankaHareket = await tx.kasaBankaHareket.create({ data: { tenantId, bankaHesapId: banka.id, tip: "tediye", tutar, dovizCinsi: kart.dovizCinsi, kur: 1, tutarTry: tutar, tarih, aciklama: girdi.aciklama, kaynakTur: "kredi_karti_ekstre" } });
+      const kur = kart.dovizCinsi === "TRY" ? D(1) : await kurZorunlu(tx, kart.dovizCinsi, tarih);
+      const bankaHareket = await tx.kasaBankaHareket.create({ data: { tenantId, bankaHesapId: banka.id, tip: "tediye", tutar, dovizCinsi: kart.dovizCinsi, kur, tutarTry: tutar.mul(kur).toDecimalPlaces(2), tarih, aciklama: girdi.aciklama, kaynakTur: "kredi_karti_ekstre" } });
       const hareket = await tx.krediKartiHareket.create({ data: { tenantId, krediKartiId: kart.id, tip: "odeme", tarih, aciklama: girdi.aciklama, tutar, taksitSayisi: 1, belgeNo: girdi.belgeNo, bankaHareketId: bankaHareket.id } });
       await tx.kasaBankaHareket.update({ where: { id: bankaHareket.id }, data: { kaynakRef: hareket.id } }); return hareket;
     });

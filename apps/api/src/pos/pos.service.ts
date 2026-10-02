@@ -12,6 +12,18 @@ import { randomBytes } from "node:crypto";
 import { adSoyadCoz } from "../cari/ad-soyad";
 import { PdfService } from "../core/pdf/pdf.service";
 import { makbuzPdfHtml } from "../kasa-banka/makbuz-pdf";
+import { faturaKilitleVeKalaniGetir, mahsupAyir } from "../fatura/odeme-durumu";
+
+/**
+ * KSB-07: POS tahsilatı faturayla aynı dövizdedir; kalan kadar mahsup edilir.
+ * Ödeme sağlayıcıda zaten gerçekleştiği için fatura bu arada kapanmışsa
+ * reddedilmez, tamamı carinin avansı olarak kalır.
+ */
+async function posFaturaKapamasi(tx: Prisma.TransactionClient, faturaId: string | null, tutar: Prisma.Decimal) {
+  if (!faturaId) return {};
+  const fatura = await faturaKilitleVeKalaniGetir(tx, faturaId);
+  return { faturaKarsiligi: tutar, faturaMahsubu: mahsupAyir(tutar, fatura.kalan).mahsup };
+}
 
 @Injectable()
 export class PosService {
@@ -70,7 +82,7 @@ export class PosService {
 
   private async odemeyiKaydet(tenantId: string, kayit: any, odemeId: string, aciklama: string) {
     if (kayit.durum === "odendi") return { basarili: true, tekrar: true, makbuzAnahtari: kayit.makbuzAnahtari };
-    return this.prisma.tenantIslem(tenantId, async (tx) => { const simdi = new Date(); const hak = await tx.posTahsilat.updateMany({ where: { id: kayit.id, durum: "baslatildi", hareketId: null }, data: { durum: "odendi", saglayiciOdemeId: odemeId, odemeTarihi: simdi, hataMesaji: null } }); if (hak.count !== 1) return { basarili: true, tekrar: true, makbuzAnahtari: kayit.makbuzAnahtari }; const kur = kayit.dovizCinsi === "TRY" ? new Prisma.Decimal(1) : await kurZorunlu(tx, kayit.dovizCinsi, simdi, "satis", tenantId); const tutarTry = kayit.tutar.mul(kur).toDecimalPlaces(2); const hareket = await tx.kasaBankaHareket.create({ data: { tenantId, posHesapId: kayit.posHesapId, tip: "tahsilat", tutar: kayit.tutar, dovizCinsi: kayit.dovizCinsi, kur, tutarTry, tarih: simdi, cariId: kayit.cariId, faturaId: kayit.faturaId, aciklama, kaynakTur: "pos_tahsilat", kaynakRef: kayit.id } }); await tx.cariHareket.create({ data: { tenantId, cariId: kayit.cariId, tip: "alacak", tutar: kayit.tutar, dovizCinsi: kayit.dovizCinsi, kur, tutarTry, tarih: simdi, aciklama, kaynakTur: "pos_tahsilat", kaynakRef: kayit.id } }); await tx.posTahsilat.update({ where: { id: kayit.id }, data: { hareketId: hareket.id } }); return { basarili: true, tekrar: false, makbuzAnahtari: kayit.makbuzAnahtari }; });
+    return this.prisma.tenantIslem(tenantId, async (tx) => { const simdi = new Date(); const hak = await tx.posTahsilat.updateMany({ where: { id: kayit.id, durum: "baslatildi", hareketId: null }, data: { durum: "odendi", saglayiciOdemeId: odemeId, odemeTarihi: simdi, hataMesaji: null } }); if (hak.count !== 1) return { basarili: true, tekrar: true, makbuzAnahtari: kayit.makbuzAnahtari }; const kur = kayit.dovizCinsi === "TRY" ? new Prisma.Decimal(1) : await kurZorunlu(tx, kayit.dovizCinsi, simdi, "satis", tenantId); const tutarTry = kayit.tutar.mul(kur).toDecimalPlaces(2); const hareket = await tx.kasaBankaHareket.create({ data: { tenantId, posHesapId: kayit.posHesapId, tip: "tahsilat", tutar: kayit.tutar, dovizCinsi: kayit.dovizCinsi, kur, tutarTry, tarih: simdi, cariId: kayit.cariId, faturaId: kayit.faturaId, ...(await posFaturaKapamasi(tx, kayit.faturaId, kayit.tutar)), aciklama, kaynakTur: "pos_tahsilat", kaynakRef: kayit.id } }); await tx.cariHareket.create({ data: { tenantId, cariId: kayit.cariId, tip: "alacak", tutar: kayit.tutar, dovizCinsi: kayit.dovizCinsi, kur, tutarTry, tarih: simdi, aciklama, kaynakTur: "pos_tahsilat", kaynakRef: kayit.id } }); await tx.posTahsilat.update({ where: { id: kayit.id }, data: { hareketId: hareket.id } }); return { basarili: true, tekrar: false, makbuzAnahtari: kayit.makbuzAnahtari }; });
   }
 
   async epostaYenidenGonder(id: string) {
@@ -125,7 +137,7 @@ export class PosService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const simdi = new Date(); const hak = await tx.posTahsilat.updateMany({ where: { id: kayit.id, durum: "baslatildi", hareketId: null }, data: { durum: "odendi", saglayiciOdemeId: sonuc.odemeId, odemeTarihi: simdi, hataMesaji: null } }); if (hak.count !== 1) return { basarili: true, tekrar: true, makbuzAnahtari: kayit.makbuzAnahtari };
       const kur = kayit.dovizCinsi === "TRY" ? new Prisma.Decimal(1) : await kurZorunlu(tx, kayit.dovizCinsi, simdi, "satis", tenantId); const tutarTry = kayit.tutar.mul(kur).toDecimalPlaces(2);
-      const hareket = await tx.kasaBankaHareket.create({ data: { tenantId, posHesapId: kayit.posHesapId, tip: "tahsilat", tutar: kayit.tutar, dovizCinsi: kayit.dovizCinsi, kur, tutarTry, tarih: simdi, cariId: kayit.cariId, faturaId: kayit.faturaId, aciklama: "iyzico kart tahsilatı", kaynakTur: "pos_tahsilat", kaynakRef: kayit.id } });
+      const hareket = await tx.kasaBankaHareket.create({ data: { tenantId, posHesapId: kayit.posHesapId, tip: "tahsilat", tutar: kayit.tutar, dovizCinsi: kayit.dovizCinsi, kur, tutarTry, tarih: simdi, cariId: kayit.cariId, faturaId: kayit.faturaId, ...(await posFaturaKapamasi(tx, kayit.faturaId, kayit.tutar)), aciklama: "iyzico kart tahsilatı", kaynakTur: "pos_tahsilat", kaynakRef: kayit.id } });
       await tx.cariHareket.create({ data: { tenantId, cariId: kayit.cariId, tip: "alacak", tutar: kayit.tutar, dovizCinsi: kayit.dovizCinsi, kur, tutarTry, tarih: simdi, aciklama: "iyzico kart tahsilatı", kaynakTur: "pos_tahsilat", kaynakRef: kayit.id } });
       await tx.posTahsilat.update({ where: { id: kayit.id }, data: { hareketId: hareket.id } }); return { basarili: true, tekrar: false, makbuzAnahtari: kayit.makbuzAnahtari };
     });

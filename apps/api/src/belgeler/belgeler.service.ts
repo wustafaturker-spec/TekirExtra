@@ -43,6 +43,7 @@ import { tedarikciCariBulVeyaOlustur } from "../cari/tedarikci-cari";
 import { eslesmeRaporu, faturaIrsaliyeAdaylari, irsaliyeAlisFiyati, irsaliyeSatirOnerileri } from "./irsaliye-eslesme";
 import { tedarikciKodlariniOgren } from "../ebelge/stok-eslesme";
 import { belgeOlusturSemasi } from "./belgeler.semalar";
+import { FATURA_ODEME_SECIMI, faturaOdemeDurumu, odemeOzetiGorunumu } from "../fatura/odeme-durumu";
 import type {
   belgeGuncelleSemasi,
   eslesmeRaporuSemasi,
@@ -309,7 +310,7 @@ export class BelgelerService {
             select: {
               id: true, no: true, durum: true, genelToplam: true,
               ebelge: { select: { tur: true, durum: true } },
-              kasaBankaHarekets: { select: { tutar: true } },
+              ...FATURA_ODEME_SECIMI,
             },
           },
           eirsaliye: { select: { durum: true, entegratorRef: true, hataMesaji: true, aliciKayitsiz: true, geciciHata: true, yenidenDenemeSayisi: true } },
@@ -383,21 +384,13 @@ export class BelgelerService {
       zincirBelgeleri: [...zincirBelgeleri.values()],
       kaynakBelge: kayit.kaynakBelge,
       turetilenler: kayit.turetilenler,
-      fatura: kayit.fatura ? (() => {
-        const odenen = kayit.fatura.kasaBankaHarekets.reduce((toplam, hareket) => toplam.add(hareket.tutar), D(0));
-        const kalan = Prisma.Decimal.max(kayit.fatura.genelToplam.sub(odenen), 0);
-        return {
-          id: kayit.fatura.id,
-          no: kayit.fatura.no,
-          durum: kayit.fatura.durum,
-          ebelge: kayit.fatura.ebelge,
-          odemeOzeti: {
-            durum: kayit.fatura.durum !== "kesin" ? "beklemede" : kalan.isZero() ? "odendi" : odenen.greaterThan(0) ? "kismi" : "odenmedi",
-            odenen: odenen.toFixed(2),
-            kalan: kalan.toFixed(2),
-          },
-        };
-      })() : null,
+      fatura: kayit.fatura ? {
+        id: kayit.fatura.id,
+        no: kayit.fatura.no,
+        durum: kayit.fatura.durum,
+        ebelge: kayit.fatura.ebelge,
+        odemeOzeti: odemeOzetiGorunumu(faturaOdemeDurumu(kayit.fatura)),
+      } : null,
       eirsaliye: kayit.eirsaliye,
       faturalamaSuresi,
       izinliEylemler: this.eylemler(kayit),

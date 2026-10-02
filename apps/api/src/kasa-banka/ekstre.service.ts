@@ -26,6 +26,7 @@ import {
   eslemeTahminEt,
   metniNormalle,
 } from "./ekstre-oku";
+import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal =>
   new Prisma.Decimal(deger);
@@ -418,7 +419,7 @@ export class EkstreService {
    */
   private async oneriHesapla(
     tenantId: string,
-    satir: { tutar: Prisma.Decimal; aciklama: string; karsiIban: string | null; karsiUnvan: string | null },
+    satir: { tutar: Prisma.Decimal; aciklama: string; karsiIban: string | null; karsiUnvan: string | null; bankaHesap?: { dovizCinsi: string } },
   ) {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       let cari: { id: string; kod: string; unvan: string } | null = null;
@@ -487,7 +488,7 @@ export class EkstreService {
 
       if (!cari) return { cari: null, cariEslesmeKaynagi: null, faturalar: [] };
 
-      const faturalar = await this.acikFaturalar(tx, tenantId, cari.id, satir.tutar);
+      const faturalar = await this.acikFaturalar(tx, tenantId, cari.id, satir.tutar, satir.bankaHesap?.dovizCinsi);
       return { cari, cariEslesmeKaynagi: kaynak, faturalar };
     });
   }
@@ -501,6 +502,7 @@ export class EkstreService {
     tenantId: string,
     cariId: string,
     tutar: Prisma.Decimal,
+    hesapDovizi?: string,
   ) {
     const girisMi = !tutar.isNegative();
     const tipler = girisMi
@@ -511,26 +513,14 @@ export class EkstreService {
       where: { tenantId, cariId, durum: "kesin", tip: { in: [...tipler] } },
       orderBy: { tarih: "desc" },
       take: 50,
-      select: { id: true, no: true, tarih: true, genelToplam: true },
+      select: { id: true, no: true, tarih: true, durum: true, dovizCinsi: true, genelToplam: true, ...FATURA_ODEME_SECIMI },
     });
     if (faturalar.length === 0) return [];
 
-    // Faturaya daha önce yazılmış ödemeler tek sorguda toplanır.
-    const odemeler = await tx.kasaBankaHareket.groupBy({
-      by: ["faturaId"],
-      where: { tenantId, faturaId: { in: faturalar.map((f) => f.id) } },
-      _sum: { tutar: true },
-    });
-    const odenen = new Map(
-      odemeler.map((o) => [o.faturaId as string, o._sum.tutar ?? D(0)]),
-    );
-
+    // KSB-07: kalan, faturanın dövizinde ortak ödeme durumundan gelir.
     const mutlak = tutar.abs();
     const acik = faturalar
-      .map((f) => {
-        const o = odenen.get(f.id) ?? D(0);
-        return { ...f, odenen: o, kalan: f.genelToplam.sub(o) };
-      })
+      .map((f) => ({ ...f, ...faturaOdemeDurumu(f) }))
       .filter((f) => f.kalan.greaterThan(0));
 
     return acik
@@ -538,11 +528,12 @@ export class EkstreService {
         id: f.id,
         no: f.no,
         tarih: f.tarih.toISOString().slice(0, 10),
+        dovizCinsi: f.dovizCinsi,
         genelToplam: f.genelToplam.toFixed(2),
         odenen: f.odenen.toFixed(2),
         kalan: f.kalan.toFixed(2),
-        /** Kalan tutar ekstre satırıyla birebir aynıysa güçlü öneri. */
-        tamEslesme: f.kalan.equals(mutlak),
+        /** Kalan tutar ekstre satırıyla aynı dövizde birebir aynıysa güçlü öneri. */
+        tamEslesme: (!hesapDovizi || f.dovizCinsi === hesapDovizi) && f.kalan.equals(mutlak),
       }))
       .sort((a, b) => Number(b.tamEslesme) - Number(a.tamEslesme))
       .slice(0, 10);

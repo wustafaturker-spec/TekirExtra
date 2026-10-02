@@ -13,6 +13,7 @@ import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
 import { kurCoz, kurZorunlu } from "../doviz/kur-coz";
 import { makbuzPdfHtml } from "./makbuz-pdf";
+import { FATURA_ODEME_SECIMI, beklenenOdemeTipi, faturaKilitleVeKalaniGetir, faturaOdemeDurumu, mahsupAyir } from "../fatura/odeme-durumu";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import type {
   bankaHesapGuncelleSemasi,
@@ -300,6 +301,36 @@ export class KasaBankaService {
     });
   }
 
+  /**
+   * KSB-07: carinin bu işlem tipiyle kapatılabilecek, kalanı olan kesin
+   * faturaları; en eski vade başta (önce o kapanır).
+   */
+  async acikFaturalar(cariId: string, tip: "tahsilat" | "tediye") {
+    const { tenantId } = aktifBaglam();
+    const tipler = tip === "tahsilat" ? (["satis", "alis_iade"] as const) : (["alis", "satis_iade"] as const);
+    const faturalar = await this.prisma.tenantIslem(tenantId, (tx) => tx.fatura.findMany({
+      where: { cariId, durum: "kesin", tip: { in: [...tipler] } },
+      orderBy: [{ vadeTarihi: "asc" }, { tarih: "asc" }],
+      take: 200,
+      select: { id: true, no: true, tip: true, tarih: true, vadeTarihi: true, dovizCinsi: true, kur: true, durum: true, genelToplam: true, ...FATURA_ODEME_SECIMI },
+    }));
+    return faturalar
+      .map((f) => ({ f, odeme: faturaOdemeDurumu(f) }))
+      .filter(({ odeme }) => odeme.kalan.isPositive())
+      .map(({ f, odeme }) => ({
+        id: f.id,
+        no: f.no,
+        tip: f.tip,
+        tarih: f.tarih.toISOString().slice(0, 10),
+        vadeTarihi: f.vadeTarihi?.toISOString().slice(0, 10) ?? null,
+        dovizCinsi: f.dovizCinsi,
+        kur: f.kur.toFixed(6),
+        genelToplam: f.genelToplam.toFixed(2),
+        odenen: odeme.odenen.toFixed(2),
+        kalan: odeme.kalan.toFixed(2),
+      }));
+  }
+
   async hareketEkle(girdi: z.infer<typeof kasaBankaHareketOlusturSemasi>) {
     const { tenantId } = aktifBaglam();
     await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "kasa/banka hareketi oluşturma");
@@ -311,19 +342,25 @@ export class KasaBankaService {
       if (hesap.dovizCinsi !== girdi.dovizCinsi) throw new BadRequestException(`Hesap ${hesap.dovizCinsi}, hareket ${girdi.dovizCinsi} cinsinde olamaz`);
       let cariId = girdi.cariId || null;
       if (cariId && !(await tx.cariHesap.findFirst({ where: { id: cariId, aktif: true }, select: { id: true } }))) throw new BadRequestException("Aktif cari hesap bulunamadı");
-      if (girdi.faturaId) {
-        const fatura = await tx.fatura.findUnique({ where: { id: girdi.faturaId }, select: { tip: true, durum: true, cariId: true, dovizCinsi: true, genelToplam: true, kasaBankaHarekets: { select: { tutar: true } }, krediKartiHareketleri: { select: { cariOdemeTutari: true } } } });
-        if (!fatura || fatura.durum !== "kesin") throw new BadRequestException("Yalnızca kesinleşmiş faturaya ödeme bağlanabilir");
-        const beklenenTip = ["satis", "alis_iade"].includes(fatura.tip) ? "tahsilat" : ["alis", "satis_iade"].includes(fatura.tip) ? "tediye" : null;
-        if (!beklenenTip || girdi.tip !== beklenenTip) throw new BadRequestException(`Bu fatura için ${beklenenTip === "tahsilat" ? "tahsilat" : "tediye"} kaydı gereklidir`);
-
-        // Çapraz Kur / Farklı Para Birimi Desteği: Fatura ile Ödeme Kasa/Banka farklı para birimlerinde olabilir
-        if (cariId && cariId !== fatura.cariId) throw new BadRequestException("Seçilen cari faturanın carisiyle uyuşmuyor");
-        cariId = fatura.cariId;
-      }
       const hareketTarihi = new Date(girdi.tarih);
       const kur = girdi.dovizCinsi === "TRY" ? D(1) : girdi.kur ? D(girdi.kur) : await kurZorunlu(tx, girdi.dovizCinsi, hareketTarihi);
       const tutarTry = tutar.mul(kur).toDecimalPlaces(2);
+
+      // KSB-07: faturaya bağlanan ödeme faturanın dövizindeki karşılığıyla
+      // mahsup edilir; kalanı aşan kısmı carinin avansı olarak kalır.
+      let kapama: { dovizCinsi: DovizCinsi; karsilik: Prisma.Decimal; mahsup: Prisma.Decimal; avans: Prisma.Decimal } | null = null;
+      if (girdi.faturaId) {
+        const fatura = await faturaKilitleVeKalaniGetir(tx, girdi.faturaId);
+        if (fatura.durum !== "kesin") throw new BadRequestException("Yalnızca kesinleşmiş faturaya ödeme bağlanabilir");
+        const beklenenTip = beklenenOdemeTipi(fatura.tip);
+        if (!beklenenTip || girdi.tip !== beklenenTip) throw new BadRequestException(`Bu fatura için ${beklenenTip === "tahsilat" ? "tahsilat" : "tediye"} kaydı gereklidir`);
+        if (cariId && cariId !== fatura.cariId) throw new BadRequestException("Seçilen cari faturanın carisiyle uyuşmuyor");
+        if (fatura.kalan.isZero()) throw new BadRequestException(`${fatura.no ?? "Fatura"} zaten kapanmış; ödemeyi faturaya bağlamadan cariye işleyin`);
+        cariId = fatura.cariId;
+        const karsilik = await this.faturaKarsiligi(tx, girdi, fatura.dovizCinsi, tutar, tutarTry, hareketTarihi);
+        kapama = { dovizCinsi: fatura.dovizCinsi, karsilik, ...mahsupAyir(karsilik, fatura.kalan) };
+      }
+
       // 1. Kasa/Banka hareketini oluştur
       const hareket = await tx.kasaBankaHareket.create({
         data: {
@@ -340,6 +377,8 @@ export class KasaBankaService {
           aciklama: girdi.aciklama,
           cariId,
           faturaId: girdi.faturaId,
+          faturaKarsiligi: kapama?.karsilik ?? null,
+          faturaMahsubu: kapama?.mahsup ?? null,
           kaynakTur: girdi.faturaId ? "fatura_kapama" : "manuel",
           kaynakRef: girdi.faturaId || null,
         },
@@ -348,6 +387,8 @@ export class KasaBankaService {
       // 2. Cari bağlantısı varsa Cari Hareketini oluştur (KSB-02)
       // Tahsilat -> Cari alacaklanır (borcu azalır)
       // Tediye -> Cari borçlanır (alacağı azalır)
+      // Faturaya bağlıysa hareket faturanın dövizinde yazılır; böylece dövizli
+      // fatura başka dövizle kapatılınca cari iki dövizde açık kalmaz.
       if (cariId) {
         const cariHareketTip = girdi.tip === "tahsilat" ? "alacak" : "borc";
         await tx.cariHareket.create({
@@ -355,9 +396,9 @@ export class KasaBankaService {
             tenantId,
             cariId,
             tip: cariHareketTip,
-            tutar,
-            dovizCinsi: girdi.dovizCinsi,
-            kur,
+            tutar: kapama?.karsilik ?? tutar,
+            dovizCinsi: kapama?.dovizCinsi ?? girdi.dovizCinsi,
+            kur: kapama ? (kapama.dovizCinsi === "TRY" ? D(1) : tutarTry.div(kapama.karsilik).toDecimalPlaces(6)) : kur,
             tutarTry,
             tarih: hareketTarihi,
             aciklama: girdi.aciklama ?? `${girdi.tip.toUpperCase()} kasa/banka fişi`,
@@ -367,8 +408,31 @@ export class KasaBankaService {
         });
       }
 
-      return hareket;
+      return { ...hareket, faturaKapama: kapama && { dovizCinsi: kapama.dovizCinsi, karsilik: kapama.karsilik.toFixed(2), mahsup: kapama.mahsup.toFixed(2), avans: kapama.avans.toFixed(2) } };
     });
+  }
+
+  /**
+   * Ödemenin fatura dövizindeki karşılığı. Aynı dövizde tutarın kendisidir.
+   * Farklı dövizde kullanıcının girdiği karşılık (bankanın uyguladığı kur)
+   * esas alınır; girilmediyse ödemenin TL karşılığı, işlem günü fatura
+   * dövizinin kuruyla çevrilir.
+   */
+  private async faturaKarsiligi(
+    tx: Prisma.TransactionClient,
+    girdi: z.infer<typeof kasaBankaHareketOlusturSemasi>,
+    faturaDovizi: DovizCinsi,
+    tutar: Prisma.Decimal,
+    tutarTry: Prisma.Decimal,
+    tarih: Date,
+  ): Promise<Prisma.Decimal> {
+    if (faturaDovizi === girdi.dovizCinsi) return tutar;
+    if (girdi.faturaKarsiligi) return D(girdi.faturaKarsiligi).toDecimalPlaces(2);
+    if (faturaDovizi === "TRY") return tutarTry;
+    const faturaDoviziKuru = await kurZorunlu(tx, faturaDovizi, tarih);
+    const karsilik = tutarTry.div(faturaDoviziKuru).toDecimalPlaces(2);
+    if (!karsilik.isPositive()) throw new BadRequestException("Ödemenin fatura dövizindeki karşılığı hesaplanamadı");
+    return karsilik;
   }
 
   async makbuzPdf(id: string): Promise<{ buffer: Buffer; dosyaAdi: string }> {

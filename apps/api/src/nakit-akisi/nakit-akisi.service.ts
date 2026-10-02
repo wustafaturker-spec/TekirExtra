@@ -4,6 +4,7 @@ import { aktifBaglam } from "../core/istek-baglami";
 import { DovizService } from "../doviz/doviz.service";
 import { cariDavranisAnalizi } from "../cari/cari-analiz";
 import { gunEkle, kurusa, nakitTahmini, type CariTahsilatProfili, type NakitKalemi, type Ufuk } from "./nakit-akisi.hesap";
+import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
 
 /** Tahmine girmeyen ve ekranda açıkça söylenen kalemler (S-01, 2026-09-11). */
 const KAPSAM_DISI = ["KDV, muhtasar ve SGK ödemeleri tahmine dahil değildir."];
@@ -87,21 +88,18 @@ export class NakitAkisiService {
         select: {
           id: true, no: true, tip: true, tarih: true, vadeTarihi: true, genelToplam: true, kur: true, dovizCinsi: true, cariId: true,
           cari: { select: { unvan: true } },
-          kasaBankaHarekets: { select: { tutarTry: true } },
-          krediKartiHareketleri: { select: { cariOdemeTutari: true } },
+          durum: true,
+          ...FATURA_ODEME_SECIMI,
         },
       });
       for (const f of faturalar) {
         const kur = Number(f.kur) || 1;
-        const odenenTry =
-          f.kasaBankaHarekets.reduce((t, h) => t + Number(h.tutarTry), 0) +
-          f.krediKartiHareketleri.reduce((t, h) => t + Number(h.cariOdemeTutari ?? 0) * kur, 0);
-        const kalanTry = Number(f.genelToplam) * kur - odenenTry;
-        if (kalanTry < 0.005) continue;
+        const kalan = Number(faturaOdemeDurumu(f).kalan);
+        if (kalan < 0.005) continue;
         const giris = f.tip === "satis" || f.tip === "alis_iade";
         ekle({
           kaynak: "fatura", kaynakId: f.id, yon: giris ? "giris" : "cikis", vade: isoGun(f.vadeTarihi ?? f.tarih),
-          dovizCinsi: f.dovizCinsi, dovizTutar: kalanTry / kur, belgeKuru: kur,
+          dovizCinsi: f.dovizCinsi, dovizTutar: kalan, belgeKuru: kur,
           aciklama: `${FATURA_ADLARI[f.tip]} ${f.no ?? "(numarasız)"}`,
           cariId: f.cariId, cariUnvan: f.cari.unvan, tahsilat: f.tip === "satis", baglanti: `/panel/fatura?fatura=${f.id}`,
         });

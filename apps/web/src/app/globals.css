@@ -3995,3 +3995,59 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 .kap-listesi__alanlar { display:grid; gap:.5rem; grid-template-columns:minmax(0,1.6fr) minmax(0,1.2fr) minmax(0,.8fr); margin-top:.35rem; }
 .kap-listesi__alanlar select, .kap-listesi__alanlar input { min-width:0; width:100%; }
 @media(max-width:560px){.kap-listesi__alanlar{grid-template-columns:1fr 1fr}.kap-listesi__alanlar>:first-child{grid-column:1/-1}}
+
+/* ─── Tahsilat / ödeme fişi (KSB-02/07) ─────────────────────────────────── */
+.payment-slip { display: grid; gap: 1rem; padding: 1.2rem; }
+.payment-slip__type .segmented { width: 100%; }
+.payment-slip__type .segmented__btn { flex: 1; }
+.payment-slip__section { display: grid; gap: .7rem; }
+.payment-slip__section > h3 { align-items: baseline; color: var(--text); display: flex; font-size: .78rem; font-weight: 750; gap: .45rem; margin: 0; }
+.payment-slip__section > h3 small { color: var(--text-subtle); font-size: .66rem; font-weight: 500; }
+.payment-slip__section + .payment-slip__section { border-top: 1px solid var(--border); padding-top: 1rem; }
+.payment-slip__amount { align-items: center; display: flex; gap: .45rem; }
+.payment-slip__amount .input { flex: 1; min-width: 0; }
+.payment-slip__hint { color: var(--text-muted); font-size: .7rem; margin: 0; }
+.payment-slip > footer { border-top: 1px solid var(--border); display: flex; gap: .5rem; justify-content: flex-end; padding-top: 1rem; }
+
+.invoice-picker { border: 1px solid var(--border); border-radius: var(--radius); display: grid; max-height: 260px; overflow: auto; }
+.invoice-picker__row { align-items: center; border-bottom: 1px solid var(--border); cursor: pointer; display: grid; gap: .7rem; grid-template-columns: auto minmax(0, 1fr) auto auto; padding: .6rem .75rem; transition: background .12s; }
+.invoice-picker__row:last-child { border-bottom: 0; }
+.invoice-picker__row:hover { background: var(--surface-2); }
+.invoice-picker__row.is-selected { background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface)); box-shadow: inset 3px 0 0 var(--accent); }
+.invoice-picker__row input { accent-color: var(--accent); margin: 0; }
+.invoice-picker__main { display: grid; gap: .12rem; min-width: 0; }
+.invoice-picker__main strong { font-size: .74rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.invoice-picker__main small { color: var(--text-muted); font-size: .64rem; }
+.invoice-picker__badges { display: flex; flex-wrap: wrap; gap: .3rem; justify-content: flex-end; }
+.invoice-picker__amount { display: grid; justify-items: end; }
+.invoice-picker__amount small { color: var(--text-subtle); font-size: .6rem; }
+.invoice-picker__amount .para { font-size: .76rem; font-weight: 700; }
+.invoice-picker__empty { color: var(--text-muted); font-size: .7rem; margin: 0; padding: .7rem .75rem; }
+
+.settlement { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); display: grid; gap: .8rem; padding: .9rem 1rem; }
+.settlement__rate { align-items: end; display: grid; gap: .6rem .9rem; grid-template-columns: minmax(150px, 220px) minmax(0, 1fr); }
+.settlement__rate .alert { grid-column: 1 / -1; }
+.settlement__rate-note { align-items: center; display: flex; flex-wrap: wrap; gap: .4rem; padding-bottom: .35rem; }
+.settlement__rate-note small { color: var(--text-muted); flex-basis: 100%; font-size: .64rem; }
+.settlement .link-button { background: none; border: 0; color: var(--accent-text); cursor: pointer; font-size: .66rem; padding: 0; text-decoration: underline; }
+.settlement__rows { display: grid; gap: .1rem; margin: 0; }
+.settlement__rows > div { align-items: baseline; display: flex; gap: 1rem; justify-content: space-between; padding: .3rem 0; }
+.settlement__rows > div + div { border-top: 1px dashed var(--border); }
+.settlement__rows dt { color: var(--text-muted); font-size: .7rem; }
+.settlement__rows dd { align-items: center; display: flex; flex-wrap: wrap; font-size: .76rem; gap: .35rem; justify-content: flex-end; margin: 0; text-align: right; }
+.settlement__rows dd small { color: var(--text-subtle); font-size: .62rem; }
+.settlement__rows .is-strong dt { color: var(--text); font-weight: 700; }
+.settlement__rows .is-strong dd { font-size: .9rem; font-weight: 800; }
+.settlement__rows .is-muted dt, .settlement__rows .is-muted dd { opacity: .85; }
+
+@media (max-width: 620px) {
+  .invoice-picker__row { gap: .25rem .6rem; grid-template-columns: auto minmax(0, 1fr) auto; }
+  .invoice-picker__row > input { grid-column: 1; grid-row: 1; }
+  .invoice-picker__main { grid-column: 2; grid-row: 1; }
+  .invoice-picker__amount { grid-column: 3; grid-row: 1; }
+  .invoice-picker__badges { grid-column: 2 / -1; grid-row: 2; justify-content: flex-start; }
+  .invoice-picker__badges:empty { display: none; }
+  .settlement__rate { grid-template-columns: 1fr; }
+  .payment-slip > footer { flex-direction: column-reverse; }
+  .payment-slip > footer .btn { width: 100%; }
+}
