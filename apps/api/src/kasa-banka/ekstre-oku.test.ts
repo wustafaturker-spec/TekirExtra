@@ -203,6 +203,32 @@ describe("Excel ekstresi (KSB-06)", () => {
     expect(Date.now() - basla).toBeLessThan(5000);
   }, 20000);
 
+  it("bütün sayfası biçimlendirilmiş dosyada yalnız değerli hücreleri okur, satır/sütun yerleri korunur", async () => {
+    const { ekstreDosyasiOku } = await import("./ekstre-oku");
+    const ExcelJS = await import("exceljs");
+    const kitap = new ExcelJS.Workbook();
+    const sayfa = kitap.addWorksheet("Hareketler");
+    sayfa.getCell("A2").value = "Ziraat Bankası hesap hareketleri"; // 1. satır boş, başlık 3. satırda
+    sayfa.addRow([]);
+    sayfa.getRow(3).values = ["Tarih", "Açıklama", null, "Tutar"];
+    for (let i = 0; i < 3000; i++) {
+      const satir = sayfa.getRow(4 + i);
+      satir.values = [new Date(Date.UTC(2026, 0, 1 + (i % 300))), `EFT ${i}`, null, i];
+      satir.getCell(16000).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFFF00" } };
+    }
+    sayfa.getRow(900000).getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFFF00" } };
+    const dosya = Buffer.from(await kitap.xlsx.writeBuffer());
+    const basla = Date.now();
+    const tablo = await ekstreDosyasiOku(dosya);
+    // Uzak biçimli hücre ayrıştırıcıda satır başına ~1 ms tutar; önemli olan doğrusal kalması ve belleğin birikmemesi.
+    expect(Date.now() - basla).toBeLessThan(15000);
+    expect(tablo).toHaveLength(3003);
+    expect(tablo[0]).toEqual(["", "", "", ""]);
+    expect(tablo[1][0]).toBe("Ziraat Bankası hesap hareketleri");
+    expect(tablo[2]).toEqual(["Tarih", "Açıklama", "", "Tutar"]);
+    expect(tablo[3]).toEqual(["2026-01-01", "EFT 0", "", "0"]);
+  }, 30000);
+
   it("bozuk .xlsx için anlaşılır hata verir", async () => {
     const { ekstreDosyasiOku } = await import("./ekstre-oku");
     await expect(ekstreDosyasiOku(Buffer.from([0x50, 0x4b, 0x03, 0x04, 1, 2, 3]))).rejects.toThrow("Excel dosyası okunamadı");

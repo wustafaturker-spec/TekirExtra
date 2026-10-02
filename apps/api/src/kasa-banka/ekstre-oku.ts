@@ -10,6 +10,7 @@
  */
 import { createHash } from "node:crypto";
 import * as ExcelJS from "exceljs";
+import { Readable } from "node:stream";
 
 export interface SutunEslemesi {
   /** Başlık satırının 0-tabanlı indisi; veri bir sonraki satırdan başlar. */
@@ -169,32 +170,54 @@ export function excelMi(buffer: Buffer): boolean {
  */
 /** Bir banka ekstresi dosyasında beklenen en fazla satır (yıllık hareket bile bunun altında kalır). */
 const EXCEL_EN_FAZLA_SATIR = 50_000;
+/** Sütun eşlemesi en fazla 200. sütunu seçebilir (ekstreSutunEslemesiSemasi). */
+const EXCEL_EN_FAZLA_SUTUN = 201;
 
+/**
+ * Excel ekstresi akışla okunur: dosya bütünüyle belleğe açılmaz, yalnız değer
+ * taşıyan satır ve hücreler tutulur. Bankaların dışa aktarımları çoğu zaman
+ * bütün sayfayı (XFD sütununa, milyonuncu satıra kadar) biçimlendirir; tam
+ * yükleme ve `columnCount` bu boş hücreleri de gezip API'yi kilitliyor,
+ * belleği tüketiyordu.
+ */
 export async function ekstreDosyasiOku(buffer: Buffer): Promise<string[][]> {
   if (!excelMi(buffer)) return ekstreTabloOku(buffer);
-  const kitap = new ExcelJS.Workbook();
+  const tablo: string[][] = [];
+  let genislik = 0;
   try {
-    await kitap.xlsx.load(buffer as unknown as ArrayBuffer);
-  } catch {
+    const okuyucu = new ExcelJS.stream.xlsx.WorkbookReader(Readable.from(buffer), {
+      worksheets: "emit", sharedStrings: "cache", styles: "cache", hyperlinks: "ignore", entries: "ignore",
+    });
+    for await (const sayfa of okuyucu) {
+      for await (const satir of sayfa as AsyncIterable<ExcelJS.Row>) {
+        if (!satir.hasValues) continue;
+        if (satir.number > EXCEL_EN_FAZLA_SATIR) {
+          throw new EkstreOkumaHatasi(`Excel dosyası ${EXCEL_EN_FAZLA_SATIR.toLocaleString("tr-TR")} satırdan uzun; dönemi bölerek yükleyin`);
+        }
+        const hucreler: string[] = [];
+        // `values` seyrek dizidir (indis = sütun no); for-in yalnız dolu hücreleri gezer.
+        // `eachCell` ise yalnız biçimli uzak sütunlara kadar her indisi dolaşır.
+        const degerler = satir.values as ExcelJS.CellValue[];
+        for (const anahtar in degerler) {
+          const sutun = Number(anahtar);
+          if (!(sutun >= 1 && sutun <= EXCEL_EN_FAZLA_SUTUN)) continue;
+          const metin = hucreMetni(degerler[sutun]);
+          if (metin.trim()) hucreler[sutun - 1] = metin;
+        }
+        if (hucreler.length === 0) continue;
+        genislik = Math.max(genislik, hucreler.length);
+        tablo[satir.number - 1] = hucreler;
+      }
+      break; // yalnız ilk çalışma sayfası
+    }
+  } catch (hata) {
+    if (hata instanceof EkstreOkumaHatasi) throw hata;
     throw new EkstreOkumaHatasi("Excel dosyası okunamadı; dosyanın .xlsx biçiminde olduğundan emin olun (eski .xls desteklenmez)");
   }
-  const sayfa = kitap.worksheets[0];
-  if (!sayfa) throw new EkstreOkumaHatasi("Excel dosyasında çalışma sayfası yok");
-  if (sayfa.actualRowCount > EXCEL_EN_FAZLA_SATIR) {
-    throw new EkstreOkumaHatasi(`Excel dosyasında ${sayfa.actualRowCount.toLocaleString("tr-TR")} satır var; en fazla ${EXCEL_EN_FAZLA_SATIR.toLocaleString("tr-TR")} satırlık ekstre yüklenebilir, dönemi bölün`);
-  }
-  // `columnCount` her çağrıda bütün satırları gezer; döngü içinde okunursa
-  // okuma satır sayısının karesiyle büyür ve büyük dosyada API kilitlenir.
-  const sutunSayisi = sayfa.columnCount;
-  const tablo: string[][] = [];
-  sayfa.eachRow({ includeEmpty: true }, (satir) => {
-    const hucreler: string[] = [];
-    for (let i = 1; i <= sutunSayisi; i++) hucreler.push(hucreMetni(satir.getCell(i).value));
-    tablo.push(hucreler);
-  });
-  while (tablo.length && tablo[tablo.length - 1].every((h) => !h.trim())) tablo.pop();
-  if (tablo.length === 0) throw new EkstreOkumaHatasi("Excel dosyası boş");
-  return tablo;
+  // Boş satırlar ve hücreler yerinde kalır: başlık satırı ve sütun indisleri dosyadakiyle aynıdır.
+  const sonuc = Array.from(tablo, (satir) => Array.from({ length: genislik }, (_, i) => satir?.[i] ?? ""));
+  if (sonuc.length === 0) throw new EkstreOkumaHatasi("Excel dosyası boş");
+  return sonuc;
 }
 
 function hucreMetni(deger: ExcelJS.CellValue): string {
