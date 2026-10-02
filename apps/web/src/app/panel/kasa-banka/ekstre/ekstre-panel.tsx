@@ -13,7 +13,7 @@ import { api } from "@/lib/api";
 import { AramaSecici } from "@/components/arama-secici";
 import { Alert, Badge, Button, Field, Input, Para, Segmented, Select, Tarih } from "@/components/ui";
 
-export type EslesmeTuru = "cari" | "mevcut_fis" | "masraf" | "gelir" | "virman" | "cek" | "kredi_karti" | "pos";
+export type EslesmeTuru = "cari" | "mevcut_fis" | "masraf" | "gelir" | "virman" | "cek" | "kredi_karti" | "pos" | "odeme_talimati";
 
 export interface EkstreSatiri {
   id: string;
@@ -56,6 +56,8 @@ interface Oneriler {
   virmanHesaplari: Array<{ tur: "kasa" | "banka"; id: string; ad: string; bankaAdi?: string }>;
   masrafKategorileri: Array<{ id: string; ad: string; varsayilanKdvOrani: string | null }>;
   gelirKategorileri: Array<{ id: string; ad: string }>;
+  /** ENT-07: aynı tutarda bankaya gönderilmiş/onaylı ödeme talimatları. */
+  odemeTalimatlari: Array<{ id: string; no: string | null; aliciUnvan: string; tutar: string; odemeTarihi: string; durum: string; aciklama: string; aciklamadaGeciyor: boolean }>;
 }
 
 export interface PosHesabi { id: string; ad: string; dovizCinsi: string; bakiye: string; aktif: boolean }
@@ -69,6 +71,7 @@ export const ESLESME_ADI: Record<EslesmeTuru, string> = {
   cek: "Çek / senet",
   kredi_karti: "Kredi kartı ödemesi",
   pos: "POS mutabakatı",
+  odeme_talimati: "Ödeme talimatı",
 };
 
 const KAYNAK_ADI: Record<string, string> = { iban: "IBAN eşleşti", vkn: "VKN eşleşti", unvan: "Unvan eşleşti", kural: "Kayıtlı kural" };
@@ -124,6 +127,7 @@ export function EslestirmePaneli({
   const [karsiHesap, setKarsiHesap] = useState("");
   const [cekId, setCekId] = useState("");
   const [kartId, setKartId] = useState("");
+  const [talimatId, setTalimatId] = useState("");
   const [posHesapId, setPosHesapId] = useState("");
   const [brutTutar, setBrutTutar] = useState("");
   const [kuralKaydet, setKuralKaydet] = useState(false);
@@ -133,7 +137,7 @@ export function EslestirmePaneli({
 
   const turler: EslesmeTuru[] = giris
     ? ["cari", "mevcut_fis", "gelir", "virman", "cek", ...(posHesaplari.some((p) => p.aktif && p.dovizCinsi === doviz) ? ["pos" as const] : [])]
-    : ["cari", "mevcut_fis", "masraf", "virman", "cek", "kredi_karti"];
+    : ["cari", "mevcut_fis", "masraf", "virman", "cek", "kredi_karti", "odeme_talimati"];
 
   // Satır değişince her şey sıfırlanır ve öneriler yeniden alınır.
   useEffect(() => {
@@ -162,9 +166,13 @@ export function EslestirmePaneli({
         setKarsiHesap("");
         setCekId(o.cekler.find((c) => c.tamEslesme)?.id ?? "");
         setKartId(o.kartlar[0]?.id ?? "");
-        // Öneri sırası: kural > birebir tutan mevcut fiş > birebir tutan çek > cari.
+        // ENT-07: açıklamada numarası geçen talimat en güçlü öneridir.
+        const talimat = o.odemeTalimatlari.find((t) => t.aciklamadaGeciyor) ?? (o.odemeTalimatlari.length === 1 ? o.odemeTalimatlari[0] : undefined);
+        setTalimatId(talimat?.id ?? "");
+        // Öneri sırası: açıklamada geçen talimat > kural > birebir tutan mevcut fiş > birebir tutan çek > cari.
         const tekFis = o.mevcutFisler.filter((f) => f.tamEslesme);
-        if (o.kural) kuraliUygula(o.kural);
+        if (talimat?.aciklamadaGeciyor) setTur("odeme_talimati");
+        else if (o.kural) kuraliUygula(o.kural);
         else if (tekFis.length === 1) { setTur("mevcut_fis"); setFisler(new Set([tekFis[0].id])); }
         else if (o.cekler.some((c) => c.tamEslesme)) setTur("cek");
         else setTur("cari");
@@ -227,6 +235,7 @@ export function EslestirmePaneli({
       case "virman": return Boolean(karsiHesap);
       case "cek": return Boolean(cekId);
       case "kredi_karti": return Boolean(kartId);
+      case "odeme_talimati": return Boolean(talimatId);
       case "pos": return Boolean(posHesapId) && komisyon >= 0;
     }
   })() && (!kuralKaydet || kuralMetni.trim().length >= 3);
@@ -253,6 +262,7 @@ export function EslestirmePaneli({
         virman: { tur, karsiKasaId: hesapTuru === "kasa" ? hesapId : null, karsiBankaHesapId: hesapTuru === "banka" ? hesapId : null, aciklama: aciklama || null },
         cek: { tur, cekSenetId: cekId },
         kredi_karti: { tur, krediKartiId: kartId },
+        odeme_talimati: { tur, talimatId },
       }[tur];
       await api(`/kasa-banka/ekstre/satirlar/${satir.id}/eslestir`, { method: "POST", body: JSON.stringify({ ...govde, ...ortak }) });
       onDegisti(`Satır ${ESLESME_ADI[tur].toLocaleLowerCase("tr-TR")} olarak işlendi.${kuralDestekli && kuralKaydet ? " Kural kaydedildi; benzer satırlarda öneri hazır gelecek." : ""}`);
@@ -508,6 +518,29 @@ export function EslestirmePaneli({
                   </Field>
                 )}
                 <p className="match-panel__note">Kart ekstre ödemesi olarak kaydedilir; kart borcundan düşer.</p>
+              </div>
+            )}
+
+            {tur === "odeme_talimati" && (
+              <div className="match-panel__section">
+                {oneriler.odemeTalimatlari.length === 0 ? (
+                  <Alert tone="warning">Bu hesaptan {mutlak.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {doviz} tutarında bankaya gönderilmiş ödeme talimatı yok.</Alert>
+                ) : (
+                  <div className="allocation" role="radiogroup" aria-label="Ödeme talimatı">
+                    {[...oneriler.odemeTalimatlari].sort((a, b) => Number(b.aciklamadaGeciyor) - Number(a.aciklamadaGeciyor)).map((t) => (
+                      <label key={t.id} className={`allocation__row${talimatId === t.id ? " is-selected" : ""}`}>
+                        <span className="allocation__pick">
+                          <input type="radio" name="talimat" checked={talimatId === t.id} onChange={() => setTalimatId(t.id)} />
+                          <span>
+                            <strong>{t.no ?? "Talimat"} · {t.aliciUnvan} {t.aciklamadaGeciyor && <Badge variant="success">Açıklamada geçiyor</Badge>}</strong>
+                            <small>{t.aciklama} · ödeme {t.odemeTarihi.split("-").reverse().join(".")} · {t.durum === "gonderildi" ? "bankaya gönderildi" : "onaylı"}</small>
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <p className="match-panel__note">Talimat gerçekleşti sayılır; bağlı faturalara tediye fişi yazılır, artanı carinin bakiyesine işlenir.</p>
               </div>
             )}
 

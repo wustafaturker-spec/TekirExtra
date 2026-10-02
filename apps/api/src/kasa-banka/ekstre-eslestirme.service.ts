@@ -25,6 +25,7 @@ import { kurZorunlu } from "../doviz/kur-coz";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
 import { kuralAnahtari, kuralBul, satirYonu } from "./ekstre-kural";
 import { metniNormalle } from "./ekstre-oku";
+import { OdemeTalimatiService } from "./odeme-talimati.service";
 import { KasaBankaService } from "./kasa-banka.service";
 import type { ekstreEslestirSemasi, ekstreKuralGuncelleSemasi } from "./kasa-banka.semalar";
 import { KrediKartiService } from "./kredi-karti.service";
@@ -42,6 +43,7 @@ export class EkstreEslestirmeService {
     private readonly kasaBanka: KasaBankaService,
     private readonly krediKarti: KrediKartiService,
     private readonly donemKilidi: DonemKilidiService,
+    private readonly odemeTalimati: OdemeTalimatiService,
   ) {}
 
   // ─── ÖNERİLER ──────────────────────────────────────────────────────────────
@@ -96,6 +98,12 @@ export class EkstreEslestirmeService {
         virmanHesaplari: [...kasalar.map((k) => ({ tur: "kasa" as const, ...k })), ...bankalar.map((b) => ({ tur: "banka" as const, id: b.id, ad: b.ad, bankaAdi: b.bankaAdi }))],
         masrafKategorileri: masrafKategorileri.map((k) => ({ ...k, varsayilanKdvOrani: k.varsayilanKdvOrani?.toFixed(2) ?? null })),
         gelirKategorileri,
+        // ENT-07: bu hesaptan aynı tutarda gönderilmiş/onaylı ödeme talimatları.
+        odemeTalimatlari: giris ? [] : (await tx.bankaOdemeTalimati.findMany({
+          where: { bankaHesapId: satir.bankaHesapId, durum: { in: ["gonderildi", "onaylandi"] }, tutar: mutlak },
+          orderBy: { odemeTarihi: "asc" },
+          select: { id: true, no: true, aliciUnvan: true, tutar: true, odemeTarihi: true, durum: true, aciklama: true },
+        })).map((t) => ({ ...t, tutar: t.tutar.toFixed(2), odemeTarihi: t.odemeTarihi.toISOString().slice(0, 10), aciklamadaGeciyor: Boolean(t.no && satir.aciklama.includes(t.no)) })),
       };
     });
   }
@@ -118,6 +126,7 @@ export class EkstreEslestirmeService {
     if (girdi.tur === "masraf" && giris) throw new BadRequestException("Masraf yalnız hesaptan para çıkışıyla eşleştirilir");
     if (girdi.tur === "gelir" && !giris) throw new BadRequestException("Gelir yalnız hesaba para girişiyle eşleştirilir");
     if (girdi.tur === "kredi_karti" && giris) throw new BadRequestException("Kredi kartı ödemesi yalnız hesaptan para çıkışıyla eşleştirilir");
+    if (girdi.tur === "odeme_talimati" && giris) throw new BadRequestException("Ödeme talimatı yalnız hesaptan para çıkışıyla eşleştirilir");
 
     // Çek ve kredi kartı kendi servislerinin işleminde yürür: satır önce ayrıca sahiplenilir.
     if (girdi.tur === "cek" || girdi.tur === "kredi_karti") {
@@ -195,6 +204,13 @@ export class EkstreEslestirmeService {
             data: { tenantId, kategoriId: kategori.id, tarih: satir.tarih, brutTutar: mutlak, netTutar: mutlak, dovizCinsi: doviz, kur, netTutarTry: tutarTry, aciklama: girdi.aciklama || aciklama, belgeNo: satir.dekontNo, bankaHesapId: satir.bankaHesapId, hareketId: hareket.id },
           });
           hareketIdleri.push(hareket.id);
+          break;
+        }
+        case "odeme_talimati": {
+          const talimat = await tx.bankaOdemeTalimati.findUnique({ where: { id: girdi.talimatId }, select: { bankaHesapId: true, tutar: true, no: true } });
+          if (!talimat || talimat.bankaHesapId !== satir.bankaHesapId) throw new BadRequestException("Talimat bu banka hesabından verilmemiş");
+          if (!talimat.tutar.equals(mutlak)) throw new BadRequestException(`${talimat.no ?? "Talimat"} tutarı ${talimat.tutar.toFixed(2)}, ekstre satırı ${mutlak.toFixed(2)}; tutarlar eşit olmalı`);
+          hareketIdleri.push(...(await this.odemeTalimati.gerceklestirTx(tx, tenantId, girdi.talimatId, tarih, null)).hareketIdleri);
           break;
         }
         case "virman": {
@@ -281,6 +297,10 @@ export class EkstreEslestirmeService {
         await tx.gelirKaydi.deleteMany({ where: { hareketId: { in: silinecek } } });
         await tx.cariHareket.deleteMany({ where: { kaynakTur: "kasa_banka", kaynakRef: { in: silinecek } } });
         await tx.kasaBankaHareket.deleteMany({ where: { id: { in: silinecek } } });
+        if (tur === "odeme_talimati") {
+          const talimatId = hareketler.find((h) => h.kaynakTur === "odeme_talimati")?.kaynakRef;
+          if (talimatId) await this.odemeTalimati.ekstreEslesmesiGeriAlindi(tx, talimatId);
+        }
       }
       await tx.auditLog.create({
         data: { tenantId, userId, islem: "ekstre_eslesmesi_geri_alindi", varlik: "kasa-banka", varlikId: id, detay: JSON.parse(JSON.stringify({ eslesmeTuru: tur, satir: { ...satir, bankaHesap: undefined }, hareketler })) as Prisma.InputJsonValue },

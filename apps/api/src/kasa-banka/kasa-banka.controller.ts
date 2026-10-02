@@ -25,7 +25,6 @@ import { EkstreEslestirmeService } from "./ekstre-eslestirme.service";
 import { KasaBankaService } from "./kasa-banka.service";
 import { BankaEntegrasyonService } from "./banka-entegrasyon.service";
 import { z } from "zod";
-import { OdemeTalimatiService } from "./odeme-talimati.service";
 import { CekBordroService } from "./cek-bordro.service";
 import {
   bankaHesapGuncelleSemasi,
@@ -60,21 +59,9 @@ export class KasaBankaController {
     private readonly ekstre: EkstreService,
     private readonly ekstreEslestirme: EkstreEslestirmeService,
     private readonly bankaEntegrasyon: BankaEntegrasyonService,
-    private readonly odemeTalimati: OdemeTalimatiService,
     private readonly cekBordro: CekBordroService,
   ) {}
 
-  @Get("odeme-talimatlari")
-  odemeTalimatlari() { return this.odemeTalimati.listele(); }
-
-  @Post("odeme-talimatlari") @Roller("muhasebe", "yonetici")
-  odemeTalimatiOlustur(@Body() govde: unknown) { const s = z.object({ bankaHesapId: z.uuid(), aliciUnvan: z.string().min(2).max(200), aliciIban: z.string().transform((x) => x.replace(/\s/g, "")).pipe(z.string().regex(/^TR\d{24}$/i, "Geçerli bir TR IBAN girin")), tutar: z.string().regex(/^\d+(\.\d{1,2})?$/), aciklama: z.string().min(1).max(140) }).safeParse(govde); if (!s.success) throw new BadRequestException(s.error.issues.map((i) => i.message).join("; ")); return this.odemeTalimati.olustur(s.data); }
-
-  @Post("odeme-talimatlari/:id/onayla") @Roller("muhasebe", "yonetici")
-  odemeTalimatiOnayla(@Param("id") id: string, @Body() govde: unknown) { const s = z.object({ totpKodu: z.string().regex(/^\d{6}$/) }).safeParse(govde); if (!s.success) throw new BadRequestException("6 haneli TOTP kodu gereklidir"); return this.odemeTalimati.onayla(id, s.data.totpKodu); }
-
-  @Post("odeme-talimatlari/:id/iptal") @Roller("muhasebe", "yonetici")
-  odemeTalimatiIptal(@Param("id") id: string) { return this.odemeTalimati.iptal(id); }
 
   @Get("banka-baglantilari/eslemeler")
   bankaEslemeleri() { return this.bankaEntegrasyon.eslemeleriListele(); }

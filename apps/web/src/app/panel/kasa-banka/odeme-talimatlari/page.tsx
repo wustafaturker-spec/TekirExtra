@@ -1,21 +1,71 @@
 "use client";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { api } from "@/lib/api";
-import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
 
-interface Banka { id: string; ad: string; bankaAdi: string; dovizCinsi: string; aktif: boolean; }
-interface Talimat { id: string; aliciUnvan: string; aliciIban: string; tutar: string; dovizCinsi: string; aciklama: string; durum: string; createdAt: string; bankaHesap: { ad: string; bankaAdi: string }; olusturan: { id: string; adSoyad: string }; onaylayan: { id: string; adSoyad: string } | null; }
+/**
+ * Ödeme talimatları (ENT-07): oluştur → ikinci kullanıcı TOTP ile onaylar →
+ * ödeme paketi → toplu ödeme dosyası bankaya yüklenir → banka ekstresinde
+ * eşleşince ya da "gerçekleşti" ile tediye fişi yazılır.
+ */
+import { useCallback, useEffect, useState } from "react";
+import { api, tokenAl } from "@/lib/api";
+import { Alert, PageHeader, Tabs } from "@/components/ui";
+import { DosyaProfili } from "./dosya-profili";
+import { Paketler } from "./paketler";
+import { TalimatListesi } from "./talimat-listesi";
+import { TopluTalimat } from "./toplu-talimat";
+import { YeniTalimat } from "./yeni-talimat";
+import type { Banka } from "./tipler";
+
+type Sekme = "talimatlar" | "yeni" | "toplu" | "paketler" | "profil";
 
 export default function OdemeTalimatlari() {
-  const [talimatlar, setTalimatlar] = useState<Talimat[]>([]); const [bankalar, setBankalar] = useState<Banka[]>([]); const [userId, setUserId] = useState(""); const [formAcik, setFormAcik] = useState(false); const [onayId, setOnayId] = useState<string | null>(null); const [hata, setHata] = useState(""); const [basari, setBasari] = useState("");
-  const yukle = useCallback(async () => { const [t, b, ben] = await Promise.all([api<Talimat[]>("/kasa-banka/odeme-talimatlari"), api<Banka[]>("/kasa-banka/bankalar"), api<{ userId: string }>("/auth/ben")]); setTalimatlar(t); setBankalar(b.filter((x) => x.aktif)); setUserId(ben.userId); }, []);
-  useEffect(() => { void yukle().catch((x) => setHata(x instanceof Error ? x.message : "Talimatlar yüklenemedi")); }, [yukle]);
-  async function olustur(e: FormEvent<HTMLFormElement>) { e.preventDefault(); setHata(""); const f = new FormData(e.currentTarget); try { await api("/kasa-banka/odeme-talimatlari", { method: "POST", body: JSON.stringify({ bankaHesapId: f.get("bankaHesapId"), aliciUnvan: f.get("aliciUnvan"), aliciIban: f.get("aliciIban"), tutar: f.get("tutar"), aciklama: f.get("aciklama") }) }); setBasari("Ödeme talimatı ikinci kullanıcı onayına gönderildi."); setFormAcik(false); await yukle(); } catch (x) { setHata(x instanceof Error ? x.message : "Talimat oluşturulamadı"); } }
-  async function onayla(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (!onayId) return; const f = new FormData(e.currentTarget); setHata(""); try { await api(`/kasa-banka/odeme-talimatlari/${onayId}/onayla`, { method: "POST", body: JSON.stringify({ totpKodu: f.get("totpKodu") }) }); setBasari("Talimat ikinci kullanıcı ve TOTP ile onaylandı; sağlayıcı gönderimini bekliyor."); setOnayId(null); await yukle(); } catch (x) { setHata(x instanceof Error ? x.message : "Talimat onaylanamadı"); } }
-  async function iptal(id: string) { setHata(""); try { await api(`/kasa-banka/odeme-talimatlari/${id}/iptal`, { method: "POST" }); setBasari("Talimat iptal edildi."); await yukle(); } catch (x) { setHata(x instanceof Error ? x.message : "Talimat iptal edilemedi"); } }
-  return <div><PageHeader title="Ödeme Talimatları" subtitle="EFT/havale talimatlarını oluşturan ve onaylayan ayrımıyla, zorunlu TOTP kullanarak yönetin." actions={<Button variant="primary" onClick={() => setFormAcik((x) => !x)}>Yeni talimat</Button>}/><Alert tone="error">{hata}</Alert><Alert tone="success">{basari}</Alert>
-    {formAcik && <Card><form className="stack" onSubmit={olustur}><div className="row"><Field label="Kaynak banka hesabı"><Select name="bankaHesapId" required><option value="">Hesap seçin</option>{bankalar.map((b) => <option key={b.id} value={b.id}>{b.bankaAdi} · {b.ad} · {b.dovizCinsi}</option>)}</Select></Field><Field label="Alıcı unvanı"><Input name="aliciUnvan" required /></Field><Field label="Alıcı IBAN"><Input name="aliciIban" required placeholder="TR..." /></Field><Field label="Tutar"><Input name="tutar" type="number" min="0.01" step="0.01" required /></Field></div><Field label="Açıklama"><Input name="aciklama" required maxLength={140} /></Field><Button type="submit" variant="primary">Onaya gönder</Button></form></Card>}
-    {onayId && <Card><form className="row" onSubmit={onayla}><Field label="Authenticator kodu"><Input name="totpKodu" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="one-time-code" /></Field><Button type="submit" variant="primary">TOTP ile onayla</Button><Button type="button" onClick={() => setOnayId(null)}>Vazgeç</Button></form></Card>}
-    <Card pad={false}><TableWrap><thead><tr><th>Tarih</th><th>Kaynak</th><th>Alıcı</th><th>Açıklama</th><th>Oluşturan / Onaylayan</th><th>Durum</th><th className="num">Tutar</th><th className="center">İşlem</th></tr></thead><tbody>{talimatlar.map((t) => <tr key={t.id}><td>{new Date(t.createdAt).toLocaleDateString("tr-TR")}</td><td>{t.bankaHesap.bankaAdi}<br/><small>{t.bankaHesap.ad}</small></td><td><strong>{t.aliciUnvan}</strong><br/><small>{t.aliciIban}</small></td><td>{t.aciklama}</td><td>{t.olusturan.adSoyad}<br/><small>{t.onaylayan?.adSoyad ?? "Onay bekliyor"}</small></td><td><Badge variant={t.durum === "gonderildi" ? "success" : t.durum === "basarisiz" || t.durum === "iptal" ? "danger" : "neutral"}>{t.durum}</Badge></td><td className="num">{Number(t.tutar).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {t.dovizCinsi}</td><td className="center"><div className="row-tight">{t.durum === "onay_bekliyor" && t.olusturan.id !== userId && <Button size="sm" variant="primary" onClick={() => setOnayId(t.id)}>Onayla</Button>}{t.durum === "onay_bekliyor" && t.olusturan.id === userId && <Button size="sm" onClick={() => void iptal(t.id)}>İptal</Button>}</div></td></tr>)}{!talimatlar.length && <tr><td colSpan={8}>Henüz ödeme talimatı yok.</td></tr>}</tbody></TableWrap></Card>
-  </div>;
+  const [sekme, setSekme] = useState<Sekme>("talimatlar");
+  const [bankalar, setBankalar] = useState<Banka[]>([]);
+  const [userId, setUserId] = useState("");
+  const [hata, setHata] = useState("");
+  const [basari, setBasari] = useState("");
+  const [yenile, setYenile] = useState(0);
+
+  useEffect(() => {
+    if (!tokenAl()) return;
+    void Promise.all([api<Banka[]>("/kasa-banka/bankalar"), api<{ userId: string }>("/auth/ben")])
+      .then(([b, ben]) => { setBankalar(b.filter((x) => x.aktif)); setUserId(ben.userId); })
+      .catch((e) => setHata(e instanceof Error ? e.message : "Hesaplar yüklenemedi"));
+  }, []);
+
+  const mesaj = useCallback((m: string, hataMi = false) => {
+    if (hataMi) { setHata(m); setBasari(""); return; }
+    setHata(""); setBasari(m); setYenile((x) => x + 1);
+  }, []);
+  const kaydedildi = useCallback((m: string) => { mesaj(m); setSekme("talimatlar"); }, [mesaj]);
+
+  return (
+    <div className="ot-page">
+      <PageHeader
+        title="Ödeme Talimatları"
+        subtitle="EFT/havale talimatlarını cari ve faturalarla oluşturun, ikinci kullanıcı ve doğrulama koduyla onaylayın, bankanızın toplu ödeme dosyasıyla gönderin. Kayıt, ödeme bankada gerçekleşince yazılır."
+      />
+      <ol className="ot-steps" aria-label="Akış">
+        <li>Oluştur</li><li>İkinci kullanıcı onaylar</li><li>Ödeme paketi + dosya</li><li>Bankaya yükle</li><li>Ekstrede eşleş / gerçekleşti</li>
+      </ol>
+      {hata && <Alert tone="error">{hata}</Alert>}
+      {basari && <Alert tone="success">{basari}</Alert>}
+      <Tabs<Sekme>
+        ariaLabel="Ödeme talimatı bölümleri"
+        value={sekme}
+        onChange={setSekme}
+        items={[
+          { deger: "talimatlar", baslik: "Talimatlar" },
+          { deger: "yeni", baslik: "Yeni talimat" },
+          { deger: "toplu", baslik: "Vadesi gelen borçlar" },
+          { deger: "paketler", baslik: "Ödeme paketleri" },
+          { deger: "profil", baslik: "Dosya profilleri" },
+        ]}
+      />
+      {sekme === "talimatlar" && <TalimatListesi userId={userId} yenile={yenile} onMesaj={mesaj} onPaketlendi={() => setSekme("paketler")} />}
+      {sekme === "yeni" && bankalar.length > 0 && <YeniTalimat bankalar={bankalar} onKaydedildi={kaydedildi} />}
+      {sekme === "toplu" && bankalar.length > 0 && <TopluTalimat bankalar={bankalar} onKaydedildi={kaydedildi} />}
+      {sekme === "paketler" && <Paketler yenile={yenile} onMesaj={mesaj} />}
+      {sekme === "profil" && bankalar.length > 0 && <DosyaProfili bankalar={bankalar} onMesaj={mesaj} />}
+    </div>
+  );
 }

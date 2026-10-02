@@ -69,8 +69,10 @@ function kurulum() {
       ]),
     },
     bankaOdemeTalimati: {
-      findMany: vi.fn().mockResolvedValue([{ id: "ot1", aliciUnvan: "Tedarikçi", tutar: 10, dovizCinsi: "EUR", aciklama: "Avans" }]),
+      findMany: vi.fn().mockResolvedValue([{ id: "ot1", no: "OT2026-000001", aliciUnvan: "Tedarikçi", tutar: 10, dovizCinsi: "EUR", aciklama: "Avans", odemeTarihi: g("2026-09-01"), cariId: null }]),
     },
+    // ENT-07: ALS1'in 200 TL'si onaylı talimatta; fatura kalemi 300 kalır.
+    bankaOdemeTalimatiFatura: { groupBy: vi.fn().mockResolvedValue([{ faturaId: "f2", _sum: { tutar: 200 } }]) },
     cariHesap: {
       findMany: vi.fn().mockResolvedValue([
         { id: "c1", karaListe: false, riskLimiti: null, hareketler: [] },
@@ -105,7 +107,8 @@ describe("NakitAkisiService", () => {
 
     expect(bul("TKR1")).toMatchObject([{ kaynak: "fatura", yon: "giris", tutar: 1000, vade: "2026-09-20" }]);
     expect(bul("TKR2")).toEqual([]); // tamamen ödenmiş
-    expect(bul("ALS1")).toMatchObject([{ kaynak: "fatura", yon: "cikis", tutar: 500 }]);
+    // 500 TL faturanın 200 TL'si onaylı ödeme talimatında (ENT-07); iki kez sayılmaz.
+    expect(bul("ALS1")).toMatchObject([{ kaynak: "fatura", yon: "cikis", tutar: 300 }]);
     expect(bul("Çek P1")).toMatchObject([{ kaynak: "cek_senet", yon: "giris", tutar: 300 }]);
     expect(bul("Senet P2")).toMatchObject([{ kaynak: "cek_senet", yon: "cikis", tutar: 200 }]);
     expect(bul("Ofis · FŞ-1")).toMatchObject([{ kaynak: "masraf", yon: "cikis", tutar: 100, vade: "2026-09-12" }]);

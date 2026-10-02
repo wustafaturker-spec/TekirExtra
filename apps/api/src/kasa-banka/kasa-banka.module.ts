@@ -13,10 +13,11 @@ import { KrediKartiService } from "./kredi-karti.service";
 import { EklerModule } from "../ekler/ekler.module";
 import { CekBordroController } from "./cek-bordro.controller";
 import { CekBordroService } from "./cek-bordro.service";
+import { OdemeTalimatiController } from "./odeme-talimati.controller";
 
 @Module({
   imports: [AuthModule, EklerModule],
-  controllers: [KasaBankaController, BankaWebhookController, KrediKartiController, CekBordroController],
+  controllers: [KasaBankaController, BankaWebhookController, KrediKartiController, CekBordroController, OdemeTalimatiController],
   providers: [KasaBankaService, EkstreService, EkstreEslestirmeService, BankaEntegrasyonService, OdemeTalimatiService, KrediKartiService, CekBordroService],
   exports: [KasaBankaService, EkstreService],
 })

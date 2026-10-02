@@ -94,9 +94,13 @@ export class NakitAkisiService {
           ...FATURA_ODEME_SECIMI,
         },
       });
+      // ENT-07: onaylı/gönderilmiş talimattaki tutar talimat kalemi olarak çıkar; faturadan düşülür.
+      const planlanan = new Map((await tx.bankaOdemeTalimatiFatura.groupBy({
+        by: ["faturaId"], where: { tenantId, talimat: { durum: { in: ["onaylandi", "gonderildi"] } } }, _sum: { tutar: true },
+      })).map((g) => [g.faturaId, Number(g._sum.tutar ?? 0)]));
       for (const f of faturalar) {
         const kur = Number(f.kur) || 1;
-        const kalan = Number(faturaOdemeDurumu(f).kalan);
+        const kalan = Number(faturaOdemeDurumu(f).kalan) - (planlanan.get(f.id) ?? 0);
         if (kalan < 0.005) continue;
         const giris = f.tip === "satis" || f.tip === "alis_iade";
         ekle({
@@ -263,13 +267,15 @@ export class NakitAkisiService {
 
       // NAK-08: onaylanmış, bankaya gönderilmemiş ödeme talimatları bugün.
       const talimatlar = await tx.bankaOdemeTalimati.findMany({
-        where: { tenantId, durum: "onaylandi" },
-        select: { id: true, aliciUnvan: true, tutar: true, dovizCinsi: true, aciklama: true },
+        where: { tenantId, durum: { in: ["onaylandi", "gonderildi"] } },
+        select: { id: true, no: true, aliciUnvan: true, tutar: true, dovizCinsi: true, aciklama: true, odemeTarihi: true, cariId: true },
       });
       for (const t of talimatlar) {
+        const vade = isoGun(t.odemeTarihi) < bugun ? bugun : isoGun(t.odemeTarihi);
+        if (vade > ufukSonu) continue;
         ekle({
-          kaynak: "odeme_talimati", kaynakId: t.id, yon: "cikis", vade: bugun, dovizCinsi: t.dovizCinsi, dovizTutar: Number(t.tutar),
-          aciklama: `Ödeme talimatı · ${t.aciklama}`, cariUnvan: t.aliciUnvan, baglanti: "/panel/kasa-banka/odeme-talimatlari",
+          kaynak: "odeme_talimati", kaynakId: t.id, yon: "cikis", vade, dovizCinsi: t.dovizCinsi, dovizTutar: Number(t.tutar),
+          aciklama: `Ödeme talimatı ${t.no ?? ""} · ${t.aciklama}`, cariId: t.cariId, cariUnvan: t.aliciUnvan, baglanti: "/panel/kasa-banka/odeme-talimatlari",
         });
       }
 

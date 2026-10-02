@@ -153,6 +153,9 @@ model Tenant {
   pazaryeriKesintileri      PazaryeriKesinti[]
   bankaHesapEslemeleri      BankaBaglantiHesap[]
   bankaOdemeTalimatlari     BankaOdemeTalimati[]
+  odemeTalimatiFaturalari   BankaOdemeTalimatiFatura[]
+  odemePaketleri            OdemePaketi[]
+  numaraSayaclari           NumaraSayaci[]
   masrafKategorileri        MasrafKategori[]
   masraflar                 Masraf[]
   masrafOdemeleri           MasrafOdeme[]
@@ -792,9 +795,9 @@ model CariHesap {
   createdAt               DateTime            @default(now()) @map("created_at")
   updatedAt               DateTime            @updatedAt @map("updated_at")
 
-  fiyatListesi          FiyatListesi?       @relation(fields: [fiyatListesiId], references: [id])
-  temsilci              User?               @relation("CariTemsilci", fields: [temsilciUserId], references: [id])
-  bayiKullanicilari     User[]              @relation("BayiKullaniciCari")
+  fiyatListesi          FiyatListesi?        @relation(fields: [fiyatListesiId], references: [id])
+  temsilci              User?                @relation("CariTemsilci", fields: [temsilciUserId], references: [id])
+  bayiKullanicilari     User[]               @relation("BayiKullaniciCari")
   satinAlmaTeklifleri   SatinAlmaTeklifi[]
   adresler              CariAdres[]
   kisiler               CariKisi[]
@@ -805,14 +808,15 @@ model CariHesap {
   crmGorevleri          CrmGorev[]
   crmFirsatlari         CrmFirsat[]
   faturas               Fatura[]
-  cekSenetleri          CekSenet[]          @relation("CekSenetCari")
-  ceklerCiro            CekSenet[]          @relation("CekSenetCiro")
+  cekSenetleri          CekSenet[]           @relation("CekSenetCari")
+  ceklerCiro            CekSenet[]           @relation("CekSenetCiro")
   cekBordrolari         CekSenetBordro[]
+  odemeTalimatlari      BankaOdemeTalimati[]
   kasaBankaHareketleri  KasaBankaHareket[]
   gelirKayitlari        GelirKaydi[]
   stokTedarikcilikleri  StokTedarikci[]
   belgeler              Belge[]
-  tasidigiBelgeler      Belge[]             @relation("BelgeTasiyici")
+  tasidigiBelgeler      Belge[]              @relation("BelgeTasiyici")
   ekstreSatirlari       BankaEkstreSatir[]
   pazaryeriSiparisleri  PazaryeriSiparis[]
   posTahsilatlari       PosTahsilat[]
@@ -2269,25 +2273,26 @@ model Fatura {
   createdAt             DateTime            @default(now()) @map("created_at")
   updatedAt             DateTime            @updatedAt @map("updated_at")
 
-  cari                  CariHesap             @relation(fields: [cariId], references: [id])
-  depo                  Depo?                 @relation(fields: [depoId], references: [id])
+  cari                  CariHesap                  @relation(fields: [cariId], references: [id])
+  depo                  Depo?                      @relation(fields: [depoId], references: [id])
   satirlar              FaturaSatir[]
   ebelge                EbelgeKayit?
   gelenEbelge           GelenEbelge?
-  kasaBankaHarekets     KasaBankaHareket[]    @relation("HareketFaturasi")
+  kasaBankaHarekets     KasaBankaHareket[]         @relation("HareketFaturasi")
   /// KSB-07: bu kur farkı faturasının kapattığı ödeme kur farkları.
-  kurFarkiOdemeleri     KasaBankaHareket[]    @relation("KurFarkiFaturasi")
+  kurFarkiOdemeleri     KasaBankaHareket[]         @relation("KurFarkiFaturasi")
   zincirBelgeleri       Belge[]
   ekstreSatirlari       BankaEkstreSatir[]
-  tekrarlayanSablon     TekrarlayanFatura[]   @relation("TekrarlayanFaturaSablon")
-  tekrarlayanPlan       TekrarlayanFatura?    @relation("TekrarlayanFaturaUretim", fields: [tekrarlayanPlanId], references: [id])
-  tekrarlayanPlanId     String?               @map("tekrarlayan_plan_id") @db.Uuid
-  planlananTarih        DateTime?             @map("planlanan_tarih") @db.Date
+  tekrarlayanSablon     TekrarlayanFatura[]        @relation("TekrarlayanFaturaSablon")
+  tekrarlayanPlan       TekrarlayanFatura?         @relation("TekrarlayanFaturaUretim", fields: [tekrarlayanPlanId], references: [id])
+  tekrarlayanPlanId     String?                    @map("tekrarlayan_plan_id") @db.Uuid
+  planlananTarih        DateTime?                  @map("planlanan_tarih") @db.Date
   pazaryeriSiparisleri  PazaryeriSiparis[]
   posTahsilatlari       PosTahsilat[]
   krediKartiHareketleri KrediKartiHareket[]
-  iadeReferanslari      FaturaIadeReferansi[] @relation("IadeReferanslari")
-  iadeEdildigiFaturalar FaturaIadeReferansi[] @relation("IadeKaynagi")
+  iadeReferanslari      FaturaIadeReferansi[]      @relation("IadeReferanslari")
+  iadeEdildigiFaturalar FaturaIadeReferansi[]      @relation("IadeKaynagi")
+  odemeTalimatiBaglari  BankaOdemeTalimatiFatura[]
 
   @@unique([tenantId, seri, sira])
   @@unique([tekrarlayanPlanId, planlananTarih])
@@ -2660,6 +2665,9 @@ model BankaHesap {
   posHesaplari       PosHesap[]           @relation("PosVarsayilanBanka")
   baglantiEslemeleri BankaBaglantiHesap[]
   odemeTalimatlari   BankaOdemeTalimati[]
+  odemePaketleri     OdemePaketi[]
+  /// ENT-07: toplu ödeme dosyası profili (xlsx/csv sütunları ya da pain.001).
+  odemeDosyaProfili  Json?                @map("odeme_dosya_profili")
   masraflar          Masraf[]
   masrafOdemeleri    MasrafOdeme[]
   gelirKayitlari     GelirKaydi[]
@@ -2797,35 +2805,102 @@ enum BankaOdemeTalimatDurumu {
   onay_bekliyor
   onaylandi
   gonderildi
+  /// ENT-07: bankada gerçekleşti; tediye fişi yazıldı.
+  gerceklesti
   basarisiz
   iptal
 }
 
 model BankaOdemeTalimati {
-  id              String                  @id @default(uuid()) @db.Uuid
-  tenantId        String                  @map("tenant_id") @db.Uuid
-  bankaHesapId    String                  @map("banka_hesap_id") @db.Uuid
-  aliciUnvan      String                  @map("alici_unvan")
-  aliciIban       String                  @map("alici_iban")
-  tutar           Decimal                 @db.Decimal(15, 2)
-  dovizCinsi      DovizCinsi              @map("doviz_cinsi")
-  aciklama        String
-  durum           BankaOdemeTalimatDurumu @default(onay_bekliyor)
-  olusturanUserId String                  @map("olusturan_user_id") @db.Uuid
-  onaylayanUserId String?                 @map("onaylayan_user_id") @db.Uuid
-  onayZamani      DateTime?               @map("onay_zamani")
-  saglayiciRef    String?                 @map("saglayici_ref")
-  hataMesaji      String?                 @map("hata_mesaji")
-  createdAt       DateTime                @default(now()) @map("created_at")
-  updatedAt       DateTime                @updatedAt @map("updated_at")
+  id                String                  @id @default(uuid()) @db.Uuid
+  tenantId          String                  @map("tenant_id") @db.Uuid
+  /// ENT-07: OT2026-000001; banka açıklamasına referans olarak yazılır.
+  no                String?
+  bankaHesapId      String                  @map("banka_hesap_id") @db.Uuid
+  cariId            String?                 @map("cari_id") @db.Uuid
+  cariBankaHesapId  String?                 @map("cari_banka_hesap_id") @db.Uuid
+  /// İstenen ödeme (valör) tarihi.
+  odemeTarihi       DateTime                @default(now()) @map("odeme_tarihi") @db.Date
+  paketId           String?                 @map("paket_id") @db.Uuid
+  gerceklesmeTarihi DateTime?               @map("gerceklesme_tarihi") @db.Date
+  aliciUnvan        String                  @map("alici_unvan")
+  aliciIban         String                  @map("alici_iban")
+  tutar             Decimal                 @db.Decimal(15, 2)
+  dovizCinsi        DovizCinsi              @map("doviz_cinsi")
+  aciklama          String
+  durum             BankaOdemeTalimatDurumu @default(onay_bekliyor)
+  olusturanUserId   String                  @map("olusturan_user_id") @db.Uuid
+  onaylayanUserId   String?                 @map("onaylayan_user_id") @db.Uuid
+  onayZamani        DateTime?               @map("onay_zamani")
+  saglayiciRef      String?                 @map("saglayici_ref")
+  hataMesaji        String?                 @map("hata_mesaji")
+  createdAt         DateTime                @default(now()) @map("created_at")
+  updatedAt         DateTime                @updatedAt @map("updated_at")
 
-  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  bankaHesap BankaHesap @relation(fields: [bankaHesapId], references: [id])
-  olusturan  User       @relation("TalimatOlusturan", fields: [olusturanUserId], references: [id])
-  onaylayan  User?      @relation("TalimatOnaylayan", fields: [onaylayanUserId], references: [id])
+  tenant     Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bankaHesap BankaHesap                 @relation(fields: [bankaHesapId], references: [id])
+  olusturan  User                       @relation("TalimatOlusturan", fields: [olusturanUserId], references: [id])
+  onaylayan  User?                      @relation("TalimatOnaylayan", fields: [onaylayanUserId], references: [id])
+  cari       CariHesap?                 @relation(fields: [cariId], references: [id])
+  paket      OdemePaketi?               @relation(fields: [paketId], references: [id])
+  faturalar  BankaOdemeTalimatiFatura[]
 
+  @@unique([tenantId, no])
   @@index([tenantId, durum, createdAt])
   @@map("banka_odeme_talimatlari")
+}
+
+/// ENT-07: talimatın ödediği faturalar ve fatura başına tutar.
+model BankaOdemeTalimatiFatura {
+  id        String  @id @default(uuid()) @db.Uuid
+  tenantId  String  @map("tenant_id") @db.Uuid
+  talimatId String  @map("talimat_id") @db.Uuid
+  faturaId  String  @map("fatura_id") @db.Uuid
+  tutar     Decimal @db.Decimal(15, 2)
+
+  tenant  Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  talimat BankaOdemeTalimati @relation(fields: [talimatId], references: [id], onDelete: Cascade)
+  fatura  Fatura             @relation(fields: [faturaId], references: [id])
+
+  @@unique([talimatId, faturaId])
+  @@index([tenantId, faturaId])
+  @@map("banka_odeme_talimati_faturalari")
+}
+
+/// ENT-07: aynı kaynak hesaptan onaylanmış talimatların toplu ödeme dosyası.
+model OdemePaketi {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  no              String
+  bankaHesapId    String    @map("banka_hesap_id") @db.Uuid
+  dosyaBicimi     String    @map("dosya_bicimi")
+  toplam          Decimal   @db.Decimal(15, 2)
+  adet            Int
+  indirmeSayisi   Int       @default(0) @map("indirme_sayisi")
+  sonIndirme      DateTime? @map("son_indirme")
+  iptal           Boolean   @default(false)
+  olusturanUserId String?   @map("olusturan_user_id") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  tenant     Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bankaHesap BankaHesap           @relation(fields: [bankaHesapId], references: [id])
+  talimatlar BankaOdemeTalimati[]
+
+  @@unique([tenantId, no])
+  @@map("odeme_paketleri")
+}
+
+/// Belge numarası sayaçları (tür ve yıl başına): OT, OPK.
+model NumaraSayaci {
+  tenantId String @map("tenant_id") @db.Uuid
+  tur      String
+  yil      Int
+  sonSira  Int    @default(0) @map("son_sira")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, tur, yil])
+  @@map("numara_sayaclari")
 }
 
 model BankaBaglantiHesap {
@@ -2917,6 +2992,7 @@ enum EkstreEslesmeTuru {
   cek
   kredi_karti
   pos
+  odeme_talimati
 }
 
 enum EkstreKuralYonu {

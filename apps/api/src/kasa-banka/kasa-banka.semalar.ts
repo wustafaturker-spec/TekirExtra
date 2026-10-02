@@ -165,6 +165,8 @@ export const ekstreEslestirSemasi = z.discriminatedUnion("tur", [
   }).refine((d) => Boolean(d.karsiKasaId) !== Boolean(d.karsiBankaHesapId), { message: "Karşı hesap olarak bir kasa ya da bir banka hesabı seçin", path: ["karsiKasaId"] }),
   z.object({ tur: z.literal("cek"), cekSenetId: z.uuid(), ...eslestirOrtak }),
   z.object({ tur: z.literal("kredi_karti"), krediKartiId: z.uuid(), ...eslestirOrtak }),
+  /** ENT-07: bankaya gönderilmiş ödeme talimatının gerçekleşmesi. */
+  z.object({ tur: z.literal("odeme_talimati"), talimatId: z.uuid(), ...eslestirOrtak }),
 ]);
 
 export const ekstreKuralGuncelleSemasi = z.object({

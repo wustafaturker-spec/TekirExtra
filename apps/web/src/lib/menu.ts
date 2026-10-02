@@ -148,6 +148,7 @@ export const MENU: MenuAlani[] = [
       { href: "/panel/kasa-banka/cek-senet", ikon: ScrollText, baslik: "Çek & Senetler", eslesme: "tam", esanlamlilar: ["portföy", "vade", "ciro"] },
       { href: "/panel/kasa-banka/cek-senet/bordrolar", ikon: ScrollText, baslik: "Çek Bordroları", eslesme: "tam", esanlamlilar: ["bordro", "giriş bordrosu", "ciro bordrosu", "tahsile verme", "teminat", "çek görüntüsü"] },
       { href: "/panel/kasa-banka/ekstre", ikon: FileSpreadsheet, baslik: "Banka Ekstresi", eslesme: "tam", esanlamlilar: ["mutabakat", "eşleştirme", "csv"] },
+      { href: "/panel/kasa-banka/odeme-talimatlari", ikon: Landmark, baslik: "Ödeme Talimatları", eslesme: "tam", esanlamlilar: ["eft", "havale", "toplu ödeme", "ödeme dosyası", "pain.001"] },
       { href: "/panel/kasa-banka/kur-farki", ikon: Coins, baslik: "Kur Farkı", eslesme: "tam", esanlamlilar: ["kur farkı faturası", "değerleme", "revalüasyon", "döviz"] },
       { href: "/panel/projeler", ikon: FolderKanban, baslik: "Projeler & Analitik Yevmiye", eslesme: "tam", esanlamlilar: ["maliyet merkezi"] },
     ],
