@@ -165,7 +165,7 @@ export class EkstreEslestirmeService {
         case "mevcut_fis": {
           const fisler = await tx.kasaBankaHareket.findMany({ where: { id: { in: girdi.hareketIdleri } } });
           const uygun = fisler.filter((f) =>
-            f.bankaHesapId === satir.bankaHesapId && !f.ekstreSatirId && f.kaynakTur !== "ters_kayit"
+            f.bankaHesapId === satir.bankaHesapId && !f.ekstreSatirId && f.kaynakTur !== "ters_kayit" && f.kaynakTur !== "acilis"
             && (giris ? ["tahsilat", "virman_gelis"] : ["tediye", "virman_gidis"]).includes(f.tip));
           if (uygun.length !== girdi.hareketIdleri.length) throw new BadRequestException("Seçilen fişlerden biri bu hesaba ait değil, yönü uyuşmuyor ya da zaten başka bir satıra bağlı");
           const toplam = uygun.reduce((t, f) => t.add(f.tutar), D(0));
@@ -467,7 +467,7 @@ export class EkstreEslestirmeService {
   private async mevcutFisAdaylari(tx: Prisma.TransactionClient, bankaHesapId: string, giris: boolean, tarih: Date, mutlak: Prisma.Decimal) {
     const adaylar = await tx.kasaBankaHareket.findMany({
       where: {
-        bankaHesapId, ekstreSatirId: null, kaynakTur: { not: "ters_kayit" },
+        bankaHesapId, ekstreSatirId: null, kaynakTur: { notIn: ["ters_kayit", "acilis"] },
         tip: { in: giris ? ["tahsilat", "virman_gelis"] : ["tediye", "virman_gidis"] },
         tarih: { gte: new Date(tarih.getTime() - 7 * GUN), lte: new Date(tarih.getTime() + 7 * GUN) },
         tutar: { lte: mutlak },

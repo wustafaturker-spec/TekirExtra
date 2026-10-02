@@ -10,7 +10,7 @@
  * bir kur uyguladıysa kullanıcı kuru düzeltir.
  */
 import { useEffect, useMemo, useState } from "react";
-import { api } from "@/lib/api";
+import { api, ApiHata } from "@/lib/api";
 import { AramaSecici } from "@/components/arama-secici";
 import { CariBakiye } from "@/components/cari-bakiye";
 import { Alert, Badge, Button, Field, Input, Para, Segmented, Select, Tarih } from "@/components/ui";
@@ -161,6 +161,7 @@ export function OdemeFisi({
   const [kalaniOtomatikYaz, setKalaniOtomatikYaz] = useState(Boolean(baslangic.faturaId && !baslangic.tutar));
   const [kaydediliyor, setKaydediliyor] = useState(false);
   const [hata, setHata] = useState("");
+  const [eksiBakiyeUyarisi, setEksiBakiyeUyarisi] = useState<string | null>(null);
 
   const aktifHesaplar = hesaplar.filter((h) => h.aktif);
   const hesap = aktifHesaplar.find((h) => `${h.tur}:${h.id}` === hesapAnahtari);
@@ -237,11 +238,13 @@ export function OdemeFisi({
     if (secilen && !aciklama) setAciklama(`${secilen.no ?? "Fatura"} ${tip === "tahsilat" ? "tahsilatı" : "ödemesi"}`);
   }
 
-  async function kaydet(e: React.FormEvent) {
-    e.preventDefault();
+  /** `onayli`: kullanıcı eksi bakiye uyarısını gördü ve yine de kaydetmek istiyor (P1-9). */
+  async function kaydet(e?: React.FormEvent, onayli = false) {
+    e?.preventDefault();
     if (!hesap) return;
     setKaydediliyor(true);
     setHata("");
+    setEksiBakiyeUyarisi(null);
     try {
       const capraz = caprazDoviz && kapama;
       const fis = {
@@ -257,6 +260,7 @@ export function OdemeFisi({
         ...(capraz ? { faturaKarsiligi: kapama.karsilik.toFixed(2) } : {}),
         // Dövizli hesaptan TL faturaya: girilen kur hareketin kendi kurudur.
         ...(capraz && fatura?.dovizCinsi === "TRY" ? { kur: sayi(kurMetni).toFixed(6) } : {}),
+        ...(onayli ? { eksiBakiyeOnay: true } : {}),
       };
       const yanit = duzeltme
         ? (await api<{ hareket: KayitYaniti }>(`/kasa-banka/hareketler/${baslangic.duzeltilenId}/duzelt`, {
@@ -272,7 +276,8 @@ export function OdemeFisi({
       const makbuz = yanit.makbuzNo ? ` Makbuz no: ${yanit.makbuzNo}.` : "";
       onKaydedildi(`${islemAdi}.${makbuz}${ayrinti}`);
     } catch (err) {
-      setHata(err instanceof Error ? err.message : "Fiş kaydedilemedi");
+      if (err instanceof ApiHata && err.durum === 409 && !onayli && /eksi bakiye/i.test(err.message)) setEksiBakiyeUyarisi(err.message);
+      else setHata(err instanceof Error ? err.message : "Fiş kaydedilemedi");
     } finally {
       setKaydediliyor(false);
     }
@@ -503,6 +508,15 @@ export function OdemeFisi({
       )}
 
       {hata && <Alert tone="error">{hata}</Alert>}
+      {eksiBakiyeUyarisi && (
+        <div className="treasury-confirm" role="alertdialog" aria-label="Eksi bakiye uyarısı">
+          <Alert tone="warning"><span><strong>Hesap eksi bakiyeye düşüyor.</strong> {eksiBakiyeUyarisi}</span></Alert>
+          <div>
+            <Button type="button" size="sm" onClick={() => setEksiBakiyeUyarisi(null)}>Vazgeç</Button>
+            <Button type="button" size="sm" variant="primary" disabled={kaydediliyor} onClick={() => void kaydet(undefined, true)}>Yine de kaydet</Button>
+          </div>
+        </div>
+      )}
 
       <footer>
         <Button type="button" onClick={onKapat} disabled={kaydediliyor}>Vazgeç</Button>

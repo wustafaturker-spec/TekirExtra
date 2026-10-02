@@ -28,6 +28,7 @@ describe("KasaBankaService (KSB-01..07)", () => {
   it("kasaOlustur yeni bir kasa kaydı oluşturur (KSB-01)", async () => {
     const mockTx = {
       kasa: {
+        findFirst: vi.fn().mockResolvedValue(null),
         create: vi.fn().mockResolvedValue({ id: "k1", ad: "Merkez Kasa", dovizCinsi: "TRY" }),
       },
     };
@@ -57,6 +58,7 @@ describe("KasaBankaService (KSB-01..07)", () => {
           .mockResolvedValueOnce({ id: "gidis-id" }) // 1. çağrı (gidis)
           .mockResolvedValueOnce({ id: "gelis-id" }), // 2. çağrı (gelis)
         update: vi.fn().mockResolvedValue({}),
+        groupBy: vi.fn().mockResolvedValue([{ tip: "tahsilat", _sum: { tutar: new Prisma.Decimal(500) } }]),
       },
     };
     mockTenantIslem.mockImplementation((tenantId, cb) => cb(mockTx));
@@ -78,6 +80,36 @@ describe("KasaBankaService (KSB-01..07)", () => {
     });
     expect(sonuc.gidis.id).toBe("gidis-id");
     expect(sonuc.gelis.id).toBe("gelis-id");
+  });
+
+  describe("P1-9 eksi bakiye uyarısı", () => {
+    const virman = { kaynakKasaId: "kasa-source", hedefKasaId: "kasa-target", tutar: "150.00", tarih: "2026-07-12" };
+    const kurulum = (once: number, sonra: number) => {
+      const tx = {
+        kasa: { findUnique: vi.fn().mockResolvedValue({ aktif: true, dovizCinsi: "TRY", ad: "Merkez" }) },
+        kasaBankaHareket: {
+          create: vi.fn().mockResolvedValueOnce({ id: "gidis-id" }).mockResolvedValueOnce({ id: "gelis-id" }),
+          update: vi.fn().mockResolvedValue({}),
+          groupBy: vi.fn()
+            .mockResolvedValueOnce([{ tip: "tahsilat", _sum: { tutar: new Prisma.Decimal(once) } }])
+            .mockResolvedValueOnce([{ tip: "tahsilat", _sum: { tutar: new Prisma.Decimal(sonra) } }]),
+        },
+      };
+      mockTenantIslem.mockImplementation((_tenantId, cb) => cb(tx));
+      return tx;
+    };
+
+    it("kaynak hesap eksiye düşerse onay ister (409), işlem geri sarılır", async () => {
+      kurulum(100, -50);
+      await expect(service.virmanEkle(virman)).rejects.toThrow(/eksi bakiyeye düşer/);
+    });
+
+    it("onaylanınca ya da bakiye eksiye düşmüyorsa kaydeder", async () => {
+      kurulum(100, -50);
+      await expect(service.virmanEkle({ ...virman, eksiBakiyeOnay: true })).resolves.toMatchObject({ gidis: { id: "gidis-id" } });
+      kurulum(500, 350);
+      await expect(service.virmanEkle(virman)).resolves.toMatchObject({ gidis: { id: "gidis-id" } });
+    });
   });
 
   it("hareketEkle tahsilat durumunda cariye ALACAK yazar (KSB-02/07)", async () => {

@@ -15,16 +15,20 @@ import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
 import { kurCoz, kurZorunlu } from "../doviz/kur-coz";
 import { makbuzPdfHtml } from "./makbuz-pdf";
+import { girisMi, hesapEkstresiHesapla } from "./hesap-ekstresi";
+import { hesapEkstresiPdfHtml } from "./hesap-ekstresi-pdf";
+import { hesapEkstresiExcel } from "./hesap-ekstresi-excel";
 import { beklenenOdemeTipi, faturaKilitleVeKalaniGetir, faturaOdemeDurumu, mahsupAyir } from "../fatura/odeme-durumu";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import type {
+  acilisSemasi,
+  bankaAcilisliOlusturSemasi,
   bankaHesapGuncelleSemasi,
-  bankaHesapOlusturSemasi,
+  kasaAcilisliOlusturSemasi,
   cekSenetGuncelleSemasi,
   cekSenetOlusturSemasi,
   kasaBankaHareketOlusturSemasi,
   kasaGuncelleSemasi,
-  kasaOlusturSemasi,
   virmanOlusturSemasi,
   posHesapOlusturSemasi,
   posBankaAktarimSemasi,
@@ -40,6 +44,16 @@ export interface KasaBankaBakiye {
 
 /** KSB-09: varsayılan makbuz önekleri; numara biçimi tetikleyiciyle (makbuz_no_ver) aynıdır. */
 const MAKBUZ_VARSAYILAN_ONEK = { tahsilat: "TM", tediye: "TD" } as const;
+/** P1-9: ekstre ve açılış uçlarında hesap "kasa:<id>" ya da "banka:<id>" olarak anılır. */
+export type HesapTuru = "kasa" | "banka";
+type AcilisGirdisi = Omit<z.infer<typeof acilisSemasi>, "neden">;
+const hesapAlani = (tur: HesapTuru, id: string) => (tur === "kasa" ? { kasaId: id } : { bankaHesapId: id });
+const tarihTR = (tarih: Date) => tarih.toLocaleDateString("tr-TR", { timeZone: "UTC" });
+const tutarTR = (tutar: Prisma.Decimal, doviz: string) => `${Number(tutar).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${doviz === "TRY" ? "TL" : doviz}`;
+
+/** Dosya adında Türkçe harf ve boşluk kalmasın. */
+const dosyaAdiParcasi = (ad: string) => metinNormalize(ad).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "hesap";
+
 export const makbuzNoBicimle = (onek: string, yil: number, sira: number) => `${onek}${yil}-${String(sira).padStart(6, "0")}`;
 
 @Injectable()
@@ -59,6 +73,7 @@ export class KasaBankaService {
     );
 
     const bakiyeler = await this.kasaBakiyeleri(kasalar.map((k) => k.id));
+    const acilislar = await this.acilislar("kasa", kasalar.map((k) => k.id));
 
     return kasalar.map((k) => {
       const bakiye = bakiyeler.get(k.id) ?? { borc: "0.00", alacak: "0.00", bakiye: "0.00" };
@@ -70,6 +85,7 @@ export class KasaBankaService {
         bakiye: bakiye.bakiye,
         borc: bakiye.borc,
         alacak: bakiye.alacak,
+        acilis: acilislar.get(k.id) ?? null,
         izinliEylemler: this.eylemler("kasa", k, ctx.rol, k._count.hareketler),
       };
     });
@@ -100,21 +116,17 @@ export class KasaBankaService {
     };
   }
 
-  async kasaOlustur(girdi: z.infer<typeof kasaOlusturSemasi>) {
+  async kasaOlustur(girdi: z.infer<typeof kasaAcilisliOlusturSemasi>) {
     const { tenantId } = aktifBaglam();
-    try {
-      return await this.prisma.tenantIslem(tenantId, (tx) =>
-        tx.kasa.create({
-          data: {
-            tenantId,
-            ad: girdi.ad,
-            dovizCinsi: girdi.dovizCinsi,
-          },
-        }),
-      );
-    } catch {
+    if (girdi.acilis) await this.donemKilidi.tarihDogrula(tenantId, girdi.acilis.tarih, "açılış fişi");
+    if (await this.prisma.tenantIslem(tenantId, (tx) => tx.kasa.findFirst({ where: { ad: girdi.ad }, select: { id: true } }))) {
       throw new BadRequestException(`'${girdi.ad}' adında kasa zaten mevcut`);
     }
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kasa = await tx.kasa.create({ data: { tenantId, ad: girdi.ad, dovizCinsi: girdi.dovizCinsi } });
+      if (girdi.acilis) await this.acilisYaz(tx, tenantId, "kasa", kasa, girdi.acilis);
+      return kasa;
+    });
   }
 
   async kasaGuncelle(id: string, girdi: z.infer<typeof kasaGuncelleSemasi>) {
@@ -158,6 +170,7 @@ export class KasaBankaService {
     );
 
     const bakiyeler = await this.bankaBakiyeleri(hesaplar.map((h) => h.id));
+    const acilislar = await this.acilislar("banka", hesaplar.map((h) => h.id));
 
     return hesaplar.map((h) => {
       const bakiye = bakiyeler.get(h.id) ?? { borc: "0.00", alacak: "0.00", bakiye: "0.00" };
@@ -173,6 +186,7 @@ export class KasaBankaService {
         bakiye: bakiye.bakiye,
         borc: bakiye.borc,
         alacak: bakiye.alacak,
+        acilis: acilislar.get(h.id) ?? null,
         izinliEylemler: this.eylemler("banka", h, ctx.rol, h._count.hareketler),
       };
     });
@@ -207,11 +221,14 @@ export class KasaBankaService {
     };
   }
 
-  async bankaOlustur(girdi: z.infer<typeof bankaHesapOlusturSemasi>) {
+  async bankaOlustur(girdi: z.infer<typeof bankaAcilisliOlusturSemasi>) {
     const { tenantId } = aktifBaglam();
-    try {
-      return await this.prisma.tenantIslem(tenantId, (tx) =>
-        tx.bankaHesap.create({
+    if (girdi.acilis) await this.donemKilidi.tarihDogrula(tenantId, girdi.acilis.tarih, "açılış fişi");
+    if (await this.prisma.tenantIslem(tenantId, (tx) => tx.bankaHesap.findFirst({ where: { ad: girdi.ad }, select: { id: true } }))) {
+      throw new BadRequestException(`'${girdi.ad}' adında banka hesabı zaten mevcut`);
+    }
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const hesap = await tx.bankaHesap.create({
           data: {
             tenantId,
             ad: girdi.ad,
@@ -223,11 +240,10 @@ export class KasaBankaService {
             faturadaGoster: girdi.faturadaGoster,
             dovizCinsi: girdi.dovizCinsi,
           },
-        }),
-      );
-    } catch {
-      throw new BadRequestException(`'${girdi.ad}' adında banka hesabı zaten mevcut`);
-    }
+        });
+      if (girdi.acilis) await this.acilisYaz(tx, tenantId, "banka", hesap, girdi.acilis);
+      return hesap;
+    });
   }
 
   async bankaGuncelle(id: string, girdi: z.infer<typeof bankaHesapGuncelleSemasi>) {
@@ -338,7 +354,12 @@ export class KasaBankaService {
   async hareketEkle(girdi: z.infer<typeof kasaBankaHareketOlusturSemasi>) {
     const { tenantId } = aktifBaglam();
     await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "kasa/banka hareketi oluşturma");
-    return this.prisma.tenantIslem(tenantId, (tx) => this.hareketOlustur(tx, tenantId, girdi));
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const once = girdi.tip === "tediye" ? await this.hesapBakiyesi(tx, girdi) : null;
+      const hareket = await this.hareketOlustur(tx, tenantId, girdi);
+      if (once) await this.eksiBakiyeDenetle(tx, girdi, once, girdi.eksiBakiyeOnay);
+      return hareket;
+    });
   }
 
   /** Tahsilat/tediye fişini verilen işlemin içinde yazar (ekleme ve düzeltme ortak). */
@@ -512,7 +533,13 @@ export class KasaBankaService {
     await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "virman");
     // Kasa ve banka hesaplarının para birimlerini kontrol et (Aynı birim olmalı)
     const dovizCinsi = await this.virmanKurallariniDenetle(girdi);
-    return this.prisma.tenantIslem(tenantId, (tx) => this.virmanOlustur(tx, tenantId, girdi, dovizCinsi, tutar));
+    const kaynak = { kasaId: girdi.kaynakKasaId, bankaHesapId: girdi.kaynakBankaHesapId };
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const once = await this.hesapBakiyesi(tx, kaynak);
+      const virman = await this.virmanOlustur(tx, tenantId, girdi, dovizCinsi, tutar);
+      await this.eksiBakiyeDenetle(tx, kaynak, once, girdi.eksiBakiyeOnay);
+      return virman;
+    });
   }
 
   /** Virmanın iki bacağını verilen işlemin içinde yazar (ekleme ve düzeltme ortak). */
@@ -582,8 +609,10 @@ export class KasaBankaService {
     const { tenantId } = aktifBaglam();
     await this.donemKilidi.tarihDogrula(tenantId, yeni.tarih, "düzeltilmiş fiş");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const once = yeni.tip === "tediye" ? await this.hesapBakiyesi(tx, yeni) : null;
       const geriAlma = await this.geriAlIslem(tx, tenantId, id, neden, "tahsilat_tediye");
       const hareket = await this.hareketOlustur(tx, tenantId, yeni);
+      if (once) await this.eksiBakiyeDenetle(tx, yeni, once, yeni.eksiBakiyeOnay);
       return { geriAlma, hareket };
     });
   }
@@ -593,9 +622,12 @@ export class KasaBankaService {
     const { tenantId } = aktifBaglam();
     await this.donemKilidi.tarihDogrula(tenantId, yeni.tarih, "düzeltilmiş virman");
     const dovizCinsi = await this.virmanKurallariniDenetle(yeni);
+    const kaynak = { kasaId: yeni.kaynakKasaId, bankaHesapId: yeni.kaynakBankaHesapId };
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const once = await this.hesapBakiyesi(tx, kaynak);
       const geriAlma = await this.geriAlIslem(tx, tenantId, id, neden, "virman");
       const virman = await this.virmanOlustur(tx, tenantId, yeni, dovizCinsi, D(yeni.tutar));
+      await this.eksiBakiyeDenetle(tx, kaynak, once, yeni.eksiBakiyeOnay);
       return { geriAlma, virman };
     });
   }
@@ -627,6 +659,7 @@ export class KasaBankaService {
     const hareket = await kilitleVeOku(id);
     if (!hareket) throw new NotFoundException("Kasa/banka hareketi bulunamadı");
     if (hareket.kaynakTur === "ters_kayit") throw new BadRequestException("Ters kayıt geri alınamaz; gerekiyorsa işlemi yeniden girin");
+    if (hareket.kaynakTur === "acilis") throw new BadRequestException("Açılış fişi geri alınmaz; Hesap ekstresi ekranındaki Açılış bakiyesi bölümünden değiştirin ya da silin");
     const virman = hareket.tip === "virman_gelis" || hareket.tip === "virman_gidis";
     if (beklenen === "virman" && !virman) throw new BadRequestException("Bu kayıt virman değil");
     if (beklenen === "tahsilat_tediye" && virman) throw new BadRequestException("Virman, virman düzeltmesiyle değiştirilir");
@@ -1191,6 +1224,213 @@ export class KasaBankaService {
 
       return guncel;
     }
+  }
+
+  // ─── AÇILIŞ FİŞİ, EKSİ BAKİYE UYARISI VE HESAP EKSTRESİ (P1-9) ────────────
+
+  /** Hesapların açılış fişleri; tutar işaretlidir (eksi açılış = tediye). */
+  private async acilislar(tur: HesapTuru, idler: string[]) {
+    if (idler.length === 0) return new Map<string, { id: string; tarih: string; tutar: string; kur: string; aciklama: string | null }>();
+    const { tenantId } = aktifBaglam();
+    const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) => tx.kasaBankaHareket.findMany({
+      where: { kaynakTur: "acilis", ...(tur === "kasa" ? { kasaId: { in: idler } } : { bankaHesapId: { in: idler } }) },
+      select: { id: true, kasaId: true, bankaHesapId: true, tip: true, tarih: true, tutar: true, kur: true, aciklama: true },
+    }));
+    return new Map(kayitlar.map((a) => [(a.kasaId ?? a.bankaHesapId)!, {
+      id: a.id,
+      tarih: a.tarih.toISOString().slice(0, 10),
+      tutar: (a.tip === "tediye" ? a.tutar.negated() : a.tutar).toFixed(2),
+      kur: a.kur.toFixed(6),
+      aciklama: a.aciklama,
+    }]));
+  }
+
+  /** Hesap satırını kilitler: açılış denetimleri (ilk hareket, tek açılış) eşzamanlı yazımla bozulmasın. */
+  private async hesabiKilitle(tx: Prisma.TransactionClient, tur: HesapTuru, id: string) {
+    if (tur === "kasa") await tx.$queryRaw`SELECT id FROM kasalar WHERE id = ${id}::uuid FOR UPDATE`;
+    else await tx.$queryRaw`SELECT id FROM banka_hesaplari WHERE id = ${id}::uuid FOR UPDATE`;
+    const secim = { id: true, ad: true, dovizCinsi: true } as const;
+    const hesap = tur === "kasa" ? await tx.kasa.findUnique({ where: { id }, select: secim }) : await tx.bankaHesap.findUnique({ where: { id }, select: secim });
+    if (!hesap) throw new NotFoundException(tur === "kasa" ? "Kasa bulunamadı" : "Banka hesabı bulunamadı");
+    return hesap;
+  }
+
+  /**
+   * Açılış fişini yazar ya da var olanı değiştirir. Açılış hesabın ilk
+   * hareketinden sonra tarihlenemez; tutar işaretlidir, eksi açılış tediyedir.
+   */
+  private async acilisYaz(tx: Prisma.TransactionClient, tenantId: string, tur: HesapTuru, hesap: { id: string; dovizCinsi: DovizCinsi }, girdi: AcilisGirdisi, neden?: string | null) {
+    const alan = hesapAlani(tur, hesap.id);
+    const tarih = new Date(girdi.tarih);
+    const ilk = await tx.kasaBankaHareket.findFirst({ where: { ...alan, kaynakTur: { not: "acilis" } }, orderBy: { tarih: "asc" }, select: { tarih: true } });
+    if (ilk && tarih > ilk.tarih) throw new BadRequestException(`Açılış tarihi hesabın ilk hareketinden (${tarihTR(ilk.tarih)}) sonra olamaz`);
+    const mevcut = await tx.kasaBankaHareket.findFirst({ where: { ...alan, kaynakTur: "acilis" } });
+    if (mevcut) {
+      if (!neden || neden.trim().length < 3) throw new BadRequestException("Açılış bakiyesini değiştirmek için gerekçe yazın (en az 3 karakter)");
+      await this.donemKilidi.tarihDogrula(tenantId, mevcut.tarih, "açılış fişi değiştirme");
+    }
+    const isaretli = D(girdi.tutar);
+    const tutar = isaretli.abs();
+    const kur = hesap.dovizCinsi === "TRY" ? D(1) : girdi.kur ? D(girdi.kur) : await kurZorunlu(tx, hesap.dovizCinsi, tarih);
+    const veri = {
+      tip: (isaretli.isNegative() ? "tediye" : "tahsilat") as KasaBankaHareketTip,
+      tutar,
+      dovizCinsi: hesap.dovizCinsi,
+      kur,
+      tutarTry: tutar.mul(kur).toDecimalPlaces(2),
+      tarih,
+      aciklama: girdi.aciklama?.trim() || "Açılış bakiyesi",
+    };
+    if (!mevcut) return tx.kasaBankaHareket.create({ data: { tenantId, ...alan, ...veri, kaynakTur: "acilis" } });
+    const kayit = await tx.kasaBankaHareket.update({ where: { id: mevcut.id }, data: veri });
+    await this.geriAlmaIzi(tx, tenantId, "kasa_banka_acilis_degisti", mevcut.id, { neden, onceki: mevcut, yeni: kayit });
+    return kayit;
+  }
+
+  async acilisKaydet(tur: HesapTuru, hesapId: string, girdi: z.infer<typeof acilisSemasi>) {
+    const { tenantId } = aktifBaglam();
+    await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "açılış fişi");
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const hesap = await this.hesabiKilitle(tx, tur, hesapId);
+      return this.acilisYaz(tx, tenantId, tur, hesap, girdi, girdi.neden);
+    });
+  }
+
+  async acilisSil(tur: HesapTuru, hesapId: string, neden: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      await this.hesabiKilitle(tx, tur, hesapId);
+      const mevcut = await tx.kasaBankaHareket.findFirst({ where: { ...hesapAlani(tur, hesapId), kaynakTur: "acilis" } });
+      if (!mevcut) throw new NotFoundException("Bu hesabın açılış fişi yok");
+      await this.donemKilidi.tarihDogrula(tenantId, mevcut.tarih, "açılış fişi silme");
+      await tx.kasaBankaHareket.delete({ where: { id: mevcut.id } });
+      await this.geriAlmaIzi(tx, tenantId, "kasa_banka_acilis_silindi", mevcut.id, { neden, hareket: mevcut });
+      return { silindi: true };
+    });
+  }
+
+  /**
+   * Daha önce cari'siz tahsilat/tediye olarak girilmiş açılışı açılış fişine
+   * çevirir. Bakiye değişmez; fiş tahsilat/ödeme sayılmaktan çıkar ve makbuz
+   * numarası boşa düşer (numara yanar, yeniden verilmez).
+   */
+  async acilisaCevir(hareketId: string, neden: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const h = await tx.kasaBankaHareket.findUnique({ where: { id: hareketId }, include: { ekstreSatir: { select: { id: true } } } });
+      if (!h) throw new NotFoundException("Kasa/banka hareketi bulunamadı");
+      const tur: HesapTuru | null = h.kasaId ? "kasa" : h.bankaHesapId ? "banka" : null;
+      if (!tur) throw new BadRequestException("POS hesabında açılış fişi tutulmaz");
+      await this.hesabiKilitle(tx, tur, (h.kasaId ?? h.bankaHesapId)!);
+      if (h.kaynakTur === "acilis") throw new ConflictException("Bu fiş zaten açılış fişi");
+      if (h.kaynakTur !== "manuel" || (h.tip !== "tahsilat" && h.tip !== "tediye")) throw new BadRequestException("Yalnız elle girilmiş tahsilat/ödeme fişi açılışa çevrilebilir");
+      if (h.cariId || h.faturaId) throw new BadRequestException("Cariye ya da faturaya bağlı fiş açılış olamaz");
+      if (h.ekstreSatir) throw new BadRequestException("Banka ekstresine bağlı fiş açılış olamaz; önce ekstre eşleşmesini geri alın");
+      const alan = hesapAlani(tur, (h.kasaId ?? h.bankaHesapId)!);
+      if (await tx.kasaBankaHareket.findFirst({ where: { ...alan, kaynakTur: "acilis" }, select: { id: true } })) throw new ConflictException("Bu hesabın zaten bir açılış fişi var");
+      if (await tx.kasaBankaHareket.findFirst({ where: { kaynakTur: "ters_kayit", kaynakRef: h.id }, select: { id: true } })) throw new BadRequestException("Geri alınmış fiş açılışa çevrilemez");
+      const onceki = await tx.kasaBankaHareket.findFirst({ where: { ...alan, id: { not: h.id }, tarih: { lt: h.tarih } }, orderBy: { tarih: "asc" }, select: { tarih: true } });
+      if (onceki) throw new BadRequestException(`Açılış hesabın ilk hareketi olmalı; bu fişten önce ${tarihTR(onceki.tarih)} tarihli hareket var`);
+      await this.donemKilidi.tarihDogrula(tenantId, h.tarih, "açılışa çevirme");
+      const kayit = await tx.kasaBankaHareket.update({ where: { id: h.id }, data: { kaynakTur: "acilis", makbuzNo: null } });
+      await this.geriAlmaIzi(tx, tenantId, "kasa_banka_acilisa_cevrildi", h.id, { neden, onceki: h });
+      return kayit;
+    });
+  }
+
+  /** Hesabın işlem içindeki güncel bakiyesi (POS hesabı ve hesapsız girdi için null). */
+  private async hesapBakiyesi(tx: Prisma.TransactionClient, hesap: { kasaId?: string | null; bankaHesapId?: string | null }): Promise<Prisma.Decimal | null> {
+    if (!hesap.kasaId && !hesap.bankaHesapId) return null;
+    const gruplar = await tx.kasaBankaHareket.groupBy({ by: ["tip"], where: hesap.kasaId ? { kasaId: hesap.kasaId } : { bankaHesapId: hesap.bankaHesapId! }, _sum: { tutar: true } });
+    return gruplar.reduce((t, g) => (girisMi(g.tip) ? t.add(g._sum.tutar ?? 0) : t.sub(g._sum.tutar ?? 0)), D(0));
+  }
+
+  /**
+   * P1-9: işlem hesabı eksi bakiyeye düşürdüyse (ya da eksideki hesabı daha da
+   * düşürdüyse) onay ister; 409 işlemi geri sarar, kullanıcı onaylayınca aynı
+   * istek `eksiBakiyeOnay` ile yinelenir. Engel değil, uyarıdır.
+   */
+  private async eksiBakiyeDenetle(tx: Prisma.TransactionClient, hesap: { kasaId?: string | null; bankaHesapId?: string | null }, once: Prisma.Decimal | null, onay?: boolean) {
+    if (onay || once === null) return;
+    const sonra = await this.hesapBakiyesi(tx, hesap);
+    if (!sonra || !sonra.isNegative() || !sonra.lt(once)) return;
+    const kayit = hesap.kasaId
+      ? await tx.kasa.findUnique({ where: { id: hesap.kasaId }, select: { ad: true, dovizCinsi: true } })
+      : await tx.bankaHesap.findUnique({ where: { id: hesap.bankaHesapId! }, select: { ad: true, dovizCinsi: true } });
+    throw new ConflictException(`Bu işlemden sonra ${hesap.kasaId ? "kasa" : "banka hesabı"} "${kayit?.ad ?? ""}" eksi bakiyeye düşer: ${tutarTR(sonra, kayit?.dovizCinsi ?? "TRY")}. İşlem doğruysa yine de kaydedebilirsiniz.`);
+  }
+
+  async hesapEkstresi(tur: HesapTuru, id: string, baslangic?: string, bitis?: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const banka = tur === "banka" ? await tx.bankaHesap.findUnique({ where: { id }, select: { id: true, ad: true, dovizCinsi: true, aktif: true, bankaAdi: true, sube: true, hesapNo: true, iban: true } }) : null;
+      const hesap = tur === "kasa" ? await tx.kasa.findUnique({ where: { id }, select: { id: true, ad: true, dovizCinsi: true, aktif: true } }) : banka;
+      if (!hesap) throw new NotFoundException(tur === "kasa" ? "Kasa bulunamadı" : "Banka hesabı bulunamadı");
+      const alan = hesapAlani(tur, id);
+      const devirGruplari = baslangic
+        ? await tx.kasaBankaHareket.groupBy({ by: ["tip"], where: { ...alan, tarih: { lt: new Date(baslangic) } }, _sum: { tutar: true, tutarTry: true } })
+        : [];
+      const hareketler = await tx.kasaBankaHareket.findMany({
+        where: { ...alan, ...(baslangic || bitis ? { tarih: { ...(baslangic ? { gte: new Date(baslangic) } : {}), ...(bitis ? { lte: new Date(bitis) } : {}) } } : {}) },
+        orderBy: [{ tarih: "asc" }, { createdAt: "asc" }],
+        include: { cari: { select: { unvan: true } }, fatura: { select: { no: true } } },
+      });
+      // Açılış, ilk hareketle aynı güne düşebilir; o gün içinde her zaman en başta yer alır.
+      hareketler.sort((a, b) => a.tarih.getTime() - b.tarih.getTime() || Number(b.kaynakTur === "acilis") - Number(a.kaynakTur === "acilis"));
+      const karsiIdler = hareketler.map((h) => h.karsiHareketId).filter((x): x is string => Boolean(x));
+      const karsilar = karsiIdler.length
+        ? await tx.kasaBankaHareket.findMany({ where: { id: { in: karsiIdler } }, select: { id: true, kasa: { select: { ad: true } }, bankaHesap: { select: { ad: true } }, posHesap: { select: { ad: true } } } })
+        : [];
+      const karsiAdi = new Map(karsilar.map((k) => [k.id, k.kasa?.ad ?? k.bankaHesap?.ad ?? k.posHesap?.ad ?? null]));
+      const acilis = (await this.acilislar(tur, [id])).get(id) ?? null;
+      // Açılış bu tarihten sonraya konamaz; ekran açılış formunu bu tarihle başlatır.
+      const ilkHareket = await tx.kasaBankaHareket.findFirst({ where: { ...alan, kaynakTur: { not: "acilis" } }, orderBy: { tarih: "asc" }, select: { tarih: true } });
+      const hesaplanan = hesapEkstresiHesapla(devirGruplari.map((g) => ({ tip: g.tip, tutar: g._sum.tutar, tutarTry: g._sum.tutarTry })), hareketler.map((h) => ({
+        id: h.id,
+        tarih: h.tarih,
+        tip: h.tip,
+        tutar: h.tutar,
+        kur: h.kur,
+        tutarTry: h.tutarTry,
+        kaynakTur: h.kaynakTur,
+        makbuzNo: h.makbuzNo,
+        aciklama: h.aciklama,
+        cari: h.cari?.unvan ?? null,
+        belge: h.fatura?.no ?? null,
+        karsiHesap: h.karsiHareketId ? karsiAdi.get(h.karsiHareketId) ?? null : null,
+      })));
+      return {
+        hesap: {
+          tur, id: hesap.id, ad: hesap.ad, dovizCinsi: hesap.dovizCinsi, aktif: hesap.aktif,
+          banka: banka && { bankaAdi: banka.bankaAdi, sube: banka.sube, hesapNo: banka.hesapNo, iban: banka.iban },
+        },
+        baslangic: baslangic ?? null,
+        bitis: bitis ?? null,
+        acilis,
+        ilkHareketTarihi: ilkHareket?.tarih.toISOString().slice(0, 10) ?? null,
+        ...hesaplanan,
+      };
+    });
+  }
+
+  async hesapEkstresiPdf(tur: HesapTuru, id: string, baslangic?: string, bitis?: string): Promise<{ buffer: Buffer; dosyaAdi: string }> {
+    const { tenantId } = aktifBaglam();
+    const [veri, firma, tema] = await Promise.all([
+      this.hesapEkstresi(tur, id, baslangic, bitis),
+      this.prisma.tenantIslem(tenantId, (tx) => tx.tenant.findUnique({
+        where: { id: tenantId },
+        select: { unvan: true, vkn: true, vergiDairesi: true, adres: true, ilce: true, il: true, postaKodu: true, telefon: true, eposta: true, webSitesi: true, mersisNo: true, ticaretSicilNo: true },
+      })),
+      this.pdf.belgeTemasi(),
+    ]);
+    if (!firma) throw new NotFoundException("Firma bulunamadı");
+    const buffer = await this.pdf.htmlToPdf(hesapEkstresiPdfHtml(veri, firma, tema), { yatay: true, sayfaNumarasi: true });
+    return { buffer, dosyaAdi: `hesap-ekstresi-${dosyaAdiParcasi(veri.hesap.ad)}.pdf` };
+  }
+
+  async hesapEkstresiExcel(tur: HesapTuru, id: string, baslangic?: string, bitis?: string): Promise<{ buffer: Buffer; dosyaAdi: string }> {
+    const veri = await this.hesapEkstresi(tur, id, baslangic, bitis);
+    return { buffer: await hesapEkstresiExcel(veri), dosyaAdi: `hesap-ekstresi-${dosyaAdiParcasi(veri.hesap.ad)}.xlsx` };
   }
 
   // ─── BAKİYE HESAPLAMA METOTLARI (PRIVATE) ──────────────────────────────────

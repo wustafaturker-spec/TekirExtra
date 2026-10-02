@@ -45,7 +45,7 @@ describe("makbuz numarası tetikleyicisi (KSB-09)", () => {
     expect((await fis("tediye", "2026-03-02")).makbuzNo).toBe("TD2026-000001");
     expect((await fis("tahsilat", "2025-12-31")).makbuzNo).toBe("TM2025-000001");
     expect((await fis("virman_gidis", "2026-03-02")).makbuzNo).toBeNull();
-    for (const kaynak of ["ters_kayit", "cek_senet", "kredi_karti_ekstre", "pos_mutabakat", "personel_maas_iptal"]) {
+    for (const kaynak of ["ters_kayit", "cek_senet", "kredi_karti_ekstre", "pos_mutabakat", "personel_maas_iptal", "acilis"]) {
       expect((await fis("tediye", "2026-03-02", kaynak)).makbuzNo).toBeNull();
     }
     expect((await fis("tediye", "2026-03-03", "masraf")).makbuzNo).toBe("TD2026-000002");

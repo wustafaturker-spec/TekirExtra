@@ -110,7 +110,8 @@ export class RaporService {
           orderBy: { createdAt: "desc" },
         }),
         tx.kasaBankaHareket.findMany({
-          where: { tenantId, tarih, tip: "tahsilat" },
+          // P1-9: açılış fişi bakiye devridir, günün tahsilatı değildir.
+          where: { tenantId, tarih, tip: "tahsilat", kaynakTur: { not: "acilis" } },
           select: { id: true, tarih: true, tutar: true, tutarTry: true, dovizCinsi: true, aciklama: true, kaynakTur: true, kaynakRef: true, kasa: { select: { ad: true } }, bankaHesap: { select: { ad: true } }, posHesap: { select: { ad: true } }, cari: { select: { unvan: true } }, fatura: { select: { id: true, no: true } } },
           orderBy: { createdAt: "desc" },
         }),

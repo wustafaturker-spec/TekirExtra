@@ -61,6 +61,8 @@ export const kasaBankaHareketOlusturSemasi = z.object({
    * aynı dövizde yok sayılır.
    */
   faturaKarsiligi: pozitifOndalik.optional().nullable(),
+  /** P1-9: fiş hesabı eksi bakiyeye düşürüyorsa kullanıcı uyarıyı onayladı. */
+  eksiBakiyeOnay: z.boolean().optional(),
 }).refine((data) => [data.kasaId, data.bankaHesapId, data.posHesapId].filter(Boolean).length === 1, {
   message: "Kasa, banka veya POS hesaplarından yalnızca biri seçilmelidir",
   path: ["kasaId"],
@@ -76,6 +78,8 @@ export const virmanOlusturSemasi = z.object({
   tutar: pozitifOndalik,
   tarih: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)"),
   aciklama: z.string().max(500).optional().nullable(),
+  /** P1-9: virman kaynak hesabı eksi bakiyeye düşürüyorsa kullanıcı uyarıyı onayladı. */
+  eksiBakiyeOnay: z.boolean().optional(),
 }).refine((data) => [data.kaynakKasaId, data.kaynakBankaHesapId, data.kaynakPosHesapId].filter(Boolean).length === 1, {
   message: "Kaynak Kasa veya Banka Hesabından en az biri seçilmelidir",
   path: ["kaynakKasaId"],
@@ -263,6 +267,24 @@ export const cekSenetGuncelleSemasi = z
 export const geriAlmaSemasi = z.object({
   neden: z.string().trim().min(3, "Geri alma gerekçesi en az 3 karakter olmalıdır").max(300),
 });
+
+/**
+ * P1-9: hesabın açılış (devir) bakiyesi. Tutar işaretlidir: eksi açılış
+ * (ör. kredili mevduatta eksi bakiye) tediye olarak yazılır. Dövizli hesapta
+ * kur boşsa açılış gününün kuru kullanılır.
+ */
+export const acilisSemasi = z.object({
+  tutar: z.string().regex(/^-?\d{1,13}(\.\d{1,2})?$/, "Geçerli bir tutar girin").refine((t) => Number(t) !== 0, "Açılış tutarı sıfır olamaz"),
+  tarih: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)"),
+  kur: pozitifOndalik.optional().nullable(),
+  aciklama: z.string().trim().max(500).optional().nullable(),
+  /** Var olan açılış değiştiriliyorsa gerekçe zorunludur (denetim izine yazılır). */
+  neden: z.string().trim().max(300).optional().nullable(),
+});
+
+/** Yeni kasa/banka hesabıyla birlikte isteğe bağlı açılış bakiyesi. */
+export const kasaAcilisliOlusturSemasi = kasaOlusturSemasi.extend({ acilis: acilisSemasi.omit({ neden: true }).optional().nullable() });
+export const bankaAcilisliOlusturSemasi = bankaHesapOlusturSemasi.extend({ acilis: acilisSemasi.omit({ neden: true }).optional().nullable() });
 
 /** KSB-09: makbuz serisi ayarı (önek + devir sırası). */
 export const makbuzSerisiSemasi = z.object({

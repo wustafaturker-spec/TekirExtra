@@ -22,13 +22,15 @@ import { EkstreSatirDurum } from "@prisma/client";
 import { Roller } from "../auth/roller.decorator";
 import { EkstreService } from "./ekstre.service";
 import { EkstreEslestirmeService } from "./ekstre-eslestirme.service";
-import { KasaBankaService } from "./kasa-banka.service";
+import { KasaBankaService, type HesapTuru } from "./kasa-banka.service";
 import { BankaEntegrasyonService } from "./banka-entegrasyon.service";
 import { z } from "zod";
 import { CekBordroService } from "./cek-bordro.service";
 import {
+  acilisSemasi,
+  bankaAcilisliOlusturSemasi,
   bankaHesapGuncelleSemasi,
-  bankaHesapOlusturSemasi,
+  kasaAcilisliOlusturSemasi,
   cekSenetGuncelleSemasi,
   cekSenetOlusturSemasi,
   ekstreEslestirSemasi,
@@ -37,7 +39,6 @@ import {
   geriAlmaSemasi,
   kasaBankaHareketOlusturSemasi,
   kasaGuncelleSemasi,
-  kasaOlusturSemasi,
   makbuzSerisiSemasi,
   virmanOlusturSemasi,
   posHesapOlusturSemasi,
@@ -90,7 +91,7 @@ export class KasaBankaController {
   @Post("kasalar")
   @Roller("muhasebe")
   async kasaOlustur(@Body() govde: unknown) {
-    const ayristirma = kasaOlusturSemasi.safeParse(govde);
+    const ayristirma = kasaAcilisliOlusturSemasi.safeParse(govde);
     if (!ayristirma.success) {
       throw new BadRequestException(
         ayristirma.error.issues.map((i) => i.message).join("; "),
@@ -133,7 +134,7 @@ export class KasaBankaController {
   @Post("bankalar")
   @Roller("muhasebe")
   async bankaOlustur(@Body() govde: unknown) {
-    const ayristirma = bankaHesapOlusturSemasi.safeParse(govde);
+    const ayristirma = bankaAcilisliOlusturSemasi.safeParse(govde);
     if (!ayristirma.success) {
       throw new BadRequestException(
         ayristirma.error.issues.map((i) => i.message).join("; "),
@@ -232,6 +233,57 @@ export class KasaBankaController {
   async virmanDuzelt(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
     const { neden, yeni } = ayristir(geriAlmaSemasi.extend({ yeni: virmanOlusturSemasi }), govde);
     return this.service.virmanDuzelt(id, neden, yeni);
+  }
+
+  // ─── AÇILIŞ FİŞİ VE HESAP EKSTRESİ (P1-9) ─────────────────────────────────
+
+  /** Hesabın açılış bakiyesini yazar ya da değiştirir (değişiklikte gerekçe zorunlu). */
+  @Put("hesaplar/:hesap/acilis")
+  @Roller("muhasebe")
+  acilisKaydet(@Param("hesap") hesap: string, @Body() govde: unknown) {
+    const { tur, id } = hesapAnahtari(hesap);
+    return this.service.acilisKaydet(tur, id, ayristir(acilisSemasi, govde));
+  }
+
+  @Post("hesaplar/:hesap/acilis/sil")
+  @Roller("muhasebe")
+  acilisSil(@Param("hesap") hesap: string, @Body() govde: unknown) {
+    const { tur, id } = hesapAnahtari(hesap);
+    return this.service.acilisSil(tur, id, ayristir(geriAlmaSemasi, govde).neden);
+  }
+
+  /** Cari'siz ilk tahsilat/ödeme fişini açılış fişine çevirir. */
+  @Post("hareketler/:id/acilisa-cevir")
+  @Roller("muhasebe")
+  acilisaCevir(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
+    return this.service.acilisaCevir(id, ayristir(geriAlmaSemasi, govde).neden);
+  }
+
+  @Get("hesaplar/:hesap/ekstre")
+  hesapEkstresi(@Param("hesap") hesap: string, @Query() sorgu: unknown) {
+    const { tur, id } = hesapAnahtari(hesap);
+    const { baslangic, bitis } = ayristir(donemSemasi, sorgu);
+    return this.service.hesapEkstresi(tur, id, baslangic, bitis);
+  }
+
+  @Get("hesaplar/:hesap/ekstre/pdf")
+  async hesapEkstresiPdf(@Param("hesap") hesap: string, @Query() sorgu: unknown, @Res() res: Response) {
+    const { tur, id } = hesapAnahtari(hesap);
+    const { baslangic, bitis } = ayristir(donemSemasi, sorgu);
+    const pdf = await this.service.hesapEkstresiPdf(tur, id, baslangic, bitis);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${pdf.dosyaAdi}"`);
+    res.send(pdf.buffer);
+  }
+
+  @Get("hesaplar/:hesap/ekstre/excel")
+  async hesapEkstresiExcel(@Param("hesap") hesap: string, @Query() sorgu: unknown, @Res() res: Response) {
+    const { tur, id } = hesapAnahtari(hesap);
+    const { baslangic, bitis } = ayristir(donemSemasi, sorgu);
+    const dosya = await this.service.hesapEkstresiExcel(tur, id, baslangic, bitis);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${dosya.dosyaAdi}"`);
+    res.send(dosya.buffer);
   }
 
   @Get("makbuz-serileri")
@@ -448,6 +500,18 @@ export class KasaBankaController {
     return this.ekstreEslestirme.kuralSil(id);
   }
 }
+
+/** P1-9: "kasa:<uuid>" ya da "banka:<uuid>". */
+function hesapAnahtari(deger: string): { tur: HesapTuru; id: string } {
+  const sonuc = z.object({ tur: z.enum(["kasa", "banka"]), id: z.uuid() }).safeParse({ tur: deger.split(":")[0], id: deger.split(":")[1] });
+  if (!sonuc.success) throw new BadRequestException("Hesap 'kasa:<id>' ya da 'banka:<id>' biçiminde olmalıdır");
+  return sonuc.data;
+}
+
+const donemSemasi = z.object({
+  baslangic: z.string().date("Geçersiz başlangıç tarihi").optional(),
+  bitis: z.string().date("Geçersiz bitiş tarihi").optional(),
+}).refine((d) => !d.baslangic || !d.bitis || d.baslangic <= d.bitis, { message: "Başlangıç tarihi bitişten sonra olamaz" });
 
 function ayristir<T extends z.ZodType>(sema: T, govde: unknown): z.infer<T> {
   const sonuc = sema.safeParse(govde);
