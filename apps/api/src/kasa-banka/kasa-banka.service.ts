@@ -38,6 +38,10 @@ export interface KasaBankaBakiye {
   bakiye: string;
 }
 
+/** KSB-09: varsayılan makbuz önekleri; numara biçimi tetikleyiciyle (makbuz_no_ver) aynıdır. */
+const MAKBUZ_VARSAYILAN_ONEK = { tahsilat: "TM", tediye: "TD" } as const;
+export const makbuzNoBicimle = (onek: string, yil: number, sira: number) => `${onek}${yil}-${String(sira).padStart(6, "0")}`;
+
 @Injectable()
 export class KasaBankaService {
   constructor(private readonly prisma: PrismaService, private readonly pdf: PdfService, private readonly donemKilidi: DonemKilidiService) {}
@@ -446,9 +450,57 @@ export class KasaBankaService {
       tx.kasaBankaHareket.findUnique({ where: { id }, include: { kasa: true, bankaHesap: true, posHesap: true, cari: { select: { kod: true, unvan: true } }, fatura: { select: { no: true } } } }),
       tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true } }),
     ]));
-    if (!hareket || !["tahsilat", "tediye"].includes(hareket.tip)) throw new NotFoundException("Tahsilat/ödeme makbuzu bulunamadı");
+    if (!hareket || !hareket.makbuzNo) throw new NotFoundException("Bu fiş için makbuz yok; makbuz yalnız tahsilat/ödeme fişlerine verilir");
     const tema = await this.pdf.belgeTemasi();
-    return { buffer: await this.pdf.htmlToPdf(makbuzPdfHtml(hareket, firma, tema)), dosyaAdi: `${hareket.tip}-makbuzu-${hareket.id.slice(0, 8)}.pdf` };
+    return { buffer: await this.pdf.htmlToPdf(makbuzPdfHtml(hareket, firma, tema)), dosyaAdi: `makbuz-${hareket.makbuzNo}.pdf` };
+  }
+
+  // ─── MAKBUZ SERİLERİ (KSB-09) ─────────────────────────────────────────────
+
+  /** Makbuz serileri; içinde bulunulan yılın serisi henüz yoksa varsayılanıyla gösterilir. */
+  async makbuzSerileri() {
+    const { tenantId } = aktifBaglam();
+    const yil = Number(bugunTR().slice(0, 4));
+    const seriler = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kayitlar = await tx.makbuzSeri.findMany({ orderBy: [{ yil: "desc" }, { tur: "asc" }] });
+      // Önek, seride gerçekten numara verildiyse kilitlenir (devir sırası tek başına kilitlemez).
+      return Promise.all(kayitlar.map(async (s) => ({
+        ...s,
+        onekKilitli: (await tx.kasaBankaHareket.count({ where: { tip: s.tur as "tahsilat" | "tediye", makbuzNo: { startsWith: `${s.onek}${s.yil}-` } } })) > 0,
+      })));
+    });
+    const liste = seriler.map((s) => ({ tur: s.tur, yil: s.yil, onek: s.onek, sonSira: s.sonSira, tanimli: true, onekKilitli: s.onekKilitli }));
+    for (const tur of ["tahsilat", "tediye"] as const) {
+      if (!liste.some((s) => s.tur === tur && s.yil === yil)) {
+        const onceki = liste.find((s) => s.tur === tur);
+        liste.push({ tur, yil, onek: onceki?.onek ?? MAKBUZ_VARSAYILAN_ONEK[tur], sonSira: 0, tanimli: false, onekKilitli: false });
+      }
+    }
+    return liste
+      .sort((a, b) => b.yil - a.yil || a.tur.localeCompare(b.tur))
+      .map((s) => ({ ...s, siradakiNo: makbuzNoBicimle(s.onek, s.yil, s.sonSira + 1) }));
+  }
+
+  /**
+   * Seri önekini ya da devir sırasını ayarlar. Önek, o yıl o seride numara
+   * verilmeden önce değiştirilebilir (yoksa aynı yılda iki önek karışır);
+   * sıra yalnız ileri alınır (verilmiş numara tekrar verilemez).
+   */
+  async makbuzSerisiAyarla(girdi: { tur: "tahsilat" | "tediye"; yil: number; onek: string; sonSira: number }) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      await tx.$queryRaw`SELECT id FROM makbuz_serileri WHERE tur = ${girdi.tur} AND yil = ${girdi.yil} FOR UPDATE`;
+      const mevcut = await tx.makbuzSeri.findUnique({ where: { tenantId_tur_yil: { tenantId, tur: girdi.tur, yil: girdi.yil } } });
+      if (mevcut) {
+        if (girdi.sonSira < mevcut.sonSira) throw new BadRequestException(`Son sıra geri alınamaz; bu seride ${makbuzNoBicimle(mevcut.onek, mevcut.yil, mevcut.sonSira)} numarası verildi`);
+        if (girdi.onek !== mevcut.onek) {
+          const verilen = await tx.kasaBankaHareket.count({ where: { makbuzNo: { startsWith: `${mevcut.onek}${mevcut.yil}-` }, tip: girdi.tur } });
+          if (verilen > 0) throw new BadRequestException(`${girdi.yil} yılında bu seride ${verilen} makbuz numarası verildi; önek ancak gelecek yıl için değiştirilebilir`);
+        }
+        return tx.makbuzSeri.update({ where: { id: mevcut.id }, data: { onek: girdi.onek, sonSira: girdi.sonSira } });
+      }
+      return tx.makbuzSeri.create({ data: { tenantId, ...girdi } });
+    });
   }
 
   // ─── HESAPLAR ARASI VİRMAN (KSB-03) ───────────────────────────────────────

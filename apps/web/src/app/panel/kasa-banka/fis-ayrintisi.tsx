@@ -26,6 +26,7 @@ export interface DefterHareketi {
   kaynakTur: string;
   kaynakRef: string | null;
   karsiHareketId: string | null;
+  makbuzNo: string | null;
   kasa?: { id: string; ad: string } | null;
   bankaHesap?: { id: string; ad: string; bankaAdi: string } | null;
   posHesap?: { id: string; ad: string } | null;
@@ -78,13 +79,12 @@ export function FisAyrintisi({
   const asil = hareket.kaynakTur === "ters_kayit" ? hareketler.find((h) => h.id === hareket.kaynakRef) ?? null : null;
   const elleGirilen = hareket.kaynakTur === "manuel" || hareket.kaynakTur === "fatura_kapama";
   const degistirilebilir = elleGirilen && !ters;
-  const makbuzlu = hareket.tip === "tahsilat" || hareket.tip === "tediye";
 
   return (
     <div className="slip-detail">
       <EylemCubugu etiket="Fiş eylemleri">
-        {makbuzlu && (
-          <Button size="sm" onClick={() => void apiDosyaIndir(`/kasa-banka/hareketler/${hareket.id}/makbuz`, `${hareket.tip}-makbuzu.pdf`)}>
+        {hareket.makbuzNo && (
+          <Button size="sm" onClick={() => void apiDosyaIndir(`/kasa-banka/hareketler/${hareket.id}/makbuz`, `makbuz-${hareket.makbuzNo}.pdf`)}>
             Makbuz PDF
           </Button>
         )}
@@ -113,6 +113,7 @@ export function FisAyrintisi({
       </div>
 
       <dl className="slip-detail__facts">
+        {hareket.makbuzNo && <div><dt>Makbuz no</dt><dd className="mono">{hareket.makbuzNo}</dd></div>}
         <div><dt>Tarih</dt><dd><Tarih deger={hareket.tarih} /></dd></div>
         <div><dt>Hesap</dt><dd>{hesapAdi(hareket)}</dd></div>
         {virmanMi(hareket) && karsi && (
@@ -150,7 +151,7 @@ export function FisAyrintisi({
           </>}
           onVazgec={() => setGeriAlAcik(false)}
           onTamam={(sonuc) => onGeriAlindi(sonuc.yontem === "silindi"
-            ? `Fiş geri alındı ve silindi${virmanMi(hareket) ? " (virmanın iki bacağı birlikte)" : ""}; cari ve fatura bakiyeleri güncellendi.`
+            ? `Fiş geri alındı ve silindi${virmanMi(hareket) ? " (virmanın iki bacağı birlikte)" : ""}; cari ve fatura bakiyeleri güncellendi.${hareket.makbuzNo ? ` ${hareket.makbuzNo} makbuz numarası yandı, yeniden kullanılmaz.` : ""}`
             : "Fişin dönemi kapalı olduğu için bugün tarihli ters kayıt atıldı; asıl kayıt değişmedi.")}
         />
       )}

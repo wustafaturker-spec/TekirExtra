@@ -43,6 +43,7 @@ interface KurYaniti {
 }
 
 interface KayitYaniti {
+  makbuzNo: string | null;
   faturaKapama: { dovizCinsi: string; karsilik: string; mahsup: string; avans: string } | null;
 }
 
@@ -268,7 +269,8 @@ export function OdemeFisi({
       const ayrinti = k && fatura
         ? ` ${fatura.no ?? "Faturaya"} ${Number(k.mahsup).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${k.dovizCinsi} mahsup edildi${Number(k.avans) > 0 ? `; ${Number(k.avans).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${k.dovizCinsi} carinin avansı olarak kaldı` : ""}.`
         : "";
-      onKaydedildi(`${islemAdi}.${ayrinti}`);
+      const makbuz = yanit.makbuzNo ? ` Makbuz no: ${yanit.makbuzNo}.` : "";
+      onKaydedildi(`${islemAdi}.${makbuz}${ayrinti}`);
     } catch (err) {
       setHata(err instanceof Error ? err.message : "Fiş kaydedilemedi");
     } finally {

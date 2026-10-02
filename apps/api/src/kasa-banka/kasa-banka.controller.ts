@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   Res,
   UploadedFile,
@@ -37,6 +38,7 @@ import {
   kasaBankaHareketOlusturSemasi,
   kasaGuncelleSemasi,
   kasaOlusturSemasi,
+  makbuzSerisiSemasi,
   virmanOlusturSemasi,
   posHesapOlusturSemasi,
   posBankaAktarimSemasi,
@@ -241,6 +243,17 @@ export class KasaBankaController {
   async virmanDuzelt(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
     const { neden, yeni } = ayristir(geriAlmaSemasi.extend({ yeni: virmanOlusturSemasi }), govde);
     return this.service.virmanDuzelt(id, neden, yeni);
+  }
+
+  @Get("makbuz-serileri")
+  makbuzSerileri() {
+    return this.service.makbuzSerileri();
+  }
+
+  @Put("makbuz-serileri")
+  @Roller("yonetici")
+  makbuzSerisiAyarla(@Body() govde: unknown) {
+    return this.service.makbuzSerisiAyarla(ayristir(makbuzSerisiSemasi, govde));
   }
 
   @Get("hareketler/:id/makbuz")

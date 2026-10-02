@@ -259,3 +259,11 @@ export const cekSenetGuncelleSemasi = z
 export const geriAlmaSemasi = z.object({
   neden: z.string().trim().min(3, "Geri alma gerekçesi en az 3 karakter olmalıdır").max(300),
 });
+
+/** KSB-09: makbuz serisi ayarı (önek + devir sırası). */
+export const makbuzSerisiSemasi = z.object({
+  tur: z.enum(["tahsilat", "tediye"]),
+  yil: z.number().int().min(2000).max(2100),
+  onek: z.string().trim().toUpperCase().regex(/^[A-Z]{1,5}$/, "Önek 1-5 harf olmalıdır (Türkçe karakter ve rakam olmadan)"),
+  sonSira: z.number().int().min(0).max(999999),
+});

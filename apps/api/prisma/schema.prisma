@@ -186,6 +186,7 @@ model Tenant {
   bordroKabulSenaryolari    BordroKabulSenaryosu[]
   personelSayaci            PersonelSayac?
   uretimSayaclari           UretimSayac[]
+  makbuzSerileri            MakbuzSeri[]
   uretimBildirimleri        UretimBildirimi[]
   isMerkezleri              IsMerkezi[]
   kaliteKontrolleri         UretimKaliteKontrol[]
@@ -2392,6 +2393,22 @@ model FaturaSatir {
   @@map("fatura_satirlari")
 }
 
+/// KSB-09: makbuz serisi; tür (tahsilat/tediye) ve yıl başına bir sayaç.
+/// Sayaç tetikleyiciyle artar ve geri sarılmaz (geri alınan fişin numarası yanar).
+model MakbuzSeri {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tur      String
+  yil      Int
+  onek     String
+  sonSira  Int    @default(0) @map("son_sira")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, tur, yil])
+  @@map("makbuz_serileri")
+}
+
 model FaturaSeri {
   id       String @id @default(uuid()) @db.Uuid
   tenantId String @map("tenant_id") @db.Uuid
@@ -2985,6 +3002,9 @@ model KasaBankaHareket {
   kurFarkiFaturaId  String?             @map("kur_farki_fatura_id") @db.Uuid
   /// KSB-07: kur farkı için fatura gerekmediğine karar verildi (ör. önemsiz tutar).
   kurFarkiKapandi   Boolean             @default(false) @map("kur_farki_kapandi")
+  /// KSB-09: tahsilat/tediye makbuz numarası (ör. TM2026-000001). Veritabanı
+  /// tetikleyicisi `makbuz_no_ver` kayıtta verir; uygulama yazmaz.
+  makbuzNo          String?             @map("makbuz_no")
   createdAt         DateTime            @default(now()) @map("created_at")
 
   kasa              Kasa?              @relation(fields: [kasaId], references: [id])
@@ -3003,6 +3023,7 @@ model KasaBankaHareket {
   krediKartiOdemesi KrediKartiHareket?
   gelirKaydi        GelirKaydi?
 
+  @@unique([tenantId, makbuzNo])
   @@index([tenantId, tarih])
   @@index([tenantId, projeId])
   @@index([tenantId, ekstreSatirId])
