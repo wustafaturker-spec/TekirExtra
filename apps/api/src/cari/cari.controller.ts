@@ -17,6 +17,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import { Roller } from "../auth/roller.decorator";
 import { CariService } from "./cari.service";
+import { CariIceAktarmaService } from "./cari-ice-aktarma.service";
 import {
   cariOlusturSemasi,
   cariGuncelleSemasi,
@@ -47,7 +48,7 @@ function ekstreSecenekleri(sorgu: unknown) {
 
 @Controller("cari")
 export class CariController {
-  constructor(private readonly cariService: CariService, private readonly abonelik: AbonelikService) {}
+  constructor(private readonly cariService: CariService, private readonly abonelik: AbonelikService, private readonly iceAktarma: CariIceAktarmaService) {}
 
   @Get()
   async listele(
@@ -292,13 +293,46 @@ export class CariController {
     return this.cariService.ekstre(id, baslangic, bitis, iptalleriGoster(iptaller), ekstreSecenekleri(sorgu));
   }
 
-  @Post("excel-aktar")
+  /** CARI-31: içe aktarma şablonu (başlıklar, örnek satır, açıklama sayfası). */
+  @Get("excel/sablon")
+  @Roller("muhasebe")
+  async excelSablon(@Res() res: Response) {
+    const buffer = await this.iceAktarma.sablon();
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", "attachment; filename=cari-sablonu.xlsx");
+    res.send(buffer);
+  }
+
+  /** CARI-31: önizleme — hiçbir şey yazmaz; satır satır yeni/güncelle/hatalı. */
+  @Post("excel/onizleme")
   @Roller("muhasebe")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
-  async excelAktar(@UploadedFile() file: YuklemeDosyasi | undefined) {
+  async excelOnizleme(@UploadedFile() file: YuklemeDosyasi | undefined) {
+    return this.iceAktarma.onizleme(this.excelDosyasi(file));
+  }
+
+  /** CARI-31: onay — dosya yeniden doğrulanır, hatasız satırlar yazılır. */
+  @Post("excel/ice-aktar")
+  @Roller("muhasebe")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
+  async excelIceAktar(@UploadedFile() file: YuklemeDosyasi | undefined) {
+    return this.iceAktarma.iceAktar(this.excelDosyasi(file));
+  }
+
+  @Post("excel/hatali-satirlar")
+  @Roller("muhasebe")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
+  async excelHataliSatirlar(@UploadedFile() file: YuklemeDosyasi | undefined, @Res() res: Response) {
+    const buffer = await this.iceAktarma.hataliSatirlar(this.excelDosyasi(file));
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", "attachment; filename=cari-hatali-satirlar.xlsx");
+    res.send(buffer);
+  }
+
+  private excelDosyasi(file: YuklemeDosyasi | undefined): Buffer {
     if (!file) throw new BadRequestException("Lütfen bir Excel dosyası yükleyin");
     excelDosyasiniDogrula(file);
-    return this.cariService.excelImport(file.buffer);
+    return file.buffer;
   }
 
   @Get(":id/ekstre/pdf")

@@ -1,45 +1,6 @@
 import * as ExcelJS from "exceljs";
 import { birimCoz } from "@tekirextra/shared";
 
-// ─── CARİ EXCEL OKUYUCU (CARI-07) ──────────────────────────────────────────
-
-export async function cariExcelOku(buffer: Buffer) {
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer as any);
-  const worksheet = workbook.worksheets[0];
-  if (!worksheet) throw new Error("Çalışma sayfası bulunamadı");
-
-  const cariler: any[] = [];
-  worksheet.eachRow((row, rowNumber) => {
-    // Başlık satırını atla
-    if (rowNumber === 1) return;
-
-    const kod = row.getCell(1).value?.toString()?.trim();
-    const unvan = row.getCell(2).value?.toString()?.trim();
-    const tipRaw = row.getCell(3).value?.toString()?.trim()?.toLowerCase();
-    const vknTckn = row.getCell(4).value?.toString()?.trim();
-    const eposta = row.getCell(5).value?.toString()?.trim();
-    const telefon = row.getCell(6).value?.toString()?.trim();
-
-    if (unvan) {
-      let tip = "musteri";
-      if (tipRaw === "tedarikci" || tipRaw === "tedarikçi") tip = "tedarikci";
-      else if (tipRaw === "diger" || tipRaw === "diğer") tip = "diger";
-
-      cariler.push({
-        kod: kod || `CARİ-${Date.now()}-${rowNumber}`,
-        unvan,
-        tip,
-        vknTckn: vknTckn || null,
-        eposta: eposta || null,
-        telefon: telefon || null,
-      });
-    }
-  });
-
-  return cariler;
-}
-
 // ─── STOK EXCEL OKUYUCU (STK-05) ───────────────────────────────────────────
 
 export async function stokExcelOku(buffer: Buffer) {

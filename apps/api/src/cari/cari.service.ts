@@ -22,7 +22,6 @@ import type {
   crmEtkilesimSemasi,
   crmGorevSemasi,
 } from "./cari.semalar";
-import { cariExcelOku } from "../core/excel-yardimci";
 import { PdfService } from "../core/pdf/pdf.service";
 import { cariDavranisAnalizi } from "./cari-analiz";
 import { gercekKisiUnvani } from "./ad-soyad";
@@ -1075,37 +1074,6 @@ export class CariService {
       notlar: k.notlar,
       aktif: k.aktif,
     };
-  }
-
-  async excelImport(buffer: Buffer): Promise<{ eklenen: number }> {
-    const { tenantId } = aktifBaglam();
-    const cariler = await cariExcelOku(buffer);
-
-    await this.prisma.tenantIslem(tenantId, async (tx) => {
-      for (const c of cariler) {
-        await tx.cariHesap.upsert({
-          where: { tenantId_kod: { tenantId, kod: c.kod } },
-          create: {
-            tenantId,
-            kod: c.kod,
-            unvan: c.unvan,
-            tip: c.tip,
-            vknTckn: c.vknTckn,
-            eposta: c.eposta,
-            telefon: c.telefon,
-          },
-          update: {
-            unvan: c.unvan,
-            tip: c.tip,
-            vknTckn: c.vknTckn,
-            eposta: c.eposta,
-            telefon: c.telefon,
-          },
-        });
-      }
-    });
-
-    return { eklenen: cariler.length };
   }
 
   async ekstreExcel(cariId: string, baslangic?: string, bitis?: string, iptalleriGosterilsin = false, secenekler: EkstreSecenekleri = {}): Promise<Buffer> {

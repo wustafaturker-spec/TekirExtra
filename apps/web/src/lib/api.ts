@@ -124,12 +124,12 @@ export async function tumSayfalariAl<T>(yol: string, adet = 200): Promise<T[]> {
 }
 
 /** Kimlik doğrulamalı dosya yanıtını indirir; JSON bekleyen api()'den ayrıdır. */
-export async function apiDosyaIndir(yol: string, dosyaAdi: string): Promise<void> {
-  let yanit = await istekYap(yol, {}, tokenAl());
+export async function apiDosyaIndir(yol: string, dosyaAdi: string, secenekler: RequestInit = {}): Promise<void> {
+  let yanit = await istekYap(yol, secenekler, tokenAl());
   if (yanit.status === 401) {
     const yeniToken = await accessTokenYenile();
     if (!yeniToken) return giriseYonlendir();
-    yanit = await istekYap(yol, {}, yeniToken);
+    yanit = await istekYap(yol, secenekler, yeniToken);
   }
   if (!yanit.ok) throw new ApiHata("Dosya indirilemedi", yanit.status);
   const adres = URL.createObjectURL(await yanit.blob());

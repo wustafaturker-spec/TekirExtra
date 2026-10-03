@@ -8,6 +8,7 @@ import { PostaKutusuSecimleri, type PostaKutusuSecimi } from "@/components/posta
 import { FormGrubu } from "@/components/form-grubu";
 import { Bakiye, CariEkstreTablosu, type EkstreVeri } from "@/components/cari-ekstre-tablosu";
 import { ElleHareketFormu } from "./elle-hareket";
+import { ExcelIceAktar } from "./excel-ice-aktar";
 import { CARI_EBELGE_ETIKETI, EKSTRE_TURU_ADLARI, EKSTRE_TURLERI, vknTcknGecerliMi, type CariEbelgeDurumu, type CariEbelgeTuru, type EkstreTuru, YABANCI_DOVIZLER, type YabanciDoviz } from "@tekirextra/shared";
 import {
   Alert,
@@ -252,6 +253,7 @@ export default function CariSayfasi() {
   const [ekstreEposta, setEkstreEposta] = useState("");
   const [ekstreIslemde, setEkstreIslemde] = useState(false);
   const [elleHareketAcik, setElleHareketAcik] = useState(false);
+  const [iceAktarAcik, setIceAktarAcik] = useState(false);
   const [ekstreIptaller, setEkstreIptaller] = useState(false);
   /** CARI-24/25/26: ekstre türü, döviz ekstresinde gösterim ("" = her döviz ayrı) ve mutabakat metni. */
   const [ekstreTuru, setEkstreTuru] = useState<EkstreTuru>("standart");
@@ -848,37 +850,6 @@ export default function CariSayfasi() {
     }
   }
 
-  async function excelYukle(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setHata("");
-    setBasari("");
-
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      const token = tokenAl();
-      const res = await fetch(`${apiBase()}/cari/excel-aktar`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.message || "Excel yükleme hatası");
-      }
-
-      const resData = await res.json();
-      setBasari(`Excel başarıyla aktarıldı. ${resData.eklenen} adet cari eklendi/güncellendi.`);
-      void yukle();
-    } catch (h) {
-      setHata(h instanceof Error ? h.message : "Excel yükleme hatası");
-    }
-  }
-
   async function kopyala(id: string) {
     setHata("");
     setBasari("");
@@ -940,10 +911,7 @@ export default function CariSayfasi() {
           <>
             {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/kasa-banka/kur-farki">💱 Kur Farkı</ButtonLabel>}
             {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/raporlar">📈 Raporlar</ButtonLabel>}
-            {!yeniSayfasi && !detaySayfasi && <ButtonLabel>
-              📥 Excel&apos;den İçe Aktar
-              <input type="file" accept=".xlsx" onChange={excelYukle} style={{ display: "none" }} />
-            </ButtonLabel>}
+            {!yeniSayfasi && !detaySayfasi && <Button onClick={() => setIceAktarAcik(true)}>📥 Excel&apos;den İçe Aktar</Button>}
             {(yeniSayfasi || detaySayfasi) ? <Button onClick={() => router.push("/panel/cari")}>Listeye dön</Button> : <ButtonLabel as="a" role="button" variant="primary" href="/panel/cari/yeni">➕ Yeni Cari</ButtonLabel>}
           </>
         }
@@ -951,6 +919,10 @@ export default function CariSayfasi() {
 
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
+
+      {iceAktarAcik && !yeniSayfasi && !detaySayfasi && (
+        <ExcelIceAktar onKapat={() => setIceAktarAcik(false)} onTamam={(m) => { setIceAktarAcik(false); setHata(""); setBasari(m); void yukle(); }} />
+      )}
 
       {formAcik && (
         <form ref={cariFormRef} className="document-editor invoice-editor" onSubmit={kaydet}>

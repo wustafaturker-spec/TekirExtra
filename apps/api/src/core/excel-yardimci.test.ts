@@ -1,26 +1,8 @@
 import { describe, expect, it } from "vitest";
 import * as ExcelJS from "exceljs";
-import { cariExcelOku, stokExcelOku, stokExcelSablonYaz } from "./excel-yardimci";
+import { stokExcelOku, stokExcelSablonYaz } from "./excel-yardimci";
 
-describe("ExcelYardimci (CARI-04/07, STK-05)", () => {
-  it("cariExcelOku excel belgesindeki cari satirlarini okur (CARI-07)", async () => {
-    // Mock excel oluştur
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet("Cariler");
-    sheet.getRow(1).values = ["Kod", "Ünvan", "Tip", "VKN/TCKN", "E-posta", "Telefon"];
-    sheet.getRow(2).values = ["C1", "Müşteri A", "musteri", "123456", "a@b.com", "555"];
-    sheet.getRow(3).values = ["C2", "Tedarikçi B", "tedarikçi", "789012", "c@d.com", "444"];
-
-    const buffer = (await workbook.xlsx.writeBuffer()) as Buffer;
-    const sonuc = await cariExcelOku(buffer);
-
-    expect(sonuc.length).toBe(2);
-    expect(sonuc[0].kod).toBe("C1");
-    expect(sonuc[0].unvan).toBe("Müşteri A");
-    expect(sonuc[0].tip).toBe("musteri");
-    expect(sonuc[1].tip).toBe("tedarikci");
-  });
-
+describe("ExcelYardimci (STK-05)", () => {
   it("stokExcelOku excel belgesindeki urun satirlarini okur (STK-05)", async () => {
     // Mock excel oluştur
     const workbook = new ExcelJS.Workbook();
