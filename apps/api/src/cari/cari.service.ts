@@ -22,7 +22,6 @@ import type {
   crmEtkilesimSemasi,
   crmGorevSemasi,
 } from "./cari.semalar";
-import { yaslandir } from "./yaslandirma";
 import { cariExcelOku } from "../core/excel-yardimci";
 import { PdfService } from "../core/pdf/pdf.service";
 import { cariDavranisAnalizi } from "./cari-analiz";
@@ -47,6 +46,7 @@ import { cariEbelgeDurumlariniOku, cariEbelgeDurumuBul } from "../ebelge/cari-eb
 import { canliIrsaliyeKutulari, kendiGbEtiketi, postaKutusuSecimi } from "../ebelge/posta-kutusu-secimi";
 import { BaglantilarService } from "../tenant/baglantilar.service";
 import { kurZorunlu } from "../doviz/kur-coz";
+import { cariRiskleri, cariYaslandirmalari, riskOzetiGorunumu, vadesiGecmis } from "./cari-risk";
 import { cariHareketKurTipi } from "@tekirextra/shared";
 
 /** CARI-28: kullanıcının elle girdiği, silinebilen hareket kaynakları. */
@@ -76,12 +76,21 @@ export class CariService {
     const { tenantId } = aktifBaglam();
     const ctx = aktifBaglam();
     const aranan = arama ? metinNormalize(arama) : "";
+    // CARI-30: "gecikmiş" = FIFO sonrası vadesi geçmiş açık tutarı olan cari (kartla aynı kural);
+    // aday olarak vadesi geçmiş borç hareketi olanlar alınır, ödenmiş olanlar elenir.
+    const gecikmisIdler = bakiye === "gecikmis"
+      ? await this.prisma.tenantIslem(tenantId, async (tx) => {
+          const adaylar = await tx.cariHesap.findMany({ where: { hareketler: { some: { tip: "borc", OR: [{ vadeTarihi: { lt: new Date() } }, { vadeTarihi: null, tarih: { lt: new Date() } }] } } }, select: { id: true } });
+          const yaslandirma = await cariYaslandirmalari(tx, adaylar.map((a) => a.id));
+          return [...yaslandirma].filter(([, y]) => vadesiGecmis(y) > 0).map(([id]) => id);
+        })
+      : null;
     const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.cariHesap.findMany({
         where: {
+          ...(gecikmisIdler ? { id: { in: gecikmisIdler } } : {}),
           ...(tip === "musteri" ? { tip: { in: ["musteri", "her_ikisi"] } } : tip === "tedarikci" ? { tip: { in: ["tedarikci", "her_ikisi"] } } : {}),
           ...(durum === "bloke" ? { karaListe: true } : {}),
-          ...(bakiye === "gecikmis" ? { hareketler: { some: { tip: "borc", vadeTarihi: { lt: new Date() } } } } : {}),
           // ARA-01: unvan, kod, VKN/TCKN ve telefon veritabanının ürettiği
           // `arama_normal` kolonunda toplanır; aksan ve büyük/küçük harf orada
           // katlandığı için "sisli" araması "Şişli Makina"yı da bulur.
@@ -177,8 +186,9 @@ export class CariService {
     );
     if (!kayit) throw new NotFoundException("Cari bulunamadı");
     const bakiyeler = (await this.bakiyeleriGetir([id])).get(id) ?? [];
-    const tryBakiye = bakiyeler.reduce((toplam, b) => toplam + Number(b.bakiyeTry), 0);
-    const risk = await this.riskOzeti(id, tryBakiye, kayit.riskLimiti);
+    // CARI-30: kart ve fatura uyarısı aynı risk fonksiyonunu kullanır.
+    const riskler = await this.prisma.tenantIslem(ctx.tenantId, (tx) => cariRiskleri(tx, [id]));
+    const risk = riskOzetiGorunumu(riskler.get(id)!, kayit.riskLimiti);
     // CARI-23: e-Fatura/e-Arşiv ve e-İrsaliye mükellefiyeti, GİB listesinden.
     const ebelge = await this.prisma.tenantIslem(ctx.tenantId, (tx) => cariEbelgeDurumlariniOku(tx, [kayit.vknTckn]));
     const postaKutulari = await this.postaKutulari(kayit);
@@ -200,41 +210,11 @@ export class CariService {
     };
   }
 
-  /**
-   * Risk özeti (CARI-17): mevcut risk = açık TRY bakiye + portföydeki/cirolu
-   * çek-senet tutarı. Limit tanımlıysa kalan limit ve aşım bilgisi döner.
-   */
-  private async riskOzeti(
-    cariId: string,
-    tryBakiye: number,
-    riskLimiti: Prisma.Decimal | null,
-  ) {
-    const { tenantId } = aktifBaglam();
-    // Yalnız ALINAN çekler cari riskidir; verilen çek bizim borcumuzdur ve
-    // carinin riskini artırmaz (KSB-05).
-    const cekSenet = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.cekSenet.aggregate({
-        where: { cariId, yon: "alinan", durum: { in: ["portfoyde", "ciro_edildi"] } },
-        _sum: { tutarTry: true },
-      }),
-    );
-    const cekSenetRiski = D(cekSenet._sum.tutarTry?.toString() ?? 0);
-    const mevcutRisk = D(Math.max(tryBakiye, 0)).add(cekSenetRiski);
-    const limit = riskLimiti ? D(riskLimiti.toString()) : null;
-    return {
-      cekSenetRiski: cekSenetRiski.toFixed(2),
-      mevcutRisk: mevcutRisk.toFixed(2),
-      limit: limit?.toFixed(2) ?? null,
-      kalanLimit: limit ? limit.sub(mevcutRisk).toFixed(2) : null,
-      asim: limit !== null && mevcutRisk.greaterThan(limit),
-    };
-  }
-
   /** Hesaplanan finansal özet (CARI-18). */
   private async finansalOzet(cariId: string) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const [sonIslem, sonTahsilat, sonOdeme, hareketler] = await Promise.all([
+      const [sonIslem, sonTahsilat, sonOdeme, yaslandirma] = await Promise.all([
         tx.cariHareket.findFirst({
           where: { cariId },
           orderBy: { tarih: "desc" },
@@ -250,27 +230,16 @@ export class CariService {
           orderBy: { tarih: "desc" },
           select: { tarih: true },
         }),
-        tx.cariHareket.findMany({
-          where: { cariId },
-          select: { tip: true, tutarTry: true, vadeTarihi: true, tarih: true },
-        }),
+        cariYaslandirmalari(tx, [cariId]),
       ]);
-      const y = yaslandir(
-        hareketler.map((h) => ({
-          tip: h.tip,
-          tutarTry: Number(h.tutarTry),
-          vadeTarihi: h.vadeTarihi,
-          tarih: h.tarih,
-        })),
-        new Date(),
-      );
+      const y = yaslandirma.get(cariId)!;
       const gun = (t?: Date | null): string | null =>
         t ? t.toISOString().slice(0, 10) : null;
       return {
         sonIslemTarihi: gun(sonIslem?.tarih),
         sonTahsilatTarihi: gun(sonTahsilat?.tarih),
         sonOdemeTarihi: gun(sonOdeme?.tarih),
-        vadesiGecmisBakiye: (y.toplam - y.guncel).toFixed(2),
+        vadesiGecmisBakiye: vadesiGecmis(y).toFixed(2),
       };
     });
   }

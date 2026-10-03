@@ -32,6 +32,7 @@ import { birimKatsayisiBul, satirBirimleriniDogrula } from "../stok/birim-cevrim
 import { satirVaryantlariniDogrula } from "../stok/varyant-secimi";
 import { teslimYeriUyarisi, teslimYeriVerisi, teslimYeriniCariyeKaydet } from "./teslim-yeri";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu, kurFarkiTry, odemeOzetiGorunumu } from "./odeme-durumu";
+import { cariRiskleri } from "../cari/cari-risk";
 import type {
   faturaOlusturSemasi,
   faturaGuncelleSemasi,
@@ -1458,20 +1459,14 @@ export class FaturaService {
       }
 
       // Risk limiti kontrolü (CARI-08): kesinleştirmeyi engellemez, uyarı döner.
+      // CARI-30: kartla aynı risk (bakiye + tahsil edilmemiş çek/senet); bu fatura dahil.
       let riskUyari: string | null = null;
       if (fatura.tip === "satis" && fatura.cari.riskLimiti !== null) {
-        const gruplar = await tx.cariHareket.groupBy({
-          by: ["tip"],
-          where: { cariId: fatura.cariId },
-          _sum: { tutarTry: true },
-        });
-        let bakiye = new Prisma.Decimal(0);
-        for (const g of gruplar) {
-          const t = g._sum.tutarTry ?? new Prisma.Decimal(0);
-          bakiye = g.tip === "borc" ? bakiye.add(t) : bakiye.sub(t);
-        }
-        if (bakiye.greaterThan(fatura.cari.riskLimiti)) {
-          riskUyari = `Risk limiti aşıldı: bakiye ${bakiye.toFixed(2)} TL, limit ${fatura.cari.riskLimiti.toFixed(2)} TL`;
+        const risk = (await cariRiskleri(tx, [fatura.cariId])).get(fatura.cariId)!;
+        if (risk.mevcutRisk.greaterThan(fatura.cari.riskLimiti)) {
+          riskUyari = `Risk limiti aşıldı: risk ${risk.mevcutRisk.toFixed(2)} TL` +
+            (risk.cekSenetRiski.isZero() ? "" : ` (bakiye ${Prisma.Decimal.max(risk.bakiyeTry, 0).toFixed(2)} + çek/senet ${risk.cekSenetRiski.toFixed(2)})`) +
+            `, limit ${fatura.cari.riskLimiti.toFixed(2)} TL`;
         }
       }
 

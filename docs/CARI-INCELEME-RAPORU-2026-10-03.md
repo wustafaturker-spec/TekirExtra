@@ -32,6 +32,7 @@ Para hesabını ya da veri bütünlüğünü doğrudan etkileyen beş sorun var:
 |---|---|
 | P0-1, P1-5 | ✅ 2026-10-03 — CARI-27/28 (TCMB kuru, açılış bakiyesi, düzeltme fişi, doğrudan silme). Excel açılış sütunu P0-5 ile. |
 | P1-1, P1-4 | ✅ 2026-10-03 — CARI-29 |
+| P0-2, P0-4 | ✅ 2026-10-03 — CARI-30 (P1-7'nin iptal çifti kısmı da) |
 
 ## 2. Öncelik sınıfları
 
