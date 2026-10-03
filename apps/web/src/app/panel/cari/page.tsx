@@ -223,7 +223,12 @@ const ADRES_TIP_ETIKETI: Record<string, string> = {
 type Sekme = "genel" | "crm" | "ekstre" | "adresler" | "kisiler" | "bankalar";
 type FiltreTip = "tumu" | "musteri" | "tedarikci" | "bloke";
 
-interface CariGorunumu { id: string; ad: string; filtreTip: FiltreTip; }
+/** CARI-36: bakiye süzgeci ve sıralama sunucuda, güncel kurla TL bakiyeye göre. */
+type BakiyeFiltre = "" | "gecikmis" | "alacakli" | "borclu" | "sifir";
+type CariSiralama = "kod" | "unvan" | "bakiye_azalan" | "bakiye_artan";
+const BAKIYE_FILTRELERI: [BakiyeFiltre, string][] = [["", "Tümü"], ["alacakli", "Alacaklıyız"], ["borclu", "Borçluyuz"], ["sifir", "Kapalı (0)"], ["gecikmis", "Vadesi geçmiş"]];
+const SIRALAMALAR: [CariSiralama, string][] = [["kod", "Koda göre"], ["unvan", "Ünvana göre"], ["bakiye_azalan", "Bakiye (büyükten küçüğe)"], ["bakiye_artan", "Bakiye (küçükten büyüğe)"]];
+interface CariGorunumu { id: string; ad: string; filtreTip: FiltreTip; bakiyeFiltre?: BakiyeFiltre; bakiyeMin?: string; bakiyeMax?: string; siralama?: CariSiralama }
 const GORUNUM_ANAHTARI = "tekir_cari_gorunumleri";
 
 /** Cari kartında e-Belge ve iletişim için eksik bilgiler (sağ panel). */
@@ -246,6 +251,11 @@ export default function CariSayfasi() {
   const [cariler, setCariler] = useState<Cari[]>([]);
   const [arama, setArama] = useState("");
   const [aramaSorgusu, setAramaSorgusu] = useState("");
+  const [bakiyeFiltre, setBakiyeFiltre] = useState<BakiyeFiltre>("");
+  const [bakiyeMin, setBakiyeMin] = useState("");
+  const [bakiyeMax, setBakiyeMax] = useState("");
+  const [bakiyeAraligi, setBakiyeAraligi] = useState({ min: "", max: "" });
+  const [siralama, setSiralama] = useState<CariSiralama>("kod");
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [formAcik, setFormAcik] = useState(yeniSayfasi);
@@ -350,6 +360,10 @@ export default function CariSayfasi() {
       if (aramaSorgusu) parametreler.set("arama", aramaSorgusu);
       if (filtreTip === "musteri" || filtreTip === "tedarikci") parametreler.set("tip", filtreTip);
       if (filtreTip === "bloke") parametreler.set("durum", "bloke");
+      if (bakiyeFiltre) parametreler.set("bakiye", bakiyeFiltre);
+      if (bakiyeAraligi.min) parametreler.set("bakiyeMin", bakiyeAraligi.min);
+      if (bakiyeAraligi.max) parametreler.set("bakiyeMax", bakiyeAraligi.max);
+      if (siralama !== "kod") parametreler.set("siralama", siralama);
       if (imlec) parametreler.set("imlec", imlec);
       const qs = parametreler.size ? `?${parametreler.toString()}` : "";
       const veri = await api<{ kayitlar: Cari[]; sonrakiImlec: string | null }>(`/cari${qs}`);
@@ -363,7 +377,7 @@ export default function CariSayfasi() {
     } finally {
       if (istekSirasi === cariYuklemeSirasi.current) setCariListesiYukleniyor(false);
     }
-  }, [aramaSorgusu, filtreTip]);
+  }, [aramaSorgusu, filtreTip, bakiyeFiltre, bakiyeAraligi, siralama]);
 
   const etiketleriYukle = useCallback(async () => {
     try {
@@ -378,6 +392,12 @@ export default function CariSayfasi() {
     const zamanlayici = window.setTimeout(() => setAramaSorgusu(arama.trim()), 300);
     return () => window.clearTimeout(zamanlayici);
   }, [arama]);
+
+  // Bakiye aralığı yazılırken her tuşta liste yeniden hesaplanmasın.
+  useEffect(() => {
+    const zamanlayici = window.setTimeout(() => setBakiyeAraligi({ min: bakiyeMin.trim().replace(",", "."), max: bakiyeMax.trim().replace(",", ".") }), 500);
+    return () => window.clearTimeout(zamanlayici);
+  }, [bakiyeMin, bakiyeMax]);
 
   useEffect(() => {
     if (cariFiltreleriHazir && tokenAl()) void yukle();
@@ -397,6 +417,8 @@ export default function CariSayfasi() {
     const tipParametresi = parametreler.get("tip");
     if (tipParametresi === "musteri" || tipParametresi === "tedarikci") setFiltreTip(tipParametresi);
     if (parametreler.get("durum") === "bloke") setFiltreTip("bloke");
+    const bakiyeParametresi = parametreler.get("bakiye");
+    if (BAKIYE_FILTRELERI.some(([deger]) => deger && deger === bakiyeParametresi)) setBakiyeFiltre(bakiyeParametresi as BakiyeFiltre);
     try { setKayitliGorunumler(JSON.parse(localStorage.getItem(GORUNUM_ANAHTARI) ?? "[]") as CariGorunumu[]); }
     catch { localStorage.removeItem(GORUNUM_ANAHTARI); }
     setCariFiltreleriHazir(true);
@@ -412,7 +434,7 @@ export default function CariSayfasi() {
 
   function gorunumKaydet(event: React.FormEvent) {
     event.preventDefault(); const ad = gorunumAdi.trim(); if (!ad) return;
-    const yeni: CariGorunumu = { id: Date.now().toString(), ad, filtreTip };
+    const yeni: CariGorunumu = { id: Date.now().toString(), ad, filtreTip, bakiyeFiltre, bakiyeMin, bakiyeMax, siralama };
     const gorunumler = [...kayitliGorunumler.filter((g) => g.ad.toLocaleLowerCase("tr-TR") !== ad.toLocaleLowerCase("tr-TR")), yeni];
     setKayitliGorunumler(gorunumler); localStorage.setItem(GORUNUM_ANAHTARI, JSON.stringify(gorunumler));
     setGorunumAdi(""); setGorunumFormuAcik(false); setBasari("“" + ad + "” görünümü kaydedildi.");
@@ -424,7 +446,16 @@ export default function CariSayfasi() {
     setKayitliGorunumler(gorunumler); localStorage.setItem(GORUNUM_ANAHTARI, JSON.stringify(gorunumler));
   }
 
-  function gorunumuUygula(gorunum: CariGorunumu) { filtreyiUygula(gorunum.filtreTip); kullanimOlayi("gorunum_kullanildi"); }
+  function gorunumuUygula(gorunum: CariGorunumu) {
+    filtreyiUygula(gorunum.filtreTip);
+    setBakiyeFiltre(gorunum.bakiyeFiltre ?? ""); setBakiyeMin(gorunum.bakiyeMin ?? ""); setBakiyeMax(gorunum.bakiyeMax ?? ""); setSiralama(gorunum.siralama ?? "kod");
+    kullanimOlayi("gorunum_kullanildi");
+  }
+
+  function filtreleriTemizle() {
+    filtreyiUygula("tumu");
+    setBakiyeFiltre(""); setBakiyeMin(""); setBakiyeMax(""); setSiralama("kod");
+  }
 
   /**
    * @param sekmeyiKoru Alt formlardan (adres/kişi/banka/etiket) sonraki
@@ -1501,9 +1532,13 @@ export default function CariSayfasi() {
         <div className="saved-view-filters">
           <Field label="Cari türü"><Select aria-label="Cari türü" value={filtreTip} onChange={(e) => filtreyiUygula(e.target.value as FiltreTip)}><option value="tumu">Tümü</option><option value="musteri">Müşteri</option><option value="tedarikci">Tedarikçi</option><option value="bloke">Bloke</option></Select></Field>
           <Field label="Kaydedilmiş görünüm"><Select value="" onChange={(e) => { const gorunum = kayitliGorunumler.find((g) => g.id === e.target.value); if (gorunum) gorunumuUygula(gorunum); }}><option value="">Görünüm seçin</option>{kayitliGorunumler.map((g) => <option value={g.id} key={g.id}>{g.ad}</option>)}</Select></Field>
+          <Field label="Bakiye"><Select aria-label="Bakiye durumu" value={bakiyeFiltre} onChange={(e) => setBakiyeFiltre(e.target.value as BakiyeFiltre)}>{BAKIYE_FILTRELERI.map(([deger, ad]) => <option value={deger} key={deger || "tumu"}>{ad}</option>)}</Select></Field>
+          <Field label="Bakiye en az (TL)"><Input aria-label="Bakiye alt sınırı (TL)" inputMode="decimal" value={bakiyeMin} onChange={(e) => setBakiyeMin(e.target.value)} placeholder="Örn. 10000" /></Field>
+          <Field label="Bakiye en çok (TL)"><Input aria-label="Bakiye üst sınırı (TL)" inputMode="decimal" value={bakiyeMax} onChange={(e) => setBakiyeMax(e.target.value)} placeholder="Örn. -5000" /></Field>
+          <Field label="Sıralama"><Select aria-label="Sıralama" value={siralama} onChange={(e) => setSiralama(e.target.value as CariSiralama)}>{SIRALAMALAR.map(([deger, ad]) => <option value={deger} key={deger}>{ad}</option>)}</Select></Field>
         </div>
         <div className="saved-view-actions">
-          {filtreTip !== "tumu" && <Button size="sm" type="button" onClick={() => filtreyiUygula("tumu")}>Filtreleri temizle</Button>}
+          {(filtreTip !== "tumu" || bakiyeFiltre || bakiyeMin || bakiyeMax || siralama !== "kod") && <Button size="sm" type="button" onClick={filtreleriTemizle}>Filtreleri temizle</Button>}
           <Button size="sm" type="button" onClick={() => setGorunumFormuAcik((acik) => !acik)}>Görünümü kaydet</Button>
         </div>
         {gorunumFormuAcik && <form className="saved-view-form" onSubmit={gorunumKaydet}><Input autoFocus aria-label="Görünüm adı" value={gorunumAdi} onChange={(e) => setGorunumAdi(e.target.value)} placeholder="Örn. Tahsilat yapılacak müşteriler" required /><Button size="sm" variant="primary" type="submit">Kaydet</Button><Button size="sm" type="button" onClick={() => setGorunumFormuAcik(false)}>Vazgeç</Button></form>}
@@ -1538,7 +1573,7 @@ export default function CariSayfasi() {
               <th>Sektör</th>
               <th>VKN / TCKN</th>
               <th>e-Belge</th>
-              <th className="num">Bakiye</th>
+              <th className="num" title="Dövizli bakiyeler güncel TCMB döviz satış kuruyla TL'ye çevrilir; alacaklıysak artı">Bakiye (TL)</th>
               <th>Risk</th>
             </tr>
           </thead>
@@ -1585,7 +1620,15 @@ export default function CariSayfasi() {
                         </Badge>
                       )}
                     </td>
-                    <td className={`num money ${bakiyeNum > 0 ? "pos" : bakiyeNum < 0 ? "neg" : ""}`}>{tl(bakiyeNum)}</td>
+                    <td className={`num money ${bakiyeNum > 0 ? "pos" : bakiyeNum < 0 ? "neg" : ""}`}>
+                      {tl(bakiyeNum)}
+                      {/* CARI-36: döviz kırılımı; TL karşılığı toplamın içinde. */}
+                      {c.bakiyeler.filter((b) => b.dovizCinsi !== "TRY" && Number(b.bakiye) !== 0).map((b) => (
+                        <small className="muted" key={b.dovizCinsi} style={{ display: "block", fontWeight: 400 }} title={`≈ ${tl(guncelTry(b))}`}>
+                          {Number(b.bakiye).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {b.dovizCinsi}
+                        </small>
+                      ))}
+                    </td>
                     <td>
                       <Status tone={c.karaListe ? "danger" : "ok"}>{c.karaListe ? "Bloke" : "Normal"}</Status>
                     </td>

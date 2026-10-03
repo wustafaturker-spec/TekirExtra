@@ -61,9 +61,25 @@ export class CariController {
     @Query("tip") tip?: string,
     @Query("durum") durum?: string,
     @Query("bakiye") bakiye?: string,
+    @Query("bakiyeMin") bakiyeMin?: string,
+    @Query("bakiyeMax") bakiyeMax?: string,
+    @Query("siralama") siralama?: string,
   ) {
     const adetSayi = sayfaAdedi(adet);
-    return this.cariService.listele(arama, imlec, adetSayi, tip, durum, bakiye);
+    // CARI-36: bakiye aralığı (TL, güncel kur) ve sıralama.
+    const sayi = (deger?: string) => {
+      if (deger === undefined || deger.trim() === "") return undefined;
+      const n = Number(deger.replace(",", "."));
+      if (!Number.isFinite(n)) throw new BadRequestException("Bakiye sınırı sayı olmalıdır");
+      return n;
+    };
+    const siralamalar = ["kod", "unvan", "bakiye_azalan", "bakiye_artan"] as const;
+    if (siralama && !siralamalar.includes(siralama as (typeof siralamalar)[number])) throw new BadRequestException("Geçersiz sıralama");
+    return this.cariService.listele(arama, imlec, adetSayi, tip, durum, bakiye, {
+      bakiyeMin: sayi(bakiyeMin),
+      bakiyeMax: sayi(bakiyeMax),
+      siralama: siralama as (typeof siralamalar)[number] | undefined,
+    });
   }
 
   @Get("etiketler")
