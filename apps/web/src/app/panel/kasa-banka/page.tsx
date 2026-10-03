@@ -555,6 +555,9 @@ export default function KasaBankaSayfasi() {
         <ButtonLabel as="a" href="/panel/kasa-banka/odeme-talimatlari">
           Ödeme talimatları
         </ButtonLabel>
+        <ButtonLabel as="a" href="/panel/kasa-banka/raporlar">
+          Raporlar
+        </ButtonLabel>
       </div>
       <Card className="treasury-filter">
         <div className="treasury-filter-grid">

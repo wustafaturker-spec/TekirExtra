@@ -15,6 +15,8 @@ export interface RaporKolon {
   alan: string;
   baslik: string;
   tip: RaporKolonTip;
+  /** Para sütunu TL değilse dövizi taşıyan satır alanı (ör. "dovizCinsi"). */
+  dovizAlani?: string;
 }
 
 /** cari/stok/depo/etiket tipleri arayüzde ilgili kayıt listesinden seçim kutusu çizer. */
@@ -27,7 +29,9 @@ export type RaporFiltreTip =
   | "cari"
   | "stok"
   | "depo"
-  | "etiket";
+  | "etiket"
+  /** KSB-14: kasa/banka/POS hesabı; değer "kasa:<id>", "banka:<id>" ya da "pos:<id>". */
+  | "hesap";
 
 export interface RaporFiltreTanimi {
   alan: string;
@@ -57,7 +61,7 @@ export type RaporSatiri = Record<string, string | number | boolean | null>;
 
 export interface RaporTanimi {
   kod: string; // "cari.yaslandirma"
-  modul: "cari" | "stok" | "fatura" | "genel" | "urun_hareket";
+  modul: "cari" | "stok" | "fatura" | "genel" | "urun_hareket" | "kasa_banka";
   ad: string;
   aciklama?: string;
   filtreler: RaporFiltreTanimi[];
@@ -120,6 +124,11 @@ export function girdiDogrula(tanim: RaporTanimi, girdi: RaporGirdisi): string[] 
       case "onay":
         if (typeof deger !== "boolean") {
           hatalar.push(`'${f.ad}' true/false olmalıdır`);
+        }
+        break;
+      case "hesap":
+        if (typeof deger !== "string" || !/^(kasa|banka|pos):[0-9a-f-]{36}$/i.test(deger)) {
+          hatalar.push(`'${f.ad}' geçersiz hesap`);
         }
         break;
       case "secim":

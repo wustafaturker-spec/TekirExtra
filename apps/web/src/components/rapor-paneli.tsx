@@ -13,7 +13,7 @@ import { Alert, Button, Card, Input } from "@/components/ui";
 interface RaporFiltreTanimi {
   alan: string;
   ad: string;
-  tip: "tarih" | "metin" | "sayi" | "secim" | "onay" | "cari" | "stok" | "depo" | "etiket";
+  tip: "tarih" | "metin" | "sayi" | "secim" | "onay" | "cari" | "stok" | "depo" | "etiket" | "hesap";
   zorunlu?: boolean;
   secenekler?: { deger: string; ad: string }[];
 }
@@ -22,6 +22,7 @@ interface RaporKolon {
   alan: string;
   baslik: string;
   tip: "metin" | "sayi" | "para" | "yuzde" | "tarih";
+  dovizAlani?: string;
 }
 
 interface RaporMeta {
@@ -62,6 +63,7 @@ const MODUL_ADLARI: Record<string, string> = {
   fatura: "Fatura",
   genel: "Genel",
   urun_hareket: "Ürün Hareketleri",
+  kasa_banka: "Kasa/Banka",
 };
 
 const SAYISAL = ["para", "sayi", "yuzde"];
@@ -69,11 +71,14 @@ const SAYISAL = ["para", "sayi", "yuzde"];
 function hucreBicimle(
   kolon: RaporKolon,
   deger: string | number | boolean | null,
+  satir?: Record<string, string | number | boolean | null>,
 ): string {
   if (deger === null || deger === undefined || deger === "") return "—";
   switch (kolon.tip) {
-    case "para":
-      return Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL";
+    case "para": {
+      const doviz = kolon.dovizAlani ? String(satir?.[kolon.dovizAlani] ?? "TRY") : "TRY";
+      return Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " " + (doviz === "TRY" ? "TL" : doviz);
+    }
     case "sayi":
       return Number(deger).toLocaleString("tr-TR");
     case "yuzde":
@@ -97,6 +102,7 @@ export function RaporPaneli({ modul }: { modul?: string }) {
   const [stoklar, setStoklar] = useState<SecimKaydi[]>([]);
   const [etiketler, setEtiketler] = useState<SecimKaydi[]>([]);
   const [depolar, setDepolar] = useState<SecimKaydi[]>([]);
+  const [hesaplar, setHesaplar] = useState<SecimKaydi[]>([]);
   const [hata, setHata] = useState("");
   const [yukleniyor, setYukleniyor] = useState(false);
 
@@ -141,6 +147,23 @@ export function RaporPaneli({ modul }: { modul?: string }) {
     if (tipler.has("depo") && depolar.length === 0) {
       void api<SecimKaydi[]>("/depo?yalnizAktif=true")
         .then(setDepolar)
+        .catch(() => undefined);
+    }
+    // KSB-14: kasa/banka/POS hesapları tek listede; değer "tur:id".
+    if (tipler.has("hesap") && hesaplar.length === 0) {
+      type Hesap = { id: string; ad: string; dovizCinsi: string };
+      void Promise.all([
+        api<Hesap[]>("/kasa-banka/kasalar"),
+        api<Hesap[]>("/kasa-banka/bankalar"),
+        api<Hesap[]>("/kasa-banka/pos-hesaplari").catch(() => []),
+      ])
+        .then(([k, b, p]) =>
+          setHesaplar([
+            ...k.map((h) => ({ id: `kasa:${h.id}`, ad: `Kasa · ${h.ad} (${h.dovizCinsi})` })),
+            ...b.map((h) => ({ id: `banka:${h.id}`, ad: `Banka · ${h.ad} (${h.dovizCinsi})` })),
+            ...p.map((h) => ({ id: `pos:${h.id}`, ad: `POS · ${h.ad} (${h.dovizCinsi})` })),
+          ]),
+        )
         .catch(() => undefined);
     }
     if (tipler.has("etiket") && etiketler.length === 0) {
@@ -284,6 +307,7 @@ export function RaporPaneli({ modul }: { modul?: string }) {
       case "cari":
       case "stok":
       case "depo":
+      case "hesap":
       case "etiket": {
         const kaynak =
           f.tip === "cari"
@@ -292,7 +316,9 @@ export function RaporPaneli({ modul }: { modul?: string }) {
               ? stoklar
               : f.tip === "depo"
                 ? depolar
-                : etiketler;
+                : f.tip === "hesap"
+                  ? hesaplar
+                  : etiketler;
         return (
           <select aria-label={f.ad} className="select" value={String(deger)} onChange={(e) => guncelle(e.target.value)}>
             <option value="">{f.zorunlu ? "Seçiniz..." : "Tümü"}</option>
@@ -405,7 +431,7 @@ export function RaporPaneli({ modul }: { modul?: string }) {
                     <tr key={i}>
                       {sonuc.kolonlar.map((k) => (
                         <td key={k.alan} className={SAYISAL.includes(k.tip) ? "num" : undefined} style={{ whiteSpace: "nowrap" }}>
-                          {hucreBicimle(k, satir[k.alan] ?? null)}
+                          {hucreBicimle(k, satir[k.alan] ?? null, satir)}
                         </td>
                       ))}
                     </tr>

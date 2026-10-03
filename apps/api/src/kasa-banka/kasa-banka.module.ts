@@ -1,3 +1,4 @@
+import "./kasa-banka.raporlar";
 import { Module, OnModuleInit } from "@nestjs/common";
 import { registerEylemPolitikasi } from "../core/eylemler/eylem-kayit";
 import { EkstreService } from "./ekstre.service";
