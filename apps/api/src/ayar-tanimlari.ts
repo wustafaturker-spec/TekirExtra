@@ -23,8 +23,10 @@ registerModulAyar(
     varsayilanDoviz: z.enum(DOVIZ_CINSLERI),
     /// CARI-32: risk limiti aşılınca sipariş onayı ve fatura kesinleştirmede davranış.
     riskLimitiPolitikasi: z.enum(["uyar", "engelle", "yonetici_onayi"]),
+    /// CARI-37: Form BA/BS bildirim eşiği (aynı kişiyle aylık KDV hariç TL toplamı).
+    babsEsigi: z.number().min(0).max(1_000_000_000),
   }),
-  { varsayilanVadeGun: 14, varsayilanDoviz: "TRY", riskLimitiPolitikasi: "uyar" },
+  { varsayilanVadeGun: 14, varsayilanDoviz: "TRY", riskLimitiPolitikasi: "uyar", babsEsigi: 5000 },
 );
 
 registerModulAyar(

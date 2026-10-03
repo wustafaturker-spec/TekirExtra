@@ -48,6 +48,10 @@ import { kurZorunlu } from "../doviz/kur-coz";
 import { cariRiskleri, cariYaslandirmalari, riskOzetiGorunumu, vadesiGecmis } from "./cari-risk";
 import { guncelKurlar, guncelTlDegeri } from "./doviz-degerleme";
 import { sonOdemeTarihleri } from "./son-odeme";
+import { babsEsigi, babsKalemleri, babsOzeti, kisiAnahtari, type BabsFormu } from "./babs";
+import { babsMutabakatHtml } from "./babs-pdf";
+
+const AY_ADLARI = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
 import { cariHareketKurTipi } from "@tekirextra/shared";
 
 /** CARI-28: kullanıcının elle girdiği, silinebilen hareket kaynakları. */
@@ -1194,6 +1198,66 @@ export class CariService {
     if (!firma) throw new NotFoundException("Firma bulunamadı");
     const { html, yatay } = ekstrePdfHtml(data, firma, { tema, mutabakat: secenekler.mutabakat });
     return this.pdf.htmlToPdf(html, { yatay, sayfaNumarasi: true });
+  }
+
+  /**
+   * CARI-37: carinin (aynı VKN'li carilerle birlikte) dönemdeki Form BA/BS
+   * kalemleri ve özeti; mutabakat mektubu ve kart önizlemesi bunu kullanır.
+   */
+  async babsMutabakati(cariId: string, yil: number, ay: number) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const cari = await tx.cariHesap.findUnique({ where: { id: cariId }, select: { id: true, unvan: true, vknTckn: true } });
+      if (!cari) throw new NotFoundException("Cari bulunamadı");
+      const anahtar = kisiAnahtari({ vknTckn: cari.vknTckn, cariId: cari.id, unvan: cari.unvan });
+      const [kalemler, esik] = await Promise.all([babsKalemleri(tx, yil, ay), babsEsigi(tx, tenantId)]);
+      const benim = kalemler.filter((k) => kisiAnahtari(k) === anahtar).sort((a, b) => a.tarih.getTime() - b.tarih.getTime());
+      const ozet = babsOzeti(benim, esik);
+      const form = (f: BabsFormu) => {
+        const s = ozet.find((o) => o.form === f);
+        return { belgeSayisi: s?.belgeSayisi ?? 0, tutar: s?.tutar ?? 0, durum: s?.durum ?? ("esik_alti" as const), kalemler: benim.filter((k) => k.form === f) };
+      };
+      const cariKodlari = [...new Set(ozet.flatMap((o) => o.cariKodlari))];
+      return {
+        donem: `${yil}-${String(ay).padStart(2, "0")}`,
+        donemAdi: `${AY_ADLARI[ay - 1]} ${yil}`,
+        unvan: cari.unvan,
+        vknTckn: cari.vknTckn,
+        cariKodlari,
+        esik,
+        ba: form("ba"),
+        bs: form("bs"),
+      };
+    });
+  }
+
+  async babsMutabakatPdf(cariId: string, yil: number, ay: number): Promise<Buffer> {
+    const { tenantId } = aktifBaglam();
+    const [veri, firma, tema] = await Promise.all([
+      this.babsMutabakati(cariId, yil, ay),
+      this.prisma.tenantIslem(tenantId, (tx) => tx.tenant.findUnique({
+        where: { id: tenantId },
+        select: { unvan: true, vkn: true, vergiDairesi: true, adres: true, ilce: true, il: true, postaKodu: true, telefon: true, eposta: true, webSitesi: true, mersisNo: true, ticaretSicilNo: true },
+      })),
+      this.pdf.belgeTemasi(),
+    ]);
+    if (!firma) throw new NotFoundException("Firma bulunamadı");
+    return this.pdf.htmlToPdf(babsMutabakatHtml(veri, firma, tema), { sayfaNumarasi: true });
+  }
+
+  async babsMutabakatEposta(cariId: string, yil: number, ay: number, alici?: string) {
+    const cari = await this.getir(cariId);
+    const hedef = alici ?? cari.eposta;
+    if (!hedef) throw new BadRequestException("Cari kartında e-posta adresi bulunmuyor");
+    const pdf = await this.babsMutabakatPdf(cariId, yil, ay);
+    const donem = `${AY_ADLARI[ay - 1]} ${yil}`;
+    await this.eposta.ekliIletiGonder({
+      alici: hedef,
+      konu: `${donem} Form BA/BS mutabakatı — ${cari.unvan}`,
+      metin: `Sayın Yetkili,\n\n${donem} dönemine ait Form BA/BS mutabakat mektubumuz ekte sunulmuştur. Kayıtlarınızla uyumluysa imzalayıp iletmenizi, fark varsa belge listesini bildirmenizi rica ederiz.\n\nSaygılarımızla`,
+      ekler: [{ dosyaAdi: `babs-mutabakat-${cari.kod}-${yil}-${String(ay).padStart(2, "0")}.pdf`, icerik: pdf, mime: "application/pdf" }],
+    });
+    return { mesaj: `BA/BS mutabakatı ${hedef} adresine gönderildi` };
   }
 
   async ekstreEpostaGonder(cariId: string, baslangic?: string, bitis?: string, alici?: string, iptalleriGosterilsin = false, secenekler: EkstreSecenekleri & { mutabakat?: boolean } = {}) {

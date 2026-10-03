@@ -10,7 +10,8 @@ export async function raporExcelYaz(
   satirlar: RaporSatiri[],
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  const sayfa = workbook.addWorksheet(tanim.ad.slice(0, 31));
+  // Excel sayfa adında * ? : \ / [ ] yasak ve en çok 31 karakter ("Form BA / BS" gibi adlar için).
+  const sayfa = workbook.addWorksheet(tanim.ad.replace(/[*?:\\/[\]]/g, "-").slice(0, 31));
 
   const sonKolon = String.fromCharCode(64 + Math.min(tanim.kolonlar.length, 26));
   sayfa.mergeCells(`A1:${sonKolon}1`);

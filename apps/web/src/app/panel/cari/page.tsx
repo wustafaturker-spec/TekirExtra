@@ -9,6 +9,7 @@ import { PostaKutusuSecimleri, type PostaKutusuSecimi } from "@/components/posta
 import { FormGrubu } from "@/components/form-grubu";
 import { Bakiye, CariEkstreTablosu, type EkstreVeri } from "@/components/cari-ekstre-tablosu";
 import { ElleHareketFormu } from "./elle-hareket";
+import { BabsMutabakatPaneli } from "./babs-mutabakat";
 import { ExcelIceAktar } from "./excel-ice-aktar";
 import { CARI_EBELGE_ETIKETI, EKSTRE_TURU_ADLARI, EKSTRE_TURLERI, vknTcknGecerliMi, type CariEbelgeDurumu, type CariEbelgeTuru, type EkstreTuru, YABANCI_DOVIZLER, type YabanciDoviz } from "@tekirextra/shared";
 import {
@@ -378,6 +379,8 @@ export default function CariSayfasi() {
       if (istekSirasi === cariYuklemeSirasi.current) setCariListesiYukleniyor(false);
     }
   }, [aramaSorgusu, filtreTip, bakiyeFiltre, bakiyeAraligi, siralama]);
+
+  const babsMesaji = useCallback(({ hata: h, basari: b }: { hata?: string; basari?: string }) => { setHata(h ?? ""); setBasari(b ?? ""); }, []);
 
   const etiketleriYukle = useCallback(async () => {
     try {
@@ -1345,6 +1348,8 @@ export default function CariSayfasi() {
                 ? <ElleHareketFormu cariId={detay.id} varsayilanDoviz={detay.dovizCinsi} onTamam={(m) => void elleHareketKaydedildi(m)} onVazgec={() => setElleHareketAcik(false)} />
                 : <div className="cari-elle-hareket__ac"><Button size="sm" onClick={() => setElleHareketAcik(true)}>+ Açılış bakiyesi / düzeltme ekle</Button></div>}
               <div className="cari-statement__mail"><Field label="Gönderilecek e-posta"><Input type="email" value={ekstreEposta} onChange={(e) => setEkstreEposta(e.target.value)} placeholder="muhasebe@firma.com" /></Field><Button variant="primary" disabled={!ekstreEposta || ekstreIslemde} onClick={() => void ekstreGonder()}>{ekstreIslemde ? "İşleniyor…" : "PDF + Excel e-posta gönder"}</Button></div>
+              {/* CARI-37: dönemin Form BA/BS özeti ve mutabakat mektubu. */}
+              <BabsMutabakatPaneli key={detay.id} cariId={detay.id} cariKod={detay.kod} varsayilanEposta={detay.eposta ?? ""} onMesaj={babsMesaji} />
               {!ekstre ? (
                 <p className="subtle" style={{ fontSize: "0.85rem" }}>Ekstre yükleniyor...</p>
               ) : (

@@ -1,6 +1,9 @@
 import { Prisma } from "@prisma/client";
 import { registerRapor } from "../core/raporlar/rapor-kayit";
 import { cariYaslandirmalari } from "./cari-risk";
+import { babsEsigi, babsKalemleri, babsOzeti, type BabsDurumu } from "./babs";
+
+const AY_ADLARI = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
 
 /**
  * Cari modülü raporları (CARI-12) — RPR-06 ortak araç setine tanım olarak
@@ -133,6 +136,60 @@ registerRapor({
         toplam: tl(d.toplam * d.kur),
       })),
     );
+  },
+});
+
+// ─── Form BA / BS (CARI-37) ─────────────────────────────────────────────────
+
+const BABS_DURUM_ADLARI: Record<BabsDurumu, string> = { bildirilir: "Bildirilir", esige_yakin: "Eşiğe yakın", esik_alti: "Eşik altı" };
+
+registerRapor({
+  kod: "cari.babs",
+  modul: "cari",
+  ad: "Form BA / BS",
+  aciklama: "Aylık, kişi başına KDV hariç alış (BA) ve satış (BS) toplamları; eşik Ayarlar > Cari'den",
+  filtreler: [
+    { alan: "yil", ad: "Yıl", tip: "sayi", zorunlu: true },
+    { alan: "ay", ad: "Ay", tip: "secim", zorunlu: true, secenekler: AY_ADLARI.map((ad, i) => ({ deger: String(i + 1), ad })) },
+    { alan: "form", ad: "Form", tip: "secim", zorunlu: true, secenekler: [{ deger: "ba", ad: "Form BA (alışlar)" }, { deger: "bs", ad: "Form BS (satışlar)" }] },
+    {
+      alan: "kapsam",
+      ad: "Kapsam",
+      tip: "secim",
+      secenekler: [
+        { deger: "bildirilir", ad: "Bildirilecekler (eşik ve üstü)" },
+        { deger: "esige_yakin", ad: "Eşiğe yakınlar (eşiğin %80'i ve üstü, altında)" },
+        { deger: "tumu", ad: "Tümü" },
+      ],
+    },
+  ],
+  kolonlar: [
+    { alan: "unvan", baslik: "Ünvan", tip: "metin" },
+    { alan: "vknTckn", baslik: "VKN / TCKN", tip: "metin" },
+    { alan: "ulke", baslik: "Ülke", tip: "metin" },
+    { alan: "cariKodlari", baslik: "Cari kodu", tip: "metin" },
+    { alan: "belgeSayisi", baslik: "Belge sayısı", tip: "sayi" },
+    { alan: "tutar", baslik: "KDV hariç tutar (TL)", tip: "para" },
+    { alan: "durum", baslik: "Durum", tip: "metin" },
+  ],
+  async calistir(girdi, { tx, tenantId }) {
+    const f = girdi.filtreler ?? {};
+    const yil = Number(f.yil);
+    const ay = Number(f.ay);
+    if (!Number.isInteger(yil) || yil < 2000 || yil > 2100 || !Number.isInteger(ay) || ay < 1 || ay > 12) return [];
+    const kapsam = f.kapsam === "tumu" || f.kapsam === "esige_yakin" ? f.kapsam : "bildirilir";
+    const [kalemler, esik] = await Promise.all([babsKalemleri(tx, yil, ay), babsEsigi(tx, tenantId)]);
+    return babsOzeti(kalemler.filter((k) => k.form === f.form), esik)
+      .filter((s) => kapsam === "tumu" || s.durum === kapsam)
+      .map((s) => ({
+        unvan: s.unvan,
+        vknTckn: s.vknTckn ?? "Kimlik yok",
+        ulke: s.ulke,
+        cariKodlari: s.cariKodlari.join(", ") || "—",
+        belgeSayisi: s.belgeSayisi,
+        tutar: s.tutar,
+        durum: BABS_DURUM_ADLARI[s.durum],
+      }));
   },
 });
 

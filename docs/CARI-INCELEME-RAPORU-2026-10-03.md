@@ -38,6 +38,7 @@ Para hesabını ya da veri bütünlüğünü doğrudan etkileyen beş sorun var:
 | P0-3, P1-7 | ✅ 2026-10-03 — CARI-33 (güncel TCMB döviz satış kuru; döviz başına, iki yönlü yaşlandırma) |
 | P1-6, P1-8 | ✅ 2026-10-04 — CARI-34 (son tahsilat/ödeme tüm ödeme kaynaklarından) ve CARI-35 (aynı VKN uyarı + onay) |
 | P2-1 | ✅ 2026-10-04 — CARI-36 (listede döviz kırılımı, bakiye durumu/aralığı süzgeci, bakiyeye göre sıralama; güncel kurla TL) |
+| P2-3 | ✅ 2026-10-04 — CARI-37 (Form BA/BS raporu + Excel, eşik ayarı, eşiğe yakınlar, cari bazında mutabakat PDF/e-posta) |
 
 ## 2. Öncelik sınıfları
 

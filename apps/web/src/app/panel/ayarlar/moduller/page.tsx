@@ -43,6 +43,7 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
       { ad: "varsayilanVadeGun", etiket: "Varsayılan vade (gün)", tip: "sayi", min: 0, max: 365 },
       { ad: "varsayilanDoviz", etiket: "Varsayılan döviz", tip: "enum", secenekler: DOVIZ_CINSLERI.map((d) => [d, d]) },
       { ad: "riskLimitiPolitikasi", etiket: "Risk limiti politikası (CARI-32)", tip: "enum", secenekler: [["uyar", "Uyar"], ["engelle", "Engelle"], ["yonetici_onayi", "Yönetici onayı"]], ipucu: "Satış siparişi onayında ve satış faturası kesinleştirmede risk limiti aşılırsa davranış; yönetici onayında gerekçe denetim izine yazılır" },
+      { ad: "babsEsigi", etiket: "Form BA/BS eşiği (TL, CARI-37)", tip: "sayi", min: 0, ipucu: "Aynı kişiyle bir aydaki KDV hariç toplam bu tutara ulaşırsa BA/BS'ye girer; mevzuattaki tutar 5.000 TL" },
     ],
   },
   stok: {

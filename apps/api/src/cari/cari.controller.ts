@@ -49,6 +49,13 @@ function ekstreSecenekleri(sorgu: unknown) {
 /** CARI-35: kullanıcı aynı VKN/TCKN'li ikinci cariyi bilerek açıyor. */
 const mukerrerVknOnayi = (govde: unknown) => (govde as { mukerrerVknOnayi?: unknown } | null)?.mukerrerVknOnayi === true;
 
+/** CARI-37: BA/BS dönemi (yıl + ay). */
+function babsDonemi(yil?: string, ay?: string) {
+  const y = Number(yil), a = Number(ay);
+  if (!Number.isInteger(y) || y < 2000 || y > 2100 || !Number.isInteger(a) || a < 1 || a > 12) throw new BadRequestException("Dönem için geçerli yıl ve ay (1-12) girin");
+  return { yil: y, ay: a };
+}
+
 @Controller("cari")
 export class CariController {
   constructor(private readonly cariService: CariService, private readonly abonelik: AbonelikService, private readonly iceAktarma: CariIceAktarmaService) {}
@@ -401,5 +408,32 @@ export class CariController {
     return this.cariService.ekstreEpostaGonder(id, sonuc.data.baslangic, sonuc.data.bitis, sonuc.data.alici, sonuc.data.iptalleriGoster ?? false, {
       tur: sonuc.data.tur, hedefDoviz: sonuc.data.tur === "doviz" ? sonuc.data.hedefDoviz : undefined, mutabakat: sonuc.data.mutabakat,
     });
+  }
+
+  // ─── CARI-37: Form BA/BS mutabakatı ──────────────────────────────────────
+
+  @Get(":id/babs")
+  async babs(@Param("id") id: string, @Query("yil") yil?: string, @Query("ay") ay?: string) {
+    const d = babsDonemi(yil, ay);
+    return this.cariService.babsMutabakati(id, d.yil, d.ay);
+  }
+
+  @Get(":id/babs/pdf")
+  async babsPdf(@Param("id") id: string, @Res() res: Response, @Query("yil") yil?: string, @Query("ay") ay?: string) {
+    const d = babsDonemi(yil, ay);
+    const buffer = await this.cariService.babsMutabakatPdf(id, d.yil, d.ay);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename=babs-mutabakat-${d.yil}-${String(d.ay).padStart(2, "0")}.pdf`);
+    res.send(buffer);
+  }
+
+  @Post(":id/babs/eposta")
+  @Roller("muhasebe")
+  async babsEposta(@Param("id") id: string, @Body() govde: unknown) {
+    const g = (govde ?? {}) as { yil?: unknown; ay?: unknown; alici?: unknown };
+    const d = babsDonemi(String(g.yil ?? ""), String(g.ay ?? ""));
+    const alici = typeof g.alici === "string" && g.alici.trim() ? g.alici.trim() : undefined;
+    if (alici && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(alici)) throw new BadRequestException("Geçerli bir e-posta adresi girin");
+    return this.cariService.babsMutabakatEposta(id, d.yil, d.ay, alici);
   }
 }
