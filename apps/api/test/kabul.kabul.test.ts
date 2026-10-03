@@ -1335,3 +1335,161 @@ describe("STK-07 — çoklu depo: bakiyeler depo bazında ayrışır", () => {
     expect((await istek(`/depo/${merkez.id}`, { method: "DELETE", jeton })).durum).toBe(400);
   });
 });
+
+/**
+ * P2-9 (finans incelemesi 2026-10-02): P0 düzeltmelerinin gerçek veritabanında
+ * senaryo testleri — dövizli kapama (KSB-07), aynı ekstre satırının iki kez
+ * eşleştirilmemesi (KSB-06) ve kapalı mali dönem (adım 3 + KSB-08).
+ */
+describe("P2-9 finans — dövizli fatura TL ile kapanır, fazla ödeme avans olur", () => {
+  it("bankanın kuruyla girilen karşılık faturayı kapatır, kur farkını ayrı izler; fazlası carinin avansı olur", async () => {
+    const { jeton } = await firmaAc("p29-doviz", vknUret(true));
+    const stokId = await stokAc(jeton, "P29-D");
+    await stokGirisi(jeton, stokId, "10");
+    const cariId = await cariAc(jeton, "P29-D-M", vknUret(true));
+
+    // 1.200 USD (1.000 + %20), fatura kuru 40 → 48.000 TL
+    const fatura = await faturaKes(jeton, {
+      tip: "satis",
+      tarih: "2026-09-10",
+      cariId,
+      dovizCinsi: "USD",
+      kur: "40",
+      satirlar: [{ stokId, miktar: "1", birim: "adet", birimFiyat: "1000", kdvOrani: "20" }],
+    });
+    const tlBanka = await istek<{ id: string }>("/kasa-banka/bankalar", {
+      method: "POST",
+      jeton,
+      body: { ad: "P29 TL Banka", bankaAdi: "Kabul Bankası", dovizCinsi: "TRY" },
+    });
+    expect(tlBanka.durum, JSON.stringify(tlBanka.veri)).toBe(201);
+
+    // Müşteri TL öder; banka 41 kurundan çevirmiş: 49.200 TL = 1.200 USD.
+    const tahsilat = await istek<{ id: string }>("/kasa-banka/hareketler", {
+      method: "POST",
+      jeton,
+      body: { bankaHesapId: tlBanka.veri.id, tip: "tahsilat", tutar: "49200", tarih: "2026-09-15", cariId, faturaId: fatura.id, faturaKarsiligi: "1200" },
+    });
+    expect(tahsilat.durum, JSON.stringify(tahsilat.veri)).toBe(201);
+
+    const kapanan = await istek<{ odemeOzeti: { durum: string; kalan: string } }>(`/fatura/${fatura.id}`, { jeton });
+    expect(kapanan.veri.odemeOzeti).toMatchObject({ durum: "odendi", kalan: "0.00" });
+    // Cari hareketi fatura dövizinde yazılır; TL ve USD bakiyeleri ayrı açık kalmaz.
+    const cari = await istek<{ bakiyeler: Array<{ dovizCinsi: string; bakiye: string }> }>(`/cari/${cariId}`, { jeton });
+    for (const b of cari.veri.bakiyeler) expect(Number(b.bakiye), b.dovizCinsi).toBeCloseTo(0, 2);
+
+    // Kur farkı kalanı bozmaz, ayrı listede bekler: 49.200 − 1.200 × 40 = 1.200 TL.
+    const kurFarki = await istek<Array<{ hareketId: string; kurFarkiTry: string }>>("/kur-farki?durum=bekleyen", { jeton });
+    expect(kurFarki.durum, JSON.stringify(kurFarki.veri)).toBe(200);
+    expect(kurFarki.veri.find((k) => k.hareketId === tahsilat.veri.id)?.kurFarkiTry).toBe("1200.00");
+
+    // Fazla ödeme: 120 USD'lik faturaya USD hesaptan 150 USD gelir → 120 mahsup, 30 avans.
+    const ikinci = await faturaKes(jeton, {
+      tip: "satis",
+      tarih: "2026-09-16",
+      cariId,
+      dovizCinsi: "USD",
+      kur: "40",
+      satirlar: [{ stokId, miktar: "1", birim: "adet", birimFiyat: "100", kdvOrani: "20" }],
+    });
+    const usdBanka = await istek<{ id: string }>("/kasa-banka/bankalar", {
+      method: "POST",
+      jeton,
+      body: { ad: "P29 USD Banka", bankaAdi: "Kabul Bankası", dovizCinsi: "USD" },
+    });
+    const fazla = await istek("/kasa-banka/hareketler", {
+      method: "POST",
+      jeton,
+      body: { bankaHesapId: usdBanka.veri.id, tip: "tahsilat", tutar: "150", dovizCinsi: "USD", kur: "40", tarih: "2026-09-17", cariId, faturaId: ikinci.id },
+    });
+    expect(fazla.durum, JSON.stringify(fazla.veri)).toBe(201);
+    const ikinciDurum = await istek<{ odemeOzeti: { durum: string; kalan: string } }>(`/fatura/${ikinci.id}`, { jeton });
+    expect(ikinciDurum.veri.odemeOzeti).toMatchObject({ durum: "odendi", kalan: "0.00" });
+    const avansli = await istek<{ bakiyeler: Array<{ dovizCinsi: string; bakiye: string }> }>(`/cari/${cariId}`, { jeton });
+    expect(Number(avansli.veri.bakiyeler.find((b) => b.dovizCinsi === "USD")?.bakiye)).toBeCloseTo(-30, 2);
+  });
+});
+
+describe("P2-9 finans — aynı ekstre satırı iki kez eşleştirilmez", () => {
+  it("eşzamanlı iki eşleştirmeden yalnız biri hareket üretir", async () => {
+    const { jeton } = await firmaAc("p29-ekstre", vknUret(true));
+    const cariId = await cariAc(jeton, "P29-E-M", vknUret(true));
+    const banka = await istek<{ id: string }>("/kasa-banka/bankalar", {
+      method: "POST",
+      jeton,
+      body: { ad: "P29 Ekstre Bankası", bankaAdi: "Kabul Bankası", dovizCinsi: "TRY" },
+    });
+    expect(banka.durum, JSON.stringify(banka.veri)).toBe(201);
+
+    const form = new FormData();
+    form.append("dosya", new Blob(["Tarih;Açıklama;Tutar\n12.09.2026;P29 GELEN EFT;1000,00\n"], { type: "text/csv" }), "ekstre.csv");
+    form.append("veri", JSON.stringify({ bankaHesapId: banka.veri.id, esleme: { baslikSatiri: 0, tarih: 0, aciklama: 1, tutar: 2 }, eslemeyiKaydet: false }));
+    const yukle = await fetch(`${taban}/kasa-banka/ekstre/yukle`, { method: "POST", headers: { Authorization: `Bearer ${jeton}` }, body: form });
+    expect(yukle.status, await yukle.clone().text()).toBe(201);
+
+    const satirlar = await istek<Array<{ id: string }>>(`/kasa-banka/ekstre/satirlar?bankaHesapId=${banka.veri.id}`, { jeton });
+    expect(satirlar.veri).toHaveLength(1);
+    const satirId = satirlar.veri[0].id;
+
+    const eslestir = () => istek(`/kasa-banka/ekstre/satirlar/${satirId}/eslestir`, { method: "POST", jeton, body: { tur: "cari", cariId } });
+    const sonuclar = await Promise.all([eslestir(), eslestir()]);
+    expect(sonuclar.map((s) => s.durum).sort()).toEqual([201, expect.any(Number)]);
+    expect(sonuclar.filter((s) => s.durum === 201)).toHaveLength(1);
+    expect(sonuclar.find((s) => s.durum !== 201)!.durum).toBeGreaterThanOrEqual(400);
+
+    const hareketler = await istek<{ kayitlar: unknown[] }>(`/kasa-banka/hareketler?bankaHesapId=${banka.veri.id}`, { jeton });
+    expect(hareketler.veri.kayitlar).toHaveLength(1);
+    const bankaDetayi = await istek<{ bakiye: string }>(`/kasa-banka/bankalar/${banka.veri.id}`, { jeton });
+    expect(Number(bankaDetayi.veri.bakiye)).toBe(1000);
+  });
+});
+
+describe("P2-9 finans — kapalı mali dönem", () => {
+  it("kapalı döneme fiş ve virman girilmez; o dönemin fişi bugün tarihli ters kayıtla geri alınır", async () => {
+    const { jeton } = await firmaAc("p29-donem", vknUret(true));
+    const kasa = await istek<{ id: string }>("/kasa-banka/kasalar", { method: "POST", jeton, body: { ad: "P29 Kasa", dovizCinsi: "TRY" } });
+    const ikinciKasa = await istek<{ id: string }>("/kasa-banka/kasalar", { method: "POST", jeton, body: { ad: "P29 Kasa 2", dovizCinsi: "TRY" } });
+    const ocakFisi = await istek<{ id: string }>("/kasa-banka/hareketler", {
+      method: "POST",
+      jeton,
+      body: { kasaId: kasa.veri.id, tip: "tahsilat", tutar: "1000", tarih: "2026-01-10", aciklama: "Ocak tahsilatı" },
+    });
+    expect(ocakFisi.durum, JSON.stringify(ocakFisi.veri)).toBe(201);
+
+    const kapat = await istek("/donem-kapatma/kapat", { method: "POST", jeton, body: { yil: 2026, ay: 1, gerekce: "Kabul testi ocak kapanışı" } });
+    expect(kapat.durum, JSON.stringify(kapat.veri)).toBe(201);
+
+    const kapaliFis = await istek<{ message: string }>("/kasa-banka/hareketler", {
+      method: "POST",
+      jeton,
+      body: { kasaId: kasa.veri.id, tip: "tahsilat", tutar: "50", tarih: "2026-01-20" },
+    });
+    expect(kapaliFis.durum).toBe(409);
+    expect(kapaliFis.veri.message).toContain("mali dönemi kapalı");
+    const kapaliVirman = await istek<{ message: string }>("/kasa-banka/virman", {
+      method: "POST",
+      jeton,
+      body: { kaynakKasaId: kasa.veri.id, hedefKasaId: ikinciKasa.veri.id, tutar: "10", tarih: "2026-01-25" },
+    });
+    expect(kapaliVirman.durum).toBe(409);
+
+    const geriAl = await istek("/kasa-banka/hareketler/" + ocakFisi.veri.id + "/geri-al", {
+      method: "POST",
+      jeton,
+      body: { neden: "Kabul testi: yanlış kasaya girilmiş" },
+    });
+    expect(geriAl.durum, JSON.stringify(geriAl.veri)).toBe(201);
+
+    const liste = await istek<{ kayitlar: Array<{ id: string; tarih: string; kaynakTur: string; kaynakRef: string | null; geriAlindi: boolean }> }>(
+      `/kasa-banka/hareketler?kasaId=${kasa.veri.id}`,
+      { jeton },
+    );
+    const asil = liste.veri.kayitlar.find((h) => h.id === ocakFisi.veri.id);
+    const ters = liste.veri.kayitlar.find((h) => h.kaynakTur === "ters_kayit");
+    expect(asil?.geriAlindi).toBe(true); // kapalı dönemdeki asıl kayıt silinmez
+    expect(ters?.kaynakRef).toBe(ocakFisi.veri.id);
+    expect(ters?.tarih.slice(0, 10)).toBe(bugun());
+    const bakiye = await istek<{ bakiye: string }>(`/kasa-banka/kasalar/${kasa.veri.id}`, { jeton });
+    expect(Number(bakiye.veri.bakiye)).toBe(0);
+  });
+});
