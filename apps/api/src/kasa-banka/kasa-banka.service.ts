@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma, CekSenetDurum, CekSenetYon, DovizCinsi, type KasaBankaHareketTip } from "@prisma/client";
-import { bugunTR } from "@tekirextra/shared";
+import { bugunTR, GIRIS_KUR_TIPI, hareketKurTipi } from "@tekirextra/shared";
 import type { KayitEylem } from "@tekirextra/shared";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -501,7 +501,7 @@ export class KasaBankaService {
       let cariId = girdi.cariId || null;
       if (cariId && !(await tx.cariHesap.findFirst({ where: { id: cariId, aktif: true }, select: { id: true } }))) throw new BadRequestException("Aktif cari hesap bulunamadı");
       const hareketTarihi = new Date(girdi.tarih);
-      const kur = girdi.dovizCinsi === "TRY" ? D(1) : girdi.kur ? D(girdi.kur) : await kurZorunlu(tx, girdi.dovizCinsi, hareketTarihi);
+      const kur = girdi.dovizCinsi === "TRY" ? D(1) : girdi.kur ? D(girdi.kur) : await kurZorunlu(tx, girdi.dovizCinsi, hareketTarihi, hareketKurTipi(girdi.tip));
       const tutarTry = tutar.mul(kur).toDecimalPlaces(2);
 
       // KSB-07: faturaya bağlanan ödeme faturanın dövizindeki karşılığıyla
@@ -587,7 +587,8 @@ export class KasaBankaService {
     if (faturaDovizi === girdi.dovizCinsi) return tutar;
     if (girdi.faturaKarsiligi) return D(girdi.faturaKarsiligi).toDecimalPlaces(2);
     if (faturaDovizi === "TRY") return tutarTry;
-    const faturaDoviziKuru = await kurZorunlu(tx, faturaDovizi, tarih);
+    // DVZ-09: ödemenin yönü (tahsilat alış, tediye satış) faturanın kur türüyle aynıdır.
+    const faturaDoviziKuru = await kurZorunlu(tx, faturaDovizi, tarih, hareketKurTipi(girdi.tip));
     const karsilik = tutarTry.div(faturaDoviziKuru).toDecimalPlaces(2);
     if (!karsilik.gt(0)) throw new BadRequestException("Ödemenin fatura dövizindeki karşılığı hesaplanamadı");
     return karsilik;
@@ -674,7 +675,7 @@ export class KasaBankaService {
   /** Ekstre eşleştirmesi de kullanır (aynı işlem içinde). */
   async virmanOlustur(tx: Prisma.TransactionClient, tenantId: string, girdi: z.infer<typeof virmanOlusturSemasi>, dovizCinsi: DovizCinsi, tutar: Prisma.Decimal) {
     {
-      const tarih = new Date(girdi.tarih); const kur = dovizCinsi === "TRY" ? D(1) : await kurZorunlu(tx, dovizCinsi, tarih); const tutarTry = tutar.mul(kur).toDecimalPlaces(2);
+      const tarih = new Date(girdi.tarih); const kur = dovizCinsi === "TRY" ? D(1) : await kurZorunlu(tx, dovizCinsi, tarih, GIRIS_KUR_TIPI); const tutarTry = tutar.mul(kur).toDecimalPlaces(2);
       // 1. Kaynak hesaptan para çıkışı (virman_gidis)
       const gidis = await tx.kasaBankaHareket.create({
         data: {
@@ -1054,7 +1055,7 @@ export class KasaBankaService {
       for (const grup of bakiyeGruplari) kullanilabilir = grup.tip === "tahsilat" || grup.tip === "virman_gelis" ? kullanilabilir.add(grup._sum.tutar ?? 0) : kullanilabilir.sub(grup._sum.tutar ?? 0);
       if (brut.greaterThan(kullanilabilir)) throw new BadRequestException(`Aktarım tutarı POS bakiyesini aşıyor (kullanılabilir: ${kullanilabilir.toFixed(2)} ${pos.dovizCinsi})`);
       const tarih = new Date(girdi.tarih);
-      const kur = await kurCoz(tx, tenantId, pos.dovizCinsi, tarih);
+      const kur = await kurCoz(tx, tenantId, pos.dovizCinsi, tarih, GIRIS_KUR_TIPI);
       if (!kur) throw new BadRequestException(`${girdi.tarih} tarihi için kayıtlı ${pos.dovizCinsi} kuru yok; kur kaydı oluşmadan dövizli POS mutabakatı yapılamaz`);
       const try_ = (tutar: Prisma.Decimal) => tutar.mul(kur).toDecimalPlaces(2);
       const ortak = { tenantId, dovizCinsi: pos.dovizCinsi, kur, tarih, kaynakTur: "pos_mutabakat", aciklama: girdi.aciklama ?? `${pos.ad} sağlayıcı ödemesi` };
@@ -1401,7 +1402,7 @@ export class KasaBankaService {
     }
     const isaretli = D(girdi.tutar);
     const tutar = isaretli.abs();
-    const kur = hesap.dovizCinsi === "TRY" ? D(1) : girdi.kur ? D(girdi.kur) : await kurZorunlu(tx, hesap.dovizCinsi, tarih);
+    const kur = hesap.dovizCinsi === "TRY" ? D(1) : girdi.kur ? D(girdi.kur) : await kurZorunlu(tx, hesap.dovizCinsi, tarih, GIRIS_KUR_TIPI);
     const veri = {
       tip: (isaretli.isNegative() ? "tediye" : "tahsilat") as KasaBankaHareketTip,
       tutar,

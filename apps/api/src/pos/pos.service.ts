@@ -125,7 +125,7 @@ export class PosService {
 
   /** POS tahsilatının kasa/banka hareketini ve cari alacağını yazar (bağlantı ödemesi ve slip ortak). */
   private async tahsilatiYaz(tx: Prisma.TransactionClient, tenantId: string, kayit: { id: string; posHesapId: string; tutar: Prisma.Decimal; dovizCinsi: any; cariId: string; faturaId: string | null }, tarih: Date, aciklama: string) {
-    const kur = kayit.dovizCinsi === "TRY" ? new Prisma.Decimal(1) : await kurZorunlu(tx, kayit.dovizCinsi, tarih, "satis", tenantId);
+    const kur = kayit.dovizCinsi === "TRY" ? new Prisma.Decimal(1) : await kurZorunlu(tx, kayit.dovizCinsi, tarih, "alis", tenantId);
     const tutarTry = kayit.tutar.mul(kur).toDecimalPlaces(2);
     const hareket = await tx.kasaBankaHareket.create({ data: { tenantId, posHesapId: kayit.posHesapId, tip: "tahsilat", tutar: kayit.tutar, dovizCinsi: kayit.dovizCinsi, kur, tutarTry, tarih, cariId: kayit.cariId, faturaId: kayit.faturaId, ...(await posFaturaKapamasi(tx, kayit.faturaId, kayit.tutar)), aciklama, kaynakTur: "pos_tahsilat", kaynakRef: kayit.id } });
     await tx.cariHareket.create({ data: { tenantId, cariId: kayit.cariId, tip: "alacak", tutar: kayit.tutar, dovizCinsi: kayit.dovizCinsi, kur, tutarTry, tarih, aciklama, kaynakTur: "pos_tahsilat", kaynakRef: kayit.id } });

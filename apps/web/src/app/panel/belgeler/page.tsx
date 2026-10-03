@@ -20,7 +20,7 @@ import { BOS_TESLIMAT_ADRESI, TeslimatAdresiAlanlari, teslimatAdresiEksik, tesli
 import { FormGrubu } from "@/components/form-grubu";
 import { AlanIpucu } from "@/components/alan-ipucu";
 import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
-import { belgeNoMetni, bugunTR, vadeTarihiHesapla, EN_UZUN_VADE_GUN, revizyonEngeli, faturaHesapla, kosulSatirlari, muhtelifMusteriMi, referansFarkiUyarisi, TESLIM_SARTLARI, irsaliyeGeriAlmaEngeli, irsaliyeIptalUyarisi, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
+import { belgeNoMetni, bugunTR, faturaKurTipi, vadeTarihiHesapla, EN_UZUN_VADE_GUN, revizyonEngeli, faturaHesapla, kosulSatirlari, muhtelifMusteriMi, referansFarkiUyarisi, TESLIM_SARTLARI, irsaliyeGeriAlmaEngeli, irsaliyeIptalUyarisi, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -439,11 +439,12 @@ export default function BelgelerSayfasi() {
     if (dovizCinsi === "TRY") { setKur("1"); setKurBilgisi(""); return; }
     if (yuklenenKurRef.current) { setKur(yuklenenKurRef.current); setKurBilgisi("Belgede kayıtlı kur"); yuklenenKurRef.current = null; return; }
     let gecerli = true;
-    api<{ kaynak: string; kurTarihi: string; oncekiIsGunuKullanildi: boolean; kurlar: Record<string, number> }>(`/doviz-kurlari?tarih=${tarih}&tip=alis`)
+    // DVZ-09: satış belgesi döviz alış, alış belgesi döviz satış kuruyla (faturasıyla aynı tür).
+    api<{ kaynak: string; kurTarihi: string; oncekiIsGunuKullanildi: boolean; kurlar: Record<string, number> }>(`/doviz-kurlari?tarih=${tarih}&tip=${faturaKurTipi(yon)}`)
       .then((veri) => { if (gecerli && veri.kurlar[dovizCinsi]) { setKur(String(veri.kurlar[dovizCinsi])); setKurBilgisi(`${veri.kaynak === "TCMB_XML" ? "TCMB" : "TCMB EVDS"} · ${veri.kurTarihi}${veri.oncekiIsGunuKullanildi ? " (önceki iş günü)" : ""}`); } })
       .catch(() => { if (gecerli) setKurBilgisi("TCMB kuru alınamadı; manuel kur girin"); });
     return () => { gecerli = false; };
-  }, [dovizCinsi, tarih]);
+  }, [dovizCinsi, tarih, yon]);
 
   const yukle = useCallback(async (imlec?: string) => {
     const istekSirasi = ++yuklemeSirasi.current;

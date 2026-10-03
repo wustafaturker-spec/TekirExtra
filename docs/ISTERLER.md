@@ -745,6 +745,7 @@ görüldü.
 | DVZ-06 | ✅ **Ekran (Ayarlar > Döviz Kurları):** tarih aralığında USD/EUR alış ve satış, kaynak (TCMB / elle), alınma zamanı listelenir; elle kurun yanında aynı günün TCMB kuru ve farkı görünür. Aralıktaki eksik iş günleri gösterilir; "eksikleri çek" ve elle kur işlemleri buradan yapılır. | G |
 | DVZ-07 | ✅ **Kur yüzünden duran iş görünür olur:** kur bulunamadığı için oluşturulamayan otomatik kira dönemi bildirim üretir (bkz. §3.10); bildirim eksik tarihi ve para birimini söyler. | G |
 | DVZ-08 | **Kapsam dışı:** USD ve EUR dışındaki para birimleri, efektif kur, kaydedilmiş belgelerin kurunu geriye dönük değiştirmek (belge kendi kurunu taşır, BUT-01). | — |
+| DVZ-09 | **Kur türü kuralı** (karar 2026-10-03): belge ve fişte önerilen TCMB kuru işlemin yönüne göre seçilir. Döviz girişi ya da alacak doğuran işlem **döviz alış**: satış faturası, alış iadesi, satış teklifi/siparişi, tahsilat, virman, açılış, POS tahsilatı ve aktarımı, pazaryeri siparişi, faturasız gelir, değerleme. Döviz çıkışı ya da borç doğuran işlem **döviz satış**: alış faturası, satış iadesi, alış teklifi/siparişi, tediye, masraf, kira, kredi kartı işlemleri, pazaryeri kesintisi, POS iadesi. Fatura ile ödemesi aynı kur türünü kullanır. Kural tek yerde (`packages/shared/src/kur-tipi.ts`); kullanıcı kuru elle değiştirebilir, kaydedilmiş belgelerin kuru değişmez (DVZ-08). | Z |
 
 ### 3.14 Faaliyet Dışı ve Faturasız Gelirler (GLR)
 

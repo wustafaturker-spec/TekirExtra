@@ -9,6 +9,7 @@
  * farklı dövizdeyse karşılık işlem günü TCMB kuruyla önerilir; banka farklı
  * bir kur uyguladıysa kullanıcı kuru düzeltir.
  */
+import { hareketKurTipi } from "@tekirextra/shared";
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiHata } from "@/lib/api";
 import { AramaSecici } from "@/components/arama-secici";
@@ -187,17 +188,17 @@ export function OdemeFisi({
     return () => { iptal = true; };
   }, [cariId, tip, baslangic.duzeltilenId]);
 
-  // İşlem günü TCMB satış kuru (sunucunun varsayılanıyla aynı kaynak).
+  // DVZ-09: işlem günü TCMB kuru; tahsilat döviz alış, tediye döviz satış (sunucunun varsayılanıyla aynı kural).
   const kurGerekli = caprazDoviz || dovizliHesap;
   useEffect(() => {
     if (!kurGerekli || !tarih) { setKurYaniti(null); return; }
     let iptal = false;
     setKurHatasi("");
-    api<KurYaniti>(`/doviz-kurlari?tarih=${tarih}&tip=satis`)
+    api<KurYaniti>(`/doviz-kurlari?tarih=${tarih}&tip=${hareketKurTipi(tip)}`)
       .then((y) => { if (!iptal) setKurYaniti(y); })
       .catch((e) => { if (!iptal) { setKurYaniti(null); setKurHatasi(e instanceof Error ? e.message : "Kur alınamadı"); } });
     return () => { iptal = true; };
-  }, [kurGerekli, tarih]);
+  }, [kurGerekli, tarih, tip]);
 
   const tcmbKuru = hesap && fatura ? onerilenKur(hesap.dovizCinsi, fatura.dovizCinsi, kurYaniti?.kurlar) : null;
   useEffect(() => {

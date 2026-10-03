@@ -20,7 +20,7 @@ import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, KAP_CINSLERI, kapEksigiVarMi, SIK_KAP_CINSLERI, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-alani";
 import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
-import { birimKisaAdi, vadeTarihiHesapla } from "@tekirextra/shared";
+import { birimKisaAdi, faturaKurTipi, vadeTarihiHesapla } from "@tekirextra/shared";
 import { BirimSecimi, birimKatsayisi, SatirBirimi } from "@/components/birim-secimi";
 import { BOS_TESLIMAT_ADRESI, faturaTeslimYeriEksik, TeslimatAdresiAlanlari, teslimatAdresiGovdesi, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
 import { ebelgeGitmemisMi, ebelgeKullanilmiyor, faturaGecikmeUyarilari, faturaGeriAlmaEngeli, type EbelgeUygulamalari } from "@tekirextra/shared";
@@ -907,11 +907,13 @@ export default function FaturaSayfasi() {
   useEffect(() => {
     if (dovizCinsi === "TRY") { setKur("1"); setKurBilgisi(""); return; }
     let gecerli = true;
-    api<{ kaynak: string; kurTarihi: string; oncekiIsGunuKullanildi: boolean; kurlar: Record<string, number> }>(`/doviz-kurlari?tarih=${tarih}&tip=alis`)
-      .then((veri) => { if (gecerli && veri.kurlar[dovizCinsi]) { setKur(String(veri.kurlar[dovizCinsi])); setKurBilgisi(`${veri.kaynak === "TCMB_XML" ? "TCMB" : "TCMB EVDS"} · ${veri.kurTarihi}${veri.oncekiIsGunuKullanildi ? " (önceki iş günü)" : ""}`); } })
+    // DVZ-09: alacak doğuran fatura döviz alış, borç doğuran döviz satış kuruyla.
+    const kurTipi = faturaKurTipi(tip);
+    api<{ kaynak: string; kurTarihi: string; oncekiIsGunuKullanildi: boolean; kurlar: Record<string, number> }>(`/doviz-kurlari?tarih=${tarih}&tip=${kurTipi}`)
+      .then((veri) => { if (gecerli && veri.kurlar[dovizCinsi]) { setKur(String(veri.kurlar[dovizCinsi])); setKurBilgisi(`${veri.kaynak === "TCMB_XML" ? "TCMB" : "TCMB EVDS"} ${kurTipi === "alis" ? "döviz alış" : "döviz satış"} · ${veri.kurTarihi}${veri.oncekiIsGunuKullanildi ? " (önceki iş günü)" : ""}`); } })
       .catch(() => { if (gecerli) setKurBilgisi("TCMB kuru alınamadı; manuel kur girin"); });
     return () => { gecerli = false; };
-  }, [dovizCinsi, tarih]);
+  }, [dovizCinsi, tarih, tip]);
 
   // Özel matrah faturasında satırlar KDV'siz olmak zorundadır (EBLG-69). Oran
   // ürün kartından geldiği için kullanıcı her satırda elle sıfırlamak zorunda

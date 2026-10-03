@@ -85,7 +85,7 @@ export class PazaryeriService {
         if (siparis.satirlar.some((s) => !s.stokId)) throw new BadRequestException("Eşleşmemiş ürün kalemi var");
         const cari = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findFirst({ where: { id: istek.cariId, aktif: true }, select: { id: true } }));
         if (!cari) throw new BadRequestException("Aktif cari hesap bulunamadı");
-        const kur = siparis.dovizCinsi === "TRY" ? new Prisma.Decimal(1) : await this.prisma.tenantIslem(tenantId, (tx) => kurZorunlu(tx, siparis.dovizCinsi, siparis.siparisTarihi, "satis", tenantId));
+        const kur = siparis.dovizCinsi === "TRY" ? new Prisma.Decimal(1) : await this.prisma.tenantIslem(tenantId, (tx) => kurZorunlu(tx, siparis.dovizCinsi, siparis.siparisTarihi, "alis", tenantId));
         const hak = await this.prisma.tenantIslem(tenantId, (tx) => tx.pazaryeriSiparis.updateMany({ where: { id: siparis.id, faturaId: null, durum: "faturalanmaya_hazir" }, data: { durum: "yeni", hataMesaji: null } }));
         if (hak.count !== 1) throw new BadRequestException("Sipariş başka bir işlem tarafından işleniyor");
         const fatura = await this.faturalar.olustur({

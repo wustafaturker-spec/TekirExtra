@@ -202,7 +202,7 @@ export class EkstreEslestirmeService {
         case "gelir": {
           const kategori = await tx.gelirKategori.findFirst({ where: { id: girdi.kategoriId, aktif: true } });
           if (!kategori) throw new BadRequestException("Aktif gelir kategorisi bulunamadı");
-          const kur = doviz === "TRY" ? D(1) : await kurZorunlu(tx, doviz, satir.tarih);
+          const kur = doviz === "TRY" ? D(1) : await kurZorunlu(tx, doviz, satir.tarih, "alis");
           const tutarTry = mutlak.mul(kur).toDecimalPlaces(2);
           const hareket = await tx.kasaBankaHareket.create({
             data: { tenantId, bankaHesapId: satir.bankaHesapId, tip: "tahsilat", tutar: mutlak, dovizCinsi: doviz, kur, tutarTry, tarih: satir.tarih, aciklama: girdi.aciklama || aciklama, kaynakTur: "faturasiz_gelir" },
