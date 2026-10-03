@@ -115,7 +115,8 @@ export class EkstreEslestirmeService {
         })).map((t) => ({ ...t, tutar: t.tutar.toFixed(2), odemeTarihi: t.odemeTarihi.toISOString().slice(0, 10), aciklamadaGeciyor: Boolean(t.no && satir.aciklama.includes(t.no)) })),
         // KRD-04: bu hesaba bağlı aktif krediler; taksitlide ilk ödenmemiş taksit, tutarı satırla aynıysa öne.
         krediler: (await tx.bankaKredisi.findMany({
-          where: { bankaHesapId: satir.bankaHesapId, durum: "aktif", ...(giris ? { tur: "rotatif" } : {}) },
+          // Çıkışta kredinin dövizindeki bütün krediler (ödeme başka hesaptan olabilir); girişte yalnız bu hesabın rotatifi.
+          where: { durum: "aktif", ...(giris ? { tur: "rotatif", bankaHesapId: satir.bankaHesapId } : { dovizCinsi: doviz }) },
           include: { taksitler: { where: { islemId: null }, orderBy: { sira: "asc" }, take: 1 } },
           orderBy: { kullanimTarihi: "asc" },
         })).map((k) => {
@@ -248,9 +249,10 @@ export class EkstreEslestirmeService {
           };
           const toplam = girdi.islem === "kullanim" ? D(tutarlar.anapara) : Object.values(tutarlar).reduce((t, v) => t.add(v), D(0));
           if (!toplam.equals(mutlak)) throw new BadRequestException(`Kredi tutarları toplamı ${toplam.toFixed(2)}, ekstre satırı ${mutlak.toFixed(2)}; anapara, faiz ve vergileri bankanın tahsil ettiğine göre düzeltin`);
+          // Kullanım kredinin hesabına girer; ödeme kredinin dövizindeki herhangi bir hesaptan olabilir.
           const kredi = await tx.bankaKredisi.findUnique({ where: { id: girdi.krediId }, select: { bankaHesapId: true } });
-          if (kredi?.bankaHesapId !== satir.bankaHesapId) throw new BadRequestException("Kredi bu banka hesabına bağlı değil");
-          hareketIdleri.push(await this.kredi.islemTx(tx, tenantId, girdi.krediId, { tip: girdi.islem, taksitId: girdi.taksitId ?? null, tarih, ...tutarlar, aciklama, eksiBakiyeOnay: true }, id));
+          if (girdi.islem === "kullanim" && kredi?.bankaHesapId !== satir.bankaHesapId) throw new BadRequestException("Kredi kullanımı yalnız kredinin bağlı olduğu hesabın ekstresinden eşleştirilir");
+          hareketIdleri.push(await this.kredi.islemTx(tx, tenantId, girdi.krediId, { tip: girdi.islem, taksitId: girdi.taksitId ?? null, bankaHesapId: satir.bankaHesapId, tarih, ...tutarlar, aciklama, eksiBakiyeOnay: true }, id));
           break;
         }
         case "doviz_islem": {

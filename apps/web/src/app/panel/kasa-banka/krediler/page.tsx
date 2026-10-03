@@ -14,7 +14,7 @@ import { IslemFormu, type AcikTaksit, type IslemTipi } from "./islem-formu";
 
 interface Banka { id: string; ad: string; bankaAdi: string; dovizCinsi: string; aktif: boolean }
 interface KrediOzeti {
-  id: string; ad: string; tur: "taksitli" | "spot" | "rotatif"; planTuru: string | null; dovizCinsi: string; anapara: string; aylikFaiz: string; bsmvOrani: string; kkdfOrani: string;
+  id: string; ad: string; tur: "taksitli" | "spot" | "rotatif"; planTuru: string | null; dovizCinsi: string; bankaHesapId: string; anapara: string; aylikFaiz: string; bsmvOrani: string; kkdfOrani: string;
   kullanimTarihi: string; vadeTarihi: string | null; taksitSayisi: number | null; tahsisUcreti: string; durum: string; aciklama: string | null;
   kalanAnapara: string; kullanilabilir: string | null; odenenTaksit: number; gecikenTaksit: number;
   siradakiTaksit: { id: string; sira: number; vadeTarihi: string; toplam: string } | null;
@@ -22,7 +22,7 @@ interface KrediOzeti {
 }
 interface KrediAyrinti extends KrediOzeti {
   taksitler: Array<AcikTaksit & { islemId: string | null; gecikti: boolean }>;
-  islemler: Array<{ id: string; tip: IslemTipi; tarih: string; anapara: string; faiz: string; bsmv: string; kkdf: string; masraf: string; tutar: string | null; ekstreyeBagli: boolean; aciklama: string | null }>;
+  islemler: Array<{ id: string; tip: IslemTipi; tarih: string; anapara: string; faiz: string; bsmv: string; kkdf: string; masraf: string; tutar: string | null; ekstreyeBagli: boolean; aciklama: string | null; banka: { id: string; ad: string; bankaAdi: string } | null }>;
 }
 
 const TUR = { taksitli: "Taksitli", spot: "Spot", rotatif: "Rotatif" };
@@ -185,19 +185,20 @@ export default function KredilerSayfasi() {
 
             <Card pad={false} title={<div><span className="kredi-ust">HAREKETLER</span><h2>İşlemler</h2></div>}>
               <TableWrap>
-                <thead><tr><th>Tarih</th><th>İşlem</th><th className="num">Anapara</th><th className="num">Faiz + vergi</th><th className="num">Banka</th><th /></tr></thead>
+                <thead><tr><th>Tarih</th><th>İşlem</th><th>Hesap</th><th className="num">Anapara</th><th className="num">Faiz + vergi</th><th className="num">Banka</th><th /></tr></thead>
                 <tbody>
                   {secili.islemler.map((i) => (
                     <tr key={i.id}>
                       <td><Tarih deger={i.tarih} /></td>
                       <td>{ISLEM[i.tip]}{i.aciklama && <small className="kredi-alt"> {i.aciklama}</small>}{Number(i.masraf) > 0 && <small className="kredi-alt"> · tahsis ücreti <Para deger={i.masraf} dovizCinsi={secili.dovizCinsi} /></small>}</td>
+                      <td>{i.banka ? `${i.banka.bankaAdi} · ${i.banka.ad}` : "—"}</td>
                       <td className="num"><Para deger={i.anapara} dovizCinsi={secili.dovizCinsi} /></td>
                       <td className="num"><Para deger={(Number(i.faiz) + Number(i.bsmv) + Number(i.kkdf)).toFixed(2)} dovizCinsi={secili.dovizCinsi} /></td>
                       <td className="num">{i.tutar && <span className={i.tip === "kullanim" ? "treasury-in" : "treasury-out"}>{i.tip === "kullanim" ? "+" : "−"}<Para deger={i.tutar} dovizCinsi={secili.dovizCinsi} /></span>}</td>
                       <td>{(i.tip !== "kullanim" || secili.tur === "rotatif") && (i.ekstreyeBagli ? <small className="kredi-alt">ekstreye bağlı</small> : <Button size="sm" onClick={() => void geriAl(i.id)}>Geri al</Button>)}</td>
                     </tr>
                   ))}
-                  {!secili.islemler.length && <tr><td colSpan={6} className="kredi-bos">Henüz işlem yok.</td></tr>}
+                  {!secili.islemler.length && <tr><td colSpan={7} className="kredi-bos">Henüz işlem yok.</td></tr>}
                 </tbody>
               </TableWrap>
             </Card>
@@ -212,7 +213,7 @@ export default function KredilerSayfasi() {
       )}
       {panel?.tur === "islem" && secili && (
         <HizliKayitPaneli baslik={`${secili.ad} · ${ISLEM[panel.tip]}`} onKapat={() => setPanel(null)}>
-          <IslemFormu krediId={secili.id} dovizCinsi={secili.dovizCinsi} tip={panel.tip} taksit={panel.taksit} onTamam={(m) => void yenile(m)} />
+          <IslemFormu krediId={secili.id} krediHesapId={secili.bankaHesapId} bankalar={bankalar} dovizCinsi={secili.dovizCinsi} tip={panel.tip} taksit={panel.taksit} onTamam={(m) => void yenile(m)} />
         </HizliKayitPaneli>
       )}
     </div>

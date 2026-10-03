@@ -1526,6 +1526,22 @@ describe("KRD — banka kredisi kullanım, taksit, geri alma ve muhasebe", () =>
     expect(Number(odenmis.kalanAnapara)).toBeCloseTo(120_000 - Number(ilk.anapara), 2);
     expect(odenmis.taksitler[0].islemId).toBeTruthy();
 
+    // Ödeme başka bir banka hesabından yapılabilir; hesap kredinin dövizinde olmalı.
+    const ikinciBanka = await istek<{ id: string }>("/kasa-banka/bankalar", { method: "POST", jeton, body: { ad: "Ödeme Hesabı", bankaAdi: "Diğer Banka", dovizCinsi: "TRY", acilis: { tarih: "2026-09-01", tutar: "50000" } } });
+    expect(ikinciBanka.durum, JSON.stringify(ikinciBanka.veri)).toBe(201);
+    const usdBanka = await istek<{ id: string }>("/kasa-banka/bankalar", { method: "POST", jeton, body: { ad: "USD Hesap", bankaAdi: "Diğer Banka", dovizCinsi: "USD" } });
+    const ikinci = odenmis.taksitler[1];
+    const taksitGovdesi = (bankaHesapId: string) => ({ tip: "taksit", taksitId: ikinci.id, bankaHesapId, tarih: "2026-11-01", anapara: ikinci.anapara, faiz: ikinci.faiz, bsmv: ikinci.bsmv, kkdf: ikinci.kkdf });
+    const dovizli = await istek<{ message: string }>(`/kasa-banka/krediler/${kredi.veri.id}/islemler`, { method: "POST", jeton, body: taksitGovdesi(usdBanka.veri.id) });
+    expect(dovizli.durum).toBe(400);
+    expect(dovizli.veri.message).toContain("dövizinde");
+    const baskaHesaptan = await istek(`/kasa-banka/krediler/${kredi.veri.id}/islemler`, { method: "POST", jeton, body: taksitGovdesi(ikinciBanka.veri.id) });
+    expect(baskaHesaptan.durum, JSON.stringify(baskaHesaptan.veri)).toBe(201);
+    expect(Number((await istek<{ bakiye: string }>(`/kasa-banka/bankalar/${ikinciBanka.veri.id}`, { jeton })).veri.bakiye)).toBeCloseTo(50_000 - Number(ikinci.toplam), 2);
+    expect(await bakiye()).toBeCloseTo(119_400 - Number(ilk.toplam), 2);
+    const ikinciIslem = (await ayrinti()).islemler.filter((i) => i.tip === "taksit").find((i) => i.id !== odenmis.islemler.find((x) => x.tip === "taksit")!.id)!;
+    expect((await istek(`/kasa-banka/krediler/islemler/${ikinciIslem.id}/geri-al`, { method: "POST", jeton })).durum).toBe(201);
+
     // Faiz ve vergiler ödenmiş Finansman Giderleri masrafı; tahsis ücreti de.
     const masraflar = await istek<Array<{ toplam: string; odemeDurumu: string; kategori: { ad: string } }>>("/masraflar", { jeton });
     const finansman = masraflar.veri.filter((m) => m.kategori.ad === "Finansman Giderleri");

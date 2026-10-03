@@ -51,6 +51,8 @@ export const planGuncelleSemasi = z.object({ satirlar: z.array(planSatiriSemasi.
 export const krediIslemSemasi = z.object({
   tip: z.enum(["taksit", "kullanim", "geri_odeme", "faiz"]),
   taksitId: z.uuid().optional().nullable(),
+  /** Ödemenin yapıldığı banka hesabı; boşsa kredinin hesabı (kullanımda hep kredinin hesabı). */
+  bankaHesapId: z.uuid().optional().nullable(),
   tarih: gunSemasi,
   anapara: ondalik.default("0"),
   faiz: ondalik.default("0"),
@@ -92,7 +94,7 @@ export class KrediService {
       if (!k) throw new NotFoundException("Kredi bulunamadı");
       const [banka, hareketler] = await Promise.all([
         tx.bankaHesap.findUnique({ where: { id: k.bankaHesapId }, select: { id: true, ad: true, bankaAdi: true, dovizCinsi: true } }),
-        tx.kasaBankaHareket.findMany({ where: { id: { in: k.islemler.map((i) => i.hareketId) } }, select: { id: true, tutar: true, ekstreSatirId: true } }),
+        tx.kasaBankaHareket.findMany({ where: { id: { in: k.islemler.map((i) => i.hareketId) } }, select: { id: true, tutar: true, ekstreSatirId: true, bankaHesap: { select: { id: true, ad: true, bankaAdi: true } } } }),
       ]);
       return {
         ...this.ozet(k, bugun),
@@ -100,7 +102,7 @@ export class KrediService {
         taksitler: k.taksitler.map((t) => ({ id: t.id, sira: t.sira, vadeTarihi: gun(t.vadeTarihi), anapara: t.anapara.toFixed(2), faiz: t.faiz.toFixed(2), bsmv: t.bsmv.toFixed(2), kkdf: t.kkdf.toFixed(2), toplam: t.anapara.add(t.faiz).add(t.bsmv).add(t.kkdf).toFixed(2), islemId: t.islemId, gecikti: !t.islemId && gun(t.vadeTarihi) < bugun })),
         islemler: k.islemler.map((i) => {
           const h = hareketler.find((x) => x.id === i.hareketId);
-          return { id: i.id, tip: i.tip, tarih: gun(i.tarih), anapara: i.anapara.toFixed(2), faiz: i.faiz.toFixed(2), bsmv: i.bsmv.toFixed(2), kkdf: i.kkdf.toFixed(2), masraf: i.masraf.toFixed(2), tutar: h?.tutar.toFixed(2) ?? null, ekstreyeBagli: Boolean(h?.ekstreSatirId), aciklama: i.aciklama };
+          return { id: i.id, tip: i.tip, tarih: gun(i.tarih), anapara: i.anapara.toFixed(2), faiz: i.faiz.toFixed(2), bsmv: i.bsmv.toFixed(2), kkdf: i.kkdf.toFixed(2), masraf: i.masraf.toFixed(2), tutar: h?.tutar.toFixed(2) ?? null, ekstreyeBagli: Boolean(h?.ekstreSatirId), aciklama: i.aciklama, banka: h?.bankaHesap ?? null };
         }),
       };
     });
@@ -228,7 +230,15 @@ export class KrediService {
       if (g.tip !== "faiz" && !anapara.gt(0)) throw new BadRequestException("Tutar sıfırdan büyük olmalıdır");
       if (g.tip === "faiz" && !faizToplam.gt(0)) throw new BadRequestException("Faiz tutarı sıfırdan büyük olmalıdır");
     }
-    const islemId = await this.islemYaz(tx, tenantId, k, {
+    // Ödemenin yapıldığı hesap seçilebilir; kredinin dövizinde aktif bir banka hesabı olmalıdır.
+    const hesapId = g.tip === "kullanim" ? k.bankaHesapId : g.bankaHesapId || k.bankaHesapId;
+    if (g.tip === "kullanim" && g.bankaHesapId && g.bankaHesapId !== k.bankaHesapId) throw new BadRequestException("Rotatif kullanım kredinin bağlı olduğu hesaba girer");
+    if (hesapId !== k.bankaHesapId) {
+      const hesap = await tx.bankaHesap.findUnique({ where: { id: hesapId }, select: { aktif: true, dovizCinsi: true } });
+      if (!hesap?.aktif) throw new BadRequestException("Ödeme yapılacak aktif banka hesabı bulunamadı");
+      if (hesap.dovizCinsi !== k.dovizCinsi) throw new BadRequestException(`Ödeme hesabı kredinin dövizinde (${k.dovizCinsi}) olmalıdır`);
+    }
+    const islemId = await this.islemYaz(tx, tenantId, { ...k, bankaHesapId: hesapId }, {
       tip: g.tip, tarih: g.tarih, anapara: g.tip === "faiz" ? "0" : g.anapara, faiz: g.faiz, bsmv: g.bsmv, kkdf: g.kkdf, masraf: D(0),
       uzunVadeli: g.tip === "taksit" ? this.uzunVadeliMi(k, g.taksitId!) : D(0), aciklama: g.aciklama ?? null, eksiBakiyeOnay: g.eksiBakiyeOnay, ekstreSatirId,
     });

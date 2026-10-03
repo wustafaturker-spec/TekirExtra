@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { bugunTR } from "@tekirextra/shared";
 import { api, ApiHata } from "@/lib/api";
-import { Alert, Button, Field, Input } from "@/components/ui";
+import { Alert, Button, Field, Input, Select } from "@/components/ui";
 
 export type IslemTipi = "taksit" | "kullanim" | "geri_odeme" | "faiz";
 export interface AcikTaksit { id: string; sira: number; vadeTarihi: string; anapara: string; faiz: string; bsmv: string; kkdf: string; toplam: string }
@@ -16,7 +16,21 @@ const sayi = (v: string) => Number(String(v).replace(",", ".")) || 0;
  * gelir; banka farklı tahsil ettiyse düzeltilir. Rotatif faizde kullanılan
  * bakiyeden hesaplanan öneri gelir.
  */
-export function IslemFormu({ krediId, dovizCinsi, tip, taksit, onTamam }: { krediId: string; dovizCinsi: string; tip: IslemTipi; taksit?: AcikTaksit; onTamam: (mesaj: string) => void }) {
+export interface OdemeHesabi { id: string; ad: string; bankaAdi: string; dovizCinsi: string; aktif: boolean }
+
+export function IslemFormu({ krediId, krediHesapId, bankalar, dovizCinsi, tip, taksit, onTamam }: {
+  krediId: string;
+  /** Kullanımın girdiği, ödemede varsayılan hesap. */
+  krediHesapId: string;
+  bankalar: OdemeHesabi[];
+  dovizCinsi: string;
+  tip: IslemTipi;
+  taksit?: AcikTaksit;
+  onTamam: (mesaj: string) => void;
+}) {
+  // Ödeme kredinin dövizindeki herhangi bir aktif banka hesabından yapılabilir; kullanım kredinin hesabına girer.
+  const odemeHesaplari = bankalar.filter((b) => b.aktif && b.dovizCinsi === dovizCinsi);
+  const [hesapId, setHesapId] = useState(krediHesapId);
   const [f, setF] = useState({
     tarih: taksit && taksit.vadeTarihi < bugunTR() ? taksit.vadeTarihi : bugunTR(),
     anapara: taksit?.anapara ?? "", faiz: taksit?.faiz ?? "0", bsmv: taksit?.bsmv ?? "0", kkdf: taksit?.kkdf ?? "0", aciklama: "",
@@ -48,7 +62,7 @@ export function IslemFormu({ krediId, dovizCinsi, tip, taksit, onTamam }: { kred
       await api(`/kasa-banka/krediler/${krediId}/islemler`, {
         method: "POST",
         body: JSON.stringify({
-          tip, taksitId: taksit?.id ?? null, tarih: f.tarih,
+          tip, taksitId: taksit?.id ?? null, tarih: f.tarih, bankaHesapId: tip === "kullanim" ? null : hesapId,
           anapara: anaparaVar ? String(sayi(f.anapara)) : "0",
           faiz: faizVar ? String(sayi(f.faiz)) : "0", bsmv: faizVar ? String(sayi(f.bsmv)) : "0", kkdf: faizVar ? String(sayi(f.kkdf)) : "0",
           aciklama: f.aciklama || null, eksiBakiyeOnay: onayli,
@@ -71,6 +85,13 @@ export function IslemFormu({ krediId, dovizCinsi, tip, taksit, onTamam }: { kred
       {eksiOnay && <Alert tone="warning"><span>{eksiOnay} <Button size="sm" onClick={(e) => void kaydet(e, true)}>Yine de kaydet</Button></span></Alert>}
       <div className="kredi-form__alanlar">
         <Field label="Tarih"><Input type="date" value={f.tarih} onChange={(e) => setF({ ...f, tarih: e.target.value })} required /></Field>
+        {tip !== "kullanim" && (
+          <Field label="Ödemenin yapıldığı hesap">
+            <Select value={hesapId} onChange={(e) => setHesapId(e.target.value)} required>
+              {odemeHesaplari.map((b) => <option key={b.id} value={b.id}>{b.bankaAdi} · {b.ad}{b.id === krediHesapId ? " (kredinin hesabı)" : ""}</option>)}
+            </Select>
+          </Field>
+        )}
         {anaparaVar && <Field label={`Anapara (${dovizCinsi})`}><Input inputMode="decimal" value={f.anapara} onChange={(e) => setF({ ...f, anapara: e.target.value })} required /></Field>}
         {faizVar && (
           <>
