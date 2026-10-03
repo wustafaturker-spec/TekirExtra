@@ -9,7 +9,7 @@ vi.mock("../core/ayarlar/ayar-kayit", () => ({
   ayarTanimiAl: () => ({ varsayilanlar: { riskLimitiPolitikasi: "uyar" } }),
 }));
 vi.mock("./cari-risk", () => ({
-  cariRiskleri: vi.fn(async (_tx: unknown, ids: string[]) =>
+  cariRiskleri: vi.fn(async (_tx: unknown, _tenantId: string, ids: string[]) =>
     new Map(ids.map((id) => [id, { bakiyeTry: D(800), cekSenetRiski: D(0), mevcutRisk: D(800) }]))),
 }));
 

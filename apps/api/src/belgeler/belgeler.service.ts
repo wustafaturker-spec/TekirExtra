@@ -26,6 +26,7 @@ import { teslimYeriniIrsaliyedenDoldur } from "../fatura/teslim-yeri";
 import { irsaliyeUblOku, type UblIrsaliye } from "../ebelge/eirsaliye-ubl-oku";
 import { tedarikciCariBulVeyaOlustur } from "../cari/tedarikci-cari";
 import { cariIslemDenetle, riskLimitiDenetle, type BelgeTuru } from "../cari/cari-islem-denetimi";
+import { belgeGuncelTry } from "../cari/doviz-degerleme";
 import { eslesmeRaporu, faturaIrsaliyeAdaylari, irsaliyeAlisFiyati, irsaliyeSatirOnerileri } from "./irsaliye-eslesme";
 import { tedarikciKodlariniOgren } from "../ebelge/stok-eslesme";
 import { belgeOlusturSemasi } from "./belgeler.semalar";
@@ -926,7 +927,7 @@ export class BelgelerService {
       // CARI-32: kara liste blokajı (gelen e-İrsaliye kaydı hariç) ve satış siparişinde risk limiti.
       if (!belge.gelenEirsaliyeId) await cariIslemDenetle(tx, belge.cariId, belge.tur, "mevcut");
       const riskUyari = belge.tur === "siparis" && belge.yon === "satis"
-        ? await riskLimitiDenetle(tx, { tenantId, userId, rol, cariId: belge.cariId, ekTutarTry: belge.genelToplam.mul(belge.kur).toDecimalPlaces(2), belgeEtiketi: "bu sipariş", onayGerekcesi: secenekler.riskOnayGerekcesi })
+        ? await riskLimitiDenetle(tx, { tenantId, userId, rol, cariId: belge.cariId, ekTutarTry: await belgeGuncelTry(tx, tenantId, belge.genelToplam, belge.dovizCinsi, belge.kur), belgeEtiketi: "bu sipariş", onayGerekcesi: secenekler.riskOnayGerekcesi })
         : null;
 
       const yil = belge.tarih.getFullYear();

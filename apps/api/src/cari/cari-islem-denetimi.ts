@@ -49,7 +49,7 @@ export interface RiskDenetimi {
   userId: string;
   rol: string;
   cariId: string;
-  /** Riskte henüz bulunmayan belge tutarı (TL); faturada hareket önceden yazıldığı için 0. */
+  /** Riskte henüz bulunmayan belge tutarı, güncel kurla TL (CARI-33); faturada hareket önceden yazıldığı için 0. */
   ekTutarTry: Prisma.Decimal;
   belgeEtiketi: string;
   /** Yönetici onayı politikasında aşımı geçmek için gerekçe. */
@@ -64,7 +64,7 @@ export interface RiskDenetimi {
 export async function riskLimitiDenetle(tx: Prisma.TransactionClient, d: RiskDenetimi): Promise<string | null> {
   const cari = await tx.cariHesap.findUnique({ where: { id: d.cariId }, select: { riskLimiti: true } });
   if (!cari?.riskLimiti) return null;
-  const risk = (await cariRiskleri(tx, [d.cariId])).get(d.cariId)!;
+  const risk = (await cariRiskleri(tx, d.tenantId, [d.cariId])).get(d.cariId)!;
   const toplam = risk.mevcutRisk.add(d.ekTutarTry);
   if (!toplam.greaterThan(cari.riskLimiti)) return null;
   const metin = `Risk limiti aşılıyor: ${d.belgeEtiketi} ile risk ${toplam.toFixed(2)} TL` +

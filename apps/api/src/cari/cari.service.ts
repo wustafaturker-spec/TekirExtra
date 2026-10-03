@@ -46,6 +46,7 @@ import { canliIrsaliyeKutulari, kendiGbEtiketi, postaKutusuSecimi } from "../ebe
 import { BaglantilarService } from "../tenant/baglantilar.service";
 import { kurZorunlu } from "../doviz/kur-coz";
 import { cariRiskleri, cariYaslandirmalari, riskOzetiGorunumu, vadesiGecmis } from "./cari-risk";
+import { guncelKurlar, guncelTlDegeri } from "./doviz-degerleme";
 import { cariHareketKurTipi } from "@tekirextra/shared";
 
 /** CARI-28: kullanıcının elle girdiği, silinebilen hareket kaynakları. */
@@ -58,7 +59,15 @@ export interface DovizBakiye {
   borc: string;
   alacak: string;
   bakiye: string;
+  /** Hareketlerin kendi kuruyla TL. */
   bakiyeTry: string;
+  /** CARI-33: güncel döviz satış kuruyla TL; kur yoksa tarihî TL. */
+  bakiyeGuncelTry: string;
+  /** Güncel satış kuru (TRY'de 1); kur bulunamadıysa null. */
+  guncelKur: string | null;
+  kurTarihi: string | null;
+  /** Değerlenmemiş kur farkı: güncel − tarihî TL. */
+  kurFarki: string;
 }
 
 @Injectable()
@@ -80,7 +89,7 @@ export class CariService {
     const gecikmisIdler = bakiye === "gecikmis"
       ? await this.prisma.tenantIslem(tenantId, async (tx) => {
           const adaylar = await tx.cariHesap.findMany({ where: { hareketler: { some: { tip: "borc", OR: [{ vadeTarihi: { lt: new Date() } }, { vadeTarihi: null, tarih: { lt: new Date() } }] } } }, select: { id: true } });
-          const yaslandirma = await cariYaslandirmalari(tx, adaylar.map((a) => a.id));
+          const yaslandirma = await cariYaslandirmalari(tx, tenantId, adaylar.map((a) => a.id));
           return [...yaslandirma].filter(([, y]) => vadesiGecmis(y) > 0).map(([id]) => id);
         })
       : null;
@@ -186,7 +195,7 @@ export class CariService {
     if (!kayit) throw new NotFoundException("Cari bulunamadı");
     const bakiyeler = (await this.bakiyeleriGetir([id])).get(id) ?? [];
     // CARI-30: kart ve fatura uyarısı aynı risk fonksiyonunu kullanır.
-    const riskler = await this.prisma.tenantIslem(ctx.tenantId, (tx) => cariRiskleri(tx, [id]));
+    const riskler = await this.prisma.tenantIslem(ctx.tenantId, (tx) => cariRiskleri(tx, ctx.tenantId, [id]));
     const risk = riskOzetiGorunumu(riskler.get(id)!, kayit.riskLimiti);
     // CARI-23: e-Fatura/e-Arşiv ve e-İrsaliye mükellefiyeti, GİB listesinden.
     const ebelge = await this.prisma.tenantIslem(ctx.tenantId, (tx) => cariEbelgeDurumlariniOku(tx, [kayit.vknTckn]));
@@ -213,7 +222,7 @@ export class CariService {
   private async finansalOzet(cariId: string) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const [sonIslem, sonTahsilat, sonOdeme, yaslandirma] = await Promise.all([
+      const [sonIslem, sonTahsilat, sonOdeme, alacaklarimiz, borclarimiz] = await Promise.all([
         tx.cariHareket.findFirst({
           where: { cariId },
           orderBy: { tarih: "desc" },
@@ -229,16 +238,21 @@ export class CariService {
           orderBy: { tarih: "desc" },
           select: { tarih: true },
         }),
-        cariYaslandirmalari(tx, [cariId]),
+        cariYaslandirmalari(tx, tenantId, [cariId]),
+        cariYaslandirmalari(tx, tenantId, [cariId], { yon: "borclarimiz" }),
       ]);
-      const y = yaslandirma.get(cariId)!;
+      const y = alacaklarimiz.get(cariId)!;
+      const b = borclarimiz.get(cariId)!;
       const gun = (t?: Date | null): string | null =>
         t ? t.toISOString().slice(0, 10) : null;
       return {
         sonIslemTarihi: gun(sonIslem?.tarih),
         sonTahsilatTarihi: gun(sonTahsilat?.tarih),
         sonOdemeTarihi: gun(sonOdeme?.tarih),
+        // CARI-33: güncel döviz satış kuruyla TL; borçlarımız tedarikçi ödeme planı içindir.
         vadesiGecmisBakiye: vadesiGecmis(y).toFixed(2),
+        vadesiGecmisBorcumuz: vadesiGecmis(b).toFixed(2),
+        kurEksik: [...new Set([...y.kurEksik, ...b.kurEksik])],
       };
     });
   }
@@ -950,13 +964,14 @@ export class CariService {
   ): Promise<Map<string, DovizBakiye[]>> {
     if (cariIdler.length === 0) return new Map();
     const { tenantId } = aktifBaglam();
-    const gruplar = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.cariHareket.groupBy({
+    const { gruplar, kurlar } = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const gruplar = await tx.cariHareket.groupBy({
         by: ["cariId", "dovizCinsi", "tip"],
         where: { cariId: { in: cariIdler } },
         _sum: { tutar: true, tutarTry: true },
-      }),
-    );
+      });
+      return { gruplar, kurlar: await guncelKurlar(tx, tenantId, gruplar.map((g) => g.dovizCinsi)) };
+    });
     const sonuc = new Map<string, Map<string, { borc: Prisma.Decimal; alacak: Prisma.Decimal; borcTry: Prisma.Decimal; alacakTry: Prisma.Decimal }>>();
     for (const g of gruplar) {
       const cariMap = sonuc.get(g.cariId) ?? new Map();
@@ -975,13 +990,22 @@ export class CariService {
     for (const [cariId, dovizler] of sonuc) {
       donus.set(
         cariId,
-        [...dovizler.entries()].map(([doviz, t]) => ({
-          dovizCinsi: doviz,
-          borc: t.borc.toFixed(2),
-          alacak: t.alacak.toFixed(2),
-          bakiye: t.borc.sub(t.alacak).toFixed(2),
-          bakiyeTry: t.borcTry.sub(t.alacakTry).toFixed(2),
-        })),
+        [...dovizler.entries()].map(([doviz, t]) => {
+          const bakiye = t.borc.sub(t.alacak);
+          const tarihi = t.borcTry.sub(t.alacakTry);
+          const deger = guncelTlDegeri(doviz, bakiye, tarihi, kurlar);
+          return {
+            dovizCinsi: doviz,
+            borc: t.borc.toFixed(2),
+            alacak: t.alacak.toFixed(2),
+            bakiye: bakiye.toFixed(2),
+            bakiyeTry: tarihi.toFixed(2),
+            bakiyeGuncelTry: deger.guncelTry.toFixed(2),
+            guncelKur: deger.kur?.toFixed(6) ?? null,
+            kurTarihi: kurlar.get(doviz)?.kurTarihi.toISOString().slice(0, 10) ?? null,
+            kurFarki: deger.guncelTry.sub(tarihi).toFixed(2),
+          };
+        }),
       );
     }
     return donus;

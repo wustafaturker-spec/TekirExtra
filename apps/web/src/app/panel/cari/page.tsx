@@ -51,7 +51,8 @@ interface Cari {
   eposta: string | null;
   telefon: string | null;
   karaListe: boolean;
-  bakiyeler: { dovizCinsi: string; bakiye: string; bakiyeTry: string }[];
+  /** CARI-33: bakiyeGuncelTry güncel döviz satış kuruyla; bakiyeTry hareketlerin kendi kuruyla. */
+  bakiyeler: { dovizCinsi: string; bakiye: string; bakiyeTry: string; bakiyeGuncelTry?: string; guncelKur?: string | null; kurTarihi?: string | null; kurFarki?: string }[];
   /** CARI-23: GİB listesine göre e-Fatura / e-Arşiv; liste güncel değilse bilinmiyor. */
   ebelgeTuru?: CariEbelgeTuru;
 }
@@ -171,12 +172,15 @@ interface CariDetay extends Cari {
     limit: string | null;
     kalanLimit: string | null;
     asim: boolean;
+    kurEksik?: string[];
   };
   finansalOzet: {
     sonIslemTarihi: string | null;
     sonTahsilatTarihi: string | null;
     sonOdemeTarihi: string | null;
     vadesiGecmisBakiye: string;
+    vadesiGecmisBorcumuz?: string;
+    kurEksik?: string[];
   };
 }
 
@@ -197,6 +201,9 @@ interface CariAnalizi {
   metrikler: { kapananBorcSayisi: number; ortalamaGecikmeGun: number | null; zamanindaOdemeOrani: number | null; acikBakiye: string; vadesiGecmisBakiye: string; limitKullanimOrani: number | null };
   gerekceler: string[];
 }
+
+/** CARI-33: dövizli bakiyenin güncel kurla TL değeri (eski yanıtta tarihî TL). */
+const guncelTry = (b: { bakiyeTry: string; bakiyeGuncelTry?: string }) => Number(b.bakiyeGuncelTry ?? b.bakiyeTry);
 
 const tl = (deger: string | number): string =>
   Number(deger).toLocaleString("tr-TR", { minimumFractionDigits: 2 }) + " TL";
@@ -1164,7 +1171,7 @@ export default function CariSayfasi() {
                 <div className="invoice-summary">
                   <h4>Finansal durum</h4>
                   {(() => {
-                    const toplam = detay.bakiyeler.reduce((t, b) => t + Number(b.bakiyeTry), 0);
+                    const toplam = detay.bakiyeler.reduce((t, b) => t + guncelTry(b), 0);
                     return (
                       <div className="invoice-summary__line is-grand" style={{ marginTop: 0, borderTop: 0, paddingTop: 0 }}>
                         <span>{toplam > 0 ? "Alacaklıyız" : toplam < 0 ? "Borçluyuz" : "Bakiye"}</span>
@@ -1172,10 +1179,24 @@ export default function CariSayfasi() {
                       </div>
                     );
                   })()}
-                  {detay.bakiyeler.filter((b) => b.dovizCinsi !== "TRY" && Number(b.bakiye) !== 0).map((b) => (
-                    <div className="invoice-summary__line" key={b.dovizCinsi}><span>{b.dovizCinsi} bakiye</span><strong>{Number(b.bakiye).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {b.dovizCinsi}</strong></div>
+                  {/* Dövizli caride TL bakiye de ayrı satırda; yalnız TL'li caride toplamla aynıdır. */}
+                  {detay.bakiyeler.filter((b, _i, hepsi) => Number(b.bakiye) !== 0 && (b.dovizCinsi !== "TRY" || hepsi.some((x) => x.dovizCinsi !== "TRY" && Number(x.bakiye) !== 0))).map((b) => b.dovizCinsi === "TRY" ? (
+                    <div className="invoice-summary__line" key="TRY"><span>TL bakiye</span><strong>{tl(b.bakiye)}</strong></div>
+                  ) : (
+                    <div className="invoice-summary__line" key={b.dovizCinsi} title={b.guncelKur ? `Güncel döviz satış kuru ${Number(b.guncelKur).toLocaleString("tr-TR", { maximumFractionDigits: 4 })} (${b.kurTarihi ?? ""}); tarihî karşılık ${tl(b.bakiyeTry)}` : "Güncel kur bulunamadı; tarihî kurla gösteriliyor"}>
+                      <span>{b.dovizCinsi} bakiye</span>
+                      <strong>{Number(b.bakiye).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {b.dovizCinsi}<small className="muted" style={{ display: "block", fontWeight: 400 }}>≈ {tl(guncelTry(b))}{b.guncelKur ? "" : " (tarihî kur)"}</small></strong>
+                    </div>
                   ))}
-                  <div className="invoice-summary__line"><span>Vadesi geçmiş</span><strong className={Number(detay.finansalOzet.vadesiGecmisBakiye) > 0 ? "is-negative" : ""}>{tl(detay.finansalOzet.vadesiGecmisBakiye)}</strong></div>
+                  {(() => {
+                    // CARI-33: güncel kur ile kayıtlardaki kur arasındaki fark; kur farkı faturasıyla kesinleşir.
+                    const fark = detay.bakiyeler.reduce((t, b) => t + Number(b.kurFarki ?? 0), 0);
+                    return Math.abs(fark) >= 0.01 ? <div className="invoice-summary__line" title="Dövizli açık bakiyenin güncel kurla değeri ile kayıt kurlarıyla değeri arasındaki fark"><span>Değerlenmemiş kur farkı</span><strong className={fark > 0 ? "is-positive" : "is-negative"}>{tl(fark)}</strong></div> : null;
+                  })()}
+                  <div className="invoice-summary__line"><span>Vadesi geçmiş alacak</span><strong className={Number(detay.finansalOzet.vadesiGecmisBakiye) > 0 ? "is-negative" : ""}>{tl(detay.finansalOzet.vadesiGecmisBakiye)}</strong></div>
+                  {Number(detay.finansalOzet.vadesiGecmisBorcumuz ?? 0) > 0 && <div className="invoice-summary__line"><span>Vadesi geçmiş borç</span><strong className="is-negative">{tl(detay.finansalOzet.vadesiGecmisBorcumuz!)}</strong></div>}
+                  {!!(detay.finansalOzet.kurEksik?.length || detay.risk.kurEksik?.length) && <small className="muted">{[...new Set([...(detay.finansalOzet.kurEksik ?? []), ...(detay.risk.kurEksik ?? [])])].join(", ")} için güncel kur yok; tarihî kurla hesaplandı. Ayarlar &gt; Döviz Kurları'ndan çekin.</small>}
+                  <small className="muted">Dövizli tutarlar güncel TCMB döviz satış kuruyla TL'ye çevrilir.</small>
                   <div className="invoice-summary__line"><span>Varsayılan vade</span><strong>{detay.varsayilanVadeGun ? `${detay.varsayilanVadeGun} gün` : "Tanımsız"}</strong></div>
                 </div>
                 <div className={`invoice-summary${detay.risk.asim ? " is-warning" : ""}`}>
@@ -1530,7 +1551,7 @@ export default function CariSayfasi() {
               </tr>
             ) : (
               filtrelenmisCariler.map((c) => {
-                const bakiyeNum = c.bakiyeler.reduce((toplam, b) => toplam + Number(b.bakiyeTry), 0);
+                const bakiyeNum = c.bakiyeler.reduce((toplam, b) => toplam + guncelTry(b), 0);
                 return (
                   <tr
                     key={c.id}

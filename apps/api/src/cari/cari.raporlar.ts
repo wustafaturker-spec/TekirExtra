@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { registerRapor } from "../core/raporlar/rapor-kayit";
-import { yaslandir } from "./yaslandirma";
+import { cariYaslandirmalari } from "./cari-risk";
 
 /**
  * Cari modülü raporları (CARI-12) — RPR-06 ortak araç setine tanım olarak
@@ -82,46 +82,57 @@ registerRapor({
   kod: "cari.yaslandirma",
   modul: "cari",
   ad: "Yaşlandırma Raporu",
-  aciklama: "Açık borç bakiyelerinin vade gecikme kovalarına dağılımı",
-  filtreler: [ETIKET_FILTRESI],
+  aciklama: "Açık bakiyelerin vade gecikme kovalarına dağılımı; döviz başına FIFO, TL güncel döviz satış kuruyla",
+  filtreler: [
+    {
+      alan: "yon",
+      ad: "Yön",
+      tip: "secim",
+      secenekler: [
+        { deger: "alacaklarimiz", ad: "Alacaklarımız (müşteriler)" },
+        { deger: "borclarimiz", ad: "Borçlarımız (tedarikçiler)" },
+      ],
+    },
+    ETIKET_FILTRESI,
+  ],
   kolonlar: [
     { alan: "kod", baslik: "Kod", tip: "metin" },
     { alan: "unvan", baslik: "Ünvan", tip: "metin" },
-    { alan: "guncel", baslik: "Güncel", tip: "para" },
-    { alan: "gun0_30", baslik: "0-30 Gün", tip: "para" },
-    { alan: "gun31_60", baslik: "31-60 Gün", tip: "para" },
-    { alan: "gun61_90", baslik: "61-90 Gün", tip: "para" },
-    { alan: "gun90Ustu", baslik: "90+ Gün", tip: "para" },
-    { alan: "toplam", baslik: "Toplam", tip: "para" },
+    { alan: "dovizCinsi", baslik: "Döviz", tip: "metin" },
+    { alan: "dovizToplam", baslik: "Açık (döviz)", tip: "sayi" },
+    { alan: "kur", baslik: "Güncel kur", tip: "sayi" },
+    { alan: "guncel", baslik: "Güncel (TL)", tip: "para" },
+    { alan: "gun0_30", baslik: "0-30 Gün (TL)", tip: "para" },
+    { alan: "gun31_60", baslik: "31-60 Gün (TL)", tip: "para" },
+    { alan: "gun61_90", baslik: "61-90 Gün (TL)", tip: "para" },
+    { alan: "gun90Ustu", baslik: "90+ Gün (TL)", tip: "para" },
+    { alan: "toplam", baslik: "Toplam (TL)", tip: "para" },
   ],
-  async calistir(girdi, { tx }) {
+  // CARI-33: her cari × döviz bir satır; TL kovaları güncel kurla, iptal çiftleri düşülmüş (kartla aynı kaynak).
+  async calistir(girdi, { tx, tenantId }) {
+    const yon = girdi.filtreler?.yon === "borclarimiz" ? "borclarimiz" : "alacaklarimiz";
     const cariler = await tx.cariHesap.findMany({
       where: { aktif: true, ...etiketKosulu(girdi.filtreler?.etiket) },
-      select: {
-        kod: true,
-        unvan: true,
-        hareketler: {
-          select: { tip: true, tutarTry: true, vadeTarihi: true, tarih: true },
-        },
-      },
+      select: { id: true, kod: true, unvan: true },
       orderBy: { kod: "asc" },
     });
-    const bugun = new Date();
-    return cariler
-      .map((c) => ({
+    const yaslandirmalar = await cariYaslandirmalari(tx, tenantId, cariler.map((c) => c.id), { yon });
+    const tl = (n: number) => Math.round(n * 100) / 100;
+    return cariler.flatMap((c) =>
+      yaslandirmalar.get(c.id)!.dovizler.map((d) => ({
         kod: c.kod,
         unvan: c.unvan,
-        ...yaslandir(
-          c.hareketler.map((h) => ({
-            tip: h.tip,
-            tutarTry: Number(h.tutarTry),
-            vadeTarihi: h.vadeTarihi,
-            tarih: h.tarih,
-          })),
-          bugun,
-        ),
-      }))
-      .filter((s) => s.toplam > 0);
+        dovizCinsi: d.kurEksik ? `${d.dovizCinsi} (güncel kur yok)` : d.dovizCinsi,
+        dovizToplam: d.toplam,
+        kur: Math.round(d.kur * 1e6) / 1e6,
+        guncel: tl(d.guncel * d.kur),
+        gun0_30: tl(d.gun0_30 * d.kur),
+        gun31_60: tl(d.gun31_60 * d.kur),
+        gun61_90: tl(d.gun61_90 * d.kur),
+        gun90Ustu: tl(d.gun90Ustu * d.kur),
+        toplam: tl(d.toplam * d.kur),
+      })),
+    );
   },
 });
 

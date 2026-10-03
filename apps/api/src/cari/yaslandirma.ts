@@ -1,11 +1,18 @@
 /**
- * Yaşlandırma (CARI-06): açık borç bakiyesi, FIFO varsayımıyla vadesi en
- * eski borç hareketlerine dağıtılır; alacaklar en eski borçları kapatır.
+ * Yaşlandırma (CARI-06): açık bakiye, FIFO varsayımıyla vadesi en eski
+ * hareketlere dağıtılır; karşı yöndeki hareketler en eski açıkları kapatır.
  * Saf fonksiyon — birim testi kolay olsun diye Prisma'dan bağımsız.
+ *
+ * CARI-33: tutar hareketin kendi dövizindedir; dövizler birbirine karışmasın
+ * diye çağıran her dövizi ayrı yaşlandırır. Yön:
+ * - `alacaklarimiz`: cariye borç yazılanlar (satış) açık kalem, alacaklar kapatır.
+ * - `borclarimiz`: cariye alacak yazılanlar (alış) açık kalem, borçlar kapatır.
  */
+export type YaslandirmaYonu = "alacaklarimiz" | "borclarimiz";
+
 export interface YaslandirmaHareketi {
   tip: "borc" | "alacak";
-  tutarTry: number;
+  tutar: number;
   vadeTarihi: Date | null;
   tarih: Date;
 }
@@ -19,47 +26,46 @@ export interface YaslandirmaSonucu {
   toplam: number;
 }
 
+export const YASLANDIRMA_KOVALARI = ["guncel", "gun0_30", "gun31_60", "gun61_90", "gun90Ustu"] as const;
+
+export const bosYaslandirma = (): YaslandirmaSonucu => ({ guncel: 0, gun0_30: 0, gun31_60: 0, gun61_90: 0, gun90Ustu: 0, toplam: 0 });
+
 export function yaslandir(
   hareketler: YaslandirmaHareketi[],
   bugun: Date,
+  yon: YaslandirmaYonu = "alacaklarimiz",
 ): YaslandirmaSonucu {
-  // Alacak toplamı en eski borçlardan düşülür (FIFO)
-  let kalanAlacak = hareketler
-    .filter((h) => h.tip === "alacak")
-    .reduce((t, h) => t + h.tutarTry, 0);
+  const acikTip = yon === "alacaklarimiz" ? "borc" : "alacak";
+  // Karşı yön toplamı en eski açık kalemlerden düşülür (FIFO)
+  let kalanKapatan = hareketler
+    .filter((h) => h.tip !== acikTip)
+    .reduce((t, h) => t + h.tutar, 0);
 
-  const acikBorclar = hareketler
-    .filter((h) => h.tip === "borc")
+  const acikKalemler = hareketler
+    .filter((h) => h.tip === acikTip)
     .sort(
       (a, b) =>
         (a.vadeTarihi ?? a.tarih).getTime() - (b.vadeTarihi ?? b.tarih).getTime(),
     )
     .map((h) => {
-      const kapatilan = Math.min(kalanAlacak, h.tutarTry);
-      kalanAlacak -= kapatilan;
-      return { ...h, acik: h.tutarTry - kapatilan };
+      const kapatilan = Math.min(kalanKapatan, h.tutar);
+      kalanKapatan -= kapatilan;
+      return { ...h, acik: h.tutar - kapatilan };
     })
     .filter((h) => h.acik > 0.005);
 
-  const sonuc: YaslandirmaSonucu = {
-    guncel: 0,
-    gun0_30: 0,
-    gun31_60: 0,
-    gun61_90: 0,
-    gun90Ustu: 0,
-    toplam: 0,
-  };
+  const sonuc = bosYaslandirma();
   const GUN_MS = 24 * 60 * 60 * 1000;
 
-  for (const borc of acikBorclar) {
-    const vade = borc.vadeTarihi ?? borc.tarih;
+  for (const kalem of acikKalemler) {
+    const vade = kalem.vadeTarihi ?? kalem.tarih;
     const gecikmeGun = Math.floor((bugun.getTime() - vade.getTime()) / GUN_MS);
-    if (gecikmeGun <= 0) sonuc.guncel += borc.acik;
-    else if (gecikmeGun <= 30) sonuc.gun0_30 += borc.acik;
-    else if (gecikmeGun <= 60) sonuc.gun31_60 += borc.acik;
-    else if (gecikmeGun <= 90) sonuc.gun61_90 += borc.acik;
-    else sonuc.gun90Ustu += borc.acik;
-    sonuc.toplam += borc.acik;
+    if (gecikmeGun <= 0) sonuc.guncel += kalem.acik;
+    else if (gecikmeGun <= 30) sonuc.gun0_30 += kalem.acik;
+    else if (gecikmeGun <= 60) sonuc.gun31_60 += kalem.acik;
+    else if (gecikmeGun <= 90) sonuc.gun61_90 += kalem.acik;
+    else sonuc.gun90Ustu += kalem.acik;
+    sonuc.toplam += kalem.acik;
   }
   const y = (n: number): number => Math.round(n * 100) / 100;
   return {
