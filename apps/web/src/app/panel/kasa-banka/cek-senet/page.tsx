@@ -21,6 +21,7 @@ import { AramaSecici } from "@/components/arama-secici";
 import { bugunTR } from "@tekirextra/shared";
 import { CekGorunumu } from "./cek-gorunumu";
 import { GeriAlmaFormu, type GeriAlmaYontemi } from "@/components/geri-alma-formu";
+import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 
 /* ─── Tipler ─────────────────────────────────────────────────────────────── */
 
@@ -233,7 +234,7 @@ export default function CekSenetSayfasi() {
           label={yon === "alinan" ? "Portföydeki" : "Tedavüldeki Borç"}
           value={para(ozet?.acik.toplamTry??0)}
           tone="accent"
-          hint={`${ozet?.acik.adet??0} adet · ${(ozet?.acik.dovizler.TRY??"0")} TRY · ${(ozet?.acik.dovizler.USD??"0")} USD · ${(ozet?.acik.dovizler.EUR??"0")} EUR`}
+          hint={`${ozet?.acik.adet??0} adet · ${Object.entries(ozet?.acik.dovizler ?? { TRY: "0" }).filter(([d, t]) => d === "TRY" || Number(t) !== 0).map(([d, t]) => `${t} ${d}`).join(" · ")}`}
         />
         <Stat
           label="Vadesi Geçmiş"
@@ -586,9 +587,7 @@ function CekSenetFormu({
         <div style={{ flex: 1, minWidth: 110 }}>
           <Field label="Döviz">
             <Select value={dovizCinsi} onChange={(e) => setDovizCinsi(e.target.value)}>
-              <option value="TRY">TRY</option>
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
+              <DovizSecenekleri />
             </Select>
           </Field>
         </div>

@@ -6,7 +6,7 @@
  */
 import { BadRequestException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { hareketTuruEtiketi, varyantliAd, varyantliKod } from "@tekirextra/shared";
+import { hareketTuruEtiketi, varyantliAd, varyantliKod, type YabanciDoviz } from "@tekirextra/shared";
 import { KUR_GERI_BAKIS_GUN } from "../doviz/kur-coz";
 
 export interface EkstreHareketi {
@@ -182,7 +182,7 @@ export async function ekstreAyrintilari(
 export async function kurCozucu(
   tx: Prisma.TransactionClient,
   tenantId: string,
-  dovizCinsi: "USD" | "EUR",
+  dovizCinsi: YabanciDoviz,
   enErken: Date,
   enGec: Date,
 ): Promise<(tarih: Date) => Prisma.Decimal> {

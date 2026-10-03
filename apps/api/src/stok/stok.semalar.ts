@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SARJ_TURLERI, birimCoz } from "@tekirextra/shared";
+import { SARJ_TURLERI, birimCoz, DOVIZ_CINSLERI } from "@tekirextra/shared";
 import { guncellemeSemasi } from "../core/sema";
 
 const pozitifOndalik = z
@@ -53,8 +53,8 @@ export const stokKartOlusturSemasi = z.object({
   kdvOrani: pozitifOndalik.default("20"),
   alisFiyati: pozitifOndalik.optional().nullable(),
   satisFiyati: pozitifOndalik.optional().nullable(),
-  alisFiyatiDoviz: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
-  satisFiyatiDoviz: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+  alisFiyatiDoviz: z.enum(DOVIZ_CINSLERI).default("TRY"),
+  satisFiyatiDoviz: z.enum(DOVIZ_CINSLERI).default("TRY"),
   kritikSeviye: pozitifOndalik.optional().nullable(),
   minStok: pozitifOndalik.optional().nullable(),
   maksStok: pozitifOndalik.optional().nullable(),
@@ -109,7 +109,7 @@ export const stokTedarikciSemasi = z.object({
   cariId: z.string().uuid(),
   tedarikciUrunKodu: z.string().max(64).optional().nullable(),
   alisFiyati: pozitifOndalik.optional().nullable(),
-  dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+  dovizCinsi: z.enum(DOVIZ_CINSLERI).default("TRY"),
   tedarikSuresiGun: z.number().int().min(0).max(365).optional().nullable(),
   varsayilan: z.boolean().default(false),
   /** STK-23: verilirse tedarikçinin varyant kodları bu listeyle değiştirilir. */
@@ -135,7 +135,7 @@ export const stokVaryantGuncelleSemasi = stokVaryantSemasi.partial().extend({ ak
 export const stokFiyatSemasi = z.object({
   varyantId: z.string().uuid().optional().nullable(),
   tip: z.enum(["alis", "satis"]),
-  dovizCinsi: z.enum(["TRY", "USD", "EUR"]),
+  dovizCinsi: z.enum(DOVIZ_CINSLERI),
   tutar: pozitifOndalik,
   aktif: z.boolean().optional().default(true),
 });

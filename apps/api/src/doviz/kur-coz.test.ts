@@ -15,12 +15,13 @@ function sahteTx(elle: Satir[], tcmb: Satir[]) {
   const bul = (tablo: string, satirlar: Satir[], ek: object) => (arg: any) => {
     cagrilar.push({ tablo, arg });
     const { gte, lte } = arg.where.tarih;
+    const istenen: string[] = arg.where.dovizCinsi.in;
     const uygun = satirlar.filter((s) => s.tarih >= gte && s.tarih <= lte).sort((a, b) => b.tarih.getTime() - a.tarih.getTime());
-    return Promise.resolve(uygun[0] ? { ...uygun[0], ...ek } : null);
+    return Promise.resolve(istenen.flatMap((dovizCinsi) => uygun.map((s) => ({ ...s, ...ek, dovizCinsi }))));
   };
   const tx = {
-    elleKur: { findFirst: bul("elle", elle, { updatedAt: g("2026-09-13") }) },
-    tcmbKuru: { findFirst: bul("tcmb", tcmb, { kaynak: "TCMB_XML", alindiAt: g("2026-09-12") }) },
+    elleKur: { findMany: bul("elle", elle, { updatedAt: g("2026-09-13") }) },
+    tcmbKuru: { findMany: bul("tcmb", tcmb, { kaynak: "TCMB_XML", alindiAt: g("2026-09-12") }) },
   };
   return { tx: tx as unknown as Prisma.TransactionClient, cagrilar };
 }
@@ -37,7 +38,7 @@ describe("kurBul / kurCoz (DVZ-04, DVZ-05)", () => {
     expect((await kurCoz(tx, "t1", "USD", g("2026-09-13")))?.toString()).toBe("41.25");
     expect((await kurCoz(tx, "t1", "USD", g("2026-09-13"), "alis"))?.toString()).toBe("41.1");
     // Elle kur kiracıya göre, TCMB kuru ortak tablodan aranır.
-    expect(cagrilar.find((c) => c.tablo === "elle")!.arg.where).toMatchObject({ tenantId: "t1", dovizCinsi: "USD" });
+    expect(cagrilar.find((c) => c.tablo === "elle")!.arg.where).toMatchObject({ tenantId: "t1", dovizCinsi: { in: ["USD"] } });
     expect(cagrilar.find((c) => c.tablo === "tcmb")!.arg.where).not.toHaveProperty("tenantId");
   });
 

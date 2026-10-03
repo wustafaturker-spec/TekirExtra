@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { DOVIZ_CINSLERI } from "@tekirextra/shared";
 
-export const FIYAT_DOVIZLERI = ["TRY", "USD", "EUR"] as const;
+export const FIYAT_DOVIZLERI = DOVIZ_CINSLERI;
 
 /** Ondalık girdiler API'de string taşınır (hassasiyet korunur, NFR-10). */
 const pozitifOndalik = z

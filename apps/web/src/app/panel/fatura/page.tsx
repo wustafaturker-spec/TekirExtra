@@ -38,6 +38,7 @@ import {
   EylemCubugu,
   EylemMenusu,
 } from "@/components/ui";
+import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 
 interface Cari {
   id: string;
@@ -2085,7 +2086,7 @@ export default function FaturaSayfasi() {
               </Field>
               <Field label="Fatura Dövizi">
                 <Select value={dovizCinsi} onChange={(e) => belgeDoviziDegistir(e.target.value)}>
-                  <option value="TRY">TRY — Türk Lirası</option><option value="USD">USD — Amerikan Doları</option><option value="EUR">EUR — Euro</option>
+                  <DovizSecenekleri adli />
                 </Select>
               </Field>
               {bekleyenCevrim && (

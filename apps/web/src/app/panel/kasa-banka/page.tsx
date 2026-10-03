@@ -5,6 +5,7 @@ import { OdemeFisi, type FisBaslangici, type FisTipi } from "./odeme-fisi";
 import { FisAyrintisi, type DefterHareketi } from "./fis-ayrintisi";
 import { DovizIslemFormu } from "./doviz-islem-formu";
 import { Alert, Badge, Button, ButtonLabel, Card, Field, Input, Select, TableWrap } from "@/components/ui";
+import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 interface Hesap {
   id: string;
   ad: string;
@@ -775,9 +776,7 @@ export default function KasaBankaSayfasi() {
                   )}
                   <Field label="Para birimi">
                     <Select value={doviz} onChange={(e) => setDoviz(e.target.value)}>
-                      <option>TRY</option>
-                      <option>USD</option>
-                      <option>EUR</option>
+                      <DovizSecenekleri />
                     </Select>
                   </Field>
                   {modal === "banka" && (

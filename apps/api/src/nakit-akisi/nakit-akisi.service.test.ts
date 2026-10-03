@@ -97,7 +97,7 @@ describe("NakitAkisiService", () => {
     // Kasa 1500 - 500 = 1000 TL; USD hesap 100 × 40 = 4000 TL (tarihsel 3000 değil).
     expect(sonuc.baslangicBakiye).toBe(5000);
     expect(sonuc.hesapSayisi).toBe(2);
-    expect(sonuc.kur).toEqual({ tarih: "2026-09-10", USD: 40, EUR: 45 });
+    expect(sonuc.kur).toEqual({ tarih: "2026-09-10", kurlar: { USD: 40, EUR: 45 } });
     expect(sonuc.uyarilar).toEqual([]);
   });
 

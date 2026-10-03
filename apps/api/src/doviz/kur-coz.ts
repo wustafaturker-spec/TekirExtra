@@ -1,5 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { Prisma, type DovizCinsi } from "@prisma/client";
 import { aktifBaglam } from "../core/istek-baglami";
 
 /**
@@ -29,35 +29,53 @@ export function kurPenceresiBasi(tarih: Date): Date {
 }
 
 /**
- * Kiracının o tarihte geçerli kuru (DVZ-04, DVZ-05). Pencere içindeki en yeni
- * günün kuru alınır; aynı gün için kiracının elle kuru varsa o, yoksa ortak
- * TCMB kuru. Pencerede kur yoksa `null` — çağıran 1 ya da sabit bir kur
+ * Kiracının o tarihte geçerli kurları (DVZ-04, DVZ-05), birden çok döviz için
+ * tek seferde. Pencere içindeki en yeni günün kuru alınır; aynı gün için
+ * kiracının elle kuru varsa o, yoksa ortak TCMB kuru. Penceresinde kuru
+ * olmayan döviz sonuçta yer almaz — çağıran 1 ya da sabit bir kur
  * varsaymamalı, işlemi durdurmalıdır.
  */
+export async function kurlariBul(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  dovizler: readonly string[],
+  tarih: Date,
+): Promise<Map<string, CozulenKur>> {
+  const pencere = { gte: kurPenceresiBasi(tarih), lte: tarih };
+  const dovizCinsi = { in: dovizler as DovizCinsi[] };
+  const [elleler, tcmbler] = await Promise.all([
+    tx.elleKur.findMany({
+      where: { tenantId, dovizCinsi, tarih: pencere },
+      orderBy: { tarih: "desc" },
+      select: { dovizCinsi: true, tarih: true, dovizAlis: true, dovizSatis: true, updatedAt: true },
+    }),
+    tx.tcmbKuru.findMany({
+      where: { dovizCinsi, tarih: pencere },
+      orderBy: { tarih: "desc" },
+      select: { dovizCinsi: true, tarih: true, dovizAlis: true, dovizSatis: true, kaynak: true, alindiAt: true },
+    }),
+  ]);
+  const sonuc = new Map<string, CozulenKur>();
+  for (const doviz of dovizler) {
+    const elle = elleler.find((k) => k.dovizCinsi === doviz);
+    const tcmb = tcmbler.find((k) => k.dovizCinsi === doviz);
+    if (elle && (!tcmb || elle.tarih.getTime() >= tcmb.tarih.getTime())) {
+      sonuc.set(doviz, { alis: elle.dovizAlis, satis: elle.dovizSatis, kurTarihi: elle.tarih, kaynak: "ELLE", alindiAt: elle.updatedAt });
+    } else if (tcmb) {
+      sonuc.set(doviz, { alis: tcmb.dovizAlis, satis: tcmb.dovizSatis, kurTarihi: tcmb.tarih, kaynak: tcmb.kaynak, alindiAt: tcmb.alindiAt });
+    }
+  }
+  return sonuc;
+}
+
+/** Tek döviz için `kurlariBul`; penceresinde kur yoksa `null`. */
 export async function kurBul(
   tx: Prisma.TransactionClient,
   tenantId: string,
-  dovizCinsi: "USD" | "EUR",
+  dovizCinsi: string,
   tarih: Date,
 ): Promise<CozulenKur | null> {
-  const pencere = { gte: kurPenceresiBasi(tarih), lte: tarih };
-  const elle = await tx.elleKur.findFirst({
-    where: { tenantId, dovizCinsi, tarih: pencere },
-    orderBy: { tarih: "desc" },
-    select: { tarih: true, dovizAlis: true, dovizSatis: true, updatedAt: true },
-  });
-  const tcmb = await tx.tcmbKuru.findFirst({
-    where: { dovizCinsi, tarih: pencere },
-    orderBy: { tarih: "desc" },
-    select: { tarih: true, dovizAlis: true, dovizSatis: true, kaynak: true, alindiAt: true },
-  });
-  if (elle && (!tcmb || elle.tarih.getTime() >= tcmb.tarih.getTime())) {
-    return { alis: elle.dovizAlis, satis: elle.dovizSatis, kurTarihi: elle.tarih, kaynak: "ELLE", alindiAt: elle.updatedAt };
-  }
-  if (tcmb) {
-    return { alis: tcmb.dovizAlis, satis: tcmb.dovizSatis, kurTarihi: tcmb.tarih, kaynak: tcmb.kaynak, alindiAt: tcmb.alindiAt };
-  }
-  return null;
+  return (await kurlariBul(tx, tenantId, [dovizCinsi], tarih)).get(dovizCinsi) ?? null;
 }
 
 /**
@@ -72,7 +90,7 @@ export async function kurCoz(
   tip: KurTipi = "satis",
 ): Promise<Prisma.Decimal | null> {
   if (dovizCinsi === "TRY") return new Prisma.Decimal(1);
-  const kur = await kurBul(tx, tenantId, dovizCinsi as "USD" | "EUR", tarih);
+  const kur = await kurBul(tx, tenantId, dovizCinsi, tarih);
   if (!kur) return null;
   return tip === "alis" ? kur.alis : kur.satis;
 }

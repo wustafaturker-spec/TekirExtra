@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DOVIZ_CINSLERI } from "@tekirextra/shared";
 
 const ondalik = (ad: string, basamak: number) =>
   z
@@ -8,7 +9,7 @@ const ondalik = (ad: string, basamak: number) =>
 
 const pozitif = (ad: string, basamak: number) => ondalik(ad, basamak).refine((v) => Number(v) > 0, `${ad} sıfırdan büyük olmalıdır`);
 
-const DOVIZLER = ["TRY", "USD", "EUR"] as const;
+const DOVIZLER = DOVIZ_CINSLERI;
 
 export const idSemasi = z.string().uuid("Geçersiz kimlik");
 

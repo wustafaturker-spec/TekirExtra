@@ -20,6 +20,7 @@ import { EklerService, type YuklenenDosya } from "../ekler/ekler.service";
 import { BORDRO_BASLIGI, bordroNoBicimle, ortalamaVade, siradakiPortfoyNolari } from "./cek-bordro-hesap";
 import type { cekBordroCikisSemasi, cekBordroGirisSemasi } from "./cek-bordro.semalar";
 import { KasaBankaService } from "./kasa-banka.service";
+import { type DovizKodu } from "@tekirextra/shared";
 
 const D = (deger: Prisma.Decimal.Value) => new Prisma.Decimal(deger);
 const gunMetni = (t: Date) => t.toISOString().slice(0, 10);
@@ -255,7 +256,7 @@ export class CekBordroService {
   // ─── YARDIMCILAR ───────────────────────────────────────────────────────────
 
   private async bordroAc(tx: Prisma.TransactionClient, tenantId: string, userId: string, g: {
-    tur: CekSenetBordroTur; tarih: string; cariId: string | null; bankaHesapId: string | null; dovizCinsi: "TRY" | "USD" | "EUR"; aciklama: string | null;
+    tur: CekSenetBordroTur; tarih: string; cariId: string | null; bankaHesapId: string | null; dovizCinsi: DovizKodu; aciklama: string | null;
     evraklar: Array<{ vadeTarihi: string; tutar: Prisma.Decimal.Value }>;
   }) {
     const yil = Number(g.tarih.slice(0, 4));

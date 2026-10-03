@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { YABANCI_DOVIZLER } from "@tekirextra/shared";
 
 const tarih = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tarih YYYY-AA-GG biçiminde olmalıdır");
-const doviz = z.enum(["USD", "EUR"], { message: "Para birimi USD ya da EUR olmalıdır" });
+const doviz = z.enum(YABANCI_DOVIZLER, { message: "Desteklenen bir yabancı para birimi seçin" });
 const kur = z
   .union([z.string(), z.number()])
   .transform((v) => String(v).trim().replace(",", "."))

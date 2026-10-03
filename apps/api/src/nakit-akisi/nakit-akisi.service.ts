@@ -305,17 +305,20 @@ export class NakitAkisiService {
     // NAK-10: kur yalnız dövizli kalem ya da hesap varsa istenir.
     const uyarilar: string[] = [];
     const dovizGerekli = veri.kalemler.some((k) => k.dovizCinsi !== "TRY") || veri.hesaplar.some((h) => h.doviz !== "TRY");
-    let kur: { tarih: string; USD: number; EUR: number } | null = null;
+    // DVZ-10: yalnız kalem ve hesaplarda geçen dövizlerin kuru döner.
+    let kur: { tarih: string; kurlar: Record<string, number> } | null = null;
     if (dovizGerekli) {
       try {
         const k = await this.doviz.kurlariGetir(undefined, "alis");
-        if (k.kurlar.USD && k.kurlar.EUR) kur = { tarih: k.kurTarihi, USD: k.kurlar.USD, EUR: k.kurlar.EUR };
+        const gerekenler = new Set([...veri.kalemler.map((x) => x.dovizCinsi), ...veri.hesaplar.map((h) => h.doviz)].filter((d) => d !== "TRY"));
+        const kurlar = Object.fromEntries(Object.entries(k.kurlar).filter(([d]) => gerekenler.has(d)));
+        if (Object.keys(kurlar).length) kur = { tarih: k.kurTarihi, kurlar };
       } catch (hata) {
         this.logger.warn(`Nakit akışı için kur alınamadı: ${hata instanceof Error ? hata.message : String(hata)}`);
       }
       if (!kur) uyarilar.push("Güncel TCMB kuru alınamadı; dövizli kalemler belgedeki kurla çevrildi, belge kuru olmayanlar tahmine alınmadı.");
     }
-    const guncelKur = (doviz: string) => (kur ? kur[doviz as "USD" | "EUR"] : undefined);
+    const guncelKur = (doviz: string) => kur?.kurlar[doviz];
 
     let atlanan = 0;
     const kalemler: NakitKalemi[] = [];

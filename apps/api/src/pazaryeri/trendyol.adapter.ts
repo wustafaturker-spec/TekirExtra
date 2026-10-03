@@ -1,10 +1,11 @@
+import { type DovizKodu, dovizKoduMu } from "@tekirextra/shared";
 export interface PazaryeriConfig {
   kullaniciAdi: string; parola?: string; apiAnahtari?: string; saticiId?: string; magazaId?: string; servisAdresi?: string;
 }
 export interface NormalizeSiparis {
   hariciId: string; siparisNo: string; hariciDurum?: string; siparisTarihi: string;
   musteriUnvani: string; musteriEposta?: string; musteriTelefon?: string; vknTckn?: string;
-  dovizCinsi: "TRY" | "USD" | "EUR"; toplam: number; teslimatAdresi?: Record<string, unknown>;
+  dovizCinsi: DovizKodu; toplam: number; teslimatAdresi?: Record<string, unknown>;
   satirlar: { hariciSatirId: string; sku: string; barkod?: string; urunAdi: string; miktar: number; birimFiyat: number; kdvOrani: number }[];
 }
 export interface PazaryeriStokFiyat {
@@ -12,7 +13,7 @@ export interface PazaryeriStokFiyat {
 }
 export interface NormalizeKesinti {
   hariciId: string; siparisNo?: string; tur: string; aciklama?: string; tarih: string;
-  tutar: number; dovizCinsi: "TRY" | "USD" | "EUR"; hamVeri?: Record<string, unknown>;
+  tutar: number; dovizCinsi: DovizKodu; hamVeri?: Record<string, unknown>;
 }
 
 export class TrendyolAdapter {
@@ -46,7 +47,7 @@ export class TrendyolAdapter {
       hariciId: String(p.shipmentPackageId), siparisNo: String(p.orderNumber), hariciDurum: p.status ?? p.shipmentPackageStatus,
       siparisTarihi: new Date(Number(p.orderDate)).toISOString(), musteriUnvani: [p.customerFirstName, p.customerLastName].filter(Boolean).join(" ") || p.invoiceAddress?.company || "Pazaryeri müşterisi",
       musteriEposta: p.customerEmail || undefined, musteriTelefon: p.shipmentAddress?.phone || undefined,
-      vknTckn: p.taxNumber || p.identityNumber || undefined, dovizCinsi: ["TRY", "USD", "EUR"].includes(p.currencyCode) ? p.currencyCode : "TRY",
+      vknTckn: p.taxNumber || p.identityNumber || undefined, dovizCinsi: dovizKoduMu(p.currencyCode) ? p.currencyCode : "TRY",
       toplam: Number(p.packageTotalPrice ?? 0), teslimatAdresi: p.shipmentAddress,
       satirlar: (Array.isArray(p.lines) ? p.lines : []).map((s: any) => ({ hariciSatirId: String(s.lineId), sku: String(s.stockCode), barkod: s.barcode || undefined, urunAdi: String(s.productName), miktar: Number(s.quantity), birimFiyat: Number(s.lineUnitPrice ?? s.lineGrossAmount ?? 0), kdvOrani: Number(s.vatRate ?? 20) })),
     })).filter((s: NormalizeSiparis) => s.satirlar.length > 0);

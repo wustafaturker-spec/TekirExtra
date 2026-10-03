@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { EN_UZUN_VADE_GUN, PLAKA_HATA_MESAJI, plakaGecerliMi, plakaNormalize, teslimSekliGecerliMi } from "@tekirextra/shared";
+import { EN_UZUN_VADE_GUN, PLAKA_HATA_MESAJI, plakaGecerliMi, plakaNormalize, teslimSekliGecerliMi, DOVIZ_CINSLERI } from "@tekirextra/shared";
 import { guncellemeSemasi } from "../core/sema";
 
 /** Plaka alanı: boşluk/küçük harf düzeltilir, biçim GİB kuralıyla sınanır. */
@@ -73,7 +73,7 @@ export const belgeOlusturSemasi = z.object({
   faturaId: z.string().uuid().optional().nullable(),
   /** STK-07: rezerv/yoldaki ve stok etkisinin işleneceği depo; boşsa varsayılan */
   depoId: z.string().uuid().optional().nullable(),
-  dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+  dovizCinsi: z.enum(DOVIZ_CINSLERI).default("TRY"),
   kur: pozitifOndalik.default("1"),
   genelIskontoYuzdesi: pozitifOndalik.default("0"),
   genelIskontoTutari: pozitifOndalik.default("0"),

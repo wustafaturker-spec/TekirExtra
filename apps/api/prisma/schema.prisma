@@ -584,10 +584,30 @@ enum KisiTip {
   tuzel
 }
 
+/// DVZ-10: packages/shared/src/doviz.ts DOVIZ_CINSLERI ile aynı olmalıdır.
 enum DovizCinsi {
   TRY
   USD
   EUR
+  GBP
+  CHF
+  AED
+  AUD
+  AZN
+  CAD
+  CNY
+  DKK
+  JPY
+  KRW
+  KWD
+  KZT
+  NOK
+  PKR
+  QAR
+  RON
+  RUB
+  SAR
+  SEK
 }
 
 /// TCMB EVDS'den alınan gösterge kurları tenant bazında önbelleğe alınır.

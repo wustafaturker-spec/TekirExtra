@@ -17,6 +17,7 @@ import {
   Select,
   TableWrap,
 } from "@/components/ui";
+import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 
 interface StokKart {
   id: string;
@@ -231,8 +232,8 @@ export default function StokSayfasi() {
           <div className="document-editor__section">
             <h4 className="document-editor__section-title">Fiyat ve vergi</h4>
             <div className="record-fields record-fields--stock-price">
-              <Field label="Alış fiyatı"><div className="row"><Input className="record-number" type="number" min="0" step="0.0001" inputMode="decimal" value={alisFiyati} onChange={(e) => setAlisFiyati(e.target.value)} placeholder="0,00" /><Select aria-label="Alış fiyatı dövizi" value={alisFiyatiDoviz} onChange={(e) => setAlisFiyatiDoviz(e.target.value)}><option>TRY</option><option>USD</option><option>EUR</option></Select></div></Field>
-              <Field label="Satış fiyatı"><div className="row"><Input className="record-number" type="number" min="0" step="0.0001" inputMode="decimal" value={satisFiyati} onChange={(e) => setSatisFiyati(e.target.value)} placeholder="0,00" /><Select aria-label="Satış fiyatı dövizi" value={satisFiyatiDoviz} onChange={(e) => setSatisFiyatiDoviz(e.target.value)}><option>TRY</option><option>USD</option><option>EUR</option></Select></div></Field>
+              <Field label="Alış fiyatı"><div className="row"><Input className="record-number" type="number" min="0" step="0.0001" inputMode="decimal" value={alisFiyati} onChange={(e) => setAlisFiyati(e.target.value)} placeholder="0,00" /><Select aria-label="Alış fiyatı dövizi" value={alisFiyatiDoviz} onChange={(e) => setAlisFiyatiDoviz(e.target.value)}><DovizSecenekleri /></Select></div></Field>
+              <Field label="Satış fiyatı"><div className="row"><Input className="record-number" type="number" min="0" step="0.0001" inputMode="decimal" value={satisFiyati} onChange={(e) => setSatisFiyati(e.target.value)} placeholder="0,00" /><Select aria-label="Satış fiyatı dövizi" value={satisFiyatiDoviz} onChange={(e) => setSatisFiyatiDoviz(e.target.value)}><DovizSecenekleri /></Select></div></Field>
               <Field label="KDV (%)"><Input className="record-number" type="number" min="0" max="100" inputMode="decimal" value={kdvOrani} onChange={(e) => setKdvOrani(e.target.value)} required /></Field>
             </div>
           </div>

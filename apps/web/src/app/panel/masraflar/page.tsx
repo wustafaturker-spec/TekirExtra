@@ -7,6 +7,7 @@ import { Alert, Badge, Button, ButtonLabel, Card, Field, Input, PageHeader, Sele
 import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyalari";
 import { MasrafEkPaneli } from "@/components/masraf-ek-paneli";
 import { bugunTR } from "@tekirextra/shared";
+import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 
 interface Kategori { id: string; ad: string; varsayilanKdvOrani: string | null; ustId: string | null; ust: { id: string; ad: string } | null; _count: { altlar: number; masraflar: number } }
 interface Cari { id: string; unvan: string }
@@ -123,7 +124,7 @@ export default function MasraflarSayfasi() {
             <Field label="Kategori"><Select required value={kategoriId} onChange={(e) => { setKategoriId(e.target.value); const k = kategoriler.find((x) => x.id === e.target.value); if (k?.varsayilanKdvOrani) setKdvOrani(k.varsayilanKdvOrani); }}>{kategoriler.filter((k) => !k.ustId).map((grup) => grup._count.altlar > 0 ? <optgroup key={grup.id} label={grup.ad}>{kategoriler.filter((k) => k.ustId === grup.id).map((k) => <option key={k.id} value={k.id}>{k.ad}</option>)}</optgroup> : <option key={grup.id} value={grup.id}>{grup.ad}</option>)}</Select></Field>
             <Field label="Belge tarihi"><Input required type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} /></Field>
             <Field label="Belge numarası"><Input value={belgeNo} onChange={(e) => setBelgeNo(e.target.value)} placeholder="Varsa belge numarası" /></Field>
-            <Field label="Para birimi"><Select value={dovizCinsi} onChange={(e) => setDovizCinsi(e.target.value)}><option value="TRY">TRY — Türk Lirası</option><option value="USD">USD — Amerikan Doları</option><option value="EUR">EUR — Euro</option></Select></Field>
+            <Field label="Para birimi"><Select value={dovizCinsi} onChange={(e) => setDovizCinsi(e.target.value)}><DovizSecenekleri adli /></Select></Field>
             {dovizCinsi !== "TRY" && <Field label={`Kur (1 ${dovizCinsi} = TRY)`}><Input required type="number" min="0.000001" step="0.000001" value={kur} onChange={(e) => { setKur(e.target.value); setKurBilgisi("Elle girilen kur"); }} /><small className="muted">{kurBilgisi || "TCMB satış kuru yükleniyor…"}</small></Field>}
           </div>
         </section>

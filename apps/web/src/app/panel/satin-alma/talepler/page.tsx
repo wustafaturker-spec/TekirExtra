@@ -7,6 +7,7 @@ import { DepoSecici } from "@/components/depo-secici";
 import { api } from "@/lib/api";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap, Tabs } from "@/components/ui";
 import { gunEkleTR } from "@tekirextra/shared";
+import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 
 type Durum = "taslak" | "onay_bekliyor" | "onaylandi" | "reddedildi" | "siparise_donustu" | "iptal";
 type Kapsam = "benim" | "onay" | "tum";
@@ -500,7 +501,7 @@ export default function SatinAlmaTalepleriSayfasi() {
                       <Field label="Tedarikçi"><AramaSecici ariaLabel="Tedarikçi" deger={teklif.tedarikciCariId} secenekler={tedarikciSecenekleri} onChange={(v) => setTeklif({ ...teklif, tedarikciCariId: v })} /></Field>
                       <Field label="Döviz">
                         <Select value={teklif.dovizCinsi} onChange={(e) => setTeklif({ ...teklif, dovizCinsi: e.target.value, kur: e.target.value === "TRY" ? "1" : "" })}>
-                          <option>TRY</option><option>USD</option><option>EUR</option>
+                          <DovizSecenekleri />
                         </Select>
                       </Field>
                       {teklif.dovizCinsi !== "TRY" && <Field label="Kur"><Input type="number" min="0" step="0.0001" value={teklif.kur} onChange={(e) => setTeklif({ ...teklif, kur: e.target.value })} /></Field>}

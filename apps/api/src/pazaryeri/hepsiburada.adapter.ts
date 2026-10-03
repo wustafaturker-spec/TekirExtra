@@ -1,4 +1,5 @@
 import type { NormalizeSiparis, PazaryeriConfig, PazaryeriStokFiyat } from "./trendyol.adapter";
+import { dovizKoduMu } from "@tekirextra/shared";
 
 const para = (deger: any): number => Number(deger?.amount ?? deger ?? 0);
 const metin = (deger: unknown): string => deger === null || deger === undefined ? "" : String(deger);
@@ -40,7 +41,7 @@ export class HepsiburadaAdapter {
       const satirlar = hamSatirlar.map((s: any, i: number) => ({ hariciSatirId: metin(s.lineItemId ?? s.id ?? `${no}-${i}`), sku: metin(s.merchantSku ?? s.merchantSKU ?? s.sku ?? s.hbSku), barkod: metin(s.barcode) || undefined, urunAdi: metin(s.productName ?? s.name ?? s.title) || "Hepsiburada ürünü", miktar: para(s.quantity ?? 1), birimFiyat: para(s.unitPrice ?? s.price), kdvOrani: para(s.vatRate ?? s.vat ?? 20) }));
       const toplam = para(ana.totalPrice ?? ana.totalAmount) || satirlar.reduce((t, s) => t + s.miktar * s.birimFiyat, 0);
       const adres = ana.shippingAddress ?? ana.deliveryAddress; const tarih = ana.orderDate ?? ana.createdDate ?? ana.purchaseDate;
-      return { hariciId: metin(ana.id ?? ana.orderId ?? no), siparisNo: no, hariciDurum: metin(ana.status) || undefined, siparisTarihi: new Date(tarih).toISOString(), musteriUnvani: metin(ana.customerName ?? ana.recipientName ?? adres?.name) || "Hepsiburada müşterisi", musteriEposta: metin(ana.customerEmail ?? ana.email) || undefined, musteriTelefon: metin(ana.customerPhone ?? adres?.phone) || undefined, vknTckn: metin(ana.taxNumber ?? ana.identityNumber) || undefined, dovizCinsi: ["TRY", "USD", "EUR"].includes(ana.currency) ? ana.currency : "TRY", toplam, teslimatAdresi: adres, satirlar };
+      return { hariciId: metin(ana.id ?? ana.orderId ?? no), siparisNo: no, hariciDurum: metin(ana.status) || undefined, siparisTarihi: new Date(tarih).toISOString(), musteriUnvani: metin(ana.customerName ?? ana.recipientName ?? adres?.name) || "Hepsiburada müşterisi", musteriEposta: metin(ana.customerEmail ?? ana.email) || undefined, musteriTelefon: metin(ana.customerPhone ?? adres?.phone) || undefined, vknTckn: metin(ana.taxNumber ?? ana.identityNumber) || undefined, dovizCinsi: dovizKoduMu(ana.currency) ? ana.currency : "TRY", toplam, teslimatAdresi: adres, satirlar };
     }).filter((s) => s.satirlar.length > 0 && s.satirlar.every((x) => x.sku));
     return { siparisler, sonrakiImlec: kayitlar.length >= limit ? String(offset + limit) : null };
   }

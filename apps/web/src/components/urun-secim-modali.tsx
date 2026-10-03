@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { Button, Field, Input, Select } from "@/components/ui";
 import { birimKatsayisi, SatirBirimi } from "@/components/birim-secimi";
 import { birimKisaAdi } from "@tekirextra/shared";
+import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 
 export interface UrunSecimStok {
   id: string; kod: string; ad: string; anaBirim?: string; kdvOrani?: string;
@@ -75,6 +76,9 @@ export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, sto
       setTcmbKurlari({ TRY: 1, ...x.kurlar }); setKurTarihi(x.kurTarihi); setKurDurumu("hazir");
     } catch (e) { setTcmbKurlari({ TRY: 1 }); setKurTarihi(""); setKurHatasi(e instanceof Error ? e.message : "Kur servisine ulaşılamadı"); setKurDurumu("hata"); }
   }
+  // DVZ-10: fiyatın ve belgenin dövizi gösterilir; ikisi de TL ise USD/EUR.
+  const gosterilecekKurlar = [...new Set([fiyatDovizi, fiyat?.kaynakDoviz, belgeDovizi].filter((d): d is string => Boolean(d) && d !== "TRY"))];
+  if (!gosterilecekKurlar.length) gosterilecekKurlar.push("USD", "EUR");
   useEffect(() => { if (acik) void kurlariYukle(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [acik, belgeTarihi]);
   useEffect(() => {
     if (!acik) return;
@@ -143,12 +147,12 @@ export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, sto
         {fiyat && <p className="product-picker__notice">Orijinal ürün fiyatı: <strong>{Number(fiyat.kaynakFiyat).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} {fiyat.kaynakDoviz}</strong>{kurTarihi && ` · TCMB döviz alış kuru: ${kurTarihi}`}</p>}
         {kurDurumu === "yukleniyor" && <p className="product-picker__notice">TCMB döviz alış kurları yükleniyor…</p>}
         {kurDurumu === "hata" && <p className="product-picker__notice is-warning" role="alert">TCMB kurları alınamadı: {kurHatasi}. <button type="button" onClick={() => void kurlariYukle()}>Tekrar dene</button></p>}
-        {kurDurumu === "hazir" && <div className="product-picker__rates"><span>USD alış <strong>{tcmbKurlari.USD?.toLocaleString("tr-TR", { minimumFractionDigits: 4 })}</strong></span><span>EUR alış <strong>{tcmbKurlari.EUR?.toLocaleString("tr-TR", { minimumFractionDigits: 4 })}</strong></span><small>{kurTarihi}</small></div>}
+        {kurDurumu === "hazir" && <div className="product-picker__rates">{gosterilecekKurlar.map((d) => <span key={d}>{d} alış <strong>{tcmbKurlari[d]?.toLocaleString("tr-TR", { minimumFractionDigits: 4 }) ?? "—"}</strong></span>)}<small>{kurTarihi}</small></div>}
         <div className="product-picker__grid">
           <Field label="Miktar"><div className="document-line-qty"><Input autoFocus type="number" min="0.000001" step="any" value={miktar} onChange={(e) => setMiktar(e.target.value)} /><SatirBirimi stok={seciliStok} value={birim} onChange={birimDegistir} /></div></Field>
           {varyantlar.length > 0 && <Field label="Varyant"><Select required value={varyantId} onChange={(e) => { setVaryantId(e.target.value); void fiyatGetir(urunKuru, e.target.value, fiyatListesiId); }}><option value="">Varyant seçin</option>{varyantlar.map((v) => <option value={v.id} key={v.id}>{v.kod} — {v.ad} (stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")})</option>)}</Select></Field>}
           <Field label="Fiyat listesi"><Select value={fiyatListesiId} onChange={(e) => { setFiyatListesiId(e.target.value); void fiyatGetir(urunKuru, varyantId, e.target.value); }}><option value="">Cari / ürün varsayılanı</option>{listeler.map((l) => <option value={l.id} key={l.id}>{l.ad} ({l.dovizCinsi})</option>)}</Select></Field>
-          <Field label="Fiyat para birimi"><Select value={fiyatDovizi} onChange={(e) => fiyatDoviziDegistir(e.target.value)}><option>TRY</option><option>USD</option><option>EUR</option></Select></Field>
+          <Field label="Fiyat para birimi"><Select value={fiyatDovizi} onChange={(e) => fiyatDoviziDegistir(e.target.value)}><DovizSecenekleri /></Select></Field>
           <Field label={`Ürün kuru (${fiyatDovizi} → TRY)`}><Input type="number" min="0.000001" step="0.000001" disabled={fiyatDovizi === "TRY"} value={fiyatDovizi === "TRY" ? "1" : String(tcmbKurlari[fiyatDovizi] ?? urunKuru)} onChange={(e) => { setUrunKuru(e.target.value); setTcmbKurlari((k) => ({ ...k, [fiyatDovizi]: Number(e.target.value) })); }} /></Field>
           <Field label={`Belge kuru (${belgeDovizi} → TRY)`}><Input readOnly value={belgeDovizi === "TRY" ? "1" : belgeKuru} /></Field>
           <Field label="Birim fiyat"><div className="row"><Input type="number" min="0" step="any" value={birimFiyat} onChange={(e) => setBirimFiyat(e.target.value)} /><strong>{fiyatDovizi}</strong></div></Field>

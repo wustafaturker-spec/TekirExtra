@@ -1,4 +1,4 @@
-import { ebelgeGitmemisMi, faturaGeriAlmaEngeli, ihracKayitliSonTarih, ilgiliKisiTemizle, varyantAciklamasi, varyantliAd, varyantliKod } from "@tekirextra/shared";
+import { ebelgeGitmemisMi, faturaGeriAlmaEngeli, ihracKayitliSonTarih, ilgiliKisiTemizle, varyantAciklamasi, varyantliAd, varyantliKod, type DovizKodu } from "@tekirextra/shared";
 import {
   BadRequestException,
   ConflictException,
@@ -742,7 +742,7 @@ export class FaturaService {
       teslimatIl: girdi.teslimatIl !== undefined ? girdi.teslimatIl : fatura.teslimatIl,
       teslimatIlce: girdi.teslimatIlce !== undefined ? girdi.teslimatIlce : fatura.teslimatIlce,
       teslimatPostaKodu: girdi.teslimatPostaKodu !== undefined ? girdi.teslimatPostaKodu : fatura.teslimatPostaKodu,
-      dovizCinsi: girdi.dovizCinsi ?? (fatura.dovizCinsi as "TRY" | "USD" | "EUR"),
+      dovizCinsi: girdi.dovizCinsi ?? (fatura.dovizCinsi as DovizKodu),
       kur: girdi.kur ?? fatura.kur,
       genelIskontoYuzdesi: girdi.genelIskontoYuzdesi ?? fatura.genelIskontoYuzdesi,
       genelIskontoTutari: girdi.genelIskontoTutari ?? fatura.genelIskontoTutari,

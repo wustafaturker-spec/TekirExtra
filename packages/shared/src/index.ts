@@ -40,3 +40,4 @@ export * from "./cari-ekstre";
 export * from "./resmi-tatiller";
 export * from "./varyant";
 export * from "./kur-tipi";
+export * from "./doviz";

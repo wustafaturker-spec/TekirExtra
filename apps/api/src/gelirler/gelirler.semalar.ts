@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DOVIZ_CINSLERI } from "@tekirextra/shared";
 
 const pozitifOndalik = z
   .union([z.string(), z.number()])
@@ -26,7 +27,7 @@ export const gelirKaydiOlusturSemasi = z.object({
   kdvOrani: yuzde.default("0"),
   kdvTutari: pozitifOndalik.default("0"),
   netTutar: pozitifOndalik,
-  dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+  dovizCinsi: z.enum(DOVIZ_CINSLERI).default("TRY"),
   kur: pozitifOndalik.default("1"),
   aciklama: z.string().trim().max(500).optional().nullable(),
   belgeNo: z.string().trim().max(100).optional().nullable(),

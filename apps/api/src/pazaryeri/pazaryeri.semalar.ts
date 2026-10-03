@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DOVIZ_CINSLERI } from "@tekirextra/shared";
 
 const satir = z.object({
   hariciSatirId: z.string().min(1), sku: z.string().min(1), barkod: z.string().optional(),
@@ -11,7 +12,7 @@ export const pazaryeriSiparisSemasi = z.object({
   hariciDurum: z.string().optional(), siparisTarihi: z.string().datetime({ offset: true }),
   musteriUnvani: z.string().min(1), musteriEposta: z.string().email().optional(),
   musteriTelefon: z.string().optional(), vknTckn: z.string().optional(),
-  dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"), toplam: z.number().nonnegative(),
+  dovizCinsi: z.enum(DOVIZ_CINSLERI).default("TRY"), toplam: z.number().nonnegative(),
   teslimatAdresi: z.record(z.string(), z.unknown()).optional(), satirlar: z.array(satir).min(1),
 });
 
@@ -32,7 +33,7 @@ export const pazaryeriKesintiSemasi = z.object({
   aciklama: z.string().max(500).optional(),
   tarih: z.string().date(),
   tutar: z.number().positive(),
-  dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+  dovizCinsi: z.enum(DOVIZ_CINSLERI).default("TRY"),
   hamVeri: z.record(z.string(), z.unknown()).optional(),
 });
 

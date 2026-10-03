@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { bugunTR } from "@tekirextra/shared";
 import { api, tumSayfalariAl } from "@/lib/api";
 import { Alert, Button, Field, Input, Para, SearchInput, Select, Tarih } from "@/components/ui";
+import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 
 export type BordroTuru = "giris" | "ciro" | "tahsile" | "teminata" | "borc_cikis";
 export const BORDRO_ADI: Record<BordroTuru, string> = {
@@ -162,7 +163,7 @@ export function YeniBordro({ tur, onKaydedildi, onVazgec }: { tur: BordroTuru; o
         )}
         {girisli && (
           <>
-            <Field label="Para birimi"><Select value={dovizCinsi} onChange={(e) => { setDovizCinsi(e.target.value); setCariId(""); if (e.target.value === "TRY") setKur("1"); }}><option>TRY</option><option>USD</option><option>EUR</option></Select></Field>
+            <Field label="Para birimi"><Select value={dovizCinsi} onChange={(e) => { setDovizCinsi(e.target.value); setCariId(""); if (e.target.value === "TRY") setKur("1"); }}><DovizSecenekleri /></Select></Field>
             {dovizCinsi !== "TRY" && <Field label="Kur"><Input type="number" step="any" min="0" value={kur} onChange={(e) => setKur(e.target.value)} /></Field>}
           </>
         )}

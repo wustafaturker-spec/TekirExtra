@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DOVIZ_CINSLERI } from "@tekirextra/shared";
 
 const bosVeyaUuid = z.union([z.string().uuid(), z.literal(""), z.null()]).optional();
 const bosVeyaMetin = z.union([z.string().trim().max(250), z.literal(""), z.null()]).optional();
@@ -28,7 +29,7 @@ export const masrafOlusturSemasi = z.object({
   kdvOrani: z.coerce.number().min(0).max(100),
   kdvTutari: z.coerce.number().min(0),
   toplam: z.coerce.number().positive(),
-  dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+  dovizCinsi: z.enum(DOVIZ_CINSLERI).default("TRY"),
   kur: z.coerce.number().positive().default(1),
   stopajOrani: z.coerce.number().min(0).max(100).nullable().optional(),
   stopajTutari: z.coerce.number().min(0).nullable().optional(),
@@ -80,7 +81,7 @@ export const kiraSozlesmeOlusturSemasi = z.object({
   matrah: z.coerce.number().positive(),
   kdvOrani: z.coerce.number().min(0).max(100).default(0),
   stopajOrani: z.coerce.number().min(0).max(100).default(0),
-  dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+  dovizCinsi: z.enum(DOVIZ_CINSLERI).default("TRY"),
 }).superRefine((girdi, ctx) => {
   if (!girdi.cariId && !girdi.kirayaVeren) ctx.addIssue({ code: "custom", path: ["kirayaVeren"], message: "Cari seçilmediğinde kiraya veren adı zorunludur" });
   if (girdi.bitisTarihi && girdi.bitisTarihi < girdi.baslangicTarihi) ctx.addIssue({ code: "custom", path: ["bitisTarihi"], message: "Bitiş tarihi başlangıçtan önce olamaz" });

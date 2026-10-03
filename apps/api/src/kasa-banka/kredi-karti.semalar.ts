@@ -1,8 +1,9 @@
 import { z } from "zod";
+import { DOVIZ_CINSLERI } from "@tekirextra/shared";
 const para = z.union([z.string(), z.number()]).transform(String).refine((v) => /^\d{1,13}(\.\d{1,2})?$/.test(v) && Number(v) > 0, "Pozitif tutar gerekli");
 export const krediKartiOlusturSemasi = z.object({
   ad: z.string().trim().min(2).max(100), bankaAdi: z.string().trim().min(2).max(100), sonDortHane: z.string().regex(/^\d{4}$/, "Kartın son 4 hanesi gereklidir"),
-  kartSahibi: z.string().trim().max(100).optional().nullable(), limit: para, dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+  kartSahibi: z.string().trim().max(100).optional().nullable(), limit: para, dovizCinsi: z.enum(DOVIZ_CINSLERI).default("TRY"),
   hesapKesimGunu: z.number().int().min(1).max(31), sonOdemeGunu: z.number().int().min(1).max(31), bagliBankaHesapId: z.string().uuid().optional().nullable(),
   renk: z.enum(["lacivert", "turkuaz", "mor", "bordo"]).default("lacivert"),
   asgariOdemeOrani: z.number().min(1).max(100).optional().nullable(),

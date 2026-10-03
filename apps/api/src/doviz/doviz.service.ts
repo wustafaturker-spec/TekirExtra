@@ -4,11 +4,15 @@ import { Prisma } from "@prisma/client";
 import { XMLParser } from "fast-xml-parser";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
-import { CozulenKur, KUR_GERI_BAKIS_GUN, KurTipi, kurBul, kurPenceresiBasi } from "./kur-coz";
+import { YABANCI_DOVIZLER, type YabanciDoviz } from "@tekirextra/shared";
+import { KUR_GERI_BAKIS_GUN, KurTipi, kurlariBul, kurPenceresiBasi } from "./kur-coz";
 
-type Doviz = "USD" | "EUR";
-const DOVIZLER: Doviz[] = ["USD", "EUR"];
-const SERILER = ["TP.DK.USD.A", "TP.DK.USD.S", "TP.DK.EUR.A", "TP.DK.EUR.S"];
+type Doviz = YabanciDoviz;
+/** DVZ-10: TCMB'nin gösterge kuru yayımladığı bütün dövizler; günlük XML hepsini taşır. */
+const DOVIZLER: readonly Doviz[] = YABANCI_DOVIZLER;
+/** Bir günün kullanılabilir sayılması için bunların kuru şarttır; EVDS yalnız bunları verir (yedek kaynak). */
+const TEMEL_DOVIZLER: readonly Doviz[] = ["USD", "EUR"];
+const SERILER = TEMEL_DOVIZLER.flatMap((d) => [`TP.DK.${d}.A`, `TP.DK.${d}.S`]);
 const GUN_MS = 24 * 60 * 60 * 1000;
 /** Aynı gün için TCMB'ye bu süre dolmadan yeniden gidilmez; yayım öncesi her ekran açılışı istek atmasın. */
 const TEKRAR_DENEME_MS = 15 * 60 * 1000;
@@ -70,7 +74,7 @@ export class DovizService {
       for (const s of satirlar) {
         const tarih = tarihCoz(String(s.TARIH ?? s.Tarih ?? ""));
         if (!tarih) continue;
-        const degerler = DOVIZLER.map((doviz) => ({ doviz, alis: sayi(s[alan(doviz, "alis")]), satis: sayi(s[alan(doviz, "satis")]) }));
+        const degerler = TEMEL_DOVIZLER.map((doviz) => ({ doviz, alis: sayi(s[alan(doviz, "alis")]), satis: sayi(s[alan(doviz, "satis")]) }));
         if (degerler.some((d) => !d.alis || !d.satis)) continue;
         gunler.push({ tarih, kaynak: "TCMB_EVDS", degerler: degerler as TcmbGunu["degerler"] });
       }
@@ -88,17 +92,20 @@ export class DovizService {
     try {
       const yanit = await fetch(url, { headers: { Accept: "application/xml" }, signal: AbortSignal.timeout(10000) });
       if (!yanit.ok) return null;
-      const xml = new XMLParser({ ignoreAttributes: false }).parse(await yanit.text()) as {
-        Tarih_Date?: { Currency?: Array<{ "@_CurrencyCode"?: string; ForexBuying?: unknown; ForexSelling?: unknown }> | { "@_CurrencyCode"?: string; ForexBuying?: unknown; ForexSelling?: unknown } };
-      };
+      type XmlDoviz = { "@_CurrencyCode"?: string; Unit?: unknown; ForexBuying?: unknown; ForexSelling?: unknown };
+      const xml = new XMLParser({ ignoreAttributes: false }).parse(await yanit.text()) as { Tarih_Date?: { Currency?: XmlDoviz[] | XmlDoviz } };
       const ham = xml.Tarih_Date?.Currency;
       const paraBirimleri = Array.isArray(ham) ? ham : ham ? [ham] : [];
-      const degerler = DOVIZLER.map((doviz) => {
+      // DVZ-10: yayımlanan her döviz alınır; JPY gibi 100 birim için verilenler birime bölünür.
+      const degerler = DOVIZLER.flatMap((doviz) => {
         const k = paraBirimleri.find((x) => x["@_CurrencyCode"] === doviz);
-        return { doviz, alis: sayi(k?.ForexBuying), satis: sayi(k?.ForexSelling) };
+        const birim = sayi(k?.Unit) ?? 1;
+        const alis = sayi(k?.ForexBuying);
+        const satis = sayi(k?.ForexSelling);
+        return alis && satis ? [{ doviz, alis: Number((alis / birim).toFixed(6)), satis: Number((satis / birim).toFixed(6)) }] : [];
       });
-      if (degerler.some((d) => !d.alis || !d.satis)) return null;
-      return { tarih, kaynak: "TCMB_XML", degerler: degerler as TcmbGunu["degerler"] };
+      if (TEMEL_DOVIZLER.some((d) => !degerler.some((x) => x.doviz === d))) return null;
+      return { tarih, kaynak: "TCMB_XML", degerler };
     } catch {
       return null;
     }
@@ -118,14 +125,30 @@ export class DovizService {
     }
   }
 
-  /** İki para biriminin de TCMB kuru bulunan günler. */
+  /**
+   * Günlük XML'den çekilmiş, yani bütün listesi kayıtlı günler. EVDS yalnız
+   * USD/EUR verir (2 kayıt); DVZ-10 öncesi XML de yalnız onları kaydediyordu.
+   * Böyle günler eksik sayılır ve XML'den yeniden çekilir. Sayı tam liste
+   * yerine "ikiden fazla" ile sınanır: TCMB bir dövizi yayımlamayı bırakırsa
+   * (ya da eski bir tarihte henüz yayımlamıyorsa) gün sonsuza dek eksik kalmasın.
+   */
   private async tamGunler(baslangic: Date, bitis: Date): Promise<Set<string>> {
     const gruplar = await this.prisma.tcmbKuru.groupBy({
       by: ["tarih"],
-      where: { tarih: { gte: baslangic, lte: bitis }, dovizCinsi: { in: DOVIZLER } },
+      where: { tarih: { gte: baslangic, lte: bitis }, dovizCinsi: { in: [...DOVIZLER] } },
       _count: { _all: true },
     });
-    return new Set(gruplar.filter((g) => g._count._all === DOVIZLER.length).map((g) => iso(g.tarih)));
+    return new Set(gruplar.filter((g) => g._count._all > TEMEL_DOVIZLER.length).map((g) => iso(g.tarih)));
+  }
+
+  /** Pencerede USD ve EUR kurunun (EVDS'den de olabilir) bulunduğu en az bir gün var mı. */
+  private async temelKurVar(baslangic: Date, bitis: Date): Promise<boolean> {
+    const gruplar = await this.prisma.tcmbKuru.groupBy({
+      by: ["tarih"],
+      where: { tarih: { gte: baslangic, lte: bitis }, dovizCinsi: { in: [...TEMEL_DOVIZLER] } },
+      _count: { _all: true },
+    });
+    return gruplar.some((g) => g._count._all === TEMEL_DOVIZLER.length);
   }
 
   /**
@@ -138,24 +161,27 @@ export class DovizService {
     const pencereBasi = kurPenceresiBasi(hedef);
     if (!zorla && (await this.tamGunler(hedef, hedef)).size) return true;
     const anahtar = iso(hedef);
-    const pencereDolu = async () => (await this.tamGunler(pencereBasi, hedef)).size > 0;
+    const pencereDolu = async () => (await this.tamGunler(pencereBasi, hedef)).size > 0 || (await this.temelKurVar(pencereBasi, hedef));
     if (!zorla && Date.now() - (this.sonDeneme.get(anahtar) ?? 0) < TEKRAR_DENEME_MS) return pencereDolu();
     this.sonDeneme.set(anahtar, Date.now());
 
-    const evds = await this.evdsAralik(pencereBasi, hedef);
-    if (evds?.length) await this.tcmbKaydet(evds);
-    if (!(await this.tamGunler(hedef, hedef)).size) {
-      const mevcut = await this.tamGunler(pencereBasi, hedef);
-      for (let geri = 0; geri <= KUR_GERI_BAKIS_GUN; geri++) {
-        const d = gunEkle(hedef, -geri);
-        if (mevcut.has(iso(d))) break; // daha yeni bir gün yayımlanmamış, bu gün zaten elde
-        if (!isGunu(d)) continue;
-        const xml = await this.xmlGun(d);
-        if (xml) {
-          await this.tcmbKaydet([xml]);
-          break;
-        }
+    // DVZ-10: tam liste yalnız XML'de; EVDS yalnız XML hiç kur vermezse USD/EUR için yedektir.
+    const mevcut = await this.tamGunler(pencereBasi, hedef);
+    let xmlBulundu = false;
+    for (let geri = 0; geri <= KUR_GERI_BAKIS_GUN; geri++) {
+      const d = gunEkle(hedef, -geri);
+      if (mevcut.has(iso(d))) { xmlBulundu = true; break; } // daha yeni bir gün yayımlanmamış, bu gün zaten elde
+      if (!isGunu(d)) continue;
+      const xml = await this.xmlGun(d);
+      if (xml) {
+        await this.tcmbKaydet([xml]);
+        xmlBulundu = true;
+        break;
       }
+    }
+    if (!xmlBulundu) {
+      const evds = await this.evdsAralik(pencereBasi, hedef);
+      if (evds?.length) await this.tcmbKaydet(evds);
     }
     return pencereDolu();
   }
@@ -177,26 +203,27 @@ export class DovizService {
     for (let d = bas; d <= son; d = gunEkle(d, 1)) if (isGunu(d) && !mevcut.has(iso(d))) adaylar.push(d);
     if (!adaylar.length) return { aday: 0, cekilen: 0, yayimlanmayan: [] as string[] };
 
-    const kalan = new Set(adaylar.map(iso));
+    // DVZ-10: önce gün gün XML (bütün liste); kalan günler için USD/EUR'u EVDS'den tamamla.
     let cekilen = 0;
-    const evds = await this.evdsAralik(adaylar[0], adaylar[adaylar.length - 1]);
-    if (evds) {
-      const uygun = evds.filter((g) => kalan.has(iso(g.tarih)));
-      await this.tcmbKaydet(uygun);
-      for (const g of uygun) kalan.delete(iso(g.tarih));
-      cekilen += uygun.length;
-    }
-    const yayimlanmayan: string[] = [];
-    for (const d of adaylar.filter((x) => kalan.has(iso(x)))) {
+    const kalan: Date[] = [];
+    for (const d of adaylar) {
       const xml = await this.xmlGun(d);
       if (xml) {
         await this.tcmbKaydet([xml]);
         cekilen += 1;
       } else {
-        yayimlanmayan.push(iso(d));
+        kalan.push(d);
       }
     }
-    return { aday: adaylar.length, cekilen, yayimlanmayan };
+    const yayimlanmayan = new Set(kalan.map(iso));
+    if (kalan.length) {
+      const evds = await this.evdsAralik(kalan[0], kalan[kalan.length - 1]);
+      const uygun = (evds ?? []).filter((g) => yayimlanmayan.has(iso(g.tarih)));
+      await this.tcmbKaydet(uygun);
+      for (const g of uygun) yayimlanmayan.delete(iso(g.tarih));
+      cekilen += uygun.length;
+    }
+    return { aday: adaylar.length, cekilen, yayimlanmayan: [...yayimlanmayan] };
   }
 
   /** DVZ-02: worker'ın günlük işi — bugün ve geriye bakış penceresindeki eksikler. */
@@ -227,31 +254,28 @@ export class DovizService {
   async kurlariGetir(tarihMetni?: string, tip: KurTipi = "alis", zorla = false) {
     const hedef = gun(tarihMetni ?? new Date().toISOString().slice(0, 10));
     const { tenantId } = aktifBaglam();
-    const oku = () =>
-      this.prisma.tenantIslem(tenantId, async (tx) => {
-        const kurlar: (CozulenKur | null)[] = [];
-        for (const doviz of DOVIZLER) kurlar.push(await kurBul(tx, tenantId, doviz, hedef));
-        return kurlar;
-      });
+    const oku = () => this.prisma.tenantIslem(tenantId, (tx) => kurlariBul(tx, tenantId, DOVIZLER, hedef));
     let kurlar = await oku();
-    if (zorla || kurlar.some((k) => !k || iso(k.kurTarihi) !== iso(hedef))) {
+    const guncel = (d: string) => kurlar.has(d) && iso(kurlar.get(d)!.kurTarihi) === iso(hedef);
+    if (zorla || !TEMEL_DOVIZLER.every(guncel) || kurlar.size < DOVIZLER.length) {
       await this.kurGarantile(hedef, zorla);
       kurlar = await oku();
     }
-    if (kurlar.some((k) => !k)) {
+    if (TEMEL_DOVIZLER.some((d) => !kurlar.has(d))) {
       throw new BadGatewayException(`${iso(hedef)} tarihi ve öncesindeki ${KUR_GERI_BAKIS_GUN} gün için USD/EUR kuru bulunamadı; Ayarlar > Döviz Kurları ekranından çekin ya da elle girin`);
     }
-    const tam = kurlar as CozulenKur[];
-    const kaynaklar = Object.fromEntries(DOVIZLER.map((d, i) => [d, tam[i].kaynak]));
+    // DVZ-10: penceresinde kuru olmayan döviz (ör. o tarihte TCMB'nin yayımlamadığı) yanıtta yer almaz.
+    const bulunan = DOVIZLER.filter((d) => kurlar.has(d)).map((d) => [d, kurlar.get(d)!] as const);
+    const kaynaklar = Object.fromEntries(bulunan.map(([d, k]) => [d, k.kaynak]));
     return {
       istenenTarih: iso(hedef),
-      kurTarihi: iso(new Date(Math.max(...tam.map((k) => k.kurTarihi.getTime())))),
+      kurTarihi: iso(new Date(Math.max(...bulunan.map(([, k]) => k.kurTarihi.getTime())))),
       tip,
       kaynak: [...new Set(Object.values(kaynaklar))].join("+"),
       kaynaklar,
-      oncekiIsGunuKullanildi: tam.some((k) => iso(k.kurTarihi) !== iso(hedef)),
-      alindiAt: new Date(Math.max(...tam.map((k) => k.alindiAt.getTime()))).toISOString(),
-      kurlar: Object.fromEntries(DOVIZLER.map((d, i) => [d, Number(tip === "alis" ? tam[i].alis : tam[i].satis)])),
+      oncekiIsGunuKullanildi: bulunan.some(([, k]) => iso(k.kurTarihi) !== iso(hedef)),
+      alindiAt: new Date(Math.max(...bulunan.map(([, k]) => k.alindiAt.getTime()))).toISOString(),
+      kurlar: Object.fromEntries(bulunan.map(([d, k]) => [d, Number(tip === "alis" ? k.alis : k.satis)])),
     };
   }
 
@@ -286,7 +310,8 @@ export class DovizService {
           satisFarki: t && e ? e.dovizSatis.sub(t.dovizSatis).toString() : null,
         };
       });
-      const eksik = isGunu(d) && d <= bugun && kurlar.some((k) => !k.tcmb);
+      // tamGunler ile aynı tanım: XML'den bütün liste gelmemişse gün eksiktir.
+      const eksik = isGunu(d) && d <= bugun && kurlar.filter((k) => k.tcmb).length <= TEMEL_DOVIZLER.length;
       if (eksik) eksikGunler.push(anahtar);
       gunler.push({ tarih: anahtar, isGunu: isGunu(d), eksik, kurlar });
     }

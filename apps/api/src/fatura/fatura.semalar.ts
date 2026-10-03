@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { guncellemeSemasi } from "../core/sema";
-import { idisEngelleri, ihracKayitliHatalari, ozelMatrahHatalari, senaryoHatalari, ytbEngelleri } from "@tekirextra/shared";
+import { idisEngelleri, ihracKayitliHatalari, ozelMatrahHatalari, senaryoHatalari, ytbEngelleri, DOVIZ_CINSLERI } from "@tekirextra/shared";
 
 const pozitifOndalik = z
   .union([z.string(), z.number()])
@@ -94,7 +94,7 @@ const faturaOlusturGovde = z.object({
   teslimatPostaKodu: z.string().trim().max(10).optional().nullable(),
   /** FTR-30: elle girilen teslim yeri carinin sevk adreslerine de eklensin. Saklanmaz. */
   teslimatAdresiniCariyeKaydet: z.boolean().optional(),
-  dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+  dovizCinsi: z.enum(DOVIZ_CINSLERI).default("TRY"),
   kur: pozitifOndalik.default("1"),
   genelIskontoYuzdesi: yuzde.default("0"),
   genelIskontoTutari: pozitifOndalik.default("0"),

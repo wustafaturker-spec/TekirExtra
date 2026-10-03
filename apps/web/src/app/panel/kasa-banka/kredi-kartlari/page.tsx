@@ -11,6 +11,7 @@ import { api, ApiHata, tokenAl } from "@/lib/api";
 import { EkstrePaneli } from "./ekstre-paneli";
 import { CariOdemeFormu, EkstreOdemeFormu, HareketFormu, KartAyarFormu, type Gonder } from "./islem-formlari";
 import { ayAdi, DURUM, type Banka, type Kart } from "./tipler";
+import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 
 type Islem = "cari" | "hareket" | "ekstre" | "ayar" | null;
 
@@ -133,7 +134,7 @@ export default function KrediKartlariSayfasi() {
             <Field label="Son 4 hane"><Input name="sonDortHane" required maxLength={4} pattern="[0-9]{4}" /></Field>
             <Field label="Kart sahibi"><Input name="kartSahibi" /></Field>
             <Field label="Kart limiti"><Input name="limit" required type="number" min="0.01" step="0.01" /></Field>
-            <Field label="Para birimi"><Select name="dovizCinsi"><option>TRY</option><option>USD</option><option>EUR</option></Select></Field>
+            <Field label="Para birimi"><Select name="dovizCinsi"><DovizSecenekleri /></Select></Field>
             <Field label="Hesap kesim günü"><Input name="hesapKesimGunu" required type="number" min="1" max="31" /></Field>
             <Field label="Son ödeme günü"><Input name="sonOdemeGunu" required type="number" min="1" max="31" /></Field>
             <Field label="Asgari ödeme oranı (%)"><Input name="asgariOdemeOrani" type="number" min="1" max="100" step="any" placeholder="Boş: limite göre %20/%40" /></Field>

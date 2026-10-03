@@ -130,7 +130,7 @@ registerRapor({
     }
     const kurlar = new Map<string, Prisma.Decimal | null>();
     for (const doviz of new Set(hesaplar.map((h) => h.dovizCinsi).filter((d) => d !== "TRY"))) {
-      kurlar.set(doviz, (await kurBul(tx, tenantId, doviz as "USD" | "EUR", tarih))?.alis ?? null);
+      kurlar.set(doviz, (await kurBul(tx, tenantId, doviz, tarih))?.alis ?? null);
     }
     return hesaplar.map((h) => {
       const t = toplam.get(`${h.tur}:${h.id}`) ?? { bakiye: D(0), tarihsel: D(0) };

@@ -1,4 +1,4 @@
-import { EKSTRE_TURLERI } from "@tekirextra/shared";
+import { EKSTRE_TURLERI, DOVIZ_CINSLERI, YABANCI_DOVIZLER } from "@tekirextra/shared";
 import { z } from "zod";
 import { guncellemeSemasi } from "../core/sema";
 
@@ -11,7 +11,7 @@ export const CARI_TIPLERI = [
   "diger",
 ] as const;
 export const KISI_TIPLERI = ["gercek", "tuzel"] as const;
-export const DOVIZLER = ["TRY", "USD", "EUR"] as const;
+export const DOVIZLER = DOVIZ_CINSLERI;
 
 /** Ondalık girdiler API'de string taşınır (hassasiyet korunur, NFR-10). */
 const ondalik = z
@@ -152,7 +152,7 @@ export const crmGorevDurumSemasi = z.object({ durum: z.enum(["acik", "tamamlandi
 /** CARI-24/25/26: ekstre uçlarının sorgu parametreleri. */
 export const ekstreSorguSemasi = z.object({
   tur: z.enum(EKSTRE_TURLERI, "Ekstre türü standart, ayrintili ya da doviz olmalıdır").optional(),
-  doviz: z.enum(["USD", "EUR"], "Çevrilecek döviz USD ya da EUR olmalıdır").optional(),
+  doviz: z.enum(YABANCI_DOVIZLER, "Çevrilecek döviz desteklenen bir yabancı para olmalıdır").optional(),
   mutabakat: z.enum(["0", "1"]).optional(),
 });
 
@@ -164,7 +164,7 @@ export const ekstreEpostaSemasi = z.object({
   iptalleriGoster: z.boolean().optional(),
   /** CARI-24/25/26: ekstre türü, döviz ekstresinde çevrilecek döviz, mutabakat metni. */
   tur: z.enum(EKSTRE_TURLERI).optional(),
-  hedefDoviz: z.enum(["USD", "EUR"]).optional(),
+  hedefDoviz: z.enum(YABANCI_DOVIZLER).optional(),
   mutabakat: z.boolean().optional(),
 }).refine((g) => !g.baslangic || !g.bitis || g.baslangic <= g.bitis, { message: "Başlangıç tarihi bitiş tarihinden sonra olamaz", path: ["bitis"] });
 

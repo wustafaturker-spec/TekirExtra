@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
 import { Alert, Button, Card, Field, Input, PageHeader, Select } from "@/components/ui";
 import { BelgeSablonuSecici, type BelgeSablonu } from "@/components/belge-sablonu-secici";
+import { DOVIZ_CINSLERI } from "@tekirextra/shared";
 
 /**
  * Modül Ayarları (AYR-01/03): backend jenerik ayar altyapısını
@@ -40,7 +41,7 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
     ikon: "👥",
     alanlar: [
       { ad: "varsayilanVadeGun", etiket: "Varsayılan vade (gün)", tip: "sayi", min: 0, max: 365 },
-      { ad: "varsayilanDoviz", etiket: "Varsayılan döviz", tip: "enum", secenekler: [["TRY", "TRY"], ["USD", "USD"], ["EUR", "EUR"]] },
+      { ad: "varsayilanDoviz", etiket: "Varsayılan döviz", tip: "enum", secenekler: DOVIZ_CINSLERI.map((d) => [d, d]) },
     ],
   },
   stok: {

@@ -6,22 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { BelgeTur, Prisma, ZincirBelgeDurum } from "@prisma/client";
-import {
-  faturaHesapla,
-  idisNormalize,
-  bugunTR,
-  faturaGecikmeUyarilari,
-  IRSALIYE_FATURA_GUN_SAYISI,
-  IRSALIYE_FATURA_TIPI,
-  irsaliyeFaturaFarklari,
-  irsaliyeFaturaSuresi,
-  irsaliyeSevkGunu,
-  irsaliyeFaturaTipiUyarMi,
-  irsaliyeKanali,
-  irsaliyeIptalUyarisi,
-  type FaturaHesaplaSatirGirdi,
-  type KayitEylem,
-} from "@tekirextra/shared";
+import { faturaHesapla, idisNormalize, bugunTR, faturaGecikmeUyarilari, IRSALIYE_FATURA_GUN_SAYISI, IRSALIYE_FATURA_TIPI, irsaliyeFaturaFarklari, irsaliyeFaturaSuresi, irsaliyeSevkGunu, irsaliyeFaturaTipiUyarMi, irsaliyeKanali, irsaliyeIptalUyarisi, type FaturaHesaplaSatirGirdi, type KayitEylem, type DovizKodu } from "@tekirextra/shared";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
@@ -563,7 +548,7 @@ export class BelgelerService {
       gecerlilikTarihi: girdi.gecerlilikTarihi ?? mevcut.gecerlilikTarihi,
       cariId: girdi.cariId ?? mevcut.cariId,
       depoId: girdi.depoId !== undefined ? girdi.depoId : mevcut.depoId,
-      dovizCinsi: girdi.dovizCinsi ?? (mevcut.dovizCinsi as "TRY" | "USD" | "EUR"),
+      dovizCinsi: girdi.dovizCinsi ?? (mevcut.dovizCinsi as DovizKodu),
       kur: girdi.kur ?? mevcut.kur,
       genelIskontoYuzdesi: girdi.genelIskontoYuzdesi ?? mevcut.genelIskontoYuzdesi,
       genelIskontoTutari: girdi.genelIskontoTutari ?? mevcut.genelIskontoTutari,
@@ -1845,7 +1830,7 @@ export class BelgelerService {
       yon: string;
       cariId: string;
       depoId: string | null;
-      dovizCinsi: "TRY" | "USD" | "EUR";
+      dovizCinsi: DovizKodu;
       kur: Prisma.Decimal;
       no: string | null;
       /** EBLG-74/FTR-31: sipariş ve talep referansı zincirden faturaya taşınır. */

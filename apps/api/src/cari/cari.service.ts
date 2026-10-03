@@ -28,7 +28,7 @@ import { PdfService } from "../core/pdf/pdf.service";
 import { cariDavranisAnalizi } from "./cari-analiz";
 import { gercekKisiUnvani } from "./ad-soyad";
 import { ebelgeTestOrtamiMi, vknTcknKabulEdilebilirMi } from "../ebelge/vkn-kabulu";
-import { belgeNoMetni, MUHTELIF_MUSTERI_KOD, MUHTELIF_MUSTERI_UNVAN, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi, vknTcknGecerliMi } from "@tekirextra/shared";
+import { belgeNoMetni, MUHTELIF_MUSTERI_KOD, MUHTELIF_MUSTERI_UNVAN, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi, vknTcknGecerliMi, type YabanciDoviz } from "@tekirextra/shared";
 import { metinNormalize } from "@tekirextra/shared";
 import { EpostaService } from "../tenant/eposta.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
@@ -41,7 +41,7 @@ import { ekstreAciklamasi, type EkstreTuru } from "@tekirextra/shared";
 /** CARI-24/25/26: ekstrenin türü; dövizde isteğe bağlı çevrilecek döviz. */
 export interface EkstreSecenekleri {
   tur?: EkstreTuru;
-  hedefDoviz?: "USD" | "EUR";
+  hedefDoviz?: YabanciDoviz;
 }
 import { cariEbelgeDurumlariniOku, cariEbelgeDurumuBul } from "../ebelge/cari-ebelge";
 import { canliIrsaliyeKutulari, kendiGbEtiketi, postaKutusuSecimi } from "../ebelge/posta-kutusu-secimi";

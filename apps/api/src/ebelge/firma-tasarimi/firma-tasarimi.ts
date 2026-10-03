@@ -1,4 +1,5 @@
 import { FATURA_SABLONU, IRSALIYE_SABLONU } from "./sablonlar";
+import { DOVIZ_CINSLERI } from "@tekirextra/shared";
 
 /**
  * EBLG-101: firmaya özel entegratör tasarımı. Düzen EMSA e-Belge tasarımıdır
@@ -61,7 +62,7 @@ function markaStili(ad: string, punto: number): string {
 
 const PARA_ADI: Record<string, string> = { TRY: "TL" };
 /** EMSA düzeninde TL satırı önce, sonra USD, EUR; diğerleri sonda. */
-const PARA_SIRASI = ["TRY", "USD", "EUR"];
+const PARA_SIRASI: readonly string[] = DOVIZ_CINSLERI;
 
 function ibanBicimle(iban: string): string {
   return iban.replace(/\s+/g, "").toUpperCase().replace(/(.{4})/g, "$1 ").trim();

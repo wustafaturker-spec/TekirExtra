@@ -7,7 +7,7 @@ import { kullanimOlayi } from "@/lib/kullanim";
 import { PostaKutusuSecimleri, type PostaKutusuSecimi } from "@/components/posta-kutusu-secimi";
 import { FormGrubu } from "@/components/form-grubu";
 import { Bakiye, CariEkstreTablosu, type EkstreVeri } from "@/components/cari-ekstre-tablosu";
-import { CARI_EBELGE_ETIKETI, EKSTRE_TURU_ADLARI, EKSTRE_TURLERI, vknTcknGecerliMi, type CariEbelgeDurumu, type CariEbelgeTuru, type EkstreTuru } from "@tekirextra/shared";
+import { CARI_EBELGE_ETIKETI, EKSTRE_TURU_ADLARI, EKSTRE_TURLERI, vknTcknGecerliMi, type CariEbelgeDurumu, type CariEbelgeTuru, type EkstreTuru, YABANCI_DOVIZLER, type YabanciDoviz } from "@tekirextra/shared";
 import {
   Alert,
   Avatar,
@@ -28,6 +28,7 @@ import {
   TableWrap,
   Tabs,
 } from "@/components/ui";
+import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 
 const TIP_ETIKETLERI: Record<string, string> = {
   musteri: "👤 Müşteri",
@@ -251,7 +252,7 @@ export default function CariSayfasi() {
   const [ekstreIptaller, setEkstreIptaller] = useState(false);
   /** CARI-24/25/26: ekstre türü, döviz ekstresinde gösterim ("" = her döviz ayrı) ve mutabakat metni. */
   const [ekstreTuru, setEkstreTuru] = useState<EkstreTuru>("standart");
-  const [ekstreDoviz, setEkstreDoviz] = useState<"" | "USD" | "EUR">("");
+  const [ekstreDoviz, setEkstreDoviz] = useState<"" | YabanciDoviz>("");
   const [ekstreMutabakat, setEkstreMutabakat] = useState(false);
   const [filtreTip, setFiltreTip] = useState<FiltreTip>("tumu");
   const [kayitliGorunumler, setKayitliGorunumler] = useState<CariGorunumu[]>([]);
@@ -440,7 +441,7 @@ export default function CariSayfasi() {
   }
 
   /** Ekstre sorgusu; ekran, PDF ve Excel aynı parametrelerle istenir. */
-  function ekstreSorgusu(s: { iptaller?: boolean; tur?: EkstreTuru; doviz?: "" | "USD" | "EUR" } = {}) {
+  function ekstreSorgusu(s: { iptaller?: boolean; tur?: EkstreTuru; doviz?: "" | YabanciDoviz } = {}) {
     const qs = new URLSearchParams();
     const tur = s.tur ?? ekstreTuru; const doviz = s.doviz ?? ekstreDoviz;
     if (ekstreBaslangic) qs.set("baslangic", ekstreBaslangic);
@@ -451,7 +452,7 @@ export default function CariSayfasi() {
     return qs;
   }
 
-  async function ekstreFiltrele(s: { iptaller?: boolean; tur?: EkstreTuru; doviz?: "" | "USD" | "EUR" } = {}) {
+  async function ekstreFiltrele(s: { iptaller?: boolean; tur?: EkstreTuru; doviz?: "" | YabanciDoviz } = {}) {
     if (!detay) return;
     if (ekstreBaslangic && ekstreBitis && ekstreBaslangic > ekstreBitis) { setHata("Başlangıç tarihi bitiş tarihinden sonra olamaz."); return; }
     setEkstreIslemde(true); setHata("");
@@ -1284,10 +1285,9 @@ export default function CariSayfasi() {
                 <Field label="Bitiş"><Input type="date" value={ekstreBitis} onChange={(e) => setEkstreBitis(e.target.value)} /></Field>
                 {ekstreTuru === "doviz" && (
                   <Field label="Gösterim">
-                    <Select aria-label="Döviz ekstresi gösterimi" value={ekstreDoviz} disabled={ekstreIslemde} onChange={(e) => { const d = e.target.value as "" | "USD" | "EUR"; setEkstreDoviz(d); void ekstreFiltrele({ doviz: d }); }}>
+                    <Select aria-label="Döviz ekstresi gösterimi" value={ekstreDoviz} disabled={ekstreIslemde} onChange={(e) => { const d = e.target.value as "" | YabanciDoviz; setEkstreDoviz(d); void ekstreFiltrele({ doviz: d }); }}>
                       <option value="">Her döviz ayrı bölüm</option>
-                      <option value="USD">Tümü USD cinsinden</option>
-                      <option value="EUR">Tümü EUR cinsinden</option>
+                      {YABANCI_DOVIZLER.map((d) => <option key={d} value={d}>Tümü {d} cinsinden</option>)}
                     </Select>
                   </Field>
                 )}
@@ -1466,7 +1466,7 @@ export default function CariSayfasi() {
                 <Input className="grow" value={bankaAdi} onChange={(e) => setBankaAdi(e.target.value)} placeholder="Banka adı" required style={{ minWidth: 140 }} />
                 <Input value={iban} onChange={(e) => setIban(e.target.value)} placeholder="TR + 24 rakam" required style={{ flex: 2, minWidth: 220 }} />
                 <Select value={paraBirimi} onChange={(e) => setParaBirimi(e.target.value)} style={{ width: 90 }}>
-                  <option>TRY</option><option>USD</option><option>EUR</option>
+                  <DovizSecenekleri />
                 </Select>
                 <Button size="sm" type="submit">➕ Ekle</Button>
               </form>

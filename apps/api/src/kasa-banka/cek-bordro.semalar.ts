@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DOVIZ_CINSLERI } from "@tekirextra/shared";
 
 const tutar = z.union([z.string(), z.number()]).transform(String).refine((v) => /^\d{1,13}(\.\d{1,2})?$/.test(v) && Number(v) > 0, "Pozitif tutar girin");
 const tarih = (ad: string) => z.string().date(`${ad} YYYY-MM-DD biçiminde olmalıdır`);
@@ -10,7 +11,7 @@ export const cekBordroGirisSemasi = z.object({
   tarih: tarih("Bordro tarihi"),
   /** Girişte çeki veren müşteri, borç çekinde lehtar. */
   cariId: z.string().uuid("Cari seçin"),
-  dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+  dovizCinsi: z.enum(DOVIZ_CINSLERI).default("TRY"),
   kur: tutar.default("1"),
   aciklama: bosMetin(500),
   satirlar: z.array(z.object({

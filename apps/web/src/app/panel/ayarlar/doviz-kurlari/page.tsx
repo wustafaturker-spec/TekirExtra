@@ -4,8 +4,10 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
 import { bugunTR, gunEkleTR } from "@tekirextra/shared";
+import { DovizSecenekleri } from "@/components/doviz-secenekleri";
+import { DOVIZ_ADLARI, YABANCI_DOVIZLER, type YabanciDoviz } from "@tekirextra/shared";
 
-type Doviz = "USD" | "EUR";
+type Doviz = YabanciDoviz;
 
 interface KurHucresi {
   dovizCinsi: Doviz;
@@ -32,6 +34,8 @@ export default function DovizKurlariSayfasi() {
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [calisiyor, setCalisiyor] = useState(false);
+  // DVZ-10: tabloda gösterilen dövizler; liste 21 döviz döndürür, tablo seçilenleri çizer.
+  const [gosterilen, setGosterilen] = useState<Doviz[]>(["USD", "EUR"]);
   const [form, setForm] = useState({ tarih: bugunIso(), dovizCinsi: "USD" as Doviz, alis: "", satis: "", gerekce: "" });
 
   const yukle = useCallback(async (bas: string, son: string) => {
@@ -146,8 +150,7 @@ export default function DovizKurlariSayfasi() {
           <Field label="Tarih"><Input type="date" value={form.tarih} max={bugunIso()} onChange={(e) => setForm({ ...form, tarih: e.target.value })} /></Field>
           <Field label="Para birimi">
             <Select value={form.dovizCinsi} onChange={(e) => setForm({ ...form, dovizCinsi: e.target.value as Doviz })}>
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
+              <DovizSecenekleri adli yalnizYabanci />
             </Select>
           </Field>
           <Field label="Alış"><Input inputMode="decimal" value={form.alis} onChange={(e) => setForm({ ...form, alis: e.target.value })} style={{ width: "8rem" }} /></Field>
@@ -158,18 +161,34 @@ export default function DovizKurlariSayfasi() {
       </Card>
 
       <Card>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center", marginBottom: "0.75rem" }}>
+          <span className="muted">Tablodaki dövizler:</span>
+          {gosterilen.map((d) => (
+            <Badge key={d} variant="neutral">
+              {d}{" "}
+              {gosterilen.length > 1 && (
+                <button type="button" aria-label={`${d} sütununu kaldır`} onClick={() => setGosterilen(gosterilen.filter((x) => x !== d))} style={{ background: "none", border: 0, cursor: "pointer", color: "inherit", padding: 0 }}>×</button>
+              )}
+            </Badge>
+          ))}
+          <Select aria-label="Tabloya döviz ekle" value="" onChange={(e) => e.target.value && setGosterilen([...gosterilen, e.target.value as Doviz])} style={{ width: "auto" }}>
+            <option value="">+ Döviz ekle</option>
+            {YABANCI_DOVIZLER.filter((d) => !gosterilen.includes(d)).map((d) => <option key={d} value={d}>{d} — {DOVIZ_ADLARI[d]}</option>)}
+          </Select>
+        </div>
         <TableWrap>
           <table>
             <thead>
               <tr>
                 <th>Tarih</th>
-                <th className="num">USD alış</th><th className="num">USD satış</th>
-                <th className="num">EUR alış</th><th className="num">EUR satış</th>
+                {gosterilen.map((d) => (
+                  <Fragment key={d}><th className="num">{d} alış</th><th className="num">{d} satış</th></Fragment>
+                ))}
                 <th>Kaynak</th><th />
               </tr>
             </thead>
             <tbody>
-              {(liste?.gunler ?? []).map((g) => (
+              {(liste?.gunler ?? []).map((g) => ({ ...g, kurlar: gosterilen.flatMap((d) => g.kurlar.filter((h) => h.dovizCinsi === d)) })).map((g) => (
                 <tr key={g.tarih} className={g.isGunu ? "" : "muted"}>
                   <td>{tarihGoster(g.tarih)} {g.eksik && <Badge variant="danger">Eksik</Badge>}</td>
                   {g.kurlar.map((h) => hucre(g, h))}

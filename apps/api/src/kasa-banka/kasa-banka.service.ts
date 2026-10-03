@@ -1156,7 +1156,7 @@ export class KasaBankaService {
     const acikDurumlar = yon === "verilen" ? ["verildi"] : ["portfoyde", "tahsile_verildi", "teminata_verildi"];
     const acik = kayitlar.filter((k) => acikDurumlar.includes(k.durum));
     const toplam = (liste: typeof kayitlar) => liste.reduce((t, k) => t.add(k.tutarTry), D(0)).toFixed(2);
-    const dovizler = Object.fromEntries(["TRY", "USD", "EUR"].map((d) => [d, acik.filter((k) => k.dovizCinsi === d).reduce((t, k) => t.add(k.tutar), D(0)).toFixed(2)]));
+    const dovizler = Object.fromEntries([...new Set(["TRY", ...acik.map((k) => k.dovizCinsi)])].map((d) => [d, acik.filter((k) => k.dovizCinsi === d).reduce((t, k) => t.add(k.tutar), D(0)).toFixed(2)]));
     return {
       acik: { adet: acik.length, toplamTry: toplam(acik), dovizler },
       geciken: { adet: acik.filter((k) => k.vadeTarihi < bugun).length, toplamTry: toplam(acik.filter((k) => k.vadeTarihi < bugun)) },

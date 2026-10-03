@@ -39,7 +39,7 @@ interface Tahmin {
   donemTipi: "gun" | "hafta";
   baslangicBakiye: number;
   hesapSayisi: number;
-  kur: { tarih: string; USD: number; EUR: number } | null;
+  kur: { tarih: string; kurlar: Record<string, number> } | null;
   senaryolar: Record<Senaryo, SenaryoSonucu>;
   kalemler: Kalem[];
   kapsamDisi: string[];
@@ -262,7 +262,7 @@ export default function NakitAkisiSayfasi() {
 
           <p className="muted" style={{ margin: 0 }}>
             {tahmin.kapsamDisi.join(" ")}
-            {tahmin.kur && <> Dövizli kalemler <Tarih deger={tahmin.kur.tarih} /> TCMB kuruyla çevrildi (USD {tahmin.kur.USD.toLocaleString("tr-TR")}, EUR {tahmin.kur.EUR.toLocaleString("tr-TR")}).</>}
+            {tahmin.kur && <> Dövizli kalemler <Tarih deger={tahmin.kur.tarih} /> TCMB kuruyla çevrildi ({Object.entries(tahmin.kur.kurlar).map(([d, k]) => `${d} ${k.toLocaleString("tr-TR")}`).join(", ")}).</>}
           </p>
         </>
       ) : null}

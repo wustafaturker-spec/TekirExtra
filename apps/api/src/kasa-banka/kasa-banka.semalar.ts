@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { guncellemeSemasi } from "../core/sema";
+import { DOVIZ_CINSLERI } from "@tekirextra/shared";
 
 const pozitifOndalik = z
   .string()
@@ -7,7 +8,7 @@ const pozitifOndalik = z
 
 export const kasaOlusturSemasi = z.object({
   ad: z.string().min(2).max(100),
-  dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+  dovizCinsi: z.enum(DOVIZ_CINSLERI).default("TRY"),
 });
 
 export const kasaGuncelleSemasi = guncellemeSemasi(kasaOlusturSemasi).extend({
@@ -23,7 +24,7 @@ export const bankaHesapOlusturSemasi = z.object({
   // EBLG-101: firma tasarımının banka tablosu.
   swift: z.union([z.string().trim().toUpperCase().regex(/^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/, "SWIFT kodu 8 ya da 11 karakterdir"), z.literal("")]).transform((d) => d || null).nullable().optional(),
   faturadaGoster: z.boolean().optional(),
-  dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+  dovizCinsi: z.enum(DOVIZ_CINSLERI).default("TRY"),
 });
 
 export const bankaHesapGuncelleSemasi = guncellemeSemasi(bankaHesapOlusturSemasi).extend({
@@ -38,7 +39,7 @@ const posAyarlari = {
 export const posHesapOlusturSemasi = z.object({
   ad: z.string().min(2).max(100), saglayici: z.enum(["iyzico", "paytr", "banka"]),
   baglantiId: z.string().uuid().optional().nullable(), varsayilanBankaHesapId: z.string().uuid().optional().nullable(),
-  dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+  dovizCinsi: z.enum(DOVIZ_CINSLERI).default("TRY"),
   ...posAyarlari,
 }).refine((d) => d.saglayici !== "banka" || Boolean(d.varsayilanBankaHesapId), { message: "Banka POS'u için paranın geçeceği banka hesabını seçin", path: ["varsayilanBankaHesapId"] });
 
@@ -62,7 +63,7 @@ export const kasaBankaHareketOlusturSemasi = z.object({
   posHesapId: z.string().uuid().optional().nullable(),
   tip: z.enum(["tahsilat", "tediye"]),
   tutar: pozitifOndalik,
-  dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+  dovizCinsi: z.enum(DOVIZ_CINSLERI).default("TRY"),
   kur: pozitifOndalik.optional(),
   tarih: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)"),
   aciklama: z.string().max(500).optional().nullable(),
@@ -232,7 +233,7 @@ export const cekSenetOlusturSemasi = z
     islemTarihi: z.string().date("Geçersiz işlem tarihi (YYYY-MM-DD)"),
     vadeTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)"),
     tutar: pozitifOndalik,
-    dovizCinsi: z.enum(["TRY", "USD", "EUR"]).default("TRY"),
+    dovizCinsi: z.enum(DOVIZ_CINSLERI).default("TRY"),
     kur: pozitifOndalik.default("1"),
     /** Alınanda keşideci, verilende kendi firmamız. */
     borclu: z.string().min(2).max(255),

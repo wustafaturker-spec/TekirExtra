@@ -14,6 +14,7 @@ import {
   Select,
   TableWrap,
 } from "@/components/ui";
+import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 
 interface FiyatListesi {
   id: string;
@@ -191,7 +192,7 @@ export default function FiyatListeleriSayfasi() {
           <form onSubmit={listeOlustur} className="stack">
             <div className="row">
               <div style={{ flex: 2, minWidth: 200 }}><Field label="Liste Adı *"><Input value={yeniAd} onChange={(e) => setYeniAd(e.target.value)} required placeholder="Örn. Bayi Fiyatları" /></Field></div>
-              <div style={{ flex: 1, minWidth: 120 }}><Field label="Döviz"><Select value={yeniDoviz} onChange={(e) => setYeniDoviz(e.target.value)}><option value="TRY">TRY</option><option value="USD">USD</option><option value="EUR">EUR</option></Select></Field></div>
+              <div style={{ flex: 1, minWidth: 120 }}><Field label="Döviz"><Select value={yeniDoviz} onChange={(e) => setYeniDoviz(e.target.value)}><DovizSecenekleri /></Select></Field></div>
             </div>
             <div><Button variant="primary" type="submit">Liste Oluştur</Button></div>
           </form>

@@ -23,6 +23,7 @@ import {
   TableWrap,
 } from "@/components/ui";
 import { birimKisaAdi, bugunTR, olcuAilesi, olcuKatsayisi, SARJ_TURLERI, SARJ_TURU_ADLARI, varyantKombinasyonlari } from "@tekirextra/shared";
+import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 
 /* ─── Tipler ─────────────────────────────────────────────────────────────── */
 
@@ -527,7 +528,7 @@ export default function StokDetaySayfasi() {
       )}
 
       {aktifSekme === "recete" && <TabPanel idPrefix="stok-detay" value="recete"><ReceteSekmesi stokId={id} anaBirim={detay.anaBirim} recete={recete} stoklar={tumStoklar.filter((s) => s.id !== id && s.tip !== "hizmet")} isMerkezleri={isMerkezleri} varyantlar={detay.varyantlar ?? []} kapsam={receteKapsami} ozelVaryantlar={ozelReceteliVaryantlar} onKapsamDegis={setReceteKapsami} onKaydedildi={async () => { await receteyiYukle(); setBasari("Yeni reçete sürümü taslak olarak kaydedildi."); }} onSilindi={async () => { await receteyiYukle(); setBasari("Ürün reçetesi arşivlendi."); }} onHata={setHata} /></TabPanel>}
-      {aktifSekme === "fiyatlar" && <TabPanel idPrefix="stok-detay" value="fiyatlar"><Card title="Dövizli ürün fiyatları"><form className="form-grid" onSubmit={fiyatEkle}><Field label="Tip"><Select value={fiyatTipi} onChange={(e) => setFiyatTipi(e.target.value as "alis" | "satis")}><option value="satis">Satış</option><option value="alis">Alış</option></Select></Field><Field label="Varyant"><Select value={fiyatVaryantId} onChange={(e) => setFiyatVaryantId(e.target.value)}><option value="">Kart fiyatı</option>{(detay.varyantlar ?? []).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad}</option>)}</Select></Field><Field label="Döviz"><Select value={fiyatDovizi} onChange={(e) => setFiyatDovizi(e.target.value)}><option>TRY</option><option>USD</option><option>EUR</option></Select></Field><Field label="Tutar"><Input type="number" min="0" step="0.0001" value={fiyatTutar} onChange={(e) => setFiyatTutar(e.target.value)} required /></Field><div><Button type="submit" variant="primary">Fiyat kaydet</Button></div></form><TableWrap><thead><tr><th>Tip</th><th>Varyant</th><th>Döviz</th><th className="num">Tutar</th><th>Durum</th><th /></tr></thead><tbody>{fiyatlar.map((f) => <tr key={f.id}><td>{f.tip === "alis" ? "Alış" : "Satış"}</td><td>{f.varyantId ? detay.varyantlar?.find((v) => v.id === f.varyantId)?.kod ?? f.varyantId : "Kart"}</td><td>{f.dovizCinsi}</td><td className="num">{Number(f.tutar).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} {f.dovizCinsi}</td><td>{f.aktif ? "Aktif" : "Pasif"}</td><td><Button size="sm" variant="danger" type="button" onClick={() => void fiyatSil(f.id)}>Sil</Button></td></tr>)}{!fiyatlar.length && <tr><td colSpan={6}>Henüz dövizli fiyat tanımlanmamış.</td></tr>}</tbody></TableWrap></Card></TabPanel>}
+      {aktifSekme === "fiyatlar" && <TabPanel idPrefix="stok-detay" value="fiyatlar"><Card title="Dövizli ürün fiyatları"><form className="form-grid" onSubmit={fiyatEkle}><Field label="Tip"><Select value={fiyatTipi} onChange={(e) => setFiyatTipi(e.target.value as "alis" | "satis")}><option value="satis">Satış</option><option value="alis">Alış</option></Select></Field><Field label="Varyant"><Select value={fiyatVaryantId} onChange={(e) => setFiyatVaryantId(e.target.value)}><option value="">Kart fiyatı</option>{(detay.varyantlar ?? []).map((v) => <option key={v.id} value={v.id}>{v.kod} — {v.ad}</option>)}</Select></Field><Field label="Döviz"><Select value={fiyatDovizi} onChange={(e) => setFiyatDovizi(e.target.value)}><DovizSecenekleri /></Select></Field><Field label="Tutar"><Input type="number" min="0" step="0.0001" value={fiyatTutar} onChange={(e) => setFiyatTutar(e.target.value)} required /></Field><div><Button type="submit" variant="primary">Fiyat kaydet</Button></div></form><TableWrap><thead><tr><th>Tip</th><th>Varyant</th><th>Döviz</th><th className="num">Tutar</th><th>Durum</th><th /></tr></thead><tbody>{fiyatlar.map((f) => <tr key={f.id}><td>{f.tip === "alis" ? "Alış" : "Satış"}</td><td>{f.varyantId ? detay.varyantlar?.find((v) => v.id === f.varyantId)?.kod ?? f.varyantId : "Kart"}</td><td>{f.dovizCinsi}</td><td className="num">{Number(f.tutar).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} {f.dovizCinsi}</td><td>{f.aktif ? "Aktif" : "Pasif"}</td><td><Button size="sm" variant="danger" type="button" onClick={() => void fiyatSil(f.id)}>Sil</Button></td></tr>)}{!fiyatlar.length && <tr><td colSpan={6}>Henüz dövizli fiyat tanımlanmamış.</td></tr>}</tbody></TableWrap></Card></TabPanel>}
 
       {aktifSekme === "hareketler" && (
         <TabPanel idPrefix="stok-detay" value="hareketler"><HareketlerSekmesi
@@ -790,12 +791,12 @@ function GenelSekmesi({
         </div>
         <div className="stock-field">
           <Field label="Alış Fiyatı">
-            <div className="stock-price-input"><Input type="number" step="0.0001" {...alan("alisFiyati")} placeholder="0.0000" /><Select aria-label="Alış fiyatı dövizi" {...alan("alisFiyatiDoviz")}><option>TRY</option><option>USD</option><option>EUR</option></Select></div>
+            <div className="stock-price-input"><Input type="number" step="0.0001" {...alan("alisFiyati")} placeholder="0.0000" /><Select aria-label="Alış fiyatı dövizi" {...alan("alisFiyatiDoviz")}><DovizSecenekleri /></Select></div>
           </Field>
         </div>
         <div className="stock-field">
           <Field label="Satış Fiyatı">
-            <div className="stock-price-input"><Input type="number" step="0.0001" {...alan("satisFiyati")} placeholder="0.0000" /><Select aria-label="Satış fiyatı dövizi" {...alan("satisFiyatiDoviz")}><option>TRY</option><option>USD</option><option>EUR</option></Select></div>
+            <div className="stock-price-input"><Input type="number" step="0.0001" {...alan("satisFiyati")} placeholder="0.0000" /><Select aria-label="Satış fiyatı dövizi" {...alan("satisFiyatiDoviz")}><DovizSecenekleri /></Select></div>
           </Field>
         </div>
       </div>
@@ -1600,9 +1601,7 @@ function TedarikcilerSekmesi({
           <div style={{ flex: 1, minWidth: 110 }}>
             <Field label="Döviz">
               <Select value={dovizCinsi} onChange={(e) => setDovizCinsi(e.target.value)}>
-                <option value="TRY">TRY</option>
-                <option value="USD">USD</option>
-                <option value="EUR">EUR</option>
+                <DovizSecenekleri />
               </Select>
             </Field>
           </div>

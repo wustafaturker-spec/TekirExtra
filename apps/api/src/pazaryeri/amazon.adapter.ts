@@ -1,4 +1,5 @@
 import type { NormalizeKesinti, NormalizeSiparis, PazaryeriConfig, PazaryeriStokFiyat } from "./trendyol.adapter";
+import { dovizKoduMu } from "@tekirextra/shared";
 
 interface AmazonImlec { token?: string; lastUpdatedAfter: string }
 interface AmazonFinansImleci { token?: string; postedAfter: string; postedBefore?: string }
@@ -109,7 +110,7 @@ export class AmazonAdapter {
         hariciDurum: p.fulfillmentStatus ?? p.OrderStatus, siparisTarihi: String(p.createdTime ?? p.PurchaseDate),
         musteriUnvani: p.buyer?.name ?? p.BuyerInfo?.BuyerName ?? adres?.name ?? adres?.Name ?? "Amazon müşterisi",
         musteriEposta: p.buyer?.email ?? p.BuyerInfo?.BuyerEmail ?? undefined, musteriTelefon: adres?.phone ?? adres?.Phone ?? undefined,
-        dovizCinsi: (["TRY", "USD", "EUR"].includes(p.orderTotal?.currencyCode ?? p.OrderTotal?.CurrencyCode) ? p.orderTotal?.currencyCode ?? p.OrderTotal?.CurrencyCode : "TRY") as NormalizeSiparis["dovizCinsi"],
+        dovizCinsi: (dovizKoduMu(p.orderTotal?.currencyCode ?? p.OrderTotal?.CurrencyCode) ? p.orderTotal?.currencyCode ?? p.OrderTotal?.CurrencyCode : "TRY") as NormalizeSiparis["dovizCinsi"],
         toplam, teslimatAdresi: adres, satirlar,
       };
     }).filter((s: NormalizeSiparis) => s.hariciId !== "undefined" && s.satirlar.length > 0);
@@ -140,7 +141,7 @@ export class AmazonAdapter {
           if (alt.length) { yapraklariGez(alt, [...yol, String(kirim.breakdownType ?? i)]); continue; }
           const miktar = Number(kirim.breakdownAmount?.currencyAmount ?? 0);
           const doviz = String(kirim.breakdownAmount?.currencyCode ?? islem.totalAmount?.currencyCode ?? "TRY");
-          if (miktar >= 0 || !["TRY", "USD", "EUR"].includes(doviz)) continue;
+          if (miktar >= 0 || !dovizKoduMu(doviz)) continue;
           const tur = String(kirim.breakdownType ?? "Amazon kesintisi");
           kesintiler.push({ hariciId: `${islem.transactionId}:${[...yol, tur, i].join("/")}`, siparisNo: siparisNo ? String(siparisNo) : undefined,
             tur, aciklama: islem.description ? String(islem.description) : undefined, tarih: String(islem.postedDate).slice(0, 10), tutar: Math.abs(miktar),

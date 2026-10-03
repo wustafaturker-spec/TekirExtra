@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { registerModulAyar } from "./core/ayarlar/ayar-kayit";
 import { BELGE_SABLONLARI, VARSAYILAN_VURGU_RENGI } from "./core/pdf/belge-temasi";
+import { DOVIZ_CINSLERI } from "@tekirextra/shared";
 
 /**
  * Modül ayar tanımları (AYR-01/03). Her modül geldiği aşamada kendi
@@ -19,7 +20,7 @@ registerModulAyar(
   "cari",
   z.object({
     varsayilanVadeGun: z.number().int().min(0).max(365),
-    varsayilanDoviz: z.enum(["TRY", "USD", "EUR"]),
+    varsayilanDoviz: z.enum(DOVIZ_CINSLERI),
   }),
   { varsayilanVadeGun: 14, varsayilanDoviz: "TRY" },
 );

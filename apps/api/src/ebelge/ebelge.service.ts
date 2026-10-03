@@ -15,7 +15,7 @@ import {
 } from "@nestjs/common";
 import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
 import type { BelgeDurumSonuc, EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
-import { faturaGecikmeUyarilari, ihracKayitliKoduBul, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeSevkGunu, type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, YOLCU_BERABER_POSTA_KUTUSU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu, sgkEngelleri, sgkFaturasiMi, SGK_VKN, sarjEngelleri, sarjPlakaNormalize, idisEngelleri, idisNormalize, ytbBelgesiMi, ytbEngelleri, ytbNormalize, type SarjTuru, type SevkiyatYontemi, sevkiyatEksikleri, sevkiyatSorulurMu, ebelgeKanali, ebelgeUygulamalariCoz, ebelgeKanalEngelleri, uygulamaAcik, type EbelgeUygulamalari } from "@tekirextra/shared";
+import { faturaGecikmeUyarilari, ihracKayitliKoduBul, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeSevkGunu, type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, YOLCU_BERABER_POSTA_KUTUSU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu, sgkEngelleri, sgkFaturasiMi, SGK_VKN, sarjEngelleri, sarjPlakaNormalize, idisEngelleri, idisNormalize, ytbBelgesiMi, ytbEngelleri, ytbNormalize, type SarjTuru, type SevkiyatYontemi, sevkiyatEksikleri, sevkiyatSorulurMu, ebelgeKanali, ebelgeUygulamalariCoz, ebelgeKanalEngelleri, uygulamaAcik, type EbelgeUygulamalari, type DovizKodu, dovizKoduMu } from "@tekirextra/shared";
 import { ebelgeUygulamalariCozTenant } from "./ebelge-uygulamalari.service";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
@@ -1912,11 +1912,7 @@ export class EbelgeService {
       tarih: kayit.tarih.toISOString().slice(0, 10),
       vadeTarihi: ubl.vadeTarihi ?? null,
       cariId,
-      dovizCinsi: (["TRY", "USD", "EUR"] as const).includes(
-        ubl.dovizCinsi as "TRY" | "USD" | "EUR",
-      )
-        ? (ubl.dovizCinsi as "TRY" | "USD" | "EUR")
-        : "TRY",
+      dovizCinsi: dovizKoduMu(ubl.dovizCinsi) ? ubl.dovizCinsi : "TRY",
       kur: "1",
       genelIskontoYuzdesi: "0",
       genelIskontoTutari: "0",

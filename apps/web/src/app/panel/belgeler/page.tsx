@@ -37,6 +37,7 @@ import {
   Select,
   TableWrap,
 } from "@/components/ui";
+import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 
 const TUR_ADI: Record<string, string> = { teklif: "Teklif", siparis: "Sipariş", irsaliye: "İrsaliye" };
 const YON_ADI: Record<string, string> = { satis: "Satış", alis: "Alış" };
@@ -1174,7 +1175,7 @@ export default function BelgelerSayfasi() {
               <Field label="Belge Türü"><Select value={tur} disabled={Boolean(duzenlenenId)} onChange={(e) => setTur(e.target.value as Tur)}><option value="teklif">Teklif</option><option value="siparis">Sipariş</option><option value="irsaliye">İrsaliye</option></Select></Field>
               <Field label="Yön"><Select value={yon} disabled={Boolean(duzenlenenId)} onChange={(e) => setYon(e.target.value as Yon)}><option value="satis">Satış</option><option value="alis">Alış</option></Select></Field>
               <Field label="Tarih"><Input type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} required /></Field>
-              <Field label="Belge Dövizi"><Select value={dovizCinsi} onChange={(e) => belgeDoviziDegistir(e.target.value)}><option>TRY</option><option>USD</option><option>EUR</option></Select></Field>
+              <Field label="Belge Dövizi"><Select value={dovizCinsi} onChange={(e) => belgeDoviziDegistir(e.target.value)}><DovizSecenekleri /></Select></Field>
               {bekleyenCevrim && (
                 <Alert tone="warning">
                   Kalem fiyatları {paraBirimiEtiketi(bekleyenCevrim.eskiDoviz)} cinsinden girildi. {paraBirimiEtiketi(dovizCinsi)} belgede kullanmak için kalemleri {yeniKurHazir ? `${dovizCinsi === "TRY" ? "1" : kur} kuruyla` : "yeni kur yüklenince"} {paraBirimiEtiketi(dovizCinsi)}'ye çevirin.{" "}
