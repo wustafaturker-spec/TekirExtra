@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { vknGecerliMi } from "@tekirextra/shared";
+import { krediPlaniHesapla, vknGecerliMi } from "@tekirextra/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
@@ -1491,5 +1491,87 @@ describe("P2-9 finans — kapalı mali dönem", () => {
     expect(ters?.tarih.slice(0, 10)).toBe(bugun());
     const bakiye = await istek<{ bakiye: string }>(`/kasa-banka/kasalar/${kasa.veri.id}`, { jeton });
     expect(Number(bakiye.veri.bakiye)).toBe(0);
+  });
+});
+
+describe("KRD — banka kredisi kullanım, taksit, geri alma ve muhasebe", () => {
+  it("taksitli kredi hesaba net girer, taksit anapara + finansman gideri olarak öder, rotatif limiti aşılamaz", async () => {
+    const { jeton } = await firmaAc("krd", vknUret(true));
+    const banka = await istek<{ id: string }>("/kasa-banka/bankalar", { method: "POST", jeton, body: { ad: "Kredi Hesabı", bankaAdi: "Kabul Bankası", dovizCinsi: "TRY" } });
+    expect(banka.durum, JSON.stringify(banka.veri)).toBe(201);
+    const bakiye = async () => Number((await istek<{ bakiye: string }>(`/kasa-banka/bankalar/${banka.veri.id}`, { jeton })).veri.bakiye);
+
+    const plan = krediPlaniHesapla({ tur: "taksitli", planTuru: "esit_taksit", anapara: 120_000, aylikFaiz: 3, bsmvOrani: 5, kkdfOrani: 0, kullanimTarihi: "2026-09-01", taksitSayisi: 24, ilkTaksitTarihi: "2026-10-01" });
+    const kredi = await istek<{ id: string }>("/kasa-banka/krediler", {
+      method: "POST", jeton,
+      body: {
+        bankaHesapId: banka.veri.id, ad: "Kabul ticari kredi", tur: "taksitli", planTuru: "esit_taksit", anapara: "120000", aylikFaiz: 3, bsmvOrani: 5, kkdfOrani: 0,
+        kullanimTarihi: "2026-09-01", taksitSayisi: 24, tahsisUcreti: "600",
+        plan: plan.map((s) => ({ vadeTarihi: s.vadeTarihi, anapara: s.anapara.toFixed(2), faiz: s.faiz.toFixed(2), bsmv: s.bsmv.toFixed(2), kkdf: s.kkdf.toFixed(2) })),
+      },
+    });
+    expect(kredi.durum, JSON.stringify(kredi.veri)).toBe(201);
+    expect(await bakiye()).toBeCloseTo(119_400, 2);
+
+    type Ayrinti = { kalanAnapara: string; durum: string; taksitler: Array<{ id: string; anapara: string; faiz: string; bsmv: string; kkdf: string; toplam: string; islemId: string | null }>; islemler: Array<{ id: string; tip: string }> };
+    const ayrinti = async () => (await istek<Ayrinti>(`/kasa-banka/krediler/${kredi.veri.id}`, { jeton })).veri;
+    const ilk = (await ayrinti()).taksitler[0];
+    const ode = await istek(`/kasa-banka/krediler/${kredi.veri.id}/islemler`, {
+      method: "POST", jeton,
+      body: { tip: "taksit", taksitId: ilk.id, tarih: "2026-10-01", anapara: ilk.anapara, faiz: ilk.faiz, bsmv: ilk.bsmv, kkdf: ilk.kkdf },
+    });
+    expect(ode.durum, JSON.stringify(ode.veri)).toBe(201);
+    expect(await bakiye()).toBeCloseTo(119_400 - Number(ilk.toplam), 2);
+    const odenmis = await ayrinti();
+    expect(Number(odenmis.kalanAnapara)).toBeCloseTo(120_000 - Number(ilk.anapara), 2);
+    expect(odenmis.taksitler[0].islemId).toBeTruthy();
+
+    // Faiz ve vergiler ödenmiş Finansman Giderleri masrafı; tahsis ücreti de.
+    const masraflar = await istek<Array<{ toplam: string; odemeDurumu: string; kategori: { ad: string } }>>("/masraflar", { jeton });
+    const finansman = masraflar.veri.filter((m) => m.kategori.ad === "Finansman Giderleri");
+    expect(finansman.map((m) => Number(m.toplam)).sort((a, b) => a - b)).toEqual([600, Number(ilk.faiz) + Number(ilk.bsmv)].sort((a, b) => a - b));
+    expect(finansman.every((m) => m.odemeDurumu === "odendi")).toBe(true);
+
+    // Muhasebe: kullanım 300/400'e ayrışır (12 ay sonrası 400), taksit 300 + 329 / 102.
+    type Onizleme = { kontroller: unknown[]; fisler: Array<{ aciklama: string; satirlar: Array<{ hesapKodu: string; borc: string; alacak: string }> }> };
+    const muh = await istek<Onizleme>("/mali-musavir/muhasebe/onizleme?baslangic=2026-09-01&bitis=2026-10-31", { jeton });
+    expect(muh.durum, JSON.stringify(muh.veri)).toBe(200);
+    expect(muh.veri.kontroller).toEqual([]);
+    const krediFisleri = muh.veri.fisler.filter((f) => f.aciklama.startsWith("Banka kredisi"));
+    expect(krediFisleri).toHaveLength(2);
+    const uzunVade = plan.filter((s) => s.vadeTarihi > "2027-09-01").reduce((t, s) => t + s.anapara, 0);
+    const kullanimFisi = krediFisleri.find((f) => f.satirlar.some((s) => s.hesapKodu.startsWith("400")))!;
+    expect(Number(kullanimFisi.satirlar.find((s) => s.hesapKodu.startsWith("400"))!.alacak)).toBeCloseTo(uzunVade, 2);
+    expect(Number(kullanimFisi.satirlar.find((s) => s.hesapKodu === "329")!.borc)).toBe(600);
+
+    // Geri alma taksiti yeniden açar, bakiye ve masraf geri döner.
+    const islem = odenmis.islemler.find((i) => i.tip === "taksit")!;
+    const geri = await istek(`/kasa-banka/krediler/islemler/${islem.id}/geri-al`, { method: "POST", jeton });
+    expect(geri.durum, JSON.stringify(geri.veri)).toBe(201);
+    expect(await bakiye()).toBeCloseTo(119_400, 2);
+    expect((await ayrinti()).taksitler[0].islemId).toBeNull();
+
+    // Rotatif: limit aşılamaz; geri ödeme kullanılanı aşamaz.
+    const rotatif = await istek<{ id: string }>("/kasa-banka/krediler", {
+      method: "POST", jeton,
+      body: { bankaHesapId: banka.veri.id, ad: "Kabul rotatif", tur: "rotatif", anapara: "50000", aylikFaiz: 3.5, kullanimTarihi: "2026-09-01" },
+    });
+    expect(rotatif.durum, JSON.stringify(rotatif.veri)).toBe(201);
+    const rIslem = (govde: Record<string, unknown>) => istek<{ message?: string }>(`/kasa-banka/krediler/${rotatif.veri.id}/islemler`, { method: "POST", jeton, body: govde });
+    expect((await rIslem({ tip: "kullanim", tarih: "2026-09-05", anapara: "30000" })).durum).toBe(201);
+    const fazla = await rIslem({ tip: "kullanim", tarih: "2026-09-06", anapara: "25000" });
+    expect(fazla.durum).toBe(400);
+    expect(fazla.veri.message).toContain("limit");
+    expect((await rIslem({ tip: "geri_odeme", tarih: "2026-09-10", anapara: "40000" })).durum).toBe(400);
+    const faiz = await istek<{ faiz: number }>(`/kasa-banka/krediler/${rotatif.veri.id}/rotatif-faiz?bitis=2026-10-05`, { jeton });
+    expect(faiz.veri.faiz).toBeCloseTo(30_000 * 0.035 * 30 / 30, 0);
+
+    // Kullanımı olan rotatif silinmez; kullanım geri alınınca silinir. Taksitli kredi açılış kullanımıyla silinir.
+    expect((await istek(`/kasa-banka/krediler/${rotatif.veri.id}`, { method: "DELETE", jeton })).durum).toBe(409);
+    const rKullanim = (await istek<Ayrinti>(`/kasa-banka/krediler/${rotatif.veri.id}`, { jeton })).veri.islemler.find((i) => i.tip === "kullanim")!;
+    expect((await istek(`/kasa-banka/krediler/islemler/${rKullanim.id}/geri-al`, { method: "POST", jeton })).durum).toBe(201);
+    expect((await istek(`/kasa-banka/krediler/${rotatif.veri.id}`, { method: "DELETE", jeton })).durum).toBe(200);
+    expect((await istek(`/kasa-banka/krediler/${kredi.veri.id}`, { method: "DELETE", jeton })).durum).toBe(200);
+    expect(await bakiye()).toBeCloseTo(0, 2);
   });
 });

@@ -13,7 +13,7 @@ import { api } from "@/lib/api";
 import { AramaSecici } from "@/components/arama-secici";
 import { Alert, Badge, Button, Field, Input, Para, Segmented, Select, Tarih } from "@/components/ui";
 
-export type EslesmeTuru = "cari" | "mevcut_fis" | "masraf" | "gelir" | "virman" | "cek" | "kredi_karti" | "pos" | "odeme_talimati" | "doviz_islem";
+export type EslesmeTuru = "cari" | "mevcut_fis" | "masraf" | "gelir" | "virman" | "cek" | "kredi_karti" | "pos" | "odeme_talimati" | "doviz_islem" | "kredi";
 
 export interface EkstreSatiri {
   id: string;
@@ -59,6 +59,8 @@ interface Oneriler {
   gelirKategorileri: Array<{ id: string; ad: string }>;
   /** ENT-07: aynı tutarda bankaya gönderilmiş/onaylı ödeme talimatları. */
   odemeTalimatlari: Array<{ id: string; no: string | null; aliciUnvan: string; tutar: string; odemeTarihi: string; durum: string; aciklama: string; aciklamadaGeciyor: boolean }>;
+  /** KRD-04: bu hesaba bağlı aktif krediler; girişte yalnız rotatif. */
+  krediler: Array<{ id: string; ad: string; tur: "taksitli" | "spot" | "rotatif"; siradakiTaksit: { id: string; sira: number; vadeTarihi: string; anapara: string; faiz: string; bsmv: string; kkdf: string; toplam: string; tutarTutuyor: boolean } | null }>;
 }
 
 export interface PosHesabi { id: string; ad: string; dovizCinsi: string; bakiye: string; aktif: boolean }
@@ -73,6 +75,7 @@ export const ESLESME_ADI: Record<EslesmeTuru, string> = {
   kredi_karti: "Kredi kartı ödemesi",
   pos: "POS mutabakatı",
   odeme_talimati: "Ödeme talimatı",
+  kredi: "Banka kredisi",
   doviz_islem: "Döviz alım/satımı",
 };
 
@@ -130,6 +133,10 @@ export function EslestirmePaneli({
   const [cekId, setCekId] = useState("");
   const [kartId, setKartId] = useState("");
   const [talimatId, setTalimatId] = useState("");
+  // KRD-04: kredi eşleşmesi; taksitte plan tutarları gelir, banka farklı tahsil ettiyse düzeltilir.
+  const [krediId, setKrediId] = useState("");
+  const [krediIslem, setKrediIslem] = useState<"taksit" | "kullanim" | "geri_odeme" | "faiz">("taksit");
+  const [krediTutar, setKrediTutar] = useState({ anapara: "", faiz: "0", bsmv: "0", kkdf: "0" });
   const [posHesapId, setPosHesapId] = useState("");
   const [brutTutar, setBrutTutar] = useState("");
   const [karsiTutar, setKarsiTutar] = useState("");
@@ -141,6 +148,18 @@ export function EslestirmePaneli({
   const turler: EslesmeTuru[] = giris
     ? ["cari", "mevcut_fis", "gelir", "virman", ...(oneriler?.dovizHesaplari.length ? ["doviz_islem" as const] : []), "cek", ...(posHesaplari.some((p) => p.aktif && p.dovizCinsi === doviz) ? ["pos" as const] : [])]
     : ["cari", "mevcut_fis", "masraf", "virman", ...(oneriler?.dovizHesaplari.length ? ["doviz_islem" as const] : []), "cek", "kredi_karti", "odeme_talimati"];
+  if (oneriler?.krediler?.length) turler.push("kredi");
+
+  function krediSec(id: string, islem?: typeof krediIslem) {
+    const k = oneriler?.krediler.find((x) => x.id === id);
+    setKrediId(id);
+    if (!k) return;
+    const yeniIslem = islem ?? (k.tur === "rotatif" ? (giris ? "kullanim" : "geri_odeme") : "taksit");
+    setKrediIslem(yeniIslem);
+    const t = k.siradakiTaksit;
+    setKrediTutar(yeniIslem === "taksit" && t ? { anapara: t.anapara, faiz: t.faiz, bsmv: t.bsmv, kkdf: t.kkdf } : yeniIslem === "faiz" ? { anapara: "0", faiz: String(mutlak), bsmv: "0", kkdf: "0" } : { anapara: String(mutlak), faiz: "0", bsmv: "0", kkdf: "0" });
+  }
+  const krediToplami = yuvarla(krediIslem === "kullanim" ? Number(krediTutar.anapara) || 0 : (["anapara", "faiz", "bsmv", "kkdf"] as const).reduce((t, k) => t + (Number(krediTutar[k]) || 0), 0));
 
   // Satır değişince her şey sıfırlanır ve öneriler yeniden alınır.
   useEffect(() => {
@@ -241,6 +260,7 @@ export function EslestirmePaneli({
       case "odeme_talimati": return Boolean(talimatId);
       case "pos": return Boolean(posHesapId) && komisyon >= 0;
       case "doviz_islem": return Boolean(karsiHesap) && Number(karsiTutar) > 0;
+      case "kredi": return Boolean(krediId) && krediToplami === yuvarla(mutlak);
     }
   })() && (!kuralKaydet || kuralMetni.trim().length >= 3);
 
@@ -268,6 +288,11 @@ export function EslestirmePaneli({
         kredi_karti: { tur, krediKartiId: kartId },
         odeme_talimati: { tur, talimatId },
         doviz_islem: { tur, karsiKasaId: hesapTuru === "kasa" ? hesapId : null, karsiBankaHesapId: hesapTuru === "banka" ? hesapId : null, karsiTutar: Number(karsiTutar).toFixed(2), aciklama: aciklama || null },
+        kredi: {
+          tur, krediId, islem: krediIslem,
+          taksitId: krediIslem === "taksit" ? oneriler?.krediler.find((k) => k.id === krediId)?.siradakiTaksit?.id ?? null : null,
+          ...Object.fromEntries((["anapara", "faiz", "bsmv", "kkdf"] as const).map((k) => [k, (Number(krediTutar[k]) || 0).toFixed(2)])),
+        },
       }[tur];
       await api(`/kasa-banka/ekstre/satirlar/${satir.id}/eslestir`, { method: "POST", body: JSON.stringify({ ...govde, ...ortak }) });
       onDegisti(`Satır ${ESLESME_ADI[tur].toLocaleLowerCase("tr-TR")} olarak işlendi.${kuralDestekli && kuralKaydet ? " Kural kaydedildi; benzer satırlarda öneri hazır gelecek." : ""}`);
@@ -553,6 +578,45 @@ export function EslestirmePaneli({
                 <p className="match-panel__note">Kart ekstre ödemesi olarak kaydedilir; kart borcundan düşer.</p>
               </div>
             )}
+
+            {tur === "kredi" && (() => {
+              const kredi = oneriler.krediler.find((k) => k.id === krediId);
+              const tutarAlani = (k: "anapara" | "faiz" | "bsmv" | "kkdf", etiket: string) => (
+                <Field label={etiket}><Input type="number" inputMode="decimal" min="0" step="any" value={krediTutar[k]} onChange={(e) => setKrediTutar({ ...krediTutar, [k]: e.target.value })} /></Field>
+              );
+              return (
+                <div className="match-panel__section">
+                  <Field label="Kredi">
+                    <Select value={krediId} onChange={(e) => krediSec(e.target.value)}>
+                      <option value="">Seçin…</option>
+                      {oneriler.krediler.map((k) => (
+                        <option key={k.id} value={k.id}>
+                          {k.ad}{k.siradakiTaksit ? ` · ${k.siradakiTaksit.sira}. taksit ${Number(k.siradakiTaksit.toplam).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}${k.siradakiTaksit.tutarTutuyor ? " ✓" : ""}` : k.tur === "rotatif" ? " · rotatif" : ""}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  {kredi?.tur === "rotatif" && !giris && (
+                    <Field label="İşlem">
+                      <Select value={krediIslem} onChange={(e) => krediSec(krediId, e.target.value as typeof krediIslem)}>
+                        <option value="geri_odeme">Anapara geri ödemesi</option>
+                        <option value="faiz">Faiz tahsili</option>
+                      </Select>
+                    </Field>
+                  )}
+                  {kredi && (
+                    <div className="kredi-form__alanlar">
+                      {krediIslem !== "faiz" && tutarAlani("anapara", "Anapara")}
+                      {(krediIslem === "taksit" || krediIslem === "faiz") && <>{tutarAlani("faiz", "Faiz")}{tutarAlani("bsmv", "BSMV")}{tutarAlani("kkdf", "KKDF")}</>}
+                    </div>
+                  )}
+                  {kredi && krediToplami !== yuvarla(mutlak) && (
+                    <Alert tone="warning">Tutarlar toplamı {krediToplami.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {doviz}, ekstre satırı {mutlak.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {doviz}; bankanın tahsil ettiğine göre düzeltin.</Alert>
+                  )}
+                  <p className="match-panel__note">Kredi işlemi bu satıra bağlı oluşur; faiz ve vergiler Finansman Giderleri'ne yazılır. Geri almak için eşleşmeyi buradan geri alın.</p>
+                </div>
+              );
+            })()}
 
             {tur === "odeme_talimati" && (
               <div className="match-panel__section">

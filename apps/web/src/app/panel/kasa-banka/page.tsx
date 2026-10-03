@@ -550,6 +550,9 @@ export default function KasaBankaSayfasi() {
         <ButtonLabel as="a" href="/panel/kasa-banka/kredi-kartlari">
           Kredi kartları
         </ButtonLabel>
+        <ButtonLabel as="a" href="/panel/kasa-banka/krediler">
+          Banka kredileri
+        </ButtonLabel>
         <ButtonLabel as="a" href="/panel/kasa-banka/cek-senet">
           Çek ve senetler
         </ButtonLabel>

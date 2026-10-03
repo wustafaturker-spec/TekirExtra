@@ -43,6 +43,7 @@ function servisKur(secenek: TxSecenekleri = {}) {
     baglanti: { findMany: vi.fn().mockResolvedValue(secenek.bankaBaglantilari ?? []) },
     bankaEkstreSatir: { groupBy: vi.fn().mockResolvedValue(secenek.bekleyenEkstre ?? []) },
     bankaHesap: { findMany: vi.fn().mockResolvedValue([{ id: "h1", ad: "Ziraat TL" }]) },
+    bankaKrediTaksiti: { findMany: vi.fn().mockResolvedValue([]) },
     personelTatilGunu: { findMany: vi.fn().mockResolvedValue([]) },
     fatura: { findMany: vi.fn().mockResolvedValue(secenek.ihracKayitlilar ?? []) },
     belge: { findMany: vi.fn().mockResolvedValue(secenek.bekleyenIrsaliyeler ?? []) },

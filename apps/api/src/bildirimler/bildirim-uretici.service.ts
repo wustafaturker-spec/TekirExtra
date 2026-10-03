@@ -416,6 +416,7 @@ export class BildirimUreticiService {
     }
 
     girdiler.push(...(await this.kartEkstreUyarilari()));
+    girdiler.push(...(await this.krediTaksitUyarilari()));
     girdiler.push(...(await this.ihracKayitliOzetleri(gun)));
     girdiler.push(...(await this.irsaliyeFaturaOzetleri(gun)));
     return girdiler;
@@ -457,6 +458,41 @@ export class BildirimUreticiService {
       }
     }
     return girdiler;
+  }
+
+  /**
+   * KRD-04: ödenmemiş kredi taksiti; vadeye 3 gün kala uyarı, vadesi geçince
+   * kritik. Anahtar taksit başınadır; ödenince tarama kapatır (`vade:` öneki).
+   */
+  private async krediTaksitUyarilari(): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const bugun = bugunTR();
+    const sinir = new Date(`${bugun}T00:00:00.000Z`);
+    sinir.setUTCDate(sinir.getUTCDate() + KART_UYARI_GUNU);
+    const taksitler = await this.prisma.tenantIslem(tenantId, (tx) => tx.bankaKrediTaksiti.findMany({
+      where: { islemId: null, vadeTarihi: { lte: sinir }, kredi: { durum: "aktif" } },
+      include: { kredi: { select: { id: true, ad: true, dovizCinsi: true } } },
+      orderBy: { vadeTarihi: "asc" },
+      take: 100,
+    }));
+    return taksitler.map((t): BildirimGirdisi => {
+      const vade = t.vadeTarihi.toISOString().slice(0, 10);
+      const gecikti = vade < bugun;
+      const tutar = `${Number(t.anapara.add(t.faiz).add(t.bsmv).add(t.kkdf).toFixed(2)).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${t.kredi.dovizCinsi}`;
+      const kalanGun = Math.round((Date.parse(vade) - Date.parse(bugun)) / 86_400_000);
+      return {
+        tur: "vade",
+        onem: gecikti ? "kritik" : "uyari",
+        baslik: gecikti ? "Kredi taksiti gecikti" : "Kredi taksitinin vadesi yaklaşıyor",
+        aciklama: `${t.kredi.ad} ${t.sira}. taksit (${tutar}) vadesi ${vade.split("-").reverse().join(".")}${gecikti ? " geçti; banka tahsil ettiyse ödemeyi işleyin" : kalanGun === 0 ? " (bugün)" : ` (${kalanGun} gün kaldı)`}.`,
+        birlesimAnahtari: `vade:kredi:${t.id}:${gecikti ? "gecikti" : "yaklasiyor"}`,
+        kaynakTur: "banka_kredisi",
+        kaynakRef: t.kredi.id,
+        hedefYol: `/panel/kasa-banka/krediler?kredi=${t.kredi.id}`,
+        roller: HEDEF_ROLLER.vade,
+        ...(gecikti ? {} : { sonTarih: new Date(`${vade}T23:59:59+03:00`) }),
+      };
+    });
   }
 
   /**

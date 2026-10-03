@@ -177,6 +177,18 @@ const eslestirOrtak = {
  * Tutarlar hesabın dövizindedir; işaret satırdan gelir.
  */
 export const ekstreEslestirSemasi = z.discriminatedUnion("tur", [
+  /** KRD-04: kredi taksiti, rotatif kullanım/geri ödeme/faiz; tutarlar satırla tutmalıdır. */
+  z.object({
+    tur: z.literal("kredi"),
+    krediId: z.uuid(),
+    islem: z.enum(["taksit", "kullanim", "geri_odeme", "faiz"]),
+    taksitId: z.uuid().optional().nullable(),
+    anapara: pozitifOndalik.optional().nullable(),
+    faiz: pozitifOndalik.optional().nullable(),
+    bsmv: pozitifOndalik.optional().nullable(),
+    kkdf: pozitifOndalik.optional().nullable(),
+    ...eslestirOrtak,
+  }),
   z.object({
     tur: z.literal("cari"),
     cariId: z.uuid(),

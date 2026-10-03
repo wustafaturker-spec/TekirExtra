@@ -543,6 +543,23 @@ saklanmaz, istendiğinde XML'den üretilir.
 >   bekleyen ve yoksayılan satırlarla açıklanan ve açıklanamayan kısma ayrılır.
 > - **Excel (.xlsx)** ekstre CSV ile aynı sütun eşlemesiyle okunur; eski .xls okunmaz.
 
+### 3.5b Banka Kredileri (KRD)
+
+> **Karar 2026-10-03 (finans incelemesi P3-2).** Taksitli, spot ve rotatif
+> krediler izlenir; ödeme planı sistemde hesaplanır, ödemeler banka hesabına
+> işlenir, nakit akışına ve muhasebe aktarımına yansır.
+
+| No | İster | Öncelik |
+|---|---|---|
+| KRD-01 | **Kredi kaydı:** banka hesabı (kullanım ve ödemeler bu hesaptan; kredi dövizi hesabın dövizidir), kredi no/adı, tür (taksitli, spot, rotatif), anapara (rotatifte limit), **aylık** faiz oranı (bankaların verdiği biçim; yıllık karşılığı gösterilir), BSMV ve KKDF oranı (varsayılan %5 ve %0), kullanım tarihi, tahsis ücreti/masraf. Taksitlide taksit sayısı, ilk taksit tarihi ve plan türü (eşit taksit / eşit anapara); spotta vade tarihi. | Z |
+| KRD-02 | **Ödeme planı:** eşit taksitte efektif oran = aylık faiz × (1 + BSMV + KKDF) ile anüite hesaplanır; her taksitte faiz = kalan anapara × aylık oran, BSMV ve KKDF faiz üzerinden, anapara = taksit − faiz − vergiler; yuvarlama farkı son taksite. Eşit anaparada anapara sabit, faiz kalan anapara üzerinden. Spotta tek ödeme: faiz = anapara × aylık oran × gün / 30. Ödenmemiş satırların tarih ve tutarları düzenlenebilir (bankanın planına uydurmak için); toplam anapara krediyle tutmalıdır. | Z |
+| KRD-03 | **Kullanım:** kredi kaydedilince anapara − tahsis ücreti banka hesabına giriş olarak yazılır; tahsis ücreti "Finansman Giderleri" masrafı olur. Rotatifte kullanım ve anapara geri ödemesi ayrı işlemlerdir, kullanılan tutar limiti aşamaz. | Z |
+| KRD-04 | **Taksit ödemesi:** vadesi yaklaşan (3 gün kala uyarı) ve geçen (kritik) taksit Bildirim Merkezi'ne düşer. "Taksiti öde" banka hesabından tek tediye yazar (anapara + faiz + BSMV + KKDF); faiz ve vergiler ödenmiş "Finansman Giderleri" masrafı olur. Tutarlar bankanın tahsil ettiğine göre düzeltilebilir. Banka ekstresinde "Kredi" eşleme türüyle aynı ödeme ekstre satırına bağlı oluşur. Rotatifte faiz tahsili için kullanılan bakiyeden günlük hesaplanan faiz önerilir, tutar düzeltilebilir. | Z |
+| KRD-05 | **Geri alma:** ödeme, kullanım ve rotatif işlemleri açık dönemde geri alınır (banka hareketi ve masraf silinir, taksit yeniden açılır); kapalı dönemde reddedilir. Ekstreye bağlı işlem önce ekstreden geri alınır. Ödemesi olan kredi silinemez. | Z |
+| KRD-06 | **Takip:** kredi listesinde kalan anapara, sıradaki taksit, gecikme ve (rotatifte) kullanılabilir limit; kredi ayrıntısında plan, ödemeler ve işlemler. Bütün taksitler ödenince kredi kapanır. Erken kapama bu sürümde yoktur (son taksitler bankanın tutarıyla elle ödenir). | Z |
+| KRD-07 | **Nakit akışı:** ödenmemiş taksitler vade günlerinde çıkış olarak görünür. | Z |
+| KRD-08 | **Muhasebe aktarımı (MUH):** kullanım B 102 + B 329 (tahsis ücreti, masrafla kapanır) / A 300 (vadesi 12 ay içindeki anapara) + A 400 (sonrası); taksit B 300/400 (anaparanın kullanımda yazıldığı hesap) + B 329 (faiz ve vergiler) / A 102; faiz ve vergi masrafı B 780 / A 329. Rotatif kullanım B 102 / A 300, geri ödeme B 300 / A 102. Kredinin alt hesabı 300.01.<sıra> (400 için 400.01.<sıra>). 400'den 300'e yıl sonu aktarımı mali müşavirdedir. | Z |
+
 ### 3.5a Muhasebe Aktarımı (MUH)
 
 > **Karar 2026-10-03 (finans incelemesi P3-1).** Ürün çift taraflı muhasebe

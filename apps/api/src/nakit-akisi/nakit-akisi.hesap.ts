@@ -18,6 +18,7 @@ export type KalemKaynak =
   | "masraf"
   | "kira"
   | "kart_ekstre"
+  | "kredi_taksit"
   | "bordro"
   | "tekrarlayan_fatura"
   | "odeme_talimati";

@@ -44,13 +44,14 @@ type HamHareket = Prisma.KasaBankaHareketGetPayload<{ select: typeof HAREKET_SEC
 export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: string, bitis: string): Promise<UreticiGirdisi> {
   const aralik = { gte: new Date(`${baslangic}T00:00:00.000Z`), lte: new Date(`${bitis}T00:00:00.000Z`) };
 
-  const [ayar, cariler, kasalar, bankalar, poslar, kartlar, dovizIslemleri] = await Promise.all([
+  const [ayar, cariler, kasalar, bankalar, poslar, kartlar, krediler, dovizIslemleri] = await Promise.all([
     tx.muhasebeAyari.findUnique({ where: { tenantId } }),
     tx.cariHesap.findMany({ select: { id: true, kod: true, unvan: true, tip: true, muhasebeKodu: true } }),
     tx.kasa.findMany({ orderBy: { createdAt: "asc" }, select: { id: true, ad: true, dovizCinsi: true, muhasebeKodu: true } }),
     tx.bankaHesap.findMany({ orderBy: { createdAt: "asc" }, select: { id: true, ad: true, dovizCinsi: true, muhasebeKodu: true } }),
     tx.posHesap.findMany({ orderBy: { createdAt: "asc" }, select: { id: true, ad: true, dovizCinsi: true, muhasebeKodu: true } }),
     tx.krediKarti.findMany({ orderBy: { createdAt: "asc" }, select: { id: true, ad: true, dovizCinsi: true, muhasebeKodu: true } }),
+    tx.bankaKredisi.findMany({ orderBy: { createdAt: "asc" }, select: { id: true, ad: true, dovizCinsi: true, muhasebeKodu: true } }),
     tx.dovizIslemi.findMany({ where: { tarih: aralik } }),
   ]);
 
@@ -61,6 +62,7 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
   hesapEkle("banka", bankalar);
   hesapEkle("pos", poslar);
   hesapEkle("kart", kartlar);
+  hesapEkle("kredi", krediler);
 
   // Döviz alım/satımının kambiyo kaydı işlemin kendi fişindedir; ayrıca fişlenmez.
   const kambiyoMasraflari = new Set(dovizIslemleri.map((d) => d.kambiyoMasrafId).filter((x): x is string => Boolean(x)));
@@ -105,6 +107,8 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
   const ekKartHam = kartIdleri.length ? await tx.krediKartiHareket.findMany({ where: { id: { in: kartIdleri } } }) : [];
   const tumKartHam = [...kartHareketleri, ...ekKartHam];
 
+  const krediIslemleri = await tx.bankaKrediIslemi.findMany({ where: { hareketId: { in: hareketIdleri } } });
+  const krediHareketten = new Map(krediIslemleri.map((i) => [i.hareketId, i]));
   const [masrafOdemeleri, kartOdemeleri] = await Promise.all([
     tx.masrafOdeme.findMany({
       where: { OR: [{ hareketId: { in: hareketIdleri } }, { krediKartiHareketId: { in: tumKartHam.map((k) => k.id) } }] },
@@ -139,6 +143,10 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
     kaynakTur: h.kaynakTur, kaynakRef: h.kaynakRef, hesap: hesapRef(h), karsiHareketId: h.karsiHareketId,
     cariId: h.cariId, faturaId: h.faturaId, faturaTipi: h.fatura?.tip ?? null, faturaKarsiligi: h.faturaKarsiligi, faturaDovizi: h.fatura?.dovizCinsi ?? null,
     masrafId: h.masraf?.id ?? masrafHareketten.get(h.id) ?? null, gelirId: h.gelirKaydi?.id ?? null, kartId: kartHareketten.get(h.id) ?? null,
+    kredi: (() => {
+      const i = krediHareketten.get(h.id);
+      return i ? { id: i.krediId, tip: i.tip, anapara: i.anapara, uzunVadeli: i.uzunVadeliAnapara, masraf: i.masraf, finansman: i.faiz.add(i.bsmv).add(i.kkdf) } : null;
+    })(),
   });
   const kartDovizi = new Map(kartlar.map((k) => [k.id, k.dovizCinsi]));
   const kartGirdisi = (k: (typeof tumKartHam)[number]): KartGirdisi => ({

@@ -15,6 +15,7 @@ function girdi(ek: Partial<UreticiGirdisi> = {}): UreticiGirdisi {
       ["kasa:k", { tur: "kasa", id: "k", ad: "Merkez Kasa", dovizCinsi: "TRY", sira: 1, muhasebeKodu: null }],
       ["banka:b", { tur: "banka", id: "b", ad: "Ziraat", dovizCinsi: "TRY", sira: 1, muhasebeKodu: "102.01.010" }],
       ["banka:u", { tur: "banka", id: "u", ad: "Ziraat USD", dovizCinsi: "USD", sira: 2, muhasebeKodu: null }],
+      ["kredi:kr", { tur: "kredi", id: "kr", ad: "Ticari kredi", dovizCinsi: "TRY", sira: 1, muhasebeKodu: null }],
     ]),
     faturalar: [], hareketler: [], ekHareketler: new Map(), masraflar: [], tumMasraflar: new Map(), gelirler: [], tumGelirler: new Map(),
     cekler: [], tumCekler: new Map(), kartHareketleri: [], ekKartHareketleri: new Map(), dovizIslemleri: [],
@@ -129,5 +130,16 @@ describe("muhasebe fiş üretici (MUH-04)", () => {
     };
     const { fisler } = fisleriUret(girdi({ dovizIslemleri: [d] }));
     expect(ozet(fisler[0])).toEqual(["102.01.010 B 4100.00", "102.01.002 A 4000.00", "646 A 100.00"]);
+  });
+
+  it("kredi kullanımı 300/400'e ayrışır, tahsis ücreti 329; taksit anapara + faiz", () => {
+    const kullanim = hareket({ id: "ku", hesap: { tur: "banka", id: "b" }, tutar: D(99000), tutarTry: D(99000), kaynakTur: "banka_kredisi", kaynakRef: "kr", makbuzNo: null,
+      kredi: { id: "kr", tip: "kullanim", anapara: D(100000), uzunVadeli: D(40000), masraf: D(1000), finansman: D(0) } });
+    const taksit = hareket({ id: "ta", tip: "tediye", hesap: { tur: "banka", id: "b" }, tutar: D(9450), tutarTry: D(9450), kaynakTur: "banka_kredisi", kaynakRef: "kr", makbuzNo: null,
+      kredi: { id: "kr", tip: "taksit", anapara: D(6300), uzunVadeli: D(0), masraf: D(0), finansman: D(3150) } });
+    const { fisler, kontroller } = fisleriUret(girdi({ hareketler: [kullanim, taksit] }));
+    expect(kontroller).toEqual([]);
+    expect(ozet(fisler.find((f) => f.kaynak.id === "ku")!)).toEqual(["102.01.010 B 99000.00", "329 B 1000.00", "300.01.001 A 60000.00", "400.01.001 A 40000.00"]);
+    expect(ozet(fisler.find((f) => f.kaynak.id === "ta")!)).toEqual(["300.01.001 B 6300.00", "329 B 3150.00", "102.01.010 A 9450.00"]);
   });
 });

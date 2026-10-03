@@ -3097,6 +3097,8 @@ enum EkstreEslesmeTuru {
   odeme_talimati
   /// P1-2a: farklı dövizdeki iki hesap arasında döviz alım/satımı.
   doviz_islem
+  /// KRD-04: banka kredisi kullanımı, taksiti ya da rotatif işlemi.
+  kredi
 }
 
 enum EkstreKuralYonu {
@@ -5002,4 +5004,81 @@ model MuhasebeAktarimi {
 
   @@index([tenantId, createdAt])
   @@map("muhasebe_aktarimlari")
+}
+
+/// KRD-01: banka kredisi. Rotatifte anapara limittir.
+model BankaKredisi {
+  id              String              @id @default(uuid()) @db.Uuid
+  tenantId        String              @map("tenant_id") @db.Uuid
+  bankaHesapId    String              @map("banka_hesap_id") @db.Uuid
+  ad              String
+  tur             String
+  planTuru        String?             @map("plan_turu")
+  dovizCinsi      DovizCinsi          @default(TRY) @map("doviz_cinsi")
+  anapara         Decimal             @db.Decimal(15, 2)
+  aylikFaiz       Decimal             @map("aylik_faiz") @db.Decimal(9, 4)
+  bsmvOrani       Decimal             @default(5) @map("bsmv_orani") @db.Decimal(5, 2)
+  kkdfOrani       Decimal             @default(0) @map("kkdf_orani") @db.Decimal(5, 2)
+  kullanimTarihi  DateTime            @map("kullanim_tarihi") @db.Date
+  taksitSayisi    Int?                @map("taksit_sayisi")
+  ilkTaksitTarihi DateTime?           @map("ilk_taksit_tarihi") @db.Date
+  vadeTarihi      DateTime?           @map("vade_tarihi") @db.Date
+  tahsisUcreti    Decimal             @default(0) @map("tahsis_ucreti") @db.Decimal(15, 2)
+  /// KRD-08 / MUH-03: kredinin alt hesap kodu; boşsa 300.01.<sıra>.
+  muhasebeKodu    String?             @map("muhasebe_kodu")
+  durum           String              @default("aktif")
+  aciklama        String?
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @default(now()) @updatedAt @map("updated_at")
+  taksitler       BankaKrediTaksiti[]
+  islemler        BankaKrediIslemi[]
+
+  @@index([tenantId, durum])
+  @@map("banka_kredileri")
+}
+
+/// KRD-03/04: kullanım, taksit ödemesi, rotatif geri ödeme ve faiz tahsili; her biri tek banka hareketi.
+model BankaKrediIslemi {
+  id                String             @id @default(uuid()) @db.Uuid
+  tenantId          String             @map("tenant_id") @db.Uuid
+  krediId           String             @map("kredi_id") @db.Uuid
+  tip               String
+  tarih             DateTime           @db.Date
+  anapara           Decimal            @default(0) @db.Decimal(15, 2)
+  faiz              Decimal            @default(0) @db.Decimal(15, 2)
+  bsmv              Decimal            @default(0) @db.Decimal(15, 2)
+  kkdf              Decimal            @default(0) @db.Decimal(15, 2)
+  masraf            Decimal            @default(0) @db.Decimal(15, 2)
+  /// KRD-08: kullanımda vadesi 12 aydan sonraki anapara (400'e yazılır).
+  uzunVadeliAnapara Decimal            @default(0) @map("uzun_vadeli_anapara") @db.Decimal(15, 2)
+  hareketId         String             @unique @map("hareket_id") @db.Uuid
+  masrafId          String?            @unique @map("masraf_id") @db.Uuid
+  aciklama          String?
+  userId            String?            @map("user_id") @db.Uuid
+  createdAt         DateTime           @default(now()) @map("created_at")
+  kredi             BankaKredisi       @relation(fields: [krediId], references: [id], onDelete: Cascade)
+  taksit            BankaKrediTaksiti?
+
+  @@index([krediId])
+  @@map("banka_kredi_islemleri")
+}
+
+/// KRD-02: ödeme planı satırı; ödenince işleme bağlanır.
+model BankaKrediTaksiti {
+  id         String            @id @default(uuid()) @db.Uuid
+  tenantId   String            @map("tenant_id") @db.Uuid
+  krediId    String            @map("kredi_id") @db.Uuid
+  sira       Int
+  vadeTarihi DateTime          @map("vade_tarihi") @db.Date
+  anapara    Decimal           @db.Decimal(15, 2)
+  faiz       Decimal           @db.Decimal(15, 2)
+  bsmv       Decimal           @db.Decimal(15, 2)
+  kkdf       Decimal           @db.Decimal(15, 2)
+  islemId    String?           @unique @map("islem_id") @db.Uuid
+  kredi      BankaKredisi      @relation(fields: [krediId], references: [id], onDelete: Cascade)
+  islem      BankaKrediIslemi? @relation(fields: [islemId], references: [id], onDelete: SetNull)
+
+  @@unique([krediId, sira])
+  @@index([tenantId, vadeTarihi])
+  @@map("banka_kredi_taksitleri")
 }

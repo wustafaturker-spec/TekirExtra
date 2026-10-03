@@ -198,6 +198,21 @@ export class NakitAkisiService {
         }
       }
 
+      // KRD-07: ödenmemiş kredi taksitleri vade gününde çıkış; geciken bugüne çekilir.
+      const krediTaksitleri = await tx.bankaKrediTaksiti.findMany({
+        where: { islemId: null, kredi: { durum: "aktif" }, vadeTarihi: { lte: new Date(`${ufukSonu}T00:00:00.000Z`) } },
+        include: { kredi: { select: { id: true, ad: true, dovizCinsi: true } } },
+      });
+      for (const t of krediTaksitleri) {
+        const vadeGunu = isoGun(t.vadeTarihi);
+        ekle({
+          kaynak: "kredi_taksit", kaynakId: t.id, yon: "cikis", vade: vadeGunu < bugun ? bugun : vadeGunu, dovizCinsi: t.kredi.dovizCinsi,
+          dovizTutar: Number(t.anapara.add(t.faiz).add(t.bsmv).add(t.kkdf)),
+          aciklama: `${t.kredi.ad} · ${t.sira}. taksit${vadeGunu < bugun ? " (gecikmiş)" : ""}`,
+          baglanti: `/panel/kasa-banka/krediler?kredi=${t.kredi.id}`,
+        });
+      }
+
       // NAK-07: bordro — açık bordroların kalanı, sonraki aylar son dönemin tekrarı.
       const acikBordrolar = await tx.personelBordro.findMany({
         where: { tenantId, durum: { in: ["onaylandi", "kismen_odendi"] } },

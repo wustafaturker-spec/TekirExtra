@@ -5,10 +5,10 @@ import { MUHASEBE_KODU_DESENI } from "@tekirextra/shared";
 import { api } from "@/lib/api";
 import { Alert, Button, Card, Input, Select, TableWrap } from "@/components/ui";
 
-type Tur = "cari" | "kasa" | "banka" | "pos" | "kart";
+type Tur = "cari" | "kasa" | "banka" | "pos" | "kart" | "kredi";
 interface AltHesap { tur: Tur; id: string; kod: string | null; ad: string; tip: string; muhasebeKodu: string | null; varsayilan: string }
 
-const TUR_ADI: Record<Tur, string> = { cari: "Cari", kasa: "Kasa", banka: "Banka", pos: "POS", kart: "Kredi kartı" };
+const TUR_ADI: Record<Tur, string> = { cari: "Cari", kasa: "Kasa", banka: "Banka", pos: "POS", kart: "Kredi kartı", kredi: "Banka kredisi" };
 const CARI_TIPI: Record<string, string> = { musteri: "Müşteri", tedarikci: "Tedarikçi", her_ikisi: "Müşteri + tedarikçi" };
 
 /**

@@ -48,7 +48,7 @@ export interface Kontrol {
 // ─── Girdi tipleri (okuyucunun ürettiği düz kayıtlar) ──────────────────────
 
 export interface CariBilgi { id: string; kod: string; unvan: string; tip: string; muhasebeKodu: string | null }
-export interface HesapBilgi { tur: "kasa" | "banka" | "pos" | "kart"; id: string; ad: string; dovizCinsi: string; sira: number; muhasebeKodu: string | null }
+export interface HesapBilgi { tur: "kasa" | "banka" | "pos" | "kart" | "kredi"; id: string; ad: string; dovizCinsi: string; sira: number; muhasebeKodu: string | null }
 
 export interface FaturaGirdisi {
   id: string; no: string | null; tip: string; tarih: string; cariId: string | null; dovizCinsi: string; kur: Prisma.Decimal;
@@ -65,6 +65,8 @@ export interface HareketGirdisi {
   cariId: string | null; faturaId: string | null; faturaTipi: string | null;
   faturaKarsiligi: Prisma.Decimal | null; faturaDovizi: string | null;
   masrafId: string | null; gelirId: string | null; kartId: string | null;
+  /** KRD-08: banka kredisi işlemi (kullanım, taksit, rotatif geri ödeme/faiz). */
+  kredi?: { id: string; tip: string; anapara: Prisma.Decimal; uzunVadeli: Prisma.Decimal; masraf: Prisma.Decimal; finansman: Prisma.Decimal } | null;
 }
 
 export interface MasrafGirdisi {
@@ -146,9 +148,18 @@ export class HesapCozucu {
 
   hesap(tur: HesapBilgi["tur"], id: string): string {
     const h = this.g.hesaplar.get(`${tur}:${id}`);
-    const ana = this.kod(tur === "kart" ? "kredi_karti" : tur);
+    const ana = this.kod(tur === "kart" ? "kredi_karti" : tur === "kredi" ? "kisa_vadeli_kredi" : tur);
     if (!h) return "";
     return h.muhasebeKodu?.trim() || `${ana}.01.${String(h.sira).padStart(3, "0")}`;
+  }
+
+  /** KRD-08: kredinin 300 alt hesabı; uzun vadeli kısım aynı alt hesapla 400'de. */
+  kredi(id: string, uzun: boolean): string {
+    const kisa = this.hesap("kredi", id);
+    if (!uzun || !kisa) return kisa;
+    const ana = this.kod("kisa_vadeli_kredi");
+    const uzunAna = this.kod("uzun_vadeli_kredi");
+    return kisa === ana || kisa.startsWith(`${ana}.`) ? uzunAna + kisa.slice(ana.length) : `${uzunAna}.01.${String(this.g.hesaplar.get(`kredi:${id}`)?.sira ?? 0).padStart(3, "0")}`;
   }
 
   hesapAdi(tur: HesapBilgi["tur"], id: string): string {
@@ -371,6 +382,22 @@ function hareketFisi(h: HareketGirdisi, g: UreticiGirdisi, c: HesapCozucu, kontr
       return null;
     }
     return { ...asilFis, tarih: h.tarih, aciklama: `Ters kayıt: ${asilFis.aciklama}`, kaynak, satirlar: ayna(asilFis.satirlar) };
+  }
+
+  // KRD-08: kredi hareketinin karşısı anapara (300/400) ve masrafla kapanan faiz/vergi (329).
+  if (h.kredi) {
+    const k = h.kredi;
+    const kur = h.kur;
+    const kisa = TL(k.anapara.sub(k.uzunVadeli), kur);
+    const uzun = TL(k.uzunVadeli, kur);
+    const gider = TL(k.tip === "kullanim" ? k.masraf : k.finansman, kur);
+    const kisaKod = c.kredi(k.id, false);
+    const satirlar = (k.tip === "kullanim"
+      ? [borc(hesapKodu, aciklama, h.tutarTry, hesapDoviz), borc(c.kod("diger_ticari_borc"), `${aciklama} tahsis ücreti`, gider), alacak(kisaKod, aciklama, kisa), alacak(c.kredi(k.id, true), aciklama, uzun)]
+      : [borc(kisaKod, aciklama, kisa), borc(c.kredi(k.id, true), aciklama, uzun), borc(c.kod("diger_ticari_borc"), `${aciklama} faiz ve vergiler`, gider), alacak(hesapKodu, aciklama, h.tutarTry, hesapDoviz)]
+    ).filter(sifirDegil);
+    dengele(satirlar, satirlar.findIndex((s) => s.hesapKodu === kisaKod), kaynak, kontroller);
+    return { tarih: h.tarih, tur: "mahsup", aciklama: `Banka kredisi ${aciklama}`, belgeNo: null, kaynak, satirlar };
   }
 
   const karsi = hareketKarsisi(h, g, c);

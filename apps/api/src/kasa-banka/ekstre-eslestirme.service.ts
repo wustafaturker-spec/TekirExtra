@@ -30,6 +30,7 @@ import { DovizIslemService } from "./doviz-islem.service";
 import { KasaBankaService } from "./kasa-banka.service";
 import type { ekstreEslestirSemasi, ekstreKuralGuncelleSemasi } from "./kasa-banka.semalar";
 import { KrediKartiService } from "./kredi-karti.service";
+import { KrediService } from "./kredi.service";
 
 const D = (deger: Prisma.Decimal.Value) => new Prisma.Decimal(deger);
 const GUN = 86_400_000;
@@ -46,6 +47,7 @@ export class EkstreEslestirmeService {
     private readonly donemKilidi: DonemKilidiService,
     private readonly odemeTalimati: OdemeTalimatiService,
     private readonly dovizIslem: DovizIslemService,
+    private readonly kredi: KrediService,
   ) {}
 
   // ─── ÖNERİLER ──────────────────────────────────────────────────────────────
@@ -111,6 +113,19 @@ export class EkstreEslestirmeService {
           orderBy: { odemeTarihi: "asc" },
           select: { id: true, no: true, aliciUnvan: true, tutar: true, odemeTarihi: true, durum: true, aciklama: true },
         })).map((t) => ({ ...t, tutar: t.tutar.toFixed(2), odemeTarihi: t.odemeTarihi.toISOString().slice(0, 10), aciklamadaGeciyor: Boolean(t.no && satir.aciklama.includes(t.no)) })),
+        // KRD-04: bu hesaba bağlı aktif krediler; taksitlide ilk ödenmemiş taksit, tutarı satırla aynıysa öne.
+        krediler: (await tx.bankaKredisi.findMany({
+          where: { bankaHesapId: satir.bankaHesapId, durum: "aktif", ...(giris ? { tur: "rotatif" } : {}) },
+          include: { taksitler: { where: { islemId: null }, orderBy: { sira: "asc" }, take: 1 } },
+          orderBy: { kullanimTarihi: "asc" },
+        })).map((k) => {
+          const t = k.taksitler[0];
+          const toplam = t ? t.anapara.add(t.faiz).add(t.bsmv).add(t.kkdf) : null;
+          return {
+            id: k.id, ad: k.ad, tur: k.tur,
+            siradakiTaksit: t ? { id: t.id, sira: t.sira, vadeTarihi: t.vadeTarihi.toISOString().slice(0, 10), anapara: t.anapara.toFixed(2), faiz: t.faiz.toFixed(2), bsmv: t.bsmv.toFixed(2), kkdf: t.kkdf.toFixed(2), toplam: toplam!.toFixed(2), tutarTutuyor: toplam!.equals(mutlak) } : null,
+          };
+        }),
       };
     });
   }
@@ -134,6 +149,7 @@ export class EkstreEslestirmeService {
     if (girdi.tur === "gelir" && !giris) throw new BadRequestException("Gelir yalnız hesaba para girişiyle eşleştirilir");
     if (girdi.tur === "kredi_karti" && giris) throw new BadRequestException("Kredi kartı ödemesi yalnız hesaptan para çıkışıyla eşleştirilir");
     if (girdi.tur === "odeme_talimati" && giris) throw new BadRequestException("Ödeme talimatı yalnız hesaptan para çıkışıyla eşleştirilir");
+    if (girdi.tur === "kredi" && giris !== (girdi.islem === "kullanim")) throw new BadRequestException(giris ? "Hesaba giriş yalnız rotatif kredi kullanımıyla eşleştirilir" : "Kredi kullanımı yalnız hesaba girişle eşleştirilir");
 
     // Çek ve kredi kartı kendi servislerinin işleminde yürür: satır önce ayrıca sahiplenilir.
     if (girdi.tur === "cek" || girdi.tur === "kredi_karti") {
@@ -218,6 +234,23 @@ export class EkstreEslestirmeService {
           if (!talimat || talimat.bankaHesapId !== satir.bankaHesapId) throw new BadRequestException("Talimat bu banka hesabından verilmemiş");
           if (!talimat.tutar.equals(mutlak)) throw new BadRequestException(`${talimat.no ?? "Talimat"} tutarı ${talimat.tutar.toFixed(2)}, ekstre satırı ${mutlak.toFixed(2)}; tutarlar eşit olmalı`);
           hareketIdleri.push(...(await this.odemeTalimati.gerceklestirTx(tx, tenantId, girdi.talimatId, tarih, null)).hareketIdleri);
+          break;
+        }
+        case "kredi": {
+          // KRD-04: taksitte tutar verilmezse plandaki tutarlar; toplam satırla tutmalıdır.
+          const taksit = girdi.islem === "taksit" && girdi.taksitId ? await tx.bankaKrediTaksiti.findUnique({ where: { id: girdi.taksitId } }) : null;
+          const parca = (deger: string | null | undefined, plan: Prisma.Decimal | undefined) => (deger ?? plan?.toFixed(2) ?? "0");
+          const tutarlar = {
+            anapara: parca(girdi.anapara, taksit?.anapara ?? (girdi.islem === "faiz" ? undefined : mutlak)),
+            faiz: parca(girdi.faiz, taksit?.faiz),
+            bsmv: parca(girdi.bsmv, taksit?.bsmv),
+            kkdf: parca(girdi.kkdf, taksit?.kkdf),
+          };
+          const toplam = girdi.islem === "kullanim" ? D(tutarlar.anapara) : Object.values(tutarlar).reduce((t, v) => t.add(v), D(0));
+          if (!toplam.equals(mutlak)) throw new BadRequestException(`Kredi tutarları toplamı ${toplam.toFixed(2)}, ekstre satırı ${mutlak.toFixed(2)}; anapara, faiz ve vergileri bankanın tahsil ettiğine göre düzeltin`);
+          const kredi = await tx.bankaKredisi.findUnique({ where: { id: girdi.krediId }, select: { bankaHesapId: true } });
+          if (kredi?.bankaHesapId !== satir.bankaHesapId) throw new BadRequestException("Kredi bu banka hesabına bağlı değil");
+          hareketIdleri.push(await this.kredi.islemTx(tx, tenantId, girdi.krediId, { tip: girdi.islem, taksitId: girdi.taksitId ?? null, tarih, ...tutarlar, aciklama, eksiBakiyeOnay: true }, id));
           break;
         }
         case "doviz_islem": {
@@ -305,6 +338,8 @@ export class EkstreEslestirmeService {
         if (islemId) await this.dovizIslem.geriAlTx(tx, tenantId, islemId, neden, id);
       } else if (tur === "pos") {
         await this.posMutabakatiniSil(tx, tenantId, idler);
+      } else if (tur === "kredi") {
+        for (const hareketId of idler) await this.kredi.islemSilTx(tx, hareketId);
       } else if (tur !== "cek" && tur !== "kredi_karti") {
         let silinecek = idler;
         if (tur === "virman") {

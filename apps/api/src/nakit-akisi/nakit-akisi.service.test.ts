@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NakitAkisiService } from "./nakit-akisi.service";
 
@@ -40,6 +41,12 @@ function kurulum() {
         { id: "ks1", baslik: "Depo", kirayaVeren: "Ev sahibi", odemeGunu: 15, matrah: 1000, kdvOrani: 20, stopajOrani: 20, dovizCinsi: "TRY", baslangicTarihi: g("2026-01-01"), bitisTarihi: null, cariId: null, cari: null, masraflar: [] },
         // Eylül kira masrafı kayıtlı: sözleşme o ay için ayrıca sayılmaz.
         { id: "ks2", baslik: "Ofis", kirayaVeren: "Ev sahibi 2", odemeGunu: 20, matrah: 2000, kdvOrani: 0, stopajOrani: 0, dovizCinsi: "TRY", baslangicTarihi: g("2026-01-01"), bitisTarihi: null, cariId: null, cari: null, masraflar: [{ kiraDonemi: g("2026-09-01") }] },
+      ]),
+    },
+    // KRD-07: ödenmemiş kredi taksiti vade gününde çıkar; gecikmiş olan bugüne çekilir.
+    bankaKrediTaksiti: {
+      findMany: vi.fn().mockResolvedValue([
+        { id: "kt1", sira: 3, vadeTarihi: g("2026-09-25"), anapara: new Prisma.Decimal(900), faiz: new Prisma.Decimal(100), bsmv: new Prisma.Decimal(5), kkdf: new Prisma.Decimal(0), kredi: { id: "kr", ad: "Ticari kredi", dovizCinsi: "TRY" } },
       ]),
     },
     // KSB-10: kart borcu ekstrenin son ödeme gününde çıkar (kesim 23, son ödeme 3).
@@ -116,6 +123,7 @@ describe("NakitAkisiService", () => {
     expect(bul("Kira · Ofis")).toEqual([]); // Eylül masrafı kayıtlı, Ekim ödemesi ufuk dışı
     // Açık dönem (kesim 23.09) 3 Ekim cumartesi → 5 Ekim. Sonraki taksitler kendi
     // ekstrelerinin son ödeme gününde (3 Kasım, 3 Aralık) çıkar; 30 günlük ufkun dışında.
+    expect(bul("Ticari kredi").map((k: { vade: string; tutar: number; kaynak: string }) => [k.kaynak, k.vade, k.tutar])).toEqual([["kredi_taksit", "2026-09-25", 1005]]);
     expect(bul("Şirket kartı").map((k: { vade: string; tutar: number; kaynak: string }) => [k.kaynak, k.vade, k.tutar])).toEqual([["kart_ekstre", "2026-10-05", 250]]);
     expect(bul("Ödeme talimatı")).toMatchObject([{ kaynak: "odeme_talimati", yon: "cikis", tutar: 450, vade: "2026-09-11" }]);
   });

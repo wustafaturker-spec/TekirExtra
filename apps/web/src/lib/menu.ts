@@ -144,6 +144,7 @@ export const MENU: MenuAlani[] = [
     ogeler: [
       { href: "/panel/kasa-banka", ikon: Landmark, baslik: "Kasa & Banka", eslesme: "tam", esanlamlilar: ["tahsilat", "ödeme", "virman", "nakit"] },
       { href: "/panel/kasa-banka/hesap-ekstresi", ikon: FileSpreadsheet, baslik: "Hesap Ekstresi", eslesme: "tam", esanlamlilar: ["kasa ekstresi", "banka hesap ekstresi", "devir", "açılış bakiyesi", "yürüyen bakiye"] },
+      { href: "/panel/kasa-banka/krediler", ikon: Landmark, baslik: "Banka Kredileri", eslesme: "tam", esanlamlilar: ["kredi", "taksit", "rotatif", "spot kredi", "ödeme planı", "bsmv", "kkdf"] },
       { href: "/panel/kasa-banka/kredi-kartlari", ikon: CreditCard, baslik: "Kredi Kartları", eslesme: "tam", esanlamlilar: ["taksit", "ekstre"] },
       { href: "/panel/kasa-banka/pos", ikon: Terminal, baslik: "POS Hesapları", eslesme: "tam", esanlamlilar: ["sanal pos", "iyzico", "paytr"] },
       { href: "/panel/kasa-banka/cek-senet", ikon: ScrollText, baslik: "Çek & Senetler", eslesme: "tam", esanlamlilar: ["portföy", "vade", "ciro"] },

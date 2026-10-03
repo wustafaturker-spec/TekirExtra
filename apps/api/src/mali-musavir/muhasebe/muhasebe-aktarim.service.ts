@@ -39,7 +39,7 @@ export const hesapKodlariSemasi = z.record(z.string(), z.string().trim().max(40)
 });
 
 export const altHesaplarSemasi = z.array(z.object({
-  tur: z.enum(["cari", "kasa", "banka", "pos", "kart"]),
+  tur: z.enum(["cari", "kasa", "banka", "pos", "kart", "kredi"]),
   id: z.uuid(),
   muhasebeKodu: kodSemasi.nullable(),
 })).min(1).max(1000);
@@ -202,6 +202,7 @@ export class MuhasebeAktarimService {
           : k.tur === "kasa" ? await tx.kasa.updateMany({ where: { id: k.id }, data: veri })
           : k.tur === "banka" ? await tx.bankaHesap.updateMany({ where: { id: k.id }, data: veri })
           : k.tur === "pos" ? await tx.posHesap.updateMany({ where: { id: k.id }, data: veri })
+          : k.tur === "kredi" ? await tx.bankaKredisi.updateMany({ where: { id: k.id }, data: veri })
           : await tx.krediKarti.updateMany({ where: { id: k.id }, data: veri });
         if (sonuc.count !== 1) throw new NotFoundException("Alt hesabı değiştirilecek kayıt bulunamadı");
       }
