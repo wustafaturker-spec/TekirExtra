@@ -113,6 +113,10 @@ async function entegratorBagla(jeton: string, saglayici = "izibiz") {
     jeton,
   });
   expect(aktif.durum, JSON.stringify(aktif.veri)).toBe(201);
+
+  // EBLG-62 sonrası: e-belge işlemleri firmanın mükellefiyeti belirtilmeden açılmaz.
+  const firma = await istek("/firma", { method: "PATCH", jeton, body: { efaturaMukellefi: true, earsivMukellefi: true, adres: "Kabul Cad. No:1", ilce: "Kadıköy", il: "İstanbul" } });
+  expect(firma.durum, JSON.stringify(firma.veri)).toBe(200);
   return olustur.veri.id;
 }
 
@@ -215,12 +219,14 @@ beforeAll(async () => {
     throw new Error("dist/main.js yok — kabul testlerinden önce `npm run build` çalıştırın");
   }
 
-  const port = 3100 + Math.floor(Math.random() * 400);
+  const port = 4100 + Math.floor(Math.random() * 400);
   const workerPort = 9500 + Math.floor(Math.random() * 400);
-  taban = `http://127.0.0.1:${port}/api/v1`;
+  // Hız sınırı IP başına ve Redis'te ortak tutulur; testler ayrı bir loopback
+  // adresinden bağlanır ki geliştirme sunucusunu kullanan kişinin sayacı dolmasın.
+  taban = `http://127.0.0.2:${port}/api/v1`;
   sunucu = spawn(process.execPath, [giris], {
     cwd: resolve(__dirname, ".."),
-    env: { ...process.env, PORT: String(port) },
+    env: { ...process.env, PORT: String(port), RATE_LIMIT_MAX: "100000" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   sunucu.stdout?.on("data", (parca) => {
@@ -464,19 +470,20 @@ describe("Kabul Ölçütü 2 — gelen e-Fatura alış faturasına işlenir", ()
     expect(cek.durum, JSON.stringify(cek.veri)).toBe(201);
     await kuyrukIsiniBekle(jeton, cek.veri.isId);
 
-    // Aynı belge ikinci çekimde yinelenmez (EBLG-05)
-    const tekrar = await istek<{ isId: string }>("/ebelge/gelenleri-cek", {
+    // EBLG-11: elle tazeleme saatte bir; hemen ardından gelen ikinci istek nedeniyle reddedilir.
+    const tekrar = await istek<{ message: string }>("/ebelge/gelenleri-cek", {
       method: "POST",
       jeton,
     });
-    await kuyrukIsiniBekle(jeton, tekrar.veri.isId);
+    expect(tekrar.durum, JSON.stringify(tekrar.veri)).toBe(400);
+    expect(tekrar.veri.message).toContain("tazelenebilir");
 
     const kutu = await istek<Array<{ id: string; durum: string; belgeNo: string; satirSayisi: number }>>(
       "/ebelge/gelen",
       { jeton },
     );
     expect(kutu.durum, JSON.stringify(kutu.veri)).toBe(200);
-    // Mock entegratör biri TİCARİ biri TEMEL iki belge döner; tekrarlı çekim çoğaltmaz.
+    // Mock entegratör biri TİCARİ biri TEMEL iki belge döner.
     expect(kutu.veri).toHaveLength(2);
     const gelen = kutu.veri.find((k) => k.belgeNo === "MCK2026000000001")!;
     expect(gelen.durum).toBe("beklemede");
@@ -536,6 +543,7 @@ describe("Kabul Ölçütü 2 — gelen e-Fatura alış faturasına işlenir", ()
         tarih: "2026-02-10",
         cariId,
         faturaId,
+        eksiBakiyeOnay: true, // KSB-12: boş kasadan ödeme
       },
     });
     expect(odeme.durum, JSON.stringify(odeme.veri)).toBe(201);
@@ -607,7 +615,8 @@ describe("R0 kritik regresyon — kesin fatura iptali ters kayıt üretir", () =
     expect(await cariBakiyesi(jeton, cariId)).toBeCloseTo(0, 2);
 
     const hareketler = await istek<Array<{ tip: string; kaynakTur: string; kaynakRef: string }>>(
-      `/stok/${stokId}/hareketler`,
+      // STK-22: iptal çifti varsayılan gizlidir; burada özellikle istenir.
+      `/stok/${stokId}/hareketler?iptaller=1`,
       { jeton },
     );
     expect(hareketler.veri).toEqual(expect.arrayContaining([
@@ -660,6 +669,8 @@ describe("R0 kritik regresyon — kesin fatura iptali ters kayıt üretir", () =
         cariId,
         faturaId: olustur.veri.id,
         aciklama: "Bağlı alış faturası ödemesi",
+        // KSB-12: boş kasadan ödeme eksi bakiye uyarısı verir; test onaylı gönderir.
+        eksiBakiyeOnay: true,
       },
     });
     expect(odeme.durum, JSON.stringify(odeme.veri)).toBe(201);
@@ -777,19 +788,24 @@ describe("R0 kritik regresyon — masraf kısmi ve taksitli kart ödemesi", () =
     expect(detay.veri.odemeler.some((o) => o.kasaId === kasa.veri.id)).toBe(true);
     expect(detay.veri.odemeler.some((o) => o.krediKartiId === kart.veri.id)).toBe(true);
 
-    const kartlar = await istek<Array<{
-      id: string;
-      borc: string;
-      hareketler: Array<{ tutar: string; taksitSayisi: number; taksitler: Array<{ tutar: string }> }>;
-    }>>("/kasa-banka/kredi-kartlari", { jeton });
+    // KSB-10: kart listesi borcu, hareketleri dönem ekstreleri verir. Kesim günü 20;
+    // 01.08 / 01.09 / 01.10 taksitleri sırayla 20.08, 20.09 ve 20.10 dönemlerine düşer.
+    const kartlar = await istek<Array<{ id: string; borc: string }>>("/kasa-banka/kredi-kartlari", { jeton });
     expect(kartlar.durum, JSON.stringify(kartlar.veri)).toBe(200);
-    const kartDetayi = kartlar.veri.find((k) => k.id === kart.veri.id);
-    expect(kartDetayi).toBeDefined();
-    expect(Number(kartDetayi?.borc)).toBe(700);
-    expect(kartDetayi?.hareketler).toHaveLength(1);
-    expect(kartDetayi?.hareketler[0].taksitSayisi).toBe(3);
-    expect(kartDetayi?.hareketler[0].taksitler).toHaveLength(3);
-    expect(kartDetayi?.hareketler[0].taksitler.reduce((t, k) => t + Number(k.tutar), 0)).toBeCloseTo(700, 2);
+    expect(Number(kartlar.veri.find((k) => k.id === kart.veri.id)?.borc)).toBe(700);
+    const taksitler: number[] = [];
+    for (const kesim of ["2026-08-20", "2026-09-20", "2026-10-20"]) {
+      const donem = await istek<{ kalemler: Array<{ kaynak: string; tutar: string; taksitSayisi: number }> }>(
+        `/kasa-banka/kredi-kartlari/${kart.veri.id}/ekstreler/${kesim}`,
+        { jeton },
+      );
+      expect(donem.durum, JSON.stringify(donem.veri)).toBe(200);
+      const taksit = donem.veri.kalemler.filter((k) => k.kaynak === "taksit");
+      expect(taksit, kesim).toHaveLength(1);
+      expect(taksit[0].taksitSayisi).toBe(3);
+      taksitler.push(Number(taksit[0].tutar));
+    }
+    expect(taksitler.reduce((t, x) => t + x, 0)).toBeCloseTo(700, 2);
 
     const fazlaOdeme = await istek(`/masraflar/${masraf.veri.id}/ode`, {
       method: "POST",
@@ -909,7 +925,8 @@ describe("R0 kritik regresyon — POS banka mutabakatı ve geri alma", () => {
       jeton,
       body: {
         ad: "Kabul POS",
-        saglayici: "paytr",
+        // ENT-04a: sanal POS sağlayıcı bağlantısı ister; fiziksel banka POS'u yalnız banka hesabı.
+        saglayici: "banka",
         varsayilanBankaHesapId: banka.veri.id,
         dovizCinsi: "TRY",
       },
@@ -1002,20 +1019,20 @@ describe("R0 kritik regresyon — POS banka mutabakatı ve geri alma", () => {
     const mutabikBanka = await istek<{ bakiye: string }>(`/kasa-banka/bankalar/${banka.veri.id}`, { jeton });
     expect(Number(mutabikBanka.veri.bakiye)).toBe(960);
 
-    const eslesenler = await istek<Array<{ id: string; durum: string; hareketId: string | null }>>(
+    // KSB-06: bağ hareket tarafındadır; satır eşleştiği hareketleri listeler.
+    const eslesenler = await istek<Array<{ id: string; durum: string; hareketler: Array<{ id: string }> }>>(
       `/kasa-banka/ekstre/satirlar?durum=eslesti&bankaHesapId=${banka.veri.id}`,
       { jeton },
     );
     const eslesen = eslesenler.veri.find((s) => s.id === ekstreSatiri!.id);
-    expect(eslesen?.hareketId).toBe(aktarim.veri.gelis.id);
+    expect(eslesen?.hareketler.map((h) => h.id)).toContain(aktarim.veri.gelis.id);
 
-    const geriAl = await istek<{ durum: string; hareketId: string | null }>(
+    const geriAl = await istek<{ durum: string }>(
       `/kasa-banka/ekstre/satirlar/${ekstreSatiri!.id}/geri-al`,
       { method: "POST", jeton },
     );
     expect(geriAl.durum, JSON.stringify(geriAl.veri)).toBe(201);
     expect(geriAl.veri.durum).toBe("beklemede");
-    expect(geriAl.veri.hareketId).toBeNull();
 
     const geriPos = await istek<Array<{ id: string; bakiye: string }>>("/kasa-banka/pos-hesaplari", { jeton });
     expect(Number(geriPos.veri.find((h) => h.id === pos.veri.id)?.bakiye)).toBe(1000);
