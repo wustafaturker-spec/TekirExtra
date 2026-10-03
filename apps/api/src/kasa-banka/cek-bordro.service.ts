@@ -41,38 +41,56 @@ export class CekBordroService {
 
   async listele(sorgu: { tur?: CekSenetBordroTur; baslangic?: string; bitis?: string }) {
     const { tenantId } = aktifBaglam();
-    return this.prisma.tenantIslem(tenantId, (tx) => tx.cekSenetBordro.findMany({
-      where: {
-        tur: sorgu.tur,
-        tarih: { ...(sorgu.baslangic ? { gte: new Date(sorgu.baslangic) } : {}), ...(sorgu.bitis ? { lte: new Date(sorgu.bitis) } : {}) },
-      },
-      orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
-      take: 200,
-      include: { cari: { select: { id: true, kod: true, unvan: true } }, bankaHesap: { select: { id: true, ad: true } } },
-    }));
+    return this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.cekSenetBordro.findMany({
+        where: {
+          tur: sorgu.tur,
+          tarih: { ...(sorgu.baslangic ? { gte: new Date(sorgu.baslangic) } : {}), ...(sorgu.bitis ? { lte: new Date(sorgu.bitis) } : {}) },
+        },
+        orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
+        take: 200,
+        include: { cari: { select: { id: true, kod: true, unvan: true } }, bankaHesap: { select: { id: true, ad: true } } },
+      }),
+    );
   }
 
   async getir(id: string) {
     const { tenantId } = aktifBaglam();
-    const bordro = await this.prisma.tenantIslem(tenantId, (tx) => tx.cekSenetBordro.findUnique({
-      where: { id },
-      include: {
-        cari: { select: { id: true, kod: true, unvan: true } },
-        bankaHesap: { select: { id: true, ad: true, bankaAdi: true, iban: true } },
-        olaylar: {
-          where: { geriAlma: false },
-          orderBy: { createdAt: "asc" },
-          include: {
-            cekSenet: {
-              select: {
-                id: true, tur: true, yon: true, portfoyNo: true, cekNo: true, vadeTarihi: true, tutar: true, dovizCinsi: true, borclu: true,
-                banka: true, sube: true, hesapNo: true, kesideYeri: true, durum: true, onYuzEkId: true, arkaYuzEkId: true,
+    const bordro = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.cekSenetBordro.findUnique({
+        where: { id },
+        include: {
+          cari: { select: { id: true, kod: true, unvan: true } },
+          bankaHesap: { select: { id: true, ad: true, bankaAdi: true, iban: true } },
+          olaylar: {
+            where: { geriAlma: false },
+            orderBy: { createdAt: "asc" },
+            include: {
+              cekSenet: {
+                select: {
+                  id: true,
+                  tur: true,
+                  yon: true,
+                  portfoyNo: true,
+                  cekNo: true,
+                  vadeTarihi: true,
+                  tutar: true,
+                  dovizCinsi: true,
+                  borclu: true,
+                  banka: true,
+                  sube: true,
+                  hesapNo: true,
+                  kesideYeri: true,
+                  durum: true,
+                  onYuzEkId: true,
+                  arkaYuzEkId: true,
+                },
               },
             },
           },
         },
-      },
-    }));
+      }),
+    );
     if (!bordro) throw new NotFoundException("Bordro bulunamadı");
     return bordro;
   }
@@ -86,23 +104,50 @@ export class CekBordroService {
       if (!cari?.aktif) throw new BadRequestException("Aktif cari hesap bulunamadı");
       const firma = girdi.tur === "borc_cikis" ? await tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true } }) : null;
       const verilenNolar = girdi.satirlar.map((s) => s.portfoyNo).filter((n): n is string => Boolean(n));
-      if (new Set(verilenNolar).size !== verilenNolar.length) throw new BadRequestException("Bordroda aynı portföy numarası iki kez kullanılmış");
+      if (new Set(verilenNolar).size !== verilenNolar.length)
+        throw new BadRequestException("Bordroda aynı portföy numarası iki kez kullanılmış");
       const eksik = girdi.satirlar.filter((s) => !s.portfoyNo).length;
       const mevcut = eksik ? (await tx.cekSenet.findMany({ select: { portfoyNo: true } })).map((c) => c.portfoyNo) : [];
       const otomatik = siradakiPortfoyNolari([...mevcut, ...verilenNolar], eksik);
 
       const bordro = await this.bordroAc(tx, tenantId, userId, {
-        tur: girdi.tur, tarih: girdi.tarih, cariId: cari.id, bankaHesapId: null, dovizCinsi: girdi.dovizCinsi, aciklama: girdi.aciklama ?? null,
+        tur: girdi.tur,
+        tarih: girdi.tarih,
+        cariId: cari.id,
+        bankaHesapId: null,
+        dovizCinsi: girdi.dovizCinsi,
+        aciklama: girdi.aciklama ?? null,
         evraklar: girdi.satirlar.map((s) => ({ vadeTarihi: s.vadeTarihi, tutar: s.tutar })),
       });
       const cekler = [];
       for (const satir of girdi.satirlar) {
-        cekler.push(await this.kasaBanka.cekKaydiYaz(tx, tenantId, userId, {
-          tur: satir.tur, yon: girdi.tur === "borc_cikis" ? "verilen" : "alinan", portfoyNo: satir.portfoyNo || otomatik.shift()!,
-          cekNo: satir.cekNo ?? null, islemTarihi: girdi.tarih, vadeTarihi: satir.vadeTarihi, tutar: satir.tutar, dovizCinsi: girdi.dovizCinsi, kur: girdi.kur,
-          borclu: satir.borclu || firma?.unvan || cari.unvan, kesideYeri: satir.kesideYeri ?? null, banka: satir.banka ?? null, sube: satir.sube ?? null,
-          hesapNo: satir.hesapNo ?? null, cariId: cari.id, aciklama: girdi.aciklama ?? null, fizikselKonum: null,
-        }, bordro));
+        cekler.push(
+          await this.kasaBanka.cekKaydiYaz(
+            tx,
+            tenantId,
+            userId,
+            {
+              tur: satir.tur,
+              yon: girdi.tur === "borc_cikis" ? "verilen" : "alinan",
+              portfoyNo: satir.portfoyNo || otomatik.shift()!,
+              cekNo: satir.cekNo ?? null,
+              islemTarihi: girdi.tarih,
+              vadeTarihi: satir.vadeTarihi,
+              tutar: satir.tutar,
+              dovizCinsi: girdi.dovizCinsi,
+              kur: girdi.kur,
+              borclu: satir.borclu || firma?.unvan || cari.unvan,
+              kesideYeri: satir.kesideYeri ?? null,
+              banka: satir.banka ?? null,
+              sube: satir.sube ?? null,
+              hesapNo: satir.hesapNo ?? null,
+              cariId: cari.id,
+              aciklama: girdi.aciklama ?? null,
+              fizikselKonum: null,
+            },
+            bordro,
+          ),
+        );
       }
       return { ...bordro, cekler: cekler.map((c) => ({ id: c.id, portfoyNo: c.portfoyNo })) };
     });
@@ -116,9 +161,18 @@ export class CekBordroService {
     const dovizler = new Set(evraklar.map((e) => e.dovizCinsi));
     if (dovizler.size > 1) throw new BadRequestException("Bir bordrodaki evraklar aynı para biriminde olmalıdır");
     for (const e of evraklar) {
-      if (e.yon !== "alinan" || e.durum !== "portfoyde") throw new BadRequestException(`${e.portfoyNo} portföyde değil; yalnız portföydeki müşteri evrakı ${girdi.tur === "ciro" ? "ciro edilir" : "bankaya verilir"}`);
+      if (e.yon !== "alinan" || e.durum !== "portfoyde")
+        throw new BadRequestException(
+          `${e.portfoyNo} portföyde değil; yalnız portföydeki müşteri evrakı ${girdi.tur === "ciro" ? "ciro edilir" : "bankaya verilir"}`,
+        );
     }
-    const gecis = { durum, islemTarihi: girdi.tarih, aciklama: girdi.aciklama ?? null, ciroCariId: girdi.tur === "ciro" ? girdi.cariId ?? null : null, bankaHesapId: girdi.tur === "ciro" ? null : girdi.bankaHesapId ?? null };
+    const gecis = {
+      durum,
+      islemTarihi: girdi.tarih,
+      aciklama: girdi.aciklama ?? null,
+      ciroCariId: girdi.tur === "ciro" ? (girdi.cariId ?? null) : null,
+      bankaHesapId: girdi.tur === "ciro" ? null : (girdi.bankaHesapId ?? null),
+    };
     for (const e of evraklar) await this.kasaBanka.cekGecisiniDenetle(tenantId, e, gecis);
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
@@ -126,13 +180,20 @@ export class CekBordroService {
         const cari = girdi.cariId ? await tx.cariHesap.findUnique({ where: { id: girdi.cariId }, select: { aktif: true } }) : null;
         if (!cari?.aktif) throw new BadRequestException("Ciro edilecek aktif cari seçin");
       } else {
-        const banka = girdi.bankaHesapId ? await tx.bankaHesap.findUnique({ where: { id: girdi.bankaHesapId }, select: { aktif: true, dovizCinsi: true } }) : null;
+        const banka = girdi.bankaHesapId
+          ? await tx.bankaHesap.findUnique({ where: { id: girdi.bankaHesapId }, select: { aktif: true, dovizCinsi: true } })
+          : null;
         if (!banka?.aktif) throw new BadRequestException("Evrakın verileceği aktif banka hesabını seçin");
-        if (banka.dovizCinsi !== evraklar[0].dovizCinsi) throw new BadRequestException("Banka hesabı ile evrakların para birimi aynı olmalıdır");
+        if (banka.dovizCinsi !== evraklar[0].dovizCinsi)
+          throw new BadRequestException("Banka hesabı ile evrakların para birimi aynı olmalıdır");
       }
       const bordro = await this.bordroAc(tx, tenantId, userId, {
-        tur: girdi.tur, tarih: girdi.tarih, cariId: girdi.tur === "ciro" ? girdi.cariId! : null, bankaHesapId: girdi.tur === "ciro" ? null : girdi.bankaHesapId!,
-        dovizCinsi: evraklar[0].dovizCinsi, aciklama: girdi.aciklama ?? null,
+        tur: girdi.tur,
+        tarih: girdi.tarih,
+        cariId: girdi.tur === "ciro" ? girdi.cariId! : null,
+        bankaHesapId: girdi.tur === "ciro" ? null : girdi.bankaHesapId!,
+        dovizCinsi: evraklar[0].dovizCinsi,
+        aciklama: girdi.aciklama ?? null,
         evraklar: evraklar.map((e) => ({ vadeTarihi: gunMetni(e.vadeTarihi), tutar: e.tutar })),
       });
       for (const e of evraklar) await this.kasaBanka.cekGecisiYaz(tx, tenantId, userId, e, gecis, bordro);
@@ -150,23 +211,38 @@ export class CekBordroService {
     const silinecekAnahtarlar: string[] = [];
     const sonuc = await this.prisma.tenantIslem(tenantId, async (tx) => {
       await tx.$queryRaw`SELECT id FROM cek_senet_bordrolari WHERE id = ${id}::uuid FOR UPDATE`;
-      const bordro = await tx.cekSenetBordro.findUnique({ where: { id }, include: { olaylar: { where: { geriAlindi: false, geriAlma: false }, select: { cekSenetId: true } } } });
+      const bordro = await tx.cekSenetBordro.findUnique({
+        where: { id },
+        include: { olaylar: { where: { geriAlindi: false, geriAlma: false }, select: { cekSenetId: true } } },
+      });
       if (!bordro) throw new NotFoundException("Bordro bulunamadı");
       if (bordro.durum === "geri_alindi") throw new BadRequestException("Bordro zaten geri alındı");
       const cekIdleri = [...new Set(bordro.olaylar.map((o) => o.cekSenetId))];
       const sonuclar = [];
-      for (const cekId of cekIdleri) sonuclar.push(await this.kasaBanka.cekSonIslemiGeriAlTx(tx, tenantId, userId, cekId, `${bordro.no} bordrosu geri alındı: ${neden}`, id));
+      for (const cekId of cekIdleri)
+        sonuclar.push(
+          await this.kasaBanka.cekSonIslemiGeriAlTx(tx, tenantId, userId, cekId, `${bordro.no} bordrosu geri alındı: ${neden}`, id),
+        );
       // Silinen evrakların görüntüleri sahipsiz kalmasın.
       const kalan = new Set((await tx.cekSenet.findMany({ where: { id: { in: cekIdleri } }, select: { id: true } })).map((c) => c.id));
       const silinen = cekIdleri.filter((c) => !kalan.has(c));
       if (silinen.length) {
-        const ekler = await tx.ek.findMany({ where: { sahipTur: "cek_senet", sahipId: { in: silinen } }, select: { id: true, depoAnahtari: true } });
+        const ekler = await tx.ek.findMany({
+          where: { sahipTur: "cek_senet", sahipId: { in: silinen } },
+          select: { id: true, depoAnahtari: true },
+        });
         await tx.ek.deleteMany({ where: { id: { in: ekler.map((e) => e.id) } } });
         silinecekAnahtarlar.push(...ekler.map((e) => e.depoAnahtari));
       }
       await tx.cekSenetBordro.update({ where: { id }, data: { durum: "geri_alindi", geriAlmaNedeni: neden } });
       const tersKayit = sonuclar.some((s) => s.yontem === "ters_kayit");
-      return { yontem: tersKayit ? "ters_kayit" as const : "silindi" as const, no: bordro.no, evrak: cekIdleri.length, silinen: silinen.length, tersKayit };
+      return {
+        yontem: tersKayit ? ("ters_kayit" as const) : ("silindi" as const),
+        no: bordro.no,
+        evrak: cekIdleri.length,
+        silinen: silinen.length,
+        tersKayit,
+      };
     });
     for (const anahtar of silinecekAnahtarlar) await this.depo.sil(anahtar).catch(() => undefined);
     return sonuc;
@@ -176,7 +252,9 @@ export class CekBordroService {
   async pdfUret(id: string, gorunumler: boolean): Promise<{ buffer: Buffer; dosyaAdi: string }> {
     const { tenantId } = aktifBaglam();
     const bordro = await this.getir(id);
-    const firma = await this.prisma.tenantIslem(tenantId, (tx) => tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true } }));
+    const firma = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true } }),
+    );
     const satirlar = bordro.olaylar.filter((o) => o.cekSenet);
     const d = bordro.dovizCinsi;
     const karsi = bordro.bankaHesap
@@ -187,16 +265,25 @@ export class CekBordroService {
       const parcalar: string[] = [];
       for (const o of satirlar) {
         const resimler: string[] = [];
-        for (const [ad, ekId] of [["Ön yüz", o.cekSenet.onYuzEkId], ["Arka yüz", o.cekSenet.arkaYuzEkId]] as const) {
+        for (const [ad, ekId] of [
+          ["Ön yüz", o.cekSenet.onYuzEkId],
+          ["Arka yüz", o.cekSenet.arkaYuzEkId],
+        ] as const) {
           if (!ekId) continue;
           const { ek, icerik } = await this.ekler.indir(ekId);
-          resimler.push(ek.mimeTip.startsWith("image/")
-            ? `<figure style="flex:1;margin:0"><img src="data:${ek.mimeTip};base64,${icerik.toString("base64")}" style="width:100%;max-height:230px;object-fit:contain;border:1px solid #e5e7eb"><figcaption style="font-size:8pt;color:#6b7280">${ad}</figcaption></figure>`
-            : `<div class="kutu" style="flex:1">${ad}: PDF olarak yüklendi (${kacis(ek.dosyaAdi)})</div>`);
+          resimler.push(
+            ek.mimeTip.startsWith("image/")
+              ? `<figure style="flex:1;margin:0"><img src="data:${ek.mimeTip};base64,${icerik.toString("base64")}" style="width:100%;max-height:230px;object-fit:contain;border:1px solid #e5e7eb"><figcaption style="font-size:8pt;color:#6b7280">${ad}</figcaption></figure>`
+              : `<div class="kutu" style="flex:1">${ad}: PDF olarak yüklendi (${kacis(ek.dosyaAdi)})</div>`,
+          );
         }
-        if (resimler.length) parcalar.push(`<div style="break-inside:avoid;margin-bottom:14px"><b>${kacis(o.cekSenet.portfoyNo)}</b> · ${kacis(o.cekSenet.cekNo ?? "")} · ${paraBicim(o.cekSenet.tutar.toString())} ${kacis(d)}<div style="display:flex;gap:10px;margin-top:6px">${resimler.join("")}</div></div>`);
+        if (resimler.length)
+          parcalar.push(
+            `<div style="break-inside:avoid;margin-bottom:14px"><b>${kacis(o.cekSenet.portfoyNo)}</b> · ${kacis(o.cekSenet.cekNo ?? "")} · ${paraBicim(o.cekSenet.tutar.toString())} ${kacis(d)}<div style="display:flex;gap:10px;margin-top:6px">${resimler.join("")}</div></div>`,
+          );
       }
-      if (parcalar.length) gorunumHtml = `<div style="break-before:page"><h3 style="margin:0 0 10px">Evrak görüntüleri</h3>${parcalar.join("")}</div>`;
+      if (parcalar.length)
+        gorunumHtml = `<div style="break-before:page"><h3 style="margin:0 0 10px">Evrak görüntüleri</h3>${parcalar.join("")}</div>`;
     }
     const html = sayfaSablonu({
       baslik: BORDRO_BASLIGI[bordro.tur],
@@ -255,10 +342,20 @@ export class CekBordroService {
 
   // ─── YARDIMCILAR ───────────────────────────────────────────────────────────
 
-  private async bordroAc(tx: Prisma.TransactionClient, tenantId: string, userId: string, g: {
-    tur: CekSenetBordroTur; tarih: string; cariId: string | null; bankaHesapId: string | null; dovizCinsi: DovizKodu; aciklama: string | null;
-    evraklar: Array<{ vadeTarihi: string; tutar: Prisma.Decimal.Value }>;
-  }) {
+  private async bordroAc(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    userId: string,
+    g: {
+      tur: CekSenetBordroTur;
+      tarih: string;
+      cariId: string | null;
+      bankaHesapId: string | null;
+      dovizCinsi: DovizKodu;
+      aciklama: string | null;
+      evraklar: Array<{ vadeTarihi: string; tutar: Prisma.Decimal.Value }>;
+    },
+  ) {
     const yil = Number(g.tarih.slice(0, 4));
     const [{ son_sira: sira }] = await tx.$queryRaw<Array<{ son_sira: number }>>`
       INSERT INTO cek_senet_bordro_sayaclari (tenant_id, yil, son_sira) VALUES (${tenantId}::uuid, ${yil}, 1)
@@ -266,9 +363,18 @@ export class CekBordroService {
       RETURNING son_sira`;
     return tx.cekSenetBordro.create({
       data: {
-        tenantId, no: bordroNoBicimle(yil, sira), tur: g.tur, tarih: new Date(g.tarih), cariId: g.cariId, bankaHesapId: g.bankaHesapId, dovizCinsi: g.dovizCinsi,
-        toplam: g.evraklar.reduce((t, e) => t.add(D(e.tutar)), D(0)), adet: g.evraklar.length, ortalamaVade: new Date(ortalamaVade(g.evraklar)),
-        aciklama: g.aciklama, userId,
+        tenantId,
+        no: bordroNoBicimle(yil, sira),
+        tur: g.tur,
+        tarih: new Date(g.tarih),
+        cariId: g.cariId,
+        bankaHesapId: g.bankaHesapId,
+        dovizCinsi: g.dovizCinsi,
+        toplam: g.evraklar.reduce((t, e) => t.add(D(e.tutar)), D(0)),
+        adet: g.evraklar.length,
+        ortalamaVade: new Date(ortalamaVade(g.evraklar)),
+        aciklama: g.aciklama,
+        userId,
       },
     });
   }
