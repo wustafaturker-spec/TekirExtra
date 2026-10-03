@@ -415,11 +415,11 @@ export default function KasaBankaSayfasi() {
       {hata && <Alert tone="error">{hata}</Alert>}
       {basari && <Alert tone="success">{basari}</Alert>}
       <section className="treasury-kpis">
-        <div className="is-lead">
+        <a className="is-lead" href="/panel/kasa-banka/nakit-pozisyonu" title="Nakit pozisyonunu aç">
           <span>TRY likidite</span>
           <strong>{para(ozet.toplam)}</strong>
-          <small>Aktif kasa ve banka hesapları</small>
-        </div>
+          <small>Aktif kasa ve banka hesapları · nakit pozisyonu →</small>
+        </a>
         <div>
           <span>Bugünkü giriş</span>
           <strong>{para(ozet.giris)}</strong>

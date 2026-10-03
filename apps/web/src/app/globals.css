@@ -4666,3 +4666,12 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 @media (max-width: 900px) { .kredi-duzen { grid-template-columns: 1fr; } }
 .kredi-form .kredi-tutar { max-width: 92px; padding-left: .4rem; padding-right: .4rem; }
 .kredi-form table input[type="date"] { min-width: 128px; }
+
+/* NAK-15: nakit pozisyonu. */
+.nakit-iki { display: grid; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.nakit-iki > * { min-width: 0; }
+.nakit-kaynak { border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; font-size: .74rem; gap: .4rem 1.2rem; padding: .7rem 1rem; }
+.kredi-page tr.is-negative td { color: var(--danger); }
+@media (max-width: 900px) { .nakit-iki { grid-template-columns: 1fr; } }
+.nakit-iki table { min-width: 0; width: 100%; }
+.nakit-iki td:nth-child(2) { white-space: normal; }

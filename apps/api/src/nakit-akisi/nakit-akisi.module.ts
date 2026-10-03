@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { DovizModule } from "../doviz/doviz.module";
 import { NakitAkisiController } from "./nakit-akisi.controller";
 import { NakitAkisiService } from "./nakit-akisi.service";
+import { NakitPozisyonuService } from "./nakit-pozisyonu.service";
 
-@Module({ imports: [DovizModule], controllers: [NakitAkisiController], providers: [NakitAkisiService] })
+@Module({ imports: [DovizModule], controllers: [NakitAkisiController], providers: [NakitAkisiService, NakitPozisyonuService] })
 export class NakitAkisiModule {}

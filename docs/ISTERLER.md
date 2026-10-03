@@ -733,6 +733,7 @@ diyordu; NAK bu ekranın yerini alır.
 | NAK-12 | Bir senaryoda bakiye eksiye düşüyorsa ilk düştüğü gün ve açık tutar gösterilmelidir; hazır "risk seviyesi" ya da kalıp tavsiye metni üretilmez. | Z |
 | NAK-13 | Nakit akışı yalnız **yönetici** ve **muhasebe** rollerine açıktır; mali müşavir dahil diğer roller göremez. | Z |
 | NAK-14 | `/panel/nakit-akisi` ekranı eklenir; eski AI sayfasındaki nakit tahmini kartı ve API ucu kaldırılıp yeni ekrana yönlendirilir. | Z |
+| NAK-15 | **Nakit pozisyonu** (karar 2026-10-03, finans incelemesi P3-3): anlık durumda hazır değerler (aktif kasa ve banka bakiyeleri, POS'ta bankaya geçmeyi bekleyen tutar, portföydeki/tahsildeki/teminattaki alınan çek-senet) ve kısa vadeli finansal borçlar (kredi kartı borcu, aktif kredilerin kalan anaparası, ödenmemiş verilen çek-senet) döviz bazında ve TL karşılığı (TCMB döviz alış; kuru olmayan döviz uyarılır, toplama girmez) ile gösterilir; net pozisyon = hazır değerler − finansal borçlar. Yanında 7 ve 30 gün içindeki vadeler (nakit akışı tahmininden: fatura, çek, kart, kredi taksiti, masraf, kira, maaş…) giriş/çıkış ve kaynak kırılımıyla; ayrıntı için Nakit Akışı ekranına bağlantı. Yetki nakit akışıyla aynıdır. | Z |
 
 ### 3.12 Bütçe (BUT)
 
