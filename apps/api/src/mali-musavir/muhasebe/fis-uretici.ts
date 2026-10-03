@@ -26,7 +26,7 @@ export interface FisSatiri {
 }
 
 export interface Kaynak {
-  tur: "fatura" | "hareket" | "masraf" | "gelir" | "cek" | "kart" | "doviz_islem";
+  tur: "fatura" | "hareket" | "masraf" | "gelir" | "cek" | "kart" | "doviz_islem" | "cari_hareket";
   id: string;
   etiket: string;
 }
@@ -97,6 +97,12 @@ export interface DovizIslemGirdisi {
   giren: { hesap: { tur: "kasa" | "banka" | "pos"; id: string }; tutar: Prisma.Decimal; doviz: string; kur: Prisma.Decimal; tl: Prisma.Decimal };
 }
 
+/** CARI-28: elle girilen cari düzeltmesi (açılış bakiyesi hariç). */
+export interface CariDuzeltmeGirdisi {
+  id: string; cariId: string; tip: "borc" | "alacak"; tarih: string; tutar: Prisma.Decimal; dovizCinsi: string; kur: Prisma.Decimal; tutarTry: Prisma.Decimal;
+  aciklama: string | null; karsiHesapKodu: string | null;
+}
+
 export interface UreticiGirdisi {
   hesapKodlari: Partial<Record<MuhasebeHesapAnahtari, string>>;
   cariler: Map<string, CariBilgi>;
@@ -115,6 +121,8 @@ export interface UreticiGirdisi {
   kartHareketleri: KartGirdisi[];
   ekKartHareketleri: Map<string, KartGirdisi>;
   dovizIslemleri: DovizIslemGirdisi[];
+  /** Eski çağıranlar için isteğe bağlı. */
+  cariDuzeltmeleri?: CariDuzeltmeGirdisi[];
   baslangic: string;
   bitis: string;
 }
@@ -458,6 +466,23 @@ function dovizIslemFisi(d: DovizIslemGirdisi, c: HesapCozucu, kontroller: Kontro
   return { tarih: d.tarih, tur: "mahsup", aciklama: `Döviz alım/satımı ${aciklama}`, belgeNo: null, kaynak, satirlar };
 }
 
+/**
+ * CARI-28: elle cari düzeltmesi. Borç yönlü: B 120/320 / A karşı (varsayılan 679);
+ * alacak yönlü: B karşı (varsayılan 689) / A 120/320. Tedarikçi carisi 320'de.
+ */
+function cariDuzeltmeFisi(h: CariDuzeltmeGirdisi, c: HesapCozucu): Fis {
+  const cariAd = c.cariAdi(h.cariId);
+  const kaynak: Kaynak = { tur: "cari_hareket", id: h.id, etiket: `Cari düzeltme ${cariAd}`.trim() };
+  const cariKodu = c.cari(h.cariId, c.cariTipi(h.cariId) === "tedarikci" ? "satici" : "alici");
+  const karsiKodu = h.karsiHesapKodu?.trim() || c.kod(h.tip === "borc" ? "cari_duzeltme_gelir" : "cari_duzeltme_gider");
+  const aciklama = `${cariAd}${h.aciklama ? ` · ${h.aciklama}` : ""}`.slice(0, 200);
+  const doviz = dovizBilgisi(h.dovizCinsi, h.tutar, h.kur);
+  const satirlar = h.tip === "borc"
+    ? [borc(cariKodu, aciklama, h.tutarTry, doviz), alacak(karsiKodu, aciklama, h.tutarTry)]
+    : [borc(karsiKodu, aciklama, h.tutarTry), alacak(cariKodu, aciklama, h.tutarTry, doviz)];
+  return { tarih: h.tarih, tur: "mahsup", aciklama: `Cari düzeltme ${aciklama}`, belgeNo: null, kaynak, satirlar };
+}
+
 // ─── Giriş noktası ────────────────────────────────────────────────────────
 
 export function fisleriUret(g: UreticiGirdisi): { fisler: Fis[]; kontroller: Kontrol[] } {
@@ -476,7 +501,8 @@ export function fisleriUret(g: UreticiGirdisi): { fisler: Fis[]; kontroller: Kon
   for (const cek of g.cekler) for (const f of cekFisleri(cek, g, c, kontroller)) ekle(f);
   for (const k of g.kartHareketleri) ekle(kartFisi(k, g, c, kontroller));
   for (const d of g.dovizIslemleri) ekle(dovizIslemFisi(d, c, kontroller));
-  const sira: Record<Kaynak["tur"], number> = { fatura: 0, masraf: 1, gelir: 2, cek: 3, kart: 4, doviz_islem: 5, hareket: 6 };
+  for (const h of g.cariDuzeltmeleri ?? []) ekle(cariDuzeltmeFisi(h, c));
+  const sira: Record<Kaynak["tur"], number> = { fatura: 0, masraf: 1, gelir: 2, cek: 3, kart: 4, doviz_islem: 5, cari_hareket: 6, hareket: 7 };
   fisler.sort((a, b) => a.tarih.localeCompare(b.tarih) || sira[a.kaynak.tur] - sira[b.kaynak.tur] || (a.belgeNo ?? "").localeCompare(b.belgeNo ?? ""));
   return { fisler, kontroller };
 }

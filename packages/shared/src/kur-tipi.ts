@@ -18,6 +18,11 @@ export function hareketKurTipi(hareketTipi: string): KurTipi {
   return hareketTipi === "tahsilat" || hareketTipi === "virman_gelis" ? "alis" : "satis";
 }
 
+/** Elle cari hareketi faturayla aynı kuralı izler: borç (satış faturası gibi) alış, alacak satış. */
+export function cariHareketKurTipi(tip: "borc" | "alacak"): KurTipi {
+  return tip === "borc" ? "alis" : "satis";
+}
+
 /** Giriş yönlü işlem (gelir, virman, açılış, POS aktarımı, değerleme) alış; çıkış yönlü (masraf, kira, kart harcaması, kesinti) satış. */
 export const GIRIS_KUR_TIPI: KurTipi = "alis";
 export const CIKIS_KUR_TIPI: KurTipi = "satis";

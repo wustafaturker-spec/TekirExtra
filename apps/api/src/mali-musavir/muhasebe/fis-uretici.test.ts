@@ -142,4 +142,18 @@ describe("muhasebe fiş üretici (MUH-04)", () => {
     expect(ozet(fisler.find((f) => f.kaynak.id === "ku")!)).toEqual(["102.01.010 B 99000.00", "329 B 1000.00", "300.01.001 A 60000.00", "400.01.001 A 40000.00"]);
     expect(ozet(fisler.find((f) => f.kaynak.id === "ta")!)).toEqual(["300.01.001 B 6300.00", "329 B 3150.00", "102.01.010 A 9450.00"]);
   });
+
+  it("elle cari düzeltmesi: borç 120/679, tedarikçide alacak 689/320, karşı hesap seçilebilir (CARI-28)", () => {
+    const duz = (ek: Record<string, unknown>) => ({ id: "c", cariId: "m", tip: "borc" as const, tarih: "2026-09-20", tutar: D(100), dovizCinsi: "USD", kur: D(40), tutarTry: D(4000), aciklama: null, karsiHesapKodu: null, ...ek });
+    const { fisler, kontroller } = fisleriUret(girdi({ cariDuzeltmeleri: [
+      duz({ id: "c1" }),
+      duz({ id: "c2", cariId: "t", tip: "alacak", dovizCinsi: "TRY", kur: D(1), tutar: D(250), tutarTry: D(250) }),
+      duz({ id: "c3", tutar: D(50), kur: D(1), dovizCinsi: "TRY", tutarTry: D(50), karsiHesapKodu: "659.01" }),
+    ] }));
+    expect(kontroller).toEqual([]);
+    expect(ozet(fisler.find((f) => f.kaynak.id === "c1")!)).toEqual(["120.01.M001 B 4000.00", "679 A 4000.00"]);
+    expect(fisler.find((f) => f.kaynak.id === "c1")!.satirlar[0].doviz).toMatchObject({ cins: "USD" });
+    expect(ozet(fisler.find((f) => f.kaynak.id === "c2")!)).toEqual(["689 B 250.00", "320.05.9 A 250.00"]);
+    expect(ozet(fisler.find((f) => f.kaynak.id === "c3")!)).toEqual(["120.01.M001 B 50.00", "659.01 A 50.00"]);
+  });
 });

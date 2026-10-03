@@ -30,7 +30,9 @@ export const MUHASEBE_HESAPLARI = {
   satis_iade: { kod: "610", ad: "Satıştan iadeler" },
   kur_farki_gelir: { kod: "646", ad: "Kambiyo kârları (kur farkı geliri)" },
   diger_gelir: { kod: "649", ad: "Diğer olağan gelir ve kârlar (kategorisiz gelir)" },
+  cari_duzeltme_gelir: { kod: "679", ad: "Diğer olağandışı gelir ve kârlar (cari düzeltme, borç yönlü)" },
   kur_farki_gider: { kod: "656", ad: "Kambiyo zararları (kur farkı gideri)" },
+  cari_duzeltme_gider: { kod: "689", ad: "Diğer olağandışı gider ve zararlar (cari düzeltme, alacak yönlü)" },
   pazaryeri_kesinti: { kod: "760", ad: "Pazarlama satış ve dağıtım giderleri (pazaryeri kesintisi)" },
   hizmet_alis: { kod: "770", ad: "Genel yönetim giderleri (hizmet alımı, kategorisiz masraf)" },
 } as const;

@@ -55,8 +55,10 @@ export function hareketTuruEtiketi(h: { kaynakTur: string; tip: "borc" | "alacak
       return "Düzeltme";
     case "mali_donem":
       return "Açılış";
+    case "acilis":
+      return "Açılış bakiyesi";
     case "manuel":
-      return "Manuel kayıt";
+      return "Elle düzeltme";
     case "pazaryeri_kesinti":
       return "Pazaryeri kesintisi";
     default:

@@ -1,4 +1,4 @@
-import { EKSTRE_TURLERI, DOVIZ_CINSLERI, YABANCI_DOVIZLER } from "@tekirextra/shared";
+import { EKSTRE_TURLERI, DOVIZ_CINSLERI, MUHASEBE_KODU_DESENI, YABANCI_DOVIZLER } from "@tekirextra/shared";
 import { z } from "zod";
 import { guncellemeSemasi } from "../core/sema";
 
@@ -76,6 +76,16 @@ export const cariGuncelleSemasi = guncellemeSemasi(cariOlusturSemasi).extend({
   vergiDairesi: z.string().max(120).optional().nullable(),
   mersisNo: z.string().regex(/^\d{16}$/, "MERSİS no 16 haneli olmalıdır").optional().nullable(),
   ticaretSicilNo: z.string().max(32).optional().nullable(),
+  // Kartta boşaltılan alan null gelir ve temizlenir (eskiden undefined sayılıp eski değer kalıyordu).
+  temsilciUserId: z.uuid().optional().nullable(),
+  kvkkOnayTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)").optional().nullable(),
+  iban: z.string().max(34).optional().nullable(),
+  karaListeNotu: z.string().max(500).optional().nullable(),
+  fiyatListesiId: z.uuid().optional().nullable(),
+  varsayilanIskonto: pozitifOndalik.optional().nullable(),
+  varsayilanVadeGun: z.number().int().min(0).max(365).optional().nullable(),
+  riskLimiti: pozitifOndalik.optional().nullable(),
+  notlar: z.string().max(2000).optional().nullable(),
 });
 
 /** EBLG-86: alıcının GİB posta kutusunu elle seçme; `null` seçimi kaldırır. */
@@ -121,14 +131,28 @@ export const kisiSemasi = z.object({
   eposta: z.email().optional(),
 });
 
+/**
+ * CARI-27/28: elle cari hareketi — açılış bakiyesi ya da düzeltme. Dövizde kur
+ * boşsa sunucu TCMB kurunu çözer; 1 kabul edilmez (döviz tutarını TL sanmak olur).
+ */
 export const cariHareketSemasi = z.object({
+  tur: z.enum(["acilis", "duzeltme"]).default("duzeltme"),
   tip: z.enum(["borc", "alacak"]),
   tutar: pozitifOndalik,
   dovizCinsi: z.enum(DOVIZLER).default("TRY"),
-  kur: pozitifOndalik.default("1"),
+  kur: pozitifOndalik.optional(),
   tarih: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)"),
   vadeTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)").optional(),
   aciklama: z.string().max(500).optional(),
+  /** Yalnız düzeltmede: muhasebe karşı hesabı; boşsa 679 (borç) / 689 (alacak) eşlemesi. */
+  karsiHesapKodu: z.string().trim().regex(MUHASEBE_KODU_DESENI, "Karşı hesap kodu geçersiz").optional().nullable(),
+}).superRefine((g, ctx) => {
+  if (g.dovizCinsi !== "TRY" && g.kur !== undefined && Number(g.kur) === 1) {
+    ctx.addIssue({ code: "custom", path: ["kur"], message: "Dövizli harekette kur 1 olamaz; boş bırakılırsa TCMB kuru kullanılır" });
+  }
+  if (g.tur === "acilis" && g.karsiHesapKodu) {
+    ctx.addIssue({ code: "custom", path: ["karsiHesapKodu"], message: "Açılış bakiyesi muhasebeye aktarılmaz; karşı hesap girilmez" });
+  }
 });
 
 export const crmEtkilesimSemasi = z.object({

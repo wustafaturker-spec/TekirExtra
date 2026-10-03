@@ -32,7 +32,7 @@ describe("ekstre ayrıntıları (CARI-24/25)", () => {
     expect(sonuc.get("h1")?.fatura).toBeUndefined();
     expect(sonuc.get("h2")).toMatchObject({ hareketTuru: "Tahsilat", odemeSekli: "Banka · Garanti BBVA (Garanti TL)" });
     expect(sonuc.get("h3")).toMatchObject({ hareketTuru: "Çek/senet alındı", belgeNo: "1234567", odemeSekli: "Çek · Akbank · vade 01.12.2026" });
-    expect(sonuc.get("h4")).toMatchObject({ hareketTuru: "Manuel kayıt", belgeNo: null });
+    expect(sonuc.get("h4")).toMatchObject({ hareketTuru: "Elle düzeltme", belgeNo: null });
     // Standart ekstrede kalemler hiç okunmaz.
     expect(t.faturaSatir.findMany).not.toHaveBeenCalled();
   });

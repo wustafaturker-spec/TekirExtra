@@ -46,6 +46,11 @@ export interface EkstreSecenekleri {
 import { cariEbelgeDurumlariniOku, cariEbelgeDurumuBul } from "../ebelge/cari-ebelge";
 import { canliIrsaliyeKutulari, kendiGbEtiketi, postaKutusuSecimi } from "../ebelge/posta-kutusu-secimi";
 import { BaglantilarService } from "../tenant/baglantilar.service";
+import { kurZorunlu } from "../doviz/kur-coz";
+import { cariHareketKurTipi } from "@tekirextra/shared";
+
+/** CARI-28: kullanıcının elle girdiği, silinebilen hareket kaynakları. */
+const ELLE_HAREKET_KAYNAKLARI = ["manuel", "acilis"];
 
 const D = (deger: string | number): Prisma.Decimal => new Prisma.Decimal(deger);
 
@@ -525,34 +530,52 @@ export class CariService {
         data: {
           ...girdi,
           ...kimlik,
-          kvkkOnayTarihi: girdi.kvkkOnayTarihi
-            ? new Date(girdi.kvkkOnayTarihi)
-            : undefined,
-          varsayilanIskonto: girdi.varsayilanIskonto
-            ? D(girdi.varsayilanIskonto)
-            : undefined,
-          riskLimiti: girdi.riskLimiti ? D(girdi.riskLimiti) : undefined,
+          // null temizler, undefined dokunmaz.
+          kvkkOnayTarihi: girdi.kvkkOnayTarihi === undefined ? undefined : girdi.kvkkOnayTarihi && new Date(girdi.kvkkOnayTarihi),
+          varsayilanIskonto: girdi.varsayilanIskonto === undefined ? undefined : girdi.varsayilanIskonto && D(girdi.varsayilanIskonto),
+          riskLimiti: girdi.riskLimiti === undefined ? undefined : girdi.riskLimiti && D(girdi.riskLimiti),
         },
       }),
     );
     return this.gorunum(kayit);
   }
 
-  /** AYR-05: hareketi olan cari silinemez — pasife alınır. */
+  /**
+   * AYR-05: hareketi ya da belgesi olan cari silinemez — pasife alınır. Bağlı
+   * kayıtlar sayılıp mesajda listelenir (eskiden yabancı anahtar hatası 500 dönüyordu).
+   */
   async sil(id: string) {
     const { tenantId } = aktifBaglam();
     if (muhtelifMusteriMi(await this.getir(id))) throw new BadRequestException("Muhtelif Müşteriler sistem carisi silinemez");
-    const hareketSayisi = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.cariHareket.count({ where: { cariId: id } }),
-    );
-    if (hareketSayisi > 0) {
-      throw new BadRequestException(
-        "Hareketi olan cari silinemez; pasife alın (PATCH aktif=false)",
-      );
+    const baglilar = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const [hareket, fatura, belgeler, cek, kasaBanka, masraf, satinAlma, stok] = await Promise.all([
+        tx.cariHareket.count({ where: { cariId: id } }),
+        tx.fatura.count({ where: { cariId: id } }),
+        tx.belge.groupBy({ by: ["tur"], where: { OR: [{ cariId: id }, { tasiyiciCariId: id }] }, _count: { _all: true } }),
+        tx.cekSenet.count({ where: { OR: [{ cariId: id }, { ciroCariId: id }] } }),
+        tx.kasaBankaHareket.count({ where: { cariId: id } }),
+        tx.masraf.count({ where: { cariId: id } }),
+        tx.satinAlmaTeklifi.count({ where: { tedarikciCariId: id } }),
+        tx.stokTedarikci.count({ where: { cariId: id } }),
+      ]);
+      const belge = (tur: string) => belgeler.find((b) => b.tur === tur)?._count._all ?? 0;
+      return ([
+        [hareket, "cari hareketi"], [fatura, "fatura"], [belge("teklif"), "teklif"], [belge("siparis"), "sipariş"], [belge("irsaliye"), "irsaliye"],
+        [cek, "çek/senet"], [kasaBanka, "kasa/banka hareketi"], [masraf, "masraf"], [satinAlma, "satın alma teklifi"], [stok, "stok tedarikçi kaydı"],
+      ] as const).filter(([sayi]) => sayi > 0).map(([sayi, ad]) => `${sayi} ${ad}`);
+    });
+    if (baglilar.length) {
+      throw new BadRequestException(`Bu cariye bağlı kayıtlar var (${baglilar.join(", ")}); silinemez, pasife alın`);
     }
-    await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.cariHesap.delete({ where: { id } }),
-    );
+    try {
+      await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.delete({ where: { id } }));
+    } catch (hata) {
+      // Sayılmayan başka bir bağ (POS, proje, kira sözleşmesi…) da silmeyi engeller.
+      if (hata instanceof Prisma.PrismaClientKnownRequestError && hata.code === "P2003") {
+        throw new BadRequestException("Bu cari başka kayıtlarda kullanılıyor; silinemez, pasife alın");
+      }
+      throw hata;
+    }
   }
 
   async adresEkle(cariId: string, girdi: z.infer<typeof adresSemasi>) {
@@ -745,9 +768,13 @@ export class CariService {
     await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "cari hareketi oluşturma");
     await this.getir(cariId);
     const tutar = D(girdi.tutar);
-    const kur = D(girdi.kur);
-    return this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.cariHareket.create({
+    const tarih = new Date(girdi.tarih);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      // CARI-27: dövizde kur verilmediyse o günün TCMB kuru, yön faturayla aynı (DVZ-09).
+      const kur = girdi.dovizCinsi === "TRY"
+        ? D(1)
+        : girdi.kur ? D(girdi.kur) : await kurZorunlu(tx, girdi.dovizCinsi, tarih, cariHareketKurTipi(girdi.tip), tenantId);
+      return tx.cariHareket.create({
         data: {
           tenantId,
           cariId,
@@ -756,12 +783,40 @@ export class CariService {
           dovizCinsi: girdi.dovizCinsi,
           kur,
           tutarTry: tutar.mul(kur).toDecimalPlaces(2),
-          tarih: new Date(girdi.tarih),
+          tarih,
           vadeTarihi: girdi.vadeTarihi ? new Date(girdi.vadeTarihi) : undefined,
           aciklama: girdi.aciklama,
+          kaynakTur: girdi.tur === "acilis" ? "acilis" : "manuel",
+          karsiHesapKodu: girdi.tur === "acilis" ? null : girdi.karsiHesapKodu || null,
         },
-      }),
-    );
+      });
+    });
+  }
+
+  /**
+   * CARI-28: yalnız elle girilen hareket (açılış bakiyesi ya da düzeltme)
+   * silinir; kapalı dönemde silinemez. Silinen kaydın içeriği denetim izine yazılır.
+   */
+  async hareketSil(cariId: string, hareketId: string) {
+    const { tenantId, userId } = aktifBaglam();
+    const hareket = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHareket.findFirst({ where: { id: hareketId, cariId } }));
+    if (!hareket) throw new NotFoundException("Cari hareketi bulunamadı");
+    if (!ELLE_HAREKET_KAYNAKLARI.includes(hareket.kaynakTur)) {
+      throw new BadRequestException("Yalnız elle girilen hareket silinebilir; bu hareket ilgili belgeden geri alınır");
+    }
+    await this.donemKilidi.tarihDogrula(tenantId, hareket.tarih.toISOString().slice(0, 10), "cari hareketi silme");
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      await tx.cariHareket.delete({ where: { id: hareket.id } });
+      await tx.auditLog.create({
+        data: {
+          tenantId, userId, islem: "cari_hareket_sil", varlik: "cari", varlikId: cariId,
+          detay: {
+            hareketId: hareket.id, tur: hareket.kaynakTur, tip: hareket.tip, tarih: hareket.tarih.toISOString().slice(0, 10),
+            tutar: hareket.tutar.toFixed(2), dovizCinsi: hareket.dovizCinsi, kur: hareket.kur.toString(), tutarTry: hareket.tutarTry.toFixed(2), aciklama: hareket.aciklama,
+          },
+        },
+      });
+    });
   }
 
   /** Ekstre (CARI-04): tarih aralığı + yürüyen bakiye (TRY). */

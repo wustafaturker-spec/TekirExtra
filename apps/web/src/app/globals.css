@@ -4675,3 +4675,8 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 @media (max-width: 900px) { .nakit-iki { grid-template-columns: 1fr; } }
 .nakit-iki table { min-width: 0; width: 100%; }
 .nakit-iki td:nth-child(2) { white-space: normal; }
+
+/* CARI-27/28: elle cari hareketi formu (ekstre sekmesi) */
+.cari-elle-hareket { border: 1px solid var(--border); border-radius: var(--radius); padding: .9rem; }
+.cari-elle-hareket .link-button { background: none; border: 0; color: var(--accent-text); cursor: pointer; font-size: inherit; padding: 0; text-decoration: underline; }
+.cari-elle-hareket__ac { display: flex; justify-content: flex-end; }

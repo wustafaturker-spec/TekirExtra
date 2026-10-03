@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import type { MuhasebeHesapAnahtari } from "@tekirextra/shared";
 import type {
   CariBilgi,
+  CariDuzeltmeGirdisi,
   CekGirdisi,
   DovizIslemGirdisi,
   FaturaGirdisi,
@@ -54,6 +55,8 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
     tx.bankaKredisi.findMany({ orderBy: { createdAt: "asc" }, select: { id: true, ad: true, dovizCinsi: true, muhasebeKodu: true } }),
     tx.dovizIslemi.findMany({ where: { tarih: aralik } }),
   ]);
+  // CARI-28: elle cari düzeltmesi fişlenir; açılış bakiyesi (acilis) fişlenmez.
+  const cariDuzeltmeleri = await tx.cariHareket.findMany({ where: { tarih: aralik, kaynakTur: "manuel" }, orderBy: { tarih: "asc" } });
 
   const hesaplar = new Map<string, HesapBilgi>();
   const hesapEkle = (tur: HesapBilgi["tur"], liste: Array<{ id: string; ad: string; dovizCinsi: string; muhasebeKodu: string | null }>) =>
@@ -197,6 +200,10 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
     kartHareketleri: kartHareketleri.map(kartGirdisi),
     ekKartHareketleri: new Map(tumKartHam.map((k) => [k.id, kartGirdisi(k)])),
     dovizIslemleri: dovizGirdileri,
+    cariDuzeltmeleri: cariDuzeltmeleri.map((h): CariDuzeltmeGirdisi => ({
+      id: h.id, cariId: h.cariId, tip: h.tip, tarih: gun(h.tarih), tutar: h.tutar, dovizCinsi: h.dovizCinsi, kur: h.kur, tutarTry: h.tutarTry,
+      aciklama: h.aciklama, karsiHesapKodu: h.karsiHesapKodu,
+    })),
     baslangic,
     bitis,
   };

@@ -7,6 +7,7 @@ import { kullanimOlayi } from "@/lib/kullanim";
 import { PostaKutusuSecimleri, type PostaKutusuSecimi } from "@/components/posta-kutusu-secimi";
 import { FormGrubu } from "@/components/form-grubu";
 import { Bakiye, CariEkstreTablosu, type EkstreVeri } from "@/components/cari-ekstre-tablosu";
+import { ElleHareketFormu } from "./elle-hareket";
 import { CARI_EBELGE_ETIKETI, EKSTRE_TURU_ADLARI, EKSTRE_TURLERI, vknTcknGecerliMi, type CariEbelgeDurumu, type CariEbelgeTuru, type EkstreTuru, YABANCI_DOVIZLER, type YabanciDoviz } from "@tekirextra/shared";
 import {
   Alert,
@@ -154,6 +155,7 @@ interface CariDetay extends Cari {
   harcamaBirimiAdi?: string | null;
   varsayilanIskonto: string | null;
   fiyatListesiId: string | null;
+  dovizCinsi: string;
   eFaturaMukellefi: boolean | null;
   ebelgeDurumu?: CariEbelgeDurumu & { listeGuncellendi: string | null };
   /** EBLG-86: alıcının GİB posta kutuları ve gönderimde kullanılacak olan. */
@@ -249,6 +251,7 @@ export default function CariSayfasi() {
   const [ekstreBitis, setEkstreBitis] = useState("");
   const [ekstreEposta, setEkstreEposta] = useState("");
   const [ekstreIslemde, setEkstreIslemde] = useState(false);
+  const [elleHareketAcik, setElleHareketAcik] = useState(false);
   const [ekstreIptaller, setEkstreIptaller] = useState(false);
   /** CARI-24/25/26: ekstre türü, döviz ekstresinde gösterim ("" = her döviz ayrı) ve mutabakat metni. */
   const [ekstreTuru, setEkstreTuru] = useState<EkstreTuru>("standart");
@@ -476,10 +479,27 @@ export default function CariSayfasi() {
     finally { setEkstreIslemde(false); }
   }
 
+  /** CARI-27/28: elle hareket sonrası kart (bakiye/risk) ve süzgeçli ekstre yenilenir. */
+  async function elleHareketKaydedildi(mesaj: string) {
+    if (!detay) return;
+    setElleHareketAcik(false);
+    await detayAc(detay.id, true); await ekstreFiltrele(); void yukle(); setBasari(mesaj);
+  }
+
+  async function elleHareketSil(s: { id: string; tarih: string; hareketTuru: string; tutar: string; dovizCinsi: string }) {
+    if (!detay) return;
+    if (!confirm(`${s.tarih.split("-").reverse().join(".")} tarihli ${s.hareketTuru.toLocaleLowerCase("tr-TR")} (${Number(s.tutar).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${s.dovizCinsi}) kalıcı olarak silinsin mi?`)) return;
+    setHata(""); setBasari("");
+    try {
+      await api(`/cari/${detay.id}/hareketler/${s.id}`, { method: "DELETE" });
+      await detayAc(detay.id, true); await ekstreFiltrele(); void yukle(); setBasari("Elle girilen hareket silindi.");
+    } catch (h) { setHata(h instanceof Error ? h.message : "Hareket silinemedi"); }
+  }
+
   async function finansGuncelle(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); if (!detay) return; const veri = new FormData(e.currentTarget);
     setHata(""); setBasari("");
-    try { await api(`/cari/${detay.id}`, { method: "PATCH", body: JSON.stringify({ riskLimiti: String(veri.get("riskLimiti") || "") || undefined, varsayilanVadeGun: veri.get("varsayilanVadeGun") === "" ? undefined : Number(veri.get("varsayilanVadeGun")), varsayilanIskonto: String(veri.get("varsayilanIskonto") || "") || undefined, fiyatListesiId: String(veri.get("fiyatListesiId") || "") || undefined, efaturaProfili: veri.get("efaturaProfili") as "temel" | "ticari", earsivGonderimSekli: veri.get("earsivGonderimSekli") as "elektronik" | "kagit", kamuIdaresi: veri.get("kamuIdaresi") === "on", harcamaBirimiVkn: String(veri.get("harcamaBirimiVkn") || "").trim() || null, harcamaBirimiAdi: String(veri.get("harcamaBirimiAdi") || "").trim() || null }) }); await detayAc(detay.id, true); setBasari("Risk ve finans koşulları güncellendi."); }
+    try { await api(`/cari/${detay.id}`, { method: "PATCH", body: JSON.stringify({ riskLimiti: String(veri.get("riskLimiti") || "") || null, varsayilanVadeGun: veri.get("varsayilanVadeGun") === "" ? null : Number(veri.get("varsayilanVadeGun")), varsayilanIskonto: String(veri.get("varsayilanIskonto") || "") || null, fiyatListesiId: String(veri.get("fiyatListesiId") || "") || null, efaturaProfili: veri.get("efaturaProfili") as "temel" | "ticari", earsivGonderimSekli: veri.get("earsivGonderimSekli") as "elektronik" | "kagit", kamuIdaresi: veri.get("kamuIdaresi") === "on", harcamaBirimiVkn: String(veri.get("harcamaBirimiVkn") || "").trim() || null, harcamaBirimiAdi: String(veri.get("harcamaBirimiAdi") || "").trim() || null }) }); await detayAc(detay.id, true); setBasari("Risk ve finans koşulları güncellendi."); }
     catch (h) { setHata(h instanceof Error ? h.message : "Finans bilgileri güncellenemedi"); }
   }
 
@@ -1298,12 +1318,16 @@ export default function CariSayfasi() {
                 </div>
                 <div className="cari-statement__exports"><Button disabled={!detay} onClick={() => detay && void apiDosyaIndir(ekstreYolu("pdf"), `ekstre-${detay.kod}-${ekstreTuru}.pdf`)}>PDF indir</Button><Button disabled={!detay} onClick={() => detay && void apiDosyaIndir(ekstreYolu("excel"), `ekstre-${detay.kod}-${ekstreTuru}.xlsx`)}>Excel indir</Button></div>
               </div>
+              {/* CARI-27/28: açılış bakiyesi ya da düzeltme; ekstrede elle girilen satır silinebilir. */}
+              {elleHareketAcik
+                ? <ElleHareketFormu cariId={detay.id} varsayilanDoviz={detay.dovizCinsi} onTamam={(m) => void elleHareketKaydedildi(m)} onVazgec={() => setElleHareketAcik(false)} />
+                : <div className="cari-elle-hareket__ac"><Button size="sm" onClick={() => setElleHareketAcik(true)}>+ Açılış bakiyesi / düzeltme ekle</Button></div>}
               <div className="cari-statement__mail"><Field label="Gönderilecek e-posta"><Input type="email" value={ekstreEposta} onChange={(e) => setEkstreEposta(e.target.value)} placeholder="muhasebe@firma.com" /></Field><Button variant="primary" disabled={!ekstreEposta || ekstreIslemde} onClick={() => void ekstreGonder()}>{ekstreIslemde ? "İşleniyor…" : "PDF + Excel e-posta gönder"}</Button></div>
               {!ekstre ? (
                 <p className="subtle" style={{ fontSize: "0.85rem" }}>Ekstre yükleniyor...</p>
               ) : (
                 <>
-                  <CariEkstreTablosu v={ekstre} />
+                  <CariEkstreTablosu v={ekstre} onSil={(satir) => void elleHareketSil(satir)} />
                   {ekstre.tur !== "doviz" && ekstre.dovizOzet.some((o) => o.dovizCinsi !== "TRY") && <div className="cari-statement__currency-summary">
                     <strong>Döviz bazında bakiye</strong>
                     <TableWrap className="cari-statement__currency-table"><thead><tr><th>Döviz</th><th className="num">Devir</th><th className="num">Dönem borç</th><th className="num">Dönem alacak</th><th className="num">Bakiye</th></tr></thead><tbody>{ekstre.dovizOzet.map((ozet) => <tr key={ozet.dovizCinsi}><td><b>{ozet.dovizCinsi}</b></td><td className="num">{Number(ozet.devir).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</td><td className="num">{Number(ozet.borc).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</td><td className="num">{Number(ozet.alacak).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</td><td className="num"><Bakiye deger={ozet.bakiye} birim={ozet.dovizCinsi === "TRY" ? "TL" : ozet.dovizCinsi} /></td></tr>)}</tbody></TableWrap>

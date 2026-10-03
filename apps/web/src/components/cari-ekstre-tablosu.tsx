@@ -8,7 +8,7 @@
  */
 import { Fragment } from "react";
 import { bakiyeYonu, type EkstreTuru } from "@tekirextra/shared";
-import { Badge, TableWrap } from "@/components/ui";
+import { Badge, Button, TableWrap } from "@/components/ui";
 
 const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
 
@@ -82,7 +82,11 @@ export function EkstreOzeti({ devir, borc, alacak, bakiye, birim = "TL" }: { dev
   );
 }
 
-function Aciklama({ s }: { s: EkstreSatir }) {
+/** CARI-28: elle girilen (açılış bakiyesi / düzeltme) satır silinebilir. */
+export const elleHareketMi = (s: { kaynakTur: string }) => s.kaynakTur === "manuel" || s.kaynakTur === "acilis";
+type SilEylemi = ((s: EkstreSatir) => void) | undefined;
+
+function Aciklama({ s, onSil }: { s: EkstreSatir; onSil?: SilEylemi }) {
   const ekler = [
     s.fatura && s.fatura.dovizCinsi !== "TRY" ? `1 ${s.fatura.dovizCinsi} = ${sayi(s.fatura.kur, 4)} TL` : null,
     !s.fatura && s.dovizCinsi !== "TRY" ? `${sayi(s.tutar)} ${s.dovizCinsi} × ${sayi(s.kur, 4)}` : null,
@@ -93,6 +97,7 @@ function Aciklama({ s }: { s: EkstreSatir }) {
     <div className="stack" style={{ gap: ".2rem" }}>
       {(s.aciklama || s.iptal || ekler.length === 0) && <span>{s.aciklama || (ekler.length ? "" : "—")}{s.iptal && <> <Badge variant="neutral">İptal</Badge></>}</span>}
       {ekler.map((e) => <small key={e} className="muted">{e}</small>)}
+      {onSil && elleHareketMi(s) && <span><Button size="sm" variant="ghost" onClick={() => onSil(s)}>Elle girilen kaydı sil</Button></span>}
     </div>
   );
 }
@@ -102,7 +107,7 @@ function Makbuz({ s }: { s: EkstreSatir }) {
 }
 
 /** Standart ve ayrıntılı ekstre: TL yürüyen bakiyeli tek tablo. */
-function TlTablosu({ v }: { v: EkstreVeri }) {
+function TlTablosu({ v, onSil }: { v: EkstreVeri; onSil?: SilEylemi }) {
   const ayrintili = v.tur === "ayrintili";
   const kolon = ayrintili ? 11 : 9;
   return (
@@ -134,7 +139,7 @@ function TlTablosu({ v }: { v: EkstreVeri }) {
                 <td>{s.vadeTarihi ? tarihTR(s.vadeTarihi) : "—"}</td>
                 <td>{s.hareketTuru}</td>
                 <td>{s.belgeNo ?? "—"}</td>
-                <td><Aciklama s={s} /></td>
+                <td><Aciklama s={s} onSil={onSil} /></td>
                 <td>{s.odemeSekli ?? ""} <Makbuz s={s} /></td>
                 {ayrintili && <><td /><td /></>}
                 <td className="num" style={{ color: s.tip === "borc" ? "var(--danger)" : undefined }}>{s.tip === "borc" ? sayi(s.tutarTry) : ""}</td>
@@ -216,7 +221,7 @@ function DovizTablosu({ satirlar, ozet, baslangic, cevrilmis }: { satirlar: Ekst
 
 export { Bakiye };
 
-export function CariEkstreTablosu({ v }: { v: EkstreVeri }) {
+export function CariEkstreTablosu({ v, onSil }: { v: EkstreVeri; onSil?: SilEylemi }) {
   if (v.tur === "doviz" && v.cevrilmis) {
     const c = v.cevrilmis;
     return (
@@ -245,7 +250,7 @@ export function CariEkstreTablosu({ v }: { v: EkstreVeri }) {
   return (
     <>
       <EkstreOzeti devir={v.devirBakiyesi} borc={v.donemBorc} alacak={v.donemAlacak} bakiye={v.donemSonuBakiyesi} />
-      {v.satirlar.length === 0 && !v.baslangic ? <p className="empty">Seçilen tarih aralığında hareket bulunmuyor.</p> : <TlTablosu v={v} />}
+      {v.satirlar.length === 0 && !v.baslangic ? <p className="empty">Seçilen tarih aralığında hareket bulunmuyor.</p> : <TlTablosu v={v} onSil={onSil} />}
     </>
   );
 }

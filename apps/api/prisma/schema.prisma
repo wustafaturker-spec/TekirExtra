@@ -1045,6 +1045,8 @@ model CariHareket {
   aciklama   String?
   kaynakTur  String         @default("manuel") @map("kaynak_tur")
   kaynakRef  String?        @map("kaynak_ref")
+  /// CARI-28: elle düzeltmenin muhasebe karşı hesabı; boşsa 679/689 eşlemesi.
+  karsiHesapKodu String?    @map("karsi_hesap_kodu")
   createdAt  DateTime       @default(now()) @map("created_at")
 
   cari CariHesap @relation(fields: [cariId], references: [id])

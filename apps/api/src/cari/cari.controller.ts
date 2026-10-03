@@ -244,6 +244,13 @@ export class CariController {
     return this.cariService.hareketEkle(id, ayristirma.data);
   }
 
+  @Delete(":id/hareketler/:hareketId")
+  @Roller("muhasebe")
+  @HttpCode(204)
+  async hareketSil(@Param("id") id: string, @Param("hareketId") hareketId: string) {
+    await this.cariService.hareketSil(id, hareketId);
+  }
+
   @Get(":id/crm")
   async crmGetir(@Param("id") id: string) { return this.cariService.crmGetir(id); }
 
