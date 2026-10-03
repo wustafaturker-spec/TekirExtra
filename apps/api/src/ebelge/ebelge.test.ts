@@ -642,6 +642,8 @@ describe("EbelgeService (EBLG-01..08)", () => {
           }),
         ],
       }),
+      // CARI-32: gelen belgenin kaydı cari blokajına takılmaz.
+      { gelenBelge: true },
     );
     expect(guncelle).toHaveBeenCalledWith({
       where: { id: "gelen-1" },
@@ -678,7 +680,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
 
       await service.gelenOnayla("gelen-1", eslesme);
 
-      expect(mockFatura.olustur).toHaveBeenCalledWith(expect.objectContaining({ tip: "alis", ihracKayitliKodu: "701" }));
+      expect(mockFatura.olustur).toHaveBeenCalledWith(expect.objectContaining({ tip: "alis", ihracKayitliKodu: "701" }), { gelenBelge: true });
     });
 
     it("tanınan kodu olmayan ihraç kayıtlı belgeyi işlemez", async () => {

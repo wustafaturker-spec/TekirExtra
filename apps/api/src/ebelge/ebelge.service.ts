@@ -1931,7 +1931,7 @@ export class EbelgeService {
         tevkifatPayda: null,
         gibIstisnaKodu: null,
       })),
-    });
+    }, { gelenBelge: true });
 
     try {
       await this.prisma.tenantIslem(tenantId, (tx) =>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { BOS_ILGILI_KISI, IlgiliKisiAlanlari, ilgiliKisiGovdesi, type IlgiliKisiDegeri } from "@/components/ilgili-kisi-alanlari";
+import { riskOnayiylaGonder } from "@/lib/risk-onayi";
 import { api, ApiHata, apiPdfAc, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
@@ -67,7 +68,7 @@ interface BelgeGorunumu {
 
 const GORUNUM_ANAHTARI = "tekir_belge_gorunumleri";
 
-interface Cari { id: string; kod?: string; unvan: string; vknTckn?: string | null; telefon?: string | null; varsayilanVadeGun?: number | null }
+interface Cari { id: string; aktif?: boolean; karaListe?: boolean; kod?: string; unvan: string; vknTckn?: string | null; telefon?: string | null; varsayilanVadeGun?: number | null }
 interface Stok { id: string; kod: string; ad: string; tip?: string; kullanilabilirMiktar?: string; tedarikciUrunKodlari?: string[]; takipTipi?: "yok" | "lot" | "seri"; anaBirim?: string; birimler?: { ad: string; katsayi: string }[]; barkod?: string | null; varyantlar?: StokVaryant[] }
 interface StokVaryant { id: string; kod: string; ad: string; aktif: boolean; mevcutMiktar: string; barkod?: string | null; nitelikler?: unknown }
 
@@ -826,7 +827,14 @@ export default function BelgelerSayfasi() {
     if (!onayBekleyen) return;
     const id = onayBekleyen.id;
     setOnayBekleyen(null);
-    await eylem(id, "onayla", "Belge onaylandı.");
+    // CARI-32: satış siparişinde risk limiti; yönetici onayı gerekirse gerekçe sorulur.
+    setHata(""); setBasari("");
+    try {
+      const sonuc = await riskOnayiylaGonder((riskOnayGerekcesi) => api<{ riskUyari?: string | null }>(`/belgeler/${id}/onayla`, { method: "POST", body: JSON.stringify({ riskOnayGerekcesi }) }));
+      setBasari(`Belge onaylandı.${sonuc.riskUyari ? ` ⚠ ${sonuc.riskUyari}` : ""}`);
+      if (detay?.id === id) await detayAc(id);
+      void yukle();
+    } catch (h) { setHata(h instanceof Error ? h.message : "İşlem başarısız"); }
   }
 
   async function sil(id: string) {
@@ -1160,10 +1168,11 @@ export default function BelgelerSayfasi() {
                   deger={cariId}
                   onChange={setCariId}
                   placeholder="Ünvan, cari kodu veya VKN ile ara"
-                  secenekler={cariler.map((cari) => ({
+                  secenekler={cariler.filter((cari) => cari.aktif !== false || cari.id === cariId).map((cari) => ({
+                    // CARI-32: pasif cari yeni belgede seçilemez; kara listedeki görünür ama belge açılamaz.
                     deger: cari.id,
-                    baslik: cari.unvan,
-                    aciklama: [cari.kod, cari.vknTckn, cari.telefon].filter(Boolean).join(" · ") || "Cari hesap",
+                    baslik: cari.karaListe ? `⛔ ${cari.unvan}` : cari.unvan,
+                    aciklama: [cari.karaListe ? "Kara listede — belge açılamaz" : null, cari.kod, cari.vknTckn, cari.telefon].filter(Boolean).join(" · ") || "Cari hesap",
                     aramaMetni: [cari.kod, cari.vknTckn, cari.telefon].filter(Boolean).join(" "),
                   }))}
                 />

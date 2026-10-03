@@ -195,8 +195,8 @@ export class BelgelerController {
 
   @Post(":id/onayla")
   @Roller("muhasebe", "satis")
-  async onayla(@Param("id") id: string) {
-    return this.belgelerService.onayla(id);
+  async onayla(@Param("id") id: string, @Body() govde?: { riskOnayGerekcesi?: string | null }) {
+    return this.belgelerService.onayla(id, { riskOnayGerekcesi: typeof govde?.riskOnayGerekcesi === "string" ? govde.riskOnayGerekcesi.slice(0, 500) : null });
   }
 
   /** FTR-29: gönderilmemiş onaylı irsaliyeyi düzeltmek için taslağa geri alır. */

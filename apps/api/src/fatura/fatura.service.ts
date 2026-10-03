@@ -32,7 +32,7 @@ import { birimKatsayisiBul, satirBirimleriniDogrula } from "../stok/birim-cevrim
 import { satirVaryantlariniDogrula } from "../stok/varyant-secimi";
 import { teslimYeriUyarisi, teslimYeriVerisi, teslimYeriniCariyeKaydet } from "./teslim-yeri";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu, kurFarkiTry, odemeOzetiGorunumu } from "./odeme-durumu";
-import { cariRiskleri } from "../cari/cari-risk";
+import { cariIslemDenetle, riskLimitiDenetle } from "../cari/cari-islem-denetimi";
 import type {
   faturaOlusturSemasi,
   faturaGuncelleSemasi,
@@ -535,7 +535,8 @@ export class FaturaService {
     };
   }
 
-  async olustur(girdi: z.infer<typeof faturaOlusturSemasi>) {
+  /** `gelenBelge`: karşı tarafın gelen e-Faturasının kaydı; cari blokajı denetlenmez (CARI-32). */
+  async olustur(girdi: z.infer<typeof faturaOlusturSemasi>, secenekler: { gelenBelge?: boolean } = {}) {
     const { tenantId, userId } = aktifBaglam();
     await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "fatura oluşturma");
 
@@ -564,6 +565,7 @@ export class FaturaService {
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       await this.cariTipiniDogrula(tx, girdi.cariId, girdi.tip);
+      if (!secenekler.gelenBelge) await cariIslemDenetle(tx, girdi.cariId, "fatura", "yeni");
       await satirBirimleriniDogrula(tx, girdi.satirlar);
       await satirVaryantlariniDogrula(tx, girdi.satirlar);
 
@@ -799,6 +801,8 @@ export class FaturaService {
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       await this.cariTipiniDogrula(tx, birlesikGirdi.cariId, birlesikGirdi.tip);
+      // CARI-32: taslak da kara listede düzenlenmez; cari değişiyorsa pasif de olmamalı.
+      await cariIslemDenetle(tx, birlesikGirdi.cariId, "fatura", birlesikGirdi.cariId === fatura.cariId ? "mevcut" : "yeni");
       // Satırları sil ve yeniden ekle
       await tx.faturaSatir.deleteMany({ where: { faturaId: id } });
 
@@ -1157,6 +1161,7 @@ export class FaturaService {
       if (proforma.tip !== "proforma") {
         throw new BadRequestException("Yalnızca proforma faturalar dönüştürülebilir");
       }
+      await cariIslemDenetle(tx, proforma.cariId, "fatura", "yeni");
 
       const yeni = await tx.fatura.create({
         data: {
@@ -1230,6 +1235,7 @@ export class FaturaService {
     }
 
     const yeni = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      await cariIslemDenetle(tx, fatura.cariId, "fatura", "yeni");
       const kopya = await tx.fatura.create({
         data: {
           tenantId,
@@ -1310,8 +1316,8 @@ export class FaturaService {
 
   // ─── FATURA KESİNLEŞTİRME VE ENTEGRASYONLAR (FTR-03/05/06) ───────────────
 
-  async kesinlestir(id: string, veri?: { no?: string; seri?: string }) {
-    const { tenantId } = aktifBaglam();
+  async kesinlestir(id: string, veri?: { no?: string; seri?: string; riskOnayGerekcesi?: string | null }) {
+    const { tenantId, userId, rol } = aktifBaglam();
     const tarih = await this.prisma.tenantIslem(tenantId, (tx) => tx.fatura.findUnique({ where: { id }, select: { tarih: true } }));
     if (!tarih) throw new NotFoundException("Fatura bulunamadı");
     await this.donemKilidi.tarihDogrula(tenantId, tarih.tarih, "fatura kesinleştirme");
@@ -1320,7 +1326,7 @@ export class FaturaService {
     const sonuc = await this.prisma.tenantIslem(tenantId, async (tx) => {
       const fatura = await tx.fatura.findUnique({
         where: { id },
-        include: { satirlar: true, cari: true },
+        include: { satirlar: true, cari: true, gelenEbelge: { select: { id: true } } },
       });
 
       if (!fatura) throw new NotFoundException("Fatura bulunamadı");
@@ -1328,13 +1334,9 @@ export class FaturaService {
         throw new BadRequestException("Fatura zaten kesinleştirilmiş veya iptal edilmiş");
       }
 
-      // İşlem blokajı (CARI-17): kara listedeki cariye belge kesilemez.
-      if (fatura.cari.karaListe) {
-        throw new BadRequestException(
-          `'${fatura.cari.unvan}' işlem blokajında (kara liste); fatura kesinleştirilemez` +
-            (fatura.cari.karaListeNotu ? ` — ${fatura.cari.karaListeNotu}` : ""),
-        );
-      }
+      // İşlem blokajı (CARI-17/32): kara listedeki cariye belge kesilemez.
+      // Gelen e-Faturanın kaydı karşı tarafın belgesidir; denetlenmez.
+      if (!fatura.gelenEbelge) await cariIslemDenetle(tx, fatura.cariId, "fatura", "mevcut");
 
       let seriKod = veri?.seri ?? "TKR";
       let faturaNo = veri?.no ?? null;
@@ -1458,17 +1460,11 @@ export class FaturaService {
         });
       }
 
-      // Risk limiti kontrolü (CARI-08): kesinleştirmeyi engellemez, uyarı döner.
-      // CARI-30: kartla aynı risk (bakiye + tahsil edilmemiş çek/senet); bu fatura dahil.
-      let riskUyari: string | null = null;
-      if (fatura.tip === "satis" && fatura.cari.riskLimiti !== null) {
-        const risk = (await cariRiskleri(tx, [fatura.cariId])).get(fatura.cariId)!;
-        if (risk.mevcutRisk.greaterThan(fatura.cari.riskLimiti)) {
-          riskUyari = `Risk limiti aşıldı: risk ${risk.mevcutRisk.toFixed(2)} TL` +
-            (risk.cekSenetRiski.isZero() ? "" : ` (bakiye ${Prisma.Decimal.max(risk.bakiyeTry, 0).toFixed(2)} + çek/senet ${risk.cekSenetRiski.toFixed(2)})`) +
-            `, limit ${fatura.cari.riskLimiti.toFixed(2)} TL`;
-        }
-      }
+      // Risk limiti (CARI-08/32): kartla aynı risk, bu fatura dahil (hareket yukarıda yazıldı);
+      // politika uyar / engelle / yönetici onayı. Engel işlemi geri alır.
+      const riskUyari = fatura.tip === "satis"
+        ? await riskLimitiDenetle(tx, { tenantId, userId, rol, cariId: fatura.cariId, ekTutarTry: new Prisma.Decimal(0), belgeEtiketi: "bu fatura", onayGerekcesi: veri?.riskOnayGerekcesi })
+        : null;
 
       // Fatura durumunu güncelle
       const kesinFatura = await tx.fatura.update({

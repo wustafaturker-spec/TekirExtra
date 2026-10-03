@@ -182,9 +182,13 @@ export class FaturaController {
   @Roller("muhasebe")
   async kesinlestir(
     @Param("id") id: string,
-    @Body() govde: { no?: string; seri?: string },
+    @Body() govde: { no?: string; seri?: string; riskOnayGerekcesi?: string | null },
   ) {
-    return this.faturaService.kesinlestir(id, govde);
+    return this.faturaService.kesinlestir(id, {
+      no: govde?.no,
+      seri: govde?.seri,
+      riskOnayGerekcesi: typeof govde?.riskOnayGerekcesi === "string" ? govde.riskOnayGerekcesi.slice(0, 500) : null,
+    });
   }
 
   /** FTR-09: proforma → satış faturası (taslak) dönüşümü. */

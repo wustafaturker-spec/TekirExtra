@@ -12,6 +12,13 @@ vi.mock("../core/istek-baglami", () => ({
   }),
 }));
 
+// CARI-32 denetimi kendi testinde; burada servis akışı sınanır.
+vi.mock("../cari/cari-islem-denetimi", () => ({
+  cariIslemDenetle: vi.fn(async () => undefined),
+  riskLimitiDenetle: vi.fn(async () => null),
+}));
+
+
 describe("FaturaService (FTR-14 - maksIskontoYuzdesi)", () => {
   const mockTenantIslem = vi.fn();
   const mockPrisma = {

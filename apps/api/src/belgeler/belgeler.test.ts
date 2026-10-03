@@ -8,6 +8,13 @@ vi.mock("../core/istek-baglami", () => ({
   aktifBaglam: () => ({ tenantId: "t1", userId: "u1", rol: "muhasebe" }),
 }));
 
+// CARI-32 denetimi kendi testinde; burada servis akışı sınanır.
+vi.mock("../cari/cari-islem-denetimi", () => ({
+  cariIslemDenetle: vi.fn(async () => undefined),
+  riskLimitiDenetle: vi.fn(async () => null),
+}));
+
+
 describe("BelgelerService", () => {
   it("eşzamanlı işlemde kapanan belge sayısı değişirse taslağı geri aldırır", async () => {
     const belge = {

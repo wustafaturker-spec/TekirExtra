@@ -21,8 +21,10 @@ registerModulAyar(
   z.object({
     varsayilanVadeGun: z.number().int().min(0).max(365),
     varsayilanDoviz: z.enum(DOVIZ_CINSLERI),
+    /// CARI-32: risk limiti aşılınca sipariş onayı ve fatura kesinleştirmede davranış.
+    riskLimitiPolitikasi: z.enum(["uyar", "engelle", "yonetici_onayi"]),
   }),
-  { varsayilanVadeGun: 14, varsayilanDoviz: "TRY" },
+  { varsayilanVadeGun: 14, varsayilanDoviz: "TRY", riskLimitiPolitikasi: "uyar" },
 );
 
 registerModulAyar(

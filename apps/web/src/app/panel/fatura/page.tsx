@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { BOS_ILGILI_KISI, IlgiliKisiAlanlari, ilgiliKisiGovdesi, type IlgiliKisiDegeri } from "@/components/ilgili-kisi-alanlari";
+import { riskOnayiylaGonder } from "@/lib/risk-onayi";
 import { api, apiPdfAc, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import { AramaSecici } from "@/components/arama-secici";
@@ -42,6 +43,8 @@ import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 
 interface Cari {
   id: string;
+  aktif?: boolean;
+  karaListe?: boolean;
   kod?: string;
   unvan: string;
   vknTckn?: string | null;
@@ -1272,9 +1275,10 @@ export default function FaturaSayfasi() {
     setHata("");
     setBasari("");
     try {
-      await api(`/fatura/${id}/kesinlestir`, { method: "POST", body: JSON.stringify({ no: belgeNo?.trim() || undefined }) });
+      // CARI-32: risk politikası yönetici onayı isterse gerekçe sorulur; uyarı başarı mesajına eklenir.
+      const sonuc = await riskOnayiylaGonder((riskOnayGerekcesi) => api<{ riskUyari?: string | null }>(`/fatura/${id}/kesinlestir`, { method: "POST", body: JSON.stringify({ no: belgeNo?.trim() || undefined, riskOnayGerekcesi }) }));
       setKesinlestirmeOzeti(null);
-      setBasari("Fatura kesinleştirildi. e-Fatura gönderimi için e-Fatura Oluştur wizard'ını kullanın.");
+      setBasari(`Fatura kesinleştirildi. e-Fatura gönderimi için e-Fatura Oluştur wizard'ını kullanın.${sonuc.riskUyari ? ` ⚠ ${sonuc.riskUyari}` : ""}`);
       void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Kesinleştirme hatası");
@@ -2043,10 +2047,11 @@ export default function FaturaSayfasi() {
                     etiket: tip.startsWith("alis") ? "Yeni tedarikçi oluştur" : "Yeni müşteri oluştur",
                     onClick: () => { setHizliHata(""); setHizliPanel("cari"); },
                   }}
-                  secenekler={cariler.map((cari) => ({
+                  secenekler={cariler.filter((cari) => cari.aktif !== false || cari.id === cariId).map((cari) => ({
+                    // CARI-32: pasif cari yeni belgede seçilemez; kara listedeki görünür ama belge açılamaz.
                     deger: cari.id,
-                    baslik: cari.unvan,
-                    aciklama: [cari.kod, cari.vknTckn, cari.telefon].filter(Boolean).join(" · ") || "Cari hesap",
+                    baslik: cari.karaListe ? `⛔ ${cari.unvan}` : cari.unvan,
+                    aciklama: [cari.karaListe ? "Kara listede — belge açılamaz" : null, cari.kod, cari.vknTckn, cari.telefon].filter(Boolean).join(" · ") || "Cari hesap",
                     aramaMetni: [cari.kod, cari.vknTckn, cari.telefon].filter(Boolean).join(" "),
                   }))}
                 />

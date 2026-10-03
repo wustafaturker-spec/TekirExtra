@@ -25,6 +25,7 @@ import { satirVaryantlariniDogrula } from "../stok/varyant-secimi";
 import { teslimYeriniIrsaliyedenDoldur } from "../fatura/teslim-yeri";
 import { irsaliyeUblOku, type UblIrsaliye } from "../ebelge/eirsaliye-ubl-oku";
 import { tedarikciCariBulVeyaOlustur } from "../cari/tedarikci-cari";
+import { cariIslemDenetle, riskLimitiDenetle, type BelgeTuru } from "../cari/cari-islem-denetimi";
 import { eslesmeRaporu, faturaIrsaliyeAdaylari, irsaliyeAlisFiyati, irsaliyeSatirOnerileri } from "./irsaliye-eslesme";
 import { tedarikciKodlariniOgren } from "../ebelge/stok-eslesme";
 import { belgeOlusturSemasi } from "./belgeler.semalar";
@@ -403,7 +404,8 @@ export class BelgelerService {
     };
   }
 
-  async olustur(girdi: z.infer<typeof belgeOlusturSemasi>) {
+  /** `gelenBelge`: gelen e-İrsaliyenin kaydı; cari blokajı denetlenmez (CARI-32). */
+  async olustur(girdi: z.infer<typeof belgeOlusturSemasi>, secenekler: { gelenBelge?: boolean } = {}) {
     const { tenantId, userId } = aktifBaglam();
     await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "belge oluşturma");
 
@@ -429,6 +431,7 @@ export class BelgelerService {
 
     const hesap = this.hesapla(girdi);
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      if (!secenekler.gelenBelge) await cariIslemDenetle(tx, girdi.cariId, girdi.tur, "yeni");
       if (girdi.faturaId) {
         if (girdi.tur !== "irsaliye" || girdi.yon !== "satis") throw new BadRequestException("Fatura bağlantısı yalnız satış irsaliyesinde kullanılabilir");
         const fatura = await tx.fatura.findUnique({ where: { id: girdi.faturaId }, select: { tenantId: true, cariId: true, tip: true, durum: true, sevkiyatYontemi: true, no: true, ebelge: { select: { durum: true } } } });
@@ -624,6 +627,8 @@ export class BelgelerService {
 
     const hesap = this.hesapla(birlesik);
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      // CARI-32: kara listede taslak da düzenlenmez; cari değişiyorsa pasif de olmamalı.
+      await cariIslemDenetle(tx, birlesik.cariId, mevcut.tur as BelgeTuru, birlesik.cariId === mevcut.cariId ? "mevcut" : "yeni");
       await this.teslimFarkiniUygula(tx, mevcut.satirlar, birlesik.satirlar);
       await tx.belgeSatir.deleteMany({ where: { belgeId: id } });
       if (girdi.satirlar) await satirBirimleriniDogrula(tx, girdi.satirlar);
@@ -763,6 +768,7 @@ export class BelgelerService {
       if (!belge) throw new NotFoundException("Belge bulunamadı");
       const engel = revizyonEngeli(belge);
       if (engel) throw new BadRequestException(engel);
+      await cariIslemDenetle(tx, belge.cariId, belge.tur, "yeni");
       // Eşzamanlı ikinci revizyonu önler: yalnız hâlâ onaylı olan sürüm devredilir.
       const devir = await tx.belge.updateMany({ where: { id, durum: "onaylandi" }, data: { durum: "revize_edildi" } });
       if (devir.count !== 1) throw new ConflictException("Teklif başka bir işlemde değişti; sayfayı yenileyip tekrar deneyin");
@@ -830,6 +836,7 @@ export class BelgelerService {
     }
 
     const yeni = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      await cariIslemDenetle(tx, belge.cariId, belge.tur, "yeni");
       const kopya = await tx.belge.create({
         data: {
           tenantId,
@@ -902,8 +909,8 @@ export class BelgelerService {
 
   // ─── ONAY / İPTAL (rezervasyon ve yoldaki stok burada) ───────────────────
 
-  async onayla(id: string) {
-    const { tenantId } = aktifBaglam();
+  async onayla(id: string, secenekler: { riskOnayGerekcesi?: string | null } = {}) {
+    const { tenantId, userId, rol } = aktifBaglam();
     const tarih = await this.prisma.tenantIslem(tenantId, (tx) => tx.belge.findUnique({ where: { id }, select: { tarih: true } }));
     if (!tarih) throw new NotFoundException("Belge bulunamadı");
     await this.donemKilidi.tarihDogrula(tenantId, tarih.tarih, "belge onaylama");
@@ -916,6 +923,11 @@ export class BelgelerService {
       if (belge.durum !== "taslak") {
         throw new BadRequestException("Yalnızca taslak belgeler onaylanabilir");
       }
+      // CARI-32: kara liste blokajı (gelen e-İrsaliye kaydı hariç) ve satış siparişinde risk limiti.
+      if (!belge.gelenEirsaliyeId) await cariIslemDenetle(tx, belge.cariId, belge.tur, "mevcut");
+      const riskUyari = belge.tur === "siparis" && belge.yon === "satis"
+        ? await riskLimitiDenetle(tx, { tenantId, userId, rol, cariId: belge.cariId, ekTutarTry: belge.genelToplam.mul(belge.kur).toDecimalPlaces(2), belgeEtiketi: "bu sipariş", onayGerekcesi: secenekler.riskOnayGerekcesi })
+        : null;
 
       const yil = belge.tarih.getFullYear();
       const irsaliye = belge.tur === "irsaliye";
@@ -981,7 +993,7 @@ export class BelgelerService {
           ...(irsaliye && !belge.fiiliSevkZamani ? { fiiliSevkZamani: new Date() } : {}),
         },
       });
-      return this.gorunum(guncel);
+      return { ...this.gorunum(guncel), riskUyari };
     });
   }
 
@@ -1126,6 +1138,7 @@ export class BelgelerService {
       if (muhtelifMusteriMi(belge.cari)) {
         throw new BadRequestException("Muhtelif Müşteriler belgesi dönüştürülemez; teslim edilen her müşteriye kendi adına fatura ya da irsaliye kesin");
       }
+      await cariIslemDenetle(tx, belge.cariId, hedef, "yeni");
       // Kısmen teslim edilmiş sipariş kalanı için yeniden dönüştürülebilir.
       if (belge.durum === "revize_edildi") {
         throw new BadRequestException("Teklifin daha yeni bir sürümü var; yalnız son sürüm siparişe dönüştürülür");
@@ -1354,6 +1367,7 @@ export class BelgelerService {
           );
         }
       }
+      for (const cariId of new Set(belgeler.map((b) => b.cariId))) await cariIslemDenetle(tx, cariId, "fatura", "yeni");
       const ilk = belgeler[0];
       if (
         !belgeler.every(
@@ -1485,7 +1499,7 @@ export class BelgelerService {
       tedarikciBelgeNo: kayit.belgeNo,
       aciklama: `Gelen e-İrsaliye ${kayit.belgeNo} — ${kayit.gonderenUnvan}`,
       satirlar: hazirlik.satirlar,
-    }));
+    }), { gelenBelge: true });
     try {
       // Bağ onaydan önce kurulur: tekillik aynı belgeden ikinci irsaliyeyi durdurur.
       await this.prisma.tenantIslem(tenantId, (tx) => tx.belge.update({ where: { id: belge.id }, data: { gelenEirsaliyeId: kayit.id, fiiliSevkZamani: kayit.sevkTarihi } }));
