@@ -55,6 +55,12 @@ export default function MaliMusavirSayfasi() {
         <p className="text-sm text-slate-500">Fatura, fiş ve KDV verilerini sürümlü Luca/Zirve aktarım taslaklarında indirin. Dosyaları hedef muhasebe yazılımınızın sürümünde içe aktarmadan önce doğrulayın.</p>
       </div>
 
+      {/* MUH-01…07: hesap kodlu yevmiye fişleri ayrı ekranda. */}
+      <a href="/panel/mali-musavir/muhasebe" className="block rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:border-slate-400">
+        <strong className="text-slate-800">Muhasebe aktarımı (yevmiye fişleri) →</strong>
+        <p className="text-sm text-slate-500 mt-1">Faturalar, kasa-banka, çek, kart, masraf ve gelirler Tekdüzen hesap planına göre fişlenir; Excel/CSV ya da PDF yevmiye olarak indirilir.</p>
+      </a>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* 1. Dışa Aktarım Kartı */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">

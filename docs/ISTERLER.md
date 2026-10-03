@@ -543,6 +543,24 @@ saklanmaz, istendiğinde XML'den üretilir.
 >   bekleyen ve yoksayılan satırlarla açıklanan ve açıklanamayan kısma ayrılır.
 > - **Excel (.xlsx)** ekstre CSV ile aynı sütun eşlemesiyle okunur; eski .xls okunmaz.
 
+### 3.5a Muhasebe Aktarımı (MUH)
+
+> **Karar 2026-10-03 (finans incelemesi P3-1).** Ürün çift taraflı muhasebe
+> tutmaz; kayıtlar kendi modül tablolarındadır. Mali müşavirin programına
+> aktarım için seçilen dönemin kayıtlarından **Tekdüzen hesap planına göre
+> yevmiye fişleri hesaplanır** ve dosya olarak verilir. Fişler saklanmaz
+> (kaynak kayıtlar tek doğrudur); her aktarım kaydedilir.
+
+| No | İster | Öncelik |
+|---|---|---|
+| MUH-01 | **Kapsam:** satış/alış/iade faturaları (kesin; proforma ve iptal edilenler hariç), kasa-banka-POS hareketleri, çek/senet olayları, kredi kartı hareketleri, onaylı masraflar ve faaliyet dışı gelirler, döviz alım/satımı (kambiyo kârı/zararı dahil). Personel maaşı (bordro programından gelir) ve hesap açılış fişleri kapsam dışıdır. | Z |
+| MUH-02 | **Hesap planı:** her kayıt türünün Tekdüzen varsayılanı vardır, firma Ayarlar'da değiştirir: kasa 100, alınan çek 101, banka 102, verilen çek 103, POS 108, alıcılar 120, alacak senetleri 121, şüpheli alacak (karşılıksız) 128, diğer alacaklar (carisiz gelir) 136, ilk madde/sarf 150, ticari mal 153, indirilecek KDV 191, peşin ödenen vergi (gelir stopajı) 193, kredi kartı borcu 309, satıcılar 320, borç senetleri 321, diğer ticari borçlar (carisiz masraf) 329, ödenecek vergi (KDV tevkifatı, stopaj) 360, hesaplanan KDV 391, yurtiçi satış 600, yurtdışı satış 601, satıştan iade 610, kambiyo kârı/kur farkı geliri 646, diğer gelir 649, kambiyo zararı/kur farkı gideri 656, pazaryeri kesintisi 760, hizmet alımı ve kategorisiz masraf 770. Masraf ve gelir kategorilerinin kendi muhasebe kodu varsa o kullanılır. | Z |
+| MUH-03 | **Alt hesaplar:** cari, kasa, banka, POS ve kredi kartı kendi alt hesabını alır; varsayılan ana hesap + `.01.` + cari kodu (kasa/banka/POS/kart için kayıt sırası, üç hane). Alt hesap kodu Muhasebe Aktarımı ekranının "Alt hesaplar" sekmesinde toplu düzenlenir. | Z |
+| MUH-04 | **Fiş kuralları:** satış faturası B 120 / A 600-601 (matrah) + A 391 (net KDV); alış faturası B 153/150/770 (satırın stok tipine göre) + B 191 (KDV) / A 320 + A 360 (KDV tevkifatı; ihraç kayıtlı alışta KDV'nin tamamı); iadeler ters yönde, satış iadesi 610. Kur farkı faturası 646/656'ya gider. Kasa/banka/POS hareketinin karşı hesabı: bağlı masraf/gelir → onun karşı hesabı; çek tahsili/ödemesi → çek hesabı; kart ekstre ödemesi → 309; pazaryeri kesintisi → 760; cari → 120 (tahsilat, müşteri) ya da 320 (tediye, tedarikçi; bağlı faturanın yönü önceliklidir). Virman tek fiş (B hedef / A kaynak); döviz alım/satımı iki bacak ve kambiyo farkı tek fiş. Masraf: B gider + B 191 / A karşı (cari 320, yoksa 329) + A 360 (stopaj); gelir: B karşı (cari 120, yoksa 136) + B 193 (stopaj) / A gelir + A 391. Çek: girişte B 101/121 / A 120; ciroda B 320 / A 101; karşılıksızda B 128 / A 101; iadede B 120 / A 101; verilen çek/senet B 320 / A 103/321; geri alınan olaylar sayılmaz. Kredi kartı: harcama/faiz/aidat B karşı / A 309; iade ters. Ters kayıt asıl fişin aynası olarak kendi tarihinde fişlenir. Dövizli kayıtta TL tutar kaydın kendi kuruyla; döviz cinsi, döviz tutarı ve kur satırda ayrıca verilir. Kuruş yuvarlama farkı cari/karşı satırına eklenir. | Z |
+| MUH-05 | **Önizleme ve denetim:** dönem seçilir; fiş sayısı, borç ve alacak toplamı, fiş listesi (satırlarıyla) gösterilir. Hesap kodu belirlenemeyen satırlar (ör. carisiz ve kaynağı olmayan elle fiş) ve borç-alacağı tutmayan fişler "kontrol gerekiyor" listesinde kaynağına bağlantıyla verilir; aktarım bu durumda da yapılabilir ama uyarı gösterilir. | Z |
+| MUH-06 | **Dışa aktarım:** Excel (.xlsx) ya da CSV; sütunlar firma profilinde seçilir ve sıralanır (fiş no, fiş tarihi, fiş türü, fiş açıklaması, satır no, hesap kodu, satır açıklaması, borç, alacak, belge no, belge tarihi, döviz, döviz tutarı, kur, kaynak), başlıklar yeniden adlandırılır; tarih biçimi (GG.AA.YYYY / YYYY-AA-GG), ondalık ayırıcı ve CSV ayırıcısı seçilir. Hazır profiller: "Genel" ve "Luca (Excel fiş aktarımı)" — Luca profili mali müşavirle doğrulanmalıdır. Ayrıca yazdırılabilir PDF yevmiye dökümü. | Z |
+| MUH-07 | **Aktarım kaydı:** her dışa aktarım dönem, biçim, fiş/satır sayısı, toplam ve kullanıcıyla kaydedilir, fişlerin parmak izi saklanır. Aktarımdan sonra o dönemde kayıt eklenir/değişir/silinirse aktarım geçmişinde "aktarımdan sonra değişti" uyarısı çıkar. Yetki: muhasebe ve yönetici. | Z |
+
 ### 3.6 Raporlama (RPR)
 
 | No | İster | Öncelik |

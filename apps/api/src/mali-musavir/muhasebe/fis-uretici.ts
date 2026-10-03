@@ -1,0 +1,455 @@
+import { Prisma } from "@prisma/client";
+import { MUHASEBE_HESAPLARI, type MuhasebeHesapAnahtari } from "@tekirextra/shared";
+
+/**
+ * MUH-04: kaynak kayıtlardan Tekdüzen yevmiye fişleri. Saf fonksiyonlardır;
+ * veritabanı okuması `fis-okuyucu.ts`'tedir. Her kaynak kendi fişini üretir ve
+ * birbirine karşı hesap üzerinden bağlanır: masraf 320/329'u alacaklandırır,
+ * ödemesi aynı hesabı borçlandırır; çek girişi 101'i borçlandırır, tahsili
+ * alacaklandırır. Böylece bir tutar iki kez gider ya da gelir yazılmaz.
+ */
+
+const D = (deger: Prisma.Decimal.Value) => new Prisma.Decimal(deger);
+const SIFIR = D(0);
+const TL = (tutar: Prisma.Decimal.Value, kur: Prisma.Decimal.Value = 1) => D(tutar).mul(kur).toDecimalPlaces(2);
+/** Kuruş yuvarlamasından büyük denge farkı fişi "kontrol gerekiyor"a düşürür. */
+const YUVARLAMA_SINIRI = D("0.05");
+
+export type FisTuru = "mahsup" | "tahsil" | "tediye";
+
+export interface FisSatiri {
+  hesapKodu: string;
+  aciklama: string;
+  borc: Prisma.Decimal;
+  alacak: Prisma.Decimal;
+  doviz?: { cins: string; tutar: Prisma.Decimal; kur: Prisma.Decimal };
+}
+
+export interface Kaynak {
+  tur: "fatura" | "hareket" | "masraf" | "gelir" | "cek" | "kart" | "doviz_islem";
+  id: string;
+  etiket: string;
+}
+
+export interface Fis {
+  tarih: string;
+  tur: FisTuru;
+  aciklama: string;
+  belgeNo: string | null;
+  kaynak: Kaynak;
+  satirlar: FisSatiri[];
+}
+
+export interface Kontrol {
+  kaynak: Kaynak;
+  mesaj: string;
+}
+
+// ─── Girdi tipleri (okuyucunun ürettiği düz kayıtlar) ──────────────────────
+
+export interface CariBilgi { id: string; kod: string; unvan: string; tip: string; muhasebeKodu: string | null }
+export interface HesapBilgi { tur: "kasa" | "banka" | "pos" | "kart"; id: string; ad: string; dovizCinsi: string; sira: number; muhasebeKodu: string | null }
+
+export interface FaturaGirdisi {
+  id: string; no: string | null; tip: string; tarih: string; cariId: string | null; dovizCinsi: string; kur: Prisma.Decimal;
+  toplamMatrah: Prisma.Decimal; toplamKdv: Prisma.Decimal; toplamNetKdv: Prisma.Decimal; toplamTevkifat: Prisma.Decimal; genelToplam: Prisma.Decimal;
+  ihracat: boolean; ihracKayitli: boolean; kurFarki: boolean;
+  satirlar: Array<{ matrah: Prisma.Decimal; stokTipi: string | null }>;
+}
+
+export interface HareketGirdisi {
+  id: string; tip: string; tarih: string; tutar: Prisma.Decimal; tutarTry: Prisma.Decimal; dovizCinsi: string; kur: Prisma.Decimal;
+  aciklama: string | null; makbuzNo: string | null; kaynakTur: string; kaynakRef: string | null;
+  hesap: { tur: "kasa" | "banka" | "pos"; id: string } | null;
+  karsiHareketId: string | null;
+  cariId: string | null; faturaId: string | null; faturaTipi: string | null;
+  faturaKarsiligi: Prisma.Decimal | null; faturaDovizi: string | null;
+  masrafId: string | null; gelirId: string | null; kartId: string | null;
+}
+
+export interface MasrafGirdisi {
+  id: string; tarih: string; belgeNo: string | null; aciklama: string | null; saticiUnvan: string | null;
+  kategoriAd: string; kategoriKodu: string | null; cariId: string | null;
+  matrah: Prisma.Decimal; kdvTutari: Prisma.Decimal; toplam: Prisma.Decimal; stopajTutari: Prisma.Decimal | null; kur: Prisma.Decimal; dovizCinsi: string;
+}
+
+export interface GelirGirdisi {
+  id: string; tarih: string; belgeNo: string | null; aciklama: string | null; kategoriAd: string; kategoriKodu: string | null; cariId: string | null;
+  brutTutar: Prisma.Decimal; kdvTutari: Prisma.Decimal; stopajTutari: Prisma.Decimal; kur: Prisma.Decimal; dovizCinsi: string;
+}
+
+export interface CekGirdisi {
+  id: string; tur: "cek" | "senet"; yon: "alinan" | "verilen"; portfoyNo: string; cekNo: string | null; tutar: Prisma.Decimal; tutarTry: Prisma.Decimal; kur: Prisma.Decimal; dovizCinsi: string;
+  cariId: string | null; ciroCariId: string | null;
+  olaylar: Array<{ id: string; oncekiDurum: string | null; yeniDurum: string; tarih: string; gecerli: boolean }>;
+}
+
+export interface KartGirdisi {
+  id: string; kartId: string; tip: string; tarih: string; aciklama: string; tutar: Prisma.Decimal; cariOdemeTutari: Prisma.Decimal | null;
+  cariId: string | null; masrafId: string | null; belgeNo: string | null; geriAlinanHareketId: string | null; kartDovizi: string;
+}
+
+export interface DovizIslemGirdisi {
+  id: string; tarih: string; aciklama: string | null;
+  cikan: { hesap: { tur: "kasa" | "banka" | "pos"; id: string }; tutar: Prisma.Decimal; doviz: string; kur: Prisma.Decimal; tl: Prisma.Decimal };
+  giren: { hesap: { tur: "kasa" | "banka" | "pos"; id: string }; tutar: Prisma.Decimal; doviz: string; kur: Prisma.Decimal; tl: Prisma.Decimal };
+}
+
+export interface UreticiGirdisi {
+  hesapKodlari: Partial<Record<MuhasebeHesapAnahtari, string>>;
+  cariler: Map<string, CariBilgi>;
+  hesaplar: Map<string, HesapBilgi>; // anahtar "tur:id"
+  faturalar: FaturaGirdisi[];
+  hareketler: HareketGirdisi[];
+  /** Dönem dışında kalsa da ters kaydın aynası ve virmanın karşı bacağı için. */
+  ekHareketler: Map<string, HareketGirdisi>;
+  masraflar: MasrafGirdisi[];
+  /** Hareket ve kart karşı hesabı için dönem dışı masraf/gelir de gerekir. */
+  tumMasraflar: Map<string, MasrafGirdisi>;
+  gelirler: GelirGirdisi[];
+  tumGelirler: Map<string, GelirGirdisi>;
+  cekler: CekGirdisi[];
+  tumCekler: Map<string, CekGirdisi>;
+  kartHareketleri: KartGirdisi[];
+  ekKartHareketleri: Map<string, KartGirdisi>;
+  dovizIslemleri: DovizIslemGirdisi[];
+  baslangic: string;
+  bitis: string;
+}
+
+// ─── Hesap kodu çözümü ────────────────────────────────────────────────────
+
+export class HesapCozucu {
+  constructor(private readonly g: Pick<UreticiGirdisi, "hesapKodlari" | "cariler" | "hesaplar">) {}
+
+  kod(anahtar: MuhasebeHesapAnahtari): string {
+    return this.g.hesapKodlari[anahtar]?.trim() || MUHASEBE_HESAPLARI[anahtar].kod;
+  }
+
+  /**
+   * Cari alt hesabı (MUH-03). Kayıtlı kod bir tarafın ana hesabıyla başlıyorsa
+   * öbür taraf için ilk bölüm değiştirilir: 120.01.0005 ↔ 320.01.0005.
+   */
+  cari(cariId: string | null, taraf: "alici" | "satici"): string {
+    const cari = cariId ? this.g.cariler.get(cariId) : undefined;
+    const ana = this.kod(taraf);
+    if (!cari) return "";
+    const kayitli = cari.muhasebeKodu?.trim();
+    if (kayitli) {
+      const diger = this.kod(taraf === "alici" ? "satici" : "alici");
+      if (kayitli === ana || kayitli.startsWith(`${ana}.`)) return kayitli;
+      if (kayitli === diger || kayitli.startsWith(`${diger}.`)) return ana + kayitli.slice(diger.length);
+      return kayitli;
+    }
+    return `${ana}.01.${cari.kod}`;
+  }
+
+  hesap(tur: HesapBilgi["tur"], id: string): string {
+    const h = this.g.hesaplar.get(`${tur}:${id}`);
+    const ana = this.kod(tur === "kart" ? "kredi_karti" : tur);
+    if (!h) return "";
+    return h.muhasebeKodu?.trim() || `${ana}.01.${String(h.sira).padStart(3, "0")}`;
+  }
+
+  hesapAdi(tur: HesapBilgi["tur"], id: string): string {
+    return this.g.hesaplar.get(`${tur}:${id}`)?.ad ?? "";
+  }
+
+  cariAdi(cariId: string | null): string {
+    return (cariId && this.g.cariler.get(cariId)?.unvan) || "";
+  }
+
+  cariTipi(cariId: string | null): string | null {
+    return (cariId && this.g.cariler.get(cariId)?.tip) || null;
+  }
+}
+
+// ─── Yardımcılar ──────────────────────────────────────────────────────────
+
+const borc = (hesapKodu: string, aciklama: string, tutar: Prisma.Decimal, doviz?: FisSatiri["doviz"]): FisSatiri => ({ hesapKodu, aciklama, borc: tutar, alacak: SIFIR, doviz });
+const alacak = (hesapKodu: string, aciklama: string, tutar: Prisma.Decimal, doviz?: FisSatiri["doviz"]): FisSatiri => ({ hesapKodu, aciklama, borc: SIFIR, alacak: tutar, doviz });
+const dovizBilgisi = (cins: string, tutar: Prisma.Decimal, kur: Prisma.Decimal) => (cins === "TRY" ? undefined : { cins, tutar, kur });
+const ayna = (satirlar: FisSatiri[]): FisSatiri[] => satirlar.map((s) => ({ ...s, borc: s.alacak, alacak: s.borc }));
+const sifirDegil = (s: FisSatiri) => !s.borc.isZero() || !s.alacak.isZero();
+
+/** Karşı satır (cari/karşı hesap) yuvarlama farkını üstlenir; büyük fark kontrol listesine düşer. */
+function dengele(satirlar: FisSatiri[], karsiIndeksi: number, kaynak: Kaynak, kontroller: Kontrol[]) {
+  const fark = satirlar.reduce((t, s) => t.add(s.borc).sub(s.alacak), SIFIR);
+  if (fark.isZero()) return;
+  if (fark.abs().lte(YUVARLAMA_SINIRI)) {
+    const k = satirlar[karsiIndeksi];
+    if (k.borc.gt(0)) k.borc = k.borc.sub(fark);
+    else k.alacak = k.alacak.add(fark);
+    return;
+  }
+  kontroller.push({ kaynak, mesaj: `Fişin borç ve alacağı ${fark.abs().toFixed(2)} TL tutmuyor` });
+}
+
+// ─── Kaynak kuralları ─────────────────────────────────────────────────────
+
+function faturaFisi(f: FaturaGirdisi, c: HesapCozucu, kontroller: Kontrol[]): Fis | null {
+  const kaynak: Kaynak = { tur: "fatura", id: f.id, etiket: `Fatura ${f.no ?? "(numarasız)"}` };
+  const satis = f.tip === "satis" || f.tip === "satis_iade";
+  const iade = f.tip === "satis_iade" || f.tip === "alis_iade";
+  const cariKodu = c.cari(f.cariId, satis ? "alici" : "satici");
+  if (!cariKodu) kontroller.push({ kaynak, mesaj: "Faturanın carisi yok; cari hesap kodu belirlenemedi" });
+  const cariAd = c.cariAdi(f.cariId);
+  const aciklama = `${f.no ?? ""} ${cariAd}`.trim();
+  const cariTl = TL(f.genelToplam, f.kur);
+  const cariDoviz = dovizBilgisi(f.dovizCinsi, f.genelToplam, f.kur);
+  const satirlar: FisSatiri[] = [];
+
+  if (satis) {
+    const gelirKodu = f.tip === "satis_iade" ? c.kod("satis_iade") : f.kurFarki ? c.kod("kur_farki_gelir") : c.kod(f.ihracat ? "yurtdisi_satis" : "yurtici_satis");
+    // Satış: B 120 / A 600 + A 391. Satış iadesi: tam tersi, gelir yerine 610 borçlanır.
+    const cari = (iade ? alacak : borc)(cariKodu, aciklama, cariTl, cariDoviz);
+    const gelir = (iade ? borc : alacak)(gelirKodu, aciklama, TL(f.toplamMatrah, f.kur));
+    const kdv = (iade ? borc : alacak)(c.kod("hesaplanan_kdv"), `${aciklama} KDV`, TL(f.toplamNetKdv, f.kur));
+    satirlar.push(cari, gelir, kdv);
+  } else {
+    // Alış: B 153/150/770 (satırın stok tipine göre, genel iskonto oranlı dağıtılır) + B 191 / A 320 + A 360.
+    const satirToplami = f.satirlar.reduce((t, s) => t.add(s.matrah), SIFIR);
+    const gruplar = new Map<string, Prisma.Decimal>();
+    for (const s of f.satirlar) {
+      const kod = f.kurFarki ? c.kod("kur_farki_gider") : s.stokTipi === "urun" ? c.kod("mal_alis") : s.stokTipi === "sarf" ? c.kod("sarf_alis") : c.kod("hizmet_alis");
+      gruplar.set(kod, (gruplar.get(kod) ?? SIFIR).add(s.matrah));
+    }
+    const giderler = [...gruplar.entries()].map(([kod, matrah]) => {
+      const pay = satirToplami.isZero() ? f.toplamMatrah : f.toplamMatrah.mul(matrah).div(satirToplami);
+      return (iade ? alacak : borc)(kod, aciklama, TL(pay, f.kur));
+    });
+    const kdv = (iade ? alacak : borc)(c.kod("indirilecek_kdv"), `${aciklama} KDV`, TL(f.toplamKdv, f.kur));
+    const cari = (iade ? borc : alacak)(cariKodu, aciklama, cariTl, cariDoviz);
+    satirlar.push(...giderler, kdv, cari);
+    // KDV tevkifatı ya da ihraç kayıtlı alış (EBLG-114): cariye ödenmeyen KDV 360'a.
+    if (f.toplamTevkifat.gt(0) || f.ihracKayitli) {
+      const toplamGider = giderler.reduce((t, s) => t.add(s.borc).add(s.alacak), SIFIR);
+      const odenecek = toplamGider.add(kdv.borc).add(kdv.alacak).sub(cariTl);
+      if (odenecek.gt(0)) satirlar.push((iade ? borc : alacak)(c.kod("odenecek_vergi"), `${aciklama} ${f.ihracKayitli ? "ihraç kayıtlı KDV" : "KDV tevkifatı"}`, odenecek));
+    }
+  }
+  const sonuc = satirlar.filter(sifirDegil);
+  dengele(sonuc, sonuc.findIndex((s) => s.hesapKodu === cariKodu), kaynak, kontroller);
+  return { tarih: f.tarih, tur: "mahsup", aciklama: `${f.tip === "satis" ? "Satış" : f.tip === "alis" ? "Alış" : f.tip === "satis_iade" ? "Satış iadesi" : "Alış iadesi"} faturası ${aciklama}`, belgeNo: f.no, kaynak, satirlar: sonuc };
+}
+
+function masrafKarsiKodu(m: MasrafGirdisi, c: HesapCozucu) {
+  return m.cariId ? c.cari(m.cariId, "satici") : c.kod("diger_ticari_borc");
+}
+
+function masrafFisi(m: MasrafGirdisi, c: HesapCozucu, kontroller: Kontrol[]): Fis {
+  const kaynak: Kaynak = { tur: "masraf", id: m.id, etiket: `Masraf ${m.belgeNo ?? m.saticiUnvan ?? m.kategoriAd}` };
+  const aciklama = `${m.kategoriAd}${m.saticiUnvan ? ` · ${m.saticiUnvan}` : ""}${m.aciklama ? ` · ${m.aciklama}` : ""}`.slice(0, 200);
+  const stopaj = m.stopajTutari ?? SIFIR;
+  const satirlar = [
+    borc(m.kategoriKodu?.trim() || c.kod("hizmet_alis"), aciklama, TL(m.matrah, m.kur)),
+    borc(c.kod("indirilecek_kdv"), `${aciklama} KDV`, TL(m.kdvTutari, m.kur)),
+    alacak(masrafKarsiKodu(m, c), aciklama, TL(m.toplam.sub(stopaj), m.kur), dovizBilgisi(m.dovizCinsi, m.toplam.sub(stopaj), m.kur)),
+    alacak(c.kod("odenecek_vergi"), `${aciklama} stopaj`, TL(stopaj, m.kur)),
+  ].filter(sifirDegil);
+  dengele(satirlar, satirlar.findIndex((s) => s.alacak.gt(0)), kaynak, kontroller);
+  return { tarih: m.tarih, tur: "mahsup", aciklama: `Masraf ${aciklama}`, belgeNo: m.belgeNo, kaynak, satirlar };
+}
+
+function gelirKarsiKodu(g: GelirGirdisi, c: HesapCozucu) {
+  return g.cariId ? c.cari(g.cariId, "alici") : c.kod("diger_alacak");
+}
+
+function gelirFisi(g: GelirGirdisi, c: HesapCozucu, kontroller: Kontrol[]): Fis {
+  const kaynak: Kaynak = { tur: "gelir", id: g.id, etiket: `Gelir ${g.belgeNo ?? g.kategoriAd}` };
+  const aciklama = `${g.kategoriAd}${g.aciklama ? ` · ${g.aciklama}` : ""}`.slice(0, 200);
+  const net = g.brutTutar.add(g.kdvTutari).sub(g.stopajTutari);
+  const satirlar = [
+    borc(gelirKarsiKodu(g, c), aciklama, TL(net, g.kur), dovizBilgisi(g.dovizCinsi, net, g.kur)),
+    borc(c.kod("pesin_vergi"), `${aciklama} stopaj`, TL(g.stopajTutari, g.kur)),
+    alacak(g.kategoriKodu?.trim() || c.kod("diger_gelir"), aciklama, TL(g.brutTutar, g.kur)),
+    alacak(c.kod("hesaplanan_kdv"), `${aciklama} KDV`, TL(g.kdvTutari, g.kur)),
+  ].filter(sifirDegil);
+  dengele(satirlar, 0, kaynak, kontroller);
+  return { tarih: g.tarih, tur: "mahsup", aciklama: `Gelir ${aciklama}`, belgeNo: g.belgeNo, kaynak, satirlar };
+}
+
+function cekHesapKodu(cek: CekGirdisi, c: HesapCozucu) {
+  if (cek.yon === "alinan") return c.kod(cek.tur === "cek" ? "alinan_cek" : "alacak_senedi");
+  return c.kod(cek.tur === "cek" ? "verilen_cek" : "borc_senedi");
+}
+
+function cekFisleri(cek: CekGirdisi, g: UreticiGirdisi, c: HesapCozucu, kontroller: Kontrol[]): Fis[] {
+  const fisler: Fis[] = [];
+  const evrak = `${cek.tur === "cek" ? "Çek" : "Senet"} ${cek.cekNo ?? cek.portfoyNo}`;
+  const hesap = cekHesapKodu(cek, c);
+  const doviz = dovizBilgisi(cek.dovizCinsi, cek.tutar, cek.kur);
+  for (const o of cek.olaylar) {
+    if (!o.gecerli || o.tarih < g.baslangic || o.tarih > g.bitis) continue;
+    const kaynak: Kaynak = { tur: "cek", id: cek.id, etiket: evrak };
+    let satirlar: FisSatiri[] | null = null;
+    let aciklama = "";
+    if (cek.yon === "alinan") {
+      if (o.oncekiDurum === null) {
+        aciklama = `${evrak} portföye giriş`;
+        satirlar = [borc(hesap, aciklama, cek.tutarTry, doviz), alacak(c.cari(cek.cariId, "alici"), aciklama, cek.tutarTry, doviz)];
+      } else if (o.yeniDurum === "ciro_edildi") {
+        aciklama = `${evrak} ciro`;
+        satirlar = [borc(c.cari(cek.ciroCariId, "satici"), aciklama, cek.tutarTry, doviz), alacak(hesap, aciklama, cek.tutarTry, doviz)];
+      } else if (o.yeniDurum === "karsiliksiz") {
+        aciklama = `${evrak} karşılıksız`;
+        satirlar = [borc(c.kod("karsiliksiz"), aciklama, cek.tutarTry, doviz), alacak(hesap, aciklama, cek.tutarTry, doviz)];
+      } else if (o.yeniDurum === "iade_edildi") {
+        aciklama = `${evrak} müşteriye iade`;
+        satirlar = [borc(c.cari(cek.cariId, "alici"), aciklama, cek.tutarTry, doviz), alacak(hesap, aciklama, cek.tutarTry, doviz)];
+      }
+    } else if (o.oncekiDurum === null) {
+      aciklama = `${evrak} verildi`;
+      satirlar = [borc(c.cari(cek.cariId, "satici"), aciklama, cek.tutarTry, doviz), alacak(hesap, aciklama, cek.tutarTry, doviz)];
+    } else if (o.yeniDurum === "iade_edildi") {
+      aciklama = `${evrak} geri alındı`;
+      satirlar = [borc(hesap, aciklama, cek.tutarTry, doviz), alacak(c.cari(cek.cariId, "satici"), aciklama, cek.tutarTry, doviz)];
+    }
+    // Tahsil/ödeme kasa-banka hareketinden, tahsile/teminata verme fişsizdir.
+    if (!satirlar) continue;
+    if (satirlar.some((s) => !s.hesapKodu)) kontroller.push({ kaynak, mesaj: `${aciklama}: evrakın carisi yok; cari hesap kodu belirlenemedi` });
+    fisler.push({ tarih: o.tarih, tur: "mahsup", aciklama, belgeNo: cek.cekNo ?? cek.portfoyNo, kaynak, satirlar });
+  }
+  return fisler;
+}
+
+type KarsiSonucu = { kod: string; doviz?: FisSatiri["doviz"] } | { eksik: string };
+
+/** Kasa/banka/POS hareketinin karşı hesabı (MUH-04). */
+function hareketKarsisi(h: HareketGirdisi, g: UreticiGirdisi, c: HesapCozucu): KarsiSonucu {
+  const masraf = h.masrafId ? g.tumMasraflar.get(h.masrafId) : undefined;
+  if (masraf) return { kod: masrafKarsiKodu(masraf, c) };
+  const gelir = h.gelirId ? g.tumGelirler.get(h.gelirId) : undefined;
+  if (gelir) return { kod: gelirKarsiKodu(gelir, c) };
+  const cek = h.kaynakTur === "cek_senet" && h.kaynakRef ? g.tumCekler.get(h.kaynakRef) : undefined;
+  if (cek) return { kod: cekHesapKodu(cek, c) };
+  if (h.kaynakTur === "kredi_karti_ekstre" && h.kartId) return { kod: c.hesap("kart", h.kartId) };
+  if (h.kaynakTur === "pazaryeri_kesinti") return { kod: c.kod("pazaryeri_kesinti") };
+  if (h.cariId) {
+    // Bağlı faturanın yönü önceliklidir; yoksa cari tipi, ikisi de olan caride hareket yönü.
+    const faturaTarafi = h.faturaTipi ? (h.faturaTipi === "satis" || h.faturaTipi === "alis_iade" ? "alici" : "satici") : null;
+    const tip = c.cariTipi(h.cariId);
+    const taraf = faturaTarafi ?? (tip === "musteri" ? "alici" : tip === "tedarikci" ? "satici" : h.tip === "tahsilat" ? "alici" : "satici");
+    // Farklı dövizle kapamada cari tarafı faturanın dövizindeki karşılığı taşır (KSB-07).
+    const doviz = h.faturaKarsiligi && h.faturaDovizi && h.faturaDovizi !== "TRY" && h.faturaKarsiligi.gt(0)
+      ? { cins: h.faturaDovizi, tutar: h.faturaKarsiligi, kur: h.tutarTry.div(h.faturaKarsiligi).toDecimalPlaces(6) }
+      : dovizBilgisi(h.dovizCinsi, h.tutar, h.kur);
+    return { kod: c.cari(h.cariId, taraf), doviz };
+  }
+  return { eksik: "Carisi ve bağlı kaydı olmayan fişin karşı hesabı belirlenemedi" };
+}
+
+function hareketFisi(h: HareketGirdisi, g: UreticiGirdisi, c: HesapCozucu, kontroller: Kontrol[]): Fis | null {
+  if (!h.hesap) return null;
+  const kaynak: Kaynak = { tur: "hareket", id: h.id, etiket: h.makbuzNo ? `Fiş ${h.makbuzNo}` : `${c.hesapAdi(h.hesap.tur, h.hesap.id)} ${h.tarih}` };
+  const hesapKodu = c.hesap(h.hesap.tur, h.hesap.id);
+  const hesapDoviz = dovizBilgisi(h.dovizCinsi, h.tutar, h.kur);
+  const aciklama = (h.aciklama ?? "").slice(0, 200) || (h.cariId ? c.cariAdi(h.cariId) : "");
+
+  // Virman: tek fiş, B hedef / A kaynak. Gelen bacak gidenle birlikte fişlenir.
+  if (h.tip === "virman_gelis") return null;
+  if (h.tip === "virman_gidis") {
+    const karsi = h.karsiHareketId ? g.ekHareketler.get(h.karsiHareketId) : undefined;
+    if (!karsi?.hesap) {
+      kontroller.push({ kaynak, mesaj: "Virmanın karşı bacağı bulunamadı" });
+      return null;
+    }
+    const satirlar = [
+      borc(c.hesap(karsi.hesap.tur, karsi.hesap.id), aciklama || "Virman", karsi.tutarTry, dovizBilgisi(karsi.dovizCinsi, karsi.tutar, karsi.kur)),
+      alacak(hesapKodu, aciklama || "Virman", h.tutarTry, hesapDoviz),
+    ];
+    dengele(satirlar, 0, kaynak, kontroller);
+    return { tarih: h.tarih, tur: "mahsup", aciklama: `Virman ${c.hesapAdi(h.hesap.tur, h.hesap.id)} → ${c.hesapAdi(karsi.hesap.tur, karsi.hesap.id)}`, belgeNo: null, kaynak, satirlar };
+  }
+
+  // Ters kayıt (KSB-08): asıl fişin aynası, kendi tarihinde.
+  if (h.kaynakTur === "ters_kayit") {
+    const asil = h.kaynakRef ? g.ekHareketler.get(h.kaynakRef) : undefined;
+    const asilFis = asil ? hareketFisi(asil, g, c, kontroller) : null;
+    if (!asilFis) {
+      kontroller.push({ kaynak, mesaj: "Ters kaydın asıl fişi bulunamadı" });
+      return null;
+    }
+    return { ...asilFis, tarih: h.tarih, aciklama: `Ters kayıt: ${asilFis.aciklama}`, kaynak, satirlar: ayna(asilFis.satirlar) };
+  }
+
+  const karsi = hareketKarsisi(h, g, c);
+  if ("eksik" in karsi) kontroller.push({ kaynak, mesaj: karsi.eksik });
+  const karsiKodu = "kod" in karsi ? karsi.kod : "";
+  const karsiDoviz = "kod" in karsi ? karsi.doviz : undefined;
+  const giris = h.tip === "tahsilat";
+  const satirlar = giris
+    ? [borc(hesapKodu, aciklama, h.tutarTry, hesapDoviz), alacak(karsiKodu, aciklama, h.tutarTry, karsiDoviz)]
+    : [borc(karsiKodu, aciklama, h.tutarTry, karsiDoviz), alacak(hesapKodu, aciklama, h.tutarTry, hesapDoviz)];
+  const tur: FisTuru = h.hesap.tur === "kasa" ? (giris ? "tahsil" : "tediye") : "mahsup";
+  return { tarih: h.tarih, tur, aciklama: `${giris ? "Tahsilat" : "Ödeme"}${aciklama ? ` ${aciklama}` : ""}`, belgeNo: h.makbuzNo, kaynak, satirlar };
+}
+
+function kartFisi(k: KartGirdisi, g: UreticiGirdisi, c: HesapCozucu, kontroller: Kontrol[]): Fis | null {
+  const kaynak: Kaynak = { tur: "kart", id: k.id, etiket: `Kart ${k.tarih} ${k.aciklama}`.slice(0, 80) };
+  if (k.tip === "odeme") return null; // bankadan karta ödeme kasa-banka hareketinden fişlenir
+  if (k.kartDovizi !== "TRY") {
+    kontroller.push({ kaynak, mesaj: "Dövizli kredi kartı hareketinin kuru tutulmuyor; elle fişlenmeli" });
+    return null;
+  }
+  if (k.geriAlinanHareketId) {
+    const asil = g.ekKartHareketleri.get(k.geriAlinanHareketId);
+    const asilFis = asil ? kartFisi(asil, g, c, kontroller) : null;
+    if (!asilFis) return null;
+    return { ...asilFis, tarih: k.tarih, aciklama: `Ters kayıt: ${asilFis.aciklama}`, kaynak, satirlar: ayna(asilFis.satirlar) };
+  }
+  const kart = c.hesap("kart", k.kartId);
+  const aciklama = k.aciklama.slice(0, 200);
+  const masraf = k.masrafId ? g.tumMasraflar.get(k.masrafId) : undefined;
+  const karsilar: FisSatiri[] = [];
+  const cariTutar = k.cariId ? (k.cariOdemeTutari ?? k.tutar) : SIFIR;
+  if (k.cariId && cariTutar.gt(0)) karsilar.push(borc(c.cari(k.cariId, "satici"), aciklama, cariTutar));
+  const kalan = k.tutar.sub(cariTutar);
+  if (kalan.gt(0)) {
+    if (masraf) karsilar.push(borc(masrafKarsiKodu(masraf, c), aciklama, kalan));
+    else {
+      karsilar.push(borc("", aciklama, kalan));
+      kontroller.push({ kaynak, mesaj: "Kart hareketinin carisi ya da masrafı yok; karşı hesap belirlenemedi" });
+    }
+  }
+  const satirlar = [...karsilar, alacak(kart, aciklama, k.tutar)];
+  const sonuc = k.tip === "iade" ? ayna(satirlar) : satirlar;
+  return { tarih: k.tarih, tur: "mahsup", aciklama: `Kredi kartı ${k.tip === "iade" ? "iadesi" : k.tip === "faiz" ? "faizi" : k.tip === "aidat" ? "aidatı" : "harcaması"} ${aciklama}`, belgeNo: k.belgeNo, kaynak, satirlar: sonuc };
+}
+
+function dovizIslemFisi(d: DovizIslemGirdisi, c: HesapCozucu, kontroller: Kontrol[]): Fis {
+  const kaynak: Kaynak = { tur: "doviz_islem", id: d.id, etiket: `Döviz ${d.cikan.doviz}→${d.giren.doviz} ${d.tarih}` };
+  const aciklama = d.aciklama?.slice(0, 200) || `${d.cikan.doviz} → ${d.giren.doviz}`;
+  const satirlar = [
+    borc(c.hesap(d.giren.hesap.tur, d.giren.hesap.id), aciklama, d.giren.tl, dovizBilgisi(d.giren.doviz, d.giren.tutar, d.giren.kur)),
+    alacak(c.hesap(d.cikan.hesap.tur, d.cikan.hesap.id), aciklama, d.cikan.tl, dovizBilgisi(d.cikan.doviz, d.cikan.tutar, d.cikan.kur)),
+  ];
+  const fark = d.giren.tl.sub(d.cikan.tl);
+  if (fark.gt(0)) satirlar.push(alacak(c.kod("kur_farki_gelir"), `${aciklama} kambiyo kârı`, fark));
+  if (fark.lt(0)) satirlar.push(borc(c.kod("kur_farki_gider"), `${aciklama} kambiyo zararı`, fark.abs()));
+  dengele(satirlar, 0, kaynak, kontroller);
+  return { tarih: d.tarih, tur: "mahsup", aciklama: `Döviz alım/satımı ${aciklama}`, belgeNo: null, kaynak, satirlar };
+}
+
+// ─── Giriş noktası ────────────────────────────────────────────────────────
+
+export function fisleriUret(g: UreticiGirdisi): { fisler: Fis[]; kontroller: Kontrol[] } {
+  const c = new HesapCozucu(g);
+  const kontroller: Kontrol[] = [];
+  const fisler: Fis[] = [];
+  const ekle = (f: Fis | null) => {
+    if (!f || !f.satirlar.length) return;
+    for (const s of f.satirlar) if (!s.hesapKodu && !kontroller.some((k) => k.kaynak.id === f.kaynak.id)) kontroller.push({ kaynak: f.kaynak, mesaj: "Hesap kodu belirlenemeyen satır var" });
+    fisler.push(f);
+  };
+  for (const f of g.faturalar) ekle(faturaFisi(f, c, kontroller));
+  for (const h of g.hareketler) ekle(hareketFisi(h, g, c, kontroller));
+  for (const m of g.masraflar) ekle(masrafFisi(m, c, kontroller));
+  for (const gl of g.gelirler) ekle(gelirFisi(gl, c, kontroller));
+  for (const cek of g.cekler) for (const f of cekFisleri(cek, g, c, kontroller)) ekle(f);
+  for (const k of g.kartHareketleri) ekle(kartFisi(k, g, c, kontroller));
+  for (const d of g.dovizIslemleri) ekle(dovizIslemFisi(d, c, kontroller));
+  const sira: Record<Kaynak["tur"], number> = { fatura: 0, masraf: 1, gelir: 2, cek: 3, kart: 4, doviz_islem: 5, hareket: 6 };
+  fisler.sort((a, b) => a.tarih.localeCompare(b.tarih) || sira[a.kaynak.tur] - sira[b.kaynak.tur] || (a.belgeNo ?? "").localeCompare(b.belgeNo ?? ""));
+  return { fisler, kontroller };
+}

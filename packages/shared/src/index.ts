@@ -41,3 +41,4 @@ export * from "./resmi-tatiller";
 export * from "./varyant";
 export * from "./kur-tipi";
 export * from "./doviz";
+export * from "./muhasebe";

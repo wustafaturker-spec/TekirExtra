@@ -769,6 +769,8 @@ enum UretimSarfDuzeltmeTip {
 model CariHesap {
   id                      String              @id @default(uuid()) @db.Uuid
   tenantId                String              @map("tenant_id") @db.Uuid
+  /// MUH-03: muhasebe alt hesap kodu; boşsa aktarımda varsayılan üretilir.
+  muhasebeKodu            String?             @map("muhasebe_kodu")
   kod                     String
   unvan                   String
   /// Gerçek kişide ad ve soyad zorunludur, unvan bunlardan türer (CARI-21).
@@ -2650,13 +2652,15 @@ enum CekSenetDurum {
 }
 
 model Kasa {
-  id         String     @id @default(uuid()) @db.Uuid
-  tenantId   String     @map("tenant_id") @db.Uuid
-  ad         String
-  dovizCinsi DovizCinsi @default(TRY) @map("doviz_cinsi")
-  aktif      Boolean    @default(true)
-  createdAt  DateTime   @default(now()) @map("created_at")
-  updatedAt  DateTime   @updatedAt @map("updated_at")
+  id           String     @id @default(uuid()) @db.Uuid
+  tenantId     String     @map("tenant_id") @db.Uuid
+  /// MUH-03: muhasebe alt hesap kodu; boşsa aktarımda varsayılan üretilir.
+  muhasebeKodu String?    @map("muhasebe_kodu")
+  ad           String
+  dovizCinsi   DovizCinsi @default(TRY) @map("doviz_cinsi")
+  aktif        Boolean    @default(true)
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
 
   hareketler      KasaBankaHareket[]
   masraflar       Masraf[]
@@ -2670,6 +2674,8 @@ model Kasa {
 model BankaHesap {
   id             String     @id @default(uuid()) @db.Uuid
   tenantId       String     @map("tenant_id") @db.Uuid
+  /// MUH-03: muhasebe alt hesap kodu; boşsa aktarımda varsayılan üretilir.
+  muhasebeKodu   String?    @map("muhasebe_kodu")
   ad             String
   bankaAdi       String     @map("banka_adi")
   sube           String?
@@ -2719,6 +2725,8 @@ enum KrediKartiHareketTipi {
 model KrediKarti {
   id                String              @id @default(uuid()) @db.Uuid
   tenantId          String              @map("tenant_id") @db.Uuid
+  /// MUH-03: muhasebe alt hesap kodu; boşsa aktarımda varsayılan üretilir.
+  muhasebeKodu      String?             @map("muhasebe_kodu")
   ad                String
   bankaAdi          String              @map("banka_adi")
   sonDortHane       String              @map("son_dort_hane")
@@ -2955,6 +2963,8 @@ model BankaBaglantiHesap {
 model PosHesap {
   id                     String     @id @default(uuid()) @db.Uuid
   tenantId               String     @map("tenant_id") @db.Uuid
+  /// MUH-03: muhasebe alt hesap kodu; boşsa aktarımda varsayılan üretilir.
+  muhasebeKodu           String?    @map("muhasebe_kodu")
   ad                     String
   saglayici              String
   baglantiId             String?    @map("baglanti_id") @db.Uuid
@@ -4964,4 +4974,32 @@ model UretimEmriGider {
   @@unique([uretimEmriId, sira])
   @@index([tenantId])
   @@map("uretim_emri_giderleri")
+}
+
+/// MUH-02/06: firmanın hesap kodu düzeltmeleri ve aktarım dosyası profili.
+model MuhasebeAyari {
+  tenantId       String   @id @map("tenant_id") @db.Uuid
+  hesapKodlari   Json     @default("{}") @map("hesap_kodlari")
+  aktarimProfili Json?    @map("aktarim_profili")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("muhasebe_ayarlari")
+}
+
+/// MUH-07: yapılan muhasebe aktarımı; parmak izi sonradan değişikliği yakalar.
+model MuhasebeAktarimi {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  baslangic   DateTime @db.Date
+  bitis       DateTime @db.Date
+  bicim       String
+  fisSayisi   Int      @map("fis_sayisi")
+  satirSayisi Int      @map("satir_sayisi")
+  borcToplami Decimal  @map("borc_toplami") @db.Decimal(18, 2)
+  parmakIzi   String   @map("parmak_izi")
+  userId      String?  @map("user_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, createdAt])
+  @@map("muhasebe_aktarimlari")
 }

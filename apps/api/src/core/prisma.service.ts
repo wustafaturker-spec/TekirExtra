@@ -27,12 +27,14 @@ export class PrismaService
   async tenantIslem<T>(
     tenantId: string,
     fn: (tx: Prisma.TransactionClient) => Promise<T>,
+    /** Uzun okumalar (ör. muhasebe aktarımı) için; varsayılan Prisma'nın 5 sn'si. */
+    secenek?: { timeout?: number },
   ): Promise<T> {
     return this.$transaction(async (tx) => {
       // EBLG-35: durum geçmişi tetikleyicisi değiştiren kullanıcıyı `app.user_id`'den okur.
       const kullanici = baglamAl()?.userId ?? "";
       await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true), set_config('app.user_id', ${kullanici}, true)`;
       return fn(tx);
-    });
+    }, secenek?.timeout ? { timeout: secenek.timeout, maxWait: 10_000 } : undefined);
   }
 }

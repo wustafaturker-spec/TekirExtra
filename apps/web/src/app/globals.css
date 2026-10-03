@@ -4584,3 +4584,45 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .treasury-totals > div > span > strong.treasury-in { color: var(--success); }
 .treasury-totals > div > span > strong.treasury-out { color: var(--danger); }
 .treasury-more { border-top: 1px solid var(--border); display: flex; justify-content: center; padding: .75rem 1rem; }
+
+/* MUH-01…07: muhasebe aktarımı ekranı. */
+.muh-page { display: grid; gap: 1rem; }
+.muh-page > * { min-width: 0; }
+.muh-donem { align-items: flex-end; display: flex; flex-wrap: wrap; gap: .75rem; }
+.muh-hizli { display: flex; gap: .4rem; padding-bottom: .2rem; }
+.muh-ozet { display: grid; gap: .75rem; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.muh-ozet > div { background: var(--surface); border: 1px solid var(--border); border-radius: .8rem; display: grid; gap: .2rem; padding: .85rem 1rem; }
+.muh-ozet > div > span { color: var(--text-muted); font-size: .68rem; font-weight: 700; }
+.muh-ozet > div > strong { font-size: 1.05rem; }
+.muh-ozet > div > small { color: var(--text-muted); font-size: .66rem; }
+.muh-ozet > div.is-ok { border-color: color-mix(in srgb, var(--success) 40%, var(--border)); }
+.muh-ozet > div.is-warning { background: color-mix(in srgb, var(--warning-soft, #fef3c7) 45%, var(--surface)); border-color: color-mix(in srgb, var(--warning, #d97706) 45%, var(--border)); }
+.muh-kontrol { margin: .4rem 0 0 1.1rem; max-height: 220px; overflow: auto; }
+.muh-kontrol li { font-size: .78rem; margin: .15rem 0; }
+.muh-ust { color: var(--accent-text); font-size: .61rem; font-weight: 850; letter-spacing: .14em; }
+.muh-page .card__title h2 { font-size: .95rem; margin: .2rem 0 0; }
+.muh-page .card__title small { color: var(--text-muted); display: block; font-size: .7rem; margin-top: .2rem; }
+.muh-indir { display: flex; flex-wrap: wrap; gap: .4rem; }
+.muh-arama { border-bottom: 1px solid var(--border); padding: .7rem 1rem; }
+.muh-arama--iki { display: grid; gap: .6rem; grid-template-columns: minmax(0, 1fr) 200px; }
+.muh-fis-bas td { background: var(--surface-2); border-top: 1px solid var(--border); font-size: .74rem; }
+.muh-fis td { font-size: .76rem; vertical-align: top; }
+.muh-kaynak { color: var(--text-muted); float: right; font-size: .7rem; }
+.muh-doviz { color: var(--text-muted); display: block; font-size: .68rem; }
+.muh-bos { color: var(--text-muted); font-size: .78rem; padding: 1rem; text-align: center; }
+.muh-sayfa { align-items: center; display: flex; gap: .75rem; justify-content: center; padding: .75rem; }
+.muh-kod { max-width: 220px; }
+.muh-alt { color: var(--text-muted); }
+.muh-profil-ayar { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); margin-bottom: 1rem; }
+.muh-alt-baslik { font-size: .85rem; margin: .5rem 0; }
+.muh-sutunlar { display: grid; gap: .4rem; list-style: none; margin: 0 0 .75rem; padding: 0; }
+.muh-sutunlar li { align-items: center; display: grid; gap: .5rem; grid-template-columns: 1.6rem 9rem minmax(0, 1fr) auto auto auto; }
+.muh-sira { color: var(--text-muted); font-size: .72rem; text-align: right; }
+.muh-alan { font-size: .78rem; font-weight: 600; }
+@media (max-width: 760px) {
+  .muh-ozet { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .muh-arama--iki { grid-template-columns: 1fr; }
+  .muh-sutunlar li { grid-template-columns: 1.4rem minmax(0, 1fr) auto auto auto; }
+  .muh-sutunlar li .muh-alan { display: none; }
+  .muh-kaynak { display: block; float: none; }
+}
