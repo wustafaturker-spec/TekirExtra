@@ -3189,6 +3189,8 @@ model KasaBankaHareket {
   /// KSB-09: tahsilat/tediye makbuz numarası (ör. TM2026-000001). Veritabanı
   /// tetikleyicisi `makbuz_no_ver` kayıtta verir; uygulama yazmaz.
   makbuzNo          String?             @map("makbuz_no")
+  /// KSB-13: açıklama + makbuz no, aksansız (veritabanında üretilir, yalnız okunur).
+  aramaNormal       String?             @map("arama_normal")
   createdAt         DateTime            @default(now()) @map("created_at")
 
   kasa              Kasa?              @relation(fields: [kasaId], references: [id])
@@ -3212,6 +3214,9 @@ model KasaBankaHareket {
   @@index([tenantId, tarih])
   @@index([tenantId, projeId])
   @@index([tenantId, ekstreSatirId])
+  @@index([tenantId, kasaId, tarih])
+  @@index([tenantId, bankaHesapId, tarih])
+  @@index([tenantId, kaynakTur, kaynakRef])
   @@map("kasa_banka_hareketleri")
 }
 

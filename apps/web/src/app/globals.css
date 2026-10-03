@@ -4574,3 +4574,13 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .fx-exchange-preview .is-gain strong { color: var(--success); }
 .fx-exchange-preview .is-loss strong { color: var(--danger); }
 @media (max-width: 620px) { .fx-exchange-preview { grid-template-columns: 1fr; } }
+
+/* KSB-13: hareket listesinde süzgece uyan kayıtların döviz bazında toplamı ve sayfa sonu. */
+.treasury-totals { border-bottom: 1px solid var(--border); display: grid; gap: .35rem; padding: .6rem 1rem; }
+.treasury-totals > div { align-items: baseline; display: flex; flex-wrap: wrap; font-size: .65rem; gap: .35rem 1.1rem; }
+.treasury-totals > div > b { color: var(--text-muted); font-size: .6rem; letter-spacing: .08em; min-width: 2.6rem; }
+.treasury-totals > div > span { color: var(--text-muted); }
+.treasury-totals > div > span > strong { color: var(--text); margin-left: .25rem; white-space: nowrap; }
+.treasury-totals > div > span > strong.treasury-in { color: var(--success); }
+.treasury-totals > div > span > strong.treasury-out { color: var(--danger); }
+.treasury-more { border-top: 1px solid var(--border); display: flex; justify-content: center; padding: .75rem 1rem; }

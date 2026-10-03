@@ -880,12 +880,12 @@ describe("R0 kritik regresyon — çek/senet hesap ve cari yönleri", () => {
     expect(Number(kasaDetayi.veri.alacak)).toBe(300);
     expect(Number(kasaDetayi.veri.bakiye)).toBe(200);
 
-    const hareketler = await istek<Array<{ tip: string; kaynakTur: string; kaynakRef: string }>>(
+    const hareketler = await istek<{ kayitlar: Array<{ tip: string; kaynakTur: string; kaynakRef: string }> }>(
       `/kasa-banka/hareketler?kasaId=${kasa.veri.id}`,
       { jeton },
     );
     expect(hareketler.durum, JSON.stringify(hareketler.veri)).toBe(200);
-    expect(hareketler.veri).toEqual(expect.arrayContaining([
+    expect(hareketler.veri.kayitlar).toEqual(expect.arrayContaining([
       expect.objectContaining({ tip: "tahsilat", kaynakTur: "cek_senet", kaynakRef: alinan.veri.id }),
       expect.objectContaining({ tip: "tediye", kaynakTur: "cek_senet", kaynakRef: verilen.veri.id }),
     ]));
@@ -1022,12 +1022,12 @@ describe("R0 kritik regresyon — POS banka mutabakatı ve geri alma", () => {
     const geriBanka = await istek<{ bakiye: string }>(`/kasa-banka/bankalar/${banka.veri.id}`, { jeton });
     expect(Number(geriBanka.veri.bakiye)).toBe(0);
 
-    const posHareketleri = await istek<Array<{ id: string; kaynakTur: string | null }>>(
+    const posHareketleri = await istek<{ kayitlar: Array<{ id: string; kaynakTur: string | null }> }>(
       `/kasa-banka/hareketler?posHesapId=${pos.veri.id}`,
       { jeton },
     );
-    expect(posHareketleri.veri).toHaveLength(1);
-    expect(posHareketleri.veri[0].id).toBe(tahsilat.veri.id);
+    expect(posHareketleri.veri.kayitlar).toHaveLength(1);
+    expect(posHareketleri.veri.kayitlar[0].id).toBe(tahsilat.veri.id);
 
     const geriAlinanMasraflar = await istek<Array<{ id: string }>>("/masraflar", { jeton });
     expect(geriAlinanMasraflar.veri.some((masraf) => masraf.id === aktarim.veri.komisyonMasrafi.id)).toBe(false);

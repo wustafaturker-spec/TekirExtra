@@ -55,6 +55,46 @@ const tutarTR = (tutar: Prisma.Decimal, doviz: string) => `${Number(tutar).toLoc
 /** Dosya adında Türkçe harf ve boşluk kalmasın. */
 const dosyaAdiParcasi = (ad: string) => metinNormalize(ad).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "hesap";
 
+/** KSB-13: hareket listesi süzgeci; tarih "YYYY-AA-GG", hesaplardan biri verilir. */
+export interface HareketSuzgeci {
+  kasaId?: string;
+  bankaHesapId?: string;
+  posHesapId?: string;
+  baslangic?: string;
+  bitis?: string;
+  tur?: "tahsilat" | "tediye" | "virman_gelis" | "virman_gidis" | "acilis";
+  arama?: string;
+  imlec?: string;
+  adet: number;
+}
+
+const HAREKET_LISTE_ILISKILERI = {
+  kasa: { select: { id: true, ad: true } },
+  bankaHesap: { select: { id: true, ad: true, bankaAdi: true } },
+  cari: { select: { id: true, kod: true, unvan: true } },
+  fatura: { select: { id: true, no: true, genelToplam: true } },
+  posHesap: { select: { id: true, ad: true, saglayici: true } },
+} satisfies Prisma.KasaBankaHareketInclude;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function hareketSuzgeciKosulu(s: Omit<HareketSuzgeci, "imlec" | "adet">): Prisma.KasaBankaHareketWhereInput {
+  const aranan = s.arama?.trim() ? metinNormalize(s.arama.trim()) : "";
+  return {
+    ...(s.kasaId ? { kasaId: s.kasaId } : {}),
+    ...(s.bankaHesapId ? { bankaHesapId: s.bankaHesapId } : {}),
+    ...(s.posHesapId ? { posHesapId: s.posHesapId } : {}),
+    ...(s.baslangic || s.bitis
+      ? { tarih: { ...(s.baslangic ? { gte: new Date(`${s.baslangic}T00:00:00.000Z`) } : {}), ...(s.bitis ? { lte: new Date(`${s.bitis}T00:00:00.000Z`) } : {}) } }
+      : {}),
+    // Açılış fişi tahsilat/tediye tipinde tutulur ama ayrı bir tür olarak süzülür.
+    ...(s.tur === "acilis" ? { kaynakTur: "acilis" } : s.tur ? { tip: s.tur, kaynakTur: { not: "acilis" } } : {}),
+    ...(aranan
+      ? { OR: [{ aramaNormal: { contains: aranan } }, { cari: { aramaNormal: { contains: aranan } } }, { fatura: { aramaNormal: { contains: aranan } } }] }
+      : {}),
+  };
+}
+
 export const makbuzNoBicimle = (onek: string, yil: number, sira: number) => `${onek}${yil}-${String(sira).padStart(6, "0")}`;
 
 @Injectable()
@@ -311,27 +351,96 @@ export class KasaBankaService {
 
   // ─── HAREKET YÖNETİMİ & FATURA KAPAMA (KSB-02/07) ─────────────────────────
 
-  async hareketListele(kasaId?: string, bankaHesapId?: string, posHesapId?: string) {
+  /**
+   * KSB-13: hareket listesi sunucuda süzülür ve imleçle sayfalanır. İlk sayfada
+   * (imleç yokken) süzgece uyan kayıtların döviz bazında toplamları ve günün
+   * TL giriş/çıkışı da döner; sonraki sayfalar yalnız kayıt getirir.
+   */
+  async hareketListele(s: HareketSuzgeci) {
+    const { tenantId } = aktifBaglam();
+    const where = hareketSuzgeciKosulu(s);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kayitlar = await tx.kasaBankaHareket.findMany({
+        where,
+        orderBy: [{ tarih: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+        take: s.adet + 1,
+        ...(s.imlec ? { cursor: { id: s.imlec }, skip: 1 } : {}),
+        include: HAREKET_LISTE_ILISKILERI,
+        omit: { aramaNormal: true },
+      });
+      const sayfa = kayitlar.slice(0, s.adet);
+      const geriAlinan = await this.geriAlinanlar(tx, sayfa);
+      return {
+        kayitlar: sayfa.map((h) => ({ ...h, geriAlindi: geriAlinan.has(h.id) || (h.karsiHareketId !== null && geriAlinan.has(h.karsiHareketId)) })),
+        sonrakiImlec: kayitlar.length > s.adet ? sayfa[sayfa.length - 1].id : null,
+        ...(s.imlec ? {} : await this.hareketToplamlari(tx, where)),
+      };
+    });
+  }
+
+  /** Ters kaydı atılmış fişler; virmanın iki bacağı birlikte geri alınmış sayılır. */
+  private async geriAlinanlar(tx: Prisma.TransactionClient, hareketler: Array<{ id: string; karsiHareketId: string | null }>) {
+    const idler = hareketler.flatMap((h) => (h.karsiHareketId ? [h.id, h.karsiHareketId] : [h.id]));
+    if (!idler.length) return new Set<string>();
+    const tersler = await tx.kasaBankaHareket.findMany({ where: { kaynakTur: "ters_kayit", kaynakRef: { in: idler } }, select: { kaynakRef: true } });
+    return new Set(tersler.map((t) => t.kaynakRef as string));
+  }
+
+  private async hareketToplamlari(tx: Prisma.TransactionClient, where: Prisma.KasaBankaHareketWhereInput) {
+    const bugun = new Date(`${bugunTR()}T00:00:00.000Z`);
+    const [adet, gruplar, bugunku] = await Promise.all([
+      tx.kasaBankaHareket.count({ where }),
+      // Açılış fişi bakiyeye girer ama tahsilat/ödeme sayılmaz (KSB-12).
+      tx.kasaBankaHareket.groupBy({ by: ["dovizCinsi", "tip"], where: { AND: [where, { kaynakTur: { not: "acilis" } }] }, _sum: { tutar: true } }),
+      tx.kasaBankaHareket.groupBy({ by: ["tip"], where: { dovizCinsi: "TRY", tarih: bugun, kaynakTur: { not: "acilis" } }, _sum: { tutar: true } }),
+    ]);
+    const dovizler = new Map<string, { giris: Prisma.Decimal; cikis: Prisma.Decimal }>();
+    for (const g of gruplar) {
+      const d = dovizler.get(g.dovizCinsi) ?? { giris: D(0), cikis: D(0) };
+      const tutar = g._sum.tutar ?? D(0);
+      if (girisMi(g.tip)) d.giris = d.giris.add(tutar);
+      else d.cikis = d.cikis.add(tutar);
+      dovizler.set(g.dovizCinsi, d);
+    }
+    const bugunToplam = (giris: boolean) => bugunku.filter((g) => girisMi(g.tip) === giris).reduce((t, g) => t.add(g._sum.tutar ?? D(0)), D(0)).toFixed(2);
+    return {
+      toplamlar: {
+        adet,
+        dovizler: [...dovizler.entries()]
+          .sort(([a], [b]) => (a === "TRY" ? -1 : b === "TRY" ? 1 : a.localeCompare(b)))
+          .map(([dovizCinsi, t]) => ({ dovizCinsi, giris: t.giris.toFixed(2), cikis: t.cikis.toFixed(2), net: t.giris.sub(t.cikis).toFixed(2) })),
+      },
+      bugun: { giris: bugunToplam(true), cikis: bugunToplam(false) },
+    };
+  }
+
+  /**
+   * KSB-13: fiş ayrıntısının tam listeye bakmadan bildiği bağlam — virmanın
+   * karşı bacağı, fişi geri alan ters kayıt, ters kaydın asıl fişi ve fişin
+   * açılışa çevrilip çevrilemeyeceği (koşullar `acilisaCevir` ile aynı).
+   */
+  async hareketBaglami(id: string) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const hareketler = await tx.kasaBankaHareket.findMany({
-        where: {
-          kasaId: kasaId || undefined,
-          bankaHesapId: bankaHesapId || undefined,
-          posHesapId: posHesapId || undefined,
-        },
-        orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
-        include: {
-          kasa: { select: { id: true, ad: true } },
-          bankaHesap: { select: { id: true, ad: true, bankaAdi: true } },
-          cari: { select: { id: true, kod: true, unvan: true } },
-          fatura: { select: { id: true, no: true, genelToplam: true } },
-          posHesap: { select: { id: true, ad: true, saglayici: true } },
-        },
+      const h = await tx.kasaBankaHareket.findUnique({ where: { id }, include: HAREKET_LISTE_ILISKILERI, omit: { aramaNormal: true } });
+      if (!h) throw new NotFoundException("Kasa/banka hareketi bulunamadı");
+      const karsi = h.karsiHareketId
+        ? await tx.kasaBankaHareket.findUnique({ where: { id: h.karsiHareketId }, include: HAREKET_LISTE_ILISKILERI, omit: { aramaNormal: true } })
+        : null;
+      const ters = await tx.kasaBankaHareket.findFirst({
+        where: { kaynakTur: "ters_kayit", kaynakRef: { in: karsi ? [h.id, karsi.id] : [h.id] } },
+        select: { id: true, tarih: true },
       });
-      // Portföydeki çekler nakit değildir; deftere karışmaz, kasa/banka
-      // sayfası onları ayrı bir göstergede (`cek-senet-ozet`) gösterir.
-      return hareketler;
+      const asilId = h.kaynakTur === "ters_kayit" && h.kaynakRef && UUID.test(h.kaynakRef) ? h.kaynakRef : null;
+      const asil = asilId ? await tx.kasaBankaHareket.findUnique({ where: { id: asilId }, select: { id: true, tarih: true, tip: true } }) : null;
+      const hesap = h.kasaId ? { kasaId: h.kasaId } : h.bankaHesapId ? { bankaHesapId: h.bankaHesapId } : null;
+      const acilisaCevrilebilir = Boolean(hesap) && h.kaynakTur === "manuel" && !h.cariId && !h.faturaId && !h.ekstreSatirId && !ters
+        && (h.tip === "tahsilat" || h.tip === "tediye")
+        && !(await tx.kasaBankaHareket.findFirst({
+          where: { ...hesap, OR: [{ kaynakTur: "acilis" }, { id: { not: h.id }, tarih: { lt: h.tarih } }] },
+          select: { id: true },
+        }));
+      return { karsi, ters, asil, acilisaCevrilebilir };
     });
   }
 

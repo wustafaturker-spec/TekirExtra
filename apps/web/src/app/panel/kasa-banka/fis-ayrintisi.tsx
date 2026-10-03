@@ -74,15 +74,21 @@ const virmanMi = (h: DefterHareketi) => h.tip === "virman_gelis" || h.tip === "v
 const hesapAdi = (h: DefterHareketi) => h.kasa?.ad ?? h.bankaHesap?.ad ?? h.posHesap?.ad ?? "—";
 const hesapAnahtari = (h: DefterHareketi) => (h.kasa ? `kasa:${h.kasa.id}` : h.bankaHesap ? `banka:${h.bankaHesap.id}` : null);
 
+/** KSB-13: tam listeye bakmadan sunucudan gelen bağlam (`/hareketler/:id/baglam`). */
+interface FisBaglami {
+  karsi: DefterHareketi | null;
+  ters: { id: string; tarih: string } | null;
+  asil: { id: string; tarih: string; tip: string } | null;
+  acilisaCevrilebilir: boolean;
+}
+
 export function FisAyrintisi({
   hareket,
-  hareketler,
   onDuzelt,
   onGeriAlindi,
 }: {
   hareket: DefterHareketi;
-  hareketler: DefterHareketi[];
-  onDuzelt: (h: DefterHareketi) => void;
+  onDuzelt: (h: DefterHareketi, karsi: DefterHareketi | null) => void;
   onGeriAlindi: (mesaj: string) => void;
 }) {
   const [geriAlAcik, setGeriAlAcik] = useState(false);
@@ -116,18 +122,28 @@ export function FisAyrintisi({
     }
   }
 
-  const karsi = hareket.karsiHareketId ? hareketler.find((h) => h.id === hareket.karsiHareketId) ?? null : null;
-  const ters = hareketler.find((h) => h.kaynakTur === "ters_kayit" && (h.kaynakRef === hareket.id || (karsi && h.kaynakRef === karsi.id)));
-  const asil = hareket.kaynakTur === "ters_kayit" ? hareketler.find((h) => h.id === hareket.kaynakRef) ?? null : null;
+  const [baglam, setBaglam] = useState<FisBaglami | null>(null);
+  const [baglamHata, setBaglamHata] = useState("");
+  useEffect(() => {
+    let iptal = false;
+    setBaglam(null);
+    setBaglamHata("");
+    api<FisBaglami>(`/kasa-banka/hareketler/${hareket.id}/baglam`)
+      .then((b) => { if (!iptal) setBaglam(b); })
+      .catch((err) => { if (!iptal) setBaglamHata(err instanceof Error ? err.message : "Fişin bağlantıları okunamadı"); });
+    return () => { iptal = true; };
+  }, [hareket.id]);
+
+  const karsi = baglam?.karsi ?? null;
+  const ters = baglam?.ters ?? null;
+  const asil = baglam?.asil ?? null;
   const elleGirilen = hareket.kaynakTur === "manuel" || hareket.kaynakTur === "fatura_kapama";
-  const degistirilebilir = elleGirilen && !ters;
+  // Bağlam gelmeden eylem düğmeleri gösterilmez; geri alınmış fiş yeniden değiştirilmesin.
+  const degistirilebilir = elleGirilen && baglam !== null && !ters;
   const acilis = hareket.kaynakTur === "acilis";
   const hesap = hesapAnahtari(hareket);
   // Sunucu da aynı koşulları denetler; burada yalnız düğmenin gösterilip gösterilmeyeceği belirlenir.
-  const ayniHesap = hareketler.filter((h) => hesap && hesapAnahtari(h) === hesap);
-  const acilisaCevrilebilir = Boolean(hesap) && hareket.kaynakTur === "manuel" && !hareket.cari && !hareket.fatura && !ters
-    && (hareket.tip === "tahsilat" || hareket.tip === "tediye")
-    && !ayniHesap.some((h) => h.kaynakTur === "acilis" || (h.id !== hareket.id && h.tarih.slice(0, 10) < hareket.tarih.slice(0, 10)));
+  const acilisaCevrilebilir = baglam?.acilisaCevrilebilir ?? false;
 
   async function acilisaCevir(e: React.FormEvent) {
     e.preventDefault();
@@ -158,7 +174,7 @@ export function FisAyrintisi({
         )}
         {degistirilebilir && (
           <>
-            <Button size="sm" onClick={() => onDuzelt(hareket)} disabled={geriAlAcik || cevirAcik}>Düzelt</Button>
+            <Button size="sm" onClick={() => onDuzelt(hareket, karsi)} disabled={geriAlAcik || cevirAcik}>Düzelt</Button>
             <Button size="sm" variant="danger" onClick={() => setGeriAlAcik(true)} disabled={geriAlAcik || cevirAcik}>Geri al</Button>
           </>
         )}
@@ -195,6 +211,7 @@ export function FisAyrintisi({
         <div><dt>Kaynak</dt><dd>{KAYNAK_ADI[hareket.kaynakTur] ?? hareket.kaynakTur.replaceAll("_", " ")}</dd></div>
       </dl>
 
+      {baglamHata && <Alert tone="error">{baglamHata}</Alert>}
       {ters && (
         <Alert tone="warning">
           Bu fiş <Tarih deger={ters.tarih} /> tarihli ters kayıtla geri alındı; iki kayıt birbirini sıfırlar.

@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiHata, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { OdemeFisi, type FisBaslangici, type FisTipi } from "./odeme-fisi";
 import { FisAyrintisi, type DefterHareketi } from "./fis-ayrintisi";
@@ -22,7 +22,21 @@ interface Cari {
   id: string;
   unvan: string;
 }
-type Hareket = DefterHareketi;
+type Hareket = DefterHareketi & { geriAlindi: boolean };
+/** KSB-13: süzgece uyan kayıtların döviz bazında toplamı (yalnız ilk sayfada gelir). */
+interface HareketToplamlari {
+  adet: number;
+  dovizler: Array<{ dovizCinsi: string; giris: string; cikis: string; net: string }>;
+}
+interface HareketSayfasi {
+  kayitlar: Hareket[];
+  sonrakiImlec: string | null;
+  toplamlar?: HareketToplamlari;
+  bugun?: { giris: string; cikis: string };
+}
+const SAYFA_ADEDI = 50;
+/** CSV süzgece uyan kayıtları sayfa sayfa çeker; en çok bu kadar. */
+const CSV_SINIRI = 50_000;
 interface PortfoyOzeti {
   acik: { adet: number; toplamTry: string };
   geciken: { adet: number; toplamTry: string };
@@ -48,6 +62,10 @@ export default function KasaBankaSayfasi() {
   const [kasalar, setKasalar] = useState<Hesap[]>([]),
     [bankalar, setBankalar] = useState<Hesap[]>([]),
     [hareketler, setHareketler] = useState<Hareket[]>([]),
+    [sonrakiImlec, setSonrakiImlec] = useState<string | null>(null),
+    [toplamlar, setToplamlar] = useState<HareketToplamlari | null>(null),
+    [bugun, setBugun] = useState({ giris: "0", cikis: "0" }),
+    [listeYukleniyor, setListeYukleniyor] = useState(true),
     [cariler, setCariler] = useState<Cari[]>([]);
   const [modal, setModal] = useState<Modal>(null),
     [islem, setIslem] = useState(""),
@@ -57,7 +75,8 @@ export default function KasaBankaSayfasi() {
     [turFiltre, setTurFiltre] = useState(""),
     [hesapFiltre, setHesapFiltre] = useState(""),
     [baslangic, setBaslangic] = useState(""),
-    [bitis, setBitis] = useState("");
+    [bitis, setBitis] = useState(""),
+    [gecikmeliArama, setGecikmeliArama] = useState("");
   const [ad, setAd] = useState(""),
     [bankaAdi, setBankaAdi] = useState(""),
     [hesapNo, setHesapNo] = useState(""),
@@ -77,17 +96,73 @@ export default function KasaBankaSayfasi() {
     [acilisEksi, setAcilisEksi] = useState(false),
     [acilisTarihi, setAcilisTarihi] = useState(yerelTarih);
   const [virmanEksiUyari, setVirmanEksiUyari] = useState<string | null>(null);
+  // Arama her tuşta değil, yazma durunca sunucuya gider.
+  useEffect(() => {
+    const t = setTimeout(() => setGecikmeliArama(arama.trim()), 300);
+    return () => clearTimeout(t);
+  }, [arama]);
+  const suzgec = useMemo(() => {
+    const p = new URLSearchParams();
+    const [hesapTuru, hesapId] = hesapFiltre.split(":");
+    if (hesapTuru === "kasa") p.set("kasaId", hesapId);
+    if (hesapTuru === "banka") p.set("bankaHesapId", hesapId);
+    if (turFiltre) p.set("tur", turFiltre);
+    if (baslangic) p.set("baslangic", baslangic);
+    if (bitis) p.set("bitis", bitis);
+    if (gecikmeliArama) p.set("arama", gecikmeliArama);
+    return p;
+  }, [hesapFiltre, turFiltre, baslangic, bitis, gecikmeliArama]);
+  // Süzgeç hızlı değişince geç gelen eski yanıt yenisinin üstüne yazmasın.
+  const listeIstegi = useRef(0);
+  const hareketleriYukle = useCallback(async () => {
+    const no = ++listeIstegi.current;
+    setListeYukleniyor(true);
+    try {
+      const p = new URLSearchParams(suzgec);
+      p.set("adet", String(SAYFA_ADEDI));
+      const sayfa = await api<HareketSayfasi>(`/kasa-banka/hareketler?${p}`);
+      if (no !== listeIstegi.current) return;
+      setHareketler(sayfa.kayitlar);
+      setSonrakiImlec(sayfa.sonrakiImlec);
+      setToplamlar(sayfa.toplamlar ?? null);
+      if (sayfa.bugun) setBugun(sayfa.bugun);
+    } catch (e) {
+      if (no === listeIstegi.current) setHata(e instanceof Error ? e.message : "Hareketler yüklenemedi");
+    } finally {
+      if (no === listeIstegi.current) setListeYukleniyor(false);
+    }
+  }, [suzgec]);
+  async function dahaFazlaYukle() {
+    if (!sonrakiImlec) return;
+    const no = listeIstegi.current;
+    setListeYukleniyor(true);
+    try {
+      const p = new URLSearchParams(suzgec);
+      p.set("adet", String(SAYFA_ADEDI));
+      p.set("imlec", sonrakiImlec);
+      const sayfa = await api<HareketSayfasi>(`/kasa-banka/hareketler?${p}`);
+      if (no !== listeIstegi.current) return;
+      setHareketler((onceki) => [...onceki, ...sayfa.kayitlar]);
+      setSonrakiImlec(sayfa.sonrakiImlec);
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : "Hareketler yüklenemedi");
+    } finally {
+      if (no === listeIstegi.current) setListeYukleniyor(false);
+    }
+  }
+  useEffect(() => {
+    if (tokenAl()) void hareketleriYukle();
+  }, [hareketleriYukle]);
   const yukle = useCallback(async () => {
     setIslem("yukle");
     try {
-      const [k, b, h] = await Promise.all([
+      const [k, b] = await Promise.all([
         api<Hesap[]>("/kasa-banka/kasalar"),
         api<Hesap[]>("/kasa-banka/bankalar"),
-        api<Hareket[]>("/kasa-banka/hareketler"),
+        hareketleriYukle(),
       ]);
       setKasalar(k);
       setBankalar(b);
-      setHareketler(h);
       void api<PortfoyOzeti>("/kasa-banka/cek-senet-ozet?yon=alinan")
         .then(setPortfoy)
         .catch(() => setPortfoy(null));
@@ -96,13 +171,22 @@ export default function KasaBankaSayfasi() {
     } finally {
       setIslem("");
     }
-  }, []);
+  }, [hareketleriYukle]);
+  // Hesaplar bir kez yüklenir; süzgeç değişince yalnız liste yenilenir (yukarıdaki etki).
   useEffect(() => {
     if (tokenAl()) {
-      void yukle();
+      void Promise.all([api<Hesap[]>("/kasa-banka/kasalar"), api<Hesap[]>("/kasa-banka/bankalar")])
+        .then(([k, b]) => {
+          setKasalar(k);
+          setBankalar(b);
+        })
+        .catch((e) => setHata(e instanceof Error ? e.message : "Finans verileri yüklenemedi"));
+      void api<PortfoyOzeti>("/kasa-banka/cek-senet-ozet?yon=alinan")
+        .then(setPortfoy)
+        .catch(() => setPortfoy(null));
       void tumSayfalariAl<Cari>("/cari").then(setCariler);
     }
-  }, [yukle]);
+  }, []);
   useEffect(() => {
     const p = new URLSearchParams(location.search),
       i = p.get("islem");
@@ -125,50 +209,19 @@ export default function KasaBankaSayfasi() {
   const hedefler = tumHesaplar.filter(
     (x) => x.aktif && (!kaynakHesap || x.dovizCinsi === kaynakHesap.dovizCinsi) && `${x.tur}:${x.id}` !== kaynak,
   );
-  const filtreli = useMemo(
-    () =>
-      hareketler.filter(
-        (h) =>
-          (!arama ||
-            `${h.aciklama || ""} ${h.cari?.unvan || ""} ${h.fatura?.no || ""} ${h.makbuzNo || ""}`
-              .toLocaleLowerCase("tr-TR")
-              .includes(arama.toLocaleLowerCase("tr-TR"))) &&
-          (!turFiltre || (turFiltre === "acilis" ? h.kaynakTur === "acilis" : h.tip === turFiltre && h.kaynakTur !== "acilis")) &&
-          (!hesapFiltre || h.kasa?.id === hesapFiltre || h.bankaHesap?.id === hesapFiltre) &&
-          (!baslangic || h.tarih.slice(0, 10) >= baslangic) &&
-          (!bitis || h.tarih.slice(0, 10) <= bitis),
-      ),
-    [hareketler, arama, turFiltre, hesapFiltre, baslangic, bitis],
-  );
-  const ozet = useMemo(() => {
-    const tryH = hareketler.filter((h) => h.dovizCinsi === "TRY"),
-      bug = yerelTarih();
-    return {
+  const ozet = useMemo(
+    () => ({
       toplam: [...kasalar, ...bankalar].filter((x) => x.dovizCinsi === "TRY" && x.aktif).reduce((t, x) => t + Number(x.bakiye), 0),
-      giris: tryH
-        .filter((h) => h.tarih.slice(0, 10) === bug && h.kaynakTur !== "acilis" && giris(h.tip))
-        .reduce((t, h) => t + Number(h.tutar), 0),
-      cikis: tryH
-        .filter((h) => h.tarih.slice(0, 10) === bug && h.kaynakTur !== "acilis" && !giris(h.tip))
-        .reduce((t, h) => t + Number(h.tutar), 0),
+      giris: Number(bugun.giris),
+      cikis: Number(bugun.cikis),
       negatif: [...kasalar, ...bankalar].filter((x) => Number(x.bakiye) < 0).length,
-    };
-  }, [hareketler, kasalar, bankalar]);
-  const geriAlinanlar = useMemo(() => {
-    const k = new Set<string>();
-    for (const h of hareketler)
-      if (h.kaynakTur === "ters_kayit" && h.kaynakRef) {
-        k.add(h.kaynakRef);
-        const asil = hareketler.find((x) => x.id === h.kaynakRef);
-        if (asil?.karsiHareketId) k.add(asil.karsiHareketId);
-      }
-    return k;
-  }, [hareketler]);
-  const hesapAnahtari = (h?: Hareket | null) => (h?.kasa ? `kasa:${h.kasa.id}` : h?.bankaHesap ? `banka:${h.bankaHesap.id}` : "");
+    }),
+    [bugun, kasalar, bankalar],
+  );
+  const hesapAnahtari = (h?: DefterHareketi | null) => (h?.kasa ? `kasa:${h.kasa.id}` : h?.bankaHesap ? `banka:${h.bankaHesap.id}` : "");
   /** KSB-08: "geri al + yeniden gir" — form eski fişle dolu açılır, kayıtta eskisi aynı işlemde geri alınır. */
-  function duzelt(h: Hareket) {
+  function duzelt(h: DefterHareketi, karsi: DefterHareketi | null) {
     if (h.tip === "virman_gidis" || h.tip === "virman_gelis") {
-      const karsi = hareketler.find((x) => x.id === h.karsiHareketId) ?? null;
       const gidis = h.tip === "virman_gidis" ? h : karsi,
         gelis = h.tip === "virman_gidis" ? karsi : h;
       temizle();
@@ -279,10 +332,28 @@ export default function KasaBankaSayfasi() {
       setIslem("");
     }
   }
-  function csv() {
+  async function csv() {
+    setIslem("csv");
+    let tumu: Hareket[] = [];
+    try {
+      let imlec: string | null = null;
+      do {
+        const p = new URLSearchParams(suzgec);
+        p.set("adet", "1000");
+        if (imlec) p.set("imlec", imlec);
+        const sayfa: HareketSayfasi = await api<HareketSayfasi>(`/kasa-banka/hareketler?${p}`);
+        tumu = tumu.concat(sayfa.kayitlar);
+        imlec = sayfa.sonrakiImlec;
+      } while (imlec && tumu.length < CSV_SINIRI);
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : "CSV hazırlanamadı");
+      return;
+    } finally {
+      setIslem("");
+    }
     const rows = [
       ["Tarih", "Makbuz no", "Hesap", "Tür", "Cari", "Fatura", "Açıklama", "Tutar", "Döviz", "Kur", "TRY Tutar"],
-      ...filtreli.map((h) => [
+      ...tumu.slice(0, CSV_SINIRI).map((h) => [
         h.tarih.slice(0, 10),
         h.makbuzNo || "",
         h.kasa?.ad || h.bankaHesap?.ad || "",
@@ -504,7 +575,7 @@ export default function KasaBankaSayfasi() {
             <Select value={hesapFiltre} onChange={(e) => setHesapFiltre(e.target.value)}>
               <option value="">Tüm hesaplar</option>
               {tumHesaplar.map((x) => (
-                <option key={`${x.tur}-${x.id}`} value={x.id}>
+                <option key={`${x.tur}-${x.id}`} value={`${x.tur}:${x.id}`}>
                   {x.ad} · {x.dovizCinsi}
                 </option>
               ))}
@@ -516,8 +587,8 @@ export default function KasaBankaSayfasi() {
           <Field label="Bitiş">
             <Input type="date" min={baslangic} value={bitis} onChange={(e) => setBitis(e.target.value)} />
           </Field>
-          <Button onClick={csv} disabled={!filtreli.length}>
-            CSV
+          <Button onClick={() => void csv()} disabled={!hareketler.length || Boolean(islem)}>
+            {islem === "csv" ? "Hazırlanıyor…" : "CSV"}
           </Button>
         </div>
       </Card>
@@ -528,10 +599,32 @@ export default function KasaBankaSayfasi() {
           <div>
             <span>FİNANS DEFTERİ</span>
             <h2>Kasa ve banka hareketleri</h2>
-            <small>{filtreli.length} kayıt</small>
+            <small>
+              {toplamlar
+                ? `${toplamlar.adet.toLocaleString("tr-TR")} kayıt${toplamlar.adet > hareketler.length ? ` · ${hareketler.length.toLocaleString("tr-TR")} gösteriliyor` : ""}`
+                : "…"}
+            </small>
           </div>
         }
       >
+        {toplamlar && toplamlar.dovizler.length > 0 && (
+          <div className="treasury-totals" aria-label="Süzgece uyan kayıtların toplamı">
+            {toplamlar.dovizler.map((t) => (
+              <div key={t.dovizCinsi}>
+                <b>{t.dovizCinsi}</b>
+                <span>
+                  Giriş <strong className="treasury-in">{para(t.giris, t.dovizCinsi)}</strong>
+                </span>
+                <span>
+                  Çıkış <strong className="treasury-out">{para(t.cikis, t.dovizCinsi)}</strong>
+                </span>
+                <span>
+                  Net <strong>{para(t.net, t.dovizCinsi)}</strong>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         <TableWrap>
           <thead>
             <tr>
@@ -546,17 +639,17 @@ export default function KasaBankaSayfasi() {
             </tr>
           </thead>
           <tbody>
-            {islem === "yukle" && !hareketler.length ? (
+            {listeYukleniyor && !hareketler.length ? (
               <tr>
                 <td colSpan={8}>
                   <div className="treasury-empty">Hareketler yükleniyor…</div>
                 </td>
               </tr>
             ) : (
-              filtreli.map((h) => (
+              hareketler.map((h) => (
                 <tr
                   key={h.id}
-                  className={`row-link${geriAlinanlar.has(h.id) ? " is-reversed" : ""}`}
+                  className={`row-link${h.geriAlindi ? " is-reversed" : ""}`}
                   tabIndex={0}
                   aria-label="Fiş ayrıntısını aç"
                   onClick={() => {
@@ -611,14 +704,14 @@ export default function KasaBankaSayfasi() {
                   <td>
                     {h.kaynakTur === "ters_kayit" ? (
                       <Badge variant="warning">Ters kayıt</Badge>
-                    ) : geriAlinanlar.has(h.id) ? (
+                    ) : h.geriAlindi ? (
                       <Badge variant="neutral">Geri alındı</Badge>
                     ) : null}
                   </td>
                 </tr>
               ))
             )}
-            {!filtreli.length && islem !== "yukle" && (
+            {!hareketler.length && !listeYukleniyor && (
               <tr>
                 <td colSpan={8}>
                   <div className="treasury-empty">Hareket bulunamadı.</div>
@@ -627,6 +720,13 @@ export default function KasaBankaSayfasi() {
             )}
           </tbody>
         </TableWrap>
+        {sonrakiImlec && (
+          <div className="treasury-more">
+            <Button onClick={() => void dahaFazlaYukle()} disabled={listeYukleniyor}>
+              {listeYukleniyor ? "Yükleniyor…" : `Daha fazla yükle (${SAYFA_ADEDI})`}
+            </Button>
+          </div>
+        )}
       </Card>
       {modal && (
         <div
@@ -736,7 +836,6 @@ export default function KasaBankaSayfasi() {
             {modal === "detay" && secili && (
               <FisAyrintisi
                 hareket={secili}
-                hareketler={hareketler}
                 onDuzelt={duzelt}
                 onGeriAlindi={async (mesaj) => {
                   setBasari(mesaj);

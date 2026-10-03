@@ -193,13 +193,28 @@ export class KasaBankaController {
 
   // ─── HAREKET ENDPOINTS ─────────────────────────────────────────────────────
 
+  /** KSB-13: süzgeçli, imleçli liste; ilk sayfada toplamlar da döner. */
   @Get("hareketler")
-  async hareketListele(
-    @Query("kasaId") kasaId?: string,
-    @Query("bankaHesapId") bankaHesapId?: string,
-    @Query("posHesapId") posHesapId?: string,
-  ) {
-    return this.service.hareketListele(kasaId, bankaHesapId, posHesapId);
+  async hareketListele(@Query() sorgu: Record<string, string | undefined>) {
+    const gun = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tarih YYYY-AA-GG biçiminde olmalı").optional();
+    const girdi = z.object({
+      kasaId: z.uuid().optional(),
+      bankaHesapId: z.uuid().optional(),
+      posHesapId: z.uuid().optional(),
+      baslangic: gun,
+      bitis: gun,
+      tur: z.enum(["tahsilat", "tediye", "virman_gelis", "virman_gidis", "acilis"]).optional(),
+      arama: z.string().max(200).optional(),
+      imlec: z.uuid().optional(),
+      adet: z.coerce.number().int().min(1).max(1000).default(50),
+    }).safeParse(Object.fromEntries(Object.entries(sorgu).filter(([, deger]) => deger !== "")));
+    if (!girdi.success) throw new BadRequestException(girdi.error.issues.map((i) => i.message).join("; "));
+    return this.service.hareketListele(girdi.data);
+  }
+
+  @Get("hareketler/:id/baglam")
+  hareketBaglami(@Param("id", ParseUUIDPipe) id: string) {
+    return this.service.hareketBaglami(id);
   }
 
   /** KSB-07: tahsilat/ödeme fişinde carinin kalanı olan faturaları. */
