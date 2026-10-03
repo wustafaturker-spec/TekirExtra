@@ -2,14 +2,17 @@ import "./cari.raporlar";
 import { Module, OnModuleInit } from "@nestjs/common";
 import { registerEylemPolitikasi } from "../core/eylemler/eylem-kayit";
 import { CariController } from "./cari.controller";
+import { VadeHatirlatmaController } from "./vade-hatirlatma.controller";
+import { VadeHatirlatmaService } from "./vade-hatirlatma.service";
 import { CariService } from "./cari.service";
 import { CariIceAktarmaService } from "./cari-ice-aktarma.service";
 import { TenantModule } from "../tenant/tenant.module";
 
 @Module({
   imports: [TenantModule],
-  controllers: [CariController],
-  providers: [CariService, CariIceAktarmaService],
+  // Sabit yollu denetleyici önce: "cari/vade-hatirlatma/..." `:id` kalıplarına düşmesin.
+  controllers: [VadeHatirlatmaController, CariController],
+  providers: [CariService, CariIceAktarmaService, VadeHatirlatmaService],
   exports: [CariService],
 })
 export class CariModule implements OnModuleInit {

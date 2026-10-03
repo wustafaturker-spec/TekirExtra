@@ -11,7 +11,7 @@ import { DOVIZ_CINSLERI } from "@tekirextra/shared";
  * (GET/PUT /ayarlar/:modul) tipli bir form ile tüketir. Alan tanımları burada
  * deklaratiftir; yeni modül ayarı gelince yalnız bu tablo genişletilir.
  */
-type AlanTip = "enum" | "sayi" | "onay" | "metin" | "kasaRef" | "bankaRef" | "sablon" | "gizli";
+type AlanTip = "enum" | "sayi" | "onay" | "metin" | "uzunMetin" | "kasaRef" | "bankaRef" | "sablon" | "gizli";
 interface Alan {
   ad: string;
   etiket: string;
@@ -26,6 +26,8 @@ interface ModulTanim {
   ikon: string;
   alanlar: Alan[];
 }
+
+const HATIRLATMA_ALANLARI = "Kullanılabilir alanlar: {unvan} {firma} {toplam} {enEskiVade} {gecikmeGun} {faturaSayisi} {faturalar} — {faturalar} vadesi geçmiş belge tablosudur; metinde yoksa sona eklenir.";
 
 const MODUL_TANIM: Record<string, ModulTanim> = {
   arayuz: {
@@ -44,6 +46,11 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
       { ad: "varsayilanDoviz", etiket: "Varsayılan döviz", tip: "enum", secenekler: DOVIZ_CINSLERI.map((d) => [d, d]) },
       { ad: "riskLimitiPolitikasi", etiket: "Risk limiti politikası (CARI-32)", tip: "enum", secenekler: [["uyar", "Uyar"], ["engelle", "Engelle"], ["yonetici_onayi", "Yönetici onayı"]], ipucu: "Satış siparişi onayında ve satış faturası kesinleştirmede risk limiti aşılırsa davranış; yönetici onayında gerekçe denetim izine yazılır" },
       { ad: "babsEsigi", etiket: "Form BA/BS eşiği (TL, CARI-37)", tip: "sayi", min: 0, ipucu: "Aynı kişiyle bir aydaki KDV hariç toplam bu tutara ulaşırsa BA/BS'ye girer; mevzuattaki tutar 5.000 TL" },
+      // CARI-38: vade hatırlatma / ihtar e-postası şablonları.
+      { ad: "vadeHatirlatmaKonusu", etiket: "Vade hatırlatması — konu", tip: "metin" },
+      { ad: "vadeHatirlatmaMetni", etiket: "Vade hatırlatması — metin", tip: "uzunMetin", ipucu: HATIRLATMA_ALANLARI },
+      { ad: "ihtarKonusu", etiket: "Ödeme ihtarı — konu", tip: "metin" },
+      { ad: "ihtarMetni", etiket: "Ödeme ihtarı — metin", tip: "uzunMetin", ipucu: HATIRLATMA_ALANLARI },
     ],
   },
   stok: {
@@ -194,6 +201,9 @@ export default function ModulAyarlariSayfasi() {
         </Select>
       );
     }
+    if (a.tip === "uzunMetin") {
+      return <textarea className="textarea" rows={9} value={String(v ?? "")} onChange={(e) => alanGuncelle(modul, a.ad, e.target.value)} />;
+    }
     return <Input value={String(v ?? "")} onChange={(e) => alanGuncelle(modul, a.ad, e.target.value)} placeholder={a.ipucu} />;
   }
 
@@ -222,7 +232,7 @@ export default function ModulAyarlariSayfasi() {
               </div>
               <div className="row">
                 {tanim.alanlar.filter((a) => a.tip !== "gizli").map((a) => (
-                  <div key={a.ad} style={a.tip === "sablon" ? { flexBasis: "100%" } : { flex: 1, minWidth: 200 }}>
+                  <div key={a.ad} style={a.tip === "sablon" || a.tip === "uzunMetin" ? { flexBasis: "100%" } : { flex: 1, minWidth: 200 }}>
                     {a.tip === "sablon" ? alanGir(m, a) : <Field label={a.etiket}>{alanGir(m, a)}</Field>}
                     {a.ipucu && a.tip !== "metin" && <p className="subtle" style={{ fontSize: "0.75rem", margin: "0.25rem 0 0" }}>{a.ipucu}</p>}
                   </div>

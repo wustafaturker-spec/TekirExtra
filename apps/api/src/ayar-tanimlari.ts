@@ -2,6 +2,7 @@ import { z } from "zod";
 import { registerModulAyar } from "./core/ayarlar/ayar-kayit";
 import { BELGE_SABLONLARI, VARSAYILAN_VURGU_RENGI } from "./core/pdf/belge-temasi";
 import { DOVIZ_CINSLERI } from "@tekirextra/shared";
+import { VARSAYILAN_SABLONLAR } from "./cari/vade-hatirlatma";
 
 /**
  * Modül ayar tanımları (AYR-01/03). Her modül geldiği aşamada kendi
@@ -25,8 +26,13 @@ registerModulAyar(
     riskLimitiPolitikasi: z.enum(["uyar", "engelle", "yonetici_onayi"]),
     /// CARI-37: Form BA/BS bildirim eşiği (aynı kişiyle aylık KDV hariç TL toplamı).
     babsEsigi: z.number().min(0).max(1_000_000_000),
+    /// CARI-38: vade hatırlatma ve ihtar e-postası şablonları; boş bırakılırsa varsayılan metin.
+    vadeHatirlatmaKonusu: z.string().max(200),
+    vadeHatirlatmaMetni: z.string().max(5000),
+    ihtarKonusu: z.string().max(200),
+    ihtarMetni: z.string().max(5000),
   }),
-  { varsayilanVadeGun: 14, varsayilanDoviz: "TRY", riskLimitiPolitikasi: "uyar", babsEsigi: 5000 },
+  { varsayilanVadeGun: 14, varsayilanDoviz: "TRY", riskLimitiPolitikasi: "uyar", babsEsigi: 5000, ...VARSAYILAN_SABLONLAR },
 );
 
 registerModulAyar(

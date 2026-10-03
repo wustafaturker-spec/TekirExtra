@@ -44,5 +44,5 @@ export class EpostaService {
   async gecmis(adet = 50) { const { tenantId } = aktifBaglam(); return this.prisma.tenantIslem(tenantId, (tx) => tx.epostaGonderim.findMany({ orderBy: { createdAt: "desc" }, take: Math.min(adet, 100) })); }
   dogrulamaGonder(eposta: string, adSoyad: string, link: string) { return this.gonder({ alici: eposta, konu: "TekirExtra — e-posta adresinizi doğrulayın", tur: "dogrulama", metin: `Merhaba ${adSoyad},\n\nTekirExtra kaydınızı tamamlamak için e-posta adresinizi doğrulayın:\n${link}\n\nBu link 24 saat geçerlidir.`, html: `<p>Merhaba ${adSoyad},</p><p><a href="${link}">E-postamı doğrula</a></p>` }); }
   iletiGonder(girdi: { alici: string; konu: string; metin: string; html?: string }) { return this.gonder(girdi); }
-  ekliIletiGonder(girdi: { alici: string; konu: string; metin: string; ekler: { dosyaAdi: string; icerik: Buffer; mime: string }[] }) { return this.gonder({ ...girdi, tur: "belge" }); }
+  ekliIletiGonder(girdi: { alici: string; konu: string; metin: string; html?: string; ekler: { dosyaAdi: string; icerik: Buffer; mime: string }[] }) { return this.gonder({ ...girdi, tur: "belge" }); }
 }

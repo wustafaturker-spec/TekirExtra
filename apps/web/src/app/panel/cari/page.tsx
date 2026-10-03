@@ -950,6 +950,7 @@ export default function CariSayfasi() {
           <>
             {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/kasa-banka/kur-farki">💱 Kur Farkı</ButtonLabel>}
             {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/raporlar">📈 Raporlar</ButtonLabel>}
+            {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/vade-hatirlatma">⏰ Vade Hatırlatma</ButtonLabel>}
             {!yeniSayfasi && !detaySayfasi && <Button onClick={() => setIceAktarAcik(true)}>📥 Excel&apos;den İçe Aktar</Button>}
             {(yeniSayfasi || detaySayfasi) ? <Button onClick={() => router.push("/panel/cari")}>Listeye dön</Button> : <ButtonLabel as="a" role="button" variant="primary" href="/panel/cari/yeni">➕ Yeni Cari</ButtonLabel>}
           </>

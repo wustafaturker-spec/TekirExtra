@@ -39,6 +39,7 @@ Para hesabını ya da veri bütünlüğünü doğrudan etkileyen beş sorun var:
 | P1-6, P1-8 | ✅ 2026-10-04 — CARI-34 (son tahsilat/ödeme tüm ödeme kaynaklarından) ve CARI-35 (aynı VKN uyarı + onay) |
 | P2-1 | ✅ 2026-10-04 — CARI-36 (listede döviz kırılımı, bakiye durumu/aralığı süzgeci, bakiyeye göre sıralama; güncel kurla TL) |
 | P2-3 | ✅ 2026-10-04 — CARI-37 (Form BA/BS raporu + Excel, eşik ayarı, eşiğe yakınlar, cari bazında mutabakat PDF/e-posta) |
+| P2-5 | ✅ 2026-10-04 — CARI-38 (toplu vade hatırlatma/ihtar e-postası, Ayarlar'dan şablon, fatura tablosu + 90 günlük ekstre eki, 7 gün sıklık sınırı, CRM kaydı) |
 
 ## 2. Öncelik sınıfları
 

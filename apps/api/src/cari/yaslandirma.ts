@@ -30,18 +30,18 @@ export const YASLANDIRMA_KOVALARI = ["guncel", "gun0_30", "gun31_60", "gun61_90"
 
 export const bosYaslandirma = (): YaslandirmaSonucu => ({ guncel: 0, gun0_30: 0, gun31_60: 0, gun61_90: 0, gun90Ustu: 0, toplam: 0 });
 
-export function yaslandir(
-  hareketler: YaslandirmaHareketi[],
-  bugun: Date,
-  yon: YaslandirmaYonu = "alacaklarimiz",
-): YaslandirmaSonucu {
+/**
+ * FIFO sonrası açık kalan kalemler (vadesi en eskiden), her biri kendi açık
+ * tutarıyla. Girdi nesnesinin diğer alanları (ör. kaynak belge) korunur;
+ * vade hatırlatmasındaki fatura listesi bunu kullanır (CARI-38).
+ */
+export function acikKalemler<T extends YaslandirmaHareketi>(hareketler: T[], yon: YaslandirmaYonu = "alacaklarimiz"): (T & { acik: number })[] {
   const acikTip = yon === "alacaklarimiz" ? "borc" : "alacak";
   // Karşı yön toplamı en eski açık kalemlerden düşülür (FIFO)
   let kalanKapatan = hareketler
     .filter((h) => h.tip !== acikTip)
     .reduce((t, h) => t + h.tutar, 0);
-
-  const acikKalemler = hareketler
+  return hareketler
     .filter((h) => h.tip === acikTip)
     .sort(
       (a, b) =>
@@ -53,11 +53,19 @@ export function yaslandir(
       return { ...h, acik: h.tutar - kapatilan };
     })
     .filter((h) => h.acik > 0.005);
+}
+
+export function yaslandir(
+  hareketler: YaslandirmaHareketi[],
+  bugun: Date,
+  yon: YaslandirmaYonu = "alacaklarimiz",
+): YaslandirmaSonucu {
+  const acikKalemlerListesi = acikKalemler(hareketler, yon);
 
   const sonuc = bosYaslandirma();
   const GUN_MS = 24 * 60 * 60 * 1000;
 
-  for (const kalem of acikKalemler) {
+  for (const kalem of acikKalemlerListesi) {
     const vade = kalem.vadeTarihi ?? kalem.tarih;
     const gecikmeGun = Math.floor((bugun.getTime() - vade.getTime()) / GUN_MS);
     if (gecikmeGun <= 0) sonuc.guncel += kalem.acik;
