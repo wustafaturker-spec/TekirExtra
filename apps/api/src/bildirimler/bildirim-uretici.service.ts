@@ -59,7 +59,7 @@ const TARAMA_ONEKLERI: Record<BildirimTuru, string[]> = {
   cek_senet: ["duzeltme:", "cek_senet:"],
   stok: ["duzeltme:", "stok_kritik:", "stok_sayim:"],
   donem: ["duzeltme:", "donem:"],
-  entegrasyon: ["duzeltme:"],
+  entegrasyon: ["duzeltme:", "banka-senkron:", "ekstre-bekleyen:"],
   satin_alma: ["duzeltme:", "satin_alma:"],
 };
 
@@ -96,6 +96,7 @@ export class BildirimUreticiService {
       ...(await this.stokOzetleri()),
       ...(await this.donemKontrolleri()),
       ...(await this.satinAlmaOnaylari()),
+      ...(await this.bankaEntegrasyonu()),
     ];
 
     let yeniTeslimat = 0;
@@ -323,6 +324,52 @@ export class BildirimUreticiService {
         roller: HEDEF_ROLLER.ebelge,
       }];
     });
+  }
+
+  /**
+   * KSB-15: otomatik çekimi 3 kez üst üste başarısız olan ya da kimlik
+   * reddiyle durmuş Vomsis bağlantısı (bağlantı başına) ve eşleştirme
+   * bekleyen ekstre satırları (banka hesabı başına özet). Anahtarlar güne
+   * bağlı değildir: sayı değişince metin güncellenir, sorun kalkınca kapanır.
+   */
+  private async bankaEntegrasyonu(): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const [baglantilar, bekleyenler] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
+      tx.baglanti.findMany({
+        where: { aile: "banka", saglayici: "vomsis", durum: "aktif", OR: [{ ardisikHata: { gte: 3 } }, { otomatikDurduNedeni: { not: null } }] },
+        select: { id: true, ardisikHata: true, sonSenkronHatasi: true, otomatikDurduNedeni: true },
+      }),
+      tx.bankaEkstreSatir.groupBy({ by: ["bankaHesapId"], where: { durum: "beklemede" }, _count: { _all: true } }),
+    ]));
+    const hesapAdlari = bekleyenler.length
+      ? new Map((await this.prisma.tenantIslem(tenantId, (tx) => tx.bankaHesap.findMany({ where: { id: { in: bekleyenler.map((b) => b.bankaHesapId) } }, select: { id: true, ad: true } }))).map((h) => [h.id, h.ad]))
+      : new Map<string, string>();
+    return [
+      ...baglantilar.map((b): BildirimGirdisi => ({
+        tur: "entegrasyon",
+        onem: b.otomatikDurduNedeni ? "kritik" : "uyari",
+        baslik: b.otomatikDurduNedeni ? "Banka hareketlerinin otomatik çekimi durdu" : "Banka hareketleri çekilemiyor",
+        aciklama: b.otomatikDurduNedeni
+          ? `${b.otomatikDurduNedeni}. Vomsis bilgilerini düzeltip "Hareketleri çek" ile deneyin; başarılı çekimde otomatik çekim yeniden başlar.`
+          : `Son ${b.ardisikHata} çekim başarısız oldu: ${b.sonSenkronHatasi ?? "bilinmeyen hata"}. Ekstre satırları güncel olmayabilir.`,
+        birlesimAnahtari: `banka-senkron:${b.id}`,
+        kaynakTur: "baglanti",
+        kaynakRef: b.id,
+        hedefYol: "/panel/ayarlar/banka-baglantilari",
+        roller: HEDEF_ROLLER.entegrasyon,
+      })),
+      ...bekleyenler.map((b): BildirimGirdisi => ({
+        tur: "entegrasyon",
+        onem: "bilgi",
+        baslik: "Eşleştirme bekleyen banka hareketi var",
+        aciklama: `${hesapAdlari.get(b.bankaHesapId) ?? "Banka hesabı"}: ${b._count._all} ekstre satırı eşleştirme bekliyor.`,
+        birlesimAnahtari: `ekstre-bekleyen:${b.bankaHesapId}`,
+        kaynakTur: "banka_hesap",
+        kaynakRef: b.bankaHesapId,
+        hedefYol: `/panel/kasa-banka/ekstre?bankaHesapId=${b.bankaHesapId}`,
+        roller: HEDEF_ROLLER.entegrasyon,
+      })),
+    ];
   }
 
   private async vadeOzetleri(): Promise<BildirimGirdisi[]> {

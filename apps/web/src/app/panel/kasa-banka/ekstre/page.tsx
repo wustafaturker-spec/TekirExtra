@@ -43,6 +43,11 @@ export default function EkstreSayfasi() {
   const [seciliId, setSeciliId] = useState<string | null>(null);
   const [suzgec, setSuzgec] = useState<Suzgec>("beklemede");
   const [bankaFiltresi, setBankaFiltresi] = useState("");
+  // KSB-15: bildirimden gelinince süzgeç adresteki hesapla açılır.
+  useEffect(() => {
+    const hesap = new URLSearchParams(window.location.search).get("bankaHesapId");
+    if (hesap) setBankaFiltresi(hesap);
+  }, []);
   const [yonFiltresi, setYonFiltresi] = useState<"" | "tahsilat" | "tediye">("");
   const [arama, setArama] = useState("");
   const [baslangic, setBaslangic] = useState("");

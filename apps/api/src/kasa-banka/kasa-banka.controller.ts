@@ -80,6 +80,17 @@ export class KasaBankaController {
   @Post("banka-baglantilari/:id/senkronize") @Roller("muhasebe")
   bankaSenkronize(@Param("id") id: string) { return this.bankaEntegrasyon.senkronize(id); }
 
+  /** KSB-15: otomatik çekim ayarı ve son durum. */
+  @Get("banka-baglantilari/senkron-durumu")
+  bankaSenkronDurumu() { return this.bankaEntegrasyon.senkronDurumlari(); }
+
+  @Put("banka-baglantilari/:id/otomatik-senkron") @Roller("muhasebe")
+  bankaOtomatikSenkron(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
+    const s = z.object({ dakika: z.union([z.literal(0), z.literal(15), z.literal(30), z.literal(60), z.literal(1440)]) }).safeParse(govde);
+    if (!s.success) throw new BadRequestException("Aralık 0 (kapalı), 15, 30, 60 ya da 1440 dakika olmalıdır");
+    return this.bankaEntegrasyon.otomatikSenkronAyarla(id, s.data.dakika);
+  }
+
   // ─── KASA ENDPOINTS ────────────────────────────────────────────────────────
 
   @Get("kasalar")

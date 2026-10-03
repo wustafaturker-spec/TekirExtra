@@ -24,6 +24,9 @@ interface TxSecenekleri {
   gelenIrsaliyeler?: { id: string; belgeNo: string; gonderenUnvan: string; sevkTarihi: Date }[];
   /** KSB-10: ekstresi hesaplanacak kredi kartları. */
   kartlar?: unknown[];
+  /** KSB-15: çekimi sorunlu Vomsis bağlantıları ve hesap başına bekleyen ekstre satırı. */
+  bankaBaglantilari?: unknown[];
+  bekleyenEkstre?: { bankaHesapId: string; _count: { _all: number } }[];
 }
 
 function servisKur(secenek: TxSecenekleri = {}) {
@@ -37,6 +40,9 @@ function servisKur(secenek: TxSecenekleri = {}) {
     satinAlmaTalebi: { findMany: vi.fn().mockResolvedValue(secenek.satinAlmaTalepleri ?? []) },
     cekSenet: { count: vi.fn().mockResolvedValue(secenek.cekSayisi ?? 0) },
     krediKarti: { findMany: vi.fn().mockResolvedValue(secenek.kartlar ?? []) },
+    baglanti: { findMany: vi.fn().mockResolvedValue(secenek.bankaBaglantilari ?? []) },
+    bankaEkstreSatir: { groupBy: vi.fn().mockResolvedValue(secenek.bekleyenEkstre ?? []) },
+    bankaHesap: { findMany: vi.fn().mockResolvedValue([{ id: "h1", ad: "Ziraat TL" }]) },
     personelTatilGunu: { findMany: vi.fn().mockResolvedValue([]) },
     fatura: { findMany: vi.fn().mockResolvedValue(secenek.ihracKayitlilar ?? []) },
     belge: { findMany: vi.fn().mockResolvedValue(secenek.bekleyenIrsaliyeler ?? []) },
@@ -347,5 +353,24 @@ describe("BildirimUreticiService — irsaliye faturalama süresi (EBLG-82)", () 
     const { servis, bildirimler } = servisKur({ bekleyenIrsaliyeler: [{ yon: "alis", tarih: gunOnce(6), fiiliSevkZamani: null }] });
     await servis.tara();
     expect(anahtarlar(bildirimler.uret).some((g) => g.birlesimAnahtari.includes("irsaliye-fatura"))).toBe(false);
+  });
+});
+
+describe("banka entegrasyonu bildirimleri (KSB-15)", () => {
+  it("3 ardışık hatayı uyarı, kimlik reddini kritik; bekleyen satırı hesap başına özet olarak bildirir", async () => {
+    const { servis, bildirimler } = servisKur({
+      bankaBaglantilari: [
+        { id: "b1", ardisikHata: 3, sonSenkronHatasi: "Vomsis hareketleri alınamadı: timeout", otomatikDurduNedeni: null },
+        { id: "b2", ardisikHata: 1, sonSenkronHatasi: "x", otomatikDurduNedeni: "Vomsis kimlik doğrulaması reddedildi: invalid app key" },
+      ],
+      bekleyenEkstre: [{ bankaHesapId: "h1", _count: { _all: 7 } }],
+    });
+    await servis.tara();
+    const uretilen = bildirimler.uret.mock.calls.map(([g]) => g);
+    expect(uretilen.find((g) => g.birlesimAnahtari === "banka-senkron:b1")).toMatchObject({ tur: "entegrasyon", onem: "uyari" });
+    expect(uretilen.find((g) => g.birlesimAnahtari === "banka-senkron:b2")).toMatchObject({ onem: "kritik" });
+    expect(uretilen.find((g) => g.birlesimAnahtari === "ekstre-bekleyen:h1")).toMatchObject({ onem: "bilgi", aciklama: "Ziraat TL: 7 ekstre satırı eşleştirme bekliyor." });
+    const entegrasyon = bildirimler.kapatEksikleri.mock.calls.find(([tur]) => tur === "entegrasyon")!;
+    expect(entegrasyon[2]).toEqual(expect.arrayContaining(["banka-senkron:", "ekstre-bekleyen:"]));
   });
 });

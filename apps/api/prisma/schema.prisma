@@ -491,6 +491,14 @@ model Baglanti {
   kesintiSenkronImleci String?        @map("kesinti_senkron_imleci")
   sonSenkronTarihi     DateTime?      @map("son_senkron_tarihi")
   sonSenkronHatasi     String?        @map("son_senkron_hatasi")
+  /// KSB-15: worker'ın otomatik çekim aralığı (dk); 0 = kapalı. Yalnız banka (Vomsis) bağlantısında kullanılır.
+  otomatikSenkronDk    Int            @default(60) @map("otomatik_senkron_dk")
+  /// KSB-15: son çekim denemesi (başarılı ya da değil); aralık buradan sayılır.
+  sonSenkronDenemesi   DateTime?      @map("son_senkron_denemesi")
+  /// KSB-15: üst üste başarısız çekim sayısı; 3 olunca bildirim üretilir.
+  ardisikHata          Int            @default(0) @map("ardisik_hata")
+  /// KSB-15: sağlayıcı kimlik bilgisini reddetti; otomatik çekim durdu.
+  otomatikDurduNedeni  String?        @map("otomatik_durdu_nedeni")
   createdAt            DateTime       @default(now()) @map("created_at")
   updatedAt            DateTime       @updatedAt @map("updated_at")
 

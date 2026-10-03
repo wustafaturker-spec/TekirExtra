@@ -2,11 +2,15 @@ export interface VomsisConfig { appKey: string; appSecret: string; baseUrl?: str
 export interface VomsisHareket { id: number; accounting_date: string; system_date: string; amount: number | string; type: "borclu" | "alacakli"; description: string; fis_no?: string | null; resource_code?: string | null; opponent_iban?: string | null; opponent_title?: string | null; current_balance?: number | string | null; }
 export interface VomsisHesap { id: number; fec_name: string; account_number: string; iban?: string | null; status: number; bank?: { bank_title?: string }; }
 
+/** KSB-15: sağlayıcı kimlik bilgisini reddetti (4xx); yeniden denemek düzeltmez, otomatik çekim durur. */
+export class VomsisKimlikHatasi extends Error {}
+
 export class VomsisAdapter {
   private kok(config: VomsisConfig) { return (config.baseUrl ?? "https://developers.vomsis.com/api/v2").replace(/\/$/, ""); }
   async tokenAl(config: VomsisConfig): Promise<string> {
     const yanit = await fetch(`${this.kok(config)}/authenticate`, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ app_key: config.appKey, app_secret: config.appSecret }) });
     const govde = await yanit.json().catch(() => ({})) as { status?: string; token?: string; message?: string };
+    if (yanit.status >= 400 && yanit.status < 500) throw new VomsisKimlikHatasi(`Vomsis kimlik doğrulaması reddedildi: ${govde.message ?? yanit.statusText}`);
     if (!yanit.ok || govde.status !== "success" || !govde.token) throw new Error(`Vomsis kimlik doğrulaması başarısız: ${govde.message ?? yanit.statusText}`);
     return govde.token;
   }
