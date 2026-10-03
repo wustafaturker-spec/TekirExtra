@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { ayarTanimiAl } from "../core/ayarlar/ayar-kayit";
-import { cariRiskleri } from "./cari-risk";
+import { cariRiskleri, toplamLimit } from "./cari-risk";
 
 /**
  * CARI-32 (karar 2026-10-03): carinin belgeye açık olup olmadığı tek yerden
@@ -66,10 +66,13 @@ export async function riskLimitiDenetle(tx: Prisma.TransactionClient, d: RiskDen
   if (!cari?.riskLimiti) return null;
   const risk = (await cariRiskleri(tx, d.tenantId, [d.cariId])).get(d.cariId)!;
   const toplam = risk.mevcutRisk.add(d.ekTutarTry);
-  if (!toplam.greaterThan(cari.riskLimiti)) return null;
+  // CARI-39: geçerli teminat limite eklenir.
+  const limit = toplamLimit(risk, cari.riskLimiti)!;
+  if (!toplam.greaterThan(limit)) return null;
+  const limitMetni = risk.teminatTry.isZero() ? `${cari.riskLimiti.toFixed(2)} TL` : `${limit.toFixed(2)} TL (risk limiti ${cari.riskLimiti.toFixed(2)} + teminat ${risk.teminatTry.toFixed(2)})`;
   const metin = `Risk limiti aşılıyor: ${d.belgeEtiketi} ile risk ${toplam.toFixed(2)} TL` +
     (risk.cekSenetRiski.isZero() ? "" : ` (bakiye ${Prisma.Decimal.max(risk.bakiyeTry, 0).toFixed(2)} + çek/senet ${risk.cekSenetRiski.toFixed(2)}${d.ekTutarTry.isZero() ? "" : ` + belge ${d.ekTutarTry.toFixed(2)}`})`) +
-    `, limit ${cari.riskLimiti.toFixed(2)} TL`;
+    `, limit ${limitMetni}`;
   const politika = await riskPolitikasi(tx, d.tenantId);
   if (politika === "uyar") return metin;
   if (politika === "engelle") throw new ConflictException(`${metin}. Risk politikası aşıma izin vermiyor; limiti artırın ya da tahsilat bekleyin`);
@@ -80,7 +83,7 @@ export async function riskLimitiDenetle(tx: Prisma.TransactionClient, d: RiskDen
   await tx.auditLog.create({
     data: {
       tenantId: d.tenantId, userId: d.userId, islem: "risk_asimi_onayi", varlik: "cari", varlikId: d.cariId,
-      detay: { belge: d.belgeEtiketi, risk: toplam.toFixed(2), limit: cari.riskLimiti.toFixed(2), gerekce },
+      detay: { belge: d.belgeEtiketi, risk: toplam.toFixed(2), limit: limit.toFixed(2), teminat: risk.teminatTry.toFixed(2), gerekce },
     },
   });
   return `${metin} — yönetici onayıyla geçildi`;

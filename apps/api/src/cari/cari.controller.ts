@@ -17,6 +17,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import { Roller } from "../auth/roller.decorator";
 import { CariService } from "./cari.service";
+import { teminatSemasi } from "./cari-teminat";
 import { CariIceAktarmaService } from "./cari-ice-aktarma.service";
 import {
   cariOlusturSemasi,
@@ -54,6 +55,13 @@ function babsDonemi(yil?: string, ay?: string) {
   const y = Number(yil), a = Number(ay);
   if (!Number.isInteger(y) || y < 2000 || y > 2100 || !Number.isInteger(a) || a < 1 || a > 12) throw new BadRequestException("Dönem için geçerli yıl ve ay (1-12) girin");
   return { yil: y, ay: a };
+}
+
+/** CARI-39: teminat gövdesi. */
+function teminatGirdisi(govde: unknown) {
+  const sonuc = teminatSemasi.safeParse(govde);
+  if (!sonuc.success) throw new BadRequestException(sonuc.error.issues.map((s) => s.message).join("; "));
+  return sonuc.data;
 }
 
 @Controller("cari")
@@ -408,6 +416,40 @@ export class CariController {
     return this.cariService.ekstreEpostaGonder(id, sonuc.data.baslangic, sonuc.data.bitis, sonuc.data.alici, sonuc.data.iptalleriGoster ?? false, {
       tur: sonuc.data.tur, hedefDoviz: sonuc.data.tur === "doviz" ? sonuc.data.hedefDoviz : undefined, mutabakat: sonuc.data.mutabakat,
     });
+  }
+
+  // ─── CARI-39: teminatlar ─────────────────────────────────────────────────
+
+  @Get(":id/teminatlar")
+  async teminatlar(@Param("id") id: string) {
+    return this.cariService.teminatlar(id);
+  }
+
+  @Post(":id/teminatlar")
+  @Roller("muhasebe")
+  async teminatEkle(@Param("id") id: string, @Body() govde: unknown) {
+    return this.cariService.teminatEkle(id, teminatGirdisi(govde));
+  }
+
+  @Patch(":id/teminatlar/:teminatId")
+  @Roller("muhasebe")
+  async teminatGuncelle(@Param("id") id: string, @Param("teminatId") teminatId: string, @Body() govde: unknown) {
+    return this.cariService.teminatGuncelle(id, teminatId, teminatGirdisi(govde));
+  }
+
+  @Post(":id/teminatlar/:teminatId/iade")
+  @Roller("muhasebe")
+  async teminatIade(@Param("id") id: string, @Param("teminatId") teminatId: string, @Body() govde: unknown) {
+    const tarih = (govde as { iadeTarihi?: unknown } | null)?.iadeTarihi;
+    if (tarih !== undefined && tarih !== null && (typeof tarih !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(tarih))) throw new BadRequestException("İade tarihi YYYY-AA-GG olmalıdır");
+    return this.cariService.teminatIade(id, teminatId, (tarih as string | null | undefined) ?? undefined);
+  }
+
+  @Delete(":id/teminatlar/:teminatId")
+  @Roller("muhasebe")
+  @HttpCode(204)
+  async teminatSil(@Param("id") id: string, @Param("teminatId") teminatId: string) {
+    await this.cariService.teminatSil(id, teminatId);
   }
 
   // ─── CARI-37: Form BA/BS mutabakatı ──────────────────────────────────────

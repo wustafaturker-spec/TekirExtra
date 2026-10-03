@@ -11,6 +11,7 @@ import { RaporService } from "../rapor/rapor.service";
 import { ekstreOzeti } from "../kasa-banka/kart-ekstre";
 import { kartEkstreleriniOku } from "../kasa-banka/kart-ekstre-oku";
 import { BildirimService, type BildirimGirdisi } from "./bildirim.service";
+import { TEMINAT_TURU_ADLARI, TEMINAT_UYARI_GUNU, type TeminatTuru } from "../cari/cari-teminat";
 
 const KRITIK_SLA_SAATI = 24;
 const CEK_UYARI_GUNU = 7;
@@ -417,6 +418,7 @@ export class BildirimUreticiService {
 
     girdiler.push(...(await this.kartEkstreUyarilari()));
     girdiler.push(...(await this.krediTaksitUyarilari()));
+    girdiler.push(...(await this.teminatSureUyarilari()));
     girdiler.push(...(await this.ihracKayitliOzetleri(gun)));
     girdiler.push(...(await this.irsaliyeFaturaOzetleri(gun)));
     return girdiler;
@@ -458,6 +460,44 @@ export class BildirimUreticiService {
       }
     }
     return girdiler;
+  }
+
+  /**
+   * CARI-39: iade edilmemiş teminatın bitişine 30 gün kala uyarı, bitiş geçince
+   * kritik bildirim (süresi geçen teminat artık risk limitine eklenmez). Kayıt
+   * başınadır — teminat sayısı azdır ve her biri yenileme/iade işi doğurur.
+   * İade edilince ya da süre uzatılınca tarama üretmez, bildirim kapanır (`vade:`).
+   */
+  private async teminatSureUyarilari(): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const bugun = bugunTR();
+    const sinir = new Date(`${bugun}T00:00:00.000Z`);
+    sinir.setUTCDate(sinir.getUTCDate() + TEMINAT_UYARI_GUNU);
+    const teminatlar = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariTeminat.findMany({
+      where: { durum: "aktif", bitisTarihi: { not: null, lte: sinir } },
+      include: { cari: { select: { id: true, kod: true, unvan: true } } },
+      orderBy: { bitisTarihi: "asc" },
+      take: 100,
+    }));
+    return teminatlar.map((t): BildirimGirdisi => {
+      const bitis = t.bitisTarihi!.toISOString().slice(0, 10);
+      const doldu = bitis < bugun;
+      const kalanGun = Math.round((Date.parse(bitis) - Date.parse(bugun)) / 86_400_000);
+      const ad = TEMINAT_TURU_ADLARI[t.tur as TeminatTuru] ?? "Teminat";
+      const tutar = `${Number(t.tutar.toFixed(2)).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${t.dovizCinsi === "TRY" ? "TL" : t.dovizCinsi}`;
+      return {
+        tur: "vade",
+        onem: doldu ? "kritik" : "uyari",
+        baslik: doldu ? "Teminatın süresi doldu" : "Teminatın süresi doluyor",
+        aciklama: `${t.cari.unvan} (${t.cari.kod}) — ${ad}${t.belgeNo ? ` ${t.belgeNo}` : ""}, ${tutar}: bitiş ${bitis.split("-").reverse().join(".")}${doldu ? "; artık risk limitine eklenmiyor. Yenilenmesini isteyin ya da iade edin" : kalanGun === 0 ? " (bugün)" : ` (${kalanGun} gün kaldı); yenilenmesini isteyin`}.`,
+        birlesimAnahtari: `vade:teminat:${t.id}:${doldu ? "doldu" : "yaklasiyor"}`,
+        kaynakTur: "cari_teminat",
+        kaynakRef: t.id,
+        hedefYol: `/panel/cari/${t.cari.id}`,
+        roller: HEDEF_ROLLER.vade,
+        ...(doldu ? {} : { sonTarih: new Date(`${bitis}T23:59:59+03:00`) }),
+      };
+    });
   }
 
   /**

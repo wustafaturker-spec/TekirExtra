@@ -10,6 +10,7 @@ import { FormGrubu } from "@/components/form-grubu";
 import { Bakiye, CariEkstreTablosu, type EkstreVeri } from "@/components/cari-ekstre-tablosu";
 import { ElleHareketFormu } from "./elle-hareket";
 import { BabsMutabakatPaneli } from "./babs-mutabakat";
+import { TeminatlarPaneli } from "./teminatlar";
 import { ExcelIceAktar } from "./excel-ice-aktar";
 import { CARI_EBELGE_ETIKETI, EKSTRE_TURU_ADLARI, EKSTRE_TURLERI, vknTcknGecerliMi, type CariEbelgeDurumu, type CariEbelgeTuru, type EkstreTuru, YABANCI_DOVIZLER, type YabanciDoviz } from "@tekirextra/shared";
 import {
@@ -175,6 +176,9 @@ interface CariDetay extends Cari {
     kalanLimit: string | null;
     asim: boolean;
     kurEksik?: string[];
+    /** CARI-39: geçerli teminat ve risk limiti + teminat. */
+    teminat?: string;
+    kullanilabilirLimit?: string | null;
   };
   finansalOzet: {
     sonIslemTarihi: string | null;
@@ -1166,6 +1170,12 @@ export default function CariSayfasi() {
                 </form>
               </div>
 
+              {/* CARI-39: alınan teminatlar; geçerli olanlar risk limitine eklenir. */}
+              <div className="document-editor__section">
+                <h4 className="document-editor__section-title">Teminatlar</h4>
+                <TeminatlarPaneli key={detay.id} cariId={detay.id} onDegisti={() => void detayAc(detay.id, true)} onMesaj={babsMesaji} />
+              </div>
+
               <FormGrubu baslik="Etiketler" aciklama="Cariyi sınıflandıran renkli etiketler" doluSayisi={detay.etiketler.length}>
                 <div className="cari-tag-studio">
                   <div className="cari-tag-studio__assigned">
@@ -1237,6 +1247,8 @@ export default function CariSayfasi() {
                   <div className="invoice-summary__line"><span>Mevcut risk</span><strong>{tl(detay.risk.mevcutRisk)}</strong></div>
                   <div className="invoice-summary__line"><span>Çek / senet riski</span><strong>{tl(detay.risk.cekSenetRiski)}</strong></div>
                   <div className="invoice-summary__line"><span>Risk limiti</span><strong>{detay.risk.limit ? tl(detay.risk.limit) : "Tanımsız"}</strong></div>
+                  {Number(detay.risk.teminat ?? 0) > 0 && <div className="invoice-summary__line" title="Geçerli teminatların güncel kurla toplamı; risk limitine eklenir"><span>+ Teminat</span><strong>{tl(detay.risk.teminat!)}</strong></div>}
+                  {Number(detay.risk.teminat ?? 0) > 0 && detay.risk.kullanilabilirLimit && <div className="invoice-summary__line"><span>Kullanılabilir limit</span><strong>{tl(detay.risk.kullanilabilirLimit)}</strong></div>}
                   <div className="invoice-summary__line"><span>Kalan limit</span><strong className={detay.risk.asim ? "is-negative" : ""}>{detay.risk.kalanLimit === null ? "—" : tl(detay.risk.kalanLimit)}</strong></div>
                   {detay.risk.asim && <small className="muted">Limit aşıldı; yeni vadeli işlemden önce finans onayı alın.</small>}
                 </div>

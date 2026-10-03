@@ -8,9 +8,12 @@ const D = (v: string | number) => new Prisma.Decimal(v);
 vi.mock("../core/ayarlar/ayar-kayit", () => ({
   ayarTanimiAl: () => ({ varsayilanlar: { riskLimitiPolitikasi: "uyar" } }),
 }));
-vi.mock("./cari-risk", () => ({
+/** Sahte risk: bakiye 800 TL; `teminat` CARI-39 teminatını verir. */
+let teminat = 0;
+vi.mock("./cari-risk", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./cari-risk")>()),
   cariRiskleri: vi.fn(async (_tx: unknown, _tenantId: string, ids: string[]) =>
-    new Map(ids.map((id) => [id, { bakiyeTry: D(800), cekSenetRiski: D(0), mevcutRisk: D(800) }]))),
+    new Map(ids.map((id) => [id, { bakiyeTry: D(800), cekSenetRiski: D(0), mevcutRisk: D(800), teminatTry: D(teminat) }]))),
 }));
 
 function txOlustur(cari: Record<string, unknown> | null, politika?: string) {
@@ -74,5 +77,16 @@ describe("riskLimitiDenetle (CARI-32)", () => {
     expect(auditLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ islem: "risk_asimi_onayi", varlikId: "c1", detay: expect.objectContaining({ gerekce: "Teminat mektubu geldi", risk: "1100.00" }) }),
     });
+  });
+
+  it("geçerli teminat limite eklenir; aşım metninde dökümü görünür (CARI-39)", async () => {
+    teminat = 500;
+    try {
+      expect(await riskLimitiDenetle(txOlustur({ riskLimiti: D(1000) }, "engelle").tx, girdi())).toBeNull(); // 1100 ≤ 1000 + 500
+      const metin = await riskLimitiDenetle(txOlustur({ riskLimiti: D(500) }).tx, girdi());
+      expect(metin).toMatch(/limit 1000\.00 TL \(risk limiti 500\.00 \+ teminat 500\.00\)/);
+    } finally {
+      teminat = 0;
+    }
   });
 });

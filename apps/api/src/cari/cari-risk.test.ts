@@ -9,7 +9,9 @@ type Hareket = { cariId: string; tip: "borc" | "alacak"; tutarTry: number; doviz
 type Cek = { cariId: string; yon: string; durum: string; vadeTarihi: string; tutarTry: number; dovizCinsi?: string; tutar?: number };
 
 /** Sahte işlem: gruplamayı ve çek süzgecini bellekteki kayıtlara uygular; TCMB kurları `kurlar`dan gelir. */
-function sahteTx(hareketler: Hareket[], cekler: Cek[], kurlar: Record<string, { alis: number; satis: number }> = {}) {
+type Teminat = { cariId: string; durum?: string; tutar: number; dovizCinsi?: string; baslangicTarihi?: string | null; bitisTarihi?: string | null };
+
+function sahteTx(hareketler: Hareket[], cekler: Cek[], kurlar: Record<string, { alis: number; satis: number }> = {}, teminatlar: Teminat[] = []) {
   const topla = <T extends { tutarTry: number; dovizCinsi?: string; tutar?: number }>(kayitlar: T[], anahtar: (k: T) => Record<string, string>) => {
     const g = new Map<string, Record<string, unknown> & { _sum: { tutar: Prisma.Decimal; tutarTry: Prisma.Decimal } }>();
     for (const k of kayitlar) {
@@ -32,6 +34,12 @@ function sahteTx(hareketler: Hareket[], cekler: Cek[], kurlar: Record<string, { 
       },
     },
     elleKur: { findMany: async () => [] },
+    cariTeminat: {
+      findMany: async () => teminatlar.map((t) => ({
+        cariId: t.cariId, durum: t.durum ?? "aktif", tutar: D(t.tutar), dovizCinsi: t.dovizCinsi ?? "TRY",
+        baslangicTarihi: t.baslangicTarihi ? new Date(t.baslangicTarihi) : null, bitisTarihi: t.bitisTarihi ? new Date(t.bitisTarihi) : null,
+      })),
+    },
     tcmbKuru: {
       findMany: async () => Object.entries(kurlar).map(([dovizCinsi, k]) => ({
         dovizCinsi, tarih: new Date("2026-10-02"), dovizAlis: D(k.alis), dovizSatis: D(k.satis), kaynak: "TCMB_XML", alindiAt: new Date("2026-10-02"),
@@ -94,6 +102,27 @@ describe("güncel kurla değerleme (CARI-33)", () => {
     expect(r.bakiyeTry.toFixed(2)).toBe("5000.00");
     expect(r.kurEksik).toEqual(["GBP"]);
     expect(riskOzetiGorunumu(r, null).kurEksik).toEqual(["GBP"]);
+  });
+});
+
+describe("teminat (CARI-39)", () => {
+  it("geçerli teminat güncel kurla limite eklenir; başlamamış ve süresi dolmuş sayılmaz", async () => {
+    const tx = sahteTx(
+      [{ cariId: "m", tip: "borc", tutarTry: 1500 }],
+      [],
+      { USD: { alis: 41, satis: 41.5 } },
+      [
+        { cariId: "m", tutar: 300 },
+        { cariId: "m", tutar: 10, dovizCinsi: "USD", bitisTarihi: "2026-10-03" }, // bugün son gün: geçerli
+        { cariId: "m", tutar: 999, baslangicTarihi: "2026-11-01" },
+        { cariId: "m", tutar: 999, bitisTarihi: "2026-10-02" },
+      ],
+    );
+    const r = (await cariRiskleri(tx, "t1", ["m"], new Date("2026-10-03T10:00:00Z"))).get("m")!;
+    expect(r.teminatTry.toFixed(2)).toBe("715.00");
+    expect(riskOzetiGorunumu(r, D(1000))).toMatchObject({ limit: "1000.00", teminat: "715.00", kullanilabilirLimit: "1715.00", kalanLimit: "215.00", asim: false });
+    // Limit tanımlı değilse teminat tek başına denetim başlatmaz.
+    expect(riskOzetiGorunumu(r, null)).toMatchObject({ kullanilabilirLimit: null, kalanLimit: null, asim: false });
   });
 });
 

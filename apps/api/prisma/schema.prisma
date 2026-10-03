@@ -853,6 +853,7 @@ model CariHesap {
   krediKartiHareketleri KrediKartiHareket[]
   masraflar             Masraf[]
   kiraSozlesmeleri      KiraSozlesme[]
+  teminatlar            CariTeminat[]
   personel              Personel?
   projeler              Proje[]
 
@@ -1031,6 +1032,38 @@ model CariEtiketAtama {
 
 /// Bakiye her zaman hareketlerden türetilir (MIMARI §7). Kaynak belge
 /// bağlantısı kaynakTur+kaynakRef ile (fatura/kasa 4-5. aşamada bağlanır).
+/// CARI-39: müşteriden alınan teminatlar. Geçerli olanlar (aktif, başlamış,
+/// süresi dolmamış) güncel döviz satış kuruyla TL'ye çevrilip risk limitine eklenir.
+model CariTeminat {
+  id              String     @id @default(uuid()) @db.Uuid
+  tenantId        String     @map("tenant_id") @db.Uuid
+  cariId          String     @map("cari_id") @db.Uuid
+  /// teminat_mektubu | ipotek | dbs | nakit | kefalet | diger
+  tur             String
+  tutar           Decimal    @db.Decimal(15, 2)
+  dovizCinsi      DovizCinsi @default(TRY) @map("doviz_cinsi")
+  /// Mektubu veren banka, DBS bankası ya da kefil adı.
+  banka           String?
+  /// Mektup no, tapu/ada-parsel, DBS sözleşme no vb.
+  belgeNo         String?    @map("belge_no")
+  baslangicTarihi DateTime?  @map("baslangic_tarihi") @db.Date
+  /// Boşsa süresiz.
+  bitisTarihi     DateTime?  @map("bitis_tarihi") @db.Date
+  aciklama        String?
+  /// aktif | iade_edildi
+  durum           String     @default("aktif")
+  iadeTarihi      DateTime?  @map("iade_tarihi") @db.Date
+  userId          String?    @map("user_id") @db.Uuid
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  cari CariHesap @relation(fields: [cariId], references: [id])
+
+  @@index([tenantId, cariId])
+  @@index([tenantId, durum, bitisTarihi])
+  @@map("cari_teminatlari")
+}
+
 model CariHareket {
   id         String         @id @default(uuid()) @db.Uuid
   tenantId   String         @map("tenant_id") @db.Uuid

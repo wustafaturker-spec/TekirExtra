@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { iptalCiftiMi, iptalEdilmisFaturalar } from "../fatura/iptal-cifti";
 import { guncelKurlar, guncelTlDegeri, type GuncelKurlar } from "./doviz-degerleme";
+import { cariTeminatlari } from "./cari-teminat";
 import { bosYaslandirma, yaslandir, YASLANDIRMA_KOVALARI, type YaslandirmaSonucu, type YaslandirmaYonu } from "./yaslandirma";
 
 /**
@@ -24,6 +25,8 @@ export interface CariRiski {
   tarihiBakiyeTry: Prisma.Decimal;
   cekSenetRiski: Prisma.Decimal;
   mevcutRisk: Prisma.Decimal;
+  /** CARI-39: geçerli teminatların güncel kurla TL toplamı; risk limitine eklenir. */
+  teminatTry: Prisma.Decimal;
   /** Güncel kuru bulunamadığı için tarihî TL ile sayılan dövizler. */
   kurEksik: string[];
 }
@@ -47,6 +50,7 @@ export async function cariRiskleri(tx: Prisma.TransactionClient, tenantId: strin
     }),
   ]);
   const kurlar = await guncelKurlar(tx, tenantId, [...bakiyeler, ...cekler].map((g) => g.dovizCinsi), bugun);
+  const teminatlar = await cariTeminatlari(tx, tenantId, cariIdler, bugun);
 
   // Cari × döviz net bakiyesi (döviz cinsinden ve tarihî TL).
   const netler = new Map<string, Map<string, { tutar: Prisma.Decimal; tarihiTry: Prisma.Decimal }>>();
@@ -60,7 +64,7 @@ export async function cariRiskleri(tx: Prisma.TransactionClient, tenantId: strin
     netler.set(g.cariId, cari);
   }
 
-  const sonuc = new Map<string, CariRiski>(cariIdler.map((id) => [id, { bakiyeTry: D(0), tarihiBakiyeTry: D(0), cekSenetRiski: D(0), mevcutRisk: D(0), kurEksik: [] }]));
+  const sonuc = new Map<string, CariRiski>(cariIdler.map((id) => [id, { bakiyeTry: D(0), tarihiBakiyeTry: D(0), cekSenetRiski: D(0), mevcutRisk: D(0), teminatTry: D(0), kurEksik: [] }]));
   const eksikEkle = (r: CariRiski, doviz: string) => { if (!r.kurEksik.includes(doviz)) r.kurEksik.push(doviz); };
   for (const [cariId, dovizler] of netler) {
     const r = sonuc.get(cariId)!;
@@ -78,18 +82,32 @@ export async function cariRiskleri(tx: Prisma.TransactionClient, tenantId: strin
     r.cekSenetRiski = r.cekSenetRiski.add(deger.guncelTry);
     if (deger.kurEksik) eksikEkle(r, c.dovizCinsi);
   }
+  for (const [cariId, t] of teminatlar) {
+    const r = sonuc.get(cariId)!;
+    r.teminatTry = t.teminatTry;
+    for (const d of t.kurEksik) eksikEkle(r, d);
+  }
   for (const r of sonuc.values()) r.mevcutRisk = Prisma.Decimal.max(r.bakiyeTry, 0).add(r.cekSenetRiski);
   return sonuc;
 }
 
+/** CARI-39: kullanılabilir limit = risk limiti + geçerli teminat; limit yoksa denetim yok. */
+export function toplamLimit(risk: Pick<CariRiski, "teminatTry">, riskLimiti: Prisma.Decimal | null): Prisma.Decimal | null {
+  return riskLimiti === null ? null : riskLimiti.add(risk.teminatTry);
+}
+
 /** Kartın risk özeti: limit tanımlıysa kalan limit ve aşım. */
 export function riskOzetiGorunumu(risk: CariRiski, riskLimiti: Prisma.Decimal | null) {
+  const limit = toplamLimit(risk, riskLimiti);
   return {
     cekSenetRiski: risk.cekSenetRiski.toFixed(2),
     mevcutRisk: risk.mevcutRisk.toFixed(2),
     limit: riskLimiti?.toFixed(2) ?? null,
-    kalanLimit: riskLimiti ? riskLimiti.sub(risk.mevcutRisk).toFixed(2) : null,
-    asim: riskLimiti !== null && risk.mevcutRisk.greaterThan(riskLimiti),
+    teminat: risk.teminatTry.toFixed(2),
+    /** Risk limiti + geçerli teminat. */
+    kullanilabilirLimit: limit?.toFixed(2) ?? null,
+    kalanLimit: limit ? limit.sub(risk.mevcutRisk).toFixed(2) : null,
+    asim: limit !== null && risk.mevcutRisk.greaterThan(limit),
     kurEksik: risk.kurEksik,
   };
 }

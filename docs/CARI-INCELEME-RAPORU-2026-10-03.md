@@ -40,6 +40,7 @@ Para hesabını ya da veri bütünlüğünü doğrudan etkileyen beş sorun var:
 | P2-1 | ✅ 2026-10-04 — CARI-36 (listede döviz kırılımı, bakiye durumu/aralığı süzgeci, bakiyeye göre sıralama; güncel kurla TL) |
 | P2-3 | ✅ 2026-10-04 — CARI-37 (Form BA/BS raporu + Excel, eşik ayarı, eşiğe yakınlar, cari bazında mutabakat PDF/e-posta) |
 | P2-5 | ✅ 2026-10-04 — CARI-38 (toplu vade hatırlatma/ihtar e-postası, Ayarlar'dan şablon, fatura tablosu + 90 günlük ekstre eki, 7 gün sıklık sınırı, CRM kaydı) |
+| P2-6 | ✅ 2026-10-04 — CARI-39 (teminat mektubu/ipotek/DBS/nakit/kefalet/diğer; geçerli teminat güncel kurla risk limitine eklenir; bitişe 30 gün kala ve süresi dolunca bildirim) |
 
 ## 2. Öncelik sınıfları
 

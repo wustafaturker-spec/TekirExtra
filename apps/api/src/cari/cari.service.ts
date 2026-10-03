@@ -27,7 +27,7 @@ import { cariDavranisAnalizi } from "./cari-analiz";
 import { gercekKisiUnvani } from "./ad-soyad";
 import { ebelgeTestOrtamiMi, vknTcknKabulEdilebilirMi } from "../ebelge/vkn-kabulu";
 import { belgeNoMetni, MUHTELIF_MUSTERI_KOD, MUHTELIF_MUSTERI_UNVAN, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi, vknTcknGecerliMi, type YabanciDoviz } from "@tekirextra/shared";
-import { metinNormalize, YURT_DISI_ALICI_VKN } from "@tekirextra/shared";
+import { bugunTR, metinNormalize, YURT_DISI_ALICI_VKN } from "@tekirextra/shared";
 import { EpostaService } from "../tenant/eposta.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { iptalCiftiMi, iptalEdilmisFaturalar } from "../fatura/iptal-cifti";
@@ -48,6 +48,7 @@ import { kurZorunlu } from "../doviz/kur-coz";
 import { cariRiskleri, cariYaslandirmalari, riskOzetiGorunumu, vadesiGecmis } from "./cari-risk";
 import { guncelKurlar, guncelTlDegeri } from "./doviz-degerleme";
 import { sonOdemeTarihleri } from "./son-odeme";
+import { TEMINAT_TURU_ADLARI, TEMINAT_UYARI_GUNU, teminatDurumu, type TeminatGirdisi, type TeminatTuru } from "./cari-teminat";
 import { babsEsigi, babsKalemleri, babsOzeti, kisiAnahtari, type BabsFormu } from "./babs";
 import { babsMutabakatHtml } from "./babs-pdf";
 
@@ -601,7 +602,7 @@ export class CariService {
     const { tenantId } = aktifBaglam();
     if (muhtelifMusteriMi(await this.getir(id))) throw new BadRequestException("Muhtelif Müşteriler sistem carisi silinemez");
     const baglilar = await this.prisma.tenantIslem(tenantId, async (tx) => {
-      const [hareket, fatura, belgeler, cek, kasaBanka, masraf, satinAlma, stok] = await Promise.all([
+      const [hareket, fatura, belgeler, cek, kasaBanka, masraf, satinAlma, stok, teminat] = await Promise.all([
         tx.cariHareket.count({ where: { cariId: id } }),
         tx.fatura.count({ where: { cariId: id } }),
         tx.belge.groupBy({ by: ["tur"], where: { OR: [{ cariId: id }, { tasiyiciCariId: id }] }, _count: { _all: true } }),
@@ -610,11 +611,12 @@ export class CariService {
         tx.masraf.count({ where: { cariId: id } }),
         tx.satinAlmaTeklifi.count({ where: { tedarikciCariId: id } }),
         tx.stokTedarikci.count({ where: { cariId: id } }),
+        tx.cariTeminat.count({ where: { cariId: id } }),
       ]);
       const belge = (tur: string) => belgeler.find((b) => b.tur === tur)?._count._all ?? 0;
       return ([
         [hareket, "cari hareketi"], [fatura, "fatura"], [belge("teklif"), "teklif"], [belge("siparis"), "sipariş"], [belge("irsaliye"), "irsaliye"],
-        [cek, "çek/senet"], [kasaBanka, "kasa/banka hareketi"], [masraf, "masraf"], [satinAlma, "satın alma teklifi"], [stok, "stok tedarikçi kaydı"],
+        [cek, "çek/senet"], [kasaBanka, "kasa/banka hareketi"], [masraf, "masraf"], [satinAlma, "satın alma teklifi"], [stok, "stok tedarikçi kaydı"], [teminat, "teminat"],
       ] as const).filter(([sayi]) => sayi > 0).map(([sayi, ad]) => `${sayi} ${ad}`);
     });
     if (baglilar.length) {
@@ -1198,6 +1200,77 @@ export class CariService {
     if (!firma) throw new NotFoundException("Firma bulunamadı");
     const { html, yatay } = ekstrePdfHtml(data, firma, { tema, mutabakat: secenekler.mutabakat });
     return this.pdf.htmlToPdf(html, { yatay, sayfaNumarasi: true });
+  }
+
+  // ─── CARI-39: teminatlar ─────────────────────────────────────────────────
+
+  async teminatlar(cariId: string) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kayitlar = await tx.cariTeminat.findMany({ where: { cariId }, orderBy: [{ durum: "asc" }, { bitisTarihi: "asc" }, { createdAt: "desc" }] });
+      const kurlar = await guncelKurlar(tx, tenantId, kayitlar.map((k) => k.dovizCinsi));
+      const bugun = new Date();
+      const satirlar = kayitlar.map((k) => {
+        const durum = teminatDurumu(k, bugun);
+        const deger = guncelTlDegeri(k.dovizCinsi, k.tutar, D(0), kurlar);
+        const kalanGun = k.bitisTarihi ? Math.floor((k.bitisTarihi.getTime() - Date.UTC(bugun.getUTCFullYear(), bugun.getUTCMonth(), bugun.getUTCDate())) / 86_400_000) : null;
+        return {
+          id: k.id, tur: k.tur, turAdi: TEMINAT_TURU_ADLARI[k.tur as TeminatTuru] ?? k.tur,
+          tutar: k.tutar.toFixed(2), dovizCinsi: k.dovizCinsi, tutarTry: deger.kurEksik ? null : deger.guncelTry.toFixed(2),
+          banka: k.banka, belgeNo: k.belgeNo, aciklama: k.aciklama,
+          baslangicTarihi: k.baslangicTarihi?.toISOString().slice(0, 10) ?? null, bitisTarihi: k.bitisTarihi?.toISOString().slice(0, 10) ?? null,
+          iadeTarihi: k.iadeTarihi?.toISOString().slice(0, 10) ?? null,
+          durum, kalanGun, yaklasiyor: durum === "gecerli" && kalanGun !== null && kalanGun <= TEMINAT_UYARI_GUNU,
+        };
+      });
+      const gecerliToplam = satirlar.filter((s) => s.durum === "gecerli" && s.tutarTry).reduce((t, s) => t.add(s.tutarTry!), D(0));
+      return { satirlar, gecerliToplamTry: gecerliToplam.toFixed(2) };
+    });
+  }
+
+  async teminatEkle(cariId: string, girdi: TeminatGirdisi) {
+    const { tenantId, userId } = aktifBaglam();
+    await this.getir(cariId);
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.cariTeminat.create({ data: { tenantId, cariId, userId, ...this.teminatVerisi(girdi) } }));
+  }
+
+  async teminatGuncelle(cariId: string, teminatId: string, girdi: TeminatGirdisi) {
+    const { tenantId } = aktifBaglam();
+    const mevcut = await this.teminatBul(cariId, teminatId);
+    if (mevcut.durum !== "aktif") throw new BadRequestException("İade edilmiş teminat düzenlenemez");
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.cariTeminat.update({ where: { id: teminatId }, data: this.teminatVerisi(girdi) }));
+  }
+
+  /** Teminat müşteriye iade edildi: kayıt kalır, riske artık eklenmez. */
+  async teminatIade(cariId: string, teminatId: string, iadeTarihi?: string) {
+    const { tenantId } = aktifBaglam();
+    const mevcut = await this.teminatBul(cariId, teminatId);
+    if (mevcut.durum !== "aktif") throw new BadRequestException("Teminat zaten iade edilmiş");
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.cariTeminat.update({ where: { id: teminatId }, data: { durum: "iade_edildi", iadeTarihi: iadeTarihi ? new Date(iadeTarihi) : new Date(bugunTR()) } }));
+  }
+
+  /** Yanlış girilen kaydı siler (iade için `teminatIade`); denetim izine yazılır. */
+  async teminatSil(cariId: string, teminatId: string) {
+    const { tenantId, userId } = aktifBaglam();
+    const mevcut = await this.teminatBul(cariId, teminatId);
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      await tx.cariTeminat.delete({ where: { id: teminatId } });
+      await tx.auditLog.create({ data: { tenantId, userId, islem: "cari_teminat_sil", varlik: "cari", varlikId: cariId, detay: { tur: mevcut.tur, tutar: mevcut.tutar.toFixed(2), dovizCinsi: mevcut.dovizCinsi, belgeNo: mevcut.belgeNo, bitisTarihi: mevcut.bitisTarihi?.toISOString().slice(0, 10) ?? null } } });
+    });
+  }
+
+  private async teminatBul(cariId: string, teminatId: string) {
+    const { tenantId } = aktifBaglam();
+    const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariTeminat.findFirst({ where: { id: teminatId, cariId } }));
+    if (!kayit) throw new NotFoundException("Teminat bulunamadı");
+    return kayit;
+  }
+
+  private teminatVerisi(g: TeminatGirdisi) {
+    return {
+      tur: g.tur, tutar: D(g.tutar), dovizCinsi: g.dovizCinsi, banka: g.banka || null, belgeNo: g.belgeNo || null, aciklama: g.aciklama || null,
+      baslangicTarihi: g.baslangicTarihi ? new Date(g.baslangicTarihi) : null, bitisTarihi: g.bitisTarihi ? new Date(g.bitisTarihi) : null,
+    };
   }
 
   /**
