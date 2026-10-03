@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { BOS_ILGILI_KISI, IlgiliKisiAlanlari, ilgiliKisiGovdesi, type IlgiliKisiDegeri } from "@/components/ilgili-kisi-alanlari";
 import { riskOnayiylaGonder } from "@/lib/risk-onayi";
+import { cariKaydet } from "@/lib/cari-kaydet";
 import { api, apiPdfAc, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
 import { AramaSecici } from "@/components/arama-secici";
@@ -1042,15 +1043,12 @@ export default function FaturaSayfasi() {
     event.preventDefault();
     setHizliHata("");
     try {
-      const yeni = await api<Cari>("/cari", {
-        method: "POST",
-        body: JSON.stringify({
-          kod: yeniCariKod,
-          unvan: yeniCariUnvan,
-          tip: tip.startsWith("alis") ? "tedarikci" : "musteri",
-          kisiTipi: "tuzel",
-          vknTckn: yeniCariVkn || undefined,
-        }),
+      const yeni = await cariKaydet<Cari>("/cari", "POST", {
+        kod: yeniCariKod,
+        unvan: yeniCariUnvan,
+        tip: tip.startsWith("alis") ? "tedarikci" : "musteri",
+        kisiTipi: "tuzel",
+        vknTckn: yeniCariVkn || undefined,
       });
       setCariler((eskiler) => [yeni, ...eskiler]);
       setCariId(yeni.id);

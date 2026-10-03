@@ -27,7 +27,7 @@ import { cariDavranisAnalizi } from "./cari-analiz";
 import { gercekKisiUnvani } from "./ad-soyad";
 import { ebelgeTestOrtamiMi, vknTcknKabulEdilebilirMi } from "../ebelge/vkn-kabulu";
 import { belgeNoMetni, MUHTELIF_MUSTERI_KOD, MUHTELIF_MUSTERI_UNVAN, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi, vknTcknGecerliMi, type YabanciDoviz } from "@tekirextra/shared";
-import { metinNormalize } from "@tekirextra/shared";
+import { metinNormalize, YURT_DISI_ALICI_VKN } from "@tekirextra/shared";
 import { EpostaService } from "../tenant/eposta.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { iptalCiftiMi, iptalEdilmisFaturalar } from "../fatura/iptal-cifti";
@@ -47,10 +47,16 @@ import { BaglantilarService } from "../tenant/baglantilar.service";
 import { kurZorunlu } from "../doviz/kur-coz";
 import { cariRiskleri, cariYaslandirmalari, riskOzetiGorunumu, vadesiGecmis } from "./cari-risk";
 import { guncelKurlar, guncelTlDegeri } from "./doviz-degerleme";
+import { sonOdemeTarihleri } from "./son-odeme";
 import { cariHareketKurTipi } from "@tekirextra/shared";
 
 /** CARI-28: kullanıcının elle girdiği, silinebilen hareket kaynakları. */
 const ELLE_HAREKET_KAYNAKLARI = ["manuel", "acilis"];
+
+/** CARI-35: birden çok carinin taşıdığı GİB ortak kimlikleri (yurt dışı alıcı, nihai tüketici). */
+const ORTAK_KIMLIKLER = new Set([YURT_DISI_ALICI_VKN, "11111111111"]);
+/** Web bu işareti görünce onay sorup isteği `mukerrerVknOnayi` ile yineler. */
+export const MUKERRER_VKN_ISARETI = "aynı kimlikle yine de kaydetmek için onaylayın";
 
 const D = (deger: string | number): Prisma.Decimal => new Prisma.Decimal(deger);
 
@@ -222,22 +228,14 @@ export class CariService {
   private async finansalOzet(cariId: string) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const [sonIslem, sonTahsilat, sonOdeme, alacaklarimiz, borclarimiz] = await Promise.all([
+      // CARI-34: son tahsilat/ödeme kasa-banka, çek/senet, POS ve kredi kartından; geri alınanlar hariç.
+      const [sonIslem, { sonTahsilat, sonOdeme }, alacaklarimiz, borclarimiz] = await Promise.all([
         tx.cariHareket.findFirst({
           where: { cariId },
           orderBy: { tarih: "desc" },
           select: { tarih: true },
         }),
-        tx.kasaBankaHareket.findFirst({
-          where: { cariId, tip: "tahsilat" },
-          orderBy: { tarih: "desc" },
-          select: { tarih: true },
-        }),
-        tx.kasaBankaHareket.findFirst({
-          where: { cariId, tip: "tediye" },
-          orderBy: { tarih: "desc" },
-          select: { tarih: true },
-        }),
+        sonOdemeTarihleri(tx, cariId),
         cariYaslandirmalari(tx, tenantId, [cariId]),
         cariYaslandirmalari(tx, tenantId, [cariId], { yon: "borclarimiz" }),
       ]);
@@ -247,8 +245,8 @@ export class CariService {
         t ? t.toISOString().slice(0, 10) : null;
       return {
         sonIslemTarihi: gun(sonIslem?.tarih),
-        sonTahsilatTarihi: gun(sonTahsilat?.tarih),
-        sonOdemeTarihi: gun(sonOdeme?.tarih),
+        sonTahsilatTarihi: gun(sonTahsilat),
+        sonOdemeTarihi: gun(sonOdeme),
         // CARI-33: güncel döviz satış kuruyla TL; borçlarımız tedarikçi ödeme planı içindir.
         vadesiGecmisBakiye: vadesiGecmis(y).toFixed(2),
         vadesiGecmisBorcumuz: vadesiGecmis(b).toFixed(2),
@@ -316,11 +314,27 @@ export class CariService {
     }
   }
 
-  async olustur(girdi: CariOlusturGirdisi) {
+  /**
+   * CARI-35 (P1-8): aynı VKN/TCKN'li ikinci cari çoğu zaman mükerrer kayıt ve
+   * bölünmüş bakiye demektir; şube carisi gibi bilinçli durumlar için kullanıcı
+   * onaylayarak geçer. Yurt dışı alıcı ve nihai tüketici gibi ortak kimlikler denetlenmez.
+   */
+  private async mukerrerVknDenetle(tenantId: string, vknTckn: string | null | undefined, haricId?: string) {
+    const vkn = vknTckn?.trim();
+    if (!vkn || ORTAK_KIMLIKLER.has(vkn)) return;
+    const ayni = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.cariHesap.findMany({ where: { vknTckn: vkn, ...(haricId ? { id: { not: haricId } } : {}) }, select: { kod: true, unvan: true }, orderBy: { kod: "asc" }, take: 3 }),
+    );
+    if (ayni.length === 0) return;
+    throw new ConflictException(`${vkn} ${ayni.map((c) => `${c.kod} (${c.unvan})`).join(", ")} carisinde kayıtlı; ${MUKERRER_VKN_ISARETI}`);
+  }
+
+  async olustur(girdi: CariOlusturGirdisi, secenekler: { mukerrerVknOnayi?: boolean } = {}) {
     const { tenantId } = aktifBaglam();
     this.muhtelifKimligiEngelle(girdi.vknTckn);
     const kimlik = this.kisiKimligi(girdi.kisiTipi, girdi.ad, girdi.soyad);
     await this.vknTcknDogrula(tenantId, girdi.vknTckn);
+    if (!secenekler.mukerrerVknOnayi) await this.mukerrerVknDenetle(tenantId, girdi.vknTckn);
     try {
       const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
         tx.cariHesap.create({
@@ -485,7 +499,7 @@ export class CariService {
     return this.getir(kopyaCari.id);
   }
 
-  async guncelle(id: string, girdi: z.infer<typeof cariGuncelleSemasi>) {
+  async guncelle(id: string, girdi: z.infer<typeof cariGuncelleSemasi>, secenekler: { mukerrerVknOnayi?: boolean } = {}) {
     const { tenantId } = aktifBaglam();
     const mevcut = await this.getir(id);
     // EBLG-95: sistem carisinin kimliği sabittir; adres, iletişim gibi alanları değişebilir.
@@ -496,6 +510,7 @@ export class CariService {
       this.muhtelifKimligiEngelle(girdi.vknTckn);
     }
     await this.vknTcknDogrula(tenantId, muhtelifMusteriMi(mevcut) ? undefined : girdi.vknTckn);
+    if (!secenekler.mukerrerVknOnayi && girdi.vknTckn && girdi.vknTckn !== mevcut.vknTckn) await this.mukerrerVknDenetle(tenantId, girdi.vknTckn, id);
     // Kimlik kuralı yalnız kimlik alanlarından biri değişirken uygulanır; başka
     // alanı güncelleyen istek, ad/soyadı henüz girilmemiş eski kayıtta kırılmasın.
     const kimlikDegisiyor = girdi.unvan !== undefined || girdi.ad !== undefined || girdi.soyad !== undefined || girdi.kisiTipi !== undefined;

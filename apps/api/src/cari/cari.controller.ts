@@ -46,6 +46,9 @@ function ekstreSecenekleri(sorgu: unknown) {
   return { tur, hedefDoviz: tur === "doviz" ? sonuc.data.doviz : undefined, mutabakat: sonuc.data.mutabakat === "1" };
 }
 
+/** CARI-35: kullanıcı aynı VKN/TCKN'li ikinci cariyi bilerek açıyor. */
+const mukerrerVknOnayi = (govde: unknown) => (govde as { mukerrerVknOnayi?: unknown } | null)?.mukerrerVknOnayi === true;
+
 @Controller("cari")
 export class CariController {
   constructor(private readonly cariService: CariService, private readonly abonelik: AbonelikService, private readonly iceAktarma: CariIceAktarmaService) {}
@@ -102,7 +105,7 @@ export class CariController {
       );
     }
     await this.abonelik.limitDogrula("cari");
-    return this.cariService.olustur(ayristirma.data);
+    return this.cariService.olustur(ayristirma.data, { mukerrerVknOnayi: mukerrerVknOnayi(govde) });
   }
 
   /** EBLG-95: "Muhtelif Müşteriler" sistem carisini getirir, yoksa açar. */
@@ -127,7 +130,7 @@ export class CariController {
         ayristirma.error.issues.map((s) => `${s.path.join(".") || "alan"}: ${s.message}`).join("; "),
       );
     }
-    return this.cariService.guncelle(id, ayristirma.data);
+    return this.cariService.guncelle(id, ayristirma.data, { mukerrerVknOnayi: mukerrerVknOnayi(govde) });
   }
 
   @Delete(":id")

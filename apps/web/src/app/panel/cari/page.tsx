@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { api, apiDosyaIndir, tokenAl } from "@/lib/api";
+import { cariKaydet } from "@/lib/cari-kaydet";
 import { kullanimOlayi } from "@/lib/kullanim";
 import { PostaKutusuSecimleri, type PostaKutusuSecimi } from "@/components/posta-kutusu-secimi";
 import { FormGrubu } from "@/components/form-grubu";
@@ -560,37 +561,34 @@ export default function CariSayfasi() {
     setHata("");
     setBasari("");
     try {
-      await api("/cari", {
-        method: "POST",
-        body: JSON.stringify({
-          kod,
-          // Gerçek kişide unvanı API ad ve soyaddan kurar (CARI-21).
-          unvan: kisiTipi === "gercek" ? `${ad.trim()} ${soyad.trim()}` : unvan,
-          ad: kisiTipi === "gercek" ? ad : undefined,
-          soyad: kisiTipi === "gercek" ? soyad : undefined,
-          kisaAd: kisaAd || undefined,
-          tip,
-          kisiTipi,
-          sektor: sektor || undefined,
-          temsilciUserId: temsilciUserId || undefined,
-          vknTckn: vknTckn || undefined,
-          vergiDairesi: vergiDairesi || undefined,
-          mersisNo: mersisNo || undefined,
-          ticaretSicilNo: ticaretSicilNo || undefined,
-          kvkkOnayTarihi: kvkkOnayTarihi || undefined,
-          eposta: eposta || undefined,
-          telefon: telefon || undefined,
-          webSitesi: webSitesi || undefined,
-          faks: faks || undefined,
-          iban: anaIban || undefined,
-          riskLimiti: riskLimiti || undefined,
-          fiyatListesiId: fiyatListesiId || undefined,
-          varsayilanIskonto: varsayilanIskonto || undefined,
-          varsayilanVadeGun: varsayilanVadeGun ? Number(varsayilanVadeGun) : undefined,
-          efaturaProfili,
-          earsivGonderimSekli,
-          notlar: notlar || undefined,
-        }),
+      await cariKaydet("/cari", "POST", {
+        kod,
+        // Gerçek kişide unvanı API ad ve soyaddan kurar (CARI-21).
+        unvan: kisiTipi === "gercek" ? `${ad.trim()} ${soyad.trim()}` : unvan,
+        ad: kisiTipi === "gercek" ? ad : undefined,
+        soyad: kisiTipi === "gercek" ? soyad : undefined,
+        kisaAd: kisaAd || undefined,
+        tip,
+        kisiTipi,
+        sektor: sektor || undefined,
+        temsilciUserId: temsilciUserId || undefined,
+        vknTckn: vknTckn || undefined,
+        vergiDairesi: vergiDairesi || undefined,
+        mersisNo: mersisNo || undefined,
+        ticaretSicilNo: ticaretSicilNo || undefined,
+        kvkkOnayTarihi: kvkkOnayTarihi || undefined,
+        eposta: eposta || undefined,
+        telefon: telefon || undefined,
+        webSitesi: webSitesi || undefined,
+        faks: faks || undefined,
+        iban: anaIban || undefined,
+        riskLimiti: riskLimiti || undefined,
+        fiyatListesiId: fiyatListesiId || undefined,
+        varsayilanIskonto: varsayilanIskonto || undefined,
+        varsayilanVadeGun: varsayilanVadeGun ? Number(varsayilanVadeGun) : undefined,
+        efaturaProfili,
+        earsivGonderimSekli,
+        notlar: notlar || undefined,
       });
       setBasari("Cari kart başarıyla oluşturuldu.");
       setFormAcik(false);
@@ -663,7 +661,7 @@ export default function CariSayfasi() {
       };
       const degisen = Object.fromEntries(Object.entries(degerler).filter(([alan, deger]) => deger !== onceki[alan as keyof typeof onceki]).map(([alan, deger]) => [alan, deger || null]));
       if (!Object.keys(degisen).length) { setBasari("İletişim ve not bilgilerinde değişiklik yok."); return; }
-      await api(`/cari/${detay.id}`, { method: "PATCH", body: JSON.stringify(degisen) });
+      await cariKaydet(`/cari/${detay.id}`, "PATCH", degisen);
       await detayAc(detay.id, true); void yukle(); setBasari("Cari iletişim ve not bilgileri güncellendi.");
     } catch (h) { setHata(h instanceof Error ? h.message : "İletişim bilgileri güncellenemedi"); }
   }
@@ -695,7 +693,7 @@ export default function CariSayfasi() {
     const degisen = Object.fromEntries(Object.entries(degerler).filter(([alan, deger]) => deger !== onceki[alan as keyof typeof onceki]).map(([alan, deger]) => [alan, deger === "" ? null : deger]));
     if (!Object.keys(degisen).length) { setBasari("Cari bilgilerinde değişiklik yok."); return; }
     try {
-      await api(`/cari/${detay.id}`, { method: "PATCH", body: JSON.stringify(degisen) });
+      await cariKaydet(`/cari/${detay.id}`, "PATCH", degisen);
       await detayAc(detay.id, true); void yukle(); setBasari("Cari kimlik ve resmî bilgileri güncellendi.");
     } catch (h) { setHata(h instanceof Error ? h.message : "Cari bilgileri güncellenemedi"); }
   }
