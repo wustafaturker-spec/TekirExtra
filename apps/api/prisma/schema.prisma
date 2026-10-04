@@ -4529,6 +4529,8 @@ model PersonelIsyeri {
   kod          String
   ad           String
   adres        String?
+  /// P2-1: SGK işyeri sicil numarası (bildirgeler için).
+  sgkSicilNo   String?             @map("sgk_sicil_no")
   aktif        Boolean             @default(true)
   createdAt    DateTime            @default(now()) @map("created_at")
   updatedAt    DateTime            @updatedAt @map("updated_at")
