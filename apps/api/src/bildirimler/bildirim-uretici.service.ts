@@ -12,6 +12,7 @@ import { ekstreOzeti } from "../kasa-banka/kart-ekstre";
 import { kartEkstreleriniOku } from "../kasa-banka/kart-ekstre-oku";
 import { BildirimService, type BildirimGirdisi } from "./bildirim.service";
 import { TEMINAT_TURU_ADLARI, TEMINAT_UYARI_GUNU, type TeminatTuru } from "../cari/cari-teminat";
+import { bakiyeFarklari, mutabakatItirazBildirimi, type DovizBakiyesi } from "../cari/cari-mutabakat";
 
 const KRITIK_SLA_SAATI = 24;
 const CEK_UYARI_GUNU = 7;
@@ -419,6 +420,7 @@ export class BildirimUreticiService {
     girdiler.push(...(await this.kartEkstreUyarilari()));
     girdiler.push(...(await this.krediTaksitUyarilari()));
     girdiler.push(...(await this.teminatSureUyarilari()));
+    girdiler.push(...(await this.mutabakatItirazlari()));
     girdiler.push(...(await this.ihracKayitliOzetleri(gun)));
     girdiler.push(...(await this.irsaliyeFaturaOzetleri(gun)));
     return girdiler;
@@ -498,6 +500,25 @@ export class BildirimUreticiService {
         ...(doldu ? {} : { sonTarih: new Date(`${bitis}T23:59:59+03:00`) }),
       };
     });
+  }
+
+  /**
+   * CARI-42: karşı tarafın portaldan itiraz ettiği, henüz kapatılmamış
+   * mutabakat. Portal yanıtında anında da üretilir; aynı anahtar olduğu için
+   * çift kayıt olmaz, itiraz kapatılınca tarama üretmez ve bildirim kapanır.
+   */
+  private async mutabakatItirazlari(): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const itirazlar = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariMutabakat.findMany({
+      where: { durum: "itiraz", itirazKapandiAt: null },
+      include: { cari: { select: { kod: true, unvan: true } } },
+      orderBy: { yanitAt: "asc" },
+      take: 100,
+    }));
+    return itirazlar.map((k) => mutabakatItirazBildirimi({
+      id: k.id, cariId: k.cariId, cari: k.cari, mutabakatTarihi: k.mutabakatTarihi, yanitlayanAd: k.yanitlayanAd,
+      farklar: bakiyeFarklari(k.bakiyeler as unknown as DovizBakiyesi[], (k.karsiBakiyeler as unknown as DovizBakiyesi[] | null) ?? []),
+    }));
   }
 
   /**

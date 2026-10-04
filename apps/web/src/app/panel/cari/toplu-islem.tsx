@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import { api, apiDosyaIndir, ApiHata } from "@/lib/api";
 import { Alert, Button, Field, Input, Select } from "@/components/ui";
+import { gecenAySonu } from "./mutabakat-paneli";
 
 /** Sunucudaki cari-toplu.ts ile aynı sınırlar ve işaret. */
 const EPOSTA_EN_FAZLA = 100;
 const ACIK_BAKIYE_ISARETI = "yine de pasife almak için onaylayın";
 
-type Eylem = "etiket" | "grup" | "durum" | "kara_liste" | "temsilci" | "ekstre";
+type Eylem = "etiket" | "grup" | "durum" | "kara_liste" | "temsilci" | "ekstre" | "mutabakat";
 interface TopluSonuc { islenen: number; atlananlar: { cariId: string; kod: string; unvan: string; mesaj: string }[] }
 
 const EYLEMLER: [Eylem, string][] = [
@@ -18,6 +19,7 @@ const EYLEMLER: [Eylem, string][] = [
   ["kara_liste", "🚫 Kara liste"],
   ["temsilci", "👤 Temsilci"],
   ["ekstre", "✉️ Ekstre e-postası"],
+  ["mutabakat", "🤝 Mutabakat iste"],
 ];
 
 /**
@@ -60,6 +62,8 @@ export function CariTopluIslem({
   const [bitis, setBitis] = useState("");
   const [ekstreTuru, setEkstreTuru] = useState<"standart" | "ayrintili">("standart");
   const [mutabakat, setMutabakat] = useState(false);
+  const [mutabakatTarihi, setMutabakatTarihi] = useState(gecenAySonu);
+  const [sonYanit, setSonYanit] = useState("");
 
   useEffect(() => {
     if (eylem !== "temsilci" || temsilciler) return;
@@ -229,6 +233,16 @@ export function CariTopluIslem({
             disabled={islemde || adet > EPOSTA_EN_FAZLA}
             onClick={() => { if (onayla("ekstre e-postası gönderilecek")) void calistir("Ekstre gönderildi", "/cari/toplu/ekstre-eposta", { baslangic: baslangic || undefined, bitis: bitis || undefined, tur: ekstreTuru, mutabakat }); }}
           >
+            {islemde ? "Gönderiliyor…" : "Gönder"}
+          </Button>
+        </div>
+      )}
+      {adet > 0 && eylem === "mutabakat" && (
+        <div className="cari-toplu__form">
+          <Field label="Mutabakat tarihi"><Input type="date" value={mutabakatTarihi} onChange={(e) => setMutabakatTarihi(e.target.value)} /></Field>
+          <Field label="Son yanıt tarihi (boşsa 15 gün)"><Input type="date" value={sonYanit} onChange={(e) => setSonYanit(e.target.value)} /></Field>
+          <span className="subtle">Her cariye o tarihteki bakiyesi, ekstresi ve kişiye özel yanıt bağlantısı kart e-postasına gider; e-postası olmayan atlanır, bekleyen eski talep iptal olur.{adet > EPOSTA_EN_FAZLA ? ` Tek seferde en çok ${EPOSTA_EN_FAZLA} cariye gönderilir.` : ""}</span>
+          <Button size="sm" variant="primary" disabled={islemde || !mutabakatTarihi || adet > EPOSTA_EN_FAZLA} onClick={() => { if (onayla("mutabakat talebi gönderilecek")) void calistir("Mutabakat istendi", "/cari/mutabakatlar/toplu", { mutabakatTarihi, sonYanitTarihi: sonYanit || null }); }}>
             {islemde ? "Gönderiliyor…" : "Gönder"}
           </Button>
         </div>

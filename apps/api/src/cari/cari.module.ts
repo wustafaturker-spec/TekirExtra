@@ -8,15 +8,22 @@ import { CariTopluController } from "./cari-toplu.controller";
 import { CariTopluService } from "./cari-toplu.service";
 import { CariGrupController } from "./cari-grup.controller";
 import { CariGrupService } from "./cari-grup.service";
+import { CariMutabakatController } from "./cari-mutabakat.controller";
+import { CariMutabakatService } from "./cari-mutabakat.service";
+import { MutabakatPortalController } from "./mutabakat-portal.controller";
+import { MutabakatPortalService } from "./mutabakat-portal.service";
+import { MutabakatZamanlayiciService } from "./mutabakat-zamanlayici.service";
+import { EklerModule } from "../ekler/ekler.module";
+import { BildirimlerModule } from "../bildirimler/bildirimler.module";
 import { CariService } from "./cari.service";
 import { CariIceAktarmaService } from "./cari-ice-aktarma.service";
 import { TenantModule } from "../tenant/tenant.module";
 
 @Module({
-  imports: [TenantModule],
-  // Sabit yollu denetleyici önce: "cari/vade-hatirlatma/...", "cari/toplu/...", "cari/gruplar/..." `:id` kalıplarına düşmesin.
-  controllers: [VadeHatirlatmaController, CariTopluController, CariGrupController, CariController],
-  providers: [CariService, CariIceAktarmaService, VadeHatirlatmaService, CariTopluService, CariGrupService],
+  imports: [TenantModule, EklerModule, BildirimlerModule],
+  // Sabit yollu denetleyici önce: "cari/vade-hatirlatma/...", "cari/toplu/...", "cari/gruplar/...", "cari/mutabakatlar/..." `:id` kalıplarına düşmesin.
+  controllers: [VadeHatirlatmaController, CariTopluController, CariGrupController, CariMutabakatController, MutabakatPortalController, CariController],
+  providers: [CariService, CariIceAktarmaService, VadeHatirlatmaService, CariTopluService, CariGrupService, CariMutabakatService, MutabakatPortalService, MutabakatZamanlayiciService],
   exports: [CariService],
 })
 export class CariModule implements OnModuleInit {

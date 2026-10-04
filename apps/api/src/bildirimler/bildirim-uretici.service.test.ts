@@ -45,6 +45,7 @@ function servisKur(secenek: TxSecenekleri = {}) {
     bankaHesap: { findMany: vi.fn().mockResolvedValue([{ id: "h1", ad: "Ziraat TL" }]) },
     bankaKrediTaksiti: { findMany: vi.fn().mockResolvedValue([]) },
     cariTeminat: { findMany: vi.fn().mockResolvedValue([]) },
+    cariMutabakat: { findMany: vi.fn().mockResolvedValue([]) },
     personelTatilGunu: { findMany: vi.fn().mockResolvedValue([]) },
     fatura: { findMany: vi.fn().mockResolvedValue(secenek.ihracKayitlilar ?? []) },
     belge: { findMany: vi.fn().mockResolvedValue(secenek.bekleyenIrsaliyeler ?? []) },

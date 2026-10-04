@@ -4720,3 +4720,25 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .cari-grup__bas { align-items: flex-start; display: flex; flex-wrap: wrap; gap: .8rem; justify-content: space-between; margin-bottom: .8rem; }
 .cari-grup__doviz { display: block; font-weight: 400; }
 .row-link.is-selected > td { background: var(--accent-soft); }
+
+/* CARI-42: girişsiz mutabakat portalı */
+.mutabakat-portal { align-content: start; background: var(--bg); display: grid; gap: 1rem; justify-items: center; margin: 0 auto; max-width: 760px; min-height: 100vh; padding: 2rem 16px 3rem; }
+.mutabakat-portal > .card { width: 100%; }
+.mutabakat-portal__kart { align-content: start; display: grid; gap: .75rem; }
+.mutabakat-portal__kart p { margin: 0; }
+.mutabakat-portal__baslik { font-size: 1.4rem; margin: 0; }
+.mutabakat-portal__cumle { font-size: 1.05rem; line-height: 1.5; }
+.mutabakat-portal__tablo { border-collapse: collapse; width: 100%; }
+.mutabakat-portal__tablo th, .mutabakat-portal__tablo td { border-bottom: 1px solid var(--border); padding: .5rem; text-align: left; }
+.mutabakat-portal__tablo .num { text-align: right; }
+.mutabakat-portal__form { border-top: 1px solid var(--border); display: grid; gap: .8rem; padding-top: .9rem; }
+.mutabakat-portal__secim { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.mutabakat-portal__secim button { background: var(--surface); border: 2px solid var(--border); border-radius: .65rem; color: var(--text); cursor: pointer; font: inherit; font-weight: 600; padding: .9rem; }
+.mutabakat-portal__secim button.is-secili { background: var(--accent-soft); border-color: var(--accent); }
+.mutabakat-portal__secim button.is-itiraz.is-secili { background: var(--danger-soft); border-color: var(--danger); }
+.mutabakat-portal__satir { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.mutabakat-portal__yanit { background: var(--accent-soft); border-radius: .65rem; display: grid; gap: .3rem; padding: .9rem; }
+.mutabakat-portal__yanit.is-itiraz { background: var(--danger-soft); }
+.mutabakat-paneli { border-top: 1px solid var(--border); display: grid; gap: .7rem; margin-top: 1rem; padding-top: 1rem; }
+.mutabakat-paneli__bas { align-items: flex-start; display: flex; flex-wrap: wrap; gap: .8rem; justify-content: space-between; }
+.mutabakat-ayrinti { display: grid; gap: .6rem; padding: .4rem 0; }

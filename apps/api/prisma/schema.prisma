@@ -857,6 +857,7 @@ model CariHesap {
   masraflar             Masraf[]
   kiraSozlesmeleri      KiraSozlesme[]
   teminatlar            CariTeminat[]
+  mutabakatlar          CariMutabakat[]
   personel              Personel?
   projeler              Proje[]
 
@@ -864,6 +865,57 @@ model CariHesap {
   @@index([tenantId, unvan])
   @@index([tenantId, grupId])
   @@map("cari_hesaplar")
+}
+
+/// CARI-42 (karar 2026-10-04): bakiye mutabakatı talebi ve karşı tarafın
+/// girişsiz portaldan verdiği yanıt. Bakiye ve ekstre PDF'i talep anında
+/// dondurulur; bağlantı anahtarının yalnız SHA-256 özeti saklanır.
+/// Durum: gonderildi | goruldu | mutabik | itiraz | iptal ("süresi doldu" türetilir).
+model CariMutabakat {
+  id                  String    @id @default(uuid()) @db.Uuid
+  tenantId            String    @map("tenant_id") @db.Uuid
+  cariId              String    @map("cari_id") @db.Uuid
+  mutabakatTarihi     DateTime  @map("mutabakat_tarihi") @db.Date
+  baslangicTarihi     DateTime? @map("baslangic_tarihi") @db.Date
+  sonYanitTarihi      DateTime  @map("son_yanit_tarihi") @db.Date
+  /// [{ dovizCinsi, bakiye }] — bakiye = borç − alacak (artı: cari bize borçlu).
+  bakiyeler           Json
+  bakiyeTry           Decimal   @map("bakiye_try") @db.Decimal(15, 2)
+  alici               String
+  anahtarOzeti        String    @map("anahtar_ozeti")
+  /// Hatırlatma e-postasındaki ikinci bağlantının özeti; ikisi de geçerlidir.
+  hatirlatmaAnahtarOzeti String? @map("hatirlatma_anahtar_ozeti")
+  ekstreAnahtari      String    @map("ekstre_anahtari")
+  durum               String    @default("gonderildi")
+  gorulduAt           DateTime? @map("goruldu_at")
+  yanitAt             DateTime? @map("yanit_at")
+  yanitlayanAd        String?   @map("yanitlayan_ad")
+  yanitlayanGorev     String?   @map("yanitlayan_gorev")
+  yanitlayanEposta    String?   @map("yanitlayan_eposta")
+  yanitAciklama       String?   @map("yanit_aciklama")
+  /// İtirazda karşı tarafın bakiyeleri: [{ dovizCinsi, bakiye }] aynı işaretle.
+  karsiBakiyeler      Json?     @map("karsi_bakiyeler")
+  ekAnahtari          String?   @map("ek_anahtari")
+  ekDosyaAdi          String?   @map("ek_dosya_adi")
+  ekMime              String?   @map("ek_mime")
+  yanitIp             String?   @map("yanit_ip")
+  yanitTarayici       String?   @map("yanit_tarayici")
+  hatirlatmaAt        DateTime? @map("hatirlatma_at")
+  itirazKapandiAt     DateTime? @map("itiraz_kapandi_at")
+  itirazKapatmaNotu   String?   @map("itiraz_kapatma_notu")
+  itirazKapatanUserId String?   @map("itiraz_kapatan_user_id") @db.Uuid
+  iptalAt             DateTime? @map("iptal_at")
+  olusturanUserId     String    @map("olusturan_user_id") @db.Uuid
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  cari CariHesap @relation(fields: [cariId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, anahtarOzeti])
+  @@index([tenantId, cariId, createdAt])
+  @@index([tenantId, durum, sonYanitTarihi])
+  @@index([tenantId, hatirlatmaAnahtarOzeti])
+  @@map("cari_mutabakatlari")
 }
 
 /// CARI-41 (karar 2026-10-04): tek seviyeli cari grubu. Grup riski üyelerin

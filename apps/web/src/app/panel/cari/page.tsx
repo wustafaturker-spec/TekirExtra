@@ -10,6 +10,7 @@ import { FormGrubu } from "@/components/form-grubu";
 import { Bakiye, CariEkstreTablosu, type EkstreVeri } from "@/components/cari-ekstre-tablosu";
 import { ElleHareketFormu } from "./elle-hareket";
 import { BabsMutabakatPaneli } from "./babs-mutabakat";
+import { MutabakatPaneli } from "./mutabakat-paneli";
 import { TeminatlarPaneli } from "./teminatlar";
 import { ExcelIceAktar } from "./excel-ice-aktar";
 import { CariTopluIslem } from "./toplu-islem";
@@ -986,6 +987,7 @@ export default function CariSayfasi() {
             {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/raporlar">📈 Raporlar</ButtonLabel>}
             {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/vade-hatirlatma">⏰ Vade Hatırlatma</ButtonLabel>}
             {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/gruplar">🏢 Cari Grupları</ButtonLabel>}
+            {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/mutabakatlar">🤝 Mutabakatlar</ButtonLabel>}
             {!yeniSayfasi && !detaySayfasi && <Button onClick={() => setIceAktarAcik(true)}>📥 Excel&apos;den İçe Aktar</Button>}
             {(yeniSayfasi || detaySayfasi) ? <Button onClick={() => router.push("/panel/cari")}>Listeye dön</Button> : <ButtonLabel as="a" role="button" variant="primary" href="/panel/cari/yeni">➕ Yeni Cari</ButtonLabel>}
           </>
@@ -1405,6 +1407,8 @@ export default function CariSayfasi() {
               <div className="cari-statement__mail"><Field label="Gönderilecek e-posta"><Input type="email" value={ekstreEposta} onChange={(e) => setEkstreEposta(e.target.value)} placeholder="muhasebe@firma.com" /></Field><Button variant="primary" disabled={!ekstreEposta || ekstreIslemde} onClick={() => void ekstreGonder()}>{ekstreIslemde ? "İşleniyor…" : "PDF + Excel e-posta gönder"}</Button></div>
               {/* CARI-37: dönemin Form BA/BS özeti ve mutabakat mektubu. */}
               <BabsMutabakatPaneli key={detay.id} cariId={detay.id} cariKod={detay.kod} varsayilanEposta={detay.eposta ?? ""} onMesaj={babsMesaji} />
+              {/* CARI-42: girişsiz portalla bakiye mutabakatı. */}
+              <MutabakatPaneli key={`m-${detay.id}`} cariId={detay.id} varsayilanEposta={detay.eposta ?? ""} onMesaj={babsMesaji} />
               {!ekstre ? (
                 <p className="subtle" style={{ fontSize: "0.85rem" }}>Ekstre yükleniyor...</p>
               ) : (
