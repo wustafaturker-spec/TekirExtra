@@ -41,6 +41,7 @@ Para hesabını ya da veri bütünlüğünü doğrudan etkileyen beş sorun var:
 | P2-3 | ✅ 2026-10-04 — CARI-37 (Form BA/BS raporu + Excel, eşik ayarı, eşiğe yakınlar, cari bazında mutabakat PDF/e-posta) |
 | P2-5 | ✅ 2026-10-04 — CARI-38 (toplu vade hatırlatma/ihtar e-postası, Ayarlar'dan şablon, fatura tablosu + 90 günlük ekstre eki, 7 gün sıklık sınırı, CRM kaydı) |
 | P2-6 | ✅ 2026-10-04 — CARI-39 (teminat mektubu/ipotek/DBS/nakit/kefalet/diğer; geçerli teminat güncel kurla risk limitine eklenir; bitişe 30 gün kala ve süresi dolunca bildirim) |
+| P2-2 | ✅ 2026-10-04 — CARI-40 (listede seçim + süzgece uyan tümü; toplu etiket, pasif/aktif — açık bakiyede onay, kara liste + not, temsilci, ekstre/mutabakat e-postası en çok 100 cari — e-postasız ve kara listedeki atlanır, CRM'e yazılır, seçilenlerin Excel'i; her toplu işlem tek auditLog `cari_toplu_*`; Muhtelif Müşteriler pasife/kara listeye alınmaz). Cari grubu ataması P3-2'ye bırakıldı (alan yok) |
 
 ## 2. Öncelik sınıfları
 

@@ -4703,3 +4703,12 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .cari-ice-aktar__tablo td { vertical-align: top; }
 .cari-ice-aktar__tablo .is-danger { color: var(--danger); }
 .cari-ice-aktar__alt { display: flex; gap: .6rem; justify-content: flex-end; padding-right: 64px; }
+
+/* CARI-40: cari listesinde toplu işlem şeridi */
+.cari-toplu { border-bottom: 1px solid var(--border); display: grid; gap: .6rem; padding: .7rem 1rem; }
+.cari-toplu__bas { align-items: center; display: flex; flex-wrap: wrap; gap: .5rem 1rem; }
+.cari-toplu__eylemler { display: flex; flex-wrap: wrap; gap: .4rem; margin-left: auto; }
+.cari-toplu__form { align-items: flex-end; background: var(--surface-2); border: 1px solid var(--border); border-radius: .65rem; display: flex; flex-wrap: wrap; gap: .6rem .8rem; padding: .75rem; }
+.cari-toplu__form .field { min-width: 180px; }
+.cari-toplu__secim { width: 2.25rem; }
+@media (max-width: 640px) { .cari-toplu__eylemler { margin-left: 0; } }

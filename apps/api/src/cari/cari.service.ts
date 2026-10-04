@@ -107,60 +107,23 @@ export class CariService {
   async listele(arama?: string, imlec?: string, adet = 50, tip?: string, durum?: string, bakiye?: string, secenekler: CariListeSecenekleri = {}) {
     const { tenantId } = aktifBaglam();
     const ctx = aktifBaglam();
-    const aranan = arama ? metinNormalize(arama) : "";
-    // CARI-30: "gecikmiş" = FIFO sonrası vadesi geçmiş açık tutarı olan cari (kartla aynı kural);
-    // aday olarak vadesi geçmiş borç hareketi olanlar alınır, ödenmiş olanlar elenir.
-    const gecikmisIdler = bakiye === "gecikmis"
-      ? await this.prisma.tenantIslem(tenantId, async (tx) => {
-          const adaylar = await tx.cariHesap.findMany({ where: { hareketler: { some: { tip: "borc", OR: [{ vadeTarihi: { lt: new Date() } }, { vadeTarihi: null, tarih: { lt: new Date() } }] } } }, select: { id: true } });
-          const yaslandirma = await cariYaslandirmalari(tx, tenantId, adaylar.map((a) => a.id));
-          return [...yaslandirma].filter(([, y]) => vadesiGecmis(y) > 0).map(([id]) => id);
-        })
-      : null;
-    const where: Prisma.CariHesapWhereInput = {
-      ...(gecikmisIdler ? { id: { in: gecikmisIdler } } : {}),
-      ...(tip === "musteri" ? { tip: { in: ["musteri", "her_ikisi"] } } : tip === "tedarikci" ? { tip: { in: ["tedarikci", "her_ikisi"] } } : {}),
-      ...(durum === "bloke" ? { karaListe: true } : {}),
-      // ARA-01: unvan, kod, VKN/TCKN ve telefon veritabanının ürettiği
-      // `arama_normal` kolonunda toplanır; aksan ve büyük/küçük harf orada
-      // katlandığı için "sisli" araması "Şişli Makina"yı da bulur.
-      ...(aranan ? { aramaNormal: { contains: aranan } } : {}),
-    };
+    const where = await this.listeSuzgeci(arama, tip, durum, bakiye);
     // CARI-23/EBLG-80: yurt dışı alıcı adres ülkesinden anlaşılır.
     const include = { _count: { select: { hareketler: true } }, adresler: { select: { tip: true, ulke: true } } } as const;
     const siralama = secenekler.siralama ?? "kod";
-    const bakiyeSuzgeci = bakiye === "alacakli" || bakiye === "borclu" || bakiye === "sifir" || secenekler.bakiyeMin !== undefined || secenekler.bakiyeMax !== undefined;
 
     let sayfa: Prisma.CariHesapGetPayload<{ include: typeof include }>[];
     let sonrakiImlec: string | null;
     let bakiyeler: Map<string, DovizBakiye[]>;
-    if (bakiyeSuzgeci || siralama === "bakiye_azalan" || siralama === "bakiye_artan") {
-      // CARI-36: bakiye her döviz için güncel kurla TL'dir (kart ve listeyle aynı); sıfır ±0,005 içinde sayılır.
-      const adaylar = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findMany({ where, select: { id: true, kod: true }, orderBy: [{ kod: "asc" }, { id: "asc" }] }));
-      const tumBakiyeler = await this.bakiyeleriGetir(adaylar.map((a) => a.id));
-      const toplam = (id: string) => (tumBakiyeler.get(id) ?? []).reduce((t, b) => t.add(b.bakiyeGuncelTry), D(0));
-      const uygun = adaylar
-        .map((a) => ({ ...a, bakiye: toplam(a.id) }))
-        .filter(({ bakiye: b }) =>
-          (bakiye !== "alacakli" || b.greaterThan(0.005)) &&
-          (bakiye !== "borclu" || b.lessThan(-0.005)) &&
-          (bakiye !== "sifir" || b.abs().lessThanOrEqualTo(0.005)) &&
-          (secenekler.bakiyeMin === undefined || b.greaterThanOrEqualTo(secenekler.bakiyeMin)) &&
-          (secenekler.bakiyeMax === undefined || b.lessThanOrEqualTo(secenekler.bakiyeMax)));
-      if (siralama === "bakiye_azalan" || siralama === "bakiye_artan") {
-        const yon = siralama === "bakiye_azalan" ? -1 : 1;
-        uygun.sort((a, b) => yon * a.bakiye.comparedTo(b.bakiye) || a.kod.localeCompare(b.kod, "tr-TR"));
-      } else if (siralama === "unvan") {
-        const unvanlar = new Map((await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findMany({ where: { id: { in: uygun.map((u) => u.id) } }, select: { id: true, unvan: true } }))).map((c) => [c.id, c.unvan]));
-        uygun.sort((a, b) => unvanlar.get(a.id)!.localeCompare(unvanlar.get(b.id)!, "tr-TR"));
-      }
+    if (this.bakiyeyeDayali(bakiye, secenekler)) {
+      const { uygun, tumBakiyeler } = await this.bakiyeyeGoreSuz(where, bakiye, secenekler);
       // İmleçteki cari süzgeçten çıktıysa (bakiyesi değişti) baştan almak yerine sayfayı bitir.
-      const imlecSirasi = imlec ? uygun.findIndex((u) => u.id === imlec) : -1;
+      const imlecSirasi = imlec ? uygun.indexOf(imlec) : -1;
       const bas = !imlec ? 0 : imlecSirasi < 0 ? uygun.length : imlecSirasi + 1;
       const dilim = uygun.slice(bas, bas + adet);
-      sonrakiImlec = uygun.length > bas + adet ? dilim[dilim.length - 1].id : null;
-      const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findMany({ where: { id: { in: dilim.map((d) => d.id) } }, include }));
-      const sira = new Map(dilim.map((d, i) => [d.id, i]));
+      sonrakiImlec = uygun.length > bas + adet ? dilim[dilim.length - 1] : null;
+      const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findMany({ where: { id: { in: dilim } }, include }));
+      const sira = new Map(dilim.map((id, i) => [id, i]));
       sayfa = kayitlar.sort((a, b) => sira.get(a.id)! - sira.get(b.id)!);
       bakiyeler = tumBakiyeler;
     } else {
@@ -188,6 +151,77 @@ export class CariService {
       })),
       sonrakiImlec,
     };
+  }
+
+  /**
+   * CARI-40: listenin süzgecine uyan bütün carilerin kimlikleri, listedeki
+   * sırayla. `enFazla` aşılırsa `kesildi` döner; toplu işlem seçimi bunu kullanır.
+   */
+  async listeKimlikleri(arama?: string, tip?: string, durum?: string, bakiye?: string, secenekler: CariListeSecenekleri = {}, enFazla = 2000) {
+    const { tenantId } = aktifBaglam();
+    const where = await this.listeSuzgeci(arama, tip, durum, bakiye);
+    const kimlikler = this.bakiyeyeDayali(bakiye, secenekler)
+      ? (await this.bakiyeyeGoreSuz(where, bakiye, secenekler)).uygun
+      : (await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findMany({
+          where,
+          select: { id: true },
+          orderBy: secenekler.siralama === "unvan" ? [{ unvan: "asc" }, { id: "asc" }] : [{ kod: "asc" }, { id: "asc" }],
+          take: enFazla + 1,
+        }))).map((k) => k.id);
+    return { kimlikler: kimlikler.slice(0, enFazla), kesildi: kimlikler.length > enFazla };
+  }
+
+  private async listeSuzgeci(arama?: string, tip?: string, durum?: string, bakiye?: string): Promise<Prisma.CariHesapWhereInput> {
+    const { tenantId } = aktifBaglam();
+    const aranan = arama ? metinNormalize(arama) : "";
+    // CARI-30: "gecikmiş" = FIFO sonrası vadesi geçmiş açık tutarı olan cari (kartla aynı kural);
+    // aday olarak vadesi geçmiş borç hareketi olanlar alınır, ödenmiş olanlar elenir.
+    const gecikmisIdler = bakiye === "gecikmis"
+      ? await this.prisma.tenantIslem(tenantId, async (tx) => {
+          const adaylar = await tx.cariHesap.findMany({ where: { hareketler: { some: { tip: "borc", OR: [{ vadeTarihi: { lt: new Date() } }, { vadeTarihi: null, tarih: { lt: new Date() } }] } } }, select: { id: true } });
+          const yaslandirma = await cariYaslandirmalari(tx, tenantId, adaylar.map((a) => a.id));
+          return [...yaslandirma].filter(([, y]) => vadesiGecmis(y) > 0).map(([id]) => id);
+        })
+      : null;
+    return {
+      ...(gecikmisIdler ? { id: { in: gecikmisIdler } } : {}),
+      ...(tip === "musteri" ? { tip: { in: ["musteri", "her_ikisi"] } } : tip === "tedarikci" ? { tip: { in: ["tedarikci", "her_ikisi"] } } : {}),
+      ...(durum === "bloke" ? { karaListe: true } : {}),
+      // ARA-01: unvan, kod, VKN/TCKN ve telefon veritabanının ürettiği
+      // `arama_normal` kolonunda toplanır; aksan ve büyük/küçük harf orada
+      // katlandığı için "sisli" araması "Şişli Makina"yı da bulur.
+      ...(aranan ? { aramaNormal: { contains: aranan } } : {}),
+    };
+  }
+
+  private bakiyeyeDayali(bakiye: string | undefined, secenekler: CariListeSecenekleri) {
+    return bakiye === "alacakli" || bakiye === "borclu" || bakiye === "sifir" || secenekler.bakiyeMin !== undefined || secenekler.bakiyeMax !== undefined
+      || secenekler.siralama === "bakiye_azalan" || secenekler.siralama === "bakiye_artan";
+  }
+
+  /** CARI-36: bakiye her döviz için güncel kurla TL'dir (kart ve listeyle aynı); sıfır ±0,005 içinde sayılır. */
+  private async bakiyeyeGoreSuz(where: Prisma.CariHesapWhereInput, bakiye: string | undefined, secenekler: CariListeSecenekleri) {
+    const { tenantId } = aktifBaglam();
+    const siralama = secenekler.siralama ?? "kod";
+    const adaylar = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findMany({ where, select: { id: true, kod: true }, orderBy: [{ kod: "asc" }, { id: "asc" }] }));
+    const tumBakiyeler = await this.bakiyeleriGetir(adaylar.map((a) => a.id));
+    const toplam = (id: string) => (tumBakiyeler.get(id) ?? []).reduce((t, b) => t.add(b.bakiyeGuncelTry), D(0));
+    const uygun = adaylar
+      .map((a) => ({ ...a, bakiye: toplam(a.id) }))
+      .filter(({ bakiye: b }) =>
+        (bakiye !== "alacakli" || b.greaterThan(0.005)) &&
+        (bakiye !== "borclu" || b.lessThan(-0.005)) &&
+        (bakiye !== "sifir" || b.abs().lessThanOrEqualTo(0.005)) &&
+        (secenekler.bakiyeMin === undefined || b.greaterThanOrEqualTo(secenekler.bakiyeMin)) &&
+        (secenekler.bakiyeMax === undefined || b.lessThanOrEqualTo(secenekler.bakiyeMax)));
+    if (siralama === "bakiye_azalan" || siralama === "bakiye_artan") {
+      const yon = siralama === "bakiye_azalan" ? -1 : 1;
+      uygun.sort((a, b) => yon * a.bakiye.comparedTo(b.bakiye) || a.kod.localeCompare(b.kod, "tr-TR"));
+    } else if (siralama === "unvan") {
+      const unvanlar = new Map((await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findMany({ where: { id: { in: uygun.map((u) => u.id) } }, select: { id: true, unvan: true } }))).map((c) => [c.id, c.unvan]));
+      uygun.sort((a, b) => unvanlar.get(a.id)!.localeCompare(unvanlar.get(b.id)!, "tr-TR"));
+    }
+    return { uygun: uygun.map((u) => u.id), tumBakiyeler };
   }
 
   /**
@@ -1032,7 +1066,7 @@ export class CariService {
 
   // Yaşlandırma raporu RPR-06 araç setine taşındı: cari.yaslandirma (CARI-12).
 
-  private async bakiyeleriGetir(
+  async bakiyeleriGetir(
     cariIdler: string[],
   ): Promise<Map<string, DovizBakiye[]>> {
     if (cariIdler.length === 0) return new Map();

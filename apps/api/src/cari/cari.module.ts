@@ -4,15 +4,17 @@ import { registerEylemPolitikasi } from "../core/eylemler/eylem-kayit";
 import { CariController } from "./cari.controller";
 import { VadeHatirlatmaController } from "./vade-hatirlatma.controller";
 import { VadeHatirlatmaService } from "./vade-hatirlatma.service";
+import { CariTopluController } from "./cari-toplu.controller";
+import { CariTopluService } from "./cari-toplu.service";
 import { CariService } from "./cari.service";
 import { CariIceAktarmaService } from "./cari-ice-aktarma.service";
 import { TenantModule } from "../tenant/tenant.module";
 
 @Module({
   imports: [TenantModule],
-  // Sabit yollu denetleyici önce: "cari/vade-hatirlatma/..." `:id` kalıplarına düşmesin.
-  controllers: [VadeHatirlatmaController, CariController],
-  providers: [CariService, CariIceAktarmaService, VadeHatirlatmaService],
+  // Sabit yollu denetleyici önce: "cari/vade-hatirlatma/...", "cari/toplu/..." `:id` kalıplarına düşmesin.
+  controllers: [VadeHatirlatmaController, CariTopluController, CariController],
+  providers: [CariService, CariIceAktarmaService, VadeHatirlatmaService, CariTopluService],
   exports: [CariService],
 })
 export class CariModule implements OnModuleInit {

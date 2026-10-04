@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { api, apiDosyaIndir, tokenAl } from "@/lib/api";
 import { cariKaydet } from "@/lib/cari-kaydet";
@@ -12,6 +12,7 @@ import { ElleHareketFormu } from "./elle-hareket";
 import { BabsMutabakatPaneli } from "./babs-mutabakat";
 import { TeminatlarPaneli } from "./teminatlar";
 import { ExcelIceAktar } from "./excel-ice-aktar";
+import { CariTopluIslem } from "./toplu-islem";
 import { CARI_EBELGE_ETIKETI, EKSTRE_TURU_ADLARI, EKSTRE_TURLERI, vknTcknGecerliMi, type CariEbelgeDurumu, type CariEbelgeTuru, type EkstreTuru, YABANCI_DOVIZLER, type YabanciDoviz } from "@tekirextra/shared";
 import {
   Alert,
@@ -54,6 +55,7 @@ interface Cari {
   eposta: string | null;
   telefon: string | null;
   karaListe: boolean;
+  aktif: boolean;
   /** CARI-33: bakiyeGuncelTry güncel döviz satış kuruyla; bakiyeTry hareketlerin kendi kuruyla. */
   bakiyeler: { dovizCinsi: string; bakiye: string; bakiyeTry: string; bakiyeGuncelTry?: string; guncelKur?: string | null; kurTarihi?: string | null; kurFarki?: string }[];
   /** CARI-23: GİB listesine göre e-Fatura / e-Arşiv; liste güncel değilse bilinmiyor. */
@@ -357,18 +359,27 @@ export default function CariSayfasi() {
   const [gorevSonTarihi, setGorevSonTarihi] = useState("");
   const [gorevHatirlatmaTarihi, setGorevHatirlatmaTarihi] = useState("");
 
+  // CARI-40: toplu işlemin "süzgecin tümü" seçimi de aynı sorguyu kullanır.
+  const listeParametreleri = useMemo(() => {
+    const parametreler = new URLSearchParams();
+    if (aramaSorgusu) parametreler.set("arama", aramaSorgusu);
+    if (filtreTip === "musteri" || filtreTip === "tedarikci") parametreler.set("tip", filtreTip);
+    if (filtreTip === "bloke") parametreler.set("durum", "bloke");
+    if (bakiyeFiltre) parametreler.set("bakiye", bakiyeFiltre);
+    if (bakiyeAraligi.min) parametreler.set("bakiyeMin", bakiyeAraligi.min);
+    if (bakiyeAraligi.max) parametreler.set("bakiyeMax", bakiyeAraligi.max);
+    if (siralama !== "kod") parametreler.set("siralama", siralama);
+    return parametreler.toString();
+  }, [aramaSorgusu, filtreTip, bakiyeFiltre, bakiyeAraligi, siralama]);
+  const [topluSecim, setTopluSecim] = useState<Set<string>>(new Set());
+  // Süzgeç değişince görünmeyen carilere yanlışlıkla işlem yapılmasın.
+  useEffect(() => { setTopluSecim(new Set()); }, [listeParametreleri]);
+
   const yukle = useCallback(async (imlec?: string) => {
     const istekSirasi = ++cariYuklemeSirasi.current;
     setCariListesiYukleniyor(true);
     try {
-      const parametreler = new URLSearchParams();
-      if (aramaSorgusu) parametreler.set("arama", aramaSorgusu);
-      if (filtreTip === "musteri" || filtreTip === "tedarikci") parametreler.set("tip", filtreTip);
-      if (filtreTip === "bloke") parametreler.set("durum", "bloke");
-      if (bakiyeFiltre) parametreler.set("bakiye", bakiyeFiltre);
-      if (bakiyeAraligi.min) parametreler.set("bakiyeMin", bakiyeAraligi.min);
-      if (bakiyeAraligi.max) parametreler.set("bakiyeMax", bakiyeAraligi.max);
-      if (siralama !== "kod") parametreler.set("siralama", siralama);
+      const parametreler = new URLSearchParams(listeParametreleri);
       if (imlec) parametreler.set("imlec", imlec);
       const qs = parametreler.size ? `?${parametreler.toString()}` : "";
       const veri = await api<{ kayitlar: Cari[]; sonrakiImlec: string | null }>(`/cari${qs}`);
@@ -382,7 +393,7 @@ export default function CariSayfasi() {
     } finally {
       if (istekSirasi === cariYuklemeSirasi.current) setCariListesiYukleniyor(false);
     }
-  }, [aramaSorgusu, filtreTip, bakiyeFiltre, bakiyeAraligi, siralama]);
+  }, [listeParametreleri]);
 
   const babsMesaji = useCallback(({ hata: h, basari: b }: { hata?: string; basari?: string }) => { setHata(h ?? ""); setBasari(b ?? ""); }, []);
 
@@ -1583,9 +1594,19 @@ export default function CariSayfasi() {
       </div>
 
       <Card pad={false}>
+        <CariTopluIslem
+          secili={topluSecim}
+          setSecili={setTopluSecim}
+          gorunenIdler={filtrelenmisCariler.map((c) => c.id)}
+          listeParametreleri={listeParametreleri}
+          dahaFazlaVar={Boolean(sonrakiCariImleci)}
+          etiketler={etiketler}
+          onTamam={() => { void yukle(); void etiketleriYukle(); }}
+        />
         <TableWrap>
           <thead>
             <tr>
+              <th aria-label="Seçim" />
               <th>Cari Adı</th>
               <th>Tür</th>
               <th>Sektör</th>
@@ -1598,7 +1619,7 @@ export default function CariSayfasi() {
           <tbody>
             {filtrelenmisCariler.length === 0 ? (
               <tr>
-                <td colSpan={7} className="empty">Arama kriterlerinize uygun cari hesap kaydı bulunamadı.</td>
+                <td colSpan={8} className="empty">Arama kriterlerinize uygun cari hesap kaydı bulunamadı.</td>
               </tr>
             ) : (
               filtrelenmisCariler.map((c) => {
@@ -1610,8 +1631,16 @@ export default function CariSayfasi() {
                     tabIndex={0}
                     aria-label={`${c.unvan} carisini aç`}
                     onClick={() => router.push(`/panel/cari/${c.id}`)}
-                    onKeyDown={(olay) => { if (olay.key === "Enter" || olay.key === " ") { olay.preventDefault(); router.push(`/panel/cari/${c.id}`); } }}
+                    onKeyDown={(olay) => { if (olay.target === olay.currentTarget && (olay.key === "Enter" || olay.key === " ")) { olay.preventDefault(); router.push(`/panel/cari/${c.id}`); } }}
                   >
+                    <td className="cari-toplu__secim" onClick={(olay) => olay.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        aria-label={`${c.unvan} seç`}
+                        checked={topluSecim.has(c.id)}
+                        onChange={(e) => { const yeni = new Set(topluSecim); if (e.target.checked) yeni.add(c.id); else yeni.delete(c.id); setTopluSecim(yeni); }}
+                      />
+                    </td>
                     <td>
                       <div className="cell-entity">
                         <Avatar isim={c.unvan} />
@@ -1648,7 +1677,7 @@ export default function CariSayfasi() {
                       ))}
                     </td>
                     <td>
-                      <Status tone={c.karaListe ? "danger" : "ok"}>{c.karaListe ? "Bloke" : "Normal"}</Status>
+                      <Status tone={c.karaListe ? "danger" : c.aktif === false ? "warn" : "ok"}>{c.karaListe ? "Bloke" : c.aktif === false ? "Pasif" : "Normal"}</Status>
                     </td>
                   </tr>
                 );
