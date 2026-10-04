@@ -32,12 +32,14 @@ const ROL_ADI: Record<Rol, string> = {
   maliyet_muhasebesi: "Maliyet Muhasebesi",
   ik: "İnsan Kaynakları",
 };
+/** PRS-21: çalışan hesabı personel kartından davetle açılır; bu ekranda rolü seçilmez. */
+const rolAdi = (r: string) => (r === "calisan" ? "Çalışan (self-servis)" : ROL_ADI[r as Rol] ?? r);
 
 interface Kullanici {
   id: string;
   eposta: string;
   adSoyad: string;
-  rol: Rol;
+  rol: Rol | "calisan";
   aktif: boolean;
   epostaDogrulandi: boolean;
   totpAktif: boolean;
@@ -208,9 +210,9 @@ export default function KullanicilarSayfasi() {
                     {!k.epostaDogrulandi && <span className="subtle"> · doğrulanmadı</span>}
                   </td>
                   <td style={{ minWidth: 150 }}>
-                    <Select value={k.rol} onChange={(e) => rolDegistir(k.id, e.target.value as Rol)}>
+                    {k.rol === "calisan" ? <span className="subtle">{rolAdi(k.rol)}</span> : <Select value={k.rol} onChange={(e) => rolDegistir(k.id, e.target.value as Rol)}>
                       {ROLLER.map((r) => (<option key={r} value={r}>{ROL_ADI[r]}</option>))}
-                    </Select>
+                    </Select>}
                   </td>
                   <td><Status tone={k.aktif ? "ok" : "danger"}>{k.aktif ? "Aktif" : "Pasif"}</Status></td>
                   <td>{k.totpAktif ? <Badge variant="success">Etkin</Badge> : <span className="subtle">—</span>}</td>

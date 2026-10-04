@@ -178,6 +178,7 @@ export const MENU: MenuAlani[] = [
     ogeler: [
       { href: "/panel/cari", ikon: Contact, baslik: "Cari Hesaplar", esanlamlilar: ["müşteri", "tedarikçi", "bakiye", "ekstre"] },
       { href: "/panel/personel", ikon: UserCog, baslik: "Personel & İK", eslesme: "tam", esanlamlilar: ["bordro", "izin", "avans", "sgk"] },
+      { href: "/panel/self-servis", ikon: UserCog, baslik: "Çalışan Self-Servis", esanlamlilar: ["pusulam", "izin talebi", "avans talebi", "bordrom"] },
     ],
   },
   {

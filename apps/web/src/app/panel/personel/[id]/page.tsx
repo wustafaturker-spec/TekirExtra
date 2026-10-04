@@ -1,5 +1,6 @@
 "use client";
 
+import { PersonelSelfServis } from "@/components/personel-self-servis";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -34,6 +35,7 @@ interface PersonelDetay {
   tckn?: string | null;
   eposta?: string | null;
   telefon?: string | null;
+  adres?: string | null;
   departman?: string | null;
   unvan?: string | null;
   calismaTipi: string;
@@ -145,7 +147,7 @@ export default function PersonelDetaySayfasi() {
   const duzenlemeAc = () => {
     if (!personel) return;
     setDuzenleme({
-      ad: personel.ad, soyad: personel.soyad, eposta: personel.eposta ?? "", telefon: personel.telefon ?? "",
+      ad: personel.ad, soyad: personel.soyad, eposta: personel.eposta ?? "", telefon: personel.telefon ?? "", adres: personel.adres ?? "",
       calismaTipi: personel.calismaTipi, girisTarihi: personel.girisTarihi.slice(0, 10),
       engellilikDerecesi: personel.engellilikDerecesi ? String(personel.engellilikDerecesi) : "",
       dogumTarihi: personel.dogumTarihi?.slice(0, 10) ?? "",
@@ -162,7 +164,7 @@ export default function PersonelDetaySayfasi() {
       await api(`/personel/${id}`, {
         method: "PUT",
         body: JSON.stringify({
-          ad: duzenleme.ad, soyad: duzenleme.soyad, eposta: duzenleme.eposta.trim() || null, telefon: duzenleme.telefon.trim() || null,
+          ad: duzenleme.ad, soyad: duzenleme.soyad, eposta: duzenleme.eposta.trim() || null, telefon: duzenleme.telefon.trim() || null, adres: duzenleme.adres.trim() || null,
           calismaTipi: duzenleme.calismaTipi, girisTarihi: duzenleme.girisTarihi,
           engellilikDerecesi: duzenleme.engellilikDerecesi ? Number(duzenleme.engellilikDerecesi) : null,
           dogumTarihi: duzenleme.dogumTarihi || null,
@@ -262,6 +264,7 @@ export default function PersonelDetaySayfasi() {
             <dl className="mt-5 grid gap-4 sm:grid-cols-2">
               <Bilgi baslik="E-posta" deger={personel.eposta || "—"} />
               <Bilgi baslik="Telefon" deger={personel.telefon || "—"} />
+              <Bilgi baslik="Adres" deger={personel.adres || "—"} />
               <Bilgi baslik="TCKN" deger={hassas?.tckn || personel.tckn || "—"} />
               <Bilgi baslik="IBAN" deger={hassas?.iban || personel.iban || "—"} />
               <div><Bilgi baslik="Cari hesap" deger={personel.cari?.kod || "Bağlı değil — maaş ve avans ödenemez"} />{!personel.cari && <button type="button" disabled={isleniyor} onClick={() => void cariBagla()} className="mt-2 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Cari aç ve bağla</button>}</div>
@@ -284,6 +287,7 @@ export default function PersonelDetaySayfasi() {
             <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-6 py-3">Yürürlük</th><th className="px-6 py-3">Tip</th><th className="px-6 py-3">Tutar</th><th className="px-6 py-3">Neden</th><th className="px-6 py-3" /></tr></thead><tbody className="divide-y divide-slate-100">{personel.ucretler.map((u) => <tr key={u.id}><td className="px-6 py-4 font-medium text-slate-900">{tarih(u.yururlukTarihi)}</td><td className="px-6 py-4">{u.tip === "net" ? "Net" : "Brüt"}</td><td className="px-6 py-4">{para(u.tutar)}</td><td className="px-6 py-4 text-slate-500">{u.neden || "—"}</td><td className="px-6 py-4 text-right">{personel.ucretler.length > 1 && <button type="button" onClick={() => void ucretSil(u)} className="text-xs font-semibold text-red-700">Sil</button>}</td></tr>)}</tbody></table></div>
           )}
         </section>
+        <PersonelSelfServis personelId={personel.id} eposta={personel.eposta} aktifPersonel={personel.durum !== "isten_ayrildi"} />
         <PersonelBelgeleri personelId={personel.id} />
       </>}
 
@@ -325,6 +329,7 @@ export default function PersonelDetaySayfasi() {
             <Alan baslik="Soyad"><input required minLength={2} maxLength={50} value={duzenleme.soyad} onChange={(e) => setDuzenleme({ ...duzenleme, soyad: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
             <Alan baslik="E-posta"><input type="email" value={duzenleme.eposta} onChange={(e) => setDuzenleme({ ...duzenleme, eposta: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
             <Alan baslik="Telefon"><input maxLength={30} value={duzenleme.telefon} onChange={(e) => setDuzenleme({ ...duzenleme, telefon: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
+            <Alan baslik="Adres"><input maxLength={500} value={duzenleme.adres} onChange={(e) => setDuzenleme({ ...duzenleme, adres: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
             <Alan baslik="Çalışma tipi"><select value={duzenleme.calismaTipi} onChange={(e) => setDuzenleme({ ...duzenleme, calismaTipi: e.target.value })} className="w-full rounded-lg border px-3 py-2"><option value="tam_zamanli">Tam zamanlı</option><option value="yari_zamanli">Yarı zamanlı</option><option value="sozlesmeli">Sözleşmeli</option></select></Alan>
             <Alan baslik="İşe giriş tarihi"><input required type="date" value={duzenleme.girisTarihi} onChange={(e) => setDuzenleme({ ...duzenleme, girisTarihi: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
             <Alan baslik="Doğum tarihi (yıllık izin yaş kuralı)"><input type="date" max={bugun()} value={duzenleme.dogumTarihi} onChange={(e) => setDuzenleme({ ...duzenleme, dogumTarihi: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
@@ -359,7 +364,7 @@ export default function PersonelDetaySayfasi() {
 }
 
 interface DuzenlemeFormu {
-  ad: string; soyad: string; eposta: string; telefon: string; calismaTipi: string; girisTarihi: string;
+  ad: string; soyad: string; eposta: string; telefon: string; adres: string; calismaTipi: string; girisTarihi: string;
   engellilikDerecesi: string; dogumTarihi: string; sgkTesvikOrani: string; tckn: string; iban: string; ibanKaldir: boolean;
 }
 

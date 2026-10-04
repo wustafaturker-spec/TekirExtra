@@ -8,14 +8,17 @@ const ROL_YOLLARI: Record<string, string[]> = {
   uretim_operatoru: ["/panel", "/panel/bildirimler", "/panel/satin-alma/talepler", "/panel/uretim", "/panel/ayarlar/hesap", "/panel/ayarlar/bildirimler"],
   depo: ["/panel", "/panel/bildirimler", "/panel/satin-alma/talepler", "/panel/uretim", "/panel/stok", "/panel/ayarlar/hesap", "/panel/ayarlar/bildirimler"],
   kalite: ["/panel", "/panel/bildirimler", "/panel/satin-alma/talepler", "/panel/uretim/kalite", "/panel/ayarlar/hesap", "/panel/ayarlar/bildirimler"],
+  calisan: ["/panel/self-servis", "/panel/bildirimler", "/panel/ayarlar/hesap", "/panel/ayarlar/bildirimler"],
   ik: ["/panel", "/panel/bildirimler", "/panel/personel", "/panel/ayarlar/hesap", "/panel/ayarlar/bildirimler"],
   maliyet_muhasebesi: ["/panel", "/panel/bildirimler", "/panel/satin-alma/talepler", "/panel/uretim", "/panel/stok", "/panel/raporlar", "/panel/ayarlar/hesap", "/panel/ayarlar/bildirimler"],
 };
 
 export function rolMenuYoluGorebilir(rol: string | null, href: string): boolean {
   if (!rol) return false;
-  if (rol === "yonetici") return true;
   const yol = href.split("?")[0];
+  // PRS-21: self-servis yalnız çalışan rolünün menüsünde (yöneticinin kartı yoktur).
+  if (yol === "/panel/self-servis" || yol.startsWith("/panel/self-servis/")) return rol === "calisan";
+  if (rol === "yonetici") return true;
   return (ROL_YOLLARI[rol] ?? []).some((izinli) =>
     izinli === "/panel" ? yol === izinli : yol === izinli || yol.startsWith(`${izinli}/`),
   );

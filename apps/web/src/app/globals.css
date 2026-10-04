@@ -4756,3 +4756,11 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .hr-liste-alt { align-items: center; color: var(--text-muted); display: flex; font-size: .85rem; gap: 1rem; justify-content: space-between; padding: .8rem 1rem; }
 .hr-register__toolbar { flex-wrap: wrap; }
 .hr-liste-alt .hr-button { background: var(--surface); border-color: var(--border-strong); }
+
+/* PRS-21: çalışan self-servisi */
+.self-servis__ikili { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; align-items: start; }
+@media (max-width: 860px) { .self-servis__ikili { grid-template-columns: 1fr; } }
+.self-servis__tanim { display: grid; grid-template-columns: minmax(9rem, auto) 1fr; gap: .45rem 1rem; margin: 0; }
+.self-servis__tanim dt { color: var(--text-muted); font-size: .8rem; }
+.self-servis__tanim dd { margin: 0; overflow-wrap: anywhere; }
+.self-servis__satir { display: contents; }

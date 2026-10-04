@@ -7,7 +7,7 @@ import { api, ApiHata, tokenAl, tokenYaz } from "@/lib/api";
 import { bugunTR, paraBicimle } from "@tekirextra/shared";
 import { Para, Tarih } from "@/components/ui";
 
-type Rol = "yonetici" | "muhasebe" | "satis" | "salt_okunur" | "mali_musavir" | "b2b_bayi" | "uretim_planlama" | "uretim_operatoru" | "depo" | "kalite" | "maliyet_muhasebesi" | "ik";
+type Rol = "yonetici" | "muhasebe" | "satis" | "salt_okunur" | "mali_musavir" | "b2b_bayi" | "uretim_planlama" | "uretim_operatoru" | "depo" | "kalite" | "maliyet_muhasebesi" | "ik" | "calisan";
 interface FinansOzet { nakitVarliklar: string; envanterDegeri: string; toplamAlacaklar: string; toplamBorclar: string; netVarlikDegeri: string; }
 interface FaturaKuyrukOzeti { taslakSatis: number; taslakAlis: number; ebelgeHata: number; acikTahsilat: number; acikOdeme: number; }
 interface CekSenet { id: string; tur: "cek" | "senet"; yon: "alinan" | "verilen"; portfoyNo: string; vadeTarihi: string; tutarTry: string; borclu: string; durum: string; banka?: string | null; cari?: { unvan: string } | null; }
@@ -17,7 +17,7 @@ interface DovizKurlari { kurTarihi: string; oncekiIsGunuKullanildi?: boolean; ku
 interface VadesiGecenSatir { faturaId: string; no: string | null; cariId: string; cariUnvan: string; vadeTarihi: string; gecikmeGun: number; kalanTry: string; tip: "satis" | "alis"; }
 interface VadesiGecenler { alacaklar: VadesiGecenSatir[]; borclar: VadesiGecenSatir[]; toplamAlacak: string; toplamBorc: string; }
 
-const rolAdi: Record<Rol, string> = { yonetici: "Yönetim görünümü", muhasebe: "Muhasebe görünümü", satis: "Satış görünümü", salt_okunur: "Genel görünüm", mali_musavir: "Mali müşavir görünümü", b2b_bayi: "Bayi görünümü", uretim_planlama: "Üretim planlama görünümü", uretim_operatoru: "Operatör görünümü", depo: "Depo görünümü", kalite: "Kalite görünümü", maliyet_muhasebesi: "Maliyet görünümü", ik: "İK görünümü" };
+const rolAdi: Record<Rol, string> = { yonetici: "Yönetim görünümü", muhasebe: "Muhasebe görünümü", satis: "Satış görünümü", salt_okunur: "Genel görünüm", mali_musavir: "Mali müşavir görünümü", b2b_bayi: "Bayi görünümü", uretim_planlama: "Üretim planlama görünümü", uretim_operatoru: "Operatör görünümü", depo: "Depo görünümü", kalite: "Kalite görünümü", maliyet_muhasebesi: "Maliyet görünümü", ik: "İK görünümü", calisan: "Çalışan görünümü" };
 // Biçim tek kaynaktan gelir (packages/shared/bicim); sayfa kendi kuralını kurmaz.
 const para = (deger: string | number, sifirBasamak = false) => paraBicimle(deger, { basamak: sifirBasamak ? 0 : 2, bosDeger: paraBicimle(0, { basamak: sifirBasamak ? 0 : 2 }) });
 const gunBaslangici = (deger = new Date()) => new Date(deger.getFullYear(), deger.getMonth(), deger.getDate());
@@ -44,7 +44,10 @@ export default function PanelSayfasi() {
   const yukle = useCallback(async () => {
     setYukleniyor(true); setHata("");
     try {
-      const [ben, firmaVeri] = await Promise.all([api<{ rol: Rol }>("/auth/ben"), api<{ unvan: string }>("/firma")]);
+      const ben = await api<{ rol: Rol }>("/auth/ben");
+      // PRS-21: çalışanın ana sayfası self-servis.
+      if (ben.rol === "calisan") { router.replace("/panel/self-servis"); return; }
+      const firmaVeri = await api<{ unvan: string }>("/firma");
       setRol(ben.rol); setFirma(firmaVeri.unvan);
       const finansalErisim = ben.rol !== "satis";
       const sonuclar = await Promise.allSettled([

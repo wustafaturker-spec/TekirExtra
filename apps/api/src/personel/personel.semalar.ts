@@ -15,6 +15,7 @@ export const personelOlusturSemasi = z.object({
   ]).optional(),
   eposta: z.union([z.string().email("Geçerli bir e-posta giriniz"), z.literal(""), z.null()]).optional(),
   telefon: bosVeyaMetin,
+  adres: z.union([z.string().trim().max(500), z.literal(""), z.null()]).optional(),
   departman: bosVeyaMetin,
   unvan: bosVeyaMetin,
   calismaTipi: z.enum(["tam_zamanli", "yari_zamanli", "sozlesmeli"]).default("tam_zamanli"),

@@ -83,6 +83,7 @@ export class KullanicilarController {
       );
     }
     const girdi = ayristirma.data;
+    if (girdi.rol === "calisan") throw new BadRequestException("Çalışan hesabı personel kartından self-servis davetiyle açılır");
     await this.abonelik.limitDogrula("kullanici");
     const { tenantId } = aktifBaglam();
     await this.bayiCariDogrula(tenantId, girdi.bayiCariId);
@@ -132,6 +133,11 @@ export class KullanicilarController {
     await this.bayiCariDogrula(tenantId, ayristirma.data.bayiCariId);
     if (id === userId && ayristirma.data.aktif === false) {
       throw new BadRequestException("Kendi hesabınızı pasifleştiremezsiniz");
+    }
+    // PRS-21: çalışan hesabı personel kartına bağlıdır; rolü buradan değişmez, başka hesap çalışan yapılmaz.
+    if (ayristirma.data.rol) {
+      const mevcut = await this.prisma.tenantIslem(tenantId, (tx) => tx.user.findUnique({ where: { id }, select: { rol: true } }));
+      if ((mevcut?.rol === "calisan") !== (ayristirma.data.rol === "calisan")) throw new BadRequestException("Çalışan self-servis hesabının rolü değiştirilemez; erişim personel kartından yönetilir");
     }
     try {
       return await this.prisma.tenantIslem(tenantId, (tx) =>

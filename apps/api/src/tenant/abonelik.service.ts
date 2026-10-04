@@ -48,7 +48,8 @@ export class AbonelikService {
     const ayBasi = new Date();
     ayBasi.setDate(1); ayBasi.setHours(0, 0, 0, 0);
     const [kullanici, cari, stok, aylikFatura] = await Promise.all([
-      tx.user.count({ where: { aktif: true } }),
+      // PRS-21: çalışan self-servis hesapları kullanıcı sınırına sayılmaz.
+      tx.user.count({ where: { aktif: true, rol: { not: "calisan" } } }),
       tx.cariHesap.count({ where: { aktif: true } }),
       tx.stokKart.count({ where: { aktif: true } }),
       tx.fatura.count({ where: { createdAt: { gte: ayBasi } } }),

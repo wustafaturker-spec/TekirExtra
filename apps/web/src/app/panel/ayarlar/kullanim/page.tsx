@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Alert, Card, PageHeader, Stat, StatGrid, TableWrap } from "@/components/ui";
 
-interface RolKirilimi { rol: "yonetici" | "muhasebe" | "satis" | "salt_okunur" | "mali_musavir" | "b2b_bayi" | "uretim_planlama" | "uretim_operatoru" | "depo" | "kalite" | "maliyet_muhasebesi" | "ik"; kullaniciSayisi: number; aktifKullanici: number; toplamOlay: number; tamamlananFatura: number; kullanilanGorunum: number; }
+interface RolKirilimi { rol: "yonetici" | "muhasebe" | "satis" | "salt_okunur" | "mali_musavir" | "b2b_bayi" | "uretim_planlama" | "uretim_operatoru" | "depo" | "kalite" | "maliyet_muhasebesi" | "ik" | "calisan"; kullaniciSayisi: number; aktifKullanici: number; toplamOlay: number; tamamlananFatura: number; kullanilanGorunum: number; }
 interface Ozet { donemGun: number; aktifKullanici: number; toplamOlay: number; rolKirilimi: RolKirilimi[]; geriBildirim: { yanit: number; ortalamaPuan: number | null; kategoriler: Record<"genel" | "kullanilabilirlik" | "hata" | "oneri", number> }; fatura: { acilan: number; tamamlanan: number; ortancaSureMs: number | null; terkOrani: number; dogrulamaHatasi: number }; gorunum: { kaydedilen: number; kullanilan: number }; }
-const ROL_ADI: Record<RolKirilimi["rol"], string> = { yonetici: "Yönetici", muhasebe: "Muhasebe", satis: "Satış", salt_okunur: "Salt okunur", mali_musavir: "Mali müşavir", b2b_bayi: "B2B bayi", uretim_planlama: "Üretim planlama", uretim_operatoru: "Üretim operatörü", depo: "Depo", kalite: "Kalite", maliyet_muhasebesi: "Maliyet muhasebesi", ik: "İnsan kaynakları" };
+const ROL_ADI: Record<RolKirilimi["rol"], string> = { yonetici: "Yönetici", muhasebe: "Muhasebe", satis: "Satış", salt_okunur: "Salt okunur", mali_musavir: "Mali müşavir", b2b_bayi: "B2B bayi", uretim_planlama: "Üretim planlama", uretim_operatoru: "Üretim operatörü", depo: "Depo", kalite: "Kalite", maliyet_muhasebesi: "Maliyet muhasebesi", ik: "İnsan kaynakları", calisan: "Çalışan (self-servis)" };
 const sure = (ms: number | null) => ms === null ? "Veri yok" : ms < 60_000 ? Math.round(ms / 1000) + " sn" : (ms / 60_000).toLocaleString("tr-TR", { maximumFractionDigits: 1 }) + " dk";
 
 export default function KullanimMetrikleriSayfasi() {

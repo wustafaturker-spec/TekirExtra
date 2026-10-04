@@ -25,6 +25,7 @@ const ROL_ADI: Record<string, string> = {
   kalite: "Kalite Sorumlusu",
   maliyet_muhasebesi: "Maliyet Muhasebesi",
   ik: "İnsan Kaynakları",
+  calisan: "Çalışan",
 };
 
 /**
@@ -117,6 +118,13 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
     const aktifAlan = MENU.find((alan) => alan.ogeler.some((oge) => aktifMi(oge)))?.baslik;
     if (aktifAlan) setAcikAlan(aktifAlan);
   }, [pathname, aktifArama]);
+  // PRS-21: ana panele erişimi olmayan rollerin açılış sayfası (çalışan → self-servis, bayi → B2B).
+  useEffect(() => {
+    if (pathname !== "/panel") return;
+    if (rol === "calisan") router.replace("/panel/self-servis");
+    else if (rol === "b2b_bayi") router.replace("/panel/b2b");
+  }, [pathname, rol, router]);
+
   useEffect(() => {
     if (!menuTercihiYuklendi.current) return;
     window.localStorage.setItem("tekirextra-acik-menu-alani", acikAlan);
@@ -129,7 +137,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
           setRol(b.rol);
           // Kapalı uygulamanın ekranları menüden kalkar (EBLG-77); istek
           // düşerse menü olduğu gibi kalır, uçları guard korur.
-          void api<EbelgeUygulamalari>("/ebelge/uygulamalar").then(setEbelgeUygulamalari).catch(() => undefined);
+          if (b.rol !== "calisan") void api<EbelgeUygulamalari>("/ebelge/uygulamalar").then(setEbelgeUygulamalari).catch(() => undefined);
           const [ozet, liste] = await Promise.all([
             api<BildirimOzeti>("/bildirimler/ozet"),
             api<{ kayitlar: BildirimTeslimati[] }>("/bildirimler?limit=8"),
@@ -447,7 +455,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
                 <h1 id="yetkisiz-baslik">Bu sayfaya erişim yetkiniz yok</h1>
                 <p>Hesabınıza tanımlı rol bu modülü görüntülemeye izin vermiyor.</p>
               </>)}
-              <Link className="btn btn--primary" href={rol === "b2b_bayi" ? "/panel/b2b" : "/panel"}>Yetkili olduğum alana dön</Link>
+              <Link className="btn btn--primary" href={rol === "b2b_bayi" ? "/panel/b2b" : rol === "calisan" ? "/panel/self-servis" : "/panel"}>Yetkili olduğum alana dön</Link>
             </section>
           )}
         </div>

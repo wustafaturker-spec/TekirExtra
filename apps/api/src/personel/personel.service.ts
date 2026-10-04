@@ -211,6 +211,7 @@ export class PersonelService {
           tckn: hassasSifrele(veri.tckn),
           eposta: veri.eposta || null,
           telefon: veri.telefon || null,
+          adres: veri.adres || null,
           departman: veri.departman || null,
           unvan: veri.unvan || null,
           calismaTipi: veri.calismaTipi,
@@ -304,6 +305,8 @@ export class PersonelService {
         data: { durum: "isten_ayrildi", aktif: false, cikisTarihi: veri.cikisTarihi, ayrilisNedeni: veri.ayrilisNedeni },
         include: { cari: true },
       });
+      // PRS-21: işten çıkışta çalışanın self-servis hesabı kapanır.
+      await tx.user.updateMany({ where: { personelId: id, aktif: true }, data: { aktif: false, davetAnahtarOzeti: null, davetSonGecerlilik: null } });
       if (cikis) await tx.auditLog.create({ data: { tenantId, userId: userId ?? null, islem: "personel_cikis_hesabi", varlik: "personel", varlikId: id, detay: { cikisNedeni: cikis.cikisNedeni, girdiler: cikis.girdiler, oneri: cikis.oneri, oneridenFarkli: cikis.oneridenFarkli, gerekce: cikis.gerekce, kidem: cikis.kidemTutari, ihbar: cikis.ihbarTutari, izinUcreti: cikis.izinUcreti } as Prisma.InputJsonValue } });
       const ay = veri.cikisTarihi.getUTCMonth() + 1, yil = veri.cikisTarihi.getUTCFullYear();
       const cikisBordrosu = await tx.personelBordro.findFirst({ where: { tenantId, personelId: id, donemYil: yil, donemAy: ay }, select: { durum: true } });
@@ -358,6 +361,7 @@ export class PersonelService {
           ...(tckn !== undefined && { tckn }),
           ...(veri.eposta !== undefined && { eposta: veri.eposta || null }),
           ...(veri.telefon !== undefined && { telefon: veri.telefon || null }),
+          ...(veri.adres !== undefined && { adres: veri.adres || null }),
           ...(veri.departman !== undefined && { departman: veri.departman || null }),
           ...(veri.unvan !== undefined && { unvan: veri.unvan || null }),
           ...(veri.calismaTipi && { calismaTipi: veri.calismaTipi }),

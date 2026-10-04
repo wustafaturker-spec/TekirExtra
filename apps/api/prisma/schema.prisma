@@ -22,6 +22,8 @@ enum Rol {
   maliyet_muhasebesi
   /// PRS-17 (P2-8): insan kaynakları; İK modülüne erişir, finans ekranlarına erişmez.
   ik
+  /// PRS-21 (P3-4): çalışan self-servisi; yalnız @Roller("calisan") uçları + oturum/bildirim.
+  calisan
 }
 
 enum BaglantiAile {
@@ -286,12 +288,18 @@ model User {
   totpAktif          Boolean  @default(false) @map("totp_aktif")
   maksIskontoYuzdesi Decimal? @map("maks_iskonto_yuzdesi") @db.Decimal(5, 2)
   bayiCariId         String?  @map("bayi_cari_id") @db.Uuid
+  /// PRS-21: çalışan rolünün bağlı olduğu personel kartı.
+  personelId         String?  @unique @map("personel_id") @db.Uuid
+  /// PRS-21: self-servis davetinin anahtar özeti (sha256); parola belirlenince silinir.
+  davetAnahtarOzeti  String?  @map("davet_anahtar_ozeti")
+  davetSonGecerlilik DateTime? @map("davet_son_gecerlilik")
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
   tenant                       Tenant                  @relation(fields: [tenantId], references: [id])
   temsilciCariler              CariHesap[]             @relation("CariTemsilci")
   bayiCari                     CariHesap?              @relation("BayiKullaniciCari", fields: [bayiCariId], references: [id], onDelete: SetNull)
+  personel                     Personel?               @relation("PersonelKullanici", fields: [personelId], references: [id], onDelete: SetNull)
   crmGorevleri                 CrmGorev[]              @relation("CrmGorevAtanan")
   crmKayitlari                 CrmEtkilesim[]
   crmFirsatlari                CrmFirsat[]             @relation("CrmFirsatSorumlu")
@@ -4410,6 +4418,8 @@ model Personel {
   tckn               String?
   eposta             String?
   telefon            String?
+  /// PRS-21: çalışanın adresi (self-servis bilgi güncelleme talebiyle değişir).
+  adres              String?
   departman          String?
   unvan              String?
   calismaTipi        PersonelCalismaTipi @default(tam_zamanli) @map("calisma_tipi")
@@ -4448,6 +4458,7 @@ model Personel {
   ucretler              PersonelUcret[]
   belgeler              PersonelBelgesi[]
   donemCalismalari      PersonelDonemCalisma[]
+  kullanici             User?                        @relation("PersonelKullanici")
 
   @@unique([tenantId, personelNo])
   @@index([tenantId, ad, soyad])
