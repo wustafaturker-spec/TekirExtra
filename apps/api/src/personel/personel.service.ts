@@ -16,9 +16,10 @@ import { avansMahsupSemasi, avansOdeSemasi } from "./personel.semalar";
 import { hassasCoz, hassasSifrele, personelMaskele } from "./personel-hassas";
 import { bordroHesapla } from "./bordro-hesaplama";
 import { hesapOzetiTutari } from "./personel-rapor-yardimci";
-import { donemCalismaSemasi } from "./personel.semalar";
+import { donemCalismaSemasi, personelUcretSemasi } from "./personel.semalar";
 import { sgkDevirleriniDonemeTasi, type SgkMatrahDevirKalemi } from "./sgk-matrah-devri";
 import { istihdamGunu, tahakkukKapsamiKosulu } from "./tahakkuk-kapsami";
+import { donemUcreti, nettenBrute } from "./ucret-donemi";
 
 const PERSONEL_GUVENLI_SECIM = { id: true, personelNo: true, ad: true, soyad: true, departman: true, unvan: true, calismaTipi: true, durum: true, netMaas: true, brutMaas: true, engellilikDerecesi: true, sgkTesvikOrani: true, cariId: true } as const;
 
@@ -82,6 +83,7 @@ export class PersonelService {
           bordrolar: { orderBy: [{ donemYil: "desc" }, { donemAy: "desc" }] },
           avanslar: { orderBy: { tarih: "desc" } },
           istihdamDonemleri: { orderBy: { baslangicTarihi: "desc" } },
+          ucretler: { orderBy: { yururlukTarihi: "desc" } },
         }
       })
     );
@@ -195,6 +197,10 @@ export class PersonelService {
           istihdamDonemleri: {
             create: { tenantId, baslangicTarihi: veri.girisTarihi },
           },
+          // PRS-06: işe giriş tarihli ilk ücret kaydı.
+          ucretler: {
+            create: { tenantId, yururlukTarihi: veri.girisTarihi, tip: veri.brutMaas ? "brut" : "net", tutar: veri.brutMaas ?? veri.netMaas, neden: "İşe giriş ücreti" },
+          },
         },
         include: { cari: true }
       });
@@ -285,6 +291,13 @@ export class PersonelService {
         },
         include: { cari: true },
       });
+      if (veri.netMaas || veri.brutMaas) {
+        // Eski uç uyumluluğu: maaş bu uçtan gelirse bugünden geçerli ücret kaydı (yeni ekran /ucretler kullanır).
+        const bugun = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`);
+        const tip = veri.brutMaas ? "brut" : "net";
+        const tutar = veri.brutMaas ?? veri.netMaas!;
+        await tx.personelUcret.upsert({ where: { tenantId_personelId_yururlukTarihi: { tenantId, personelId: id, yururlukTarihi: bugun } }, create: { tenantId, personelId: id, yururlukTarihi: bugun, tip, tutar, neden: "Kart düzenleme", olusturanUserId: userId ?? null }, update: { tip, tutar } });
+      }
       if (veri.girisTarihi && veri.girisTarihi.getTime() !== mevcut.girisTarihi.getTime()) {
         await tx.personelIstihdamDonemi.updateMany({ where: { tenantId, personelId: id, bitisTarihi: null }, data: { baslangicTarihi: veri.girisTarihi } });
       }
@@ -346,13 +359,13 @@ export class PersonelService {
       // PRS-02: dönemle kesişen istihdamı olan herkes (çıkış ayı, askıda, uzun süreli izin dahil).
       const aktifPersoneller = await tx.personel.findMany({
         where: tahakkukKapsamiKosulu(tenantId, donemYil, donemAy),
-        include: { istihdamDonemleri: { select: { baslangicTarihi: true, bitisTarihi: true } } },
+        include: { istihdamDonemleri: { select: { baslangicTarihi: true, bitisTarihi: true } }, ucretler: { select: { yururlukTarihi: true, tip: true, tutar: true } } },
       });
 
       let olusturulanSayi = 0;
       const calismalar = await tx.personelDonemCalisma.findMany({ where: { tenantId, yil: donemYil, ay: donemAy } });
       const calismaHaritasi = new Map(calismalar.map((c) => [c.personelId, c]));
-      const mevzuat = aktifPersoneller.some((p) => p.brutMaas) ? await this.donemMevzuati(tx, tenantId, donemYil, donemAy) : null;
+      const mevzuat = await this.donemMevzuatiVarsa(tx, tenantId, donemYil, donemAy);
 
       for (const p of aktifPersoneller) {
         const mevcut = await tx.personelBordro.findUnique({
@@ -376,11 +389,9 @@ export class PersonelService {
     });
   }
 
-  private async donemMevzuati(tx: Prisma.TransactionClient, tenantId: string, yil: number, ay: number) {
+  private donemMevzuatiVarsa(tx: Prisma.TransactionClient, tenantId: string, yil: number, ay: number) {
     const donemBaslangici = new Date(Date.UTC(yil, ay - 1, 1));
-    const mevzuat = await tx.bordroMevzuatSeti.findFirst({ where: { tenantId, durum: "aktif", yururlukBaslangic: { lte: donemBaslangici }, OR: [{ yururlukBitis: null }, { yururlukBitis: { gte: donemBaslangici } }] }, orderBy: { surum: "desc" } });
-    if (!mevzuat) throw new BadRequestException("Brüt ücretli personel için döneme uygun etkin mevzuat seti bulunamadı");
-    return mevzuat;
+    return tx.bordroMevzuatSeti.findFirst({ where: { tenantId, durum: "aktif", yururlukBaslangic: { lte: donemBaslangici }, OR: [{ yururlukBitis: null }, { yururlukBitis: { gte: donemBaslangici } }] }, orderBy: { surum: "desc" } });
   }
 
   /**
@@ -391,23 +402,30 @@ export class PersonelService {
   private async bordroHesabi(
     tx: Prisma.TransactionClient,
     tenantId: string,
-    p: { id: string; netMaas: Prisma.Decimal; brutMaas: Prisma.Decimal | null; engellilikDerecesi: number | null; sgkTesvikOrani: Prisma.Decimal; istihdamDonemleri: { baslangicTarihi: Date; bitisTarihi: Date | null }[] },
+    p: { id: string; personelNo?: string; engellilikDerecesi: number | null; sgkTesvikOrani: Prisma.Decimal; istihdamDonemleri: { baslangicTarihi: Date; bitisTarihi: Date | null }[]; ucretler: { yururlukTarihi: Date; tip: string; tutar: Prisma.Decimal }[] },
     calisma: Prisma.PersonelDonemCalismaGetPayload<object> | undefined,
     donemYil: number,
     donemAy: number,
     mevzuat: { id: string; parametreler: Prisma.JsonValue } | null,
   ) {
     const primGunu = calisma?.primGunu ?? istihdamGunu(p.istihdamDonemleri, donemYil, donemAy);
-    const onceki = p.brutMaas ? await tx.personelBordro.findFirst({ where: { tenantId, personelId: p.id, donemYil, donemAy: { lt: donemAy } }, orderBy: { donemAy: "desc" }, select: { kumulatifMatrah: true, asgariKumulatifMatrah: true, hesapOzeti: true } }) : null;
-    const oncekiDevirBordrosu = p.brutMaas ? await tx.personelBordro.findFirst({ where: { tenantId, personelId: p.id, OR: [{ donemYil: { lt: donemYil } }, { donemYil, donemAy: { lt: donemAy } }] }, orderBy: [{ donemYil: "desc" }, { donemAy: "desc" }], select: { donemYil: true, donemAy: true, hesapOzeti: true } }) : null;
-    const temelBrut = p.brutMaas ? new Prisma.Decimal(p.brutMaas).mul(primGunu).div(30).toDecimalPlaces(2) : null;
+    // PRS-06: dönemin ücreti ücret geçmişinden; brüt ücret mevzuat ister, net ücret mevzuat varsa brüte çevrilir.
+    const ucret = donemUcreti(p.ucretler, p.istihdamDonemleri, donemYil, donemAy);
+    if (ucret.tip === "brut" && !mevzuat) throw new BadRequestException(`${p.personelNo ?? "Personel"} brüt ücretli; ${donemYil}/${String(donemAy).padStart(2, "0")} için etkin mevzuat seti bulunamadı`);
+    const mevzuatli = Boolean(mevzuat);
+    const onceki = mevzuatli ? await tx.personelBordro.findFirst({ where: { tenantId, personelId: p.id, donemYil, donemAy: { lt: donemAy } }, orderBy: { donemAy: "desc" }, select: { kumulatifMatrah: true, asgariKumulatifMatrah: true, hesapOzeti: true } }) : null;
+    const oncekiDevirBordrosu = mevzuatli ? await tx.personelBordro.findFirst({ where: { tenantId, personelId: p.id, OR: [{ donemYil: { lt: donemYil } }, { donemYil, donemAy: { lt: donemAy } }] }, orderBy: [{ donemYil: "desc" }, { donemAy: "desc" }], select: { donemYil: true, donemAy: true, hesapOzeti: true } }) : null;
+    const oranli = new Prisma.Decimal(ucret.aylik).mul(primGunu).div(30).toDecimalPlaces(2);
+    const ortak = { primGunu, engellilikDerecesi: p.engellilikDerecesi ?? undefined, sgkTesvikOrani: calisma?.sgkTesvikOrani?.toNumber() ?? Number(p.sgkTesvikOrani ?? 0), oncekiKumulatifMatrah: onceki?.kumulatifMatrah?.toNumber() ?? 0, oncekiAsgariKumulatifMatrah: onceki?.asgariKumulatifMatrah?.toNumber() ?? 0 };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const temelBrut = !mevzuat ? null : ucret.tip === "brut" ? oranli : new Prisma.Decimal(primGunu > 0 ? nettenBrute(mevzuat.parametreler as any, oranli.toNumber(), ortak) : 0);
     const fazlaMesaiBrut = calisma?.fazlaMesaiBrut ?? new Prisma.Decimal(0);
     const primIkramiyeBrut = calisma?.primIkramiyeBrut ?? new Prisma.Decimal(0);
     const ucretDisiOdeme = fazlaMesaiBrut.add(primIkramiyeBrut);
     const sgkMatrahDevirleri = oncekiDevirBordrosu ? hesapOzetindenSgkDevirleri(oncekiDevirBordrosu.hesapOzeti, oncekiDevirBordrosu.donemYil, oncekiDevirBordrosu.donemAy, donemYil, donemAy) : [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const hesap = temelBrut && mevzuat ? bordroHesapla(mevzuat.parametreler as any, { brutUcret: temelBrut.toNumber(), ucretDisiOdeme:ucretDisiOdeme.toNumber(), sgkMatrahDevirleri, primGunu, nakitYemekYardimi:calisma?.nakitYemekYardimi.toNumber()??0, fiiliCalismaGunu:calisma?.fiiliCalismaGunu??0, engellilikDerecesi: p.engellilikDerecesi ?? undefined, sgkTesvikOrani: calisma?.sgkTesvikOrani?.toNumber() ?? p.sgkTesvikOrani.toNumber(), sahisSigortaPrimi:calisma?.sahisSigortaPrimi.toNumber()??0, hayatSigortaPrimi:calisma?.hayatSigortaPrimi.toNumber()??0, sendikaAidati:calisma?.sendikaAidati.toNumber()??0, oncekiKumulatifSigortaIndirimi:hesapOzetiTutari(onceki?.hesapOzeti??null,"yeniKumulatifSigortaIndirimi").toNumber(), oncekiKumulatifMatrah: onceki?.kumulatifMatrah?.toNumber() ?? 0, oncekiAsgariKumulatifMatrah: onceki?.asgariKumulatifMatrah?.toNumber() ?? 0 }) : null;
-    const operasyonelNet = new Prisma.Decimal(p.netMaas).mul(primGunu).div(30).toDecimalPlaces(2);
+    const operasyonelNet = oranli;
     const kalemler: { tip: "kazanc" | "kesinti"; kod: string; aciklama: string; tutar: Prisma.Decimal.Value }[] = hesap ? [
       { tip: "kazanc", kod: "temel_brut_ucret", aciklama: "Temel brüt ücret", tutar: temelBrut! },
       ...(fazlaMesaiBrut.gt(0) ? [{ tip: "kazanc" as const, kod: "fazla_mesai", aciklama: "Fazla mesai brüt", tutar: fazlaMesaiBrut }] : []),
@@ -426,7 +444,7 @@ export class PersonelService {
         brutMaas: new Prisma.Decimal(hesap?.brutUcret ?? operasyonelNet),
         netMaas: new Prisma.Decimal(hesap?.netUcret ?? operasyonelNet),
         mevzuatSetiId: hesap ? mevzuat!.id : null,
-        hesapOzeti: hesap ? (hesap as Prisma.InputJsonValue) : Prisma.DbNull,
+        hesapOzeti: hesap ? ({ ...hesap, ucretTipi: ucret.tip, ...(ucret.tip === "net" ? { hedefNet: oranli.toFixed(2) } : {}) } as Prisma.InputJsonValue) : Prisma.DbNull,
         kumulatifMatrah: hesap ? new Prisma.Decimal(hesap.yeniKumulatifMatrah) : null,
         asgariKumulatifMatrah: hesap ? new Prisma.Decimal(hesap.yeniAsgariKumulatifMatrah) : null,
         primGunu,
@@ -455,10 +473,10 @@ export class PersonelService {
       if (!bordro) throw new NotFoundException("Bordro bulunamadı");
       if (!["hesaplandi", "onay_bekliyor", "reddedildi"].includes(bordro.durum)) throw new BadRequestException("Yalnız onaylanmamış bordro yeniden hesaplanır; onaylı bordroda önce onayı geri alın");
       await this.sonrakiDonemKontrolu(tx, tenantId, bordro, "yeniden hesaplayın");
-      const personel = await tx.personel.findFirstOrThrow({ where: { id: bordro.personelId, tenantId }, include: { istihdamDonemleri: { select: { baslangicTarihi: true, bitisTarihi: true } } } });
+      const personel = await tx.personel.findFirstOrThrow({ where: { id: bordro.personelId, tenantId }, include: { istihdamDonemleri: { select: { baslangicTarihi: true, bitisTarihi: true } }, ucretler: { select: { yururlukTarihi: true, tip: true, tutar: true } } } });
       if (istihdamGunu(personel.istihdamDonemleri, bordro.donemYil, bordro.donemAy) === 0) throw new BadRequestException("Personelin bu dönemde istihdamı yok; bordroyu silin");
       const calisma = await tx.personelDonemCalisma.findUnique({ where: { tenantId_personelId_yil_ay: { tenantId, personelId: bordro.personelId, yil: bordro.donemYil, ay: bordro.donemAy } } }) ?? undefined;
-      const mevzuat = personel.brutMaas ? await this.donemMevzuati(tx, tenantId, bordro.donemYil, bordro.donemAy) : null;
+      const mevzuat = await this.donemMevzuatiVarsa(tx, tenantId, bordro.donemYil, bordro.donemAy);
       const hesap = await this.bordroHesabi(tx, tenantId, personel, calisma, bordro.donemYil, bordro.donemAy, mevzuat);
       if (hesap.baslik.mevzuatSetiId) {
         const elle = await tx.personelBordroKalemi.count({ where: { tenantId, bordroId, manuel: true, avansId: null } });
@@ -831,6 +849,59 @@ export class PersonelService {
       });
       await tx.cariHareket.create({ data: { tenantId, cariId: avans.personel.cariId, tip: "borc", tutar: avans.tutar, tutarTry: avans.tutar, tarih: veri.tarih, aciklama: "Personel avans alacağı", kaynakTur: "personel_avans", kaynakRef: avans.id } });
       return tx.personelAvans.update({ where: { id }, data: { durum: "odendi", odendi: true, odenenTutar: avans.tutar, kalanTutar: avans.tutar, kasaBankaFiId: fis.id, tarih: veri.tarih } });
+    });
+  }
+
+  /** PRS-06: onaylı/ödenmiş bordrosu olan ay ve sonrası geriye dönük değiştirilemez. */
+  private async ucretDonemKontrolu(tx: Prisma.TransactionClient, tenantId: string, personelId: string, tarih: Date) {
+    const kilitli = await tx.personelBordro.findFirst({
+      where: { tenantId, personelId, durum: { in: ["onaylandi", "kismen_odendi", "odendi"] }, OR: [{ donemYil: { gt: tarih.getUTCFullYear() } }, { donemYil: tarih.getUTCFullYear(), donemAy: { gte: tarih.getUTCMonth() + 1 } }] },
+      orderBy: [{ donemYil: "asc" }, { donemAy: "asc" }], select: { donemYil: true, donemAy: true },
+    });
+    if (kilitli) throw new BadRequestException(`${kilitli.donemYil}/${String(kilitli.donemAy).padStart(2, "0")} bordrosu onaylı; o aya etki eden ücret değişikliği için önce onayı geri alın`);
+  }
+
+  /** Kartta gösterilen güncel ücret: bugün geçerli kayıt. */
+  private async kartUcretiniGuncelle(tx: Prisma.TransactionClient, tenantId: string, personelId: string) {
+    const bugun = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`);
+    const gecerli = await tx.personelUcret.findFirst({ where: { tenantId, personelId, yururlukTarihi: { lte: bugun } }, orderBy: { yururlukTarihi: "desc" } })
+      ?? await tx.personelUcret.findFirst({ where: { tenantId, personelId }, orderBy: { yururlukTarihi: "asc" } });
+    if (!gecerli) return;
+    await tx.personel.update({ where: { id: personelId }, data: gecerli.tip === "brut" ? { brutMaas: gecerli.tutar } : { netMaas: gecerli.tutar, brutMaas: null } });
+  }
+
+  /**
+   * PRS-06 (P1-1): yürürlük tarihli ücret değişikliği (zam, net↔brüt geçişi).
+   * Aynı güne ikinci kayıt öncekini değiştirir. Onaylı bordro dönemine geriye
+   * dönük kayıt girilemez; onaylanmamış bordrolar "Yeniden hesapla" ile güncellenir.
+   */
+  async ucretEkle(tenantId: string, personelId: string, userId: string, girdi: z.infer<typeof personelUcretSemasi>) {
+    const v = personelUcretSemasi.parse(girdi);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const personel = await tx.personel.findFirst({ where: { id: personelId, tenantId }, select: { id: true, girisTarihi: true } });
+      if (!personel) throw new NotFoundException("Personel bulunamadı");
+      await this.ucretDonemKontrolu(tx, tenantId, personelId, v.yururlukTarihi);
+      const kayit = await tx.personelUcret.upsert({
+        where: { tenantId_personelId_yururlukTarihi: { tenantId, personelId, yururlukTarihi: v.yururlukTarihi } },
+        create: { tenantId, personelId, yururlukTarihi: v.yururlukTarihi, tip: v.tip, tutar: v.tutar, neden: v.neden ?? null, olusturanUserId: userId },
+        update: { tip: v.tip, tutar: v.tutar, neden: v.neden ?? null, olusturanUserId: userId },
+      });
+      await this.kartUcretiniGuncelle(tx, tenantId, personelId);
+      await tx.auditLog.create({ data: { tenantId, userId, islem: "personel_ucret_ekle", varlik: "personel", varlikId: personelId, detay: { yururluk: v.yururlukTarihi.toISOString().slice(0, 10), tip: v.tip, tutar: kayit.tutar.toFixed(2), neden: v.neden ?? null } } });
+      return kayit;
+    });
+  }
+
+  async ucretSil(tenantId: string, personelId: string, ucretId: string, userId: string) {
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kayit = await tx.personelUcret.findFirst({ where: { id: ucretId, personelId, tenantId } });
+      if (!kayit) throw new NotFoundException("Ücret kaydı bulunamadı");
+      if (await tx.personelUcret.count({ where: { tenantId, personelId } }) <= 1) throw new BadRequestException("Tek ücret kaydı silinemez; yeni kayıt ekleyerek değiştirin");
+      await this.ucretDonemKontrolu(tx, tenantId, personelId, kayit.yururlukTarihi);
+      await tx.personelUcret.delete({ where: { id: ucretId } });
+      await this.kartUcretiniGuncelle(tx, tenantId, personelId);
+      await tx.auditLog.create({ data: { tenantId, userId, islem: "personel_ucret_sil", varlik: "personel", varlikId: personelId, detay: { yururluk: kayit.yururlukTarihi.toISOString().slice(0, 10), tip: kayit.tip, tutar: kayit.tutar.toFixed(2) } } });
+      return { silindi: true };
     });
   }
 

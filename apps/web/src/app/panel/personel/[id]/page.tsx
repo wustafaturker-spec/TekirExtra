@@ -24,6 +24,8 @@ interface Avans {
   odendi: boolean;
 }
 
+interface UcretKaydi { id: string; yururlukTarihi: string; tip: "net" | "brut"; tutar: string; neden?: string | null }
+
 interface PersonelDetay {
   id: string;
   personelNo: string;
@@ -47,6 +49,7 @@ interface PersonelDetay {
   cari?: { id: string; kod: string; unvan: string } | null;
   bordrolar: Bordro[];
   avanslar: Avans[];
+  ucretler: UcretKaydi[];
 }
 
 const para = (deger: string) => Number(deger).toLocaleString("tr-TR", {
@@ -69,6 +72,8 @@ export default function PersonelDetaySayfasi() {
   const [ayrilis, setAyrilis] = useState({ cikisTarihi: bugun(), ayrilisNedeni: "" });
   const [yeniGirisTarihi, setYeniGirisTarihi] = useState(bugun());
   const [duzenleme, setDuzenleme] = useState<DuzenlemeFormu | null>(null);
+  /** PRS-06: yürürlük tarihli ücret değişikliği. */
+  const [ucretFormu, setUcretFormu] = useState<{ yururlukTarihi: string; tip: "net" | "brut"; tutar: string; neden: string } | null>(null);
 
   const yukle = useCallback(async () => {
     try {
@@ -115,7 +120,6 @@ export default function PersonelDetaySayfasi() {
     setDuzenleme({
       ad: personel.ad, soyad: personel.soyad, eposta: personel.eposta ?? "", telefon: personel.telefon ?? "",
       calismaTipi: personel.calismaTipi, girisTarihi: personel.girisTarihi.slice(0, 10),
-      netMaas: String(Number(personel.netMaas)), brutMaas: personel.brutMaas ? String(Number(personel.brutMaas)) : "",
       engellilikDerecesi: personel.engellilikDerecesi ? String(personel.engellilikDerecesi) : "",
       sgkTesvikOrani: String(Number(personel.sgkTesvikOrani ?? 0)), tckn: "", iban: "", ibanKaldir: false,
     });
@@ -131,8 +135,7 @@ export default function PersonelDetaySayfasi() {
         method: "PUT",
         body: JSON.stringify({
           ad: duzenleme.ad, soyad: duzenleme.soyad, eposta: duzenleme.eposta.trim() || null, telefon: duzenleme.telefon.trim() || null,
-          calismaTipi: duzenleme.calismaTipi, girisTarihi: duzenleme.girisTarihi, netMaas: sayi(duzenleme.netMaas),
-          brutMaas: duzenleme.brutMaas.trim() ? sayi(duzenleme.brutMaas) : null,
+          calismaTipi: duzenleme.calismaTipi, girisTarihi: duzenleme.girisTarihi,
           engellilikDerecesi: duzenleme.engellilikDerecesi ? Number(duzenleme.engellilikDerecesi) : null,
           sgkTesvikOrani: sayi(duzenleme.sgkTesvikOrani || "0"),
           ...(duzenleme.tckn.trim() && { tckn: duzenleme.tckn.trim() }),
@@ -155,6 +158,21 @@ export default function PersonelDetaySayfasi() {
       await yukle();
     } catch (e) { setHata(e instanceof ApiHata ? e.message : "Cari bağlanamadı"); }
     finally { setIsleniyor(false); }
+  };
+
+  const ucretKaydet = async (e: React.FormEvent) => {
+    e.preventDefault(); if (!ucretFormu) return;
+    try {
+      setIsleniyor(true); setHata(null);
+      await api(`/personel/${id}/ucretler`, { method: "POST", body: JSON.stringify({ ...ucretFormu, tutar: Number(ucretFormu.tutar.replace(",", ".")), neden: ucretFormu.neden.trim() || null }) });
+      setUcretFormu(null); await yukle();
+    } catch (e) { setHata(e instanceof ApiHata ? e.message : "Ücret kaydedilemedi"); }
+    finally { setIsleniyor(false); }
+  };
+  const ucretSil = async (u: UcretKaydi) => {
+    if (!window.confirm(`${tarih(u.yururlukTarihi)} tarihli ücret kaydı silinsin mi?`)) return;
+    try { setHata(null); await api(`/personel/${id}/ucretler/${u.id}`, { method: "DELETE" }); await yukle(); }
+    catch (e) { setHata(e instanceof ApiHata ? e.message : "Ücret kaydı silinemedi"); }
   };
 
   const hassasGoster = async () => {
@@ -202,8 +220,7 @@ export default function PersonelDetaySayfasi() {
         </header>
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <OzetKart baslik="Net ücret" deger={para(personel.netMaas)} alt="Aylık sözleşme ücreti" />
-          {personel.brutMaas && <OzetKart baslik="Brüt ücret" deger={para(personel.brutMaas)} alt="Mevzuat hesaplama tabanı" />}
+          {personel.brutMaas ? <OzetKart baslik="Brüt ücret" deger={para(personel.brutMaas)} alt="Brüt anlaşılan aylık ücret" /> : <OzetKart baslik="Net ücret" deger={para(personel.netMaas)} alt="Net anlaşılan; mevzuat seti varsa her ay brüte çevrilir" />}
           {Number(personel.sgkTesvikOrani) > 0 && <OzetKart baslik="SGK teşviki" deger={`%${Number(personel.sgkTesvikOrani).toLocaleString("tr-TR")}`} alt="Mevzuat azamisiyle sınırlandırılır" />}
           <OzetKart baslik="İşe giriş" deger={tarih(personel.girisTarihi)} alt={personel.calismaTipi.replaceAll("_", " ")} />
           <OzetKart baslik="Bordrolar" deger={String(personel.bordrolar.length)} alt={`${personel.bordrolar.filter((b) => !b.odendi).length} açık ödeme`} />
@@ -232,6 +249,12 @@ export default function PersonelDetaySayfasi() {
             )}
           </section>
         </div>
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5"><h2 className="text-base font-bold text-slate-900">Ücret geçmişi</h2><button type="button" onClick={() => setUcretFormu({ yururlukTarihi: bugun(), tip: personel.brutMaas ? "brut" : "net", tutar: "", neden: "" })} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Ücret değiştir</button></div>
+          {(personel.ucretler ?? []).length === 0 ? <p className="p-8 text-center text-sm text-slate-500">Ücret kaydı yok.</p> : (
+            <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-6 py-3">Yürürlük</th><th className="px-6 py-3">Tip</th><th className="px-6 py-3">Tutar</th><th className="px-6 py-3">Neden</th><th className="px-6 py-3" /></tr></thead><tbody className="divide-y divide-slate-100">{personel.ucretler.map((u) => <tr key={u.id}><td className="px-6 py-4 font-medium text-slate-900">{tarih(u.yururlukTarihi)}</td><td className="px-6 py-4">{u.tip === "net" ? "Net" : "Brüt"}</td><td className="px-6 py-4">{para(u.tutar)}</td><td className="px-6 py-4 text-slate-500">{u.neden || "—"}</td><td className="px-6 py-4 text-right">{personel.ucretler.length > 1 && <button type="button" onClick={() => void ucretSil(u)} className="text-xs font-semibold text-red-700">Sil</button>}</td></tr>)}</tbody></table></div>
+          )}
+        </section>
         <PersonelBelgeleri personelId={personel.id} />
       </>}
 
@@ -243,7 +266,7 @@ export default function PersonelDetaySayfasi() {
         </form>
       </IslemModal>}
 
-      {duzenleme && personel && <IslemModal genis baslik="Personel bilgilerini düzenle" aciklama="Ücret değişikliği sonraki tahakkuklardan itibaren geçerli olur; bağlı cari kartı da güncellenir." kapat={() => setDuzenleme(null)}>
+      {duzenleme && personel && <IslemModal genis baslik="Personel bilgilerini düzenle" aciklama="Bağlı cari kartı da güncellenir. Ücret değişikliği için “Ücret değiştir”i kullanın." kapat={() => setDuzenleme(null)}>
         <form onSubmit={duzenlemeKaydet} className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <Alan baslik="Ad"><input required minLength={2} maxLength={50} value={duzenleme.ad} onChange={(e) => setDuzenleme({ ...duzenleme, ad: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
@@ -252,8 +275,6 @@ export default function PersonelDetaySayfasi() {
             <Alan baslik="Telefon"><input maxLength={30} value={duzenleme.telefon} onChange={(e) => setDuzenleme({ ...duzenleme, telefon: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
             <Alan baslik="Çalışma tipi"><select value={duzenleme.calismaTipi} onChange={(e) => setDuzenleme({ ...duzenleme, calismaTipi: e.target.value })} className="w-full rounded-lg border px-3 py-2"><option value="tam_zamanli">Tam zamanlı</option><option value="yari_zamanli">Yarı zamanlı</option><option value="sozlesmeli">Sözleşmeli</option></select></Alan>
             <Alan baslik="İşe giriş tarihi"><input required type="date" value={duzenleme.girisTarihi} onChange={(e) => setDuzenleme({ ...duzenleme, girisTarihi: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
-            <Alan baslik="Net ücret (TL)"><input required inputMode="decimal" value={duzenleme.netMaas} onChange={(e) => setDuzenleme({ ...duzenleme, netMaas: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
-            <Alan baslik="Brüt ücret (TL, mevzuat hesabı için)"><input inputMode="decimal" value={duzenleme.brutMaas} onChange={(e) => setDuzenleme({ ...duzenleme, brutMaas: e.target.value })} placeholder="Boşsa net ücretle tahakkuk" className="w-full rounded-lg border px-3 py-2" /></Alan>
             <Alan baslik="Engellilik derecesi"><select value={duzenleme.engellilikDerecesi} onChange={(e) => setDuzenleme({ ...duzenleme, engellilikDerecesi: e.target.value })} className="w-full rounded-lg border px-3 py-2"><option value="">Yok</option><option value="1">1. derece</option><option value="2">2. derece</option><option value="3">3. derece</option></select></Alan>
             <Alan baslik="SGK teşvik oranı (%)"><input inputMode="decimal" value={duzenleme.sgkTesvikOrani} onChange={(e) => setDuzenleme({ ...duzenleme, sgkTesvikOrani: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
             <Alan baslik={`Yeni TCKN (şu an ${personel.tckn ?? "yok"})`}><input inputMode="numeric" maxLength={11} value={duzenleme.tckn} onChange={(e) => setDuzenleme({ ...duzenleme, tckn: e.target.value })} placeholder="Değişmeyecekse boş bırakın" className="w-full rounded-lg border px-3 py-2" /></Alan>
@@ -261,6 +282,16 @@ export default function PersonelDetaySayfasi() {
           </div>
           {personel.iban && <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={duzenleme.ibanKaldir} onChange={(e) => setDuzenleme({ ...duzenleme, ibanKaldir: e.target.checked, iban: "" })} /> IBAN'ı kaldır</label>}
           <ModalEylemler isleniyor={isleniyor} kapat={() => setDuzenleme(null)} onay="Kaydet" />
+        </form>
+      </IslemModal>}
+
+      {ucretFormu && personel && <IslemModal baslik="Ücret değiştir" aciklama="Değişiklik yürürlük tarihinden itibaren geçerli olur; ay içindeki değişiklik günlere bölünür. Onaylanmamış bordroları “Yeniden hesapla” ile güncelleyin." kapat={() => setUcretFormu(null)}>
+        <form onSubmit={ucretKaydet} className="space-y-3">
+          <Alan baslik="Yürürlük tarihi"><input required type="date" value={ucretFormu.yururlukTarihi} onChange={(e) => setUcretFormu({ ...ucretFormu, yururlukTarihi: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
+          <Alan baslik="Ücret tipi"><select value={ucretFormu.tip} onChange={(e) => setUcretFormu({ ...ucretFormu, tip: e.target.value as "net" | "brut" })} className="w-full rounded-lg border px-3 py-2"><option value="net">Net anlaşıldı (mevzuat seti varsa brüte çevrilir)</option><option value="brut">Brüt anlaşıldı</option></select></Alan>
+          <Alan baslik="Aylık tutar (TL)"><input required inputMode="decimal" value={ucretFormu.tutar} onChange={(e) => setUcretFormu({ ...ucretFormu, tutar: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
+          <Alan baslik="Neden (isteğe bağlı)"><input maxLength={250} value={ucretFormu.neden} onChange={(e) => setUcretFormu({ ...ucretFormu, neden: e.target.value })} placeholder="Örn. Yıllık zam" className="w-full rounded-lg border px-3 py-2" /></Alan>
+          <ModalEylemler isleniyor={isleniyor} kapat={() => setUcretFormu(null)} onay="Kaydet" />
         </form>
       </IslemModal>}
 
@@ -276,7 +307,7 @@ export default function PersonelDetaySayfasi() {
 
 interface DuzenlemeFormu {
   ad: string; soyad: string; eposta: string; telefon: string; calismaTipi: string; girisTarihi: string;
-  netMaas: string; brutMaas: string; engellilikDerecesi: string; sgkTesvikOrani: string; tckn: string; iban: string; ibanKaldir: boolean;
+  engellilikDerecesi: string; sgkTesvikOrani: string; tckn: string; iban: string; ibanKaldir: boolean;
 }
 
 function OzetKart({ baslik, deger, alt }: { baslik: string; deger: string; alt: string }) { return <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{baslik}</p><p className="mt-2 text-xl font-bold text-slate-900">{deger}</p><p className="mt-1 text-xs capitalize text-slate-500">{alt}</p></article>; }

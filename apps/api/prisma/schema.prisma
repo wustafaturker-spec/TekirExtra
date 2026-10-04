@@ -227,6 +227,7 @@ model Tenant {
   duzeltmeOlaylari          DuzeltmeOlayi[]
 
   @@map("tenants")
+  personelUcretleri         PersonelUcret[]
 }
 
 /// KLN-08: v1.0 fiyatlandırma uygulamaz. Sağlayıcı ve dönem alanları ileride
@@ -4440,12 +4441,36 @@ model Personel {
   pozisyon              PersonelPozisyon?            @relation(fields: [pozisyonId], references: [id])
   yonetici              Personel?                    @relation("PersonelYonetici", fields: [yoneticiId], references: [id])
   bagliPersoneller      Personel[]                   @relation("PersonelYonetici")
+  ucretler              PersonelUcret[]
   belgeler              PersonelBelgesi[]
   donemCalismalari      PersonelDonemCalisma[]
 
   @@unique([tenantId, personelNo])
   @@index([tenantId, ad, soyad])
   @@map("personel")
+}
+
+/// PRS-06 (P1-1/P1-6): yürürlük tarihli ücret geçmişi. Tahakkuk dönemin
+/// ücretini buradan alır; ay içi değişiklik istihdam günlerine bölünür.
+/// tip "brut": tutar brüt ücret; "net": anlaşılan net, mevzuat setiyle her ay
+/// brüte çevrilir (set yoksa net tutarla tahakkuk). Personel.netMaas/brutMaas
+/// güncel ücretin kartta gösterilen kopyasıdır.
+model PersonelUcret {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  personelId      String   @map("personel_id") @db.Uuid
+  yururlukTarihi  DateTime @map("yururluk_tarihi") @db.Date
+  tip             String
+  tutar           Decimal  @db.Decimal(15, 2)
+  neden           String?
+  olusturanUserId String?  @map("olusturan_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  personel Personel @relation(fields: [personelId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, personelId, yururlukTarihi])
+  @@map("personel_ucretleri")
 }
 
 model PersonelDonemCalisma {

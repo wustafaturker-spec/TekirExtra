@@ -134,3 +134,11 @@ export const avansMahsupSemasi = z.object({
 
 /** PRS-04: boşsa yeni cari açılır. */
 export const personelCariBaglaSemasi = z.object({ cariId: z.string().uuid().optional().nullable() });
+
+/** PRS-06: yürürlük tarihli ücret kaydı. */
+export const personelUcretSemasi = z.object({
+  yururlukTarihi: z.coerce.date(),
+  tip: z.enum(["net", "brut"]),
+  tutar: z.coerce.number().positive("Ücret sıfırdan büyük olmalıdır").max(100_000_000),
+  neden: z.string().trim().max(250).optional().nullable(),
+});

@@ -13,7 +13,7 @@ import { bordroListeFiltreSemasi } from "./personel.semalar";
 import { bordroKalemOlusturSemasi } from "./personel.semalar";
 import { bordroOdemeIptalSemasi } from "./personel.semalar";
 import { avansMahsupSemasi, avansOdeSemasi, avansRetSemasi } from "./personel.semalar";
-import { donemCalismaSemasi, personelCariBaglaSemasi } from "./personel.semalar";
+import { donemCalismaSemasi, personelCariBaglaSemasi, personelUcretSemasi } from "./personel.semalar";
 import { aktifBaglam } from "../core/istek-baglami";
 import { Roller } from "../auth/roller.decorator";
 
@@ -215,6 +215,18 @@ export class PersonelController {
     const { tenantId, userId } = aktifBaglam();
     const { neden } = avansRetSemasi.parse(body);
     return this.personelService.avansOdemeIptal(tenantId, avansId, userId, neden);
+  }
+
+  @Post(":id/ucretler")
+  async ucretEkle(@Param("id", ParseUUIDPipe) id: string, @Body() body: unknown) {
+    const { tenantId, userId } = aktifBaglam();
+    return this.personelService.ucretEkle(tenantId, id, userId, personelUcretSemasi.parse(body));
+  }
+
+  @Delete(":id/ucretler/:ucretId")
+  async ucretSil(@Param("id", ParseUUIDPipe) id: string, @Param("ucretId", ParseUUIDPipe) ucretId: string) {
+    const { tenantId, userId } = aktifBaglam();
+    return this.personelService.ucretSil(tenantId, id, ucretId, userId);
   }
 
   @Post(":id/cari-bagla")
