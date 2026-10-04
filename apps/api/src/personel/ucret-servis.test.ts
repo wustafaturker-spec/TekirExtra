@@ -10,6 +10,7 @@ describe("ücret geçmişi servisi (PRS-06)", () => {
     const tx: any = {
       personel: { findMany: vi.fn(async () => [{ id: "p1", personelNo: "PRS-1", engellilikDerecesi: null, sgkTesvikOrani: D(0), istihdamDonemleri: [{ baslangicTarihi: new Date("2025-01-01T00:00:00Z"), bitisTarihi: null }], ucretler: [{ yururlukTarihi: new Date("2025-01-01T00:00:00Z"), tip: "net", tutar: D(25500) }] }]) },
       personelDonemCalisma: { findMany: vi.fn(async () => []) },
+      personelIzinTalebi: { findMany: vi.fn(async () => []) },
       bordroMevzuatSeti: { findFirst: vi.fn(async () => ({ id: "m1", parametreler: p })) },
       personelBordro: { findUnique: vi.fn(async () => null), findFirst: vi.fn(async () => null), create: vi.fn(async () => ({})) },
     };
@@ -27,6 +28,7 @@ describe("ücret geçmişi servisi (PRS-06)", () => {
     const tx: any = {
       personel: { findMany: vi.fn(async () => [{ id: "p1", personelNo: "PRS-1", engellilikDerecesi: null, sgkTesvikOrani: D(0), istihdamDonemleri: [{ baslangicTarihi: new Date("2025-01-01T00:00:00Z"), bitisTarihi: null }], ucretler: [{ yururlukTarihi: new Date("2025-01-01T00:00:00Z"), tip: "brut", tutar: D(40000) }] }]) },
       personelDonemCalisma: { findMany: vi.fn(async () => []) },
+      personelIzinTalebi: { findMany: vi.fn(async () => []) },
       bordroMevzuatSeti: { findFirst: vi.fn(async () => null) },
       personelBordro: { findUnique: vi.fn(async () => null), findFirst: vi.fn(async () => null), create: vi.fn() },
     };

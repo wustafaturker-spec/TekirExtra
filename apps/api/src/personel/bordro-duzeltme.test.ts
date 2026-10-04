@@ -8,6 +8,7 @@ const D = (v: string | number) => new Prisma.Decimal(v);
 function kur(bordro: Record<string, unknown>, ek: Record<string, unknown> = {}) {
   const tx: any = {
     bordroMevzuatSeti: { findFirst: vi.fn(async () => null) },
+    personelIzinTalebi: { findMany: vi.fn(async () => []) },
     personelBordro: {
       findFirst: vi.fn(async (a: { where: { donemAy?: unknown } }) => (a.where.donemAy ? null : bordro)),
       findUnique: vi.fn(async () => ({ ...bordro, kalemler: [], personel: {}, odemeler: [] })),

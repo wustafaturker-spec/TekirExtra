@@ -42,3 +42,33 @@ export function istihdamGunu(donemler: IstihdamAraligi[], yil: number, ay: numbe
   }
   return gun >= ayGunu ? 30 : Math.min(30, gun);
 }
+
+export interface UcretsizIzin { baslangicTarihi: Date; bitisTarihi: Date; turKod: string }
+
+/**
+ * PRS-09 (P1-8): onaylı ücretsiz izinlerin dönemdeki takvim günü (istihdam
+ * içinde kalan kısmı) ve önerilen eksik gün nedeni. Prim günü önerisi =
+ * istihdam günü − ücretsiz izin günü (en az 0); puantaj elle girilmişse o geçer.
+ */
+export function izinliPrimGunu(istihdamlar: IstihdamAraligi[], izinler: UcretsizIzin[], yil: number, ay: number): { istihdamGunu: number; ucretsizIzinGunu: number; primGunu: number; eksikGunNedeni: "istirahat" | "ucretsiz_izin" | null } {
+  const tam = istihdamGunu(istihdamlar, yil, ay);
+  const { baslangic, son } = donemSinirlari(yil, ay);
+  const ayBas = utcGun(baslangic), aySon = utcGun(son);
+  const gunler = new Set<number>();
+  let hastalik = 0, diger = 0;
+  for (const iz of izinler) {
+    for (let g = Math.max(ayBas, utcGun(iz.baslangicTarihi)); g <= Math.min(aySon, utcGun(iz.bitisTarihi)); g += GUN_MS) {
+      const istihdamda = istihdamlar.some((d) => utcGun(d.baslangicTarihi) <= g && (!d.bitisTarihi || utcGun(d.bitisTarihi) >= g));
+      if (!istihdamda || gunler.has(g)) continue;
+      gunler.add(g);
+      if (iz.turKod === "hastalik") hastalik += 1; else diger += 1;
+    }
+  }
+  const izinGunu = Math.min(gunler.size, tam);
+  return {
+    istihdamGunu: tam,
+    ucretsizIzinGunu: izinGunu,
+    primGunu: Math.max(0, tam - izinGunu),
+    eksikGunNedeni: izinGunu === 0 ? null : hastalik > diger ? "istirahat" : "ucretsiz_izin",
+  };
+}

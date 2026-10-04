@@ -24,3 +24,18 @@ describe("istihdam günü (PRS-02)", () => {
     expect(istihdamGunu([d("2025-01-01", "2026-04-30")], 2026, 5)).toBe(0);
   });
 });
+
+import { izinliPrimGunu } from "./tahakkuk-kapsami";
+describe("ücretsiz izin ve prim günü (PRS-09)", () => {
+  const tamAy = [d("2025-01-01")];
+  it("ücretsiz izin takvim günü kadar prim gününden düşer, neden önerilir", () => {
+    expect(izinliPrimGunu(tamAy, [{ baslangicTarihi: t("2026-10-20"), bitisTarihi: t("2026-10-31"), turKod: "ucretsiz" }], 2026, 10)).toEqual({ istihdamGunu: 30, ucretsizIzinGunu: 12, primGunu: 18, eksikGunNedeni: "ucretsiz_izin" });
+    expect(izinliPrimGunu(tamAy, [{ baslangicTarihi: t("2026-09-28"), bitisTarihi: t("2026-10-02"), turKod: "hastalik" }], 2026, 10)).toMatchObject({ ucretsizIzinGunu: 2, primGunu: 28, eksikGunNedeni: "istirahat" });
+  });
+  it("istihdam dışındaki izin günü sayılmaz; çakışan izinler bir kez sayılır; ay tamamı 0", () => {
+    expect(izinliPrimGunu([d("2025-01-01", "2026-10-10")], [{ baslangicTarihi: t("2026-10-05"), bitisTarihi: t("2026-10-20"), turKod: "ucretsiz" }], 2026, 10)).toMatchObject({ istihdamGunu: 10, ucretsizIzinGunu: 6, primGunu: 4 });
+    expect(izinliPrimGunu(tamAy, [{ baslangicTarihi: t("2026-10-01"), bitisTarihi: t("2026-10-10"), turKod: "ucretsiz" }, { baslangicTarihi: t("2026-10-05"), bitisTarihi: t("2026-10-12"), turKod: "ucretsiz" }], 2026, 10).ucretsizIzinGunu).toBe(12);
+    expect(izinliPrimGunu(tamAy, [{ baslangicTarihi: t("2026-10-01"), bitisTarihi: t("2026-10-31"), turKod: "ucretsiz" }], 2026, 10).primGunu).toBe(0);
+    expect(izinliPrimGunu(tamAy, [], 2026, 10)).toEqual({ istihdamGunu: 30, ucretsizIzinGunu: 0, primGunu: 30, eksikGunNedeni: null });
+  });
+});

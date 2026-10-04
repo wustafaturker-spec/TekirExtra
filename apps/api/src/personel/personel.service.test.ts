@@ -40,6 +40,7 @@ describe("PersonelService", () => {
         findMany: vi.fn().mockResolvedValue([]),
       },
       bordroMevzuatSeti: { findFirst: vi.fn().mockResolvedValue(null) },
+      personelIzinTalebi: { findMany: vi.fn().mockResolvedValue([]) },
       personelBordroKalemi: {
         create: vi.fn().mockResolvedValue({ id: "kalem-1" }),
         findFirst: vi.fn().mockResolvedValue(null),
@@ -95,6 +96,15 @@ describe("PersonelService", () => {
     mockPrisma.personel.findMany.mockResolvedValue([{ id: "p-1", ad: "Ahmet", soyad: "Yılmaz", netMaas: 30000, brutMaas: null, durum: "isten_ayrildi", ucretler: [{ yururlukTarihi: new Date("2020-01-01T00:00:00Z"), tip: "net", tutar: 30000 }], istihdamDonemleri: [{ baslangicTarihi: new Date("2025-01-01T00:00:00Z"), bitisTarihi: new Date("2026-10-15T00:00:00Z") }] }]);
     await service.bordroTopluTahakkuk("tenant-1", "user-1", { donemYil: 2026, donemAy: 10 });
     expect(mockPrisma.personelBordro.create.mock.calls[0][0].data.primGunu).toBe(15);
+  });
+
+  it("puantaj yoksa onaylı ücretsiz izin prim gününden düşer ve eksik gün nedeni yazılır (PRS-09)", async () => {
+    mockPrisma.personelIzinTalebi.findMany.mockResolvedValue([{ personelId: "p-1", baslangicTarihi: new Date("2026-10-20T00:00:00Z"), bitisTarihi: new Date("2026-10-31T00:00:00Z"), izinTuru: { kod: "ucretsiz" } }]);
+    await service.bordroTopluTahakkuk("tenant-1", "user-1", { donemYil: 2026, donemAy: 10 });
+    const veri = mockPrisma.personelBordro.create.mock.calls[0][0].data;
+    expect(veri.primGunu).toBe(18);
+    expect(veri.eksikGunNedeni).toBe("ucretsiz_izin");
+    expect(veri.netMaas.toFixed(2)).toBe("18000.00");
   });
 
   it("puantajda prim günü istihdam gününe göre denetlenir (PRS-02)", async () => {

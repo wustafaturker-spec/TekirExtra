@@ -18,7 +18,7 @@ import { bordroHesapla } from "./bordro-hesaplama";
 import { hesapOzetiTutari } from "./personel-rapor-yardimci";
 import { donemCalismaSemasi, personelUcretSemasi } from "./personel.semalar";
 import { sgkDevirleriniDonemeTasi, type SgkMatrahDevirKalemi } from "./sgk-matrah-devri";
-import { istihdamGunu, tahakkukKapsamiKosulu } from "./tahakkuk-kapsami";
+import { istihdamGunu, izinliPrimGunu, tahakkukKapsamiKosulu, type UcretsizIzin } from "./tahakkuk-kapsami";
 import { donemUcreti, nettenBrute } from "./ucret-donemi";
 
 const PERSONEL_GUVENLI_SECIM = { id: true, personelNo: true, ad: true, soyad: true, departman: true, unvan: true, calismaTipi: true, durum: true, netMaas: true, brutMaas: true, engellilikDerecesi: true, sgkTesvikOrani: true, cariId: true } as const;
@@ -103,6 +103,18 @@ export class PersonelService {
     }));
   }
 
+  /** PRS-09: dönemle kesişen onaylı ücretsiz izinler, personel başına. */
+  private async ucretsizIzinler(tx: Prisma.TransactionClient, tenantId: string, personelIdler: string[], yil: number, ay: number): Promise<Map<string, UcretsizIzin[]>> {
+    const bas = new Date(Date.UTC(yil, ay - 1, 1)), son = new Date(Date.UTC(yil, ay, 0));
+    const talepler = personelIdler.length ? await tx.personelIzinTalebi.findMany({
+      where: { tenantId, personelId: { in: personelIdler }, durum: "onaylandi", izinTuru: { ucretli: false }, baslangicTarihi: { lte: son }, bitisTarihi: { gte: bas } },
+      select: { personelId: true, baslangicTarihi: true, bitisTarihi: true, izinTuru: { select: { kod: true } } },
+    }) : [];
+    const harita = new Map<string, UcretsizIzin[]>();
+    for (const t of talepler) harita.set(t.personelId, [...(harita.get(t.personelId) ?? []), { baslangicTarihi: t.baslangicTarihi, bitisTarihi: t.bitisTarihi, turKod: t.izinTuru.kod }]);
+    return harita;
+  }
+
   /** PRS-02: dönemle kesişen istihdamı olan herkes; `istihdamGunu` puantajın varsayılan prim günüdür. */
   async donemCalismaListele(tenantId: string, yil: number, ay: number) {
     const personeller = await this.prisma.tenantIslem(tenantId, (tx) => tx.personel.findMany({
@@ -110,7 +122,12 @@ export class PersonelService {
       select: { id: true, personelNo: true, ad: true, soyad: true, durum: true, sgkTesvikOrani: true, donemCalismalari: { where: { yil, ay }, take: 1 }, istihdamDonemleri: { select: { baslangicTarihi: true, bitisTarihi: true } } },
       orderBy: { ad: "asc" },
     }));
-    return personeller.map(({ istihdamDonemleri, ...p }) => ({ ...p, istihdamGunu: istihdamGunu(istihdamDonemleri, yil, ay) }));
+    const izinler = await this.prisma.tenantIslem(tenantId, (tx) => this.ucretsizIzinler(tx, tenantId, personeller.map((p) => p.id), yil, ay));
+    // PRS-09: puantaj girilmemişse prim günü ve eksik gün nedeni onaylı ücretsiz izinlerden önerilir.
+    return personeller.map(({ istihdamDonemleri, ...p }) => {
+      const oneri = izinliPrimGunu(istihdamDonemleri, izinler.get(p.id) ?? [], yil, ay);
+      return { ...p, istihdamGunu: oneri.istihdamGunu, ucretsizIzinGunu: oneri.ucretsizIzinGunu, onerilenPrimGunu: oneri.primGunu, onerilenEksikGunNedeni: oneri.eksikGunNedeni };
+    });
   }
 
   async donemCalismaKaydet(tenantId: string, girdi: z.infer<typeof donemCalismaSemasi>) {
@@ -368,6 +385,7 @@ export class PersonelService {
       const calismalar = await tx.personelDonemCalisma.findMany({ where: { tenantId, yil: donemYil, ay: donemAy } });
       const calismaHaritasi = new Map(calismalar.map((c) => [c.personelId, c]));
       const mevzuat = await this.donemMevzuatiVarsa(tx, tenantId, donemYil, donemAy);
+      const izinler = await this.ucretsizIzinler(tx, tenantId, aktifPersoneller.map((p) => p.id), donemYil, donemAy);
 
       for (const p of aktifPersoneller) {
         const mevcut = await tx.personelBordro.findUnique({
@@ -375,7 +393,7 @@ export class PersonelService {
           select: { id: true },
         });
         if (mevcut) continue;
-        const hesap = await this.bordroHesabi(tx, tenantId, p, calismaHaritasi.get(p.id), donemYil, donemAy, mevzuat);
+        const hesap = await this.bordroHesabi(tx, tenantId, p, calismaHaritasi.get(p.id), donemYil, donemAy, mevzuat, izinler.get(p.id) ?? []);
         await tx.personelBordro.create({
           data: {
             tenantId, personelId: p.id, donemYil, donemAy, ...hesap.baslik,
@@ -409,8 +427,10 @@ export class PersonelService {
     donemYil: number,
     donemAy: number,
     mevzuat: { id: string; parametreler: Prisma.JsonValue } | null,
+    ucretsizIzinler: UcretsizIzin[] = [],
   ) {
-    const primGunu = calisma?.primGunu ?? istihdamGunu(p.istihdamDonemleri, donemYil, donemAy);
+    const izinOnerisi = izinliPrimGunu(p.istihdamDonemleri, ucretsizIzinler, donemYil, donemAy);
+    const primGunu = calisma?.primGunu ?? izinOnerisi.primGunu;
     // PRS-06: dönemin ücreti ücret geçmişinden; brüt ücret mevzuat ister, net ücret mevzuat varsa brüte çevrilir.
     const ucret = donemUcreti(p.ucretler, p.istihdamDonemleri, donemYil, donemAy);
     if (ucret.tip === "brut" && !mevzuat) throw new BadRequestException(`${p.personelNo ?? "Personel"} brüt ücretli; ${donemYil}/${String(donemAy).padStart(2, "0")} için etkin mevzuat seti bulunamadı`);
@@ -450,7 +470,7 @@ export class PersonelService {
         kumulatifMatrah: hesap ? new Prisma.Decimal(hesap.yeniKumulatifMatrah) : null,
         asgariKumulatifMatrah: hesap ? new Prisma.Decimal(hesap.yeniAsgariKumulatifMatrah) : null,
         primGunu,
-        eksikGunNedeni: calisma?.eksikGunNedeni ?? null,
+        eksikGunNedeni: calisma ? calisma.eksikGunNedeni ?? null : izinOnerisi.eksikGunNedeni,
       },
       kalemler,
     };
@@ -479,7 +499,8 @@ export class PersonelService {
       if (istihdamGunu(personel.istihdamDonemleri, bordro.donemYil, bordro.donemAy) === 0) throw new BadRequestException("Personelin bu dönemde istihdamı yok; bordroyu silin");
       const calisma = await tx.personelDonemCalisma.findUnique({ where: { tenantId_personelId_yil_ay: { tenantId, personelId: bordro.personelId, yil: bordro.donemYil, ay: bordro.donemAy } } }) ?? undefined;
       const mevzuat = await this.donemMevzuatiVarsa(tx, tenantId, bordro.donemYil, bordro.donemAy);
-      const hesap = await this.bordroHesabi(tx, tenantId, personel, calisma, bordro.donemYil, bordro.donemAy, mevzuat);
+      const izinler = await this.ucretsizIzinler(tx, tenantId, [personel.id], bordro.donemYil, bordro.donemAy);
+      const hesap = await this.bordroHesabi(tx, tenantId, personel, calisma, bordro.donemYil, bordro.donemAy, mevzuat, izinler.get(personel.id) ?? []);
       if (hesap.baslik.mevzuatSetiId) {
         const elle = await tx.personelBordroKalemi.count({ where: { tenantId, bordroId, manuel: true, avansId: null } });
         if (elle) throw new BadRequestException("Mevzuatla hesaplanan bordroda elle kalem olamaz; elle eklenen kalemleri silip yeniden deneyin");
