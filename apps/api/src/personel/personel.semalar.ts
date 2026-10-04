@@ -131,3 +131,6 @@ export const avansMahsupSemasi = z.object({
   avansId: z.string().uuid(),
   tutar: pozitifPara,
 });
+
+/** PRS-04: boşsa yeni cari açılır. */
+export const personelCariBaglaSemasi = z.object({ cariId: z.string().uuid().optional().nullable() });

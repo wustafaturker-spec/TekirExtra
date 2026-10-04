@@ -24,7 +24,7 @@ import type {
 const gun = (t: Date) => t.toISOString().slice(0, 10);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Maaş bordro programından gelir; açılış fişi muhasebede ayrıca açılır (MUH-01). */
-const KAPSAM_DISI_HAREKET = ["acilis", "personel_maas", "personel_maas_iptal", "personel_avans"];
+const KAPSAM_DISI_HAREKET = ["acilis", "personel_maas", "personel_maas_iptal", "personel_avans", "personel_avans_iptal"];
 
 type Tx = Prisma.TransactionClient;
 type HesapRef = { tur: "kasa" | "banka" | "pos"; id: string } | null;

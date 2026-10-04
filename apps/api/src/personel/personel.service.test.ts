@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { Prisma } from "@prisma/client";
 import { PersonelService } from "./personel.service";
 
 describe("PersonelService", () => {
@@ -132,7 +133,7 @@ describe("PersonelService", () => {
     await service.bordroOnayla("tenant-1", "bordro-1", "onaylayan");
 
     expect(mockPrisma.cariHareket.create).toHaveBeenCalledWith({ data: expect.objectContaining({
-      tenantId: "tenant-1", cariId: "cari-1", tip: "alacak", tutar: 30000,
+      tenantId: "tenant-1", cariId: "cari-1", tip: "alacak", tutar: new Prisma.Decimal(30000),
       kaynakTur: "bordro_tahakkuk", kaynakRef: "bordro-1",
     }) });
   });

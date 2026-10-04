@@ -146,6 +146,17 @@ export default function PersonelDetaySayfasi() {
     } finally { setIsleniyor(false); }
   };
 
+  /** PRS-04: carisi olmayan personel ödenemez; cari açılınca onaylı bordroların eksik tahakkuku yazılır. */
+  const cariBagla = async () => {
+    if (!window.confirm("Personele yeni bir cari hesap açılacak; onaylı bordroların eksik tahakkukları dönem sonu tarihiyle cariye yazılacak. Devam edilsin mi?")) return;
+    try {
+      setIsleniyor(true); setHata(null);
+      await api(`/personel/${id}/cari-bagla`, { method: "POST", body: "{}" });
+      await yukle();
+    } catch (e) { setHata(e instanceof ApiHata ? e.message : "Cari bağlanamadı"); }
+    finally { setIsleniyor(false); }
+  };
+
   const hassasGoster = async () => {
     try { setHata(null); setHassas(await api(`/personel/${id}/hassas-veriler`)); }
     catch (e) { setHata(e instanceof Error ? e.message : "Hassas bilgiler görüntülenemedi"); }
@@ -207,7 +218,7 @@ export default function PersonelDetaySayfasi() {
               <Bilgi baslik="Telefon" deger={personel.telefon || "—"} />
               <Bilgi baslik="TCKN" deger={hassas?.tckn || personel.tckn || "—"} />
               <Bilgi baslik="IBAN" deger={hassas?.iban || personel.iban || "—"} />
-              <Bilgi baslik="Cari hesap" deger={personel.cari?.kod || "Bağlı değil"} />
+              <div><Bilgi baslik="Cari hesap" deger={personel.cari?.kod || "Bağlı değil — maaş ve avans ödenemez"} />{!personel.cari && <button type="button" disabled={isleniyor} onClick={() => void cariBagla()} className="mt-2 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Cari aç ve bağla</button>}</div>
               <Bilgi baslik="Çıkış tarihi" deger={tarih(personel.cikisTarihi)} />
             </dl>
             <div className="mt-5 flex items-center gap-3 border-t pt-4"><button type="button" onClick={() => hassas ? setHassas(null) : void hassasGoster()} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">{hassas ? "Hassas bilgileri gizle" : "Hassas bilgileri görüntüle"}</button><span className="text-xs text-slate-400">Görüntüleme işlemi denetim kaydına yazılır.</span></div>

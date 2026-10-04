@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
+import { Injectable, NotFoundException, BadRequestException, Optional } from "@nestjs/common";
 import { PrismaService } from "../core/prisma.service";
+import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { 
   personelOlusturSemasi, 
   personelGuncelleSemasi, 
@@ -37,9 +38,20 @@ function hesapOzetindenSgkDevirleri(ozet: Prisma.JsonValue | null, kaynakYil: nu
   return sgkDevirleriniDonemeTasi(devirler, kaynakYil, kaynakAy, hedefYil, hedefAy);
 }
 
+/**
+ * PRS-04 (P0-2, karar 2026-10-04): cariye yazılan tahakkuk, avans mahsubu
+ * öncesi net ücrettir. Avans ödemesi cariye ayrıca borç yazıldığı için
+ * avans + maaş ödemesi tahakkuku tam kapatır.
+ */
+export function cariTahakkukTutari(b: { odenecekTutar: Prisma.Decimal; kalemler: { avansId: string | null; tutar: Prisma.Decimal }[] }): Prisma.Decimal {
+  return b.kalemler.filter((k) => k.avansId).reduce((t, k) => t.add(k.tutar), new Prisma.Decimal(b.odenecekTutar));
+}
+
+const donemSonu = (yil: number, ay: number) => new Date(Date.UTC(yil, ay, 0));
+
 @Injectable()
 export class PersonelService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly donemKilidi?: DonemKilidiService) {}
 
   async listele(tenantId: string, arama?: string) {
     const personeller = await this.prisma.tenantIslem(tenantId, (tx) =>
@@ -527,12 +539,13 @@ export class PersonelService {
       if (sonuc.count !== 1) throw new BadRequestException("Yalnızca onay bekleyen bordro onaylanabilir");
 
       if (bordro.personel.cariId) {
+        const tutar = cariTahakkukTutari(bordro);
         await tx.cariHareket.create({ data: {
           tenantId,
           cariId: bordro.personel.cariId,
           tip: "alacak",
-          tutar: bordro.odenecekTutar,
-          tutarTry: bordro.odenecekTutar,
+          tutar,
+          tutarTry: tutar,
           tarih: onayTarihi,
           aciklama: `${bordro.donemYil}/${bordro.donemAy} Maaş Tahakkuku`,
           kaynakTur: "bordro_tahakkuk",
@@ -806,10 +819,89 @@ export class PersonelService {
             tarih: veri.tarih,
             aciklama: avans.aciklama || `Avans Ödemesi - ${avans.personel.ad} ${avans.personel.soyad}`,
             kaynakTur: "personel_avans",
+            kaynakRef: avans.id,
           }
       });
       await tx.cariHareket.create({ data: { tenantId, cariId: avans.personel.cariId, tip: "borc", tutar: avans.tutar, tutarTry: avans.tutar, tarih: veri.tarih, aciklama: "Personel avans alacağı", kaynakTur: "personel_avans", kaynakRef: avans.id } });
       return tx.personelAvans.update({ where: { id }, data: { durum: "odendi", odendi: true, odenenTutar: avans.tutar, kalanTutar: avans.tutar, kasaBankaFiId: fis.id, tarih: veri.tarih } });
+    });
+  }
+
+  /**
+   * PRS-04 (P1-10): mahsup edilmemiş avans ödemesi ters kayıtla geri alınır;
+   * avans yeniden "onaylandı" olur, doğru hesaptan tekrar ödenebilir.
+   */
+  async avansOdemeIptal(tenantId: string, id: string, userId: string, neden: string) {
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const avans = await tx.personelAvans.findFirst({ where: { id, tenantId }, include: { personel: { select: { cariId: true, ad: true, soyad: true } } } });
+      if (!avans) throw new NotFoundException("Avans bulunamadı");
+      if (avans.durum !== "odendi" || avans.mahsupEdilenTutar.gt(0)) throw new BadRequestException("Yalnız ödenmiş ve bordrodan hiç mahsup edilmemiş avansın ödemesi geri alınır; önce mahsubu bordrodan kaldırın");
+      const isaret = await tx.personelAvans.updateMany({ where: { id, tenantId, durum: "odendi", mahsupEdilenTutar: 0 }, data: { durum: "onaylandi", odendi: false, odenenTutar: 0, kalanTutar: 0, kasaBankaFiId: null } });
+      if (isaret.count !== 1) throw new BadRequestException("Avans eşzamanlı olarak değişti");
+      const fis = avans.kasaBankaFiId ? await tx.kasaBankaHareket.findFirst({ where: { id: avans.kasaBankaFiId, tenantId } }) : null;
+      if (fis) {
+        await tx.kasaBankaHareket.create({ data: {
+          tenantId, kasaId: fis.kasaId, bankaHesapId: fis.bankaHesapId, cariId: fis.cariId, tip: "tahsilat", tutar: fis.tutar, tutarTry: fis.tutarTry, tarih: new Date(),
+          aciklama: `Avans ödemesi iptali: ${neden}`.slice(0, 500), kaynakTur: "personel_avans_iptal", kaynakRef: avans.id, karsiHareketId: fis.id,
+        } });
+      }
+      const cariHareket = await tx.cariHareket.findFirst({ where: { tenantId, kaynakTur: "personel_avans", kaynakRef: avans.id }, orderBy: { createdAt: "desc" } });
+      if (cariHareket) {
+        await tx.cariHareket.create({ data: {
+          tenantId, cariId: cariHareket.cariId, tip: "alacak", tutar: cariHareket.tutar, tutarTry: cariHareket.tutarTry, tarih: new Date(),
+          aciklama: `Avans ödemesi iptali: ${neden}`.slice(0, 500), kaynakTur: "personel_avans_iptal", kaynakRef: avans.id,
+        } });
+      }
+      await tx.auditLog.create({ data: { tenantId, userId, islem: "personel_avans_odeme_iptal", varlik: "personel_avans", varlikId: id, detay: { tutar: avans.tutar.toFixed(2), neden, kasaTers: Boolean(fis), cariTers: Boolean(cariHareket) } } });
+      return tx.personelAvans.findUnique({ where: { id } });
+    });
+  }
+
+  /**
+   * PRS-04 (P1-3): carisi olmayan personele cari bağlar (verilen cari ya da
+   * yeni açılan). Onaylı bordrolardan cari tahakkuku olmayanlar dönem sonu
+   * tarihiyle yazılır (kapalı dönem reddedilir).
+   */
+  async cariBagla(tenantId: string, id: string, userId: string, mevcutCariId?: string | null) {
+    const eksikler = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const personel = await tx.personel.findFirst({ where: { id, tenantId } });
+      if (!personel) throw new NotFoundException("Personel bulunamadı");
+      if (personel.cariId) throw new BadRequestException("Personelin zaten bağlı carisi var");
+      const bordrolar = await tx.personelBordro.findMany({ where: { tenantId, personelId: id, durum: { in: ["onaylandi", "kismen_odendi", "odendi"] } }, include: { kalemler: { select: { avansId: true, tutar: true } } } });
+      return bordrolar;
+    });
+    for (const b of eksikler) await this.donemKilidi?.tarihDogrula(tenantId, donemSonu(b.donemYil, b.donemAy), "personel cari tahakkuku");
+
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const personel = await tx.personel.findFirstOrThrow({ where: { id, tenantId } });
+      let cariId: string;
+      if (mevcutCariId) {
+        const cari = await tx.cariHesap.findFirst({ where: { id: mevcutCariId, tenantId }, select: { id: true, personel: { select: { id: true } } } });
+        if (!cari) throw new NotFoundException("Cari bulunamadı");
+        if (cari.personel) throw new BadRequestException("Bu cari başka bir personele bağlı");
+        cariId = cari.id;
+      } else {
+        const kodVar = await tx.cariHesap.findFirst({ where: { tenantId, kod: personel.personelNo }, select: { id: true } });
+        const yeni = await tx.cariHesap.create({ data: {
+          tenantId, kod: kodVar ? `${personel.personelNo}-P` : personel.personelNo, unvan: `${personel.ad} ${personel.soyad}`, tip: "personel", kisiTipi: "gercek",
+          ad: personel.ad, soyad: personel.soyad, eposta: personel.eposta, telefon: personel.telefon, iban: hassasCoz(personel.iban), vknTckn: hassasCoz(personel.tckn),
+        } });
+        cariId = yeni.id;
+      }
+      await tx.personel.update({ where: { id }, data: { cariId } });
+      let yazilan = 0;
+      for (const b of eksikler) {
+        const tahakkuk = await tx.cariHareket.findFirst({ where: { tenantId, kaynakTur: "bordro_tahakkuk", kaynakRef: b.id } });
+        if (tahakkuk) continue;
+        const tutar = cariTahakkukTutari(b);
+        await tx.cariHareket.create({ data: {
+          tenantId, cariId, tip: "alacak", tutar, tutarTry: tutar, tarih: donemSonu(b.donemYil, b.donemAy),
+          aciklama: `${b.donemYil}/${b.donemAy} Maaş Tahakkuku`, kaynakTur: "bordro_tahakkuk", kaynakRef: b.id,
+        } });
+        yazilan++;
+      }
+      await tx.auditLog.create({ data: { tenantId, userId, islem: "personel_cari_bagla", varlik: "personel", varlikId: id, detay: { cariId, yeniCari: !mevcutCariId, eksikTahakkuk: yazilan } } });
+      return { cariId, eksikTahakkuk: yazilan };
     });
   }
 

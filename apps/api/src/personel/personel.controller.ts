@@ -13,7 +13,7 @@ import { bordroListeFiltreSemasi } from "./personel.semalar";
 import { bordroKalemOlusturSemasi } from "./personel.semalar";
 import { bordroOdemeIptalSemasi } from "./personel.semalar";
 import { avansMahsupSemasi, avansOdeSemasi, avansRetSemasi } from "./personel.semalar";
-import { donemCalismaSemasi } from "./personel.semalar";
+import { donemCalismaSemasi, personelCariBaglaSemasi } from "./personel.semalar";
 import { aktifBaglam } from "../core/istek-baglami";
 import { Roller } from "../auth/roller.decorator";
 
@@ -208,6 +208,20 @@ export class PersonelController {
     const { tenantId, userId } = aktifBaglam();
     const { neden } = avansRetSemasi.parse(body);
     return this.personelService.avansReddet(tenantId, avansId, userId, neden);
+  }
+
+  @Post("avanslar/:avansId/odeme-iptal")
+  async avansOdemeIptal(@Param("avansId", ParseUUIDPipe) avansId: string, @Body() body: unknown) {
+    const { tenantId, userId } = aktifBaglam();
+    const { neden } = avansRetSemasi.parse(body);
+    return this.personelService.avansOdemeIptal(tenantId, avansId, userId, neden);
+  }
+
+  @Post(":id/cari-bagla")
+  async cariBagla(@Param("id", ParseUUIDPipe) id: string, @Body() body: unknown) {
+    const { tenantId, userId } = aktifBaglam();
+    const { cariId } = personelCariBaglaSemasi.parse(body ?? {});
+    return this.personelService.cariBagla(tenantId, id, userId, cariId);
   }
 
   @Post("avanslar/:avansId/odemeler")

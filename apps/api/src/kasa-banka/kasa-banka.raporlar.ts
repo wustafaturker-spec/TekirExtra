@@ -82,6 +82,7 @@ const KAYNAK_ADI: Record<string, string> = {
   personel_maas: "Personel maaşı",
   personel_maas_iptal: "Maaş iptali",
   personel_avans: "Personel avansı",
+  personel_avans_iptal: "Avans iptali",
   doviz_islem: "Döviz alım/satımı",
   odeme_talimati: "Ödeme talimatı",
 };
