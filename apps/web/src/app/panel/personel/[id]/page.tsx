@@ -44,6 +44,7 @@ interface PersonelDetay {
   brutMaas?: string | null;
   sgkTesvikOrani?: string;
   engellilikDerecesi?: number | null;
+  dogumTarihi?: string | null;
   iban?: string | null;
   durum: "taslak" | "aktif" | "askida" | "uzun_sureli_izin" | "isten_ayrildi";
   cari?: { id: string; kod: string; unvan: string } | null;
@@ -121,6 +122,7 @@ export default function PersonelDetaySayfasi() {
       ad: personel.ad, soyad: personel.soyad, eposta: personel.eposta ?? "", telefon: personel.telefon ?? "",
       calismaTipi: personel.calismaTipi, girisTarihi: personel.girisTarihi.slice(0, 10),
       engellilikDerecesi: personel.engellilikDerecesi ? String(personel.engellilikDerecesi) : "",
+      dogumTarihi: personel.dogumTarihi?.slice(0, 10) ?? "",
       sgkTesvikOrani: String(Number(personel.sgkTesvikOrani ?? 0)), tckn: "", iban: "", ibanKaldir: false,
     });
   };
@@ -137,6 +139,7 @@ export default function PersonelDetaySayfasi() {
           ad: duzenleme.ad, soyad: duzenleme.soyad, eposta: duzenleme.eposta.trim() || null, telefon: duzenleme.telefon.trim() || null,
           calismaTipi: duzenleme.calismaTipi, girisTarihi: duzenleme.girisTarihi,
           engellilikDerecesi: duzenleme.engellilikDerecesi ? Number(duzenleme.engellilikDerecesi) : null,
+          dogumTarihi: duzenleme.dogumTarihi || null,
           sgkTesvikOrani: sayi(duzenleme.sgkTesvikOrani || "0"),
           ...(duzenleme.tckn.trim() && { tckn: duzenleme.tckn.trim() }),
           ...(duzenleme.ibanKaldir ? { iban: null } : duzenleme.iban.trim() ? { iban: duzenleme.iban } : {}),
@@ -275,6 +278,7 @@ export default function PersonelDetaySayfasi() {
             <Alan baslik="Telefon"><input maxLength={30} value={duzenleme.telefon} onChange={(e) => setDuzenleme({ ...duzenleme, telefon: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
             <Alan baslik="Çalışma tipi"><select value={duzenleme.calismaTipi} onChange={(e) => setDuzenleme({ ...duzenleme, calismaTipi: e.target.value })} className="w-full rounded-lg border px-3 py-2"><option value="tam_zamanli">Tam zamanlı</option><option value="yari_zamanli">Yarı zamanlı</option><option value="sozlesmeli">Sözleşmeli</option></select></Alan>
             <Alan baslik="İşe giriş tarihi"><input required type="date" value={duzenleme.girisTarihi} onChange={(e) => setDuzenleme({ ...duzenleme, girisTarihi: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
+            <Alan baslik="Doğum tarihi (yıllık izin yaş kuralı)"><input type="date" max={bugun()} value={duzenleme.dogumTarihi} onChange={(e) => setDuzenleme({ ...duzenleme, dogumTarihi: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
             <Alan baslik="Engellilik derecesi"><select value={duzenleme.engellilikDerecesi} onChange={(e) => setDuzenleme({ ...duzenleme, engellilikDerecesi: e.target.value })} className="w-full rounded-lg border px-3 py-2"><option value="">Yok</option><option value="1">1. derece</option><option value="2">2. derece</option><option value="3">3. derece</option></select></Alan>
             <Alan baslik="SGK teşvik oranı (%)"><input inputMode="decimal" value={duzenleme.sgkTesvikOrani} onChange={(e) => setDuzenleme({ ...duzenleme, sgkTesvikOrani: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
             <Alan baslik={`Yeni TCKN (şu an ${personel.tckn ?? "yok"})`}><input inputMode="numeric" maxLength={11} value={duzenleme.tckn} onChange={(e) => setDuzenleme({ ...duzenleme, tckn: e.target.value })} placeholder="Değişmeyecekse boş bırakın" className="w-full rounded-lg border px-3 py-2" /></Alan>
@@ -307,7 +311,7 @@ export default function PersonelDetaySayfasi() {
 
 interface DuzenlemeFormu {
   ad: string; soyad: string; eposta: string; telefon: string; calismaTipi: string; girisTarihi: string;
-  engellilikDerecesi: string; sgkTesvikOrani: string; tckn: string; iban: string; ibanKaldir: boolean;
+  engellilikDerecesi: string; dogumTarihi: string; sgkTesvikOrani: string; tckn: string; iban: string; ibanKaldir: boolean;
 }
 
 function OzetKart({ baslik, deger, alt }: { baslik: string; deger: string; alt: string }) { return <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{baslik}</p><p className="mt-2 text-xl font-bold text-slate-900">{deger}</p><p className="mt-1 text-xs capitalize text-slate-500">{alt}</p></article>; }

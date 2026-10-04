@@ -3,15 +3,24 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { PrismaService } from "../core/prisma.service";
 import { izinBakiyeDuzeltSemasi, izinTalepOlusturSemasi, izinTuruOlusturSemasi, tatilGunuSemasi } from "./izin.semalar";
+import { hizmetYildonumleri, islenecekHakEdisler, yasHesapla, yillikIzinGunu } from "./izin-hak-edisi";
 
-export function isGunuSayisi(baslangic: Date, bitis: Date, tatiller: { tarih: Date; yarimGun: boolean }[] = []): number {
+const YILLIK_KOD = "yillik";
+const HAK_EDIS_ONEKI = "kidem:";
+
+/**
+ * İzin günü: pazar ve tam gün tatiller sayılmaz, arife yarım. Cumartesi
+ * işyerinin haftada 6 gün çalışmasına bağlıdır (Çalışma Takvimi ayarı,
+ * PRS-08); varsayılan sayılmaz.
+ */
+export function isGunuSayisi(baslangic: Date, bitis: Date, tatiller: { tarih: Date; yarimGun: boolean }[] = [], cumartesiIzinGunu = false): number {
   let gun = 0;
   const tatilHaritasi = new Map(tatiller.map((t) => [t.tarih.toISOString().slice(0, 10), t.yarimGun]));
   const tarih = new Date(Date.UTC(baslangic.getUTCFullYear(), baslangic.getUTCMonth(), baslangic.getUTCDate()));
   const son = new Date(Date.UTC(bitis.getUTCFullYear(), bitis.getUTCMonth(), bitis.getUTCDate()));
   while (tarih <= son) {
     const haftaGunu = tarih.getUTCDay();
-    if (haftaGunu !== 0 && haftaGunu !== 6) {
+    if (haftaGunu !== 0 && (haftaGunu !== 6 || cumartesiIzinGunu)) {
       const tatil = tatilHaritasi.get(tarih.toISOString().slice(0, 10));
       gun += tatil === undefined ? 1 : tatil ? 0.5 : 0;
     }
@@ -56,7 +65,7 @@ export class IzinService {
       if (!personel) throw new NotFoundException("Aktif personel bulunamadı");
       if (!izinTuru) throw new NotFoundException("İzin türü bulunamadı");
       if (cakisan) throw new BadRequestException("Personelin bu tarihlerle çakışan izin talebi vardır");
-      const gunSayisi = isGunuSayisi(veri.baslangicTarihi, veri.bitisTarihi, tatiller);
+      const gunSayisi = isGunuSayisi(veri.baslangicTarihi, veri.bitisTarihi, tatiller, await this.cumartesiIzinGunu(tx, tenantId));
       if (gunSayisi < 0.5) throw new BadRequestException("İzin aralığında çalışma günü bulunmalıdır");
       return tx.personelIzinTalebi.create({ data: { tenantId, personelId: veri.personelId, izinTuruId: veri.izinTuruId, baslangicTarihi: veri.baslangicTarihi, bitisTarihi: veri.bitisTarihi, gunSayisi, aciklama: veri.aciklama || null, olusturanUserId: userId } });
     });
@@ -85,6 +94,7 @@ export class IzinService {
       if (talep.olusturanUserId === userId) throw new BadRequestException("İzin talebini oluşturan kullanıcı aynı talebi onaylayamaz");
       if (talep.durum !== "talep") throw new BadRequestException("Yalnızca bekleyen izin talebi onaylanabilir");
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${talep.personelId}:${talep.izinTuruId}`}))`;
+      if (talep.izinTuru.kod === YILLIK_KOD) await this.hakEdisleriIsle(tx, tenantId, talep.personelId);
       if (talep.izinTuru.bakiyeTakibi) {
         const bakiye = await this.bakiyeHesapla(tx, tenantId, talep.personelId, talep.izinTuruId);
         if (bakiye.lt(talep.gunSayisi)) throw new BadRequestException(`Yetersiz izin bakiyesi. Kullanılabilir: ${bakiye.toFixed(2)} gün`);
@@ -120,9 +130,42 @@ export class IzinService {
 
   async bakiyeler(tenantId: string, personelId: string) {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      await this.varsayilanTurleriHazirla(tx, tenantId);
+      await this.hakEdisleriIsle(tx, tenantId, personelId);
       const turler = await tx.personelIzinTuru.findMany({ where: { tenantId, aktif: true, bakiyeTakibi: true } });
       return Promise.all(turler.map(async (tur) => ({ izinTuru: tur, bakiye: (await this.bakiyeHesapla(tx, tenantId, personelId, tur.id)).toFixed(2) })));
     });
+  }
+
+  private async cumartesiIzinGunu(tx: Prisma.TransactionClient, tenantId: string): Promise<boolean> {
+    const kayit = await tx.modulAyar.findUnique({ where: { tenantId_modul: { tenantId, modul: "calisma_takvimi" } }, select: { ayarlar: true } });
+    return (kayit?.ayarlar as Record<string, unknown> | null)?.cumartesiIzinGunu === true;
+  }
+
+  /**
+   * PRS-08: dolan hizmet yılları için yıllık izin hakkını yazar (idempotent,
+   * `donemRef = kidem:N`). Bakiye görüntülenirken ve yıllık izin onaylanırken çağrılır.
+   */
+  async hakEdisleriIsle(tx: Prisma.TransactionClient, tenantId: string, personelId: string): Promise<number> {
+    const [personel, tur] = await Promise.all([
+      tx.personel.findFirst({ where: { id: personelId, tenantId }, select: { dogumTarihi: true, istihdamDonemleri: { select: { baslangicTarihi: true, bitisTarihi: true } } } }),
+      tx.personelIzinTuru.findFirst({ where: { tenantId, kod: YILLIK_KOD }, select: { id: true } }),
+    ]);
+    if (!personel || !tur) return 0;
+    const yildonumleri = hizmetYildonumleri(personel.istihdamDonemleri, new Date());
+    const islenmis = await tx.personelIzinBakiyeHareketi.findMany({ where: { tenantId, personelId, izinTuruId: tur.id, donemRef: { startsWith: HAK_EDIS_ONEKI } }, select: { donemRef: true } });
+    const yillar = islenecekHakEdisler(yildonumleri, islenmis.map((h) => Number(h.donemRef!.slice(HAK_EDIS_ONEKI.length))));
+    if (!yillar.length) return 0;
+    const sonuc = await tx.personelIzinBakiyeHareketi.createMany({
+      data: yillar.map((n) => {
+        const tarih = yildonumleri[n - 1];
+        const yas = personel.dogumTarihi ? yasHesapla(personel.dogumTarihi, tarih) : null;
+        const gun = yillikIzinGunu(n, yas);
+        return { tenantId, personelId, izinTuruId: tur.id, tip: "hak_edis" as const, gun, donemRef: `${HAK_EDIS_ONEKI}${n}`, aciklama: `${n}. hizmet yılı yıllık izin hakkı (${tarih.toISOString().slice(0, 10)}, ${gun} gün)` };
+      }),
+      skipDuplicates: true,
+    });
+    return sonuc.count;
   }
 
   private async bakiyeHesapla(tx: Prisma.TransactionClient, tenantId: string, personelId: string, izinTuruId: string) {

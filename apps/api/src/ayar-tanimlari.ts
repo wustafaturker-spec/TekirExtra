@@ -136,6 +136,8 @@ registerModulAyar(
   z.object({
     /// Üretim günü bu saatte başlar; operasyonlar buradan itibaren planlanır.
     gunBaslangicSaati: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Saat SS:DD biçiminde olmalıdır"),
+    /// PRS-08: haftada 6 gün çalışılıyorsa cumartesi yıllık izinde iş günü sayılır.
+    cumartesiIzinGunu: z.boolean().default(false),
   }),
-  { gunBaslangicSaati: "08:00" },
+  { gunBaslangicSaati: "08:00", cumartesiIzinGunu: false },
 );

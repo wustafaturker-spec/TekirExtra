@@ -23,6 +23,8 @@ export const personelOlusturSemasi = z.object({
   netMaas: z.coerce.number().positive("Net maaş sıfırdan büyük olmalıdır"),
   brutMaas: z.coerce.number().positive("Brüt maaş sıfırdan büyük olmalıdır").optional().nullable(),
   engellilikDerecesi: z.coerce.number().int().min(1).max(3).optional().nullable(),
+  /** PRS-08: yıllık izin yaş kuralı. */
+  dogumTarihi: z.coerce.date().max(new Date(), "Doğum tarihi gelecekte olamaz").optional().nullable(),
   sgkTesvikOrani: z.coerce.number().min(0).max(100).default(0),
   iban: z.union([
     z.string().transform((deger) => deger.replace(/\s/g, "").toUpperCase()).pipe(z.string().regex(/^TR\d{24}$/, "Geçerli bir TR IBAN giriniz")),

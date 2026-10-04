@@ -4416,6 +4416,8 @@ model Personel {
   netMaas            Decimal             @map("net_maas") @db.Decimal(15, 2)
   brutMaas           Decimal?            @map("brut_maas") @db.Decimal(15, 2)
   engellilikDerecesi Int?                @map("engellilik_derecesi")
+  /// PRS-08: yıllık izin yaş kuralı (18 yaş altı / 50 yaş üstü en az 20 gün).
+  dogumTarihi        DateTime?           @map("dogum_tarihi") @db.Date
   sgkTesvikOrani     Decimal             @default(0) @map("sgk_tesvik_orani") @db.Decimal(6, 3)
   iban               String?
   cariId             String?             @unique @map("cari_id") @db.Uuid
@@ -4645,6 +4647,8 @@ model PersonelIzinBakiyeHareketi {
   personelId   String                        @map("personel_id") @db.Uuid
   izinTuruId   String                        @map("izin_turu_id") @db.Uuid
   izinTalebiId String?                       @map("izin_talebi_id") @db.Uuid
+  /// PRS-08: otomatik hak edişin tekillik anahtarı ("kidem:3" = 3. hizmet yılı).
+  donemRef     String?                       @map("donem_ref")
   tip          PersonelIzinBakiyeHareketTipi
   gun          Decimal                       @db.Decimal(6, 2)
   aciklama     String?
