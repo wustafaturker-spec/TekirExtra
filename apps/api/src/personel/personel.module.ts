@@ -1,3 +1,4 @@
+import { PersonelKuyrukService } from "./personel-kuyruk.service";
 import { Module } from "@nestjs/common";
 import { PersonelController } from "./personel.controller";
 import { PersonelService } from "./personel.service";
@@ -20,7 +21,7 @@ import { MevzuatService } from "./mevzuat.service";
 @Module({
   imports: [EklerModule, DonemKapatmaModule, TenantModule],
   controllers: [BordroPusulaController, IzinController, OrganizasyonController, PersonelBelgeController, PersonelRaporController, MevzuatController, PersonelController],
-  providers: [BordroPusulaService, PersonelService, IzinService, OrganizasyonService, PersonelBelgeService, PersonelRaporService, MevzuatService],
+  providers: [BordroPusulaService, PersonelService, PersonelKuyrukService, IzinService, OrganizasyonService, PersonelBelgeService, PersonelRaporService, MevzuatService],
   exports: [PersonelService],
 })
 export class PersonelModule {}

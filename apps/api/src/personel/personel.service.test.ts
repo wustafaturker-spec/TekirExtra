@@ -26,7 +26,7 @@ describe("PersonelService", () => {
       cariHareket: {
         create: vi.fn().mockResolvedValue({ id: "cari-hareket-1" }),
       },
-      personelBordro: {
+      personelBordro: { findMany: vi.fn(async () => []),
         findUnique: vi.fn().mockResolvedValue(null),
         findFirst: vi.fn().mockResolvedValue({
           id: "bordro-1", durum: "onay_bekliyor", olusturanUserId: "hazirlayan",

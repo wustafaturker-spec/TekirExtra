@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { uygulamaAcik, type EbelgeUygulamalari, type Rol } from "@tekirextra/shared";
 import { aktifBaglam, baglamlaCalistir } from "../core/istek-baglami";
 import { MetricsService } from "../core/observability/metrics.service";
+import { redisBaglantisi } from "../core/redis-baglantisi";
 import { ebelgeUygulamalariCozTenant } from "./ebelge-uygulamalari.service";
 import { EbelgeService } from "./ebelge.service";
 import { EirsaliyeService, eirsaliyeSorguKosulu, eirsaliyeYenidenDenemeKosulu } from "./eirsaliye.service";
@@ -64,11 +65,6 @@ export interface EbelgeKuyrukVerisi {
 
 interface DeadLetterVerisi extends EbelgeKuyrukVerisi { asilIsId: string; hata: string; deadLetterZamani: string; }
 
-function redisBaglantisi() {
-  const adres = new URL(process.env.REDIS_URL || "redis://localhost:6380");
-  const db = adres.pathname.length > 1 ? Number(adres.pathname.slice(1)) : 0;
-  return { host: adres.hostname, port: Number(adres.port || 6379), username: adres.username || undefined, password: adres.password || undefined, db: Number.isFinite(db) ? db : 0, ...(adres.protocol === "rediss:" ? { tls: {} } : {}), maxRetriesPerRequest: null };
-}
 
 const isKimligi = (tenantId: string, faturaId: string) => `ebelge-gonder-${tenantId}-${faturaId}`;
 const durumIsKimligi = (tenantId: string, faturaId: string) => `ebelge-durum-${tenantId}-${faturaId}`;

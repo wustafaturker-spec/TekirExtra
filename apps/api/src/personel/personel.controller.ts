@@ -1,3 +1,4 @@
+import { PersonelKuyrukService } from "./personel-kuyruk.service";
 import { PersonelErisimGuard } from "./personel-erisim.guard";
 import { BadRequestException, Controller, Delete, Get, Post, Put, Body, Param, ParseUUIDPipe, Query, Res, UploadedFile, UseInterceptors, UseGuards } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
@@ -26,7 +27,7 @@ import { Roller } from "../auth/roller.decorator";
 @Roller("muhasebe", "ik")
 @UseGuards(PersonelErisimGuard)
 export class PersonelController {
-  constructor(private readonly personelService: PersonelService) {}
+  constructor(private readonly personelService: PersonelService, private readonly kuyruk: PersonelKuyrukService) {}
 
   @Get()
   async listele(@Query("arama") arama?: string, @Query("durum") durum?: string, @Query("departmanId") departmanId?: string, @Query("adet") adet?: string, @Query("imlec") imlec?: string) {
@@ -122,11 +123,16 @@ export class PersonelController {
     return this.personelService.yenidenBaslat(tenantId, id, personelYenidenBaslatSemasi.parse(body));
   }
 
+  /** PRS-20: büyük kadroda arka plan işi döner ({ arkaPlan: true, isId }); ekran durumu izler. */
   @Post("bordrolar/tahakkuk")
   async bordroTopluTahakkuk(@Body() body: unknown) {
-    const { tenantId, userId } = aktifBaglam();
-    const veri = bordroTahakkukSemasi.parse(body);
-    return this.personelService.bordroTopluTahakkuk(tenantId, userId, veri);
+    const { tenantId, userId, rol } = aktifBaglam();
+    return this.kuyruk.tahakkukBaslat(tenantId, userId, rol, body);
+  }
+
+  @Get("bordrolar/tahakkuk-isleri/:isId")
+  tahakkukIsDurumu(@Param("isId") isId: string) {
+    return this.kuyruk.isDurumu(aktifBaglam().tenantId, isId);
   }
 
   @Post("bordrolar/:bordroId/onaya-gonder")

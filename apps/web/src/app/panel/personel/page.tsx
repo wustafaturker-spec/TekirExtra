@@ -26,6 +26,8 @@ interface Personel {
   };
 }
 
+type TahakkukSonucu = { arkaPlan?: false; olusturulanSayi: number; toplamAktifPersonel: number; mevcutSayi: number; hatalar: { personel: string; mesaj: string }[] };
+
 export default function PersonelSayfasi() {
   const [personeller, setPersoneller] = useState<Personel[]>([]);
   const [yukleniyor, setYukleniyor] = useState(true);
@@ -56,6 +58,8 @@ export default function PersonelSayfasi() {
   });
 
   const [tahakkukModalAcik, setTahakkukModalAcik] = useState(false);
+  /** PRS-20: tahakkuk sonucu ya da arka plan işinin ilerlemesi. */
+  const [tahakkukDurum, setTahakkukDurum] = useState<string | null>(null);
   const [donem, setDonem] = useState({
     donemYil: new Date().getFullYear(),
     donemAy: new Date().getMonth() + 1,
@@ -119,12 +123,24 @@ export default function PersonelSayfasi() {
     try {
       setKaydediliyor(true);
       setHata(null);
-      const data = await api<{ olusturulanSayi: number }>("/personel/bordrolar/tahakkuk", {
+      setTahakkukDurum(null);
+      const ilk = await api<TahakkukSonucu | { arkaPlan: true; isId: string; toplamAktifPersonel: number }>("/personel/bordrolar/tahakkuk", {
         method: "POST",
         body: JSON.stringify(donem),
       });
-      alert(`${data.olusturulanSayi} adet personele bordro tahakkuku başarıyla oluşturuldu.`);
-      setTahakkukModalAcik(false);
+      let sonuc: TahakkukSonucu;
+      if (ilk.arkaPlan) {
+        // Büyük kadro: worker'da çalışır, ilerleme izlenir.
+        setTahakkukDurum(`${ilk.toplamAktifPersonel} kişilik tahakkuk arka planda başladı…`);
+        for (;;) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const d = await api<{ durum: string; ilerleme: { yapilan: number; toplam: number } | null; sonuc: TahakkukSonucu | null; hata: string | null }>(`/personel/bordrolar/tahakkuk-isleri/${encodeURIComponent(ilk.isId)}`);
+          if (d.durum === "failed") throw new Error(d.hata ?? "Tahakkuk işi başarısız oldu");
+          if (d.durum === "completed" && d.sonuc) { sonuc = d.sonuc; break; }
+          setTahakkukDurum(d.ilerleme ? `Tahakkuk sürüyor: ${d.ilerleme.yapilan} / ${d.ilerleme.toplam} personel` : "Tahakkuk sırada bekliyor…");
+        }
+      } else sonuc = ilk;
+      setTahakkukDurum(`${sonuc.olusturulanSayi} bordro oluşturuldu${sonuc.mevcutSayi ? `, ${sonuc.mevcutSayi} kişinin bordrosu zaten vardı` : ""}.${sonuc.hatalar.length ? ` Oluşturulamayan ${sonuc.hatalar.length}: ${sonuc.hatalar.map((h) => `${h.personel} (${h.mesaj})`).join("; ")}` : ""}`);
     } catch (e) {
       setHata(e instanceof ApiHata ? e.message : "Bordro tahakkuku oluşturulamadı");
     } finally {
@@ -137,7 +153,7 @@ export default function PersonelSayfasi() {
   const toplamNet = personeller.reduce((toplam, p) => toplam + Number(p.netMaas), 0);
 
   return (
-    <div className="hr-page">
+    <div className="hr-page hr-subpage">
       <header className="hr-hero">
         <div className="hr-hero__copy">
           <span>İNSAN KAYNAKLARI</span>
@@ -403,6 +419,7 @@ export default function PersonelSayfasi() {
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl space-y-4">
             <h2 className="text-xl font-bold text-slate-800">Aylık Bordro Tahakkuku Oluştur</h2>
             <p className="text-xs text-slate-500">Tüm aktif personel için belirtilen döneme ait maaş bordrosu kaydı üretilecektir.</p>
+            {tahakkukDurum && <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{tahakkukDurum}</div>}
             <form onSubmit={topluBordroOlustur} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -429,10 +446,10 @@ export default function PersonelSayfasi() {
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setTahakkukModalAcik(false)}
+                  onClick={() => { setTahakkukModalAcik(false); setTahakkukDurum(null); }}
                   className="px-4 py-2 text-slate-600 border rounded-lg text-sm hover:bg-slate-50"
                 >
-                  İptal
+                  Kapat
                 </button>
                 <button disabled={kaydediliyor} type="submit" className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60">
                   {kaydediliyor ? "Oluşturuluyor…" : "Tahakkuk Ettir"}

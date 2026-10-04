@@ -433,42 +433,62 @@ export class PersonelService {
     });
   }
 
-  async bordroTopluTahakkuk(tenantId: string, userId: string, girdi: z.infer<typeof bordroTahakkukSemasi>) {
-    const { donemYil, donemAy } = bordroTahakkukSemasi.parse(girdi);
+  /** PRS-19 (P3-5): kuyruk kararının kadro büyüklüğü. */
+  tahakkukKapsamSayisi(tenantId: string, donemYil: number, donemAy: number) {
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.personel.count({ where: tahakkukKapsamiKosulu(tenantId, donemYil, donemAy) }));
+  }
 
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
+  /**
+   * P3-5: ortak veriler (kapsam, mevcut bordrolar, puantaj, mevzuat, ücretsiz
+   * izinler) tek okumada; her personel kendi kısa transaction'ında yazılır.
+   * Birinin hatası (ör. ücret kaydı yok) ötekileri durdurmaz, nedeniyle
+   * döner. Aynı dönemi eşzamanlı çalışan ikinci tahakkukun yazdığı bordro
+   * tekillik kısıtıyla atlanır. Arka plan işi `ilerleme` ile durum bildirir.
+   */
+  async bordroTopluTahakkuk(tenantId: string, userId: string, girdi: z.infer<typeof bordroTahakkukSemasi>, ilerleme?: (yapilan: number, toplam: number) => Promise<void> | void) {
+    const { donemYil, donemAy } = bordroTahakkukSemasi.parse(girdi);
+    const { personeller, mevcutlar, calismaHaritasi, mevzuat, izinler } = await this.prisma.tenantIslem(tenantId, async (tx) => {
       // PRS-02: dönemle kesişen istihdamı olan herkes (çıkış ayı, askıda, uzun süreli izin dahil).
-      const aktifPersoneller = await tx.personel.findMany({
+      const personeller = await tx.personel.findMany({
         where: tahakkukKapsamiKosulu(tenantId, donemYil, donemAy),
         include: { istihdamDonemleri: { select: { baslangicTarihi: true, bitisTarihi: true } }, ucretler: { select: { yururlukTarihi: true, tip: true, tutar: true } } },
+        orderBy: { personelNo: "asc" },
       });
-
-      let olusturulanSayi = 0;
+      const mevcutlar = await tx.personelBordro.findMany({ where: { tenantId, donemYil, donemAy }, select: { personelId: true } });
       const calismalar = await tx.personelDonemCalisma.findMany({ where: { tenantId, yil: donemYil, ay: donemAy } });
-      const calismaHaritasi = new Map(calismalar.map((c) => [c.personelId, c]));
-      const mevzuat = await this.donemMevzuatiVarsa(tx, tenantId, donemYil, donemAy);
-      const izinler = await this.ucretsizIzinler(tx, tenantId, aktifPersoneller.map((p) => p.id), donemYil, donemAy);
+      return {
+        personeller,
+        mevcutlar: new Set(mevcutlar.map((b) => b.personelId)),
+        calismaHaritasi: new Map(calismalar.map((c) => [c.personelId, c])),
+        mevzuat: await this.donemMevzuatiVarsa(tx, tenantId, donemYil, donemAy),
+        izinler: await this.ucretsizIzinler(tx, tenantId, personeller.map((p) => p.id), donemYil, donemAy),
+      };
+    });
 
-      for (const p of aktifPersoneller) {
-        const mevcut = await tx.personelBordro.findUnique({
-          where: { tenantId_personelId_donemYil_donemAy: { tenantId, personelId: p.id, donemYil, donemAy } },
-          select: { id: true },
-        });
-        if (mevcut) continue;
-        const hesap = await this.bordroHesabi(tx, tenantId, p, calismaHaritasi.get(p.id), donemYil, donemAy, mevzuat, izinler.get(p.id) ?? []);
-        await tx.personelBordro.create({
-          data: {
-            tenantId, personelId: p.id, donemYil, donemAy, ...hesap.baslik,
-            prim: 0, kesinti: 0, odenecekTutar: hesap.baslik.netMaas, kalanTutar: hesap.baslik.netMaas,
-            odendi: false, durum: "hesaplandi", olusturanUserId: userId,
-            kalemler: { create: hesap.kalemler.map((k) => ({ tenantId, ...k })) },
-          },
+    const bekleyen = personeller.filter((p) => !mevcutlar.has(p.id));
+    let olusturulanSayi = 0;
+    const hatalar: { personel: string; mesaj: string }[] = [];
+    for (const [i, p] of bekleyen.entries()) {
+      try {
+        await this.prisma.tenantIslem(tenantId, async (tx) => {
+          const hesap = await this.bordroHesabi(tx, tenantId, p, calismaHaritasi.get(p.id), donemYil, donemAy, mevzuat, izinler.get(p.id) ?? []);
+          await tx.personelBordro.create({
+            data: {
+              tenantId, personelId: p.id, donemYil, donemAy, ...hesap.baslik,
+              prim: 0, kesinti: 0, odenecekTutar: hesap.baslik.netMaas, kalanTutar: hesap.baslik.netMaas,
+              odendi: false, durum: "hesaplandi", olusturanUserId: userId,
+              kalemler: { create: hesap.kalemler.map((k) => ({ tenantId, ...k })) },
+            },
+          });
         });
         olusturulanSayi++;
+      } catch (e) {
+        if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002")) hatalar.push({ personel: `${p.personelNo} ${p.ad} ${p.soyad}`, mesaj: e instanceof Error ? e.message : String(e) });
       }
+      if (ilerleme && ((i + 1) % 10 === 0 || i + 1 === bekleyen.length)) await ilerleme(i + 1, bekleyen.length);
+    }
 
-      return { olusturulanSayi, toplamAktifPersonel: aktifPersoneller.length };
-    });
+    return { olusturulanSayi, toplamAktifPersonel: personeller.length, mevcutSayi: personeller.length - bekleyen.length, hatalar };
   }
 
   private donemMevzuatiVarsa(tx: Prisma.TransactionClient, tenantId: string, yil: number, ay: number) {
