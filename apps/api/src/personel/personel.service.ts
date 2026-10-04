@@ -225,17 +225,27 @@ export class PersonelService {
     });
   }
 
-  async guncelle(tenantId: string, id: string, girdi: z.infer<typeof personelGuncelleSemasi>) {
+  /**
+   * P0-6: kart düzenleme. Bağlı cari (ad, iletişim, IBAN, TCKN) eşitlenir; işe
+   * giriş tarihi açık istihdam dönemine de yazılır; değişen alanlar denetim
+   * kaydına geçer (TCKN/IBAN değerleri yazılmaz, yalnız değiştiği; ücretin eski
+   * ve yeni değeri yazılır). Ücret değişikliği sonraki tahakkuklarda geçerlidir.
+   */
+  async guncelle(tenantId: string, id: string, girdi: z.infer<typeof personelGuncelleSemasi>, userId?: string) {
     const veri = personelGuncelleSemasi.parse(girdi);
-    await this.getir(tenantId, id);
 
-    const personel = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.personel.update({
+    const personel = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const mevcut = await tx.personel.findFirst({ where: { id, tenantId } });
+      if (!mevcut) throw new NotFoundException("Personel bulunamadı");
+      if (veri.girisTarihi && mevcut.cikisTarihi && veri.girisTarihi > mevcut.cikisTarihi) throw new BadRequestException("İşe giriş tarihi çıkış tarihinden sonra olamaz");
+      const tckn = veri.tckn !== undefined ? hassasSifrele(veri.tckn) : undefined;
+      const iban = veri.iban !== undefined ? hassasSifrele(veri.iban) : undefined;
+      const guncel = await tx.personel.update({
         where: { id },
         data: {
           ...(veri.ad && { ad: veri.ad }),
           ...(veri.soyad && { soyad: veri.soyad }),
-          ...(veri.tckn !== undefined && { tckn: hassasSifrele(veri.tckn) }),
+          ...(tckn !== undefined && { tckn }),
           ...(veri.eposta !== undefined && { eposta: veri.eposta || null }),
           ...(veri.telefon !== undefined && { telefon: veri.telefon || null }),
           ...(veri.departman !== undefined && { departman: veri.departman || null }),
@@ -247,11 +257,39 @@ export class PersonelService {
           ...(veri.brutMaas !== undefined && { brutMaas: veri.brutMaas }),
           ...(veri.engellilikDerecesi !== undefined && { engellilikDerecesi: veri.engellilikDerecesi }),
           ...(veri.sgkTesvikOrani !== undefined && { sgkTesvikOrani: veri.sgkTesvikOrani }),
-          ...(veri.iban !== undefined && { iban: hassasSifrele(veri.iban) }),
+          ...(iban !== undefined && { iban }),
         },
-        include: { cari: true }
-      })
-    );
+        include: { cari: true },
+      });
+      if (veri.girisTarihi && veri.girisTarihi.getTime() !== mevcut.girisTarihi.getTime()) {
+        await tx.personelIstihdamDonemi.updateMany({ where: { tenantId, personelId: id, bitisTarihi: null }, data: { baslangicTarihi: veri.girisTarihi } });
+      }
+      if (guncel.cariId) {
+        await tx.cariHesap.update({
+          where: { id: guncel.cariId },
+          data: {
+            ...((veri.ad || veri.soyad) && { ad: guncel.ad, soyad: guncel.soyad, unvan: `${guncel.ad} ${guncel.soyad}` }),
+            ...(veri.eposta !== undefined && { eposta: guncel.eposta }),
+            ...(veri.telefon !== undefined && { telefon: guncel.telefon }),
+            ...(veri.iban !== undefined && { iban: veri.iban || null }),
+            ...(veri.tckn !== undefined && { vknTckn: veri.tckn || null }),
+          },
+        });
+      }
+      const alanlar = (Object.keys(veri) as (keyof typeof veri)[]).filter((k) => veri[k] !== undefined && k !== "cariOlustur");
+      const ucret = (deger: Prisma.Decimal | null) => deger?.toFixed(2) ?? null;
+      await tx.auditLog.create({
+        data: {
+          tenantId, userId: userId ?? null, islem: "personel_guncelle", varlik: "personel", varlikId: id,
+          detay: {
+            alanlar,
+            ...(veri.netMaas && { netMaas: { onceki: ucret(mevcut.netMaas), yeni: ucret(guncel.netMaas) } }),
+            ...(veri.brutMaas !== undefined && { brutMaas: { onceki: ucret(mevcut.brutMaas), yeni: ucret(guncel.brutMaas) } }),
+          },
+        },
+      });
+      return guncel;
+    });
     return personelMaskele(personel);
   }
 
@@ -683,57 +721,45 @@ export class PersonelService {
   }
 
   /**
-   * Seçili ay ve yıl için onaylanmış bordrolardan Banka Toplu Maaş Havale / EFT dosyası üretir.
+   * Dönemin ödenmemiş (onaylı ya da kısmen ödenmiş) bordrolarından toplu maaş
+   * havalesi CSV'si. TCKN/IBAN çözülerek yazılır; IBAN'ı olmayan personel varsa
+   * dosya üretilmez (bankada reddedilecek satır göndermek yerine eksik listelenir).
+   * Toplu hassas veri dökümü denetim kaydına yazılır.
    */
-  async bankaMaasDosyasiOlustur(tenantId: string, yil: number, ay: number, bankaFormat: "garanti" | "akbank" | "isbank" | "standart" = "standart") {
+  async bankaMaasDosyasiOlustur(tenantId: string, userId: string, yil: number, ay: number) {
     const bordrolar = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.personelBordro.findMany({
-        where: {
-          tenantId,
-          donemYil: yil,
-          donemAy: ay,
-          durum: "onaylandi",
-        },
-        include: {
-          personel: { select: { ad: true, soyad: true, tckn: true, iban: true } },
-        },
+        where: { tenantId, donemYil: yil, donemAy: ay, durum: { in: ["onaylandi", "kismen_odendi"] }, kalanTutar: { gt: 0 } },
+        include: { personel: { select: { personelNo: true, ad: true, soyad: true, tckn: true, iban: true } } },
+        orderBy: { personel: { ad: "asc" } },
       })
     );
-
     if (bordrolar.length === 0) {
-      throw new BadRequestException("Belirtilen dönemde onaylanmış maaş bordrosu bulunamadı");
+      throw new BadRequestException("Belirtilen dönemde ödenmemiş onaylı maaş bordrosu bulunamadı");
+    }
+    const satirlar = bordrolar.map((b) => ({ ...b, tckn: hassasCoz(b.personel.tckn), iban: hassasCoz(b.personel.iban) }));
+    const ibansiz = satirlar.filter((b) => !b.iban);
+    if (ibansiz.length) {
+      throw new BadRequestException(`IBAN'ı olmayan personel var: ${ibansiz.map((b) => `${b.personel.personelNo} ${b.personel.ad} ${b.personel.soyad}`).join(", ")}. Personel kartına IBAN girip yeniden deneyin`);
     }
 
-    let dosyaIcerigi = "";
-    const toplamOdenecek = bordrolar.reduce((sum, b) => sum + Number(b.odenecekTutar), 0);
+    const donem = `${yil}/${String(ay).padStart(2, "0")}`;
+    const alan = (deger: string) => `"${deger.replaceAll('"', '""')}"`;
+    const toplam = satirlar.reduce((t, b) => t.add(b.kalanTutar), new Prisma.Decimal(0));
+    // Excel Türkçe karakterleri doğru açsın diye UTF-8 BOM.
+    const dosyaIcerigi = "\uFEFF" + ["Ad Soyad;TCKN;IBAN;Tutar;Açıklama", ...satirlar.map((b) =>
+      [alan(`${b.personel.ad} ${b.personel.soyad}`), alan(b.tckn ?? ""), alan(b.iban!), b.kalanTutar.toFixed(2), alan(`${donem} Maaş Ödemesi`)].join(";"),
+    )].join("\r\n") + "\r\n";
 
-    if (bankaFormat === "garanti" || bankaFormat === "isbank") {
-      // CSV formatı: Alıcı Adı;IBAN;Tutar;Açıklama;VKN/TCKN
-      dosyaIcerigi = "Alıcı Adı Soyadı;IBAN;Ödenecek Tutar;Açıklama;TCKN\n";
-      bordrolar.forEach((b) => {
-        const adSoyad = `${b.personel.ad} ${b.personel.soyad}`;
-        const iban = b.personel.iban || "IBAN_TANIMSIZ";
-        const tutar = Number(b.odenecekTutar).toFixed(2);
-        const aciklama = `${yil}/${ay.toString().padStart(2, "0")} Maaş Ödemesi`;
-        const tckn = b.personel.tckn || "";
-        dosyaIcerigi += `"${adSoyad}";"${iban}";${tutar};"${aciklama}";"${tckn}"\n`;
-      });
-    } else {
-      // Standart TXT / CSV formatı
-      dosyaIcerigi = `Dönem: ${yil}/${ay.toString().padStart(2, "0")} - Toplam Personel: ${bordrolar.length} - Toplam Tutari: ${toplamOdenecek.toFixed(2)} TL\n`;
-      dosyaIcerigi += "Sıra;Ad Soyad;TCKN;IBAN;Net Ödenecek (TL)\n";
-      bordrolar.forEach((b, idx) => {
-        dosyaIcerigi += `${idx + 1};${b.personel.ad} ${b.personel.soyad};${b.personel.tckn || "—"};${b.personel.iban || "—"};${Number(b.odenecekTutar).toFixed(2)}\n`;
-      });
-    }
-
+    await this.prisma.tenantIslem(tenantId, (tx) => tx.auditLog.create({
+      data: { tenantId, userId, islem: "HASSAS_VERI_TOPLU_DISA_AKTAR", varlik: "personel_bordro", detay: { amac: "banka_maas_dosyasi", donem, personelSayisi: satirlar.length, toplam: toplam.toFixed(2) } },
+    }));
     return {
       donemYil: yil,
       donemAy: ay,
-      bankaFormat,
-      toplamPersonel: bordrolar.length,
-      toplamTutar: toplamOdenecek.toFixed(2),
-      dosyaAdi: `Maas_Transfer_${yil}_${ay.toString().padStart(2, "0")}_${bankaFormat}.csv`,
+      toplamPersonel: satirlar.length,
+      toplamTutar: toplam.toFixed(2),
+      dosyaAdi: `Maas_Transfer_${yil}_${String(ay).padStart(2, "0")}.csv`,
       dosyaIcerigi,
     };
   }

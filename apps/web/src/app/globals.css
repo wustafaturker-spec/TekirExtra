@@ -4742,3 +4742,7 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .mutabakat-paneli { border-top: 1px solid var(--border); display: grid; gap: .7rem; margin-top: 1rem; padding-top: 1rem; }
 .mutabakat-paneli__bas { align-items: flex-start; display: flex; flex-wrap: wrap; gap: .8rem; justify-content: space-between; }
 .mutabakat-ayrinti { display: grid; gap: .6rem; padding: .4rem 0; }
+
+/* P0-6: İK işlem pencereleri uzun formda kaydırılır. */
+.hr-modal { max-height: calc(100vh - 2rem); overflow-y: auto; }
+.hr-subpage :where(.hr-modal--genis) { max-width: 42rem; }

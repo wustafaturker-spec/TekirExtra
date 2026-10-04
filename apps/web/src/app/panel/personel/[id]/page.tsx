@@ -41,6 +41,7 @@ interface PersonelDetay {
   netMaas: string;
   brutMaas?: string | null;
   sgkTesvikOrani?: string;
+  engellilikDerecesi?: number | null;
   iban?: string | null;
   durum: "taslak" | "aktif" | "askida" | "uzun_sureli_izin" | "isten_ayrildi";
   cari?: { id: string; kod: string; unvan: string } | null;
@@ -67,6 +68,7 @@ export default function PersonelDetaySayfasi() {
   const [hassas, setHassas] = useState<{ tckn: string | null; iban: string | null } | null>(null);
   const [ayrilis, setAyrilis] = useState({ cikisTarihi: bugun(), ayrilisNedeni: "" });
   const [yeniGirisTarihi, setYeniGirisTarihi] = useState(bugun());
+  const [duzenleme, setDuzenleme] = useState<DuzenlemeFormu | null>(null);
 
   const yukle = useCallback(async () => {
     try {
@@ -107,6 +109,43 @@ export default function PersonelDetaySayfasi() {
     } finally { setIsleniyor(false); }
   };
 
+  /** P0-6: kart düzenleme. TCKN/IBAN maskeli geldiği için boş bırakılırsa değişmez. */
+  const duzenlemeAc = () => {
+    if (!personel) return;
+    setDuzenleme({
+      ad: personel.ad, soyad: personel.soyad, eposta: personel.eposta ?? "", telefon: personel.telefon ?? "",
+      calismaTipi: personel.calismaTipi, girisTarihi: personel.girisTarihi.slice(0, 10),
+      netMaas: String(Number(personel.netMaas)), brutMaas: personel.brutMaas ? String(Number(personel.brutMaas)) : "",
+      engellilikDerecesi: personel.engellilikDerecesi ? String(personel.engellilikDerecesi) : "",
+      sgkTesvikOrani: String(Number(personel.sgkTesvikOrani ?? 0)), tckn: "", iban: "", ibanKaldir: false,
+    });
+  };
+
+  const duzenlemeKaydet = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!duzenleme) return;
+    try {
+      setIsleniyor(true); setHata(null);
+      const sayi = (v: string) => Number(v.replace(",", "."));
+      await api(`/personel/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          ad: duzenleme.ad, soyad: duzenleme.soyad, eposta: duzenleme.eposta.trim() || null, telefon: duzenleme.telefon.trim() || null,
+          calismaTipi: duzenleme.calismaTipi, girisTarihi: duzenleme.girisTarihi, netMaas: sayi(duzenleme.netMaas),
+          brutMaas: duzenleme.brutMaas.trim() ? sayi(duzenleme.brutMaas) : null,
+          engellilikDerecesi: duzenleme.engellilikDerecesi ? Number(duzenleme.engellilikDerecesi) : null,
+          sgkTesvikOrani: sayi(duzenleme.sgkTesvikOrani || "0"),
+          ...(duzenleme.tckn.trim() && { tckn: duzenleme.tckn.trim() }),
+          ...(duzenleme.ibanKaldir ? { iban: null } : duzenleme.iban.trim() ? { iban: duzenleme.iban } : {}),
+        }),
+      });
+      setDuzenleme(null); setHassas(null);
+      await yukle();
+    } catch (e) {
+      setHata(e instanceof ApiHata ? e.message : "Personel bilgileri kaydedilemedi");
+    } finally { setIsleniyor(false); }
+  };
+
   const hassasGoster = async () => {
     try { setHata(null); setHassas(await api(`/personel/${id}/hassas-veriler`)); }
     catch (e) { setHata(e instanceof Error ? e.message : "Hassas bilgiler görüntülenemedi"); }
@@ -140,7 +179,8 @@ export default function PersonelDetaySayfasi() {
                 <p className="mt-1 text-sm text-slate-500">{personel.personelNo} · {personel.departman || "Departman belirtilmedi"} · {personel.unvan || "Unvan belirtilmedi"}</p>
               </div>
             </div>
-            <div>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={duzenlemeAc} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Düzenle</button>
               {personel.durum === "isten_ayrildi" ? (
                 <button onClick={() => setYenidenAcik(true)} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Yeniden işe başlat</button>
               ) : (
@@ -192,6 +232,27 @@ export default function PersonelDetaySayfasi() {
         </form>
       </IslemModal>}
 
+      {duzenleme && personel && <IslemModal genis baslik="Personel bilgilerini düzenle" aciklama="Ücret değişikliği sonraki tahakkuklardan itibaren geçerli olur; bağlı cari kartı da güncellenir." kapat={() => setDuzenleme(null)}>
+        <form onSubmit={duzenlemeKaydet} className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Alan baslik="Ad"><input required minLength={2} maxLength={50} value={duzenleme.ad} onChange={(e) => setDuzenleme({ ...duzenleme, ad: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
+            <Alan baslik="Soyad"><input required minLength={2} maxLength={50} value={duzenleme.soyad} onChange={(e) => setDuzenleme({ ...duzenleme, soyad: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
+            <Alan baslik="E-posta"><input type="email" value={duzenleme.eposta} onChange={(e) => setDuzenleme({ ...duzenleme, eposta: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
+            <Alan baslik="Telefon"><input maxLength={30} value={duzenleme.telefon} onChange={(e) => setDuzenleme({ ...duzenleme, telefon: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
+            <Alan baslik="Çalışma tipi"><select value={duzenleme.calismaTipi} onChange={(e) => setDuzenleme({ ...duzenleme, calismaTipi: e.target.value })} className="w-full rounded-lg border px-3 py-2"><option value="tam_zamanli">Tam zamanlı</option><option value="yari_zamanli">Yarı zamanlı</option><option value="sozlesmeli">Sözleşmeli</option></select></Alan>
+            <Alan baslik="İşe giriş tarihi"><input required type="date" value={duzenleme.girisTarihi} onChange={(e) => setDuzenleme({ ...duzenleme, girisTarihi: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
+            <Alan baslik="Net ücret (TL)"><input required inputMode="decimal" value={duzenleme.netMaas} onChange={(e) => setDuzenleme({ ...duzenleme, netMaas: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
+            <Alan baslik="Brüt ücret (TL, mevzuat hesabı için)"><input inputMode="decimal" value={duzenleme.brutMaas} onChange={(e) => setDuzenleme({ ...duzenleme, brutMaas: e.target.value })} placeholder="Boşsa net ücretle tahakkuk" className="w-full rounded-lg border px-3 py-2" /></Alan>
+            <Alan baslik="Engellilik derecesi"><select value={duzenleme.engellilikDerecesi} onChange={(e) => setDuzenleme({ ...duzenleme, engellilikDerecesi: e.target.value })} className="w-full rounded-lg border px-3 py-2"><option value="">Yok</option><option value="1">1. derece</option><option value="2">2. derece</option><option value="3">3. derece</option></select></Alan>
+            <Alan baslik="SGK teşvik oranı (%)"><input inputMode="decimal" value={duzenleme.sgkTesvikOrani} onChange={(e) => setDuzenleme({ ...duzenleme, sgkTesvikOrani: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
+            <Alan baslik={`Yeni TCKN (şu an ${personel.tckn ?? "yok"})`}><input inputMode="numeric" maxLength={11} value={duzenleme.tckn} onChange={(e) => setDuzenleme({ ...duzenleme, tckn: e.target.value })} placeholder="Değişmeyecekse boş bırakın" className="w-full rounded-lg border px-3 py-2" /></Alan>
+            <Alan baslik={`Yeni IBAN (şu an ${personel.iban ?? "yok"})`}><input disabled={duzenleme.ibanKaldir} value={duzenleme.iban} onChange={(e) => setDuzenleme({ ...duzenleme, iban: e.target.value })} placeholder="TR…" className="w-full rounded-lg border px-3 py-2" /></Alan>
+          </div>
+          {personel.iban && <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={duzenleme.ibanKaldir} onChange={(e) => setDuzenleme({ ...duzenleme, ibanKaldir: e.target.checked, iban: "" })} /> IBAN'ı kaldır</label>}
+          <ModalEylemler isleniyor={isleniyor} kapat={() => setDuzenleme(null)} onay="Kaydet" />
+        </form>
+      </IslemModal>}
+
       {yenidenAcik && personel && <IslemModal baslik="Yeniden işe başlat" aciklama="Yeni istihdam başlangıç tarihini girin." kapat={() => setYenidenAcik(false)}>
         <form onSubmit={yenidenBaslat} className="space-y-4">
           <Alan baslik="Yeni işe giriş tarihi"><input required type="date" value={yeniGirisTarihi} onChange={(e) => setYeniGirisTarihi(e.target.value)} className="w-full rounded-lg border px-3 py-2" /></Alan>
@@ -202,8 +263,13 @@ export default function PersonelDetaySayfasi() {
   );
 }
 
+interface DuzenlemeFormu {
+  ad: string; soyad: string; eposta: string; telefon: string; calismaTipi: string; girisTarihi: string;
+  netMaas: string; brutMaas: string; engellilikDerecesi: string; sgkTesvikOrani: string; tckn: string; iban: string; ibanKaldir: boolean;
+}
+
 function OzetKart({ baslik, deger, alt }: { baslik: string; deger: string; alt: string }) { return <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{baslik}</p><p className="mt-2 text-xl font-bold text-slate-900">{deger}</p><p className="mt-1 text-xs capitalize text-slate-500">{alt}</p></article>; }
 function Bilgi({ baslik, deger }: { baslik: string; deger: string }) { return <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">{baslik}</dt><dd className="mt-1 break-words text-sm font-medium text-slate-800">{deger}</dd></div>; }
 function Alan({ baslik, children }: { baslik: string; children: React.ReactNode }) { return <label className="block"><span className="mb-1 block text-xs font-semibold text-slate-600">{baslik}</span>{children}</label>; }
-function IslemModal({ baslik, aciklama, kapat, children }: { baslik: string; aciklama: string; kapat: () => void; children: React.ReactNode }) { return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-label={baslik} onMouseDown={(e) => { if (e.target === e.currentTarget) kapat(); }}><div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"><h2 className="text-xl font-bold text-slate-900">{baslik}</h2><p className="mb-5 mt-1 text-sm text-slate-500">{aciklama}</p>{children}</div></div>; }
+function IslemModal({ baslik, aciklama, kapat, children, genis = false }: { baslik: string; aciklama: string; kapat: () => void; children: React.ReactNode; genis?: boolean }) { return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-label={baslik} onMouseDown={(e) => { if (e.target === e.currentTarget) kapat(); }}><div className={`hr-modal${genis ? " hr-modal--genis" : ""} w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl`}><h2 className="text-xl font-bold text-slate-900">{baslik}</h2><p className="mb-5 mt-1 text-sm text-slate-500">{aciklama}</p>{children}</div></div>; }
 function ModalEylemler({ isleniyor, kapat, onay, tehlikeli = false }: { isleniyor: boolean; kapat: () => void; onay: string; tehlikeli?: boolean }) { return <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={kapat} className="rounded-lg border px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Vazgeç</button><button disabled={isleniyor} type="submit" className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 ${tehlikeli ? "bg-red-600 hover:bg-red-700" : "bg-emerald-600 hover:bg-emerald-700"}`}>{isleniyor ? "İşleniyor…" : onay}</button></div>; }

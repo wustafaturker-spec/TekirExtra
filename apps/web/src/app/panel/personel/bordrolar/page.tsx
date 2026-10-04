@@ -68,7 +68,7 @@ export default function BordroCalismaAlani() {
           type="button"
           onClick={async () => {
             try {
-              const res = await api<{ dosyaAdi: string; dosyaIcerigi: string }>(`/personel/bordrolar/banka-dosyasi?yil=${donem.yil}&ay=${donem.ay}&format=garanti`);
+              const res = await api<{ dosyaAdi: string; dosyaIcerigi: string }>(`/personel/bordrolar/banka-dosyasi?yil=${donem.yil}&ay=${donem.ay}`);
               const blob = new Blob([res.dosyaIcerigi], { type: "text/csv;charset=utf-8;" });
               const url = URL.createObjectURL(blob);
               const link = document.createElement("a");

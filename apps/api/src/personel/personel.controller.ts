@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, Post, Put, Body, Param, Query } from "@nestjs/common";
+import { BadRequestException, Controller, Delete, Get, Post, Put, Body, Param, Query } from "@nestjs/common";
 import { PersonelService } from "./personel.service";
 import { 
   personelOlusturSemasi, 
@@ -43,13 +43,11 @@ export class PersonelController {
   }
 
   @Get("bordrolar/banka-dosyasi")
-  async bankaMaasDosyasi(
-    @Query("yil") yil: string,
-    @Query("ay") ay: string,
-    @Query("format") format?: "garanti" | "akbank" | "isbank" | "standart"
-  ) {
-    const { tenantId } = aktifBaglam();
-    return this.personelService.bankaMaasDosyasiOlustur(tenantId, Number(yil), Number(ay), format || "standart");
+  async bankaMaasDosyasi(@Query("yil") yil?: string, @Query("ay") ay?: string) {
+    const { tenantId, userId } = aktifBaglam();
+    const f = bordroListeFiltreSemasi.parse({ yil, ay });
+    if (!f.yil || !f.ay) throw new BadRequestException("Dönem için yıl ve ay zorunludur");
+    return this.personelService.bankaMaasDosyasiOlustur(tenantId, userId, f.yil, f.ay);
   }
 
   @Post("calisma-gunleri")
@@ -95,9 +93,9 @@ export class PersonelController {
 
   @Put(":id")
   async guncelle(@Param("id") id: string, @Body() body: unknown) {
-    const { tenantId } = aktifBaglam();
+    const { tenantId, userId } = aktifBaglam();
     const veri = personelGuncelleSemasi.parse(body);
-    return this.personelService.guncelle(tenantId, id, veri);
+    return this.personelService.guncelle(tenantId, id, veri, userId);
   }
 
   @Post(":id/isten-cikar")

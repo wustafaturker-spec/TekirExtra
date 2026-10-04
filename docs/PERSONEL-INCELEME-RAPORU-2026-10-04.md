@@ -40,6 +40,12 @@ Bunlara ek olarak bordronun finans tarafına yansıması eksik: tahakkuk carisin
 olarak sayıyor, SGK ve vergi yükü hiçbir raporda görünmüyor; brüt hesap için her kiracının asgari ücreti,
 SGK tavanını, oranları ve vergi dilimlerini kendisinin girmesi gerekiyor.
 
+## Durum
+
+| Madde | Durum |
+|---|---|
+| P0-1, P0-6 | ✅ 2026-10-04 — PRS-01 (banka dosyası: çözülmüş TCKN/IBAN, `onaylandi`+`kismen_odendi` ve kalan tutar, IBAN'sız personel varsa dosya üretilmez, UTF-8 BOM, `HASSAS_VERI_TOPLU_DISA_AKTAR` denetim kaydı, sahte banka biçimleri kaldırıldı; detayda düzenleme penceresi, bağlı cari eşitlenir, giriş tarihi açık istihdam dönemine yazılır, `personel_guncelle` denetim kaydında değişen alanlar ve ücretin eski/yeni değeri) |
+
 ## 2. Öncelik sınıfları
 
 | Sınıf | Anlamı |
