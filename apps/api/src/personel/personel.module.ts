@@ -7,6 +7,9 @@ import { OrganizasyonController } from "./organizasyon.controller";
 import { OrganizasyonService } from "./organizasyon.service";
 import { EklerModule } from "../ekler/ekler.module";
 import { DonemKapatmaModule } from "../donem-kapatma/donem-kapatma.module";
+import { TenantModule } from "../tenant/tenant.module";
+import { BordroPusulaController } from "./bordro-pusula.controller";
+import { BordroPusulaService } from "./bordro-pusula.service";
 import { PersonelBelgeController } from "./personel-belge.controller";
 import { PersonelBelgeService } from "./personel-belge.service";
 import { PersonelRaporController } from "./personel-rapor.controller";
@@ -15,9 +18,9 @@ import { MevzuatController } from "./mevzuat.controller";
 import { MevzuatService } from "./mevzuat.service";
 
 @Module({
-  imports: [EklerModule, DonemKapatmaModule],
-  controllers: [IzinController, OrganizasyonController, PersonelBelgeController, PersonelRaporController, MevzuatController, PersonelController],
-  providers: [PersonelService, IzinService, OrganizasyonService, PersonelBelgeService, PersonelRaporService, MevzuatService],
+  imports: [EklerModule, DonemKapatmaModule, TenantModule],
+  controllers: [BordroPusulaController, IzinController, OrganizasyonController, PersonelBelgeController, PersonelRaporController, MevzuatController, PersonelController],
+  providers: [BordroPusulaService, PersonelService, IzinService, OrganizasyonService, PersonelBelgeService, PersonelRaporService, MevzuatService],
   exports: [PersonelService],
 })
 export class PersonelModule {}

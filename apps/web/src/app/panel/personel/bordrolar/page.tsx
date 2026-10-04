@@ -85,6 +85,22 @@ export default function BordroCalismaAlani() {
         >
           🏦 Banka Maaş Havale Dosyası (.CSV)
         </button>
+        <button
+          type="button"
+          onClick={async () => {
+            // PRS-10: dönemin onaylı bordrolarının ücret hesap pusulaları personele e-postayla.
+            if (!window.confirm(`${donem.ay}/${donem.yil} onaylı bordrolarının pusulaları personelin kart e-postasına gönderilecek. Devam edilsin mi?`)) return;
+            try {
+              const res = await api<{ gonderilen: number; atlananlar: { personel: string; mesaj: string }[] }>("/personel/pusulalar/toplu-eposta", { method: "POST", body: JSON.stringify({ yil: donem.yil, ay: donem.ay }) });
+              alert(`${res.gonderilen} pusula gönderildi.${res.atlananlar.length ? `\nGönderilmeyen:\n${res.atlananlar.map((a) => `• ${a.personel}: ${a.mesaj}`).join("\n")}` : ""}`);
+            } catch (err) {
+              alert(err instanceof Error ? err.message : "Pusulalar gönderilemedi");
+            }
+          }}
+          className="rounded-lg border px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          ✉️ Pusulaları e-postala
+        </button>
         <label className="text-xs font-semibold text-slate-500">Yıl<input type="number" min={2020} max={2100} value={donem.yil} onChange={(e) => setDonem({ ...donem, yil: Number(e.target.value) })} className="mt-1 block w-28 rounded-lg border bg-white px-3 py-2 text-sm text-slate-900" /></label>
         <label className="text-xs font-semibold text-slate-500">Ay<select value={donem.ay} onChange={(e) => setDonem({ ...donem, ay: Number(e.target.value) })} className="mt-1 block rounded-lg border bg-white px-3 py-2 text-sm text-slate-900">{Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{new Intl.DateTimeFormat("tr-TR", { month: "long" }).format(new Date(2026, i, 1))}</option>)}</select></label>
       </div>
