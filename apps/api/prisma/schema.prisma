@@ -232,6 +232,7 @@ model Tenant {
 
   @@map("tenants")
   personelUcretleri         PersonelUcret[]
+  personelBilgiTalepleri PersonelBilgiTalebi[]
 }
 
 /// KLN-08: v1.0 fiyatlandırma uygulamaz. Sağlayıcı ve dönem alanları ileride
@@ -4456,6 +4457,7 @@ model Personel {
   yonetici              Personel?                    @relation("PersonelYonetici", fields: [yoneticiId], references: [id])
   bagliPersoneller      Personel[]                   @relation("PersonelYonetici")
   ucretler              PersonelUcret[]
+  bilgiTalepleri        PersonelBilgiTalebi[]
   belgeler              PersonelBelgesi[]
   donemCalismalari      PersonelDonemCalisma[]
   kullanici             User?                        @relation("PersonelKullanici")
@@ -4463,6 +4465,29 @@ model Personel {
   @@unique([tenantId, personelNo])
   @@index([tenantId, ad, soyad])
   @@map("personel")
+}
+
+/// PRS-22 (P3-4): çalışanın self-servisten iletişim/IBAN güncelleme talebi; İK onaylayınca karta yazılır.
+model PersonelBilgiTalebi {
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  personelId       String    @map("personel_id") @db.Uuid
+  /// { telefon?, adres?, iban? } — IBAN şifreli (hassasSifrele).
+  alanlar          Json
+  aciklama         String?
+  durum            String    @default("bekliyor")
+  retNedeni        String?   @map("ret_nedeni")
+  olusturanUserId  String?   @map("olusturan_user_id") @db.Uuid
+  kararVerenUserId String?   @map("karar_veren_user_id") @db.Uuid
+  kararTarihi      DateTime? @map("karar_tarihi")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  personel Personel @relation(fields: [personelId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, durum])
+  @@index([tenantId, personelId])
+  @@map("personel_bilgi_talepleri")
 }
 
 /// PRS-06 (P1-1/P1-6): yürürlük tarihli ücret geçmişi. Tahakkuk dönemin

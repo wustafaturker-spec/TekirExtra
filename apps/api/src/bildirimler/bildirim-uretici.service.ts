@@ -132,7 +132,7 @@ export class BildirimUreticiService {
     const bugun = bugunTR();
     const sinir = new Date(`${bugun}T00:00:00.000Z`);
     sinir.setUTCDate(sinir.getUTCDate() + 30);
-    const [belgeler, izin, avans, bordro] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
+    const [belgeler, izin, avans, bilgi, bordro] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
       tx.personelBelgesi.findMany({
         where: { gecerlilikTarihi: { not: null, lte: sinir }, personel: { durum: { not: "isten_ayrildi" } } },
         include: { personel: { select: { id: true, personelNo: true, ad: true, soyad: true } } },
@@ -140,6 +140,7 @@ export class BildirimUreticiService {
       }),
       tx.personelIzinTalebi.count({ where: { durum: "talep" } }),
       tx.personelAvans.count({ where: { durum: "talep" } }),
+      tx.personelBilgiTalebi.count({ where: { durum: "bekliyor" } }),
       tx.personelBordro.count({ where: { durum: "onay_bekliyor" } }),
     ]));
     const BELGE_ADI: Record<string, string> = { kimlik: "Kimlik", is_sozlesmesi: "İş sözleşmesi", diploma: "Diploma", sertifika: "Sertifika", saglik_raporu: "Sağlık raporu", adli_sicil: "Adli sicil kaydı", ikametgah: "İkametgâh", askerlik: "Askerlik belgesi", sgk_bildirgesi: "SGK bildirgesi", diger: "Belge" };
@@ -157,14 +158,14 @@ export class BildirimUreticiService {
         ...(doldu ? {} : { sonTarih: new Date(`${bitis}T23:59:59+03:00`) }),
       };
     });
-    const parcalar = [izin && `${izin} izin talebi`, avans && `${avans} avans talebi`, bordro && `${bordro} bordro`].filter(Boolean);
+    const parcalar = [izin && `${izin} izin talebi`, avans && `${avans} avans talebi`, bilgi && `${bilgi} bilgi güncelleme talebi`, bordro && `${bordro} bordro`].filter(Boolean);
     if (parcalar.length) {
       girdiler.push({
         tur: "personel", onem: "bilgi",
         baslik: "Onay bekleyen İK işlemleri",
         aciklama: `${parcalar.join(", ")} onay bekliyor. Hazırlayan kişi kendi kaydını onaylayamaz; başka bir yetkili onaylamalı.`,
         birlesimAnahtari: "personel:onay_bekleyen",
-        kaynakTur: "personel", hedefYol: bordro ? "/panel/personel/bordrolar" : izin ? "/panel/personel/izinler" : "/panel/personel/avanslar",
+        kaynakTur: "personel", hedefYol: bordro ? "/panel/personel/bordrolar" : izin ? "/panel/personel/izinler" : avans ? "/panel/personel/avanslar" : "/panel/personel/bilgi-talepleri",
         roller: HEDEF_ROLLER.personel,
       });
     }

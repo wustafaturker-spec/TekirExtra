@@ -52,6 +52,7 @@ function servisKur(secenek: TxSecenekleri = {}) {
     cariMutabakat: { findMany: vi.fn().mockResolvedValue([]) },
     personelBelgesi: { findMany: vi.fn().mockResolvedValue(secenek.personelBelgeleri ?? []) },
     personelIzinTalebi: { count: vi.fn().mockResolvedValue(secenek.izinTalepSayisi ?? 0) },
+    personelBilgiTalebi: { count: vi.fn(async () => 0) },
     personelAvans: { count: vi.fn().mockResolvedValue(secenek.avansTalepSayisi ?? 0) },
     personelBordro: { count: vi.fn().mockResolvedValue(secenek.onayBekleyenBordro ?? 0) },
     personelTatilGunu: { findMany: vi.fn().mockResolvedValue([]) },

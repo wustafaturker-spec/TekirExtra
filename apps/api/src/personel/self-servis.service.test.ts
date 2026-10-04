@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { Prisma } from "@prisma/client";
 import { SelfServisService } from "./self-servis.service";
+import { hassasCoz } from "./personel-hassas";
 
 const PID = "11111111-1111-4111-8111-111111111111";
 
@@ -50,5 +52,56 @@ describe("self-servis (PRS-21)", () => {
     const { s } = kur();
     await expect(s.parolaBelirle("t1", "kisa", { parola: "Gecerli12345" })).rejects.toThrow(/geçersiz/);
     await expect(s.parolaBelirle("t1", "a".repeat(43), { parola: "kisa" })).rejects.toThrow();
+  });
+});
+
+describe("self-servis talepleri (PRS-22)", () => {
+  const IBAN = "TR330006100519786457841326";
+  function kur2(ek: { acikAvans?: number; talep?: unknown; createHata?: unknown; guncelleHata?: unknown } = {}) {
+    const tx = {
+      user: { findUnique: vi.fn(async () => ({ personelId: PID })) },
+      personelAvans: { count: vi.fn(async () => ek.acikAvans ?? 0) },
+      personelBilgiTalebi: {
+        create: vi.fn(async (a: { data: { alanlar: unknown } }) => { if (ek.createHata) throw ek.createHata; return { id: "bt", durum: "bekliyor", alanlar: a.data.alanlar }; }),
+        findFirst: vi.fn(async () => ek.talep ?? null), updateMany: vi.fn(async () => ({ count: 1 })), update: vi.fn(async () => ({})),
+      },
+    };
+    const prisma = { tenantIslem: (_t: string, cb: (t: unknown) => unknown) => cb(tx) };
+    const personel = { avansVer: vi.fn(async () => ({ id: "a1" })), guncelle: vi.fn(async () => { if (ek.guncelleHata) throw ek.guncelleHata; return {}; }) };
+    return { s: new SelfServisService(prisma as never, {} as never, {} as never, {} as never, personel as never), tx, personel };
+  }
+
+  it("avans talebi kendi kartına talep olarak açılır; açık talep varken yenisi reddedilir", async () => {
+    const a = kur2();
+    await a.s.avansTalebi("t1", "u1", { tutar: 5000, aciklama: "kira" });
+    expect(a.personel.avansVer).toHaveBeenCalledWith("t1", "u1", expect.objectContaining({ personelId: PID, tutar: 5000, aciklama: "kira" }));
+    await expect(kur2({ acikAvans: 1 }).s.avansTalebi("t1", "u1", { tutar: 100 })).rejects.toThrow(/Onay bekleyen avans/);
+  });
+
+  it("bilgi talebi: IBAN şifreli saklanır, maskeli döner; boş talep ve açık ikinci talep reddedilir", async () => {
+    const a = kur2();
+    const r = await a.s.bilgiTalebi("t1", "u1", { iban: "tr33 0006 1005 1978 6457 8413 26", telefon: "0555" });
+    const kayitli = (a.tx.personelBilgiTalebi.create.mock.calls[0][0] as { data: { alanlar: { iban: string; telefon: string } } }).data.alanlar;
+    expect(kayitli.iban).not.toContain("TR33");
+    expect(hassasCoz(kayitli.iban)).toBe(IBAN);
+    expect(r.alanlar).toEqual({ telefon: "0555", iban: "TR33 •••• •••• 1326" });
+    await expect(a.s.bilgiTalebi("t1", "u1", {})).rejects.toThrow(/En az bir alan/);
+    await expect(a.s.bilgiTalebi("t1", "u1", { iban: "TR12" })).rejects.toThrow(/TR IBAN/);
+    const cift = kur2({ createHata: new Prisma.PrismaClientKnownRequestError("tekil", { code: "P2002", clientVersion: "x" }) });
+    await expect(cift.s.bilgiTalebi("t1", "u1", { telefon: "1" })).rejects.toThrow(/Onay bekleyen bilgi/);
+  });
+
+  it("onay alanları personel güncellemesinden geçirir (IBAN açık); güncelleme düşerse talep beklemeye döner", async () => {
+    const { hassasSifrele } = await import("./personel-hassas");
+    const talep = { id: "bt", personelId: PID, alanlar: { iban: hassasSifrele(IBAN), adres: "Yeni adres" } };
+    const a = kur2({ talep });
+    await a.s.bilgiOnayla("t1", "bt", "ik1");
+    expect(a.personel.guncelle).toHaveBeenCalledWith("t1", PID, { adres: "Yeni adres", iban: IBAN }, "ik1");
+    const b = kur2({ talep, guncelleHata: new Error("cari güncellenemedi") });
+    await expect(b.s.bilgiOnayla("t1", "bt", "ik1")).rejects.toThrow(/cari/);
+    expect(b.tx.personelBilgiTalebi.update).toHaveBeenCalledWith({ where: { id: "bt" }, data: { durum: "bekliyor", kararVerenUserId: null, kararTarihi: null } });
+    const kendi = kur2({ talep: { ...talep, olusturanUserId: "ik1" } });
+    await expect(kendi.s.bilgiOnayla("t1", "bt", "ik1")).rejects.toThrow(/Kendi bilgi/);
+    expect(kendi.personel.guncelle).not.toHaveBeenCalled();
   });
 });

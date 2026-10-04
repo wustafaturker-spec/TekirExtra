@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Query, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
 import { Public } from "../auth/public.decorator";
 import { Roller } from "../auth/roller.decorator";
@@ -36,6 +36,24 @@ export class SelfServisController {
 
   @Post("izinler/:id/geri-cek")
   izinGeriCek(@Param("id", ParseUUIDPipe) id: string) { const { tenantId, userId } = aktifBaglam(); return this.servis.izinGeriCek(tenantId, userId, id); }
+
+  @Get("avanslar")
+  avanslar() { const { tenantId, userId } = aktifBaglam(); return this.servis.avanslar(tenantId, userId); }
+
+  @Post("avanslar")
+  avansTalebi(@Body() govde: unknown) { const { tenantId, userId } = aktifBaglam(); return this.servis.avansTalebi(tenantId, userId, govde); }
+
+  @Post("avanslar/:id/geri-cek")
+  avansGeriCek(@Param("id", ParseUUIDPipe) id: string) { const { tenantId, userId } = aktifBaglam(); return this.servis.avansGeriCek(tenantId, userId, id); }
+
+  @Get("bilgi-talepleri")
+  bilgiTalepleri() { const { tenantId, userId } = aktifBaglam(); return this.servis.bilgiTalepleri(tenantId, userId); }
+
+  @Post("bilgi-talepleri")
+  bilgiTalebi(@Body() govde: unknown) { const { tenantId, userId } = aktifBaglam(); return this.servis.bilgiTalebi(tenantId, userId, govde); }
+
+  @Post("bilgi-talepleri/:id/geri-cek")
+  bilgiGeriCek(@Param("id", ParseUUIDPipe) id: string) { const { tenantId, userId } = aktifBaglam(); return this.servis.bilgiGeriCek(tenantId, userId, id); }
 }
 
 /** PRS-21: İK'nın personel kartındaki self-servis daveti ve erişim kapatma. */
@@ -44,6 +62,18 @@ export class SelfServisController {
 @UseGuards(PersonelErisimGuard)
 export class SelfServisDavetController {
   constructor(private readonly servis: SelfServisService) {}
+
+  /** PRS-22: çalışanların bilgi güncelleme talepleri (varsayılan bekleyenler). */
+  @Get("bilgi-talepleri")
+  bilgiTalepleri(@Query("durum") durum?: string, @Query("personelId") personelId?: string) {
+    return this.servis.bilgiTalepleriIk(aktifBaglam().tenantId, durum && ["bekliyor", "onaylandi", "reddedildi", "iptal", "hepsi"].includes(durum) ? durum : "bekliyor", personelId && /^[0-9a-f-]{36}$/i.test(personelId) ? personelId : undefined);
+  }
+
+  @Post("bilgi-talepleri/:talepId/onayla")
+  bilgiOnayla(@Param("talepId", ParseUUIDPipe) talepId: string) { const { tenantId, userId } = aktifBaglam(); return this.servis.bilgiOnayla(tenantId, talepId, userId); }
+
+  @Post("bilgi-talepleri/:talepId/reddet")
+  bilgiReddet(@Param("talepId", ParseUUIDPipe) talepId: string, @Body() govde: unknown) { const { tenantId, userId } = aktifBaglam(); return this.servis.bilgiReddet(tenantId, talepId, userId, govde); }
 
   @Get(":id/self-servis")
   durum(@Param("id", ParseUUIDPipe) id: string) { return this.servis.durum(aktifBaglam().tenantId, id); }

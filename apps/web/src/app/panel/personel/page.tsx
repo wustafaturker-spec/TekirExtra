@@ -177,6 +177,7 @@ export default function PersonelSayfasi() {
         <Link href="/panel/personel/bordrolar"><b>BR</b><span><strong>Bordrolar</strong><small>Tahakkuk, onay ve ödeme</small></span></Link>
         <Link href="/panel/personel/bordrolar/calisma-gunleri"><b>PG</b><span><strong>Puantaj</strong><small>Gün ve değişken kazançlar</small></span></Link>
         <Link href="/panel/personel/izinler"><b>İZ</b><span><strong>İzinler</strong><small>Talep ve bakiyeler</small></span></Link>
+        <Link href="/panel/personel/bilgi-talepleri"><b>BT</b><span><strong>Bilgi talepleri</strong><small>Self-servis güncellemeleri</small></span></Link>
         <Link href="/panel/personel/organizasyon"><b>OR</b><span><strong>Organizasyon</strong><small>İşyeri ve ekip yapısı</small></span></Link>
         <Link href="/panel/personel/mevzuat"><b>MV</b><span><strong>Mevzuat</strong><small>Sürümler ve kabul testleri</small></span></Link>
         <Link href="/panel/personel/raporlar"><b>RP</b><span><strong>Raporlar</strong><small>Maliyet ve iş gücü analizi</small></span></Link>

@@ -9,6 +9,10 @@ import { EpostaService } from "../tenant/eposta.service";
 import { BordroPusulaService } from "./bordro-pusula.service";
 import { donemAdi } from "./bordro-pusula";
 import { IzinService } from "./izin.service";
+import { hassasCoz, hassasSifrele, ibanMaskele } from "./personel-hassas";
+import { PersonelService } from "./personel.service";
+import { Prisma } from "@prisma/client";
+import { bugunTR } from "@tekirextra/shared";
 
 /**
  * PRS-21 (P3-4, karar 2026-10-04): çalışan self-servisi. Çalışan kendi
@@ -34,6 +38,26 @@ export const calisanIzinSemasi = z.object({
   aciklama: z.string().trim().max(500).optional().nullable(),
 });
 
+export const calisanAvansSemasi = z.object({
+  tutar: z.coerce.number().positive("Avans tutarı sıfırdan büyük olmalıdır").max(10_000_000),
+  aciklama: z.string().trim().max(500).optional().nullable(),
+});
+/** PRS-22: değişmesi istenen alanlar; boş bırakılan alan değişmez. IBAN TR biçiminde. */
+export const bilgiTalebiSemasi = z.object({
+  telefon: z.string().trim().max(30).optional(),
+  adres: z.string().trim().max(500).optional(),
+  iban: z.string().transform((d) => d.replace(/\s/g, "").toUpperCase()).pipe(z.string().regex(/^TR\d{24}$/, "Geçerli bir TR IBAN giriniz")).optional(),
+  aciklama: z.string().trim().max(500).optional().nullable(),
+}).refine((v) => Boolean(v.telefon || v.adres || v.iban), "En az bir alanı doldurun");
+export const bilgiRetSemasi = z.object({ neden: z.string().trim().min(3, "Ret nedeni en az 3 karakter olmalıdır").max(500) });
+
+type BilgiAlanlari = { telefon?: string; adres?: string; iban?: string };
+/** IBAN şifreli saklanır; ekranlarda maskeli gösterilir. */
+const alanlariGoster = (alanlar: Prisma.JsonValue) => {
+  const a = (alanlar ?? {}) as BilgiAlanlari;
+  return { ...(a.telefon !== undefined && { telefon: a.telefon }), ...(a.adres !== undefined && { adres: a.adres }), ...(a.iban !== undefined && { iban: ibanMaskele(a.iban) }) };
+};
+
 export const davetAdresi = (tenantId: string, anahtar: string) => `${(process.env.APP_URL ?? "http://localhost:3100").replace(/\/$/, "")}/davet/${tenantId}/${anahtar}`;
 
 @Injectable()
@@ -43,6 +67,7 @@ export class SelfServisService {
     private readonly eposta: EpostaService,
     private readonly pusula: BordroPusulaService,
     private readonly izin: IzinService,
+    private readonly personel: PersonelService,
   ) {}
 
   // ─── İK tarafı ───────────────────────────────────────────────────────────
@@ -195,5 +220,102 @@ export class SelfServisService {
     if (!n.count) throw new BadRequestException("Yalnız onay bekleyen kendi talebinizi geri çekebilirsiniz");
     return { geriCekildi: true };
   }
+
+  // ─── PRS-22: avans ve bilgi güncelleme talepleri ──────────────────────────
+
+  async avanslar(tenantId: string, userId: string) {
+    const personelId = await this.benimPersonelim(tenantId, userId);
+    return this.prisma.tenantIslem(tenantId, (tx) => tx.personelAvans.findMany({ where: { personelId }, orderBy: { tarih: "desc" }, select: { id: true, tutar: true, tarih: true, aciklama: true, durum: true, retNedeni: true, odenenTutar: true, mahsupEdilenTutar: true, kalanTutar: true } }));
+  }
+
+  /** Avans talebi İK'nın mevcut avans onayına düşer; aynı anda tek açık talep. */
+  async avansTalebi(tenantId: string, userId: string, girdi: unknown) {
+    const personelId = await this.benimPersonelim(tenantId, userId);
+    const veri = calisanAvansSemasi.parse(girdi);
+    const acik = await this.prisma.tenantIslem(tenantId, (tx) => tx.personelAvans.count({ where: { personelId, durum: "talep" } }));
+    if (acik) throw new BadRequestException("Onay bekleyen avans talebiniz var; karar verilince yenisini oluşturabilirsiniz");
+    const bugun = new Date(`${bugunTR()}T00:00:00.000Z`);
+    return this.personel.avansVer(tenantId, userId, { personelId, tutar: veri.tutar, tarih: bugun, aciklama: veri.aciklama || null });
+  }
+
+  async avansGeriCek(tenantId: string, userId: string, avansId: string) {
+    const personelId = await this.benimPersonelim(tenantId, userId);
+    const n = await this.prisma.tenantIslem(tenantId, (tx) => tx.personelAvans.updateMany({ where: { id: avansId, personelId, durum: "talep" }, data: { durum: "iptal" } }));
+    if (!n.count) throw new BadRequestException("Yalnız onay bekleyen kendi talebinizi geri çekebilirsiniz");
+    return { geriCekildi: true };
+  }
+
+  async bilgiTalepleri(tenantId: string, userId: string) {
+    const personelId = await this.benimPersonelim(tenantId, userId);
+    const liste = await this.prisma.tenantIslem(tenantId, (tx) => tx.personelBilgiTalebi.findMany({ where: { personelId }, orderBy: { createdAt: "desc" } }));
+    return liste.map((t) => ({ id: t.id, durum: t.durum, aciklama: t.aciklama, retNedeni: t.retNedeni, createdAt: t.createdAt, kararTarihi: t.kararTarihi, alanlar: alanlariGoster(t.alanlar) }));
+  }
+
+  async bilgiTalebi(tenantId: string, userId: string, girdi: unknown) {
+    const personelId = await this.benimPersonelim(tenantId, userId);
+    const v = bilgiTalebiSemasi.parse(girdi);
+    const alanlar: BilgiAlanlari = { ...(v.telefon && { telefon: v.telefon }), ...(v.adres && { adres: v.adres }), ...(v.iban && { iban: hassasSifrele(v.iban)! }) };
+    try {
+      const t = await this.prisma.tenantIslem(tenantId, (tx) => tx.personelBilgiTalebi.create({ data: { tenantId, personelId, alanlar, aciklama: v.aciklama || null, olusturanUserId: userId } }));
+      return { id: t.id, durum: t.durum, alanlar: alanlariGoster(t.alanlar) };
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") throw new BadRequestException("Onay bekleyen bilgi güncelleme talebiniz var; geri çekip yenisini oluşturabilirsiniz");
+      throw e;
+    }
+  }
+
+  async bilgiGeriCek(tenantId: string, userId: string, talepId: string) {
+    const personelId = await this.benimPersonelim(tenantId, userId);
+    const n = await this.prisma.tenantIslem(tenantId, (tx) => tx.personelBilgiTalebi.updateMany({ where: { id: talepId, personelId, durum: "bekliyor" }, data: { durum: "iptal" } }));
+    if (!n.count) throw new BadRequestException("Yalnız onay bekleyen kendi talebinizi geri çekebilirsiniz");
+    return { geriCekildi: true };
+  }
+
+  /** İK listesi: istenen değerin yanında kartta şu an kayıtlı değer (IBAN maskeli). */
+  async bilgiTalepleriIk(tenantId: string, durum = "bekliyor", personelId?: string) {
+    const liste = await this.prisma.tenantIslem(tenantId, (tx) => tx.personelBilgiTalebi.findMany({
+      where: { ...(durum !== "hepsi" && { durum }), ...(personelId && { personelId }) },
+      orderBy: { createdAt: "desc" }, take: 200,
+      include: { personel: { select: { id: true, personelNo: true, ad: true, soyad: true, telefon: true, adres: true, iban: true } } },
+    }));
+    return liste.map((t) => ({
+      id: t.id, durum: t.durum, aciklama: t.aciklama, retNedeni: t.retNedeni, createdAt: t.createdAt, kararTarihi: t.kararTarihi,
+      personel: { id: t.personel.id, personelNo: t.personel.personelNo, ad: t.personel.ad, soyad: t.personel.soyad },
+      istenen: alanlariGoster(t.alanlar),
+      mevcut: { telefon: t.personel.telefon, adres: t.personel.adres, iban: ibanMaskele(t.personel.iban) },
+    }));
+  }
+
+  /**
+   * Onay: talep önce sahiplenilir (çift onay olmaz), sonra alanlar personel
+   * güncellemesinden geçer (cari eşitleme, şifreleme, denetim kaydı orada);
+   * güncelleme düşerse talep yeniden beklemeye döner.
+   */
+  async bilgiOnayla(tenantId: string, talepId: string, userId: string) {
+    const t = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const talep = await tx.personelBilgiTalebi.findFirst({ where: { id: talepId, durum: "bekliyor" } });
+      if (!talep) throw new NotFoundException("Onay bekleyen talep bulunamadı");
+      if (talep.olusturanUserId === userId) throw new BadRequestException("Kendi bilgi güncelleme talebinizi onaylayamazsınız");
+      const n = await tx.personelBilgiTalebi.updateMany({ where: { id: talepId, durum: "bekliyor" }, data: { durum: "onaylandi", kararVerenUserId: userId, kararTarihi: new Date() } });
+      if (!n.count) throw new BadRequestException("Talep bu arada karara bağlandı");
+      return talep;
+    });
+    const a = (t.alanlar ?? {}) as BilgiAlanlari;
+    try {
+      await this.personel.guncelle(tenantId, t.personelId, { ...(a.telefon !== undefined && { telefon: a.telefon }), ...(a.adres !== undefined && { adres: a.adres }), ...(a.iban !== undefined && { iban: hassasCoz(a.iban) }) } as never, userId);
+    } catch (e) {
+      await this.prisma.tenantIslem(tenantId, (tx) => tx.personelBilgiTalebi.update({ where: { id: talepId }, data: { durum: "bekliyor", kararVerenUserId: null, kararTarihi: null } }));
+      throw e;
+    }
+    return { onaylandi: true };
+  }
+
+  async bilgiReddet(tenantId: string, talepId: string, userId: string, girdi: unknown) {
+    const { neden } = bilgiRetSemasi.parse(girdi);
+    const n = await this.prisma.tenantIslem(tenantId, (tx) => tx.personelBilgiTalebi.updateMany({ where: { id: talepId, durum: "bekliyor" }, data: { durum: "reddedildi", retNedeni: neden, kararVerenUserId: userId, kararTarihi: new Date() } }));
+    if (!n.count) throw new NotFoundException("Onay bekleyen talep bulunamadı");
+    return { reddedildi: true };
+  }
+
 }
 
