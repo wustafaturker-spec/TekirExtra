@@ -144,3 +144,14 @@ export const personelUcretSemasi = z.object({
   tutar: z.coerce.number().positive("Ücret sıfırdan büyük olmalıdır").max(100_000_000),
   neden: z.string().trim().max(250).optional().nullable(),
 });
+
+/** PRS-16: bordro toplu işlem. */
+export const bordroTopluSemasi = z.object({
+  islem: z.enum(["onaya_gonder", "onayla", "ode"]),
+  bordroIdler: z.array(z.string().uuid()).min(1, "En az bir bordro seçin").max(500),
+  kasaId: bosVeyaUuid,
+  bankaHesapId: bosVeyaUuid,
+  odemeTarihi: z.coerce.date().optional(),
+}).superRefine((g, ctx) => {
+  if (g.islem === "ode" && (!g.odemeTarihi || (!g.kasaId && !g.bankaHesapId) || (g.kasaId && g.bankaHesapId))) ctx.addIssue({ code: "custom", message: "Toplu ödemede ödeme tarihi ve tam olarak bir kasa ya da banka hesabı seçilmelidir" });
+});

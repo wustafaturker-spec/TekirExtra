@@ -15,6 +15,7 @@ import { bordroKalemOlusturSemasi } from "./personel.semalar";
 import { avansMahsupSemasi, avansOdeSemasi } from "./personel.semalar";
 import { hassasCoz, hassasSifrele, personelMaskele } from "./personel-hassas";
 import { metinNormalize } from "@tekirextra/shared";
+import { puantajOku, puantajSablonu } from "./puantaj-excel";
 import { bordroHesapla } from "./bordro-hesaplama";
 import { hesapOzetiTutari } from "./personel-rapor-yardimci";
 import { donemCalismaSemasi, personelUcretSemasi } from "./personel.semalar";
@@ -941,6 +942,70 @@ export class PersonelService {
       await tx.auditLog.create({ data: { tenantId, userId, islem: "personel_ucret_sil", varlik: "personel", varlikId: personelId, detay: { yururluk: kayit.yururlukTarihi.toISOString().slice(0, 10), tip: kayit.tip, tutar: kayit.tutar.toFixed(2) } } });
       return { silindi: true };
     });
+  }
+
+  /**
+   * PRS-16 (P2-7): seçilen bordrolara toplu onaya gönderme, onaylama ya da
+   * ödeme (kalan tutar). Her bordro tekil işlemin kurallarından geçer
+   * (hazırlayan onaylayamaz, dönem kilidi…); hata ötekileri durdurmaz.
+   */
+  async bordroToplu(tenantId: string, userId: string, girdi: { islem: "onaya_gonder" | "onayla" | "ode"; bordroIdler: string[]; kasaId?: string | null; bankaHesapId?: string | null; odemeTarihi?: Date }) {
+    const bordrolar = await this.prisma.tenantIslem(tenantId, (tx) => tx.personelBordro.findMany({ where: { tenantId, id: { in: girdi.bordroIdler } }, select: { id: true, kalanTutar: true, personel: { select: { personelNo: true, ad: true, soyad: true } } } }));
+    const atlananlar: { bordroId: string; personel: string; mesaj: string }[] = [];
+    let islenen = 0;
+    for (const b of bordrolar) {
+      try {
+        if (girdi.islem === "onaya_gonder") await this.bordroOnayaGonder(tenantId, b.id);
+        else if (girdi.islem === "onayla") await this.bordroOnayla(tenantId, b.id, userId);
+        else {
+          if (b.kalanTutar.lte(0)) throw new BadRequestException("Kalan tutar yok");
+          await this.bordroOde(tenantId, b.id, { kasaId: girdi.kasaId ?? null, bankaHesapId: girdi.bankaHesapId ?? null, odemeTarihi: girdi.odemeTarihi!, tutar: b.kalanTutar.toFixed(2) } as never);
+        }
+        islenen += 1;
+      } catch (hata) {
+        atlananlar.push({ bordroId: b.id, personel: `${b.personel.personelNo} ${b.personel.ad} ${b.personel.soyad}`, mesaj: hata instanceof Error ? hata.message : "İşlem yapılamadı" });
+      }
+    }
+    for (const id of girdi.bordroIdler) if (!bordrolar.some((b) => b.id === id)) atlananlar.push({ bordroId: id, personel: "—", mesaj: "Bordro bulunamadı" });
+    return { islenen, atlananlar };
+  }
+
+  /** PRS-16: dönemin puantaj şablonu (kapsamdaki personel + kayıtlı değerler). */
+  async puantajSablonuUret(tenantId: string, yil: number, ay: number) {
+    const liste = await this.donemCalismaListele(tenantId, yil, ay);
+    return puantajSablonu(yil, ay, liste.map((p) => {
+      const c = p.donemCalismalari[0];
+      return {
+        personelNo: p.personelNo, adSoyad: `${p.ad} ${p.soyad}`, istihdamGunu: p.istihdamGunu,
+        primGunu: c?.primGunu ?? p.onerilenPrimGunu, eksikGunNedeni: c ? c.eksikGunNedeni : p.onerilenEksikGunNedeni,
+        fazlaMesaiBrut: Number(c?.fazlaMesaiBrut ?? 0), primIkramiyeBrut: Number(c?.primIkramiyeBrut ?? 0), nakitYemekYardimi: Number(c?.nakitYemekYardimi ?? 0),
+        fiiliCalismaGunu: c?.fiiliCalismaGunu ?? 0, sahisSigortaPrimi: Number(c?.sahisSigortaPrimi ?? 0), hayatSigortaPrimi: Number(c?.hayatSigortaPrimi ?? 0),
+        sendikaAidati: Number(c?.sendikaAidati ?? 0), aciklama: c?.aciklama ?? null,
+      };
+    }));
+  }
+
+  /** PRS-16: Excel'den puantaj; her satır tekil kayıt kurallarından geçer, satır satır sonuç döner. */
+  async puantajIceAktar(tenantId: string, yil: number, ay: number, buffer: Buffer) {
+    const satirlar = await puantajOku(buffer);
+    if (!satirlar.length) throw new BadRequestException("Dosyada puantaj satırı bulunamadı");
+    const personeller = await this.prisma.tenantIslem(tenantId, (tx) => tx.personel.findMany({ where: { tenantId, personelNo: { in: satirlar.map((s) => s.personelNo) } }, select: { id: true, personelNo: true } }));
+    const harita = new Map(personeller.map((p) => [p.personelNo, p.id]));
+    const hatalar: { satir: number; personelNo: string; mesaj: string }[] = [];
+    let kaydedilen = 0;
+    for (const s of satirlar) {
+      const personelId = harita.get(s.personelNo);
+      if (!personelId) { hatalar.push({ satir: s.satir, personelNo: s.personelNo, mesaj: "Personel bulunamadı" }); continue; }
+      try {
+        const { satir: _s, personelNo: _n, ...alanlar } = s;
+        await this.donemCalismaKaydet(tenantId, donemCalismaSemasi.parse({ personelId, yil, ay, ...alanlar }));
+        kaydedilen += 1;
+      } catch (hata) {
+        const mesaj = hata instanceof z.ZodError ? hata.issues.map((i) => i.message).join("; ") : hata instanceof Error ? hata.message : "Kaydedilemedi";
+        hatalar.push({ satir: s.satir, personelNo: s.personelNo, mesaj });
+      }
+    }
+    return { kaydedilen, hatalar };
   }
 
   /**

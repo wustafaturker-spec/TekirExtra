@@ -1,4 +1,7 @@
-import { BadRequestException, Controller, Delete, Get, Post, Put, Body, Param, ParseUUIDPipe, Query } from "@nestjs/common";
+import { BadRequestException, Controller, Delete, Get, Post, Put, Body, Param, ParseUUIDPipe, Query, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import type { Response } from "express";
+import { excelDosyasiniDogrula, type YuklemeDosyasi } from "../core/guvenlik/dosya-dogrulama";
 import { PersonelService } from "./personel.service";
 import { 
   personelOlusturSemasi, 
@@ -13,7 +16,7 @@ import { bordroListeFiltreSemasi } from "./personel.semalar";
 import { bordroKalemOlusturSemasi } from "./personel.semalar";
 import { bordroOdemeIptalSemasi } from "./personel.semalar";
 import { avansMahsupSemasi, avansOdeSemasi, avansRetSemasi } from "./personel.semalar";
-import { donemCalismaSemasi, personelCariBaglaSemasi, personelUcretSemasi } from "./personel.semalar";
+import { bordroTopluSemasi, donemCalismaSemasi, personelCariBaglaSemasi, personelUcretSemasi } from "./personel.semalar";
 import { aktifBaglam } from "../core/istek-baglami";
 import { sayfaAdedi } from "../core/sayfalama";
 import { Roller } from "../auth/roller.decorator";
@@ -136,6 +139,32 @@ export class PersonelController {
     const { tenantId, userId } = aktifBaglam();
     const { neden } = bordroRetSemasi.parse(body);
     return this.personelService.bordroReddet(tenantId, bordroId, userId, neden);
+  }
+
+  @Post("bordrolar/toplu")
+  async bordroToplu(@Body() body: unknown) {
+    const { tenantId, userId } = aktifBaglam();
+    return this.personelService.bordroToplu(tenantId, userId, bordroTopluSemasi.parse(body));
+  }
+
+  @Get("calisma-gunleri/sablon")
+  async puantajSablonu(@Query("yil") yil: string, @Query("ay") ay: string, @Res() res: Response) {
+    const f = bordroListeFiltreSemasi.parse({ yil, ay });
+    if (!f.yil || !f.ay) throw new BadRequestException("Dönem için yıl ve ay zorunludur");
+    const buffer = await this.personelService.puantajSablonuUret(aktifBaglam().tenantId, f.yil, f.ay);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename=puantaj-${f.yil}-${String(f.ay).padStart(2, "0")}.xlsx`);
+    res.send(buffer);
+  }
+
+  @Post("calisma-gunleri/excel")
+  @UseInterceptors(FileInterceptor("dosya", { limits: { fileSize: 5 * 1024 * 1024, files: 1 } }))
+  async puantajIceAktar(@Query("yil") yil: string, @Query("ay") ay: string, @UploadedFile() dosya?: YuklemeDosyasi) {
+    const f = bordroListeFiltreSemasi.parse({ yil, ay });
+    if (!f.yil || !f.ay) throw new BadRequestException("Dönem için yıl ve ay zorunludur");
+    if (!dosya) throw new BadRequestException("Excel dosyası seçin");
+    excelDosyasiniDogrula(dosya);
+    return this.personelService.puantajIceAktar(aktifBaglam().tenantId, f.yil, f.ay, dosya.buffer);
   }
 
   @Post("bordrolar/:bordroId/yeniden-hesapla")
