@@ -1,4 +1,5 @@
-import { BadRequestException, Controller, Delete, Get, Post, Put, Body, Param, ParseUUIDPipe, Query, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { PersonelErisimGuard } from "./personel-erisim.guard";
+import { BadRequestException, Controller, Delete, Get, Post, Put, Body, Param, ParseUUIDPipe, Query, Res, UploadedFile, UseInterceptors, UseGuards } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { excelDosyasiniDogrula, type YuklemeDosyasi } from "../core/guvenlik/dosya-dogrulama";
@@ -22,7 +23,8 @@ import { sayfaAdedi } from "../core/sayfalama";
 import { Roller } from "../auth/roller.decorator";
 
 @Controller("personel")
-@Roller("muhasebe")
+@Roller("muhasebe", "ik")
+@UseGuards(PersonelErisimGuard)
 export class PersonelController {
   constructor(private readonly personelService: PersonelService) {}
 

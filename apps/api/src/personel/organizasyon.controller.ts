@@ -1,9 +1,11 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Put } from "@nestjs/common";
+import { PersonelErisimGuard } from "./personel-erisim.guard";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Put, UseGuards } from "@nestjs/common";
 import { Roller } from "../auth/roller.decorator";
 import { aktifBaglam } from "../core/istek-baglami";
 import { departmanGuncelleSemasi, departmanOlusturSemasi, isyeriGuncelleSemasi, isyeriOlusturSemasi, personelOrganizasyonAtaSemasi, pozisyonGuncelleSemasi, pozisyonOlusturSemasi } from "./organizasyon.semalar";
 import { OrganizasyonService } from "./organizasyon.service";
-@Controller("personel/organizasyon") @Roller("muhasebe")
+@Controller("personel/organizasyon") @Roller("muhasebe", "ik")
+@UseGuards(PersonelErisimGuard)
 export class OrganizasyonController {
   constructor(private readonly service: OrganizasyonService) {}
   @Get() agac() { return this.service.agac(aktifBaglam().tenantId); }

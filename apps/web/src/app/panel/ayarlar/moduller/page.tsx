@@ -30,6 +30,13 @@ interface ModulTanim {
 const HATIRLATMA_ALANLARI = "Kullanılabilir alanlar: {unvan} {firma} {toplam} {enEskiVade} {gecikmeGun} {faturaSayisi} {faturalar} — {faturalar} vadesi geçmiş belge tablosudur; metinde yoksa sona eklenir.";
 
 const MODUL_TANIM: Record<string, ModulTanim> = {
+  personel: {
+    baslik: "Personel ve İK",
+    ikon: "🧑‍💼",
+    alanlar: [
+      { ad: "maasMuhasebeyeAcik", etiket: "Maaş ve özlük verisi muhasebe rolüne açık", tip: "onay", ipucu: "Kapatılırsa İK ekranlarına yalnız yönetici ve İnsan Kaynakları rolü erişir (PRS-17)." },
+    ],
+  },
   arayuz: {
     baslik: "Arayüz",
     ikon: "🎨",

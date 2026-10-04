@@ -20,6 +20,8 @@ enum Rol {
   depo
   kalite
   maliyet_muhasebesi
+  /// PRS-17 (P2-8): insan kaynakları; İK modülüne erişir, finans ekranlarına erişmez.
+  ik
 }
 
 enum BaglantiAile {

@@ -141,3 +141,12 @@ registerModulAyar(
   }),
   { gunBaslangicSaati: "08:00", cumartesiIzinGunu: false },
 );
+
+registerModulAyar(
+  "personel",
+  z.object({
+    /// PRS-17 (P2-8): kapatılırsa İK ekranlarına yalnız yönetici ve İK rolü erişir.
+    maasMuhasebeyeAcik: z.boolean().default(true),
+  }),
+  { maasMuhasebeyeAcik: true },
+);

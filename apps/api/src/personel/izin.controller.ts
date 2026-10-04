@@ -1,11 +1,13 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query } from "@nestjs/common";
+import { PersonelErisimGuard } from "./personel-erisim.guard";
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { Roller } from "../auth/roller.decorator";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinBakiyeDuzeltSemasi, izinKararSemasi, izinRetSemasi, izinTalepOlusturSemasi, izinTuruOlusturSemasi, tatilGunuSemasi } from "./izin.semalar";
 import { IzinService } from "./izin.service";
 
 @Controller("personel/izinler")
-@Roller("muhasebe")
+@Roller("muhasebe", "ik")
+@UseGuards(PersonelErisimGuard)
 export class IzinController {
   constructor(private readonly service: IzinService) {}
   @Get("turler") turler() { return this.service.turleriListele(aktifBaglam().tenantId); }

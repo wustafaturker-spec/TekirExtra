@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Get, Param, ParseUUIDPipe, Post, Res } from "@nestjs/common";
+import { PersonelErisimGuard } from "./personel-erisim.guard";
+import { BadRequestException, Body, Controller, Get, Param, ParseUUIDPipe, Post, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
 import { z } from "zod";
 import { Roller } from "../auth/roller.decorator";
@@ -9,7 +10,8 @@ const topluSema = z.object({ yil: z.coerce.number().int().min(2020).max(2100), a
 
 /** PRS-10: ücret hesap pusulası (İş K. m.37). */
 @Controller("personel/pusulalar")
-@Roller("muhasebe")
+@Roller("muhasebe", "ik")
+@UseGuards(PersonelErisimGuard)
 export class BordroPusulaController {
   constructor(private readonly servis: BordroPusulaService) {}
 

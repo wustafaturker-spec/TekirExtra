@@ -24,6 +24,7 @@ const ROL_ADI: Record<string, string> = {
   depo: "Depo Sorumlusu",
   kalite: "Kalite Sorumlusu",
   maliyet_muhasebesi: "Maliyet Muhasebesi",
+  ik: "İnsan Kaynakları",
 };
 
 /**

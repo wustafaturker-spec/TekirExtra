@@ -1,5 +1,7 @@
-import { Body,Controller,Get,Param,Post,Query } from "@nestjs/common"; import { Roller } from "../auth/roller.decorator"; import { aktifBaglam } from "../core/istek-baglami"; import { bordroListeFiltreSemasi } from "./personel.semalar"; import { bordroHesaplamaSemasi, kabulSenaryosuSemasi, mevzuatSetiSemasi } from "./mevzuat.semalar"; import { MevzuatService } from "./mevzuat.service";
-@Controller("personel/mevzuat") @Roller("muhasebe") export class MevzuatController{constructor(private readonly service:MevzuatService){}
+import { PersonelErisimGuard } from "./personel-erisim.guard";
+import { Body,Controller,Get,Param,Post,Query, UseGuards } from "@nestjs/common"; import { Roller } from "../auth/roller.decorator"; import { aktifBaglam } from "../core/istek-baglami"; import { bordroListeFiltreSemasi } from "./personel.semalar"; import { bordroHesaplamaSemasi, kabulSenaryosuSemasi, mevzuatSetiSemasi } from "./mevzuat.semalar"; import { MevzuatService } from "./mevzuat.service";
+@Controller("personel/mevzuat") @Roller("muhasebe", "ik")
+@UseGuards(PersonelErisimGuard) export class MevzuatController{constructor(private readonly service:MevzuatService){}
 @Get() listele(){return this.service.listele(aktifBaglam().tenantId)}
 @Get("resmi") resmi(){return this.service.resmiListele(aktifBaglam().tenantId)}
 @Post("resmi/:kod/yukle") resmiYukle(@Param("kod")kod:string){const c=aktifBaglam();return this.service.resmiYukle(c.tenantId,c.userId,kod)}

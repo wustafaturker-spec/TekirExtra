@@ -8,6 +8,7 @@ const ROL_YOLLARI: Record<string, string[]> = {
   uretim_operatoru: ["/panel", "/panel/bildirimler", "/panel/satin-alma/talepler", "/panel/uretim", "/panel/ayarlar/hesap", "/panel/ayarlar/bildirimler"],
   depo: ["/panel", "/panel/bildirimler", "/panel/satin-alma/talepler", "/panel/uretim", "/panel/stok", "/panel/ayarlar/hesap", "/panel/ayarlar/bildirimler"],
   kalite: ["/panel", "/panel/bildirimler", "/panel/satin-alma/talepler", "/panel/uretim/kalite", "/panel/ayarlar/hesap", "/panel/ayarlar/bildirimler"],
+  ik: ["/panel", "/panel/bildirimler", "/panel/personel", "/panel/ayarlar/hesap", "/panel/ayarlar/bildirimler"],
   maliyet_muhasebesi: ["/panel", "/panel/bildirimler", "/panel/satin-alma/talepler", "/panel/uretim", "/panel/stok", "/panel/raporlar", "/panel/ayarlar/hesap", "/panel/ayarlar/bildirimler"],
 };
 

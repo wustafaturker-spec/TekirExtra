@@ -1,4 +1,4 @@
-export const ROLLER = ["yonetici", "muhasebe", "satis", "salt_okunur", "mali_musavir", "b2b_bayi", "uretim_planlama", "uretim_operatoru", "depo", "kalite", "maliyet_muhasebesi"] as const;
+export const ROLLER = ["yonetici", "muhasebe", "satis", "salt_okunur", "mali_musavir", "b2b_bayi", "uretim_planlama", "uretim_operatoru", "depo", "kalite", "maliyet_muhasebesi", "ik"] as const;
 export type Rol = (typeof ROLLER)[number];
 
 export const FATURA_DURUMLARI = ["taslak", "kesin", "iptal"] as const;

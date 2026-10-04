@@ -1,11 +1,13 @@
-import { BadRequestException, Controller, Get, Query, Res } from "@nestjs/common";
+import { PersonelErisimGuard } from "./personel-erisim.guard";
+import { BadRequestException, Controller, Get, Query, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
 import { Roller } from "../auth/roller.decorator";
 import { PersonelRaporService } from "./personel-rapor.service";
 import { bordroListeFiltreSemasi } from "./personel.semalar";
 
 @Controller("personel/raporlar")
-@Roller("muhasebe")
+@Roller("muhasebe", "ik")
+@UseGuards(PersonelErisimGuard)
 export class PersonelRaporController {
   constructor(private readonly service: PersonelRaporService) {}
   @Get("ozet") ozet() { return this.service.ozet(); }
