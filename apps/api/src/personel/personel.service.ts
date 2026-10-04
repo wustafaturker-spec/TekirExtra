@@ -14,6 +14,7 @@ import { Prisma } from "@prisma/client";
 import { bordroKalemOlusturSemasi } from "./personel.semalar";
 import { avansMahsupSemasi, avansOdeSemasi } from "./personel.semalar";
 import { hassasCoz, hassasSifrele, personelMaskele } from "./personel-hassas";
+import { metinNormalize } from "@tekirextra/shared";
 import { bordroHesapla } from "./bordro-hesaplama";
 import { hesapOzetiTutari } from "./personel-rapor-yardimci";
 import { donemCalismaSemasi, personelUcretSemasi } from "./personel.semalar";
@@ -54,24 +55,31 @@ const donemSonu = (yil: number, ay: number) => new Date(Date.UTC(yil, ay, 0));
 export class PersonelService {
   constructor(private readonly prisma: PrismaService, @Optional() private readonly donemKilidi?: DonemKilidiService) {}
 
-  async listele(tenantId: string, arama?: string) {
+  /**
+   * P2-3 (PRS-14): aksansız Türkçe arama (ad, soyad, personel no, departman,
+   * unvan) ve durum/departman süzgeci. `adet` verilirse sayfalı yanıt
+   * ({ kayitlar, sonrakiImlec, toplam }); verilmezse diğer ekranlar için dizi.
+   * KOBİ kadroları küçük olduğundan süzme bellekte yapılır.
+   */
+  async listele(tenantId: string, arama?: string, secenekler: { durum?: string; departmanId?: string; adet?: number; imlec?: string } = {}) {
+    const durumlar = ["taslak", "aktif", "askida", "uzun_sureli_izin", "isten_ayrildi"] as const;
+    const durum = durumlar.find((d) => d === secenekler.durum);
     const personeller = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.personel.findMany({
-        where: {
-          tenantId,
-          ...(arama ? {
-            OR: [
-              { ad: { contains: arama, mode: "insensitive" } },
-              { soyad: { contains: arama, mode: "insensitive" } },
-              { departman: { contains: arama, mode: "insensitive" } },
-            ]
-          } : {})
-        },
-        include: { cari: true },
-        orderBy: { ad: "asc" }
+        where: { tenantId, ...(durum ? { durum } : secenekler.durum === "calisan" ? { durum: { not: "isten_ayrildi" } } : {}), ...(secenekler.departmanId ? { departmanId: secenekler.departmanId } : {}) },
+        include: { cari: { select: { id: true, kod: true, unvan: true } } },
+        orderBy: [{ ad: "asc" }, { soyad: "asc" }, { id: "asc" }],
       })
     );
-    return personeller.map(personelMaskele);
+    const aranan = arama ? metinNormalize(arama) : "";
+    // Veritabanı harmanlaması Türkçe değil (Ç, İ, Ş yanlış yerde); sıra bellekte.
+    personeller.sort((x, y) => `${x.ad} ${x.soyad}`.localeCompare(`${y.ad} ${y.soyad}`, "tr") || x.id.localeCompare(y.id));
+    const suzulmus = aranan ? personeller.filter((p) => metinNormalize([p.ad, p.soyad, p.personelNo, p.departman, p.unvan].filter(Boolean).join(" ")).includes(aranan)) : personeller;
+    const maskeli = suzulmus.map(personelMaskele);
+    if (!secenekler.adet) return maskeli;
+    const bas = secenekler.imlec ? maskeli.findIndex((p) => p.id === secenekler.imlec) + 1 : 0;
+    const dilim = maskeli.slice(bas, bas + secenekler.adet);
+    return { kayitlar: dilim, sonrakiImlec: maskeli.length > bas + secenekler.adet ? dilim.at(-1)!.id : null, toplam: maskeli.length };
   }
 
   async getir(tenantId: string, id: string) {

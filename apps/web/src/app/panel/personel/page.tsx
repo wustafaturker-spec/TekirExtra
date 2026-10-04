@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { api, ApiHata } from "@/lib/api";
 import Link from "next/link";
 import { bugunTR } from "@tekirextra/shared";
@@ -29,6 +30,13 @@ export default function PersonelSayfasi() {
   const [personeller, setPersoneller] = useState<Personel[]>([]);
   const [yukleniyor, setYukleniyor] = useState(true);
   const [arama, setArama] = useState("");
+  /** PRS-14: durum/departman süzgeci ve 50'şer sayfalama (sunucuda, aksansız arama). */
+  const [durumSuzgeci, setDurumSuzgeci] = useState("");
+  const [departmanSuzgeci, setDepartmanSuzgeci] = useState("");
+  const [departmanlar, setDepartmanlar] = useState<{ id: string; ad: string }[]>([]);
+  const [sonrakiImlec, setSonrakiImlec] = useState<string | null>(null);
+  const [toplam, setToplam] = useState(0);
+  const router = useRouter();
   const [hata, setHata] = useState<string | null>(null);
   const [kaydediliyor, setKaydediliyor] = useState(false);
 
@@ -61,22 +69,28 @@ export default function PersonelSayfasi() {
     isten_ayrildi: "İşten ayrıldı",
   };
 
-  useEffect(() => {
-    const zamanlayici = window.setTimeout(() => { void fetchPersonel(); }, 350);
-    return () => window.clearTimeout(zamanlayici);
-  }, [arama]);
-
-  const fetchPersonel = async () => {
+  const fetchPersonel = useCallback(async (imlec?: string) => {
     try {
       setHata(null);
-      const data = await api<Personel[]>(`/personel?arama=${encodeURIComponent(arama)}`);
-      setPersoneller(data);
+      const q = new URLSearchParams({ adet: "50", ...(arama ? { arama } : {}), ...(durumSuzgeci ? { durum: durumSuzgeci } : {}), ...(departmanSuzgeci ? { departmanId: departmanSuzgeci } : {}), ...(imlec ? { imlec } : {}) });
+      const data = await api<{ kayitlar: Personel[]; sonrakiImlec: string | null; toplam: number }>(`/personel?${q.toString()}`);
+      setPersoneller((eski) => (imlec ? [...eski, ...data.kayitlar] : data.kayitlar));
+      setSonrakiImlec(data.sonrakiImlec); setToplam(data.toplam);
     } catch (e) {
       setHata(e instanceof Error ? e.message : "Personel listesi alınamadı");
     } finally {
       setYukleniyor(false);
     }
-  };
+  }, [arama, durumSuzgeci, departmanSuzgeci]);
+
+  useEffect(() => {
+    const zamanlayici = window.setTimeout(() => { void fetchPersonel(); }, 350);
+    return () => window.clearTimeout(zamanlayici);
+  }, [fetchPersonel]);
+
+  useEffect(() => {
+    api<{ departmanlar: { id: string; ad: string }[] }[]>("/personel/organizasyon").then((agac) => setDepartmanlar(agac.flatMap((i) => i.departmanlar))).catch(() => undefined);
+  }, []);
 
   const personelEkle = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -162,6 +176,12 @@ export default function PersonelSayfasi() {
           onChange={(e) => setArama(e.target.value)}
           className="hr-search"
         />
+        <select aria-label="Durum" value={durumSuzgeci} onChange={(e) => setDurumSuzgeci(e.target.value)} className="hr-search hr-search--secim">
+          <option value="">Tüm durumlar</option><option value="calisan">Çalışanlar</option><option value="aktif">Aktif</option><option value="askida">Askıda</option><option value="uzun_sureli_izin">Uzun süreli izin</option><option value="isten_ayrildi">İşten ayrılanlar</option>
+        </select>
+        {departmanlar.length > 0 && <select aria-label="Departman" value={departmanSuzgeci} onChange={(e) => setDepartmanSuzgeci(e.target.value)} className="hr-search hr-search--secim">
+          <option value="">Tüm departmanlar</option>{departmanlar.map((d) => <option key={d.id} value={d.id}>{d.ad}</option>)}
+        </select>}
         </div>
 
       {hata && (
@@ -175,7 +195,7 @@ export default function PersonelSayfasi() {
         {yukleniyor ? (
           <div className="p-8 text-center text-slate-500">Yükleniyor...</div>
         ) : personeller.length === 0 ? (
-          <div className="p-8 text-center text-slate-500">Henüz personel kaydı bulunmuyor.</div>
+          <div className="p-8 text-center text-slate-500">{arama || durumSuzgeci || departmanSuzgeci ? "Süzgece uyan personel yok." : "Henüz personel kaydı bulunmuyor."}</div>
         ) : (
           <table className="w-full text-left text-sm text-slate-700">
             <thead className="bg-slate-50 border-b font-semibold text-slate-600">
@@ -184,14 +204,14 @@ export default function PersonelSayfasi() {
                 <th className="p-4">Personel No</th>
                 <th className="p-4">Departman / Unvan</th>
                 <th className="p-4">Çalışma Tipi</th>
-                <th className="p-4">Net Maaş</th>
+                <th className="p-4">Ücret</th>
                 <th className="p-4">Cari Hesap</th>
                 <th className="p-4 text-right">Durum</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {personeller.map((p) => (
-                <tr key={p.id} className="hover:bg-slate-50 transition">
+                <tr key={p.id} className="hr-satir-link hover:bg-slate-50 transition" tabIndex={0} onClick={() => router.push(`/panel/personel/${p.id}`)} onKeyDown={(e) => { if (e.key === "Enter") router.push(`/panel/personel/${p.id}`); }}>
                   <td className="p-4 font-medium text-slate-900">
                     <Link href={`/panel/personel/${p.id}`} className="hover:text-orange-700 hover:underline">
                       {p.ad} {p.soyad}
@@ -204,7 +224,7 @@ export default function PersonelSayfasi() {
                       {p.calismaTipi === "tam_zamanli" ? "Tam Zamanlı" : p.calismaTipi === "yari_zamanli" ? "Yarı Zamanlı" : "Sözleşmeli"}
                     </span>
                   </td>
-                  <td className="p-4 font-semibold text-slate-900">{Number(p.netMaas).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ₺</td>
+                  <td className="p-4 font-semibold text-slate-900">{Number(p.brutMaas ?? p.netMaas).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ₺ <small className="font-normal text-slate-500">{p.brutMaas ? "brüt" : "net"}</small></td>
                   <td className="p-4 text-xs font-mono text-slate-500">{p.cari ? p.cari.kod : "-"}</td>
                   <td className="p-4 text-right">
                     <span className={`px-2 py-0.5 rounded text-xs ${p.aktif ? "bg-green-100 text-green-800" : "bg-slate-100 text-slate-600"}`}>
@@ -216,6 +236,7 @@ export default function PersonelSayfasi() {
             </tbody>
           </table>
         )}
+        {!yukleniyor && personeller.length > 0 && <div className="hr-liste-alt"><span>{personeller.length} / {toplam} personel</span>{sonrakiImlec && <button type="button" onClick={() => void fetchPersonel(sonrakiImlec)} className="hr-button">Daha fazla yükle</button>}</div>}
       </div>
       </section>
 

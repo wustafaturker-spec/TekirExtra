@@ -15,6 +15,7 @@ import { bordroOdemeIptalSemasi } from "./personel.semalar";
 import { avansMahsupSemasi, avansOdeSemasi, avansRetSemasi } from "./personel.semalar";
 import { donemCalismaSemasi, personelCariBaglaSemasi, personelUcretSemasi } from "./personel.semalar";
 import { aktifBaglam } from "../core/istek-baglami";
+import { sayfaAdedi } from "../core/sayfalama";
 import { Roller } from "../auth/roller.decorator";
 
 @Controller("personel")
@@ -23,9 +24,10 @@ export class PersonelController {
   constructor(private readonly personelService: PersonelService) {}
 
   @Get()
-  async listele(@Query("arama") arama?: string) {
+  async listele(@Query("arama") arama?: string, @Query("durum") durum?: string, @Query("departmanId") departmanId?: string, @Query("adet") adet?: string, @Query("imlec") imlec?: string) {
     const { tenantId } = aktifBaglam();
-    return this.personelService.listele(tenantId, arama);
+    if (departmanId && !/^[0-9a-f-]{36}$/i.test(departmanId)) throw new BadRequestException("Geçersiz departman");
+    return this.personelService.listele(tenantId, arama, { durum, departmanId, adet: adet ? sayfaAdedi(adet) : undefined, imlec });
   }
 
   @Get("bordrolar")
