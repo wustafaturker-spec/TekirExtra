@@ -17,12 +17,16 @@ export const MUHASEBE_HESAPLARI = {
   mal_alis: { kod: "153", ad: "Ticari mallar" },
   indirilecek_kdv: { kod: "191", ad: "İndirilecek KDV" },
   pesin_vergi: { kod: "193", ad: "Peşin ödenen vergiler (gelir stopajı)" },
+  personel_avans: { kod: "196", ad: "Personel avansları" },
   kisa_vadeli_kredi: { kod: "300", ad: "Banka kredileri (kısa vadeli)" },
   kredi_karti: { kod: "309", ad: "Diğer mali borçlar (kredi kartı)" },
   satici: { kod: "320", ad: "Satıcılar" },
   borc_senedi: { kod: "321", ad: "Borç senetleri" },
   diger_ticari_borc: { kod: "329", ad: "Diğer ticari borçlar (carisiz masraf)" },
-  odenecek_vergi: { kod: "360", ad: "Ödenecek vergi ve fonlar (KDV tevkifatı, stopaj)" },
+  personel_borc: { kod: "335", ad: "Personele borçlar (net ücret)" },
+  diger_cesitli_borc: { kod: "336", ad: "Diğer çeşitli borçlar (bordro kesintileri: sendika, sigorta)" },
+  odenecek_vergi: { kod: "360", ad: "Ödenecek vergi ve fonlar (KDV tevkifatı, stopaj, bordro GV/DV)" },
+  odenecek_sgk: { kod: "361", ad: "Ödenecek sosyal güvenlik kesintileri (SGK, işsizlik)" },
   hesaplanan_kdv: { kod: "391", ad: "Hesaplanan KDV" },
   uzun_vadeli_kredi: { kod: "400", ad: "Banka kredileri (uzun vadeli)" },
   yurtici_satis: { kod: "600", ad: "Yurtiçi satışlar" },
@@ -35,6 +39,8 @@ export const MUHASEBE_HESAPLARI = {
   cari_duzeltme_gider: { kod: "689", ad: "Diğer olağandışı gider ve zararlar (cari düzeltme, alacak yönlü)" },
   pazaryeri_kesinti: { kod: "760", ad: "Pazarlama satış ve dağıtım giderleri (pazaryeri kesintisi)" },
   hizmet_alis: { kod: "770", ad: "Genel yönetim giderleri (hizmet alımı, kategorisiz masraf)" },
+  ucret_gideri: { kod: "770", ad: "Ücret giderleri (brüt ücret, izin ücreti, işveren SGK/işsizlik payı)" },
+  tazminat_gideri: { kod: "770", ad: "Kıdem ve ihbar tazminatı giderleri" },
 } as const;
 
 export type MuhasebeHesapAnahtari = keyof typeof MUHASEBE_HESAPLARI;

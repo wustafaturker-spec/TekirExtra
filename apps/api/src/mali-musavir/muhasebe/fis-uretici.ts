@@ -26,7 +26,7 @@ export interface FisSatiri {
 }
 
 export interface Kaynak {
-  tur: "fatura" | "hareket" | "masraf" | "gelir" | "cek" | "kart" | "doviz_islem" | "cari_hareket";
+  tur: "fatura" | "hareket" | "masraf" | "gelir" | "cek" | "kart" | "doviz_islem" | "cari_hareket" | "bordro";
   id: string;
   etiket: string;
 }
@@ -103,6 +103,18 @@ export interface CariDuzeltmeGirdisi {
   aciklama: string | null; karsiHesapKodu: string | null;
 }
 
+/**
+ * PRS-19 (P3-1): onaylı bordronun tahakkuk fişi; tarih dönem sonu (cari
+ * tahakkukla aynı). Tutarlar bordroda saklanan kalem ve hesap özetinden okunur.
+ */
+export interface BordroGirdisi {
+  id: string; tarih: string; donem: string; personelNo: string; adSoyad: string;
+  odenecekTutar: Prisma.Decimal;
+  kalemler: Array<{ tip: "kazanc" | "kesinti"; kod: string | null; aciklama: string; tutar: Prisma.Decimal }>;
+  /** Mevzuatla hesaplanmamış bordroda null (işveren payı yok). */
+  isverenPayi: { sgk: Prisma.Decimal; issizlik: Prisma.Decimal } | null;
+}
+
 export interface UreticiGirdisi {
   hesapKodlari: Partial<Record<MuhasebeHesapAnahtari, string>>;
   cariler: Map<string, CariBilgi>;
@@ -123,6 +135,9 @@ export interface UreticiGirdisi {
   dovizIslemleri: DovizIslemGirdisi[];
   /** Eski çağıranlar için isteğe bağlı. */
   cariDuzeltmeleri?: CariDuzeltmeGirdisi[];
+  /** PRS-19: onaylı bordrolar ve personel carisi → personel no (335/196 alt hesabı). */
+  bordrolar?: BordroGirdisi[];
+  personelCarileri?: Map<string, string>;
   baslangic: string;
   bitis: string;
 }
@@ -152,6 +167,12 @@ export class HesapCozucu {
       return kayitli;
     }
     return `${ana}.01.${cari.kod}`;
+  }
+
+  /** PRS-19: personel alt hesabı, ör. 335.01.PRS-000005 / 196.01.PRS-000005. */
+  personel(anahtar: "personel_borc" | "personel_avans", personelNo: string | undefined): string {
+    const ana = this.kod(anahtar);
+    return personelNo ? `${ana}.01.${personelNo}` : ana;
   }
 
   hesap(tur: HesapBilgi["tur"], id: string): string {
@@ -344,6 +365,9 @@ function hareketKarsisi(h: HareketGirdisi, g: UreticiGirdisi, c: HesapCozucu): K
   if (cek) return { kod: cekHesapKodu(cek, c) };
   if (h.kaynakTur === "kredi_karti_ekstre" && h.kartId) return { kod: c.hesap("kart", h.kartId) };
   if (h.kaynakTur === "pazaryeri_kesinti") return { kod: c.kod("pazaryeri_kesinti") };
+  // PRS-19: maaş ödemesi 335'i, avans ödemesi 196'yı kapatır; iptalleri aynı hesabın tersidir.
+  if (h.kaynakTur === "personel_maas" || h.kaynakTur === "personel_maas_iptal") return { kod: c.personel("personel_borc", h.cariId ? g.personelCarileri?.get(h.cariId) : undefined) };
+  if (h.kaynakTur === "personel_avans" || h.kaynakTur === "personel_avans_iptal") return { kod: c.personel("personel_avans", h.cariId ? g.personelCarileri?.get(h.cariId) : undefined) };
   if (h.cariId) {
     // Bağlı faturanın yönü önceliklidir; yoksa cari tipi, ikisi de olan caride hareket yönü.
     const faturaTarafi = h.faturaTipi ? (h.faturaTipi === "satis" || h.faturaTipi === "alis_iade" ? "alici" : "satici") : null;
@@ -483,6 +507,46 @@ function cariDuzeltmeFisi(h: CariDuzeltmeGirdisi, c: HesapCozucu): Fis {
   return { tarih: h.tarih, tur: "mahsup", aciklama: `Cari düzeltme ${aciklama}`, belgeNo: null, kaynak, satirlar };
 }
 
+const SGK_KESINTILERI = new Set(["sgk_isci", "issizlik_isci"]);
+const VERGI_KESINTILERI = new Set(["gelir_vergisi", "damga_vergisi"]);
+const TAZMINATLAR = new Set(["kidem_tazminati", "ihbar_tazminati"]);
+
+/**
+ * PRS-19: B ücret gideri (kazançlar + işveren SGK/işsizlik), B tazminat gideri
+ * (kıdem, ihbar) / A 361 (işçi + işveren SGK ve işsizlik), A 360 (GV + DV),
+ * A 196 (avans mahsubu), A 649 (işçinin ihbar borcu), A 336 (diğer kesintiler),
+ * A 335 net ödenecek (fark satırı; bordronun ödenecek tutarıyla tutmazsa kontrol).
+ */
+function bordroFisi(b: BordroGirdisi, c: HesapCozucu, kontroller: Kontrol[]): Fis {
+  const kaynak: Kaynak = { tur: "bordro", id: b.id, etiket: `Bordro ${b.donem} ${b.adSoyad}` };
+  const topla = (f: (k: BordroGirdisi["kalemler"][number]) => boolean) => b.kalemler.filter(f).reduce((t, k) => t.add(k.tutar), SIFIR);
+  const kazanc = (k: BordroGirdisi["kalemler"][number]) => k.tip === "kazanc";
+  const kesinti = (k: BordroGirdisi["kalemler"][number]) => k.tip === "kesinti";
+  const ucret = topla((k) => kazanc(k) && !TAZMINATLAR.has(k.kod ?? ""));
+  const tazminat = topla((k) => kazanc(k) && TAZMINATLAR.has(k.kod ?? ""));
+  const isveren = b.isverenPayi ? b.isverenPayi.sgk.add(b.isverenPayi.issizlik) : SIFIR;
+  const sgk = topla((k) => kesinti(k) && SGK_KESINTILERI.has(k.kod ?? "")).add(isveren);
+  const vergi = topla((k) => kesinti(k) && VERGI_KESINTILERI.has(k.kod ?? ""));
+  const avans = topla((k) => kesinti(k) && k.kod === "avans_mahsup");
+  const ihbarBorcu = topla((k) => kesinti(k) && k.kod === "ihbar_kesintisi");
+  const diger = topla((k) => kesinti(k) && !SGK_KESINTILERI.has(k.kod ?? "") && !VERGI_KESINTILERI.has(k.kod ?? "") && k.kod !== "avans_mahsup" && k.kod !== "ihbar_kesintisi");
+  const net = ucret.add(tazminat).add(isveren).sub(sgk).sub(vergi).sub(avans).sub(ihbarBorcu).sub(diger);
+  if (net.sub(b.odenecekTutar).abs().gt(YUVARLAMA_SINIRI)) kontroller.push({ kaynak, mesaj: `Bordro kalemlerinden çıkan net (${net.toFixed(2)}) ödenecek tutarla (${b.odenecekTutar.toFixed(2)}) tutmuyor` });
+  const ad = `${b.adSoyad} ${b.donem}`;
+  const satirlar = [
+    borc(c.kod("ucret_gideri"), `${ad} brüt ücret ve ek ödemeler`, ucret),
+    borc(c.kod("ucret_gideri"), `${ad} işveren SGK ve işsizlik payı`, isveren),
+    borc(c.kod("tazminat_gideri"), `${ad} kıdem ve ihbar tazminatı`, tazminat),
+    alacak(c.kod("odenecek_sgk"), `${ad} SGK ve işsizlik primleri`, sgk),
+    alacak(c.kod("odenecek_vergi"), `${ad} gelir ve damga vergisi`, vergi),
+    alacak(c.personel("personel_avans", b.personelNo), `${ad} avans mahsubu`, avans),
+    alacak(c.kod("diger_gelir"), `${ad} ihbar önelsiz ayrılış`, ihbarBorcu),
+    alacak(c.kod("diger_cesitli_borc"), `${ad} diğer kesintiler`, diger),
+    alacak(c.personel("personel_borc", b.personelNo), `${ad} net ödenecek`, net),
+  ].filter(sifirDegil);
+  return { tarih: b.tarih, tur: "mahsup", aciklama: `Bordro tahakkuku ${ad}`, belgeNo: null, kaynak, satirlar };
+}
+
 // ─── Giriş noktası ────────────────────────────────────────────────────────
 
 export function fisleriUret(g: UreticiGirdisi): { fisler: Fis[]; kontroller: Kontrol[] } {
@@ -502,7 +566,8 @@ export function fisleriUret(g: UreticiGirdisi): { fisler: Fis[]; kontroller: Kon
   for (const k of g.kartHareketleri) ekle(kartFisi(k, g, c, kontroller));
   for (const d of g.dovizIslemleri) ekle(dovizIslemFisi(d, c, kontroller));
   for (const h of g.cariDuzeltmeleri ?? []) ekle(cariDuzeltmeFisi(h, c));
-  const sira: Record<Kaynak["tur"], number> = { fatura: 0, masraf: 1, gelir: 2, cek: 3, kart: 4, doviz_islem: 5, cari_hareket: 6, hareket: 7 };
+  for (const b of g.bordrolar ?? []) ekle(bordroFisi(b, c, kontroller));
+  const sira: Record<Kaynak["tur"], number> = { fatura: 0, masraf: 1, gelir: 2, cek: 3, kart: 4, doviz_islem: 5, cari_hareket: 6, bordro: 7, hareket: 8 };
   fisler.sort((a, b) => a.tarih.localeCompare(b.tarih) || sira[a.kaynak.tur] - sira[b.kaynak.tur] || (a.belgeNo ?? "").localeCompare(b.belgeNo ?? ""));
   return { fisler, kontroller };
 }

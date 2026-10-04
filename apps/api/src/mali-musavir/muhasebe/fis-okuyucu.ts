@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import type { MuhasebeHesapAnahtari } from "@tekirextra/shared";
 import type {
+  BordroGirdisi,
   CariBilgi,
   CariDuzeltmeGirdisi,
   CekGirdisi,
@@ -24,7 +25,8 @@ import type {
 const gun = (t: Date) => t.toISOString().slice(0, 10);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Maaş bordro programından gelir; açılış fişi muhasebede ayrıca açılır (MUH-01). */
-const KAPSAM_DISI_HAREKET = ["acilis", "personel_maas", "personel_maas_iptal", "personel_avans", "personel_avans_iptal"];
+/** PRS-19: maaş ve avans hareketleri artık fişlenir (335/196); yalnız açılış kapsam dışı. */
+const KAPSAM_DISI_HAREKET = ["acilis"];
 
 type Tx = Prisma.TransactionClient;
 type HesapRef = { tur: "kasa" | "banka" | "pos"; id: string } | null;
@@ -57,6 +59,17 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
   ]);
   // CARI-28: elle cari düzeltmesi fişlenir; açılış bakiyesi (acilis) fişlenmez.
   const cariDuzeltmeleri = await tx.cariHareket.findMany({ where: { tarih: aralik, kaynakTur: "manuel" }, orderBy: { tarih: "asc" } });
+  // PRS-19: onaylı bordrolar (tahakkuk tarihi dönem sonu) ve personel carileri.
+  const personeller = await tx.personel.findMany({ select: { personelNo: true, cariId: true } });
+  const donemler: Array<{ donemYil: number; donemAy: number }> = [];
+  for (let t = new Date(Date.UTC(aralik.gte.getUTCFullYear(), aralik.gte.getUTCMonth(), 1)); t <= aralik.lte; t = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 1))) {
+    const son = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0));
+    if (son >= aralik.gte && son <= aralik.lte) donemler.push({ donemYil: t.getUTCFullYear(), donemAy: t.getUTCMonth() + 1 });
+  }
+  const bordrolar = donemler.length ? await tx.personelBordro.findMany({
+    where: { durum: { in: ["onaylandi", "kismen_odendi", "odendi"] }, OR: donemler },
+    select: { id: true, donemYil: true, donemAy: true, odenecekTutar: true, hesapOzeti: true, personel: { select: { personelNo: true, ad: true, soyad: true } }, kalemler: { select: { tip: true, kod: true, aciklama: true, tutar: true } } },
+  }) : [];
 
   const hesaplar = new Map<string, HesapBilgi>();
   const hesapEkle = (tur: HesapBilgi["tur"], liste: Array<{ id: string; ad: string; dovizCinsi: string; muhasebeKodu: string | null }>) =>
@@ -204,6 +217,16 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
       id: h.id, cariId: h.cariId, tip: h.tip, tarih: gun(h.tarih), tutar: h.tutar, dovizCinsi: h.dovizCinsi, kur: h.kur, tutarTry: h.tutarTry,
       aciklama: h.aciklama, karsiHesapKodu: h.karsiHesapKodu,
     })),
+    bordrolar: bordrolar.map((b): BordroGirdisi => {
+      const ozet = b.hesapOzeti && typeof b.hesapOzeti === "object" && !Array.isArray(b.hesapOzeti) ? (b.hesapOzeti as Record<string, unknown>) : null;
+      return {
+        id: b.id, tarih: gun(new Date(Date.UTC(b.donemYil, b.donemAy, 0))), donem: `${b.donemYil}/${String(b.donemAy).padStart(2, "0")}`,
+        personelNo: b.personel.personelNo, adSoyad: `${b.personel.ad} ${b.personel.soyad}`, odenecekTutar: b.odenecekTutar,
+        kalemler: b.kalemler.map((k) => ({ tip: k.tip as "kazanc" | "kesinti", kod: k.kod, aciklama: k.aciklama, tutar: k.tutar })),
+        isverenPayi: ozet ? { sgk: new Prisma.Decimal(String(ozet.isverenSgkNet ?? 0)), issizlik: new Prisma.Decimal(String(ozet.isverenIssizlik ?? 0)) } : null,
+      };
+    }),
+    personelCarileri: new Map(personeller.filter((p) => p.cariId).map((p) => [p.cariId!, p.personelNo])),
     baslangic,
     bitis,
   };
