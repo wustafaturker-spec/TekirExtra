@@ -45,6 +45,7 @@ SGK tavanını, oranları ve vergi dilimlerini kendisinin girmesi gerekiyor.
 | Madde | Durum |
 |---|---|
 | P0-1, P0-6 | ✅ 2026-10-04 — PRS-01 (banka dosyası: çözülmüş TCKN/IBAN, `onaylandi`+`kismen_odendi` ve kalan tutar, IBAN'sız personel varsa dosya üretilmez, UTF-8 BOM, `HASSAS_VERI_TOPLU_DISA_AKTAR` denetim kaydı, sahte banka biçimleri kaldırıldı; detayda düzenleme penceresi, bağlı cari eşitlenir, giriş tarihi açık istihdam dönemine yazılır, `personel_guncelle` denetim kaydında değişen alanlar ve ücretin eski/yeni değeri) |
+| P0-3, P0-4 | ✅ 2026-10-04 — PRS-02 (karar: takvim günü, tam ay 30; çıkış günü dahil; askıda/uzun süreli izin tahakkuka girer, puantajla düşülür. Tahakkuk ve puantaj kapsamı dönemle kesişen istihdam dönemlerinden, yalnız taslak hariç; varsayılan prim günü istihdam günü; puantajda gün istihdam gününü aşamaz, eksik gün nedeni yalnız istihdam içi eksikte istenir. `tahakkuk-kapsami.ts`) |
 
 ## 2. Öncelik sınıfları
 
@@ -179,6 +180,12 @@ puantaj ayrı ekranda elle giriliyor. Aynı bilgi iki yerde, tutarsızlığa aç
 `avansOde` (`personel.service.ts:666`) kasa/banka fişine `kaynakRef` yazmıyor; ödenmiş avansı geri alma ucu yok.
 Yanlış kasadan ödenen avans düzeltilemez, muhasebe/denetimde fiş avansa bağlanamaz.
 **Öneri:** `kaynakRef = avans.id`, bordro ödemesindeki gibi ters kayıtlı "ödemeyi iptal et" (mahsup edilmemişse).
+
+### P1-11 Puantaj ekranı yemek yardımını sıfırlıyor (ek bulgu, PRS-02 sırasında)
+`bordrolar/calisma-gunleri/page.tsx`: nakit yemek yardımı ve fiilî çalışma günü alanları ekranda yok; kaydet
+bu iki alanı göndermediği için API varsayılanı (0) yazılıyor. API'den girilmiş yemek yardımı ekrandan herhangi bir
+düzeltmede silinir; özellik ekrandan kullanılamaz.
+**Öneri:** İki sütun eklensin (yemekte fiilî gün zorunlu kuralı zaten şemada).
 
 ## 5. P2 — Verimlilik, raporlama ve tutarlılık
 

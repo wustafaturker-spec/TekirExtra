@@ -17,6 +17,7 @@ import { bordroHesapla } from "./bordro-hesaplama";
 import { hesapOzetiTutari } from "./personel-rapor-yardimci";
 import { donemCalismaSemasi } from "./personel.semalar";
 import { sgkDevirleriniDonemeTasi, type SgkMatrahDevirKalemi } from "./sgk-matrah-devri";
+import { istihdamGunu, tahakkukKapsamiKosulu } from "./tahakkuk-kapsami";
 
 const PERSONEL_GUVENLI_SECIM = { id: true, personelNo: true, ad: true, soyad: true, departman: true, unvan: true, calismaTipi: true, durum: true, netMaas: true, brutMaas: true, engellilikDerecesi: true, sgkTesvikOrani: true, cariId: true } as const;
 
@@ -88,15 +89,26 @@ export class PersonelService {
     }));
   }
 
+  /** PRS-02: dönemle kesişen istihdamı olan herkes; `istihdamGunu` puantajın varsayılan prim günüdür. */
   async donemCalismaListele(tenantId: string, yil: number, ay: number) {
-    return this.prisma.tenantIslem(tenantId, (tx) => tx.personel.findMany({ where: { tenantId, durum: "aktif" }, select: { id: true, personelNo: true, ad: true, soyad: true, sgkTesvikOrani: true, donemCalismalari: { where: { yil, ay }, take: 1 } }, orderBy: { ad: "asc" } }));
+    const personeller = await this.prisma.tenantIslem(tenantId, (tx) => tx.personel.findMany({
+      where: tahakkukKapsamiKosulu(tenantId, yil, ay),
+      select: { id: true, personelNo: true, ad: true, soyad: true, durum: true, sgkTesvikOrani: true, donemCalismalari: { where: { yil, ay }, take: 1 }, istihdamDonemleri: { select: { baslangicTarihi: true, bitisTarihi: true } } },
+      orderBy: { ad: "asc" },
+    }));
+    return personeller.map(({ istihdamDonemleri, ...p }) => ({ ...p, istihdamGunu: istihdamGunu(istihdamDonemleri, yil, ay) }));
   }
 
   async donemCalismaKaydet(tenantId: string, girdi: z.infer<typeof donemCalismaSemasi>) {
     const v = donemCalismaSemasi.parse(girdi);
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const personel = await tx.personel.findFirst({ where: { id: v.personelId, tenantId, durum: "aktif" }, select: { id: true } });
-      if (!personel) throw new NotFoundException("Aktif personel bulunamadı");
+      const personel = await tx.personel.findFirst({ where: { id: v.personelId, ...tahakkukKapsamiKosulu(tenantId, v.yil, v.ay) }, select: { id: true, istihdamDonemleri: { select: { baslangicTarihi: true, bitisTarihi: true } } } });
+      if (!personel) throw new NotFoundException("Personelin bu dönemde istihdamı yok");
+      // Eksik gün nedeni istihdam içinde çalışılmayan gün içindir; ay içi giriş/çıkış günleri neden istemez.
+      const gun = istihdamGunu(personel.istihdamDonemleri, v.yil, v.ay);
+      if (v.primGunu > gun) throw new BadRequestException(`Prim günü bu dönemdeki istihdam gününü (${gun}) aşamaz`);
+      if (v.primGunu < gun && !v.eksikGunNedeni) throw new BadRequestException(`İstihdam günü ${gun}; daha az bildirimde eksik gün nedeni zorunludur`);
+      if (v.primGunu === gun && v.eksikGunNedeni) throw new BadRequestException("İstihdam süresinin tamamında çalışmada eksik gün nedeni seçilemez");
       const bordro = await tx.personelBordro.findUnique({ where: { tenantId_personelId_donemYil_donemAy: { tenantId, personelId: v.personelId, donemYil: v.yil, donemAy: v.ay } }, select: { id: true } });
       if (bordro) throw new BadRequestException("Tahakkuk oluşturulduktan sonra çalışma günü değiştirilemez");
       return tx.personelDonemCalisma.upsert({ where: { tenantId_personelId_yil_ay: { tenantId, personelId: v.personelId, yil: v.yil, ay: v.ay } }, create: { tenantId, ...v }, update: { primGunu: v.primGunu, eksikGunNedeni: v.eksikGunNedeni ?? null, aciklama: v.aciklama ?? null, sgkTesvikOrani: v.sgkTesvikOrani ?? null, sahisSigortaPrimi:v.sahisSigortaPrimi, hayatSigortaPrimi:v.hayatSigortaPrimi, sendikaAidati:v.sendikaAidati, fazlaMesaiBrut:v.fazlaMesaiBrut, primIkramiyeBrut:v.primIkramiyeBrut, nakitYemekYardimi:v.nakitYemekYardimi, fiiliCalismaGunu:v.fiiliCalismaGunu } });
@@ -318,17 +330,12 @@ export class PersonelService {
   async bordroTopluTahakkuk(tenantId: string, userId: string, girdi: z.infer<typeof bordroTahakkukSemasi>) {
     const { donemYil, donemAy } = bordroTahakkukSemasi.parse(girdi);
     const donemBaslangici = new Date(Date.UTC(donemYil, donemAy - 1, 1));
-    const donemSonu = new Date(Date.UTC(donemYil, donemAy, 0));
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      // PRS-02: dönemle kesişen istihdamı olan herkes (çıkış ayı, askıda, uzun süreli izin dahil).
       const aktifPersoneller = await tx.personel.findMany({
-        where: {
-          tenantId,
-          aktif: true,
-          durum: "aktif",
-          girisTarihi: { lte: donemSonu },
-          OR: [{ cikisTarihi: null }, { cikisTarihi: { gte: donemBaslangici } }],
-        }
+        where: tahakkukKapsamiKosulu(tenantId, donemYil, donemAy),
+        include: { istihdamDonemleri: { select: { baslangicTarihi: true, bitisTarihi: true } } },
       });
 
       let olusturulanSayi = 0;
@@ -352,7 +359,7 @@ export class PersonelService {
         });
 
         if (!mevcut) {
-          const calisma = calismaHaritasi.get(p.id); const primGunu = calisma?.primGunu ?? 30;
+          const calisma = calismaHaritasi.get(p.id); const primGunu = calisma?.primGunu ?? istihdamGunu(p.istihdamDonemleri, donemYil, donemAy);
           const onceki = p.brutMaas ? await tx.personelBordro.findFirst({ where: { tenantId, personelId: p.id, donemYil, donemAy: { lt: donemAy } }, orderBy: { donemAy: "desc" }, select: { kumulatifMatrah: true, asgariKumulatifMatrah: true, hesapOzeti:true } }) : null;
           const oncekiDevirBordrosu = p.brutMaas ? await tx.personelBordro.findFirst({ where: { tenantId, personelId: p.id, OR: [{ donemYil: { lt: donemYil } }, { donemYil, donemAy: { lt: donemAy } }] }, orderBy: [{ donemYil: "desc" }, { donemAy: "desc" }], select: { donemYil: true, donemAy: true, hesapOzeti: true } }) : null;
           const temelBrut = p.brutMaas ? new Prisma.Decimal(p.brutMaas).mul(primGunu).div(30).toDecimalPlaces(2) : null;

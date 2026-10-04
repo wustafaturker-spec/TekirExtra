@@ -62,8 +62,7 @@ export const donemCalismaSemasi = z.object({
   nakitYemekYardimi: z.coerce.number().min(0).max(100_000_000).default(0),
   fiiliCalismaGunu: z.coerce.number().int().min(0).max(31).default(0),
 }).superRefine((v, ctx) => {
-  if (v.primGunu < 30 && !v.eksikGunNedeni) ctx.addIssue({ code: "custom", path: ["eksikGunNedeni"], message: "30 günden az bildirimde eksik gün nedeni zorunludur" });
-  if (v.primGunu === 30 && v.eksikGunNedeni) ctx.addIssue({ code: "custom", path: ["eksikGunNedeni"], message: "30 günlük bildirimde eksik gün nedeni seçilemez" });
+  // Eksik gün nedeni kuralı istihdam gününe bağlı olduğu için serviste (PRS-02).
   if (v.primGunu === 0 && (v.fazlaMesaiBrut > 0 || v.primIkramiyeBrut > 0 || v.nakitYemekYardimi > 0)) ctx.addIssue({ code: "custom", path: ["primGunu"], message: "Kazanç veya yemek yardımı bulunan dönemde prim günü sıfır olamaz" });
   if (v.nakitYemekYardimi > 0 && v.fiiliCalismaGunu === 0) ctx.addIssue({ code: "custom", path: ["fiiliCalismaGunu"], message: "Yemek yardımında fiilî çalışma günü zorunludur" });
 });
