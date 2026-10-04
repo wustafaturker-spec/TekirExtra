@@ -29,6 +29,7 @@ const HEDEF_ROLLER: Record<BildirimTuru, Rol[]> = {
   donem: ["yonetici", "muhasebe"],
   entegrasyon: ["yonetici", "muhasebe"],
   satin_alma: ["yonetici", "muhasebe"],
+  personel: ["yonetici", "muhasebe"],
 };
 
 /**
@@ -63,6 +64,7 @@ const TARAMA_ONEKLERI: Record<BildirimTuru, string[]> = {
   donem: ["duzeltme:", "donem:"],
   entegrasyon: ["duzeltme:", "banka-senkron:", "ekstre-bekleyen:"],
   satin_alma: ["duzeltme:", "satin_alma:"],
+  personel: ["personel:"],
 };
 
 function gunAnahtari(tarih = new Date()): string {
@@ -99,6 +101,7 @@ export class BildirimUreticiService {
       ...(await this.donemKontrolleri()),
       ...(await this.satinAlmaOnaylari()),
       ...(await this.bankaEntegrasyonu()),
+      ...(await this.personelBildirimleri()),
     ];
 
     let yeniTeslimat = 0;
@@ -106,7 +109,7 @@ export class BildirimUreticiService {
 
     // Yalnız bu taramada gerçekten bakılan türler kapatılır; bakılmayan bir
     // türün kayıtları "artık tespit edilmiyor" sanılıp kapanmamalıdır.
-    const taranan: BildirimTuru[] = ["duzeltme", "ebelge", "vade", "cek_senet", "stok", "donem", "entegrasyon", "satin_alma"];
+    const taranan: BildirimTuru[] = ["duzeltme", "ebelge", "vade", "cek_senet", "stok", "donem", "entegrasyon", "satin_alma", "personel"];
     let kapanan = 0;
     for (const tur of taranan) {
       const anahtarlar = girdiler.filter((g) => g.tur === tur).map((g) => g.birlesimAnahtari);
@@ -114,6 +117,58 @@ export class BildirimUreticiService {
     }
 
     return { uretilen: girdiler.length, yeniTeslimat, kapanan, yukseltilen: await this.yukselt() };
+  }
+
+  /**
+   * PRS-15 (P2-2): İK bildirimleri.
+   * - Özlük belgesi (kayıt başına): geçerlilik sonuna 30 gün kala uyarı, geçince
+   *   kritik. Belge yenilenince (tarih ileri alınınca) ya da silinince kapanır.
+   *   İşten ayrılan personelin belgeleri sorulmaz.
+   * - Onay bekleyen işler (günlük özet, tek anahtar): izin, avans ve bordro
+   *   onayları; hepsi işlenince kapanır.
+   */
+  private async personelBildirimleri(): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const bugun = bugunTR();
+    const sinir = new Date(`${bugun}T00:00:00.000Z`);
+    sinir.setUTCDate(sinir.getUTCDate() + 30);
+    const [belgeler, izin, avans, bordro] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
+      tx.personelBelgesi.findMany({
+        where: { gecerlilikTarihi: { not: null, lte: sinir }, personel: { durum: { not: "isten_ayrildi" } } },
+        include: { personel: { select: { id: true, personelNo: true, ad: true, soyad: true } } },
+        orderBy: { gecerlilikTarihi: "asc" }, take: 100,
+      }),
+      tx.personelIzinTalebi.count({ where: { durum: "talep" } }),
+      tx.personelAvans.count({ where: { durum: "talep" } }),
+      tx.personelBordro.count({ where: { durum: "onay_bekliyor" } }),
+    ]));
+    const BELGE_ADI: Record<string, string> = { kimlik: "Kimlik", is_sozlesmesi: "İş sözleşmesi", diploma: "Diploma", sertifika: "Sertifika", saglik_raporu: "Sağlık raporu", adli_sicil: "Adli sicil kaydı", ikametgah: "İkametgâh", askerlik: "Askerlik belgesi", sgk_bildirgesi: "SGK bildirgesi", diger: "Belge" };
+    const girdiler: BildirimGirdisi[] = belgeler.map((b) => {
+      const bitis = b.gecerlilikTarihi!.toISOString().slice(0, 10);
+      const doldu = bitis < bugun;
+      const kalan = Math.round((Date.parse(bitis) - Date.parse(bugun)) / 86_400_000);
+      return {
+        tur: "personel", onem: doldu ? "kritik" : "uyari",
+        baslik: doldu ? "Özlük belgesinin süresi doldu" : "Özlük belgesinin süresi doluyor",
+        aciklama: `${b.personel.ad} ${b.personel.soyad} (${b.personel.personelNo}) — ${BELGE_ADI[b.tur] ?? "Belge"}: geçerlilik ${bitis.split("-").reverse().join(".")}${doldu ? "; yenisini alıp yükleyin" : kalan === 0 ? " (bugün)" : ` (${kalan} gün kaldı)`}.`,
+        birlesimAnahtari: `personel:belge:${b.id}:${doldu ? "doldu" : "yaklasiyor"}`,
+        kaynakTur: "personel_belgesi", kaynakRef: b.id, hedefYol: `/panel/personel/${b.personel.id}`,
+        roller: HEDEF_ROLLER.personel,
+        ...(doldu ? {} : { sonTarih: new Date(`${bitis}T23:59:59+03:00`) }),
+      };
+    });
+    const parcalar = [izin && `${izin} izin talebi`, avans && `${avans} avans talebi`, bordro && `${bordro} bordro`].filter(Boolean);
+    if (parcalar.length) {
+      girdiler.push({
+        tur: "personel", onem: "bilgi",
+        baslik: "Onay bekleyen İK işlemleri",
+        aciklama: `${parcalar.join(", ")} onay bekliyor. Hazırlayan kişi kendi kaydını onaylayamaz; başka bir yetkili onaylamalı.`,
+        birlesimAnahtari: "personel:onay_bekleyen",
+        kaynakTur: "personel", hedefYol: bordro ? "/panel/personel/bordrolar" : izin ? "/panel/personel/izinler" : "/panel/personel/avanslar",
+        roller: HEDEF_ROLLER.personel,
+      });
+    }
+    return girdiler;
   }
 
   /**

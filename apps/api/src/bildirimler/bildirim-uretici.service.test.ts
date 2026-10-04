@@ -8,6 +8,10 @@ interface TxSecenekleri {
   duzeltmeler?: unknown[];
   ebelgeler?: unknown[];
   satinAlmaTalepleri?: unknown[];
+  personelBelgeleri?: unknown[];
+  izinTalepSayisi?: number;
+  avansTalepSayisi?: number;
+  onayBekleyenBordro?: number;
   cekSayisi?: number;
   /** EBLG-63: beyannamesi gelmemiş ihraç kayıtlı faturaların tarihleri. */
   ihracKayitlilar?: { tarih: Date; tip: string }[];
@@ -46,6 +50,10 @@ function servisKur(secenek: TxSecenekleri = {}) {
     bankaKrediTaksiti: { findMany: vi.fn().mockResolvedValue([]) },
     cariTeminat: { findMany: vi.fn().mockResolvedValue([]) },
     cariMutabakat: { findMany: vi.fn().mockResolvedValue([]) },
+    personelBelgesi: { findMany: vi.fn().mockResolvedValue(secenek.personelBelgeleri ?? []) },
+    personelIzinTalebi: { count: vi.fn().mockResolvedValue(secenek.izinTalepSayisi ?? 0) },
+    personelAvans: { count: vi.fn().mockResolvedValue(secenek.avansTalepSayisi ?? 0) },
+    personelBordro: { count: vi.fn().mockResolvedValue(secenek.onayBekleyenBordro ?? 0) },
     personelTatilGunu: { findMany: vi.fn().mockResolvedValue([]) },
     fatura: { findMany: vi.fn().mockResolvedValue(secenek.ihracKayitlilar ?? []) },
     belge: { findMany: vi.fn().mockResolvedValue(secenek.bekleyenIrsaliyeler ?? []) },
@@ -375,5 +383,29 @@ describe("banka entegrasyonu bildirimleri (KSB-15)", () => {
     expect(uretilen.find((g) => g.birlesimAnahtari === "ekstre-bekleyen:h1")).toMatchObject({ onem: "bilgi", aciklama: "Ziraat TL: 7 ekstre satırı eşleştirme bekliyor." });
     const entegrasyon = bildirimler.kapatEksikleri.mock.calls.find(([tur]) => tur === "entegrasyon")!;
     expect(entegrasyon[2]).toEqual(expect.arrayContaining(["banka-senkron:", "ekstre-bekleyen:"]));
+  });
+});
+
+describe("İK bildirimleri (PRS-15)", () => {
+  afterEach(() => vi.useRealTimers());
+  it("özlük belgesi süresi kayıt başına; onay bekleyenler tek özet", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-10-04T09:00:00+03:00"));
+    const kisi = { id: "p1", personelNo: "PRS-1", ad: "Ali", soyad: "Veli" };
+    const { servis, bildirimler } = servisKur({
+      personelBelgeleri: [
+        { id: "b1", tur: "saglik_raporu", gecerlilikTarihi: new Date("2026-10-20T00:00:00Z"), personel: kisi },
+        { id: "b2", tur: "is_sozlesmesi", gecerlilikTarihi: new Date("2026-09-30T00:00:00Z"), personel: kisi },
+      ],
+      izinTalepSayisi: 2, onayBekleyenBordro: 3,
+    });
+    await servis.tara();
+    const uretilen = bildirimler.uret.mock.calls.map((c) => c[0]).filter((g: { tur: string }) => g.tur === "personel");
+    expect(uretilen.map((g: { birlesimAnahtari: string; onem: string }) => [g.birlesimAnahtari, g.onem])).toEqual([
+      ["personel:belge:b1:yaklasiyor", "uyari"],
+      ["personel:belge:b2:doldu", "kritik"],
+      ["personel:onay_bekleyen", "bilgi"],
+    ]);
+    expect(uretilen[2].aciklama).toContain("2 izin talebi, 3 bordro onay bekliyor");
+    expect(bildirimler.kapatEksikleri).toHaveBeenCalledWith("personel", expect.arrayContaining(["personel:onay_bekleyen"]), ["personel:"]);
   });
 });

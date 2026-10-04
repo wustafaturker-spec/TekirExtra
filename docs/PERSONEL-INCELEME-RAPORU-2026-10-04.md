@@ -58,6 +58,7 @@ SGK tavanını, oranları ve vergi dilimlerini kendisinin girmesi gerekiyor.
 | P2-6 | ✅ 2026-10-04 — PRS-12 (mevzuat seti yokken net ücretli bordroya puantajdaki fazla mesai, prim/ikramiye ve nakit yemek yardımı kazanç kalemi olarak eklenir; başlık neti kalem toplamı) |
 | P2-1 | ✅ 2026-10-04 — PRS-13 (işyeri/departman/pozisyon düzenleme ve pasife alma `PATCH /personel/organizasyon/...`; kod değişmez; etkin personeli olan birim, altında etkin departman olan departman ve son etkin işyeri pasife alınmaz; üst departman döngüye karşı denetlenir; pozisyon adı değişince kartlardaki unvan güncellenir; işyerine SGK sicil no (göç 20261004180000_isyeri_sgk_sicil); sayfada "Düzenle" penceresi) |
 | P2-3 | ✅ 2026-10-04 — PRS-14 (personel listesi: aksansız/ı-İ katlamalı arama (ad, soyad, no, departman, unvan), durum ("çalışanlar" dahil) ve departman süzgeci, Türkçe alfabe sırası, `adet` verilince imleçli sayfalı yanıt (diğer ekranlar dizi almaya devam eder), 50'şer "Daha fazla yükle", satırdan karta geçiş, ücret sütunu net/brüt tipini gösterir) |
+| P2-2 | ✅ 2026-10-04 — PRS-15 (bildirim türü `personel` (göç 20261004190000_bildirim_personel, tercih ekranında "Personel / İK"): özlük belgesi geçerliliğine 30 gün kala uyarı, geçince kritik (kayıt başına, işten ayrılan hariç; yenilenince kapanır); onay bekleyen izin/avans/bordro tek özet bildirimde. Deneme süresi bitimi yapılmadı — kartta deneme süresi alanı yok. Tarama worker'da çalışır; birim testle sınandı) |
 
 ## 2. Öncelik sınıfları
 
