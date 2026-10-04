@@ -14,6 +14,9 @@ vi.mock("./cari-risk", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./cari-risk")>()),
   cariRiskleri: vi.fn(async (_tx: unknown, _tenantId: string, ids: string[]) =>
     new Map(ids.map((id) => [id, { bakiyeTry: D(800), cekSenetRiski: D(0), mevcutRisk: D(800), teminatTry: D(teminat) }]))),
+  /** Sahte grup: 3 üye, toplam risk 2500 TL, üye teminatı 200 TL. */
+  grupRiskleri: vi.fn(async (_tx: unknown, _tenantId: string, ids: string[]) =>
+    new Map(ids.map((id) => [id, { uyeSayisi: 3, bakiyeTry: D(2500), cekSenetRiski: D(0), mevcutRisk: D(2500), teminatTry: D(200), kurEksik: [] }]))),
 }));
 
 function txOlustur(cari: Record<string, unknown> | null, politika?: string) {
@@ -88,5 +91,18 @@ describe("riskLimitiDenetle (CARI-32)", () => {
     } finally {
       teminat = 0;
     }
+  });
+
+  it("grup limiti üyelerin toplam riskine uygulanır, üye teminatı eklenir (CARI-41)", async () => {
+    const grup = (riskLimiti: number) => ({ id: "g1", ad: "ABC Holding", riskLimiti: D(riskLimiti) });
+    // Cari limiti yok, grup 2500 + 300 belge = 2800 ≤ 2600 + 200
+    expect(await riskLimitiDenetle(txOlustur({ riskLimiti: null, grup: grup(2600) }).tx, girdi())).toBeNull();
+    const metin = await riskLimitiDenetle(txOlustur({ riskLimiti: null, grup: grup(2000) }).tx, girdi());
+    expect(metin).toMatch(/'ABC Holding' grup risk limiti aşılıyor: bu sipariş ile 3 üyenin toplam riski 2800\.00 TL, limit 2200\.00 TL \(grup limiti 2000\.00 \+ teminat 200\.00\)/);
+  });
+
+  it("cari ve grup limiti birlikte aşılırsa ikisi de yazılır; engelle tek hata verir", async () => {
+    const tx = txOlustur({ riskLimiti: D(1000), grup: { id: "g1", ad: "ABC", riskLimiti: D(1000) } }, "engelle").tx;
+    await expect(riskLimitiDenetle(tx, girdi())).rejects.toThrow(/Risk limiti aşılıyor.*; 'ABC' grup risk limiti aşılıyor.*izin vermiyor/);
   });
 });

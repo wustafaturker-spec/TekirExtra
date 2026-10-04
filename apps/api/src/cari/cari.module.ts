@@ -6,15 +6,17 @@ import { VadeHatirlatmaController } from "./vade-hatirlatma.controller";
 import { VadeHatirlatmaService } from "./vade-hatirlatma.service";
 import { CariTopluController } from "./cari-toplu.controller";
 import { CariTopluService } from "./cari-toplu.service";
+import { CariGrupController } from "./cari-grup.controller";
+import { CariGrupService } from "./cari-grup.service";
 import { CariService } from "./cari.service";
 import { CariIceAktarmaService } from "./cari-ice-aktarma.service";
 import { TenantModule } from "../tenant/tenant.module";
 
 @Module({
   imports: [TenantModule],
-  // Sabit yollu denetleyici önce: "cari/vade-hatirlatma/...", "cari/toplu/..." `:id` kalıplarına düşmesin.
-  controllers: [VadeHatirlatmaController, CariTopluController, CariController],
-  providers: [CariService, CariIceAktarmaService, VadeHatirlatmaService, CariTopluService],
+  // Sabit yollu denetleyici önce: "cari/vade-hatirlatma/...", "cari/toplu/...", "cari/gruplar/..." `:id` kalıplarına düşmesin.
+  controllers: [VadeHatirlatmaController, CariTopluController, CariGrupController, CariController],
+  providers: [CariService, CariIceAktarmaService, VadeHatirlatmaService, CariTopluService, CariGrupService],
   exports: [CariService],
 })
 export class CariModule implements OnModuleInit {

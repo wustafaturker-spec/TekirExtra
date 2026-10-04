@@ -782,6 +782,8 @@ model CariHesap {
   kisiTipi                KisiTip             @default(tuzel) @map("kisi_tipi")
   sektor                  String?
   temsilciUserId          String?             @map("temsilci_user_id") @db.Uuid
+  /// CARI-41: holding / ana firma grubu; grup limiti üyelerin toplam riskine uygulanır.
+  grupId                  String?             @map("grup_id") @db.Uuid
   vknTckn                 String?             @map("vkn_tckn")
   /// EBLG-86: alıcının GİB'de birden çok posta kutusu varsa elle seçilen kutu.
   /// Listede durduğu sürece seçim kuralının önüne geçer; listeden düşerse
@@ -827,6 +829,7 @@ model CariHesap {
 
   fiyatListesi          FiyatListesi?        @relation(fields: [fiyatListesiId], references: [id])
   temsilci              User?                @relation("CariTemsilci", fields: [temsilciUserId], references: [id])
+  grup                  CariGrup?            @relation(fields: [grupId], references: [id], onDelete: SetNull)
   bayiKullanicilari     User[]               @relation("BayiKullaniciCari")
   satinAlmaTeklifleri   SatinAlmaTeklifi[]
   adresler              CariAdres[]
@@ -859,7 +862,25 @@ model CariHesap {
 
   @@unique([tenantId, kod])
   @@index([tenantId, unvan])
+  @@index([tenantId, grupId])
   @@map("cari_hesaplar")
+}
+
+/// CARI-41 (karar 2026-10-04): tek seviyeli cari grubu. Grup riski üyelerin
+/// riskleri toplamıdır; limit = grup risk limiti + üyelerin geçerli teminatları.
+model CariGrup {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  ad         String
+  riskLimiti Decimal? @map("risk_limiti") @db.Decimal(15, 2)
+  notlar     String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  uyeler CariHesap[]
+
+  @@unique([tenantId, ad])
+  @@map("cari_gruplari")
 }
 
 enum CrmEtkilesimTipi {

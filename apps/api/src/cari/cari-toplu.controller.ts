@@ -5,7 +5,7 @@ import { Roller } from "../auth/roller.decorator";
 import { CariService } from "./cari.service";
 import { CariTopluService } from "./cari-toplu.service";
 import {
-  TOPLU_EN_FAZLA, topluDurumSemasi, topluEkstreSemasi, topluEtiketSemasi, topluExcelSemasi, topluKaraListeSemasi, topluTemsilciSemasi,
+  TOPLU_EN_FAZLA, topluDurumSemasi, topluEkstreSemasi, topluEtiketSemasi, topluExcelSemasi, topluGrupSemasi, topluKaraListeSemasi, topluTemsilciSemasi,
 } from "./cari-toplu";
 
 const ayristir = <T>(sema: z.ZodType<T>, govde: unknown): T => {
@@ -31,6 +31,7 @@ export class CariTopluController {
     @Query("bakiyeMin") bakiyeMin?: string,
     @Query("bakiyeMax") bakiyeMax?: string,
     @Query("siralama") siralama?: string,
+    @Query("grup") grup?: string,
   ) {
     const sayi = (deger?: string) => {
       if (deger === undefined || deger.trim() === "") return undefined;
@@ -39,7 +40,9 @@ export class CariTopluController {
       return n;
     };
     if (siralama && !siralamalar.includes(siralama as (typeof siralamalar)[number])) throw new BadRequestException("Geçersiz sıralama");
+    if (grup && grup !== "yok" && !/^[0-9a-f-]{36}$/i.test(grup)) throw new BadRequestException("Geçersiz cari grubu");
     return this.cari.listeKimlikleri(arama, tip, durum, bakiye, {
+      grup: grup || undefined,
       bakiyeMin: sayi(bakiyeMin), bakiyeMax: sayi(bakiyeMax), siralama: siralama as (typeof siralamalar)[number] | undefined,
     }, TOPLU_EN_FAZLA);
   }
@@ -73,6 +76,12 @@ export class CariTopluController {
   @Roller("muhasebe")
   temsilci(@Body() govde: unknown) {
     return this.servis.temsilci(ayristir(topluTemsilciSemasi, govde));
+  }
+
+  @Post("grup")
+  @Roller("muhasebe")
+  grup(@Body() govde: unknown) {
+    return this.servis.grup(ayristir(topluGrupSemasi, govde));
   }
 
   @Post("ekstre-eposta")

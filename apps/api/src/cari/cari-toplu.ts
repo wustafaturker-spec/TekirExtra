@@ -35,6 +35,12 @@ export const topluTemsilciSemasi = z.object({
   temsilciUserId: z.uuid().nullable(),
 });
 
+/** CARI-41: null gruptan çıkarır. */
+export const topluGrupSemasi = z.object({
+  cariIdler: cariIdler(TOPLU_EN_FAZLA),
+  grupId: z.uuid().nullable(),
+});
+
 export const topluEkstreSemasi = z.object({
   cariIdler: cariIdler(TOPLU_EPOSTA_EN_FAZLA),
   baslangic: z.iso.date().optional(),

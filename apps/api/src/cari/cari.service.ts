@@ -45,7 +45,7 @@ import { cariEbelgeDurumlariniOku, cariEbelgeDurumuBul } from "../ebelge/cari-eb
 import { canliIrsaliyeKutulari, kendiGbEtiketi, postaKutusuSecimi } from "../ebelge/posta-kutusu-secimi";
 import { BaglantilarService } from "../tenant/baglantilar.service";
 import { kurZorunlu } from "../doviz/kur-coz";
-import { cariRiskleri, cariYaslandirmalari, riskOzetiGorunumu, vadesiGecmis } from "./cari-risk";
+import { cariRiskleri, cariYaslandirmalari, grupRiskleri, riskOzetiGorunumu, vadesiGecmis } from "./cari-risk";
 import { guncelKurlar, guncelTlDegeri } from "./doviz-degerleme";
 import { sonOdemeTarihleri } from "./son-odeme";
 import { TEMINAT_TURU_ADLARI, TEMINAT_UYARI_GUNU, teminatDurumu, type TeminatGirdisi, type TeminatTuru } from "./cari-teminat";
@@ -70,6 +70,8 @@ export interface CariListeSecenekleri {
   bakiyeMin?: number;
   bakiyeMax?: number;
   siralama?: "kod" | "unvan" | "bakiye_azalan" | "bakiye_artan";
+  /** CARI-41: grup kimliği ya da "yok" (gruba bağlı olmayanlar). */
+  grup?: string;
 }
 
 export interface DovizBakiye {
@@ -107,9 +109,9 @@ export class CariService {
   async listele(arama?: string, imlec?: string, adet = 50, tip?: string, durum?: string, bakiye?: string, secenekler: CariListeSecenekleri = {}) {
     const { tenantId } = aktifBaglam();
     const ctx = aktifBaglam();
-    const where = await this.listeSuzgeci(arama, tip, durum, bakiye);
+    const where = await this.listeSuzgeci(arama, tip, durum, bakiye, secenekler.grup);
     // CARI-23/EBLG-80: yurt dışı alıcı adres ülkesinden anlaşılır.
-    const include = { _count: { select: { hareketler: true } }, adresler: { select: { tip: true, ulke: true } } } as const;
+    const include = { _count: { select: { hareketler: true } }, adresler: { select: { tip: true, ulke: true } }, grup: { select: { id: true, ad: true } } } as const;
     const siralama = secenekler.siralama ?? "kod";
 
     let sayfa: Prisma.CariHesapGetPayload<{ include: typeof include }>[];
@@ -145,6 +147,7 @@ export class CariService {
     return {
       kayitlar: sayfa.map((k) => ({
         ...this.gorunum(k),
+        grup: k.grup,
         ebelgeTuru: cariEbelgeDurumuBul(ebelge!, k).tur,
         bakiyeler: bakiyeler.get(k.id) ?? [],
         izinliEylemler: this.eylemler(k, ctx.rol, k._count.hareketler),
@@ -159,7 +162,7 @@ export class CariService {
    */
   async listeKimlikleri(arama?: string, tip?: string, durum?: string, bakiye?: string, secenekler: CariListeSecenekleri = {}, enFazla = 2000) {
     const { tenantId } = aktifBaglam();
-    const where = await this.listeSuzgeci(arama, tip, durum, bakiye);
+    const where = await this.listeSuzgeci(arama, tip, durum, bakiye, secenekler.grup);
     const kimlikler = this.bakiyeyeDayali(bakiye, secenekler)
       ? (await this.bakiyeyeGoreSuz(where, bakiye, secenekler)).uygun
       : (await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findMany({
@@ -171,7 +174,7 @@ export class CariService {
     return { kimlikler: kimlikler.slice(0, enFazla), kesildi: kimlikler.length > enFazla };
   }
 
-  private async listeSuzgeci(arama?: string, tip?: string, durum?: string, bakiye?: string): Promise<Prisma.CariHesapWhereInput> {
+  private async listeSuzgeci(arama?: string, tip?: string, durum?: string, bakiye?: string, grup?: string): Promise<Prisma.CariHesapWhereInput> {
     const { tenantId } = aktifBaglam();
     const aranan = arama ? metinNormalize(arama) : "";
     // CARI-30: "gecikmiş" = FIFO sonrası vadesi geçmiş açık tutarı olan cari (kartla aynı kural);
@@ -187,6 +190,7 @@ export class CariService {
       ...(gecikmisIdler ? { id: { in: gecikmisIdler } } : {}),
       ...(tip === "musteri" ? { tip: { in: ["musteri", "her_ikisi"] } } : tip === "tedarikci" ? { tip: { in: ["tedarikci", "her_ikisi"] } } : {}),
       ...(durum === "bloke" ? { karaListe: true } : {}),
+      ...(grup === "yok" ? { grupId: null } : grup ? { grupId: grup } : {}),
       // ARA-01: unvan, kod, VKN/TCKN ve telefon veritabanının ürettiği
       // `arama_normal` kolonunda toplanır; aksan ve büyük/küçük harf orada
       // katlandığı için "sisli" araması "Şişli Makina"yı da bulur.
@@ -285,6 +289,7 @@ export class CariService {
           etiketler: { include: { etiket: true } },
           temsilci: { select: { id: true, adSoyad: true } },
           fiyatListesi: { select: { id: true, ad: true } },
+          grup: { select: { id: true, ad: true, riskLimiti: true } },
           _count: { select: { hareketler: true } },
         },
       }),
@@ -294,6 +299,8 @@ export class CariService {
     // CARI-30: kart ve fatura uyarısı aynı risk fonksiyonunu kullanır.
     const riskler = await this.prisma.tenantIslem(ctx.tenantId, (tx) => cariRiskleri(tx, ctx.tenantId, [id]));
     const risk = riskOzetiGorunumu(riskler.get(id)!, kayit.riskLimiti);
+    // CARI-41: grup riski belge denetimindeki fonksiyonla.
+    const grupRiski = kayit.grup ? (await this.prisma.tenantIslem(ctx.tenantId, (tx) => grupRiskleri(tx, ctx.tenantId, [kayit.grup!.id]))).get(kayit.grup.id)! : null;
     // CARI-23: e-Fatura/e-Arşiv ve e-İrsaliye mükellefiyeti, GİB listesinden.
     const ebelge = await this.prisma.tenantIslem(ctx.tenantId, (tx) => cariEbelgeDurumlariniOku(tx, [kayit.vknTckn]));
     const postaKutulari = await this.postaKutulari(kayit);
@@ -307,6 +314,7 @@ export class CariService {
       etiketler: kayit.etiketler.map((a) => a.etiket),
       temsilci: kayit.temsilci,
       fiyatListesi: kayit.fiyatListesi,
+      grup: kayit.grup && grupRiski ? { id: kayit.grup.id, ad: kayit.grup.ad, uyeSayisi: grupRiski.uyeSayisi, risk: riskOzetiGorunumu(grupRiski, kayit.grup.riskLimiti) } : null,
       bakiyeler,
       risk,
       riskAsimi: risk.asim,
@@ -398,6 +406,14 @@ export class CariService {
     return this.gorunum(kayit);
   }
 
+  /** CARI-41: seçilen grup bu kiracıda olmalı (yoksa yabancı anahtar hatası 500 dönerdi). */
+  private async grupDogrula(grupId: string | null | undefined) {
+    if (!grupId) return;
+    const { tenantId } = aktifBaglam();
+    const grup = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariGrup.findUnique({ where: { id: grupId }, select: { id: true } }));
+    if (!grup) throw new BadRequestException("Cari grubu bulunamadı");
+  }
+
   /** EBLG-95: muhtelif müşteri kimliği yalnız sistem carisinde bulunur. */
   private muhtelifKimligiEngelle(vknTckn: string | null | undefined) {
     if (muhtelifMusteriMi({ vknTckn })) {
@@ -421,6 +437,7 @@ export class CariService {
   }
 
   async olustur(girdi: CariOlusturGirdisi, secenekler: { mukerrerVknOnayi?: boolean } = {}) {
+    await this.grupDogrula(girdi.grupId);
     const { tenantId } = aktifBaglam();
     this.muhtelifKimligiEngelle(girdi.vknTckn);
     const kimlik = this.kisiKimligi(girdi.kisiTipi, girdi.ad, girdi.soyad);
@@ -504,6 +521,7 @@ export class CariService {
           soyad: cari.soyad,
           sektor: cari.sektor,
           temsilciUserId: cari.temsilciUserId,
+          grupId: cari.grupId,
           vknTckn: cari.vknTckn,
           vergiDairesi: cari.vergiDairesi,
           mersisNo: cari.mersisNo,
@@ -601,6 +619,7 @@ export class CariService {
       this.muhtelifKimligiEngelle(girdi.vknTckn);
     }
     await this.vknTcknDogrula(tenantId, muhtelifMusteriMi(mevcut) ? undefined : girdi.vknTckn);
+    await this.grupDogrula(girdi.grupId);
     if (!secenekler.mukerrerVknOnayi && girdi.vknTckn && girdi.vknTckn !== mevcut.vknTckn) await this.mukerrerVknDenetle(tenantId, girdi.vknTckn, id);
     // Kimlik kuralı yalnız kimlik alanlarından biri değişirken uygulanır; başka
     // alanı güncelleyen istek, ad/soyadı henüz girilmemiş eski kayıtta kırılmasın.
@@ -1141,6 +1160,7 @@ export class CariService {
     soyad: string | null;
     sektor: string | null;
     temsilciUserId: string | null;
+    grupId: string | null;
     vknTckn: string | null;
     vergiDairesi: string | null;
     mersisNo: string | null;
@@ -1178,6 +1198,7 @@ export class CariService {
       soyad: k.soyad,
       sektor: k.sektor,
       temsilciUserId: k.temsilciUserId,
+      grupId: k.grupId,
       vknTckn: k.vknTckn,
       vergiDairesi: k.vergiDairesi,
       mersisNo: k.mersisNo,

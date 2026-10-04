@@ -138,6 +138,22 @@ export class CariTopluService {
     return { islenen: ids.length, atlananlar };
   }
 
+  /** CARI-41: gruba ata ya da gruptan çıkar. */
+  async grup(girdi: { cariIdler: string[]; grupId: string | null }): Promise<TopluSonuc> {
+    const { tenantId } = aktifBaglam();
+    const { cariler, atlananlar } = await this.seciliCariler(girdi.cariIdler);
+    let grupAdi: string | null = null;
+    if (girdi.grupId) {
+      const grup = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariGrup.findUnique({ where: { id: girdi.grupId! }, select: { ad: true } }));
+      if (!grup) throw new BadRequestException("Cari grubu bulunamadı");
+      grupAdi = grup.ad;
+    }
+    const ids = cariler.map((c) => c.id);
+    await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.updateMany({ where: { id: { in: ids } }, data: { grupId: girdi.grupId } }));
+    await this.denetimKaydi("grup", ids, { grupId: girdi.grupId, grup: grupAdi });
+    return { islenen: ids.length, atlananlar };
+  }
+
   /**
    * Her cariye kendi ekstresi (PDF + Excel) kart e-postasına gider; sırayla
    * gönderilir, birinin hatası ötekileri durdurmaz. E-postası olmayan ve kara
@@ -180,6 +196,7 @@ export class CariTopluService {
         id: true, kod: true, unvan: true, tip: true, kisiTipi: true, vknTckn: true, vergiDairesi: true, eposta: true, telefon: true,
         sektor: true, riskLimiti: true, varsayilanVadeGun: true, aktif: true, karaListe: true, karaListeNotu: true,
         temsilci: { select: { adSoyad: true } },
+        grup: { select: { ad: true } },
         etiketler: { select: { etiket: { select: { ad: true } } } },
       },
     }));
@@ -190,7 +207,7 @@ export class CariTopluService {
     const kolonlar: { baslik: string; genislik: number; bicim?: string }[] = [
       { baslik: "Kod", genislik: 14 }, { baslik: "Unvan", genislik: 40 }, { baslik: "Tür", genislik: 18 }, { baslik: "Kişi tipi", genislik: 10 },
       { baslik: "VKN / TCKN", genislik: 14 }, { baslik: "Vergi dairesi", genislik: 18 }, { baslik: "E-posta", genislik: 28 }, { baslik: "Telefon", genislik: 16 },
-      { baslik: "Sektör", genislik: 16 }, { baslik: "Temsilci", genislik: 20 }, { baslik: "Etiketler", genislik: 24 },
+      { baslik: "Sektör", genislik: 16 }, { baslik: "Cari grubu", genislik: 20 }, { baslik: "Temsilci", genislik: 20 }, { baslik: "Etiketler", genislik: 24 },
       { baslik: "Durum", genislik: 8 }, { baslik: "Kara liste", genislik: 10 }, { baslik: "Kara liste notu", genislik: 28 },
       { baslik: "Vade (gün)", genislik: 10 }, { baslik: "Risk limiti (TL)", genislik: 15, bicim: PARA },
       { baslik: "Bakiye (TL, güncel kur)", genislik: 18, bicim: PARA }, { baslik: "Döviz bakiyeleri", genislik: 30 },
@@ -212,12 +229,12 @@ export class CariTopluService {
         .map((b) => `${Number(b.bakiye).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${b.dovizCinsi}`).join("; ");
       sayfa.addRow([
         c.kod, c.unvan, TIP_ADI[c.tip] ?? c.tip, c.kisiTipi === "gercek" ? "Gerçek" : "Tüzel", c.vknTckn, c.vergiDairesi, c.eposta, c.telefon,
-        c.sektor, c.temsilci?.adSoyad ?? null, c.etiketler.map((e) => e.etiket.ad).join(", ") || null,
+        c.sektor, c.grup?.ad ?? null, c.temsilci?.adSoyad ?? null, c.etiketler.map((e) => e.etiket.ad).join(", ") || null,
         c.aktif ? "Aktif" : "Pasif", c.karaListe ? "Evet" : "", c.karaListeNotu, c.varsayilanVadeGun,
         c.riskLimiti === null ? null : Number(c.riskLimiti), Math.round(tl * 100) / 100, dovizli || null,
       ]);
     }
-    const toplamSatiri = sayfa.addRow([`${cariler.length} cari`, ...Array(15).fill(null), Math.round(toplam * 100) / 100, null]);
+    const toplamSatiri = sayfa.addRow([`${cariler.length} cari`, ...Array(16).fill(null), Math.round(toplam * 100) / 100, null]);
     toplamSatiri.font = { bold: true };
     toplamSatiri.eachCell((h) => { h.border = { top: { style: "medium" } }; });
     return Buffer.from(await kitap.xlsx.writeBuffer());

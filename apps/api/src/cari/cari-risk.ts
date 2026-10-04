@@ -91,13 +91,47 @@ export async function cariRiskleri(tx: Prisma.TransactionClient, tenantId: strin
   return sonuc;
 }
 
+export interface GrupRiski {
+  uyeSayisi: number;
+  bakiyeTry: Prisma.Decimal;
+  cekSenetRiski: Prisma.Decimal;
+  /** Üyelerin mevcut risklerinin toplamı (alacaklı olduğumuz üye diğerini kapatmaz). */
+  mevcutRisk: Prisma.Decimal;
+  /** Üyelerin geçerli teminatları; grup limitine eklenir. */
+  teminatTry: Prisma.Decimal;
+  kurEksik: string[];
+}
+
+/**
+ * CARI-41 (karar 2026-10-04): grup riski üyelerin `cariRiskleri` sonuçlarının
+ * toplamıdır; kart, grup sayfası ve belge denetimi bunu kullanır.
+ */
+export async function grupRiskleri(tx: Prisma.TransactionClient, tenantId: string, grupIdler: string[], bugun = new Date()): Promise<Map<string, GrupRiski>> {
+  if (grupIdler.length === 0) return new Map();
+  const uyeler = await tx.cariHesap.findMany({ where: { grupId: { in: grupIdler } }, select: { id: true, grupId: true } });
+  const riskler = await cariRiskleri(tx, tenantId, uyeler.map((u) => u.id), bugun);
+  const sonuc = new Map<string, GrupRiski>(grupIdler.map((id) => [id, { uyeSayisi: 0, bakiyeTry: D(0), cekSenetRiski: D(0), mevcutRisk: D(0), teminatTry: D(0), kurEksik: [] }]));
+  for (const u of uyeler) {
+    const g = sonuc.get(u.grupId!)!;
+    const r = riskler.get(u.id)!;
+    g.uyeSayisi += 1;
+    g.bakiyeTry = g.bakiyeTry.add(r.bakiyeTry);
+    g.cekSenetRiski = g.cekSenetRiski.add(r.cekSenetRiski);
+    g.mevcutRisk = g.mevcutRisk.add(r.mevcutRisk);
+    g.teminatTry = g.teminatTry.add(r.teminatTry);
+    for (const d of r.kurEksik) if (!g.kurEksik.includes(d)) g.kurEksik.push(d);
+  }
+  return sonuc;
+}
+
 /** CARI-39: kullanılabilir limit = risk limiti + geçerli teminat; limit yoksa denetim yok. */
 export function toplamLimit(risk: Pick<CariRiski, "teminatTry">, riskLimiti: Prisma.Decimal | null): Prisma.Decimal | null {
   return riskLimiti === null ? null : riskLimiti.add(risk.teminatTry);
 }
 
 /** Kartın risk özeti: limit tanımlıysa kalan limit ve aşım. */
-export function riskOzetiGorunumu(risk: CariRiski, riskLimiti: Prisma.Decimal | null) {
+/** Kart ve grup özeti; grup riskinde de aynı alanlar vardır (CARI-41). */
+export function riskOzetiGorunumu(risk: Pick<CariRiski, "cekSenetRiski" | "mevcutRisk" | "teminatTry" | "kurEksik">, riskLimiti: Prisma.Decimal | null) {
   const limit = toplamLimit(risk, riskLimiti);
   return {
     cekSenetRiski: risk.cekSenetRiski.toFixed(2),

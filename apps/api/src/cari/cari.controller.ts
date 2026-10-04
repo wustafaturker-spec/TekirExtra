@@ -79,6 +79,7 @@ export class CariController {
     @Query("bakiyeMin") bakiyeMin?: string,
     @Query("bakiyeMax") bakiyeMax?: string,
     @Query("siralama") siralama?: string,
+    @Query("grup") grup?: string,
   ) {
     const adetSayi = sayfaAdedi(adet);
     // CARI-36: bakiye aralığı (TL, güncel kur) ve sıralama.
@@ -90,7 +91,9 @@ export class CariController {
     };
     const siralamalar = ["kod", "unvan", "bakiye_azalan", "bakiye_artan"] as const;
     if (siralama && !siralamalar.includes(siralama as (typeof siralamalar)[number])) throw new BadRequestException("Geçersiz sıralama");
+    if (grup && grup !== "yok" && !/^[0-9a-f-]{36}$/i.test(grup)) throw new BadRequestException("Geçersiz cari grubu");
     return this.cariService.listele(arama, imlec, adetSayi, tip, durum, bakiye, {
+      grup: grup || undefined,
       bakiyeMin: sayi(bakiyeMin),
       bakiyeMax: sayi(bakiyeMax),
       siralama: siralama as (typeof siralamalar)[number] | undefined,

@@ -8,11 +8,12 @@ import { Alert, Button, Field, Input, Select } from "@/components/ui";
 const EPOSTA_EN_FAZLA = 100;
 const ACIK_BAKIYE_ISARETI = "yine de pasife almak için onaylayın";
 
-type Eylem = "etiket" | "durum" | "kara_liste" | "temsilci" | "ekstre";
+type Eylem = "etiket" | "grup" | "durum" | "kara_liste" | "temsilci" | "ekstre";
 interface TopluSonuc { islenen: number; atlananlar: { cariId: string; kod: string; unvan: string; mesaj: string }[] }
 
 const EYLEMLER: [Eylem, string][] = [
   ["etiket", "🏷️ Etiket"],
+  ["grup", "🏢 Grup"],
   ["durum", "⏸️ Pasif / aktif"],
   ["kara_liste", "🚫 Kara liste"],
   ["temsilci", "👤 Temsilci"],
@@ -31,6 +32,7 @@ export function CariTopluIslem({
   listeParametreleri,
   dahaFazlaVar,
   etiketler,
+  gruplar,
   onTamam,
 }: {
   secili: Set<string>;
@@ -41,6 +43,8 @@ export function CariTopluIslem({
   /** Listede yüklenmemiş sayfa var mı ("süzgecin tümü" bağlantısı yalnız o zaman anlamlı). */
   dahaFazlaVar: boolean;
   etiketler: { id: string; ad: string }[];
+  /** CARI-41 */
+  gruplar: { id: string; ad: string }[];
   onTamam: () => void;
 }) {
   const [eylem, setEylem] = useState<Eylem | null>(null);
@@ -48,6 +52,7 @@ export function CariTopluIslem({
   const [hata, setHata] = useState("");
   const [sonuc, setSonuc] = useState<{ baslik: string; veri: TopluSonuc } | null>(null);
   const [etiketId, setEtiketId] = useState("");
+  const [grupId, setGrupId] = useState("");
   const [karaListeNotu, setKaraListeNotu] = useState("");
   const [temsilciler, setTemsilciler] = useState<{ id: string; adSoyad: string }[] | null>(null);
   const [temsilciId, setTemsilciId] = useState("");
@@ -160,6 +165,19 @@ export function CariTopluIslem({
           {etiketler.length === 0 && <span className="subtle">Önce bir cari kartından etiket oluşturun.</span>}
           <Button size="sm" variant="primary" disabled={!etiketId || islemde} onClick={() => void calistir("Etiket eklendi", "/cari/toplu/etiket", { etiketId, islem: "ekle" })}>Ekle</Button>
           <Button size="sm" disabled={!etiketId || islemde} onClick={() => { if (onayla("etiket kaldırılacak")) void calistir("Etiket kaldırıldı", "/cari/toplu/etiket", { etiketId, islem: "kaldir" }); }}>Kaldır</Button>
+        </div>
+      )}
+
+      {adet > 0 && eylem === "grup" && (
+        <div className="cari-toplu__form">
+          <Field label="Cari grubu">
+            <Select value={grupId} onChange={(e) => setGrupId(e.target.value)}>
+              <option value="">Gruptan çıkar</option>
+              {gruplar.map((g) => <option key={g.id} value={g.id}>{g.ad}</option>)}
+            </Select>
+          </Field>
+          {gruplar.length === 0 && <span className="subtle">Grup tanımı <a className="btn-link" href="/panel/cari/gruplar">Cari Grupları</a> sayfasında.</span>}
+          <Button size="sm" variant="primary" disabled={islemde} onClick={() => { if (onayla(grupId ? "grup atanacak (önceki grupları değişir)" : "grup bağı kaldırılacak")) void calistir(grupId ? "Gruba atandı" : "Gruptan çıkarıldı", "/cari/toplu/grup", { grupId: grupId || null }); }}>Uygula</Button>
         </div>
       )}
 

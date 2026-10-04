@@ -32,6 +32,8 @@ export const cariOlusturSemasi = z.object({
   soyad: z.string().trim().max(100).optional().nullable(),
   sektor: z.string().max(120).optional(),
   temsilciUserId: z.uuid().optional(),
+  /** CARI-41: cari grubu. */
+  grupId: z.uuid().optional(),
   /**
    * Kontrol hanesi burada değil serviste doğrulanır (EBLG-47): e-belge test
    * bağlantısı olan kiracıda sentetik kimlikler kontrol hanesini tutmaz ve
@@ -78,6 +80,7 @@ export const cariGuncelleSemasi = guncellemeSemasi(cariOlusturSemasi).extend({
   ticaretSicilNo: z.string().max(32).optional().nullable(),
   // Kartta boşaltılan alan null gelir ve temizlenir (eskiden undefined sayılıp eski değer kalıyordu).
   temsilciUserId: z.uuid().optional().nullable(),
+  grupId: z.uuid().optional().nullable(),
   kvkkOnayTarihi: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)").optional().nullable(),
   iban: z.string().max(34).optional().nullable(),
   karaListeNotu: z.string().max(500).optional().nullable(),

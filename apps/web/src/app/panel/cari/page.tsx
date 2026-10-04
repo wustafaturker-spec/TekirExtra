@@ -56,6 +56,8 @@ interface Cari {
   telefon: string | null;
   karaListe: boolean;
   aktif: boolean;
+  /** CARI-41: listede grup adı. */
+  grup?: { id: string; ad: string } | null;
   /** CARI-33: bakiyeGuncelTry güncel döviz satış kuruyla; bakiyeTry hareketlerin kendi kuruyla. */
   bakiyeler: { dovizCinsi: string; bakiye: string; bakiyeTry: string; bakiyeGuncelTry?: string; guncelKur?: string | null; kurTarihi?: string | null; kurFarki?: string }[];
   /** CARI-23: GİB listesine göre e-Fatura / e-Arşiv; liste güncel değilse bilinmiyor. */
@@ -133,7 +135,17 @@ interface CariKisi {
   eposta: string | null;
 }
 
-interface CariDetay extends Cari {
+/** CARI-41: grup özeti (kartta) — riskOzetiGorunumu ile aynı alanlar. */
+interface GrupOzeti {
+  id: string;
+  ad: string;
+  uyeSayisi: number;
+  risk: { mevcutRisk: string; limit: string | null; teminat?: string; kullanilabilirLimit: string | null; kalanLimit: string | null; asim: boolean };
+}
+
+interface CariDetay extends Omit<Cari, "grup"> {
+  grupId: string | null;
+  grup: GrupOzeti | null;
   kisaAd: string | null;
   kisiTipi: string;
   /** Gerçek kişide dolu; unvan bunlardan türer (CARI-21). */
@@ -235,7 +247,7 @@ type BakiyeFiltre = "" | "gecikmis" | "alacakli" | "borclu" | "sifir";
 type CariSiralama = "kod" | "unvan" | "bakiye_azalan" | "bakiye_artan";
 const BAKIYE_FILTRELERI: [BakiyeFiltre, string][] = [["", "Tümü"], ["alacakli", "Alacaklıyız"], ["borclu", "Borçluyuz"], ["sifir", "Kapalı (0)"], ["gecikmis", "Vadesi geçmiş"]];
 const SIRALAMALAR: [CariSiralama, string][] = [["kod", "Koda göre"], ["unvan", "Ünvana göre"], ["bakiye_azalan", "Bakiye (büyükten küçüğe)"], ["bakiye_artan", "Bakiye (küçükten büyüğe)"]];
-interface CariGorunumu { id: string; ad: string; filtreTip: FiltreTip; bakiyeFiltre?: BakiyeFiltre; bakiyeMin?: string; bakiyeMax?: string; siralama?: CariSiralama }
+interface CariGorunumu { id: string; ad: string; filtreTip: FiltreTip; bakiyeFiltre?: BakiyeFiltre; bakiyeMin?: string; bakiyeMax?: string; siralama?: CariSiralama; grupFiltre?: string }
 const GORUNUM_ANAHTARI = "tekir_cari_gorunumleri";
 
 /** Cari kartında e-Belge ve iletişim için eksik bilgiler (sağ panel). */
@@ -263,6 +275,9 @@ export default function CariSayfasi() {
   const [bakiyeMax, setBakiyeMax] = useState("");
   const [bakiyeAraligi, setBakiyeAraligi] = useState({ min: "", max: "" });
   const [siralama, setSiralama] = useState<CariSiralama>("kod");
+  /** CARI-41: "" tümü, "yok" grupsuz, aksi grup kimliği. */
+  const [grupFiltre, setGrupFiltre] = useState("");
+  const [gruplar, setGruplar] = useState<{ id: string; ad: string }[]>([]);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [formAcik, setFormAcik] = useState(yeniSayfasi);
@@ -369,8 +384,9 @@ export default function CariSayfasi() {
     if (bakiyeAraligi.min) parametreler.set("bakiyeMin", bakiyeAraligi.min);
     if (bakiyeAraligi.max) parametreler.set("bakiyeMax", bakiyeAraligi.max);
     if (siralama !== "kod") parametreler.set("siralama", siralama);
+    if (grupFiltre) parametreler.set("grup", grupFiltre);
     return parametreler.toString();
-  }, [aramaSorgusu, filtreTip, bakiyeFiltre, bakiyeAraligi, siralama]);
+  }, [aramaSorgusu, filtreTip, bakiyeFiltre, bakiyeAraligi, siralama, grupFiltre]);
   const [topluSecim, setTopluSecim] = useState<Set<string>>(new Set());
   // Süzgeç değişince görünmeyen carilere yanlışlıkla işlem yapılmasın.
   useEffect(() => { setTopluSecim(new Set()); }, [listeParametreleri]);
@@ -424,6 +440,7 @@ export default function CariSayfasi() {
   useEffect(() => {
     if (tokenAl()) {
       void etiketleriYukle();
+      api<{ id: string; ad: string }[]>("/cari/gruplar").then((veri) => setGruplar(Array.isArray(veri) ? veri : [])).catch(() => undefined);
       api<{ id: string; ad: string; dovizCinsi: string }[]>("/fiyat-listeleri")
         .then((veri) => setFiyatListeleri(Array.isArray(veri) ? veri : []))
         .catch(() => undefined);
@@ -437,6 +454,8 @@ export default function CariSayfasi() {
     if (parametreler.get("durum") === "bloke") setFiltreTip("bloke");
     const bakiyeParametresi = parametreler.get("bakiye");
     if (BAKIYE_FILTRELERI.some(([deger]) => deger && deger === bakiyeParametresi)) setBakiyeFiltre(bakiyeParametresi as BakiyeFiltre);
+    const grupParametresi = parametreler.get("grup");
+    if (grupParametresi) setGrupFiltre(grupParametresi);
     try { setKayitliGorunumler(JSON.parse(localStorage.getItem(GORUNUM_ANAHTARI) ?? "[]") as CariGorunumu[]); }
     catch { localStorage.removeItem(GORUNUM_ANAHTARI); }
     setCariFiltreleriHazir(true);
@@ -452,7 +471,7 @@ export default function CariSayfasi() {
 
   function gorunumKaydet(event: React.FormEvent) {
     event.preventDefault(); const ad = gorunumAdi.trim(); if (!ad) return;
-    const yeni: CariGorunumu = { id: Date.now().toString(), ad, filtreTip, bakiyeFiltre, bakiyeMin, bakiyeMax, siralama };
+    const yeni: CariGorunumu = { id: Date.now().toString(), ad, filtreTip, bakiyeFiltre, bakiyeMin, bakiyeMax, siralama, grupFiltre };
     const gorunumler = [...kayitliGorunumler.filter((g) => g.ad.toLocaleLowerCase("tr-TR") !== ad.toLocaleLowerCase("tr-TR")), yeni];
     setKayitliGorunumler(gorunumler); localStorage.setItem(GORUNUM_ANAHTARI, JSON.stringify(gorunumler));
     setGorunumAdi(""); setGorunumFormuAcik(false); setBasari("“" + ad + "” görünümü kaydedildi.");
@@ -466,13 +485,13 @@ export default function CariSayfasi() {
 
   function gorunumuUygula(gorunum: CariGorunumu) {
     filtreyiUygula(gorunum.filtreTip);
-    setBakiyeFiltre(gorunum.bakiyeFiltre ?? ""); setBakiyeMin(gorunum.bakiyeMin ?? ""); setBakiyeMax(gorunum.bakiyeMax ?? ""); setSiralama(gorunum.siralama ?? "kod");
+    setBakiyeFiltre(gorunum.bakiyeFiltre ?? ""); setBakiyeMin(gorunum.bakiyeMin ?? ""); setBakiyeMax(gorunum.bakiyeMax ?? ""); setSiralama(gorunum.siralama ?? "kod"); setGrupFiltre(gorunum.grupFiltre ?? "");
     kullanimOlayi("gorunum_kullanildi");
   }
 
   function filtreleriTemizle() {
     filtreyiUygula("tumu");
-    setBakiyeFiltre(""); setBakiyeMin(""); setBakiyeMax(""); setSiralama("kod");
+    setBakiyeFiltre(""); setBakiyeMin(""); setBakiyeMax(""); setSiralama("kod"); setGrupFiltre("");
   }
 
   /**
@@ -558,7 +577,7 @@ export default function CariSayfasi() {
   async function finansGuncelle(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); if (!detay) return; const veri = new FormData(e.currentTarget);
     setHata(""); setBasari("");
-    try { await api(`/cari/${detay.id}`, { method: "PATCH", body: JSON.stringify({ riskLimiti: String(veri.get("riskLimiti") || "") || null, varsayilanVadeGun: veri.get("varsayilanVadeGun") === "" ? null : Number(veri.get("varsayilanVadeGun")), varsayilanIskonto: String(veri.get("varsayilanIskonto") || "") || null, fiyatListesiId: String(veri.get("fiyatListesiId") || "") || null, efaturaProfili: veri.get("efaturaProfili") as "temel" | "ticari", earsivGonderimSekli: veri.get("earsivGonderimSekli") as "elektronik" | "kagit", kamuIdaresi: veri.get("kamuIdaresi") === "on", harcamaBirimiVkn: String(veri.get("harcamaBirimiVkn") || "").trim() || null, harcamaBirimiAdi: String(veri.get("harcamaBirimiAdi") || "").trim() || null }) }); await detayAc(detay.id, true); setBasari("Risk ve finans koşulları güncellendi."); }
+    try { await api(`/cari/${detay.id}`, { method: "PATCH", body: JSON.stringify({ riskLimiti: String(veri.get("riskLimiti") || "") || null, grupId: String(veri.get("grupId") || "") || null, varsayilanVadeGun: veri.get("varsayilanVadeGun") === "" ? null : Number(veri.get("varsayilanVadeGun")), varsayilanIskonto: String(veri.get("varsayilanIskonto") || "") || null, fiyatListesiId: String(veri.get("fiyatListesiId") || "") || null, efaturaProfili: veri.get("efaturaProfili") as "temel" | "ticari", earsivGonderimSekli: veri.get("earsivGonderimSekli") as "elektronik" | "kagit", kamuIdaresi: veri.get("kamuIdaresi") === "on", harcamaBirimiVkn: String(veri.get("harcamaBirimiVkn") || "").trim() || null, harcamaBirimiAdi: String(veri.get("harcamaBirimiAdi") || "").trim() || null }) }); await detayAc(detay.id, true); setBasari("Risk ve finans koşulları güncellendi."); }
     catch (h) { setHata(h instanceof Error ? h.message : "Finans bilgileri güncellenemedi"); }
   }
 
@@ -966,6 +985,7 @@ export default function CariSayfasi() {
             {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/kasa-banka/kur-farki">💱 Kur Farkı</ButtonLabel>}
             {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/raporlar">📈 Raporlar</ButtonLabel>}
             {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/vade-hatirlatma">⏰ Vade Hatırlatma</ButtonLabel>}
+            {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/gruplar">🏢 Cari Grupları</ButtonLabel>}
             {!yeniSayfasi && !detaySayfasi && <Button onClick={() => setIceAktarAcik(true)}>📥 Excel&apos;den İçe Aktar</Button>}
             {(yeniSayfasi || detaySayfasi) ? <Button onClick={() => router.push("/panel/cari")}>Listeye dön</Button> : <ButtonLabel as="a" role="button" variant="primary" href="/panel/cari/yeni">➕ Yeni Cari</ButtonLabel>}
           </>
@@ -1169,6 +1189,7 @@ export default function CariSayfasi() {
                 <h4 className="document-editor__section-title">Risk ve finans koşulları</h4>
                 <form className="cari-kart-form" onSubmit={finansGuncelle}>
                     <Field label="Risk limiti (TL)"><Input name="riskLimiti" type="number" min="0" step="0.01" defaultValue={detay.riskLimiti ?? ""} placeholder="Limit tanımlayın" /></Field>
+                    <Field label="Cari grubu"><Select name="grupId" defaultValue={detay.grupId ?? ""}><option value="">Grup yok</option>{gruplar.map((g) => <option key={g.id} value={g.id}>{g.ad}</option>)}</Select></Field>
                     <Field label="Varsayılan vade (gün)"><Input name="varsayilanVadeGun" type="number" min="0" max="365" defaultValue={detay.varsayilanVadeGun ?? ""} /></Field>
                     <Field label="Varsayılan iskonto (%)"><Input name="varsayilanIskonto" type="number" min="0" max="100" step="0.01" defaultValue={detay.varsayilanIskonto ?? ""} /></Field>
                     <Field label="Fiyat listesi"><Select name="fiyatListesiId" defaultValue={detay.fiyatListesiId ?? ""}><option value="">Stok satış fiyatı</option>{fiyatListeleri.map((liste) => <option key={liste.id} value={liste.id}>{liste.ad} · {liste.dovizCinsi}</option>)}</Select></Field>
@@ -1263,6 +1284,16 @@ export default function CariSayfasi() {
                   <div className="invoice-summary__line"><span>Kalan limit</span><strong className={detay.risk.asim ? "is-negative" : ""}>{detay.risk.kalanLimit === null ? "—" : tl(detay.risk.kalanLimit)}</strong></div>
                   {detay.risk.asim && <small className="muted">Limit aşıldı; yeni vadeli işlemden önce finans onayı alın.</small>}
                 </div>
+                {detay.grup && (
+                  <div className={`invoice-summary${detay.grup.risk.asim ? " is-warning" : ""}`}>
+                    <h4>Grup: <a className="btn-link" href={`/panel/cari/gruplar?id=${detay.grup.id}`}>{detay.grup.ad}</a></h4>
+                    <div className="invoice-summary__line"><span>Üye</span><strong>{detay.grup.uyeSayisi}</strong></div>
+                    <div className="invoice-summary__line"><span>Grup riski</span><strong>{tl(detay.grup.risk.mevcutRisk)}</strong></div>
+                    <div className="invoice-summary__line" title="Grup risk limiti + üyelerin geçerli teminatları"><span>Grup limiti</span><strong>{detay.grup.risk.kullanilabilirLimit ? tl(detay.grup.risk.kullanilabilirLimit) : "Tanımsız"}</strong></div>
+                    {detay.grup.risk.kalanLimit !== null && <div className="invoice-summary__line"><span>Kalan grup limiti</span><strong className={detay.grup.risk.asim ? "is-negative" : ""}>{tl(detay.grup.risk.kalanLimit)}</strong></div>}
+                    {detay.grup.risk.asim && <small className="muted">Grup limiti aşıldı; gruptaki her cariye kesilen belge risk politikasına takılır.</small>}
+                  </div>
+                )}
                 <div className="invoice-summary">
                   <h4>Son hareketler</h4>
                   <div className="invoice-summary__line"><span>Son işlem</span><strong>{detay.finansalOzet.sonIslemTarihi ?? "—"}</strong></div>
@@ -1564,10 +1595,11 @@ export default function CariSayfasi() {
           <Field label="Bakiye"><Select aria-label="Bakiye durumu" value={bakiyeFiltre} onChange={(e) => setBakiyeFiltre(e.target.value as BakiyeFiltre)}>{BAKIYE_FILTRELERI.map(([deger, ad]) => <option value={deger} key={deger || "tumu"}>{ad}</option>)}</Select></Field>
           <Field label="Bakiye en az (TL)"><Input aria-label="Bakiye alt sınırı (TL)" inputMode="decimal" value={bakiyeMin} onChange={(e) => setBakiyeMin(e.target.value)} placeholder="Örn. 10000" /></Field>
           <Field label="Bakiye en çok (TL)"><Input aria-label="Bakiye üst sınırı (TL)" inputMode="decimal" value={bakiyeMax} onChange={(e) => setBakiyeMax(e.target.value)} placeholder="Örn. -5000" /></Field>
+          {(gruplar.length > 0 || grupFiltre) && <Field label="Cari grubu"><Select aria-label="Cari grubu" value={grupFiltre} onChange={(e) => setGrupFiltre(e.target.value)}><option value="">Tümü</option><option value="yok">Grubu olmayanlar</option>{gruplar.map((g) => <option key={g.id} value={g.id}>{g.ad}</option>)}{grupFiltre && grupFiltre !== "yok" && !gruplar.some((g) => g.id === grupFiltre) && <option value={grupFiltre}>Seçili grup</option>}</Select></Field>}
           <Field label="Sıralama"><Select aria-label="Sıralama" value={siralama} onChange={(e) => setSiralama(e.target.value as CariSiralama)}>{SIRALAMALAR.map(([deger, ad]) => <option value={deger} key={deger}>{ad}</option>)}</Select></Field>
         </div>
         <div className="saved-view-actions">
-          {(filtreTip !== "tumu" || bakiyeFiltre || bakiyeMin || bakiyeMax || siralama !== "kod") && <Button size="sm" type="button" onClick={filtreleriTemizle}>Filtreleri temizle</Button>}
+          {(filtreTip !== "tumu" || bakiyeFiltre || bakiyeMin || bakiyeMax || siralama !== "kod" || grupFiltre) && <Button size="sm" type="button" onClick={filtreleriTemizle}>Filtreleri temizle</Button>}
           <Button size="sm" type="button" onClick={() => setGorunumFormuAcik((acik) => !acik)}>Görünümü kaydet</Button>
         </div>
         {gorunumFormuAcik && <form className="saved-view-form" onSubmit={gorunumKaydet}><Input autoFocus aria-label="Görünüm adı" value={gorunumAdi} onChange={(e) => setGorunumAdi(e.target.value)} placeholder="Örn. Tahsilat yapılacak müşteriler" required /><Button size="sm" variant="primary" type="submit">Kaydet</Button><Button size="sm" type="button" onClick={() => setGorunumFormuAcik(false)}>Vazgeç</Button></form>}
@@ -1601,6 +1633,7 @@ export default function CariSayfasi() {
           listeParametreleri={listeParametreleri}
           dahaFazlaVar={Boolean(sonrakiCariImleci)}
           etiketler={etiketler}
+          gruplar={gruplar}
           onTamam={() => { void yukle(); void etiketleriYukle(); }}
         />
         <TableWrap>
@@ -1649,7 +1682,7 @@ export default function CariSayfasi() {
                             {c.karaListe && <span title="Kara liste / işlem blokajı">🚫 </span>}
                             {c.unvan}
                           </div>
-                          <div className="cell-entity__meta">{c.kod}</div>
+                          <div className="cell-entity__meta">{c.kod}{c.grup && <> · <span title="Cari grubu">🏢 {c.grup.ad}</span></>}</div>
                         </div>
                       </div>
                     </td>
