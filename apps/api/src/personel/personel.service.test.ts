@@ -36,6 +36,8 @@ describe("PersonelService", () => {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         update: vi.fn().mockResolvedValue({ id: "bordro-1" }),
       },
+      personelIstihdamDonemi: { findFirst: vi.fn(async () => null), updateMany: vi.fn(async () => ({ count: 1 })) },
+
       personelDonemCalisma: {
         findMany: vi.fn().mockResolvedValue([]),
       },

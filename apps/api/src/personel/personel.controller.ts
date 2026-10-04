@@ -105,10 +105,15 @@ export class PersonelController {
     return this.personelService.guncelle(tenantId, id, veri, userId);
   }
 
+  @Post(":id/cikis-onizleme")
+  cikisOnizleme(@Param("id", ParseUUIDPipe) id: string, @Body() body: unknown) {
+    return this.personelService.cikisOnizleme(aktifBaglam().tenantId, id, body);
+  }
+
   @Post(":id/isten-cikar")
   async istenCikar(@Param("id") id: string, @Body() body: unknown) {
-    const { tenantId } = aktifBaglam();
-    return this.personelService.istenCikar(tenantId, id, personelIstenCikarSemasi.parse(body));
+    const { tenantId, userId } = aktifBaglam();
+    return this.personelService.istenCikar(tenantId, id, personelIstenCikarSemasi.parse(body), userId);
   }
 
   @Post(":id/yeniden-baslat")

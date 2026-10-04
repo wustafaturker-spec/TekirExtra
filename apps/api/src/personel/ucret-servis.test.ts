@@ -9,6 +9,8 @@ describe("ücret geçmişi servisi (PRS-06)", () => {
   it("net anlaşılan personel mevzuat seti varsa brüte çevrilir; net hedefi tutar, kesintiler yazılır", async () => {
     const tx: any = {
       personel: { findMany: vi.fn(async () => [{ id: "p1", personelNo: "PRS-1", engellilikDerecesi: null, sgkTesvikOrani: D(0), istihdamDonemleri: [{ baslangicTarihi: new Date("2025-01-01T00:00:00Z"), bitisTarihi: null }], ucretler: [{ yururlukTarihi: new Date("2025-01-01T00:00:00Z"), tip: "net", tutar: D(25500) }] }]) },
+      personelIstihdamDonemi: { findFirst: vi.fn(async () => null), updateMany: vi.fn(async () => ({ count: 1 })) },
+
       personelDonemCalisma: { findMany: vi.fn(async () => []) },
       personelIzinTalebi: { findMany: vi.fn(async () => []) },
       bordroMevzuatSeti: { findFirst: vi.fn(async () => ({ id: "m1", parametreler: p })) },
@@ -27,6 +29,8 @@ describe("ücret geçmişi servisi (PRS-06)", () => {
   it("brüt ücretli personelde mevzuat seti yoksa tahakkuk durur", async () => {
     const tx: any = {
       personel: { findMany: vi.fn(async () => [{ id: "p1", personelNo: "PRS-1", engellilikDerecesi: null, sgkTesvikOrani: D(0), istihdamDonemleri: [{ baslangicTarihi: new Date("2025-01-01T00:00:00Z"), bitisTarihi: null }], ucretler: [{ yururlukTarihi: new Date("2025-01-01T00:00:00Z"), tip: "brut", tutar: D(40000) }] }]) },
+      personelIstihdamDonemi: { findFirst: vi.fn(async () => null), updateMany: vi.fn(async () => ({ count: 1 })) },
+
       personelDonemCalisma: { findMany: vi.fn(async () => []) },
       personelIzinTalebi: { findMany: vi.fn(async () => []) },
       bordroMevzuatSeti: { findFirst: vi.fn(async () => null) },

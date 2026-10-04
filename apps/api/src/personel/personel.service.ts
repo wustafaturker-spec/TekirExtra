@@ -20,8 +20,10 @@ import { bordroHesapla } from "./bordro-hesaplama";
 import { hesapOzetiTutari } from "./personel-rapor-yardimci";
 import { donemCalismaSemasi, personelUcretSemasi } from "./personel.semalar";
 import { sgkDevirleriniDonemeTasi, type SgkMatrahDevirKalemi } from "./sgk-matrah-devri";
-import { istihdamGunu, izinliPrimGunu, tahakkukKapsamiKosulu, type UcretsizIzin } from "./tahakkuk-kapsami";
+import { donemSinirlari, istihdamGunu, izinliPrimGunu, tahakkukKapsamiKosulu, type UcretsizIzin } from "./tahakkuk-kapsami";
 import { donemUcreti, nettenBrute } from "./ucret-donemi";
+import { CIKIS_NEDENLERI, cikisHesapla, type IhbarDurumu } from "./cikis-hesabi";
+import { cikisOnizlemeSemasi } from "./personel.semalar";
 
 const PERSONEL_GUVENLI_SECIM = { id: true, personelNo: true, ad: true, soyad: true, departman: true, unvan: true, calismaTipi: true, durum: true, netMaas: true, brutMaas: true, engellilikDerecesi: true, sgkTesvikOrani: true, cariId: true } as const;
 
@@ -235,7 +237,52 @@ export class PersonelService {
     });
   }
 
-  async istenCikar(tenantId: string, id: string, girdi: z.infer<typeof personelIstenCikarSemasi>) {
+  /**
+   * PRS-18: çıkış hesabı önizlemesi. Hak önerisi çıkış nedeninden; son brüt
+   * ücret geçmişinden (net ücretli personelde mevzuatla brüte çevrilir), yan
+   * ödeme önerisi son puantajın nakit yemek yardımı, izin günü yıllık izin bakiyesi.
+   */
+  async cikisOnizleme(tenantId: string, id: string, girdi: unknown) {
+    const veri = cikisOnizlemeSemasi.parse(girdi);
+    return this.prisma.tenantIslem(tenantId, (tx) => this.cikisHesabiKur(tx, tenantId, id, veri.cikisTarihi, veri));
+  }
+
+  private async cikisHesabiKur(tx: Prisma.TransactionClient, tenantId: string, id: string, cikisTarihi: Date, veri: z.infer<typeof cikisOnizlemeSemasi> | NonNullable<z.infer<typeof personelIstenCikarSemasi>["cikisHesabi"]>) {
+    const personel = await tx.personel.findFirst({ where: { tenantId, id }, select: { girisTarihi: true, engellilikDerecesi: true, sgkTesvikOrani: true, istihdamDonemleri: { where: { OR: [{ bitisTarihi: null }, { bitisTarihi: { gte: cikisTarihi } }] }, orderBy: { baslangicTarihi: "desc" }, take: 1, select: { baslangicTarihi: true } }, ucretler: { where: { yururlukTarihi: { lte: cikisTarihi } }, orderBy: { yururlukTarihi: "desc" }, take: 1, select: { tip: true, tutar: true } } } });
+    if (!personel) throw new NotFoundException("Personel bulunamadı");
+    const kural = CIKIS_NEDENLERI[veri.cikisNedeni];
+    const oneri = { kidemHakki: kural.kidem as boolean, ihbarDurumu: kural.ihbar as IhbarDurumu };
+    const kidemHakki = veri.kidemHakki ?? oneri.kidemHakki;
+    const ihbarDurumu = veri.ihbarDurumu ?? oneri.ihbarDurumu;
+    const girisTarihi = personel.istihdamDonemleri[0]?.baslangicTarihi ?? personel.girisTarihi;
+    const ucret = personel.ucretler[0];
+    let sonBrutOnerisi = 0;
+    if (ucret) {
+      const tutar = ucret.tutar.toNumber();
+      const yil = cikisTarihi.getUTCFullYear(), ay = cikisTarihi.getUTCMonth() + 1;
+      const mevzuat = ucret.tip === "net" ? await this.donemMevzuatiVarsa(tx, tenantId, yil, ay) : null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      sonBrutOnerisi = mevzuat ? nettenBrute(mevzuat.parametreler as any, tutar, { primGunu: 30, engellilikDerecesi: personel.engellilikDerecesi ?? undefined, sgkTesvikOrani: Number(personel.sgkTesvikOrani ?? 0), oncekiKumulatifMatrah: 0, oncekiAsgariKumulatifMatrah: 0 }) : tutar;
+    }
+    const sonPuantaj = await tx.personelDonemCalisma.findFirst({ where: { tenantId, personelId: id }, orderBy: [{ yil: "desc" }, { ay: "desc" }], select: { nakitYemekYardimi: true } });
+    const yillik = await tx.personelIzinTuru.findFirst({ where: { tenantId, kod: "yillik" }, select: { id: true } });
+    const hareketler = yillik ? await tx.personelIzinBakiyeHareketi.findMany({ where: { tenantId, personelId: id, izinTuruId: yillik.id }, select: { tip: true, gun: true } }) : [];
+    const izinBakiyesi = Math.max(0, hareketler.reduce((t, h) => (["kullanim", "duzeltme_azalis"].includes(h.tip) ? t - h.gun.toNumber() : t + h.gun.toNumber()), 0));
+    const sonBrut = veri.sonBrut ?? sonBrutOnerisi;
+    const izinGunu = veri.izinGunu ?? izinBakiyesi;
+    const hesap = cikisHesapla({ girisTarihi, cikisTarihi, kidemHakki, ihbarDurumu, sonBrut, yanOdemeler: veri.yanOdemeler, izinGunu });
+    return {
+      cikisNedeni: veri.cikisNedeni,
+      cikisNedeniAdi: kural.ad,
+      oneri: { ...oneri, sonBrut: sonBrutOnerisi, yanOdemeler: sonPuantaj?.nakitYemekYardimi.toNumber() ?? 0, izinGunu: izinBakiyesi },
+      girdiler: { girisTarihi: girisTarihi.toISOString().slice(0, 10), cikisTarihi: cikisTarihi.toISOString().slice(0, 10), kidemHakki, ihbarDurumu, sonBrut, yanOdemeler: veri.yanOdemeler, izinGunu },
+      oneridenFarkli: kidemHakki !== oneri.kidemHakki || ihbarDurumu !== oneri.ihbarDurumu,
+      gerekce: veri.gerekce || null,
+      ...hesap,
+    };
+  }
+
+  async istenCikar(tenantId: string, id: string, girdi: z.infer<typeof personelIstenCikarSemasi>, userId?: string) {
     const veri = personelIstenCikarSemasi.parse(girdi);
     const personel = await this.getir(tenantId, id);
     if (personel.durum === "isten_ayrildi") {
@@ -246,16 +293,22 @@ export class PersonelService {
     }
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const cikis = veri.cikisHesabi ? await this.cikisHesabiKur(tx, tenantId, id, veri.cikisTarihi, veri.cikisHesabi) : null;
+      if (cikis?.oneridenFarkli && (cikis.gerekce ?? "").length < 3) throw new BadRequestException("Kıdem/ihbar hakkı çıkış nedeninin önerisinden farklı; gerekçe yazın (en az 3 karakter)");
       await tx.personelIstihdamDonemi.updateMany({
         where: { tenantId, personelId: id, bitisTarihi: null },
-        data: { bitisTarihi: veri.cikisTarihi, ayrilisNedeni: veri.ayrilisNedeni },
+        data: { bitisTarihi: veri.cikisTarihi, ayrilisNedeni: veri.ayrilisNedeni, ...(cikis && { cikisNedeni: cikis.cikisNedeni, cikisHesabi: cikis as unknown as Prisma.InputJsonValue }) },
       });
       const personel = await tx.personel.update({
         where: { id },
         data: { durum: "isten_ayrildi", aktif: false, cikisTarihi: veri.cikisTarihi, ayrilisNedeni: veri.ayrilisNedeni },
         include: { cari: true },
       });
-      return personelMaskele(personel);
+      if (cikis) await tx.auditLog.create({ data: { tenantId, userId: userId ?? null, islem: "personel_cikis_hesabi", varlik: "personel", varlikId: id, detay: { cikisNedeni: cikis.cikisNedeni, girdiler: cikis.girdiler, oneri: cikis.oneri, oneridenFarkli: cikis.oneridenFarkli, gerekce: cikis.gerekce, kidem: cikis.kidemTutari, ihbar: cikis.ihbarTutari, izinUcreti: cikis.izinUcreti } as Prisma.InputJsonValue } });
+      const ay = veri.cikisTarihi.getUTCMonth() + 1, yil = veri.cikisTarihi.getUTCFullYear();
+      const cikisBordrosu = await tx.personelBordro.findFirst({ where: { tenantId, personelId: id, donemYil: yil, donemAy: ay }, select: { durum: true } });
+      const uyari = !cikisBordrosu ? null : ["hesaplandi", "onay_bekliyor"].includes(cikisBordrosu.durum) ? `${yil}/${String(ay).padStart(2, "0")} bordrosu çıkıştan önce hesaplanmış; çıkış tarihini ve tazminatları almak için yeniden hesaplayın` : `${yil}/${String(ay).padStart(2, "0")} bordrosu onaylı; çıkışı yansıtmak için onayı geri alıp yeniden hesaplayın`;
+      return { ...personelMaskele(personel), cikisHesabi: cikis, uyari };
     });
   }
 
@@ -453,15 +506,29 @@ export class PersonelService {
     const fazlaMesaiBrut = calisma?.fazlaMesaiBrut ?? new Prisma.Decimal(0);
     const primIkramiyeBrut = calisma?.primIkramiyeBrut ?? new Prisma.Decimal(0);
     const ucretDisiOdeme = fazlaMesaiBrut.add(primIkramiyeBrut);
+    // PRS-18: çıkış ayında kıdem, ihbar ve kullanılmamış izin ücreti.
+    const { baslangic: ayBasi, son: aySonu } = donemSinirlari(donemYil, donemAy);
+    const cikisDonemi = await tx.personelIstihdamDonemi.findFirst({ where: { tenantId, personelId: p.id, bitisTarihi: { gte: ayBasi, lte: aySonu }, NOT: { cikisHesabi: { equals: Prisma.DbNull } } }, orderBy: { bitisTarihi: "desc" }, select: { cikisHesabi: true } });
+    const ch = (cikisDonemi?.cikisHesabi ?? null) as { kidemTutari?: number; ihbarTutari?: number; ihbarDurumu?: IhbarDurumu; izinUcreti?: number; izinGunu?: number; ihbarHaftasi?: number } | null;
+    const kidemTazminati = ch?.kidemTutari ?? 0, izinUcreti = ch?.izinUcreti ?? 0;
+    const ihbarTazminati = ch?.ihbarDurumu === "isveren_oder" ? ch.ihbarTutari ?? 0 : 0;
+    const ihbarKesintisi = ch?.ihbarDurumu === "isci_oder" ? ch.ihbarTutari ?? 0 : 0;
+    const cikisKazanclari = [
+      ...(izinUcreti > 0 ? [{ tip: "kazanc" as const, kod: "izin_ucreti", aciklama: `Kullanılmamış yıllık izin ücreti (${ch?.izinGunu} gün)`, tutar: izinUcreti }] : []),
+      ...(ihbarTazminati > 0 ? [{ tip: "kazanc" as const, kod: "ihbar_tazminati", aciklama: `İhbar tazminatı (${ch?.ihbarHaftasi} hafta)`, tutar: ihbarTazminati }] : []),
+      ...(kidemTazminati > 0 ? [{ tip: "kazanc" as const, kod: "kidem_tazminati", aciklama: "Kıdem tazminatı", tutar: kidemTazminati }] : []),
+    ];
+    const cikisKesintileri = ihbarKesintisi > 0 ? [{ tip: "kesinti" as const, kod: "ihbar_kesintisi", aciklama: `İhbar önelsiz ayrılış (${ch?.ihbarHaftasi} hafta)`, tutar: ihbarKesintisi }] : [];
     const sgkMatrahDevirleri = oncekiDevirBordrosu ? hesapOzetindenSgkDevirleri(oncekiDevirBordrosu.hesapOzeti, oncekiDevirBordrosu.donemYil, oncekiDevirBordrosu.donemAy, donemYil, donemAy) : [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const hesap = temelBrut && mevzuat ? bordroHesapla(mevzuat.parametreler as any, { brutUcret: temelBrut.toNumber(), ucretDisiOdeme:ucretDisiOdeme.toNumber(), sgkMatrahDevirleri, primGunu, nakitYemekYardimi:calisma?.nakitYemekYardimi.toNumber()??0, fiiliCalismaGunu:calisma?.fiiliCalismaGunu??0, engellilikDerecesi: p.engellilikDerecesi ?? undefined, sgkTesvikOrani: calisma?.sgkTesvikOrani?.toNumber() ?? p.sgkTesvikOrani.toNumber(), sahisSigortaPrimi:calisma?.sahisSigortaPrimi.toNumber()??0, hayatSigortaPrimi:calisma?.hayatSigortaPrimi.toNumber()??0, sendikaAidati:calisma?.sendikaAidati.toNumber()??0, oncekiKumulatifSigortaIndirimi:hesapOzetiTutari(onceki?.hesapOzeti??null,"yeniKumulatifSigortaIndirimi").toNumber(), oncekiKumulatifMatrah: onceki?.kumulatifMatrah?.toNumber() ?? 0, oncekiAsgariKumulatifMatrah: onceki?.asgariKumulatifMatrah?.toNumber() ?? 0 }) : null;
+    const hesap = temelBrut && mevzuat ? bordroHesapla(mevzuat.parametreler as any, { brutUcret: temelBrut.toNumber(), ucretDisiOdeme:ucretDisiOdeme.toNumber(), sgkMatrahDevirleri, primGunu, nakitYemekYardimi:calisma?.nakitYemekYardimi.toNumber()??0, fiiliCalismaGunu:calisma?.fiiliCalismaGunu??0, engellilikDerecesi: p.engellilikDerecesi ?? undefined, sgkTesvikOrani: calisma?.sgkTesvikOrani?.toNumber() ?? p.sgkTesvikOrani.toNumber(), sahisSigortaPrimi:calisma?.sahisSigortaPrimi.toNumber()??0, hayatSigortaPrimi:calisma?.hayatSigortaPrimi.toNumber()??0, sendikaAidati:calisma?.sendikaAidati.toNumber()??0, oncekiKumulatifSigortaIndirimi:hesapOzetiTutari(onceki?.hesapOzeti??null,"yeniKumulatifSigortaIndirimi").toNumber(), oncekiKumulatifMatrah: onceki?.kumulatifMatrah?.toNumber() ?? 0, oncekiAsgariKumulatifMatrah: onceki?.asgariKumulatifMatrah?.toNumber() ?? 0, izinUcreti, ihbarTazminati, kidemTazminati }) : null;
     const operasyonelNet = oranli;
     const kalemler: { tip: "kazanc" | "kesinti"; kod: string; aciklama: string; tutar: Prisma.Decimal.Value }[] = hesap ? [
       { tip: "kazanc", kod: "temel_brut_ucret", aciklama: "Temel brüt ücret", tutar: temelBrut! },
       ...(fazlaMesaiBrut.gt(0) ? [{ tip: "kazanc" as const, kod: "fazla_mesai", aciklama: "Fazla mesai brüt", tutar: fazlaMesaiBrut }] : []),
       ...(primIkramiyeBrut.gt(0) ? [{ tip: "kazanc" as const, kod: "prim_ikramiye", aciklama: "Prim / ikramiye brüt", tutar: primIkramiyeBrut }] : []),
       ...(Number(hesap.nakitYemekYardimi) > 0 ? [{ tip: "kazanc" as const, kod: "nakit_yemek_yardimi", aciklama: "Nakit yemek yardımı", tutar: hesap.nakitYemekYardimi }] : []),
+      ...cikisKazanclari,
       { tip: "kesinti", kod: "sgk_isci", aciklama: "SGK çalışan payı", tutar: hesap.sgkIsci },
       { tip: "kesinti", kod: "issizlik_isci", aciklama: "İşsizlik çalışan payı", tutar: hesap.issizlikIsci },
       { tip: "kesinti", kod: "gelir_vergisi", aciklama: "Gelir vergisi", tutar: hesap.gelirVergisi },
@@ -469,18 +536,22 @@ export class PersonelService {
       ...(Number(hesap.sahisSigortaPrimi) > 0 ? [{ tip: "kesinti" as const, kod: "sahis_sigorta_primi", aciklama: "Şahıs sigortası primi", tutar: hesap.sahisSigortaPrimi }] : []),
       ...(Number(hesap.hayatSigortaPrimi) > 0 ? [{ tip: "kesinti" as const, kod: "hayat_sigorta_primi", aciklama: "Hayat sigortası primi", tutar: hesap.hayatSigortaPrimi }] : []),
       ...(Number(hesap.sendikaAidati) > 0 ? [{ tip: "kesinti" as const, kod: "sendika_aidati", aciklama: "Sendika aidatı", tutar: hesap.sendikaAidati }] : []),
+      ...cikisKesintileri,
     ] : [
       // P2-6: mevzuat seti yoksa vergi/SGK hesaplanmaz; puantajdaki ek kazançlar yine de bordroya girer.
       { tip: "kazanc", kod: "temel_ucret", aciklama: "Temel ücret", tutar: operasyonelNet },
       ...(fazlaMesaiBrut.gt(0) ? [{ tip: "kazanc" as const, kod: "fazla_mesai", aciklama: "Fazla mesai", tutar: fazlaMesaiBrut }] : []),
       ...(primIkramiyeBrut.gt(0) ? [{ tip: "kazanc" as const, kod: "prim_ikramiye", aciklama: "Prim / ikramiye", tutar: primIkramiyeBrut }] : []),
       ...(calisma?.nakitYemekYardimi.gt(0) ? [{ tip: "kazanc" as const, kod: "nakit_yemek_yardimi", aciklama: "Nakit yemek yardımı", tutar: calisma.nakitYemekYardimi }] : []),
+      ...cikisKazanclari,
+      ...cikisKesintileri,
     ];
-    const operasyonelToplam = kalemler.reduce((t, k) => t.add(new Prisma.Decimal(k.tutar.toString())), new Prisma.Decimal(0));
+    const kazancToplami = kalemler.filter((k) => k.tip === "kazanc").reduce((t, k) => t.add(new Prisma.Decimal(k.tutar.toString())), new Prisma.Decimal(0));
+    const operasyonelToplam = kazancToplami.sub(ihbarKesintisi);
     return {
       baslik: {
-        brutMaas: hesap ? new Prisma.Decimal(hesap.brutUcret) : operasyonelToplam,
-        netMaas: hesap ? new Prisma.Decimal(hesap.netUcret) : operasyonelToplam,
+        brutMaas: hesap ? new Prisma.Decimal(hesap.brutUcret).add(ihbarTazminati).add(kidemTazminati) : kazancToplami,
+        netMaas: hesap ? new Prisma.Decimal(hesap.netUcret).sub(ihbarKesintisi) : operasyonelToplam,
         mevzuatSetiId: hesap ? mevzuat!.id : null,
         hesapOzeti: hesap ? ({ ...hesap, ucretTipi: ucret.tip, ...(ucret.tip === "net" ? { hedefNet: oranli.toFixed(2) } : {}) } as Prisma.InputJsonValue) : Prisma.DbNull,
         kumulatifMatrah: hesap ? new Prisma.Decimal(hesap.yeniKumulatifMatrah) : null,

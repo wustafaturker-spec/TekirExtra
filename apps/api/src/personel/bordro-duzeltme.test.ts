@@ -17,6 +17,8 @@ function kur(bordro: Record<string, unknown>, ek: Record<string, unknown> = {}) 
       deleteMany: vi.fn(async () => ({ count: 1 })),
     },
     personel: { findFirstOrThrow: vi.fn(async () => ({ id: "p1", netMaas: D(30000), brutMaas: null, engellilikDerecesi: null, sgkTesvikOrani: D(0), istihdamDonemleri: [{ baslangicTarihi: new Date("2025-01-01T00:00:00Z"), bitisTarihi: null }], ucretler: [{ yururlukTarihi: new Date("2020-01-01T00:00:00Z"), tip: "net", tutar: D(30000) }] })) },
+    personelIstihdamDonemi: { findFirst: vi.fn(async () => null), updateMany: vi.fn(async () => ({ count: 1 })) },
+
     personelDonemCalisma: { findUnique: vi.fn(async () => ({ primGunu: 20, eksikGunNedeni: "ucretsiz_izin", fazlaMesaiBrut: D(0), primIkramiyeBrut: D(0), nakitYemekYardimi: D(0), fiiliCalismaGunu: 0, sgkTesvikOrani: null, sahisSigortaPrimi: D(0), hayatSigortaPrimi: D(0), sendikaAidati: D(0) })) },
     personelBordroKalemi: {
       count: vi.fn(async () => 0),

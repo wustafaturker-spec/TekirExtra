@@ -71,6 +71,10 @@ export default function PersonelDetaySayfasi() {
   const [yenidenAcik, setYenidenAcik] = useState(false);
   const [hassas, setHassas] = useState<{ tckn: string | null; iban: string | null } | null>(null);
   const [ayrilis, setAyrilis] = useState({ cikisTarihi: bugun(), ayrilisNedeni: "" });
+  /** PRS-18: çıkış hesabı (kıdem, ihbar, izin ücreti); boş alan = sistemin önerisi. */
+  const [cikisForm, setCikisForm] = useState<CikisFormu>({ cikisNedeni: "", yanOdemeler: "", gerekce: "" });
+  const [cikisOnizleme, setCikisOnizleme] = useState<CikisOnizleme | null>(null);
+  const [cikisUyari, setCikisUyari] = useState<string | null>(null);
   const [yeniGirisTarihi, setYeniGirisTarihi] = useState(bugun());
   const [duzenleme, setDuzenleme] = useState<DuzenlemeFormu | null>(null);
   /** PRS-06: yürürlük tarihli ücret değişikliği. */
@@ -89,11 +93,33 @@ export default function PersonelDetaySayfasi() {
 
   useEffect(() => { void yukle(); }, [yukle]);
 
+  const cikisGovdesi = useCallback(() => cikisForm.cikisNedeni ? {
+    cikisNedeni: cikisForm.cikisNedeni,
+    ...(cikisForm.kidemHakki !== undefined && { kidemHakki: cikisForm.kidemHakki }),
+    ...(cikisForm.ihbarDurumu && { ihbarDurumu: cikisForm.ihbarDurumu }),
+    ...(cikisForm.sonBrut && { sonBrut: Number(cikisForm.sonBrut) }),
+    ...(cikisForm.izinGunu && { izinGunu: Number(cikisForm.izinGunu) }),
+    yanOdemeler: Number(cikisForm.yanOdemeler || cikisOnizleme?.oneri.yanOdemeler || 0),
+    ...(cikisForm.gerekce && { gerekce: cikisForm.gerekce }),
+  } : null, [cikisForm, cikisOnizleme?.oneri.yanOdemeler]);
+
+  useEffect(() => {
+    const govde = cikisGovdesi();
+    if (!ayrilisAcik || !govde || !ayrilis.cikisTarihi) { setCikisOnizleme(null); return; }
+    const zamanlayici = setTimeout(() => {
+      api<CikisOnizleme>(`/personel/${id}/cikis-onizleme`, { method: "POST", body: JSON.stringify({ ...govde, cikisTarihi: ayrilis.cikisTarihi }) })
+        .then(setCikisOnizleme).catch((e) => setHata(e instanceof Error ? e.message : "Çıkış hesabı yapılamadı"));
+    }, 300);
+    return () => clearTimeout(zamanlayici);
+  }, [ayrilisAcik, ayrilis.cikisTarihi, cikisGovdesi, id]);
+
   const istenCikar = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       setIsleniyor(true); setHata(null);
-      await api(`/personel/${id}/isten-cikar`, { method: "POST", body: JSON.stringify(ayrilis) });
+      const govde = cikisGovdesi();
+      const r = await api<{ uyari: string | null }>(`/personel/${id}/isten-cikar`, { method: "POST", body: JSON.stringify({ ...ayrilis, ...(govde && { cikisHesabi: govde }) }) });
+      setCikisUyari(r.uyari);
       setAyrilisAcik(false);
       await yukle();
     } catch (e) {
@@ -261,10 +287,33 @@ export default function PersonelDetaySayfasi() {
         <PersonelBelgeleri personelId={personel.id} />
       </>}
 
-      {ayrilisAcik && personel && <IslemModal baslik="İşten çıkış işlemi" aciklama="Bu işlem personeli gelecek tahakkukların dışında bırakır." kapat={() => setAyrilisAcik(false)}>
+      {cikisUyari && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{cikisUyari}</div>}
+      {ayrilisAcik && personel && <IslemModal genis baslik="İşten çıkış işlemi" aciklama="Bu işlem personeli gelecek tahakkukların dışında bırakır. Çıkış hesabı seçilirse kıdem, ihbar ve kullanılmamış izin ücreti çıkış ayının bordrosuna kalem olarak girer." kapat={() => setAyrilisAcik(false)}>
         <form onSubmit={istenCikar} className="space-y-4">
-          <Alan baslik="Çıkış tarihi"><input required type="date" value={ayrilis.cikisTarihi} onChange={(e) => setAyrilis({ ...ayrilis, cikisTarihi: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
-          <Alan baslik="Ayrılış nedeni"><textarea required minLength={3} maxLength={500} rows={3} value={ayrilis.ayrilisNedeni} onChange={(e) => setAyrilis({ ...ayrilis, ayrilisNedeni: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Alan baslik="Çıkış tarihi"><input required type="date" value={ayrilis.cikisTarihi} onChange={(e) => setAyrilis({ ...ayrilis, cikisTarihi: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
+            <Alan baslik="Yasal çıkış nedeni"><select value={cikisForm.cikisNedeni} onChange={(e) => setCikisForm({ ...cikisForm, cikisNedeni: e.target.value, kidemHakki: undefined, ihbarDurumu: undefined })} className="w-full rounded-lg border px-3 py-2"><option value="">Çıkış hesabı yapma</option>{CIKIS_NEDENLERI.map(([k, ad]) => <option key={k} value={k}>{ad}</option>)}</select></Alan>
+          </div>
+          <Alan baslik="Ayrılış nedeni (açıklama)"><textarea required minLength={3} maxLength={500} rows={2} value={ayrilis.ayrilisNedeni} onChange={(e) => setAyrilis({ ...ayrilis, ayrilisNedeni: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
+          {cikisForm.cikisNedeni && cikisOnizleme && <div className="space-y-3 rounded-xl border border-slate-200 p-4">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={cikisOnizleme.girdiler.kidemHakki} onChange={(e) => setCikisForm({ ...cikisForm, kidemHakki: e.target.checked })} /> Kıdem tazminatı hakkı</label>
+              <Alan baslik="İhbar"><select value={cikisOnizleme.girdiler.ihbarDurumu} onChange={(e) => setCikisForm({ ...cikisForm, ihbarDurumu: e.target.value as CikisFormu["ihbarDurumu"] })} className="w-full rounded-lg border px-3 py-2"><option value="yok">Ödenmez (önel verildi / hak yok)</option><option value="isveren_oder">İşveren öder</option><option value="isci_oder">İşçi önelsiz ayrıldı (kesinti)</option></select></Alan>
+              <Alan baslik="Kullanılmamış izin (gün)"><input type="number" min={0} step="0.5" placeholder={String(cikisOnizleme.oneri.izinGunu)} value={cikisForm.izinGunu ?? ""} onChange={(e) => setCikisForm({ ...cikisForm, izinGunu: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
+              <Alan baslik="Son brüt ücret (aylık)"><input type="number" min={0} step="0.01" placeholder={cikisOnizleme.oneri.sonBrut.toFixed(2)} value={cikisForm.sonBrut ?? ""} onChange={(e) => setCikisForm({ ...cikisForm, sonBrut: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
+              <Alan baslik="Düzenli yan ödemeler (aylık)"><input type="number" min={0} step="0.01" placeholder={cikisOnizleme.oneri.yanOdemeler.toFixed(2)} value={cikisForm.yanOdemeler} onChange={(e) => setCikisForm({ ...cikisForm, yanOdemeler: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>
+            </div>
+            {cikisOnizleme.oneridenFarkli && <Alan baslik="Gerekçe (hak, nedenin önerisinden farklı)"><input required minLength={3} maxLength={500} value={cikisForm.gerekce} onChange={(e) => setCikisForm({ ...cikisForm, gerekce: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan>}
+            <table className="w-full text-sm"><tbody className="divide-y divide-slate-100">
+              <tr><td className="py-1.5 text-slate-500">Hizmet süresi</td><td className="py-1.5 text-right">{cikisOnizleme.hizmetGunu} gün ({cikisOnizleme.girdiler.girisTarihi} – {cikisOnizleme.girdiler.cikisTarihi})</td></tr>
+              <tr><td className="py-1.5 text-slate-500">Giydirilmiş brüt / kıdem esası (tavan {para(String(cikisOnizleme.kidemTavani))})</td><td className="py-1.5 text-right">{para(String(cikisOnizleme.giydirilmisBrut))} / {para(String(cikisOnizleme.kidemEsasi))}</td></tr>
+              <tr><td className="py-1.5">Kıdem tazminatı <span className="text-xs text-slate-500">(yalnız damga vergisi)</span></td><td className="py-1.5 text-right font-semibold">{para(String(cikisOnizleme.kidemTutari))}</td></tr>
+              <tr><td className="py-1.5">İhbar tazminatı · {cikisOnizleme.ihbarHaftasi} hafta <span className="text-xs text-slate-500">(GV + DV){cikisOnizleme.ihbarDurumu === "isci_oder" ? " — işçiden kesilir" : ""}</span></td><td className="py-1.5 text-right font-semibold">{para(String(cikisOnizleme.ihbarTutari))}</td></tr>
+              <tr><td className="py-1.5">Kullanılmamış izin ücreti · {cikisOnizleme.izinGunu} gün <span className="text-xs text-slate-500">(SGK + GV + DV)</span></td><td className="py-1.5 text-right font-semibold">{para(String(cikisOnizleme.izinUcreti))}</td></tr>
+            </tbody></table>
+            {cikisOnizleme.kidemUyari && <p className="text-xs text-amber-800">{cikisOnizleme.kidemUyari}</p>}
+            <p className="text-xs text-slate-500">Tutarlar brüttür; kesintiler çıkış ayının bordrosunda hesaplanır. Hizmet süresi son istihdam dönemidir; önceki dönemlerin birleştirilmesi gerekiyorsa tutarı elle değerlendirin.</p>
+          </div>}
           <ModalEylemler isleniyor={isleniyor} kapat={() => setAyrilisAcik(false)} onay="İşten çıkışı kaydet" tehlikeli />
         </form>
       </IslemModal>}
@@ -316,6 +365,15 @@ interface DuzenlemeFormu {
 
 function OzetKart({ baslik, deger, alt }: { baslik: string; deger: string; alt: string }) { return <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{baslik}</p><p className="mt-2 text-xl font-bold text-slate-900">{deger}</p><p className="mt-1 text-xs capitalize text-slate-500">{alt}</p></article>; }
 function Bilgi({ baslik, deger }: { baslik: string; deger: string }) { return <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">{baslik}</dt><dd className="mt-1 break-words text-sm font-medium text-slate-800">{deger}</dd></div>; }
+type CikisFormu = { cikisNedeni: string; kidemHakki?: boolean; ihbarDurumu?: "yok" | "isveren_oder" | "isci_oder"; sonBrut?: string; yanOdemeler: string; izinGunu?: string; gerekce: string };
+interface CikisOnizleme {
+  oneri: { kidemHakki: boolean; ihbarDurumu: string; sonBrut: number; yanOdemeler: number; izinGunu: number };
+  girdiler: { girisTarihi: string; cikisTarihi: string; kidemHakki: boolean; ihbarDurumu: "yok" | "isveren_oder" | "isci_oder" };
+  oneridenFarkli: boolean; hizmetGunu: number; giydirilmisBrut: number; kidemTavani: number; kidemEsasi: number; kidemTutari: number; kidemUyari: string | null;
+  ihbarHaftasi: number; ihbarTutari: number; ihbarDurumu: string; izinGunu: number; izinUcreti: number;
+}
+const CIKIS_NEDENLERI: [string, string][] = [["isveren_fesih", "İşveren feshi (haklı neden olmadan)"], ["istifa", "İstifa"], ["emeklilik", "Emeklilik / yaşlılık aylığı"], ["askerlik", "Muvazzaf askerlik"], ["evlilik", "Evlilik (kadın, 1 yıl içinde)"], ["isci_hakli_fesih", "İşçinin haklı feshi (m.24)"], ["isveren_saglik_zorlayici", "İşveren feshi — sağlık / zorlayıcı neden"], ["ahlak_iyiniyet", "İşveren feshi — ahlak ve iyiniyet ihlali"], ["deneme_suresi", "Deneme süresinde fesih"], ["belirli_sure_bitimi", "Belirli süreli sözleşmenin bitimi"], ["olum", "Ölüm"], ["diger", "Diğer"]];
+
 function Alan({ baslik, children }: { baslik: string; children: React.ReactNode }) { return <label className="block"><span className="mb-1 block text-xs font-semibold text-slate-600">{baslik}</span>{children}</label>; }
 function IslemModal({ baslik, aciklama, kapat, children, genis = false }: { baslik: string; aciklama: string; kapat: () => void; children: React.ReactNode; genis?: boolean }) { return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-label={baslik} onMouseDown={(e) => { if (e.target === e.currentTarget) kapat(); }}><div className={`hr-modal${genis ? " hr-modal--genis" : ""} w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl`}><h2 className="text-xl font-bold text-slate-900">{baslik}</h2><p className="mb-5 mt-1 text-sm text-slate-500">{aciklama}</p>{children}</div></div>; }
 function ModalEylemler({ isleniyor, kapat, onay, tehlikeli = false }: { isleniyor: boolean; kapat: () => void; onay: string; tehlikeli?: boolean }) { return <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={kapat} className="rounded-lg border px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Vazgeç</button><button disabled={isleniyor} type="submit" className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 ${tehlikeli ? "bg-red-600 hover:bg-red-700" : "bg-emerald-600 hover:bg-emerald-700"}`}>{isleniyor ? "İşleniyor…" : onay}</button></div>; }

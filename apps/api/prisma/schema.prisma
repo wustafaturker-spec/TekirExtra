@@ -4674,6 +4674,10 @@ model PersonelIstihdamDonemi {
   baslangicTarihi DateTime  @map("baslangic_tarihi") @db.Date
   bitisTarihi     DateTime? @map("bitis_tarihi") @db.Date
   ayrilisNedeni   String?   @map("ayrilis_nedeni")
+  /// PRS-18: yasal çıkış nedeni kodu (cikis-hesabi.ts CIKIS_NEDENLERI).
+  cikisNedeni     String?   @map("cikis_nedeni")
+  /// PRS-18: kıdem/ihbar/izin ücreti girdileri ve tutarları; çıkış ayı bordrosu okur.
+  cikisHesabi     Json?     @map("cikis_hesabi")
   createdAt       DateTime  @default(now()) @map("created_at")
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)

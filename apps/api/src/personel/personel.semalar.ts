@@ -36,10 +36,26 @@ export const personelOlusturSemasi = z.object({
 
 export const personelGuncelleSemasi = guncellemeSemasi(personelOlusturSemasi);
 
+const CIKIS_NEDEN_KODLARI = ["isveren_fesih", "istifa", "emeklilik", "askerlik", "evlilik", "isci_hakli_fesih", "isveren_saglik_zorlayici", "ahlak_iyiniyet", "deneme_suresi", "belirli_sure_bitimi", "olum", "diger"] as const;
+
+/** PRS-18: çıkış hesabı girdileri; verilmezse çıkış hesabı yapılmaz (eski davranış). */
+export const cikisHesabiGirdiSemasi = z.object({
+  cikisNedeni: z.enum(CIKIS_NEDEN_KODLARI),
+  kidemHakki: z.boolean().optional(),
+  ihbarDurumu: z.enum(["yok", "isveren_oder", "isci_oder"]).optional(),
+  sonBrut: z.coerce.number().min(0).optional(),
+  yanOdemeler: z.coerce.number().min(0).default(0),
+  izinGunu: z.coerce.number().min(0).max(400).optional(),
+  gerekce: z.string().trim().max(500).optional(),
+});
+
 export const personelIstenCikarSemasi = z.object({
   cikisTarihi: z.coerce.date(),
   ayrilisNedeni: z.string().trim().min(3, "Ayrılış nedeni en az 3 karakter olmalıdır").max(500),
+  cikisHesabi: cikisHesabiGirdiSemasi.optional(),
 });
+
+export const cikisOnizlemeSemasi = cikisHesabiGirdiSemasi.extend({ cikisTarihi: z.coerce.date() });
 
 export const personelYenidenBaslatSemasi = z.object({
   girisTarihi: z.coerce.date(),
