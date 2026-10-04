@@ -4746,3 +4746,6 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 /* P0-6: İK işlem pencereleri uzun formda kaydırılır. */
 .hr-modal { max-height: calc(100vh - 2rem); overflow-y: auto; }
 .hr-subpage :where(.hr-modal--genis) { max-width: 42rem; }
+/* Tehlikeli eylem düğmeleri (işten çıkış, bordro sil / onay geri al) taklit katmanında yoktu. */
+.hr-subpage :where(.bg-red-600) { background-color: var(--danger); }
+.hr-subpage :where(.hover\:bg-red-700):hover { background-color: var(--danger); filter: brightness(.92); }

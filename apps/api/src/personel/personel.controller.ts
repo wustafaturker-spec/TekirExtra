@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Delete, Get, Post, Put, Body, Param, Query } from "@nestjs/common";
+import { BadRequestException, Controller, Delete, Get, Post, Put, Body, Param, ParseUUIDPipe, Query } from "@nestjs/common";
 import { PersonelService } from "./personel.service";
 import { 
   personelOlusturSemasi, 
@@ -134,6 +134,28 @@ export class PersonelController {
     const { tenantId, userId } = aktifBaglam();
     const { neden } = bordroRetSemasi.parse(body);
     return this.personelService.bordroReddet(tenantId, bordroId, userId, neden);
+  }
+
+  @Post("bordrolar/:bordroId/yeniden-hesapla")
+  async bordroYenidenHesapla(@Param("bordroId", ParseUUIDPipe) bordroId: string) {
+    const { tenantId, userId } = aktifBaglam();
+    return this.personelService.bordroYenidenHesapla(tenantId, bordroId, userId);
+  }
+
+  /** PRS-03: yalnız yönetici; gerekçe zorunlu. */
+  @Post("bordrolar/:bordroId/onay-geri-al")
+  @Roller("yonetici")
+  async bordroOnayGeriAl(@Param("bordroId", ParseUUIDPipe) bordroId: string, @Body() body: unknown) {
+    const { tenantId, userId } = aktifBaglam();
+    const { neden } = bordroRetSemasi.parse(body);
+    return this.personelService.bordroOnayGeriAl(tenantId, bordroId, userId, neden);
+  }
+
+  @Delete("bordrolar/:bordroId")
+  async bordroSil(@Param("bordroId", ParseUUIDPipe) bordroId: string, @Body() body: unknown) {
+    const { tenantId, userId } = aktifBaglam();
+    const { neden } = bordroRetSemasi.parse(body ?? {});
+    return this.personelService.bordroSil(tenantId, bordroId, userId, neden);
   }
 
   @Post("bordrolar/:bordroId/kalemler")
