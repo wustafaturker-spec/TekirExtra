@@ -23,6 +23,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
   type SelectHTMLAttributes,
+  useEffect,
   useId,
 } from "react";
 
@@ -532,5 +533,57 @@ export function EylemMenusu({ etiket = "Diğer", children }: { etiket?: string; 
         {children}
       </div>
     </details>
+  );
+}
+
+/**
+ * Ortak modal. Esc ve arka plana tıklama kapatır; `altBilgi` düğme satırıdır.
+ * Form içeren modallarda form etiketi `children` içinde kalır.
+ */
+export function Modal({
+  baslik,
+  aciklama,
+  onKapat,
+  genis,
+  altBilgi,
+  children,
+}: {
+  baslik: ReactNode;
+  aciklama?: ReactNode;
+  onKapat: () => void;
+  genis?: boolean;
+  altBilgi?: ReactNode;
+  children: ReactNode;
+}) {
+  const baslikId = useId();
+  useEffect(() => {
+    const tus = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") onKapat(); };
+    window.addEventListener("keydown", tus);
+    return () => window.removeEventListener("keydown", tus);
+  }, [onKapat]);
+  return (
+    <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onKapat(); }}>
+      <div aria-labelledby={baslikId} aria-modal="true" className={cx("modal", genis && "modal--wide")} role="dialog">
+        <div className="modal__head">
+          <div>
+            <h2 id={baslikId}>{baslik}</h2>
+            {aciklama && <p>{aciklama}</p>}
+          </div>
+          <Button aria-label="Kapat" size="sm" onClick={onKapat}>✕</Button>
+        </div>
+        <div className="modal__body">{children}</div>
+        {altBilgi && <div className="modal__foot">{altBilgi}</div>}
+      </div>
+    </div>
+  );
+}
+
+/** Modal içindeki formun "Vazgeç + gönder" satırı. */
+export function ModalEylem({ onVazgec, isleniyor, metin, tehlikeli }: { onVazgec: () => void; isleniyor?: boolean; metin: string; tehlikeli?: boolean }) {
+  return (
+    <div className="row-tight" style={{ justifyContent: "flex-end" }}>
+      <Button type="button" onClick={onVazgec}>Vazgeç</Button>
+      <Button type="submit" variant={tehlikeli ? "danger" : "primary"} disabled={isleniyor}>{isleniyor ? "İşleniyor…" : metin}</Button>
+    </div>
   );
 }

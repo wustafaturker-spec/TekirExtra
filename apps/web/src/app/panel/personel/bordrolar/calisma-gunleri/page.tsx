@@ -1,13 +1,131 @@
 "use client";
-import Link from "next/link";import{useCallback,useEffect,useState}from"react";import{api,apiDosyaIndir}from"@/lib/api";
-interface Bildirim{id:string;primGunu:number;nakitYemekYardimi?:string;fiiliCalismaGunu?:number;sgkTesvikOrani?:string|null;sahisSigortaPrimi?:string;hayatSigortaPrimi?:string;sendikaAidati?:string;fazlaMesaiBrut?:string;primIkramiyeBrut?:string;eksikGunNedeni?:string|null;aciklama?:string|null} interface Satir{id:string;personelNo:string;ad:string;soyad:string;durum:string;sgkTesvikOrani:string;istihdamGunu:number;ucretsizIzinGunu:number;onerilenPrimGunu:number;onerilenEksikGunNedeni:string|null;donemCalismalari:Bildirim[]}
-const durumAdi:Record<string,string>={isten_ayrildi:"İşten ayrıldı",askida:"Askıda",uzun_sureli_izin:"Uzun süreli izin"};
-const nedenler:Record<string,string>={istirahat:"İstirahat",ucretsiz_izin:"Ücretsiz izin",disiplin:"Disiplin",gozaltina_alinma:"Gözaltı/tutukluluk",kismi_istihdam:"Kısmi istihdam",puantaj:"Puantaj",diger:"Diğer"};const now=new Date();
-export default function CalismaGunleri(){const[yil,setYil]=useState(now.getFullYear());const[ay,setAy]=useState(now.getMonth()+1);const[satirlar,setSatirlar]=useState<Satir[]>([]);const[formlar,setFormlar]=useState<Record<string,{primGunu:string;sgkTesvikOrani:string;sahisSigortaPrimi:string;hayatSigortaPrimi:string;sendikaAidati:string;fazlaMesaiBrut:string;primIkramiyeBrut:string;nakitYemekYardimi:string;fiiliCalismaGunu:string;eksikGunNedeni:string;aciklama:string}>>({});const[hata,setHata]=useState("");const[islemde,setIslemde]=useState("");
-const yukle=useCallback(async()=>{try{setHata("");const s=await api<Satir[]>(`/personel/calisma-gunleri?yil=${yil}&ay=${ay}`);setSatirlar(s);setFormlar(Object.fromEntries(s.map(p=>{const v=p.donemCalismalari[0];return[p.id,{primGunu:String(v?.primGunu??p.onerilenPrimGunu),sgkTesvikOrani:String(v?.sgkTesvikOrani??p.sgkTesvikOrani??0),sahisSigortaPrimi:String(v?.sahisSigortaPrimi??0),hayatSigortaPrimi:String(v?.hayatSigortaPrimi??0),sendikaAidati:String(v?.sendikaAidati??0),fazlaMesaiBrut:String(v?.fazlaMesaiBrut??0),primIkramiyeBrut:String(v?.primIkramiyeBrut??0),nakitYemekYardimi:String(v?.nakitYemekYardimi??0),fiiliCalismaGunu:String(v?.fiiliCalismaGunu??0),eksikGunNedeni:v?v.eksikGunNedeni??"":p.onerilenEksikGunNedeni??"",aciklama:v?.aciklama??""}]})));}catch(e){setHata(e instanceof Error?e.message:"Çalışma günleri alınamadı");}},[yil,ay]);useEffect(()=>{void yukle()},[yukle]);
-async function kaydet(p:Satir){const f=formlar[p.id];setIslemde(p.id);try{await api("/personel/calisma-gunleri",{method:"POST",body:JSON.stringify({personelId:p.id,yil,ay,primGunu:Number(f.primGunu),sgkTesvikOrani:Number(f.sgkTesvikOrani),sahisSigortaPrimi:Number(f.sahisSigortaPrimi),hayatSigortaPrimi:Number(f.hayatSigortaPrimi),sendikaAidati:Number(f.sendikaAidati),fazlaMesaiBrut:Number(f.fazlaMesaiBrut),primIkramiyeBrut:Number(f.primIkramiyeBrut),nakitYemekYardimi:Number(f.nakitYemekYardimi),fiiliCalismaGunu:Number(f.fiiliCalismaGunu),eksikGunNedeni:Number(f.primGunu)<p.istihdamGunu?f.eksikGunNedeni||null:null,aciklama:f.aciklama||null})});await yukle();}catch(e){setHata(e instanceof Error?e.message:"Bildirim kaydedilemedi");}finally{setIslemde("");}}
-const degistir=(id:string,k:string,v:string)=>setFormlar({...formlar,[id]:{...formlar[id],[k]:v}});
-/* PRS-16: Excel şablonu ve içe aktarma (her satır tekil kayıt kurallarından geçer). */
-const[excelSonuc,setExcelSonuc]=useState("");
-async function excelYukle(dosya:File){setIslemde("excel");setHata("");setExcelSonuc("");try{const form=new FormData();form.set("dosya",dosya);const r=await api<{kaydedilen:number;hatalar:{satir:number;personelNo:string;mesaj:string}[]}>(`/personel/calisma-gunleri/excel?yil=${yil}&ay=${ay}`,{method:"POST",body:form});setExcelSonuc(`${r.kaydedilen} satır kaydedildi.${r.hatalar.length?` Hatalı: ${r.hatalar.map(h=>`satır ${h.satir} ${h.personelNo}: ${h.mesaj}`).join("; ")}`:""}`);await yukle();}catch(e){setHata(e instanceof Error?e.message:"Excel yüklenemedi");}finally{setIslemde("");}}
-return <main className="hr-subpage hr-subpage--payroll"><header className="flex flex-col gap-4 border-b pb-5 md:flex-row md:items-end md:justify-between"><div><Link href="/panel/personel/bordrolar" className="text-sm font-medium text-slate-500 hover:text-orange-700">← Bordrolara dön</Link><p className="mt-4 text-xs font-bold uppercase tracking-widest text-orange-600">Tahakkuk hazırlığı</p><h1 className="text-2xl font-bold">Aylık çalışma ve kazançlar</h1><p className="mt-1 text-sm text-slate-500">Prim günü, değişken brüt kazançlar ve yasal indirimleri tahakkuk öncesinde doğrulayın.</p></div><div className="flex gap-2"><input type="number" min="2020" max="2100" value={yil} onChange={e=>setYil(Number(e.target.value))} className="w-24 rounded-lg border px-3 py-2"/><select value={ay} onChange={e=>setAy(Number(e.target.value))} className="rounded-lg border px-3 py-2">{Array.from({length:12},(_,i)=><option key={i+1} value={i+1}>{i+1}. ay</option>)}</select><button type="button" onClick={()=>void apiDosyaIndir(`/personel/calisma-gunleri/sablon?yil=${yil}&ay=${ay}`,`puantaj-${yil}-${String(ay).padStart(2,"0")}.xlsx`).catch(e=>setHata(e instanceof Error?e.message:"Şablon indirilemedi"))} className="rounded-lg border px-3 py-2 text-xs font-semibold">Excel şablonu</button><label className="cursor-pointer rounded-lg border px-3 py-2 text-xs font-semibold">{islemde==="excel"?"Yükleniyor…":"Excel'den yükle"}<input type="file" accept=".xlsx" className="sr-only" onChange={e=>{const f=e.target.files?.[0];e.target.value="";if(f)void excelYukle(f);}}/></label></div></header>{excelSonuc&&<div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{excelSonuc}</div>}{hata&&<div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{hata}</div>}<section className="overflow-hidden rounded-2xl border bg-white shadow-sm"><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3">Personel</th><th className="px-5 py-3">Prim günü</th><th className="px-5 py-3">SGK teşvik %</th><th className="px-5 py-3">Eksik gün nedeni</th><th className="px-5 py-3">Fazla mesai brüt</th><th className="px-5 py-3">Prim / ikramiye brüt</th><th className="px-5 py-3">Nakit yemek yardımı</th><th className="px-5 py-3">Fiilî çalışma günü</th><th className="px-5 py-3">Şahıs sigortası</th><th className="px-5 py-3">Hayat sigortası</th><th className="px-5 py-3">Sendika aidatı</th><th className="px-5 py-3">Açıklama</th><th className="px-5 py-3"/></tr></thead><tbody className="divide-y">{satirlar.map(p=>{const f=formlar[p.id];if(!f)return null;const eksik=Number(f.primGunu)<p.istihdamGunu;return <tr key={p.id}><td className="px-5 py-4"><strong>{p.ad} {p.soyad}</strong><p className="font-mono text-xs text-slate-400">{p.personelNo}</p>{p.istihdamGunu<30&&<p className="text-xs text-slate-500">İstihdam: {p.istihdamGunu} gün</p>}{p.ucretsizIzinGunu>0&&<p className="text-xs text-amber-800" title="Onaylı ücretli olmayan izinden önerildi">Ücretsiz izin: {p.ucretsizIzinGunu} gün{p.donemCalismalari[0]?"":" (öneri)"}</p>}{durumAdi[p.durum]&&<p className="text-xs text-amber-800">{durumAdi[p.durum]}</p>}</td><td className="px-5 py-4"><input type="number" min="0" max={p.istihdamGunu} value={f.primGunu} onChange={e=>degistir(p.id,"primGunu",e.target.value)} className="w-20 rounded-lg border px-3 py-2"/></td><td className="px-5 py-4"><input type="number" min="0" max="100" step="0.001" value={f.sgkTesvikOrani} onChange={e=>degistir(p.id,"sgkTesvikOrani",e.target.value)} className="w-24 rounded-lg border px-3 py-2"/></td><td className="px-5 py-4"><select required={eksik} disabled={!eksik} value={f.eksikGunNedeni} onChange={e=>degistir(p.id,"eksikGunNedeni",e.target.value)} className="min-w-40 rounded-lg border px-3 py-2 disabled:bg-slate-100"><option value="">{eksik?"Neden seçin":"Tam çalışma"}</option>{Object.entries(nedenler).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></td><td className="px-5 py-4"><input type="number" min="0" step="0.01" value={f.fazlaMesaiBrut} onChange={e=>degistir(p.id,"fazlaMesaiBrut",e.target.value)} className="w-32 rounded-lg border px-3 py-2"/></td><td className="px-5 py-4"><input type="number" min="0" step="0.01" value={f.primIkramiyeBrut} onChange={e=>degistir(p.id,"primIkramiyeBrut",e.target.value)} className="w-32 rounded-lg border px-3 py-2"/></td><td className="px-5 py-4"><input type="number" min="0" step="0.01" value={f.nakitYemekYardimi} onChange={e=>degistir(p.id,"nakitYemekYardimi",e.target.value)} className="w-32 rounded-lg border px-3 py-2"/></td><td className="px-5 py-4"><input type="number" min="0" max="31" value={f.fiiliCalismaGunu} onChange={e=>degistir(p.id,"fiiliCalismaGunu",e.target.value)} title="Yemek yardımı istisnası fiilî çalışılan güne göre hesaplanır" className="w-20 rounded-lg border px-3 py-2"/></td><td className="px-5 py-4"><input type="number" min="0" step="0.01" value={f.sahisSigortaPrimi} onChange={e=>degistir(p.id,"sahisSigortaPrimi",e.target.value)} className="w-28 rounded-lg border px-3 py-2"/></td><td className="px-5 py-4"><input type="number" min="0" step="0.01" value={f.hayatSigortaPrimi} onChange={e=>degistir(p.id,"hayatSigortaPrimi",e.target.value)} className="w-28 rounded-lg border px-3 py-2"/></td><td className="px-5 py-4"><input type="number" min="0" step="0.01" value={f.sendikaAidati} onChange={e=>degistir(p.id,"sendikaAidati",e.target.value)} className="w-28 rounded-lg border px-3 py-2"/></td><td className="px-5 py-4"><input maxLength={500} value={f.aciklama} onChange={e=>degistir(p.id,"aciklama",e.target.value)} className="w-full min-w-48 rounded-lg border px-3 py-2"/></td><td className="px-5 py-4 text-right"><button disabled={islemde===p.id||eksik&&!f.eksikGunNedeni} onClick={()=>void kaydet(p)} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">Kaydet</button></td></tr>})}</tbody></table></div>{satirlar.length===0&&<p className="p-10 text-center text-sm text-slate-500">Bu dönemde istihdamı olan personel yok.</p>}</section><div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900"><strong>Önemli:</strong> Tahakkuk oluşturulduktan sonra ilgili personelin dönem bildirimi değiştirilemez. Düzeltme için bordronun kontrollü iptal/revizyon akışı kullanılmalıdır.</div></main>}
+
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { api, apiDosyaIndir } from "@/lib/api";
+import { Alert, Button, ButtonLabel, Card, Input, PageHeader, Select, Table } from "@/components/ui";
+
+interface Bildirim { id: string; primGunu: number; nakitYemekYardimi?: string; fiiliCalismaGunu?: number; sgkTesvikOrani?: string | null; sahisSigortaPrimi?: string; hayatSigortaPrimi?: string; sendikaAidati?: string; fazlaMesaiBrut?: string; primIkramiyeBrut?: string; eksikGunNedeni?: string | null; aciklama?: string | null }
+interface Satir { id: string; personelNo: string; ad: string; soyad: string; durum: string; sgkTesvikOrani: string; istihdamGunu: number; ucretsizIzinGunu: number; onerilenPrimGunu: number; onerilenEksikGunNedeni: string | null; donemCalismalari: Bildirim[] }
+type Form = { primGunu: string; sgkTesvikOrani: string; sahisSigortaPrimi: string; hayatSigortaPrimi: string; sendikaAidati: string; fazlaMesaiBrut: string; primIkramiyeBrut: string; nakitYemekYardimi: string; fiiliCalismaGunu: string; eksikGunNedeni: string; aciklama: string };
+
+const DURUM_ADI: Record<string, string> = { isten_ayrildi: "İşten ayrıldı", askida: "Askıda", uzun_sureli_izin: "Uzun süreli izin" };
+const NEDENLER: Record<string, string> = { istirahat: "İstirahat", ucretsiz_izin: "Ücretsiz izin", disiplin: "Disiplin", gozaltina_alinma: "Gözaltı/tutukluluk", kismi_istihdam: "Kısmi istihdam", puantaj: "Puantaj", diger: "Diğer" };
+const TUTAR_ALANLARI: [keyof Form, string][] = [["fazlaMesaiBrut", "Fazla mesai brüt"], ["primIkramiyeBrut", "Prim / ikramiye brüt"], ["nakitYemekYardimi", "Nakit yemek yardımı"]];
+const KESINTI_ALANLARI: [keyof Form, string][] = [["sahisSigortaPrimi", "Şahıs sigortası"], ["hayatSigortaPrimi", "Hayat sigortası"], ["sendikaAidati", "Sendika aidatı"]];
+
+/** Tahakkuk öncesi puantaj: prim günü, değişken brüt kazançlar ve yasal indirimler. */
+export default function CalismaGunleri() {
+  const simdi = new Date();
+  const [yil, setYil] = useState(simdi.getFullYear());
+  const [ay, setAy] = useState(simdi.getMonth() + 1);
+  const [satirlar, setSatirlar] = useState<Satir[]>([]);
+  const [formlar, setFormlar] = useState<Record<string, Form>>({});
+  const [hata, setHata] = useState("");
+  const [islemde, setIslemde] = useState("");
+  const [excelSonuc, setExcelSonuc] = useState("");
+
+  const yukle = useCallback(async () => {
+    try {
+      setHata("");
+      const s = await api<Satir[]>(`/personel/calisma-gunleri?yil=${yil}&ay=${ay}`);
+      setSatirlar(s);
+      setFormlar(Object.fromEntries(s.map((p) => {
+        const v = p.donemCalismalari[0];
+        return [p.id, {
+          primGunu: String(v?.primGunu ?? p.onerilenPrimGunu), sgkTesvikOrani: String(v?.sgkTesvikOrani ?? p.sgkTesvikOrani ?? 0),
+          sahisSigortaPrimi: String(v?.sahisSigortaPrimi ?? 0), hayatSigortaPrimi: String(v?.hayatSigortaPrimi ?? 0), sendikaAidati: String(v?.sendikaAidati ?? 0),
+          fazlaMesaiBrut: String(v?.fazlaMesaiBrut ?? 0), primIkramiyeBrut: String(v?.primIkramiyeBrut ?? 0), nakitYemekYardimi: String(v?.nakitYemekYardimi ?? 0),
+          fiiliCalismaGunu: String(v?.fiiliCalismaGunu ?? 0), eksikGunNedeni: v ? v.eksikGunNedeni ?? "" : p.onerilenEksikGunNedeni ?? "", aciklama: v?.aciklama ?? "",
+        }];
+      })));
+    } catch (e) { setHata(e instanceof Error ? e.message : "Çalışma günleri alınamadı"); }
+  }, [yil, ay]);
+  useEffect(() => { void yukle(); }, [yukle]);
+
+  async function kaydet(p: Satir) {
+    const f = formlar[p.id]; setIslemde(p.id);
+    try {
+      await api("/personel/calisma-gunleri", {
+        method: "POST",
+        body: JSON.stringify({
+          personelId: p.id, yil, ay, primGunu: Number(f.primGunu), sgkTesvikOrani: Number(f.sgkTesvikOrani),
+          sahisSigortaPrimi: Number(f.sahisSigortaPrimi), hayatSigortaPrimi: Number(f.hayatSigortaPrimi), sendikaAidati: Number(f.sendikaAidati),
+          fazlaMesaiBrut: Number(f.fazlaMesaiBrut), primIkramiyeBrut: Number(f.primIkramiyeBrut), nakitYemekYardimi: Number(f.nakitYemekYardimi), fiiliCalismaGunu: Number(f.fiiliCalismaGunu),
+          eksikGunNedeni: Number(f.primGunu) < p.istihdamGunu ? f.eksikGunNedeni || null : null, aciklama: f.aciklama || null,
+        }),
+      });
+      await yukle();
+    } catch (e) { setHata(e instanceof Error ? e.message : "Bildirim kaydedilemedi"); }
+    finally { setIslemde(""); }
+  }
+  const degistir = (id: string, k: keyof Form, v: string) => setFormlar({ ...formlar, [id]: { ...formlar[id], [k]: v } });
+
+  /* PRS-16: Excel şablonu ve içe aktarma (her satır tekil kayıt kurallarından geçer). */
+  async function excelYukle(dosya: File) {
+    setIslemde("excel"); setHata(""); setExcelSonuc("");
+    try {
+      const govde = new FormData(); govde.set("dosya", dosya);
+      const r = await api<{ kaydedilen: number; hatalar: { satir: number; personelNo: string; mesaj: string }[] }>(`/personel/calisma-gunleri/excel?yil=${yil}&ay=${ay}`, { method: "POST", body: govde });
+      setExcelSonuc(`${r.kaydedilen} satır kaydedildi.${r.hatalar.length ? ` Hatalı: ${r.hatalar.map((h) => `satır ${h.satir} ${h.personelNo}: ${h.mesaj}`).join("; ")}` : ""}`);
+      await yukle();
+    } catch (e) { setHata(e instanceof Error ? e.message : "Excel yüklenemedi"); }
+    finally { setIslemde(""); }
+  }
+
+  const tutarHucresi = (p: Satir, f: Form, k: keyof Form, etiket: string) => <td key={k}><Input aria-label={etiket} type="number" min="0" step="0.01" value={f[k]} onChange={(e) => degistir(p.id, k, e.target.value)} style={{ width: "7.5rem" }} /></td>;
+
+  return (
+    <div className="stack">
+      <Link className="back-link" href="/panel/personel/bordrolar">← Bordrolara dön</Link>
+      <PageHeader
+        title="Aylık çalışma ve kazançlar"
+        subtitle="Prim günü, değişken brüt kazançlar ve yasal indirimleri tahakkuk öncesinde doğrulayın."
+        actions={<>
+          <Input aria-label="Yıl" type="number" min="2020" max="2100" value={yil} onChange={(e) => setYil(Number(e.target.value))} style={{ width: "6rem" }} />
+          <Select aria-label="Ay" value={ay} onChange={(e) => setAy(Number(e.target.value))} style={{ width: "auto" }}>{Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}. ay</option>)}</Select>
+          <Button onClick={() => void apiDosyaIndir(`/personel/calisma-gunleri/sablon?yil=${yil}&ay=${ay}`, `puantaj-${yil}-${String(ay).padStart(2, "0")}.xlsx`).catch((e) => setHata(e instanceof Error ? e.message : "Şablon indirilemedi"))}>Excel şablonu</Button>
+          <ButtonLabel>{islemde === "excel" ? "Yükleniyor…" : "Excel'den yükle"}<input type="file" accept=".xlsx" className="sr-only" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void excelYukle(f); }} /></ButtonLabel>
+        </>}
+      />
+      <Alert tone="warning">{excelSonuc}</Alert>
+      <Alert tone="error">{hata}</Alert>
+      <Card pad={false}>
+        <Table density="compact">
+          <thead><tr><th>Personel</th><th>Prim günü</th><th>SGK teşvik %</th><th>Eksik gün nedeni</th>{TUTAR_ALANLARI.map(([, b]) => <th key={b}>{b}</th>)}<th>Fiilî çalışma günü</th>{KESINTI_ALANLARI.map(([, b]) => <th key={b}>{b}</th>)}<th>Açıklama</th><th /></tr></thead>
+          <tbody>
+            {satirlar.map((p) => {
+              const f = formlar[p.id]; if (!f) return null;
+              const eksik = Number(f.primGunu) < p.istihdamGunu;
+              return (
+                <tr key={p.id}>
+                  <td style={{ minWidth: "11rem" }}>
+                    <strong style={{ whiteSpace: "nowrap" }}>{p.ad} {p.soyad}</strong><div className="subtle mono">{p.personelNo}</div>
+                    {p.istihdamGunu < 30 && <div className="muted" style={{ fontSize: "0.75rem" }}>İstihdam: {p.istihdamGunu} gün</div>}
+                    {p.ucretsizIzinGunu > 0 && <div style={{ color: "var(--warning)", fontSize: "0.75rem" }} title="Onaylı ücretli olmayan izinden önerildi">Ücretsiz izin: {p.ucretsizIzinGunu} gün{p.donemCalismalari[0] ? "" : " (öneri)"}</div>}
+                    {DURUM_ADI[p.durum] && <div style={{ color: "var(--warning)", fontSize: "0.75rem" }}>{DURUM_ADI[p.durum]}</div>}
+                  </td>
+                  <td><Input aria-label="Prim günü" type="number" min="0" max={p.istihdamGunu} value={f.primGunu} onChange={(e) => degistir(p.id, "primGunu", e.target.value)} style={{ width: "5rem" }} /></td>
+                  <td><Input aria-label="SGK teşvik oranı" type="number" min="0" max="100" step="0.001" value={f.sgkTesvikOrani} onChange={(e) => degistir(p.id, "sgkTesvikOrani", e.target.value)} style={{ width: "6rem" }} /></td>
+                  <td>
+                    <Select aria-label="Eksik gün nedeni" required={eksik} disabled={!eksik} value={f.eksikGunNedeni} onChange={(e) => degistir(p.id, "eksikGunNedeni", e.target.value)} style={{ minWidth: "10rem" }}>
+                      <option value="">{eksik ? "Neden seçin" : "Tam çalışma"}</option>
+                      {Object.entries(NEDENLER).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </Select>
+                  </td>
+                  {TUTAR_ALANLARI.map(([k, b]) => tutarHucresi(p, f, k, b))}
+                  <td><Input aria-label="Fiilî çalışma günü" type="number" min="0" max="31" value={f.fiiliCalismaGunu} onChange={(e) => degistir(p.id, "fiiliCalismaGunu", e.target.value)} title="Yemek yardımı istisnası fiilî çalışılan güne göre hesaplanır" style={{ width: "5rem" }} /></td>
+                  {KESINTI_ALANLARI.map(([k, b]) => tutarHucresi(p, f, k, b))}
+                  <td><Input aria-label="Açıklama" maxLength={500} value={f.aciklama} onChange={(e) => degistir(p.id, "aciklama", e.target.value)} style={{ minWidth: "12rem" }} /></td>
+                  <td className="num"><Button size="sm" variant="primary" disabled={islemde === p.id || (eksik && !f.eksikGunNedeni)} onClick={() => void kaydet(p)}>Kaydet</Button></td>
+                </tr>
+              );
+            })}
+            {!satirlar.length && <tr><td className="muted" colSpan={13}>Bu dönemde istihdamı olan personel yok.</td></tr>}
+          </tbody>
+        </Table>
+      </Card>
+      <Alert tone="warning"><strong>Önemli:</strong> Tahakkuk oluşturulduktan sonra ilgili personelin dönem bildirimi değiştirilemez. Düzeltme için bordronun kontrollü iptal/revizyon akışı kullanılmalıdır.</Alert>
+    </div>
+  );
+}

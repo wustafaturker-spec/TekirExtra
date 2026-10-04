@@ -1,13 +1,144 @@
 "use client";
-import Link from "next/link"; import { useCallback,useEffect,useState } from "react"; import { api } from "@/lib/api";
-interface SetKaydi{id:string;ad:string;surum:number;yururlukBaslangic:string;yururlukBitis?:string|null;durum:"taslak"|"aktif"|"arsiv";kaynakNotu?:string|null;parametreler:{asgariUcretBrut:number;sgkTavan:number;sgkIsciOrani:number;issizlikIsciOrani:number;sgkIsverenOrani:number;issizlikIsverenOrani:number;sgkTesvikAzamiOrani?:number;yemekGelirVergisiGunlukIstisna?:number;yemekSgkGunlukIstisna?:number;damgaVergisiOrani:number;gelirVergisiDilimleri:{ustSinir:number|null;oran:number}[]}}
+
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { api } from "@/lib/api";
+import { Alert, Badge, Button, Card, Field, Input, PageHeader } from "@/components/ui";
+
+interface SetKaydi {
+  id: string; ad: string; surum: number; yururlukBaslangic: string; yururlukBitis?: string | null; durum: "taslak" | "aktif" | "arsiv"; kaynakNotu?: string | null;
+  parametreler: { asgariUcretBrut: number; sgkTavan: number; sgkIsciOrani: number; issizlikIsciOrani: number; sgkIsverenOrani: number; issizlikIsverenOrani: number; sgkTesvikAzamiOrani?: number; yemekGelirVergisiGunlukIstisna?: number; yemekSgkGunlukIstisna?: number; damgaVergisiOrani: number; gelirVergisiDilimleri: { ustSinir: number | null; oran: number }[] };
+}
+interface ResmiSet { kod: string; ad: string; yururlukBaslangic: string; yururlukBitis: string | null; kaynakNotu: string; yuklu: { id: string; durum: string; surum: number } | null }
+
 /** Elle set istisnadır (PRS-11 resmî setleri tercih edilir); varsayılanlar 2026 değerleri. */
-const ilk={ad:"",yururlukBaslangic:`${new Date().getFullYear()}-01-01`,yururlukBitis:"",kaynakNotu:"",asgariUcretBrut:"33030",sgkTavan:"297270",sgkIsciOrani:"14",issizlikIsciOrani:"1",sgkIsverenOrani:"21.75",issizlikIsverenOrani:"2",sgkTesvikAzamiOrani:"5",yemekGelirVergisiGunlukIstisna:"300",yemekSgkGunlukIstisna:"300",engellilikDerece1:"12000",engellilikDerece2:"7000",engellilikDerece3:"3000",damgaVergisiOrani:"0.759",dilimler:"190000:15\n400000:20\n1500000:27\n5300000:35\n:40"};
-interface ResmiSet{kod:string;ad:string;yururlukBaslangic:string;yururlukBitis:string|null;kaynakNotu:string;yuklu:{id:string;durum:string;surum:number}|null}
-export default function MevzuatSayfasi(){const[setler,setSetler]=useState<SetKaydi[]>([]);const[form,setForm]=useState(ilk);const[hata,setHata]=useState("");const[islemde,setIslemde]=useState("");const[resmiler,setResmiler]=useState<ResmiSet[]>([]);const yukle=useCallback(async()=>{try{setSetler(await api<SetKaydi[]>("/personel/mevzuat"));setResmiler(await api<ResmiSet[]>("/personel/mevzuat/resmi"));}catch(e){setHata(e instanceof Error?e.message:"Setler alınamadı");}},[]);useEffect(()=>{void yukle();},[yukle]);
-async function kaydet(e:React.FormEvent){e.preventDefault();setIslemde("yeni");try{const gelirVergisiDilimleri=form.dilimler.split("\n").filter(Boolean).map(s=>{const[a,o]=s.split(":");return{ustSinir:a?Number(a):null,oran:Number(o)}});await api("/personel/mevzuat",{method:"POST",body:JSON.stringify({ad:form.ad,yururlukBaslangic:form.yururlukBaslangic,yururlukBitis:form.yururlukBitis||null,kaynakNotu:form.kaynakNotu,parametreler:{asgariUcretBrut:Number(form.asgariUcretBrut),sgkTavan:Number(form.sgkTavan),sgkIsciOrani:Number(form.sgkIsciOrani),issizlikIsciOrani:Number(form.issizlikIsciOrani),sgkIsverenOrani:Number(form.sgkIsverenOrani),issizlikIsverenOrani:Number(form.issizlikIsverenOrani),sgkTesvikAzamiOrani:Number(form.sgkTesvikAzamiOrani),yemekGelirVergisiGunlukIstisna:Number(form.yemekGelirVergisiGunlukIstisna),yemekSgkGunlukIstisna:Number(form.yemekSgkGunlukIstisna),engellilikIndirimi:{derece1:Number(form.engellilikDerece1),derece2:Number(form.engellilikDerece2),derece3:Number(form.engellilikDerece3)},damgaVergisiOrani:Number(form.damgaVergisiOrani),gelirVergisiDilimleri}})});setForm(ilk);await yukle();}catch(e){setHata(e instanceof Error?e.message:"Set kaydedilemedi");}finally{setIslemde("");}}
-async function resmiYukle(r:ResmiSet){if(!window.confirm(`${r.ad} yüklenip etkinleştirilecek. Devam edilsin mi?`))return;setIslemde(r.kod);setHata("");try{await api(`/personel/mevzuat/resmi/${r.kod}/yukle`,{method:"POST",body:"{}"});await yukle();}catch(e){setHata(e instanceof Error?e.message:"Resmî set yüklenemedi");}finally{setIslemde("");}}
-async function calistir(id:string,islem:string){setIslemde(id);try{await api(`/personel/mevzuat/${id}/${islem}`,{method:"POST"});await yukle();}catch(e){setHata(e instanceof Error?e.message:"İşlem tamamlanamadı");}finally{setIslemde("");}}
-return <main className="hr-subpage hr-subpage--law"><header className="border-b pb-5"><Link href="/panel/personel/bordrolar" className="text-sm font-medium text-slate-500 hover:text-orange-700">← Bordro çalışma alanına dön</Link><p className="mt-4 text-xs font-bold uppercase tracking-widest text-orange-600">Bordro yönetişimi</p><h1 className="text-2xl font-bold">Mevzuat parametre setleri</h1><p className="mt-1 text-sm text-slate-500">Brüt ve net anlaşılan ücretlerin SGK ve vergi hesabı bu parametrelerle yapılır. Resmî setleri yüklemeniz yeterlidir; elle set yalnız istisnai durumlar içindir.</p></header>{hata&&<div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{hata}</div>}<section className="rounded-2xl border bg-white p-6 shadow-sm"><h2 className="font-bold">Resmî setler</h2><p className="mt-1 text-sm text-slate-500">Sistemle gelir; kaynakları doğrulanmış ve kabul senaryolarıyla sınanmıştır. Yüklenen set doğrudan etkin olur.</p><div className="mt-4 space-y-3">{resmiler.map(r=><div key={r.kod} className="rounded-xl border p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><strong>{r.ad}</strong><p className="text-xs text-slate-500">{new Date(r.yururlukBaslangic).toLocaleDateString("tr-TR",{timeZone:"UTC"})} – {r.yururlukBitis?new Date(r.yururlukBitis).toLocaleDateString("tr-TR",{timeZone:"UTC"}):"…"}</p></div>{r.yuklu?<span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">Yüklü · v{r.yuklu.surum} · {r.yuklu.durum==="aktif"?"etkin":r.yuklu.durum}</span>:<button disabled={islemde===r.kod} onClick={()=>void resmiYukle(r)} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Yükle ve etkinleştir</button>}</div><p className="mt-2 text-xs leading-5 text-slate-500">{r.kaynakNotu}</p></div>)}</div></section><div className="grid gap-6 xl:grid-cols-[.8fr_1.2fr]"><form onSubmit={kaydet} className="space-y-4 rounded-2xl border bg-white p-6 shadow-sm"><h2 className="font-bold">Yeni taslak set</h2><Alan b="Set adı"><input required minLength={3} value={form.ad} onChange={e=>setForm({...form,ad:e.target.value})} className="w-full rounded-lg border px-3 py-2"/></Alan><div className="grid grid-cols-2 gap-3"><Alan b="Yürürlük başlangıcı"><input required type="date" value={form.yururlukBaslangic} onChange={e=>setForm({...form,yururlukBaslangic:e.target.value})} className="w-full rounded-lg border px-3 py-2"/></Alan><Alan b="Yürürlük bitişi"><input type="date" value={form.yururlukBitis} onChange={e=>setForm({...form,yururlukBitis:e.target.value})} className="w-full rounded-lg border px-3 py-2"/></Alan></div><div className="grid grid-cols-2 gap-3"><Sayi b="Asgari ücret brüt" k="asgariUcretBrut" f={form} s={setForm}/><Sayi b="SGK tavanı" k="sgkTavan" f={form} s={setForm}/><Sayi b="SGK işçi oranı %" k="sgkIsciOrani" f={form} s={setForm}/><Sayi b="İşsizlik işçi oranı %" k="issizlikIsciOrani" f={form} s={setForm}/><Sayi b="Damga vergisi oranı %" k="damgaVergisiOrani" f={form} s={setForm}/><Sayi b="Azami SGK teşvik oranı %" k="sgkTesvikAzamiOrani" f={form} s={setForm}/><Sayi b="1. derece engellilik indirimi" k="engellilikDerece1" f={form} s={setForm}/><Sayi b="2. derece engellilik indirimi" k="engellilikDerece2" f={form} s={setForm}/><Sayi b="3. derece engellilik indirimi" k="engellilikDerece3" f={form} s={setForm}/></div><Alan b="Gelir vergisi dilimleri"><textarea required rows={4} value={form.dilimler} onChange={e=>setForm({...form,dilimler:e.target.value})} className="w-full rounded-lg border px-3 py-2 font-mono text-sm"/><small className="text-slate-500">Her satır: üst sınır:oran. Son sınırsız dilim için “:oran”.</small></Alan><Alan b="Kaynak ve doğrulama notu"><textarea required minLength={10} rows={3} value={form.kaynakNotu} onChange={e=>setForm({...form,kaynakNotu:e.target.value})} className="w-full rounded-lg border px-3 py-2"/></Alan><button disabled={islemde==="yeni"} className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Taslağı oluştur</button></form><section className="space-y-4">{setler.length===0?<div className="rounded-2xl border bg-white p-10 text-center text-sm text-slate-500">Henüz mevzuat seti yok.</div>:setler.map(x=><article key={x.id} className="rounded-2xl border bg-white p-5 shadow-sm"><div className="flex items-start justify-between"><div><span className="font-mono text-xs text-slate-400">Sürüm {x.surum}</span><h2 className="font-bold">{x.ad}</h2><p className="mt-1 text-xs text-slate-500">{new Date(x.yururlukBaslangic).toLocaleDateString("tr-TR",{timeZone:"UTC"})} – {x.yururlukBitis?new Date(x.yururlukBitis).toLocaleDateString("tr-TR",{timeZone:"UTC"}):"Süresiz"}</p></div><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${x.durum==="aktif"?"bg-emerald-100 text-emerald-800":x.durum==="taslak"?"bg-amber-100 text-amber-800":"bg-slate-100 text-slate-600"}`}>{x.durum}</span></div><div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-3 text-xs"><b>Asgari brüt<br/>{x.parametreler.asgariUcretBrut.toLocaleString("tr-TR")}</b><b>SGK tavan<br/>{x.parametreler.sgkTavan.toLocaleString("tr-TR")}</b><b>Vergi dilimi<br/>{x.parametreler.gelirVergisiDilimleri.length}</b></div><p className="mt-3 text-xs text-slate-500">{x.kaynakNotu}</p>{x.durum!=="arsiv"&&<div className="mt-4 flex justify-end gap-2">{x.durum==="taslak"&&<button disabled={islemde===x.id} onClick={()=>void calistir(x.id,"aktiflestir")} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white">Etkinleştir</button>}<button disabled={islemde===x.id} onClick={()=>void calistir(x.id,"arsivle")} className="rounded-lg border px-3 py-2 text-xs font-semibold">Arşivle</button></div>}</article>)}</section></div></main>}
-function Alan({b,children}:{b:string;children:React.ReactNode}){return <label className="block"><span className="mb-1 block text-xs font-semibold text-slate-600">{b}</span>{children}</label>}
-function Sayi({b,k,f,s}:{b:string;k:keyof typeof ilk;f:typeof ilk;s:React.Dispatch<React.SetStateAction<typeof ilk>>}){return <><Alan b={b}><input required type="number" min="0" step="0.001" value={f[k]} onChange={e=>s({...f,[k]:e.target.value})} className="w-full rounded-lg border px-3 py-2"/></Alan>{k==="issizlikIsciOrani"&&<><Sayi b="SGK işveren oranı %" k="sgkIsverenOrani" f={f} s={s}/><Sayi b="İşsizlik işveren oranı %" k="issizlikIsverenOrani" f={f} s={s}/></>}</>}
+const ilk = { ad: "", yururlukBaslangic: `${new Date().getFullYear()}-01-01`, yururlukBitis: "", kaynakNotu: "", asgariUcretBrut: "33030", sgkTavan: "297270", sgkIsciOrani: "14", issizlikIsciOrani: "1", sgkIsverenOrani: "21.75", issizlikIsverenOrani: "2", sgkTesvikAzamiOrani: "5", yemekGelirVergisiGunlukIstisna: "300", yemekSgkGunlukIstisna: "300", engellilikDerece1: "12000", engellilikDerece2: "7000", engellilikDerece3: "3000", damgaVergisiOrani: "0.759", dilimler: "190000:15\n400000:20\n1500000:27\n5300000:35\n:40" };
+type Form = typeof ilk;
+
+const SAYI_ALANLARI: [string, keyof Form][] = [
+  ["Asgari ücret brüt", "asgariUcretBrut"], ["SGK tavanı", "sgkTavan"], ["SGK işçi oranı %", "sgkIsciOrani"], ["İşsizlik işçi oranı %", "issizlikIsciOrani"],
+  ["SGK işveren oranı %", "sgkIsverenOrani"], ["İşsizlik işveren oranı %", "issizlikIsverenOrani"], ["Damga vergisi oranı %", "damgaVergisiOrani"], ["Azami SGK teşvik oranı %", "sgkTesvikAzamiOrani"],
+  ["1. derece engellilik indirimi", "engellilikDerece1"], ["2. derece engellilik indirimi", "engellilikDerece2"], ["3. derece engellilik indirimi", "engellilikDerece3"],
+];
+const DURUM: Record<SetKaydi["durum"], [string, "success" | "warning" | "neutral"]> = { aktif: ["Etkin", "success"], taslak: ["Taslak", "warning"], arsiv: ["Arşiv", "neutral"] };
+const gun = (v: string) => new Date(v).toLocaleDateString("tr-TR", { timeZone: "UTC" });
+
+/** Bordro SGK ve vergi hesabının parametre setleri: resmî setler + istisnai elle taslak. */
+export default function MevzuatSayfasi() {
+  const [setler, setSetler] = useState<SetKaydi[]>([]);
+  const [resmiler, setResmiler] = useState<ResmiSet[]>([]);
+  const [form, setForm] = useState(ilk);
+  const [hata, setHata] = useState("");
+  const [islemde, setIslemde] = useState("");
+
+  const yukle = useCallback(async () => {
+    try { setSetler(await api<SetKaydi[]>("/personel/mevzuat")); setResmiler(await api<ResmiSet[]>("/personel/mevzuat/resmi")); }
+    catch (e) { setHata(e instanceof Error ? e.message : "Setler alınamadı"); }
+  }, []);
+  useEffect(() => { void yukle(); }, [yukle]);
+
+  async function kaydet(e: React.FormEvent) {
+    e.preventDefault(); setIslemde("yeni");
+    try {
+      const gelirVergisiDilimleri = form.dilimler.split("\n").filter(Boolean).map((s) => { const [a, o] = s.split(":"); return { ustSinir: a ? Number(a) : null, oran: Number(o) }; });
+      await api("/personel/mevzuat", {
+        method: "POST",
+        body: JSON.stringify({
+          ad: form.ad, yururlukBaslangic: form.yururlukBaslangic, yururlukBitis: form.yururlukBitis || null, kaynakNotu: form.kaynakNotu,
+          parametreler: {
+            asgariUcretBrut: Number(form.asgariUcretBrut), sgkTavan: Number(form.sgkTavan), sgkIsciOrani: Number(form.sgkIsciOrani), issizlikIsciOrani: Number(form.issizlikIsciOrani),
+            sgkIsverenOrani: Number(form.sgkIsverenOrani), issizlikIsverenOrani: Number(form.issizlikIsverenOrani), sgkTesvikAzamiOrani: Number(form.sgkTesvikAzamiOrani),
+            yemekGelirVergisiGunlukIstisna: Number(form.yemekGelirVergisiGunlukIstisna), yemekSgkGunlukIstisna: Number(form.yemekSgkGunlukIstisna),
+            engellilikIndirimi: { derece1: Number(form.engellilikDerece1), derece2: Number(form.engellilikDerece2), derece3: Number(form.engellilikDerece3) },
+            damgaVergisiOrani: Number(form.damgaVergisiOrani), gelirVergisiDilimleri,
+          },
+        }),
+      });
+      setForm(ilk); await yukle();
+    } catch (err) { setHata(err instanceof Error ? err.message : "Set kaydedilemedi"); }
+    finally { setIslemde(""); }
+  }
+
+  async function resmiYukle(r: ResmiSet) {
+    if (!window.confirm(`${r.ad} yüklenip etkinleştirilecek. Devam edilsin mi?`)) return;
+    setIslemde(r.kod); setHata("");
+    try { await api(`/personel/mevzuat/resmi/${r.kod}/yukle`, { method: "POST", body: "{}" }); await yukle(); }
+    catch (e) { setHata(e instanceof Error ? e.message : "Resmî set yüklenemedi"); }
+    finally { setIslemde(""); }
+  }
+
+  async function calistir(id: string, islem: string) {
+    setIslemde(id);
+    try { await api(`/personel/mevzuat/${id}/${islem}`, { method: "POST" }); await yukle(); }
+    catch (e) { setHata(e instanceof Error ? e.message : "İşlem tamamlanamadı"); }
+    finally { setIslemde(""); }
+  }
+
+  return (
+    <div className="stack">
+      <Link className="back-link" href="/panel/personel/bordrolar">← Bordro çalışma alanına dön</Link>
+      <PageHeader
+        title="Mevzuat parametre setleri"
+        subtitle="Brüt ve net anlaşılan ücretlerin SGK ve vergi hesabı bu parametrelerle yapılır. Resmî setleri yüklemeniz yeterlidir; elle set yalnız istisnai durumlar içindir."
+        actions={<Link className="btn btn--ghost" href="/panel/personel/mevzuat/kabul">Kabul senaryoları</Link>}
+      />
+      <Alert tone="error">{hata}</Alert>
+
+      <Card title="Resmî setler">
+        <p className="muted" style={{ marginTop: "-0.5rem" }}>Sistemle gelir; kaynakları doğrulanmış ve kabul senaryolarıyla sınanmıştır. Yüklenen set doğrudan etkin olur.</p>
+        <ul className="list-plain">
+          {resmiler.map((r) => (
+            <li key={r.kod} className="card card--pad">
+              <div className="between">
+                <div><strong>{r.ad}</strong><div className="subtle">{gun(r.yururlukBaslangic)} – {r.yururlukBitis ? gun(r.yururlukBitis) : "…"}</div></div>
+                {r.yuklu
+                  ? <Badge variant="success">Yüklü · v{r.yuklu.surum} · {r.yuklu.durum === "aktif" ? "etkin" : r.yuklu.durum}</Badge>
+                  : <Button size="sm" variant="primary" disabled={islemde === r.kod} onClick={() => void resmiYukle(r)}>Yükle ve etkinleştir</Button>}
+              </div>
+              <p className="muted" style={{ margin: "0.5rem 0 0", fontSize: "0.78rem" }}>{r.kaynakNotu}</p>
+            </li>
+          ))}
+        </ul>
+      </Card>
+
+      <div className="split">
+        <Card title="Yeni taslak set">
+          <form className="stack" onSubmit={kaydet}>
+            <Field label="Set adı"><Input required minLength={3} value={form.ad} onChange={(e) => setForm({ ...form, ad: e.target.value })} /></Field>
+            <div className="form-grid form-grid--2">
+              <Field label="Yürürlük başlangıcı"><Input required type="date" value={form.yururlukBaslangic} onChange={(e) => setForm({ ...form, yururlukBaslangic: e.target.value })} /></Field>
+              <Field label="Yürürlük bitişi"><Input type="date" value={form.yururlukBitis} onChange={(e) => setForm({ ...form, yururlukBitis: e.target.value })} /></Field>
+              {SAYI_ALANLARI.map(([b, k]) => <Field key={k} label={b}><Input required type="number" min="0" step="0.001" value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} /></Field>)}
+            </div>
+            <Field label="Gelir vergisi dilimleri">
+              <textarea className="textarea mono" required rows={5} value={form.dilimler} onChange={(e) => setForm({ ...form, dilimler: e.target.value })} />
+              <small className="muted">Her satır: üst sınır:oran. Son sınırsız dilim için “:oran”.</small>
+            </Field>
+            <Field label="Kaynak ve doğrulama notu"><textarea className="textarea" required minLength={10} rows={3} value={form.kaynakNotu} onChange={(e) => setForm({ ...form, kaynakNotu: e.target.value })} /></Field>
+            <Button block type="submit" variant="primary" disabled={islemde === "yeni"}>Taslağı oluştur</Button>
+          </form>
+        </Card>
+        <div className="stack">
+          {!setler.length && <Card><p className="muted" style={{ margin: 0 }}>Henüz mevzuat seti yok.</p></Card>}
+          {setler.map((x) => (
+            <Card key={x.id} title={<><small className="subtle mono">Sürüm {x.surum}</small><div>{x.ad}</div></>} actions={<Badge variant={DURUM[x.durum][1]}>{DURUM[x.durum][0]}</Badge>}>
+              <p className="muted" style={{ marginTop: "-0.5rem" }}>{gun(x.yururlukBaslangic)} – {x.yururlukBitis ? gun(x.yururlukBitis) : "Süresiz"}</p>
+              <dl className="kv">
+                <dt>Asgari brüt</dt><dd>{x.parametreler.asgariUcretBrut.toLocaleString("tr-TR")}</dd>
+                <dt>SGK tavan</dt><dd>{x.parametreler.sgkTavan.toLocaleString("tr-TR")}</dd>
+                <dt>Vergi dilimi</dt><dd>{x.parametreler.gelirVergisiDilimleri.length}</dd>
+              </dl>
+              {x.kaynakNotu && <p className="muted" style={{ fontSize: "0.78rem" }}>{x.kaynakNotu}</p>}
+              {x.durum !== "arsiv" && (
+                <div className="row-tight" style={{ justifyContent: "flex-end" }}>
+                  {x.durum === "taslak" && <Button size="sm" variant="primary" disabled={islemde === x.id} onClick={() => void calistir(x.id, "aktiflestir")}>Etkinleştir</Button>}
+                  <Button size="sm" disabled={islemde === x.id} onClick={() => void calistir(x.id, "arsivle")}>Arşivle</Button>
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}

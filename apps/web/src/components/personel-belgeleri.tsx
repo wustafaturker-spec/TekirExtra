@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, apiDosyaIndir } from "@/lib/api";
 import { BelgeDosyalari } from "@/components/belge-dosyalari";
+import { Alert, Badge, Button, Card, Field, Input, Select, Table } from "@/components/ui";
 
 interface PersonelBelgesi {
   id: string; ekId: string; tur: string; aciklama?: string | null; belgeTarihi?: string | null;
@@ -41,16 +42,41 @@ export function PersonelBelgeleri({ personelId }: { personelId: string }) {
     catch (e) { setHata(e instanceof Error ? e.message : "Belge silinemedi"); }
   }
 
-  return <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-    <div className="border-b border-slate-100 px-6 py-5"><h2 className="font-bold text-slate-900">Özlük belgeleri</h2><p className="mt-1 text-sm text-slate-500">Personel evraklarını sınıflandırın ve süre sonlarını izleyin.</p></div>
-    {hata && <div role="alert" className="m-5 rounded-lg bg-red-50 p-3 text-sm text-red-700">{hata}</div>}
-    <form onSubmit={kaydet} className="grid gap-4 border-b bg-slate-50/60 p-5 lg:grid-cols-4">
-      <label className="text-xs font-semibold text-slate-600">Belge türü<select value={form.tur} onChange={(e) => setForm({ ...form, tur: e.target.value })} className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm">{Object.entries(TUR_ADLARI).map(([k,v]) => <option key={k} value={k}>{v}</option>)}</select></label>
-      <label className="text-xs font-semibold text-slate-600">Belge tarihi<input type="date" value={form.belgeTarihi} onChange={(e) => setForm({ ...form, belgeTarihi: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" /></label>
-      <label className="text-xs font-semibold text-slate-600">Geçerlilik sonu<input type="date" value={form.gecerlilikTarihi} min={form.belgeTarihi || undefined} onChange={(e) => setForm({ ...form, gecerlilikTarihi: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" /></label>
-      <label className="text-xs font-semibold text-slate-600">Açıklama<input maxLength={500} value={form.aciklama} onChange={(e) => setForm({ ...form, aciklama: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" /></label>
-      <div className="lg:col-span-4"><BelgeDosyalari dosyalar={dosyalar} onChange={(d) => setDosyalar(d.slice(0, 1))} /><button disabled={!dosyalar.length || islemde} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{islemde ? "Yükleniyor…" : "Belgeyi özlük dosyasına ekle"}</button></div>
-    </form>
-    <div className="divide-y">{belgeler.length === 0 ? <p className="p-8 text-center text-sm text-slate-500">Henüz özlük belgesi eklenmemiş.</p> : belgeler.map((b) => { const kalan = b.gecerlilikTarihi ? Math.ceil((new Date(b.gecerlilikTarihi).getTime() - Date.now()) / 86400000) : null; return <article key={b.id} className="flex flex-col gap-3 p-5 md:flex-row md:items-center md:justify-between"><div><div className="flex flex-wrap items-center gap-2"><strong className="text-sm text-slate-900">{b.ek.dosyaAdi}</strong><span className="rounded-full bg-orange-50 px-2 py-1 text-xs font-semibold text-orange-700">{TUR_ADLARI[b.tur]}</span>{kalan !== null && kalan <= 30 && <span className={`rounded-full px-2 py-1 text-xs font-semibold ${kalan < 0 ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>{kalan < 0 ? "Süresi doldu" : `${kalan} gün kaldı`}</span>}</div><p className="mt-1 text-xs text-slate-500">Belge: {gun(b.belgeTarihi)} · Geçerlilik: {gun(b.gecerlilikTarihi)} · {(b.ek.boyut / 1024).toLocaleString("tr-TR", { maximumFractionDigits: 0 })} KB</p>{b.aciklama && <p className="mt-1 text-sm text-slate-600">{b.aciklama}</p>}</div><div className="flex gap-2"><button onClick={() => void apiDosyaIndir(`/ekler/${b.ekId}/indir`, b.ek.dosyaAdi)} className="rounded-lg border px-3 py-2 text-xs font-semibold text-slate-700">İndir</button><button onClick={() => void sil(b)} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700">Sil</button></div></article>; })}</div>
-  </section>;
+  return (
+    <Card title="Özlük belgeleri" pad={false}>
+      <div className="stack" style={{ padding: "0 1.1rem 1.1rem" }}>
+        <p className="muted" style={{ margin: 0 }}>Personel evraklarını sınıflandırın ve süre sonlarını izleyin.</p>
+        <Alert tone="error">{hata}</Alert>
+        <form className="form-grid" onSubmit={kaydet}>
+          <Field label="Belge türü"><Select value={form.tur} onChange={(e) => setForm({ ...form, tur: e.target.value })}>{Object.entries(TUR_ADLARI).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field>
+          <Field label="Belge tarihi"><Input type="date" value={form.belgeTarihi} onChange={(e) => setForm({ ...form, belgeTarihi: e.target.value })} /></Field>
+          <Field label="Geçerlilik sonu"><Input type="date" value={form.gecerlilikTarihi} min={form.belgeTarihi || undefined} onChange={(e) => setForm({ ...form, gecerlilikTarihi: e.target.value })} /></Field>
+          <Field label="Açıklama" className="form-grid__tam"><Input maxLength={500} value={form.aciklama} onChange={(e) => setForm({ ...form, aciklama: e.target.value })} /></Field>
+          <div className="form-grid__tam stack" style={{ gap: "0.6rem" }}>
+            <BelgeDosyalari dosyalar={dosyalar} onChange={(d) => setDosyalar(d.slice(0, 1))} />
+            <div><Button type="submit" variant="primary" disabled={!dosyalar.length || islemde}>{islemde ? "Yükleniyor…" : "Belgeyi özlük dosyasına ekle"}</Button></div>
+          </div>
+        </form>
+      </div>
+      <Table>
+        <thead><tr><th>Belge</th><th>Tarihler</th><th /></tr></thead>
+        <tbody>
+          {belgeler.map((b) => {
+            const kalan = b.gecerlilikTarihi ? Math.ceil((new Date(b.gecerlilikTarihi).getTime() - Date.now()) / 86400000) : null;
+            return (
+              <tr key={b.id}>
+                <td>
+                  <div className="row-tight"><strong>{b.ek.dosyaAdi}</strong><Badge variant="accent">{TUR_ADLARI[b.tur]}</Badge>{kalan !== null && kalan <= 30 && <Badge variant={kalan < 0 ? "danger" : "warning"}>{kalan < 0 ? "Süresi doldu" : `${kalan} gün kaldı`}</Badge>}</div>
+                  {b.aciklama && <div className="muted" style={{ fontSize: "0.8rem" }}>{b.aciklama}</div>}
+                </td>
+                <td className="muted" style={{ fontSize: "0.8rem" }}>Belge: {gun(b.belgeTarihi)} · Geçerlilik: {gun(b.gecerlilikTarihi)} · {(b.ek.boyut / 1024).toLocaleString("tr-TR", { maximumFractionDigits: 0 })} KB</td>
+                <td className="num"><div className="row-tight" style={{ justifyContent: "flex-end" }}><Button size="sm" onClick={() => void apiDosyaIndir(`/ekler/${b.ekId}/indir`, b.ek.dosyaAdi)}>İndir</Button><Button size="sm" variant="danger" onClick={() => void sil(b)}>Sil</Button></div></td>
+              </tr>
+            );
+          })}
+          {!belgeler.length && <tr><td className="muted" colSpan={3}>Henüz özlük belgesi eklenmemiş.</td></tr>}
+        </tbody>
+      </Table>
+    </Card>
+  );
 }

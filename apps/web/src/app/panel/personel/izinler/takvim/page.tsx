@@ -1,15 +1,78 @@
 "use client";
+
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-interface Tatil { id:string; tarih:string; ad:string; yarimGun:boolean }
-const tarih=(v:string)=>new Date(v).toLocaleDateString("tr-TR",{weekday:"long",day:"numeric",month:"long",year:"numeric",timeZone:"UTC"});
-export default function CalismaTakvimi(){
-  const [yil,setYil]=useState(new Date().getFullYear()); const [tatiller,setTatiller]=useState<Tatil[]>([]); const [hata,setHata]=useState(""); const [islemde,setIslemde]=useState(false);
-  const [form,setForm]=useState({tarih:`${new Date().getFullYear()}-01-01`,ad:"",yarimGun:false});
-  const yukle=useCallback(async()=>{try{setHata("");setTatiller(await api<Tatil[]>(`/personel/izinler/tatiller?yil=${yil}`));}catch(e){setHata(e instanceof Error?e.message:"Takvim alınamadı");}},[yil]); useEffect(()=>{void yukle();},[yukle]);
-  async function kaydet(e:React.FormEvent){e.preventDefault();setIslemde(true);try{await api("/personel/izinler/tatiller",{method:"POST",body:JSON.stringify(form)});setForm({...form,ad:"",yarimGun:false});await yukle();}catch(e){setHata(e instanceof Error?e.message:"Tatil kaydedilemedi");}finally{setIslemde(false);}}
-  async function sil(t:Tatil){if(!confirm(`${t.ad} takvimden silinsin mi?`))return;try{await api(`/personel/izinler/tatiller/${t.id}`,{method:"DELETE"});await yukle();}catch(e){setHata(e instanceof Error?e.message:"Tatil silinemedi");}}
-  return <main className="hr-subpage hr-subpage--leave hr-subpage--compact"><header className="border-b pb-5"><Link href="/panel/personel/izinler" className="text-sm font-medium text-slate-500 hover:text-orange-700">← İzin yönetimine dön</Link><p className="mt-4 text-xs font-bold uppercase tracking-widest text-orange-600">İnsan Kaynakları</p><h1 className="text-2xl font-bold text-slate-900">Çalışma ve resmî tatil takvimi</h1><p className="mt-1 text-sm text-slate-500">İzin hesabından düşülecek tam ve yarım tatil günlerini yönetin.</p></header>{hata&&<div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{hata}</div>}<div className="grid gap-6 lg:grid-cols-[.7fr_1.3fr]"><form onSubmit={kaydet} className="h-fit space-y-4 rounded-2xl border bg-white p-6 shadow-sm"><h2 className="font-bold">Takvime gün ekle</h2><Alan b="Tarih"><input required type="date" value={form.tarih} onChange={e=>setForm({...form,tarih:e.target.value})} className="w-full rounded-lg border px-3 py-2"/></Alan><Alan b="Açıklama"><input required minLength={2} maxLength={100} value={form.ad} onChange={e=>setForm({...form,ad:e.target.value})} placeholder="Örn. Cumhuriyet Bayramı" className="w-full rounded-lg border px-3 py-2"/></Alan><label className="flex items-center gap-3 rounded-lg bg-slate-50 p-3 text-sm"><input type="checkbox" checked={form.yarimGun} onChange={e=>setForm({...form,yarimGun:e.target.checked})}/>Yarım gün çalışma dışı</label><button disabled={islemde} className="w-full rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{islemde?"Kaydediliyor…":"Takvime kaydet"}</button><p className="text-xs leading-5 text-slate-500">Aynı tarih yeniden kaydedilirse mevcut tanım güncellenir.</p></form><section className="overflow-hidden rounded-2xl border bg-white shadow-sm"><div className="flex items-center justify-between border-b p-5"><div><h2 className="font-bold">{yil} takvimi</h2><p className="text-xs text-slate-500">{tatiller.length} özel gün</p></div><select value={yil} onChange={e=>setYil(Number(e.target.value))} className="rounded-lg border px-3 py-2 text-sm">{Array.from({length:5},(_,i)=>new Date().getFullYear()-1+i).map(y=><option key={y}>{y}</option>)}</select></div>{tatiller.length===0?<p className="p-10 text-center text-sm text-slate-500">Bu yıl için tatil günü tanımlanmamış.</p>:<div className="divide-y">{tatiller.map(t=><article key={t.id} className="flex items-center justify-between gap-4 p-5"><div><strong className="text-sm text-slate-900">{t.ad}</strong><p className="mt-1 text-xs capitalize text-slate-500">{tarih(t.tarih)}</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${t.yarimGun?"bg-amber-100 text-amber-800":"bg-red-50 text-red-700"}`}>{t.yarimGun?"Yarım gün":"Tam gün"}</span><button onClick={()=>void sil(t)} className="text-xs font-semibold text-red-600">Sil</button></div></article>)}</div>}</section></div></main>;
+import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, Table } from "@/components/ui";
+
+interface Tatil { id: string; tarih: string; ad: string; yarimGun: boolean }
+
+const tarihYazi = (v: string) => new Date(v).toLocaleDateString("tr-TR", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+
+/** İzin gün sayımından düşülen tam ve yarım tatil günleri (çalışma takvimiyle ortak). */
+export default function CalismaTakvimi() {
+  const buYil = new Date().getFullYear();
+  const [yil, setYil] = useState(buYil);
+  const [tatiller, setTatiller] = useState<Tatil[]>([]);
+  const [hata, setHata] = useState("");
+  const [islemde, setIslemde] = useState(false);
+  const [form, setForm] = useState({ tarih: `${buYil}-01-01`, ad: "", yarimGun: false });
+
+  const yukle = useCallback(async () => {
+    try { setHata(""); setTatiller(await api<Tatil[]>(`/personel/izinler/tatiller?yil=${yil}`)); }
+    catch (e) { setHata(e instanceof Error ? e.message : "Takvim alınamadı"); }
+  }, [yil]);
+  useEffect(() => { void yukle(); }, [yukle]);
+
+  async function kaydet(e: React.FormEvent) {
+    e.preventDefault(); setIslemde(true);
+    try { await api("/personel/izinler/tatiller", { method: "POST", body: JSON.stringify(form) }); setForm({ ...form, ad: "", yarimGun: false }); await yukle(); }
+    catch (err) { setHata(err instanceof Error ? err.message : "Tatil kaydedilemedi"); }
+    finally { setIslemde(false); }
+  }
+  async function sil(t: Tatil) {
+    if (!confirm(`${t.ad} takvimden silinsin mi?`)) return;
+    try { await api(`/personel/izinler/tatiller/${t.id}`, { method: "DELETE" }); await yukle(); }
+    catch (e) { setHata(e instanceof Error ? e.message : "Tatil silinemedi"); }
+  }
+
+  return (
+    <div className="stack">
+      <Link className="back-link" href="/panel/personel/izinler">← İzin yönetimine dön</Link>
+      <PageHeader title="Çalışma ve resmî tatil takvimi" subtitle="İzin hesabından düşülecek tam ve yarım tatil günlerini yönetin." />
+      <Alert tone="error">{hata}</Alert>
+      <div className="split">
+        <Card title="Takvime gün ekle">
+          <form className="stack" onSubmit={kaydet}>
+            <Field label="Tarih"><Input required type="date" value={form.tarih} onChange={(e) => setForm({ ...form, tarih: e.target.value })} /></Field>
+            <Field label="Açıklama"><Input required minLength={2} maxLength={100} value={form.ad} onChange={(e) => setForm({ ...form, ad: e.target.value })} placeholder="Örn. Cumhuriyet Bayramı" /></Field>
+            <label className="check"><input type="checkbox" checked={form.yarimGun} onChange={(e) => setForm({ ...form, yarimGun: e.target.checked })} /><span>Yarım gün çalışma dışı</span></label>
+            <Button block type="submit" variant="primary" disabled={islemde}>{islemde ? "Kaydediliyor…" : "Takvime kaydet"}</Button>
+            <p className="muted" style={{ margin: 0, fontSize: "0.78rem" }}>Aynı tarih yeniden kaydedilirse mevcut tanım güncellenir.</p>
+          </form>
+        </Card>
+        <Card pad={false}>
+          <div className="between" style={{ padding: "1rem 1.25rem" }}>
+            <div><div className="card__title" style={{ margin: 0 }}>{yil} takvimi</div><small className="muted">{tatiller.length} özel gün</small></div>
+            <Select aria-label="Yıl" value={yil} onChange={(e) => setYil(Number(e.target.value))} style={{ width: "auto" }}>
+              {Array.from({ length: 5 }, (_, i) => buYil - 1 + i).map((y) => <option key={y}>{y}</option>)}
+            </Select>
+          </div>
+          <Table>
+            <thead><tr><th>Gün</th><th>Süre</th><th /></tr></thead>
+            <tbody>
+              {tatiller.map((t) => (
+                <tr key={t.id}>
+                  <td><strong>{t.ad}</strong><div className="subtle" style={{ textTransform: "capitalize" }}>{tarihYazi(t.tarih)}</div></td>
+                  <td><Badge variant={t.yarimGun ? "warning" : "danger"}>{t.yarimGun ? "Yarım gün" : "Tam gün"}</Badge></td>
+                  <td className="num"><Button size="sm" variant="danger" onClick={() => void sil(t)}>Sil</Button></td>
+                </tr>
+              ))}
+              {!tatiller.length && <tr><td className="muted" colSpan={3}>Bu yıl için tatil günü tanımlanmamış.</td></tr>}
+            </tbody>
+          </Table>
+        </Card>
+      </div>
+    </div>
+  );
 }
-function Alan({b,children}:{b:string;children:React.ReactNode}){return <label className="block"><span className="mb-1 block text-xs font-semibold text-slate-600">{b}</span>{children}</label>}

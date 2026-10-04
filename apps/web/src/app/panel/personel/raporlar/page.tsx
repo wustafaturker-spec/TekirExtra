@@ -3,29 +3,134 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, apiDosyaIndir } from "@/lib/api";
+import { Alert, Badge, Button, ButtonLabel, Card, Input, PageHeader, Para, Select, Stat, StatGrid, Table } from "@/components/ui";
+import { paraBicimle } from "@tekirextra/shared";
 
-interface Ozet { donem:{yil:number;ay:number}; toplamPersonel:number; aktifPersonel:number; aylikSozlesmeYuku:string; durumlar:{durum:string;adet:number}[]; departmanlar:{ad:string;adet:number;ucretYuku:string;isverenMaliyeti:string}[]; bordro:{acikAdet:number;acikTutar:string;donemIsverenMaliyeti:string;donemTesvikTasarrufu:string;trend:{yil:number;ay:number;tahakkuk:string;odeme:string;isverenMaliyeti:string;tesvik:string}[]}; avans:{acikAdet:number;acikTutar:string}; izin:{bekleyen:number;planliGun:string}; belgeler:{suresiDolmus:number;yaklasan:{id:string;tur:string;gecerlilikTarihi:string;personel:{id:string;personelNo:string;ad:string;soyad:string};ek:{dosyaAdi:string}}[]} }
-const para=(v:string)=>Number(v).toLocaleString("tr-TR",{style:"currency",currency:"TRY",maximumFractionDigits:0});
-const aylar=["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
-const turAdi=(v:string)=>v.replaceAll("_"," ").replace(/(^| )\p{L}/gu,(x)=>x.toLocaleUpperCase("tr-TR"));
-
-export default function IkRaporlariSayfasi(){
-  const [veri,setVeri]=useState<Ozet|null>(null); const [hata,setHata]=useState(""); const [yukleniyor,setYukleniyor]=useState(true);
-  const [raporDonemi,setRaporDonemi]=useState({yil:new Date().getFullYear(),ay:new Date().getMonth()+1});
-  const yukle=useCallback(async()=>{setYukleniyor(true);try{setHata("");setVeri(await api<Ozet>("/personel/raporlar/ozet"));}catch(e){setHata(e instanceof Error?e.message:"Rapor alınamadı");}finally{setYukleniyor(false);}},[]);
-  useEffect(()=>{void yukle();},[yukle]);
-  const azami=useMemo(()=>Math.max(1,...(veri?.bordro.trend.map(x=>Math.max(Number(x.tahakkuk),Number(x.odeme),Number(x.isverenMaliyeti)))??[])),[veri]);
-  return <main className="hr-subpage hr-subpage--reports">
-    <header className="flex flex-col gap-4 border-b pb-5 md:flex-row md:items-end md:justify-between"><div><Link href="/panel/personel" className="text-sm font-medium text-slate-500 hover:text-orange-700">← Personel listesine dön</Link><p className="mt-4 text-xs font-bold uppercase tracking-widest text-orange-600">Yönetim görünümü</p><h1 className="text-3xl font-bold text-slate-900">İK kontrol merkezi</h1><p className="mt-1 text-sm text-slate-500">İş gücü, ücret yükü ve bekleyen süreçleri tek ekrandan izleyin.</p></div><div className="flex flex-wrap items-center gap-2"><input aria-label="Rapor yılı" type="number" min="2020" max="2100" value={raporDonemi.yil} onChange={e=>setRaporDonemi({...raporDonemi,yil:Number(e.target.value)})} className="w-24 rounded-lg border bg-white px-3 py-2 text-sm"/><select aria-label="Rapor ayı" value={raporDonemi.ay} onChange={e=>setRaporDonemi({...raporDonemi,ay:Number(e.target.value)})} className="rounded-lg border bg-white px-3 py-2 text-sm">{aylar.map((a,i)=><option key={a} value={i+1}>{a}</option>)}</select><Link href="/panel/personel/raporlar/maliyet" className="rounded-lg border bg-white px-4 py-2 text-sm font-semibold text-slate-700">Maliyet detayı</Link><button onClick={()=>void apiDosyaIndir(`/personel/raporlar/maliyet.xlsx?yil=${raporDonemi.yil}&ay=${raporDonemi.ay}`,`personel-maliyet-${raporDonemi.yil}-${String(raporDonemi.ay).padStart(2,"0")}.xlsx`)} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Excel indir</button><button disabled={yukleniyor} onClick={()=>void yukle()} className="rounded-lg border bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50">{yukleniyor?"Güncelleniyor…":"↻ Yenile"}</button></div></header>
-    {hata&&<div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{hata}</div>}
-    {!veri?<div className="rounded-2xl border bg-white p-12 text-center text-sm text-slate-500">İK göstergeleri hazırlanıyor…</div>:<>
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"><Kart b="Aktif iş gücü" d={String(veri.aktifPersonel)} a={`${veri.toplamPersonel} toplam personel`} ton="orange"/><Kart b="Dönem işveren maliyeti" d={para(veri.bordro.donemIsverenMaliyeti)} a="Brüt ücret ve işveren payları" ton="slate"/><Kart b="SGK teşvik tasarrufu" d={para(veri.bordro.donemTesvikTasarrufu)} a="Dönem bordro hesap izleri" ton="emerald"/><Kart b="Aylık ücret yükü" d={para(veri.aylikSozlesmeYuku)} a="Aktif sözleşme net ücretleri" ton="slate"/><Kart b="Açık bordro" d={para(veri.bordro.acikTutar)} a={`${veri.bordro.acikAdet} bordro işlemi`} ton="amber"/><Kart b="Açık avans" d={para(veri.avans.acikTutar)} a={`${veri.avans.acikAdet} açık kayıt`} ton="violet"/></section>
-      <section className="grid gap-6 lg:grid-cols-[1.5fr_.8fr]"><article className="rounded-2xl border bg-white p-6 shadow-sm"><Baslik b="6 aylık bordro görünümü" a="Net tahakkuk, ödeme ve işveren maliyeti karşılaştırması"/><div className="mt-8 flex h-56 items-end gap-4 border-b border-slate-200 px-2">{veri.bordro.trend.map(x=><div key={`${x.yil}-${x.ay}`} className="flex h-full flex-1 flex-col justify-end"><div className="flex flex-1 items-end justify-center gap-1"><span title={`Tahakkuk ${para(x.tahakkuk)}`} style={{height:`${Math.max(2,Number(x.tahakkuk)/azami*100)}%`}} className="w-3 rounded-t bg-orange-500 md:w-5"/><span title={`Ödeme ${para(x.odeme)}`} style={{height:`${Math.max(2,Number(x.odeme)/azami*100)}%`}} className="w-3 rounded-t bg-slate-700 md:w-5"/><span title={`İşveren maliyeti ${para(x.isverenMaliyeti)}`} style={{height:`${Math.max(2,Number(x.isverenMaliyeti)/azami*100)}%`}} className="w-3 rounded-t bg-emerald-600 md:w-5"/></div><span className="py-3 text-center text-xs font-medium text-slate-500">{aylar[x.ay-1]} {String(x.yil).slice(-2)}</span></div>)}</div><div className="mt-4 flex flex-wrap gap-5 text-xs text-slate-600"><span><i className="mr-2 inline-block h-2.5 w-2.5 rounded bg-orange-500"/>Tahakkuk</span><span><i className="mr-2 inline-block h-2.5 w-2.5 rounded bg-slate-700"/>Ödeme</span><span><i className="mr-2 inline-block h-2.5 w-2.5 rounded bg-emerald-600"/>İşveren maliyeti</span></div></article>
-      <article className="rounded-2xl border bg-white p-6 shadow-sm"><Baslik b="Bekleyen işler" a="Operasyonel takip kuyruğu"/><div className="mt-5 space-y-3"><Is href="/panel/personel/izinler" b="İzin onayı" d={`${veri.izin.bekleyen} talep`} uyari={veri.izin.bekleyen>0}/><Is href="/panel/personel/bordrolar" b="Açık bordrolar" d={`${veri.bordro.acikAdet} işlem`} uyari={veri.bordro.acikAdet>0}/><Is href="/panel/personel/avanslar" b="Açık avanslar" d={`${veri.avans.acikAdet} kayıt`} uyari={veri.avans.acikAdet>0}/><Is href="#belgeler" b="Süresi dolan belge" d={`${veri.belgeler.suresiDolmus} belge`} uyari={veri.belgeler.suresiDolmus>0}/></div></article></section>
-      <section className="grid gap-6 lg:grid-cols-2"><article className="overflow-hidden rounded-2xl border bg-white shadow-sm"><div className="p-6"><Baslik b="Departman dağılımı" a="Çalışan sayısı ve sözleşme ücret yükü"/></div><div className="divide-y">{veri.departmanlar.map(d=><div key={d.ad} className="grid grid-cols-[1fr_auto] gap-4 px-6 py-4"><div><div className="flex justify-between text-sm"><strong>{d.ad}</strong><span>{d.adet} kişi</span></div><div className="mt-2 h-1.5 overflow-hidden rounded bg-slate-100"><div style={{width:`${Math.max(4,d.adet/veri.aktifPersonel*100)}%`}} className="h-full rounded bg-orange-500"/></div></div><div className="self-center text-right text-xs text-slate-500"><strong className="block text-sm text-slate-800">{para(d.isverenMaliyeti)}</strong><span>işveren maliyeti</span><span className="block">Net sözleşme: {para(d.ucretYuku)}</span></div></div>)}</div></article><article id="belgeler" className="overflow-hidden rounded-2xl border bg-white shadow-sm"><div className="p-6"><Baslik b="Yaklaşan belge süreleri" a="Önümüzdeki 30 gün içinde sona erecek belgeler"/></div><div className="divide-y">{veri.belgeler.yaklasan.length===0?<p className="p-8 text-center text-sm text-slate-500">Yaklaşan belge süresi bulunmuyor.</p>:veri.belgeler.yaklasan.map(b=><Link key={b.id} href={`/panel/personel/${b.personel.id}`} className="flex items-center justify-between gap-4 px-6 py-4 hover:bg-slate-50"><div><strong className="text-sm">{b.personel.ad} {b.personel.soyad}</strong><p className="text-xs text-slate-500">{b.personel.personelNo} · {turAdi(b.tur)} · {b.ek.dosyaAdi}</p></div><time className="whitespace-nowrap rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">{new Date(b.gecerlilikTarihi).toLocaleDateString("tr-TR",{timeZone:"UTC"})}</time></Link>)}</div></article></section>
-    </>}
-  </main>;
+interface Ozet {
+  donem: { yil: number; ay: number }; toplamPersonel: number; aktifPersonel: number; aylikSozlesmeYuku: string;
+  durumlar: { durum: string; adet: number }[];
+  departmanlar: { ad: string; adet: number; ucretYuku: string; isverenMaliyeti: string }[];
+  bordro: { acikAdet: number; acikTutar: string; donemIsverenMaliyeti: string; donemTesvikTasarrufu: string; trend: { yil: number; ay: number; tahakkuk: string; odeme: string; isverenMaliyeti: string; tesvik: string }[] };
+  avans: { acikAdet: number; acikTutar: string };
+  izin: { bekleyen: number; planliGun: string };
+  belgeler: { suresiDolmus: number; yaklasan: { id: string; tur: string; gecerlilikTarihi: string; personel: { id: string; personelNo: string; ad: string; soyad: string }; ek: { dosyaAdi: string } }[] };
 }
-function Kart({b,d,a,ton}:{b:string;d:string;a:string;ton:string}){const renk:Record<string,string>={orange:"border-orange-200 bg-orange-50",slate:"border-slate-200 bg-white",amber:"border-amber-200 bg-amber-50",violet:"border-violet-200 bg-violet-50",emerald:"border-emerald-200 bg-emerald-50"};return <article className={`rounded-2xl border p-5 shadow-sm ${renk[ton]}`}><p className="text-xs font-bold uppercase tracking-wide text-slate-500">{b}</p><p className="mt-2 text-2xl font-bold text-slate-900">{d}</p><p className="mt-1 text-xs text-slate-500">{a}</p></article>}
-function Baslik({b,a}:{b:string;a:string}){return <div><h2 className="font-bold text-slate-900">{b}</h2><p className="mt-1 text-sm text-slate-500">{a}</p></div>}
-function Is({href,b,d,uyari}:{href:string;b:string;d:string;uyari:boolean}){return <Link href={href} className="flex items-center justify-between rounded-xl border p-4 hover:bg-slate-50"><span className="text-sm font-semibold text-slate-800">{b}</span><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${uyari?"bg-amber-100 text-amber-800":"bg-emerald-100 text-emerald-800"}`}>{d}</span></Link>}
+
+const AYLAR = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
+const SERILER = [["tahakkuk", "Tahakkuk", "var(--viz-1)"], ["odeme", "Ödeme", "var(--viz-2)"], ["isverenMaliyeti", "İşveren maliyeti", "var(--viz-3)"]] as const;
+const turAdi = (v: string) => v.replaceAll("_", " ").replace(/(^| )\p{L}/gu, (x) => x.toLocaleUpperCase("tr-TR"));
+const tl = (v: string | number) => paraBicimle(v, { basamak: 0 });
+
+/** İK kontrol merkezi: iş gücü, ücret yükü, bekleyen işler ve belge süreleri. */
+export default function IkRaporlariSayfasi() {
+  const [veri, setVeri] = useState<Ozet | null>(null);
+  const [hata, setHata] = useState("");
+  const [yukleniyor, setYukleniyor] = useState(true);
+  const [tablo, setTablo] = useState(false);
+  const [raporDonemi, setRaporDonemi] = useState({ yil: new Date().getFullYear(), ay: new Date().getMonth() + 1 });
+
+  const yukle = useCallback(async () => {
+    setYukleniyor(true);
+    try { setHata(""); setVeri(await api<Ozet>("/personel/raporlar/ozet")); }
+    catch (e) { setHata(e instanceof Error ? e.message : "Rapor alınamadı"); }
+    finally { setYukleniyor(false); }
+  }, []);
+  useEffect(() => { void yukle(); }, [yukle]);
+  const azami = useMemo(() => Math.max(1, ...(veri?.bordro.trend.map((x) => Math.max(Number(x.tahakkuk), Number(x.odeme), Number(x.isverenMaliyeti))) ?? [])), [veri]);
+
+  return (
+    <div className="stack">
+      <Link className="back-link" href="/panel/personel">← Personel listesine dön</Link>
+      <PageHeader
+        title="İK kontrol merkezi"
+        subtitle="İş gücü, ücret yükü ve bekleyen süreçleri tek ekrandan izleyin."
+        actions={<>
+          <Input aria-label="Rapor yılı" type="number" min="2020" max="2100" value={raporDonemi.yil} onChange={(e) => setRaporDonemi({ ...raporDonemi, yil: Number(e.target.value) })} style={{ width: "6rem" }} />
+          <Select aria-label="Rapor ayı" value={raporDonemi.ay} onChange={(e) => setRaporDonemi({ ...raporDonemi, ay: Number(e.target.value) })} style={{ width: "auto" }}>{AYLAR.map((a, i) => <option key={a} value={i + 1}>{a}</option>)}</Select>
+          <ButtonLabel as="a" href="/panel/personel/raporlar/maliyet">Maliyet detayı</ButtonLabel>
+          <Button variant="primary" onClick={() => void apiDosyaIndir(`/personel/raporlar/maliyet.xlsx?yil=${raporDonemi.yil}&ay=${raporDonemi.ay}`, `personel-maliyet-${raporDonemi.yil}-${String(raporDonemi.ay).padStart(2, "0")}.xlsx`)}>Excel indir</Button>
+          <Button disabled={yukleniyor} onClick={() => void yukle()}>{yukleniyor ? "Güncelleniyor…" : "↻ Yenile"}</Button>
+        </>}
+      />
+      <Alert tone="error">{hata}</Alert>
+      {!veri ? <Card><p className="muted" style={{ margin: 0 }}>İK göstergeleri hazırlanıyor…</p></Card> : <>
+        <StatGrid>
+          <Stat label="Aktif iş gücü" value={veri.aktifPersonel} hint={`${veri.toplamPersonel} toplam personel`} tone="accent" />
+          <Stat label="Dönem işveren maliyeti" value={tl(veri.bordro.donemIsverenMaliyeti)} hint="Brüt ücret ve işveren payları" />
+          <Stat label="SGK teşvik tasarrufu" value={tl(veri.bordro.donemTesvikTasarrufu)} hint="Dönem bordro hesap izleri" tone="success" />
+          <Stat label="Aylık ücret yükü" value={tl(veri.aylikSozlesmeYuku)} hint="Aktif sözleşme net ücretleri" />
+          <Stat label="Açık bordro" value={tl(veri.bordro.acikTutar)} hint={`${veri.bordro.acikAdet} bordro işlemi`} />
+          <Stat label="Açık avans" value={tl(veri.avans.acikTutar)} hint={`${veri.avans.acikAdet} açık kayıt`} />
+        </StatGrid>
+
+        <div className="split split--wide-left">
+          <Card title="6 aylık bordro görünümü" actions={<Button size="sm" onClick={() => setTablo((t) => !t)}>{tablo ? "Grafik" : "Tablo"}</Button>}>
+            <p className="muted" style={{ marginTop: "-0.5rem" }}>Net tahakkuk, ödeme ve işveren maliyeti karşılaştırması</p>
+            {tablo ? (
+              <Table density="compact">
+                <thead><tr><th>Dönem</th>{SERILER.map(([, ad]) => <th key={ad} className="num">{ad}</th>)}</tr></thead>
+                <tbody>{veri.bordro.trend.map((x) => <tr key={`${x.yil}-${x.ay}`}><td>{AYLAR[x.ay - 1]} {x.yil}</td>{SERILER.map(([k]) => <td key={k} className="num"><Para deger={x[k]} /></td>)}</tr>)}</tbody>
+              </Table>
+            ) : (<>
+              <div className="bar-chart" role="img" aria-label="Son altı ayın tahakkuk, ödeme ve işveren maliyeti">
+                {veri.bordro.trend.map((x) => (
+                  <div key={`${x.yil}-${x.ay}`} className="bar-chart__group">
+                    <div className="bar-chart__bars">
+                      {SERILER.map(([k, ad, renk]) => <span key={k} className="bar-chart__bar" title={`${AYLAR[x.ay - 1]} ${x.yil} · ${ad}: ${tl(x[k])}`} style={{ height: `${Math.max(2, (Number(x[k]) / azami) * 100)}%`, background: renk }} />)}
+                    </div>
+                    <span className="bar-chart__label">{AYLAR[x.ay - 1]} {String(x.yil).slice(-2)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="chart-legend">{SERILER.map(([k, ad, renk]) => <span key={k}><i style={{ background: renk }} />{ad}</span>)}</div>
+            </>)}
+          </Card>
+          <Card title="Bekleyen işler">
+            <ul className="list-plain">
+              <Is href="/panel/personel/izinler" b="İzin onayı" d={`${veri.izin.bekleyen} talep`} uyari={veri.izin.bekleyen > 0} />
+              <Is href="/panel/personel/bordrolar" b="Açık bordrolar" d={`${veri.bordro.acikAdet} işlem`} uyari={veri.bordro.acikAdet > 0} />
+              <Is href="/panel/personel/avanslar" b="Açık avanslar" d={`${veri.avans.acikAdet} kayıt`} uyari={veri.avans.acikAdet > 0} />
+              <Is href="#belgeler" b="Süresi dolan belge" d={`${veri.belgeler.suresiDolmus} belge`} uyari={veri.belgeler.suresiDolmus > 0} />
+            </ul>
+          </Card>
+        </div>
+
+        <div className="split split--even">
+          <Card title="Departman dağılımı" pad={false}>
+            <Table className="table--fit">
+              <thead><tr><th>Departman</th><th className="num">İşveren maliyeti</th><th className="num">Net sözleşme</th></tr></thead>
+              <tbody>
+                {veri.departmanlar.map((d) => (
+                  <tr key={d.ad}>
+                    <td><div className="between"><strong>{d.ad}</strong><small className="muted">{d.adet} kişi</small></div><div className="meter" style={{ marginTop: "0.4rem" }}><span style={{ width: `${Math.max(4, (d.adet / Math.max(1, veri.aktifPersonel)) * 100)}%` }} /></div></td>
+                    <td className="num"><Para deger={d.isverenMaliyeti} basamak={0} /></td>
+                    <td className="num"><Para deger={d.ucretYuku} basamak={0} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </Card>
+          <Card title="Yaklaşan belge süreleri" pad={false} id="belgeler">
+            <Table className="table--fit">
+              <thead><tr><th>Personel</th><th>Belge</th><th className="num">Son geçerlilik</th></tr></thead>
+              <tbody>
+                {veri.belgeler.yaklasan.map((b) => (
+                  <tr key={b.id}>
+                    <td><Link href={`/panel/personel/${b.personel.id}`}><strong>{b.personel.ad} {b.personel.soyad}</strong></Link><div className="subtle">{b.personel.personelNo}</div></td>
+                    <td>{turAdi(b.tur)}<div className="subtle">{b.ek.dosyaAdi}</div></td>
+                    <td className="num"><Badge variant="warning">{new Date(b.gecerlilikTarihi).toLocaleDateString("tr-TR", { timeZone: "UTC" })}</Badge></td>
+                  </tr>
+                ))}
+                {!veri.belgeler.yaklasan.length && <tr><td className="muted" colSpan={3}>Önümüzdeki 30 günde süresi dolacak belge yok.</td></tr>}
+              </tbody>
+            </Table>
+          </Card>
+        </div>
+      </>}
+    </div>
+  );
+}
+
+function Is({ href, b, d, uyari }: { href: string; b: string; d: string; uyari: boolean }) {
+  return <li><Link href={href} className="between card" style={{ padding: "0.75rem 1rem" }}><strong style={{ fontSize: "0.85rem" }}>{b}</strong><Badge variant={uyari ? "warning" : "success"}>{d}</Badge></Link></li>;
+}

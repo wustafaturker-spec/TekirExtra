@@ -4,14 +4,19 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiHata } from "@/lib/api";
 import { bugunTR } from "@tekirextra/shared";
+import { Alert, Badge, Button, Card, Field, Input, Modal, ModalEylem, PageHeader, Para, Select, Stat, StatGrid, Table } from "@/components/ui";
 
 type AvansDurum = "talep" | "onaylandi" | "odendi" | "kismen_mahsup" | "mahsup_edildi" | "reddedildi" | "iptal";
-interface Avans { id: string; tutar: string; tarih: string; aciklama?: string | null; durum: AvansDurum; kalanTutar: string; mahsupEdilenTutar: string; retNedeni?: string | null; personel: Personel }
 interface Personel { id: string; personelNo: string; ad: string; soyad: string; durum?: string }
+interface Avans { id: string; tutar: string; tarih: string; aciklama?: string | null; durum: AvansDurum; kalanTutar: string; mahsupEdilenTutar: string; retNedeni?: string | null; personel: Personel }
 interface Hesap { id: string; ad: string; bankaAdi?: string; aktif: boolean; dovizCinsi: string; bakiye: string }
-const para = (v: string | number) => Number(v).toLocaleString("tr-TR", { style: "currency", currency: "TRY" });
-const durumAdi: Record<AvansDurum, string> = { talep: "Onay bekliyor", onaylandi: "Ödeme bekliyor", odendi: "Mahsup bekliyor", kismen_mahsup: "Kısmen mahsup", mahsup_edildi: "Mahsup edildi", reddedildi: "Reddedildi", iptal: "İptal" };
 
+const DURUM: Record<AvansDurum, [string, "warning" | "info" | "accent" | "neutral" | "success" | "danger"]> = {
+  talep: ["Onay bekliyor", "warning"], onaylandi: ["Ödeme bekliyor", "info"], odendi: ["Mahsup bekliyor", "accent"], kismen_mahsup: ["Kısmen mahsup", "accent"],
+  mahsup_edildi: ["Mahsup edildi", "success"], reddedildi: ["Reddedildi", "danger"], iptal: ["İptal", "neutral"],
+};
+
+/** Avans talebi, onay, ödeme ve bordro mahsup bakiyeleri. */
 export default function AvanslarSayfasi() {
   const [avanslar, setAvanslar] = useState<Avans[]>([]);
   const [personeller, setPersoneller] = useState<Personel[]>([]);
@@ -27,18 +32,138 @@ export default function AvanslarSayfasi() {
   const [hesaplar, setHesaplar] = useState<{ kasalar: Hesap[]; bankalar: Hesap[] }>({ kasalar: [], bankalar: [] });
   const [talep, setTalep] = useState({ personelId: "", tutar: "", tarih: bugunTR(), aciklama: "" });
   const [odeme, setOdeme] = useState({ kaynak: "", tarih: bugunTR() });
-  const yukle = useCallback(async () => { try { setHata(null); const [a, p] = await Promise.all([api<Avans[]>("/personel/avanslar"), api<Personel[]>("/personel")]); setAvanslar(a); setPersoneller(p.filter((x) => x.durum === "aktif")); } catch (e) { setHata(e instanceof Error ? e.message : "Avans kayıtları alınamadı"); } }, []);
+
+  const yukle = useCallback(async () => {
+    try {
+      setHata(null);
+      const [a, p] = await Promise.all([api<Avans[]>("/personel/avanslar"), api<Personel[]>("/personel")]);
+      setAvanslar(a); setPersoneller(p.filter((x) => x.durum === "aktif"));
+    } catch (e) { setHata(e instanceof Error ? e.message : "Avans kayıtları alınamadı"); }
+  }, []);
   useEffect(() => { void yukle(); }, [yukle]);
-  const ozet = useMemo(() => ({ talepler: avanslar.filter((a) => a.durum === "talep").length, acik: avanslar.filter((a) => ["odendi", "kismen_mahsup"].includes(a.durum)).reduce((t, a) => t + Number(a.kalanTutar), 0), toplam: avanslar.reduce((t, a) => t + Number(a.tutar), 0) }), [avanslar]);
-  const calistir = async (id: string, fn: () => Promise<unknown>) => { try { setIsleniyor(id); setHata(null); await fn(); await yukle(); return true; } catch (e) { setHata(e instanceof ApiHata ? e.message : "İşlem tamamlanamadı"); return false; } finally { setIsleniyor(null); } };
-  const olustur = async (e: React.FormEvent) => { e.preventDefault(); if (await calistir("yeni", () => api("/personel/avanslar", { method: "POST", body: JSON.stringify(talep) }))) { setTalepAcik(false); setTalep({ personelId: "", tutar: "", tarih: bugunTR(), aciklama: "" }); } };
-  const odemeAc = async (a: Avans) => { try { const [kasalar, bankalar] = await Promise.all([api<Hesap[]>("/kasa-banka/kasalar"), api<Hesap[]>("/kasa-banka/bankalar")]); setHesaplar({ kasalar: kasalar.filter((h) => h.aktif && h.dovizCinsi === "TRY"), bankalar: bankalar.filter((h) => h.aktif && h.dovizCinsi === "TRY") }); setOdenecek(a); } catch (e) { setHata(e instanceof Error ? e.message : "Hesaplar alınamadı"); } };
-  const ode = async (e: React.FormEvent) => { e.preventDefault(); if (!odenecek) return; const [tur, hesapId] = odeme.kaynak.split(":"); if (await calistir(odenecek.id, () => api(`/personel/avanslar/${odenecek.id}/odemeler`, { method: "POST", body: JSON.stringify({ tarih: odeme.tarih, [tur === "kasa" ? "kasaId" : "bankaHesapId"]: hesapId }) }))) setOdenecek(null); };
-  const odemeGeriAl = async (e: React.FormEvent) => { e.preventDefault(); if (!geriAlinacak) return; if (await calistir(geriAlinacak.id, () => api(`/personel/avanslar/${geriAlinacak.id}/odeme-iptal`, { method: "POST", body: JSON.stringify({ neden: geriAlmaNedeni }) }))) { setGeriAlinacak(null); setGeriAlmaNedeni(""); } };
-  const reddet = async (e: React.FormEvent) => { e.preventDefault(); if (!reddedilecek) return; if (await calistir(reddedilecek.id, () => api(`/personel/avanslar/${reddedilecek.id}/reddet`, { method: "POST", body: JSON.stringify({ neden: retNedeni }) }))) { setReddedilecek(null); setRetNedeni(""); } };
-  return <main className="hr-subpage hr-subpage--advance"><Link href="/panel/personel" className="text-sm font-medium text-slate-500 hover:text-orange-700">← Personel listesine dön</Link><header className="flex items-end justify-between border-b pb-5"><div><p className="text-xs font-bold uppercase tracking-widest text-orange-600">İnsan Kaynakları</p><h1 className="text-2xl font-bold text-slate-900">Avans yönetimi</h1><p className="mt-1 text-sm text-slate-500">Talep, onay, ödeme ve bordro mahsup bakiyelerini yönetin.</p></div><button onClick={() => setTalepAcik(true)} className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white">Yeni avans talebi</button></header>{hata && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{hata}</div>}<section className="grid gap-4 sm:grid-cols-3"><Kart b="Bekleyen talep" d={String(ozet.talepler)} /><Kart b="Açık avans bakiyesi" d={para(ozet.acik)} /><Kart b="Toplam talep" d={para(ozet.toplam)} /></section><section className="overflow-hidden rounded-2xl border bg-white shadow-sm">{avanslar.length === 0 ? <p className="p-10 text-center text-sm text-slate-500">Henüz avans talebi yok.</p> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr><th className="px-5 py-3">Personel</th><th className="px-5 py-3">Talep</th><th className="px-5 py-3">Mahsup</th><th className="px-5 py-3">Kalan</th><th className="px-5 py-3">Durum</th><th className="px-5 py-3" /></tr></thead><tbody className="divide-y">{avanslar.map((a) => <tr key={a.id}><td className="px-5 py-4"><Link href={`/panel/personel/${a.personel.id}`} className="font-semibold text-slate-900 hover:text-orange-700">{a.personel.ad} {a.personel.soyad}</Link><p className="font-mono text-xs text-slate-400">{a.personel.personelNo}</p></td><td className="px-5 py-4 font-semibold">{para(a.tutar)}</td><td className="px-5 py-4">{para(a.mahsupEdilenTutar)}</td><td className="px-5 py-4">{para(a.kalanTutar)}</td><td className="px-5 py-4"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold">{durumAdi[a.durum]}</span>{a.retNedeni && <p className="mt-1 text-xs text-red-600">{a.retNedeni}</p>}</td><td className="px-5 py-4 text-right"><div className="flex justify-end gap-2">{a.durum === "talep" && <><button onClick={() => setReddedilecek(a)} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700">Reddet</button><button disabled={isleniyor === a.id} onClick={() => void calistir(a.id, () => api(`/personel/avanslar/${a.id}/onayla`, { method: "POST" }))} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white">Onayla</button></>}{a.durum === "onaylandi" && <button onClick={() => void odemeAc(a)} className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white">Öde</button>}{a.durum === "odendi" && Number(a.mahsupEdilenTutar) === 0 && <button onClick={() => setGeriAlinacak(a)} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700">Ödemeyi geri al</button>}</div></td></tr>)}</tbody></table></div>}</section>{talepAcik && <Modal b="Yeni avans talebi" kapat={() => setTalepAcik(false)}><form onSubmit={olustur} className="space-y-4"><Alan b="Personel"><select required value={talep.personelId} onChange={(e) => setTalep({ ...talep, personelId: e.target.value })} className="w-full rounded-lg border px-3 py-2"><option value="">Personel seçin</option>{personeller.map((p) => <option key={p.id} value={p.id}>{p.personelNo} · {p.ad} {p.soyad}</option>)}</select></Alan><Alan b="Tutar"><input required type="number" min="0.01" step="0.01" value={talep.tutar} onChange={(e) => setTalep({ ...talep, tutar: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan><Alan b="Talep tarihi"><input required type="date" value={talep.tarih} onChange={(e) => setTalep({ ...talep, tarih: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan><Alan b="Açıklama"><textarea maxLength={250} value={talep.aciklama} onChange={(e) => setTalep({ ...talep, aciklama: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan><Eylem kapat={() => setTalepAcik(false)} isleniyor={isleniyor === "yeni"} metin="Talebi oluştur" /></form></Modal>}{odenecek && <Modal b="Avans ödemesi" kapat={() => setOdenecek(null)}><form onSubmit={ode} className="space-y-4"><div className="rounded-xl bg-violet-50 p-4 text-sm">Ödenecek: <strong>{para(odenecek.tutar)}</strong></div><Alan b="Kasa / banka"><select required value={odeme.kaynak} onChange={(e) => setOdeme({ ...odeme, kaynak: e.target.value })} className="w-full rounded-lg border px-3 py-2"><option value="">Hesap seçin</option><optgroup label="Kasalar">{hesaplar.kasalar.map((h) => <option key={h.id} value={`kasa:${h.id}`}>{h.ad} · {para(h.bakiye)}</option>)}</optgroup><optgroup label="Bankalar">{hesaplar.bankalar.map((h) => <option key={h.id} value={`banka:${h.id}`}>{h.bankaAdi} / {h.ad}</option>)}</optgroup></select></Alan><Alan b="Ödeme tarihi"><input required type="date" value={odeme.tarih} onChange={(e) => setOdeme({ ...odeme, tarih: e.target.value })} className="w-full rounded-lg border px-3 py-2" /></Alan><Eylem kapat={() => setOdenecek(null)} isleniyor={isleniyor === odenecek.id} metin="Ödemeyi kaydet" /></form></Modal>}{geriAlinacak && <Modal b="Avans ödemesini geri al" kapat={() => setGeriAlinacak(null)}><form onSubmit={odemeGeriAl} className="space-y-4"><p className="text-sm text-slate-500">Kasa/banka ve personel carisine ters kayıt yazılır; avans yeniden “Onaylandı” olur ve doğru hesaptan tekrar ödenebilir.</p><Alan b="Gerekçe"><textarea required minLength={3} maxLength={500} rows={3} value={geriAlmaNedeni} onChange={(e) => setGeriAlmaNedeni(e.target.value)} className="w-full rounded-lg border px-3 py-2" /></Alan><div className="flex justify-end gap-2"><button type="button" onClick={() => setGeriAlinacak(null)} className="rounded-lg border px-4 py-2 text-sm">Vazgeç</button><button className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white">Ödemeyi geri al</button></div></form></Modal>}{reddedilecek && <Modal b="Avans talebini reddet" kapat={() => setReddedilecek(null)}><form onSubmit={reddet} className="space-y-4"><Alan b="Ret nedeni"><textarea required minLength={3} maxLength={500} rows={4} value={retNedeni} onChange={(e) => setRetNedeni(e.target.value)} className="w-full rounded-lg border px-3 py-2" /></Alan><Eylem kapat={() => setReddedilecek(null)} isleniyor={isleniyor === reddedilecek.id} metin="Talebi reddet" /></form></Modal>}</main>;
+
+  const ozet = useMemo(() => ({
+    talepler: avanslar.filter((a) => a.durum === "talep").length,
+    acik: avanslar.filter((a) => ["odendi", "kismen_mahsup"].includes(a.durum)).reduce((t, a) => t + Number(a.kalanTutar), 0),
+    toplam: avanslar.reduce((t, a) => t + Number(a.tutar), 0),
+  }), [avanslar]);
+
+  const calistir = async (id: string, fn: () => Promise<unknown>) => {
+    try { setIsleniyor(id); setHata(null); await fn(); await yukle(); return true; }
+    catch (e) { setHata(e instanceof ApiHata ? e.message : "İşlem tamamlanamadı"); return false; }
+    finally { setIsleniyor(null); }
+  };
+  const olustur = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (await calistir("yeni", () => api("/personel/avanslar", { method: "POST", body: JSON.stringify(talep) }))) { setTalepAcik(false); setTalep({ personelId: "", tutar: "", tarih: bugunTR(), aciklama: "" }); }
+  };
+  const odemeAc = async (a: Avans) => {
+    try {
+      const [kasalar, bankalar] = await Promise.all([api<Hesap[]>("/kasa-banka/kasalar"), api<Hesap[]>("/kasa-banka/bankalar")]);
+      setHesaplar({ kasalar: kasalar.filter((h) => h.aktif && h.dovizCinsi === "TRY"), bankalar: bankalar.filter((h) => h.aktif && h.dovizCinsi === "TRY") });
+      setOdenecek(a);
+    } catch (e) { setHata(e instanceof Error ? e.message : "Hesaplar alınamadı"); }
+  };
+  const ode = async (e: React.FormEvent) => {
+    e.preventDefault(); if (!odenecek) return;
+    const [tur, hesapId] = odeme.kaynak.split(":");
+    if (await calistir(odenecek.id, () => api(`/personel/avanslar/${odenecek.id}/odemeler`, { method: "POST", body: JSON.stringify({ tarih: odeme.tarih, [tur === "kasa" ? "kasaId" : "bankaHesapId"]: hesapId }) }))) setOdenecek(null);
+  };
+  const odemeGeriAl = async (e: React.FormEvent) => {
+    e.preventDefault(); if (!geriAlinacak) return;
+    if (await calistir(geriAlinacak.id, () => api(`/personel/avanslar/${geriAlinacak.id}/odeme-iptal`, { method: "POST", body: JSON.stringify({ neden: geriAlmaNedeni }) }))) { setGeriAlinacak(null); setGeriAlmaNedeni(""); }
+  };
+  const reddet = async (e: React.FormEvent) => {
+    e.preventDefault(); if (!reddedilecek) return;
+    if (await calistir(reddedilecek.id, () => api(`/personel/avanslar/${reddedilecek.id}/reddet`, { method: "POST", body: JSON.stringify({ neden: retNedeni }) }))) { setReddedilecek(null); setRetNedeni(""); }
+  };
+
+  return (
+    <div className="stack">
+      <Link className="back-link" href="/panel/personel">← Personel listesine dön</Link>
+      <PageHeader title="Avans yönetimi" subtitle="Talep, onay, ödeme ve bordro mahsup bakiyelerini yönetin." actions={<Button variant="primary" onClick={() => setTalepAcik(true)}>Yeni avans talebi</Button>} />
+      <Alert tone="error">{hata}</Alert>
+      <StatGrid>
+        <Stat label="Bekleyen talep" value={ozet.talepler} tone={ozet.talepler ? "accent" : "default"} />
+        <Stat label="Açık avans bakiyesi" value={<Para deger={ozet.acik} />} />
+        <Stat label="Toplam talep" value={<Para deger={ozet.toplam} />} />
+      </StatGrid>
+      <Card pad={false}>
+        <Table>
+          <thead><tr><th>Personel</th><th className="num">Talep</th><th className="num">Mahsup</th><th className="num">Kalan</th><th>Durum</th><th /></tr></thead>
+          <tbody>
+            {avanslar.map((a) => (
+              <tr key={a.id}>
+                <td><Link href={`/panel/personel/${a.personel.id}`}><strong>{a.personel.ad} {a.personel.soyad}</strong></Link><div className="subtle mono">{a.personel.personelNo}</div></td>
+                <td className="num"><strong><Para deger={a.tutar} /></strong></td>
+                <td className="num"><Para deger={a.mahsupEdilenTutar} /></td>
+                <td className="num"><Para deger={a.kalanTutar} /></td>
+                <td><Badge variant={DURUM[a.durum][1]}>{DURUM[a.durum][0]}</Badge>{a.retNedeni && <div style={{ color: "var(--danger)", fontSize: "0.75rem", marginTop: "0.25rem" }}>{a.retNedeni}</div>}</td>
+                <td className="num">
+                  <div className="row-tight" style={{ justifyContent: "flex-end" }}>
+                    {a.durum === "talep" && <>
+                      <Button size="sm" variant="danger" onClick={() => setReddedilecek(a)}>Reddet</Button>
+                      <Button size="sm" variant="primary" disabled={isleniyor === a.id} onClick={() => void calistir(a.id, () => api(`/personel/avanslar/${a.id}/onayla`, { method: "POST" }))}>Onayla</Button>
+                    </>}
+                    {a.durum === "onaylandi" && <Button size="sm" variant="primary" onClick={() => void odemeAc(a)}>Öde</Button>}
+                    {a.durum === "odendi" && Number(a.mahsupEdilenTutar) === 0 && <Button size="sm" variant="danger" onClick={() => setGeriAlinacak(a)}>Ödemeyi geri al</Button>}
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {!avanslar.length && <tr><td className="muted" colSpan={6}>Henüz avans talebi yok.</td></tr>}
+          </tbody>
+        </Table>
+      </Card>
+
+      {talepAcik && (
+        <Modal baslik="Yeni avans talebi" onKapat={() => setTalepAcik(false)}>
+          <form className="stack" onSubmit={olustur}>
+            <Field label="Personel">
+              <Select required value={talep.personelId} onChange={(e) => setTalep({ ...talep, personelId: e.target.value })}>
+                <option value="">Personel seçin</option>
+                {personeller.map((p) => <option key={p.id} value={p.id}>{p.personelNo} · {p.ad} {p.soyad}</option>)}
+              </Select>
+            </Field>
+            <Field label="Tutar"><Input required type="number" min="0.01" step="0.01" value={talep.tutar} onChange={(e) => setTalep({ ...talep, tutar: e.target.value })} /></Field>
+            <Field label="Talep tarihi"><Input required type="date" value={talep.tarih} onChange={(e) => setTalep({ ...talep, tarih: e.target.value })} /></Field>
+            <Field label="Açıklama"><textarea className="textarea" maxLength={250} value={talep.aciklama} onChange={(e) => setTalep({ ...talep, aciklama: e.target.value })} /></Field>
+            <ModalEylem onVazgec={() => setTalepAcik(false)} isleniyor={isleniyor === "yeni"} metin="Talebi oluştur" />
+          </form>
+        </Modal>
+      )}
+      {odenecek && (
+        <Modal baslik="Avans ödemesi" aciklama={<>Ödenecek: <strong><Para deger={odenecek.tutar} /></strong> · {odenecek.personel.ad} {odenecek.personel.soyad}</>} onKapat={() => setOdenecek(null)}>
+          <form className="stack" onSubmit={ode}>
+            <Field label="Kasa / banka">
+              <Select required value={odeme.kaynak} onChange={(e) => setOdeme({ ...odeme, kaynak: e.target.value })}>
+                <option value="">Hesap seçin</option>
+                <optgroup label="Kasalar">{hesaplar.kasalar.map((h) => <option key={h.id} value={`kasa:${h.id}`}>{h.ad} · {Number(h.bakiye).toLocaleString("tr-TR", { style: "currency", currency: "TRY" })}</option>)}</optgroup>
+                <optgroup label="Bankalar">{hesaplar.bankalar.map((h) => <option key={h.id} value={`banka:${h.id}`}>{h.bankaAdi} / {h.ad}</option>)}</optgroup>
+              </Select>
+            </Field>
+            <Field label="Ödeme tarihi"><Input required type="date" value={odeme.tarih} onChange={(e) => setOdeme({ ...odeme, tarih: e.target.value })} /></Field>
+            <ModalEylem onVazgec={() => setOdenecek(null)} isleniyor={isleniyor === odenecek.id} metin="Ödemeyi kaydet" />
+          </form>
+        </Modal>
+      )}
+      {geriAlinacak && (
+        <Modal baslik="Avans ödemesini geri al" aciklama="Kasa/banka ve personel carisine ters kayıt yazılır; avans yeniden “Onaylandı” olur ve doğru hesaptan tekrar ödenebilir." onKapat={() => setGeriAlinacak(null)}>
+          <form className="stack" onSubmit={odemeGeriAl}>
+            <Field label="Gerekçe"><textarea className="textarea" required minLength={3} maxLength={500} rows={3} value={geriAlmaNedeni} onChange={(e) => setGeriAlmaNedeni(e.target.value)} /></Field>
+            <ModalEylem onVazgec={() => setGeriAlinacak(null)} isleniyor={isleniyor === geriAlinacak.id} metin="Ödemeyi geri al" tehlikeli />
+          </form>
+        </Modal>
+      )}
+      {reddedilecek && (
+        <Modal baslik="Avans talebini reddet" onKapat={() => setReddedilecek(null)}>
+          <form className="stack" onSubmit={reddet}>
+            <Field label="Ret nedeni"><textarea className="textarea" required minLength={3} maxLength={500} rows={4} value={retNedeni} onChange={(e) => setRetNedeni(e.target.value)} /></Field>
+            <ModalEylem onVazgec={() => setReddedilecek(null)} isleniyor={isleniyor === reddedilecek.id} metin="Talebi reddet" tehlikeli />
+          </form>
+        </Modal>
+      )}
+    </div>
+  );
 }
-function Kart({ b, d }: { b: string; d: string }) { return <article className="rounded-2xl border bg-white p-5 shadow-sm"><p className="text-xs font-semibold uppercase text-slate-500">{b}</p><p className="mt-2 text-xl font-bold">{d}</p></article>; }
-function Alan({ b, children }: { b: string; children: React.ReactNode }) { return <label className="block"><span className="mb-1 block text-xs font-semibold text-slate-600">{b}</span>{children}</label>; }
-function Modal({ b, kapat, children }: { b: string; kapat: () => void; children: React.ReactNode }) { return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4" role="dialog" aria-modal="true"><div className="w-full max-w-md rounded-2xl bg-white p-6"><h2 className="mb-5 text-xl font-bold">{b}</h2>{children}</div></div>; }
-function Eylem({ kapat, isleniyor, metin }: { kapat: () => void; isleniyor: boolean; metin: string }) { return <div className="flex justify-end gap-2"><button type="button" onClick={kapat} className="rounded-lg border px-4 py-2 text-sm">Vazgeç</button><button disabled={isleniyor} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{isleniyor ? "İşleniyor…" : metin}</button></div>; }
+
