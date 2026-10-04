@@ -479,6 +479,7 @@ export class PersonelService {
    * "hesaplandı"ya döner ve yeniden onaya girer.
    */
   async bordroOnayGeriAl(tenantId: string, bordroId: string, userId: string, neden: string) {
+    await this.donemKilidi?.tarihDogrula(tenantId, new Date(), "bordro onayını geri alma");
     await this.prisma.tenantIslem(tenantId, async (tx) => {
       const bordro = await tx.personelBordro.findFirst({ where: { id: bordroId, tenantId }, include: { personel: { select: { cariId: true } }, odemeler: { where: { durum: "aktif" }, select: { id: true } } } });
       if (!bordro) throw new NotFoundException("Bordro bulunamadı");
@@ -530,6 +531,9 @@ export class PersonelService {
     if (bordro.olusturanUserId === userId) {
       throw new BadRequestException("Bordroyu hazırlayan kullanıcı aynı bordroyu onaylayamaz");
     }
+    // PRS-05 (P1-2): tahakkuk dönem sonu tarihiyle yazılır; dönem kapalıysa onay reddedilir.
+    const tahakkukTarihi = donemSonu(bordro.donemYil, bordro.donemAy);
+    if (bordro.personel.cariId) await this.donemKilidi?.tarihDogrula(tenantId, tahakkukTarihi, "bordro onayı");
     await this.prisma.tenantIslem(tenantId, async (tx) => {
       const onayTarihi = new Date();
       const sonuc = await tx.personelBordro.updateMany({
@@ -546,7 +550,7 @@ export class PersonelService {
           tip: "alacak",
           tutar,
           tutarTry: tutar,
-          tarih: onayTarihi,
+          tarih: tahakkukTarihi,
           aciklama: `${bordro.donemYil}/${bordro.donemAy} Maaş Tahakkuku`,
           kaynakTur: "bordro_tahakkuk",
           kaynakRef: bordro.id,
@@ -645,6 +649,7 @@ export class PersonelService {
   async bordroOde(tenantId: string, bordroId: string, girdi: z.infer<typeof bordroOdeSemasi>) {
     const veri = bordroOdeSemasi.parse(girdi);
     const tutar = new Prisma.Decimal(veri.tutar);
+    await this.donemKilidi?.tarihDogrula(tenantId, veri.odemeTarihi, "maaş ödemesi");
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const bordro = await tx.personelBordro.findFirst({
@@ -726,6 +731,7 @@ export class PersonelService {
   }
 
   async bordroOdemeIptal(tenantId: string, bordroId: string, odemeId: string, neden: string) {
+    await this.donemKilidi?.tarihDogrula(tenantId, new Date(), "maaş ödemesi iptali");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const odeme = await tx.personelBordroOdeme.findFirst({ where: { id: odemeId, bordroId, tenantId, durum: "aktif" } });
       if (!odeme) throw new NotFoundException("Aktif bordro ödemesi bulunamadı");
@@ -789,6 +795,7 @@ export class PersonelService {
 
   async avansOde(tenantId: string, id: string, girdi: z.infer<typeof avansOdeSemasi>) {
     const veri = avansOdeSemasi.parse(girdi);
+    await this.donemKilidi?.tarihDogrula(tenantId, veri.tarih, "avans ödemesi");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const avans = await tx.personelAvans.findFirst({ where: { id, tenantId, durum: "onaylandi" }, include: { personel: true } });
       if (!avans) throw new BadRequestException("Yalnızca onaylanmış avans ödenebilir");
@@ -832,6 +839,7 @@ export class PersonelService {
    * avans yeniden "onaylandı" olur, doğru hesaptan tekrar ödenebilir.
    */
   async avansOdemeIptal(tenantId: string, id: string, userId: string, neden: string) {
+    await this.donemKilidi?.tarihDogrula(tenantId, new Date(), "avans ödemesi iptali");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const avans = await tx.personelAvans.findFirst({ where: { id, tenantId }, include: { personel: { select: { cariId: true, ad: true, soyad: true } } } });
       if (!avans) throw new NotFoundException("Avans bulunamadı");

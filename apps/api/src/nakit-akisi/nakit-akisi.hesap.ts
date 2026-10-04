@@ -20,6 +20,8 @@ export type KalemKaynak =
   | "kart_ekstre"
   | "kredi_taksit"
   | "bordro"
+  /** PRS-05: bordronun SGK primi ve muhtasar (gelir + damga vergisi) ödemesi, ertesi ayın 26'sı. */
+  | "bordro_yasal"
   | "tekrarlayan_fatura"
   | "odeme_talimati";
 
@@ -224,4 +226,28 @@ export function nakitTahmini(girdi: {
 
   kalemler.sort((a, b) => (a.tarihler.baz.tarih ?? "9999").localeCompare(b.tarihler.baz.tarih ?? "9999") || a.vade.localeCompare(b.vade));
   return { bugun, ufukGun, ufukSonu, donemTipi, senaryolar, kalemler };
+}
+
+/**
+ * PRS-05: SGK primi ve muhtasar beyannamesi ödemesi dönemi izleyen ayın 26'sıdır;
+ * hafta sonuna denk gelirse izleyen pazartesi.
+ */
+export function bordroYasalVade(donemYil: number, donemAy: number): string {
+  const t = new Date(Date.UTC(donemYil, donemAy, 26));
+  const gun = t.getUTCDay();
+  if (gun === 6) t.setUTCDate(t.getUTCDate() + 2);
+  if (gun === 0) t.setUTCDate(t.getUTCDate() + 1);
+  return t.toISOString().slice(0, 10);
+}
+
+/** Hesap özetinden SGK (işçi + işveren, teşvik sonrası) ve muhtasar (gelir + damga) tutarları. */
+export function bordroYasalTutarlari(hesapOzeti: unknown): { sgk: number; vergi: number } | null {
+  if (!hesapOzeti || typeof hesapOzeti !== "object") return null;
+  const o = hesapOzeti as Record<string, unknown>;
+  const n = (k: string) => Number(o[k] ?? 0);
+  if (o.isverenSgkNet === undefined) return null;
+  return {
+    sgk: Math.round((n("sgkIsci") + n("issizlikIsci") + n("isverenSgkNet") + n("isverenIssizlik")) * 100) / 100,
+    vergi: Math.round((n("gelirVergisi") + n("damgaVergisi")) * 100) / 100,
+  };
 }

@@ -256,7 +256,7 @@ export default function ButceSayfasi() {
           <>
             <p className="muted" style={{ margin: 0 }}>
               Revizyon {karsi.gecerliRevizyon} ile {karsi.sonAy === 0 ? "henüz başlamamış yıl" : karsi.sonAy === 12 ? "yılın tamamı" : `Ocak–${AYLAR[karsi.sonAy - 1]} dönemi`} karşılaştırılıyor.
-              {karsi.ilkRevizyon && ` İlk onaylı plan: revizyon ${karsi.ilkRevizyon}.`} Personel gideri net ödenecek tutardır; işveren maliyeti dahil değildir.
+              {karsi.ilkRevizyon && ` İlk onaylı plan: revizyon ${karsi.ilkRevizyon}.`} Personel gideri işveren maliyetidir (brüt ücret + işveren SGK ve işsizlik payı); net ücretli bordroda kazanç toplamı.
             </p>
             {karsi.uyarilar.map((u) => <div key={u} className="approval-impact is-warning">{u}</div>)}
             <StatGrid>

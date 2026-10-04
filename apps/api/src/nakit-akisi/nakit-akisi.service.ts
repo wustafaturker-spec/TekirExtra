@@ -5,7 +5,7 @@ import { PrismaService } from "../core/prisma.service";
 import { aktifBaglam } from "../core/istek-baglami";
 import { DovizService } from "../doviz/doviz.service";
 import { cariDavranisAnalizi } from "../cari/cari-analiz";
-import { gunEkle, kurusa, nakitTahmini, type CariTahsilatProfili, type NakitKalemi, type Ufuk } from "./nakit-akisi.hesap";
+import { bordroYasalTutarlari, bordroYasalVade, gunEkle, kurusa, nakitTahmini, type CariTahsilatProfili, type NakitKalemi, type Ufuk } from "./nakit-akisi.hesap";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
 
 /** Tahmine girmeyen ve ekranda açıkça söylenen kalemler (S-01, 2026-09-11). */
@@ -252,6 +252,40 @@ export class NakitAkisiService {
             kaynak: "bordro", kaynakId: `tahmin-${donem.slice(0, 7)}`, yon: "cikis", vade: tarih, dovizCinsi: "TRY", dovizTutar: toplam, tahmin: true,
             aciklama: `Bordro ${donem.slice(5, 7)}.${donem.slice(0, 4)} (son dönemin tekrarı)`, baglanti: "/panel/personel",
           });
+        }
+      }
+
+      // PRS-05: bordronun SGK primi ve muhtasarı ertesi ayın 26'sında. Ödeme takibi
+      // olmadığı için vadesi gelmemiş dönemler sayılır; son dönem sonraki aylara tekrarlanır.
+      const yasalBordrolar = await tx.personelBordro.findMany({
+        where: { tenantId, durum: { notIn: ["reddedildi", "iptal"] }, mevzuatSetiId: { not: null } },
+        select: { donemYil: true, donemAy: true, durum: true, hesapOzeti: true },
+      });
+      const yasalDonemler = new Map<string, { yil: number; ay: number; sgk: number; vergi: number; kesin: boolean }>();
+      for (const b of yasalBordrolar) {
+        const t = bordroYasalTutarlari(b.hesapOzeti);
+        if (!t) continue;
+        const anahtar = `${b.donemYil}-${String(b.donemAy).padStart(2, "0")}`;
+        const d = yasalDonemler.get(anahtar) ?? { yil: b.donemYil, ay: b.donemAy, sgk: 0, vergi: 0, kesin: false };
+        d.sgk += t.sgk; d.vergi += t.vergi;
+        if (["onaylandi", "kismen_odendi", "odendi"].includes(b.durum)) d.kesin = true;
+        yasalDonemler.set(anahtar, d);
+      }
+      const yasalEkle = (yil: number, ay: number, sgk: number, vergi: number, tahmin: boolean) => {
+        const vade = bordroYasalVade(yil, ay);
+        if (vade < bugun || vade > ufukSonu) return;
+        const donem = `${String(ay).padStart(2, "0")}.${yil}`;
+        const ek = tahmin ? " (son dönemin tekrarı)" : "";
+        if (sgk > 0.004) ekle({ kaynak: "bordro_yasal", kaynakId: `sgk-${yil}-${ay}`, yon: "cikis", vade, dovizCinsi: "TRY", dovizTutar: Math.round(sgk * 100) / 100, tahmin, aciklama: `SGK primleri ${donem}${ek}`, baglanti: "/panel/personel/bordrolar" });
+        if (vergi > 0.004) ekle({ kaynak: "bordro_yasal", kaynakId: `muhtasar-${yil}-${ay}`, yon: "cikis", vade, dovizCinsi: "TRY", dovizTutar: Math.round(vergi * 100) / 100, tahmin, aciklama: `Muhtasar (gelir + damga vergisi) ${donem}${ek}`, baglanti: "/panel/personel/bordrolar" });
+      };
+      const sirali = [...yasalDonemler.values()].sort((a, b) => a.yil - b.yil || a.ay - b.ay);
+      for (const d of sirali) yasalEkle(d.yil, d.ay, d.sgk, d.vergi, !d.kesin);
+      const sonYasal = sirali.at(-1);
+      if (sonYasal) {
+        for (let i = 1; i <= 4; i += 1) {
+          const toplamAy = sonYasal.ay - 1 + i;
+          yasalEkle(sonYasal.yil + Math.floor(toplamAy / 12), (toplamAy % 12) + 1, sonYasal.sgk, sonYasal.vergi, true);
         }
       }
 

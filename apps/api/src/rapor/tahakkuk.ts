@@ -83,8 +83,22 @@ export interface TahakkukVerisi {
     donemYil: number;
     donemAy: number;
     odenecekTutar: Sayi;
+    /** PRS-05: personel gideri; mevzuatlıda işveren maliyeti, değilse kazanç toplamı. Yoksa ödenecek. */
+    giderTutari?: Sayi;
     personel: { ad: string; soyad: string };
   }[];
+}
+
+/**
+ * PRS-05 (P1-4): personel gideri işveren maliyetidir (brüt + işveren SGK ve
+ * işsizlik − teşvik, hesap özetinden). Mevzuatsız (net ücretli) bordroda vergi
+ * ve SGK hesaplanmadığı için kazanç kalemlerinin toplamı alınır; avans mahsubu
+ * gideri azaltmaz.
+ */
+export function bordroGideri(hesapOzeti: unknown, kalemler: { tip: string; tutar: Sayi }[]): number {
+  const ozet = hesapOzeti && typeof hesapOzeti === "object" ? (hesapOzeti as Record<string, unknown>).isverenMaliyeti : undefined;
+  if (typeof ozet === "string" || typeof ozet === "number") return Number(ozet);
+  return kalemler.filter((k) => k.tip === "kazanc").reduce((t, k) => t + sayi(k.tutar), 0);
 }
 
 /** Belge dışında hiçbir veriye dayanmayan sabit kalemler. */
@@ -98,7 +112,7 @@ export const SABIT_KALEMLER: { anahtar: string; tur: TahakkukTur; anaKategori: s
   { anahtar: "mal_alis", tur: "gider", anaKategori: "Mal Alış Maliyetleri", altKategori: "Mal Alış Maliyeti" },
   { anahtar: "hizmet_alis", tur: "gider", anaKategori: "Hizmet Alış Giderleri", altKategori: "Hizmet Alışları" },
   { anahtar: "satis_iadesi", tur: "gider", anaKategori: "Satış İadeleri", altKategori: "Satış İadesi" },
-  { anahtar: "personel", tur: "gider", anaKategori: "Personel Giderleri", altKategori: "Bordro (net ödenecek)" },
+  { anahtar: "personel", tur: "gider", anaKategori: "Personel Giderleri", altKategori: "Bordro (işveren maliyeti)" },
 ];
 const SABIT = new Map(SABIT_KALEMLER.map((k) => [k.anahtar, k]));
 
@@ -176,7 +190,7 @@ export function tahakkukSiniflandir(veri: TahakkukVerisi): { kalemler: TahakkukK
 
   const personel = sabit("personel");
   for (const b of veri.bordrolar) {
-    const tutar = kurus(sayi(b.odenecekTutar));
+    const tutar = kurus(sayi(b.giderTutari ?? b.odenecekTutar));
     kalemler.push({
       id: b.id, tarih: ayinSonGunu(b.donemYil, b.donemAy), tur: "gider", anahtar: "personel",
       anaKategori: personel.anaKategori, altKategori: personel.altKategori,
@@ -241,12 +255,12 @@ export async function tahakkukOku(tx: Prisma.TransactionClient, tenantId: string
   const bordrolar = (
     await tx.personelBordro.findMany({
       where: { tenantId, donemYil: { gte: ilkYil, lte: sonYil }, durum: { notIn: ["reddedildi", "iptal"] } },
-      select: { id: true, donemYil: true, donemAy: true, odenecekTutar: true, personel: { select: { ad: true, soyad: true } } },
+      select: { id: true, donemYil: true, donemAy: true, odenecekTutar: true, hesapOzeti: true, kalemler: { select: { tip: true, tutar: true } }, personel: { select: { ad: true, soyad: true } } },
     })
   ).filter((b) => {
     const aySonu = new Date(Date.UTC(b.donemYil, b.donemAy, 0));
     return aySonu >= baslangic && aySonu <= bitis;
-  });
+  }).map(({ hesapOzeti, kalemler, ...b }) => ({ ...b, giderTutari: bordroGideri(hesapOzeti, kalemler) }));
 
   const { kalemler, cevrilemeyen } = tahakkukSiniflandir({ faturalar, masraflar, gelirKayitlari, bordrolar });
   const uyarilar = cevrilemeyen ? [`${cevrilemeyen} dövizli masraf, kuru kayıtlı olmadığı için sayılmadı.`] : [];
