@@ -107,6 +107,14 @@ describe("PersonelService", () => {
     expect(veri.netMaas.toFixed(2)).toBe("18000.00");
   });
 
+  it("mevzuat seti yokken puantajdaki fazla mesai, prim ve yemek kazanç kalemi olur (P2-6)", async () => {
+    mockPrisma.personelDonemCalisma.findMany.mockResolvedValue([{ personelId: "p-1", primGunu: 30, eksikGunNedeni: null, sgkTesvikOrani: null, fazlaMesaiBrut: new Prisma.Decimal(2000), primIkramiyeBrut: new Prisma.Decimal(1000), nakitYemekYardimi: new Prisma.Decimal(500), fiiliCalismaGunu: 20, sahisSigortaPrimi: new Prisma.Decimal(0), hayatSigortaPrimi: new Prisma.Decimal(0), sendikaAidati: new Prisma.Decimal(0) }]);
+    await service.bordroTopluTahakkuk("tenant-1", "user-1", { donemYil: 2026, donemAy: 10 });
+    const veri = mockPrisma.personelBordro.create.mock.calls[0][0].data;
+    expect(veri.kalemler.create.map((k: { kod: string }) => k.kod)).toEqual(["temel_ucret", "fazla_mesai", "prim_ikramiye", "nakit_yemek_yardimi"]);
+    expect(veri.netMaas.toFixed(2)).toBe("33500.00");
+  });
+
   it("puantajda prim günü istihdam gününe göre denetlenir (PRS-02)", async () => {
     mockPrisma.personel.findFirst.mockResolvedValue({ id: "p-1", istihdamDonemleri: [{ baslangicTarihi: new Date("2026-09-20T00:00:00Z"), bitisTarihi: null }] });
     mockPrisma.personelDonemCalisma = { upsert: vi.fn().mockResolvedValue({}) };

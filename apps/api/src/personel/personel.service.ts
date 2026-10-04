@@ -460,11 +460,18 @@ export class PersonelService {
       ...(Number(hesap.sahisSigortaPrimi) > 0 ? [{ tip: "kesinti" as const, kod: "sahis_sigorta_primi", aciklama: "Şahıs sigortası primi", tutar: hesap.sahisSigortaPrimi }] : []),
       ...(Number(hesap.hayatSigortaPrimi) > 0 ? [{ tip: "kesinti" as const, kod: "hayat_sigorta_primi", aciklama: "Hayat sigortası primi", tutar: hesap.hayatSigortaPrimi }] : []),
       ...(Number(hesap.sendikaAidati) > 0 ? [{ tip: "kesinti" as const, kod: "sendika_aidati", aciklama: "Sendika aidatı", tutar: hesap.sendikaAidati }] : []),
-    ] : [{ tip: "kazanc", kod: "temel_ucret", aciklama: "Temel ücret", tutar: operasyonelNet }];
+    ] : [
+      // P2-6: mevzuat seti yoksa vergi/SGK hesaplanmaz; puantajdaki ek kazançlar yine de bordroya girer.
+      { tip: "kazanc", kod: "temel_ucret", aciklama: "Temel ücret", tutar: operasyonelNet },
+      ...(fazlaMesaiBrut.gt(0) ? [{ tip: "kazanc" as const, kod: "fazla_mesai", aciklama: "Fazla mesai", tutar: fazlaMesaiBrut }] : []),
+      ...(primIkramiyeBrut.gt(0) ? [{ tip: "kazanc" as const, kod: "prim_ikramiye", aciklama: "Prim / ikramiye", tutar: primIkramiyeBrut }] : []),
+      ...(calisma?.nakitYemekYardimi.gt(0) ? [{ tip: "kazanc" as const, kod: "nakit_yemek_yardimi", aciklama: "Nakit yemek yardımı", tutar: calisma.nakitYemekYardimi }] : []),
+    ];
+    const operasyonelToplam = kalemler.reduce((t, k) => t.add(new Prisma.Decimal(k.tutar.toString())), new Prisma.Decimal(0));
     return {
       baslik: {
-        brutMaas: new Prisma.Decimal(hesap?.brutUcret ?? operasyonelNet),
-        netMaas: new Prisma.Decimal(hesap?.netUcret ?? operasyonelNet),
+        brutMaas: hesap ? new Prisma.Decimal(hesap.brutUcret) : operasyonelToplam,
+        netMaas: hesap ? new Prisma.Decimal(hesap.netUcret) : operasyonelToplam,
         mevzuatSetiId: hesap ? mevzuat!.id : null,
         hesapOzeti: hesap ? ({ ...hesap, ucretTipi: ucret.tip, ...(ucret.tip === "net" ? { hedefNet: oranli.toFixed(2) } : {}) } as Prisma.InputJsonValue) : Prisma.DbNull,
         kumulatifMatrah: hesap ? new Prisma.Decimal(hesap.yeniKumulatifMatrah) : null,
