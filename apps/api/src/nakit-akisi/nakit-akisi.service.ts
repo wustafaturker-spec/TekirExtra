@@ -271,21 +271,20 @@ export class NakitAkisiService {
         if (["onaylandi", "kismen_odendi", "odendi"].includes(b.durum)) d.kesin = true;
         yasalDonemler.set(anahtar, d);
       }
-      const yasalEkle = (yil: number, ay: number, sgk: number, vergi: number, tahmin: boolean) => {
+      const yasalEkle = (yil: number, ay: number, sgk: number, vergi: number, tahmin: boolean, ek: string) => {
         const vade = bordroYasalVade(yil, ay);
         if (vade < bugun || vade > ufukSonu) return;
         const donem = `${String(ay).padStart(2, "0")}.${yil}`;
-        const ek = tahmin ? " (son dönemin tekrarı)" : "";
         if (sgk > 0.004) ekle({ kaynak: "bordro_yasal", kaynakId: `sgk-${yil}-${ay}`, yon: "cikis", vade, dovizCinsi: "TRY", dovizTutar: Math.round(sgk * 100) / 100, tahmin, aciklama: `SGK primleri ${donem}${ek}`, baglanti: "/panel/personel/bordrolar" });
         if (vergi > 0.004) ekle({ kaynak: "bordro_yasal", kaynakId: `muhtasar-${yil}-${ay}`, yon: "cikis", vade, dovizCinsi: "TRY", dovizTutar: Math.round(vergi * 100) / 100, tahmin, aciklama: `Muhtasar (gelir + damga vergisi) ${donem}${ek}`, baglanti: "/panel/personel/bordrolar" });
       };
       const sirali = [...yasalDonemler.values()].sort((a, b) => a.yil - b.yil || a.ay - b.ay);
-      for (const d of sirali) yasalEkle(d.yil, d.ay, d.sgk, d.vergi, !d.kesin);
+      for (const d of sirali) yasalEkle(d.yil, d.ay, d.sgk, d.vergi, !d.kesin, d.kesin ? "" : " (onaylanmamış bordro)");
       const sonYasal = sirali.at(-1);
       if (sonYasal) {
         for (let i = 1; i <= 4; i += 1) {
           const toplamAy = sonYasal.ay - 1 + i;
-          yasalEkle(sonYasal.yil + Math.floor(toplamAy / 12), (toplamAy % 12) + 1, sonYasal.sgk, sonYasal.vergi, true);
+          yasalEkle(sonYasal.yil + Math.floor(toplamAy / 12), (toplamAy % 12) + 1, sonYasal.sgk, sonYasal.vergi, true, " (son dönemin tekrarı)");
         }
       }
 
