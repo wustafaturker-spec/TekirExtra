@@ -167,7 +167,7 @@ describe("UretimService profesyonel emir akışı", () => {
 
   it("bildirim ek giderleri mamul maliyetine ve emir toplamına katar", async () => {
     const hareketEkle = vi.fn();
-    service = new UretimService(prisma, { hareketEkle } as any);
+    service = new UretimService(prisma, { hareketEkle, kartlariKilitle: vi.fn() } as any);
     prisma.uretimBildirimi.findUnique.mockResolvedValue(null);
     prisma.uretimBildirimi.create.mockImplementation(({ data }: { data: unknown }) => Promise.resolve({ id: "b-1", ...(data as object) }));
     prisma.uretimEmriGider = { update: vi.fn() };
@@ -246,7 +246,7 @@ describe("UretimService profesyonel emir akışı", () => {
     prisma.uretimKaliteKontrol.findUniqueOrThrow.mockResolvedValue({ ...kontrol, durum: "kabul" });
     prisma.uretimEmri.findUniqueOrThrow.mockResolvedValue({ id: "emir-1", uretilenMiktar: D(5), planlananMiktar: D(5) });
     const hareketEkle = vi.fn().mockResolvedValueOnce({ partiTahsisleri: [{ lotNo: "LOT-1", seriNo: null, sonKullanmaTarihi: null, uretimTarihi: null, miktar: D(5) }] }).mockResolvedValue({ partiTahsisleri: [] });
-    (service as any).stokService = { hareketEkle };
+    (service as any).stokService = { hareketEkle, kartlariKilitle: vi.fn() };
 
     await service.kaliteKarari("kalite-1", { karar: "kabul", kontrolNotu: "Ölçümler tolerans içinde" });
 
@@ -261,7 +261,7 @@ describe("UretimService profesyonel emir akışı", () => {
     prisma.uretimKaliteKontrol.findUniqueOrThrow.mockResolvedValue({ ...kontrol, durum: "red" });
     prisma.uretimEmri.findUniqueOrThrow.mockResolvedValue({ id: "emir-1", uretilenMiktar: D(5), planlananMiktar: D(5) });
     const hareketEkle = vi.fn().mockResolvedValue({ partiTahsisleri: [] });
-    (service as any).stokService = { hareketEkle };
+    (service as any).stokService = { hareketEkle, kartlariKilitle: vi.fn() };
 
     await service.kaliteKarari("kalite-1", { karar: "red", kontrolNotu: "Ölçüm tolerans dışında" });
 

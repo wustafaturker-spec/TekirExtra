@@ -51,6 +51,9 @@ export default function StokSayfasi() {
   const [arama, setArama] = useState("");
   const [aramaSorgusu, setAramaSorgusu] = useState("");
   const [hata, setHata] = useState("");
+  /** STK-24: tutarlılık denetimi yalnız yöneticiye açık. */
+  const [yonetici, setYonetici] = useState(false);
+  useEffect(() => { api<{ rol: string }>("/auth/ben").then((b) => setYonetici(b.rol === "yonetici")).catch(() => undefined); }, []);
   const [basari, setBasari] = useState("");
   const [formAcik, setFormAcik] = useState(false);
   const [sonrakiStokImleci, setSonrakiStokImleci] = useState<string | null>(null);
@@ -179,6 +182,7 @@ export default function StokSayfasi() {
           <>
             <ButtonLabel as="a" href="/panel/stok/smm">₺ SMM & Karlılık</ButtonLabel>
             <ButtonLabel as="a" href="/panel/stok/raporlar">📈 Raporlar</ButtonLabel>
+            {yonetici && <ButtonLabel as="a" href="/panel/stok/tutarlilik">Tutarlılık denetimi</ButtonLabel>}
             <Button onClick={() => void excelSablonIndir()}>📄 Örnek Şablon</Button>
             <ButtonLabel>
               {excelYukleniyor ? "İşleniyor..." : "📥 Excel’den İçe Aktar"}

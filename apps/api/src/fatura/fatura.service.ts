@@ -994,6 +994,7 @@ export class FaturaService {
 
       if (fatura.tip !== "proforma") {
         const hareketler = await this.sonKesinlestirmeHareketleri(tx, id);
+        await this.stokService.kartlariKilitle(tx, hareketler.map((h) => h.stokId));
         for (const hareket of hareketler) {
           await this.stokService.hareketEkle(tx, {
             stokId: hareket.stokId,
@@ -1081,7 +1082,9 @@ export class FaturaService {
       }
 
       const etiket = `${fatura.no || fatura.id} nolu fatura taslağa geri alma ters hareketi`;
-      for (const hareket of await this.sonKesinlestirmeHareketleri(tx, id)) {
+      const geriAlinacaklar = await this.sonKesinlestirmeHareketleri(tx, id);
+      await this.stokService.kartlariKilitle(tx, geriAlinacaklar.map((h) => h.stokId));
+      for (const hareket of geriAlinacaklar) {
         await this.stokService.hareketEkle(tx, {
           stokId: hareket.stokId,
           varyantId: hareket.varyantId,
@@ -1408,6 +1411,7 @@ export class FaturaService {
         // STK-07: fatura başlığındaki depo; seçilmemişse varsayılan depo
         const depoId = await this.depoService.depoCozumle(tx, fatura.depoId);
         kullanilanDepoId = depoId;
+        await this.stokService.kartlariKilitle(tx, fatura.satirlar.map((s) => s.stokId));
         for (const s of fatura.satirlar) {
           const tip =
             fatura.tip === "satis" || fatura.tip === "alis_iade" ? "cikis" : "giris";

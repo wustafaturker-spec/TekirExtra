@@ -46,12 +46,35 @@ describe("StokService arama", () => {
     const tx = {
       stokKart: { findUnique: vi.fn().mockResolvedValue({ id: "stok-1", tip: "urun", mevcutMiktar: new Prisma.Decimal(0), ortalamaMaliyet: new Prisma.Decimal(0) }) },
       stokVaryant: { findFirst: vi.fn().mockResolvedValue(null) },
+      $queryRaw: vi.fn().mockResolvedValue([]),
     } as any;
     await expect(servis.hareketEkle(tx, {
       stokId: "stok-1", varyantId: "varyant-baska", depoId: "depo-1", tip: "giris",
       miktar: new Prisma.Decimal(1), girilenBirim: "adet", girilenMiktar: new Prisma.Decimal(1),
       birimMaliyet: new Prisma.Decimal(10), tarih: new Date("2026-08-10"),
     })).rejects.toThrow("Varyant bu stok kartına ait değil");
+  });
+
+  it("STK-24: kart satırını okumadan önce FOR UPDATE ile kilitler", async () => {
+    const servis = new StokService({} as any, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
+    const sira: string[] = [];
+    const tx = {
+      $queryRaw: vi.fn(async (parcalar: TemplateStringsArray, idler: string[]) => { sira.push(`kilit:${parcalar.join("?")}:${idler.join(",")}`); return []; }),
+      stokKart: { findUnique: vi.fn(async () => { sira.push("oku"); return null; }) },
+    } as any;
+    await expect(servis.hareketEkle(tx, { stokId: "stok-1", depoId: "depo-1", tip: "giris", miktar: new Prisma.Decimal(1), girilenBirim: "adet", girilenMiktar: new Prisma.Decimal(1), birimMaliyet: new Prisma.Decimal(1), tarih: new Date("2026-10-08") })).rejects.toThrow("Stok kartı bulunamadı");
+    expect(sira[0]).toMatch(/^kilit:.*FOR UPDATE:stok-1$/);
+    expect(sira[1]).toBe("oku");
+  });
+
+  it("STK-24: toplu kilit tekrarsız kimliklerle tek sorgu", async () => {
+    const servis = new StokService({} as any, {} as any, {} as any, {} as any);
+    const $queryRaw = vi.fn().mockResolvedValue([]);
+    await servis.kartlariKilitle({ $queryRaw } as any, ["b", "a", "b"]);
+    await servis.kartlariKilitle({ $queryRaw } as any, []);
+    expect($queryRaw).toHaveBeenCalledTimes(1);
+    expect($queryRaw.mock.calls[0][0].join("?")).toContain("ORDER BY id FOR UPDATE");
+    expect($queryRaw.mock.calls[0][1]).toEqual(["b", "a"]);
   });
 
   it("parti çıkışını FEFO sırasıyla tahsis eder", async () => {

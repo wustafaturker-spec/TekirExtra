@@ -144,6 +144,7 @@ export class TransferService {
       }
 
       const uyarilar: string[] = [];
+      await this.stokService.kartlariKilitle(tx, transfer.kalemler.map((k) => k.stokId));
       for (const k of transfer.kalemler) {
         const kart = await tx.stokKart.findUnique({
           where: { id: k.stokId },

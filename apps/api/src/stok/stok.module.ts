@@ -7,12 +7,14 @@ import { DepoService } from "./depo.service";
 import { StokController } from "./stok.controller";
 import { StokService } from "./stok.service";
 import { TransferService } from "./transfer.service";
+import { StokTutarlilikController } from "./stok-tutarlilik.controller";
+import { StokTutarlilikService } from "./stok-tutarlilik.service";
 import { TenantModule } from "../tenant/tenant.module";
 
 @Module({
   imports: [TenantModule],
-  controllers: [StokController, DepoController],
-  providers: [StokService, DepoService, TransferService],
+  controllers: [StokTutarlilikController, StokController, DepoController],
+  providers: [StokService, DepoService, TransferService, StokTutarlilikService],
   exports: [StokService, DepoService],
 })
 export class StokModule implements OnModuleInit {

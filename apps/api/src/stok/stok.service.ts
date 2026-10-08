@@ -743,7 +743,10 @@ export class StokService {
     } = girdi;
     let birimMaliyet = girdi.birimMaliyet;
 
-    // Ürünü kilitleyerek getir (race condition engellemek için)
+    // STK-24: kart satırı işlem sonuna kadar kilitlenir; eşzamanlı hareket
+    // bekler, toplam miktar ve ortalama maliyet ezilmez. Depo/varyant
+    // bakiyeleri de kilitten sonra okunur ki eksi stok denetimi güncel olsun.
+    await this.kartlariKilitle(tx, [stokId]);
     const urun = await tx.stokKart.findUnique({
       where: { id: stokId },
     });
@@ -879,6 +882,18 @@ export class StokService {
     }
 
     return { hareket, eksiStokUyarisi, partiTahsisleri };
+  }
+
+  /**
+   * STK-24: kart satırlarını id sırasıyla kilitler. Çok satırlı belge
+   * (fatura, sayım, transfer, üretim) döngüden önce bütün kartlarını
+   * çağırır; iki işlem aynı ürünleri farklı sırayla kilitleyip birbirini
+   * beklemesin (deadlock). Aynı işlemde tekrar kilitlemek bekletmez.
+   */
+  async kartlariKilitle(tx: Prisma.TransactionClient, stokIdler: string[]) {
+    const idler = [...new Set(stokIdler)];
+    if (!idler.length) return;
+    await tx.$queryRaw`SELECT id FROM stok_kartlari WHERE id = ANY(${idler}::uuid[]) ORDER BY id FOR UPDATE`;
   }
 
   private async partiTahsisEt(
@@ -1224,6 +1239,7 @@ export class StokService {
         throw new BadRequestException("Sayım zaten onaylanmış");
       }
 
+      await this.kartlariKilitle(tx, sayim.kalemler.map((k) => k.stokId));
       for (const k of sayim.kalemler) {
         const urun = await tx.stokKart.findUnique({ where: { id: k.stokId } });
         if (!urun) continue;

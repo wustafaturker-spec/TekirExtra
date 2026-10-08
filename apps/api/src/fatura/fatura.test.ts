@@ -146,7 +146,7 @@ describe("FaturaService.taslagaGeriAl (FTR-29)", () => {
     } as any;
     mockTenantIslem.mockImplementation((_t: string, cb: (t: unknown) => unknown) => cb(tx));
     const service = new FaturaService(
-      mockPrisma, { hareketEkle } as any, {} as any, {} as any, {} as any, { zincirEtkisiniCoz } as any,
+      mockPrisma, { hareketEkle, kartlariKilitle: vi.fn() } as any, {} as any, {} as any, {} as any, { zincirEtkisiniCoz } as any,
       { tarihDogrula: vi.fn() } as any, {} as any, { entegratoreUlasmadiginiDogrula } as any,
     );
     vi.spyOn(service as any, "gorunum").mockImplementation((f) => f);
@@ -233,7 +233,7 @@ describe("FaturaService.iptal — e-belge kuralı (EBLG-22)", () => {
     tx.fatura.update = vi.fn().mockResolvedValue({ id: "f1", durum: "iptal" });
     mockTenantIslem.mockImplementation((_t: string, cb: (t: unknown) => unknown) => cb(tx));
     const service = new FaturaService(
-      mockPrisma, { hareketEkle } as any, {} as any, {} as any, {} as any, {} as any,
+      mockPrisma, { hareketEkle, kartlariKilitle: vi.fn() } as any, {} as any, {} as any, {} as any, {} as any,
       { tarihDogrula: vi.fn() } as any, {} as any, { earsivBelgesiniIptalEt, gitmemisBelgeyiKapat } as any,
     );
     return { service, tx, earsivBelgesiniIptalEt, gitmemisBelgeyiKapat, hareketEkle };

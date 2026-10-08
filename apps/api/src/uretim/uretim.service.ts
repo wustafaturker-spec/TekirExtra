@@ -566,6 +566,8 @@ export class UretimService {
 
       const girilenSarflar = new Map((girdi.sarflar ?? []).map((s) => [s.uretimEmriKalemId, D(s.miktar)]));
       if (girilenSarflar.size !== (girdi.sarflar ?? []).length || [...girilenSarflar.keys()].some((kalemId) => !emir.kalemler.some((k) => k.id === kalemId))) throw new BadRequestException("Gerçek sarf satırları bu üretim emrine ait ve benzersiz olmalıdır");
+      // STK-24: sarf, mamul ve yan ürün kartları döngüden önce sırayla kilitlenir.
+      await this.stokService.kartlariKilitle(tx, [...emir.kalemler.map((k) => k.malzemeStokId), emir.stokId, ...(emir.ciktilar ?? []).map((c) => c.stokId)]);
       let toplamMaliyet = D(0);
       const sarfKayitlari: { uretimEmriKalemId: string; miktar: Prisma.Decimal; birimMaliyet: Prisma.Decimal }[] = [];
       for (const kalem of emir.kalemler) {
