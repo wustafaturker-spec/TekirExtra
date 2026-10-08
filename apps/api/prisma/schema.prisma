@@ -4432,6 +4432,16 @@ model Personel {
   /// PRS-08: yıllık izin yaş kuralı (18 yaş altı / 50 yaş üstü en az 20 gün).
   dogumTarihi        DateTime?           @map("dogum_tarihi") @db.Date
   sgkTesvikOrani     Decimal             @default(0) @map("sgk_tesvik_orani") @db.Decimal(6, 3)
+  /// PRS-23: SGK bildirge ve MUHSGK alanları. Meslek kodu ISCO-08 (NNNN.NN), belge türü SGK kodu,
+  /// öğrenim durumu SGK 0–7, teşvik kanun no 5 hane (boşsa döküm teşvik oranından önerir).
+  meslekKodu         String?             @map("meslek_kodu")
+  sgkBelgeTuru       String              @default("1") @map("sgk_belge_turu")
+  ogrenimDurumu      Int?                @map("ogrenim_durumu")
+  tesvikKanunNo      String?             @map("tesvik_kanun_no")
+  /// PRS-23: e-Bildirge işe giriş XML alanları.
+  mezuniyetYili      Int?                @map("mezuniyet_yili")
+  mezuniyetBolumu    String?             @map("mezuniyet_bolumu")
+  eskiHukumlu        Boolean             @default(false) @map("eski_hukumlu")
   iban               String?
   cariId             String?             @unique @map("cari_id") @db.Uuid
   aktif              Boolean             @default(true)
@@ -4569,6 +4579,8 @@ model PersonelIsyeri {
   adres        String?
   /// P2-1: SGK işyeri sicil numarası (bildirgeler için).
   sgkSicilNo   String?             @map("sgk_sicil_no")
+  /// PRS-23: ÇSGB işkolu (1–28; boş = 0), e-Bildirge XML'inde istenir.
+  csgbIsKolu   Int?                @map("csgb_is_kolu")
   aktif        Boolean             @default(true)
   createdAt    DateTime            @default(now()) @map("created_at")
   updatedAt    DateTime            @updatedAt @map("updated_at")
@@ -4714,6 +4726,13 @@ model PersonelIstihdamDonemi {
   cikisNedeni     String?   @map("cikis_nedeni")
   /// PRS-18: kıdem/ihbar/izin ücreti girdileri ve tutarları; çıkış ayı bordrosu okur.
   cikisHesabi     Json?     @map("cikis_hesabi")
+  /// PRS-24: SGK bildirge takibi; tarih boşsa bildirge verilmedi sayılır.
+  iseGirisBildirgeTarihi   DateTime? @map("ise_giris_bildirge_tarihi") @db.Date
+  iseGirisBildirgeNo       String?   @map("ise_giris_bildirge_no")
+  istenCikisBildirgeTarihi DateTime? @map("isten_cikis_bildirge_tarihi") @db.Date
+  istenCikisBildirgeNo     String?   @map("isten_cikis_bildirge_no")
+  /// PRS-24: SGK işten çıkış kodu (sgk-kodlari.ts); çıkış nedeninden önerilir.
+  sgkCikisKodu             String?   @map("sgk_cikis_kodu")
   createdAt       DateTime  @default(now()) @map("created_at")
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)

@@ -17,6 +17,19 @@ export function raporPdfHtml(
   satirlar: RaporSatiri[],
   tema?: BelgeTemasi,
 ): string {
+  return sayfaSablonu({
+    baslik: tanim.ad,
+    altBaslik: tanim.aciklama,
+    icerik: raporTablosuHtml(tanim, satirlar),
+    tema,
+  });
+}
+
+/** Kolon tanımından tek tablo; birden çok tabloyu tek sayfada birleştiren çıktılar için. */
+export function raporTablosuHtml(
+  tanim: Pick<RaporTanimi, "kolonlar">,
+  satirlar: RaporSatiri[],
+): string {
   const hucre = (satir: RaporSatiri, kolon: RaporTanimi["kolonlar"][number]) => {
     const deger = satir[kolon.alan];
     if (deger === null || deger === undefined || deger === "") {
@@ -43,19 +56,12 @@ export function raporPdfHtml(
           .map((s) => `<tr>${tanim.kolonlar.map((k) => hucre(s, k)).join("")}</tr>`)
           .join("\n");
 
-  const icerik = `<table class="veri">
+  return `<table class="veri">
   <thead><tr>${tanim.kolonlar
     .map((k) => `<th${["para", "sayi", "yuzde"].includes(k.tip) ? ' class="sag"' : ""}>${kacis(k.baslik)}</th>`)
     .join("")}</tr></thead>
   <tbody>${govde}</tbody>
 </table>`;
-
-  return sayfaSablonu({
-    baslik: tanim.ad,
-    altBaslik: tanim.aciklama,
-    icerik,
-    tema,
-  });
 }
 
 /** 7+ kolonlu raporlar yatay sayfada daha okunur. */

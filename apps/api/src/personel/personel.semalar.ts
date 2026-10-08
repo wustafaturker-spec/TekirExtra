@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { guncellemeSemasi } from "../core/sema";
 import { tcknGecerliMi } from "@tekirextra/shared";
+import { SGK_CIKIS_KODLARI } from "./sgk-kodlari";
 
 const bosVeyaUuid = z.union([z.string().uuid(), z.literal(""), z.null()]).optional();
 const bosVeyaMetin = z.union([z.string().trim().max(250), z.literal(""), z.null()]).optional();
@@ -27,6 +28,14 @@ export const personelOlusturSemasi = z.object({
   /** PRS-08: yıllık izin yaş kuralı. */
   dogumTarihi: z.coerce.date().max(new Date(), "Doğum tarihi gelecekte olamaz").optional().nullable(),
   sgkTesvikOrani: z.coerce.number().min(0).max(100).default(0),
+  /** PRS-23: SGK bildirge ve MUHSGK alanları. */
+  meslekKodu: z.union([z.string().trim().regex(/^\d{4}\.\d{2}$/, "Meslek kodu NNNN.NN biçiminde olmalıdır (ör. 2411.01)"), z.literal(""), z.null()]).optional(),
+  sgkBelgeTuru: z.coerce.number().int().min(1, "Belge türü 1–92 arasında olmalıdır").max(92, "Belge türü 1–92 arasında olmalıdır").transform(String).default("1"),
+  ogrenimDurumu: z.coerce.number().int().min(0).max(7).optional().nullable(),
+  mezuniyetYili: z.coerce.number().int().min(1900, "Mezuniyet yılı geçersiz").max(2100, "Mezuniyet yılı geçersiz").optional().nullable(),
+  mezuniyetBolumu: z.union([z.string().trim().max(100), z.literal(""), z.null()]).optional(),
+  eskiHukumlu: z.boolean().default(false),
+  tesvikKanunNo: z.union([z.string().trim().regex(/^\d{5}$/, "Kanun no 5 haneli olmalıdır (ör. 05510)"), z.literal(""), z.null()]).optional(),
   iban: z.union([
     z.string().transform((deger) => deger.replace(/\s/g, "").toUpperCase()).pipe(z.string().regex(/^TR\d{24}$/, "Geçerli bir TR IBAN giriniz")),
     z.literal(""),
@@ -54,6 +63,8 @@ export const personelIstenCikarSemasi = z.object({
   cikisTarihi: z.coerce.date(),
   ayrilisNedeni: z.string().trim().min(3, "Ayrılış nedeni en az 3 karakter olmalıdır").max(500),
   cikisHesabi: cikisHesabiGirdiSemasi.optional(),
+  /** PRS-24: verilmezse çıkış hesabındaki yasal nedenden önerilir. */
+  sgkCikisKodu: z.string().regex(/^\d{2}$/).refine((k) => k in SGK_CIKIS_KODLARI, "Geçersiz SGK çıkış kodu").optional().nullable(),
 });
 
 export const cikisOnizlemeSemasi = cikisHesabiGirdiSemasi.extend({ cikisTarihi: z.coerce.date() });

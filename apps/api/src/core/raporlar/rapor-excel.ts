@@ -10,6 +10,16 @@ export async function raporExcelYaz(
   satirlar: RaporSatiri[],
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
+  raporSayfasiEkle(workbook, tanim, satirlar);
+  return (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
+}
+
+/** Çok sayfalı dışa aktarımlar için (ör. MUHSGK hizmet listesi + özet): tek rapor sayfası ekler. */
+export function raporSayfasiEkle(
+  workbook: ExcelJS.Workbook,
+  tanim: Pick<RaporTanimi, "ad" | "kolonlar">,
+  satirlar: RaporSatiri[],
+): void {
   // Excel sayfa adında * ? : \ / [ ] yasak ve en çok 31 karakter ("Form BA / BS" gibi adlar için).
   const sayfa = workbook.addWorksheet(tanim.ad.replace(/[*?:\\/[\]]/g, "-").slice(0, 31));
 
@@ -79,6 +89,4 @@ export async function raporExcelYaz(
     });
     kolon.width = Math.min(enGenis + 3, 50);
   });
-
-  return (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
 }

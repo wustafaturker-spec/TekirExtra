@@ -24,6 +24,7 @@ import { donemSinirlari, istihdamGunu, izinliPrimGunu, tahakkukKapsamiKosulu, ty
 import { donemUcreti, nettenBrute } from "./ucret-donemi";
 import { CIKIS_NEDENLERI, cikisHesapla, type IhbarDurumu } from "./cikis-hesabi";
 import { cikisOnizlemeSemasi } from "./personel.semalar";
+import { CIKIS_NEDENI_SGK_KODU } from "./sgk-kodlari";
 
 const PERSONEL_GUVENLI_SECIM = { id: true, personelNo: true, ad: true, soyad: true, departman: true, unvan: true, calismaTipi: true, durum: true, netMaas: true, brutMaas: true, engellilikDerecesi: true, sgkTesvikOrani: true, cariId: true } as const;
 
@@ -48,6 +49,19 @@ function hesapOzetindenSgkDevirleri(ozet: Prisma.JsonValue | null, kaynakYil: nu
  * öncesi net ücrettir. Avans ödemesi cariye ayrıca borç yazıldığı için
  * avans + maaş ödemesi tahakkuku tam kapatır.
  */
+/** PRS-23: gönderilen SGK kart alanları; boş metin null olur. */
+function sgkKartAlanlari(v: Partial<Pick<z.infer<typeof personelOlusturSemasi>, "meslekKodu" | "sgkBelgeTuru" | "ogrenimDurumu" | "mezuniyetYili" | "mezuniyetBolumu" | "eskiHukumlu" | "tesvikKanunNo">>) {
+  return {
+    ...(v.meslekKodu !== undefined && { meslekKodu: v.meslekKodu || null }),
+    ...(v.sgkBelgeTuru !== undefined && { sgkBelgeTuru: v.sgkBelgeTuru }),
+    ...(v.ogrenimDurumu !== undefined && { ogrenimDurumu: v.ogrenimDurumu }),
+    ...(v.mezuniyetYili !== undefined && { mezuniyetYili: v.mezuniyetYili }),
+    ...(v.mezuniyetBolumu !== undefined && { mezuniyetBolumu: v.mezuniyetBolumu || null }),
+    ...(v.eskiHukumlu !== undefined && { eskiHukumlu: v.eskiHukumlu }),
+    ...(v.tesvikKanunNo !== undefined && { tesvikKanunNo: v.tesvikKanunNo || null }),
+  };
+}
+
 export function cariTahakkukTutari(b: { odenecekTutar: Prisma.Decimal; kalemler: { avansId: string | null; tutar: Prisma.Decimal }[] }): Prisma.Decimal {
   return b.kalemler.filter((k) => k.avansId).reduce((t, k) => t.add(k.tutar), new Prisma.Decimal(b.odenecekTutar));
 }
@@ -222,6 +236,7 @@ export class PersonelService {
           engellilikDerecesi: veri.engellilikDerecesi ?? null,
           dogumTarihi: veri.dogumTarihi ?? null,
           sgkTesvikOrani: veri.sgkTesvikOrani,
+          ...sgkKartAlanlari(veri),
           iban: hassasSifrele(veri.iban),
           cariId: cariId || null,
           istihdamDonemleri: {
@@ -298,7 +313,7 @@ export class PersonelService {
       if (cikis?.oneridenFarkli && (cikis.gerekce ?? "").length < 3) throw new BadRequestException("Kıdem/ihbar hakkı çıkış nedeninin önerisinden farklı; gerekçe yazın (en az 3 karakter)");
       await tx.personelIstihdamDonemi.updateMany({
         where: { tenantId, personelId: id, bitisTarihi: null },
-        data: { bitisTarihi: veri.cikisTarihi, ayrilisNedeni: veri.ayrilisNedeni, ...(cikis && { cikisNedeni: cikis.cikisNedeni, cikisHesabi: cikis as unknown as Prisma.InputJsonValue }) },
+        data: { bitisTarihi: veri.cikisTarihi, ayrilisNedeni: veri.ayrilisNedeni, sgkCikisKodu: veri.sgkCikisKodu || (cikis ? CIKIS_NEDENI_SGK_KODU[cikis.cikisNedeni] : null), ...(cikis && { cikisNedeni: cikis.cikisNedeni, cikisHesabi: cikis as unknown as Prisma.InputJsonValue }) },
       });
       const personel = await tx.personel.update({
         where: { id },
@@ -372,6 +387,7 @@ export class PersonelService {
           ...(veri.engellilikDerecesi !== undefined && { engellilikDerecesi: veri.engellilikDerecesi }),
           ...(veri.dogumTarihi !== undefined && { dogumTarihi: veri.dogumTarihi }),
           ...(veri.sgkTesvikOrani !== undefined && { sgkTesvikOrani: veri.sgkTesvikOrani }),
+          ...sgkKartAlanlari(veri),
           ...(iban !== undefined && { iban }),
         },
         include: { cari: true },

@@ -15,7 +15,7 @@ export class OrganizasyonService {
       return tx.personelIsyeri.findMany({ where: { tenantId, aktif: true }, include: { departmanlar: { where: { aktif: true }, include: { pozisyonlar: { where: { aktif: true }, orderBy: { ad: "asc" } }, _count: { select: { personeller: true } } }, orderBy: { ad: "asc" } }, _count: { select: { personeller: true } } }, orderBy: { ad: "asc" } });
     });
   }
-  async isyeriOlustur(tenantId: string, girdi: z.infer<typeof isyeriOlusturSemasi>) { const v = isyeriOlusturSemasi.parse(girdi); return this.prisma.tenantIslem(tenantId, (tx) => tx.personelIsyeri.create({ data: { tenantId, ...v, adres: v.adres || null, sgkSicilNo: v.sgkSicilNo || null } })); }
+  async isyeriOlustur(tenantId: string, girdi: z.infer<typeof isyeriOlusturSemasi>) { const v = isyeriOlusturSemasi.parse(girdi); return this.prisma.tenantIslem(tenantId, (tx) => tx.personelIsyeri.create({ data: { tenantId, ...v, adres: v.adres || null, sgkSicilNo: v.sgkSicilNo || null, csgbIsKolu: v.csgbIsKolu ?? null } })); }
   async departmanOlustur(tenantId: string, girdi: z.infer<typeof departmanOlusturSemasi>) { const v = departmanOlusturSemasi.parse(girdi); return this.prisma.tenantIslem(tenantId, async (tx) => { const isyeri = await tx.personelIsyeri.findFirst({ where: { id: v.isyeriId, tenantId, aktif: true } }); if (!isyeri) throw new NotFoundException("İşyeri bulunamadı"); if (v.ustDepartmanId && !await tx.personelDepartman.findFirst({ where: { id: v.ustDepartmanId, tenantId, isyeriId: v.isyeriId } })) throw new BadRequestException("Üst departman aynı işyerinde olmalıdır"); return tx.personelDepartman.create({ data: { tenantId, ...v, ustDepartmanId: v.ustDepartmanId || null } }); }); }
   async pozisyonOlustur(tenantId: string, girdi: z.infer<typeof pozisyonOlusturSemasi>) { const v = pozisyonOlusturSemasi.parse(girdi); return this.prisma.tenantIslem(tenantId, async (tx) => { if (v.departmanId && !await tx.personelDepartman.findFirst({ where: { id: v.departmanId, tenantId, aktif: true } })) throw new NotFoundException("Departman bulunamadı"); return tx.personelPozisyon.create({ data: { tenantId, ...v, departmanId: v.departmanId || null } }); }); }
   async personelAta(tenantId: string, personelId: string, girdi: z.infer<typeof personelOrganizasyonAtaSemasi>) {
@@ -63,7 +63,7 @@ export class OrganizasyonService {
         await this.aktifPersonelVarsaEngelle(tx, { tenantId, isyeriId: id }, isyeri.ad)
         if (await tx.personelIsyeri.count({ where: { tenantId, aktif: true, id: { not: id } } }) === 0) throw new BadRequestException("En az bir etkin işyeri kalmalıdır")
       }
-      return tx.personelIsyeri.update({ where: { id }, data: { ...(v.ad && { ad: v.ad }), ...(v.adres !== undefined && { adres: v.adres || null }), ...(v.sgkSicilNo !== undefined && { sgkSicilNo: v.sgkSicilNo || null }), ...(v.aktif !== undefined && { aktif: v.aktif }) } })
+      return tx.personelIsyeri.update({ where: { id }, data: { ...(v.ad && { ad: v.ad }), ...(v.adres !== undefined && { adres: v.adres || null }), ...(v.sgkSicilNo !== undefined && { sgkSicilNo: v.sgkSicilNo || null }), ...(v.csgbIsKolu !== undefined && { csgbIsKolu: v.csgbIsKolu }), ...(v.aktif !== undefined && { aktif: v.aktif }) } })
     })
   }
 

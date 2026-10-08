@@ -6,6 +6,7 @@ import Link from "next/link";
 import { api, ApiHata } from "@/lib/api";
 import { bugunTR } from "@tekirextra/shared";
 import { Alert, Badge, Button, Card, Field, Input, Modal, ModalEylem, PageHeader, Para, SearchInput, Select, Stat, StatGrid, Table } from "@/components/ui";
+import { BOS_SGK_ALANLARI, PersonelSgkAlanlari, sgkAlanlariGovdesi } from "@/components/personel-sgk-alanlari";
 
 interface Personel {
   id: string;
@@ -43,11 +44,12 @@ const KISAYOLLAR = [
   ["/panel/personel/izinler", "İZ", "İzinler", "Talep ve bakiyeler"],
   ["/panel/personel/avanslar", "AV", "Avanslar", "Talep, ödeme ve mahsup"],
   ["/panel/personel/bilgi-talepleri", "BT", "Bilgi talepleri", "Self-servis güncellemeleri"],
+  ["/panel/personel/sgk", "SG", "SGK ve MUHSGK", "Bildirgeler, döküm ve XML"],
   ["/panel/personel/organizasyon", "OR", "Organizasyon", "İşyeri ve ekip yapısı"],
   ["/panel/personel/mevzuat", "MV", "Mevzuat", "Sürümler ve kabul testleri"],
   ["/panel/personel/raporlar", "RP", "Raporlar", "Maliyet ve iş gücü analizi"],
 ] as const;
-const BOS_FORM = { ad: "", soyad: "", departman: "", unvan: "", netMaas: 30000, brutMaas: 0, engellilikDerecesi: "", sgkTesvikOrani: 0, calismaTipi: "tam_zamanli", girisTarihi: bugunTR(), cariOlustur: true };
+const BOS_FORM = { ad: "", soyad: "", departman: "", unvan: "", netMaas: 30000, brutMaas: 0, engellilikDerecesi: "", sgkTesvikOrani: 0, calismaTipi: "tam_zamanli", girisTarihi: bugunTR(), cariOlustur: true, sgk: BOS_SGK_ALANLARI };
 
 /** Personel sicili ve İK çalışma alanlarına giriş. */
 export default function PersonelSayfasi() {
@@ -99,7 +101,7 @@ export default function PersonelSayfasi() {
       setKaydediliyor(true); setHata(null);
       await api<Personel>("/personel", {
         method: "POST",
-        body: JSON.stringify({ ...form, brutMaas: form.brutMaas > 0 ? form.brutMaas : undefined, engellilikDerecesi: form.engellilikDerecesi ? Number(form.engellilikDerecesi) : undefined }),
+        body: JSON.stringify({ ...form, sgk: undefined, ...sgkAlanlariGovdesi(form.sgk), brutMaas: form.brutMaas > 0 ? form.brutMaas : undefined, engellilikDerecesi: form.engellilikDerecesi ? Number(form.engellilikDerecesi) : undefined }),
       });
       setModalAcik(false);
       setForm({ ...BOS_FORM, girisTarihi: bugunTR() });
@@ -235,6 +237,7 @@ export default function PersonelSayfasi() {
                 <Field label="SGK teşvik oranı (%)"><Input type="number" min="0" max="100" step="0.001" value={form.sgkTesvikOrani} onChange={(e) => setForm({ ...form, sgkTesvikOrani: Number(e.target.value) })} /><small className="muted">Mevzuat setindeki azami oran uygulanır.</small></Field>
               </div>
             </fieldset>
+            <PersonelSgkAlanlari deger={form.sgk} onChange={(sgk) => setForm({ ...form, sgk })} />
             <label className="check"><input type="checkbox" checked={form.cariOlustur} onChange={(e) => setForm({ ...form, cariOlustur: e.target.checked })} /><span>Otomatik cari hesap kartı oluştur <small className="muted">(maaş ödemelerinin takibi için önerilir)</small></span></label>
             <div className="between">
               <small className="muted">* Zorunlu alanlar</small>

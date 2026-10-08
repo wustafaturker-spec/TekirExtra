@@ -19,11 +19,13 @@ import { PersonelRaporController } from "./personel-rapor.controller";
 import { PersonelRaporService } from "./personel-rapor.service";
 import { MevzuatController } from "./mevzuat.controller";
 import { MevzuatService } from "./mevzuat.service";
+import { SgkController } from "./sgk.controller";
+import { SgkService } from "./sgk.service";
 
 @Module({
   imports: [EklerModule, DonemKapatmaModule, TenantModule],
-  controllers: [SelfServisController, SelfServisDavetController, SelfServisDavetPortalController, BordroPusulaController, IzinController, OrganizasyonController, PersonelBelgeController, PersonelRaporController, MevzuatController, PersonelController],
-  providers: [SelfServisService, BordroPusulaService, PersonelService, PersonelKuyrukService, IzinService, OrganizasyonService, PersonelBelgeService, PersonelRaporService, MevzuatService],
+  controllers: [SelfServisController, SelfServisDavetController, SelfServisDavetPortalController, BordroPusulaController, IzinController, OrganizasyonController, PersonelBelgeController, PersonelRaporController, MevzuatController, SgkController, PersonelController],
+  providers: [SelfServisService, BordroPusulaService, PersonelService, PersonelKuyrukService, IzinService, OrganizasyonService, PersonelBelgeService, PersonelRaporService, MevzuatService, SgkService],
   exports: [PersonelService],
 })
 export class PersonelModule {}

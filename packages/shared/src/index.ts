@@ -22,6 +22,7 @@ export * from "./ozel-matrah";
 export * from "./idis";
 export * from "./sarj";
 export * from "./sgk";
+export * from "./sgk-bildirge";
 export * from "./tarih";
 export * from "./cari-ebelge";
 export * from "./sevkiyat";

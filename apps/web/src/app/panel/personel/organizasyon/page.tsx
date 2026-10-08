@@ -1,5 +1,6 @@
 "use client";
 
+import { CSGB_IS_KOLLARI } from "@tekirextra/shared";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiHata } from "@/lib/api";
@@ -7,10 +8,10 @@ import { Alert, Badge, Button, Card, Field, Input, Modal, PageHeader, Select } f
 
 interface Pozisyon { id: string; kod: string; ad: string; departmanId?: string | null }
 interface Departman { id: string; kod: string; ad: string; isyeriId: string; ustDepartmanId?: string | null; pozisyonlar: Pozisyon[]; _count: { personeller: number } }
-interface Isyeri { id: string; kod: string; ad: string; adres?: string | null; sgkSicilNo?: string | null; departmanlar: Departman[]; _count: { personeller: number } }
+interface Isyeri { id: string; kod: string; ad: string; adres?: string | null; sgkSicilNo?: string | null; csgbIsKolu?: number | null; departmanlar: Departman[]; _count: { personeller: number } }
 interface Personel { id: string; personelNo: string; ad: string; soyad: string; departmanId?: string | null; pozisyonId?: string | null; isyeriId?: string | null; yoneticiId?: string | null; durum: string }
 type BirimTuru = "isyeri" | "departman" | "pozisyon";
-type Duzen = { tur: BirimTuru; id: string; kod: string; ad: string; adres: string; sgkSicilNo: string; ustDepartmanId: string; departmanId: string; isyeriId: string };
+type Duzen = { tur: BirimTuru; id: string; kod: string; ad: string; adres: string; sgkSicilNo: string; csgbIsKolu: string; ustDepartmanId: string; departmanId: string; isyeriId: string };
 
 const TUR_ADI: Record<BirimTuru, string> = { isyeri: "İşyeri", departman: "Departman", pozisyon: "Pozisyon" };
 const YOL: Record<BirimTuru, string> = { isyeri: "isyerleri", departman: "departmanlar", pozisyon: "pozisyonlar" };
@@ -53,15 +54,15 @@ export default function OrganizasyonSayfasi() {
   const duzenYol = (d: Duzen) => `/personel/organizasyon/${YOL[d.tur]}/${d.id}`;
   const duzenKaydet = async (e: React.FormEvent) => {
     e.preventDefault(); if (!duzen) return;
-    const govde = duzen.tur === "isyeri" ? { ad: duzen.ad, adres: duzen.adres || null, sgkSicilNo: duzen.sgkSicilNo || null } : duzen.tur === "departman" ? { ad: duzen.ad, ustDepartmanId: duzen.ustDepartmanId || null } : { ad: duzen.ad, departmanId: duzen.departmanId || null };
+    const govde = duzen.tur === "isyeri" ? { ad: duzen.ad, adres: duzen.adres || null, sgkSicilNo: duzen.sgkSicilNo || null, csgbIsKolu: duzen.csgbIsKolu ? Number(duzen.csgbIsKolu) : null } : duzen.tur === "departman" ? { ad: duzen.ad, ustDepartmanId: duzen.ustDepartmanId || null } : { ad: duzen.ad, departmanId: duzen.departmanId || null };
     if (await kaydet(() => api(duzenYol(duzen), { method: "PATCH", body: JSON.stringify(govde) }))) setDuzen(null);
   };
   const pasifeAl = async () => {
     if (!duzen || !window.confirm(`${duzen.ad} pasife alınacak; organizasyon ağacında ve seçimlerde görünmez. Devam edilsin mi?`)) return;
     if (await kaydet(() => api(duzenYol(duzen), { method: "PATCH", body: JSON.stringify({ aktif: false }) }))) setDuzen(null);
   };
-  const duzenAc = (tur: BirimTuru, x: { id: string; kod: string; ad: string; adres?: string | null; sgkSicilNo?: string | null; ustDepartmanId?: string | null; departmanId?: string | null }, isyeriId: string) =>
-    setDuzen({ tur, id: x.id, kod: x.kod, ad: x.ad, adres: x.adres ?? "", sgkSicilNo: x.sgkSicilNo ?? "", ustDepartmanId: x.ustDepartmanId ?? "", departmanId: x.departmanId ?? "", isyeriId });
+  const duzenAc = (tur: BirimTuru, x: { id: string; kod: string; ad: string; adres?: string | null; sgkSicilNo?: string | null; csgbIsKolu?: number | null; ustDepartmanId?: string | null; departmanId?: string | null }, isyeriId: string) =>
+    setDuzen({ tur, id: x.id, kod: x.kod, ad: x.ad, adres: x.adres ?? "", sgkSicilNo: x.sgkSicilNo ?? "", csgbIsKolu: x.csgbIsKolu ? String(x.csgbIsKolu) : "", ustDepartmanId: x.ustDepartmanId ?? "", departmanId: x.departmanId ?? "", isyeriId });
   const yeniKaydet = async (e: React.FormEvent) => {
     e.preventDefault();
     const govde = yeni.tur === "isyeri" ? { kod: yeni.kod, ad: yeni.ad, adres: yeni.adres } : yeni.tur === "departman" ? { kod: yeni.kod, ad: yeni.ad, isyeriId: yeni.isyeriId, ustDepartmanId: yeni.ustDepartmanId || null } : { kod: yeni.kod, ad: yeni.ad, departmanId: yeni.departmanId || null };
@@ -130,7 +131,8 @@ export default function OrganizasyonSayfasi() {
             <Field label="Ad"><Input required minLength={2} maxLength={100} value={duzen.ad} onChange={(e) => setDuzen({ ...duzen, ad: e.target.value })} /></Field>
             {duzen.tur === "isyeri" && <>
               <Field label="Adres"><Input maxLength={500} value={duzen.adres} onChange={(e) => setDuzen({ ...duzen, adres: e.target.value })} /></Field>
-              <Field label="SGK işyeri sicil no"><Input maxLength={40} value={duzen.sgkSicilNo} onChange={(e) => setDuzen({ ...duzen, sgkSicilNo: e.target.value })} placeholder="26 haneli sicil numarası" /></Field>
+              <Field label="SGK işyeri sicil no"><Input maxLength={40} value={duzen.sgkSicilNo} onChange={(e) => setDuzen({ ...duzen, sgkSicilNo: e.target.value })} placeholder="26 haneli sicil numarası" /><small className="muted">SGK XML dosyaları için 26 hane gerekir.</small></Field>
+              <Field label="ÇSGB işkolu"><Select value={duzen.csgbIsKolu} onChange={(e) => setDuzen({ ...duzen, csgbIsKolu: e.target.value })}><option value="">Seçilmedi</option>{CSGB_IS_KOLLARI.map((ad, i) => <option key={ad} value={i + 1}>{String(i + 1).padStart(2, "0")} — {ad}</option>)}</Select></Field>
             </>}
             {duzen.tur === "departman" && <Field label="Üst departman"><Select value={duzen.ustDepartmanId} onChange={(e) => setDuzen({ ...duzen, ustDepartmanId: e.target.value })}><option value="">Yok (en üst)</option>{isyeriDepartmanlari(duzen.isyeriId).filter((x) => x.id !== duzen.id).map((x) => <option key={x.id} value={x.id}>{x.ad}</option>)}</Select></Field>}
             {duzen.tur === "pozisyon" && <Field label="Departman"><Select value={duzen.departmanId} onChange={(e) => setDuzen({ ...duzen, departmanId: e.target.value })}><option value="">Genel pozisyon</option>{isyeriDepartmanlari(duzen.isyeriId).map((x) => <option key={x.id} value={x.id}>{x.ad}</option>)}</Select></Field>}

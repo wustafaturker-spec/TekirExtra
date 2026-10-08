@@ -7,6 +7,8 @@ import { api, ApiHata } from "@/lib/api";
 import { bugunTR } from "@tekirextra/shared";
 import { PersonelBelgeleri } from "@/components/personel-belgeleri";
 import { PersonelSelfServis } from "@/components/personel-self-servis";
+import { PersonelSgkAlanlari, sgkAlanlariGovdesi, sgkAlanlariKaydindan, type SgkAlanlari } from "@/components/personel-sgk-alanlari";
+import { CIKIS_NEDENI_SGK_KODU, OGRENIM_DURUMLARI, SGK_BELGE_TURLERI, SGK_CIKIS_KODLARI } from "@tekirextra/shared";
 import { Alert, Avatar, Badge, Button, Card, EylemCubugu, Field, Input, Modal, ModalEylem, PageHeader, Para, Select, Stat, StatGrid, Table } from "@/components/ui";
 
 interface Bordro {
@@ -25,6 +27,8 @@ interface Avans {
   aciklama?: string | null;
   odendi: boolean;
 }
+
+interface IstihdamDonemi { id: string; baslangicTarihi: string; bitisTarihi?: string | null; iseGirisBildirgeTarihi?: string | null; iseGirisBildirgeNo?: string | null; istenCikisBildirgeTarihi?: string | null; istenCikisBildirgeNo?: string | null; sgkCikisKodu?: string | null }
 
 interface UcretKaydi { id: string; yururlukTarihi: string; tip: "net" | "brut"; tutar: string; neden?: string | null }
 
@@ -49,6 +53,8 @@ interface PersonelDetay {
   engellilikDerecesi?: number | null;
   dogumTarihi?: string | null;
   iban?: string | null;
+  sgkBelgeTuru?: string; meslekKodu?: string | null; ogrenimDurumu?: number | null; mezuniyetYili?: number | null; mezuniyetBolumu?: string | null; eskiHukumlu?: boolean; tesvikKanunNo?: string | null;
+  istihdamDonemleri?: IstihdamDonemi[];
   durum: "taslak" | "aktif" | "askida" | "uzun_sureli_izin" | "isten_ayrildi";
   cari?: { id: string; kod: string; unvan: string } | null;
   bordrolar: Bordro[];
@@ -74,6 +80,8 @@ export default function PersonelDetaySayfasi() {
   const [yenidenAcik, setYenidenAcik] = useState(false);
   const [hassas, setHassas] = useState<{ tckn: string | null; iban: string | null } | null>(null);
   const [ayrilis, setAyrilis] = useState({ cikisTarihi: bugun(), ayrilisNedeni: "" });
+  /** PRS-24: boşsa yasal çıkış nedeninden önerilen kod gönderilir. */
+  const [sgkCikisKodu, setSgkCikisKodu] = useState("");
   /** PRS-18: çıkış hesabı (kıdem, ihbar, izin ücreti); boş alan = sistemin önerisi. */
   const [cikisForm, setCikisForm] = useState<CikisFormu>({ cikisNedeni: "", yanOdemeler: "", gerekce: "" });
   const [cikisOnizleme, setCikisOnizleme] = useState<CikisOnizleme | null>(null);
@@ -121,7 +129,8 @@ export default function PersonelDetaySayfasi() {
     try {
       setIsleniyor(true); setHata(null);
       const govde = cikisGovdesi();
-      const r = await api<{ uyari: string | null }>(`/personel/${id}/isten-cikar`, { method: "POST", body: JSON.stringify({ ...ayrilis, ...(govde && { cikisHesabi: govde }) }) });
+      const kod = sgkCikisKodu || (cikisForm.cikisNedeni ? CIKIS_NEDENI_SGK_KODU[cikisForm.cikisNedeni as keyof typeof CIKIS_NEDENI_SGK_KODU] : "");
+      const r = await api<{ uyari: string | null }>(`/personel/${id}/isten-cikar`, { method: "POST", body: JSON.stringify({ ...ayrilis, ...(govde && { cikisHesabi: govde }), ...(kod && { sgkCikisKodu: kod }) }) });
       setCikisUyari(r.uyari);
       setAyrilisAcik(false);
       await yukle();
@@ -151,6 +160,7 @@ export default function PersonelDetaySayfasi() {
       engellilikDerecesi: personel.engellilikDerecesi ? String(personel.engellilikDerecesi) : "",
       dogumTarihi: personel.dogumTarihi?.slice(0, 10) ?? "",
       sgkTesvikOrani: String(Number(personel.sgkTesvikOrani ?? 0)), tckn: "", iban: "", ibanKaldir: false,
+      sgk: sgkAlanlariKaydindan(personel),
     });
   };
 
@@ -168,6 +178,7 @@ export default function PersonelDetaySayfasi() {
           engellilikDerecesi: duzenleme.engellilikDerecesi ? Number(duzenleme.engellilikDerecesi) : null,
           dogumTarihi: duzenleme.dogumTarihi || null,
           sgkTesvikOrani: sayi(duzenleme.sgkTesvikOrani || "0"),
+          ...sgkAlanlariGovdesi(duzenleme.sgk),
           ...(duzenleme.tckn.trim() && { tckn: duzenleme.tckn.trim() }),
           ...(duzenleme.ibanKaldir ? { iban: null } : duzenleme.iban.trim() ? { iban: duzenleme.iban } : {}),
         }),
@@ -295,6 +306,29 @@ export default function PersonelDetaySayfasi() {
             </tbody>
           </Table>
         </Card>
+        <Card title="SGK bilgileri" actions={<Link className="btn btn--ghost btn--sm" href="/panel/personel/sgk">SGK ekranı</Link>}>
+          <dl className="kv">
+            <dt>Belge türü</dt><dd>{personel.sgkBelgeTuru ?? "1"} — {SGK_BELGE_TURLERI[personel.sgkBelgeTuru ?? "1"] ?? "elle girilen kod"}</dd>
+            <dt>Meslek kodu</dt><dd className="mono">{personel.meslekKodu || <span style={{ color: "var(--warning)" }}>Girilmedi — bildirge XML'ine alınmaz</span>}</dd>
+            <dt>Öğrenim</dt><dd>{personel.ogrenimDurumu == null ? "—" : `${OGRENIM_DURUMLARI[personel.ogrenimDurumu]}${personel.mezuniyetYili ? ` (${personel.mezuniyetYili}${personel.mezuniyetBolumu ? `, ${personel.mezuniyetBolumu}` : ""})` : ""}`}</dd>
+            <dt>Teşvik kanun no</dt><dd className="mono">{personel.tesvikKanunNo || `${Number(personel.sgkTesvikOrani ?? 0) > 0 ? "05510" : "00000"} (öneri)`}</dd>
+            {personel.eskiHukumlu && <><dt>Eski hükümlü</dt><dd>Evet</dd></>}
+          </dl>
+          {(personel.istihdamDonemleri ?? []).length > 0 && (
+            <Table density="compact" className="table--fit">
+              <thead><tr><th>İstihdam</th><th>İşe giriş bildirgesi</th><th>İşten çıkış bildirgesi</th></tr></thead>
+              <tbody>
+                {personel.istihdamDonemleri!.map((d) => (
+                  <tr key={d.id}>
+                    <td>{tarih(d.baslangicTarihi)} – {d.bitisTarihi ? tarih(d.bitisTarihi) : "devam ediyor"}</td>
+                    <td>{d.iseGirisBildirgeTarihi ? <Badge variant="success">Verildi {tarih(d.iseGirisBildirgeTarihi)}</Badge> : <Badge variant="warning">Verilmedi</Badge>}</td>
+                    <td>{!d.bitisTarihi ? "—" : <>{d.istenCikisBildirgeTarihi ? <Badge variant="success">Verildi {tarih(d.istenCikisBildirgeTarihi)}</Badge> : <Badge variant="warning">Verilmedi</Badge>}{d.sgkCikisKodu && <small className="muted"> · kod {d.sgkCikisKodu}</small>}</>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </Card>
         <PersonelSelfServis personelId={personel.id} eposta={personel.eposta} aktifPersonel={personel.durum !== "isten_ayrildi"} />
         <PersonelBelgeleri personelId={personel.id} />
       </>}
@@ -311,6 +345,12 @@ export default function PersonelDetaySayfasi() {
                 </Select>
               </Field>
             </div>
+            <Field label="SGK işten çıkış kodu">
+              <Select value={sgkCikisKodu} onChange={(e) => setSgkCikisKodu(e.target.value)}>
+                <option value="">{cikisForm.cikisNedeni ? `Önerilen: ${CIKIS_NEDENI_SGK_KODU[cikisForm.cikisNedeni as keyof typeof CIKIS_NEDENI_SGK_KODU]} — ${SGK_CIKIS_KODLARI[CIKIS_NEDENI_SGK_KODU[cikisForm.cikisNedeni as keyof typeof CIKIS_NEDENI_SGK_KODU]]}` : "Seçilmedi (SGK ekranından da girilebilir)"}</option>
+                {Object.entries(SGK_CIKIS_KODLARI).map(([kod, ad]) => <option key={kod} value={kod}>{kod} — {ad}</option>)}
+              </Select>
+            </Field>
             <Field label="Ayrılış nedeni (açıklama)"><textarea className="textarea" required minLength={3} maxLength={500} rows={2} value={ayrilis.ayrilisNedeni} onChange={(e) => setAyrilis({ ...ayrilis, ayrilisNedeni: e.target.value })} /></Field>
             {cikisForm.cikisNedeni && cikisOnizleme && (
               <fieldset className="form-section">
@@ -360,6 +400,7 @@ export default function PersonelDetaySayfasi() {
               <Field label={`Yeni TCKN (şu an ${personel.tckn ?? "yok"})`}><Input inputMode="numeric" maxLength={11} value={duzenleme.tckn} onChange={(e) => setDuzenleme({ ...duzenleme, tckn: e.target.value })} placeholder="Değişmeyecekse boş bırakın" /></Field>
               <Field label={`Yeni IBAN (şu an ${personel.iban ?? "yok"})`}><Input disabled={duzenleme.ibanKaldir} value={duzenleme.iban} onChange={(e) => setDuzenleme({ ...duzenleme, iban: e.target.value })} placeholder="TR…" /></Field>
             </div>
+            <PersonelSgkAlanlari deger={duzenleme.sgk} onChange={(sgk) => setDuzenleme({ ...duzenleme, sgk })} />
             {personel.iban && <label className="check"><input type="checkbox" checked={duzenleme.ibanKaldir} onChange={(e) => setDuzenleme({ ...duzenleme, ibanKaldir: e.target.checked, iban: "" })} /><span>IBAN'ı kaldır</span></label>}
             <ModalEylem onVazgec={() => setDuzenleme(null)} isleniyor={isleniyor} metin="Kaydet" />
           </form>
@@ -392,7 +433,7 @@ export default function PersonelDetaySayfasi() {
 
 interface DuzenlemeFormu {
   ad: string; soyad: string; eposta: string; telefon: string; adres: string; calismaTipi: string; girisTarihi: string;
-  engellilikDerecesi: string; dogumTarihi: string; sgkTesvikOrani: string; tckn: string; iban: string; ibanKaldir: boolean;
+  engellilikDerecesi: string; dogumTarihi: string; sgkTesvikOrani: string; tckn: string; iban: string; ibanKaldir: boolean; sgk: SgkAlanlari;
 }
 type CikisFormu = { cikisNedeni: string; kidemHakki?: boolean; ihbarDurumu?: "yok" | "isveren_oder" | "isci_oder"; sonBrut?: string; yanOdemeler: string; izinGunu?: string; gerekce: string };
 interface CikisOnizleme {

@@ -131,7 +131,12 @@ export async function apiDosyaIndir(yol: string, dosyaAdi: string, secenekler: R
     if (!yeniToken) return giriseYonlendir();
     yanit = await istekYap(yol, secenekler, yeniToken);
   }
-  if (!yanit.ok) throw new ApiHata("Dosya indirilemedi", yanit.status);
+  if (!yanit.ok) {
+    // Sunucunun nedeni (ör. eksik işyeri, şema hatası) kullanıcıya gösterilir.
+    const govde = (await yanit.json().catch(() => ({}))) as { message?: unknown };
+    const mesaj = Array.isArray(govde.message) ? govde.message.join("; ") : typeof govde.message === "string" ? govde.message : "Dosya indirilemedi";
+    throw new ApiHata(mesaj, yanit.status);
+  }
   const adres = URL.createObjectURL(await yanit.blob());
   const baglanti = document.createElement("a");
   baglanti.href = adres; baglanti.download = dosyaAdi; baglanti.click();

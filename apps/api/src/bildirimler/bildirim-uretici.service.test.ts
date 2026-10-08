@@ -9,6 +9,9 @@ interface TxSecenekleri {
   ebelgeler?: unknown[];
   satinAlmaTalepleri?: unknown[];
   personelBelgeleri?: unknown[];
+  /** PRS-27: bildirgesi işaretlenmemiş istihdam dönemleri. */
+  girisBildirgeleri?: unknown[];
+  cikisBildirgeleri?: unknown[];
   izinTalepSayisi?: number;
   avansTalepSayisi?: number;
   onayBekleyenBordro?: number;
@@ -51,6 +54,7 @@ function servisKur(secenek: TxSecenekleri = {}) {
     cariTeminat: { findMany: vi.fn().mockResolvedValue([]) },
     cariMutabakat: { findMany: vi.fn().mockResolvedValue([]) },
     personelBelgesi: { findMany: vi.fn().mockResolvedValue(secenek.personelBelgeleri ?? []) },
+    personelIstihdamDonemi: { findMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) => ("iseGirisBildirgeTarihi" in where ? secenek.girisBildirgeleri : secenek.cikisBildirgeleri) ?? []) },
     personelIzinTalebi: { count: vi.fn().mockResolvedValue(secenek.izinTalepSayisi ?? 0) },
     personelBilgiTalebi: { count: vi.fn(async () => 0) },
     personelAvans: { count: vi.fn().mockResolvedValue(secenek.avansTalepSayisi ?? 0) },
@@ -408,5 +412,33 @@ describe("İK bildirimleri (PRS-15)", () => {
     ]);
     expect(uretilen[2].aciklama).toContain("2 izin talebi, 3 bordro onay bekliyor");
     expect(bildirimler.kapatEksikleri).toHaveBeenCalledWith("personel", expect.arrayContaining(["personel:onay_bekleyen"]), ["personel:"]);
+  });
+});
+
+describe("SGK bildirge süreleri (PRS-27)", () => {
+  afterEach(() => vi.useRealTimers());
+  it("işe giriş son günü başlangıçtan bir gün önce, çıkış 10 gün sonra; kayıt başına, gecikince kritik", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-10-08T09:00:00+03:00"));
+    const kisi = { id: "p1", personelNo: "PRS-1", ad: "Ali", soyad: "Veli" };
+    const { servis, bildirimler, tx } = servisKur({
+      girisBildirgeleri: [
+        { id: "i1", baslangicTarihi: new Date("2026-10-20T00:00:00Z"), personel: kisi },
+        { id: "i2", baslangicTarihi: new Date("2026-10-01T00:00:00Z"), personel: kisi },
+      ],
+      cikisBildirgeleri: [{ id: "i3", baslangicTarihi: new Date("2026-01-01T00:00:00Z"), bitisTarihi: new Date("2026-10-01T00:00:00Z"), personel: kisi }],
+    });
+    await servis.tara();
+    const uretilen = bildirimler.uret.mock.calls.map((c) => c[0]).filter((g: { birlesimAnahtari: string }) => g.birlesimAnahtari.startsWith("personel:sgk-"));
+    expect(uretilen.map((g: { birlesimAnahtari: string; onem: string; sonTarih?: Date }) => [g.birlesimAnahtari, g.onem, g.sonTarih?.toISOString() ?? null])).toEqual([
+      ["personel:sgk-giris:i1:bekliyor", "uyari", "2026-10-19T20:59:59.000Z"],
+      ["personel:sgk-giris:i2:gecikti", "kritik", null],
+      ["personel:sgk-cikis:i3:bekliyor", "uyari", "2026-10-11T20:59:59.000Z"],
+    ]);
+    expect(uretilen[0].aciklama).toContain("son günü 19.10.2026");
+    expect(uretilen[0].roller).toEqual(["yonetici", "muhasebe", "ik"]);
+    // 30 günden eski gecikmeler sorgu sınırında elenir.
+    const sorgular = tx.personelIstihdamDonemi.findMany.mock.calls.map(([a]: [{ where: Record<string, { gte?: Date }> }]) => a.where);
+    expect(sorgular[0].baslangicTarihi.gte?.toISOString().slice(0, 10)).toBe("2026-09-09");
+    expect(sorgular[1].bitisTarihi.gte?.toISOString().slice(0, 10)).toBe("2026-08-29");
   });
 });

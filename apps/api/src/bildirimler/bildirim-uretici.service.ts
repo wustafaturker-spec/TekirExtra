@@ -13,6 +13,9 @@ import { kartEkstreleriniOku } from "../kasa-banka/kart-ekstre-oku";
 import { BildirimService, type BildirimGirdisi } from "./bildirim.service";
 import { TEMINAT_TURU_ADLARI, TEMINAT_UYARI_GUNU, type TeminatTuru } from "../cari/cari-teminat";
 import { bakiyeFarklari, mutabakatItirazBildirimi, type DovizBakiyesi } from "../cari/cari-mutabakat";
+import { iseGirisSonTarihi, istenCikisSonTarihi } from "../personel/sgk-kodlari";
+
+const gunEkle = (t: Date, gun: number) => new Date(t.getTime() + gun * 86_400_000);
 
 const KRITIK_SLA_SAATI = 24;
 const CEK_UYARI_GUNU = 7;
@@ -29,7 +32,7 @@ const HEDEF_ROLLER: Record<BildirimTuru, Rol[]> = {
   donem: ["yonetici", "muhasebe"],
   entegrasyon: ["yonetici", "muhasebe"],
   satin_alma: ["yonetici", "muhasebe"],
-  personel: ["yonetici", "muhasebe"],
+  personel: ["yonetici", "muhasebe", "ik"],
 };
 
 /**
@@ -132,7 +135,10 @@ export class BildirimUreticiService {
     const bugun = bugunTR();
     const sinir = new Date(`${bugun}T00:00:00.000Z`);
     sinir.setUTCDate(sinir.getUTCDate() + 30);
-    const [belgeler, izin, avans, bilgi, bordro] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
+    // PRS-27: son tarihi 30 günden eski gecikmiş bildirge bildirim üretmez (ekranda "gecikti" kalır).
+    const gecikmeSiniri = new Date(`${bugun}T00:00:00.000Z`);
+    gecikmeSiniri.setUTCDate(gecikmeSiniri.getUTCDate() - 30);
+    const [belgeler, izin, avans, bilgi, bordro, girisler, cikislar] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
       tx.personelBelgesi.findMany({
         where: { gecerlilikTarihi: { not: null, lte: sinir }, personel: { durum: { not: "isten_ayrildi" } } },
         include: { personel: { select: { id: true, personelNo: true, ad: true, soyad: true } } },
@@ -142,6 +148,14 @@ export class BildirimUreticiService {
       tx.personelAvans.count({ where: { durum: "talep" } }),
       tx.personelBilgiTalebi.count({ where: { durum: "bekliyor" } }),
       tx.personelBordro.count({ where: { durum: "onay_bekliyor" } }),
+      tx.personelIstihdamDonemi.findMany({
+        where: { iseGirisBildirgeTarihi: null, baslangicTarihi: { gte: gunEkle(gecikmeSiniri, 1) }, personel: { durum: { not: "taslak" } } },
+        include: { personel: { select: { id: true, personelNo: true, ad: true, soyad: true } } }, orderBy: { baslangicTarihi: "asc" }, take: 100,
+      }),
+      tx.personelIstihdamDonemi.findMany({
+        where: { istenCikisBildirgeTarihi: null, bitisTarihi: { not: null, gte: gunEkle(gecikmeSiniri, -10) }, personel: { durum: { not: "taslak" } } },
+        include: { personel: { select: { id: true, personelNo: true, ad: true, soyad: true } } }, orderBy: { bitisTarihi: "asc" }, take: 100,
+      }),
     ]));
     const BELGE_ADI: Record<string, string> = { kimlik: "Kimlik", is_sozlesmesi: "İş sözleşmesi", diploma: "Diploma", sertifika: "Sertifika", saglik_raporu: "Sağlık raporu", adli_sicil: "Adli sicil kaydı", ikametgah: "İkametgâh", askerlik: "Askerlik belgesi", sgk_bildirgesi: "SGK bildirgesi", diger: "Belge" };
     const girdiler: BildirimGirdisi[] = belgeler.map((b) => {
@@ -158,6 +172,22 @@ export class BildirimUreticiService {
         ...(doldu ? {} : { sonTarih: new Date(`${bitis}T23:59:59+03:00`) }),
       };
     });
+    const bildirge = (tur: "giris" | "cikis", d: (typeof girisler)[number]): BildirimGirdisi => {
+      const son = (tur === "giris" ? iseGirisSonTarihi(d.baslangicTarihi) : istenCikisSonTarihi(d.bitisTarihi!)).toISOString().slice(0, 10);
+      const gecikti = son < bugun;
+      const ad = tur === "giris" ? "İşe giriş" : "İşten çıkış";
+      const tarih = (tur === "giris" ? d.baslangicTarihi : d.bitisTarihi!).toISOString().slice(0, 10).split("-").reverse().join(".");
+      return {
+        tur: "personel", onem: gecikti ? "kritik" : "uyari",
+        baslik: gecikti ? `${ad} bildirgesi gecikti` : `${ad} bildirgesi verilmeli`,
+        aciklama: `${d.personel.ad} ${d.personel.soyad} (${d.personel.personelNo}) — ${tur === "giris" ? "işe giriş" : "çıkış"} ${tarih}; SGK bildirgesinin son günü ${son.split("-").reverse().join(".")}. Verildiyse SGK ekranından işaretleyin.`,
+        birlesimAnahtari: `personel:sgk-${tur}:${d.id}:${gecikti ? "gecikti" : "bekliyor"}`,
+        kaynakTur: "personel_istihdam", kaynakRef: d.id, hedefYol: `/panel/personel/sgk?sekme=${tur}`,
+        roller: HEDEF_ROLLER.personel,
+        ...(gecikti ? {} : { sonTarih: new Date(`${son}T23:59:59+03:00`) }),
+      };
+    };
+    girdiler.push(...girisler.map((d) => bildirge("giris", d)), ...cikislar.map((d) => bildirge("cikis", d)));
     const parcalar = [izin && `${izin} izin talebi`, avans && `${avans} avans talebi`, bilgi && `${bilgi} bilgi güncelleme talebi`, bordro && `${bordro} bordro`].filter(Boolean);
     if (parcalar.length) {
       girdiler.push({
