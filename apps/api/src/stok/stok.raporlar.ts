@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { registerRapor } from "../core/raporlar/rapor-kayit";
+import { satisSatirlari, urunBazinda } from "./satis-ozeti";
 import { iptalCiftiMi, iptalEdilmisFaturalar, iptalleriGoster } from "../fatura/iptal-cifti";
 
 /** Stok modülü raporları (STK-13) — RPR-06 araç seti tanımları. */
@@ -30,36 +31,9 @@ const TRANSFER_TURLERI = new Set(["transfer_giris", "transfer_cikis"]);
 const gunOnce = (gun: number): string =>
   new Date(Date.now() - gun * 86_400_000).toISOString().slice(0, 10);
 
-/** Tarih aralığındaki kesin satış satırlarını stok bilgisiyle çeker. */
-async function satisSatirlari(
-  tx: Prisma.TransactionClient,
-  baslangic?: unknown,
-  bitis?: unknown,
-) {
-  return tx.faturaSatir.findMany({
-    where: {
-      fatura: {
-        tip: "satis",
-        durum: "kesin",
-        tarih: tarihAraligi(baslangic, bitis),
-      },
-    },
-    select: {
-      stokId: true,
-      miktar: true,
-      matrah: true,
-      fatura: { select: { kur: true } },
-      stok: {
-        select: {
-          kod: true,
-          ad: true,
-          mevcutMiktar: true,
-          ortalamaMaliyet: true,
-        },
-      },
-    },
-  });
-}
+/** STK-32: tarih aralığındaki ürün bazında satış (iade düşülmüş, maliyet hareketlerden). */
+const urunSatislari = async (tx: Prisma.TransactionClient, baslangic?: unknown, bitis?: unknown) =>
+  urunBazinda(await satisSatirlari(tx, tarihAraligi(baslangic, bitis)));
 
 // ─── Envanter değeri (STK-03) ───────────────────────────────────────────────
 
@@ -87,7 +61,8 @@ registerRapor({
   async calistir(girdi, { tx }) {
     const depoId = girdi.filtreler?.depo ? String(girdi.filtreler.depo) : null;
     const kartlar = await tx.stokKart.findMany({
-      where: { aktif: true, tip: "urun" },
+      // STK-33: hizmet stok tutmaz; sarf malzeme değerli stoktur.
+      where: { aktif: true, tip: { not: "hizmet" } },
       orderBy: { kod: "asc" },
     });
 
@@ -247,25 +222,10 @@ registerRapor({
   ],
   async calistir(girdi, { tx }) {
     const f = girdi.filtreler ?? {};
-    const satirlar = await satisSatirlari(tx, f.baslangic, f.bitis);
-    const gruplar = new Map<
-      string,
-      { kod: string; ad: string; miktar: number; ciro: Prisma.Decimal }
-    >();
-    for (const s of satirlar) {
-      const g = gruplar.get(s.stokId) ?? {
-        kod: s.stok.kod,
-        ad: s.stok.ad,
-        miktar: 0,
-        ciro: D(0),
-      };
-      g.miktar += Number(s.miktar);
-      g.ciro = g.ciro.add(s.matrah.mul(s.fatura.kur));
-      gruplar.set(s.stokId, g);
-    }
+    const gruplar = (await urunSatislari(tx, f.baslangic, f.bitis)).map((g) => ({ kod: g.kod, ad: g.ad, miktar: g.miktar.toNumber(), ciro: g.ciro }));
     const adet = typeof f.adet === "number" && f.adet > 0 ? f.adet : 20;
     const isaret = f.yon === "az" ? 1 : -1;
-    return [...gruplar.values()]
+    return gruplar
       .sort((a, b) => isaret * (a.miktar - b.miktar))
       .slice(0, adet)
       .map((g) => ({
@@ -295,22 +255,8 @@ registerRapor({
   ],
   async calistir(girdi, { tx }) {
     const f = girdi.filtreler ?? {};
-    const satirlar = await satisSatirlari(tx, f.baslangic, f.bitis);
-    const gruplar = new Map<
-      string,
-      { kod: string; ad: string; satilan: number; mevcut: number }
-    >();
-    for (const s of satirlar) {
-      const g = gruplar.get(s.stokId) ?? {
-        kod: s.stok.kod,
-        ad: s.stok.ad,
-        satilan: 0,
-        mevcut: Number(s.stok.mevcutMiktar),
-      };
-      g.satilan += Number(s.miktar);
-      gruplar.set(s.stokId, g);
-    }
-    return [...gruplar.values()]
+    const gruplar = (await urunSatislari(tx, f.baslangic, f.bitis)).map((g) => ({ kod: g.kod, ad: g.ad, satilan: g.miktar.toNumber(), mevcut: g.mevcutMiktar.toNumber() }));
+    return gruplar
       .sort((a, b) => b.satilan - a.satilan)
       .map((g) => ({
         kod: g.kod,
@@ -329,7 +275,7 @@ registerRapor({
   kod: "stok.urun-karlilik",
   modul: "stok",
   ad: "Ürün Bazlı Kârlılık",
-  aciklama: "Satış matrahı ile ağırlıklı ortalama maliyet farkından kâr marjı",
+  aciklama: "Satış matrahı (TL) ile satış anındaki ağırlıklı ortalama maliyet farkından kâr marjı; satış iadeleri düşülür",
   filtreler: TARIH_FILTRELERI,
   kolonlar: [
     { alan: "kod", baslik: "Kod", tip: "metin" },
@@ -342,25 +288,8 @@ registerRapor({
   ],
   async calistir(girdi, { tx }) {
     const f = girdi.filtreler ?? {};
-    const satirlar = await satisSatirlari(tx, f.baslangic, f.bitis);
-    const gruplar = new Map<
-      string,
-      { kod: string; ad: string; miktar: number; ciro: Prisma.Decimal; maliyet: Prisma.Decimal }
-    >();
-    for (const s of satirlar) {
-      const g = gruplar.get(s.stokId) ?? {
-        kod: s.stok.kod,
-        ad: s.stok.ad,
-        miktar: 0,
-        ciro: D(0),
-        maliyet: D(0),
-      };
-      g.miktar += Number(s.miktar);
-      g.ciro = g.ciro.add(s.matrah.mul(s.fatura.kur));
-      g.maliyet = g.maliyet.add(s.stok.ortalamaMaliyet.mul(s.miktar));
-      gruplar.set(s.stokId, g);
-    }
-    return [...gruplar.values()]
+    const gruplar = (await urunSatislari(tx, f.baslangic, f.bitis)).map((g) => ({ kod: g.kod, ad: g.ad, miktar: g.miktar.toNumber(), ciro: g.ciro, maliyet: g.maliyet }));
+    return gruplar
       .sort((a, b) => a.kod.localeCompare(b.kod, "tr"))
       .map((g) => {
         const kar = g.ciro.sub(g.maliyet);
@@ -396,7 +325,7 @@ registerRapor({
   ],
   async calistir(_girdi, { tx }) {
     const kartlar = await tx.stokKart.findMany({
-      where: { aktif: true, kritikSeviye: { not: null } },
+      where: { aktif: true, kritikSeviye: { not: null }, tip: { not: "hizmet" } },
       orderBy: { kod: "asc" },
     });
     return kartlar
@@ -436,11 +365,7 @@ registerRapor({
     const f = girdi.filtreler ?? {};
     const gun = typeof f.gun === "number" && f.gun > 0 ? f.gun : 90;
 
-    const satirlar = await satisSatirlari(tx, gunOnce(gun));
-    const satislar = new Map<string, Prisma.Decimal>();
-    for (const s of satirlar) {
-      satislar.set(s.stokId, (satislar.get(s.stokId) ?? D(0)).add(s.miktar));
-    }
+    const satislar = new Map((await urunSatislari(tx, gunOnce(gun))).map((g) => [g.stokId, Prisma.Decimal.max(D(0), g.miktar)]));
 
     const kartlar = await tx.stokKart.findMany({
       where: { aktif: true, tip: { in: ["urun", "sarf"] } },
@@ -631,7 +556,7 @@ registerRapor({
   ],
   async calistir(_girdi, { tx }) {
     const kartlar = await tx.stokKart.findMany({
-      where: { mevcutMiktar: { lt: 0 } },
+      where: { mevcutMiktar: { lt: 0 }, tip: { not: "hizmet" } },
       orderBy: { kod: "asc" },
     });
     if (kartlar.length === 0) return [];

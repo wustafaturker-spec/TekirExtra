@@ -1165,7 +1165,8 @@ export class FaturaService {
       select: { createdAt: true },
     });
     return tx.stokHareket.findMany({
-      where: { kaynakTur: "fatura", kaynakRef: faturaId, ...(sonGeriAlma ? { createdAt: { gt: sonGeriAlma.createdAt } } : {}) },
+      // STK-33: eski hizmet hareketleri ters çevrilmez (hizmete hareket yazılmaz).
+      where: { kaynakTur: "fatura", kaynakRef: faturaId, stok: { tip: { not: "hizmet" } }, ...(sonGeriAlma ? { createdAt: { gt: sonGeriAlma.createdAt } } : {}) },
       include: { partiler: { include: { parti: true } } },
       orderBy: { createdAt: "asc" },
     });
@@ -1435,7 +1436,10 @@ export class FaturaService {
         const iadeKaynaklari = fatura.tip === "satis_iade"
           ? (await tx.faturaIadeReferansi.findMany({ where: { faturaId: id, kaynakFaturaId: { not: null } }, select: { kaynakFaturaId: true } })).map((r) => r.kaynakFaturaId!)
           : [];
+        // STK-33: hizmet satırı stok hareketi üretmez.
+        const hizmetler = new Set((await tx.stokKart.findMany({ where: { id: { in: fatura.satirlar.map((s) => s.stokId) }, tip: "hizmet" }, select: { id: true } })).map((k) => k.id));
         for (const s of fatura.satirlar) {
+          if (hizmetler.has(s.stokId)) continue;
           const tip =
             fatura.tip === "satis" || fatura.tip === "alis_iade" ? "cikis" : "giris";
           // STK-10: ek birimle (koli) girilen satır stoğa ana birimle (adet)

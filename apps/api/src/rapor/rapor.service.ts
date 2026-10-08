@@ -1,3 +1,4 @@
+import { fifoDegerleri, satisSatirlari } from "../stok/satis-ozeti";
 import { Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -161,124 +162,63 @@ export class RaporService {
    * Satılan Malın Maliyeti (SMM - COGS) ve Brüt Kar Analizi.
    * Metotlar: 'agirlikli_ortalama' veya 'fifo'.
    */
-  async smmAnalizi(yontem: "agirlikli_ortalama" | "fifo" = "agirlikli_ortalama") {
+  /**
+   * STK-32: satılan malın maliyeti ve brüt kâr. Ciro satır matrahı × kurdan,
+   * miktar ve maliyet faturanın stok hareketlerinden; satış iadeleri eksi.
+   * FIFO, ürünün bütün hareketlerinden kurulan kuyrukla değerlenir.
+   */
+  async smmAnalizi(yontem: "agirlikli_ortalama" | "fifo" = "agirlikli_ortalama", baslangic?: string, bitis?: string) {
     const { tenantId } = aktifBaglam();
-
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      // 1. Kesinleşmiş tüm satış faturası satırlarını çek
-      const satisSatirlari = await tx.faturaSatir.findMany({
-        where: {
-          tenantId,
-          fatura: { durum: "kesin", tip: "satis" },
-        },
-        include: {
-          stok: { select: { id: true, kod: true, ad: true, ortalamaMaliyet: true } },
-          fatura: { select: { id: true, no: true, tarih: true, cari: { select: { unvan: true } } } },
-        },
-        orderBy: { fatura: { tarih: "asc" } },
-      });
-
-      // 2. FIFO hesabı için tüm kesinleşmiş alış satırlarını al
-      const alisSatirlari = await tx.faturaSatir.findMany({
-        where: {
-          tenantId,
-          fatura: { durum: "kesin", tip: "alis" },
-        },
-        select: {
-          stokId: true,
-          miktar: true,
-          birimFiyat: true,
-          iskontoOrani: true,
-          fatura: { select: { tarih: true } },
-        },
-        orderBy: { fatura: { tarih: "asc" } },
-      });
-
-      let toplamSatisCirosu = D(0);
-      let toplamSmmMaliyeti = D(0);
-
-      // FIFO için stok bazlı stok havuzu kopyası
-      const fifoKuyruklari: Record<string, Array<{ kalanMiktar: number; birimMaliyet: number }>> = {};
-      alisSatirlari.forEach((a) => {
-        if (!fifoKuyruklari[a.stokId]) fifoKuyruklari[a.stokId] = [];
-        const miktar = D(a.miktar).toNumber();
-        const brut = miktar * D(a.birimFiyat).toNumber();
-        const iskonto = (brut * D(a.iskontoOrani).toNumber()) / 100;
-        const netTutar = brut - iskonto;
-        const birimMaliyet = miktar > 0 ? netTutar / miktar : D(a.birimFiyat).toNumber();
-        fifoKuyruklari[a.stokId].push({ kalanMiktar: miktar, birimMaliyet });
-      });
-
-      const detaylar = satisSatirlari.map((satir) => {
-        const satilanMiktar = D(satir.miktar).toNumber();
-        const brut = satilanMiktar * D(satir.birimFiyat).toNumber();
-        const iskonto = (brut * D(satir.iskontoOrani).toNumber()) / 100;
-        const satisNetTutar = brut - iskonto;
-        toplamSatisCirosu = toplamSatisCirosu.add(satisNetTutar);
-
-        let birimMaliyet = 0;
-        let toplamMaliyet = 0;
-
-        if (yontem === "fifo" && fifoKuyruklari[satir.stokId] && fifoKuyruklari[satir.stokId].length > 0) {
-          // FIFO Mantığı: İlk giren ilk çıkar (Oldest Batch First)
-          let erimesiGereken = satilanMiktar;
-          const kuyruk = fifoKuyruklari[satir.stokId];
-
-          while (erimesiGereken > 0 && kuyruk.length > 0) {
-            const parti = kuyruk[0];
-            if (parti.kalanMiktar <= erimesiGereken) {
-              toplamMaliyet += parti.kalanMiktar * parti.birimMaliyet;
-              erimesiGereken -= parti.kalanMiktar;
-              kuyruk.shift(); // Parti tükendi
-            } else {
-              toplamMaliyet += erimesiGereken * parti.birimMaliyet;
-              parti.kalanMiktar -= erimesiGereken;
-              erimesiGereken = 0;
-            }
-          }
-          // Eğer FIFO stoğu bittiyse kalan miktar için ortalama maliyet kullan
-          if (erimesiGereken > 0) {
-            const varsayilanBirim = D(satir.stok.ortalamaMaliyet).toNumber();
-            toplamMaliyet += erimesiGereken * varsayilanBirim;
-          }
-          birimMaliyet = satilanMiktar > 0 ? toplamMaliyet / satilanMiktar : 0;
-        } else {
-          // Ağırlıklı Ortalama Maliyet Metodu (Stok Kartındaki Ortalama Maliyet)
-          birimMaliyet = D(satir.stok.ortalamaMaliyet).toNumber();
-          toplamMaliyet = satilanMiktar * birimMaliyet;
+      const satirlar = await satisSatirlari(tx, { ...(baslangic && { gte: new Date(baslangic) }), ...(bitis && { lte: new Date(bitis) }) });
+      let fifo: Map<string, Prisma.Decimal> | null = null;
+      if (yontem === "fifo" && satirlar.length) {
+        fifo = new Map();
+        for (const stokId of new Set(satirlar.map((s) => s.stokId))) {
+          const hareketler = await tx.stokHareket.findMany({ where: { stokId }, orderBy: [{ tarih: "asc" }, { createdAt: "asc" }, { id: "asc" }], select: { id: true, miktar: true, maliyet: true } });
+          for (const [id, deger] of fifoDegerleri(hareketler)) fifo.set(id, deger);
         }
-
-        toplamSmmMaliyeti = toplamSmmMaliyeti.add(toplamMaliyet);
-        const karTutar = satisNetTutar - toplamMaliyet;
-        const karMarjiYuzde = satisNetTutar > 0 ? (karTutar / satisNetTutar) * 100 : 0;
-
+      }
+      // FIFO: satışın değeri çıkış hareketlerinin FIFO değeri; iade, aynı ürünün dönemdeki
+      // FIFO birim maliyetiyle geri alınır (ortalamayla alınsa iki yöntem karışır).
+      const fifoSatis = (s: (typeof satirlar)[number]) => s.hareketPaylari.reduce((t, p) => t.add((fifo!.get(p.hareketId) ?? D(0)).mul(p.oran)), D(0)).toDecimalPlaces(2);
+      const fifoBirim = new Map<string, Prisma.Decimal>();
+      if (fifo) for (const stokId of new Set(satirlar.map((s) => s.stokId))) {
+        const satislar = satirlar.filter((s) => s.stokId === stokId && s.tip === "satis");
+        const adet = satislar.reduce((t, s) => t.add(s.miktar), D(0));
+        if (adet.gt(0)) fifoBirim.set(stokId, satislar.reduce((t, s) => t.add(fifoSatis(s)), D(0)).div(adet));
+      }
+      let toplamSatisCirosu = D(0), toplamSmmMaliyeti = D(0);
+      const detaylar = satirlar.map((s) => {
+        const maliyet = !fifo ? s.maliyet
+          : s.tip === "satis" ? fifoSatis(s)
+          : fifoBirim.has(s.stokId) ? s.miktar.mul(fifoBirim.get(s.stokId)!).toDecimalPlaces(2) : s.maliyet;
+        toplamSatisCirosu = toplamSatisCirosu.add(s.ciro);
+        toplamSmmMaliyeti = toplamSmmMaliyeti.add(maliyet);
+        const kar = s.ciro.sub(maliyet);
         return {
-          faturaId: satir.fatura.id,
-          faturaNo: satir.fatura.no || "Taslak",
-          tarih: satir.fatura.tarih.toISOString().slice(0, 10),
-          stokKod: satir.stok.kod,
-          stokAd: satir.stok.ad,
-          cariUnvan: satir.fatura.cari.unvan,
-          satilanMiktar,
-          satisNetTutar,
-          birimMaliyet,
-          toplamMaliyet,
-          karTutar,
-          karMarjiYuzde: Number(karMarjiYuzde.toFixed(2)),
+          faturaId: s.faturaId,
+          faturaNo: s.faturaNo || "Taslak",
+          tarih: s.tarih.toISOString().slice(0, 10),
+          tip: s.tip,
+          stokKod: s.kod,
+          stokAd: s.ad,
+          cariUnvan: s.cariUnvan,
+          satilanMiktar: s.miktar.toNumber(),
+          satisNetTutar: s.ciro.toNumber(),
+          birimMaliyet: s.miktar.isZero() ? 0 : maliyet.div(s.miktar).toDecimalPlaces(4).toNumber(),
+          toplamMaliyet: maliyet.toNumber(),
+          karTutar: kar.toNumber(),
+          karMarjiYuzde: s.ciro.isZero() ? 0 : kar.div(s.ciro).mul(100).toDecimalPlaces(2).toNumber(),
         };
       });
-
       const brutKar = toplamSatisCirosu.sub(toplamSmmMaliyeti);
-      const genelKarMarjiYuzde = toplamSatisCirosu.greaterThan(0)
-        ? brutKar.div(toplamSatisCirosu).mul(100).toNumber()
-        : 0;
-
       return {
-        yontem,
+        yontem, baslangic: baslangic ?? null, bitis: bitis ?? null,
         toplamSatisCirosu: toplamSatisCirosu.toFixed(2),
         toplamSmmMaliyeti: toplamSmmMaliyeti.toFixed(2),
         brutKar: brutKar.toFixed(2),
-        genelKarMarjiYuzde: Number(genelKarMarjiYuzde.toFixed(2)),
+        genelKarMarjiYuzde: toplamSatisCirosu.gt(0) ? brutKar.div(toplamSatisCirosu).mul(100).toDecimalPlaces(2).toNumber() : 0,
         detaylar,
       };
     });

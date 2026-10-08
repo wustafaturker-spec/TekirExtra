@@ -25,8 +25,9 @@ export class RaporController {
   }
 
   @Get("smm")
-  async smmAnalizi(@Query("yontem") yontem?: "agirlikli_ortalama" | "fifo") {
-    return this.raporService.smmAnalizi(yontem);
+  async smmAnalizi(@Query("yontem") yontem?: string, @Query("baslangic") baslangic?: string, @Query("bitis") bitis?: string) {
+    const tarih = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
+    return this.raporService.smmAnalizi(yontem === "fifo" ? "fifo" : "agirlikli_ortalama", tarih(baslangic), tarih(bitis));
   }
 
   @Get("gelir-gider")

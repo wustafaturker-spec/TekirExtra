@@ -34,6 +34,9 @@ export const STOK_HAREKET_TIPLERI = [
   "acilis",
 ] as const;
 
+/** STK-34: elle hareket ucunun kabul ettiği türler. */
+export const ELLE_HAREKET_TIPLERI = ["giris", "cikis", "acilis", "fire", "zayi", "numune", "promosyon"] as const;
+
 export const stokKartOlusturSemasi = z.object({
   kod: z.string().min(1).max(32),
   ad: z.string().min(2).max(255),
@@ -83,7 +86,8 @@ export const stokHareketOlusturSemasi = z.object({
   varyantId: z.string().uuid().optional().nullable(),
   /** STK-07: boşsa varsayılan depo kullanılır (tek depolu firmalarda arayüz sormaz) */
   depoId: z.string().uuid().optional().nullable(),
-  tip: z.enum(STOK_HAREKET_TIPLERI),
+  /** STK-34: sayım düzeltmesi yalnız sayım onayından, transfer yalnız transfer fişinden. */
+  tip: z.enum(ELLE_HAREKET_TIPLERI, { message: "Elle yalnız giriş, çıkış, açılış, fire, zayi, numune ve promosyon hareketi girilebilir" }),
   miktar: pozitifOndalik,
   girilenBirim: z.string().min(1).max(20),
   girilenMiktar: pozitifOndalik,
@@ -97,7 +101,7 @@ export const stokHareketOlusturSemasi = z.object({
     uretimTarihi: z.string().date().optional().nullable(),
     miktar: pozitifOndalik,
   })).optional().default([]),
-});
+}).refine((h) => !["giris", "acilis"].includes(h.tip) || Number(h.maliyet) > 0, { path: ["maliyet"], message: "Elle girişte birim maliyet sıfırdan büyük olmalıdır" });
 
 export const stokBarkodSemasi = z.object({
   barkod: z.string().min(3).max(120),

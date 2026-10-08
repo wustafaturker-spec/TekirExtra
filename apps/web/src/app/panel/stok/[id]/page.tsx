@@ -282,14 +282,15 @@ const HAREKET_TIPLERI: { deger: string; baslik: string; yon: "giris" | "cikis" |
   { deger: "zayi", baslik: "Zayi", yon: "cikis" },
   { deger: "numune", baslik: "Numune", yon: "cikis" },
   { deger: "promosyon", baslik: "Promosyon", yon: "cikis" },
-  { deger: "sayim_duzeltme", baslik: "Sayım Düzeltme", yon: "duzeltme" },
 ];
 
 /**
- * Elle girilemeyen, yalnız listede görünen türler (STK-07): depolar arası
- * transferin iki ayağı — transfer fişi ekranından üretilir.
+ * Elle girilemeyen, yalnız listede görünen türler: depolar arası transferin
+ * iki ayağı transfer fişinden (STK-07), sayım düzeltmesi sayım onayından
+ * (STK-34) üretilir.
  */
-const TUREYEN_HAREKET_TIPLERI: { deger: string; baslik: string; yon: "giris" | "cikis" }[] = [
+const TUREYEN_HAREKET_TIPLERI: { deger: string; baslik: string; yon: "giris" | "cikis" | "duzeltme" }[] = [
+  { deger: "sayim_duzeltme", baslik: "Sayım Düzeltme", yon: "duzeltme" },
   { deger: "transfer_giris", baslik: "Transfer Girişi", yon: "giris" },
   { deger: "transfer_cikis", baslik: "Transfer Çıkışı", yon: "cikis" },
 ];
@@ -1111,11 +1112,14 @@ function HareketlerSekmesi({
                 </Field>
               </div>
               <div style={{ flex: 1, minWidth: 150 }}>
-                <Field label="Birim Maliyet (TRY)">
+                <Field label={HAREKET_TIPLERI.find((h) => h.deger === tip)?.yon === "giris" ? "Birim Maliyet (TRY) *" : "Birim Maliyet (TRY)"}>
+                  {/* STK-34: elle girişte maliyet zorunlu; çıkışta ortalama maliyet kullanılır. */}
                   <Input
                     type="number"
                     step="0.0001"
-                    min="0"
+                    min={HAREKET_TIPLERI.find((h) => h.deger === tip)?.yon === "giris" ? "0.0001" : "0"}
+                    required={HAREKET_TIPLERI.find((h) => h.deger === tip)?.yon === "giris"}
+                    disabled={HAREKET_TIPLERI.find((h) => h.deger === tip)?.yon !== "giris"}
                     value={maliyet}
                     onChange={(e) => setMaliyet(e.target.value)}
                   />

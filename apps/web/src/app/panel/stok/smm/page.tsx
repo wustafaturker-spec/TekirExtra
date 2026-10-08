@@ -1,242 +1,103 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import { Alert, Badge, Button, Card, Field, Input, PageHeader, Para, SearchInput, Segmented, Stat, StatGrid, Table } from "@/components/ui";
 
+type Yontem = "agirlikli_ortalama" | "fifo";
 interface SmmDetay {
-  faturaId: string;
-  faturaNo: string;
-  tarih: string;
-  stokKod: string;
-  stokAd: string;
-  cariUnvan: string;
-  satilanMiktar: number;
-  satisNetTutar: number;
-  birimMaliyet: number;
-  toplamMaliyet: number;
-  karTutar: number;
-  karMarjiYuzde: number;
+  faturaId: string; faturaNo: string; tarih: string; tip: "satis" | "satis_iade"; stokKod: string; stokAd: string; cariUnvan: string;
+  satilanMiktar: number; satisNetTutar: number; birimMaliyet: number; toplamMaliyet: number; karTutar: number; karMarjiYuzde: number;
 }
+interface SmmRaporu { yontem: Yontem; toplamSatisCirosu: string; toplamSmmMaliyeti: string; brutKar: string; genelKarMarjiYuzde: number; detaylar: SmmDetay[] }
 
-interface SmmRaporu {
-  yontem: "agirlikli_ortalama" | "fifo";
-  toplamSatisCirosu: string;
-  toplamSmmMaliyeti: string;
-  brutKar: string;
-  genelKarMarjiYuzde: number;
-  detaylar: SmmDetay[];
-}
+const ayBasi = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; };
+const bugun = () => new Date().toISOString().slice(0, 10);
+const miktar = (v: number) => v.toLocaleString("tr-TR", { maximumFractionDigits: 3 });
 
-const tl = (val: string | number) => Number(val || 0).toLocaleString("tr-TR", { style: "currency", currency: "TRY" });
-
+/**
+ * STK-32: satılan malın maliyeti ve brüt kâr. Ciro faturanın TL matrahından,
+ * maliyet stok hareketlerinden (satış anındaki ortalama ya da FIFO); satış
+ * iadeleri eksi satır olarak düşülür.
+ */
 export default function SmmRaporSayfasi() {
-  const [yontem, setYontem] = useState<"agirlikli_ortalama" | "fifo">("agirlikli_ortalama");
+  const [yontem, setYontem] = useState<Yontem>("agirlikli_ortalama");
+  const [aralik, setAralik] = useState({ baslangic: ayBasi(), bitis: bugun() });
   const [rapor, setRapor] = useState<SmmRaporu | null>(null);
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hata, setHata] = useState("");
   const [arama, setArama] = useState("");
 
   const raporYukle = useCallback(async () => {
-    setYukleniyor(true);
-    setHata("");
+    setYukleniyor(true); setHata("");
     try {
-      const veri = await api<SmmRaporu>(`/rapor/smm?yontem=${yontem}`);
-      setRapor(veri);
+      const q = new URLSearchParams({ yontem, ...(aralik.baslangic && { baslangic: aralik.baslangic }), ...(aralik.bitis && { bitis: aralik.bitis }) });
+      setRapor(await api<SmmRaporu>(`/rapor/smm?${q.toString()}`));
     } catch (err) {
       setHata(err instanceof Error ? err.message : "SMM raporu yüklenemedi");
-    } finally {
-      setYukleniyor(false);
-    }
-  }, [yontem]);
+    } finally { setYukleniyor(false); }
+  }, [yontem, aralik]);
+  useEffect(() => { void raporYukle(); }, [raporYukle]);
 
-  useEffect(() => {
-    void raporYukle();
-  }, [raporYukle]);
-
-  const filtrelenmisDetaylar = (rapor?.detaylar || []).filter((d) => {
-    if (!arama.trim()) return true;
-    const q = arama.toLowerCase();
-    return (
-      d.faturaNo.toLowerCase().includes(q) ||
-      d.stokAd.toLowerCase().includes(q) ||
-      d.stokKod.toLowerCase().includes(q) ||
-      d.cariUnvan.toLowerCase().includes(q)
-    );
-  });
+  const detaylar = useMemo(() => {
+    const q = arama.trim().toLocaleLowerCase("tr");
+    return (rapor?.detaylar ?? []).filter((d) => !q || [d.faturaNo, d.stokAd, d.stokKod, d.cariUnvan].some((x) => x.toLocaleLowerCase("tr").includes(q)));
+  }, [rapor, arama]);
 
   return (
-    <div style={{ backgroundColor: "#f8fafc", minHeight: "100vh", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", color: "#0f172a" }}>
-      
-      {/* Header */}
-      <header style={{ backgroundColor: "#0f172a", color: "#ffffff", padding: "16px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.15)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-          <div style={{ backgroundColor: "#0284c7", color: "#ffffff", width: "36px", height: "36px", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "900", fontSize: "16px" }}>
-            ₺
-          </div>
-          <div>
-            <h1 style={{ fontSize: "18px", fontWeight: "700", margin: 0 }}>Satılan Malın Maliyeti (SMM) & Karlılık Analizi</h1>
-            <span style={{ fontSize: "11px", opacity: 0.8 }}>Stok Maliyetlendirme Yöntemleri: FIFO & Ağırlıklı Ortalama Maliyet</span>
-          </div>
+    <div className="stack">
+      <Link className="back-link" href="/panel/stok">← Stok kartları</Link>
+      <PageHeader
+        title="SMM ve kârlılık"
+        subtitle="Satılan malın maliyeti: ciro faturanın TL matrahından, maliyet stok hareketlerinden. Satış iadeleri ciro ve maliyetten düşülür; iptal edilen faturalar dahil edilmez."
+        actions={<Button onClick={() => void raporYukle()} disabled={yukleniyor}>{yukleniyor ? "Yükleniyor…" : "Yenile"}</Button>}
+      />
+      <Alert tone="error">{hata}</Alert>
+      <Card>
+        <div className="form-grid">
+          <Field label="Maliyet yöntemi">
+            <Segmented<Yontem> ariaLabel="Maliyet yöntemi" items={[{ deger: "agirlikli_ortalama", baslik: "Ağırlıklı ortalama" }, { deger: "fifo", baslik: "FIFO" }]} value={yontem} onChange={setYontem} />
+          </Field>
+          <Field label="Başlangıç"><Input type="date" value={aralik.baslangic} onChange={(e) => setAralik({ ...aralik, baslangic: e.target.value })} /></Field>
+          <Field label="Bitiş"><Input type="date" value={aralik.bitis} onChange={(e) => setAralik({ ...aralik, bitis: e.target.value })} /></Field>
         </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <Link href="/panel/stok" style={{ padding: "6px 14px", backgroundColor: "rgba(255,255,255,0.15)", color: "#ffffff", borderRadius: "6px", textDecoration: "none", fontSize: "12px", fontWeight: "600" }}>
-            ← Stoğa Dön
-          </Link>
-          <button onClick={() => void raporYukle()} style={{ padding: "6px 14px", backgroundColor: "#0284c7", color: "#ffffff", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: "700", cursor: "pointer" }}>
-            {yukleniyor ? "Yükleniyor..." : "↻ Yenile"}
-          </button>
+        <p className="muted" style={{ margin: "0.6rem 0 0", fontSize: "0.8rem" }}>
+          {yontem === "fifo" ? "FIFO: her ürünün bütün giriş hareketleri (alış, üretim, açılış, sayım fazlası, iade) kuyruğa girer, çıkışlar en eskiden tüketir." : "Ağırlıklı ortalama: satış anında stok hareketine yazılan ortalama maliyet."}
+        </p>
+      </Card>
+      {rapor && (
+        <StatGrid>
+          <Stat label="Net satış cirosu" value={<Para deger={rapor.toplamSatisCirosu} />} hint="İadeler düşülmüş, TL" />
+          <Stat label="Satılan malın maliyeti" value={<Para deger={rapor.toplamSmmMaliyeti} />} hint={yontem === "fifo" ? "FIFO" : "Ağırlıklı ortalama"} />
+          <Stat label="Brüt kâr" value={<Para deger={rapor.brutKar} />} hint={`Marj %${rapor.genelKarMarjiYuzde.toLocaleString("tr-TR")}`} tone="accent" />
+        </StatGrid>
+      )}
+      <Card pad={false}>
+        <div style={{ padding: "1rem 1.1rem" }}>
+          <SearchInput aria-label="SMM satırı ara" placeholder="Fatura, ürün veya cari ara…" value={arama} onChange={(e) => setArama(e.target.value)} />
         </div>
-      </header>
-
-      {/* Main Content */}
-      <main style={{ padding: "24px", maxWidth: "1500px", margin: "0 auto" }}>
-
-        {/* Method Selector & Filters */}
-        <div style={{ backgroundColor: "#ffffff", padding: "16px 20px", borderRadius: "10px", border: "1px solid #e2e8f0", marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <span style={{ fontSize: "13px", fontWeight: "700", color: "#475569" }}>Maliyetlendirme Yöntemi:</span>
-            <div style={{ display: "flex", gap: "6px" }}>
-              <button
-                onClick={() => setYontem("agirlikli_ortalama")}
-                style={{
-                  padding: "8px 14px",
-                  borderRadius: "6px",
-                  border: "1px solid",
-                  borderColor: yontem === "agirlikli_ortalama" ? "#0284c7" : "#cbd5e1",
-                  backgroundColor: yontem === "agirlikli_ortalama" ? "#e0f2fe" : "#ffffff",
-                  color: yontem === "agirlikli_ortalama" ? "#0369a1" : "#475569",
-                  fontSize: "12px",
-                  fontWeight: "700",
-                  cursor: "pointer",
-                }}
-              >
-                📊 Ağırlıklı Ortalama Maliyet
-              </button>
-              <button
-                onClick={() => setYontem("fifo")}
-                style={{
-                  padding: "8px 14px",
-                  borderRadius: "6px",
-                  border: "1px solid",
-                  borderColor: yontem === "fifo" ? "#0284c7" : "#cbd5e1",
-                  backgroundColor: yontem === "fifo" ? "#e0f2fe" : "#ffffff",
-                  color: yontem === "fifo" ? "#0369a1" : "#475569",
-                  fontSize: "12px",
-                  fontWeight: "700",
-                  cursor: "pointer",
-                }}
-              >
-                🔄 FIFO (İlk Giren İlk Çıkar)
-              </button>
-            </div>
-          </div>
-
-          <input
-            type="text"
-            placeholder="🔍 Fatura, Stok veya Cari Ara..."
-            value={arama}
-            onChange={(e) => setArama(e.target.value)}
-            style={{ padding: "8px 14px", border: "1px solid #cbd5e1", borderRadius: "6px", fontSize: "12px", width: "240px" }}
-          />
-        </div>
-
-        {/* Executive Overview KPI Cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px", marginBottom: "24px" }}>
-          
-          <div style={{ backgroundColor: "#ffffff", padding: "18px 20px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
-            <span style={{ fontSize: "12px", fontWeight: "600", color: "#64748b" }}>Toplam Satış Cirosu</span>
-            <div style={{ fontSize: "22px", fontWeight: "800", color: "#0f172a", marginTop: "4px" }}>{tl(rapor?.toplamSatisCirosu || 0)}</div>
-            <span style={{ fontSize: "11px", color: "#94a3b8" }}>Net faturalandırılmış brüt satışlar</span>
-          </div>
-
-          <div style={{ backgroundColor: "#ffffff", padding: "18px 20px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
-            <span style={{ fontSize: "12px", fontWeight: "600", color: "#dc2626" }}>Satılan Malın Maliyeti (SMM)</span>
-            <div style={{ fontSize: "22px", fontWeight: "800", color: "#dc2626", marginTop: "4px" }}>{tl(rapor?.toplamSmmMaliyeti || 0)}</div>
-            <span style={{ fontSize: "11px", color: "#94a3b8" }}>Seçilen metot ({yontem === "fifo" ? "FIFO" : "Ortalama"}) maliyeti</span>
-          </div>
-
-          <div style={{ backgroundColor: "#ffffff", padding: "18px 20px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
-            <span style={{ fontSize: "12px", fontWeight: "600", color: "#16a34a" }}>Brüt Satış Karı</span>
-            <div style={{ fontSize: "22px", fontWeight: "800", color: "#16a34a", marginTop: "4px" }}>{tl(rapor?.brutKar || 0)}</div>
-            <span style={{ fontSize: "11px", color: "#94a3b8" }}>Ciro - SMM Maliyeti</span>
-          </div>
-
-          <div style={{ backgroundColor: "#ffffff", padding: "18px 20px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
-            <span style={{ fontSize: "12px", fontWeight: "600", color: "#0284c7" }}>Genel Brüt Kar Marjı</span>
-            <div style={{ fontSize: "22px", fontWeight: "800", color: "#0284c7", marginTop: "4px" }}>%{rapor?.genelKarMarjiYuzde || 0}</div>
-            <span style={{ fontSize: "11px", color: "#94a3b8" }}>Kar / Toplam Ciro oranı</span>
-          </div>
-
-        </div>
-
-        {hata && (
-          <div style={{ backgroundColor: "#fee2e2", color: "#dc2626", padding: "12px 16px", borderRadius: "8px", marginBottom: "16px", fontSize: "13px" }}>
-            ⚠️ {hata}
-          </div>
-        )}
-
-        {/* Detailed Table */}
-        <div style={{ backgroundColor: "#ffffff", borderRadius: "10px", border: "1px solid #cbd5e1", overflow: "hidden", boxShadow: "0 2px 6px rgba(0,0,0,0.04)" }}>
-          <div style={{ padding: "14px 20px", backgroundColor: "#f8fafc", borderBottom: "1px solid #e2e8f0", fontSize: "13px", fontWeight: "700", color: "#334155" }}>
-            📋 Satış Kalemleri Bazında Maliyet & Kar Marjı Dökümü ({filtrelenmisDetaylar.length} kayıt)
-          </div>
-
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
-              <thead>
-                <tr style={{ backgroundColor: "#f1f5f9", color: "#475569", borderBottom: "2px solid #cbd5e1" }}>
-                  <th style={{ padding: "10px 14px", textAlign: "left" }}>Fatura No</th>
-                  <th style={{ padding: "10px 14px", textAlign: "left" }}>Tarih</th>
-                  <th style={{ padding: "10px 14px", textAlign: "left" }}>Müşteri (Cari)</th>
-                  <th style={{ padding: "10px 14px", textAlign: "left" }}>Ürün / Stok Adı</th>
-                  <th style={{ padding: "10px 14px", textAlign: "right" }}>Miktar</th>
-                  <th style={{ padding: "10px 14px", textAlign: "right" }}>Satış Cirosu</th>
-                  <th style={{ padding: "10px 14px", textAlign: "right" }}>Birim Maliyet</th>
-                  <th style={{ padding: "10px 14px", textAlign: "right" }}>Toplam SMM</th>
-                  <th style={{ padding: "10px 14px", textAlign: "right" }}>Kar Tutarı</th>
-                  <th style={{ padding: "10px 14px", textAlign: "right" }}>Kar Marjı</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtrelenmisDetaylar.map((satir, idx) => (
-                  <tr key={idx} style={{ borderBottom: "1px solid #e2e8f0", backgroundColor: idx % 2 === 0 ? "#ffffff" : "#f8fafc" }}>
-                    <td style={{ padding: "10px 14px", fontWeight: "700", color: "#0f172a" }}>{satir.faturaNo}</td>
-                    <td style={{ padding: "10px 14px", color: "#64748b" }}>{satir.tarih}</td>
-                    <td style={{ padding: "10px 14px", color: "#334155" }}>{satir.cariUnvan}</td>
-                    <td style={{ padding: "10px 14px", fontWeight: "600", color: "#0f172a" }}>
-                      {satir.stokAd} <span style={{ fontSize: "10px", color: "#94a3b8" }}>({satir.stokKod})</span>
-                    </td>
-                    <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: "700" }}>{satir.satilanMiktar}</td>
-                    <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: "600" }}>{tl(satir.satisNetTutar)}</td>
-                    <td style={{ padding: "10px 14px", textAlign: "right", color: "#64748b" }}>{tl(satir.birimMaliyet)}</td>
-                    <td style={{ padding: "10px 14px", textAlign: "right", color: "#dc2626", fontWeight: "600" }}>{tl(satir.toplamMaliyet)}</td>
-                    <td style={{ padding: "10px 14px", textAlign: "right", color: satir.karTutar >= 0 ? "#16a34a" : "#dc2626", fontWeight: "700" }}>
-                      {tl(satir.karTutar)}
-                    </td>
-                    <td style={{ padding: "10px 14px", textAlign: "right" }}>
-                      <span style={{ padding: "2px 8px", borderRadius: "12px", backgroundColor: satir.karMarjiYuzde >= 20 ? "#dcfce7" : satir.karMarjiYuzde > 0 ? "#fef9c3" : "#fee2e2", color: satir.karMarjiYuzde >= 20 ? "#15803d" : satir.karMarjiYuzde > 0 ? "#a16207" : "#b91c1c", fontWeight: "800", fontSize: "11px" }}>
-                        %{satir.karMarjiYuzde}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-
-                {!filtrelenmisDetaylar.length && (
-                  <tr>
-                    <td colSpan={10} style={{ padding: "32px", textAlign: "center", color: "#94a3b8" }}>
-                      Gösterilecek uygun satış maliyet kaydı bulunamadı.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-      </main>
-
+        <Table>
+          <thead><tr><th>Fatura</th><th>Tarih</th><th>Cari</th><th>Ürün</th><th className="num">Miktar</th><th className="num">Ciro</th><th className="num">Birim maliyet</th><th className="num">SMM</th><th className="num">Kâr</th><th className="num">Marj</th></tr></thead>
+          <tbody>
+            {detaylar.map((d, i) => (
+              <tr key={`${d.faturaId}-${d.stokKod}-${i}`}>
+                <td><Link href={`/panel/fatura/yeni?ac=${d.faturaId}`}><strong>{d.faturaNo}</strong></Link>{d.tip === "satis_iade" && <> <Badge variant="warning">İade</Badge></>}</td>
+                <td className="mono">{d.tarih}</td>
+                <td>{d.cariUnvan}</td>
+                <td><span className="mono subtle">{d.stokKod}</span> {d.stokAd}</td>
+                <td className="num">{miktar(d.satilanMiktar)}</td>
+                <td className="num"><Para deger={d.satisNetTutar} /></td>
+                <td className="num"><Para deger={d.birimMaliyet} /></td>
+                <td className="num"><Para deger={d.toplamMaliyet} /></td>
+                <td className="num"><strong><Para deger={d.karTutar} /></strong></td>
+                <td className="num">%{d.karMarjiYuzde.toLocaleString("tr-TR")}</td>
+              </tr>
+            ))}
+            {!detaylar.length && <tr><td className="muted" colSpan={10}>{yukleniyor ? "Yükleniyor…" : "Seçilen aralıkta kesinleşmiş satış yok."}</td></tr>}
+          </tbody>
+        </Table>
+      </Card>
     </div>
   );
 }

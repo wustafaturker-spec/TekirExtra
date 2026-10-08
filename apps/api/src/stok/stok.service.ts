@@ -759,6 +759,8 @@ export class StokService {
       where: { id: stokId },
     });
     if (!urun) throw new NotFoundException("Stok kartı bulunamadı");
+    // STK-33: hizmet stok tutmaz; hareket yazılmaz.
+    if (urun.tip === "hizmet") throw new BadRequestException(`'${urun.ad}' bir hizmet kartı; stok hareketi yazılmaz`);
     const varyant = varyantId ? await tx.stokVaryant.findFirst({ where: { id: varyantId, stokId, aktif: true } }) : null;
     if (varyantId && !varyant) throw new BadRequestException("Varyant bu stok kartına ait değil");
     // STK-30: varyantlı kartın hareketi varyantsız olamaz; olursa kart toplamı varyant toplamından kopar.

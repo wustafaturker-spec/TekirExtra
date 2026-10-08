@@ -5,6 +5,8 @@ import { PrismaService } from "../core/prisma.service";
 import { ciftAnahtar, miktarFarklari, type TutarlilikTuru } from "./stok-tutarlilik";
 
 type Tx = Prisma.TransactionClient;
+/** STK-33: hizmet kartı stok tutmaz; eski hizmet hareketleri denetime girmez. */
+const HIZMET_DISI: Prisma.StokHareketWhereInput = { stok: { tip: { not: "hizmet" } } };
 const D = (v: Prisma.Decimal.Value | null | undefined) => new Prisma.Decimal(v ?? 0);
 const toplamHaritasi = <T>(satirlar: T[], anahtar: (s: T) => string | null, miktar: (s: T) => Prisma.Decimal.Value | null) =>
   new Map(satirlar.flatMap((s) => { const a = anahtar(s); return a ? [[a, D(miktar(s))] as const] : []; }));
@@ -25,13 +27,13 @@ export class StokTutarlilikService {
 
   private async hesapla(tx: Tx) {
     const [kartlar, depolar, depoBakiyeleri, varyantlar, varyantDepoBakiyeleri, hKart, hDepo, hVaryant, hVaryantDepo, hDagitilmamis] = [
-      await tx.stokKart.findMany({ select: { id: true, kod: true, ad: true, mevcutMiktar: true, _count: { select: { varyantlar: true } } } }),
+      await tx.stokKart.findMany({ where: { tip: { not: "hizmet" } }, select: { id: true, kod: true, ad: true, mevcutMiktar: true, _count: { select: { varyantlar: true } } } }),
       await tx.depo.findMany({ select: { id: true, ad: true } }),
-      await tx.stokDepoBakiye.findMany({ select: { stokId: true, depoId: true, mevcutMiktar: true } }),
+      await tx.stokDepoBakiye.findMany({ where: { stok: { tip: { not: "hizmet" } } }, select: { stokId: true, depoId: true, mevcutMiktar: true } }),
       await tx.stokVaryant.findMany({ select: { id: true, stokId: true, kod: true, mevcutMiktar: true } }),
       await tx.stokVaryantDepoBakiye.findMany({ select: { varyantId: true, depoId: true, mevcutMiktar: true } }),
-      await tx.stokHareket.groupBy({ by: ["stokId"], _sum: { miktar: true } }),
-      await tx.stokHareket.groupBy({ by: ["stokId", "depoId"], _sum: { miktar: true } }),
+      await tx.stokHareket.groupBy({ by: ["stokId"], where: HIZMET_DISI, _sum: { miktar: true } }),
+      await tx.stokHareket.groupBy({ by: ["stokId", "depoId"], where: HIZMET_DISI, _sum: { miktar: true } }),
       await tx.stokHareket.groupBy({ by: ["varyantId"], where: { varyantId: { not: null } }, _sum: { miktar: true } }),
       await tx.stokHareket.groupBy({ by: ["varyantId", "depoId"], where: { varyantId: { not: null } }, _sum: { miktar: true } }),
       await tx.stokHareket.groupBy({ by: ["stokId"], where: { varyantId: null }, _sum: { miktar: true } }),
