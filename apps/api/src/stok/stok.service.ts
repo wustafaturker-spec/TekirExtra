@@ -55,6 +55,8 @@ export interface StokHareketGirdisi {
    * ortalamadan düşer (alış iadesi, alış/satış iadesi girişinin iptali).
    */
   maliyetliCikis?: boolean;
+  /** STK-31: çıkışta FEFO yerine `partiler`de belirtilen partilerden düşülür (sayım eksiği). */
+  partiSecimi?: "fefo" | "belirtilen";
   tarih: Date;
   aciklama?: string | null;
   kaynakTur?: string;
@@ -759,6 +761,10 @@ export class StokService {
     if (!urun) throw new NotFoundException("Stok kartı bulunamadı");
     const varyant = varyantId ? await tx.stokVaryant.findFirst({ where: { id: varyantId, stokId, aktif: true } }) : null;
     if (varyantId && !varyant) throw new BadRequestException("Varyant bu stok kartına ait değil");
+    // STK-30: varyantlı kartın hareketi varyantsız olamaz; olursa kart toplamı varyant toplamından kopar.
+    if (!varyantId && (await tx.stokVaryant.count({ where: { stokId, aktif: true } })) > 0) {
+      throw new BadRequestException(`'${urun.ad}' varyantlı bir kart; hareket için varyant seçilmelidir`);
+    }
 
     const depo = await tx.depo.findUnique({ where: { id: depoId } });
     if (!depo) throw new NotFoundException("Depo bulunamadı");
@@ -844,7 +850,7 @@ export class StokService {
       },
     });
     const partiTahsisleri = await this.partiTahsisEt(tx, urun.takipTipi, hareket.id, {
-      stokId, varyantId, depoId, miktarDegisimi, partiler: girdi.partiler ?? [],
+      stokId, varyantId, depoId, miktarDegisimi, partiler: girdi.partiler ?? [], partiSecimi: girdi.partiSecimi ?? "fefo",
     });
 
     // Stok kartındaki toplam ve depo bakiyesi birlikte güncellenir (STK-07)
@@ -888,7 +894,7 @@ export class StokService {
     tx: Prisma.TransactionClient,
     takipTipi: "yok" | "lot" | "seri",
     hareketId: string,
-    girdi: { stokId: string; varyantId?: string | null; depoId: string; miktarDegisimi: Prisma.Decimal; partiler: NonNullable<StokHareketGirdisi["partiler"]> },
+    girdi: { stokId: string; varyantId?: string | null; depoId: string; miktarDegisimi: Prisma.Decimal; partiler: NonNullable<StokHareketGirdisi["partiler"]>; partiSecimi: "fefo" | "belirtilen" },
   ) {
     const { tenantId } = aktifBaglam();
     if (takipTipi === "yok") {
@@ -915,6 +921,19 @@ export class StokService {
             });
         await tx.stokHareketParti.create({ data: { tenantId, hareketId, partiId: parti.id, miktar: p.miktar } });
         tahsisler.push({ ...p, seriNo: p.seriNo ?? null, sonKullanmaTarihi: p.sonKullanmaTarihi ?? null, uretimTarihi: p.uretimTarihi ?? null });
+      }
+      return tahsisler;
+    }
+    if (girdi.partiSecimi === "belirtilen") {
+      const toplam = girdi.partiler.reduce((t, p) => t.add(p.miktar), D(0));
+      if (!toplam.eq(hedef)) throw new BadRequestException("Parti miktarları hareket miktarına eşit olmalıdır");
+      for (const p of girdi.partiler) {
+        const anahtar = [girdi.stokId, girdi.varyantId ?? "-", girdi.depoId, p.lotNo, p.seriNo ?? "-"].join(":");
+        const parti = await tx.stokParti.findUnique({ where: { tenantId_anahtar: { tenantId, anahtar } } });
+        if (!parti || parti.kalanMiktar.lt(p.miktar)) throw new BadRequestException(`'${p.lotNo}${p.seriNo ? ` / ${p.seriNo}` : ""}' partisinde yeterli stok yok`);
+        await tx.stokParti.update({ where: { id: parti.id }, data: { kalanMiktar: { decrement: p.miktar } } });
+        await tx.stokHareketParti.create({ data: { tenantId, hareketId, partiId: parti.id, miktar: p.miktar.negated() } });
+        tahsisler.push({ lotNo: parti.lotNo, seriNo: parti.seriNo, sonKullanmaTarihi: parti.sonKullanmaTarihi?.toISOString().slice(0, 10) ?? null, uretimTarihi: parti.uretimTarihi?.toISOString().slice(0, 10) ?? null, miktar: p.miktar });
       }
       return tahsisler;
     }
@@ -1162,166 +1181,7 @@ export class StokService {
     if (silinen.count === 0) throw new NotFoundException("Tedarikçi kaydı bulunamadı");
   }
 
-  // ─── FİİLİ SAYIM (STK-06/20) ─────────────────────────────────────────────
-  // Sayım taslak olarak kaydedilir; farklar yalnız onayla stoğa işlenir.
-
-  async sayimOlustur(girdi: z.infer<typeof sayimOlusturSemasi>) {
-    const { tenantId } = aktifBaglam();
-
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
-      // Sayım tek depoyu kapsar (STK-07); depo verilmezse varsayılan depo
-      const depoId = await this.depoService.depoCozumle(tx, girdi.depoId);
-      const sayim = await tx.sayim.create({
-        data: {
-          tenantId,
-          depoId,
-          tarih: new Date(girdi.tarih),
-          aciklama: girdi.aciklama,
-        },
-      });
-
-      for (const k of girdi.kalemler) {
-        const urun = await tx.stokKart.findUnique({
-          where: { id: k.stokId },
-          select: { id: true },
-        });
-        if (!urun) throw new NotFoundException(`Sayılmak istenen '${k.stokId}' ürünü bulunamadı`);
-
-        // Sistem miktarı sayılan deponun bakiyesidir
-        const bakiye = await tx.stokDepoBakiye.findUnique({
-          where: { tenantId_stokId_depoId: { tenantId, stokId: k.stokId, depoId } },
-        });
-
-        await tx.sayimKalem.create({
-          data: {
-            tenantId,
-            sayimId: sayim.id,
-            stokId: k.stokId,
-            sistemMiktar: D(bakiye?.mevcutMiktar ?? 0),
-            fiiliMiktar: D(k.fiiliMiktar),
-          },
-        });
-      }
-
-      return sayim;
-    });
-  }
-
-  /**
-   * Sayım onayı (STK-20): farklar onay anındaki güncel sistem miktarına göre
-   * yeniden hesaplanır ve sayim_duzeltme hareketleri olarak işlenir.
-   */
-  async sayimOnayla(id: string) {
-    const { tenantId, userId, rol } = aktifBaglam();
-    if (!["muhasebe", "yonetici"].includes(rol)) {
-      throw new ForbiddenException("Sayım onayı için muhasebe veya yönetici rolü gerekir");
-    }
-
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const sayim = await tx.sayim.findUnique({
-        where: { id },
-        include: { kalemler: true },
-      });
-      if (!sayim) throw new NotFoundException("Sayım bulunamadı");
-      if (sayim.durum !== "taslak") {
-        throw new BadRequestException("Sayım zaten onaylanmış");
-      }
-
-      await this.kartlariKilitle(tx, sayim.kalemler.map((k) => k.stokId));
-      for (const k of sayim.kalemler) {
-        const urun = await tx.stokKart.findUnique({ where: { id: k.stokId } });
-        if (!urun) continue;
-
-        // Fark, sayılan deponun onay anındaki miktarına göre hesaplanır (STK-07/20)
-        const bakiye = await tx.stokDepoBakiye.findUnique({
-          where: {
-            tenantId_stokId_depoId: { tenantId, stokId: k.stokId, depoId: sayim.depoId },
-          },
-        });
-        const guncelSistem = D(bakiye?.mevcutMiktar ?? 0);
-        const fark = D(k.fiiliMiktar).sub(guncelSistem);
-
-        // Onay anındaki sistem miktarını kayda geçir
-        await tx.sayimKalem.update({
-          where: { id: k.id },
-          data: { sistemMiktar: guncelSistem },
-        });
-
-        if (!fark.isZero()) {
-          const birimMaliyet = guncelSistem.gt(0)
-            ? D(urun.ortalamaMaliyet)
-            : D(urun.alisFiyati ?? 0);
-
-          await this.hareketEkle(tx, {
-            stokId: k.stokId,
-            depoId: sayim.depoId,
-            tip: "sayim_duzeltme",
-            miktar: fark,
-            girilenBirim: urun.anaBirim,
-            girilenMiktar: fark,
-            birimMaliyet,
-            tarih: new Date(sayim.tarih),
-            aciklama: `${sayim.id} nolu sayım düzeltmesi`,
-            kaynakTur: "sayim",
-            kaynakRef: sayim.id,
-          });
-        }
-      }
-
-      return tx.sayim.update({
-        where: { id },
-        data: {
-          durum: "onaylandi",
-          onaylayanUserId: userId,
-          onayZamani: new Date(),
-        },
-      });
-    });
-  }
-
-  async sayimListesi() {
-    const { tenantId } = aktifBaglam();
-    return this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.sayim.findMany({
-        orderBy: { tarih: "desc" },
-        include: {
-          depo: { select: { id: true, kod: true, ad: true } },
-          _count: { select: { kalemler: true } },
-        },
-      }),
-    );
-  }
-
-  async sayimGetir(id: string) {
-    const { tenantId } = aktifBaglam();
-    const sayim = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.sayim.findUnique({
-        where: { id },
-        include: {
-          depo: { select: { id: true, kod: true, ad: true } },
-          kalemler: true,
-        },
-      }),
-    );
-    if (!sayim) throw new NotFoundException("Sayım bulunamadı");
-
-    const stokIdler = sayim.kalemler.map((k) => k.stokId);
-    const stoklar = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.stokKart.findMany({
-        where: { id: { in: stokIdler } },
-        select: { id: true, kod: true, ad: true, anaBirim: true },
-      }),
-    );
-    const stokMap = new Map(stoklar.map((s) => [s.id, s]));
-
-    return {
-      ...sayim,
-      kalemler: sayim.kalemler.map((k) => ({
-        ...k,
-        stok: stokMap.get(k.stokId) ?? null,
-      })),
-    };
-  }
+  // Fiili sayım SayimService'e taşındı (STK-29…31).
 
   // Envanter raporu RPR-06 araç setine taşındı: stok.envanter (STK-13).
 

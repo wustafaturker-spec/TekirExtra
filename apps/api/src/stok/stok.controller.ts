@@ -23,6 +23,7 @@ import { sayfaAdedi } from "../core/sayfalama";
 import { stokExcelSablonYaz } from "../core/excel-yardimci";
 import { DepoService } from "./depo.service";
 import { StokService } from "./stok.service";
+import { SayimService } from "./sayim.service";
 import { AbonelikService } from "../tenant/abonelik.service";
 import { excelDosyasiniDogrula, type YuklemeDosyasi } from "../core/guvenlik/dosya-dogrulama";
 import { iptalleriGoster } from "../fatura/iptal-cifti";
@@ -51,6 +52,7 @@ export class StokController {
     private readonly depoService: DepoService,
     private readonly prisma: PrismaService,
     private readonly abonelik: AbonelikService,
+    private readonly sayimService: SayimService,
   ) {}
 
   // ─── KATEGORİ UÇLARI (Önce tanımlanmalı) ──────────────────────────────────
@@ -85,12 +87,20 @@ export class StokController {
 
   @Get("sayimlar")
   async sayimListesi() {
-    return this.stokService.sayimListesi();
+    return this.sayimService.liste();
+  }
+
+  /** STK-29…31: sayım formu için deponun sayım tarihindeki miktarları. */
+  @Get("sayimlar/sistem")
+  async sayimSistemi(@Query("depoId") depoId?: string, @Query("tarih") tarih?: string) {
+    if (!tarih || !/^\d{4}-\d{2}-\d{2}$/.test(tarih)) throw new BadRequestException("Sayım tarihi (YYYY-AA-GG) zorunludur");
+    if (depoId && !/^[0-9a-f-]{36}$/i.test(depoId)) throw new BadRequestException("Geçersiz depo");
+    return this.sayimService.sistemListesi(depoId, tarih);
   }
 
   @Get("sayimlar/:id")
   async sayimGetir(@Param("id") id: string) {
-    return this.stokService.sayimGetir(id);
+    return this.sayimService.getir(id);
   }
 
   @Post("sayimlar")
@@ -102,13 +112,13 @@ export class StokController {
         ayristirma.error.issues.map((s) => s.message).join("; "),
       );
     }
-    return this.stokService.sayimOlustur(ayristirma.data);
+    return this.sayimService.olustur(ayristirma.data);
   }
 
   @Post("sayimlar/:id/onayla")
   @Roller("muhasebe")
   async sayimOnayla(@Param("id") id: string) {
-    return this.stokService.sayimOnayla(id);
+    return this.sayimService.onayla(id);
   }
 
   // ─── BARKOD ARAMA (STK-15) ───────────────────────────────────────────────

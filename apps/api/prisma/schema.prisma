@@ -1363,6 +1363,7 @@ model StokVaryant {
   uretimEmirleri     UretimEmri[]
   urunReceteleri     UrunRecetesi[]
   tedarikciKodlari   StokTedarikciVaryant[]
+  sayimKalemleri          SayimKalem[]
 
   @@unique([tenantId, kod])
   @@unique([tenantId, barkod])
@@ -1543,10 +1544,15 @@ model SayimKalem {
   tenantId     String  @map("tenant_id") @db.Uuid
   sayimId      String  @map("sayim_id") @db.Uuid
   stokId       String  @map("stok_id") @db.Uuid
+  /// STK-30: varyantlı kartta zorunlu.
+  varyantId    String? @map("varyant_id") @db.Uuid
   sistemMiktar Decimal @map("sistem_miktar") @db.Decimal(15, 3)
   fiiliMiktar  Decimal @map("fiili_miktar") @db.Decimal(15, 3)
+  /// STK-31: lot/seri takipli üründe parti satırları [{ lotNo, seriNo, sonKullanmaTarihi, sistemMiktar, fiiliMiktar }].
+  partiler     Json?
 
-  sayim Sayim @relation(fields: [sayimId], references: [id], onDelete: Cascade)
+  sayim   Sayim        @relation(fields: [sayimId], references: [id], onDelete: Cascade)
+  varyant StokVaryant? @relation(fields: [varyantId], references: [id])
 
   @@map("sayim_kalemleri")
 }

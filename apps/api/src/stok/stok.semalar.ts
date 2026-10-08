@@ -154,9 +154,20 @@ export const etiketBasSemasi = z.object({
     .min(1, "En az bir etiket kalemi gerekli"),
 });
 
+/** STK-31: lot/seri takipli üründe parti bazında fiili miktar. */
+export const sayimPartiSemasi = z.object({
+  lotNo: z.string().trim().min(1, "Lot no zorunludur").max(100),
+  seriNo: z.string().trim().min(1).max(160).optional().nullable(),
+  sonKullanmaTarihi: z.string().date().optional().nullable(),
+  fiiliMiktar: pozitifOndalik,
+});
+
 export const sayimKalemSemasi = z.object({
   stokId: z.string().uuid(),
+  /** STK-30: varyantlı kartta zorunlu (serviste denetlenir). */
+  varyantId: z.string().uuid().optional().nullable(),
   fiiliMiktar: pozitifOndalik,
+  partiler: z.array(sayimPartiSemasi).max(500).optional(),
 });
 
 export const sayimOlusturSemasi = z.object({
@@ -164,5 +175,5 @@ export const sayimOlusturSemasi = z.object({
   depoId: z.string().uuid().optional().nullable(),
   tarih: z.string().date("Geçersiz tarih formatı (YYYY-MM-DD)"),
   aciklama: z.string().max(500).optional().nullable(),
-  kalemler: z.array(sayimKalemSemasi).min(1, "En az bir sayım kalemi eklemelisiniz"),
+  kalemler: z.array(sayimKalemSemasi).min(1, "En az bir sayım kalemi eklemelisiniz").max(5000),
 });

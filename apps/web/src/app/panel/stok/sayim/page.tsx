@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { api, tokenAl } from "@/lib/api";
 import { useDepolar } from "@/lib/depolar";
 import { DepoSecici } from "@/components/depo-secici";
 import {
@@ -20,24 +20,28 @@ import {
 } from "@/components/ui";
 import { bugunTR } from "@tekirextra/shared";
 
-interface StokSatiri {
-  id: string;
+/** STK-29…31: sayım tarihindeki sistem miktarı; varyantlı kart varyant başına satır. */
+interface SistemPartisi { lotNo: string; seriNo: string | null; sonKullanmaTarihi: string | null; sistemMiktar: string }
+interface SistemSatiri {
+  stokId: string;
+  varyantId: string | null;
   kod: string;
   ad: string;
-  tip: string;
+  varyantAd: string | null;
   anaBirim: string;
-  mevcutMiktar: string;
+  takipTipi: "yok" | "lot" | "seri";
+  sistemMiktar: string;
+  partiler: SistemPartisi[];
 }
+/** Formda girilen parti satırı; `yeni` sayımda bulunan, sistemde olmayan lot. */
+interface PartiGirdisi { lotNo: string; seriNo: string; sonKullanmaTarihi: string; sistemMiktar: string; fiili: string; yeni?: boolean }
+
+const satirAnahtari = (s: { stokId: string; varyantId: string | null }) => `${s.stokId}|${s.varyantId ?? ""}`;
 
 interface DepoBilgi {
   id: string;
   kod: string;
   ad: string;
-}
-
-interface DepoBakiye {
-  stokId: string;
-  mevcutMiktar: string;
 }
 
 interface SayimOzet {
@@ -56,6 +60,8 @@ interface SayimKalem {
   sistemMiktar: string;
   fiiliMiktar: string;
   stok: { id: string; kod: string; ad: string; anaBirim: string } | null;
+  varyant: { id: string; kod: string; ad: string } | null;
+  partiler: { lotNo: string; seriNo: string | null; sonKullanmaTarihi: string | null; sistemMiktar: string; fiiliMiktar: string }[] | null;
 }
 
 interface SayimDetay extends Omit<SayimOzet, "_count"> {
@@ -70,7 +76,7 @@ const bugun = () => bugunTR();
 export default function SayimSayfasi() {
   const [sayimlar, setSayimlar] = useState<SayimOzet[]>([]);
   const [detay, setDetay] = useState<SayimDetay | null>(null);
-  const [stoklar, setStoklar] = useState<StokSatiri[]>([]);
+  const [satirlar, setSatirlar] = useState<SistemSatiri[]>([]);
   const [formAcik, setFormAcik] = useState(false);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
@@ -80,17 +86,13 @@ export default function SayimSayfasi() {
   const [depoId, setDepoId] = useState("");
   const [aciklama, setAciklama] = useState("");
   const [arama, setArama] = useState("");
-  /** stokId → kullanıcının girdiği fiili miktar; boş bırakılanlar sayıma girmez. */
+  /** satır anahtarı → fiili miktar; boş bırakılanlar sayıma girmez. */
   const [fiili, setFiili] = useState<Record<string, string>>({});
+  /** lot/seri takipli satırların parti girdileri (STK-31). */
+  const [partiGirdileri, setPartiGirdileri] = useState<Record<string, PartiGirdisi[]>>({});
+  const [acikPartiler, setAcikPartiler] = useState<string | null>(null);
 
   const { cokluDepo } = useDepolar();
-  /** Seçili deponun ürün bazlı miktarları; tek depoda kart toplamı kullanılır. */
-  const [depoBakiyeleri, setDepoBakiyeleri] = useState<Record<string, string> | null>(null);
-
-  const stoklariYukle = useCallback(async () => {
-    const tumStoklar = await tumSayfalariAl<StokSatiri>("/stok");
-    setStoklar(tumStoklar.filter((stok) => stok.tip !== "hizmet"));
-  }, []);
 
   const yukle = useCallback(async () => {
     try {
@@ -100,53 +102,64 @@ export default function SayimSayfasi() {
     }
   }, []);
 
+  /** Sistem miktarı sayım tarihinin gün sonu itibarıyla, seçili depoda (STK-29). */
+  const sistemiYukle = useCallback(async () => {
+    if (!formAcik || !tarih) return;
+    try {
+      const q = new URLSearchParams({ tarih, ...(depoId ? { depoId } : {}) });
+      setSatirlar((await api<{ satirlar: SistemSatiri[] }>(`/stok/sayimlar/sistem?${q.toString()}`)).satirlar);
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Sistem miktarları alınamadı");
+    }
+  }, [formAcik, tarih, depoId]);
+
   useEffect(() => {
     if (!tokenAl()) return;
     void yukle();
-    void stoklariYukle().catch(() => {});
-  }, [stoklariYukle, yukle]);
+  }, [yukle]);
+  useEffect(() => { void sistemiYukle(); }, [sistemiYukle]);
 
-  // Depo seçilince sistem miktarı o deponun bakiyesinden okunur (STK-07)
-  useEffect(() => {
-    if (!depoId) {
-      setDepoBakiyeleri(null);
-      return;
-    }
-    void api<DepoBakiye[]>(`/depo/${depoId}/bakiyeler`)
-      .then((satirlar) =>
-        setDepoBakiyeleri(
-          Object.fromEntries(satirlar.map((b) => [b.stokId, b.mevcutMiktar])),
-        ),
-      )
-      .catch(() => setDepoBakiyeleri(null));
-  }, [depoId]);
-
-  /** Ürünün sayım ekranında gösterilecek sistem miktarı. */
-  const sistemMiktar = useCallback(
-    (s: StokSatiri) => (depoBakiyeleri ? (depoBakiyeleri[s.id] ?? "0") : s.mevcutMiktar),
-    [depoBakiyeleri],
-  );
+  const partileriAc = (s: SistemSatiri) => {
+    const a = satirAnahtari(s);
+    setPartiGirdileri((g) => g[a] ? g : { ...g, [a]: s.partiler.map((p) => ({ lotNo: p.lotNo, seriNo: p.seriNo ?? "", sonKullanmaTarihi: p.sonKullanmaTarihi ?? "", sistemMiktar: p.sistemMiktar, fiili: "" })) });
+    setAcikPartiler((x) => (x === a ? null : a));
+  };
+  const partiDegistir = (a: string, i: number, ek: Partial<PartiGirdisi>) => setPartiGirdileri((g) => ({ ...g, [a]: g[a].map((p, j) => (j === i ? { ...p, ...ek } : p)) }));
+  /** Lotlu satırın fiilisi parti girdilerinin toplamı; hiç girilmemişse boş. */
+  const lotluFiili = (a: string) => {
+    const g = partiGirdileri[a];
+    if (!g || g.every((p) => p.fiili.trim() === "")) return "";
+    return String(g.reduce((t, p) => t + Number(p.fiili || 0), 0));
+  };
+  const fiiliDegeri = (s: SistemSatiri) => (s.takipTipi === "yok" ? fiili[satirAnahtari(s)] ?? "" : lotluFiili(satirAnahtari(s)));
 
   const suzulmus = useMemo(() => {
     const a = arama.trim().toLocaleLowerCase("tr");
-    if (!a) return stoklar;
-    return stoklar.filter(
-      (s) => s.ad.toLocaleLowerCase("tr").includes(a) || s.kod.toLocaleLowerCase("tr").includes(a),
+    if (!a) return satirlar;
+    return satirlar.filter(
+      (s) => s.ad.toLocaleLowerCase("tr").includes(a) || s.kod.toLocaleLowerCase("tr").includes(a) || (s.varyantAd ?? "").toLocaleLowerCase("tr").includes(a),
     );
-  }, [stoklar, arama]);
+  }, [satirlar, arama]);
 
   const girilenler = useMemo(
-    () => Object.entries(fiili).filter(([, d]) => d.trim() !== ""),
-    [fiili],
+    () => satirlar.filter((s) => fiiliDegeri(s).trim() !== ""),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [satirlar, fiili, partiGirdileri],
   );
 
   async function taslakKaydet() {
     setHata("");
     setBasari("");
     try {
-      const kalemler = girilenler.map(([stokId, deger]) => ({
-        stokId,
-        fiiliMiktar: Number(deger).toFixed(3),
+      const kalemler = girilenler.map((s) => ({
+        stokId: s.stokId,
+        varyantId: s.varyantId,
+        fiiliMiktar: Number(fiiliDegeri(s)).toFixed(3),
+        ...(s.takipTipi !== "yok" && {
+          partiler: (partiGirdileri[satirAnahtari(s)] ?? [])
+            .filter((p) => p.fiili.trim() !== "" && p.lotNo.trim() !== "")
+            .map((p) => ({ lotNo: p.lotNo.trim(), seriNo: p.seriNo.trim() || null, sonKullanmaTarihi: p.sonKullanmaTarihi || null, fiiliMiktar: Number(p.fiili).toFixed(3) })),
+        }),
       }));
       await api("/stok/sayimlar", {
         method: "POST",
@@ -160,6 +173,8 @@ export default function SayimSayfasi() {
       setBasari(`${kalemler.length} kalemli sayım taslağı oluşturuldu.`);
       setFormAcik(false);
       setFiili({});
+      setPartiGirdileri({});
+      setAcikPartiler(null);
       setAciklama("");
       setArama("");
       await yukle();
@@ -185,8 +200,7 @@ export default function SayimSayfasi() {
       setBasari("Sayım onaylandı; farklar sayım düzeltme hareketi olarak stoğa işlendi.");
       await yukle();
       await detayAc(id);
-      // Miktarlar değişti; sonraki taslakta güncel sistem miktarı görünsün
-      void stoklariYukle().catch(() => {});
+      void sistemiYukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Sayım onaylanamadı");
     }
@@ -218,7 +232,7 @@ export default function SayimSayfasi() {
           <div className="row">
             <div style={{ flex: 1, minWidth: 170 }}>
               <Field label="Sayım Tarihi *">
-                <Input type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} />
+                <Input type="date" max={bugun()} value={tarih} onChange={(e) => setTarih(e.target.value)} />
               </Field>
             </div>
             <div style={{ flex: 1, minWidth: 200 }}>
@@ -236,9 +250,11 @@ export default function SayimSayfasi() {
           </div>
 
           <p className="muted" style={{ fontSize: "0.85rem" }}>
-            Yalnız <strong>fiili miktar girdiğiniz</strong> ürünler sayıma dahil edilir; boş bıraktıklarınız
-            etkilenmez. Farklar onay anındaki güncel stok miktarına göre yeniden hesaplanır.
-            {cokluDepo && " Bir sayım tek depoyu kapsar; sistem miktarı seçtiğiniz deponun bakiyesidir."}
+            Yalnız <strong>fiili miktar girdiğiniz</strong> satırlar sayıma dahil edilir; boş bıraktıklarınız
+            etkilenmez. Sistem miktarı <strong>sayım tarihinin gün sonu</strong> itibarıyladır; onayda fark bu
+            tarihe göre işlenir, sayımdan sonraki satış ve alışlar korunur. Varyantlı ürünler varyant başına,
+            lot/seri takipli ürünler parti başına sayılır.
+            {cokluDepo && " Bir sayım tek depoyu kapsar."}
           </p>
 
           <SearchInput
@@ -269,26 +285,35 @@ export default function SayimSayfasi() {
                   </tr>
                 ) : (
                   suzulmus.map((s) => {
-                    const girilen = fiili[s.id] ?? "";
-                    const sistem = sistemMiktar(s);
+                    const a = satirAnahtari(s);
+                    const lotlu = s.takipTipi !== "yok";
+                    const girilen = fiiliDegeri(s);
+                    const sistem = s.sistemMiktar;
                     const fark = girilen.trim() === "" ? null : Number(girilen) - Number(sistem);
+                    const partiler = partiGirdileri[a] ?? [];
                     return (
-                      <tr key={s.id}>
+                      <Fragment key={a}>
+                      <tr>
                         <td className="mono">{s.kod}</td>
-                        <td>{s.ad}</td>
+                        <td>{s.ad}{s.varyantAd && <span className="muted"> · {s.varyantAd}</span>}</td>
                         <td className="num">
                           {adet(sistem)} {s.anaBirim}
                         </td>
                         <td className="num">
-                          <Input
-                            type="number"
-                            step="0.001"
-                            min="0"
-                            value={girilen}
-                            onChange={(e) => setFiili((f) => ({ ...f, [s.id]: e.target.value }))}
-                            placeholder="—"
-                            style={{ textAlign: "right" }}
-                          />
+                          {lotlu ? (
+                            <Button size="sm" onClick={() => partileriAc(s)}>{girilen === "" ? "Partileri say" : adet(girilen)} ({s.takipTipi === "seri" ? "seri" : "lot"})</Button>
+                          ) : (
+                            <Input
+                              type="number"
+                              step="0.001"
+                              min="0"
+                              aria-label={`${s.kod} fiili miktar`}
+                              value={girilen}
+                              onChange={(e) => setFiili((f) => ({ ...f, [a]: e.target.value }))}
+                              placeholder="—"
+                              style={{ textAlign: "right" }}
+                            />
+                          )}
                         </td>
                         <td
                           className="num"
@@ -305,6 +330,32 @@ export default function SayimSayfasi() {
                           {fark === null ? "—" : `${fark > 0 ? "+" : ""}${adet(fark)}`}
                         </td>
                       </tr>
+                      {lotlu && acikPartiler === a && (
+                        <tr>
+                          <td colSpan={5}>
+                            <TableWrap>
+                              <thead><tr><th>Lot</th>{s.takipTipi === "seri" && <th>Seri no</th>}<th>Son kullanma</th><th className="num">Sistem</th><th className="num" style={{ width: 140 }}>Fiili</th></tr></thead>
+                              <tbody>
+                                {partiler.map((p, i) => (
+                                  <tr key={`${p.lotNo}-${p.seriNo}-${i}`}>
+                                    <td>{p.yeni ? <Input aria-label="Lot no" value={p.lotNo} onChange={(e) => partiDegistir(a, i, { lotNo: e.target.value })} /> : <span className="mono">{p.lotNo}</span>}</td>
+                                    {s.takipTipi === "seri" && <td>{p.yeni ? <Input aria-label="Seri no" value={p.seriNo} onChange={(e) => partiDegistir(a, i, { seriNo: e.target.value })} /> : <span className="mono">{p.seriNo}</span>}</td>}
+                                    <td>{p.yeni ? <Input type="date" aria-label="Son kullanma" value={p.sonKullanmaTarihi} onChange={(e) => partiDegistir(a, i, { sonKullanmaTarihi: e.target.value })} /> : (p.sonKullanmaTarihi || "—")}</td>
+                                    <td className="num">{adet(p.sistemMiktar)}</td>
+                                    <td className="num"><Input type="number" step={s.takipTipi === "seri" ? "1" : "0.001"} min="0" max={s.takipTipi === "seri" ? "1" : undefined} aria-label="Parti fiili miktar" value={p.fiili} onChange={(e) => partiDegistir(a, i, { fiili: e.target.value })} placeholder="0" style={{ textAlign: "right" }} /></td>
+                                  </tr>
+                                ))}
+                                {!partiler.length && <tr><td colSpan={5} className="muted">Sayım tarihinde bu depoda parti yok.</td></tr>}
+                              </tbody>
+                            </TableWrap>
+                            <div className="row-tight" style={{ marginTop: "0.5rem" }}>
+                              <Button size="sm" onClick={() => setPartiGirdileri((g) => ({ ...g, [a]: [...(g[a] ?? []), { lotNo: "", seriNo: "", sonKullanmaTarihi: "", sistemMiktar: "0", fiili: "", yeni: true }] }))}>+ Sayımda bulunan yeni {s.takipTipi === "seri" ? "seri" : "lot"}</Button>
+                              <small className="muted">Girilmeyen parti bulunamadı (0) sayılır.</small>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     );
                   })
                 )}
@@ -314,7 +365,7 @@ export default function SayimSayfasi() {
 
           <div className="between" style={{ marginTop: "1rem" }}>
             <span className="muted" style={{ fontSize: "0.9rem" }}>
-              {girilenler.length} ürün sayıma dahil edilecek
+              {girilenler.length} satır sayıma dahil edilecek
             </span>
             <Button variant="primary" onClick={taslakKaydet} disabled={girilenler.length === 0}>
               Taslağı Kaydet
@@ -428,8 +479,9 @@ function SayimDetayKarti({
 
       {taslak && (
         <p className="muted" style={{ fontSize: "0.85rem" }}>
-          Aşağıdaki farklar taslak anındaki stok miktarına göredir. Onayda farklar güncel miktara göre yeniden
-          hesaplanıp <strong>sayım düzeltme</strong> hareketi olarak işlenir.
+          Sistem miktarı sayım tarihinin gün sonu itibarıyladır. Onayda bu tarihe göre yeniden hesaplanır
+          (sonradan geçmiş tarihli hareket girildiyse güncellenir) ve fark sayım tarihli <strong>sayım düzeltme</strong>
+          hareketi olarak işlenir; sayımdan sonraki hareketler korunur.
         </p>
       )}
 
@@ -447,9 +499,10 @@ function SayimDetayKarti({
           {detay.kalemler.map((k) => {
             const fark = Number(k.fiiliMiktar) - Number(k.sistemMiktar);
             return (
-              <tr key={k.id}>
-                <td className="mono">{k.stok?.kod ?? "—"}</td>
-                <td>{k.stok?.ad ?? "(silinmiş ürün)"}</td>
+              <Fragment key={k.id}>
+              <tr>
+                <td className="mono">{k.varyant?.kod ?? k.stok?.kod ?? "—"}</td>
+                <td>{k.stok?.ad ?? "(silinmiş ürün)"}{k.varyant && <span className="muted"> · {k.varyant.ad}</span>}</td>
                 <td className="num">{adet(k.sistemMiktar)}</td>
                 <td className="num">{adet(k.fiiliMiktar)}</td>
                 <td
@@ -463,6 +516,19 @@ function SayimDetayKarti({
                   {adet(fark)} {k.stok?.anaBirim ?? ""}
                 </td>
               </tr>
+              {(k.partiler ?? []).map((p) => {
+                const pf = Number(p.fiiliMiktar) - Number(p.sistemMiktar);
+                return (
+                  <tr key={`${k.id}-${p.lotNo}-${p.seriNo}`} className="muted">
+                    <td />
+                    <td style={{ paddingLeft: "1.5rem" }}>Lot {p.lotNo}{p.seriNo ? ` · seri ${p.seriNo}` : ""}{p.sonKullanmaTarihi ? ` · SKT ${p.sonKullanmaTarihi}` : ""}</td>
+                    <td className="num">{adet(p.sistemMiktar)}</td>
+                    <td className="num">{adet(p.fiiliMiktar)}</td>
+                    <td className="num">{pf > 0 ? "+" : ""}{adet(pf)}</td>
+                  </tr>
+                );
+              })}
+              </Fragment>
             );
           })}
         </tbody>
