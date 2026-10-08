@@ -1,3 +1,4 @@
+import { girisOrtalamasi, maliyetliCikisOrtalamasi } from "./maliyet";
 import {
   BadRequestException,
   ConflictException,
@@ -47,8 +48,13 @@ export interface StokHareketGirdisi {
   miktar: Prisma.Decimal;
   girilenBirim: string;
   girilenMiktar: Prisma.Decimal;
-  /** girişte alış fiyatı, çıkışta göz ardı edilir (ortalama maliyet kullanılır) */
+  /** girişte alış fiyatı, çıkışta göz ardı edilir (ortalama maliyet kullanılır) — `maliyetliCikis` hariç */
   birimMaliyet: Prisma.Decimal;
+  /**
+   * STK-27: çıkış ortalama maliyetle değil `birimMaliyet` ile yapılır ve
+   * ortalamadan düşer (alış iadesi, alış/satış iadesi girişinin iptali).
+   */
+  maliyetliCikis?: boolean;
   tarih: Date;
   aciklama?: string | null;
   kaynakTur?: string;
@@ -774,23 +780,15 @@ export class StokService {
       miktarDegisimi = miktar;
       yeniMevcut = D(urun.mevcutMiktar).add(miktarDegisimi);
 
-      // AVCO Formülü (STK-08):
-      // yeniMevcut > 0 ise yeni maliyet hesaplanır. Eski mevcut miktar <= 0 ise,
-      // yeni maliyet doğrudan gelen birimMaliyet olur (negatif stoku düzeltirken veya sıfır envanterde).
-      if (yeniMevcut.gt(0)) {
-        if (D(urun.mevcutMiktar).lte(0)) {
-          yeniMaliyet = birimMaliyet;
-        } else {
-          const eskiDeger = D(urun.mevcutMiktar).mul(D(urun.ortalamaMaliyet));
-          const girenDeger = miktar.mul(birimMaliyet);
-          yeniMaliyet = eskiDeger.add(girenDeger).div(yeniMevcut).toDecimalPlaces(4);
-        }
-      }
+      // AVCO (STK-08): eski stok eksi/sıfırsa giren maliyet, yeni miktar ≤ 0 ise ortalama korunur.
+      yeniMaliyet = girisOrtalamasi(urun.mevcutMiktar, urun.ortalamaMaliyet, miktar, birimMaliyet);
     } else if (StokService.CIKIS_TURLERI.includes(tip)) {
       miktarDegisimi = miktar.negated();
       yeniMevcut = D(urun.mevcutMiktar).add(miktarDegisimi);
-      // Çıkış hareketinde maliyet, mevcut ortalama maliyettir ve ortalama maliyet DEĞİŞMEZ.
-      birimMaliyet = D(urun.ortalamaMaliyet);
+      // Çıkış ortalama maliyetle yapılır, ortalama değişmez. STK-27: alış
+      // maliyetiyle çıkışta maliyet verilendir ve ortalamadan düşer.
+      if (girdi.maliyetliCikis) yeniMaliyet = maliyetliCikisOrtalamasi(urun.mevcutMiktar, urun.ortalamaMaliyet, miktar, birimMaliyet);
+      else birimMaliyet = D(urun.ortalamaMaliyet);
 
       // Eksi stok politikası (STK-17) — yalnız stoklu ürünlerde (hizmet hariç).
       // Kontrol KULLANILABİLİR stok üzerinden yapılır (FTR-12 S-01 kararı):
@@ -822,18 +820,8 @@ export class StokService {
       miktarDegisimi = miktar; // Sayım düzeltmesinde miktar pozitif veya negatif olabilir
       yeniMevcut = D(urun.mevcutMiktar).add(miktarDegisimi);
 
-      // Artış düzeltmesi ise (miktar > 0), bir nevi giriş gibi maliyet etkilenir
-      if (miktarDegisimi.gt(0)) {
-        if (yeniMevcut.gt(0)) {
-          if (D(urun.mevcutMiktar).lte(0)) {
-            yeniMaliyet = birimMaliyet;
-          } else {
-            const eskiDeger = D(urun.mevcutMiktar).mul(D(urun.ortalamaMaliyet));
-            const girenDeger = miktarDegisimi.mul(birimMaliyet);
-            yeniMaliyet = eskiDeger.add(girenDeger).div(yeniMevcut).toDecimalPlaces(4);
-          }
-        }
-      }
+      // Artış düzeltmesi giriş gibi ortalamayı etkiler
+      if (miktarDegisimi.gt(0)) yeniMaliyet = girisOrtalamasi(urun.mevcutMiktar, urun.ortalamaMaliyet, miktarDegisimi, birimMaliyet);
       // Azalış düzeltmesi ise (miktar < 0) maliyet değişmez, çıkış gibi işlem görür
     }
 

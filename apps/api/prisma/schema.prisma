@@ -229,6 +229,7 @@ model Tenant {
   projeNotlari              ProjeNot[]
   duzeltmeKayitlari         DuzeltmeKaydi[]
   duzeltmeOlaylari          DuzeltmeOlayi[]
+  stokMaliyetDuzeltmeleri   StokMaliyetDuzeltme[]
 
   @@map("tenants")
   personelUcretleri         PersonelUcret[]
@@ -1509,6 +1510,7 @@ model StokHareket {
   depo     Depo               @relation(fields: [depoId], references: [id])
   varyant  StokVaryant?       @relation(fields: [varyantId], references: [id])
   partiler StokHareketParti[]
+  maliyetDuzeltmeleri StokMaliyetDuzeltme[]
 
   @@index([tenantId, stokId, tarih])
   @@index([tenantId, depoId, tarih])
@@ -5283,4 +5285,24 @@ model BankaKrediTaksiti {
   @@unique([krediId, sira])
   @@index([tenantId, vadeTarihi])
   @@map("banka_kredi_taksitleri")
+}
+
+/// STK-28: maliyeti yeniden hesaplamanın değiştirdiği hareket maliyetleri;
+/// yalnız eklenir (hareketin eski değeri kaybolmasın).
+model StokMaliyetDuzeltme {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  hareketId   String   @map("hareket_id") @db.Uuid
+  calismaId   String   @map("calisma_id") @db.Uuid
+  eskiMaliyet Decimal  @map("eski_maliyet") @db.Decimal(15, 4)
+  yeniMaliyet Decimal  @map("yeni_maliyet") @db.Decimal(15, 4)
+  userId      String?  @map("user_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant  Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  hareket StokHareket @relation(fields: [hareketId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, hareketId])
+  @@index([tenantId, calismaId])
+  @@map("stok_maliyet_duzeltmeleri")
 }

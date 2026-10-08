@@ -9,12 +9,14 @@ import { StokService } from "./stok.service";
 import { TransferService } from "./transfer.service";
 import { StokTutarlilikController } from "./stok-tutarlilik.controller";
 import { StokTutarlilikService } from "./stok-tutarlilik.service";
+import { StokMaliyetController } from "./stok-maliyet.controller";
+import { StokMaliyetService } from "./stok-maliyet.service";
 import { TenantModule } from "../tenant/tenant.module";
 
 @Module({
   imports: [TenantModule],
-  controllers: [StokTutarlilikController, StokController, DepoController],
-  providers: [StokService, DepoService, TransferService, StokTutarlilikService],
+  controllers: [StokTutarlilikController, StokMaliyetController, StokController, DepoController],
+  providers: [StokService, DepoService, TransferService, StokTutarlilikService, StokMaliyetService],
   exports: [StokService, DepoService],
 })
 export class StokModule implements OnModuleInit {

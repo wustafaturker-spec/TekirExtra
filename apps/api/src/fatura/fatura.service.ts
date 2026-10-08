@@ -1,3 +1,4 @@
+import { agirlikliMaliyet, alisBirimMaliyeti } from "../stok/maliyet";
 import { ebelgeGitmemisMi, faturaGeriAlmaEngeli, ihracKayitliSonTarih, ilgiliKisiTemizle, varyantAciklamasi, varyantliAd, varyantliKod, type DovizKodu } from "@tekirextra/shared";
 import {
   BadRequestException,
@@ -948,6 +949,21 @@ export class FaturaService {
    * Taslağı kayıt izini koruyarak iptal eder. Kesin ve e-belgesiz faturada
    * mali kayıtlar silinmez; stok ve cari için ters hareket üretilir.
    */
+  /**
+   * STK-26: satış iadesinin birim maliyeti — bağlı satış faturalarındaki aynı
+   * ürün/varyant çıkışlarının ağırlıklı maliyeti; bağ yoksa anlık ortalama.
+   * Kart satırı çağıranda kilitlidir.
+   */
+  private async satisIadesiMaliyeti(tx: Prisma.TransactionClient, stokId: string, varyantId: string | null, kaynakFaturaIdleri: string[]) {
+    if (kaynakFaturaIdleri.length) {
+      const cikislar = await tx.stokHareket.findMany({ where: { kaynakTur: "fatura", kaynakRef: { in: kaynakFaturaIdleri }, stokId, varyantId: varyantId ?? null, miktar: { lt: 0 } }, select: { miktar: true, maliyet: true } });
+      const maliyet = agirlikliMaliyet(cikislar);
+      if (maliyet) return maliyet;
+    }
+    const kart = await tx.stokKart.findUnique({ where: { id: stokId }, select: { ortalamaMaliyet: true } });
+    return kart?.ortalamaMaliyet ?? new Prisma.Decimal(0);
+  }
+
   async iptal(id: string) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
@@ -1008,6 +1024,8 @@ export class FaturaService {
             girilenBirim: hareket.girilenBirim,
             girilenMiktar: hareket.girilenMiktar,
             birimMaliyet: hareket.maliyet,
+            // STK-27: girişin tersi girdiği maliyetle çıkar ve ortalamadan düşer.
+            maliyetliCikis: hareket.tip !== "cikis",
             tarih: new Date(),
             aciklama: `${fatura.no || fatura.id} nolu fatura iptal ters hareketi`,
             kaynakTur: "fatura_iptal",
@@ -1094,6 +1112,7 @@ export class FaturaService {
           girilenBirim: hareket.girilenBirim,
           girilenMiktar: hareket.girilenMiktar,
           birimMaliyet: hareket.maliyet,
+          maliyetliCikis: hareket.tip !== "cikis",
           tarih: hareket.tarih,
           aciklama: etiket,
           kaynakTur: "fatura_geri_alma",
@@ -1412,22 +1431,35 @@ export class FaturaService {
         const depoId = await this.depoService.depoCozumle(tx, fatura.depoId);
         kullanilanDepoId = depoId;
         await this.stokService.kartlariKilitle(tx, fatura.satirlar.map((s) => s.stokId));
+        // STK-26: satış iadesinin maliyeti bağlı satış faturalarının çıkışından gelir.
+        const iadeKaynaklari = fatura.tip === "satis_iade"
+          ? (await tx.faturaIadeReferansi.findMany({ where: { faturaId: id, kaynakFaturaId: { not: null } }, select: { kaynakFaturaId: true } })).map((r) => r.kaynakFaturaId!)
+          : [];
         for (const s of fatura.satirlar) {
           const tip =
             fatura.tip === "satis" || fatura.tip === "alis_iade" ? "cikis" : "giris";
           // STK-10: ek birimle (koli) girilen satır stoğa ana birimle (adet)
           // yazılır; birim fiyat da ana birim başına düşer.
           const katsayi = await birimKatsayisiBul(tx, s.stokId, s.birim);
+          const anaMiktar = s.miktar.mul(katsayi);
+          // STK-25/26/27: alış ve alış iadesinde satırın net TL tutarı; satış
+          // iadesinde satışın çıkış maliyeti; satışta ortalama (hareketEkle verir).
+          const birimMaliyet = fatura.tip === "alis" || fatura.tip === "alis_iade"
+            ? alisBirimMaliyeti(s.matrah, fatura.kur, anaMiktar)
+            : fatura.tip === "satis_iade"
+              ? await this.satisIadesiMaliyeti(tx, s.stokId, s.varyantId, iadeKaynaklari)
+              : new Prisma.Decimal(0);
 
           const hareketSonucu = await this.stokService.hareketEkle(tx, {
             stokId: s.stokId,
             varyantId: s.varyantId,
             depoId,
             tip,
-            miktar: s.miktar.mul(katsayi),
+            miktar: anaMiktar,
             girilenBirim: s.birim,
             girilenMiktar: s.miktar,
-            birimMaliyet: s.birimFiyat.div(katsayi).toDecimalPlaces(4),
+            birimMaliyet,
+            maliyetliCikis: fatura.tip === "alis_iade",
             tarih: new Date(fatura.tarih),
             aciklama: `${faturaNo || fatura.id} nolu fatura hareketi`,
             kaynakTur: "fatura",
