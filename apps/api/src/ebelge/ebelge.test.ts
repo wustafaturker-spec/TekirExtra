@@ -1189,6 +1189,12 @@ describe("EbelgeService.earsivBelgesiniIptalEt (EBLG-22)", () => {
     expect(tx.ebelgeKayit.update).not.toHaveBeenCalled();
   });
 
+  it("geriye tarihli faturada süre gönderim gününden işler", async () => {
+    const { service, tx, earsivIptal } = kur({ durum: "iletildi", raporlandi: false });
+    await service.earsivBelgesiniIptalEt(tx, { ...fatura, tarih: gunOnce(12) }, { ...ebelge, createdAt: gunOnce(3) });
+    expect(earsivIptal).toHaveBeenCalled();
+  });
+
   it("Mevzuat Merkezi süreyi uzatırsa eski faturayı da iptal eder (MVZ-13)", async () => {
     // Süre kiracı ayarı değil, fatura tarihindeki merkezi kanuni değerdir.
     const { service, earsivIptal } = kur({ durum: "iletildi", raporlandi: false });

@@ -990,7 +990,7 @@ export class FaturaService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const fatura = await tx.fatura.findUnique({
         where: { id },
-        include: { ebelge: { select: { id: true, tur: true, durum: true, entegratorRef: true } } },
+        include: { ebelge: { select: { id: true, tur: true, durum: true, entegratorRef: true, createdAt: true } } },
       });
       if (!fatura) throw new NotFoundException("Fatura bulunamadı");
       if (fatura.durum === "iptal") throw new BadRequestException("Fatura zaten iptal edilmiş");
@@ -1100,7 +1100,7 @@ export class FaturaService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const fatura = await tx.fatura.findUnique({
         where: { id },
-        include: { ebelge: { select: { id: true, tur: true, durum: true, entegratorRef: true } } },
+        include: { ebelge: { select: { id: true, tur: true, durum: true, entegratorRef: true, createdAt: true } } },
       });
       if (!fatura) throw new NotFoundException("Fatura bulunamadı");
       const engel = faturaGeriAlmaEngeli(fatura);

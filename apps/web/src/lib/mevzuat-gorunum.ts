@@ -7,5 +7,6 @@ export const OLAY_ADI: Record<string, string> = {
   giris: "Giriş yaptı", olusturuldu: "Oluşturdu", guncellendi: "Bilgileri güncelledi", satirlar_guncellendi: "Kalemleri güncelledi",
   onaya_gonderildi: "Onaya gönderdi", taslaga_cekildi: "Taslağa çekti", geri_cevrildi: "Geri çevirdi", yayinlandi: "Yayınladı",
   silindi: "Taslağı sildi", talep_guncellendi: "Talebi güncelledi", platform_kullanicisi_kuruldu: "Platform kullanıcısı kuruldu",
+  kabul_senaryolari_guncellendi: "Kabul senaryolarını güncelledi", ilk_dolum: "İlk dolum", dayanak_notu: "Dayanak notu",
 };
 export const tarihTR = (gun: string | null) => (gun ? new Date(`${gun.slice(0, 10)}T12:00:00`).toLocaleDateString("tr-TR") : "—");

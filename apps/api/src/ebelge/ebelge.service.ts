@@ -1,4 +1,5 @@
 import { stokKartiBul, tedarikciKodlariniOgren } from "./stok-eslesme";
+import { earsivIptalGecenGun } from "./earsiv-iptal-suresi";
 import { faturaIrsaliyeAdaylari } from "../belgeler/irsaliye-eslesme";
 import { tedarikciCariBulVeyaOlustur } from "../cari/tedarikci-cari";
 import {
@@ -2261,7 +2262,7 @@ export class EbelgeService {
   async earsivBelgesiniIptalEt(
     tx: Prisma.TransactionClient,
     fatura: { id: string; no: string | null; tarih: Date; genelToplam: Prisma.Decimal },
-    ebelge: { id: string; entegratorRef: string | null },
+    ebelge: { id: string; entegratorRef: string | null; createdAt?: Date | null },
   ): Promise<void> {
     const { tenantId } = aktifBaglam();
     const baglanti = await tx.baglanti.findFirst({ where: { tenantId, aile: "ebelge", durum: "aktif" } });
@@ -2275,8 +2276,9 @@ export class EbelgeService {
     // İptali sınırlayan şey raporlanma değil süredir: e-Arşiv raporu günlük
     // gidiyor, belge ertesi gün raporlanmış oluyor ama iptal hakkı sürüyor.
     // MVZ-13: süre Mevzuat Merkezi'nden, fatura tarihindeki değer (yoksa 8 gün).
+    // Süre fatura tarihi ile gönderim gününden sonrakinden, takvim günüyle işler.
     const gunSayisi = await kanuniDegerOku(tx, "earsiv_iptal_gun", fatura.tarih, 8);
-    const gunFarki = Math.floor((Date.now() - fatura.tarih.getTime()) / 86_400_000);
+    const gunFarki = earsivIptalGecenGun(fatura.tarih, ebelge.createdAt);
     if (gunFarki > gunSayisi) {
       throw new BadRequestException(
         `${fatura.no} numaralı e-Arşiv faturasının ${gunSayisi} günlük iptal süresi geçmiş (${gunFarki} gün); düzeltme için iade faturası düzenleyin.`,

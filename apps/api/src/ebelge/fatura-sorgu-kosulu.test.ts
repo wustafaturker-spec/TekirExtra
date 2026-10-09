@@ -35,7 +35,8 @@ describe("faturaSorguKosulu (EBLG-40)", () => {
     const earsiv = dallar().find((d) => d.tur === "earsiv")!;
     expect(earsiv.durum).toBe("iletildi");
     // İptal tam gün farkına bakar: 8. günün sonuna kadar iptal edilebilir.
-    expect(earsiv.fatura.tarih.gte.getTime()).toBe(simdi - 9 * GUN);
+    expect(earsiv.OR[0].fatura.tarih.gte.getTime()).toBe(simdi - 9 * GUN);
+    expect(earsiv.OR[1].createdAt.gte.getTime()).toBe(simdi - 9 * GUN);
   });
 
   it("süreleri modül ayarından okur, yoksa varsayılana düşer", () => {

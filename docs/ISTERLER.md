@@ -942,8 +942,10 @@ dışı: pazaryeri ürün eşlemesindeki KDV (dış sistem verisi).
 **Aşama 4 (kanuni süre ve eşikler) bitti — 2026-10-09:** göç
 `20261010120000_mevzuat_kanuni_degerler`. BA/BS eşiği 5.000 TL (VUK GT 396),
 irsaliyenin faturalanma süresi 7 gün (VUK 231/5) ve e-Arşiv iptal süresi 8 gün
-(önceki varsayılan, sektör uygulaması — **dayanağı platform ekibince
-doğrulanmalı**) merkezde, 2000'den beri; kiracı ayarlarından kaldırıldı
+(TTK 21/2'deki 8 günlük itiraz süresi + sektör uygulaması, takvim günü;
+2026-10-09'da süre başlangıcı **fatura tarihi ile gönderim gününden
+sonraki** yapıldı — geriye tarihli faturada iptal hakkı kısalmaz; tebliğ
+metniyle doğrulanmadı, mali müşavir teyidi açık) merkezde, 2000'den beri; kiracı ayarlarından kaldırıldı
 (`cari.babsEsigi`, `ebelge.earsivIptalGunSayisi`, `ebelge.irsaliyeFaturaGunSayisi`;
 eski kayıtlı değerler yok sayılır). BA/BS dönemin ilk günündeki, e-Arşiv iptali
 ve faturalama süresi uyarısı fatura tarihindeki, takip/bildirimler bugünkü

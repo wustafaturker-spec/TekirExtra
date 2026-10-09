@@ -71,7 +71,11 @@ export function faturaSorguKosulu(tenantId: string, simdi: number, sureler: Fatu
           {
             durum: "iletildi",
             tur: "earsiv",
-            fatura: { tarih: { gte: new Date(simdi - (sureler.earsivIptalGunSayisi + 1) * GUN_MS) } },
+            // İptal süresi fatura tarihi ile gönderimden sonrakinden işler.
+            OR: [
+              { fatura: { tarih: { gte: new Date(simdi - (sureler.earsivIptalGunSayisi + 1) * GUN_MS) } } },
+              { createdAt: { gte: new Date(simdi - (sureler.earsivIptalGunSayisi + 1) * GUN_MS) } },
+            ],
           },
         ],
       },
