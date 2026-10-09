@@ -16,7 +16,9 @@ describe("ozelMatrahHatalari", () => {
     expect(ozelMatrahHatalari({ ...temel, satirlar: [{ kdvOrani: 20 }] })[0]).toMatch(/KDV oranı sıfır olmalıdır/);
     expect(ozelMatrahHatalari({ ...temel, satirlar: [{ kdvOrani: 0, tevkifatKodu: "601" }] })[0]).toMatch(/tevkifatlı satır/);
     expect(ozelMatrahHatalari({ ...temel, ozelMatrahTutari: "300000" })[0]).toMatch(/satış bedelini aşamaz/);
-    expect(ozelMatrahHatalari({ ...temel, tip: "alis_iade" })[0]).toMatch(/yalnız satış faturasında/);
+    expect(ozelMatrahHatalari({ ...temel, tip: "alis_iade" })[0]).toMatch(/yalnız satış ve alış faturasında/);
+    // EBLG-116: gelen özel matrah belgesi alışa işlenir.
+    expect(ozelMatrahHatalari({ ...temel, tip: "alis" })).toEqual([]);
   });
 
   it("tutar varken oran ister, tanımsız kodu reddeder", () => {

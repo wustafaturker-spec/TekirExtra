@@ -123,7 +123,16 @@ interface GelenDetay {
     genelToplam: string;
   };
   satirlar: GelenSatir[];
+  /** EBLG-119: iade belgesi satış iadesi olarak işlenir. */
+  faturaTipi?: "alis" | "satis_iade";
+  /** EBLG-115: oluşacak faturanın belge toplamlarıyla karşılaştırması. */
+  tutarDenetimi?: TutarDenetimi;
+  /** EBLG-115…119: işlemeyi durduran nedenler (kur yok, tanınmayan kod…). */
+  engeller?: string[];
 }
+
+interface TutarFarki { alan: string; ad: string; belge: number; sistem: number; fark: number }
+interface TutarDenetimi { tolerans: number; satirlar: TutarFarki[]; asanlar: TutarFarki[]; gecerli: boolean }
 
 interface StokSecenek {
   id: string;
@@ -394,7 +403,7 @@ export default function GelenKutusuSayfasi() {
     setBasari("");
     setIslemde("onayla");
     try {
-      const s = await api<{ faturaId: string; toplamFarki: string | null; irsaliyeBagi: IrsaliyeBagi | null }>(
+      const s = await api<{ faturaId: string; faturaTipi?: "alis" | "satis_iade"; irsaliyeBagi: IrsaliyeBagi | null }>(
         `/ebelge/gelen/${detay.id}/onayla`,
         {
           method: "POST",
@@ -411,13 +420,7 @@ export default function GelenKutusuSayfasi() {
       await detayAc(detay.id);
       await listeYukle();
       // Detay yeniden yüklenince mesajlar temizlenir; sonuç ondan sonra yazılır.
-      setBasari(
-        `Taslak alış faturası oluşturuldu.${
-          s.toplamFarki
-            ? ` ⚠️ Hesaplanan toplam belge toplamından ${s.toplamFarki} ₺ farklı — faturayı kesinleştirmeden önce kontrol edin.`
-            : ""
-        }`,
-      );
+      setBasari(s.faturaTipi === "satis_iade" ? "Taslak satış iade faturası oluşturuldu." : "Taslak alış faturası oluşturuldu.");
       const b = s.irsaliyeBagi;
       const sonuc = b ? [
         ...(b.baglanan.length ? [`${b.baglanan.length} irsaliye faturaya bağlandı: ${b.baglanan.map((x) => `${x.tedarikciNo} → ${x.no ?? "alış irsaliyesi"}`).join(", ")}.`] : []),
@@ -641,6 +644,9 @@ export default function GelenKutusuSayfasi() {
   /* ─── Görünüm: onay & eşleştirme ───────────────────────────────────────── */
 
   const islenebilir = detay.durum === "beklemede";
+  // EBLG-115: engel ya da toleransı aşan fark varsa belge işlenmez.
+  const kapiKapali = (detay.engeller?.length ?? 0) > 0 || detay.tutarDenetimi?.gecerli === false;
+  const faturaAdi = detay.faturaTipi === "satis_iade" ? "satış iade faturası" : "alış faturası";
 
   return (
     <div className="incoming-detail">
@@ -1044,6 +1050,55 @@ export default function GelenKutusuSayfasi() {
           </tbody>
         </TableWrap>
 
+        {islenebilir && detay.faturaTipi === "satis_iade" && (
+          <div style={{ padding: "0.8rem 1.25rem 0" }}>
+            <Alert tone="warning">
+              Bu belge müşterinin iade faturası: <strong>satış iadesi</strong> olarak işlenir (stok girer, cari alacak azalır).
+              Belge numarası korunur, bizim serimizden numara almaz.
+            </Alert>
+          </div>
+        )}
+        {islenebilir && (detay.engeller?.length ?? 0) > 0 && (
+          <div style={{ padding: "0.8rem 1.25rem 0" }}>
+            <Alert tone="error">
+              <strong>Belge faturaya işlenemez:</strong>
+              <ul style={{ margin: "0.3rem 0 0", paddingLeft: "1.1rem" }}>
+                {detay.engeller!.map((e) => <li key={e}>{e}</li>)}
+              </ul>
+              Belgeyi reddedin ya da faturayı elle girin.
+            </Alert>
+          </div>
+        )}
+        {islenebilir && detay.tutarDenetimi && (
+          <div style={{ padding: "0.8rem 1.25rem 0" }}>
+            <strong style={{ fontSize: "0.85rem" }}>Belge ile oluşacak fatura</strong>
+            <TableWrap>
+              <table className="table">
+                <thead>
+                  <tr><th>Tutar</th><th className="num">Belge</th><th className="num">Sistem</th><th className="num">Fark</th></tr>
+                </thead>
+                <tbody>
+                  {detay.tutarDenetimi.satirlar.map((f) => {
+                    const asti = detay.tutarDenetimi!.asanlar.some((a) => a.alan === f.alan);
+                    return (
+                      <tr key={f.alan} className={asti ? "is-negative" : undefined}>
+                        <td>{f.ad}</td>
+                        <td className="num">{para(f.belge, detay.dovizCinsi)}</td>
+                        <td className="num">{para(f.sistem, detay.dovizCinsi)}</td>
+                        <td className="num">{f.fark === 0 ? "—" : `${f.fark > 0 ? "+" : ""}${para(f.fark, detay.dovizCinsi)}`}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </TableWrap>
+            <span className="muted" style={{ fontSize: "0.8rem" }}>
+              {detay.tutarDenetimi.gecerli
+                ? `Tolerans ${para(detay.tutarDenetimi.tolerans, detay.dovizCinsi)}; kuruş farkı varsa faturanın notuna yazılır.`
+                : `Fark toleransı (${para(detay.tutarDenetimi.tolerans, detay.dovizCinsi)}) aşıyor; belge işlenemez. Belgeyi reddedin ya da faturayı elle girin.`}
+            </span>
+          </div>
+        )}
         {(detay.irsaliyeEslesmesi?.length ?? 0) > 0 && detay.durum === "beklemede" && (
           <div style={{ padding: "0.8rem 1.25rem 0" }}>
             <strong style={{ fontSize: "0.85rem" }}>Faturada adı geçen irsaliyeler</strong>
@@ -1066,7 +1121,7 @@ export default function GelenKutusuSayfasi() {
         <div className="between" style={{ padding: "1rem 1.25rem" }}>
           <span className="muted" style={{ fontSize: "0.9rem" }}>
             {detay.durum === "islendi"
-              ? "Bu belge taslak alış faturasına işlendi. Hatalı eşleştirme varsa taslağı iptal edip yeniden eşleyebilirsiniz."
+              ? `Bu belge taslak ${faturaAdi}na işlendi. Hatalı eşleştirme varsa taslağı iptal edip yeniden eşleyebilirsiniz.`
               : detay.durum === "reddedildi"
                 ? "Reddedilen belge faturaya işlenemez."
                 : eksikSatirlar.length === 0
@@ -1087,7 +1142,7 @@ export default function GelenKutusuSayfasi() {
             <Button
               variant="primary"
               onClick={() => void faturayaIsle()}
-              disabled={!islenebilir || eksikSatirlar.length > 0 || islemde !== null}
+              disabled={!islenebilir || kapiKapali || eksikSatirlar.length > 0 || islemde !== null}
             >
               {islemde === "onayla" ? "İşleniyor..." : "Faturaya İşle"}
             </Button>

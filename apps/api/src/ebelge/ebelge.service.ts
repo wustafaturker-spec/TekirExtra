@@ -27,6 +27,7 @@ import { PrismaService } from "../core/prisma.service";
 import { FaturaService } from "../fatura/fatura.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
 import { UblOkumaHatasi, faturaUblOku, type UblFatura, type UblSatir } from "./ubl-oku";
+import { gelenFaturaGirdisi, gelenFaturaHesabi, tutarDenetimi, type GelenSatirEslesmesi } from "./gelen-fatura";
 import { adSoyadCoz } from "../cari/ad-soyad";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import { MukellefListesiService } from "./mukellef-listesi.service";
@@ -119,6 +120,23 @@ function gelenIhracKayitliKodu(ubl: Pick<UblFatura, "faturaTipKodu" | "istisnaKo
     );
   }
   return kod;
+}
+
+/**
+ * EBLG-115…119: gelen belgeden oluşacak faturanın girdisi, işlemeyi durduran
+ * engeller ve belge toplamlarıyla karşılaştırma. Onay ekranı (eşleşmesiz) ve
+ * onay (eşleşmeli) aynı hesabı görür.
+ */
+function gelenDenetle(ubl: UblFatura, eslesme: (siraNo: number) => GelenSatirEslesmesi | undefined = () => undefined) {
+  const { girdi, engeller } = gelenFaturaGirdisi(ubl, eslesme);
+  let ihracKayitliKodu: string | null = null;
+  try {
+    ihracKayitliKodu = gelenIhracKayitliKodu(ubl);
+  } catch (hata) {
+    engeller.push(hata instanceof Error ? hata.message : String(hata));
+  }
+  const denetim = tutarDenetimi(ubl, gelenFaturaHesabi(girdi, Boolean(ihracKayitliKodu)), Boolean(ihracKayitliKodu));
+  return { girdi, engeller, denetim, ihracKayitliKodu };
 }
 
 /**
@@ -1803,10 +1821,17 @@ export class EbelgeService {
       ];
     });
 
+    const { girdi: oneri, engeller, denetim } = gelenDenetle(ubl);
+
     return {
       id: kayit.id,
       uuid: kayit.uuid,
       irsaliyeEslesmesi,
+      /** EBLG-119: iade belgesi satış iadesi olarak işlenir. */
+      faturaTipi: oneri.tip,
+      /** EBLG-115: belge / sistem / fark tablosu ve işlemeyi durduran engeller. */
+      tutarDenetimi: denetim,
+      engeller,
       belgeNo: kayit.belgeNo,
       gonderenVkn: kayit.gonderenVkn,
       gonderenUnvan: kayit.gonderenUnvan,
@@ -1885,12 +1910,28 @@ export class EbelgeService {
 
     // EBLG-114: ihraç kayıtlı gelen faturada KDV hesaplanır ama ödenmez; kod
     // alış faturasına geçer ve KDV cariye/genel toplama girmez.
-    const ihracKayitliKodu = gelenIhracKayitliKodu(ubl);
+    // EBLG-115…119: kur, belge iskontosu, tevkifat ve özel matrah belgeden
+    // gelir; oluşacak fatura belge toplamlarını tutmuyorsa işlenmez.
+    const { girdi: belgeGirdisi, engeller, denetim, ihracKayitliKodu } = gelenDenetle(ubl, (sira) => {
+      const stokId = eslesme.get(sira);
+      return stokId ? { stokId, varyantId: varyantlar.get(sira) } : undefined;
+    });
+    if (engeller.length > 0) {
+      throw new BadRequestException(`Belge faturaya işlenemez: ${engeller.join("; ")}`);
+    }
+    if (!denetim.gecerli) {
+      throw new BadRequestException(
+        `Oluşacak fatura belgenin tutarlarını tutmuyor (tolerans ${denetim.tolerans.toFixed(2)} ${ubl.dovizCinsi}): ${denetim.asanlar
+          .map((f) => `${f.ad} belge ${f.belge.toFixed(2)}, sistem ${f.sistem.toFixed(2)}`)
+          .join("; ")}. Belgeyi reddedin ya da faturayı elle girin.`,
+      );
+    }
+    const tip = belgeGirdisi.tip;
 
     const mevcutCari = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.cariHesap.findFirst({
         where: { tenantId, vknTckn: kayit.gonderenVkn },
-        select: { id: true },
+        select: { id: true, tip: true },
       }),
     );
 
@@ -1899,47 +1940,75 @@ export class EbelgeService {
         `Gönderen firma (${kayit.gonderenUnvan} - VKN: ${kayit.gonderenVkn}) sisteminizde kayıtlı bir cari hesap değil. Lütfen yeni cari hesap açılmasını onaylayın.`,
       );
     }
+    if (mevcutCari && tip === "satis_iade" && mevcutCari.tip === "tedarikci") {
+      throw new BadRequestException(
+        `Belge bir iade faturası; gönderen cari (${kayit.gonderenUnvan}) yalnız tedarikçi tipinde. Cari tipini müşteri ya da her ikisi yapıp yeniden deneyin.`,
+      );
+    }
 
     const cariId = await this.gonderenCariBulVeyaOlustur(
       tenantId,
       kayit.gonderenVkn,
       kayit.gonderenUnvan,
+      tip === "satis_iade" ? "musteri" : "tedarikci",
     );
 
+    // EBLG-115: tolerans içindeki kuruş farkı faturanın notunda kalır.
+    const kurusFarklari = denetim.satirlar.filter((f) => f.fark !== 0);
     const fatura = await this.faturaService.olustur({
-      tip: "alis",
+      tip,
       no: kayit.belgeNo,
       tarih: kayit.tarih.toISOString().slice(0, 10),
       vadeTarihi: ubl.vadeTarihi ?? null,
       cariId,
-      dovizCinsi: dovizKoduMu(ubl.dovizCinsi) ? ubl.dovizCinsi : "TRY",
-      kur: "1",
+      dovizCinsi: belgeGirdisi.dovizCinsi as DovizKodu,
+      kur: belgeGirdisi.kur,
       genelIskontoYuzdesi: "0",
-      genelIskontoTutari: "0",
+      genelIskontoTutari: belgeGirdisi.genelIskontoTutari,
       aciklama: `Gelen e-Fatura ${kayit.belgeNo} — ${kayit.gonderenUnvan}`,
-      notlar: null,
+      notlar: kurusFarklari.length
+        ? `Belge ile kuruş farkı (${ubl.dovizCinsi}): ${kurusFarklari.map((f) => `${f.ad} ${f.fark > 0 ? "+" : ""}${f.fark.toFixed(2)}`).join(", ")}`
+        : null,
       ihracKayitliKodu,
-      satirlar: ubl.satirlar.map((s) => ({
-        stokId: eslesme.get(s.siraNo) as string,
-        varyantId: varyantlar.get(s.siraNo),
-        miktar: s.miktar.toFixed(3),
+      ozelMatrahKodu: belgeGirdisi.ozelMatrahKodu,
+      ozelMatrahTutari: belgeGirdisi.ozelMatrahTutari,
+      ozelMatrahOrani: belgeGirdisi.ozelMatrahOrani,
+      satirlar: belgeGirdisi.satirlar.map((s) => ({
+        stokId: s.stokId,
+        varyantId: s.varyantId,
+        miktar: s.miktar,
         birim: s.birim,
-        birimFiyat: s.birimFiyat.toFixed(4),
-        iskontoOrani: Math.max(0, s.iskontoOrani).toFixed(2),
-        kdvOrani: Math.max(0, s.kdvOrani).toFixed(2),
-        tevkifatPay: null,
-        tevkifatPayda: null,
+        birimFiyat: s.birimFiyat,
+        iskontoOrani: s.iskontoOrani,
+        kdvOrani: s.kdvOrani,
+        tevkifatKodu: s.tevkifatKodu,
+        tevkifatOrani: s.tevkifatOrani,
         gibIstisnaKodu: null,
       })),
     }, { gelenBelge: true });
 
     try {
-      await this.prisma.tenantIslem(tenantId, (tx) =>
-        tx.gelenEbelge.update({
+      await this.prisma.tenantIslem(tenantId, async (tx) => {
+        await tx.gelenEbelge.update({
           where: { id },
           data: { durum: "islendi", faturaId: fatura.id },
-        }),
-      );
+        });
+        // EBLG-119: iade belgesinin dayandığı faturalar; bizim kesin satış
+        // faturamızla eşleşen bağlanır (satış iadesi maliyeti STK-26).
+        if (tip === "satis_iade" && ubl.iadeReferanslari.length > 0) {
+          const kaynaklar = await tx.fatura.findMany({
+            where: { cariId, tip: "satis", durum: "kesin", no: { in: ubl.iadeReferanslari.map((r) => r.no) } },
+            select: { id: true, no: true, tarih: true },
+          });
+          const tekil = [...new Map(ubl.iadeReferanslari.map((r) => [r.no, r])).values()];
+          await tx.faturaIadeReferansi.createMany({
+            data: tekil.map((r, index) => {
+              const kaynak = kaynaklar.find((k) => k.no === r.no);
+              return { tenantId, faturaId: fatura.id, sira: index + 1, kaynakFaturaId: kaynak?.id ?? null, belgeNo: r.no, tarih: kaynak?.tarih ?? new Date(r.tarih ?? kayit.tarih.toISOString().slice(0, 10)) };
+            }),
+          });
+        }
+      });
     } catch (hata) {
       // Bağ kurulamadıysa taslak ortada kalmasın: geri al ve hatayı yükselt.
       await this.faturaService.sil(fatura.id).catch(() => undefined);
@@ -1947,7 +2016,8 @@ export class EbelgeService {
     }
 
     // STK-23: bağlanan satırın satıcı kodu (varyant ya da kart düzeyinde) öğrenilir; hata faturayı geri almaz.
-    await this.prisma.tenantIslem(tenantId, (tx) =>
+    // İade belgesindeki kod müşterinindir, satıcı kodu değildir.
+    if (tip === "alis") await this.prisma.tenantIslem(tenantId, (tx) =>
       tedarikciKodlariniOgren(tx, tenantId, cariId, ubl.satirlar.map((s) => ({ saticiUrunKodu: s.saticiUrunKodu, stokId: eslesme.get(s.siraNo) as string, varyantId: varyantlar.get(s.siraNo) }))),
     ).catch((hata: unknown) => this.logger.warn(JSON.stringify({ event: "tedarikci_varyant_kodu_ogrenilemedi", gelenEbelgeId: id, hata: hata instanceof Error ? hata.message : String(hata) })));
 
@@ -1964,13 +2034,11 @@ export class EbelgeService {
       faturaId: fatura.id,
       irsaliyeNolari: ubl.irsaliyeler.map((i) => i.no),
       irsaliyeBagi,
+      faturaTipi: tip,
       belgeToplami: ubl.toplamlar.genelToplam.toFixed(2),
       hesaplananToplam: fatura.genelToplam,
-      /** Belge ile hesaplanan toplam tutmuyorsa kullanıcıya gösterilir. */
-      toplamFarki:
-        Math.abs(Number(fatura.genelToplam) - ubl.toplamlar.genelToplam) > 0.01
-          ? (Number(fatura.genelToplam) - ubl.toplamlar.genelToplam).toFixed(2)
-          : null,
+      /** EBLG-115: tolerans içi farklar (aşanlar işlemeyi zaten durdurur). */
+      tutarDenetimi: denetim,
     };
   }
 
@@ -2402,13 +2470,14 @@ export class EbelgeService {
     });
   }
 
-  /** Gönderen VKN'siyle cari bulur; yoksa tedarikçi carisi açar. */
+  /** Gönderen VKN'siyle cari bulur; yoksa tedarikçi (iade belgesinde müşteri) carisi açar. */
   private async gonderenCariBulVeyaOlustur(
     tenantId: string,
     vkn: string,
     unvan: string,
+    tip: "tedarikci" | "musteri" = "tedarikci",
   ): Promise<string> {
-    return this.prisma.tenantIslem(tenantId, (tx) => tedarikciCariBulVeyaOlustur(tx, tenantId, vkn, unvan));
+    return this.prisma.tenantIslem(tenantId, (tx) => tedarikciCariBulVeyaOlustur(tx, tenantId, vkn, unvan, tip));
   }
 
   /**

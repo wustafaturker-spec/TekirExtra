@@ -42,8 +42,9 @@ export function ozelMatrahHatalari(girdi: OzelMatrahGirdi): string[] {
   if (!girdi.ozelMatrahKodu) return [];
   const hatalar: string[] = [];
 
-  if (girdi.tip !== "satis") {
-    hatalar.push("Özel matrah yalnız satış faturasında seçilebilir");
+  // EBLG-116: gelen özel matrah belgesi alış faturasına aynı kuralla işlenir.
+  if (girdi.tip !== "satis" && girdi.tip !== "alis") {
+    hatalar.push("Özel matrah yalnız satış ve alış faturasında seçilebilir");
   }
   if (!ozelMatrahKoduBul(girdi.ozelMatrahKodu)) {
     hatalar.push(`Tanımsız özel matrah kodu: ${girdi.ozelMatrahKodu}`);

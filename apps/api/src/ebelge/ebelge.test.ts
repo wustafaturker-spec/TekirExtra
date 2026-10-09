@@ -650,7 +650,58 @@ describe("EbelgeService (EBLG-01..08)", () => {
       data: { durum: "islendi", faturaId: "fatura-1" },
     });
     expect(sonuc.faturaId).toBe("fatura-1");
-    expect(sonuc.toplamFarki).toBeNull(); // belge toplamı ile hesaplanan uyuşuyor
+    expect(sonuc.tutarDenetimi.gecerli).toBe(true); // belge toplamı ile hesaplanan uyuşuyor
+  });
+
+  it("gelen iade belgesi satış iadesi olur, numarasını korur ve satış faturamıza bağlanır (EBLG-119)", async () => {
+    const xml = GELEN_UBL.replace(
+      "<cbc:IssueDate>2026-07-20</cbc:IssueDate>",
+      `<cbc:IssueDate>2026-07-20</cbc:IssueDate>
+  <cbc:InvoiceTypeCode>IADE</cbc:InvoiceTypeCode>
+  <cac:BillingReference><cac:InvoiceDocumentReference><cbc:ID>TKR2026000000007</cbc:ID><cbc:IssueDate>2026-07-01</cbc:IssueDate></cac:InvoiceDocumentReference></cac:BillingReference>
+  <cac:BillingReference><cac:InvoiceDocumentReference><cbc:ID>KAGIT-12</cbc:ID><cbc:IssueDate>2026-06-15</cbc:IssueDate></cac:InvoiceDocumentReference></cac:BillingReference>`,
+    );
+    const createMany = vi.fn().mockResolvedValue({ count: 2 });
+    const mockTx = {
+      gelenEbelge: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "gelen-1", durum: "beklemede", belgeNo: "GIB2026000000001", gonderenVkn: "1234567890",
+          gonderenUnvan: "Müşteri A.Ş.", tarih: new Date("2026-07-20"), xmlIcerik: xml,
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      stokKart: { findMany: vi.fn().mockResolvedValue([{ id: "11111111-1111-4111-8111-111111111111" }]) },
+      cariHesap: { findFirst: vi.fn().mockResolvedValue({ id: "cari-1", tip: "musteri" }) },
+      fatura: { findMany: vi.fn().mockResolvedValue([{ id: "satis-7", no: "TKR2026000000007", tarih: new Date("2026-07-01") }]) },
+      faturaIadeReferansi: { createMany },
+    };
+    mockTenantIslem.mockImplementation((_tenantId: string, cb: any) => cb(mockTx));
+    mockFatura.olustur.mockResolvedValue({ id: "fatura-1", genelToplam: "1080.00" });
+
+    await service.gelenOnayla("gelen-1", { satirEslesmeleri: [{ siraNo: 1, stokId: "11111111-1111-4111-8111-111111111111" }] });
+
+    expect(mockFatura.olustur).toHaveBeenCalledWith(expect.objectContaining({ tip: "satis_iade", no: "GIB2026000000001", cariId: "cari-1" }), { gelenBelge: true });
+    expect(mockTx.fatura.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ cariId: "cari-1", tip: "satis", durum: "kesin" }) }));
+    expect(createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({ faturaId: "fatura-1", sira: 1, belgeNo: "TKR2026000000007", kaynakFaturaId: "satis-7" }),
+        expect.objectContaining({ faturaId: "fatura-1", sira: 2, belgeNo: "KAGIT-12", kaynakFaturaId: null, tarih: new Date("2026-06-15") }),
+      ],
+    });
+  });
+
+  it("iade belgesini yalnız tedarikçi tipindeki cariye işlemez (EBLG-119)", async () => {
+    const xml = GELEN_UBL.replace("<cbc:IssueDate>2026-07-20</cbc:IssueDate>", "<cbc:IssueDate>2026-07-20</cbc:IssueDate>\n  <cbc:InvoiceTypeCode>IADE</cbc:InvoiceTypeCode>");
+    const mockTx = {
+      gelenEbelge: { findUnique: vi.fn().mockResolvedValue({ id: "gelen-1", durum: "beklemede", belgeNo: "GIB2026000000001", gonderenVkn: "1234567890", gonderenUnvan: "X", tarih: new Date("2026-07-20"), xmlIcerik: xml }) },
+      stokKart: { findMany: vi.fn().mockResolvedValue([{ id: "11111111-1111-4111-8111-111111111111" }]) },
+      cariHesap: { findFirst: vi.fn().mockResolvedValue({ id: "cari-1", tip: "tedarikci" }) },
+    };
+    mockTenantIslem.mockImplementation((_tenantId: string, cb: any) => cb(mockTx));
+    mockFatura.olustur.mockClear();
+
+    await expect(service.gelenOnayla("gelen-1", { satirEslesmeleri: [{ siraNo: 1, stokId: "11111111-1111-4111-8111-111111111111" }] })).rejects.toThrow(/yalnız tedarikçi/);
+    expect(mockFatura.olustur).not.toHaveBeenCalled();
   });
 
   describe("gelen ihraç kayıtlı fatura (EBLG-114)", () => {

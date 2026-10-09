@@ -27,7 +27,13 @@ export interface UblSatir {
   kdvTutari: number;
   /** Satır net tutarı (LineExtensionAmount) — iskonto düşülmüş, KDV hariç. */
   matrah: number;
+  /** EBLG-117: satır tevkifatı (`WithholdingTaxTotal`): GİB kodu, oran (%) ve tutar. */
+  tevkifat?: { kod: string; oran: number; tutar: number };
+  /** EBLG-115/120: KDV dışındaki satır vergileri (konaklama, BSMV, ÖTV…). */
+  digerVergiler: UblVergi[];
 }
+
+export interface UblVergi { kod: string; ad: string; tutar: number }
 
 export interface UblToplamlar {
   satirToplami: number;
@@ -40,6 +46,24 @@ export interface UblToplamlar {
   ozelMatrah?: number;
   kdv: number;
   genelToplam: number;
+  /** EBLG-115: yalnız KDV (0015) alt toplamlarının vergisi ve para birimi (belge dövizinden farklı olabilir). */
+  kdvSaf: number;
+  vergiParaBirimi: string;
+  /** EBLG-115: belge tevkifat toplamı (`WithholdingTaxTotal/TaxAmount`). */
+  tevkifat: number;
+  /** EBLG-117: başlıktaki tevkifat kodları; bazı belgeler satırda tevkifat yazmaz. */
+  tevkifatKodlari: { kod: string; oran: number; tutar: number }[];
+  /** EBLG-115: `PayableAmount` ve `TaxInclusiveAmount` ayrı ayrı (genelToplam ödenecek olandır). */
+  odenecek: number;
+  vergiDahil: number;
+  /** EBLG-118: belge düzeyi iskonto (ChargeIndicator=false) ve artırım (true) toplamları. */
+  belgeIskontosu: number;
+  belgeArtirimi: number;
+  /** EBLG-116: özel matrah kodu (KDV alt toplamının istisna kodu) ve oranı. */
+  ozelMatrahKodu?: string;
+  ozelMatrahOrani?: number;
+  /** EBLG-115/120: başlıktaki KDV dışı vergiler (tevkifat 9015 hariç). */
+  digerVergiler: UblVergi[];
 }
 
 export interface UblFatura {
@@ -65,6 +89,8 @@ export interface UblFatura {
    * kayıtlı belgenin kodu (701/702) buradan okunur.
    */
   istisnaKodlari: string[];
+  /** EBLG-119: iade faturasının dayandığı faturalar (`BillingReference/InvoiceDocumentReference`). */
+  iadeReferanslari: { no: string; tarih?: string }[];
   dovizCinsi: string;
   /** Dövizli belgede 1 döviz = kaç TL (`PricingExchangeRate`); TRY belgede yok. */
   kur?: number;
@@ -248,6 +274,8 @@ function satirOku(satir: Dugum, sira: number): UblSatir {
   }
 
   const item = nesne(satir.Item) ?? {};
+  const tevkifatAlt = dizi(yol(satir, "WithholdingTaxTotal", "TaxSubtotal"))[0];
+  const tevkifatKodu = tevkifatAlt ? metin(yol(tevkifatAlt, "TaxCategory", "TaxScheme", "TaxTypeCode")) : "";
 
   return {
     siraNo: sayi(satir.ID) || sira,
@@ -265,7 +293,16 @@ function satirOku(satir: Dugum, sira: number): UblSatir {
     kdvOrani,
     kdvTutari,
     matrah,
+    ...(tevkifatAlt && tevkifatKodu ? { tevkifat: { kod: tevkifatKodu, oran: kdvOraniOku(tevkifatAlt), tutar: sayi(tevkifatAlt.TaxAmount) } } : {}),
+    digerVergiler: digerVergiler(satir.TaxTotal),
   };
+}
+
+/** KDV (0015) ve KDV tevkifatı (9015) dışındaki vergi alt toplamları. */
+function digerVergiler(taxTotal: unknown): UblVergi[] {
+  return dizi(yol(taxTotal, "TaxSubtotal"))
+    .map((a) => ({ kod: metin(yol(a, "TaxCategory", "TaxScheme", "TaxTypeCode")), ad: metin(yol(a, "TaxCategory", "TaxScheme", "Name")), tutar: sayi(a.TaxAmount) }))
+    .filter((v) => v.kod !== "" && v.kod !== "0015" && v.kod !== "9015");
 }
 
 export class UblOkumaHatasi extends Error {}
@@ -332,6 +369,9 @@ export function faturaUblOku(xml: string): UblFatura {
         .map((alt) => metin(yol(alt, "TaxCategory", "TaxExemptionReasonCode")))
         .filter(Boolean),
     )],
+    iadeReferanslari: dizi(fatura.BillingReference)
+      .map((b) => ({ no: metin(yol(b, "InvoiceDocumentReference", "ID")), tarih: metin(yol(b, "InvoiceDocumentReference", "IssueDate")) || undefined }))
+      .filter((r) => r.no),
     dovizCinsi: metin(fatura.DocumentCurrencyCode) || "TRY",
     kur: kurOku(fatura),
     gonderen: partyOku(yol(fatura, "AccountingSupplierParty", "Party")),
@@ -343,6 +383,21 @@ export function faturaUblOku(xml: string): UblFatura {
       ...(metin(fatura.InvoiceTypeCode) === "OZELMATRAH" && kdvBasligi ? { ozelMatrah: sayi(kdvBasligi.TaxableAmount) } : {}),
       kdv: kdvToplam,
       genelToplam: genelToplam || matrah + kdvToplam,
+      // Alt toplamı olmayan başlıkta (eski/elle üretilmiş belge) vergi toplamı KDV sayılır.
+      kdvSaf: dizi(yol(fatura.TaxTotal, "TaxSubtotal")).length
+        ? kdvAltToplamlari(fatura.TaxTotal).reduce((t, a) => t + sayi(a.TaxAmount), 0)
+        : kdvToplam,
+      vergiParaBirimi: oznitelik(yol(fatura, "TaxTotal", "TaxAmount"), "currencyID") || metin(fatura.DocumentCurrencyCode) || "TRY",
+      tevkifat: dizi(fatura.WithholdingTaxTotal).reduce((t, w) => t + sayi(w.TaxAmount), 0),
+      tevkifatKodlari: dizi(fatura.WithholdingTaxTotal).flatMap((w) => dizi(w.TaxSubtotal))
+        .map((a) => ({ kod: metin(yol(a, "TaxCategory", "TaxScheme", "TaxTypeCode")), oran: kdvOraniOku(a), tutar: sayi(a.TaxAmount) }))
+        .filter((t) => t.kod !== ""),
+      odenecek: sayi(parasal?.PayableAmount),
+      vergiDahil: sayi(parasal?.TaxInclusiveAmount),
+      belgeIskontosu: dizi(fatura.AllowanceCharge).filter((a) => metin(a.ChargeIndicator).toLowerCase() !== "true").reduce((t, a) => t + sayi(a.Amount), 0),
+      belgeArtirimi: dizi(fatura.AllowanceCharge).filter((a) => metin(a.ChargeIndicator).toLowerCase() === "true").reduce((t, a) => t + sayi(a.Amount), 0),
+      ...(metin(fatura.InvoiceTypeCode) === "OZELMATRAH" && kdvBasligi ? { ozelMatrahKodu: metin(yol(kdvBasligi, "TaxCategory", "TaxExemptionReasonCode")) || undefined, ozelMatrahOrani: kdvOraniOku(kdvBasligi) } : {}),
+      digerVergiler: digerVergiler(fatura.TaxTotal),
     },
     satirlar,
   };

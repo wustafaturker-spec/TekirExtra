@@ -1374,7 +1374,7 @@ export class FaturaService {
       if (oncekiNumara) {
         faturaNo = oncekiNumara;
         seriKod = fatura.seri ?? seriKod;
-      } else if (fatura.tip === "satis" || fatura.tip === "satis_iade" || fatura.tip === "alis_iade") {
+      } else if (!fatura.gelenEbelge && (fatura.tip === "satis" || fatura.tip === "satis_iade" || fatura.tip === "alis_iade")) {
         // Entegratör otomatik seri kullanıyorsa numarayı o atar (EBLG-16);
         // burada sayaç ilerletilmez. Reddedilen belge böylece seride boşluk
         // bırakmaz, numara gönderim yanıtından gelir.
@@ -1406,6 +1406,8 @@ export class FaturaService {
           fatura.sira = guncelSeri.sonSira;
         }
       } else {
+        // EBLG-119: gelen e-Faturadan doğan satış iadesinin numarası müşterinin
+        // belgesidir; bizim serimizden sıra almaz.
         // Alış faturası ise el ile girilen numara zorunlu olmalı; taslağa
         // geri alınmış faturada önceki numara kullanılır (FTR-29).
         faturaNo = faturaNo ?? fatura.no;

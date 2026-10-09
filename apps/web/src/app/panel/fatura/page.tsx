@@ -680,7 +680,7 @@ export default function FaturaSayfasi() {
   // Özel matrahta KDV satırlardan değil belgeye girilen matrahtan doğar ve
   // genel toplama eklenir; ekrandaki özet sunucunun hesabıyla aynı olsun diye
   // aynı girdi buraya da verilir (karar 2026-09-20).
-  const ozelMatrahSecili = tip === "satis" && ozelMatrahKodu ? ozelMatrahKodu : null;
+  const ozelMatrahSecili = (tip === "satis" || tip === "alis") && ozelMatrahKodu ? ozelMatrahKodu : null;
   const sonuc = faturaHesapla({
     satirlar: girdiSatirlar,
     kdvTahsilEdilmez: Boolean(ihracKayitli),
@@ -2431,7 +2431,7 @@ export default function FaturaSayfasi() {
                     </AlanIpucu>
                   </Field>
                 )}
-                {tip === "satis" && (
+                {(tip === "satis" || tip === "alis") && (
                   <Field label="Özel matrah (KDV K. 23)">
                     <Select aria-label="Özel matrah" value={ozelMatrahKodu} onChange={(e) => setOzelMatrahKodu(e.target.value)}>
                       <option value="">Hayır — normal satış</option>
