@@ -917,7 +917,7 @@ Tevkifat Kodları); FTR-35'in oran/kod düzenlemesi kalktı (MVZ-15). Gelen
 belgede tanınmayan kod ya da uymayan oran platforma tek açık talep olarak düşer,
 görülme sayısı artar (MVZ-10). Platform ekranında tevkifat değişikliğinin
 etkileyeceği taslak fatura ve firma sayısı görünür (MVZ-06, şimdilik yalnız
-tevkifat). Tevkifat alt sınırı uyarısı formda hazır, **değer yüklenmedi**:
+tevkifat). Tevkifat alt sınırı uyarısı formda hazır (değer aşama sonrasında yüklendi, aşağıya bakın):
 platform ekibi `kanuni_deger / tevkifat_alt_siniri`'ni dayanağıyla girince
 devreye girer. Bilinen sınır: merkezde bir kaydın başlangıcından önceye kayıt
 eklenemez (2000-01-01 öncesi tarihçe girilemez).
@@ -950,8 +950,7 @@ metniyle doğrulanmadı, mali müşavir teyidi açık) merkezde, 2000'den beri; 
 eski kayıtlı değerler yok sayılır). BA/BS dönemin ilk günündeki, e-Arşiv iptali
 ve faturalama süresi uyarısı fatura tarihindeki, takip/bildirimler bugünkü
 değeri kullanır. Entegratör sorgu sıklığı ayarları (e-Fatura/e-İrsaliye yanıt
-sorgu günü) kiracıda kaldı. **Tevkifat alt sınırı yüklenmedi** (doğrulanmış
-dayanak yok); platform ekibi girdiğinde fatura formu uyarısı devreye girer. Bulgu: tevkifat tablosu GİB kod listesi
+sorgu günü) kiracıda kaldı. Tevkifat alt sınırı sonradan yüklendi (aşağıya bakın). Bulgu: tevkifat tablosu GİB kod listesi
 v1.17'de kalmış, gelen belgelerden fark edilmişti (EBLG-115…119, FTR-35).
 
 **Aşama 5 (bordro) bitti — 2026-10-09:** göç `20261010140000_mevzuat_bordro`
@@ -988,6 +987,15 @@ Temmuz'da değiştiği için bir kayıt yalnız başladığı yarıyılda geçer
 yeni dönemin tavanı yayınlanmadıysa kıdem doğan çıkış hesabı "tavan
 yayınlanmadı" hatası verir (kıdem doğmayan çıkış hesaplanır). Koddaki
 `KIDEM_TAVANLARI` kalktı.
+
+**Tevkifat alt sınırı yüklendi — 2026-10-09:** göç
+`20261010200000_mevzuat_tevkifat_alt_siniri`. Dayanak KDVGUT I/C-2.1.3.1
+(50 Seri No'lu Değişiklik Tebliği, RG 10.02.2024/32456): kısmi tevkifata konu
+işlemin KDV dahil bedeli işlemin yapıldığı yılın VUK 232 fatura düzenleme
+sınırını aşmıyorsa tevkifat uygulanmaz. Değerler: 01.03.2024'ten 6.900 TL,
+2025 9.900 TL (VUK GT 577), 2026 12.000 TL (VUK GT 588, RG 31.12.2025/33124).
+Sınır yıllık olduğundan fatura formu kaydı yalnız başladığı yılda kullanır;
+yeni yılın sınırı yayınlanmadıysa uyarı çıkmaz. Uyarı kaydı engellemez.
 
 Mevcut durum: değerler kodda sabit (`packages/shared/src/gib-kodlari.ts`),
 bir kısmı kiracı ayarında (BA/BS eşiği CARI-37, e-Arşiv iptal süresi EBLG-22,

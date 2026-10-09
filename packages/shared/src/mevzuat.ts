@@ -45,7 +45,7 @@ export const KANUNI_DEGERLER = [
   ["babs_esigi", "Form BA/BS bildirim eşiği (TL, KDV hariç aylık)"],
   ["earsiv_iptal_gun", "e-Arşiv fatura iptal süresi (gün)"],
   ["irsaliye_fatura_gun", "İrsaliyenin faturalanma süresi (gün)"],
-  ["tevkifat_alt_siniri", "KDV tevkifatı alt sınırı (TL, KDV dahil)"],
+  ["tevkifat_alt_siniri", "KDV tevkifatı alt sınırı (TL, KDV dahil; yalnız başladığı yılda geçerli)"],
   ["kidem_tavani", "Kıdem tazminatı tavanı (TL; yalnız başladığı yarıyılda geçerli)"],
 ] as const;
 

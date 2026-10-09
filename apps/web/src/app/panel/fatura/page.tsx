@@ -596,8 +596,10 @@ export default function FaturaSayfasi() {
   useEffect(() => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(tarih)) return;
     void api<TevkifatKodu[]>(`/mevzuat/tevkifat-tablosu?tarih=${tarih}`).then(setTevkifatTablosu).catch(() => undefined);
-    void api<{ anahtar: string; deger: { deger?: number } }[]>(`/mevzuat/kayitlar?tur=kanuni_deger&tarih=${tarih}`)
-      .then((liste) => setTevkifatAltSiniri(liste.find((k) => k.anahtar === "tevkifat_alt_siniri")?.deger.deger ?? null))
+    // KDVGUT I/C-2.1.3.1: sınır işlemin yapıldığı yılın fatura düzenleme sınırıdır;
+    // başka yıl başlamış kayıt kullanılmaz (yeni yılın sınırı yayınlanmadıysa uyarı yok).
+    void api<{ anahtar: string; deger: { deger?: number }; yururlukBaslangic: string }[]>(`/mevzuat/kayitlar?tur=kanuni_deger&tarih=${tarih}`)
+      .then((liste) => setTevkifatAltSiniri(liste.find((k) => k.anahtar === "tevkifat_alt_siniri" && k.yururlukBaslangic.slice(0, 4) === tarih.slice(0, 4))?.deger.deger ?? null))
       .catch(() => undefined);
   }, [tarih]);
   const [vadeTarihi, setVadeTarihi] = useState("");
@@ -2622,7 +2624,7 @@ export default function FaturaSayfasi() {
               </div>
               {tevkifatliSatirSayisi > 0 && tevkifatAltSiniri !== null && (sonuc.toplamMatrah + sonuc.toplamKdv) * (dovizCinsi === "TRY" ? 1 : Number(kur) || 0) <= tevkifatAltSiniri && (
                 <ul className="scenario-warnings">
-                  <li>KDV dahil tutar tevkifat alt sınırının ({tl(tevkifatAltSiniri, "TRY")}) altında; bu işlemde tevkifat uygulanmayabilir. Mevzuatı kontrol edin.</li>
+                  <li>KDV dahil tutar {tarih.slice(0, 4)} tevkifat alt sınırını ({tl(tevkifatAltSiniri, "TRY")}) aşmıyor; kısmi tevkifat uygulanmaz (KDVGUT I/C-2.1.3.1). Aynı alıcıya bölünmüş işlem varsa toplamı esas alın.</li>
                 </ul>
               )}
               {ozelMatrahUyarilari.length > 0 && (
