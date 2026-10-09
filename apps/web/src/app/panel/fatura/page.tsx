@@ -19,7 +19,7 @@ import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
 import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { varyantDegeriCoz, varyantSecenekleri } from "@/lib/varyant-secimi";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
-import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, KAP_CINSLERI, kapEksigiVarMi, SIK_KAP_CINSLERI, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
+import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, KAP_CINSLERI, kapEksigiVarMi, SIK_KAP_CINSLERI, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, tevkifatTablosuCoz, type TevkifatDegisikligi, type TevkifatKodu, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-alani";
 import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
 import { birimKisaAdi, faturaKurTipi, vadeTarihiHesapla } from "@tekirextra/shared";
@@ -478,6 +478,9 @@ export default function FaturaSayfasi() {
   useEffect(() => { if (yeniSayfasi) { setFormAcik(true); faturaBaslangicRef.current = Date.now(); } }, [yeniSayfasi]);
   // EBLG-77: kapalı uygulamanın düğmesi hiç çizilmesin diye bir kez okunur.
   useEffect(() => { void api<EbelgeUygulamalari>("/ebelge/uygulamalar").then(setEbelgeUygulamalari).catch(() => undefined); }, []);
+  // FTR-35: firmanın tevkifat tablosu (Ayarlar > Tevkifat); okunamazsa varsayılan.
+  const [tevkifatTablosu, setTevkifatTablosu] = useState<readonly TevkifatKodu[]>(TEVKIFAT_KODLARI);
+  useEffect(() => { void api<{ degisiklikler: TevkifatDegisikligi[] }>("/ayarlar/tevkifat").then((a) => setTevkifatTablosu(tevkifatTablosuCoz(a.degisiklikler ?? []))).catch(() => undefined); }, []);
   const saltOkunur = acikFatura !== null && !faturaDuzenlenebilir(acikFatura);
   /** EBLG-77: e-belge gönderimi yalnız e-Fatura ya da e-Arşiv açıkken mümkündür. */
   const ebelgeGonderilebilirFirma = ebelgeUygulamalari === null || !ebelgeKullanilmiyor(ebelgeUygulamalari);
@@ -662,7 +665,7 @@ export default function FaturaSayfasi() {
   const girdiSatirlar: FaturaHesaplaSatirGirdi[] = satirlar.map((s) => {
     // Oran GİB kodundan gelir (FTR-18); önizleme bunu hesaba katmazsa ekranda
     // yazan tutar ile kaydedilen fatura ayrışır.
-    const tevkifat = tevkifatPayPayda(s.tevkifatKodu, s.tevkifatOrani);
+    const tevkifat = tevkifatPayPayda(s.tevkifatKodu, s.tevkifatOrani, tevkifatTablosu);
     return {
       stokId: s.stokId || "gecici-id",
       miktar: s.miktar,
@@ -711,7 +714,7 @@ export default function FaturaSayfasi() {
   const ihracKayitliUyarilari = ihracKayitliHatalari({ tip, ihracKayitliKodu: ihracKayitli, satirlar: senaryoSatirlari });
   // EBLG-59: tevkifatlı faturada sıfır KDV satırı yalnız 351 alabilir; liste sunucudaki kuralla süzülür.
   const istisnaSecenekleri = izinliIstisnaKodlari(senaryoSatirlari);
-  const senaryoUyarilari = senaryoHatalari(senaryoSatirlari, Boolean(ozelMatrah));
+  const senaryoUyarilari = senaryoHatalari(senaryoSatirlari, Boolean(ozelMatrah), { tevkifatTablosu });
   // EBLG-72: sevkiyat numarasının biçimi ve satır etiketleri sunucudaki kuralla denetlenir.
   const idisUyarilari = idisEngelleri({
     sevkiyatNo: idisSevkiyatNo,
@@ -2243,7 +2246,7 @@ export default function FaturaSayfasi() {
                                 aria-label="GİB tevkifat kodu"
                                 value={s.tevkifatKodu || ""}
                                 onChange={(e) => {
-                                  const kod = tevkifatKoduBul(e.target.value);
+                                  const kod = tevkifatKoduBul(e.target.value, tevkifatTablosu);
                                   const yeniSatirlar = [...satirlar];
                                   // Oran koddan gelir; yalnız 650 için kullanıcı seçer (FTR-18).
                                   yeniSatirlar[index] = {
@@ -2255,18 +2258,19 @@ export default function FaturaSayfasi() {
                                 }}
                               >
                                 <option value="">Tevkifat yok</option>
-                                {TEVKIFAT_KODLARI.map((k) => (
+                                {/* Pasif kod yeni seçimde görünmez; satırda zaten varsa gösterilir (FTR-35). */}
+                                {tevkifatTablosu.filter((k) => !k.pasif || k.kod === s.tevkifatKodu).map((k) => (
                                   <option key={k.kod} value={k.kod}>
-                                    {k.kod} — {k.ad}{k.oranlar.length === 1 ? ` (${k.oranlar[0]})` : ""}
+                                    {k.kod} — {k.ad}{k.oranlar.length === 1 ? ` (${k.oranlar[0]})` : ""}{k.pasif ? " — pasif" : ""}
                                   </option>
                                 ))}
                               </Select>
                             </Field>
-                            {(tevkifatKoduBul(s.tevkifatKodu)?.oranlar.length ?? 0) > 1 && (
+                            {(tevkifatKoduBul(s.tevkifatKodu, tevkifatTablosu)?.oranlar.length ?? 0) > 1 && (
                               <Field label="Tevkifat oranı">
                                 <Select aria-label="Tevkifat oranı" value={s.tevkifatOrani || ""} onChange={(e) => satirGuncelle(index, "tevkifatOrani", e.target.value)}>
                                   <option value="">Oran seçin</option>
-                                  {tevkifatKoduBul(s.tevkifatKodu)!.oranlar.map((o) => <option key={o} value={o}>{o}</option>)}
+                                  {tevkifatKoduBul(s.tevkifatKodu, tevkifatTablosu)!.oranlar.map((o) => <option key={o} value={o}>{o}</option>)}
                                 </Select>
                               </Field>
                             )}

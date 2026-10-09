@@ -117,7 +117,8 @@ const senaryolariDogrula = (
     tevkifatOrani: satir.tevkifatOrani,
     gibIstisnaKodu: satir.gibIstisnaKodu,
   }));
-  for (const hata of senaryoHatalari(satirlar, Boolean((fatura as { ozelMatrahKodu?: string | null }).ozelMatrahKodu))) {
+  // FTR-35: tevkifat kodu ve oranı kiracının tablosuna bağlı; servis denetler.
+  for (const hata of senaryoHatalari(satirlar, Boolean((fatura as { ozelMatrahKodu?: string | null }).ozelMatrahKodu), { tevkifatTablosu: null })) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["satirlar", hata.satirIndeksi, hata.alan], message: hata.mesaj });
   }
 };

@@ -48,7 +48,6 @@ import {
   ihracKayitliKoduBul,
   istisnaKoduBul,
   senaryoUblKodu,
-  tevkifatKoduBul,
   odemeSekliUblKodu,
   ublAdresi,
   type BelgeAdresGirdi,
@@ -758,7 +757,9 @@ ${teslimatAdresiXml(genelTeslimAdresi)}` : ""}${irsaliyeYerine ? `
   };
 
   const tevkifatBlogu = tevkifatIade ? "" : [...tevkifatGruplari.entries()]
-    .filter(([kod]) => tevkifatKoduBul(kod))
+    // FTR-35: kod firmanın tablosundan da gelebilir (eklenen kod); kaydedilirken
+    // denetlendi, oran satırda saklı. Burada yeniden tabloya bakılmaz.
+    .filter(([kod]) => /^\d{3}$/.test(kod))
     .map(([kod, deger]) => `  <cac:WithholdingTaxTotal>
     <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${deger.tutar.toFixed(2)}</cbc:TaxAmount>
     <cac:TaxSubtotal>

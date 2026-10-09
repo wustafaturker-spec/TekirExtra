@@ -1,4 +1,4 @@
-import { type IstisnaKodu, KDV_ISTISNA_KODLARI, ihracKayitliKoduBul, istisnaKoduBul, tevkifatKoduBul, tevkifatOraniAyristir } from "./gib-kodlari";
+import { type IstisnaKodu, KDV_ISTISNA_KODLARI, ihracKayitliKoduBul, istisnaKoduBul, tevkifatKoduBul, tevkifatOraniAyristir, type TevkifatKodu } from "./gib-kodlari";
 
 /** UBL'e `InvoiceTypeCode` olarak yazılan GİB senaryosu (FTR-16). */
 export type FaturaSenaryosu = "satis" | "iade" | "tevkifat" | "tevkifatiade" | "istisna" | "ihrackayitli" | "ozelmatrah" | "sgk" | "sarj" | "sarjanlik";
@@ -104,7 +104,18 @@ export interface SenaryoHatasi {
  * Hem şema doğrulaması hem de arayüzün kaydetme öncesi özeti bu listeyi
  * kullanır, böylece iki taraf aynı kuralı ayrı ayrı yorumlamaz.
  */
-export function senaryoHatalari(satirlar: SenaryoSatirGirdi[], ozelMatrah = false): SenaryoHatasi[] {
+export interface SenaryoSecenekleri {
+  /**
+   * FTR-35: firmanın tevkifat tablosu. Verilmezse varsayılan (GİB) tablo;
+   * `null` kod ve oran denetimini atlar — tablo kiracıya özel olduğundan şema
+   * doğrulaması bunu yapamaz, servis kiracının tablosuyla yeniden denetler.
+   */
+  tevkifatTablosu?: readonly TevkifatKodu[] | null;
+  /** Gelen belgeden oluşan faturada pasif kod da kabul edilir. */
+  pasifKodKabul?: boolean;
+}
+
+export function senaryoHatalari(satirlar: SenaryoSatirGirdi[], ozelMatrah = false, secenek: SenaryoSecenekleri = {}): SenaryoHatasi[] {
   const hatalar: SenaryoHatasi[] = [];
   const tevkifatli = satirlar.some((s) => Boolean(s.tevkifatKodu));
 
@@ -137,10 +148,12 @@ export function senaryoHatalari(satirlar: SenaryoSatirGirdi[], ozelMatrah = fals
       }
     }
 
-    if (satir.tevkifatKodu) {
-      const kod = tevkifatKoduBul(satir.tevkifatKodu);
+    if (satir.tevkifatKodu && secenek.tevkifatTablosu !== null) {
+      const kod = tevkifatKoduBul(satir.tevkifatKodu, secenek.tevkifatTablosu);
       if (!kod) {
         hatalar.push({ satirIndeksi, alan: "tevkifatKodu", mesaj: `Tanımsız GİB tevkifat kodu: ${satir.tevkifatKodu}` });
+      } else if (kod.pasif && !secenek.pasifKodKabul) {
+        hatalar.push({ satirIndeksi, alan: "tevkifatKodu", mesaj: `${kod.kod} tevkifat kodu Ayarlar'da pasif yapılmış` });
       } else if (kod.oranlar.length > 1) {
         // Yalnız "650 Diğerleri" birden çok oranla kullanılabiliyor; oran yine
         // listeden seçilir, serbest girilmez.
@@ -149,13 +162,13 @@ export function senaryoHatalari(satirlar: SenaryoSatirGirdi[], ozelMatrah = fals
         } else if (!kod.oranlar.includes(satir.tevkifatOrani)) {
           hatalar.push({ satirIndeksi, alan: "tevkifatOrani", mesaj: `${kod.kod} kodu için geçersiz tevkifat oranı: ${satir.tevkifatOrani}` });
         }
-      } else if (satir.tevkifatOrani && satir.tevkifatOrani !== kod.oranlar[0]) {
-        hatalar.push({ satirIndeksi, alan: "tevkifatOrani", mesaj: `${kod.kod} kodunun oranı ${kod.oranlar[0]} olmalıdır` });
       }
-
-      if (kdvSifir) {
-        hatalar.push({ satirIndeksi, alan: "tevkifatKodu", mesaj: "KDV oranı sıfır olan satırda tevkifat uygulanamaz" });
-      }
+      // Tek oranlı kodda oran koddan gelir (tevkifatPayPayda); satırdaki eski
+      // oran yazısı yok sayılır — FTR-35'te oran değişince taslak yeni oranla
+      // hesaplanır, reddedilmez.
+    }
+    if (satir.tevkifatKodu && kdvSifir) {
+      hatalar.push({ satirIndeksi, alan: "tevkifatKodu", mesaj: "KDV oranı sıfır olan satırda tevkifat uygulanamaz" });
     }
   });
 
@@ -191,8 +204,10 @@ export function ihracKayitliHatalari(fatura: {
 export function tevkifatPayPayda(
   tevkifatKodu: string | null | undefined,
   tevkifatOrani?: string | null,
+  /** FTR-35: firmanın tevkifat tablosu; verilmezse varsayılan. */
+  tablo?: readonly TevkifatKodu[],
 ): { pay: number; payda: number } | undefined {
-  const kod = tevkifatKoduBul(tevkifatKodu);
+  const kod = tevkifatKoduBul(tevkifatKodu, tablo);
   if (!kod) return undefined;
   const oran = kod.oranlar.length === 1 ? kod.oranlar[0] : tevkifatOrani;
   return oran ? tevkifatOraniAyristir(oran) : undefined;

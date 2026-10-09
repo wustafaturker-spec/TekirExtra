@@ -4,7 +4,7 @@
  * belge iskontosu, iade referansları); oluşacak faturanın tutarları belgenin
  * toplamlarıyla karşılaştırılır, tolerans aşılırsa işleme durur.
  */
-import { dovizKoduMu, faturaHesapla, ozelMatrahKdvsi, ozelMatrahKoduBul, tevkifatKoduBul, tevkifatPayPayda, type FaturaHesaplaSonuc } from "@tekirextra/shared";
+import { dovizKoduMu, faturaHesapla, ozelMatrahKdvsi, ozelMatrahKoduBul, tevkifatKoduBul, tevkifatPayPayda, type FaturaHesaplaSonuc, type TevkifatKodu } from "@tekirextra/shared";
 import type { UblFatura } from "./ubl-oku";
 
 export type GelenFaturaTipi = "alis" | "satis_iade";
@@ -33,7 +33,12 @@ export interface GelenFaturaGirdisi {
  * Fatura girdisi + işlemeyi durduran engeller. Engelden dönen girdi yine
  * hesaplanır ki onay ekranı farkı gösterebilsin.
  */
-export function gelenFaturaGirdisi(ubl: UblFatura, eslesme: (siraNo: number) => GelenSatirEslesmesi | undefined): { girdi: GelenFaturaGirdisi; engeller: string[] } {
+export function gelenFaturaGirdisi(
+  ubl: UblFatura,
+  eslesme: (siraNo: number) => GelenSatirEslesmesi | undefined,
+  /** FTR-35: firmanın tevkifat tablosu (pasif kodlar dahil); verilmezse varsayılan. */
+  tevkifatTablosu?: readonly TevkifatKodu[],
+): { girdi: GelenFaturaGirdisi; engeller: string[] } {
   const engeller: string[] = [];
   const doviz = ubl.dovizCinsi !== "TRY";
   if (!dovizKoduMu(ubl.dovizCinsi)) engeller.push(`Belge dövizi (${ubl.dovizCinsi}) sistemde tanımlı değil`);
@@ -59,7 +64,7 @@ export function gelenFaturaGirdisi(ubl: UblFatura, eslesme: (siraNo: number) => 
     let tevkifatKodu: string | null = null, tevkifatOrani: string | null = null;
     const tevkifat = s.tevkifat ?? (baslikTevkifati && s.kdvOrani > 0 ? baslikTevkifati : undefined);
     if (tevkifat) {
-      const kod = tevkifatKoduBul(tevkifat.kod);
+      const kod = tevkifatKoduBul(tevkifat.kod, tevkifatTablosu);
       if (!kod) engeller.push(`${s.siraNo}. satırın tevkifat kodu tanınmıyor: ${tevkifat.kod}`);
       else {
         tevkifatKodu = kod.kod;
@@ -68,7 +73,7 @@ export function gelenFaturaGirdisi(ubl: UblFatura, eslesme: (siraNo: number) => 
           if (!kod.oranlar.includes(oran)) engeller.push(`${s.siraNo}. satırın tevkifat oranı (%${tevkifat.oran}) ${kod.kod} koduna uymuyor`);
           tevkifatOrani = oran;
         } else if (kod.oranlar[0] !== oran) {
-          engeller.push(`${s.siraNo}. satırda ${kod.kod} kodu %${tevkifat.oran} oranla yazılmış; sistemdeki oranı ${kod.oranlar[0]}`);
+          engeller.push(`${s.siraNo}. satırda ${kod.kod} kodu %${tevkifat.oran} oranla yazılmış; sistemdeki oranı ${kod.oranlar[0]} (Ayarlar > Tevkifat)`);
         }
       }
     }
@@ -98,10 +103,10 @@ export function gelenFaturaGirdisi(ubl: UblFatura, eslesme: (siraNo: number) => 
 }
 
 /** Fatura servisinin kesinleştirmede yapacağı hesabın aynısı. */
-export function gelenFaturaHesabi(girdi: GelenFaturaGirdisi, kdvTahsilEdilmez: boolean): FaturaHesaplaSonuc {
+export function gelenFaturaHesabi(girdi: GelenFaturaGirdisi, kdvTahsilEdilmez: boolean, tevkifatTablosu?: readonly TevkifatKodu[]): FaturaHesaplaSonuc {
   return faturaHesapla({
     satirlar: girdi.satirlar.map((s) => {
-      const oran = tevkifatPayPayda(s.tevkifatKodu, s.tevkifatOrani);
+      const oran = tevkifatPayPayda(s.tevkifatKodu, s.tevkifatOrani, tevkifatTablosu);
       return { stokId: s.stokId, miktar: Number(s.miktar), birimFiyat: Number(s.birimFiyat), iskontoOrani: Number(s.iskontoOrani), kdvOrani: Number(s.kdvOrani), tevkifatPay: oran?.pay, tevkifatPayda: oran?.payda };
     }),
     genelIskontoTutari: Number(girdi.genelIskontoTutari),

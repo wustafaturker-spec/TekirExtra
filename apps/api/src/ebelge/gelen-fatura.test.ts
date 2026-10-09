@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { gelenFaturaGirdisi, gelenFaturaHesabi, gelenFaturaTipi, tevkifatOraniMetni, tutarDenetimi } from "./gelen-fatura";
 import type { UblFatura, UblSatir } from "./ubl-oku";
+import { tevkifatTablosuCoz } from "@tekirextra/shared";
 
 const STOK = "11111111-1111-4111-8111-111111111111";
 const eslesme = () => ({ stokId: STOK });
@@ -95,8 +96,8 @@ describe("gelen özel matrah (EBLG-116)", () => {
 describe("gelen tevkifat (EBLG-117)", () => {
   it("tek oranlı kodda oran koddan, 650'de belgeden gelir", () => {
     expect(tevkifatOraniMetni(70)).toBe("7/10");
-    const tek = denetle(belge({ faturaTipKodu: "TEVKIFAT", satirlar: [satir({ tevkifat: { kod: "603", oran: 50, tutar: 100 } })], toplamlar: { tevkifat: 100, odenecek: 1100 } }));
-    expect(tek.girdi.satirlar[0]).toMatchObject({ tevkifatKodu: "603", tevkifatOrani: null });
+    const tek = denetle(belge({ faturaTipKodu: "TEVKIFAT", satirlar: [satir({ tevkifat: { kod: "604", oran: 50, tutar: 100 } })], toplamlar: { tevkifat: 100, odenecek: 1100 } }));
+    expect(tek.girdi.satirlar[0]).toMatchObject({ tevkifatKodu: "604", tevkifatOrani: null });
     expect(tek.denetim.gecerli).toBe(true);
     const diger = denetle(belge({ faturaTipKodu: "TEVKIFAT", satirlar: [satir({ tevkifat: { kod: "650", oran: 20, tutar: 40 } })], toplamlar: { tevkifat: 40, odenecek: 1160 } }));
     expect(diger.girdi.satirlar[0]).toMatchObject({ tevkifatKodu: "650", tevkifatOrani: "2/10" });
@@ -104,16 +105,26 @@ describe("gelen tevkifat (EBLG-117)", () => {
   });
 
   it("yalnız başlıkta yazılan tek tevkifat kodu KDV'li satırlara uygulanır (TRK2026000000037)", () => {
-    const ubl = belge({ faturaTipKodu: "TEVKIFAT", satirlar: [satir({ miktar: 1, birimFiyat: 500, matrah: 500, kdvTutari: 100 })], toplamlar: { matrah: 500, kdvSaf: 100, tevkifat: 50, tevkifatKodlari: [{ kod: "603", oran: 50, tutar: 50 }], odenecek: 550 } });
+    const ubl = belge({ faturaTipKodu: "TEVKIFAT", satirlar: [satir({ miktar: 1, birimFiyat: 500, matrah: 500, kdvTutari: 100 })], toplamlar: { matrah: 500, kdvSaf: 100, tevkifat: 50, tevkifatKodlari: [{ kod: "604", oran: 50, tutar: 50 }], odenecek: 550 } });
     const { girdi, engeller, denetim } = denetle(ubl);
     expect(engeller).toEqual([]);
-    expect(girdi.satirlar[0].tevkifatKodu).toBe("603");
+    expect(girdi.satirlar[0].tevkifatKodu).toBe("604");
     expect(denetim.gecerli).toBe(true);
-    // 603 sistemde 5/10; belge %70 diyorsa fark yerine açık engel.
-    const yetmis = belge({ faturaTipKodu: "TEVKIFAT", toplamlar: { tevkifatKodlari: [{ kod: "603", oran: 70, tutar: 140 }] } });
-    expect(denetle(yetmis).engeller.join()).toMatch(/603 kodu %70 oranla yazılmış; sistemdeki oranı 5\/10/);
-    const ikiKod = belge({ toplamlar: { tevkifatKodlari: [{ kod: "603", oran: 50, tutar: 50 }, { kod: "650", oran: 20, tutar: 20 }] } });
+    // 604 sistemde 5/10; belge %70 diyorsa fark yerine açık engel.
+    const yetmis = belge({ faturaTipKodu: "TEVKIFAT", toplamlar: { tevkifatKodlari: [{ kod: "604", oran: 70, tutar: 140 }] } });
+    expect(denetle(yetmis).engeller.join()).toMatch(/604 kodu %70 oranla yazılmış; sistemdeki oranı 5\/10/);
+    const ikiKod = belge({ toplamlar: { tevkifatKodlari: [{ kod: "604", oran: 50, tutar: 50 }, { kod: "650", oran: 20, tutar: 20 }] } });
     expect(denetle(ikiKod).engeller.join()).toMatch(/birden çok kodla/);
+  });
+
+  it("firmanın tablosu kullanılır: güncel varsayılanla 601 %40 geçer, değiştirilen oranla durur (FTR-35)", () => {
+    const ubl = belge({ faturaTipKodu: "TEVKIFAT", satirlar: [satir({ tevkifat: { kod: "601", oran: 40, tutar: 80 } })], toplamlar: { tevkifat: 80, odenecek: 1120 } });
+    expect(denetle(ubl).engeller).toEqual([]);
+    expect(denetle(ubl).denetim.gecerli).toBe(true);
+    const tablo = tevkifatTablosuCoz([{ kod: "601", oranlar: ["3/10"] }]);
+    expect(gelenFaturaGirdisi(ubl, eslesme, tablo).engeller.join()).toMatch(/601 kodu %40.*3\/10 \(Ayarlar > Tevkifat\)/);
+    // Pasif kod gelen belgede yine tanınır.
+    expect(gelenFaturaGirdisi(ubl, eslesme, tevkifatTablosuCoz([{ kod: "601", pasif: true }])).engeller).toEqual([]);
   });
 
   it("tanınmayan kodda ve 650'ye uymayan oranda durur", () => {

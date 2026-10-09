@@ -61,24 +61,9 @@ describe("GİB senaryo doğrulamaları (FTR-17, FTR-18)", () => {
     expect(sonuc.success).toBe(true);
   });
 
-  it("tek oranlı kodda yanlış oranı reddeder", () => {
-    const sonuc = faturaOlusturSemasi.safeParse({ ...temel, satirlar: [{ ...satir, tevkifatKodu: "601", tevkifatOrani: "9/10" }] });
-    expect(hataYollari(sonuc)).toEqual(["satirlar.0.tevkifatOrani"]);
-  });
-
-  it("650 kodunda oran seçilmesini ister", () => {
-    const sonuc = faturaOlusturSemasi.safeParse({ ...temel, satirlar: [{ ...satir, tevkifatKodu: "650" }] });
-    expect(hataYollari(sonuc)).toEqual(["satirlar.0.tevkifatOrani"]);
-  });
-
-  it("650 kodunu listedeki oranla kabul eder", () => {
-    const sonuc = faturaOlusturSemasi.safeParse({ ...temel, satirlar: [{ ...satir, tevkifatKodu: "650", tevkifatOrani: "5/10" }] });
-    expect(sonuc.success).toBe(true);
-  });
-
-  it("liste dışı tevkifat kodunu reddeder", () => {
-    const sonuc = faturaOlusturSemasi.safeParse({ ...temel, satirlar: [{ ...satir, tevkifatKodu: "699" }] });
-    expect(hataYollari(sonuc)).toEqual(["satirlar.0.tevkifatKodu"]);
+  it("kod ve oran denetimini kiracının tablosuyla servise bırakır (FTR-35)", () => {
+    expect(faturaOlusturSemasi.safeParse({ ...temel, satirlar: [{ ...satir, tevkifatKodu: "699" }] }).success).toBe(true);
+    expect(faturaOlusturSemasi.safeParse({ ...temel, satirlar: [{ ...satir, tevkifatKodu: "650" }] }).success).toBe(true);
   });
 
   it("KDV sıfır satırda tevkifata izin vermez", () => {

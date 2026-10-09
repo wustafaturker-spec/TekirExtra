@@ -15,7 +15,7 @@ import {
 } from "@nestjs/common";
 import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
 import type { BelgeDurumSonuc, EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
-import { faturaGecikmeUyarilari, ihracKayitliKoduBul, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeSevkGunu, type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, YOLCU_BERABER_POSTA_KUTUSU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu, sgkEngelleri, sgkFaturasiMi, SGK_VKN, sarjEngelleri, sarjPlakaNormalize, idisEngelleri, idisNormalize, ytbBelgesiMi, ytbEngelleri, ytbNormalize, type SarjTuru, type SevkiyatYontemi, sevkiyatEksikleri, sevkiyatSorulurMu, ebelgeKanali, ebelgeUygulamalariCoz, ebelgeKanalEngelleri, uygulamaAcik, type EbelgeUygulamalari, type DovizKodu, dovizKoduMu } from "@tekirextra/shared";
+import { faturaGecikmeUyarilari, ihracKayitliKoduBul, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeSevkGunu, type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, YOLCU_BERABER_POSTA_KUTUSU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu, sgkEngelleri, sgkFaturasiMi, SGK_VKN, sarjEngelleri, sarjPlakaNormalize, idisEngelleri, idisNormalize, ytbBelgesiMi, ytbEngelleri, ytbNormalize, type SarjTuru, type SevkiyatYontemi, sevkiyatEksikleri, sevkiyatSorulurMu, ebelgeKanali, ebelgeUygulamalariCoz, ebelgeKanalEngelleri, uygulamaAcik, type EbelgeUygulamalari, type DovizKodu, dovizKoduMu, type TevkifatKodu } from "@tekirextra/shared";
 import { ebelgeUygulamalariCozTenant } from "./ebelge-uygulamalari.service";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
@@ -28,6 +28,7 @@ import { FaturaService } from "../fatura/fatura.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
 import { UblOkumaHatasi, faturaUblOku, type UblFatura, type UblSatir } from "./ubl-oku";
 import { gelenFaturaGirdisi, gelenFaturaHesabi, tutarDenetimi, type GelenSatirEslesmesi } from "./gelen-fatura";
+import { firmaTevkifatTablosu } from "../fatura/tevkifat-tablosu";
 import { adSoyadCoz } from "../cari/ad-soyad";
 import { durumAciklamasi } from "./durum-aciklamasi";
 import { MukellefListesiService } from "./mukellef-listesi.service";
@@ -127,15 +128,15 @@ function gelenIhracKayitliKodu(ubl: Pick<UblFatura, "faturaTipKodu" | "istisnaKo
  * engeller ve belge toplamlarıyla karşılaştırma. Onay ekranı (eşleşmesiz) ve
  * onay (eşleşmeli) aynı hesabı görür.
  */
-function gelenDenetle(ubl: UblFatura, eslesme: (siraNo: number) => GelenSatirEslesmesi | undefined = () => undefined) {
-  const { girdi, engeller } = gelenFaturaGirdisi(ubl, eslesme);
+function gelenDenetle(ubl: UblFatura, tevkifatTablosu: readonly TevkifatKodu[], eslesme: (siraNo: number) => GelenSatirEslesmesi | undefined = () => undefined) {
+  const { girdi, engeller } = gelenFaturaGirdisi(ubl, eslesme, tevkifatTablosu);
   let ihracKayitliKodu: string | null = null;
   try {
     ihracKayitliKodu = gelenIhracKayitliKodu(ubl);
   } catch (hata) {
     engeller.push(hata instanceof Error ? hata.message : String(hata));
   }
-  const denetim = tutarDenetimi(ubl, gelenFaturaHesabi(girdi, Boolean(ihracKayitliKodu)), Boolean(ihracKayitliKodu));
+  const denetim = tutarDenetimi(ubl, gelenFaturaHesabi(girdi, Boolean(ihracKayitliKodu), tevkifatTablosu), Boolean(ihracKayitliKodu));
   return { girdi, engeller, denetim, ihracKayitliKodu };
 }
 
@@ -1821,7 +1822,7 @@ export class EbelgeService {
       ];
     });
 
-    const { girdi: oneri, engeller, denetim } = gelenDenetle(ubl);
+    const { girdi: oneri, engeller, denetim } = gelenDenetle(ubl, await firmaTevkifatTablosu(this.ayarlar));
 
     return {
       id: kayit.id,
@@ -1912,7 +1913,7 @@ export class EbelgeService {
     // alış faturasına geçer ve KDV cariye/genel toplama girmez.
     // EBLG-115…119: kur, belge iskontosu, tevkifat ve özel matrah belgeden
     // gelir; oluşacak fatura belge toplamlarını tutmuyorsa işlenmez.
-    const { girdi: belgeGirdisi, engeller, denetim, ihracKayitliKodu } = gelenDenetle(ubl, (sira) => {
+    const { girdi: belgeGirdisi, engeller, denetim, ihracKayitliKodu } = gelenDenetle(ubl, await firmaTevkifatTablosu(this.ayarlar), (sira) => {
       const stokId = eslesme.get(sira);
       return stokId ? { stokId, varyantId: varyantlar.get(sira) } : undefined;
     });

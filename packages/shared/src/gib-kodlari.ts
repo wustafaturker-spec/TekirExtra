@@ -146,32 +146,45 @@ export interface TevkifatKodu {
    * listeden oran seçer, serbest oran giremez.
    */
   oranlar: readonly string[];
+  /** FTR-35: firma kodu pasif yaptıysa yeni satırda seçilemez; gelen belgede tanınır. */
+  pasif?: boolean;
 }
 
+/**
+ * Kısmi tevkifat kodları — GİB UBL-TR Kod Listeleri v1.42 (Mart 2026) ve
+ * KDVGUT I/C-2.1.3 (karar 2026-10-09; liste v1.17'de kalmıştı: 601 3/10→4/10,
+ * 603 5/10→7/10, 609/615/617–620 5/10→7/10, 612/613 7/10→9/10, 624–627 eklendi).
+ * Firma oranları Ayarlar > Tevkifat'tan değiştirebilir (FTR-35); bu tablo
+ * varsayılandır.
+ */
 export const TEVKIFAT_KODLARI: readonly TevkifatKodu[] = [
-  { kod: "601", ad: "YAPIM İŞLERİ İLE BU İŞLERLE BİRLİKTE İFA EDİLEN MÜHENDİSLİK-MİMARLIK VE ETÜT-PROJE HİZMETLERİ", oranlar: ["3/10"] },
+  { kod: "601", ad: "YAPIM İŞLERİ İLE BU İŞLERLE BİRLİKTE İFA EDİLEN MÜHENDİSLİK-MİMARLIK VE ETÜT-PROJE HİZMETLERİ", oranlar: ["4/10"] },
   { kod: "602", ad: "ETÜT, PLAN-PROJE, DANIŞMANLIK, DENETİM VE BENZERİ HİZMETLER", oranlar: ["9/10"] },
-  { kod: "603", ad: "MAKİNE, TEÇHİZAT, DEMİRBAŞ VE TAŞITLARA AİT TADİL, BAKIM VE ONARIM HİZMETLERİ", oranlar: ["5/10"] },
+  { kod: "603", ad: "MAKİNE, TEÇHİZAT, DEMİRBAŞ VE TAŞITLARA AİT TADİL, BAKIM VE ONARIM HİZMETLERİ", oranlar: ["7/10"] },
   { kod: "604", ad: "YEMEK SERVİS HİZMETİ", oranlar: ["5/10"] },
   { kod: "605", ad: "ORGANİZASYON HİZMETİ", oranlar: ["5/10"] },
   { kod: "606", ad: "İŞGÜCÜ TEMİN HİZMETLERİ", oranlar: ["9/10"] },
   { kod: "607", ad: "ÖZEL GÜVENLİK HİZMETİ", oranlar: ["9/10"] },
   { kod: "608", ad: "YAPI DENETİM HİZMETLERİ", oranlar: ["9/10"] },
-  { kod: "609", ad: "FASON OLARAK YAPTIRILAN TEKSTİL VE KONFEKSİYON İŞLERİ, ÇANTA VE AYAKKABI DİKİM İŞLERİ VE BU İŞLERE ARACILIK HİZMETLERİ", oranlar: ["5/10"] },
+  { kod: "609", ad: "FASON OLARAK YAPTIRILAN TEKSTİL VE KONFEKSİYON İŞLERİ, ÇANTA VE AYAKKABI DİKİM İŞLERİ VE BU İŞLERE ARACILIK HİZMETLERİ", oranlar: ["7/10"] },
   { kod: "610", ad: "TURİSTİK MAĞAZALARA VERİLEN MÜŞTERİ BULMA / GÖTÜRME HİZMETLERİ", oranlar: ["9/10"] },
   { kod: "611", ad: "SPOR KULÜPLERİNİN YAYIN, REKLÂM VE İSİM HAKKI GELİRLERİNE KONU İŞLEMLERİ", oranlar: ["9/10"] },
-  { kod: "612", ad: "TEMİZLİK HİZMETİ", oranlar: ["7/10"] },
-  { kod: "613", ad: "ÇEVRE VE BAHÇE BAKIM HİZMETLERİ", oranlar: ["7/10"] },
+  { kod: "612", ad: "TEMİZLİK HİZMETİ", oranlar: ["9/10"] },
+  { kod: "613", ad: "ÇEVRE VE BAHÇE BAKIM HİZMETLERİ", oranlar: ["9/10"] },
   { kod: "614", ad: "SERVİS TAŞIMACILIĞI HİZMETİ", oranlar: ["5/10"] },
-  { kod: "615", ad: "HER TÜRLÜ BASKI VE BASIM HİZMETLERİ", oranlar: ["5/10"] },
-  { kod: "616", ad: "5018 SAYILI KANUNA EKLİ CETVELLERDEKİ İDARE, KURUM VE KURULUŞLARA YAPILAN DİĞER HİZMETLER", oranlar: ["5/10"] },
-  { kod: "617", ad: "HURDA METALDEN ELDE EDİLEN KÜLÇE TESLİMLERİ", oranlar: ["5/10"] },
-  { kod: "618", ad: "HURDA METALDEN ELDE EDİLENLER DIŞINDAKİ BAKIR, ÇİNKO VE ALÜMİNYUM KÜLÇE TESLİMLERİ", oranlar: ["5/10"] },
-  { kod: "619", ad: "BAKIR, ÇİNKO VE ALÜMİNYUM ÜRÜNLERİNİN TESLİMİ", oranlar: ["5/10"] },
-  { kod: "620", ad: "İSTİSNADAN VAZGEÇENLERİN HURDA VE ATIK TESLİMİ", oranlar: ["5/10"] },
+  { kod: "615", ad: "HER TÜRLÜ BASKI VE BASIM HİZMETLERİ", oranlar: ["7/10"] },
+  { kod: "616", ad: "DİĞER HİZMETLER", oranlar: ["5/10"] },
+  { kod: "617", ad: "HURDA METALDEN ELDE EDİLEN KÜLÇE TESLİMLERİ", oranlar: ["7/10"] },
+  { kod: "618", ad: "HURDA METALDEN ELDE EDİLENLER DIŞINDAKİ BAKIR, ÇİNKO, DEMİR-ÇELİK, ALÜMİNYUM VE KURŞUN KÜLÇE TESLİMLERİ", oranlar: ["7/10"] },
+  { kod: "619", ad: "BAKIR, ÇİNKO VE ALÜMİNYUM ÜRÜNLERİNİN TESLİMİ", oranlar: ["7/10"] },
+  { kod: "620", ad: "İSTİSNADAN VAZGEÇENLERİN HURDA VE ATIK TESLİMİ", oranlar: ["7/10"] },
   { kod: "621", ad: "METAL, PLASTİK, LASTİK, KAUÇUK, KÂĞIT VE CAM HURDA VE ATIKLARDAN ELDE EDİLEN HAMMADDE TESLİMİ", oranlar: ["9/10"] },
   { kod: "622", ad: "PAMUK, TİFTİK, YÜN VE YAPAĞI İLE HAM POST VE DERİ TESLİMLERİ", oranlar: ["9/10"] },
   { kod: "623", ad: "AĞAÇ VE ORMAN ÜRÜNLERİ TESLİMİ", oranlar: ["5/10"] },
+  { kod: "624", ad: "YÜK TAŞIMACILIĞI HİZMETİ", oranlar: ["2/10"] },
+  { kod: "625", ad: "TİCARİ REKLAM HİZMETLERİ", oranlar: ["3/10"] },
+  { kod: "626", ad: "DİĞER TESLİMLER", oranlar: ["2/10"] },
+  { kod: "627", ad: "DEMİR-ÇELİK ÜRÜNLERİNİN TESLİMİ", oranlar: ["5/10"] },
   { kod: "650", ad: "DİĞERLERİ", oranlar: ["2/10", "5/10", "7/10", "9/10"] },
 ];
 
@@ -213,8 +226,14 @@ export function istisnaKoduBul(kod: string | null | undefined): IstisnaKodu | un
   return kod ? ISTISNA_HARITASI.get(kod) : undefined;
 }
 
-export function tevkifatKoduBul(kod: string | null | undefined): TevkifatKodu | undefined {
-  return kod ? TEVKIFAT_HARITASI.get(kod) : undefined;
+/**
+ * Kodu tabloda arar; tablo verilmezse varsayılan (GİB) tablo. Firmanın kendi
+ * tablosu `tevkifatTablosuCoz` ile üretilir (FTR-35). Pasif kod da bulunur;
+ * seçilebilirlik ayrıca denetlenir.
+ */
+export function tevkifatKoduBul(kod: string | null | undefined, tablo?: readonly TevkifatKodu[]): TevkifatKodu | undefined {
+  if (!kod) return undefined;
+  return tablo ? tablo.find((k) => k.kod === kod) : TEVKIFAT_HARITASI.get(kod);
 }
 
 /** "9/10" gibi bir oranı paya ve paydaya ayırır. */

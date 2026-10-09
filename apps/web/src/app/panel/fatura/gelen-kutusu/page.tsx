@@ -1073,7 +1073,6 @@ export default function GelenKutusuSayfasi() {
           <div style={{ padding: "0.8rem 1.25rem 0" }}>
             <strong style={{ fontSize: "0.85rem" }}>Belge ile oluşacak fatura</strong>
             <TableWrap>
-              <table className="table">
                 <thead>
                   <tr><th>Tutar</th><th className="num">Belge</th><th className="num">Sistem</th><th className="num">Fark</th></tr>
                 </thead>
@@ -1090,7 +1089,6 @@ export default function GelenKutusuSayfasi() {
                     );
                   })}
                 </tbody>
-              </table>
             </TableWrap>
             <span className="muted" style={{ fontSize: "0.8rem" }}>
               {detay.tutarDenetimi.gecerli

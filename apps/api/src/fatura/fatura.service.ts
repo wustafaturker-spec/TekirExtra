@@ -7,10 +7,13 @@ import {
   Injectable,
   NotFoundException,
   Inject,
+  Optional,
   forwardRef,
 } from "@nestjs/common";
 import { Prisma, FaturaTip, FaturaDurum, BelgeDurum } from "@prisma/client";
-import { faturaHesapla, faturaSenaryosuTuret, idisNormalize, metinNormalize, ozelMatrahKdvsi, sarjTuruCoz, sgkFaturasiMi, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type KayitEylem } from "@tekirextra/shared";
+import { faturaHesapla, faturaSenaryosuTuret, idisNormalize, metinNormalize, ozelMatrahKdvsi, sarjTuruCoz, sgkFaturasiMi, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type KayitEylem, type TevkifatKodu } from "@tekirextra/shared";
+import { AyarlarService } from "../core/ayarlar/ayarlar.service";
+import { firmaTevkifatTablosu, tevkifatKurallariniUygula } from "./tevkifat-tablosu";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
@@ -57,7 +60,16 @@ export class FaturaService {
     private readonly baglantilar: BaglantilarService,
     @Inject(forwardRef(() => EbelgeService)) private readonly ebelge: EbelgeService,
     @Inject(forwardRef(() => EbelgeGorunumService)) private readonly ebelgeGorunum: EbelgeGorunumService,
+    @Optional() private readonly ayarlar?: AyarlarService,
   ) {}
+
+  /** FTR-35: kiracının tevkifat tablosuyla kod/oran kuralı; ihlal kaydı durdurur. */
+  private async tevkifatTablosuIleDogrula(girdi: { satirlar?: { kdvOrani?: string | number | null; tevkifatKodu?: string | null; tevkifatOrani?: string | null }[] }, pasifKodKabul: boolean) {
+    const tablo = await firmaTevkifatTablosu(this.ayarlar);
+    const hatalar = tevkifatKurallariniUygula(girdi.satirlar ?? [], tablo, pasifKodKabul);
+    if (hatalar.length) throw new BadRequestException(hatalar.join("; "));
+    return tablo;
+  }
 
   private async cariTipiniDogrula(tx: Prisma.TransactionClient, cariId: string, tip: string): Promise<void> {
     const cari = await tx.cariHesap.findUnique({ where: { id: cariId }, select: { tip: true } });
@@ -562,7 +574,8 @@ export class FaturaService {
     }
 
     // Fatura hesaplamalarını shared engine üzerinden yapalım (FTR-04)
-    const hesaplanan = this.hesaplaFatura(girdi);
+    const tevkifatTablosu = await this.tevkifatTablosuIleDogrula(girdi, Boolean(secenekler.gelenBelge));
+    const hesaplanan = this.hesaplaFatura(girdi, tevkifatTablosu);
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       await this.cariTipiniDogrula(tx, girdi.cariId, girdi.tip);
@@ -798,7 +811,9 @@ export class FaturaService {
       }
     }
 
-    const hesaplanan = this.hesaplaFatura(birlesikGirdi);
+    // FTR-35: taslak her kaydedişte firmanın güncel tevkifat oranıyla hesaplanır.
+    const tevkifatTablosu = await this.tevkifatTablosuIleDogrula(birlesikGirdi, Boolean(fatura.gelenEbelge));
+    const hesaplanan = this.hesaplaFatura(birlesikGirdi, tevkifatTablosu);
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       await this.cariTipiniDogrula(tx, birlesikGirdi.cariId, birlesikGirdi.tip);
@@ -1668,11 +1683,11 @@ export class FaturaService {
     }[];
     genelIskontoYuzdesi?: string | number | Prisma.Decimal;
     genelIskontoTutari?: string | number | Prisma.Decimal;
-  }) {
+  }, tevkifatTablosu?: readonly TevkifatKodu[]) {
     const satirGirdileri: FaturaHesaplaSatirGirdi[] = girdi.satirlar.map((s) => {
       // Oran GİB kodundan türer (FTR-18). Saklı satırlar yeniden hesaplanırken
       // kod henüz yoksa mevcut pay/payda korunur.
-      const oran = tevkifatPayPayda(s.tevkifatKodu, s.tevkifatOrani);
+      const oran = tevkifatPayPayda(s.tevkifatKodu, s.tevkifatOrani, tevkifatTablosu);
       return {
         stokId: s.stokId,
         miktar: Number(s.miktar),

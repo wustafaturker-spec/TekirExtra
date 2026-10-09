@@ -723,6 +723,13 @@ describe("faturaUblUret — KDV alt toplamları ve istisna (EBLG-59)", () => {
     expect(tevkifat).toContain("<cbc:Percent>90</cbc:Percent>");
   });
 
+  it("firmanın eklediği tevkifat kodunu satırdaki oranla yazar (FTR-35)", () => {
+    const xml = faturaUblUret(fatura([satir(20, null, { tevkifatKodu: "628", tevkifatTutari: 6, tevkifatPay: 3, tevkifatPayda: 10 })], { senaryo: "tevkifat" }), satici);
+    const tevkifat = xml.slice(xml.indexOf("<cac:WithholdingTaxTotal>"), xml.indexOf("</cac:WithholdingTaxTotal>"));
+    expect(tevkifat).toContain("<cbc:TaxTypeCode>628</cbc:TaxTypeCode>");
+    expect(tevkifat).toContain("<cbc:Percent>30</cbc:Percent>");
+  });
+
   it("iade faturası carinin ticari profiline rağmen TEMELFATURA gider", () => {
     const xml = faturaUblUret(fatura([satir(20, null)], { tip: "alis_iade", senaryo: "iade", efaturaProfili: "ticari" }), satici);
     expect(xml).toContain("<cbc:ProfileID>TEMELFATURA</cbc:ProfileID>");
