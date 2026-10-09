@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { MevzuatDegisiklikDurum, MevzuatTalepDurumu, Prisma } from "@prisma/client";
-import { mevzuatDegerHatalari, mevzuatTuruMu } from "@tekirextra/shared";
+import { MEVZUAT_TUR_TANIMLARI, mevzuatDegerHatalari, mevzuatTuruMu } from "@tekirextra/shared";
 import { aktifPlatformBaglam } from "../core/istek-baglami";
 import { MevzuatService } from "./mevzuat.service";
 import { PlatformPrismaService } from "./platform-prisma.service";
@@ -240,13 +240,16 @@ export class PlatformMevzuatService {
    * Eklenen kod mevcut taslağı etkilemez; değişen ve kaldırılan kodlar sayılır.
    */
   private async etki(satirlar: { tur: string; anahtar: string; islem: string }[], yururluk: string) {
-    const tevkifat = satirlar.filter((s) => s.tur === "tevkifat_kodu" && s.islem !== "ekle").map((s) => s.anahtar);
-    const kalemler: { ad: string; taslakFatura: number; firma: number }[] = [];
-    if (tevkifat.length) {
-      const [r] = await this.db.$queryRaw<{ taslak_fatura: bigint; firma: bigint }[]>`SELECT * FROM mevzuat_etki_tevkifat(${tevkifat}::text[], ${yururluk}::date)`;
-      kalemler.push({ ad: `Tevkifat kodları (${tevkifat.join(", ")})`, taslakFatura: Number(r?.taslak_fatura ?? 0), firma: Number(r?.firma ?? 0) });
+    const turler = [...new Set(satirlar.filter((s) => s.islem !== "ekle" && s.tur !== "kanuni_deger").map((s) => s.tur))];
+    const kalemler: { ad: string; taslakFatura: number; taslakBelge: number; firma: number }[] = [];
+    for (const tur of turler) {
+      const anahtarlar = satirlar.filter((s) => s.tur === tur && s.islem !== "ekle").map((s) => s.anahtar);
+      const [r] = await this.db.$queryRaw<{ taslak_fatura: bigint; taslak_belge: bigint; firma: bigint }[]>`SELECT * FROM mevzuat_etki(${tur}, ${anahtarlar}::text[], ${yururluk}::date)`;
+      const ad = mevzuatTuruMu(tur) ? MEVZUAT_TUR_TANIMLARI[tur].ad : tur;
+      kalemler.push({ ad: `${ad} (${anahtarlar.join(", ")})`, taslakFatura: Number(r?.taslak_fatura ?? 0), taslakBelge: Number(r?.taslak_belge ?? 0), firma: Number(r?.firma ?? 0) });
     }
-    const hesaplanmayan = [...new Set(satirlar.filter((s) => s.tur !== "tevkifat_kodu").map((s) => s.tur))];
+    // Kanuni süre/eşikler aşama 4'te tüketilir; etki hesabı o zaman eklenir.
+    const hesaplanmayan = [...new Set(satirlar.filter((s) => s.tur === "kanuni_deger").map((s) => s.tur))];
     return { kalemler, hesaplanmayan };
   }
 

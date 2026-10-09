@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap, Tabs } from "@/components/ui";
 import { gunEkleTR } from "@tekirextra/shared";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
+import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
 
 type Durum = "taslak" | "onay_bekliyor" | "onaylandi" | "reddedildi" | "siparise_donustu" | "iptal";
 type Kapsam = "benim" | "onay" | "tum";
@@ -111,6 +112,8 @@ export default function SatinAlmaTalepleriSayfasi() {
   const [form, setForm] = useState<TalepFormu | null>(null);
   const [gerekce, setGerekce] = useState("");
   const [teklif, setTeklif] = useState<TeklifFormu>(bosTeklif());
+  // MVZ-11: teklif bugün girilir; KDV oranı bugün yürürlükteki merkezi listeden.
+  const kodTablosu = useKodTablosu(null);
   const [teklifDosyalari, setTeklifDosyalari] = useState<File[]>([]);
   const [depoId, setDepoId] = useState("");
   const [ekAcik, setEkAcik] = useState<string | null>(null);
@@ -519,7 +522,7 @@ export default function SatinAlmaTalepleriSayfasi() {
                             <tr key={k.id}>
                               <td>{k.stokKod} — {k.stokAd} · {sayi(k.miktar, 3)} {k.birim}</td>
                               <td className="num"><Input type="number" min="0" step="0.0001" value={f.birimFiyat} onChange={(e) => fiyatGuncelle({ birimFiyat: e.target.value })} style={{ maxWidth: 150 }} /></td>
-                              <td className="num"><Input type="number" min="0" max="100" value={f.kdvOrani} onChange={(e) => fiyatGuncelle({ kdvOrani: e.target.value })} style={{ maxWidth: 90 }} /></td>
+                              <td className="num"><KdvOraniSecimi tablo={kodTablosu} value={f.kdvOrani} onDegis={(o) => fiyatGuncelle({ kdvOrani: o })} style={{ maxWidth: 110 }} /></td>
                             </tr>
                           );
                         })}

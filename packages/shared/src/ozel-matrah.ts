@@ -19,7 +19,7 @@
  * ödenecek 95.500.
  */
 
-import { ozelMatrahKoduBul } from "./gib-kodlari";
+import { ozelMatrahKoduBul, type OzelMatrahKodu } from "./gib-kodlari";
 import { kdvTutari, yuvarla } from "./para";
 
 export interface OzelMatrahGirdi {
@@ -38,7 +38,7 @@ export interface OzelMatrahGirdi {
  * Özel matrah faturasının kurallarını denetler. Arayüz kaydetmeden önce, şema
  * doğrulaması kaydederken aynı listeyi üretir.
  */
-export function ozelMatrahHatalari(girdi: OzelMatrahGirdi): string[] {
+export function ozelMatrahHatalari(girdi: OzelMatrahGirdi, /** MVZ-11: belge tarihindeki liste; `null` kod denetimini servise bırakır. */ tablo?: readonly OzelMatrahKodu[] | null): string[] {
   if (!girdi.ozelMatrahKodu) return [];
   const hatalar: string[] = [];
 
@@ -46,7 +46,7 @@ export function ozelMatrahHatalari(girdi: OzelMatrahGirdi): string[] {
   if (girdi.tip !== "satis" && girdi.tip !== "alis") {
     hatalar.push("Özel matrah yalnız satış ve alış faturasında seçilebilir");
   }
-  if (!ozelMatrahKoduBul(girdi.ozelMatrahKodu)) {
+  if (tablo !== null && !ozelMatrahKoduBul(girdi.ozelMatrahKodu, tablo)) {
     hatalar.push(`Tanımsız özel matrah kodu: ${girdi.ozelMatrahKodu}`);
   }
 

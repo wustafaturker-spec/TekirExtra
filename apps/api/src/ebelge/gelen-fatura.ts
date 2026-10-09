@@ -4,7 +4,7 @@
  * belge iskontosu, iade referansları); oluşacak faturanın tutarları belgenin
  * toplamlarıyla karşılaştırılır, tolerans aşılırsa işleme durur.
  */
-import { dovizKoduMu, faturaHesapla, ozelMatrahKdvsi, ozelMatrahKoduBul, tevkifatKoduBul, tevkifatPayPayda, type FaturaHesaplaSonuc, type TevkifatKodu } from "@tekirextra/shared";
+import { dovizKoduMu, faturaHesapla, kdvOraniHatasi, ozelMatrahKdvsi, ozelMatrahKoduBul, tevkifatKoduBul, tevkifatPayPayda, VARSAYILAN_KOD_TABLOSU, type FaturaHesaplaSonuc, type KodTablosu, type TevkifatKodu } from "@tekirextra/shared";
 import type { UblFatura } from "./ubl-oku";
 
 export type GelenFaturaTipi = "alis" | "satis_iade";
@@ -41,6 +41,8 @@ export function gelenFaturaGirdisi(
   eslesme: (siraNo: number) => GelenSatirEslesmesi | undefined,
   /** MVZ-12: belge tarihindeki merkezi tevkifat tablosu; verilmezse varsayılan. */
   tevkifatTablosu?: readonly TevkifatKodu[],
+  /** MVZ-11: belge tarihindeki KDV oranları ve kodları; verilmezse varsayılan. */
+  kodTablosu: KodTablosu = VARSAYILAN_KOD_TABLOSU,
 ): { girdi: GelenFaturaGirdisi; engeller: string[]; bilinmeyenler: BilinmeyenMevzuat[] } {
   const engeller: string[] = [];
   const bilinmeyenler: BilinmeyenMevzuat[] = [];
@@ -52,9 +54,22 @@ export function gelenFaturaGirdisi(
   if (vergiAdlari.size) engeller.push(`KDV dışı vergi aktarılamıyor (EBLG-120): ${[...vergiAdlari].join(", ")}`);
 
   const ozelMatrah = ubl.faturaTipKodu === "OZELMATRAH";
-  const ozelMatrahKodlari = ubl.istisnaKodlari.filter((k) => ozelMatrahKoduBul(k));
+  const ozelMatrahKodlari = ubl.istisnaKodlari.filter((k) => ozelMatrahKoduBul(k, kodTablosu.ozelMatrah));
   if (ozelMatrah && ozelMatrahKodlari.length > 1) engeller.push(`Belgede birden çok özel matrah kodu var (${ozelMatrahKodlari.join(", ")}); fatura tek kod taşır`);
-  else if (ozelMatrah && !ozelMatrahKoduBul(ubl.toplamlar.ozelMatrahKodu)) engeller.push(`Özel matrah kodu tanınmıyor: ${ubl.toplamlar.ozelMatrahKodu ?? "yok"}`);
+  else if (ozelMatrah && !ozelMatrahKoduBul(ubl.toplamlar.ozelMatrahKodu, kodTablosu.ozelMatrah)) {
+    engeller.push(`Özel matrah kodu tanınmıyor: ${ubl.toplamlar.ozelMatrahKodu ?? "yok"}`);
+    if (ubl.toplamlar.ozelMatrahKodu) bilinmeyenler.push({ tur: "ozel_matrah_kodu", anahtar: ubl.toplamlar.ozelMatrahKodu, aciklama: `Gelen e-Faturada tanınmayan özel matrah kodu ${ubl.toplamlar.ozelMatrahKodu}, belge tarihi ${ubl.tarih}` });
+  }
+
+  // MVZ-11: satır KDV oranı belge tarihindeki merkezi listede olmalı (özel matrahta satırlar KDV'sizdir).
+  if (!ozelMatrah) {
+    for (const oran of new Set(ubl.satirlar.map((s) => Math.max(0, s.kdvOrani)))) {
+      if (kdvOraniHatasi(oran, kodTablosu.kdvOranlari)) {
+        engeller.push(`KDV oranı %${oran} belge tarihinde (${ubl.tarih}) geçerli değil (Mevzuat Merkezi ekibine iletildi)`);
+        bilinmeyenler.push({ tur: "kdv_orani", anahtar: String(oran), aciklama: `Gelen e-Faturada %${oran} KDV oranı görüldü; belge tarihinde (${ubl.tarih}) merkezde yok` });
+      }
+    }
+  }
 
   // EBLG-117: tevkifatı yalnız başlıkta yazan belgede tek kod KDV'li her
   // satıra uygulanır; birden çok kod satırlara dağıtılamaz.

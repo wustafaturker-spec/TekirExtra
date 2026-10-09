@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional
 } from "@nestjs/common";
 import { BelgeTur, Prisma, ZincirBelgeDurum } from "@prisma/client";
 import { faturaHesapla, idisNormalize, bugunTR, faturaGecikmeUyarilari, IRSALIYE_FATURA_GUN_SAYISI, IRSALIYE_FATURA_TIPI, irsaliyeFaturaFarklari, irsaliyeFaturaSuresi, irsaliyeSevkGunu, irsaliyeFaturaTipiUyarMi, irsaliyeKanali, irsaliyeIptalUyarisi, type FaturaHesaplaSatirGirdi, type KayitEylem, type DovizKodu } from "@tekirextra/shared";
@@ -41,6 +42,7 @@ import type {
   matbuBelgeNoSemasi,
   topluFaturaSemasi,
 } from "./belgeler.semalar";
+import { MevzuatService } from "../mevzuat/mevzuat.service";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal =>
   new Prisma.Decimal(deger);
@@ -118,6 +120,7 @@ export class BelgelerService {
     private readonly depoService: DepoService,
     private readonly donemKilidi: DonemKilidiService,
     private readonly ayarlar?: AyarlarService,
+    @Optional() private readonly mevzuat?: MevzuatService,
   ) {}
 
   // ─── FATURALAMA SÜRESİ (EBLG-82) ──────────────────────────────────────────
@@ -409,6 +412,8 @@ export class BelgelerService {
   async olustur(girdi: z.infer<typeof belgeOlusturSemasi>, secenekler: { gelenBelge?: boolean } = {}) {
     const { tenantId, userId } = aktifBaglam();
     await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "belge oluşturma");
+    // MVZ-11: KDV oranı belge tarihindeki merkezi listeden olmalı.
+    if (!secenekler.gelenBelge) await this.mevzuat?.kdvOranlariniDogrula(girdi.satirlar.map((s) => s.kdvOrani), girdi.tarih);
 
     // FTR-14: satıcı kullanıcı bazında maksimum iskonto yetkisi kontrolü
     const user = await this.prisma.tenantIslem(tenantId, (tx) =>
@@ -547,6 +552,8 @@ export class BelgelerService {
     if (mevcut.durum !== "taslak") {
       throw new BadRequestException("Yalnızca taslak belgeler güncellenebilir");
     }
+    // MVZ-11: KDV oranı belge tarihindeki merkezi listeden olmalı.
+    await this.mevzuat?.kdvOranlariniDogrula((girdi.satirlar ?? mevcut.satirlar).map((s: { kdvOrani: unknown }) => String(s.kdvOrani)), girdi.tarih ?? mevcut.tarih);
     const birlesik = {
       tarih: girdi.tarih ?? mevcut.tarih,
       gecerlilikTarihi: girdi.gecerlilikTarihi ?? mevcut.gecerlilikTarihi,

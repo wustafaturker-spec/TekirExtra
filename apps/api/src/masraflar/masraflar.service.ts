@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -7,6 +7,7 @@ import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { DovizService } from "../doviz/doviz.service";
 import { KUR_GERI_BAKIS_GUN, kurCoz } from "../doviz/kur-coz";
 import type { kategoriGuncelleSemasi, kategoriOlusturSemasi, kiraDonemOlusturSemasi, kiraSozlesmeGuncelleSemasi, kiraSozlesmeOlusturSemasi, masrafGuncelleSemasi, masrafOdemeSemasi, masrafOlusturSemasi } from "./masraflar.semalar";
+import { MevzuatService } from "../mevzuat/mevzuat.service";
 
 const D = (deger: string | number | Prisma.Decimal) => new Prisma.Decimal(deger);
 
@@ -27,7 +28,7 @@ const VARSAYILAN_KATEGORILER = ["Kira", "Elektrik, Su ve Doğalgaz", "Telefon ve
 
 @Injectable()
 export class MasraflarService {
-  constructor(private readonly prisma: PrismaService, private readonly donemKilidi: DonemKilidiService, private readonly doviz: DovizService) {}
+  constructor(private readonly prisma: PrismaService, private readonly donemKilidi: DonemKilidiService, private readonly doviz: DovizService, @Optional() private readonly mevzuat?: MevzuatService) {}
 
   async kategoriListele() {
     const { tenantId } = aktifBaglam();
@@ -106,6 +107,8 @@ export class MasraflarService {
   async olustur(girdi: z.infer<typeof masrafOlusturSemasi>) {
     const { tenantId } = aktifBaglam();
     await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "masraf oluşturma");
+    // MVZ-11: KDV oranı belge tarihindeki merkezi listeden olmalı.
+    await this.mevzuat?.kdvOranlariniDogrula([girdi.kdvOrani], girdi.tarih);
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       if (!(await tx.masrafKategori.findUnique({ where: { id: girdi.kategoriId } }))) throw new BadRequestException("Masraf kategorisi bulunamadı");
       if (girdi.cariId && !(await tx.cariHesap.findUnique({ where: { id: girdi.cariId } }))) throw new BadRequestException("Cari hesap bulunamadı");
@@ -118,6 +121,8 @@ export class MasraflarService {
     if (mevcut.durum !== "taslak") throw new BadRequestException("Yalnızca taslak masraf düzenlenebilir");
     const { tenantId } = aktifBaglam();
     await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "masraf güncelleme");
+    // MVZ-11: KDV oranı belge tarihindeki merkezi listeden olmalı.
+    if (girdi.kdvOrani !== undefined) await this.mevzuat?.kdvOranlariniDogrula([girdi.kdvOrani], girdi.tarih ?? mevcut.tarih);
     return this.prisma.tenantIslem(tenantId, (tx) => tx.masraf.update({ where: { id }, data: this.veri(girdi) }));
   }
 
@@ -229,6 +234,8 @@ export class MasraflarService {
 
   async kiraSozlesmeOlustur(girdi: z.infer<typeof kiraSozlesmeOlusturSemasi>) {
     const { tenantId } = aktifBaglam();
+    // MVZ-11: aylık tahakkukta kullanılacak KDV oranı bugün yürürlükteki merkezi listeden olmalı.
+    await this.mevzuat?.kdvOranlariniDogrula([girdi.kdvOrani], new Date());
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       if (!(await tx.masrafKategori.findUnique({ where: { id: girdi.kategoriId } }))) throw new BadRequestException("Masraf kategorisi bulunamadı");
       if (girdi.cariId && !(await tx.cariHesap.findUnique({ where: { id: girdi.cariId } }))) throw new BadRequestException("Cari hesap bulunamadı");
@@ -238,6 +245,8 @@ export class MasraflarService {
 
   async kiraSozlesmeGuncelle(id: string, girdi: z.infer<typeof kiraSozlesmeGuncelleSemasi>) {
     const { tenantId } = aktifBaglam();
+    // MVZ-11: aylık tahakkukta kullanılacak KDV oranı bugün yürürlükteki merkezi listeden olmalı.
+    await this.mevzuat?.kdvOranlariniDogrula([girdi.kdvOrani], new Date());
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       if (!(await tx.kiraSozlesme.findUnique({ where: { id } }))) throw new NotFoundException("Kira sözleşmesi bulunamadı");
       if (!(await tx.masrafKategori.findUnique({ where: { id: girdi.kategoriId } }))) throw new BadRequestException("Masraf kategorisi bulunamadı");

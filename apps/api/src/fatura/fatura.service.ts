@@ -13,7 +13,7 @@ import {
 import { Prisma, FaturaTip, FaturaDurum, BelgeDurum } from "@prisma/client";
 import { faturaHesapla, faturaSenaryosuTuret, idisNormalize, metinNormalize, ozelMatrahKdvsi, sarjTuruCoz, sgkFaturasiMi, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type KayitEylem, type TevkifatKodu } from "@tekirextra/shared";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
-import { firmaTevkifatTablosu, tevkifatKurallariniUygula } from "./tevkifat-tablosu";
+import { belgeKodTablosu, firmaTevkifatTablosu, mevzuatKurallariniUygula } from "./tevkifat-tablosu";
 import { MevzuatService } from "../mevzuat/mevzuat.service";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -65,11 +65,14 @@ export class FaturaService {
     @Optional() private readonly mevzuat?: MevzuatService,
   ) {}
 
-  /** MVZ-12: belge tarihindeki merkezi tevkifat tablosuyla kod/oran kuralı; ihlal kaydı durdurur. */
-  private async tevkifatTablosuIleDogrula(girdi: { tarih: string | Date; satirlar?: { kdvOrani?: string | number | null; tevkifatKodu?: string | null; tevkifatOrani?: string | null }[] }, pasifKodKabul: boolean) {
+  /** MVZ-11/12: belge tarihindeki merkezi tablolarla KDV oranı ve kod kuralları; ihlal kaydı durdurur. */
+  private async tevkifatTablosuIleDogrula(girdi: { tarih: string | Date; ozelMatrahKodu?: string | null; ihracKayitliKodu?: string | null; satirlar?: { kdvOrani?: string | number | null; tevkifatKodu?: string | null; tevkifatOrani?: string | null; gibIstisnaKodu?: string | null }[] }, pasifKodKabul: boolean) {
     const tarih = typeof girdi.tarih === "string" ? girdi.tarih.slice(0, 10) : girdi.tarih.toISOString().slice(0, 10);
-    const tablo = await firmaTevkifatTablosu({ mevzuat: this.mevzuat, ayarlar: this.ayarlar }, tarih);
-    const hatalar = tevkifatKurallariniUygula(girdi.satirlar ?? [], tablo, pasifKodKabul);
+    const [tablo, kod] = await Promise.all([
+      firmaTevkifatTablosu({ mevzuat: this.mevzuat, ayarlar: this.ayarlar }, tarih),
+      belgeKodTablosu(this.mevzuat, tarih),
+    ]);
+    const hatalar = mevzuatKurallariniUygula({ ozelMatrahKodu: girdi.ozelMatrahKodu, ihracKayitliKodu: girdi.ihracKayitliKodu, satirlar: girdi.satirlar ?? [] }, { tevkifat: tablo, kod }, pasifKodKabul);
     if (hatalar.length) throw new BadRequestException(hatalar.join("; "));
     return tablo;
   }
@@ -1564,8 +1567,9 @@ export class FaturaService {
     );
     if (!firma) throw new NotFoundException("Firma bulunamadı");
     const tema = await this.pdf.belgeTemasi();
+    const kodTablosu = await belgeKodTablosu(this.mevzuat, new Date(fatura.tarih).toISOString().slice(0, 10));
     const buffer = await this.pdf.htmlToPdf(
-      faturaPdfHtml(fatura, { ...firma, tema }),
+      faturaPdfHtml({ ...fatura, kodTablosu }, { ...firma, tema }),
     );
     return {
       buffer,

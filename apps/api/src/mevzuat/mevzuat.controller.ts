@@ -19,6 +19,14 @@ export class MevzuatController {
     private readonly ayarlar: AyarlarService,
   ) {}
 
+  /** MVZ-11: formların KDV oranı ve kod listeleri — belge tarihindeki merkezi tablo. */
+  @Get("kod-tablosu")
+  kodTablosu(@Query("tarih") tarih?: string) {
+    const gun = tarih ?? bugunTR();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(gun)) throw new BadRequestException("Tarih YYYY-MM-DD olmalıdır");
+    return this.mevzuat.kodTablosu(gun);
+  }
+
   /** MVZ-12: fatura formunun tevkifat listesi — belge tarihindeki merkezi tablo, firmanın gizledikleri işaretli. */
   @Get("tevkifat-tablosu")
   tevkifatTablosu(@Query("tarih") tarih?: string) {

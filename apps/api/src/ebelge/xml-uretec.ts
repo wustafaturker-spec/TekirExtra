@@ -13,6 +13,7 @@ import {
   KAMU_ODEME_KODU,
   ozelMatrahKdvsi,
   ozelMatrahKoduBul,
+  type KodTablosu,
   ozelMatrahSatirPaylari,
   sgkBelgeAlanlari,
   SGK_FATURA_TIPI,
@@ -121,6 +122,8 @@ export function faturaUblUret(
   /** Satıcı: firma kartı (EBLG-62). Adres eksikse gönderim daha önce durur. */
   supplier: { unvan: string; vkn: string } & FirmaEbelgeBilgisi,
   secenekler: {
+    /** MVZ-11: belge tarihindeki merkezi kod listesi; kod açıklamaları buradan yazılır (yoksa varsayılan liste). */
+    kodTablosu?: KodTablosu;
     tur?: "efatura" | "earsiv";
     ihracat?: IhracatUblBilgisi;
     /** EBLG-80: yurt dışı alıcıya e-Arşiv istisna; yalnız e-Arşiv kanalında geçerli. */
@@ -266,9 +269,9 @@ export function faturaUblUret(
   const istisnaAciklamasi = (kod: string) =>
     // Entegratör görünümü kodu zaten "812-" diye yazıyor; açıklamada kodu
     // tekrarlamak "812-812 …" çıkarıyordu.
-    ozelMatrahKoduBul(kod) ? ozelMatrahKoduBul(kod)!.ad
+    ozelMatrahKoduBul(kod, secenekler.kodTablosu?.ozelMatrah) ? ozelMatrahKoduBul(kod, secenekler.kodTablosu?.ozelMatrah)!.ad
     : yolcu && kod === YOLCU_BERABER_ISTISNA_KODU ? YOLCU_BERABER_ISTISNA_ACIKLAMASI
-    : ihracatIstisnasi || (yurtDisiIstisna && (kod === "301" || kod === "302")) ? ihracatIstisnaAciklamasi(kod) : `${kod} ${(istisnaKoduBul(kod) ?? ihracKayitliKoduBul(kod))?.ad ?? ""}`.trim();
+    : ihracatIstisnasi || (yurtDisiIstisna && (kod === "301" || kod === "302")) ? ihracatIstisnaAciklamasi(kod) : `${kod} ${(istisnaKoduBul(kod, secenekler.kodTablosu?.istisna) ?? ihracKayitliKoduBul(kod, secenekler.kodTablosu?.ihracKayitli))?.ad ?? ""}`.trim();
 
   /*
    * İhraç kayıtlı satış (EBLG-60): KDV hesaplanıp gösterilir ama tahsil

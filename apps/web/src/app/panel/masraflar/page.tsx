@@ -8,6 +8,7 @@ import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyal
 import { MasrafEkPaneli } from "@/components/masraf-ek-paneli";
 import { bugunTR } from "@tekirextra/shared";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
+import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
 
 interface Kategori { id: string; ad: string; varsayilanKdvOrani: string | null; ustId: string | null; ust: { id: string; ad: string } | null; _count: { altlar: number; masraflar: number } }
 interface Cari { id: string; unvan: string }
@@ -34,6 +35,8 @@ export default function MasraflarSayfasi() {
   const [kategoriId, setKategoriId] = useState(""); const [cariId, setCariId] = useState("");
   const [belgeTuru, setBelgeTuru] = useState("fis"); const [belgeNo, setBelgeNo] = useState("");
   const [tarih, setTarih] = useState(bugun()); const [saticiUnvan, setSaticiUnvan] = useState("");
+  // MVZ-11: KDV oranı belge tarihindeki merkezi listeden seçilir.
+  const kodTablosu = useKodTablosu(tarih);
   const [vknTckn, setVknTckn] = useState(""); const [aciklama, setAciklama] = useState("");
   const [toplamBedel, setToplamBedel] = useState(""); const [kdvOrani, setKdvOrani] = useState("20");
   const [dovizCinsi, setDovizCinsi] = useState("TRY"); const [kur, setKur] = useState("1"); const [kurBilgisi, setKurBilgisi] = useState("");
@@ -141,7 +144,7 @@ export default function MasraflarSayfasi() {
           <div className="expense-entry__section-head"><span className="expense-entry__step">03</span><div><h3>Tutar ve belge</h3><p>Toplam bedelden matrah ve KDV otomatik ayrılır</p></div></div>
           <div className="expense-entry__grid expense-entry__grid--amount">
             <Field label="Toplam bedel (KDV dâhil)"><Input required min="0.01" step="0.01" type="number" value={toplamBedel} onChange={(e) => setToplamBedel(e.target.value)} placeholder="0,00" autoFocus /></Field>
-            <Field label="KDV oranı"><Select value={kdvOrani} onChange={(e) => setKdvOrani(e.target.value)}><option value="0">%0</option><option value="1">%1</option><option value="10">%10</option><option value="20">%20</option></Select></Field>
+            <Field label="KDV oranı"><KdvOraniSecimi tablo={kodTablosu} value={kdvOrani} onDegis={setKdvOrani} /></Field>
             <Field label="Matrah"><Input readOnly value={matrah} /></Field>
             <Field label="KDV tutarı"><Input readOnly value={kdvTutari} /></Field>
             <div className="expense-entry__total"><span>KDV dâhil toplam</span><strong>{para(toplam, dovizCinsi)}</strong>{dovizCinsi !== "TRY" && <small>{para(Number(toplam) * Number(kur || 0))} karşılığı</small>}</div>

@@ -135,7 +135,8 @@ export function ihracKayitliSonTarih(teslim: Date | string): string {
 /** Son tarihe bu kadar gün kala Bildirim Merkezi uyarır. */
 export const IHRAC_KAYITLI_UYARI_GUNU = 15;
 
-export const ihracKayitliKoduBul = (kod: string | null | undefined) => IHRAC_KAYITLI_KODLARI.find((k) => k.kod === kod);
+/** MVZ-11: tablo verilirse (belge tarihindeki merkezi liste) onda, verilmezse varsayılan listede arar. */
+export const ihracKayitliKoduBul = (kod: string | null | undefined, tablo: readonly { kod: string; ad: string }[] = IHRAC_KAYITLI_KODLARI) => tablo.find((k) => k.kod === kod);
 
 export interface TevkifatKodu {
   kod: string;
@@ -215,15 +216,17 @@ export const OZEL_MATRAH_KODLARI: readonly OzelMatrahKodu[] = [
 
 const OZEL_MATRAH_HARITASI = new Map(OZEL_MATRAH_KODLARI.map((k) => [k.kod, k]));
 
-export function ozelMatrahKoduBul(kod: string | null | undefined): OzelMatrahKodu | undefined {
-  return kod ? OZEL_MATRAH_HARITASI.get(kod) : undefined;
+export function ozelMatrahKoduBul(kod: string | null | undefined, tablo?: readonly OzelMatrahKodu[]): OzelMatrahKodu | undefined {
+  if (!kod) return undefined;
+  return tablo ? tablo.find((k) => k.kod === kod) : OZEL_MATRAH_HARITASI.get(kod);
 }
 
 const ISTISNA_HARITASI = new Map(KDV_ISTISNA_KODLARI.map((k) => [k.kod, k]));
 const TEVKIFAT_HARITASI = new Map(TEVKIFAT_KODLARI.map((k) => [k.kod, k]));
 
-export function istisnaKoduBul(kod: string | null | undefined): IstisnaKodu | undefined {
-  return kod ? ISTISNA_HARITASI.get(kod) : undefined;
+export function istisnaKoduBul(kod: string | null | undefined, tablo?: readonly IstisnaKodu[]): IstisnaKodu | undefined {
+  if (!kod) return undefined;
+  return tablo ? tablo.find((k) => k.kod === kod) : ISTISNA_HARITASI.get(kod);
 }
 
 /**

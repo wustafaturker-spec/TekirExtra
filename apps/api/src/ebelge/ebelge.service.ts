@@ -16,7 +16,7 @@ import {
 } from "@nestjs/common";
 import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
 import type { BelgeDurumSonuc, EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
-import { faturaGecikmeUyarilari, ihracKayitliKoduBul, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeSevkGunu, type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, YOLCU_BERABER_POSTA_KUTUSU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu, sgkEngelleri, sgkFaturasiMi, SGK_VKN, sarjEngelleri, sarjPlakaNormalize, idisEngelleri, idisNormalize, ytbBelgesiMi, ytbEngelleri, ytbNormalize, type SarjTuru, type SevkiyatYontemi, sevkiyatEksikleri, sevkiyatSorulurMu, ebelgeKanali, ebelgeUygulamalariCoz, ebelgeKanalEngelleri, uygulamaAcik, type EbelgeUygulamalari, type DovizKodu, dovizKoduMu, type TevkifatKodu } from "@tekirextra/shared";
+import { faturaGecikmeUyarilari, ihracKayitliKoduBul, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeSevkGunu, type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, YOLCU_BERABER_POSTA_KUTUSU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu, sgkEngelleri, sgkFaturasiMi, SGK_VKN, sarjEngelleri, sarjPlakaNormalize, idisEngelleri, idisNormalize, ytbBelgesiMi, ytbEngelleri, ytbNormalize, type SarjTuru, type SevkiyatYontemi, sevkiyatEksikleri, sevkiyatSorulurMu, ebelgeKanali, ebelgeUygulamalariCoz, ebelgeKanalEngelleri, uygulamaAcik, type EbelgeUygulamalari, type DovizKodu, dovizKoduMu, type KodTablosu, type TevkifatKodu, VARSAYILAN_KOD_TABLOSU } from "@tekirextra/shared";
 import { ebelgeUygulamalariCozTenant } from "./ebelge-uygulamalari.service";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
@@ -29,7 +29,7 @@ import { FaturaService } from "../fatura/fatura.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
 import { UblOkumaHatasi, faturaUblOku, type UblFatura, type UblSatir } from "./ubl-oku";
 import { gelenFaturaGirdisi, gelenFaturaHesabi, tutarDenetimi, type GelenSatirEslesmesi } from "./gelen-fatura";
-import { firmaTevkifatTablosu } from "../fatura/tevkifat-tablosu";
+import { belgeKodTablosu, firmaTevkifatTablosu } from "../fatura/tevkifat-tablosu";
 import { MevzuatService } from "../mevzuat/mevzuat.service";
 import { adSoyadCoz } from "../cari/ad-soyad";
 import { durumAciklamasi } from "./durum-aciklamasi";
@@ -114,9 +114,9 @@ function ytbGirdisi(fatura: {
  * EBLG-114: gelen `IHRACKAYITLI` faturanın ihraç kayıtlı kodu. Tanımsız kodla
  * gelen belge işlenmez: kodsuz işlenirse KDV yeniden cariye eklenirdi.
  */
-function gelenIhracKayitliKodu(ubl: Pick<UblFatura, "faturaTipKodu" | "istisnaKodlari">): string | null {
+function gelenIhracKayitliKodu(ubl: Pick<UblFatura, "faturaTipKodu" | "istisnaKodlari">, kodTablosu: KodTablosu = VARSAYILAN_KOD_TABLOSU): string | null {
   if (ubl.faturaTipKodu.toUpperCase() !== "IHRACKAYITLI") return null;
-  const kod = ubl.istisnaKodlari.find((k) => ihracKayitliKoduBul(k));
+  const kod = ubl.istisnaKodlari.find((k) => ihracKayitliKoduBul(k, kodTablosu.ihracKayitli));
   if (!kod) {
     throw new BadRequestException(
       `Belge ihraç kayıtlı ama tanınan bir ihraç kayıtlı kodu taşımıyor (${ubl.istisnaKodlari.join(", ") || "kod yok"}); faturaya işlenemez`,
@@ -130,15 +130,15 @@ function gelenIhracKayitliKodu(ubl: Pick<UblFatura, "faturaTipKodu" | "istisnaKo
  * engeller ve belge toplamlarıyla karşılaştırma. Onay ekranı (eşleşmesiz) ve
  * onay (eşleşmeli) aynı hesabı görür.
  */
-function gelenDenetle(ubl: UblFatura, tevkifatTablosu: readonly TevkifatKodu[], eslesme: (siraNo: number) => GelenSatirEslesmesi | undefined = () => undefined) {
-  const { girdi, engeller, bilinmeyenler } = gelenFaturaGirdisi(ubl, eslesme, tevkifatTablosu);
+function gelenDenetle(ubl: UblFatura, tablolar: { tevkifat: readonly TevkifatKodu[]; kod: KodTablosu }, eslesme: (siraNo: number) => GelenSatirEslesmesi | undefined = () => undefined) {
+  const { girdi, engeller, bilinmeyenler } = gelenFaturaGirdisi(ubl, eslesme, tablolar.tevkifat, tablolar.kod);
   let ihracKayitliKodu: string | null = null;
   try {
-    ihracKayitliKodu = gelenIhracKayitliKodu(ubl);
+    ihracKayitliKodu = gelenIhracKayitliKodu(ubl, tablolar.kod);
   } catch (hata) {
     engeller.push(hata instanceof Error ? hata.message : String(hata));
   }
-  const denetim = tutarDenetimi(ubl, gelenFaturaHesabi(girdi, Boolean(ihracKayitliKodu), tevkifatTablosu), Boolean(ihracKayitliKodu));
+  const denetim = tutarDenetimi(ubl, gelenFaturaHesabi(girdi, Boolean(ihracKayitliKodu), tablolar.tevkifat), Boolean(ihracKayitliKodu));
   return { girdi, engeller, denetim, ihracKayitliKodu, bilinmeyenler };
 }
 
@@ -216,6 +216,12 @@ export class EbelgeService {
     private readonly belgeler: BelgelerService,
     @Optional() private readonly mevzuat?: MevzuatService,
   ) {}
+
+  /** MVZ-11/12: gelen belgenin tarihindeki merkezi tablolar (karşı tarafın belgesi: firmanın gizledikleri de tanınır). */
+  private async gelenTablolari(tarih: string) {
+    const [tevkifat, kod] = await Promise.all([firmaTevkifatTablosu({ mevzuat: this.mevzuat }, tarih), belgeKodTablosu(this.mevzuat, tarih)]);
+    return { tevkifat, kod };
+  }
 
   // ─── E-BELGE GÖNDERİMİ (EBLG-01/02/06/07) ──────────────────────────────────
 
@@ -1003,6 +1009,8 @@ export class EbelgeService {
       ublFatura,
       hazirlik.tenant,
       {
+        // MVZ-11: istisna/özel matrah/ihraç kayıtlı açıklamaları belge tarihindeki merkezi listeden.
+        kodTablosu: await belgeKodTablosu(this.mevzuat, ublFatura.tarih.toISOString().slice(0, 10)),
         tur,
         ihracat: hazirlik.ihracat.ublBilgisi,
         yurtDisiEarsiv: hazirlik.ihracat.yurtDisiEarsiv,
@@ -1826,7 +1834,7 @@ export class EbelgeService {
     });
 
     // MVZ-12: belge tarihindeki merkezi tablo; firmanın gizledikleri de tanınır.
-    const { girdi: oneri, engeller, denetim, bilinmeyenler } = gelenDenetle(ubl, await firmaTevkifatTablosu({ mevzuat: this.mevzuat }, ubl.tarih));
+    const { girdi: oneri, engeller, denetim, bilinmeyenler } = gelenDenetle(ubl, await this.gelenTablolari(ubl.tarih));
     // MVZ-10: merkezde karşılığı olmayan kod/oran platform ekibine iletilir; hata belgeyi etkilemez.
     for (const b of bilinmeyenler) await this.mevzuat?.bilinmeyenBildir(b).catch((hata: unknown) => this.logger.warn(JSON.stringify({ event: "mevzuat_bilinmeyen_kod_kaydedilemedi", hata: hata instanceof Error ? hata.message : String(hata) })));
 
@@ -1919,7 +1927,7 @@ export class EbelgeService {
     // alış faturasına geçer ve KDV cariye/genel toplama girmez.
     // EBLG-115…119: kur, belge iskontosu, tevkifat ve özel matrah belgeden
     // gelir; oluşacak fatura belge toplamlarını tutmuyorsa işlenmez.
-    const { girdi: belgeGirdisi, engeller, denetim, ihracKayitliKodu } = gelenDenetle(ubl, await firmaTevkifatTablosu({ mevzuat: this.mevzuat }, ubl.tarih), (sira) => {
+    const { girdi: belgeGirdisi, engeller, denetim, ihracKayitliKodu } = gelenDenetle(ubl, await this.gelenTablolari(ubl.tarih), (sira) => {
       const stokId = eslesme.get(sira);
       return stokId ? { stokId, varyantId: varyantlar.get(sira) } : undefined;
     });

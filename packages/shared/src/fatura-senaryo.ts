@@ -1,4 +1,5 @@
 import { type IstisnaKodu, KDV_ISTISNA_KODLARI, ihracKayitliKoduBul, istisnaKoduBul, tevkifatKoduBul, tevkifatOraniAyristir, type TevkifatKodu } from "./gib-kodlari";
+import { kdvOraniHatasi, type KodTablosu } from "./kod-tablosu";
 
 /** UBL'e `InvoiceTypeCode` olarak yazılan GİB senaryosu (FTR-16). */
 export type FaturaSenaryosu = "satis" | "iade" | "tevkifat" | "tevkifatiade" | "istisna" | "ihrackayitli" | "ozelmatrah" | "sgk" | "sarj" | "sarjanlik";
@@ -87,15 +88,15 @@ export function faturaSenaryosuTuret(
  * satırlar için yalnız 351 kalır. Arayüz listeyi, şema doğrulaması seçimi bu
  * işlevle denetler.
  */
-export function izinliIstisnaKodlari(satirlar: Pick<SenaryoSatirGirdi, "tevkifatKodu">[]): readonly IstisnaKodu[] {
+export function izinliIstisnaKodlari(satirlar: Pick<SenaryoSatirGirdi, "tevkifatKodu">[], istisnaTablosu: readonly IstisnaKodu[] = KDV_ISTISNA_KODLARI): readonly IstisnaKodu[] {
   return satirlar.some((s) => Boolean(s.tevkifatKodu))
-    ? KDV_ISTISNA_KODLARI.filter((k) => k.kod === ISTISNA_OLMAYAN_KOD)
-    : KDV_ISTISNA_KODLARI;
+    ? istisnaTablosu.filter((k) => k.kod === ISTISNA_OLMAYAN_KOD)
+    : istisnaTablosu;
 }
 
 export interface SenaryoHatasi {
   satirIndeksi: number;
-  alan: "gibIstisnaKodu" | "tevkifatKodu" | "tevkifatOrani";
+  alan: "gibIstisnaKodu" | "tevkifatKodu" | "tevkifatOrani" | "kdvOrani";
   mesaj: string;
 }
 
@@ -113,6 +114,13 @@ export interface SenaryoSecenekleri {
   tevkifatTablosu?: readonly TevkifatKodu[] | null;
   /** Gelen belgeden oluşan faturada pasif kod da kabul edilir. */
   pasifKodKabul?: boolean;
+  /**
+   * MVZ-11: belge tarihindeki KDV oranları ve istisna kodları. Verilirse KDV
+   * oranı listeyle denetlenir; verilmezse istisna varsayılan listeden aranır
+   * ve oran denetlenmez; `null` istisna kodu denetimini de atlar (şema —
+   * servis belge tarihindeki tabloyla yeniden denetler).
+   */
+  kodTablosu?: KodTablosu | null;
 }
 
 export function senaryoHatalari(satirlar: SenaryoSatirGirdi[], ozelMatrah = false, secenek: SenaryoSecenekleri = {}): SenaryoHatasi[] {
@@ -134,8 +142,13 @@ export function senaryoHatalari(satirlar: SenaryoSatirGirdi[], ozelMatrah = fals
       });
     }
 
+    if (secenek.kodTablosu) {
+      const kdvHatasi = kdvOraniHatasi(satir.kdvOrani, secenek.kodTablosu.kdvOranlari);
+      if (kdvHatasi) hatalar.push({ satirIndeksi, alan: "kdvOrani", mesaj: kdvHatasi });
+    }
+
     if (satir.gibIstisnaKodu) {
-      if (!istisnaKoduBul(satir.gibIstisnaKodu)) {
+      if (secenek.kodTablosu !== null && !istisnaKoduBul(satir.gibIstisnaKodu, secenek.kodTablosu?.istisna)) {
         hatalar.push({ satirIndeksi, alan: "gibIstisnaKodu", mesaj: `Tanımsız GİB istisna kodu: ${satir.gibIstisnaKodu}` });
       } else if (!kdvSifir) {
         hatalar.push({ satirIndeksi, alan: "gibIstisnaKodu", mesaj: "İstisna kodu yalnızca KDV oranı sıfır olan satırda kullanılabilir" });
@@ -186,10 +199,10 @@ export function ihracKayitliHatalari(fatura: {
   tip: string;
   ihracKayitliKodu?: string | null;
   satirlar: Pick<SenaryoSatirGirdi, "tevkifatKodu">[];
-}): string[] {
+}, /** MVZ-11: belge tarihindeki liste; `null` kod denetimini servise bırakır. */ tablo?: readonly { kod: string; ad: string }[] | null): string[] {
   if (!fatura.ihracKayitliKodu) return [];
   const hatalar: string[] = [];
-  if (!ihracKayitliKoduBul(fatura.ihracKayitliKodu)) hatalar.push(`Tanımsız ihraç kayıtlı kodu: ${fatura.ihracKayitliKodu}`);
+  if (tablo !== null && !ihracKayitliKoduBul(fatura.ihracKayitliKodu, tablo)) hatalar.push(`Tanımsız ihraç kayıtlı kodu: ${fatura.ihracKayitliKodu}`);
   if (fatura.tip !== "satis" && fatura.tip !== "alis") hatalar.push("İhraç kayıtlı yalnız satış ve alış faturasında olabilir");
   if (fatura.satirlar.some((s) => Boolean(s.tevkifatKodu))) {
     hatalar.push("İhraç kayıtlı satışta KDV tahsil edilmez; tevkifat uygulanamaz");

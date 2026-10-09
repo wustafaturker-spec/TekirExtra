@@ -15,7 +15,7 @@
  * üretemez). Geri alma eşleme türüne göre çalışır: mevcut fiş yalnız bağdan
  * çözülür, üretilen kayıtlar silinir.
  */
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { type EkstreEslesmeTuru, Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -31,6 +31,7 @@ import { KasaBankaService } from "./kasa-banka.service";
 import type { ekstreEslestirSemasi, ekstreKuralGuncelleSemasi } from "./kasa-banka.semalar";
 import { KrediKartiService } from "./kredi-karti.service";
 import { KrediService } from "./kredi.service";
+import { MevzuatService } from "../mevzuat/mevzuat.service";
 
 const D = (deger: Prisma.Decimal.Value) => new Prisma.Decimal(deger);
 const GUN = 86_400_000;
@@ -48,6 +49,7 @@ export class EkstreEslestirmeService {
     private readonly odemeTalimati: OdemeTalimatiService,
     private readonly dovizIslem: DovizIslemService,
     private readonly kredi: KrediService,
+    @Optional() private readonly mevzuat?: MevzuatService,
   ) {}
 
   // ─── ÖNERİLER ──────────────────────────────────────────────────────────────
@@ -138,6 +140,8 @@ export class EkstreEslestirmeService {
     const satir = await this.satirGetir(tenantId, id);
     if (satir.durum === "eslesti") throw new ConflictException("Bu satır zaten eşleştirilmiş");
     await this.donemKilidi.tarihDogrula(tenantId, satir.tarih, "ekstre satırını eşleştirme");
+    // MVZ-11: KDV oranı belge tarihindeki merkezi listeden olmalı.
+    if (girdi.tur === "masraf") await this.mevzuat?.kdvOranlariniDogrula([girdi.kdvOrani], satir.tarih);
 
     const giris = !satir.tutar.isNegative();
     const mutlak = satir.tutar.abs();

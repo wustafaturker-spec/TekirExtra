@@ -920,7 +920,24 @@ etkileyeceği taslak fatura ve firma sayısı görünür (MVZ-06, şimdilik yaln
 tevkifat). Tevkifat alt sınırı uyarısı formda hazır, **değer yüklenmedi**:
 platform ekibi `kanuni_deger / tevkifat_alt_siniri`'ni dayanağıyla girince
 devreye girer. Bilinen sınır: merkezde bir kaydın başlangıcından önceye kayıt
-eklenemez (2000-01-01 öncesi tarihçe girilemez). Bulgu: tevkifat tablosu GİB kod listesi
+eklenemez (2000-01-01 öncesi tarihçe girilemez).
+
+**Aşama 3 (KDV) bitti — 2026-10-09:** göç `20261010090000_mevzuat_kdv`.
+KDV oranları **tarihçeli** (kullanıcı onayı): %8/%18 09.07.2023'e kadar,
+%10/%20 10.07.2023'ten (CK 7346, RG 07.07.2023), %1 ve %0 2000'den beri;
+85 istisna, 12 özel matrah, 2 ihraç kayıtlı kodu bugünkü listeyle 2000'den
+beri. Fatura (satır KDV, istisna, özel matrah, ihraç kayıtlı), teklif/sipariş/
+irsaliye, masraf, kira sözleşmesi, gelir, kredi kartı harcaması, ekstre
+eşleştirme, satın alma teklifi ve stok kartı (Excel dahil) KDV oranını kendi
+tarihindeki merkezi listeyle denetler; tarihsiz kayıtlar (stok kartı, kira
+sözleşmesi, satın alma teklifi) bugünün listesini kullanır. Formlarda serbest
+oran kalktı, liste dışı kayıtlı oran "bu tarihte geçerli değil" diye görünür.
+Gelen e-Faturada liste dışı oran ve tanınmayan özel matrah kodu kapıda durur
+ve platforma bildirilir. e-Belge XML'i ve fatura PDF'i kod açıklamalarını belge
+tarihindeki listeden yazar. Etki önizlemesi tüm KDV türlerinde (taslak fatura
++ taslak teklif/sipariş/irsaliye). Kur farkı faturası kaynak faturanın oranını
+taşır ve normal fatura kaydından geçtiği için aynı denetime girer. Kapsam
+dışı: pazaryeri ürün eşlemesindeki KDV (dış sistem verisi). Bulgu: tevkifat tablosu GİB kod listesi
 v1.17'de kalmış, gelen belgelerden fark edilmişti (EBLG-115…119, FTR-35).
 
 Mevcut durum: değerler kodda sabit (`packages/shared/src/gib-kodlari.ts`),
@@ -936,12 +953,12 @@ serbest yazılıyor (0–100).
 | MVZ-03 | **Geçmiş belgeye etkisi:** kesinleşmiş belge satırda sakladığı değerle kalır, hiçbir değişiklik onu yeniden hesaplamaz. Taslak bir sonraki kaydedişte, kendi tarihindeki değerle yeniden hesaplanır. | Z |
 | MVZ-04 | ✅ **Platform yöneticisi rolü:** kiracı rollerinden (kiracı "yönetici"si dahil) ayrı bir rol; hiçbir kiracının verisine erişmez, yalnız Mevzuat Merkezi'ni yönetir. Girişte iki adımlı doğrulama zorunlu. Platform kullanıcısı kiracı panelinden açılamaz; **ayrı platform paneli** (`/platform`, ayrı giriş) kullanılır: tablolar, etki önizlemesi, yayın kuyruğu, denetim izi, "bilinmeyen kod" ve kiracı bildirimleri listesi. | Z |
 | MVZ-05 | ✅ **Değişiklik akışı:** taslak → yayın. Her değişiklikte **mevzuat dayanağı** (tebliğ/kılavuz adı, sayısı, tarihi) ve **yürürlük tarihi** zorunlu. Yayınlanan değer değiştirilmez; düzeltme yeni bir kayıtla yapılır (eskisi bitiş tarihi alır). **Dört göz:** hazırlayan kişi yayınlayamaz; ikinci bir platform yetkilisi dayanağı kontrol edip yayınlar ya da gerekçeyle geri çevirir. | Z |
-| MVZ-06 | ✅ (tevkifat; diğer türler bağlandıkça) **Etki önizlemesi:** yayından önce değişikliğin etkileyeceği **taslak** belge sayısı (toplam ve kiracı sayısı; kiracı verisi gösterilmez) ve pasifleşen kodu kullanan taslaklar gösterilir. | Z |
+| MVZ-06 | ✅ (tevkifat + KDV türleri; kanuni değerler aşama 4) **Etki önizlemesi:** yayından önce değişikliğin etkileyeceği **taslak** belge sayısı (toplam ve kiracı sayısı; kiracı verisi gösterilmez) ve pasifleşen kodu kullanan taslaklar gösterilir. | Z |
 | MVZ-07 | ✅ **Bildirim:** yayınlanan değişiklik bütün kiracıların yönetici ve muhasebe rollerine Bildirim Merkezi kaydı olarak gider (BLD): ne değişti, yürürlük tarihi, dayanağı. Kiracı panelinde **Ayarlar > Mevzuat** salt okunur görünümü: güncel ve geçmiş değerler, dayanakları. | Z |
 | MVZ-08 | ✅ **Denetim izi:** her değişiklik eski/yeni değer, kişi, zaman ve dayanakla saklanır; silinemez. | Z |
 | MVZ-09 | ✅ **Kiracıya kalan tercihler:** kiracı mevzuat değerini (oran, kod, ad, süre, eşik) **değiştiremez**. Yalnız kullanmadığı kodu kendi listesinden gizleyebilir (pasif; gelen belgede yine tanınır) ve varsayılan seçimlerini belirler (ör. yeni satırın varsayılan KDV oranı, geçerli oranlar arasından). Kiracı ekranında **"Eksik / hatalı bildir"** ile platform ekibine talep açılır. | Z |
 | MVZ-10 | ✅ **Gelen belgede bilinmeyen değer:** gelen e-Faturada merkezi tabloda olmayan bir kod ya da belgenin tarihinde geçersiz bir oran görülürse belge kapıda durur (EBLG-115) ve platform ekibine "bilinmeyen kod/oran" kaydı düşer (kod, oran, belge tarihi, görülme sayısı; kiracı adı ve belge içeriği taşınmaz). Mevzuat değişikliğinin erken işareti olarak kullanılır. | Z |
-| MVZ-11 | **İlk paket — KDV:** geçerli KDV oranları (yürürlük tarihli liste); fatura, stok kartı, masraf ve diğer KDV'li formlarda oran serbest yazılmaz, belge tarihindeki listeden seçilir; liste dışı oran reddedilir. KDV istisna kodları, özel matrah kodları, ihraç kayıtlı kodları da merkezi tabloya taşınır. | Z |
+| MVZ-11 | ✅ **İlk paket — KDV:** geçerli KDV oranları (yürürlük tarihli liste); fatura, stok kartı, masraf ve diğer KDV'li formlarda oran serbest yazılmaz, belge tarihindeki listeden seçilir; liste dışı oran reddedilir. KDV istisna kodları, özel matrah kodları, ihraç kayıtlı kodları da merkezi tabloya taşınır. | Z |
 | MVZ-12 | ✅ **İlk paket — tevkifat:** tevkifat kodları ve oranları (FTR-35'in yerini alır). Tevkifat alt sınırı (2026 için KDV dahil 12.000 TL bildiriliyor; dayanağı yüklemede doğrulanır) da tutulur; sınırın altındaki tevkifatlı satırda uyarı verilir. | Z |
 | MVZ-13 | **İlk paket — kanuni süre ve eşikler:** BA/BS bildirim eşiği (CARI-37), e-Arşiv iptal süresi (EBLG-22), irsaliye–fatura süresi (EBLG-82) kiracı ayarından kaldırılıp merkeze taşınır. Entegratör sorgu sıklığı gibi işletim ayarları kiracıda kalır. | Z |
 | MVZ-14 | **İlk paket — bordro:** bordro mevzuat setleri (asgari ücret, SGK oran ve tavanı, gelir vergisi dilimleri, damga vergisi, istisnalar; PRS-11) merkezi olur; kiracıya kopyalanmaz, kiracıdaki taslak/onay adımı kalkar. Kabul senaryoları yayından önce platformda çalıştırılır. Onaylı bordrolar saklı değerleriyle kalır. | Z |

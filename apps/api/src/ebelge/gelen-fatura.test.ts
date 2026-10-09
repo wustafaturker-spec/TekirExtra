@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { gelenFaturaGirdisi, gelenFaturaHesabi, gelenFaturaTipi, tevkifatOraniMetni, tutarDenetimi } from "./gelen-fatura";
 import type { UblFatura, UblSatir } from "./ubl-oku";
-import { tevkifatTablosuKur } from "@tekirextra/shared";
+import { kodTablosuKur, tevkifatTablosuKur } from "@tekirextra/shared";
 
 const STOK = "11111111-1111-4111-8111-111111111111";
 const eslesme = () => ({ stokId: STOK });
@@ -135,6 +135,23 @@ describe("gelen tevkifat (EBLG-117)", () => {
   it("tanınmayan kodda ve 650'ye uymayan oranda durur", () => {
     expect(denetle(belge({ satirlar: [satir({ tevkifat: { kod: "699", oran: 50, tutar: 100 } })] })).engeller[0]).toMatch(/tevkifat kodu tanınmıyor/);
     expect(denetle(belge({ satirlar: [satir({ tevkifat: { kod: "650", oran: 40, tutar: 80 } })] })).engeller[0]).toMatch(/koduna uymuyor/);
+  });
+});
+
+describe("gelen belgede KDV oranı ve kodlar belge tarihine göre (MVZ-11)", () => {
+  const tablo2022 = kodTablosuKur({ kdvOrani: [{ anahtar: "1", deger: {} }, { anahtar: "8", deger: {} }, { anahtar: "18", deger: {} }], istisna: [], ozelMatrah: [], ihracKayitli: [] });
+
+  it("2022 tarihli belgede %18 geçer; %20 kapıda durur ve platforma bildirilir", () => {
+    const eski = belge({ tarih: "2022-05-01", satirlar: [satir({ kdvOrani: 18, kdvTutari: 180 })], toplamlar: { kdvSaf: 180, odenecek: 1180, vergiDahil: 1180, genelToplam: 1180, kdv: 180 } });
+    expect(gelenFaturaGirdisi(eski, eslesme, undefined, tablo2022).engeller).toEqual([]);
+    const yeni = gelenFaturaGirdisi(belge({ tarih: "2022-05-01" }), eslesme, undefined, tablo2022);
+    expect(yeni.engeller.join()).toMatch(/KDV oranı %20 belge tarihinde \(2022-05-01\) geçerli değil/);
+    expect(yeni.bilinmeyenler).toEqual([expect.objectContaining({ tur: "kdv_orani", anahtar: "20" })]);
+  });
+
+  it("tanınmayan özel matrah kodu platforma bildirilir", () => {
+    const ubl = belge({ faturaTipKodu: "OZELMATRAH", satirlar: [satir({ kdvOrani: 0, kdvTutari: 0 })], toplamlar: { ozelMatrahKodu: "899" } });
+    expect(gelenFaturaGirdisi(ubl, eslesme).bilinmeyenler).toEqual([expect.objectContaining({ tur: "ozel_matrah_kodu", anahtar: "899" })]);
   });
 });
 

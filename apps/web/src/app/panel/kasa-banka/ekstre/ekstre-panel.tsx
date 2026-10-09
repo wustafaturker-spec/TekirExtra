@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { AramaSecici } from "@/components/arama-secici";
 import { Alert, Badge, Button, Field, Input, Para, Segmented, Select, Tarih } from "@/components/ui";
+import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
 
 export type EslesmeTuru = "cari" | "mevcut_fis" | "masraf" | "gelir" | "virman" | "cek" | "kredi_karti" | "pos" | "odeme_talimati" | "doviz_islem" | "kredi";
 
@@ -80,7 +81,6 @@ export const ESLESME_ADI: Record<EslesmeTuru, string> = {
 };
 
 const KAYNAK_ADI: Record<string, string> = { iban: "IBAN eşleşti", vkn: "VKN eşleşti", unvan: "Unvan eşleşti", kural: "Kayıtlı kural" };
-const KDV_ORANLARI = ["0", "1", "10", "20"];
 const yuvarla = (n: number) => Math.round(n * 100) / 100;
 
 /**
@@ -128,6 +128,8 @@ export function EslestirmePaneli({
   const [fisler, setFisler] = useState<Set<string>>(new Set());
   const [kategoriId, setKategoriId] = useState("");
   const [kdvOrani, setKdvOrani] = useState("0");
+  // MVZ-11: masraf olarak eşleştirmede KDV oranı ekstre satırı tarihindeki merkezi listeden.
+  const kodTablosu = useKodTablosu(satir.tarih);
   const [aciklama, setAciklama] = useState("");
   const [karsiHesap, setKarsiHesap] = useState("");
   const [cekId, setCekId] = useState("");
@@ -483,9 +485,7 @@ export function EslestirmePaneli({
                   </Field>
                   {tur === "masraf" && (
                     <Field label="KDV oranı">
-                      <Select value={kdvOrani} onChange={(e) => setKdvOrani(e.target.value)}>
-                        {KDV_ORANLARI.map((o) => <option key={o} value={o}>%{o}</option>)}
-                      </Select>
+                      <KdvOraniSecimi tablo={kodTablosu} value={kdvOrani} onDegis={setKdvOrani} />
                     </Field>
                   )}
                 </div>

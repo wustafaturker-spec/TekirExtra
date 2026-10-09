@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import { gizliTevkifatKodlari, senaryoHatalari, TEVKIFAT_KODLARI, tevkifatTablosuKur, type TevkifatFirmaAyari, type TevkifatKodu } from "@tekirextra/shared";
+import { gizliTevkifatKodlari, ihracKayitliKoduBul, ozelMatrahKoduBul, senaryoHatalari, TEVKIFAT_KODLARI, tevkifatTablosuKur, VARSAYILAN_KOD_TABLOSU, type KodTablosu, type TevkifatFirmaAyari, type TevkifatKodu } from "@tekirextra/shared";
 import type { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import type { MevzuatService } from "../mevzuat/mevzuat.service";
 
@@ -23,11 +23,40 @@ export async function firmaTevkifatTablosu(
   return tevkifatTablosuKur(kayitlar, gizli);
 }
 
+/** MVZ-11: belge tarihindeki KDV kod tablosu; mevzuat servisi yoksa (birim testleri) varsayılan. */
+export async function belgeKodTablosu(mevzuat: MevzuatService | undefined, tarih: string): Promise<KodTablosu> {
+  return mevzuat ? mevzuat.kodTablosu(tarih) : VARSAYILAN_KOD_TABLOSU;
+}
+
 /**
- * Şema tevkifat kodunu kiracının tablosunu bilmeden doğrulayamaz; kod ve oran
- * kuralı burada belge tarihindeki tabloyla uygulanır. Gelen belgeden oluşan
- * faturada gizli kod da kabul edilir (belge karşı tarafındır).
+ * Şema kod listelerini belge tarihini bilmeden doğrulayamaz; KDV oranı,
+ * istisna, tevkifat, özel matrah ve ihraç kayıtlı kodu burada belge
+ * tarihindeki merkezi tabloyla denetlenir (MVZ-11/12). Gelen belgeden oluşan
+ * faturada gizli tevkifat kodu da kabul edilir (belge karşı tarafındır).
  */
+export function mevzuatKurallariniUygula(
+  fatura: {
+    ozelMatrahKodu?: string | null;
+    ihracKayitliKodu?: string | null;
+    satirlar: { kdvOrani?: string | number | null; tevkifatKodu?: string | null; tevkifatOrani?: string | null; gibIstisnaKodu?: string | null }[];
+  },
+  tablolar: { tevkifat: readonly TevkifatKodu[]; kod: KodTablosu },
+  pasifKodKabul = false,
+): string[] {
+  const hatalar = senaryoHatalari(
+    fatura.satirlar.map((s) => ({ kdvOrani: Number(s.kdvOrani ?? 0), tevkifatKodu: s.tevkifatKodu, tevkifatOrani: s.tevkifatOrani, gibIstisnaKodu: s.gibIstisnaKodu })),
+    Boolean(fatura.ozelMatrahKodu),
+    { tevkifatTablosu: tablolar.tevkifat, pasifKodKabul, kodTablosu: tablolar.kod },
+  )
+    // Sıfır KDV'de istisna kodu zorunluluğu gibi kurallar şemada zaten denetlendi; burada yalnız liste üyeliği.
+    .filter((h) => h.alan === "tevkifatKodu" || h.alan === "tevkifatOrani" || h.alan === "kdvOrani" || (h.alan === "gibIstisnaKodu" && h.mesaj.startsWith("Tanımsız")))
+    .map((h) => `${h.satirIndeksi + 1}. satır: ${h.mesaj}`);
+  if (fatura.ozelMatrahKodu && !ozelMatrahKoduBul(fatura.ozelMatrahKodu, tablolar.kod.ozelMatrah)) hatalar.push(`Özel matrah kodu ${fatura.ozelMatrahKodu} belge tarihinde geçerli değil`);
+  if (fatura.ihracKayitliKodu && !ihracKayitliKoduBul(fatura.ihracKayitliKodu, tablolar.kod.ihracKayitli)) hatalar.push(`İhraç kayıtlı kodu ${fatura.ihracKayitliKodu} belge tarihinde geçerli değil`);
+  return hatalar;
+}
+
+/** Yalnız tevkifat kodu ve oranı (eski çağrılar ve testler için). */
 export function tevkifatKurallariniUygula(
   satirlar: { kdvOrani?: string | number | null; tevkifatKodu?: string | null; tevkifatOrani?: string | null }[],
   tablo: readonly TevkifatKodu[],

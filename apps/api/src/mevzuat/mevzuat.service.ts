@@ -1,4 +1,5 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
+import { kdvOraniHatasi, kodTablosuKur, type KodTablosu } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { yururluktedir } from "./yayin-plani";
@@ -43,6 +44,31 @@ export class MevzuatService {
   /** MVZ-02: belge tarihinde yürürlükte olan değerler. */
   async yururluktekiler(tur: string, tarih: string): Promise<MevzuatDegeri[]> {
     return (await this.turKayitlari(tur)).filter((k) => yururluktedir(k, tarih));
+  }
+
+  /** MVZ-11: belge tarihindeki KDV oranları, istisna, özel matrah ve ihraç kayıtlı kodları. */
+  async kodTablosu(tarih: string): Promise<KodTablosu> {
+    const [kdvOrani, istisna, ozelMatrah, ihracKayitli] = await Promise.all([
+      this.yururluktekiler("kdv_orani", tarih),
+      this.yururluktekiler("kdv_istisna_kodu", tarih),
+      this.yururluktekiler("ozel_matrah_kodu", tarih),
+      this.yururluktekiler("ihrac_kayitli_kodu", tarih),
+    ]);
+    return kodTablosuKur({ kdvOrani, istisna, ozelMatrah, ihracKayitli });
+  }
+
+  /**
+   * MVZ-11: KDV'li her kayıt (belge, masraf, gelir, kart işlemi, stok kartı…)
+   * oranını kendi tarihindeki merkezi listeden almak zorundadır; liste dışı
+   * oran reddedilir.
+   */
+  async kdvOranlariniDogrula(oranlar: (number | string | null | undefined)[], tarih: Date | string): Promise<void> {
+    const gun = typeof tarih === "string" ? tarih.slice(0, 10) : tarih.toISOString().slice(0, 10);
+    const liste = (await this.kodTablosu(gun)).kdvOranlari;
+    for (const oran of new Set(oranlar.filter((o) => o !== null && o !== undefined && o !== "").map(Number))) {
+      const hata = kdvOraniHatasi(oran, liste);
+      if (hata) throw new BadRequestException(hata);
+    }
   }
 
   /** Ayarlar > Mevzuat: bir türün geçmiş dahil bütün kayıtları. */

@@ -24,6 +24,7 @@ import {
 } from "@/components/ui";
 import { birimKisaAdi, bugunTR, olcuAilesi, olcuKatsayisi, SARJ_TURLERI, SARJ_TURU_ADLARI, varyantKombinasyonlari } from "@tekirextra/shared";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
+import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
 
 /* ─── Tipler ─────────────────────────────────────────────────────────────── */
 
@@ -661,6 +662,8 @@ function GenelSekmesi({
     takipTipi: detay.takipTipi ?? "yok",
   });
 
+  // MVZ-11: kartın KDV oranı bugün yürürlükteki merkezi listeden.
+  const kodTablosu = useKodTablosu(null);
   const alan = (k: keyof typeof form) => ({
     value: form[k] as string,
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -787,7 +790,7 @@ function GenelSekmesi({
       <div className="stock-editor__grid stock-editor__grid--pricing">
         <div className="stock-field">
           <Field label="KDV Oranı (%)">
-            <Input type="number" step="0.01" {...alan("kdvOrani")} />
+            <KdvOraniSecimi tablo={kodTablosu} value={form.kdvOrani as string} onDegis={(o) => setForm((f) => ({ ...f, kdvOrani: o }))} />
           </Field>
         </div>
         <div className="stock-field">

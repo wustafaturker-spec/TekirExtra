@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { Prisma, type SatinAlmaOlayTuru, type SatinAlmaTalepDurumu } from "@prisma/client";
 import { belgeOlusturSemasi } from "../belgeler/belgeler.semalar";
 import { BelgelerService } from "../belgeler/belgeler.service";
@@ -18,6 +18,7 @@ import {
   tumTalepleriGorurMu,
 } from "./satin-alma.hesap";
 import type { SiparisGirdisi, TalepGirdisi, TeklifGirdisi } from "./satin-alma.semalar";
+import { MevzuatService } from "../mevzuat/mevzuat.service";
 
 type Tx = Prisma.TransactionClient;
 
@@ -58,6 +59,7 @@ export class SatinAlmaService {
     private readonly ayarlar: AyarlarService,
     private readonly belgeler: BelgelerService,
     private readonly butce: ButceService,
+    @Optional() private readonly mevzuat?: MevzuatService,
   ) {}
 
   private async onayEsigi(tx?: Tx): Promise<number> {
@@ -463,6 +465,8 @@ export class SatinAlmaService {
 
   async teklifEkle(talepId: string, girdi: TeklifGirdisi) {
     const { tenantId } = aktifBaglam();
+    // MVZ-11: KDV oranı belge tarihindeki merkezi listeden olmalı.
+    await this.mevzuat?.kdvOranlariniDogrula(girdi.kalemler.map((k) => k.kdvOrani), new Date());
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const t = await this.onayliTalep(tx, talepId);
       const { teklif, tedarikci } = await this.teklifKaydet(tx, t, girdi, false);

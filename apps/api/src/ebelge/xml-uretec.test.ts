@@ -1,3 +1,4 @@
+import { VARSAYILAN_KOD_TABLOSU } from "@tekirextra/shared";
 import { describe, expect, it } from "vitest";
 import { belgeNoyuUbleYaz, faturaUblUret } from "./xml-uretec";
 
@@ -715,6 +716,12 @@ describe("faturaUblUret — KDV alt toplamları ve istisna (EBLG-59)", () => {
     const xml = faturaUblUret(fatura([satir(0, "201")]), satici);
     const satirVergisi = xml.slice(xml.indexOf("<cac:InvoiceLine>"));
     expect(satirVergisi).toContain("<cbc:TaxExemptionReason>201 17/1 Kültür ve Eğitim Amacı Taşıyan İşlemler</cbc:TaxExemptionReason>");
+  });
+
+  it("istisna açıklamasını belge tarihindeki merkezi listeden yazar (MVZ-11)", () => {
+    const kodTablosu = { ...VARSAYILAN_KOD_TABLOSU, istisna: [{ kod: "201", tur: "kismi" as const, ad: "Merkezde güncellenmiş ad" }] };
+    const xml = faturaUblUret(fatura([satir(0, "201")]), satici, { kodTablosu });
+    expect(xml).toContain("<cbc:TaxExemptionReason>201 Merkezde güncellenmiş ad</cbc:TaxExemptionReason>");
   });
 
   it("tevkifat yüzdesini kod listesindeki gibi ondalıksız yazar", () => {

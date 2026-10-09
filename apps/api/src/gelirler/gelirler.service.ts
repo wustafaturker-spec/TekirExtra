@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -8,6 +8,7 @@ import type {
   gelirKategoriOlusturSemasi,
   gelirKaydiOlusturSemasi,
 } from "./gelirler.semalar";
+import { MevzuatService } from "../mevzuat/mevzuat.service";
 
 const D = (deger: string | number | Prisma.Decimal) => new Prisma.Decimal(deger);
 
@@ -25,7 +26,7 @@ const VARSAYILAN_GELIR_KATEGORILERI = [
 
 @Injectable()
 export class GelirlerService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly mevzuat?: MevzuatService) {}
 
   // ─── KATEGORİ İŞLEMLERİ ───────────────────────────────────────────────
 
@@ -149,6 +150,8 @@ export class GelirlerService {
 
   async olustur(girdi: z.infer<typeof gelirKaydiOlusturSemasi>) {
     const { tenantId } = aktifBaglam();
+    // MVZ-11: KDV oranı belge tarihindeki merkezi listeden olmalı.
+    await this.mevzuat?.kdvOranlariniDogrula([girdi.kdvOrani], girdi.tarih);
     const netTutar = D(girdi.netTutar);
     const kur = girdi.dovizCinsi === "TRY" ? D(1) : D(girdi.kur);
     const netTutarTry = netTutar.mul(kur).toDecimalPlaces(2);

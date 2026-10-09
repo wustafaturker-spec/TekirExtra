@@ -51,9 +51,10 @@ describe("GİB senaryo doğrulamaları (FTR-17, FTR-18)", () => {
     expect(hataYollari(sonuc)).toEqual(["satirlar.0.gibIstisnaKodu"]);
   });
 
-  it("liste dışı istisna kodunu reddeder", () => {
-    const sonuc = faturaOlusturSemasi.safeParse({ ...temel, satirlar: [{ ...satir, kdvOrani: "0", gibIstisnaKodu: "999" }] });
-    expect(hataYollari(sonuc)).toEqual(["satirlar.0.gibIstisnaKodu"]);
+  it("istisna kodu listesini belge tarihindeki tabloyla servise bırakır (MVZ-11)", () => {
+    expect(faturaOlusturSemasi.safeParse({ ...temel, satirlar: [{ ...satir, kdvOrani: "0", gibIstisnaKodu: "999" }] }).success).toBe(true);
+    // Sıfır KDV'de kod zorunluluğu şemada kalır.
+    expect(hataYollari(faturaOlusturSemasi.safeParse({ ...temel, satirlar: [{ ...satir, kdvOrani: "0" }] }))).toEqual(["satirlar.0.gibIstisnaKodu"]);
   });
 
   it("tek oranlı tevkifat kodunu oransız kabul eder", () => {
@@ -61,7 +62,7 @@ describe("GİB senaryo doğrulamaları (FTR-17, FTR-18)", () => {
     expect(sonuc.success).toBe(true);
   });
 
-  it("kod ve oran denetimini kiracının tablosuyla servise bırakır (FTR-35)", () => {
+  it("tevkifat kodu ve oranını belge tarihindeki tabloyla servise bırakır (MVZ-12)", () => {
     expect(faturaOlusturSemasi.safeParse({ ...temel, satirlar: [{ ...satir, tevkifatKodu: "699" }] }).success).toBe(true);
     expect(faturaOlusturSemasi.safeParse({ ...temel, satirlar: [{ ...satir, tevkifatKodu: "650" }] }).success).toBe(true);
   });

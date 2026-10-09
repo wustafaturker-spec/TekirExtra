@@ -13,6 +13,7 @@ import {
   SARJ_TURU_ADLARI,
   ozelMatrahKdvsi,
   ozelMatrahKoduBul,
+  type KodTablosu,
   senaryoUblKodu,
   ulkeAdi,
   type AraciKurum,
@@ -73,6 +74,8 @@ export interface FaturaPdfSatiri {
 }
 
 export interface FaturaPdfVerisi {
+  /** MVZ-11: belge tarihindeki merkezi kod listesi; kod açıklamaları buradan (yoksa varsayılan liste). */
+  kodTablosu?: KodTablosu;
   tip: string;
   durum: string;
   no: string | null;
@@ -175,7 +178,7 @@ function kamuBilgisi(f: FaturaPdfVerisi): string {
  * matrah üzerinden hesaplanır — alıcı bunu belgede görmelidir.
  */
 function ozelMatrahBilgisi(f: FaturaPdfVerisi): string {
-  const tanim = ozelMatrahKoduBul(f.ozelMatrahKodu);
+  const tanim = ozelMatrahKoduBul(f.ozelMatrahKodu, f.kodTablosu?.ozelMatrah);
   if (!tanim) return "";
   const kdv = ozelMatrahKdvsi(f.ozelMatrahTutari, f.ozelMatrahOrani);
   const paraBirimi = f.dovizCinsi === "TRY" ? "TL" : f.dovizCinsi;
@@ -299,8 +302,8 @@ export interface FirmaBilgisi extends FirmaIletisimi {
  * İhraç kayıtlı satışın belge altı ibaresi (EBLG-60). Metin kod listesindeki
  * addan gelir; kullanıcının kabul edilmiş belgesindeki açıklamayla aynı anlamı taşır.
  */
-function ihracKayitliIbaresi(kod: string | null | undefined): string {
-  const tanim = ihracKayitliKoduBul(kod);
+function ihracKayitliIbaresi(kod: string | null | undefined, tablo?: KodTablosu): string {
+  const tanim = ihracKayitliKoduBul(kod, tablo?.ihracKayitli);
   return tanim
     ? `<p style="margin-top:10px;font-size:9pt">${kacis(`${tanim.kod} — ${tanim.ad}: ihraç edilmek şartıyla teslim edildiğinden KDV tahsil edilmemiştir.`)}</p>`
     : "";
@@ -343,7 +346,7 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
    * Saha örneğindeki gibi satır toplamı "Mal/Hizmet Toplamı" olur, KDV ise
    * özel matrah üzerinden hesaplanıp toplama eklenir.
    */
-  const ozelMatrah = ozelMatrahKoduBul(f.ozelMatrahKodu);
+  const ozelMatrah = ozelMatrahKoduBul(f.ozelMatrahKodu, f.kodTablosu?.ozelMatrah);
 
   const kalemler: { etiket: string; deger: string | number; kalin?: boolean }[] = [
     { etiket: "Brüt Toplam", deger: f.toplamBrut },
@@ -426,7 +429,7 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
 </table>
 ${f.aciklama ? `<p style="margin-top:10px;color:#6b7280">${kacis(f.aciklama)}</p>` : ""}
 ${f.ebelge?.tur === "earsiv" && f.earsivGonderimSekli !== "kagit" ? `<p style="margin-top:10px;font-size:9pt">${EARSIV_ELEKTRONIK_IBARESI}</p>` : ""}
-${ihracKayitliIbaresi(f.ihracKayitliKodu)}
+${ihracKayitliIbaresi(f.ihracKayitliKodu, f.kodTablosu)}
 ${kamuBilgisi(f)}
 ${ozelMatrahBilgisi(f)}
 ${sgkBilgisi(f)}

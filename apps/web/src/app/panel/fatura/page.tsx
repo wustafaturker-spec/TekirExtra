@@ -7,6 +7,7 @@ import { riskOnayiylaGonder } from "@/lib/risk-onayi";
 import { cariKaydet } from "@/lib/cari-kaydet";
 import { api, apiPdfAc, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { kullanimOlayi } from "@/lib/kullanim";
+import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
 import { AramaSecici } from "@/components/arama-secici";
 import { DepoSecici } from "@/components/depo-secici";
 import { BelgeOnizlemeEkrani } from "@/components/belge-onizleme-ekrani";
@@ -19,7 +20,7 @@ import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
 import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { varyantDegeriCoz, varyantSecenekleri } from "@/lib/varyant-secimi";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
-import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, KAP_CINSLERI, kapEksigiVarMi, SIK_KAP_CINSLERI, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type TevkifatKodu, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
+import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, KAP_CINSLERI, kapEksigiVarMi, SIK_KAP_CINSLERI, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type TevkifatKodu, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-alani";
 import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
 import { birimKisaAdi, faturaKurTipi, vadeTarihiHesapla } from "@tekirextra/shared";
@@ -588,6 +589,10 @@ export default function FaturaSayfasi() {
   // gizledikleri işaretli) ve tevkifat alt sınırı; okunamazsa varsayılan tablo.
   const [tevkifatTablosu, setTevkifatTablosu] = useState<readonly TevkifatKodu[]>(TEVKIFAT_KODLARI);
   const [tevkifatAltSiniri, setTevkifatAltSiniri] = useState<number | null>(null);
+  // MVZ-11: belge tarihindeki KDV oranları ve istisna/özel matrah/ihraç kayıtlı kodları.
+  const kodTablosu = useKodTablosu(tarih);
+  // Stok kartı tarihsizdir: hızlı kart açmada bugünkü liste.
+  const bugununKodTablosu = useKodTablosu(null);
   useEffect(() => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(tarih)) return;
     void api<TevkifatKodu[]>(`/mevzuat/tevkifat-tablosu?tarih=${tarih}`).then(setTevkifatTablosu).catch(() => undefined);
@@ -718,11 +723,11 @@ export default function FaturaSayfasi() {
     ozelMatrahOrani,
     satirlar: senaryoSatirlari,
     satisBedeli: sonuc.toplamMatrah,
-  });
-  const ihracKayitliUyarilari = ihracKayitliHatalari({ tip, ihracKayitliKodu: ihracKayitli, satirlar: senaryoSatirlari });
+  }, kodTablosu.ozelMatrah);
+  const ihracKayitliUyarilari = ihracKayitliHatalari({ tip, ihracKayitliKodu: ihracKayitli, satirlar: senaryoSatirlari }, kodTablosu.ihracKayitli);
   // EBLG-59: tevkifatlı faturada sıfır KDV satırı yalnız 351 alabilir; liste sunucudaki kuralla süzülür.
-  const istisnaSecenekleri = izinliIstisnaKodlari(senaryoSatirlari);
-  const senaryoUyarilari = senaryoHatalari(senaryoSatirlari, Boolean(ozelMatrah), { tevkifatTablosu });
+  const istisnaSecenekleri = izinliIstisnaKodlari(senaryoSatirlari, kodTablosu.istisna);
+  const senaryoUyarilari = senaryoHatalari(senaryoSatirlari, Boolean(ozelMatrah), { tevkifatTablosu, kodTablosu });
   // EBLG-72: sevkiyat numarasının biçimi ve satır etiketleri sunucudaki kuralla denetlenir.
   const idisUyarilari = idisEngelleri({
     sevkiyatNo: idisSevkiyatNo,
@@ -2218,7 +2223,7 @@ export default function FaturaSayfasi() {
                       <td className="invoice-line__field" data-label="Miktar"><div className="document-line-qty"><Input className="document-line-number" aria-label="Miktar" type="number" min="0.01" step="any" inputMode="decimal" ref={(eleman) => { miktarRefleri.current[index] = eleman; }} value={s.miktar} onChange={(e) => satirGuncelle(index, "miktar", Number(e.target.value))} required /><SatirBirimi stok={s.stokId ? seciliStok : undefined} value={s.birim} onChange={(birim) => satirBirimiDegistir(index, birim)} disabled={saltOkunur} /></div></td>
                       <td className="invoice-line__field" data-label="Birim fiyat"><Input className="document-line-number" aria-label="Birim fiyat" type="number" min="0" step="any" inputMode="decimal" value={s.birimFiyat} onChange={(e) => satirGuncelle(index, "birimFiyat", Number(e.target.value))} required /></td>
                       <td className="invoice-line__field" data-label="İskonto %"><Input className="document-line-number" aria-label="İskonto yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.iskontoOrani} onChange={(e) => satirGuncelle(index, "iskontoOrani", Number(e.target.value))} /></td>
-                      <td className="invoice-line__field" data-label="KDV %"><Input className="document-line-number" aria-label="KDV yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.kdvOrani} onChange={(e) => satirGuncelle(index, "kdvOrani", Number(e.target.value))} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); satirEkle(); } }} required /></td>
+                      <td className="invoice-line__field" data-label="KDV %"><KdvOraniSecimi className="document-line-number" aria-label="KDV yüzdesi" tablo={kodTablosu} value={s.kdvOrani} onDegis={(o) => satirGuncelle(index, "kdvOrani", Number(o))} disabled={Boolean(ozelMatrahSecili)} required /></td>
                       <td className="num document-line-total invoice-line__total" data-label="Satır toplamı">{tl(satirSonuc ? satirSonuc.toplamTutar : 0, dovizCinsi)}{satirSonuc && satirSonuc.kdvTutari > 0 && <small className="invoice-line__tax">KDV {tl(satirSonuc.kdvTutari, dovizCinsi)}</small>}</td>
                       <td className="center invoice-line__action">
                         <Button aria-expanded={acikSatir === index} aria-label="Satır ayrıntıları" title="Satır ayrıntıları" size="sm" type="button" onClick={() => setAcikSatir(acikSatir === index ? null : index)}>⋯</Button>
@@ -2447,17 +2452,14 @@ export default function FaturaSayfasi() {
                   <Field label="Özel matrah (KDV K. 23)">
                     <Select aria-label="Özel matrah" value={ozelMatrahKodu} onChange={(e) => setOzelMatrahKodu(e.target.value)}>
                       <option value="">Hayır — normal satış</option>
-                      {OZEL_MATRAH_KODLARI.map((k) => <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>)}
+                      {kodTablosu.ozelMatrah.map((k) => <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>)}
                     </Select>
                     {ozelMatrahKodu ? (
                       <>
                         {/* Üç kutu da etiketlidir: değer girilince placeholder
                             kaybolduğu için hangisinin ne olduğu görünmez kalıyordu. */}
                         <Field label="KDV oranı (%)">
-                          <Input
-                            type="number" min="0" max="100" step="0.01" value={ozelMatrahOrani}
-                            onChange={(e) => setOzelMatrahOrani(e.target.value)}
-                          />
+                          <KdvOraniSecimi tablo={{ ...kodTablosu, kdvOranlari: kodTablosu.kdvOranlari.filter((k) => k.oran > 0) }} value={ozelMatrahOrani} onDegis={setOzelMatrahOrani} />
                         </Field>
                         {/* Satıcı "92.000'e aldım, 95.500'e satıyorum" diye düşünür;
                             farkın içindeki KDV'yi ayırmayı ondan beklemeyelim. */}
@@ -2488,7 +2490,7 @@ export default function FaturaSayfasi() {
                   <Field label="İhraç kayıtlı satış">
                     <Select aria-label="İhraç kayıtlı satış" value={ihracKayitliKodu} onChange={(e) => setIhracKayitliKodu(e.target.value)}>
                       <option value="">Hayır — normal satış</option>
-                      {IHRAC_KAYITLI_KODLARI.map((k) => <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>)}
+                      {kodTablosu.ihracKayitli.map((k) => <option key={k.kod} value={k.kod}>{k.kod} — {k.ad}</option>)}
                     </Select>
                     <AlanIpucu>
                       {ihracKayitliKodu ? "KDV hesaplanır ve belgede görünür ama tahsil edilmez; ödenecek tutar matrahtır." : "İhracatçıya ihraç kaydıyla teslimde seçilir."}
@@ -2707,7 +2709,7 @@ export default function FaturaSayfasi() {
             <Field label="Barkod"><Input value={yeniStokBarkod} onChange={(e) => setYeniStokBarkod(e.target.value)} /></Field>
             <Field label={tip.startsWith("alis") ? "Alış fiyatı (TRY)" : "Satış fiyatı (TRY)"}><Input className="record-number" type="number" min="0" step="0.0001" inputMode="decimal" value={yeniStokFiyat} onChange={(e) => setYeniStokFiyat(e.target.value)} placeholder="0,00" /></Field>
             <Field label="Birim"><BirimSecimi value={yeniStokBirim} onChange={setYeniStokBirim} required /></Field>
-            <Field label="KDV (%)"><Input className="record-number" type="number" min="0" max="100" inputMode="decimal" value={yeniStokKdv} onChange={(e) => setYeniStokKdv(e.target.value)} required /></Field>
+            <Field label="KDV (%)"><KdvOraniSecimi className="record-number" tablo={bugununKodTablosu} value={yeniStokKdv} onDegis={setYeniStokKdv} required /></Field>
             <div className="quick-panel__actions">
               <Button type="button" onClick={() => setHizliPanel(null)}>Vazgeç</Button>
               <Button type="submit" variant="primary">Oluştur ve seç</Button>

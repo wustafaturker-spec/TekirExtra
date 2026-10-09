@@ -16,7 +16,7 @@ interface Detay {
   hazirlayan: { adSoyad: string }; yayinlayan: { adSoyad: string } | null;
   satirlar: Satir[]; planHatalari: string[];
   /** MVZ-06: etkilenecek taslak belge sayıları (kiracı bilgisi yok). */
-  etki: { kalemler: { ad: string; taslakFatura: number; firma: number }[]; hesaplanmayan: string[] } | null;
+  etki: { kalemler: { ad: string; taslakFatura: number; taslakBelge: number; firma: number }[]; hesaplanmayan: string[] } | null;
   olaylar: { id: string; olay: string; zaman: string; kullanici: string | null; detay: Record<string, unknown> | null }[];
   izinler: { duzenle: boolean; onayaGonder: boolean; taslagaCek: boolean; yayinla: boolean; geriCevir: boolean };
 }
@@ -138,7 +138,7 @@ function DegisiklikDetayi() {
       {d.etki && d.satirlar.length > 0 && <div style={{ marginBottom: "1rem" }}>
         <strong>Etki</strong>
         <ul style={{ margin: "0.3rem 0 0", paddingLeft: "1.1rem" }}>
-          {d.etki.kalemler.map((k) => <li key={k.ad}>{k.ad}: yürürlük tarihinden sonraki <strong>{k.taslakFatura}</strong> taslak fatura ({k.firma} firma) bir sonraki kaydedişte yeni değerle hesaplanır. Kesinleşmiş belgeler değişmez.</li>)}
+          {d.etki.kalemler.map((k) => <li key={k.ad}>{k.ad}: yürürlük tarihinden sonraki <strong>{k.taslakFatura}</strong> taslak fatura{k.taslakBelge ? <> ve <strong>{k.taslakBelge}</strong> taslak teklif/sipariş/irsaliye</> : null} ({k.firma} firma) bir sonraki kaydedişte yeni değerle denetlenir. Kesinleşmiş belgeler değişmez.</li>)}
           {!d.etki.kalemler.length && !d.etki.hesaplanmayan.length && <li>Yalnız yeni kalem ekleniyor; mevcut belgeler etkilenmez.</li>}
           {d.etki.hesaplanmayan.map((t) => <li key={t} className="muted">{MEVZUAT_TUR_TANIMLARI[t as MevzuatTuru]?.ad ?? t}: etki hesabı bu tür merkeze bağlandığında eklenecek.</li>)}
         </ul>

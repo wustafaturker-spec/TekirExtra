@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { bugunTR } from "@tekirextra/shared";
 import { Prisma, type DovizCinsi } from "@prisma/client";
 import type { z } from "zod";
@@ -11,6 +11,7 @@ import { kurZorunlu } from "../doviz/kur-coz";
 import { ekstreOzeti, type EkstreDonemi } from "./kart-ekstre";
 import { kartEkstreleriniOku } from "./kart-ekstre-oku";
 import type { krediKartiCariOdemeSemasi, krediKartiEkstreOdemeSemasi, krediKartiGuncelleSemasi, krediKartiHareketSemasi, krediKartiKesinlestirSemasi, krediKartiOlusturSemasi } from "./kredi-karti.semalar";
+import { MevzuatService } from "../mevzuat/mevzuat.service";
 
 const D = (deger: Prisma.Decimal.Value) => new Prisma.Decimal(deger);
 const gunMetni = (t: Date) => t.toISOString().slice(0, 10);
@@ -47,7 +48,7 @@ function donemOzeti(d: EkstreDonemi) {
 
 @Injectable()
 export class KrediKartiService {
-  constructor(private readonly prisma: PrismaService, private readonly donemKilidi: DonemKilidiService) {}
+  constructor(private readonly prisma: PrismaService, private readonly donemKilidi: DonemKilidiService, @Optional() private readonly mevzuat?: MevzuatService) {}
 
   /**
    * Kartlar, borç/limit ve ekstre özetiyle. Hareketler burada yüklenmez;
@@ -186,6 +187,8 @@ export class KrediKartiService {
   async hareketEkle(girdi: z.infer<typeof krediKartiHareketSemasi>) {
     const { tenantId } = aktifBaglam();
     await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "kredi kartı hareketi oluşturma");
+    // MVZ-11: KDV oranı belge tarihindeki merkezi listeden olmalı.
+    if (girdi.tip === "harcama") await this.mevzuat?.kdvOranlariniDogrula([girdi.kdvOrani], girdi.tarih);
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const kart = await tx.krediKarti.findUnique({ where: { id: girdi.krediKartiId, tenantId } }); if (!kart?.aktif) throw new NotFoundException("Aktif kredi kartı hesabı bulunamadı");
       const tutar = D(girdi.tutar); const tarih = new Date(girdi.tarih);

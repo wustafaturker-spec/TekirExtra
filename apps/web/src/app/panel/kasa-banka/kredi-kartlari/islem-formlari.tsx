@@ -10,6 +10,7 @@ import { bugunTR } from "@tekirextra/shared";
 import { api, tumSayfalariAl } from "@/lib/api";
 import { Button, Field, Input, Para, Select, Tarih } from "@/components/ui";
 import type { Banka, Kart } from "./tipler";
+import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
 
 export type Gonder = (yol: string, govde: Record<string, unknown>, mesaj: string, method?: "POST" | "PATCH") => Promise<boolean>;
 
@@ -76,6 +77,9 @@ export function HareketFormu({ kart, gonder }: { kart: Kart; gonder: Gonder }) {
   const [kategoriler, setKategoriler] = useState<Kategori[]>([]);
   const [kategoriId, setKategoriId] = useState("");
   const [kdvOrani, setKdvOrani] = useState("20");
+  const [islemTarihi, setIslemTarihi] = useState(bugunTR());
+  // MVZ-11: harcamanın KDV oranı işlem tarihindeki merkezi listeden.
+  const kodTablosu = useKodTablosu(islemTarihi);
 
   useEffect(() => {
     void api<Kategori[]>("/masraflar/kategoriler").then((k) => setKategoriler(k.filter((x) => x.aktif))).catch(() => setKategoriler([]));
@@ -106,7 +110,7 @@ export function HareketFormu({ kart, gonder }: { kart: Kart; gonder: Gonder }) {
           <option value="iade">İade</option>
         </Select>
       </Field>
-      <Field label="Tarih"><Input name="tarih" type="date" required defaultValue={bugunTR()} /></Field>
+      <Field label="Tarih"><Input name="tarih" type="date" required value={islemTarihi} onChange={(e) => setIslemTarihi(e.target.value)} /></Field>
       <Field label={tip === "harcama" ? "Tutar (KDV dahil)" : "Tutar"}><Input name="tutar" type="number" min="0.01" step="0.01" required /></Field>
       {tip === "harcama" && (
         <>
@@ -122,9 +126,7 @@ export function HareketFormu({ kart, gonder }: { kart: Kart; gonder: Gonder }) {
           </Field>
           <Field label="Satıcı"><Input name="saticiUnvan" placeholder="Fişteki satıcı" /></Field>
           <Field label="KDV oranı">
-            <Select value={kdvOrani} onChange={(e) => setKdvOrani(e.target.value)}>
-              {["0", "1", "10", "20"].map((o) => <option key={o} value={o}>%{o}</option>)}
-            </Select>
+            <KdvOraniSecimi tablo={kodTablosu} value={kdvOrani} onDegis={setKdvOrani} />
           </Field>
           <Field label="Taksit"><Input name="taksitSayisi" type="number" min="1" max="36" defaultValue="1" /></Field>
         </>

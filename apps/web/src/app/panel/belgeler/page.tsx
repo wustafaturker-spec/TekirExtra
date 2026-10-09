@@ -39,6 +39,7 @@ import {
   TableWrap,
 } from "@/components/ui";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
+import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
 
 const TUR_ADI: Record<string, string> = { teklif: "Teklif", siparis: "Sipariş", irsaliye: "İrsaliye" };
 const YON_ADI: Record<string, string> = { satis: "Satış", alis: "Alış" };
@@ -350,6 +351,8 @@ export default function BelgelerSayfasi() {
     return () => { aktif = false; };
   }, [tur, yon, cariId]);
   const [tarih, setTarih] = useState(bugunTR());
+  // MVZ-11: KDV oranı belge tarihindeki merkezi listeden seçilir.
+  const kodTablosu = useKodTablosu(tarih);
   const [gecerlilik, setGecerlilik] = useState("");
   const [aciklama, setAciklama] = useState("");
   // e-İrsaliye taşıma bilgileri (EBLG-23); yalnız irsaliyede sorulur.
@@ -1275,7 +1278,7 @@ export default function BelgelerSayfasi() {
                     <td className="invoice-line__field" data-label="Miktar"><div className="document-line-qty"><Input className="document-line-number" aria-label="Miktar" type="number" min="0.01" step="any" inputMode="decimal" value={s.miktar} onChange={(e) => satirGuncelle(i, "miktar", Number(e.target.value))} required /><SatirBirimi stok={stoklar.find((x) => x.id === s.stokId)} value={s.birim} onChange={(birim) => satirBirimiDegistir(i, birim)} /></div></td>
                     <td className="invoice-line__field" data-label="Birim fiyat"><Input className="document-line-number" aria-label="Birim fiyat" type="number" min="0" step="any" inputMode="decimal" value={s.birimFiyat} onChange={(e) => satirGuncelle(i, "birimFiyat", Number(e.target.value))} required /></td>
                     <td className="invoice-line__field" data-label="İskonto %"><Input className="document-line-number" aria-label="İskonto yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.iskontoOrani} onChange={(e) => satirGuncelle(i, "iskontoOrani", Number(e.target.value))} /></td>
-                    <td className="invoice-line__field" data-label="KDV %"><Input className="document-line-number" aria-label="KDV yüzdesi" type="number" min="0" max="100" inputMode="decimal" value={s.kdvOrani} onChange={(e) => satirGuncelle(i, "kdvOrani", Number(e.target.value))} required /></td>
+                    <td className="invoice-line__field" data-label="KDV %"><KdvOraniSecimi className="document-line-number" aria-label="KDV yüzdesi" tablo={kodTablosu} value={s.kdvOrani} onDegis={(o) => satirGuncelle(i, "kdvOrani", Number(o))} required /></td>
                     <td className="num document-line-total invoice-line__total" data-label="Satır toplamı">{tl(ss ? ss.toplamTutar : 0, dovizCinsi)}{ss && ss.kdvTutari > 0 && <small className="invoice-line__tax">KDV {tl(ss.kdvTutari, dovizCinsi)}</small>}</td>
                     <td className="center invoice-line__action"><Button aria-label="Satırı sil" title="Satırı sil" variant="danger" size="sm" type="button" onClick={() => satirSil(i)}>×</Button></td>
                   </tr>

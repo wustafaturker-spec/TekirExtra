@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional
 } from "@nestjs/common";
 import { Prisma, type StokHareketTip } from "@prisma/client";
 import type { KayitEylem } from "@tekirextra/shared";
@@ -35,6 +36,7 @@ import type {
 import { stokExcelOku } from "../core/excel-yardimci";
 import { iptalCiftiMi, iptalEdilmisFaturalar } from "../fatura/iptal-cifti";
 import { birimKatsayisiBul } from "./birim-cevrim";
+import { MevzuatService } from "../mevzuat/mevzuat.service";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal => new Prisma.Decimal(deger);
 
@@ -71,6 +73,7 @@ export class StokService {
     private readonly pdf: PdfService,
     private readonly depoService: DepoService,
     private readonly donemKilidi: DonemKilidiService,
+    @Optional() private readonly mevzuat?: MevzuatService,
   ) {}
 
   // ─── STOK KART YÖNETİMİ (STK-01) ───────────────────────────────────────────
@@ -266,6 +269,8 @@ export class StokService {
 
   async olustur(girdi: z.infer<typeof stokKartOlusturSemasi>) {
     const { tenantId } = aktifBaglam();
+    // MVZ-11: kartın KDV oranı bugün yürürlükteki merkezi listeden olmalı.
+    await this.mevzuat?.kdvOranlariniDogrula([girdi.kdvOrani], new Date());
     try {
       const kayit = await this.prisma.tenantIslem(tenantId, (tx) =>
         tx.stokKart.create({
@@ -478,6 +483,8 @@ export class StokService {
 
   async guncelle(id: string, girdi: z.infer<typeof stokKartGuncelleSemasi>) {
     const { tenantId } = aktifBaglam();
+    // MVZ-11: kartın KDV oranı bugün yürürlükteki merkezi listeden olmalı.
+    if (girdi.kdvOrani !== undefined) await this.mevzuat?.kdvOranlariniDogrula([girdi.kdvOrani], new Date());
     const mevcut = await this.getir(id);
     if (girdi.takipTipi && girdi.takipTipi !== mevcut.takipTipi) {
       const partiSayisi = await this.prisma.tenantIslem(tenantId, (tx) => tx.stokParti.count({ where: { stokId: id } }));
@@ -1308,6 +1315,8 @@ export class StokService {
     const { tenantId } = aktifBaglam();
     const urunler = await stokExcelOku(buffer);
     StokService.excelBirimleriniDogrula(urunler);
+    // MVZ-11: içe aktarılan kartların KDV oranları bugün yürürlükteki merkezi listeden olmalı.
+    await this.mevzuat?.kdvOranlariniDogrula(urunler.map((u) => (u as { kdvOrani?: string | number | null }).kdvOrani), new Date());
 
     await this.prisma.tenantIslem(tenantId, async (tx) => {
       // Hareketi olan kartın ana birimi Excel'le de değişmez (STK-01).

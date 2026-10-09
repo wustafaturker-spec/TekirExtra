@@ -118,7 +118,7 @@ const senaryolariDogrula = (
     gibIstisnaKodu: satir.gibIstisnaKodu,
   }));
   // FTR-35: tevkifat kodu ve oranı kiracının tablosuna bağlı; servis denetler.
-  for (const hata of senaryoHatalari(satirlar, Boolean((fatura as { ozelMatrahKodu?: string | null }).ozelMatrahKodu), { tevkifatTablosu: null })) {
+  for (const hata of senaryoHatalari(satirlar, Boolean((fatura as { ozelMatrahKodu?: string | null }).ozelMatrahKodu), { tevkifatTablosu: null, kodTablosu: null })) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["satirlar", hata.satirIndeksi, hata.alan], message: hata.mesaj });
   }
 };
@@ -169,13 +169,13 @@ const faturaFinansalDogrula = (fatura: { teslimatAdres?: string | null; teslimat
       ozelMatrahTutari: fatura.ozelMatrahTutari,
       ozelMatrahOrani: fatura.ozelMatrahOrani,
       satirlar: (fatura.satirlar ?? []).map((s) => ({ kdvOrani: s.kdvOrani ?? 0, tevkifatKodu: s.tevkifatKodu })),
-    })) {
+    }, null)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ozelMatrahKodu"], message: mesaj });
     }
   }
   // Güncellemede tip gelmeyebilir; kural tam hâliyle serviste yeniden uygulanır.
   if (fatura.ihracKayitliKodu && fatura.tip) {
-    for (const mesaj of ihracKayitliHatalari({ tip: fatura.tip, ihracKayitliKodu: fatura.ihracKayitliKodu, satirlar: fatura.satirlar ?? [] })) {
+    for (const mesaj of ihracKayitliHatalari({ tip: fatura.tip, ihracKayitliKodu: fatura.ihracKayitliKodu, satirlar: fatura.satirlar ?? [] }, null)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ihracKayitliKodu"], message: mesaj });
     }
   }

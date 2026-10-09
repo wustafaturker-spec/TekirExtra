@@ -9,6 +9,7 @@ export * from "./gib-kodlari";
 export * from "./fatura-senaryo";
 export * from "./tevkifat-ayar";
 export * from "./mevzuat";
+export * from "./kod-tablosu";
 export * from "./plaka";
 export * from "./birim-kodu";
 export * from "./ulke";
