@@ -16,6 +16,9 @@ export const gelenFaturaTipi = (ubl: Pick<UblFatura, "faturaTipKodu">): GelenFat
 /** Belgedeki tevkifat yüzdesi (ör. 70) → sistemin oran biçimi (7/10). */
 export const tevkifatOraniMetni = (yuzde: number) => `${Math.round(yuzde / 10)}/10`;
 
+/** MVZ-10: gelen belgede görülen, merkezde karşılığı olmayan kod/oran (kiracı bilgisi taşımaz). */
+export interface BilinmeyenMevzuat { tur: string; anahtar: string; aciklama: string }
+
 export interface GelenSatirEslesmesi { stokId: string; varyantId?: string | null }
 
 export interface GelenFaturaGirdisi {
@@ -36,10 +39,11 @@ export interface GelenFaturaGirdisi {
 export function gelenFaturaGirdisi(
   ubl: UblFatura,
   eslesme: (siraNo: number) => GelenSatirEslesmesi | undefined,
-  /** FTR-35: firmanın tevkifat tablosu (pasif kodlar dahil); verilmezse varsayılan. */
+  /** MVZ-12: belge tarihindeki merkezi tevkifat tablosu; verilmezse varsayılan. */
   tevkifatTablosu?: readonly TevkifatKodu[],
-): { girdi: GelenFaturaGirdisi; engeller: string[] } {
+): { girdi: GelenFaturaGirdisi; engeller: string[]; bilinmeyenler: BilinmeyenMevzuat[] } {
   const engeller: string[] = [];
+  const bilinmeyenler: BilinmeyenMevzuat[] = [];
   const doviz = ubl.dovizCinsi !== "TRY";
   if (!dovizKoduMu(ubl.dovizCinsi)) engeller.push(`Belge dövizi (${ubl.dovizCinsi}) sistemde tanımlı değil`);
   if (doviz && !(ubl.kur && ubl.kur > 0)) engeller.push(`Dövizli (${ubl.dovizCinsi}) belgede kur yok; TL karşılığı bilinmeden işlenemez`);
@@ -65,15 +69,22 @@ export function gelenFaturaGirdisi(
     const tevkifat = s.tevkifat ?? (baslikTevkifati && s.kdvOrani > 0 ? baslikTevkifati : undefined);
     if (tevkifat) {
       const kod = tevkifatKoduBul(tevkifat.kod, tevkifatTablosu);
-      if (!kod) engeller.push(`${s.siraNo}. satırın tevkifat kodu tanınmıyor: ${tevkifat.kod}`);
+      if (!kod) {
+        engeller.push(`${s.siraNo}. satırın tevkifat kodu tanınmıyor: ${tevkifat.kod}`);
+        bilinmeyenler.push({ tur: "tevkifat_kodu", anahtar: tevkifat.kod, aciklama: `Gelen e-Faturada tanınmayan tevkifat kodu ${tevkifat.kod} (%${tevkifat.oran}), belge tarihi ${ubl.tarih}` });
+      }
       else {
         tevkifatKodu = kod.kod;
         const oran = tevkifatOraniMetni(tevkifat.oran);
         if (kod.oranlar.length > 1) {
-          if (!kod.oranlar.includes(oran)) engeller.push(`${s.siraNo}. satırın tevkifat oranı (%${tevkifat.oran}) ${kod.kod} koduna uymuyor`);
+          if (!kod.oranlar.includes(oran)) {
+            engeller.push(`${s.siraNo}. satırın tevkifat oranı (%${tevkifat.oran}) ${kod.kod} koduna uymuyor`);
+            bilinmeyenler.push({ tur: "tevkifat_kodu", anahtar: kod.kod, aciklama: `Gelen e-Faturada ${kod.kod} kodu %${tevkifat.oran} oranla görüldü (merkezde ${kod.oranlar.join(", ")}), belge tarihi ${ubl.tarih}` });
+          }
           tevkifatOrani = oran;
         } else if (kod.oranlar[0] !== oran) {
-          engeller.push(`${s.siraNo}. satırda ${kod.kod} kodu %${tevkifat.oran} oranla yazılmış; sistemdeki oranı ${kod.oranlar[0]} (Ayarlar > Tevkifat)`);
+          engeller.push(`${s.siraNo}. satırda ${kod.kod} kodu %${tevkifat.oran} oranla yazılmış; belge tarihinde merkezi oran ${kod.oranlar[0]} (Mevzuat Merkezi ekibine iletildi)`);
+          bilinmeyenler.push({ tur: "tevkifat_kodu", anahtar: kod.kod, aciklama: `Gelen e-Faturada ${kod.kod} kodu %${tevkifat.oran} oranla görüldü (merkezde ${kod.oranlar[0]}), belge tarihi ${ubl.tarih}` });
         }
       }
     }
@@ -89,6 +100,7 @@ export function gelenFaturaGirdisi(
 
   return {
     engeller,
+    bilinmeyenler,
     girdi: {
       tip: gelenFaturaTipi(ubl),
       dovizCinsi: ubl.dovizCinsi,

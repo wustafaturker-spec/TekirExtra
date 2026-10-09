@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import type { MevzuatDegisiklikDurum, MevzuatTalepDurumu, Prisma } from "@prisma/client";
 import { mevzuatDegerHatalari, mevzuatTuruMu } from "@tekirextra/shared";
 import { aktifPlatformBaglam } from "../core/istek-baglami";
+import { MevzuatService } from "./mevzuat.service";
 import { PlatformPrismaService } from "./platform-prisma.service";
 import { yayinPlani, yururluktedir, type PlanKaydi, type PlanSatiri } from "./yayin-plani";
 
@@ -20,7 +21,10 @@ export interface SatirGirdisi { tur: string; anahtar: string; islem: "ekle" | "d
  */
 @Injectable()
 export class PlatformMevzuatService {
-  constructor(private readonly platform: PlatformPrismaService) {}
+  constructor(
+    private readonly platform: PlatformPrismaService,
+    private readonly okuyucu: MevzuatService,
+  ) {}
 
   private get db() {
     return this.platform.db;
@@ -61,6 +65,7 @@ export class PlatformMevzuatService {
     const { kullaniciId } = aktifPlatformBaglam();
     const duzenleyen = this.duzenleyenler(d);
     const plan = d.durum === "yayinlandi" ? null : yayinPlani(mevcut, d.satirlar.map(satirPlani), yururluk);
+    const etki = d.durum === "yayinlandi" ? null : await this.etki(d.satirlar, yururluk);
 
     return {
       ...d,
@@ -73,6 +78,7 @@ export class PlatformMevzuatService {
       }),
       olaylar: d.olaylar.map((o) => ({ ...o, kullanici: o.kullaniciId ? kullanicilar.get(o.kullaniciId) ?? null : null })),
       planHatalari: plan?.hatalar ?? [],
+      etki,
       izinler: {
         duzenle: d.durum === "taslak",
         onayaGonder: d.durum === "taslak",
@@ -194,7 +200,7 @@ export class PlatformMevzuatService {
       await this.olay(tx, id, "yayinlandi", { kapatilan: plan.kapat.length, eklenen: plan.ekle.length });
       await this.durumGecisi(tx, id, "onay_bekliyor", { durum: "yayinlandi", yayinlayanId: kullaniciId, yayinZamani: new Date() });
       return { kapatilan: plan.kapat.length, eklenen: plan.ekle.length };
-    });
+    }).finally(() => this.okuyucu.onbellekTemizle());
   }
 
   /** Bir türün belirli tarihte yürürlükteki kayıtları (ya da bir anahtarın tüm geçmişi). */
@@ -225,6 +231,23 @@ export class PlatformMevzuatService {
       if (!sonuc.count) throw new NotFoundException("Talep bulunamadı");
       await this.olay(tx, null, "talep_guncellendi", { talepId: id, durum, cozumNotu: cozumNotu ?? null });
     });
+  }
+
+  /**
+   * MVZ-06: değişikliğin etkileyeceği taslak belgeler — yalnız toplam sayı
+   * (kiracı adı ya da belge bilgisi yok). Platform rolü kiracı tablolarını
+   * okuyamadığı için şema sahibinin tanımladığı toplam fonksiyonu kullanılır.
+   * Eklenen kod mevcut taslağı etkilemez; değişen ve kaldırılan kodlar sayılır.
+   */
+  private async etki(satirlar: { tur: string; anahtar: string; islem: string }[], yururluk: string) {
+    const tevkifat = satirlar.filter((s) => s.tur === "tevkifat_kodu" && s.islem !== "ekle").map((s) => s.anahtar);
+    const kalemler: { ad: string; taslakFatura: number; firma: number }[] = [];
+    if (tevkifat.length) {
+      const [r] = await this.db.$queryRaw<{ taslak_fatura: bigint; firma: bigint }[]>`SELECT * FROM mevzuat_etki_tevkifat(${tevkifat}::text[], ${yururluk}::date)`;
+      kalemler.push({ ad: `Tevkifat kodları (${tevkifat.join(", ")})`, taslakFatura: Number(r?.taslak_fatura ?? 0), firma: Number(r?.firma ?? 0) });
+    }
+    const hesaplanmayan = [...new Set(satirlar.filter((s) => s.tur !== "tevkifat_kodu").map((s) => s.tur))];
+    return { kalemler, hesaplanmayan };
   }
 
   // ─── yardımcılar ────────────────────────────────────────────────────────

@@ -35,6 +35,11 @@ export class MevzuatService {
     return kayitlar;
   }
 
+  /** Yayından sonra aynı süreçte eski değer okunmasın (diğer süreçler TTL ile tazelenir). */
+  onbellekTemizle(): void {
+    this.onbellek.clear();
+  }
+
   /** MVZ-02: belge tarihinde yürürlükte olan değerler. */
   async yururluktekiler(tur: string, tarih: string): Promise<MevzuatDegeri[]> {
     return (await this.turKayitlari(tur)).filter((k) => yururluktedir(k, tarih));
@@ -54,6 +59,19 @@ export class MevzuatService {
       select: { id: true, no: true, baslik: true, dayanak: true, aciklama: true, yururlukBaslangic: true, yayinZamani: true, satirlar: { orderBy: { sira: "asc" }, select: { tur: true, anahtar: true, islem: true, deger: true } } },
     });
     return liste.map((d) => ({ ...d, yururlukBaslangic: gun(d.yururlukBaslangic) }));
+  }
+
+  /**
+   * MVZ-10: gelen belgede görülen bilinmeyen kod/oran. Aynı kod için açık bir
+   * talep varsa yalnız görülme sayısı artar. Kiracı bilgisi yazılmaz; uygulama
+   * rolü bu tabloda yalnız eşleşme sütunlarını okuyup sayacı artırabilir.
+   */
+  async bilinmeyenBildir(girdi: { tur: string; anahtar: string; aciklama: string }): Promise<void> {
+    await this.prisma.$executeRaw`
+      INSERT INTO mevzuat_talepleri (id, kaynak, tur, anahtar, aciklama, updated_at)
+      VALUES (gen_random_uuid(), 'bilinmeyen_kod', ${girdi.tur}, ${girdi.anahtar}, ${girdi.aciklama}, now())
+      ON CONFLICT (tur, anahtar) WHERE kaynak = 'bilinmeyen_kod' AND durum = 'acik'
+      DO UPDATE SET gorulme_sayisi = mevzuat_talepleri.gorulme_sayisi + 1, updated_at = now()`;
   }
 
   /**

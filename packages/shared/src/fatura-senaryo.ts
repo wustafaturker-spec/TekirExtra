@@ -106,7 +106,7 @@ export interface SenaryoHatasi {
  */
 export interface SenaryoSecenekleri {
   /**
-   * FTR-35: firmanın tevkifat tablosu. Verilmezse varsayılan (GİB) tablo;
+   * MVZ-12: belge tarihinde yürürlükteki merkezi tablo + firmanın gizledikleri. Verilmezse varsayılan (GİB) tablo;
    * `null` kod ve oran denetimini atlar — tablo kiracıya özel olduğundan şema
    * doğrulaması bunu yapamaz, servis kiracının tablosuyla yeniden denetler.
    */
@@ -153,7 +153,7 @@ export function senaryoHatalari(satirlar: SenaryoSatirGirdi[], ozelMatrah = fals
       if (!kod) {
         hatalar.push({ satirIndeksi, alan: "tevkifatKodu", mesaj: `Tanımsız GİB tevkifat kodu: ${satir.tevkifatKodu}` });
       } else if (kod.pasif && !secenek.pasifKodKabul) {
-        hatalar.push({ satirIndeksi, alan: "tevkifatKodu", mesaj: `${kod.kod} tevkifat kodu Ayarlar'da pasif yapılmış` });
+        hatalar.push({ satirIndeksi, alan: "tevkifatKodu", mesaj: `${kod.kod} tevkifat kodu firma listesinde gizlenmiş (Ayarlar > Tevkifat Kodları)` });
       } else if (kod.oranlar.length > 1) {
         // Yalnız "650 Diğerleri" birden çok oranla kullanılabiliyor; oran yine
         // listeden seçilir, serbest girilmez.
@@ -164,7 +164,7 @@ export function senaryoHatalari(satirlar: SenaryoSatirGirdi[], ozelMatrah = fals
         }
       }
       // Tek oranlı kodda oran koddan gelir (tevkifatPayPayda); satırdaki eski
-      // oran yazısı yok sayılır — FTR-35'te oran değişince taslak yeni oranla
+      // oran yazısı yok sayılır — MVZ'de merkezi oran değişince taslak yeni oranla
       // hesaplanır, reddedilmez.
     }
     if (satir.tevkifatKodu && kdvSifir) {
@@ -204,7 +204,7 @@ export function ihracKayitliHatalari(fatura: {
 export function tevkifatPayPayda(
   tevkifatKodu: string | null | undefined,
   tevkifatOrani?: string | null,
-  /** FTR-35: firmanın tevkifat tablosu; verilmezse varsayılan. */
+  /** MVZ-12: belge tarihindeki firma tablosu; verilmezse varsayılan. */
   tablo?: readonly TevkifatKodu[],
 ): { pay: number; payda: number } | undefined {
   const kod = tevkifatKoduBul(tevkifatKodu, tablo);

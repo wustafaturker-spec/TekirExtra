@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { gelenFaturaGirdisi, gelenFaturaHesabi, gelenFaturaTipi, tevkifatOraniMetni, tutarDenetimi } from "./gelen-fatura";
 import type { UblFatura, UblSatir } from "./ubl-oku";
-import { tevkifatTablosuCoz } from "@tekirextra/shared";
+import { tevkifatTablosuKur } from "@tekirextra/shared";
 
 const STOK = "11111111-1111-4111-8111-111111111111";
 const eslesme = () => ({ stokId: STOK });
@@ -112,19 +112,24 @@ describe("gelen tevkifat (EBLG-117)", () => {
     expect(denetim.gecerli).toBe(true);
     // 604 sistemde 5/10; belge %70 diyorsa fark yerine açık engel.
     const yetmis = belge({ faturaTipKodu: "TEVKIFAT", toplamlar: { tevkifatKodlari: [{ kod: "604", oran: 70, tutar: 140 }] } });
-    expect(denetle(yetmis).engeller.join()).toMatch(/604 kodu %70 oranla yazılmış; sistemdeki oranı 5\/10/);
+    expect(denetle(yetmis).engeller.join()).toMatch(/604 kodu %70 oranla yazılmış; belge tarihinde merkezi oran 5\/10/);
     const ikiKod = belge({ toplamlar: { tevkifatKodlari: [{ kod: "604", oran: 50, tutar: 50 }, { kod: "650", oran: 20, tutar: 20 }] } });
     expect(denetle(ikiKod).engeller.join()).toMatch(/birden çok kodla/);
   });
 
-  it("firmanın tablosu kullanılır: güncel varsayılanla 601 %40 geçer, değiştirilen oranla durur (FTR-35)", () => {
+  it("belge tarihindeki merkezi tablo kullanılır; uymayan oran ve bilinmeyen kod platforma bildirilir (MVZ-10/12)", () => {
     const ubl = belge({ faturaTipKodu: "TEVKIFAT", satirlar: [satir({ tevkifat: { kod: "601", oran: 40, tutar: 80 } })], toplamlar: { tevkifat: 80, odenecek: 1120 } });
     expect(denetle(ubl).engeller).toEqual([]);
     expect(denetle(ubl).denetim.gecerli).toBe(true);
-    const tablo = tevkifatTablosuCoz([{ kod: "601", oranlar: ["3/10"] }]);
-    expect(gelenFaturaGirdisi(ubl, eslesme, tablo).engeller.join()).toMatch(/601 kodu %40.*3\/10 \(Ayarlar > Tevkifat\)/);
-    // Pasif kod gelen belgede yine tanınır.
-    expect(gelenFaturaGirdisi(ubl, eslesme, tevkifatTablosuCoz([{ kod: "601", pasif: true }])).engeller).toEqual([]);
+    // Belgenin tarihinde 601 3/10 olsaydı:
+    const eski = tevkifatTablosuKur([{ anahtar: "601", deger: { ad: "YAPIM", oranlar: ["3/10"] } }]);
+    const sonuc = gelenFaturaGirdisi(ubl, eslesme, eski);
+    expect(sonuc.engeller.join()).toMatch(/601 kodu %40.*merkezi oran 3\/10/);
+    expect(sonuc.bilinmeyenler).toEqual([expect.objectContaining({ tur: "tevkifat_kodu", anahtar: "601", aciklama: expect.stringContaining("%40") })]);
+    // Firmanın gizlediği kod gelen belgede yine tanınır.
+    expect(gelenFaturaGirdisi(ubl, eslesme, tevkifatTablosuKur([{ anahtar: "601", deger: { ad: "YAPIM", oranlar: ["4/10"] } }], ["601"])).engeller).toEqual([]);
+    const yok = gelenFaturaGirdisi(belge({ satirlar: [satir({ tevkifat: { kod: "699", oran: 50, tutar: 100 } })] }), eslesme);
+    expect(yok.bilinmeyenler[0]).toMatchObject({ anahtar: "699" });
   });
 
   it("tanınmayan kodda ve 650'ye uymayan oranda durur", () => {

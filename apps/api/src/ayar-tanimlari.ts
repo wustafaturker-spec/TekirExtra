@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { registerModulAyar } from "./core/ayarlar/ayar-kayit";
 import { BELGE_SABLONLARI, VARSAYILAN_VURGU_RENGI } from "./core/pdf/belge-temasi";
-import { DOVIZ_CINSLERI, tevkifatAyarHatalari } from "@tekirextra/shared";
+import { DOVIZ_CINSLERI } from "@tekirextra/shared";
 import { VARSAYILAN_SABLONLAR } from "./cari/vade-hatirlatma";
 
 /**
@@ -155,18 +155,12 @@ registerModulAyar(
   "tevkifat",
   z.object({
     /**
-     * FTR-35: varsayılan (GİB) tevkifat tablosuna firmanın değişiklikleri —
-     * oran değişikliği, eklenen kod, pasif kod. Yalnız değişiklik saklanır;
-     * dokunulmamış kod varsayılanı izler.
+     * MVZ-09: firmanın kendi listesinden gizlediği tevkifat kodları. Kodlar ve
+     * oranlar Mevzuat Merkezi'ndedir; firma değiştiremez (FTR-35'in oran/kod
+     * düzenlemesi MVZ-15 ile kalktı, eski `degisiklikler` alanı okunurken
+     * yalnız `pasif` işaretleri gizli sayılır).
      */
-    degisiklikler: z.array(z.object({
-      kod: z.string().trim().max(3),
-      ad: z.string().trim().max(300).optional().nullable(),
-      oranlar: z.array(z.string().trim().max(5)).max(10).optional().nullable(),
-      pasif: z.boolean().optional(),
-    })).max(200),
-  }).superRefine((ayar, ctx) => {
-    for (const mesaj of tevkifatAyarHatalari(ayar.degisiklikler)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["degisiklikler"], message: mesaj });
+    gizli: z.array(z.string().regex(/^\d{3}$/, "Tevkifat kodu üç haneli olmalıdır")).max(200),
   }),
-  { degisiklikler: [] },
+  { gizli: [] },
 );

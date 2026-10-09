@@ -19,7 +19,7 @@ import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
 import { UrunSecimModali } from "@/components/urun-secim-modali";
 import { varyantDegeriCoz, varyantSecenekleri } from "@/lib/varyant-secimi";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
-import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, KAP_CINSLERI, kapEksigiVarMi, SIK_KAP_CINSLERI, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, tevkifatTablosuCoz, type TevkifatDegisikligi, type TevkifatKodu, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
+import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, IHRAC_KAYITLI_KODLARI, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, OZEL_MATRAH_KODLARI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, KAP_CINSLERI, kapEksigiVarMi, SIK_KAP_CINSLERI, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type TevkifatKodu, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-alani";
 import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
 import { birimKisaAdi, faturaKurTipi, vadeTarihiHesapla } from "@tekirextra/shared";
@@ -478,9 +478,6 @@ export default function FaturaSayfasi() {
   useEffect(() => { if (yeniSayfasi) { setFormAcik(true); faturaBaslangicRef.current = Date.now(); } }, [yeniSayfasi]);
   // EBLG-77: kapalı uygulamanın düğmesi hiç çizilmesin diye bir kez okunur.
   useEffect(() => { void api<EbelgeUygulamalari>("/ebelge/uygulamalar").then(setEbelgeUygulamalari).catch(() => undefined); }, []);
-  // FTR-35: firmanın tevkifat tablosu (Ayarlar > Tevkifat); okunamazsa varsayılan.
-  const [tevkifatTablosu, setTevkifatTablosu] = useState<readonly TevkifatKodu[]>(TEVKIFAT_KODLARI);
-  useEffect(() => { void api<{ degisiklikler: TevkifatDegisikligi[] }>("/ayarlar/tevkifat").then((a) => setTevkifatTablosu(tevkifatTablosuCoz(a.degisiklikler ?? []))).catch(() => undefined); }, []);
   const saltOkunur = acikFatura !== null && !faturaDuzenlenebilir(acikFatura);
   /** EBLG-77: e-belge gönderimi yalnız e-Fatura ya da e-Arşiv açıkken mümkündür. */
   const ebelgeGonderilebilirFirma = ebelgeUygulamalari === null || !ebelgeKullanilmiyor(ebelgeUygulamalari);
@@ -587,6 +584,17 @@ export default function FaturaSayfasi() {
   const [kur, setKur] = useState("1");
   const [kurBilgisi, setKurBilgisi] = useState("");
   const [tarih, setTarih] = useState(bugunTR());
+  // MVZ-12: belge tarihinde yürürlükteki merkezi tevkifat tablosu (firmanın
+  // gizledikleri işaretli) ve tevkifat alt sınırı; okunamazsa varsayılan tablo.
+  const [tevkifatTablosu, setTevkifatTablosu] = useState<readonly TevkifatKodu[]>(TEVKIFAT_KODLARI);
+  const [tevkifatAltSiniri, setTevkifatAltSiniri] = useState<number | null>(null);
+  useEffect(() => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(tarih)) return;
+    void api<TevkifatKodu[]>(`/mevzuat/tevkifat-tablosu?tarih=${tarih}`).then(setTevkifatTablosu).catch(() => undefined);
+    void api<{ anahtar: string; deger: { deger?: number } }[]>(`/mevzuat/kayitlar?tur=kanuni_deger&tarih=${tarih}`)
+      .then((liste) => setTevkifatAltSiniri(liste.find((k) => k.anahtar === "tevkifat_alt_siniri")?.deger.deger ?? null))
+      .catch(() => undefined);
+  }, [tarih]);
   const [vadeTarihi, setVadeTarihi] = useState("");
   const [vadeElleDegisti, setVadeElleDegisti] = useState(false);
   // Profil cari kartından gelir ama fatura üzerinde değiştirilebilir (FTR-19);
@@ -2610,6 +2618,11 @@ export default function FaturaSayfasi() {
                 <span>{sonuc.toplamTevkifat > 0 ? "Tevkifat sonrası tahsil edilecek" : "Tahsil edilecek"}</span>
                 <strong>{tl(sonuc.genelToplam, dovizCinsi)}</strong>
               </div>
+              {tevkifatliSatirSayisi > 0 && tevkifatAltSiniri !== null && (sonuc.toplamMatrah + sonuc.toplamKdv) * (dovizCinsi === "TRY" ? 1 : Number(kur) || 0) <= tevkifatAltSiniri && (
+                <ul className="scenario-warnings">
+                  <li>KDV dahil tutar tevkifat alt sınırının ({tl(tevkifatAltSiniri, "TRY")}) altında; bu işlemde tevkifat uygulanmayabilir. Mevzuatı kontrol edin.</li>
+                </ul>
+              )}
               {ozelMatrahUyarilari.length > 0 && (
                 <ul className="scenario-warnings">
                   {ozelMatrahUyarilari.map((mesaj) => <li key={mesaj}>{mesaj}</li>)}

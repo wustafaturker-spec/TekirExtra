@@ -1,6 +1,8 @@
 import { BadRequestException, Body, Controller, Get, Post, Query } from "@nestjs/common";
 import { z } from "zod";
 import { bugunTR, MEVZUAT_TURLERI } from "@tekirextra/shared";
+import { AyarlarService } from "../core/ayarlar/ayarlar.service";
+import { firmaTevkifatTablosu } from "../fatura/tevkifat-tablosu";
 import { MevzuatService } from "./mevzuat.service";
 
 const talepSemasi = z.object({
@@ -12,7 +14,18 @@ const talepSemasi = z.object({
 /** Kiracı tarafı: Mevzuat Merkezi'ni salt okur (MVZ-07) ve talep açar (MVZ-09). */
 @Controller("mevzuat")
 export class MevzuatController {
-  constructor(private readonly mevzuat: MevzuatService) {}
+  constructor(
+    private readonly mevzuat: MevzuatService,
+    private readonly ayarlar: AyarlarService,
+  ) {}
+
+  /** MVZ-12: fatura formunun tevkifat listesi — belge tarihindeki merkezi tablo, firmanın gizledikleri işaretli. */
+  @Get("tevkifat-tablosu")
+  tevkifatTablosu(@Query("tarih") tarih?: string) {
+    const gun = tarih ?? bugunTR();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(gun)) throw new BadRequestException("Tarih YYYY-MM-DD olmalıdır");
+    return firmaTevkifatTablosu({ mevzuat: this.mevzuat, ayarlar: this.ayarlar }, gun);
+  }
 
   @Get("kayitlar")
   async kayitlar(@Query("tur") tur: string, @Query("tarih") tarih?: string, @Query("gecmis") gecmis?: string) {

@@ -204,7 +204,7 @@ export const AYARLAR: MenuOge[] = [
   { href: "/panel/ayarlar/kullanicilar", ikon: Users, baslik: "Kullanıcılar", eslesme: "tam", esanlamlilar: ["rol", "yetki", "bayi"] },
   { href: "/panel/ayarlar/fatura-serileri", ikon: FileText, baslik: "Fatura Serileri", eslesme: "tam" },
   { href: "/panel/ayarlar/mevzuat", ikon: Landmark, baslik: "Mevzuat", eslesme: "tam", esanlamlilar: ["kdv oranı", "istisna kodu", "özel matrah", "kanuni süre", "mevzuat merkezi"] },
-  { href: "/panel/ayarlar/tevkifat", ikon: Percent, baslik: "Tevkifat Oranları", eslesme: "tam", esanlamlilar: ["tevkifat", "kdv tevkifatı", "tevkifat kodu", "601", "650"] },
+  { href: "/panel/ayarlar/tevkifat", ikon: Percent, baslik: "Tevkifat Kodları", eslesme: "tam", esanlamlilar: ["tevkifat", "kdv tevkifatı", "tevkifat kodu", "tevkifat oranı", "601", "650"] },
   { href: "/panel/ayarlar/doviz-kurlari", ikon: ChartColumn, baslik: "Döviz Kurları", eslesme: "tam", esanlamlilar: ["kur", "tcmb", "usd", "eur", "elle kur"] },
   { href: "/panel/ayarlar/depolar", ikon: Boxes, baslik: "Depolar", eslesme: "tam" },
   { href: "/panel/ayarlar/calisma-takvimi", ikon: CalendarRange, baslik: "Çalışma Takvimi", eslesme: "tam", esanlamlilar: ["tatil", "bayram", "resmî tatil", "mesai", "başlangıç saati"] },

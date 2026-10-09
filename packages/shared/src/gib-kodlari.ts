@@ -146,7 +146,7 @@ export interface TevkifatKodu {
    * listeden oran seçer, serbest oran giremez.
    */
   oranlar: readonly string[];
-  /** FTR-35: firma kodu pasif yaptıysa yeni satırda seçilemez; gelen belgede tanınır. */
+  /** MVZ-09: firma kodu gizlediyse yeni satırda seçilemez; gelen belgede tanınır. */
   pasif?: boolean;
 }
 
@@ -154,8 +154,8 @@ export interface TevkifatKodu {
  * Kısmi tevkifat kodları — GİB UBL-TR Kod Listeleri v1.42 (Mart 2026) ve
  * KDVGUT I/C-2.1.3 (karar 2026-10-09; liste v1.17'de kalmıştı: 601 3/10→4/10,
  * 603 5/10→7/10, 609/615/617–620 5/10→7/10, 612/613 7/10→9/10, 624–627 eklendi).
- * Firma oranları Ayarlar > Tevkifat'tan değiştirebilir (FTR-35); bu tablo
- * varsayılandır.
+ * Çalışma anında kaynak Mevzuat Merkezi'dir (MVZ-12); bu tablo merkezin ilk
+ * dolumu ve merkez okunamayan ortamlar (birim testleri) içindir.
  */
 export const TEVKIFAT_KODLARI: readonly TevkifatKodu[] = [
   { kod: "601", ad: "YAPIM İŞLERİ İLE BU İŞLERLE BİRLİKTE İFA EDİLEN MÜHENDİSLİK-MİMARLIK VE ETÜT-PROJE HİZMETLERİ", oranlar: ["4/10"] },
@@ -228,7 +228,7 @@ export function istisnaKoduBul(kod: string | null | undefined): IstisnaKodu | un
 
 /**
  * Kodu tabloda arar; tablo verilmezse varsayılan (GİB) tablo. Firmanın kendi
- * tablosu `tevkifatTablosuCoz` ile üretilir (FTR-35). Pasif kod da bulunur;
+ * tablosu `tevkifatTablosuKur` ile merkezi kayıtlardan üretilir (MVZ-12). Gizli (pasif) kod da bulunur;
  * seçilebilirlik ayrıca denetlenir.
  */
 export function tevkifatKoduBul(kod: string | null | undefined, tablo?: readonly TevkifatKodu[]): TevkifatKodu | undefined {
