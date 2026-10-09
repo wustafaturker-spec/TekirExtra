@@ -367,7 +367,7 @@ export default function PersonelDetaySayfasi() {
                   <Table density="compact" className="table--fit">
                     <tbody>
                       <tr><td className="muted">Hizmet süresi</td><td className="num">{cikisOnizleme.hizmetGunu} gün ({cikisOnizleme.girdiler.girisTarihi} – {cikisOnizleme.girdiler.cikisTarihi})</td></tr>
-                      <tr><td className="muted">Giydirilmiş brüt / kıdem esası (tavan <Para deger={cikisOnizleme.kidemTavani} />)</td><td className="num"><Para deger={cikisOnizleme.giydirilmisBrut} /> / <Para deger={cikisOnizleme.kidemEsasi} /></td></tr>
+                      <tr><td className="muted">Giydirilmiş brüt / kıdem esası ({cikisOnizleme.kidemTavani === null ? "tavan yayınlanmadı" : <>tavan <Para deger={cikisOnizleme.kidemTavani} /></>})</td><td className="num"><Para deger={cikisOnizleme.giydirilmisBrut} /> / <Para deger={cikisOnizleme.kidemEsasi} /></td></tr>
                       <tr><td>Kıdem tazminatı <small className="muted">(yalnız damga vergisi)</small></td><td className="num"><strong><Para deger={cikisOnizleme.kidemTutari} /></strong></td></tr>
                       <tr><td>İhbar tazminatı · {cikisOnizleme.ihbarHaftasi} hafta <small className="muted">(GV + DV){cikisOnizleme.ihbarDurumu === "isci_oder" ? " — işçiden kesilir" : ""}</small></td><td className="num"><strong><Para deger={cikisOnizleme.ihbarTutari} /></strong></td></tr>
                       <tr><td>Kullanılmamış izin ücreti · {cikisOnizleme.izinGunu} gün <small className="muted">(SGK + GV + DV)</small></td><td className="num"><strong><Para deger={cikisOnizleme.izinUcreti} /></strong></td></tr>
@@ -439,7 +439,7 @@ type CikisFormu = { cikisNedeni: string; kidemHakki?: boolean; ihbarDurumu?: "yo
 interface CikisOnizleme {
   oneri: { kidemHakki: boolean; ihbarDurumu: string; sonBrut: number; yanOdemeler: number; izinGunu: number };
   girdiler: { girisTarihi: string; cikisTarihi: string; kidemHakki: boolean; ihbarDurumu: "yok" | "isveren_oder" | "isci_oder" };
-  oneridenFarkli: boolean; hizmetGunu: number; giydirilmisBrut: number; kidemTavani: number; kidemEsasi: number; kidemTutari: number; kidemUyari: string | null;
+  oneridenFarkli: boolean; hizmetGunu: number; giydirilmisBrut: number; kidemTavani: number | null; kidemEsasi: number; kidemTutari: number; kidemUyari: string | null;
   ihbarHaftasi: number; ihbarTutari: number; ihbarDurumu: string; izinGunu: number; izinUcreti: number;
 }
 const CIKIS_NEDENLERI: [string, string][] = [["isveren_fesih", "İşveren feshi (haklı neden olmadan)"], ["istifa", "İstifa"], ["emeklilik", "Emeklilik / yaşlılık aylığı"], ["askerlik", "Muvazzaf askerlik"], ["evlilik", "Evlilik (kadın, 1 yıl içinde)"], ["isci_hakli_fesih", "İşçinin haklı feshi (m.24)"], ["isveren_saglik_zorlayici", "İşveren feshi — sağlık / zorlayıcı neden"], ["ahlak_iyiniyet", "İşveren feshi — ahlak ve iyiniyet ihlali"], ["deneme_suresi", "Deneme süresinde fesih"], ["belirli_sure_bitimi", "Belirli süreli sözleşmenin bitimi"], ["olum", "Ölüm"], ["diger", "Diğer"]];

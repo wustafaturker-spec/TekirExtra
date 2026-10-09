@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { kanuniDegerOku } from "./kanuni-deger";
+import { kanuniDegerOku, kidemTavaniOku } from "./kanuni-deger";
 import { babsEsigi } from "../cari/babs";
 
 describe("kanuni değer okuma (MVZ-13)", () => {
@@ -21,5 +21,14 @@ describe("kanuni değer okuma (MVZ-13)", () => {
     const tx = { mevzuatKayit: { findFirst: vi.fn().mockResolvedValue({ deger: { deger: 8000 } }) } };
     expect(await babsEsigi(tx as never, 2026, 3)).toBe(8000);
     expect(tx.mevzuatKayit.findFirst.mock.calls[0][0].where.yururlukBaslangic).toEqual({ lte: new Date("2026-03-01T00:00:00Z") });
+  });
+
+  it("kıdem tavanı yalnız başladığı yarıyılda geçerlidir; yoksa null", async () => {
+    const findFirst = vi.fn().mockResolvedValueOnce({ deger: { deger: 73729.87 } }).mockResolvedValueOnce(null);
+    const db = { mevzuatKayit: { findFirst } } as never;
+    expect(await kidemTavaniOku(db, new Date("2026-10-15T00:00:00Z"))).toBe(73729.87);
+    expect(findFirst.mock.calls[0][0].where.yururlukBaslangic).toEqual({ lte: new Date("2026-10-15T00:00:00Z"), gte: new Date("2026-07-01T00:00:00Z") });
+    expect(await kidemTavaniOku(db, new Date("2027-03-01T00:00:00Z"))).toBeNull();
+    expect(findFirst.mock.calls[1][0].where.yururlukBaslangic.gte).toEqual(new Date("2027-01-01T00:00:00Z"));
   });
 });

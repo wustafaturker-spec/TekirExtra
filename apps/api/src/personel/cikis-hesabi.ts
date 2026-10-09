@@ -12,8 +12,8 @@
  *   brüt ücret üzerinden; ücret gibi SGK + GV + DV.
  * - Hizmet süresi yalnız son istihdam dönemidir; önceki dönemlerin birleştirilmesi elle değerlendirilir.
  *
- * Kıdem tavanı (Hazine ve Maliye Bakanlığı, 2026-10-04 doğrulandı):
- * 2026-01-01…2026-06-30: 64.948,77 TL · 2026-07-01…2026-12-31: 73.729,87 TL.
+ * Kıdem tavanı Mevzuat Merkezi'nden gelir (`kanuni_deger / kidem_tavani`,
+ * yarıyıllık); çağıran fesih tarihindeki değeri okuyup girdiye koyar.
  */
 
 export const CIKIS_NEDENLERI = {
@@ -34,21 +34,9 @@ export const CIKIS_NEDENLERI = {
 export type CikisNedeni = keyof typeof CIKIS_NEDENLERI;
 export type IhbarDurumu = "yok" | "isveren_oder" | "isci_oder";
 
-export const KIDEM_TAVANLARI: { baslangic: string; bitis: string; tavan: number }[] = [
-  { baslangic: "2026-01-01", bitis: "2026-06-30", tavan: 64948.77 },
-  { baslangic: "2026-07-01", bitis: "2026-12-31", tavan: 73729.87 },
-];
-
 const GUN_MS = 86_400_000;
 const utc = (t: Date) => Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate());
 const kurus = (n: number) => Math.round(n * 100) / 100;
-
-export function kidemTavani(cikis: Date): number {
-  const gun = cikis.toISOString().slice(0, 10);
-  const t = KIDEM_TAVANLARI.find((k) => k.baslangic <= gun && gun <= k.bitis);
-  if (!t) throw new Error(`${gun} için kıdem tazminatı tavanı tanımlı değil; cikis-hesabi.ts KIDEM_TAVANLARI güncellenmeli`);
-  return t.tavan;
-}
 
 /** Giriş ve çıkış günü dahil hizmet günü. */
 export const hizmetGunu = (giris: Date, cikis: Date) => Math.round((utc(cikis) - utc(giris)) / GUN_MS) + 1;
@@ -71,14 +59,25 @@ export interface CikisGirdisi {
   yanOdemeler: number;
   /** Kullanılmamış yıllık izin günü. */
   izinGunu: number;
+  /** Fesih tarihindeki kıdem tavanı (Mevzuat Merkezi); yayınlanmamışsa null. */
+  kidemTavani: number | null;
+}
+
+export class KidemTavaniYokHatasi extends Error {
+  constructor(cikis: Date) {
+    super(`${cikis.toISOString().slice(0, 10)} tarihindeki kıdem tazminatı tavanı Mevzuat Merkezi'nde henüz yayınlanmadı`);
+  }
 }
 
 export function cikisHesapla(g: CikisGirdisi) {
   const gun = hizmetGunu(g.girisTarihi, g.cikisTarihi);
   const giydirilmis = kurus(g.sonBrut + g.yanOdemeler);
-  const tavan = kidemTavani(g.cikisTarihi);
-  const kidemEsasi = Math.min(giydirilmis, tavan);
-  const kidemTutari = g.kidemHakki && gun >= 365 ? kurus((kidemEsasi * gun) / 365) : 0;
+  const tavan = g.kidemTavani;
+  const kidemVar = g.kidemHakki && gun >= 365;
+  // Kıdem doğmuyorsa tavan gerekmez; doğuyorsa tavansız hesap yapılmaz.
+  if (kidemVar && tavan === null) throw new KidemTavaniYokHatasi(g.cikisTarihi);
+  const kidemEsasi = tavan === null ? giydirilmis : Math.min(giydirilmis, tavan);
+  const kidemTutari = kidemVar ? kurus((kidemEsasi * gun) / 365) : 0;
   const hafta = ihbarHaftasi(gun);
   const ihbarTutari = g.ihbarDurumu === "yok" ? 0 : kurus((giydirilmis / 30) * hafta * 7);
   const izinUcreti = kurus((g.sonBrut / 30) * Math.max(0, g.izinGunu));

@@ -979,6 +979,14 @@ Etki önizlemesi yürürlükten sonraki aynı yıl dönemlerinin onaylanmamış
 bordrolarını sayar. 2027 değerleri platform panelinden yayınlanmalıdır
 (asgari ücret Aralık'ta açıklanır).
 
+**Kıdem tazminatı tavanı merkeze taşındı — 2026-10-09:** göç
+`20261010160000_mevzuat_kidem_tavani`; `kanuni_deger / kidem_tavani`
+(01.01–30.06.2026 64.948,77 TL, 01.07.2026'dan 73.729,87 TL). Tavan Ocak ve
+Temmuz'da değiştiği için bir kayıt yalnız başladığı yarıyılda geçerlidir;
+yeni dönemin tavanı yayınlanmadıysa kıdem doğan çıkış hesabı "tavan
+yayınlanmadı" hatası verir (kıdem doğmayan çıkış hesaplanır). Koddaki
+`KIDEM_TAVANLARI` kalktı.
+
 Mevcut durum: değerler kodda sabit (`packages/shared/src/gib-kodlari.ts`),
 bir kısmı kiracı ayarında (BA/BS eşiği CARI-37, e-Arşiv iptal süresi EBLG-22,
 irsaliye–fatura süresi EBLG-82, FTR-35 tevkifat değişiklikleri), bordro

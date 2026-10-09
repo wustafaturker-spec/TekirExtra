@@ -1,22 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { bordroHesapla } from "./bordro-hesaplama";
-import { cikisHesapla, hizmetGunu, ihbarHaftasi, kidemTavani, CIKIS_NEDENLERI } from "./cikis-hesabi";
+import { cikisHesapla, hizmetGunu, ihbarHaftasi, CIKIS_NEDENLERI } from "./cikis-hesabi";
 import { PARAMETRELER_2026_2 } from "./bordro-ilk-dolum.test-veri";
 
 const t = (iso: string) => new Date(`${iso}T00:00:00Z`);
 
 describe("çıkış hesabı (PRS-18)", () => {
-  it("kıdem tavanı fesih tarihine göre", () => {
-    expect(kidemTavani(t("2026-06-30"))).toBe(64948.77);
-    expect(kidemTavani(t("2026-07-01"))).toBe(73729.87);
-    expect(() => kidemTavani(t("2027-01-01"))).toThrow(/tavanı tanımlı değil/);
+  it("tavan yayınlanmamışsa kıdem doğan çıkış hesaplanmaz; kıdem doğmuyorsa tavan gerekmez", () => {
+    const g = { girisTarihi: t("2019-03-15"), cikisTarihi: t("2027-01-15"), ihbarDurumu: "yok" as const, sonBrut: 80000, yanOdemeler: 0, izinGunu: 0, kidemTavani: null };
+    expect(() => cikisHesapla({ ...g, kidemHakki: true })).toThrow(/henüz yayınlanmadı/);
+    expect(cikisHesapla({ ...g, kidemHakki: false }).kidemTutari).toBe(0);
   });
   it("ihbar haftası kıdeme göre", () => {
     expect([100, 183, 547, 548, 1095, 1096, 4000].map(ihbarHaftasi)).toEqual([2, 4, 4, 6, 6, 8, 8]);
   });
   it("tavanı aşan ücrette kıdem tavandan; artan gün orantılı; ihbar ve izin", () => {
     // 2019-03-15 → 2026-10-15: 2772 gün
-    const r = cikisHesapla({ girisTarihi: t("2019-03-15"), cikisTarihi: t("2026-10-15"), kidemHakki: true, ihbarDurumu: "isveren_oder", sonBrut: 80000, yanOdemeler: 6000, izinGunu: 10 });
+    const r = cikisHesapla({ girisTarihi: t("2019-03-15"), cikisTarihi: t("2026-10-15"), kidemHakki: true, ihbarDurumu: "isveren_oder", sonBrut: 80000, yanOdemeler: 6000, izinGunu: 10, kidemTavani: 73729.87 });
     expect(r.hizmetGunu).toBe(hizmetGunu(t("2019-03-15"), t("2026-10-15")));
     expect(r.kidemEsasi).toBe(73729.87);
     expect(r.kidemTutari).toBe(Math.round(73729.87 * r.hizmetGunu / 365 * 100) / 100);
@@ -25,7 +25,7 @@ describe("çıkış hesabı (PRS-18)", () => {
     expect(r.izinUcreti).toBe(Math.round(80000 / 30 * 10 * 100) / 100);
   });
   it("1 yıldan az hizmette kıdem yok; istifada ihbar yok", () => {
-    const r = cikisHesapla({ girisTarihi: t("2026-01-10"), cikisTarihi: t("2026-10-15"), kidemHakki: true, ihbarDurumu: "yok", sonBrut: 40000, yanOdemeler: 0, izinGunu: 0 });
+    const r = cikisHesapla({ girisTarihi: t("2026-01-10"), cikisTarihi: t("2026-10-15"), kidemHakki: true, ihbarDurumu: "yok", sonBrut: 40000, yanOdemeler: 0, izinGunu: 0, kidemTavani: 73729.87 });
     expect(r.kidemTutari).toBe(0);
     expect(r.kidemUyari).toMatch(/1 yıldan az/);
     expect(r.ihbarTutari).toBe(0);

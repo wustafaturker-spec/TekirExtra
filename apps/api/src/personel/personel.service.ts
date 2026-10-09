@@ -23,7 +23,8 @@ import { donemCalismaSemasi, personelUcretSemasi } from "./personel.semalar";
 import { sgkDevirleriniDonemeTasi, type SgkMatrahDevirKalemi } from "./sgk-matrah-devri";
 import { donemSinirlari, istihdamGunu, izinliPrimGunu, tahakkukKapsamiKosulu, type UcretsizIzin } from "./tahakkuk-kapsami";
 import { donemUcreti, nettenBrute } from "./ucret-donemi";
-import { CIKIS_NEDENLERI, cikisHesapla, type IhbarDurumu } from "./cikis-hesabi";
+import { CIKIS_NEDENLERI, cikisHesapla, KidemTavaniYokHatasi, type IhbarDurumu } from "./cikis-hesabi";
+import { kidemTavaniOku } from "../mevzuat/kanuni-deger";
 import { cikisOnizlemeSemasi } from "./personel.semalar";
 import { CIKIS_NEDENI_SGK_KODU } from "./sgk-kodlari";
 
@@ -286,7 +287,13 @@ export class PersonelService {
     const izinBakiyesi = Math.max(0, hareketler.reduce((t, h) => (["kullanim", "duzeltme_azalis"].includes(h.tip) ? t - h.gun.toNumber() : t + h.gun.toNumber()), 0));
     const sonBrut = veri.sonBrut ?? sonBrutOnerisi;
     const izinGunu = veri.izinGunu ?? izinBakiyesi;
-    const hesap = cikisHesapla({ girisTarihi, cikisTarihi, kidemHakki, ihbarDurumu, sonBrut, yanOdemeler: veri.yanOdemeler, izinGunu });
+    let hesap;
+    try {
+      hesap = cikisHesapla({ girisTarihi, cikisTarihi, kidemHakki, ihbarDurumu, sonBrut, yanOdemeler: veri.yanOdemeler, izinGunu, kidemTavani: await kidemTavaniOku(tx, cikisTarihi) });
+    } catch (e) {
+      if (e instanceof KidemTavaniYokHatasi) throw new BadRequestException(e.message);
+      throw e;
+    }
     return {
       cikisNedeni: veri.cikisNedeni,
       cikisNedeniAdi: kural.ad,
