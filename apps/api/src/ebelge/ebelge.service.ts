@@ -16,7 +16,7 @@ import {
 } from "@nestjs/common";
 import { BelgeDurum, EarsivGonderimSekli, EbelgeTur, GelenEbelgeDurum, Prisma } from "@prisma/client";
 import type { BelgeDurumSonuc, EntegratorConfig, GelenAliciYaniti, GonderimSonuc } from "@tekirextra/baglanti";
-import { faturaGecikmeUyarilari, ihracKayitliKoduBul, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeSevkGunu, type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, YOLCU_BERABER_POSTA_KUTUSU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu, sgkEngelleri, sgkFaturasiMi, SGK_VKN, sarjEngelleri, sarjPlakaNormalize, idisEngelleri, idisNormalize, ytbBelgesiMi, ytbEngelleri, ytbNormalize, type SarjTuru, type SevkiyatYontemi, sevkiyatEksikleri, sevkiyatSorulurMu, ebelgeKanali, ebelgeUygulamalariCoz, ebelgeKanalEngelleri, uygulamaAcik, type EbelgeUygulamalari, type DovizKodu, dovizKoduMu, type KodTablosu, type TevkifatKodu, VARSAYILAN_KOD_TABLOSU } from "@tekirextra/shared";
+import { bugunTR, faturaGecikmeUyarilari, ihracKayitliKoduBul, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeSevkGunu, type FirmaEbelgeBilgisi, IHRACAT_POSTA_KUTUSU, birimTanindiMi, firmaEbelgeEksikleri, gibBelgeNoMu, ublAdresi, YURT_DISI_IADE_ENGELI, MUKELLEF_TURU_KAMU, YOLCU_BERABER_POSTA_KUTUSU, ibanNormalize, kamuEngelleri, kamuSenaryosuMu, sgkEngelleri, sgkFaturasiMi, SGK_VKN, sarjEngelleri, sarjPlakaNormalize, idisEngelleri, idisNormalize, ytbBelgesiMi, ytbEngelleri, ytbNormalize, type SarjTuru, type SevkiyatYontemi, sevkiyatEksikleri, sevkiyatSorulurMu, ebelgeKanali, ebelgeUygulamalariCoz, ebelgeKanalEngelleri, uygulamaAcik, type EbelgeUygulamalari, type DovizKodu, dovizKoduMu, type KodTablosu, type TevkifatKodu, VARSAYILAN_KOD_TABLOSU } from "@tekirextra/shared";
 import { ebelgeUygulamalariCozTenant } from "./ebelge-uygulamalari.service";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
@@ -45,6 +45,7 @@ import { ebelgeGonderilebilirTipMi, iadeOzeti } from "./iade-bilgisi";
 import { tasiyiciAdresiniBagla, tasiyiciCariBul, tasiyiciCariOzeti } from "./tasiyici-cari";
 import { internetSatisOzeti } from "./internet-satis-bilgisi";
 import { yolcuBeraberiOzeti } from "./yolcu-beraberi-bilgisi";
+import { kanuniDegerOku } from "../mevzuat/kanuni-deger";
 
 /** Onay ekranında satırın hangi ipucuyla eşleştiği. */
 export type EslesmeKaynagi =
@@ -331,8 +332,8 @@ export class EbelgeService {
       // EBLG-82: fatura irsaliyenin faturalama süresinden sonra düzenlendiyse
       // sihirbaz uyarır (engel değil). Bağlı her irsaliye sayılır — kâğıt
       // irsaliyeden dönüşen fatura da, sihirbazda seçilen e-İrsaliye de.
-      const ebelgeAyari = this.ayarlar ? await this.ayarlar.getir("ebelge", tx) : {};
-      const irsaliyeFaturaGunSayisi = Number(ebelgeAyari.irsaliyeFaturaGunSayisi) > 0 ? Number(ebelgeAyari.irsaliyeFaturaGunSayisi) : IRSALIYE_FATURA_GUN_SAYISI;
+      // MVZ-13: faturalama süresi Mevzuat Merkezi'nden (fatura tarihindeki).
+      const irsaliyeFaturaGunSayisi = await kanuniDegerOku(tx, "irsaliye_fatura_gun", fatura.tarih, IRSALIYE_FATURA_GUN_SAYISI);
       const bagliIrsaliyeler = fatura.tip === "satis"
         ? await tx.belge.findMany({ where: { tenantId, faturaId: fatura.id, tur: "irsaliye" }, select: { no: true, tarih: true, fiiliSevkZamani: true } })
         : [];
@@ -1364,7 +1365,11 @@ export class EbelgeService {
     const adapter = this.baglantilarService.adapterCoz(baglanti.saglayici);
     // EBLG-40: temel e-Fatura alıcıya ulaşınca, ticari yanıt süresi ve e-Arşiv
     // iptal süresi dolunca otomatik sorgu durur; elle sorgu açık kalır.
-    const sureler = faturaSorguSureleriniOku(this.ayarlar ? await this.ayarlar.getir("ebelge") : {});
+    const sureler = faturaSorguSureleriniOku({
+      ...(this.ayarlar ? await this.ayarlar.getir("ebelge") : {}),
+      // MVZ-13: e-Arşiv iptal süresi kiracı ayarı değil, merkezi kanuni değerdir.
+      earsivIptalGunSayisi: await kanuniDegerOku(this.prisma, "earsiv_iptal_gun", bugunTR(), 8),
+    });
 
     const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.ebelgeKayit.findMany({
@@ -2269,9 +2274,8 @@ export class EbelgeService {
 
     // İptali sınırlayan şey raporlanma değil süredir: e-Arşiv raporu günlük
     // gidiyor, belge ertesi gün raporlanmış oluyor ama iptal hakkı sürüyor.
-    // Süre sektör kaynağından geldiği için ayarlanabilir (varsayılan 8 gün).
-    const ayarlar = await this.ayarlar.getir("ebelge", tx);
-    const gunSayisi = Number(ayarlar.earsivIptalGunSayisi ?? 8);
+    // MVZ-13: süre Mevzuat Merkezi'nden, fatura tarihindeki değer (yoksa 8 gün).
+    const gunSayisi = await kanuniDegerOku(tx, "earsiv_iptal_gun", fatura.tarih, 8);
     const gunFarki = Math.floor((Date.now() - fatura.tarih.getTime()) / 86_400_000);
     if (gunFarki > gunSayisi) {
       throw new BadRequestException(

@@ -24,15 +24,14 @@ registerModulAyar(
     varsayilanDoviz: z.enum(DOVIZ_CINSLERI),
     /// CARI-32: risk limiti aşılınca sipariş onayı ve fatura kesinleştirmede davranış.
     riskLimitiPolitikasi: z.enum(["uyar", "engelle", "yonetici_onayi"]),
-    /// CARI-37: Form BA/BS bildirim eşiği (aynı kişiyle aylık KDV hariç TL toplamı).
-    babsEsigi: z.number().min(0).max(1_000_000_000),
+    // CARI-37 BA/BS eşiği MVZ-13 ile Mevzuat Merkezi'ne taşındı (kanuni_deger/babs_esigi).
     /// CARI-38: vade hatırlatma ve ihtar e-postası şablonları; boş bırakılırsa varsayılan metin.
     vadeHatirlatmaKonusu: z.string().max(200),
     vadeHatirlatmaMetni: z.string().max(5000),
     ihtarKonusu: z.string().max(200),
     ihtarMetni: z.string().max(5000),
   }),
-  { varsayilanVadeGun: 14, varsayilanDoviz: "TRY", riskLimitiPolitikasi: "uyar", babsEsigi: 5000, ...VARSAYILAN_SABLONLAR },
+  { varsayilanVadeGun: 14, varsayilanDoviz: "TRY", riskLimitiPolitikasi: "uyar", ...VARSAYILAN_SABLONLAR },
 );
 
 registerModulAyar(
@@ -80,15 +79,8 @@ registerModulAyar(
 registerModulAyar(
   "ebelge",
   z.object({
-    /**
-     * e-Arşiv faturasının kaç gün içinde iptal edilebileceği (EBLG-22).
-     * Süre geçtikten sonra düzeltme yolu iade faturasıdır.
-     *
-     * Varsayılan 8 gün yaygın uygulamadır; tebliğ metninden değil sektör
-     * kaynağından geldiği için mali müşavirin söylediği süreyle
-     * değiştirilebilsin diye ayar yapıldı.
-     */
-    earsivIptalGunSayisi: z.number().int().min(0).max(90),
+    // EBLG-22 e-Arşiv iptal süresi ve EBLG-82 irsaliye–fatura süresi MVZ-13 ile
+    // Mevzuat Merkezi'ne taşındı (kanuni_deger/earsiv_iptal_gun, irsaliye_fatura_gun).
     /**
      * Alıcı yanıt vermezse giden e-İrsaliyenin gönderimden sonra kaç gün
      * otomatik sorgulanacağı (EBLG-36). GİB yanıt için 7 gün öngörür; varsayılan
@@ -103,13 +95,8 @@ registerModulAyar(
      * geç gelen yanıtı gelen tarama okur. Planlayıcı en fazla 60 güne bakar.
      */
     efaturaYanitGunSayisi: z.number().int().min(1).max(60),
-    /**
-     * İrsaliyenin kaç gün içinde faturalanması gerektiği (EBLG-82). VUK 231/5
-     * teslimden itibaren 7 gün der; mali müşavir değiştirebilsin diye ayar.
-     */
-    irsaliyeFaturaGunSayisi: z.number().int().min(1).max(30),
   }),
-  { earsivIptalGunSayisi: 8, eirsaliyeYanitGunSayisi: 10, efaturaYanitGunSayisi: 10, irsaliyeFaturaGunSayisi: 7 },
+  { eirsaliyeYanitGunSayisi: 10, efaturaYanitGunSayisi: 10 },
 );
 
 registerModulAyar(

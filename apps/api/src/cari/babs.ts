@@ -1,12 +1,12 @@
 import { Prisma } from "@prisma/client";
 import { metinNormalize, YURT_DISI_ALICI_VKN } from "@tekirextra/shared";
-import { ayarTanimiAl } from "../core/ayarlar/ayar-kayit";
+import { kanuniDegerOku } from "../mevzuat/kanuni-deger";
 
 /**
  * CARI-37 (P2-3, karar 2026-10-04): Form BA (alışlar) ve Form BS (satışlar).
  *
  * - Aynı kişiyle bir ayda düzenlenen fatura ve fatura yerine geçen belgelerin
- *   KDV hariç TL toplamı eşiği (cari ayarı `babsEsigi`, varsayılan 5.000 TL)
+ *   KDV hariç TL toplamı eşiği (Mevzuat Merkezi `kanuni_deger/babs_esigi`, MVZ-13; yoksa 5.000 TL)
  *   aşarsa bildirilir; belge sayısıyla birlikte.
  * - İadeler düzenleyene göre: müşterinin bize kestiği satış iadesi BA'ya,
  *   bizim kestiğimiz alış iadesi BS'ye girer.
@@ -69,10 +69,9 @@ export function kisiAnahtari(k: Pick<BabsKalemi, "vknTckn" | "cariId" | "unvan">
   return k.cariId ? `cari:${k.cariId}` : `unvan:${metinNormalize(k.unvan)}`;
 }
 
-export async function babsEsigi(tx: Prisma.TransactionClient, tenantId: string): Promise<number> {
-  const kayit = await tx.modulAyar.findUnique({ where: { tenantId_modul: { tenantId, modul: "cari" } } });
-  const deger = { ...ayarTanimiAl("cari")?.varsayilanlar, ...((kayit?.ayarlar as Record<string, unknown>) ?? {}) }.babsEsigi;
-  return typeof deger === "number" && deger >= 0 ? deger : VARSAYILAN_BABS_ESIGI;
+/** MVZ-13: dönemin ilk günü yürürlükteki merkezi eşik (kiracı ayarı değildir). */
+export async function babsEsigi(tx: Prisma.TransactionClient, yil: number, ay: number): Promise<number> {
+  return kanuniDegerOku(tx, "babs_esigi", new Date(Date.UTC(yil, ay - 1, 1)), VARSAYILAN_BABS_ESIGI);
 }
 
 const tl = (tutar: Prisma.Decimal, kur: Prisma.Decimal) => Math.round(tutar.mul(kur).toNumber() * 100) / 100;

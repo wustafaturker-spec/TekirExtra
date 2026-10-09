@@ -1189,12 +1189,14 @@ describe("EbelgeService.earsivBelgesiniIptalEt (EBLG-22)", () => {
     expect(tx.ebelgeKayit.update).not.toHaveBeenCalled();
   });
 
-  it("süre ayarı uzatılırsa eski faturayı da iptal eder", async () => {
-    // Süre tebliğ metninden değil sektör kaynağından geldi; ayarlanabilir.
-    const { service, earsivIptal } = kur({ durum: "iletildi", raporlandi: false }, 30);
+  it("Mevzuat Merkezi süreyi uzatırsa eski faturayı da iptal eder (MVZ-13)", async () => {
+    // Süre kiracı ayarı değil, fatura tarihindeki merkezi kanuni değerdir.
+    const { service, earsivIptal } = kur({ durum: "iletildi", raporlandi: false });
+    const tx = { ...kur({}).tx, mevzuatKayit: { findFirst: vi.fn().mockResolvedValue({ deger: { deger: 30 } }) } };
 
-    await service.earsivBelgesiniIptalEt(kur({}, 30).tx, { ...fatura, tarih: gunOnce(20) }, ebelge);
+    await service.earsivBelgesiniIptalEt(tx as never, { ...fatura, tarih: gunOnce(20) }, ebelge);
 
+    expect(tx.mevzuatKayit.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ tur: "kanuni_deger", anahtar: "earsiv_iptal_gun" }) }));
     expect(earsivIptal).toHaveBeenCalled();
   });
 

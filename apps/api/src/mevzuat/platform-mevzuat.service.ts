@@ -248,7 +248,7 @@ export class PlatformMevzuatService {
       const ad = mevzuatTuruMu(tur) ? MEVZUAT_TUR_TANIMLARI[tur].ad : tur;
       kalemler.push({ ad: `${ad} (${anahtarlar.join(", ")})`, taslakFatura: Number(r?.taslak_fatura ?? 0), taslakBelge: Number(r?.taslak_belge ?? 0), firma: Number(r?.firma ?? 0) });
     }
-    // Kanuni süre/eşikler aşama 4'te tüketilir; etki hesabı o zaman eklenir.
+    // Kanuni süre/eşikler belge satırında saklanmaz; sayılacak taslak yoktur, yeni değer sonraki hesaplarda kullanılır.
     const hesaplanmayan = [...new Set(satirlar.filter((s) => s.tur === "kanuni_deger").map((s) => s.tur))];
     return { kalemler, hesaplanmayan };
   }

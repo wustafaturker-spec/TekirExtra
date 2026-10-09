@@ -178,7 +178,7 @@ registerRapor({
     const ay = Number(f.ay);
     if (!Number.isInteger(yil) || yil < 2000 || yil > 2100 || !Number.isInteger(ay) || ay < 1 || ay > 12) return [];
     const kapsam = f.kapsam === "tumu" || f.kapsam === "esige_yakin" ? f.kapsam : "bildirilir";
-    const [kalemler, esik] = await Promise.all([babsKalemleri(tx, yil, ay), babsEsigi(tx, tenantId)]);
+    const [kalemler, esik] = await Promise.all([babsKalemleri(tx, yil, ay), babsEsigi(tx, yil, ay)]);
     return babsOzeti(kalemler.filter((k) => k.form === f.form), esik)
       .filter((s) => kapsam === "tumu" || s.durum === kapsam)
       .map((s) => ({

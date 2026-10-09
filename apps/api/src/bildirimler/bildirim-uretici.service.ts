@@ -14,6 +14,7 @@ import { BildirimService, type BildirimGirdisi } from "./bildirim.service";
 import { TEMINAT_TURU_ADLARI, TEMINAT_UYARI_GUNU, type TeminatTuru } from "../cari/cari-teminat";
 import { bakiyeFarklari, mutabakatItirazBildirimi, type DovizBakiyesi } from "../cari/cari-mutabakat";
 import { iseGirisSonTarihi, istenCikisSonTarihi } from "../personel/sgk-kodlari";
+import { kanuniDegerOku } from "../mevzuat/kanuni-deger";
 
 const gunEkle = (t: Date, gun: number) => new Date(t.getTime() + gun * 86_400_000);
 
@@ -698,8 +699,8 @@ export class BildirimUreticiService {
       }),
     );
     if (bekleyenler.length === 0) return [];
-    const ayar = this.ayarlar ? await this.ayarlar.getir("ebelge") : {};
-    const gunSayisi = Number(ayar.irsaliyeFaturaGunSayisi) > 0 ? Number(ayar.irsaliyeFaturaGunSayisi) : IRSALIYE_FATURA_GUN_SAYISI;
+    // MVZ-13: faturalama süresi Mevzuat Merkezi'nden.
+    const gunSayisi = await kanuniDegerOku(this.prisma, "irsaliye_fatura_gun", bugunTR(), IRSALIYE_FATURA_GUN_SAYISI);
     const bugun = bugunTR();
     const sure = (b: (typeof bekleyenler)[number]) => irsaliyeFaturaSuresi({ sevkGunu: irsaliyeSevkGunu(b), bugun, gunSayisi });
     const satis = bekleyenler.filter((b) => b.yon === "satis").map(sure);

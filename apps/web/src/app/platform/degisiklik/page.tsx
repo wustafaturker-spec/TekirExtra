@@ -140,7 +140,7 @@ function DegisiklikDetayi() {
         <ul style={{ margin: "0.3rem 0 0", paddingLeft: "1.1rem" }}>
           {d.etki.kalemler.map((k) => <li key={k.ad}>{k.ad}: yürürlük tarihinden sonraki <strong>{k.taslakFatura}</strong> taslak fatura{k.taslakBelge ? <> ve <strong>{k.taslakBelge}</strong> taslak teklif/sipariş/irsaliye</> : null} ({k.firma} firma) bir sonraki kaydedişte yeni değerle denetlenir. Kesinleşmiş belgeler değişmez.</li>)}
           {!d.etki.kalemler.length && !d.etki.hesaplanmayan.length && <li>Yalnız yeni kalem ekleniyor; mevcut belgeler etkilenmez.</li>}
-          {d.etki.hesaplanmayan.map((t) => <li key={t} className="muted">{MEVZUAT_TUR_TANIMLARI[t as MevzuatTuru]?.ad ?? t}: etki hesabı bu tür merkeze bağlandığında eklenecek.</li>)}
+          {d.etki.hesaplanmayan.map((t) => <li key={t} className="muted">{MEVZUAT_TUR_TANIMLARI[t as MevzuatTuru]?.ad ?? t}: belgede saklanmaz; yeni değer yürürlükten itibaren BA/BS, faturalama süresi ve e-Arşiv iptal hesaplarında kullanılır.</li>)}
         </ul>
       </div>}
       <div className="row-tight">

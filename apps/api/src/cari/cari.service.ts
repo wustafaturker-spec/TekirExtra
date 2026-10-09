@@ -1338,7 +1338,7 @@ export class CariService {
       const cari = await tx.cariHesap.findUnique({ where: { id: cariId }, select: { id: true, unvan: true, vknTckn: true } });
       if (!cari) throw new NotFoundException("Cari bulunamadı");
       const anahtar = kisiAnahtari({ vknTckn: cari.vknTckn, cariId: cari.id, unvan: cari.unvan });
-      const [kalemler, esik] = await Promise.all([babsKalemleri(tx, yil, ay), babsEsigi(tx, tenantId)]);
+      const [kalemler, esik] = await Promise.all([babsKalemleri(tx, yil, ay), babsEsigi(tx, yil, ay)]);
       const benim = kalemler.filter((k) => kisiAnahtari(k) === anahtar).sort((a, b) => a.tarih.getTime() - b.tarih.getTime());
       const ozet = babsOzeti(benim, esik);
       const form = (f: BabsFormu) => {

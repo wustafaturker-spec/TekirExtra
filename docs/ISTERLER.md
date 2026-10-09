@@ -937,7 +937,19 @@ ve platforma bildirilir. e-Belge XML'i ve fatura PDF'i kod açıklamalarını be
 tarihindeki listeden yazar. Etki önizlemesi tüm KDV türlerinde (taslak fatura
 + taslak teklif/sipariş/irsaliye). Kur farkı faturası kaynak faturanın oranını
 taşır ve normal fatura kaydından geçtiği için aynı denetime girer. Kapsam
-dışı: pazaryeri ürün eşlemesindeki KDV (dış sistem verisi). Bulgu: tevkifat tablosu GİB kod listesi
+dışı: pazaryeri ürün eşlemesindeki KDV (dış sistem verisi).
+
+**Aşama 4 (kanuni süre ve eşikler) bitti — 2026-10-09:** göç
+`20261010120000_mevzuat_kanuni_degerler`. BA/BS eşiği 5.000 TL (VUK GT 396),
+irsaliyenin faturalanma süresi 7 gün (VUK 231/5) ve e-Arşiv iptal süresi 8 gün
+(önceki varsayılan, sektör uygulaması — **dayanağı platform ekibince
+doğrulanmalı**) merkezde, 2000'den beri; kiracı ayarlarından kaldırıldı
+(`cari.babsEsigi`, `ebelge.earsivIptalGunSayisi`, `ebelge.irsaliyeFaturaGunSayisi`;
+eski kayıtlı değerler yok sayılır). BA/BS dönemin ilk günündeki, e-Arşiv iptali
+ve faturalama süresi uyarısı fatura tarihindeki, takip/bildirimler bugünkü
+değeri kullanır. Entegratör sorgu sıklığı ayarları (e-Fatura/e-İrsaliye yanıt
+sorgu günü) kiracıda kaldı. **Tevkifat alt sınırı yüklenmedi** (doğrulanmış
+dayanak yok); platform ekibi girdiğinde fatura formu uyarısı devreye girer. Bulgu: tevkifat tablosu GİB kod listesi
 v1.17'de kalmış, gelen belgelerden fark edilmişti (EBLG-115…119, FTR-35).
 
 Mevcut durum: değerler kodda sabit (`packages/shared/src/gib-kodlari.ts`),
@@ -953,14 +965,14 @@ serbest yazılıyor (0–100).
 | MVZ-03 | **Geçmiş belgeye etkisi:** kesinleşmiş belge satırda sakladığı değerle kalır, hiçbir değişiklik onu yeniden hesaplamaz. Taslak bir sonraki kaydedişte, kendi tarihindeki değerle yeniden hesaplanır. | Z |
 | MVZ-04 | ✅ **Platform yöneticisi rolü:** kiracı rollerinden (kiracı "yönetici"si dahil) ayrı bir rol; hiçbir kiracının verisine erişmez, yalnız Mevzuat Merkezi'ni yönetir. Girişte iki adımlı doğrulama zorunlu. Platform kullanıcısı kiracı panelinden açılamaz; **ayrı platform paneli** (`/platform`, ayrı giriş) kullanılır: tablolar, etki önizlemesi, yayın kuyruğu, denetim izi, "bilinmeyen kod" ve kiracı bildirimleri listesi. | Z |
 | MVZ-05 | ✅ **Değişiklik akışı:** taslak → yayın. Her değişiklikte **mevzuat dayanağı** (tebliğ/kılavuz adı, sayısı, tarihi) ve **yürürlük tarihi** zorunlu. Yayınlanan değer değiştirilmez; düzeltme yeni bir kayıtla yapılır (eskisi bitiş tarihi alır). **Dört göz:** hazırlayan kişi yayınlayamaz; ikinci bir platform yetkilisi dayanağı kontrol edip yayınlar ya da gerekçeyle geri çevirir. | Z |
-| MVZ-06 | ✅ (tevkifat + KDV türleri; kanuni değerler aşama 4) **Etki önizlemesi:** yayından önce değişikliğin etkileyeceği **taslak** belge sayısı (toplam ve kiracı sayısı; kiracı verisi gösterilmez) ve pasifleşen kodu kullanan taslaklar gösterilir. | Z |
+| MVZ-06 | ✅ (tevkifat + KDV türleri; kanuni değerler belgede saklanmadığı için sayılmaz) **Etki önizlemesi:** yayından önce değişikliğin etkileyeceği **taslak** belge sayısı (toplam ve kiracı sayısı; kiracı verisi gösterilmez) ve pasifleşen kodu kullanan taslaklar gösterilir. | Z |
 | MVZ-07 | ✅ **Bildirim:** yayınlanan değişiklik bütün kiracıların yönetici ve muhasebe rollerine Bildirim Merkezi kaydı olarak gider (BLD): ne değişti, yürürlük tarihi, dayanağı. Kiracı panelinde **Ayarlar > Mevzuat** salt okunur görünümü: güncel ve geçmiş değerler, dayanakları. | Z |
 | MVZ-08 | ✅ **Denetim izi:** her değişiklik eski/yeni değer, kişi, zaman ve dayanakla saklanır; silinemez. | Z |
 | MVZ-09 | ✅ **Kiracıya kalan tercihler:** kiracı mevzuat değerini (oran, kod, ad, süre, eşik) **değiştiremez**. Yalnız kullanmadığı kodu kendi listesinden gizleyebilir (pasif; gelen belgede yine tanınır) ve varsayılan seçimlerini belirler (ör. yeni satırın varsayılan KDV oranı, geçerli oranlar arasından). Kiracı ekranında **"Eksik / hatalı bildir"** ile platform ekibine talep açılır. | Z |
 | MVZ-10 | ✅ **Gelen belgede bilinmeyen değer:** gelen e-Faturada merkezi tabloda olmayan bir kod ya da belgenin tarihinde geçersiz bir oran görülürse belge kapıda durur (EBLG-115) ve platform ekibine "bilinmeyen kod/oran" kaydı düşer (kod, oran, belge tarihi, görülme sayısı; kiracı adı ve belge içeriği taşınmaz). Mevzuat değişikliğinin erken işareti olarak kullanılır. | Z |
 | MVZ-11 | ✅ **İlk paket — KDV:** geçerli KDV oranları (yürürlük tarihli liste); fatura, stok kartı, masraf ve diğer KDV'li formlarda oran serbest yazılmaz, belge tarihindeki listeden seçilir; liste dışı oran reddedilir. KDV istisna kodları, özel matrah kodları, ihraç kayıtlı kodları da merkezi tabloya taşınır. | Z |
 | MVZ-12 | ✅ **İlk paket — tevkifat:** tevkifat kodları ve oranları (FTR-35'in yerini alır). Tevkifat alt sınırı (2026 için KDV dahil 12.000 TL bildiriliyor; dayanağı yüklemede doğrulanır) da tutulur; sınırın altındaki tevkifatlı satırda uyarı verilir. | Z |
-| MVZ-13 | **İlk paket — kanuni süre ve eşikler:** BA/BS bildirim eşiği (CARI-37), e-Arşiv iptal süresi (EBLG-22), irsaliye–fatura süresi (EBLG-82) kiracı ayarından kaldırılıp merkeze taşınır. Entegratör sorgu sıklığı gibi işletim ayarları kiracıda kalır. | Z |
+| MVZ-13 | ✅ **İlk paket — kanuni süre ve eşikler:** BA/BS bildirim eşiği (CARI-37), e-Arşiv iptal süresi (EBLG-22), irsaliye–fatura süresi (EBLG-82) kiracı ayarından kaldırılıp merkeze taşınır. Entegratör sorgu sıklığı gibi işletim ayarları kiracıda kalır. | Z |
 | MVZ-14 | **İlk paket — bordro:** bordro mevzuat setleri (asgari ücret, SGK oran ve tavanı, gelir vergisi dilimleri, damga vergisi, istisnalar; PRS-11) merkezi olur; kiracıya kopyalanmaz, kiracıdaki taslak/onay adımı kalkar. Kabul senaryoları yayından önce platformda çalıştırılır. Onaylı bordrolar saklı değerleriyle kalır. | Z |
 | MVZ-15 | ✅ **FTR-35 dönüşümü:** kiracının tevkifat oranı değiştirme ve kod ekleme yetkisi kalkar; pasif yapma MVZ-09 olarak kalır. Göçte kiracı ayarlarındaki oran/ad/eklenen kod değişiklikleri silinir, pasif işaretleri korunur; silinen değişiklik varsa platform ekibine listelenir. | Z |
 | MVZ-16 | ✅ **Güvenlik:** merkezi tablolar kiracı RLS politikasına tabi değildir; uygulama veritabanı kullanıcısı bu tablolarda yalnız okuma yetkisine sahiptir, yazma yalnız platform uçlarından ve ayrı yetkiyle yapılır. | Z |

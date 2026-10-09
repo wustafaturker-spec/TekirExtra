@@ -43,6 +43,7 @@ import type {
   topluFaturaSemasi,
 } from "./belgeler.semalar";
 import { MevzuatService } from "../mevzuat/mevzuat.service";
+import { kanuniDegerOku } from "../mevzuat/kanuni-deger";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal =>
   new Prisma.Decimal(deger);
@@ -125,11 +126,9 @@ export class BelgelerService {
 
   // ─── FATURALAMA SÜRESİ (EBLG-82) ──────────────────────────────────────────
 
-  /** İrsaliyenin kaç gün içinde faturalanacağı; ayar yoksa 7 (VUK 231/5). */
+  /** İrsaliyenin kaç gün içinde faturalanacağı: Mevzuat Merkezi'nden (MVZ-13), yoksa 7 (VUK 231/5). */
   async irsaliyeFaturaGunSayisi(tx?: Prisma.TransactionClient): Promise<number> {
-    const ayar = this.ayarlar ? await this.ayarlar.getir("ebelge", tx) : {};
-    const gun = Number(ayar.irsaliyeFaturaGunSayisi);
-    return Number.isInteger(gun) && gun > 0 ? gun : IRSALIYE_FATURA_GUN_SAYISI;
+    return kanuniDegerOku(tx ?? this.prisma, "irsaliye_fatura_gun", bugunTR(), IRSALIYE_FATURA_GUN_SAYISI);
   }
 
   /**
