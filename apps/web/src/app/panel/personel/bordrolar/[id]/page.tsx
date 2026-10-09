@@ -10,7 +10,7 @@ import { Alert, Badge, Button, Card, EylemCubugu, EylemMenusu, Field, Input, Mod
 type Durum = "hesaplandi" | "onay_bekliyor" | "onaylandi" | "kismen_odendi" | "reddedildi" | "odendi" | "iptal";
 interface Kalem { id: string; tip: "kazanc" | "kesinti"; kod: string; aciklama: string; tutar: string; manuel: boolean }
 interface Odeme { id: string; tutar: string; tarih: string; aciklama?: string | null; durum: "aktif" | "iptal"; iptalNedeni?: string | null; kasaId?: string | null; bankaHesapId?: string | null }
-interface Bordro { id: string; donemYil: number; donemAy: number; brutMaas: string; netMaas: string; prim: string; kesinti: string; odenecekTutar: string; odenenTutar: string; kalanTutar: string; durum: Durum; retNedeni?: string | null; odemeTarihi?: string | null; kumulatifMatrah?: string | null; asgariKumulatifMatrah?: string | null; hesapOzeti?: Record<string, unknown> | null; mevzuatSeti?: { id: string; surum: number; ad: string; yururlukBaslangic: string; yururlukBitis?: string | null } | null; personel: { id: string; personelNo: string; ad: string; soyad: string; cariId?: string | null }; kalemler: Kalem[]; odemeler: Odeme[] }
+interface Bordro { id: string; donemYil: number; donemAy: number; brutMaas: string; netMaas: string; prim: string; kesinti: string; odenecekTutar: string; odenenTutar: string; kalanTutar: string; durum: Durum; retNedeni?: string | null; odemeTarihi?: string | null; kumulatifMatrah?: string | null; asgariKumulatifMatrah?: string | null; hesapOzeti?: Record<string, unknown> | null; mevzuatKaydi?: { id: string; yururlukBaslangic: string; yururlukBitis?: string | null; degisiklik: { no: number; baslik: string; dayanak: string } | null } | null; personel: { id: string; personelNo: string; ad: string; soyad: string; cariId?: string | null }; kalemler: Kalem[]; odemeler: Odeme[] }
 interface Hesap { id: string; ad: string; dovizCinsi: string; aktif: boolean; bakiye: string; bankaAdi?: string }
 interface Avans { id: string; kalanTutar: string; tarih: string; durum: string; aciklama?: string | null }
 
@@ -142,10 +142,10 @@ export default function BordroDetay() {
         <Stat label="Kalan" value={<Para deger={bordro.kalanTutar} />} tone="accent" />
       </StatGrid>
 
-      {bordro.mevzuatSeti && (
+      {bordro.mevzuatKaydi && (
         <Card
-          title={`Mevzuat hesap izi · ${bordro.mevzuatSeti.ad} · sürüm ${bordro.mevzuatSeti.surum}`}
-          actions={<small className="muted">Yürürlük {gun(bordro.mevzuatSeti.yururlukBaslangic)}{bordro.mevzuatSeti.yururlukBitis ? ` – ${gun(bordro.mevzuatSeti.yururlukBitis)}` : ""}</small>}
+          title={`Mevzuat hesap izi · ${bordro.mevzuatKaydi.degisiklik ? `#${bordro.mevzuatKaydi.degisiklik.no} ${bordro.mevzuatKaydi.degisiklik.baslik}` : "Bordro parametreleri (ilk dolum)"}`}
+          actions={<small className="muted">Yürürlük {gun(bordro.mevzuatKaydi.yururlukBaslangic)}{bordro.mevzuatKaydi.yururlukBitis ? ` – ${gun(bordro.mevzuatKaydi.yururlukBitis)}` : ""}{bordro.mevzuatKaydi.degisiklik ? ` · ${bordro.mevzuatKaydi.degisiklik.dayanak}` : ""}</small>}
         >
           {bordro.hesapOzeti && <HesapIzi ozet={bordro.hesapOzeti} />}
         </Card>

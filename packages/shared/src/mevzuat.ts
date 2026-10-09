@@ -11,10 +11,10 @@
  * kendi tarihindeki değeri kullanır (MVZ-02).
  */
 
-export const MEVZUAT_TURLERI = ["tevkifat_kodu", "kdv_orani", "kdv_istisna_kodu", "ozel_matrah_kodu", "ihrac_kayitli_kodu", "kanuni_deger"] as const;
+export const MEVZUAT_TURLERI = ["tevkifat_kodu", "kdv_orani", "kdv_istisna_kodu", "ozel_matrah_kodu", "ihrac_kayitli_kodu", "kanuni_deger", "bordro_parametreleri"] as const;
 export type MevzuatTuru = (typeof MEVZUAT_TURLERI)[number];
 
-export type MevzuatAlanTipi = "metin" | "sayi" | "oranlar" | "secim";
+export type MevzuatAlanTipi = "metin" | "sayi" | "oranlar" | "secim" | "dilimler";
 
 export interface MevzuatAlan {
   ad: string;
@@ -23,6 +23,8 @@ export interface MevzuatAlan {
   zorunlu: boolean;
   secenekler?: readonly (readonly [string, string])[];
   ipucu?: string;
+  /** Sayı alanında üst sınır (ör. yüzde alanlarında 100). */
+  azami?: number;
 }
 
 export interface MevzuatTurTanimi {
@@ -34,6 +36,8 @@ export interface MevzuatTurTanimi {
   /** Anahtar serbest değil, bu listeden seçilir (kanuni değerler). */
   anahtarSecenekleri?: readonly (readonly [string, string])[];
   alanlar: readonly MevzuatAlan[];
+  /** Çok alanlı türlerde özet ve düzenleyici alan adlarını da gösterir (bordro). */
+  etiketli?: boolean;
 }
 
 /** MVZ-13: kiracı ayarından merkeze taşınan kanuni süre ve eşikler. */
@@ -43,6 +47,17 @@ export const KANUNI_DEGERLER = [
   ["irsaliye_fatura_gun", "İrsaliyenin faturalanma süresi (gün)"],
   ["tevkifat_alt_siniri", "KDV tevkifatı alt sınırı (TL, KDV dahil)"],
 ] as const;
+
+/**
+ * MVZ-14: bordro mevzuatı tek kayıtta bütün set olarak tutulur (`genel`
+ * anahtarı). Gelir vergisi tarifesi yıllık olduğundan bir kayıt yalnız
+ * başladığı takvim yılının dönemlerine uygulanır; yeni yıl için yayın
+ * yapılmadıysa bordro önceki yılın değerleriyle hesaplanmaz.
+ */
+export const BORDRO_ANAHTARI = "genel";
+
+const yuzde = (ad: string, etiket: string, ipucu?: string): MevzuatAlan => ({ ad, etiket, tip: "sayi", zorunlu: true, azami: 100, ipucu });
+const tutar = (ad: string, etiket: string, ipucu?: string): MevzuatAlan => ({ ad, etiket, tip: "sayi", zorunlu: true, ipucu });
 
 export const MEVZUAT_TUR_TANIMLARI: Record<MevzuatTuru, MevzuatTurTanimi> = {
   tevkifat_kodu: {
@@ -100,7 +115,63 @@ export const MEVZUAT_TUR_TANIMLARI: Record<MevzuatTuru, MevzuatTurTanimi> = {
     anahtarSecenekleri: KANUNI_DEGERLER,
     alanlar: [{ ad: "deger", etiket: "Değer", tip: "sayi", zorunlu: true }],
   },
+  bordro_parametreleri: {
+    tur: "bordro_parametreleri",
+    ad: "Bordro parametreleri",
+    anahtarEtiketi: "Set",
+    anahtarIpucu: "Listeden seçin",
+    anahtarDeseni: /^genel$/,
+    anahtarSecenekleri: [[BORDRO_ANAHTARI, "Bordro parametreleri (tam set)"]],
+    etiketli: true,
+    alanlar: [
+      tutar("asgariUcretBrut", "Asgari ücret brüt (TL/ay)"),
+      tutar("sgkTavan", "SGK tavanı (TL/ay)"),
+      yuzde("sgkIsciOrani", "SGK işçi %"),
+      yuzde("issizlikIsciOrani", "İşsizlik işçi %"),
+      yuzde("sgkIsverenOrani", "SGK işveren %"),
+      yuzde("issizlikIsverenOrani", "İşsizlik işveren %"),
+      yuzde("sgkTesvikAzamiOrani", "Hazine teşviki azami puan"),
+      tutar("yemekGelirVergisiGunlukIstisna", "Yemek GV istisnası (TL/gün)"),
+      tutar("yemekSgkGunlukIstisna", "Yemek SGK istisnası (TL/gün)"),
+      tutar("engellilikDerece1", "Engellilik indirimi 1. derece (TL/ay)"),
+      tutar("engellilikDerece2", "Engellilik indirimi 2. derece (TL/ay)"),
+      tutar("engellilikDerece3", "Engellilik indirimi 3. derece (TL/ay)"),
+      yuzde("damgaVergisiOrani", "Damga vergisi %", "binde 7,59 → 0,759"),
+      { ad: "gelirVergisiDilimleri", etiket: "GV dilimleri", tip: "dilimler", zorunlu: true, ipucu: "üst sınır:oran; son dilim sınırsız — ör. 190000:15; 400000:20; :40" },
+    ],
+  },
 };
+
+export interface GelirVergisiDilimi {
+  ustSinir: number | null;
+  oran: number;
+}
+
+/** "190000:15; 400000:20; :40" → dilim listesi (düzenleyici metni). Çözülemeyen parça NaN olur, doğrulama yakalar. */
+export function dilimleriCoz(metin: string): GelirVergisiDilimi[] {
+  return metin.split(/[;\n]+/).map((p) => p.trim()).filter(Boolean).map((p) => {
+    const [ust = "", oran = ""] = p.split(":").map((x) => x.trim());
+    const sayi = (x: string) => Number(x.includes(",") ? x.replace(/\./g, "").replace(",", ".") : x);
+    return { ustSinir: ust === "" ? null : sayi(ust), oran: sayi(oran) };
+  });
+}
+
+export function dilimMetni(dilimler: unknown): string {
+  return Array.isArray(dilimler) ? (dilimler as GelirVergisiDilimi[]).map((d) => `${d.ustSinir ?? ""}:${d.oran}`).join("; ") : "";
+}
+
+function dilimHatalari(v: unknown): string[] {
+  if (!Array.isArray(v) || !v.length || v.length > 10) return ["GV dilimleri 1–10 dilimlik liste olmalıdır"];
+  const hatalar: string[] = [];
+  const liste = v as GelirVergisiDilimi[];
+  liste.forEach((d, i) => {
+    const son = i === liste.length - 1;
+    if (!d || typeof d !== "object" || typeof d.oran !== "number" || !Number.isFinite(d.oran) || d.oran < 0 || d.oran > 100) hatalar.push(`GV ${i + 1}. dilim oranı 0–100 arasında olmalıdır`);
+    if (son ? d?.ustSinir !== null : typeof d?.ustSinir !== "number" || !Number.isFinite(d.ustSinir) || d.ustSinir <= 0) hatalar.push(son ? "Son GV dilimi üst sınırsız olmalıdır (ör. :40)" : `GV ${i + 1}. dilim üst sınırı pozitif sayı olmalıdır`);
+    if (i > 0 && !son && typeof d?.ustSinir === "number" && typeof liste[i - 1]?.ustSinir === "number" && d.ustSinir <= liste[i - 1]!.ustSinir!) hatalar.push("GV dilimleri artan sırada olmalıdır");
+  });
+  return hatalar;
+}
 
 export function mevzuatTuruMu(tur: string): tur is MevzuatTuru {
   return (MEVZUAT_TURLERI as readonly string[]).includes(tur);
@@ -126,6 +197,8 @@ export function mevzuatDegerHatalari(tur: string, anahtar: string, deger: unknow
     if (bos) { if (alan.zorunlu) hatalar.push(`${alan.etiket} zorunludur`); continue; }
     if (alan.tip === "metin" && (typeof v !== "string" || v.trim().length > 500)) hatalar.push(`${alan.etiket} en çok 500 karakterlik metin olmalıdır`);
     if (alan.tip === "sayi" && (typeof v !== "number" || !Number.isFinite(v) || v < 0)) hatalar.push(`${alan.etiket} sıfır ya da pozitif sayı olmalıdır`);
+    else if (alan.tip === "sayi" && alan.azami !== undefined && (v as number) > alan.azami) hatalar.push(`${alan.etiket} en çok ${alan.azami} olabilir`);
+    if (alan.tip === "dilimler") hatalar.push(...dilimHatalari(v));
     if (alan.tip === "secim" && !alan.secenekler?.some(([k]) => k === v)) hatalar.push(`${alan.etiket} geçersiz: ${String(v)}`);
     if (alan.tip === "oranlar") {
       const liste = Array.isArray(v) ? v : [];
@@ -137,6 +210,9 @@ export function mevzuatDegerHatalari(tur: string, anahtar: string, deger: unknow
       if (new Set(liste).size !== liste.length) hatalar.push(`${alan.etiket} içinde aynı oran birden çok kez var`);
     }
   }
+  if (tur === "bordro_parametreleri" && typeof nesne.sgkTavan === "number" && typeof nesne.asgariUcretBrut === "number" && nesne.sgkTavan < nesne.asgariUcretBrut) {
+    hatalar.push("SGK tavanı asgari ücretten düşük olamaz");
+  }
   return hatalar;
 }
 
@@ -144,14 +220,17 @@ export function mevzuatDegerHatalari(tur: string, anahtar: string, deger: unknow
 export function mevzuatDegerOzeti(tur: string, deger: unknown): string {
   if (!mevzuatTuruMu(tur) || !deger || typeof deger !== "object") return "";
   const nesne = deger as Record<string, unknown>;
-  return MEVZUAT_TUR_TANIMLARI[tur].alanlar
+  const tanim = MEVZUAT_TUR_TANIMLARI[tur];
+  return tanim.alanlar
     .filter((a) => nesne[a.ad] !== undefined && nesne[a.ad] !== null && nesne[a.ad] !== "")
     .map((a) => {
       const v = nesne[a.ad];
-      if (a.tip === "secim") return a.secenekler?.find(([k]) => k === v)?.[1] ?? String(v);
-      if (Array.isArray(v)) return v.join(", ");
-      if (typeof v === "number") return v.toLocaleString("tr-TR");
-      return String(v);
+      const metin = a.tip === "secim" ? a.secenekler?.find(([k]) => k === v)?.[1] ?? String(v)
+        : a.tip === "dilimler" && Array.isArray(v) ? (v as GelirVergisiDilimi[]).map((d) => d.ustSinir === null ? `üstü %${d.oran}` : `${d.ustSinir.toLocaleString("tr-TR")}'e kadar %${d.oran}`).join(", ")
+        : Array.isArray(v) ? v.join(", ")
+        : typeof v === "number" ? v.toLocaleString("tr-TR")
+        : String(v);
+      return tanim.etiketli ? `${a.etiket}: ${metin}` : metin;
     })
     .join(" · ");
 }

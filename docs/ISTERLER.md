@@ -952,6 +952,33 @@ sorgu günü) kiracıda kaldı. **Tevkifat alt sınırı yüklenmedi** (doğrula
 dayanak yok); platform ekibi girdiğinde fatura formu uyarısı devreye girer. Bulgu: tevkifat tablosu GİB kod listesi
 v1.17'de kalmış, gelen belgelerden fark edilmişti (EBLG-115…119, FTR-35).
 
+**Aşama 5 (bordro) bitti — 2026-10-09:** göç `20261010140000_mevzuat_bordro`
+(öncesinde yedek alındı). Onaylı tasarım (kullanıcı, 2026-10-09):
+(1) Yeni tür **"Bordro parametreleri"**: tek kayıt bütün seti tutar (asgari
+ücret, SGK tavanı, işçi/işveren SGK ve işsizlik oranları, hazine teşviki azami
+puanı, yemek GV/SGK günlük istisnaları, engellilik indirimleri, damga vergisi,
+GV dilimleri). (2) **Yıl kuralı:** gelir vergisi tarifesi yıllık olduğundan bir
+kayıt yalnız başladığı takvim yılının dönemlerine uygulanır; yeni yılın kaydı
+yayınlanmadıysa önceki yılın değerleri kullanılmaz, brüt ücretli bordro
+"yayınlanmadı" hatası verir. Bordro dönemin ilk gününde yürürlükteki kaydı
+kullanır (ay içinde yürürlüğe giren değer sonraki aydan). (3) **Kabul
+senaryoları platformda:** bordro parametresi eklenen/değişen değişiklik en az
+bir senaryo (girdiler + resmî kaynaktan beklenen net/vergi/maliyet, tolerans)
+olmadan onaya gönderilemez; senaryolar onaya gönderirken ve yayın anında
+sunucuda yeniden çalıştırılır, biri tutmazsa yayın yapılmaz; senaryoları
+düzenleyen hazırlayan sayılır (dört göz), yayınlanan değişikliğin senaryoları
+değiştirilemez. (4) **İlk dolum:** 2026 Ocak–Nisan (yemek SGK 260,39 TL) ve
+Mayıs'tan itibaren (300 TL) değerleri; 2026 öncesi yüklenmedi (kullanıcı kararı).
+(5) **Kiracı:** set oluşturma, etkinleştirme, resmî set yükleme ve kabul
+ekranları kalktı (PRS-11'in kiracı akışı); Personel > Mevzuat salt okunur
+görünüm + brüt–net simülasyonu. (6) **Bordrolar** merkezi kayda bağlanır
+(`personel_bordro.mevzuat_kayit_id`); göç, kiracı setinin değerleri dönemin
+merkezi kaydıyla birebir aynıysa bağladı (14 bordro), aksi hâlde durdu; kiracı
+set tabloları silindi. Onaylı bordroların saklı hesap değerleri değişmez.
+Etki önizlemesi yürürlükten sonraki aynı yıl dönemlerinin onaylanmamış
+bordrolarını sayar. 2027 değerleri platform panelinden yayınlanmalıdır
+(asgari ücret Aralık'ta açıklanır).
+
 Mevcut durum: değerler kodda sabit (`packages/shared/src/gib-kodlari.ts`),
 bir kısmı kiracı ayarında (BA/BS eşiği CARI-37, e-Arşiv iptal süresi EBLG-22,
 irsaliye–fatura süresi EBLG-82, FTR-35 tevkifat değişiklikleri), bordro
@@ -965,7 +992,7 @@ serbest yazılıyor (0–100).
 | MVZ-03 | **Geçmiş belgeye etkisi:** kesinleşmiş belge satırda sakladığı değerle kalır, hiçbir değişiklik onu yeniden hesaplamaz. Taslak bir sonraki kaydedişte, kendi tarihindeki değerle yeniden hesaplanır. | Z |
 | MVZ-04 | ✅ **Platform yöneticisi rolü:** kiracı rollerinden (kiracı "yönetici"si dahil) ayrı bir rol; hiçbir kiracının verisine erişmez, yalnız Mevzuat Merkezi'ni yönetir. Girişte iki adımlı doğrulama zorunlu. Platform kullanıcısı kiracı panelinden açılamaz; **ayrı platform paneli** (`/platform`, ayrı giriş) kullanılır: tablolar, etki önizlemesi, yayın kuyruğu, denetim izi, "bilinmeyen kod" ve kiracı bildirimleri listesi. | Z |
 | MVZ-05 | ✅ **Değişiklik akışı:** taslak → yayın. Her değişiklikte **mevzuat dayanağı** (tebliğ/kılavuz adı, sayısı, tarihi) ve **yürürlük tarihi** zorunlu. Yayınlanan değer değiştirilmez; düzeltme yeni bir kayıtla yapılır (eskisi bitiş tarihi alır). **Dört göz:** hazırlayan kişi yayınlayamaz; ikinci bir platform yetkilisi dayanağı kontrol edip yayınlar ya da gerekçeyle geri çevirir. | Z |
-| MVZ-06 | ✅ (tevkifat + KDV türleri; kanuni değerler belgede saklanmadığı için sayılmaz) **Etki önizlemesi:** yayından önce değişikliğin etkileyeceği **taslak** belge sayısı (toplam ve kiracı sayısı; kiracı verisi gösterilmez) ve pasifleşen kodu kullanan taslaklar gösterilir. | Z |
+| MVZ-06 | ✅ (tevkifat + KDV türleri, bordro parametreleri için onaylanmamış bordro; kanuni değerler belgede saklanmadığı için sayılmaz) **Etki önizlemesi:** yayından önce değişikliğin etkileyeceği **taslak** belge sayısı (toplam ve kiracı sayısı; kiracı verisi gösterilmez) ve pasifleşen kodu kullanan taslaklar gösterilir. | Z |
 | MVZ-07 | ✅ **Bildirim:** yayınlanan değişiklik bütün kiracıların yönetici ve muhasebe rollerine Bildirim Merkezi kaydı olarak gider (BLD): ne değişti, yürürlük tarihi, dayanağı. Kiracı panelinde **Ayarlar > Mevzuat** salt okunur görünümü: güncel ve geçmiş değerler, dayanakları. | Z |
 | MVZ-08 | ✅ **Denetim izi:** her değişiklik eski/yeni değer, kişi, zaman ve dayanakla saklanır; silinemez. | Z |
 | MVZ-09 | ✅ **Kiracıya kalan tercihler:** kiracı mevzuat değerini (oran, kod, ad, süre, eşik) **değiştiremez**. Yalnız kullanmadığı kodu kendi listesinden gizleyebilir (pasif; gelen belgede yine tanınır) ve varsayılan seçimlerini belirler (ör. yeni satırın varsayılan KDV oranı, geçerli oranlar arasından). Kiracı ekranında **"Eksik / hatalı bildir"** ile platform ekibine talep açılır. | Z |
@@ -973,7 +1000,7 @@ serbest yazılıyor (0–100).
 | MVZ-11 | ✅ **İlk paket — KDV:** geçerli KDV oranları (yürürlük tarihli liste); fatura, stok kartı, masraf ve diğer KDV'li formlarda oran serbest yazılmaz, belge tarihindeki listeden seçilir; liste dışı oran reddedilir. KDV istisna kodları, özel matrah kodları, ihraç kayıtlı kodları da merkezi tabloya taşınır. | Z |
 | MVZ-12 | ✅ **İlk paket — tevkifat:** tevkifat kodları ve oranları (FTR-35'in yerini alır). Tevkifat alt sınırı (2026 için KDV dahil 12.000 TL bildiriliyor; dayanağı yüklemede doğrulanır) da tutulur; sınırın altındaki tevkifatlı satırda uyarı verilir. | Z |
 | MVZ-13 | ✅ **İlk paket — kanuni süre ve eşikler:** BA/BS bildirim eşiği (CARI-37), e-Arşiv iptal süresi (EBLG-22), irsaliye–fatura süresi (EBLG-82) kiracı ayarından kaldırılıp merkeze taşınır. Entegratör sorgu sıklığı gibi işletim ayarları kiracıda kalır. | Z |
-| MVZ-14 | **İlk paket — bordro:** bordro mevzuat setleri (asgari ücret, SGK oran ve tavanı, gelir vergisi dilimleri, damga vergisi, istisnalar; PRS-11) merkezi olur; kiracıya kopyalanmaz, kiracıdaki taslak/onay adımı kalkar. Kabul senaryoları yayından önce platformda çalıştırılır. Onaylı bordrolar saklı değerleriyle kalır. | Z |
+| MVZ-14 | ✅ **İlk paket — bordro:** bordro mevzuat setleri (asgari ücret, SGK oran ve tavanı, gelir vergisi dilimleri, damga vergisi, istisnalar; PRS-11) merkezi olur; kiracıya kopyalanmaz, kiracıdaki taslak/onay adımı kalkar. Kabul senaryoları yayından önce platformda çalıştırılır. Onaylı bordrolar saklı değerleriyle kalır. | Z |
 | MVZ-15 | ✅ **FTR-35 dönüşümü:** kiracının tevkifat oranı değiştirme ve kod ekleme yetkisi kalkar; pasif yapma MVZ-09 olarak kalır. Göçte kiracı ayarlarındaki oran/ad/eklenen kod değişiklikleri silinir, pasif işaretleri korunur; silinen değişiklik varsa platform ekibine listelenir. | Z |
 | MVZ-16 | ✅ **Güvenlik:** merkezi tablolar kiracı RLS politikasına tabi değildir; uygulama veritabanı kullanıcısı bu tablolarda yalnız okuma yetkisine sahiptir, yazma yalnız platform uçlarından ve ayrı yetkiyle yapılır. | Z |
 

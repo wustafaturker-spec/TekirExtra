@@ -245,7 +245,7 @@ export default function PersonelDetaySayfasi() {
         <StatGrid>
           {personel.brutMaas
             ? <Stat label="Brüt ücret" value={<Para deger={personel.brutMaas} />} hint="Brüt anlaşılan aylık ücret" tone="accent" />
-            : <Stat label="Net ücret" value={<Para deger={personel.netMaas} />} hint="Net anlaşılan; mevzuat seti varsa her ay brüte çevrilir" tone="accent" />}
+            : <Stat label="Net ücret" value={<Para deger={personel.netMaas} />} hint="Net anlaşılan; bordro mevzuatıyla her ay brüte çevrilir" tone="accent" />}
           {Number(personel.sgkTesvikOrani) > 0 && <Stat label="SGK teşviki" value={`%${Number(personel.sgkTesvikOrani).toLocaleString("tr-TR")}`} hint="Mevzuat azamisiyle sınırlandırılır" />}
           <Stat label="İşe giriş" value={tarih(personel.girisTarihi)} hint={CALISMA_TIPI[personel.calismaTipi] ?? personel.calismaTipi} />
           <Stat label="Bordrolar" value={personel.bordrolar.length} hint={`${personel.bordrolar.filter((b) => !b.odendi).length} açık ödeme`} />
@@ -411,7 +411,7 @@ export default function PersonelDetaySayfasi() {
         <Modal baslik="Ücret değiştir" aciklama="Değişiklik yürürlük tarihinden itibaren geçerli olur; ay içindeki değişiklik günlere bölünür. Onaylanmamış bordroları “Yeniden hesapla” ile güncelleyin." onKapat={() => setUcretFormu(null)}>
           <form className="stack" onSubmit={ucretKaydet}>
             <Field label="Yürürlük tarihi"><Input required type="date" value={ucretFormu.yururlukTarihi} onChange={(e) => setUcretFormu({ ...ucretFormu, yururlukTarihi: e.target.value })} /></Field>
-            <Field label="Ücret tipi"><Select value={ucretFormu.tip} onChange={(e) => setUcretFormu({ ...ucretFormu, tip: e.target.value as "net" | "brut" })}><option value="net">Net anlaşıldı (mevzuat seti varsa brüte çevrilir)</option><option value="brut">Brüt anlaşıldı</option></Select></Field>
+            <Field label="Ücret tipi"><Select value={ucretFormu.tip} onChange={(e) => setUcretFormu({ ...ucretFormu, tip: e.target.value as "net" | "brut" })}><option value="net">Net anlaşıldı (bordro mevzuatıyla brüte çevrilir)</option><option value="brut">Brüt anlaşıldı</option></Select></Field>
             <Field label="Aylık tutar (TL)"><Input required inputMode="decimal" value={ucretFormu.tutar} onChange={(e) => setUcretFormu({ ...ucretFormu, tutar: e.target.value })} /></Field>
             <Field label="Neden (isteğe bağlı)"><Input maxLength={250} value={ucretFormu.neden} onChange={(e) => setUcretFormu({ ...ucretFormu, neden: e.target.value })} placeholder="Örn. Yıllık zam" /></Field>
             <ModalEylem onVazgec={() => setUcretFormu(null)} isleniyor={isleniyor} metin="Kaydet" />

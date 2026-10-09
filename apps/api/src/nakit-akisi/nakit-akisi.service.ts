@@ -258,7 +258,7 @@ export class NakitAkisiService {
       // PRS-05: bordronun SGK primi ve muhtasarı ertesi ayın 26'sında. Ödeme takibi
       // olmadığı için vadesi gelmemiş dönemler sayılır; son dönem sonraki aylara tekrarlanır.
       const yasalBordrolar = await tx.personelBordro.findMany({
-        where: { tenantId, durum: { notIn: ["reddedildi", "iptal"] }, mevzuatSetiId: { not: null } },
+        where: { tenantId, durum: { notIn: ["reddedildi", "iptal"] }, mevzuatKayitId: { not: null } },
         select: { donemYil: true, donemAy: true, durum: true, hesapOzeti: true },
       });
       const yasalDonemler = new Map<string, { yil: number; ay: number; sgk: number; vergi: number; kesin: boolean }>();

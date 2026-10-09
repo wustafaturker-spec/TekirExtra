@@ -46,7 +46,7 @@ function MevzuatGorunumu() {
 
   const tanim = MEVZUAT_TUR_TANIMLARI[tur];
   return <div className="production-page">
-    <PageHeader title="Mevzuat" subtitle="KDV oranları, tevkifat ve istisna kodları, kanuni süre ve eşikler tüm firmalar için merkezi olarak güncel tutulur. Belgeleriniz kendi tarihindeki değerle hesaplanır; kesinleşmiş belgeler değişmez." />
+    <PageHeader title="Mevzuat" subtitle="KDV oranları, tevkifat ve istisna kodları, kanuni süre ve eşikler ile bordro parametreleri tüm firmalar için merkezi olarak güncel tutulur. Belgeleriniz kendi tarihindeki değerle hesaplanır; kesinleşmiş belgeler ve onaylı bordrolar değişmez." />
     <Alert tone="error">{hata}</Alert><Alert tone="success">{basari}</Alert>
 
     <Card title="Son değişiklikler" pad={false}>

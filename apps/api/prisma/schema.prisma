@@ -189,9 +189,7 @@ model Tenant {
   personelDepartmanlari     PersonelDepartman[]
   personelPozisyonlari      PersonelPozisyon[]
   personelBelgeleri         PersonelBelgesi[]
-  bordroMevzuatSetleri      BordroMevzuatSeti[]
   personelDonemCalismalari  PersonelDonemCalisma[]
-  bordroKabulSenaryolari    BordroKabulSenaryosu[]
   personelSayaci            PersonelSayac?
   uretimSayaclari           UretimSayac[]
   makbuzSerileri            MakbuzSeri[]
@@ -230,10 +228,10 @@ model Tenant {
   duzeltmeKayitlari         DuzeltmeKaydi[]
   duzeltmeOlaylari          DuzeltmeOlayi[]
   stokMaliyetDuzeltmeleri   StokMaliyetDuzeltme[]
+  personelUcretleri         PersonelUcret[]
+  personelBilgiTalepleri    PersonelBilgiTalebi[]
 
   @@map("tenants")
-  personelUcretleri         PersonelUcret[]
-  personelBilgiTalepleri PersonelBilgiTalebi[]
 }
 
 /// KLN-08: v1.0 fiyatlandırma uygulamaz. Sağlayıcı ve dönem alanları ileride
@@ -277,26 +275,26 @@ model AbonelikDegisikligi {
 }
 
 model User {
-  id                 String   @id @default(uuid()) @db.Uuid
-  tenantId           String   @map("tenant_id") @db.Uuid
+  id                 String    @id @default(uuid()) @db.Uuid
+  tenantId           String    @map("tenant_id") @db.Uuid
   eposta             String
-  parolaHash         String   @map("parola_hash")
-  adSoyad            String   @map("ad_soyad")
+  parolaHash         String    @map("parola_hash")
+  adSoyad            String    @map("ad_soyad")
   rol                Rol
-  aktif              Boolean  @default(true)
-  epostaDogrulandi   Boolean  @default(false) @map("eposta_dogrulandi")
+  aktif              Boolean   @default(true)
+  epostaDogrulandi   Boolean   @default(false) @map("eposta_dogrulandi")
   /// TOTP gizli anahtarı AES-256-GCM ile şifreli saklanır (KLN-05)
-  totpSecretSifreli  String?  @map("totp_secret_sifreli")
-  totpAktif          Boolean  @default(false) @map("totp_aktif")
-  maksIskontoYuzdesi Decimal? @map("maks_iskonto_yuzdesi") @db.Decimal(5, 2)
-  bayiCariId         String?  @map("bayi_cari_id") @db.Uuid
+  totpSecretSifreli  String?   @map("totp_secret_sifreli")
+  totpAktif          Boolean   @default(false) @map("totp_aktif")
+  maksIskontoYuzdesi Decimal?  @map("maks_iskonto_yuzdesi") @db.Decimal(5, 2)
+  bayiCariId         String?   @map("bayi_cari_id") @db.Uuid
   /// PRS-21: çalışan rolünün bağlı olduğu personel kartı.
-  personelId         String?  @unique @map("personel_id") @db.Uuid
+  personelId         String?   @unique @map("personel_id") @db.Uuid
   /// PRS-21: self-servis davetinin anahtar özeti (sha256); parola belirlenince silinir.
-  davetAnahtarOzeti  String?  @map("davet_anahtar_ozeti")
+  davetAnahtarOzeti  String?   @map("davet_anahtar_ozeti")
   davetSonGecerlilik DateTime? @map("davet_son_gecerlilik")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
 
   tenant                       Tenant                  @relation(fields: [tenantId], references: [id])
   temsilciCariler              CariHesap[]             @relation("CariTemsilci")
@@ -885,42 +883,42 @@ model CariHesap {
 /// dondurulur; bağlantı anahtarının yalnız SHA-256 özeti saklanır.
 /// Durum: gonderildi | goruldu | mutabik | itiraz | iptal ("süresi doldu" türetilir).
 model CariMutabakat {
-  id                  String    @id @default(uuid()) @db.Uuid
-  tenantId            String    @map("tenant_id") @db.Uuid
-  cariId              String    @map("cari_id") @db.Uuid
-  mutabakatTarihi     DateTime  @map("mutabakat_tarihi") @db.Date
-  baslangicTarihi     DateTime? @map("baslangic_tarihi") @db.Date
-  sonYanitTarihi      DateTime  @map("son_yanit_tarihi") @db.Date
+  id                     String    @id @default(uuid()) @db.Uuid
+  tenantId               String    @map("tenant_id") @db.Uuid
+  cariId                 String    @map("cari_id") @db.Uuid
+  mutabakatTarihi        DateTime  @map("mutabakat_tarihi") @db.Date
+  baslangicTarihi        DateTime? @map("baslangic_tarihi") @db.Date
+  sonYanitTarihi         DateTime  @map("son_yanit_tarihi") @db.Date
   /// [{ dovizCinsi, bakiye }] — bakiye = borç − alacak (artı: cari bize borçlu).
-  bakiyeler           Json
-  bakiyeTry           Decimal   @map("bakiye_try") @db.Decimal(15, 2)
-  alici               String
-  anahtarOzeti        String    @map("anahtar_ozeti")
+  bakiyeler              Json
+  bakiyeTry              Decimal   @map("bakiye_try") @db.Decimal(15, 2)
+  alici                  String
+  anahtarOzeti           String    @map("anahtar_ozeti")
   /// Hatırlatma e-postasındaki ikinci bağlantının özeti; ikisi de geçerlidir.
-  hatirlatmaAnahtarOzeti String? @map("hatirlatma_anahtar_ozeti")
-  ekstreAnahtari      String    @map("ekstre_anahtari")
-  durum               String    @default("gonderildi")
-  gorulduAt           DateTime? @map("goruldu_at")
-  yanitAt             DateTime? @map("yanit_at")
-  yanitlayanAd        String?   @map("yanitlayan_ad")
-  yanitlayanGorev     String?   @map("yanitlayan_gorev")
-  yanitlayanEposta    String?   @map("yanitlayan_eposta")
-  yanitAciklama       String?   @map("yanit_aciklama")
+  hatirlatmaAnahtarOzeti String?   @map("hatirlatma_anahtar_ozeti")
+  ekstreAnahtari         String    @map("ekstre_anahtari")
+  durum                  String    @default("gonderildi")
+  gorulduAt              DateTime? @map("goruldu_at")
+  yanitAt                DateTime? @map("yanit_at")
+  yanitlayanAd           String?   @map("yanitlayan_ad")
+  yanitlayanGorev        String?   @map("yanitlayan_gorev")
+  yanitlayanEposta       String?   @map("yanitlayan_eposta")
+  yanitAciklama          String?   @map("yanit_aciklama")
   /// İtirazda karşı tarafın bakiyeleri: [{ dovizCinsi, bakiye }] aynı işaretle.
-  karsiBakiyeler      Json?     @map("karsi_bakiyeler")
-  ekAnahtari          String?   @map("ek_anahtari")
-  ekDosyaAdi          String?   @map("ek_dosya_adi")
-  ekMime              String?   @map("ek_mime")
-  yanitIp             String?   @map("yanit_ip")
-  yanitTarayici       String?   @map("yanit_tarayici")
-  hatirlatmaAt        DateTime? @map("hatirlatma_at")
-  itirazKapandiAt     DateTime? @map("itiraz_kapandi_at")
-  itirazKapatmaNotu   String?   @map("itiraz_kapatma_notu")
-  itirazKapatanUserId String?   @map("itiraz_kapatan_user_id") @db.Uuid
-  iptalAt             DateTime? @map("iptal_at")
-  olusturanUserId     String    @map("olusturan_user_id") @db.Uuid
-  createdAt           DateTime  @default(now()) @map("created_at")
-  updatedAt           DateTime  @updatedAt @map("updated_at")
+  karsiBakiyeler         Json?     @map("karsi_bakiyeler")
+  ekAnahtari             String?   @map("ek_anahtari")
+  ekDosyaAdi             String?   @map("ek_dosya_adi")
+  ekMime                 String?   @map("ek_mime")
+  yanitIp                String?   @map("yanit_ip")
+  yanitTarayici          String?   @map("yanit_tarayici")
+  hatirlatmaAt           DateTime? @map("hatirlatma_at")
+  itirazKapandiAt        DateTime? @map("itiraz_kapandi_at")
+  itirazKapatmaNotu      String?   @map("itiraz_kapatma_notu")
+  itirazKapatanUserId    String?   @map("itiraz_kapatan_user_id") @db.Uuid
+  iptalAt                DateTime? @map("iptal_at")
+  olusturanUserId        String    @map("olusturan_user_id") @db.Uuid
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
 
   cari CariHesap @relation(fields: [cariId], references: [id], onDelete: Restrict)
 
@@ -1151,22 +1149,22 @@ model CariTeminat {
 }
 
 model CariHareket {
-  id         String         @id @default(uuid()) @db.Uuid
-  tenantId   String         @map("tenant_id") @db.Uuid
-  cariId     String         @map("cari_id") @db.Uuid
-  tip        CariHareketTip
-  tutar      Decimal        @db.Decimal(15, 2)
-  dovizCinsi DovizCinsi     @default(TRY) @map("doviz_cinsi")
-  kur        Decimal        @default(1) @db.Decimal(15, 6)
-  tutarTry   Decimal        @map("tutar_try") @db.Decimal(15, 2)
-  tarih      DateTime       @db.Date
-  vadeTarihi DateTime?      @map("vade_tarihi") @db.Date
-  aciklama   String?
-  kaynakTur  String         @default("manuel") @map("kaynak_tur")
-  kaynakRef  String?        @map("kaynak_ref")
+  id             String         @id @default(uuid()) @db.Uuid
+  tenantId       String         @map("tenant_id") @db.Uuid
+  cariId         String         @map("cari_id") @db.Uuid
+  tip            CariHareketTip
+  tutar          Decimal        @db.Decimal(15, 2)
+  dovizCinsi     DovizCinsi     @default(TRY) @map("doviz_cinsi")
+  kur            Decimal        @default(1) @db.Decimal(15, 6)
+  tutarTry       Decimal        @map("tutar_try") @db.Decimal(15, 2)
+  tarih          DateTime       @db.Date
+  vadeTarihi     DateTime?      @map("vade_tarihi") @db.Date
+  aciklama       String?
+  kaynakTur      String         @default("manuel") @map("kaynak_tur")
+  kaynakRef      String?        @map("kaynak_ref")
   /// CARI-28: elle düzeltmenin muhasebe karşı hesabı; boşsa 679/689 eşlemesi.
-  karsiHesapKodu String?    @map("karsi_hesap_kodu")
-  createdAt  DateTime       @default(now()) @map("created_at")
+  karsiHesapKodu String?        @map("karsi_hesap_kodu")
+  createdAt      DateTime       @default(now()) @map("created_at")
 
   cari CariHesap @relation(fields: [cariId], references: [id])
 
@@ -1363,7 +1361,7 @@ model StokVaryant {
   uretimEmirleri     UretimEmri[]
   urunReceteleri     UrunRecetesi[]
   tedarikciKodlari   StokTedarikciVaryant[]
-  sayimKalemleri          SayimKalem[]
+  sayimKalemleri     SayimKalem[]
 
   @@unique([tenantId, kod])
   @@unique([tenantId, barkod])
@@ -1507,10 +1505,10 @@ model StokHareket {
   kaynakRef     String?        @map("kaynak_ref")
   createdAt     DateTime       @default(now()) @map("created_at")
 
-  stok     StokKart           @relation(fields: [stokId], references: [id])
-  depo     Depo               @relation(fields: [depoId], references: [id])
-  varyant  StokVaryant?       @relation(fields: [varyantId], references: [id])
-  partiler StokHareketParti[]
+  stok                StokKart              @relation(fields: [stokId], references: [id])
+  depo                Depo                  @relation(fields: [depoId], references: [id])
+  varyant             StokVaryant?          @relation(fields: [varyantId], references: [id])
+  partiler            StokHareketParti[]
   maliyetDuzeltmeleri StokMaliyetDuzeltme[]
 
   @@index([tenantId, stokId, tarih])
@@ -4312,57 +4310,6 @@ enum PersonelBordroDurum {
   iptal
 }
 
-enum BordroMevzuatDurum {
-  taslak
-  aktif
-  arsiv
-}
-
-model BordroMevzuatSeti {
-  id                String                 @id @default(uuid()) @db.Uuid
-  tenantId          String                 @map("tenant_id") @db.Uuid
-  ad                String
-  surum             Int
-  yururlukBaslangic DateTime               @map("yururluk_baslangic") @db.Date
-  yururlukBitis     DateTime?              @map("yururluk_bitis") @db.Date
-  durum             BordroMevzuatDurum     @default(taslak)
-  parametreler      Json
-  kaynakNotu        String?                @map("kaynak_notu")
-  olusturanUserId   String                 @map("olusturan_user_id") @db.Uuid
-  onaylayanUserId   String?                @map("onaylayan_user_id") @db.Uuid
-  onayTarihi        DateTime?              @map("onay_tarihi")
-  createdAt         DateTime               @default(now()) @map("created_at")
-  updatedAt         DateTime               @updatedAt @map("updated_at")
-  tenant            Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  bordrolar         PersonelBordro[]
-  kabulSenaryolari  BordroKabulSenaryosu[]
-
-  @@unique([tenantId, surum])
-  @@index([tenantId, durum, yururlukBaslangic])
-  @@map("bordro_mevzuat_setleri")
-}
-
-model BordroKabulSenaryosu {
-  id               String            @id @default(uuid()) @db.Uuid
-  tenantId         String            @map("tenant_id") @db.Uuid
-  mevzuatSetiId    String            @map("mevzuat_seti_id") @db.Uuid
-  ad               String
-  girdiler         Json
-  beklenen         Json
-  tolerans         Decimal           @default(0.01) @db.Decimal(8, 2)
-  sonSonuc         Json?             @map("son_sonuc")
-  basarili         Boolean?
-  sonCalistiranId  String?           @map("son_calistiran_id") @db.Uuid
-  sonCalismaTarihi DateTime?         @map("son_calisma_tarihi")
-  createdAt        DateTime          @default(now()) @map("created_at")
-  updatedAt        DateTime          @updatedAt @map("updated_at")
-  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  mevzuatSeti      BordroMevzuatSeti @relation(fields: [mevzuatSetiId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId, mevzuatSetiId, basarili])
-  @@map("bordro_kabul_senaryolari")
-}
-
 enum PersonelBordroOdemeDurum {
   aktif
   iptal
@@ -4724,16 +4671,16 @@ model PersonelIzinBakiyeHareketi {
 }
 
 model PersonelIstihdamDonemi {
-  id              String    @id @default(uuid()) @db.Uuid
-  tenantId        String    @map("tenant_id") @db.Uuid
-  personelId      String    @map("personel_id") @db.Uuid
-  baslangicTarihi DateTime  @map("baslangic_tarihi") @db.Date
-  bitisTarihi     DateTime? @map("bitis_tarihi") @db.Date
-  ayrilisNedeni   String?   @map("ayrilis_nedeni")
+  id                       String    @id @default(uuid()) @db.Uuid
+  tenantId                 String    @map("tenant_id") @db.Uuid
+  personelId               String    @map("personel_id") @db.Uuid
+  baslangicTarihi          DateTime  @map("baslangic_tarihi") @db.Date
+  bitisTarihi              DateTime? @map("bitis_tarihi") @db.Date
+  ayrilisNedeni            String?   @map("ayrilis_nedeni")
   /// PRS-18: yasal çıkış nedeni kodu (cikis-hesabi.ts CIKIS_NEDENLERI).
-  cikisNedeni     String?   @map("cikis_nedeni")
+  cikisNedeni              String?   @map("cikis_nedeni")
   /// PRS-18: kıdem/ihbar/izin ücreti girdileri ve tutarları; çıkış ayı bordrosu okur.
-  cikisHesabi     Json?     @map("cikis_hesabi")
+  cikisHesabi              Json?     @map("cikis_hesabi")
   /// PRS-24: SGK bildirge takibi; tarih boşsa bildirge verilmedi sayılır.
   iseGirisBildirgeTarihi   DateTime? @map("ise_giris_bildirge_tarihi") @db.Date
   iseGirisBildirgeNo       String?   @map("ise_giris_bildirge_no")
@@ -4741,7 +4688,7 @@ model PersonelIstihdamDonemi {
   istenCikisBildirgeNo     String?   @map("isten_cikis_bildirge_no")
   /// PRS-24: SGK işten çıkış kodu (sgk-kodlari.ts); çıkış nedeninden önerilir.
   sgkCikisKodu             String?   @map("sgk_cikis_kodu")
-  createdAt       DateTime  @default(now()) @map("created_at")
+  createdAt                DateTime  @default(now()) @map("created_at")
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   personel Personel @relation(fields: [personelId], references: [id], onDelete: Cascade)
@@ -4771,18 +4718,19 @@ model PersonelBordro {
   onaylayanUserId       String?                 @map("onaylayan_user_id") @db.Uuid
   onayTarihi            DateTime?               @map("onay_tarihi")
   retNedeni             String?                 @map("ret_nedeni")
-  mevzuatSetiId         String?                 @map("mevzuat_seti_id") @db.Uuid
+  /// MVZ-14: bordronun hesaplandığı merkezi bordro parametreleri kaydı (yayından sonra değişmez).
+  mevzuatKayitId        String?                 @map("mevzuat_kayit_id") @db.Uuid
   hesapOzeti            Json?                   @map("hesap_ozeti")
   kumulatifMatrah       Decimal?                @map("kumulatif_matrah") @db.Decimal(15, 2)
   asgariKumulatifMatrah Decimal?                @map("asgari_kumulatif_matrah") @db.Decimal(15, 2)
   primGunu              Int                     @default(30) @map("prim_gunu")
   eksikGunNedeni        PersonelEksikGunNedeni? @map("eksik_gun_nedeni")
 
-  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  personel    Personel               @relation(fields: [personelId], references: [id], onDelete: Cascade)
-  mevzuatSeti BordroMevzuatSeti?     @relation(fields: [mevzuatSetiId], references: [id])
-  kalemler    PersonelBordroKalemi[]
-  odemeler    PersonelBordroOdeme[]
+  tenant       Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  personel     Personel               @relation(fields: [personelId], references: [id], onDelete: Cascade)
+  mevzuatKaydi MevzuatKayit?          @relation(fields: [mevzuatKayitId], references: [id])
+  kalemler     PersonelBordroKalemi[]
+  odemeler     PersonelBordroOdeme[]
 
   @@unique([tenantId, personelId, donemYil, donemAy])
   @@index([tenantId, donemYil, donemAy])
@@ -5370,11 +5318,12 @@ model MevzuatDegisiklik {
   createdAt           DateTime               @default(now()) @map("created_at")
   updatedAt           DateTime               @updatedAt @map("updated_at")
 
-  hazirlayan PlatformKullanici         @relation("Hazirlayan", fields: [hazirlayanId], references: [id])
-  yayinlayan PlatformKullanici?        @relation("Yayinlayan", fields: [yayinlayanId], references: [id])
-  satirlar   MevzuatDegisiklikSatiri[]
-  kayitlar   MevzuatKayit[]
-  olaylar    MevzuatOlay[]
+  hazirlayan       PlatformKullanici         @relation("Hazirlayan", fields: [hazirlayanId], references: [id])
+  yayinlayan       PlatformKullanici?        @relation("Yayinlayan", fields: [yayinlayanId], references: [id])
+  satirlar         MevzuatDegisiklikSatiri[]
+  kayitlar         MevzuatKayit[]
+  olaylar          MevzuatOlay[]
+  kabulSenaryolari MevzuatKabulSenaryosu[]
 
   @@index([durum, yayinZamani])
   @@map("mevzuat_degisiklikleri")
@@ -5409,9 +5358,33 @@ model MevzuatKayit {
   createdAt         DateTime  @default(now()) @map("created_at")
 
   degisiklik MevzuatDegisiklik? @relation(fields: [degisiklikId], references: [id])
+  bordrolar  PersonelBordro[]
 
   @@index([tur, anahtar, yururlukBaslangic])
   @@map("mevzuat_kayitlari")
+}
+
+/// MVZ-14: bordro parametresi değişikliğinin kabul senaryosu. Onaya gönderirken
+/// ve yayında sunucuda yeniden çalıştırılır; biri tutmazsa yayın yapılmaz.
+model MevzuatKabulSenaryosu {
+  id               String    @id @default(uuid()) @db.Uuid
+  degisiklikId     String    @map("degisiklik_id") @db.Uuid
+  sira             Int
+  ad               String
+  /// Bordro hesabı girdileri (brüt ücret, prim günü, önceki kümülatif matrah…).
+  girdiler         Json
+  /// Resmî kaynaktan beklenen sonuçlar (net ücret, GV, DV…).
+  beklenen         Json
+  tolerans         Decimal   @default(0.01) @db.Decimal(8, 2)
+  sonSonuc         Json?     @map("son_sonuc")
+  basarili         Boolean?
+  sonCalistiranId  String?   @map("son_calistiran_id") @db.Uuid
+  sonCalismaZamani DateTime? @map("son_calisma_zamani")
+
+  degisiklik MevzuatDegisiklik @relation(fields: [degisiklikId], references: [id], onDelete: Cascade)
+
+  @@index([degisiklikId, sira])
+  @@map("mevzuat_kabul_senaryolari")
 }
 
 /// MVZ-08: denetim izi; yalnız eklenir, değiştirilmez ve silinmez.

@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState, type FormEvent } from "react";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
-import { MEVZUAT_TUR_TANIMLARI, MEVZUAT_TURLERI, mevzuatDegerHatalari, mevzuatDegerOzeti, type MevzuatTuru } from "@tekirextra/shared";
+import { MEVZUAT_TUR_TANIMLARI, MEVZUAT_TURLERI, dilimMetni, dilimleriCoz, mevzuatDegerHatalari, mevzuatDegerOzeti, type MevzuatTuru } from "@tekirextra/shared";
+import { KabulSenaryolari, type KabulSenaryosu } from "./kabul-senaryolari";
 import { DURUM_ADI, DURUM_ROZETI, ISLEM_ADI, OLAY_ADI, tarihTR, type MevzuatDurum } from "@/lib/mevzuat-gorunum";
 import { platformApi, platformTokenAl } from "@/lib/platform-api";
 
@@ -16,7 +17,10 @@ interface Detay {
   hazirlayan: { adSoyad: string }; yayinlayan: { adSoyad: string } | null;
   satirlar: Satir[]; planHatalari: string[];
   /** MVZ-06: etkilenecek taslak belge sayıları (kiracı bilgisi yok). */
-  etki: { kalemler: { ad: string; taslakFatura: number; taslakBelge: number; firma: number }[]; hesaplanmayan: string[] } | null;
+  etki: { kalemler: { ad: string; taslakFatura: number; taslakBelge: number; taslakBordro: number; firma: number }[]; hesaplanmayan: string[] } | null;
+  /** MVZ-14: bordro parametresi eklenen/değişen değişiklikte kabul senaryosu zorunlu. */
+  kabulGerekli: boolean;
+  kabulSenaryolari: KabulSenaryosu[];
   olaylar: { id: string; olay: string; zaman: string; kullanici: string | null; detay: Record<string, unknown> | null }[];
   izinler: { duzenle: boolean; onayaGonder: boolean; taslagaCek: boolean; yayinla: boolean; geriCevir: boolean };
 }
@@ -29,7 +33,7 @@ function taslagaCevir(s: Satir): TaslakSatir {
   const alanlar: Record<string, string> = {};
   for (const a of tanim?.alanlar ?? []) {
     const v = s.deger?.[a.ad];
-    alanlar[a.ad] = v === undefined || v === null ? "" : Array.isArray(v) ? v.join(", ") : String(v);
+    alanlar[a.ad] = v === undefined || v === null ? "" : a.tip === "dilimler" ? dilimMetni(v) : Array.isArray(v) ? v.join(", ") : String(v);
   }
   return { tur: s.tur as MevzuatTuru, anahtar: s.anahtar, islem: s.islem, alanlar, oncekiDeger: s.oncekiDeger, oncekiYururluk: s.oncekiYururluk };
 }
@@ -40,7 +44,7 @@ function degereCevir(s: TaslakSatir): Record<string, unknown> | null {
   for (const a of MEVZUAT_TUR_TANIMLARI[s.tur].alanlar) {
     const metin = (s.alanlar[a.ad] ?? "").trim();
     if (!metin) continue;
-    deger[a.ad] = a.tip === "oranlar" ? metin.split(/[,;\s]+/).filter(Boolean) : a.tip === "sayi" ? Number(metin.replace(",", ".")) : metin;
+    deger[a.ad] = a.tip === "oranlar" ? metin.split(/[,;\s]+/).filter(Boolean) : a.tip === "dilimler" ? dilimleriCoz(metin) : a.tip === "sayi" ? Number(metin.replace(",", ".")) : metin;
   }
   return deger;
 }
@@ -74,6 +78,17 @@ function DegisiklikDetayi() {
   }), "Kalemler kaydedildi.");
   const guncelle = (i: number, ek: Partial<TaslakSatir>) => { setSatirlar((eski) => eski.map((s, j) => (j === i ? { ...s, ...ek } : s))); setDegisti(true); };
   const satirEkle = () => { setSatirlar((eski) => [...eski, { tur: "tevkifat_kodu", anahtar: "", islem: "ekle", alanlar: {} }]); setDegisti(true); };
+  /** Tek anahtarlı türde (bordro) anahtar kendiliğinden seçilir; yürürlükteki değer düzenlemeye başlangıç olur. */
+  async function turSec(i: number, tur: MevzuatTuru) {
+    const secenekler = MEVZUAT_TUR_TANIMLARI[tur].anahtarSecenekleri;
+    const anahtar = secenekler?.length === 1 ? secenekler[0]![0] : "";
+    guncelle(i, { tur, anahtar, alanlar: {} });
+    if (!anahtar || !d) return;
+    try {
+      const [mevcut] = await platformApi<{ deger: Record<string, unknown> }[]>(`/platform/mevzuat/kayitlar?tur=${tur}&tarih=${d.yururlukBaslangic}`);
+      if (mevcut) guncelle(i, { tur, anahtar, islem: "degistir", alanlar: taslagaCevir({ tur, anahtar, islem: "degistir", deger: mevcut.deger }).alanlar });
+    } catch { /* başlangıç değeri isteğe bağlı */ }
+  }
   const satirSil = (i: number) => { setSatirlar((eski) => eski.filter((_, j) => j !== i)); setDegisti(true); };
 
   if (!id) return <Alert tone="error">Değişiklik seçilmedi.</Alert>;
@@ -106,7 +121,7 @@ function DegisiklikDetayi() {
             const sorunlar = s.islem === "kaldir" || !s.anahtar ? [] : mevzuatDegerHatalari(s.tur, s.anahtar.trim(), degereCevir(s));
             return <tr key={i}>
               <td>{duzenle
-                ? <Select aria-label="Tür" value={s.tur} onChange={(e) => guncelle(i, { tur: e.target.value as MevzuatTuru, anahtar: "", alanlar: {} })}>{MEVZUAT_TURLERI.map((t) => <option key={t} value={t}>{MEVZUAT_TUR_TANIMLARI[t].ad}</option>)}</Select>
+                ? <Select aria-label="Tür" value={s.tur} onChange={(e) => void turSec(i, e.target.value as MevzuatTuru)}>{MEVZUAT_TURLERI.map((t) => <option key={t} value={t}>{MEVZUAT_TUR_TANIMLARI[t].ad}</option>)}</Select>
                 : tanim.ad}</td>
               <td>{duzenle
                 ? tanim.anahtarSecenekleri
@@ -117,7 +132,12 @@ function DegisiklikDetayi() {
                 ? <Select aria-label="İşlem" value={s.islem} onChange={(e) => guncelle(i, { islem: e.target.value as Islem })}>{(["ekle", "degistir", "kaldir"] as const).map((x) => <option key={x} value={x}>{ISLEM_ADI[x]}</option>)}</Select>
                 : ISLEM_ADI[s.islem]}</td>
               <td>{s.islem === "kaldir" ? <span className="muted">Yürürlükten kalkar</span> : duzenle
-                ? <div className="mevzuat-deger">
+                ? tanim.etiketli
+                  ? <div className="mevzuat-deger mevzuat-deger--etiketli">
+                      {tanim.alanlar.map((a) => <label key={a.ad} className={a.tip === "dilimler" ? "mevzuat-alan--genis" : undefined}>{a.etiket}<Input aria-label={a.etiket} placeholder={a.ipucu} value={s.alanlar[a.ad] ?? ""} onChange={(e) => guncelle(i, { alanlar: { ...s.alanlar, [a.ad]: e.target.value } })} /></label>)}
+                      {sorunlar.length > 0 && <span className="is-negative mevzuat-alan--genis" style={{ fontSize: "0.8rem" }}>{sorunlar.join(" · ")}</span>}
+                    </div>
+                  : <div className="mevzuat-deger">
                     {tanim.alanlar.map((a) => a.tip === "secim"
                       ? <Select key={a.ad} aria-label={a.etiket} value={s.alanlar[a.ad] ?? ""} onChange={(e) => guncelle(i, { alanlar: { ...s.alanlar, [a.ad]: e.target.value } })}><option value="">{a.etiket}</option>{a.secenekler?.map(([k, ad]) => <option key={k} value={k}>{ad}</option>)}</Select>
                       : <Input key={a.ad} aria-label={a.etiket} placeholder={`${a.etiket}${a.ipucu ? ` (${a.ipucu})` : ""}${a.zorunlu ? "" : " — isteğe bağlı"}`} value={s.alanlar[a.ad] ?? ""} onChange={(e) => guncelle(i, { alanlar: { ...s.alanlar, [a.ad]: e.target.value } })} />)}
@@ -134,11 +154,15 @@ function DegisiklikDetayi() {
       {duzenle && degisti && <p className="muted" style={{ padding: "0.8rem 1.25rem", margin: 0 }}>Kaydedilmemiş değişiklik var; onaya göndermeden önce kalemleri kaydedin.</p>}
     </Card>
 
+    {(d.kabulGerekli || d.kabulSenaryolari.length > 0) && <KabulSenaryolari degisiklikId={id} senaryolar={d.kabulSenaryolari} duzenle={duzenle} yayinlandi={d.durum === "yayinlandi"} kalemlerKaydedilmedi={degisti} onDegisti={yansit} />}
+
     <Card title="Onay ve yayın">
       {d.etki && d.satirlar.length > 0 && <div style={{ marginBottom: "1rem" }}>
         <strong>Etki</strong>
         <ul style={{ margin: "0.3rem 0 0", paddingLeft: "1.1rem" }}>
-          {d.etki.kalemler.map((k) => <li key={k.ad}>{k.ad}: yürürlük tarihinden sonraki <strong>{k.taslakFatura}</strong> taslak fatura{k.taslakBelge ? <> ve <strong>{k.taslakBelge}</strong> taslak teklif/sipariş/irsaliye</> : null} ({k.firma} firma) bir sonraki kaydedişte yeni değerle denetlenir. Kesinleşmiş belgeler değişmez.</li>)}
+          {d.etki.kalemler.map((k) => k.ad === MEVZUAT_TUR_TANIMLARI.bordro_parametreleri.ad
+            ? <li key={k.ad}>{k.ad}: yürürlükten sonraki aynı yıl dönemlerinde <strong>{k.taslakBordro}</strong> onaylanmamış bordro ({k.firma} firma) yeniden hesaplanınca yeni değerle hesaplanır. Onaylı bordrolar saklı değerleriyle kalır; değer ayın ilk gününden sonra yürürlüğe giriyorsa sonraki aydan uygulanır.</li>
+            : <li key={k.ad}>{k.ad}: yürürlük tarihinden sonraki <strong>{k.taslakFatura}</strong> taslak fatura{k.taslakBelge ? <> ve <strong>{k.taslakBelge}</strong> taslak teklif/sipariş/irsaliye</> : null} ({k.firma} firma) bir sonraki kaydedişte yeni değerle denetlenir. Kesinleşmiş belgeler değişmez.</li>)}
           {!d.etki.kalemler.length && !d.etki.hesaplanmayan.length && <li>Yalnız yeni kalem ekleniyor; mevcut belgeler etkilenmez.</li>}
           {d.etki.hesaplanmayan.map((t) => <li key={t} className="muted">{MEVZUAT_TUR_TANIMLARI[t as MevzuatTuru]?.ad ?? t}: belgede saklanmaz; yeni değer yürürlükten itibaren BA/BS, faturalama süresi ve e-Arşiv iptal hesaplarında kullanılır.</li>)}
         </ul>

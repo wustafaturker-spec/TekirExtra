@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useState } from "react";
 import { api } from "@/lib/api";
+import { tarihTR } from "@/lib/mevzuat-gorunum";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Para, Select, Stat, StatGrid, Table } from "@/components/ui";
 
 interface HesapSonucu {
-  mevzuatSeti: { id: string; surum: number; ad: string };
+  mevzuat: { id: string; yururlukBaslangic: string; yururlukBitis: string | null };
   uyari: string;
   sonuc: Record<string, unknown>;
 }
@@ -26,7 +27,7 @@ const ETIKETLER: Record<string, string> = {
   isverenSgkTesvikIndirimi: "SGK teşvik indirimi", isverenSgkNet: "Net SGK işveren payı", isverenIssizlik: "İşsizlik işveren payı", isverenMaliyeti: "Toplam işveren maliyeti",
 };
 
-/** Etkin mevzuat sürümüyle brütten nete deneme hesabı ve ayrıntılı hesap izi. */
+/** Mevzuat Merkezi'ndeki dönem parametreleriyle brütten nete deneme hesabı ve ayrıntılı hesap izi. */
 export default function BrutNetHesaplama() {
   const [form, setForm] = useState(ilk);
   const [veri, setVeri] = useState<HesapSonucu | null>(null);
@@ -59,8 +60,8 @@ export default function BrutNetHesaplama() {
 
   return (
     <div className="stack">
-      <Link className="back-link" href="/panel/personel/mevzuat">← Mevzuat setlerine dön</Link>
-      <PageHeader title="Brüt–net simülasyonu" subtitle="Etkin mevzuat sürümüyle hesaplama yapın ve tüm hesap izini inceleyin." />
+      <Link className="back-link" href="/panel/personel/mevzuat">← Bordro mevzuatına dön</Link>
+      <PageHeader title="Brüt–net simülasyonu" subtitle="Dönemin Mevzuat Merkezi parametreleriyle hesaplama yapın ve tüm hesap izini inceleyin." />
       <Alert tone="error">{hata}</Alert>
       <div className="split">
         <Card title="Hesaplama girdileri">
@@ -73,7 +74,7 @@ export default function BrutNetHesaplama() {
             <Field label="Devrin kalan ayı"><Select value={form.devrinKalanAyi} onChange={(e) => alan("devrinKalanAyi", e.target.value)}><option value="2">2 ay</option><option value="1">Son ay</option></Select></Field>
             <Field label="Prim günü"><Input required type="number" min="1" max="30" value={form.primGunu} onChange={(e) => alan("primGunu", e.target.value)} /></Field>
             {tutar("primeEsasKazanc", "PEK (isteğe bağlı)", { min: "0.01", placeholder: "Otomatik" })}
-            <Field label="SGK teşvik oranı %"><Input required type="number" min="0" max="100" step="0.001" value={form.sgkTesvikOrani} onChange={(e) => alan("sgkTesvikOrani", e.target.value)} title="Mevzuat setindeki azami oranı aşamaz" /></Field>
+            <Field label="SGK teşvik oranı %"><Input required type="number" min="0" max="100" step="0.001" value={form.sgkTesvikOrani} onChange={(e) => alan("sgkTesvikOrani", e.target.value)} title="Bordro parametrelerindeki azami teşvik puanını aşamaz" /></Field>
             <Field label="Engellilik indirimi"><Select value={form.engellilikDerecesi} onChange={(e) => alan("engellilikDerecesi", e.target.value)}><option value="">Uygulanmayacak</option><option value="1">1. derece</option><option value="2">2. derece</option><option value="3">3. derece</option></Select></Field>
             {tutar("sahisSigortaPrimi", "Şahıs sigortası primi")}
             {tutar("hayatSigortaPrimi", "Hayat sigortası primi")}
@@ -81,7 +82,7 @@ export default function BrutNetHesaplama() {
             {tutar("oncekiKumulatifSigortaIndirimi", "Önceki kümülatif sigorta indirimi")}
             {tutar("oncekiKumulatifMatrah", "Önceki kümülatif vergi matrahı", { required: true })}
             {tutar("oncekiAsgariKumulatifMatrah", "Önceki asgari kümülatif matrah", { required: true })}
-            <p className="muted" style={{ fontSize: "0.78rem" }}>Teşvik oranı mevzuat setindeki azami oranı aşamaz.</p>
+            <p className="muted" style={{ fontSize: "0.78rem" }}>Teşvik oranı bordro parametrelerindeki azami puanı aşamaz.</p>
             <div><Button block type="submit" variant="primary" disabled={islemde}>{islemde ? "Hesaplanıyor…" : "Brütten nete hesapla"}</Button></div>
           </form>
         </Card>
@@ -90,7 +91,7 @@ export default function BrutNetHesaplama() {
         ) : (
           <div className="stack">
             <StatGrid>
-              <Stat label="Net ücret" value={<Para deger={String(veri.sonuc.netUcret)} />} tone="accent" hint={`${veri.mevzuatSeti.ad} · v${veri.mevzuatSeti.surum}`} />
+              <Stat label="Net ücret" value={<Para deger={String(veri.sonuc.netUcret)} />} tone="accent" hint={`Parametreler ${tarihTR(veri.mevzuat.yururlukBaslangic)}${veri.mevzuat.yururlukBitis ? ` – ${tarihTR(veri.mevzuat.yururlukBitis)}` : "'den beri"}`} />
               <Stat label="Toplam işveren maliyeti" value={<Para deger={String(veri.sonuc.isverenMaliyeti)} />} />
             </StatGrid>
             <Card title="Hesap izi" pad={false}>

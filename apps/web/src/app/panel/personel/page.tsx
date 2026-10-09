@@ -46,7 +46,7 @@ const KISAYOLLAR = [
   ["/panel/personel/bilgi-talepleri", "BT", "Bilgi talepleri", "Self-servis güncellemeleri"],
   ["/panel/personel/sgk", "SG", "SGK ve MUHSGK", "Bildirgeler, döküm ve XML"],
   ["/panel/personel/organizasyon", "OR", "Organizasyon", "İşyeri ve ekip yapısı"],
-  ["/panel/personel/mevzuat", "MV", "Mevzuat", "Sürümler ve kabul testleri"],
+  ["/panel/personel/mevzuat", "MV", "Mevzuat", "Bordro parametreleri ve simülasyon"],
   ["/panel/personel/raporlar", "RP", "Raporlar", "Maliyet ve iş gücü analizi"],
 ] as const;
 const BOS_FORM = { ad: "", soyad: "", departman: "", unvan: "", netMaas: 30000, brutMaas: 0, engellilikDerecesi: "", sgkTesvikOrani: 0, calismaTipi: "tam_zamanli", girisTarihi: bugunTR(), cariOlustur: true, sgk: BOS_SGK_ALANLARI };
@@ -234,7 +234,7 @@ export default function PersonelSayfasi() {
                 <Field label="Net maaş (₺) *"><Input required type="number" min="0" step="0.01" value={form.netMaas} onChange={(e) => setForm({ ...form, netMaas: Number(e.target.value) })} /></Field>
                 <Field label="Brüt maaş (₺)"><Input type="number" min="0" step="0.01" value={form.brutMaas} onChange={(e) => setForm({ ...form, brutMaas: Number(e.target.value) })} /><small className="muted">0 bırakılırsa net ücret modeli kullanılır.</small></Field>
                 <Field label="Engellilik indirimi"><Select value={form.engellilikDerecesi} onChange={(e) => setForm({ ...form, engellilikDerecesi: e.target.value })}><option value="">Uygulanmayacak</option><option value="1">1. derece</option><option value="2">2. derece</option><option value="3">3. derece</option></Select><small className="muted">Doğrulanmış vergi indirimi yazısına göre seçin.</small></Field>
-                <Field label="SGK teşvik oranı (%)"><Input type="number" min="0" max="100" step="0.001" value={form.sgkTesvikOrani} onChange={(e) => setForm({ ...form, sgkTesvikOrani: Number(e.target.value) })} /><small className="muted">Mevzuat setindeki azami oran uygulanır.</small></Field>
+                <Field label="SGK teşvik oranı (%)"><Input type="number" min="0" max="100" step="0.001" value={form.sgkTesvikOrani} onChange={(e) => setForm({ ...form, sgkTesvikOrani: Number(e.target.value) })} /><small className="muted">Bordro parametrelerindeki azami teşvik puanı uygulanır.</small></Field>
               </div>
             </fieldset>
             <PersonelSgkAlanlari deger={form.sgk} onChange={(sgk) => setForm({ ...form, sgk })} />

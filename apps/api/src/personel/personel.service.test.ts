@@ -41,7 +41,7 @@ describe("PersonelService", () => {
       personelDonemCalisma: {
         findMany: vi.fn().mockResolvedValue([]),
       },
-      bordroMevzuatSeti: { findFirst: vi.fn().mockResolvedValue(null) },
+      mevzuatKayit: { findFirst: vi.fn().mockResolvedValue(null) },
       personelIzinTalebi: { findMany: vi.fn().mockResolvedValue([]) },
       personelBordroKalemi: {
         create: vi.fn().mockResolvedValue({ id: "kalem-1" }),
@@ -109,7 +109,7 @@ describe("PersonelService", () => {
     expect(veri.netMaas.toFixed(2)).toBe("18000.00");
   });
 
-  it("mevzuat seti yokken puantajdaki fazla mesai, prim ve yemek kazanç kalemi olur (P2-6)", async () => {
+  it("bordro mevzuatı yokken puantajdaki fazla mesai, prim ve yemek kazanç kalemi olur (P2-6)", async () => {
     mockPrisma.personelDonemCalisma.findMany.mockResolvedValue([{ personelId: "p-1", primGunu: 30, eksikGunNedeni: null, sgkTesvikOrani: null, fazlaMesaiBrut: new Prisma.Decimal(2000), primIkramiyeBrut: new Prisma.Decimal(1000), nakitYemekYardimi: new Prisma.Decimal(500), fiiliCalismaGunu: 20, sahisSigortaPrimi: new Prisma.Decimal(0), hayatSigortaPrimi: new Prisma.Decimal(0), sendikaAidati: new Prisma.Decimal(0) }]);
     await service.bordroTopluTahakkuk("tenant-1", "user-1", { donemYil: 2026, donemAy: 10 });
     const veri = mockPrisma.personelBordro.create.mock.calls[0][0].data;

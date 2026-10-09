@@ -7,7 +7,7 @@ const D = (v: string | number) => new Prisma.Decimal(v);
 /** PRS-03: yeniden hesapla, onayı geri al, sil. */
 function kur(bordro: Record<string, unknown>, ek: Record<string, unknown> = {}) {
   const tx: any = {
-    bordroMevzuatSeti: { findFirst: vi.fn(async () => null) },
+    mevzuatKayit: { findFirst: vi.fn(async () => null) },
     personelIzinTalebi: { findMany: vi.fn(async () => []) },
     personelBordro: {
       findFirst: vi.fn(async (a: { where: { donemAy?: unknown } }) => (a.where.donemAy ? null : bordro)),
@@ -35,7 +35,7 @@ function kur(bordro: Record<string, unknown>, ek: Record<string, unknown> = {}) 
   return { s: new PersonelService(prisma as never), tx };
 }
 
-const temel = { id: "b1", personelId: "p1", donemYil: 2026, donemAy: 9, mevzuatSetiId: null, netMaas: D(30000) };
+const temel = { id: "b1", personelId: "p1", donemYil: 2026, donemAy: 9, mevzuatKayitId: null, netMaas: D(30000) };
 
 describe("bordro düzeltme (PRS-03)", () => {
   it("yeniden hesap yalnız sistem kalemlerini yeniler, puantaj gününü alır, elle/avans kalemleri korunur", async () => {
@@ -55,8 +55,8 @@ describe("bordro düzeltme (PRS-03)", () => {
   });
 
   it("mevzuatlı bordroda sonraki ay varsa düzeltme engellenir", async () => {
-    const { s, tx } = kur({ ...temel, durum: "hesaplandi", mevzuatSetiId: "m1" });
-    tx.personelBordro.findFirst = vi.fn(async (a: { where: { donemAy?: unknown } }) => (a.where.donemAy ? { donemAy: 10 } : { ...temel, durum: "hesaplandi", mevzuatSetiId: "m1" }));
+    const { s, tx } = kur({ ...temel, durum: "hesaplandi", mevzuatKayitId: "m1" });
+    tx.personelBordro.findFirst = vi.fn(async (a: { where: { donemAy?: unknown } }) => (a.where.donemAy ? { donemAy: 10 } : { ...temel, durum: "hesaplandi", mevzuatKayitId: "m1" }));
     await expect(s.bordroYenidenHesapla("t1", "b1", "u2")).rejects.toThrow(/2026\/10 bordrosu kümülatif/);
   });
 

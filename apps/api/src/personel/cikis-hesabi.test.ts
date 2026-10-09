@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { bordroHesapla } from "./bordro-hesaplama";
 import { cikisHesapla, hizmetGunu, ihbarHaftasi, kidemTavani, CIKIS_NEDENLERI } from "./cikis-hesabi";
-import { RESMI_MEVZUAT_SETLERI } from "./resmi-mevzuat";
+import { PARAMETRELER_2026_2 } from "./bordro-ilk-dolum.test-veri";
 
 const t = (iso: string) => new Date(`${iso}T00:00:00Z`);
 
@@ -33,7 +33,7 @@ describe("çıkış hesabı (PRS-18)", () => {
     expect(CIKIS_NEDENLERI.isveren_fesih.ihbar).toBe("isveren_oder");
   });
   it("motor: kıdem yalnız damga, ihbar GV+DV (SGK yok), izin ücreti SGK'lı", () => {
-    const p = RESMI_MEVZUAT_SETLERI[1].parametreler;
+    const p = PARAMETRELER_2026_2;
     const temel = { brutUcret: 40000, primGunu: 30, oncekiKumulatifMatrah: 0, oncekiAsgariKumulatifMatrah: 0 };
     const yalin = bordroHesapla(p, temel);
     const kidemli = bordroHesapla(p, { ...temel, kidemTazminati: 100000 });

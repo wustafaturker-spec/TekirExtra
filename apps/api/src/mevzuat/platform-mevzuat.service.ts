@@ -4,11 +4,14 @@ import { MEVZUAT_TUR_TANIMLARI, mevzuatDegerHatalari, mevzuatTuruMu } from "@tek
 import { aktifPlatformBaglam } from "../core/istek-baglami";
 import { MevzuatService } from "./mevzuat.service";
 import { PlatformPrismaService } from "./platform-prisma.service";
+import { kabulCalistir, type KabulSenaryosuGirdisi } from "./bordro-kabul";
 import { yayinPlani, yururluktedir, type PlanKaydi, type PlanSatiri } from "./yayin-plani";
 
 const gun = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
 /** Bu olayları kaydeden kişi değişikliğin hazırlayanlarındandır; yayınlayamaz (dört göz). */
-const DUZENLEME_OLAYLARI = ["olusturuldu", "guncellendi", "satirlar_guncellendi", "onaya_gonderildi"];
+const DUZENLEME_OLAYLARI = ["olusturuldu", "guncellendi", "satirlar_guncellendi", "kabul_senaryolari_guncellendi", "onaya_gonderildi"];
+/** MVZ-14: kabul senaryosu isteyen satır (bordro parametresi eklenir ya da değişir). */
+const kabulGerekir = (s: { tur: string; islem: string }) => s.tur === "bordro_parametreleri" && s.islem !== "kaldir";
 
 export interface DegisiklikGirdisi { baslik: string; dayanak: string; aciklama?: string | null; yururlukBaslangic: string }
 export interface SatirGirdisi { tur: string; anahtar: string; islem: "ekle" | "degistir" | "kaldir"; deger?: unknown }
@@ -53,6 +56,7 @@ export class PlatformMevzuatService {
         hazirlayan: { select: { adSoyad: true, eposta: true } },
         yayinlayan: { select: { adSoyad: true, eposta: true } },
         olaylar: { orderBy: { zaman: "asc" } },
+        kabulSenaryolari: { orderBy: { sira: "asc" } },
       },
     });
     if (!d) throw new NotFoundException("Mevzuat değişikliği bulunamadı");
@@ -79,6 +83,7 @@ export class PlatformMevzuatService {
       olaylar: d.olaylar.map((o) => ({ ...o, kullanici: o.kullaniciId ? kullanicilar.get(o.kullaniciId) ?? null : null })),
       planHatalari: plan?.hatalar ?? [],
       etki,
+      kabulGerekli: d.satirlar.some(kabulGerekir),
       izinler: {
         duzenle: d.durum === "taslak",
         onayaGonder: d.durum === "taslak",
@@ -149,6 +154,7 @@ export class PlatformMevzuatService {
       const satirlar = await tx.mevzuatDegisiklikSatiri.findMany({ where: { degisiklikId: id }, orderBy: { sira: "asc" } });
       const plan = yayinPlani(await this.planKayitlari(tx, satirlar), satirlar.map(satirPlani), gun(d.yururlukBaslangic)!);
       if (plan.hatalar.length) throw new BadRequestException(plan.hatalar.join("; "));
+      await this.kabulKapisi(tx, id, satirlar);
       await this.durumGecisi(tx, id, "taslak", { durum: "onay_bekliyor", onayaGonderimZamani: new Date(), retGerekcesi: null });
       await this.olay(tx, id, "onaya_gonderildi");
     });
@@ -189,6 +195,8 @@ export class PlatformMevzuatService {
       const yururluk = gun(d.yururlukBaslangic)!;
       const plan = yayinPlani(await this.planKayitlari(tx, satirlar), satirlar.map(satirPlani), yururluk);
       if (plan.hatalar.length) throw new BadRequestException(`Yayınlanamadı: ${plan.hatalar.join("; ")}`);
+      // MVZ-14: bordro parametresinin kabul senaryoları yayın anında yeniden çalıştırılır.
+      await this.kabulKapisi(tx, id, satirlar);
 
       for (const k of plan.kapat) await tx.mevzuatKayit.update({ where: { id: k.id }, data: { yururlukBitis: new Date(k.yururlukBitis) } });
       if (plan.ekle.length) {
@@ -201,6 +209,57 @@ export class PlatformMevzuatService {
       await this.durumGecisi(tx, id, "onay_bekliyor", { durum: "yayinlandi", yayinlayanId: kullaniciId, yayinZamani: new Date() });
       return { kapatilan: plan.kapat.length, eklenen: plan.ekle.length };
     }).finally(() => this.okuyucu.onbellekTemizle());
+  }
+
+  /** MVZ-14: kabul senaryolarının tamamı yazılır (yalnız taslakta). */
+  async kabulSenaryolariYaz(id: string, senaryolar: KabulSenaryosuGirdisi[]) {
+    await this.db.$transaction(async (tx) => {
+      await this.taslakOlmali(tx, id);
+      await tx.mevzuatKabulSenaryosu.deleteMany({ where: { degisiklikId: id } });
+      await tx.mevzuatKabulSenaryosu.createMany({
+        data: senaryolar.map((s, i) => ({ degisiklikId: id, sira: i + 1, ad: s.ad, girdiler: s.girdiler as Prisma.InputJsonValue, beklenen: s.beklenen as Prisma.InputJsonValue, tolerans: s.tolerans })),
+      });
+      await this.olay(tx, id, "kabul_senaryolari_guncellendi", { senaryolar: senaryolar as unknown as Prisma.InputJsonValue });
+    });
+  }
+
+  /** Senaryoları değişiklikteki bordro değeriyle çalıştırıp sonucu saklar (yayınlanana kadar). */
+  async kabulSenaryolariCalistir(id: string) {
+    await this.db.$transaction(async (tx) => {
+      const d = await tx.mevzuatDegisiklik.findUnique({ where: { id }, select: { durum: true } });
+      if (!d) throw new NotFoundException("Mevzuat değişikliği bulunamadı");
+      if (d.durum === "yayinlandi") throw new ConflictException("Yayınlanan değişikliğin senaryoları yeniden çalıştırılmaz");
+      const satirlar = await tx.mevzuatDegisiklikSatiri.findMany({ where: { degisiklikId: id } });
+      await this.kabulSonuclari(tx, id, satirlar);
+    });
+  }
+
+  /**
+   * Bordro parametresi eklenen/değişen değişiklikte en az bir senaryo olmalı ve
+   * hepsi tutmalıdır; aksi hâlde onaya gönderilemez ve yayınlanamaz.
+   */
+  private async kabulKapisi(tx: Prisma.TransactionClient, id: string, satirlar: { tur: string; islem: string; deger: unknown }[]) {
+    if (!satirlar.some(kabulGerekir)) return;
+    const sonuclar = await this.kabulSonuclari(tx, id, satirlar);
+    if (!sonuclar.length) throw new BadRequestException("Bordro parametresi değişikliğinde en az bir kabul senaryosu bulunmalıdır (ör. asgari ücretin resmî neti)");
+    const tutmayan = sonuclar.filter((s) => !s.basarili).map((s) => s.ad);
+    if (tutmayan.length) throw new BadRequestException(`Kabul senaryosu tutmadı: ${tutmayan.join(", ")}`);
+  }
+
+  private async kabulSonuclari(tx: Prisma.TransactionClient, id: string, satirlar: { tur: string; islem: string; deger: unknown }[]) {
+    const satir = satirlar.find(kabulGerekir);
+    const senaryolar = await tx.mevzuatKabulSenaryosu.findMany({ where: { degisiklikId: id }, orderBy: { sira: "asc" } });
+    if (!satir) return [];
+    const { kullaniciId } = aktifPlatformBaglam();
+    const zaman = new Date();
+    const sonuclar: { ad: string; basarili: boolean }[] = [];
+    for (const s of senaryolar) {
+      let sonuc;
+      try { sonuc = kabulCalistir(satir.deger, s); } catch (e) { sonuc = { basarili: false, alanlar: {}, hata: e instanceof Error ? e.message : String(e) }; }
+      await tx.mevzuatKabulSenaryosu.update({ where: { id: s.id }, data: { sonSonuc: sonuc as unknown as Prisma.InputJsonValue, basarili: sonuc.basarili, sonCalistiranId: kullaniciId, sonCalismaZamani: zaman } });
+      sonuclar.push({ ad: s.ad, basarili: sonuc.basarili });
+    }
+    return sonuclar;
   }
 
   /** Bir türün belirli tarihte yürürlükteki kayıtları (ya da bir anahtarın tüm geçmişi). */
@@ -240,13 +299,18 @@ export class PlatformMevzuatService {
    * Eklenen kod mevcut taslağı etkilemez; değişen ve kaldırılan kodlar sayılır.
    */
   private async etki(satirlar: { tur: string; anahtar: string; islem: string }[], yururluk: string) {
-    const turler = [...new Set(satirlar.filter((s) => s.islem !== "ekle" && s.tur !== "kanuni_deger").map((s) => s.tur))];
-    const kalemler: { ad: string; taslakFatura: number; taslakBelge: number; firma: number }[] = [];
+    const turler = [...new Set(satirlar.filter((s) => s.islem !== "ekle" && s.tur !== "kanuni_deger" && s.tur !== "bordro_parametreleri").map((s) => s.tur))];
+    const kalemler: { ad: string; taslakFatura: number; taslakBelge: number; taslakBordro: number; firma: number }[] = [];
     for (const tur of turler) {
       const anahtarlar = satirlar.filter((s) => s.tur === tur && s.islem !== "ekle").map((s) => s.anahtar);
       const [r] = await this.db.$queryRaw<{ taslak_fatura: bigint; taslak_belge: bigint; firma: bigint }[]>`SELECT * FROM mevzuat_etki(${tur}, ${anahtarlar}::text[], ${yururluk}::date)`;
       const ad = mevzuatTuruMu(tur) ? MEVZUAT_TUR_TANIMLARI[tur].ad : tur;
-      kalemler.push({ ad: `${ad} (${anahtarlar.join(", ")})`, taslakFatura: Number(r?.taslak_fatura ?? 0), taslakBelge: Number(r?.taslak_belge ?? 0), firma: Number(r?.firma ?? 0) });
+      kalemler.push({ ad: `${ad} (${anahtarlar.join(", ")})`, taslakFatura: Number(r?.taslak_fatura ?? 0), taslakBelge: Number(r?.taslak_belge ?? 0), taslakBordro: 0, firma: Number(r?.firma ?? 0) });
+    }
+    // MVZ-14: eklenen yıl da (yürürlükten sonraki) onaylanmamış bordroları etkiler.
+    if (satirlar.some((s) => s.tur === "bordro_parametreleri")) {
+      const [r] = await this.db.$queryRaw<{ taslak_bordro: bigint; firma: bigint }[]>`SELECT * FROM mevzuat_etki_bordro(${yururluk}::date)`;
+      kalemler.push({ ad: MEVZUAT_TUR_TANIMLARI.bordro_parametreleri.ad, taslakFatura: 0, taslakBelge: 0, taslakBordro: Number(r?.taslak_bordro ?? 0), firma: Number(r?.firma ?? 0) });
     }
     // Kanuni süre/eşikler belge satırında saklanmaz; sayılacak taslak yoktur, yeni değer sonraki hesaplarda kullanılır.
     const hesaplanmayan = [...new Set(satirlar.filter((s) => s.tur === "kanuni_deger").map((s) => s.tur))];

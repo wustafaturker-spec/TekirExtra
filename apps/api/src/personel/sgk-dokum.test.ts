@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { bordroHesapla } from "./bordro-hesaplama";
-import { RESMI_MEVZUAT_SETLERI } from "./resmi-mevzuat";
+import { PARAMETRELER_2026_2 } from "./bordro-ilk-dolum.test-veri";
 import { aphbBildirgeleri, aphbDisiNedeni, hizmetSatiri, muhsgkOzeti, type HizmetGirdisi } from "./sgk-dokum";
 
-const p = RESMI_MEVZUAT_SETLERI[1].parametreler;
+const p = PARAMETRELER_2026_2;
 const hesap = (brut: number, ek: Partial<Parameters<typeof bordroHesapla>[1]> = {}) => bordroHesapla(p, { brutUcret: brut, primGunu: 30, oncekiKumulatifMatrah: 0, oncekiAsgariKumulatifMatrah: 0, ...ek });
 const girdi = (ek: Partial<HizmetGirdisi> = {}): HizmetGirdisi => ({
   personelId: "p1", personelNo: "PRS-000001", ad: "Ayşe", soyad: "Yılmaz", tckn: "10000000146", belgeTuru: "1", kanunNo: "05510", meslekKodu: "2411.01",

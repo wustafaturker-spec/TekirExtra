@@ -3,6 +3,7 @@ import { z } from "zod";
 import { MEVZUAT_TURLERI } from "@tekirextra/shared";
 import { aktifPlatformBaglam } from "../core/istek-baglami";
 import { PlatformUcu, Public } from "../auth/public.decorator";
+import { KABUL_SONUC_ALANLARI, kabulSenaryolariSemasi } from "./bordro-kabul";
 import { PlatformAuthService } from "./platform-auth.service";
 import { PlatformMevzuatService } from "./platform-mevzuat.service";
 
@@ -87,6 +88,24 @@ export class PlatformMevzuatController {
   async satirlar(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
     await this.mevzuat.satirlariYaz(id, ayristir(satirlarSemasi, govde).satirlar);
     return this.mevzuat.getir(id);
+  }
+
+  /** MVZ-14: bordro parametresi değişikliğinin kabul senaryoları. */
+  @Put("degisiklikler/:id/kabul-senaryolari")
+  async kabulSenaryolari(@Param("id", ParseUUIDPipe) id: string, @Body() govde: unknown) {
+    await this.mevzuat.kabulSenaryolariYaz(id, ayristir(kabulSenaryolariSemasi, govde).senaryolar);
+    return this.mevzuat.getir(id);
+  }
+
+  @Post("degisiklikler/:id/kabul-senaryolari/calistir")
+  async kabulCalistir(@Param("id", ParseUUIDPipe) id: string) {
+    await this.mevzuat.kabulSenaryolariCalistir(id);
+    return this.mevzuat.getir(id);
+  }
+
+  @Get("kabul-sonuc-alanlari")
+  kabulSonucAlanlari() {
+    return KABUL_SONUC_ALANLARI;
   }
 
   @Post("degisiklikler/:id/onaya-gonder")
