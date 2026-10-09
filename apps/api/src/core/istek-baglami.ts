@@ -13,8 +13,15 @@ export interface IstekBaglami {
   rol: Rol;
 }
 
+/** MVZ-04: platform ekibi kimliği; kiracı bağlamıyla aynı istekte bulunmaz. */
+export interface PlatformBaglami {
+  kullaniciId: string;
+  eposta: string;
+}
+
 interface BaglamTutucu {
   deger?: IstekBaglami;
+  platform?: PlatformBaglami;
 }
 
 export const istekBaglami = new AsyncLocalStorage<BaglamTutucu>();
@@ -45,4 +52,21 @@ export function aktifBaglam(): IstekBaglami {
 /** HTTP isteği dışındaki worker işlerini açık bir kimlik bağlamında çalıştırır. */
 export function baglamlaCalistir<T>(deger: IstekBaglami, is: () => Promise<T>): Promise<T> {
   return istekBaglami.run({ deger }, is);
+}
+
+/** AuthGuard platform ucunda doğrulanan platform token'ından kurar. */
+export function platformBaglamKur(deger: PlatformBaglami): void {
+  const tutucu = istekBaglami.getStore();
+  if (tutucu) tutucu.platform = deger;
+}
+
+export function aktifPlatformBaglam(): PlatformBaglami {
+  const deger = istekBaglami.getStore()?.platform;
+  if (!deger) throw new Error("Platform kimliği kurulmadan platform işlemi yapılamaz");
+  return deger;
+}
+
+/** Testler ve betikler için: açık bir platform kimliğinde çalıştırır. */
+export function platformBaglamiylaCalistir<T>(deger: PlatformBaglami, is: () => Promise<T>): Promise<T> {
+  return istekBaglami.run({ platform: deger }, is);
 }

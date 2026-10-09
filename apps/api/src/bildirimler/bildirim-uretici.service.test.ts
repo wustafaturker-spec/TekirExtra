@@ -34,6 +34,8 @@ interface TxSecenekleri {
   /** KSB-15: çekimi sorunlu Vomsis bağlantıları ve hesap başına bekleyen ekstre satırı. */
   bankaBaglantilari?: unknown[];
   bekleyenEkstre?: { bankaHesapId: string; _count: { _all: number } }[];
+  /** MVZ-07: son 30 günde yayınlanan mevzuat değişiklikleri (kiracısız tablo). */
+  mevzuatDegisiklikleri?: unknown[];
 }
 
 function servisKur(secenek: TxSecenekleri = {}) {
@@ -69,7 +71,10 @@ function servisKur(secenek: TxSecenekleri = {}) {
     user: { findMany: vi.fn().mockResolvedValue(secenek.yoneticiler ?? []) },
     $queryRaw: vi.fn().mockResolvedValue([{ sayi: BigInt(secenek.kritikStok ?? 0) }]),
   };
-  const prisma = { tenantIslem: vi.fn((_tenantId, calistir) => calistir(tx)) } as never;
+  const prisma = {
+    tenantIslem: vi.fn((_tenantId, calistir) => calistir(tx)),
+    mevzuatDegisiklik: { findMany: vi.fn().mockResolvedValue(secenek.mevzuatDegisiklikleri ?? []) },
+  } as never;
   const bildirimler = { uret: vi.fn().mockResolvedValue({ bildirimId: "b1", yeniTeslimat: 1 }), kapatEksikleri: vi.fn().mockResolvedValue(0) };
   const rapor = { vadesiGecenler: vi.fn().mockResolvedValue({ alacaklar: [], borclar: [], toplamAlacak: "0.00", toplamBorc: "0.00" }) };
   return { servis: new BildirimUreticiService(prisma, bildirimler as never, rapor as never), bildirimler, rapor, tx, teslimatCreateMany, bildirimUpdate };
@@ -103,6 +108,26 @@ describe("kart ekstresi bildirimi (KSB-10)", () => {
     ({ servis, bildirimler } = servisKur({ kartlar: [kart(1000)] }));
     await servis.tara();
     expect(bildirimler.uret.mock.calls.some(([g]) => g.birlesimAnahtari.startsWith("vade:kart:"))).toBe(false);
+  });
+});
+
+describe("mevzuat bildirimi (MVZ-07)", () => {
+  it("yayınlanan değişikliği yönetici ve muhasebeye bir kez duyurur; daha önce duyurulanı yeniden açmaz", async () => {
+    const degisiklik = (id: string) => ({ id, no: 3, baslik: "Tevkifat oranları", dayanak: "KDVGUT değişikliği", yururlukBaslangic: new Date("2026-11-01"), _count: { satirlar: 2 } });
+    const { servis, bildirimler, tx } = servisKur({ mevzuatDegisiklikleri: [degisiklik("d1"), degisiklik("d2")] });
+    tx.bildirim.findMany.mockImplementation(async ({ where }: { where: { birlesimAnahtari?: unknown } }) =>
+      where.birlesimAnahtari ? [{ birlesimAnahtari: "mevzuat:degisiklik:d1" }] : []);
+
+    await servis.tara();
+
+    const mevzuat = bildirimler.uret.mock.calls.map(([g]) => g).filter((g: { tur: string }) => g.tur === "mevzuat");
+    expect(mevzuat).toEqual([expect.objectContaining({
+      birlesimAnahtari: "mevzuat:degisiklik:d2", onem: "bilgi", roller: ["yonetici", "muhasebe"],
+      baslik: "Mevzuat güncellendi: Tevkifat oranları", hedefYol: "/panel/ayarlar/mevzuat?degisiklik=d2",
+    })]);
+    expect(mevzuat[0].aciklama).toContain("yürürlük 01.11.2026");
+    // Duyuru taramada kapatılmaz.
+    expect(bildirimler.kapatEksikleri.mock.calls.some(([tur]) => tur === "mevzuat")).toBe(false);
   });
 });
 

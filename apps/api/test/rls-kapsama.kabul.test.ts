@@ -11,8 +11,13 @@ import { afterAll, describe, expect, it } from "vitest";
  * dosyasına değil veritabanının gerçek durumuna bakar.
  */
 
-/** Kiracı bağlamı kurulmadan kullanılan kimlik tabloları (MIMARI §3). */
-const BILINCLI_ISTISNALAR = new Set(["auth_kimlikler", "oturumlar", "eposta_dogrulamalar"]);
+/**
+ * Kiracı bağlamı kurulmadan kullanılan kimlik tabloları (MIMARI §3).
+ * `mevzuat_talepleri` (MVZ-09/10) platform tablosudur: `tenant_id` yalnız
+ * bildirimi gönderen kiracıyı not eder; uygulama rolünün bu tabloda yalnız
+ * INSERT yetkisi vardır, okuyamaz (yetki migration 20261009120000'de).
+ */
+const BILINCLI_ISTISNALAR = new Set(["auth_kimlikler", "oturumlar", "eposta_dogrulamalar", "mevzuat_talepleri"]);
 
 const prisma = new PrismaClient({
   datasourceUrl: process.env.DATABASE_URL_MIGRATE ?? process.env.DATABASE_URL,

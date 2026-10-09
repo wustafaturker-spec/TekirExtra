@@ -5032,6 +5032,8 @@ enum BildirimTuru {
   satin_alma
   /// PRS-15 (P2-2): özlük belgesi süresi, onay bekleyen İK işleri.
   personel
+  /// MVZ-07: platform ekibinin yayınladığı mevzuat değişikliği.
+  mevzuat
 }
 
 enum BildirimOnemi {
@@ -5311,4 +5313,149 @@ model StokMaliyetDuzeltme {
   @@index([tenantId, hareketId])
   @@index([tenantId, calismaId])
   @@map("stok_maliyet_duzeltmeleri")
+}
+
+// ─── Mevzuat Merkezi (MVZ, 2026-10-09) ─────────────────────────────────────
+// Kiracıya ait olmayan tablolar: RLS yoktur. Uygulama rolü (tekir_app)
+// mevzuat kayıtlarını ve yayınlanan değişiklikleri yalnız okur; yazma
+// platform rolüyle (tekir_platform, DATABASE_URL_PLATFORM) yapılır (MVZ-16).
+
+/// MVZ-04: platform ekibi kullanıcısı; kiracı kullanıcılarından ayrıdır, hiçbir kiracı verisine erişmez.
+model PlatformKullanici {
+  id                String    @id @default(uuid()) @db.Uuid
+  eposta            String    @unique
+  adSoyad           String    @map("ad_soyad")
+  parolaHash        String    @map("parola_hash")
+  /// İki adımlı doğrulama zorunludur; gizli anahtar şifreli saklanır.
+  totpSecretSifreli String    @map("totp_secret_sifreli")
+  aktif             Boolean   @default(true)
+  sonGiris          DateTime? @map("son_giris")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  hazirlanan MevzuatDegisiklik[] @relation("Hazirlayan")
+  yayinlanan MevzuatDegisiklik[] @relation("Yayinlayan")
+
+  @@map("platform_kullanicilari")
+}
+
+enum MevzuatDegisiklikDurum {
+  taslak
+  onay_bekliyor
+  yayinlandi
+}
+
+enum MevzuatIslem {
+  ekle
+  degistir
+  kaldir
+}
+
+/// MVZ-05: bir mevzuat düzenlemesi (ör. bir tebliğ); birden çok kalemi aynı yürürlükle değiştirir.
+model MevzuatDegisiklik {
+  id                  String                 @id @default(uuid()) @db.Uuid
+  no                  Int                    @unique @default(autoincrement())
+  baslik              String
+  /// Mevzuat dayanağı: tebliğ/kılavuz adı, sayısı, tarihi (zorunlu).
+  dayanak             String
+  aciklama            String?
+  yururlukBaslangic   DateTime               @map("yururluk_baslangic") @db.Date
+  durum               MevzuatDegisiklikDurum @default(taslak)
+  hazirlayanId        String                 @map("hazirlayan_id") @db.Uuid
+  yayinlayanId        String?                @map("yayinlayan_id") @db.Uuid
+  onayaGonderimZamani DateTime?              @map("onaya_gonderim_zamani")
+  yayinZamani         DateTime?              @map("yayin_zamani")
+  /// Son geri çevirmenin gerekçesi; değişiklik taslağa döner.
+  retGerekcesi        String?                @map("ret_gerekcesi")
+  createdAt           DateTime               @default(now()) @map("created_at")
+  updatedAt           DateTime               @updatedAt @map("updated_at")
+
+  hazirlayan PlatformKullanici         @relation("Hazirlayan", fields: [hazirlayanId], references: [id])
+  yayinlayan PlatformKullanici?        @relation("Yayinlayan", fields: [yayinlayanId], references: [id])
+  satirlar   MevzuatDegisiklikSatiri[]
+  kayitlar   MevzuatKayit[]
+  olaylar    MevzuatOlay[]
+
+  @@index([durum, yayinZamani])
+  @@map("mevzuat_degisiklikleri")
+}
+
+model MevzuatDegisiklikSatiri {
+  id           String       @id @default(uuid()) @db.Uuid
+  degisiklikId String       @map("degisiklik_id") @db.Uuid
+  sira         Int
+  tur          String
+  anahtar      String
+  islem        MevzuatIslem
+  /// Kaldırmada boş.
+  deger        Json?
+
+  degisiklik MevzuatDegisiklik @relation(fields: [degisiklikId], references: [id], onDelete: Cascade)
+
+  @@unique([degisiklikId, tur, anahtar])
+  @@map("mevzuat_degisiklik_satirlari")
+}
+
+/// MVZ-01/02: yürürlükteki ve geçmiş değerler; belge kendi tarihindeki kaydı kullanır.
+model MevzuatKayit {
+  id                String    @id @default(uuid()) @db.Uuid
+  tur               String
+  anahtar           String
+  deger             Json
+  yururlukBaslangic DateTime  @map("yururluk_baslangic") @db.Date
+  yururlukBitis     DateTime? @map("yururluk_bitis") @db.Date
+  /// Kaydı getiren değişiklik; ilk dolumda (tohum) boş.
+  degisiklikId      String?   @map("degisiklik_id") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  degisiklik MevzuatDegisiklik? @relation(fields: [degisiklikId], references: [id])
+
+  @@index([tur, anahtar, yururlukBaslangic])
+  @@map("mevzuat_kayitlari")
+}
+
+/// MVZ-08: denetim izi; yalnız eklenir, değiştirilmez ve silinmez.
+model MevzuatOlay {
+  id           String   @id @default(uuid()) @db.Uuid
+  degisiklikId String?  @map("degisiklik_id") @db.Uuid
+  kullaniciId  String?  @map("kullanici_id") @db.Uuid
+  olay         String
+  detay        Json?
+  zaman        DateTime @default(now())
+
+  degisiklik MevzuatDegisiklik? @relation(fields: [degisiklikId], references: [id])
+
+  @@index([degisiklikId, zaman])
+  @@index([zaman])
+  @@map("mevzuat_olaylari")
+}
+
+enum MevzuatTalepKaynagi {
+  kiraci_bildirimi
+  bilinmeyen_kod
+}
+
+enum MevzuatTalepDurumu {
+  acik
+  cozuldu
+  reddedildi
+}
+
+/// MVZ-09/10: kiracının "eksik/hatalı bildir" kaydı ve gelen belgede görülen bilinmeyen kod.
+model MevzuatTalep {
+  id            String              @id @default(uuid()) @db.Uuid
+  kaynak        MevzuatTalepKaynagi
+  /// Kiracı bildiriminde gönderen kiracı; bilinmeyen kodda boş (kiracı adı taşınmaz).
+  tenantId      String?             @map("tenant_id") @db.Uuid
+  tur           String?
+  anahtar       String?
+  aciklama      String
+  gorulmeSayisi Int                 @default(1) @map("gorulme_sayisi")
+  durum         MevzuatTalepDurumu  @default(acik)
+  cozumNotu     String?             @map("cozum_notu")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+
+  @@index([durum, createdAt])
+  @@map("mevzuat_talepleri")
 }

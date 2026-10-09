@@ -56,6 +56,25 @@ varlığı kanıt değildir; hedef veritabanının kendisine bakılır.
    `tenant_id` sütunlu tablolar sayılır; hepsi 0 dönmeli. İşlem `ROLLBACK` ile
    kapatılır, veri değişmez.
 
+### Mevzuat Merkezi platform kurulumu (MVZ-04/16)
+
+Mevzuat değerleri (KDV, tevkifat, istisna kodları, kanuni süre/eşikler,
+bordro) kiracıya ait değildir; platform ekibi ayrı bir panelden (`/platform`)
+yönetir.
+
+1. `tekir_platform` rolünün parolası güçlü bir değerle değiştirilir
+   (`ALTER ROLE tekir_platform PASSWORD '…'`) ve `DATABASE_URL_PLATFORM`
+   buna göre tanımlanır. Rol yalnız mevzuat tablolarına yetkilidir.
+2. `PLATFORM_JWT_SECRET` güçlü ve `JWT_SECRET`'tan **farklı** bir değerle
+   tanımlanır; aynıysa ya da boşsa platform uçları kapalı kalır.
+3. Platform kullanıcıları yalnız sunucuda betikle açılır:
+   `node --env-file=.env dist/platform-kullanici-olustur.js <eposta> "<Ad Soyad>"`.
+   Parola ve doğrulayıcı anahtarı bir kez yazdırılır; dört göz için en az
+   **iki** kullanıcı gerekir.
+4. Doğrulama: uygulama rolüyle `INSERT INTO mevzuat_kayitlari …` ve
+   `SELECT … FROM platform_kullanicilari` "permission denied" vermeli; platform
+   rolüyle herhangi bir kiracı tablosu okunamamalı.
+
 ## Son kullanıcı kapsamı
 
 TekirExtra mevcut haliyle ön muhasebe ürünüdür. E-defter, bordro, resmi genel

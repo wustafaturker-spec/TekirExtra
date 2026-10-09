@@ -880,6 +880,60 @@ yalnız indirilir; yükleme kullanıcının SGK/GİB oturumunda yapılır.
 | PRS-27 | **Süre takibi bildirimleri** (BLD `personel` türü, İK ve muhasebe rolleri): işe giriş bildirgesi işaretlenmemiş istihdam dönemi için son tarih **başlangıçtan bir gün önce** (özel sektör, 5510 m.8); işten çıkış bildirgesi işaretlenmemiş dönem için **çıkıştan itibaren 10 gün**. Bildirim kişi başı tekil anahtarla üretilir, bildirge işaretlenince kalkar; son tarihi 30 günden daha eski olan gecikmiş kayıtlar bildirim üretmez (ekranda "verilmedi" görünmeye devam eder). | Z |
 | PRS-28 | **APHB XML'i** (MUHSGK sekmesinde, işyeri seçiliyken): PRS-26 hizmet satırlarından `APHB-3.1.xsd`'ye uygun `AYLIKBILDIRGELER` dosyası — `ISYERI` (sicil 21 hane + KONTROLNO + ARACINO, unvan/adres 50 karakter, vergi no), `BORDRO` (DONEMAY/DONEMYIL, tahakkuk nedeni A, belge mahiyeti A — asıl), belge türü + kanun no ikilisi başına bir `BILDIRGELER`, kişi başı `SIGORTALI` (sıra, TCKN, ad/soyad 18 karakter, PEK = ücret + prim/ikramiye, prim/ikramiye, gün, giriş/çıkış günü, eksik gün sayısı/nedeni, işten çıkış nedeni, meslek kodu). Yalnız hesap izi olan onaylı bordrolar girer; dosya üretildikten sonra şemaya karşı doğrulanır, hata varsa indirilmez ve hata gösterilir. İndirme denetim kaydına yazılır. Ek/iptal belge (mahiyet E/İ) ve geçmiş dönem tahakkuk nedenleri bu pakette yok. | Z |
 
+### 3.17 Mevzuat Merkezi (MVZ)
+
+Karar gerekçesi (2026-10-09, kullanıcı önerisi): vergi ve belge mevzuatına
+bağlı değerler (KDV oranları, tevkifat kodları/oranları, istisna kodları,
+kanuni süre ve eşikler) firmanın tercihi değil, herkes için aynı olan kanun
+bilgisidir. Kiracının bunları değiştirebilmesi hatalı belge riskini artırır;
+mevzuat takibi ürünün sorumluluğundadır. Bu değerler **merkezi**, **yürürlük
+tarihli** tablolarda tutulur; yalnız platform ekibi değiştirir ve tüm
+kiracılar için aynı anda geçerli olur.
+
+Onay (2026-10-09, kullanıcı): ilk paket MVZ-11…14'ün **hepsi** (KDV, tevkifat,
+kanuni süre/eşikler, bordro); platform ekibi **ayrı platform panelinden**
+çalışır; yayın **dört göz** (hazırlayan ≠ yayınlayan); kiracı **yalnız
+gizleyebilir**.
+
+**Aşama 1 (altyapı) bitti — 2026-10-09:** merkezi tablolar ve yetkiler (göç
+`20261009120000_mevzuat_merkezi`), yürürlük çözümü, platform rolü/girişi
+(parola + doğrulama kodu, ayrı JWT anahtarı), `/platform` paneli
+(değişiklikler, kalem düzenleyici, onay/yayın/geri çevirme, yürürlükteki
+değerler, talepler, denetim izi), dört göz, değişmezlik tetikleyicileri,
+kiracıya bildirim (BLD `mevzuat` türü), kiracı **Ayarlar > Mevzuat** sayfası ve
+"eksik/hatalı bildir". Tablolar boştur; ilk dolum ve tüketim aşama 2–5'te
+(tevkifat → KDV → süre/eşikler → bordro). Henüz yapılmayan: **MVZ-06 etki
+önizlemesi** (tüketen modül bağlandıkça, aşama 2'den itibaren), **MVZ-09
+kiracının kod gizlemesi** ve **MVZ-10 bilinmeyen kod kaydı** (aşama 2, gelen
+fatura kapısıyla). Kod: `apps/api/src/mevzuat/`, `packages/shared/src/mevzuat.ts`,
+`apps/web/src/app/platform/`. Bulgu: tevkifat tablosu GİB kod listesi
+v1.17'de kalmış, gelen belgelerden fark edilmişti (EBLG-115…119, FTR-35).
+
+Mevcut durum: değerler kodda sabit (`packages/shared/src/gib-kodlari.ts`),
+bir kısmı kiracı ayarında (BA/BS eşiği CARI-37, e-Arşiv iptal süresi EBLG-22,
+irsaliye–fatura süresi EBLG-82, FTR-35 tevkifat değişiklikleri), bordro
+parametreleri kiracıya kopyalanan setlerde (PRS-11). KDV oranı formlarda
+serbest yazılıyor (0–100).
+
+| No | İster | Öncelik |
+|---|---|---|
+| MVZ-01 | ✅ **Merkezi mevzuat tabloları:** kiracıya ait olmayan (tenant kimliği taşımayan) tablolarda tutulur; bütün kiracılar okur, yalnız platform ekibi yazar. İlk paket MVZ-11…14 kalemlerinin tamamıdır. Koddaki sabitler (`TEVKIFAT_KODLARI` vb.) yalnız **ilk dolum** için kullanılır; çalışma anında kaynak veritabanıdır. Web istemcisi tabloyu API'den alır, kendi kopyasını taşımaz. | Z |
+| MVZ-02 | ✅ **Yürürlük tarihi:** her değer bir yürürlük başlangıcı (ve varsa bitişi) taşır; aynı kalem için dönemler çakışmaz. Belge **kendi tarihindeki** değeri kullanır: fatura tarihi, gelen belgede belgenin tarihi. Örnek: 601 tevkifatı 2024 değişikliğinden önce 3/10, sonra 4/10; değişiklikten önceki tarihli bir taslak 3/10 ile hesaplanır (yürürlük tarihleri tabloya dayanağından girilir). KDV oranı 2023-07-10 öncesi %8/%18, sonrası %10/%20. | Z |
+| MVZ-03 | **Geçmiş belgeye etkisi:** kesinleşmiş belge satırda sakladığı değerle kalır, hiçbir değişiklik onu yeniden hesaplamaz. Taslak bir sonraki kaydedişte, kendi tarihindeki değerle yeniden hesaplanır. | Z |
+| MVZ-04 | ✅ **Platform yöneticisi rolü:** kiracı rollerinden (kiracı "yönetici"si dahil) ayrı bir rol; hiçbir kiracının verisine erişmez, yalnız Mevzuat Merkezi'ni yönetir. Girişte iki adımlı doğrulama zorunlu. Platform kullanıcısı kiracı panelinden açılamaz; **ayrı platform paneli** (`/platform`, ayrı giriş) kullanılır: tablolar, etki önizlemesi, yayın kuyruğu, denetim izi, "bilinmeyen kod" ve kiracı bildirimleri listesi. | Z |
+| MVZ-05 | ✅ **Değişiklik akışı:** taslak → yayın. Her değişiklikte **mevzuat dayanağı** (tebliğ/kılavuz adı, sayısı, tarihi) ve **yürürlük tarihi** zorunlu. Yayınlanan değer değiştirilmez; düzeltme yeni bir kayıtla yapılır (eskisi bitiş tarihi alır). **Dört göz:** hazırlayan kişi yayınlayamaz; ikinci bir platform yetkilisi dayanağı kontrol edip yayınlar ya da gerekçeyle geri çevirir. | Z |
+| MVZ-06 | **Etki önizlemesi:** yayından önce değişikliğin etkileyeceği **taslak** belge sayısı (toplam ve kiracı sayısı; kiracı verisi gösterilmez) ve pasifleşen kodu kullanan taslaklar gösterilir. | Z |
+| MVZ-07 | ✅ **Bildirim:** yayınlanan değişiklik bütün kiracıların yönetici ve muhasebe rollerine Bildirim Merkezi kaydı olarak gider (BLD): ne değişti, yürürlük tarihi, dayanağı. Kiracı panelinde **Ayarlar > Mevzuat** salt okunur görünümü: güncel ve geçmiş değerler, dayanakları. | Z |
+| MVZ-08 | ✅ **Denetim izi:** her değişiklik eski/yeni değer, kişi, zaman ve dayanakla saklanır; silinemez. | Z |
+| MVZ-09 | **Kiracıya kalan tercihler:** kiracı mevzuat değerini (oran, kod, ad, süre, eşik) **değiştiremez**. Yalnız kullanmadığı kodu kendi listesinden gizleyebilir (pasif; gelen belgede yine tanınır) ve varsayılan seçimlerini belirler (ör. yeni satırın varsayılan KDV oranı, geçerli oranlar arasından). Kiracı ekranında **"Eksik / hatalı bildir"** ile platform ekibine talep açılır. | Z |
+| MVZ-10 | **Gelen belgede bilinmeyen değer:** gelen e-Faturada merkezi tabloda olmayan bir kod ya da belgenin tarihinde geçersiz bir oran görülürse belge kapıda durur (EBLG-115) ve platform ekibine "bilinmeyen kod/oran" kaydı düşer (kod, oran, belge tarihi, görülme sayısı; kiracı adı ve belge içeriği taşınmaz). Mevzuat değişikliğinin erken işareti olarak kullanılır. | Z |
+| MVZ-11 | **İlk paket — KDV:** geçerli KDV oranları (yürürlük tarihli liste); fatura, stok kartı, masraf ve diğer KDV'li formlarda oran serbest yazılmaz, belge tarihindeki listeden seçilir; liste dışı oran reddedilir. KDV istisna kodları, özel matrah kodları, ihraç kayıtlı kodları da merkezi tabloya taşınır. | Z |
+| MVZ-12 | **İlk paket — tevkifat:** tevkifat kodları ve oranları (FTR-35'in yerini alır). Tevkifat alt sınırı (2026 için KDV dahil 12.000 TL bildiriliyor; dayanağı yüklemede doğrulanır) da tutulur; sınırın altındaki tevkifatlı satırda uyarı verilir. | Z |
+| MVZ-13 | **İlk paket — kanuni süre ve eşikler:** BA/BS bildirim eşiği (CARI-37), e-Arşiv iptal süresi (EBLG-22), irsaliye–fatura süresi (EBLG-82) kiracı ayarından kaldırılıp merkeze taşınır. Entegratör sorgu sıklığı gibi işletim ayarları kiracıda kalır. | Z |
+| MVZ-14 | **İlk paket — bordro:** bordro mevzuat setleri (asgari ücret, SGK oran ve tavanı, gelir vergisi dilimleri, damga vergisi, istisnalar; PRS-11) merkezi olur; kiracıya kopyalanmaz, kiracıdaki taslak/onay adımı kalkar. Kabul senaryoları yayından önce platformda çalıştırılır. Onaylı bordrolar saklı değerleriyle kalır. | Z |
+| MVZ-15 | **FTR-35 dönüşümü:** kiracının tevkifat oranı değiştirme ve kod ekleme yetkisi kalkar; pasif yapma MVZ-09 olarak kalır. Göçte kiracı ayarlarındaki oran/ad/eklenen kod değişiklikleri silinir, pasif işaretleri korunur; silinen değişiklik varsa platform ekibine listelenir. | Z |
+| MVZ-16 | ✅ **Güvenlik:** merkezi tablolar kiracı RLS politikasına tabi değildir; uygulama veritabanı kullanıcısı bu tablolarda yalnız okuma yetkisine sahiptir, yazma yalnız platform uçlarından ve ayrı yetkiyle yapılır. | Z |
+
 ## 4. Fonksiyonel Olmayan İsterler
 
 ### 4.1 Performans

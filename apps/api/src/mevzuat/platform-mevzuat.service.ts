@@ -1,0 +1,273 @@
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import type { MevzuatDegisiklikDurum, MevzuatTalepDurumu, Prisma } from "@prisma/client";
+import { mevzuatDegerHatalari, mevzuatTuruMu } from "@tekirextra/shared";
+import { aktifPlatformBaglam } from "../core/istek-baglami";
+import { PlatformPrismaService } from "./platform-prisma.service";
+import { yayinPlani, yururluktedir, type PlanKaydi, type PlanSatiri } from "./yayin-plani";
+
+const gun = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
+/** Bu olayları kaydeden kişi değişikliğin hazırlayanlarındandır; yayınlayamaz (dört göz). */
+const DUZENLEME_OLAYLARI = ["olusturuldu", "guncellendi", "satirlar_guncellendi", "onaya_gonderildi"];
+
+export interface DegisiklikGirdisi { baslik: string; dayanak: string; aciklama?: string | null; yururlukBaslangic: string }
+export interface SatirGirdisi { tur: string; anahtar: string; islem: "ekle" | "degistir" | "kaldir"; deger?: unknown }
+
+/**
+ * Mevzuat Merkezi platform işlemleri (MVZ-04…08). Yalnız `tekir_platform`
+ * bağlantısını kullanır. Akış: taslak → onay bekliyor → yayınlandı; geri
+ * çevrilen değişiklik gerekçesiyle taslağa döner. Yayınlanan değişiklik
+ * veritabanı tetikleyicisiyle de değiştirilemez.
+ */
+@Injectable()
+export class PlatformMevzuatService {
+  constructor(private readonly platform: PlatformPrismaService) {}
+
+  private get db() {
+    return this.platform.db;
+  }
+
+  private async olay(tx: Prisma.TransactionClient, degisiklikId: string | null, olay: string, detay?: Prisma.InputJsonValue) {
+    await tx.mevzuatOlay.create({ data: { degisiklikId, kullaniciId: aktifPlatformBaglam().kullaniciId, olay, detay } });
+  }
+
+  async listele(durum?: MevzuatDegisiklikDurum) {
+    const liste = await this.db.mevzuatDegisiklik.findMany({
+      where: durum ? { durum } : undefined,
+      orderBy: [{ no: "desc" }],
+      take: 200,
+      include: { hazirlayan: { select: { adSoyad: true } }, yayinlayan: { select: { adSoyad: true } }, _count: { select: { satirlar: true } } },
+    });
+    return liste.map(({ _count, ...d }) => ({ ...d, yururlukBaslangic: gun(d.yururlukBaslangic), satirSayisi: _count.satirlar }));
+  }
+
+  /** Değişiklik + satırlar + her satırın şu an yürürlükteki değeri + olaylar + kullanıcının yapabilecekleri. */
+  async getir(id: string) {
+    const d = await this.db.mevzuatDegisiklik.findUnique({
+      where: { id },
+      include: {
+        satirlar: { orderBy: { sira: "asc" } },
+        hazirlayan: { select: { adSoyad: true, eposta: true } },
+        yayinlayan: { select: { adSoyad: true, eposta: true } },
+        olaylar: { orderBy: { zaman: "asc" } },
+      },
+    });
+    if (!d) throw new NotFoundException("Mevzuat değişikliği bulunamadı");
+    const yururluk = gun(d.yururlukBaslangic)!;
+    const mevcut = await this.planKayitlari(this.db, d.satirlar);
+    const kullanicilar = new Map((await this.db.platformKullanici.findMany({
+      where: { id: { in: [...new Set(d.olaylar.map((o) => o.kullaniciId).filter((x): x is string => Boolean(x)))] } },
+      select: { id: true, adSoyad: true },
+    })).map((k) => [k.id, k.adSoyad]));
+    const { kullaniciId } = aktifPlatformBaglam();
+    const duzenleyen = this.duzenleyenler(d);
+    const plan = d.durum === "yayinlandi" ? null : yayinPlani(mevcut, d.satirlar.map(satirPlani), yururluk);
+
+    return {
+      ...d,
+      yururlukBaslangic: yururluk,
+      satirlar: d.satirlar.map((s) => {
+        // Yayınlanmamışta karşılaştırma için yürürlükten önceki son değer.
+        const onceki = mevcut.filter((k) => k.tur === s.tur && k.anahtar === s.anahtar && k.yururlukBaslangic < yururluk)
+          .sort((a, b) => b.yururlukBaslangic.localeCompare(a.yururlukBaslangic))[0];
+        return { ...s, oncekiDeger: onceki ? (onceki as PlanKaydi & { deger: unknown }).deger : null, oncekiYururluk: onceki?.yururlukBaslangic ?? null };
+      }),
+      olaylar: d.olaylar.map((o) => ({ ...o, kullanici: o.kullaniciId ? kullanicilar.get(o.kullaniciId) ?? null : null })),
+      planHatalari: plan?.hatalar ?? [],
+      izinler: {
+        duzenle: d.durum === "taslak",
+        onayaGonder: d.durum === "taslak",
+        taslagaCek: d.durum === "onay_bekliyor" && duzenleyen.has(kullaniciId),
+        yayinla: d.durum === "onay_bekliyor" && !duzenleyen.has(kullaniciId),
+        geriCevir: d.durum === "onay_bekliyor" && !duzenleyen.has(kullaniciId),
+      },
+    };
+  }
+
+  async olustur(girdi: DegisiklikGirdisi) {
+    const { kullaniciId } = aktifPlatformBaglam();
+    return this.db.$transaction(async (tx) => {
+      const d = await tx.mevzuatDegisiklik.create({
+        data: { baslik: girdi.baslik.trim(), dayanak: girdi.dayanak.trim(), aciklama: girdi.aciklama?.trim() || null, yururlukBaslangic: new Date(girdi.yururlukBaslangic), hazirlayanId: kullaniciId },
+      });
+      await this.olay(tx, d.id, "olusturuldu", { baslik: d.baslik, dayanak: d.dayanak, yururlukBaslangic: girdi.yururlukBaslangic });
+      return { id: d.id, no: d.no };
+    });
+  }
+
+  async guncelle(id: string, girdi: DegisiklikGirdisi) {
+    await this.db.$transaction(async (tx) => {
+      await this.taslakOlmali(tx, id);
+      await tx.mevzuatDegisiklik.update({
+        where: { id },
+        data: { baslik: girdi.baslik.trim(), dayanak: girdi.dayanak.trim(), aciklama: girdi.aciklama?.trim() || null, yururlukBaslangic: new Date(girdi.yururlukBaslangic) },
+      });
+      await this.olay(tx, id, "guncellendi", { baslik: girdi.baslik, dayanak: girdi.dayanak, yururlukBaslangic: girdi.yururlukBaslangic });
+    });
+  }
+
+  async sil(id: string) {
+    await this.db.$transaction(async (tx) => {
+      const d = await this.taslakOlmali(tx, id);
+      await this.olay(tx, id, "silindi", { no: d.no, baslik: d.baslik });
+      await tx.mevzuatDegisiklik.delete({ where: { id } });
+    });
+  }
+
+  /** Satır listesinin tamamı yazılır; değerler türün kuralıyla denetlenir. */
+  async satirlariYaz(id: string, satirlar: SatirGirdisi[]) {
+    const hatalar: string[] = [];
+    satirlar.forEach((s, i) => {
+      if (!mevzuatTuruMu(s.tur)) hatalar.push(`${i + 1}. satır: tanımsız tür ${s.tur}`);
+      else if (s.islem !== "kaldir") for (const h of mevzuatDegerHatalari(s.tur, s.anahtar, s.deger)) hatalar.push(`${i + 1}. satır (${s.anahtar}): ${h}`);
+    });
+    const anahtarlar = satirlar.map((s) => `${s.tur}/${s.anahtar}`);
+    if (new Set(anahtarlar).size !== anahtarlar.length) hatalar.push("Aynı kalem birden çok kez girilmiş");
+    if (hatalar.length) throw new BadRequestException(hatalar.join("; "));
+
+    await this.db.$transaction(async (tx) => {
+      await this.taslakOlmali(tx, id);
+      await tx.mevzuatDegisiklikSatiri.deleteMany({ where: { degisiklikId: id } });
+      await tx.mevzuatDegisiklikSatiri.createMany({
+        data: satirlar.map((s, i) => ({
+          degisiklikId: id, sira: i + 1, tur: s.tur, anahtar: s.anahtar.trim(), islem: s.islem,
+          deger: s.islem === "kaldir" ? undefined : (s.deger as Prisma.InputJsonValue),
+        })),
+      });
+      await this.olay(tx, id, "satirlar_guncellendi", { satirlar: satirlar.map((s) => ({ tur: s.tur, anahtar: s.anahtar, islem: s.islem, deger: s.deger ?? null })) as Prisma.InputJsonValue });
+    });
+  }
+
+  async onayaGonder(id: string) {
+    await this.db.$transaction(async (tx) => {
+      const d = await this.taslakOlmali(tx, id);
+      const satirlar = await tx.mevzuatDegisiklikSatiri.findMany({ where: { degisiklikId: id }, orderBy: { sira: "asc" } });
+      const plan = yayinPlani(await this.planKayitlari(tx, satirlar), satirlar.map(satirPlani), gun(d.yururlukBaslangic)!);
+      if (plan.hatalar.length) throw new BadRequestException(plan.hatalar.join("; "));
+      await this.durumGecisi(tx, id, "taslak", { durum: "onay_bekliyor", onayaGonderimZamani: new Date(), retGerekcesi: null });
+      await this.olay(tx, id, "onaya_gonderildi");
+    });
+  }
+
+  /** Hazırlayan, onay bekleyen değişikliği düzeltmek için geri çeker. */
+  async taslagaCek(id: string) {
+    await this.db.$transaction(async (tx) => {
+      const d = await this.onayBekleyenOlmali(tx, id);
+      if (!this.duzenleyenler(d).has(aktifPlatformBaglam().kullaniciId)) throw new ForbiddenException("Yalnız hazırlayanlar taslağa çekebilir; siz geri çevirebilirsiniz");
+      await this.durumGecisi(tx, id, "onay_bekliyor", { durum: "taslak", onayaGonderimZamani: null });
+      await this.olay(tx, id, "taslaga_cekildi");
+    });
+  }
+
+  async geriCevir(id: string, gerekce: string) {
+    await this.db.$transaction(async (tx) => {
+      const d = await this.onayBekleyenOlmali(tx, id);
+      this.dortGoz(d);
+      await this.durumGecisi(tx, id, "onay_bekliyor", { durum: "taslak", onayaGonderimZamani: null, retGerekcesi: gerekce.trim() });
+      await this.olay(tx, id, "geri_cevrildi", { gerekce: gerekce.trim() });
+    });
+  }
+
+  /**
+   * Dört göz: değişikliği hazırlayan ya da düzenleyen kişi yayınlayamaz. Plan
+   * yayın anındaki kayıtlarla yeniden kurulur (onaydan sonra başka bir
+   * değişiklik yayınlanmış olabilir).
+   */
+  async yayinla(id: string) {
+    const { kullaniciId } = aktifPlatformBaglam();
+    return this.db.$transaction(async (tx) => {
+      // Aynı anda iki yayını sıraya sokar: kayıt planı tutarlı kalır.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('mevzuat_yayin'))`;
+      const d = await this.onayBekleyenOlmali(tx, id);
+      this.dortGoz(d);
+      const satirlar = await tx.mevzuatDegisiklikSatiri.findMany({ where: { degisiklikId: id }, orderBy: { sira: "asc" } });
+      const yururluk = gun(d.yururlukBaslangic)!;
+      const plan = yayinPlani(await this.planKayitlari(tx, satirlar), satirlar.map(satirPlani), yururluk);
+      if (plan.hatalar.length) throw new BadRequestException(`Yayınlanamadı: ${plan.hatalar.join("; ")}`);
+
+      for (const k of plan.kapat) await tx.mevzuatKayit.update({ where: { id: k.id }, data: { yururlukBitis: new Date(k.yururlukBitis) } });
+      if (plan.ekle.length) {
+        await tx.mevzuatKayit.createMany({
+          data: plan.ekle.map((e) => ({ tur: e.tur, anahtar: e.anahtar, deger: e.deger as Prisma.InputJsonValue, yururlukBaslangic: new Date(e.yururlukBaslangic), degisiklikId: id })),
+        });
+      }
+      // Olay, durum yayınlandı olmadan önce yazılır: sonrasında değişiklik satırı kilitlenir.
+      await this.olay(tx, id, "yayinlandi", { kapatilan: plan.kapat.length, eklenen: plan.ekle.length });
+      await this.durumGecisi(tx, id, "onay_bekliyor", { durum: "yayinlandi", yayinlayanId: kullaniciId, yayinZamani: new Date() });
+      return { kapatilan: plan.kapat.length, eklenen: plan.ekle.length };
+    });
+  }
+
+  /** Bir türün belirli tarihte yürürlükteki kayıtları (ya da bir anahtarın tüm geçmişi). */
+  async kayitlar(tur: string, tarih?: string, anahtar?: string) {
+    const kayitlar = await this.db.mevzuatKayit.findMany({
+      where: { tur, ...(anahtar ? { anahtar } : {}) },
+      orderBy: [{ anahtar: "asc" }, { yururlukBaslangic: "asc" }],
+      include: { degisiklik: { select: { no: true, baslik: true, dayanak: true } } },
+    });
+    const liste = kayitlar.map((k) => ({ ...k, yururlukBaslangic: gun(k.yururlukBaslangic)!, yururlukBitis: gun(k.yururlukBitis) }));
+    return anahtar || !tarih ? liste : liste.filter((k) => yururluktedir(k, tarih));
+  }
+
+  async olaylar(sayfa = 1) {
+    const take = 100;
+    const olaylar = await this.db.mevzuatOlay.findMany({ orderBy: { zaman: "desc" }, skip: (Math.max(1, sayfa) - 1) * take, take, include: { degisiklik: { select: { no: true, baslik: true } } } });
+    const kullanicilar = new Map((await this.db.platformKullanici.findMany({ select: { id: true, adSoyad: true } })).map((k) => [k.id, k.adSoyad]));
+    return olaylar.map((o) => ({ ...o, kullanici: o.kullaniciId ? kullanicilar.get(o.kullaniciId) ?? null : null }));
+  }
+
+  async talepler(durum?: MevzuatTalepDurumu) {
+    return this.db.mevzuatTalep.findMany({ where: durum ? { durum } : undefined, orderBy: [{ createdAt: "desc" }], take: 300 });
+  }
+
+  async talepGuncelle(id: string, durum: MevzuatTalepDurumu, cozumNotu?: string | null) {
+    await this.db.$transaction(async (tx) => {
+      const sonuc = await tx.mevzuatTalep.updateMany({ where: { id }, data: { durum, cozumNotu: cozumNotu?.trim() || null } });
+      if (!sonuc.count) throw new NotFoundException("Talep bulunamadı");
+      await this.olay(tx, null, "talep_guncellendi", { talepId: id, durum, cozumNotu: cozumNotu ?? null });
+    });
+  }
+
+  // ─── yardımcılar ────────────────────────────────────────────────────────
+
+  private async planKayitlari(tx: Pick<Prisma.TransactionClient, "mevzuatKayit">, satirlar: { tur: string; anahtar: string }[]) {
+    if (!satirlar.length) return [] as (PlanKaydi & { deger: unknown })[];
+    const kayitlar = await tx.mevzuatKayit.findMany({
+      where: { OR: satirlar.map((s) => ({ tur: s.tur, anahtar: s.anahtar })) },
+    });
+    return kayitlar.map((k) => ({ id: k.id, tur: k.tur, anahtar: k.anahtar, deger: k.deger, yururlukBaslangic: gun(k.yururlukBaslangic)!, yururlukBitis: gun(k.yururlukBitis) }));
+  }
+
+  private duzenleyenler(d: { hazirlayanId: string; olaylar: { kullaniciId: string | null; olay: string }[] }): Set<string> {
+    return new Set([d.hazirlayanId, ...d.olaylar.filter((o) => DUZENLEME_OLAYLARI.includes(o.olay) && o.kullaniciId).map((o) => o.kullaniciId!)]);
+  }
+
+  private dortGoz(d: { hazirlayanId: string; olaylar: { kullaniciId: string | null; olay: string }[] }) {
+    if (this.duzenleyenler(d).has(aktifPlatformBaglam().kullaniciId)) {
+      throw new ForbiddenException("Dört göz ilkesi: değişikliği hazırlayan ya da düzenleyen kişi yayınlayamaz ve geri çeviremez");
+    }
+  }
+
+  private async taslakOlmali(tx: Prisma.TransactionClient, id: string) {
+    const d = await tx.mevzuatDegisiklik.findUnique({ where: { id } });
+    if (!d) throw new NotFoundException("Mevzuat değişikliği bulunamadı");
+    if (d.durum !== "taslak") throw new ConflictException(d.durum === "yayinlandi" ? "Yayınlanan değişiklik değiştirilemez" : "Onay bekleyen değişiklik düzenlenemez; önce taslağa çekin");
+    return d;
+  }
+
+  private async onayBekleyenOlmali(tx: Prisma.TransactionClient, id: string) {
+    const d = await tx.mevzuatDegisiklik.findUnique({ where: { id }, include: { olaylar: { select: { kullaniciId: true, olay: true } } } });
+    if (!d) throw new NotFoundException("Mevzuat değişikliği bulunamadı");
+    if (d.durum !== "onay_bekliyor") throw new ConflictException("Değişiklik onay beklemiyor");
+    return d;
+  }
+
+  /** Eşzamanlı iki işlemden yalnız biri durumu değiştirir. */
+  private async durumGecisi(tx: Prisma.TransactionClient, id: string, beklenen: MevzuatDegisiklikDurum, data: Prisma.MevzuatDegisiklikUpdateManyMutationInput & { yayinlayanId?: string }) {
+    const sonuc = await tx.mevzuatDegisiklik.updateMany({ where: { id, durum: beklenen }, data });
+    if (!sonuc.count) throw new ConflictException("Değişikliğin durumu bu arada değişti; sayfayı yenileyin");
+  }
+}
+
+function satirPlani(s: { tur: string; anahtar: string; islem: "ekle" | "degistir" | "kaldir"; deger: unknown }): PlanSatiri {
+  return { tur: s.tur, anahtar: s.anahtar, islem: s.islem, deger: s.deger };
+}

@@ -38,6 +38,7 @@ import { BildirimlerModule } from "./bildirimler/bildirimler.module";
 import { NakitAkisiModule } from "./nakit-akisi/nakit-akisi.module";
 import { ButceModule } from "./butce/butce.module";
 import { SatinAlmaModule } from "./satin-alma/satin-alma.module";
+import { MevzuatModule } from "./mevzuat/mevzuat.module";
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { SatinAlmaModule } from "./satin-alma/satin-alma.module";
     ConfigModule.forRoot({ isGlobal: true }),
     CoreModule,
     AuthModule,
+    MevzuatModule,
     TenantModule,
     BelgelerModule,
     CariModule,

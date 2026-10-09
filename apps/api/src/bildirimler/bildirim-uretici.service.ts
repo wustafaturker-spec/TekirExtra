@@ -33,6 +33,7 @@ const HEDEF_ROLLER: Record<BildirimTuru, Rol[]> = {
   entegrasyon: ["yonetici", "muhasebe"],
   satin_alma: ["yonetici", "muhasebe"],
   personel: ["yonetici", "muhasebe", "ik"],
+  mevzuat: ["yonetici", "muhasebe"],
 };
 
 /**
@@ -68,6 +69,8 @@ const TARAMA_ONEKLERI: Record<BildirimTuru, string[]> = {
   entegrasyon: ["duzeltme:", "banka-senkron:", "ekstre-bekleyen:"],
   satin_alma: ["duzeltme:", "satin_alma:"],
   personel: ["personel:"],
+  // MVZ-07: duyurudur, "artık tespit edilmiyor" diye kapanmaz; taramada kapatılmaz.
+  mevzuat: [],
 };
 
 function gunAnahtari(tarih = new Date()): string {
@@ -105,6 +108,7 @@ export class BildirimUreticiService {
       ...(await this.satinAlmaOnaylari()),
       ...(await this.bankaEntegrasyonu()),
       ...(await this.personelBildirimleri()),
+      ...(await this.mevzuatDegisiklikleri()),
     ];
 
     let yeniTeslimat = 0;
@@ -249,6 +253,36 @@ export class BildirimUreticiService {
    * rollere bildirilir; karara bağlanınca ya da geri çekilince tespit edilmez ve
    * bildirim kapanır.
    */
+  /**
+   * MVZ-07: platform ekibinin son 30 günde yayınladığı mevzuat değişiklikleri.
+   * Her değişiklik kiracıya bir kez duyurulur: daha önce üretilmiş (kapatılmış
+   * olsa bile) bildirim yeniden açılmaz.
+   */
+  private async mevzuatDegisiklikleri(): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const degisiklikler = await this.prisma.mevzuatDegisiklik.findMany({
+      where: { durum: "yayinlandi", yayinZamani: { gte: gunEkle(new Date(), -30) } },
+      select: { id: true, no: true, baslik: true, dayanak: true, yururlukBaslangic: true, _count: { select: { satirlar: true } } },
+      orderBy: { yayinZamani: "asc" },
+    });
+    if (!degisiklikler.length) return [];
+    const anahtar = (id: string) => `mevzuat:degisiklik:${id}`;
+    const mevcut = new Set((await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.bildirim.findMany({ where: { birlesimAnahtari: { in: degisiklikler.map((d) => anahtar(d.id)) } }, select: { birlesimAnahtari: true } }),
+    )).map((b) => b.birlesimAnahtari));
+    return degisiklikler.filter((d) => !mevcut.has(anahtar(d.id))).map((d) => ({
+      tur: "mevzuat" as const,
+      onem: "bilgi" as const,
+      baslik: `Mevzuat güncellendi: ${d.baslik}`,
+      aciklama: `${d._count.satirlar} kalem · yürürlük ${d.yururlukBaslangic.toLocaleDateString("tr-TR", { timeZone: "UTC" })} · dayanak: ${d.dayanak}`,
+      birlesimAnahtari: anahtar(d.id),
+      kaynakTur: "mevzuat_degisiklik",
+      kaynakRef: d.id,
+      hedefYol: `/panel/ayarlar/mevzuat?degisiklik=${d.id}`,
+      roller: HEDEF_ROLLER.mevzuat,
+    }));
+  }
+
   private async satinAlmaOnaylari(): Promise<BildirimGirdisi[]> {
     const { tenantId } = aktifBaglam();
     const ayar = this.ayarlar ? await this.ayarlar.getir("satin_alma") : {};
