@@ -143,7 +143,11 @@ export function gelenFaturaHesabi(girdi: GelenFaturaGirdisi, kdvTahsilEdilmez: b
 }
 
 export interface TutarFarki { alan: "matrah" | "kdv" | "tevkifat" | "odenecek"; ad: string; belge: number; sistem: number; fark: number }
-export interface TutarDenetimi { tolerans: number; satirlar: TutarFarki[]; asanlar: TutarFarki[]; gecerli: boolean }
+export interface TutarDenetimi {
+  tolerans: number; satirlar: TutarFarki[]; asanlar: TutarFarki[]; gecerli: boolean;
+  /** Farkın ya da belge kartı ile tablo arasındaki ayrımın bilinen nedenleri (ekranda gösterilir). */
+  aciklamalar: string[];
+}
 
 /**
  * EBLG-115: belge dövizinde karşılaştırma; tolerans satır sayısı × 0,01 (en
@@ -164,7 +168,15 @@ export function tutarDenetimi(ubl: UblFatura, hesap: FaturaHesaplaSonuc, ihracKa
       : satir("odenecek", "Ödenecek tutar", t.odenecek || t.genelToplam, hesap.genelToplam),
   ];
   const asanlar = satirlar.filter((s) => Math.abs(s.fark) > tolerans + 1e-9);
-  return { tolerans, satirlar, asanlar, gecerli: asanlar.length === 0 };
+  const tl = (v: number) => `${v.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${ubl.dovizCinsi}`;
+  const aciklamalar: string[] = [];
+  if (t.kdvIcindeTevkifat > 0 && t.tevkifat === 0) {
+    aciklamalar.push(`Belgedeki ${tl(t.kdvIcindeTevkifat)} tevkifat (9015) standart tevkifat alanına değil KDV toplamının içine yazılmış; sistem bunu tevkifat olarak okuyamadığı için ödenecek tutar tutmuyor. Gönderenden belgeyi düzeltmesini isteyin ya da faturayı elle girin.`);
+  }
+  const digerToplam = t.digerVergiler.reduce((s, v) => s + v.tutar, 0);
+  if (digerToplam !== 0) aciklamalar.push(`Belgede KDV dışı vergi var (${t.digerVergiler.map((v) => `${v.ad || v.kod}: ${tl(v.tutar)}`).join(", ")}); tabloda yalnız KDV karşılaştırılır.`);
+  if (Math.abs(t.kdv - t.kdvSaf) > tolerans) aciklamalar.push(`Üstteki KDV kartı belgenin vergi toplamıdır (${tl(t.kdv)}); tablodaki KDV yalnız KDV alt toplamlarıdır (${tl(t.kdvSaf)}).`);
+  return { tolerans, satirlar, asanlar, gecerli: asanlar.length === 0, aciklamalar };
 }
 
 const yuvarla = (v: number) => Math.round(v * 100) / 100;

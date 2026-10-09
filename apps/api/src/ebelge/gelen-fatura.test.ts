@@ -21,7 +21,7 @@ const belge = (b: Partial<UblFatura> & { toplamlar?: Partial<UblFatura["toplamla
     ...geri,
     toplamlar: {
       satirToplami: 1000, iskontoToplami: 0, matrah: 1000, kdv: 200, genelToplam: 1200, kdvSaf: 200, vergiParaBirimi: "TRY",
-      tevkifat: 0, tevkifatKodlari: [], odenecek: 1200, vergiDahil: 1200, belgeIskontosu: 0, belgeArtirimi: 0, digerVergiler: [], ...toplamlar,
+      tevkifat: 0, tevkifatKodlari: [], odenecek: 1200, vergiDahil: 1200, belgeIskontosu: 0, belgeArtirimi: 0, digerVergiler: [], kdvIcindeTevkifat: 0, ...toplamlar,
     },
   };
 };
@@ -168,5 +168,18 @@ describe("gelen kur, belge iskontosu ve diğer vergiler (EBLG-118/120)", () => {
     expect(denetle(belge({ dovizCinsi: "USD" })).engeller.join()).toMatch(/kur yok/);
     expect(denetle(belge({ toplamlar: { belgeArtirimi: 50 } })).engeller.join()).toMatch(/artırım/);
     expect(denetle(belge({ toplamlar: { digerVergiler: [{ kod: "0059", ad: "Konaklama Vergisi", tutar: 20 }] } })).engeller.join()).toMatch(/EBLG-120.*Konaklama/);
+  });
+});
+
+describe("tutar farkının açıklaması", () => {
+  it("KDV içine yazılmış 9015 tevkifatı farkın nedeni olarak söylenir", () => {
+    // Matrah 1.000, KDV 200, 4/10 tevkifat 80 KDV toplamına eksi yazılmış; ödenecek 1.120.
+    const { denetim } = denetle(belge({ toplamlar: { kdv: 120, kdvIcindeTevkifat: 80, odenecek: 1120, genelToplam: 1120 } }));
+    expect(denetim.gecerli).toBe(false);
+    expect(denetim.aciklamalar.join(" ")).toMatch(/80,00 TRY tevkifat \(9015\).*KDV toplamının içine/);
+    expect(denetim.aciklamalar.join(" ")).toMatch(/Üstteki KDV kartı belgenin vergi toplamıdır \(120,00 TRY\)/);
+  });
+  it("standart belgede açıklama yok", () => {
+    expect(denetle(belge()).denetim.aciklamalar).toEqual([]);
   });
 });

@@ -618,7 +618,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
         findMany: vi.fn().mockResolvedValue([{ id: "11111111-1111-4111-8111-111111111111" }]),
       },
       cariHesap: {
-        findFirst: vi.fn().mockResolvedValue({ id: "cari-1" }),
+        findFirst: vi.fn().mockResolvedValue({ id: "cari-1" }), findMany: vi.fn().mockResolvedValue([{ id: "cari-1", tip: "tedarikci" }]),
       },
     };
     mockTenantIslem.mockImplementation((_tenantId: string, cb: any) => cb(mockTx));
@@ -671,7 +671,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
         update: vi.fn().mockResolvedValue({}),
       },
       stokKart: { findMany: vi.fn().mockResolvedValue([{ id: "11111111-1111-4111-8111-111111111111" }]) },
-      cariHesap: { findFirst: vi.fn().mockResolvedValue({ id: "cari-1", tip: "musteri" }) },
+      cariHesap: { findFirst: vi.fn().mockResolvedValue({ id: "cari-1", tip: "musteri" }), findMany: vi.fn().mockResolvedValue([{ id: "cari-1", tip: "musteri" }]) },
       fatura: { findMany: vi.fn().mockResolvedValue([{ id: "satis-7", no: "TKR2026000000007", tarih: new Date("2026-07-01") }]) },
       faturaIadeReferansi: { createMany },
     };
@@ -695,12 +695,12 @@ describe("EbelgeService (EBLG-01..08)", () => {
     const mockTx = {
       gelenEbelge: { findUnique: vi.fn().mockResolvedValue({ id: "gelen-1", durum: "beklemede", belgeNo: "GIB2026000000001", gonderenVkn: "1234567890", gonderenUnvan: "X", tarih: new Date("2026-07-20"), xmlIcerik: xml }) },
       stokKart: { findMany: vi.fn().mockResolvedValue([{ id: "11111111-1111-4111-8111-111111111111" }]) },
-      cariHesap: { findFirst: vi.fn().mockResolvedValue({ id: "cari-1", tip: "tedarikci" }) },
+      cariHesap: { findFirst: vi.fn().mockResolvedValue({ id: "cari-1", tip: "tedarikci" }), findMany: vi.fn().mockResolvedValue([{ id: "cari-1", tip: "tedarikci" }]) },
     };
     mockTenantIslem.mockImplementation((_tenantId: string, cb: any) => cb(mockTx));
     mockFatura.olustur.mockClear();
 
-    await expect(service.gelenOnayla("gelen-1", { satirEslesmeleri: [{ siraNo: 1, stokId: "11111111-1111-4111-8111-111111111111" }] })).rejects.toThrow(/yalnız tedarikçi/);
+    await expect(service.gelenOnayla("gelen-1", { satirEslesmeleri: [{ siraNo: 1, stokId: "11111111-1111-4111-8111-111111111111" }] })).rejects.toThrow(/tedarikçi tipinde; iade faturası için müşteri/);
     expect(mockFatura.olustur).not.toHaveBeenCalled();
   });
 
@@ -720,7 +720,7 @@ describe("EbelgeService (EBLG-01..08)", () => {
         update: vi.fn().mockResolvedValue({}),
       },
       stokKart: { findMany: vi.fn().mockResolvedValue([{ id: "11111111-1111-4111-8111-111111111111" }]) },
-      cariHesap: { findFirst: vi.fn().mockResolvedValue({ id: "cari-1" }) },
+      cariHesap: { findFirst: vi.fn().mockResolvedValue({ id: "cari-1" }), findMany: vi.fn().mockResolvedValue([{ id: "cari-1", tip: "tedarikci" }]) },
     });
     const eslesme = { satirEslesmeleri: [{ siraNo: 1, stokId: "11111111-1111-4111-8111-111111111111" }] };
 

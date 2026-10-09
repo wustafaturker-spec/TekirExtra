@@ -1,7 +1,7 @@
 import { stokKartiBul, tedarikciKodlariniOgren } from "./stok-eslesme";
 import { earsivIptalGecenGun } from "./earsiv-iptal-suresi";
 import { faturaIrsaliyeAdaylari } from "../belgeler/irsaliye-eslesme";
-import { tedarikciCariBulVeyaOlustur } from "../cari/tedarikci-cari";
+import { gonderenCariSec, tedarikciCariBulVeyaOlustur } from "../cari/tedarikci-cari";
 import {
   BadGatewayException,
   BadRequestException,
@@ -1819,12 +1819,13 @@ export class EbelgeService {
       );
     }
 
-    const cari = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.cariHesap.findFirst({
-        where: { tenantId, vknTckn: kayit.gonderenVkn },
-        select: { id: true, kod: true, unvan: true, karaListe: true },
-      }),
+    // MVZ-12: belge tarihindeki merkezi tablo; firmanın gizledikleri de tanınır.
+    const { girdi: oneri, engeller, denetim, bilinmeyenler } = gelenDenetle(ubl, await this.gelenTablolari(ubl.tarih));
+    // Aynı VKN'li birden çok cari varsa belgenin yönüne uygun olanı.
+    const { cari: secilenCari, uyari: cariUyarisi } = await this.prisma.tenantIslem(tenantId, (tx) =>
+      gonderenCariSec(tx, tenantId, kayit.gonderenVkn, oneri.tip === "satis_iade" ? "musteri" : "tedarikci"),
     );
+    const cari = secilenCari ? { id: secilenCari.id, kod: secilenCari.kod, unvan: secilenCari.unvan, karaListe: secilenCari.karaListe } : null;
 
     const satirlar = await this.eslesmeOner(tenantId, ubl.satirlar, cari?.id ?? null);
 
@@ -1839,8 +1840,6 @@ export class EbelgeService {
       ];
     });
 
-    // MVZ-12: belge tarihindeki merkezi tablo; firmanın gizledikleri de tanınır.
-    const { girdi: oneri, engeller, denetim, bilinmeyenler } = gelenDenetle(ubl, await this.gelenTablolari(ubl.tarih));
     // MVZ-10: merkezde karşılığı olmayan kod/oran platform ekibine iletilir; hata belgeyi etkilemez.
     for (const b of bilinmeyenler) await this.mevzuat?.bilinmeyenBildir(b).catch((hata: unknown) => this.logger.warn(JSON.stringify({ event: "mevzuat_bilinmeyen_kod_kaydedilemedi", hata: hata instanceof Error ? hata.message : String(hata) })));
 
@@ -1866,6 +1865,8 @@ export class EbelgeService {
       /** Kabul/ret yalnızca ticari faturada anlamlı (EBLG-06). */
       yanitGerekiyor: (kayit.profilId ?? ubl.profilId) === "TICARIFATURA",
       cari,
+      /** Bulunan cari belgenin yönüne uygun tipte değilse işleme engeli. */
+      cariUyarisi,
       dovizCinsi: ubl.dovizCinsi,
       belgeToplamlari: {
         satirToplami: ubl.toplamlar.satirToplami.toFixed(2),
@@ -1949,11 +1950,8 @@ export class EbelgeService {
     }
     const tip = belgeGirdisi.tip;
 
-    const mevcutCari = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.cariHesap.findFirst({
-        where: { tenantId, vknTckn: kayit.gonderenVkn },
-        select: { id: true, tip: true },
-      }),
+    const { cari: mevcutCari, uyari: cariUyarisi } = await this.prisma.tenantIslem(tenantId, (tx) =>
+      gonderenCariSec(tx, tenantId, kayit.gonderenVkn, tip === "satis_iade" ? "musteri" : "tedarikci"),
     );
 
     if (!mevcutCari && !girdi.yeniCariOnay) {
@@ -1961,11 +1959,7 @@ export class EbelgeService {
         `Gönderen firma (${kayit.gonderenUnvan} - VKN: ${kayit.gonderenVkn}) sisteminizde kayıtlı bir cari hesap değil. Lütfen yeni cari hesap açılmasını onaylayın.`,
       );
     }
-    if (mevcutCari && tip === "satis_iade" && mevcutCari.tip === "tedarikci") {
-      throw new BadRequestException(
-        `Belge bir iade faturası; gönderen cari (${kayit.gonderenUnvan}) yalnız tedarikçi tipinde. Cari tipini müşteri ya da her ikisi yapıp yeniden deneyin.`,
-      );
-    }
+    if (cariUyarisi) throw new BadRequestException(cariUyarisi);
 
     const cariId = await this.gonderenCariBulVeyaOlustur(
       tenantId,

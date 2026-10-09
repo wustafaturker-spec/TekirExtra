@@ -1,5 +1,6 @@
 "use client";
 
+import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, apiPdfAc, tokenAl } from "@/lib/api";
 import { BirimSecimi } from "@/components/birim-secimi";
@@ -114,6 +115,8 @@ interface GelenDetay {
   /** SAT-13: faturada adı geçen irsaliyelerin bizdeki karşılığı; işlenince bağlanır. */
   irsaliyeEslesmesi?: { no: string; durum: IrsaliyeEslesmeDurumu; irsaliyeNo: string | null }[];
   cari: { id: string; kod: string; unvan: string; karaListe: boolean } | null;
+  /** Bulunan cari belgenin yönüne uygun tipte değil (ör. alışta müşteri kartı). */
+  cariUyarisi?: string | null;
   dovizCinsi: string;
   belgeToplamlari: {
     satirToplami: string;
@@ -132,7 +135,7 @@ interface GelenDetay {
 }
 
 interface TutarFarki { alan: string; ad: string; belge: number; sistem: number; fark: number }
-interface TutarDenetimi { tolerans: number; satirlar: TutarFarki[]; asanlar: TutarFarki[]; gecerli: boolean }
+interface TutarDenetimi { tolerans: number; satirlar: TutarFarki[]; asanlar: TutarFarki[]; gecerli: boolean; aciklamalar?: string[] }
 
 interface StokSecenek {
   id: string;
@@ -199,6 +202,8 @@ export default function GelenKutusuSayfasi() {
 
   // Yeni kart formu
   const [yeniKartSira, setYeniKartSira] = useState<number | null>(null);
+  // MVZ-11: stok kartı tarihsizdir; yeni kartın KDV oranı bugünkü merkezi listeden.
+  const kartKodTablosu = useKodTablosu(null);
   const [yeniKod, setYeniKod] = useState("");
   const [yeniAd, setYeniAd] = useState("");
   const [yeniTip, setYeniTip] = useState<"urun" | "sarf" | "hizmet">("urun");
@@ -645,7 +650,7 @@ export default function GelenKutusuSayfasi() {
 
   const islenebilir = detay.durum === "beklemede";
   // EBLG-115: engel ya da toleransı aşan fark varsa belge işlenmez.
-  const kapiKapali = (detay.engeller?.length ?? 0) > 0 || detay.tutarDenetimi?.gecerli === false;
+  const kapiKapali = (detay.engeller?.length ?? 0) > 0 || detay.tutarDenetimi?.gecerli === false || Boolean(detay.cariUyarisi);
   const faturaAdi = detay.faturaTipi === "satis_iade" ? "satış iade faturası" : "alış faturası";
 
   return (
@@ -718,6 +723,7 @@ export default function GelenKutusuSayfasi() {
           {!detay.cari ? "⚠️ Yeni Tedarikçi Uyarısı — Cari Hesap Bulunamadı" : "Cari Hesap"}
         </div>
         {detay.cari ? (
+          <>
           <p style={{ margin: 0 }}>
             <code className="mono">{detay.cari.kod}</code> — {detay.cari.unvan}
             {detay.cari.karaListe && (
@@ -727,6 +733,8 @@ export default function GelenKutusuSayfasi() {
               </>
             )}
           </p>
+          {detay.cariUyarisi && detay.durum === "beklemede" && <div style={{ marginTop: "0.6rem" }}><Alert tone="warning">{detay.cariUyarisi}</Alert></div>}
+          </>
         ) : (
           <div>
             <p style={{ fontSize: "0.875rem", margin: "4px 0 12px", color: "#92400e" }}>
@@ -1011,12 +1019,7 @@ export default function GelenKutusuSayfasi() {
                           </div>
                           <div style={{ flex: 1, minWidth: 90 }}>
                             <Field label="KDV %">
-                              <Select value={yeniKdv} onChange={(e) => setYeniKdv(e.target.value)}>
-                                <option value="0">0</option>
-                                <option value="1">1</option>
-                                <option value="10">10</option>
-                                <option value="20">20</option>
-                              </Select>
+                              <KdvOraniSecimi value={yeniKdv} onDegis={setYeniKdv} tablo={kartKodTablosu} />
                             </Field>
                           </div>
                         </div>
@@ -1095,6 +1098,11 @@ export default function GelenKutusuSayfasi() {
                 ? `Tolerans ${para(detay.tutarDenetimi.tolerans, detay.dovizCinsi)}; kuruş farkı varsa faturanın notuna yazılır.`
                 : `Fark toleransı (${para(detay.tutarDenetimi.tolerans, detay.dovizCinsi)}) aşıyor; belge işlenemez. Belgeyi reddedin ya da faturayı elle girin.`}
             </span>
+            {(detay.tutarDenetimi.aciklamalar?.length ?? 0) > 0 && (
+              <ul className="muted" style={{ margin: "0.4rem 0 0", paddingLeft: "1.1rem", fontSize: "0.8rem" }}>
+                {detay.tutarDenetimi.aciklamalar!.map((a) => <li key={a}>{a}</li>)}
+              </ul>
+            )}
           </div>
         )}
         {(detay.irsaliyeEslesmesi?.length ?? 0) > 0 && detay.durum === "beklemede" && (

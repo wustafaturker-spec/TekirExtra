@@ -64,6 +64,11 @@ export interface UblToplamlar {
   ozelMatrahOrani?: number;
   /** EBLG-115/120: başlıktaki KDV dışı vergiler (tevkifat 9015 hariç). */
   digerVergiler: UblVergi[];
+  /**
+   * Standart dışı yazım: tevkifat (9015) `WithholdingTaxTotal` yerine
+   * `TaxTotal` içinde (çoğunlukla eksi) alt toplam olarak yazılmış; mutlak toplam.
+   */
+  kdvIcindeTevkifat: number;
 }
 
 export interface UblFatura {
@@ -398,6 +403,9 @@ export function faturaUblOku(xml: string): UblFatura {
       belgeArtirimi: dizi(fatura.AllowanceCharge).filter((a) => metin(a.ChargeIndicator).toLowerCase() === "true").reduce((t, a) => t + sayi(a.Amount), 0),
       ...(metin(fatura.InvoiceTypeCode) === "OZELMATRAH" && kdvBasligi ? { ozelMatrahKodu: metin(yol(kdvBasligi, "TaxCategory", "TaxExemptionReasonCode")) || undefined, ozelMatrahOrani: kdvOraniOku(kdvBasligi) } : {}),
       digerVergiler: digerVergiler(fatura.TaxTotal),
+      kdvIcindeTevkifat: dizi(yol(fatura.TaxTotal, "TaxSubtotal"))
+        .filter((a) => metin(yol(a, "TaxCategory", "TaxScheme", "TaxTypeCode")) === "9015")
+        .reduce((t, a) => t + Math.abs(sayi(a.TaxAmount)), 0),
     },
     satirlar,
   };
