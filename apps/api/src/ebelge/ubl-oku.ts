@@ -47,6 +47,8 @@ export interface UblToplamlar {
   ozelMatrah?: number;
   kdv: number;
   genelToplam: number;
+  /** EBLG-129: KDV (0015) alt toplamlarının matrahı; ÖTV gibi KDV matrahına giren vergiler içindedir. Alt toplam yoksa yok. */
+  kdvMatrahi?: number;
   /** EBLG-115: yalnız KDV (0015) alt toplamlarının vergisi ve para birimi (belge dövizinden farklı olabilir). */
   kdvSaf: number;
   vergiParaBirimi: string;
@@ -392,6 +394,7 @@ export function faturaUblOku(xml: string): UblFatura {
       ...(metin(fatura.InvoiceTypeCode) === "OZELMATRAH" && kdvBasligi ? { ozelMatrah: sayi(kdvBasligi.TaxableAmount) } : {}),
       kdv: kdvToplam,
       genelToplam: genelToplam || matrah + kdvToplam,
+      ...(kdvAltToplamlari(fatura.TaxTotal).length ? { kdvMatrahi: kdvAltToplamlari(fatura.TaxTotal).reduce((t, a) => t + sayi(a.TaxableAmount), 0) } : {}),
       // Alt toplamı olmayan başlıkta (eski/elle üretilmiş belge) vergi toplamı KDV sayılır.
       kdvSaf: dizi(yol(fatura.TaxTotal, "TaxSubtotal")).length
         ? kdvAltToplamlari(fatura.TaxTotal).reduce((t, a) => t + sayi(a.TaxAmount), 0)
