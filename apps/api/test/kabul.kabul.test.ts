@@ -614,14 +614,15 @@ describe("R0 kritik regresyon — kesin fatura iptali ters kayıt üretir", () =
     expect(await stokMiktari(jeton, stokId)).toBe(0);
     expect(await cariBakiyesi(jeton, cariId)).toBeCloseTo(0, 2);
 
-    const hareketler = await istek<Array<{ tip: string; kaynakTur: string; kaynakRef: string }>>(
+    const hareketler = await istek<{ kayitlar: Array<{ tip: string; kaynakTur: string; kaynakRef: string }> }>(
       // STK-22: iptal çifti varsayılan gizlidir; burada özellikle istenir.
       `/stok/${stokId}/hareketler?iptaller=1`,
       { jeton },
     );
-    expect(hareketler.veri).toEqual(expect.arrayContaining([
+    expect(hareketler.veri.kayitlar).toEqual(expect.arrayContaining([
       expect.objectContaining({ tip: "giris", kaynakTur: "fatura", kaynakRef: olustur.veri.id }),
-      expect.objectContaining({ tip: "cikis", kaynakTur: "fatura_iptal", kaynakRef: olustur.veri.id }),
+      // STK-38: ters hareket faturanın tarihine yazılır, iptal gününe değil.
+      expect.objectContaining({ tip: "cikis", kaynakTur: "fatura_iptal", kaynakRef: olustur.veri.id, tarih: expect.stringMatching(/^2026-03-10/) }),
     ]));
 
     const ikinciIptal = await istek(`/fatura/${olustur.veri.id}/iptal`, { method: "POST", jeton });

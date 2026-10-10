@@ -34,11 +34,21 @@ import type {
 } from "./stok.semalar";
 
 import { stokExcelOku } from "../core/excel-yardimci";
-import { iptalCiftiMi, iptalEdilmisFaturalar } from "../fatura/iptal-cifti";
+import { IPTAL_CIFTI_KAYNAKLARI, iptalCiftiMi, iptalEdilmisFaturalar } from "../fatura/iptal-cifti";
 import { birimKatsayisiBul } from "./birim-cevrim";
 import { MevzuatService } from "../mevzuat/mevzuat.service";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal => new Prisma.Decimal(deger);
+
+/** STK-36: ürün hareket listesi süzgeci; tarihler YYYY-AA-GG. */
+export interface StokHareketSuzgeci {
+  depoId?: string;
+  baslangic?: string;
+  bitis?: string;
+  iptaller: boolean;
+  imlec?: string;
+  adet: number;
+}
 
 /** Stok hareketi girdisi (STK-07 ile depo zorunlu alan oldu). */
 export interface StokHareketGirdisi {
@@ -684,21 +694,68 @@ export class StokService {
 
   // ─── STOK HAREKETLERİ & AVCO HESAPLAMA (STK-02/08) ───────────────────────
 
-  async hareketListele(stokId: string, depoId?: string, iptalleriGosterilsin = false) {
+  /**
+   * STK-36: ürün hareketleri imleçle sayfalanır (yeniden eskiye). İptal
+   * edilmiş faturaların hareketleri (STK-22) sorguda süzülür ki sayfalar
+   * eksik dolmasın. İlk sayfada başlangıç öncesi devir, dönem giriş/çıkışı,
+   * son bakiye ve kayıt sayısı da döner; istemci yürüyen bakiyeyi son
+   * bakiyeden geriye doğru hesaplar.
+   */
+  async hareketListele(stokId: string, s: StokHareketSuzgeci) {
     const { tenantId } = aktifBaglam();
     await this.getir(stokId);
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const hareketler = await tx.stokHareket.findMany({
-        where: { stokId, ...(depoId ? { depoId } : {}) },
-        orderBy: [{ tarih: "asc" }, { createdAt: "asc" }],
+      const temel: Prisma.StokHareketWhereInput = { stokId, ...(s.depoId ? { depoId: s.depoId } : {}) };
+      const iptalKosulu: Prisma.StokHareketWhereInput = {};
+      if (!s.iptaller) {
+        const refler = await tx.stokHareket.findMany({
+          where: { ...temel, kaynakTur: { in: [...IPTAL_CIFTI_KAYNAKLARI] }, kaynakRef: { not: null } },
+          distinct: ["kaynakRef"],
+          select: { kaynakRef: true },
+        });
+        const iptaller = refler.length
+          ? await tx.fatura.findMany({ where: { id: { in: refler.map((r) => r.kaynakRef!) }, durum: "iptal" }, select: { id: true } })
+          : [];
+        if (iptaller.length) iptalKosulu.NOT = { kaynakTur: { in: [...IPTAL_CIFTI_KAYNAKLARI] }, kaynakRef: { in: iptaller.map((f) => f.id) } };
+      }
+      const tarihKosulu = s.baslangic || s.bitis
+        ? { tarih: { ...(s.baslangic ? { gte: new Date(s.baslangic) } : {}), ...(s.bitis ? { lte: new Date(s.bitis) } : {}) } }
+        : {};
+      const where: Prisma.StokHareketWhereInput = { ...temel, ...iptalKosulu, ...tarihKosulu };
+      const kayitlar = await tx.stokHareket.findMany({
+        where,
+        orderBy: [{ tarih: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+        take: s.adet + 1,
+        ...(s.imlec ? { cursor: { id: s.imlec }, skip: 1 } : {}),
         include: { depo: { select: { id: true, kod: true, ad: true } }, varyant: { select: { id: true, kod: true, ad: true } } },
       });
-      // STK-22: iptal edilmiş faturanın hareketi, ters hareketi ve telafisi
-      // birbirini sıfırlar; varsayılan olarak gösterilmez.
-      const iptaller = await iptalEdilmisFaturalar(tx, hareketler);
-      return hareketler
-        .map((h) => ({ ...h, iptal: iptalCiftiMi(h, iptaller) }))
-        .filter((h) => iptalleriGosterilsin || !h.iptal);
+      const sayfa = kayitlar.slice(0, s.adet);
+      const iptaller = s.iptaller ? await iptalEdilmisFaturalar(tx, sayfa) : new Set<string>();
+      const sonuc = {
+        kayitlar: sayfa.map((h) => ({ ...h, iptal: iptalCiftiMi(h, iptaller) })),
+        sonrakiImlec: kayitlar.length > s.adet ? sayfa[sayfa.length - 1].id : null,
+      };
+      if (s.imlec) return sonuc;
+
+      // İptal çiftleri toplamda sıfırlandığı için devir ve bakiye süzgeçten bağımsızdır.
+      const toplam = async (w: Prisma.StokHareketWhereInput) =>
+        D((await tx.stokHareket.aggregate({ where: w, _sum: { miktar: true } }))._sum.miktar ?? 0);
+      const devir = s.baslangic ? await toplam({ ...temel, tarih: { lt: new Date(s.baslangic) } }) : D(0);
+      const [giris, cikis, kayitSayisi] = await Promise.all([
+        toplam({ ...where, miktar: { gt: 0 } }),
+        toplam({ ...where, miktar: { lt: 0 } }),
+        tx.stokHareket.count({ where }),
+      ]);
+      return {
+        ...sonuc,
+        ozet: {
+          devir: devir.toString(),
+          giris: giris.toString(),
+          cikis: cikis.abs().toString(),
+          sonBakiye: devir.add(giris).add(cikis).toString(),
+          kayitSayisi,
+        },
+      };
     });
   }
 

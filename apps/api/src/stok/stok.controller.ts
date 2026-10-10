@@ -358,8 +358,27 @@ export class StokController {
     @Param("id") id: string,
     @Query("depoId") depoId?: string,
     @Query("iptaller") iptaller?: string,
+    @Query("baslangic") baslangic?: string,
+    @Query("bitis") bitis?: string,
+    @Query("imlec") imlec?: string,
+    @Query("adet") adet?: string,
   ) {
-    return this.stokService.hareketListele(id, depoId, iptalleriGoster(iptaller));
+    // STK-36: imleçli sayfa; ilk sayfada devir ve dönem özeti.
+    const gun = (deger?: string) => {
+      if (!deger) return undefined;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(deger)) throw new BadRequestException("Tarih YYYY-AA-GG biçiminde olmalı");
+      return deger;
+    };
+    if (imlec && !/^[0-9a-f-]{36}$/i.test(imlec)) throw new BadRequestException("Geçersiz imleç");
+    if (depoId && !/^[0-9a-f-]{36}$/i.test(depoId)) throw new BadRequestException("Geçersiz depo");
+    return this.stokService.hareketListele(id, {
+      depoId: depoId || undefined,
+      baslangic: gun(baslangic),
+      bitis: gun(bitis),
+      iptaller: iptalleriGoster(iptaller),
+      imlec: imlec || undefined,
+      adet: sayfaAdedi(adet, 100, 500),
+    });
   }
 
   @Get(":id/partiler")

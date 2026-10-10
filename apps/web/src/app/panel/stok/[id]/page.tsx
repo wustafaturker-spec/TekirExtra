@@ -18,6 +18,8 @@ import {
   Input,
   PageHeader,
   Select,
+  Stat,
+  StatGrid,
   TabPanel,
   Tabs,
   TableWrap,
@@ -206,6 +208,29 @@ interface Hareket {
   varyant?: { id: string; kod: string; ad: string } | null;
 }
 
+/** STK-36: ilk sayfada gelen devir ve dönem özeti (ana birim). */
+interface HareketOzeti {
+  devir: string;
+  giris: string;
+  cikis: string;
+  sonBakiye: string;
+  kayitSayisi: number;
+}
+
+interface HareketSayfasi {
+  kayitlar: Hareket[];
+  sonrakiImlec: string | null;
+  ozet?: HareketOzeti;
+}
+
+/** Hareket listesi süzgeci; tarihler YYYY-AA-GG, boşsa sınırsız. */
+interface HareketSuzgeci {
+  baslangic: string;
+  bitis: string;
+  depoId: string;
+  iptaller: boolean;
+}
+
 interface StokDetay {
   id: string;
   kod: string;
@@ -326,7 +351,9 @@ export default function StokDetaySayfasi() {
 
   const [detay, setDetay] = useState<StokDetay | null>(null);
   const [hareketler, setHareketler] = useState<Hareket[]>([]);
-  const [iptalleriGoster, setIptalleriGoster] = useState(false);
+  const [hareketOzeti, setHareketOzeti] = useState<HareketOzeti | null>(null);
+  const [hareketImleci, setHareketImleci] = useState<string | null>(null);
+  const [hareketSuzgeci, setHareketSuzgeci] = useState<HareketSuzgeci>({ baslangic: "", bitis: "", depoId: "", iptaller: false });
   const [depoBakiyeleri, setDepoBakiyeleri] = useState<DepoBakiyeSatiri[]>([]);
   const [partiler, setPartiler] = useState<Parti[]>([]);
   const [fiyatlar, setFiyatlar] = useState<StokFiyat[]>([]);
@@ -357,13 +384,23 @@ export default function StokDetaySayfasi() {
     }
   }, [id]);
 
-  const hareketleriYukle = useCallback(async () => {
+  /** STK-36: imleçsiz çağrı ilk sayfayı ve özeti yükler; imleçle sonraki sayfa eklenir. */
+  const hareketleriYukle = useCallback(async (imlec?: string) => {
+    const p = new URLSearchParams();
+    if (hareketSuzgeci.baslangic) p.set("baslangic", hareketSuzgeci.baslangic);
+    if (hareketSuzgeci.bitis) p.set("bitis", hareketSuzgeci.bitis);
+    if (hareketSuzgeci.depoId) p.set("depoId", hareketSuzgeci.depoId);
+    if (hareketSuzgeci.iptaller) p.set("iptaller", "1");
+    if (imlec) p.set("imlec", imlec);
     try {
-      setHareketler(await api<Hareket[]>(`/stok/${id}/hareketler${iptalleriGoster ? "?iptaller=1" : ""}`));
+      const sayfa = await api<HareketSayfasi>(`/stok/${id}/hareketler?${p}`);
+      setHareketler((onceki) => (imlec ? [...onceki, ...sayfa.kayitlar] : sayfa.kayitlar));
+      if (sayfa.ozet) setHareketOzeti(sayfa.ozet);
+      setHareketImleci(sayfa.sonrakiImlec);
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Hareketler yüklenemedi");
     }
-  }, [id, iptalleriGoster]);
+  }, [id, hareketSuzgeci]);
 
   const depoBakiyeleriYukle = useCallback(async () => {
     try {
@@ -501,7 +538,7 @@ export default function StokDetaySayfasi() {
             { deger: "genel", baslik: "Genel" },
             { deger: "recete", baslik: recete ? `Ürün reçetesi (${recete.kalemler?.length ?? 0})` : "Ürün reçetesi" },
             { deger: "fiyatlar", baslik: `Dövizli fiyatlar (${fiyatlar.length})` },
-            { deger: "hareketler", baslik: `Hareketler (${hareketler.length})` },
+            { deger: "hareketler", baslik: `Hareketler (${hareketOzeti?.kayitSayisi ?? hareketler.length})` },
             ...(cokluDepo
               ? [{ deger: "depolar" as Sekme, baslik: `Depolar (${depoBakiyeleri.length})` }]
               : []),
@@ -536,8 +573,11 @@ export default function StokDetaySayfasi() {
         <TabPanel idPrefix="stok-detay" value="hareketler"><HareketlerSekmesi
           detay={detay}
           hareketler={hareketler}
-          iptalleriGoster={iptalleriGoster}
-          onIptalleriGoster={setIptalleriGoster}
+          ozet={hareketOzeti}
+          suzgec={hareketSuzgeci}
+          onSuzgec={setHareketSuzgeci}
+          dahaVar={hareketImleci !== null}
+          onDahaFazla={() => hareketImleci && hareketleriYukle(hareketImleci)}
           onEkle={async (govde) => {
             setHata("");
             setBasari("");
@@ -1000,14 +1040,20 @@ function VaryantlarSekmesi({ detay, onIslem }: { detay: StokDetay; onIslem: (isl
 function HareketlerSekmesi({
   detay,
   hareketler,
-  iptalleriGoster,
-  onIptalleriGoster,
+  ozet,
+  suzgec,
+  onSuzgec,
+  dahaVar,
+  onDahaFazla,
   onEkle,
 }: {
   detay: StokDetay;
   hareketler: Hareket[];
-  iptalleriGoster: boolean;
-  onIptalleriGoster: (goster: boolean) => void;
+  ozet: HareketOzeti | null;
+  suzgec: HareketSuzgeci;
+  onSuzgec: (suzgec: HareketSuzgeci) => void;
+  dahaVar: boolean;
+  onDahaFazla: () => void;
   onEkle: (govde: Record<string, unknown>) => Promise<boolean>;
 }) {
   const { cokluDepo } = useDepolar();
@@ -1060,6 +1106,13 @@ function HareketlerSekmesi({
   }
 
   const yon = (t: string) => TUM_HAREKET_TIPLERI.find((h) => h.deger === t)?.yon ?? "duzeltme";
+  // STK-36: liste yeniden eskiye; her satırın bakiyesi son bakiyeden üstteki
+  // satırların miktarı düşülerek bulunur (sayfalar eklendikçe de geçerli).
+  const bakiyeler: number[] = [];
+  if (ozet) {
+    let kalan = Number(ozet.sonBakiye);
+    for (const h of hareketler) { bakiyeler.push(kalan); kalan -= Number(h.miktar); }
+  }
   const baslik = (t: string) => TUM_HAREKET_TIPLERI.find((h) => h.deger === t)?.baslik ?? t;
 
   return (
@@ -1161,10 +1214,27 @@ function HareketlerSekmesi({
         )}
       </Card>
 
-      <label className="check-row">
-        <input type="checkbox" checked={iptalleriGoster} onChange={(e) => onIptalleriGoster(e.target.checked)} />
-        İptalleri de göster
-      </label>
+      <div className="row" style={{ alignItems: "flex-end" }}>
+        <div style={{ flex: 1, minWidth: 150 }}>
+          <Field label="Başlangıç"><Input type="date" value={suzgec.baslangic} onChange={(e) => onSuzgec({ ...suzgec, baslangic: e.target.value })} /></Field>
+        </div>
+        <div style={{ flex: 1, minWidth: 150 }}>
+          <Field label="Bitiş"><Input type="date" value={suzgec.bitis} onChange={(e) => onSuzgec({ ...suzgec, bitis: e.target.value })} /></Field>
+        </div>
+        {cokluDepo && <div style={{ flex: 1, minWidth: 180 }}><DepoSecici deger={suzgec.depoId} onChange={(depoId) => onSuzgec({ ...suzgec, depoId })} /></div>}
+        <label className="check-row" style={{ flex: 1, minWidth: 170 }}>
+          <input type="checkbox" checked={suzgec.iptaller} onChange={(e) => onSuzgec({ ...suzgec, iptaller: e.target.checked })} />
+          İptalleri de göster
+        </label>
+      </div>
+      {ozet && (
+        <StatGrid>
+          {suzgec.baslangic && <Stat label="Devir" value={`${adet(ozet.devir)} ${detay.anaBirim}`} hint={`${suzgec.baslangic} öncesi`} />}
+          <Stat label="Giriş" value={`${adet(ozet.giris)} ${detay.anaBirim}`} />
+          <Stat label="Çıkış" value={`${adet(ozet.cikis)} ${detay.anaBirim}`} />
+          <Stat label={suzgec.bitis ? "Dönem sonu bakiye" : "Bakiye"} value={`${adet(ozet.sonBakiye)} ${detay.anaBirim}`} hint={`${ozet.kayitSayisi} hareket`} />
+        </StatGrid>
+      )}
       <Card pad={false}>
         <TableWrap>
           <thead>
@@ -1174,6 +1244,7 @@ function HareketlerSekmesi({
               <th>Tip</th>
               <th className="num">Girilen</th>
               <th className="num">Ana Birim</th>
+              <th className="num">Bakiye</th>
               <th className="num">Birim Maliyet</th>
               <th>Kaynak</th>
               <th>Açıklama</th>
@@ -1182,12 +1253,12 @@ function HareketlerSekmesi({
           <tbody>
             {hareketler.length === 0 ? (
               <tr>
-                <td colSpan={cokluDepo ? 8 : 7} className="empty">
-                  Bu ürün için henüz stok hareketi yok.
+                <td colSpan={cokluDepo ? 9 : 8} className="empty">
+                  {suzgec.baslangic || suzgec.bitis ? "Seçilen aralıkta stok hareketi yok." : "Bu ürün için henüz stok hareketi yok."}
                 </td>
               </tr>
             ) : (
-              hareketler.map((h) => {
+              hareketler.map((h, i) => {
                 const y = yon(h.tip);
                 // miktar API'de işaretli saklanır (çıkışlarda eksi); işareti biz eklemiyoruz.
                 const degisim = Number(h.miktar);
@@ -1212,6 +1283,7 @@ function HareketlerSekmesi({
                       {degisim > 0 ? "+" : ""}
                       {adet(degisim)} {detay.anaBirim}
                     </td>
+                    <td className="num">{bakiyeler[i] !== undefined ? adet(bakiyeler[i]) : "—"}</td>
                     <td className="num">{Number(h.maliyet) > 0 ? tl(h.maliyet) : "—"}</td>
                     <td>
                       <span className="muted" style={{ fontSize: "0.85rem" }}>
@@ -1226,6 +1298,11 @@ function HareketlerSekmesi({
           </tbody>
         </TableWrap>
       </Card>
+      {dahaVar && (
+        <div>
+          <Button variant="ghost" onClick={onDahaFazla}>Daha fazla yükle</Button>
+        </div>
+      )}
     </div>
   );
 }

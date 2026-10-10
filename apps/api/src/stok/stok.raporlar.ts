@@ -1,6 +1,8 @@
 import { Prisma } from "@prisma/client";
+import { BadRequestException } from "@nestjs/common";
 import { registerRapor } from "../core/raporlar/rapor-kayit";
 import { satisSatirlari, urunBazinda } from "./satis-ozeti";
+import { tarihliBakiyeler } from "./tarihli-envanter";
 import { iptalCiftiMi, iptalEdilmisFaturalar, iptalleriGoster } from "../fatura/iptal-cifti";
 
 /** Stok modülü raporları (STK-13) — RPR-06 araç seti tanımları. */
@@ -41,8 +43,10 @@ registerRapor({
   kod: "stok.envanter",
   modul: "stok",
   ad: "Envanter Değeri",
-  aciklama: "Anlık stok miktarı ve ağırlıklı ortalama maliyetle envanter değeri",
+  aciklama: "Anlık ya da seçilen tarih itibarıyla stok miktarı ve ağırlıklı ortalama maliyetle envanter değeri",
   filtreler: [
+    // STK-37: boşsa anlık; doluysa o gün sonu itibarıyla hareketlerden.
+    { alan: "tarih", ad: "Tarih itibarıyla", tip: "tarih" },
     { alan: "kritikAlti", ad: "Yalnız kritik altı", tip: "onay" },
     { alan: "depo", ad: "Depo", tip: "depo" },
   ],
@@ -60,6 +64,8 @@ registerRapor({
   ],
   async calistir(girdi, { tx }) {
     const depoId = girdi.filtreler?.depo ? String(girdi.filtreler.depo) : null;
+    const tarih = girdi.filtreler?.tarih ? String(girdi.filtreler.tarih) : "";
+    if (tarih) return tarihliEnvanter(tx, tarih, depoId, Boolean(girdi.filtreler?.kritikAlti));
     const kartlar = await tx.stokKart.findMany({
       // STK-33: hizmet stok tutmaz; sarf malzeme değerli stoktur.
       where: { aktif: true, tip: { not: "hizmet" } },
@@ -107,6 +113,45 @@ registerRapor({
       }));
   },
 });
+
+/**
+ * STK-37: tarih itibarıyla envanter. Rezerve ve yoldaki miktar geçmişte
+ * tutulmadığı için boş döner. Bugün pasif olan kart o gün stoklu ise listelenir.
+ */
+async function tarihliEnvanter(tx: Prisma.TransactionClient, tarih: string, depoId: string | null, kritikAlti: boolean) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(tarih)) throw new BadRequestException("Tarih YYYY-AA-GG biçiminde olmalı");
+  const hareketler = await tx.stokHareket.findMany({
+    where: { tarih: { lte: new Date(tarih) }, stok: { tip: { not: "hizmet" } } },
+    orderBy: [{ stokId: "asc" }, { tarih: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+    select: { id: true, stokId: true, depoId: true, miktar: true, maliyet: true, kaynakTur: true, kaynakRef: true },
+  });
+  const refler = [...new Set(hareketler.filter((h) => h.kaynakTur === "fatura" && h.kaynakRef && h.miktar.lt(0)).map((h) => h.kaynakRef!))];
+  const alisIadeleri = new Set(refler.length
+    ? (await tx.fatura.findMany({ where: { id: { in: refler }, tip: "alis_iade" }, select: { id: true } })).map((f) => f.id)
+    : []);
+  const bakiyeler = tarihliBakiyeler(hareketler, alisIadeleri);
+  const kartlar = await tx.stokKart.findMany({ where: { tip: { not: "hizmet" } }, orderBy: { kod: "asc" } });
+  const depoAd = depoId ? ((await tx.depo.findUnique({ where: { id: depoId } }))?.ad ?? "") : "Tüm depolar";
+  return kartlar.flatMap((k) => {
+    const b = bakiyeler.get(k.id);
+    const miktar = b ? (depoId ? (b.depoMiktarlari.get(depoId) ?? D(0)) : b.miktar) : D(0);
+    if (!k.aktif && miktar.isZero()) return [];
+    if (kritikAlti && !(k.kritikSeviye !== null && miktar.lessThan(k.kritikSeviye))) return [];
+    const ortalama = b?.ortalama ?? D(0);
+    return [{
+      kod: k.kod,
+      ad: k.ad,
+      depo: depoAd,
+      birim: k.anaBirim,
+      miktar: Number(miktar),
+      rezerve: null,
+      kullanilabilir: null,
+      yoldaki: null,
+      ortalamaMaliyet: ortalama.toFixed(2),
+      envanterDegeri: miktar.mul(ortalama).toFixed(2),
+    }];
+  });
+}
 
 // ─── Stok hareket özeti ─────────────────────────────────────────────────────
 
