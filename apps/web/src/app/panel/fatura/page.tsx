@@ -717,7 +717,8 @@ export default function FaturaSayfasi() {
       tevkifatPay: tevkifat?.pay,
       tevkifatPayda: tevkifat?.payda,
       // EBLG-120: sunucu davranışı merkezden yeniden çözer; özet aynı sonucu göstersin.
-      ekVergiler: (s.ekVergiler ?? []).map((v) => ({ tutar: Number(v.tutar), stopaj: v.stopaj, kdvMatrahinaDahil: v.kdvMatrahinaDahil, hesap: v.hesap ?? null, oran: Number(v.oran ?? 0), birimTutar: Number(v.birimTutar ?? 0) })),
+      // EBLG-131: maktu vergi ana birim başınadır; ek birimli satırda (koli) katsayıyla ölçeklenir.
+      ekVergiler: (s.ekVergiler ?? []).map((v) => ({ tutar: Number(v.tutar), stopaj: v.stopaj, kdvMatrahinaDahil: v.kdvMatrahinaDahil, hesap: v.hesap ?? null, oran: Number(v.oran ?? 0), birimTutar: Number(v.birimTutar ?? 0) * (v.hesap === "birim" ? birimKatsayisi(stoklar.find((x) => x.id === s.stokId), s.birim) : 1) })),
     };
   });
   // EBLG-60: ihraç kayıtlı yalnız satışta; tip değişince seçim yok sayılır.

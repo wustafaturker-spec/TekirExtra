@@ -384,7 +384,7 @@ export function faturaUblUret(
    * matrahı, KDV matrahına dahil vergilerle (ÖTV…) artar; her vergi satırda ve
    * başlıkta kendi alt toplamıyla yazılır (gelen belgelerdeki yapı).
    */
-  type SatirEkVergisi = { kod: string; ad: string; hesap?: "oran" | "birim" | null; oran: string | null; birimTutar?: string | null; matrah: string | null; tutar: string; stopaj: boolean; kdvMatrahinaDahil: boolean };
+  type SatirEkVergisi = { kod: string; ad: string; hesap?: "oran" | "birim" | null; oran: string | null; birimTutar?: string | null; matrah: string | null; tutar: string; stopaj: boolean; kdvMatrahinaDahil: boolean; anaBirim?: string | null; katsayi?: string | null };
   const ekVergileri = (satir: { ekVergiler?: unknown }): SatirEkVergisi[] => (Array.isArray(satir.ekVergiler) ? (satir.ekVergiler as SatirEkVergisi[]) : []);
   const kdvMatrahi = (satir: { matrah: unknown; ekVergiler?: unknown }) =>
     Math.round(Number(satir.matrah) * 100 + ekVergileri(satir).filter((v) => !v.stopaj && v.kdvMatrahinaDahil).reduce((t, v) => t + Math.round(Number(v.tutar) * 100), 0)) / 100;
@@ -407,7 +407,8 @@ ${girinti}</cac:TaxSubtotal>
     kod: v.kod, ad: v.ad, tutar: Number(v.tutar),
     matrah: v.matrah !== null && v.matrah !== undefined && v.matrah !== "" ? Number(v.matrah) : null,
     oran: v.hesap === "birim" || v.oran === null || v.oran === undefined || v.oran === "" ? null : Number(v.oran),
-    birim: v.hesap === "birim" ? { miktar: Number(satir.miktar), birimKodu: birimUblKodu(satir.birim), birimTutar: Number(v.birimTutar ?? 0) } : undefined,
+    // EBLG-131: birim tutar ana birim başınadır; miktar da ana birimle yazılır (3 koli → 36 adet).
+    birim: v.hesap === "birim" ? { miktar: Number(satir.miktar) * Number(v.katsayi ?? 1), birimKodu: birimUblKodu(v.anaBirim || satir.birim), birimTutar: Number(v.birimTutar ?? 0) } : undefined,
   }, "      ")).join("");
   // Başlıkta kod başına tek alt toplam; oran yalnız bütün satırlarda aynıysa yazılır.
   const baslikEkVergileri = [...fatura.satirlar.flatMap(ekVergileri).reduce((m, v) => {

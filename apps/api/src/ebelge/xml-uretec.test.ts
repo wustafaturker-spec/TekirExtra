@@ -1470,6 +1470,12 @@ describe("faturaUblUret — KDV dışı vergiler (EBLG-127)", () => {
     expect(s).not.toMatch(/<cbc:Percent>[^<]*<\/cbc:Percent>\s*<cac:TaxCategory>\s*<cac:TaxScheme>\s*<cbc:Name>ÖTV/);
   });
 
+  it("ek birimli satırda maktu verginin miktarı ana birimle yazılır: 2 bidon → 40 LTR × 12,50 (EBLG-131)", () => {
+    const maktu = { kod: "0071", ad: "ÖTV I. Liste", hesap: "birim", oran: null, birimTutar: "12.5", matrah: null, tutar: "500.00", stopaj: false, kdvMatrahinaDahil: true, anaBirim: "litre", katsayi: "20" };
+    const s = satirVergisi(faturaUblUret(fatura([satir([maktu], { miktar: 2, birim: "bidon", birimFiyat: 2000, matrah: 4000, kdvTutari: 900 })]), satici));
+    expect(s).toMatch(/<cbc:TaxAmount currencyID="TRY">500.00<\/cbc:TaxAmount>\s*<cbc:BaseUnitMeasure unitCode="LTR">40.000<\/cbc:BaseUnitMeasure>\s*<cbc:PerUnitAmount currencyID="TRY">12.5000<\/cbc:PerUnitAmount>/);
+  });
+
   it("konaklama vergili satış KONAKLAMAVERGISI tipiyle gider", () => {
     const konaklama = { kod: "0059", ad: "Konaklama Vergisi", hesap: "oran", oran: "2", birimTutar: null, matrah: "1000.00", tutar: "20.00", stopaj: false, kdvMatrahinaDahil: false };
     const xml = faturaUblUret(fatura([satir([konaklama], { kdvTutari: 200 })], { senaryo: "konaklamavergisi", toplamKdv: 200, genelToplam: 1220 }), satici);

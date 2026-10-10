@@ -155,7 +155,8 @@ export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, sto
   const belgeyeCevrilmisFiyat = (() => { const kaynakKur = tcmbKurlari[fiyatDovizi]; const hedefKur = belgeDovizi === "TRY" ? 1 : Number(belgeKuru); return kaynakKur && hedefKur ? Number(birimFiyat) * kaynakKur / hedefKur : Number(birimFiyat); })();
   // EBLG-125: faturadaki hesapla aynı — oran satır matrahına, birim tutarı satır miktarına.
   const matrah = Number(miktar) * belgeyeCevrilmisFiyat * (1 - Number(iskonto) / 100);
-  const ekVergiTutarlari = ekVergiler.map((v) => (v.hesap === "oran" ? matrah * Number(v.deger) / 100 : Number(miktar) * Number(v.deger)));
+  // EBLG-131: maktu vergi kartın ana birimi başınadır; ek birimde (koli) katsayıyla çarpılır.
+  const ekVergiTutarlari = ekVergiler.map((v) => (v.hesap === "oran" ? matrah * Number(v.deger) / 100 : Number(miktar) * birimKatsayisi(seciliStok, birim) * Number(v.deger)));
   const vergiTuru = (kod: string) => vergiTurleri?.find((t) => t.kod === kod);
   const para = (n: number) => n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (!acik) return null;
@@ -179,7 +180,7 @@ export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, sto
           <Field label={`Belge kuru (${belgeDovizi} → TRY)`}><Input readOnly value={belgeDovizi === "TRY" ? "1" : belgeKuru} /></Field>
           <Field label="Birim fiyat"><div className="row"><Input type="number" min="0" step="any" value={birimFiyat} onChange={(e) => setBirimFiyat(e.target.value)} /><strong>{fiyatDovizi}</strong></div></Field>
           <Field label="KDV (%)"><Input type="number" min="0" max="100" value={kdv} onChange={(e) => setKdv(e.target.value)} /></Field>
-          {ekVergiler.map((v, i) => <Field key={v.kod} label={`${vergiTuru(v.kod)?.ad ?? v.kod} ${v.hesap === "oran" ? "(%)" : `(${belgeDovizi} / ${birimKisaAdi(birim || seciliStok?.anaBirim || "adet")})`}`}>
+          {ekVergiler.map((v, i) => <Field key={v.kod} label={`${vergiTuru(v.kod)?.ad ?? v.kod} ${v.hesap === "oran" ? "(%)" : `(${belgeDovizi} / ${birimKisaAdi(seciliStok?.anaBirim || "adet")})`}`}>
             <Input type="number" min="0" max={v.hesap === "oran" ? 100 : undefined} step="any" value={v.deger} onChange={(e) => setEkVergiler((l) => l.map((x, j) => (j === i ? { ...x, deger: e.target.value } : x)))} />
           </Field>)}
           <Field label="İndirim (%)"><Input type="number" min="0" max="100" value={iskonto} onChange={(e) => setIskonto(e.target.value)} /></Field>

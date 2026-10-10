@@ -16,7 +16,7 @@ import { faturaHesapla, faturaSenaryosuTuret, KONAKLAMA_VERGISI_KODU, idisNormal
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { belgeKodTablosu, firmaTevkifatTablosu, mevzuatKurallariniUygula } from "./tevkifat-tablosu";
 import { MevzuatService } from "../mevzuat/mevzuat.service";
-import { ekVergileriCoz, hesapGirdisi, saklanacakEkVergiler, sakliEkVergiler, type EkVergi, type EkVergiGirdisi } from "./ek-vergi";
+import { ekVergileriCoz, hesapGirdisi, maktuBirimleriniBagla, saklanacakEkVergiler, sakliEkVergiler, type EkVergi, type EkVergiGirdisi } from "./ek-vergi";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
@@ -80,7 +80,7 @@ export class FaturaService {
   }
 
   /** EBLG-120: satırların KDV dışı vergilerini belge tarihindeki merkezi vergi türleriyle çözer. */
-  private async ekVergileriniCoz(girdi: { tip: string; tarih: string | Date; satirlar: { ekVergiler?: EkVergiGirdisi[] | null }[] }): Promise<EkVergi[][]> {
+  private async ekVergileriniCoz(girdi: { tip: string; tarih: string | Date; satirlar: { stokId: string; birim?: string | null; ekVergiler?: EkVergiGirdisi[] | null }[] }): Promise<EkVergi[][]> {
     if (!girdi.satirlar.some((s) => s.ekVergiler?.length)) return girdi.satirlar.map(() => []);
     const tarih = typeof girdi.tarih === "string" ? girdi.tarih.slice(0, 10) : girdi.tarih.toISOString().slice(0, 10);
     const { satirlar, hatalar } = ekVergileriCoz(girdi.tip, girdi.satirlar, (await belgeKodTablosu(this.mevzuat, tarih)).vergiTurleri);
@@ -89,6 +89,10 @@ export class FaturaService {
       hatalar.push("Konaklama vergili fatura tevkifat taşıyamaz (fatura tipi KONAKLAMAVERGISI); tevkifatlı kalemi ayrı faturaya alın");
     }
     if (hatalar.length) throw new BadRequestException(hatalar.join("; "));
+    // EBLG-131: maktu vergi ek birimli satırda ana birime çevrilerek hesaplanır.
+    if (satirlar.some((l) => l.some((v) => v.hesap === "birim"))) {
+      await this.prisma.tenantIslem(aktifBaglam().tenantId, (tx) => maktuBirimleriniBagla(tx, girdi.satirlar, satirlar));
+    }
     return satirlar;
   }
 

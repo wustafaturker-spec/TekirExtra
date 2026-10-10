@@ -44,7 +44,7 @@ import type {
 } from "./belgeler.semalar";
 import { MevzuatService } from "../mevzuat/mevzuat.service";
 import { belgeKodTablosu } from "../fatura/tevkifat-tablosu";
-import { ekVergileriCoz, hesapGirdisi, saklanacakEkVergiler, type EkVergi } from "../fatura/ek-vergi";
+import { ekVergileriCoz, hesapGirdisi, maktuBirimleriniBagla, saklanacakEkVergiler, type EkVergi } from "../fatura/ek-vergi";
 import { kanuniDegerOku } from "../mevzuat/kanuni-deger";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal =>
@@ -1873,6 +1873,7 @@ export class BelgelerService {
     const ilk = belgeler[0];
     const tumSatirlar = belgeler.flatMap((b) => b.satirlar);
     const ekVergiler = await this.kartEkVergileri(tx, ilk.yon === "satis" ? "satis" : "alis", tumSatirlar.map((s) => s.stokId));
+    await maktuBirimleriniBagla(tx, tumSatirlar, ekVergiler);
     // Genel iskonto payları belge bazında zaten satırlara dağıtılmış olabilir;
     // faturada genel iskonto sıfırlanır, satır değerleri yeniden hesaplanır.
     const hesap = this.hesapla({

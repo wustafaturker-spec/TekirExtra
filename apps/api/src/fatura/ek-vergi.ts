@@ -4,10 +4,20 @@
  * ad, stopaj ve KDV matrahı kuralı belge tarihindeki merkezi vergi türü
  * kaydından türer (istemcinin gönderdiği davranışa güvenilmez).
  */
+import type { Prisma } from "@prisma/client";
 import { vergiTuruBul, type EkVergiHesapGirdisi, type VergiTuru } from "@tekirextra/shared";
 
 export interface EkVergiGirdisi { kod: string; hesap?: "oran" | "birim" | null; oran?: string | null; birimTutar?: string | null; matrah?: string | null; tutar?: string | null }
-export interface EkVergi { kod: string; ad: string; hesap: "oran" | "birim" | null; oran: string | null; birimTutar: string | null; matrah: string | null; tutar: string; stopaj: boolean; kdvMatrahinaDahil: boolean }
+export interface EkVergi {
+  kod: string; ad: string; hesap: "oran" | "birim" | null; oran: string | null; birimTutar: string | null; matrah: string | null; tutar: string; stopaj: boolean; kdvMatrahinaDahil: boolean;
+  /**
+   * EBLG-131: maktu vergide birim tutar kartın ana birimi başınadır; satır ek
+   * birimle (koli) girildiyse katsayı (1 koli = 12 adet) ve ana birim burada
+   * durur. Vergi = satır miktarı × katsayı × birim tutar; UBL'de miktar ana birimle.
+   */
+  anaBirim?: string | null;
+  katsayi?: string | null;
+}
 
 /** Ek vergi taşıyabilen fatura tipleri; iade ve proforma kapsam dışı (EBLG-126). */
 const EK_VERGI_TIPLERI = new Set(["alis", "satis"]);
@@ -27,7 +37,34 @@ export function ekVergileriCoz(tip: string, satirlar: { ekVergiler?: EkVergiGird
 
 /** faturaHesapla girdisi: hesaplı vergide oran/birim tutar, belgedekinde tutar. */
 export function hesapGirdisi(v: EkVergi): EkVergiHesapGirdisi {
-  return { stopaj: v.stopaj, kdvMatrahinaDahil: v.kdvMatrahinaDahil, hesap: v.hesap, tutar: Number(v.tutar), oran: Number(v.oran ?? 0), birimTutar: Number(v.birimTutar ?? 0) };
+  // EBLG-131: hesap satır miktarıyla yapılır; birim tutar satır birimine (koli) ölçeklenir.
+  return { stopaj: v.stopaj, kdvMatrahinaDahil: v.kdvMatrahinaDahil, hesap: v.hesap, tutar: Number(v.tutar), oran: Number(v.oran ?? 0), birimTutar: Number(v.birimTutar ?? 0) * Number(v.katsayi ?? 1) };
+}
+
+/**
+ * EBLG-131: maktu (birim başı) vergisi olan satırlara kartın ana birimini ve
+ * satır biriminin katsayısını işler. Tanımsız ek birim 1 sayılmaz — birim
+ * doğrulaması satır kaydında hata verir; burada yalnız bilinen katsayı yazılır.
+ */
+export async function maktuBirimleriniBagla(
+  tx: Prisma.TransactionClient,
+  satirlar: { stokId: string; birim?: string | null }[],
+  vergiler: EkVergi[][],
+): Promise<void> {
+  const ilgili = satirlar.map((s, i) => ({ s, l: vergiler[i] ?? [] })).filter(({ l }) => l.some((v) => v.hesap === "birim"));
+  if (!ilgili.length) return;
+  const stokIdleri = [...new Set(ilgili.map(({ s }) => s.stokId))];
+  const kartlar = await tx.stokKart.findMany({ where: { id: { in: stokIdleri } }, select: { id: true, anaBirim: true, birimler: { select: { ad: true, katsayi: true } } } });
+  for (const { s, l } of ilgili) {
+    const kart = kartlar.find((k) => k.id === s.stokId);
+    if (!kart) continue;
+    const birim = s.birim || kart.anaBirim;
+    const katsayi = birim === kart.anaBirim ? null : kart.birimler.find((b) => b.ad === birim)?.katsayi;
+    for (const v of l.filter((x) => x.hesap === "birim")) {
+      v.anaBirim = kart.anaBirim;
+      v.katsayi = katsayi ? katsayi.toString() : null;
+    }
+  }
 }
 
 /** Hesap sonrası saklanacak hâl: tutar hesaptan, oranlı verginin matrahı satır matrahı. */
