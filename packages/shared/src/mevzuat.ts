@@ -11,7 +11,7 @@
  * kendi tarihindeki değeri kullanır (MVZ-02).
  */
 
-export const MEVZUAT_TURLERI = ["tevkifat_kodu", "kdv_orani", "kdv_istisna_kodu", "ozel_matrah_kodu", "ihrac_kayitli_kodu", "kanuni_deger", "bordro_parametreleri"] as const;
+export const MEVZUAT_TURLERI = ["tevkifat_kodu", "kdv_orani", "kdv_istisna_kodu", "ozel_matrah_kodu", "ihrac_kayitli_kodu", "kanuni_deger", "bordro_parametreleri", "vergi_turu_kodu"] as const;
 export type MevzuatTuru = (typeof MEVZUAT_TURLERI)[number];
 
 export type MevzuatAlanTipi = "metin" | "sayi" | "oranlar" | "secim" | "dilimler";
@@ -115,6 +115,18 @@ export const MEVZUAT_TUR_TANIMLARI: Record<MevzuatTuru, MevzuatTurTanimi> = {
     anahtarDeseni: /^[a-z_]+$/,
     anahtarSecenekleri: KANUNI_DEGERLER,
     alanlar: [{ ad: "deger", etiket: "Değer", tip: "sayi", zorunlu: true }],
+  },
+  vergi_turu_kodu: {
+    tur: "vergi_turu_kodu",
+    ad: "KDV dışı vergi türü",
+    anahtarEtiketi: "Kod",
+    anahtarIpucu: "UBL vergi türü kodu, dört hane (ör. 0071)",
+    anahtarDeseni: /^\d{4}$/,
+    alanlar: [
+      { ad: "ad", etiket: "Ad", tip: "metin", zorunlu: true },
+      { ad: "davranis", etiket: "Davranış", tip: "secim", zorunlu: true, secenekler: [["maliyet", "Bedele eklenir (maliyet unsuru)"], ["stopaj", "Stopaj (alıcı keser, ödenecekten düşer)"]] },
+      { ad: "kdvMatrahi", etiket: "KDV matrahı", tip: "secim", zorunlu: true, secenekler: [["dahil", "KDV matrahına dahil"], ["haric", "KDV matrahına dahil değil"]] },
+    ],
   },
   bordro_parametreleri: {
     tur: "bordro_parametreleri",

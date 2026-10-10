@@ -43,6 +43,20 @@ import {
 } from "@/components/ui";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 
+/** EBLG-120: satırın KDV dışı vergisi (sunucunun döndürdüğü çözülmüş hâli). */
+interface EkVergiSatiri { kod: string; ad: string; oran: string | null; matrah: string | null; tutar: string; stopaj: boolean; kdvMatrahinaDahil: boolean }
+
+/** Özet kutusu için vergi türü başına toplam. */
+function ekVergiOzeti(satirlar: { ekVergiler?: EkVergiSatiri[] }[]) {
+  const harita = new Map<string, { kod: string; ad: string; stopaj: boolean; tutar: number }>();
+  for (const v of satirlar.flatMap((s) => s.ekVergiler ?? [])) {
+    const m = harita.get(v.kod) ?? { kod: v.kod, ad: v.ad, stopaj: v.stopaj, tutar: 0 };
+    m.tutar = Math.round((m.tutar + Number(v.tutar)) * 100) / 100;
+    harita.set(v.kod, m);
+  }
+  return [...harita.values()];
+}
+
 interface Cari {
   id: string;
   aktif?: boolean;
@@ -108,6 +122,8 @@ interface FaturaSatir {
   ytbMakineSiraNo?: string;
   /** EBLG-71: SARJANLIK faturasında şarj ünitesinin seri numarası. */
   sarjUniteSeriNo?: string;
+  /** EBLG-120: KDV dışı vergiler (gelen belgeden; formda salt okunur, kayıtta aynen gider). */
+  ekVergiler?: EkVergiSatiri[];
   lotNo?: string; seriNolar?: string; sonKullanmaTarihi?: string; uretimTarihi?: string;
   /** FTR-28: ürünün fiyatı başka dövizdeydi, fiyat yazılmadı; elle fiyat girilince kalkar. Sunucuya gitmez. */
   dovizUyarisi?: string;
@@ -183,7 +199,7 @@ interface FaturaDetay extends Fatura {
   gumrukBeyannameTarihi?: string | null;
   notlar?: string | null;
   depoId?: string | null;
-  satirlar: { stokId: string; varyantId?: string | null; stokKod: string; stokAd: string; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; gibIstisnaKodu?: string | null; tevkifatKodu?: string | null; tevkifatOrani?: string | null; idisEtiketNo?: string | null; sarjUniteSeriNo?: string | null; ytbHarcamaTipi?: string | null; ytbMakineAdi?: string | null; ytbMakineId?: string | null; ytbMakineSiraNo?: string | null }[];
+  satirlar: { stokId: string; varyantId?: string | null; stokKod: string; stokAd: string; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; gibIstisnaKodu?: string | null; tevkifatKodu?: string | null; tevkifatOrani?: string | null; idisEtiketNo?: string | null; sarjUniteSeriNo?: string | null; ytbHarcamaTipi?: string | null; ytbMakineAdi?: string | null; ytbMakineId?: string | null; ytbMakineSiraNo?: string | null; ekVergiler?: EkVergiSatiri[] }[];
   ebelge?: {
     id: string;
     durum: string;
@@ -689,6 +705,8 @@ export default function FaturaSayfasi() {
       iskontoOrani: s.iskontoOrani,
       tevkifatPay: tevkifat?.pay,
       tevkifatPayda: tevkifat?.payda,
+      // EBLG-120: sunucu davranışı merkezden yeniden çözer; özet aynı sonucu göstersin.
+      ekVergiler: (s.ekVergiler ?? []).map((v) => ({ tutar: Number(v.tutar), stopaj: v.stopaj, kdvMatrahinaDahil: v.kdvMatrahinaDahil })),
     };
   });
   // EBLG-60: ihraç kayıtlı yalnız satışta; tip değişince seçim yok sayılır.
@@ -831,6 +849,7 @@ export default function FaturaSayfasi() {
           ytbMakineId: satir.ytbMakineId ?? "",
           ytbMakineSiraNo: satir.ytbMakineSiraNo ?? "",
           sarjUniteSeriNo: satir.sarjUniteSeriNo ?? "",
+          ekVergiler: satir.ekVergiler ?? [],
           projeId: (satir as any).projeId ?? (satir as any).proje?.id ?? undefined,
           projeAltKirilimId: (satir as any).projeAltKirilimId ?? (satir as any).projeAltKirilim?.id ?? undefined,
         })));
@@ -1260,6 +1279,7 @@ export default function FaturaSayfasi() {
             ytbMakineId: s.ytbMakineId?.trim() || undefined,
             ytbMakineSiraNo: s.ytbMakineSiraNo?.trim() || undefined,
             sarjUniteSeriNo: s.sarjUniteSeriNo?.trim() || undefined,
+            ekVergiler: s.ekVergiler?.length ? s.ekVergiler.map((v) => ({ kod: v.kod, oran: v.oran, matrah: v.matrah, tutar: v.tutar })) : undefined,
             projeId: s.projeId || undefined,
             projeAltKirilimId: s.projeAltKirilimId || undefined,
             partiBilgileri: (() => {
@@ -2213,6 +2233,7 @@ export default function FaturaSayfasi() {
                         />
                         {varyantlariAl(s.stokId).length > 0 && <Select aria-label="Varyant" required value={s.varyantId ?? ""} onChange={(e) => { const varyantId = e.target.value; setSatirlar((eskiler) => eskiler.map((x, i) => i === index ? { ...x, varyantId } : x)); if (varyantId) void kalemFiyatiGetir(s.stokId, varyantId).then((fiyat) => { if (fiyat) setSatirlar((eskiler) => eskiler.map((x, i) => i === index && x.varyantId === varyantId ? { ...x, ...fiyat } : x)); }); }}><option value="">Varyant seçin</option>{varyantlariAl(s.stokId).filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.ad} · {v.kod} · Stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")}</option>)}</Select>}
                         {satirDogrulamaHatalari.includes(index) && <p className="field-error" id={`fatura-satir-${index}-hatasi`} role="alert">Bu satır için ürün veya hizmet seçin.</p>}
+                        {(s.ekVergiler?.length ?? 0) > 0 && <small className="muted">{s.ekVergiler!.map((v) => `${v.ad}${v.stopaj ? " (stopaj)" : ""}: ${tl(Number(v.tutar), dovizCinsi)}`).join(" · ")}</small>}
                         {s.dovizUyarisi && <p className="field-error" role="alert">{s.dovizUyarisi}</p>}
                         {seciliStok && (
                           <span className={`document-line-stock${stokYetersiz ? " is-warning" : ""}`}>
@@ -2557,6 +2578,9 @@ export default function FaturaSayfasi() {
               ))}
               {ihracKayitli && <small className="muted">{tip === "alis" ? "İhraç kayıtlı alış: KDV hesaplanır, satıcıya ödenmez ve cariye girmez." : "İhraç kayıtlı: KDV hesaplanır, tahsil edilmez."}</small>}
               {sonuc.toplamTevkifat > 0 && <div className="invoice-summary__line is-discount"><span>Tevkifat</span><span>-{tl(sonuc.toplamTevkifat, dovizCinsi)}</span></div>}
+              {ekVergiOzeti(satirlar).map((v) => (
+                <div className={`invoice-summary__line ${v.stopaj ? "is-discount" : "is-tax"}`} key={v.kod}><span>{v.ad}</span><span>{v.stopaj ? "-" : ""}{tl(v.tutar, dovizCinsi)}</span></div>
+              ))}
               <div className="invoice-summary__line is-grand"><span>Ödenecek</span><span>{tl(sonuc.genelToplam, dovizCinsi)}</span></div>
               {dovizCinsi !== "TRY" && Number(kur) > 0 && <small className="muted invoice-summary__tl">≈ {tl(sonuc.genelToplam * Number(kur), "TRY")} · kur {Number(kur).toLocaleString("tr-TR", { maximumFractionDigits: 4 })}</small>}
             </div>

@@ -2427,6 +2427,9 @@ model Fatura {
   /// Biçim `YolcuBeraberiBilgisi` (packages/shared/src/yolcu-beraberi.ts).
   yolcuBeraberi         Json?               @map("yolcu_beraberi")
   toplamNetKdv          Decimal             @map("toplam_net_kdv") @db.Decimal(15, 2)
+  /// EBLG-120: bedele eklenen KDV dışı vergiler ve kesilen stopaj toplamı (belge dövizi).
+  toplamEkVergi         Decimal             @default(0) @map("toplam_ek_vergi") @db.Decimal(15, 2)
+  toplamStopaj          Decimal             @default(0) @map("toplam_stopaj") @db.Decimal(15, 2)
   genelToplam           Decimal             @map("genel_toplam") @db.Decimal(15, 2)
   aciklama              String?
   notlar                String?
@@ -2533,6 +2536,10 @@ model FaturaSatir {
   tevkifatPayda     Int?    @map("tevkifat_payda")
   tevkifatTutari    Decimal @default(0) @map("tevkifat_tutari") @db.Decimal(15, 2)
   netKdvTutari      Decimal @map("net_kdv_tutari") @db.Decimal(15, 2)
+  /// EBLG-120: KDV dışı vergiler [{kod, ad, oran, matrah, tutar, stopaj, kdvMatrahinaDahil}]; davranış kodun merkezdeki kaydından.
+  ekVergiler        Json?   @map("ek_vergiler")
+  ekVergiTutari     Decimal @default(0) @map("ek_vergi_tutari") @db.Decimal(15, 2)
+  stopajTutari      Decimal @default(0) @map("stopaj_tutari") @db.Decimal(15, 2)
   toplamTutar       Decimal @map("toplam_tutar") @db.Decimal(15, 2)
   gibIstisnaKodu    String? @map("gib_istisna_kodu")
   /// İDİS etiket numarası (EBLG-72): 2 harf + 7 rakam, her satırda zorunlu.

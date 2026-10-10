@@ -4,8 +4,8 @@
  * belge iskontosu, iade referansları); oluşacak faturanın tutarları belgenin
  * toplamlarıyla karşılaştırılır, tolerans aşılırsa işleme durur.
  */
-import { dovizKoduMu, faturaHesapla, kdvOraniHatasi, ozelMatrahKdvsi, ozelMatrahKoduBul, tevkifatKoduBul, tevkifatPayPayda, VARSAYILAN_KOD_TABLOSU, type FaturaHesaplaSonuc, type KodTablosu, type TevkifatKodu } from "@tekirextra/shared";
-import type { UblFatura } from "./ubl-oku";
+import { dovizKoduMu, faturaHesapla, kdvOraniHatasi, ozelMatrahKdvsi, ozelMatrahKoduBul, tevkifatKoduBul, tevkifatPayPayda, vergiTuruBul, VARSAYILAN_KOD_TABLOSU, VARSAYILAN_VERGI_TURLERI, type FaturaHesaplaSonuc, type KodTablosu, type TevkifatKodu, type VergiTuru } from "@tekirextra/shared";
+import type { UblFatura, UblVergi } from "./ubl-oku";
 
 export type GelenFaturaTipi = "alis" | "satis_iade";
 const IADE_TIPLERI = new Set(["IADE", "TEVKIFATIADE"]);
@@ -29,7 +29,38 @@ export interface GelenFaturaGirdisi {
   ozelMatrahKodu: string | null;
   ozelMatrahTutari: string | null;
   ozelMatrahOrani: string | null;
-  satirlar: { siraNo: number; stokId: string; varyantId: string | null; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; tevkifatKodu: string | null; tevkifatOrani: string | null }[];
+  satirlar: { siraNo: number; stokId: string; varyantId: string | null; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; tevkifatKodu: string | null; tevkifatOrani: string | null; ekVergiler: GelenEkVergi[] }[];
+}
+
+/** EBLG-120: satıra aktarılan KDV dışı vergi (belge dövizinde). */
+export interface GelenEkVergi { kod: string; oran: string | null; matrah: string | null; tutar: string }
+
+const kurus = (v: number) => Math.round(v * 100) / 100;
+
+/**
+ * EBLG-120: satır vergileri olduğu gibi; yalnız başlıkta yazılmış bir kod
+ * satırlara matrah (LineExtensionAmount) oranında dağıtılır, kuruş farkı son
+ * satıra. Aynı kod satırda da varsa başlıktaki tekrar sayılmaz.
+ */
+export function gelenEkVergileri(ubl: Pick<UblFatura, "satirlar" | "toplamlar">): GelenEkVergi[][] {
+  const metin = (v: number | null) => (v === null ? null : String(v));
+  const satirlar = ubl.satirlar.map((s) => s.digerVergiler.map((v) => ({ kod: v.kod, oran: metin(v.oran), matrah: metin(v.matrah), tutar: kurus(v.tutar).toFixed(2) })));
+  const satirKodlari = new Set(ubl.satirlar.flatMap((s) => s.digerVergiler.map((v) => v.kod)));
+  const baslikta = new Map<string, UblVergi[]>();
+  for (const v of ubl.toplamlar.digerVergiler.filter((v) => !satirKodlari.has(v.kod))) baslikta.set(v.kod, [...(baslikta.get(v.kod) ?? []), v]);
+  const toplamMatrah = ubl.satirlar.reduce((t, s) => t + s.matrah, 0);
+  for (const [kod, liste] of baslikta) {
+    const tutar = kurus(liste.reduce((t, v) => t + v.tutar, 0));
+    if (tutar === 0) continue;
+    const oran = liste.length === 1 ? metin(liste[0].oran) : null;
+    let dagitilan = 0;
+    ubl.satirlar.forEach((s, i) => {
+      const pay = i === ubl.satirlar.length - 1 ? kurus(tutar - dagitilan) : toplamMatrah > 0 ? kurus(tutar * s.matrah / toplamMatrah) : 0;
+      dagitilan = kurus(dagitilan + pay);
+      if (pay !== 0) satirlar[i].push({ kod, oran, matrah: oran === null ? null : String(s.matrah), tutar: pay.toFixed(2) });
+    });
+  }
+  return satirlar;
 }
 
 /**
@@ -50,8 +81,16 @@ export function gelenFaturaGirdisi(
   if (!dovizKoduMu(ubl.dovizCinsi)) engeller.push(`Belge dövizi (${ubl.dovizCinsi}) sistemde tanımlı değil`);
   if (doviz && !(ubl.kur && ubl.kur > 0)) engeller.push(`Dövizli (${ubl.dovizCinsi}) belgede kur yok; TL karşılığı bilinmeden işlenemez`);
   if (ubl.toplamlar.belgeArtirimi > 0) engeller.push(`Belge düzeyinde ${ubl.toplamlar.belgeArtirimi.toFixed(2)} ${ubl.dovizCinsi} artırım (masraf) var; aktarılamıyor`);
-  const vergiAdlari = new Set([...ubl.toplamlar.digerVergiler, ...ubl.satirlar.flatMap((s) => s.digerVergiler)].map((v) => v.ad || v.kod));
-  if (vergiAdlari.size) engeller.push(`KDV dışı vergi aktarılamıyor (EBLG-120): ${[...vergiAdlari].join(", ")}`);
+  // EBLG-120: KDV dışı vergiler alış faturasına aktarılır; kod merkezde tanımlı olmalı.
+  const ekVergiler = gelenEkVergileri(ubl);
+  const vergiKodlari = new Map([...ubl.toplamlar.digerVergiler, ...ubl.satirlar.flatMap((s) => s.digerVergiler)].map((v) => [v.kod, v.ad] as const));
+  for (const [kod, ad] of vergiKodlari) {
+    if (!vergiTuruBul(kod, kodTablosu.vergiTurleri)) {
+      engeller.push(`Vergi türü ${kod}${ad ? ` (${ad})` : ""} belge tarihinde tanımlı değil (Mevzuat Merkezi ekibine iletildi)`);
+      bilinmeyenler.push({ tur: "vergi_turu_kodu", anahtar: kod, aciklama: `Gelen e-Faturada tanınmayan vergi türü ${kod}${ad ? ` (${ad})` : ""}, belge tarihi ${ubl.tarih}` });
+    }
+  }
+  if (vergiKodlari.size && gelenFaturaTipi(ubl) !== "alis") engeller.push(`KDV dışı vergili iade belgesi aktarılamıyor (${[...vergiKodlari.values()].filter(Boolean).join(", ") || [...vergiKodlari.keys()].join(", ")}); faturayı elle girin`);
 
   const ozelMatrah = ubl.faturaTipKodu === "OZELMATRAH";
   const ozelMatrahKodlari = ubl.istisnaKodlari.filter((k) => ozelMatrahKoduBul(k, kodTablosu.ozelMatrah));
@@ -110,6 +149,7 @@ export function gelenFaturaGirdisi(
       // EBLG-116: özel matrahta KDV satırdan değil özel matrahtan doğar.
       kdvOrani: ozelMatrah ? "0" : Math.max(0, s.kdvOrani).toFixed(2),
       tevkifatKodu, tevkifatOrani,
+      ekVergiler: ekVergiler[ubl.satirlar.indexOf(s)] ?? [],
     };
   });
 
@@ -130,11 +170,16 @@ export function gelenFaturaGirdisi(
 }
 
 /** Fatura servisinin kesinleştirmede yapacağı hesabın aynısı. */
-export function gelenFaturaHesabi(girdi: GelenFaturaGirdisi, kdvTahsilEdilmez: boolean, tevkifatTablosu?: readonly TevkifatKodu[]): FaturaHesaplaSonuc {
+export function gelenFaturaHesabi(girdi: GelenFaturaGirdisi, kdvTahsilEdilmez: boolean, tevkifatTablosu?: readonly TevkifatKodu[], vergiTurleri: readonly VergiTuru[] = VARSAYILAN_VERGI_TURLERI): FaturaHesaplaSonuc {
   return faturaHesapla({
     satirlar: girdi.satirlar.map((s) => {
       const oran = tevkifatPayPayda(s.tevkifatKodu, s.tevkifatOrani, tevkifatTablosu);
-      return { stokId: s.stokId, miktar: Number(s.miktar), birimFiyat: Number(s.birimFiyat), iskontoOrani: Number(s.iskontoOrani), kdvOrani: Number(s.kdvOrani), tevkifatPay: oran?.pay, tevkifatPayda: oran?.payda };
+      // EBLG-120: tanınmayan kod engel üretir; hesapta bedele eklenen vergi sayılır.
+      const ekVergiler = s.ekVergiler.map((v) => {
+        const tur = vergiTuruBul(v.kod, vergiTurleri);
+        return { tutar: Number(v.tutar), stopaj: tur?.stopaj ?? false, kdvMatrahinaDahil: tur?.kdvMatrahinaDahil ?? false };
+      });
+      return { stokId: s.stokId, miktar: Number(s.miktar), birimFiyat: Number(s.birimFiyat), iskontoOrani: Number(s.iskontoOrani), kdvOrani: Number(s.kdvOrani), tevkifatPay: oran?.pay, tevkifatPayda: oran?.payda, ekVergiler };
     }),
     genelIskontoTutari: Number(girdi.genelIskontoTutari),
     kdvTahsilEdilmez,
@@ -142,7 +187,7 @@ export function gelenFaturaHesabi(girdi: GelenFaturaGirdisi, kdvTahsilEdilmez: b
   });
 }
 
-export interface TutarFarki { alan: "matrah" | "kdv" | "tevkifat" | "odenecek"; ad: string; belge: number; sistem: number; fark: number }
+export interface TutarFarki { alan: "matrah" | "kdv" | "tevkifat" | "ek_vergi" | "stopaj" | "odenecek"; ad: string; belge: number; sistem: number; fark: number }
 export interface TutarDenetimi {
   tolerans: number; satirlar: TutarFarki[]; asanlar: TutarFarki[]; gecerli: boolean;
   /** Farkın ya da belge kartı ile tablo arasındaki ayrımın bilinen nedenleri (ekranda gösterilir). */
@@ -155,14 +200,21 @@ export interface TutarDenetimi {
  * ödenecek tutar zaten kapsar. İhraç kayıtlı belgede KDV ödenmediği için
  * ödenecek yerine vergi dahil toplam karşılaştırılır.
  */
-export function tutarDenetimi(ubl: UblFatura, hesap: FaturaHesaplaSonuc, ihracKayitli: boolean): TutarDenetimi {
+export function tutarDenetimi(ubl: UblFatura, hesap: FaturaHesaplaSonuc, ihracKayitli: boolean, vergiTurleri: readonly VergiTuru[] = VARSAYILAN_VERGI_TURLERI): TutarDenetimi {
   const t = ubl.toplamlar;
+  // EBLG-120: belgedeki KDV dışı vergiler davranışına göre (başlık yoksa satırlardan).
+  const belgeVergileri = t.digerVergiler.length ? t.digerVergiler : ubl.satirlar.flatMap((s) => s.digerVergiler);
+  const stopajMi = (v: UblVergi) => vergiTuruBul(v.kod, vergiTurleri)?.stopaj ?? false;
+  const belgeEkVergi = belgeVergileri.filter((v) => !stopajMi(v)).reduce((s, v) => s + v.tutar, 0);
+  const belgeStopaj = belgeVergileri.filter(stopajMi).reduce((s, v) => s + v.tutar, 0);
   const tolerans = Math.max(0.05, ubl.satirlar.length * 0.01);
   const satir = (alan: TutarFarki["alan"], ad: string, belge: number, sistem: number): TutarFarki => ({ alan, ad, belge: yuvarla(belge), sistem: yuvarla(sistem), fark: yuvarla(sistem - belge) });
   const satirlar = [
     satir("matrah", "Matrah", t.matrah, hesap.toplamMatrah),
     ...(t.vergiParaBirimi === ubl.dovizCinsi ? [satir("kdv", "KDV", t.kdvSaf, hesap.toplamKdv)] : []),
     satir("tevkifat", "Tevkifat", t.tevkifat, hesap.toplamTevkifat),
+    ...(belgeEkVergi || hesap.toplamEkVergi ? [satir("ek_vergi", "KDV dışı vergiler", belgeEkVergi, hesap.toplamEkVergi)] : []),
+    ...(belgeStopaj || hesap.toplamStopaj ? [satir("stopaj", "Stopaj", belgeStopaj, hesap.toplamStopaj)] : []),
     ihracKayitli
       ? satir("odenecek", "Vergiler dahil toplam", t.vergiDahil || t.genelToplam, hesap.genelToplam + hesap.toplamKdv)
       : satir("odenecek", "Ödenecek tutar", t.odenecek || t.genelToplam, hesap.genelToplam),
@@ -173,8 +225,7 @@ export function tutarDenetimi(ubl: UblFatura, hesap: FaturaHesaplaSonuc, ihracKa
   if (t.kdvIcindeTevkifat > 0 && t.tevkifat === 0) {
     aciklamalar.push(`Belgedeki ${tl(t.kdvIcindeTevkifat)} tevkifat (9015) standart tevkifat alanına değil KDV toplamının içine yazılmış; sistem bunu tevkifat olarak okuyamadığı için ödenecek tutar tutmuyor. Gönderenden belgeyi düzeltmesini isteyin ya da faturayı elle girin.`);
   }
-  const digerToplam = t.digerVergiler.reduce((s, v) => s + v.tutar, 0);
-  if (digerToplam !== 0) aciklamalar.push(`Belgede KDV dışı vergi var (${t.digerVergiler.map((v) => `${v.ad || v.kod}: ${tl(v.tutar)}`).join(", ")}); tabloda yalnız KDV karşılaştırılır.`);
+  if (belgeStopaj) aciklamalar.push(`Belgede ${tl(belgeStopaj)} stopaj var; ödenecek tutardan düşülür, muhasebede 360'a alacak yazılır.`);
   if (Math.abs(t.kdv - t.kdvSaf) > tolerans) aciklamalar.push(`Üstteki KDV kartı belgenin vergi toplamıdır (${tl(t.kdv)}); tablodaki KDV yalnız KDV alt toplamlarıdır (${tl(t.kdvSaf)}).`);
   return { tolerans, satirlar, asanlar, gecerli: asanlar.length === 0, aciklamalar };
 }

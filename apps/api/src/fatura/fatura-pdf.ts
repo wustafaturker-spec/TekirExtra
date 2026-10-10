@@ -105,6 +105,9 @@ export interface FaturaPdfVerisi {
   /** EBLG-60: ihraç kayıtlı kodu; doluysa KDV gösterilir ama tahsil edilmez. */
   ihracKayitliKodu?: string | null;
   toplamTevkifat: string;
+  /** EBLG-120: bedele eklenen KDV dışı vergiler ve kesilen stopaj. */
+  toplamEkVergi?: string;
+  toplamStopaj?: string;
   genelToplam: string;
   aciklama: string | null;
   cari: { kod: string; unvan: string; vknTckn: string | null };
@@ -357,6 +360,8 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
       ? { etiket: `Hesaplanan KDV (özel matrah %${sayiBicim(f.ozelMatrahOrani ?? "0")})`, deger: f.toplamKdv }
       : { etiket: f.ihracKayitliKodu ? `Hesaplanan KDV (tahsil edilmez — ${kacis(f.ihracKayitliKodu)})` : "Hesaplanan KDV", deger: f.toplamKdv },
     ...(Number(f.toplamTevkifat) > 0 ? [{ etiket: "KDV Tevkifatı", deger: `-${f.toplamTevkifat}` }] : []),
+    ...(Number(f.toplamEkVergi ?? 0) > 0 ? [{ etiket: "KDV Dışı Vergiler", deger: f.toplamEkVergi! }] : []),
+    ...(Number(f.toplamStopaj ?? 0) > 0 ? [{ etiket: "Stopaj", deger: `-${f.toplamStopaj}` }] : []),
     { etiket: "Genel Toplam", deger: f.genelToplam, kalin: true },
   ];
   // EBLG-57: dövizli faturada toplamların TL karşılığı da gösterilir; ihracat

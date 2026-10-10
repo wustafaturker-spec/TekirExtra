@@ -48,13 +48,15 @@ export class MevzuatService {
 
   /** MVZ-11: belge tarihindeki KDV oranları, istisna, özel matrah ve ihraç kayıtlı kodları. */
   async kodTablosu(tarih: string): Promise<KodTablosu> {
-    const [kdvOrani, istisna, ozelMatrah, ihracKayitli] = await Promise.all([
+    const [kdvOrani, istisna, ozelMatrah, ihracKayitli, vergiTuru] = await Promise.all([
       this.yururluktekiler("kdv_orani", tarih),
       this.yururluktekiler("kdv_istisna_kodu", tarih),
       this.yururluktekiler("ozel_matrah_kodu", tarih),
       this.yururluktekiler("ihrac_kayitli_kodu", tarih),
+      // EBLG-120: KDV dışı vergi türleri (ÖTV, ÖİV, stopaj…).
+      this.yururluktekiler("vergi_turu_kodu", tarih),
     ]);
-    return kodTablosuKur({ kdvOrani, istisna, ozelMatrah, ihracKayitli });
+    return kodTablosuKur({ kdvOrani, istisna, ozelMatrah, ihracKayitli, vergiTuru });
   }
 
   /**

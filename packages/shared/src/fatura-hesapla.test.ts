@@ -143,3 +143,36 @@ describe("faturaHesapla — özel matrah", () => {
     expect(sonuc.genelToplam).toBe(95500);
   });
 });
+
+describe("KDV dışı vergiler (EBLG-120) — gerçek belge örnekleri", () => {
+  const satir = (birimFiyat: number, kdvOrani: number, ekVergiler: { tutar: number; stopaj: boolean; kdvMatrahinaDahil: boolean }[]) =>
+    ({ stokId: "s", miktar: 1, birimFiyat, kdvOrani, ekVergiler });
+
+  it("ÖTV KDV matrahına girer: 1000 + ÖTV 250 → KDV 250, ödenecek 1500", () => {
+    const s = faturaHesapla({ satirlar: [satir(1000, 20, [{ tutar: 250, stopaj: false, kdvMatrahinaDahil: true }])] });
+    expect(s.toplamKdv).toBe(250);
+    expect(s.toplamEkVergi).toBe(250);
+    expect(s.genelToplam).toBe(1500);
+    expect(s.kdvDetaylari[0].matrah).toBe(1250);
+  });
+
+  it("ÖİV KDV matrahına girmez, ÖTV III girer: 100 + ÖİV 10 + ÖTV 30 → KDV matrahı 130, KDV 26, ödenecek 166", () => {
+    const s = faturaHesapla({ satirlar: [satir(100, 20, [{ tutar: 10, stopaj: false, kdvMatrahinaDahil: false }, { tutar: 30, stopaj: false, kdvMatrahinaDahil: true }])] });
+    expect(s.toplamKdv).toBe(26);
+    expect(s.genelToplam).toBe(166);
+  });
+
+  it("konaklama vergisi KDV matrahına girmez: 500 + KDV 100 + 10 → 610", () => {
+    const s = faturaHesapla({ satirlar: [satir(500, 20, [{ tutar: 10, stopaj: false, kdvMatrahinaDahil: false }])] });
+    expect(s.toplamKdv).toBe(100);
+    expect(s.genelToplam).toBe(610);
+  });
+
+  it("stopaj ödenecekten düşer: 500 + KDV 100 − GV stopajı 50 → 550", () => {
+    const s = faturaHesapla({ satirlar: [satir(500, 20, [{ tutar: 50, stopaj: true, kdvMatrahinaDahil: false }])] });
+    expect(s.toplamStopaj).toBe(50);
+    expect(s.toplamEkVergi).toBe(0);
+    expect(s.genelToplam).toBe(550);
+    expect(s.satirlar[0].toplamTutar).toBe(550);
+  });
+});

@@ -16,6 +16,7 @@ import { faturaHesapla, faturaSenaryosuTuret, idisNormalize, metinNormalize, oze
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { belgeKodTablosu, firmaTevkifatTablosu, mevzuatKurallariniUygula } from "./tevkifat-tablosu";
 import { MevzuatService } from "../mevzuat/mevzuat.service";
+import { ekVergileriCoz, sakliEkVergiler, type EkVergi, type EkVergiGirdisi } from "./ek-vergi";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
@@ -76,6 +77,15 @@ export class FaturaService {
     const hatalar = mevzuatKurallariniUygula({ ozelMatrahKodu: girdi.ozelMatrahKodu, ihracKayitliKodu: girdi.ihracKayitliKodu, satirlar: girdi.satirlar ?? [] }, { tevkifat: tablo, kod }, pasifKodKabul);
     if (hatalar.length) throw new BadRequestException(hatalar.join("; "));
     return tablo;
+  }
+
+  /** EBLG-120: satırların KDV dışı vergilerini belge tarihindeki merkezi vergi türleriyle çözer. */
+  private async ekVergileriniCoz(girdi: { tip: string; tarih: string | Date; satirlar: { ekVergiler?: EkVergiGirdisi[] | null }[] }): Promise<EkVergi[][]> {
+    if (!girdi.satirlar.some((s) => s.ekVergiler?.length)) return girdi.satirlar.map(() => []);
+    const tarih = typeof girdi.tarih === "string" ? girdi.tarih.slice(0, 10) : girdi.tarih.toISOString().slice(0, 10);
+    const { satirlar, hatalar } = ekVergileriCoz(girdi.tip, girdi.satirlar, (await belgeKodTablosu(this.mevzuat, tarih)).vergiTurleri);
+    if (hatalar.length) throw new BadRequestException(hatalar.join("; "));
+    return satirlar;
   }
 
   private async cariTipiniDogrula(tx: Prisma.TransactionClient, cariId: string, tip: string): Promise<void> {
@@ -211,12 +221,12 @@ export class FaturaService {
               toplamBrut: s.toplamBrut, toplamSatirIskontosu: s.toplamSatirIskontosu,
               genelIskontoToplam: s.genelIskontoToplam, toplamMatrah: s.toplamMatrah,
               toplamKdv: s.toplamKdv, toplamTevkifat: s.toplamTevkifat,
-              toplamNetKdv: s.toplamNetKdv, genelToplam: s.genelToplam,
+              toplamNetKdv: s.toplamNetKdv, toplamEkVergi: s.toplamEkVergi, toplamStopaj: s.toplamStopaj, genelToplam: s.genelToplam,
               aciklama: s.aciklama, notlar: s.notlar, tekrarlayanPlanId: plan.id, planlananTarih: tarih,
             }});
             for (const satir of s.satirlar) {
               const { id: _id, faturaId: _faturaId, ...veri } = satir;
-              await tx.faturaSatir.create({ data: { ...veri, partiBilgileri: veri.partiBilgileri === null ? Prisma.JsonNull : veri.partiBilgileri as Prisma.InputJsonValue, id: undefined, faturaId: yeni.id } });
+              await tx.faturaSatir.create({ data: { ...veri, partiBilgileri: veri.partiBilgileri === null ? Prisma.JsonNull : veri.partiBilgileri as Prisma.InputJsonValue, ekVergiler: veri.ekVergiler === null ? Prisma.JsonNull : veri.ekVergiler as Prisma.InputJsonValue, id: undefined, faturaId: yeni.id } });
             }
             uretilenIds.push(yeni.id);
             planUretimAdedi += 1;
@@ -521,6 +531,10 @@ export class FaturaService {
         tevkifatPayda: s.tevkifatPayda,
         tevkifatTutari: s.tevkifatTutari.toFixed(2),
         netKdvTutari: s.netKdvTutari.toFixed(2),
+        // EBLG-120: KDV dışı vergiler (salt okunur; taslak düzenlenirken aynen geri gönderilir).
+        ekVergiler: (s.ekVergiler as EkVergi[] | null) ?? [],
+        ekVergiTutari: s.ekVergiTutari.toFixed(2),
+        stopajTutari: s.stopajTutari.toFixed(2),
         toplamTutar: s.toplamTutar.toFixed(2),
         gibIstisnaKodu: s.gibIstisnaKodu,
         idisEtiketNo: s.idisEtiketNo,
@@ -582,7 +596,8 @@ export class FaturaService {
 
     // Fatura hesaplamalarını shared engine üzerinden yapalım (FTR-04)
     const tevkifatTablosu = await this.tevkifatTablosuIleDogrula(girdi, Boolean(secenekler.gelenBelge));
-    const hesaplanan = this.hesaplaFatura(girdi, tevkifatTablosu);
+    const ekVergiler = await this.ekVergileriniCoz(girdi);
+    const hesaplanan = this.hesaplaFatura(girdi, tevkifatTablosu, ekVergiler);
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       await this.cariTipiniDogrula(tx, girdi.cariId, girdi.tip);
@@ -671,6 +686,8 @@ export class FaturaService {
           toplamKdv: D(hesaplanan.toplamKdv),
           toplamTevkifat: D(hesaplanan.toplamTevkifat),
           toplamNetKdv: D(hesaplanan.toplamNetKdv),
+          toplamEkVergi: D(hesaplanan.toplamEkVergi),
+          toplamStopaj: D(hesaplanan.toplamStopaj),
           genelToplam: D(hesaplanan.genelToplam),
           aciklama: girdi.aciklama,
           notlar: girdi.notlar,
@@ -703,6 +720,10 @@ export class FaturaService {
             tevkifatPayda: s.tevkifatPayda,
             tevkifatTutari: D(s.tevkifatTutari),
             netKdvTutari: D(s.netKdvTutari),
+            // EBLG-120: KDV dışı vergiler (davranış merkezden çözüldü).
+            ekVergiler: ekVergiler[index].length ? (ekVergiler[index] as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+            ekVergiTutari: D(s.ekVergiTutari),
+            stopajTutari: D(s.stopajTutari),
             toplamTutar: D(s.toplamTutar),
             gibIstisnaKodu: orijinalSatir.gibIstisnaKodu,
             // İDİS etiket no ve şarj ünitesi seri no satır alanlarıdır
@@ -795,6 +816,7 @@ export class FaturaService {
           ytbMakineSiraNo: s.ytbMakineSiraNo,
           projeId: (s as any).projeId ?? undefined,
           projeAltKirilimId: (s as any).projeAltKirilimId ?? undefined,
+          ekVergiler: sakliEkVergiler(s.ekVergiler),
         })),
     };
 
@@ -820,7 +842,8 @@ export class FaturaService {
 
     // MVZ-03: taslak her kaydedişte kendi tarihindeki merkezi tevkifat oranıyla hesaplanır.
     const tevkifatTablosu = await this.tevkifatTablosuIleDogrula(birlesikGirdi, Boolean(fatura.gelenEbelge));
-    const hesaplanan = this.hesaplaFatura(birlesikGirdi, tevkifatTablosu);
+    const ekVergiler = await this.ekVergileriniCoz(birlesikGirdi);
+    const hesaplanan = this.hesaplaFatura(birlesikGirdi, tevkifatTablosu, ekVergiler);
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       await this.cariTipiniDogrula(tx, birlesikGirdi.cariId, birlesikGirdi.tip);
@@ -854,6 +877,10 @@ export class FaturaService {
             tevkifatPayda: s.tevkifatPayda,
             tevkifatTutari: D(s.tevkifatTutari),
             netKdvTutari: D(s.netKdvTutari),
+            // EBLG-120: KDV dışı vergiler (davranış merkezden çözüldü).
+            ekVergiler: ekVergiler[index].length ? (ekVergiler[index] as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+            ekVergiTutari: D(s.ekVergiTutari),
+            stopajTutari: D(s.stopajTutari),
             toplamTutar: D(s.toplamTutar),
             gibIstisnaKodu: orijinalSatir.gibIstisnaKodu,
             // İDİS etiket no ve şarj ünitesi seri no satır alanlarıdır
@@ -933,6 +960,8 @@ export class FaturaService {
           toplamKdv: D(hesaplanan.toplamKdv),
           toplamTevkifat: D(hesaplanan.toplamTevkifat),
           toplamNetKdv: D(hesaplanan.toplamNetKdv),
+          toplamEkVergi: D(hesaplanan.toplamEkVergi),
+          toplamStopaj: D(hesaplanan.toplamStopaj),
           genelToplam: D(hesaplanan.genelToplam),
           aciklama: birlesikGirdi.aciklama,
           notlar: birlesikGirdi.notlar,
@@ -1320,6 +1349,8 @@ export class FaturaService {
           toplamKdv: fatura.toplamKdv,
           toplamTevkifat: fatura.toplamTevkifat,
           toplamNetKdv: fatura.toplamNetKdv,
+          toplamEkVergi: fatura.toplamEkVergi,
+          toplamStopaj: fatura.toplamStopaj,
           genelToplam: fatura.genelToplam,
           aciklama: fatura.aciklama ? `${fatura.aciklama} (Kopya)` : "Kopya",
           notlar: fatura.notlar,
@@ -1364,6 +1395,9 @@ export class FaturaService {
             tevkifatPayda: s.tevkifatPayda,
             tevkifatTutari: s.tevkifatTutari,
             netKdvTutari: s.netKdvTutari,
+            ekVergiler: s.ekVergiler ?? Prisma.JsonNull,
+            ekVergiTutari: s.ekVergiTutari,
+            stopajTutari: s.stopajTutari,
             toplamTutar: s.toplamTutar,
             gibIstisnaKodu: s.gibIstisnaKodu,
             tevkifatKodu: s.tevkifatKodu,
@@ -1492,8 +1526,9 @@ export class FaturaService {
           const anaMiktar = s.miktar.mul(katsayi);
           // STK-25/26/27: alış ve alış iadesinde satırın net TL tutarı; satış
           // iadesinde satışın çıkış maliyeti; satışta ortalama (hareketEkle verir).
+          // EBLG-120: bedele eklenen KDV dışı vergi (ÖTV, ÖİV…) maliyettir; stopaj değildir.
           const birimMaliyet = fatura.tip === "alis" || fatura.tip === "alis_iade"
-            ? alisBirimMaliyeti(s.matrah, fatura.kur, anaMiktar)
+            ? alisBirimMaliyeti(s.matrah.add(s.ekVergiTutari), fatura.kur, anaMiktar)
             : fatura.tip === "satis_iade"
               ? await this.satisIadesiMaliyeti(tx, s.stokId, s.varyantId, iadeKaynaklari)
               : new Prisma.Decimal(0);
@@ -1711,8 +1746,8 @@ export class FaturaService {
     }[];
     genelIskontoYuzdesi?: string | number | Prisma.Decimal;
     genelIskontoTutari?: string | number | Prisma.Decimal;
-  }, tevkifatTablosu?: readonly TevkifatKodu[]) {
-    const satirGirdileri: FaturaHesaplaSatirGirdi[] = girdi.satirlar.map((s) => {
+  }, tevkifatTablosu?: readonly TevkifatKodu[], ekVergiler?: EkVergi[][]) {
+    const satirGirdileri: FaturaHesaplaSatirGirdi[] = girdi.satirlar.map((s, i) => {
       // Oran GİB kodundan türer (FTR-18). Saklı satırlar yeniden hesaplanırken
       // kod henüz yoksa mevcut pay/payda korunur.
       const oran = tevkifatPayPayda(s.tevkifatKodu, s.tevkifatOrani, tevkifatTablosu);
@@ -1724,6 +1759,7 @@ export class FaturaService {
         kdvOrani: Number(s.kdvOrani),
         tevkifatPay: oran?.pay ?? s.tevkifatPay ?? undefined,
         tevkifatPayda: oran?.payda ?? s.tevkifatPayda ?? undefined,
+        ekVergiler: (ekVergiler?.[i] ?? []).map((v) => ({ tutar: Number(v.tutar), stopaj: v.stopaj, kdvMatrahinaDahil: v.kdvMatrahinaDahil })),
       };
     });
 
@@ -1805,6 +1841,8 @@ export class FaturaService {
     toplamKdv: Prisma.Decimal;
     toplamTevkifat: Prisma.Decimal;
     toplamNetKdv: Prisma.Decimal;
+    toplamEkVergi?: Prisma.Decimal;
+    toplamStopaj?: Prisma.Decimal;
     genelToplam: Prisma.Decimal;
     aciklama: string | null;
     notlar: string | null;
@@ -1903,6 +1941,9 @@ export class FaturaService {
       toplamKdv: D(k.toplamKdv).toFixed(2),
       toplamTevkifat: D(k.toplamTevkifat).toFixed(2),
       toplamNetKdv: D(k.toplamNetKdv).toFixed(2),
+      // EBLG-120: bedele eklenen KDV dışı vergiler ve kesilen stopaj.
+      toplamEkVergi: D(k.toplamEkVergi ?? 0).toFixed(2),
+      toplamStopaj: D(k.toplamStopaj ?? 0).toFixed(2),
       genelToplam: D(k.genelToplam).toFixed(2),
       aciklama: k.aciklama,
       notlar: k.notlar,

@@ -63,6 +63,16 @@ describe("muhasebe fiş üretici (MUH-04)", () => {
     expect(ozet(fisler.find((x) => x.kaynak.tur === "masraf")!)[0]).toBe("153 B 100.00");
   });
 
+  it("KDV dışı vergi satırın hesabına, stopaj 360'a (EBLG-120)", () => {
+    // Ürün 1000 + ÖTV 250 → 153 1250, KDV 250; hizmet 500 − GV stopajı 50 → 770 500, 360 A 50; cari 1250+250+500+100−50 = 2050.
+    const f = fatura({ tip: "alis", cariId: "t", toplamMatrah: D(1500), toplamKdv: D(350), toplamNetKdv: D(350), toplamStopaj: D(50), genelToplam: D(2050),
+      satirlar: [{ matrah: D(1000), ekVergi: D(250), stokTipi: "urun" }, { matrah: D(500), stokTipi: "hizmet" }] });
+    const { fisler, kontroller } = fisleriUret(girdi({ faturalar: [f] }));
+    expect(kontroller).toEqual([]);
+    expect(ozet(fisler[0])).toEqual(["153 B 1250.00", "770 B 500.00", "191 B 350.00", "320.05.9 A 2050.00", "360 A 50.00"]);
+    expect(dengeli(fisler[0])).toBe(true);
+  });
+
   it("satış iadesi 610 ve 391 borç, cari alacak; firmanın kod düzeltmesi uygulanır", () => {
     const { fisler } = fisleriUret(girdi({ hesapKodlari: { satis_iade: "610.01" }, faturalar: [fatura({ tip: "satis_iade" })] }));
     expect(ozet(fisler[0])).toEqual(["120.01.M001 A 1200.00", "610.01 B 1000.00", "391 B 200.00"]);

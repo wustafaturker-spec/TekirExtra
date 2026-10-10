@@ -140,7 +140,7 @@ function gelenDenetle(ubl: UblFatura, tablolar: { tevkifat: readonly TevkifatKod
   } catch (hata) {
     engeller.push(hata instanceof Error ? hata.message : String(hata));
   }
-  const denetim = tutarDenetimi(ubl, gelenFaturaHesabi(girdi, Boolean(ihracKayitliKodu), tablolar.tevkifat), Boolean(ihracKayitliKodu));
+  const denetim = tutarDenetimi(ubl, gelenFaturaHesabi(girdi, Boolean(ihracKayitliKodu), tablolar.tevkifat, tablolar.kod.vergiTurleri), Boolean(ihracKayitliKodu), tablolar.kod.vergiTurleri);
   return { girdi, engeller, denetim, ihracKayitliKodu, bilinmeyenler };
 }
 
@@ -1999,6 +1999,8 @@ export class EbelgeService {
         tevkifatKodu: s.tevkifatKodu,
         tevkifatOrani: s.tevkifatOrani,
         gibIstisnaKodu: null,
+        // EBLG-120: KDV dışı vergiler; davranış servis tarafında merkezden çözülür.
+        ekVergiler: s.ekVergiler,
       })),
     }, { gelenBelge: true });
 

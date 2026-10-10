@@ -42,6 +42,16 @@ export const faturaSatirSemasi = z.object({
   ytbMakineSiraNo: z.string().max(60).optional().nullable(),
   projeId: z.string().uuid().optional().nullable(),
   projeAltKirilimId: z.string().uuid().optional().nullable(),
+  /**
+   * EBLG-120: KDV dışı vergiler (belge dövizinde tutar). Davranış (stopaj,
+   * KDV matrahına dahil) koddan, belge tarihindeki merkezi kayıttan türer.
+   */
+  ekVergiler: z.array(z.object({
+    kod: z.string().regex(/^\d{4}$/, "Vergi türü kodu dört hane olmalı"),
+    oran: z.coerce.string().max(20).optional().nullable(),
+    matrah: z.coerce.string().max(30).optional().nullable(),
+    tutar: z.coerce.string().regex(/^\d+(\.\d{1,2})?$/, "Vergi tutarı negatif olmayan, en çok iki ondalıklı sayı olmalı"),
+  })).max(20).optional().nullable(),
 });
 
 const tarihSemasi = z

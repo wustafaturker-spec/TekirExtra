@@ -94,9 +94,9 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
       where: { durum: "kesin", tip: { in: ["satis", "alis", "satis_iade", "alis_iade"] }, tarih: aralik },
       select: {
         id: true, no: true, tip: true, tarih: true, cariId: true, dovizCinsi: true, kur: true,
-        toplamMatrah: true, toplamKdv: true, toplamNetKdv: true, toplamTevkifat: true, genelToplam: true,
+        toplamMatrah: true, toplamKdv: true, toplamNetKdv: true, toplamTevkifat: true, toplamStopaj: true, genelToplam: true,
         ihracatTeslimSarti: true, ihracKayitliKodu: true,
-        satirlar: { select: { matrah: true, stok: { select: { tip: true } }, maliyetDagitimlari: { where: { durum: "aktif" }, select: { id: true } } } },
+        satirlar: { select: { matrah: true, ekVergiTutari: true, stok: { select: { tip: true } }, maliyetDagitimlari: { where: { durum: "aktif" }, select: { id: true } } } },
       },
     }),
     tx.kasaBankaHareket.findMany({ where: { kurFarkiFaturaId: { not: null } }, select: { kurFarkiFaturaId: true } }),
@@ -178,9 +178,9 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
 
   const faturaGirdileri: FaturaGirdisi[] = faturalar.map((f) => ({
     id: f.id, no: f.no, tip: f.tip, tarih: gun(f.tarih), cariId: f.cariId, dovizCinsi: f.dovizCinsi, kur: f.kur,
-    toplamMatrah: f.toplamMatrah, toplamKdv: f.toplamKdv, toplamNetKdv: f.toplamNetKdv, toplamTevkifat: f.toplamTevkifat, genelToplam: f.genelToplam,
+    toplamMatrah: f.toplamMatrah, toplamKdv: f.toplamKdv, toplamNetKdv: f.toplamNetKdv, toplamTevkifat: f.toplamTevkifat, toplamStopaj: f.toplamStopaj, genelToplam: f.genelToplam,
     ihracat: Boolean(f.ihracatTeslimSarti), ihracKayitli: Boolean(f.ihracKayitliKodu), kurFarki: kurFarkiFaturalari.has(f.id),
-    satirlar: f.satirlar.map((s) => ({ matrah: s.matrah, stokTipi: s.stok?.tip ?? null, stokaDagitildi: s.maliyetDagitimlari.length > 0 })),
+    satirlar: f.satirlar.map((s) => ({ matrah: s.matrah, ekVergi: s.ekVergiTutari, stokTipi: s.stok?.tip ?? null, stokaDagitildi: s.maliyetDagitimlari.length > 0 })),
   }));
 
   const dovizGirdileri: DovizIslemGirdisi[] = dovizIslemleri.flatMap((d) => {

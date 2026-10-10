@@ -43,7 +43,7 @@ export class StokMaliyetService {
     const faturaIdleri = [...new Set(hareketler.filter((h) => h.kaynakRef && (h.kaynakTur === "fatura" || FATURA_TERSLERI.includes(h.kaynakTur ?? ""))).map((h) => h.kaynakRef!))];
     const faturalar = new Map((await tx.fatura.findMany({
       where: { id: { in: faturaIdleri } },
-      select: { id: true, tip: true, kur: true, satirlar: { where: { stokId }, select: { varyantId: true, miktar: true, birim: true, matrah: true } }, iadeReferanslari: { select: { kaynakFaturaId: true } } },
+      select: { id: true, tip: true, kur: true, satirlar: { where: { stokId }, select: { varyantId: true, miktar: true, birim: true, matrah: true, ekVergiTutari: true } }, iadeReferanslari: { select: { kaynakFaturaId: true } } },
     })).map((f) => [f.id, f]));
     const katsayilar = new Map<string, Prisma.Decimal>();
     const tanimsizBirimler = new Set<string>();
@@ -64,7 +64,7 @@ export class StokMaliyetService {
     // Faturanın bu ürün/varyant satırlarının net TL birim maliyeti (STK-25) + dağıtılan gider payı (STK-40).
     const alisMaliyeti = async (f: NonNullable<ReturnType<typeof faturalar.get>>, varyantId: string | null) => {
       let matrah = D(0), miktar = D(0);
-      for (const s of f.satirlar.filter((s) => (s.varyantId ?? null) === varyantId)) { matrah = matrah.add(s.matrah); miktar = miktar.add(s.miktar.mul(await katsayi(s.birim))); }
+      for (const s of f.satirlar.filter((s) => (s.varyantId ?? null) === varyantId)) { matrah = matrah.add(s.matrah).add(s.ekVergiTutari); miktar = miktar.add(s.miktar.mul(await katsayi(s.birim))); }
       const pay = f.tip === "alis" ? dagitimPaylari.get(`${f.id}|${varyantId ?? ""}`) : undefined;
       if (pay && miktar.gt(0)) return matrah.mul(f.kur).add(pay).div(miktar).toDecimalPlaces(4);
       return alisBirimMaliyeti(matrah, f.kur, miktar);

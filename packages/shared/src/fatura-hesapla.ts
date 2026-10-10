@@ -6,6 +6,11 @@ export interface FaturaHesaplaSatirGirdi {
   iskontoOrani?: number; // Yüzde (örn. 10)
   tevkifatPay?: number; // Örn. 5 (5/10 için)
   tevkifatPayda?: number; // Örn. 10
+  /**
+   * EBLG-120: KDV dışı vergiler (belgedeki tutarlarıyla). Stopaj ödenecekten
+   * düşer; diğerleri bedele eklenir, KDV matrahına dahil olanlar KDV'yi artırır.
+   */
+  ekVergiler?: { tutar: number; stopaj: boolean; kdvMatrahinaDahil: boolean }[];
 }
 
 export interface FaturaHesaplaGirdi {
@@ -40,7 +45,12 @@ export interface FaturaHesaplaSatirSonuc {
   tevkifatPayda?: number;
   tevkifatTutari: number;  // kdvTutari * (pay/payda) (yuvarlanmış)
   netKdvTutari: number;    // kdvTutari - tevkifatTutari
-  toplamTutar: number;     // matrah + netKdvTutari
+  /** EBLG-120: bedele eklenen KDV dışı vergiler ve stopaj (satırın). */
+  ekVergiTutari: number;
+  stopajTutari: number;
+  /** KDV matrahı: matrah + KDV matrahına dahil vergiler. */
+  kdvMatrahi: number;
+  toplamTutar: number;     // matrah + ekVergi + netKdvTutari − stopaj
 }
 
 export interface KdvDetay {
@@ -59,6 +69,9 @@ export interface FaturaHesaplaSonuc {
   toplamKdv: number;
   toplamTevkifat: number;
   toplamNetKdv: number;
+  /** EBLG-120: bedele eklenen KDV dışı vergiler ve kesilen stopaj toplamı. */
+  toplamEkVergi: number;
+  toplamStopaj: number;
   genelToplam: number;
   kdvDetaylari: KdvDetay[];
 }
@@ -84,6 +97,10 @@ export function faturaHesapla(girdi: FaturaHesaplaGirdi): FaturaHesaplaSonuc {
       iskontoTutari,
       tevkifatPay: s.tevkifatPay,
       tevkifatPayda: s.tevkifatPayda,
+      ekVergiler: s.ekVergiler ?? [],
+      ekVergiTutari: 0,
+      stopajTutari: 0,
+      kdvMatrahi: 0,
       kdvOrani: s.kdvOrani || 0,
       kdvTutari: 0,
       tevkifatTutari: 0,
@@ -125,8 +142,13 @@ export function faturaHesapla(girdi: FaturaHesaplaGirdi): FaturaHesaplaSonuc {
 
     s.matrah = Y(satirMatrahOncesi - s.genelIskontoPayi);
 
+    // EBLG-120: ek vergiler belgedeki tutarlarıyla; KDV matrahına dahil olanlar KDV'yi artırır.
+    s.ekVergiTutari = Y(s.ekVergiler.filter((v) => !v.stopaj).reduce((t, v) => t + v.tutar, 0));
+    s.stopajTutari = Y(s.ekVergiler.filter((v) => v.stopaj).reduce((t, v) => t + v.tutar, 0));
+    s.kdvMatrahi = Y(s.matrah + s.ekVergiler.filter((v) => !v.stopaj && v.kdvMatrahinaDahil).reduce((t, v) => t + v.tutar, 0));
+
     // KDV & Tevkifat Hesaplama
-    s.kdvTutari = Y(s.matrah * (s.kdvOrani / 100));
+    s.kdvTutari = Y(s.kdvMatrahi * (s.kdvOrani / 100));
 
     if (s.tevkifatPay && s.tevkifatPayda && s.tevkifatPayda > 0) {
       s.tevkifatTutari = Y(s.kdvTutari * (s.tevkifatPay / s.tevkifatPayda));
@@ -135,7 +157,7 @@ export function faturaHesapla(girdi: FaturaHesaplaGirdi): FaturaHesaplaSonuc {
     }
 
     s.netKdvTutari = girdi.kdvTahsilEdilmez ? 0 : Y(s.kdvTutari - s.tevkifatTutari);
-    s.toplamTutar = Y(s.matrah + s.netKdvTutari);
+    s.toplamTutar = Y(s.matrah + s.ekVergiTutari + s.netKdvTutari - s.stopajTutari);
   });
 
   // Toplamları Topla
@@ -147,7 +169,9 @@ export function faturaHesapla(girdi: FaturaHesaplaGirdi): FaturaHesaplaSonuc {
   const toplamKdv = Y(satirlar.reduce((t, s) => t + s.kdvTutari, 0) + ozelMatrahKdvsi);
   const toplamTevkifat = Y(satirlar.reduce((t, s) => t + s.tevkifatTutari, 0));
   const toplamNetKdv = Y(satirlar.reduce((t, s) => t + s.netKdvTutari, 0) + ozelMatrahKdvsi);
-  const genelToplam = Y(toplamMatrah + toplamNetKdv);
+  const toplamEkVergi = Y(satirlar.reduce((t, s) => t + s.ekVergiTutari, 0));
+  const toplamStopaj = Y(satirlar.reduce((t, s) => t + s.stopajTutari, 0));
+  const genelToplam = Y(toplamMatrah + toplamEkVergi + toplamNetKdv - toplamStopaj);
 
   // KDV Oranlarına Göre Kırılım Detayları
   const kdvMap = new Map<number, KdvDetay>();
@@ -158,7 +182,7 @@ export function faturaHesapla(girdi: FaturaHesaplaGirdi): FaturaHesaplaSonuc {
       kdvTutari: 0,
       tevkifatTutari: 0,
     };
-    mevcut.matrah = Y(mevcut.matrah + s.matrah);
+    mevcut.matrah = Y(mevcut.matrah + s.kdvMatrahi);
     mevcut.kdvTutari = Y(mevcut.kdvTutari + s.kdvTutari);
     mevcut.tevkifatTutari = Y(mevcut.tevkifatTutari + s.tevkifatTutari);
     kdvMap.set(s.kdvOrani, mevcut);
@@ -175,6 +199,8 @@ export function faturaHesapla(girdi: FaturaHesaplaGirdi): FaturaHesaplaSonuc {
     toplamKdv,
     toplamTevkifat,
     toplamNetKdv,
+    toplamEkVergi,
+    toplamStopaj,
     genelToplam,
     kdvDetaylari,
   };

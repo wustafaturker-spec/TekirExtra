@@ -164,10 +164,50 @@ describe("gelen kur, belge iskontosu ve diğer vergiler (EBLG-118/120)", () => {
     expect(denetim.gecerli).toBe(true);
   });
 
-  it("kursuz dövizli belge, belge artırımı ve KDV dışı vergi işlemeyi durdurur", () => {
+  it("kursuz dövizli belge ve belge artırımı işlemeyi durdurur", () => {
     expect(denetle(belge({ dovizCinsi: "USD" })).engeller.join()).toMatch(/kur yok/);
     expect(denetle(belge({ toplamlar: { belgeArtirimi: 50 } })).engeller.join()).toMatch(/artırım/);
-    expect(denetle(belge({ toplamlar: { digerVergiler: [{ kod: "0059", ad: "Konaklama Vergisi", tutar: 20 }] } })).engeller.join()).toMatch(/EBLG-120.*Konaklama/);
+  });
+});
+
+describe("KDV dışı vergiler (EBLG-120)", () => {
+  const v = (kod: string, ad: string, tutar: number, matrah: number | null = null, oran: number | null = null) => ({ kod, ad, tutar, matrah, oran });
+
+  it("yalnız başlıktaki konaklama vergisi satırlara matrah oranında dağıtılır, ödenecek tutar tutar", () => {
+    // 600 + 400 matrah, KDV %20 → 200, konaklama %2 → 20, ödenecek 1220.
+    const ubl = belge({
+      satirlar: [satir({ siraNo: 1, matrah: 600, birimFiyat: 60, kdvTutari: 120 }), satir({ siraNo: 2, matrah: 400, birimFiyat: 40, kdvTutari: 80 })],
+      toplamlar: { digerVergiler: [v("0059", "Konaklama Vergisi", 20, 1000, 2)], odenecek: 1220, genelToplam: 1220 },
+    });
+    const { girdi, engeller, denetim } = denetle(ubl);
+    expect(engeller).toEqual([]);
+    expect(girdi.satirlar.map((s) => s.ekVergiler.map((x) => x.tutar))).toEqual([["12.00"], ["8.00"]]);
+    expect(denetim.gecerli).toBe(true);
+    expect(denetim.satirlar.find((x) => x.alan === "ek_vergi")).toMatchObject({ belge: 20, sistem: 20 });
+  });
+
+  it("satırdaki ÖTV KDV matrahına girer (1000 + 250 → KDV 250, ödenecek 1500)", () => {
+    const otv = v("0071", "ÖTV 1. Liste", 250, 1000, 25);
+    const ubl = belge({ satirlar: [satir({ kdvTutari: 250, digerVergiler: [otv] })], toplamlar: { kdv: 500, kdvSaf: 250, digerVergiler: [otv], odenecek: 1500, genelToplam: 1500 } });
+    const { engeller, denetim } = denetle(ubl);
+    expect(engeller).toEqual([]);
+    expect(denetim.gecerli).toBe(true);
+  });
+
+  it("stopaj ödenecekten düşer ve açıklanır (500 + 100 − 50 → 550)", () => {
+    const stopaj = v("0003", "Gelir Vergisi Stopajı", 50, 500, 10);
+    const ubl = belge({ satirlar: [satir({ matrah: 500, birimFiyat: 50, kdvTutari: 100 })], toplamlar: { matrah: 500, kdv: 150, kdvSaf: 100, digerVergiler: [stopaj], odenecek: 550, genelToplam: 550 } });
+    const { denetim } = denetle(ubl);
+    expect(denetim.gecerli).toBe(true);
+    expect(denetim.satirlar.find((x) => x.alan === "stopaj")).toMatchObject({ belge: 50, sistem: 50 });
+    expect(denetim.aciklamalar.join(" ")).toMatch(/50,00 TRY stopaj/);
+  });
+
+  it("tanınmayan vergi kodu ve vergili iade belgesi işlemeyi durdurur", () => {
+    const { engeller, bilinmeyenler } = gelenFaturaGirdisi(belge({ toplamlar: { digerVergiler: [v("9999", "Uydurma Vergi", 10)] } }), eslesme);
+    expect(engeller.join()).toMatch(/9999.*tanımlı değil/);
+    expect(bilinmeyenler).toEqual([expect.objectContaining({ tur: "vergi_turu_kodu", anahtar: "9999" })]);
+    expect(denetle(belge({ faturaTipKodu: "IADE", toplamlar: { digerVergiler: [v("0059", "Konaklama Vergisi", 20)] } })).engeller.join()).toMatch(/iade belgesi/);
   });
 });
 

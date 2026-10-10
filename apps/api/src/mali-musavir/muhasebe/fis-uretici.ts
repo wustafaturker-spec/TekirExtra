@@ -53,9 +53,12 @@ export interface HesapBilgi { tur: "kasa" | "banka" | "pos" | "kart" | "kredi"; 
 export interface FaturaGirdisi {
   id: string; no: string | null; tip: string; tarih: string; cariId: string | null; dovizCinsi: string; kur: Prisma.Decimal;
   toplamMatrah: Prisma.Decimal; toplamKdv: Prisma.Decimal; toplamNetKdv: Prisma.Decimal; toplamTevkifat: Prisma.Decimal; genelToplam: Prisma.Decimal;
+  /** EBLG-120: alıcının kestiği stopaj (360'a alacak). */
+  toplamStopaj?: Prisma.Decimal;
   ihracat: boolean; ihracKayitli: boolean; kurFarki: boolean;
   /** STK-40: stokaDagitildi — maliyet dağıtımına kaynak olmuş hizmet satırı 153'e gider. */
-  satirlar: Array<{ matrah: Prisma.Decimal; stokTipi: string | null; stokaDagitildi?: boolean }>;
+  /** EBLG-120: ekVergi — bedele eklenen KDV dışı vergi; satırın gider/stok hesabına eklenir. */
+  satirlar: Array<{ matrah: Prisma.Decimal; ekVergi?: Prisma.Decimal; stokTipi: string | null; stokaDagitildi?: boolean }>;
 }
 
 export interface HareketGirdisi {
@@ -251,23 +254,27 @@ function faturaFisi(f: FaturaGirdisi, c: HesapCozucu, kontroller: Kontrol[]): Fi
     satirlar.push(cari, gelir, kdv);
   } else {
     // Alış: B 153/150/770 (satırın stok tipine göre, genel iskonto oranlı dağıtılır) + B 191 / A 320 + A 360.
+    // EBLG-120: bedele eklenen KDV dışı vergi (ÖTV, ÖİV…) satırın hesabına eklenir; stopaj 360'a alacak.
     const satirToplami = f.satirlar.reduce((t, s) => t.add(s.matrah), SIFIR);
-    const gruplar = new Map<string, Prisma.Decimal>();
+    const gruplar = new Map<string, { matrah: Prisma.Decimal; ekVergi: Prisma.Decimal }>();
     for (const s of f.satirlar) {
       const kod = f.kurFarki ? c.kod("kur_farki_gider") : s.stokTipi === "urun" || s.stokaDagitildi ? c.kod("mal_alis") : s.stokTipi === "sarf" ? c.kod("sarf_alis") : c.kod("hizmet_alis");
-      gruplar.set(kod, (gruplar.get(kod) ?? SIFIR).add(s.matrah));
+      const g = gruplar.get(kod) ?? { matrah: SIFIR, ekVergi: SIFIR };
+      gruplar.set(kod, { matrah: g.matrah.add(s.matrah), ekVergi: g.ekVergi.add(s.ekVergi ?? SIFIR) });
     }
-    const giderler = [...gruplar.entries()].map(([kod, matrah]) => {
-      const pay = satirToplami.isZero() ? f.toplamMatrah : f.toplamMatrah.mul(matrah).div(satirToplami);
-      return (iade ? alacak : borc)(kod, aciklama, TL(pay, f.kur));
+    const giderler = [...gruplar.entries()].map(([kod, g]) => {
+      const pay = satirToplami.isZero() ? f.toplamMatrah : f.toplamMatrah.mul(g.matrah).div(satirToplami);
+      return (iade ? alacak : borc)(kod, aciklama, TL(pay.add(g.ekVergi), f.kur));
     });
     const kdv = (iade ? alacak : borc)(c.kod("indirilecek_kdv"), `${aciklama} KDV`, TL(f.toplamKdv, f.kur));
     const cari = (iade ? borc : alacak)(cariKodu, aciklama, cariTl, cariDoviz);
+    const stopajTl = TL(f.toplamStopaj ?? SIFIR, f.kur);
     satirlar.push(...giderler, kdv, cari);
+    if (stopajTl.gt(0)) satirlar.push((iade ? borc : alacak)(c.kod("odenecek_vergi"), `${aciklama} stopaj`, stopajTl));
     // KDV tevkifatı ya da ihraç kayıtlı alış (EBLG-114): cariye ödenmeyen KDV 360'a.
     if (f.toplamTevkifat.gt(0) || f.ihracKayitli) {
       const toplamGider = giderler.reduce((t, s) => t.add(s.borc).add(s.alacak), SIFIR);
-      const odenecek = toplamGider.add(kdv.borc).add(kdv.alacak).sub(cariTl);
+      const odenecek = toplamGider.add(kdv.borc).add(kdv.alacak).sub(cariTl).sub(stopajTl);
       if (odenecek.gt(0)) satirlar.push((iade ? borc : alacak)(c.kod("odenecek_vergi"), `${aciklama} ${f.ihracKayitli ? "ihraç kayıtlı KDV" : "KDV tevkifatı"}`, odenecek));
     }
   }

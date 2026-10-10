@@ -33,7 +33,8 @@ export interface UblSatir {
   digerVergiler: UblVergi[];
 }
 
-export interface UblVergi { kod: string; ad: string; tutar: number }
+/** EBLG-120: matrah (TaxableAmount) ve oran (Percent) belgede yoksa null. */
+export interface UblVergi { kod: string; ad: string; tutar: number; matrah: number | null; oran: number | null }
 
 export interface UblToplamlar {
   satirToplami: number;
@@ -306,7 +307,10 @@ function satirOku(satir: Dugum, sira: number): UblSatir {
 /** KDV (0015) ve KDV tevkifatı (9015) dışındaki vergi alt toplamları. */
 function digerVergiler(taxTotal: unknown): UblVergi[] {
   return dizi(yol(taxTotal, "TaxSubtotal"))
-    .map((a) => ({ kod: metin(yol(a, "TaxCategory", "TaxScheme", "TaxTypeCode")), ad: metin(yol(a, "TaxCategory", "TaxScheme", "Name")), tutar: sayi(a.TaxAmount) }))
+    .map((a) => ({
+      kod: metin(yol(a, "TaxCategory", "TaxScheme", "TaxTypeCode")), ad: metin(yol(a, "TaxCategory", "TaxScheme", "Name")), tutar: sayi(a.TaxAmount),
+      matrah: a.TaxableAmount === undefined ? null : sayi(a.TaxableAmount), oran: a.Percent === undefined ? null : sayi(a.Percent),
+    }))
     .filter((v) => v.kod !== "" && v.kod !== "0015" && v.kod !== "9015");
 }
 
