@@ -1022,6 +1022,7 @@ serbest yazılıyor (0–100).
 | MVZ-14 | ✅ **İlk paket — bordro:** bordro mevzuat setleri (asgari ücret, SGK oran ve tavanı, gelir vergisi dilimleri, damga vergisi, istisnalar; PRS-11) merkezi olur; kiracıya kopyalanmaz, kiracıdaki taslak/onay adımı kalkar. Kabul senaryoları yayından önce platformda çalıştırılır. Onaylı bordrolar saklı değerleriyle kalır. | Z |
 | MVZ-15 | ✅ **FTR-35 dönüşümü:** kiracının tevkifat oranı değiştirme ve kod ekleme yetkisi kalkar; pasif yapma MVZ-09 olarak kalır. Göçte kiracı ayarlarındaki oran/ad/eklenen kod değişiklikleri silinir, pasif işaretleri korunur; silinen değişiklik varsa platform ekibine listelenir. | Z |
 | MVZ-16 | ✅ **Güvenlik:** merkezi tablolar kiracı RLS politikasına tabi değildir; uygulama veritabanı kullanıcısı bu tablolarda yalnız okuma yetkisine sahiptir, yazma yalnız platform uçlarından ve ayrı yetkiyle yapılır. | Z |
+| MVZ-17 | ✅ **Dönemsel değer yayın takvimi:** yalnız başladığı dönemde geçerli değerler (bordro parametreleri ve tevkifat alt sınırı yıllık, kıdem tavanı yarıyıllık) için platform panelinde içinde bulunulan ve sıradaki dönemin yayın durumu gösterilir (45 gün kala "yaklaşıyor"). Kayıt yayınlanmamışsa platform ekibine 30, 15 ve 7 gün kala ve dönem başında birer kez e-posta gider. Dönem başladığı hâlde kayıt yoksa kiracıya kritik bildirim düşer (bordro uyarısı yalnız aktif çalışanı olan firmaya); kayıt yayınlanınca bildirim kapanır. | Z |
 
 ## 4. Fonksiyonel Olmayan İsterler
 

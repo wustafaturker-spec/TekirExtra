@@ -5,16 +5,21 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Segmented, TableWrap } from "@/components/ui";
 import { platformApi, platformTokenAl } from "@/lib/platform-api";
+import type { TakvimSatiri } from "@tekirextra/shared";
 
 import { DURUM_ADI, DURUM_ROZETI, tarihTR, type MevzuatDurum as Durum } from "@/lib/mevzuat-gorunum";
 
 interface Degisiklik { id: string; no: number; baslik: string; dayanak: string; yururlukBaslangic: string; durum: Durum; satirSayisi: number; yayinZamani: string | null; hazirlayan: { adSoyad: string }; yayinlayan: { adSoyad: string } | null; retGerekcesi: string | null }
 
 
+const TAKVIM_ADI: Record<TakvimSatiri["durum"], string> = { tamam: "Yayınlandı", bekliyor: "Henüz erken", yaklasiyor: "Yaklaşıyor — yayınlanmadı", eksik: "Dönem başladı — kayıt yok" };
+const TAKVIM_ROZETI: Record<TakvimSatiri["durum"], "success" | "neutral" | "warning" | "danger"> = { tamam: "success", bekliyor: "neutral", yaklasiyor: "warning", eksik: "danger" };
+
 /** MVZ-05: değişiklik listesi ve yeni değişiklik taslağı. */
 export default function PlatformDegisiklikleri() {
   const yonlendir = useRouter();
   const [liste, setListe] = useState<Degisiklik[]>([]);
+  const [takvim, setTakvim] = useState<TakvimSatiri[]>([]);
   const [durum, setDurum] = useState<Durum | "hepsi">("hepsi");
   const [hata, setHata] = useState("");
   const [islem, setIslem] = useState(false);
@@ -23,6 +28,8 @@ export default function PlatformDegisiklikleri() {
     setListe(await platformApi<Degisiklik[]>(`/platform/mevzuat/degisiklikler${durum === "hepsi" ? "" : `?durum=${durum}`}`));
   }, [durum]);
   useEffect(() => { if (platformTokenAl()) void yukle().catch((e) => setHata(e instanceof Error ? e.message : "Liste yüklenemedi")); }, [yukle]);
+  // MVZ-17: dönemsel değerlerin yayın takvimi.
+  useEffect(() => { if (platformTokenAl()) void platformApi<TakvimSatiri[]>("/platform/mevzuat/yayin-takvimi").then(setTakvim).catch(() => setTakvim([])); }, []);
 
   async function olustur(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -40,6 +47,21 @@ export default function PlatformDegisiklikleri() {
   return <>
     <PageHeader title="Mevzuat değişiklikleri" subtitle="Her değişiklik bir düzenlemedir (tebliğ, kılavuz): dayanağı ve yürürlük tarihiyle hazırlanır, onaya gönderilir, başka bir platform yetkilisi yayınlar. Yayınlanan değişiklik tüm kiracılar için geçerlidir ve değiştirilemez." />
     <Alert tone="error">{hata}</Alert>
+    {takvim.length > 0 && <Card title="Yayın takvimi" pad={false}>
+      <p className="muted" style={{ margin: "0 1.25rem 0.75rem" }}>Bu değerler yalnız başladıkları dönemde geçerlidir; yeni dönemin kaydı yayınlanmadan kiracılarda ilgili hesap yapılamaz. Döneme 45 gün kala uyarı verilir; 30, 15 ve 7 gün kala ve dönem başında platform ekibine e-posta gider.</p>
+      <TableWrap>
+        <thead><tr><th>Değer</th><th>Dönem</th><th>Başlangıç</th><th className="num">Kalan gün</th><th>Durum</th></tr></thead>
+        <tbody>
+          {takvim.map((t) => <tr key={`${t.tur}/${t.anahtar}/${t.donem}`}>
+            <td>{t.ad}</td>
+            <td>{t.donem}</td>
+            <td>{tarihTR(t.baslangic)}</td>
+            <td className="num">{t.kalanGun > 0 ? t.kalanGun : "—"}</td>
+            <td><Badge variant={TAKVIM_ROZETI[t.durum]}>{TAKVIM_ADI[t.durum]}</Badge>{t.durum === "eksik" && <div className="muted">Kiracılarda {t.etki}.</div>}</td>
+          </tr>)}
+        </tbody>
+      </TableWrap>
+    </Card>}
     <Card title="Değişiklikler" actions={<Segmented ariaLabel="Durum" value={durum} onChange={setDurum} items={[{ deger: "hepsi", baslik: "Hepsi" }, { deger: "taslak", baslik: "Taslak" }, { deger: "onay_bekliyor", baslik: "Onay bekliyor" }, { deger: "yayinlandi", baslik: "Yayınlandı" }]} />} pad={false}>
       <TableWrap>
         <thead><tr><th>No</th><th>Başlık</th><th>Dayanak</th><th>Yürürlük</th><th>Kalem</th><th>Durum</th><th>Hazırlayan / Yayınlayan</th></tr></thead>

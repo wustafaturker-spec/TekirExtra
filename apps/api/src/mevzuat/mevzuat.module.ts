@@ -5,6 +5,7 @@ import { PlatformAuthController, PlatformMevzuatController } from "./platform.co
 import { PlatformAuthService } from "./platform-auth.service";
 import { PlatformMevzuatService } from "./platform-mevzuat.service";
 import { PlatformPrismaService } from "./platform-prisma.service";
+import { MevzuatHatirlatmaService } from "./mevzuat-hatirlatma.service";
 
 /**
  * Mevzuat Merkezi (MVZ). `MevzuatService` diğer modüllerin (fatura, e-belge,
@@ -14,7 +15,7 @@ import { PlatformPrismaService } from "./platform-prisma.service";
 @Global()
 @Module({
   controllers: [MevzuatController, PlatformAuthController, PlatformMevzuatController],
-  providers: [MevzuatService, PlatformPrismaService, PlatformAuthService, PlatformMevzuatService],
+  providers: [MevzuatService, PlatformPrismaService, PlatformAuthService, PlatformMevzuatService, MevzuatHatirlatmaService],
   exports: [MevzuatService],
 })
 export class MevzuatModule {}

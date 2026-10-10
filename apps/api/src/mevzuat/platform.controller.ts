@@ -143,6 +143,12 @@ export class PlatformMevzuatController {
     return this.mevzuat.olaylar(Number(sayfa) || 1);
   }
 
+  /** MVZ-17: dönemsel değerlerin (bordro, kıdem tavanı, tevkifat alt sınırı) yayın takvimi. */
+  @Get("yayin-takvimi")
+  yayinTakvimi() {
+    return this.mevzuat.yayinTakvimi();
+  }
+
   @Get("talepler")
   talepler(@Query("durum") durum?: string) {
     return this.mevzuat.talepler(durum ? ayristir(z.enum(["acik", "cozuldu", "reddedildi"]), durum) : undefined);

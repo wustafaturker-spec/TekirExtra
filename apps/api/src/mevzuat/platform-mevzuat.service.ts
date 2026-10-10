@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { MevzuatDegisiklikDurum, MevzuatTalepDurumu, Prisma } from "@prisma/client";
-import { MEVZUAT_TUR_TANIMLARI, mevzuatDegerHatalari, mevzuatTuruMu } from "@tekirextra/shared";
+import { bugunTR, DONEMSEL_DEGERLER, MEVZUAT_TUR_TANIMLARI, mevzuatDegerHatalari, mevzuatTuruMu, yayinTakvimi } from "@tekirextra/shared";
 import { aktifPlatformBaglam } from "../core/istek-baglami";
 import { MevzuatService } from "./mevzuat.service";
 import { PlatformPrismaService } from "./platform-prisma.service";
@@ -355,6 +355,15 @@ export class PlatformMevzuatService {
   private async durumGecisi(tx: Prisma.TransactionClient, id: string, beklenen: MevzuatDegisiklikDurum, data: Prisma.MevzuatDegisiklikUpdateManyMutationInput & { yayinlayanId?: string }) {
     const sonuc = await tx.mevzuatDegisiklik.updateMany({ where: { id, durum: beklenen }, data });
     if (!sonuc.count) throw new ConflictException("Değişikliğin durumu bu arada değişti; sayfayı yenileyin");
+  }
+
+  /** MVZ-17: içinde bulunulan ve sıradaki dönemde dönemsel değerlerin yayın durumu. */
+  async yayinTakvimi() {
+    const kayitlar = await this.db.mevzuatKayit.findMany({
+      where: { OR: DONEMSEL_DEGERLER.map((d) => ({ tur: d.tur, anahtar: d.anahtar })) },
+      select: { tur: true, anahtar: true, yururlukBaslangic: true },
+    });
+    return yayinTakvimi(kayitlar.map((k) => ({ ...k, yururlukBaslangic: k.yururlukBaslangic.toISOString().slice(0, 10) })), bugunTR());
   }
 }
 

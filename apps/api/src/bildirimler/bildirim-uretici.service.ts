@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import type { BildirimTuru, DuzeltmeTuru } from "@prisma/client";
-import { bugunTR, EIRSALIYE_YANIT_GUN_SAYISI, MUHTELIF_MUSTERI_VKN, eirsaliyeYanitSuresi, gunEkleTR, IHRAC_KAYITLI_UYARI_GUNU, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeFaturaSuresi, irsaliyeSevkGunu, type Rol, ihracKayitliSonTarih } from "@tekirextra/shared";
+import { bugunTR, DONEMSEL_DEGERLER, yayinTakvimi, EIRSALIYE_YANIT_GUN_SAYISI, MUHTELIF_MUSTERI_VKN, eirsaliyeYanitSuresi, gunEkleTR, IHRAC_KAYITLI_UYARI_GUNU, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeFaturaSuresi, irsaliyeSevkGunu, type Rol, ihracKayitliSonTarih } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
@@ -70,8 +70,8 @@ const TARAMA_ONEKLERI: Record<BildirimTuru, string[]> = {
   entegrasyon: ["duzeltme:", "banka-senkron:", "ekstre-bekleyen:"],
   satin_alma: ["duzeltme:", "satin_alma:"],
   personel: ["personel:"],
-  // MVZ-07: duyurudur, "artık tespit edilmiyor" diye kapanmaz; taramada kapatılmaz.
-  mevzuat: [],
+  // MVZ-07: duyurular ("mevzuat:") taramada kapatılmaz; MVZ-17 yayın eksiği uyarısı ("mevzuat-eksik:") yayınlanınca kapanır.
+  mevzuat: ["mevzuat-eksik:"],
 };
 
 function gunAnahtari(tarih = new Date()): string {
@@ -110,6 +110,7 @@ export class BildirimUreticiService {
       ...(await this.bankaEntegrasyonu()),
       ...(await this.personelBildirimleri()),
       ...(await this.mevzuatDegisiklikleri()),
+      ...(await this.mevzuatYayinEksikleri()),
     ];
 
     let yeniTeslimat = 0;
@@ -117,7 +118,7 @@ export class BildirimUreticiService {
 
     // Yalnız bu taramada gerçekten bakılan türler kapatılır; bakılmayan bir
     // türün kayıtları "artık tespit edilmiyor" sanılıp kapanmamalıdır.
-    const taranan: BildirimTuru[] = ["duzeltme", "ebelge", "vade", "cek_senet", "stok", "donem", "entegrasyon", "satin_alma", "personel"];
+    const taranan: BildirimTuru[] = ["duzeltme", "ebelge", "vade", "cek_senet", "stok", "donem", "entegrasyon", "satin_alma", "personel", "mevzuat"];
     let kapanan = 0;
     for (const tur of taranan) {
       const anahtarlar = girdiler.filter((g) => g.tur === tur).map((g) => g.birlesimAnahtari);
@@ -280,6 +281,36 @@ export class BildirimUreticiService {
       kaynakTur: "mevzuat_degisiklik",
       kaynakRef: d.id,
       hedefYol: `/panel/ayarlar/mevzuat?degisiklik=${d.id}`,
+      roller: HEDEF_ROLLER.mevzuat,
+    }));
+  }
+
+  /**
+   * MVZ-17: dönemi başladığı hâlde Mevzuat Merkezi'nde yeni dönem kaydı
+   * yayınlanmamış değer (2027 bordro parametreleri, kıdem tavanı…). Kiracı
+   * düzeltemez; ilgili hesabın neden yapılamadığını önceden söyler. Bordro
+   * uyarısı yalnız çalışanı olan firmaya gider. Kayıt yayınlanınca kapanır.
+   */
+  private async mevzuatYayinEksikleri(): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const kayitlar = await this.prisma.mevzuatKayit.findMany({
+      where: { OR: DONEMSEL_DEGERLER.map((d) => ({ tur: d.tur, anahtar: d.anahtar })) },
+      select: { tur: true, anahtar: true, yururlukBaslangic: true },
+    });
+    const eksikler = yayinTakvimi(kayitlar.map((k) => ({ ...k, yururlukBaslangic: k.yururlukBaslangic.toISOString().slice(0, 10) })), bugunTR())
+      .filter((s) => s.durum === "eksik");
+    if (!eksikler.length) return [];
+    const calisanVar = eksikler.some((s) => s.tur === "bordro_parametreleri")
+      && (await this.prisma.tenantIslem(tenantId, (tx) => tx.personel.count({ where: { aktif: true } }))) > 0;
+    return eksikler.filter((s) => s.tur !== "bordro_parametreleri" || calisanVar).map((s) => ({
+      tur: "mevzuat" as const,
+      onem: "kritik" as const,
+      baslik: `${s.donem} ${s.ad} henüz yayınlanmadı`,
+      aciklama: `Yeni dönem ${new Date(`${s.baslangic}T00:00:00Z`).toLocaleDateString("tr-TR", { timeZone: "UTC" })} tarihinde başladı; değer Mevzuat Merkezi'nde yayınlanana kadar ${s.etki}. Platform ekibine iletildi.`,
+      birlesimAnahtari: `mevzuat-eksik:${s.tur}:${s.anahtar}:${s.donem}`,
+      kaynakTur: "mevzuat_kayit",
+      kaynakRef: `${s.tur}/${s.anahtar}`,
+      hedefYol: "/panel/ayarlar/mevzuat",
       roller: HEDEF_ROLLER.mevzuat,
     }));
   }

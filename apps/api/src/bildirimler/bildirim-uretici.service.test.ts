@@ -5,6 +5,9 @@ import { HATA_YERLESME_MS } from "../ebelge/yerlesmis-hata";
 vi.mock("../core/istek-baglami", () => ({ aktifBaglam: () => ({ tenantId: "t1", userId: "u1", rol: "yonetici" }) }));
 
 interface TxSecenekleri {
+  /** MVZ-17: dönemsel değer kayıtları; verilmezse içinde bulunulan dönemler kayıtlı sayılır. */
+  mevzuatKayitlari?: { tur: string; anahtar: string; yururlukBaslangic: Date }[];
+  aktifPersonel?: number;
   duzeltmeler?: unknown[];
   ebelgeler?: unknown[];
   satinAlmaTalepleri?: unknown[];
@@ -38,6 +41,17 @@ interface TxSecenekleri {
   mevzuatDegisiklikleri?: unknown[];
 }
 
+/** Bugünün yılı ve yarıyılı için kayıtlı dönemsel değerler (eksik uyarısı üretmez). */
+function guncelDonemKayitlari() {
+  const bugun = new Date();
+  const yil = bugun.getUTCFullYear(), yariBasi = bugun.getUTCMonth() < 6 ? `${yil}-01-01` : `${yil}-07-01`;
+  return [
+    { tur: "bordro_parametreleri", anahtar: "genel", yururlukBaslangic: new Date(`${yil}-01-01`) },
+    { tur: "kanuni_deger", anahtar: "kidem_tavani", yururlukBaslangic: new Date(yariBasi) },
+    { tur: "kanuni_deger", anahtar: "tevkifat_alt_siniri", yururlukBaslangic: new Date(`${yil}-01-01`) },
+  ];
+}
+
 function servisKur(secenek: TxSecenekleri = {}) {
   const teslimatCreateMany = vi.fn();
   const bildirimUpdate = vi.fn();
@@ -61,6 +75,7 @@ function servisKur(secenek: TxSecenekleri = {}) {
     personelBilgiTalebi: { count: vi.fn(async () => 0) },
     personelAvans: { count: vi.fn().mockResolvedValue(secenek.avansTalepSayisi ?? 0) },
     personelBordro: { count: vi.fn().mockResolvedValue(secenek.onayBekleyenBordro ?? 0) },
+    personel: { count: vi.fn().mockResolvedValue(secenek.aktifPersonel ?? 0) },
     personelTatilGunu: { findMany: vi.fn().mockResolvedValue([]) },
     fatura: { findMany: vi.fn().mockResolvedValue(secenek.ihracKayitlilar ?? []) },
     belge: { findMany: vi.fn().mockResolvedValue(secenek.bekleyenIrsaliyeler ?? []) },
@@ -74,6 +89,7 @@ function servisKur(secenek: TxSecenekleri = {}) {
   const prisma = {
     tenantIslem: vi.fn((_tenantId, calistir) => calistir(tx)),
     mevzuatDegisiklik: { findMany: vi.fn().mockResolvedValue(secenek.mevzuatDegisiklikleri ?? []) },
+    mevzuatKayit: { findMany: vi.fn().mockResolvedValue(secenek.mevzuatKayitlari ?? guncelDonemKayitlari()), findFirst: vi.fn().mockResolvedValue(null) },
   } as never;
   const bildirimler = { uret: vi.fn().mockResolvedValue({ bildirimId: "b1", yeniTeslimat: 1 }), kapatEksikleri: vi.fn().mockResolvedValue(0) };
   const rapor = { vadesiGecenler: vi.fn().mockResolvedValue({ alacaklar: [], borclar: [], toplamAlacak: "0.00", toplamBorc: "0.00" }) };
@@ -126,8 +142,25 @@ describe("mevzuat bildirimi (MVZ-07)", () => {
       baslik: "Mevzuat güncellendi: Tevkifat oranları", hedefYol: "/panel/ayarlar/mevzuat?degisiklik=d2",
     })]);
     expect(mevzuat[0].aciklama).toContain("yürürlük 01.11.2026");
-    // Duyuru taramada kapatılmaz.
-    expect(bildirimler.kapatEksikleri.mock.calls.some(([tur]) => tur === "mevzuat")).toBe(false);
+    // Duyuru taramada kapatılmaz; yalnız MVZ-17 yayın eksiği uyarıları kapanabilir.
+    expect(bildirimler.kapatEksikleri.mock.calls.filter(([tur]) => tur === "mevzuat").map(([, , onekler]) => onekler)).toEqual([["mevzuat-eksik:"]]);
+  });
+
+  it("dönemi başlamış değer yayınlanmadıysa kritik uyarı; bordro uyarısı yalnız çalışanı olan firmaya (MVZ-17)", async () => {
+    const eski = [
+      { tur: "bordro_parametreleri", anahtar: "genel", yururlukBaslangic: new Date("2000-01-01") },
+      { tur: "kanuni_deger", anahtar: "kidem_tavani", yururlukBaslangic: new Date("2000-01-01") },
+      { tur: "kanuni_deger", anahtar: "tevkifat_alt_siniri", yururlukBaslangic: new Date("2000-01-01") },
+    ];
+    const anahtarlar = async (aktifPersonel: number) => {
+      const { servis, bildirimler } = servisKur({ mevzuatKayitlari: eski, aktifPersonel });
+      await servis.tara();
+      return bildirimler.uret.mock.calls.map(([g]) => g).filter((g: { birlesimAnahtari: string }) => g.birlesimAnahtari.startsWith("mevzuat-eksik:"));
+    };
+    const calisansiz = await anahtarlar(0);
+    expect(calisansiz.map((g: { birlesimAnahtari: string }) => g.birlesimAnahtari.split(":")[2])).toEqual(["kidem_tavani", "tevkifat_alt_siniri"]);
+    expect(calisansiz[0]).toMatchObject({ onem: "kritik", roller: ["yonetici", "muhasebe"], hedefYol: "/panel/ayarlar/mevzuat" });
+    expect((await anahtarlar(3)).some((g: { birlesimAnahtari: string }) => g.birlesimAnahtari.includes("bordro_parametreleri"))).toBe(true);
   });
 });
 
