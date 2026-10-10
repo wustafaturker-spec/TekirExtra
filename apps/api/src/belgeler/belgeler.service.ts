@@ -43,6 +43,8 @@ import type {
   topluFaturaSemasi,
 } from "./belgeler.semalar";
 import { MevzuatService } from "../mevzuat/mevzuat.service";
+import { belgeKodTablosu } from "../fatura/tevkifat-tablosu";
+import { ekVergileriCoz, hesapGirdisi, saklanacakEkVergiler, type EkVergi } from "../fatura/ek-vergi";
 import { kanuniDegerOku } from "../mevzuat/kanuni-deger";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal =>
@@ -1870,6 +1872,7 @@ export class BelgelerService {
   ) {
     const ilk = belgeler[0];
     const tumSatirlar = belgeler.flatMap((b) => b.satirlar);
+    const ekVergiler = await this.kartEkVergileri(tx, ilk.yon === "satis" ? "satis" : "alis", tumSatirlar.map((s) => s.stokId));
     // Genel iskonto payları belge bazında zaten satırlara dağıtılmış olabilir;
     // faturada genel iskonto sıfırlanır, satır değerleri yeniden hesaplanır.
     const hesap = this.hesapla({
@@ -1885,7 +1888,7 @@ export class BelgelerService {
         tevkifatPay: s.tevkifatPay,
         tevkifatPayda: s.tevkifatPayda,
       })),
-    });
+    }, ekVergiler);
     const kaynakNolar = belgeler.map((b) => b.no).filter(Boolean).join(", ");
     const referanslar = birlesikReferanslar(belgeler);
     const kosullar = ilkKosullar(belgeler);
@@ -1904,6 +1907,9 @@ export class BelgelerService {
         genelIskontoYuzdesi: D(0),
         genelIskontoTutari: D(0),
         ...this.toplamAlanlari(hesap),
+        // EBLG-125: yalnız faturada tutulan KDV dışı vergi toplamları (belge modelinde yok).
+        toplamEkVergi: D(hesap.toplamEkVergi),
+        toplamStopaj: D(hesap.toplamStopaj),
         aciklama: kaynakNolar ? `Belge zincirinden: ${kaynakNolar}` : null,
         // EBLG-74/FTR-31: müşteri referansları faturada da durur. Toplu
         // faturalamada ilk dolu olan alınır; farklı olanları e-Belge nota yazar.
@@ -1940,6 +1946,10 @@ export class BelgelerService {
           tevkifatPayda: s.tevkifatPayda,
           tevkifatTutari: D(s.tevkifatTutari),
           netKdvTutari: D(s.netKdvTutari),
+          // EBLG-125: ürün kartının KDV dışı vergileri zincirden gelen faturaya da yazılır.
+          ekVergiler: ekVergiler[i].length ? (saklanacakEkVergiler(ekVergiler[i], s) as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+          ekVergiTutari: D(s.ekVergiTutari),
+          stopajTutari: D(s.stopajTutari),
           toplamTutar: D(s.toplamTutar),
         },
       });
@@ -2001,8 +2011,8 @@ export class BelgelerService {
     }[];
     genelIskontoYuzdesi?: string | number | Prisma.Decimal;
     genelIskontoTutari?: string | number | Prisma.Decimal;
-  }) {
-    const satirlar: FaturaHesaplaSatirGirdi[] = girdi.satirlar.map((s) => ({
+  }, ekVergiler?: EkVergi[][]) {
+    const satirlar: FaturaHesaplaSatirGirdi[] = girdi.satirlar.map((s, i) => ({
       stokId: s.stokId,
       miktar: Number(s.miktar),
       birimFiyat: Number(s.birimFiyat),
@@ -2010,6 +2020,7 @@ export class BelgelerService {
       kdvOrani: Number(s.kdvOrani),
       tevkifatPay: s.tevkifatPay || undefined,
       tevkifatPayda: s.tevkifatPayda || undefined,
+      ekVergiler: (ekVergiler?.[i] ?? []).map(hesapGirdisi),
     }));
     return faturaHesapla({
       satirlar,
@@ -2020,6 +2031,24 @@ export class BelgelerService {
         ? Number(girdi.genelIskontoTutari)
         : 0,
     });
+  }
+
+  /**
+   * EBLG-125: zincirden (teklif, sipariş, irsaliye) açılan fatura taslağında
+   * ürün kartlarının KDV dışı vergileri. Teklif ve irsaliye bu vergileri
+   * taşımaz; fatura kesilirken karttan gelir, formdaki gibi. Merkezde tanımı
+   * olmayan kod atlanır.
+   */
+  private async kartEkVergileri(tx: Prisma.TransactionClient, tip: "satis" | "alis", stokIdleri: string[]): Promise<EkVergi[][]> {
+    const kayitlar = await tx.stokEkVergi.findMany({ where: { stokId: { in: [...new Set(stokIdleri)] } }, orderBy: { sira: "asc" } });
+    if (!kayitlar.length) return stokIdleri.map(() => []);
+    const turler = (await belgeKodTablosu(this.mevzuat, bugunTR())).vergiTurleri;
+    const satirlar = stokIdleri.map((stokId) => ({
+      ekVergiler: kayitlar.filter((k) => k.stokId === stokId && turler.some((t) => t.kod === k.kod)).map((k) => ({
+        kod: k.kod, hesap: k.hesap, oran: k.hesap === "oran" ? k.deger.toString() : null, birimTutar: k.hesap === "birim" ? k.deger.toString() : null,
+      })),
+    }));
+    return ekVergileriCoz(tip, satirlar, turler).satirlar;
   }
 
   private toplamAlanlari(hesap: ReturnType<typeof faturaHesapla>) {

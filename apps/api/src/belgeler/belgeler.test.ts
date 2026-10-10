@@ -36,6 +36,7 @@ describe("BelgelerService", () => {
       },
       fatura: { create: vi.fn().mockResolvedValue({ id: "f1" }) },
       faturaSatir: { create: vi.fn() },
+      stokEkVergi: { findMany: vi.fn().mockResolvedValue([]) },
     };
     const prisma = { tenantIslem: vi.fn((_tenantId, calistir) => calistir(tx)) } as any;
     const service = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
@@ -62,6 +63,7 @@ describe("BelgelerService", () => {
       },
       fatura: { create: vi.fn().mockResolvedValue({ id: "f1" }), findUnique: vi.fn().mockResolvedValue(null) },
       faturaSatir: { create: vi.fn() },
+      stokEkVergi: { findMany: vi.fn().mockResolvedValue([]) },
     };
     const prisma = { tenantIslem: vi.fn((_tenantId, calistir) => calistir(tx)) } as any;
     const service = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
@@ -75,6 +77,31 @@ describe("BelgelerService", () => {
       vadeTarihi: new Date(vadeTarihiHesapla(bugunTR(), 30)!),
       ihracatTeslimSarti: "EXW",
     });
+  });
+
+  it("zincirden açılan faturaya ürün kartının KDV dışı vergisi yazılır (EBLG-125)", async () => {
+    const satir = { stokId: "s1", varyantId: null, miktar: new Prisma.Decimal(1), birim: "adet", birimFiyat: new Prisma.Decimal(1000), iskontoOrani: new Prisma.Decimal(0), kdvOrani: new Prisma.Decimal(20), tevkifatPay: null, tevkifatPayda: null };
+    const tx = {
+      belge: {
+        findMany: vi.fn().mockResolvedValue([{ id: "i1", no: "i1", durum: "onaylandi", tur: "irsaliye", cariId: "c1", dovizCinsi: "TRY", kur: new Prisma.Decimal(1), yon: "satis", depoId: "d1", satirlar: [satir] }]),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      fatura: { create: vi.fn().mockResolvedValue({ id: "f1" }), findUnique: vi.fn().mockResolvedValue(null) },
+      faturaSatir: { create: vi.fn() },
+      stokEkVergi: { findMany: vi.fn().mockResolvedValue([{ stokId: "s1", kod: "0074", hesap: "oran", deger: new Prisma.Decimal(25) }]) },
+    };
+    const prisma = { tenantIslem: vi.fn((_tenantId, calistir) => calistir(tx)) } as any;
+    const service = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
+
+    await service.topluFatura({ belgeIds: ["i1"] });
+
+    const fatura = tx.fatura.create.mock.calls[0][0].data;
+    expect(fatura.toplamEkVergi.toString()).toBe("250");
+    expect(fatura.toplamKdv.toString()).toBe("250");
+    expect(fatura.genelToplam.toString()).toBe("1500");
+    const kayit = tx.faturaSatir.create.mock.calls[0][0].data;
+    expect(kayit.ekVergiTutari.toString()).toBe("250");
+    expect(kayit.ekVergiler).toEqual([expect.objectContaining({ kod: "0074", oran: "25", tutar: "250.00", kdvMatrahinaDahil: true })]);
   });
 
   it("sonraki sayfa imlecini son döndürülen belgeye koyar", async () => {
