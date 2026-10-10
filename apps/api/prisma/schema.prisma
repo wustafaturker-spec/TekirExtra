@@ -228,6 +228,8 @@ model Tenant {
   duzeltmeKayitlari         DuzeltmeKaydi[]
   duzeltmeOlaylari          DuzeltmeOlayi[]
   stokMaliyetDuzeltmeleri   StokMaliyetDuzeltme[]
+  maliyetDagitimlari        MaliyetDagitimi[]
+  maliyetDagitimPaylari     MaliyetDagitimPayi[]
   personelUcretleri         PersonelUcret[]
   personelBilgiTalepleri    PersonelBilgiTalebi[]
 
@@ -1253,6 +1255,8 @@ model StokKart {
   uretimMalzemeleri       UretimEmriKalem[]        @relation("UretimMalzemesi")
   receteCiktilari         UrunRecetesiCikti[]      @relation("ReceteCiktiStok")
   uretimCiktiStoklari     UretimEmriCikti[]        @relation("UretimCiktiStok")
+
+  maliyetDagitimPaylari MaliyetDagitimPayi[]
 
   @@unique([tenantId, kod])
   @@index([tenantId, ad])
@@ -2450,6 +2454,8 @@ model Fatura {
   iadeEdildigiFaturalar FaturaIadeReferansi[]      @relation("IadeKaynagi")
   odemeTalimatiBaglari  BankaOdemeTalimatiFatura[]
 
+  maliyetDagitimPaylari MaliyetDagitimPayi[]
+
   @@unique([tenantId, seri, sira])
   @@unique([tekrarlayanPlanId, planlananTarih])
   @@index([tenantId, tarih])
@@ -2552,6 +2558,9 @@ model FaturaSatir {
   varyant         StokVaryant?     @relation(fields: [varyantId], references: [id])
   proje           Proje?           @relation(fields: [projeId], references: [id])
   projeAltKirilim ProjeAltKirilim? @relation(fields: [projeAltKirilimId], references: [id])
+
+  maliyetDagitimlari    MaliyetDagitimi[]
+  maliyetDagitimPaylari MaliyetDagitimPayi[]
 
   @@index([tenantId, faturaId])
   @@index([tenantId, projeId])
@@ -3696,6 +3705,8 @@ model Masraf {
   proje           Proje?            @relation(fields: [projeId], references: [id])
   projeAltKirilim ProjeAltKirilim?  @relation(fields: [projeAltKirilimId], references: [id])
   odemeler        MasrafOdeme[]
+
+  maliyetDagitimlari MaliyetDagitimi[]
 
   @@unique([kiraSozlesmeId, kiraDonemi])
   @@index([tenantId, tarih])
@@ -5431,4 +5442,67 @@ model MevzuatTalep {
 
   @@index([durum, createdAt])
   @@map("mevzuat_talepleri")
+}
+
+/// STK-40: nakliye, gümrük, sigorta gibi giderin (masraf ya da alış
+/// faturasının hizmet satırı) seçilen alış faturalarının stok satırlarına
+/// dağıtılması. Pay alış maliyetine eklenir; maliyet yeniden hesaplanır.
+/// Kaynak başına tek aktif dağıtım (kısmi tekil dizin göçte).
+model MaliyetDagitimi {
+  id            String                @id @default(uuid()) @db.Uuid
+  tenantId      String                @map("tenant_id") @db.Uuid
+  /// "masraf" | "fatura_satiri"
+  kaynakTur     String                @map("kaynak_tur")
+  masrafId      String?               @map("masraf_id") @db.Uuid
+  faturaSatirId String?               @map("fatura_satir_id") @db.Uuid
+  /// Kaynağın tarihi; dağıtılan tutar KDV hariç TL.
+  tarih         DateTime              @db.Date
+  tutar         Decimal               @db.Decimal(15, 2)
+  yontem        MaliyetDagitimYontemi
+  durum         MaliyetDagitimDurum   @default(aktif)
+  aciklama      String?
+  userId        String?               @map("user_id") @db.Uuid
+  iptalEdenId   String?               @map("iptal_eden_id") @db.Uuid
+  iptalTarihi   DateTime?             @map("iptal_tarihi")
+  createdAt     DateTime              @default(now()) @map("created_at")
+
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  masraf      Masraf?              @relation(fields: [masrafId], references: [id])
+  faturaSatir FaturaSatir?         @relation(fields: [faturaSatirId], references: [id])
+  paylar      MaliyetDagitimPayi[]
+
+  @@index([tenantId, durum])
+  @@map("maliyet_dagitimlari")
+}
+
+model MaliyetDagitimPayi {
+  id            String  @id @default(uuid()) @db.Uuid
+  tenantId      String  @map("tenant_id") @db.Uuid
+  dagitimId     String  @map("dagitim_id") @db.Uuid
+  faturaId      String  @map("fatura_id") @db.Uuid
+  faturaSatirId String  @map("fatura_satir_id") @db.Uuid
+  stokId        String  @map("stok_id") @db.Uuid
+  varyantId     String? @map("varyant_id") @db.Uuid
+  tutar         Decimal @db.Decimal(15, 2)
+
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dagitim     MaliyetDagitimi @relation(fields: [dagitimId], references: [id], onDelete: Cascade)
+  // Geri alınmış dağıtımın payı, faturası taslakta düzenlenip satırları silinince gider.
+  fatura      Fatura          @relation(fields: [faturaId], references: [id], onDelete: Cascade)
+  faturaSatir FaturaSatir     @relation(fields: [faturaSatirId], references: [id], onDelete: Cascade)
+  stok        StokKart        @relation(fields: [stokId], references: [id])
+
+  @@index([tenantId, faturaId])
+  @@index([tenantId, stokId])
+  @@map("maliyet_dagitim_paylari")
+}
+
+enum MaliyetDagitimYontemi {
+  tutar
+  miktar
+}
+
+enum MaliyetDagitimDurum {
+  aktif
+  iptal
 }

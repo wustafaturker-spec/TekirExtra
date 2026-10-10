@@ -54,10 +54,19 @@ export class StokMaliyetService {
       return katsayilar.get(birim)!;
     };
 
-    // Faturanın bu ürün/varyant satırlarının net TL birim maliyeti (STK-25).
+    // STK-40: alış satırlarına dağıtılmış giderler (aktif dağıtımlar), fatura+varyant başına TL.
+    const dagitimPaylari = new Map<string, Prisma.Decimal>();
+    for (const p of await tx.maliyetDagitimPayi.findMany({ where: { stokId, dagitim: { durum: "aktif" } }, select: { faturaId: true, varyantId: true, tutar: true } })) {
+      const anahtar = `${p.faturaId}|${p.varyantId ?? ""}`;
+      dagitimPaylari.set(anahtar, (dagitimPaylari.get(anahtar) ?? D(0)).add(p.tutar));
+    }
+
+    // Faturanın bu ürün/varyant satırlarının net TL birim maliyeti (STK-25) + dağıtılan gider payı (STK-40).
     const alisMaliyeti = async (f: NonNullable<ReturnType<typeof faturalar.get>>, varyantId: string | null) => {
       let matrah = D(0), miktar = D(0);
       for (const s of f.satirlar.filter((s) => (s.varyantId ?? null) === varyantId)) { matrah = matrah.add(s.matrah); miktar = miktar.add(s.miktar.mul(await katsayi(s.birim))); }
+      const pay = f.tip === "alis" ? dagitimPaylari.get(`${f.id}|${varyantId ?? ""}`) : undefined;
+      if (pay && miktar.gt(0)) return matrah.mul(f.kur).add(pay).div(miktar).toDecimalPlaces(4);
       return alisBirimMaliyeti(matrah, f.kur, miktar);
     };
 
@@ -113,6 +122,26 @@ export class StokMaliyetService {
     return stokId ? [stokId] : (await tx.stokKart.findMany({ where: { tip: { not: "hizmet" } }, select: { id: true }, orderBy: { kod: "asc" } })).map((k) => k.id);
   }
 
+  /**
+   * Kartı kilitleyip yeniden hesaplar ve yazar; çağıranın işlemi içinde
+   * (STK-40 maliyet dağıtımı da bunu kullanır). Değişiklik yoksa null.
+   */
+  async kartiUygula(tx: Tx, stokId: string, calismaId: string): Promise<Omit<KartMaliyetSonucu, "yazilacak"> | null> {
+    const { tenantId, userId } = aktifBaglam();
+    await tx.$queryRaw`SELECT id FROM stok_kartlari WHERE id = ${stokId}::uuid FOR UPDATE`;
+    const sonuc = await this.kartHesabi(tx, stokId, await this.acikBaslangic(tx));
+    if (!sonuc) return null;
+    // Hareket değişmez kayıttır (NFR-08): yalnız maliyet sütunu güncellenir, eski değer geçmişe yazılır.
+    for (const y of sonuc.yazilacak) await tx.stokHareket.update({ where: { id: y.id }, data: { maliyet: y.maliyet } });
+    if (sonuc.yazilacak.length) await tx.stokMaliyetDuzeltme.createMany({ data: sonuc.yazilacak.map((y) => ({ tenantId, hareketId: y.id, calismaId, eskiMaliyet: y.eski, yeniMaliyet: y.maliyet, userId })) });
+    await tx.stokKart.update({ where: { id: stokId }, data: { ortalamaMaliyet: D(sonuc.yeniOrtalama) } });
+    const { yazilacak: _y, ...gorunum } = sonuc;
+    return gorunum;
+  }
+
+  /** Yeniden yazımın başladığı gün (dışarıdan: dağıtım kapalı dönem denetimi). */
+  acikDonemBaslangici(tx: Tx) { return this.acikBaslangic(tx); }
+
   async onizle(stokId?: string) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
@@ -135,17 +164,10 @@ export class StokMaliyetService {
     const calismaId = randomUUID();
     for (const id of idler) {
       const s = await this.prisma.tenantIslem(tenantId, async (tx) => {
-        await tx.$queryRaw`SELECT id FROM stok_kartlari WHERE id = ${id}::uuid FOR UPDATE`;
         acik = await this.acikBaslangic(tx);
-        const sonuc = await this.kartHesabi(tx, id, acik);
-        if (!sonuc) return null;
-        // Hareket değişmez kayıttır (NFR-08): yalnız maliyet sütunu güncellenir, eski değer geçmişe yazılır.
-        for (const y of sonuc.yazilacak) await tx.stokHareket.update({ where: { id: y.id }, data: { maliyet: y.maliyet } });
-        if (sonuc.yazilacak.length) await tx.stokMaliyetDuzeltme.createMany({ data: sonuc.yazilacak.map((y) => ({ tenantId, hareketId: y.id, calismaId, eskiMaliyet: y.eski, yeniMaliyet: y.maliyet, userId })) });
-        await tx.stokKart.update({ where: { id }, data: { ortalamaMaliyet: D(sonuc.yeniOrtalama) } });
-        return sonuc;
+        return this.kartiUygula(tx, id, calismaId);
       });
-      if (s) { const { yazilacak: _y, ...gorunum } = s; kartlar.push(gorunum); }
+      if (s) kartlar.push(s);
     }
     const sonuc = ozet(kartlar, acik);
     await this.prisma.tenantIslem(tenantId, (tx) => tx.auditLog.create({ data: { tenantId, userId, islem: "stok_maliyet_yeniden_hesap", varlik: "stok", varlikId: stokId ?? null, detay: { calismaId, kapsam: stokId ? "tek" : "tum", acikBaslangic: sonuc.acikBaslangic, kartSayisi: kartlar.length, hareketSayisi: sonuc.degisenHareket, degerFarki: sonuc.degerFarki, kartlar: kartlar.slice(0, 100).map((k) => ({ kod: k.kod, eski: k.eskiOrtalama, yeni: k.yeniOrtalama })) } as Prisma.InputJsonValue } }));

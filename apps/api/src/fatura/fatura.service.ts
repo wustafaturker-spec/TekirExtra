@@ -1,4 +1,5 @@
 import { agirlikliMaliyet, alisBirimMaliyeti } from "../stok/maliyet";
+import { faturaDagitimKosulu } from "../stok/maliyet-dagitimi.service";
 import { ebelgeGitmemisMi, faturaGeriAlmaEngeli, ihracKayitliSonTarih, ilgiliKisiTemizle, varyantAciklamasi, varyantliAd, varyantliKod, type DovizKodu } from "@tekirextra/shared";
 import {
   BadRequestException,
@@ -985,12 +986,19 @@ export class FaturaService {
     return kart?.ortalamaMaliyet ?? new Prisma.Decimal(0);
   }
 
+  /** STK-40: maliyet dağıtımının kaynağı ya da hedefi olan fatura geri alınmaz. */
+  private async dagitimEngeli(tenantId: string, faturaId: string, eylem: string) {
+    const sayi = await this.prisma.tenantIslem(tenantId, (tx) => tx.maliyetDagitimi.count({ where: faturaDagitimKosulu(faturaId) }));
+    if (sayi) throw new BadRequestException(`Bu faturaya maliyet dağıtımı bağlı; fatura ${eylem}. Önce Maliyet Dağıtımı ekranından dağıtımı geri alın`);
+  }
+
   async iptal(id: string) {
     const { tenantId } = aktifBaglam();
     // STK-38: ters kayıtlar faturanın tarihine yazılır; dönemi kapalıysa iptal
     // edilemez (kapalı döneme kayıt girmez), düzeltme iade faturasıyla yapılır.
     const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.fatura.findUnique({ where: { id }, select: { tarih: true, durum: true, tip: true } }));
     if (!kayit) throw new NotFoundException("Fatura bulunamadı");
+    await this.dagitimEngeli(tenantId, id, "iptal edilemez");
     if (kayit.durum === "kesin" && kayit.tip !== "proforma") {
       try {
         await this.donemKilidi.tarihDogrula(tenantId, kayit.tarih, "fatura iptali");
@@ -1108,6 +1116,7 @@ export class FaturaService {
     const { tenantId } = aktifBaglam();
     const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.fatura.findUnique({ where: { id }, select: { tarih: true } }));
     if (!kayit) throw new NotFoundException("Fatura bulunamadı");
+    await this.dagitimEngeli(tenantId, id, "taslağa geri alınamaz");
     await this.donemKilidi.tarihDogrula(tenantId, kayit.tarih, "faturayı taslağa geri alma");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const fatura = await tx.fatura.findUnique({

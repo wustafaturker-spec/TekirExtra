@@ -96,12 +96,12 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
         id: true, no: true, tip: true, tarih: true, cariId: true, dovizCinsi: true, kur: true,
         toplamMatrah: true, toplamKdv: true, toplamNetKdv: true, toplamTevkifat: true, genelToplam: true,
         ihracatTeslimSarti: true, ihracKayitliKodu: true,
-        satirlar: { select: { matrah: true, stok: { select: { tip: true } } } },
+        satirlar: { select: { matrah: true, stok: { select: { tip: true } }, maliyetDagitimlari: { where: { durum: "aktif" }, select: { id: true } } } },
       },
     }),
     tx.kasaBankaHareket.findMany({ where: { kurFarkiFaturaId: { not: null } }, select: { kurFarkiFaturaId: true } }),
     tx.kasaBankaHareket.findMany({ where: { tarih: aralik, kaynakTur: { notIn: KAPSAM_DISI_HAREKET } }, select: HAREKET_SECIMI }),
-    tx.masraf.findMany({ where: { durum: "onaylandi", tarih: aralik, id: { notIn: [...kambiyoMasraflari] } }, include: { kategori: { select: { ad: true, muhasebeKodu: true } } } }),
+    tx.masraf.findMany({ where: { durum: "onaylandi", tarih: aralik, id: { notIn: [...kambiyoMasraflari] } }, include: { kategori: { select: { ad: true, muhasebeKodu: true } }, maliyetDagitimlari: { where: { durum: "aktif" }, select: { id: true } } } }),
     tx.gelirKaydi.findMany({ where: { tarih: aralik, id: { notIn: [...kambiyoGelirleri] } }, include: { kategori: { select: { ad: true, muhasebeKodu: true } } } }),
     tx.krediKartiHareket.findMany({ where: { tarih: aralik } }),
     tx.cekSenetOlay.findMany({ where: { islemTarihi: aralik }, select: { cekSenetId: true } }),
@@ -141,7 +141,7 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
   const gelirIdleri = new Set([...gelirler.map((g) => g.id), ...tumHamHareketler.map((h) => h.gelirKaydi?.id).filter((x): x is string => Boolean(x))]);
   const cekIdleri = new Set([...cekOlaylari.map((o) => o.cekSenetId), ...tumHamHareketler.filter((h) => h.kaynakTur === "cek_senet" && h.kaynakRef && UUID.test(h.kaynakRef)).map((h) => h.kaynakRef!)]);
   const [tumMasrafHam, tumGelirHam, cekler] = await Promise.all([
-    tx.masraf.findMany({ where: { id: { in: [...masrafIdleri] } }, include: { kategori: { select: { ad: true, muhasebeKodu: true } } } }),
+    tx.masraf.findMany({ where: { id: { in: [...masrafIdleri] } }, include: { kategori: { select: { ad: true, muhasebeKodu: true } }, maliyetDagitimlari: { where: { durum: "aktif" }, select: { id: true } } } }),
     tx.gelirKaydi.findMany({ where: { id: { in: [...gelirIdleri] } }, include: { kategori: { select: { ad: true, muhasebeKodu: true } } } }),
     tx.cekSenet.findMany({ where: { id: { in: [...cekIdleri] } }, include: { olaylar: { orderBy: { createdAt: "asc" } } } }),
   ]);
@@ -149,6 +149,7 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
   const masrafGirdisi = (m: (typeof tumMasrafHam)[number]): MasrafGirdisi => ({
     id: m.id, tarih: gun(m.tarih), belgeNo: m.belgeNo, aciklama: m.aciklama, saticiUnvan: m.saticiUnvan, kategoriAd: m.kategori.ad, kategoriKodu: m.kategori.muhasebeKodu,
     cariId: m.cariId, matrah: m.matrah, kdvTutari: m.kdvTutari, toplam: m.toplam, stopajTutari: m.stopajTutari, kur: m.kur, dovizCinsi: m.dovizCinsi,
+    stokaDagitildi: m.maliyetDagitimlari.length > 0,
   });
   const gelirGirdisi = (g: (typeof tumGelirHam)[number]): GelirGirdisi => ({
     id: g.id, tarih: gun(g.tarih), belgeNo: g.belgeNo, aciklama: g.aciklama, kategoriAd: g.kategori.ad, kategoriKodu: g.kategori.muhasebeKodu, cariId: g.cariId,
@@ -179,7 +180,7 @@ export async function uretimGirdisiOku(tx: Tx, tenantId: string, baslangic: stri
     id: f.id, no: f.no, tip: f.tip, tarih: gun(f.tarih), cariId: f.cariId, dovizCinsi: f.dovizCinsi, kur: f.kur,
     toplamMatrah: f.toplamMatrah, toplamKdv: f.toplamKdv, toplamNetKdv: f.toplamNetKdv, toplamTevkifat: f.toplamTevkifat, genelToplam: f.genelToplam,
     ihracat: Boolean(f.ihracatTeslimSarti), ihracKayitli: Boolean(f.ihracKayitliKodu), kurFarki: kurFarkiFaturalari.has(f.id),
-    satirlar: f.satirlar.map((s) => ({ matrah: s.matrah, stokTipi: s.stok?.tip ?? null })),
+    satirlar: f.satirlar.map((s) => ({ matrah: s.matrah, stokTipi: s.stok?.tip ?? null, stokaDagitildi: s.maliyetDagitimlari.length > 0 })),
   }));
 
   const dovizGirdileri: DovizIslemGirdisi[] = dovizIslemleri.flatMap((d) => {

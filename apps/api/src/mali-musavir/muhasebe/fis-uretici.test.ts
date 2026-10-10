@@ -55,6 +55,14 @@ describe("muhasebe fiş üretici (MUH-04)", () => {
     expect(ozet(fisler[0])).toEqual(["153 B 600.00", "770 B 400.00", "191 B 200.00", "320.05.9 A 1100.00", "360 A 100.00"]);
   });
 
+  it("stok maliyetine dağıtılmış hizmet satırı ve masraf 153'e gider (STK-40)", () => {
+    const f = fatura({ tip: "alis", cariId: "t", satirlar: [{ matrah: D(600), stokTipi: "urun" }, { matrah: D(400), stokTipi: "hizmet", stokaDagitildi: true }] });
+    const masraf = { id: "ms", tarih: "2026-09-11", belgeNo: "N1", aciklama: null, saticiUnvan: "Nakliyeci", kategoriAd: "Nakliye", kategoriKodu: "760.01", cariId: null, matrah: D(100), kdvTutari: D(20), toplam: D(120), stopajTutari: null, kur: D(1), dovizCinsi: "TRY", stokaDagitildi: true };
+    const { fisler } = fisleriUret(girdi({ faturalar: [f], masraflar: [masraf], tumMasraflar: new Map([["ms", masraf]]) }));
+    expect(ozet(fisler[0]).slice(0, 1)).toEqual(["153 B 1000.00"]);
+    expect(ozet(fisler.find((x) => x.kaynak.tur === "masraf")!)[0]).toBe("153 B 100.00");
+  });
+
   it("satış iadesi 610 ve 391 borç, cari alacak; firmanın kod düzeltmesi uygulanır", () => {
     const { fisler } = fisleriUret(girdi({ hesapKodlari: { satis_iade: "610.01" }, faturalar: [fatura({ tip: "satis_iade" })] }));
     expect(ozet(fisler[0])).toEqual(["120.01.M001 A 1200.00", "610.01 B 1000.00", "391 B 200.00"]);

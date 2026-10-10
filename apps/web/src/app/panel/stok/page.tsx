@@ -187,6 +187,7 @@ export default function StokSayfasi() {
             <ButtonLabel as="a" href="/panel/stok/raporlar">📈 Raporlar</ButtonLabel>
             {yonetici && <ButtonLabel as="a" href="/panel/stok/tutarlilik">Tutarlılık denetimi</ButtonLabel>}
             {yonetici && <ButtonLabel as="a" href="/panel/stok/maliyet">Maliyeti yeniden hesapla</ButtonLabel>}
+            <ButtonLabel as="a" href="/panel/stok/maliyet-dagitimi">Maliyet dağıtımı</ButtonLabel>
             <Button onClick={() => void excelSablonIndir()}>📄 Örnek Şablon</Button>
             <ButtonLabel>
               {excelYukleniyor ? "İşleniyor..." : "📥 Excel’den İçe Aktar"}

@@ -203,6 +203,10 @@ export class MasraflarService {
     if (mevcut.odemeDurumu !== "odenmedi") throw new BadRequestException("Ödeme alınmış masraf iptal edilemez");
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      // STK-40: stok maliyetine dağıtılmış gider iptal edilemez.
+      if (await tx.maliyetDagitimi.count({ where: { masrafId: id, durum: "aktif" } })) {
+        throw new BadRequestException("Bu masraf stok maliyetine dağıtılmış; önce Maliyet Dağıtımı ekranından dağıtımı geri alın");
+      }
       if (mevcut.cariId && mevcut.durum === "onaylandi") {
         const netTutar = mevcut.toplam.sub(mevcut.stopajTutari ?? D(0));
         const unvan = mevcut.cari?.unvan ?? mevcut.saticiUnvan ?? "Masraf";

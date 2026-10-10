@@ -137,6 +137,7 @@ describe("FaturaService.taslagaGeriAl (FTR-29)", () => {
         update: vi.fn().mockResolvedValue({ id: "f1", durum: "taslak" }),
       },
       kasaBankaHareket: { count: vi.fn().mockResolvedValue(0) },
+      maliyetDagitimi: { count: vi.fn().mockResolvedValue(0) },
       posTahsilat: { count: vi.fn().mockResolvedValue(0) },
       krediKartiHareket: { count: vi.fn().mockResolvedValue(0) },
       stokHareket: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) },
@@ -221,6 +222,7 @@ describe("FaturaService.iptal — e-belge kuralı (EBLG-22)", () => {
     const tx = {
       fatura: { findUnique: vi.fn().mockResolvedValue({ id: "f1", no, durum: "kesin", tip: "satis", tarih: new Date(), genelToplam: new Prisma.Decimal("900.00"), cariId: "c1", dovizCinsi: "TRY", kur: new Prisma.Decimal("1"), ebelge }) },
       kasaBankaHareket: { count: vi.fn().mockResolvedValue(0) },
+      maliyetDagitimi: { count: vi.fn().mockResolvedValue(0) },
       posTahsilat: { count: vi.fn().mockResolvedValue(0) },
       krediKartiHareket: { count: vi.fn().mockResolvedValue(0) },
       stokHareket: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) },
@@ -260,6 +262,14 @@ describe("FaturaService.iptal — e-belge kuralı (EBLG-22)", () => {
     const { service, tx } = kur(null, "SNC2026000000003", kilit);
 
     await expect(service.iptal("f1")).rejects.toThrow("dönemi kapalı; fatura iptali yapılamaz; iade faturası düzenleyin");
+    expect(tx.fatura.update).not.toHaveBeenCalled();
+  });
+
+  it("maliyet dağıtımına bağlı faturayı iptal etmez (STK-40)", async () => {
+    const { service, tx } = kur(null);
+    tx.maliyetDagitimi.count.mockResolvedValue(1);
+
+    await expect(service.iptal("f1")).rejects.toThrow("maliyet dağıtımı bağlı; fatura iptal edilemez");
     expect(tx.fatura.update).not.toHaveBeenCalled();
   });
 

@@ -54,7 +54,8 @@ export interface FaturaGirdisi {
   id: string; no: string | null; tip: string; tarih: string; cariId: string | null; dovizCinsi: string; kur: Prisma.Decimal;
   toplamMatrah: Prisma.Decimal; toplamKdv: Prisma.Decimal; toplamNetKdv: Prisma.Decimal; toplamTevkifat: Prisma.Decimal; genelToplam: Prisma.Decimal;
   ihracat: boolean; ihracKayitli: boolean; kurFarki: boolean;
-  satirlar: Array<{ matrah: Prisma.Decimal; stokTipi: string | null }>;
+  /** STK-40: stokaDagitildi — maliyet dağıtımına kaynak olmuş hizmet satırı 153'e gider. */
+  satirlar: Array<{ matrah: Prisma.Decimal; stokTipi: string | null; stokaDagitildi?: boolean }>;
 }
 
 export interface HareketGirdisi {
@@ -73,6 +74,8 @@ export interface MasrafGirdisi {
   id: string; tarih: string; belgeNo: string | null; aciklama: string | null; saticiUnvan: string | null;
   kategoriAd: string; kategoriKodu: string | null; cariId: string | null;
   matrah: Prisma.Decimal; kdvTutari: Prisma.Decimal; toplam: Prisma.Decimal; stopajTutari: Prisma.Decimal | null; kur: Prisma.Decimal; dovizCinsi: string;
+  /** STK-40: stok maliyetine dağıtılmış masraf gider yerine 153'e borç yazılır. */
+  stokaDagitildi?: boolean;
 }
 
 export interface GelirGirdisi {
@@ -251,7 +254,7 @@ function faturaFisi(f: FaturaGirdisi, c: HesapCozucu, kontroller: Kontrol[]): Fi
     const satirToplami = f.satirlar.reduce((t, s) => t.add(s.matrah), SIFIR);
     const gruplar = new Map<string, Prisma.Decimal>();
     for (const s of f.satirlar) {
-      const kod = f.kurFarki ? c.kod("kur_farki_gider") : s.stokTipi === "urun" ? c.kod("mal_alis") : s.stokTipi === "sarf" ? c.kod("sarf_alis") : c.kod("hizmet_alis");
+      const kod = f.kurFarki ? c.kod("kur_farki_gider") : s.stokTipi === "urun" || s.stokaDagitildi ? c.kod("mal_alis") : s.stokTipi === "sarf" ? c.kod("sarf_alis") : c.kod("hizmet_alis");
       gruplar.set(kod, (gruplar.get(kod) ?? SIFIR).add(s.matrah));
     }
     const giderler = [...gruplar.entries()].map(([kod, matrah]) => {
@@ -282,7 +285,7 @@ function masrafFisi(m: MasrafGirdisi, c: HesapCozucu, kontroller: Kontrol[]): Fi
   const aciklama = `${m.kategoriAd}${m.saticiUnvan ? ` · ${m.saticiUnvan}` : ""}${m.aciklama ? ` · ${m.aciklama}` : ""}`.slice(0, 200);
   const stopaj = m.stopajTutari ?? SIFIR;
   const satirlar = [
-    borc(m.kategoriKodu?.trim() || c.kod("hizmet_alis"), aciklama, TL(m.matrah, m.kur)),
+    borc(m.stokaDagitildi ? c.kod("mal_alis") : m.kategoriKodu?.trim() || c.kod("hizmet_alis"), aciklama, TL(m.matrah, m.kur)),
     borc(c.kod("indirilecek_kdv"), `${aciklama} KDV`, TL(m.kdvTutari, m.kur)),
     alacak(masrafKarsiKodu(m, c), aciklama, TL(m.toplam.sub(stopaj), m.kur), dovizBilgisi(m.dovizCinsi, m.toplam.sub(stopaj), m.kur)),
     alacak(c.kod("odenecek_vergi"), `${aciklama} stopaj`, TL(stopaj, m.kur)),
