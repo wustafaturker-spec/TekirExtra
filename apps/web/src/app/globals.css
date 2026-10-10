@@ -2693,6 +2693,9 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 .stock-kpi--lead.is-danger > strong { color: var(--danger); }
 .stock-kpi--value > strong { color: var(--accent-text); }
 .stock-tabs { background: var(--surface); border: 1px solid var(--border); border-radius: .8rem; box-shadow: var(--shadow-sm); margin: 0; overflow: hidden; padding: .25rem .4rem 0; }
+/* Sekme çok; gizli yatay kaydırmada sağdakiler fark edilmiyordu. Geniş ekranda alt satıra kırılır. */
+@media (min-width: 601px) { .stock-tabs .tabs { flex-wrap: wrap; overflow-x: visible; } }
+.stock-field .link-button { background: none; border: 0; color: var(--accent-text); cursor: pointer; font: inherit; padding: 0; text-decoration: underline; }
 .stock-editor { overflow: hidden; }
 .stock-editor__section { align-items: center; border-top: 1px solid var(--border); display: flex; gap: .7rem; margin-top: .2rem; padding-top: 1rem; }
 .stock-editor__section > span { align-items: center; background: var(--accent-soft); border-radius: 50%; color: var(--accent-text); display: flex; font-size: .62rem; font-weight: 800; height: 28px; justify-content: center; width: 28px; }

@@ -540,6 +540,7 @@ export default function StokDetaySayfasi() {
             { deger: "genel", baslik: "Genel" },
             { deger: "recete", baslik: recete ? `Ürün reçetesi (${recete.kalemler?.length ?? 0})` : "Ürün reçetesi" },
             { deger: "fiyatlar", baslik: `Dövizli fiyatlar (${fiyatlar.length})` },
+            { deger: "vergiler", baslik: `KDV dışı vergiler (${detay.ekVergiler?.length ?? 0})` },
             { deger: "hareketler", baslik: `Hareketler (${hareketOzeti?.kayitSayisi ?? hareketler.length})` },
             ...(cokluDepo
               ? [{ deger: "depolar" as Sekme, baslik: `Depolar (${depoBakiyeleri.length})` }]
@@ -549,7 +550,6 @@ export default function StokDetaySayfasi() {
             ...((detay.takipTipi ?? "yok") !== "yok" ? [{ deger: "partiler" as Sekme, baslik: `Seri / Lot (${partiler.length})` }] : []),
             { deger: "barkodlar", baslik: `Barkodlar (${detay.barkodlar.length})` },
             { deger: "tedarikciler", baslik: `Tedarikçiler (${detay.tedarikciler.length})` },
-            { deger: "vergiler", baslik: `Vergiler (${detay.ekVergiler?.length ?? 0})` },
           ]}
         />
       </div>
@@ -559,6 +559,7 @@ export default function StokDetaySayfasi() {
           <GenelSekmesi
             detay={detay}
             kategoriler={kategoriler}
+            onVergiler={() => setAktifSekme("vergiler")}
             onKaydet={(govde) =>
               islem(
                 () => api(`/stok/${id}`, { method: "PATCH", body: JSON.stringify(govde) }),
@@ -679,10 +680,12 @@ export default function StokDetaySayfasi() {
 function GenelSekmesi({
   detay,
   kategoriler,
+  onVergiler,
   onKaydet,
 }: {
   detay: StokDetay;
   kategoriler: Kategori[];
+  onVergiler: () => void;
   onKaydet: (govde: Record<string, unknown>) => Promise<boolean>;
 }) {
   const duzenlenebilir = detay.izinliEylemler.includes("duzenle");
@@ -842,6 +845,13 @@ function GenelSekmesi({
           <Field label="KDV Oranı (%)">
             <KdvOraniSecimi tablo={kodTablosu} value={form.kdvOrani as string} onDegis={(o) => setForm((f) => ({ ...f, kdvOrani: o }))} />
           </Field>
+          {/* EBLG-125: KDV dışı vergiler ayrı sekmede düzenlenir; burada yalnız özet ve bağlantı. */}
+          <small className="muted">
+            {detay.ekVergiler?.length
+              ? `KDV dışı: ${detay.ekVergiler.map((v) => `${kodTablosu.vergiTurleri.find((t) => t.kod === v.kod)?.ad ?? v.kod} ${v.hesap === "oran" ? `%${Number(v.deger)}` : `${Number(v.deger)} TL/${detay.anaBirim}`}`).join(", ")} · `
+              : "ÖTV, ÖİV gibi KDV dışı vergi yok · "}
+            <button type="button" className="link-button" onClick={onVergiler}>{detay.ekVergiler?.length ? "Düzenle" : "Ekle"}</button>
+          </small>
         </div>
         <div className="stock-field">
           <Field label="Alış Fiyatı">
