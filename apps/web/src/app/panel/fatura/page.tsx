@@ -47,8 +47,8 @@ import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 interface EkVergiSatiri { kod: string; ad: string; hesap?: "oran" | "birim" | null; oran: string | null; birimTutar?: string | null; matrah: string | null; tutar: string; stopaj: boolean; kdvMatrahinaDahil: boolean }
 
 /** EBLG-125: ürün kartının vergisi → satır vergisi (ad ve davranış belge tarihindeki merkezi listeden). */
-function karttanEkVergiler(stok: Stok | undefined, turler: readonly VergiTuru[]): EkVergiSatiri[] {
-  return (stok?.ekVergiler ?? []).flatMap((v) => {
+function karttanEkVergiler(vergiler: Stok["ekVergiler"], turler: readonly VergiTuru[]): EkVergiSatiri[] {
+  return (vergiler ?? []).flatMap((v) => {
     const tur = turler.find((t) => t.kod === v.kod);
     return tur ? [{ kod: v.kod, ad: tur.ad, hesap: v.hesap, oran: v.hesap === "oran" ? v.deger : null, birimTutar: v.hesap === "birim" ? v.deger : null, matrah: null, tutar: "0", stopaj: tur.stopaj, kdvMatrahinaDahil: tur.kdvMatrahinaDahil }] : [];
   });
@@ -1059,7 +1059,7 @@ export default function FaturaSayfasi() {
         yeni[index].kdvOrani = Number(stok.kdvOrani || 20);
       }
       // EBLG-125: kartın KDV dışı vergileri; iade ve proformada taşınmaz.
-      yeni[index].ekVergiler = tip === "satis" || tip === "alis" ? karttanEkVergiler(stok, kodTablosu.vergiTurleri) : [];
+      yeni[index].ekVergiler = tip === "satis" || tip === "alis" ? karttanEkVergiler(stok?.ekVergiler, kodTablosu.vergiTurleri) : [];
       yeni[index].dovizUyarisi = undefined;
       if (deger) {
         const fiyat = await kalemFiyatiGetir(String(deger));
@@ -2706,9 +2706,11 @@ export default function FaturaSayfasi() {
           </div>
         </div>
       )}
-      <UrunSecimModali acik={urunModali !== null} baslangicStokId={urunModali?.stokId} baslangicVaryantId={urunModali?.varyantId} stoklar={stoklar} cariId={cariId} tip={tip.startsWith("alis") ? "alis" : "satis"} belgeDovizi={dovizCinsi} belgeKuru={kur} belgeTarihi={tarih} onKapat={() => setUrunModali(null)} onEkle={(urun) => {
+      <UrunSecimModali acik={urunModali !== null} baslangicStokId={urunModali?.stokId} baslangicVaryantId={urunModali?.varyantId} stoklar={stoklar} cariId={cariId} tip={tip.startsWith("alis") ? "alis" : "satis"} belgeDovizi={dovizCinsi} belgeKuru={kur} belgeTarihi={tarih} vergiTurleri={tip === "satis" || tip === "alis" ? kodTablosu.vergiTurleri : undefined} onKapat={() => setUrunModali(null)} onEkle={(urun) => {
         setSatirlar((eskiler) => {
-          const satir = { stokId: urun.stokId, varyantId: urun.varyantId, miktar: urun.miktar, birim: urun.birim, birimFiyat: urun.birimFiyat, iskontoOrani: urun.iskontoOrani, kdvOrani: urun.kdvOrani, gibIstisnaKodu: "" };
+          // EBLG-125: pencerede gösterilen (gerekirse düzeltilen) KDV dışı vergiler satıra gelir.
+          const ekVergiler = tip === "satis" || tip === "alis" ? karttanEkVergiler(urun.ekVergiler, kodTablosu.vergiTurleri) : [];
+          const satir = { stokId: urun.stokId, varyantId: urun.varyantId, miktar: urun.miktar, birim: urun.birim, birimFiyat: urun.birimFiyat, iskontoOrani: urun.iskontoOrani, kdvOrani: urun.kdvOrani, gibIstisnaKodu: "", ekVergiler };
           if (urunModali == null || urunModali.satir >= eskiler.length) return [...eskiler, satir];
           return eskiler.map((x, i) => i === urunModali.satir ? satir : x);
         });

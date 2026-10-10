@@ -15,7 +15,11 @@ export interface UrunSecimStok {
   barkod?: string | null;
   /** Aktif varyantlar: aramada varyant kodu/barkodu ürünü bulur ve varyantı seçer. */
   varyantlar?: { id: string; kod: string; barkod?: string | null }[];
+  /** EBLG-125: kartın KDV dışı vergileri (ÖTV, ÖİV…). */
+  ekVergiler?: UrunEkVergisi[];
 }
+/** EBLG-125: kart vergisi — oran (%) ya da birim başı tutar. */
+export interface UrunEkVergisi { kod: string; hesap: "oran" | "birim"; deger: string }
 interface Varyant { id: string; kod: string; ad: string; mevcutMiktar: string; aktif: boolean }
 interface FiyatListesi { id: string; ad: string; dovizCinsi: string; aktif: boolean }
 interface Tavsiye {
@@ -25,14 +29,21 @@ interface Tavsiye {
 export interface UrunSecimSonucu {
   stokId: string; varyantId?: string; miktar: number; birim: string; birimFiyat: number;
   iskontoOrani: number; kdvOrani: number; kaynakDoviz: string; kaynakFiyat: number; urunKuru: number;
+  /** EBLG-125: pencerede gösterilip düzenlenebilen KDV dışı vergiler; `vergiTurleri` verilmezse boş. */
+  ekVergiler: UrunEkVergisi[];
 }
 
-export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, stoklar, cariId, tip, belgeDovizi, belgeKuru, belgeTarihi, onKapat, onEkle }: {
+export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, stoklar, cariId, tip, belgeDovizi, belgeKuru, belgeTarihi, vergiTurleri, onKapat, onEkle }: {
   acik: boolean; stoklar: UrunSecimStok[]; cariId?: string; tip: string; belgeDovizi: string; belgeKuru: string;
   baslangicStokId?: string;
   /** Satır araması bir varyantı bulduysa pencere o varyant seçili açılır. */
   baslangicVaryantId?: string;
   belgeTarihi: string;
+  /**
+   * EBLG-125: verilirse kartın KDV dışı vergileri KDV gibi pencerede görünür ve
+   * düzenlenir. KDV dışı vergi taşımayan belgede (teklif, irsaliye, iade) verilmez.
+   */
+  vergiTurleri?: readonly { kod: string; ad: string; stopaj: boolean }[];
   onKapat: () => void; onEkle: (sonuc: UrunSecimSonucu) => void;
 }) {
   const [arama, setArama] = useState("");
@@ -53,6 +64,9 @@ export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, sto
   const [kurHatasi, setKurHatasi] = useState("");
   const [iskonto, setIskonto] = useState("0");
   const [kdv, setKdv] = useState("20");
+  const [ekVergiler, setEkVergiler] = useState<UrunEkVergisi[]>([]);
+  /** Kartın vergileri; tanımı merkezde olmayan kod gösterilmez (faturada da taşınmaz). */
+  const kartVergileri = (s?: UrunSecimStok) => (vergiTurleri ? (s?.ekVergiler ?? []).filter((v) => vergiTurleri.some((t) => t.kod === v.kod)) : []);
   const [hata, setHata] = useState("");
   const stok = stoklar.find((s) => s.id === stokId);
   const sonuclar = useMemo(() => {
@@ -86,6 +100,8 @@ export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, sto
     const secili = stoklar.find((s) => s.id === baslangicStokId);
     setBirim(secili?.anaBirim ?? "adet");
     if (secili) setKdv(secili.kdvOrani ?? "20");
+    setEkVergiler(kartVergileri(secili));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [acik, baslangicStokId, baslangicVaryantId, stoklar]);
   useEffect(() => {
     if (!stokId) { setVaryantlar([]); return; }
@@ -123,6 +139,7 @@ export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, sto
     const s = stoklar.find((x) => x.id === id);
     const eslesen = q ? s?.varyantlar?.find((v) => [v.kod, v.barkod].some((d) => d?.toLocaleLowerCase("tr-TR") === q)) : undefined;
     setStokId(id); setVaryantId(eslesen?.id ?? ""); setKdv(s?.kdvOrani ?? "20"); setBirim(s?.anaBirim ?? "adet");
+    setEkVergiler(kartVergileri(s));
   }
   const seciliStok = stoklar.find((s) => s.id === stokId);
   function birimDegistir(yeni: string) {
@@ -136,6 +153,11 @@ export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, sto
     setFiyatDovizi(yeniDoviz); setUrunKuru(String(hedefKur ?? 1));
   }
   const belgeyeCevrilmisFiyat = (() => { const kaynakKur = tcmbKurlari[fiyatDovizi]; const hedefKur = belgeDovizi === "TRY" ? 1 : Number(belgeKuru); return kaynakKur && hedefKur ? Number(birimFiyat) * kaynakKur / hedefKur : Number(birimFiyat); })();
+  // EBLG-125: faturadaki hesapla aynı — oran satır matrahına, birim tutarı satır miktarına.
+  const matrah = Number(miktar) * belgeyeCevrilmisFiyat * (1 - Number(iskonto) / 100);
+  const ekVergiTutarlari = ekVergiler.map((v) => (v.hesap === "oran" ? matrah * Number(v.deger) / 100 : Number(miktar) * Number(v.deger)));
+  const vergiTuru = (kod: string) => vergiTurleri?.find((t) => t.kod === kod);
+  const para = (n: number) => n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (!acik) return null;
   return <div className="product-picker-layer" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onKapat(); }}>
     <section className="product-picker" role="dialog" aria-modal="true" aria-label="Ürün veya hizmet ekle">
@@ -157,11 +179,15 @@ export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, sto
           <Field label={`Belge kuru (${belgeDovizi} → TRY)`}><Input readOnly value={belgeDovizi === "TRY" ? "1" : belgeKuru} /></Field>
           <Field label="Birim fiyat"><div className="row"><Input type="number" min="0" step="any" value={birimFiyat} onChange={(e) => setBirimFiyat(e.target.value)} /><strong>{fiyatDovizi}</strong></div></Field>
           <Field label="KDV (%)"><Input type="number" min="0" max="100" value={kdv} onChange={(e) => setKdv(e.target.value)} /></Field>
+          {ekVergiler.map((v, i) => <Field key={v.kod} label={`${vergiTuru(v.kod)?.ad ?? v.kod} ${v.hesap === "oran" ? "(%)" : `(${belgeDovizi} / ${birimKisaAdi(birim || seciliStok?.anaBirim || "adet")})`}`}>
+            <Input type="number" min="0" max={v.hesap === "oran" ? 100 : undefined} step="any" value={v.deger} onChange={(e) => setEkVergiler((l) => l.map((x, j) => (j === i ? { ...x, deger: e.target.value } : x)))} />
+          </Field>)}
           <Field label="İndirim (%)"><Input type="number" min="0" max="100" value={iskonto} onChange={(e) => setIskonto(e.target.value)} /></Field>
         </div>
         {hata && <p className="product-picker__notice is-warning" role="alert">{hata}</p>}
-        <div className="product-picker__total"><span>TOPLAM</span><strong>{(Number(miktar) * belgeyeCevrilmisFiyat * (1 - Number(iskonto) / 100)).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {belgeDovizi}</strong></div>
-        <footer><Button type="button" onClick={() => { setStokId(""); setFiyat(null); }}>Başka ürün seç</Button><Button variant="primary" type="button" disabled={Number(miktar) <= 0 || !Number.isFinite(belgeyeCevrilmisFiyat) || (varyantlar.length > 0 && !varyantId)} onClick={() => onEkle({ stokId, varyantId: varyantId || undefined, miktar: Number(miktar), birim: birim || seciliStok?.anaBirim || "adet", birimFiyat: belgeyeCevrilmisFiyat, iskontoOrani: Number(iskonto), kdvOrani: Number(kdv), kaynakDoviz: fiyatDovizi, kaynakFiyat: Number(birimFiyat), urunKuru: tcmbKurlari[fiyatDovizi] ?? Number(urunKuru) })}>+ Ekle</Button></footer>
+        <div className="product-picker__total"><span>TOPLAM</span><strong>{matrah.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {belgeDovizi}</strong></div>
+        {ekVergiler.length > 0 && <ul className="product-picker__taxes">{ekVergiler.map((v, i) => <li key={v.kod}><span>{vergiTuru(v.kod)?.ad ?? v.kod}{vergiTuru(v.kod)?.stopaj ? " (stopaj, ödenecekten düşer)" : ""}</span><strong>{vergiTuru(v.kod)?.stopaj ? "−" : ""}{para(ekVergiTutarlari[i] || 0)} {belgeDovizi}</strong></li>)}</ul>}
+        <footer><Button type="button" onClick={() => { setStokId(""); setFiyat(null); }}>Başka ürün seç</Button><Button variant="primary" type="button" disabled={Number(miktar) <= 0 || !Number.isFinite(belgeyeCevrilmisFiyat) || (varyantlar.length > 0 && !varyantId) || ekVergiler.some((v) => !(Number(v.deger) > 0))} onClick={() => onEkle({ stokId, varyantId: varyantId || undefined, miktar: Number(miktar), birim: birim || seciliStok?.anaBirim || "adet", birimFiyat: belgeyeCevrilmisFiyat, iskontoOrani: Number(iskonto), kdvOrani: Number(kdv), kaynakDoviz: fiyatDovizi, kaynakFiyat: Number(birimFiyat), urunKuru: tcmbKurlari[fiyatDovizi] ?? Number(urunKuru), ekVergiler: ekVergiler.map((v) => ({ ...v, deger: String(Number(v.deger)) })) })}>+ Ekle</Button></footer>
       </div>}
     </section>
   </div>;
