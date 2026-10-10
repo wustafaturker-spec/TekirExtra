@@ -94,6 +94,12 @@ function DegisiklikDetayi() {
   if (!id) return <Alert tone="error">Değişiklik seçilmedi.</Alert>;
   if (!d) return <><Alert tone="error">{hata}</Alert><p className="muted">Yükleniyor…</p></>;
   const duzenle = d.izinler.duzenle;
+  // Sunucu onaya gönderirken senaryoları yeniden çalıştırır; tutmadığı bilinen ya da eksik senaryoda düğme baştan kapalı.
+  const kabulEngeli = d.kabulGerekli && !d.kabulSenaryolari.length
+    ? "Onaya göndermek için en az bir kabul senaryosu ekleyin."
+    : d.kabulSenaryolari.some((k) => k.basarili === false)
+      ? "Tutmayan kabul senaryosu var; değeri ya da beklentiyi düzeltip yeniden çalıştırın."
+      : null;
 
   return <>
     <PageHeader title={`#${d.no} ${d.baslik}`} subtitle={`Dayanak: ${d.dayanak} · Yürürlük: ${tarihTR(d.yururlukBaslangic)} · Hazırlayan: ${d.hazirlayan.adSoyad}${d.yayinlayan ? ` · Yayınlayan: ${d.yayinlayan.adSoyad}` : ""}`} />
@@ -113,7 +119,7 @@ function DegisiklikDetayi() {
     </Card>}
 
     <Card title="Kalemler" pad={false} actions={duzenle ? <div className="row-tight"><Button size="sm" onClick={satirEkle}>+ Kalem</Button><Button size="sm" variant="primary" disabled={islem || !degisti} onClick={() => void satirlariKaydet()}>Kalemleri kaydet</Button></div> : undefined}>
-      <TableWrap>
+      <TableWrap className="mevzuat-kalemler">
         <thead><tr><th>Tür</th><th>Anahtar</th><th>İşlem</th><th>Yeni değer</th><th>Önceki değer</th>{duzenle && <th />}</tr></thead>
         <tbody>
           {satirlar.map((s, i) => {
@@ -121,15 +127,15 @@ function DegisiklikDetayi() {
             const sorunlar = s.islem === "kaldir" || !s.anahtar ? [] : mevzuatDegerHatalari(s.tur, s.anahtar.trim(), degereCevir(s));
             return <tr key={i}>
               <td>{duzenle
-                ? <Select aria-label="Tür" value={s.tur} onChange={(e) => void turSec(i, e.target.value as MevzuatTuru)}>{MEVZUAT_TURLERI.map((t) => <option key={t} value={t}>{MEVZUAT_TUR_TANIMLARI[t].ad}</option>)}</Select>
+                ? <Select aria-label="Tür" style={{ minWidth: "11rem" }} value={s.tur} onChange={(e) => void turSec(i, e.target.value as MevzuatTuru)}>{MEVZUAT_TURLERI.map((t) => <option key={t} value={t}>{MEVZUAT_TUR_TANIMLARI[t].ad}</option>)}</Select>
                 : tanim.ad}</td>
               <td>{duzenle
                 ? tanim.anahtarSecenekleri
-                  ? <Select aria-label={tanim.anahtarEtiketi} value={s.anahtar} onChange={(e) => guncelle(i, { anahtar: e.target.value })}><option value="">Seçin</option>{tanim.anahtarSecenekleri.map(([k, ad]) => <option key={k} value={k}>{ad}</option>)}</Select>
+                  ? <Select aria-label={tanim.anahtarEtiketi} style={{ minWidth: "10rem" }} value={s.anahtar} onChange={(e) => guncelle(i, { anahtar: e.target.value })}><option value="">Seçin</option>{tanim.anahtarSecenekleri.map(([k, ad]) => <option key={k} value={k}>{ad}</option>)}</Select>
                   : <Input aria-label={tanim.anahtarEtiketi} value={s.anahtar} placeholder={tanim.anahtarIpucu} onChange={(e) => guncelle(i, { anahtar: e.target.value })} style={{ maxWidth: "8rem" }} />
                 : <strong>{tanim.anahtarSecenekleri?.find(([k]) => k === s.anahtar)?.[1] ?? s.anahtar}</strong>}</td>
               <td>{duzenle
-                ? <Select aria-label="İşlem" value={s.islem} onChange={(e) => guncelle(i, { islem: e.target.value as Islem })}>{(["ekle", "degistir", "kaldir"] as const).map((x) => <option key={x} value={x}>{ISLEM_ADI[x]}</option>)}</Select>
+                ? <Select aria-label="İşlem" style={{ minWidth: "7rem" }} value={s.islem} onChange={(e) => guncelle(i, { islem: e.target.value as Islem })}>{(["ekle", "degistir", "kaldir"] as const).map((x) => <option key={x} value={x}>{ISLEM_ADI[x]}</option>)}</Select>
                 : ISLEM_ADI[s.islem]}</td>
               <td>{s.islem === "kaldir" ? <span className="muted">Yürürlükten kalkar</span> : duzenle
                 ? tanim.etiketli
@@ -168,11 +174,12 @@ function DegisiklikDetayi() {
         </ul>
       </div>}
       <div className="row-tight">
-        {d.izinler.onayaGonder && <Button variant="primary" disabled={islem || degisti} onClick={() => void calis(() => post("onaya-gonder"), "Onaya gönderildi. Başka bir platform yetkilisi yayınlayacak.")}>Onaya gönder</Button>}
+        {d.izinler.onayaGonder && <Button variant="primary" disabled={islem || degisti || kabulEngeli !== null} onClick={() => void calis(() => post("onaya-gonder"), "Onaya gönderildi. Başka bir platform yetkilisi yayınlayacak.")}>Onaya gönder</Button>}
         {d.izinler.taslagaCek && <Button disabled={islem} onClick={() => void calis(() => post("taslaga-cek"), "Taslağa çekildi.")}>Taslağa çek</Button>}
         {d.izinler.yayinla && <Button variant="primary" disabled={islem || d.planHatalari.length > 0} onClick={() => { if (window.confirm(`#${d.no} ${d.baslik} yayınlanacak ve ${tarihTR(d.yururlukBaslangic)} tarihinden itibaren tüm kiracılar için geçerli olacak. Yayınlanan değişiklik geri alınamaz. Devam edilsin mi?`)) void calis(async () => (await platformApi<{ degisiklik: Detay }>(`/platform/mevzuat/degisiklikler/${id}/yayinla`, { method: "POST" })).degisiklik, "Yayınlandı. Kiracılara bildirim bir sonraki taramada düşer."); }}>Yayınla</Button>}
         {d.izinler.duzenle && <Button variant="danger" disabled={islem} onClick={() => { if (window.confirm("Taslak silinsin mi?")) void calis(async () => { await platformApi(`/platform/mevzuat/degisiklikler/${id}`, { method: "DELETE" }); yonlendir.replace("/platform"); }, "Silindi."); }}>Taslağı sil</Button>}
       </div>
+      {d.izinler.onayaGonder && kabulEngeli && <p className="muted">{kabulEngeli}</p>}
       {d.izinler.geriCevir && <div className="form-grid" style={{ marginTop: "1rem" }}>
         <Field label="Geri çevirme gerekçesi"><Input value={gerekce} onChange={(e) => setGerekce(e.target.value)} placeholder="ör. dayanak sayısı eksik, 603 oranı kılavuzla tutmuyor" /></Field>
         <div><Button variant="danger" disabled={islem || gerekce.trim().length < 5} onClick={() => void calis(() => post("geri-cevir", { gerekce }), "Geri çevrildi; hazırlayan düzeltecek.")}>Geri çevir</Button></div>
