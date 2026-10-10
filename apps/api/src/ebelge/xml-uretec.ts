@@ -379,6 +379,46 @@ export function faturaUblUret(
   const vazgecilenOran = (satir: { kdvOrani: unknown; stok: { kdvOrani?: unknown } }) =>
     ytb && fatura.senaryo === "istisna" && Number(satir.kdvOrani) === 0 ? Number(satir.stok.kdvOrani ?? 0) : 0;
 
+  /**
+   * EBLG-127: satırın KDV dışı vergileri (saklı, çözülmüş hâl). KDV'nin
+   * matrahı, KDV matrahına dahil vergilerle (ÖTV…) artar; her vergi satırda ve
+   * başlıkta kendi alt toplamıyla yazılır (gelen belgelerdeki yapı).
+   */
+  type SatirEkVergisi = { kod: string; ad: string; hesap?: "oran" | "birim" | null; oran: string | null; birimTutar?: string | null; matrah: string | null; tutar: string; stopaj: boolean; kdvMatrahinaDahil: boolean };
+  const ekVergileri = (satir: { ekVergiler?: unknown }): SatirEkVergisi[] => (Array.isArray(satir.ekVergiler) ? (satir.ekVergiler as SatirEkVergisi[]) : []);
+  const kdvMatrahi = (satir: { matrah: unknown; ekVergiler?: unknown }) =>
+    Math.round(Number(satir.matrah) * 100 + ekVergileri(satir).filter((v) => !v.stopaj && v.kdvMatrahinaDahil).reduce((t, v) => t + Math.round(Number(v.tutar) * 100), 0)) / 100;
+  const ekVergiKurusu = (satir: { ekVergiler?: unknown }) => ekVergileri(satir).reduce((t, v) => t + Math.round(Number(v.tutar) * 100), 0);
+  const ekVergiAltToplami = (v: { kod: string; ad: string; matrah: number | null; tutar: number; oran: number | null; birim?: { miktar: number; birimKodu: string; birimTutar: number } }, girinti: string) => `${girinti}<cac:TaxSubtotal>${v.matrah !== null ? `
+${girinti}  <cbc:TaxableAmount currencyID="${fatura.dovizCinsi}">${v.matrah.toFixed(2)}</cbc:TaxableAmount>` : ""}
+${girinti}  <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${v.tutar.toFixed(2)}</cbc:TaxAmount>${v.oran !== null ? `
+${girinti}  <cbc:Percent>${v.oran.toFixed(2)}</cbc:Percent>` : ""}${v.birim ? `
+${girinti}  <cbc:BaseUnitMeasure unitCode="${v.birim.birimKodu}">${v.birim.miktar.toFixed(3)}</cbc:BaseUnitMeasure>
+${girinti}  <cbc:PerUnitAmount currencyID="${fatura.dovizCinsi}">${v.birim.birimTutar.toFixed(4)}</cbc:PerUnitAmount>` : ""}
+${girinti}  <cac:TaxCategory>
+${girinti}    <cac:TaxScheme>
+${girinti}      <cbc:Name>${escape(v.ad)}</cbc:Name>
+${girinti}      <cbc:TaxTypeCode>${escape(v.kod)}</cbc:TaxTypeCode>
+${girinti}    </cac:TaxScheme>
+${girinti}  </cac:TaxCategory>
+${girinti}</cac:TaxSubtotal>
+`;
+  const satirEkVergiBlogu = (satir: { ekVergiler?: unknown; miktar: unknown; birim: string }) => ekVergileri(satir).map((v) => ekVergiAltToplami({
+    kod: v.kod, ad: v.ad, tutar: Number(v.tutar),
+    matrah: v.matrah !== null && v.matrah !== undefined && v.matrah !== "" ? Number(v.matrah) : null,
+    oran: v.hesap === "birim" || v.oran === null || v.oran === undefined || v.oran === "" ? null : Number(v.oran),
+    birim: v.hesap === "birim" ? { miktar: Number(satir.miktar), birimKodu: birimUblKodu(satir.birim), birimTutar: Number(v.birimTutar ?? 0) } : undefined,
+  }, "      ")).join("");
+  // Başlıkta kod başına tek alt toplam; oran yalnız bütün satırlarda aynıysa yazılır.
+  const baslikEkVergileri = [...fatura.satirlar.flatMap(ekVergileri).reduce((m, v) => {
+    const g = m.get(v.kod) ?? { kod: v.kod, ad: v.ad, matrahKurus: 0, matrahVar: true, tutarKurus: 0, oranlar: new Set<string>() };
+    if (v.matrah === null || v.matrah === undefined || v.matrah === "") g.matrahVar = false; else g.matrahKurus += Math.round(Number(v.matrah) * 100);
+    g.tutarKurus += Math.round(Number(v.tutar) * 100);
+    g.oranlar.add(v.hesap === "birim" ? "birim" : String(v.oran ?? ""));
+    return m.set(v.kod, g);
+  }, new Map<string, { kod: string; ad: string; matrahKurus: number; matrahVar: boolean; tutarKurus: number; oranlar: Set<string> }>()).values()];
+  const toplamEkVergiKurusu = baslikEkVergileri.reduce((t, g) => t + g.tutarKurus, 0);
+
   const kdvAltToplamlari = [...fatura.satirlar.reduce((gruplar, satir) => {
     const oran = Number(satir.kdvOrani);
     const kod = altToplamKodu(satir);
@@ -387,7 +427,7 @@ export function faturaUblUret(
     // anahtarına girer: aynı istisna kodundan farklı oranlı satırlar ayrılır.
     const anahtar = `${oran}|${kod ?? ""}|${vazgecilen}`;
     const grup = gruplar.get(anahtar) ?? { oran, kod, matrahKurus: 0, kdvKurus: 0, vazgecilenOran: vazgecilen, vazgecilenKurus: 0 };
-    grup.matrahKurus += Math.round(Number(satir.matrah) * 100);
+    grup.matrahKurus += Math.round(kdvMatrahi(satir) * 100);
     grup.kdvKurus += Math.round(belgeKdvi(satir) * 100);
     grup.vazgecilenKurus += Math.round(vazgecilenKdv(Number(satir.matrah), vazgecilen) * 100);
     return gruplar.set(anahtar, grup);
@@ -925,7 +965,7 @@ ${aliciTckn && !gtbAlici ? `      <cac:Person>
   </cac:AccountingCustomerParty>
 ${yabanciAliciBlogu}${yolcuBlogu}${kamuAliciBlogu}${teslimatBlogu}${sevkBlogu}${internetOdemeBlogu}${kamuOdemeBlogu}${vadeBlogu}
 ${kurBlogu}  <cac:TaxTotal>
-    <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${(ozelMatrah ? ozelMatrah.kdv : tevkifatIade ? Number(fatura.toplamNetKdv) : Number(fatura.toplamKdv)).toFixed(2)}</cbc:TaxAmount>
+    <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${((ozelMatrah ? ozelMatrah.kdv : tevkifatIade ? Number(fatura.toplamNetKdv) : Number(fatura.toplamKdv)) + toplamEkVergiKurusu / 100).toFixed(2)}</cbc:TaxAmount>
 ${(ozelMatrah
     ? [{ matrahKurus: Math.round(ozelMatrah.tutar * 100), kdvKurus: Math.round(ozelMatrah.kdv * 100), oran: ozelMatrah.oran, kod: ozelMatrah.kod }]
     : kdvAltToplamlari
@@ -948,12 +988,15 @@ ${(ozelMatrah
       </cac:TaxCategory>
     </cac:TaxSubtotal>
 `;
-  }).join("")}  </cac:TaxTotal>
+  }).join("")}${baslikEkVergileri.map((g) => ekVergiAltToplami({
+    kod: g.kod, ad: g.ad, tutar: g.tutarKurus / 100, matrah: g.matrahVar ? g.matrahKurus / 100 : null,
+    oran: g.oranlar.size === 1 && ![...g.oranlar][0].match(/^(birim)?$/) ? Number([...g.oranlar][0]) : null,
+  }, "    ")).join("")}  </cac:TaxTotal>
 ${tevkifatBlogu}
   <cac:LegalMonetaryTotal>
     <cbc:LineExtensionAmount currencyID="${fatura.dovizCinsi}">${fatura.toplamBrut.toFixed(2)}</cbc:LineExtensionAmount>
     <cbc:TaxExclusiveAmount currencyID="${fatura.dovizCinsi}">${fatura.toplamMatrah.toFixed(2)}</cbc:TaxExclusiveAmount>
-    <cbc:TaxInclusiveAmount currencyID="${fatura.dovizCinsi}">${ihracKayitliKodu ? kurusTopla(fatura.toplamMatrah, fatura.toplamKdv) : fatura.genelToplam.toFixed(2)}</cbc:TaxInclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="${fatura.dovizCinsi}">${ihracKayitliKodu ? kurusTopla(fatura.toplamMatrah, fatura.toplamKdv) : kurusTopla(fatura.genelToplam, fatura.toplamStopaj ?? 0)}</cbc:TaxInclusiveAmount>
     <cbc:AllowanceTotalAmount currencyID="${fatura.dovizCinsi}">${kurusTopla(fatura.toplamSatirIskontosu, fatura.genelIskontoToplam)}</cbc:AllowanceTotalAmount>
     <cbc:PayableAmount currencyID="${fatura.dovizCinsi}">${fatura.genelToplam.toFixed(2)}</cbc:PayableAmount>
   </cac:LegalMonetaryTotal>
@@ -992,9 +1035,9 @@ ${tevkifatBlogu}
       </cac:TaxSubtotal>
     </cac:TaxTotal>` : `
     <cac:TaxTotal>
-      <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${belgeKdvi(s).toFixed(2)}</cbc:TaxAmount>
+      <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${(belgeKdvi(s) + ekVergiKurusu(s) / 100).toFixed(2)}</cbc:TaxAmount>
       <cac:TaxSubtotal>
-        <cbc:TaxableAmount currencyID="${fatura.dovizCinsi}">${s.matrah.toFixed(2)}</cbc:TaxableAmount>
+        <cbc:TaxableAmount currencyID="${fatura.dovizCinsi}">${kdvMatrahi(s).toFixed(2)}</cbc:TaxableAmount>
 ${vazgecilenOran(s) > 0 ? `        <cbc:TaxAmount currencyID="${fatura.dovizCinsi}">${vazgecilenKdv(Number(s.matrah), vazgecilenOran(s)).toFixed(2)}</cbc:TaxAmount>
         <cbc:CalculationSequenceNumeric>${VAZGECILEN_KDV_SIRA_NO}</cbc:CalculationSequenceNumeric>
         <cbc:Percent>${vazgecilenOran(s).toFixed(2)}</cbc:Percent>
@@ -1010,7 +1053,7 @@ ${vazgecilenOran(s) > 0 ? `        <cbc:TaxAmount currencyID="${fatura.dovizCins
           </cac:TaxScheme>
         </cac:TaxCategory>
       </cac:TaxSubtotal>
-    </cac:TaxTotal>`}
+${satirEkVergiBlogu(s)}    </cac:TaxTotal>`}
     <cac:Item>${varyantAciklamasi(s.varyant) ? `
       <cbc:Description>${escape(varyantAciklamasi(s.varyant))}</cbc:Description>` : ""}
       <cbc:Name>${escape(varyantliAd(s.stok.ad, s.varyant))}</cbc:Name>${ytb && ytbNormalize(s.ytbMakineAdi) ? `

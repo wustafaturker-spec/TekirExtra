@@ -103,6 +103,16 @@ export const stokHareketOlusturSemasi = z.object({
   })).optional().default([]),
 }).refine((h) => !["giris", "acilis"].includes(h.tip) || Number(h.maliyet) > 0, { path: ["maliyet"], message: "Elle girişte birim maliyet sıfırdan büyük olmalıdır" });
 
+/** EBLG-125: kartın KDV dışı vergileri (liste bütün olarak yazılır). */
+export const stokEkVergiSemasi = z.object({
+  vergiler: z.array(z.object({
+    kod: z.string().regex(/^\d{4}$/, "Vergi türü kodu dört hane olmalı"),
+    hesap: z.enum(["oran", "birim"]),
+    deger: z.coerce.number().positive("Vergi değeri sıfırdan büyük olmalı").max(1_000_000),
+  })).max(10),
+}).refine((v) => new Set(v.vergiler.map((x) => x.kod)).size === v.vergiler.length, "Aynı vergi türü karta iki kez eklenemez")
+  .refine((v) => v.vergiler.every((x) => x.hesap !== "oran" || x.deger <= 100), "Oran %100'ü aşamaz");
+
 export const stokBarkodSemasi = z.object({
   barkod: z.string().min(3).max(120),
   birim: z.string().max(20).optional().nullable(),

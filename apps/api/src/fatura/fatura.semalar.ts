@@ -48,10 +48,13 @@ export const faturaSatirSemasi = z.object({
    */
   ekVergiler: z.array(z.object({
     kod: z.string().regex(/^\d{4}$/, "Vergi türü kodu dört hane olmalı"),
+    /** EBLG-126: "oran" matrahın yüzdesi, "birim" miktar başına tutar; boşsa tutar belgedeki gibidir (gelen). */
+    hesap: z.enum(["oran", "birim"]).optional().nullable(),
     oran: z.coerce.string().max(20).optional().nullable(),
+    birimTutar: z.coerce.string().max(30).optional().nullable(),
     matrah: z.coerce.string().max(30).optional().nullable(),
-    tutar: z.coerce.string().regex(/^\d+(\.\d{1,2})?$/, "Vergi tutarı negatif olmayan, en çok iki ondalıklı sayı olmalı"),
-  })).max(20).optional().nullable(),
+    tutar: z.coerce.string().regex(/^\d+(\.\d{1,2})?$/, "Vergi tutarı negatif olmayan, en çok iki ondalıklı sayı olmalı").optional().nullable(),
+  }).refine((v) => (v.hesap === "oran" ? Number(v.oran) > 0 : v.hesap === "birim" ? Number(v.birimTutar) > 0 : v.tutar != null), "Vergi için oran, birim tutar ya da tutar gerekli")).max(20).optional().nullable(),
 });
 
 const tarihSemasi = z

@@ -233,6 +233,8 @@ model Tenant {
   personelUcretleri         PersonelUcret[]
   personelBilgiTalepleri    PersonelBilgiTalebi[]
 
+  stokEkVergileri StokEkVergi[]
+
   @@map("tenants")
 }
 
@@ -1258,6 +1260,8 @@ model StokKart {
 
   maliyetDagitimPaylari MaliyetDagitimPayi[]
 
+  ekVergiler StokEkVergi[]
+
   @@unique([tenantId, kod])
   @@index([tenantId, ad])
   @@map("stok_kartlari")
@@ -2268,6 +2272,8 @@ enum FaturaSenaryo {
   sgk
   sarj
   sarjanlik
+  /// EBLG-127: konaklama vergili satış.
+  konaklamavergisi
 }
 
 /// e-Fatura profili (FTR-19). TICARIFATURA alıcıya 8 gün içinde kabul/ret
@@ -5512,4 +5518,32 @@ enum MaliyetDagitimYontemi {
 enum MaliyetDagitimDurum {
   aktif
   iptal
+}
+
+/// EBLG-125: ürün kartının KDV dışı vergileri (ÖTV, ÖİV, konaklama…). Ürün
+/// faturaya eklenince satıra buradan gelir; davranış (stopaj, KDV matrahı)
+/// kodun Mevzuat Merkezi'ndeki kaydından türer.
+model StokEkVergi {
+  id        String       @id @default(uuid()) @db.Uuid
+  tenantId  String       @map("tenant_id") @db.Uuid
+  stokId    String       @map("stok_id") @db.Uuid
+  /// UBL vergi türü kodu (Mevzuat: vergi_turu_kodu).
+  kod       String
+  /// "oran": matrahın yüzdesi; "birim": satır miktarı başına tutar (maktu).
+  hesap     EkVergiHesap
+  deger     Decimal      @db.Decimal(15, 4)
+  sira      Int          @default(0)
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  tenant Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  stok   StokKart @relation(fields: [stokId], references: [id], onDelete: Cascade)
+
+  @@unique([stokId, kod])
+  @@index([tenantId, stokId])
+  @@map("stok_ek_vergileri")
+}
+
+enum EkVergiHesap {
+  oran
+  birim
 }

@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { kdvMatrahinaDahilToplam } from "./ek-vergi";
 import { registerRapor } from "../core/raporlar/rapor-kayit";
 
 /**
@@ -295,6 +296,7 @@ registerRapor({
         kdvOrani: true,
         matrah: true,
         netKdvTutari: true,
+        ekVergiler: true,
         fatura: { select: { tip: true, kur: true } },
       },
     });
@@ -316,7 +318,8 @@ registerRapor({
         matrah: D(0),
         kdv: D(0),
       };
-      g.matrah = g.matrah.add(s.matrah.mul(s.fatura.kur).mul(isaret));
+      // EBLG-128: KDV matrahı, KDV matrahına dahil vergilerle (ÖTV, elektrik tüketim…) birlikte.
+      g.matrah = g.matrah.add(s.matrah.add(kdvMatrahinaDahilToplam(s.ekVergiler)).mul(s.fatura.kur).mul(isaret));
       g.kdv = g.kdv.add(s.netKdvTutari.mul(s.fatura.kur).mul(isaret));
       gruplar.set(anahtar, g);
     }

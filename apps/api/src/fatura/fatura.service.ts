@@ -12,11 +12,11 @@ import {
   forwardRef,
 } from "@nestjs/common";
 import { Prisma, FaturaTip, FaturaDurum, BelgeDurum } from "@prisma/client";
-import { faturaHesapla, faturaSenaryosuTuret, idisNormalize, metinNormalize, ozelMatrahKdvsi, sarjTuruCoz, sgkFaturasiMi, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type KayitEylem, type TevkifatKodu } from "@tekirextra/shared";
+import { faturaHesapla, faturaSenaryosuTuret, KONAKLAMA_VERGISI_KODU, idisNormalize, metinNormalize, ozelMatrahKdvsi, sarjTuruCoz, sgkFaturasiMi, tevkifatPayPayda, type FaturaHesaplaSatirGirdi, type KayitEylem, type TevkifatKodu } from "@tekirextra/shared";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { belgeKodTablosu, firmaTevkifatTablosu, mevzuatKurallariniUygula } from "./tevkifat-tablosu";
 import { MevzuatService } from "../mevzuat/mevzuat.service";
-import { ekVergileriCoz, sakliEkVergiler, type EkVergi, type EkVergiGirdisi } from "./ek-vergi";
+import { ekVergileriCoz, hesapGirdisi, saklanacakEkVergiler, sakliEkVergiler, type EkVergi, type EkVergiGirdisi } from "./ek-vergi";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
@@ -84,6 +84,10 @@ export class FaturaService {
     if (!girdi.satirlar.some((s) => s.ekVergiler?.length)) return girdi.satirlar.map(() => []);
     const tarih = typeof girdi.tarih === "string" ? girdi.tarih.slice(0, 10) : girdi.tarih.toISOString().slice(0, 10);
     const { satirlar, hatalar } = ekVergileriCoz(girdi.tip, girdi.satirlar, (await belgeKodTablosu(this.mevzuat, tarih)).vergiTurleri);
+    // EBLG-127: konaklama vergili satış KONAKLAMAVERGISI tipiyle gider; belge tek tip taşır, tevkifatla birleşemez.
+    if (satirlar.some((l) => l.some((v) => v.kod === KONAKLAMA_VERGISI_KODU)) && girdi.satirlar.some((x) => (x as { tevkifatKodu?: string | null }).tevkifatKodu)) {
+      hatalar.push("Konaklama vergili fatura tevkifat taşıyamaz (fatura tipi KONAKLAMAVERGISI); tevkifatlı kalemi ayrı faturaya alın");
+    }
     if (hatalar.length) throw new BadRequestException(hatalar.join("; "));
     return satirlar;
   }
@@ -645,6 +649,7 @@ export class FaturaService {
           // Senaryo satırlardan türetilir, kullanıcı seçmez (FTR-16); profilin
           // varsayılanı cari kartından gelir (FTR-19).
           senaryo: faturaSenaryosuTuret(girdi.tip, girdi.satirlar.map((s) => ({
+            ekVergiKodlari: (s.ekVergiler ?? []).map((v) => v.kod),
             kdvOrani: Number(s.kdvOrani),
             tevkifatKodu: s.tevkifatKodu,
             gibIstisnaKodu: s.gibIstisnaKodu,
@@ -721,7 +726,7 @@ export class FaturaService {
             tevkifatTutari: D(s.tevkifatTutari),
             netKdvTutari: D(s.netKdvTutari),
             // EBLG-120: KDV dışı vergiler (davranış merkezden çözüldü).
-            ekVergiler: ekVergiler[index].length ? (ekVergiler[index] as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+            ekVergiler: ekVergiler[index].length ? (saklanacakEkVergiler(ekVergiler[index], s) as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
             ekVergiTutari: D(s.ekVergiTutari),
             stopajTutari: D(s.stopajTutari),
             toplamTutar: D(s.toplamTutar),
@@ -878,7 +883,7 @@ export class FaturaService {
             tevkifatTutari: D(s.tevkifatTutari),
             netKdvTutari: D(s.netKdvTutari),
             // EBLG-120: KDV dışı vergiler (davranış merkezden çözüldü).
-            ekVergiler: ekVergiler[index].length ? (ekVergiler[index] as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+            ekVergiler: ekVergiler[index].length ? (saklanacakEkVergiler(ekVergiler[index], s) as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
             ekVergiTutari: D(s.ekVergiTutari),
             stopajTutari: D(s.stopajTutari),
             toplamTutar: D(s.toplamTutar),
@@ -922,6 +927,7 @@ export class FaturaService {
           // Satırlar değiştiyse senaryo da değişebilir; her güncellemede
           // yeniden türetilir (FTR-16).
           senaryo: faturaSenaryosuTuret(birlesikGirdi.tip, birlesikGirdi.satirlar.map((s) => ({
+            ekVergiKodlari: (s.ekVergiler ?? []).map((v) => v.kod),
             kdvOrani: Number(s.kdvOrani),
             tevkifatKodu: s.tevkifatKodu,
             gibIstisnaKodu: s.gibIstisnaKodu,
@@ -1759,7 +1765,7 @@ export class FaturaService {
         kdvOrani: Number(s.kdvOrani),
         tevkifatPay: oran?.pay ?? s.tevkifatPay ?? undefined,
         tevkifatPayda: oran?.payda ?? s.tevkifatPayda ?? undefined,
-        ekVergiler: (ekVergiler?.[i] ?? []).map((v) => ({ tutar: Number(v.tutar), stopaj: v.stopaj, kdvMatrahinaDahil: v.kdvMatrahinaDahil })),
+        ekVergiler: (ekVergiler?.[i] ?? []).map(hesapGirdisi),
       };
     });
 

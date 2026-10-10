@@ -252,6 +252,12 @@ function faturaFisi(f: FaturaGirdisi, c: HesapCozucu, kontroller: Kontrol[]): Fi
     const gelir = (iade ? borc : alacak)(gelirKodu, aciklama, TL(f.toplamMatrah, f.kur));
     const kdv = (iade ? borc : alacak)(c.kod("hesaplanan_kdv"), `${aciklama} KDV`, TL(f.toplamNetKdv, f.kur));
     satirlar.push(cari, gelir, kdv);
+    // EBLG-128: tahsil edilen KDV dışı vergi (ÖTV, ÖİV, konaklama…) devlete ödenecektir (360);
+    // alıcının kestiği stopaj bizim peşin ödediğimiz vergidir (193).
+    const ekVergi = f.satirlar.reduce((t, s) => t.add(s.ekVergi ?? SIFIR), SIFIR);
+    if (ekVergi.gt(0)) satirlar.push((iade ? borc : alacak)(c.kod("odenecek_vergi"), `${aciklama} KDV dışı vergiler`, TL(ekVergi, f.kur)));
+    const satisStopaji = TL(f.toplamStopaj ?? SIFIR, f.kur);
+    if (satisStopaji.gt(0)) satirlar.push((iade ? alacak : borc)(c.kod("pesin_vergi"), `${aciklama} stopaj`, satisStopaji));
   } else {
     // Alış: B 153/150/770 (satırın stok tipine göre, genel iskonto oranlı dağıtılır) + B 191 / A 320 + A 360.
     // EBLG-120: bedele eklenen KDV dışı vergi (ÖTV, ÖİV…) satırın hesabına eklenir; stopaj 360'a alacak.

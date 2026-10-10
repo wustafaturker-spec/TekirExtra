@@ -2,7 +2,10 @@ import { type IstisnaKodu, KDV_ISTISNA_KODLARI, ihracKayitliKoduBul, istisnaKodu
 import { kdvOraniHatasi, type KodTablosu } from "./kod-tablosu";
 
 /** UBL'e `InvoiceTypeCode` olarak yazılan GİB senaryosu (FTR-16). */
-export type FaturaSenaryosu = "satis" | "iade" | "tevkifat" | "tevkifatiade" | "istisna" | "ihrackayitli" | "ozelmatrah" | "sgk" | "sarj" | "sarjanlik";
+export type FaturaSenaryosu = "satis" | "iade" | "tevkifat" | "tevkifatiade" | "istisna" | "ihrackayitli" | "ozelmatrah" | "sgk" | "sarj" | "sarjanlik" | "konaklamavergisi";
+
+/** EBLG-127: konaklama vergisi (0059) taşıyan satış faturası KONAKLAMAVERGISI tipiyle gider. */
+export const KONAKLAMA_VERGISI_KODU = "0059";
 
 /** GİB'in `InvoiceTypeCode` kod listesindeki karşılıkları. */
 const UBL_KARSILIGI: Record<FaturaSenaryosu, string> = {
@@ -16,6 +19,7 @@ const UBL_KARSILIGI: Record<FaturaSenaryosu, string> = {
   sgk: "SGK",
   sarj: "SARJ",
   sarjanlik: "SARJANLIK",
+  konaklamavergisi: "KONAKLAMAVERGISI",
 };
 
 export function senaryoUblKodu(senaryo: FaturaSenaryosu): string {
@@ -27,6 +31,8 @@ export interface SenaryoSatirGirdi {
   tevkifatKodu?: string | null;
   tevkifatOrani?: string | null;
   gibIstisnaKodu?: string | null;
+  /** EBLG-127: satırdaki KDV dışı vergi kodları (konaklama vergisi tipi buradan türer). */
+  ekVergiKodlari?: readonly string[];
 }
 
 const iadeTipi = (tip: string) => tip === "satis_iade" || tip === "alis_iade";
@@ -71,6 +77,8 @@ export function faturaSenaryosuTuret(
   if (ozelMatrahKodu && tip === "satis") return "ozelmatrah";
   // EBLG-60: ihraç kayıtlı satış faturada işaretlenir; satırlardan türemez.
   if (ihracKayitliKodu && tip === "satis") return "ihrackayitli";
+  // EBLG-127: konaklama vergili satış kendi tipiyle gider (gelen belgelerde de böyle).
+  if (tip === "satis" && satirlar.some((s) => s.ekVergiKodlari?.includes(KONAKLAMA_VERGISI_KODU))) return "konaklamavergisi";
   /*
    * EBLG-61: tevkifatlı faturanın iadesi TEVKIFATIADE'dir ve tevkifatsız
    * düzenlenir — belgede yalnız satıcıya ödenmiş (tevkif dışı) KDV görünür.

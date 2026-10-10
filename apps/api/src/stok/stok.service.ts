@@ -15,7 +15,8 @@ import { ayarTanimiAl } from "../core/ayarlar/ayar-kayit";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
-import { metinNormalize, type DovizKodu } from "@tekirextra/shared";
+import { bugunTR, metinNormalize, vergiTuruBul, type DovizKodu } from "@tekirextra/shared";
+import { belgeKodTablosu } from "../fatura/tevkifat-tablosu";
 import { DepoService } from "./depo.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { etiketPdfHtml, type EtiketVerisi } from "./etiket-pdf";
@@ -24,6 +25,7 @@ import type {
   kategoriSemasi,
   sayimOlusturSemasi,
   stokBarkodSemasi,
+  stokEkVergiSemasi,
   stokBirimSemasi,
   stokKartGuncelleSemasi,
   stokKartOlusturSemasi,
@@ -140,6 +142,8 @@ export class StokService {
           birimler: { select: { ad: true, katsayi: true }, orderBy: { katsayi: "asc" } },
           // Belge satırında varyant seçimi ve varyant kodu/barkoduyla arama için.
           varyantlar: { where: { aktif: true }, orderBy: { kod: "asc" }, select: { id: true, kod: true, ad: true, barkod: true, nitelikler: true, mevcutMiktar: true, aktif: true } },
+          // EBLG-125: belge satırına gelen KDV dışı vergiler.
+          ekVergiler: { orderBy: { sira: "asc" }, select: { kod: true, hesap: true, deger: true } },
           _count: { select: { hareketler: true } },
         },
       }),
@@ -156,6 +160,7 @@ export class StokService {
         // STK-10: belge satırında seçilebilen ek birimler.
         birimler: k.birimler.map((b) => ({ ad: b.ad, katsayi: b.katsayi.toString() })),
         varyantlar: k.varyantlar.map((v) => ({ ...v, mevcutMiktar: v.mevcutMiktar.toString() })),
+        ekVergiler: k.ekVergiler.map((v) => ({ ...v, deger: v.deger.toString() })),
         izinliEylemler: this.eylemler(k, ctx.rol, k._count.hareketler),
       })),
       sonrakiImlec,
@@ -178,6 +183,7 @@ export class StokService {
             },
           },
           varyantlar: { orderBy: [{ aktif: "desc" }, { kod: "asc" }], include: { depoBakiyeleri: { include: { depo: { select: { id: true, kod: true, ad: true } } } } } },
+          ekVergiler: { orderBy: { sira: "asc" }, select: { kod: true, hesap: true, deger: true } },
           _count: { select: { hareketler: true } },
         },
       }),
@@ -192,6 +198,7 @@ export class StokService {
       barkodlar: kayit.barkodlar,
       tedarikciler: kayit.tedarikciler,
       varyantlar: kayit.varyantlar,
+      ekVergiler: kayit.ekVergiler.map((v) => ({ ...v, deger: v.deger.toString() })),
       // Hareket görmüş kartın ana birimi değişirse eski miktarlar yeni
       // birimle okunur; bu yüzden kilitlenir (STK-01).
       anaBirimKilitli: kayit._count.hareketler > 0,
@@ -1054,6 +1061,23 @@ export class StokService {
   }
 
   // ─── BARKODLAR (STK-15) ──────────────────────────────────────────────────
+
+  /**
+   * EBLG-125: kartın KDV dışı vergileri bütün liste olarak değiştirilir. Kod
+   * bugün yürürlükteki merkezi vergi türü listesinde olmalı.
+   */
+  async ekVergileriKaydet(stokId: string, girdi: z.infer<typeof stokEkVergiSemasi>) {
+    const { tenantId } = aktifBaglam();
+    await this.getir(stokId);
+    const turler = (await belgeKodTablosu(this.mevzuat, bugunTR())).vergiTurleri;
+    const bilinmeyen = girdi.vergiler.find((v) => !vergiTuruBul(v.kod, turler));
+    if (bilinmeyen) throw new BadRequestException(`${bilinmeyen.kod} vergi türü kodu tanımlı değil`);
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      await tx.stokEkVergi.deleteMany({ where: { stokId } });
+      if (girdi.vergiler.length) await tx.stokEkVergi.createMany({ data: girdi.vergiler.map((v, sira) => ({ tenantId, stokId, kod: v.kod, hesap: v.hesap, deger: D(v.deger), sira })) });
+    });
+    return this.getir(stokId);
+  }
 
   async barkodEkle(stokId: string, girdi: z.infer<typeof stokBarkodSemasi>) {
     const { tenantId } = aktifBaglam();

@@ -10,7 +10,21 @@ export interface FaturaHesaplaSatirGirdi {
    * EBLG-120: KDV dışı vergiler (belgedeki tutarlarıyla). Stopaj ödenecekten
    * düşer; diğerleri bedele eklenir, KDV matrahına dahil olanlar KDV'yi artırır.
    */
-  ekVergiler?: { tutar: number; stopaj: boolean; kdvMatrahinaDahil: boolean }[];
+  ekVergiler?: EkVergiHesapGirdisi[];
+}
+
+/**
+ * EBLG-120/126: tutar belgedeki gibi verilir (gelen belge) ya da hesaplanır —
+ * "oran": satır matrahı × oran/100 (nispi), "birim": satır miktarı × birim
+ * tutar (maktu, ör. litre başına ÖTV).
+ */
+export interface EkVergiHesapGirdisi {
+  stopaj: boolean;
+  kdvMatrahinaDahil: boolean;
+  hesap?: "oran" | "birim" | null;
+  tutar?: number;
+  oran?: number;
+  birimTutar?: number;
 }
 
 export interface FaturaHesaplaGirdi {
@@ -47,6 +61,8 @@ export interface FaturaHesaplaSatirSonuc {
   netKdvTutari: number;    // kdvTutari - tevkifatTutari
   /** EBLG-120: bedele eklenen KDV dışı vergiler ve stopaj (satırın). */
   ekVergiTutari: number;
+  /** Girdideki sırayla her ek verginin (hesaplanmış) tutarı. */
+  ekVergiTutarlari: number[];
   stopajTutari: number;
   /** KDV matrahı: matrah + KDV matrahına dahil vergiler. */
   kdvMatrahi: number;
@@ -98,6 +114,7 @@ export function faturaHesapla(girdi: FaturaHesaplaGirdi): FaturaHesaplaSonuc {
       tevkifatPay: s.tevkifatPay,
       tevkifatPayda: s.tevkifatPayda,
       ekVergiler: s.ekVergiler ?? [],
+      ekVergiTutarlari: [] as number[],
       ekVergiTutari: 0,
       stopajTutari: 0,
       kdvMatrahi: 0,
@@ -142,10 +159,13 @@ export function faturaHesapla(girdi: FaturaHesaplaGirdi): FaturaHesaplaSonuc {
 
     s.matrah = Y(satirMatrahOncesi - s.genelIskontoPayi);
 
-    // EBLG-120: ek vergiler belgedeki tutarlarıyla; KDV matrahına dahil olanlar KDV'yi artırır.
-    s.ekVergiTutari = Y(s.ekVergiler.filter((v) => !v.stopaj).reduce((t, v) => t + v.tutar, 0));
-    s.stopajTutari = Y(s.ekVergiler.filter((v) => v.stopaj).reduce((t, v) => t + v.tutar, 0));
-    s.kdvMatrahi = Y(s.matrah + s.ekVergiler.filter((v) => !v.stopaj && v.kdvMatrahinaDahil).reduce((t, v) => t + v.tutar, 0));
+    // EBLG-120/126: ek vergi tutarı belgeden ya da orandan/birim tutardan; KDV matrahına dahil olanlar KDV'yi artırır.
+    s.ekVergiTutarlari = s.ekVergiler.map((v) =>
+      v.hesap === "oran" ? Y(s.matrah * (v.oran ?? 0) / 100) : v.hesap === "birim" ? Y(s.miktar * (v.birimTutar ?? 0)) : Y(v.tutar ?? 0));
+    const ekToplam = (kosul: (v: EkVergiHesapGirdisi) => boolean) => Y(s.ekVergiler.reduce((t, v, i) => t + (kosul(v) ? s.ekVergiTutarlari[i] : 0), 0));
+    s.ekVergiTutari = ekToplam((v) => !v.stopaj);
+    s.stopajTutari = ekToplam((v) => v.stopaj);
+    s.kdvMatrahi = Y(s.matrah + ekToplam((v) => !v.stopaj && v.kdvMatrahinaDahil));
 
     // KDV & Tevkifat Hesaplama
     s.kdvTutari = Y(s.kdvMatrahi * (s.kdvOrani / 100));

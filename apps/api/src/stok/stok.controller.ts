@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Res,
   UseInterceptors,
@@ -32,6 +33,7 @@ import {
   kategoriSemasi,
   sayimOlusturSemasi,
   stokBarkodSemasi,
+  stokEkVergiSemasi,
   stokBirimSemasi,
   stokHareketOlusturSemasi,
   stokKartGuncelleSemasi,
@@ -261,6 +263,15 @@ export class StokController {
     @Param("birimId") birimId: string,
   ) {
     await this.stokService.birimSil(id, birimId);
+  }
+
+  /** EBLG-125: kartın KDV dışı vergileri (ÖTV, ÖİV…); liste bütün olarak yazılır. */
+  @Put(":id/ek-vergiler")
+  @Roller("muhasebe")
+  async ekVergileriKaydet(@Param("id") id: string, @Body() govde: unknown) {
+    const ayristirma = stokEkVergiSemasi.safeParse(govde);
+    if (!ayristirma.success) throw new BadRequestException(ayristirma.error.issues.map((s) => s.message).join("; "));
+    return this.stokService.ekVergileriKaydet(id, ayristirma.data);
   }
 
   // ─── BARKOD UÇLARI (STK-15) ──────────────────────────────────────────────

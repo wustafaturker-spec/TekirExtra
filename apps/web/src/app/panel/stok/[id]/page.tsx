@@ -272,6 +272,8 @@ interface StokDetay {
   barkodlar: Barkod[];
   tedarikciler: Tedarikci[];
   varyantlar?: Varyant[];
+  /** EBLG-125: KDV dışı vergiler (ÖTV, ÖİV…); faturada satıra buradan gelir. */
+  ekVergiler?: { kod: string; hesap: "oran" | "birim"; deger: string }[];
   izinliEylemler: string[];
 }
 
@@ -281,7 +283,7 @@ interface CariOzet {
   unvan: string;
 }
 
-type Sekme = "genel" | "recete" | "fiyatlar" | "hareketler" | "depolar" | "varyantlar" | "partiler" | "birimler" | "barkodlar" | "tedarikciler";
+type Sekme = "genel" | "recete" | "fiyatlar" | "hareketler" | "depolar" | "varyantlar" | "partiler" | "birimler" | "barkodlar" | "tedarikciler" | "vergiler";
 
 interface Parti { id: string; lotNo: string; seriNo: string | null; sonKullanmaTarihi: string | null; uretimTarihi: string | null; ilkMiktar: string; kalanMiktar: string; depo: { ad: string }; varyant: { kod: string; ad: string } | null }
 
@@ -547,6 +549,7 @@ export default function StokDetaySayfasi() {
             ...((detay.takipTipi ?? "yok") !== "yok" ? [{ deger: "partiler" as Sekme, baslik: `Seri / Lot (${partiler.length})` }] : []),
             { deger: "barkodlar", baslik: `Barkodlar (${detay.barkodlar.length})` },
             { deger: "tedarikciler", baslik: `Tedarikçiler (${detay.tedarikciler.length})` },
+            { deger: "vergiler", baslik: `Vergiler (${detay.ekVergiler?.length ?? 0})` },
           ]}
         />
       </div>
@@ -625,6 +628,13 @@ export default function StokDetaySayfasi() {
         <TabPanel idPrefix="stok-detay" value="varyantlar"><VaryantlarSekmesi detay={detay} onIslem={islem} /></TabPanel>
       )}
       {aktifSekme === "partiler" && <TabPanel idPrefix="stok-detay" value="partiler"><PartilerSekmesi detay={detay} partiler={partiler} /></TabPanel>}
+
+      {aktifSekme === "vergiler" && (
+        <TabPanel idPrefix="stok-detay" value="vergiler"><VergilerSekmesi
+          detay={detay}
+          onKaydet={(vergiler) => islem(() => api(`/stok/${id}/ek-vergiler`, { method: "PUT", body: JSON.stringify({ vergiler }) }), "Vergiler kaydedildi.")}
+        /></TabPanel>
+      )}
 
       {aktifSekme === "barkodlar" && (
         <TabPanel idPrefix="stok-detay" value="barkodlar"><BarkodlarSekmesi
@@ -1799,5 +1809,63 @@ function TedarikcilerSekmesi({
         </TableWrap>
       </Card>
     </div>
+  );
+}
+
+/* ─── Vergiler sekmesi (EBLG-125) ────────────────────────────────────────── */
+
+type VergiSatiri = { kod: string; hesap: "oran" | "birim"; deger: string };
+
+/**
+ * Ürünün KDV dışı vergileri (ÖTV, ÖİV, konaklama…). Ürün satış ya da alış
+ * faturasına eklenince bu vergiler satıra gelir; stopaj ve KDV matrahı kuralı
+ * vergi türünün Mevzuat Merkezi'ndeki kaydından gelir.
+ */
+function VergilerSekmesi({ detay, onKaydet }: { detay: StokDetay; onKaydet: (vergiler: VergiSatiri[]) => Promise<boolean> }) {
+  const tablo = useKodTablosu(null);
+  const [satirlar, setSatirlar] = useState<VergiSatiri[]>(detay.ekVergiler ?? []);
+  const [degisti, setDegisti] = useState(false);
+  useEffect(() => { setSatirlar(detay.ekVergiler ?? []); setDegisti(false); }, [detay.ekVergiler]);
+  const guncelle = (i: number, ek: Partial<VergiSatiri>) => { setSatirlar((e) => e.map((v, j) => (j === i ? { ...v, ...ek } : v))); setDegisti(true); };
+  const tur = (kod: string) => tablo.vergiTurleri.find((t) => t.kod === kod);
+  const secili = new Set(satirlar.map((v) => v.kod));
+  return (
+    <Card
+      title="KDV dışı vergiler"
+      actions={<div className="row-tight">
+        <Button size="sm" onClick={() => { setSatirlar((e) => [...e, { kod: "", hesap: "oran", deger: "" }]); setDegisti(true); }}>+ Vergi ekle</Button>
+        <Button size="sm" variant="primary" disabled={!degisti || satirlar.some((v) => !v.kod || !(Number(v.deger) > 0))} onClick={() => void onKaydet(satirlar.map((v) => ({ ...v, deger: String(Number(v.deger)) }))).then((ok) => ok && setDegisti(false))}>Kaydet</Button>
+      </div>}
+    >
+      <p className="muted" style={{ marginTop: 0 }}>Ürün satış ya da alış faturasına eklenince bu vergiler satıra gelir. Oran satır matrahına, birim başı tutar satır miktarına uygulanır (ör. litre başına ÖTV). Stopaj ödenecek tutardan düşer; KDV matrahına dahil vergiler KDV'yi de artırır.</p>
+      <TableWrap>
+        <thead><tr><th>Vergi türü</th><th>Hesap</th><th className="num">Değer</th><th>Kural</th><th /></tr></thead>
+        <tbody>
+          {satirlar.map((v, i) => {
+            const t = tur(v.kod);
+            return (
+              <tr key={i}>
+                <td>
+                  <Select aria-label="Vergi türü" value={v.kod} onChange={(e) => guncelle(i, { kod: e.target.value })}>
+                    <option value="">Seçin</option>
+                    {tablo.vergiTurleri.filter((x) => x.kod === v.kod || !secili.has(x.kod)).map((x) => <option key={x.kod} value={x.kod}>{x.kod} — {x.ad}</option>)}
+                  </Select>
+                </td>
+                <td>
+                  <Select aria-label="Hesap" value={v.hesap} onChange={(e) => guncelle(i, { hesap: e.target.value as VergiSatiri["hesap"] })}>
+                    <option value="oran">Oran (%)</option>
+                    <option value="birim">Birim başı tutar (TL / {detay.anaBirim})</option>
+                  </Select>
+                </td>
+                <td className="num"><Input aria-label="Değer" type="number" min="0" step="0.0001" max={v.hesap === "oran" ? 100 : undefined} value={v.deger} onChange={(e) => guncelle(i, { deger: e.target.value })} style={{ maxWidth: "9rem" }} /></td>
+                <td className="muted">{t ? [t.stopaj ? "Stopaj — ödenecekten düşer" : "Bedele eklenir", t.kdvMatrahinaDahil ? "KDV matrahına dahil" : "KDV matrahına dahil değil"].join(" · ") : "—"}</td>
+                <td><Button size="sm" variant="danger" onClick={() => { setSatirlar((e) => e.filter((_, j) => j !== i)); setDegisti(true); }}>Sil</Button></td>
+              </tr>
+            );
+          })}
+          {!satirlar.length && <tr><td colSpan={5} className="muted">Bu ürüne KDV dışı vergi tanımlanmamış.</td></tr>}
+        </tbody>
+      </TableWrap>
+    </Card>
   );
 }

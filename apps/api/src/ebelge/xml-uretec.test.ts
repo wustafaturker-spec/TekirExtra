@@ -1424,3 +1424,56 @@ describe("faturaUblUret — yatırım teşvik (EBLG-78)", () => {
     expect(xml).not.toContain("ModelName");
   });
 });
+
+describe("faturaUblUret — KDV dışı vergiler (EBLG-127)", () => {
+  const otv = { kod: "0074", ad: "ÖTV IV. Liste", hesap: "oran", oran: "25", birimTutar: null, matrah: "1000.00", tutar: "250.00", stopaj: false, kdvMatrahinaDahil: true };
+  const satir = (ekVergiler: unknown[], ek: Record<string, unknown> = {}) => ({
+    miktar: 1, birim: "adet", birimFiyat: 1000, iskontoTutari: 0, matrah: 1000, kdvOrani: 20, kdvTutari: 250, gibIstisnaKodu: null,
+    stok: { kod: "STK-1", ad: "Ürün" }, ekVergiler, ...ek,
+  });
+  const fatura = (satirlar: unknown[], ek: Record<string, unknown> = {}) => ({
+    id: "77777777-7777-4777-8777-777777777777", no: "TKR2026000000020", tarih: new Date("2026-10-10T12:00:00Z"),
+    tip: "satis", senaryo: "satis", dovizCinsi: "TRY",
+    toplamKdv: 250, toplamMatrah: 1000, toplamBrut: 1000, genelToplam: 1500, toplamStopaj: 0, toplamSatirIskontosu: 0,
+    cari: { vknTckn: "1234567890", unvan: "Alıcı A.Ş." }, satirlar, ...ek,
+  }) as never;
+  const satici = { unvan: "Satıcı A.Ş.", vkn: "9876543210" };
+  const baslik = (xml: string) => xml.slice(xml.indexOf("<cac:TaxTotal>"), xml.indexOf("</cac:TaxTotal>"));
+  const satirVergisi = (xml: string) => { const i = xml.indexOf("<cac:InvoiceLine>"); return xml.slice(xml.indexOf("<cac:TaxTotal>", i), xml.indexOf("</cac:TaxTotal>", i)); };
+
+  it("ÖTV KDV matrahına girer; satırda ve başlıkta ayrı alt toplam, vergiler dahil toplam 1500 (gelen belge örneği)", () => {
+    const xml = faturaUblUret(fatura([satir([otv])]), satici);
+    const b = baslik(xml);
+    expect(b).toContain('<cbc:TaxAmount currencyID="TRY">500.00</cbc:TaxAmount>');
+    expect(b).toContain('<cbc:TaxableAmount currencyID="TRY">1250.00</cbc:TaxableAmount>');
+    expect(b).toMatch(/<cbc:TaxableAmount currencyID="TRY">1000.00<\/cbc:TaxableAmount>\s*<cbc:TaxAmount currencyID="TRY">250.00<\/cbc:TaxAmount>\s*<cbc:Percent>25.00<\/cbc:Percent>[\s\S]*<cbc:TaxTypeCode>0074<\/cbc:TaxTypeCode>/);
+    const s = satirVergisi(xml);
+    expect(s).toContain('<cbc:TaxAmount currencyID="TRY">500.00</cbc:TaxAmount>');
+    expect(s).toContain('<cbc:TaxableAmount currencyID="TRY">1250.00</cbc:TaxableAmount>');
+    expect(s).toContain("<cbc:TaxTypeCode>0074</cbc:TaxTypeCode>");
+    expect(xml).toContain('<cbc:TaxInclusiveAmount currencyID="TRY">1500.00</cbc:TaxInclusiveAmount>');
+    expect(xml).toContain('<cbc:PayableAmount currencyID="TRY">1500.00</cbc:PayableAmount>');
+  });
+
+  it("stopaj vergiler dahil toplamda kalır, ödenecekten düşer (500 + 100 − 50: 600 / 550)", () => {
+    const stopaj = { kod: "0003", ad: "Gelir Vergisi Stopajı", hesap: "oran", oran: "10", birimTutar: null, matrah: "500.00", tutar: "50.00", stopaj: true, kdvMatrahinaDahil: false };
+    const xml = faturaUblUret(fatura([satir([stopaj], { matrah: 500, birimFiyat: 500, kdvTutari: 100 })], { toplamKdv: 100, toplamMatrah: 500, toplamBrut: 500, genelToplam: 550, toplamStopaj: 50 }), satici);
+    expect(baslik(xml)).toContain('<cbc:TaxAmount currencyID="TRY">150.00</cbc:TaxAmount>');
+    expect(xml).toContain('<cbc:TaxInclusiveAmount currencyID="TRY">600.00</cbc:TaxInclusiveAmount>');
+    expect(xml).toContain('<cbc:PayableAmount currencyID="TRY">550.00</cbc:PayableAmount>');
+  });
+
+  it("maktu vergide oran yerine birim başı tutar ve miktar yazılır", () => {
+    const maktu = { kod: "0071", ad: "ÖTV I. Liste", hesap: "birim", oran: null, birimTutar: "12.5", matrah: null, tutar: "125.00", stopaj: false, kdvMatrahinaDahil: true };
+    const s = satirVergisi(faturaUblUret(fatura([satir([maktu], { miktar: 10, birim: "litre", matrah: 1000, kdvTutari: 225 })]), satici));
+    expect(s).toMatch(/<cbc:TaxAmount currencyID="TRY">125.00<\/cbc:TaxAmount>\s*<cbc:BaseUnitMeasure unitCode="LTR">10.000<\/cbc:BaseUnitMeasure>\s*<cbc:PerUnitAmount currencyID="TRY">12.5000<\/cbc:PerUnitAmount>/);
+    expect(s).not.toMatch(/<cbc:Percent>[^<]*<\/cbc:Percent>\s*<cac:TaxCategory>\s*<cac:TaxScheme>\s*<cbc:Name>ÖTV/);
+  });
+
+  it("konaklama vergili satış KONAKLAMAVERGISI tipiyle gider", () => {
+    const konaklama = { kod: "0059", ad: "Konaklama Vergisi", hesap: "oran", oran: "2", birimTutar: null, matrah: "1000.00", tutar: "20.00", stopaj: false, kdvMatrahinaDahil: false };
+    const xml = faturaUblUret(fatura([satir([konaklama], { kdvTutari: 200 })], { senaryo: "konaklamavergisi", toplamKdv: 200, genelToplam: 1220 }), satici);
+    expect(xml).toContain("<cbc:InvoiceTypeCode>KONAKLAMAVERGISI</cbc:InvoiceTypeCode>");
+    expect(baslik(xml)).toContain('<cbc:TaxableAmount currencyID="TRY">1000.00</cbc:TaxableAmount>');
+  });
+});

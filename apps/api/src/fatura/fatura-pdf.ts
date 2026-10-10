@@ -62,6 +62,8 @@ export interface FaturaPdfSatiri {
   toplamTutar: string;
   /** FTR-11: satır bazlı GİB istisna kodu (ör. 301). */
   gibIstisnaKodu?: string | null;
+  /** EBLG-128: satırın KDV dışı vergileri (ad ve tutar). */
+  ekVergiler?: { ad: string; tutar: string; stopaj: boolean }[];
   /** EBLG-78: yatırım teşvik harcama tipi ve makine kimlikleri. */
   ytbHarcamaTipi?: string | null;
   ytbMakineAdi?: string | null;
@@ -321,7 +323,7 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
       (s, i) => `<tr>
   <td class="orta">${i + 1}</td>
   <td>${kacis(s.satirKod ?? s.stokKod)}</td>
-  <td>${kacis(s.satirAd ?? s.stokAd)}${s.satirAciklama ? `<br><span style="color:#6b7280;font-size:8pt">${kacis(s.satirAciklama)}</span>` : ""}${
+  <td>${kacis(s.satirAd ?? s.stokAd)}${s.satirAciklama ? `<br><span style="color:#6b7280;font-size:8pt">${kacis(s.satirAciklama)}</span>` : ""}${s.ekVergiler?.length ? `<br><span style="color:#6b7280;font-size:8pt">${s.ekVergiler.map((v) => `${kacis(v.ad)}${v.stopaj ? " (stopaj)" : ""}: ${paraBicim(v.tutar)}`).join(" · ")}</span>` : ""}${
     s.gibIstisnaKodu
       ? `<br><span style="color:#6b7280;font-size:8pt">KDV istisna kodu: ${kacis(s.gibIstisnaKodu)}</span>`
       : ""

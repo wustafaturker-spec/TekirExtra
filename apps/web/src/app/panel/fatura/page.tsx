@@ -23,7 +23,7 @@ import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, KAP_CINSLERI, kapEksigiVarMi, SIK_KAP_CINSLERI, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type TevkifatKodu, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-alani";
 import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
-import { birimKisaAdi, faturaKurTipi, vadeTarihiHesapla } from "@tekirextra/shared";
+import { birimKisaAdi, faturaKurTipi, vadeTarihiHesapla, type VergiTuru } from "@tekirextra/shared";
 import { BirimSecimi, birimKatsayisi, SatirBirimi } from "@/components/birim-secimi";
 import { BOS_TESLIMAT_ADRESI, faturaTeslimYeriEksik, TeslimatAdresiAlanlari, teslimatAdresiGovdesi, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
 import { ebelgeGitmemisMi, ebelgeKullanilmiyor, faturaGecikmeUyarilari, faturaGeriAlmaEngeli, type EbelgeUygulamalari } from "@tekirextra/shared";
@@ -44,16 +44,24 @@ import {
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 
 /** EBLG-120: satırın KDV dışı vergisi (sunucunun döndürdüğü çözülmüş hâli). */
-interface EkVergiSatiri { kod: string; ad: string; oran: string | null; matrah: string | null; tutar: string; stopaj: boolean; kdvMatrahinaDahil: boolean }
+interface EkVergiSatiri { kod: string; ad: string; hesap?: "oran" | "birim" | null; oran: string | null; birimTutar?: string | null; matrah: string | null; tutar: string; stopaj: boolean; kdvMatrahinaDahil: boolean }
 
-/** Özet kutusu için vergi türü başına toplam. */
-function ekVergiOzeti(satirlar: { ekVergiler?: EkVergiSatiri[] }[]) {
+/** EBLG-125: ürün kartının vergisi → satır vergisi (ad ve davranış belge tarihindeki merkezi listeden). */
+function karttanEkVergiler(stok: Stok | undefined, turler: readonly VergiTuru[]): EkVergiSatiri[] {
+  return (stok?.ekVergiler ?? []).flatMap((v) => {
+    const tur = turler.find((t) => t.kod === v.kod);
+    return tur ? [{ kod: v.kod, ad: tur.ad, hesap: v.hesap, oran: v.hesap === "oran" ? v.deger : null, birimTutar: v.hesap === "birim" ? v.deger : null, matrah: null, tutar: "0", stopaj: tur.stopaj, kdvMatrahinaDahil: tur.kdvMatrahinaDahil }] : [];
+  });
+}
+
+/** Özet kutusu için vergi türü başına toplam; tutar hesaptan (oran/birim) ya da belgeden. */
+function ekVergiOzeti(satirlar: { ekVergiler?: EkVergiSatiri[] }[], tutarlar: number[][]) {
   const harita = new Map<string, { kod: string; ad: string; stopaj: boolean; tutar: number }>();
-  for (const v of satirlar.flatMap((s) => s.ekVergiler ?? [])) {
+  satirlar.forEach((s, i) => (s.ekVergiler ?? []).forEach((v, j) => {
     const m = harita.get(v.kod) ?? { kod: v.kod, ad: v.ad, stopaj: v.stopaj, tutar: 0 };
-    m.tutar = Math.round((m.tutar + Number(v.tutar)) * 100) / 100;
+    m.tutar = Math.round((m.tutar + (tutarlar[i]?.[j] ?? Number(v.tutar))) * 100) / 100;
     harita.set(v.kod, m);
-  }
+  }));
   return [...harita.values()];
 }
 
@@ -90,6 +98,8 @@ interface Stok {
   alisFiyatiDoviz?: string;
   satisFiyatiDoviz?: string;
   kdvOrani: string;
+  /** EBLG-125: kartın KDV dışı vergileri; satıra buradan gelir. */
+  ekVergiler?: { kod: string; hesap: "oran" | "birim"; deger: string }[];
   takipTipi?: "yok" | "lot" | "seri";
   /** EBLG-71: doluysa bu kartı taşıyan fatura şarj faturası olur. */
   sarjTuru?: string | null;
@@ -404,6 +414,7 @@ const SENARYO_ADLARI: Record<FaturaSenaryosu, string> = {
   sgk: "SGK",
   sarj: "Şarj hizmeti",
   sarjanlik: "Şarj ünitesi",
+  konaklamavergisi: "Konaklama vergisi",
 };
 
 /** BelgeDurum enum'u (EBLG-04). */
@@ -706,7 +717,7 @@ export default function FaturaSayfasi() {
       tevkifatPay: tevkifat?.pay,
       tevkifatPayda: tevkifat?.payda,
       // EBLG-120: sunucu davranışı merkezden yeniden çözer; özet aynı sonucu göstersin.
-      ekVergiler: (s.ekVergiler ?? []).map((v) => ({ tutar: Number(v.tutar), stopaj: v.stopaj, kdvMatrahinaDahil: v.kdvMatrahinaDahil })),
+      ekVergiler: (s.ekVergiler ?? []).map((v) => ({ tutar: Number(v.tutar), stopaj: v.stopaj, kdvMatrahinaDahil: v.kdvMatrahinaDahil, hesap: v.hesap ?? null, oran: Number(v.oran ?? 0), birimTutar: Number(v.birimTutar ?? 0) })),
     };
   });
   // EBLG-60: ihraç kayıtlı yalnız satışta; tip değişince seçim yok sayılır.
@@ -730,6 +741,7 @@ export default function FaturaSayfasi() {
     tevkifatKodu: s.tevkifatKodu,
     tevkifatOrani: s.tevkifatOrani,
     gibIstisnaKodu: s.gibIstisnaKodu,
+    ekVergiKodlari: (s.ekVergiler ?? []).map((v) => v.kod),
   }));
   // Özel matrah yalnız satışta; satırlar KDV hariç girilir, KDV matrahtan doğar.
   const ozelMatrah = ozelMatrahSecili;
@@ -1046,6 +1058,8 @@ export default function FaturaSayfasi() {
       if (stok) {
         yeni[index].kdvOrani = Number(stok.kdvOrani || 20);
       }
+      // EBLG-125: kartın KDV dışı vergileri; iade ve proformada taşınmaz.
+      yeni[index].ekVergiler = tip === "satis" || tip === "alis" ? karttanEkVergiler(stok, kodTablosu.vergiTurleri) : [];
       yeni[index].dovizUyarisi = undefined;
       if (deger) {
         const fiyat = await kalemFiyatiGetir(String(deger));
@@ -1279,7 +1293,7 @@ export default function FaturaSayfasi() {
             ytbMakineId: s.ytbMakineId?.trim() || undefined,
             ytbMakineSiraNo: s.ytbMakineSiraNo?.trim() || undefined,
             sarjUniteSeriNo: s.sarjUniteSeriNo?.trim() || undefined,
-            ekVergiler: s.ekVergiler?.length ? s.ekVergiler.map((v) => ({ kod: v.kod, oran: v.oran, matrah: v.matrah, tutar: v.tutar })) : undefined,
+            ekVergiler: s.ekVergiler?.length ? s.ekVergiler.map((v) => (v.hesap ? { kod: v.kod, hesap: v.hesap, oran: v.oran, birimTutar: v.birimTutar } : { kod: v.kod, oran: v.oran, matrah: v.matrah, tutar: v.tutar })) : undefined,
             projeId: s.projeId || undefined,
             projeAltKirilimId: s.projeAltKirilimId || undefined,
             partiBilgileri: (() => {
@@ -2233,7 +2247,7 @@ export default function FaturaSayfasi() {
                         />
                         {varyantlariAl(s.stokId).length > 0 && <Select aria-label="Varyant" required value={s.varyantId ?? ""} onChange={(e) => { const varyantId = e.target.value; setSatirlar((eskiler) => eskiler.map((x, i) => i === index ? { ...x, varyantId } : x)); if (varyantId) void kalemFiyatiGetir(s.stokId, varyantId).then((fiyat) => { if (fiyat) setSatirlar((eskiler) => eskiler.map((x, i) => i === index && x.varyantId === varyantId ? { ...x, ...fiyat } : x)); }); }}><option value="">Varyant seçin</option>{varyantlariAl(s.stokId).filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.ad} · {v.kod} · Stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")}</option>)}</Select>}
                         {satirDogrulamaHatalari.includes(index) && <p className="field-error" id={`fatura-satir-${index}-hatasi`} role="alert">Bu satır için ürün veya hizmet seçin.</p>}
-                        {(s.ekVergiler?.length ?? 0) > 0 && <small className="muted">{s.ekVergiler!.map((v) => `${v.ad}${v.stopaj ? " (stopaj)" : ""}: ${tl(Number(v.tutar), dovizCinsi)}`).join(" · ")}</small>}
+                        {(s.ekVergiler?.length ?? 0) > 0 && <small className="muted">{s.ekVergiler!.map((v, j) => `${v.ad}${v.hesap === "oran" ? ` %${Number(v.oran).toLocaleString("tr-TR")}` : ""}${v.stopaj ? " (stopaj)" : ""}: ${tl(satirSonuc?.ekVergiTutarlari[j] ?? Number(v.tutar), dovizCinsi)}`).join(" · ")}</small>}
                         {s.dovizUyarisi && <p className="field-error" role="alert">{s.dovizUyarisi}</p>}
                         {seciliStok && (
                           <span className={`document-line-stock${stokYetersiz ? " is-warning" : ""}`}>
@@ -2578,7 +2592,7 @@ export default function FaturaSayfasi() {
               ))}
               {ihracKayitli && <small className="muted">{tip === "alis" ? "İhraç kayıtlı alış: KDV hesaplanır, satıcıya ödenmez ve cariye girmez." : "İhraç kayıtlı: KDV hesaplanır, tahsil edilmez."}</small>}
               {sonuc.toplamTevkifat > 0 && <div className="invoice-summary__line is-discount"><span>Tevkifat</span><span>-{tl(sonuc.toplamTevkifat, dovizCinsi)}</span></div>}
-              {ekVergiOzeti(satirlar).map((v) => (
+              {ekVergiOzeti(satirlar, sonuc.satirlar.map((x) => x.ekVergiTutarlari)).map((v) => (
                 <div className={`invoice-summary__line ${v.stopaj ? "is-discount" : "is-tax"}`} key={v.kod}><span>{v.ad}</span><span>{v.stopaj ? "-" : ""}{tl(v.tutar, dovizCinsi)}</span></div>
               ))}
               <div className="invoice-summary__line is-grand"><span>Ödenecek</span><span>{tl(sonuc.genelToplam, dovizCinsi)}</span></div>

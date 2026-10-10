@@ -176,3 +176,16 @@ describe("KDV dışı vergiler (EBLG-120) — gerçek belge örnekleri", () => {
     expect(s.satirlar[0].toplamTutar).toBe(550);
   });
 });
+
+describe("karttan gelen KDV dışı vergi (EBLG-126)", () => {
+  it("oranlı vergi satır matrahından, maktu vergi miktardan hesaplanır", () => {
+    const s = faturaHesapla({ satirlar: [
+      { stokId: "a", miktar: 2, birimFiyat: 500, kdvOrani: 20, iskontoOrani: 10, ekVergiler: [{ stopaj: false, kdvMatrahinaDahil: true, hesap: "oran", oran: 20 }] },
+      { stokId: "b", miktar: 10, birimFiyat: 40, kdvOrani: 20, ekVergiler: [{ stopaj: false, kdvMatrahinaDahil: true, hesap: "birim", birimTutar: 12.5 }] },
+    ] });
+    // a: matrah 900, ÖTV %20 → 180, KDV (1080) 216; b: matrah 400, ÖTV 10 × 12,5 → 125, KDV (525) 105.
+    expect(s.satirlar.map((x) => x.ekVergiTutarlari)).toEqual([[180], [125]]);
+    expect(s.toplamKdv).toBe(321);
+    expect(s.genelToplam).toBe(900 + 180 + 216 + 400 + 125 + 105);
+  });
+});
