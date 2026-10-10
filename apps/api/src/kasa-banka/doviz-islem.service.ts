@@ -135,7 +135,7 @@ export class DovizIslemService {
     await tx.$queryRaw`SELECT id FROM doviz_islemleri WHERE id = ${id}::uuid FOR UPDATE`;
     const islem = await tx.dovizIslemi.findUnique({ where: { id } });
     if (!islem) throw new NotFoundException("Döviz alım/satımı bulunamadı");
-    await this.donemKilidi.tarihDogrula(tenantId, islem.tarih, "döviz alım/satımını geri alma");
+    await this.donemKilidi.tarihDogrula(tenantId, islem.tarih, "döviz alım/satımını geri alma", tx);
     const hareketler = await tx.kasaBankaHareket.findMany({ where: { kaynakTur: "doviz_islem", kaynakRef: id }, include: { ekstreSatir: { select: { id: true, tarih: true, aciklama: true } } } });
     const bagli = hareketler.find((h) => h.ekstreSatir && h.ekstreSatir.id !== ekstreSatirId);
     if (bagli?.ekstreSatir) throw new BadRequestException(`Bu işlemin bir bacağı ${bagli.ekstreSatir.tarih.toISOString().slice(0, 10)} tarihli "${bagli.ekstreSatir.aciklama}" ekstre satırına bağlı; önce Banka Ekstresi ekranından o eşleşmeyi geri alın`);

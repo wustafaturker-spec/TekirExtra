@@ -41,6 +41,16 @@ olduğunu gösterir. Readiness başarısızsa load balancer yeni trafik
 yönlendirmemelidir. Geliştirme ortamında S3/Redis değişkenleri tanımlı değilse
 ilgili bağımlılık kontrolü atlanır; üretimde bu değişkenler zorunlu tutulmalıdır.
 
+### Veritabanı bağlantı havuzu (STK-35)
+
+API süreci başına havuz boyutu `DATABASE_URL` içindeki `connection_limit`
+parametresiyle belirlenir (`…/tekirextra?connection_limit=20`); verilmezse
+Prisma çekirdek×2+1 kullanır. Toplam (süreç sayısı × `connection_limit` +
+worker) PostgreSQL `max_connections` değerinin altında kalmalıdır. Kiracı
+işlemi havuzdan en çok 10 sn bağlantı bekler; dolarsa istemci **503 +
+`Retry-After: 3`** alır ve `db_pool_busy` uyarısı loglanır. Bu uyarı sık
+görülüyorsa havuz büyütülür ya da süreç sayısı artırılır.
+
 ### RLS doğrulaması (yeni ortam kurulumunda)
 
 2026-09-13 denetiminde 17 tabloda RLS'nin hiç olmadığı bulundu: yarım kalıp

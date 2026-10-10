@@ -742,7 +742,7 @@ export class StokService {
     girdi: StokHareketGirdisi,
   ): Promise<{ hareket: unknown; eksiStokUyarisi: string | null; partiTahsisleri: { lotNo: string; seriNo: string | null; sonKullanmaTarihi: string | null; uretimTarihi: string | null; miktar: Prisma.Decimal }[] }> {
     const { tenantId } = aktifBaglam();
-    await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "stok hareketi oluşturma");
+    await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "stok hareketi oluşturma", tx);
     const {
       stokId,
       varyantId,

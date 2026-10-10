@@ -490,7 +490,7 @@ export class PosService {
       if (!kayit || kayit.kanal !== "slip" || kayit.durum !== "odendi" || !kayit.hareket)
         throw new BadRequestException("Yalnız kaydedilmiş banka POS slibi geri alınabilir");
       if (kayit._count.iadeler) throw new BadRequestException("İadesi olan slip geri alınamaz; önce iadeleri geri alın");
-      await this.donemKilidi.tarihDogrula(tenantId, kayit.hareket.tarih, "slip geri alma");
+      await this.donemKilidi.tarihDogrula(tenantId, kayit.hareket.tarih, "slip geri alma", tx);
       const cariler = await tx.cariHareket.findMany({ where: { kaynakTur: "pos_tahsilat", kaynakRef: id } });
       await tx.posTahsilat.update({ where: { id }, data: { durum: "iptal", iptalNedeni: neden, hareketId: null } });
       await tx.cariHareket.deleteMany({ where: { id: { in: cariler.map((c) => c.id) } } });
@@ -583,7 +583,7 @@ export class PosService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const iade = await tx.posIade.findUnique({ where: { id: iadeId }, include: { hareket: true } });
       if (!iade) throw new NotFoundException("POS iadesi bulunamadı");
-      await this.donemKilidi.tarihDogrula(tenantId, iade.tarih, "POS iadesini geri alma");
+      await this.donemKilidi.tarihDogrula(tenantId, iade.tarih, "POS iadesini geri alma", tx);
       if (iade.hareket.ekstreSatirId) throw new BadRequestException("İade banka ekstresine bağlı; önce ekstre eşleşmesini geri alın");
       const cariler = await tx.cariHareket.findMany({ where: { kaynakTur: "pos_iade", kaynakRef: iade.hareketId } });
       await tx.posIade.delete({ where: { id: iadeId } });

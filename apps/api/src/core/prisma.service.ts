@@ -11,6 +11,14 @@ import { baglamAl } from "./istek-baglami";
  * (politika gereği) hiç satır döndürmez — sessiz veri sızıntısı yerine
  * sessiz boş sonuç tercih edilmiştir; uygulama DB rolünde BYPASSRLS yoktur.
  */
+/**
+ * STK-35: işlemin havuzdan bağlantı bekleyebileceği süre (Prisma varsayılanı
+ * 2 sn). Yük altında kısa bekleyiş yerine kuyrukta beklenir; yine de dolarsa
+ * hata filtresi 503 + Retry-After döner. Havuz boyutu `DATABASE_URL`
+ * içindeki `connection_limit` ile ayarlanır (varsayılan çekirdek×2+1).
+ */
+const BAGLANTI_BEKLEME_MS = 10_000;
+
 @Injectable()
 export class PrismaService
   extends PrismaClient
@@ -35,6 +43,6 @@ export class PrismaService
       const kullanici = baglamAl()?.userId ?? "";
       await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true), set_config('app.user_id', ${kullanici}, true)`;
       return fn(tx);
-    }, secenek?.timeout ? { timeout: secenek.timeout, maxWait: 10_000 } : undefined);
+    }, { maxWait: BAGLANTI_BEKLEME_MS, ...(secenek?.timeout ? { timeout: secenek.timeout } : {}) });
   }
 }

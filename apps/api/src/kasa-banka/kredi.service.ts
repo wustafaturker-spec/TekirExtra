@@ -345,7 +345,7 @@ export class KrediService {
       if (!silinebilir) throw new ConflictException("Ödemesi ya da işlemi olan kredi silinemez; önce işlemleri geri alın");
       const kullanim = k.islemler.find((i) => i.tip === "kullanim");
       if (kullanim) {
-        await this.donemKilidi.tarihDogrula(tenantId, kullanim.tarih, "kredi silme");
+        await this.donemKilidi.tarihDogrula(tenantId, kullanim.tarih, "kredi silme", tx);
         const h = await tx.kasaBankaHareket.findUnique({ where: { id: kullanim.hareketId }, select: { ekstreSatirId: true } });
         if (h?.ekstreSatirId) throw new BadRequestException("Kredi kullanımı banka ekstresine bağlı; önce ekstre eşleşmesini geri alın");
         await this.islemSilTx(tx, kullanim.hareketId);

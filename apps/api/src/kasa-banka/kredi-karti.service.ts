@@ -305,7 +305,7 @@ export class KrediKartiService {
       }
 
       const bugun = bugunTR();
-      await this.donemKilidi.tarihDogrula(tenantId, bugun, "ters kayıt");
+      await this.donemKilidi.tarihDogrula(tenantId, bugun, "ters kayıt", tx);
       const tarih = new Date(bugun);
       // Ödeme ve iade borcu azaltmıştı, tersi borcu geri yazar; diğerleri iadeyle sıfırlanır.
       const tersTip = h.tip === "odeme" || h.tip === "iade" ? "harcama" : "iade";

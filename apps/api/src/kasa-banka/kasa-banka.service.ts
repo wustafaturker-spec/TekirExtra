@@ -924,7 +924,7 @@ export class KasaBankaService {
 
       const kapali = await this.donemKapaliMi(tenantId, son.islemTarihi);
       const bugun = bugunTR();
-      if (kapali) await this.donemKilidi.tarihDogrula(tenantId, bugun, "ters kayıt");
+      if (kapali) await this.donemKilidi.tarihDogrula(tenantId, bugun, "ters kayıt", tx);
 
       // Bu evrakın henüz geri alınmamış cari hareketleri (tür bazında).
       const acikCariHareketleri = async (kaynakTur: string) => {
@@ -1398,7 +1398,7 @@ export class KasaBankaService {
     const mevcut = await tx.kasaBankaHareket.findFirst({ where: { ...alan, kaynakTur: "acilis" } });
     if (mevcut) {
       if (!neden || neden.trim().length < 3) throw new BadRequestException("Açılış bakiyesini değiştirmek için gerekçe yazın (en az 3 karakter)");
-      await this.donemKilidi.tarihDogrula(tenantId, mevcut.tarih, "açılış fişi değiştirme");
+      await this.donemKilidi.tarihDogrula(tenantId, mevcut.tarih, "açılış fişi değiştirme", tx);
     }
     const isaretli = D(girdi.tutar);
     const tutar = isaretli.abs();
@@ -1433,7 +1433,7 @@ export class KasaBankaService {
       await this.hesabiKilitle(tx, tur, hesapId);
       const mevcut = await tx.kasaBankaHareket.findFirst({ where: { ...hesapAlani(tur, hesapId), kaynakTur: "acilis" } });
       if (!mevcut) throw new NotFoundException("Bu hesabın açılış fişi yok");
-      await this.donemKilidi.tarihDogrula(tenantId, mevcut.tarih, "açılış fişi silme");
+      await this.donemKilidi.tarihDogrula(tenantId, mevcut.tarih, "açılış fişi silme", tx);
       await tx.kasaBankaHareket.delete({ where: { id: mevcut.id } });
       await this.geriAlmaIzi(tx, tenantId, "kasa_banka_acilis_silindi", mevcut.id, { neden, hareket: mevcut });
       return { silindi: true };
@@ -1462,7 +1462,7 @@ export class KasaBankaService {
       if (await tx.kasaBankaHareket.findFirst({ where: { kaynakTur: "ters_kayit", kaynakRef: h.id }, select: { id: true } })) throw new BadRequestException("Geri alınmış fiş açılışa çevrilemez");
       const onceki = await tx.kasaBankaHareket.findFirst({ where: { ...alan, id: { not: h.id }, tarih: { lt: h.tarih } }, orderBy: { tarih: "asc" }, select: { tarih: true } });
       if (onceki) throw new BadRequestException(`Açılış hesabın ilk hareketi olmalı; bu fişten önce ${tarihTR(onceki.tarih)} tarihli hareket var`);
-      await this.donemKilidi.tarihDogrula(tenantId, h.tarih, "açılışa çevirme");
+      await this.donemKilidi.tarihDogrula(tenantId, h.tarih, "açılışa çevirme", tx);
       const kayit = await tx.kasaBankaHareket.update({ where: { id: h.id }, data: { kaynakTur: "acilis", makbuzNo: null } });
       await this.geriAlmaIzi(tx, tenantId, "kasa_banka_acilisa_cevrildi", h.id, { neden, onceki: h });
       return kayit;
