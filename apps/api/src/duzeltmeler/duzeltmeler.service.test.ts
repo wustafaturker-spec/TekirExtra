@@ -4,6 +4,9 @@ import { baglamlaCalistir } from "../core/istek-baglami";
 import { HATA_YERLESME_MS } from "../ebelge/yerlesmis-hata";
 import { DuzeltmelerService } from "./duzeltmeler.service";
 
+const tutarlilik = vi.hoisted(() => vi.fn());
+vi.mock("../stok/stok-tutarlilik.service", () => ({ stokTutarlilikHesapla: tutarlilik }));
+
 describe("DuzeltmelerService", () => {
   const tx = {
     bankaEkstreSatir: { findMany: vi.fn() },
@@ -35,6 +38,7 @@ describe("DuzeltmelerService", () => {
     tx.fatura.findMany.mockResolvedValue([]);
     tx.duzeltmeKaydi.findMany.mockResolvedValue([]);
     tx.duzeltmeKaydi.upsert.mockResolvedValue({});
+    tutarlilik.mockResolvedValue({ farklar: [], dagitilmamis: [], kartSayisi: 0 });
     service = new DuzeltmelerService(prisma as never, { getir: vi.fn().mockResolvedValue({ miktarToleransYuzde: 1, fiyatToleransYuzde: 1 }) } as never);
   });
 
@@ -84,6 +88,29 @@ describe("DuzeltmelerService", () => {
     expect(sonuc).toMatchObject({ taranan: 1, bulunan: 1 });
     expect(tx.duzeltmeKaydi.upsert).toHaveBeenCalledWith(expect.objectContaining({
       where: { tenantId_tekillikAnahtari: { tenantId: "tenant-1", tekillikAnahtari: "SAYIM_FARKI_ONAYSIZ:stok_sayim:sayim-1" } },
+    }));
+  });
+
+  it("bakiye–hareket farkını kart başına tek kritik kayıt, varyantsız hareketi uyarı olarak açar (STK-39)", async () => {
+    tutarlilik.mockResolvedValue({
+      farklar: [
+        { tur: "kart", stokId: "stok-1", kod: "HM-001", ad: "Hammadde", fark: "100.000" },
+        { tur: "depo", stokId: "stok-1", kod: "HM-001", ad: "Hammadde", fark: "100.000" },
+      ],
+      dagitilmamis: [{ stokId: "stok-2", kod: "SF0101", ad: "Gömlek", miktar: "-500.000" }],
+      kartSayisi: 2,
+    });
+
+    const sonuc = await baglamlaCalistir({ tenantId: "tenant-1", userId: "user-1", rol: "muhasebe" }, () => service.tara());
+
+    expect(sonuc).toMatchObject({ bulunan: 2 });
+    expect(tx.duzeltmeKaydi.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { tenantId_tekillikAnahtari: { tenantId: "tenant-1", tekillikAnahtari: "STOK_BAKIYE_FARKI:stok_tutarlilik:stok-1" } },
+      create: expect.objectContaining({ onem: "kritik", aciklama: expect.stringContaining("kart toplamı (+100), depo bakiyesi") }),
+    }));
+    expect(tx.duzeltmeKaydi.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { tenantId_tekillikAnahtari: { tenantId: "tenant-1", tekillikAnahtari: "VARYANTSIZ_HAREKET:stok_tutarlilik:stok-2" } },
+      create: expect.objectContaining({ onem: "uyari" }),
     }));
   });
 

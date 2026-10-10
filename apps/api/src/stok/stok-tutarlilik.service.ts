@@ -13,54 +13,72 @@ const toplamHaritasi = <T>(satirlar: T[], anahtar: (s: T) => string | null, mikt
 
 export interface TutarlilikSatiri {
   tur: TutarlilikTuru; stokId: string; kod: string; ad: string; depoId: string | null; depo: string | null; varyantId: string | null; varyant: string | null;
+  /** STK-39: lot/seri satırında parti kimliği ve etiketi (lot · seri). */
+  partiId: string | null; parti: string | null;
   kayitli: string; hareket: string; fark: string;
 }
 
 /**
- * STK-24: kart, depo, varyant ve varyant-depo bakiyelerinin hareket
- * toplamıyla uyumu. Onarım yalnız farklı satırları hareket toplamına eşitler;
- * hareket yazmaz, ortalama maliyete dokunmaz.
+ * STK-24/39: kart, depo, varyant, varyant-depo ve parti bakiyelerinin hareket
+ * toplamıyla uyumu. Düzeltme Merkezi taraması da bunu kullanır (açık işlemle).
+ */
+export async function stokTutarlilikHesapla(tx: Tx) {
+  const [kartlar, depolar, depoBakiyeleri, varyantlar, varyantDepoBakiyeleri, partiler, hKart, hDepo, hVaryant, hVaryantDepo, hDagitilmamis, hParti] = [
+    await tx.stokKart.findMany({ where: { tip: { not: "hizmet" } }, select: { id: true, kod: true, ad: true, mevcutMiktar: true, _count: { select: { varyantlar: true } } } }),
+    await tx.depo.findMany({ select: { id: true, ad: true } }),
+    await tx.stokDepoBakiye.findMany({ where: { stok: { tip: { not: "hizmet" } } }, select: { stokId: true, depoId: true, mevcutMiktar: true } }),
+    await tx.stokVaryant.findMany({ select: { id: true, stokId: true, kod: true, mevcutMiktar: true } }),
+    await tx.stokVaryantDepoBakiye.findMany({ select: { varyantId: true, depoId: true, mevcutMiktar: true } }),
+    await tx.stokParti.findMany({ select: { id: true, stokId: true, varyantId: true, depoId: true, lotNo: true, seriNo: true, kalanMiktar: true } }),
+    await tx.stokHareket.groupBy({ by: ["stokId"], where: HIZMET_DISI, _sum: { miktar: true } }),
+    await tx.stokHareket.groupBy({ by: ["stokId", "depoId"], where: HIZMET_DISI, _sum: { miktar: true } }),
+    await tx.stokHareket.groupBy({ by: ["varyantId"], where: { varyantId: { not: null } }, _sum: { miktar: true } }),
+    await tx.stokHareket.groupBy({ by: ["varyantId", "depoId"], where: { varyantId: { not: null } }, _sum: { miktar: true } }),
+    await tx.stokHareket.groupBy({ by: ["stokId"], where: { varyantId: null }, _sum: { miktar: true } }),
+    await tx.stokHareketParti.groupBy({ by: ["partiId"], _sum: { miktar: true } }),
+  ];
+  const kart = new Map(kartlar.map((k) => [k.id, k]));
+  const depoAdi = new Map(depolar.map((d) => [d.id, d.ad]));
+  const varyant = new Map(varyantlar.map((v) => [v.id, v]));
+  const parti = new Map(partiler.map((p) => [p.id, p]));
+  const satir = (tur: TutarlilikTuru, stokId: string, depoId: string | null, varyantId: string | null, f: { kayitli: Prisma.Decimal; hareket: Prisma.Decimal; fark: Prisma.Decimal }, partiId: string | null = null): TutarlilikSatiri => {
+    const p = partiId ? parti.get(partiId) : undefined;
+    return {
+      tur, stokId, kod: kart.get(stokId)?.kod ?? "?", ad: kart.get(stokId)?.ad ?? "?", depoId, depo: depoId ? depoAdi.get(depoId) ?? "?" : null,
+      varyantId, varyant: varyantId ? varyant.get(varyantId)?.kod ?? "?" : null,
+      partiId, parti: p ? [p.lotNo, p.seriNo].filter(Boolean).join(" · ") : null,
+      kayitli: f.kayitli.toFixed(3), hareket: f.hareket.toFixed(3), fark: f.fark.toFixed(3),
+    };
+  };
+  const farklar: TutarlilikSatiri[] = [
+    ...miktarFarklari(toplamHaritasi(kartlar, (k) => k.id, (k) => k.mevcutMiktar), toplamHaritasi(hKart, (h) => h.stokId, (h) => h._sum.miktar))
+      .map((f) => satir("kart", f.anahtar, null, null, f)),
+    ...miktarFarklari(toplamHaritasi(depoBakiyeleri, (b) => ciftAnahtar(b.stokId, b.depoId), (b) => b.mevcutMiktar), toplamHaritasi(hDepo, (h) => ciftAnahtar(h.stokId, h.depoId), (h) => h._sum.miktar))
+      .map((f) => { const [stokId, depoId] = f.anahtar.split("|"); return satir("depo", stokId, depoId, null, f); }),
+    ...miktarFarklari(toplamHaritasi(varyantlar, (v) => v.id, (v) => v.mevcutMiktar), toplamHaritasi(hVaryant, (h) => h.varyantId, (h) => h._sum.miktar))
+      .map((f) => satir("varyant", varyant.get(f.anahtar)?.stokId ?? "?", null, f.anahtar, f)),
+    ...miktarFarklari(toplamHaritasi(varyantDepoBakiyeleri, (b) => ciftAnahtar(b.varyantId, b.depoId), (b) => b.mevcutMiktar), toplamHaritasi(hVaryantDepo, (h) => h.varyantId && ciftAnahtar(h.varyantId, h.depoId), (h) => h._sum.miktar))
+      .map((f) => { const [varyantId, depoId] = f.anahtar.split("|"); return satir("varyant_depo", varyant.get(varyantId)?.stokId ?? "?", depoId, varyantId, f); }),
+    // STK-39: partinin kalan miktarı, parti hareketlerinin (işaretli) toplamına eşit olmalı.
+    ...miktarFarklari(toplamHaritasi(partiler, (p) => p.id, (p) => p.kalanMiktar), toplamHaritasi(hParti, (h) => h.partiId, (h) => h._sum.miktar))
+      .flatMap((f) => { const p = parti.get(f.anahtar); return p ? [satir("parti", p.stokId, p.depoId, p.varyantId, f, p.id)] : []; }),
+  ];
+  // Varyantlı kartta varyanta bağlanmamış hareketler: kart toplamını varyant toplamından ayırır; onarılamaz, gösterilir.
+  const dagitilmamis = hDagitilmamis
+    .filter((h) => (kart.get(h.stokId)?._count.varyantlar ?? 0) > 0 && !D(h._sum.miktar).isZero())
+    .map((h) => ({ stokId: h.stokId, kod: kart.get(h.stokId)!.kod, ad: kart.get(h.stokId)!.ad, miktar: D(h._sum.miktar).toFixed(3) }));
+  return { farklar, dagitilmamis, kartSayisi: kartlar.length };
+}
+
+/**
+ * STK-24: bakiyelerin hareket toplamıyla uyumu. Onarım yalnız farklı satırları
+ * hareket toplamına eşitler; hareket yazmaz, ortalama maliyete dokunmaz.
  */
 @Injectable()
 export class StokTutarlilikService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async hesapla(tx: Tx) {
-    const [kartlar, depolar, depoBakiyeleri, varyantlar, varyantDepoBakiyeleri, hKart, hDepo, hVaryant, hVaryantDepo, hDagitilmamis] = [
-      await tx.stokKart.findMany({ where: { tip: { not: "hizmet" } }, select: { id: true, kod: true, ad: true, mevcutMiktar: true, _count: { select: { varyantlar: true } } } }),
-      await tx.depo.findMany({ select: { id: true, ad: true } }),
-      await tx.stokDepoBakiye.findMany({ where: { stok: { tip: { not: "hizmet" } } }, select: { stokId: true, depoId: true, mevcutMiktar: true } }),
-      await tx.stokVaryant.findMany({ select: { id: true, stokId: true, kod: true, mevcutMiktar: true } }),
-      await tx.stokVaryantDepoBakiye.findMany({ select: { varyantId: true, depoId: true, mevcutMiktar: true } }),
-      await tx.stokHareket.groupBy({ by: ["stokId"], where: HIZMET_DISI, _sum: { miktar: true } }),
-      await tx.stokHareket.groupBy({ by: ["stokId", "depoId"], where: HIZMET_DISI, _sum: { miktar: true } }),
-      await tx.stokHareket.groupBy({ by: ["varyantId"], where: { varyantId: { not: null } }, _sum: { miktar: true } }),
-      await tx.stokHareket.groupBy({ by: ["varyantId", "depoId"], where: { varyantId: { not: null } }, _sum: { miktar: true } }),
-      await tx.stokHareket.groupBy({ by: ["stokId"], where: { varyantId: null }, _sum: { miktar: true } }),
-    ];
-    const kart = new Map(kartlar.map((k) => [k.id, k]));
-    const depoAdi = new Map(depolar.map((d) => [d.id, d.ad]));
-    const varyant = new Map(varyantlar.map((v) => [v.id, v]));
-    const satir = (tur: TutarlilikTuru, stokId: string, depoId: string | null, varyantId: string | null, f: { kayitli: Prisma.Decimal; hareket: Prisma.Decimal; fark: Prisma.Decimal }): TutarlilikSatiri => ({
-      tur, stokId, kod: kart.get(stokId)?.kod ?? "?", ad: kart.get(stokId)?.ad ?? "?", depoId, depo: depoId ? depoAdi.get(depoId) ?? "?" : null,
-      varyantId, varyant: varyantId ? varyant.get(varyantId)?.kod ?? "?" : null, kayitli: f.kayitli.toFixed(3), hareket: f.hareket.toFixed(3), fark: f.fark.toFixed(3),
-    });
-    const farklar: TutarlilikSatiri[] = [
-      ...miktarFarklari(toplamHaritasi(kartlar, (k) => k.id, (k) => k.mevcutMiktar), toplamHaritasi(hKart, (h) => h.stokId, (h) => h._sum.miktar))
-        .map((f) => satir("kart", f.anahtar, null, null, f)),
-      ...miktarFarklari(toplamHaritasi(depoBakiyeleri, (b) => ciftAnahtar(b.stokId, b.depoId), (b) => b.mevcutMiktar), toplamHaritasi(hDepo, (h) => ciftAnahtar(h.stokId, h.depoId), (h) => h._sum.miktar))
-        .map((f) => { const [stokId, depoId] = f.anahtar.split("|"); return satir("depo", stokId, depoId, null, f); }),
-      ...miktarFarklari(toplamHaritasi(varyantlar, (v) => v.id, (v) => v.mevcutMiktar), toplamHaritasi(hVaryant, (h) => h.varyantId, (h) => h._sum.miktar))
-        .map((f) => satir("varyant", varyant.get(f.anahtar)?.stokId ?? "?", null, f.anahtar, f)),
-      ...miktarFarklari(toplamHaritasi(varyantDepoBakiyeleri, (b) => ciftAnahtar(b.varyantId, b.depoId), (b) => b.mevcutMiktar), toplamHaritasi(hVaryantDepo, (h) => h.varyantId && ciftAnahtar(h.varyantId, h.depoId), (h) => h._sum.miktar))
-        .map((f) => { const [varyantId, depoId] = f.anahtar.split("|"); return satir("varyant_depo", varyant.get(varyantId)?.stokId ?? "?", depoId, varyantId, f); }),
-    ];
-    // Varyantlı kartta varyanta bağlanmamış hareketler: kart toplamını varyant toplamından ayırır; onarılamaz, gösterilir.
-    const dagitilmamis = hDagitilmamis
-      .filter((h) => (kart.get(h.stokId)?._count.varyantlar ?? 0) > 0 && !D(h._sum.miktar).isZero())
-      .map((h) => ({ stokId: h.stokId, kod: kart.get(h.stokId)!.kod, ad: kart.get(h.stokId)!.ad, miktar: D(h._sum.miktar).toFixed(3) }));
-    return { farklar, dagitilmamis, kartSayisi: kartlar.length };
-  }
+  private hesapla(tx: Tx) { return stokTutarlilikHesapla(tx); }
 
   async denetle() {
     const { tenantId } = aktifBaglam();
@@ -81,9 +99,10 @@ export class StokTutarlilikService {
         if (f.tur === "kart") await tx.stokKart.update({ where: { id: f.stokId }, data: { mevcutMiktar } });
         else if (f.tur === "depo") await tx.stokDepoBakiye.upsert({ where: { tenantId_stokId_depoId: { tenantId, stokId: f.stokId, depoId: f.depoId! } }, create: { tenantId, stokId: f.stokId, depoId: f.depoId!, mevcutMiktar }, update: { mevcutMiktar } });
         else if (f.tur === "varyant") await tx.stokVaryant.update({ where: { id: f.varyantId! }, data: { mevcutMiktar } });
+        else if (f.tur === "parti") await tx.stokParti.update({ where: { id: f.partiId! }, data: { kalanMiktar: mevcutMiktar } });
         else await tx.stokVaryantDepoBakiye.upsert({ where: { tenantId_varyantId_depoId: { tenantId, varyantId: f.varyantId!, depoId: f.depoId! } }, create: { tenantId, varyantId: f.varyantId!, depoId: f.depoId!, mevcutMiktar }, update: { mevcutMiktar } });
       }
-      await tx.auditLog.create({ data: { tenantId, userId, islem: "stok_tutarlilik_onarim", varlik: "stok", detay: { duzeltilen: farklar.length, farklar: farklar.slice(0, 200).map((f) => ({ tur: f.tur, kod: f.kod, depo: f.depo, varyant: f.varyant, kayitli: f.kayitli, hareket: f.hareket })) } as Prisma.InputJsonValue } });
+      await tx.auditLog.create({ data: { tenantId, userId, islem: "stok_tutarlilik_onarim", varlik: "stok", detay: { duzeltilen: farklar.length, farklar: farklar.slice(0, 200).map((f) => ({ tur: f.tur, kod: f.kod, depo: f.depo, varyant: f.varyant, parti: f.parti, kayitli: f.kayitli, hareket: f.hareket })) } as Prisma.InputJsonValue } });
       return { duzeltilen: farklar.length, farklar };
     });
   }

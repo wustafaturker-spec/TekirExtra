@@ -5,10 +5,10 @@ import { useCallback, useEffect, useState } from "react";
 import { api, ApiHata } from "@/lib/api";
 import { Alert, Badge, Button, Card, PageHeader, Stat, StatGrid, Table } from "@/components/ui";
 
-type Tur = "kart" | "depo" | "varyant" | "varyant_depo";
-interface Fark { tur: Tur; stokId: string; kod: string; ad: string; depo: string | null; varyant: string | null; kayitli: string; hareket: string; fark: string }
+type Tur = "kart" | "depo" | "varyant" | "varyant_depo" | "parti";
+interface Fark { tur: Tur; stokId: string; kod: string; ad: string; depo: string | null; varyant: string | null; parti: string | null; kayitli: string; hareket: string; fark: string }
 interface Denetim { farklar: Fark[]; dagitilmamis: { stokId: string; kod: string; ad: string; miktar: string }[]; kartSayisi: number }
-const TUR: Record<Tur, string> = { kart: "Kart toplamı", depo: "Depo bakiyesi", varyant: "Varyant toplamı", varyant_depo: "Varyant depo bakiyesi" };
+const TUR: Record<Tur, string> = { kart: "Kart toplamı", depo: "Depo bakiyesi", varyant: "Varyant toplamı", varyant_depo: "Varyant depo bakiyesi", parti: "Lot / seri kalanı" };
 const sayi = (v: string) => Number(v).toLocaleString("tr-TR", { maximumFractionDigits: 3 });
 
 /** STK-24: kayıtlı stok bakiyelerinin hareket toplamıyla uyumu; yönetici farkları onarır. */
@@ -41,7 +41,7 @@ export default function StokTutarlilikSayfasi() {
       <Link className="back-link" href="/panel/stok">← Stok kartları</Link>
       <PageHeader
         title="Stok tutarlılık denetimi"
-        subtitle="Kart, depo ve varyant bakiyeleri stok hareketlerinin toplamıyla karşılaştırılır. Fark, eşzamanlı işlemlerin birbirini ezdiği eski kayıtlardan kalır; onarım bakiyeyi hareket toplamına eşitler."
+        subtitle="Kart, depo, varyant ve lot/seri bakiyeleri stok hareketlerinin toplamıyla karşılaştırılır; farklar Düzeltme Merkezi'ne de düşer. Fark, eşzamanlı işlemlerin birbirini ezdiği eski kayıtlardan kalır; onarım bakiyeyi hareket toplamına eşitler."
         actions={<>
           <Button onClick={() => void yukle()}>Yeniden denetle</Button>
           <Button variant="primary" disabled={isleniyor || !denetim?.farklar.length} onClick={() => void onar()}>{isleniyor ? "Onarılıyor…" : "Farkları onar"}</Button>
@@ -57,13 +57,13 @@ export default function StokTutarlilikSayfasi() {
         </StatGrid>
         <Card title="Farklar" pad={false}>
           <Table>
-            <thead><tr><th>Ürün</th><th>Bakiye</th><th>Depo / varyant</th><th className="num">Kayıtlı</th><th className="num">Hareket toplamı</th><th className="num">Fark</th></tr></thead>
+            <thead><tr><th>Ürün</th><th>Bakiye</th><th>Depo / varyant / lot</th><th className="num">Kayıtlı</th><th className="num">Hareket toplamı</th><th className="num">Fark</th></tr></thead>
             <tbody>
               {denetim.farklar.map((f, i) => (
-                <tr key={`${f.tur}-${f.stokId}-${f.depo}-${f.varyant}-${i}`}>
+                <tr key={`${f.tur}-${f.stokId}-${f.depo}-${f.varyant}-${f.parti}-${i}`}>
                   <td><Link href={`/panel/stok/${f.stokId}`}><strong>{f.kod}</strong></Link> <span className="muted">{f.ad}</span></td>
                   <td><Badge variant="warning">{TUR[f.tur]}</Badge></td>
-                  <td>{[f.depo, f.varyant].filter(Boolean).join(" · ") || "—"}</td>
+                  <td>{[f.depo, f.varyant, f.parti].filter(Boolean).join(" · ") || "—"}</td>
                   <td className="num">{sayi(f.kayitli)}</td>
                   <td className="num">{sayi(f.hareket)}</td>
                   <td className="num"><strong>{Number(f.fark) > 0 ? "+" : ""}{sayi(f.fark)}</strong></td>

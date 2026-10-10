@@ -9,6 +9,8 @@ import { yerlesmisHataKosulu } from "../ebelge/yerlesmis-hata";
 import { VARSAYILAN_TOLERANS_YUZDE, farkAciklamasi, ucluEslestir } from "../satin-alma/uclu-eslestirme";
 import type { duzeltmeListeSemasi } from "./duzeltmeler.semalar";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
+import { stokTutarlilikHesapla } from "../stok/stok-tutarlilik.service";
+import { kartBazinda, tutarlilikOzeti } from "../stok/stok-tutarlilik";
 
 type ListeGirdisi = z.infer<typeof duzeltmeListeSemasi>;
 type Tespit = {
@@ -124,6 +126,9 @@ export class DuzeltmelerService {
           take: 2_000,
         }),
       ]);
+      // STK-39: bakiye–hareket uyumu (tutarlılık denetiminin otomatik hâli), kart başına tek kayıt.
+      const tutarlilik = await stokTutarlilikHesapla(tx);
+      const farkliKartlar = kartBazinda(tutarlilik.farklar);
       const tolerans = await this.ayarlar.getir("satin_alma", tx);
       const eslesmeFarklari = alisFaturalari.flatMap((fatura) => {
         const farklar = ucluEslestir({
@@ -159,6 +164,8 @@ export class DuzeltmelerService {
         ...posTahsilatlari.map((tahsilat) => ({ tur: "pos" as const, onem: "kritik" as const, kaynakTur: "pos_tahsilat", kaynakRef: tahsilat.id, nedenKodu: "POS_FINANS_HAREKETI_EKSIK", aciklama: `${tahsilat.saglayiciOdemeId || tahsilat.id} referanslı ${tahsilat.tutar.toString()} POS tahsilatının finans hareketi yok.`, onerilenEylem: "Sağlayıcı sonucunu doğrulayın ve tahsilat hareketini idempotent olarak yeniden oluşturun." })),
         ...ebelgeler.map((belge) => ({ tur: "ebelge" as const, onem: belge.durum === "hata" ? "kritik" as const : "uyari" as const, kaynakTur: "ebelge", kaynakRef: belge.faturaId, nedenKodu: belge.durum === "hata" ? "EBELGE_HATALI" : "EBELGE_UZUN_BEKLIYOR", aciklama: belge.hataMesaji || "e-Belge gönderimi yarım kalmış: 15 dakikadır kuyrukta ve entegratöre ulaşmamış.", onerilenEylem: belge.durum === "hata" ? "e-Belge operasyon kuyruğundan hata ayrıntısını inceleyip güvenli yeniden deneme başlatın." : "Faturanın e-Belge panelinden yeniden gönderin; belge entegratörde oluşmuşsa yeniden gönderilmez, benimsenir." })),
         ...negatifStoklar.map((bakiye) => ({ tur: "stok" as const, onem: "kritik" as const, kaynakTur: "stok_depo_bakiyesi", kaynakRef: bakiye.id, nedenKodu: "NEGATIF_STOK", aciklama: `${bakiye.stok.kod} · ${bakiye.stok.ad}, ${bakiye.depo.ad} deposunda ${bakiye.mevcutMiktar.toString()} bakiyeye düştü.`, onerilenEylem: "Eksik giriş/transfer hareketini düzeltin veya kontrollü sayım farkı onayı oluşturun." })),
+        ...farkliKartlar.map(({ stokId, satirlar }) => ({ tur: "stok" as const, onem: "kritik" as const, kaynakTur: "stok_tutarlilik", kaynakRef: stokId, nedenKodu: "STOK_BAKIYE_FARKI", aciklama: `${satirlar[0].kod} · ${satirlar[0].ad}: ${tutarlilikOzeti(satirlar)} hareket toplamıyla uyuşmuyor.`, onerilenEylem: "Stok tutarlılık denetiminde farkları inceleyip onarın; onarım bakiyeyi hareket toplamına eşitler." })),
+        ...tutarlilik.dagitilmamis.map((d) => ({ tur: "stok" as const, onem: "uyari" as const, kaynakTur: "stok_tutarlilik", kaynakRef: d.stokId, nedenKodu: "VARYANTSIZ_HAREKET", aciklama: `${d.kod} · ${d.ad}: varyantlı kartta toplam ${Number(d.miktar).toLocaleString("tr-TR")} birimlik hareket bir varyanta bağlı değil; kart toplamı varyant toplamından ayrışıyor.`, onerilenEylem: "Varyantsız hareketi ilgili varyanta elle düzeltme fişiyle taşıyın." })),
         ...farkliTaslakSayimlar.map((sayim) => ({ tur: "stok" as const, onem: "uyari" as const, kaynakTur: "stok_sayim", kaynakRef: sayim.id, nedenKodu: "SAYIM_FARKI_ONAYSIZ", aciklama: `${sayim.depo.ad} deposundaki ${sayim.farkliKalem} sayım farkı henüz onaylanmadı.`, onerilenEylem: "Sayım farklarını inceleyip sayımı onaylayın veya taslağı düzeltin." })),
         ...vadesiGecenEvraklar.map((evrak) => ({ tur: "cek_senet" as const, onem: "uyari" as const, kaynakTur: "cek_senet", kaynakRef: evrak.id, nedenKodu: "VADE_GECTI_DURUM_ACIK", aciklama: `${evrak.portfoyNo} portföy numaralı ${evrak.tutar.toString()} tutarlı evrakın vadesi ${evrak.vadeTarihi.toLocaleDateString("tr-TR")} tarihinde geçti; durumu ${evrak.durum}.`, onerilenEylem: "Tahsilat/ödeme sonucunu kaydedin veya evrak durumunu güncelleyin." })),
         ...eslesmeFarklari.map(({ fatura, farklar }) => ({ tur: "satin_alma" as const, onem: "uyari" as const, kaynakTur: "fatura", kaynakRef: fatura.id, nedenKodu: "UCLU_ESLESME_FARKI", aciklama: `${fatura.no || fatura.id} numaralı alış faturası sipariş ve mal kabulle örtüşmüyor — ${farkAciklamasi(farklar)}.`, onerilenEylem: "Faturayı sipariş ve irsaliyeyle karşılaştırın; fark gerçekse tedarikçiden düzeltme isteyin, kabul ediyorsanız kaydı kapatın." })),
@@ -176,7 +183,7 @@ export class DuzeltmelerService {
         });
       }
 
-      const mevcutlar = await tx.duzeltmeKaydi.findMany({ where: { nedenKodu: { in: ["ESLESMEMIS_EKSTRE", "ODEME_BAGLANTISI_YOK", "BELGESIZ_KART_HARCAMASI", "POS_FINANS_HAREKETI_EKSIK", "EBELGE_HATALI", "EBELGE_UZUN_BEKLIYOR", "NEGATIF_STOK", "SAYIM_FARKI_ONAYSIZ", "VADE_GECTI_DURUM_ACIK", "FATURA_ODEME_TOPLAMI_ASIMI", "UCLU_ESLESME_FARKI"] }, durum: { in: ["acik", "incelemede", "beklemede"] }, tekillikAnahtari: { not: null } }, select: { id: true, tekillikAnahtari: true, durum: true } });
+      const mevcutlar = await tx.duzeltmeKaydi.findMany({ where: { nedenKodu: { in: ["ESLESMEMIS_EKSTRE", "ODEME_BAGLANTISI_YOK", "BELGESIZ_KART_HARCAMASI", "POS_FINANS_HAREKETI_EKSIK", "EBELGE_HATALI", "EBELGE_UZUN_BEKLIYOR", "NEGATIF_STOK", "STOK_BAKIYE_FARKI", "VARYANTSIZ_HAREKET", "SAYIM_FARKI_ONAYSIZ", "VADE_GECTI_DURUM_ACIK", "FATURA_ODEME_TOPLAMI_ASIMI", "UCLU_ESLESME_FARKI"] }, durum: { in: ["acik", "incelemede", "beklemede"] }, tekillikAnahtari: { not: null } }, select: { id: true, tekillikAnahtari: true, durum: true } });
       let otomatikCozulen = 0;
       for (const kayit of mevcutlar) {
         if (kayit.tekillikAnahtari && aktifAnahtarlar.has(kayit.tekillikAnahtari)) continue;

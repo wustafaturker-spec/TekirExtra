@@ -18,3 +18,18 @@ describe("stok tutarlılık farkları (STK-24)", () => {
     expect(miktarFarklari(new Map([["a", D(1.5)]]), new Map([["a", new Prisma.Decimal("1.500")]]))).toEqual([]);
   });
 });
+
+describe("Düzeltme Merkezi özeti (STK-39)", () => {
+  it("farkları kart başına toplar ve kısa özet yazar", async () => {
+    const { kartBazinda, tutarlilikOzeti } = await import("./stok-tutarlilik");
+    const gruplar = kartBazinda([
+      { stokId: "a", tur: "kart" as const, fark: "2.000" },
+      { stokId: "a", tur: "depo" as const, fark: "1.000" },
+      { stokId: "a", tur: "depo" as const, fark: "1.000" },
+      { stokId: "b", tur: "parti" as const, fark: "-1.000" },
+    ]);
+    expect(gruplar.map((g) => g.stokId)).toEqual(["a", "b"]);
+    expect(tutarlilikOzeti(gruplar[0].satirlar)).toBe("kart toplamı (+2), 2 depo bakiyesi");
+    expect(tutarlilikOzeti(gruplar[1].satirlar)).toBe("lot/seri bakiyesi");
+  });
+});
