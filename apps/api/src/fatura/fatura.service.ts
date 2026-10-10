@@ -987,6 +987,18 @@ export class FaturaService {
 
   async iptal(id: string) {
     const { tenantId } = aktifBaglam();
+    // STK-38: ters kayıtlar faturanın tarihine yazılır; dönemi kapalıysa iptal
+    // edilemez (kapalı döneme kayıt girmez), düzeltme iade faturasıyla yapılır.
+    const kayit = await this.prisma.tenantIslem(tenantId, (tx) => tx.fatura.findUnique({ where: { id }, select: { tarih: true, durum: true, tip: true } }));
+    if (!kayit) throw new NotFoundException("Fatura bulunamadı");
+    if (kayit.durum === "kesin" && kayit.tip !== "proforma") {
+      try {
+        await this.donemKilidi.tarihDogrula(tenantId, kayit.tarih, "fatura iptali");
+      } catch (hata) {
+        if (hata instanceof ConflictException) throw new ConflictException(`${hata.message}; iade faturası düzenleyin`);
+        throw hata;
+      }
+    }
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const fatura = await tx.fatura.findUnique({
         where: { id },
@@ -1047,7 +1059,7 @@ export class FaturaService {
             birimMaliyet: hareket.maliyet,
             // STK-27: girişin tersi girdiği maliyetle çıkar ve ortalamadan düşer.
             maliyetliCikis: hareket.tip !== "cikis",
-            tarih: new Date(),
+            tarih: fatura.tarih,
             aciklama: `${fatura.no || fatura.id} nolu fatura iptal ters hareketi`,
             kaynakTur: "fatura_iptal",
             kaynakRef: fatura.id,
@@ -1071,7 +1083,7 @@ export class FaturaService {
             dovizCinsi: fatura.dovizCinsi,
             kur: fatura.kur,
             tutarTry: fatura.genelToplam.mul(fatura.kur).toDecimalPlaces(2),
-            tarih: new Date(),
+            tarih: fatura.tarih,
             aciklama: `${fatura.no || fatura.id} nolu fatura iptal ters hareketi`,
             kaynakTur: "fatura_iptal",
             kaynakRef: fatura.id,

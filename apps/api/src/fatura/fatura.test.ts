@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 import { FaturaService } from "./fatura.service";
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { _tumPolitikalariTemizle, registerEylemPolitikasi } from "../core/eylemler/eylem-kayit";
 
 vi.mock("../core/istek-baglami", () => ({
@@ -214,7 +214,7 @@ describe("FaturaService.iptal — e-belge kuralı (EBLG-22)", () => {
   const mockTenantIslem = vi.fn();
   const mockPrisma = { tenantIslem: mockTenantIslem } as any;
 
-  function kur(ebelge: unknown, no: string | null = "SNC2026000000003") {
+  function kur(ebelge: unknown, no: string | null = "SNC2026000000003", tarihDogrula = vi.fn()) {
     const earsivBelgesiniIptalEt = vi.fn();
     const gitmemisBelgeyiKapat = vi.fn();
     const hareketEkle = vi.fn();
@@ -234,10 +234,34 @@ describe("FaturaService.iptal — e-belge kuralı (EBLG-22)", () => {
     mockTenantIslem.mockImplementation((_t: string, cb: (t: unknown) => unknown) => cb(tx));
     const service = new FaturaService(
       mockPrisma, { hareketEkle, kartlariKilitle: vi.fn() } as any, {} as any, {} as any, {} as any, {} as any,
-      { tarihDogrula: vi.fn() } as any, {} as any, { earsivBelgesiniIptalEt, gitmemisBelgeyiKapat } as any,
+      { tarihDogrula } as any, {} as any, { earsivBelgesiniIptalEt, gitmemisBelgeyiKapat } as any,
     );
     return { service, tx, earsivBelgesiniIptalEt, gitmemisBelgeyiKapat, hareketEkle };
   }
+
+  it("ters stok ve cari hareketini faturanın tarihine yazar (STK-38)", async () => {
+    const { service, tx, hareketEkle } = kur(null);
+    const faturaTarihi = new Date("2026-09-30T00:00:00Z");
+    tx.fatura.findUnique.mockResolvedValue({ ...(await tx.fatura.findUnique()), tarih: faturaTarihi });
+    tx.stokHareket.findMany.mockResolvedValue([{
+      stokId: "s1", varyantId: null, depoId: "d1", tip: "cikis",
+      miktar: new Prisma.Decimal("-2"), girilenBirim: "adet", girilenMiktar: new Prisma.Decimal("2"),
+      maliyet: new Prisma.Decimal("5"), partiler: [],
+    }]);
+
+    await service.iptal("f1");
+
+    expect(hareketEkle.mock.calls[0][1].tarih).toBe(faturaTarihi);
+    expect(tx.cariHareket.create.mock.calls[0][0].data.tarih).toBe(faturaTarihi);
+  });
+
+  it("dönemi kapalı kesin faturayı iptal etmez, iadeye yönlendirir (STK-38)", async () => {
+    const kilit = vi.fn().mockRejectedValue(new ConflictException("Eylül 2026 mali dönemi kapalı; fatura iptali yapılamaz"));
+    const { service, tx } = kur(null, "SNC2026000000003", kilit);
+
+    await expect(service.iptal("f1")).rejects.toThrow("dönemi kapalı; fatura iptali yapılamaz; iade faturası düzenleyin");
+    expect(tx.fatura.update).not.toHaveBeenCalled();
+  });
 
   it("stok çıkışını pozitif miktarlı girişle geri alır", async () => {
     // Hareket miktarı işaretli saklanır (çıkış -1000); işaretli verilirse
