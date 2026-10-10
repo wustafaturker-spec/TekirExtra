@@ -221,3 +221,33 @@ describe("faturaPdfHtml — SGK faturası", () => {
     expect(faturaPdfHtml(fatura, firma)).not.toContain("SGK faturası");
   });
 });
+
+describe("faturaPdfHtml — KDV dışı vergilerin sırası (EBLG-130)", () => {
+  const satir = (ekVergiler: NonNullable<FaturaPdfVerisi["satirlar"][number]["ekVergiler"]>) => ({
+    stokKod: "S1", stokAd: "Buzdolabı", miktar: "1", birim: "adet", birimFiyat: "1000.00", iskontoOrani: "0", iskontoTutari: "0.00",
+    matrah: "1000.00", kdvOrani: "20", kdvTutari: "250.00", toplamTutar: "1500.00", ekVergiler,
+  }) as unknown as FaturaPdfVerisi["satirlar"][number];
+  const sira = (html: string, ...etiketler: string[]) => etiketler.map((e) => html.indexOf(`>${e}</td>`));
+
+  it("ÖTV KDV matrahından önce; KDV matrahı ÖTV dahil; stopaj ve konaklama KDV'den sonra", () => {
+    const html = faturaPdfHtml({
+      ...fatura, toplamBrut: "1000.00", toplamMatrah: "1000.00", toplamKdv: "250.00", toplamEkVergi: "270.00", toplamStopaj: "100.00", genelToplam: "1420.00",
+      satirlar: [satir([
+        { kod: "0074", ad: "ÖTV IV. Liste", tutar: "250.00", stopaj: false, kdvMatrahinaDahil: true },
+        { kod: "0059", ad: "Konaklama Vergisi", tutar: "20.00", stopaj: false, kdvMatrahinaDahil: false },
+        { kod: "0003", ad: "Gelir Vergisi Stopajı", tutar: "100.00", stopaj: true, kdvMatrahinaDahil: false },
+      ])],
+    }, firma);
+    const [mal, otv, matrah, kdv, konaklama, stopaj] = sira(html, "Mal/Hizmet Toplamı", "ÖTV IV. Liste", "KDV Matrahı", "Hesaplanan KDV", "Konaklama Vergisi", "Gelir Vergisi Stopajı (stopaj)");
+    expect([mal, otv, matrah, kdv, konaklama, stopaj].every((x) => x > 0)).toBe(true);
+    expect(mal < otv && otv < matrah && matrah < kdv && kdv < konaklama && konaklama < stopaj).toBe(true);
+    expect(html).toMatch(/>KDV Matrahı<\/td>\s*<td class="sag"[^>]*>1\.250,00/);
+    expect(html).not.toContain(">KDV Dışı Vergiler<");
+  });
+
+  it("vergisiz faturada eski düzen: KDV Matrahı doğrudan matrah", () => {
+    const html = faturaPdfHtml(fatura, firma);
+    expect(html).toMatch(/>KDV Matrahı<\/td>\s*<td class="sag"[^>]*>100,00/);
+    expect(html).not.toContain("Mal/Hizmet Toplamı");
+  });
+});

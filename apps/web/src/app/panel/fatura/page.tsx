@@ -56,9 +56,9 @@ function karttanEkVergiler(vergiler: Stok["ekVergiler"], turler: readonly VergiT
 
 /** Özet kutusu için vergi türü başına toplam; tutar hesaptan (oran/birim) ya da belgeden. */
 function ekVergiOzeti(satirlar: { ekVergiler?: EkVergiSatiri[] }[], tutarlar: number[][]) {
-  const harita = new Map<string, { kod: string; ad: string; stopaj: boolean; tutar: number }>();
+  const harita = new Map<string, { kod: string; ad: string; stopaj: boolean; kdvMatrahinaDahil: boolean; tutar: number }>();
   satirlar.forEach((s, i) => (s.ekVergiler ?? []).forEach((v, j) => {
-    const m = harita.get(v.kod) ?? { kod: v.kod, ad: v.ad, stopaj: v.stopaj, tutar: 0 };
+    const m = harita.get(v.kod) ?? { kod: v.kod, ad: v.ad, stopaj: v.stopaj, kdvMatrahinaDahil: v.kdvMatrahinaDahil && !v.stopaj, tutar: 0 };
     m.tutar = Math.round((m.tutar + (tutarlar[i]?.[j] ?? Number(v.tutar))) * 100) / 100;
     harita.set(v.kod, m);
   }));
@@ -733,6 +733,9 @@ export default function FaturaSayfasi() {
     kdvTahsilEdilmez: Boolean(ihracKayitli),
     ozelMatrahKdvsi: ozelMatrahSecili ? ozelMatrahKdvsi(ozelMatrahTutari || 0, ozelMatrahOrani || 0) : 0,
   });
+  // EBLG-130: özet kutusunda KDV dışı vergiler türüne göre; matraha dahil olanlar KDV matrahından önce.
+  const ekVergiOzetleri = ekVergiOzeti(satirlar, sonuc.satirlar.map((x) => x.ekVergiTutarlari));
+  const matrahaDahilVergiler = ekVergiOzetleri.filter((v) => v.kdvMatrahinaDahil);
 
   // Senaryo ve GİB kural hataları sunucudakiyle aynı işlevden gelir; kullanıcı
   // kaydetmeden önce ne göndereceğini görür (FTR-16, FTR-20).
@@ -2586,13 +2589,16 @@ export default function FaturaSayfasi() {
               <h4>Fatura özeti</h4>
               <div className="invoice-summary__line"><span>Brüt toplam</span><span>{tl(sonuc.toplamBrut, dovizCinsi)}</span></div>
               {sonuc.toplamSatirIskontosu > 0 && <div className="invoice-summary__line is-discount"><span>İskonto</span><span>-{tl(sonuc.toplamSatirIskontosu, dovizCinsi)}</span></div>}
-              <div className="invoice-summary__line"><span>Matrah</span><span>{tl(sonuc.toplamMatrah, dovizCinsi)}</span></div>
+              <div className="invoice-summary__line"><span>{matrahaDahilVergiler.length ? "Mal / hizmet toplamı" : "Matrah"}</span><span>{tl(sonuc.toplamMatrah, dovizCinsi)}</span></div>
+              {/* EBLG-130: KDV matrahına dahil vergiler (ÖTV…) KDV matrahından önce. */}
+              {matrahaDahilVergiler.map((v) => <div className="invoice-summary__line is-tax" key={v.kod}><span>{v.ad}</span><span>{tl(v.tutar, dovizCinsi)}</span></div>)}
+              {matrahaDahilVergiler.length > 0 && <div className="invoice-summary__line"><span>KDV matrahı</span><span>{tl(sonuc.toplamMatrah + matrahaDahilVergiler.reduce((t, v) => t + v.tutar, 0), dovizCinsi)}</span></div>}
               {sonuc.kdvDetaylari.map((k) => (
                 <div className="invoice-summary__line is-tax" key={k.kdvOrani}><span>{ihracKayitli ? "Hesaplanan " : ""}KDV %{k.kdvOrani}{sonuc.kdvDetaylari.length > 1 && <small> · matrah {tl(k.matrah, dovizCinsi)}</small>}</span><span>{tl(k.kdvTutari, dovizCinsi)}</span></div>
               ))}
               {ihracKayitli && <small className="muted">{tip === "alis" ? "İhraç kayıtlı alış: KDV hesaplanır, satıcıya ödenmez ve cariye girmez." : "İhraç kayıtlı: KDV hesaplanır, tahsil edilmez."}</small>}
               {sonuc.toplamTevkifat > 0 && <div className="invoice-summary__line is-discount"><span>Tevkifat</span><span>-{tl(sonuc.toplamTevkifat, dovizCinsi)}</span></div>}
-              {ekVergiOzeti(satirlar, sonuc.satirlar.map((x) => x.ekVergiTutarlari)).map((v) => (
+              {ekVergiOzetleri.filter((v) => !v.kdvMatrahinaDahil).map((v) => (
                 <div className={`invoice-summary__line ${v.stopaj ? "is-discount" : "is-tax"}`} key={v.kod}><span>{v.ad}</span><span>{v.stopaj ? "-" : ""}{tl(v.tutar, dovizCinsi)}</span></div>
               ))}
               <div className="invoice-summary__line is-grand"><span>Ödenecek</span><span>{tl(sonuc.genelToplam, dovizCinsi)}</span></div>

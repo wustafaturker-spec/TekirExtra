@@ -63,7 +63,7 @@ export interface FaturaPdfSatiri {
   /** FTR-11: satır bazlı GİB istisna kodu (ör. 301). */
   gibIstisnaKodu?: string | null;
   /** EBLG-128: satırın KDV dışı vergileri (ad ve tutar). */
-  ekVergiler?: { ad: string; tutar: string; stopaj: boolean }[];
+  ekVergiler?: { kod?: string; ad: string; tutar: string; stopaj: boolean; kdvMatrahinaDahil?: boolean }[];
   /** EBLG-78: yatırım teşvik harcama tipi ve makine kimlikleri. */
   ytbHarcamaTipi?: string | null;
   ytbMakineAdi?: string | null;
@@ -353,17 +353,38 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
    */
   const ozelMatrah = ozelMatrahKoduBul(f.ozelMatrahKodu, f.kodTablosu?.ozelMatrah);
 
+  // EBLG-130: KDV dışı vergiler türüne göre toplanır; KDV matrahına dahil olanlar
+  // (ÖTV…) KDV matrahından önce gelir ve matraha eklenir, diğerleri KDV'den sonra.
+  const vergiTurleri = new Map<string, { ad: string; stopaj: boolean; dahil: boolean; tutar: number }>();
+  for (const v of f.satirlar.flatMap((s) => s.ekVergiler ?? [])) {
+    const anahtar = v.kod ?? v.ad;
+    const m = vergiTurleri.get(anahtar) ?? { ad: v.ad, stopaj: v.stopaj, dahil: v.kdvMatrahinaDahil === true && !v.stopaj, tutar: 0 };
+    m.tutar = Math.round((m.tutar + Number(v.tutar)) * 100) / 100;
+    vergiTurleri.set(anahtar, m);
+  }
+  const vergiKalemleri = (dahil: boolean) => [...vergiTurleri.values()].filter((v) => v.dahil === dahil && v.tutar > 0)
+    .map((v) => ({ etiket: `${kacis(v.ad)}${v.stopaj ? " (stopaj)" : ""}`, deger: v.stopaj ? `-${v.tutar.toFixed(2)}` : v.tutar.toFixed(2) }));
+  const dahilToplam = [...vergiTurleri.values()].filter((v) => v.dahil).reduce((t, v) => t + v.tutar, 0);
+  // Satır bazında vergi bilgisi olmayan eski kayıt: toplam tek satırda kalır.
+  const vergiDokumu = vergiTurleri.size > 0;
+
   const kalemler: { etiket: string; deger: string | number; kalin?: boolean }[] = [
     { etiket: "Brüt Toplam", deger: f.toplamBrut },
     ...(Number(f.toplamSatirIskontosu) > 0 ? [{ etiket: "Satır İskontoları", deger: `-${f.toplamSatirIskontosu}` }] : []),
     ...(Number(f.genelIskontoToplam) > 0 ? [{ etiket: "Genel İskonto", deger: `-${f.genelIskontoToplam}` }] : []),
-    { etiket: ozelMatrah ? "Mal/Hizmet Toplamı" : "KDV Matrahı", deger: f.toplamMatrah },
+    ...(dahilToplam > 0 && !ozelMatrah
+      ? [{ etiket: "Mal/Hizmet Toplamı", deger: f.toplamMatrah }, ...vergiKalemleri(true), { etiket: "KDV Matrahı", deger: (Number(f.toplamMatrah) + dahilToplam).toFixed(2) }]
+      : [{ etiket: ozelMatrah ? "Mal/Hizmet Toplamı" : "KDV Matrahı", deger: f.toplamMatrah }, ...(ozelMatrah ? vergiKalemleri(true) : [])]),
     ozelMatrah
       ? { etiket: `Hesaplanan KDV (özel matrah %${sayiBicim(f.ozelMatrahOrani ?? "0")})`, deger: f.toplamKdv }
       : { etiket: f.ihracKayitliKodu ? `Hesaplanan KDV (tahsil edilmez — ${kacis(f.ihracKayitliKodu)})` : "Hesaplanan KDV", deger: f.toplamKdv },
     ...(Number(f.toplamTevkifat) > 0 ? [{ etiket: "KDV Tevkifatı", deger: `-${f.toplamTevkifat}` }] : []),
-    ...(Number(f.toplamEkVergi ?? 0) > 0 ? [{ etiket: "KDV Dışı Vergiler", deger: f.toplamEkVergi! }] : []),
-    ...(Number(f.toplamStopaj ?? 0) > 0 ? [{ etiket: "Stopaj", deger: `-${f.toplamStopaj}` }] : []),
+    ...(vergiDokumu
+      ? vergiKalemleri(false)
+      : [
+          ...(Number(f.toplamEkVergi ?? 0) > 0 ? [{ etiket: "KDV Dışı Vergiler", deger: f.toplamEkVergi! }] : []),
+          ...(Number(f.toplamStopaj ?? 0) > 0 ? [{ etiket: "Stopaj", deger: `-${f.toplamStopaj}` }] : []),
+        ]),
     { etiket: "Genel Toplam", deger: f.genelToplam, kalin: true },
   ];
   // EBLG-57: dövizli faturada toplamların TL karşılığı da gösterilir; ihracat

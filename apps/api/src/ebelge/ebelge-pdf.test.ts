@@ -28,6 +28,8 @@ describe("yedek e-Belge görünümü — KDV dışı vergiler (EBLG-129)", () =>
     expect(satirVar(html, "ÖTV IV. Liste (%25)", "250,00")).toBe(true);
     expect(satirVar(html, "Ödenecek Tutar", "1.500,00")).toBe(true);
     expect(html).toContain("<small>ÖTV IV. Liste %25: 250,00</small>");
+    // EBLG-130: matraha dahil vergi KDV matrahından önce.
+    expect(html.indexOf("ÖTV IV. Liste (%25)</td>")).toBeLessThan(html.indexOf("KDV Matrahı</td>"));
   });
 
   it("stopaj ödenecekten düştüğü için eksi basılır", () => {
@@ -35,6 +37,7 @@ describe("yedek e-Belge görünümü — KDV dışı vergiler (EBLG-129)", () =>
     const html = ebelgeYedekPdfHtml(faturaUblOku(faturaUblUret(fatura([satir([stopaj], { matrah: 500, birimFiyat: 500, kdvTutari: 100 })], { toplamKdv: 100, toplamMatrah: 500, toplamBrut: 500, genelToplam: 550, toplamStopaj: 50 }), satici)));
     expect(satirVar(html, "Hesaplanan KDV", "100,00")).toBe(true);
     expect(satirVar(html, "Gelir Vergisi Stopajı (%10)", "-50,00")).toBe(true);
+    expect(html.indexOf("Gelir Vergisi Stopajı (%10)</td>")).toBeGreaterThan(html.indexOf("Hesaplanan KDV</td>"));
     expect(satirVar(html, "Ödenecek Tutar", "550,00")).toBe(true);
   });
 

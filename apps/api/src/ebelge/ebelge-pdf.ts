@@ -74,6 +74,9 @@ export function ebelgeYedekPdfHtml(
   const vergiEtiketi = (v: { kod: string; ad: string; oran: number | null }) => `${kacis(v.ad || v.kod)}${v.oran !== null ? ` (%${sayiBicim(v.oran)})` : ""}`;
   const digerVergiler = f.toplamlar.digerVergiler ?? [];
   const digerVar = digerVergiler.length > 0;
+  // EBLG-130: KDV matrahına dahil vergiler (ÖTV…) KDV matrahından önce, diğerleri KDV'den sonra.
+  const dahilMi = (kod: string) => vergiTuruBul(kod)?.kdvMatrahinaDahil === true;
+  const vergiKalemi = (v: (typeof digerVergiler)[number]) => ({ etiket: vergiEtiketi(v), deger: stopajMi(v.kod) ? -v.tutar : v.tutar });
 
   const toplamSatiri = (etiket: string, deger: number, kalin = false, birim = paraBirimi) =>
     `<tr${kalin ? ' style="font-weight:bold"' : ""}>
@@ -84,13 +87,14 @@ export function ebelgeYedekPdfHtml(
   const kalemler: { etiket: string; deger: number; kalin?: boolean }[] = [
     { etiket: "Mal/Hizmet Toplamı", deger: f.toplamlar.satirToplami },
     ...(f.toplamlar.iskontoToplami > 0 ? [{ etiket: "İskonto", deger: -f.toplamlar.iskontoToplami }] : []),
+    ...digerVergiler.filter((v) => dahilMi(v.kod)).map(vergiKalemi),
     // EBLG-111: özel matrahta KDV satış bedelinden değil özel matrahtan hesaplanır.
     f.toplamlar.ozelMatrah !== undefined
       ? { etiket: "Özel Matrah (KDV Matrahı)", deger: f.toplamlar.ozelMatrah }
       : { etiket: "KDV Matrahı", deger: digerVar && f.toplamlar.kdvMatrahi !== undefined ? f.toplamlar.kdvMatrahi : f.toplamlar.matrah },
     // Başlık vergi toplamı diğer vergileri de içerir; o durumda yalnız KDV alt toplamları.
     { etiket: "Hesaplanan KDV", deger: digerVar ? f.toplamlar.kdvSaf : f.toplamlar.kdv },
-    ...digerVergiler.map((v) => ({ etiket: vergiEtiketi(v), deger: stopajMi(v.kod) ? -v.tutar : v.tutar })),
+    ...digerVergiler.filter((v) => !dahilMi(v.kod)).map(vergiKalemi),
     { etiket: "Ödenecek Tutar", deger: f.toplamlar.genelToplam, kalin: true },
   ];
   // EBLG-57: dövizli belgede kur ve toplamların TL karşılığı da basılır.
