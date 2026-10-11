@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { BadRequestException } from "@nestjs/common";
 import { FINANS_ROLLERI, registerRapor } from "../core/raporlar/rapor-kayit";
-import { satisSatirlari, urunBazinda } from "./satis-ozeti";
+import { bilinenMarj, satisSatirlari, urunBazinda } from "./satis-ozeti";
 import { tarihliBakiyeler } from "./tarihli-envanter";
 import { iptalCiftiMi, iptalEdilmisFaturalar, iptalleriGoster } from "../fatura/iptal-cifti";
 
@@ -332,10 +332,11 @@ registerRapor({
     { alan: "maliyet", baslik: "Maliyet (TL)", tip: "para", toplam: true },
     { alan: "kar", baslik: "Kâr (TL)", tip: "para", toplam: true },
     { alan: "marj", baslik: "Marj", tip: "yuzde" },
+    { alan: "maliyetsizCiro", baslik: "Maliyeti Bilinmeyen Ciro (TL)", tip: "para", toplam: true },
   ],
   async calistir(girdi, { tx }) {
     const f = girdi.filtreler ?? {};
-    const gruplar = (await urunSatislari(tx, f.baslangic, f.bitis)).map((g) => ({ kod: g.kod, ad: g.ad, miktar: g.miktar.toNumber(), ciro: g.ciro, maliyet: g.maliyet }));
+    const gruplar = (await urunSatislari(tx, f.baslangic, f.bitis)).map((g) => ({ kod: g.kod, ad: g.ad, miktar: g.miktar.toNumber(), ciro: g.ciro, maliyet: g.maliyet, maliyetsizCiro: g.maliyetsizCiro }));
     return gruplar
       .sort((a, b) => a.kod.localeCompare(b.kod, "tr"))
       .map((g) => {
@@ -347,9 +348,9 @@ registerRapor({
           ciro: g.ciro.toFixed(2),
           maliyet: g.maliyet.toFixed(2),
           kar: kar.toFixed(2),
-          marj: g.ciro.greaterThan(0)
-            ? kar.div(g.ciro).mul(100).toDecimalPlaces(2).toNumber()
-            : null,
+          // RPR-13: maliyeti bilinmeyen satış %100 marj sayılmaz.
+          marj: bilinenMarj(g.ciro, g.maliyet, g.maliyetsizCiro),
+          maliyetsizCiro: g.maliyetsizCiro.toFixed(2),
         };
       });
   },

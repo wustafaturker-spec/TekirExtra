@@ -40,11 +40,11 @@ Asıl sorunlar **yetki** ve **rakamların doğruluğu/tutarlılığı**:
 | P0-1 | Rapor ve panel özeti uçlarında rol denetimi | ✅ RPR-11 (2026-10-11) |
 | P0-2 | Kâr/Zarar Özeti çift sayım | ✅ RPR-12 (2026-10-11) |
 | P1-1 | Kâr tanımlarının birleştirilmesi (Gelir-Gider / Kâr-Zarar / SMM) | ✅ RPR-12 (2026-10-11) |
-| P1-2 | Dönemsel Satış/Alış Özeti satış ve alışı karıştırıyor | Açık |
-| P1-3 | KDV Dökümü ile KDV ön analizinin tutarsızlığı | Açık |
+| P1-2 | Dönemsel Satış/Alış Özeti satış ve alışı karıştırıyor | ✅ RPR-13 (2026-10-11) |
+| P1-3 | KDV Dökümü ile KDV ön analizinin tutarsızlığı | ✅ RPR-13 (2026-10-11) |
 | P1-4 | Pivot: iptal/taslak, döviz ve yeniden hesap | Açık |
 | P1-5 | Panel özeti: bütün cari hareketlerini belleğe alıyor, eksi stok | Açık |
-| P1-6 | Maliyeti bilinmeyen satış %100 kâr görünüyor; Kâr Marjı eski yöntem | Açık |
+| P1-6 | Maliyeti bilinmeyen satış %100 kâr görünüyor; Kâr Marjı eski yöntem | ✅ RPR-13 (2026-10-11); Ürün Satışları ve Alıcı Bazlı Satışlar da eski yöntemdeydi, taşındı |
 | P2-1 … P2-8 | Dışa aktarım, sınırlar, devir hızı, kaynak sütunu, SMM ekranı, ayrı ekranlar, envanter, testler | Açık |
 | P3 | Ek geliştirmeler (zamanlanmış rapor, karşılaştırma, grafik, drill-down…) | Öneri |
 

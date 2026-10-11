@@ -15,7 +15,7 @@
  * (`satis-ozeti.ts`), böylece üç ekran aynı rakamı verir.
  */
 import type { Prisma } from "@prisma/client";
-import { satisSatirlari, type SatisSatiri } from "../stok/satis-ozeti";
+import { maliyetBilinmiyor, satisSatirlari, type SatisSatiri } from "../stok/satis-ozeti";
 import { tahakkukOku, type TahakkukKalemi } from "./tahakkuk";
 
 export interface KarZarar {
@@ -42,7 +42,7 @@ export function karZararHesapla(kalemler: TahakkukKalemi[], satirlar: SatisSatir
   const masraflar = kurus(topla((k) => k.anahtar.startsWith("masraf_kategori:")));
   const personel = kurus(topla((k) => k.anahtar === "personel"));
   const smm = kurus(satirlar.reduce((t, s) => t + Number(s.maliyet), 0));
-  const maliyetsiz = satirlar.filter((s) => s.tip === "satis" && s.stokTip !== "hizmet" && Number(s.maliyet) === 0 && Number(s.ciro) > 0);
+  const maliyetsiz = satirlar.filter(maliyetBilinmiyor);
   const brutKar = kurus(netSatis - smm);
   const faaliyetGiderleri = kurus(hizmetAlislari + masraflar + personel);
   return {

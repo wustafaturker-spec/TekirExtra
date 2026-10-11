@@ -58,3 +58,24 @@ describe("Kâr/Zarar Özeti raporu (RPR-12)", () => {
     vi.doUnmock("./kar-zarar");
   });
 });
+
+describe("satış raporları (RPR-13)", () => {
+  it("Dönemsel Özet satış ve alışı ayrı sütunda, iadeleri düşülmüş verir", async () => {
+    await import("../fatura/fatura.raporlar");
+    const { raporTanimiAl } = await import("../core/raporlar/rapor-kayit");
+    const ft = (tip: string, matrah: number, kur = 1) => ({ tip, tarih: new Date("2026-10-05"), toplamMatrah: D(matrah), kur: D(kur), cari: { unvan: "A" } });
+    const tx = { fatura: { findMany: vi.fn().mockResolvedValue([ft("satis", 1000), ft("satis", 10, 40), ft("satis_iade", 100), ft("alis", 600), ft("alis_iade", 50)]) } };
+    const [satir] = await raporTanimiAl("fatura.donemsel-ozet")!.calistir({ filtreler: {} }, { tenantId: "t1", tx: tx as never });
+    expect(satir).toMatchObject({ satis: "1400.00", satisIade: "100.00", netSatis: "1300.00", alis: "600.00", alisIade: "50.00", netAlis: "550.00", belgeSayisi: 5 });
+  });
+
+  it("maliyeti bilinmeyen satış marja girmez ve ayrı sütunda; hiç bilinmiyorsa marj boş", async () => {
+    const { bilinenMarj, maliyetBilinmiyor } = await import("../stok/satis-ozeti");
+    expect(maliyetBilinmiyor(satir(1000, 0))).toBe(true);
+    expect(maliyetBilinmiyor(satir(1000, 0, { stokTip: "hizmet" }))).toBe(false);
+    expect(maliyetBilinmiyor(satir(-100, 0, { tip: "satis_iade" }))).toBe(false);
+    // 3.000 ciro: 1.000'i maliyetsiz; bilinen 2.000 ciro, 1.500 maliyet → %25
+    expect(bilinenMarj(D(3000), D(1500), D(1000))).toBe(25);
+    expect(bilinenMarj(D(1000), D(0), D(1000))).toBeNull();
+  });
+});

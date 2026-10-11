@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { registerRapor } from "../core/raporlar/rapor-kayit";
 import { iptalCiftiMi, iptalEdilmisFaturalar, iptalleriGoster } from "../fatura/iptal-cifti";
+import { bilinenMarj, maliyetBilinmiyor, satisSatirlari } from "./satis-ozeti";
 
 const D = (v: string | number | Prisma.Decimal) => new Prisma.Decimal(v);
 const tarihAraligi = (baslangic?: unknown, bitis?: unknown) => ({ ...(baslangic ? { gte: new Date(String(baslangic)) } : {}), ...(bitis ? { lte: new Date(String(bitis)) } : {}) });
@@ -29,28 +30,53 @@ registerRapor({
   },
 });
 
+/**
+ * RPR-13 (inceleme P1-6): ciro, ana birimde miktar ve maliyet ortak satış
+ * kaynağından (`satis-ozeti.ts`, satış anındaki hareket maliyeti). Önceden
+ * kartın bugünkü ortalama maliyeti × satır miktarı (ek birim çevrilmeden)
+ * kullanılıyordu. Ürün ve alıcı süzgeci satırlara uygulanır.
+ */
 async function satisVerisi(tx: Prisma.TransactionClient, f: Record<string, unknown>) {
-  return tx.faturaSatir.findMany({ where: { ...(f.stok ? { stokId: String(f.stok) } : {}), fatura: { durum: "kesin", tip: { in: ["satis", "satis_iade"] }, tarih: tarihAraligi(f.baslangic, f.bitis), ...(f.cari ? { cariId: String(f.cari) } : {}) } }, include: { stok: { select: { kod: true, ad: true, ortalamaMaliyet: true } }, fatura: { select: { id: true, tip: true, tarih: true, kur: true, cari: { select: { id: true, kod: true, unvan: true } } } } } });
+  return (await satisSatirlari(tx, tarihAraligi(f.baslangic, f.bitis)))
+    .filter((s) => (!f.stok || s.stokId === String(f.stok)) && (!f.cari || s.cariId === String(f.cari)));
 }
 
 registerRapor({
-  kod: "urun-hareket.urun-satislari", modul: "urun_hareket", ad: "Ürün Satışları", aciklama: "Kesin satış faturalarına göre ürün miktarı, net satış, maliyet ve kârlılık",
+  kod: "urun-hareket.urun-satislari", modul: "urun_hareket", ad: "Ürün Satışları", aciklama: "Kesin satış faturalarına göre ürün miktarı (ana birim), net satış, satış anındaki maliyet ve kârlılık; maliyeti bilinmeyen ciro ayrı",
   filtreler: [...TARIH, { alan: "stok", ad: "Ürün", tip: "stok" }, { alan: "cari", ad: "Alıcı", tip: "cari" }],
-  kolonlar: [{ alan: "kod", baslik: "Kod", tip: "metin" }, { alan: "urun", baslik: "Ürün", tip: "metin" }, { alan: "satisMiktari", baslik: "Satış", tip: "sayi" }, { alan: "iadeMiktari", baslik: "İade", tip: "sayi" }, { alan: "netMiktar", baslik: "Net Miktar", tip: "sayi" }, { alan: "aliciSayisi", baslik: "Alıcı", tip: "sayi" }, { alan: "netSatis", baslik: "Net Satış", tip: "para", toplam: true }, { alan: "maliyet", baslik: "Maliyet", tip: "para", toplam: true }, { alan: "kar", baslik: "Kâr", tip: "para", toplam: true }, { alan: "karOrani", baslik: "Kâr Oranı", tip: "yuzde" }],
+  kolonlar: [{ alan: "kod", baslik: "Kod", tip: "metin" }, { alan: "urun", baslik: "Ürün", tip: "metin" }, { alan: "satisMiktari", baslik: "Satış", tip: "sayi" }, { alan: "iadeMiktari", baslik: "İade", tip: "sayi" }, { alan: "netMiktar", baslik: "Net Miktar", tip: "sayi" }, { alan: "aliciSayisi", baslik: "Alıcı", tip: "sayi" }, { alan: "netSatis", baslik: "Net Satış", tip: "para", toplam: true }, { alan: "maliyet", baslik: "Maliyet", tip: "para", toplam: true }, { alan: "kar", baslik: "Kâr", tip: "para", toplam: true }, { alan: "karOrani", baslik: "Kâr Oranı", tip: "yuzde" }, { alan: "maliyetsizCiro", baslik: "Maliyeti Bilinmeyen Ciro", tip: "para", toplam: true }],
   async calistir(girdi, { tx }) {
-    const satirlar = await satisVerisi(tx, girdi.filtreler ?? {}); const gruplar = new Map<string, { kod: string; urun: string; satis: Prisma.Decimal; iade: Prisma.Decimal; net: Prisma.Decimal; maliyet: Prisma.Decimal; alicilar: Set<string> }>();
-    for (const s of satirlar) { const yon = s.fatura.tip === "satis" ? D(1) : D(-1); const g = gruplar.get(s.stokId) ?? { kod: s.stok.kod, urun: s.stok.ad, satis: D(0), iade: D(0), net: D(0), maliyet: D(0), alicilar: new Set<string>() }; const tutar = s.matrah.mul(s.fatura.kur).mul(yon); if (yon.gt(0)) g.satis = g.satis.add(s.miktar); else g.iade = g.iade.add(s.miktar); g.net = g.net.add(tutar); g.maliyet = g.maliyet.add(s.miktar.mul(s.stok.ortalamaMaliyet).mul(yon)); g.alicilar.add(s.fatura.cari.id); gruplar.set(s.stokId, g); }
-    return [...gruplar.values()].map((g) => { const kar = g.net.sub(g.maliyet); return { kod: g.kod, urun: g.urun, satisMiktari: g.satis.toFixed(3), iadeMiktari: g.iade.toFixed(3), netMiktar: g.satis.sub(g.iade).toFixed(3), aliciSayisi: g.alicilar.size, netSatis: g.net.toFixed(2), maliyet: g.maliyet.toFixed(2), kar: kar.toFixed(2), karOrani: g.net.eq(0) ? 0 : Number(kar.div(g.net).mul(100).toFixed(2)) }; });
+    const gruplar = new Map<string, { kod: string; urun: string; satis: Prisma.Decimal; iade: Prisma.Decimal; net: Prisma.Decimal; maliyet: Prisma.Decimal; maliyetsiz: Prisma.Decimal; alicilar: Set<string> }>();
+    for (const s of await satisVerisi(tx, girdi.filtreler ?? {})) {
+      const g = gruplar.get(s.stokId) ?? { kod: s.kod, urun: s.ad, satis: D(0), iade: D(0), net: D(0), maliyet: D(0), maliyetsiz: D(0), alicilar: new Set<string>() };
+      if (s.tip === "satis") g.satis = g.satis.add(s.miktar); else g.iade = g.iade.add(s.miktar.abs());
+      g.net = g.net.add(s.ciro);
+      g.maliyet = g.maliyet.add(s.maliyet);
+      if (maliyetBilinmiyor(s)) g.maliyetsiz = g.maliyetsiz.add(s.ciro);
+      g.alicilar.add(s.cariId);
+      gruplar.set(s.stokId, g);
+    }
+    return [...gruplar.values()].map((g) => ({ kod: g.kod, urun: g.urun, satisMiktari: g.satis.toFixed(3), iadeMiktari: g.iade.toFixed(3), netMiktar: g.satis.sub(g.iade).toFixed(3), aliciSayisi: g.alicilar.size, netSatis: g.net.toFixed(2), maliyet: g.maliyet.toFixed(2), kar: g.net.sub(g.maliyet).toFixed(2), karOrani: bilinenMarj(g.net, g.maliyet, g.maliyetsiz), maliyetsizCiro: g.maliyetsiz.toFixed(2) }));
   },
 });
 
 registerRapor({
-  kod: "urun-hareket.alici-urun", modul: "urun_hareket", ad: "Alıcı Bazlı Satışlar", aciklama: "Hangi alıcının hangi ürünü ne kadar ve hangi ortalama fiyatla aldığını gösterir",
+  kod: "urun-hareket.alici-urun", modul: "urun_hareket", ad: "Alıcı Bazlı Satışlar", aciklama: "Hangi alıcının hangi ürünü ne kadar (ana birim) ve hangi ortalama fiyatla aldığını gösterir; kâr satış anındaki maliyetle",
   filtreler: [...TARIH, { alan: "cari", ad: "Alıcı", tip: "cari" }, { alan: "stok", ad: "Ürün", tip: "stok" }],
-  kolonlar: [{ alan: "cariKod", baslik: "Cari Kod", tip: "metin" }, { alan: "alici", baslik: "Alıcı", tip: "metin" }, { alan: "urunKod", baslik: "Ürün Kod", tip: "metin" }, { alan: "urun", baslik: "Ürün", tip: "metin" }, { alan: "sonAlis", baslik: "Son Alış", tip: "tarih" }, { alan: "faturaSayisi", baslik: "Fatura", tip: "sayi", toplam: true }, { alan: "netMiktar", baslik: "Net Miktar", tip: "sayi" }, { alan: "ortalamaFiyat", baslik: "Ort. Fiyat", tip: "para" }, { alan: "netSatis", baslik: "Net Satış", tip: "para", toplam: true }, { alan: "kar", baslik: "Kâr", tip: "para", toplam: true }],
+  kolonlar: [{ alan: "cariKod", baslik: "Cari Kod", tip: "metin" }, { alan: "alici", baslik: "Alıcı", tip: "metin" }, { alan: "urunKod", baslik: "Ürün Kod", tip: "metin" }, { alan: "urun", baslik: "Ürün", tip: "metin" }, { alan: "sonAlis", baslik: "Son Alış", tip: "tarih" }, { alan: "faturaSayisi", baslik: "Fatura", tip: "sayi", toplam: true }, { alan: "netMiktar", baslik: "Net Miktar", tip: "sayi" }, { alan: "ortalamaFiyat", baslik: "Ort. Fiyat", tip: "para" }, { alan: "netSatis", baslik: "Net Satış", tip: "para", toplam: true }, { alan: "kar", baslik: "Kâr", tip: "para", toplam: true }, { alan: "maliyetsizCiro", baslik: "Maliyeti Bilinmeyen Ciro", tip: "para", toplam: true }],
   async calistir(girdi, { tx }) {
-    const satirlar = await satisVerisi(tx, girdi.filtreler ?? {}); const gruplar = new Map<string, { cariKod: string; alici: string; urunKod: string; urun: string; son: Date; faturalar: Set<string>; miktar: Prisma.Decimal; satis: Prisma.Decimal; maliyet: Prisma.Decimal }>();
-    for (const s of satirlar) { const anahtar = `${s.fatura.cari.id}:${s.stokId}`; const yon = s.fatura.tip === "satis" ? D(1) : D(-1); const g = gruplar.get(anahtar) ?? { cariKod: s.fatura.cari.kod, alici: s.fatura.cari.unvan, urunKod: s.stok.kod, urun: s.stok.ad, son: s.fatura.tarih, faturalar: new Set<string>(), miktar: D(0), satis: D(0), maliyet: D(0) }; if (s.fatura.tarih > g.son) g.son = s.fatura.tarih; g.faturalar.add(s.fatura.id); g.miktar = g.miktar.add(s.miktar.mul(yon)); g.satis = g.satis.add(s.matrah.mul(s.fatura.kur).mul(yon)); g.maliyet = g.maliyet.add(s.miktar.mul(s.stok.ortalamaMaliyet).mul(yon)); gruplar.set(anahtar, g); }
-    return [...gruplar.values()].map((g) => ({ cariKod: g.cariKod, alici: g.alici, urunKod: g.urunKod, urun: g.urun, sonAlis: g.son.toISOString().slice(0, 10), faturaSayisi: g.faturalar.size, netMiktar: g.miktar.toFixed(3), ortalamaFiyat: g.miktar.eq(0) ? "0" : g.satis.div(g.miktar).toFixed(2), netSatis: g.satis.toFixed(2), kar: g.satis.sub(g.maliyet).toFixed(2) }));
+    const gruplar = new Map<string, { cariKod: string; alici: string; urunKod: string; urun: string; son: Date; faturalar: Set<string>; miktar: Prisma.Decimal; satis: Prisma.Decimal; maliyet: Prisma.Decimal; maliyetsiz: Prisma.Decimal }>();
+    for (const s of await satisVerisi(tx, girdi.filtreler ?? {})) {
+      const anahtar = `${s.cariId}:${s.stokId}`;
+      const g = gruplar.get(anahtar) ?? { cariKod: s.cariKod, alici: s.cariUnvan, urunKod: s.kod, urun: s.ad, son: s.tarih, faturalar: new Set<string>(), miktar: D(0), satis: D(0), maliyet: D(0), maliyetsiz: D(0) };
+      if (s.tarih > g.son) g.son = s.tarih;
+      g.faturalar.add(s.faturaId);
+      g.miktar = g.miktar.add(s.miktar);
+      g.satis = g.satis.add(s.ciro);
+      g.maliyet = g.maliyet.add(s.maliyet);
+      if (maliyetBilinmiyor(s)) g.maliyetsiz = g.maliyetsiz.add(s.ciro);
+      gruplar.set(anahtar, g);
+    }
+    return [...gruplar.values()].map((g) => ({ cariKod: g.cariKod, alici: g.alici, urunKod: g.urunKod, urun: g.urun, sonAlis: g.son.toISOString().slice(0, 10), faturaSayisi: g.faturalar.size, netMiktar: g.miktar.toFixed(3), ortalamaFiyat: g.miktar.eq(0) ? "0" : g.satis.div(g.miktar).toFixed(2), netSatis: g.satis.toFixed(2), kar: g.satis.sub(g.maliyet).toFixed(2), maliyetsizCiro: g.maliyetsiz.toFixed(2) }));
   },
 });

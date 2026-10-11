@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { XMLBuilder } from "fast-xml-parser";
 import { PrismaService } from "../core/prisma.service";
+import { kdvBeyanFaturalari, kdvBeyanSatirlari, kdvBeyanToplami } from "../fatura/kdv-beyan";
 
 const xmlBuilder = new XMLBuilder({ format: true, indentBy: "  ", ignoreAttributes: false, suppressEmptyNode: false });
 
@@ -58,38 +59,27 @@ export class MaliMusavirService {
    * Kestiğimiz tevkifat ayrıca KDV-2 ile beyan edilip ödenir.
    */
   async kdvOzetRaporu(tenantId: string, baslangicTarihi: Date, bitisTarihi: Date) {
-    const faturalar = await this.prisma.tenantIslem(tenantId, (tx) => tx.fatura.findMany({
-      where: { tenantId, tarih: { gte: baslangicTarihi, lte: bitisTarihi }, durum: "kesin", tip: { in: ["satis", "alis", "satis_iade", "alis_iade"] } },
-      select: { tip: true, toplamKdv: true, toplamNetKdv: true, toplamTevkifat: true, kur: true, ihracKayitliKodu: true },
-    }));
-    const t = { satisKdv: 0, alistanIadeKdv: 0, alisKdv: 0, satistanIadeKdv: 0, ihracKayitliAlisKdv: 0, ihracKayitliSatisKdv: 0, aliciTevkifati: 0, kestigimizTevkifat: 0 };
-    for (const f of faturalar) {
-      const tl = (deger: unknown) => Number(deger ?? 0) * Number(f.kur ?? 1);
-      if (f.tip === "satis") {
-        if (f.ihracKayitliKodu) t.ihracKayitliSatisKdv += tl(f.toplamKdv);
-        t.satisKdv += tl(f.toplamNetKdv);
-        t.aliciTevkifati += tl(f.toplamTevkifat);
-      } else if (f.tip === "alis_iade") {
-        t.alistanIadeKdv += tl(f.toplamNetKdv);
-      } else if (f.tip === "satis_iade") {
-        t.satistanIadeKdv += tl(f.toplamNetKdv);
-      } else if (f.ihracKayitliKodu) {
-        t.ihracKayitliAlisKdv += tl(f.toplamKdv);
-      } else {
-        t.alisKdv += tl(f.toplamNetKdv) + tl(f.toplamTevkifat);
-        t.kestigimizTevkifat += tl(f.toplamTevkifat);
-      }
-    }
+    const faturalar = await this.prisma.tenantIslem(tenantId, (tx) => kdvBeyanFaturalari(tx, { gte: baslangicTarihi, lte: bitisTarihi }));
+    // RPR-13: KDV Dökümü raporuyla aynı hesap (kdv-beyan.ts).
+    const satirlar = kdvBeyanSatirlari(faturalar);
+    const t = (yon: Parameters<typeof kdvBeyanToplami>[1]) => kdvBeyanToplami(satirlar, yon);
+    const satisKdv = t("hesaplanan_satis"), alistanIadeKdv = t("hesaplanan_alis_iade");
+    const alisKdv = t("indirilecek_alis"), satistanIadeKdv = t("indirilecek_satis_iade");
     const yuvarla = (n: number) => Math.round(n * 100) / 100;
-    const hesaplananKdv = yuvarla(t.satisKdv + t.alistanIadeKdv);
-    const indirilecekKdv = yuvarla(t.alisKdv + t.satistanIadeKdv);
+    const hesaplananKdv = yuvarla(satisKdv + alistanIadeKdv);
+    const indirilecekKdv = yuvarla(alisKdv + satistanIadeKdv);
     const netKdv = yuvarla(hesaplananKdv - indirilecekKdv);
     return {
       baslangicTarihi, bitisTarihi,
-      ...(Object.fromEntries(Object.entries(t).map(([k, v]) => [k, yuvarla(v)])) as typeof t),
+      satisKdv, alistanIadeKdv, alisKdv, satistanIadeKdv,
+      ihracKayitliAlisKdv: t("bilgi_ihrac_kayitli_alis"),
+      ihracKayitliSatisKdv: t("bilgi_ihrac_kayitli_satis"),
+      aliciTevkifati: t("bilgi_alici_tevkifati"),
+      kestigimizTevkifat: t("kdv2_tevkifat"),
       hesaplananKdv, indirilecekKdv,
       odenecekKdv: netKdv > 0 ? netKdv : 0,
       devredenKdv: netKdv < 0 ? -netKdv : 0,
     };
   }
+
 }

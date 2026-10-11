@@ -2,6 +2,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { MaliMusavirService } from "./mali-musavir.service";
 import { XMLParser } from "fast-xml-parser";
 
+/** KDV beyan hesabı satırlardan çalışır (RPR-13); tek satırlı sahte fatura. */
+const ft = (tip: string, kdv: number, net: number, tevkifat: number, kur: number, ihracKayitliKodu: string | null) => ({
+  tip, kur, ihracKayitliKodu, toplamNetKdv: net, satirlar: [{ kdvOrani: 20, matrah: kdv * 5, kdvTutari: kdv, tevkifatTutari: tevkifat, netKdvTutari: net }],
+});
+
 describe("MaliMusavirService", () => {
   let service: MaliMusavirService;
   let mockPrisma: any;
@@ -23,7 +28,7 @@ describe("MaliMusavirService", () => {
             genelToplam: 1200,
             durum: "kesin",
             cari: { unvan: "Test & <Müşteri>", vknTckn: "11111111111" },
-            satirlar: [{ toplamTutar: 1200, kdvOrani: 20 }]
+            satirlar: [{ toplamTutar: 1200, kdvOrani: 20, matrah: 1000, kdvTutari: 200, tevkifatTutari: 0, netKdvTutari: 200 }]
           }
         ]),
       },
@@ -68,9 +73,9 @@ describe("MaliMusavirService", () => {
 
   it("ihraç kayıtlı alışın KDV'sini indirilecek KDV'ye katmaz (EBLG-114)", async () => {
     mockPrisma.fatura.findMany.mockResolvedValueOnce([
-      { tip: "satis", toplamKdv: 200, toplamNetKdv: 200, toplamTevkifat: 0, kur: 1, ihracKayitliKodu: null },
-      { tip: "alis", toplamKdv: 50, toplamNetKdv: 50, toplamTevkifat: 0, kur: 1, ihracKayitliKodu: null },
-      { tip: "alis", toplamKdv: 80, toplamNetKdv: 0, toplamTevkifat: 0, kur: 1, ihracKayitliKodu: "701" },
+      ft("satis", 200, 200, 0, 1, null),
+      ft("alis", 50, 50, 0, 1, null),
+      ft("alis", 80, 0, 0, 1, "701"),
     ]);
     const ozet = await service.kdvOzetRaporu("tenant-1", new Date("2026-08-01"), new Date("2026-08-31"));
     expect(ozet.indirilecekKdv).toBe(50);
@@ -81,15 +86,15 @@ describe("MaliMusavirService", () => {
   it("iadeleri beyannamedeki yerine koyar, tevkifatı ayırır ve dövizliyi kurla çevirir (RPR-02)", async () => {
     mockPrisma.fatura.findMany.mockResolvedValueOnce([
       // Satış 1.000 + KDV 200, 5/10 tevkifat: satıcı 100 beyan eder, 100'ü alıcı KDV-2 ile
-      { tip: "satis", toplamKdv: 200, toplamNetKdv: 100, toplamTevkifat: 100, kur: 1, ihracKayitliKodu: null },
+      ft("satis", 200, 100, 100, 1, null),
       // Dövizli satış: 10 EUR KDV × 40 = 400
-      { tip: "satis", toplamKdv: 10, toplamNetKdv: 10, toplamTevkifat: 0, kur: 40, ihracKayitliKodu: null },
+      ft("satis", 10, 10, 0, 40, null),
       // İhraç kayıtlı satış: KDV hesaplanır, tahsil edilmez (net 0) → ödenecek tutara girmez
-      { tip: "satis", toplamKdv: 60, toplamNetKdv: 0, toplamTevkifat: 0, kur: 1, ihracKayitliKodu: "701" },
+      ft("satis", 60, 0, 0, 1, "701"),
       // Tevkifatlı alış: KDV 300, 90'ını biz kestik → indirilecek 300, KDV-2 90
-      { tip: "alis", toplamKdv: 300, toplamNetKdv: 210, toplamTevkifat: 90, kur: 1, ihracKayitliKodu: null },
-      { tip: "alis_iade", toplamKdv: 20, toplamNetKdv: 20, toplamTevkifat: 0, kur: 1, ihracKayitliKodu: null },
-      { tip: "satis_iade", toplamKdv: 30, toplamNetKdv: 30, toplamTevkifat: 0, kur: 1, ihracKayitliKodu: null },
+      ft("alis", 300, 210, 90, 1, null),
+      ft("alis_iade", 20, 20, 0, 1, null),
+      ft("satis_iade", 30, 30, 0, 1, null),
     ]);
     const ozet = await service.kdvOzetRaporu("tenant-1", new Date("2026-08-01"), new Date("2026-08-31"));
     const sorgu = mockPrisma.fatura.findMany.mock.calls.at(-1)[0];

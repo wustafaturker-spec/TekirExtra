@@ -1,7 +1,8 @@
 import { Prisma } from "@prisma/client";
-import { kdvMatrahinaDahilToplam } from "./ek-vergi";
+import { KDV_BEYAN_YONLERI, kdvBeyanFaturalari, kdvBeyanSatirlari } from "./kdv-beyan";
 import { FINANS_ROLLERI, registerRapor } from "../core/raporlar/rapor-kayit";
 import { karZararHesapla, karZararVerisi } from "../rapor/kar-zarar";
+import { bilinenMarj, maliyetBilinmiyor, satisSatirlari } from "../stok/satis-ozeti";
 
 /**
  * Fatura modülü raporları (FTR-15; KDV dökümü RPR-02'yi karşılar) —
@@ -39,7 +40,7 @@ registerRapor({
   kod: "fatura.donemsel-ozet",
   modul: "fatura",
   ad: "Dönemsel Satış/Alış Özeti",
-  aciklama: "Kesin faturaların seçilen kırılımda belge sayısı ve toplamları",
+  aciklama: "Kesin faturaların KDV hariç tutarları; satış ve alış ayrı sütunlarda, iadeler düşülerek net",
   filtreler: [
     ...TARIH_FILTRELERI,
     {
@@ -56,12 +57,17 @@ registerRapor({
     { deger: "cari", ad: "Cari" },
     { deger: "tip", ad: "Belge Tipi" },
   ],
+  // RPR-13 (inceleme P1-2): önceden filtre boşken satış, alış ve iadeler aynı
+  // "Matrah" sütununda toplanıyordu (iadeler artı); sayının anlamı yoktu.
   kolonlar: [
     { alan: "grup", baslik: "Kırılım", tip: "metin" },
+    { alan: "satis", baslik: "Satış (TL)", tip: "para", toplam: true },
+    { alan: "satisIade", baslik: "Satış İadesi (TL)", tip: "para", toplam: true },
+    { alan: "netSatis", baslik: "Net Satış (TL)", tip: "para", toplam: true },
+    { alan: "alis", baslik: "Alış (TL)", tip: "para", toplam: true },
+    { alan: "alisIade", baslik: "Alış İadesi (TL)", tip: "para", toplam: true },
+    { alan: "netAlis", baslik: "Net Alış (TL)", tip: "para", toplam: true },
     { alan: "belgeSayisi", baslik: "Belge Sayısı", tip: "sayi", toplam: true },
-    { alan: "matrah", baslik: "Matrah (TL)", tip: "para", toplam: true },
-    { alan: "kdv", baslik: "KDV (TL)", tip: "para", toplam: true },
-    { alan: "toplam", baslik: "Genel Toplam (TL)", tip: "para", toplam: true },
   ],
   async calistir(girdi, { tx }) {
     const f = girdi.filtreler ?? {};
@@ -73,48 +79,31 @@ registerRapor({
           : { not: "proforma" },
         tarih: tarihAraligi(f.baslangic, f.bitis),
       },
-      select: {
-        tip: true,
-        tarih: true,
-        toplamMatrah: true,
-        toplamNetKdv: true,
-        genelToplam: true,
-        kur: true,
-        cari: { select: { unvan: true } },
-      },
+      select: { tip: true, tarih: true, toplamMatrah: true, kur: true, cari: { select: { unvan: true } } },
     });
     const gruplama = girdi.gruplama ?? "ay";
-    const gruplar = new Map<
-      string,
-      { belgeSayisi: number; matrah: Prisma.Decimal; kdv: Prisma.Decimal; toplam: Prisma.Decimal }
-    >();
+    type Grup = { satis: Prisma.Decimal; satisIade: Prisma.Decimal; alis: Prisma.Decimal; alisIade: Prisma.Decimal; belgeSayisi: number };
+    const gruplar = new Map<string, Grup>();
     for (const ft of faturalar) {
-      const anahtar =
-        gruplama === "cari"
-          ? ft.cari.unvan
-          : gruplama === "tip"
-            ? TIP_ADLARI[ft.tip]
-            : ay(ft.tarih);
-      const g = gruplar.get(anahtar) ?? {
-        belgeSayisi: 0,
-        matrah: D(0),
-        kdv: D(0),
-        toplam: D(0),
-      };
+      const anahtar = gruplama === "cari" ? ft.cari.unvan : gruplama === "tip" ? TIP_ADLARI[ft.tip] : ay(ft.tarih);
+      const g = gruplar.get(anahtar) ?? { satis: D(0), satisIade: D(0), alis: D(0), alisIade: D(0), belgeSayisi: 0 };
+      const tutar = ft.toplamMatrah.mul(ft.kur);
+      const alan = ({ satis: "satis", satis_iade: "satisIade", alis: "alis", alis_iade: "alisIade" } as const)[ft.tip as "satis"];
+      if (alan) g[alan] = g[alan].add(tutar);
       g.belgeSayisi += 1;
-      g.matrah = g.matrah.add(ft.toplamMatrah.mul(ft.kur));
-      g.kdv = g.kdv.add(ft.toplamNetKdv.mul(ft.kur));
-      g.toplam = g.toplam.add(ft.genelToplam.mul(ft.kur));
       gruplar.set(anahtar, g);
     }
     return [...gruplar.entries()]
       .sort(([a], [b]) => a.localeCompare(b, "tr"))
       .map(([grup, g]) => ({
         grup,
+        satis: g.satis.toFixed(2),
+        satisIade: g.satisIade.toFixed(2),
+        netSatis: g.satis.sub(g.satisIade).toFixed(2),
+        alis: g.alis.toFixed(2),
+        alisIade: g.alisIade.toFixed(2),
+        netAlis: g.alis.sub(g.alisIade).toFixed(2),
         belgeSayisi: g.belgeSayisi,
-        matrah: g.matrah.toFixed(2),
-        kdv: g.kdv.toFixed(2),
-        toplam: g.toplam.toFixed(2),
       }));
   },
 });
@@ -126,7 +115,7 @@ registerRapor({
   modul: "fatura",
   ad: "Kâr Marjı Analizi",
   aciklama:
-    "Satış matrahı - ağırlıklı ortalama maliyet; ürün/cari/ay kırılımında",
+    "Net satış (iadeler düşülmüş) − satış anındaki maliyet; ürün/cari/ay kırılımında. Maliyeti bilinmeyen ciro ayrı, marja girmez",
   // RPR-11: kâr bilgisi; satış/depo rolleri görmez.
   roller: FINANS_ROLLERI,
   filtreler: TARIH_FILTRELERI,
@@ -141,54 +130,32 @@ registerRapor({
     { alan: "maliyet", baslik: "Maliyet (TL)", tip: "para", toplam: true },
     { alan: "kar", baslik: "Kâr (TL)", tip: "para", toplam: true },
     { alan: "marj", baslik: "Marj", tip: "yuzde" },
+    { alan: "maliyetsizCiro", baslik: "Maliyeti Bilinmeyen Ciro (TL)", tip: "para", toplam: true },
   ],
+  // RPR-13 (inceleme P1-6): önceden kartın bugünkü ortalama maliyeti × satır
+  // miktarı (ek birim çevrilmeden), iadeler düşülmeden; artık SMM ile aynı kaynak.
   async calistir(girdi, { tx }) {
     const f = girdi.filtreler ?? {};
-    const satirlar = await tx.faturaSatir.findMany({
-      where: {
-        fatura: {
-          tip: "satis",
-          durum: "kesin",
-          tarih: tarihAraligi(f.baslangic, f.bitis),
-        },
-      },
-      select: {
-        miktar: true,
-        matrah: true,
-        stok: { select: { ad: true, ortalamaMaliyet: true } },
-        fatura: {
-          select: { tarih: true, kur: true, cari: { select: { unvan: true } } },
-        },
-      },
-    });
     const gruplama = girdi.gruplama ?? "urun";
-    const gruplar = new Map<string, { ciro: Prisma.Decimal; maliyet: Prisma.Decimal }>();
-    for (const s of satirlar) {
-      const anahtar =
-        gruplama === "cari"
-          ? s.fatura.cari.unvan
-          : gruplama === "ay"
-            ? ay(s.fatura.tarih)
-            : s.stok.ad;
-      const g = gruplar.get(anahtar) ?? { ciro: D(0), maliyet: D(0) };
-      g.ciro = g.ciro.add(s.matrah.mul(s.fatura.kur));
-      g.maliyet = g.maliyet.add(s.stok.ortalamaMaliyet.mul(s.miktar));
+    const gruplar = new Map<string, { ciro: Prisma.Decimal; maliyet: Prisma.Decimal; maliyetsiz: Prisma.Decimal }>();
+    for (const s of await satisSatirlari(tx, tarihAraligi(f.baslangic, f.bitis))) {
+      const anahtar = gruplama === "cari" ? s.cariUnvan : gruplama === "ay" ? ay(s.tarih) : `${s.kod} · ${s.ad}`;
+      const g = gruplar.get(anahtar) ?? { ciro: D(0), maliyet: D(0), maliyetsiz: D(0) };
+      g.ciro = g.ciro.add(s.ciro);
+      g.maliyet = g.maliyet.add(s.maliyet);
+      if (maliyetBilinmiyor(s)) g.maliyetsiz = g.maliyetsiz.add(s.ciro);
       gruplar.set(anahtar, g);
     }
     return [...gruplar.entries()]
       .sort(([a], [b]) => a.localeCompare(b, "tr"))
-      .map(([grup, g]) => {
-        const kar = g.ciro.sub(g.maliyet);
-        return {
-          grup,
-          ciro: g.ciro.toFixed(2),
-          maliyet: g.maliyet.toFixed(2),
-          kar: kar.toFixed(2),
-          marj: g.ciro.greaterThan(0)
-            ? kar.div(g.ciro).mul(100).toDecimalPlaces(2).toNumber()
-            : null,
-        };
-      });
+      .map(([grup, g]) => ({
+        grup,
+        ciro: g.ciro.toFixed(2),
+        maliyet: g.maliyet.toFixed(2),
+        kar: g.ciro.sub(g.maliyet).toFixed(2),
+        marj: bilinenMarj(g.ciro, g.maliyet, g.maliyetsiz),
+        maliyetsizCiro: g.maliyetsiz.toFixed(2),
+      }));
   },
 });
 
@@ -277,63 +244,26 @@ registerRapor({
   modul: "fatura",
   ad: "KDV Dökümü",
   aciklama:
-    "Oran kırılımında hesaplanan (satış) ve indirilecek (alış) KDV; iadeler düşülür",
+    "Beyanname yerleşimiyle oran kırılımı: hesaplanan (satış, alıştan iade), indirilecek (alış tam KDV, satıştan iade), KDV-2 tevkifatı ve bilgi satırları; KDV ön analiziyle aynı hesap",
+  // RPR-13: beyan bilgisi; satış rolü görmez.
+  roller: FINANS_ROLLERI,
   filtreler: TARIH_FILTRELERI,
   kolonlar: [
+    { alan: "yon", baslik: "Beyan Satırı", tip: "metin" },
     { alan: "kdvOrani", baslik: "KDV Oranı", tip: "yuzde" },
-    { alan: "yon", baslik: "Yön", tip: "metin" },
     { alan: "matrah", baslik: "Matrah (TL)", tip: "para" },
     { alan: "kdv", baslik: "KDV (TL)", tip: "para" },
   ],
   async calistir(girdi, { tx }) {
     const f = girdi.filtreler ?? {};
-    const satirlar = await tx.faturaSatir.findMany({
-      where: {
-        fatura: {
-          durum: "kesin",
-          tip: { not: "proforma" },
-          tarih: tarihAraligi(f.baslangic, f.bitis),
-        },
-      },
-      select: {
-        kdvOrani: true,
-        matrah: true,
-        netKdvTutari: true,
-        ekVergiler: true,
-        fatura: { select: { tip: true, kur: true } },
-      },
-    });
-    // satış ve satış_iade "Hesaplanan", alış ve alış_iade "İndirilecek";
-    // iadeler kendi yönünden düşülür.
-    const gruplar = new Map<
-      string,
-      { kdvOrani: number; yon: string; matrah: Prisma.Decimal; kdv: Prisma.Decimal }
-    >();
-    for (const s of satirlar) {
-      const yon = ["satis", "satis_iade"].includes(s.fatura.tip)
-        ? "Hesaplanan"
-        : "İndirilecek";
-      const isaret = s.fatura.tip.endsWith("_iade") ? -1 : 1;
-      const anahtar = `${s.kdvOrani}|${yon}`;
-      const g = gruplar.get(anahtar) ?? {
-        kdvOrani: Number(s.kdvOrani),
-        yon,
-        matrah: D(0),
-        kdv: D(0),
-      };
-      // EBLG-128: KDV matrahı, KDV matrahına dahil vergilerle (ÖTV, elektrik tüketim…) birlikte.
-      g.matrah = g.matrah.add(s.matrah.add(kdvMatrahinaDahilToplam(s.ekVergiler)).mul(s.fatura.kur).mul(isaret));
-      g.kdv = g.kdv.add(s.netKdvTutari.mul(s.fatura.kur).mul(isaret));
-      gruplar.set(anahtar, g);
-    }
-    return [...gruplar.values()]
-      .sort((a, b) => a.yon.localeCompare(b.yon, "tr") || a.kdvOrani - b.kdvOrani)
-      .map((g) => ({
-        kdvOrani: g.kdvOrani,
-        yon: g.yon,
-        matrah: g.matrah.toFixed(2),
-        kdv: g.kdv.toFixed(2),
-      }));
+    // RPR-13: önceden her iki yönde net KDV alınıyor, iadeler kendi yönünden
+    // düşülüyordu; tevkifatlı alışta ön analizle farklı indirilecek KDV çıkıyordu.
+    return kdvBeyanSatirlari(await kdvBeyanFaturalari(tx, tarihAraligi(f.baslangic, f.bitis))).map((s) => ({
+      yon: KDV_BEYAN_YONLERI[s.yon],
+      kdvOrani: s.kdvOrani,
+      matrah: s.matrah.toFixed(2),
+      kdv: s.kdv.toFixed(2),
+    }));
   },
 });
 

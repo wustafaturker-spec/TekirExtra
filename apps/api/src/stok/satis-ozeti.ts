@@ -12,7 +12,7 @@ type Tx = Prisma.TransactionClient;
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
 
 export interface SatisSatiri {
-  faturaId: string; faturaNo: string; tarih: Date; cariUnvan: string; tip: "satis" | "satis_iade";
+  faturaId: string; faturaNo: string; tarih: Date; cariId: string; cariKod: string; cariUnvan: string; tip: "satis" | "satis_iade";
   stokId: string; kod: string; ad: string; mevcutMiktar: Prisma.Decimal;
   /** Kartın tipi (urun, sarf, hizmet…); maliyeti bilinmeyen mal satışını ayırmak için. */
   stokTip: string;
@@ -31,7 +31,7 @@ export async function satisSatirlari(tx: Tx, tarih: Prisma.DateTimeFilter = {}):
   const faturalar = await tx.fatura.findMany({
     where: { tip: { in: ["satis", "satis_iade"] }, durum: "kesin", tarih },
     select: {
-      id: true, no: true, tarih: true, tip: true, kur: true, cari: { select: { unvan: true } },
+      id: true, no: true, tarih: true, tip: true, kur: true, cari: { select: { id: true, kod: true, unvan: true } },
       satirlar: { select: { stokId: true, miktar: true, birim: true, matrah: true, stok: { select: { kod: true, ad: true, tip: true, mevcutMiktar: true } } } },
     },
     orderBy: [{ tarih: "asc" }, { createdAt: "asc" }],
@@ -61,7 +61,7 @@ export async function satisSatirlari(tx: Tx, tarih: Prisma.DateTimeFilter = {}):
       // Çıkış eksi işaretli saklanır: satışta değer artı, iadede eksi çıkar.
       const deger = hs.reduce((t, h) => t.sub(h.miktar.mul(h.maliyet)), D(0));
       sonuc.push({
-        faturaId: f.id, faturaNo: f.no ?? "", tarih: f.tarih, cariUnvan: f.cari?.unvan ?? "", tip: f.tip as "satis" | "satis_iade",
+        faturaId: f.id, faturaNo: f.no ?? "", tarih: f.tarih, cariId: f.cari?.id ?? "", cariKod: f.cari?.kod ?? "", cariUnvan: f.cari?.unvan ?? "", tip: f.tip as "satis" | "satis_iade",
         stokId: s.stokId, kod: s.stok.kod, ad: s.stok.ad, stokTip: s.stok.tip, mevcutMiktar: s.stok.mevcutMiktar,
         miktar: ana.mul(isaret), ciro: s.matrah.mul(f.kur).mul(isaret).toDecimalPlaces(2), maliyet: deger.mul(oran).toDecimalPlaces(2),
         hareketPaylari: hs.map((h) => ({ hareketId: h.id, oran })),
@@ -71,14 +71,29 @@ export async function satisSatirlari(tx: Tx, tarih: Prisma.DateTimeFilter = {}):
   return sonuc;
 }
 
-export interface UrunSatisOzeti { stokId: string; kod: string; ad: string; mevcutMiktar: Prisma.Decimal; miktar: Prisma.Decimal; ciro: Prisma.Decimal; maliyet: Prisma.Decimal }
+/**
+ * RPR-13 (inceleme P1-6): maliyeti kayıtlı olmayan mal satışı. Maliyet 0
+ * yazıldığı için kâr %100 görünür; raporlar bu ciroyu ayrı gösterir ve
+ * marjı yalnız maliyeti bilinen kısımdan hesaplar. Hizmet satışı maliyetsizdir.
+ */
+export const maliyetBilinmiyor = (s: Pick<SatisSatiri, "tip" | "stokTip" | "maliyet" | "ciro">) =>
+  s.tip === "satis" && s.stokTip !== "hizmet" && s.maliyet.isZero() && s.ciro.gt(0);
+
+/** Marj (%), maliyeti bilinmeyen ciro dışarıda; bilinen ciro yoksa null. */
+export function bilinenMarj(ciro: Prisma.Decimal, maliyet: Prisma.Decimal, maliyetsizCiro: Prisma.Decimal): number | null {
+  const bilinen = ciro.sub(maliyetsizCiro);
+  return bilinen.gt(0) ? bilinen.sub(maliyet).div(bilinen).mul(100).toDecimalPlaces(2).toNumber() : null;
+}
+
+export interface UrunSatisOzeti { stokId: string; kod: string; ad: string; mevcutMiktar: Prisma.Decimal; miktar: Prisma.Decimal; ciro: Prisma.Decimal; maliyet: Prisma.Decimal; maliyetsizCiro: Prisma.Decimal }
 
 /** Satırları ürün başına toplar. */
 export function urunBazinda(satirlar: SatisSatiri[]): UrunSatisOzeti[] {
   const m = new Map<string, UrunSatisOzeti>();
   for (const s of satirlar) {
-    const g = m.get(s.stokId) ?? { stokId: s.stokId, kod: s.kod, ad: s.ad, mevcutMiktar: s.mevcutMiktar, miktar: D(0), ciro: D(0), maliyet: D(0) };
+    const g = m.get(s.stokId) ?? { stokId: s.stokId, kod: s.kod, ad: s.ad, mevcutMiktar: s.mevcutMiktar, miktar: D(0), ciro: D(0), maliyet: D(0), maliyetsizCiro: D(0) };
     g.miktar = g.miktar.add(s.miktar); g.ciro = g.ciro.add(s.ciro); g.maliyet = g.maliyet.add(s.maliyet);
+    if (maliyetBilinmiyor(s)) g.maliyetsizCiro = g.maliyetsizCiro.add(s.ciro);
     m.set(s.stokId, g);
   }
   return [...m.values()];
