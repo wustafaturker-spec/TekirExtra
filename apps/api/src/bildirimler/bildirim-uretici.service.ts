@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 import type { BildirimTuru, DuzeltmeTuru } from "@prisma/client";
 import { bugunTR, DONEMSEL_DEGERLER, yayinTakvimi, EIRSALIYE_YANIT_GUN_SAYISI, MUHTELIF_MUSTERI_VKN, eirsaliyeYanitSuresi, gunEkleTR, IHRAC_KAYITLI_UYARI_GUNU, IRSALIYE_FATURA_GUN_SAYISI, irsaliyeFaturaSuresi, irsaliyeSevkGunu, type Rol, ihracKayitliSonTarih } from "@tekirextra/shared";
 import { aktifBaglam } from "../core/istek-baglami";
@@ -15,6 +15,12 @@ import { TEMINAT_TURU_ADLARI, TEMINAT_UYARI_GUNU, type TeminatTuru } from "../ca
 import { bakiyeFarklari, mutabakatItirazBildirimi, type DovizBakiyesi } from "../cari/cari-mutabakat";
 import { iseGirisSonTarihi, istenCikisSonTarihi } from "../personel/sgk-kodlari";
 import { kanuniDegerOku } from "../mevzuat/kanuni-deger";
+import { MevzuatService } from "../mevzuat/mevzuat.service";
+import { coz } from "../core/kripto";
+import { belgeKodTablosu } from "../fatura/tevkifat-tablosu";
+import { tasarimVergiKodlariEski, vergiKodImzasi, VERGILI_TASARIM_TURLERI } from "../ebelge/firma-tasarimi/vergi-kodlari";
+import { TASARIM_ALANI } from "../tenant/belge-tasarimlari.service";
+import type { EntegratorConfig } from "@tekirextra/baglanti";
 
 const gunEkle = (t: Date, gun: number) => new Date(t.getTime() + gun * 86_400_000);
 
@@ -62,7 +68,7 @@ const DUZELTME_TUR_ESLEMESI: Record<DuzeltmeTuru, BildirimTuru> = {
  */
 const TARAMA_ONEKLERI: Record<BildirimTuru, string[]> = {
   duzeltme: ["duzeltme:"],
-  ebelge: ["duzeltme:", "ebelge:", ENTEGRATOR_IPTAL_ANAHTAR_ONEKI],
+  ebelge: ["duzeltme:", "ebelge:", ENTEGRATOR_IPTAL_ANAHTAR_ONEKI, "tasarim-vergi:"],
   vade: ["duzeltme:", "vade:"],
   cek_senet: ["duzeltme:", "cek_senet:"],
   stok: ["duzeltme:", "stok_kritik:", "stok_sayim:"],
@@ -95,12 +101,14 @@ export class BildirimUreticiService {
     private readonly bildirimler: BildirimService,
     private readonly rapor: RaporService,
     private readonly ayarlar?: AyarlarService,
+    @Optional() private readonly mevzuat?: MevzuatService,
   ) {}
 
   async tara(): Promise<{ uretilen: number; yeniTeslimat: number; kapanan: number; yukseltilen: number }> {
     const girdiler = [
       ...(await this.duzeltmeKayitlari()),
       ...(await this.ebelgeHatalari()),
+      ...(await this.tasarimVergiKodlari()),
       ...(await this.eirsaliyeYanitlari()),
       ...(await this.gelenEirsaliyeYanitSureleri()),
       ...(await this.vadeOzetleri()),
@@ -400,6 +408,43 @@ export class BildirimUreticiService {
       sonTarih: this.sla("kritik"),
       roller: HEDEF_ROLLER.ebelge,
     }))];
+  }
+
+  /**
+   * EBLG-133: seçili firma tasarımı (XSLT) bugünkü Mevzuat vergi listesinden
+   * farklı bir listeyle üretilmiş: yeni stopaj ya da KDV matrahına dahil kod
+   * belgede yanlış yerde/işaretle basılır. Firma tasarımı yeniden oluşturulup
+   * seçilince kapanır.
+   */
+  private async tasarimVergiKodlari(): Promise<BildirimGirdisi[]> {
+    const { tenantId } = aktifBaglam();
+    const [baglantilar, firma] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
+      tx.baglanti.findMany({ where: { aile: "ebelge", durum: "aktif" }, select: { id: true, sifreliConfig: true } }),
+      tx.tenant.findUnique({ where: { id: tenantId }, select: { vkn: true } }),
+    ]));
+    if (!baglantilar.length || !firma) return [];
+    const imza = vergiKodImzasi((await belgeKodTablosu(this.mevzuat, bugunTR())).vergiTurleri);
+    const girdiler: BildirimGirdisi[] = [];
+    for (const b of baglantilar) {
+      let cfg: EntegratorConfig;
+      try { cfg = JSON.parse(coz(b.sifreliConfig)) as EntegratorConfig; } catch { continue; }
+      for (const tur of VERGILI_TASARIM_TURLERI) {
+        const secili = cfg[TASARIM_ALANI[tur]];
+        if (!tasarimVergiKodlariEski(secili, firma.vkn, cfg.tasarimVergiImzalari, imza)) continue;
+        girdiler.push({
+          tur: "ebelge",
+          onem: "uyari",
+          baslik: `${tur === "earsiv" ? "e-Arşiv" : "e-Fatura"} tasarımı vergi kodları güncel değil`,
+          aciklama: `Seçili tasarım (${secili}) Mevzuat Merkezi'ndeki vergi türü listesi değişmeden önce üretildi; yeni stopaj ya da KDV matrahına dahil vergi kodu belgede yanlış sırada veya işaretle basılabilir. Entegratörler ekranında firma tasarımını yeniden oluşturun.`,
+          birlesimAnahtari: `tasarim-vergi:${b.id}:${tur}`,
+          kaynakTur: "baglanti",
+          kaynakRef: b.id,
+          hedefYol: "/panel/ayarlar/entegratorler",
+          roller: HEDEF_ROLLER.ebelge,
+        });
+      }
+    }
+    return girdiler;
   }
 
   /**

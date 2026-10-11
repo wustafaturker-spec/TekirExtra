@@ -1,4 +1,4 @@
-import { vergiTuruBul } from "@tekirextra/shared";
+import { vergiTuruBul, VARSAYILAN_VERGI_TURLERI, type VergiTuru } from "@tekirextra/shared";
 import { kacis, kurBicim, paraBicim, sayfaSablonu, sayiBicim, tarihBicim, tlKarsiligi } from "../core/pdf/pdf-sablon";
 import type { BelgeTemasi } from "../core/pdf/belge-temasi";
 import { karekoduHtmlEkle } from "./karekod";
@@ -34,8 +34,11 @@ export function ebelgeYedekPdfHtml(
     karekodDataUri?: string;
     /** Kestiğimiz belge: düzen yedek değil, seçtiğimiz şablondur. */
     kendiBelgemiz?: boolean;
+    /** EBLG-133: belge tarihindeki Mevzuat vergi türleri (stopaj, KDV matrahına dahil); verilmezse ilk dolum listesi. */
+    vergiTurleri?: readonly VergiTuru[];
   } = {},
 ): string {
+  const vergiTurleri = secenekler.vergiTurleri ?? VARSAYILAN_VERGI_TURLERI;
   const paraBirimi = f.dovizCinsi === "TRY" ? "TL" : f.dovizCinsi;
   const profil = PROFIL_ADLARI[f.profilId] ?? f.profilId;
 
@@ -58,7 +61,7 @@ export function ebelgeYedekPdfHtml(
       (s) => `<tr>
   <td class="orta">${s.siraNo}</td>
   <td>${kacis(s.saticiUrunKodu ?? "")}</td>
-  <td>${kacis(s.ad)}${(s.digerVergiler ?? []).map((v) => `<br><small>${kacis(v.ad || v.kod)}${v.oran !== null ? ` %${sayiBicim(v.oran)}` : ""}: ${vergiTuruBul(v.kod)?.stopaj ? "−" : ""}${paraBicim(v.tutar)}</small>`).join("")}</td>
+  <td>${kacis(s.ad)}${(s.digerVergiler ?? []).map((v) => `<br><small>${kacis(v.ad || v.kod)}${v.oran !== null ? ` %${sayiBicim(v.oran)}` : ""}: ${vergiTuruBul(v.kod, vergiTurleri)?.stopaj ? "−" : ""}${paraBicim(v.tutar)}</small>`).join("")}</td>
   <td class="sag">${sayiBicim(s.miktar)} ${kacis(s.birim)}</td>
   <td class="sag">${paraBicim(s.birimFiyat)}</td>
   <td class="sag">${s.iskontoTutari > 0 ? paraBicim(s.iskontoTutari) : ""}</td>
@@ -70,12 +73,12 @@ export function ebelgeYedekPdfHtml(
     .join("\n");
 
   // EBLG-129: KDV dışı vergiler (ÖTV, ÖİV, konaklama…) ayrı satırda; stopaj ödenecekten düştüğü için eksi.
-  const stopajMi = (kod: string) => vergiTuruBul(kod)?.stopaj === true;
+  const stopajMi = (kod: string) => vergiTuruBul(kod, vergiTurleri)?.stopaj === true;
   const vergiEtiketi = (v: { kod: string; ad: string; oran: number | null }) => `${kacis(v.ad || v.kod)}${v.oran !== null ? ` (%${sayiBicim(v.oran)})` : ""}`;
   const digerVergiler = f.toplamlar.digerVergiler ?? [];
   const digerVar = digerVergiler.length > 0;
   // EBLG-130: KDV matrahına dahil vergiler (ÖTV…) KDV matrahından önce, diğerleri KDV'den sonra.
-  const dahilMi = (kod: string) => vergiTuruBul(kod)?.kdvMatrahinaDahil === true;
+  const dahilMi = (kod: string) => vergiTuruBul(kod, vergiTurleri)?.kdvMatrahinaDahil === true;
   const vergiKalemi = (v: (typeof digerVergiler)[number]) => ({ etiket: vergiEtiketi(v), deger: stopajMi(v.kod) ? -v.tutar : v.tutar });
 
   const toplamSatiri = (etiket: string, deger: number, kalin = false, birim = paraBirimi) =>

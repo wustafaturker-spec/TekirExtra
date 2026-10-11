@@ -1,10 +1,13 @@
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
+import { bugunTR } from "@tekirextra/shared";
 import type { EntegratorConfig } from "@tekirextra/baglanti";
 import { aktifBaglam } from "../core/istek-baglami";
 import { coz } from "../core/kripto";
 import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
 import { BaglantilarService } from "../tenant/baglantilar.service";
+import { belgeKodTablosu } from "../fatura/tevkifat-tablosu";
+import { MevzuatService } from "../mevzuat/mevzuat.service";
 import { ebelgeYedekPdfHtml } from "./ebelge-pdf";
 import { eirsaliyeYedekPdfHtml, GIDEN_EIRSALIYE_NOTU } from "./eirsaliye-pdf";
 import { numaraBoslukTaslakHtml, type NumaraBosluklari } from "./eirsaliye-bosluk";
@@ -25,6 +28,7 @@ export class EbelgeGorunumService {
     private readonly prisma: PrismaService,
     private readonly pdf: PdfService,
     private readonly baglantilar: BaglantilarService,
+    @Optional() private readonly mevzuat?: MevzuatService,
   ) {}
 
   /**
@@ -88,8 +92,10 @@ export class EbelgeGorunumService {
       throw hata;
     }
     const tema = await this.pdf.belgeTemasi();
+    // EBLG-133: stopaj ve KDV matrahına dahil vergi kuralı belge tarihindeki merkezi listeden.
+    const vergiTurleri = (await belgeKodTablosu(this.mevzuat, fatura.tarih || bugunTR())).vergiTurleri;
     return {
-      buffer: await this.pdf.htmlToPdf(ebelgeYedekPdfHtml(fatura, { tema, karekodDataUri: karekodUri, kendiBelgemiz })),
+      buffer: await this.pdf.htmlToPdf(ebelgeYedekPdfHtml(fatura, { tema, karekodDataUri: karekodUri, kendiBelgemiz, vergiTurleri })),
       dosyaAdi,
     };
   }

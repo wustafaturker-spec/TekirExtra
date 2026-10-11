@@ -67,6 +67,12 @@ export interface EntegratorConfig {
   efaturaTasarimi?: string;
   earsivTasarimi?: string;
   eirsaliyeTasarimi?: string;
+  /**
+   * EBLG-133: firma tasarımının adı → üretildiği vergi kodu listesinin imzası
+   * (stopaj ve KDV matrahına dahil kodlar). Mevzuat listesi değişince seçili
+   * tasarımın eskidiği buradan anlaşılır.
+   */
+  tasarimVergiImzalari?: Record<string, string>;
 }
 
 /** EBLG-99: tasarımı ayrı yönetilen belge türleri. */

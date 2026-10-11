@@ -8,7 +8,7 @@ import { FirmaTasarimi } from "./FirmaTasarimi";
 type TasarimTuru = "efatura" | "earsiv" | "eirsaliye";
 
 interface BelgeTasarimi { id: string; baslik: string; varsayilan: boolean }
-interface TasarimListesi { destekleniyor: boolean; secili: string | null; tasarimlar: BelgeTasarimi[] }
+interface TasarimListesi { destekleniyor: boolean; secili: string | null; tasarimlar: BelgeTasarimi[]; vergiKodlariEski?: boolean }
 
 const TUR_ADI: Record<TasarimTuru, string> = { efatura: "e-Fatura", earsiv: "e-Arşiv", eirsaliye: "e-İrsaliye" };
 
@@ -109,6 +109,15 @@ export function BelgeTasarimlari({ baglantiId, turler }: { baglantiId: string; t
               {islemde === "secim" ? "Kaydediliyor..." : "Seçimi Kaydet"}
             </Button>
           </div>
+
+          {/* EBLG-133: Mevzuat'taki vergi türü listesi değişti; tasarım eski listeyle üretilmiş. */}
+          {liste.vergiKodlariEski && (
+            <Alert tone="warning">
+              Seçili tasarım ({liste.secili}) Mevzuat Merkezi&apos;ndeki vergi türü listesi değişmeden önce üretildi. Yeni bir stopaj ya da
+              KDV matrahına dahil vergi kodu belgede yanlış sırada veya işaretle basılabilir. Aşağıdan firma tasarımını yeniden oluşturun;
+              yeni sürüm yüklenir ve seçilir.
+            </Alert>
+          )}
 
           {/* EBLG-101: firmaya özel tasarımı üretip yükler ve seçer. */}
           <FirmaTasarimi baglantiId={baglantiId} tur={tur} onYuklendi={() => void yukle()} />

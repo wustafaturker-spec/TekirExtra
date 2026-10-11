@@ -19,16 +19,20 @@ function kurulum(config: Record<string, unknown> = {}, ornek: { xml: string; no:
     tasarimOnizle: vi.fn().mockResolvedValue({ basarili: true, html: "<html/>" }),
   };
   const update = vi.fn();
+  // Son yazılan ayar okunur (seçimden sonra imza yazımı güncel ayarın üstüne yapılmalı).
+  const ilkAyar = sifrele(JSON.stringify({ saglayici: "nes", apiAnahtari: "a", ...config }));
   const tx = {
     baglanti: {
-      findUnique: vi.fn().mockResolvedValue({ id: "b1", tenantId: "tenant-1", aile: "ebelge", saglayici: "nes", durum: "aktif", sifreliConfig: sifrele(JSON.stringify({ saglayici: "nes", apiAnahtari: "a", ...config })) }),
+      findUnique: vi.fn(async () => ({ id: "b1", tenantId: "tenant-1", aile: "ebelge", saglayici: "nes", durum: "aktif", sifreliConfig: update.mock.calls.at(-1)?.[0].data.sifreliConfig ?? ilkAyar })),
       update,
     },
+    tenant: { findUnique: vi.fn().mockResolvedValue({ unvan: "Tekir A.Ş.", vkn: "1234567801", eposta: null, telefon: null, webSitesi: null, belgeMarkaAdi: null, belgeMarkaAlt: null, belgeEkBilgi: null, belgeRozetleri: [] }) },
+    bankaHesap: { findMany: vi.fn().mockResolvedValue([]) },
     ebelgeArsiv: { findFirst: vi.fn().mockResolvedValue(ornek ? { xmlIcerik: ornek.xml, ebelge: { fatura: { no: ornek.no } } } : null) },
     eirsaliyeKayit: { findFirst: vi.fn().mockResolvedValue(null) },
   };
   const prisma = { tenantIslem: (_t: string, fn: (t: typeof tx) => unknown) => fn(tx) };
-  const servis = new BelgeTasarimlariService(prisma as never, { adapterCoz: () => adapter } as never);
+  const servis = new BelgeTasarimlariService(prisma as never, { adapterCoz: () => adapter } as never, { firmaLogoDataUri: async () => null } as never);
   const saklanan = () => JSON.parse(coz(update.mock.calls[0][0].data.sifreliConfig)) as Record<string, unknown>;
   return { servis, adapter, update, saklanan };
 }
@@ -39,6 +43,34 @@ describe("BelgeTasarimlariService (EBLG-99)", () => {
     const sonuc = await baglamda(() => servis.listele("b1", "efatura"));
     expect(sonuc).toMatchObject({ destekleniyor: true, secili: "TEKIR_EFATURA" });
     expect(sonuc.tasarimlar).toHaveLength(2);
+  });
+
+  it("seçili firma tasarımı eski vergi listesiyle üretildiyse uyarır (EBLG-133)", async () => {
+    const eski = kurulum({ efaturaTasarimi: "TX1234567801-EFATURA-v9", tasarimVergiImzalari: { "TX1234567801-EFATURA-v9": "stopaj=0003;dahil=" } });
+    expect((await baglamda(() => eski.servis.listele("b1", "efatura"))).vergiKodlariEski).toBe(true);
+    // İmzasız firma tasarımı ilk dolum listesiyle üretilmiş sayılır; Mevzuat'sız ortamda liste odur.
+    const imzasiz = kurulum({ efaturaTasarimi: "TX1234567801-EFATURA-v9" });
+    expect((await baglamda(() => imzasiz.servis.listele("b1", "efatura"))).vergiKodlariEski).toBe(false);
+    // Elle yüklenen tasarım ve e-İrsaliye denetlenmez.
+    const elle = kurulum({ efaturaTasarimi: "TEKIR_EFATURA", tasarimVergiImzalari: { TEKIR_EFATURA: "x" } });
+    expect((await baglamda(() => elle.servis.listele("b1", "efatura"))).vergiKodlariEski).toBe(false);
+  });
+
+  it("firma tasarımını o günkü vergi listesiyle üretir, seçer ve imzasını yazar (EBLG-133)", async () => {
+    const { servis, adapter, update } = kurulum();
+    const yuklenen: { baslik: string; xslt: string }[] = [];
+    adapter.tasarimYukle.mockImplementation(async (_cfg: unknown, _tur: unknown, t: { baslik: string; xslt: string }) => { yuklenen.push(t); return { id: "t-9", baslik: t.baslik, varsayilan: false }; });
+    adapter.tasarimlariListele.mockImplementation(async () => yuklenen.map((t, i) => ({ id: `y${i}`, baslik: t.baslik, varsayilan: false })));
+
+    await baglamda(() => servis.firmaTasarimiOlustur("b1", "efatura"));
+
+    expect(yuklenen[0].baslik).toBe("TX1234567801-EFATURA-v1");
+    expect(yuklenen[0].xslt).toContain("contains(' 0003 0011 ',");
+    expect(yuklenen[0].xslt).not.toContain("@@");
+    const son = JSON.parse(coz(update.mock.calls.at(-1)![0].data.sifreliConfig));
+    expect(son.efaturaTasarimi).toBe("TX1234567801-EFATURA-v1");
+    expect(son.tasarimVergiImzalari).toEqual({ "TX1234567801-EFATURA-v1": "stopaj=0003,0011;dahil=0061,0071,0073,0074,8005,9077" });
+    expect((await baglamda(() => servis.listele("b1", "efatura"))).vergiKodlariEski).toBe(false);
   });
 
   it("seçimi bağlantıyı pasife çekmeden yazar; boş seçim entegratörün varsayılanına döner", async () => {

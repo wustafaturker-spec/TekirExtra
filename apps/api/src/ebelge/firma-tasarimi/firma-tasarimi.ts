@@ -1,5 +1,6 @@
 import { FATURA_SABLONU, IRSALIYE_SABLONU } from "./sablonlar";
-import { DOVIZ_CINSLERI } from "@tekirextra/shared";
+import { DOVIZ_CINSLERI, VARSAYILAN_VERGI_TURLERI, type VergiTuru } from "@tekirextra/shared";
+import { tasarimVergiKodlari } from "./vergi-kodlari";
 
 /**
  * EBLG-101: firmaya özel entegratör tasarımı. Düzen EMSA e-Belge tasarımıdır
@@ -29,6 +30,8 @@ export interface FirmaTasarimVerisi {
   logoDataUri?: string | null;
   rozetler?: string[];
   bankaHesaplari?: TasarimBankaHesabi[];
+  /** EBLG-133: Mevzuat Merkezi'nin bugünkü vergi türleri; verilmezse ilk dolum listesi. */
+  vergiTurleri?: readonly VergiTuru[];
 }
 
 /**
@@ -164,6 +167,7 @@ export function firmaTasarimiUret(tur: "fatura" | "irsaliye", veri: FirmaTasarim
   const ekBilgi = veri.ekBilgi?.trim() ?? "";
   const logo = gorselMi(veri.logoDataUri, AZAMI_LOGO_BOYU) ? veri.logoDataUri : null;
   const yerlesim = logoYerlesimi(logo);
+  const vergiKodlari = tasarimVergiKodlari(veri.vergiTurleri ?? VARSAYILAN_VERGI_TURLERI);
   const iletisim = [veri.eposta, veri.telefon, veri.webSitesi].map((d) => d?.trim()).filter(Boolean).join(" · ");
   const degerler: Record<string, string> = {
     YORUM: `TekirExtra firma tasarımı · ${kacis(unvan).replace(/--/g, "–")} · EBLG-101 (G20 onaylı kurumsal düzen v3)`,
@@ -181,6 +185,9 @@ export function firmaTasarimiUret(tur: "fatura" | "irsaliye", veri: FirmaTasarim
     DIP_EK: ekBilgi ? ` · ${kacis(ekBilgi)}` : "",
     ILETISIM: kacis(iletisim),
     BANKALAR: bankaTablosu((veri.bankaHesaplari ?? []).filter((h) => h.iban?.trim())),
+    // EBLG-133: XSLT `contains(' … ', concat(' ', kod, ' '))` ile arar; kodlar boşlukla ayrılır.
+    STOPAJ_KODLARI: vergiKodlari.stopaj.join(" "),
+    MATRAHA_DAHIL_KODLARI: vergiKodlari.dahil.join(" "),
   };
   const sablon = tur === "fatura" ? FATURA_SABLONU : IRSALIYE_SABLONU;
   return sablon.replace(/@@([A-Z0-9_]+)@@/g, (_, ad: string) => {

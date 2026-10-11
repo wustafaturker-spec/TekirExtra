@@ -3,8 +3,12 @@ import { BildirimUreticiService } from "./bildirim-uretici.service";
 import { HATA_YERLESME_MS } from "../ebelge/yerlesmis-hata";
 
 vi.mock("../core/istek-baglami", () => ({ aktifBaglam: () => ({ tenantId: "t1", userId: "u1", rol: "yonetici" }) }));
+// EBLG-133: bağlantı ayarı testte düz JSON tutulur.
+vi.mock("../core/kripto", () => ({ coz: (metin: string) => metin }));
 
 interface TxSecenekleri {
+  /** EBLG-133: e-Belge bağlantılarının (düz JSON) ayarları. */
+  ebelgeAyarlari?: Record<string, unknown>[];
   /** MVZ-17: dönemsel değer kayıtları; verilmezse içinde bulunulan dönemler kayıtlı sayılır. */
   mevzuatKayitlari?: { tur: string; anahtar: string; yururlukBaslangic: Date }[];
   aktifPersonel?: number;
@@ -63,7 +67,10 @@ function servisKur(secenek: TxSecenekleri = {}) {
     satinAlmaTalebi: { findMany: vi.fn().mockResolvedValue(secenek.satinAlmaTalepleri ?? []) },
     cekSenet: { count: vi.fn().mockResolvedValue(secenek.cekSayisi ?? 0) },
     krediKarti: { findMany: vi.fn().mockResolvedValue(secenek.kartlar ?? []) },
-    baglanti: { findMany: vi.fn().mockResolvedValue(secenek.bankaBaglantilari ?? []) },
+    baglanti: { findMany: vi.fn(async ({ where }: { where: { aile: string } }) => (where.aile === "ebelge"
+      ? (secenek.ebelgeAyarlari ?? []).map((ayar, i) => ({ id: `e${i + 1}`, sifreliConfig: JSON.stringify(ayar) }))
+      : secenek.bankaBaglantilari ?? [])) },
+    tenant: { findUnique: vi.fn().mockResolvedValue({ vkn: "1234567801" }) },
     bankaEkstreSatir: { groupBy: vi.fn().mockResolvedValue(secenek.bekleyenEkstre ?? []) },
     bankaHesap: { findMany: vi.fn().mockResolvedValue([{ id: "h1", ad: "Ziraat TL" }]) },
     bankaKrediTaksiti: { findMany: vi.fn().mockResolvedValue([]) },
@@ -181,6 +188,29 @@ describe("BildirimUreticiService.tara", () => {
     expect(bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({ tur: "duzeltme", birlesimAnahtari: "duzeltme:d2" }));
   });
 
+
+  it("eski vergi listesiyle üretilmiş seçili firma tasarımını bildirir; güncel imzalıyı ve elle yüklenmişi bildirmez (EBLG-133)", async () => {
+    const { vergiKodImzasi } = await import("../ebelge/firma-tasarimi/vergi-kodlari");
+    const { VARSAYILAN_VERGI_TURLERI } = await import("@tekirextra/shared");
+    const guncel = vergiKodImzasi(VARSAYILAN_VERGI_TURLERI);
+    const { servis, bildirimler } = servisKur({
+      ebelgeAyarlari: [{
+        // e-Fatura: imzası farklı → eski; e-Arşiv: imza güncel
+        efaturaTasarimi: "TX1234567801-EFATURA-v10", earsivTasarimi: "TX1234567801-EARSIV-v7",
+        tasarimVergiImzalari: { "TX1234567801-EFATURA-v10": "stopaj=0003;dahil=0071", "TX1234567801-EARSIV-v7": guncel },
+      }, {
+        // Elle yüklenmiş tasarım denetlenmez; imzasız firma tasarımı ilk dolum listesiyle sayılır (güncel).
+        efaturaTasarimi: "EMSA_EFATURA", earsivTasarimi: "TX1234567801-EARSIV-v6",
+      }],
+    });
+
+    await servis.tara();
+
+    const uretilen = bildirimler.uret.mock.calls.map((c) => c[0]).filter((g) => g.birlesimAnahtari.startsWith("tasarim-vergi:"));
+    expect(uretilen.map((g) => g.birlesimAnahtari)).toEqual(["tasarim-vergi:e1:efatura"]);
+    expect(uretilen[0]).toMatchObject({ tur: "ebelge", onem: "uyari", hedefYol: "/panel/ayarlar/entegratorler" });
+    expect(bildirimler.kapatEksikleri).toHaveBeenCalledWith("ebelge", expect.arrayContaining(["tasarim-vergi:e1:efatura"]), expect.arrayContaining(["tasarim-vergi:"]));
+  });
 
   it("taze e-Belge hatasını sormaz, yerleşmişi ve reddi sorar (EBLG-46)", async () => {
     // Gönderim ilk denemede düşüp ikincide geçebilir; geri alınamayan e-posta

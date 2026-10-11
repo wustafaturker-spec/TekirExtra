@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import type { Baglanti } from "@prisma/client";
 import type { BelgeTasarimi, EntegratorAdapter, EntegratorConfig, TasarimTuru } from "@tekirextra/baglanti";
 import { XMLValidator } from "fast-xml-parser";
@@ -7,7 +7,11 @@ import { coz, sifrele } from "../core/kripto";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PdfService } from "../core/pdf/pdf.service";
 import { PrismaService } from "../core/prisma.service";
+import { bugunTR } from "@tekirextra/shared";
 import { firmaTasarimiUret } from "../ebelge/firma-tasarimi/firma-tasarimi";
+import { tasarimVergiKodlariEski, vergiKodImzasi, VERGILI_TASARIM_TURLERI } from "../ebelge/firma-tasarimi/vergi-kodlari";
+import { belgeKodTablosu } from "../fatura/tevkifat-tablosu";
+import { MevzuatService } from "../mevzuat/mevzuat.service";
 import { BaglantilarService } from "./baglantilar.service";
 
 export const TASARIM_TURLERI = ["efatura", "earsiv", "eirsaliye"] as const satisfies readonly TasarimTuru[];
@@ -77,14 +81,35 @@ export class BelgeTasarimlariService {
     private readonly prisma: PrismaService,
     private readonly baglantilar: BaglantilarService,
     private readonly pdf: PdfService,
+    @Optional() private readonly mevzuat?: MevzuatService,
   ) {}
 
-  async listele(id: string, tur: TasarimTuru): Promise<{ destekleniyor: boolean; secili: string | null; tasarimlar: BelgeTasarimi[] }> {
+  /** EBLG-133: bugünkü merkezi vergi türleri ve bunların tasarım imzası. */
+  private async vergiTurleri() {
+    const turler = (await belgeKodTablosu(this.mevzuat, bugunTR())).vergiTurleri;
+    return { turler, imza: vergiKodImzasi(turler) };
+  }
+
+  async listele(id: string, tur: TasarimTuru): Promise<{ destekleniyor: boolean; secili: string | null; tasarimlar: BelgeTasarimi[]; vergiKodlariEski: boolean }> {
     const { kayit, cfg, adapter } = await this.hazirla(id);
     const secili = cfg[TASARIM_ALANI[tur]] || null;
-    if (!adapter.tasarimlariListele) return { destekleniyor: false, secili, tasarimlar: [] };
+    const vergiKodlariEski = await this.vergiKodlariEskiMi(kayit.tenantId, cfg, tur);
+    if (!adapter.tasarimlariListele) return { destekleniyor: false, secili, tasarimlar: [], vergiKodlariEski };
     const tasarimlar = await this.entegrator(() => adapter.tasarimlariListele!(cfg, tur), kayit);
-    return { destekleniyor: true, secili, tasarimlar };
+    return { destekleniyor: true, secili, tasarimlar, vergiKodlariEski };
+  }
+
+  /**
+   * EBLG-133: seçili firma tasarımı bugünkü Mevzuat vergi listesinden farklı
+   * bir listeyle üretildiyse true; firma tasarımı yeniden oluşturulmalıdır.
+   */
+  async vergiKodlariEskiMi(tenantId: string, cfg: EntegratorConfig, tur: TasarimTuru): Promise<boolean> {
+    if (!(VERGILI_TASARIM_TURLERI as readonly string[]).includes(tur)) return false;
+    const secili = cfg[TASARIM_ALANI[tur]];
+    if (!secili) return false;
+    const firma = await this.prisma.tenantIslem(tenantId, (tx) => tx.tenant.findUnique({ where: { id: tenantId }, select: { vkn: true } }));
+    if (!firma) return false;
+    return tasarimVergiKodlariEski(secili, firma.vkn, cfg.tasarimVergiImzalari, (await this.vergiTurleri()).imza);
   }
 
   async yukle(id: string, girdi: z.infer<typeof tasarimYukleSemasi>): Promise<BelgeTasarimi> {
@@ -132,6 +157,7 @@ export class BelgeTasarimlariService {
     );
     if (!firma) throw new NotFoundException("Firma bulunamadı");
     const logoDataUri = await this.pdf.firmaLogoDataUri();
+    const vergi = await this.vergiTurleri();
     const xslt = firmaTasarimiUret(tur === "eirsaliye" ? "irsaliye" : "fatura", {
       ...firma,
       markaAdi: firma.belgeMarkaAdi,
@@ -140,6 +166,7 @@ export class BelgeTasarimlariService {
       rozetler: Array.isArray(firma.belgeRozetleri) ? firma.belgeRozetleri.filter((r): r is string => typeof r === "string") : [],
       logoDataUri,
       bankaHesaplari: hesaplar.map((h) => ({ ...h, iban: h.iban!, dovizCinsi: String(h.dovizCinsi) })),
+      vergiTurleri: vergi.turler,
     });
     const hata = xsltDenetle(xslt);
     if (hata) throw new BadRequestException(`Üretilen tasarım geçersiz: ${hata}`);
@@ -150,6 +177,10 @@ export class BelgeTasarimlariService {
     const surum = 1 + Math.max(0, ...mevcut.filter((t) => t.baslik.startsWith(onek)).map((t) => Number(t.baslik.slice(onek.length))).filter(Number.isInteger));
     const tasarim = await this.entegrator(() => adapter.tasarimYukle!(cfg, tur, { baslik: `${onek}${surum}`, xslt }), kayit);
     await this.sec(id, { [tur]: tasarim.baslik });
+    // EBLG-133: tasarımın hangi vergi listesiyle üretildiği; liste değişince uyarı buradan çıkar.
+    const guncel = await this.hazirla(id);
+    const yeniCfg: EntegratorConfig = { ...guncel.cfg, tasarimVergiImzalari: { ...guncel.cfg.tasarimVergiImzalari, [tasarim.baslik]: vergi.imza } };
+    await this.prisma.tenantIslem(tenantId, (tx) => tx.baglanti.update({ where: { id }, data: { sifreliConfig: sifrele(JSON.stringify(yeniCfg)) } }));
     return { tasarim, boyut: Buffer.byteLength(xslt), logoKondu: xslt.includes('class="logo"') };
   }
 
