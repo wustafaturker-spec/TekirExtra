@@ -214,7 +214,7 @@ Varyant kırılımı yok (varyantlı ürün tek satır); eksi stok değerlemeye 
 | Zamanlanmış rapor e-postası | ✅ RPR-24 (2026-10-11): kayıtlı görünüm aboneliği, göreli dönem, Excel/PDF eki, yalnız firma kullanıcıları, worker 5 dk tarama, duraklatma + yeniden deneme |
 | Karşılaştırmalı dönem | ✅ RPR-25 (2026-10-11): önceki dönem / geçen yıl / elle; toplam karşılaştırması her dönemli raporda, satır karşılaştırması zaman dışı kırılımda; Excel/PDF, görünüm ve abonelik e-postasına girer |
 | Grafik | ✅ RPR-26 (2026-10-11): 8 raporda SVG grafik (paylaşılan `rapor-grafik.ts`), ekranda katlanabilir + PDF'te; palet doğrulandı, koyu temada ayrı adımlar |
-| Satırdan kayda gitme | Cari, fatura, ürün sütunlarına bağlantı (`baglantiAlani` hazır) |
+| Satırdan kayda gitme | ✅ RPR-27 (2026-10-11): 17 raporda cari/stok/fatura bağlantısı, rol denetimli |
 | Favori ve son kullanılan raporlar | Katalogda üstte |
 | Satış kırılımları (RPR-03) | Satış temsilcisi, ürün kategorisi, il/bölge |
 | Bütçe-gerçekleşen ve nakit akışı | Kataloğa "ayrı ekran" bağlantısı olarak |

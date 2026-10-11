@@ -335,9 +335,9 @@ registerRapor({
   aciklama: "Kesinleştirilmemiş fatura ve proformalar",
   filtreler: [],
   kolonlar: [
-    { alan: "tip", baslik: "Tip", tip: "metin" },
+    { alan: "tip", baslik: "Tip", tip: "metin", kayit: { tur: "fatura", idAlani: "faturaId" } },
     { alan: "tarih", baslik: "Belge Tarihi", tip: "tarih" },
-    { alan: "cari", baslik: "Cari", tip: "metin" },
+    { alan: "cari", baslik: "Cari", tip: "metin", kayit: { tur: "cari", idAlani: "cariId" } },
     { alan: "toplam", baslik: "Genel Toplam (TL)", tip: "para", toplam: true },
     { alan: "bekleyenGun", baslik: "Bekleme (Gün)", tip: "sayi" },
   ],
@@ -345,17 +345,20 @@ registerRapor({
     const taslaklar = await tx.fatura.findMany({
       where: { durum: "taslak" },
       select: {
+        id: true,
         tip: true,
         tarih: true,
         genelToplam: true,
         kur: true,
         createdAt: true,
-        cari: { select: { unvan: true } },
+        cari: { select: { id: true, unvan: true } },
       },
       orderBy: { createdAt: "asc" },
     });
     const simdi = Date.now();
     return taslaklar.map((ft) => ({
+      faturaId: ft.id,
+      cariId: ft.cari.id,
       tip: TIP_ADLARI[ft.tip],
       tarih: ft.tarih.toISOString().slice(0, 10),
       cari: ft.cari.unvan,

@@ -14,7 +14,8 @@ describe("envanter varyant kırılımı (RPR-22)", () => {
       ["TS / m", "Tişört — M", 5, 5, "250.00"],
       ["TS", "Tişört — varyantsız", 1, 1, "50.00"],
     ]);
-    expect(r.every((x) => !("stokId" in x))).toBe(true);
+    // RPR-27: kimlik satırda kalır, varyant satırları da stok kartına bağlanır.
+    expect(r.every((x) => x.stokId === "s1")).toBe(true);
   });
 
   it("varyantsız kart olduğu gibi kalır; eksi varyant değerlenmez", () => {

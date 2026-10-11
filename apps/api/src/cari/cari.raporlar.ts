@@ -102,7 +102,7 @@ registerRapor({
   grafik: { tur: "yatay", seriler: ["gun0_30", "gun31_60", "gun61_90", "gun90Ustu"] },
   kolonlar: [
     { alan: "kod", baslik: "Kod", tip: "metin" },
-    { alan: "unvan", baslik: "Ünvan", tip: "metin" },
+    { alan: "unvan", baslik: "Ünvan", tip: "metin", kayit: { tur: "cari", idAlani: "cariId" } },
     { alan: "dovizCinsi", baslik: "Döviz", tip: "metin" },
     { alan: "dovizToplam", baslik: "Açık (döviz)", tip: "sayi" },
     { alan: "kur", baslik: "Güncel kur", tip: "sayi" },
@@ -125,6 +125,7 @@ registerRapor({
     const tl = (n: number) => Math.round(n * 100) / 100;
     return cariler.flatMap((c) =>
       yaslandirmalar.get(c.id)!.dovizler.map((d) => ({
+        cariId: c.id,
         kod: c.kod,
         unvan: c.unvan,
         dovizCinsi: d.kurEksik ? `${d.dovizCinsi} (güncel kur yok)` : d.dovizCinsi,
@@ -207,7 +208,7 @@ registerRapor({
   grafik: { tur: "yatay", kategori: "unvan", seriler: ["netSatis"], enCok: 10 },
   kolonlar: [
     { alan: "kod", baslik: "Kod", tip: "metin" },
-    { alan: "unvan", baslik: "Ünvan", tip: "metin" },
+    { alan: "unvan", baslik: "Ünvan", tip: "metin", kayit: { tur: "cari", idAlani: "cariId" } },
     { alan: "satis", baslik: "Satış", tip: "para", toplam: true },
     { alan: "satisIade", baslik: "Satış İade", tip: "para", toplam: true },
     { alan: "alis", baslik: "Alış", tip: "para", toplam: true },
@@ -231,10 +232,11 @@ registerRapor({
     });
     const gruplar = new Map<
       string,
-      { kod: string; unvan: string; toplamlar: Record<string, Prisma.Decimal> }
+      { id: string; kod: string; unvan: string; toplamlar: Record<string, Prisma.Decimal> }
     >();
     for (const ft of faturalar) {
       const grup = gruplar.get(ft.cari.id) ?? {
+        id: ft.cari.id,
         kod: ft.cari.kod,
         unvan: ft.cari.unvan,
         toplamlar: {},
@@ -246,6 +248,7 @@ registerRapor({
     return [...gruplar.values()].map((g) => {
       const al = (tip: string): Prisma.Decimal => g.toplamlar[tip] ?? D(0);
       return {
+        cariId: g.id,
         kod: g.kod,
         unvan: g.unvan,
         satis: al("satis").toFixed(2),
@@ -269,7 +272,7 @@ registerRapor({
   filtreler: [ETIKET_FILTRESI],
   kolonlar: [
     { alan: "kod", baslik: "Kod", tip: "metin" },
-    { alan: "unvan", baslik: "Ünvan", tip: "metin" },
+    { alan: "unvan", baslik: "Ünvan", tip: "metin", kayit: { tur: "cari", idAlani: "cariId" } },
     { alan: "tahsilEdilen", baslik: "Tahsil Edilen (TL)", tip: "para", toplam: true },
     { alan: "ortalamaGun", baslik: "Ortalama Süre (Gün)", tip: "sayi" },
     { alan: "acikBakiye", baslik: "Açık Bakiye (TL)", tip: "para", toplam: true },
@@ -278,6 +281,7 @@ registerRapor({
     const cariler = await tx.cariHesap.findMany({
       where: { aktif: true, ...etiketKosulu(girdi.filtreler?.etiket) },
       select: {
+        id: true,
         kod: true,
         unvan: true,
         hareketler: {
@@ -319,6 +323,7 @@ registerRapor({
       if (tahsilEdilen <= 0.005 && acikBorclar.length === 0) continue;
       const acikBakiye = acikBorclar.reduce((t, b) => t + b.kalan, 0);
       sonuc.push({
+        cariId: c.id,
         kod: c.kod,
         unvan: c.unvan,
         tahsilEdilen: tahsilEdilen.toFixed(2),
@@ -348,7 +353,7 @@ registerRapor({
   grafik: { tur: "yatay", kategori: "unvan", seriler: ["bakiye"], enCok: 10 },
   kolonlar: [
     { alan: "kod", baslik: "Kod", tip: "metin" },
-    { alan: "unvan", baslik: "Ünvan", tip: "metin" },
+    { alan: "unvan", baslik: "Ünvan", tip: "metin", kayit: { tur: "cari", idAlani: "cariId" } },
     { alan: "borc", baslik: "Borç (TL)", tip: "para", toplam: true },
     { alan: "alacak", baslik: "Alacak (TL)", tip: "para", toplam: true },
     { alan: "bakiye", baslik: "Bakiye (TL)", tip: "para", toplam: true },
@@ -359,6 +364,7 @@ registerRapor({
     const cariler = await tx.cariHesap.findMany({
       where: { aktif: true, ...etiketKosulu(f.etiket) },
       select: {
+        id: true,
         kod: true,
         unvan: true,
         hareketler: { select: { tip: true, tutarTry: true } },
@@ -374,6 +380,7 @@ registerRapor({
         }
         const bakiye = borc.sub(alacak);
         return {
+          id: c.id,
           kod: c.kod,
           unvan: c.unvan,
           borcD: borc,
@@ -385,6 +392,7 @@ registerRapor({
       .sort((a, b) => b.bakiyeD.comparedTo(a.bakiyeD))
       .slice(0, adet)
       .map((c) => ({
+        cariId: c.id,
         kod: c.kod,
         unvan: c.unvan,
         borc: c.borcD.toFixed(2),

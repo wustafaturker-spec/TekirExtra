@@ -21,6 +21,12 @@ export interface RaporKolon {
   /** RPR-09: hücre, satırın bu alanındaki panel yoluna bağlantı olur (ör. faturaya); dışa aktarımda yok sayılır. */
   baglantiAlani?: string;
   /**
+   * RPR-27: hücre kaydına bağlantı olur (cari kartı, stok kartı, fatura);
+   * kimlik satırın `idAlani` alanındadır. Yolu ve rol denetimini ekran kurar;
+   * dışa aktarımda yok sayılır.
+   */
+  kayit?: { tur: "cari" | "stok" | "fatura"; idAlani: string };
+  /**
    * Sonuç tablosunun toplam satırında toplanır. Yalnız anlamlı sütunlar
    * işaretlenir: yürüyen bakiye, oran, farklı birimdeki miktar ya da yönü
    * karışık (hesaplanan + indirilecek) tutar toplanmaz.

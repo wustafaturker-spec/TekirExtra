@@ -8,6 +8,7 @@ import { Alert, Badge, Button, Card, EylemMenusu, Field, Input, Modal, ModalEyle
 import { AbonelikPenceresi } from "@/components/rapor-abonelik";
 import { RaporGrafigi } from "@/components/rapor-grafik";
 import type { GrafikTanimi } from "@tekirextra/shared";
+import { rolMenuYoluGorebilir } from "@/lib/rol-yetkileri";
 
 /**
  * Ortak rapor paneli (RPR-06/08): rapor kataloğunu API meta verisinden çizer —
@@ -32,6 +33,8 @@ interface RaporKolon {
   dovizAlani?: string;
   /** RPR-09: hücre satırın bu alanındaki panel yoluna bağlantı olur. */
   baglantiAlani?: string;
+  /** RPR-27: hücre kaydın sayfasına bağlantı olur; kimlik satırın `idAlani` alanında. */
+  kayit?: { tur: "cari" | "stok" | "fatura"; idAlani: string };
   /** Toplam satırında toplanır (yalnız anlamlı sütunlar işaretlidir). */
   toplam?: boolean;
 }
@@ -187,6 +190,15 @@ function sunucuToplamlari(kolonlar: RaporKolon[], t: Record<string, ToplamHucres
   return sonuc.size ? sonuc : null;
 }
 
+/** RPR-27: kayıt türünden panel yolu; kimlik yoksa bağlantı yok. */
+function kayitYolu(k: RaporKolon, satir: Satir): string | null {
+  const id = k.kayit ? satir[k.kayit.idAlani] : null;
+  if (typeof id !== "string" || !id) return null;
+  if (k.kayit!.tur === "cari") return `/panel/cari/${id}`;
+  if (k.kayit!.tur === "stok") return `/panel/stok/${id}`;
+  return `/panel/fatura/yeni?ac=${id}`;
+}
+
 // ─── Adres durumu ────────────────────────────────────────────────────────────
 
 /** `?rapor=kod&f.baslangic=…&g=ay&s=alan:desc` */
@@ -231,6 +243,9 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
   const [secilenKod, setSecilenKod] = useState("");
   const [filtreler, setFiltreler] = useState<FiltreDegerleri>({});
   const [kars, setKars] = useState<Karsilastirma>(KARSILASTIRMA_YOK);
+  // RPR-27: rolün göremediği kayıt sayfasına bağlantı verilmez.
+  const [rol, setRol] = useState<string | null>(null);
+  useEffect(() => { void api<{ rol: string }>("/auth/ben").then((b) => setRol(b.rol)).catch(() => undefined); }, []);
   const [gruplama, setGruplama] = useState("");
   const [siralama, setSiralama] = useState<Siralama | null>(null);
   const [sonuc, setSonuc] = useState<(RaporSonucu & { zaman: Date; girdi: FiltreDegerleri; gruplama: string }) | null>(null);
@@ -694,7 +709,8 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
                         gosterilen.map((satir, i) => (
                           <tr key={i}>
                             {sonuc.kolonlar.map((k) => {
-                              const yol = k.baglantiAlani ? satir[k.baglantiAlani] : null;
+                              const kayit = kayitYolu(k, satir);
+                              const yol = k.baglantiAlani ? satir[k.baglantiAlani] : kayit && rolMenuYoluGorebilir(rol, kayit) ? kayit : null;
                               const metin = hucreBicimle(k, satir[k.alan], satir);
                               return (
                                 <td key={k.alan} className={SAYISAL.includes(k.tip) ? "num" : undefined}>

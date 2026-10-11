@@ -53,7 +53,7 @@ registerRapor({
     { alan: "varyantlar", ad: "Varyantları ayrı göster", tip: "onay" },
   ],
   kolonlar: [
-    { alan: "kod", baslik: "Kod", tip: "metin" },
+    { alan: "kod", baslik: "Kod", tip: "metin", kayit: { tur: "stok", idAlani: "stokId" } },
     { alan: "ad", baslik: "Ürün", tip: "metin" },
     { alan: "depo", baslik: "Depo", tip: "metin" },
     { alan: "birim", baslik: "Birim", tip: "metin" },
@@ -70,7 +70,8 @@ registerRapor({
     const satirlar = tarih
       ? await tarihliEnvanter(tx, tarih, depoId, Boolean(girdi.filtreler?.kritikAlti))
       : await anlikEnvanter(tx, depoId, Boolean(girdi.filtreler?.kritikAlti));
-    if (!girdi.filtreler?.varyantlar) return satirlar.map(({ stokId: _s, ...r }) => r);
+    // RPR-27: stokId satırda kalır (kod sütunu stok kartına bağlantı).
+    if (!girdi.filtreler?.varyantlar) return satirlar;
     return varyantKirilimi(satirlar, await varyantMiktarlari(tx, satirlar.map((r) => r.stokId), depoId, tarih));
   },
 });
@@ -154,11 +155,11 @@ async function varyantMiktarlari(tx: Prisma.TransactionClient, stokIdler: string
   return sonuc;
 }
 
-interface EnvanterSatiri {
+type EnvanterSatiri = {
   kod: string; ad: string; depo: string; birim: string; miktar: number;
   rezerve: number | null; kullanilabilir: number | null; yoldaki: number | null;
   ortalamaMaliyet: string; envanterDegeri: string | null; stokId: string;
-}
+};
 
 /**
  * Varyantlı kartın satırı varyant satırlarına bölünür (maliyet kart düzeyinde
@@ -167,8 +168,8 @@ interface EnvanterSatiri {
  */
 export function varyantKirilimi(satirlar: EnvanterSatiri[], varyantlar: Map<string, VaryantMiktari[]>) {
   const sayi = (v: Prisma.Decimal | null) => (v === null ? null : Number(v));
-  return satirlar.flatMap(({ stokId, ...r }) => {
-    const liste = (varyantlar.get(stokId) ?? []).filter((v) => !v.miktar.isZero());
+  return satirlar.flatMap((r) => {
+    const liste = (varyantlar.get(r.stokId) ?? []).filter((v) => !v.miktar.isZero());
     if (!liste.length) return [r];
     const ortalama = D(r.ortalamaMaliyet);
     const satir = (kod: string, ad: string, miktar: Prisma.Decimal, rezerve: Prisma.Decimal | null, yoldaki: Prisma.Decimal | null) => ({
@@ -238,7 +239,7 @@ registerRapor({
     { alan: "iptaller", ad: "İptalleri de göster", tip: "onay" },
   ],
   kolonlar: [
-    { alan: "kod", baslik: "Kod", tip: "metin" },
+    { alan: "kod", baslik: "Kod", tip: "metin", kayit: { tur: "stok", idAlani: "stokId" } },
     { alan: "ad", baslik: "Ürün", tip: "metin" },
     { alan: "giris", baslik: "Giriş", tip: "sayi" },
     { alan: "cikis", baslik: "Çıkış", tip: "sayi" },
@@ -270,6 +271,7 @@ registerRapor({
     const gruplar = new Map<
       string,
       {
+        stokId: string;
         kod: string;
         ad: string;
         giris: number;
@@ -281,6 +283,7 @@ registerRapor({
     for (const h of hareketler) {
       if (!iptalleriSay && iptalCiftiMi(h, iptaller)) continue;
       const g = gruplar.get(h.stokId) ?? {
+        stokId: h.stokId,
         kod: h.stok.kod,
         ad: h.stok.ad,
         giris: 0,
@@ -330,20 +333,21 @@ registerRapor({
     { alan: "adet", ad: "Kayıt Sayısı", tip: "sayi" },
   ],
   kolonlar: [
-    { alan: "kod", baslik: "Kod", tip: "metin" },
+    { alan: "kod", baslik: "Kod", tip: "metin", kayit: { tur: "stok", idAlani: "stokId" } },
     { alan: "ad", baslik: "Ürün", tip: "metin" },
     { alan: "miktar", baslik: "Satılan Miktar", tip: "sayi" },
     { alan: "ciro", baslik: "Ciro (TL)", tip: "para", toplam: true },
   ],
   async calistir(girdi, { tx }) {
     const f = girdi.filtreler ?? {};
-    const gruplar = (await urunSatislari(tx, f.baslangic, f.bitis)).map((g) => ({ kod: g.kod, ad: g.ad, miktar: g.miktar.toNumber(), ciro: g.ciro }));
+    const gruplar = (await urunSatislari(tx, f.baslangic, f.bitis)).map((g) => ({ stokId: g.stokId, kod: g.kod, ad: g.ad, miktar: g.miktar.toNumber(), ciro: g.ciro }));
     const adet = typeof f.adet === "number" && f.adet > 0 ? f.adet : 20;
     const isaret = f.yon === "az" ? 1 : -1;
     return gruplar
       .sort((a, b) => isaret * (a.miktar - b.miktar))
       .slice(0, adet)
       .map((g) => ({
+        stokId: g.stokId,
         kod: g.kod,
         ad: g.ad,
         miktar: g.miktar,
@@ -374,7 +378,7 @@ registerRapor({
     "Dönem satışının ortalama stoğa ((dönem başı + dönem sonu) / 2) oranı ve stokta kalma süresi; hiç satılmayan stoklu ürünler de listelenir (devir 0)",
   filtreler: TARIH_FILTRELERI.map((f) => ({ ...f, zorunlu: true })),
   kolonlar: [
-    { alan: "kod", baslik: "Kod", tip: "metin" },
+    { alan: "kod", baslik: "Kod", tip: "metin", kayit: { tur: "stok", idAlani: "stokId" } },
     { alan: "ad", baslik: "Ürün", tip: "metin" },
     { alan: "birim", baslik: "Birim", tip: "metin" },
     { alan: "donemBasi", baslik: "Dönem Başı Stok", tip: "sayi" },
@@ -428,7 +432,7 @@ registerRapor({
   roller: [...FINANS_ROLLERI, "maliyet_muhasebesi"],
   filtreler: TARIH_FILTRELERI,
   kolonlar: [
-    { alan: "kod", baslik: "Kod", tip: "metin" },
+    { alan: "kod", baslik: "Kod", tip: "metin", kayit: { tur: "stok", idAlani: "stokId" } },
     { alan: "ad", baslik: "Ürün", tip: "metin" },
     { alan: "satilanMiktar", baslik: "Miktar", tip: "sayi" },
     { alan: "ciro", baslik: "Ciro (TL)", tip: "para", toplam: true },
@@ -439,12 +443,13 @@ registerRapor({
   ],
   async calistir(girdi, { tx }) {
     const f = girdi.filtreler ?? {};
-    const gruplar = (await urunSatislari(tx, f.baslangic, f.bitis)).map((g) => ({ kod: g.kod, ad: g.ad, miktar: g.miktar.toNumber(), ciro: g.ciro, maliyet: g.maliyet, maliyetsizCiro: g.maliyetsizCiro }));
+    const gruplar = (await urunSatislari(tx, f.baslangic, f.bitis)).map((g) => ({ stokId: g.stokId, kod: g.kod, ad: g.ad, miktar: g.miktar.toNumber(), ciro: g.ciro, maliyet: g.maliyet, maliyetsizCiro: g.maliyetsizCiro }));
     return gruplar
       .sort((a, b) => a.kod.localeCompare(b.kod, "tr"))
       .map((g) => {
         const kar = g.ciro.sub(g.maliyet);
         return {
+          stokId: g.stokId,
           kod: g.kod,
           ad: g.ad,
           satilanMiktar: g.miktar,
@@ -468,7 +473,7 @@ registerRapor({
   aciklama: "Mevcut miktarı kritik seviyenin altına düşen ürünler",
   filtreler: [],
   kolonlar: [
-    { alan: "kod", baslik: "Kod", tip: "metin" },
+    { alan: "kod", baslik: "Kod", tip: "metin", kayit: { tur: "stok", idAlani: "stokId" } },
     { alan: "ad", baslik: "Ürün", tip: "metin" },
     { alan: "mevcut", baslik: "Mevcut", tip: "sayi" },
     { alan: "kritikSeviye", baslik: "Kritik Seviye", tip: "sayi" },
@@ -482,6 +487,7 @@ registerRapor({
     return kartlar
       .filter((k) => k.kritikSeviye && k.mevcutMiktar.lessThan(k.kritikSeviye))
       .map((k) => ({
+        stokId: k.id,
         kod: k.kod,
         ad: k.ad,
         mevcut: Number(k.mevcutMiktar),
@@ -502,7 +508,7 @@ registerRapor({
     "altına düşen ürünler; varsayılan tedarikçi bilgisiyle",
   filtreler: [{ alan: "gun", ad: "Satış Ortalaması Dönemi (gün)", tip: "sayi" }],
   kolonlar: [
-    { alan: "kod", baslik: "Kod", tip: "metin" },
+    { alan: "kod", baslik: "Kod", tip: "metin", kayit: { tur: "stok", idAlani: "stokId" } },
     { alan: "ad", baslik: "Ürün", tip: "metin" },
     { alan: "mevcut", baslik: "Mevcut", tip: "sayi" },
     { alan: "gunlukSatis", baslik: "Ort. Günlük Satış", tip: "sayi" },
@@ -551,6 +557,7 @@ registerRapor({
       const hedef =
         k.maksStok && D(k.maksStok).gt(nokta) ? D(k.maksStok) : nokta;
       sonuc.push({
+        stokId: k.id,
         kod: k.kod,
         ad: k.ad,
         mevcut: Number(k.mevcutMiktar),
@@ -588,7 +595,7 @@ registerRapor({
     },
   ],
   kolonlar: [
-    { alan: "kod", baslik: "Kod", tip: "metin" },
+    { alan: "kod", baslik: "Kod", tip: "metin", kayit: { tur: "stok", idAlani: "stokId" } },
     { alan: "ad", baslik: "Ürün", tip: "metin" },
     { alan: "tur", baslik: "Tür", tip: "metin" },
     { alan: "miktar", baslik: "Miktar", tip: "sayi" },
@@ -611,11 +618,12 @@ registerRapor({
     });
     const gruplar = new Map<
       string,
-      { kod: string; ad: string; tur: string; miktar: Prisma.Decimal; tutar: Prisma.Decimal }
+      { stokId: string; kod: string; ad: string; tur: string; miktar: Prisma.Decimal; tutar: Prisma.Decimal }
     >();
     for (const h of hareketler) {
       const anahtar = `${h.stokId}:${h.tip}`;
       const g = gruplar.get(anahtar) ?? {
+        stokId: h.stokId,
         kod: h.stok.kod,
         ad: h.stok.ad,
         tur: h.tip === "fire" ? "Fire" : "Zayi",
@@ -632,6 +640,7 @@ registerRapor({
         (a, b) => a.kod.localeCompare(b.kod, "tr") || a.tur.localeCompare(b.tur, "tr"),
       )
       .map((g) => ({
+        stokId: g.stokId,
         kod: g.kod,
         ad: g.ad,
         tur: g.tur,
@@ -651,7 +660,7 @@ registerRapor({
     "Belirtilen gün sayısı boyunca hiç hareket görmemiş, stoğu bulunan ürünler",
   filtreler: [{ alan: "gun", ad: "Gün", tip: "sayi" }],
   kolonlar: [
-    { alan: "kod", baslik: "Kod", tip: "metin" },
+    { alan: "kod", baslik: "Kod", tip: "metin", kayit: { tur: "stok", idAlani: "stokId" } },
     { alan: "ad", baslik: "Ürün", tip: "metin" },
     { alan: "mevcut", baslik: "Mevcut", tip: "sayi" },
     { alan: "envanterDegeri", baslik: "Envanter Değeri", tip: "para", toplam: true },
@@ -680,6 +689,7 @@ registerRapor({
         return !son || son < sinir;
       })
       .map((k) => ({
+        stokId: k.id,
         kod: k.kod,
         ad: k.ad,
         mevcut: Number(k.mevcutMiktar),
@@ -699,7 +709,7 @@ registerRapor({
   aciklama: "Mevcut miktarı eksiye düşmüş ürünler (eksi stok politikası takibi)",
   filtreler: [],
   kolonlar: [
-    { alan: "kod", baslik: "Kod", tip: "metin" },
+    { alan: "kod", baslik: "Kod", tip: "metin", kayit: { tur: "stok", idAlani: "stokId" } },
     { alan: "ad", baslik: "Ürün", tip: "metin" },
     { alan: "birim", baslik: "Birim", tip: "metin" },
     { alan: "mevcut", baslik: "Mevcut", tip: "sayi" },
@@ -720,6 +730,7 @@ registerRapor({
       sonHareketler.map((h) => [h.stokId, h._max.tarih]),
     );
     return kartlar.map((k) => ({
+      stokId: k.id,
       kod: k.kod,
       ad: k.ad,
       birim: k.anaBirim,

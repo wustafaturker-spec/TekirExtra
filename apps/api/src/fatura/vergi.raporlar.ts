@@ -52,6 +52,7 @@ export interface VergiKalemi {
   faturaNo: string;
   tarih: string;
   cariId: string;
+  stokId: string;
   cari: string;
   urun: string;
   kova: VergiKovasi;
@@ -83,6 +84,7 @@ export async function vergiKalemleri(f: RaporFiltreDegerleri, tx: Prisma.Transac
       matrah: true,
       birim: true,
       ekVergiler: true,
+      stokId: true,
       stok: { select: { kod: true, ad: true } },
       fatura: { select: { id: true, no: true, tarih: true, tip: true, kur: true, dovizCinsi: true, cari: { select: { id: true, unvan: true } } } },
     },
@@ -95,6 +97,7 @@ export async function vergiKalemleri(f: RaporFiltreDegerleri, tx: Prisma.Transac
     faturaNo: s.fatura.no ?? "Numarasız",
     tarih: tarihMetni(s.fatura.tarih),
     cariId: s.fatura.cari.id,
+    stokId: s.stokId,
     cari: s.fatura.cari.unvan,
     urun: `${s.stok.kod} · ${s.stok.ad}`,
     kova: vergiKovasi(s.fatura.tip, v.stopaj),
@@ -189,8 +192,8 @@ registerRapor({
   kolonlar: [
     { alan: "tarih", baslik: "Tarih", tip: "tarih" },
     { alan: "faturaNo", baslik: "Fatura", tip: "metin", baglantiAlani: "faturaYolu" },
-    { alan: "cari", baslik: "Cari", tip: "metin" },
-    { alan: "urun", baslik: "Ürün / hizmet", tip: "metin" },
+    { alan: "cari", baslik: "Cari", tip: "metin", kayit: { tur: "cari", idAlani: "cariId" } },
+    { alan: "urun", baslik: "Ürün / hizmet", tip: "metin", kayit: { tur: "stok", idAlani: "stokId" } },
     { alan: "kova", baslik: "Kova", tip: "metin" },
     { alan: "vergi", baslik: "Vergi türü", tip: "metin" },
     { alan: "oran", baslik: "Oran / birim", tip: "metin" },
@@ -203,7 +206,9 @@ registerRapor({
       tarih: k.tarih,
       faturaNo: k.faturaNo,
       faturaYolu: `/panel/fatura/yeni?ac=${k.faturaId}`,
+      cariId: k.cariId,
       cari: k.cari,
+      stokId: k.stokId,
       urun: k.urun,
       kova: KOVA_ADLARI[k.kova],
       vergi: vergiEtiketi(k),
