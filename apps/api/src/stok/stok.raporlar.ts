@@ -49,6 +49,8 @@ registerRapor({
     { alan: "tarih", ad: "Tarih itibarıyla", tip: "tarih" },
     { alan: "kritikAlti", ad: "Yalnız kritik altı", tip: "onay" },
     { alan: "depo", ad: "Depo", tip: "depo" },
+    // RPR-22 (inceleme P2-7): varyantlı ürün her varyantıyla ayrı satır.
+    { alan: "varyantlar", ad: "Varyantları ayrı göster", tip: "onay" },
   ],
   kolonlar: [
     { alan: "kod", baslik: "Kod", tip: "metin" },
@@ -65,7 +67,17 @@ registerRapor({
   async calistir(girdi, { tx }) {
     const depoId = girdi.filtreler?.depo ? String(girdi.filtreler.depo) : null;
     const tarih = girdi.filtreler?.tarih ? String(girdi.filtreler.tarih) : "";
-    if (tarih) return tarihliEnvanter(tx, tarih, depoId, Boolean(girdi.filtreler?.kritikAlti));
+    const satirlar = tarih
+      ? await tarihliEnvanter(tx, tarih, depoId, Boolean(girdi.filtreler?.kritikAlti))
+      : await anlikEnvanter(tx, depoId, Boolean(girdi.filtreler?.kritikAlti));
+    if (!girdi.filtreler?.varyantlar) return satirlar.map(({ stokId: _s, ...r }) => r);
+    return varyantKirilimi(satirlar, await varyantMiktarlari(tx, satirlar.map((r) => r.stokId), depoId, tarih));
+  },
+});
+
+/** Anlık envanter (kart ya da depo bakiyesinden). */
+async function anlikEnvanter(tx: Prisma.TransactionClient, depoId: string | null, kritikAlti: boolean): Promise<EnvanterSatiri[]> {
+  {
     const kartlar = await tx.stokKart.findMany({
       // STK-33: hizmet stok tutmaz; sarf malzeme değerli stoktur.
       where: { aktif: true, tip: { not: "hizmet" } },
@@ -96,7 +108,7 @@ registerRapor({
       })
       .filter(
         ({ k, mevcut }) =>
-          !girdi.filtreler?.kritikAlti ||
+          !kritikAlti ||
           (k.kritikSeviye !== null && mevcut.lessThan(k.kritikSeviye)),
       )
       .map(({ k, mevcut, rezerve, yoldaki }) => ({
@@ -109,16 +121,73 @@ registerRapor({
         kullanilabilir: Number(mevcut.sub(rezerve)),
         yoldaki: Number(yoldaki),
         ortalamaMaliyet: k.ortalamaMaliyet.toFixed(2),
-        envanterDegeri: mevcut.mul(k.ortalamaMaliyet).toFixed(2),
+        envanterDegeri: degerle(mevcut, k.ortalamaMaliyet),
+        stokId: k.id,
       }));
-  },
-});
+  }
+}
+
+/** RPR-22: eksi stok değerlenmez (panel özetiyle aynı kural, RPR-15); toplam satırına girmez. */
+const degerle = (miktar: Prisma.Decimal, ortalama: Prisma.Decimal) => (miktar.lt(0) ? null : miktar.mul(ortalama).toFixed(2));
+
+interface VaryantMiktari { varyantId: string; kod: string; ad: string; miktar: Prisma.Decimal; rezerve: Prisma.Decimal | null; yoldaki: Prisma.Decimal | null }
+
+/** Kartların varyant miktarları: anlık varyant/depo bakiyesinden, tarihli o güne kadarki hareketlerden. */
+async function varyantMiktarlari(tx: Prisma.TransactionClient, stokIdler: string[], depoId: string | null, tarih: string): Promise<Map<string, VaryantMiktari[]>> {
+  const varyantlar = await tx.stokVaryant.findMany({ where: { stokId: { in: stokIdler } }, select: { id: true, stokId: true, kod: true, ad: true, mevcutMiktar: true, rezerveMiktar: true, yoldakiMiktar: true }, orderBy: { kod: "asc" } });
+  if (!varyantlar.length) return new Map();
+  let miktarlar: Map<string, { miktar: Prisma.Decimal; rezerve: Prisma.Decimal | null; yoldaki: Prisma.Decimal | null }>;
+  if (tarih) {
+    const gruplar = await tx.stokHareket.groupBy({ by: ["varyantId"], where: { varyantId: { in: varyantlar.map((v) => v.id) }, tarih: { lte: new Date(tarih) }, ...(depoId ? { depoId } : {}) }, _sum: { miktar: true } });
+    miktarlar = new Map(gruplar.map((g) => [g.varyantId!, { miktar: D(g._sum.miktar ?? 0), rezerve: null, yoldaki: null }]));
+  } else if (depoId) {
+    const b = await tx.stokVaryantDepoBakiye.findMany({ where: { depoId, varyantId: { in: varyantlar.map((v) => v.id) } } });
+    miktarlar = new Map(b.map((x) => [x.varyantId, { miktar: x.mevcutMiktar, rezerve: x.rezerveMiktar, yoldaki: x.yoldakiMiktar }]));
+  } else {
+    miktarlar = new Map(varyantlar.map((v) => [v.id, { miktar: v.mevcutMiktar, rezerve: v.rezerveMiktar, yoldaki: v.yoldakiMiktar }]));
+  }
+  const sonuc = new Map<string, VaryantMiktari[]>();
+  for (const v of varyantlar) {
+    const m = miktarlar.get(v.id) ?? { miktar: D(0), rezerve: tarih ? null : D(0), yoldaki: tarih ? null : D(0) };
+    sonuc.set(v.stokId, [...(sonuc.get(v.stokId) ?? []), { varyantId: v.id, kod: v.kod, ad: v.ad, ...m }]);
+  }
+  return sonuc;
+}
+
+interface EnvanterSatiri {
+  kod: string; ad: string; depo: string; birim: string; miktar: number;
+  rezerve: number | null; kullanilabilir: number | null; yoldaki: number | null;
+  ortalamaMaliyet: string; envanterDegeri: string | null; stokId: string;
+}
+
+/**
+ * Varyantlı kartın satırı varyant satırlarına bölünür (maliyet kart düzeyinde
+ * tutulduğu için kartın ortalaması); varyantsız kalan miktar ayrı satır olur.
+ * Miktarı sıfır varyant yazılmaz.
+ */
+export function varyantKirilimi(satirlar: EnvanterSatiri[], varyantlar: Map<string, VaryantMiktari[]>) {
+  const sayi = (v: Prisma.Decimal | null) => (v === null ? null : Number(v));
+  return satirlar.flatMap(({ stokId, ...r }) => {
+    const liste = (varyantlar.get(stokId) ?? []).filter((v) => !v.miktar.isZero());
+    if (!liste.length) return [r];
+    const ortalama = D(r.ortalamaMaliyet);
+    const satir = (kod: string, ad: string, miktar: Prisma.Decimal, rezerve: Prisma.Decimal | null, yoldaki: Prisma.Decimal | null) => ({
+      ...r, kod, ad, miktar: Number(miktar), rezerve: sayi(rezerve), yoldaki: sayi(yoldaki),
+      kullanilabilir: rezerve === null ? null : Number(miktar.sub(rezerve)), envanterDegeri: degerle(miktar, ortalama),
+    });
+    const kalan = D(r.miktar).sub(liste.reduce((t, v) => t.add(v.miktar), D(0)));
+    return [
+      ...liste.map((v) => satir(`${r.kod} / ${v.kod}`, `${r.ad} — ${v.ad}`, v.miktar, v.rezerve, v.yoldaki)),
+      ...(kalan.isZero() ? [] : [satir(r.kod, `${r.ad} — varyantsız`, kalan, r.rezerve === null ? null : D(0), r.yoldaki === null ? null : D(0))]),
+    ];
+  });
+}
 
 /**
  * STK-37: tarih itibarıyla envanter. Rezerve ve yoldaki miktar geçmişte
  * tutulmadığı için boş döner. Bugün pasif olan kart o gün stoklu ise listelenir.
  */
-async function tarihliEnvanter(tx: Prisma.TransactionClient, tarih: string, depoId: string | null, kritikAlti: boolean) {
+async function tarihliEnvanter(tx: Prisma.TransactionClient, tarih: string, depoId: string | null, kritikAlti: boolean): Promise<EnvanterSatiri[]> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(tarih)) throw new BadRequestException("Tarih YYYY-AA-GG biçiminde olmalı");
   const hareketler = await tx.stokHareket.findMany({
     where: { tarih: { lte: new Date(tarih) }, stok: { tip: { not: "hizmet" } } },
@@ -148,7 +217,8 @@ async function tarihliEnvanter(tx: Prisma.TransactionClient, tarih: string, depo
       kullanilabilir: null,
       yoldaki: null,
       ortalamaMaliyet: ortalama.toFixed(2),
-      envanterDegeri: miktar.mul(ortalama).toFixed(2),
+      envanterDegeri: degerle(miktar, ortalama),
+      stokId: k.id,
     }];
   });
 }
