@@ -104,6 +104,74 @@ describe("BelgelerService", () => {
     expect(kayit.ekVergiler).toEqual([expect.objectContaining({ kod: "0074", oran: "25", tutar: "250.00", kdvMatrahinaDahil: true })]);
   });
 
+  it("belgedeki KDV dışı vergi faturaya karttan değil belgeden geçer (EBLG-132)", async () => {
+    const satir = {
+      stokId: "s1", varyantId: null, miktar: new Prisma.Decimal(2), birim: "adet", birimFiyat: new Prisma.Decimal(500), iskontoOrani: new Prisma.Decimal(0), kdvOrani: new Prisma.Decimal(20), tevkifatPay: null, tevkifatPayda: null,
+      // Kullanıcı teklifte kart oranını (%25) %10'a indirmiş
+      ekVergiler: [{ kod: "0074", ad: "ÖTV III", hesap: "oran", oran: "10", birimTutar: null, matrah: "1000.00", tutar: "100.00", stopaj: false, kdvMatrahinaDahil: true }],
+    };
+    const tx = {
+      belge: {
+        findMany: vi.fn().mockResolvedValue([{ id: "i1", no: "i1", durum: "onaylandi", tur: "irsaliye", cariId: "c1", dovizCinsi: "TRY", kur: new Prisma.Decimal(1), yon: "satis", depoId: "d1", satirlar: [satir] }]),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      fatura: { create: vi.fn().mockResolvedValue({ id: "f1" }), findUnique: vi.fn().mockResolvedValue(null) },
+      faturaSatir: { create: vi.fn() },
+      stokEkVergi: { findMany: vi.fn().mockResolvedValue([{ stokId: "s1", kod: "0074", hesap: "oran", deger: new Prisma.Decimal(25) }]) },
+    };
+    const prisma = { tenantIslem: vi.fn((_tenantId, calistir) => calistir(tx)) } as any;
+    const service = new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any);
+
+    await service.topluFatura({ belgeIds: ["i1"] });
+
+    expect(tx.fatura.create.mock.calls[0][0].data.toplamEkVergi.toString()).toBe("100");
+    expect(tx.faturaSatir.create.mock.calls[0][0].data.ekVergiler).toEqual([expect.objectContaining({ kod: "0074", oran: "10", tutar: "100.00" })]);
+  });
+
+  describe("belge oluşturmada KDV dışı vergiler (EBLG-132)", () => {
+    const girdi = (ek: Record<string, unknown>) => ({
+      tur: "teklif" as const, yon: "satis" as const, tarih: "2026-10-11", cariId: "11111111-1111-1111-1111-111111111111", dovizCinsi: "TRY" as const, kur: "1",
+      genelIskontoYuzdesi: "0", genelIskontoTutari: "0",
+      satirlar: [{ stokId: "22222222-2222-2222-2222-222222222222", miktar: "2", birim: "adet", birimFiyat: "500", iskontoOrani: "0", kdvOrani: "20", ...ek }],
+    });
+    const kur = () => {
+      const tx = {
+        user: { findUnique: vi.fn().mockResolvedValue(null) },
+        belge: { create: vi.fn((a: { data: Record<string, unknown> }) => Promise.resolve({ id: "b1", ...a.data })) },
+        belgeSatir: { create: vi.fn() },
+        stokEkVergi: { findMany: vi.fn().mockResolvedValue([{ stokId: "22222222-2222-2222-2222-222222222222", kod: "0074", hesap: "oran", deger: new Prisma.Decimal(25) }]) },
+        stokKart: { findMany: vi.fn().mockResolvedValue([{ id: "22222222-2222-2222-2222-222222222222", anaBirim: "adet", birimler: [] }]) },
+        stokVaryant: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
+        cariHesap: { findUnique: vi.fn().mockResolvedValue({ varsayilanVadeGun: null }) },
+      };
+      const prisma = { tenantIslem: vi.fn((_t: string, calistir: (tx: unknown) => unknown) => calistir(tx)) } as any;
+      return { tx, servis: new BelgelerService(prisma, {} as any, {} as any, { tarihDogrula: vi.fn() } as any) };
+    };
+
+    it("alan gönderilmezse ürün kartının vergisini uygular", async () => {
+      const { tx, servis } = kur();
+      await servis.olustur(girdi({}) as any);
+      const belge = tx.belge.create.mock.calls[0][0].data;
+      // 1000 + ÖTV 250 → KDV 250, genel 1500
+      expect(belge.toplamEkVergi.toString()).toBe("250");
+      expect(belge.genelToplam.toString()).toBe("1500");
+      expect(tx.belgeSatir.create.mock.calls[0][0].data.ekVergiler).toEqual([expect.objectContaining({ kod: "0074", tutar: "250.00" })]);
+    });
+
+    it("boş dizi gönderilirse vergisiz kaydeder ve boş dizi saklar", async () => {
+      const { tx, servis } = kur();
+      await servis.olustur(girdi({ ekVergiler: [] }) as any);
+      expect(tx.belge.create.mock.calls[0][0].data.genelToplam.toString()).toBe("1200");
+      expect(tx.belgeSatir.create.mock.calls[0][0].data.ekVergiler).toEqual([]);
+    });
+
+    it("maktu vergiyi miktar başı hesaplar", async () => {
+      const { tx, servis } = kur();
+      await servis.olustur(girdi({ ekVergiler: [{ kod: "0071", hesap: "birim", birimTutar: "12.5" }] }) as any);
+      expect(tx.belge.create.mock.calls[0][0].data.toplamEkVergi.toString()).toBe("25");
+    });
+  });
+
   it("sonraki sayfa imlecini son döndürülen belgeye koyar", async () => {
     const belge = (id: string) => ({
       id, tur: "siparis", yon: "satis", durum: "onaylandi", no: id,
@@ -215,6 +283,34 @@ describe("BelgelerService", () => {
     // Teslim edilen sipariş satırında birikir, sipariş kısmen kapanır
     expect(tx.belgeSatir.update).toHaveBeenCalledWith({ where: { id: "s1" }, data: { teslimEdilenMiktar: { increment: expect.anything() } } });
     expect(tx.belge.update).toHaveBeenCalledWith({ where: { id: "sip1" }, data: { durum: "kismen_kapandi" } });
+  });
+
+  it("kısmi dönüşümde KDV dışı vergiyi yeni miktarla taşır (EBLG-132)", async () => {
+    const { servis, tx, satir } = siparisKurulumu();
+    Object.assign(satir, {
+      ekVergiler: [{ kod: "0071", ad: "ÖTV I", hesap: "oran", oran: "10", birimTutar: null, matrah: "1000.00", tutar: "100.00", stopaj: false, kdvMatrahinaDahil: true }],
+      ekVergiTutari: D("100"), stopajTutari: D(0), kdvTutari: D("220"), netKdvTutari: D("220"), toplamTutar: D("1320"),
+    });
+
+    await servis.donustur("sip1", "irsaliye", { kalemler: [{ satirId: "s1", miktar: "40" }] });
+
+    const yeni = tx.belge.create.mock.calls[0][0].data;
+    // 400 + ÖTV 40 = KDV matrahı 440, KDV 88
+    expect(Number(yeni.toplamEkVergi)).toBe(40);
+    expect(Number(yeni.toplamKdv)).toBe(88);
+    expect(Number(yeni.genelToplam)).toBe(528);
+    const yeniSatir = tx.belgeSatir.createMany.mock.calls[0][0].data[0];
+    expect(Number(yeniSatir.ekVergiTutari)).toBe(40);
+    expect(yeniSatir.ekVergiler).toEqual([expect.objectContaining({ kod: "0071", oran: "10", matrah: "400.00", tutar: "40.00" })]);
+  });
+
+  it("özellikten önceki satırı (vergisi NULL) dönüşümde vergisiz taşır (EBLG-132)", async () => {
+    const { servis, tx, satir } = siparisKurulumu();
+    Object.assign(satir, { ekVergiler: null });
+
+    await servis.donustur("sip1", "irsaliye");
+
+    expect(tx.belgeSatir.createMany.mock.calls[0][0].data[0].ekVergiler).toBe(Prisma.JsonNull);
   });
 
   it("müşterinin referanslarını, ilgili kişisini ve koşulları yeni belgeye kopyalar (FTR-31/32/33)", async () => {
@@ -439,7 +535,7 @@ describe("BelgelerService", () => {
       miktar: D("100"), teslimEdilenMiktar: D("40"), birim: "adet", birimFiyat: D("10"),
       iskontoOrani: D(0), iskontoTutari: D(0), genelIskontoPayi: D(0), matrah: D("1000"),
       kdvOrani: D("20"), kdvTutari: D("200"), tevkifatPay: null, tevkifatPayda: null,
-      tevkifatTutari: D(0), netKdvTutari: D("200"), toplamTutar: D("1200"),
+      tevkifatTutari: D(0), netKdvTutari: D("200"), ekVergiler: null, ekVergiTutari: D(0), stopajTutari: D(0), toplamTutar: D("1200"),
       stok: { id: "stk1", kod: "STK-1", ad: "Ürün" }, varyant: null,
     };
     const irsaliyeSatiri = (miktar: string) => ({

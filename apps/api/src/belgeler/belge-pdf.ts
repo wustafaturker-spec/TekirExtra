@@ -63,6 +63,8 @@ export interface BelgePdfVerisi {
     iskontoOrani: string;
     kdvOrani: string;
     toplamTutar: string;
+    /** EBLG-132: satırın KDV dışı vergileri (NULL = özellikten önceki satır). */
+    ekVergiler?: { kod?: string; ad: string; tutar: string; stopaj: boolean; kdvMatrahinaDahil?: boolean }[] | null;
   }[];
 }
 
@@ -85,7 +87,7 @@ export function belgePdfHtml(
       (s, i) => `<tr>
   <td class="orta">${i + 1}</td>
   <td>${kacis(s.satirKod ?? s.stokKod)}</td>
-  <td>${kacis(s.satirAd ?? s.stokAd)}${s.satirAciklama ? `<br><span style="color:#6b7280;font-size:8pt">${kacis(s.satirAciklama)}</span>` : ""}</td>
+  <td>${kacis(s.satirAd ?? s.stokAd)}${s.satirAciklama ? `<br><span style="color:#6b7280;font-size:8pt">${kacis(s.satirAciklama)}</span>` : ""}${s.ekVergiler?.length ? `<br><span style="color:#6b7280;font-size:8pt">${s.ekVergiler.map((v) => `${kacis(v.ad)}${v.stopaj ? " (stopaj)" : ""}: ${paraBicim(v.tutar)}`).join(" · ")}</span>` : ""}</td>
   <td class="sag">${sayiBicim(s.miktar)} ${kacis(s.birim)}</td>
   <td class="sag">${paraBicim(s.birimFiyat)}</td>
   <td class="sag">${Number(s.iskontoOrani) > 0 ? `%${sayiBicim(s.iskontoOrani)}` : ""}</td>
@@ -94,6 +96,27 @@ export function belgePdfHtml(
 </tr>`,
     )
     .join("\n");
+
+  // EBLG-132: fatura çıktısındaki sıra (EBLG-130) — KDV matrahına dahil
+  // vergiler (ÖTV…) matrahtan önce, diğerleri ve stopaj KDV'den sonra.
+  const vergiler = new Map<string, { ad: string; stopaj: boolean; dahil: boolean; tutar: number }>();
+  for (const v of b.satirlar.flatMap((s) => s.ekVergiler ?? [])) {
+    const anahtar = v.kod ?? v.ad;
+    const m = vergiler.get(anahtar) ?? { ad: v.ad, stopaj: v.stopaj, dahil: v.kdvMatrahinaDahil === true && !v.stopaj, tutar: 0 };
+    m.tutar = Math.round((m.tutar + Number(v.tutar)) * 100) / 100;
+    vergiler.set(anahtar, m);
+  }
+  const vergiKalemleri = (dahil: boolean) => [...vergiler.values()].filter((v) => v.dahil === dahil && v.tutar > 0)
+    .map((v) => ({ etiket: `${kacis(v.ad)}${v.stopaj ? " (stopaj)" : ""}`, deger: v.stopaj ? `-${v.tutar.toFixed(2)}` : v.tutar.toFixed(2), kalin: false }));
+  const dahilToplam = [...vergiler.values()].filter((v) => v.dahil).reduce((t, v) => t + v.tutar, 0);
+  const toplamlar = [
+    ...(dahilToplam > 0
+      ? [{ etiket: "Mal/Hizmet Toplamı", deger: b.toplamMatrah, kalin: false }, ...vergiKalemleri(true), { etiket: "KDV Matrahı", deger: (Number(b.toplamMatrah) + dahilToplam).toFixed(2), kalin: false }]
+      : [{ etiket: "KDV Matrahı", deger: b.toplamMatrah, kalin: false }]),
+    { etiket: "Hesaplanan KDV", deger: b.toplamKdv, kalin: false },
+    ...vergiKalemleri(false),
+    { etiket: "Genel Toplam", deger: b.genelToplam, kalin: true },
+  ].map((k) => `<tr${k.kalin ? ' style="font-weight:bold"' : ""}><td style="padding:3px 8px">${k.etiket}</td><td class="sag" style="padding:3px 8px">${paraBicim(k.deger)} ${paraBirimi}</td></tr>`).join("\n  ");
 
   const icerik = `
 <table style="width:100%;margin-bottom:12px;font-size:9pt">
@@ -141,9 +164,7 @@ export function belgePdfHtml(
   <tbody>${satirlar}</tbody>
 </table>
 <table style="margin-top:12px;margin-left:auto;border:1px solid #e5e7eb;border-radius:4px;font-size:9pt">
-  <tr><td style="padding:3px 8px">KDV Matrahı</td><td class="sag" style="padding:3px 8px">${paraBicim(b.toplamMatrah)} ${paraBirimi}</td></tr>
-  <tr><td style="padding:3px 8px">Hesaplanan KDV</td><td class="sag" style="padding:3px 8px">${paraBicim(b.toplamKdv)} ${paraBirimi}</td></tr>
-  <tr style="font-weight:bold"><td style="padding:3px 8px">Genel Toplam</td><td class="sag" style="padding:3px 8px">${paraBicim(b.genelToplam)} ${paraBirimi}</td></tr>
+  ${toplamlar}
 </table>
 ${
   b.tur === "irsaliye"

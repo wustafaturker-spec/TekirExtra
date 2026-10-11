@@ -23,7 +23,7 @@ import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, KAP_CINSLERI, kapEksigiVarMi, SIK_KAP_CINSLERI, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type TevkifatKodu, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-alani";
 import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
-import { birimKisaAdi, faturaKurTipi, vadeTarihiHesapla, type VergiTuru } from "@tekirextra/shared";
+import { birimKisaAdi, faturaKurTipi, vadeTarihiHesapla } from "@tekirextra/shared";
 import { BirimSecimi, birimKatsayisi, SatirBirimi } from "@/components/birim-secimi";
 import { BOS_TESLIMAT_ADRESI, faturaTeslimYeriEksik, TeslimatAdresiAlanlari, teslimatAdresiGovdesi, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
 import { ebelgeGitmemisMi, ebelgeKullanilmiyor, faturaGecikmeUyarilari, faturaGeriAlmaEngeli, type EbelgeUygulamalari } from "@tekirextra/shared";
@@ -42,28 +42,7 @@ import {
   EylemMenusu,
 } from "@/components/ui";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
-
-/** EBLG-120: satırın KDV dışı vergisi (sunucunun döndürdüğü çözülmüş hâli). */
-interface EkVergiSatiri { kod: string; ad: string; hesap?: "oran" | "birim" | null; oran: string | null; birimTutar?: string | null; matrah: string | null; tutar: string; stopaj: boolean; kdvMatrahinaDahil: boolean }
-
-/** EBLG-125: ürün kartının vergisi → satır vergisi (ad ve davranış belge tarihindeki merkezi listeden). */
-function karttanEkVergiler(vergiler: Stok["ekVergiler"], turler: readonly VergiTuru[]): EkVergiSatiri[] {
-  return (vergiler ?? []).flatMap((v) => {
-    const tur = turler.find((t) => t.kod === v.kod);
-    return tur ? [{ kod: v.kod, ad: tur.ad, hesap: v.hesap, oran: v.hesap === "oran" ? v.deger : null, birimTutar: v.hesap === "birim" ? v.deger : null, matrah: null, tutar: "0", stopaj: tur.stopaj, kdvMatrahinaDahil: tur.kdvMatrahinaDahil }] : [];
-  });
-}
-
-/** Özet kutusu için vergi türü başına toplam; tutar hesaptan (oran/birim) ya da belgeden. */
-function ekVergiOzeti(satirlar: { ekVergiler?: EkVergiSatiri[] }[], tutarlar: number[][]) {
-  const harita = new Map<string, { kod: string; ad: string; stopaj: boolean; kdvMatrahinaDahil: boolean; tutar: number }>();
-  satirlar.forEach((s, i) => (s.ekVergiler ?? []).forEach((v, j) => {
-    const m = harita.get(v.kod) ?? { kod: v.kod, ad: v.ad, stopaj: v.stopaj, kdvMatrahinaDahil: v.kdvMatrahinaDahil && !v.stopaj, tutar: 0 };
-    m.tutar = Math.round((m.tutar + (tutarlar[i]?.[j] ?? Number(v.tutar))) * 100) / 100;
-    harita.set(v.kod, m);
-  }));
-  return [...harita.values()];
-}
+import { ekVergiGovdesi, ekVergiHesapGirdileri, ekVergiOzeti, karttanEkVergiler, type EkVergiSatiri } from "@/lib/ek-vergi";
 
 interface Cari {
   id: string;
@@ -718,7 +697,7 @@ export default function FaturaSayfasi() {
       tevkifatPayda: tevkifat?.payda,
       // EBLG-120: sunucu davranışı merkezden yeniden çözer; özet aynı sonucu göstersin.
       // EBLG-131: maktu vergi ana birim başınadır; ek birimli satırda (koli) katsayıyla ölçeklenir.
-      ekVergiler: (s.ekVergiler ?? []).map((v) => ({ tutar: Number(v.tutar), stopaj: v.stopaj, kdvMatrahinaDahil: v.kdvMatrahinaDahil, hesap: v.hesap ?? null, oran: Number(v.oran ?? 0), birimTutar: Number(v.birimTutar ?? 0) * (v.hesap === "birim" ? birimKatsayisi(stoklar.find((x) => x.id === s.stokId), s.birim) : 1) })),
+      ekVergiler: ekVergiHesapGirdileri(s.ekVergiler, birimKatsayisi(stoklar.find((x) => x.id === s.stokId), s.birim)),
     };
   });
   // EBLG-60: ihraç kayıtlı yalnız satışta; tip değişince seçim yok sayılır.
@@ -1297,7 +1276,7 @@ export default function FaturaSayfasi() {
             ytbMakineId: s.ytbMakineId?.trim() || undefined,
             ytbMakineSiraNo: s.ytbMakineSiraNo?.trim() || undefined,
             sarjUniteSeriNo: s.sarjUniteSeriNo?.trim() || undefined,
-            ekVergiler: s.ekVergiler?.length ? s.ekVergiler.map((v) => (v.hesap ? { kod: v.kod, hesap: v.hesap, oran: v.oran, birimTutar: v.birimTutar } : { kod: v.kod, oran: v.oran, matrah: v.matrah, tutar: v.tutar })) : undefined,
+            ekVergiler: s.ekVergiler?.length ? ekVergiGovdesi(s.ekVergiler) : undefined,
             projeId: s.projeId || undefined,
             projeAltKirilimId: s.projeAltKirilimId || undefined,
             partiBilgileri: (() => {

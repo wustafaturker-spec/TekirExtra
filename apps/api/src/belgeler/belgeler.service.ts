@@ -44,7 +44,7 @@ import type {
 } from "./belgeler.semalar";
 import { MevzuatService } from "../mevzuat/mevzuat.service";
 import { belgeKodTablosu } from "../fatura/tevkifat-tablosu";
-import { ekVergileriCoz, hesapGirdisi, maktuBirimleriniBagla, saklanacakEkVergiler, type EkVergi } from "../fatura/ek-vergi";
+import { ekVergileriCoz, hesapGirdisi, maktuBirimleriniBagla, saklanacakEkVergiler, sakliEkVergiler, type EkVergi, type EkVergiGirdisi } from "../fatura/ek-vergi";
 import { kanuniDegerOku } from "../mevzuat/kanuni-deger";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal =>
@@ -113,6 +113,10 @@ type BelgeSatirKaydi = {
   toplamTutar: Prisma.Decimal;
   /** EBLG-72: irsaliyedeki etiket numarası faturaya da taşınır. */
   idisEtiketNo?: string | null;
+  /** EBLG-132: saklı KDV dışı vergiler; NULL = özellikten önceki satır. */
+  ekVergiler?: Prisma.JsonValue | null;
+  ekVergiTutari?: Prisma.Decimal;
+  stopajTutari?: Prisma.Decimal;
 };
 
 @Injectable()
@@ -346,6 +350,10 @@ export class BelgelerService {
         matrah: s.matrah.toFixed(2),
         kdvOrani: s.kdvOrani.toFixed(2),
         kdvTutari: s.kdvTutari.toFixed(2),
+        // EBLG-132: NULL = özellikten önceki satır (düzenlenirse kart vergisi gelir).
+        ekVergiler: (s.ekVergiler as EkVergi[] | null) ?? null,
+        ekVergiTutari: s.ekVergiTutari.toFixed(2),
+        stopajTutari: s.stopajTutari.toFixed(2),
         toplamTutar: s.toplamTutar.toFixed(2),
         idisEtiketNo: s.idisEtiketNo,
         // FTR-29: taslak düzenlenirken sipariş bağı korunsun diye ekrana gider.
@@ -436,8 +444,9 @@ export class BelgelerService {
       }
     }
 
-    const hesap = this.hesapla(girdi);
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const ekVergiler = await this.girdiEkVergileri(tx, girdi.yon, girdi.tarih, girdi.satirlar);
+      const hesap = this.hesapla(girdi, ekVergiler);
       if (!secenekler.gelenBelge) await cariIslemDenetle(tx, girdi.cariId, girdi.tur, "yeni");
       if (girdi.faturaId) {
         if (girdi.tur !== "irsaliye" || girdi.yon !== "satis") throw new BadRequestException("Fatura bağlantısı yalnız satış irsaliyesinde kullanılabilir");
@@ -485,7 +494,7 @@ export class BelgelerService {
       });
       await satirBirimleriniDogrula(tx, girdi.satirlar);
       await satirVaryantlariniDogrula(tx, girdi.satirlar);
-      await this.satirlariYaz(tx, belge.id, hesap.satirlar, girdi.satirlar);
+      await this.satirlariYaz(tx, belge.id, hesap.satirlar, girdi.satirlar, ekVergiler);
       return this.gorunum(belge);
     });
   }
@@ -610,6 +619,8 @@ export class BelgelerService {
           tevkifatPayda: null,
           idisEtiketNo: s.idisEtiketNo,
           kaynakSatirId: s.kaynakSatirId,
+          // EBLG-132: saklı vergiler korunur; özellikten önceki satıra kart vergisi gelir.
+          ekVergiler: Array.isArray(s.ekVergiler) ? sakliEkVergiler(s.ekVergiler) : undefined,
         })),
     };
 
@@ -634,15 +645,16 @@ export class BelgelerService {
       }
     }
 
-    const hesap = this.hesapla(birlesik);
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const ekVergiler = await this.girdiEkVergileri(tx, mevcut.yon, birlesik.tarih, birlesik.satirlar);
+      const hesap = this.hesapla(birlesik, ekVergiler);
       // CARI-32: kara listede taslak da düzenlenmez; cari değişiyorsa pasif de olmamalı.
       await cariIslemDenetle(tx, birlesik.cariId, mevcut.tur as BelgeTuru, birlesik.cariId === mevcut.cariId ? "mevcut" : "yeni");
       await this.teslimFarkiniUygula(tx, mevcut.satirlar, birlesik.satirlar);
       await tx.belgeSatir.deleteMany({ where: { belgeId: id } });
       if (girdi.satirlar) await satirBirimleriniDogrula(tx, girdi.satirlar);
       if (girdi.satirlar) await satirVaryantlariniDogrula(tx, girdi.satirlar);
-      await this.satirlariYaz(tx, id, hesap.satirlar, birlesik.satirlar);
+      await this.satirlariYaz(tx, id, hesap.satirlar, birlesik.satirlar, ekVergiler);
       const belge = await tx.belge.update({
         where: { id },
         data: {
@@ -797,9 +809,10 @@ export class BelgelerService {
         } as Prisma.BelgeUncheckedCreateInput,
       });
       await tx.belgeSatir.createMany({
-        data: satirlar.map(({ id: _sid, belgeId: _bid, kaynakSatirId: _ks, teslimEdilenMiktar: _te, partiBilgileri, ...satir }) => ({
+        data: satirlar.map(({ id: _sid, belgeId: _bid, kaynakSatirId: _ks, teslimEdilenMiktar: _te, partiBilgileri, ekVergiler, ...satir }) => ({
           ...satir,
           partiBilgileri: partiBilgileri ?? Prisma.JsonNull,
+          ekVergiler: ekVergiler ?? Prisma.JsonNull,
           belgeId: yeni.id,
         })) as Prisma.BelgeSatirCreateManyInput[],
       });
@@ -868,6 +881,8 @@ export class BelgelerService {
           toplamKdv: belge.toplamKdv,
           toplamTevkifat: belge.toplamTevkifat,
           toplamNetKdv: belge.toplamNetKdv,
+          toplamEkVergi: belge.toplamEkVergi,
+          toplamStopaj: belge.toplamStopaj,
           genelToplam: belge.genelToplam,
           aciklama: belge.aciklama ? `${belge.aciklama} (Kopya)` : "Kopya",
           // FTR-32: ilgili kişi müşteriye aittir, kopyada da kalır (talep/sipariş
@@ -905,6 +920,9 @@ export class BelgelerService {
             tevkifatPayda: s.tevkifatPayda,
             tevkifatTutari: s.tevkifatTutari,
             netKdvTutari: s.netKdvTutari,
+            ekVergiler: s.ekVergiler ?? Prisma.JsonNull,
+            ekVergiTutari: s.ekVergiTutari,
+            stopajTutari: s.stopajTutari,
             toplamTutar: s.toplamTutar,
           },
         });
@@ -1217,6 +1235,8 @@ export class BelgelerService {
                 toplamKdv: belge.toplamKdv,
                 toplamTevkifat: belge.toplamTevkifat,
                 toplamNetKdv: belge.toplamNetKdv,
+                toplamEkVergi: belge.toplamEkVergi,
+                toplamStopaj: belge.toplamStopaj,
                 genelToplam: belge.genelToplam,
               }),
           aciklama: belge.aciklama,
@@ -1261,6 +1281,10 @@ export class BelgelerService {
             tevkifatPayda: s.tevkifatPayda,
             tevkifatTutari: h ? D(h.tevkifatTutari) : s.tevkifatTutari,
             netKdvTutari: h ? D(h.netKdvTutari) : s.netKdvTutari,
+            // EBLG-132: vergiler kaynaktan taşınır; kısmi dönüşümde tutarlar yeni miktarla.
+            ekVergiler: !Array.isArray(s.ekVergiler) ? Prisma.JsonNull : h ? (saklanacakEkVergiler(s.ekVergiler as unknown as EkVergi[], h) as unknown as Prisma.InputJsonValue) : s.ekVergiler,
+            ekVergiTutari: h ? D(h.ekVergiTutari) : s.ekVergiTutari,
+            stopajTutari: h ? D(h.stopajTutari) : s.stopajTutari,
             toplamTutar: h ? D(h.toplamTutar) : s.toplamTutar,
           };
         }),
@@ -1348,7 +1372,7 @@ export class BelgelerService {
       })),
       genelIskontoYuzdesi: belge.genelIskontoYuzdesi,
       genelIskontoTutari,
-    });
+    }, donusenler.map((s) => (Array.isArray(s.ekVergiler) ? (s.ekVergiler as unknown as EkVergi[]) : [])));
     return { hesap, genelIskontoTutari };
   }
 
@@ -1872,8 +1896,8 @@ export class BelgelerService {
   ) {
     const ilk = belgeler[0];
     const tumSatirlar = belgeler.flatMap((b) => b.satirlar);
-    const ekVergiler = await this.kartEkVergileri(tx, ilk.yon === "satis" ? "satis" : "alis", tumSatirlar.map((s) => s.stokId));
-    await maktuBirimleriniBagla(tx, tumSatirlar, ekVergiler);
+    // EBLG-132: vergiler belgeden taşınır; özellikten önceki satıra karttan gelir.
+    const ekVergiler = await this.kayitliEkVergiler(tx, ilk.yon, bugunTR(), tumSatirlar);
     // Genel iskonto payları belge bazında zaten satırlara dağıtılmış olabilir;
     // faturada genel iskonto sıfırlanır, satır değerleri yeniden hesaplanır.
     const hesap = this.hesapla({
@@ -1908,9 +1932,6 @@ export class BelgelerService {
         genelIskontoYuzdesi: D(0),
         genelIskontoTutari: D(0),
         ...this.toplamAlanlari(hesap),
-        // EBLG-125: yalnız faturada tutulan KDV dışı vergi toplamları (belge modelinde yok).
-        toplamEkVergi: D(hesap.toplamEkVergi),
-        toplamStopaj: D(hesap.toplamStopaj),
         aciklama: kaynakNolar ? `Belge zincirinden: ${kaynakNolar}` : null,
         // EBLG-74/FTR-31: müşteri referansları faturada da durur. Toplu
         // faturalamada ilk dolu olan alınır; farklı olanları e-Belge nota yazar.
@@ -1963,6 +1984,7 @@ export class BelgelerService {
     belgeId: string,
     hesapSatirlari: ReturnType<typeof faturaHesapla>["satirlar"],
     girdiSatirlari: { birim?: string; varyantId?: string | null; partiBilgileri?: unknown[]; idisEtiketNo?: string | null; kaynakSatirId?: string | null }[],
+    ekVergiler: EkVergi[][],
   ): Promise<void> {
     const { tenantId } = aktifBaglam();
     for (const [i, s] of hesapSatirlari.entries()) {
@@ -1994,6 +2016,10 @@ export class BelgelerService {
           tevkifatPayda: s.tevkifatPayda,
           tevkifatTutari: D(s.tevkifatTutari),
           netKdvTutari: D(s.netKdvTutari),
+          // EBLG-132: vergisiz satır da boş dizi taşır (NULL eski satırı gösterir).
+          ekVergiler: saklanacakEkVergiler(ekVergiler[i] ?? [], s) as unknown as Prisma.InputJsonValue,
+          ekVergiTutari: D(s.ekVergiTutari),
+          stopajTutari: D(s.stopajTutari),
           toplamTutar: D(s.toplamTutar),
         },
       });
@@ -2035,21 +2061,41 @@ export class BelgelerService {
   }
 
   /**
-   * EBLG-125: zincirden (teklif, sipariş, irsaliye) açılan fatura taslağında
-   * ürün kartlarının KDV dışı vergileri. Teklif ve irsaliye bu vergileri
-   * taşımaz; fatura kesilirken karttan gelir, formdaki gibi. Merkezde tanımı
-   * olmayan kod atlanır.
+   * EBLG-132: girdi satırlarının KDV dışı vergileri, belge tarihindeki merkezi
+   * vergi türleriyle çözülür. Alan hiç gönderilmeyen satıra (eski istemci,
+   * gelen e-İrsaliye) ürün kartının vergileri gelir; kartta olup merkezde
+   * tanımı olmayan kod atlanır. Maktu vergi ek birimde ana birimle (EBLG-131).
    */
-  private async kartEkVergileri(tx: Prisma.TransactionClient, tip: "satis" | "alis", stokIdleri: string[]): Promise<EkVergi[][]> {
-    const kayitlar = await tx.stokEkVergi.findMany({ where: { stokId: { in: [...new Set(stokIdleri)] } }, orderBy: { sira: "asc" } });
-    if (!kayitlar.length) return stokIdleri.map(() => []);
-    const turler = (await belgeKodTablosu(this.mevzuat, bugunTR())).vergiTurleri;
-    const satirlar = stokIdleri.map((stokId) => ({
-      ekVergiler: kayitlar.filter((k) => k.stokId === stokId && turler.some((t) => t.kod === k.kod)).map((k) => ({
-        kod: k.kod, hesap: k.hesap, oran: k.hesap === "oran" ? k.deger.toString() : null, birimTutar: k.hesap === "birim" ? k.deger.toString() : null,
-      })),
+  private async girdiEkVergileri(
+    tx: Prisma.TransactionClient,
+    yon: string,
+    tarih: string | Date,
+    satirlar: { stokId: string; birim?: string | null; ekVergiler?: EkVergiGirdisi[] | null }[],
+  ): Promise<EkVergi[][]> {
+    const eksik = satirlar.filter((s) => s.ekVergiler === undefined).map((s) => s.stokId);
+    const kartlar = eksik.length ? await tx.stokEkVergi.findMany({ where: { stokId: { in: [...new Set(eksik)] } }, orderBy: { sira: "asc" } }) : [];
+    if (!kartlar.length && !satirlar.some((s) => s.ekVergiler?.length)) return satirlar.map(() => []);
+    const gun = typeof tarih === "string" ? tarih.slice(0, 10) : tarih.toISOString().slice(0, 10);
+    const turler = (await belgeKodTablosu(this.mevzuat, gun)).vergiTurleri;
+    const girdiler = satirlar.map((s) => ({
+      ekVergiler: s.ekVergiler !== undefined
+        ? s.ekVergiler ?? []
+        : kartlar.filter((k) => k.stokId === s.stokId && turler.some((t) => t.kod === k.kod)).map((k) => ({
+            kod: k.kod, hesap: k.hesap, oran: k.hesap === "oran" ? k.deger.toString() : null, birimTutar: k.hesap === "birim" ? k.deger.toString() : null,
+          })),
     }));
-    return ekVergileriCoz(tip, satirlar, turler).satirlar;
+    const { satirlar: vergiler, hatalar } = ekVergileriCoz(yon === "alis" ? "alis" : "satis", girdiler, turler);
+    if (hatalar.length) throw new BadRequestException(hatalar.join("; "));
+    await maktuBirimleriniBagla(tx, satirlar, vergiler);
+    return vergiler;
+  }
+
+  /** EBLG-132: saklı satırların vergileri; NULL (özellikten önceki) satıra karttan çözülür. */
+  private async kayitliEkVergiler(tx: Prisma.TransactionClient, yon: string, tarih: string, satirlar: BelgeSatirKaydi[]): Promise<EkVergi[][]> {
+    const eskiler = satirlar.filter((s) => !Array.isArray(s.ekVergiler));
+    const kart = eskiler.length ? await this.girdiEkVergileri(tx, yon, tarih, eskiler.map((s) => ({ stokId: s.stokId, birim: s.birim }))) : [];
+    let j = 0;
+    return satirlar.map((s) => (Array.isArray(s.ekVergiler) ? (s.ekVergiler as unknown as EkVergi[]).map((v) => ({ ...v })) : kart[j++]));
   }
 
   private toplamAlanlari(hesap: ReturnType<typeof faturaHesapla>) {
@@ -2061,6 +2107,8 @@ export class BelgelerService {
       toplamKdv: D(hesap.toplamKdv),
       toplamTevkifat: D(hesap.toplamTevkifat),
       toplamNetKdv: D(hesap.toplamNetKdv),
+      toplamEkVergi: D(hesap.toplamEkVergi),
+      toplamStopaj: D(hesap.toplamStopaj),
       genelToplam: D(hesap.genelToplam),
     };
   }
@@ -2090,6 +2138,8 @@ export class BelgelerService {
     toplamKdv: Prisma.Decimal;
     toplamTevkifat: Prisma.Decimal;
     toplamNetKdv: Prisma.Decimal;
+    toplamEkVergi?: Prisma.Decimal;
+    toplamStopaj?: Prisma.Decimal;
     genelToplam: Prisma.Decimal;
     aciklama: string | null;
     notlar: string | null;
@@ -2161,6 +2211,8 @@ export class BelgelerService {
       toplamKdv: D(k.toplamKdv).toFixed(2),
       toplamTevkifat: D(k.toplamTevkifat).toFixed(2),
       toplamNetKdv: D(k.toplamNetKdv).toFixed(2),
+      toplamEkVergi: D(k.toplamEkVergi ?? 0).toFixed(2),
+      toplamStopaj: D(k.toplamStopaj ?? 0).toFixed(2),
       genelToplam: D(k.genelToplam).toFixed(2),
       aciklama: k.aciklama,
       notlar: k.notlar,

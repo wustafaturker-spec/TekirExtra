@@ -13,6 +13,7 @@ import { DepoSecici } from "@/components/depo-secici";
 import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
 import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyalari";
 import { UrunSecimModali } from "@/components/urun-secim-modali";
+import { ekVergiGovdesi, ekVergiHesapGirdileri, ekVergiOzeti, karttanEkVergiler, type EkVergiSatiri, type KartEkVergisi } from "@/lib/ek-vergi";
 import { varyantDegeriCoz, varyantSecenekleri } from "@/lib/varyant-secimi";
 import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { TasimaBilgisiPaneli } from "@/components/tasima-bilgisi-paneli";
@@ -70,7 +71,7 @@ interface BelgeGorunumu {
 const GORUNUM_ANAHTARI = "tekir_belge_gorunumleri";
 
 interface Cari { id: string; aktif?: boolean; karaListe?: boolean; kod?: string; unvan: string; vknTckn?: string | null; telefon?: string | null; varsayilanVadeGun?: number | null }
-interface Stok { id: string; kod: string; ad: string; tip?: string; kullanilabilirMiktar?: string; tedarikciUrunKodlari?: string[]; takipTipi?: "yok" | "lot" | "seri"; anaBirim?: string; birimler?: { ad: string; katsayi: string }[]; barkod?: string | null; varyantlar?: StokVaryant[] }
+interface Stok { id: string; kod: string; ad: string; tip?: string; kullanilabilirMiktar?: string; tedarikciUrunKodlari?: string[]; takipTipi?: "yok" | "lot" | "seri"; anaBirim?: string; birimler?: { ad: string; katsayi: string }[]; barkod?: string | null; varyantlar?: StokVaryant[]; ekVergiler?: KartEkVergisi[] }
 interface StokVaryant { id: string; kod: string; ad: string; aktif: boolean; mevcutMiktar: string; barkod?: string | null; nitelikler?: unknown }
 
 interface BelgeSatirForm {
@@ -89,6 +90,11 @@ interface BelgeSatirForm {
   dovizUyarisi?: string;
   /** FTR-29: taslak düzenlenirken satırın türediği sipariş satırı; ürün değişince bağ düşer. */
   kaynakSatirId?: string;
+  /**
+   * EBLG-132: KDV dışı vergiler (ÖTV, ÖİV, stopaj…) — ürün seçilince karttan
+   * gelir, pencerede düzeltilebilir. Tanımsızsa sunucu kart vergisini uygular.
+   */
+  ekVergiler?: EkVergiSatiri[];
 }
 
 /** FTR-27 / EBLG-83: belgenin karşı ya da basılı numarası ve düzenleme ucu. */
@@ -203,7 +209,7 @@ interface BelgeDetay extends Belge {
     ebelge: { tur: string; durum: string } | null;
     odemeOzeti: { durum: string; odenen: string; kalan: string };
   } | null;
-  satirlar: { id: string; stokId: string; varyantId?: string | null; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; toplamTutar?: string; stok?: { kod: string; ad: string }; satirKod?: string; satirAd?: string; satirAciklama?: string | null; teslimEdilenMiktar?: string; kalanMiktar?: string; idisEtiketNo?: string | null; kaynakSatirId?: string | null; partiBilgileri?: { lotNo: string; seriNo?: string | null; sonKullanmaTarihi?: string | null; uretimTarihi?: string | null }[] }[];
+  satirlar: { id: string; stokId: string; varyantId?: string | null; miktar: string; birim: string; birimFiyat: string; iskontoOrani: string; kdvOrani: string; toplamTutar?: string; stok?: { kod: string; ad: string }; satirKod?: string; satirAd?: string; satirAciklama?: string | null; teslimEdilenMiktar?: string; kalanMiktar?: string; idisEtiketNo?: string | null; kaynakSatirId?: string | null; partiBilgileri?: { lotNo: string; seriNo?: string | null; sonKullanmaTarihi?: string | null; uretimTarihi?: string | null }[]; ekVergiler?: EkVergiSatiri[] | null }[];
   /** SAT-10: siparişin teslim geçmişi (iptal edilen irsaliyeler sayılmaz). */
   teslimatlar?: {
     id: string; no: string | null; durum: string; tarih: string;
@@ -437,8 +443,12 @@ export default function BelgelerSayfasi() {
     birimFiyat: s.birimFiyat,
     kdvOrani: s.kdvOrani,
     iskontoOrani: s.iskontoOrani,
+    ekVergiler: ekVergiHesapGirdileri(s.ekVergiler, birimKatsayisi(stoklar.find((x) => x.id === s.stokId), s.birim)),
   }));
   const sonuc = faturaHesapla({ satirlar: girdiSatirlar });
+  // EBLG-132: özet faturadaki sırayla (EBLG-130) — matraha dahil vergiler KDV matrahından önce.
+  const ekVergiOzetleri = ekVergiOzeti(satirlar, sonuc.satirlar.map((x) => x.ekVergiTutarlari));
+  const matrahaDahilVergiler = ekVergiOzetleri.filter((v) => v.kdvMatrahinaDahil);
 
   useEffect(() => {
     if (dovizCinsi === "TRY") { setKur("1"); setKurBilgisi(""); return; }
@@ -632,7 +642,7 @@ export default function BelgelerSayfasi() {
     yeni[i] = { ...yeni[i], [alan]: deger };
     // Elle girilen fiyat belge dövizindedir; uyumsuzluk uyarısı kalkar.
     if (alan === "birimFiyat") yeni[i].dovizUyarisi = undefined;
-    if (alan === "stokId") { yeni[i].varyantId = undefined; yeni[i].dovizUyarisi = undefined; yeni[i].kaynakSatirId = undefined; yeni[i].birim = stoklar.find((x) => x.id === deger)?.anaBirim; }
+    if (alan === "stokId") { const stok = stoklar.find((x) => x.id === deger); yeni[i].varyantId = undefined; yeni[i].dovizUyarisi = undefined; yeni[i].kaynakSatirId = undefined; yeni[i].birim = stok?.anaBirim; yeni[i].ekVergiler = stok ? karttanEkVergiler(stok.ekVergiler, kodTablosu.vergiTurleri) : undefined; }
     if (alan === "stokId" && deger) {
       const fiyat = await kalemFiyatiGetir(String(deger));
       if (fiyat) yeni[i] = { ...yeni[i], ...fiyat };
@@ -712,6 +722,8 @@ export default function BelgelerSayfasi() {
             kdvOrani: String(s.kdvOrani),
             idisEtiketNo: s.idisEtiketNo?.trim() || null,
             ...(duzenlenenId ? { kaynakSatirId: s.kaynakSatirId ?? null } : {}),
+            // EBLG-132: boş dizi "vergisiz" demektir; alan yoksa sunucu kart vergisini uygular.
+            ...(s.ekVergiler ? { ekVergiler: ekVergiGovdesi(s.ekVergiler) } : {}),
             partiBilgileri: (() => { const stok = stoklar.find((x) => x.id === s.stokId); if (yon !== "alis" || !stok?.takipTipi || stok.takipTipi === "yok") return []; if (stok.takipTipi === "seri") return (s.seriNolar ?? "").split(/[\n,;]/).map((x) => x.trim()).filter(Boolean).map((seriNo) => ({ lotNo: s.lotNo || seriNo, seriNo, sonKullanmaTarihi: s.sonKullanmaTarihi || null, uretimTarihi: s.uretimTarihi || null, miktar: "1" })); return [{ lotNo: s.lotNo ?? "", seriNo: null, sonKullanmaTarihi: s.sonKullanmaTarihi || null, uretimTarihi: s.uretimTarihi || null, miktar: String(s.miktar) }]; })(),
           })),
         }),
@@ -768,6 +780,8 @@ export default function BelgelerSayfasi() {
         stokId: x.stokId, varyantId: x.varyantId ?? undefined,
         miktar: Number(x.miktar), birim: x.birim, birimFiyat: Number(x.birimFiyat), iskontoOrani: Number(x.iskontoOrani), kdvOrani: Number(x.kdvOrani),
         idisEtiketNo: x.idisEtiketNo ?? undefined, kaynakSatirId: x.kaynakSatirId ?? undefined,
+        // EBLG-132: özellikten önceki satırda (NULL) kart vergisi gösterilir; kart yüklenmemişse sunucuya bırakılır.
+        ekVergiler: x.ekVergiler ?? (() => { const stok = stoklar.find((k) => k.id === x.stokId); return stok ? karttanEkVergiler(stok.ekVergiler, kodTablosu.vergiTurleri) : undefined; })(),
         lotNo: partiler[0]?.lotNo, seriNolar: seriNolar.length ? seriNolar.join("\n") : undefined,
         sonKullanmaTarihi: partiler[0]?.sonKullanmaTarihi ?? undefined, uretimTarihi: partiler[0]?.uretimTarihi ?? undefined,
       };
@@ -1262,6 +1276,7 @@ export default function BelgelerSayfasi() {
                         })), ...varyantSecenekleri(stoklar)]}
                       />
                       {varyantlariAl(s.stokId).length > 0 && <Select aria-label="Varyant" required value={s.varyantId ?? ""} onChange={(e) => { const varyantId = e.target.value; setSatirlar((eskiler) => eskiler.map((x, j) => j === i ? { ...x, varyantId } : x)); if (varyantId) void kalemFiyatiGetir(s.stokId, varyantId).then((fiyat) => { if (fiyat) setSatirlar((eskiler) => eskiler.map((x, j) => j === i && x.varyantId === varyantId ? { ...x, ...fiyat } : x)); }); }}><option value="">Varyant seçin</option>{varyantlariAl(s.stokId).filter((v) => v.aktif).map((v) => <option key={v.id} value={v.id}>{v.ad} · {v.kod} · Stok {Number(v.mevcutMiktar).toLocaleString("tr-TR")}</option>)}</Select>}
+                      {(s.ekVergiler?.length ?? 0) > 0 && <small className="muted">{s.ekVergiler!.map((v, j) => `${v.ad}${v.hesap === "oran" ? ` %${Number(v.oran).toLocaleString("tr-TR")}` : ""}${v.stopaj ? " (stopaj)" : ""}: ${tl(ss?.ekVergiTutarlari[j] ?? Number(v.tutar), dovizCinsi)}`).join(" · ")}</small>}
                       {s.dovizUyarisi && <p className="field-error" role="alert">{s.dovizUyarisi}</p>}
                       {(() => {
                         // Satışta kullanılabilir stok satırın altında görünür; teklif ve siparişte yetersizse uyarır.
@@ -1512,8 +1527,14 @@ export default function BelgelerSayfasi() {
               <div className="invoice-summary__line"><span>Kalem</span><span>{satirlar.filter((s) => s.stokId).length}</span></div>
               <div className="invoice-summary__line"><span>Brüt toplam</span><span>{tl(sonuc.toplamBrut, dovizCinsi)}</span></div>
               {sonuc.toplamSatirIskontosu > 0 && <div className="invoice-summary__line is-discount"><span>İskonto</span><span>-{tl(sonuc.toplamSatirIskontosu, dovizCinsi)}</span></div>}
+              {matrahaDahilVergiler.length > 0 && <div className="invoice-summary__line"><span>Mal / hizmet toplamı</span><span>{tl(sonuc.toplamMatrah, dovizCinsi)}</span></div>}
+              {matrahaDahilVergiler.map((v) => <div className="invoice-summary__line is-tax" key={v.kod}><span>{v.ad}</span><span>{tl(v.tutar, dovizCinsi)}</span></div>)}
+              {matrahaDahilVergiler.length > 0 && <div className="invoice-summary__line"><span>KDV matrahı</span><span>{tl(sonuc.toplamMatrah + matrahaDahilVergiler.reduce((t, v) => t + v.tutar, 0), dovizCinsi)}</span></div>}
               {sonuc.kdvDetaylari.map((d) => (
                 <div className="invoice-summary__line is-tax" key={d.kdvOrani}><span>KDV %{d.kdvOrani}</span><span>{tl(d.kdvTutari, dovizCinsi)}</span></div>
+              ))}
+              {ekVergiOzetleri.filter((v) => !v.kdvMatrahinaDahil).map((v) => (
+                <div className={`invoice-summary__line ${v.stopaj ? "is-discount" : "is-tax"}`} key={v.kod}><span>{v.ad}</span><span>{v.stopaj ? "-" : ""}{tl(v.tutar, dovizCinsi)}</span></div>
               ))}
               <div className="invoice-summary__line is-grand"><span>Genel toplam</span><span>{tl(sonuc.genelToplam, dovizCinsi)}</span></div>
               {/* Siparişin onayda stoğa etkisi; kullanıcı ne olacağını önceden görsün. */}
@@ -1559,9 +1580,10 @@ export default function BelgelerSayfasi() {
         </div>
       )}
 
-      <UrunSecimModali acik={urunModali !== null} baslangicStokId={urunModali?.stokId} baslangicVaryantId={urunModali?.varyantId} stoklar={stoklar} cariId={cariId} tip={yon} belgeDovizi={dovizCinsi} belgeKuru={kur} belgeTarihi={tarih} onKapat={() => setUrunModali(null)} onEkle={(urun) => {
+      <UrunSecimModali acik={urunModali !== null} baslangicStokId={urunModali?.stokId} baslangicVaryantId={urunModali?.varyantId} stoklar={stoklar} cariId={cariId} tip={yon} belgeDovizi={dovizCinsi} belgeKuru={kur} belgeTarihi={tarih} vergiTurleri={kodTablosu.vergiTurleri} onKapat={() => setUrunModali(null)} onEkle={(urun) => {
         setSatirlar((eskiler) => {
-          const satir: BelgeSatirForm = { stokId: urun.stokId, varyantId: urun.varyantId, miktar: urun.miktar, birim: urun.birim, birimFiyat: urun.birimFiyat, iskontoOrani: urun.iskontoOrani, kdvOrani: urun.kdvOrani };
+          // EBLG-132: pencerede gösterilen (gerekirse düzeltilen) KDV dışı vergiler satıra gelir.
+          const satir: BelgeSatirForm = { stokId: urun.stokId, varyantId: urun.varyantId, miktar: urun.miktar, birim: urun.birim, birimFiyat: urun.birimFiyat, iskontoOrani: urun.iskontoOrani, kdvOrani: urun.kdvOrani, ekVergiler: karttanEkVergiler(urun.ekVergiler, kodTablosu.vergiTurleri) };
           if (urunModali == null || urunModali.satir >= eskiler.length) return [...eskiler, satir];
           return eskiler.map((x, i) => i === urunModali.satir ? satir : x);
         });
@@ -1745,6 +1767,7 @@ export default function BelgelerSayfasi() {
                           {s.satirAciklama && <small className="muted"> · {s.satirAciklama}</small>}
                           {/* EBLG-72: onaylı belgede etiket düzenlenemez ama belgeyle giden numara görünmelidir. */}
                           {s.idisEtiketNo && <small className="muted"> · İDİS etiket {s.idisEtiketNo}</small>}
+                          {(s.ekVergiler?.length ?? 0) > 0 && <small className="muted"> · {s.ekVergiler!.map((v) => `${v.ad}${v.stopaj ? " (stopaj)" : ""}: ${tl(v.tutar, detay.dovizCinsi)}`).join(" · ")}</small>}
                         </td>
                         <td className="num">{Number(s.miktar).toLocaleString("tr-TR")} {s.birim}</td>
                         {/* SAT-09/10: siparişin ne kadarı teslim edildi, ne kadarı bekliyor */}
@@ -1825,8 +1848,19 @@ export default function BelgelerSayfasi() {
               {detay.toplamBrut != null && <div className="invoice-summary__line"><span>Brüt toplam</span><strong>{tl(detay.toplamBrut, detay.dovizCinsi)}</strong></div>}
               {Number(detay.toplamSatirIskontosu ?? 0) > 0 && <div className="invoice-summary__line"><span>Satır iskontosu</span><strong>−{tl(detay.toplamSatirIskontosu!, detay.dovizCinsi)}</strong></div>}
               {Number(detay.genelIskontoToplam ?? 0) > 0 && <div className="invoice-summary__line"><span>Genel iskonto</span><strong>−{tl(detay.genelIskontoToplam!, detay.dovizCinsi)}</strong></div>}
-              {detay.toplamMatrah != null && <div className="invoice-summary__line"><span>Matrah</span><strong>{tl(detay.toplamMatrah, detay.dovizCinsi)}</strong></div>}
-              {detay.toplamKdv != null && <div className="invoice-summary__line"><span>KDV</span><strong>{tl(detay.toplamKdv, detay.dovizCinsi)}</strong></div>}
+              {/* EBLG-132: KDV dışı vergiler türüne göre, faturadaki sırayla (EBLG-130). */}
+              {(() => {
+                const vergiler = ekVergiOzeti(detay.satirlar, []);
+                const dahil = vergiler.filter((v) => v.kdvMatrahinaDahil);
+                const dahilToplam = dahil.reduce((t, v) => t + v.tutar, 0);
+                return <>
+                  {detay.toplamMatrah != null && <div className="invoice-summary__line"><span>{dahil.length ? "Mal / hizmet toplamı" : "Matrah"}</span><strong>{tl(detay.toplamMatrah, detay.dovizCinsi)}</strong></div>}
+                  {dahil.map((v) => <div className="invoice-summary__line" key={v.kod}><span>{v.ad}</span><strong>{tl(v.tutar, detay.dovizCinsi)}</strong></div>)}
+                  {dahil.length > 0 && detay.toplamMatrah != null && <div className="invoice-summary__line"><span>KDV matrahı</span><strong>{tl(Number(detay.toplamMatrah) + dahilToplam, detay.dovizCinsi)}</strong></div>}
+                  {detay.toplamKdv != null && <div className="invoice-summary__line"><span>KDV</span><strong>{tl(detay.toplamKdv, detay.dovizCinsi)}</strong></div>}
+                  {vergiler.filter((v) => !v.kdvMatrahinaDahil).map((v) => <div className="invoice-summary__line" key={v.kod}><span>{v.ad}</span><strong>{v.stopaj ? "−" : ""}{tl(v.tutar, detay.dovizCinsi)}</strong></div>)}
+                </>;
+              })()}
               <div className="invoice-summary__line is-grand"><span>Genel toplam</span><span>{tl(detay.genelToplam, detay.dovizCinsi)}</span></div>
               <small className="muted">{detay.satirlar.length} kalem</small>
             </div>

@@ -3944,6 +3944,9 @@ model Belge {
   toplamKdv              Decimal          @map("toplam_kdv") @db.Decimal(15, 2)
   toplamTevkifat         Decimal          @default(0) @map("toplam_tevkifat") @db.Decimal(15, 2)
   toplamNetKdv           Decimal          @map("toplam_net_kdv") @db.Decimal(15, 2)
+  /// EBLG-132: KDV dışı vergiler (fatura gibi); genel toplama dahil, stopaj düşülmüş.
+  toplamEkVergi          Decimal          @default(0) @map("toplam_ek_vergi") @db.Decimal(15, 2)
+  toplamStopaj           Decimal          @default(0) @map("toplam_stopaj") @db.Decimal(15, 2)
   genelToplam            Decimal          @map("genel_toplam") @db.Decimal(15, 2)
   aciklama               String?
   notlar                 String?
@@ -4110,6 +4113,12 @@ model BelgeSatir {
   tevkifatPayda      Int?    @map("tevkifat_payda")
   tevkifatTutari     Decimal @default(0) @map("tevkifat_tutari") @db.Decimal(15, 2)
   netKdvTutari       Decimal @map("net_kdv_tutari") @db.Decimal(15, 2)
+  /// EBLG-132: KDV dışı vergiler, fatura satırındaki biçimde. Boş dizi =
+  /// vergisiz; NULL = özellikten önce yazılmış satır (faturaya geçerken
+  /// vergiler ürün kartından çözülür).
+  ekVergiler         Json?   @map("ek_vergiler")
+  ekVergiTutari      Decimal @default(0) @map("ek_vergi_tutari") @db.Decimal(15, 2)
+  stopajTutari       Decimal @default(0) @map("stopaj_tutari") @db.Decimal(15, 2)
   toplamTutar        Decimal @map("toplam_tutar") @db.Decimal(15, 2)
   fiyatListesiId     String? @map("fiyat_listesi_id") @db.Uuid
   /// SAT-09: sipariş satırından şimdiye dek irsaliyeye dönüşen miktar; kalan

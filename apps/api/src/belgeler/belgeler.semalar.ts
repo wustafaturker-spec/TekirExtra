@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { EN_UZUN_VADE_GUN, PLAKA_HATA_MESAJI, plakaGecerliMi, plakaNormalize, teslimSekliGecerliMi, DOVIZ_CINSLERI } from "@tekirextra/shared";
 import { guncellemeSemasi } from "../core/sema";
+import { ekVergiSemasi } from "../fatura/fatura.semalar";
 
 /** Plaka alanı: boşluk/küçük harf düzeltilir, biçim GİB kuralıyla sınanır. */
 const plakaAlani = z
@@ -42,6 +43,11 @@ export const belgeSatirSemasi = z.object({
    * Yalnız belgenin zaten bağlı olduğu satırlar verilebilir (sunucu denetler).
    */
   kaynakSatirId: z.string().uuid().optional().nullable(),
+  /**
+   * EBLG-132: KDV dışı vergiler (fatura satırındaki biçim). Alan hiç
+   * gönderilmezse ürün kartındaki vergiler uygulanır; boş dizi vergisizdir.
+   */
+  ekVergiler: ekVergiSemasi,
 });
 
 export const belgeOlusturSemasi = z.object({
