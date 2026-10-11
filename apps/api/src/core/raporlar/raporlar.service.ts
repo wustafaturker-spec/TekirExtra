@@ -17,6 +17,9 @@ import { girdiOzeti, toplamSatiri, type DisaAktarimBilgisi } from "./rapor-disa-
  */
 export const EKRAN_SATIR_SINIRI = 500;
 import { raporExcelYaz } from "./rapor-excel";
+import { karsilastir, karsilastirmaDonemi, toplamKarsilastirmaMetni } from "./rapor-karsilastirma";
+
+const trTarih = (v: string) => `${v.slice(8, 10)}.${v.slice(5, 7)}.${v.slice(0, 4)}`;
 import { raporPdfHtml, raporYatayMi } from "./rapor-pdf";
 import {
   girdiDogrula,
@@ -69,35 +72,58 @@ export class RaporlarService {
     const hatalar = girdiDogrula(tanim, girdi);
     if (hatalar.length > 0) throw new BadRequestException(hatalar.join("; "));
 
+    // RPR-25: karşılaştırma dönemi ana dönemden türetilir (elle verilmediyse).
+    const f = girdi.filtreler ?? {};
+    const donem = girdi.karsilastirma
+      ? karsilastirmaDonemi(String(f.baslangic ?? ""), String(f.bitis ?? ""), girdi.karsilastirma)
+      : null;
+    if (girdi.karsilastirma && !donem) throw new BadRequestException("Karşılaştırma için raporda geçerli başlangıç–bitiş ve karşılaştırma dönemi gerekir");
+
     const { tenantId } = aktifBaglam();
-    const satirlar = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tanim.calistir(girdi, { tenantId, tx }),
-    );
+    const [satirlar, oncekiSatirlar] = await this.prisma.tenantIslem(tenantId, async (tx) => [
+      await tanim.calistir(girdi, { tenantId, tx }),
+      donem ? await tanim.calistir({ ...girdi, filtreler: { ...f, ...donem } }, { tenantId, tx }) : null,
+    ]);
+    const sirali = siralamaUygula(tanim, satirlar, girdi.siralama);
+    if (!donem || !oncekiSatirlar) return { kod: tanim.kod, ad: tanim.ad, kolonlar: tanim.kolonlar, satirlar: sirali, karsilastirma: null };
+    const k = karsilastir(tanim.kolonlar, sirali, oncekiSatirlar);
     return {
-      kod: tanim.kod,
-      ad: tanim.ad,
-      kolonlar: tanim.kolonlar,
-      satirlar: siralamaUygula(tanim, satirlar, girdi.siralama),
+      kod: tanim.kod, ad: tanim.ad, kolonlar: k.kolonlar, satirlar: k.satirlar,
+      karsilastirma: { ...donem, tur: girdi.karsilastirma!.tur, satirKarsilastirmasi: k.satirKarsilastirmasi, toplamlar: k.toplamlar },
+    };
+  }
+
+  /** Excel, PDF ve zamanlanmış gönderimin ortak çıktısı: rapor bir kez çalışır, karşılaştırma sütunları ve satırları dahil. */
+  private async disaAktar(kod: string, girdi: RaporGirdisi, bicim: { excel: boolean; pdf: boolean }) {
+    const tanim = raporTanimiAl(kod);
+    if (!tanim) throw new NotFoundException(`'${kod}' raporu bulunamadı`);
+    const sonuc = await this.tumSatirlar(kod, girdi);
+    const tema = await this.pdf.belgeTemasi();
+    const temel = await this.disaAktarimBilgisi(tanim, girdi);
+    const k = sonuc.karsilastirma;
+    const bilgi: DisaAktarimBilgisi = {
+      ...temel,
+      bilgiler: k ? [...temel.bilgiler, `Karşılaştırma: ${trTarih(k.baslangic)} – ${trTarih(k.bitis)}`, ...toplamKarsilastirmaMetni(k.toplamlar)] : temel.bilgiler,
+      vurguRengi: tema.vurguRengi,
+    };
+    const cikti = { ...tanim, kolonlar: sonuc.kolonlar };
+    return {
+      tanim,
+      satirSayisi: sonuc.satirlar.length,
+      toplamlar: toplamSatiri(sonuc.kolonlar, sonuc.satirlar),
+      bilgi,
+      excel: bicim.excel ? await raporExcelYaz(cikti, sonuc.satirlar, bilgi) : undefined,
+      pdf: bicim.pdf ? await this.pdf.htmlToPdf(raporPdfHtml(cikti, sonuc.satirlar, tema, bilgi), { yatay: raporYatayMi(cikti) }) : undefined,
     };
   }
 
   async excel(kod: string, girdi: RaporGirdisi): Promise<Buffer> {
-    const tanim = raporTanimiAl(kod);
-    if (!tanim) throw new NotFoundException(`'${kod}' raporu bulunamadı`);
-    const sonuc = await this.tumSatirlar(kod, girdi);
-    const tema = await this.pdf.belgeTemasi();
-    return raporExcelYaz(tanim, sonuc.satirlar, { ...(await this.disaAktarimBilgisi(tanim, girdi)), vurguRengi: tema.vurguRengi });
+    return (await this.disaAktar(kod, girdi, { excel: true, pdf: false })).excel!;
   }
 
   /** RPR-04: rapor PDF dışa aktarımı (T-02 altyapısı üzerinden). */
   async pdfUret(kod: string, girdi: RaporGirdisi): Promise<Buffer> {
-    const tanim = raporTanimiAl(kod);
-    if (!tanim) throw new NotFoundException(`'${kod}' raporu bulunamadı`);
-    const sonuc = await this.tumSatirlar(kod, girdi);
-    const tema = await this.pdf.belgeTemasi();
-    return this.pdf.htmlToPdf(raporPdfHtml(tanim, sonuc.satirlar, tema, await this.disaAktarimBilgisi(tanim, girdi)), {
-      yatay: raporYatayMi(tanim),
-    });
+    return (await this.disaAktar(kod, girdi, { excel: false, pdf: true })).pdf!;
   }
 
   /**
@@ -105,19 +131,7 @@ export class RaporlarService {
    * dosyaları, satır sayısını, toplamları ve dönem/süzgeç özetini birlikte döner.
    */
   async paket(kod: string, girdi: RaporGirdisi, bicim: { excel: boolean; pdf: boolean }) {
-    const tanim = raporTanimiAl(kod);
-    if (!tanim) throw new NotFoundException(`'${kod}' raporu bulunamadı`);
-    const sonuc = await this.tumSatirlar(kod, girdi);
-    const tema = await this.pdf.belgeTemasi();
-    const bilgi = { ...(await this.disaAktarimBilgisi(tanim, girdi)), vurguRengi: tema.vurguRengi };
-    return {
-      tanim,
-      satirSayisi: sonuc.satirlar.length,
-      toplamlar: toplamSatiri(tanim.kolonlar, sonuc.satirlar),
-      bilgi,
-      excel: bicim.excel ? await raporExcelYaz(tanim, sonuc.satirlar, bilgi) : undefined,
-      pdf: bicim.pdf ? await this.pdf.htmlToPdf(raporPdfHtml(tanim, sonuc.satirlar, tema, bilgi), { yatay: raporYatayMi(tanim) }) : undefined,
-    };
+    return this.disaAktar(kod, girdi, bicim);
   }
 
   /** RPR-16: dışa aktarım başlığı — firma ünvanı, dönem ve süzgeçler adlarıyla. */

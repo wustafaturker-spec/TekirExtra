@@ -59,6 +59,8 @@ export interface RaporGirdisi {
   filtreler?: RaporFiltreDegerleri;
   gruplama?: string;
   siralama?: { alan: string; yon: "asc" | "desc" };
+  /** RPR-25: karşılaştırma dönemi; yalnız başlangıç–bitiş süzgeçli raporda. */
+  karsilastirma?: { tur: "onceki" | "gecen_yil" | "elle"; baslangic?: string; bitis?: string };
 }
 
 export interface RaporBaglami {

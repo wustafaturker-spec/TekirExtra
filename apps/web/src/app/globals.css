@@ -4404,6 +4404,12 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .rapor-sonuc__bas { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; padding: .75rem 1rem; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: .8rem; }
 .rapor-sonuc__bas strong { color: var(--text); }
 .rapor-sonuc__uyari { margin: 0; padding: .55rem 1rem; background: var(--warning-soft); color: var(--text); font-size: .8rem; }
+/* RPR-25: karşılaştırma şeridi — dönem ve toplamların değişimi. */
+.rapor-karsilastirma { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem 1.1rem; padding: .55rem 1rem; border-bottom: 1px solid var(--border); background: var(--surface-2); font-size: .8rem; }
+.rapor-karsilastirma__kalem { font-variant-numeric: tabular-nums; }
+.rapor-karsilastirma__kalem em { font-style: normal; font-weight: 700; }
+.rapor-karsilastirma__kalem .is-pozitif { color: var(--success); }
+.rapor-karsilastirma__kalem .is-negatif { color: var(--danger); }
 .rapor-sonuc__tablo { max-height: 70vh; overflow: auto; }
 .rapor-sonuc__tablo td { white-space: nowrap; }
 .rapor-sonuc__toplam td { position: sticky; bottom: 0; background: var(--surface-muted); border-top: 2px solid var(--border-strong); font-weight: 800; }

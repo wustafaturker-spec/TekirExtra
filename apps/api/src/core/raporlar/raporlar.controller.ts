@@ -22,6 +22,10 @@ const girdiSemasi = z.object({
   siralama: z
     .object({ alan: z.string(), yon: z.enum(["asc", "desc"]) })
     .optional(),
+  // RPR-25
+  karsilastirma: z
+    .object({ tur: z.enum(["onceki", "gecen_yil", "elle"]), baslangic: z.string().optional(), bitis: z.string().optional() })
+    .optional(),
 });
 
 const gorunumSemasi = z.object({

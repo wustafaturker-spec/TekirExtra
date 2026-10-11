@@ -50,6 +50,14 @@ type FiltreDegerleri = Record<string, string | number | boolean>;
 
 type ToplamHucresi = { deger: number; doviz?: string } | "karisik";
 
+/** RPR-25: karşılaştırma seçimi; tur boşsa yok. */
+type Karsilastirma = { tur: "" | "onceki" | "gecen_yil" | "elle"; baslangic?: string; bitis?: string };
+const KARSILASTIRMA_YOK: Karsilastirma = { tur: "" };
+interface KarsilastirmaSonucu {
+  baslangic: string; bitis: string; satirKarsilastirmasi: boolean;
+  toplamlar: { alan: string; baslik: string; tip: string; doviz?: string; bu: number; onceki: number; fark: number; yuzde: number | null }[];
+}
+
 interface RaporSonucu {
   kolonlar: RaporKolon[];
   /** RPR-17: sunucu en çok AZAMI_SATIR satır gönderir. */
@@ -58,13 +66,14 @@ interface RaporSonucu {
   satirSayisi?: number;
   /** Bütün satırlardan sunucuda hesaplanan toplam satırı (kesildiğinde de doğru). */
   toplamlar?: Record<string, ToplamHucresi> | null;
+  karsilastirma?: KarsilastirmaSonucu | null;
 }
 
 interface Gorunum {
   id: string;
   ad: string;
   firmaGeneli: boolean;
-  girdi: { filtreler?: FiltreDegerleri; gruplama?: string; siralama?: Siralama };
+  girdi: { filtreler?: FiltreDegerleri; gruplama?: string; siralama?: Siralama; karsilastirma?: Karsilastirma };
 }
 
 interface SecimKaydi {
@@ -177,7 +186,7 @@ function sunucuToplamlari(kolonlar: RaporKolon[], t: Record<string, ToplamHucres
 // ─── Adres durumu ────────────────────────────────────────────────────────────
 
 /** `?rapor=kod&f.baslangic=…&g=ay&s=alan:desc` */
-function adrestenOku(): { kod?: string; filtreler: FiltreDegerleri; gruplama?: string; siralama?: Siralama } {
+function adrestenOku(): { kod?: string; filtreler: FiltreDegerleri; gruplama?: string; siralama?: Siralama; karsilastirma?: Karsilastirma } {
   const p = new URLSearchParams(window.location.search);
   const filtreler: FiltreDegerleri = {};
   p.forEach((deger, anahtar) => {
@@ -190,12 +199,16 @@ function adrestenOku(): { kod?: string; filtreler: FiltreDegerleri; gruplama?: s
     filtreler,
     gruplama: p.get("g") ?? undefined,
     siralama: alan ? { alan, yon: yon === "asc" ? "asc" : "desc" } : undefined,
+    karsilastirma: ["onceki", "gecen_yil", "elle"].includes(p.get("k") ?? "")
+      ? { tur: p.get("k") as Karsilastirma["tur"], baslangic: p.get("k.b") ?? undefined, bitis: p.get("k.bit") ?? undefined }
+      : undefined,
   };
 }
 
-function adreseYaz(kod: string, filtreler: FiltreDegerleri, gruplama: string, siralama: Siralama | null, yeniKayit: boolean) {
+function adreseYaz(kod: string, filtreler: FiltreDegerleri, gruplama: string, siralama: Siralama | null, yeniKayit: boolean, k: Karsilastirma = KARSILASTIRMA_YOK) {
   const p = new URLSearchParams(window.location.search);
-  for (const anahtar of [...p.keys()]) if (anahtar.startsWith("f.") || ["rapor", "g", "s"].includes(anahtar)) p.delete(anahtar);
+  for (const anahtar of [...p.keys()]) if (anahtar.startsWith("f.") || ["rapor", "g", "s", "k", "k.b", "k.bit"].includes(anahtar)) p.delete(anahtar);
+  if (k.tur) { p.set("k", k.tur); if (k.tur === "elle" && k.baslangic) p.set("k.b", k.baslangic); if (k.tur === "elle" && k.bitis) p.set("k.bit", k.bitis); }
   p.set("rapor", kod);
   for (const [alan, deger] of Object.entries(filtreler)) if (deger !== "" && deger !== undefined) p.set(`f.${alan}`, String(deger));
   if (gruplama) p.set("g", gruplama);
@@ -213,6 +226,7 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
   const [arama, setArama] = useState("");
   const [secilenKod, setSecilenKod] = useState("");
   const [filtreler, setFiltreler] = useState<FiltreDegerleri>({});
+  const [kars, setKars] = useState<Karsilastirma>(KARSILASTIRMA_YOK);
   const [gruplama, setGruplama] = useState("");
   const [siralama, setSiralama] = useState<Siralama | null>(null);
   const [sonuc, setSonuc] = useState<(RaporSonucu & { zaman: Date; girdi: FiltreDegerleri; gruplama: string }) | null>(null);
@@ -268,6 +282,7 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
     setFiltreler(adres && Object.keys(adres.filtreler).length ? adres.filtreler : varsayilanFiltreler(secilen));
     setGruplama(adres?.gruplama && secilen.gruplamalar.some((g) => g.deger === adres.gruplama) ? adres.gruplama : secilen.gruplamalar[0]?.deger ?? "");
     setSiralama(adres?.siralama ?? null);
+    setKars(adres?.karsilastirma ?? KARSILASTIRMA_YOK);
     setSonuc(null);
     setEksikler([]);
     setHata("");
@@ -301,16 +316,18 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
   }, [secilen?.kod]);
 
   const girdiOlustur = useCallback(
-    (f: FiltreDegerleri = filtreler, g: string = gruplama, s: Siralama | null = siralama) => {
+    (f: FiltreDegerleri = filtreler, g: string = gruplama, s: Siralama | null = siralama, k: Karsilastirma = kars) => {
       const temiz: FiltreDegerleri = {};
       for (const [alan, deger] of Object.entries(f)) if (deger !== "" && deger !== undefined) temiz[alan] = deger;
-      return { filtreler: temiz, ...(g ? { gruplama: g } : {}), ...(s ? { siralama: s } : {}) };
+      const donemli = secilen ? ["baslangic", "bitis"].every((a) => secilen.filtreler.some((x) => x.alan === a)) : false;
+      const karsilastirma = donemli && k.tur ? { tur: k.tur, ...(k.tur === "elle" ? { baslangic: k.baslangic, bitis: k.bitis } : {}) } : undefined;
+      return { filtreler: temiz, ...(g ? { gruplama: g } : {}), ...(s ? { siralama: s } : {}), ...(karsilastirma ? { karsilastirma } : {}) };
     },
-    [filtreler, gruplama, siralama],
+    [filtreler, gruplama, siralama, kars, secilen],
   );
 
   const calistir = useCallback(
-    async (f: FiltreDegerleri = filtreler, g: string = gruplama, s: Siralama | null = siralama) => {
+    async (f: FiltreDegerleri = filtreler, g: string = gruplama, s: Siralama | null = siralama, k: Karsilastirma = kars) => {
       if (!secilen) return;
       // Zorunlu alan sunucuya gitmeden alanın altında söylenir.
       const eksik = secilen.filtreler.filter((x) => x.zorunlu && (f[x.alan] === undefined || f[x.alan] === "")).map((x) => x.alan);
@@ -319,17 +336,17 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
       setYukleniyor(true);
       setHata("");
       try {
-        const girdi = girdiOlustur(f, g, s);
+        const girdi = girdiOlustur(f, g, s, k);
         const veri = await api<RaporSonucu>(`/raporlar/${secilen.kod}/calistir`, { method: "POST", body: JSON.stringify(girdi) });
         setSonuc({ ...veri, zaman: new Date(), girdi: girdi.filtreler, gruplama: g });
-        adreseYaz(secilen.kod, f, g, s, false);
+        adreseYaz(secilen.kod, f, g, s, false, k);
       } catch (h) {
         setHata(h instanceof Error ? h.message : "Rapor çalıştırılamadı");
       } finally {
         setYukleniyor(false);
       }
     },
-    [secilen, filtreler, gruplama, siralama, girdiOlustur],
+    [secilen, filtreler, gruplama, siralama, kars, girdiOlustur],
   );
 
   function raporSec(kod: string) {
@@ -385,10 +402,12 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
     const f = g.girdi.filtreler ?? {};
     const gr = g.girdi.gruplama ?? gruplama;
     const s = g.girdi.siralama ?? null;
+    const k = g.girdi.karsilastirma ?? KARSILASTIRMA_YOK;
     setFiltreler(f);
     setGruplama(gr);
     setSiralama(s);
-    void calistir(f, gr, s);
+    setKars(k);
+    void calistir(f, gr, s, k);
   }
 
   async function gorunumSil(g: Gorunum) {
@@ -595,6 +614,22 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
                     </select>
                   </Field>
                 )}
+                {donemVar && (
+                  <Field label="Karşılaştır">
+                    <select className="select" value={kars.tur} onChange={(e) => setKars({ ...kars, tur: e.target.value as Karsilastirma["tur"] })}>
+                      <option value="">Yok</option>
+                      <option value="onceki">Önceki dönem</option>
+                      <option value="gecen_yil">Geçen yıl aynı dönem</option>
+                      <option value="elle">Elle dönem…</option>
+                    </select>
+                  </Field>
+                )}
+                {donemVar && kars.tur === "elle" && (
+                  <>
+                    <Field label="Karşılaştırma başlangıcı"><Input type="date" value={kars.baslangic ?? ""} onChange={(e) => setKars({ ...kars, baslangic: e.target.value })} /></Field>
+                    <Field label="Karşılaştırma bitişi"><Input type="date" value={kars.bitis ?? ""} onChange={(e) => setKars({ ...kars, bitis: e.target.value })} /></Field>
+                  </>
+                )}
                 <div className="rapor-filtreler__eylemler">
                   <Button type="submit" variant="primary" disabled={yukleniyor}>{yukleniyor ? "Hazırlanıyor…" : "Raporu çalıştır"}</Button>
                   <Button type="button" onClick={() => void disaAktar("excel")} disabled={indiriliyor !== ""}>{indiriliyor === "excel" ? "İndiriliyor…" : "Excel"}</Button>
@@ -617,6 +652,18 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
                   <span>{sonucOzeti()}</span>
                   <strong>{satirSayisi.toLocaleString("tr-TR")} satır</strong>
                 </div>
+                {sonuc.karsilastirma && (
+                  <div className="rapor-karsilastirma">
+                    <span className="muted">Karşılaştırma: {trTarih(sonuc.karsilastirma.baslangic)} – {trTarih(sonuc.karsilastirma.bitis)}{!sonuc.karsilastirma.satirKarsilastirmasi && " · zaman kırılımında yalnız toplamlar karşılaştırılır"}</span>
+                    {sonuc.karsilastirma.toplamlar.map((t) => (
+                      <span key={t.alan} className="rapor-karsilastirma__kalem">
+                        <strong>{t.baslik}</strong>{" "}
+                        {hucreBicimle({ alan: t.alan, baslik: t.baslik, tip: t.tip as RaporKolon["tip"] }, t.bu)} ← {hucreBicimle({ alan: t.alan, baslik: t.baslik, tip: t.tip as RaporKolon["tip"] }, t.onceki)}
+                        {t.yuzde !== null && <em className={t.yuzde >= 0 ? "is-pozitif" : "is-negatif"}> {t.yuzde > 0 ? "+" : ""}{t.yuzde.toLocaleString("tr-TR")} %</em>}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {satirSayisi > AZAMI_SATIR && (
                   <p className="rapor-sonuc__uyari">İlk {AZAMI_SATIR} satır gösteriliyor; toplamlar bütün satırlardan. Tamamı için Excel ya da PDF indirin.</p>
                 )}
