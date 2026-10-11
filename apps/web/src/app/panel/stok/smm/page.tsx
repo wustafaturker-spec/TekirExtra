@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import { Alert, Badge, Button, Card, Field, Input, PageHeader, Para, SearchInput, Segmented, Stat, StatGrid, Table } from "@/components/ui";
+import { Alert, Badge, Button, Card, Field, Input, PageHeader, Para, SearchInput, Segmented, Stat, StatGrid, Table, Tarih } from "@/components/ui";
 
 type Yontem = "agirlikli_ortalama" | "fifo";
 interface SmmDetay {
@@ -83,7 +83,7 @@ export default function SmmRaporSayfasi() {
             {detaylar.map((d, i) => (
               <tr key={`${d.faturaId}-${d.stokKod}-${i}`}>
                 <td><Link href={`/panel/fatura/yeni?ac=${d.faturaId}`}><strong>{d.faturaNo}</strong></Link>{d.tip === "satis_iade" && <> <Badge variant="warning">İade</Badge></>}</td>
-                <td className="mono">{d.tarih}</td>
+                <td><Tarih deger={d.tarih} /></td>
                 <td>{d.cariUnvan}</td>
                 <td><span className="mono subtle">{d.stokKod}</span> {d.stokAd}</td>
                 <td className="num">{miktar(d.satilanMiktar)}</td>

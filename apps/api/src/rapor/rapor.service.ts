@@ -196,7 +196,7 @@ export class RaporService {
         const kar = s.ciro.sub(maliyet);
         return {
           faturaId: s.faturaId,
-          faturaNo: s.faturaNo || "Taslak",
+          faturaNo: s.faturaNo || "Numarasız", // RPR-20: yalnız kesin faturalar gelir; numarasız = e-Belge gönderilmemiş, taslak değil
           tarih: s.tarih.toISOString().slice(0, 10),
           tip: s.tip,
           stokKod: s.kod,

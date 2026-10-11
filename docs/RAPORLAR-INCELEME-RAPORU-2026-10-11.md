@@ -47,7 +47,10 @@ Asıl sorunlar **yetki** ve **rakamların doğruluğu/tutarlılığı**:
 | P1-6 | Maliyeti bilinmeyen satış %100 kâr görünüyor; Kâr Marjı eski yöntem | ✅ RPR-13 (2026-10-11); Ürün Satışları ve Alıcı Bazlı Satışlar da eski yöntemdeydi, taşındı |
 | P2-1 | Dışa aktarım | ✅ RPR-16 (2026-10-11): `rapor-disa-aktarim.ts` — firma ünvanı, dönem + süzgeçler adlarıyla, ekranla aynı toplam satırı, dövizli hücrede birim, belge teması rengi, gg.aa.yyyy, 26+ sütun |
 | P2-2 | Sunucuda satır sınırı | ✅ RPR-17 (2026-10-11, kısmen): ekrana en çok 500 satır + `satirSayisi`, toplam satırı sunucuda bütün satırlardan (kesilince de görünür); vadesi geçenler 500'erli sayfalarla tamamı, sayı/toplam tam, liste 50; bildirim sayıyı buradan alır. Açık: Hareketler, Tahsilat Performansı, tarihli envanter ve SMM/FIFO veriyi hâlâ bütünüyle yükler (sorgu düzeyinde iyileştirme) |
-| P2-3 … P2-8 | Devir hızı, kaynak sütunu, SMM ekranı, ayrı ekranlar, envanter, testler | Açık |
+| P2-3 | Stok devir hızı | ✅ RPR-18: satış ÷ ortalama stok ((dönem başı + sonu)/2), stokta kalma günü, SMM; satılmayan stoklu ürünler devir 0 ile en üstte; dönem zorunlu |
+| P2-4 | Hareket kaynağı | ✅ RPR-19: belge no + bağlantı (fatura/iptal/geri alma, transfer, sayım, üretim); maliyeti kayıtlı olmayan çıkış boş |
+| P2-5 | SMM ekranı | ✅ RPR-20: numarasız kesin fatura "Numarasız"; tarih gg.aa.yyyy |
+| P2-6 … P2-8 | Ayrı ekranlar, envanter, testler | Açık |
 | P3 | Ek geliştirmeler (zamanlanmış rapor, karşılaştırma, grafik, drill-down…) | Öneri |
 
 ## 3. Bulgular
