@@ -99,7 +99,7 @@ function servisKur(secenek: TxSecenekleri = {}) {
     mevzuatKayit: { findMany: vi.fn().mockResolvedValue(secenek.mevzuatKayitlari ?? guncelDonemKayitlari()), findFirst: vi.fn().mockResolvedValue(null) },
   } as never;
   const bildirimler = { uret: vi.fn().mockResolvedValue({ bildirimId: "b1", yeniTeslimat: 1 }), kapatEksikleri: vi.fn().mockResolvedValue(0) };
-  const rapor = { vadesiGecenler: vi.fn().mockResolvedValue({ alacaklar: [], borclar: [], toplamAlacak: "0.00", toplamBorc: "0.00" }) };
+  const rapor = { vadesiGecenler: vi.fn().mockResolvedValue({ alacaklar: [], borclar: [], toplamAlacak: "0.00", toplamBorc: "0.00", alacakSayisi: 0, borcSayisi: 0 }) };
   return { servis: new BildirimUreticiService(prisma, bildirimler as never, rapor as never), bildirimler, rapor, tx, teslimatCreateMany, bildirimUpdate };
 }
 
@@ -290,12 +290,15 @@ describe("BildirimUreticiService.tara", () => {
       borclar: [{ faturaId: "f3" }],
       toplamAlacak: "18500.00",
       toplamBorc: "4200.00",
+      // RPR-17: liste sınırlıdır; sayı bütün faturalardandır.
+      alacakSayisi: 230,
+      borcSayisi: 1,
     });
 
     await servis.tara();
 
     expect(bildirimler.uret).toHaveBeenCalledWith(
-      expect.objectContaining({ tur: "vade", aciklama: "2 tahsil edilecek (18500.00 TL), 1 ödenecek (4200.00 TL) fatura vadesini geçti." }),
+      expect.objectContaining({ tur: "vade", aciklama: "230 tahsil edilecek (18500.00 TL), 1 ödenecek (4200.00 TL) fatura vadesini geçti." }),
     );
   });
 

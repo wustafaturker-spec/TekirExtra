@@ -46,7 +46,8 @@ Asıl sorunlar **yetki** ve **rakamların doğruluğu/tutarlılığı**:
 | P1-5 | Panel özeti: bütün cari hareketlerini belleğe alıyor, eksi stok | ✅ RPR-15 (2026-10-11): `rapor/varlik-ozeti.ts` — cari bakiyesi veritabanında gruplanır, pasifler dahil, dövizli bakiye cari kartı gibi güncel kurla; eksi stok değerlenmez, sayısı uyarı olarak döner (panel + Gelir-Gider). Demo: stok −51,86 M → 126.245 TL, net varlık −35,1 M → +17,0 M |
 | P1-6 | Maliyeti bilinmeyen satış %100 kâr görünüyor; Kâr Marjı eski yöntem | ✅ RPR-13 (2026-10-11); Ürün Satışları ve Alıcı Bazlı Satışlar da eski yöntemdeydi, taşındı |
 | P2-1 | Dışa aktarım | ✅ RPR-16 (2026-10-11): `rapor-disa-aktarim.ts` — firma ünvanı, dönem + süzgeçler adlarıyla, ekranla aynı toplam satırı, dövizli hücrede birim, belge teması rengi, gg.aa.yyyy, 26+ sütun |
-| P2-2 … P2-8 | Sınırlar, devir hızı, kaynak sütunu, SMM ekranı, ayrı ekranlar, envanter, testler | Açık |
+| P2-2 | Sunucuda satır sınırı | ✅ RPR-17 (2026-10-11, kısmen): ekrana en çok 500 satır + `satirSayisi`, toplam satırı sunucuda bütün satırlardan (kesilince de görünür); vadesi geçenler 500'erli sayfalarla tamamı, sayı/toplam tam, liste 50; bildirim sayıyı buradan alır. Açık: Hareketler, Tahsilat Performansı, tarihli envanter ve SMM/FIFO veriyi hâlâ bütünüyle yükler (sorgu düzeyinde iyileştirme) |
+| P2-3 … P2-8 | Devir hızı, kaynak sütunu, SMM ekranı, ayrı ekranlar, envanter, testler | Açık |
 | P3 | Ek geliştirmeler (zamanlanmış rapor, karşılaştırma, grafik, drill-down…) | Öneri |
 
 ## 3. Bulgular

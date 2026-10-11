@@ -47,9 +47,16 @@ type Satir = Record<string, string | number | boolean | null>;
 type Siralama = { alan: string; yon: "asc" | "desc" };
 type FiltreDegerleri = Record<string, string | number | boolean>;
 
+type ToplamHucresi = { deger: number; doviz?: string } | "karisik";
+
 interface RaporSonucu {
   kolonlar: RaporKolon[];
+  /** RPR-17: sunucu en çok AZAMI_SATIR satır gönderir. */
   satirlar: Satir[];
+  /** Kesilmeden önceki satır sayısı. */
+  satirSayisi?: number;
+  /** Bütün satırlardan sunucuda hesaplanan toplam satırı (kesildiğinde de doğru). */
+  toplamlar?: Record<string, ToplamHucresi> | null;
 }
 
 interface Gorunum {
@@ -150,6 +157,18 @@ function toplamlar(kolonlar: RaporKolon[], satirlar: Satir[]): Map<string, strin
     if (dovizler.size > 1) { sonuc.set(k.alan, "—"); continue; }
     const toplam = satirlar.reduce((t, s) => t + (Number(s[k.alan]) || 0), 0);
     sonuc.set(k.alan, hucreBicimle(k, Math.round(toplam * 100) / 100, { [k.dovizAlani ?? ""]: [...dovizler][0] ?? "TRY" }));
+  }
+  return sonuc.size ? sonuc : null;
+}
+
+/** RPR-17: sunucunun bütün satırlardan hesapladığı toplam satırını biçimler. */
+function sunucuToplamlari(kolonlar: RaporKolon[], t: Record<string, ToplamHucresi> | null): Map<string, string> | null {
+  if (!t) return null;
+  const sonuc = new Map<string, string>();
+  for (const k of kolonlar) {
+    const h = t[k.alan];
+    if (!h) continue;
+    sonuc.set(k.alan, h === "karisik" ? "—" : hucreBicimle(k, h.deger, { [k.dovizAlani ?? ""]: h.doviz ?? "TRY" }));
   }
   return sonuc.size ? sonuc : null;
 }
@@ -474,7 +493,10 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
   }
 
   const gosterilen = sonuc ? sonuc.satirlar.slice(0, AZAMI_SATIR) : [];
-  const toplamSatiri = sonuc && sonuc.satirlar.length > 1 ? toplamlar(sonuc.kolonlar, sonuc.satirlar) : null;
+  const satirSayisi = sonuc ? (sonuc.satirSayisi ?? sonuc.satirlar.length) : 0;
+  const toplamSatiri = !sonuc ? null
+    : sonuc.toplamlar !== undefined ? sunucuToplamlari(sonuc.kolonlar, sonuc.toplamlar)
+    : sonuc.satirlar.length > 1 ? toplamlar(sonuc.kolonlar, sonuc.satirlar) : null;
 
   // ─── Çizim ────────────────────────────────────────────────────────────────
 
@@ -588,10 +610,10 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
               <Card pad={false} style={{ marginTop: "1rem", opacity: yukleniyor ? 0.55 : 1 }} aria-busy={yukleniyor}>
                 <div className="rapor-sonuc__bas">
                   <span>{sonucOzeti()}</span>
-                  <strong>{sonuc.satirlar.length.toLocaleString("tr-TR")} satır</strong>
+                  <strong>{satirSayisi.toLocaleString("tr-TR")} satır</strong>
                 </div>
-                {sonuc.satirlar.length > AZAMI_SATIR && (
-                  <p className="rapor-sonuc__uyari">İlk {AZAMI_SATIR} satır gösteriliyor; tamamı ve toplamlar için Excel ya da PDF indirin.</p>
+                {satirSayisi > AZAMI_SATIR && (
+                  <p className="rapor-sonuc__uyari">İlk {AZAMI_SATIR} satır gösteriliyor; toplamlar bütün satırlardan. Tamamı için Excel ya da PDF indirin.</p>
                 )}
                 <div className="table-wrap rapor-sonuc__tablo">
                   <table className="table">
@@ -625,7 +647,7 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
                         ))
                       )}
                     </tbody>
-                    {toplamSatiri && sonuc.satirlar.length <= AZAMI_SATIR && (
+                    {toplamSatiri && (
                       <tfoot>
                         <tr className="rapor-sonuc__toplam">
                           {sonuc.kolonlar.map((k, i) => (

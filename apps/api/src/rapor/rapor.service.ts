@@ -124,22 +124,35 @@ export class RaporService {
     const { tenantId } = aktifBaglam();
     const bugun = new Date();
     const bugunBaslangic = new Date(Date.UTC(bugun.getUTCFullYear(), bugun.getUTCMonth(), bugun.getUTCDate()));
+    // RPR-17 (inceleme P2-2): eskiden en eski 200 fatura alınıp ödenmişler
+    // sonradan eleniyordu; 200'den fazla vadesi geçmiş faturada toplam ve sayı
+    // eksik kalıyordu. Şimdi hepsi 500'erli sayfalarla taranır; toplam ve
+    // sayı tamdır, listeler en eski LISTE_SINIRI kayıtla sınırlıdır.
+    const LISTE_SINIRI = 50;
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const faturalar = await tx.fatura.findMany({
-        where: { tenantId, durum: "kesin", tip: { in: ["satis", "alis"] }, vadeTarihi: { lt: bugunBaslangic } },
-        orderBy: { vadeTarihi: "asc" }, take: 200,
-        select: { id: true, no: true, tip: true, vadeTarihi: true, genelToplam: true, kur: true, cari: { select: { id: true, unvan: true } }, durum: true, ...FATURA_ODEME_SECIMI },
-      });
-      const satirlar = faturalar.map((f) => {
-        const kalanTry = faturaOdemeDurumu(f).kalan.mul(f.kur).toDecimalPlaces(2);
-        const vade = f.vadeTarihi ?? bugunBaslangic;
-        const gecikmeGun = Math.max(1, Math.floor((bugunBaslangic.getTime() - vade.getTime()) / 86_400_000));
-        return { faturaId: f.id, no: f.no, cariId: f.cari.id, cariUnvan: f.cari.unvan, vadeTarihi: vade.toISOString().slice(0, 10), gecikmeGun, kalanTry: kalanTry.toFixed(2), tip: f.tip };
-      }).filter((f) => Number(f.kalanTry) > 0);
-      const alacaklar = satirlar.filter((f) => f.tip === "satis");
-      const borclar = satirlar.filter((f) => f.tip === "alis");
-      const toplam = (liste: typeof satirlar) => liste.reduce((t, f) => t.add(f.kalanTry), D(0)).toFixed(2);
-      return { alacaklar, borclar, toplamAlacak: toplam(alacaklar), toplamBorc: toplam(borclar) };
+      type Satir = { faturaId: string; no: string | null; cariId: string; cariUnvan: string; vadeTarihi: string; gecikmeGun: number; kalanTry: string; tip: string };
+      const alacaklar: Satir[] = [], borclar: Satir[] = [];
+      let toplamAlacak = D(0), toplamBorc = D(0), alacakSayisi = 0, borcSayisi = 0;
+      let imlec: string | undefined;
+      for (;;) {
+        const faturalar = await tx.fatura.findMany({
+          where: { tenantId, durum: "kesin", tip: { in: ["satis", "alis"] }, vadeTarihi: { lt: bugunBaslangic } },
+          orderBy: [{ vadeTarihi: "asc" }, { id: "asc" }], take: 500, ...(imlec ? { cursor: { id: imlec }, skip: 1 } : {}),
+          select: { id: true, no: true, tip: true, vadeTarihi: true, genelToplam: true, kur: true, cari: { select: { id: true, unvan: true } }, durum: true, ...FATURA_ODEME_SECIMI },
+        });
+        for (const f of faturalar) {
+          const kalanTry = faturaOdemeDurumu(f).kalan.mul(f.kur).toDecimalPlaces(2);
+          if (!kalanTry.gt(0)) continue;
+          const vade = f.vadeTarihi ?? bugunBaslangic;
+          const gecikmeGun = Math.max(1, Math.floor((bugunBaslangic.getTime() - vade.getTime()) / 86_400_000));
+          const satir = { faturaId: f.id, no: f.no, cariId: f.cari.id, cariUnvan: f.cari.unvan, vadeTarihi: vade.toISOString().slice(0, 10), gecikmeGun, kalanTry: kalanTry.toFixed(2), tip: f.tip };
+          if (f.tip === "satis") { toplamAlacak = toplamAlacak.add(kalanTry); alacakSayisi++; if (alacaklar.length < LISTE_SINIRI) alacaklar.push(satir); }
+          else { toplamBorc = toplamBorc.add(kalanTry); borcSayisi++; if (borclar.length < LISTE_SINIRI) borclar.push(satir); }
+        }
+        if (faturalar.length < 500) break;
+        imlec = faturalar[faturalar.length - 1].id;
+      }
+      return { alacaklar, borclar, toplamAlacak: toplamAlacak.toFixed(2), toplamBorc: toplamBorc.toFixed(2), alacakSayisi, borcSayisi };
     });
   }
 

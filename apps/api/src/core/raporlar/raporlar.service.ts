@@ -8,7 +8,14 @@ import { Prisma } from "@prisma/client";
 import { aktifBaglam } from "../istek-baglami";
 import { PdfService } from "../pdf/pdf.service";
 import { PrismaService } from "../prisma.service";
-import { girdiOzeti, type DisaAktarimBilgisi } from "./rapor-disa-aktarim";
+import { girdiOzeti, toplamSatiri, type DisaAktarimBilgisi } from "./rapor-disa-aktarim";
+
+/**
+ * RPR-17 (inceleme P2-2): ekrana giden satır sınırı. Ekran zaten 500 satır
+ * gösteriyordu ama API tamamını gönderiyordu; toplam satırı artık sunucuda
+ * bütün satırlardan hesaplanır, Excel/PDF bütün satırları alır.
+ */
+export const EKRAN_SATIR_SINIRI = 500;
 import { raporExcelYaz } from "./rapor-excel";
 import { raporPdfHtml, raporYatayMi } from "./rapor-pdf";
 import {
@@ -41,7 +48,19 @@ export class RaporlarService {
     }));
   }
 
+  /** Ekran için: ilk EKRAN_SATIR_SINIRI satır, toplam satır sayısı ve bütün satırlardan toplam satırı. */
   async calistir(kod: string, girdi: RaporGirdisi) {
+    const sonuc = await this.tumSatirlar(kod, girdi);
+    const toplamlar = toplamSatiri(sonuc.kolonlar, sonuc.satirlar);
+    return {
+      ...sonuc,
+      satirlar: sonuc.satirlar.slice(0, EKRAN_SATIR_SINIRI),
+      satirSayisi: sonuc.satirlar.length,
+      toplamlar: toplamlar ? Object.fromEntries(toplamlar) : null,
+    };
+  }
+
+  private async tumSatirlar(kod: string, girdi: RaporGirdisi) {
     const tanim = raporTanimiAl(kod);
     if (!tanim) throw new NotFoundException(`'${kod}' raporu bulunamadı`);
     // RPR-11: Excel ve PDF de buradan geçer.
@@ -65,7 +84,7 @@ export class RaporlarService {
   async excel(kod: string, girdi: RaporGirdisi): Promise<Buffer> {
     const tanim = raporTanimiAl(kod);
     if (!tanim) throw new NotFoundException(`'${kod}' raporu bulunamadı`);
-    const sonuc = await this.calistir(kod, girdi);
+    const sonuc = await this.tumSatirlar(kod, girdi);
     const tema = await this.pdf.belgeTemasi();
     return raporExcelYaz(tanim, sonuc.satirlar, { ...(await this.disaAktarimBilgisi(tanim, girdi)), vurguRengi: tema.vurguRengi });
   }
@@ -74,7 +93,7 @@ export class RaporlarService {
   async pdfUret(kod: string, girdi: RaporGirdisi): Promise<Buffer> {
     const tanim = raporTanimiAl(kod);
     if (!tanim) throw new NotFoundException(`'${kod}' raporu bulunamadı`);
-    const sonuc = await this.calistir(kod, girdi);
+    const sonuc = await this.tumSatirlar(kod, girdi);
     const tema = await this.pdf.belgeTemasi();
     return this.pdf.htmlToPdf(raporPdfHtml(tanim, sonuc.satirlar, tema, await this.disaAktarimBilgisi(tanim, girdi)), {
       yatay: raporYatayMi(tanim),

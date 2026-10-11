@@ -579,8 +579,8 @@ export class BildirimUreticiService {
     // Vade tanımı rapor motorundan gelir; aynı sayı iki yerde ayrı hesaplanırsa
     // kullanıcı zilde ve raporda farklı rakam görür.
     const vadesiGecenler = await this.rapor.vadesiGecenler();
-    const alacak = vadesiGecenler.alacaklar.length;
-    const borc = vadesiGecenler.borclar.length;
+    const alacak = vadesiGecenler.alacakSayisi;
+    const borc = vadesiGecenler.borcSayisi;
     if (alacak || borc) {
       girdiler.push({
         tur: "vade",
