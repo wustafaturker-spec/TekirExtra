@@ -9,6 +9,8 @@ import { rolMenuYoluGorebilir } from "@/lib/rol-yetkileri";
 /** Kendi ekranı olan raporlar katalogda bağlantı olarak durur; rolün göremediği ekran listelenmez (RPR-21). */
 const AYRI_EKRANLAR = [
   { modul: "genel", ad: "Gelir - Gider Raporu", aciklama: "Gelir ve gider kalemleri, kategori kırılımı ve kâr marjı (ayrı ekran)", href: "/panel/raporlar/gelir-gider" },
+  { modul: "genel", ad: "Bütçe – Gerçekleşen", aciklama: "Aylık bütçe, gerçekleşen ve sapma; revizyonlar (ayrı ekran)", href: "/panel/butce" },
+  { modul: "kasa_banka", ad: "Nakit Akışı Tahmini", aciklama: "Vadeli alacak, borç, çek ve planlı ödemelerden ileriye dönük nakit pozisyonu (ayrı ekran)", href: "/panel/nakit-akisi" },
   { modul: "stok", ad: "SMM & Kârlılık", aciklama: "Satılan malın maliyeti ve brüt kâr; ağırlıklı ortalama ya da FIFO (ayrı ekran)", href: "/panel/stok/smm" },
   { modul: "fatura", ad: "Fatura Pivotu", aciklama: "Fatura kalemlerini iki boyutta toplar; cari × ay, ürün × depo… (ayrı ekran)", href: "/panel/fatura/pivot" },
 ];

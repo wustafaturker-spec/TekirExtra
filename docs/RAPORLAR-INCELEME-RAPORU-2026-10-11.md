@@ -217,7 +217,7 @@ Varyant kırılımı yok (varyantlı ürün tek satır); eksi stok değerlemeye 
 | Satırdan kayda gitme | ✅ RPR-27 (2026-10-11): 17 raporda cari/stok/fatura bağlantısı, rol denetimli |
 | Favori ve son kullanılan raporlar | ✅ RPR-28 (2026-10-11): sunucuda kullanıcıya özel (`rapor_tercihleri`), katalogda üstte |
 | Satış kırılımları (RPR-03) | ✅ RPR-29 (2026-10-11): "Satış Kırılımları" raporu — temsilci (carinin bugünkü), kategori, il, ülke; ortak satış kaynağı |
-| Bütçe-gerçekleşen ve nakit akışı | Kataloğa "ayrı ekran" bağlantısı olarak |
+| Bütçe-gerçekleşen ve nakit akışı | ✅ 2026-10-11: katalogda ayrı ekran bağlantısı (rol süzgeçli) |
 | Metabase (RPR-07) | `docker-compose.yml`'de `metabase:latest` etiketiyle, entegrasyonsuz duruyor; sürüm sabitlenip entegre edilmeli ya da kaldırılmalı |
 | Sonuç önbelleği | Ağır raporlar (FIFO, tarihli envanter) için kısa süreli önbellek |
 
