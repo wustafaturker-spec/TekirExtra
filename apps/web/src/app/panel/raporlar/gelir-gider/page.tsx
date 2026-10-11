@@ -38,10 +38,26 @@ interface GelirGiderKalem {
   tutar: string;
 }
 
+/** RPR-12: tek kâr tanımı — net satış − SMM + diğer gelirler − giderler. */
+interface KarZarar {
+  netSatis: number;
+  smm: number;
+  brutKar: number;
+  digerGelirler: number;
+  hizmetAlislari: number;
+  masraflar: number;
+  personel: number;
+  faaliyetGiderleri: number;
+  netKar: number;
+  maliyetsizSatis: { satir: number; ciro: number };
+}
+
 interface GelirGiderRaporYaniti {
   baslangicTarihi: string;
   bitisTarihi: string;
   ozet: GelirGiderOzet;
+  karZarar: KarZarar;
+  uyarilar?: string[];
   gelirKategorileri: KategoriKirilim[];
   giderKategorileri: KategoriKirilim[];
   kalemler: GelirGiderKalem[];
@@ -160,6 +176,7 @@ export default function GelirGiderRaporuSayfasi() {
       />
 
       <Alert tone="error">{hata}</Alert>
+      {(veri?.uyarilar ?? []).map((u) => <Alert key={u} tone="warning">{u}</Alert>)}
 
       {/* Tarih ve Versiyon Seçim Paneli */}
       <Card style={{ marginBottom: "1.5rem" }}>
@@ -217,12 +234,13 @@ export default function GelirGiderRaporuSayfasi() {
               <small className="muted">Alışlar, masraflar, personel, satış iadeleri</small>
             </Card>
 
-            <Card style={{ borderLeft: `4px solid ${netFark >= 0 ? "#16a34a" : "#dc2626"}` }}>
-              <span className="muted" style={{ fontSize: "12px", textTransform: "uppercase", fontWeight: 600 }}>Dönem Net Kar / Zarar</span>
-              <h2 style={{ color: netFark >= 0 ? "#16a34a" : "#dc2626", marginTop: "4px", marginBottom: 0 }}>
-                {netFark >= 0 ? "+" : ""}{tl(netFark)}
+            {/* RPR-12: net kâr SMM bazlı; alış bazlı gelir − gider farkı ayrıca altta. */}
+            <Card style={{ borderLeft: `4px solid ${veri.karZarar.netKar >= 0 ? "var(--success)" : "var(--danger)"}` }}>
+              <span className="muted" style={{ fontSize: "12px", textTransform: "uppercase", fontWeight: 600 }}>Dönem Net Kâr / Zarar</span>
+              <h2 style={{ color: veri.karZarar.netKar >= 0 ? "var(--success)" : "var(--danger)", marginTop: "4px", marginBottom: 0 }}>
+                {veri.karZarar.netKar >= 0 ? "+" : ""}{tl(veri.karZarar.netKar)}
               </h2>
-              <small className="muted">{netFark >= 0 ? "Net Kar" : "Net Zarar"}</small>
+              <small className="muted">Satılan malın maliyetiyle · gelir − gider farkı (alış bazlı) {netFark >= 0 ? "+" : ""}{tl(netFark)}</small>
             </Card>
 
             <Card style={{ borderLeft: "4px solid #2563eb" }}>
@@ -231,6 +249,22 @@ export default function GelirGiderRaporuSayfasi() {
               <small className="muted">Varlıktır; gelire ve net farka katılmaz</small>
             </Card>
           </div>
+
+          {/* RPR-12: kâr dökümü (Kâr/Zarar Özeti raporu ve SMM ekranıyla aynı hesap). */}
+          <Card style={{ marginBottom: "1.5rem" }}>
+            <div className="invoice-summary" style={{ border: 0, boxShadow: "none", padding: 0 }}>
+              <h4>Kâr / zarar · satılan malın maliyetiyle</h4>
+              <div className="invoice-summary__line"><span>Net satış (satış − satış iadeleri)</span><span>{tl(veri.karZarar.netSatis)}</span></div>
+              <div className="invoice-summary__line is-discount"><span>Satılan malın maliyeti</span><span>{veri.karZarar.smm ? "-" : ""}{tl(veri.karZarar.smm)}</span></div>
+              <div className="invoice-summary__line"><strong>Brüt kâr</strong><strong>{tl(veri.karZarar.brutKar)}</strong></div>
+              {veri.karZarar.digerGelirler !== 0 && <div className="invoice-summary__line"><span>Diğer gelirler</span><span>+{tl(veri.karZarar.digerGelirler)}</span></div>}
+              <div className="invoice-summary__line is-discount"><span>Hizmet alışları</span><span>{veri.karZarar.hizmetAlislari ? "-" : ""}{tl(veri.karZarar.hizmetAlislari)}</span></div>
+              <div className="invoice-summary__line is-discount"><span>Masraflar</span><span>{veri.karZarar.masraflar ? "-" : ""}{tl(veri.karZarar.masraflar)}</span></div>
+              <div className="invoice-summary__line is-discount"><span>Personel (bordro)</span><span>{veri.karZarar.personel ? "-" : ""}{tl(veri.karZarar.personel)}</span></div>
+              <div className="invoice-summary__line is-grand"><span>Net kâr / zarar</span><span>{tl(veri.karZarar.netKar)}</span></div>
+              <small className="muted">Mal alışı gider sayılmaz: stoğa girer, satıldığında maliyet olarak düşer. Ödemeler kâra girmez. Aşağıdaki gelir/gider tabloları alışları gider olarak gösterir (bütçe karşılaştırması için).</small>
+            </div>
+          </Card>
 
           {/* Versiyon 1: Genel Özet */}
           {versiyon === "genel" && (() => {

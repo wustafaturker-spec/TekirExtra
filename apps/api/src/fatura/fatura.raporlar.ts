@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { kdvMatrahinaDahilToplam } from "./ek-vergi";
 import { FINANS_ROLLERI, registerRapor } from "../core/raporlar/rapor-kayit";
+import { karZararHesapla, karZararVerisi } from "../rapor/kar-zarar";
 
 /**
  * Fatura modülü raporları (FTR-15; KDV dökümü RPR-02'yi karşılar) —
@@ -434,106 +435,56 @@ registerRapor({
   },
 });
 
-// ─── Kâr/Zarar Özeti (RPR-05) ───────────────────────────────────────────────
+// ─── Kâr/Zarar Özeti (RPR-05, RPR-12) ───────────────────────────────────────
 
 registerRapor({
   kod: "genel.kar-zarar-ozeti",
-  modul: "genel" as any,
+  modul: "genel",
   ad: "Kâr/Zarar Özeti",
-  aciklama: "Satış Matrahı − Alış Matrahı − Kasa/Banka Tediye Giderleri formülüyle kâr/zarar özeti",
+  aciklama:
+    "Net satış − satılan malın maliyeti = brüt kâr; + diğer gelirler − hizmet alışı, masraf ve bordro = net kâr. Tahakkuk esaslı, KDV hariç; mal alışı gider değil (stoğa girer), ödemeler kâra girmez.",
   // RPR-11: kâr bilgisi; satış/depo rolleri görmez.
   roller: FINANS_ROLLERI,
-  filtreler: TARIH_FILTRELERI,
+  filtreler: TARIH_FILTRELERI.map((f) => ({ ...f, zorunlu: true })),
   gruplamalar: [
     { deger: "ay", ad: "Ay" },
-    { deger: "yok", ad: "Genel Toplam" },
+    { deger: "yok", ad: "Dönem toplamı" },
   ],
   kolonlar: [
     { alan: "grup", baslik: "Dönem", tip: "metin" },
-    { alan: "satisMatrah", baslik: "Satış Matrahı (TL)", tip: "para", toplam: true },
-    { alan: "alisMatrah", baslik: "Alış Matrahı (TL)", tip: "para", toplam: true },
-    { alan: "tediyeGiderleri", baslik: "Tediye Giderleri (TL)", tip: "para", toplam: true },
-    { alan: "netKarZarar", baslik: "Net Kâr/Zarar (TL)", tip: "para", toplam: true },
+    { alan: "netSatis", baslik: "Net Satış (TL)", tip: "para", toplam: true },
+    { alan: "smm", baslik: "Satılan Malın Maliyeti (TL)", tip: "para", toplam: true },
+    { alan: "brutKar", baslik: "Brüt Kâr (TL)", tip: "para", toplam: true },
+    { alan: "digerGelirler", baslik: "Diğer Gelirler (TL)", tip: "para", toplam: true },
+    { alan: "faaliyetGiderleri", baslik: "Giderler (TL)", tip: "para", toplam: true },
+    { alan: "netKar", baslik: "Net Kâr/Zarar (TL)", tip: "para", toplam: true },
+    { alan: "maliyetsizCiro", baslik: "Maliyeti Bilinmeyen Satış (TL)", tip: "para", toplam: true },
   ],
-  async calistir(girdi, { tx }) {
+  // RPR-12: eski formül (satış − alış − bütün tediyeler) tedarikçi ödemelerini
+  // de düşüp alışı iki kez sayıyordu (1–11 Ekim: −795 bin; doğrusu SMM bazlı).
+  async calistir(girdi, { tx, tenantId }) {
     const f = girdi.filtreler ?? {};
-
-    // 1. Kesinleşmiş satış ve alış faturalarının matrahlarını çekelim
-    const faturalar = await tx.fatura.findMany({
-      where: {
-        durum: "kesin",
-        tip: { not: "proforma" },
-        tarih: tarihAraligi(f.baslangic, f.bitis),
-      },
-      select: {
-        tip: true,
-        tarih: true,
-        toplamMatrah: true,
-        kur: true,
-      },
-    });
-
-    // 2. Kasa/banka tediye giderlerini çekelim
-    const tediyeler = await tx.kasaBankaHareket.findMany({
-      where: {
-        tip: "tediye",
-        tarih: tarihAraligi(f.baslangic, f.bitis),
-      },
-      select: {
-        tarih: true,
-        tutarTry: true,
-      },
-    });
-
+    const baslangic = new Date(`${String(f.baslangic)}T00:00:00.000Z`);
+    const bitis = new Date(`${String(f.bitis)}T23:59:59.999Z`);
+    const { kalemler, satirlar } = await karZararVerisi(tx, tenantId, baslangic, bitis);
     const gruplama = girdi.gruplama ?? "ay";
-    const gruplar = new Map<
-      string,
-      { satis: Prisma.Decimal; alis: Prisma.Decimal; tediye: Prisma.Decimal }
-    >();
-
-    const getGrupAnahtari = (tarih: Date) => {
-      if (gruplama === "yok") return "Toplam";
-      return ay(tarih);
-    };
-
-    // Faturaları işle
-    for (const ft of faturalar) {
-      const anahtar = getGrupAnahtari(ft.tarih);
-      const g = gruplar.get(anahtar) ?? { satis: D(0), alis: D(0), tediye: D(0) };
-      const tutar = ft.toplamMatrah.mul(ft.kur);
-
-      if (ft.tip === "satis") {
-        g.satis = g.satis.add(tutar);
-      } else if (ft.tip === "satis_iade") {
-        g.satis = g.satis.sub(tutar);
-      } else if (ft.tip === "alis") {
-        g.alis = g.alis.add(tutar);
-      } else if (ft.tip === "alis_iade") {
-        g.alis = g.alis.sub(tutar);
-      }
-
-      gruplar.set(anahtar, g);
-    }
-
-    // Tediyeleri işle
-    for (const td of tediyeler) {
-      const anahtar = getGrupAnahtari(td.tarih);
-      const g = gruplar.get(anahtar) ?? { satis: D(0), alis: D(0), tediye: D(0) };
-      g.tediye = g.tediye.add(td.tutarTry);
-      gruplar.set(anahtar, g);
-    }
-
-    return [...gruplar.entries()]
-      .sort(([a], [b]) => a.localeCompare(b, "tr"))
-      .map(([grup, g]) => {
-        const net = g.satis.sub(g.alis).sub(g.tediye);
-        return {
-          grup,
-          satisMatrah: g.satis.toFixed(2),
-          alisMatrah: g.alis.toFixed(2),
-          tediyeGiderleri: g.tediye.toFixed(2),
-          netKarZarar: net.toFixed(2),
-        };
-      });
+    const anahtar = (tarih: string) => (gruplama === "yok" ? "Dönem" : tarih.slice(0, 7));
+    const gruplar = new Set([...kalemler.map((k) => anahtar(k.tarih)), ...satirlar.map((s) => anahtar(s.tarih.toISOString()))]);
+    return [...gruplar].sort().map((grup) => {
+      const kz = karZararHesapla(
+        kalemler.filter((k) => anahtar(k.tarih) === grup),
+        satirlar.filter((s) => anahtar(s.tarih.toISOString()) === grup),
+      );
+      return {
+        grup,
+        netSatis: kz.netSatis.toFixed(2),
+        smm: kz.smm.toFixed(2),
+        brutKar: kz.brutKar.toFixed(2),
+        digerGelirler: kz.digerGelirler.toFixed(2),
+        faaliyetGiderleri: kz.faaliyetGiderleri.toFixed(2),
+        netKar: kz.netKar.toFixed(2),
+        maliyetsizCiro: kz.maliyetsizSatis.ciro.toFixed(2),
+      };
+    });
   },
 });

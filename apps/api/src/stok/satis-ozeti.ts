@@ -14,6 +14,8 @@ const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
 export interface SatisSatiri {
   faturaId: string; faturaNo: string; tarih: Date; cariUnvan: string; tip: "satis" | "satis_iade";
   stokId: string; kod: string; ad: string; mevcutMiktar: Prisma.Decimal;
+  /** Kartın tipi (urun, sarf, hizmet…); maliyeti bilinmeyen mal satışını ayırmak için. */
+  stokTip: string;
   /** Ana birimde; satış artı, iade eksi. */
   miktar: Prisma.Decimal;
   /** TL ciro; iade eksi. */
@@ -30,7 +32,7 @@ export async function satisSatirlari(tx: Tx, tarih: Prisma.DateTimeFilter = {}):
     where: { tip: { in: ["satis", "satis_iade"] }, durum: "kesin", tarih },
     select: {
       id: true, no: true, tarih: true, tip: true, kur: true, cari: { select: { unvan: true } },
-      satirlar: { select: { stokId: true, miktar: true, birim: true, matrah: true, stok: { select: { kod: true, ad: true, mevcutMiktar: true } } } },
+      satirlar: { select: { stokId: true, miktar: true, birim: true, matrah: true, stok: { select: { kod: true, ad: true, tip: true, mevcutMiktar: true } } } },
     },
     orderBy: [{ tarih: "asc" }, { createdAt: "asc" }],
   });
@@ -60,7 +62,7 @@ export async function satisSatirlari(tx: Tx, tarih: Prisma.DateTimeFilter = {}):
       const deger = hs.reduce((t, h) => t.sub(h.miktar.mul(h.maliyet)), D(0));
       sonuc.push({
         faturaId: f.id, faturaNo: f.no ?? "", tarih: f.tarih, cariUnvan: f.cari?.unvan ?? "", tip: f.tip as "satis" | "satis_iade",
-        stokId: s.stokId, kod: s.stok.kod, ad: s.stok.ad, mevcutMiktar: s.stok.mevcutMiktar,
+        stokId: s.stokId, kod: s.stok.kod, ad: s.stok.ad, stokTip: s.stok.tip, mevcutMiktar: s.stok.mevcutMiktar,
         miktar: ana.mul(isaret), ciro: s.matrah.mul(f.kur).mul(isaret).toDecimalPlaces(2), maliyet: deger.mul(oran).toDecimalPlaces(2),
         hareketPaylari: hs.map((h) => ({ hareketId: h.id, oran })),
       });

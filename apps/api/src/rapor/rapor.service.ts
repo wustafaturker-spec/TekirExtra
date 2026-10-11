@@ -3,7 +3,8 @@ import { Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
-import { kategoriOzeti, tahakkukOku, toplam } from "./tahakkuk";
+import { kategoriOzeti, toplam } from "./tahakkuk";
+import { karZararHesapla, karZararVerisi } from "./kar-zarar";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal => new Prisma.Decimal(deger);
@@ -242,7 +243,9 @@ export class RaporService {
       : new Date(Date.UTC(simdi.getFullYear(), simdi.getMonth() + 1, 0, 23, 59, 59, 999));
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const { kalemler, uyarilar } = await tahakkukOku(tx, tenantId, baslangic, bitis);
+      const { kalemler, satirlar, uyarilar } = await karZararVerisi(tx, tenantId, baslangic, bitis);
+      // RPR-12: net kâr SMM bazlı (tek tanım); netFark alış bazlı gelir − gider farkıdır.
+      const karZarar = karZararHesapla(kalemler, satirlar);
 
       // Yalnız bilgi: stok bir varlıktır, dönem geliri değildir (BUT-04).
       const stoklar = await tx.stokKart.findMany({
@@ -274,10 +277,16 @@ export class RaporService {
           karMarjiYuzde: toplamGelir > 0 ? Number(((netFark / toplamGelir) * 100).toFixed(2)) : 0,
           mevcutStokDegeri: envanterDegeri.toFixed(2),
         },
+        karZarar,
         gelirKategorileri: kategoriOzeti(kalemler, "gelir"),
         giderKategorileri: kategoriOzeti(kalemler, "gider"),
         kalemler: kalemler.map((k) => ({ ...k, tutarTry: k.tutarTry.toFixed(2), tutar: k.tutar.toFixed(2) })),
-        uyarilar,
+        uyarilar: [
+          ...uyarilar,
+          ...(karZarar.maliyetsizSatis.satir
+            ? [`${karZarar.maliyetsizSatis.satir} mal satış satırının maliyeti kayıtlı değil (${karZarar.maliyetsizSatis.ciro.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL ciro); brüt kâr bu tutar kadar yüksek görünebilir.`]
+            : []),
+        ],
       };
     });
   }

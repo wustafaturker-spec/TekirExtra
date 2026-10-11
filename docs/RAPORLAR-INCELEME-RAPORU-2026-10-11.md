@@ -38,8 +38,8 @@ Asıl sorunlar **yetki** ve **rakamların doğruluğu/tutarlılığı**:
 | Öncelik | Madde | Durum |
 |---|---|---|
 | P0-1 | Rapor ve panel özeti uçlarında rol denetimi | ✅ RPR-11 (2026-10-11) |
-| P0-2 | Kâr/Zarar Özeti çift sayım | Açık |
-| P1-1 | Kâr tanımlarının birleştirilmesi (Gelir-Gider / Kâr-Zarar / SMM) | Açık |
+| P0-2 | Kâr/Zarar Özeti çift sayım | ✅ RPR-12 (2026-10-11) |
+| P1-1 | Kâr tanımlarının birleştirilmesi (Gelir-Gider / Kâr-Zarar / SMM) | ✅ RPR-12 (2026-10-11) |
 | P1-2 | Dönemsel Satış/Alış Özeti satış ve alışı karıştırıyor | Açık |
 | P1-3 | KDV Dökümü ile KDV ön analizinin tutarsızlığı | Açık |
 | P1-4 | Pivot: iptal/taslak, döviz ve yeniden hesap | Açık |
