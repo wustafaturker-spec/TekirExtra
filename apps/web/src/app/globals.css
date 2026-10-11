@@ -2855,6 +2855,14 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 .crm-card button { border:1px solid var(--border); border-radius:6px; background:var(--surface-muted); color:var(--text-muted); padding:.25rem .4rem; font-size:.68rem; cursor:pointer; }
 .crm-card button:hover { color:var(--accent-text); border-color:var(--accent); }
 .crm-card__edit { align-self:flex-start; margin-top:.25rem; }
+/* Sütun üst şeridi aşamanın token rengi; sayaç, toplam, kart tutarı ve hızlı taşıma düğmeleri (Tailwind sınıflarının yerine, 2026-10-11). */
+.crm-column { border-top-width:3px; }
+.crm-column__sayi { min-width:1.6rem; padding:.1rem .45rem; border:1px solid var(--border); border-radius:999px; background:var(--surface); color:var(--text-muted); font-size:.72rem; font-weight:700; text-align:center; }
+.crm-column__toplam { color:var(--text-muted); font-size:.75rem; font-weight:600; }
+.crm-column__kartlar { display:flex; flex:1; flex-direction:column; gap:.75rem; }
+.crm-card__tutar { color:var(--accent-text); font-size:.9rem; font-weight:800; font-variant-numeric:tabular-nums; }
+.crm-card__asamalar { display:flex; flex-wrap:wrap; gap:.25rem; padding-top:.5rem; border-top:1px solid var(--border); }
+.crm-modal__eylemler { display:flex; justify-content:flex-end; gap:.5rem; padding-top:.5rem; }
 .crm-modal-backdrop { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; padding:1rem; background:rgb(15 23 42 / .48); }
 .crm-modal { width:min(100%,560px); max-height:calc(100vh - 2rem); overflow:auto; padding:1.5rem; border-radius:18px; background:var(--surface); box-shadow:0 24px 70px rgb(15 23 42 / .25); }
 .crm-modal h2 { margin:0 0 1.2rem; color:var(--text); font-size:1.2rem; }

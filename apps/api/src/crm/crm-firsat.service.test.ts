@@ -33,3 +33,15 @@ describe("CrmFirsatService", () => {
     expect(guncel.asama).toBe("kazanildi");
   });
 });
+
+describe("fırsat şeması — boş kapanış tarihi", () => {
+  it("boş tarih alanını tarihsiz sayar, dolu tarihi kabul eder, bozuk tarihi reddeder", async () => {
+    const { firsatOlusturSemasi, firsatGuncelleSemasi } = await import("./crm-firsat.semalar");
+    const temel = { baslik: "Deneme", cariId: "932ac1dc-e523-451c-84f7-4f779981d6fd", tahminiTutar: 1000 };
+    expect(firsatOlusturSemasi.parse({ ...temel, kapanisTarihi: "" }).kapanisTarihi).toBeNull();
+    expect(firsatOlusturSemasi.parse({ ...temel }).kapanisTarihi).toBeUndefined();
+    expect(firsatOlusturSemasi.parse({ ...temel, kapanisTarihi: "2026-12-31" }).kapanisTarihi).toEqual(new Date("2026-12-31"));
+    expect(firsatOlusturSemasi.safeParse({ ...temel, kapanisTarihi: "bozuk" }).success).toBe(false);
+    expect(firsatGuncelleSemasi.parse({ kapanisTarihi: "" }).kapanisTarihi).toBeNull();
+  });
+});

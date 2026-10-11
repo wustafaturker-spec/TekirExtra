@@ -16,7 +16,9 @@ export const firsatOlusturSemasi = z.object({
     "kazanildi",
     "kaybedildi"
   ]).default("yeni_lead"),
-  kapanisTarihi: z.coerce.date().nullable().optional(),
+  // Formdaki boş tarih alanı "" gönderir; coerce onu geçersiz tarihe çevirip
+  // kapanış tarihsiz fırsatı reddediyordu (2026-10-11). Boş = tarih yok.
+  kapanisTarihi: z.preprocess((v) => (v === "" ? null : v), z.coerce.date().nullable().optional()),
   sorumluUserId: bosVeyaUuid,
   notlar: bosVeyaMetin,
 });
