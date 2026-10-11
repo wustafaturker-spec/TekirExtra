@@ -47,4 +47,16 @@ describe("yedek e-Belge görünümü — KDV dışı vergiler (EBLG-129)", () =>
     expect(satirVar(html, "Hesaplanan KDV", "200,00")).toBe(true);
     expect(html).not.toContain("<small>");
   });
+
+  it("YTB 13/d: başlık vergi toplamı 0 iken Hesaplanan KDV alt toplamdan değil başlıktan (0) basılır", () => {
+    const xml = faturaUblUret(fatura([satir([], { kdvTutari: 200 })], { toplamKdv: 200, genelToplam: 1200 }), satici);
+    // K072026000000088 biçimi: KDV alt toplamı hesaplanır, başlık ve ödenecek tahsil edilmeyen KDV'yi içermez.
+    const ytb = xml.replace(/(<cac:TaxTotal>\s*<cbc:TaxAmount currencyID="TRY">)200\.00/, "$10.00").replace(/(<cbc:PayableAmount currencyID="TRY">)1200\.00/, "$11000.00");
+    expect(ytb).not.toBe(xml);
+    const ubl = faturaUblOku(ytb);
+    expect(ubl.toplamlar.kdv).toBe(0);
+    const html = ebelgeYedekPdfHtml(ubl);
+    expect(satirVar(html, "Hesaplanan KDV", "0,00")).toBe(true);
+    expect(satirVar(html, "Ödenecek Tutar", "1.000,00")).toBe(true);
+  });
 });

@@ -340,8 +340,10 @@ export function faturaUblOku(xml: string): UblFatura {
 
   const parasal = nesne(fatura.LegalMonetaryTotal);
   const kdvBasligi = kdvAltToplam(fatura.TaxTotal);
-  const kdvToplam =
-    sayi(yol(fatura, "TaxTotal", "TaxAmount")) || sayi(kdvBasligi?.TaxAmount);
+  // Başlık toplamı belgede varsa 0 olsa da odur: YTB 13/d (308) istisnasında
+  // başlık 0, KDV alt toplamı hesaplanan (tahsil edilmeyen) KDV'yi taşır.
+  const baslikVergisi = yol(fatura, "TaxTotal", "TaxAmount");
+  const kdvToplam = metin(baslikVergisi) !== "" ? sayi(baslikVergisi) : sayi(kdvBasligi?.TaxAmount);
 
   const satirToplami = sayi(parasal?.LineExtensionAmount);
   const matrah = sayi(parasal?.TaxExclusiveAmount) || satirToplami;
