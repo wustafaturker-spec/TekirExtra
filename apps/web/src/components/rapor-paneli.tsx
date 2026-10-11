@@ -243,6 +243,9 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
   const [secilenKod, setSecilenKod] = useState("");
   const [filtreler, setFiltreler] = useState<FiltreDegerleri>({});
   const [kars, setKars] = useState<Karsilastirma>(KARSILASTIRMA_YOK);
+  // RPR-28: favori ve son kullanılan raporlar (sunucuda, kullanıcıya özel).
+  const [tercih, setTercih] = useState<{ favoriler: string[]; sonKullanilanlar: string[] }>({ favoriler: [], sonKullanilanlar: [] });
+  useEffect(() => { void api<typeof tercih>("/raporlar/tercihler").then(setTercih).catch(() => undefined); }, []);
   // RPR-27: rolün göremediği kayıt sayfasına bağlantı verilmez.
   const [rol, setRol] = useState<string | null>(null);
   useEffect(() => { void api<{ rol: string }>("/auth/ben").then((b) => setRol(b.rol)).catch(() => undefined); }, []);
@@ -358,6 +361,8 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
         const girdi = girdiOlustur(f, g, s, k);
         const veri = await api<RaporSonucu>(`/raporlar/${secilen.kod}/calistir`, { method: "POST", body: JSON.stringify(girdi) });
         setSonuc({ ...veri, zaman: new Date(), girdi: girdi.filtreler, gruplama: g });
+        // Sunucu da aynısını yazar (RPR-28); liste yeniden çekilmeden güncellenir.
+        setTercih((t) => ({ ...t, sonKullanilanlar: [secilen.kod, ...t.sonKullanilanlar.filter((x) => x !== secilen.kod)].slice(0, 5) }));
         adreseYaz(secilen.kod, f, g, s, false, k);
       } catch (h) {
         setHata(h instanceof Error ? h.message : "Rapor çalıştırılamadı");
@@ -459,6 +464,29 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raporlar, ayriEkranlar, aranan]);
   const katalogGoster = raporlar.length + ayriEkranlar.length > 1;
+  const kodla = (kodlar: string[]) => kodlar.map((k) => raporlar.find((r) => r.kod === k)).filter((r): r is RaporMeta => Boolean(r));
+  const favoriler = aranan ? [] : kodla(tercih.favoriler);
+  const sonlar = aranan ? [] : kodla(tercih.sonKullanilanlar);
+
+  async function favoriDegistir(kod: string) {
+    try { setTercih(await api(`/raporlar/tercihler/favori/${encodeURIComponent(kod)}`, { method: "POST" })); }
+    catch (h) { setHata(h instanceof Error ? h.message : "Favori kaydedilemedi"); }
+  }
+
+  const katalogOgesi = (r: RaporMeta, onek: string) => {
+    const favori = tercih.favoriler.includes(r.kod);
+    return (
+      <div key={`${onek}-${r.kod}`} className="rapor-katalog__satir">
+        <button type="button" className={`rapor-katalog__oge${r.kod === secilenKod ? " is-secili" : ""}`} aria-current={r.kod === secilenKod ? "true" : undefined} onClick={() => raporSec(r.kod)}>
+          <strong>{r.ad}</strong>
+          {r.aciklama && onek === "m" && <span>{r.aciklama}</span>}
+        </button>
+        <button type="button" className={`rapor-katalog__yildiz${favori ? " is-favori" : ""}`} aria-pressed={favori} aria-label={favori ? `${r.ad} favorilerden çıkar` : `${r.ad} favorilere ekle`} title={favori ? "Favorilerden çıkar" : "Favorilere ekle"} onClick={() => void favoriDegistir(r.kod)}>
+          {favori ? "★" : "☆"}
+        </button>
+      </div>
+    );
+  };
 
   // ─── Filtre alanları ──────────────────────────────────────────────────────
 
@@ -556,15 +584,12 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
           </select>
           <nav className="rapor-katalog__liste">
             {gruplar.length === 0 && <p className="muted" style={{ fontSize: "0.85rem" }}>“{arama}” ile eşleşen rapor yok.</p>}
+            {favoriler.length > 0 && <div className="rapor-katalog__grup"><h4>Favoriler</h4>{favoriler.map((r) => katalogOgesi(r, "f"))}</div>}
+            {sonlar.length > 0 && <div className="rapor-katalog__grup"><h4>Son kullanılanlar</h4>{sonlar.map((r) => katalogOgesi(r, "s"))}</div>}
             {gruplar.map(([m, g]) => (
               <div key={m} className="rapor-katalog__grup">
                 {!modul && <h4>{MODUL_ADLARI[m] ?? m}</h4>}
-                {g.raporlar.map((r) => (
-                  <button key={r.kod} type="button" className={`rapor-katalog__oge${r.kod === secilenKod ? " is-secili" : ""}`} aria-current={r.kod === secilenKod ? "true" : undefined} onClick={() => raporSec(r.kod)}>
-                    <strong>{r.ad}</strong>
-                    {r.aciklama && <span>{r.aciklama}</span>}
-                  </button>
-                ))}
+                {g.raporlar.map((r) => katalogOgesi(r, "m"))}
                 {g.ayrilar.map((a) => (
                   <a key={a.href} className="rapor-katalog__oge" href={a.href}>
                     <strong>{a.ad} ↗</strong>

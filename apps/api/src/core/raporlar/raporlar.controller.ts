@@ -53,6 +53,17 @@ export class RaporlarController {
     return this.raporlarService.listele(modul);
   }
 
+  /** RPR-28: favori ve son kullanılan raporlar. */
+  @Get("tercihler")
+  tercihler() {
+    return this.raporlarService.tercihler();
+  }
+
+  @Post("tercihler/favori/:kod")
+  favoriDegistir(@Param("kod") kod: string) {
+    return this.raporlarService.favoriDegistir(kod);
+  }
+
   @Post(":kod/calistir")
   async calistir(@Param("kod") kod: string, @Body() govde: unknown) {
     return this.raporlarService.calistir(kod, ayristir(girdiSemasi, govde ?? {}));

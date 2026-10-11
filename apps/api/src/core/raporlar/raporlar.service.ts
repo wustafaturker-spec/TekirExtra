@@ -16,6 +16,9 @@ import { girdiOzeti, toplamSatiri, type DisaAktarimBilgisi } from "./rapor-disa-
  * bütün satırlardan hesaplanır, Excel/PDF bütün satırları alır.
  */
 export const EKRAN_SATIR_SINIRI = 500;
+
+/** RPR-28: son kullanılanlar listesi — kod öne alınır, tekrar yok, en çok `n`. */
+export const sonListesi = (liste: string[], kod: string, n = 5) => [kod, ...liste.filter((k) => k !== kod)].slice(0, n);
 import { raporExcelYaz } from "./rapor-excel";
 import { karsilastir, karsilastirmaDonemi, toplamKarsilastirmaMetni } from "./rapor-karsilastirma";
 
@@ -55,6 +58,8 @@ export class RaporlarService {
   /** Ekran için: ilk EKRAN_SATIR_SINIRI satır, toplam satır sayısı ve bütün satırlardan toplam satırı. */
   async calistir(kod: string, girdi: RaporGirdisi) {
     const sonuc = await this.tumSatirlar(kod, girdi);
+    // RPR-28: kayıt hatası raporu düşürmez.
+    await this.sonKullanildi(kod).catch(() => undefined);
     const toplamlar = toplamSatiri(sonuc.kolonlar, sonuc.satirlar);
     return {
       ...sonuc,
@@ -142,6 +147,45 @@ export class RaporlarService {
       firma: (await tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true } }))?.unvan?.trim() || undefined,
       bilgiler: await girdiOzeti(tx, tanim, girdi),
     }));
+  }
+
+  // ─── FAVORİ VE SON KULLANILANLAR (RPR-28) ─────────────────────────────────
+
+  /** Kullanıcının listeleri; rolün artık göremediği rapor süzülür. */
+  async tercihler() {
+    const { tenantId, userId, rol } = aktifBaglam();
+    const t = await this.prisma.tenantIslem(tenantId, (tx) => tx.raporTercihi.findUnique({ where: { tenantId_userId: { tenantId, userId } } }));
+    const gorunur = (k: string) => { const tanim = raporTanimiAl(k); return Boolean(tanim && raporErisilebilir(tanim, rol)); };
+    return { favoriler: (t?.favoriler ?? []).filter(gorunur), sonKullanilanlar: (t?.sonKullanilanlar ?? []).filter(gorunur) };
+  }
+
+  async favoriDegistir(kod: string) {
+    this.erisimDenetle(kod);
+    const { tenantId, userId } = aktifBaglam();
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const t = await tx.raporTercihi.findUnique({ where: { tenantId_userId: { tenantId, userId } } });
+      const liste = t?.favoriler ?? [];
+      const favoriler = liste.includes(kod) ? liste.filter((k) => k !== kod) : [...liste, kod];
+      await tx.raporTercihi.upsert({
+        where: { tenantId_userId: { tenantId, userId } },
+        create: { tenantId, userId, favoriler, sonKullanilanlar: [] },
+        update: { favoriler },
+      });
+    });
+    return this.tercihler();
+  }
+
+  private async sonKullanildi(kod: string) {
+    const { tenantId, userId } = aktifBaglam();
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const t = await tx.raporTercihi.findUnique({ where: { tenantId_userId: { tenantId, userId } } });
+      const sonKullanilanlar = sonListesi(t?.sonKullanilanlar ?? [], kod);
+      await tx.raporTercihi.upsert({
+        where: { tenantId_userId: { tenantId, userId } },
+        create: { tenantId, userId, favoriler: [], sonKullanilanlar },
+        update: { sonKullanilanlar },
+      });
+    });
   }
 
   // ─── KAYITLI GÖRÜNÜMLER (RPR-06) ─────────────────────────────────────────

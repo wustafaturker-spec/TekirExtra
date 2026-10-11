@@ -567,6 +567,19 @@ model RaporGorunumu {
 /// RPR-24: kayıtlı görünümün zamanlanmış e-posta aboneliği. Saat ve gün
 /// Türkiye saatiyle; alıcılar yalnız firma kullanıcıları (her gönderimde
 /// rapor yetkisi yeniden denetlenir).
+/// RPR-28: kullanıcının favori ve son çalıştırdığı raporlar (kod listesi, en yeni önde).
+model RaporTercihi {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  favoriler        String[]
+  sonKullanilanlar String[] @map("son_kullanilanlar")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, userId])
+  @@map("rapor_tercihleri")
+}
+
 model RaporAboneligi {
   id              String    @id @default(uuid()) @db.Uuid
   tenantId        String    @map("tenant_id") @db.Uuid
