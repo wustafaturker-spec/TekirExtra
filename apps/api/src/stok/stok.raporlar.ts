@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { BadRequestException } from "@nestjs/common";
 import { FINANS_ROLLERI, registerRapor } from "../core/raporlar/rapor-kayit";
 import { bilinenMarj, satisSatirlari, urunBazinda } from "./satis-ozeti";
-import { tarihliBakiyeler } from "./tarihli-envanter";
+import { tarihliBakiyeler, type TarihliBakiye } from "./tarihli-envanter";
 import { iptalCiftiMi, iptalEdilmisFaturalar, iptalleriGoster } from "../fatura/iptal-cifti";
 
 /** Stok modülü raporları (STK-13) — RPR-06 araç seti tanımları. */
@@ -190,17 +190,22 @@ export function varyantKirilimi(satirlar: EnvanterSatiri[], varyantlar: Map<stri
  */
 async function tarihliEnvanter(tx: Prisma.TransactionClient, tarih: string, depoId: string | null, kritikAlti: boolean): Promise<EnvanterSatiri[]> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(tarih)) throw new BadRequestException("Tarih YYYY-AA-GG biçiminde olmalı");
-  const hareketler = await tx.stokHareket.findMany({
-    where: { tarih: { lte: new Date(tarih) }, stok: { tip: { not: "hizmet" } } },
-    orderBy: [{ stokId: "asc" }, { tarih: "asc" }, { createdAt: "asc" }, { id: "asc" }],
-    select: { id: true, stokId: true, depoId: true, miktar: true, maliyet: true, kaynakTur: true, kaynakRef: true },
-  });
-  const refler = [...new Set(hareketler.filter((h) => h.kaynakTur === "fatura" && h.kaynakRef && h.miktar.lt(0)).map((h) => h.kaynakRef!))];
-  const alisIadeleri = new Set(refler.length
-    ? (await tx.fatura.findMany({ where: { id: { in: refler }, tip: "alis_iade" }, select: { id: true } })).map((f) => f.id)
-    : []);
-  const bakiyeler = tarihliBakiyeler(hareketler, alisIadeleri);
   const kartlar = await tx.stokKart.findMany({ where: { tip: { not: "hizmet" } }, orderBy: { kod: "asc" } });
+  // RPR-30 (inceleme P2-2): bütün hareketler tek seferde belleğe alınmaz; ortalama
+  // kart başına yeniden oynatıldığı için 200 kartlık parçalar bağımsızdır.
+  const bakiyeler = new Map<string, TarihliBakiye>();
+  for (let i = 0; i < kartlar.length; i += 200) {
+    const hareketler = await tx.stokHareket.findMany({
+      where: { tarih: { lte: new Date(tarih) }, stokId: { in: kartlar.slice(i, i + 200).map((k) => k.id) } },
+      orderBy: [{ stokId: "asc" }, { tarih: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+      select: { id: true, stokId: true, depoId: true, miktar: true, maliyet: true, kaynakTur: true, kaynakRef: true },
+    });
+    const refler = [...new Set(hareketler.filter((h) => h.kaynakTur === "fatura" && h.kaynakRef && h.miktar.lt(0)).map((h) => h.kaynakRef!))];
+    const alisIadeleri = new Set(refler.length
+      ? (await tx.fatura.findMany({ where: { id: { in: refler }, tip: "alis_iade" }, select: { id: true } })).map((f) => f.id)
+      : []);
+    for (const [stokId, b] of tarihliBakiyeler(hareketler, alisIadeleri)) bakiyeler.set(stokId, b);
+  }
   const depoAd = depoId ? ((await tx.depo.findUnique({ where: { id: depoId } }))?.ad ?? "") : "Tüm depolar";
   return kartlar.flatMap((k) => {
     const b = bakiyeler.get(k.id);

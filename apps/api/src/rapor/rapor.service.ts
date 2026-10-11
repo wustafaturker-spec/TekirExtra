@@ -170,19 +170,30 @@ export class RaporService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const satirlar = await satisSatirlari(tx, { ...(baslangic && { gte: new Date(baslangic) }), ...(bitis && { lte: new Date(bitis) }) });
       let fifo: Map<string, Prisma.Decimal> | null = null;
+      const urunSatirlari = new Map<string, typeof satirlar>();
+      for (const s of satirlar) { const l = urunSatirlari.get(s.stokId); if (l) l.push(s); else urunSatirlari.set(s.stokId, [s]); }
       if (yontem === "fifo" && satirlar.length) {
+        // RPR-30 (inceleme P2-2): ürün başına ayrı sorgu yerine 200'lük parçalar;
+        // bitişten sonraki hareketler dönemdeki çıkışların FIFO değerini etkilemez.
         fifo = new Map();
-        for (const stokId of new Set(satirlar.map((s) => s.stokId))) {
-          const hareketler = await tx.stokHareket.findMany({ where: { stokId }, orderBy: [{ tarih: "asc" }, { createdAt: "asc" }, { id: "asc" }], select: { id: true, miktar: true, maliyet: true } });
-          for (const [id, deger] of fifoDegerleri(hareketler)) fifo.set(id, deger);
+        const urunler = [...urunSatirlari.keys()];
+        for (let i = 0; i < urunler.length; i += 200) {
+          const hareketler = await tx.stokHareket.findMany({
+            where: { stokId: { in: urunler.slice(i, i + 200) }, ...(bitis && { tarih: { lte: new Date(bitis) } }) },
+            orderBy: [{ stokId: "asc" }, { tarih: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+            select: { id: true, stokId: true, miktar: true, maliyet: true },
+          });
+          const urunHareketleri = new Map<string, typeof hareketler>();
+          for (const h of hareketler) { const l = urunHareketleri.get(h.stokId); if (l) l.push(h); else urunHareketleri.set(h.stokId, [h]); }
+          for (const liste of urunHareketleri.values()) for (const [id, deger] of fifoDegerleri(liste)) fifo.set(id, deger);
         }
       }
       // FIFO: satışın değeri çıkış hareketlerinin FIFO değeri; iade, aynı ürünün dönemdeki
       // FIFO birim maliyetiyle geri alınır (ortalamayla alınsa iki yöntem karışır).
       const fifoSatis = (s: (typeof satirlar)[number]) => s.hareketPaylari.reduce((t, p) => t.add((fifo!.get(p.hareketId) ?? D(0)).mul(p.oran)), D(0)).toDecimalPlaces(2);
       const fifoBirim = new Map<string, Prisma.Decimal>();
-      if (fifo) for (const stokId of new Set(satirlar.map((s) => s.stokId))) {
-        const satislar = satirlar.filter((s) => s.stokId === stokId && s.tip === "satis");
+      if (fifo) for (const [stokId, urunun] of urunSatirlari) {
+        const satislar = urunun.filter((s) => s.tip === "satis");
         const adet = satislar.reduce((t, s) => t.add(s.miktar), D(0));
         if (adet.gt(0)) fifoBirim.set(stokId, satislar.reduce((t, s) => t.add(fifoSatis(s)), D(0)).div(adet));
       }

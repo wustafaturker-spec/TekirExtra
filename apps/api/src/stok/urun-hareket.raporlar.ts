@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { registerRapor } from "../core/raporlar/rapor-kayit";
 import { iptalCiftiMi, iptalEdilmisFaturalar, iptalleriGoster } from "../fatura/iptal-cifti";
@@ -7,6 +8,9 @@ const D = (v: string | number | Prisma.Decimal) => new Prisma.Decimal(v);
 const tarihAraligi = (baslangic?: unknown, bitis?: unknown) => ({ ...(baslangic ? { gte: new Date(String(baslangic)) } : {}), ...(bitis ? { lte: new Date(String(bitis)) } : {}) });
 const TARIH = [{ alan: "baslangic", ad: "Başlangıç", tip: "tarih" as const }, { alan: "bitis", ad: "Bitiş", tip: "tarih" as const }];
 const HAREKET_ADI: Record<string, string> = { giris: "Giriş", cikis: "Çıkış", sayim_duzeltme: "Sayım düzeltme", fire: "Fire", zayi: "Zayi", numune: "Numune", promosyon: "Promosyon", acilis: "Açılış", transfer_cikis: "Transfer çıkış", transfer_giris: "Transfer giriş" };
+
+/** RPR-30 (inceleme P2-2): Hareketler dökümü bu satırı aşarsa dönem daraltılmalı (bellek ve dışa aktarım sınırı). */
+export const HAREKET_SINIRI = 50_000;
 
 function hareketGrubu(h: { tip: string; kaynakTur: string }) {
   // Sarf, mamul/yan ürün girişi, kalite ve sarf düzeltmeleri hep `uretim_` önekli.
@@ -54,11 +58,14 @@ export function maliyetHucreleri(miktar: Prisma.Decimal, maliyet: Prisma.Decimal
 
 registerRapor({
   kod: "urun-hareket.hareketler", modul: "urun_hareket", ad: "Hareketler", aciklama: "Tüm giriş, çıkış, fire, transfer ve üretim hareketlerinin tarih sıralı dökümü",
-  filtreler: [...TARIH, { alan: "stok", ad: "Ürün", tip: "stok" }, { alan: "depo", ad: "Depo", tip: "depo" }, { alan: "grup", ad: "Hareket Grubu", tip: "secim", secenekler: [{ deger: "giris", ad: "Girişler" }, { deger: "cikis", ad: "Çıkışlar" }, { deger: "fire", ad: "Fire / Zayi" }, { deger: "uretim", ad: "Üretim" }, { deger: "transfer", ad: "Transfer" }, { deger: "sayim", ad: "Sayım" }] }, { alan: "iptaller", ad: "İptalleri de göster", tip: "onay" }],
+  filtreler: [...TARIH.map((f) => ({ ...f, zorunlu: true })), { alan: "stok", ad: "Ürün", tip: "stok" }, { alan: "depo", ad: "Depo", tip: "depo" }, { alan: "grup", ad: "Hareket Grubu", tip: "secim", secenekler: [{ deger: "giris", ad: "Girişler" }, { deger: "cikis", ad: "Çıkışlar" }, { deger: "fire", ad: "Fire / Zayi" }, { deger: "uretim", ad: "Üretim" }, { deger: "transfer", ad: "Transfer" }, { deger: "sayim", ad: "Sayım" }] }, { alan: "iptaller", ad: "İptalleri de göster", tip: "onay" }],
   kolonlar: [{ alan: "tarih", baslik: "Tarih", tip: "tarih" }, { alan: "kod", baslik: "Kod", tip: "metin", kayit: { tur: "stok", idAlani: "stokId" } }, { alan: "urun", baslik: "Ürün / Varyant", tip: "metin" }, { alan: "depo", baslik: "Depo", tip: "metin" }, { alan: "hareket", baslik: "Hareket", tip: "metin" }, { alan: "kaynak", baslik: "Kaynak", tip: "metin", baglantiAlani: "kaynakYolu" }, { alan: "giris", baslik: "Giriş", tip: "sayi" }, { alan: "cikis", baslik: "Çıkış", tip: "sayi" }, { alan: "birimMaliyet", baslik: "Birim Maliyet", tip: "para" }, { alan: "toplamMaliyet", baslik: "Toplam Maliyet", tip: "para" }, { alan: "aciklama", baslik: "Açıklama", tip: "metin" }],
   async calistir(girdi, { tx }) {
     const f = girdi.filtreler ?? {};
-    const hareketler = await tx.stokHareket.findMany({ where: { tarih: tarihAraligi(f.baslangic, f.bitis), ...(f.stok ? { stokId: String(f.stok) } : {}), ...(f.depo ? { depoId: String(f.depo) } : {}) }, orderBy: [{ tarih: "desc" }, { createdAt: "desc" }], include: { stok: { select: { kod: true, ad: true, anaBirim: true } }, varyant: { select: { kod: true, ad: true } }, depo: { select: { kod: true, ad: true } } } });
+    const kosul = { tarih: tarihAraligi(f.baslangic, f.bitis), ...(f.stok ? { stokId: String(f.stok) } : {}), ...(f.depo ? { depoId: String(f.depo) } : {}) };
+    const adet = await tx.stokHareket.count({ where: kosul });
+    if (adet > HAREKET_SINIRI) throw new BadRequestException(`Dönemde ${adet.toLocaleString("tr-TR")} hareket var; en çok ${HAREKET_SINIRI.toLocaleString("tr-TR")} hareket dökülür. Dönemi daraltın ya da ürün/depo seçin.`);
+    const hareketler = await tx.stokHareket.findMany({ where: kosul, orderBy: [{ tarih: "desc" }, { createdAt: "desc" }], include: { stok: { select: { kod: true, ad: true, anaBirim: true } }, varyant: { select: { kod: true, ad: true } }, depo: { select: { kod: true, ad: true } } } });
     // STK-22: iptal edilmiş faturanın hareketleri seçenek işaretlenmedikçe gösterilmez.
     const iptaller = await iptalEdilmisFaturalar(tx, hareketler);
     const belgeler = await kaynakBelgeleri(tx, hareketler);

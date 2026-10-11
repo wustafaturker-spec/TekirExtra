@@ -280,63 +280,73 @@ registerRapor({
   async calistir(girdi, { tx }) {
     const cariler = await tx.cariHesap.findMany({
       where: { aktif: true, ...etiketKosulu(girdi.filtreler?.etiket) },
-      select: {
-        id: true,
-        kod: true,
-        unvan: true,
-        hareketler: {
-          select: { tip: true, tutarTry: true, tarih: true },
-          orderBy: { tarih: "asc" },
-        },
-      },
+      select: { id: true, kod: true, unvan: true },
       orderBy: { kod: "asc" },
     });
-    const GUN_MS = 24 * 60 * 60 * 1000;
     const sonuc = [];
-    for (const c of cariler) {
-      // FIFO: her alacak, en eski açık borçları kapatır; kapanan tutar için
-      // borç→alacak gün farkı tutar ağırlığıyla toplanır.
-      const acikBorclar: { tarih: Date; kalan: number }[] = [];
-      let agirlikliGunToplami = 0;
-      let tahsilEdilen = 0;
-      for (const h of c.hareketler) {
-        const tutar = Number(h.tutarTry);
-        if (h.tip === "borc") {
-          acikBorclar.push({ tarih: h.tarih, kalan: tutar });
-          continue;
-        }
-        let kalanAlacak = tutar;
-        while (kalanAlacak > 0.005 && acikBorclar.length > 0) {
-          const borc = acikBorclar[0];
-          const kapanan = Math.min(borc.kalan, kalanAlacak);
-          const gun = Math.max(
-            0,
-            Math.floor((h.tarih.getTime() - borc.tarih.getTime()) / GUN_MS),
-          );
-          agirlikliGunToplami += gun * kapanan;
-          tahsilEdilen += kapanan;
-          borc.kalan -= kapanan;
-          kalanAlacak -= kapanan;
-          if (borc.kalan <= 0.005) acikBorclar.shift();
-        }
-      }
-      if (tahsilEdilen <= 0.005 && acikBorclar.length === 0) continue;
-      const acikBakiye = acikBorclar.reduce((t, b) => t + b.kalan, 0);
-      sonuc.push({
-        cariId: c.id,
-        kod: c.kod,
-        unvan: c.unvan,
-        tahsilEdilen: tahsilEdilen.toFixed(2),
-        ortalamaGun:
-          tahsilEdilen > 0
-            ? Math.round(agirlikliGunToplami / tahsilEdilen)
-            : null,
-        acikBakiye: acikBakiye.toFixed(2),
+    // RPR-30 (inceleme P2-2): bütün carilerin bütün hareketleri bir kerede
+    // belleğe alınmaz; FIFO cari başına bağımsız olduğu için 200'lük parçalar.
+    for (let i = 0; i < cariler.length; i += 200) {
+      const parca = cariler.slice(i, i + 200);
+      const hareketler = await tx.cariHareket.findMany({
+        where: { cariId: { in: parca.map((c) => c.id) } },
+        select: { cariId: true, tip: true, tutarTry: true, tarih: true },
+        // Aynı gün sırası belirli olsun (önceden sorgudan sorguya değişiyordu).
+        orderBy: [{ cariId: "asc" }, { tarih: "asc" }, { createdAt: "asc" }, { id: "asc" }],
       });
+      const cariHareketleri = new Map<string, typeof hareketler>();
+      for (const h of hareketler) { const l = cariHareketleri.get(h.cariId); if (l) l.push(h); else cariHareketleri.set(h.cariId, [h]); }
+      for (const c of parca) {
+        const r = tahsilatFifo(cariHareketleri.get(c.id) ?? []);
+        if (r.tahsilEdilen <= 0.005 && r.acikBakiye <= 0.005) continue;
+        sonuc.push({
+          cariId: c.id,
+          kod: c.kod,
+          unvan: c.unvan,
+          tahsilEdilen: r.tahsilEdilen.toFixed(2),
+          ortalamaGun: r.ortalamaGun,
+          acikBakiye: r.acikBakiye.toFixed(2),
+        });
+      }
     }
     return sonuc;
   },
 });
+
+/**
+ * RPR-30: tahsilat FIFO'su. Her alacak en eski açık borcu kapatır; kapanan
+ * tutar için borç→alacak gün farkı tutarla ağırlıklandırılır. Kapatacak
+ * borcu olmayan alacak (avans) önceden atılıyordu; artık bekler ve sonraki
+ * borçları 0 günle kapatır.
+ */
+export function tahsilatFifo(hareketler: { tip: string; tutarTry: Prisma.Decimal | number | string; tarih: Date }[]) {
+  const GUN_MS = 24 * 60 * 60 * 1000;
+  const acikBorclar: { tarih: Date; kalan: number }[] = [];
+  let avans = 0, agirlikliGun = 0, tahsilEdilen = 0;
+  for (const h of hareketler) {
+    const tutar = Number(h.tutarTry);
+    if (h.tip === "borc") {
+      const avanstan = Math.min(avans, tutar);
+      avans -= avanstan; tahsilEdilen += avanstan;
+      if (tutar - avanstan > 0.005) acikBorclar.push({ tarih: h.tarih, kalan: tutar - avanstan });
+      continue;
+    }
+    let kalan = tutar;
+    while (kalan > 0.005 && acikBorclar.length > 0) {
+      const borc = acikBorclar[0];
+      const kapanan = Math.min(borc.kalan, kalan);
+      agirlikliGun += Math.max(0, Math.floor((h.tarih.getTime() - borc.tarih.getTime()) / GUN_MS)) * kapanan;
+      tahsilEdilen += kapanan; borc.kalan -= kapanan; kalan -= kapanan;
+      if (borc.kalan <= 0.005) acikBorclar.shift();
+    }
+    if (kalan > 0.005) avans += kalan;
+  }
+  return {
+    tahsilEdilen,
+    ortalamaGun: tahsilEdilen > 0 ? Math.round(agirlikliGun / tahsilEdilen) : null,
+    acikBakiye: acikBorclar.reduce((t, b) => t + b.kalan, 0),
+  };
+}
 
 // ─── En yüksek bakiyeli cariler ─────────────────────────────────────────────
 
