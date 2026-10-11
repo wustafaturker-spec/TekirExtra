@@ -25,25 +25,12 @@ describe("RaporService (RPR-04..05)", () => {
           { tip: "tediye", _sum: { tutarTry: new Prisma.Decimal(300.0) } },
         ]),
       },
-      stokKart: {
-        findMany: vi.fn().mockResolvedValue([
-          { tip: "urun", mevcutMiktar: new Prisma.Decimal(10), ortalamaMaliyet: new Prisma.Decimal(15.0) }, // 150 TL envanter
-        ]),
-      },
-      cariHesap: {
-        findMany: vi.fn().mockResolvedValue([
-          {
-            id: "c1",
-            hareketler: [
-              { tip: "borc", tutarTry: new Prisma.Decimal(500.0) }, // cari borçlu 500 (bizim alacağımız)
-            ],
-          },
-          {
-            id: "c2",
-            hareketler: [
-              { tip: "alacak", tutarTry: new Prisma.Decimal(200.0) }, // cari alacaklı 200 (bizim borcumuz)
-            ],
-          },
+      // RPR-15: stok değeri SQL'de (eksi stok hariç), cari bakiyesi gruplanarak.
+      $queryRaw: vi.fn().mockResolvedValue([{ deger: "150", eksi: 1 }]),
+      cariHareket: {
+        groupBy: vi.fn().mockResolvedValue([
+          { cariId: "c1", dovizCinsi: "TRY", tip: "borc", _sum: { tutar: new Prisma.Decimal(500), tutarTry: new Prisma.Decimal(500) } }, // bizim alacağımız
+          { cariId: "c2", dovizCinsi: "TRY", tip: "alacak", _sum: { tutar: new Prisma.Decimal(200), tutarTry: new Prisma.Decimal(200) } }, // bizim borcumuz
         ]),
       },
     };
@@ -61,5 +48,6 @@ describe("RaporService (RPR-04..05)", () => {
     expect(sonuc.toplamAlacaklar).toBe("500.00");
     expect(sonuc.toplamBorclar).toBe("200.00");
     expect(sonuc.netVarlikDegeri).toBe("1150.00");
+    expect(sonuc.eksiStokSayisi).toBe(1);
   });
 });

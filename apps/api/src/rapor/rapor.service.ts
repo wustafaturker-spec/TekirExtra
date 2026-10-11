@@ -6,6 +6,7 @@ import { PrismaService } from "../core/prisma.service";
 import { kategoriOzeti, toplam } from "./tahakkuk";
 import { karZararHesapla, karZararVerisi } from "./kar-zarar";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
+import { cariBakiyeToplamlari, envanterDegerlemesi } from "./varlik-ozeti";
 import { faturaPivotDetayi, faturaPivotu, pivotSorgusuCoz } from "./fatura-pivot";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal => new Prisma.Decimal(deger);
@@ -58,47 +59,12 @@ export class RaporService {
 
       const nakitVarliklar = kasaBankaBorc.sub(kasaBankaAlacak);
 
-      // 2. Toplam Stok Envanter Değeri
-      const stoklar = await tx.stokKart.findMany({
-        where: { tenantId, aktif: true },
-        select: { mevcutMiktar: true, ortalamaMaliyet: true },
-      });
-
-      let envanterDegeri = D(0);
-      stoklar.forEach((s) => {
-        envanterDegeri = envanterDegeri.add(s.mevcutMiktar.mul(s.ortalamaMaliyet));
-      });
-
-      // 3. Cari Borç ve Alacak Toplamları (Alacaklar & Borçlar)
-      const cariler = await tx.cariHesap.findMany({
-        where: { tenantId, aktif: true },
-        include: {
-          hareketler: { select: { tip: true, tutarTry: true } },
-        },
-      });
-
-      let toplamAlacaklar = D(0); // Müşterilerden alacağımız (pozitif bakiye)
-      let toplamBorclar = D(0);    // Satıcılara borcumuz (negatif bakiye)
-
-      cariler.forEach((c) => {
-        let borcSum = D(0);
-        let alacakSum = D(0);
-
-        c.hareketler.forEach((h) => {
-          if (h.tip === "borc") {
-            borcSum = borcSum.add(h.tutarTry);
-          } else {
-            alacakSum = alacakSum.add(h.tutarTry);
-          }
-        });
-
-        const cariBakiye = borcSum.sub(alacakSum); // borç > alacak ise müşteri borçludur (bizim alacağımız)
-        if (cariBakiye.greaterThan(0)) {
-          toplamAlacaklar = toplamAlacaklar.add(cariBakiye);
-        } else if (cariBakiye.lessThan(0)) {
-          toplamBorclar = toplamBorclar.add(cariBakiye.abs());
-        }
-      });
+      // 2–3. RPR-15: stok değeri ve cari bakiyeleri veritabanında toplanır.
+      const envanter = await envanterDegerlemesi(tx, tenantId);
+      const cari = await cariBakiyeToplamlari(tx, tenantId);
+      const envanterDegeri = envanter.deger;
+      const toplamAlacaklar = cari.alacaklar;
+      const toplamBorclar = cari.borclar;
 
       return {
         nakitVarliklar: nakitVarliklar.toFixed(2),
@@ -110,6 +76,8 @@ export class RaporService {
           .add(toplamAlacaklar)
           .sub(toplamBorclar)
           .toFixed(2),
+        eksiStokSayisi: envanter.eksiStokSayisi,
+        kurEksik: cari.kurEksik,
       };
     });
   }
@@ -264,11 +232,7 @@ export class RaporService {
       const karZarar = karZararHesapla(kalemler, satirlar);
 
       // Yalnız bilgi: stok bir varlıktır, dönem geliri değildir (BUT-04).
-      const stoklar = await tx.stokKart.findMany({
-        where: { tenantId, aktif: true, tip: { in: ["urun", "sarf"] } },
-        select: { mevcutMiktar: true, ortalamaMaliyet: true },
-      });
-      const envanterDegeri = stoklar.reduce((t, s) => t.add(s.mevcutMiktar.mul(s.ortalamaMaliyet)), D(0));
+      const envanter = await envanterDegerlemesi(tx, tenantId);
 
       const kalem = (kosul: (anahtar: string) => boolean) => toplam(kalemler, (k) => kosul(k.anahtar)).toFixed(2);
       const toplamGelir = toplam(kalemler, (k) => k.tur === "gelir");
@@ -291,7 +255,8 @@ export class RaporService {
           toplamGider: toplamGider.toFixed(2),
           netFark: netFark.toFixed(2),
           karMarjiYuzde: toplamGelir > 0 ? Number(((netFark / toplamGelir) * 100).toFixed(2)) : 0,
-          mevcutStokDegeri: envanterDegeri.toFixed(2),
+          mevcutStokDegeri: envanter.deger.toFixed(2),
+          eksiStokSayisi: envanter.eksiStokSayisi,
         },
         karZarar,
         gelirKategorileri: kategoriOzeti(kalemler, "gelir"),

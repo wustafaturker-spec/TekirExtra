@@ -9,7 +9,7 @@ import { bugunTR, paraBicimle } from "@tekirextra/shared";
 import { Para, Tarih } from "@/components/ui";
 
 type Rol = "yonetici" | "muhasebe" | "satis" | "salt_okunur" | "mali_musavir" | "b2b_bayi" | "uretim_planlama" | "uretim_operatoru" | "depo" | "kalite" | "maliyet_muhasebesi" | "ik" | "calisan";
-interface FinansOzet { nakitVarliklar: string; envanterDegeri: string; toplamAlacaklar: string; toplamBorclar: string; netVarlikDegeri: string; }
+interface FinansOzet { nakitVarliklar: string; envanterDegeri: string; toplamAlacaklar: string; toplamBorclar: string; netVarlikDegeri: string; eksiStokSayisi?: number; kurEksik?: string[]; }
 interface FaturaKuyrukOzeti { taslakSatis: number; taslakAlis: number; ebelgeHata: number; acikTahsilat: number; acikOdeme: number; }
 interface CekSenet { id: string; tur: "cek" | "senet"; yon: "alinan" | "verilen"; portfoyNo: string; vadeTarihi: string; tutarTry: string; borclu: string; durum: string; banka?: string | null; cari?: { unvan: string } | null; }
 interface IsOgesi { href: string; baslik: string; aciklama: string; sayi: number; ton: "danger" | "warning" | "neutral"; }
@@ -240,6 +240,9 @@ export default function PanelSayfasi() {
               <div style={{ fontSize: "11px", color: kritikStok ? "var(--danger)" : "var(--text-muted)", fontWeight: "600" }}>
                 {kritikStok ? `${kritikStok} ürün kritik stokta` : "Kritik stok yok"}
               </div>
+              {!!finans?.eksiStokSayisi && (
+                <div style={{ fontSize: "11px", color: "var(--warning)", fontWeight: "600" }}>{finans.eksiStokSayisi} üründe eksi stok; değere katılmadı</div>
+              )}
             </div>
 
             {/* 5. Net Varlık Değeri - Koyu/Obsidian Gradient Icon Header */}
@@ -250,6 +253,9 @@ export default function PanelSayfasi() {
               <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: "600" }}>Net Varlık Değeri</span>
               <div style={{ fontSize: "24px", fontWeight: "800", color: "var(--text)", margin: "4px 0" }}>{finans ? para(finans.netVarlikDegeri, true) : "—"}</div>
               <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>Nakit + alacak + envanter - borç</div>
+              {!!finans?.kurEksik?.length && (
+                <div style={{ fontSize: "11px", color: "var(--warning)", fontWeight: "600" }}>{finans.kurEksik.join(", ")} güncel kuru yok; tarihî TL kullanıldı</div>
+              )}
             </div>
           </div>
         </section>

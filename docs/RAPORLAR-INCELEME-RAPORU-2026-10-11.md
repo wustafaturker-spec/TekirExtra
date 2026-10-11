@@ -43,7 +43,7 @@ Asıl sorunlar **yetki** ve **rakamların doğruluğu/tutarlılığı**:
 | P1-2 | Dönemsel Satış/Alış Özeti satış ve alışı karıştırıyor | ✅ RPR-13 (2026-10-11) |
 | P1-3 | KDV Dökümü ile KDV ön analizinin tutarsızlığı | ✅ RPR-13 (2026-10-11) |
 | P1-4 | Pivot: iptal/taslak, döviz ve yeniden hesap | ✅ RPR-14 (2026-10-11): `/rapor/fatura-pivot` SQL'de kayıtlı TL tutarlardan, varsayılan kesin, iptal hiç, iade eksi, dönem zorunlu, 5.000 hücre / 500 kalem sınırı; sayfa tasarım sisteminde |
-| P1-5 | Panel özeti: bütün cari hareketlerini belleğe alıyor, eksi stok | Açık |
+| P1-5 | Panel özeti: bütün cari hareketlerini belleğe alıyor, eksi stok | ✅ RPR-15 (2026-10-11): `rapor/varlik-ozeti.ts` — cari bakiyesi veritabanında gruplanır, pasifler dahil, dövizli bakiye cari kartı gibi güncel kurla; eksi stok değerlenmez, sayısı uyarı olarak döner (panel + Gelir-Gider). Demo: stok −51,86 M → 126.245 TL, net varlık −35,1 M → +17,0 M |
 | P1-6 | Maliyeti bilinmeyen satış %100 kâr görünüyor; Kâr Marjı eski yöntem | ✅ RPR-13 (2026-10-11); Ürün Satışları ve Alıcı Bazlı Satışlar da eski yöntemdeydi, taşındı |
 | P2-1 … P2-8 | Dışa aktarım, sınırlar, devir hızı, kaynak sütunu, SMM ekranı, ayrı ekranlar, envanter, testler | Açık |
 | P3 | Ek geliştirmeler (zamanlanmış rapor, karşılaştırma, grafik, drill-down…) | Öneri |

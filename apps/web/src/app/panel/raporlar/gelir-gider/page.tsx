@@ -13,6 +13,7 @@ interface GelirGiderOzet {
   satisHasilati: string;
   faaliyetDisiGelirler: string;
   mevcutStokDegeri: string;
+  eksiStokSayisi?: number;
   alisMaliyeti: string;
   masrafGiderleri: string;
   personelGiderleri: string;
@@ -246,7 +247,7 @@ export default function GelirGiderRaporuSayfasi() {
             <Card style={{ borderLeft: "4px solid #2563eb" }}>
               <span className="muted" style={{ fontSize: "12px", textTransform: "uppercase", fontWeight: 600 }}>Aktif Stok Değeri</span>
               <h2 style={{ color: "#2563eb", marginTop: "4px", marginBottom: 0 }}>{tl(veri.ozet.mevcutStokDegeri)}</h2>
-              <small className="muted">Varlıktır; gelire ve net farka katılmaz</small>
+              <small className="muted">Varlıktır; gelire ve net farka katılmaz{veri.ozet.eksiStokSayisi ? ` · ${veri.ozet.eksiStokSayisi} eksi stoklu ürün değere katılmadı` : ""}</small>
             </Card>
           </div>
 
