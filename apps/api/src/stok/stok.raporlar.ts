@@ -284,33 +284,66 @@ registerRapor({
 
 // ─── Stok devir hızı ────────────────────────────────────────────────────────
 
+/**
+ * RPR-18 (inceleme P2-3): devir hızı = dönem satış miktarı ÷ ortalama stok
+ * ((dönem başı + dönem sonu) / 2), miktarlar ana birimde. Eskiden payda
+ * bugünkü stoktu ve yalnız satılan ürünler listeleniyordu; dönmeyen stok
+ * (asıl bakılması gereken) görünmüyordu.
+ */
+export function devirHesabi(satilan: number, donemBasi: number, donemSonu: number, gun: number) {
+  const ortalama = (Math.max(donemBasi, 0) + Math.max(donemSonu, 0)) / 2;
+  const devir = ortalama > 0 ? Math.round((satilan / ortalama) * 100) / 100 : null;
+  return { ortalama, devir, stoktaGun: devir && devir > 0 ? Math.round(gun / devir) : null };
+}
+
 registerRapor({
   kod: "stok.devir-hizi",
   modul: "stok",
   ad: "Stok Devir Hızı",
   aciklama:
-    "Dönem satış miktarının mevcut stoğa oranı; stok tükenme süresi tahmini",
-  filtreler: TARIH_FILTRELERI,
+    "Dönem satışının ortalama stoğa ((dönem başı + dönem sonu) / 2) oranı ve stokta kalma süresi; hiç satılmayan stoklu ürünler de listelenir (devir 0)",
+  filtreler: TARIH_FILTRELERI.map((f) => ({ ...f, zorunlu: true })),
   kolonlar: [
     { alan: "kod", baslik: "Kod", tip: "metin" },
     { alan: "ad", baslik: "Ürün", tip: "metin" },
+    { alan: "birim", baslik: "Birim", tip: "metin" },
+    { alan: "donemBasi", baslik: "Dönem Başı Stok", tip: "sayi" },
+    { alan: "donemSonu", baslik: "Dönem Sonu Stok", tip: "sayi" },
+    { alan: "ortalamaStok", baslik: "Ortalama Stok", tip: "sayi" },
     { alan: "satilanMiktar", baslik: "Dönem Satışı", tip: "sayi" },
-    { alan: "mevcutMiktar", baslik: "Mevcut Stok", tip: "sayi" },
+    { alan: "smm", baslik: "Satılan Malın Maliyeti", tip: "para", toplam: true },
     { alan: "devirHizi", baslik: "Devir Hızı", tip: "sayi" },
+    { alan: "stoktaGun", baslik: "Stokta Kalma (gün)", tip: "sayi" },
   ],
   async calistir(girdi, { tx }) {
     const f = girdi.filtreler ?? {};
-    const gruplar = (await urunSatislari(tx, f.baslangic, f.bitis)).map((g) => ({ kod: g.kod, ad: g.ad, satilan: g.miktar.toNumber(), mevcut: g.mevcutMiktar.toNumber() }));
-    return gruplar
-      .sort((a, b) => b.satilan - a.satilan)
-      .map((g) => ({
-        kod: g.kod,
-        ad: g.ad,
-        satilanMiktar: g.satilan,
-        mevcutMiktar: g.mevcut,
-        devirHizi:
-          g.mevcut > 0 ? Math.round((g.satilan / g.mevcut) * 100) / 100 : null,
-      }));
+    const baslangic = new Date(String(f.baslangic)), bitis = new Date(String(f.bitis));
+    const gun = Math.round((bitis.getTime() - baslangic.getTime()) / 86_400_000) + 1;
+    const bakiye = async (tarih: Prisma.DateTimeFilter) =>
+      new Map((await tx.stokHareket.groupBy({ by: ["stokId"], where: { tarih }, _sum: { miktar: true } }))
+        .map((g) => [g.stokId, Number(g._sum.miktar ?? 0)]));
+    const [basi, sonu, satislar, kartlar] = await Promise.all([
+      bakiye({ lt: baslangic }),
+      bakiye({ lte: bitis }),
+      urunSatislari(tx, f.baslangic, f.bitis),
+      tx.stokKart.findMany({ where: { tip: { not: "hizmet" } }, select: { id: true, kod: true, ad: true, anaBirim: true } }),
+    ]);
+    const satis = new Map(satislar.map((g) => [g.stokId, g]));
+    return kartlar
+      .map((k) => {
+        const s = satis.get(k.id);
+        const donemBasi = basi.get(k.id) ?? 0, donemSonu = sonu.get(k.id) ?? 0, satilan = s ? s.miktar.toNumber() : 0;
+        const h = devirHesabi(satilan, donemBasi, donemSonu, gun);
+        return {
+          kod: k.kod, ad: k.ad, birim: k.anaBirim, donemBasi, donemSonu, ortalamaStok: h.ortalama,
+          satilanMiktar: satilan, smm: s ? s.maliyet.toFixed(2) : "0.00", devirHizi: satilan > 0 ? h.devir : (h.ortalama > 0 ? 0 : null),
+          stoktaGun: h.stoktaGun,
+        };
+      })
+      // Stoğu da satışı da olmayan kart gürültüdür.
+      .filter((r) => r.satilanMiktar !== 0 || r.ortalamaStok > 0)
+      // Dönmeyen stok önce: devir küçükten büyüğe, devirsizler (stoksuz satış) sonda.
+      .sort((a, b) => (a.devirHizi ?? Infinity) - (b.devirHizi ?? Infinity) || b.ortalamaStok - a.ortalamaStok);
   },
 });
 
