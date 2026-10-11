@@ -3,6 +3,7 @@ import { KDV_BEYAN_YONLERI, kdvBeyanFaturalari, kdvBeyanSatirlari } from "./kdv-
 import { FINANS_ROLLERI, registerRapor } from "../core/raporlar/rapor-kayit";
 import { karZararHesapla, karZararVerisi } from "../rapor/kar-zarar";
 import { bilinenMarj, maliyetBilinmiyor, satisSatirlari } from "../stok/satis-ozeti";
+import { satisKirilimi } from "./satis-kirilimi";
 
 /**
  * Fatura modülü raporları (FTR-15; KDV dökümü RPR-02'yi karşılar) —
@@ -423,5 +424,54 @@ registerRapor({
         maliyetsizCiro: kz.maliyetsizSatis.ciro.toFixed(2),
       };
     });
+  },
+});
+
+// ─── Satış kırılımları (RPR-29, RPR-03) ─────────────────────────────────────
+
+registerRapor({
+  kod: "fatura.satis-kirilimlari",
+  modul: "fatura",
+  ad: "Satış Kırılımları",
+  aciklama:
+    "Net satış (iadeler düşülmüş, KDV hariç TL) temsilci, ürün kategorisi, il ya da ülke kırılımında; temsilci carinin bugünkü temsilcisidir",
+  filtreler: TARIH_FILTRELERI.map((f) => ({ ...f, zorunlu: true })),
+  gruplamalar: [
+    { deger: "temsilci", ad: "Satış temsilcisi" },
+    { deger: "kategori", ad: "Ürün kategorisi" },
+    { deger: "il", ad: "İl" },
+    { deger: "ulke", ad: "Ülke" },
+  ],
+  // RPR-26
+  grafik: { tur: "yatay", kategori: "grup", seriler: ["netSatis"], enCok: 10 },
+  kolonlar: [
+    { alan: "grup", baslik: "Kırılım", tip: "metin" },
+    { alan: "netSatis", baslik: "Net Satış (TL)", tip: "para", toplam: true },
+    { alan: "pay", baslik: "Pay", tip: "yuzde" },
+    { alan: "faturaSayisi", baslik: "Fatura", tip: "sayi" },
+    { alan: "cariSayisi", baslik: "Cari", tip: "sayi" },
+    { alan: "miktar", baslik: "Miktar (ana birim)", tip: "sayi" },
+  ],
+  async calistir(girdi, { tx }) {
+    const f = girdi.filtreler ?? {};
+    const satirlar = await satisSatirlari(tx, tarihAraligi(f.baslangic, f.bitis));
+    const gruplama = girdi.gruplama ?? "temsilci";
+    if (gruplama === "kategori") {
+      const kartlar = await tx.stokKart.findMany({ where: { id: { in: [...new Set(satirlar.map((s) => s.stokId))] } }, select: { id: true, kategori: { select: { ad: true } } } });
+      const kategori = new Map(kartlar.map((k) => [k.id, k.kategori?.ad ?? null]));
+      return satisKirilimi(satirlar, (s) => kategori.get(s.stokId) ?? null);
+    }
+    const cariler = await tx.cariHesap.findMany({
+      where: { id: { in: [...new Set(satirlar.map((s) => s.cariId))] } },
+      select: { id: true, temsilci: { select: { adSoyad: true } }, adresler: { select: { tip: true, il: true, ulke: true } } },
+    });
+    // Fatura adresi, yoksa ilk adres.
+    const adres = (c: (typeof cariler)[number]) => c.adresler.find((a) => a.tip === "fatura") ?? c.adresler[0];
+    const deger = new Map(cariler.map((c) => [c.id,
+      // Yazım farkı (İstanbul / İSTANBUL) ayrı satır açmasın.
+      gruplama === "il" ? adres(c)?.il?.trim().toLocaleUpperCase("tr-TR") || null
+      : gruplama === "ulke" ? adres(c)?.ulke ?? null
+      : c.temsilci?.adSoyad ?? null]));
+    return satisKirilimi(satirlar, (s) => deger.get(s.cariId) ?? null);
   },
 });
