@@ -6,6 +6,8 @@ import { api, apiDosyaIndir, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { AramaSecici } from "@/components/arama-secici";
 import { Alert, Badge, Button, Card, EylemMenusu, Field, Input, Modal, ModalEylem, SearchInput, TableSkeleton } from "@/components/ui";
 import { AbonelikPenceresi } from "@/components/rapor-abonelik";
+import { RaporGrafigi } from "@/components/rapor-grafik";
+import type { GrafikTanimi } from "@tekirextra/shared";
 
 /**
  * Ortak rapor paneli (RPR-06/08): rapor kataloğunu API meta verisinden çizer —
@@ -42,6 +44,8 @@ interface RaporMeta {
   filtreler: RaporFiltreTanimi[];
   gruplamalar: { deger: string; ad: string }[];
   kolonlar: RaporKolon[];
+  /** RPR-26 */
+  grafik?: GrafikTanimi | null;
 }
 
 type Satir = Record<string, string | number | boolean | null>;
@@ -663,6 +667,9 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
                       </span>
                     ))}
                   </div>
+                )}
+                {secilen.grafik && sonuc.satirlar.length > 0 && (
+                  <RaporGrafigi tanim={secilen.grafik} baslik={secilen.ad} kolonlar={sonuc.kolonlar} satirlar={sonuc.satirlar} kesik={satirSayisi > sonuc.satirlar.length} />
                 )}
                 {satirSayisi > AZAMI_SATIR && (
                   <p className="rapor-sonuc__uyari">İlk {AZAMI_SATIR} satır gösteriliyor; toplamlar bütün satırlardan. Tamamı için Excel ya da PDF indirin.</p>

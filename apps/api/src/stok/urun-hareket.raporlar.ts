@@ -80,6 +80,8 @@ async function satisVerisi(tx: Prisma.TransactionClient, f: Record<string, unkno
 registerRapor({
   kod: "urun-hareket.urun-satislari", modul: "urun_hareket", ad: "Ürün Satışları", aciklama: "Kesin satış faturalarına göre ürün miktarı (ana birim), net satış, satış anındaki maliyet ve kârlılık; maliyeti bilinmeyen ciro ayrı",
   filtreler: [...TARIH, { alan: "stok", ad: "Ürün", tip: "stok" }, { alan: "cari", ad: "Alıcı", tip: "cari" }],
+  // RPR-26
+  grafik: { tur: "yatay", kategori: "urun", seriler: ["netSatis"], enCok: 10 },
   kolonlar: [{ alan: "kod", baslik: "Kod", tip: "metin" }, { alan: "urun", baslik: "Ürün", tip: "metin" }, { alan: "satisMiktari", baslik: "Satış", tip: "sayi" }, { alan: "iadeMiktari", baslik: "İade", tip: "sayi" }, { alan: "netMiktar", baslik: "Net Miktar", tip: "sayi" }, { alan: "aliciSayisi", baslik: "Alıcı", tip: "sayi" }, { alan: "netSatis", baslik: "Net Satış", tip: "para", toplam: true }, { alan: "maliyet", baslik: "Maliyet", tip: "para", toplam: true }, { alan: "kar", baslik: "Kâr", tip: "para", toplam: true }, { alan: "karOrani", baslik: "Kâr Oranı", tip: "yuzde" }, { alan: "maliyetsizCiro", baslik: "Maliyeti Bilinmeyen Ciro", tip: "para", toplam: true }],
   async calistir(girdi, { tx }) {
     const gruplar = new Map<string, { kod: string; urun: string; satis: Prisma.Decimal; iade: Prisma.Decimal; net: Prisma.Decimal; maliyet: Prisma.Decimal; maliyetsiz: Prisma.Decimal; alicilar: Set<string> }>();

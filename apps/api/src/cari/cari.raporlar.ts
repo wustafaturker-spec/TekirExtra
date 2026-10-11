@@ -98,6 +98,8 @@ registerRapor({
     },
     ETIKET_FILTRESI,
   ],
+  // RPR-26
+  grafik: { tur: "yatay", seriler: ["gun0_30", "gun31_60", "gun61_90", "gun90Ustu"] },
   kolonlar: [
     { alan: "kod", baslik: "Kod", tip: "metin" },
     { alan: "unvan", baslik: "Ünvan", tip: "metin" },
@@ -201,6 +203,8 @@ registerRapor({
   ad: "Cari Bazlı Satış/Alış Özeti",
   aciklama: "Kesinleşmiş faturaların cari kırılımında toplamları (TL)",
   filtreler: [...TARIH_FILTRELERI, ETIKET_FILTRESI],
+  // RPR-26
+  grafik: { tur: "yatay", kategori: "unvan", seriler: ["netSatis"], enCok: 10 },
   kolonlar: [
     { alan: "kod", baslik: "Kod", tip: "metin" },
     { alan: "unvan", baslik: "Ünvan", tip: "metin" },
@@ -340,6 +344,8 @@ registerRapor({
     { alan: "adet", ad: "Kayıt Sayısı", tip: "sayi" },
     ETIKET_FILTRESI,
   ],
+  // RPR-26
+  grafik: { tur: "yatay", kategori: "unvan", seriler: ["bakiye"], enCok: 10 },
   kolonlar: [
     { alan: "kod", baslik: "Kod", tip: "metin" },
     { alan: "unvan", baslik: "Ünvan", tip: "metin" },

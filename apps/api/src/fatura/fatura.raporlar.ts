@@ -59,6 +59,8 @@ registerRapor({
   ],
   // RPR-13 (inceleme P1-2): önceden filtre boşken satış, alış ve iadeler aynı
   // "Matrah" sütununda toplanıyordu (iadeler artı); sayının anlamı yoktu.
+  // RPR-26
+  grafik: { tur: "sutun", kategori: "grup", seriler: ["netSatis", "netAlis"] },
   kolonlar: [
     { alan: "grup", baslik: "Kırılım", tip: "metin" },
     { alan: "satis", baslik: "Satış (TL)", tip: "para", toplam: true },
@@ -380,6 +382,8 @@ registerRapor({
     { deger: "ay", ad: "Ay" },
     { deger: "yok", ad: "Dönem toplamı" },
   ],
+  // RPR-26
+  grafik: { tur: "cizgi", kategori: "grup", seriler: ["netSatis", "brutKar", "netKar"] },
   kolonlar: [
     { alan: "grup", baslik: "Dönem", tip: "metin" },
     { alan: "netSatis", baslik: "Net Satış (TL)", tip: "para", toplam: true },

@@ -48,6 +48,7 @@ export class RaporlarService {
       filtreler: t.filtreler,
       gruplamalar: t.gruplamalar ?? [],
       kolonlar: t.kolonlar,
+      grafik: t.grafik ?? null,
     }));
   }
 

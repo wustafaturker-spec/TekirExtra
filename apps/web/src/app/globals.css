@@ -6,6 +6,10 @@
 
 /* ─── 1. Modern Amber (Standart) ─────────────────────────────────────────── */
 :root, [data-theme="amber-default"] {
+  /* RPR-26: grafik serileri (doğrulandı: CVD ΔE ≥ 9,2, normal ≥ 24) */
+  --seri-1: #2a78d6;
+  --seri-2: #eb6834;
+  --seri-3: #1baf7a;
   --bg: #f7f8fa;
   --surface: #ffffff;
   --surface-2: #f8fafc;
@@ -54,6 +58,10 @@
 
 /* ─── 2. Slate Minimal & Mint ────────────────────────────────────────────── */
 [data-theme="slate-mint"] {
+  /* RPR-26: grafik serileri (doğrulandı: CVD ΔE ≥ 9,2, normal ≥ 24) */
+  --seri-1: #2a78d6;
+  --seri-2: #eb6834;
+  --seri-3: #1baf7a;
   --bg: #f1f5f9;
   --surface: #ffffff;
   --surface-2: #f8fafc;
@@ -76,6 +84,10 @@
 
 /* ─── 3. Corporate Indigo & Navy ─────────────────────────────────────────── */
 [data-theme="corporate-navy"] {
+  /* RPR-26: grafik serileri, koyu zemin adımları (doğrulandı, ≥ 3:1) */
+  --seri-1: #3987e5;
+  --seri-2: #d95926;
+  --seri-3: #199e70;
   --bg: #0f172a;
   --surface: #1e293b;
   --surface-2: #334155;
@@ -98,6 +110,10 @@
 
 /* ─── 4. Midnight Cyber (Dark) ───────────────────────────────────────────── */
 [data-theme="dark-obsidian"] {
+  /* RPR-26: grafik serileri, koyu zemin adımları (doğrulandı, ≥ 3:1) */
+  --seri-1: #3987e5;
+  --seri-2: #d95926;
+  --seri-3: #199e70;
   --bg: #09090b;
   --surface: #18181b;
   --surface-2: #27272a;
@@ -4422,3 +4438,9 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
   .rapor-katalog__secim { display: block; width: 100%; }
   .rapor-filtreler__genis { grid-column: 1 / -1; }
 }
+
+/* RPR-26: rapor grafiği — tablonun üstünde, katlanabilir. */
+.rapor-grafik { padding: .75rem 1rem .5rem; border-bottom: 1px solid var(--border); }
+.rapor-grafik summary { cursor: pointer; font-size: .8rem; font-weight: 600; color: var(--text-muted); }
+.rapor-grafik svg { display: block; max-width: 100%; height: auto; margin-top: .5rem; }
+.rapor-grafik__not { margin: .4rem 0 0; font-size: .78rem; color: var(--text-muted); }

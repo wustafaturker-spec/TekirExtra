@@ -6,6 +6,7 @@ import {
   tarihBicim,
 } from "../pdf/pdf-sablon";
 import type { BelgeTemasi } from "../pdf/belge-temasi";
+import { grafikSvg, grafikVerisi } from "@tekirextra/shared";
 import { type DisaAktarimBilgisi, hucreDovizi, toplamSatiri } from "./rapor-disa-aktarim";
 import type { RaporKolon, RaporSatiri, RaporTanimi } from "./rapor-kayit";
 
@@ -30,9 +31,20 @@ export function raporPdfHtml(
   return sayfaSablonu({
     baslik: tanim.ad,
     altBaslik: [bilgi?.firma, tanim.aciklama].filter(Boolean).join(" — ") || undefined,
-    icerik: ozet + raporTablosuHtml(tanim, satirlar, { toplam: true }),
+    icerik: ozet + raporGrafigiHtml(tanim, satirlar) + raporTablosuHtml(tanim, satirlar, { toplam: true }),
     tema,
   });
+}
+
+/** RPR-26: tanımda grafik varsa tablonun üstüne SVG (açık tema renkleri; baskı beyaz zemin). */
+export function raporGrafigiHtml(tanim: Pick<RaporTanimi, "ad" | "grafik" | "kolonlar">, satirlar: RaporSatiri[]): string {
+  if (!tanim.grafik) return "";
+  const r = grafikVerisi(tanim.grafik, tanim.kolonlar, satirlar);
+  if (!("veri" in r)) return "";
+  // Ekrandaki ölçüyle (viewBox 760) ve sans yazıyla; sayfa genişliğine büyüyüp etiketleri taşırmasın.
+  return `<div class="grafik" style="margin:6px 0 12px;max-width:760px;font-family:Arial,Helvetica,sans-serif;page-break-inside:avoid">${grafikSvg(r.veri, {
+    renkler: ["#2a78d6", "#eb6834", "#1baf7a"], metin: "#18202f", soluk: "#667085", izgara: "#e6e9ee", zemin: "#ffffff", baslik: tanim.ad,
+  })}</div>`;
 }
 
 /** Kolon tanımından tek tablo; birden çok tabloyu tek sayfada birleştiren çıktılar için. */

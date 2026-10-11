@@ -172,6 +172,8 @@ registerRapor({
     { deger: "cari", ad: "Cari" },
     { deger: "kaynak", ad: "Kaynak" },
   ],
+  // RPR-26
+  grafik: { tur: "sutun", kategori: "grup", seriler: ["girisTry", "cikisTry"] },
   kolonlar: [
     { alan: "grup", baslik: "Grup", tip: "metin" },
     { alan: "dovizCinsi", baslik: "Döviz", tip: "metin" },
@@ -399,6 +401,8 @@ registerRapor({
     { deger: "hafta", ad: "Hafta" },
     { deger: "gun", ad: "Gün" },
   ],
+  // RPR-26
+  grafik: { tur: "sutun", kategori: "donem", seriler: ["giris", "cikis"] },
   kolonlar: [
     { alan: "hesap", baslik: "Hesap", tip: "metin" },
     { alan: "dovizCinsi", baslik: "Döviz", tip: "metin" },

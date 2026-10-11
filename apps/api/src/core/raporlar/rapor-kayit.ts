@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import type { Rol } from "@tekirextra/shared";
+import type { GrafikTanimi, Rol } from "@tekirextra/shared";
 
 /**
  * Ortak rapor araç seti kayıt defteri (RPR-06, MIMARI §4.4).
@@ -78,6 +78,8 @@ export interface RaporTanimi {
   filtreler: RaporFiltreTanimi[];
   gruplamalar?: { deger: string; ad: string }[];
   kolonlar: RaporKolon[];
+  /** RPR-26: ekranda ve PDF'te tablonun üstündeki grafik. */
+  grafik?: GrafikTanimi;
   /** Verilirse yalnız bu roller (ve yönetici) görür ve çalıştırır; verilmezse modülün varsayılanı (`MODUL_ROLLERI`). */
   roller?: readonly Rol[];
   calistir: (girdi: RaporGirdisi, bag: RaporBaglami) => Promise<RaporSatiri[]>;

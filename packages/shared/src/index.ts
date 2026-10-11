@@ -48,3 +48,4 @@ export * from "./doviz";
 export * from "./muhasebe";
 export * from "./kredi";
 export * from "./donemsel-degerler";
+export * from "./rapor-grafik";
