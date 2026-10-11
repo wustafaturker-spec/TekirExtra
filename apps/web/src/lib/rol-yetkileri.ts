@@ -13,12 +13,33 @@ const ROL_YOLLARI: Record<string, string[]> = {
   maliyet_muhasebesi: ["/panel", "/panel/bildirimler", "/panel/satin-alma/talepler", "/panel/uretim", "/panel/stok", "/panel/raporlar", "/panel/ayarlar/hesap", "/panel/ayarlar/bildirimler"],
 };
 
+/** RPR-11: finansal özet ve raporları gören roller (yönetici her zaman); API'deki `FINANS_ROLLERI` ile aynı. */
+export const FINANS_ROLLERI = ["muhasebe", "mali_musavir", "salt_okunur"];
+
+/**
+ * RPR-11: genel izinli bir yolun altında daha dar rolle açılan sayfalar
+ * (ör. /panel/raporlar'ı gören maliyet muhasebesi Gelir-Gider'i görmez).
+ * API aynı rolleri uygular; burada menü ve sayfa erişimi için.
+ */
+const KISITLI_YOLLAR: { yol: string; roller: string[] }[] = [
+  { yol: "/panel/raporlar/gelir-gider", roller: FINANS_ROLLERI },
+  { yol: "/panel/raporlar/kdv-disi-vergiler", roller: ["muhasebe", "mali_musavir"] },
+  { yol: "/panel/stok/smm", roller: [...FINANS_ROLLERI, "maliyet_muhasebesi"] },
+];
+
+/** Panel özetindeki finansal kartlar (nakit, alacak/borç, vadesi geçenler). */
+export function finansalOzetGorebilir(rol: string | null): boolean {
+  return rol === "yonetici" || (rol !== null && FINANS_ROLLERI.includes(rol));
+}
+
 export function rolMenuYoluGorebilir(rol: string | null, href: string): boolean {
   if (!rol) return false;
   const yol = href.split("?")[0];
   // PRS-21: self-servis yalnız çalışan rolünün menüsünde (yöneticinin kartı yoktur).
   if (yol === "/panel/self-servis" || yol.startsWith("/panel/self-servis/")) return rol === "calisan";
   if (rol === "yonetici") return true;
+  const kisit = KISITLI_YOLLAR.find((k) => yol === k.yol || yol.startsWith(`${k.yol}/`));
+  if (kisit && !kisit.roller.includes(rol)) return false;
   return (ROL_YOLLARI[rol] ?? []).some((izinli) =>
     izinli === "/panel" ? yol === izinli : yol === izinli || yol.startsWith(`${izinli}/`),
   );

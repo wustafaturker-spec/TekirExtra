@@ -12,6 +12,7 @@ import { raporExcelYaz } from "./rapor-excel";
 import { raporPdfHtml, raporYatayMi } from "./rapor-pdf";
 import {
   girdiDogrula,
+  raporErisilebilir,
   raporTanimiAl,
   raporTanimlari,
   siralamaUygula,
@@ -28,7 +29,7 @@ export class RaporlarService {
   /** Rapor kataloğu: arayüz filtre/gruplama/kolon meta verisinden çizilir. */
   listele(modul?: string) {
     const { rol } = aktifBaglam();
-    return raporTanimlari(modul).filter((t) => !t.roller || t.roller.includes(rol)).map((t) => ({
+    return raporTanimlari(modul).filter((t) => raporErisilebilir(t, rol)).map((t) => ({
       kod: t.kod,
       modul: t.modul,
       ad: t.ad,
@@ -42,8 +43,8 @@ export class RaporlarService {
   async calistir(kod: string, girdi: RaporGirdisi) {
     const tanim = raporTanimiAl(kod);
     if (!tanim) throw new NotFoundException(`'${kod}' raporu bulunamadı`);
-    // RPR-09: role kısıtlı rapor; Excel ve PDF de buradan geçer.
-    if (tanim.roller && !tanim.roller.includes(aktifBaglam().rol)) throw new ForbiddenException("Bu raporu görme yetkiniz yok");
+    // RPR-11: Excel ve PDF de buradan geçer.
+    if (!raporErisilebilir(tanim, aktifBaglam().rol)) throw new ForbiddenException("Bu raporu görme yetkiniz yok");
 
     const hatalar = girdiDogrula(tanim, girdi);
     if (hatalar.length > 0) throw new BadRequestException(hatalar.join("; "));
@@ -81,7 +82,15 @@ export class RaporlarService {
   // ─── KAYITLI GÖRÜNÜMLER (RPR-06) ─────────────────────────────────────────
   // Görünüm kişiseldir; firmaGeneli işaretlenirse firmadaki herkes görür.
 
+  /** RPR-11: görünüm uçları da raporun rolüne bağlıdır. */
+  private erisimDenetle(raporKod: string) {
+    const tanim = raporTanimiAl(raporKod);
+    if (!tanim) throw new NotFoundException(`'${raporKod}' raporu bulunamadı`);
+    if (!raporErisilebilir(tanim, aktifBaglam().rol)) throw new ForbiddenException("Bu raporu görme yetkiniz yok");
+  }
+
   async gorunumleriListele(raporKod: string) {
+    this.erisimDenetle(raporKod);
     const { tenantId, userId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, (tx) =>
       tx.raporGorunumu.findMany({
@@ -98,6 +107,7 @@ export class RaporlarService {
     raporKod: string,
     veri: { ad: string; girdi: RaporGirdisi; firmaGeneli: boolean },
   ) {
+    this.erisimDenetle(raporKod);
     if (!raporTanimiAl(raporKod)) {
       throw new NotFoundException(`'${raporKod}' raporu bulunamadı`);
     }

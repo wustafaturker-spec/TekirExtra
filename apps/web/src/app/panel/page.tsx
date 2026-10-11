@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiHata, tokenAl, tokenYaz } from "@/lib/api";
+import { finansalOzetGorebilir } from "@/lib/rol-yetkileri";
 import { bugunTR, paraBicimle } from "@tekirextra/shared";
 import { Para, Tarih } from "@/components/ui";
 
@@ -49,11 +50,12 @@ export default function PanelSayfasi() {
       if (ben.rol === "calisan") { router.replace("/panel/self-servis"); return; }
       const firmaVeri = await api<{ unvan: string }>("/firma");
       setRol(ben.rol); setFirma(firmaVeri.unvan);
-      const finansalErisim = ben.rol !== "satis";
+      // RPR-11: finansal özet yalnız finans rollerine; API de aynı rolleri uygular.
+      const finansalErisim = finansalOzetGorebilir(ben.rol);
       const sonuclar = await Promise.allSettled([
         api<FaturaKuyrukOzeti>("/fatura/is-kuyrugu-ozeti"),
         api<{ kritikStok: number }>("/stok/kritik-ozeti"),
-        api<GunlukOzet>("/rapor/gunluk"),
+        finansalErisim || ben.rol === "satis" ? api<GunlukOzet>("/rapor/gunluk") : Promise.resolve(null),
         api<DovizKurlari>("/doviz-kurlari?tip=alis"),
         api<DovizKurlari>("/doviz-kurlari?tip=satis"),
         ...(finansalErisim ? [
@@ -63,7 +65,7 @@ export default function PanelSayfasi() {
       ]);
       if (sonuclar[0]?.status === "fulfilled") setFatura(sonuclar[0].value as FaturaKuyrukOzeti);
       if (sonuclar[1]?.status === "fulfilled") setKritikStok((sonuclar[1].value as { kritikStok: number }).kritikStok);
-      if (sonuclar[2]?.status === "fulfilled") setGunluk(sonuclar[2].value as GunlukOzet);
+      if (sonuclar[2]?.status === "fulfilled" && sonuclar[2].value) setGunluk(sonuclar[2].value as GunlukOzet);
       if (sonuclar[3]?.status === "fulfilled") setAlisKurlari(sonuclar[3].value as DovizKurlari);
       if (sonuclar[4]?.status === "fulfilled") setSatisKurlari(sonuclar[4].value as DovizKurlari);
       if (finansalErisim) {
@@ -151,8 +153,9 @@ export default function PanelSayfasi() {
         </div>
       )}
 
-      {/* Daily Strip (Satış & Tahsilat & Kurlar) */}
+      {/* Daily Strip (Satış & Tahsilat & Kurlar) — RPR-11: satış/tahsilat yalnız finans ve satış rollerine. */}
       <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "20px", marginBottom: "28px" }}>
+        {(finansalOzetGorebilir(rol) || rol === "satis") && <>
         <Link href={`/panel/fatura?yon=satis&baslangic=${bugunTR()}&bitis=${bugunTR()}`} style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "14px", border: "1px solid var(--border)", textDecoration: "none", boxShadow: "var(--shadow)", display: "block" }}>
           <div style={{ color: "var(--text-muted)", fontSize: "13px", fontWeight: "600", marginBottom: "6px" }}>Bugünkü Satış Hacmi</div>
           <div style={{ fontSize: "28px", fontWeight: "800", color: "var(--text)", marginBottom: "4px" }}>{gunluk ? para(gunluk.satis.toplam) : "—"}</div>
@@ -164,6 +167,7 @@ export default function PanelSayfasi() {
           <div style={{ fontSize: "28px", fontWeight: "800", color: "var(--text)", marginBottom: "4px" }}>{gunluk ? para(gunluk.tahsilat.toplam) : "—"}</div>
           <div style={{ fontSize: "12px", color: "var(--accent)", fontWeight: "600" }}>{gunluk?.tahsilat.adet ?? 0} tahsilat kaydı · Detayları Gör →</div>
         </Link>
+        </>}
 
         <div style={{ backgroundColor: "var(--surface)", padding: "20px", borderRadius: "14px", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)", fontSize: "13px", fontWeight: "600", marginBottom: "10px" }}>
@@ -186,7 +190,7 @@ export default function PanelSayfasi() {
       </section>
 
       {/* Main KPI Grid */}
-      {rol !== "satis" && (
+      {finansalOzetGorebilir(rol) && (
         <section style={{ marginBottom: "28px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
             <h2 style={{ fontSize: "18px", fontWeight: "800", color: "var(--text)", margin: 0 }}>Finansal Varlık & Borç Durumu</h2>
@@ -339,8 +343,8 @@ export default function PanelSayfasi() {
 
       </div>
 
-      {/* Overdue Tables (Alacak & Borç) */}
-      {rol !== "satis" && (
+      {/* Overdue Tables (Alacak & Borç) — RPR-11: finans rollerine. */}
+      {finansalOzetGorebilir(rol) && (
         <section className="dashboard-home__overdue" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "24px" }}>
           {[{ baslik: "Vadesi Geçmiş Alacaklar", alt: "Müşterilerden tahsil edilecek açık faturalar", toplam: vadesiGecenler?.toplamAlacak, liste: vadesiGecenler?.alacaklar ?? [], renk: "var(--success)", bos: "Vadesi geçmiş alacak yok." }, { baslik: "Vadesi Geçmiş Borçlar", alt: "Tedarikçilere ödenecek açık faturalar", toplam: vadesiGecenler?.toplamBorc, liste: vadesiGecenler?.borclar ?? [], renk: "var(--danger)", bos: "Vadesi geçmiş borç yok." }].map((grup) => (
             <div key={grup.baslik} style={{ backgroundColor: "var(--surface)", padding: "24px", borderRadius: "16px", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
@@ -376,7 +380,7 @@ export default function PanelSayfasi() {
         </section>
       )}
 
-      {rol !== "satis" && (
+      {finansalOzetGorebilir(rol) && (
         <section style={{ marginTop: "24px", backgroundColor: "var(--surface)", padding: "24px", borderRadius: "16px", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
             <div>

@@ -76,9 +76,30 @@ export interface RaporTanimi {
   filtreler: RaporFiltreTanimi[];
   gruplamalar?: { deger: string; ad: string }[];
   kolonlar: RaporKolon[];
-  /** RPR-09: verilirse yalnız bu roller görür ve çalıştırır; verilmezse rapor erişimi olan herkes. */
+  /** Verilirse yalnız bu roller (ve yönetici) görür ve çalıştırır; verilmezse modülün varsayılanı (`MODUL_ROLLERI`). */
   roller?: readonly Rol[];
   calistir: (girdi: RaporGirdisi, bag: RaporBaglami) => Promise<RaporSatiri[]>;
+}
+
+/**
+ * Rapor erişimi (RPR-11, 2026-10-11 inceleme P0-1). Yönetici her raporu
+ * görür. Tanımda `roller` yoksa modülün varsayılanı geçer; liste web'deki
+ * rol → sayfa haritasıyla (`rol-yetkileri.ts`) uyumludur: kullanıcı ekranda
+ * göremediği raporu API'den de alamaz.
+ */
+export const FINANS_ROLLERI: readonly Rol[] = ["muhasebe", "mali_musavir", "salt_okunur"];
+export const MODUL_ROLLERI: Record<RaporTanimi["modul"], readonly Rol[]> = {
+  fatura: [...FINANS_ROLLERI, "satis"],
+  cari: [...FINANS_ROLLERI, "satis"],
+  stok: [...FINANS_ROLLERI, "depo", "uretim_planlama", "maliyet_muhasebesi"],
+  urun_hareket: [...FINANS_ROLLERI, "maliyet_muhasebesi"],
+  kasa_banka: FINANS_ROLLERI,
+  vergi: FINANS_ROLLERI,
+  genel: FINANS_ROLLERI,
+};
+
+export function raporErisilebilir(tanim: RaporTanimi, rol: Rol): boolean {
+  return rol === "yonetici" || (tanim.roller ?? MODUL_ROLLERI[tanim.modul] ?? []).includes(rol);
 }
 
 const tanimlar = new Map<string, RaporTanimi>();

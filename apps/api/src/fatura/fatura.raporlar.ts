@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { kdvMatrahinaDahilToplam } from "./ek-vergi";
-import { registerRapor } from "../core/raporlar/rapor-kayit";
+import { FINANS_ROLLERI, registerRapor } from "../core/raporlar/rapor-kayit";
 
 /**
  * Fatura modülü raporları (FTR-15; KDV dökümü RPR-02'yi karşılar) —
@@ -126,6 +126,8 @@ registerRapor({
   ad: "Kâr Marjı Analizi",
   aciklama:
     "Satış matrahı - ağırlıklı ortalama maliyet; ürün/cari/ay kırılımında",
+  // RPR-11: kâr bilgisi; satış/depo rolleri görmez.
+  roller: FINANS_ROLLERI,
   filtreler: TARIH_FILTRELERI,
   gruplamalar: [
     { deger: "urun", ad: "Ürün" },
@@ -439,6 +441,8 @@ registerRapor({
   modul: "genel" as any,
   ad: "Kâr/Zarar Özeti",
   aciklama: "Satış Matrahı − Alış Matrahı − Kasa/Banka Tediye Giderleri formülüyle kâr/zarar özeti",
+  // RPR-11: kâr bilgisi; satış/depo rolleri görmez.
+  roller: FINANS_ROLLERI,
   filtreler: TARIH_FILTRELERI,
   gruplamalar: [
     { deger: "ay", ad: "Ay" },

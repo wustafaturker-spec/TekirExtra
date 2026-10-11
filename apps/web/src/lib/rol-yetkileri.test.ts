@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rolMenuYoluGorebilir } from "./rol-yetkileri";
+import { finansalOzetGorebilir, rolMenuYoluGorebilir } from "./rol-yetkileri";
 
 describe("panel rol erişim matrisi", () => {
   it("rol yüklenmeden panel içeriğini açmaz", () => {
@@ -24,5 +24,19 @@ describe("panel rol erişim matrisi", () => {
   it("üretim rollerini ilgili operasyon ekranlarıyla sınırlar", () => {
     expect(rolMenuYoluGorebilir("kalite", "/panel/uretim/kalite")).toBe(true);
     expect(rolMenuYoluGorebilir("kalite", "/panel/uretim/planlama")).toBe(false);
+  });
+
+  it("dar rollü rapor sayfalarını ayırır; finansal özet yalnız finans rollerinde (RPR-11)", () => {
+    expect(rolMenuYoluGorebilir("maliyet_muhasebesi", "/panel/raporlar")).toBe(true);
+    expect(rolMenuYoluGorebilir("maliyet_muhasebesi", "/panel/raporlar/gelir-gider")).toBe(false);
+    expect(rolMenuYoluGorebilir("maliyet_muhasebesi", "/panel/stok/smm")).toBe(true);
+    expect(rolMenuYoluGorebilir("depo", "/panel/stok")).toBe(true);
+    expect(rolMenuYoluGorebilir("depo", "/panel/stok/smm")).toBe(false);
+    expect(rolMenuYoluGorebilir("salt_okunur", "/panel/raporlar/kdv-disi-vergiler")).toBe(false);
+    expect(rolMenuYoluGorebilir("mali_musavir", "/panel/raporlar/kdv-disi-vergiler")).toBe(true);
+    expect(finansalOzetGorebilir("depo")).toBe(false);
+    expect(finansalOzetGorebilir("satis")).toBe(false);
+    expect(finansalOzetGorebilir("salt_okunur")).toBe(true);
+    expect(finansalOzetGorebilir("yonetici")).toBe(true);
   });
 });

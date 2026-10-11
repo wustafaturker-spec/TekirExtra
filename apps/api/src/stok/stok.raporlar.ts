@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { BadRequestException } from "@nestjs/common";
-import { registerRapor } from "../core/raporlar/rapor-kayit";
+import { FINANS_ROLLERI, registerRapor } from "../core/raporlar/rapor-kayit";
 import { satisSatirlari, urunBazinda } from "./satis-ozeti";
 import { tarihliBakiyeler } from "./tarihli-envanter";
 import { iptalCiftiMi, iptalEdilmisFaturalar, iptalleriGoster } from "../fatura/iptal-cifti";
@@ -321,6 +321,8 @@ registerRapor({
   modul: "stok",
   ad: "Ürün Bazlı Kârlılık",
   aciklama: "Satış matrahı (TL) ile satış anındaki ağırlıklı ortalama maliyet farkından kâr marjı; satış iadeleri düşülür",
+  // RPR-11: kâr bilgisi; satış/depo rolleri görmez.
+  roller: [...FINANS_ROLLERI, "maliyet_muhasebesi"],
   filtreler: TARIH_FILTRELERI,
   kolonlar: [
     { alan: "kod", baslik: "Kod", tip: "metin" },

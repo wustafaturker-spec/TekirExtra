@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, tokenAl } from "@/lib/api";
+import { rolMenuYoluGorebilir } from "@/lib/rol-yetkileri";
 import { BirimSecimi } from "@/components/birim-secimi";
 import {
   Alert,
@@ -54,7 +55,8 @@ export default function StokSayfasi() {
   const [hata, setHata] = useState("");
   /** STK-24: tutarlılık denetimi yalnız yöneticiye açık. */
   const [yonetici, setYonetici] = useState(false);
-  useEffect(() => { api<{ rol: string }>("/auth/ben").then((b) => setYonetici(b.rol === "yonetici")).catch(() => undefined); }, []);
+  const [rol, setRol] = useState<string | null>(null);
+  useEffect(() => { api<{ rol: string }>("/auth/ben").then((b) => { setYonetici(b.rol === "yonetici"); setRol(b.rol); }).catch(() => undefined); }, []);
   const [basari, setBasari] = useState("");
   const [formAcik, setFormAcik] = useState(false);
   const [sonrakiStokImleci, setSonrakiStokImleci] = useState<string | null>(null);
@@ -183,7 +185,7 @@ export default function StokSayfasi() {
         subtitle="Ürünlerinizi, hizmetlerinizi, envanter miktarlarını ve maliyetlerini takip edin."
         actions={
           <>
-            <ButtonLabel as="a" href="/panel/stok/smm">₺ SMM & Karlılık</ButtonLabel>
+            {rolMenuYoluGorebilir(rol, "/panel/stok/smm") && <ButtonLabel as="a" href="/panel/stok/smm">₺ SMM & Karlılık</ButtonLabel>}
             <ButtonLabel as="a" href="/panel/stok/raporlar">📈 Raporlar</ButtonLabel>
             {yonetici && <ButtonLabel as="a" href="/panel/stok/tutarlilik">Tutarlılık denetimi</ButtonLabel>}
             {yonetici && <ButtonLabel as="a" href="/panel/stok/maliyet">Maliyeti yeniden hesapla</ButtonLabel>}
