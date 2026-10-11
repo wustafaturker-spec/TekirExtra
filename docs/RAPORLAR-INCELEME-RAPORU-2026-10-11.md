@@ -218,8 +218,8 @@ Varyant kırılımı yok (varyantlı ürün tek satır); eksi stok değerlemeye 
 | Favori ve son kullanılan raporlar | ✅ RPR-28 (2026-10-11): sunucuda kullanıcıya özel (`rapor_tercihleri`), katalogda üstte |
 | Satış kırılımları (RPR-03) | ✅ RPR-29 (2026-10-11): "Satış Kırılımları" raporu — temsilci (carinin bugünkü), kategori, il, ülke; ortak satış kaynağı |
 | Bütçe-gerçekleşen ve nakit akışı | ✅ 2026-10-11: katalogda ayrı ekran bağlantısı (rol süzgeçli) |
-| Metabase (RPR-07) | `docker-compose.yml`'de `metabase:latest` etiketiyle, entegrasyonsuz duruyor; sürüm sabitlenip entegre edilmeli ya da kaldırılmalı |
-| Sonuç önbelleği | Ağır raporlar (FIFO, tarihli envanter) için kısa süreli önbellek |
+| Metabase (RPR-07) | ✅ karar 2026-10-11: ertelendi, compose'da v0.63.13'e sabitlendi |
+| Sonuç önbelleği | Karar 2026-10-11: şimdilik yapılmıyor (eski veri riski; gerçek veri büyüyünce P2-2 sorgu iyileştirmesiyle birlikte ölçülecek) |
 
 ## 5. Önerilen sıra
 

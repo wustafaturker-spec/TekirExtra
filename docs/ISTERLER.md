@@ -651,7 +651,7 @@ sunucu tarafında alınır. API anahtarı yalnızca `TCMB_EVDS_API_KEY` ortam
 değişkeninde tutulur. Belge tarihinde kur yayımlanmamışsa önceki iş gününün kuru
 kullanılır; kaynak tarih kullanıcıya gösterilir ve alınan değerler veritabanında
 önbelleğe alınır. EVDS erişilemezse kullanıcı manuel kur girebilir.
-| RPR-07 | **Gömülü analitik (Metabase):** Sistem, Metabase ile gömülü analiz panoları sunmalıdır. Hazır panolar (satış trendi, nakit akış, cari risk, stok analizi) uygulama içinde gösterilir; kiracı yalıtımı imzalı gömme parametresiyle (kilitli tenant_id) garanti edilir. Operasyonel/mali belgeler (ekstre, KDV özeti gibi) Metabase'e değil, yerli rapor araç setine (RPR-06) aittir. | İ |
+| RPR-07 | **Gömülü analitik (Metabase)** — *ertelendi (karar 2026-10-11): yerli raporlar, grafik (RPR-26) ve abonelik (RPR-24) şimdilik yeterli; compose'da sürüm v0.63.13'e sabitlendi, entegrasyon yok.* Sistem, Metabase ile gömülü analiz panoları sunmalıdır. Hazır panolar (satış trendi, nakit akış, cari risk, stok analizi) uygulama içinde gösterilir; kiracı yalıtımı imzalı gömme parametresiyle (kilitli tenant_id) garanti edilir. Operasyonel/mali belgeler (ekstre, KDV özeti gibi) Metabase'e değil, yerli rapor araç setine (RPR-06) aittir. | İ |
 
 ### 3.7 Kullanıcı ve Firma Yönetimi (KLN)
 

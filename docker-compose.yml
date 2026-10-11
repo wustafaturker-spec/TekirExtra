@@ -52,7 +52,8 @@ services:
       retries: 10
 
   metabase:
-    image: metabase/metabase:latest
+    # RPR-07 ertelendi (karar 2026-10-11); sürüm sabit, beklenmedik güncelleme olmasın.
+    image: metabase/metabase:v0.63.13
     ports:
       - "3030:3000"
     environment:
