@@ -111,7 +111,7 @@ export default function MaliMusavirSayfasi() {
           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
             <span>📑</span> KDV Beyanname Ön Analizi
           </h2>
-          <p className="text-xs text-slate-500">Aylık bazda hesaplanan (satış) ve indirilecek (alış) KDV tutarlarını sorgulayın.</p>
+          <p className="text-xs text-slate-500">Aylık bazda hesaplanan (satış) ve indirilecek (alış) KDV tutarlarını sorgulayın. ÖTV, ÖİV ve stopaj için <a className="text-orange-600 underline" href="/panel/raporlar/kdv-disi-vergiler">KDV dışı vergiler raporu</a>.</p>
 
           <form onSubmit={kdvHesapla} className="grid grid-cols-3 gap-3 pt-2">
             <div>

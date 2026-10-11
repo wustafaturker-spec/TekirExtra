@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import type { Rol } from "@tekirextra/shared";
 
 /**
  * Ortak rapor araç seti kayıt defteri (RPR-06, MIMARI §4.4).
@@ -17,6 +18,8 @@ export interface RaporKolon {
   tip: RaporKolonTip;
   /** Para sütunu TL değilse dövizi taşıyan satır alanı (ör. "dovizCinsi"). */
   dovizAlani?: string;
+  /** RPR-09: hücre, satırın bu alanındaki panel yoluna bağlantı olur (ör. faturaya); dışa aktarımda yok sayılır. */
+  baglantiAlani?: string;
 }
 
 /** cari/stok/depo/etiket tipleri arayüzde ilgili kayıt listesinden seçim kutusu çizer. */
@@ -61,12 +64,14 @@ export type RaporSatiri = Record<string, string | number | boolean | null>;
 
 export interface RaporTanimi {
   kod: string; // "cari.yaslandirma"
-  modul: "cari" | "stok" | "fatura" | "genel" | "urun_hareket" | "kasa_banka";
+  modul: "cari" | "stok" | "fatura" | "genel" | "urun_hareket" | "kasa_banka" | "vergi";
   ad: string;
   aciklama?: string;
   filtreler: RaporFiltreTanimi[];
   gruplamalar?: { deger: string; ad: string }[];
   kolonlar: RaporKolon[];
+  /** RPR-09: verilirse yalnız bu roller görür ve çalıştırır; verilmezse rapor erişimi olan herkes. */
+  roller?: readonly Rol[];
   calistir: (girdi: RaporGirdisi, bag: RaporBaglami) => Promise<RaporSatiri[]>;
 }
 

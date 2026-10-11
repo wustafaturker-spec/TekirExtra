@@ -23,6 +23,8 @@ interface RaporKolon {
   baslik: string;
   tip: "metin" | "sayi" | "para" | "yuzde" | "tarih";
   dovizAlani?: string;
+  /** RPR-09: hücre satırın bu alanındaki panel yoluna bağlantı olur. */
+  baglantiAlani?: string;
 }
 
 interface RaporMeta {
@@ -431,7 +433,9 @@ export function RaporPaneli({ modul }: { modul?: string }) {
                     <tr key={i}>
                       {sonuc.kolonlar.map((k) => (
                         <td key={k.alan} className={SAYISAL.includes(k.tip) ? "num" : undefined} style={{ whiteSpace: "nowrap" }}>
-                          {hucreBicimle(k, satir[k.alan] ?? null, satir)}
+                          {k.baglantiAlani && typeof satir[k.baglantiAlani] === "string" && String(satir[k.baglantiAlani]).startsWith("/panel/")
+                            ? <a href={String(satir[k.baglantiAlani])}>{hucreBicimle(k, satir[k.alan] ?? null, satir)}</a>
+                            : hucreBicimle(k, satir[k.alan] ?? null, satir)}
                         </td>
                       ))}
                     </tr>

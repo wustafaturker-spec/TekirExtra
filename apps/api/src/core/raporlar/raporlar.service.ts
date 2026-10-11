@@ -27,7 +27,8 @@ export class RaporlarService {
 
   /** Rapor kataloğu: arayüz filtre/gruplama/kolon meta verisinden çizilir. */
   listele(modul?: string) {
-    return raporTanimlari(modul).map((t) => ({
+    const { rol } = aktifBaglam();
+    return raporTanimlari(modul).filter((t) => !t.roller || t.roller.includes(rol)).map((t) => ({
       kod: t.kod,
       modul: t.modul,
       ad: t.ad,
@@ -41,6 +42,8 @@ export class RaporlarService {
   async calistir(kod: string, girdi: RaporGirdisi) {
     const tanim = raporTanimiAl(kod);
     if (!tanim) throw new NotFoundException(`'${kod}' raporu bulunamadı`);
+    // RPR-09: role kısıtlı rapor; Excel ve PDF de buradan geçer.
+    if (tanim.roller && !tanim.roller.includes(aktifBaglam().rol)) throw new ForbiddenException("Bu raporu görme yetkiniz yok");
 
     const hatalar = girdiDogrula(tanim, girdi);
     if (hatalar.length > 0) throw new BadRequestException(hatalar.join("; "));

@@ -1,4 +1,5 @@
 import "./fatura.raporlar";
+import "./vergi.raporlar";
 import { Module, OnModuleInit, forwardRef } from "@nestjs/common";
 import { registerEylemPolitikasi } from "../core/eylemler/eylem-kayit";
 import { StokModule } from "../stok/stok.module";
