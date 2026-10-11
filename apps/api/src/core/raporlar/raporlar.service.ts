@@ -8,6 +8,7 @@ import { Prisma } from "@prisma/client";
 import { aktifBaglam } from "../istek-baglami";
 import { PdfService } from "../pdf/pdf.service";
 import { PrismaService } from "../prisma.service";
+import { girdiOzeti, type DisaAktarimBilgisi } from "./rapor-disa-aktarim";
 import { raporExcelYaz } from "./rapor-excel";
 import { raporPdfHtml, raporYatayMi } from "./rapor-pdf";
 import {
@@ -65,7 +66,8 @@ export class RaporlarService {
     const tanim = raporTanimiAl(kod);
     if (!tanim) throw new NotFoundException(`'${kod}' raporu bulunamadı`);
     const sonuc = await this.calistir(kod, girdi);
-    return raporExcelYaz(tanim, sonuc.satirlar);
+    const tema = await this.pdf.belgeTemasi();
+    return raporExcelYaz(tanim, sonuc.satirlar, { ...(await this.disaAktarimBilgisi(tanim, girdi)), vurguRengi: tema.vurguRengi });
   }
 
   /** RPR-04: rapor PDF dışa aktarımı (T-02 altyapısı üzerinden). */
@@ -74,9 +76,18 @@ export class RaporlarService {
     if (!tanim) throw new NotFoundException(`'${kod}' raporu bulunamadı`);
     const sonuc = await this.calistir(kod, girdi);
     const tema = await this.pdf.belgeTemasi();
-    return this.pdf.htmlToPdf(raporPdfHtml(tanim, sonuc.satirlar, tema), {
+    return this.pdf.htmlToPdf(raporPdfHtml(tanim, sonuc.satirlar, tema, await this.disaAktarimBilgisi(tanim, girdi)), {
       yatay: raporYatayMi(tanim),
     });
+  }
+
+  /** RPR-16: dışa aktarım başlığı — firma ünvanı, dönem ve süzgeçler adlarıyla. */
+  private async disaAktarimBilgisi(tanim: Parameters<typeof girdiOzeti>[1], girdi: RaporGirdisi): Promise<DisaAktarimBilgisi> {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => ({
+      firma: (await tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true } }))?.unvan?.trim() || undefined,
+      bilgiler: await girdiOzeti(tx, tanim, girdi),
+    }));
   }
 
   // ─── KAYITLI GÖRÜNÜMLER (RPR-06) ─────────────────────────────────────────
