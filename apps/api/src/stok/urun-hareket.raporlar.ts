@@ -17,16 +17,52 @@ function hareketGrubu(h: { tip: string; kaynakTur: string }) {
   return ["giris", "acilis"].includes(h.tip) ? "giris" : "cikis";
 }
 
+/**
+ * RPR-19 (inceleme P2-4): "Kaynak" sütunu ham kimlik (`fatura · 0d9b…`)
+ * gösteriyordu. Kimlik belge numarasına çevrilir ve belgeye bağlantı verilir.
+ */
+const FATURA_KAYNAKLARI: Record<string, string> = { fatura: "Fatura", fatura_iptal: "Fatura iptali", fatura_geri_alma: "Taslağa geri alma" };
+
+async function kaynakBelgeleri(tx: Prisma.TransactionClient, hareketler: { kaynakTur: string; kaynakRef: string | null }[]) {
+  const kimlikler = (turler: string[]) => [...new Set(hareketler.filter((h) => turler.includes(h.kaynakTur) && h.kaynakRef && /^[0-9a-f-]{36}$/i.test(h.kaynakRef)).map((h) => h.kaynakRef!))];
+  const faturaIdler = kimlikler(Object.keys(FATURA_KAYNAKLARI)), transferIdler = kimlikler(["transfer"]);
+  const [faturalar, transferler] = await Promise.all([
+    faturaIdler.length ? tx.fatura.findMany({ where: { id: { in: faturaIdler } }, select: { id: true, no: true } }) : [],
+    transferIdler.length ? tx.depoTransfer.findMany({ where: { id: { in: transferIdler } }, select: { id: true, no: true } }) : [],
+  ]);
+  return { faturalar: new Map(faturalar.map((f) => [f.id, f.no])), transferler: new Map(transferler.map((t) => [t.id, t.no])) };
+}
+
+export function kaynakEtiketi(h: { kaynakTur: string; kaynakRef: string | null }, b: { faturalar: Map<string, string | null>; transferler: Map<string, string> }): { kaynak: string; kaynakYolu: string | null } {
+  const ref = h.kaynakRef ?? "";
+  if (FATURA_KAYNAKLARI[h.kaynakTur]) {
+    const no = b.faturalar.has(ref) ? (b.faturalar.get(ref) ?? "Numarasız") : null;
+    return { kaynak: `${FATURA_KAYNAKLARI[h.kaynakTur]}${no ? ` ${no}` : ""}`, kaynakYolu: no ? `/panel/fatura/yeni?ac=${ref}` : null };
+  }
+  if (h.kaynakTur === "transfer") return { kaynak: `Transfer${b.transferler.get(ref) ? ` ${b.transferler.get(ref)}` : ""}`, kaynakYolu: "/panel/stok/transferler" };
+  if (h.kaynakTur === "sayim") return { kaynak: "Sayım", kaynakYolu: "/panel/stok/sayim" };
+  if (h.kaynakTur.startsWith("uretim")) return { kaynak: "Üretim bildirimi", kaynakYolu: "/panel/uretim/emirler" };
+  if (h.kaynakTur === "manuel") return { kaynak: "Elle giriş", kaynakYolu: null };
+  return { kaynak: h.kaynakTur, kaynakYolu: null };
+}
+
+/** Maliyeti kayıtlı olmayan çıkış 0 değil boş görünür ("bedava" sanılmasın). */
+export function maliyetHucreleri(miktar: Prisma.Decimal, maliyet: Prisma.Decimal) {
+  if (maliyet.isZero() && miktar.lt(0)) return { birimMaliyet: null, toplamMaliyet: null };
+  return { birimMaliyet: maliyet.toFixed(4), toplamMaliyet: miktar.abs().mul(maliyet).toFixed(2) };
+}
+
 registerRapor({
   kod: "urun-hareket.hareketler", modul: "urun_hareket", ad: "Hareketler", aciklama: "Tüm giriş, çıkış, fire, transfer ve üretim hareketlerinin tarih sıralı dökümü",
   filtreler: [...TARIH, { alan: "stok", ad: "Ürün", tip: "stok" }, { alan: "depo", ad: "Depo", tip: "depo" }, { alan: "grup", ad: "Hareket Grubu", tip: "secim", secenekler: [{ deger: "giris", ad: "Girişler" }, { deger: "cikis", ad: "Çıkışlar" }, { deger: "fire", ad: "Fire / Zayi" }, { deger: "uretim", ad: "Üretim" }, { deger: "transfer", ad: "Transfer" }, { deger: "sayim", ad: "Sayım" }] }, { alan: "iptaller", ad: "İptalleri de göster", tip: "onay" }],
-  kolonlar: [{ alan: "tarih", baslik: "Tarih", tip: "tarih" }, { alan: "kod", baslik: "Kod", tip: "metin" }, { alan: "urun", baslik: "Ürün / Varyant", tip: "metin" }, { alan: "depo", baslik: "Depo", tip: "metin" }, { alan: "hareket", baslik: "Hareket", tip: "metin" }, { alan: "kaynak", baslik: "Kaynak", tip: "metin" }, { alan: "giris", baslik: "Giriş", tip: "sayi" }, { alan: "cikis", baslik: "Çıkış", tip: "sayi" }, { alan: "birimMaliyet", baslik: "Birim Maliyet", tip: "para" }, { alan: "toplamMaliyet", baslik: "Toplam Maliyet", tip: "para" }, { alan: "aciklama", baslik: "Açıklama", tip: "metin" }],
+  kolonlar: [{ alan: "tarih", baslik: "Tarih", tip: "tarih" }, { alan: "kod", baslik: "Kod", tip: "metin" }, { alan: "urun", baslik: "Ürün / Varyant", tip: "metin" }, { alan: "depo", baslik: "Depo", tip: "metin" }, { alan: "hareket", baslik: "Hareket", tip: "metin" }, { alan: "kaynak", baslik: "Kaynak", tip: "metin", baglantiAlani: "kaynakYolu" }, { alan: "giris", baslik: "Giriş", tip: "sayi" }, { alan: "cikis", baslik: "Çıkış", tip: "sayi" }, { alan: "birimMaliyet", baslik: "Birim Maliyet", tip: "para" }, { alan: "toplamMaliyet", baslik: "Toplam Maliyet", tip: "para" }, { alan: "aciklama", baslik: "Açıklama", tip: "metin" }],
   async calistir(girdi, { tx }) {
     const f = girdi.filtreler ?? {};
     const hareketler = await tx.stokHareket.findMany({ where: { tarih: tarihAraligi(f.baslangic, f.bitis), ...(f.stok ? { stokId: String(f.stok) } : {}), ...(f.depo ? { depoId: String(f.depo) } : {}) }, orderBy: [{ tarih: "desc" }, { createdAt: "desc" }], include: { stok: { select: { kod: true, ad: true, anaBirim: true } }, varyant: { select: { kod: true, ad: true } }, depo: { select: { kod: true, ad: true } } } });
     // STK-22: iptal edilmiş faturanın hareketleri seçenek işaretlenmedikçe gösterilmez.
     const iptaller = await iptalEdilmisFaturalar(tx, hareketler);
-    return hareketler.filter((h) => (iptalleriGoster(f.iptaller) || !iptalCiftiMi(h, iptaller)) && (!f.grup || hareketGrubu(h) === f.grup)).map((h) => { const m = D(h.miktar); return { tarih: h.tarih.toISOString().slice(0, 10), kod: h.stok.kod, urun: `${h.stok.ad}${h.varyant ? ` / ${h.varyant.kod} — ${h.varyant.ad}` : ""}`, depo: `${h.depo.kod} — ${h.depo.ad}`, hareket: h.kaynakTur === "uretim_sarf" ? "Üretim sarfı" : h.kaynakTur === "uretim_giris" ? "Üretim girişi" : HAREKET_ADI[h.tip] ?? h.tip, kaynak: `${h.kaynakTur}${h.kaynakRef ? ` · ${h.kaynakRef}` : ""}`, giris: m.gt(0) ? m.toFixed(3) : "0", cikis: m.lt(0) ? m.abs().toFixed(3) : "0", birimMaliyet: h.maliyet.toFixed(4), toplamMaliyet: m.abs().mul(h.maliyet).toFixed(2), aciklama: `${h.aciklama ?? ""}${iptalCiftiMi(h, iptaller) ? " (iptal)" : ""}` }; });
+    const belgeler = await kaynakBelgeleri(tx, hareketler);
+    return hareketler.filter((h) => (iptalleriGoster(f.iptaller) || !iptalCiftiMi(h, iptaller)) && (!f.grup || hareketGrubu(h) === f.grup)).map((h) => { const m = D(h.miktar); return { tarih: h.tarih.toISOString().slice(0, 10), kod: h.stok.kod, urun: `${h.stok.ad}${h.varyant ? ` / ${h.varyant.kod} — ${h.varyant.ad}` : ""}`, depo: `${h.depo.kod} — ${h.depo.ad}`, hareket: h.kaynakTur === "uretim_sarf" ? "Üretim sarfı" : h.kaynakTur === "uretim_giris" ? "Üretim girişi" : HAREKET_ADI[h.tip] ?? h.tip, ...kaynakEtiketi(h, belgeler), giris: m.gt(0) ? m.toFixed(3) : "0", cikis: m.lt(0) ? m.abs().toFixed(3) : "0", ...maliyetHucreleri(m, h.maliyet), aciklama: `${h.aciklama ?? ""}${iptalCiftiMi(h, iptaller) ? " (iptal)" : ""}` }; });
   },
 });
 
