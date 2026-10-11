@@ -20,6 +20,12 @@ export interface RaporKolon {
   dovizAlani?: string;
   /** RPR-09: hücre, satırın bu alanındaki panel yoluna bağlantı olur (ör. faturaya); dışa aktarımda yok sayılır. */
   baglantiAlani?: string;
+  /**
+   * Sonuç tablosunun toplam satırında toplanır. Yalnız anlamlı sütunlar
+   * işaretlenir: yürüyen bakiye, oran, farklı birimdeki miktar ya da yönü
+   * karışık (hesaplanan + indirilecek) tutar toplanmaz.
+   */
+  toplam?: boolean;
 }
 
 /** cari/stok/depo/etiket tipleri arayüzde ilgili kayıt listesinden seçim kutusu çizer. */

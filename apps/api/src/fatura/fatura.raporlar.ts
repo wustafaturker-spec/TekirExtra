@@ -57,10 +57,10 @@ registerRapor({
   ],
   kolonlar: [
     { alan: "grup", baslik: "Kırılım", tip: "metin" },
-    { alan: "belgeSayisi", baslik: "Belge Sayısı", tip: "sayi" },
-    { alan: "matrah", baslik: "Matrah (TL)", tip: "para" },
-    { alan: "kdv", baslik: "KDV (TL)", tip: "para" },
-    { alan: "toplam", baslik: "Genel Toplam (TL)", tip: "para" },
+    { alan: "belgeSayisi", baslik: "Belge Sayısı", tip: "sayi", toplam: true },
+    { alan: "matrah", baslik: "Matrah (TL)", tip: "para", toplam: true },
+    { alan: "kdv", baslik: "KDV (TL)", tip: "para", toplam: true },
+    { alan: "toplam", baslik: "Genel Toplam (TL)", tip: "para", toplam: true },
   ],
   async calistir(girdi, { tx }) {
     const f = girdi.filtreler ?? {};
@@ -134,9 +134,9 @@ registerRapor({
   ],
   kolonlar: [
     { alan: "grup", baslik: "Kırılım", tip: "metin" },
-    { alan: "ciro", baslik: "Ciro (TL)", tip: "para" },
-    { alan: "maliyet", baslik: "Maliyet (TL)", tip: "para" },
-    { alan: "kar", baslik: "Kâr (TL)", tip: "para" },
+    { alan: "ciro", baslik: "Ciro (TL)", tip: "para", toplam: true },
+    { alan: "maliyet", baslik: "Maliyet (TL)", tip: "para", toplam: true },
+    { alan: "kar", baslik: "Kâr (TL)", tip: "para", toplam: true },
     { alan: "marj", baslik: "Marj", tip: "yuzde" },
   ],
   async calistir(girdi, { tx }) {
@@ -204,10 +204,10 @@ registerRapor({
   ],
   kolonlar: [
     { alan: "grup", baslik: "Kırılım", tip: "metin" },
-    { alan: "brut", baslik: "Brüt (TL)", tip: "para" },
-    { alan: "satirIskonto", baslik: "Satır İskontosu (TL)", tip: "para" },
-    { alan: "genelIskonto", baslik: "Genel İskonto Payı (TL)", tip: "para" },
-    { alan: "toplamIskonto", baslik: "Toplam İskonto (TL)", tip: "para" },
+    { alan: "brut", baslik: "Brüt (TL)", tip: "para", toplam: true },
+    { alan: "satirIskonto", baslik: "Satır İskontosu (TL)", tip: "para", toplam: true },
+    { alan: "genelIskonto", baslik: "Genel İskonto Payı (TL)", tip: "para", toplam: true },
+    { alan: "toplamIskonto", baslik: "Toplam İskonto (TL)", tip: "para", toplam: true },
     { alan: "oran", baslik: "İskonto Oranı", tip: "yuzde" },
   ],
   async calistir(girdi, { tx }) {
@@ -348,8 +348,8 @@ registerRapor({
   ],
   kolonlar: [
     { alan: "grup", baslik: "Kırılım", tip: "metin" },
-    { alan: "satis", baslik: "Satış (TL)", tip: "para" },
-    { alan: "iade", baslik: "İade (TL)", tip: "para" },
+    { alan: "satis", baslik: "Satış (TL)", tip: "para", toplam: true },
+    { alan: "iade", baslik: "İade (TL)", tip: "para", toplam: true },
     { alan: "oran", baslik: "İade Oranı", tip: "yuzde" },
   ],
   async calistir(girdi, { tx }) {
@@ -403,7 +403,7 @@ registerRapor({
     { alan: "tip", baslik: "Tip", tip: "metin" },
     { alan: "tarih", baslik: "Belge Tarihi", tip: "tarih" },
     { alan: "cari", baslik: "Cari", tip: "metin" },
-    { alan: "toplam", baslik: "Genel Toplam (TL)", tip: "para" },
+    { alan: "toplam", baslik: "Genel Toplam (TL)", tip: "para", toplam: true },
     { alan: "bekleyenGun", baslik: "Bekleme (Gün)", tip: "sayi" },
   ],
   async calistir(_girdi, { tx }) {
@@ -446,10 +446,10 @@ registerRapor({
   ],
   kolonlar: [
     { alan: "grup", baslik: "Dönem", tip: "metin" },
-    { alan: "satisMatrah", baslik: "Satış Matrahı (TL)", tip: "para" },
-    { alan: "alisMatrah", baslik: "Alış Matrahı (TL)", tip: "para" },
-    { alan: "tediyeGiderleri", baslik: "Tediye Giderleri (TL)", tip: "para" },
-    { alan: "netKarZarar", baslik: "Net Kâr/Zarar (TL)", tip: "para" },
+    { alan: "satisMatrah", baslik: "Satış Matrahı (TL)", tip: "para", toplam: true },
+    { alan: "alisMatrah", baslik: "Alış Matrahı (TL)", tip: "para", toplam: true },
+    { alan: "tediyeGiderleri", baslik: "Tediye Giderleri (TL)", tip: "para", toplam: true },
+    { alan: "netKarZarar", baslik: "Net Kâr/Zarar (TL)", tip: "para", toplam: true },
   ],
   async calistir(girdi, { tx }) {
     const f = girdi.filtreler ?? {};

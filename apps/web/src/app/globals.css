@@ -4374,3 +4374,45 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .mevzuat-olaylar time { color: var(--text-muted); white-space: nowrap; }
 @media (max-width: 720px) { .platform-header { padding: 0.75rem 1rem; } .platform-main { padding: 1rem; } }
 .table tr.is-selected td, tr.is-selected > td { background: var(--accent-soft); }
+
+/* ─── Rapor paneli (RPR-06/08, 2026-10-11): gruplu katalog + rapor alanı ─── */
+.rapor-duzen { display: grid; grid-template-columns: minmax(230px, 280px) minmax(0, 1fr); gap: 1.25rem; align-items: start; }
+.rapor-icerik { min-width: 0; }
+.rapor-katalog { position: sticky; top: 1rem; display: flex; flex-direction: column; gap: .6rem; max-height: calc(100vh - 2rem); }
+.rapor-katalog__secim { display: none; }
+.rapor-katalog__liste { overflow-y: auto; display: flex; flex-direction: column; gap: .9rem; padding-right: .25rem; }
+.rapor-katalog__grup { display: flex; flex-direction: column; gap: .15rem; }
+.rapor-katalog__grup h4 { margin: 0 0 .25rem; color: var(--text-subtle); font-size: .7rem; letter-spacing: .05em; text-transform: uppercase; }
+.rapor-katalog__oge { display: flex; flex-direction: column; gap: .1rem; width: 100%; padding: .45rem .6rem; border: 1px solid transparent; border-radius: .6rem; background: none; color: var(--text); font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
+.rapor-katalog__oge strong { font-size: .84rem; font-weight: 600; }
+.rapor-katalog__oge span { color: var(--text-muted); font-size: .72rem; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.rapor-katalog__oge:hover { background: var(--surface); border-color: var(--border); }
+.rapor-katalog__oge.is-secili { background: var(--accent-soft); border-color: var(--accent); }
+.rapor-katalog__oge.is-secili strong { color: var(--accent-text); }
+.rapor-donemler { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: 1rem; }
+.rapor-donemler .chip { cursor: pointer; font: inherit; font-size: .78rem; font-weight: 600; background: var(--surface); border: 1px solid var(--border); color: var(--text-muted); }
+.rapor-donemler .chip.is-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); font-weight: 700; }
+.rapor-filtreler { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: .85rem 1rem; align-items: start; margin-top: 1rem; }
+.rapor-filtreler__genis { grid-column: span 2; }
+.rapor-filtreler__eylemler { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .5rem; padding-top: .25rem; }
+.rapor-onay { display: inline-flex; align-items: center; gap: .4rem; min-height: 2.4rem; font-size: .85rem; cursor: pointer; }
+.rapor-onay input { width: 1.05rem; height: 1.05rem; }
+.rapor-gorunum { display: flex; align-items: center; gap: .25rem; }
+.rapor-gorunum .btn { flex: 1; }
+.rapor-gorunum__sil { border: 0; background: none; color: var(--text-subtle); cursor: pointer; padding: .2rem .35rem; border-radius: .35rem; }
+.rapor-gorunum__sil:hover { color: var(--danger); background: var(--danger-soft); }
+.rapor-sonuc__bas { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; padding: .75rem 1rem; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: .8rem; }
+.rapor-sonuc__bas strong { color: var(--text); }
+.rapor-sonuc__uyari { margin: 0; padding: .55rem 1rem; background: var(--warning-soft); color: var(--text); font-size: .8rem; }
+.rapor-sonuc__tablo { max-height: 70vh; overflow: auto; }
+.rapor-sonuc__tablo td { white-space: nowrap; }
+.rapor-sonuc__toplam td { position: sticky; bottom: 0; background: var(--surface-muted); border-top: 2px solid var(--border-strong); font-weight: 800; }
+.rapor-sirala { border: 0; background: none; padding: 0; color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; }
+.rapor-sirala:hover { color: var(--accent-text); }
+@media (max-width: 900px) {
+  .rapor-duzen { grid-template-columns: 1fr; }
+  .rapor-katalog { position: static; max-height: none; }
+  .rapor-katalog__liste { display: none; }
+  .rapor-katalog__secim { display: block; width: 100%; }
+  .rapor-filtreler__genis { grid-column: 1 / -1; }
+}

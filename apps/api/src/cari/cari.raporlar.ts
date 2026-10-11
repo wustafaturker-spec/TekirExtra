@@ -104,12 +104,12 @@ registerRapor({
     { alan: "dovizCinsi", baslik: "Döviz", tip: "metin" },
     { alan: "dovizToplam", baslik: "Açık (döviz)", tip: "sayi" },
     { alan: "kur", baslik: "Güncel kur", tip: "sayi" },
-    { alan: "guncel", baslik: "Güncel (TL)", tip: "para" },
-    { alan: "gun0_30", baslik: "0-30 Gün (TL)", tip: "para" },
-    { alan: "gun31_60", baslik: "31-60 Gün (TL)", tip: "para" },
-    { alan: "gun61_90", baslik: "61-90 Gün (TL)", tip: "para" },
-    { alan: "gun90Ustu", baslik: "90+ Gün (TL)", tip: "para" },
-    { alan: "toplam", baslik: "Toplam (TL)", tip: "para" },
+    { alan: "guncel", baslik: "Güncel (TL)", tip: "para", toplam: true },
+    { alan: "gun0_30", baslik: "0-30 Gün (TL)", tip: "para", toplam: true },
+    { alan: "gun31_60", baslik: "31-60 Gün (TL)", tip: "para", toplam: true },
+    { alan: "gun61_90", baslik: "61-90 Gün (TL)", tip: "para", toplam: true },
+    { alan: "gun90Ustu", baslik: "90+ Gün (TL)", tip: "para", toplam: true },
+    { alan: "toplam", baslik: "Toplam (TL)", tip: "para", toplam: true },
   ],
   // CARI-33: her cari × döviz bir satır; TL kovaları güncel kurla, iptal çiftleri düşülmüş (kartla aynı kaynak).
   async calistir(girdi, { tx, tenantId }) {
@@ -168,8 +168,8 @@ registerRapor({
     { alan: "vknTckn", baslik: "VKN / TCKN", tip: "metin" },
     { alan: "ulke", baslik: "Ülke", tip: "metin" },
     { alan: "cariKodlari", baslik: "Cari kodu", tip: "metin" },
-    { alan: "belgeSayisi", baslik: "Belge sayısı", tip: "sayi" },
-    { alan: "tutar", baslik: "KDV hariç tutar (TL)", tip: "para" },
+    { alan: "belgeSayisi", baslik: "Belge sayısı", tip: "sayi", toplam: true },
+    { alan: "tutar", baslik: "KDV hariç tutar (TL)", tip: "para", toplam: true },
     { alan: "durum", baslik: "Durum", tip: "metin" },
   ],
   async calistir(girdi, { tx, tenantId }) {
@@ -204,11 +204,11 @@ registerRapor({
   kolonlar: [
     { alan: "kod", baslik: "Kod", tip: "metin" },
     { alan: "unvan", baslik: "Ünvan", tip: "metin" },
-    { alan: "satis", baslik: "Satış", tip: "para" },
-    { alan: "satisIade", baslik: "Satış İade", tip: "para" },
-    { alan: "alis", baslik: "Alış", tip: "para" },
-    { alan: "alisIade", baslik: "Alış İade", tip: "para" },
-    { alan: "netSatis", baslik: "Net Satış", tip: "para" },
+    { alan: "satis", baslik: "Satış", tip: "para", toplam: true },
+    { alan: "satisIade", baslik: "Satış İade", tip: "para", toplam: true },
+    { alan: "alis", baslik: "Alış", tip: "para", toplam: true },
+    { alan: "alisIade", baslik: "Alış İade", tip: "para", toplam: true },
+    { alan: "netSatis", baslik: "Net Satış", tip: "para", toplam: true },
   ],
   async calistir(girdi, { tx }) {
     const f = girdi.filtreler ?? {};
@@ -266,9 +266,9 @@ registerRapor({
   kolonlar: [
     { alan: "kod", baslik: "Kod", tip: "metin" },
     { alan: "unvan", baslik: "Ünvan", tip: "metin" },
-    { alan: "tahsilEdilen", baslik: "Tahsil Edilen (TL)", tip: "para" },
+    { alan: "tahsilEdilen", baslik: "Tahsil Edilen (TL)", tip: "para", toplam: true },
     { alan: "ortalamaGun", baslik: "Ortalama Süre (Gün)", tip: "sayi" },
-    { alan: "acikBakiye", baslik: "Açık Bakiye (TL)", tip: "para" },
+    { alan: "acikBakiye", baslik: "Açık Bakiye (TL)", tip: "para", toplam: true },
   ],
   async calistir(girdi, { tx }) {
     const cariler = await tx.cariHesap.findMany({
@@ -343,9 +343,9 @@ registerRapor({
   kolonlar: [
     { alan: "kod", baslik: "Kod", tip: "metin" },
     { alan: "unvan", baslik: "Ünvan", tip: "metin" },
-    { alan: "borc", baslik: "Borç (TL)", tip: "para" },
-    { alan: "alacak", baslik: "Alacak (TL)", tip: "para" },
-    { alan: "bakiye", baslik: "Bakiye (TL)", tip: "para" },
+    { alan: "borc", baslik: "Borç (TL)", tip: "para", toplam: true },
+    { alan: "alacak", baslik: "Alacak (TL)", tip: "para", toplam: true },
+    { alan: "bakiye", baslik: "Bakiye (TL)", tip: "para", toplam: true },
   ],
   async calistir(girdi, { tx }) {
     const f = girdi.filtreler ?? {};

@@ -60,7 +60,7 @@ registerRapor({
     { alan: "kullanilabilir", baslik: "Kullanılabilir", tip: "sayi" },
     { alan: "yoldaki", baslik: "Yoldaki", tip: "sayi" },
     { alan: "ortalamaMaliyet", baslik: "Ort. Maliyet", tip: "para" },
-    { alan: "envanterDegeri", baslik: "Envanter Değeri", tip: "para" },
+    { alan: "envanterDegeri", baslik: "Envanter Değeri", tip: "para", toplam: true },
   ],
   async calistir(girdi, { tx }) {
     const depoId = girdi.filtreler?.depo ? String(girdi.filtreler.depo) : null;
@@ -263,7 +263,7 @@ registerRapor({
     { alan: "kod", baslik: "Kod", tip: "metin" },
     { alan: "ad", baslik: "Ürün", tip: "metin" },
     { alan: "miktar", baslik: "Satılan Miktar", tip: "sayi" },
-    { alan: "ciro", baslik: "Ciro (TL)", tip: "para" },
+    { alan: "ciro", baslik: "Ciro (TL)", tip: "para", toplam: true },
   ],
   async calistir(girdi, { tx }) {
     const f = girdi.filtreler ?? {};
@@ -326,9 +326,9 @@ registerRapor({
     { alan: "kod", baslik: "Kod", tip: "metin" },
     { alan: "ad", baslik: "Ürün", tip: "metin" },
     { alan: "satilanMiktar", baslik: "Miktar", tip: "sayi" },
-    { alan: "ciro", baslik: "Ciro (TL)", tip: "para" },
-    { alan: "maliyet", baslik: "Maliyet (TL)", tip: "para" },
-    { alan: "kar", baslik: "Kâr (TL)", tip: "para" },
+    { alan: "ciro", baslik: "Ciro (TL)", tip: "para", toplam: true },
+    { alan: "maliyet", baslik: "Maliyet (TL)", tip: "para", toplam: true },
+    { alan: "kar", baslik: "Kâr (TL)", tip: "para", toplam: true },
     { alan: "marj", baslik: "Marj", tip: "yuzde" },
   ],
   async calistir(girdi, { tx }) {
@@ -486,7 +486,7 @@ registerRapor({
     { alan: "ad", baslik: "Ürün", tip: "metin" },
     { alan: "tur", baslik: "Tür", tip: "metin" },
     { alan: "miktar", baslik: "Miktar", tip: "sayi" },
-    { alan: "tutar", baslik: "Tutar (TL)", tip: "para" },
+    { alan: "tutar", baslik: "Tutar (TL)", tip: "para", toplam: true },
   ],
   async calistir(girdi, { tx }) {
     const f = girdi.filtreler ?? {};
@@ -548,7 +548,7 @@ registerRapor({
     { alan: "kod", baslik: "Kod", tip: "metin" },
     { alan: "ad", baslik: "Ürün", tip: "metin" },
     { alan: "mevcut", baslik: "Mevcut", tip: "sayi" },
-    { alan: "envanterDegeri", baslik: "Envanter Değeri", tip: "para" },
+    { alan: "envanterDegeri", baslik: "Envanter Değeri", tip: "para", toplam: true },
     { alan: "sonHareket", baslik: "Son Hareket", tip: "tarih" },
   ],
   async calistir(girdi, { tx }) {
