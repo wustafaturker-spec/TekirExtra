@@ -52,7 +52,7 @@ Asıl sorunlar **yetki** ve **rakamların doğruluğu/tutarlılığı**:
 | P2-5 | SMM ekranı | ✅ RPR-20: numarasız kesin fatura "Numarasız"; tarih gg.aa.yyyy |
 | P2-6 | Ayrı ekranlar | ✅ RPR-21 (kullanıcı kararı: ayrı kalsın, eksikler tamamlansın; çift menü kalksın): Gelir-Gider, SMM, Pivot adreste durum (`useAdresDurumu`); SMM CSV; katalogda SMM + Pivot bağlantısı, rolün göremediği ekran listelenmez; pivot web rol kısıtı; "Ürün Hareket Raporu" menüden kalktı, eski adres kataloğa yönlenir |
 | P2-7 | Envanter | ✅ RPR-22: "Varyantları ayrı göster" seçeneği (anlık + tarihli, depo dahil), varyantsız kalan ayrı satır; eksi stok satırı değerlenmez. Not: varyant düzeyinde artı varyantlar değerlendiği için toplam kart düzeyinden farklı olabilir (demo 126.245 → 144.736, APS-001 kartı eksi ama bazı varyantları artı) |
-| P2-8 | Testler | Açık |
+| P2-8 | Testler | ✅ RPR-23: `test/raporlar.kabul.test.ts` — kataloğun tamamı boş ve dolu kiracıda gerçek DB/RLS altında çalışır, satırlar bütün sütunları taşır; kâr özeti, pivot, panel varlıkları, devir hızı ve envanter bilinen değerlerle. Ayrıca bu turda birim testleri: pivot, varlık özeti, dışa aktarım, devir, hareket kaynağı, envanter varyantı |
 | P3 | Ek geliştirmeler (zamanlanmış rapor, karşılaştırma, grafik, drill-down…) | Öneri |
 
 ## 3. Bulgular
