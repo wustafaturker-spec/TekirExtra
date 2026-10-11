@@ -35,6 +35,7 @@ import { ProjelerModule } from "./projeler/projeler.module";
 import { DuzeltmelerModule } from "./duzeltmeler/duzeltmeler.module";
 import { DonemKapatmaModule } from "./donem-kapatma/donem-kapatma.module";
 import { BildirimlerModule } from "./bildirimler/bildirimler.module";
+import { RaporAbonelikModule } from "./rapor-abonelik/rapor-abonelik.module";
 import { NakitAkisiModule } from "./nakit-akisi/nakit-akisi.module";
 import { ButceModule } from "./butce/butce.module";
 import { SatinAlmaModule } from "./satin-alma/satin-alma.module";
@@ -66,6 +67,7 @@ import { MevzuatModule } from "./mevzuat/mevzuat.module";
     DuzeltmelerModule,
     DonemKapatmaModule,
     BildirimlerModule,
+    RaporAbonelikModule,
     DovizModule,
     UretimModule,
     CalismaTakvimiModule,

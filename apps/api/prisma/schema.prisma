@@ -557,9 +557,49 @@ model RaporGorunumu {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
+  abonelikler RaporAboneligi[]
+
   @@unique([tenantId, userId, raporKod, ad])
   @@index([tenantId, raporKod])
   @@map("rapor_gorunumleri")
+}
+
+/// RPR-24: kayıtlı görünümün zamanlanmış e-posta aboneliği. Saat ve gün
+/// Türkiye saatiyle; alıcılar yalnız firma kullanıcıları (her gönderimde
+/// rapor yetkisi yeniden denetlenir).
+model RaporAboneligi {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  /// Kuran kullanıcı; rapor onun rolüyle çalışır, yetkisini kaybederse abonelik duraklar.
+  userId          String    @map("user_id") @db.Uuid
+  gorunumId       String    @map("gorunum_id") @db.Uuid
+  /// gunluk | haftalik | aylik
+  siklik          String
+  /// Haftalıkta 1 (Pazartesi)…7, aylıkta 1…28; günlükte boş.
+  gun             Int?
+  /// "HH:mm", Türkiye saati.
+  saat            String
+  /// dun | gecen_hafta | gecen_ay | bu_ay | bu_yil | gorunum (görünümdeki sabit dönem)
+  donem           String
+  /// excel | pdf | ikisi
+  bicim           String
+  bosGonder       Boolean   @default(false) @map("bos_gonder")
+  aliciIdler      String[]  @map("alici_idler") @db.Uuid
+  aktif           Boolean   @default(true)
+  sonrakiGonderim DateTime  @map("sonraki_gonderim")
+  sonGonderim     DateTime? @map("son_gonderim")
+  /// gonderildi | bos_atlandi | basarisiz | duraklatildi
+  sonDurum        String?   @map("son_durum")
+  sonHata         String?   @map("son_hata")
+  denemeSayisi    Int       @default(0) @map("deneme_sayisi")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  gorunum RaporGorunumu @relation(fields: [gorunumId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@index([aktif, sonrakiGonderim])
+  @@map("rapor_abonelikleri")
 }
 
 // ─── 3. Aşama: Cari + Stok ───────────────────────────────────────────────

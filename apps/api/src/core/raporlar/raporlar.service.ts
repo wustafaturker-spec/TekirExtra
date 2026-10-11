@@ -100,6 +100,26 @@ export class RaporlarService {
     });
   }
 
+  /**
+   * RPR-24: zamanlanmış gönderim için raporu bir kez çalıştırır; istenen
+   * dosyaları, satır sayısını, toplamları ve dönem/süzgeç özetini birlikte döner.
+   */
+  async paket(kod: string, girdi: RaporGirdisi, bicim: { excel: boolean; pdf: boolean }) {
+    const tanim = raporTanimiAl(kod);
+    if (!tanim) throw new NotFoundException(`'${kod}' raporu bulunamadı`);
+    const sonuc = await this.tumSatirlar(kod, girdi);
+    const tema = await this.pdf.belgeTemasi();
+    const bilgi = { ...(await this.disaAktarimBilgisi(tanim, girdi)), vurguRengi: tema.vurguRengi };
+    return {
+      tanim,
+      satirSayisi: sonuc.satirlar.length,
+      toplamlar: toplamSatiri(tanim.kolonlar, sonuc.satirlar),
+      bilgi,
+      excel: bicim.excel ? await raporExcelYaz(tanim, sonuc.satirlar, bilgi) : undefined,
+      pdf: bicim.pdf ? await this.pdf.htmlToPdf(raporPdfHtml(tanim, sonuc.satirlar, tema, bilgi), { yatay: raporYatayMi(tanim) }) : undefined,
+    };
+  }
+
   /** RPR-16: dışa aktarım başlığı — firma ünvanı, dönem ve süzgeçler adlarıyla. */
   private async disaAktarimBilgisi(tanim: Parameters<typeof girdiOzeti>[1], girdi: RaporGirdisi): Promise<DisaAktarimBilgisi> {
     const { tenantId } = aktifBaglam();

@@ -5,6 +5,7 @@ import { bugunTR } from "@tekirextra/shared";
 import { api, apiDosyaIndir, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { AramaSecici } from "@/components/arama-secici";
 import { Alert, Badge, Button, Card, EylemMenusu, Field, Input, Modal, ModalEylem, SearchInput, TableSkeleton } from "@/components/ui";
+import { AbonelikPenceresi } from "@/components/rapor-abonelik";
 
 /**
  * Ortak rapor paneli (RPR-06/08): rapor kataloğunu API meta verisinden çizer —
@@ -218,6 +219,8 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
   const [eksikler, setEksikler] = useState<string[]>([]);
   const [gorunumler, setGorunumler] = useState<Gorunum[]>([]);
   const [gorunumPenceresi, setGorunumPenceresi] = useState(false);
+  // RPR-24: kayıtlı görünümün zamanlanmış e-postası.
+  const [abonelikPenceresi, setAbonelikPenceresi] = useState(false);
   const [gorunumAdi, setGorunumAdi] = useState("");
   const [firmaGeneli, setFirmaGeneli] = useState(false);
   const [kayitlar, setKayitlar] = useState<Record<"cari" | "stok" | "depo" | "hesap" | "etiket", SecimKaydi[]>>({ cari: [], stok: [], depo: [], hesap: [], etiket: [] });
@@ -562,6 +565,8 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
                     </div>
                   ))}
                   <Button size="sm" onClick={() => setGorunumPenceresi(true)}>＋ Bu filtreleri kaydet…</Button>
+                  <Button size="sm" onClick={() => setAbonelikPenceresi(true)} title="Kayıtlı görünümü düzenli olarak e-postayla gönder">✉ E-postayla düzenli gönder…</Button>
+                  <a className="btn btn--ghost btn--sm" href="/panel/raporlar/zamanlanmis">Zamanlanmış raporlarım</a>
                 </EylemMenusu>
               </div>
 
@@ -665,6 +670,16 @@ export function RaporPaneli({ modul, ayriEkranlar = [] }: { modul?: string; ayri
           </>
         )}
       </div>
+
+      {abonelikPenceresi && secilen && (
+        <AbonelikPenceresi
+          raporKod={secilen.kod}
+          gorunumler={gorunumler}
+          donemli={secilen.filtreler.some((f) => f.alan === "baslangic") && secilen.filtreler.some((f) => f.alan === "bitis")}
+          onKapat={() => setAbonelikPenceresi(false)}
+          onKaydedildi={(m) => { setAbonelikPenceresi(false); setBilgi(m); }}
+        />
+      )}
 
       {gorunumPenceresi && secilen && (
         <Modal baslik="Görünüm olarak kaydet" aciklama="Bu raporun filtreleri, kırılımı ve sıralaması bir adla saklanır; Görünümler menüsünden tek tıkla çalışır." onKapat={() => setGorunumPenceresi(false)}>

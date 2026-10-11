@@ -211,7 +211,7 @@ Varyant kırılımı yok (varyantlı ürün tek satır); eksi stok değerlemeye 
 
 | Öneri | Not |
 |---|---|
-| Zamanlanmış rapor e-postası | Kayıtlı görünüm + haftalık/aylık gönderim (mevcut SMTP ve bildirim zamanlayıcısı) |
+| Zamanlanmış rapor e-postası | ✅ RPR-24 (2026-10-11): kayıtlı görünüm aboneliği, göreli dönem, Excel/PDF eki, yalnız firma kullanıcıları, worker 5 dk tarama, duraklatma + yeniden deneme |
 | Karşılaştırmalı dönem | Önceki dönem / geçen yıl aynı dönem sütunları, % değişim |
 | Grafik | Dönemsel özet, kâr trendi, yaşlandırma için tablo üstünde grafik |
 | Satırdan kayda gitme | Cari, fatura, ürün sütunlarına bağlantı (`baglantiAlani` hazır) |
