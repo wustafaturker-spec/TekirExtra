@@ -42,7 +42,7 @@ Asıl sorunlar **yetki** ve **rakamların doğruluğu/tutarlılığı**:
 | P1-1 | Kâr tanımlarının birleştirilmesi (Gelir-Gider / Kâr-Zarar / SMM) | ✅ RPR-12 (2026-10-11) |
 | P1-2 | Dönemsel Satış/Alış Özeti satış ve alışı karıştırıyor | ✅ RPR-13 (2026-10-11) |
 | P1-3 | KDV Dökümü ile KDV ön analizinin tutarsızlığı | ✅ RPR-13 (2026-10-11) |
-| P1-4 | Pivot: iptal/taslak, döviz ve yeniden hesap | Açık |
+| P1-4 | Pivot: iptal/taslak, döviz ve yeniden hesap | ✅ RPR-14 (2026-10-11): `/rapor/fatura-pivot` SQL'de kayıtlı TL tutarlardan, varsayılan kesin, iptal hiç, iade eksi, dönem zorunlu, 5.000 hücre / 500 kalem sınırı; sayfa tasarım sisteminde |
 | P1-5 | Panel özeti: bütün cari hareketlerini belleğe alıyor, eksi stok | Açık |
 | P1-6 | Maliyeti bilinmeyen satış %100 kâr görünüyor; Kâr Marjı eski yöntem | ✅ RPR-13 (2026-10-11); Ürün Satışları ve Alıcı Bazlı Satışlar da eski yöntemdeydi, taşındı |
 | P2-1 … P2-8 | Dışa aktarım, sınırlar, devir hızı, kaynak sütunu, SMM ekranı, ayrı ekranlar, envanter, testler | Açık |

@@ -1,11 +1,12 @@
 import { fifoDegerleri, satisSatirlari } from "../stok/satis-ozeti";
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { kategoriOzeti, toplam } from "./tahakkuk";
 import { karZararHesapla, karZararVerisi } from "./kar-zarar";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
+import { faturaPivotDetayi, faturaPivotu, pivotSorgusuCoz } from "./fatura-pivot";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal => new Prisma.Decimal(deger);
 
@@ -14,6 +15,21 @@ export class RaporService {
   constructor(private readonly prisma: PrismaService) {}
 
   // Kar-zarar analizi RPR-06 araç setine taşındı: fatura.kar-marji (FTR-15).
+
+  // ─── FATURA PİVOTU (RPR-14) ───────────────────────────────────────────────
+
+  async faturaPivotu(sorgu: Record<string, string | undefined>) {
+    const { tenantId } = aktifBaglam();
+    const q = pivotSorgusuCoz(sorgu);
+    return this.prisma.tenantIslem(tenantId, (tx) => faturaPivotu(tx, tenantId, q));
+  }
+
+  async faturaPivotDetayi(sorgu: Record<string, string | undefined>) {
+    const { tenantId } = aktifBaglam();
+    const q = pivotSorgusuCoz(sorgu);
+    if (sorgu.satirAnahtari === undefined) throw new BadRequestException("satirAnahtari zorunlu");
+    return this.prisma.tenantIslem(tenantId, (tx) => faturaPivotDetayi(tx, tenantId, q, sorgu.satirAnahtari!, sorgu.sutunAnahtari));
+  }
 
   // ─── FİNANSAL DURUM ÖZETİ (RPR-01/04) ─────────────────────────────────────
 

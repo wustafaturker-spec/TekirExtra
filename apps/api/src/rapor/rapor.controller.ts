@@ -40,6 +40,19 @@ export class RaporController {
     return this.raporService.smmAnalizi(yontem === "fifo" ? "fifo" : "agirlikli_ortalama", tarih(baslangic), tarih(bitis));
   }
 
+  /** RPR-14: fatura satır pivotu; tutarlar kayıtlı TL değerler, iptal dışarıda. */
+  @Get("fatura-pivot")
+  @Roller("muhasebe", "mali_musavir", "salt_okunur", "satis")
+  async faturaPivotu(@Query() sorgu: Record<string, string | undefined>) {
+    return this.raporService.faturaPivotu(sorgu);
+  }
+
+  @Get("fatura-pivot/detay")
+  @Roller("muhasebe", "mali_musavir", "salt_okunur", "satis")
+  async faturaPivotDetayi(@Query() sorgu: Record<string, string | undefined>) {
+    return this.raporService.faturaPivotDetayi(sorgu);
+  }
+
   @Get("gelir-gider")
   @Roller("muhasebe", "mali_musavir", "salt_okunur")
   async gelirGiderRaporu(
