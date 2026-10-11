@@ -46,16 +46,50 @@ export class MaliMusavirService {
     return `\uFEFF"Tarih";"Fiş No";"İşlem Tipi";"Cari Unvan";"VKN/TCKN";"Tutar";"Açıklama"\r\n${satirlar.length ? `${satirlar.join("\r\n")}\r\n` : ""}`;
   }
 
+  /**
+   * RPR-02: KDV-1 ön analizi; tutarlar fatura kuruyla TL. Beyannamedeki gibi:
+   * - Hesaplanan: satışın KDV'si (tevkifatlıda yalnız satıcının payı — kalanı
+   *   alıcı KDV-2 ile beyan eder) + alıştan iade faturasında hesapladığımız KDV.
+   * - İndirimler: alışın KDV'sinin tamamı (tevkifatlıda kestiğimiz kısım da;
+   *   onu KDV-2 ile beyan edip ödediğimiz için indiririz) + satıştan iadede
+   *   müşteriye geri verdiğimiz KDV.
+   * - İhraç kayıtlı alışın KDV'si ödenmez, indirilmez (EBLG-114); ihraç
+   *   kayıtlı satışın KDV'si tahsil edilmez, ödenecek tutara girmez (tecil).
+   * Kestiğimiz tevkifat ayrıca KDV-2 ile beyan edilip ödenir.
+   */
   async kdvOzetRaporu(tenantId: string, baslangicTarihi: Date, bitisTarihi: Date) {
-    const faturalar = await this.prisma.tenantIslem(tenantId, (tx) => tx.fatura.findMany({ where: { tenantId, tarih: { gte: baslangicTarihi, lte: bitisTarihi }, durum: "kesin" } }));
-    let hesaplananKdv = 0, indirilecekKdv = 0, ihracKayitliAlisKdv = 0;
+    const faturalar = await this.prisma.tenantIslem(tenantId, (tx) => tx.fatura.findMany({
+      where: { tenantId, tarih: { gte: baslangicTarihi, lte: bitisTarihi }, durum: "kesin", tip: { in: ["satis", "alis", "satis_iade", "alis_iade"] } },
+      select: { tip: true, toplamKdv: true, toplamNetKdv: true, toplamTevkifat: true, kur: true, ihracKayitliKodu: true },
+    }));
+    const t = { satisKdv: 0, alistanIadeKdv: 0, alisKdv: 0, satistanIadeKdv: 0, ihracKayitliAlisKdv: 0, ihracKayitliSatisKdv: 0, aliciTevkifati: 0, kestigimizTevkifat: 0 };
     for (const f of faturalar) {
-      if (f.tip === "satis") hesaplananKdv += Number(f.toplamKdv);
-      // EBLG-114: ihraç kayıtlı alışta KDV satıcıya ödenmez, indirilemez.
-      else if (f.tip === "alis" && f.ihracKayitliKodu) ihracKayitliAlisKdv += Number(f.toplamKdv);
-      else if (f.tip === "alis") indirilecekKdv += Number(f.toplamKdv);
+      const tl = (deger: unknown) => Number(deger ?? 0) * Number(f.kur ?? 1);
+      if (f.tip === "satis") {
+        if (f.ihracKayitliKodu) t.ihracKayitliSatisKdv += tl(f.toplamKdv);
+        t.satisKdv += tl(f.toplamNetKdv);
+        t.aliciTevkifati += tl(f.toplamTevkifat);
+      } else if (f.tip === "alis_iade") {
+        t.alistanIadeKdv += tl(f.toplamNetKdv);
+      } else if (f.tip === "satis_iade") {
+        t.satistanIadeKdv += tl(f.toplamNetKdv);
+      } else if (f.ihracKayitliKodu) {
+        t.ihracKayitliAlisKdv += tl(f.toplamKdv);
+      } else {
+        t.alisKdv += tl(f.toplamNetKdv) + tl(f.toplamTevkifat);
+        t.kestigimizTevkifat += tl(f.toplamTevkifat);
+      }
     }
-    const netKdv = hesaplananKdv - indirilecekKdv;
-    return { baslangicTarihi, bitisTarihi, hesaplananKdv, indirilecekKdv, ihracKayitliAlisKdv, odenecekKdv: netKdv > 0 ? netKdv : 0, devredenKdv: netKdv < 0 ? Math.abs(netKdv) : 0 };
+    const yuvarla = (n: number) => Math.round(n * 100) / 100;
+    const hesaplananKdv = yuvarla(t.satisKdv + t.alistanIadeKdv);
+    const indirilecekKdv = yuvarla(t.alisKdv + t.satistanIadeKdv);
+    const netKdv = yuvarla(hesaplananKdv - indirilecekKdv);
+    return {
+      baslangicTarihi, bitisTarihi,
+      ...(Object.fromEntries(Object.entries(t).map(([k, v]) => [k, yuvarla(v)])) as typeof t),
+      hesaplananKdv, indirilecekKdv,
+      odenecekKdv: netKdv > 0 ? netKdv : 0,
+      devredenKdv: netKdv < 0 ? -netKdv : 0,
+    };
   }
 }

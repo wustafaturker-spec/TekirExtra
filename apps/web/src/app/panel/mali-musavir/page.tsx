@@ -2,6 +2,27 @@
 
 import { useState } from "react";
 import { ayBasiTR, bugunTR } from "@tekirextra/shared";
+import { api, apiDosyaIndir } from "@/lib/api";
+import { Alert, Button, ButtonLabel, Card, Field, Input, PageHeader } from "@/components/ui";
+
+/** RPR-02: KDV-1 ön analizi (TL, fatura kuruyla). */
+interface KdvOzeti {
+  satisKdv: number;
+  alistanIadeKdv: number;
+  hesaplananKdv: number;
+  alisKdv: number;
+  satistanIadeKdv: number;
+  indirilecekKdv: number;
+  /** EBLG-114: ihraç kayıtlı alışların KDV'si; ödenmediği için indirilmez. */
+  ihracKayitliAlisKdv: number;
+  ihracKayitliSatisKdv: number;
+  aliciTevkifati: number;
+  kestigimizTevkifat: number;
+  odenecekKdv: number;
+  devredenKdv: number;
+}
+
+const tl = (n: number) => `${n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₺`;
 
 export default function MaliMusavirSayfasi() {
   const [baslangic, setBaslangic] = useState(
@@ -13,165 +34,96 @@ export default function MaliMusavirSayfasi() {
     yil: new Date().getFullYear(),
     ay: new Date().getMonth() + 1,
   });
-  const [kdvOzet, setKdvOzet] = useState<{
-    hesaplananKdv: number;
-    indirilecekKdv: number;
-    /** EBLG-114: ihraç kayıtlı alışların KDV'si; ödenmediği için indirilmez. */
-    ihracKayitliAlisKdv?: number;
-    odenecekKdv: number;
-    devredenKdv: number;
-  } | null>(null);
+  const [kdvOzet, setKdvOzet] = useState<KdvOzeti | null>(null);
   const [kdvYukleniyor, setKdvYukleniyor] = useState(false);
+  const [hata, setHata] = useState("");
 
-  const lucaXmlIndir = () => {
-    window.open(`/api/mali-musavir/aktarim/luca-xml?baslangic=${baslangic}&bitis=${bitis}`, "_blank");
+  // İstekler oturumlu API istemcisinden gider; önceden yetkisiz düz fetch
+  // `/api/mali-musavir/...` adresine gidip 404 alıyordu (2026-10-11).
+  const dosyaIndir = (yol: string, ad: string) => {
+    setHata("");
+    void apiDosyaIndir(`${yol}?baslangic=${baslangic}&bitis=${bitis}`, ad).catch((h) => setHata(h instanceof Error ? h.message : "Dosya indirilemedi"));
   };
-
-  const zirveCsvIndir = () => {
-    window.open(`/api/mali-musavir/aktarim/zirve-csv?baslangic=${baslangic}&bitis=${bitis}`, "_blank");
-  };
+  const lucaXmlIndir = () => dosyaIndir("/mali-musavir/aktarim/luca-xml", `luca-faturalar-${baslangic}-${bitis}.xml`);
+  const zirveCsvIndir = () => dosyaIndir("/mali-musavir/aktarim/zirve-csv", `zirve-fisler-${baslangic}-${bitis}.csv`);
 
   const kdvHesapla = async (e: React.FormEvent) => {
     e.preventDefault();
     setKdvYukleniyor(true);
+    setHata("");
+    const ay = String(kdvDonem.ay).padStart(2, "0");
+    const sonGun = new Date(Date.UTC(kdvDonem.yil, kdvDonem.ay, 0)).toISOString().slice(0, 10);
     try {
-      const res = await fetch(`/api/mali-musavir/kdv-ozeti?yil=${kdvDonem.yil}&ay=${kdvDonem.ay}`);
-      if (res.ok) {
-        const data = await res.json();
-        setKdvOzet(data);
-      }
-    } catch (e) {
-      console.error(e);
+      setKdvOzet(await api<KdvOzeti>(`/mali-musavir/kdv-ozeti?baslangic=${kdvDonem.yil}-${ay}-01&bitis=${sonGun}`));
+    } catch (h) {
+      setKdvOzet(null);
+      setHata(h instanceof Error ? h.message : "KDV özeti alınamadı");
     } finally {
       setKdvYukleniyor(false);
     }
   };
 
+  /** Alt kırılım satırı (ör. satışlar, iadeler); sıfırsa gösterilmez. */
+  const alt = (etiket: string, deger: number, zorunlu = false) =>
+    (zorunlu || deger > 0) && (
+      <div className="invoice-summary__line"><span style={{ paddingLeft: "0.75rem", color: "var(--text-muted)" }}>{etiket}</span><span>{tl(deger)}</span></div>
+    );
+
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-8">
-      {/* Başlık */}
-      <div className="border-b pb-4">
-        <h1 className="text-2xl font-bold text-slate-800">Mali Müşavir & Veri Aktarım Portalı</h1>
-        <p className="text-sm text-slate-500">Fatura, fiş ve KDV verilerini sürümlü Luca/Zirve aktarım taslaklarında indirin. Dosyaları hedef muhasebe yazılımınızın sürümünde içe aktarmadan önce doğrulayın.</p>
-      </div>
+    <div>
+      {/* Sayfa Tailwind sınıflarıyla yazılmıştı; uygulama Tailwind kullanmadığı için biçimsiz görünüyordu (2026-10-11). */}
+      <PageHeader
+        title="Mali Müşavir & Veri Aktarım Portalı"
+        subtitle="Fatura, fiş ve KDV verilerini sürümlü Luca/Zirve aktarım taslaklarında indirin. Dosyaları hedef muhasebe yazılımınızın sürümünde içe aktarmadan önce doğrulayın."
+        actions={<ButtonLabel as="a" href="/panel/mali-musavir/muhasebe">Muhasebe aktarımı (yevmiye fişleri) →</ButtonLabel>}
+      />
+      <Alert tone="error">{hata}</Alert>
 
-      {/* MUH-01…07: hesap kodlu yevmiye fişleri ayrı ekranda. */}
-      <a href="/panel/mali-musavir/muhasebe" className="block rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:border-slate-400">
-        <strong className="text-slate-800">Muhasebe aktarımı (yevmiye fişleri) →</strong>
-        <p className="text-sm text-slate-500 mt-1">Faturalar, kasa-banka, çek, kart, masraf ve gelirler Tekdüzen hesap planına göre fişlenir; Excel/CSV ya da PDF yevmiye olarak indirilir.</p>
-      </a>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* 1. Dışa Aktarım Kartı */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-            <span>📦</span> Fatura & Fiş Dışa Aktarımı
-          </h2>
-          <p className="text-xs text-slate-500">Seçilen tarih aralığındaki faturaları Luca XML veya Kasa/Banka fişlerini Zirve CSV formatında indirin.</p>
-          
-          <div className="grid grid-cols-2 gap-4 pt-2">
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Başlangıç Tarihi</label>
-              <input
-                type="date"
-                value={baslangic}
-                onChange={(e) => setBaslangic(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Bitiş Tarihi</label>
-              <input
-                type="date"
-                value={bitis}
-                onChange={(e) => setBitis(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg text-sm"
-              />
-            </div>
+      <div className="form-grid form-grid--2">
+        <Card title="Fatura & fiş dışa aktarımı">
+          <p className="muted" style={{ fontSize: "0.85rem", marginTop: 0 }}>Seçilen tarih aralığındaki faturaları Luca XML, kasa/banka fişlerini Zirve CSV olarak indirin.</p>
+          <div className="row-tight" style={{ alignItems: "flex-end", gap: "0.75rem", marginBottom: "1rem" }}>
+            <Field label="Başlangıç"><Input type="date" value={baslangic} onChange={(e) => setBaslangic(e.target.value)} /></Field>
+            <Field label="Bitiş"><Input type="date" value={bitis} onChange={(e) => setBitis(e.target.value)} /></Field>
           </div>
-
-          <div className="flex flex-col gap-2 pt-4">
-            <button
-              onClick={lucaXmlIndir}
-              className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-xl transition flex items-center justify-center gap-2"
-            >
-              📄 Luca Uyumlu Fatura XML İndir
-            </button>
-            <button
-              onClick={zirveCsvIndir}
-              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm rounded-xl transition flex items-center justify-center gap-2"
-            >
-              📊 Zirve/Logo Uyumlu Fiş CSV İndir
-            </button>
+          <div className="row-tight">
+            <Button variant="primary" onClick={lucaXmlIndir}>Luca uyumlu fatura XML</Button>
+            <Button onClick={zirveCsvIndir}>Zirve/Logo uyumlu fiş CSV</Button>
           </div>
-        </div>
+        </Card>
 
-        {/* 2. KDV Hazırlık Kartı */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-            <span>📑</span> KDV Beyanname Ön Analizi
-          </h2>
-          <p className="text-xs text-slate-500">Aylık bazda hesaplanan (satış) ve indirilecek (alış) KDV tutarlarını sorgulayın. ÖTV, ÖİV ve stopaj için <a className="text-orange-600 underline" href="/panel/raporlar/kdv-disi-vergiler">KDV dışı vergiler raporu</a>.</p>
-
-          <form onSubmit={kdvHesapla} className="grid grid-cols-3 gap-3 pt-2">
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Yıl</label>
-              <input
-                type="number"
-                value={kdvDonem.yil}
-                onChange={(e) => setKdvDonem({ ...kdvDonem, yil: Number(e.target.value) })}
-                className="w-full px-3 py-2 border rounded-lg text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Ay</label>
-              <input
-                type="number"
-                min="1"
-                max="12"
-                value={kdvDonem.ay}
-                onChange={(e) => setKdvDonem({ ...kdvDonem, ay: Number(e.target.value) })}
-                className="w-full px-3 py-2 border rounded-lg text-sm"
-              />
-            </div>
-            <div className="flex items-end">
-              <button
-                type="submit"
-                disabled={kdvYukleniyor}
-                className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-medium text-sm rounded-lg transition"
-              >
-                {kdvYukleniyor ? "..." : "Sorgula"}
-              </button>
-            </div>
+        <Card title="KDV beyanname ön analizi">
+          <p className="muted" style={{ fontSize: "0.85rem", marginTop: 0 }}>
+            Ay bazında hesaplanan ve indirilecek KDV; iadeler ve tevkifat beyannamedeki yerinde. ÖTV, ÖİV ve stopaj için{" "}
+            <a href="/panel/raporlar/kdv-disi-vergiler">KDV dışı vergiler raporu</a>.
+          </p>
+          <form onSubmit={kdvHesapla} className="row-tight" style={{ alignItems: "flex-end", gap: "0.75rem", marginBottom: "1rem" }}>
+            <Field label="Yıl"><Input type="number" value={kdvDonem.yil} onChange={(e) => setKdvDonem({ ...kdvDonem, yil: Number(e.target.value) })} style={{ width: "6rem" }} /></Field>
+            <Field label="Ay"><Input type="number" min={1} max={12} value={kdvDonem.ay} onChange={(e) => setKdvDonem({ ...kdvDonem, ay: Number(e.target.value) })} style={{ width: "4.5rem" }} /></Field>
+            <Button type="submit" variant="primary" disabled={kdvYukleniyor}>{kdvYukleniyor ? "Sorgulanıyor..." : "Sorgula"}</Button>
           </form>
 
           {kdvOzet && (
-            <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-600">Hesaplanan KDV (Satış):</span>
-                <span className="font-semibold text-slate-900">{kdvOzet.hesaplananKdv.toLocaleString("tr-TR")} ₺</span>
+            <div className="invoice-summary">
+              <h4>{kdvDonem.yil} / {String(kdvDonem.ay).padStart(2, "0")} · TL, fatura kuruyla</h4>
+              <div className="invoice-summary__line"><strong>Hesaplanan KDV</strong><strong>{tl(kdvOzet.hesaplananKdv)}</strong></div>
+              {alt("Satışlar (tevkifatta satıcı payı)", kdvOzet.satisKdv, true)}
+              {alt("Alıştan iade faturaları", kdvOzet.alistanIadeKdv)}
+              <div className="invoice-summary__line"><strong>İndirilecek KDV</strong><strong>{tl(kdvOzet.indirilecekKdv)}</strong></div>
+              {alt("Alışlar (tevkifatlı dahil tamamı)", kdvOzet.alisKdv, true)}
+              {alt("Satıştan iadeler", kdvOzet.satistanIadeKdv)}
+              {kdvOzet.ihracKayitliAlisKdv > 0 && <div className="invoice-summary__line"><span>İhraç kayıtlı alış KDV&apos;si (indirilmez)</span><span>{tl(kdvOzet.ihracKayitliAlisKdv)}</span></div>}
+              {kdvOzet.ihracKayitliSatisKdv > 0 && <div className="invoice-summary__line"><span>İhraç kayıtlı satış KDV&apos;si (tahsil edilmez)</span><span>{tl(kdvOzet.ihracKayitliSatisKdv)}</span></div>}
+              <div className="invoice-summary__line is-grand">
+                <span>{kdvOzet.odenecekKdv > 0 ? "Tahmini ödenecek KDV" : "Sonraki döneme devreden KDV"}</span>
+                <span>{tl(kdvOzet.odenecekKdv > 0 ? kdvOzet.odenecekKdv : kdvOzet.devredenKdv)}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">İndirilecek KDV (Alış):</span>
-                <span className="font-semibold text-slate-900">{kdvOzet.indirilecekKdv.toLocaleString("tr-TR")} ₺</span>
-              </div>
-              {(kdvOzet.ihracKayitliAlisKdv ?? 0) > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-slate-600">İhraç kayıtlı alış KDV'si (indirilmez):</span>
-                  <span className="text-slate-600">{(kdvOzet.ihracKayitliAlisKdv ?? 0).toLocaleString("tr-TR")} ₺</span>
-                </div>
-              )}
-              <div className="border-t pt-2 flex justify-between font-bold">
-                <span className={kdvOzet.odenecekKdv > 0 ? "text-amber-700" : "text-green-700"}>
-                  {kdvOzet.odenecekKdv > 0 ? "Tahmini Ödenecek KDV:" : "Sonraki Döneme Devreden KDV:"}
-                </span>
-                <span className={kdvOzet.odenecekKdv > 0 ? "text-amber-700" : "text-green-700"}>
-                  {(kdvOzet.odenecekKdv > 0 ? kdvOzet.odenecekKdv : kdvOzet.devredenKdv).toLocaleString("tr-TR")} ₺
-                </span>
-              </div>
+              {/* KDV tevkifatı KDV-1'de değil: kestiğimiz KDV-2 ile ödenir, alıcının kestiğini o beyan eder. */}
+              {kdvOzet.kestigimizTevkifat > 0 && <div className="invoice-summary__line is-discount"><span>Kestiğimiz KDV tevkifatı — KDV-2 ile ayrıca ödenir</span><span>{tl(kdvOzet.kestigimizTevkifat)}</span></div>}
+              {kdvOzet.aliciTevkifati > 0 && <div className="invoice-summary__line"><small>Alıcıların kestiği tevkifat (alıcı beyan eder)</small><small>{tl(kdvOzet.aliciTevkifati)}</small></div>}
             </div>
           )}
-        </div>
+        </Card>
       </div>
     </div>
   );

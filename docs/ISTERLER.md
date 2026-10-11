@@ -613,7 +613,7 @@ saklanmaz, istendiğinde XML'den üretilir.
 | No | İster | Öncelik |
 |---|---|---|
 | RPR-01 | Ana panelde özet göstergeler sunulmalıdır: aylık satış/alış, tahsilat/ödeme, vadesi gelen alacak/borç, kritik stok. | Z |
-| RPR-02 | KDV özet raporu (hesaplanan/indirilecek) dönem bazında alınabilmelidir. | Z |
+| RPR-02 | KDV özet raporu (hesaplanan/indirilecek) dönem bazında alınabilmelidir. **2026-10-11:** Mali Müşavir'deki ön analiz beyannamedeki gibi ayrıştırır: hesaplanan = satış KDV'si (tevkifatlıda satıcı payı) + alıştan iade; indirilecek = alış KDV'sinin tamamı (tevkifatlı dahil) + satıştan iade; ihraç kayıtlı alış indirilmez, ihraç kayıtlı satış tahsil edilmez; kestiğimiz tevkifat KDV-2 olarak ayrı gösterilir. Tutarlar fatura kuruyla TL. | Z |
 | RPR-03 | Satış raporları: cari, ürün, dönem kırılımında. | Z |
 | RPR-04 | Tüm raporlar PDF ve Excel olarak dışa aktarılabilmelidir. | Z |
 | RPR-05 | Kâr/zarar özeti (basit gelir-gider farkı) raporlanabilmelidir. | İ |

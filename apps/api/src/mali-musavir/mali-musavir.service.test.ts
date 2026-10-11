@@ -17,6 +17,9 @@ describe("MaliMusavirService", () => {
             tip: "satis",
             toplamMatrah: 1000,
             toplamKdv: 200,
+            toplamNetKdv: 200,
+            toplamTevkifat: 0,
+            kur: 1,
             genelToplam: 1200,
             durum: "kesin",
             cari: { unvan: "Test & <Müşteri>", vknTckn: "11111111111" },
@@ -65,13 +68,37 @@ describe("MaliMusavirService", () => {
 
   it("ihraç kayıtlı alışın KDV'sini indirilecek KDV'ye katmaz (EBLG-114)", async () => {
     mockPrisma.fatura.findMany.mockResolvedValueOnce([
-      { tip: "satis", toplamKdv: 200, ihracKayitliKodu: null },
-      { tip: "alis", toplamKdv: 50, ihracKayitliKodu: null },
-      { tip: "alis", toplamKdv: 80, ihracKayitliKodu: "701" },
+      { tip: "satis", toplamKdv: 200, toplamNetKdv: 200, toplamTevkifat: 0, kur: 1, ihracKayitliKodu: null },
+      { tip: "alis", toplamKdv: 50, toplamNetKdv: 50, toplamTevkifat: 0, kur: 1, ihracKayitliKodu: null },
+      { tip: "alis", toplamKdv: 80, toplamNetKdv: 0, toplamTevkifat: 0, kur: 1, ihracKayitliKodu: "701" },
     ]);
     const ozet = await service.kdvOzetRaporu("tenant-1", new Date("2026-08-01"), new Date("2026-08-31"));
     expect(ozet.indirilecekKdv).toBe(50);
     expect(ozet.ihracKayitliAlisKdv).toBe(80);
     expect(ozet.odenecekKdv).toBe(150);
+  });
+
+  it("iadeleri beyannamedeki yerine koyar, tevkifatı ayırır ve dövizliyi kurla çevirir (RPR-02)", async () => {
+    mockPrisma.fatura.findMany.mockResolvedValueOnce([
+      // Satış 1.000 + KDV 200, 5/10 tevkifat: satıcı 100 beyan eder, 100'ü alıcı KDV-2 ile
+      { tip: "satis", toplamKdv: 200, toplamNetKdv: 100, toplamTevkifat: 100, kur: 1, ihracKayitliKodu: null },
+      // Dövizli satış: 10 EUR KDV × 40 = 400
+      { tip: "satis", toplamKdv: 10, toplamNetKdv: 10, toplamTevkifat: 0, kur: 40, ihracKayitliKodu: null },
+      // İhraç kayıtlı satış: KDV hesaplanır, tahsil edilmez (net 0) → ödenecek tutara girmez
+      { tip: "satis", toplamKdv: 60, toplamNetKdv: 0, toplamTevkifat: 0, kur: 1, ihracKayitliKodu: "701" },
+      // Tevkifatlı alış: KDV 300, 90'ını biz kestik → indirilecek 300, KDV-2 90
+      { tip: "alis", toplamKdv: 300, toplamNetKdv: 210, toplamTevkifat: 90, kur: 1, ihracKayitliKodu: null },
+      { tip: "alis_iade", toplamKdv: 20, toplamNetKdv: 20, toplamTevkifat: 0, kur: 1, ihracKayitliKodu: null },
+      { tip: "satis_iade", toplamKdv: 30, toplamNetKdv: 30, toplamTevkifat: 0, kur: 1, ihracKayitliKodu: null },
+    ]);
+    const ozet = await service.kdvOzetRaporu("tenant-1", new Date("2026-08-01"), new Date("2026-08-31"));
+    const sorgu = mockPrisma.fatura.findMany.mock.calls.at(-1)[0];
+    expect(sorgu.where.tip).toEqual({ in: ["satis", "alis", "satis_iade", "alis_iade"] });
+    expect(ozet).toMatchObject({
+      satisKdv: 500, alistanIadeKdv: 20, hesaplananKdv: 520,
+      alisKdv: 300, satistanIadeKdv: 30, indirilecekKdv: 330,
+      aliciTevkifati: 100, kestigimizTevkifat: 90, ihracKayitliSatisKdv: 60,
+      odenecekKdv: 190, devredenKdv: 0,
+    });
   });
 });
