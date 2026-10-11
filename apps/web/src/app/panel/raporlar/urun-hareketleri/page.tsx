@@ -1,11 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { RaporPaneli } from "@/components/rapor-paneli";
-import { PageHeader } from "@/components/ui";
-
+/** RPR-21 (inceleme P2-6): katalogdaki Ürün Hareketleri raporlarına ikinci yoldu; eski bağlantılar katalogda açılır. */
 export default function UrunHareketRaporuSayfasi() {
-  return <div>
-    <PageHeader title="Ürün Hareket Raporu" subtitle="Stok giriş ve çıkışlarını, fireleri, üretim hareketlerini ve alıcı bazlı ürün satışlarını inceleyin." />
-    <RaporPaneli modul="urun_hareket" />
-  </div>;
+  redirect("/panel/raporlar?rapor=urun-hareket.hareketler");
 }

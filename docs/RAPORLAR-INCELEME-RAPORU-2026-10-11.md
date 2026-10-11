@@ -50,7 +50,8 @@ Asıl sorunlar **yetki** ve **rakamların doğruluğu/tutarlılığı**:
 | P2-3 | Stok devir hızı | ✅ RPR-18: satış ÷ ortalama stok ((dönem başı + sonu)/2), stokta kalma günü, SMM; satılmayan stoklu ürünler devir 0 ile en üstte; dönem zorunlu |
 | P2-4 | Hareket kaynağı | ✅ RPR-19: belge no + bağlantı (fatura/iptal/geri alma, transfer, sayım, üretim); maliyeti kayıtlı olmayan çıkış boş |
 | P2-5 | SMM ekranı | ✅ RPR-20: numarasız kesin fatura "Numarasız"; tarih gg.aa.yyyy |
-| P2-6 … P2-8 | Ayrı ekranlar, envanter, testler | Açık |
+| P2-6 | Ayrı ekranlar | ✅ RPR-21 (kullanıcı kararı: ayrı kalsın, eksikler tamamlansın; çift menü kalksın): Gelir-Gider, SMM, Pivot adreste durum (`useAdresDurumu`); SMM CSV; katalogda SMM + Pivot bağlantısı, rolün göremediği ekran listelenmez; pivot web rol kısıtı; "Ürün Hareket Raporu" menüden kalktı, eski adres kataloğa yönlenir |
+| P2-7 … P2-8 | Envanter, testler | Açık |
 | P3 | Ek geliştirmeler (zamanlanmış rapor, karşılaştırma, grafik, drill-down…) | Öneri |
 
 ## 3. Bulgular

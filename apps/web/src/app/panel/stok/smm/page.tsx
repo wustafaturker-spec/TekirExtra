@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import { useAdresDurumu } from "@/lib/adres-durumu";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Para, SearchInput, Segmented, Stat, StatGrid, Table, Tarih } from "@/components/ui";
 
 type Yontem = "agirlikli_ortalama" | "fifo";
@@ -22,8 +23,12 @@ const miktar = (v: number) => v.toLocaleString("tr-TR", { maximumFractionDigits:
  * iadeleri eksi satır olarak düşülür.
  */
 export default function SmmRaporSayfasi() {
-  const [yontem, setYontem] = useState<Yontem>("agirlikli_ortalama");
-  const [aralik, setAralik] = useState({ baslangic: ayBasi(), bitis: bugun() });
+  // RPR-21: yöntem ve dönem adreste; bağlantı aynı görünümü açar.
+  const [adres, adresGuncelle, adresHazir] = useAdresDurumu({ yontem: "agirlikli_ortalama", baslangic: ayBasi(), bitis: bugun() });
+  const yontem: Yontem = adres.yontem === "fifo" ? "fifo" : "agirlikli_ortalama";
+  const setYontem = (y: Yontem) => adresGuncelle({ yontem: y });
+  const aralik = { baslangic: adres.baslangic, bitis: adres.bitis };
+  const setAralik = (a: { baslangic: string; bitis: string }) => adresGuncelle(a);
   const [rapor, setRapor] = useState<SmmRaporu | null>(null);
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hata, setHata] = useState("");
@@ -37,8 +42,29 @@ export default function SmmRaporSayfasi() {
     } catch (err) {
       setHata(err instanceof Error ? err.message : "SMM raporu yüklenemedi");
     } finally { setYukleniyor(false); }
-  }, [yontem, aralik]);
-  useEffect(() => { void raporYukle(); }, [raporYukle]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yontem, aralik.baslangic, aralik.bitis]);
+  useEffect(() => { if (adresHazir) void raporYukle(); }, [raporYukle, adresHazir]);
+
+  /** RPR-21: ekrandaki (aramayla süzülmüş) satırlar; başlıkta dönem ve yöntem. */
+  const csvIndir = () => {
+    if (!rapor) return;
+    const q = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const s = (v: number) => v.toFixed(2).replace(".", ",");
+    const satirlar = [
+      [q("SMM ve kârlılık"), q(`${aralik.baslangic} – ${aralik.bitis}`), q(yontem === "fifo" ? "FIFO" : "Ağırlıklı ortalama"), arama ? q(`Arama: ${arama}`) : ""].join(";"),
+      ["Fatura", "Tarih", "Tip", "Cari", "Ürün kodu", "Ürün", "Miktar", "Ciro (TL)", "Birim maliyet", "SMM", "Kâr", "Marj %"].map(q).join(";"),
+      ...detaylar.map((d) => [q(d.faturaNo), d.tarih, d.tip === "satis_iade" ? "İade" : "Satış", q(d.cariUnvan), q(d.stokKod), q(d.stokAd),
+        String(d.satilanMiktar).replace(".", ","), s(d.satisNetTutar), s(d.birimMaliyet), s(d.toplamMaliyet), s(d.karTutar), s(d.karMarjiYuzde)].join(";")),
+      [q("Toplam"), "", "", "", "", "", "", s(detaylar.reduce((t, d) => t + d.satisNetTutar, 0)), "", s(detaylar.reduce((t, d) => t + d.toplamMaliyet, 0)), s(detaylar.reduce((t, d) => t + d.karTutar, 0)), ""].join(";"),
+    ];
+    const url = URL.createObjectURL(new Blob(["\uFEFF" + satirlar.join("\n")], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `smm_${yontem}_${aralik.baslangic}_${aralik.bitis}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const detaylar = useMemo(() => {
     const q = arama.trim().toLocaleLowerCase("tr");
@@ -51,7 +77,7 @@ export default function SmmRaporSayfasi() {
       <PageHeader
         title="SMM ve kârlılık"
         subtitle="Satılan malın maliyeti: ciro faturanın TL matrahından, maliyet stok hareketlerinden. Satış iadeleri ciro ve maliyetten düşülür; iptal edilen faturalar dahil edilmez."
-        actions={<Button onClick={() => void raporYukle()} disabled={yukleniyor}>{yukleniyor ? "Yükleniyor…" : "Yenile"}</Button>}
+        actions={<div className="row-tight"><Button onClick={() => void raporYukle()} disabled={yukleniyor}>{yukleniyor ? "Yükleniyor…" : "Yenile"}</Button><Button variant="primary" onClick={csvIndir} disabled={!rapor?.detaylar.length}>CSV indir</Button></div>}
       />
       <Alert tone="error">{hata}</Alert>
       <Card>

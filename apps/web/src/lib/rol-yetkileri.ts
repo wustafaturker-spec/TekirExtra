@@ -25,6 +25,8 @@ const KISITLI_YOLLAR: { yol: string; roller: string[] }[] = [
   { yol: "/panel/raporlar/gelir-gider", roller: FINANS_ROLLERI },
   { yol: "/panel/raporlar/kdv-disi-vergiler", roller: ["muhasebe", "mali_musavir"] },
   { yol: "/panel/stok/smm", roller: [...FINANS_ROLLERI, "maliyet_muhasebesi"] },
+  // RPR-21: API /rapor/fatura-pivot ile aynı roller.
+  { yol: "/panel/fatura/pivot", roller: [...FINANS_ROLLERI, "satis"] },
 ];
 
 /** Panel özetindeki finansal kartlar (nakit, alacak/borç, vadesi geçenler). */

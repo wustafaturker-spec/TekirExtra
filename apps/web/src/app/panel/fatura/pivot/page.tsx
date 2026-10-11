@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
+import { useAdresDurumu } from "@/lib/adres-durumu";
 import { Alert, Button, Card, Field, Input, Miktar, PageHeader, Para, SearchInput, Segmented, Select, Tarih } from "@/components/ui";
 import { bugunTR, yilBasiTR } from "@tekirextra/shared";
 
@@ -55,15 +56,26 @@ const etiketGoster = (boyut: Boyut, etiket: string) =>
   boyut === "ay" && /^\d{4}-\d{2}$/.test(etiket) ? `${AYLAR[Number(etiket.slice(5)) - 1]} ${etiket.slice(0, 4)}` : etiket || "—";
 
 export default function FaturaPivotSayfasi() {
-  const [baslangic, setBaslangic] = useState(yilBasiTR());
-  const [bitis, setBitis] = useState(bugunTR());
-  const [yon, setYon] = useState<Yon>("satis");
-  const [durum, setDurum] = useState<Durum>("kesin");
-  const [satir, setSatir] = useState<Boyut>("cari");
-  const [sutun, setSutun] = useState<Boyut>("ay");
-  const [metrik, setMetrik] = useState<Metrik>("matrah");
+  // RPR-21: seçimler adreste; bağlantı aynı pivotu açar.
+  const [adres, adresGuncelle, adresHazir] = useAdresDurumu({
+    baslangic: yilBasiTR(), bitis: bugunTR(), yon: "satis", durum: "kesin", satir: "cari", sutun: "ay", metrik: "matrah", arama: "",
+  });
+  const secim = <T extends string>(deger: string, izinli: readonly T[], varsayilan: T): T => ((izinli as readonly string[]).includes(deger) ? (deger as T) : varsayilan);
+  const { baslangic, bitis, arama } = adres;
+  const yon = secim<Yon>(adres.yon, ["satis", "alis", "tum"], "satis");
+  const durum = secim<Durum>(adres.durum, Object.keys(DURUMLAR) as Durum[], "kesin");
+  const satir = secim<Boyut>(adres.satir, Object.keys(BOYUTLAR) as Boyut[], "cari");
+  const sutun = secim<Boyut>(adres.sutun, Object.keys(BOYUTLAR) as Boyut[], "ay");
+  const metrik = secim<Metrik>(adres.metrik, Object.keys(METRIKLER) as Metrik[], "matrah");
+  const setBaslangic = (v: string) => adresGuncelle({ baslangic: v });
+  const setBitis = (v: string) => adresGuncelle({ bitis: v });
+  const setYon = (v: Yon) => adresGuncelle({ yon: v });
+  const setDurum = (v: Durum) => adresGuncelle({ durum: v });
+  const setSatir = (v: Boyut) => adresGuncelle({ satir: v });
+  const setSutun = (v: Boyut) => adresGuncelle({ sutun: v });
+  const setMetrik = (v: Metrik) => adresGuncelle({ metrik: v });
   const [aramaGirdisi, setAramaGirdisi] = useState("");
-  const [arama, setArama] = useState("");
+  useEffect(() => { if (adresHazir) setAramaGirdisi(adres.arama); }, [adresHazir]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [veri, setVeri] = useState<PivotYaniti | null>(null);
   const [yukleniyor, setYukleniyor] = useState(true);
@@ -91,12 +103,13 @@ export default function FaturaPivotSayfasi() {
     }
   }, [parametreler]);
 
-  useEffect(() => { void yukle(); }, [yukle]);
+  useEffect(() => { if (adresHazir) void yukle(); }, [yukle, adresHazir]);
 
   useEffect(() => {
-    const t = setTimeout(() => setArama(aramaGirdisi.trim()), 400);
+    if (!adresHazir) return;
+    const t = setTimeout(() => adresGuncelle({ arama: aramaGirdisi.trim() }), 400);
     return () => clearTimeout(t);
-  }, [aramaGirdisi]);
+  }, [aramaGirdisi, adresHazir, adresGuncelle]);
 
   const satirAc = async (anahtar: string) => {
     if (acik === anahtar) { setAcik(null); return; }

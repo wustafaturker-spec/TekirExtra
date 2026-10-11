@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
+import { useAdresDurumu } from "@/lib/adres-durumu";
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, TableWrap } from "@/components/ui";
 import { ayBasiTR, bugunTR, gunEkleTR, gunTR, yilBasiTR } from "@tekirextra/shared";
 
@@ -68,8 +69,11 @@ export default function GelirGiderRaporuSayfasi() {
   const bugun = bugunTR();
   const buAyBaslangic = ayBasiTR();
 
-  const [baslangic, setBaslangic] = useState(buAyBaslangic);
-  const [bitis, setBitis] = useState(bugun);
+  // RPR-21: dönem adreste; bağlantı aynı dönemi açar.
+  const [adres, adresGuncelle, adresHazir] = useAdresDurumu({ baslangic: buAyBaslangic, bitis: bugun });
+  const { baslangic, bitis } = adres;
+  const setBaslangic = (v: string) => adresGuncelle({ baslangic: v });
+  const setBitis = (v: string) => adresGuncelle({ bitis: v });
   const [versiyon, setVersiyon] = useState<"genel" | "ayrintili">("genel");
   const [aramaMetni, setAramaMetni] = useState("");
   const [turFiltresi, setTurFiltresi] = useState<"hepsi" | "gelir" | "gider">("hepsi");
@@ -93,8 +97,8 @@ export default function GelirGiderRaporuSayfasi() {
   }, [baslangic, bitis]);
 
   useEffect(() => {
-    void raporYukle();
-  }, [raporYukle]);
+    if (adresHazir) void raporYukle();
+  }, [raporYukle, adresHazir]);
 
   const hizliTarihAyarla = (tur: "buAy" | "gecenAy" | "son30Gun" | "buYil") => {
     const simdi = new Date();
