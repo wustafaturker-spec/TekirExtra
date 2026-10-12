@@ -9,8 +9,9 @@ import { ebelgeYoluGorunur } from "@/lib/ebelge-yollari";
 import type { EbelgeUygulamalari } from "@tekirextra/shared";
 import { ThemeConfiguratorDrawer } from "@/components/theme-configurator-drawer";
 import { KomutPaleti } from "@/components/komut-paleti";
+import { AiDisKanalAsistanModal } from "@/components/ai-dis-kanal-asistan-modal";
 import { AYARLAR, MENU, menuOgesiAktifMi, type MenuOge } from "@/lib/menu";
-import { Bell, ChevronRight, CircleHelp, LogOut, Menu as MenuIkonu, Search, Settings } from "lucide-react";
+import { Bell, ChevronRight, CircleHelp, LogOut, Menu as MenuIkonu, Search, Settings, Sparkles } from "lucide-react";
 
 const ROL_ADI: Record<string, string> = {
   yonetici: "Yönetici",
@@ -83,6 +84,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const [acikAlan, setAcikAlan] = useState<string>("Özet");
   const [ayarlarAcik, setAyarlarAcik] = useState(false);
   const [paletAcik, setPaletAcik] = useState(false);
+  const [aiAsistanAcik, setAiAsistanAcik] = useState(false);
   const ayarlarTetikleyiciRef = useRef<HTMLButtonElement>(null);
   const [bildirimler, setBildirimler] = useState<BildirimTeslimati[]>([]);
   const [bildirimOzeti, setBildirimOzeti] = useState<BildirimOzeti>({ okunmamis: 0, acik: 0, kritik: 0 });
@@ -321,6 +323,9 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
         </button>
         <Link className="mobile-brand" href="/panel">Tekir<b>Extra</b></Link>
         <div style={{ marginLeft: "auto", marginRight: "8px", display: "flex", alignItems: "center", gap: "4px" }}>
+          <button aria-label="AI Asistan" className="notification-button" onClick={() => setAiAsistanAcik(true)} style={{ color: "#059669" }} title="AI Asistan" type="button">
+            <Sparkles aria-hidden="true" size={19} strokeWidth={1.9} />
+          </button>
           <button aria-label="Ara veya git" className="notification-button" onClick={paletiAc} type="button">
             <Search aria-hidden="true" size={19} strokeWidth={1.9} />
           </button>
@@ -347,6 +352,36 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
         </div>
 
         <nav className="nav">
+          <button
+            className="palet-tetik"
+            onClick={() => setAiAsistanAcik(true)}
+            style={{
+              backgroundColor: "rgba(16, 185, 129, 0.08)",
+              borderColor: "rgba(16, 185, 129, 0.3)",
+              color: "#059669",
+              marginBottom: "6px",
+            }}
+            title="AI Asistan Penceresi"
+            type="button"
+          >
+            <Sparkles aria-hidden="true" size={15} strokeWidth={1.9} />
+            <span style={{ fontWeight: 600 }}>AI Asistan (Pencere)</span>
+          </button>
+          <Link
+            className="palet-tetik"
+            href="/mobil/asistan"
+            style={{
+              backgroundColor: "rgba(56, 189, 248, 0.08)",
+              borderColor: "rgba(56, 189, 248, 0.3)",
+              color: "#0284c7",
+              marginBottom: "6px",
+              textDecoration: "none",
+            }}
+            title="WhatsApp Benzeri Mobil Sohbet Modu"
+          >
+            <span style={{ fontSize: "14px" }}>📱</span>
+            <span style={{ fontWeight: 600 }}>Mobil Sohbet (Tam Ekran)</span>
+          </Link>
           <button className="palet-tetik" onClick={paletiAc} title="Komut paleti (Ctrl+K)" type="button">
             <Search aria-hidden="true" size={15} strokeWidth={1.9} />
             <span>Ara veya git…</span>
@@ -437,6 +472,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
       )}
 
       <KomutPaleti acik={paletAcik} ebelgeUygulamalari={ebelgeUygulamalari} rol={rol} setAcik={setPaletAcik} />
+      <AiDisKanalAsistanModal acik={aiAsistanAcik} onKapat={() => setAiAsistanAcik(false)} />
 
       <main className="app-main" id="ana-icerik" tabIndex={-1}>
         <div className="app-content">

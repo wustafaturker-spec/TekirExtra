@@ -199,8 +199,10 @@ export class StokController {
     @Query("belgeKuru") belgeKuru = "1",
     @Query("urunKuru") urunKuru?: string,
     @Query("varyantId") varyantId?: string,
+    @Query("vadeGun") vadeGun?: string,
+    @Query("miktar") miktar?: string,
   ) {
-    return this.stokService.tavsiyeFiyat(id, cariId, tip, dovizCinsi, fiyatListesiId, belgeKuru, urunKuru, varyantId);
+    return this.stokService.tavsiyeFiyat(id, cariId, tip, dovizCinsi, fiyatListesiId, belgeKuru, urunKuru, varyantId, vadeGun, miktar);
   }
 
   @Post()

@@ -6,6 +6,7 @@ import { api, tokenAl, tumSayfalariAl } from "@/lib/api";
 import { Alert, Badge, Button, ButtonLabel, Card, Field, Input, PageHeader, Select, TableWrap } from "@/components/ui";
 import { BelgeDosyalari, belgeDosyalariniYukle } from "@/components/belge-dosyalari";
 import { MasrafEkPaneli } from "@/components/masraf-ek-paneli";
+import { FisAiDoldurModal, type FisAiDoldurVerisi } from "@/components/fis-ai-doldur-modal";
 import { bugunTR } from "@tekirextra/shared";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
@@ -41,6 +42,8 @@ export default function MasraflarSayfasi() {
   const [toplamBedel, setToplamBedel] = useState(""); const [kdvOrani, setKdvOrani] = useState("20");
   const [dovizCinsi, setDovizCinsi] = useState("TRY"); const [kur, setKur] = useState("1"); const [kurBilgisi, setKurBilgisi] = useState("");
   const [dosyalar, setDosyalar] = useState<File[]>([]);
+  const [aiFisModalAcik, setAiFisModalAcik] = useState(false);
+  const [aiOdemeHesabi, setAiOdemeHesabi] = useState("");
   const [arama, setArama] = useState(""); const [durumFiltresi, setDurumFiltresi] = useState("aktif"); const [kategoriFiltresi, setKategoriFiltresi] = useState("");
 
   const matrah = useMemo(() => {
@@ -86,7 +89,33 @@ export default function MasraflarSayfasi() {
     try {
       const kayit = await api<Masraf>(duzenlenenId ? `/masraflar/${duzenlenenId}` : "/masraflar", { method: duzenlenenId ? "PATCH" : "POST", body: JSON.stringify({ kategoriId, cariId: cariId || null, belgeTuru, belgeNo: belgeNo || null, tarih, saticiUnvan: cariId ? null : saticiUnvan, vknTckn: vknTckn || null, aciklama: aciklama || null, matrah, kdvOrani, kdvTutari, toplam, dovizCinsi, kur }) });
       if (dosyalar.length) await belgeDosyalariniYukle("masraf", kayit.id, dosyalar);
-      setBasari(duzenlenenId ? "Masraf güncellendi." : "Masraf taslak olarak kaydedildi."); setFormAcik(false); setToplamBedel(""); setBelgeNo(""); setSaticiUnvan(""); setAciklama(""); setDovizCinsi("TRY"); setKur("1"); setKurBilgisi(""); setDosyalar([]); await yukle(); if (yeniSayfasi) router.push("/panel/masraflar");
+
+      // AI Fiş Hızlı Ödeme: Eğer kasa veya kart seçildiyse doğrudan onayla ve öde
+      if (aiOdemeHesabi && !duzenlenenId) {
+        try {
+          await api(`/masraflar/${kayit.id}/onayla`, { method: "POST" });
+          const [tur, hId] = aiOdemeHesabi.split(":");
+          await api(`/masraflar/${kayit.id}/ode`, {
+            method: "POST",
+            body: JSON.stringify({
+              kasaId: tur === "kasa" ? hId : null,
+              bankaHesapId: tur === "banka" ? hId : null,
+              krediKartiId: tur === "kart" ? hId : null,
+              odemeTarihi: tarih,
+              tutar: toplam,
+              taksitSayisi: 1,
+              aciklama: aciklama || `${saticiUnvan || "Perakende"} fiş ödemesi`,
+            }),
+          });
+          setBasari("Fiş masrafı oluşturuldu, onaylandı ve ödemesi başarıyla işlendi.");
+        } catch {
+          setBasari("Masraf kaydedildi ancak otomatik ödeme yapılamadı; ödemeyi listeden tamamlayabilirsiniz.");
+        }
+      } else {
+        setBasari(duzenlenenId ? "Masraf güncellendi." : "Masraf taslak olarak kaydedildi.");
+      }
+
+      setFormAcik(false); setToplamBedel(""); setBelgeNo(""); setSaticiUnvan(""); setAciklama(""); setDovizCinsi("TRY"); setKur("1"); setKurBilgisi(""); setDosyalar([]); setAiOdemeHesabi(""); await yukle(); if (yeniSayfasi) router.push("/panel/masraflar");
     } catch (e) { setHata(e instanceof Error ? e.message : "Masraf kaydedilemedi"); }
   }
 
@@ -115,10 +144,39 @@ export default function MasraflarSayfasi() {
   }
 
   return <div className={yeniSayfasi ? "create-page" : "expense-page"}>
-    {yeniSayfasi ? <PageHeader title="Yeni Masraf" subtitle="Fiş, fatura veya gider belgesini kaydedin." actions={<Button onClick={() => router.push("/panel/masraflar")}>Listeye dön</Button>} /> : <header className="expense-hero"><div><span>GİDER YÖNETİM MERKEZİ</span><h1>Masraflar</h1><p>Giderlerinizi kaydedin, onaylayın ve ödeme durumunu tek ekrandan yönetin.</p></div><div><ButtonLabel as="a" href="/panel/masraflar/raporlar">Ayrıntılı raporlar</ButtonLabel><ButtonLabel as="a" href="/panel/masraflar/kategoriler">Kategoriler</ButtonLabel><ButtonLabel as="a" variant="primary" href="/panel/masraflar/yeni">+ Yeni masraf</ButtonLabel></div></header>}
+    {yeniSayfasi ? (
+      <PageHeader
+        title="Yeni Masraf"
+        subtitle="Fiş, fatura veya gider belgesini kaydedin."
+        actions={
+          <div style={{ display: "flex", gap: "8px" }}>
+            <Button variant="ghost" onClick={() => setAiFisModalAcik(true)}>
+              ✨ Yapay Zeka ile Fiş / Fatura Tara
+            </Button>
+            <Button onClick={() => router.push("/panel/masraflar")}>Listeye dön</Button>
+          </div>
+        }
+      />
+    ) : (
+      <header className="expense-hero">
+        <div>
+          <span>GİDER YÖNETİM MERKEZİ</span>
+          <h1>Masraflar</h1>
+          <p>Giderlerinizi kaydedin, onaylayın ve ödeme durumunu tek ekrandan yönetin.</p>
+        </div>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <Button variant="ghost" onClick={() => { setFormAcik(true); setAiFisModalAcik(true); }}>
+            ✨ Fiş / Fatura Tara
+          </Button>
+          <ButtonLabel as="a" href="/panel/masraflar/raporlar">Ayrıntılı raporlar</ButtonLabel>
+          <ButtonLabel as="a" href="/panel/masraflar/kategoriler">Kategoriler</ButtonLabel>
+          <ButtonLabel as="a" variant="primary" href="/panel/masraflar/yeni">+ Yeni masraf</ButtonLabel>
+        </div>
+      </header>
+    )}
     {hata && <Alert tone="error">{hata}</Alert>}{basari && <Alert tone="success">{basari}</Alert>}
     {!yeniSayfasi && <section className="expense-summary"><div className="expense-summary__lead"><span>Toplam gider</span><strong>{para(ozet.toplam)}</strong><small>İptal kayıtlar hariç · TL karşılığı</small></div><div className={ozet.odenmemis ? "is-danger" : ""}><span>Ödenecek bakiye</span><strong>{para(ozet.odenmemis)}</strong><small>Stopaj sonrası net ödeme</small></div><div><span>Kira giderleri</span><strong>{para(ozet.kira)}</strong><small>Toplam gider içindeki pay %{ozet.toplam ? Math.round(ozet.kira / ozet.toplam * 100) : 0}</small></div><div className={ozet.taslak ? "is-warning" : ""}><span>Onay bekleyen</span><strong>{ozet.taslak}</strong><small>Taslak masraf kaydı</small></div></section>}
-    {formAcik && <Card className="expense-entry" title={<span><span className="expense-entry__eyebrow">{duzenlenenId ? "DÜZENLEME" : "YENİ KAYIT"}</span>Masraf bilgileri</span>} style={{ marginTop: "1rem" }}><form onSubmit={kaydet}>
+    {formAcik && <Card className="expense-entry" title={<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}><span><span className="expense-entry__eyebrow">{duzenlenenId ? "DÜZENLEME" : "YENİ KAYIT"}</span>Masraf bilgileri</span><Button type="button" variant="ghost" onClick={() => setAiFisModalAcik(true)}>✨ Yapay Zeka ile Fiş Oku</Button></div>} style={{ marginTop: "1rem" }}><form onSubmit={kaydet}>
       <div className="expense-entry__layout">
         <section className="expense-entry__section">
           <div className="expense-entry__section-head"><span className="expense-entry__step">01</span><div><h3>Belge ve kategori</h3><p>Masrafın temel kayıt bilgileri</p></div></div>
@@ -167,5 +225,44 @@ export default function MasraflarSayfasi() {
       {!odemeHesabi && <p className="expense-payment__hint">Bu para birimine uygun bir kasa, banka hesabı veya şirket kredi kartı seçin.</p>}
       <div className="feedback-form__actions"><Button disabled={odemeKaydediliyor} onClick={() => setOdenecekMasraf(null)} type="button">Vazgeç</Button><Button disabled={odemeKaydediliyor || !odemeHesabi || Number(odemeTutari) <= 0} variant="primary" type="submit">{odemeKaydediliyor ? "Kaydediliyor…" : "Ödemeyi kaydet"}</Button></div>
     </form></section></div>}
+
+    <FisAiDoldurModal
+      acik={aiFisModalAcik}
+      onKapat={() => setAiFisModalAcik(false)}
+      kategoriler={kategoriler}
+      kasalar={kasalar}
+      krediKartlari={krediKartlari}
+      onVeriDoldur={({ ocr, dosya, kategoriId: gelenKategoriId, odemeHesabi: gelenOdemeHesabi }) => {
+        setFormAcik(true);
+        setBelgeTuru("fis"); // Fiş belgesi olarak işaretle
+        setCariId(""); // Fişlerde cari açmadan doğrudan satıcı unvanı işlenir
+        if (ocr.saticiUnvan) setSaticiUnvan(ocr.saticiUnvan);
+        if (ocr.saticiVknTckn) setVknTckn(ocr.saticiVknTckn);
+        if (ocr.belgeNo) setBelgeNo(ocr.belgeNo);
+        if (ocr.tarih) setTarih(ocr.tarih);
+        if (ocr.genelToplam) setToplamBedel(ocr.genelToplam.toFixed(2));
+        if (ocr.kdvKirilimi?.[0]?.oran !== undefined) {
+          setKdvOrani(String(ocr.kdvKirilimi[0].oran));
+        }
+        if (ocr.paraBirimi && ocr.paraBirimi !== "TRY") {
+          setDovizCinsi(ocr.paraBirimi);
+        } else {
+          setDovizCinsi("TRY");
+        }
+        if (gelenKategoriId) {
+          setKategoriId(gelenKategoriId);
+        }
+        if (gelenOdemeHesabi) {
+          setAiOdemeHesabi(gelenOdemeHesabi);
+        }
+        if (ocr.kalemler?.length) {
+          setAciklama(ocr.kalemler.map((k) => `${k.aciklama} (${k.miktar} ${k.birim})`).join(", ").slice(0, 200));
+        }
+        if (dosya) {
+          setDosyalar([dosya]);
+        }
+        setBasari("✨ Fiş bilgileri carisiz doğrudan gider olarak forma aktarıldı. Kontrol edip kaydedebilirsiniz.");
+      }}
+    />
   </div>;
 }

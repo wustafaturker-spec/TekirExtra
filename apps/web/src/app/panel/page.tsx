@@ -7,6 +7,7 @@ import { api, ApiHata, tokenAl, tokenYaz } from "@/lib/api";
 import { finansalOzetGorebilir } from "@/lib/rol-yetkileri";
 import { bugunTR, paraBicimle } from "@tekirextra/shared";
 import { Para, Tarih } from "@/components/ui";
+import { AiCfoBrifingKart } from "@/components/ai-cfo-brifing-kart";
 
 type Rol = "yonetici" | "muhasebe" | "satis" | "salt_okunur" | "mali_musavir" | "b2b_bayi" | "uretim_planlama" | "uretim_operatoru" | "depo" | "kalite" | "maliyet_muhasebesi" | "ik" | "calisan";
 interface FinansOzet { nakitVarliklar: string; envanterDegeri: string; toplamAlacaklar: string; toplamBorclar: string; netVarlikDegeri: string; eksiStokSayisi?: number; kurEksik?: string[]; }
@@ -150,6 +151,13 @@ export default function PanelSayfasi() {
       {hata && (
         <div style={{ backgroundColor: "var(--danger-soft)", border: "1px solid var(--danger)", borderRadius: "12px", padding: "12px 20px", color: "var(--danger)", fontSize: "13px", fontWeight: "500", marginBottom: "24px", display: "flex", alignItems: "center", gap: "10px" }}>
           <span>⚠️</span> {hata}
+        </div>
+      )}
+
+      {/* AI Finansal Yönetici Brifingi & Doğal Dil ChatBI (Faz 4) */}
+      {finansalOzetGorebilir(rol) && (
+        <div style={{ marginBottom: "28px" }}>
+          <AiCfoBrifingKart />
         </div>
       )}
 

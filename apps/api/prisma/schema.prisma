@@ -234,6 +234,10 @@ model Tenant {
   personelBilgiTalepleri    PersonelBilgiTalebi[]
 
   stokEkVergileri StokEkVergi[]
+  ajanOturumlari    AjanOturumu[]
+  belgeOcrKayitlari BelgeOcrKaydi[]
+  aiAyari           TenantAiAyari?
+  aiGorevleri       TenantAiGorev[]
 
   @@map("tenants")
 }
@@ -328,6 +332,9 @@ model User {
   atananDuzeltmeKayitlari      DuzeltmeKaydi[]         @relation("DuzeltmeAtanan")
   cozduguDuzeltmeKayitlari     DuzeltmeKaydi[]         @relation("DuzeltmeCozen")
   duzeltmeOlaylari             DuzeltmeOlayi[]
+  telefon                      String?                 @map("telefon")
+  pinKodu                      String?                 @map("pin_kodu")
+  ajanOturumlari               AjanOturumu[]
 
   @@unique([tenantId, eposta])
   @@index([tenantId])
@@ -5652,3 +5659,99 @@ enum EkVergiHesap {
   oran
   birim
 }
+
+// ─── Yapay Zeka Dış Kanallar ve Oturum Modelleri (Faz 3) ───────────────────
+
+model AjanOturumu {
+  id            String             @id @default(uuid()) @db.Uuid
+  tenantId      String             @map("tenant_id") @db.Uuid
+  userId        String             @map("user_id") @db.Uuid
+  kanal         String             // "WHATSAPP", "TELEGRAM", "EMAIL", "WEB"
+  kanalKimlik   String             @map("kanal_kimlik") // Telefon no veya e-posta
+  pinKodu       String?            @map("pin_kodu")
+  pinDogrulandi Boolean            @default(false) @map("pin_dogrulandi")
+  sonEtkilesim  DateTime           @default(now()) @map("son_etkilesim")
+  createdAt     DateTime           @default(now()) @map("created_at")
+
+  tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mesajlar      AjanMesajGecmisi[]
+
+  @@unique([tenantId, kanal, kanalKimlik])
+  @@index([tenantId, kanal])
+  @@map("ajan_oturumlari")
+}
+
+model AjanMesajGecmisi {
+  id          String      @id @default(uuid()) @db.Uuid
+  oturumId    String      @map("oturum_id") @db.Uuid
+  rol         String      // "user", "assistant", "system", "tool"
+  icerik      String      @db.Text
+  aracCagrisi Json?       @map("arac_cagrisi")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  oturum      AjanOturumu @relation(fields: [oturumId], references: [id], onDelete: Cascade)
+
+  @@index([oturumId, createdAt])
+  @@map("ajan_mesaj_gecmisi")
+}
+
+// ─── OCR ve Taranan Belgeler (Faz 1 / 3) ───────────────────────────────────
+
+model BelgeOcrKaydi {
+  id            String    @id @default(uuid()) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  dosyaYolu     String    @map("dosya_yolu")
+  belgeTuru     String    // "FIS", "FATURA", "EKSTRE"
+  hamMetin      String?   @map("ham_metin") @db.Text
+  cikarilanVeri Json      @map("cikarilan_veri")
+  durum         String    @default("BEKLIYOR") // "BEKLIYOR", "ISLENDI", "REDDEDILDI"
+  kaynakKayitId String?   @map("kaynak_kayit_id") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, durum])
+  @@map("belge_ocr_kayitlari")
+}
+
+// ─── Tenant AI Özelleştirme & Görevler (BYOK & Kurallar & Otomasyon) ─────
+
+model TenantAiAyari {
+  id                String   @id @default(uuid()) @db.Uuid
+  tenantId          String   @unique @map("tenant_id") @db.Uuid
+  saglayici         String   @default("varsayilan") @map("saglayici") // "varsayilan", "gemini", "openai", "anthropic", "ollama"
+  apiKey            String?  @map("api_key")
+  modelAdi          String?  @map("model_adi")
+  baseUrl           String?  @map("base_url")
+  ozelTalimatlar    String?  @map("ozel_talimatlar") @db.Text // "Şunları asla yapma", "Şu durumlarda dikkatli ol"
+  guvenlikKurallari Json?    @map("guvenlik_kurallari")
+  guncellendiAt     DateTime @updatedAt @map("guncellendi_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_ai_ayarlari")
+}
+
+model TenantAiGorev {
+  id            String    @id @default(uuid()) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  ad            String    @map("ad")
+  tetikleyici   String    @map("tetikleyici") // "ZAMANLANMIS", "VADE_GECIKMESI", "KASA_KRITIK"
+  zamanlamaCron String?   @map("zamanlama_cron") // Örn: "09:00" veya "0 9 * * *"
+  gorevTalimati String    @map("gorev_talimati") @db.Text
+  kanal         String    @default("WHATSAPP") @map("kanal") // "WHATSAPP", "EMAIL", "PANEL"
+  hedefKimlik   String?   @map("hedef_kimlik")
+  aktif         Boolean   @default(true) @map("aktif")
+  sonCalisma    DateTime? @map("son_calisma")
+  sonSonuc      String?   @map("son_sonuc") @db.Text
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, aktif])
+  @@map("tenant_ai_gorevleri")
+}
+
+

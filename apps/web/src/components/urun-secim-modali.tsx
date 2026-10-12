@@ -25,6 +25,26 @@ interface FiyatListesi { id: string; ad: string; dovizCinsi: string; aktif: bool
 interface Tavsiye {
   birimFiyat: number; kaynakFiyat: number; kaynakDoviz: string; belgeDovizi: string;
   belgeKuru: number; urunKuru: number | null; cevrilebilir: boolean; fiyatKaynagi: string; iskontoOrani: number;
+  aiOneri?: {
+    onerilenFiyat: number;
+    paraBirimi: string;
+    altSinirFiyat: number;
+    ustSinirFiyat: number;
+    iskontoVeyaVadeFarkiOrani: number;
+    karMarjiYuzde?: number;
+    fiyatKaynagi?: string;
+    uyarilar?: string[];
+    kirilim: {
+      bazFiyat: number;
+      grupIskontosuYuzde: number;
+      miktarIskontosuYuzde: number;
+      efektifVadeGun: number;
+      vadeFinansmanMaliyetiYuzde: number;
+      asgariMaliyetKalkan: number;
+    };
+    gerekceler: string[];
+    guvenSkoru: number;
+  } | null;
 }
 export interface UrunSecimSonucu {
   stokId: string; varyantId?: string; miktar: number; birim: string; birimFiyat: number;
@@ -117,13 +137,14 @@ export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, sto
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stokId]);
 
-  async function fiyatGetir(kaynakKur = urunKuru, seciliVaryant = varyantId, seciliListe = fiyatListesiId) {
+  async function fiyatGetir(kaynakKur = urunKuru, seciliVaryant = varyantId, seciliListe = fiyatListesiId, seciliMiktar = miktar) {
     if (!stokId) return;
     const p = new URLSearchParams({ tip, dovizCinsi: belgeDovizi, belgeKuru: belgeDovizi === "TRY" ? "1" : belgeKuru || "1" });
     if (cariId) p.set("cariId", cariId);
     if (seciliListe) p.set("fiyatListesiId", seciliListe);
     if (seciliVaryant) p.set("varyantId", seciliVaryant);
     if (kaynakKur) p.set("urunKuru", kaynakKur);
+    if (seciliMiktar) p.set("miktar", seciliMiktar);
     try {
       const t = await api<Tavsiye>(`/stok/${stokId}/tavsiye-fiyat?${p}`);
       // Tavsiye fiyat ana birim başınadır; seçili ek birime ölçeklenir.
@@ -168,6 +189,47 @@ export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, sto
         <div className="product-picker__results">{sonuclar.map((s) => <button type="button" key={s.id} onClick={() => stokSec(s.id)}><strong>{s.ad}</strong><span>{s.kod}</span><em>{Number(s.kullanilabilirMiktar ?? s.mevcutMiktar ?? 0).toLocaleString("tr-TR")} {birimKisaAdi(s.anaBirim ?? "adet")}</em></button>)}{!sonuclar.length && <p>Aramayla eşleşen ürün bulunamadı.</p>}</div>
       </div> : <div className="product-picker__body">
         {fiyat && <p className="product-picker__notice">Orijinal ürün fiyatı: <strong>{Number(fiyat.kaynakFiyat).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} {fiyat.kaynakDoviz}</strong>{kurTarihi && ` · TCMB döviz alış kuru: ${kurTarihi}`}</p>}
+        {fiyat?.aiOneri && (
+          <div className="product-picker__notice" style={{ backgroundColor: "#eff6ff", borderColor: "#bfdbfe", color: "#1e3a8a", padding: "8px 12px", borderRadius: "6px", marginBottom: "10px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+              <span style={{ fontWeight: 600 }}>✨ AI Dinamik Fiyat Önerisi: <strong>{fiyat.aiOneri.onerilenFiyat.toFixed(2)} {fiyat.aiOneri.paraBirimi}</strong></span>
+              <button
+                type="button"
+                onClick={() => {
+                  setBirimFiyat(String(fiyat.aiOneri!.onerilenFiyat));
+                  if (fiyat.aiOneri!.kirilim.grupIskontosuYuzde || fiyat.aiOneri!.kirilim.miktarIskontosuYuzde) {
+                    setIskonto(String(fiyat.aiOneri!.kirilim.grupIskontosuYuzde + fiyat.aiOneri!.kirilim.miktarIskontosuYuzde));
+                  }
+                }}
+                style={{ fontSize: "11px", backgroundColor: "#2563eb", color: "#fff", padding: "2px 8px", borderRadius: "4px", border: "none", cursor: "pointer" }}
+              >
+                Öneriyi Uygula
+              </button>
+            </div>
+            <div style={{ fontSize: "11px", color: "#3b82f6", display: "flex", gap: "12px", alignItems: "center" }}>
+              <span>Alt Sınır (Stop-loss): {fiyat.aiOneri.altSinirFiyat.toFixed(2)}</span>
+              <span>Üst Sınır: {fiyat.aiOneri.ustSinirFiyat.toFixed(2)}</span>
+              <span>Net Değişim: %{fiyat.aiOneri.iskontoVeyaVadeFarkiOrani > 0 ? `+${fiyat.aiOneri.iskontoVeyaVadeFarkiOrani}` : fiyat.aiOneri.iskontoVeyaVadeFarkiOrani}</span>
+              {fiyat.aiOneri.karMarjiYuzde !== undefined && (
+                <span style={{ fontWeight: 600, color: fiyat.aiOneri.karMarjiYuzde < 15 ? "#dc2626" : "#16a34a" }}>
+                  Marj: %{fiyat.aiOneri.karMarjiYuzde.toFixed(1)}
+                </span>
+              )}
+            </div>
+            {fiyat.aiOneri.uyarilar && fiyat.aiOneri.uyarilar.length > 0 && (
+              <div style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "4px", padding: "6px 8px", marginTop: "6px" }}>
+                {fiyat.aiOneri.uyarilar.map((u, i) => (
+                  <div key={i} style={{ color: "#991b1b", fontSize: "11px", fontWeight: 500 }}>{u}</div>
+                ))}
+              </div>
+            )}
+            {fiyat.aiOneri.gerekceler.length > 0 && (
+              <ul style={{ margin: "4px 0 0", paddingLeft: "16px", fontSize: "11px", color: "#475569" }}>
+                {fiyat.aiOneri.gerekceler.map((g, i) => <li key={i}>{g}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
         {kurDurumu === "yukleniyor" && <p className="product-picker__notice">TCMB döviz alış kurları yükleniyor…</p>}
         {kurDurumu === "hata" && <p className="product-picker__notice is-warning" role="alert">TCMB kurları alınamadı: {kurHatasi}. <button type="button" onClick={() => void kurlariYukle()}>Tekrar dene</button></p>}
         {kurDurumu === "hazir" && <div className="product-picker__rates">{gosterilecekKurlar.map((d) => <span key={d}>{d} alış <strong>{tcmbKurlari[d]?.toLocaleString("tr-TR", { minimumFractionDigits: 4 }) ?? "—"}</strong></span>)}<small>{kurTarihi}</small></div>}

@@ -16,6 +16,7 @@ import { DenklestirmePaneli } from "./denklestirme-paneli";
 import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
 import { ExcelIceAktar } from "./excel-ice-aktar";
 import { CariTopluIslem } from "./toplu-islem";
+import { CariAiDoldurModal, type CariAiDoldurVerisi } from "@/components/cari-ai-doldur-modal";
 import { CARI_EBELGE_ETIKETI, EKSTRE_TURU_ADLARI, EKSTRE_TURLERI, vknTcknGecerliMi, type CariEbelgeDurumu, type CariEbelgeTuru, type EkstreTuru, YABANCI_DOVIZLER, type YabanciDoviz } from "@tekirextra/shared";
 import {
   Alert,
@@ -315,6 +316,7 @@ export default function CariSayfasi() {
   const [ekstreIslemde, setEkstreIslemde] = useState(false);
   const [elleHareketAcik, setElleHareketAcik] = useState(false);
   const [iceAktarAcik, setIceAktarAcik] = useState(false);
+  const [aiModalAcik, setAiModalAcik] = useState(false);
   const [ekstreIptaller, setEkstreIptaller] = useState(false);
   /** CARI-24/25/26: ekstre türü, döviz ekstresinde gösterim ("" = her döviz ayrı) ve mutabakat metni. */
   const [ekstreTuru, setEkstreTuru] = useState<EkstreTuru>("standart");
@@ -1037,9 +1039,19 @@ export default function CariSayfasi() {
 
       {formAcik && (
         <form ref={cariFormRef} className="document-editor invoice-editor" onSubmit={kaydet}>
-          <div className="document-editor__head">
-            <h3>Yeni cari hesap</h3>
-            <span className="badge badge--warning">Yeni</span>
+          <div className="document-editor__head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <h3>Yeni cari hesap</h3>
+              <span className="badge badge--warning">Yeni</span>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setAiModalAcik(true)}
+              style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+            >
+              ✨ Yapay Zeka ile E-posta / Kartvizitten Doldur
+            </Button>
           </div>
           <div className="invoice-layout">
           <div className="invoice-layout__main">
@@ -1773,6 +1785,31 @@ export default function CariSayfasi() {
           </div>
         )}
       </Card>
+
+      <CariAiDoldurModal
+        acik={aiModalAcik}
+        onKapat={() => setAiModalAcik(false)}
+        onVeriDoldur={(v: CariAiDoldurVerisi) => {
+          if (v.kisiTipi) setKisiTipi(v.kisiTipi);
+          if (v.kisiTipi === "gercek") {
+            if (v.ad) setAd(v.ad);
+            if (v.soyad) setSoyad(v.soyad);
+            setUnvan([v.ad, v.soyad].filter(Boolean).join(" "));
+          } else {
+            if (v.unvan) setUnvan(v.unvan);
+          }
+          if (v.vknTckn) setVknTckn(v.vknTckn);
+          if (v.vergiDairesi) setVergiDairesi(v.vergiDairesi);
+          if (v.eposta) setEposta(v.eposta);
+          if (v.telefon) setTelefon(v.telefon);
+          if (v.webSitesi) setWebSitesi(v.webSitesi);
+          if (v.faks) setFaks(v.faks);
+          if (v.iban) setAnaIban(v.iban);
+          if (v.sektor) setSektor(v.sektor);
+          if (v.ticaretSicilNo) setTicaretSicilNo(v.ticaretSicilNo);
+          setBasari("✨ Cari bilgileri yapay zeka ile başarıyla dolduruldu. Lütfen gözden geçirip kaydedin.");
+        }}
+      />
     </div>
   );
 }

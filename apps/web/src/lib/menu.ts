@@ -217,6 +217,7 @@ export const AYARLAR: MenuOge[] = [
   { href: "/panel/ayarlar/eposta", ikon: Mail, baslik: "E-posta Ayarları", eslesme: "tam", esanlamlilar: ["smtp"] },
   { href: "/panel/ayarlar/bildirimler", ikon: Bell, baslik: "Bildirim Tercihleri", eslesme: "tam", esanlamlilar: ["sessiz saat", "kanal", "e-posta bildirimi"] },
   { href: "/panel/ayarlar/moduller", ikon: Settings, baslik: "Modül Ayarları", eslesme: "tam" },
+  { href: "/panel/ayarlar/yapay-zeka", ikon: Sparkles, baslik: "Yapay Zeka & Ajanlar", eslesme: "tam", esanlamlilar: ["ai", "yapay zeka", "byok", "openai", "claude", "gemini", "ajan", "kurallar"] },
   { href: "/panel/ayarlar/abonelik", ikon: CreditCard, baslik: "Abonelik ve Paket", eslesme: "tam" },
   { href: "/panel/ayarlar/denetim", ikon: ShieldCheck, baslik: "Denetim İzi", eslesme: "tam", esanlamlilar: ["log", "audit"] },
   { href: "/panel/ayarlar/kullanim", ikon: ChartColumn, baslik: "Kullanım Metrikleri", eslesme: "tam" },

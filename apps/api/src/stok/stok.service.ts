@@ -334,7 +334,18 @@ export class StokService {
     }
   }
 
-  async tavsiyeFiyat(stokId: string, cariId?: string, tip = "satis", dovizCinsi = "TRY", fiyatListesiId?: string, belgeKuru = "1", urunKuru?: string, varyantId?: string) {
+  async tavsiyeFiyat(
+    stokId: string,
+    cariId?: string,
+    tip = "satis",
+    dovizCinsi = "TRY",
+    fiyatListesiId?: string,
+    belgeKuru = "1",
+    urunKuru?: string,
+    varyantId?: string,
+    vadeGun?: number | string,
+    miktar?: number | string,
+  ) {
     const { tenantId } = aktifBaglam();
 
     let birimFiyat = 0;
@@ -385,6 +396,62 @@ export class StokService {
     const kaynakKurDegeri = kaynakDoviz === "TRY" ? 1 : Number(urunKuru || (kaynakDoviz === dovizCinsi ? belgeKurDegeri : 0));
     const cevrilebilir = kaynakDoviz === dovizCinsi || (belgeKurDegeri > 0 && kaynakKurDegeri > 0);
     const cevrilmisFiyat = kaynakDoviz === dovizCinsi ? birimFiyat : cevrilebilir ? birimFiyat * kaynakKurDegeri / belgeKurDegeri : null;
+
+    // AI Dinamik Fiyatlandırma ve Vade Tahmin Motoru (Opsiyonel / Zenginleştirilmiş)
+    let aiOneri = null;
+    if (tip === "satis" && (cevrilmisFiyat ?? birimFiyat) > 0) {
+      const { aiDinamikFiyatHesapla } = await import("../ai/fiyatlandirma/ai-fiyat-motoru");
+      
+      // Carinin grubu ve varsa geçmiş hareket gecikmesi
+      let cariGrupAdi: string | null = null;
+      let ortalamaGecikme: number | null = null;
+
+      if (cariId) {
+        const cariDetay = await this.prisma.tenantIslem(tenantId, (tx) =>
+          tx.cariHesap.findUnique({
+            where: { id: cariId },
+            include: { grup: { select: { ad: true } } },
+          }),
+        );
+        cariGrupAdi = cariDetay?.grup?.ad ?? null;
+      }
+
+      const baz = Number(cevrilmisFiyat ?? birimFiyat);
+      const maliyet = Number(stok.alisFiyati ?? (baz * 0.7));
+
+      // Geçmiş faturalardan ürünün ortalama satış fiyatını sorgula (varsa)
+      let ortalamaSatisFiyati: number | null = null;
+      try {
+        const sonSatislar = await this.prisma.tenantIslem(tenantId, (tx) =>
+          tx.faturaSatir.findMany({
+            where: { stokId, fatura: { tip: "satis", durum: { not: "iptal" } } },
+            select: { birimFiyat: true },
+            take: 10,
+          }),
+        );
+        if (sonSatislar && sonSatislar.length > 0) {
+          const toplam = sonSatislar.reduce((t: number, s: { birimFiyat: Prisma.Decimal }) => t + Number(s.birimFiyat), 0);
+          ortalamaSatisFiyati = Math.round((toplam / sonSatislar.length) * 100) / 100;
+        }
+      } catch {
+        // ortalama fiyat yoksa sessizce devam
+      }
+
+      aiOneri = aiDinamikFiyatHesapla({
+        stokId,
+        bazFiyat: baz,
+        paraBirimi: dovizCinsi,
+        maliyet,
+        ortalamaSatisFiyati,
+        fiyatListesindenGeldi: fiyatKaynagi === "fiyat_listesi",
+        fiyatListesiAdi: fiyatKaynagi === "fiyat_listesi" ? "Özel Fiyat Listesi" : null,
+        vadeGun: Number(vadeGun || 0),
+        miktar: Number(miktar || 1),
+        musteriGrubu: cariGrupAdi,
+        cariOrtalamaGecikmeGun: ortalamaGecikme,
+      });
+    }
+
     return {
       birimFiyat: cevrilmisFiyat ?? birimFiyat,
       kaynakFiyat: birimFiyat,
@@ -395,6 +462,7 @@ export class StokService {
       cevrilebilir,
       fiyatKaynagi,
       iskontoOrani,
+      aiOneri,
     };
   }
 

@@ -1,7 +1,7 @@
 "use client";
 
 const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
+  process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
 const ACCESS_TOKEN_ANAHTARI = "tekir_access";
 
 export function tokenAl(): string | null {
