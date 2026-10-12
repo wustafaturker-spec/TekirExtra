@@ -38,6 +38,29 @@ export class AiService {
   }
 
   /**
+   * Kiracının kayıtlı sağlayıcısını getirir (veya varsayılan sağlayıcıyı)
+   */
+  private async getProviderForTenant(tenantId: string): Promise<IAiProvider> {
+    try {
+      const ayar = await this.prisma.tenantIslem(tenantId, async (tx) => {
+        if (!tx.tenantAiAyari) return null;
+        return tx.tenantAiAyari.findUnique({ where: { tenantId } });
+      });
+      if (ayar && "apiKey" in ayar && ayar.apiKey) {
+        return AiProviderFactory.uret({
+          saglayici: ayar.saglayici,
+          apiKey: ayar.apiKey,
+          modelAdi: ayar.modelAdi,
+          baseUrl: ayar.baseUrl,
+        });
+      }
+    } catch {
+      // Hata durumunda varsayılan sağlayıcıya dön
+    }
+    return this.aiProvider;
+  }
+
+  /**
    * Fiş veya Fatura Görselini/Belgesini Multimodal AI ile Tarar,
    * Matematiksel ve VKN doğrulamalarını yapar, sistemdeki Carilerle eşleştirir.
    */
@@ -49,20 +72,41 @@ export class AiService {
     const sistemRol = `
 Sen Türkiye mevzuatına (VUK, KDV, e-Fatura/e-Arşiv) uzmanlaşmış bir muhasebe denetçisisin.
 Görseli veya metni dikkatle inceleyerek satıcı bilgilerini, KDV oran ve matrahlarını, toplam tutarları kuruşu kuruşuna çıkar.
+Lütfen yanıtı SADECE geçerli bir JSON objesi olarak ve AŞAĞIDAKİ camelCase alan adlarıyla üret:
+{
+  "belgeTuru": "FIS" | "FATURA" | "E_ARSIV" | "E_FATURA" | "BILINMIYOR",
+  "belgeNo": string | null,
+  "tarih": "YYYY-MM-DD" | null,
+  "saticiUnvan": string,
+  "saticiVknTckn": string | null,
+  "saticiVergiDairesi": string | null,
+  "saticiAdres": string | null,
+  "saticiTelefon": string | null,
+  "saticiEposta": string | null,
+  "saticiIban": string | null,
+  "paraBirimi": "TRY",
+  "toplamKdv": number,
+  "toplamMatrah": number,
+  "genelToplam": number,
+  "kdvKirilimi": [{ "oran": number, "matrah": number, "kdvTutari": number }],
+  "kalemler": [{ "aciklama": string, "miktar": number, "birim": string, "birimFiyat": number, "toplamTutar": number, "kdvOrani": number }],
+  "guvenSkoru": number
+}
+ÖNEMLİ KURAL: Alan adlarını kesinlikle snake_case veya İngilizce yapma, tam olarak yukarıda belirtilen Türkçe camelCase formatı kullan.
 `.trim();
 
     const prompt = `
-Aşağıdaki fiş/fatura belgesinden şu alanları çıkar:
-- Belge türü (FIS, FATURA, E_ARSIV vb.)
-- Belge no ve tarihi (YYYY-MM-DD)
-- Satıcı ünvanı, VKN veya TCKN, vergi dairesi, adres, telefon, e-posta, IBAN
+Aşağıdaki fiş/fatura belgesinden satıcı, KDV ve toplam tutar bilgilerini çıkar:
+- Belge türü, Belge no ve tarihi (YYYY-MM-DD)
+- Satıcı ünvanı, VKN/TCKN, vergi dairesi, adres, telefon
 - Toplam matrah, toplam KDV, genel toplam ve KDV oran kırılımları (%1, %10, %20)
 - Satır kalemleri (açıklama, miktar, birim fiyat, tutar)
 ${girdi.hamMetin ? `\nBelge Metni:\n${girdi.hamMetin}` : ""}
 `.trim();
 
-    // 1. Model-Agnostik Yapay Zeka Çıkarımı
-    const hamSonuc = await this.aiProvider.yapilandirilmisUretim<FisFaturaOcrSonuc>(
+    // 1. Dinamik Tenant Sağlayıcısı ile Multimodal AI Çıkarımı
+    const provider = await this.getProviderForTenant(tenantId);
+    const hamSonuc = await provider.yapilandirilmisUretim<FisFaturaOcrSonuc>(
       {
         sistemRol,
         prompt,
@@ -170,7 +214,8 @@ ${girdi.hamMetin ? `\nİletişim / E-posta Metni:\n${girdi.hamMetin}` : ""}
 `.trim();
 
     // 1. Model-Agnostik Çıkarım
-    const hamSonuc = await this.aiProvider.yapilandirilmisUretim<CariIletisimCikarim>(
+    const provider = await this.getProviderForTenant(tenantId);
+    const hamSonuc = await provider.yapilandirilmisUretim<CariIletisimCikarim>(
       {
         sistemRol,
         prompt,
