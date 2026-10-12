@@ -11,8 +11,13 @@ export class MockAiProvider implements IAiProvider {
     girdi: AiMultimodalGirdi,
     sema: z.ZodType<T>,
   ): Promise<T> {
-    // Prompt içeriğine göre uygun sahte yanıt üretimi
-    if (girdi.prompt.includes("fis_fatura") || (girdi.gorselBase64 && !girdi.prompt.includes("cari"))) {
+    const promptLower = (girdi.prompt || "").toLowerCase();
+    if (
+      promptLower.includes("fis") ||
+      promptLower.includes("fiş") ||
+      promptLower.includes("fatura") ||
+      (girdi.gorselBase64 && !promptLower.includes("cari"))
+    ) {
       const ornekFis = {
         belgeTuru: "FIS",
         belgeNo: "00124",

@@ -60,7 +60,8 @@ export class AiAjanController {
    */
   @Get("oturum/:id")
   async oturumDetay(@Param("id") oturumId: string) {
-    return this.ajanService.oturumDetay(oturumId);
+    const { tenantId } = aktifBaglam();
+    return this.ajanService.oturumDetay(tenantId, oturumId);
   }
 
   /**

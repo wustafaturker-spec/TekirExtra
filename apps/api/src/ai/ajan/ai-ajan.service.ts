@@ -62,14 +62,17 @@ export class AiAjanService {
       const adayPin = girdi.pinKodu || (islenecekMetin.length === 4 && /^\d{4}$/.test(islenecekMetin) ? islenecekMetin : null);
 
       if (adayPin && adayPin === user.pinKodu) {
-        await this.prisma.ajanOturumu.update({
-          where: { id: oturum.id },
-          data: { pinDogrulandi: true, sonEtkilesim: new Date() },
+        await this.prisma.tenantIslem(tenantId, (tx) => {
+          const txOturum = (tx as any)?.ajanOturumu || this.prisma.ajanOturumu;
+          return txOturum.update({
+            where: { id: oturum.id },
+            data: { pinDogrulandi: true, sonEtkilesim: new Date() },
+          });
         });
 
         const hosgeldinMesaji = `🔐 PIN kodunuz doğrulandı! TekirExtra Kurumsal AI Asistanına hoş geldiniz Sayın ${user.adSoyad}.\n\nSize nasıl yardımcı olabilirim?\n• *"Yılmaz Ticaret bakiye sorgula"*\n• *"A4 Kağıt stok sorgula"*\n• *"ABC Ltd için 50 adet teklif aç"*\n• *"Geciken ödemeleri hatırlat"*`;
-        await this.mesajKaydet(oturum.id, "user", islenecekMetin);
-        await this.mesajKaydet(oturum.id, "assistant", hosgeldinMesaji);
+        await this.mesajKaydet(tenantId, oturum.id, "user", islenecekMetin);
+        await this.mesajKaydet(tenantId, oturum.id, "assistant", hosgeldinMesaji);
 
         return {
           oturumId: oturum.id,
@@ -86,16 +89,19 @@ export class AiAjanService {
     }
 
     // 4. Kullanıcı Mesajını Kaydet
-    await this.mesajKaydet(oturum.id, "user", islenecekMetin);
+    await this.mesajKaydet(tenantId, oturum.id, "user", islenecekMetin);
 
     // 5. Niyet & Komut Çözümleme (Intent Extraction & Tool Dispatch)
     const aracSonucu = await this.komutuYurut(tenantId, user.id, islenecekMetin);
 
     // 6. Yanıtı Kaydet ve Oturumu Güncelle
-    await this.mesajKaydet(oturum.id, "assistant", aracSonucu.mesaj, aracSonucu.veri);
-    await this.prisma.ajanOturumu.update({
-      where: { id: oturum.id },
-      data: { sonEtkilesim: new Date() },
+    await this.mesajKaydet(tenantId, oturum.id, "assistant", aracSonucu.mesaj, aracSonucu.veri);
+    await this.prisma.tenantIslem(tenantId, (tx) => {
+      const txOturum = (tx as any)?.ajanOturumu || this.prisma.ajanOturumu;
+      return txOturum.update({
+        where: { id: oturum.id },
+        data: { sonEtkilesim: new Date() },
+      });
     });
 
     return {
@@ -111,73 +117,127 @@ export class AiAjanService {
    * PIN Doğrulama Ucu
    */
   async pinDogrula(tenantId: string, kanal: string, kanalKimlik: string, pinKodu: string): Promise<boolean> {
-    const oturum = await this.prisma.ajanOturumu.findFirst({
-      where: { tenantId, kanal, kanalKimlik },
-      include: { user: true },
-    });
-
-    if (!oturum || !oturum.user.pinKodu) return true;
-
-    if (oturum.user.pinKodu === pinKodu) {
-      await this.prisma.ajanOturumu.update({
-        where: { id: oturum.id },
-        data: { pinDogrulandi: true, sonEtkilesim: new Date() },
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const txOturum = (tx as any)?.ajanOturumu || this.prisma.ajanOturumu;
+      const oturum = await txOturum.findFirst({
+        where: { tenantId, kanal, kanalKimlik },
+        include: { user: true },
       });
-      return true;
-    }
 
-    return false;
+      if (!oturum || !oturum.user.pinKodu) return true;
+
+      if (oturum.user.pinKodu === pinKodu) {
+        await txOturum.update({
+          where: { id: oturum.id },
+          data: { pinDogrulandi: true, sonEtkilesim: new Date() },
+        });
+        return true;
+      }
+
+      return false;
+    });
   }
 
   /**
    * Oturum Bilgisi ve Son Mesajlar
    */
-  async oturumDetay(oturumId: string) {
-    return this.prisma.ajanOturumu.findUnique({
-      where: { id: oturumId },
-      include: {
-        mesajlar: { orderBy: { createdAt: "asc" }, take: 20 },
-        user: { select: { id: true, adSoyad: true, eposta: true, rol: true } },
-      },
+  async oturumDetay(tenantId: string, oturumId: string) {
+    return this.prisma.tenantIslem(tenantId, (tx) => {
+      const txOturum = (tx as any)?.ajanOturumu || this.prisma.ajanOturumu;
+      return txOturum.findUnique({
+        where: { id: oturumId },
+        include: {
+          mesajlar: { orderBy: { createdAt: "asc" }, take: 20 },
+          user: { select: { id: true, adSoyad: true, eposta: true, rol: true } },
+        },
+      });
     });
   }
 
   // ─── YARDIMCI METODLAR ──────────────────────────────────────────────────
 
   private async kullaniciyiTespitEt(kanalKimlik: string, tercihTenantId?: string, tercihUserId?: string) {
-    if (tercihUserId && tercihTenantId) {
-      const u = await this.prisma.user.findFirst({
-        where: { id: tercihUserId, tenantId: tercihTenantId },
+    if (tercihTenantId) {
+      return this.prisma.tenantIslem(tercihTenantId, async (tx) => {
+        const txUser = (tx as any)?.user || this.prisma.user;
+        if (tercihUserId && txUser?.findFirst) {
+          const u = await txUser.findFirst({
+            where: { id: tercihUserId },
+          });
+          if (u) return { user: u, tenantId: tercihTenantId };
+        }
+
+        const telefonTemiz = kanalKimlik.replace(/\D/g, "");
+        if (txUser?.findFirst) {
+          const u = await txUser.findFirst({
+            where: {
+              OR: [
+                { eposta: { equals: kanalKimlik, mode: "insensitive" } },
+                ...(telefonTemiz.length >= 7 ? [{ telefon: { contains: telefonTemiz } }] : []),
+              ],
+            },
+          });
+          if (u) return { user: u, tenantId: tercihTenantId };
+
+          const varsayilan = await txUser.findFirst({
+            orderBy: { createdAt: "asc" },
+          });
+          if (varsayilan) return { user: varsayilan, tenantId: tercihTenantId };
+        }
+
+        throw new Error("Sistemde kayıtlı kullanıcı bulunamadı.");
       });
-      if (u) return { user: u, tenantId: tercihTenantId };
     }
 
-    // Telefon no veya e-postadan ara
-    const bulunanUser = await this.prisma.user.findFirst({
-      where: {
-        OR: [
-          { eposta: { equals: kanalKimlik, mode: "insensitive" } },
-          { telefon: { contains: kanalKimlik.replace(/\D/g, "") } },
-        ],
-      },
-      include: { tenant: true },
-    });
-
-    if (bulunanUser) {
-      return { user: bulunanUser, tenantId: bulunanUser.tenantId };
+    // Tenant doğrudan verilmemişse önce user tablosundan ara (mock veya doğrudan erişim)
+    if (this.prisma.user?.findFirst) {
+      try {
+        const telefonTemiz = kanalKimlik.replace(/\D/g, "");
+        const u = await this.prisma.user.findFirst({
+          where: {
+            OR: [
+              { eposta: { equals: kanalKimlik, mode: "insensitive" } },
+              ...(telefonTemiz.length >= 7 ? [{ telefon: { contains: telefonTemiz } }] : []),
+            ],
+          },
+        });
+        if (u) return { user: u, tenantId: u.tenantId };
+      } catch {
+        // RLS nedeniyle doğrudan okunamıyorsa devam et
+      }
     }
 
-    // Simülasyon / Dev ortamında ilk aktif kullanıcıyı seç
-    const varsayilanUser = await this.prisma.user.findFirst({
-      where: tercihTenantId ? { tenantId: tercihTenantId } : {},
-      orderBy: { createdAt: "asc" },
-    });
+    // Tenant bilinmiyorsa (ör. webhook) authKimlik üzerinden bul
+    if (this.prisma.authKimlik?.findFirst) {
+      const kimlik = await this.prisma.authKimlik.findFirst({
+        where: {
+          eposta: { equals: kanalKimlik, mode: "insensitive" },
+        },
+      });
 
-    if (!varsayilanUser) {
-      throw new Error(`Sistemde kayıtlı kullanıcı bulunamadı.`);
+      if (kimlik) {
+        return this.prisma.tenantIslem(kimlik.tenantId, async (tx) => {
+          const txUser = (tx as any)?.user || this.prisma.user;
+          const u = await txUser?.findUnique({ where: { id: kimlik.userId } });
+          if (u) return { user: u, tenantId: kimlik.tenantId };
+          throw new Error("Kullanıcı bulunamadı.");
+        });
+      }
     }
 
-    return { user: varsayilanUser, tenantId: varsayilanUser.tenantId };
+    if (this.prisma.tenant?.findFirst) {
+      const ilkTenant = await this.prisma.tenant.findFirst({ orderBy: { createdAt: "asc" } });
+      if (ilkTenant) {
+        return this.prisma.tenantIslem(ilkTenant.id, async (tx) => {
+          const txUser = (tx as any)?.user || this.prisma.user;
+          const u = await txUser?.findFirst({ orderBy: { createdAt: "asc" } });
+          if (!u) throw new Error("Kullanıcı bulunamadı.");
+          return { user: u, tenantId: ilkTenant.id };
+        });
+      }
+    }
+
+    throw new Error("Sistemde aktif kiracı veya kullanıcı bulunamadı.");
   }
 
   private async oturumBulVeyaOlustur(
@@ -187,35 +247,38 @@ export class AiAjanService {
     kanalKimlik: string,
     userPin?: string | null,
   ) {
-    let oturum = await this.prisma.ajanOturumu.findUnique({
-      where: {
-        tenantId_kanal_kanalKimlik: { tenantId, kanal, kanalKimlik },
-      },
-    });
-
-    if (!oturum) {
-      oturum = await this.prisma.ajanOturumu.create({
-        data: {
-          tenantId,
-          userId,
-          kanal,
-          kanalKimlik,
-          pinKodu: userPin || null,
-          pinDogrulandi: !userPin, // PIN yoksa doğrudan onaylı
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const txOturum = (tx as any)?.ajanOturumu || this.prisma.ajanOturumu;
+      let oturum = await txOturum.findUnique({
+        where: {
+          tenantId_kanal_kanalKimlik: { tenantId, kanal, kanalKimlik },
         },
       });
-    } else {
-      // 12 saatten uzun süre geçmişse ve PIN varsa oturumu kilitle
-      const onikiSaatOnce = new Date(Date.now() - 12 * 60 * 60 * 1000);
-      if (oturum.sonEtkilesim < onikiSaatOnce && userPin) {
-        oturum = await this.prisma.ajanOturumu.update({
-          where: { id: oturum.id },
-          data: { pinDogrulandi: false },
-        });
-      }
-    }
 
-    return oturum;
+      if (!oturum) {
+        oturum = await txOturum.create({
+          data: {
+            tenantId,
+            userId,
+            kanal,
+            kanalKimlik,
+            pinKodu: userPin || null,
+            pinDogrulandi: !userPin, // PIN yoksa doğrudan onaylı
+          },
+        });
+      } else {
+        // 12 saatten uzun süre geçmişse ve PIN varsa oturumu kilitle
+        const onikiSaatOnce = new Date(Date.now() - 12 * 60 * 60 * 1000);
+        if (oturum.sonEtkilesim < onikiSaatOnce && userPin) {
+          oturum = await txOturum.update({
+            where: { id: oturum.id },
+            data: { pinDogrulandi: false },
+          });
+        }
+      }
+
+      return oturum;
+    });
   }
 
   private sesTranskripsiyon(_sesBase64: string, hamMetin: string): string {
@@ -224,14 +287,17 @@ export class AiAjanService {
     return "Yılmaz Ticarete 50 koli A4 Kağıt için 60 gün vadeli teklif açalım, birim fiyatı 120 TL olsun.";
   }
 
-  private async mesajKaydet(oturumId: string, rol: string, icerik: string, aracCagrisi?: any) {
-    return this.prisma.ajanMesajGecmisi.create({
-      data: {
-        oturumId,
-        rol,
-        icerik,
-        aracCagrisi: aracCagrisi || undefined,
-      },
+  private async mesajKaydet(tenantId: string, oturumId: string, rol: string, icerik: string, aracCagrisi?: any) {
+    return this.prisma.tenantIslem(tenantId, (tx) => {
+      const txMesaj = (tx as any)?.ajanMesajGecmisi || this.prisma.ajanMesajGecmisi;
+      return txMesaj.create({
+        data: {
+          oturumId,
+          rol,
+          icerik,
+          aracCagrisi: aracCagrisi || undefined,
+        },
+      });
     });
   }
 
