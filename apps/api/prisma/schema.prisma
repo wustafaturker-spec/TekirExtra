@@ -568,6 +568,39 @@ model RaporGorunumu {
 /// Türkiye saatiyle; alıcılar yalnız firma kullanıcıları (her gönderimde
 /// rapor yetkisi yeniden denetlenir).
 /// RPR-28: kullanıcının favori ve son çalıştırdığı raporlar (kod listesi, en yeni önde).
+/// KSB-16: ödeme (ya da iade faturası) ile fatura arasındaki kapama. Tutar
+/// kapanan faturanın dövizindedir; tam olarak bir kaynak taşır (veritabanı
+/// kısıtı). `otomatik` kayıtlar vadeye göre denkleştirmenin ürünüdür ve her
+/// denkleştirmede yeniden hesaplanır; elle olanlar korunur.
+model FaturaKapama {
+  id                  String    @id @default(uuid()) @db.Uuid
+  tenantId            String    @map("tenant_id") @db.Uuid
+  cariId              String    @map("cari_id") @db.Uuid
+  faturaId            String    @map("fatura_id") @db.Uuid
+  tutar               Decimal   @db.Decimal(15, 2)
+  otomatik            Boolean   @default(true)
+  kasaBankaHareketId  String?   @map("kasa_banka_hareket_id") @db.Uuid
+  krediKartiHareketId String?   @map("kredi_karti_hareket_id") @db.Uuid
+  cekSenetId          String?   @map("cek_senet_id") @db.Uuid
+  iadeFaturaId        String?   @map("iade_fatura_id") @db.Uuid
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  cari              CariHesap          @relation(fields: [cariId], references: [id], onDelete: Cascade)
+  fatura            Fatura             @relation("KapananFatura", fields: [faturaId], references: [id], onDelete: Cascade)
+  kasaBankaHareket  KasaBankaHareket?  @relation(fields: [kasaBankaHareketId], references: [id], onDelete: Cascade)
+  krediKartiHareket KrediKartiHareket? @relation(fields: [krediKartiHareketId], references: [id], onDelete: Cascade)
+  cekSenet          CekSenet?          @relation(fields: [cekSenetId], references: [id], onDelete: Cascade)
+  iadeFatura        Fatura?            @relation("IadeKaynagi", fields: [iadeFaturaId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, faturaId])
+  @@index([tenantId, cariId])
+  @@index([kasaBankaHareketId])
+  @@index([krediKartiHareketId])
+  @@index([cekSenetId])
+  @@index([iadeFaturaId])
+  @@map("fatura_kapamalari")
+}
+
 model RaporTercihi {
   id               String   @id @default(uuid()) @db.Uuid
   tenantId         String   @map("tenant_id") @db.Uuid
@@ -929,6 +962,10 @@ model CariHesap {
   personel              Personel?
   projeler              Proje[]
 
+  /// KSB-16: bu tarihten önce girilmiş ödeme/iadeler otomatik dağıtılmaz (göç öncesi veri);
+  /// "vadeye göre yeniden denkleştir" boşaltır. Yeni carilerde boş (hepsi).
+  denklestirmeBaslangic   DateTime?           @map("denklestirme_baslangic")
+  kapamalar               FaturaKapama[]
   @@unique([tenantId, kod])
   @@index([tenantId, unvan])
   @@index([tenantId, grupId])
@@ -2518,6 +2555,9 @@ model Fatura {
 
   maliyetDagitimPaylari MaliyetDagitimPayi[]
 
+  /// KSB-16: bu faturayı kapatan kapamalar; iade faturasının kaynak olduğu kapamalar ayrıca.
+  kapamalar             FaturaKapama[]             @relation("KapananFatura")
+  iadeKapamalari        FaturaKapama[]             @relation("IadeKaynagi")
   @@unique([tenantId, seri, sira])
   @@unique([tekrarlayanPlanId, planlananTarih])
   @@index([tenantId, tarih])
@@ -2987,6 +3027,7 @@ model KrediKartiHareket {
   masrafOdemesi       MasrafOdeme?
   ekstre              KrediKartiEkstre?     @relation(fields: [ekstreId], references: [id], onDelete: SetNull)
 
+  kapamalar           FaturaKapama[]
   @@index([tenantId, krediKartiId, tarih])
   @@index([tenantId, cariId])
   @@index([tenantId, faturaId])
@@ -3451,6 +3492,7 @@ model KasaBankaHareket {
   krediKartiOdemesi KrediKartiHareket?
   gelirKaydi        GelirKaydi?
 
+  kapamalar         FaturaKapama[]
   @@unique([tenantId, makbuzNo])
   @@index([tenantId, tarih])
   @@index([tenantId, projeId])
@@ -3501,6 +3543,7 @@ model CekSenet {
   arkaYuzEk  Ek?            @relation("CekArkaYuz", fields: [arkaYuzEkId], references: [id], onDelete: SetNull)
   olaylar    CekSenetOlay[]
 
+  kapamalar     FaturaKapama[]
   @@unique([tenantId, portfoyNo])
   @@map("cek_senetler")
 }

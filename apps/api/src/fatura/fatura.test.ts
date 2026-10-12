@@ -4,6 +4,17 @@ import { FaturaService } from "./fatura.service";
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { _tumPolitikalariTemizle, registerEylemPolitikasi } from "../core/eylemler/eylem-kayit";
 
+// KSB-16: denkleştirmenin veritabanı tarafı kendi testinde; burada akışın çağırdığı sınanır.
+vi.mock("./denklestirme", async (orijinal) => ({
+  ...(await orijinal<typeof import("./denklestirme")>()),
+  cariDenklestir: vi.fn(async () => ({ kapamalar: [] })),
+  carileriDenklestir: vi.fn(async () => undefined),
+  elleKapamaYaz: vi.fn(async () => undefined),
+  kaynakKapamalariniCoz: vi.fn(async () => undefined),
+  faturaKapamalariniCoz: vi.fn(async () => undefined),
+}));
+
+
 vi.mock("../core/istek-baglami", () => ({
   aktifBaglam: () => ({
     tenantId: "t1-uuid",
@@ -101,8 +112,8 @@ describe("FaturaService (FTR-14 - maksIskontoYuzdesi)", () => {
     const fatura = (tip: string, durum: string, toplam: string, odemeler: Array<{ mahsup: string }>, ebelgeDurum?: string, kur = "1") => ({
       tip, durum, genelToplam: new Prisma.Decimal(toplam), kur: new Prisma.Decimal(kur),
       ebelge: ebelgeDurum ? { durum: ebelgeDurum } : null,
-      kasaBankaHarekets: odemeler.map(({ mahsup }) => ({ faturaMahsubu: new Prisma.Decimal(mahsup) })),
-      krediKartiHareketleri: [],
+      kapamalar: odemeler.map(({ mahsup }) => ({ tutar: new Prisma.Decimal(mahsup) })),
+      iadeKapamalari: [],
     });
     const findMany = vi.fn().mockResolvedValue([
       fatura("satis", "taslak", "100", [], "hata"),
@@ -140,6 +151,7 @@ describe("FaturaService.taslagaGeriAl (FTR-29)", () => {
       maliyetDagitimi: { count: vi.fn().mockResolvedValue(0) },
       posTahsilat: { count: vi.fn().mockResolvedValue(0) },
       krediKartiHareket: { count: vi.fn().mockResolvedValue(0) },
+      faturaKapama: { count: vi.fn().mockResolvedValue(0) },
       stokHareket: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) },
       cariHareket: { create: vi.fn().mockResolvedValue({}) },
       ebelgeKayit: { delete: vi.fn().mockResolvedValue({}) },
@@ -225,6 +237,7 @@ describe("FaturaService.iptal — e-belge kuralı (EBLG-22)", () => {
       maliyetDagitimi: { count: vi.fn().mockResolvedValue(0) },
       posTahsilat: { count: vi.fn().mockResolvedValue(0) },
       krediKartiHareket: { count: vi.fn().mockResolvedValue(0) },
+      faturaKapama: { count: vi.fn().mockResolvedValue(0) },
       stokHareket: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) },
       cariHareket: { create: vi.fn().mockResolvedValue({}) },
       cariHesap: { update: vi.fn().mockResolvedValue({}) },

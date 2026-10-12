@@ -20,9 +20,9 @@ function kurulum() {
     },
     fatura: {
       findMany: vi.fn().mockResolvedValue([
-        { id: "f1", no: "TKR1", tip: "satis", tarih: g("2026-09-01"), vadeTarihi: g("2026-09-20"), genelToplam: 1200, kur: 1, dovizCinsi: "TRY", cariId: "c1", cari: { unvan: "Müşteri A" }, durum: "kesin", kasaBankaHarekets: [{ faturaMahsubu: 200 }], krediKartiHareketleri: [] },
-        { id: "f2", no: "ALS1", tip: "alis", tarih: g("2026-09-01"), vadeTarihi: g("2026-09-15"), genelToplam: 500, kur: 1, dovizCinsi: "TRY", cariId: "c9", cari: { unvan: "Tedarikçi" }, durum: "kesin", kasaBankaHarekets: [], krediKartiHareketleri: [] },
-        { id: "f3", no: "TKR2", tip: "satis", tarih: g("2026-09-01"), vadeTarihi: g("2026-09-10"), genelToplam: 100, kur: 1, dovizCinsi: "TRY", cariId: "c1", cari: { unvan: "Müşteri A" }, durum: "kesin", kasaBankaHarekets: [{ faturaMahsubu: 100 }], krediKartiHareketleri: [] },
+        { id: "f1", no: "TKR1", tip: "satis", tarih: g("2026-09-01"), vadeTarihi: g("2026-09-20"), genelToplam: 1200, kur: 1, dovizCinsi: "TRY", cariId: "c1", cari: { unvan: "Müşteri A" }, durum: "kesin", kapamalar: [{ tutar: 200 }], iadeKapamalari: [] },
+        { id: "f2", no: "ALS1", tip: "alis", tarih: g("2026-09-01"), vadeTarihi: g("2026-09-15"), genelToplam: 500, kur: 1, dovizCinsi: "TRY", cariId: "c9", cari: { unvan: "Tedarikçi" }, durum: "kesin", kapamalar: [], iadeKapamalari: [] },
+        { id: "f3", no: "TKR2", tip: "satis", tarih: g("2026-09-01"), vadeTarihi: g("2026-09-10"), genelToplam: 100, kur: 1, dovizCinsi: "TRY", cariId: "c1", cari: { unvan: "Müşteri A" }, durum: "kesin", kapamalar: [{ tutar: 100 }], iadeKapamalari: [] },
       ]),
     },
     cekSenet: {

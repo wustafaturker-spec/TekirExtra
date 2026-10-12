@@ -75,11 +75,22 @@ export const kasaBankaHareketOlusturSemasi = z.object({
    * aynı dövizde yok sayılır.
    */
   faturaKarsiligi: pozitifOndalik.optional().nullable(),
+  /**
+   * KSB-16: ödemenin birden çok faturaya elle dağıtımı (fatura başına tutar,
+   * hesapla aynı dövizde). Seçilenler önce kapanır; artanı vadeye göre dağılır.
+   */
+  faturalar: z.array(z.object({ faturaId: z.string().uuid(), tutar: pozitifOndalik })).max(100).optional(),
   /** P1-9: fiş hesabı eksi bakiyeye düşürüyorsa kullanıcı uyarıyı onayladı. */
   eksiBakiyeOnay: z.boolean().optional(),
 }).refine((data) => [data.kasaId, data.bankaHesapId, data.posHesapId].filter(Boolean).length === 1, {
   message: "Kasa, banka veya POS hesaplarından yalnızca biri seçilmelidir",
   path: ["kasaId"],
+}).refine((data) => !(data.faturaId && data.faturalar?.length), {
+  message: "Tek fatura ya da birden çok fatura seçilir; ikisi birlikte olmaz",
+  path: ["faturalar"],
+}).refine((data) => !data.faturalar || new Set(data.faturalar.map((f) => f.faturaId)).size === data.faturalar.length, {
+  message: "Aynı fatura iki kez seçilemez",
+  path: ["faturalar"],
 });
 
 export const virmanOlusturSemasi = z.object({

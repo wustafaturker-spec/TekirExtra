@@ -1,10 +1,10 @@
 /**
  * KSB-07: faturanın ödeme durumunun tek kaynağı.
  *
- * Kalan tutar yalnız ödemelerin **fatura dövizindeki mahsubundan** hesaplanır
- * (`faturaMahsubu`). Ödemenin hesap dövizi, kuru ya da TL karşılığı burada
- * kullanılmaz; böylece farklı kurla yapılan ödeme kalanı bozmaz. Kasa/banka,
- * POS ve kredi kartı ödemeleri birlikte sayılır.
+ * KSB-16: kalan yalnız **kapama kayıtlarından** (fatura dövizinde) hesaplanır:
+ * bu faturayı kapatanlar + (iade faturasıysa) onun başka faturaları kapattığı
+ * tutarlar. Kasa/banka, POS, kredi kartı, çek ve iade faturası kapamaları
+ * birlikte sayılır; elle ya da vadeye göre otomatik olması fark etmez.
  */
 import { BadRequestException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
@@ -13,8 +13,8 @@ const D = (deger: Prisma.Decimal.Value) => new Prisma.Decimal(deger);
 
 /** Ödeme durumunu hesaplamak için faturadan okunması gereken ilişkiler. */
 export const FATURA_ODEME_SECIMI = {
-  kasaBankaHarekets: { select: { faturaMahsubu: true } },
-  krediKartiHareketleri: { select: { faturaMahsubu: true } },
+  kapamalar: { select: { tutar: true } },
+  iadeKapamalari: { select: { tutar: true } },
 } as const;
 
 export type OdemeDurumuKodu = "beklemede" | "odenmedi" | "kismi" | "odendi";
@@ -22,8 +22,8 @@ export type OdemeDurumuKodu = "beklemede" | "odenmedi" | "kismi" | "odendi";
 export interface FaturaOdemeKaynagi {
   durum: string;
   genelToplam: Prisma.Decimal;
-  kasaBankaHarekets: Array<{ faturaMahsubu: Prisma.Decimal | null }>;
-  krediKartiHareketleri: Array<{ faturaMahsubu: Prisma.Decimal | null }>;
+  kapamalar: Array<{ tutar: Prisma.Decimal }>;
+  iadeKapamalari: Array<{ tutar: Prisma.Decimal }>;
 }
 
 export interface FaturaOdemeDurumu {
@@ -35,8 +35,7 @@ export interface FaturaOdemeDurumu {
 }
 
 export function faturaOdemeDurumu(fatura: FaturaOdemeKaynagi): FaturaOdemeDurumu {
-  const odenen = [...fatura.kasaBankaHarekets, ...fatura.krediKartiHareketleri]
-    .reduce((toplam, odeme) => toplam.add(odeme.faturaMahsubu ?? 0), D(0));
+  const odenen = [...fatura.kapamalar, ...fatura.iadeKapamalari].reduce((toplam, k) => toplam.add(k.tutar), D(0));
   const kalan = Prisma.Decimal.max(D(fatura.genelToplam).sub(odenen), 0);
   const durum: OdemeDurumuKodu = fatura.durum !== "kesin"
     ? "beklemede"
@@ -58,7 +57,7 @@ export function beklenenOdemeTipi(faturaTipi: string): "tahsilat" | "tediye" | n
 
 /**
  * Faturaya yeni ödeme bağlanmadan önce faturayı satır düzeyinde kilitler ve
- * güncel kalanını döner. Aynı faturaya eşzamanlı iki ödeme ikisi birden
+ * elle kapamalardan sonra kalanını döner. Aynı faturaya eşzamanlı iki ödeme ikisi birden
  * "tam kalan" kadar mahsup edemez; ikinci işlem birincinin bitmesini bekler.
  */
 export async function faturaKilitleVeKalaniGetir(tx: Prisma.TransactionClient, faturaId: string) {
@@ -74,7 +73,10 @@ export async function faturaKilitleVeKalaniGetir(tx: Prisma.TransactionClient, f
       dovizCinsi: true,
       kur: true,
       genelToplam: true,
-      ...FATURA_ODEME_SECIMI,
+      // KSB-16: elle bağlama yalnız elle kapamalarla yarışır; otomatik
+      // kapamalar bağlamadan sonra cari denkleştirilirken yeniden dağılır.
+      kapamalar: { where: { otomatik: false }, select: { tutar: true } },
+      iadeKapamalari: { where: { otomatik: false }, select: { tutar: true } },
     },
   });
   if (!fatura) throw new BadRequestException("Fatura bulunamadı");

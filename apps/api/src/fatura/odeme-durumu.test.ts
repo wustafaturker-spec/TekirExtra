@@ -3,23 +3,23 @@ import { Prisma } from "@prisma/client";
 import { faturaOdemeDurumu, kurFarkiTry, mahsupAyir } from "./odeme-durumu";
 
 const D = (deger: string) => new Prisma.Decimal(deger);
-const fatura = (genelToplam: string, kasa: Array<string | null>, kart: Array<string | null> = [], durum = "kesin") => ({
+const fatura = (genelToplam: string, kapamalar: string[], iadeKapamalari: string[] = [], durum = "kesin") => ({
   durum,
   genelToplam: D(genelToplam),
-  kasaBankaHarekets: kasa.map((m) => ({ faturaMahsubu: m === null ? null : D(m) })),
-  krediKartiHareketleri: kart.map((m) => ({ faturaMahsubu: m === null ? null : D(m) })),
+  kapamalar: kapamalar.map((t) => ({ tutar: D(t) })),
+  iadeKapamalari: iadeKapamalari.map((t) => ({ tutar: D(t) })),
 });
 
-describe("faturaOdemeDurumu (KSB-07)", () => {
-  it("kasa/banka ve kredi kartı mahsuplarını birlikte sayar", () => {
+describe("faturaOdemeDurumu (KSB-07/16)", () => {
+  it("faturayı kapatan ve iadenin kapattırdığı kapamaları birlikte sayar", () => {
     const durum = faturaOdemeDurumu(fatura("1000", ["300"], ["200"]));
     expect(durum.odenen.toFixed(2)).toBe("500.00");
     expect(durum.kalan.toFixed(2)).toBe("500.00");
     expect(durum.durum).toBe("kismi");
   });
 
-  it("mahsubu olmayan (faturaya bağlanmamış) hareketi saymaz", () => {
-    expect(faturaOdemeDurumu(fatura("100", [null])).durum).toBe("odenmedi");
+  it("kapaması olmayan fatura ödenmedi görünür", () => {
+    expect(faturaOdemeDurumu(fatura("100", [])).durum).toBe("odenmedi");
   });
 
   it("kalan eksiye düşmez, fazla ödenen eski kayıt 'ödendi' görünür", () => {

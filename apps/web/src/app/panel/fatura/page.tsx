@@ -221,8 +221,20 @@ interface FaturaDetay extends Fatura {
       hesap: string;
       createdAt: string;
     }[];
+    /** KSB-16: faturayı kapatan bütün kayıtlar; `otomatik` vadeye göre denkleştirmeden gelir. */
+    kapamalar: {
+      id: string;
+      tutar: string;
+      otomatik: boolean;
+      kaynakTur: "kasa_banka" | "kredi_karti" | "cek_senet" | "iade_fatura" | "kapatilan_fatura" | "bilinmiyor";
+      kaynakId: string | null;
+      tarih: string | null;
+      etiket: string;
+    }[];
   };
 }
+
+const KAPAMA_KAYNAGI: Record<string, string> = { kasa_banka: "Tahsilat/ödeme", kredi_karti: "Kredi kartı", cek_senet: "Çek/senet", iade_fatura: "İade faturası", kapatilan_fatura: "Kapattığı fatura", bilinmiyor: "Kapama" };
 
 interface KesinlestirmeOzeti {
   fatura: FaturaDetay;
@@ -3580,7 +3592,17 @@ export default function FaturaSayfasi() {
                   </div>
                 </div>
               ))}
-              {odemeDetayi.odemeOzeti.hareketler.length === 0 && (
+              {/* Faturaya bağlı fişler yukarıda; burada vadeye göre gelenler, çoklu dağıtımlar ve çek/iade kapamaları. */}
+              {odemeDetayi.odemeOzeti.kapamalar.filter((k) => k.otomatik || !odemeDetayi.odemeOzeti.hareketler.some((h) => h.id === k.kaynakId)).map((k) => (
+                <div className="status-history__item is-complete" key={k.id}>
+                  <span />
+                  <div>
+                    <strong>{KAPAMA_KAYNAGI[k.kaynakTur]} · {tl(k.tutar, odemeDetayi.dovizCinsi)}</strong>
+                    <small>{k.tarih ? `${k.tarih} · ` : ""}{k.etiket}{k.otomatik ? " · vadeye göre otomatik kapandı" : ""}</small>
+                  </div>
+                </div>
+              ))}
+              {odemeDetayi.odemeOzeti.hareketler.length === 0 && odemeDetayi.odemeOzeti.kapamalar.length === 0 && (
                 <div className="status-history__item">
                   <span />
                   <div><strong>Henüz ödeme eşleştirilmedi</strong><small>Kalan {tl(odemeDetayi.odemeOzeti.kalan, odemeDetayi.dovizCinsi)}</small></div>

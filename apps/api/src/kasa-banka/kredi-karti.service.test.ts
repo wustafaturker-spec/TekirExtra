@@ -3,6 +3,17 @@ import { describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 import { KrediKartiService } from "./kredi-karti.service";
 
+// KSB-16: denkleştirmenin veritabanı tarafı kendi testinde; burada akışın çağırdığı sınanır.
+vi.mock("../fatura/denklestirme", async (orijinal) => ({
+  ...(await orijinal<typeof import("../fatura/denklestirme")>()),
+  cariDenklestir: vi.fn(async () => ({ kapamalar: [] })),
+  carileriDenklestir: vi.fn(async () => undefined),
+  elleKapamaYaz: vi.fn(async () => undefined),
+  kaynakKapamalariniCoz: vi.fn(async () => undefined),
+  faturaKapamalariniCoz: vi.fn(async () => undefined),
+}));
+
+
 vi.mock("../core/istek-baglami", () => ({ aktifBaglam: () => ({ tenantId: "t1", rol: "muhasebe" }) }));
 // 1 USD = 30 TL.
 vi.mock("../doviz/kur-coz", () => ({ kurZorunlu: vi.fn(async () => new Prisma.Decimal("30")) }));
@@ -19,7 +30,7 @@ function hazirla(kartDovizi: string, fatura?: Record<string, unknown>) {
     fatura: {
       findUnique: vi.fn().mockResolvedValue({
         id: "fatura-1", no: "ALS-1", tip: "alis", durum: "kesin", cariId: "cari-1", dovizCinsi: kartDovizi, kur: D("1"),
-        genelToplam: D("1000"), kasaBankaHarekets: [], krediKartiHareketleri: [], ...fatura,
+        genelToplam: D("1000"), kapamalar: [], iadeKapamalari: [], ...fatura,
       }),
     },
     $queryRaw: vi.fn().mockResolvedValue([]),
@@ -58,7 +69,7 @@ describe("KrediKartiService", () => {
   });
 
   it("faturanın kalanını aşan kart ödemesinde kalan kadar mahsup eder (KSB-07)", async () => {
-    const { tx, service } = hazirla("TRY", { kasaBankaHarekets: [{ faturaMahsubu: D("700") }] });
+    const { tx, service } = hazirla("TRY", { kapamalar: [{ tutar: D("700") }] });
 
     await service.cariOdeme({ ...cariOdeme, faturaId: "fatura-1", cariOdemeTutari: "500" });
 

@@ -100,6 +100,13 @@ export class CariController {
     });
   }
 
+  /** KSB-16: göç öncesi ödemeleri dağıtılmamış bütün carileri vadeye göre denkleştirir. */
+  @Post("denklestir-toplu")
+  @Roller("yonetici")
+  async topluDenklestir() {
+    return this.cariService.topluDenklestir();
+  }
+
   @Get("etiketler")
   async etiketleriListele() {
     return this.cariService.etiketleriListele();
@@ -147,6 +154,19 @@ export class CariController {
   @Roller("muhasebe", "satis")
   async muhtelifMusteri() {
     return this.cariService.muhtelifMusteriCarisi();
+  }
+
+  /** KSB-16: "Vadeye göre yeniden denkleştir" önizlemesi (yazmaz). */
+  @Get(":id/denklestirme")
+  @Roller("muhasebe")
+  async denklestirmeOnizle(@Param("id") id: string) {
+    return this.cariService.denklestir(id, false);
+  }
+
+  @Post(":id/denklestir")
+  @Roller("muhasebe")
+  async denklestir(@Param("id") id: string) {
+    return this.cariService.denklestir(id, true);
   }
 
   @Post(":id/kopyala")

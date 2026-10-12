@@ -2,6 +2,17 @@ import { describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 import { PosService } from "./pos.service";
 
+// KSB-16: denkleştirmenin veritabanı tarafı kendi testinde; burada akışın çağırdığı sınanır.
+vi.mock("../fatura/denklestirme", async (orijinal) => ({
+  ...(await orijinal<typeof import("../fatura/denklestirme")>()),
+  cariDenklestir: vi.fn(async () => ({ kapamalar: [] })),
+  carileriDenklestir: vi.fn(async () => undefined),
+  elleKapamaYaz: vi.fn(async () => undefined),
+  kaynakKapamalariniCoz: vi.fn(async () => undefined),
+  faturaKapamalariniCoz: vi.fn(async () => undefined),
+}));
+
+
 vi.mock("../core/istek-baglami", () => ({
   aktifBaglam: () => ({ tenantId: "t1", userId: "u1", rol: "muhasebe" }),
   baglamlaCalistir: (_b: unknown, is: () => Promise<unknown>) => is(),

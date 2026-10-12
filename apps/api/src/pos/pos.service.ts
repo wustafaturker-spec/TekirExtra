@@ -24,6 +24,7 @@ import { randomBytes } from "node:crypto";
 import { adSoyadCoz } from "../cari/ad-soyad";
 import { PdfService } from "../core/pdf/pdf.service";
 import { makbuzPdfHtml } from "../kasa-banka/makbuz-pdf";
+import { cariDenklestir, elleKapamaYaz } from "../fatura/denklestirme";
 import { faturaKilitleVeKalaniGetir, mahsupAyir } from "../fatura/odeme-durumu";
 
 /**
@@ -383,6 +384,9 @@ export class PosService {
       },
     });
     await tx.posTahsilat.update({ where: { id: kayit.id }, data: { hareketId: hareket.id } });
+    // KSB-16: faturaya düşen kısım elle kapama; artanı carinin diğer açıklarına vadeyle dağılır.
+    if (kayit.faturaId && hareket.faturaMahsubu) await elleKapamaYaz(tx, { tenantId, cariId: kayit.cariId, faturaId: kayit.faturaId, tutar: hareket.faturaMahsubu, kaynak: { kasaBankaHareketId: hareket.id } });
+    await cariDenklestir(tx, tenantId, kayit.cariId);
     return hareket;
   }
 
@@ -495,6 +499,7 @@ export class PosService {
       await tx.posTahsilat.update({ where: { id }, data: { durum: "iptal", iptalNedeni: neden, hareketId: null } });
       await tx.cariHareket.deleteMany({ where: { id: { in: cariler.map((c) => c.id) } } });
       await tx.kasaBankaHareket.delete({ where: { id: kayit.hareket.id } });
+      await cariDenklestir(tx, tenantId, kayit.cariId);
       await tx.auditLog.create({
         data: {
           tenantId,
@@ -572,9 +577,11 @@ export class PosService {
           kaynakRef: hareket.id,
         },
       });
-      return tx.posIade.create({
+      const iade = await tx.posIade.create({
         data: { tenantId, posTahsilatId: kayit.id, tutar, tarih, neden: girdi.neden, hareketId: hareket.id, userId },
       });
+      await this.kapamayiIadeyleEsitle(tx, tenantId, kayit.id);
+      return iade;
     });
   }
 
@@ -589,6 +596,7 @@ export class PosService {
       await tx.posIade.delete({ where: { id: iadeId } });
       await tx.cariHareket.deleteMany({ where: { id: { in: cariler.map((c) => c.id) } } });
       await tx.kasaBankaHareket.delete({ where: { id: iade.hareketId } });
+      await this.kapamayiIadeyleEsitle(tx, tenantId, iade.posTahsilatId);
       await tx.auditLog.create({
         data: {
           tenantId,
@@ -601,6 +609,21 @@ export class PosService {
       });
       return { geriAlindi: true };
     });
+  }
+
+  /**
+   * KSB-16: iade ödemenin faturaya düşen kısmını geri açar; elle kapama
+   * tahsilatın mahsubu eksi iadelerin geri açtığı kadar olur. İadenin
+   * carideki etkisi (borç) denkleştirmede tahsilattan düşülür.
+   */
+  private async kapamayiIadeyleEsitle(tx: Prisma.TransactionClient, tenantId: string, tahsilatId: string) {
+    const kayit = await tx.posTahsilat.findUnique({ where: { id: tahsilatId }, include: { hareket: true, iadeler: { include: { hareket: true } } } });
+    if (!kayit?.hareket) return;
+    if (kayit.faturaId) {
+      const net = kayit.iadeler.reduce((t, i) => t.add(i.hareket.faturaMahsubu ?? 0), kayit.hareket.faturaMahsubu ?? new Prisma.Decimal(0));
+      await elleKapamaYaz(tx, { tenantId, cariId: kayit.cariId, faturaId: kayit.faturaId, tutar: net, kaynak: { kasaBankaHareketId: kayit.hareket.id } });
+    }
+    await cariDenklestir(tx, tenantId, kayit.cariId);
   }
 
   /** Her aktif POS hesabı için bankaya geçecek tutarlar, valör tarihine göre. */

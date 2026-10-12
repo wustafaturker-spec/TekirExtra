@@ -38,6 +38,7 @@ import { takiliRezervasyonMu } from "../ebelge/takili-rezervasyon";
 import { birimKatsayisiBul, satirBirimleriniDogrula } from "../stok/birim-cevrim";
 import { satirVaryantlariniDogrula } from "../stok/varyant-secimi";
 import { teslimYeriUyarisi, teslimYeriVerisi, teslimYeriniCariyeKaydet } from "./teslim-yeri";
+import { cariDenklestir, faturaKapamalariniCoz, kapamaKaynagi } from "./denklestirme";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu, kurFarkiTry, odemeOzetiGorunumu } from "./odeme-durumu";
 import { cariIslemDenetle, riskLimitiDenetle } from "../cari/cari-islem-denetimi";
 import type {
@@ -497,6 +498,17 @@ export class FaturaService {
             orderBy: [{ tarih: "desc" }, { createdAt: "desc" }],
             include: { krediKarti: { select: { ad: true } } },
           },
+          // KSB-16: faturayı kapatan bütün kayıtlar (elle ve vadeye göre otomatik).
+          kapamalar: {
+            orderBy: { createdAt: "asc" },
+            include: {
+              kasaBankaHareket: { select: { id: true, tip: true, tarih: true, aciklama: true, makbuzNo: true } },
+              krediKartiHareket: { select: { id: true, tarih: true, aciklama: true } },
+              cekSenet: { select: { id: true, tur: true, portfoyNo: true, islemTarihi: true } },
+              iadeFatura: { select: { id: true, no: true, tarih: true } },
+            },
+          },
+          iadeKapamalari: { include: { fatura: { select: { id: true, no: true, tarih: true } } } },
         },
       }),
     );
@@ -572,6 +584,11 @@ export class FaturaService {
           hesap: hareket.kasa?.ad ?? hareket.bankaHesap?.ad ?? "Hesap belirtilmedi",
           createdAt: hareket.createdAt.toISOString(),
         })), ...kayit.krediKartiHareketleri.map((hareket) => ({ id: hareket.id, tip: "kredi_karti", tutar: (hareket.cariOdemeTutari ?? D(0)).toFixed(2), dovizCinsi: kayit.dovizCinsi, mahsup: (hareket.faturaMahsubu ?? D(0)).toFixed(2), avans: (hareket.cariOdemeTutari ?? D(0)).sub(hareket.faturaMahsubu ?? 0).toFixed(2), kurFarkiTry: "0.00", tarih: hareket.tarih.toISOString().slice(0, 10), aciklama: hareket.aciklama, hesap: hareket.krediKarti.ad, createdAt: hareket.createdAt.toISOString() }))],
+        kapamalar: [
+          ...kayit.kapamalar.map((k) => ({ id: k.id, tutar: k.tutar.toFixed(2), otomatik: k.otomatik, ...kapamaKaynagi(k) })),
+          // İade faturasında: bu iadenin kapattığı faturalar.
+          ...kayit.iadeKapamalari.map((k) => ({ id: k.id, tutar: k.tutar.toFixed(2), otomatik: k.otomatik, kaynakTur: "kapatilan_fatura" as const, kaynakId: k.fatura.id, tarih: k.fatura.tarih.toISOString().slice(0, 10), etiket: k.fatura.no ?? "Fatura" })),
+        ],
       },
       izinliEylemler: this.eylemler(kayit, ctx.rol),
     };
@@ -1070,12 +1087,14 @@ export class FaturaService {
         return tx.fatura.update({ where: { id }, data: { durum: "iptal" } });
       }
 
-      const [kasaBankaSayisi, posSayisi, krediKartiSayisi] = await Promise.all([
+      const [kasaBankaSayisi, posSayisi, krediKartiSayisi, elleKapamaSayisi] = await Promise.all([
         tx.kasaBankaHareket.count({ where: { faturaId: id } }),
         tx.posTahsilat.count({ where: { faturaId: id } }),
         tx.krediKartiHareket.count({ where: { tenantId, faturaId: id } }),
+        // KSB-16: birden çok faturaya dağıtılan ödemenin hareketinde fatura alanı boştur; bağı elle kapama taşır.
+        tx.faturaKapama.count({ where: { faturaId: id, otomatik: false } }),
       ]);
-      if (kasaBankaSayisi + posSayisi + krediKartiSayisi > 0) {
+      if (kasaBankaSayisi + posSayisi + krediKartiSayisi + elleKapamaSayisi > 0) {
         throw new BadRequestException("Tahsilat veya ödeme bağlı fatura doğrudan iptal edilemez; önce finans hareketini geri alın veya iade faturası düzenleyin");
       }
 
@@ -1137,7 +1156,11 @@ export class FaturaService {
           },
         });
       }
-      return tx.fatura.update({ where: { id }, data: { durum: "iptal" } });
+      // KSB-16: iptal edilen faturanın kapamaları (elle dahil) çözülür; ödemeler avansa döner ve yeniden dağılır.
+      await faturaKapamalariniCoz(tx, id);
+      const iptalEdilen = await tx.fatura.update({ where: { id }, data: { durum: "iptal" } });
+      await cariDenklestir(tx, tenantId, fatura.cariId);
+      return iptalEdilen;
     });
   }
 
@@ -1166,12 +1189,14 @@ export class FaturaService {
       const engel = faturaGeriAlmaEngeli(fatura);
       if (engel) throw new BadRequestException(engel);
 
-      const [kasaBankaSayisi, posSayisi, krediKartiSayisi] = await Promise.all([
+      const [kasaBankaSayisi, posSayisi, krediKartiSayisi, elleKapamaSayisi] = await Promise.all([
         tx.kasaBankaHareket.count({ where: { faturaId: id } }),
         tx.posTahsilat.count({ where: { faturaId: id } }),
         tx.krediKartiHareket.count({ where: { tenantId, faturaId: id } }),
+        // KSB-16: birden çok faturaya dağıtılan ödemenin hareketinde fatura alanı boştur; bağı elle kapama taşır.
+        tx.faturaKapama.count({ where: { faturaId: id, otomatik: false } }),
       ]);
-      if (kasaBankaSayisi + posSayisi + krediKartiSayisi > 0) {
+      if (kasaBankaSayisi + posSayisi + krediKartiSayisi + elleKapamaSayisi > 0) {
         throw new BadRequestException("Tahsilat veya ödeme bağlı fatura taslağa geri alınamaz; önce finans hareketini geri alın");
       }
 
@@ -1230,7 +1255,10 @@ export class FaturaService {
       const bagliBelgeler = await tx.belge.findMany({ where: { faturaId: id }, select: { id: true } });
       await this.belgelerService.zincirEtkisiniCoz(tx, bagliBelgeler.map((b) => b.id), 1);
 
-      return this.gorunum(await tx.fatura.update({ where: { id }, data: { durum: "taslak" } }));
+      await faturaKapamalariniCoz(tx, id);
+      const taslak = await tx.fatura.update({ where: { id }, data: { durum: "taslak" } });
+      await cariDenklestir(tx, tenantId, fatura.cariId);
+      return this.gorunum(taslak);
     });
   }
 
@@ -1606,6 +1634,8 @@ export class FaturaService {
           depoId: kullanilanDepoId,
         },
       });
+      // KSB-16: carinin bekleyen avansı ve iadeleri yeni faturayı vadesine göre kapatır.
+      await cariDenklestir(tx, tenantId, fatura.cariId);
 
       return { kesinFatura: { ...this.gorunum(kesinFatura), riskUyari, stokUyarilari } };
     });

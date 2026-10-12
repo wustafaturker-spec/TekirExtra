@@ -46,6 +46,8 @@ interface KurYaniti {
 interface KayitYaniti {
   makbuzNo: string | null;
   faturaKapama: { dovizCinsi: string; karsilik: string; mahsup: string; avans: string } | null;
+  /** KSB-16: birden çok faturaya dağıtımda her faturaya düşen tutar. */
+  faturaKapamalari?: { faturaId: string; no: string | null; tutar: string }[];
 }
 
 export type FisTipi = "tahsilat" | "tediye";
@@ -153,6 +155,9 @@ export function OdemeFisi({
   const [aciklama, setAciklama] = useState(baslangic.aciklama ?? "");
   const [faturaId, setFaturaId] = useState<string | null>(baslangic.faturaId ?? null);
   const [faturalar, setFaturalar] = useState<AcikFatura[] | null>(null);
+  /** KSB-16: birden çok faturaya dağıtım; anahtar fatura, değer o faturaya yazılan tutar. */
+  const [coklu, setCoklu] = useState(false);
+  const [dagitim, setDagitim] = useState<Record<string, string>>({});
   const [faturaHatasi, setFaturaHatasi] = useState("");
   const [kurYaniti, setKurYaniti] = useState<KurYaniti | null>(null);
   const [kurHatasi, setKurHatasi] = useState("");
@@ -173,7 +178,8 @@ export function OdemeFisi({
 
   // Carinin bu yöndeki açık faturaları; URL'den gelen fatura da buradan seçilir.
   useEffect(() => {
-    if (!cariId) { setFaturalar(null); setFaturaId(null); return; }
+    setDagitim({});
+    if (!cariId) { setFaturalar(null); setFaturaId(null); setCoklu(false); return; }
     let iptal = false;
     setFaturalar(null);
     setFaturaHatasi("");
@@ -233,7 +239,32 @@ export function OdemeFisi({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kalaniOtomatikYaz, hesap, fatura, caprazDoviz, kurMetni]);
 
+  // Çoklu dağıtımda yalnız hesapla aynı dövizdeki faturalar seçilebilir (sunucu da aynı kuralı uygular).
+  const dagitilabilir = (f: AcikFatura) => Boolean(hesap && f.dovizCinsi === hesap.dovizCinsi);
+  const secilenler = coklu ? (faturalar ?? []).filter((f) => sayi(dagitim[f.id] ?? "") > 0 && dagitilabilir(f)) : [];
+  const dagitilan = yuvarla(secilenler.reduce((t, f) => t + sayi(dagitim[f.id]), 0));
+  const asanFatura = secilenler.find((f) => sayi(dagitim[f.id]) > sayi(f.kalan) + 0.0001);
+  const dagitimGecerli = !coklu || (secilenler.length > 0 && !asanFatura && dagitilan <= sayi(tutar) + 0.0001);
+
+  /** Ödeme tutarını vadesi en erken faturadan başlayarak seçili olmayanlar dahil dağıtır. */
+  function vadeyeGoreDoldur() {
+    let kalan = sayi(tutar);
+    const yeni: Record<string, string> = {};
+    for (const f of [...(faturalar ?? [])].filter(dagitilabilir).sort((a, b) => (a.vadeTarihi ?? a.tarih).localeCompare(b.vadeTarihi ?? b.tarih))) {
+      if (kalan <= 0) break;
+      const pay = yuvarla(Math.min(kalan, sayi(f.kalan)));
+      if (pay > 0) { yeni[f.id] = pay.toFixed(2); kalan = yuvarla(kalan - pay); }
+    }
+    setDagitim(yeni);
+  }
+
+  function cokluSec() {
+    setCoklu(true);
+    setFaturaId(null);
+  }
+
   function faturaSec(id: string | null) {
+    setCoklu(false);
     setFaturaId(id);
     const secilen = faturalar?.find((f) => f.id === id);
     if (secilen && !aciklama) setAciklama(`${secilen.no ?? "Fatura"} ${tip === "tahsilat" ? "tahsilatı" : "ödemesi"}`);
@@ -257,7 +288,8 @@ export function OdemeFisi({
         tarih,
         aciklama: aciklama || null,
         cariId: cariId || null,
-        faturaId: fatura?.id ?? null,
+        faturaId: coklu ? null : fatura?.id ?? null,
+        ...(coklu ? { faturalar: secilenler.map((f) => ({ faturaId: f.id, tutar: sayi(dagitim[f.id]).toFixed(2) })) } : {}),
         ...(capraz ? { faturaKarsiligi: kapama.karsilik.toFixed(2) } : {}),
         // Dövizli hesaptan TL faturaya: girilen kur hareketin kendi kurudur.
         ...(capraz && fatura?.dovizCinsi === "TRY" ? { kur: sayi(kurMetni).toFixed(6) } : {}),
@@ -275,7 +307,10 @@ export function OdemeFisi({
         ? ` ${fatura.no ?? "Faturaya"} ${Number(k.mahsup).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${k.dovizCinsi} mahsup edildi${Number(k.avans) > 0 ? `; ${Number(k.avans).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ${k.dovizCinsi} carinin avansı olarak kaldı` : ""}.`
         : "";
       const makbuz = yanit.makbuzNo ? ` Makbuz no: ${yanit.makbuzNo}.` : "";
-      onKaydedildi(`${islemAdi}.${makbuz}${ayrinti}`);
+      const cokluAyrinti = yanit.faturaKapamalari?.length
+        ? ` ${yanit.faturaKapamalari.map((k) => `${k.no ?? "Fatura"} ${Number(k.tutar).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}`).join(", ")} kapatıldı.`
+        : "";
+      onKaydedildi(`${islemAdi}.${makbuz}${ayrinti}${cokluAyrinti}`);
     } catch (err) {
       if (err instanceof ApiHata && err.durum === 409 && !onayli && /eksi bakiye/i.test(err.message)) setEksiBakiyeUyarisi(err.message);
       else setHata(err instanceof Error ? err.message : "Fiş kaydedilemedi");
@@ -289,7 +324,7 @@ export function OdemeFisi({
     ? (baslangic.tip === "tediye" ? -1 : 1) * sayi(baslangic.tutar ?? "0")
     : 0;
   const tahminiBakiye = hesap ? sayi(hesap.bakiye) - eskiEtki + (tip === "tahsilat" ? 1 : -1) * sayi(tutar) : 0;
-  const kaydedilebilir = Boolean(hesap && sayi(tutar) > 0 && tarih && (!fatura || kapama) && (!duzeltme || duzeltmeNedeni.trim().length >= 3));
+  const kaydedilebilir = Boolean(hesap && sayi(tutar) > 0 && tarih && (!fatura || kapama) && dagitimGecerli && (!duzeltme || duzeltmeNedeni.trim().length >= 3));
 
   return (
     <form className="payment-slip" onSubmit={kaydet}>
@@ -312,7 +347,7 @@ export function OdemeFisi({
             { deger: "tediye", baslik: "Ödeme (para çıkışı)" },
           ]}
           value={tip}
-          onChange={(t) => { setTip(t); setFaturaId(null); }}
+          onChange={(t) => { setTip(t); setFaturaId(null); setCoklu(false); }}
         />
       </div>
 
@@ -377,13 +412,22 @@ export function OdemeFisi({
             <p className="payment-slip__hint">Açık faturalar yükleniyor…</p>
           ) : (
             <div className="invoice-picker" role="radiogroup" aria-label="Kapatılacak fatura">
-              <label className={`invoice-picker__row${faturaId === null ? " is-selected" : ""}`}>
-                <input type="radio" name="fatura" checked={faturaId === null} onChange={() => faturaSec(null)} />
+              <label className={`invoice-picker__row${faturaId === null && !coklu ? " is-selected" : ""}`}>
+                <input type="radio" name="fatura" checked={faturaId === null && !coklu} onChange={() => faturaSec(null)} />
                 <span className="invoice-picker__main">
                   <strong>Faturaya bağlama</strong>
-                  <small>Tutar yalnız cari bakiyesine işlenir</small>
+                  <small>Açık faturalara vade sırasıyla kendiliğinden dağılır; artanı avans kalır</small>
                 </span>
               </label>
+              {faturalar.length > 1 && (
+                <label className={`invoice-picker__row${coklu ? " is-selected" : ""}`}>
+                  <input type="radio" name="fatura" checked={coklu} onChange={cokluSec} />
+                  <span className="invoice-picker__main">
+                    <strong>Birden çok faturaya dağıt</strong>
+                    <small>Faturaları işaretleyip her birine düşecek tutarı yazın; artan vadeye göre dağılır</small>
+                  </span>
+                </label>
+              )}
               {faturalar.length === 0 && (
                 <p className="invoice-picker__empty">
                   Bu carinin {tip === "tahsilat" ? "tahsil edilecek" : "ödenecek"} açık faturası yok.
@@ -392,8 +436,18 @@ export function OdemeFisi({
               {faturalar.map((f) => {
                 const gecikme = gecikmeGunu(f.vadeTarihi);
                 return (
-                  <label key={f.id} className={`invoice-picker__row${faturaId === f.id ? " is-selected" : ""}`}>
-                    <input type="radio" name="fatura" checked={faturaId === f.id} onChange={() => faturaSec(f.id)} />
+                  <label key={f.id} className={`invoice-picker__row${(coklu ? sayi(dagitim[f.id] ?? "") > 0 : faturaId === f.id) ? " is-selected" : ""}`}>
+                    {coklu ? (
+                      <input
+                        type="checkbox"
+                        aria-label={`${f.no ?? "Numarasız fatura"} faturasına dağıt`}
+                        disabled={!dagitilabilir(f)}
+                        checked={sayi(dagitim[f.id] ?? "") > 0}
+                        onChange={(e) => setDagitim((d) => ({ ...d, [f.id]: e.target.checked ? f.kalan : "" }))}
+                      />
+                    ) : (
+                      <input type="radio" name="fatura" checked={faturaId === f.id} onChange={() => faturaSec(f.id)} />
+                    )}
                     <span className="invoice-picker__main">
                       <strong>{f.no ?? "Numarasız fatura"}</strong>
                       <small>
@@ -410,10 +464,40 @@ export function OdemeFisi({
                     <span className="invoice-picker__amount">
                       <small>Kalan</small>
                       <Para deger={f.kalan} dovizCinsi={f.dovizCinsi} />
+                      {coklu && dagitilabilir(f) && (
+                        <Input
+                          aria-label={`${f.no ?? "Numarasız fatura"} için tutar`}
+                          inputMode="decimal"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={dagitim[f.id] ?? ""}
+                          onChange={(e) => setDagitim((d) => ({ ...d, [f.id]: e.target.value }))}
+                          placeholder="Tutar"
+                        />
+                      )}
                     </span>
                   </label>
                 );
               })}
+            </div>
+          )}
+
+          {coklu && hesap && (
+            <div className="settlement" aria-live="polite">
+              <dl className="settlement__rows">
+                <div><dt>Ödeme tutarı</dt><dd><Para deger={sayi(tutar)} dovizCinsi={hesap.dovizCinsi} /></dd></div>
+                <div className="is-strong"><dt>Seçilen faturalara</dt><dd><Para deger={dagitilan} dovizCinsi={hesap.dovizCinsi} /></dd></div>
+                <div><dt>Artan (vadeye göre dağılır)</dt><dd><Para deger={Math.max(0, yuvarla(sayi(tutar) - dagitilan))} dovizCinsi={hesap.dovizCinsi} /></dd></div>
+              </dl>
+              <div>
+                <Button type="button" size="sm" onClick={vadeyeGoreDoldur} disabled={!(sayi(tutar) > 0)}>Vadeye göre doldur</Button>
+              </div>
+              {asanFatura && <Alert tone="error">{asanFatura.no ?? "Numarasız fatura"} için yazılan tutar kalanı aşıyor.</Alert>}
+              {dagitilan > sayi(tutar) + 0.0001 && <Alert tone="error">Faturalara dağıtılan tutar ödeme tutarını aşıyor.</Alert>}
+              {(faturalar ?? []).some((f) => !dagitilabilir(f)) && (
+                <small className="payment-slip__hint">Hesaptan farklı dövizdeki faturalar çoklu dağıtıma girmez; onları tek fatura seçerek kapatın.</small>
+              )}
             </div>
           )}
 

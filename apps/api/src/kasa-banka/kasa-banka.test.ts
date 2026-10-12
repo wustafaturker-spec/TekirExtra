@@ -2,6 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 import { ConflictException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { KasaBankaService } from "./kasa-banka.service";
+import { cariDenklestir, carileriDenklestir, elleKapamaYaz, kaynakKapamalariniCoz } from "../fatura/denklestirme";
+
+// KSB-16: denkleştirmenin veritabanı tarafı kendi testinde; burada akışın çağırdığı sınanır.
+vi.mock("../fatura/denklestirme", async (orijinal) => ({
+  ...(await orijinal<typeof import("../fatura/denklestirme")>()),
+  cariDenklestir: vi.fn(async () => ({ kapamalar: [] })),
+  carileriDenklestir: vi.fn(async () => undefined),
+  elleKapamaYaz: vi.fn(async () => undefined),
+  kaynakKapamalariniCoz: vi.fn(async () => undefined),
+  faturaKapamalariniCoz: vi.fn(async () => undefined),
+}));
+
 
 // Mock the istek baglami (aktifBaglam)
 vi.mock("../core/istek-baglami", () => ({
@@ -127,8 +139,8 @@ describe("KasaBankaService (KSB-01..07)", () => {
           cariId: "cari-1",
           dovizCinsi: "TRY",
           genelToplam: new Prisma.Decimal("500.00"),
-          kasaBankaHarekets: [],
-          krediKartiHareketleri: [],
+          kapamalar: [],
+          iadeKapamalari: [],
         }),
       },
       $queryRaw: vi.fn().mockResolvedValue([]),
@@ -243,7 +255,7 @@ describe("KasaBankaService fatura kapama (KSB-07)", () => {
       fatura: {
         findUnique: vi.fn().mockResolvedValue({
           id: "fatura-1", no: "K07-1", tip: "satis", durum: "kesin", cariId: "cari-1",
-          dovizCinsi: "TRY", kur: kur("1"), krediKartiHareketleri: [], kasaBankaHarekets: [], ...fatura,
+          dovizCinsi: "TRY", kur: kur("1"), iadeKapamalari: [], kapamalar: [], ...fatura,
         }),
       },
       $queryRaw: vi.fn().mockResolvedValue([]),
@@ -275,7 +287,7 @@ describe("KasaBankaService fatura kapama (KSB-07)", () => {
   });
 
   it("kalanı aşan ödemede kalan kadar mahsup eder, artanı avans bırakır", async () => {
-    const tx = islem({ genelToplam: kur("500"), kasaBankaHarekets: [{ faturaMahsubu: kur("200") }] });
+    const tx = islem({ genelToplam: kur("500"), kapamalar: [{ tutar: kur("200") }] });
 
     const sonuc = await service.hareketEkle({ ...tahsilat, tutar: "450", dovizCinsi: "TRY" });
 
@@ -283,10 +295,53 @@ describe("KasaBankaService fatura kapama (KSB-07)", () => {
     // Cariye ödemenin tamamı yazılır; 150 TL carinin avansı olarak kalır.
     expect(tx.cariHareket.create.mock.calls[0][0].data).toMatchObject({ tutar: kur("450") });
     expect(sonuc.faturaKapama).toMatchObject({ mahsup: "300.00", avans: "150.00" });
+    // KSB-16: bağlanan 300 elle kapama; artan 150 carinin denkleştirmesine kalır.
+    expect(vi.mocked(elleKapamaYaz).mock.calls.at(-1)?.[1]).toMatchObject({ faturaId: "fatura-1", tutar: kur("300") });
+    expect(vi.mocked(cariDenklestir)).toHaveBeenLastCalledWith(tx, expect.any(String), expect.any(String));
+  });
+
+  describe("birden çok faturaya dağıtım (KSB-16)", () => {
+    const coklu = { bankaHesapId: "banka-1", tip: "tahsilat" as const, tarih: "2026-10-02", cariId: "cari-1", dovizCinsi: "TRY" as const };
+    const ikiFatura = (ek: Record<string, unknown> = {}) => {
+      const tx = islem({});
+      const faturalar: Record<string, Record<string, unknown>> = {
+        "fatura-1": { id: "fatura-1", no: "K07-1", genelToplam: kur("300") },
+        "fatura-2": { id: "fatura-2", no: "K07-2", genelToplam: kur("200"), ...ek },
+      };
+      tx.fatura.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => ({
+        tip: "satis", durum: "kesin", cariId: "cari-1", dovizCinsi: "TRY", kur: kur("1"), iadeKapamalari: [], kapamalar: [], ...faturalar[where.id],
+      }));
+      return tx;
+    };
+
+    it("her faturaya yazılan tutar kadar elle kapama yazar; hareketin fatura alanı boş kalır", async () => {
+      const tx = ikiFatura();
+      vi.mocked(elleKapamaYaz).mockClear();
+
+      const sonuc = await service.hareketEkle({ ...coklu, tutar: "600", faturalar: [{ faturaId: "fatura-2", tutar: "200" }, { faturaId: "fatura-1", tutar: "250" }] });
+
+      expect(tx.kasaBankaHareket.create.mock.calls[0][0].data).toMatchObject({ faturaId: undefined, faturaMahsubu: null, kaynakTur: "fatura_kapama" });
+      expect(vi.mocked(elleKapamaYaz).mock.calls.map(([, g]) => [g.faturaId, g.tutar.toFixed(2)])).toEqual([["fatura-1", "250.00"], ["fatura-2", "200.00"]]);
+      expect(sonuc.faturaKapamalari).toHaveLength(2);
+      // Artan 150 carinin vadeye göre denkleştirmesine kalır.
+      expect(vi.mocked(cariDenklestir)).toHaveBeenLastCalledWith(tx, expect.any(String), "cari-1");
+    });
+
+    it("dağıtılan toplam ödemeyi aşarsa reddeder", async () => {
+      ikiFatura();
+      await expect(service.hareketEkle({ ...coklu, tutar: "100", faturalar: [{ faturaId: "fatura-1", tutar: "80" }, { faturaId: "fatura-2", tutar: "30" }] })).rejects.toThrow("ödeme tutarını aşamaz");
+    });
+
+    it("faturanın kalanını aşan tutarı ve farklı dövizli faturayı reddeder", async () => {
+      ikiFatura();
+      await expect(service.hareketEkle({ ...coklu, tutar: "500", faturalar: [{ faturaId: "fatura-2", tutar: "250" }] })).rejects.toThrow("kalanı (200.00) aşıyor");
+      ikiFatura({ dovizCinsi: "USD" });
+      await expect(service.hareketEkle({ ...coklu, tutar: "500", faturalar: [{ faturaId: "fatura-2", tutar: "10" }] })).rejects.toThrow("aynı dövizde");
+    });
   });
 
   it("kapanmış faturaya ödeme bağlanmasını reddeder", async () => {
-    islem({ genelToplam: kur("500"), kasaBankaHarekets: [{ faturaMahsubu: kur("500") }] });
+    islem({ genelToplam: kur("500"), kapamalar: [{ tutar: kur("500") }] });
 
     await expect(service.hareketEkle({ ...tahsilat, tutar: "10", dovizCinsi: "TRY" })).rejects.toThrow("zaten kapanmış");
   });
@@ -390,6 +445,9 @@ describe("KasaBankaService fiş geri alma (KSB-08)", () => {
     expect(tx.kasaBankaHareket.deleteMany).not.toHaveBeenCalled();
     expect(tx.kasaBankaHareket.create.mock.calls[0][0].data).toMatchObject({ tip: "tediye", tutar: D("500"), faturaId: "f1", faturaMahsubu: D("-500"), kaynakTur: "ters_kayit", kaynakRef: "h1" });
     expect(tx.cariHareket.create.mock.calls[0][0].data).toMatchObject({ tip: "borc", tutar: D("500"), kaynakRef: "ters-h1" });
+    // KSB-16: ters kaydedilen fişin kapamaları çözülür, cari yeniden dağıtılır.
+    expect(vi.mocked(kaynakKapamalariniCoz)).toHaveBeenLastCalledWith(tx, { kasaBankaHareketIdler: ["h1"] });
+    expect(vi.mocked(carileriDenklestir).mock.calls.at(-1)?.[2]).toEqual([expect.any(String)]);
   });
 
   it("virmanın iki bacağını birlikte geri alır", async () => {

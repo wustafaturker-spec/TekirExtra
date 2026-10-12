@@ -31,6 +31,7 @@ import { bugunTR, metinNormalize, YURT_DISI_ALICI_VKN } from "@tekirextra/shared
 import { EpostaService } from "../tenant/eposta.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { iptalCiftiMi, iptalEdilmisFaturalar } from "../fatura/iptal-cifti";
+import { yenidenDenklestir } from "../fatura/denklestirme";
 import { ekstreAyrintilari, hedefDovizTutari, kurCozucu } from "./cari-ekstre";
 import { ekstrePdfHtml } from "./cari-ekstre-pdf";
 import { ekstreExcelYaz } from "./cari-ekstre-excel";
@@ -933,6 +934,35 @@ export class CariService {
    * ya da döviz; dövizde `hedefDoviz` verilirse tüm hareketler o dövize
    * çevrilir, verilmezse her döviz kendi bölümünde listelenir.
    */
+  /** KSB-16: carinin bütün ödeme ve iadelerini vadeye göre yeniden dağıtır; `uygula` yoksa önizlemedir. */
+  async denklestir(cariId: string, uygula: boolean) {
+    const { tenantId } = aktifBaglam();
+    const sonuc = await this.prisma.tenantIslem(tenantId, (tx) => yenidenDenklestir(tx, tenantId, cariId, uygula));
+    if (!sonuc) throw new NotFoundException("Cari bulunamadı");
+    return sonuc;
+  }
+
+  /**
+   * KSB-16: göçten önceki ödemeleri henüz dağıtılmamış bütün cariler (yönetici
+   * toplu işlemi). Her cari kendi işleminde denkleştirilir; biri hata verirse
+   * öbürleri etkilenmez.
+   */
+  async topluDenklestir() {
+    const { tenantId } = aktifBaglam();
+    const cariler = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findMany({ where: { denklestirmeBaslangic: { not: null } }, select: { id: true, unvan: true } }));
+    let degisenFatura = 0;
+    const hatalar: { cari: string; hata: string }[] = [];
+    for (const cari of cariler) {
+      try {
+        const sonuc = await this.prisma.tenantIslem(tenantId, (tx) => yenidenDenklestir(tx, tenantId, cari.id, true));
+        degisenFatura += sonuc?.degisenFatura ?? 0;
+      } catch (hata) {
+        hatalar.push({ cari: cari.unvan, hata: hata instanceof Error ? hata.message : String(hata) });
+      }
+    }
+    return { cariSayisi: cariler.length - hatalar.length, degisenFatura, hatalar };
+  }
+
   async ekstre(cariId: string, baslangic?: string, bitis?: string, iptalleriGosterilsin = false, secenekler: EkstreSecenekleri = {}) {
     const { tenantId } = aktifBaglam();
     const tur = secenekler.tur ?? "standart";

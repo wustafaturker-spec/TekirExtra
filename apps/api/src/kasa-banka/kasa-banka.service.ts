@@ -18,6 +18,7 @@ import { makbuzPdfHtml } from "./makbuz-pdf";
 import { girisMi, hesapEkstresiHesapla } from "./hesap-ekstresi";
 import { hesapEkstresiPdfHtml } from "./hesap-ekstresi-pdf";
 import { hesapEkstresiExcel } from "./hesap-ekstresi-excel";
+import { cariDenklestir, carileriDenklestir, elleKapamaYaz, kaynakKapamalariniCoz } from "../fatura/denklestirme";
 import { beklenenOdemeTipi, faturaKilitleVeKalaniGetir, faturaOdemeDurumu, mahsupAyir } from "../fatura/odeme-durumu";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import type {
@@ -457,13 +458,13 @@ export class KasaBankaService {
       take: 200,
       select: {
         id: true, no: true, tip: true, tarih: true, vadeTarihi: true, dovizCinsi: true, kur: true, durum: true, genelToplam: true,
-        kasaBankaHarekets: { select: { id: true, faturaMahsubu: true } },
-        krediKartiHareketleri: { select: { faturaMahsubu: true } },
+        kapamalar: { select: { tutar: true, kasaBankaHareketId: true } },
+        iadeKapamalari: { select: { tutar: true } },
       },
     }));
-    // Düzeltilen fiş yeniden girileceği için onun mahsubu sayılmaz; kapattığı fatura listede kalır.
+    // Düzeltilen fiş yeniden girileceği için onun kapaması sayılmaz; kapattığı fatura listede kalır.
     return faturalar
-      .map((f) => ({ f, odeme: faturaOdemeDurumu({ ...f, kasaBankaHarekets: f.kasaBankaHarekets.filter((h) => h.id !== haricHareketId) }) }))
+      .map((f) => ({ f, odeme: faturaOdemeDurumu({ ...f, kapamalar: f.kapamalar.filter((k) => !haricHareketId || k.kasaBankaHareketId !== haricHareketId) }) }))
       .filter(({ odeme }) => odeme.kalan.gt(0))
       .map(({ f, odeme }) => ({
         id: f.id,
@@ -519,6 +520,26 @@ export class KasaBankaService {
         kapama = { dovizCinsi: fatura.dovizCinsi, karsilik, ...mahsupAyir(karsilik, fatura.kalan) };
       }
 
+      // KSB-16: birden çok faturaya elle dağıtım; tutarlar hesapla aynı dövizde ve her biri kalanı aşamaz.
+      const coklu: { faturaId: string; no: string | null; tutar: Prisma.Decimal }[] = [];
+      if (girdi.faturalar?.length) {
+        if (!cariId) throw new BadRequestException("Birden çok faturaya dağıtım için cari seçilmelidir");
+        const dagitilan = girdi.faturalar.reduce((t, f) => t.add(D(f.tutar)), D(0));
+        if (dagitilan.gt(tutar)) throw new BadRequestException(`Faturalara dağıtılan ${dagitilan.toFixed(2)} ${girdi.dovizCinsi}, ödeme tutarını aşamaz`);
+        // Kilit sırası sabit: eşzamanlı iki ödeme aynı faturaları ters sırayla kilitleyip kilitlenmez.
+        for (const secim of [...girdi.faturalar].sort((a, b) => a.faturaId.localeCompare(b.faturaId))) {
+          const fatura = await faturaKilitleVeKalaniGetir(tx, secim.faturaId);
+          const ad = fatura.no ?? "Numarasız fatura";
+          if (fatura.durum !== "kesin") throw new BadRequestException(`${ad} kesinleşmemiş; yalnız kesinleşmiş faturaya ödeme bağlanır`);
+          if (fatura.cariId !== cariId) throw new BadRequestException(`${ad} seçilen cariye ait değil`);
+          if (beklenenOdemeTipi(fatura.tip) !== girdi.tip) throw new BadRequestException(`${ad} için ${beklenenOdemeTipi(fatura.tip) === "tahsilat" ? "tahsilat" : "tediye"} kaydı gereklidir`);
+          if (fatura.dovizCinsi !== girdi.dovizCinsi) throw new BadRequestException(`${ad} ${fatura.dovizCinsi} cinsinden; birden çok faturaya dağıtımda faturalar hesapla aynı dövizde olmalıdır`);
+          const secilen = D(secim.tutar);
+          if (secilen.gt(fatura.kalan)) throw new BadRequestException(`${ad} için yazılan ${secilen.toFixed(2)} ${girdi.dovizCinsi}, kalanı (${fatura.kalan.toFixed(2)}) aşıyor`);
+          coklu.push({ faturaId: fatura.id, no: fatura.no, tutar: secilen });
+        }
+      }
+
       // 1. Kasa/Banka hareketini oluştur
       const hareket = await tx.kasaBankaHareket.create({
         data: {
@@ -537,7 +558,7 @@ export class KasaBankaService {
           faturaId: girdi.faturaId,
           faturaKarsiligi: kapama?.karsilik ?? null,
           faturaMahsubu: kapama?.mahsup ?? null,
-          kaynakTur: girdi.faturaId ? "fatura_kapama" : "manuel",
+          kaynakTur: girdi.faturaId || coklu.length ? "fatura_kapama" : "manuel",
           kaynakRef: girdi.faturaId || null,
         },
       });
@@ -566,7 +587,16 @@ export class KasaBankaService {
         });
       }
 
-      return { ...hareket, faturaKapama: kapama && { dovizCinsi: kapama.dovizCinsi, karsilik: kapama.karsilik.toFixed(2), mahsup: kapama.mahsup.toFixed(2), avans: kapama.avans.toFixed(2) } };
+      // KSB-16: bağlanan kısım elle kapamadır; artanı ve bağlanmamış ödeme vadeye göre dağılır.
+      if (kapama && girdi.faturaId && cariId) await elleKapamaYaz(tx, { tenantId, cariId, faturaId: girdi.faturaId, tutar: kapama.mahsup, kaynak: { kasaBankaHareketId: hareket.id } });
+      for (const k of coklu) await elleKapamaYaz(tx, { tenantId, cariId: cariId!, faturaId: k.faturaId, tutar: k.tutar, kaynak: { kasaBankaHareketId: hareket.id } });
+      if (cariId) await cariDenklestir(tx, tenantId, cariId);
+
+      return {
+        ...hareket,
+        faturaKapamalari: coklu.map((k) => ({ faturaId: k.faturaId, no: k.no, tutar: k.tutar.toFixed(2) })),
+        faturaKapama: kapama && { dovizCinsi: kapama.dovizCinsi, karsilik: kapama.karsilik.toFixed(2), mahsup: kapama.mahsup.toFixed(2), avans: kapama.avans.toFixed(2) },
+      };
     }
   }
 
@@ -828,6 +858,7 @@ export class KasaBankaService {
         }
       }
       await this.geriAlmaIzi(tx, tenantId, "kasa_banka_fisi_silindi", id, goruntu);
+      await carileriDenklestir(tx, tenantId, bacaklar.map((b) => b.cariId));
       return { yontem: "silindi", hareketIdleri: idler };
     }
 
@@ -884,6 +915,9 @@ export class KasaBankaService {
       await tx.kasaBankaHareket.update({ where: { id: b }, data: { karsiHareketId: a } });
     }
     await this.geriAlmaIzi(tx, tenantId, "kasa_banka_fisi_ters_kayit", id, { ...goruntu, tersHareketler: [...yeniIdler.values()] });
+    // KSB-16: ters kaydedilen ödemenin kapamaları çözülür, cari yeniden dağıtılır.
+    await kaynakKapamalariniCoz(tx, { kasaBankaHareketIdler: idler });
+    await carileriDenklestir(tx, tenantId, bacaklar.map((b) => b.cariId));
     return { yontem: "ters_kayit", hareketIdleri: [...yeniIdler.values()] };
   }
 
@@ -905,6 +939,23 @@ export class KasaBankaService {
    * geri alınmaz (KSB-11); bordro geri alması `bordroIcinden` ile çağırır.
    */
   async cekSonIslemiGeriAlTx(tx: Prisma.TransactionClient, tenantId: string, userId: string, id: string, neden: string, bordroIcinden?: string) {
+    return this.cekCarileriniDenklestir(tx, tenantId, id, () => this.cekSonIsleminiGeriAl(tx, tenantId, userId, id, neden, bordroIcinden));
+  }
+
+  /**
+   * KSB-16: çekin durumu (karşılıksız, iade, ciro) carilerin kapamalarını
+   * değiştirir. İşlemden önceki ve sonraki cari/ciro carisi denkleştirilir;
+   * silinen evrakın kapamaları zincirleme gider.
+   */
+  private async cekCarileriniDenklestir<T>(tx: Prisma.TransactionClient, tenantId: string, id: string, islem: () => Promise<T>): Promise<T> {
+    const once = await tx.cekSenet.findUnique({ where: { id }, select: { cariId: true, ciroCariId: true } });
+    const sonuc = await islem();
+    const sonra = await tx.cekSenet.findUnique({ where: { id }, select: { cariId: true, ciroCariId: true } });
+    await carileriDenklestir(tx, tenantId, [once?.cariId, once?.ciroCariId, sonra?.cariId, sonra?.ciroCariId]);
+    return sonuc;
+  }
+
+  private async cekSonIsleminiGeriAl(tx: Prisma.TransactionClient, tenantId: string, userId: string, id: string, neden: string, bordroIcinden?: string) {
     {
       await tx.$queryRaw`SELECT id FROM cek_senetler WHERE id = ${id}::uuid FOR UPDATE`;
       const cs = await tx.cekSenet.findUnique({
@@ -1234,6 +1285,8 @@ export class KasaBankaService {
         });
       }
 
+      // KSB-16: çek/senet carinin tahsilatı/ödemesidir; açık faturalara vadeyle dağılır.
+      if (girdi.cariId) await cariDenklestir(tx, tenantId, girdi.cariId);
       return CS;
     }
   }
@@ -1267,7 +1320,12 @@ export class KasaBankaService {
   }
 
   /** Durum geçişini işlem içinde yazar (tek evrak ve çıkış bordroları ortak kullanır). */
-  async cekGecisiYaz(
+  async cekGecisiYaz(...arg: Parameters<KasaBankaService["cekGecisiniYaz"]>) {
+    const [tx, tenantId, , CS] = arg;
+    return this.cekCarileriniDenklestir(tx, tenantId, CS.id, () => this.cekGecisiniYaz(...arg));
+  }
+
+  private async cekGecisiniYaz(
     tx: Prisma.TransactionClient, tenantId: string, userId: string,
     CS: Awaited<ReturnType<KasaBankaService["cekSenetGetir"]>>, girdi: z.infer<typeof cekSenetGuncelleSemasi>, bordro?: { id: string; no: string },
   ) {

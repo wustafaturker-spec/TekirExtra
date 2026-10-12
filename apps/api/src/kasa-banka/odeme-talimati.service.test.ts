@@ -2,6 +2,17 @@ import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import { OdemeTalimatiService } from "./odeme-talimati.service";
 
+// KSB-16: denkleştirmenin veritabanı tarafı kendi testinde; burada akışın çağırdığı sınanır.
+vi.mock("../fatura/denklestirme", async (orijinal) => ({
+  ...(await orijinal<typeof import("../fatura/denklestirme")>()),
+  cariDenklestir: vi.fn(async () => ({ kapamalar: [] })),
+  carileriDenklestir: vi.fn(async () => undefined),
+  elleKapamaYaz: vi.fn(async () => undefined),
+  kaynakKapamalariniCoz: vi.fn(async () => undefined),
+  faturaKapamalariniCoz: vi.fn(async () => undefined),
+}));
+
+
 vi.mock("../core/istek-baglami", () => ({ aktifBaglam: () => ({ tenantId: "tenant", userId: "onaylayan", rol: "muhasebe" }) }));
 const D = (d: string) => new Prisma.Decimal(d);
 const IBAN = "TR330006100519786457841326";
@@ -42,7 +53,7 @@ describe("OdemeTalimatiService oluşturma (ENT-07)", () => {
       cariHesap: { findUnique: vi.fn().mockResolvedValue({ id: "c1", unvan: "Ege Ambalaj", aktif: true }) },
       cariBankaHesap: { findUnique: vi.fn().mockResolvedValue({ id: "cb1", cariId: "c1", iban: IBAN, hesapSahibi: null }) },
       fatura: {
-        findMany: vi.fn().mockResolvedValue([{ id: "f1", no: "ALS-1", cariId: "c1", tip: "alis", durum: "kesin", dovizCinsi: "TRY", genelToplam: D("1000"), kasaBankaHarekets: [{ faturaMahsubu: D("300") }], krediKartiHareketleri: [] }]),
+        findMany: vi.fn().mockResolvedValue([{ id: "f1", no: "ALS-1", cariId: "c1", tip: "alis", durum: "kesin", dovizCinsi: "TRY", genelToplam: D("1000"), kapamalar: [{ tutar: D("300") }], iadeKapamalari: [] }]),
       },
       bankaOdemeTalimatiFatura: { groupBy: vi.fn().mockResolvedValue(planlanan === "0" ? [] : [{ faturaId: "f1", _sum: { tutar: D(planlanan) } }]) },
       $queryRaw: vi.fn().mockResolvedValue([{ son_sira: 7 }]),

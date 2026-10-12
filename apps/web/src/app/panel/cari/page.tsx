@@ -12,6 +12,8 @@ import { ElleHareketFormu } from "./elle-hareket";
 import { BabsMutabakatPaneli } from "./babs-mutabakat";
 import { MutabakatPaneli } from "./mutabakat-paneli";
 import { TeminatlarPaneli } from "./teminatlar";
+import { DenklestirmePaneli } from "./denklestirme-paneli";
+import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
 import { ExcelIceAktar } from "./excel-ice-aktar";
 import { CariTopluIslem } from "./toplu-islem";
 import { CARI_EBELGE_ETIKETI, EKSTRE_TURU_ADLARI, EKSTRE_TURLERI, vknTcknGecerliMi, type CariEbelgeDurumu, type CariEbelgeTuru, type EkstreTuru, YABANCI_DOVIZLER, type YabanciDoviz } from "@tekirextra/shared";
@@ -281,6 +283,24 @@ export default function CariSayfasi() {
   const [gruplar, setGruplar] = useState<{ id: string; ad: string }[]>([]);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
+  /** KSB-16: vadeye göre yeniden denkleştirme paneli. */
+  const [denklestirmeAcik, setDenklestirmeAcik] = useState(false);
+  const [topluDenklestirme, setTopluDenklestirme] = useState<"kapali" | "onay" | "calisiyor">("kapali");
+  const [yonetici, setYonetici] = useState(false);
+  useEffect(() => { api<{ rol: string }>("/auth/ben").then((ben) => setYonetici(ben.rol === "yonetici")).catch(() => undefined); }, []);
+
+  async function topluDenklestir() {
+    setTopluDenklestirme("calisiyor"); setHata(""); setBasari("");
+    try {
+      const sonuc = await api<{ cariSayisi: number; degisenFatura: number; hatalar: { cari: string; hata: string }[] }>("/cari/denklestir-toplu", { method: "POST" });
+      setBasari(`${sonuc.cariSayisi} cari vadeye göre denkleştirildi; ${sonuc.degisenFatura} faturanın kalanı değişti.`);
+      if (sonuc.hatalar.length) setHata(`Denkleştirilemeyen cariler: ${sonuc.hatalar.map((h) => `${h.cari} (${h.hata})`).join("; ")}`);
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Toplu denkleştirme yapılamadı");
+    } finally {
+      setTopluDenklestirme("kapali");
+    }
+  }
   const [formAcik, setFormAcik] = useState(yeniSayfasi);
   useEffect(() => { if (yeniSayfasi) setFormAcik(true); }, [yeniSayfasi]);
   const [detay, setDetay] = useState<CariDetay | null>(null);
@@ -989,6 +1009,7 @@ export default function CariSayfasi() {
             {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/gruplar">🏢 Cari Grupları</ButtonLabel>}
             {!yeniSayfasi && !detaySayfasi && <ButtonLabel as="a" href="/panel/cari/mutabakatlar">🤝 Mutabakatlar</ButtonLabel>}
             {!yeniSayfasi && !detaySayfasi && <Button onClick={() => setIceAktarAcik(true)}>📥 Excel&apos;den İçe Aktar</Button>}
+            {!yeniSayfasi && !detaySayfasi && yonetici && <Button onClick={() => setTopluDenklestirme("onay")}>⚖ Toplu denkleştir</Button>}
             {(yeniSayfasi || detaySayfasi) ? <Button onClick={() => router.push("/panel/cari")}>Listeye dön</Button> : <ButtonLabel as="a" role="button" variant="primary" href="/panel/cari/yeni">➕ Yeni Cari</ButtonLabel>}
           </>
         }
@@ -996,6 +1017,19 @@ export default function CariSayfasi() {
 
       <Alert tone="error">{hata}</Alert>
       <Alert tone="success">{basari}</Alert>
+
+      {topluDenklestirme !== "kapali" && (
+        <HizliKayitPaneli baslik="Bütün carileri vadeye göre denkleştir" onKapat={() => { if (topluDenklestirme === "onay") setTopluDenklestirme("kapali"); }}>
+          <p style={{ margin: 0 }}>
+            Geçişten önce girilmiş ve faturaya bağlanmamış ödeme, çek ve iadeleri henüz dağıtılmamış bütün cariler, açık faturalarına vade sırasıyla denkleştirilir. Faturaya elle bağlanmış ödemeler değişmez.
+          </p>
+          <p className="muted" style={{ margin: 0, fontSize: "0.85rem" }}>Tek bir cariyi önizleyerek denkleştirmek için cari kartındaki &quot;Vadeye göre denkleştir&quot; düğmesini kullanın.</p>
+          <div className="quick-panel__actions">
+            <Button type="button" disabled={topluDenklestirme === "calisiyor"} onClick={() => setTopluDenklestirme("kapali")}>Vazgeç</Button>
+            <Button type="button" variant="primary" disabled={topluDenklestirme === "calisiyor"} onClick={() => void topluDenklestir()}>{topluDenklestirme === "calisiyor" ? "Denkleştiriliyor…" : "Denkleştir"}</Button>
+          </div>
+        </HizliKayitPaneli>
+      )}
 
       {iceAktarAcik && !yeniSayfasi && !detaySayfasi && (
         <ExcelIceAktar onKapat={() => setIceAktarAcik(false)} onTamam={(m) => { setIceAktarAcik(false); setHata(""); setBasari(m); void yukle(); }} />
@@ -1123,9 +1157,18 @@ export default function CariSayfasi() {
           </div>
           <EylemCubugu etiket="Cari eylemleri">
             <Button size="sm" type="button" onClick={() => setAktifSekme("ekstre")}>📊 Ekstre</Button>
+            <Button size="sm" type="button" onClick={() => setDenklestirmeAcik(true)}>⚖ Vadeye göre denkleştir</Button>
             <Button size="sm" type="button" onClick={() => void kopyala(detay.id)}>📋 Kopyala</Button>
             <Button size="sm" type="button" variant={detay.karaListe ? undefined : "danger"} onClick={() => void karaListeDegistir()}>{detay.karaListe ? "✅ Blokajı Kaldır" : "🚫 Kara Listeye Al"}</Button>
           </EylemCubugu>
+
+          {denklestirmeAcik && (
+            <DenklestirmePaneli
+              cariId={detay.id}
+              onKapat={() => setDenklestirmeAcik(false)}
+              onUygulandi={(mesaj) => { setDenklestirmeAcik(false); setHata(""); setBasari(mesaj); void detayAc(detay.id, true); }}
+            />
+          )}
 
           <div style={{ marginTop: "1.25rem" }}>
             <Tabs<Sekme>

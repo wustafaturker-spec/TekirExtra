@@ -5,6 +5,7 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
+import { cariDenklestir, carileriDenklestir, elleKapamaYaz, kaynakKapamalariniCoz } from "../fatura/denklestirme";
 import { faturaKilitleVeKalaniGetir, mahsupAyir } from "../fatura/odeme-durumu";
 import { icYuzdeMatrah } from "../fatura/kur-farki-kural";
 import { kurZorunlu } from "../doviz/kur-coz";
@@ -239,6 +240,9 @@ export class KrediKartiService {
           kategori: FINANSMAN_KATEGORISI, kdvOrani: 0, saticiUnvan: kart.bankaAdi, belgeTuru: "dekont", kur,
         });
       }
+      // KSB-16: bağlanan kısım elle kapama; artanı tedarikçinin diğer faturalarına vadeyle dağılır.
+      if (girdi.faturaId && faturaMahsubu) await elleKapamaYaz(tx, { tenantId, cariId: cari.id, faturaId: girdi.faturaId, tutar: faturaMahsubu, kaynak: { krediKartiHareketId: hareket.id } });
+      await cariDenklestir(tx, tenantId, cari.id);
       return hareket;
     });
   }
@@ -301,6 +305,7 @@ export class KrediKartiService {
           await tx.kasaBankaHareket.delete({ where: { id: h.bankaHareket.id } });
         }
         await iz("kredi_karti_hareketi_silindi");
+        await carileriDenklestir(tx, tenantId, [h.cariId]);
         return { yontem: "silindi" as const };
       }
 
@@ -335,6 +340,8 @@ export class KrediKartiService {
         });
       }
       await iz("kredi_karti_hareketi_ters_kayit", { tersHareketId: ters.id, neden: kapali ? "mali_donem_kapali" : "ekstre_kesinlesti" });
+      await kaynakKapamalariniCoz(tx, { krediKartiHareketIdler: [h.id] });
+      await carileriDenklestir(tx, tenantId, [h.cariId]);
       return { yontem: "ters_kayit" as const, ekstreKesinlesti: !kapali };
     });
   }
