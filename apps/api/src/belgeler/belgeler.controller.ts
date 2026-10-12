@@ -235,4 +235,15 @@ export class BelgelerController {
     res.setHeader("Content-Disposition", `inline; filename="${pdf.dosyaAdi}"`);
     res.send(pdf.buffer);
   }
+
+  /** FTR-36: onaylı satış belgesini PDF ekiyle e-postala; adres boşsa cari kartındaki. */
+  @Post(":id/pdf-gonder")
+  @Roller("muhasebe", "satis")
+  async pdfGonder(@Param("id") id: string, @Body() govde: { eposta?: string }) {
+    const eposta = govde?.eposta;
+    if (eposta !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(eposta)) {
+      throw new BadRequestException("Geçersiz e-posta adresi");
+    }
+    return this.belgelerService.pdfGonder(id, eposta);
+  }
 }

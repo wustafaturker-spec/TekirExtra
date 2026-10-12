@@ -319,6 +319,10 @@ export default function BelgelerSayfasi() {
   const [onayBekleyen, setOnayBekleyen] = useState<BelgeDetay | null>(null);
   /** EBLG-90: GİB'e ulaşmış e-İrsaliyenin iptalinde yasal yolu hatırlatan onay. */
   const [iptalUyarisi, setIptalUyarisi] = useState<{ id: string; metin: string } | null>(null);
+  /** FTR-36: e-postayla gönderilecek belge; adres boşsa cari kartındaki kullanılır. */
+  const [epostaBelgesi, setEpostaBelgesi] = useState<BelgeDetay | null>(null);
+  const [epostaAdresi, setEpostaAdresi] = useState("");
+  const [epostaGonderiliyor, setEpostaGonderiliyor] = useState(false);
   const [donusumBekleyen, setDonusumBekleyen] = useState<{ belge: BelgeDetay; hedef: "siparis" | "irsaliye" | "fatura" } | null>(null);
   /** SAT-10: siparişten irsaliyeye dönüşümde satır başına teslim miktarı. */
   const [teslimMiktarlari, setTeslimMiktarlari] = useState<Record<string, string>>({});
@@ -1019,6 +1023,23 @@ export default function BelgelerSayfasi() {
     }
   }
 
+  async function epostaGonder() {
+    if (!epostaBelgesi) return;
+    setHata(""); setBasari(""); setEpostaGonderiliyor(true);
+    try {
+      const yanit = await api<{ alici: string; belge: "ebelge" | "sistem" }>(`/belgeler/${epostaBelgesi.id}/pdf-gonder`, {
+        method: "POST",
+        body: JSON.stringify(epostaAdresi.trim() === "" ? {} : { eposta: epostaAdresi.trim() }),
+      });
+      setBasari(`${belgeNoGoster(epostaBelgesi)} ${yanit.belge === "ebelge" ? "e-İrsaliye görünümü" : "PDF'i"} ${yanit.alici} adresine gönderildi.`);
+      setEpostaBelgesi(null); setEpostaAdresi("");
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "E-posta gönderilemedi");
+    } finally {
+      setEpostaGonderiliyor(false);
+    }
+  }
+
   function seciliDegistir(id: string) {
     setSecili((eski) => {
       const y = new Set(eski);
@@ -1622,6 +1643,9 @@ export default function BelgelerSayfasi() {
             {/* FTR-34: onaylı, siparişe dönüşmemiş teklif yeni sürümle değiştirilir. */}
             {revizyonEngeli(detay) === null && <Button size="sm" type="button" onClick={() => void revizeEt(detay.id)}>📝 Revize et</Button>}
             <Button size="sm" type="button" onClick={() => void pdfAc(detay.id)}>🖨 PDF</Button>
+            {detay.yon === "satis" && ["onaylandi", "kismen_kapandi", "kapandi"].includes(detay.durum) && (
+              <Button size="sm" type="button" onClick={() => { setEpostaAdresi(""); setEpostaBelgesi(detay); }}>✉ E-postayla gönder</Button>
+            )}
             <EylemMenusu>
               <Button size="sm" type="button" onClick={() => void eylem(detay.id, "kopyala", "Belge kopyalandı (taslak).")}>📋 Kopyala</Button>
               {(detay.durum === "onaylandi" || detay.durum === "kismen_kapandi") && <Button variant="danger" size="sm" type="button" onClick={() => { const metin = irsaliyeIptalUyarisi(detay); if (metin) setIptalUyarisi({ id: detay.id, metin }); else void eylem(detay.id, "iptal", "Belge iptal edildi."); }}>İptal et</Button>}
@@ -1929,6 +1953,26 @@ export default function BelgelerSayfasi() {
           onKapat={() => setTasimaPaneli(null)}
           onKaydedildi={(mesaj) => { const id = tasimaPaneli.id; setTasimaPaneli(null); setHata(""); setBasari(mesaj); void detayAc(id); void yukle(); }}
         />
+      )}
+
+      {epostaBelgesi && (
+        <HizliKayitPaneli baslik={`${TUR_ADI[epostaBelgesi.tur]} e-postayla gönder`} onKapat={() => setEpostaBelgesi(null)}>
+          <p className="muted" style={{ margin: 0 }}>
+            {belgeNoGoster(epostaBelgesi)} · {epostaBelgesi.cari.unvan} · {tl(epostaBelgesi.genelToplam, epostaBelgesi.dovizCinsi)}
+          </p>
+          <p className="muted" style={{ fontSize: "0.85rem", margin: 0 }}>
+            {epostaBelgesi.eirsaliye && epostaBelgesi.eirsaliye.durum !== "hata"
+              ? "Ek: GİB'e iletilen e-İrsaliyenin görünümü."
+              : "Ek: belgenin PDF çıktısı."}
+          </p>
+          <Field label="Alıcı e-posta">
+            <Input type="email" value={epostaAdresi} onChange={(e) => setEpostaAdresi(e.target.value)} placeholder="Boş bırakılırsa cari kartındaki adres kullanılır" />
+          </Field>
+          <div className="quick-panel__actions">
+            <Button type="button" onClick={() => setEpostaBelgesi(null)}>Vazgeç</Button>
+            <Button type="button" variant="primary" disabled={epostaGonderiliyor} onClick={() => void epostaGonder()}>{epostaGonderiliyor ? "Gönderiliyor…" : "Gönder"}</Button>
+          </div>
+        </HizliKayitPaneli>
       )}
 
       {iptalUyarisi && (

@@ -962,3 +962,60 @@ describe("teklif revizyonu (FTR-34)", () => {
     await expect(servis.donustur("t1", "siparis")).rejects.toThrow(/yalnız son sürüm/);
   });
 });
+
+describe("BelgelerService.pdfGonder (FTR-36)", () => {
+  const kayit = (ek: Record<string, unknown> = {}) => ({
+    tur: "teklif", yon: "satis", durum: "onaylandi", no: "TKF2026000020", revizyonNo: null,
+    gecerlilikTarihi: new Date("2026-10-27"), cari: { unvan: "KARSEL LTD.", eposta: "cari@ornek.local" }, eirsaliye: null, ...ek,
+  });
+  const kur = (belge: Record<string, unknown> | null, gorunum?: { gidenIrsaliyePdf: ReturnType<typeof vi.fn> }) => {
+    const tx = { belge: { findUnique: vi.fn().mockResolvedValue(belge) } };
+    const prisma = { tenantIslem: vi.fn((_t, calistir) => calistir(tx)) } as any;
+    const eposta = { ekliIletiGonder: vi.fn().mockResolvedValue(undefined) };
+    const servis = new BelgelerService(prisma, {} as any, {} as any, {} as any, undefined, undefined, eposta as any, (gorunum ? { get: () => gorunum } : undefined) as any);
+    vi.spyOn(servis, "pdfUret").mockResolvedValue({ buffer: Buffer.from("pdf"), dosyaAdi: "belge-TKF2026000020.pdf" });
+    return { servis, eposta };
+  };
+
+  it("teklifi cari adresine geçerlilik tarihiyle gönderir", async () => {
+    const { servis, eposta } = kur(kayit());
+    await expect(servis.pdfGonder("b1")).resolves.toEqual({ gonderildi: true, alici: "cari@ornek.local", belge: "sistem" });
+    const ileti = eposta.ekliIletiGonder.mock.calls[0][0];
+    expect(ileti.konu).toBe("Satış Teklifi TKF2026000020");
+    expect(ileti.metin).toContain("27.10.2026 tarihine kadar geçerlidir");
+    expect(ileti.ekler[0].dosyaAdi).toBe("belge-TKF2026000020.pdf");
+  });
+
+  it("elle yazılan adres cari adresinin önüne geçer", async () => {
+    const { servis, eposta } = kur(kayit());
+    await servis.pdfGonder("b1", "baska@ornek.local");
+    expect(eposta.ekliIletiGonder.mock.calls[0][0].alici).toBe("baska@ornek.local");
+  });
+
+  it.each([
+    [{ durum: "taslak", no: null }, /Taslak/],
+    [{ durum: "iptal" }, /İptal/],
+    [{ durum: "revize_edildi" }, /yeni sürümü/],
+    [{ yon: "alis" }, /satış belgeleri/],
+    [{ cari: { unvan: "X", eposta: null } }, /Alıcı e-postası yok/],
+  ])("gönderilemeyen belgeyi reddeder %#", async (ek, hata) => {
+    const { servis, eposta } = kur(kayit(ek));
+    await expect(servis.pdfGonder("b1")).rejects.toThrow(hata);
+    expect(eposta.ekliIletiGonder).not.toHaveBeenCalled();
+  });
+
+  it("GİB'e iletilmiş e-İrsaliyede resmî görünümü ekler", async () => {
+    const gorunum = { gidenIrsaliyePdf: vi.fn().mockResolvedValue({ buffer: Buffer.from("resmi"), dosyaAdi: "irsaliye-GBZ1.pdf" }) };
+    const { servis, eposta } = kur(kayit({ tur: "irsaliye", no: "GBZ1", gecerlilikTarihi: null, eirsaliye: { durum: "iletildi" } }), gorunum);
+    await expect(servis.pdfGonder("b1")).resolves.toMatchObject({ belge: "ebelge" });
+    expect(eposta.ekliIletiGonder.mock.calls[0][0]).toMatchObject({ konu: "e-İrsaliye GBZ1", ekler: [{ dosyaAdi: "irsaliye-GBZ1.pdf" }] });
+  });
+
+  it("hatalı e-İrsaliyede kendi çıktımızı ekler", async () => {
+    const gorunum = { gidenIrsaliyePdf: vi.fn() };
+    const { servis, eposta } = kur(kayit({ tur: "irsaliye", no: "GBZ1", gecerlilikTarihi: null, eirsaliye: { durum: "hata" } }), gorunum);
+    await servis.pdfGonder("b1");
+    expect(gorunum.gidenIrsaliyePdf).not.toHaveBeenCalled();
+    expect(eposta.ekliIletiGonder.mock.calls[0][0].konu).toBe("Sevk İrsaliyesi GBZ1");
+  });
+});

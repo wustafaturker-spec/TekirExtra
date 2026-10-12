@@ -6,6 +6,7 @@ import {
   NotFoundException,
   Optional
 } from "@nestjs/common";
+import { ModuleRef } from "@nestjs/core";
 import { BelgeTur, Prisma, ZincirBelgeDurum } from "@prisma/client";
 import { faturaHesapla, idisNormalize, bugunTR, faturaGecikmeUyarilari, IRSALIYE_FATURA_GUN_SAYISI, IRSALIYE_FATURA_TIPI, irsaliyeFaturaFarklari, irsaliyeFaturaSuresi, irsaliyeSevkGunu, irsaliyeFaturaTipiUyarMi, irsaliyeKanali, irsaliyeIptalUyarisi, type FaturaHesaplaSatirGirdi, type KayitEylem, type DovizKodu } from "@tekirextra/shared";
 import type { z } from "zod";
@@ -17,6 +18,8 @@ import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { PrismaService } from "../core/prisma.service";
 import { DepoService } from "../stok/depo.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
+import { EbelgeGorunumService } from "../ebelge/ebelge-gorunum.service";
+import { EpostaService } from "../tenant/eposta.service";
 import { belgePdfHtml } from "./belge-pdf";
 import { durumGecmisiOku } from "../core/durum-gecmisi";
 import { ebelgeUygulamalariniOku } from "../ebelge/ebelge-uygulamalari.service";
@@ -128,6 +131,9 @@ export class BelgelerService {
     private readonly donemKilidi: DonemKilidiService,
     private readonly ayarlar?: AyarlarService,
     @Optional() private readonly mevzuat?: MevzuatService,
+    @Optional() private readonly eposta?: EpostaService,
+    // e-Belge modülü bu modülü içe aktarır; görünüm servisi döngü kurmadan çalışma anında alınır.
+    @Optional() private readonly moduleRef?: ModuleRef,
   ) {}
 
   // ─── FATURALAMA SÜRESİ (EBLG-82) ──────────────────────────────────────────
@@ -1453,6 +1459,47 @@ export class BelgelerService {
       belgePdfHtml(belge, { ...firma, tema }),
     );
     return { buffer, dosyaAdi: `belge-${belge.no ? `${belge.no}${belge.revizyonNo ? `-Rev${belge.revizyonNo}` : ""}` : "taslak"}.pdf` };
+  }
+
+  /**
+   * FTR-36: onaylı satış teklifi/siparişi/irsaliyesi müşteriye e-postayla
+   * gider. Alıcı verilmezse cari kartındaki adres kullanılır. GİB'e iletilmiş
+   * e-İrsaliyede resmî görünüm (EBLG-85), diğerlerinde kendi çıktımız eklenir.
+   */
+  async pdfGonder(id: string, aliciEposta?: string) {
+    if (!this.eposta) throw new Error("EpostaService yüklenmedi");
+    const { tenantId } = aktifBaglam();
+    const belge = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.belge.findUnique({
+        where: { id },
+        select: { tur: true, yon: true, durum: true, no: true, revizyonNo: true, gecerlilikTarihi: true, cari: { select: { unvan: true, eposta: true } }, eirsaliye: { select: { durum: true } } },
+      }),
+    );
+    if (!belge) throw new NotFoundException("Belge bulunamadı");
+    if (belge.yon !== "satis") throw new BadRequestException("Yalnız satış belgeleri e-postayla gönderilebilir");
+    if (belge.durum === "taslak" || !belge.no) throw new BadRequestException("Taslak belge gönderilemez; önce onaylayın");
+    if (belge.durum === "iptal") throw new BadRequestException("İptal edilmiş belge gönderilemez");
+    if (belge.durum === "revize_edildi") throw new BadRequestException("Bu teklifin yeni sürümü var; geçerli sürümü gönderin");
+    const alici = aliciEposta || belge.cari.eposta;
+    if (!alici) throw new BadRequestException("Alıcı e-postası yok: cari kartına e-posta ekleyin veya adres belirtin");
+
+    const gorunum = this.moduleRef?.get(EbelgeGorunumService, { strict: false });
+    const resmi = belge.tur === "irsaliye" && belge.eirsaliye && belge.eirsaliye.durum !== "hata" && gorunum
+      ? await gorunum.gidenIrsaliyePdf(id).catch((hata: unknown) => { if (hata instanceof NotFoundException) return null; throw hata; })
+      : null;
+    const { buffer, dosyaAdi } = resmi ?? (await this.pdfUret(id));
+    const no = belgeNoMetni(belge.no, belge.revizyonNo);
+    const ad = { teklif: "Satış Teklifi", siparis: "Satış Siparişi", irsaliye: resmi ? "e-İrsaliye" : "Sevk İrsaliyesi" }[belge.tur];
+    const gecerlilik = belge.tur === "teklif" && belge.gecerlilikTarihi
+      ? ` Teklifimiz ${belge.gecerlilikTarihi.toISOString().slice(0, 10).split("-").reverse().join(".")} tarihine kadar geçerlidir.`
+      : "";
+    await this.eposta.ekliIletiGonder({
+      alici,
+      konu: `${ad} ${no}`,
+      metin: `Sayın ${belge.cari.unvan},\n\n${no} numaralı ${ad.toLocaleLowerCase("tr-TR")} ekte yer almaktadır.${gecerlilik}\n\nİyi çalışmalar dileriz.`,
+      ekler: [{ dosyaAdi, icerik: buffer, mime: "application/pdf" }],
+    });
+    return { gonderildi: true, alici, belge: resmi ? "ebelge" as const : "sistem" as const };
   }
 
   // ─── GELEN e-İRSALİYE → ALIŞ İRSALİYESİ (SAT-12/13/14) ──────────────────
