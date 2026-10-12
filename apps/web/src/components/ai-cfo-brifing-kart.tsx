@@ -40,6 +40,7 @@ export function AiCfoBrifingKart() {
   const [soru, setSoru] = useState("");
   const [soruCevap, setSoruCevap] = useState<RaporYaniti | null>(null);
   const [soruYukleniyor, setSoruYukleniyor] = useState(false);
+  const [hata, setHata] = useState<string | null>(null);
   const [aktifSekme, setAktifSekme] = useState<"cfo_brifing" | "chat_bi">("cfo_brifing");
 
   useEffect(() => {
@@ -60,16 +61,18 @@ export function AiCfoBrifingKart() {
     const s = (ozelSoru || soru).trim();
     if (!s) return;
 
+    setSoru(s);
     setSoruYukleniyor(true);
     setAktifSekme("chat_bi");
+    setHata(null);
     try {
       const yanit = await api<RaporYaniti>("/ai/rapor/sor", {
         method: "POST",
         body: JSON.stringify({ soru: s }),
       });
       setSoruCevap(yanit);
-    } catch {
-      // Hata durumu
+    } catch (err: any) {
+      setHata(err?.message || "Rapor sorgulanırken bir hata oluştu.");
     } finally {
       setSoruYukleniyor(false);
     }
@@ -406,45 +409,144 @@ export function AiCfoBrifingKart() {
             </button>
           </div>
 
+          {/* Hata Uyarısı */}
+          {hata && (
+            <div
+              style={{
+                padding: "12px 16px",
+                backgroundColor: "#fef2f2",
+                border: "1px solid #fecaca",
+                borderRadius: "10px",
+                color: "#991b1b",
+                fontSize: "13px",
+                marginBottom: "16px",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+              }}
+            >
+              <AlertTriangle size={16} />
+              <span>{hata}</span>
+            </div>
+          )}
+
+          {/* Yükleniyor Durumu */}
+          {soruYukleniyor && (
+            <div
+              style={{
+                padding: "24px",
+                textAlign: "center",
+                color: "#059669",
+                fontSize: "13px",
+                backgroundColor: "#f0fdf4",
+                borderRadius: "12px",
+                border: "1px dashed #86efac",
+                marginBottom: "16px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "10px",
+              }}
+            >
+              <Sparkles size={18} style={{ animation: "pulse 1.5s infinite" }} />
+              <span>Finansal veriler taranıyor ve yapay zeka analiz raporu hazırlanıyor...</span>
+            </div>
+          )}
+
           {/* Soru Yanıt Kartı */}
           {soruCevap && (
             <div
               style={{
                 backgroundColor: "#f8fafc",
-                borderRadius: "12px",
-                padding: "16px",
+                borderRadius: "14px",
+                padding: "18px",
                 border: "1px solid #e2e8f0",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
-                <div style={{ fontWeight: 700, fontSize: "15px", color: "#0f172a" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px", borderBottom: "1px solid #e2e8f0", paddingBottom: "10px" }}>
+                <div style={{ fontWeight: 700, fontSize: "16px", color: "#0f172a", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <BarChart2 size={18} color="#059669" />
                   {soruCevap.baslik}
                 </div>
-                <div style={{ fontSize: "11px", color: "#64748b" }}>
+                <div style={{ fontSize: "12px", color: "#64748b", backgroundColor: "#ffffff", padding: "4px 10px", borderRadius: "12px", border: "1px solid #e2e8f0" }}>
                   Dönem: {soruCevap.donem}
                 </div>
               </div>
 
-              {/* İçgörüler */}
-              <div style={{ marginBottom: "14px", backgroundColor: "#ffffff", padding: "12px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
-                <div style={{ fontWeight: 600, fontSize: "12px", color: "#059669", marginBottom: "6px" }}>
-                  💡 AI Analitik İçgörüleri:
+              {/* Doğal Dilde AI Analiz Metni */}
+              {soruCevap.cevapMetni && (
+                <div
+                  style={{
+                    marginBottom: "16px",
+                    backgroundColor: "#ffffff",
+                    padding: "14px 16px",
+                    borderRadius: "12px",
+                    border: "1px solid #cbd5e1",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                  }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: "12px", color: "#0284c7", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <Sparkles size={15} /> Finansal Asistan Özeti & Değerlendirmesi:
+                  </div>
+                  <div style={{ fontSize: "13px", color: "#1e293b", lineHeight: 1.6, whiteSpace: "pre-line" }}>
+                    {soruCevap.cevapMetni}
+                  </div>
                 </div>
-                <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "13px", color: "#334155", lineHeight: 1.5 }}>
-                  {soruCevap.icgoruler.map((ic, i) => (
-                    <li key={i}>{ic}</li>
+              )}
+
+              {/* Metrik Rozetleri */}
+              {soruCevap.metrikler && Object.keys(soruCevap.metrikler).length > 0 && (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                    gap: "10px",
+                    marginBottom: "16px",
+                  }}
+                >
+                  {Object.entries(soruCevap.metrikler).map(([k, v]) => (
+                    <div
+                      key={k}
+                      style={{
+                        padding: "10px 14px",
+                        backgroundColor: "#ffffff",
+                        borderRadius: "10px",
+                        border: "1px solid #e2e8f0",
+                      }}
+                    >
+                      <div style={{ fontSize: "11px", color: "#64748b", textTransform: "capitalize" }}>
+                        {k.replace(/([A-Z])/g, " $1")}
+                      </div>
+                      <div style={{ fontSize: "15px", fontWeight: 700, color: "#0f172a", marginTop: "3px" }}>
+                        {typeof v === "number" ? `${v.toLocaleString("tr-TR")} TL` : String(v)}
+                      </div>
+                    </div>
                   ))}
-                </ul>
-              </div>
+                </div>
+              )}
+
+              {/* AI Analitik İçgörüleri */}
+              {soruCevap.icgoruler && soruCevap.icgoruler.length > 0 && (
+                <div style={{ marginBottom: "16px", backgroundColor: "rgba(16, 185, 129, 0.05)", padding: "14px", borderRadius: "10px", border: "1px solid rgba(16, 185, 129, 0.2)" }}>
+                  <div style={{ fontWeight: 700, fontSize: "12px", color: "#065f46", marginBottom: "6px" }}>
+                    💡 AI Analitik İçgörüleri:
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "13px", color: "#1e293b", lineHeight: 1.5 }}>
+                    {soruCevap.icgoruler.map((ic, i) => (
+                      <li key={i}>{ic}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {/* Tablo Çıktısı Varsa */}
               {soruCevap.tablo && soruCevap.tablo.length > 0 && (
                 <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", fontSize: "13px", borderCollapse: "collapse", backgroundColor: "#ffffff", borderRadius: "8px" }}>
+                  <table style={{ width: "100%", fontSize: "13px", borderCollapse: "collapse", backgroundColor: "#ffffff", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
                     <thead>
                       <tr style={{ backgroundColor: "#f1f5f9", textAlign: "left" }}>
                         {Object.keys(soruCevap.tablo[0]).map((kolon) => (
-                          <th key={kolon} style={{ padding: "8px 12px", borderBottom: "1px solid #e2e8f0", textTransform: "capitalize" }}>
+                          <th key={kolon} style={{ padding: "10px 14px", borderBottom: "1px solid #e2e8f0", textTransform: "capitalize", fontWeight: 600 }}>
                             {kolon}
                           </th>
                         ))}
@@ -454,7 +556,7 @@ export function AiCfoBrifingKart() {
                       {soruCevap.tablo.map((satir, satIndex) => (
                         <tr key={satIndex} style={{ borderBottom: "1px solid #f1f5f9" }}>
                           {Object.values(satir).map((val: any, valIndex) => (
-                            <td key={valIndex} style={{ padding: "8px 12px" }}>
+                            <td key={valIndex} style={{ padding: "10px 14px" }}>
                               {typeof val === "number" ? val.toLocaleString("tr-TR") : String(val)}
                             </td>
                           ))}
@@ -464,6 +566,41 @@ export function AiCfoBrifingKart() {
                   </table>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Başlangıç Yönlendirme Durumu */}
+          {!soruCevap && !soruYukleniyor && !hata && (
+            <div
+              style={{
+                padding: "36px 20px",
+                textAlign: "center",
+                backgroundColor: "#f8fafc",
+                borderRadius: "14px",
+                border: "1px dashed #cbd5e1",
+              }}
+            >
+              <div
+                style={{
+                  width: "48px",
+                  height: "48px",
+                  borderRadius: "50%",
+                  backgroundColor: "rgba(16, 185, 129, 0.12)",
+                  color: "#059669",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  margin: "0 auto 12px",
+                }}
+              >
+                <Sparkles size={24} />
+              </div>
+              <div style={{ fontWeight: 700, fontSize: "15px", color: "#0f172a", marginBottom: "6px" }}>
+                Doğal Dilde Finansal Raporlama (ChatBI)
+              </div>
+              <div style={{ fontSize: "13px", color: "#64748b", maxWidth: "480px", margin: "0 auto", lineHeight: 1.5 }}>
+                Yukarıdaki hazır soru haplarından birine tıklayabilir veya serbestçe şirketin cirosunu, vadesi geçen alacaklarını, nakit likiditesini ya da masraflarını sorabilirsiniz.
+              </div>
             </div>
           )}
         </div>

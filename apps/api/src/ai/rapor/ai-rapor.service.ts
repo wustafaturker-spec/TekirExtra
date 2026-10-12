@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "../../core/prisma.service";
+import { AiProviderFactory } from "../saglayici/ai-provider.factory";
 import {
   semantikCiroVeKarlilik,
   semantikEnCokSatanMusteriler,
@@ -49,37 +50,106 @@ export class AiRaporService {
   async soruCevapla(tenantId: string, soru: string): Promise<AiRaporYaniti> {
     const s = soru.trim().toLowerCase();
 
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
-      let sonuc: SemantikSorguSonucu;
+    // 1. Veritabanı sorguları ve tenant ayarını Prisma işlemi içinde güvenle alıp bağlantıyı serbest bırakıyoruz
+    const { sonuc, ayar } = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      let sorguSonucu: SemantikSorguSonucu;
 
-      if (s.includes("müşteri") || s.includes("musteri") || s.includes("en çok satan") || s.includes("en buyuk satis")) {
-        sonuc = await semantikEnCokSatanMusteriler(tx, tenantId, 5);
-      } else if (s.includes("alacak") || s.includes("vade") || s.includes("gecik") || s.includes("borçlu")) {
-        sonuc = await semantikVadesiGecmisAlacaklar(tx, tenantId);
-      } else if (s.includes("masraf") || s.includes("gider") || s.includes("harcama")) {
-        sonuc = await semantikMasrafKirilimi(tx, tenantId);
-      } else if (s.includes("nakit") || s.includes("kasa") || s.includes("banka") || s.includes("para")) {
-        sonuc = await semantikNakitDurumu(tx, tenantId);
+      if (
+        s.includes("alacak") ||
+        s.includes("vade") ||
+        s.includes("gecik") ||
+        s.includes("borçlu") ||
+        s.includes("tahsilat") ||
+        s.includes("riskli")
+      ) {
+        sorguSonucu = await semantikVadesiGecmisAlacaklar(tx, tenantId);
+      } else if (
+        s.includes("müşteri") ||
+        s.includes("musteri") ||
+        s.includes("en çok satan") ||
+        s.includes("en cok satan") ||
+        s.includes("lider cari")
+      ) {
+        sorguSonucu = await semantikEnCokSatanMusteriler(tx, tenantId, 5);
+      } else if (
+        s.includes("masraf") ||
+        s.includes("gider") ||
+        s.includes("harcama") ||
+        s.includes("maliyet")
+      ) {
+        sorguSonucu = await semantikMasrafKirilimi(tx, tenantId);
+      } else if (
+        s.includes("nakit") ||
+        s.includes("kasa") ||
+        s.includes("banka") ||
+        s.includes("para") ||
+        s.includes("likidite") ||
+        s.includes("mevduat")
+      ) {
+        sorguSonucu = await semantikNakitDurumu(tx, tenantId);
       } else {
         // Varsayılan: Ciro ve Kârlılık Analizi
-        sonuc = await semantikCiroVeKarlilik(tx, tenantId);
+        sorguSonucu = await semantikCiroVeKarlilik(tx, tenantId);
       }
 
-      // Doğal dilde açıklama metni oluştur
-      const cevapMetni = this.cevapMetniOlustur(soru, sonuc);
-
-      return {
-        soru,
-        baslik: sonuc.baslik,
-        raporTuru: sonuc.raporTuru,
-        donem: sonuc.donem,
-        metrikler: sonuc.metrikler,
-        tablo: sonuc.tablo,
-        grafikTuru: sonuc.grafikTuru,
-        icgoruler: sonuc.icgoruler,
-        cevapMetni,
-      };
+      const tenantAyar = tx.tenantAiAyari
+        ? await tx.tenantAiAyari.findUnique({ where: { tenantId } })
+        : null;
+      return { sonuc: sorguSonucu, ayar: tenantAyar };
     });
+
+    // 2. Doğal dilde temel açıklama metni oluştur
+    let cevapMetni = this.cevapMetniOlustur(soru, sonuc);
+
+    // 3. Eğer kiracının aktif bir AI sağlayıcısı (Gemini vb.) varsa metni akıllıca zenginleştir
+    // (Harici LLM HTTP çağrısı DB havuzunu kilitlememesi için işlem DIŞINDA çalıştırılır)
+    if (ayar?.apiKey) {
+      try {
+        const provider = AiProviderFactory.uret({
+          saglayici: ayar.saglayici,
+          apiKey: ayar.apiKey,
+          modelAdi: ayar.modelAdi,
+          baseUrl: ayar.baseUrl,
+        });
+
+        const aiPrompt = `
+Sen bir kurumsal CFO ve finansal analistsin.
+Kullanıcının Sorusu: "${soru}"
+
+Veritabanından güvenli ve doğrulanmış olarak çıkarılan finansal veriler:
+Rapor Başlığı: ${sonuc.baslik}
+Dönem: ${sonuc.donem}
+Metrikler: ${JSON.stringify(sonuc.metrikler, null, 2)}
+Önemli Bulgular: ${sonuc.icgoruler.join("; ")}
+${sonuc.tablo && sonuc.tablo.length > 0 ? `Tablo: ${JSON.stringify(sonuc.tablo.slice(0, 5), null, 2)}` : ""}
+
+Görev:
+Kullanıcının sorusuna doğrudan, nazik ve profesyonel bir finans yöneticisi diliyle yanıt ver.
+Rakamları Türk Lirası biçiminde açıkça belirt.
+Gerekirse 1-2 cümlelik pratik bir finansal öneri de ekle.
+Yanıtın net, özet ve anlaşılır olsun.
+        `.trim();
+
+        const zenginMetin = await provider.metinUret({ prompt: aiPrompt });
+        if (zenginMetin && zenginMetin.trim()) {
+          cevapMetni = zenginMetin.trim();
+        }
+      } catch (err) {
+        this.logger.warn(`AI Provider zenginleştirme hatası, deterministik yanıta dönülüyor: ${err}`);
+      }
+    }
+
+    return {
+      soru,
+      baslik: sonuc.baslik,
+      raporTuru: sonuc.raporTuru,
+      donem: sonuc.donem,
+      metrikler: sonuc.metrikler,
+      tablo: sonuc.tablo,
+      grafikTuru: sonuc.grafikTuru,
+      icgoruler: sonuc.icgoruler,
+      cevapMetni,
+    };
   }
 
   /**
