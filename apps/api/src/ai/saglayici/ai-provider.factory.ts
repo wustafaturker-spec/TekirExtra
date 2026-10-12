@@ -52,7 +52,7 @@ export class AiProviderFactory {
       case "gemini": {
         const geminiKey = config.apiKey || process.env.GEMINI_API_KEY;
         if (geminiKey) {
-          return new GeminiAiProvider(geminiKey, config.modelAdi || "gemini-1.5-flash");
+          return new GeminiAiProvider(geminiKey, config.modelAdi || "gemini-2.5-flash");
         }
         console.warn("[AiProviderFactory] GEMINI_API_KEY bulunamadı, MockAiProvider'a geri düşülüyor.");
         return new MockAiProvider();

@@ -11,9 +11,15 @@ export class GeminiAiProvider implements IAiProvider {
 
   constructor(apiKey?: string, model?: string) {
     this.apiKey = apiKey || process.env.GEMINI_API_KEY || "";
-    let secilenModel = (model || "gemini-1.5-flash").trim();
+    let secilenModel = (model || "gemini-2.5-flash").trim();
     if (secilenModel.startsWith("models/")) {
       secilenModel = secilenModel.replace(/^models\//, "");
+    }
+    // Kullanımdan kalkmış 1.5 modellerini güncel 2.5 sürümüne otomatik eşle
+    if (secilenModel === "gemini-1.5-flash") {
+      secilenModel = "gemini-2.5-flash";
+    } else if (secilenModel === "gemini-1.5-pro") {
+      secilenModel = "gemini-2.5-pro";
     }
     this.model = secilenModel;
   }

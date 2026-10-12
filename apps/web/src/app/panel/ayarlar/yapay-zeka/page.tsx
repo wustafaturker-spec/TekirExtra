@@ -239,7 +239,7 @@ export default function YapayZekaAyarlariSayfasi() {
                   placeholder={
                     saglayici === "openai" ? "gpt-4o-mini" :
                     saglayici === "anthropic" ? "claude-3-5-sonnet-20241022" :
-                    saglayici === "ollama" ? "llama3.2" : "gemini-1.5-flash"
+                    saglayici === "ollama" ? "llama3.2" : "gemini-2.5-flash"
                   }
                   value={modelAdi}
                   onChange={(e) => setModelAdi(e.target.value)}
