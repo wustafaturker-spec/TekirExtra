@@ -25,25 +25,16 @@ interface FiyatListesi { id: string; ad: string; dovizCinsi: string; aktif: bool
 interface Tavsiye {
   birimFiyat: number; kaynakFiyat: number; kaynakDoviz: string; belgeDovizi: string;
   belgeKuru: number; urunKuru: number | null; cevrilebilir: boolean; fiyatKaynagi: string; iskontoOrani: number;
-  aiOneri?: {
+  /** AI-12: kurala dayalı fiyat önerisi, belge dövizinde; maliyet bilinmiyorsa marj/taban yok. */
+  fiyatOnerisi?: {
     onerilenFiyat: number;
     paraBirimi: string;
-    altSinirFiyat: number;
+    altSinirFiyat: number | null;
     ustSinirFiyat: number;
     iskontoVeyaVadeFarkiOrani: number;
-    karMarjiYuzde?: number;
-    fiyatKaynagi?: string;
-    uyarilar?: string[];
-    kirilim: {
-      bazFiyat: number;
-      grupIskontosuYuzde: number;
-      miktarIskontosuYuzde: number;
-      efektifVadeGun: number;
-      vadeFinansmanMaliyetiYuzde: number;
-      asgariMaliyetKalkan: number;
-    };
+    karMarjiYuzde: number | null;
+    uyarilar: string[];
     gerekceler: string[];
-    guvenSkoru: number;
   } | null;
 }
 export interface UrunSecimSonucu {
@@ -189,45 +180,20 @@ export function UrunSecimModali({ acik, baslangicStokId, baslangicVaryantId, sto
         <div className="product-picker__results">{sonuclar.map((s) => <button type="button" key={s.id} onClick={() => stokSec(s.id)}><strong>{s.ad}</strong><span>{s.kod}</span><em>{Number(s.kullanilabilirMiktar ?? s.mevcutMiktar ?? 0).toLocaleString("tr-TR")} {birimKisaAdi(s.anaBirim ?? "adet")}</em></button>)}{!sonuclar.length && <p>Aramayla eşleşen ürün bulunamadı.</p>}</div>
       </div> : <div className="product-picker__body">
         {fiyat && <p className="product-picker__notice">Orijinal ürün fiyatı: <strong>{Number(fiyat.kaynakFiyat).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} {fiyat.kaynakDoviz}</strong>{kurTarihi && ` · TCMB döviz alış kuru: ${kurTarihi}`}</p>}
-        {fiyat?.aiOneri && (
-          <div className="product-picker__notice" style={{ backgroundColor: "#eff6ff", borderColor: "#bfdbfe", color: "#1e3a8a", padding: "8px 12px", borderRadius: "6px", marginBottom: "10px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-              <span style={{ fontWeight: 600 }}>✨ AI Dinamik Fiyat Önerisi: <strong>{fiyat.aiOneri.onerilenFiyat.toFixed(2)} {fiyat.aiOneri.paraBirimi}</strong></span>
-              <button
-                type="button"
-                onClick={() => {
-                  setBirimFiyat(String(fiyat.aiOneri!.onerilenFiyat));
-                  if (fiyat.aiOneri!.kirilim.grupIskontosuYuzde || fiyat.aiOneri!.kirilim.miktarIskontosuYuzde) {
-                    setIskonto(String(fiyat.aiOneri!.kirilim.grupIskontosuYuzde + fiyat.aiOneri!.kirilim.miktarIskontosuYuzde));
-                  }
-                }}
-                style={{ fontSize: "11px", backgroundColor: "#2563eb", color: "#fff", padding: "2px 8px", borderRadius: "4px", border: "none", cursor: "pointer" }}
-              >
-                Öneriyi Uygula
-              </button>
+        {fiyat?.fiyatOnerisi && (
+          <div className="product-picker__notice fiyat-onerisi">
+            <div className="fiyat-onerisi__ust">
+              <span>Fiyat önerisi: <strong>{fiyat.fiyatOnerisi.onerilenFiyat.toFixed(2)} {fiyat.fiyatOnerisi.paraBirimi}</strong> <small>(müşteri grubu, vade ve miktar kuralı)</small></span>
+              {/* Önerilen fiyat iskontolar düşülmüş net fiyattır; satıra ayrıca iskonto yazılmaz. */}
+              <Button size="sm" type="button" onClick={() => { setBirimFiyat(String(fiyat.fiyatOnerisi!.onerilenFiyat)); setIskonto("0"); }}>Öneriyi uygula</Button>
             </div>
-            <div style={{ fontSize: "11px", color: "#3b82f6", display: "flex", gap: "12px", alignItems: "center" }}>
-              <span>Alt Sınır (Stop-loss): {fiyat.aiOneri.altSinirFiyat.toFixed(2)}</span>
-              <span>Üst Sınır: {fiyat.aiOneri.ustSinirFiyat.toFixed(2)}</span>
-              <span>Net Değişim: %{fiyat.aiOneri.iskontoVeyaVadeFarkiOrani > 0 ? `+${fiyat.aiOneri.iskontoVeyaVadeFarkiOrani}` : fiyat.aiOneri.iskontoVeyaVadeFarkiOrani}</span>
-              {fiyat.aiOneri.karMarjiYuzde !== undefined && (
-                <span style={{ fontWeight: 600, color: fiyat.aiOneri.karMarjiYuzde < 15 ? "#dc2626" : "#16a34a" }}>
-                  Marj: %{fiyat.aiOneri.karMarjiYuzde.toFixed(1)}
-                </span>
-              )}
+            <div className="fiyat-onerisi__ayrinti">
+              {fiyat.fiyatOnerisi.altSinirFiyat !== null && <span>Taban: {fiyat.fiyatOnerisi.altSinirFiyat.toFixed(2)}</span>}
+              <span>Değişim: %{fiyat.fiyatOnerisi.iskontoVeyaVadeFarkiOrani > 0 ? `+${fiyat.fiyatOnerisi.iskontoVeyaVadeFarkiOrani}` : fiyat.fiyatOnerisi.iskontoVeyaVadeFarkiOrani}</span>
+              {fiyat.fiyatOnerisi.karMarjiYuzde !== null && <span className={fiyat.fiyatOnerisi.karMarjiYuzde < 15 ? "is-negatif" : "is-pozitif"}>Marj: %{fiyat.fiyatOnerisi.karMarjiYuzde.toFixed(1)}</span>}
             </div>
-            {fiyat.aiOneri.uyarilar && fiyat.aiOneri.uyarilar.length > 0 && (
-              <div style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "4px", padding: "6px 8px", marginTop: "6px" }}>
-                {fiyat.aiOneri.uyarilar.map((u, i) => (
-                  <div key={i} style={{ color: "#991b1b", fontSize: "11px", fontWeight: 500 }}>{u}</div>
-                ))}
-              </div>
-            )}
-            {fiyat.aiOneri.gerekceler.length > 0 && (
-              <ul style={{ margin: "4px 0 0", paddingLeft: "16px", fontSize: "11px", color: "#475569" }}>
-                {fiyat.aiOneri.gerekceler.map((g, i) => <li key={i}>{g}</li>)}
-              </ul>
-            )}
+            {fiyat.fiyatOnerisi.uyarilar.length > 0 && <ul className="fiyat-onerisi__uyari">{fiyat.fiyatOnerisi.uyarilar.map((u) => <li key={u}>{u}</li>)}</ul>}
+            {fiyat.fiyatOnerisi.gerekceler.length > 0 && <ul className="fiyat-onerisi__gerekce">{fiyat.fiyatOnerisi.gerekceler.map((g) => <li key={g}>{g}</li>)}</ul>}
           </div>
         )}
         {kurDurumu === "yukleniyor" && <p className="product-picker__notice">TCMB döviz alış kurları yükleniyor…</p>}

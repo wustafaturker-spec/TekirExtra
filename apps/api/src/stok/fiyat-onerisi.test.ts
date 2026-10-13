@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { aiDinamikFiyatHesapla } from "./ai-fiyat-motoru";
+import { fiyatOnerisiHesapla } from "./fiyat-onerisi";
 
-describe("AI Dinamik Fiyatlandırma ve Vade Riski Motoru Testleri", () => {
+describe("Fiyat önerisi (AI-12)", () => {
   it("peşin satışta bayi indirimini doğru uygular", () => {
-    const sonuc = aiDinamikFiyatHesapla({
+    const sonuc = fiyatOnerisiHesapla({
       stokId: "stk-1",
       bazFiyat: 100,
       paraBirimi: "TRY",
@@ -19,7 +19,7 @@ describe("AI Dinamik Fiyatlandırma ve Vade Riski Motoru Testleri", () => {
   });
 
   it("vadeli satışta aylık faiz maliyetini ve cari gecikmesini fiyata yansıtır", () => {
-    const sonuc = aiDinamikFiyatHesapla({
+    const sonuc = fiyatOnerisiHesapla({
       stokId: "stk-1",
       bazFiyat: 100,
       paraBirimi: "TRY",
@@ -38,7 +38,7 @@ describe("AI Dinamik Fiyatlandırma ve Vade Riski Motoru Testleri", () => {
   });
 
   it("yüksek iskonto durumunda asgari maliyet kalkanı (Stop-Loss) devreye girer", () => {
-    const sonuc = aiDinamikFiyatHesapla({
+    const sonuc = fiyatOnerisiHesapla({
       stokId: "stk-1",
       bazFiyat: 100,
       paraBirimi: "TRY",
@@ -50,6 +50,15 @@ describe("AI Dinamik Fiyatlandırma ve Vade Riski Motoru Testleri", () => {
 
     // Taban fiyat maliyet + %10 marjdan (99 TL) aşağı inemez
     expect(sonuc.onerilenFiyat).toBe(99);
-    expect(sonuc.gerekceler.some((g) => g.includes("Asgari kâr marjı kalkanı"))).toBe(true);
+    expect(sonuc.gerekceler.some((g) => g.includes("tabanına çekildi"))).toBe(true);
+  });
+
+  it("maliyet bilinmiyorsa marj ve taban üretmez, varsayım yapmaz", () => {
+    const sonuc = fiyatOnerisiHesapla({ stokId: "s", bazFiyat: 100, paraBirimi: "USD", maliyet: null, vadeGun: 0 });
+    expect(sonuc.karMarjiYuzde).toBeNull();
+    expect(sonuc.altSinirFiyat).toBeNull();
+    expect(sonuc.kirilim.asgariMaliyetKalkan).toBeNull();
+    expect(sonuc.uyarilar).toEqual([]);
+    expect(sonuc.onerilenFiyat).toBe(100);
   });
 });

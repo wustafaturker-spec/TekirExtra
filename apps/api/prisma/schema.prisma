@@ -334,8 +334,6 @@ model User {
   atananDuzeltmeKayitlari      DuzeltmeKaydi[]         @relation("DuzeltmeAtanan")
   cozduguDuzeltmeKayitlari     DuzeltmeKaydi[]         @relation("DuzeltmeCozen")
   duzeltmeOlaylari             DuzeltmeOlayi[]
-  telefon                      String?                 @map("telefon")
-  pinKodu                      String?                 @map("pin_kodu")
   ajanOturumlari               AjanOturumu[]
   aiOnayTalepleri              AiOnayTalebi[]
   aiMcpAnahtarlari             AiMcpAnahtari[]
@@ -5674,8 +5672,6 @@ model AjanOturumu {
   userId        String             @map("user_id") @db.Uuid
   kanal         String             // "WHATSAPP", "TELEGRAM", "EMAIL", "WEB"
   kanalKimlik   String             @map("kanal_kimlik") // Telefon no veya e-posta
-  pinKodu       String?            @map("pin_kodu")
-  pinDogrulandi Boolean            @default(false) @map("pin_dogrulandi")
   sonEtkilesim  DateTime           @default(now()) @map("son_etkilesim")
   createdAt     DateTime           @default(now()) @map("created_at")
 

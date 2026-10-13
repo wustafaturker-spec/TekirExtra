@@ -31,25 +31,14 @@ export class OllamaAiProvider implements IAiProvider {
       : "Yanıtını SADECE geçerli bir JSON formatında ver.";
 
     const endpoint = `${this.baseUrl}/api/generate`;
-    const yanit = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const veri = await saglayiciIstegi("Ollama", endpoint, {}, {
         model: this.model,
         prompt: `${systemPrompt}\n\nİstek: ${girdi.prompt}`,
         format: "json",
         stream: false,
         images: images.length > 0 ? images : undefined,
         options: { temperature: 0.1 },
-      }),
-    });
-
-    if (!yanit.ok) {
-      const hataMetni = await yanit.text();
-      throw new Error(`Ollama API Hatası (${yanit.status}): ${hataMetni}`);
-    }
-
-    const veri = (await yanit.json()) as any;
+      });
     const hamMetin = veri.response;
     if (!hamMetin) {
       throw new Error("Ollama API'den boş yanıt döndü.");
@@ -61,23 +50,12 @@ export class OllamaAiProvider implements IAiProvider {
 
   async metinUret(girdi: AiMultimodalGirdi): Promise<string> {
     const endpoint = `${this.baseUrl}/api/generate`;
-    const yanit = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const veri = await saglayiciIstegi("Ollama", endpoint, {}, {
         model: this.model,
         prompt: `${girdi.sistemRol ? `${girdi.sistemRol}\n\n` : ""}${girdi.prompt}`,
         stream: false,
         options: { temperature: 0.3 },
-      }),
-    });
-
-    if (!yanit.ok) {
-      const hataMetni = await yanit.text();
-      throw new Error(`Ollama API Hatası (${yanit.status}): ${hataMetni}`);
-    }
-
-    const veri = (await yanit.json()) as any;
+      });
     return veri.response || "";
   }
 

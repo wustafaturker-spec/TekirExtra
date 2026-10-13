@@ -172,7 +172,7 @@ export class AiAjanService {
         if (mevcut.userId !== userId) throw new ForbiddenException("Bu oturum başka bir kullanıcıya bağlı.");
         return mevcut;
       }
-      return tx.ajanOturumu.create({ data: { tenantId, userId, kanal: "WEB", kanalKimlik, pinDogrulandi: true } });
+      return tx.ajanOturumu.create({ data: { tenantId, userId, kanal: "WEB", kanalKimlik } });
     });
   }
 

@@ -1,6 +1,8 @@
 import { Injectable, BadRequestException, Logger } from "@nestjs/common";
 import { PrismaService } from "../../core/prisma.service";
 import { AiProviderFactory, TenantAiYapilandirma, kiraciAdresiHatasi } from "../saglayici/ai-provider.factory";
+import { apiAnahtariMaskele, apiAnahtariSifrele, ayardanYapilandirma, maskeliMi } from "../saglayici/kiraci-saglayici";
+import { hassasCoz } from "../../personel/personel-hassas";
 
 export interface TenantAiAyariGirdi {
   saglayici?: string;
@@ -50,8 +52,8 @@ export class TenantAiService {
 
     return {
       ...ayar,
-      // API key'i güvenlik için kısmi maskele
-      apiKey: ayar.apiKey ? `${ayar.apiKey.slice(0, 4)}...${ayar.apiKey.slice(-4)}` : null,
+      // AI-11: yalnız son 4 karakter görünür.
+      apiKey: apiAnahtariMaskele(ayar.apiKey),
       hasApiKey: Boolean(ayar.apiKey),
     };
   }
@@ -67,10 +69,10 @@ export class TenantAiService {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const mevcut = await tx.tenantAiAyari.findUnique({ where: { tenantId } });
 
-      let yeniApiKey = girdi.apiKey;
-      // Eğer kullanıcı masked key gönderdiyse veya boşsa ve eskisi varsa eskisini koru
-      if (girdi.apiKey && girdi.apiKey.includes("...") && mevcut?.apiKey) {
-        yeniApiKey = mevcut.apiKey;
+      // Maske geri geldiyse anahtar değişmemiştir; yeni anahtar şifrelenerek saklanır (AI-11).
+      let yeniApiKey: string | null | undefined = girdi.apiKey === undefined ? undefined : apiAnahtariSifrele(girdi.apiKey);
+      if (girdi.apiKey && maskeliMi(girdi.apiKey)) {
+        yeniApiKey = mevcut?.apiKey ? apiAnahtariSifrele(hassasCoz(mevcut.apiKey)) : null;
       }
 
       return tx.tenantAiAyari.upsert({
@@ -103,11 +105,11 @@ export class TenantAiService {
     try {
       // Eğer apiKey maskeli gelmişse ve DB'de varsa gerçeğini çek
       let testKey = girdi.apiKey;
-      if (!testKey || testKey.includes("...")) {
+      if (!testKey || maskeliMi(testKey)) {
         const mevcut = await this.prisma.tenantIslem(tenantId, (tx) =>
           tx.tenantAiAyari.findUnique({ where: { tenantId } }),
         );
-        if (mevcut?.apiKey) testKey = mevcut.apiKey;
+        if (mevcut?.apiKey) testKey = hassasCoz(mevcut.apiKey);
       }
 
       const provider = AiProviderFactory.uret({
@@ -205,7 +207,7 @@ export class TenantAiService {
       tx.tenantAiAyari.findUnique({ where: { tenantId } }),
     );
 
-    const provider = AiProviderFactory.uret(ayar || undefined);
+    const provider = AiProviderFactory.uret(ayar ? ayardanYapilandirma(ayar) : undefined);
 
     const sistemRol = `
 Sen TekirExtra ön muhasebe ve ERP yöneticisinin otonom yapay zeka asistanısın.

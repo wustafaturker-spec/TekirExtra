@@ -13,6 +13,7 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { ayarTanimiAl } from "../core/ayarlar/ayar-kayit";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
+import { fiyatOnerisiHesapla } from "./fiyat-onerisi";
 import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
 import { bugunTR, metinNormalize, vergiTuruBul, type DovizKodu } from "@tekirextra/shared";
@@ -397,59 +398,51 @@ export class StokService {
     const cevrilebilir = kaynakDoviz === dovizCinsi || (belgeKurDegeri > 0 && kaynakKurDegeri > 0);
     const cevrilmisFiyat = kaynakDoviz === dovizCinsi ? birimFiyat : cevrilebilir ? birimFiyat * kaynakKurDegeri / belgeKurDegeri : null;
 
-    // AI Dinamik Fiyatlandırma ve Vade Tahmin Motoru (Opsiyonel / Zenginleştirilmiş)
-    let aiOneri = null;
-    if (tip === "satis" && (cevrilmisFiyat ?? birimFiyat) > 0) {
-      const { aiDinamikFiyatHesapla } = await import("../ai/fiyatlandirma/ai-fiyat-motoru");
-      
-      // Carinin grubu ve varsa geçmiş hareket gecikmesi
-      let cariGrupAdi: string | null = null;
-      let ortalamaGecikme: number | null = null;
+    // AI-12: kurala dayalı fiyat önerisi. Bütün tutarlar belge dövizinde; fiyat
+    // çevrilemiyorsa öneri üretilmez, maliyet çevrilemiyorsa varsayım yapılmaz.
+    let fiyatOnerisi = null;
+    if (tip === "satis" && cevrilmisFiyat !== null && cevrilmisFiyat > 0) {
+      const cariGrupAdi = cariId
+        ? (await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findUnique({ where: { id: cariId }, select: { grup: { select: { ad: true } } } })))?.grup?.ad ?? null
+        : null;
 
-      if (cariId) {
-        const cariDetay = await this.prisma.tenantIslem(tenantId, (tx) =>
-          tx.cariHesap.findUnique({
-            where: { id: cariId },
-            include: { grup: { select: { ad: true } } },
-          }),
-        );
-        cariGrupAdi = cariDetay?.grup?.ad ?? null;
-      }
+      // Maliyet: kartın alış fiyatı, belge dövizine çevrilebiliyorsa.
+      const alis = stok.alisFiyati === null ? null : Number(stok.alisFiyati);
+      const alisDoviz = stok.alisFiyatiDoviz;
+      const maliyet = alis === null || alis <= 0 ? null
+        : alisDoviz === dovizCinsi ? alis
+        : alisDoviz === "TRY" && belgeKurDegeri > 0 ? alis / belgeKurDegeri
+        : alisDoviz === kaynakDoviz && kaynakKurDegeri > 0 && belgeKurDegeri > 0 ? alis * kaynakKurDegeri / belgeKurDegeri
+        : null;
 
-      const baz = Number(cevrilmisFiyat ?? birimFiyat);
-      const maliyet = Number(stok.alisFiyati ?? (baz * 0.7));
+      // Geçmiş: aynı dövizdeki son 10 kesin satış, tarih sırasıyla, satır iskontosu düşülmüş.
+      const sonSatislar = await this.prisma.tenantIslem(tenantId, (tx) =>
+        tx.faturaSatir.findMany({
+          where: { stokId, fatura: { tip: "satis", durum: "kesin", dovizCinsi: dovizCinsi as never } },
+          orderBy: { fatura: { tarih: "desc" } },
+          select: { birimFiyat: true, iskontoOrani: true },
+          take: 10,
+        }),
+      );
+      const ortalamaSatisFiyati = sonSatislar.length
+        ? Math.round((sonSatislar.reduce((t, x) => t + Number(x.birimFiyat) * (1 - Number(x.iskontoOrani) / 100), 0) / sonSatislar.length) * 100) / 100
+        : null;
 
-      // Geçmiş faturalardan ürünün ortalama satış fiyatını sorgula (varsa)
-      let ortalamaSatisFiyati: number | null = null;
-      try {
-        const sonSatislar = await this.prisma.tenantIslem(tenantId, (tx) =>
-          tx.faturaSatir.findMany({
-            where: { stokId, fatura: { tip: "satis", durum: { not: "iptal" } } },
-            select: { birimFiyat: true },
-            take: 10,
-          }),
-        );
-        if (sonSatislar && sonSatislar.length > 0) {
-          const toplam = sonSatislar.reduce((t: number, s: { birimFiyat: Prisma.Decimal }) => t + Number(s.birimFiyat), 0);
-          ortalamaSatisFiyati = Math.round((toplam / sonSatislar.length) * 100) / 100;
-        }
-      } catch {
-        // ortalama fiyat yoksa sessizce devam
-      }
-
-      aiOneri = aiDinamikFiyatHesapla({
+      // Taban: carinin iskontosu düşülmüş fiyat; öneri uygulanınca satıra ayrıca iskonto yazılmaz.
+      fiyatOnerisi = fiyatOnerisiHesapla({
         stokId,
-        bazFiyat: baz,
+        bazFiyat: cevrilmisFiyat * (1 - iskontoOrani / 100),
         paraBirimi: dovizCinsi,
         maliyet,
         ortalamaSatisFiyati,
         fiyatListesindenGeldi: fiyatKaynagi === "fiyat_listesi",
-        fiyatListesiAdi: fiyatKaynagi === "fiyat_listesi" ? "Özel Fiyat Listesi" : null,
+        fiyatListesiAdi: fiyatKaynagi === "fiyat_listesi" ? "Cariye tanımlı fiyat listesi" : null,
         vadeGun: Number(vadeGun || 0),
         miktar: Number(miktar || 1),
         musteriGrubu: cariGrupAdi,
-        cariOrtalamaGecikmeGun: ortalamaGecikme,
+        cariOrtalamaGecikmeGun: null,
       });
+      if (iskontoOrani > 0) fiyatOnerisi.gerekceler.unshift(`Carinin %${iskontoOrani} iskontosu tabana yansıtıldı.`);
     }
 
     return {
@@ -462,7 +455,7 @@ export class StokService {
       cevrilebilir,
       fiyatKaynagi,
       iskontoOrani,
-      aiOneri,
+      fiyatOnerisi,
     };
   }
 

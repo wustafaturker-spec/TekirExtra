@@ -47,13 +47,13 @@ doğru fikirler taşıyor. Ancak modül **bugünkü hâliyle üretime çıkamaz*
 | P1-2 | "ONAYLA" kiracıdaki herhangi bir kullanıcının son taslak teklifini onaylıyor | ✅ AI-04: kesinleştiren işlem yalnız onay talebi açar; talebi yalnız isteyen kullanıcı düğmeyle onaylar (yazı onay sayılmaz), 24 saat, tek sefer, denetim kaydı + bildirim |
 | P1-3 | ChatBI/brifing rakamları yanlış ve rapor modülüyle tutarsız | ✅ AI-08: semantik katman silindi; asistan rapor araçlarıyla, yönetici özeti finansal özet + gelir-gider + vadesi geçenler uçlarından. Canlıda: 1–13 Ekim net kâr özet ve asistanda aynı (112.411,86 TL). Ek bulgu: Gemini `metinUret` sistem talimatını göndermiyordu (düzeltildi); model "bu ay" için ay sonunu seçip ileri tarihli tahakkukla farklı kâr veriyordu (araç bitişi bugüne çeker) |
 | P1-4 | AI uçlarında rol denetimi yok | ✅ AI-02: araçlar ucun `@Roller` ve e-Belge uygulaması kuralıyla süzülür ve çağrılır; OCR `muhasebe`, ChatBI/brifing finans rolleri; `/panel/ai` iç rollere açık |
-| P1-5 | PIN tasarımı işlevsiz ve zayıf | Kısmen (AI-10): PIN akışı ve uçları kodda kalktı; boş kolonlar AI-10 göçüyle silinecek |
-| P1-6 | Dinamik fiyat motoru: para birimi karışıyor, girdiler sabit | Açık |
-| P1-7 | API anahtarı düz metin; sağlayıcı hata gövdesi kullanıcıya dönüyor | Açık |
+| P1-5 | PIN tasarımı işlevsiz ve zayıf | ✅ AI-10: PIN akışı, uçları ve şema alanları kalktı; boş kolonları silen göç yazıldı (uygulama kullanıcı onayında) |
+| P1-6 | Dinamik fiyat motoru: para birimi karışıyor, girdiler sabit | ✅ AI-12: `stok/fiyat-onerisi.ts` (AI adı yok); fiyat çevrilemiyorsa öneri yok, maliyet belge dövizine çevrilir, bilinmiyorsa marj/taban yok; ortalama aynı dövizdeki son 10 kesin satıştan, tarih sırasıyla; cari iskontosu tabana yansır. Ek bulgu düzeltildi: "Öneriyi uygula" iskontoyu ikinci kez satıra yazıyordu. Grup iskontoları ve finansman oranı hâlâ kodda sabit |
+| P1-7 | API anahtarı düz metin; sağlayıcı hata gövdesi kullanıcıya dönüyor | ✅ AI-11: anahtar `hassasSifrele` ile (eski düz değer ilk kullanımda şifrelenir), ekranda `••••son4`; bütün sağlayıcı çağrıları `saglayiciIstegi` ile 60 sn zaman aşımı, hata gövdesi yalnız sunucu kaydında, Gemini anahtarı başlıkta |
 | P2-1 | Niyet çözümleme regex ile; "AI" adı yanıltıcı | ✅ AI-05: sağlayıcılara araç çağırma (Anthropic, OpenAI, Gemini, Ollama), en çok 8 tur; yanıt denetimi (aşağıda canlı bulgular) |
 | P2-2 | Ekranlar: Tailwind sınıfları, satır içi renkler, dar ekran, 2 MB gövde sınırı | Kısmen: asistan penceresi, mobil sayfa ve `/panel/ai` tek `AsistanSohbet` bileşeninde, token'larla; fiş/cari modalları, CFO kartı ve ayarlar sayfası kaldı |
 | P2-3 | OCR → masraf: çok oranlı KDV, belge görseli eklenmiyor, kategori eşleşmesi | Açık |
-| P2-4 | Sağlayıcı katmanı: emekli model adı, anahtar URL'de, zaman aşımı/maliyet sınırı yok | Açık |
+| P2-4 | Sağlayıcı katmanı: emekli model adı, anahtar URL'de, zaman aşımı/maliyet sınırı yok | Kısmen: Anthropic varsayılanı güncellendi, anahtar başlıkta, zaman aşımı var, araç çağırma yerleşik; kiracı başı kullanım/maliyet sınırı yok |
 | P2-5 | KVKK: kişisel/ticari veri yurt dışı LLM'e onaysız gidiyor; sohbet kaydı süresiz | Açık |
 | P2-6 | Ölü/kullanılmayan yapılar (`belge_ocr_kayitlari`, görev tetikleyicileri, WhatsApp webhook) | Kısmen: eski ajan araçları, MCP servisi, simülasyon/PIN uçları silindi; tablo ve görev tetikleyicileri kaldı |
 | P2-7 | Testler sahte Prisma ile; güvenlik ve RLS testi yok | Açık |

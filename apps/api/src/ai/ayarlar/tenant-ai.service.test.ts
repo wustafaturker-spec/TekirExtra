@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ServiceUnavailableException } from "@nestjs/common";
 import { TenantAiService } from "./tenant-ai.service";
+import { hassasCoz } from "../../personel/personel-hassas";
 
 describe("TenantAiService - BYOK, Kurallar ve Otonom Görevler", () => {
   let service: TenantAiService;
@@ -26,6 +27,7 @@ describe("TenantAiService - BYOK, Kurallar ve Otonom Görevler", () => {
       tenantIslem: vi.fn((_tenantId, callback) => callback(mockTx)),
     };
     service = new TenantAiService(mockPrisma);
+    vi.stubEnv("BAGLANTI_SIFRELEME_ANAHTARI", "a".repeat(64));
   });
 
   afterEach(() => {
@@ -47,7 +49,7 @@ describe("TenantAiService - BYOK, Kurallar ve Otonom Görevler", () => {
 
     expect(sonuc.saglayici).toBe("openai");
     expect(sonuc.hasApiKey).toBe(true);
-    expect(sonuc.apiKey).toBe("sk-1...5678"); // Maskelenmiş olmalı
+    expect(sonuc.apiKey).toBe("••••5678"); // AI-11: yalnız son 4 karakter
     expect(sonuc.ozelTalimatlar).toBe("Kaya Ltd'ye teklif verme.");
   });
 
@@ -69,6 +71,11 @@ describe("TenantAiService - BYOK, Kurallar ve Otonom Görevler", () => {
     });
 
     expect(mockTx.tenantAiAyari.upsert).toHaveBeenCalled();
+    // AI-11: anahtar şifreli saklanır, düz metin veritabanına gitmez.
+    const saklanan = mockTx.tenantAiAyari.upsert.mock.calls[0][0].create.apiKey as string;
+    expect(saklanan.startsWith("enc:v1:")).toBe(true);
+    expect(saklanan).not.toContain("sk-ant-123");
+    expect(hassasCoz(saklanan)).toBe("sk-ant-123");
     expect(kayit.saglayici).toBe("anthropic");
   });
 
@@ -137,5 +144,13 @@ describe("TenantAiService - BYOK, Kurallar ve Otonom Görevler", () => {
     for (const baseUrl of ["http://api.example.com/v1", "https://169.254.169.254", "https://localhost:11434", "https://postgres", "https://[::1]/v1"]) {
       await expect(service.ayarKaydet(mockTenantId, { saglayici: "openai", apiKey: "sk-x", baseUrl })).rejects.toThrow(/Sağlayıcı adresi/);
     }
+  });
+
+  it("7. Maske geri gelirse mevcut anahtar korunur", async () => {
+    const { hassasSifrele } = await import("../../personel/personel-hassas");
+    mockTx.tenantAiAyari.findUnique.mockResolvedValue({ tenantId: mockTenantId, apiKey: hassasSifrele("sk-gercek-1234") });
+    mockTx.tenantAiAyari.upsert.mockClear();
+    await service.ayarKaydet(mockTenantId, { saglayici: "openai", apiKey: "••••1234" });
+    expect(hassasCoz(mockTx.tenantAiAyari.upsert.mock.calls[0][0].update.apiKey)).toBe("sk-gercek-1234");
   });
 });

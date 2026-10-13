@@ -1,15 +1,14 @@
 /**
- * AI Dinamik Fiyatlandırma & Vade Risk Motoru
- *
- * Müşteri grubu, istenen vade günü, carinin geçmiş ödeme disiplini (gecikme gün sayısı)
- * ve ürün maliyetini (FIFO / Liste fiyatı) birleştirerek kârlılığı koruyan,
- * vadeli finansman maliyetini yansıtan fiyat tahmin motorudur.
+ * Fiyat önerisi (AI-12): müşteri grubu, vade ve miktara göre kurala dayalı
+ * öneri — yapay zekâ değildir. Bütün tutarlar belge dövizindedir; maliyet
+ * bilinmiyorsa marj denetimi ve taban fiyat üretilmez.
  */
 
 export interface FiyatlandirmaGirdisi {
   stokId: string;
   bazFiyat: number;
   paraBirimi: string;
+  /** Belge dövizinde birim maliyet; bilinmiyorsa null (varsayım yapılmaz). */
   maliyet?: number | null;
   /** Varsa ürünün geçmiş ortalama satış fiyatı */
   ortalamaSatisFiyati?: number | null;
@@ -31,10 +30,12 @@ export interface FiyatlandirmaGirdisi {
 export interface FiyatlandirmaSonucu {
   onerilenFiyat: number;
   paraBirimi: string;
-  altSinirFiyat: number; // Stop-loss: Bu fiyatın altına inilmemeli
+  /** Maliyet + %10 taban; maliyet bilinmiyorsa null. */
+  altSinirFiyat: number | null;
   ustSinirFiyat: number;
   iskontoVeyaVadeFarkiOrani: number; // Pozitif: Vade farkı / Negatif: İskonto
-  karMarjiYuzde: number; // Tahmini brüt kâr marjı yüzdesi
+  /** Brüt kâr marjı; maliyet bilinmiyorsa null. */
+  karMarjiYuzde: number | null;
   fiyatKaynagi: "fiyat_listesi" | "dinamik_hesap";
   uyarilar: string[]; // Kâr marjı düşüklüğü veya ortalama fiyat altı uyarıları
   kirilim: {
@@ -43,18 +44,18 @@ export interface FiyatlandirmaSonucu {
     miktarIskontosuYuzde: number;
     efektifVadeGun: number;
     vadeFinansmanMaliyetiYuzde: number;
-    asgariMaliyetKalkan: number;
+    asgariMaliyetKalkan: number | null;
   };
   gerekceler: string[];
   guvenSkoru: number;
 }
 
-export function aiDinamikFiyatHesapla(girdi: FiyatlandirmaGirdisi): FiyatlandirmaSonucu {
+export function fiyatOnerisiHesapla(girdi: FiyatlandirmaGirdisi): FiyatlandirmaSonucu {
   const gerekceler: string[] = [];
   const uyarilar: string[] = [];
   const aylikFaiz = girdi.aylikFinansmanOrani ?? 4.5; // Aylık %4.5 finansman maliyeti
   const bazFiyat = Math.max(0, girdi.bazFiyat);
-  const maliyet = girdi.maliyet && girdi.maliyet > 0 ? girdi.maliyet : bazFiyat * 0.7; // Maliyet bilinmiyorsa %30 marj varsay
+  const maliyet = girdi.maliyet && girdi.maliyet > 0 ? girdi.maliyet : null;
 
   let hesaplananFiyat = bazFiyat;
   let grupIskontosuYuzde = 0;
@@ -67,7 +68,7 @@ export function aiDinamikFiyatHesapla(girdi: FiyatlandirmaGirdisi): Fiyatlandirm
     fiyatKaynagi = "fiyat_listesi";
     hesaplananFiyat = bazFiyat;
     gerekceler.push(
-      `Cari hesaba tanımlı fiyat listesi (${girdi.fiyatListesiAdi || "Özel Liste"}) esas alındı: ${bazFiyat} ${girdi.paraBirimi}.`
+      `${girdi.fiyatListesiAdi || "Cariye tanımlı fiyat listesi"} esas alındı: ${bazFiyat.toFixed(2)} ${girdi.paraBirimi}.`
     );
 
     // Vadeli satışsa fiyat listesi üzerine sadece vade finansman farkı eklenebilir
@@ -124,25 +125,23 @@ export function aiDinamikFiyatHesapla(girdi: FiyatlandirmaGirdisi): Fiyatlandirm
     hesaplananFiyat = iskontoluFiyat * (1 + vadeFinansmanMaliyetiYuzde / 100);
   }
 
-  // 3. ASGARİ MALİYET GÜVENLİK KALKANI (STOP-LOSS)
-  const asgariMaliyetKalkan = Math.round(maliyet * 1.10 * 100) / 100;
-  if (hesaplananFiyat < asgariMaliyetKalkan) {
+  // 3. ASGARİ MALİYET KALKANI: yalnız maliyet biliniyorsa.
+  const asgariMaliyetKalkan = maliyet === null ? null : Math.round(maliyet * 1.10 * 100) / 100;
+  if (asgariMaliyetKalkan !== null && hesaplananFiyat < asgariMaliyetKalkan) {
     hesaplananFiyat = asgariMaliyetKalkan;
-    gerekceler.push(`⚠️ Asgari kâr marjı kalkanı devreye girdi: Fiyat maliyetin altına düşürülemez (${asgariMaliyetKalkan} ${girdi.paraBirimi}).`);
+    gerekceler.push(`Fiyat maliyet + %10 tabanına çekildi (${asgariMaliyetKalkan} ${girdi.paraBirimi}).`);
   }
 
   const onerilenFiyat = Math.round(hesaplananFiyat * 100) / 100;
-  const altSinirFiyat = Math.round(Math.max(asgariMaliyetKalkan, onerilenFiyat * 0.95) * 100) / 100;
+  const altSinirFiyat = asgariMaliyetKalkan === null ? null : Math.round(Math.max(asgariMaliyetKalkan, onerilenFiyat * 0.95) * 100) / 100;
   const ustSinirFiyat = Math.round((onerilenFiyat * 1.08) * 100) / 100;
 
-  // 4. KÂR MARJI KONTROLÜ VE UYARILAR
-  const karTutari = onerilenFiyat - maliyet;
-  const karMarjiYuzde = onerilenFiyat > 0 ? Math.round((karTutari / onerilenFiyat) * 1000) / 10 : 0;
-
-  if (karMarjiYuzde < 15) {
-    uyarilar.push(
-      `⚠️ Düşük Kâr Marjı Uyarısı: Bu fiyat ile brüt kâr marjı yalnızca %${karMarjiYuzde.toFixed(1)} seviyesinde kalmaktadır (Maliyet: ${maliyet.toFixed(2)} ${girdi.paraBirimi}).`
-    );
+  // 4. KÂR MARJI: maliyet bilinmiyorsa hesaplanmaz.
+  const karMarjiYuzde = maliyet === null || onerilenFiyat <= 0 ? null : Math.round(((onerilenFiyat - maliyet) / onerilenFiyat) * 1000) / 10;
+  if (maliyet === null) {
+    gerekceler.push("Maliyet bilinmediği için marj denetlenmedi.");
+  } else if (karMarjiYuzde !== null && karMarjiYuzde < 15) {
+    uyarilar.push(`Düşük kâr marjı: brüt marj %${karMarjiYuzde.toFixed(1)} (maliyet ${maliyet.toFixed(2)} ${girdi.paraBirimi}).`);
   }
 
   // 5. GEÇMİŞ ORTALAMA SATIŞ FİYATI KARŞILAŞTIRMASI VE UYARISI
@@ -151,7 +150,7 @@ export function aiDinamikFiyatHesapla(girdi: FiyatlandirmaGirdisi): Fiyatlandirm
     if (onerilenFiyat < ortalamaFiyat * 0.92) {
       const farkYuzde = Math.round(((ortalamaFiyat - onerilenFiyat) / ortalamaFiyat) * 100);
       uyarilar.push(
-        `📉 Ortalama Altı Fiyat Uyarısı: Teklif edilen fiyat (${onerilenFiyat} ${girdi.paraBirimi}), bu ürünün geçmiş ortalama satış fiyatının (${ortalamaFiyat.toFixed(2)} ${girdi.paraBirimi}) %${farkYuzde} altındadır!`
+        `Ortalama altı fiyat: önerilen fiyat (${onerilenFiyat} ${girdi.paraBirimi}), bu ürünün geçmiş ortalama satış fiyatının (${ortalamaFiyat.toFixed(2)} ${girdi.paraBirimi}) %${farkYuzde} altındadır!`
       );
     }
   }

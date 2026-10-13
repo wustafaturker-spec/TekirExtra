@@ -4480,3 +4480,11 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .mcp-liste li { display: flex; justify-content: space-between; align-items: center; gap: .75rem; padding: .6rem 0; border-top: 1px solid var(--border); }
 .mcp-ornek { margin-top: 1rem; }
 .mcp-ornek summary { cursor: pointer; font-weight: 600; font-size: .88rem; }
+/* AI-12: ürün seçimindeki fiyat önerisi. */
+.fiyat-onerisi { display: flex; flex-direction: column; gap: .35rem; }
+.fiyat-onerisi__ust { display: flex; justify-content: space-between; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.fiyat-onerisi__ayrinti { display: flex; gap: .75rem; flex-wrap: wrap; font-size: .78rem; color: var(--text-muted); }
+.fiyat-onerisi__ayrinti .is-negatif { color: var(--danger); font-weight: 600; }
+.fiyat-onerisi__ayrinti .is-pozitif { color: var(--success); font-weight: 600; }
+.fiyat-onerisi__uyari { margin: 0; padding-left: 1rem; font-size: .78rem; color: var(--danger); }
+.fiyat-onerisi__gerekce { margin: 0; padding-left: 1rem; font-size: .78rem; color: var(--text-muted); }

@@ -43,28 +43,16 @@ export class AnthropicAiProvider implements IAiProvider {
     });
 
     const endpoint = "https://api.anthropic.com/v1/messages";
-    const yanit = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    const veri = await saglayiciIstegi("Anthropic", endpoint, {
         "x-api-key": this.apiKey,
         "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
+      }, {
         model: this.model,
         max_tokens: 4096,
         system: girdi.sistemRol || "Sen kurumsal bir ERP muhasebe ve analitik uzmanısın. Yanıtları doğrudan JSON olarak üretirsin.",
         messages: [{ role: "user", content }],
         temperature: 0.1,
-      }),
-    });
-
-    if (!yanit.ok) {
-      const hataMetni = await yanit.text();
-      throw new Error(`Anthropic API Hatası (${yanit.status}): ${hataMetni}`);
-    }
-
-    const veri = (await yanit.json()) as any;
+      });
     const hamMetin = veri.content?.[0]?.text;
     if (!hamMetin) {
       throw new Error("Anthropic API'den boş yanıt döndü.");
@@ -82,28 +70,16 @@ export class AnthropicAiProvider implements IAiProvider {
     }
 
     const endpoint = "https://api.anthropic.com/v1/messages";
-    const yanit = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    const veri = await saglayiciIstegi("Anthropic", endpoint, {
         "x-api-key": this.apiKey,
         "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
+      }, {
         model: this.model,
         max_tokens: 2048,
         system: girdi.sistemRol,
         messages: [{ role: "user", content: girdi.prompt }],
         temperature: 0.3,
-      }),
-    });
-
-    if (!yanit.ok) {
-      const hataMetni = await yanit.text();
-      throw new Error(`Anthropic API Hatası (${yanit.status}): ${hataMetni}`);
-    }
-
-    const veri = (await yanit.json()) as any;
+      });
     return veri.content?.[0]?.text || "";
   }
 

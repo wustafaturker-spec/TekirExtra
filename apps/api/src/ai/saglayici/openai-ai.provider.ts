@@ -53,26 +53,14 @@ export class OpenAiAiProvider implements IAiProvider {
     messages.push({ role: "user", content: userContent });
 
     const endpoint = `${this.baseUrl}/chat/completions`;
-    const yanit = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    const veri = await saglayiciIstegi("OpenAI", endpoint, {
         Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
+      }, {
         model: this.model,
         messages,
         response_format: { type: "json_object" },
         temperature: 0.1,
-      }),
-    });
-
-    if (!yanit.ok) {
-      const hataMetni = await yanit.text();
-      throw new Error(`OpenAI API Hatası (${yanit.status}): ${hataMetni}`);
-    }
-
-    const veri = (await yanit.json()) as any;
+      });
     const hamMetin = veri.choices?.[0]?.message?.content;
     if (!hamMetin) {
       throw new Error("OpenAI API'den boş yanıt döndü.");
@@ -94,25 +82,13 @@ export class OpenAiAiProvider implements IAiProvider {
     messages.push({ role: "user", content: girdi.prompt });
 
     const endpoint = `${this.baseUrl}/chat/completions`;
-    const yanit = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    const veri = await saglayiciIstegi("OpenAI", endpoint, {
         Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
+      }, {
         model: this.model,
         messages,
         temperature: 0.3,
-      }),
-    });
-
-    if (!yanit.ok) {
-      const hataMetni = await yanit.text();
-      throw new Error(`OpenAI API Hatası (${yanit.status}): ${hataMetni}`);
-    }
-
-    const veri = (await yanit.json()) as any;
+      });
     return veri.choices?.[0]?.message?.content || "";
   }
 

@@ -33,7 +33,7 @@ export class GeminiAiProvider implements IAiProvider {
       throw new Error("GEMINI_API_KEY tanımlanmamış. Lütfen API anahtarınızı girin.");
     }
 
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`;
 
     const parts: any[] = [];
     if (girdi.gorselBase64) {
@@ -60,23 +60,7 @@ export class GeminiAiProvider implements IAiProvider {
       },
     };
 
-    const yanit = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(istekGovdesi),
-    });
-
-    if (!yanit.ok) {
-      const hataMetni = await yanit.text();
-      let mesaj = `Gemini API Hatası (${yanit.status}): ${hataMetni}`;
-      try {
-        const parsed = JSON.parse(hataMetni);
-        if (parsed.error?.message) mesaj = `Gemini Hatası: ${parsed.error.message}`;
-      } catch {}
-      throw new Error(mesaj);
-    }
-
-    const veri = (await yanit.json()) as any;
+    const veri = await saglayiciIstegi("Gemini", endpoint, { "x-goog-api-key": this.apiKey }, istekGovdesi);
     let hamMetin = veri.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!hamMetin) {
       throw new Error("Gemini API'den boş yanıt döndü.");
