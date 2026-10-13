@@ -6,6 +6,7 @@ import { FaturaController } from "../../../fatura/fatura.controller";
 import { KasaBankaController } from "../../../kasa-banka/kasa-banka.controller";
 import { MasraflarController } from "../../../masraflar/masraflar.controller";
 import { RaporController } from "../../../rapor/rapor.controller";
+import { RaporlarController } from "../../../core/raporlar/raporlar.controller";
 import { StokController } from "../../../stok/stok.controller";
 import type { UcTanimi } from "../uc-cagirici";
 
@@ -49,5 +50,10 @@ export const UC = {
   kasaBankaHareket: uc(KasaBankaController, "hareketEkle", "POST /kasa-banka/hareketler"),
 
   vadesiGecenler: uc(RaporController, "vadesiGecenler", "GET /rapor/vadesi-gecenler"),
+  finansalOzet: uc(RaporController, "finansalOzet", "GET /rapor/ozet"),
+  gelirGider: uc(RaporController, "gelirGiderRaporu", "GET /rapor/gelir-gider"),
+  raporKatalogu: uc(RaporlarController, "listele", "GET /raporlar"),
+  // Rapor çalıştırmak okumadır; POST yalnız gövde taşımak için (denetim kaydına yazılmaz).
+  raporCalistir: uc(RaporlarController, "calistir", "GET /raporlar/:kod/calistir"),
   dovizKuru: uc(DovizController, "getir", "GET /doviz-kurlari"),
 };

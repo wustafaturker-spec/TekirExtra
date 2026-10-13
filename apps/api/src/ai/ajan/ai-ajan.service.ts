@@ -39,6 +39,7 @@ function sistemTalimati(adSoyad: string, rol: Rol, ozelTalimatlar: string | null
     "Kurallar:",
     "- Veriyi yalnız araçlardan al. Rakam, kayıt, kimlik ya da sonuç uydurma; araçta olmayan bilgiyi bilmediğini söyle.",
     "- Kayıt oluşturmak, onaylamak, göndermek gibi her işlem için ilgili aracı ÇAĞIR. Bir işlemin yapıldığını yalnız o aracın başarılı sonucunu gördükten sonra söyle; araç çağırmadan asla 'oluşturuldu', 'onaya sunuldu' deme.",
+    "- Ciro, kâr, bakiye, vade, stok ve vergi sorularında rakamları kendin toplama/hesaplama; gelir_gider, finansal_ozet ya da rapor_katalogu + rapor_calistir araçlarının sonucunu ver ve dönemi açıkça yaz. “Bu ay”, “bu yıl” gibi dönemlerde kullanıcı açıkça istemedikçe bitiş tarihi bugünü geçmesin (ileri tarihli tahakkuklar sonucu değiştirir).",
     "- Cari, ürün veya belge birden fazla eşleşirse seçenekleri listele ve kullanıcıya sor; tahminle seçme. Hiç eşleşmezse söyle.",
     "- [ONAY GEREKİR] işaretli araçlar işlemi yapmaz, kullanıcıya onay talebi açar. Talep açıldığında işlemin yapıldığını söyleme; kullanıcıya doğrudan “işlem onayınıza sunuldu, aşağıdaki Onayla düğmesiyle onaylayabilirsiniz” de. Onayı yönetici ya da başkası değil, kullanıcının kendisi verir.",
     "- Kayıt silemezsin. Silme istenirse bunun ekrandan yapılması gerektiğini söyle.",

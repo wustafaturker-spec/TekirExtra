@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { adres, arac, cagir, sec, tarih, uuid } from "./arac";
+import { adres, arac, BUGUN, cagir, sec, tarih, uuid } from "./arac";
 import { UC } from "./uclar";
 
 const CARI_ALANLARI = ["id", "kod", "unvan", "tip", "vknTckn", "eposta", "telefon", "aktif", "bakiyeler"];
@@ -210,6 +210,88 @@ export const OKUMA_ARACLARI = [
     async calistir(b) {
       const k = await cagir<any[]>(b, UC.masrafKategoriler, []);
       return { kategoriler: (k ?? []).map((x) => ({ ...sec(x, ["id", "ad", "varsayilanKdvOrani"]), ust: x.ust?.ad })) };
+    },
+  }),
+  arac({
+    ad: "rapor_katalogu",
+    aciklama:
+      "Kullanıcının görebildiği hazır raporlar (kod, ad, süzgeçler). Satış, alış, cari, stok, kasa-banka, vergi sorularında önce uygun raporu buradan bul, sonra rapor_calistir ile çalıştır.",
+    sinif: "okuma",
+    girdi: z.object({ modul: z.string().optional().describe("fatura, cari, stok, kasa_banka, vergi, genel…") }),
+    uc: UC.raporKatalogu,
+    async calistir(b, g) {
+      const liste = await cagir<any[]>(b, UC.raporKatalogu, [g.modul]);
+      return {
+        raporlar: liste.map((r) => ({
+          kod: r.kod, modul: r.modul, ad: r.ad, aciklama: r.aciklama ?? undefined,
+          suzgecler: (r.filtreler ?? []).map((f: any) => ({ ...sec(f, ["alan", "ad", "tip", "zorunlu"]), secenekler: f.secenekler?.slice(0, 20).map((x: any) => x.deger) })),
+          gruplamalar: (r.gruplamalar ?? []).map((x: any) => x.deger),
+        })),
+      };
+    },
+  }),
+  arac({
+    ad: "rapor_calistir",
+    aciklama:
+      "Rapor kataloğundaki bir raporu süzgeçlerle çalıştırır; rakamlar rapor ekranıyla aynıdır. Tarih süzgeçleri YYYY-AA-GG. Sonuçta ilk 30 satır, toplam satır sayısı ve toplamlar döner; ekran bağlantısını da ver.",
+    sinif: "okuma",
+    girdi: z.object({
+      kod: z.string().min(1).describe("rapor_katalogu'ndaki rapor kodu"),
+      suzgecler: z
+        .array(z.object({ alan: z.string().describe("katalogdaki suzgecler[].alan (ör. baslangic, bitis)"), deger: z.string() }))
+        .optional()
+        .describe("Süzgeç değerleri"),
+      gruplama: z.string().optional(),
+    }),
+    uc: UC.raporCalistir,
+    async calistir(b, g) {
+      const filtreler = Object.fromEntries((g.suzgecler ?? []).map((x) => [x.alan, x.deger === "true" ? true : x.deger === "false" ? false : x.deger]));
+      const r = await cagir(b, UC.raporCalistir, [g.kod, { filtreler, ...(g.gruplama ? { gruplama: g.gruplama } : {}) }]);
+      // Rapor ekranının paylaşılabilir adresi: ?rapor=kod&f.<süzgeç>=değer&g=gruplama (RPR-10).
+      const sorgu = new URLSearchParams({ rapor: g.kod, ...Object.fromEntries(Object.entries(filtreler).map(([k, v]) => [`f.${k}`, String(v)])) });
+      if (g.gruplama) sorgu.set("g", g.gruplama);
+      return {
+        ad: r.ad,
+        kolonlar: (r.kolonlar ?? []).map((k: any) => sec(k, ["alan", "baslik", "tip"])),
+        satirlar: (r.satirlar ?? []).slice(0, 30),
+        satirSayisi: r.satirSayisi,
+        toplamlar: r.toplamlar,
+        adres: `/panel/raporlar?${sorgu.toString()}`,
+      };
+    },
+  }),
+  arac({
+    ad: "finansal_ozet",
+    aciklama: "Bugün itibarıyla nakit varlıklar, stok değeri, alacaklar, borçlar ve net varlık (panel özetiyle aynı hesap).",
+    sinif: "okuma",
+    girdi: z.object({}),
+    uc: UC.finansalOzet,
+    calistir: (b) => cagir(b, UC.finansalOzet, []),
+  }),
+  arac({
+    ad: "gelir_gider",
+    aciklama: "Dönemin gelir-gider ve kâr/zarar özeti (satış hasılatı, satılan malın maliyeti, brüt ve net kâr, gider kırılımı). Kâr sorularında bunu kullan.",
+    sinif: "okuma",
+    girdi: z.object({
+      baslangic: tarih("Dönem başı"),
+      bitis: tarih("Dönem sonu"),
+      ileriTarihDahil: z.boolean().optional().describe("Kullanıcı bugünden sonraki tarihleri açıkça istediyse true"),
+    }),
+    uc: UC.gelirGider,
+    async calistir(b, g) {
+      // "Bu ay" sorusunda ay sonuna kadar alınırsa ileri tarihli tahakkuklar (kira, maaş) kârı değiştirir;
+      // canlıda aynı gün iki farklı net kâr verildi. Kullanıcı istemedikçe bitiş bugüne çekilir.
+      const bugun = BUGUN();
+      const bitis = !g.ileriTarihDahil && g.bitis > bugun ? bugun : g.bitis;
+      const r = await cagir(b, UC.gelirGider, [g.baslangic, bitis]);
+      return {
+        donem: { baslangic: r.baslangicTarihi, bitis: r.bitisTarihi },
+        ozet: r.ozet,
+        karZarar: r.karZarar,
+        giderKategorileri: (r.giderKategorileri ?? []).slice(0, 15),
+        uyarilar: [...(bitis !== g.bitis ? [`Bitiş tarihi bugüne (${bugun}) çekildi; ileri tarihli tahakkuklar dahil değil.`] : []), ...(r.uyarilar ?? [])],
+        adres: `/panel/raporlar/gelir-gider?baslangic=${g.baslangic}&bitis=${bitis}`,
+      };
     },
   }),
 ];

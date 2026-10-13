@@ -194,6 +194,18 @@ describe("araç kaydı (AI-03/AI-06)", () => {
     expect(aracTanimi(AJAN_ARACLARI.find((a) => a.ad === "belge_onayla")!).aciklama).toContain("ONAY GEREKİR");
   });
 
+  it("gelir-giderde bitişi kullanıcı istemedikçe bugüne çeker", async () => {
+    const gg = AJAN_ARACLARI.find((a) => a.ad === "gelir_gider")!;
+    const cagrilar: unknown[][] = [];
+    const uc = { cagir: async (_u: unknown, arg: unknown[]) => { cagrilar.push(arg); return { uyarilar: [] }; } };
+    const b = { uc: uc as never, kaynak: "asistan" as const, arac: gg.ad };
+    const sonuc = (await gg.calistir(b, gg.girdi.parse({ baslangic: "2026-01-01", bitis: "2999-12-31" }))) as { uyarilar: string[] };
+    expect(cagrilar[0][1]).not.toBe("2999-12-31");
+    expect(sonuc.uyarilar[0]).toContain("bugüne");
+    await gg.calistir(b, gg.girdi.parse({ baslangic: "2026-01-01", bitis: "2999-12-31", ileriTarihDahil: true }));
+    expect(cagrilar[1][1]).toBe("2999-12-31");
+  });
+
   it("başka dövizdeki liste fiyatını ürün kuruyla çevirtir ve liste iskontosunu uygular", async () => {
     const taslak = AJAN_ARACLARI.find((a) => a.ad === "belge_taslagi_olustur")!;
     const cagrilar: Array<{ yol: string; arg: unknown[] }> = [];

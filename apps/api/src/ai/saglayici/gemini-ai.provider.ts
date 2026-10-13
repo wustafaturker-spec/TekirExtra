@@ -162,30 +162,13 @@ export class GeminiAiProvider implements IAiProvider {
   }
 
   async metinUret(girdi: AiMultimodalGirdi): Promise<string> {
-    if (!this.apiKey) {
-      throw new Error("GEMINI_API_KEY tanımlanmamış. Lütfen API anahtarınızı girin.");
-    }
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
-    const parts: any[] = [{ text: girdi.prompt }];
-
-    const yanit = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts }] }),
+    // Sistem talimatı ayrı gider (önceden yalnız istem gönderiliyordu, talimat yok sayılıyordu).
+    const veri = await saglayiciIstegi("Gemini", `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`, { "x-goog-api-key": this.apiKey }, {
+      ...(girdi.sistemRol ? { systemInstruction: { parts: [{ text: girdi.sistemRol }] } } : {}),
+      contents: [{ role: "user", parts: [{ text: girdi.prompt }] }],
     });
-
-    if (!yanit.ok) {
-      const hataMetni = await yanit.text();
-      let mesaj = `Gemini API Hatası (${yanit.status}): ${hataMetni}`;
-      try {
-        const parsed = JSON.parse(hataMetni);
-        if (parsed.error?.message) mesaj = `Gemini Hatası: ${parsed.error.message}`;
-      } catch {}
-      throw new Error(mesaj);
-    }
-
-    const veri = (await yanit.json()) as any;
-    return veri.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const parcalar: any[] = veri.candidates?.[0]?.content?.parts ?? [];
+    return parcalar.filter((p) => typeof p.text === "string" && !p.thought).map((p) => p.text).join("").trim();
   }
 
   async aracliSohbet(girdi: AiAracliSohbetGirdisi): Promise<AiAracliYanit> {

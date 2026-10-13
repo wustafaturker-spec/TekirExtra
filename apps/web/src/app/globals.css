@@ -4470,3 +4470,6 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 @media (max-width: 700px) { .asistan__mesaj { max-width: 100%; } }
 .mobil-asistan { max-width: 48rem; margin: 0 auto; padding: .5rem 16px; background: var(--bg); min-height: 100dvh; }
 .mobil-asistan__baslik { display: flex; justify-content: space-between; align-items: center; padding: .5rem 0 .75rem; font-size: .9rem; }
+/* AI-08: yönetici özeti kartı. */
+.yonetici-ozeti__uyarilar { margin: 1rem 0 0; padding-left: 1.1rem; color: var(--warning); font-size: .88rem; display: flex; flex-direction: column; gap: .25rem; }
+.yonetici-ozeti__yorum { margin: .9rem 0 0; padding: .7rem .85rem; border-radius: var(--radius); background: var(--bg); border: 1px solid var(--border); font-size: .88rem; color: var(--text-muted); }
