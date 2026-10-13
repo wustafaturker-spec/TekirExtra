@@ -4473,3 +4473,10 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 /* AI-08: yönetici özeti kartı. */
 .yonetici-ozeti__uyarilar { margin: 1rem 0 0; padding-left: 1.1rem; color: var(--warning); font-size: .88rem; display: flex; flex-direction: column; gap: .25rem; }
 .yonetici-ozeti__yorum { margin: .9rem 0 0; padding: .7rem .85rem; border-radius: var(--radius); background: var(--bg); border: 1px solid var(--border); font-size: .88rem; color: var(--text-muted); }
+/* AI-09: MCP erişim anahtarları. */
+.mcp-kod { display: block; white-space: pre-wrap; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: .6rem .75rem; margin: .5rem 0; }
+.mcp-yeni { display: flex; flex-direction: column; gap: .4rem; margin-bottom: 1rem; }
+.mcp-liste { list-style: none; margin: 1rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .6rem; }
+.mcp-liste li { display: flex; justify-content: space-between; align-items: center; gap: .75rem; padding: .6rem 0; border-top: 1px solid var(--border); }
+.mcp-ornek { margin-top: 1rem; }
+.mcp-ornek summary { cursor: pointer; font-weight: 600; font-size: .88rem; }

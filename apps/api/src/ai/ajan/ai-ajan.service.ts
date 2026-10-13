@@ -2,18 +2,17 @@ import { BadRequestException, ForbiddenException, Injectable, Logger } from "@ne
 import type { Rol } from "@tekirextra/shared";
 import { aktifBaglam } from "../../core/istek-baglami";
 import { PrismaService } from "../../core/prisma.service";
-import type { AiAracCagrisi, AiSohbetMesaji, IAiProvider } from "../saglayici/ai-provider.interface";
+import type { AiSohbetMesaji, IAiProvider } from "../saglayici/ai-provider.interface";
 import { kiraciSaglayicisi } from "../saglayici/kiraci-saglayici";
-import { AiOnayService, type OnayTalebiGorunumu } from "../onay/ai-onay.service";
-import { AJAN_ARACLARI, aracBul, aracTanimi, type AjanAraci } from "./araclar";
+import type { OnayTalebiGorunumu } from "../onay/ai-onay.service";
+import { aracTanimi } from "./araclar";
+import { AracYurutucu } from "./arac-yurutucu";
 import { BUGUN } from "./araclar/arac";
-import { UcCagirici } from "./uc-cagirici";
 import { DUZELTME_ISTEMI, GUVENLI_YANIT, uydurmaNedeni } from "./yanit-denetimi";
 
 /** Bir kullanıcı mesajında en çok bu kadar model turu (araç → sonuç → model). */
 const EN_COK_TUR = 8;
 const GECMIS_MESAJ = 12;
-const ARAC_CIKTISI_SINIRI = 12_000;
 const MESAJ_SINIRI = 4_000;
 const BOS_YANIT_DENEMESI = 2;
 
@@ -49,22 +48,6 @@ function sistemTalimati(adSoyad: string, rol: Rol, ozelTalimatlar: string | null
   ].join("\n");
 }
 
-function hataMetni(hata: unknown): string {
-  if (hata && typeof hata === "object" && "getResponse" in hata && typeof (hata as { getResponse: unknown }).getResponse === "function") {
-    const yanit = (hata as { getResponse: () => unknown }).getResponse();
-    if (typeof yanit === "string") return yanit;
-    const mesaj = (yanit as { message?: unknown })?.message;
-    if (Array.isArray(mesaj)) return mesaj.join("; ");
-    if (typeof mesaj === "string") return mesaj;
-  }
-  return hata instanceof Error ? hata.message : "Araç çalışırken hata oluştu";
-}
-
-function jsonKisalt(deger: unknown): string {
-  const metin = JSON.stringify(deger ?? null);
-  return metin.length > ARAC_CIKTISI_SINIRI ? `${metin.slice(0, ARAC_CIKTISI_SINIRI)}… (kısaltıldı)` : metin;
-}
-
 /**
  * AI-05: kullanıcının yazdığı talimatı modelin seçtiği araçlarla yürütür.
  * Kimlik ve rol yalnız oturumdan gelir; model yalnız kullanıcının rolüyle
@@ -79,14 +62,8 @@ export class AiAjanService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly uc: UcCagirici,
-    private readonly onay: AiOnayService,
+    private readonly yurutucu: AracYurutucu,
   ) {}
-
-  /** Modele sunulacak araçlar: rolün ekranda girebildiği uçlar (AI-02). */
-  izinliAraclar(rol: Rol): AjanAraci[] {
-    return AJAN_ARACLARI.filter((a) => this.uc.yetkiliMi(a.uc, rol));
-  }
 
   async mesajiIsle(mesaj: string): Promise<AjanYaniti> {
     const { tenantId, userId, rol } = aktifBaglam();
@@ -110,7 +87,7 @@ export class AiAjanService {
     const oturum = await this.oturumGetir(tenantId, userId);
     const gecmis = await this.gecmisOku(tenantId, oturum.id);
 
-    const izinli = this.izinliAraclar(rol);
+    const izinli = this.yurutucu.izinliAraclar(rol);
     const aracHaritasi = new Map(izinli.map((a) => [a.ad, a]));
     const tanimlar = izinli.map(aracTanimi);
     const mesajlar: AiSohbetMesaji[] = [...gecmis, { rol: "kullanici", metin }];
@@ -146,7 +123,7 @@ export class AiAjanService {
       }
       mesajlar.push({ rol: "asistan", metin: yanit.metin, aracCagrilari: yanit.aracCagrilari, ham: yanit.ham });
       for (const cagri of yanit.aracCagrilari) {
-        const sonuc = await this.aracCalistir(cagri, aracHaritasi, oturum.id);
+        const sonuc = await this.yurutucu.yurut(cagri, aracHaritasi, { kaynak: "asistan", oturumId: oturum.id });
         calisanlar.push({ ad: cagri.ad, sinif: aracHaritasi.get(cagri.ad)?.sinif ?? "bilinmiyor", basarili: !sonuc.hata });
         if (sonuc.talep) talepler.push(sonuc.talep);
         if (!sonuc.hata) aracCiktilari.push(sonuc.icerik);
@@ -185,43 +162,6 @@ export class AiAjanService {
         talepIdleri: ((k.aracCagrisi as { talepler?: string[] } | null)?.talepler ?? []).filter((t) => typeof t === "string"),
       })),
     };
-  }
-
-  private async aracCalistir(cagri: AiAracCagrisi, izinli: Map<string, AjanAraci>, oturumId: string): Promise<{ icerik: string; hata?: boolean; talep?: OnayTalebiGorunumu }> {
-    const arac = izinli.get(cagri.ad);
-    if (!arac) {
-      if (aracBul(cagri.ad)) return { icerik: `Kullanıcının rolü "${cagri.ad}" işlemine yetkili değil; bu işlemi yapamazsın.`, hata: true };
-      // Canlıda Gemini adı kesik yazdı ("belge_taslagi_olust"): en yakın adı önerip yeniden denetir.
-      const oneri = [...izinli.keys()].find((ad) => cagri.ad && (ad.startsWith(cagri.ad) || cagri.ad.startsWith(ad)));
-      return { icerik: `"${cagri.ad}" adlı araç yok.${oneri ? ` "${oneri}" aracını kastettiysen onu aynı parametrelerle yeniden çağır.` : " Yalnız sunulan araç adlarını kullan."}`, hata: true };
-    }
-    const ayristirma = arac.girdi.safeParse(cagri.girdi);
-    if (!ayristirma.success) {
-      return {
-        icerik: `Geçersiz parametre: ${ayristirma.error.issues.map((s) => `${s.path.join(".")}: ${s.message}`).join("; ")}. ` +
-          "Kimlik (…Id) alanları arama araçlarının döndürdüğü UUID olmalıdır; elinde belge numarası ya da ad varsa önce ilgili arama aracını çağır.",
-        hata: true,
-      };
-    }
-    const baglam = { uc: this.uc, kaynak: "asistan" as const, arac: arac.ad };
-    try {
-      if (arac.sinif === "onay") {
-        const ozet = await arac.ozetle!(baglam, ayristirma.data);
-        // Ham girdi saklanır; onayda aynı şemayla yeniden doğrulanır.
-        const talep = await this.onay.olustur({ arac: arac.ad, parametreler: cagri.girdi, ozet, kaynak: "asistan", oturumId });
-        return {
-          icerik: jsonKisalt({
-            durum: "onay_bekliyor", talepId: talep.id, ozet, adres: `/panel/ai?talep=${talep.id}`,
-            not: "İşlem YAPILMADI. Kullanıcı sohbetteki Onayla düğmesine ya da adresteki onay listesine basınca çalışacak.",
-          }),
-          talep,
-        };
-      }
-      return { icerik: jsonKisalt(await arac.calistir(baglam, ayristirma.data)) };
-    } catch (hata) {
-      this.logger.warn(`Araç ${arac.ad} hata verdi: ${String(hata)}`);
-      return { icerik: `Hata: ${hataMetni(hata)}`, hata: true };
-    }
   }
 
   private async oturumGetir(tenantId: string, userId: string) {

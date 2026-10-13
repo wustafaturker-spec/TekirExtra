@@ -6,6 +6,7 @@ import { TanimsizAiProvider } from "../saglayici/tanimsiz-ai.provider";
 import type { AiAracliYanit } from "../saglayici/ai-provider.interface";
 import { AJAN_ARACLARI, aracTanimi } from "./araclar";
 import { AiAjanService } from "./ai-ajan.service";
+import { AracYurutucu } from "./arac-yurutucu";
 
 const KIMLIK = { tenantId: "11111111-1111-1111-1111-111111111111", userId: "22222222-2222-2222-2222-222222222222" };
 const CARI_ID = "3f2b6c1e-8d4a-4c2b-9a1e-5b7c8d9e0f12";
@@ -28,7 +29,7 @@ function kur(yanitlar: AiAracliYanit[], secenek: { yetkiliMi?: (ad: string) => b
   };
   const onay = { olustur: vi.fn(async (g: { arac: string; ozet: string }) => ({ id: "talep-1", arac: g.arac, ozet: g.ozet, durum: "bekliyor" })) };
   const saglayici = new SenaryoAiProvider(yanitlar);
-  const service = new AiAjanService(prisma as never, uc as never, onay as never);
+  const service = new AiAjanService(prisma as never, new AracYurutucu(uc as never, onay as never));
   service.saglayiciBul = async () => ({ saglayici, ozelTalimatlar: null });
   const calistir = (mesaj: string, rol = "satis") => istekBaglami.run({ deger: { ...KIMLIK, rol: rol as never } }, () => service.mesajiIsle(mesaj));
   return { service, tx, uc, onay, saglayici, calistir };

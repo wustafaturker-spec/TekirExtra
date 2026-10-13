@@ -236,6 +236,7 @@ model Tenant {
   stokEkVergileri StokEkVergi[]
   ajanOturumlari    AjanOturumu[]
   aiOnayTalepleri   AiOnayTalebi[]
+  aiMcpAnahtarlari  AiMcpAnahtari[]
   belgeOcrKayitlari BelgeOcrKaydi[]
   aiAyari           TenantAiAyari?
   aiGorevleri       TenantAiGorev[]
@@ -337,6 +338,7 @@ model User {
   pinKodu                      String?                 @map("pin_kodu")
   ajanOturumlari               AjanOturumu[]
   aiOnayTalepleri              AiOnayTalebi[]
+  aiMcpAnahtarlari             AiMcpAnahtari[]
 
   @@unique([tenantId, eposta])
   @@index([tenantId])
@@ -5726,6 +5728,27 @@ model AiOnayTalebi {
 
   @@index([tenantId, userId, durum])
   @@map("ai_onay_talepleri")
+}
+
+/// AI-09: kullanıcının kendi adına oluşturduğu MCP erişim anahtarı. Anahtarın
+/// kendisi saklanmaz (bir kez gösterilir); SHA-256 özeti ve görünen öneki tutulur.
+/// Anahtar o kullanıcının kimliği ve güncel rolüyle çalışır; iptal silme değildir.
+model AiMcpAnahtari {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  ad          String
+  onEk        String    @map("on_ek")
+  ozet        String    @unique
+  sonKullanim DateTime? @map("son_kullanim")
+  iptalAt     DateTime? @map("iptal_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@map("ai_mcp_anahtarlari")
 }
 
 enum AiIslemKaynagi {

@@ -412,18 +412,19 @@ export default function YapayZekaAyarlariSayfasi() {
           )}
         </Card>
 
-        {/* KART 4: MCP — güvenlik düzeltmesine kadar kapalı */}
+        {/* KART 4: MCP — anahtarlar /panel/ai sayfasında (AI-09) */}
         <Card>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", marginBottom: "12px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <Server size={22} color="var(--accent)" />
               <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "700" }}>Model Context Protocol (MCP) Sunucusu</h3>
             </div>
-            <Badge variant="neutral">Kapalı</Badge>
+            <Badge variant="success">Açık</Badge>
           </div>
-          <Alert tone="warning">
-            MCP bağlantısı, kiracıya özel erişim anahtarı eklenene kadar kullanıma kapalıdır.
-          </Alert>
+          <p className="muted" style={{ margin: 0 }}>
+            Her kullanıcı kendi erişim anahtarını <a href="/panel/ai">Asistan ve Onaylar</a> sayfasından oluşturur; anahtar o kullanıcının
+            yetkisiyle çalışır ve onay gerektiren işlemler panelden onaylanır. Yönetici olarak kiracıdaki bütün anahtarları orada görüp iptal edebilirsiniz.
+          </p>
         </Card>
       </div>
 
