@@ -1072,6 +1072,25 @@ hareketi**, **kart oluşturma/değiştirme**, **toplu işlemler** ve **iptal/iad
 | AI-11 | ✅ **Sağlayıcı güvenliği:** kiracının API anahtarı şifreli saklanır (`hassasSifrele`), ekranda yalnız son 4 karakteri görünür; sağlayıcı hata gövdesi kullanıcıya dönmez, kayda yazılır; her sağlayıcı çağrısında zaman aşımı (60 sn) vardır. | Z |
 | AI-12 | ✅ **Fiyat önerisi:** öneri "AI" adı taşımaz ("Fiyat önerisi"); maliyet belge dövizine çevrilir, ortalama satış fiyatı belge dövizindeki son kesin satışlardan tarih sırasıyla alınır; maliyeti bilinmeyen üründe marj uyarısı ve taban fiyat üretilmez. | Z |
 
+**S-01 kararları, ikinci tur (2026-10-13, kullanıcı onayı):** inceleme raporunun kalan maddeleri
+ve ödeme/tahsilat desteği. Çok oranlı fiş **oran başına ayrı masraf**; dış sağlayıcıya veri
+aktarımı **yönetici onayına** bağlı; otonom görevler **gerçek, veriye dayalı göreve** çevrilir;
+tahsilat için **gecikme riski tahmini, tahsilat önceliklendirme, ekstre eşleştirme önerisi ve
+hatırlatma metni** eklenir.
+
+| No | İster | Öncelik |
+|---|---|---|
+| AI-13 | **Fiş/kartvizit tarama:** tarama pencereleri tasarım sistemine taşınır, telefonda taşmaz; görsel istemcide küçültülür (gövde sınırına takılmaz). Fişte birden çok KDV oranı varsa **oran başına ayrı masraf taslağı** açılır (aynı belge no, satıcı ve tarih; görsel her birine ek; kırılım pencerede gösterilir). Belge dövizi TRY değilse aktarılır. Her tarama `belge_ocr_kayitlari`na yazılır (kim, ne zaman, sağlayıcı, çıkarılan veri, oluşan masraf/cari) — denetim izi. | Z |
+| AI-14 | **Yurt dışı aktarım onayı (KVKK):** yönetici Ayarlar > Yapay Zeka'da hangi sağlayıcıya hangi verinin (cari, stok, belge, rakamlar, taranan görseller) gideceğini gösteren metni okuyup onay verir; onaylayan ve zaman kaydedilir, onay geri alınabilir. Onay yoksa dış sağlayıcıya (Gemini, OpenAI, Anthropic; platform anahtarı dahil) **hiç istek gitmez**, asistan/tarama/özet yorumu bunu söyler. Platformun kendi Ollama sunucusu onaysız çalışır. | Z |
+| AI-15 | **Kullanım sınırı ve sayaç:** kiracı başına günlük model çağrısı sınırı (varsayılan 1.000, yönetici değiştirir); aşılınca istek açık mesajla reddedilir. Çağrılar gün, kullanıcı ve özellik (asistan, MCP, tarama, özet, görev) bazında sayılır; Ayarlar > Yapay Zeka'da son 30 gün gösterilir. | Z |
+| AI-16 | **Yapay zekâ görevleri:** görev, oluşturan kullanıcının kimliği ve rolüyle asistanı **yalnız okuma araçlarıyla** çalıştırır (yazamaz, gönderemez, onay talebi açamaz); sonuç panel bildirimi ve (tercihe göre) e-posta olarak gelir. Tetikleyiciler: **zamanlanmış** (her gün/haftanın günü, saat), **vade gecikmesi** (vadesi geçen alacak varken günde bir), **kasa kritik** (nakit varlıklar görevde girilen eşiğin altına inince günde bir). WhatsApp kanalı kalkar. Zamanlayıcı worker'da çalışır; her çalışma son sonuç ve zamanıyla saklanır; görev AI-14/AI-15 kurallarına tabidir. | Z |
+| AI-17 | **Gecikme riski tahmini:** her cari için son 24 ayda kapanmış satış faturalarından (Tahsilat Performansı ile aynı FIFO kapama) zamanında ödeme oranı, ortalama ve medyan gecikme hesaplanır; açık fatura için **beklenen ödeme tarihi** = vade + medyan gecikme. Risk: **düşük** (zamanında ≥ %80 ve medyan ≤ 7 gün), **yüksek** (medyan > 30 gün ya da zamanında < %40), arada **orta**; 3'ten az kapanmış fatura **yetersiz veri**. Hesap istatistikseldir, dil modeli kullanılmaz. Vade hatırlatma ekranında, cari kartında ve asistanda (`tahsilat_riski`) gösterilir. Nakit akışı tahminine bağlanması ayrı karardır. | Z |
+| AI-18 | **Tahsilat önceliklendirme:** vadesi geçmiş ya da 7 gün içinde dolacak alacaklar için öncelik puanı = kalan tutar (TL) × risk katsayısı (düşük 1, orta 1,5, yüksek 2, yetersiz veri 1,25) × (1 + gecikme günü / 30); "Bugün kimi aramalı" listesi vade hatırlatma ekranında ve asistanda (`tahsilat_oncelikleri`), puanın bileşenleriyle. | Z |
+| AI-19 | **Ekstre eşleştirme önerisi:** kuralın eşleştiremediği banka ekstresi satırları için önce deterministik aday aranır (tutar = açık fatura kalanı, açıklamada VKN/fatura no/unvan); bulunamazsa dil modeli açıklamadan cari adayını çıkarır (AI-14 onayına tabi). Öneri satırda "öneri" olarak gerekçesiyle görünür; kullanıcı mevcut eşleştirme eylemiyle onaylamadan hiçbir şey işlenmez. | Z |
+| AI-20 | **Hatırlatma metni:** vade hatırlatma ekranında carinin geciken faturaları, tutarları ve seçilen kademenin tonuyla kibar bir not taslağı dil modeline yazdırılır; kullanıcı düzenler, gönderim mevcut akıştan (muhasebe) yapılır. Asistanda hatırlatma gönderimi onaya tabi araçtır (`odeme_hatirlatmasi_gonder`). | Z |
+| AI-21 | **Fiyat önerisi ayarları:** grup iskontoları (bayi, toptan, VIP), hacim eşikleri ve aylık finansman oranı Ayarlar > Modüller'de kiracı ayarı olur; bugünkü sabit değerler varsayılan kalır. | Z |
+| AI-22 | **E2e bakım:** e2e taklitlerindeki e-Belge uygulamaları verisi güncel biçime getirilir; e2e paketi yeşile döner. | Z |
+
 ## 4. Fonksiyonel Olmayan İsterler
 
 ### 4.1 Performans
