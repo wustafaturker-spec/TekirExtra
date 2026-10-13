@@ -8,6 +8,7 @@ import { MasraflarController } from "../../../masraflar/masraflar.controller";
 import { RaporController } from "../../../rapor/rapor.controller";
 import { RaporlarController } from "../../../core/raporlar/raporlar.controller";
 import { StokController } from "../../../stok/stok.controller";
+import { VadeHatirlatmaController } from "../../../cari/vade-hatirlatma.controller";
 import type { UcTanimi } from "../uc-cagirici";
 
 const uc = (denetleyici: UcTanimi["denetleyici"], yontem: string, yol: string): UcTanimi => ({ denetleyici, yontem, yol });
@@ -56,4 +57,6 @@ export const UC = {
   // Rapor çalıştırmak okumadır; POST yalnız gövde taşımak için (denetim kaydına yazılmaz).
   raporCalistir: uc(RaporlarController, "calistir", "GET /raporlar/:kod/calistir"),
   dovizKuru: uc(DovizController, "getir", "GET /doviz-kurlari"),
+  tahsilatOncelikleri: uc(VadeHatirlatmaController, "oncelikler", "GET /cari/vade-hatirlatma/oncelikler"),
+  tahsilatRiski: uc(VadeHatirlatmaController, "cariRiski", "GET /cari/vade-hatirlatma/risk/:cariId"),
 };

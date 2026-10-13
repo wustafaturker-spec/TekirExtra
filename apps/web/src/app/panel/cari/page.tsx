@@ -39,6 +39,7 @@ import {
   Tabs,
 } from "@/components/ui";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
+import { BeklenenOdemelerKart } from "@/components/tahsilat-riski";
 
 const TIP_ETIKETLERI: Record<string, string> = {
   musteri: "👤 Müşteri",
@@ -1383,6 +1384,7 @@ export default function CariSayfasi() {
                   </StatGrid>
                   <details className="record-disclosure"><summary>Analiz gerekçeleri</summary><ul>{cariAnalizi.gerekceler.map((gerekce) => <li key={gerekce}>{gerekce}</li>)}</ul><p className="subtle">Bu sonuç istatistiksel bir karar desteğidir; finansal karar öncesinde kullanıcı değerlendirmesi gerekir.</p></details>
                 </Card>}
+                {detay && <BeklenenOdemelerKart cariId={detay.id} />}
                 <div className="row" style={{ alignItems: "flex-start" }}>
                   <Card className="grow" style={{ minWidth: 300 }}>
                     <div className="card__title">Yeni Etkileşim</div>

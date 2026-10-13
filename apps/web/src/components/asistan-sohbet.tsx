@@ -44,10 +44,16 @@ const DURUM: Record<OnayTalebi["durum"], { ad: string; tur: "warning" | "info" |
 let sayac = 0;
 const yeniAnahtar = () => `m${Date.now()}-${sayac++}`;
 
-/** Metindeki `/panel/...` yollarını bağlantıya çevirir; geri kalanı düz metin. */
+/** Metindeki `/panel/...` yollarını bağlantıya, `**…**` işaretini kalına çevirir; HTML yorumlanmaz. */
 function baglantili(metin: string): ReactNode {
-  const parcalar = metin.split(/(\/panel\/[^\s)\]"'`,]+)/g);
-  return parcalar.map((p, i) => (p.startsWith("/panel/") ? <a href={p} key={i}>{p}</a> : <Fragment key={i}>{p}</Fragment>));
+  // Model madde işaretini "*   " yazıyor; görünümde "•".
+  const temiz = metin.replace(/^(\s*)[*-]\s+/gm, "$1• ");
+  const parcalar = temiz.split(/(\/panel\/[^\s)\]"'`,*]+|\*\*[^*]+\*\*)/g);
+  return parcalar.map((p, i) =>
+    p.startsWith("/panel/") ? <a href={p} key={i}>{p}</a>
+      : p.startsWith("**") && p.endsWith("**") && p.length > 4 ? <strong key={i}>{p.slice(2, -2)}</strong>
+        : <Fragment key={i}>{p}</Fragment>,
+  );
 }
 
 function hataMesaji(hata: unknown): string {

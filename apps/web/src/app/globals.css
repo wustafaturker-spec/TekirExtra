@@ -4493,3 +4493,9 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .yz-onay p, .yz-onay ul { margin: 0; }
 .yz-onay ul { padding-left: 1.1rem; }
 .yz-kullanim__form { margin-top: 1rem; align-items: flex-end; }
+/* AI-17/18: tahsilat riski ve öncelik. */
+.tahsilat-oncelik { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.tahsilat-oncelik li { display: flex; justify-content: space-between; gap: .75rem; padding: .55rem 0; border-top: 1px solid var(--border); }
+.tahsilat-oncelik li:first-child { border-top: 0; }
+.tahsilat-oncelik__tutar { display: flex; flex-direction: column; align-items: flex-end; white-space: nowrap; }
+.tahsilat-oncelik__not { margin-top: 0; font-size: .82rem; }

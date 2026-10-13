@@ -1,7 +1,8 @@
-import { BadRequestException, Body, Controller, Get, Post } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from "@nestjs/common";
 import { z } from "zod";
 import { Roller } from "../auth/roller.decorator";
 import { VadeHatirlatmaService } from "./vade-hatirlatma.service";
+import { TahsilatRiskiService } from "./tahsilat-riski";
 
 const kademe = z.enum(["hatirlatma", "ihtar"]);
 const onizlemeSemasi = z.object({ cariId: z.string().uuid(), kademe, not: z.string().max(1000).optional().nullable() });
@@ -21,7 +22,25 @@ const ayristir = <T>(sema: z.ZodType<T>, govde: unknown): T => {
 /** CARI-38: vadesi geçmiş alacak için hatırlatma / ihtar e-postası. */
 @Controller("cari/vade-hatirlatma")
 export class VadeHatirlatmaController {
-  constructor(private readonly servis: VadeHatirlatmaService) {}
+  constructor(
+    private readonly servis: VadeHatirlatmaService,
+    private readonly risk: TahsilatRiskiService,
+  ) {}
+
+  /** AI-18: "bugün kimi aramalı" — vadesi geçmiş/7 gün içinde dolacak alacaklar, öncelik puanıyla. */
+  @Get("oncelikler")
+  @Roller("muhasebe", "satis")
+  oncelikler(@Query("adet") adet?: string) {
+    const n = Number(adet ?? 50);
+    return this.risk.oncelikler(Number.isInteger(n) && n > 0 && n <= 500 ? n : 50);
+  }
+
+  /** AI-17: carinin gecikme riski ve açık faturalarının beklenen ödeme tarihleri. */
+  @Get("risk/:cariId")
+  @Roller("muhasebe", "satis")
+  cariRiski(@Param("cariId", ParseUUIDPipe) cariId: string) {
+    return this.risk.cariRiski(cariId);
+  }
 
   @Get("adaylar")
   @Roller("muhasebe", "satis")

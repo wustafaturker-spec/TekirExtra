@@ -294,4 +294,28 @@ export const OKUMA_ARACLARI = [
       };
     },
   }),
+  arac({
+    ad: "tahsilat_oncelikleri",
+    aciklama:
+      "Bugün kimi aramalı: vadesi geçmiş ya da 7 gün içinde dolacak alacakları cari başına öncelik puanıyla sıralar (kalan tutar × risk katsayısı × (1 + gecikme/30); risk cari kartındaki ödeme davranışı analizinden). Puanın bileşenlerini de açıkla.",
+    sinif: "okuma",
+    girdi: z.object({ adet: z.number().int().min(1).max(50).optional().describe("Varsayılan 10") }),
+    uc: UC.tahsilatOncelikleri,
+    async calistir(b, g) {
+      const liste = await cagir<any[]>(b, UC.tahsilatOncelikleri, [String(g.adet ?? 10)]);
+      return { oncelikler: liste.map((x) => ({ ...x, adres: adres.cari(x.cariId) })), ekran: "/panel/cari/vade-hatirlatma" };
+    },
+  }),
+  arac({
+    ad: "tahsilat_riski",
+    aciklama:
+      "Bir carinin açık faturaları ve beklenen ödeme tarihleri; risk seviyesi ve tahmini gecikme cari kartındaki ödeme davranışı analizinden gelir. Beklenen tarihler tahmindir; öyle sun.",
+    sinif: "okuma",
+    girdi: z.object({ cariId: uuid("Cari kimliği") }),
+    uc: UC.tahsilatRiski,
+    async calistir(b, g) {
+      const r = await cagir(b, UC.tahsilatRiski, [g.cariId]);
+      return { ...r, acikFaturalar: (r.acikFaturalar ?? []).slice(0, 30), adres: adres.cari(g.cariId) };
+    },
+  }),
 ];

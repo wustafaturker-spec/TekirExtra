@@ -171,7 +171,7 @@ describe("araç kaydı (AI-03/AI-06)", () => {
   it("silme aracı yoktur; her aracın sınıfı vardır, onaya tabi olanlar özet üretir", () => {
     expect(AJAN_ARACLARI.length).toBeGreaterThan(20);
     for (const a of AJAN_ARACLARI) {
-      expect(a.ad).not.toMatch(/sil/);
+      expect(a.ad).not.toMatch(/(^|_)sil(_|$)/);
       expect(a.uc.yol).not.toMatch(/^DELETE /);
       expect(["okuma", "taslak", "onay"]).toContain(a.sinif);
       if (a.sinif === "onay") expect(a.ozetle).toBeTypeOf("function");

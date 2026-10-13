@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { Alert, Badge, Button, ButtonLabel, Card, Field, PageHeader, Segmented, TableWrap } from "@/components/ui";
+import { RiskRozeti, TahsilatOncelikleriKart, type TahsilatOnceligi } from "@/components/tahsilat-riski";
 
 type Kademe = "hatirlatma" | "ihtar";
 
@@ -44,6 +45,7 @@ export default function VadeHatirlatmaSayfasi() {
   const [sonuclar, setSonuclar] = useState<Sonuc[] | null>(null);
   const [hata, setHata] = useState("");
   const [islemde, setIslemde] = useState(false);
+  const [oncelikler, setOncelikler] = useState<TahsilatOnceligi[] | null>(null);
 
   const yukle = useCallback(async () => {
     try {
@@ -55,6 +57,9 @@ export default function VadeHatirlatmaSayfasi() {
     }
   }, []);
   useEffect(() => { void yukle(); }, [yukle]);
+  // AI-17/18: risk ve öncelik; yüklenemezse ekranın geri kalanı etkilenmez.
+  useEffect(() => { api<TahsilatOnceligi[]>("/cari/vade-hatirlatma/oncelikler?adet=500").then(setOncelikler).catch(() => setOncelikler([])); }, []);
+  const riskler = useMemo(() => new Map((oncelikler ?? []).map((o) => [o.cariId, o.risk])), [oncelikler]);
 
   const secilebilir = useMemo(() => (adaylar ?? []).filter((a) => a.eposta), [adaylar]);
   const seciliAdaylar = useMemo(() => (adaylar ?? []).filter((a) => secili.has(a.cariId)), [adaylar, secili]);
@@ -109,6 +114,8 @@ export default function VadeHatirlatmaSayfasi() {
         </Alert>
       )}
 
+      <TahsilatOncelikleriKart liste={oncelikler} />
+
       <Card>
         <div className="vade-hatirlatma__ayar">
           <Field label="Kademe">
@@ -155,7 +162,7 @@ export default function VadeHatirlatmaSayfasi() {
               <tr key={a.cariId}>
                 <td><input type="checkbox" aria-label={`${a.unvan} seç`} disabled={!a.eposta} checked={secili.has(a.cariId)} onChange={() => degistir(a.cariId)} /></td>
                 <td>
-                  <a href={`/panel/cari/${a.cariId}`}><strong>{a.unvan}</strong></a>
+                  <a href={`/panel/cari/${a.cariId}`}><strong>{a.unvan}</strong></a> {riskler.get(a.cariId) && <RiskRozeti risk={riskler.get(a.cariId)!} />}
                   <div className="subtle">{a.kod} · {a.faturaSayisi} kalem{a.karaListe ? " · kara listede" : ""}{!a.aktif ? " · pasif" : ""}</div>
                 </td>
                 <td>{a.eposta ?? <Badge variant="warning">E-posta yok</Badge>}</td>

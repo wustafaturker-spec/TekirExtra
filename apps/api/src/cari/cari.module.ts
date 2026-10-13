@@ -16,6 +16,7 @@ import { MutabakatZamanlayiciService } from "./mutabakat-zamanlayici.service";
 import { EklerModule } from "../ekler/ekler.module";
 import { BildirimlerModule } from "../bildirimler/bildirimler.module";
 import { CariService } from "./cari.service";
+import { TahsilatRiskiService } from "./tahsilat-riski";
 import { CariIceAktarmaService } from "./cari-ice-aktarma.service";
 import { TenantModule } from "../tenant/tenant.module";
 
@@ -23,7 +24,7 @@ import { TenantModule } from "../tenant/tenant.module";
   imports: [TenantModule, EklerModule, BildirimlerModule],
   // Sabit yollu denetleyici önce: "cari/vade-hatirlatma/...", "cari/toplu/...", "cari/gruplar/...", "cari/mutabakatlar/..." `:id` kalıplarına düşmesin.
   controllers: [VadeHatirlatmaController, CariTopluController, CariGrupController, CariMutabakatController, MutabakatPortalController, CariController],
-  providers: [CariService, CariIceAktarmaService, VadeHatirlatmaService, CariTopluService, CariGrupService, CariMutabakatService, MutabakatPortalService, MutabakatZamanlayiciService],
+  providers: [TahsilatRiskiService, CariService, CariIceAktarmaService, VadeHatirlatmaService, CariTopluService, CariGrupService, CariMutabakatService, MutabakatPortalService, MutabakatZamanlayiciService],
   exports: [CariService],
 })
 export class CariModule implements OnModuleInit {
