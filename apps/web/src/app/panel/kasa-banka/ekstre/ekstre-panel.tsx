@@ -49,7 +49,9 @@ interface AcikFatura { id: string; no: string | null; tarih: string; vadeTarihi:
 interface Oneriler {
   kural: Kural | null;
   onerilenCari: { id: string; kod: string; unvan: string } | null;
-  cariEslesmeKaynagi: "iban" | "vkn" | "unvan" | "kural" | null;
+  cariEslesmeKaynagi: "iban" | "vkn" | "unvan" | "kural" | "fatura_no" | "tutar" | "yapay_zeka" | null;
+  /** AI-19: yapay zekâ önerisinin gerekçesi. */
+  cariGerekcesi?: string;
   faturalar: AcikFatura[];
   mevcutFisler: Array<{ id: string; tip: string; tarih: string; tutar: string; aciklama: string | null; tamEslesme: boolean; cari: { unvan: string } | null; fatura: { no: string | null } | null }>;
   cekler: Array<{ id: string; tur: string; portfoyNo: string; cekNo: string | null; vadeTarihi: string; tutar: string; durum: string; borclu: string; banka: string | null; tamEslesme: boolean; cari: { unvan: string } | null }>;
@@ -80,7 +82,7 @@ export const ESLESME_ADI: Record<EslesmeTuru, string> = {
   doviz_islem: "Döviz alım/satımı",
 };
 
-const KAYNAK_ADI: Record<string, string> = { iban: "IBAN eşleşti", vkn: "VKN eşleşti", unvan: "Unvan eşleşti", kural: "Kayıtlı kural" };
+const KAYNAK_ADI: Record<string, string> = { iban: "IBAN eşleşti", vkn: "VKN eşleşti", unvan: "Unvan eşleşti", kural: "Kayıtlı kural", fatura_no: "Fatura no eşleşti", tutar: "Tutar tek faturayı tutuyor", yapay_zeka: "Yapay zekâ önerisi — kontrol edin" };
 const yuvarla = (n: number) => Math.round(n * 100) / 100;
 
 /**
@@ -400,7 +402,10 @@ export function EslestirmePaneli({
                   <AramaSecici ariaLabel="Cari hesap" deger={cariId} onChange={(id) => { setCariId(id); setDagitim({}); }} placeholder="Cari ara…" secenekler={cariler.map((c) => ({ deger: c.id, baslik: c.unvan }))} />
                 </Field>
                 {oneriler.onerilenCari && cariId === oneriler.onerilenCari.id && oneriler.cariEslesmeKaynagi && (
-                  <Badge variant="info">{KAYNAK_ADI[oneriler.cariEslesmeKaynagi]}</Badge>
+                  <>
+                    <Badge variant={oneriler.cariEslesmeKaynagi === "yapay_zeka" ? "warning" : "info"}>{KAYNAK_ADI[oneriler.cariEslesmeKaynagi]}</Badge>
+                    {oneriler.cariGerekcesi && <small className="muted">{oneriler.cariGerekcesi}</small>}
+                  </>
                 )}
                 {cariId && (
                   <>

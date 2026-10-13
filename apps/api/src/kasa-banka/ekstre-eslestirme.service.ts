@@ -16,7 +16,7 @@
  * çözülür, üretilen kayıtlar silinir.
  */
 import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from "@nestjs/common";
-import { type EkstreEslesmeTuru, Prisma } from "@prisma/client";
+import { type DovizCinsi, type EkstreEslesmeTuru, Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
@@ -32,11 +32,13 @@ import type { ekstreEslestirSemasi, ekstreKuralGuncelleSemasi } from "./kasa-ban
 import { KrediKartiService } from "./kredi-karti.service";
 import { KrediService } from "./kredi.service";
 import { MevzuatService } from "../mevzuat/mevzuat.service";
+import { z as zod } from "zod";
+import { kiraciSaglayicisi } from "../ai/saglayici/kiraci-saglayici";
 
 const D = (deger: Prisma.Decimal.Value) => new Prisma.Decimal(deger);
 const GUN = 86_400_000;
 
-export type CariEslesmeKaynagi = "iban" | "vkn" | "unvan" | "kural" | null;
+export type CariEslesmeKaynagi = "iban" | "vkn" | "unvan" | "kural" | "fatura_no" | "tutar" | "yapay_zeka" | null;
 type EslestirGirdisi = z.infer<typeof ekstreEslestirSemasi>;
 
 @Injectable()
@@ -61,13 +63,29 @@ export class EkstreEslestirmeService {
     const giris = !satir.tutar.isNegative();
     const mutlak = satir.tutar.abs();
     const doviz = satir.bankaHesap.dovizCinsi;
+    const sonuc = await this.temelOneriler(tenantId, satir, giris, mutlak, doviz);
+    if (sonuc.onerilenCari || sonuc.kural) return sonuc;
+    // AI-19: kurallar cari bulamadıysa dil modeli açıklamadan karşı tarafı çıkarır.
+    // Çağrı veritabanı işleminin dışında yapılır; hata ya da onay yoksa öneri yalnız atlanır.
+    const ai = await this.yapayZekaCariOnerisi(tenantId, satir).catch(() => null);
+    if (!ai) return sonuc;
+    const faturalar = await this.prisma.tenantIslem(tenantId, (tx) => this.acikFaturalar(tx, ai.cari.id, giris, mutlak, doviz));
+    return { ...sonuc, onerilenCari: ai.cari, cariEslesmeKaynagi: "yapay_zeka" as CariEslesmeKaynagi, cariGerekcesi: ai.gerekce, faturalar };
+  }
 
+  private async temelOneriler(
+    tenantId: string,
+    satir: Awaited<ReturnType<EkstreEslestirmeService["satirGetir"]>>,
+    giris: boolean,
+    mutlak: Prisma.Decimal,
+    doviz: DovizCinsi,
+  ) {
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const kurallar = await tx.ekstreKurali.findMany({ where: { aktif: true } });
       const kural = kuralBul(kurallar, satir);
       const { cari, kaynak } = kural?.cariId
         ? { cari: await tx.cariHesap.findUnique({ where: { id: kural.cariId }, select: { id: true, kod: true, unvan: true } }), kaynak: "kural" as const }
-        : await this.cariOner(tx, tenantId, satir);
+        : await this.cariOner(tx, tenantId, satir, { giris, mutlak, doviz });
 
       const [faturalar, mevcutFisler, cekler, kartlar, kasalar, bankalar, masrafKategorileri, gelirKategorileri] = await Promise.all([
         cari ? this.acikFaturalar(tx, cari.id, giris, mutlak, doviz) : Promise.resolve([]),
@@ -482,7 +500,12 @@ export class EkstreEslestirmeService {
   }
 
   /** Cari önerisi: karşı IBAN → açıklamadaki VKN → açıklamada geçen unvan. */
-  private async cariOner(tx: Prisma.TransactionClient, tenantId: string, satir: { aciklama: string; karsiIban: string | null; karsiUnvan: string | null }) {
+  private async cariOner(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    satir: { aciklama: string; karsiIban: string | null; karsiUnvan: string | null },
+    tutar?: { giris: boolean; mutlak: Prisma.Decimal; doviz: DovizCinsi },
+  ) {
     const sec = { id: true, kod: true, unvan: true } as const;
     if (satir.karsiIban) {
       const iban = satir.karsiIban.replace(/\s/g, "").toUpperCase();
@@ -503,7 +526,49 @@ export class EkstreEslestirmeService {
       const unvan = metniNormalle(c.unvan);
       if (unvan.length >= 4 && metin.includes(unvan) && unvan.length > (enIyi ? metniNormalle(enIyi.unvan).length : 0)) enIyi = c;
     }
-    return { cari: enIyi, kaynak: (enIyi ? "unvan" : null) as CariEslesmeKaynagi };
+    if (enIyi) return { cari: enIyi, kaynak: "unvan" as CariEslesmeKaynagi };
+    // AI-19: açıklamada GİB biçimli fatura numarası (3 harf + 13 rakam) geçiyorsa o faturanın carisi.
+    for (const no of `${satir.aciklama} ${satir.karsiUnvan ?? ""}`.toUpperCase().match(/\b[A-Z0-9]{3}20\d{11}\b/g) ?? []) {
+      const f = await tx.fatura.findFirst({ where: { tenantId, no, durum: "kesin" }, select: { cari: { select: sec } } });
+      if (f) return { cari: f.cari, kaynak: "fatura_no" as CariEslesmeKaynagi };
+    }
+    // AI-19: kalanı satırla birebir tutan açık fatura yalnız bir carideyse o cari.
+    if (tutar) {
+      const adaylar = await tx.fatura.findMany({
+        where: { tenantId, durum: "kesin", dovizCinsi: tutar.doviz, tip: { in: tutar.giris ? ["satis", "alis_iade"] : ["alis", "satis_iade"] }, genelToplam: { gte: tutar.mutlak } },
+        select: { durum: true, genelToplam: true, cari: { select: sec }, ...FATURA_ODEME_SECIMI },
+        take: 500,
+      });
+      const tutanlar = new Map(adaylar.filter((f) => faturaOdemeDurumu(f).kalan.equals(tutar.mutlak)).map((f) => [f.cari.id, f.cari]));
+      if (tutanlar.size === 1) return { cari: [...tutanlar.values()][0], kaynak: "tutar" as CariEslesmeKaynagi };
+    }
+    return { cari: null, kaynak: null as CariEslesmeKaynagi };
+  }
+
+  /**
+   * AI-19: dil modeline yalnız satırın açıklaması ve karşı unvanı verilir; dönen
+   * karşı taraf adı cari unvanlarında aranır. Tek aday çıkarsa öneri olur.
+   */
+  private async yapayZekaCariOnerisi(tenantId: string, satir: { aciklama: string; karsiUnvan: string | null }) {
+    const { saglayici } = await kiraciSaglayicisi(this.prisma, tenantId, { ozellik: "ekstre" });
+    if (saglayici.saglayiciAdi === "tanimsiz") return null;
+    const sonuc = await saglayici.yapilandirilmisUretim(
+      {
+        sistemRol: "Banka ekstresi satırının açıklamasından ödemeyi yapan/alan karşı tarafın (firma ya da kişi) adını çıkarırsın. Banka adı, işlem türü (EFT, HAVALE, FAST), referans ve tutarı ad sayma. Emin değilsen null ver.",
+        prompt: `Açıklama: ${satir.aciklama}\nKarşı unvan: ${satir.karsiUnvan ?? "-"}\nJSON: {"karsiTarafAdi": string | null, "gerekce": string}`,
+      },
+      zod.object({ karsiTarafAdi: zod.string().nullable(), gerekce: zod.string().default("") }),
+    );
+    const kelimeler = metniNormalle(sonuc.karsiTarafAdi ?? "").split(/\s+/).filter((k) => k.length >= 3 && !/\d/.test(k) && !["LTD", "STI", "SAN", "TIC", "VE", "A.S", "AS"].includes(k.toUpperCase()));
+    if (!kelimeler.length) return null;
+    const sec = { id: true, kod: true, unvan: true } as const;
+    const cariler = await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findMany({ where: { tenantId, aktif: true }, select: sec }));
+    const puanli = cariler
+      .map((c) => ({ c, puan: kelimeler.filter((k) => metniNormalle(c.unvan).includes(k)).length }))
+      .filter((x) => x.puan > 0)
+      .sort((a, b) => b.puan - a.puan);
+    if (!puanli.length || (puanli[1] && puanli[1].puan === puanli[0].puan)) return null;
+    return { cari: puanli[0].c, gerekce: `Yapay zekâ açıklamadan “${sonuc.karsiTarafAdi}” adını çıkardı${sonuc.gerekce ? `: ${sonuc.gerekce}` : ""}.` };
   }
 
   /** Carinin bu yönde kalanı olan kesin faturaları; en eski vade önce (dağıtım sırası). */
