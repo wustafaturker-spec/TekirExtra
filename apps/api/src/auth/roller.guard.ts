@@ -12,6 +12,17 @@ import { ROLLER_ANAHTAR } from "./roller.decorator";
 /** Çalışan rolünün @Roller("calisan") dışında erişebildiği hesap uçları. */
 export const CALISAN_ACIK_YOLLAR = ["/auth/ben", "/auth/totp", "/auth/cikis", "/bildirimler"];
 
+/**
+ * Bir rolün `@Roller` listesi verilen uca erişip erişemeyeceği. Çalışan rolü
+ * yalnız adının açıkça geçtiği uçlara girer (PRS-21); hesap yolu istisnaları
+ * guard'dadır. Yapay zekâ araçları da ucu bu kuralla denetler (AI-02).
+ */
+export function rolUcaYetkili(rol: Rol, gerekli: Rol[] | undefined): boolean {
+  if (rol === "calisan") return Boolean(gerekli?.includes("calisan"));
+  if (!gerekli || gerekli.length === 0) return true;
+  return rol === "yonetici" || gerekli.includes(rol);
+}
+
 /** Rol denetimi (KLN-02): @Roller listesi + yonetici her zaman geçer. */
 @Injectable()
 export class RollerGuard implements CanActivate {
@@ -31,12 +42,8 @@ export class RollerGuard implements CanActivate {
       if (CALISAN_ACIK_YOLLAR.some((onek) => yol === onek || yol.startsWith(`${onek}/`))) return true;
       throw new ForbiddenException("Bu işlem için yetkiniz yok");
     }
-    if (!gerekli || gerekli.length === 0) return true;
     if (!baglam) return true; // @Public uçlar — AuthGuard zaten karar verdi
-
-    if (baglam.rol === "yonetici" || gerekli.includes(baglam.rol)) {
-      return true;
-    }
+    if (rolUcaYetkili(baglam.rol, gerekli)) return true;
     throw new ForbiddenException("Bu işlem için yetkiniz yok");
   }
 }

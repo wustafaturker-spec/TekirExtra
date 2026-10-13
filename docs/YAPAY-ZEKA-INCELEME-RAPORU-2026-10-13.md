@@ -43,19 +43,19 @@ doğru fikirler taşıyor. Ancak modül **bugünkü hâliyle üretime çıkamaz*
 | P0-2 | Ajan ucunda gövdeden `tenantId`/`userId` kabulü; tanınmayan gönderen ilk kullanıcıya eşleniyor | ✅ AI-01: kiracı/kullanıcı yalnız `aktifBaglam()`; kullanıcı kimliğiyle kiracı içinde aranır, yoksa 403; ilk kullanıcı/ilk kiracı yedekleri kalktı; kanal oturumu başka kullanıcıya aitse 403; web asistanı kullanıcı başına `web:<userId>` oturumu; `pin-dogrula` ve `oturum/:id` yalnız kendi oturumu |
 | P0-3 | Kiracı ayarıyla platform API anahtarının dışarı sızdırılması + SSRF (`baseUrl`) | ✅ AI-01: kiracı adresi yalnız kiracının kendi anahtarıyla; adres https + alan adı + yerel/özel ad yok (`kiraciAdresiHatasi`), kayıtta 400; Ollama adresi yalnız `OLLAMA_BASE_URL`. Kalan: alan adının özel IP'ye çözülmesi (DNS rebinding) engellenmiyor |
 | P0-4 | Sahte gönderim/transkripsiyon/OCR sonuçları gerçek gibi sunuluyor | ✅ AI-01: sağlayıcı/anahtar yoksa `TanimsizAiProvider` (503); mock yalnız ortamda `AI_PROVIDER=mock`; ayar okuma hatası yutulmuyor. Gönderim araçları "hiçbir şey gönderilmedi" deyip ekrana yönlendiriyor (uydurma alıcı kalktı); ses yazıya dökülemiyorsa komut çalışmaz; doğru PIN geçmişe yazılmaz. Ekranlar: sahte mikrofon, uydurma "850 TL" fiş kamerası kalktı; PIN yanlışken "doğrulandı" demiyor; hızlı komutlar yalnız kutuyu doldurur, taslak onay düğmesi teklif numarasıyla gönderir |
-| P1-1 | Ajanın teklif akışı belge kurallarını atlıyor (KDV %20 sabit, numara biçimi, varyant, döviz, onay) | Açık |
-| P1-2 | "ONAYLA" kiracıdaki herhangi bir kullanıcının son taslak teklifini onaylıyor | Açık |
+| P1-1 | Ajanın teklif akışı belge kurallarını atlıyor (KDV %20 sabit, numara biçimi, varyant, döviz, onay) | ✅ AI-02…07 (2026-10-13): araçlar ekranın denetleyici metotlarını çağırır (`UcCagirici`); KDV/birim karttan, fiyat ekranın fiyat önerisi ucundan (liste iskontosu ve döviz çevrimi dahil), numara onayda normal seriden (canlıda TKF2026000023). Regex/varsayılan cari-ürün kalktı |
+| P1-2 | "ONAYLA" kiracıdaki herhangi bir kullanıcının son taslak teklifini onaylıyor | ✅ AI-04: kesinleştiren işlem yalnız onay talebi açar; talebi yalnız isteyen kullanıcı düğmeyle onaylar (yazı onay sayılmaz), 24 saat, tek sefer, denetim kaydı + bildirim |
 | P1-3 | ChatBI/brifing rakamları yanlış ve rapor modülüyle tutarsız | Açık |
-| P1-4 | AI uçlarında rol denetimi yok | Açık |
-| P1-5 | PIN tasarımı işlevsiz ve zayıf | Açık |
+| P1-4 | AI uçlarında rol denetimi yok | ✅ AI-02: araçlar ucun `@Roller` ve e-Belge uygulaması kuralıyla süzülür ve çağrılır; OCR `muhasebe`, ChatBI/brifing finans rolleri; `/panel/ai` iç rollere açık |
+| P1-5 | PIN tasarımı işlevsiz ve zayıf | Kısmen (AI-10): PIN akışı ve uçları kodda kalktı; boş kolonlar AI-10 göçüyle silinecek |
 | P1-6 | Dinamik fiyat motoru: para birimi karışıyor, girdiler sabit | Açık |
 | P1-7 | API anahtarı düz metin; sağlayıcı hata gövdesi kullanıcıya dönüyor | Açık |
-| P2-1 | Niyet çözümleme regex ile; "AI" adı yanıltıcı | Açık |
-| P2-2 | Ekranlar: Tailwind sınıfları, satır içi renkler, dar ekran, 2 MB gövde sınırı | Açık |
+| P2-1 | Niyet çözümleme regex ile; "AI" adı yanıltıcı | ✅ AI-05: sağlayıcılara araç çağırma (Anthropic, OpenAI, Gemini, Ollama), en çok 8 tur; yanıt denetimi (aşağıda canlı bulgular) |
+| P2-2 | Ekranlar: Tailwind sınıfları, satır içi renkler, dar ekran, 2 MB gövde sınırı | Kısmen: asistan penceresi, mobil sayfa ve `/panel/ai` tek `AsistanSohbet` bileşeninde, token'larla; fiş/cari modalları, CFO kartı ve ayarlar sayfası kaldı |
 | P2-3 | OCR → masraf: çok oranlı KDV, belge görseli eklenmiyor, kategori eşleşmesi | Açık |
 | P2-4 | Sağlayıcı katmanı: emekli model adı, anahtar URL'de, zaman aşımı/maliyet sınırı yok | Açık |
 | P2-5 | KVKK: kişisel/ticari veri yurt dışı LLM'e onaysız gidiyor; sohbet kaydı süresiz | Açık |
-| P2-6 | Ölü/kullanılmayan yapılar (`belge_ocr_kayitlari`, görev tetikleyicileri, WhatsApp webhook) | Açık |
+| P2-6 | Ölü/kullanılmayan yapılar (`belge_ocr_kayitlari`, görev tetikleyicileri, WhatsApp webhook) | Kısmen: eski ajan araçları, MCP servisi, simülasyon/PIN uçları silindi; tablo ve görev tetikleyicileri kaldı |
 | P2-7 | Testler sahte Prisma ile; güvenlik ve RLS testi yok | Açık |
 
 ## 3. Bulgular
@@ -283,7 +283,36 @@ this.prisma.ajanOturumu` gibi yollar yalnız testlere uymak için var ve gerçek
 riski taşıyor. Kimliksiz MCP, gövdeden kiracı, rol, gerçek DB/RLS altında çalışma testleri yok
 (raporlardaki `raporlar.kabul.test.ts` benzeri bir kabul testi gerekli).
 
-## 4. Önerilen sıra
+## 4. Canlı deneme bulguları (AI-02…07, 2026-10-13)
+
+Demo kiracıda kayıtlı Gemini 2.5 Flash ile, `admin` (yönetici), `muhasebe` ve `depo` kullanıcılarıyla
+denendi. Sonuçlar:
+
+- **Çalışan:** cari/stok sorgusu; taslak teklif (varyantlı, dövizli liste fiyatı TL'ye çevrilerek);
+  onay talebi → başka kullanıcı onaylayamaz (403) → sahibi onaylar, teklif `TKF2026000023` aldı →
+  ikinci onay 409 → red; denetim kaydında `AI POST …` + araç + talep; bildirim talep kapanınca kapandı.
+  Depo rolüne taslak/onay araçları sunulmadı, silme isteği reddedildi. MCP uçları 404.
+- **Model araç çağırmadan iş yapmış gibi konuştu** ("teklif taslağı oluşturuldu" + uydurma bağlantı;
+  "onayınız gerekiyor, onayladığınızda iptal edilecek"). Sistem talimatı yetmedi → sunucuda
+  **yanıt denetimi** (`yanit-denetimi.ts`): yanıttaki kimlik/`/panel` adresi araç sonuçlarında yoksa,
+  talep yokken onay iddiası varsa ya da hiç araç çalışmadan işlem iddiası varsa bir kez düzeltme
+  istenir, yine uydurursa güvenli yanıt gösterilir.
+- **Gemini ara sıra içeriksiz yanıt dönüyor** (4 denemede 1) → aynı istek 2 kez yeniden denenir.
+- **Araç adını kesik yazdı** (`belge_taslagi_olust`) → en yakın adı öneren hata mesajı.
+- **Döviz hatası:** fiyat listesindeki 0,38 USD çevrilmeden 0,38 TL yazıldı (`cevrilebilir:false`
+  göz ardı edildi) → ekran gibi ürün kuru alınıp yeniden çevriliyor, liste iskontosu uygulanıyor;
+  çevrilemezse fiyat kullanıcıdan istenir.
+- **Veri:** "KARSEL OTOMOTİV" araması kayıttaki "KARSEL OTOTMOTİV" yazım hatasına takıldı → çok
+  kelimeli arama sonuçsuzsa ilk kelimeyle aday listesi.
+- **E2e gerilemesi (69d184d):** web API adresi göreli `/api/v1`'e çevrilmiş, e2e testleri hâlâ
+  `localhost:3001`'i taklit ediyordu; beş e2e dosyası kırıktı → desen `**/api/v1/**`.
+  Bunun ardında daha eski bir kırılma çıktı: e2e taklitlerindeki e-Belge uygulamaları verisi eski
+  biçimde (`uygulamaAcik` → `undefined.acik`), panel istemcide çöküyor. Yapay zekâ işinden bağımsız; ayrı ele alınmalı.
+
+Test verisi: denemede açılan iki yanlış/geçici taslak silindi; `TKF2026000023` (Ayşen Benni, 600 TL)
+onaylı kaldı.
+
+## 5. Önerilen sıra
 
 1. **Hemen (P0):** `McpController`'ı ve `/ai/ajan/mesaj`'ın gövde kimliğini kapat; ajan simülasyonunda
    sahte gönderim/transkripsiyonu kaldır; mock sağlayıcıyı üretimde devre dışı bırak; `baseUrl` + ortam

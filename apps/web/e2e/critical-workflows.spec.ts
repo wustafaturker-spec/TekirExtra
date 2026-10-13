@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
       sessionStorage.setItem("tekir_access", "e2e-token");
     }
   });
-  await page.route("http://localhost:3001/api/v1/**", async (route) => {
+  await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/auth/ben")) {
       await route.fulfill({ json: { userId: "u1", tenantId: "t1", rol: "yonetici" } });
@@ -77,7 +77,7 @@ test("işlem sonuçları ekran okuyucu canlı bölgeleriyle duyurulur", async ({
   await expect(hata).toHaveAttribute("aria-live", "assertive");
   await expect(hata).toHaveAttribute("aria-atomic", "true");
 
-  await page.route("http://localhost:3001/api/v1/auth/eposta-dogrula**", (route) =>
+  await page.route("**/api/v1/auth/eposta-dogrula**", (route) =>
     route.fulfill({ json: { mesaj: "E-posta adresiniz doğrulandı." } }),
   );
   await page.goto("/dogrula?token=e2e-token");
@@ -88,7 +88,7 @@ test("işlem sonuçları ekran okuyucu canlı bölgeleriyle duyurulur", async ({
 });
 
 test("sekmeler rollerini bildirir ve ok tuşlarıyla gezilebilir", async ({ page }) => {
-  await page.route("http://localhost:3001/api/v1/cari**", (route) => {
+  await page.route("**/api/v1/cari**", (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/cari/etiketler")) return route.fulfill({ json: [] });
     if (pathname.endsWith("/cari/c1/ekstre")) {
@@ -133,14 +133,14 @@ test("sekmeler rollerini bildirir ve ok tuşlarıyla gezilebilir", async ({ page
 });
 
 test("fatura doğrulama hataları ilgili seçiciye bağlanır ve ilk hataya odaklanır", async ({ page }) => {
-  await page.route("http://localhost:3001/api/v1/cari**", (route) => {
+  await page.route("**/api/v1/cari**", (route) => {
     const { pathname } = new URL(route.request().url());
     return route.fulfill({ json: pathname.endsWith("/cari/c1")
       ? { id: "c1", kod: "C001", unvan: "Test Müşteri", bakiyeler: [], risk: { mevcutRisk: "0", limit: null, kalanLimit: null, asim: false } }
       : { kayitlar: [{ id: "c1", kod: "C001", unvan: "Test Müşteri" }], sonrakiImlec: null }
     });
   });
-  await page.route("http://localhost:3001/api/v1/stok**", (route) => route.fulfill({ json: { kayitlar: [], sonrakiImlec: null } }));
+  await page.route("**/api/v1/stok**", (route) => route.fulfill({ json: { kayitlar: [], sonrakiImlec: null } }));
   await page.goto("/panel/fatura?yon=satis&yeni=1");
 
   await page.getByRole("button", { name: "Taslak faturayı kaydet" }).click();
@@ -247,7 +247,7 @@ test("dekoratif ikonlar kontrol ve bağlantı adlarını kirletmez", async ({ pa
 });
 
 test("salt okunur rol yetkisiz yönetim sayfasını alt içerik çalışmadan göremez", async ({ page }) => {
-  await page.route("http://localhost:3001/api/v1/auth/ben", (route) =>
+  await page.route("**/api/v1/auth/ben", (route) =>
     route.fulfill({ json: { userId: "u2", tenantId: "t1", rol: "salt_okunur" } }),
   );
   await page.goto("/panel/ayarlar/kullanicilar");
@@ -259,7 +259,7 @@ test("salt okunur rol yetkisiz yönetim sayfasını alt içerik çalışmadan g�
 
 test("proje seçeneklerini yükler ve yeni projeyi kaydeder", async ({ page }) => {
   let kaydedilen: Record<string, unknown> | null = null;
-  await page.route("http://localhost:3001/api/v1/projeler**", async (route) => {
+  await page.route("**/api/v1/projeler**", async (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/projeler/secenekler")) {
       return route.fulfill({ json: {
@@ -291,7 +291,7 @@ test("proje seçeneklerini yükler ve yeni projeyi kaydeder", async ({ page }) =
 });
 
 test("başarılı giriş access tokenı kaydeder ve panele yönlendirir", async ({ page }) => {
-  await page.route("http://localhost:3001/api/v1/auth/giris", async (route) => {
+  await page.route("**/api/v1/auth/giris", async (route) => {
     expect(route.request().postDataJSON()).toMatchObject({ eposta: "kullanici@example.com", parola: "guvenli-parola" });
     await route.fulfill({ json: { accessToken: "yeni-access-token", kullanici: { rol: "yonetici" } } });
   });
@@ -320,7 +320,7 @@ test("eski kalıcı tokenı sekme oturumuna taşır ve localStorage kopyasını 
 
 test("faturasız gelir kaydı seçilen hesaba tahsilat oluşturur", async ({ page }) => {
   let kaydedilen: Record<string, unknown> | null = null;
-  await page.route("http://localhost:3001/api/v1/gelirler**", async (route) => {
+  await page.route("**/api/v1/gelirler**", async (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/gelirler/kategoriler")) {
       return route.fulfill({ json: [{ id: "kat1", ad: "Faiz Geliri", varsayilanStopajOrani: "15", varsayilanKdvOrani: "0", muhasebeKodu: "642", ustId: null }] });
@@ -331,10 +331,10 @@ test("faturasız gelir kaydı seçilen hesaba tahsilat oluşturur", async ({ pag
     }
     return route.fulfill({ json: [] });
   });
-  await page.route("http://localhost:3001/api/v1/kasa-banka/kasalar", (route) =>
+  await page.route("**/api/v1/kasa-banka/kasalar", (route) =>
     route.fulfill({ json: [{ id: "k1", ad: "Merkez Kasa", dovizCinsi: "TRY", bakiye: "1000" }] }),
   );
-  await page.route("http://localhost:3001/api/v1/kasa-banka/bankalar", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/v1/kasa-banka/bankalar", (route) => route.fulfill({ json: [] }));
   await page.goto("/panel/gelirler");
   await page.getByRole("button", { name: /Yeni Gelir Kaydı/ }).click();
   await page.getByLabel("Gelir Kategorisi").selectOption("kat1");
@@ -348,7 +348,7 @@ test("faturasız gelir kaydı seçilen hesaba tahsilat oluşturur", async ({ pag
 
 test("kasa ödeme fişi doğru hesap ve işlem tipiyle kaydedilir", async ({ page }) => {
   let kaydedilen: Record<string, unknown> | null = null;
-  await page.route("http://localhost:3001/api/v1/kasa-banka/**", async (route) => {
+  await page.route("**/api/v1/kasa-banka/**", async (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/kasalar")) return route.fulfill({ json: [{ id: "k1", ad: "Merkez Kasa", dovizCinsi: "TRY", bakiye: "1000", borc: "0", alacak: "0", aktif: true }] });
     if (pathname.endsWith("/bankalar")) return route.fulfill({ json: [] });
@@ -450,7 +450,7 @@ test("değiştirilmiş fatura formu yanlışlıkla terk edilmez", async ({ page 
 
 test("kullanıcı panelden geri bildirim gönderebilir", async ({ page }) => {
   let gonderilen: unknown;
-  await page.route("http://localhost:3001/api/v1/kullanim/geri-bildirim", async (route) => {
+  await page.route("**/api/v1/kullanim/geri-bildirim", async (route) => {
     gonderilen = route.request().postDataJSON();
     await route.fulfill({ json: { kaydedildi: true } });
   });
@@ -476,7 +476,7 @@ test("kullanıcı panelden geri bildirim gönderebilir", async ({ page }) => {
 
 test("başarısız geri bildirim formu veriyi korur ve yeniden gönderilebilir", async ({ page }) => {
   let deneme = 0;
-  await page.route("http://localhost:3001/api/v1/kullanim/geri-bildirim", async (route) => {
+  await page.route("**/api/v1/kullanim/geri-bildirim", async (route) => {
     deneme += 1;
     if (deneme === 1) {
       await route.fulfill({ status: 500, json: { mesaj: "Geçici sunucu hatası" } });
@@ -506,12 +506,12 @@ test("başarısız geri bildirim formu veriyi korur ve yeniden gönderilebilir",
 
 
 test("ana panel kuyruk sayaçları tüm veri sayfalarını kapsar", async ({ page }) => {
-  await page.route("http://localhost:3001/api/v1/auth/ben", (route) =>
+  await page.route("**/api/v1/auth/ben", (route) =>
     route.fulfill({ json: { userId: "u1", tenantId: "t1", rol: "satis" } }),
   );
-  await page.route("http://localhost:3001/api/v1/firma", (route) => route.fulfill({ json: { unvan: "Test Firma" } }));
+  await page.route("**/api/v1/firma", (route) => route.fulfill({ json: { unvan: "Test Firma" } }));
   const faturaIstekleri: string[] = []; const stokIstekleri: string[] = [];
-  await page.route("http://localhost:3001/api/v1/fatura**", (route) => {
+  await page.route("**/api/v1/fatura**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/fatura/is-kuyrugu-ozeti")) {
       return route.fulfill({ json: { taslakSatis: 2, taslakAlis: 0, ebelgeHata: 0, acikTahsilat: 2, acikOdeme: 0 } });
@@ -524,7 +524,7 @@ test("ana panel kuyruk sayaçları tüm veri sayfalarını kapsar", async ({ pag
       : { kayitlar: [fatura], sonrakiImlec: "fatura-1" }
     });
   });
-  await page.route("http://localhost:3001/api/v1/stok**", (route) => {
+  await page.route("**/api/v1/stok**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/v1/stok/kritik-ozeti") return route.fulfill({ json: { kritikStok: 2 } });
     if (url.pathname !== "/api/v1/stok") return route.fallback();
@@ -549,7 +549,7 @@ test("stok sayımı tüm stok sayfalarını forma yükler", async ({ page }) => 
     id, kod, ad, tip: "urun", anaBirim: "adet", mevcutMiktar: "10",
   });
   const istekler: string[] = [];
-  await page.route("http://localhost:3001/api/v1/stok**", (route) => {
+  await page.route("**/api/v1/stok**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/v1/stok/sayimlar") return route.fulfill({ json: [] });
     if (url.pathname !== "/api/v1/stok") return route.fallback();
@@ -569,7 +569,7 @@ test("stok sayımı tüm stok sayfalarını forma yükler", async ({ page }) => 
 });
 
 test("kategori ürün sayıları tüm stok sayfalarını kapsar", async ({ page }) => {
-  await page.route("http://localhost:3001/api/v1/stok**", (route) => {
+  await page.route("**/api/v1/stok**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/v1/stok/kategoriler") {
       return route.fulfill({ json: [{ id: "kat-1", ad: "Elektronik", ustId: null, ust: null }] });
@@ -592,9 +592,9 @@ test("kategori ürün sayıları tüm stok sayfalarını kapsar", async ({ page 
 // geliştirme sunucusunda React strict mode efektleri iki kez çalıştırır ve her sayfa
 // iki kez istenir. Üretim derlemesinde her sayfa bir kez istenir (2026-09-13 ölçümü).
 test("kasa banka fişi tüm cari sayfalarını seçime yükler", async ({ page }) => {
-  await page.route("http://localhost:3001/api/v1/kasa-banka/**", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/v1/kasa-banka/**", (route) => route.fulfill({ json: [] }));
   const istekler: string[] = [];
-  await page.route("http://localhost:3001/api/v1/cari**", (route) => {
+  await page.route("**/api/v1/cari**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname !== "/api/v1/cari") return route.fallback();
     const imlec = url.searchParams.get("imlec");
@@ -615,7 +615,7 @@ test("kasa banka fişi tüm cari sayfalarını seçime yükler", async ({ page }
 });
 
 test("fiyat listesi tüm stok sayfalarını ürün seçimine yükler", async ({ page }) => {
-  await page.route("http://localhost:3001/api/v1/fiyat-listeleri**", (route) => {
+  await page.route("**/api/v1/fiyat-listeleri**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/v1/fiyat-listeleri/liste-1") {
       return route.fulfill({ json: { id: "liste-1", ad: "Bayi", dovizCinsi: "TRY", aktif: true, cariSayisi: 0, kalemler: [] } });
@@ -623,7 +623,7 @@ test("fiyat listesi tüm stok sayfalarını ürün seçimine yükler", async ({ 
     return route.fulfill({ json: [{ id: "liste-1", ad: "Bayi", dovizCinsi: "TRY", aktif: true, kalemSayisi: 0, cariSayisi: 0 }] });
   });
   const istekler: string[] = [];
-  await page.route("http://localhost:3001/api/v1/stok**", (route) => {
+  await page.route("**/api/v1/stok**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname !== "/api/v1/stok") return route.fallback();
     const imlec = url.searchParams.get("imlec");
@@ -643,11 +643,11 @@ test("fiyat listesi tüm stok sayfalarını ürün seçimine yükler", async ({ 
 });
 
 test("belge formu tüm cari ve stok sayfalarını seçime yükler", async ({ page }) => {
-  await page.route("http://localhost:3001/api/v1/belgeler**", (route) =>
+  await page.route("**/api/v1/belgeler**", (route) =>
     route.fulfill({ json: { kayitlar: [], sonrakiImlec: null } }),
   );
   const cariIstekleri: string[] = []; const stokIstekleri: string[] = [];
-  await page.route("http://localhost:3001/api/v1/cari**", (route) => {
+  await page.route("**/api/v1/cari**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname !== "/api/v1/cari") return route.fallback();
     const imlec = url.searchParams.get("imlec"); cariIstekleri.push(imlec ?? "ilk");
@@ -656,7 +656,7 @@ test("belge formu tüm cari ve stok sayfalarını seçime yükler", async ({ pag
       : { kayitlar: [{ id: "cari-1", kod: "C001", unvan: "İlk Belge Carisi" }], sonrakiImlec: "cari-1" }
     });
   });
-  await page.route("http://localhost:3001/api/v1/stok**", (route) => {
+  await page.route("**/api/v1/stok**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname !== "/api/v1/stok") return route.fallback();
     const imlec = url.searchParams.get("imlec"); stokIstekleri.push(imlec ?? "ilk");
@@ -679,7 +679,7 @@ test("belge formu tüm cari ve stok sayfalarını seçime yükler", async ({ pag
 test("fatura formu tüm cari ve stok sayfalarını seçime yükler", async ({ page }) => {
   const cariIstekleri: string[] = [];
   const stokIstekleri: string[] = [];
-  await page.route("http://localhost:3001/api/v1/cari**", (route) => {
+  await page.route("**/api/v1/cari**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname !== "/api/v1/cari") return route.fallback();
     const imlec = url.searchParams.get("imlec"); cariIstekleri.push(imlec ?? "ilk");
@@ -688,7 +688,7 @@ test("fatura formu tüm cari ve stok sayfalarını seçime yükler", async ({ pa
       : { kayitlar: [{ id: "cari-1", kod: "C001", unvan: "İlk Sayfa Cari" }], sonrakiImlec: "cari-1" }
     });
   });
-  await page.route("http://localhost:3001/api/v1/stok**", (route) => {
+  await page.route("**/api/v1/stok**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname !== "/api/v1/stok") return route.fallback();
     const imlec = url.searchParams.get("imlec"); stokIstekleri.push(imlec ?? "ilk");
@@ -709,7 +709,7 @@ test("fatura formu tüm cari ve stok sayfalarını seçime yükler", async ({ pa
 });
 
 test("stok tedarikçi seçimi tüm cari sayfalarını yükler", async ({ page }) => {
-  await page.route("http://localhost:3001/api/v1/stok/stok-1**", (route) => {
+  await page.route("**/api/v1/stok/stok-1**", (route) => {
     const yol = new URL(route.request().url()).pathname;
     if (yol.endsWith("/hareketler") || yol.endsWith("/depo-bakiyeleri")) return route.fulfill({ json: [] });
     return route.fulfill({ json: {
@@ -720,9 +720,9 @@ test("stok tedarikçi seçimi tüm cari sayfalarını yükler", async ({ page })
       kullanilabilirMiktar: "10", ortalamaMaliyet: "75", aktif: true, kategori: null, birimler: [], barkodlar: [], tedarikciler: [], izinliEylemler: [],
     } });
   });
-  await page.route("http://localhost:3001/api/v1/stok/kategoriler", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/v1/stok/kategoriler", (route) => route.fulfill({ json: [] }));
   const istekler: string[] = [];
-  await page.route("http://localhost:3001/api/v1/cari**", (route) => {
+  await page.route("**/api/v1/cari**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname !== "/api/v1/cari") return route.fallback();
     const imlec = url.searchParams.get("imlec"); istekler.push(imlec ?? "ilk");
@@ -746,13 +746,13 @@ test("stok tedarikçi seçimi tüm cari sayfalarını yükler", async ({ page })
 test("çek senet formu tüm cari sayfalarını seçime yükler", async ({ page }) => {
   // Kalıp özet ucunu da yakalar; özet nesne bekler, dizi gelirse sayfa çöker.
   const bos = { adet: 0, toplamTry: "0" };
-  await page.route("http://localhost:3001/api/v1/kasa-banka/cek-senet**", (route) => route.fulfill({
+  await page.route("**/api/v1/kasa-banka/cek-senet**", (route) => route.fulfill({
     json: new URL(route.request().url()).pathname.endsWith("/cek-senet-ozet")
       ? { acik: { ...bos, dovizler: {} }, geciken: bos, yaklasan: bos, bankada: bos, ciro: bos, karsiliksiz: bos }
       : [],
   }));
   const istekler: string[] = [];
-  await page.route("http://localhost:3001/api/v1/cari**", (route) => {
+  await page.route("**/api/v1/cari**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname !== "/api/v1/cari") return route.fallback();
     const imlec = url.searchParams.get("imlec"); istekler.push(imlec ?? "ilk");
@@ -771,7 +771,7 @@ test("çek senet formu tüm cari sayfalarını seçime yükler", async ({ page }
 });
 
 test("rapor filtreleri tüm cari ve stok sayfalarını yükler", async ({ page }) => {
-  await page.route("http://localhost:3001/api/v1/raporlar**", (route) => {
+  await page.route("**/api/v1/raporlar**", (route) => {
     const yol = new URL(route.request().url()).pathname;
     if (yol.endsWith("/gorunumler")) return route.fulfill({ json: [] });
     return route.fulfill({ json: [{
@@ -786,8 +786,8 @@ test("rapor filtreleri tüm cari ve stok sayfalarını yükler", async ({ page }
       ? { kayitlar: [{ id: onEk + "-2", ad: "İkinci Sayfa " + tur }], sonrakiImlec: null }
       : { kayitlar: [{ id: onEk + "-1", ad: "İlk Sayfa " + tur }], sonrakiImlec: onEk + "-1" };
   };
-  await page.route("http://localhost:3001/api/v1/cari**", (route) => route.fulfill({ json: sayfaliYanit(new URL(route.request().url()), "Cari") }));
-  await page.route("http://localhost:3001/api/v1/stok**", (route) => {
+  await page.route("**/api/v1/cari**", (route) => route.fulfill({ json: sayfaliYanit(new URL(route.request().url()), "Cari") }));
+  await page.route("**/api/v1/stok**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname !== "/api/v1/stok") return route.fallback();
     return route.fulfill({ json: sayfaliYanit(url, "Stok") });
@@ -806,7 +806,7 @@ test("fatura listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ pa
     odemeOzeti: { durum: "odenmedi", odenen: "0.00", kalan: "1200.00" },
   });
   const istekler: string[] = [];
-  await page.route("http://localhost:3001/api/v1/fatura**", (route) => {
+  await page.route("**/api/v1/fatura**", (route) => {
     const url = new URL(route.request().url());
     if (url.searchParams.get("adet") === "200") return route.fulfill({ json: { kayitlar: [], sonrakiImlec: null } });
     const imlec = url.searchParams.get("imlec");
@@ -834,7 +834,7 @@ test("açık ödeme filtresi eşleşme için sonraki fatura sayfasını tarar", 
     ebelge: null, odemeOzeti: { durum: odemeDurumu, odenen: odemeDurumu === "odendi" ? "1200.00" : "0.00", kalan: odemeDurumu === "odendi" ? "0.00" : "1200.00" },
   });
   const istekler: string[] = [];
-  await page.route("http://localhost:3001/api/v1/fatura**", (route) => {
+  await page.route("**/api/v1/fatura**", (route) => {
     const url = new URL(route.request().url());
     if (url.searchParams.get("adet") === "200") return route.fulfill({ json: { kayitlar: [], sonrakiImlec: null } });
     const imlec = url.searchParams.get("imlec");
@@ -864,7 +864,7 @@ test("geç dönen eski fatura filtresi güncel sonucu ezmez", async ({ page }) =
   const yavasBekleme = new Promise<void>((resolve) => { yavasYanitla = resolve; });
   const yavasIstek = new Promise<void>((resolve) => { yavasBasladi = resolve; });
   const yavasBitti = new Promise<void>((resolve) => { yavasTamamlandi = resolve; });
-  await page.route("http://localhost:3001/api/v1/fatura**", async (route) => {
+  await page.route("**/api/v1/fatura**", async (route) => {
     const durum = new URL(route.request().url()).searchParams.get("durum");
     if (durum === "taslak") {
       yavasBasladi(); await yavasBekleme;
@@ -890,7 +890,7 @@ test("cari listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page
     karaListe: false, bakiyeler: [{ dovizCinsi: "TRY", bakiye: "0.00" }],
   });
   const istekler: string[] = [];
-  await page.route("http://localhost:3001/api/v1/cari**", (route) => {
+  await page.route("**/api/v1/cari**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname !== "/api/v1/cari") return route.fallback();
     const imlec = url.searchParams.get("imlec");
@@ -917,7 +917,7 @@ test("cari türü ve bloke filtreleri sunucu sorgusuna uygulanır", async ({ pag
     bakiyeler: [{ dovizCinsi: "TRY", bakiye: "0.00" }],
   });
   const istekler: URL[] = [];
-  await page.route("http://localhost:3001/api/v1/cari**", (route) => {
+  await page.route("**/api/v1/cari**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname !== "/api/v1/cari") return route.fallback();
     istekler.push(url);
@@ -947,7 +947,7 @@ test("geç dönen eski cari araması güncel sonucu ezmez", async ({ page }) => 
   const yavasBekleme = new Promise<void>((resolve) => { yavasYanitla = resolve; });
   const yavasIstek = new Promise<void>((resolve) => { yavasBasladi = resolve; });
   const yavasBitti = new Promise<void>((resolve) => { yavasTamamlandi = resolve; });
-  await page.route("http://localhost:3001/api/v1/cari**", async (route) => {
+  await page.route("**/api/v1/cari**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname !== "/api/v1/cari") return route.fallback();
     const arama = url.searchParams.get("arama");
@@ -976,7 +976,7 @@ test("stok listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ page
     alisFiyati: "100.00", satisFiyati: "120.00", mevcutMiktar: "10", ortalamaMaliyet: "90.00",
   });
   const istekler: string[] = [];
-  await page.route("http://localhost:3001/api/v1/stok**", (route) => {
+  await page.route("**/api/v1/stok**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname !== "/api/v1/stok") return route.fallback();
     const imlec = url.searchParams.get("imlec");
@@ -1006,7 +1006,7 @@ test("geç dönen eski stok araması güncel sonucu ezmez", async ({ page }) => 
   const yavasBekleme = new Promise<void>((resolve) => { yavasYanitla = resolve; });
   const yavasIstek = new Promise<void>((resolve) => { yavasBasladi = resolve; });
   const yavasBitti = new Promise<void>((resolve) => { yavasTamamlandi = resolve; });
-  await page.route("http://localhost:3001/api/v1/stok**", async (route) => {
+  await page.route("**/api/v1/stok**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname !== "/api/v1/stok") return route.fallback();
     const arama = url.searchParams.get("arama");
@@ -1031,7 +1031,7 @@ test("geç dönen eski stok araması güncel sonucu ezmez", async ({ page }) => 
 
 test("fatura, e-Belge ve ödeme durumları bağımsız izlenebilir", async ({ page }) => {
   const faturaIstekleri: URL[] = [];
-  await page.route("http://localhost:3001/api/v1/fatura**", async (route) => {
+  await page.route("**/api/v1/fatura**", async (route) => {
     faturaIstekleri.push(new URL(route.request().url()));
     await route.fulfill({ json: { kayitlar: [{
       id: "f1", no: "SAT2026000001", tip: "satis", tarih: "2026-08-07", durum: "kesin",
@@ -1066,7 +1066,7 @@ test("fatura, e-Belge ve ödeme durumları bağımsız izlenebilir", async ({ pa
 
 test("ana sayfa role uygun iş kuyruklarını ve finansal görünürlüğü sunar", async ({ page }) => {
   let rol: "satis" | "yonetici" = "satis";
-  await page.route("http://localhost:3001/api/v1/**", async (route) => {
+  await page.route("**/api/v1/**", async (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/auth/ben")) return route.fulfill({ json: { rol } });
     if (pathname.endsWith("/firma")) return route.fulfill({ json: { unvan: "Örnek Firma" } });
@@ -1101,19 +1101,19 @@ test("ana sayfa role uygun iş kuyruklarını ve finansal görünürlüğü suna
 
 
 test("kesinleştirme öncesi stok, cari, vergi ve e-Belge etkisi gösterilir", async ({ page }) => {
-  await page.route("http://localhost:3001/api/v1/fatura", (route) => route.fulfill({ json: { kayitlar: [{
+  await page.route("**/api/v1/fatura", (route) => route.fulfill({ json: { kayitlar: [{
     id: "f1", no: null, tip: "satis", tarih: "2026-08-07", durum: "taslak",
     toplamMatrah: "1000.00", toplamKdv: "200.00", genelToplam: "1200.00",
     cari: { unvan: "Örnek Müşteri AŞ" }, odemeOzeti: { durum: "beklemede", odenen: "0", kalan: "1200" },
   }] } }));
-  await page.route("http://localhost:3001/api/v1/fatura/f1", (route) => route.fulfill({ json: {
+  await page.route("**/api/v1/fatura/f1", (route) => route.fulfill({ json: {
     id: "f1", no: null, tip: "satis", tarih: "2026-08-07", durum: "taslak", dovizCinsi: "TRY",
     toplamMatrah: "1000.00", toplamKdv: "200.00", genelToplam: "1200.00",
     cari: { id: "c1", kod: "C001", unvan: "Örnek Müşteri AŞ", vknTckn: "1234567890", eFaturaMukellefi: true },
     satirlar: [{ stokId: "s1", stokKod: "S001", stokAd: "Ürün", miktar: "2", birim: "adet" }],
     odemeOzeti: { durum: "beklemede", odenen: "0", kalan: "1200", hareketler: [] },
   } }));
-  await page.route("http://localhost:3001/api/v1/cari/c1", (route) => route.fulfill({ json: {
+  await page.route("**/api/v1/cari/c1", (route) => route.fulfill({ json: {
     id: "c1", unvan: "Örnek Müşteri AŞ", bakiyeler: [],
     risk: { mevcutRisk: "300.00", limit: "5000.00", kalanLimit: "4700.00", asim: false },
   } }));
@@ -1134,12 +1134,12 @@ test("kesinleştirme öncesi stok, cari, vergi ve e-Belge etkisi gösterilir", a
 
 
 test("fatura kalemleri yalnız klavyeyle kesintisiz girilebilir", async ({ page }) => {
-  await page.route("http://localhost:3001/api/v1/stok?adet=200", (route) => route.fulfill({ json: { kayitlar: [{
+  await page.route("**/api/v1/stok?adet=200", (route) => route.fulfill({ json: { kayitlar: [{
     id: "s1", kod: "STK-001", ad: "Klavye Ürünü", barkod: "8690000000001", anaBirim: "adet",
     kullanilabilirMiktar: "25", alisFiyati: "80.00", satisFiyati: "100.00", kdvOrani: "20",
     tedarikciUrunKodlari: ["TED-42"],
   }], sonrakiImlec: null } }));
-  await page.route("http://localhost:3001/api/v1/stok/s1/tavsiye-fiyat**", (route) => route.fulfill({ json: { birimFiyat: 100, iskontoOrani: 0 } }));
+  await page.route("**/api/v1/stok/s1/tavsiye-fiyat**", (route) => route.fulfill({ json: { birimFiyat: 100, iskontoOrani: 0 } }));
 
   await page.goto("/panel/fatura?yon=satis&yeni=1");
   const urun = page.getByRole("combobox", { name: "1. satır ürün veya hizmet seçimi" });
@@ -1174,15 +1174,15 @@ test("hatalı e-Belge nedeni gösterilir ve yeniden gönderilebilir", async ({ p
     ebelge: { id: "e1", durum: "hata", tur: "efatura" },
     odemeOzeti: { durum: "odenmedi", odenen: "0", kalan: "1200" },
   };
-  await page.route("http://localhost:3001/api/v1/fatura", (route) => route.fulfill({ json: { kayitlar: [liste] } }));
-  await page.route("http://localhost:3001/api/v1/fatura/f1", (route) => route.fulfill({ json: {
+  await page.route("**/api/v1/fatura", (route) => route.fulfill({ json: { kayitlar: [liste] } }));
+  await page.route("**/api/v1/fatura/f1", (route) => route.fulfill({ json: {
     ...liste, dovizCinsi: "TRY", cari: { id: "c1", kod: "C001", unvan: "Örnek Müşteri AŞ", vknTckn: "1234567890", eFaturaMukellefi: true },
     satirlar: [], odemeOzeti: { ...liste.odemeOzeti, hareketler: [] },
     ebelge: { id: "e1", durum: yenidenGonderildi ? "kuyrukta" : "hata", tur: "efatura", entegratorRef: null,
       hataMesaji: yenidenGonderildi ? null : "Alıcı VKN bilgisi entegratör kaydıyla eşleşmiyor.",
       createdAt: "2026-08-07T08:00:00.000Z", updatedAt: "2026-08-07T08:05:00.000Z" },
   } }));
-  await page.route("http://localhost:3001/api/v1/ebelge/gonder/f1", (route) => {
+  await page.route("**/api/v1/ebelge/gonder/f1", (route) => {
     yenidenGonderildi = true;
     return route.fulfill({ json: { kuyrugaAlindi: true } });
   });
@@ -1211,9 +1211,9 @@ test("belge dönüşümünden önce aktarılacak içerik onaylanır", async ({ p
       { stokId: "s2", miktar: "1", birim: "adet", birimFiyat: "500", iskontoOrani: "0", kdvOrani: "20" },
     ],
   };
-  await page.route("http://localhost:3001/api/v1/belgeler", (route) => route.fulfill({ json: { kayitlar: [belge] } }));
-  await page.route("http://localhost:3001/api/v1/belgeler/b1", (route) => route.fulfill({ json: belge }));
-  await page.route("http://localhost:3001/api/v1/belgeler/b1/donustur", async (route) => {
+  await page.route("**/api/v1/belgeler", (route) => route.fulfill({ json: { kayitlar: [belge] } }));
+  await page.route("**/api/v1/belgeler/b1", (route) => route.fulfill({ json: belge }));
+  await page.route("**/api/v1/belgeler/b1/donustur", async (route) => {
     donusumIstegi = route.request().postDataJSON();
     await route.fulfill({ json: { id: "b2" } });
   });
@@ -1240,11 +1240,11 @@ test("görünür faturalanabilir belgeler topluca seçilir", async ({ page }) =>
     dovizCinsi: "TRY", faturaId: null, cari: { id: "c1", kod: "C001", unvan: "Örnek Müşteri" },
   });
   let gonderilen: unknown = null;
-  await page.route("http://localhost:3001/api/v1/belgeler", (route) => route.fulfill({ json: { kayitlar: [
+  await page.route("**/api/v1/belgeler", (route) => route.fulfill({ json: { kayitlar: [
     belge("b1", "SP-001", "siparis", "onaylandi"), belge("b2", "IRS-001", "irsaliye", "onaylandi"),
     belge("b3", "SP-TASLAK", "siparis", "taslak"),
   ], sonrakiImlec: null } }));
-  await page.route("http://localhost:3001/api/v1/belgeler/toplu-fatura", (route) => {
+  await page.route("**/api/v1/belgeler/toplu-fatura", (route) => {
     gonderilen = route.request().postDataJSON();
     return route.fulfill({ json: { faturaId: "f1" } });
   });
@@ -1274,7 +1274,7 @@ test("uyumsuz belgelerin birlikte faturalanması seçimde engellenir", async ({ 
     id, no, tur: "siparis", durum: "onaylandi", yon: "satis", tarih: "2026-08-07", genelToplam: "1200.00",
     dovizCinsi: "USD", kur, depoId: "d1", faturaId: null, cari: { id: cariId, kod: cariId, unvan: `Cari ${cariId}` },
   });
-  await page.route("http://localhost:3001/api/v1/belgeler", (route) => route.fulfill({ json: {
+  await page.route("**/api/v1/belgeler", (route) => route.fulfill({ json: {
     kayitlar: [belge("b1", "SP-001", "c1", "32.0000"), belge("b2", "SP-002", "c1", "33.0000")], sonrakiImlec: null,
   } }));
 
@@ -1299,8 +1299,8 @@ test("toplu fatura oluşturulurken yinelenen gönderim engellenir", async ({ pag
   let istekSayisi = 0;
   let yanitla!: () => void;
   const beklet = new Promise<void>((resolve) => { yanitla = resolve; });
-  await page.route("http://localhost:3001/api/v1/belgeler", (route) => route.fulfill({ json: { kayitlar: [belge], sonrakiImlec: null } }));
-  await page.route("http://localhost:3001/api/v1/belgeler/toplu-fatura", async (route) => {
+  await page.route("**/api/v1/belgeler", (route) => route.fulfill({ json: { kayitlar: [belge], sonrakiImlec: null } }));
+  await page.route("**/api/v1/belgeler/toplu-fatura", async (route) => {
     istekSayisi += 1;
     await beklet;
     await route.fulfill({ json: { faturaId: "f1" } });
@@ -1324,11 +1324,11 @@ test("toplu fatura yarışı sonrası belge listesi yenilenir", async ({ page })
     cari: { id: "c1", kod: "C001", unvan: "Örnek Müşteri" },
   });
   let listeIstegi = 0;
-  await page.route("http://localhost:3001/api/v1/belgeler", (route) => {
+  await page.route("**/api/v1/belgeler", (route) => {
     listeIstegi += 1;
     return route.fulfill({ json: { kayitlar: [belge(listeIstegi === 1 ? "onaylandi" : "kapandi")], sonrakiImlec: null } });
   });
-  await page.route("http://localhost:3001/api/v1/belgeler/toplu-fatura", (route) => route.fulfill({
+  await page.route("**/api/v1/belgeler/toplu-fatura", (route) => route.fulfill({
     status: 409, json: { message: "Belge başka bir işlemde faturalanmış" },
   }));
 
@@ -1343,7 +1343,7 @@ test("toplu fatura yarışı sonrası belge listesi yenilenir", async ({ page })
 
 test("belge sayfası URL filtreleriyle tek sorguda açılır", async ({ page }) => {
   const istekler: URL[] = [];
-  await page.route("http://localhost:3001/api/v1/belgeler**", (route) => {
+  await page.route("**/api/v1/belgeler**", (route) => {
     istekler.push(new URL(route.request().url()));
     return route.fulfill({ json: { kayitlar: [{
       id: "b1", no: "SP-ALIS", tur: "siparis", durum: "onaylandi", yon: "alis", tarih: "2026-08-07",
@@ -1367,7 +1367,7 @@ test("belge filtresi değiştiğinde gizli toplu seçimler temizlenir", async ({
     dovizCinsi: "TRY", faturaId: null, cari: { id: "c1", kod: "C001", unvan: "Örnek Müşteri" },
   });
   const listeIstekleri: string[] = [];
-  await page.route("http://localhost:3001/api/v1/belgeler**", (route) => {
+  await page.route("**/api/v1/belgeler**", (route) => {
     const url = new URL(route.request().url());
     listeIstekleri.push(url.toString());
     const kayitlar = url.searchParams.get("yon") === "alis"
@@ -1389,7 +1389,7 @@ test("belge filtresi değiştiğinde gizli toplu seçimler temizlenir", async ({
 
 test("başarısız belge listesi yeniden yüklenebilir", async ({ page }) => {
   let istekSayisi = 0;
-  await page.route("http://localhost:3001/api/v1/belgeler**", (route) => {
+  await page.route("**/api/v1/belgeler**", (route) => {
     istekSayisi += 1;
     if (istekSayisi === 1) return route.fulfill({ status: 500, json: { message: "Geçici servis hatası" } });
     return route.fulfill({ json: { kayitlar: [{
@@ -1410,7 +1410,7 @@ test("başarısız belge listesi yeniden yüklenebilir", async ({ page }) => {
 test("belge listesi yükleniyor ve filtrelenmiş boş durumlarını ayırır", async ({ page }) => {
   let yanitla!: () => void;
   const beklet = new Promise<void>((resolve) => { yanitla = resolve; });
-  await page.route("http://localhost:3001/api/v1/belgeler**", async (route) => {
+  await page.route("**/api/v1/belgeler**", async (route) => {
     await beklet;
     await route.fulfill({ json: { kayitlar: [], sonrakiImlec: null } });
   });
@@ -1432,7 +1432,7 @@ test("belgeler başlangıç ve bitiş tarihine göre filtrelenir", async ({ page
   });
   const tumu = [belge("b1", "SP-001", "2026-07-31"), belge("b2", "SP-002", "2026-08-05"), belge("b3", "SP-003", "2026-08-12")];
   let sonParametreler = new URLSearchParams();
-  await page.route("http://localhost:3001/api/v1/belgeler**", (route) => {
+  await page.route("**/api/v1/belgeler**", (route) => {
     sonParametreler = new URL(route.request().url()).searchParams;
     const baslangic = sonParametreler.get("baslangic"); const bitis = sonParametreler.get("bitis");
     const kayitlar = tumu.filter((kayit) => (!baslangic || kayit.tarih >= baslangic) && (!bitis || kayit.tarih <= bitis));
@@ -1473,7 +1473,7 @@ test("geç dönen eski belge araması güncel sonucu ezmez", async ({ page }) =>
   const yavasBekleme = new Promise<void>((resolve) => { yavasYanitla = resolve; });
   const yavasIstek = new Promise<void>((resolve) => { yavasBasladi = resolve; });
   const yavasBitti = new Promise<void>((resolve) => { yavasTamamlandi = resolve; });
-  await page.route("http://localhost:3001/api/v1/belgeler**", async (route) => {
+  await page.route("**/api/v1/belgeler**", async (route) => {
     const arama = new URL(route.request().url()).searchParams.get("arama");
     if (arama === "Yavaş Cari") {
       yavasBasladi(); await yavasBekleme;
@@ -1496,7 +1496,7 @@ test("geç dönen eski belge araması güncel sonucu ezmez", async ({ page }) =>
 
 test("belge araması yüklenmemiş kayıtlarda sunucuda çalışır", async ({ page }) => {
   let aramaParametresi: string | null = null;
-  await page.route("http://localhost:3001/api/v1/belgeler**", (route) => {
+  await page.route("**/api/v1/belgeler**", (route) => {
     const arama = new URL(route.request().url()).searchParams.get("arama");
     aramaParametresi = arama;
     if (arama === "Uzak Cari") return route.fulfill({ json: { kayitlar: [{
@@ -1519,7 +1519,7 @@ test("belge listesinin sonraki sayfası mevcut kayıtlara eklenir", async ({ pag
     genelToplam: "1200.00", dovizCinsi: "TRY", faturaId: null, cari: { id: "c1", kod: "C001", unvan: "Örnek Müşteri" },
   });
   let ikinciSayfaIstendi = false;
-  await page.route("http://localhost:3001/api/v1/belgeler**", (route) => {
+  await page.route("**/api/v1/belgeler**", (route) => {
     const imlec = new URL(route.request().url()).searchParams.get("imlec");
     if (imlec === "sonraki-1") {
       ikinciSayfaIstendi = true;
@@ -1542,7 +1542,7 @@ test("filtrelenmiş belgeler UTF-8 CSV olarak dışa aktarılır", async ({ page
     id, no, tur: "siparis", yon: "satis", durum: "onaylandi", tarih: "2026-08-07",
     genelToplam: "1200.00", dovizCinsi: "TRY", faturaId: null, cari: { id: "c1", kod: "C001", unvan },
   });
-  await page.route("http://localhost:3001/api/v1/belgeler", (route) => route.fulfill({ json: { kayitlar: [
+  await page.route("**/api/v1/belgeler", (route) => route.fulfill({ json: { kayitlar: [
     belge("b1", "SP-001", "Alfa Müşteri"), belge("b2", "SP-002", "Beta Müşteri"),
   ] } }));
 
@@ -1568,10 +1568,10 @@ test("belge zinciri bağlantısı ilgili faturayı doğrudan odaklar", async ({ 
     odemeOzeti: { durum: "odenmedi", odenen: "0", kalan: "1200" },
   });
   const odak = fatura("f1", "SAT-001", "Zincir Müşterisi");
-  await page.route("http://localhost:3001/api/v1/fatura", (route) => route.fulfill({ json: { kayitlar: [
+  await page.route("**/api/v1/fatura", (route) => route.fulfill({ json: { kayitlar: [
     odak, fatura("f2", "SAT-002", "Diğer Müşteri"),
   ] } }));
-  await page.route("http://localhost:3001/api/v1/fatura/f1", (route) => route.fulfill({ json: {
+  await page.route("**/api/v1/fatura/f1", (route) => route.fulfill({ json: {
     ...odak, dovizCinsi: "TRY", cari: { id: "c1", kod: "C001", unvan: "Zincir Müşterisi" }, satirlar: [],
     odemeOzeti: { durum: "odenmedi", odenen: "0", kalan: "1200", hareketler: [] },
   } }));
@@ -1592,10 +1592,10 @@ test("belge zinciri bağlantısı ilgili faturayı doğrudan odaklar", async ({ 
 test("teklif, sipariş, irsaliye ve fatura zinciri bulunup gezilebilir", async ({ page }) => {
   const ortak = { yon: "satis", durum: "onaylandi", tarih: "2026-08-07", genelToplam: "1200.00", dovizCinsi: "TRY",
     cari: { id: "c1", kod: "C001", unvan: "Örnek Müşteri AŞ" }, gecerlilikTarihi: null, aciklama: null, notlar: null, satirlar: [] };
-  await page.route("http://localhost:3001/api/v1/belgeler", (route) => route.fulfill({ json: { kayitlar: [{
+  await page.route("**/api/v1/belgeler", (route) => route.fulfill({ json: { kayitlar: [{
     ...ortak, id: "b2", tur: "siparis", no: "SP-001", faturaId: "f1",
   }] } }));
-  await page.route("http://localhost:3001/api/v1/belgeler/*", (route) => {
+  await page.route("**/api/v1/belgeler/*", (route) => {
     const id = new URL(route.request().url()).pathname.split("/").pop();
     if (id === "b1") return route.fulfill({ json: {
       ...ortak, id: "b1", tur: "teklif", no: "TK-001", faturaId: "f1", kaynakBelge: null,
@@ -1643,7 +1643,7 @@ test("teklif, sipariş, irsaliye ve fatura zinciri bulunup gezilebilir", async (
 });
 
 test("senaryo özeti kaydetmeden önce gönderilecek belgeyi gösterir", async ({ page }) => {
-  await page.route("http://localhost:3001/api/v1/cari**", (route) => {
+  await page.route("**/api/v1/cari**", (route) => {
     const { pathname } = new URL(route.request().url());
     return route.fulfill({ json: pathname.endsWith("/cari/c1")
       ? { id: "c1", kod: "C001", unvan: "Test Müşteri", efaturaProfili: "ticari", bakiyeler: [], risk: { mevcutRisk: "0", limit: null, kalanLimit: null, asim: false } }

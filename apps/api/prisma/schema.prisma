@@ -235,6 +235,7 @@ model Tenant {
 
   stokEkVergileri StokEkVergi[]
   ajanOturumlari    AjanOturumu[]
+  aiOnayTalepleri   AiOnayTalebi[]
   belgeOcrKayitlari BelgeOcrKaydi[]
   aiAyari           TenantAiAyari?
   aiGorevleri       TenantAiGorev[]
@@ -335,6 +336,7 @@ model User {
   telefon                      String?                 @map("telefon")
   pinKodu                      String?                 @map("pin_kodu")
   ajanOturumlari               AjanOturumu[]
+  aiOnayTalepleri              AiOnayTalebi[]
 
   @@unique([tenantId, eposta])
   @@index([tenantId])
@@ -5118,6 +5120,8 @@ enum BildirimTuru {
   personel
   /// MVZ-07: platform ekibinin yayınladığı mevzuat değişikliği.
   mevzuat
+  /// AI-04: kullanıcının onayını bekleyen yapay zekâ işlemi.
+  yapay_zeka
 }
 
 enum BildirimOnemi {
@@ -5676,6 +5680,7 @@ model AjanOturumu {
   tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   mesajlar      AjanMesajGecmisi[]
+  onayTalepleri AiOnayTalebi[]
 
   @@unique([tenantId, kanal, kanalKimlik])
   @@index([tenantId, kanal])
@@ -5694,6 +5699,47 @@ model AjanMesajGecmisi {
 
   @@index([oturumId, createdAt])
   @@map("ajan_mesaj_gecmisi")
+}
+
+/// AI-04: asistanın ya da MCP'nin hazırladığı, kullanıcı onayı bekleyen
+/// kesinleştirme işlemi. Araç adı ve parametreler onaydan sonra değişmez;
+/// onayda işlem ekranın ucuyla, onaylayanın o anki rolüyle çalışır.
+model AiOnayTalebi {
+  id             String            @id @default(uuid()) @db.Uuid
+  tenantId       String            @map("tenant_id") @db.Uuid
+  userId         String            @map("user_id") @db.Uuid
+  oturumId       String?           @map("oturum_id") @db.Uuid
+  kaynak         AiIslemKaynagi
+  arac           String
+  parametreler   Json
+  ozet           String            @db.Text
+  durum          AiOnayTalepDurumu @default(bekliyor)
+  gecerlilikSonu DateTime          @map("gecerlilik_sonu")
+  kararAt        DateTime?         @map("karar_at")
+  sonuc          Json?
+  hata           String?           @db.Text
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  oturum AjanOturumu? @relation(fields: [oturumId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, userId, durum])
+  @@map("ai_onay_talepleri")
+}
+
+enum AiIslemKaynagi {
+  asistan
+  mcp
+}
+
+enum AiOnayTalepDurumu {
+  bekliyor
+  isleniyor
+  onaylandi
+  reddedildi
+  suresi_doldu
+  hata
 }
 
 // ─── OCR ve Taranan Belgeler (Faz 1 / 3) ───────────────────────────────────

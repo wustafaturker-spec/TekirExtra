@@ -4450,3 +4450,23 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .rapor-grafik summary { cursor: pointer; font-size: .8rem; font-weight: 600; color: var(--text-muted); }
 .rapor-grafik svg { display: block; max-width: 100%; height: auto; margin-top: .5rem; }
 .rapor-grafik__not { margin: .4rem 0 0; font-size: .78rem; color: var(--text-muted); }
+
+/* AI-05: asistan sohbeti ve onay talebi kartı. */
+.asistan { display: flex; flex-direction: column; gap: .6rem; min-height: 0; height: 32rem; }
+.asistan__mesajlar { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: .75rem; padding: .25rem; }
+.asistan__bos { display: flex; flex-direction: column; gap: .4rem; color: var(--text-muted); font-size: .88rem; padding: .5rem; }
+.asistan__bos strong { color: var(--text); }
+.asistan__mesaj { display: flex; flex-direction: column; gap: .4rem; max-width: 85%; }
+.asistan__mesaj--kullanici { align-self: flex-end; align-items: flex-end; }
+.asistan__mesaj--asistan { align-self: flex-start; }
+.asistan__balon { white-space: pre-wrap; overflow-wrap: anywhere; padding: .6rem .8rem; border-radius: var(--radius-lg); font-size: .9rem; line-height: 1.45; background: var(--bg); border: 1px solid var(--border); color: var(--text); }
+.asistan__mesaj--kullanici .asistan__balon { background: var(--accent-soft); border-color: var(--accent-soft); }
+.asistan__balon--bekliyor { color: var(--text-muted); font-style: italic; }
+.asistan__girdi { display: flex; gap: .5rem; }
+.asistan__girdi .input, .asistan__girdi input { flex: 1; min-width: 0; }
+.asistan-talep { display: flex; flex-direction: column; gap: .45rem; padding: .7rem .8rem; border: 1px solid var(--warning); border-radius: var(--radius); background: var(--surface); width: 100%; max-width: 32rem; }
+.asistan-talep__ust { display: flex; gap: .4rem; flex-wrap: wrap; }
+.asistan-talep__ozet { margin: 0; font-size: .88rem; overflow-wrap: anywhere; }
+@media (max-width: 700px) { .asistan__mesaj { max-width: 100%; } }
+.mobil-asistan { max-width: 48rem; margin: 0 auto; padding: .5rem 16px; background: var(--bg); min-height: 100dvh; }
+.mobil-asistan__baslik { display: flex; justify-content: space-between; align-items: center; padding: .5rem 0 .75rem; font-size: .9rem; }

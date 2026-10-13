@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { IAiProvider, AiMultimodalGirdi, AiProviderTuru } from "./ai-provider.interface";
+import { IAiProvider, AiMultimodalGirdi, AiProviderTuru, AiAracliSohbetGirdisi, AiAracliYanit } from "./ai-provider.interface";
+import { aracGirdisiniAyristir, saglayiciIstegi } from "./aracli-ortak";
 
 /**
  * Anthropic Claude Sağlayıcısı (Claude 3.5 Sonnet, Claude 3.5 Haiku)
@@ -9,7 +10,7 @@ export class AnthropicAiProvider implements IAiProvider {
   private apiKey: string;
   private model: string;
 
-  constructor(apiKey?: string, model = "claude-3-5-sonnet-20241022") {
+  constructor(apiKey?: string, model = "claude-sonnet-5-5") {
     this.apiKey = apiKey || process.env.ANTHROPIC_API_KEY || "";
     this.model = model;
   }
@@ -104,5 +105,36 @@ export class AnthropicAiProvider implements IAiProvider {
 
     const veri = (await yanit.json()) as any;
     return veri.content?.[0]?.text || "";
+  }
+
+  async aracliSohbet(girdi: AiAracliSohbetGirdisi): Promise<AiAracliYanit> {
+    const messages: Array<{ role: "user" | "assistant"; content: any }> = [];
+    for (const m of girdi.mesajlar) {
+      if (m.rol === "kullanici") messages.push({ role: "user", content: m.metin });
+      else if (m.rol === "asistan") messages.push({ role: "assistant", content: m.ham ?? m.metin });
+      else {
+        // Ardışık araç sonuçları tek kullanıcı mesajında gider.
+        const blok = { type: "tool_result", tool_use_id: m.cagriId, content: m.icerik, ...(m.hata ? { is_error: true } : {}) };
+        const son = messages[messages.length - 1];
+        if (son?.role === "user" && Array.isArray(son.content) && son.content[0]?.type === "tool_result") son.content.push(blok);
+        else messages.push({ role: "user", content: [blok] });
+      }
+    }
+    const veri = await saglayiciIstegi("Anthropic", "https://api.anthropic.com/v1/messages", {
+      "x-api-key": this.apiKey,
+      "anthropic-version": "2023-06-01",
+    }, {
+      model: this.model,
+      max_tokens: 4096,
+      system: girdi.sistemRol,
+      messages,
+      tools: girdi.araclar.map((a) => ({ name: a.ad, description: a.aciklama, input_schema: a.girdiSemasi })),
+    });
+    const bloklar: any[] = Array.isArray(veri.content) ? veri.content : [];
+    return {
+      metin: bloklar.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim(),
+      aracCagrilari: bloklar.filter((b) => b.type === "tool_use").map((b) => ({ id: b.id, ad: b.name, girdi: aracGirdisiniAyristir(b.input) })),
+      ham: bloklar,
+    };
   }
 }

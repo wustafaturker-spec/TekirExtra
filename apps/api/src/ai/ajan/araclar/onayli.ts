@@ -1,0 +1,246 @@
+import { z } from "zod";
+import { adres, arac, BUGUN, cagir, para, sayiMetni, sec, tarih, uuid, type AracBaglami } from "./arac";
+import { UC } from "./uclar";
+
+/*
+ * AI-03/AI-04: onaya tabi araçlar. `ozetle` yalnız okur ve kullanıcının
+ * onaylayacağı metni üretir; `calistir` kullanıcı onay düğmesine bastıktan
+ * sonra, onun o anki rolüyle çalışır.
+ */
+
+const TUR_ADI: Record<string, string> = { teklif: "Teklif", siparis: "Sipariş", irsaliye: "İrsaliye" };
+const FATURA_TIP_ADI: Record<string, string> = { satis: "Satış faturası", alis: "Alış faturası", satis_iade: "Satış iade faturası", alis_iade: "Alış iade faturası", proforma: "Proforma" };
+
+async function belgeTanimi(b: AracBaglami, id: string): Promise<string> {
+  const k = await cagir(b, UC.belgeGetir, [id]);
+  return `${TUR_ADI[k.tur] ?? "Belge"} ${k.no ?? "(numarasız taslak)"} · ${k.cari?.unvan ?? ""} · ${para(k.genelToplam, k.dovizCinsi)} · durum: ${k.durum}`;
+}
+
+async function faturaTanimi(b: AracBaglami, id: string): Promise<string> {
+  const k = await cagir(b, UC.faturaGetir, [id]);
+  return `${FATURA_TIP_ADI[k.tip] ?? "Fatura"} ${k.no ?? "(numarasız taslak)"} · ${k.cari?.unvan ?? ""} · ${para(k.genelToplam, k.dovizCinsi)} · durum: ${k.durum}`;
+}
+
+async function cariTanimi(b: AracBaglami, id: string): Promise<string> {
+  const k = await cagir(b, UC.cariGetir, [id]);
+  return `${k.unvan} (${k.kod})`;
+}
+
+const cariAlanlari = z.object({
+  unvan: z.string().min(2).max(255).optional(),
+  tip: z.enum(["musteri", "tedarikci", "her_ikisi", "personel", "ortak", "diger"]).optional(),
+  kisiTipi: z.enum(["gercek", "tuzel"]).optional(),
+  ad: z.string().max(100).optional().describe("Gerçek kişide ad"),
+  soyad: z.string().max(100).optional().describe("Gerçek kişide soyad"),
+  vknTckn: z.string().max(11).optional(),
+  vergiDairesi: z.string().max(120).optional(),
+  eposta: z.string().max(255).optional(),
+  telefon: z.string().max(32).optional(),
+  iban: z.string().max(34).optional(),
+  varsayilanVadeGun: z.number().int().min(0).max(365).optional(),
+  dovizCinsi: z.string().length(3).optional(),
+});
+
+const stokAlanlari = z.object({
+  ad: z.string().min(2).max(255).optional(),
+  tip: z.enum(["urun", "hizmet", "sarf"]).optional(),
+  anaBirim: z.string().max(20).optional(),
+  kdvOrani: sayiMetni("KDV oranı (Mevzuat listesinden)").optional(),
+  satisFiyati: sayiMetni("KDV hariç satış fiyatı").optional(),
+  satisFiyatiDoviz: z.string().length(3).optional(),
+  alisFiyati: sayiMetni("KDV hariç alış fiyatı").optional(),
+  alisFiyatiDoviz: z.string().length(3).optional(),
+  barkod: z.string().max(120).optional(),
+  kategoriId: uuid("Stok kategorisi").optional(),
+});
+
+const alanListesi = (o: Record<string, unknown>) =>
+  Object.entries(o).filter(([, v]) => v !== undefined).map(([k, v]) => `${k}: ${v}`).join(", ");
+
+export const ONAYLI_ARACLAR = [
+  arac({
+    ad: "belge_onayla",
+    aciklama: "Taslak teklif/sipariş/irsaliyeyi onaylar (numara verilir, stok rezervi işler). Kullanıcı onayı gerekir.",
+    sinif: "onay",
+    girdi: z.object({ belgeId: uuid("Belge kimliği"), riskOnayGerekcesi: z.string().max(500).optional().describe("Risk limiti aşılıyorsa kullanıcının gerekçesi") }),
+    uc: UC.belgeOnayla,
+    ozetle: async (b, g) => `Onaylanacak: ${await belgeTanimi(b, g.belgeId)}`,
+    async calistir(b, g) {
+      const k = await cagir(b, UC.belgeOnayla, [g.belgeId, { riskOnayGerekcesi: g.riskOnayGerekcesi ?? null }], g.belgeId);
+      return { ...sec(k, ["id", "no", "durum"]), adres: adres.belge(g.belgeId) };
+    },
+  }),
+  arac({
+    ad: "belge_iptal",
+    aciklama: "Teklif/sipariş/irsaliyeyi iptal eder (kayıt silinmez, iptal durumuna geçer). Kullanıcı onayı gerekir.",
+    sinif: "onay",
+    girdi: z.object({ belgeId: uuid("Belge kimliği") }),
+    uc: UC.belgeIptal,
+    ozetle: async (b, g) => `İptal edilecek: ${await belgeTanimi(b, g.belgeId)}`,
+    async calistir(b, g) {
+      const k = await cagir(b, UC.belgeIptal, [g.belgeId, { uyariOnaylandi: false }], g.belgeId);
+      return { ...sec(k, ["id", "no", "durum"]), adres: adres.belge(g.belgeId) };
+    },
+  }),
+  arac({
+    ad: "fatura_kesinlestir",
+    aciklama: "Taslak faturayı kesinleştirir (numara verilir, cari ve stok işler). e-Belge göndermez. Kullanıcı onayı gerekir.",
+    sinif: "onay",
+    girdi: z.object({ faturaId: uuid("Fatura kimliği"), riskOnayGerekcesi: z.string().max(500).optional() }),
+    uc: UC.faturaKesinlestir,
+    ozetle: async (b, g) => `Kesinleştirilecek: ${await faturaTanimi(b, g.faturaId)}`,
+    async calistir(b, g) {
+      const k = await cagir(b, UC.faturaKesinlestir, [g.faturaId, { riskOnayGerekcesi: g.riskOnayGerekcesi ?? null }], g.faturaId);
+      return { ...sec(k, ["id", "no", "durum", "genelToplam"]), adres: adres.fatura(g.faturaId) };
+    },
+  }),
+  arac({
+    ad: "fatura_iptal",
+    aciklama: "Faturayı iptal eder (kayıt silinmez; ters kayıtlar oluşur). Kullanıcı onayı gerekir.",
+    sinif: "onay",
+    girdi: z.object({ faturaId: uuid("Fatura kimliği") }),
+    uc: UC.faturaIptal,
+    ozetle: async (b, g) => `İptal edilecek: ${await faturaTanimi(b, g.faturaId)}`,
+    async calistir(b, g) {
+      const k = await cagir(b, UC.faturaIptal, [g.faturaId], g.faturaId);
+      return { ...sec(k, ["id", "no", "durum"]), adres: adres.fatura(g.faturaId) };
+    },
+  }),
+  arac({
+    ad: "belge_eposta_gonder",
+    aciklama: "Onaylı satış teklifi/siparişi/irsaliyesini PDF ekiyle e-postalar. Adres verilmezse cari kartındaki adres. Kullanıcı onayı gerekir.",
+    sinif: "onay",
+    girdi: z.object({ belgeId: uuid("Belge kimliği"), eposta: z.string().max(255).optional() }),
+    uc: UC.belgeEposta,
+    ozetle: async (b, g) => `E-postayla gönderilecek: ${await belgeTanimi(b, g.belgeId)} → ${g.eposta ?? "cari kartındaki adres"}`,
+    async calistir(b, g) {
+      return cagir(b, UC.belgeEposta, [g.belgeId, g.eposta ? { eposta: g.eposta } : {}], g.belgeId);
+    },
+  }),
+  arac({
+    ad: "fatura_eposta_gonder",
+    aciklama: "Faturayı PDF ekiyle e-postalar. Adres verilmezse cari kartındaki adres. Kullanıcı onayı gerekir.",
+    sinif: "onay",
+    girdi: z.object({ faturaId: uuid("Fatura kimliği"), eposta: z.string().max(255).optional() }),
+    uc: UC.faturaEposta,
+    ozetle: async (b, g) => `E-postayla gönderilecek: ${await faturaTanimi(b, g.faturaId)} → ${g.eposta ?? "cari kartındaki adres"}`,
+    async calistir(b, g) {
+      return cagir(b, UC.faturaEposta, [g.faturaId, g.eposta ? { eposta: g.eposta } : {}], g.faturaId);
+    },
+  }),
+  arac({
+    ad: "ebelge_gonder",
+    aciklama: "Kesin faturayı e-Fatura/e-Arşiv olarak entegratöre gönderim kuyruğuna alır (GİB'e gider). Kullanıcı onayı gerekir.",
+    sinif: "onay",
+    girdi: z.object({ faturaId: uuid("Fatura kimliği") }),
+    uc: UC.ebelgeGonder,
+    ozetle: async (b, g) => `e-Belge olarak gönderilecek (GİB): ${await faturaTanimi(b, g.faturaId)}`,
+    async calistir(b, g) {
+      return cagir(b, UC.ebelgeGonder, [g.faturaId, {}], g.faturaId);
+    },
+  }),
+  arac({
+    ad: "cari_ekstre_eposta",
+    aciklama: "Cari hesap ekstresini PDF olarak e-postalar. Alıcı verilmezse cari kartındaki adres. Kullanıcı onayı gerekir.",
+    sinif: "onay",
+    girdi: z.object({
+      cariId: uuid("Cari kimliği"),
+      baslangic: tarih("Başlangıç").optional(),
+      bitis: tarih("Bitiş").optional(),
+      alici: z.string().max(255).optional(),
+      tur: z.enum(["standart", "ayrintili", "doviz"]).optional(),
+    }),
+    uc: UC.cariEkstreEposta,
+    ozetle: async (b, g) =>
+      `Ekstre e-postalanacak: ${await cariTanimi(b, g.cariId)} · ${g.baslangic ?? "başlangıç"} – ${g.bitis ?? "bugün"} → ${g.alici ?? "cari kartındaki adres"}`,
+    async calistir(b, g) {
+      const { cariId, ...govde } = g;
+      return cagir(b, UC.cariEkstreEposta, [cariId, govde], cariId);
+    },
+  }),
+  arac({
+    ad: "kasa_banka_hareketi_kaydet",
+    aciklama:
+      "Tahsilat veya tediye kaydeder (kasa ya da banka hesabına; cari ve fatura bağlanabilir). Hesap kimliği için kasa_banka_hesaplari. Kullanıcı onayı gerekir.",
+    sinif: "onay",
+    girdi: z.object({
+      tip: z.enum(["tahsilat", "tediye"]),
+      hesapTuru: z.enum(["kasa", "banka"]),
+      hesapId: uuid("Kasa ya da banka hesabı kimliği"),
+      tutar: sayiMetni("Tutar (hesap dövizinde)"),
+      dovizCinsi: z.string().length(3).optional().describe("Hesabın dövizi; varsayılan TRY"),
+      tarih: tarih("İşlem tarihi; varsayılan bugün").optional(),
+      cariId: uuid("Cari kimliği").optional(),
+      faturaId: uuid("Kapatılacak fatura").optional(),
+      aciklama: z.string().max(500).optional(),
+    }),
+    uc: UC.kasaBankaHareket,
+    async ozetle(b, g) {
+      const hesaplar = await cagir<any[]>(b, g.hesapTuru === "kasa" ? UC.kasaListe : UC.bankaListe, []);
+      const hesap = hesaplar.find((h) => h.id === g.hesapId);
+      const cari = g.cariId ? ` · cari: ${await cariTanimi(b, g.cariId)}` : "";
+      const fatura = g.faturaId ? ` · fatura: ${await faturaTanimi(b, g.faturaId)}` : "";
+      return `${g.tip === "tahsilat" ? "Tahsilat" : "Tediye"}: ${para(g.tutar, g.dovizCinsi ?? hesap?.dovizCinsi ?? "TRY")} · ${g.hesapTuru}: ${hesap?.ad ?? g.hesapId} · tarih ${g.tarih ?? BUGUN()}${cari}${fatura}`;
+    },
+    async calistir(b, g) {
+      const k = await cagir(b, UC.kasaBankaHareket, [{
+        kasaId: g.hesapTuru === "kasa" ? g.hesapId : null,
+        bankaHesapId: g.hesapTuru === "banka" ? g.hesapId : null,
+        tip: g.tip, tutar: g.tutar, dovizCinsi: (g.dovizCinsi ?? "TRY").toUpperCase(), tarih: g.tarih ?? BUGUN(),
+        cariId: g.cariId ?? null, faturaId: g.faturaId ?? null, aciklama: g.aciklama ?? null,
+      }]);
+      return sec(k, ["id", "tip", "tutar", "dovizCinsi", "tarih"]);
+    },
+  }),
+  arac({
+    ad: "cari_olustur",
+    aciklama: "Yeni cari kartı açar. Cari kodunu kullanıcıdan al ya da mevcut kod düzenine göre öner. Kullanıcı onayı gerekir.",
+    sinif: "onay",
+    girdi: cariAlanlari.extend({ kod: z.string().min(1).max(32), unvan: z.string().min(2).max(255), tip: z.enum(["musteri", "tedarikci", "her_ikisi", "personel", "ortak", "diger"]) }),
+    uc: UC.cariOlustur,
+    ozetle: async (_b, g) => `Yeni cari: ${alanListesi(g)}`,
+    async calistir(b, g) {
+      const k = await cagir(b, UC.cariOlustur, [g]);
+      return { ...sec(k, ["id", "kod", "unvan"]), adres: adres.cari(k.id) };
+    },
+  }),
+  arac({
+    ad: "cari_guncelle",
+    aciklama: "Cari kartının alanlarını günceller (yalnız verilen alanlar). Kullanıcı onayı gerekir.",
+    sinif: "onay",
+    girdi: z.object({ cariId: uuid("Cari kimliği"), degisiklikler: cariAlanlari }),
+    uc: UC.cariGuncelle,
+    ozetle: async (b, g) => `Cari güncellenecek: ${await cariTanimi(b, g.cariId)} → ${alanListesi(g.degisiklikler)}`,
+    async calistir(b, g) {
+      const k = await cagir(b, UC.cariGuncelle, [g.cariId, g.degisiklikler], g.cariId);
+      return { ...sec(k, ["id", "kod", "unvan"]), adres: adres.cari(g.cariId) };
+    },
+  }),
+  arac({
+    ad: "stok_karti_olustur",
+    aciklama: "Yeni stok/hizmet kartı açar. Stok kodunu kullanıcıdan al ya da mevcut kod düzenine göre öner. Kullanıcı onayı gerekir.",
+    sinif: "onay",
+    girdi: stokAlanlari.extend({ kod: z.string().min(1).max(32), ad: z.string().min(2).max(255) }),
+    uc: UC.stokOlustur,
+    ozetle: async (_b, g) => `Yeni stok kartı: ${alanListesi(g)}`,
+    async calistir(b, g) {
+      const k = await cagir(b, UC.stokOlustur, [g]);
+      return { ...sec(k, ["id", "kod", "ad"]), adres: adres.stok(k.id) };
+    },
+  }),
+  arac({
+    ad: "stok_karti_guncelle",
+    aciklama: "Stok kartının alanlarını (fiyat, KDV, birim, ad…) günceller. Kullanıcı onayı gerekir.",
+    sinif: "onay",
+    girdi: z.object({ stokId: uuid("Stok kartı kimliği"), degisiklikler: stokAlanlari }),
+    uc: UC.stokGuncelle,
+    async ozetle(b, g) {
+      const k = await cagir(b, UC.stokGetir, [g.stokId]);
+      return `Stok kartı güncellenecek: ${k.ad} (${k.kod}) → ${alanListesi(g.degisiklikler)}`;
+    },
+    async calistir(b, g) {
+      const k = await cagir(b, UC.stokGuncelle, [g.stokId, g.degisiklikler], g.stokId);
+      return { ...sec(k, ["id", "kod", "ad"]), adres: adres.stok(g.stokId) };
+    },
+  }),
+];

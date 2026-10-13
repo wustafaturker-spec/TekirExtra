@@ -1,40 +1,60 @@
 "use client";
 
-import { ButtonLabel, Card, PageHeader } from "@/components/ui";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { api } from "@/lib/api";
+import { Alert, Card, PageHeader, Segmented } from "@/components/ui";
+import { AsistanSohbet, TalepKarti, type OnayTalebi } from "@/components/asistan-sohbet";
 
-/*
- * Sayfa Tailwind sınıflarıyla yazılmıştı; uygulamada Tailwind olmadığı için
- * gizlenmesi gereken dosya seçici ham göründü (2026-10-11). OCR kapalıyken
- * çalışamayan yükleme ve sabit "%94 güven" yazan sonuç bloğu kaldırıldı;
- * uç (`POST /ai/ocr/tara`) yerinde, akış açılınca arayüz yeniden kurulur.
+/**
+ * AI-04/AI-05: asistan sohbeti ve kullanıcının onay talepleri. MCP'den gelen
+ * talepler yalnız buradan onaylanır; bildirim bağlantısı `?talep=<id>` taşır.
  */
-export default function AiAsistanSayfasi() {
+function AsistanGorunumu() {
+  const odak = useSearchParams().get("talep");
+  const [gorunum, setGorunum] = useState<"bekleyen" | "tum">("bekleyen");
+  const [talepler, setTalepler] = useState<OnayTalebi[] | null>(null);
+  const [hata, setHata] = useState<string | null>(null);
+
+  const yukle = useCallback(() => {
+    setHata(null);
+    api<OnayTalebi[]>(`/ai/onay-talepleri${gorunum === "bekleyen" ? "?durum=bekliyor" : ""}`)
+      .then(setTalepler)
+      .catch((e) => setHata(e instanceof Error ? e.message : "Talepler yüklenemedi"));
+  }, [gorunum]);
+
+  useEffect(yukle, [yukle]);
+
+  const guncelle = (t: OnayTalebi) => setTalepler((liste) => (liste ?? []).map((x) => (x.id === t.id ? t : x)));
+  const sirali = [...(talepler ?? [])].sort((a, b) => (a.id === odak ? -1 : b.id === odak ? 1 : 0));
+
   return (
     <div>
-      <PageHeader title="Finansal Projeksiyon" subtitle="Nakit tahmini ve belge okuma araçları." />
-
+      <PageHeader title="Asistan ve Onaylar" subtitle="Asistan taslak açar ve sorgular; onaylama, gönderim, ödeme ve kart değişikliği sizin onayınızla yapılır." />
       <div className="form-grid form-grid--2">
-        {/* NAK-14: nakit tahmini kendi ekranına taşındı. */}
-        <Card title="📊 Nakit akışı tahmini">
-          <p className="muted" style={{ fontSize: "0.9rem", marginTop: 0 }}>
-            Nakit tahmini ayrı bir ekranda: kasa ve banka bakiyesinden başlayıp faturalar, çek/senetler, masraflar, kira,
-            kart taksitleri, bordro ve tekrarlayan faturalardan 7, 30 ve 90 günlük; iyimser, baz ve kötümser senaryolu,
-            kalem kalem açıklanabilir tahmin.
-          </p>
-          <ButtonLabel as="a" href="/panel/nakit-akisi" variant="primary">Nakit akışını aç</ButtonLabel>
+        <Card title="Asistan">
+          <AsistanSohbet onTalepDegisti={yukle} />
         </Card>
-
-        <Card title="🧾 Fiş & fatura OCR — yakında">
-          <p className="muted" style={{ fontSize: "0.9rem", marginTop: 0 }}>
-            Doğrulanmış bir OCR sağlayıcısı ve kullanıcı onaylı taslak akışı tamamlanana kadar belge yükleme kullanıma
-            kapalıdır; henüz gerçek belge işleme yapılmıyor.
-          </p>
-          <div style={{ border: "2px dashed var(--border)", borderRadius: "0.85rem", color: "var(--text-subtle)", padding: "1.5rem", textAlign: "center" }}>
-            <div style={{ fontSize: "1.8rem" }} aria-hidden>📷</div>
-            <strong style={{ color: "var(--text-muted)" }}>Yakında</strong>
+        <Card
+          title="Onay talepleri"
+          actions={<Segmented ariaLabel="Talep görünümü" items={[{ deger: "bekleyen", baslik: "Bekleyen" }, { deger: "tum", baslik: "Tümü" }]} onChange={setGorunum} value={gorunum} />}
+        >
+          {hata && <Alert tone="error">{hata}</Alert>}
+          {talepler && !talepler.length && <p className="muted">{gorunum === "bekleyen" ? "Onayınızı bekleyen işlem yok." : "Henüz talep yok."}</p>}
+          <div className="stack">
+            {sirali.map((t) => (
+              <div key={t.id}>
+                <small className="muted">{new Date(t.createdAt).toLocaleString("tr-TR")} · {t.arac}</small>
+                <TalepKarti talep={t} onDegisti={guncelle} />
+              </div>
+            ))}
           </div>
         </Card>
       </div>
     </div>
   );
+}
+
+export default function AsistanSayfasi() {
+  return <Suspense fallback={<p className="muted">Yükleniyor…</p>}><AsistanGorunumu /></Suspense>;
 }

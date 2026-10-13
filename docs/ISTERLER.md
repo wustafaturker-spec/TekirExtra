@@ -1045,6 +1045,33 @@ serbest yazılıyor (0–100).
 | MVZ-16 | ✅ **Güvenlik:** merkezi tablolar kiracı RLS politikasına tabi değildir; uygulama veritabanı kullanıcısı bu tablolarda yalnız okuma yetkisine sahiptir, yazma yalnız platform uçlarından ve ayrı yetkiyle yapılır. | Z |
 | MVZ-17 | ✅ **Dönemsel değer yayın takvimi:** yalnız başladığı dönemde geçerli değerler (bordro parametreleri ve tevkifat alt sınırı yıllık, kıdem tavanı yarıyıllık) için platform panelinde içinde bulunulan ve sıradaki dönemin yayın durumu gösterilir (45 gün kala "yaklaşıyor"). Kayıt yayınlanmamışsa platform ekibine 30, 15 ve 7 gün kala ve dönem başında birer kez e-posta gider. Dönem başladığı hâlde kayıt yoksa kiracıya kritik bildirim düşer (bordro uyarısı yalnız aktif çalışanı olan firmaya); kayıt yayınlanınca bildirim kapanır. | Z |
 
+### 3.18 Yapay Zekâ Asistanı ve MCP (AI)
+
+Kaynak: yapay zekâ incelemesi (`docs/YAPAY-ZEKA-INCELEME-RAPORU-2026-10-13.md`).
+AI-01 (P0 güvenlik ve sahte sonuçlar) 2026-10-13'te kapandı (24ae1bc). AI-02…AI-07 2026-10-13'te
+kodlandı ve demo kiracıda Gemini ile canlı denendi (rapor §4). Sıradaki paketler: AI-08, AI-09, AI-10…12.
+
+**S-01 kapı kararları (2026-10-13, kullanıcı onayı):** asistan ve MCP **silme
+dışında her işlemi** yapabilir; **onay olmadan kesinleştirme yapamaz**; MCP'de
+de aynı kural geçerlidir. Onayı **işlemi isteyen kullanıcı** verir. Onaya tabi
+işlemler: belge onayı/fatura kesinleştirme, **dışarıya gönderim**, **para
+hareketi**, **kart oluşturma/değiştirme**, **toplu işlemler** ve **iptal/iade**
+(iptal silme sayılmaz). Asistan komutları **LLM araç çağırma** ile anlar.
+
+| No | İster | Öncelik |
+|---|---|---|
+| AI-02 | ✅ **Kimlik ve yetki:** asistan ve MCP her zaman bir kullanıcı adına, o kullanıcının kiracısı ve **güncel rolüyle** çalışır. Her araç, aynı işi yapan ekran ucunun rol kuralını uygular; rolün yapamadığı araç modele hiç sunulmaz. ChatBI ve yönetici özeti uçları finansal özet rollerine açıktır (RPR-11 ile aynı). | Z |
+| AI-03 | ✅ **İşlem sınıfları:** (1) **okuma** — doğrudan çalışır; (2) **taslak** — teklif, sipariş, irsaliye, fatura, masraf taslağı oluşturma/düzenleme ve CRM görev/notu doğrudan çalışır; (3) **onaya tabi** — belge onayı, fatura kesinleştirme, dışarıya gönderim (e-posta, e-Belge, WhatsApp), para hareketi (tahsilat, tediye, virman, masraf ödemesi), cari/stok/fiyat kartı oluşturma ve güncelleme, birden fazla kaydı değiştiren toplu işlemler, iptal ve iade; (4) **yasak** — hiçbir kayıt (taslak dahil) silinemez. Sınıf araç tanımında sabittir; model değiştiremez. | Z |
+| AI-04 | ✅ **Onay talebi:** onaya tabi araç işlemi yapmaz; işlem türünü, parametreleri ve insan okunur özeti (ne olacak, hangi kayıt, tutarlar) içeren bir **onay talebi** oluşturur (isteyen kullanıcı, kaynak: asistan/MCP, 24 saat geçerlilik). Talebi **yalnız isteyen kullanıcı** onaylar ya da reddeder: sohbette o talebe bağlı düğmeyle veya panelde "Onay bekleyen yapay zekâ işlemleri" listesinden; yazıyla "ONAYLA" onay sayılmaz. MCP'den gelen talep yalnız panelden onaylanır. Onayda işlem ekranla aynı servisle, onaylayanın o anki rolüyle ve güncel veriyle çalışır; parametreler onaydan sonra değiştirilemez; kayıt bu arada değiştiyse (ör. belge artık taslak değil) talep hata verir. Oluşturma, onay, red, süre dolması ve sonuç denetim kaydına yazılır; bekleyen talep için kullanıcıya bildirim düşer (BLD), karara bağlanınca kapanır. | Z |
+| AI-05 | ✅ **LLM araç çağırma:** asistan modelin seçtiği aracı, şemayla doğrulanmış parametrelerle çalıştırır (sağlayıcı katmanına araç çağırma desteği: Anthropic, OpenAI, Gemini). Sağlayıcı tanımlı değilse asistan kapalıdır ve bunu söyler. Yanıttaki rakamlar araç çıktısından gelir. Birden fazla cari/ürün eşleşirse adaylar listelenir ve seçim istenir; varsayılan cari/ürün yoktur. Bağlam olarak oturumun son mesajları ve kiracının özel talimatları kullanılır. | Z |
+| AI-06 | ✅ **İlk araç seti:** okuma — cari ara ve bakiye (cari kartıyla aynı kural, döviz dahil), stok ara ve depo bakiyesi, belge ara/göster, vadesi geçen alacaklar (rapor servisi), rapor kataloğundan rapor çalıştırma; taslak — teklif/sipariş/irsaliye, satış/alış faturası taslağı, masraf taslağı, CRM görevi; onaya tabi — belge onayı, fatura kesinleştirme, belge e-postası (FTR-36), cari ekstre e-postası (CARI-24), e-Belge gönderimi, tahsilat/tediye kaydı, cari ve stok kartı oluşturma/güncelleme, belge/fatura iptali. Araç kaydı genişletilebilir; diğer işlemler sonraki paketlerde aynı sınıf kurallarıyla eklenir. | Z |
+| AI-07 | ✅ **Belge kuralları:** araçlar belge, fatura, masraf ve cari işlemlerini ekranın kullandığı servislerle yapar: KDV oranı karttan/Mevzuat'tan, numara onayda ve aynı seriden, varyant ve birim çevrimi, döviz ve kur, cari işlem ve risk limiti denetimleri aynen uygulanır. | Z |
+| AI-08 | **ChatBI ve yönetici özeti:** soru rapor kataloğundaki (RPR) bir rapora ve süzgece eşlenir; rakamlar rapor servisinden gelir (kâr RPR-12, varlıklar RPR-15, vadesi geçenler RPR-17). LLM yalnız sonucu yorumlar; sağlayıcı yoksa yorum yapılmaz, rapor sonucu gösterilir. Yönetici özeti dönemini açıkça yazar ve aynı kaynakları kullanır. | Z |
+| AI-09 | **MCP:** kullanıcı Ayarlar > Yapay Zeka'da kendi adına **MCP erişim anahtarı** oluşturur (adı, oluşturma ve son kullanım zamanı; anahtar bir kez gösterilir, özeti saklanır; kullanıcı ve yönetici iptal edebilir). Anahtar o kullanıcının kimliği ve rolüyle çalışır; aynı araç seti ve sınıflar geçerlidir, onaya tabi işlemler panel onay listesine düşer. Anahtarsız ya da iptal edilmiş anahtarla istek 401 alır. | Z |
+| AI-10 | **Dış kanal ve PIN:** WhatsApp/e-posta ile asistana yazma bu pakette yoktur; kullanılmayan PIN alanları ve PIN ucu kaldırılır. Dış kanal ayrı pakette, imza doğrulamalı webhook ve önceden eşlenmiş kullanıcıyla gelir. | Z |
+| AI-11 | **Sağlayıcı güvenliği:** kiracının API anahtarı şifreli saklanır (`hassasSifrele`), ekranda yalnız son 4 karakteri görünür; sağlayıcı hata gövdesi kullanıcıya dönmez, kayda yazılır; her sağlayıcı çağrısında zaman aşımı (60 sn) vardır. | Z |
+| AI-12 | **Fiyat önerisi:** öneri "AI" adı taşımaz ("Fiyat önerisi"); maliyet belge dövizine çevrilir, ortalama satış fiyatı belge dövizindeki son kesin satışlardan tarih sırasıyla alınır; maliyeti bilinmeyen üründe marj uyarısı ve taban fiyat üretilmez. | Z |
+
 ## 4. Fonksiyonel Olmayan İsterler
 
 ### 4.1 Performans

@@ -2,8 +2,11 @@ import { Controller, Post, Body } from "@nestjs/common";
 import { AiService } from "./ai.service";
 import { aiBelgeGirdiSemasi } from "./ai.semalar";
 import { aktifBaglam } from "../core/istek-baglami";
+import { Roller } from "../auth/roller.decorator";
 
+/** AI-02: OCR sonucu masraf ve cari formunu doldurur; o formları açan rol. */
 @Controller("ai")
+@Roller("muhasebe")
 export class AiController {
   constructor(private readonly aiService: AiService) {}
 

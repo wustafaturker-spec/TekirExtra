@@ -76,7 +76,7 @@ export class AiProviderFactory {
 
       case "anthropic": {
         const key = kiraciAnahtari || process.env.ANTHROPIC_API_KEY;
-        return key ? new AnthropicAiProvider(key, config.modelAdi || "claude-3-5-sonnet-20241022") : new TanimsizAiProvider();
+        return key ? new AnthropicAiProvider(key, config.modelAdi || "claude-sonnet-5-5") : new TanimsizAiProvider();
       }
 
       case "ollama":

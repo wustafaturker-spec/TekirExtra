@@ -14,7 +14,7 @@ async function apiMockla(page: Page) {
       sessionStorage.setItem("tekir_access", "e2e-token");
     }
   });
-  await page.route("http://localhost:3001/api/v1/**", async (route) => {
+  await page.route("**/api/v1/**", async (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/auth/ben")) {
       await route.fulfill({ json: { userId: "u1", tenantId: "t1", rol: "yonetici" } });
@@ -57,7 +57,7 @@ const ornekFatura = {
 } as const;
 
 async function veriDoluFaturaMockla(page: Page) {
-  await page.route("http://localhost:3001/api/v1/fatura**", async (route) => {
+  await page.route("**/api/v1/fatura**", async (route) => {
     const { pathname } = new URL(route.request().url());
     await route.fulfill({
       json: pathname.endsWith("/fatura/fatura-1")
@@ -68,7 +68,7 @@ async function veriDoluFaturaMockla(page: Page) {
 }
 
 async function veriDoluEkstreMockla(page: Page) {
-  await page.route("http://localhost:3001/api/v1/kasa-banka/**", async (route) => {
+  await page.route("**/api/v1/kasa-banka/**", async (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/kasa-banka/bankalar")) {
       await route.fulfill({ json: [{ id: "banka-1", ad: "İş Bankası TL", bankaAdi: "İş Bankası", dovizCinsi: "TRY" }] });
@@ -96,7 +96,7 @@ async function veriDoluEkstreMockla(page: Page) {
       }],
     });
   });
-  await page.route("http://localhost:3001/api/v1/cari**", (route) => route.fulfill({
+  await page.route("**/api/v1/cari**", (route) => route.fulfill({
     json: { kayitlar: [
       { id: "cari-1", kod: "CR-00124", unvan: "ABC Makina Sanayi ve Ticaret Ltd. Şti." },
       { id: "cari-2", kod: "CR-00208", unvan: "ABC Endüstriyel Ürünler A.Ş." },
@@ -105,7 +105,7 @@ async function veriDoluEkstreMockla(page: Page) {
 }
 
 async function faturaFormuMockla(page: Page) {
-  await page.route("http://localhost:3001/api/v1/cari**", async (route) => {
+  await page.route("**/api/v1/cari**", async (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/cari/cari-1")) {
       await route.fulfill({ json: {
@@ -118,7 +118,7 @@ async function faturaFormuMockla(page: Page) {
     }
     await route.fulfill({ json: { kayitlar: [{ id: "cari-1", kod: "CR-00124", unvan: "ABC Makina Sanayi ve Ticaret Ltd. Şti.", vknTckn: "1234567890", telefon: "0212 555 01 24" }], sonrakiImlec: null } });
   });
-  await page.route("http://localhost:3001/api/v1/stok**", async (route) => {
+  await page.route("**/api/v1/stok**", async (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/stok/stok-1/tavsiye-fiyat")) {
       await route.fulfill({ json: { kaynakFiyat: 185, kaynakDoviz: "TRY", iskontoOrani: 5, cevrilebilir: true } });
@@ -133,7 +133,7 @@ async function faturaFormuMockla(page: Page) {
 }
 
 async function veriDoluAnaKayitMockla(page: Page) {
-  await page.route("http://localhost:3001/api/v1/cari**", async (route) => {
+  await page.route("**/api/v1/cari**", async (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/cari/etiketler")) {
       await route.fulfill({ json: [] });
@@ -145,7 +145,7 @@ async function veriDoluAnaKayitMockla(page: Page) {
       { id: "cari-3", kod: "CR-00311", unvan: "Riskli Müşteri Ltd. Şti.", tip: "musteri", sektor: null, vknTckn: "1122334455", eposta: null, telefon: null, karaListe: true, bakiyeler: [{ dovizCinsi: "TRY", bakiye: "126400.00", bakiyeTry: "126400.00" }] },
     ], sonrakiImlec: null } });
   });
-  await page.route("http://localhost:3001/api/v1/stok**", (route) => route.fulfill({ json: { kayitlar: [
+  await page.route("**/api/v1/stok**", (route) => route.fulfill({ json: { kayitlar: [
     { id: "stok-1", kod: "PRD-0042", ad: "A4 Fotokopi Kağıdı 80 gr Beyaz 500 Yaprak Ekonomik Ofis Paketi", tip: "urun", barkod: "8690000000042", anaBirim: "paket", kdvOrani: "20", alisFiyati: "145.00", satisFiyati: "185.00", mevcutMiktar: "124", ortalamaMaliyet: "141.75", alisFiyatiDoviz: "TRY", satisFiyatiDoviz: "TRY" },
     { id: "stok-2", kod: "PRD-0088", ad: "Endüstriyel Kesici Disk 115 mm", tip: "urun", barkod: "8690000000088", anaBirim: "adet", kdvOrani: "20", alisFiyati: "72.50", satisFiyati: "110.00", mevcutMiktar: "0", ortalamaMaliyet: "68.40", alisFiyatiDoviz: "TRY", satisFiyatiDoviz: "TRY" },
     { id: "stok-3", kod: "SRV-0012", ad: "Yerinde Kurulum ve Teknik Destek Hizmeti", tip: "hizmet", barkod: null, anaBirim: "saat", kdvOrani: "20", alisFiyati: null, satisFiyati: "1250.00", mevcutMiktar: "0", ortalamaMaliyet: "0", alisFiyatiDoviz: "TRY", satisFiyatiDoviz: "TRY" },
@@ -153,7 +153,7 @@ async function veriDoluAnaKayitMockla(page: Page) {
 }
 
 async function veriDoluKasaBankaMockla(page: Page) {
-  await page.route("http://localhost:3001/api/v1/kasa-banka/**", async (route) => {
+  await page.route("**/api/v1/kasa-banka/**", async (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/kasa-banka/kasalar")) {
       await route.fulfill({ json: [
@@ -174,14 +174,14 @@ async function veriDoluKasaBankaMockla(page: Page) {
       { id: "hareket-2", tarih: "2026-08-08", tip: "tediye", tutar: "31850.50", dovizCinsi: "TRY", kur: "1", tutarTry: "31850.50", aciklama: "Temmuz dönemi toplu tedarikçi ödemesi ve masraf kapaması", kaynakTur: "manuel", karsiHareketId: null, kasa: null, bankaHesap: { id: "banka-1", ad: "İş Bankası Ticari TL Ana Hesabı", bankaAdi: "Türkiye İş Bankası" }, cari: { unvan: "Kuzey Tedarik A.Ş." } },
     ] });
   });
-  await page.route("http://localhost:3001/api/v1/cari**", (route) => route.fulfill({ json: { kayitlar: [
+  await page.route("**/api/v1/cari**", (route) => route.fulfill({ json: { kayitlar: [
     { id: "cari-1", unvan: "ABC Makina Sanayi ve Ticaret Ltd. Şti." },
     { id: "cari-2", unvan: "Kuzey Tedarik A.Ş." },
   ], sonrakiImlec: null } }));
 }
 
 async function veriDoluAnaPanelMockla(page: Page) {
-  await page.route("http://localhost:3001/api/v1/**", async (route) => {
+  await page.route("**/api/v1/**", async (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith("/auth/ben")) {
       await route.fulfill({ json: { userId: "u1", tenantId: "t1", rol: "yonetici" } });
@@ -400,7 +400,7 @@ for (const gorunum of [
     test("geri bildirim diyaloğu görsel olarak korunur", async ({ page }) => {
       await apiMockla(page);
       let gonderimDenemesi = 0;
-      await page.route("http://localhost:3001/api/v1/kullanim/geri-bildirim", (route) => {
+      await page.route("**/api/v1/kullanim/geri-bildirim", (route) => {
         gonderimDenemesi += 1;
         return gonderimDenemesi === 1
           ? route.fulfill({ status: 500, json: { mesaj: "Geçici sunucu hatası" } })

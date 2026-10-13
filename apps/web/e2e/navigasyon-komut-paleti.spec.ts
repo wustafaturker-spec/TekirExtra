@@ -38,7 +38,7 @@ async function apiMockla(page: Page) {
   await page.addInitScript(() => {
     sessionStorage.setItem("tekir_access", "e2e-token");
   });
-  await page.route("http://localhost:3001/api/v1/**", async (route) => {
+  await page.route("**/api/v1/**", async (route) => {
     const { pathname, searchParams } = new URL(route.request().url());
     const arama = searchParams.get("arama") ?? "";
 

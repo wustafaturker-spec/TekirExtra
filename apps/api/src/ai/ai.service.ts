@@ -10,6 +10,7 @@ import {
 import { fisFaturaDogrula, cariIletisimDogrula, DogrulamaSonucu } from "./ai.dogrulama";
 import { IAiProvider } from "./saglayici/ai-provider.interface";
 import { AiProviderFactory } from "./saglayici/ai-provider.factory";
+import { kiraciSaglayicisi } from "./saglayici/kiraci-saglayici";
 
 export interface FisFaturaTaramaCiktisi {
   dogrulama: DogrulamaSonucu<FisFaturaOcrSonuc>;
@@ -37,21 +38,8 @@ export class AiService {
     this.aiProvider = provider;
   }
 
-  /**
-   * Kiracının kayıtlı sağlayıcısını getirir; kayıt yoksa platform sağlayıcısı.
-   * Okuma hatası yutulmaz — sessizce başka sağlayıcıya düşmek sonucu değiştirir.
-   */
   private async getProviderForTenant(tenantId: string): Promise<IAiProvider> {
-    const ayar = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.tenantAiAyari.findUnique({ where: { tenantId } }),
-    );
-    if (!ayar) return this.aiProvider;
-    return AiProviderFactory.uret({
-      saglayici: ayar.saglayici,
-      apiKey: ayar.apiKey,
-      modelAdi: ayar.modelAdi,
-      baseUrl: ayar.baseUrl,
-    });
+    return (await kiraciSaglayicisi(this.prisma, tenantId, () => this.aiProvider)).saglayici;
   }
 
   /**

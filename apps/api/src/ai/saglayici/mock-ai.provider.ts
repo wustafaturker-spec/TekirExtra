@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { IAiProvider, AiMultimodalGirdi, AiProviderTuru } from "./ai-provider.interface";
+import { IAiProvider, AiMultimodalGirdi, AiProviderTuru, AiAracliSohbetGirdisi, AiAracliYanit } from "./ai-provider.interface";
 
 /**
  * Mock / Test Yapay Zeka Sağlayıcısı (CI/CD ve API Anahtarsız Ortamlar İçin)
@@ -81,5 +81,26 @@ export class MockAiProvider implements IAiProvider {
 
   async metinUret(girdi: AiMultimodalGirdi): Promise<string> {
     return `[Mock AI Yanıtı]: "${girdi.prompt.slice(0, 50)}..." talebiniz başarıyla simüle edildi.`;
+  }
+
+  async aracliSohbet(_girdi: AiAracliSohbetGirdisi): Promise<AiAracliYanit> {
+    return { metin: "[Örnek sağlayıcı] Gerçek yapay zekâ sağlayıcısı tanımlı değil; araç çağrılmadı.", aracCagrilari: [] };
+  }
+}
+
+/**
+ * Testler için senaryolu sağlayıcı: `aracliSohbet` sıradaki yanıtı döner ve
+ * aldığı girdileri saklar.
+ */
+export class SenaryoAiProvider extends MockAiProvider {
+  readonly girdiler: AiAracliSohbetGirdisi[] = [];
+
+  constructor(private readonly yanitlar: AiAracliYanit[]) {
+    super();
+  }
+
+  override async aracliSohbet(girdi: AiAracliSohbetGirdisi): Promise<AiAracliYanit> {
+    this.girdiler.push(structuredClone(girdi));
+    return this.yanitlar.shift() ?? { metin: "", aracCagrilari: [] };
   }
 }

@@ -41,6 +41,8 @@ const HEDEF_ROLLER: Record<BildirimTuru, Rol[]> = {
   satin_alma: ["yonetici", "muhasebe"],
   personel: ["yonetici", "muhasebe", "ik"],
   mevzuat: ["yonetici", "muhasebe"],
+  // AI-04: onay talebi yalnız isteyen kullanıcıya düşer (kullaniciIdler).
+  yapay_zeka: [],
 };
 
 /**
@@ -78,6 +80,8 @@ const TARAMA_ONEKLERI: Record<BildirimTuru, string[]> = {
   personel: ["personel:"],
   // MVZ-07: duyurular ("mevzuat:") taramada kapatılmaz; MVZ-17 yayın eksiği uyarısı ("mevzuat-eksik:") yayınlanınca kapanır.
   mevzuat: ["mevzuat-eksik:"],
+  // AI-04: talep bildirimleri taramada değil, talep karara bağlanınca kapanır.
+  yapay_zeka: [],
 };
 
 function gunAnahtari(tarih = new Date()): string {

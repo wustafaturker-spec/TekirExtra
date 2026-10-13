@@ -60,7 +60,7 @@ async function apiMockla(page: Page, baslangic: SahteTeslimat[]) {
   await page.addInitScript(() => {
     sessionStorage.setItem("tekir_access", "e2e-token");
   });
-  await page.route("http://localhost:3001/api/v1/**", async (route) => {
+  await page.route("**/api/v1/**", async (route) => {
     const istek = route.request();
     const { pathname, searchParams } = new URL(istek.url());
 

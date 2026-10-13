@@ -25,6 +25,8 @@ export interface BildirimGirdisi {
   sonTarih?: Date;
   /** Bildirimin düşeceği roller; kullanıcılar bu rollerden türetilir. */
   roller: Rol[];
+  /** Verilirse bildirim rollere değil yalnız bu kullanıcılara düşer (AI-04). */
+  kullaniciIdler?: string[];
 }
 
 const ACIK_DURUMLAR = ["yeni", "okundu", "ustlenildi"] as const;
@@ -69,7 +71,10 @@ export class BildirimService {
       });
 
       const [kullanicilar, tercihler, mevcutTeslimatlar] = await Promise.all([
-        tx.user.findMany({ where: { rol: { in: girdi.roller }, aktif: true }, select: { id: true } }),
+        tx.user.findMany({
+          where: girdi.kullaniciIdler ? { id: { in: girdi.kullaniciIdler }, aktif: true } : { rol: { in: girdi.roller }, aktif: true },
+          select: { id: true },
+        }),
         tx.bildirimTercihi.findMany({ where: { tur: girdi.tur }, select: { userId: true, uygulamaIci: true, eposta: true } }),
         tx.bildirimTeslimati.findMany({ where: { bildirimId: bildirim.id }, select: { userId: true } }),
       ]);

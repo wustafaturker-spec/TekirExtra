@@ -25,12 +25,17 @@ export class EbelgeUygulamasiGuard implements CanActivate {
     if (!gerekli || gerekli.length === 0) return true;
     if (!baglamAl()) return true; // @Public uçlar — AuthGuard zaten karar verdi
 
-    const durum = await this.uygulamalar.uygulamalar();
-    if (gerekli.some((kod) => uygulamaAcik(durum, kod))) return true;
-
-    const adlar = gerekli.map((kod) => EBELGE_UYGULAMALARI.find((u) => u.kod === kod)?.ad ?? kod);
-    throw new ForbiddenException(
-      `Firma ${adlar.join(" / ")} uygulamasına kayıtlı değil; bu işlem Ayarlar > Firma ekranından mükellefiyet belirtilene kadar kullanılamaz`,
-    );
+    await ebelgeUygulamasiDenetle(gerekli, this.uygulamalar);
+    return true;
   }
+}
+
+/** Firma gerekli e-Belge uygulamalarından hiçbirine kayıtlı değilse 403 (yapay zekâ araçları da kullanır). */
+export async function ebelgeUygulamasiDenetle(gerekli: EbelgeUygulamaKodu[], uygulamalar: EbelgeUygulamalariService): Promise<void> {
+  const durum = await uygulamalar.uygulamalar();
+  if (gerekli.some((kod) => uygulamaAcik(durum, kod))) return;
+  const adlar = gerekli.map((kod) => EBELGE_UYGULAMALARI.find((u) => u.kod === kod)?.ad ?? kod);
+  throw new ForbiddenException(
+    `Firma ${adlar.join(" / ")} uygulamasına kayıtlı değil; bu işlem Ayarlar > Firma ekranından mükellefiyet belirtilene kadar kullanılamaz`,
+  );
 }

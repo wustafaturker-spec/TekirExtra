@@ -1,8 +1,11 @@
 import { Controller, Post, Get, Body } from "@nestjs/common";
 import { AiRaporService } from "./ai-rapor.service";
 import { aktifBaglam } from "../../core/istek-baglami";
+import { Roller } from "../../auth/roller.decorator";
 
+/** AI-02: finansal özet rolleri (RPR-11 `GET /rapor/ozet` ile aynı). */
 @Controller("ai/rapor")
+@Roller("muhasebe", "mali_musavir", "salt_okunur")
 export class AiRaporController {
   constructor(private readonly raporService: AiRaporService) {}
 

@@ -10,7 +10,7 @@ test("düzeltme kaydı incelenir, atanır, notlanır ve beklemeye alınır", asy
     createdAt: "2026-09-02T10:00:00.000Z", atanan: atanan ? { id: "11111111-1111-4111-8111-111111111111", adSoyad: "Ayşe Yönetici" } : null,
     olaylar: notEklendi ? [{ id: "olay-1", olayTuru: "not", aciklama: "Banka dekontu istendi.", createdAt: "2026-09-02T11:00:00.000Z", user: { adSoyad: "Ayşe Yönetici" } }] : [],
   });
-  await page.route("http://localhost:3001/api/v1/**", async (route) => {
+  await page.route("**/api/v1/**", async (route) => {
     const { pathname } = new URL(route.request().url()); const method = route.request().method();
     if (pathname.endsWith("/auth/ben")) return route.fulfill({ json: { userId: "u1", tenantId: "t1", rol: "yonetici" } });
     if (pathname.endsWith("/duzeltmeler/ozet")) return route.fulfill({ json: { acik: 2, kritik: 2, bugunOlusan: 1, banaAtanan: atanan ? 1 : 0, slaAsan: 1 } });

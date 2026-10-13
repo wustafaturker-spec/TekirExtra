@@ -1,403 +1,250 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import { istekBaglami } from "../../core/istek-baglami";
+import { SenaryoAiProvider } from "../saglayici/mock-ai.provider";
+import { TanimsizAiProvider } from "../saglayici/tanimsiz-ai.provider";
+import type { AiAracliYanit } from "../saglayici/ai-provider.interface";
+import { AJAN_ARACLARI, aracTanimi } from "./araclar";
 import { AiAjanService } from "./ai-ajan.service";
-import { Prisma } from "@prisma/client";
 
-describe("AiAjanService - Dış Kanallar & AI Ajan Entegrasyonu (Faz 3)", () => {
-  let service: AiAjanService;
-  let mockPrisma: any;
+const KIMLIK = { tenantId: "11111111-1111-1111-1111-111111111111", userId: "22222222-2222-2222-2222-222222222222" };
+const CARI_ID = "3f2b6c1e-8d4a-4c2b-9a1e-5b7c8d9e0f12";
+const BELGE_ID = "7a1d2e3f-4b5c-4d6e-8f70-81920a1b2c3d";
 
-  const mockTenantId = "11111111-1111-1111-1111-111111111111";
-  const mockUserId = "22222222-2222-2222-2222-222222222222";
-  const mockOturumId = "33333333-3333-3333-3333-333333333333";
-  const kimlik = { tenantId: mockTenantId, userId: mockUserId };
-
-  beforeEach(() => {
-    mockPrisma = {
-      user: {
-        findFirst: vi.fn(),
-      },
-      ajanOturumu: {
-        findUnique: vi.fn(),
-        findFirst: vi.fn(),
-        create: vi.fn(),
-        update: vi.fn(),
-      },
-      ajanMesajGecmisi: {
-        create: vi.fn().mockResolvedValue({ id: "mesaj-1" }),
-      },
-      tenantIslem: vi.fn((_tenantId, callback) => callback(mockTx)),
-    };
-
-    (mockTx as any).user = mockPrisma.user;
-    service = new AiAjanService(mockPrisma);
-  });
-
-  const mockTx = {
-    cariHesap: {
-      findMany: vi.fn(),
-      findFirst: vi.fn(),
-    },
-    cariHareket: {
-      findMany: vi.fn(),
-    },
-    stokKart: {
-      findMany: vi.fn(),
-    },
-    belge: {
-      create: vi.fn(),
-      findFirst: vi.fn(),
+function kur(yanitlar: AiAracliYanit[], secenek: { yetkiliMi?: (ad: string) => boolean; ucSonucu?: (yol: string, arg: unknown[]) => unknown } = {}) {
+  const tx = {
+    user: { findFirst: vi.fn().mockResolvedValue({ adSoyad: "Ayşe Satış" }) },
+    ajanOturumu: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({ id: "oturum-1", userId: KIMLIK.userId }),
       update: vi.fn(),
     },
-    belgeSayac: {
-      upsert: vi.fn().mockResolvedValue({ sonSira: 1 }),
-      findUnique: vi.fn().mockResolvedValue({ id: "s-1" }),
-      update: vi.fn().mockResolvedValue({ sonSira: 1 }),
-    },
-    crmGorev: {
-      create: vi.fn().mockResolvedValue({ id: "gorev-1", baslik: "Toplantı" }),
-    },
+    ajanMesajGecmisi: { findMany: vi.fn().mockResolvedValue([]), create: vi.fn() },
   };
+  const prisma = { tenantIslem: vi.fn((_t: string, fn: (t: typeof tx) => unknown) => fn(tx)) };
+  const uc = {
+    yetkiliMi: vi.fn((u: { yol: string }) => (secenek.yetkiliMi ? secenek.yetkiliMi(u.yol) : true)),
+    cagir: vi.fn(async (u: { yol: string }, arg: unknown[]) => secenek.ucSonucu?.(u.yol, arg) ?? {}),
+  };
+  const onay = { olustur: vi.fn(async (g: { arac: string; ozet: string }) => ({ id: "talep-1", arac: g.arac, ozet: g.ozet, durum: "bekliyor" })) };
+  const saglayici = new SenaryoAiProvider(yanitlar);
+  const service = new AiAjanService(prisma as never, uc as never, onay as never);
+  service.saglayiciBul = async () => ({ saglayici, ozelTalimatlar: null });
+  const calistir = (mesaj: string, rol = "satis") => istekBaglami.run({ deger: { ...KIMLIK, rol: rol as never } }, () => service.mesajiIsle(mesaj));
+  return { service, tx, uc, onay, saglayici, calistir };
+}
 
-  it("1. Güvenlik: Kullanıcının PIN kodu varsa ilk etkileşimde PIN doğrulaması istemelidir", async () => {
-    mockPrisma.user.findFirst.mockResolvedValue({
-      id: mockUserId,
-      tenantId: mockTenantId,
-      adSoyad: "Ahmet Satış",
-      pinKodu: "1453",
-    });
-
-    mockPrisma.ajanOturumu.findUnique.mockResolvedValue({
-      id: mockOturumId,
-      tenantId: mockTenantId,
-      userId: mockUserId,
-      pinDogrulandi: false,
-      sonEtkilesim: new Date(),
-    });
-
-    const sonuc = await service.mesajiIsle({
-      kanal: "WHATSAPP",
-      kanalKimlik: "+905321112233",
-      mesaj: "Merhaba",
-    }, kimlik);
-
-    expect(sonuc.pinGerekiyor).toBe(true);
-    expect(sonuc.cevap).toContain("lütfen 4 haneli PIN kodunuzu giriniz");
+describe("asistan araç döngüsü (AI-05)", () => {
+  it("sağlayıcı tanımsızsa asistan kapalıdır ve hiçbir şey yazmaz", async () => {
+    const k = kur([]);
+    k.service.saglayiciBul = async () => ({ saglayici: new TanimsizAiProvider(), ozelTalimatlar: null });
+    const y = await k.calistir("merhaba");
+    expect(y.asistanKapali).toBe(true);
+    expect(k.tx.ajanMesajGecmisi.create).not.toHaveBeenCalled();
   });
 
-  it("2. Güvenlik: Doğru PIN kodu girildiğinde oturum açılmalı ve teyit mesajı dönmelidir", async () => {
-    mockPrisma.user.findFirst.mockResolvedValue({
-      id: mockUserId,
-      tenantId: mockTenantId,
-      adSoyad: "Ahmet Satış",
-      pinKodu: "1453",
-    });
-
-    mockPrisma.ajanOturumu.findUnique.mockResolvedValue({
-      id: mockOturumId,
-      tenantId: mockTenantId,
-      userId: mockUserId,
-      pinDogrulandi: false,
-      sonEtkilesim: new Date(),
-    });
-
-    const sonuc = await service.mesajiIsle({
-      kanal: "WHATSAPP",
-      kanalKimlik: "+905321112233",
-      mesaj: "1453",
-    }, kimlik);
-
-    expect(sonuc.pinGerekiyor).toBe(false);
-    expect(sonuc.cevap).toContain("PIN kodunuz doğrulandı");
-    expect(mockPrisma.ajanOturumu.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: mockOturumId },
-        data: expect.objectContaining({ pinDogrulandi: true }),
-      }),
+  it("okuma aracını çalıştırır, sonucu modele verir ve son yanıtı kaydeder", async () => {
+    const k = kur(
+      [
+        { metin: "", aracCagrilari: [{ id: "c1", ad: "cari_ara", girdi: { arama: "Yılmaz" } }] },
+        { metin: "Yılmaz Ticaret bakiyesi 10.000,00 TL.", aracCagrilari: [] },
+      ],
+      { ucSonucu: (yol) => (yol === "GET /cari" ? { kayitlar: [{ id: CARI_ID, kod: "C1", unvan: "Yılmaz Ticaret", bakiyeler: [{ dovizCinsi: "TRY", bakiye: "10000.00" }], izinliEylemler: ["x"] }] } : {}) },
     );
+    const y = await k.calistir("Yılmaz bakiyesi");
+    expect(y.cevap).toBe("Yılmaz Ticaret bakiyesi 10.000,00 TL.");
+    expect(k.uc.cagir).toHaveBeenCalledWith(expect.objectContaining({ yol: "GET /cari" }), ["Yılmaz", undefined, "10", undefined], expect.objectContaining({ kaynak: "asistan", arac: "cari_ara" }));
+    const ikinciTur = k.saglayici.girdiler[1].mesajlar;
+    const sonuc = ikinciTur.find((m) => m.rol === "arac_sonucu");
+    expect(sonuc && "icerik" in sonuc && sonuc.icerik).toContain("Yılmaz Ticaret");
+    // Gereksiz alanlar modele gitmez.
+    expect(sonuc && "icerik" in sonuc && sonuc.icerik).not.toContain("izinliEylemler");
+    expect(k.tx.ajanMesajGecmisi.create).toHaveBeenCalledTimes(2);
   });
 
-  it("3. Bakiye Sorgulama: Cari borç/alacak bakiyesini başarıyla hesaplayıp özetlemelidir", async () => {
-    mockPrisma.user.findFirst.mockResolvedValue({
-      id: mockUserId,
-      tenantId: mockTenantId,
-      adSoyad: "Mustafa Yönetici",
-      pinKodu: null,
-    });
-
-    mockPrisma.ajanOturumu.findUnique.mockResolvedValue({
-      id: mockOturumId,
-      tenantId: mockTenantId,
-      userId: mockUserId,
-      pinDogrulandi: true,
-      sonEtkilesim: new Date(),
-    });
-
-    mockTx.cariHesap.findMany.mockResolvedValue([
-      {
-        id: "cari-1",
-        kod: "CAR001",
-        unvan: "Yılmaz Ticaret Ltd.",
-        eposta: "yilmaz@ticaret.com",
-        telefon: "05320000000",
-      },
-    ]);
-
-    mockTx.cariHareket.findMany.mockResolvedValue([
-      { tip: "borc", tutarTry: new Prisma.Decimal(15000) },
-      { tip: "alacak", tutarTry: new Prisma.Decimal(5000) },
-    ]);
-
-    const sonuc = await service.mesajiIsle({
-      kanal: "WHATSAPP",
-      kanalKimlik: "+905321112233",
-      mesaj: "Yılmaz Ticaret bakiye sorgula",
-    }, kimlik);
-
-    expect(sonuc.eylem).toBe("bakiye_sorgula");
-    expect(sonuc.cevap).toContain("Yılmaz Ticaret Ltd.");
-    expect(sonuc.cevap).toContain("10.000,00 TL");
-    expect(sonuc.cevap).toContain("Borçlu");
+  it("rolün ekranda giremediği uçların araçları modele sunulmaz", async () => {
+    const k = kur([{ metin: "tamam", aracCagrilari: [] }], { yetkiliMi: (yol) => yol.startsWith("GET ") });
+    await k.calistir("merhaba");
+    const sunulan = k.saglayici.girdiler[0].araclar.map((a) => a.ad);
+    expect(sunulan).toContain("cari_ara");
+    expect(sunulan).not.toContain("belge_onayla");
+    expect(sunulan).not.toContain("belge_taslagi_olustur");
   });
 
-  it("4. Stok Sorgulama: Ürünün depodaki mevcudunu ve liste fiyatını dönmelidir", async () => {
-    mockPrisma.user.findFirst.mockResolvedValue({
-      id: mockUserId,
-      tenantId: mockTenantId,
-      adSoyad: "Mustafa",
-      pinKodu: null,
-    });
-
-    mockPrisma.ajanOturumu.findUnique.mockResolvedValue({
-      id: mockOturumId,
-      tenantId: mockTenantId,
-      userId: mockUserId,
-      pinDogrulandi: true,
-      sonEtkilesim: new Date(),
-    });
-
-    mockTx.stokKart.findMany.mockResolvedValue([
-      {
-        id: "stok-1",
-        kod: "STK-A4",
-        ad: "A4 Fotokopi Kağıdı 80g",
-        anaBirim: "koli",
-        satisFiyati: new Prisma.Decimal(125.0),
-        mevcutMiktar: new Prisma.Decimal(450),
-      },
-    ]);
-
-    const sonuc = await service.mesajiIsle({
-      kanal: "WHATSAPP",
-      kanalKimlik: "+905321112233",
-      mesaj: "A4 Kağıt stoğu ne kadar?",
-    }, kimlik);
-
-    expect(sonuc.eylem).toBe("stok_sorgula");
-    expect(sonuc.cevap).toContain("450 koli");
-    expect(sonuc.cevap).toContain("125.00 TL");
-  });
-
-  it("5. Teklif Taslağı Hazırlama: Doğal dilden taslak teklif oluşturmalı ve onay talimatı vermelidir", async () => {
-    mockPrisma.user.findFirst.mockResolvedValue({
-      id: mockUserId,
-      tenantId: mockTenantId,
-      adSoyad: "Mustafa",
-      pinKodu: null,
-    });
-
-    mockPrisma.ajanOturumu.findUnique.mockResolvedValue({
-      id: mockOturumId,
-      tenantId: mockTenantId,
-      userId: mockUserId,
-      pinDogrulandi: true,
-      sonEtkilesim: new Date(),
-    });
-
-    mockTx.cariHesap.findMany.mockResolvedValue([
-      {
-        id: "cari-1",
-        kod: "CAR001",
-        unvan: "Yılmaz Ticaret Ltd.",
-        grup: { ad: "Bayi" },
-      },
-    ]);
-
-    mockTx.stokKart.findMany.mockResolvedValue([
-      {
-        id: "stok-1",
-        kod: "STK-A4",
-        ad: "A4 Kağıt",
-        anaBirim: "koli",
-        satisFiyati: new Prisma.Decimal(100.0),
-        alisFiyati: new Prisma.Decimal(70.0),
-      },
-    ]);
-
-    mockTx.belge.create.mockResolvedValue({
-      id: "teklif-1",
-      no: "TKF-2026-0001",
-    });
-
-    const sonuc = await service.mesajiIsle({
-      kanal: "WHATSAPP",
-      kanalKimlik: "+905321112233",
-      mesaj: "Yılmaz Ticarete 50 koli A4 Kağıt için 30 gün vadeli teklif açalım, birim fiyat 120 TL olsun",
-    }, kimlik);
-
-    expect(sonuc.eylem).toBe("teklif_taslagi");
-    expect(sonuc.cevap).toContain("TKF-2026-0001");
-    expect(sonuc.cevap).toContain("TASLAK olarak hazırlandı");
-    expect(sonuc.cevap).toContain("ONAYLA");
-    expect(mockTx.belge.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          tur: "teklif",
-          durum: "taslak",
-          cariId: "cari-1",
-          odemeVadeGun: 30,
-        }),
-      }),
+  it("modelin sunulmamış bir aracı çağırması çalıştırılmaz, hata olarak döner", async () => {
+    const k = kur(
+      [
+        { metin: "", aracCagrilari: [{ id: "c1", ad: "fatura_kesinlestir", girdi: { faturaId: BELGE_ID } }] },
+        { metin: "Yetkiniz yok.", aracCagrilari: [] },
+      ],
+      { yetkiliMi: (yol) => yol.startsWith("GET ") },
     );
+    const y = await k.calistir("faturayı kesinleştir");
+    expect(k.onay.olustur).not.toHaveBeenCalled();
+    expect(y.araclar).toEqual([{ ad: "fatura_kesinlestir", sinif: "bilinmiyor", basarili: false }]);
   });
 
-  it("6. Teklif Onaylama: 'ONAYLA' komutu ile bekleyen teklifi onaylandı durumuna geçirmelidir", async () => {
-    mockPrisma.user.findFirst.mockResolvedValue({
-      id: mockUserId,
-      tenantId: mockTenantId,
-      adSoyad: "Mustafa",
-      pinKodu: null,
-    });
-
-    mockPrisma.ajanOturumu.findUnique.mockResolvedValue({
-      id: mockOturumId,
-      tenantId: mockTenantId,
-      userId: mockUserId,
-      pinDogrulandi: true,
-      sonEtkilesim: new Date(),
-    });
-
-    mockTx.belge.findFirst.mockResolvedValue({
-      id: "teklif-1",
-      no: "TKF-2026-0001",
-      genelToplam: new Prisma.Decimal(7200),
-      cari: { unvan: "Yılmaz Ticaret Ltd." },
-    });
-
-    mockTx.belge.update.mockResolvedValue({
-      id: "teklif-1",
-      no: "TKF-2026-0001",
-      durum: "onaylandi",
-    });
-
-    const sonuc = await service.mesajiIsle({
-      kanal: "WHATSAPP",
-      kanalKimlik: "+905321112233",
-      mesaj: "ONAYLA",
-    }, kimlik);
-
-    expect(sonuc.eylem).toBe("teklif_onayla");
-    expect(sonuc.cevap).toContain("TKF-2026-0001");
-    expect(sonuc.cevap).toContain("ONAYLANDI");
-    expect(mockTx.belge.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: "teklif-1" },
-        data: { durum: "onaylandi" },
-      }),
+  it("onaya tabi araç işlem yapmaz; talep açar ve modele işlemin yapılmadığını söyler", async () => {
+    const k = kur(
+      [
+        { metin: "", aracCagrilari: [{ id: "c1", ad: "belge_onayla", girdi: { belgeId: BELGE_ID } }] },
+        { metin: "Teklif onayınıza sunuldu.", aracCagrilari: [] },
+      ],
+      { ucSonucu: (yol) => (yol === "GET /belgeler/:id" ? { tur: "teklif", no: null, cari: { unvan: "Kaya Ltd" }, genelToplam: "1200", dovizCinsi: "TRY", durum: "taslak" } : {}) },
     );
+    const y = await k.calistir("teklifi onayla");
+    expect(k.uc.cagir).not.toHaveBeenCalledWith(expect.objectContaining({ yol: "POST /belgeler/:id/onayla" }), expect.anything(), expect.anything());
+    expect(k.onay.olustur).toHaveBeenCalledWith(expect.objectContaining({ arac: "belge_onayla", parametreler: { belgeId: BELGE_ID }, kaynak: "asistan", oturumId: "oturum-1" }));
+    expect(k.onay.olustur.mock.calls[0][0].ozet).toContain("Kaya Ltd");
+    expect(y.onayTalepleri.map((t) => t.id)).toEqual(["talep-1"]);
+    const sonuc = k.saglayici.girdiler[1].mesajlar.find((m) => m.rol === "arac_sonucu");
+    expect(sonuc && "icerik" in sonuc && sonuc.icerik).toContain("YAPILMADI");
   });
 
-  it("7. Belge Dağıtımı: Gönderim yapılmadığını söyler ve belge ekranına yönlendirir", async () => {
-    mockPrisma.user.findFirst.mockResolvedValue({
-      id: mockUserId,
-      tenantId: mockTenantId,
-      adSoyad: "Mustafa",
-      pinKodu: null,
-    });
-
-    mockPrisma.ajanOturumu.findUnique.mockResolvedValue({
-      id: mockOturumId,
-      tenantId: mockTenantId,
-      userId: mockUserId,
-      pinDogrulandi: true,
-      sonEtkilesim: new Date(),
-    });
-
-    mockTx.belge.findFirst.mockResolvedValue({
-      id: "teklif-1",
-      no: "TKF-2026-0001",
-      cari: {
-        unvan: "Yılmaz Ticaret Ltd.",
-        eposta: "ahmet@yilmaz.com",
-        kisiler: [],
-      },
-    });
-
-    const sonuc = await service.mesajiIsle({
-      kanal: "WHATSAPP",
-      kanalKimlik: "+905321112233",
-      mesaj: "TKF-2026-0001 nolu teklifi e-posta ile müşteriye gönder",
-    }, kimlik);
-
-    expect(sonuc.eylem).toBe("belge_gonder");
-    expect(sonuc.cevap).toContain("hiçbir şey gönderilmedi");
-    expect(sonuc.cevap).not.toContain("iletildi");
-    expect(sonuc.cevap).toContain("/panel/belgeler?odak=teklif-1");
+  it("kesik yazılmış araç adında doğru adı önerir", async () => {
+    const k = kur([
+      { metin: "", aracCagrilari: [{ id: "c1", ad: "belge_taslagi_olust", girdi: {} }] },
+      { metin: "Tamam.", aracCagrilari: [] },
+    ]);
+    await k.calistir("teklif");
+    const sonuc = k.saglayici.girdiler[1].mesajlar.find((m) => m.rol === "arac_sonucu");
+    expect(sonuc && "icerik" in sonuc && sonuc.icerik).toContain('"belge_taslagi_olustur" aracını kastettiysen');
   });
 
-  function standartKullaniciVeOturum(oturumSahibi = mockUserId) {
-    mockPrisma.user.findFirst.mockResolvedValue({ id: mockUserId, tenantId: mockTenantId, adSoyad: "Mustafa", pinKodu: null });
-    mockPrisma.ajanOturumu.findUnique.mockResolvedValue({
-      id: mockOturumId,
-      tenantId: mockTenantId,
-      userId: oturumSahibi,
-      pinDogrulandi: true,
-      sonEtkilesim: new Date(),
-    });
-  }
-
-  it("8. Kimlik: kullanıcı oturumdaki kimlikle kiracı içinde aranır, gönderen numarasıyla değil", async () => {
-    standartKullaniciVeOturum();
-    mockTx.stokKart.findMany.mockResolvedValue([]);
-    await service.mesajiIsle({ kanal: "WEB", kanalKimlik: "web:x", mesaj: "A4 stok" }, kimlik);
-    expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({ where: { id: mockUserId, tenantId: mockTenantId } });
+  it("geçersiz parametre aracı çalıştırmaz, doğrulama hatasını modele döner", async () => {
+    const k = kur([
+      { metin: "", aracCagrilari: [{ id: "c1", ad: "cari_getir", girdi: { cariId: "yok" } }] },
+      { metin: "Cari bulunamadı.", aracCagrilari: [] },
+    ]);
+    await k.calistir("cariyi getir");
+    expect(k.uc.cagir).not.toHaveBeenCalled();
+    const sonuc = k.saglayici.girdiler[1].mesajlar.find((m) => m.rol === "arac_sonucu");
+    expect(sonuc && "hata" in sonuc && sonuc.hata).toBe(true);
   });
 
-  it("9. Kimlik: kullanıcı kiracıda yoksa işlem reddedilir", async () => {
-    mockPrisma.user.findFirst.mockResolvedValue(null);
-    await expect(service.mesajiIsle({ kanal: "WEB", kanalKimlik: "web:x", mesaj: "A4 stok" }, kimlik)).rejects.toThrow(/bulunamadı/);
+  it("araç çağırmadan işlem yapıldı diyen yanıtı bir kez düzelttirir, yine uydurursa göstermez", async () => {
+    const k = kur([
+      { metin: "Teklif taslağı oluşturuldu: /panel/belge/a1b2c3d4-e5f6-7890-1234-567890abcdef", aracCagrilari: [] },
+      { metin: "Teklif hazırlandı.", aracCagrilari: [] },
+    ]);
+    const y = await k.calistir("teklif hazırla");
+    expect(k.saglayici.girdiler).toHaveLength(2);
+    const duzeltme = k.saglayici.girdiler[1].mesajlar.at(-1);
+    expect(duzeltme && "metin" in duzeltme && duzeltme.metin).toContain("[Sistem denetimi]");
+    expect(y.cevap).toContain("doğrulanamadı");
+    expect(y.cevap).not.toContain("a1b2c3d4");
   });
 
-  it("10. Kimlik: başka kullanıcıya ait kanal oturumu kullanılamaz", async () => {
-    standartKullaniciVeOturum("44444444-4444-4444-4444-444444444444");
-    await expect(service.mesajiIsle({ kanal: "WHATSAPP", kanalKimlik: "+905321112233", mesaj: "A4 stok" }, kimlik)).rejects.toThrow(/başka bir kullanıcıya/);
+  it("düzeltme isteğinden sonra aracı çağıran model normal devam eder", async () => {
+    const k = kur([
+      { metin: "Onayınıza sunuldu.", aracCagrilari: [] },
+      { metin: "", aracCagrilari: [{ id: "c1", ad: "belge_onayla", girdi: { belgeId: BELGE_ID } }] },
+      { metin: "Teklif onayınıza sunuldu.", aracCagrilari: [] },
+    ], { ucSonucu: () => ({ tur: "teklif", cari: { unvan: "Kaya" }, genelToplam: "1", dovizCinsi: "TRY", durum: "taslak" }) });
+    const y = await k.calistir("onayla");
+    expect(y.cevap).toBe("Teklif onayınıza sunuldu.");
+    expect(y.onayTalepleri).toHaveLength(1);
   });
 
-  it("11. Ses: yazıya dökülemeyen ses komut çalıştırmaz", async () => {
-    standartKullaniciVeOturum();
-    mockTx.belge.create.mockClear();
-    const sonuc = await service.mesajiIsle({ kanal: "WEB", kanalKimlik: "web:x", sesBase64: "AAAA" }, kimlik);
-    expect(sonuc.eylem).toBe("girdi_yok");
-    expect(sonuc.cevap).toContain("yazıya dökülemiyor");
-    expect(mockTx.belge.create).not.toHaveBeenCalled();
+  it("içeriksiz model yanıtını yeniden dener", async () => {
+    const k = kur([
+      { metin: "", aracCagrilari: [] },
+      { metin: "", aracCagrilari: [{ id: "c1", ad: "masraf_kategorileri", girdi: {} }] },
+      { metin: "Kategoriler listelendi.", aracCagrilari: [] },
+    ], { ucSonucu: () => [] });
+    const y = await k.calistir("kategoriler");
+    expect(y.cevap).toBe("Kategoriler listelendi.");
+    expect(y.araclar).toHaveLength(1);
   });
 
-  it("12. PIN: doğru PIN geçmişe yazılmaz", async () => {
-    mockPrisma.user.findFirst.mockResolvedValue({ id: mockUserId, tenantId: mockTenantId, adSoyad: "Mustafa", pinKodu: "1453" });
-    mockPrisma.ajanOturumu.findUnique.mockResolvedValue({ id: mockOturumId, tenantId: mockTenantId, userId: mockUserId, pinDogrulandi: false, sonEtkilesim: new Date() });
-    mockPrisma.ajanMesajGecmisi.create.mockClear();
-    await service.mesajiIsle({ kanal: "WEB", kanalKimlik: "web:x", mesaj: "1453" }, kimlik);
-    const icerikler = mockPrisma.ajanMesajGecmisi.create.mock.calls.map((c: any[]) => c[0].data.icerik);
-    expect(icerikler).not.toContain("1453");
+  it("tur sınırında durur, sonsuz araç döngüsüne girmez", async () => {
+    const dongu = Array.from({ length: 20 }, () => ({ metin: "", aracCagrilari: [{ id: "c", ad: "masraf_kategorileri", girdi: {} }] }));
+    const k = kur(dongu, { ucSonucu: () => [] });
+    const y = await k.calistir("döngü");
+    expect(k.saglayici.girdiler.length).toBe(8);
+    expect(y.cevap).toContain("tamamlanamadı");
   });
+});
 
-  it("13. Hatırlatma ve ekstre gönderim yapılmış gibi bildirilmez", async () => {
-    standartKullaniciVeOturum();
-    mockTx.cariHesap.findFirst.mockResolvedValue({ id: "cari-1", unvan: "Kaya Ltd" });
-    const hatirlatma = await service.mesajiIsle({ kanal: "WEB", kanalKimlik: "web:x", mesaj: "Gecikmiş ödemeleri hatırlat" }, kimlik);
-    const ekstre = await service.mesajiIsle({ kanal: "WEB", kanalKimlik: "web:x", mesaj: "Kaya Ltd ekstre gönder" }, kimlik);
-    for (const s of [hatirlatma, ekstre]) {
-      expect(s.cevap).toContain("hiçbir şey gönderilmedi");
-      expect(s.veri?.durum).toBe("GONDERILMEDI");
+describe("araç kaydı (AI-03/AI-06)", () => {
+  it("silme aracı yoktur; her aracın sınıfı vardır, onaya tabi olanlar özet üretir", () => {
+    expect(AJAN_ARACLARI.length).toBeGreaterThan(20);
+    for (const a of AJAN_ARACLARI) {
+      expect(a.ad).not.toMatch(/sil/);
+      expect(a.uc.yol).not.toMatch(/^DELETE /);
+      expect(["okuma", "taslak", "onay"]).toContain(a.sinif);
+      if (a.sinif === "onay") expect(a.ozetle).toBeTypeOf("function");
     }
+  });
+
+  it("kesinleştiren, gönderen, para ve kart değiştiren, iptal eden araçlar onaya tabidir", () => {
+    const onayli = new Set(AJAN_ARACLARI.filter((a) => a.sinif === "onay").map((a) => a.ad));
+    for (const ad of ["belge_onayla", "fatura_kesinlestir", "belge_eposta_gonder", "fatura_eposta_gonder", "ebelge_gonder", "cari_ekstre_eposta", "kasa_banka_hareketi_kaydet", "cari_olustur", "cari_guncelle", "stok_karti_olustur", "stok_karti_guncelle", "belge_iptal", "fatura_iptal"]) {
+      expect(onayli.has(ad), ad).toBe(true);
+    }
+    for (const a of AJAN_ARACLARI.filter((x) => x.sinif !== "onay")) expect(a.uc.yol, a.ad).not.toMatch(/onayla|kesinlestir|gonder|iptal|hareketler|^POST \/cari$|^POST \/stok$|^PATCH /);
+  });
+
+  it("her araç sağlayıcıların anladığı JSON şemasına çevrilir", () => {
+    for (const a of AJAN_ARACLARI) {
+      const t = aracTanimi(a);
+      expect(t.girdiSemasi.type, a.ad).toBe("object");
+      expect(JSON.stringify(t.girdiSemasi)).not.toMatch(/additionalProperties|\$schema|anyOf/);
+    }
+    expect(aracTanimi(AJAN_ARACLARI.find((a) => a.ad === "belge_onayla")!).aciklama).toContain("ONAY GEREKİR");
+  });
+
+  it("başka dövizdeki liste fiyatını ürün kuruyla çevirtir ve liste iskontosunu uygular", async () => {
+    const taslak = AJAN_ARACLARI.find((a) => a.ad === "belge_taslagi_olustur")!;
+    const cagrilar: Array<{ yol: string; arg: unknown[] }> = [];
+    const uc = {
+      cagir: async (u: { yol: string }, arg: unknown[]) => {
+        cagrilar.push({ yol: u.yol, arg });
+        if (u.yol === "GET /stok/:id") return { ad: "Bez", kdvOrani: "10", anaBirim: "adet" };
+        if (u.yol === "GET /doviz-kurlari") return { kurlar: { USD: 40 } };
+        if (u.yol === "GET /stok/:id/tavsiye-fiyat") {
+          return arg[6] ? { birimFiyat: 15.2, cevrilebilir: true, kaynakDoviz: "USD", iskontoOrani: 5 } : { birimFiyat: 0.38, cevrilebilir: false, kaynakDoviz: "USD", iskontoOrani: 5 };
+        }
+        if (u.yol === "POST /belgeler") return { id: BELGE_ID };
+        return {};
+      },
+    };
+    await taslak.calistir({ uc: uc as never, kaynak: "asistan", arac: taslak.ad }, taslak.girdi.parse({ tur: "teklif", cariId: CARI_ID, tarih: "2026-10-13", satirlar: [{ stokId: CARI_ID, miktar: 1000 }] }));
+    expect(cagrilar.find((c) => c.yol === "GET /doviz-kurlari")!.arg).toEqual(["2026-10-13", "alis"]);
+    const satir = (cagrilar.find((c) => c.yol === "POST /belgeler")!.arg[0] as { satirlar: Array<Record<string, string>> }).satirlar[0];
+    expect(satir).toMatchObject({ birimFiyat: "15.2000", iskontoOrani: "5" });
+  });
+
+  it("çevrilemeyen fiyatı yazmaz, fiyatı kullanıcıdan istetir", async () => {
+    const taslak = AJAN_ARACLARI.find((a) => a.ad === "belge_taslagi_olustur")!;
+    const uc = {
+      cagir: async (u: { yol: string }) => {
+        if (u.yol === "GET /stok/:id") return { ad: "Bez", kdvOrani: "10", anaBirim: "adet" };
+        if (u.yol === "GET /doviz-kurlari") return { kurlar: { USD: 40 } };
+        if (u.yol === "GET /stok/:id/tavsiye-fiyat") return { birimFiyat: 0.38, cevrilebilir: false, kaynakDoviz: "USD" };
+        throw new Error("belge açılmamalı");
+      },
+    };
+    await expect(taslak.calistir({ uc: uc as never, kaynak: "asistan", arac: taslak.ad }, taslak.girdi.parse({ tur: "teklif", cariId: CARI_ID, satirlar: [{ stokId: CARI_ID, miktar: 1 }] }))).rejects.toThrow(/birim fiyatı kullanıcıdan/);
+  });
+
+  it("taslak araç satırı karttaki KDV ve birimle, fiyat yoksa fiyat önerisiyle doldurur", async () => {
+    const taslak = AJAN_ARACLARI.find((a) => a.ad === "belge_taslagi_olustur")!;
+    const cagrilar: Array<{ yol: string; arg: unknown[] }> = [];
+    const uc = {
+      cagir: async (u: { yol: string }, arg: unknown[]) => {
+        cagrilar.push({ yol: u.yol, arg });
+        if (u.yol === "GET /stok/:id") return { ad: "A4 Kağıt", kdvOrani: "10", anaBirim: "koli" };
+        if (u.yol === "GET /stok/:id/tavsiye-fiyat") return { birimFiyat: 125.5 };
+        if (u.yol === "POST /belgeler") return { id: BELGE_ID, durum: "taslak" };
+        return {};
+      },
+    };
+    const g = z.object({}).passthrough().parse({ tur: "teklif", cariId: CARI_ID, satirlar: [{ stokId: CARI_ID, miktar: 5 }] });
+    const sonuc = await taslak.calistir({ uc: uc as never, kaynak: "asistan", arac: taslak.ad }, taslak.girdi.parse(g));
+    const govde = cagrilar.find((c) => c.yol === "POST /belgeler")!.arg[0] as { satirlar: Array<Record<string, string>>; durum?: string; kur: string };
+    expect(govde.satirlar[0]).toMatchObject({ kdvOrani: "10", birim: "koli", birimFiyat: "125.5000", miktar: "5" });
+    expect(govde.kur).toBe("1");
+    expect(sonuc).toMatchObject({ id: BELGE_ID, adres: `/panel/belgeler?odak=${BELGE_ID}` });
   });
 });

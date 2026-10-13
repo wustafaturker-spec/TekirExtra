@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { IAiProvider, AiMultimodalGirdi, AiProviderTuru } from "./ai-provider.interface";
+import { IAiProvider, AiMultimodalGirdi, AiProviderTuru, AiAracliSohbetGirdisi, AiAracliYanit } from "./ai-provider.interface";
+import { aracGirdisiniAyristir, saglayiciIstegi } from "./aracli-ortak";
 
 /**
  * Yerel / Sunucu İçi Ollama Sağlayıcısı (Llama 3.2, DeepSeek-R1, Qwen2.5)
@@ -78,5 +79,28 @@ export class OllamaAiProvider implements IAiProvider {
 
     const veri = (await yanit.json()) as any;
     return veri.response || "";
+  }
+
+  async aracliSohbet(girdi: AiAracliSohbetGirdisi): Promise<AiAracliYanit> {
+    const messages: any[] = [{ role: "system", content: girdi.sistemRol }];
+    for (const m of girdi.mesajlar) {
+      if (m.rol === "kullanici") messages.push({ role: "user", content: m.metin });
+      else if (m.rol === "asistan") messages.push(m.ham ?? { role: "assistant", content: m.metin });
+      else messages.push({ role: "tool", tool_name: m.ad, content: m.icerik });
+    }
+    const veri = await saglayiciIstegi("Ollama", `${this.baseUrl}/api/chat`, {}, {
+      model: this.model,
+      messages,
+      stream: false,
+      options: { temperature: 0.2 },
+      tools: girdi.araclar.map((a) => ({ type: "function", function: { name: a.ad, description: a.aciklama, parameters: a.girdiSemasi } })),
+    });
+    const mesaj = veri.message ?? { role: "assistant", content: "" };
+    const cagrilar: any[] = Array.isArray(mesaj.tool_calls) ? mesaj.tool_calls : [];
+    return {
+      metin: typeof mesaj.content === "string" ? mesaj.content.trim() : "",
+      aracCagrilari: cagrilar.map((c, i) => ({ id: c.id ?? `${c.function?.name}-${i}`, ad: c.function?.name, girdi: aracGirdisiniAyristir(c.function?.arguments) })),
+      ham: mesaj,
+    };
   }
 }

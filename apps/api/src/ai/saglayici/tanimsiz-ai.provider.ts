@@ -1,5 +1,5 @@
 import { ServiceUnavailableException } from "@nestjs/common";
-import { IAiProvider, AiProviderTuru } from "./ai-provider.interface";
+import { IAiProvider, AiProviderTuru, AiAracliYanit } from "./ai-provider.interface";
 
 const VARSAYILAN_MESAJ =
   "Yapay zekâ sağlayıcısı tanımlı değil. Ayarlar → Yapay Zeka ekranından sağlayıcı ve API anahtarı girin.";
@@ -18,6 +18,10 @@ export class TanimsizAiProvider implements IAiProvider {
   }
 
   async metinUret(): Promise<string> {
+    throw new ServiceUnavailableException(this.mesaj);
+  }
+
+  async aracliSohbet(): Promise<AiAracliYanit> {
     throw new ServiceUnavailableException(this.mesaj);
   }
 }

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { IAiProvider, AiMultimodalGirdi, AiProviderTuru } from "./ai-provider.interface";
+import { IAiProvider, AiMultimodalGirdi, AiProviderTuru, AiAracliSohbetGirdisi, AiAracliYanit } from "./ai-provider.interface";
+import { aracGirdisiniAyristir, saglayiciIstegi } from "./aracli-ortak";
 
 /**
  * Google Gemini Multimodal / Structured Outputs Sağlayıcısı
@@ -185,5 +186,37 @@ export class GeminiAiProvider implements IAiProvider {
 
     const veri = (await yanit.json()) as any;
     return veri.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  }
+
+  async aracliSohbet(girdi: AiAracliSohbetGirdisi): Promise<AiAracliYanit> {
+    const contents: Array<{ role: "user" | "model"; parts: any[] }> = [];
+    for (const m of girdi.mesajlar) {
+      if (m.rol === "kullanici") contents.push({ role: "user", parts: [{ text: m.metin }] });
+      else if (m.rol === "asistan") contents.push((m.ham as { role: "model"; parts: any[] }) ?? { role: "model", parts: [{ text: m.metin }] });
+      else {
+        const parca = { functionResponse: { name: m.ad, response: { sonuc: m.icerik, ...(m.hata ? { hata: true } : {}) } } };
+        const son = contents[contents.length - 1];
+        if (son?.role === "user" && son.parts[0]?.functionResponse) son.parts.push(parca);
+        else contents.push({ role: "user", parts: [parca] });
+      }
+    }
+    // Anahtar URL'de değil başlıkta gider (AI-11).
+    const veri = await saglayiciIstegi("Gemini", `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`, { "x-goog-api-key": this.apiKey }, {
+      systemInstruction: { parts: [{ text: girdi.sistemRol }] },
+      contents,
+      tools: [{ functionDeclarations: girdi.araclar.map((a) => ({ name: a.ad, description: a.aciklama, parameters: a.girdiSemasi })) }],
+      generationConfig: { temperature: 0.2 },
+    });
+    const icerik = veri.candidates?.[0]?.content ?? { role: "model", parts: [] };
+    const parcalar: any[] = Array.isArray(icerik.parts) ? icerik.parts : [];
+    return {
+      metin: parcalar.filter((p) => typeof p.text === "string" && !p.thought).map((p) => p.text).join("\n").trim(),
+      aracCagrilari: parcalar.filter((p) => p.functionCall).map((p, i) => ({
+        id: p.functionCall.id ?? `${p.functionCall.name}-${i}`,
+        ad: p.functionCall.name,
+        girdi: aracGirdisiniAyristir(p.functionCall.args),
+      })),
+      ham: { role: "model", parts: parcalar },
+    };
   }
 }

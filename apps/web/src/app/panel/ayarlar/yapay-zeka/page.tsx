@@ -210,7 +210,7 @@ export default function YapayZekaAyarlariSayfasi() {
               <Select value={saglayici} onChange={(e) => setSaglayici(e.target.value)}>
                 <option value="varsayilan">TekirExtra Varsayılanı (Platform Paylaşımlı)</option>
                 <option value="openai">OpenAI (GPT-4o / GPT-4o-mini)</option>
-                <option value="anthropic">Anthropic (Claude 3.5 Sonnet / Haiku)</option>
+                <option value="anthropic">Anthropic (Claude)</option>
                 <option value="gemini">Google Gemini (Gemini 2.5 Flash / Pro)</option>
                 <option value="ollama">Ollama (platformun sunucusu)</option>
               </Select>
@@ -238,7 +238,7 @@ export default function YapayZekaAyarlariSayfasi() {
                 <Input
                   placeholder={
                     saglayici === "openai" ? "gpt-4o-mini" :
-                    saglayici === "anthropic" ? "claude-3-5-sonnet-20241022" :
+                    saglayici === "anthropic" ? "claude-sonnet-5-5" :
                     saglayici === "ollama" ? "llama3.2" : "gemini-2.5-flash"
                   }
                   value={modelAdi}

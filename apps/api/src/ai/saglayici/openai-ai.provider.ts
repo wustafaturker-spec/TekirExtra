@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { IAiProvider, AiMultimodalGirdi, AiProviderTuru } from "./ai-provider.interface";
+import { IAiProvider, AiMultimodalGirdi, AiProviderTuru, AiAracliSohbetGirdisi, AiAracliYanit } from "./ai-provider.interface";
+import { aracGirdisiniAyristir, saglayiciIstegi } from "./aracli-ortak";
 
 /**
  * OpenAI API / Azure OpenAI Uyumlu Sağlayıcı (GPT-4o, GPT-4o-mini)
@@ -113,5 +114,27 @@ export class OpenAiAiProvider implements IAiProvider {
 
     const veri = (await yanit.json()) as any;
     return veri.choices?.[0]?.message?.content || "";
+  }
+
+  async aracliSohbet(girdi: AiAracliSohbetGirdisi): Promise<AiAracliYanit> {
+    const messages: any[] = [{ role: "system", content: girdi.sistemRol }];
+    for (const m of girdi.mesajlar) {
+      if (m.rol === "kullanici") messages.push({ role: "user", content: m.metin });
+      else if (m.rol === "asistan") messages.push(m.ham ?? { role: "assistant", content: m.metin });
+      else messages.push({ role: "tool", tool_call_id: m.cagriId, content: m.icerik });
+    }
+    const veri = await saglayiciIstegi("OpenAI", `${this.baseUrl}/chat/completions`, { Authorization: `Bearer ${this.apiKey}` }, {
+      model: this.model,
+      messages,
+      temperature: 0.2,
+      tools: girdi.araclar.map((a) => ({ type: "function", function: { name: a.ad, description: a.aciklama, parameters: a.girdiSemasi } })),
+    });
+    const mesaj = veri.choices?.[0]?.message ?? { role: "assistant", content: "" };
+    const cagrilar: any[] = Array.isArray(mesaj.tool_calls) ? mesaj.tool_calls : [];
+    return {
+      metin: typeof mesaj.content === "string" ? mesaj.content.trim() : "",
+      aracCagrilari: cagrilar.map((c) => ({ id: c.id, ad: c.function?.name, girdi: aracGirdisiniAyristir(c.function?.arguments) })),
+      ham: mesaj,
+    };
   }
 }

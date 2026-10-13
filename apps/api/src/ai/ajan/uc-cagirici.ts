@@ -1,0 +1,87 @@
+import { ForbiddenException, Injectable, Logger, type Type } from "@nestjs/common";
+import { ModuleRef, Reflector } from "@nestjs/core";
+import type { EbelgeUygulamaKodu, Rol } from "@tekirextra/shared";
+import { ROLLER_ANAHTAR } from "../../auth/roller.decorator";
+import { rolUcaYetkili } from "../../auth/roller.guard";
+import { aktifBaglam } from "../../core/istek-baglami";
+import { PrismaService } from "../../core/prisma.service";
+import { EbelgeUygulamalariService } from "../../ebelge/ebelge-uygulamalari.service";
+import { ebelgeUygulamasiDenetle } from "../../ebelge/ebelge-uygulamasi.guard";
+import { EBELGE_UYGULAMASI_ANAHTAR } from "../../ebelge/ebelge-uygulamasi.decorator";
+
+/** Bir aracın dayandığı ekran ucu: denetleyici sınıfı + metot adı. */
+export interface UcTanimi {
+  denetleyici: Type<object>;
+  yontem: string;
+  /** Denetim kaydında görünen uç, ör. `POST /belgeler/:id/onayla`. */
+  yol: string;
+}
+
+export interface CagriIzi {
+  kaynak: "asistan" | "mcp";
+  arac: string;
+  talepId?: string;
+  varlikId?: string | null;
+}
+
+/**
+ * AI-02/AI-07: araçlar servisleri değil ekranın denetleyici metotlarını
+ * çağırır; girdi doğrulaması, abonelik limiti ve iş kuralları böylece ekranla
+ * birebir aynıdır. HTTP guard'ları devrede olmadığı için ucun `@Roller` ve
+ * e-Belge uygulaması bilgisi burada aynı fonksiyonlarla denetlenir.
+ * Yazan çağrılar denetim kaydına araç ve kaynakla yazılır.
+ */
+@Injectable()
+export class UcCagirici {
+  private readonly logger = new Logger(UcCagirici.name);
+
+  constructor(
+    private readonly moduleRef: ModuleRef,
+    private readonly reflector: Reflector,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  private handler(uc: UcTanimi): (...argumanlar: unknown[]) => Promise<unknown> {
+    const fn = (uc.denetleyici.prototype as Record<string, unknown>)[uc.yontem];
+    if (typeof fn !== "function") throw new Error(`${uc.denetleyici.name}.${uc.yontem} bulunamadı`);
+    return fn as (...argumanlar: unknown[]) => Promise<unknown>;
+  }
+
+  /** Rol bu uca ekranda erişebiliyor mu (araç listesini süzmek için). */
+  yetkiliMi(uc: UcTanimi, rol: Rol): boolean {
+    const gerekli = this.reflector.getAllAndOverride<Rol[] | undefined>(ROLLER_ANAHTAR, [this.handler(uc), uc.denetleyici]);
+    return rolUcaYetkili(rol, gerekli);
+  }
+
+  async cagir<T = unknown>(uc: UcTanimi, argumanlar: unknown[], iz?: CagriIzi): Promise<T> {
+    const baglam = aktifBaglam();
+    const handler = this.handler(uc);
+    if (!this.yetkiliMi(uc, baglam.rol)) throw new ForbiddenException("Bu işlem için yetkiniz yok");
+
+    const ebelge = this.reflector.getAllAndOverride<EbelgeUygulamaKodu[] | undefined>(EBELGE_UYGULAMASI_ANAHTAR, [handler, uc.denetleyici]);
+    if (ebelge?.length) {
+      await ebelgeUygulamasiDenetle(ebelge, this.moduleRef.get(EbelgeUygulamalariService, { strict: false }));
+    }
+
+    const denetleyici = this.moduleRef.get(uc.denetleyici, { strict: false }) as Record<string, unknown>;
+    const sonuc = (await handler.apply(denetleyici, argumanlar)) as T;
+
+    if (iz && !uc.yol.startsWith("GET ")) {
+      await this.prisma
+        .tenantIslem(baglam.tenantId, (tx) =>
+          tx.auditLog.create({
+            data: {
+              tenantId: baglam.tenantId,
+              userId: baglam.userId,
+              islem: `AI ${uc.yol}`,
+              varlik: uc.yol.split(" ")[1]?.split("/")[1] ?? "",
+              varlikId: iz.varlikId ?? null,
+              detay: { kaynak: iz.kaynak, arac: iz.arac, ...(iz.talepId ? { talepId: iz.talepId } : {}) },
+            },
+          }),
+        )
+        .catch((hata: unknown) => this.logger.error(`Denetim izi yazılamadı: ${String(hata)}`));
+    }
+    return sonuc;
+  }
+}
