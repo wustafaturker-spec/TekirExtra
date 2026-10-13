@@ -46,6 +46,7 @@ export default function VadeHatirlatmaSayfasi() {
   const [hata, setHata] = useState("");
   const [islemde, setIslemde] = useState(false);
   const [oncelikler, setOncelikler] = useState<TahsilatOnceligi[] | null>(null);
+  const [notYaziliyor, setNotYaziliyor] = useState(false);
 
   const yukle = useCallback(async () => {
     try {
@@ -97,6 +98,20 @@ export default function VadeHatirlatmaSayfasi() {
     }
   }
 
+  /** AI-20: tek cari seçiliyse kişisel, çoksa genel bir not taslağı; kullanıcı düzenler. */
+  async function notYazdir() {
+    if (!seciliAdaylar.length) return;
+    setNotYaziliyor(true); setHata("");
+    try {
+      const y = await api<{ not: string }>("/cari/vade-hatirlatma/ai-not", { method: "POST", body: JSON.stringify({ cariIdler: seciliAdaylar.map((a) => a.cariId), kademe }) });
+      setNot(y.not);
+    } catch (h) {
+      setHata(h instanceof Error ? h.message : "Not yazılamadı");
+    } finally {
+      setNotYaziliyor(false);
+    }
+  }
+
   const gonderilen = sonuclar?.filter((s) => s.durum === "gonderildi").length ?? 0;
 
   return (
@@ -124,6 +139,10 @@ export default function VadeHatirlatmaSayfasi() {
           <Field label="Ek not (isteğe bağlı, tablodan sonra eklenir)">
             <textarea className="textarea" rows={2} maxLength={1000} value={not} onChange={(e) => setNot(e.target.value)} placeholder="Örn. Banka hesap bilgilerimiz değişmiştir…" />
           </Field>
+          <div className="row-tight">
+            <Button size="sm" disabled={!seciliAdaylar.length || notYaziliyor} onClick={() => void notYazdir()}>{notYaziliyor ? "Yazılıyor…" : "✨ Yapay zekâ ile not yaz"}</Button>
+            <small className="muted">{seciliAdaylar.length === 1 ? "Seçili cariye göre kişisel taslak; gönderim öncesi düzenleyebilirsiniz." : "Birden çok cari seçili: genel bir taslak yazılır."}</small>
+          </div>
           <label className="check-row"><input type="checkbox" checked={siklikSiniriniAs} onChange={(e) => setSiklikSiniriniAs(e.target.checked)} /> Son 7 günde hatırlatma almış carilere de gönder</label>
           <div className="vade-hatirlatma__gonder">
             <span>{seciliAdaylar.length} cari seçili · {para(seciliToplam)}</span>

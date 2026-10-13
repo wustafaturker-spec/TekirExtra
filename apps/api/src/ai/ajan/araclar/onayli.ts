@@ -243,4 +243,25 @@ export const ONAYLI_ARACLAR = [
       return { ...sec(k, ["id", "kod", "ad"]), adres: adres.stok(g.stokId) };
     },
   }),
+  arac({
+    ad: "odeme_hatirlatmasi_gonder",
+    aciklama:
+      "Vadesi geçmiş alacağı olan carilere hatırlatma ya da ihtar e-postası gönderir (vade hatırlatma şablonu, ekstre ekli; son 7 günde hatırlatma alan atlanır). Kullanıcı onayı gerekir.",
+    sinif: "onay",
+    girdi: z.object({
+      cariIdler: z.array(uuid("Cari kimliği")).min(1).max(50),
+      kademe: z.enum(["hatirlatma", "ihtar"]),
+      not: z.string().max(1000).optional().describe("E-postaya eklenecek kısa not"),
+    }),
+    uc: UC.vadeHatirlatmaGonder,
+    async ozetle(b, g) {
+      const adlar = [];
+      for (const id of g.cariIdler.slice(0, 10)) adlar.push(await cariTanimi(b, id));
+      return `${g.kademe === "ihtar" ? "Ödeme ihtarı" : "Vade hatırlatması"} e-postası gönderilecek: ${adlar.join(", ")}${g.cariIdler.length > 10 ? ` ve ${g.cariIdler.length - 10} cari daha` : ""}${g.not ? ` · not: “${g.not}”` : ""}`;
+    },
+    async calistir(b, g) {
+      const sonuc = await cagir<any[]>(b, UC.vadeHatirlatmaGonder, [{ cariIdler: g.cariIdler, kademe: g.kademe, not: g.not ?? null }]);
+      return { sonuclar: sonuc.map((x) => sec(x, ["unvan", "durum", "mesaj"])) };
+    },
+  }),
 ];

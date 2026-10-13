@@ -27,6 +27,13 @@ export class VadeHatirlatmaController {
     private readonly risk: TahsilatRiskiService,
   ) {}
 
+  /** AI-20: ek not için yapay zekâ taslağı (gönderim ayrı ve onaylı). */
+  @Post("ai-not")
+  @Roller("muhasebe", "satis")
+  yapayZekaNotu(@Body() govde: unknown) {
+    return this.servis.yapayZekaNotu(ayristir(z.object({ cariIdler: z.array(z.string().uuid()).min(1).max(200), kademe }), govde));
+  }
+
   /** AI-18: "bugün kimi aramalı" — vadesi geçmiş/7 gün içinde dolacak alacaklar, öncelik puanıyla. */
   @Get("oncelikler")
   @Roller("muhasebe", "satis")

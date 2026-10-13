@@ -59,4 +59,5 @@ export const UC = {
   dovizKuru: uc(DovizController, "getir", "GET /doviz-kurlari"),
   tahsilatOncelikleri: uc(VadeHatirlatmaController, "oncelikler", "GET /cari/vade-hatirlatma/oncelikler"),
   tahsilatRiski: uc(VadeHatirlatmaController, "cariRiski", "GET /cari/vade-hatirlatma/risk/:cariId"),
+  vadeHatirlatmaGonder: uc(VadeHatirlatmaController, "gonder", "POST /cari/vade-hatirlatma/gonder"),
 };

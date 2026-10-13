@@ -5,6 +5,7 @@ import { EpostaService } from "../tenant/eposta.service";
 import { CariService } from "./cari.service";
 import { guncelKurlar, guncelTlDegeri } from "./doviz-degerleme";
 import { Prisma } from "@prisma/client";
+import { kiraciSaglayicisi } from "../ai/saglayici/kiraci-saglayici";
 import {
   hatirlatmaIletisi, hatirlatmaSablonlari, KADEME_ADI, siklikEngeli, sonHatirlatmalar, vadesiGecmisKalemler,
   type Kademe,
@@ -126,5 +127,34 @@ export class VadeHatirlatmaService {
       }
     }
     return sonuclar;
+  }
+
+  /**
+   * AI-20: hatırlatmanın "ek not"u için dil modeline kibar bir taslak yazdırır.
+   * Tek cari seçiliyse onun geciken kalemleriyle kişiselleşir; birden çoksa
+   * kademe tonunda genel not yazılır. E-posta şablonu fatura tablosunu zaten
+   * içerdiği için not rakam tekrar etmez. Gönderim kullanıcının düzenleyip
+   * onaylamasıyla mevcut akıştan yapılır.
+   */
+  async yapayZekaNotu(girdi: { cariIdler: string[]; kademe: Kademe }): Promise<{ not: string }> {
+    const { tenantId } = aktifBaglam();
+    const tek = girdi.cariIdler.length === 1 ? girdi.cariIdler[0] : null;
+    const baglam = tek ? await this.ileti(tek, girdi.kademe) : null;
+    const firma = await this.prisma.tenantIslem(tenantId, (tx) => tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true } }));
+    const { saglayici } = await kiraciSaglayicisi(this.prisma, tenantId, { ozellik: "hatirlatma" });
+    const ton = girdi.kademe === "ihtar" ? "kararlı ve resmî ama saygılı (ödeme ihtarı)" : "kibar ve yardımsever (hatırlatma)";
+    const ayrinti = baglam
+      ? `Alıcı: ${baglam.cari.unvan}. Geciken kalem sayısı: ${baglam.kalemler.length}; en uzun gecikme ${baglam.kalemler.reduce((m, k) => Math.max(m, k.gecikmeGun), 0)} gün.`
+      : "Not birden çok cariye gidecek; alıcıya özel bilgi kullanma.";
+    const metin = await saglayici.metinUret({
+      sistemRol:
+        "Bir Türk şirketinin muhasebe biriminden müşteriye giden vade hatırlatma e-postasına eklenecek kısa notu yazarsın. " +
+        "E-postada fatura tablosu zaten var: tutar, tarih ya da fatura numarası yazma, yeni bilgi uydurma. Selamlama ve imza yazma. " +
+        "En çok 3 cümle, düz metin, Türkçe.",
+      prompt: `Gönderen firma: ${firma?.unvan ?? ""}. Ton: ${ton}. ${ayrinti} Ödeme yapıldıysa dikkate alınmamasını rica eden ve iletişim için davet eden bir not yaz.`,
+    });
+    const not = metin.replace(/\*\*|__|`/g, "").replace(/\s+/g, " ").trim().slice(0, 1000);
+    if (!not) throw new BadRequestException("Not üretilemedi; lütfen tekrar deneyin.");
+    return { not };
   }
 }
