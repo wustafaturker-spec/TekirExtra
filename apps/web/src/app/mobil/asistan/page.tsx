@@ -4,11 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import {
   ArrowLeft,
-  Camera,
   Check,
   FileText,
-  Mic,
-  MicOff,
   Paperclip,
   Send,
   ShieldCheck,
@@ -34,33 +31,30 @@ export default function MobilAsistanSayfasi() {
       id: "1",
       gonderen: "assistant",
       icerik:
-        "👋 Merhaba! Ben TekirExtra Mobil AI Asistanınız.\nWhatsApp'a ihtiyaç duymadan doğrudan buradan bana sesli veya yazılı talimat verebilirsiniz:\n\n• \"Yılmaz Ticaret bakiye sorgula\"\n• \"A4 Kağıt stoğu ne kadar?\"\n• \"Yılmaz Ticarete 50 koli A4 Kağıt için teklif hazırla, birim 140 TL\"\n• Veya kamerayla fiş fotoğrafı yükleyin.",
+        "👋 Merhaba! Ben TekirExtra Mobil AI Asistanınız.\nBuradan bana yazılı talimat verebilirsiniz:\n\n• \"Yılmaz Ticaret bakiye sorgula\"\n• \"A4 Kağıt stoğu ne kadar?\"\n• \"Yılmaz Ticarete 50 koli A4 Kağıt için teklif hazırla, birim 140 TL\"\n\nFiş taramak için Masraflar ekranındaki “Fiş / Fatura Tara” düğmesini kullanın.",
       zaman: "Şimdi",
     },
   ]);
   const [girdi, setGirdi] = useState("");
   const [yukleniyor, setYukleniyor] = useState(false);
-  const [kayitYapiliyor, setKayitYapiliyor] = useState(false);
   const [pinGirdisi, setPinGirdisi] = useState("");
   const [aktifPinMesajId, setAktifPinMesajId] = useState<string | null>(null);
 
   const mesajlarSonuRef = useRef<HTMLDivElement>(null);
-  const dosyaGirdiRef = useRef<HTMLInputElement>(null);
-  const medyaKaydediciRef = useRef<MediaRecorder | null>(null);
 
   useEffect(() => {
     mesajlarSonuRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [mesajlar]);
 
-  async function mesajGonder(metinGirdi?: string, sesVarMi = false) {
+  async function mesajGonder(metinGirdi?: string) {
     const metin = (metinGirdi || girdi).trim();
-    if (!metin && !sesVarMi) return;
+    if (!metin) return;
 
     const simdikiZaman = new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
     const kullaniciMesaji: Mesaj = {
       id: Math.random().toString(),
       gonderen: "user",
-      icerik: sesVarMi ? `🎙️ Sesli Talimat: "${metin}"` : metin,
+      icerik: metin,
       zaman: simdikiZaman,
     };
 
@@ -78,7 +72,6 @@ export default function MobilAsistanSayfasi() {
         method: "POST",
         body: JSON.stringify({
           mesaj: metin,
-          sesBase64: sesVarMi ? "mock-ses" : undefined,
         }),
       });
 
@@ -112,108 +105,40 @@ export default function MobilAsistanSayfasi() {
     }
   }
 
-  // Sesli Komut (Bas-Konuş)
-  async function sesKaydiBaslatDurdur() {
-    if (kayitYapiliyor) {
-      setKayitYapiliyor(false);
-      // Gerçek veya simüle sesli komut tamamlama
-      mesajGonder("Kasa ve bankalardaki anlık nakit mevcudunu ve güncel ciro durumunu özetle", true);
-    } else {
-      try {
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          medyaKaydediciRef.current = new MediaRecorder(stream);
-          medyaKaydediciRef.current.start();
-        }
-      } catch {
-        // İzin yoksa veya masaüstü simülasyonu
-      }
-      setKayitYapiliyor(true);
-    }
-  }
-
-  // Fiş / Belge Kamerası
-  async function dosyaSecildi(e: React.ChangeEvent<HTMLInputElement>) {
-    const dosya = e.target.files?.[0];
-    if (!dosya) return;
-
-    const simdikiZaman = new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
-    setMesajlar((prev) => [
-      ...prev,
-      {
-        id: Math.random().toString(),
-        gonderen: "user",
-        icerik: `📷 Fiş Yüklendi: ${dosya.name}`,
-        zaman: simdikiZaman,
-      },
-    ]);
-
-    setYukleniyor(true);
-    try {
-      const yanit = await api<{
-        cevap: string;
-        eylem?: string;
-        veri?: any;
-      }>("/ai/ajan/simulasyon", {
-        method: "POST",
-        body: JSON.stringify({
-          mesaj: `Görsel fiş analiz edildi: ${dosya.name} (Tutar: 850 TL, Kategori: Akaryakıt)`,
-        }),
-      });
-
-      setMesajlar((prev) => [
-        ...prev,
-        {
-          id: Math.random().toString(),
-          gonderen: "assistant",
-          icerik: yanit.cevap || "🧾 Fiş okundu: 850 TL Akaryakıt gideri carisiz doğrudan masraf olarak taslağa alındı.",
-          zaman: new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }),
-          eylem: "masraf_kaydet",
-        },
-      ]);
-    } catch {
-      setMesajlar((prev) => [
-        ...prev,
-        {
-          id: Math.random().toString(),
-          gonderen: "assistant",
-          icerik: "Fiş işlenirken bir hata oluştu.",
-          zaman: new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }),
-        },
-      ]);
-    } finally {
-      setYukleniyor(false);
-      if (dosyaGirdiRef.current) dosyaGirdiRef.current.value = "";
-    }
-  }
-
   // Güvenlik PIN Onayı
   async function pinDogrula() {
-    if (!pinGirdisi || pinGirdisi.length < 4) return;
+    if (!/^\d{4}$/.test(pinGirdisi)) return;
     setYukleniyor(true);
     try {
-      await api("/ai/ajan/pin-dogrula", {
+      const yanit = await api<{ cevap: string; pinGerekiyor?: boolean }>("/ai/ajan/simulasyon", {
         method: "POST",
-        body: JSON.stringify({ pin: pinGirdisi }),
+        body: JSON.stringify({ mesaj: pinGirdisi }),
       });
-
+      const asistanMesaji: Mesaj = {
+        id: Math.random().toString(),
+        gonderen: "assistant",
+        icerik: yanit.pinGerekiyor ? "❌ PIN kodu hatalı. Lütfen tekrar deneyin." : yanit.cevap,
+        zaman: new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }),
+        pinGerekiyor: yanit.pinGerekiyor,
+      };
+      setMesajlar((prev) => [...prev, asistanMesaji]);
+      setAktifPinMesajId(yanit.pinGerekiyor ? asistanMesaji.id : null);
+      setPinGirdisi("");
+    } catch {
       setMesajlar((prev) => [
         ...prev,
         {
           id: Math.random().toString(),
           gonderen: "assistant",
-          icerik: "🔒 PIN doğrulandı! Onaylanan işlem ERP veritabanına kesin kayıt olarak işlendi.",
+          icerik: "⚠️ PIN doğrulanamadı. Lütfen tekrar deneyin.",
           zaman: new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }),
         },
       ]);
-      setAktifPinMesajId(null);
-      setPinGirdisi("");
-    } catch {
-      alert("Hatalı PIN kodu! Lütfen tekrar deneyin.");
     } finally {
       setYukleniyor(false);
     }
   }
+
 
   return (
     <div
@@ -337,7 +262,7 @@ export default function MobilAsistanSayfasi() {
                 {m.eylem === "teklif_taslagi" && (
                   <div style={{ marginTop: "10px", display: "flex", gap: "8px" }}>
                     <button
-                      onClick={() => mesajGonder("ONAYLA")}
+                      onClick={() => mesajGonder(m.veri?.teklifNo ? `${m.veri.teklifNo} ONAYLA` : "ONAYLA")}
                       style={{
                         padding: "6px 12px",
                         backgroundColor: "#10b981",
@@ -462,37 +387,10 @@ export default function MobilAsistanSayfasi() {
           gap: "8px",
         }}
       >
-        {/* Görsel / Belge Ekleme */}
-        <input
-          type="file"
-          accept="image/*,.pdf"
-          ref={dosyaGirdiRef}
-          style={{ display: "none" }}
-          onChange={dosyaSecildi}
-        />
-        <button
-          type="button"
-          onClick={() => dosyaGirdiRef.current?.click()}
-          title="Fiş / Belge Fotoğrafı Ekle"
-          style={{
-            background: "none",
-            border: "none",
-            color: "var(--text-muted, #94a3b8)",
-            cursor: "pointer",
-            padding: "8px",
-            borderRadius: "50%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Camera size={22} />
-        </button>
-
         {/* Metin Giriş Alanı */}
         <input
           type="text"
-          placeholder={kayitYapiliyor ? "🎙️ Dinleniyor..." : "Mesaj yazın veya konuşun..."}
+          placeholder="Mesaj yazın..."
           value={girdi}
           onChange={(e) => setGirdi(e.target.value)}
           onKeyDown={(e) => {
@@ -501,7 +399,6 @@ export default function MobilAsistanSayfasi() {
               mesajGonder();
             }
           }}
-          disabled={kayitYapiliyor}
           style={{
             flex: 1,
             padding: "12px 14px",
@@ -514,49 +411,27 @@ export default function MobilAsistanSayfasi() {
           }}
         />
 
-        {/* Ses Kaydı (Bas-Konuş) veya Gönder Butonu */}
-        {girdi.trim() ? (
-          <button
-            type="button"
-            onClick={() => mesajGonder()}
-            style={{
-              width: "42px",
-              height: "42px",
-              borderRadius: "50%",
-              backgroundColor: "#10b981",
-              border: "none",
-              color: "white",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              boxShadow: "0 2px 8px rgba(16, 185, 129, 0.4)",
-            }}
-          >
-            <Send size={18} />
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={sesKaydiBaslatDurdur}
-            title={kayitYapiliyor ? "Kaydı Durdur ve Gönder" : "Sesli Komut Ver"}
-            style={{
-              width: "42px",
-              height: "42px",
-              borderRadius: "50%",
-              backgroundColor: kayitYapiliyor ? "#ef4444" : "rgba(16, 185, 129, 0.15)",
-              border: "none",
-              color: kayitYapiliyor ? "white" : "#10b981",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              transition: "all 0.2s",
-            }}
-          >
-            {kayitYapiliyor ? <MicOff size={20} /> : <Mic size={20} />}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => mesajGonder()}
+          disabled={yukleniyor || !girdi.trim()}
+          aria-label="Gönder"
+          style={{
+            width: "42px",
+            height: "42px",
+            borderRadius: "50%",
+            backgroundColor: "#10b981",
+            border: "none",
+            color: "white",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            opacity: girdi.trim() ? 1 : 0.5,
+          }}
+        >
+          <Send size={18} />
+        </button>
       </footer>
     </div>
   );

@@ -54,6 +54,7 @@ describe("AiService Entegrasyonu", () => {
     mockPrisma = {
       tenantIslem: vi.fn((tenantId, cb) =>
         cb({
+          tenantAiAyari: { findUnique: vi.fn().mockResolvedValue(null) },
           cariHesap: {
             findFirst: vi.fn().mockResolvedValue({
               id: "cari-123",

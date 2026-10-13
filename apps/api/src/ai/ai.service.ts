@@ -38,26 +38,20 @@ export class AiService {
   }
 
   /**
-   * Kiracının kayıtlı sağlayıcısını getirir (veya varsayılan sağlayıcıyı)
+   * Kiracının kayıtlı sağlayıcısını getirir; kayıt yoksa platform sağlayıcısı.
+   * Okuma hatası yutulmaz — sessizce başka sağlayıcıya düşmek sonucu değiştirir.
    */
   private async getProviderForTenant(tenantId: string): Promise<IAiProvider> {
-    try {
-      const ayar = await this.prisma.tenantIslem(tenantId, async (tx) => {
-        if (!tx.tenantAiAyari) return null;
-        return tx.tenantAiAyari.findUnique({ where: { tenantId } });
-      });
-      if (ayar && "apiKey" in ayar && ayar.apiKey) {
-        return AiProviderFactory.uret({
-          saglayici: ayar.saglayici,
-          apiKey: ayar.apiKey,
-          modelAdi: ayar.modelAdi,
-          baseUrl: ayar.baseUrl,
-        });
-      }
-    } catch {
-      // Hata durumunda varsayılan sağlayıcıya dön
-    }
-    return this.aiProvider;
+    const ayar = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.tenantAiAyari.findUnique({ where: { tenantId } }),
+    );
+    if (!ayar) return this.aiProvider;
+    return AiProviderFactory.uret({
+      saglayici: ayar.saglayici,
+      apiKey: ayar.apiKey,
+      modelAdi: ayar.modelAdi,
+      baseUrl: ayar.baseUrl,
+    });
   }
 
   /**

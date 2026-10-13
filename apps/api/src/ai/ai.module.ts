@@ -7,12 +7,13 @@ import { AiRaporController } from "./rapor/ai-rapor.controller";
 import { AiRaporService } from "./rapor/ai-rapor.service";
 import { TenantAiController } from "./ayarlar/tenant-ai.controller";
 import { TenantAiService } from "./ayarlar/tenant-ai.service";
-import { McpController } from "./mcp/mcp.controller";
-import { McpService } from "./mcp/mcp.service";
 
+// MCP sunucusu (mcp/) kapalı: uçları kimlik doğrulamasız ve kiracıyı istemciye
+// seçtiriyordu. Kiracıya özel, iptal edilebilir erişim anahtarıyla yeniden
+// açılana kadar modüle bağlanmaz.
 @Module({
-  controllers: [AiController, AiAjanController, AiRaporController, TenantAiController, McpController],
-  providers: [AiService, AiAjanService, AiRaporService, TenantAiService, McpService],
-  exports: [AiService, AiAjanService, AiRaporService, TenantAiService, McpService],
+  controllers: [AiController, AiAjanController, AiRaporController, TenantAiController],
+  providers: [AiService, AiAjanService, AiRaporService, TenantAiService],
+  exports: [AiService, AiAjanService, AiRaporService, TenantAiService],
 })
 export class AiModule {}

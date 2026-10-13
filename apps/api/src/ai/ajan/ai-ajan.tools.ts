@@ -359,8 +359,14 @@ export async function araciTeklifOnayla(
   };
 }
 
+/*
+ * 5–7. Gönderim araçları. Asistan henüz e-posta/WhatsApp göndermiyor; işi
+ * yapılmış gibi bildirmek yerine kullanıcıyı gönderimin yapıldığı ekrana
+ * yönlendirir (belge e-postası FTR-36, cari ekstre CARI-24, vade hatırlatma).
+ */
+
 /**
- * 5. Belge Gönderme / İletme Aracı (E-posta / WhatsApp)
+ * 5. Belge Gönderme / İletme Aracı — ekrana yönlendirir
  */
 export async function araciBelgeGonder(
   tx: Prisma.TransactionClient,
@@ -381,7 +387,7 @@ export async function araciBelgeGonder(
   const belge = await tx.belge.findFirst({
     where,
     orderBy: { createdAt: "desc" },
-    include: { cari: { include: { kisiler: true } } },
+    select: { id: true, no: true },
   });
 
   if (!belge) {
@@ -392,31 +398,18 @@ export async function araciBelgeGonder(
     };
   }
 
-  let hedefAlici = param.alici?.trim();
-  if (!hedefAlici) {
-    if (param.kanal === "EMAIL") {
-      hedefAlici = belge.cari.kisiler[0]?.eposta || belge.cari.eposta || "muhasebe@musteri.com";
-    } else {
-      hedefAlici = belge.cari.kisiler[0]?.telefon || belge.cari.telefon || "+90 532 000 0000";
-    }
-  }
-
+  const adres = `/panel/belgeler?odak=${belge.id}`;
   return {
-    basarili: true,
+    basarili: false,
     eylem: "belge_gonder",
-    mesaj: `📨 **${belge.no}** nolu teklif PDF belgesi ${param.kanal === "EMAIL" ? `📧 *${hedefAlici}* e-posta adresine` : `💬 *${hedefAlici}* WhatsApp hattına`} başarıyla iletildi.`,
-    veri: {
-      belgeId: belge.id,
-      belgeNo: belge.no,
-      kanal: param.kanal,
-      alici: hedefAlici,
-      durum: "ILETILDI",
-    },
+    mesaj: `📨 Asistan henüz belge gönderemiyor; hiçbir şey gönderilmedi.
+**${belge.no ?? "Taslak"}** belgesini müşteriye göndermek için belge ekranındaki **E-posta gönder** düğmesini kullanın: ${adres}`,
+    veri: { belgeId: belge.id, belgeNo: belge.no, adres, durum: "GONDERILMEDI" },
   };
 }
 
 /**
- * 6. Cari Ekstre Gönderme Aracı
+ * 6. Cari Ekstre Gönderme Aracı — ekrana yönlendirir
  */
 export async function araciCariEkstreGonder(
   tx: Prisma.TransactionClient,
@@ -427,7 +420,7 @@ export async function araciCariEkstreGonder(
     alici?: string;
   },
 ): Promise<AjanAracSonucu> {
-  const cariler = await tx.cariHesap.findMany({
+  const cari = await tx.cariHesap.findFirst({
     where: {
       tenantId,
       OR: [
@@ -435,11 +428,10 @@ export async function araciCariEkstreGonder(
         { kod: { contains: param.cariAdi, mode: "insensitive" } },
       ],
     },
-    include: { kisiler: true },
-    take: 1,
+    select: { id: true, unvan: true },
   });
 
-  if (cariler.length === 0) {
+  if (!cari) {
     return {
       basarili: false,
       eylem: "cari_ekstre_gonder",
@@ -447,69 +439,34 @@ export async function araciCariEkstreGonder(
     };
   }
 
-  const cari = cariler[0];
-  const hedef = param.alici || (param.kanal === "EMAIL" ? cari.eposta : cari.telefon) || "ilgili yetkiliye";
-
+  const adres = `/panel/cari/${cari.id}`;
   return {
-    basarili: true,
+    basarili: false,
     eylem: "cari_ekstre_gonder",
-    mesaj: `📊 **${cari.unvan}** firmasının son 3 aylık cari hesap ekstresi (PDF) ${param.kanal === "EMAIL" ? `📧 *${hedef}* adresine e-posta olarak` : `💬 *${hedef}* WhatsApp numarasına`} gönderildi.`,
-    veri: {
-      cariId: cari.id,
-      cariUnvan: cari.unvan,
-      alici: hedef,
-      kanal: param.kanal,
-      durum: "ILETILDI",
-    },
+    mesaj: `📊 Asistan henüz ekstre gönderemiyor; hiçbir şey gönderilmedi.
+**${cari.unvan}** ekstresini cari kartındaki ekstre bölümünden alıp gönderebilirsiniz: ${adres}`,
+    veri: { cariId: cari.id, cariUnvan: cari.unvan, adres, durum: "GONDERILMEDI" },
   };
 }
 
 /**
- * 7. Ödeme Hatırlatması Gönderme Aracı
+ * 7. Ödeme Hatırlatması Aracı — ekrana yönlendirir
  */
 export async function araciOdemeHatirlatmasiYap(
-  tx: Prisma.TransactionClient,
-  tenantId: string,
-  param: {
+  _tx: Prisma.TransactionClient,
+  _tenantId: string,
+  _param: {
     cariAdi?: string;
     kanal: "EMAIL" | "WHATSAPP";
   },
 ): Promise<AjanAracSonucu> {
-  const bugun = new Date();
-  const where: Prisma.CariHareketWhereInput = {
-    tenantId,
-    tip: "borc",
-    vadeTarihi: { lt: bugun },
-    ...(param.cariAdi ? { cari: { unvan: { contains: param.cariAdi, mode: "insensitive" } } } : {}),
-  };
-
-  const gecikenler = await tx.cariHareket.findMany({
-    where,
-    include: { cari: true },
-    take: 10,
-  });
-
-  if (gecikenler.length === 0) {
-    return {
-      basarili: true,
-      eylem: "odeme_hatirlatmasi",
-      mesaj: `🎉 Harika! ${param.cariAdi ? `"${param.cariAdi}" için` : "Sistemde"} vadesi geçmiş gecikmiş ödeme bulunmamaktadır.`,
-    };
-  }
-
-  const toplamTutar = gecikenler.reduce((acc, h) => acc + Number(h.tutarTry), 0);
-  const cariUnvan = gecikenler[0].cari.unvan;
-
+  const adres = "/panel/cari/vade-hatirlatma";
   return {
-    basarili: true,
+    basarili: false,
     eylem: "odeme_hatirlatmasi",
-    mesaj: `🔔 **${param.cariAdi ? cariUnvan : `${gecikenler.length} adet gecikmiş fatura`}** için toplam **${toplamTutar.toFixed(2)} TL** tutarındaki nazik ödeme hatırlatma iletisi ${param.kanal === "WHATSAPP" ? "WhatsApp" : "E-posta"} kanalı üzerinden hazırlandı ve iletildi.`,
-    veri: {
-      gecikenAdet: gecikenler.length,
-      toplamTutar,
-      kanal: param.kanal,
-      durum: "ILETILDI",
-    },
+    mesaj: `🔔 Asistan henüz ödeme hatırlatması gönderemiyor; hiçbir şey gönderilmedi.
+Vadesi geçen carileri ve hatırlatma gönderimini vade hatırlatma ekranında bulabilirsiniz: ${adres}`,
+    veri: { adres, durum: "GONDERILMEDI" },
   };
 }
 

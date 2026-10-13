@@ -212,7 +212,7 @@ export default function YapayZekaAyarlariSayfasi() {
                 <option value="openai">OpenAI (GPT-4o / GPT-4o-mini)</option>
                 <option value="anthropic">Anthropic (Claude 3.5 Sonnet / Haiku)</option>
                 <option value="gemini">Google Gemini (Gemini 2.5 Flash / Pro)</option>
-                <option value="ollama">Yerel / Kurumsal Ollama (Llama 3.2 / DeepSeek)</option>
+                <option value="ollama">Ollama (platformun sunucusu)</option>
               </Select>
             </div>
 
@@ -247,13 +247,13 @@ export default function YapayZekaAyarlariSayfasi() {
               </div>
             )}
 
-            {(saglayici === "ollama" || saglayici === "openai") && (
+            {saglayici === "openai" && (
               <div>
                 <label style={{ display: "block", fontSize: "13px", fontWeight: "600", marginBottom: "6px" }}>
-                  Özel Endpoint / Base URL {saglayici === "ollama" ? "(Yerel Sunucu)" : "(Azure vb.)"}
+                  Özel Endpoint / Base URL (Azure vb.; yalnız kendi API anahtarınızla, https)
                 </label>
                 <Input
-                  placeholder={saglayici === "ollama" ? "http://localhost:11434" : "https://api.openai.com/v1"}
+                  placeholder="https://api.openai.com/v1"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
                 />
@@ -412,121 +412,18 @@ export default function YapayZekaAyarlariSayfasi() {
           )}
         </Card>
 
-        {/* KART 4: Model Context Protocol (MCP) Sunucu Entegrasyonu */}
+        {/* KART 4: MCP — güvenlik düzeltmesine kadar kapalı */}
         <Card>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px", borderBottom: "1px solid var(--border)", paddingBottom: "12px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", marginBottom: "12px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <Server size={22} color="var(--accent)" />
-              <div>
-                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "700" }}>Model Context Protocol (MCP) Sunucusu</h3>
-                <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)" }}>
-                  TekirExtra&apos;yı Claude Desktop, Cursor veya harici MCP ajanlarına bağlayın.
-                </p>
-              </div>
+              <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "700" }}>Model Context Protocol (MCP) Sunucusu</h3>
             </div>
-            <Badge variant="success">MCP v2024-11-05 Aktif</Badge>
+            <Badge variant="neutral">Kapalı</Badge>
           </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px", marginBottom: "16px" }}>
-            <div style={{ padding: "14px", backgroundColor: "var(--surface-2)", borderRadius: "8px", border: "1px solid var(--border)" }}>
-              <div style={{ fontSize: "12px", fontWeight: "600", color: "var(--text-muted)", marginBottom: "4px" }}>SSE Canlı Bağlantı Endpoint</div>
-              <code style={{ fontSize: "13px", color: "var(--accent)", wordBreak: "break-all" }}>
-                http://localhost:3001/api/v1/mcp/sse
-              </code>
-            </div>
-
-            <div style={{ padding: "14px", backgroundColor: "var(--surface-2)", borderRadius: "8px", border: "1px solid var(--border)" }}>
-              <div style={{ fontSize: "12px", fontWeight: "600", color: "var(--text-muted)", marginBottom: "4px" }}>JSON-RPC 2.0 Endpoint</div>
-              <code style={{ fontSize: "13px", color: "var(--accent)", wordBreak: "break-all" }}>
-                http://localhost:3001/api/v1/mcp/rpc
-              </code>
-            </div>
-          </div>
-
-          <div style={{ marginBottom: "16px" }}>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: "600", marginBottom: "6px" }}>
-              Mevcut MCP Araçları (8 Tools) & Kaynakları (5 Resources)
-            </label>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-              <span style={{ fontSize: "11px", padding: "3px 8px", backgroundColor: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "4px" }}>
-                🛠️ bakiye_sorgula
-              </span>
-              <span style={{ fontSize: "11px", padding: "3px 8px", backgroundColor: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "4px" }}>
-                🛠️ stok_sorgula
-              </span>
-              <span style={{ fontSize: "11px", padding: "3px 8px", backgroundColor: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "4px" }}>
-                🛠️ teklif_taslagi_hazirla
-              </span>
-              <span style={{ fontSize: "11px", padding: "3px 8px", backgroundColor: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "4px" }}>
-                🛠️ teklif_onayla
-              </span>
-              <span style={{ fontSize: "11px", padding: "3px 8px", backgroundColor: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "4px" }}>
-                🛠️ cari_ekstre_gonder
-              </span>
-              <span style={{ fontSize: "11px", padding: "3px 8px", backgroundColor: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "4px" }}>
-                🛠️ odeme_hatirlatmasi_yap
-              </span>
-              <span style={{ fontSize: "11px", padding: "3px 8px", backgroundColor: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "4px" }}>
-                🛠️ crm_gorev_olustur
-              </span>
-              <span style={{ fontSize: "11px", padding: "3px 8px", backgroundColor: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "4px" }}>
-                📊 tekir://raporlar/cfo-brifingi
-              </span>
-              <span style={{ fontSize: "11px", padding: "3px 8px", backgroundColor: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "4px" }}>
-                📊 tekir://raporlar/riskli-alacaklar
-              </span>
-              <span style={{ fontSize: "11px", padding: "3px 8px", backgroundColor: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "4px" }}>
-                📊 tekir://finans/likidite
-              </span>
-            </div>
-          </div>
-
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-              <label style={{ fontSize: "13px", fontWeight: "600" }}>
-                Claude Desktop Yapılandırması (claude_desktop_config.json)
-              </label>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  navigator.clipboard.writeText(JSON.stringify({
-                    mcpServers: {
-                      tekirextra: {
-                        url: "http://localhost:3001/api/v1/mcp/sse",
-                        headers: {
-                          Authorization: "Bearer <JWT_TOKEN>"
-                        }
-                      }
-                    }
-                  }, null, 2));
-                  setBasari("MCP yapılandırma JSON panoya kopyalandı.");
-                }}
-              >
-                📋 Kopyala
-              </Button>
-            </div>
-            <pre style={{
-              margin: 0,
-              padding: "12px",
-              borderRadius: "8px",
-              backgroundColor: "var(--surface-2)",
-              border: "1px solid var(--border)",
-              fontSize: "12px",
-              color: "var(--text)",
-              overflowX: "auto"
-            }}>
-{`{
-  "mcpServers": {
-    "tekirextra": {
-      "url": "http://localhost:3001/api/v1/mcp/sse",
-      "headers": {
-        "Authorization": "Bearer <SISTEM_VEYA_KULLANICI_TOKENI>"
-      }
-    }
-  }
-}`}
-            </pre>
-          </div>
+          <Alert tone="warning">
+            MCP bağlantısı, kiracıya özel erişim anahtarı eklenene kadar kullanıma kapalıdır.
+          </Alert>
         </Card>
       </div>
 

@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { ServiceUnavailableException } from "@nestjs/common";
 import { TenantAiService } from "./tenant-ai.service";
 
 describe("TenantAiService - BYOK, Kurallar ve Otonom Görevler", () => {
@@ -25,6 +26,10 @@ describe("TenantAiService - BYOK, Kurallar ve Otonom Görevler", () => {
       tenantIslem: vi.fn((_tenantId, callback) => callback(mockTx)),
     };
     service = new TenantAiService(mockPrisma);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it("1. Ayar Getirme: Kayıtlı API anahtarını güvenlik için maskelemelidir", async () => {
@@ -109,11 +114,28 @@ describe("TenantAiService - BYOK, Kurallar ve Otonom Görevler", () => {
     });
 
     mockTx.tenantAiGorev.update.mockResolvedValue({ id: "gorev-1" });
+    vi.stubEnv("AI_PROVIDER", "mock");
 
     const sonuc = await service.gorevCalistir(mockTenantId, "gorev-1");
 
     expect(sonuc.ad).toBe("Günlük Finans Özeti");
     expect(sonuc.raporIcerigi.length).toBeGreaterThan(0);
     expect(mockTx.tenantAiGorev.update).toHaveBeenCalled();
+  });
+
+  it("5. Sağlayıcı tanımsızsa görev örnek metin üretmez, 503 ile reddedilir", async () => {
+    vi.stubEnv("AI_PROVIDER", "");
+    mockTx.tenantAiGorev.findUnique.mockResolvedValue({ id: "gorev-1", ad: "Özet", gorevTalimati: "Özetle", kanal: "PANEL" });
+    mockTx.tenantAiAyari.findUnique.mockResolvedValue(null);
+    mockTx.tenantAiGorev.update.mockClear();
+
+    await expect(service.gorevCalistir(mockTenantId, "gorev-1")).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(mockTx.tenantAiGorev.update).not.toHaveBeenCalled();
+  });
+
+  it("6. Ayar kaydı yerel/özel ağ adresini reddeder", async () => {
+    for (const baseUrl of ["http://api.example.com/v1", "https://169.254.169.254", "https://localhost:11434", "https://postgres", "https://[::1]/v1"]) {
+      await expect(service.ayarKaydet(mockTenantId, { saglayici: "openai", apiKey: "sk-x", baseUrl })).rejects.toThrow(/Sağlayıcı adresi/);
+    }
   });
 });

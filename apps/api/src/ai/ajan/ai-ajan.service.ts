@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "../../core/prisma.service";
 import {
   araciBakiyeSorgula,
@@ -18,9 +18,13 @@ export interface GelenAjanMesaji {
   mesaj?: string;
   sesBase64?: string;
   mimeType?: string;
-  tenantId?: string;
-  userId?: string;
   pinKodu?: string;
+}
+
+/** Oturumdan (aktifBaglam) gelen kimlik; istek gövdesinden alınmaz. */
+export interface AjanKimligi {
+  tenantId: string;
+  userId: string;
 }
 
 export interface AjanCevabi {
@@ -38,28 +42,26 @@ export class AiAjanService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Dış kanaldan gelen mesajı işler ve güvenli AI yanıtı üretir
+   * Oturum açmış kullanıcının mesajını işler
    */
-  async mesajiIsle(girdi: GelenAjanMesaji): Promise<AjanCevabi> {
-    const kanal = girdi.kanal || "WHATSAPP";
-    const kanalKimlik = girdi.kanalKimlik.trim();
+  async mesajiIsle(girdi: GelenAjanMesaji, kimlik: AjanKimligi): Promise<AjanCevabi> {
+    const kanal = girdi.kanal || "WEB";
+    const kanalKimlik = (girdi.kanalKimlik || "").trim();
+    if (!kanalKimlik) throw new BadRequestException("Kanal kimliği zorunludur.");
+    const { tenantId } = kimlik;
 
-    // 1. Kullanıcıyı ve Kiracıyı Tespit Et
-    const { user, tenantId } = await this.kullaniciyiTespitEt(kanalKimlik, girdi.tenantId, girdi.userId);
+    // 1. Kullanıcı yalnız oturumdan
+    const user = await this.kullaniciyiGetir(kimlik);
 
     // 2. Oturumu Getir veya Başlat
     const oturum = await this.oturumBulVeyaOlustur(tenantId, user.id, kanal, kanalKimlik, user.pinKodu);
 
     // 3. PIN Doğrulama Denetimi
     const pinGerekli = Boolean(user.pinKodu && !oturum.pinDogrulandi);
-    const hamGirdi = girdi.mesaj?.trim() || "";
-
-    // Ses kaydı varsa transkripsiyon yap
-    const islenecekMetin = girdi.sesBase64 ? this.sesTranskripsiyon(girdi.sesBase64, hamGirdi) : hamGirdi;
+    const islenecekMetin = girdi.mesaj?.trim() || "";
 
     if (pinGerekli) {
-      // Girilen metin veya gönderilen pinKodu PIN ile uyuşuyor mu?
-      const adayPin = girdi.pinKodu || (islenecekMetin.length === 4 && /^\d{4}$/.test(islenecekMetin) ? islenecekMetin : null);
+      const adayPin = girdi.pinKodu || (/^\d{4}$/.test(islenecekMetin) ? islenecekMetin : null);
 
       if (adayPin && adayPin === user.pinKodu) {
         await this.prisma.tenantIslem(tenantId, (tx) => {
@@ -70,8 +72,9 @@ export class AiAjanService {
           });
         });
 
-        const hosgeldinMesaji = `🔐 PIN kodunuz doğrulandı! TekirExtra Kurumsal AI Asistanına hoş geldiniz Sayın ${user.adSoyad}.\n\nSize nasıl yardımcı olabilirim?\n• *"Yılmaz Ticaret bakiye sorgula"*\n• *"A4 Kağıt stok sorgula"*\n• *"ABC Ltd için 50 adet teklif aç"*\n• *"Geciken ödemeleri hatırlat"*`;
-        await this.mesajKaydet(tenantId, oturum.id, "user", islenecekMetin);
+        const hosgeldinMesaji = `🔐 PIN kodunuz doğrulandı. Hoş geldiniz Sayın ${user.adSoyad}.\n\nSize nasıl yardımcı olabilirim?\n• *"Yılmaz Ticaret bakiye sorgula"*\n• *"A4 Kağıt stok sorgula"*\n• *"ABC Ltd için 50 adet teklif aç"*`;
+        // PIN'in kendisi geçmişe yazılmaz.
+        await this.mesajKaydet(tenantId, oturum.id, "user", "[PIN girildi]");
         await this.mesajKaydet(tenantId, oturum.id, "assistant", hosgeldinMesaji);
 
         return {
@@ -85,6 +88,17 @@ export class AiAjanService {
         oturumId: oturum.id,
         cevap: `🔒 Güvenliğiniz için lütfen 4 haneli PIN kodunuzu giriniz.\n(Kullanıcı: ${user.adSoyad})`,
         pinGerekiyor: true,
+      };
+    }
+
+    // Ses yazıya dökülemiyor; tahmin edilen bir komut çalıştırılmaz.
+    if (!islenecekMetin) {
+      return {
+        oturumId: oturum.id,
+        cevap: girdi.sesBase64
+          ? "🎙️ Sesli mesajlar henüz yazıya dökülemiyor. Lütfen talimatınızı yazarak gönderin."
+          : "Lütfen bir talimat yazın.",
+        eylem: "girdi_yok",
       };
     }
 
@@ -114,38 +128,36 @@ export class AiAjanService {
   }
 
   /**
-   * PIN Doğrulama Ucu
+   * PIN Doğrulama Ucu — yalnız kullanıcının kendi oturumu için
    */
-  async pinDogrula(tenantId: string, kanal: string, kanalKimlik: string, pinKodu: string): Promise<boolean> {
+  async pinDogrula(kimlik: AjanKimligi, kanal: string, kanalKimlik: string, pinKodu: string): Promise<boolean> {
+    const { tenantId, userId } = kimlik;
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const txOturum = (tx as any)?.ajanOturumu || this.prisma.ajanOturumu;
       const oturum = await txOturum.findFirst({
-        where: { tenantId, kanal, kanalKimlik },
+        where: { tenantId, userId, kanal, kanalKimlik },
         include: { user: true },
       });
 
-      if (!oturum || !oturum.user.pinKodu) return true;
+      if (!oturum || !oturum.user.pinKodu || oturum.user.pinKodu !== pinKodu) return false;
 
-      if (oturum.user.pinKodu === pinKodu) {
-        await txOturum.update({
-          where: { id: oturum.id },
-          data: { pinDogrulandi: true, sonEtkilesim: new Date() },
-        });
-        return true;
-      }
-
-      return false;
+      await txOturum.update({
+        where: { id: oturum.id },
+        data: { pinDogrulandi: true, sonEtkilesim: new Date() },
+      });
+      return true;
     });
   }
 
   /**
-   * Oturum Bilgisi ve Son Mesajlar
+   * Oturum Bilgisi ve Son Mesajlar — yalnız kullanıcının kendi oturumu
    */
-  async oturumDetay(tenantId: string, oturumId: string) {
+  async oturumDetay(kimlik: AjanKimligi, oturumId: string) {
+    const { tenantId, userId } = kimlik;
     return this.prisma.tenantIslem(tenantId, (tx) => {
       const txOturum = (tx as any)?.ajanOturumu || this.prisma.ajanOturumu;
-      return txOturum.findUnique({
-        where: { id: oturumId },
+      return txOturum.findFirst({
+        where: { id: oturumId, userId },
         include: {
           mesajlar: { orderBy: { createdAt: "asc" }, take: 20 },
           user: { select: { id: true, adSoyad: true, eposta: true, rol: true } },
@@ -156,88 +168,12 @@ export class AiAjanService {
 
   // ─── YARDIMCI METODLAR ──────────────────────────────────────────────────
 
-  private async kullaniciyiTespitEt(kanalKimlik: string, tercihTenantId?: string, tercihUserId?: string) {
-    if (tercihTenantId) {
-      return this.prisma.tenantIslem(tercihTenantId, async (tx) => {
-        const txUser = (tx as any)?.user || this.prisma.user;
-        if (tercihUserId && txUser?.findFirst) {
-          const u = await txUser.findFirst({
-            where: { id: tercihUserId },
-          });
-          if (u) return { user: u, tenantId: tercihTenantId };
-        }
-
-        const telefonTemiz = kanalKimlik.replace(/\D/g, "");
-        if (txUser?.findFirst) {
-          const u = await txUser.findFirst({
-            where: {
-              OR: [
-                { eposta: { equals: kanalKimlik, mode: "insensitive" } },
-                ...(telefonTemiz.length >= 7 ? [{ telefon: { contains: telefonTemiz } }] : []),
-              ],
-            },
-          });
-          if (u) return { user: u, tenantId: tercihTenantId };
-
-          const varsayilan = await txUser.findFirst({
-            orderBy: { createdAt: "asc" },
-          });
-          if (varsayilan) return { user: varsayilan, tenantId: tercihTenantId };
-        }
-
-        throw new Error("Sistemde kayıtlı kullanıcı bulunamadı.");
-      });
-    }
-
-    // Tenant doğrudan verilmemişse önce user tablosundan ara (mock veya doğrudan erişim)
-    if (this.prisma.user?.findFirst) {
-      try {
-        const telefonTemiz = kanalKimlik.replace(/\D/g, "");
-        const u = await this.prisma.user.findFirst({
-          where: {
-            OR: [
-              { eposta: { equals: kanalKimlik, mode: "insensitive" } },
-              ...(telefonTemiz.length >= 7 ? [{ telefon: { contains: telefonTemiz } }] : []),
-            ],
-          },
-        });
-        if (u) return { user: u, tenantId: u.tenantId };
-      } catch {
-        // RLS nedeniyle doğrudan okunamıyorsa devam et
-      }
-    }
-
-    // Tenant bilinmiyorsa (ör. webhook) authKimlik üzerinden bul
-    if (this.prisma.authKimlik?.findFirst) {
-      const kimlik = await this.prisma.authKimlik.findFirst({
-        where: {
-          eposta: { equals: kanalKimlik, mode: "insensitive" },
-        },
-      });
-
-      if (kimlik) {
-        return this.prisma.tenantIslem(kimlik.tenantId, async (tx) => {
-          const txUser = (tx as any)?.user || this.prisma.user;
-          const u = await txUser?.findUnique({ where: { id: kimlik.userId } });
-          if (u) return { user: u, tenantId: kimlik.tenantId };
-          throw new Error("Kullanıcı bulunamadı.");
-        });
-      }
-    }
-
-    if (this.prisma.tenant?.findFirst) {
-      const ilkTenant = await this.prisma.tenant.findFirst({ orderBy: { createdAt: "asc" } });
-      if (ilkTenant) {
-        return this.prisma.tenantIslem(ilkTenant.id, async (tx) => {
-          const txUser = (tx as any)?.user || this.prisma.user;
-          const u = await txUser?.findFirst({ orderBy: { createdAt: "asc" } });
-          if (!u) throw new Error("Kullanıcı bulunamadı.");
-          return { user: u, tenantId: ilkTenant.id };
-        });
-      }
-    }
-
-    throw new Error("Sistemde aktif kiracı veya kullanıcı bulunamadı.");
+  private async kullaniciyiGetir(kimlik: AjanKimligi) {
+    const user = await this.prisma.tenantIslem(kimlik.tenantId, (tx) =>
+      tx.user.findFirst({ where: { id: kimlik.userId, tenantId: kimlik.tenantId } }),
+    );
+    if (!user) throw new ForbiddenException("Kullanıcı bu kiracıda bulunamadı.");
+    return user;
   }
 
   private async oturumBulVeyaOlustur(
@@ -255,6 +191,10 @@ export class AiAjanService {
         },
       });
 
+      if (oturum && oturum.userId !== userId) {
+        throw new ForbiddenException("Bu kanal kimliği başka bir kullanıcıya bağlı.");
+      }
+
       if (!oturum) {
         oturum = await txOturum.create({
           data: {
@@ -262,7 +202,6 @@ export class AiAjanService {
             userId,
             kanal,
             kanalKimlik,
-            pinKodu: userPin || null,
             pinDogrulandi: !userPin, // PIN yoksa doğrudan onaylı
           },
         });
@@ -279,12 +218,6 @@ export class AiAjanService {
 
       return oturum;
     });
-  }
-
-  private sesTranskripsiyon(_sesBase64: string, hamMetin: string): string {
-    // Ses transkripsiyonu (Gemini Audio / Whisper simülasyonu)
-    if (hamMetin) return hamMetin;
-    return "Yılmaz Ticarete 50 koli A4 Kağıt için 60 gün vadeli teklif açalım, birim fiyatı 120 TL olsun.";
   }
 
   private async mesajKaydet(tenantId: string, oturumId: string, rol: string, icerik: string, aracCagrisi?: any) {
@@ -468,7 +401,7 @@ export class AiAjanService {
       return {
         basarili: true,
         eylem: "yardim",
-        mesaj: `👋 Merhaba! Ben **TekirExtra AI Asistanınız**.\nSahada veya ofis dışındayken WhatsApp, E-posta ve Sesli Mesajlar ile bana şu talimatları verebilirsiniz:\n\n• 📊 **Bakiye:** *"Yılmaz Ticaret bakiye sorgula"*\n• 📦 **Stok:** *"A4 Kağıt stoğu ne kadar?"*\n• 📝 **Teklif:** *"Yılmaz Ticarete 50 koli A4 Kağıt için 60 gün vadeli teklif hazırla, birim fiyat 120 TL"*\n• ✅ **Onay:** *"ONAYLA"*\n• 📨 **Dağıtım:** *"Müşteriye e-posta ile gönder"*\n• 🔔 **Hatırlatma:** *"Gecikmiş ödemeleri hatırlat"*\n• 📋 **Ekstre:** *"Kaya Ltd'ye cari ekstresini ilet"*`,
+        mesaj: `👋 Merhaba! Ben **TekirExtra Asistanınız**. Şu talimatları yazarak verebilirsiniz:\n\n• 📊 **Bakiye:** *"Yılmaz Ticaret bakiye sorgula"*\n• 📦 **Stok:** *"A4 Kağıt stoğu ne kadar?"*\n• 📝 **Teklif:** *"Yılmaz Ticarete 50 koli A4 Kağıt için 60 gün vadeli teklif hazırla, birim fiyat 120 TL"*\n• ✅ **Onay:** *"ONAYLA"*\n\nBelge, ekstre ve ödeme hatırlatması gönderimi henüz asistandan yapılamıyor; ilgili ekranları kullanın.`,
       };
     });
   }

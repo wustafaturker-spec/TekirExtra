@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { api } from "@/lib/api";
-import { MessageSquare, Send, Mic, Sparkles, X, Check, ShieldCheck, FileText, ArrowRight } from "lucide-react";
+import { MessageSquare, Send, Sparkles, X, Check, ShieldCheck, FileText, ArrowRight } from "lucide-react";
 
 interface Mesaj {
   id: string;
@@ -24,13 +24,12 @@ export function AiDisKanalAsistanModal({ acik, onKapat }: Props) {
       id: "1",
       gonderen: "assistant",
       icerik:
-        "👋 Merhaba! Ben TekirExtra Kurumsal AI Asistanınız.\nWhatsApp, E-posta ve Sesli Mesajlar üzerinden bana uzaktan talimat verebilirsiniz:\n\n• *\"Yılmaz Ticaret bakiye sorgula\"*\n• *\"A4 Kağıt stoğu ne kadar?\"*\n• *\"Yılmaz Ticarete 50 koli A4 Kağıt için 30 gün vadeli teklif açalım, birim fiyat 120 TL\"*\n• *\"ONAYLA\"*\n• *\"Müşteriye e-posta ile gönder\"*",
+        "👋 Merhaba! Ben TekirExtra Kurumsal AI Asistanınız.\nBana yazılı talimat verebilirsiniz:\n\n• *\"Yılmaz Ticaret bakiye sorgula\"*\n• *\"A4 Kağıt stoğu ne kadar?\"*\n• *\"Yılmaz Ticarete 50 koli A4 Kağıt için 30 gün vadeli teklif açalım, birim fiyat 120 TL\"*\n• *\"ONAYLA\"*",
       zaman: "Şimdi",
     },
   ]);
   const [girdi, setGirdi] = useState("");
   const [yukleniyor, setYukleniyor] = useState(false);
-  const [sesSimulasyonu, setSesSimulasyonu] = useState(false);
   const mesajlarSonuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -41,15 +40,15 @@ export function AiDisKanalAsistanModal({ acik, onKapat }: Props) {
 
   if (!acik) return null;
 
-  async function mesajGonder(metinGirdi?: string, sesVarMi = false) {
+  async function mesajGonder(metinGirdi?: string) {
     const metin = (metinGirdi || girdi).trim();
-    if (!metin && !sesVarMi) return;
+    if (!metin) return;
 
     const simdikiZaman = new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
     const kullaniciMesaji: Mesaj = {
       id: Math.random().toString(),
       gonderen: "user",
-      icerik: sesVarMi ? `🎙️ Ses Kaydı: "${metin}"` : metin,
+      icerik: metin,
       zaman: simdikiZaman,
     };
 
@@ -67,7 +66,6 @@ export function AiDisKanalAsistanModal({ acik, onKapat }: Props) {
         method: "POST",
         body: JSON.stringify({
           mesaj: metin,
-          sesBase64: sesVarMi ? "mock-ses-base64" : undefined,
         }),
       });
 
@@ -93,21 +91,13 @@ export function AiDisKanalAsistanModal({ acik, onKapat }: Props) {
       ]);
     } finally {
       setYukleniyor(false);
-      setSesSimulasyonu(false);
     }
   }
 
+  // Hızlı komut yalnız kutuyu doldurur; teklif/onay gibi kayıt yazan
+  // komutlar kullanıcı göndermeden çalışmaz.
   function hizliKomut(komut: string) {
     setGirdi(komut);
-    mesajGonder(komut);
-  }
-
-  function sesliKomutSimuleEt() {
-    setSesSimulasyonu(true);
-    const sesliMetin = "Yılmaz Ticarete 50 koli A4 Kağıt için 60 gün vadeli teklif açalım, birim fiyatı 120 TL olsun.";
-    setTimeout(() => {
-      mesajGonder(sesliMetin, true);
-    }, 1200);
   }
 
   return (
@@ -170,17 +160,6 @@ export function AiDisKanalAsistanModal({ acik, onKapat }: Props) {
             <div>
               <div style={{ fontWeight: 600, fontSize: "16px", display: "flex", alignItems: "center", gap: "6px" }}>
                 TekirExtra AI Asistanı
-                <span
-                  style={{
-                    backgroundColor: "#10b981",
-                    fontSize: "11px",
-                    fontWeight: 500,
-                    padding: "2px 8px",
-                    borderRadius: "12px",
-                  }}
-                >
-                  WhatsApp & Çoklu Kanal
-                </span>
               </div>
               <div style={{ fontSize: "12px", opacity: 0.85 }}>
                 Sahadan teklif oluşturma, bakiye/stok sorgulama & onay ajanı
@@ -287,40 +266,6 @@ export function AiDisKanalAsistanModal({ acik, onKapat }: Props) {
           >
             ✅ ONAYLA
           </button>
-          <button
-            onClick={() => hizliKomut("Teklifi müşteriye e-posta ile gönder")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "12px",
-              borderRadius: "20px",
-              border: "1px solid #2563eb",
-              backgroundColor: "#eff6ff",
-              color: "#1d4ed8",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-            }}
-          >
-            📨 E-Posta ile Gönder
-          </button>
-          <button
-            onClick={() => hizliKomut("Gecikmiş ödemeleri hatırlat")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "12px",
-              borderRadius: "20px",
-              border: "1px solid #ea580c",
-              backgroundColor: "#fff7ed",
-              color: "#c2410c",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-            }}
-          >
-            🔔 Ödeme Hatırlat
-          </button>
         </div>
 
         {/* Mesaj Alanı (Sohbet Akışı) */}
@@ -377,28 +322,7 @@ export function AiDisKanalAsistanModal({ acik, onKapat }: Props) {
             );
           })}
 
-          {sesSimulasyonu && (
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <div
-                style={{
-                  backgroundColor: "#059669",
-                  color: "#ffffff",
-                  padding: "10px 16px",
-                  borderRadius: "16px 16px 2px 16px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  fontSize: "13px",
-                  boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-                }}
-              >
-                <Mic size={18} className="animate-pulse" />
-                <span>🎙️ Ses kaydı çözümleniyor... (Whisper/Gemini Audio)</span>
-              </div>
-            </div>
-          )}
-
-          {yukleniyor && !sesSimulasyonu && (
+          {yukleniyor && (
             <div style={{ display: "flex", justifyContent: "flex-start" }}>
               <div
                 style={{
@@ -432,29 +356,6 @@ export function AiDisKanalAsistanModal({ acik, onKapat }: Props) {
             gap: "10px",
           }}
         >
-          <button
-            type="button"
-            title="Sesli Mesaj Simülasyonu"
-            onClick={sesliKomutSimuleEt}
-            disabled={yukleniyor}
-            style={{
-              width: "42px",
-              height: "42px",
-              borderRadius: "50%",
-              backgroundColor: sesSimulasyonu ? "#ef4444" : "#f1f5f9",
-              color: sesSimulasyonu ? "#ffffff" : "#0f766e",
-              border: "none",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              transition: "all 0.2s",
-              flexShrink: 0,
-            }}
-          >
-            <Mic size={20} />
-          </button>
-
           <input
             type="text"
             value={girdi}

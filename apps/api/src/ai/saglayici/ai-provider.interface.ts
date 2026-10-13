@@ -3,7 +3,7 @@ import { z } from "zod";
 /**
  * Desteklenen Yapay Zeka Sağlayıcıları
  */
-export type AiProviderTuru = "gemini" | "openai" | "anthropic" | "ollama" | "mock";
+export type AiProviderTuru = "gemini" | "openai" | "anthropic" | "ollama" | "mock" | "tanimsiz";
 
 /**
  * Çok Modlu (Multimodal) Girdi İçeriği

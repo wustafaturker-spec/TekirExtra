@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, Logger } from "@nestjs/common";
 import { PrismaService } from "../../core/prisma.service";
-import { AiProviderFactory, TenantAiYapilandirma } from "../saglayici/ai-provider.factory";
+import { AiProviderFactory, TenantAiYapilandirma, kiraciAdresiHatasi } from "../saglayici/ai-provider.factory";
 
 export interface TenantAiAyariGirdi {
   saglayici?: string;
@@ -60,6 +60,10 @@ export class TenantAiService {
    * Kiracı AI ayarlarını kaydeder veya günceller
    */
   async ayarKaydet(tenantId: string, girdi: TenantAiAyariGirdi) {
+    if (girdi.baseUrl?.trim()) {
+      const hata = kiraciAdresiHatasi(girdi.baseUrl.trim());
+      if (hata) throw new BadRequestException(`Sağlayıcı adresi: ${hata}`);
+    }
     return this.prisma.tenantIslem(tenantId, async (tx) => {
       const mevcut = await tx.tenantAiAyari.findUnique({ where: { tenantId } });
 
