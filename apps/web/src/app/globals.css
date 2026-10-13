@@ -4488,3 +4488,8 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .fiyat-onerisi__ayrinti .is-pozitif { color: var(--success); font-weight: 600; }
 .fiyat-onerisi__uyari { margin: 0; padding-left: 1rem; font-size: .78rem; color: var(--danger); }
 .fiyat-onerisi__gerekce { margin: 0; padding-left: 1rem; font-size: .78rem; color: var(--text-muted); }
+/* AI-14/15: veri aktarımı onayı ve kullanım. */
+.yz-onay { display: flex; flex-direction: column; gap: .6rem; font-size: .9rem; }
+.yz-onay p, .yz-onay ul { margin: 0; }
+.yz-onay ul { padding-left: 1.1rem; }
+.yz-kullanim__form { margin-top: 1rem; align-items: flex-end; }

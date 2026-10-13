@@ -1,7 +1,8 @@
 import { Injectable, BadRequestException, Logger } from "@nestjs/common";
 import { PrismaService } from "../../core/prisma.service";
 import { AiProviderFactory, TenantAiYapilandirma, kiraciAdresiHatasi } from "../saglayici/ai-provider.factory";
-import { apiAnahtariMaskele, apiAnahtariSifrele, ayardanYapilandirma, maskeliMi } from "../saglayici/kiraci-saglayici";
+import { apiAnahtariMaskele, apiAnahtariSifrele, kiraciSaglayicisi, maskeliMi, VARSAYILAN_GUNLUK_SINIR } from "../saglayici/kiraci-saglayici";
+import { aktifBaglam } from "../../core/istek-baglami";
 import { hassasCoz } from "../../personel/personel-hassas";
 
 export interface TenantAiAyariGirdi {
@@ -11,6 +12,8 @@ export interface TenantAiAyariGirdi {
   baseUrl?: string | null;
   ozelTalimatlar?: string | null;
   guvenlikKurallari?: Record<string, unknown> | null;
+  /** AI-15: 1–100.000. */
+  gunlukCagriSiniri?: number;
 }
 
 export interface TenantAiGorevGirdi {
@@ -47,14 +50,20 @@ export class TenantAiService {
         baseUrl: null,
         ozelTalimatlar: null,
         guvenlikKurallari: null,
+        yurtDisiOnay: null,
+        gunlukCagriSiniri: VARSAYILAN_GUNLUK_SINIR,
       };
     }
+    const onaylayan = ayar.yurtDisiOnayUserId
+      ? await this.prisma.tenantIslem(tenantId, (tx) => tx.user.findUnique({ where: { id: ayar.yurtDisiOnayUserId! }, select: { adSoyad: true } }))
+      : null;
 
     return {
       ...ayar,
       // AI-11: yalnız son 4 karakter görünür.
       apiKey: apiAnahtariMaskele(ayar.apiKey),
       hasApiKey: Boolean(ayar.apiKey),
+      yurtDisiOnay: ayar.yurtDisiOnayAt ? { tarih: ayar.yurtDisiOnayAt, onaylayan: onaylayan?.adSoyad ?? null } : null,
     };
   }
 
@@ -62,6 +71,9 @@ export class TenantAiService {
    * Kiracı AI ayarlarını kaydeder veya günceller
    */
   async ayarKaydet(tenantId: string, girdi: TenantAiAyariGirdi) {
+    if (girdi.gunlukCagriSiniri !== undefined && (!Number.isInteger(girdi.gunlukCagriSiniri) || girdi.gunlukCagriSiniri < 1 || girdi.gunlukCagriSiniri > 100_000)) {
+      throw new BadRequestException("Günlük çağrı sınırı 1 ile 100.000 arasında bir tam sayı olmalıdır.");
+    }
     if (girdi.baseUrl?.trim()) {
       const hata = kiraciAdresiHatasi(girdi.baseUrl.trim());
       if (hata) throw new BadRequestException(`Sağlayıcı adresi: ${hata}`);
@@ -85,14 +97,17 @@ export class TenantAiService {
           baseUrl: girdi.baseUrl || null,
           ozelTalimatlar: girdi.ozelTalimatlar || null,
           guvenlikKurallari: (girdi.guvenlikKurallari as any) || null,
+          ...(girdi.gunlukCagriSiniri !== undefined ? { gunlukCagriSiniri: girdi.gunlukCagriSiniri } : {}),
         },
         update: {
-          saglayici: girdi.saglayici || "varsayilan",
+          // Gönderilmeyen alan değişmez (yalnız sınır kaydı sağlayıcıyı sıfırlıyordu).
+          ...(girdi.saglayici !== undefined ? { saglayici: girdi.saglayici || "varsayilan" } : {}),
           ...(yeniApiKey !== undefined ? { apiKey: yeniApiKey || null } : {}),
           modelAdi: girdi.modelAdi !== undefined ? girdi.modelAdi || null : undefined,
           baseUrl: girdi.baseUrl !== undefined ? girdi.baseUrl || null : undefined,
           ozelTalimatlar: girdi.ozelTalimatlar !== undefined ? girdi.ozelTalimatlar || null : undefined,
           guvenlikKurallari: girdi.guvenlikKurallari !== undefined ? (girdi.guvenlikKurallari as any) || null : undefined,
+          ...(girdi.gunlukCagriSiniri !== undefined ? { gunlukCagriSiniri: girdi.gunlukCagriSiniri } : {}),
         },
       });
     });
@@ -207,7 +222,8 @@ export class TenantAiService {
       tx.tenantAiAyari.findUnique({ where: { tenantId } }),
     );
 
-    const provider = AiProviderFactory.uret(ayar ? ayardanYapilandirma(ayar) : undefined);
+    // AI-14/15: görev de onay kapısından ve sayaçtan geçer.
+    const { saglayici: provider } = await kiraciSaglayicisi(this.prisma, tenantId, { ozellik: "gorev" });
 
     const sistemRol = `
 Sen TekirExtra ön muhasebe ve ERP yöneticisinin otonom yapay zeka asistanısın.
@@ -248,6 +264,38 @@ Hedef: ${gorev.hedefKimlik || "Yönetici"}
       hedef: gorev.hedefKimlik,
       raporIcerigi: sonucMetni,
       tarih: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * AI-14: yurt dışı aktarım onayı. Onaylayan ve zaman kaydedilir; geri alınırsa
+   * dış sağlayıcıya istek gitmez.
+   */
+  async yurtDisiOnay(tenantId: string, onay: boolean) {
+    const { userId } = aktifBaglam();
+    const veri = onay ? { yurtDisiOnayAt: new Date(), yurtDisiOnayUserId: userId } : { yurtDisiOnayAt: null, yurtDisiOnayUserId: null };
+    await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.tenantAiAyari.upsert({ where: { tenantId }, create: { tenantId, ...veri }, update: veri }),
+    );
+    this.logger.log(`Yurt dışı aktarım onayı ${onay ? "verildi" : "geri alındı"} (kiracı ${tenantId}, kullanıcı ${userId})`);
+    return this.ayarGetir(tenantId);
+  }
+
+  /** AI-15: son 30 günün çağrıları (gün ve özellik bazında) ve bugünkü toplam. */
+  async kullanim(tenantId: string) {
+    const baslangic = new Date(Date.now() - 30 * 86_400_000);
+    const [satirlar, ayar] = await this.prisma.tenantIslem(tenantId, (tx) =>
+      Promise.all([
+        tx.aiKullanim.groupBy({ by: ["gun", "ozellik"], where: { tenantId, gun: { gte: baslangic } }, _sum: { cagri: true }, orderBy: { gun: "desc" } }),
+        tx.tenantAiAyari.findUnique({ where: { tenantId }, select: { gunlukCagriSiniri: true } }),
+      ]),
+    );
+    const bugun = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" });
+    const gunler = satirlar.map((x) => ({ gun: x.gun.toISOString().slice(0, 10), ozellik: x.ozellik, cagri: x._sum.cagri ?? 0 }));
+    return {
+      gunlukSinir: ayar?.gunlukCagriSiniri ?? VARSAYILAN_GUNLUK_SINIR,
+      bugunToplam: gunler.filter((g) => g.gun === bugun).reduce((t, g) => t + g.cagri, 0),
+      gunler,
     };
   }
 }

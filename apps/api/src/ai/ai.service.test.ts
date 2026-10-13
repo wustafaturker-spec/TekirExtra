@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { AiService } from "./ai.service";
+import { istekBaglami } from "../core/istek-baglami";
 import { MockAiProvider } from "./saglayici/mock-ai.provider";
 import { fisFaturaDogrula } from "./ai.dogrulama";
 import { vknGecerliMi, tcknGecerliMi } from "@tekirextra/shared";
@@ -55,6 +56,7 @@ describe("AiService Entegrasyonu", () => {
       tenantIslem: vi.fn((tenantId, cb) =>
         cb({
           tenantAiAyari: { findUnique: vi.fn().mockResolvedValue(null) },
+          aiKullanim: { aggregate: vi.fn().mockResolvedValue({ _sum: { cagri: 0 } }), upsert: vi.fn() },
           cariHesap: {
             findFirst: vi.fn().mockResolvedValue({
               id: "cari-123",
@@ -70,10 +72,10 @@ describe("AiService Entegrasyonu", () => {
   });
 
   it("fiş görselinden doğru alanları çıkarır, carisi varsa otomatik eşleştirir", async () => {
-    const sonuc = await service.fisFaturaOcrTara("tenant-1", {
+    const sonuc = await istekBaglami.run({ deger: { tenantId: "tenant-1", userId: "u1", rol: "muhasebe" } }, () => service.fisFaturaOcrTara("tenant-1", {
       gorselBase64: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
       belgeTipi: "fis_fatura",
-    });
+    }));
 
     expect(sonuc.dogrulama.gecerli).toBe(true);
     expect(sonuc.dogrulama.veri.saticiUnvan).toBe("MİGROS TİCARET A.Ş.");
@@ -87,10 +89,10 @@ describe("AiService Entegrasyonu", () => {
   });
 
   it("iletişim / kartvizit metninden cari hesap ve yetkili kişi bilgilerini eksiksiz çıkarır", async () => {
-    const sonuc = await service.cariBilgisiCikar("tenant-1", {
+    const sonuc = await istekBaglami.run({ deger: { tenantId: "tenant-1", userId: "u1", rol: "muhasebe" } }, () => service.cariBilgisiCikar("tenant-1", {
       hamMetin: "Kaya Metal Ltd. Şti. Ahmet Kaya 05321112233 muhasebe@kayametal.com.tr",
       belgeTipi: "cari_bilgisi",
-    });
+    }));
 
     expect(sonuc.dogrulama.gecerli).toBe(true);
     expect(sonuc.dogrulama.veri.unvan).toContain("KAYA");

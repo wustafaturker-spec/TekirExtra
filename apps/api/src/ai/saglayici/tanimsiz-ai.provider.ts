@@ -11,7 +11,7 @@ const VARSAYILAN_MESAJ =
 export class TanimsizAiProvider implements IAiProvider {
   readonly saglayiciAdi: AiProviderTuru = "tanimsiz";
 
-  constructor(private readonly mesaj = VARSAYILAN_MESAJ) {}
+  constructor(readonly mesaj = VARSAYILAN_MESAJ) {}
 
   async yapilandirilmisUretim<T>(): Promise<T> {
     throw new ServiceUnavailableException(this.mesaj);

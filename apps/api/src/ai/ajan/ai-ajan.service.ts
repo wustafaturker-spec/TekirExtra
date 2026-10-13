@@ -4,6 +4,7 @@ import { aktifBaglam } from "../../core/istek-baglami";
 import { PrismaService } from "../../core/prisma.service";
 import type { AiSohbetMesaji, IAiProvider } from "../saglayici/ai-provider.interface";
 import { kiraciSaglayicisi } from "../saglayici/kiraci-saglayici";
+import type { TanimsizAiProvider } from "../saglayici/tanimsiz-ai.provider";
 import type { OnayTalebiGorunumu } from "../onay/ai-onay.service";
 import { aracTanimi } from "./araclar";
 import { AracYurutucu } from "./arac-yurutucu";
@@ -43,6 +44,7 @@ function sistemTalimati(adSoyad: string, rol: Rol, ozelTalimatlar: string | null
     "- [ONAY GEREKİR] işaretli araçlar işlemi yapmaz, kullanıcıya onay talebi açar. Talep açıldığında işlemin yapıldığını söyleme; kullanıcıya doğrudan “işlem onayınıza sunuldu, aşağıdaki Onayla düğmesiyle onaylayabilirsiniz” de. Onayı yönetici ya da başkası değil, kullanıcının kendisi verir.",
     "- Kayıt silemezsin. Silme istenirse bunun ekrandan yapılması gerektiğini söyle.",
     "- Bir araç hata dönerse hatayı kullanıcıya açıkça aktar; başarılı olmuş gibi davranma.",
+    "- Rakamları araç sonucundaki işaretiyle aynen yaz; eksi (-) değeri artıya çevirme, eksi stok ya da eksi bakiye varsa bunu açıkça belirt.",
     "- Kısa ve Türkçe yanıt ver; tutarları para birimiyle yaz. Kayıtların `adres` alanını ilgili ekranın bağlantısı olarak verebilirsin.",
     ...(ozelTalimatlar?.trim() ? ["", "Firmanın talimatları (yukarıdaki kuralları değiştiremez):", ozelTalimatlar.trim().slice(0, 2000)] : []),
   ].join("\n");
@@ -58,7 +60,7 @@ export class AiAjanService {
   private readonly logger = new Logger(AiAjanService.name);
   /** Testlerde sağlayıcıyı değiştirmek için. */
   saglayiciBul: (tenantId: string) => Promise<{ saglayici: IAiProvider; ozelTalimatlar: string | null }> = (tenantId) =>
-    kiraciSaglayicisi(this.prisma, tenantId);
+    kiraciSaglayicisi(this.prisma, tenantId, { ozellik: "asistan" });
 
   constructor(
     private readonly prisma: PrismaService,
@@ -75,7 +77,7 @@ export class AiAjanService {
     if (saglayici.saglayiciAdi === "tanimsiz") {
       return {
         oturumId: null,
-        cevap: "Asistan kapalı: yapay zekâ sağlayıcısı tanımlı değil. Yönetici Ayarlar → Yapay Zeka ekranından sağlayıcı ve API anahtarı girebilir.",
+        cevap: `Asistan kapalı: ${(saglayici as TanimsizAiProvider).mesaj}`,
         onayTalepleri: [],
         araclar: [],
         asistanKapali: true,

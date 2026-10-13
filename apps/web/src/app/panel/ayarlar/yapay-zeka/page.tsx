@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { PageHeader, Card, Button, Input, Select, Alert, Badge } from "@/components/ui";
+import { YzVeriOnayiKart } from "@/components/yz-veri-onayi-kart";
+import { YzKullanimKart } from "@/components/yz-kullanim-kart";
 import { Sparkles, Shield, Clock, CheckCircle2, AlertTriangle, Play, Trash2, Plus, RefreshCw, Key, Server, Cpu } from "lucide-react";
 
 interface AiAyari {
@@ -190,6 +192,10 @@ export default function YapayZekaAyarlariSayfasi() {
       {basari && <div style={{ marginBottom: 16 }}><Alert tone="success">{basari}</Alert></div>}
 
       <div style={{ display: "grid", gap: "24px" }}>
+        {/* AI-14/15 */}
+        <YzVeriOnayiKart />
+        <YzKullanimKart />
+
         {/* KART 1: AI Sağlayıcı ve Model Entegrasyonu (BYOK) */}
         <Card>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px", borderBottom: "1px solid var(--border)", paddingBottom: "12px" }}>

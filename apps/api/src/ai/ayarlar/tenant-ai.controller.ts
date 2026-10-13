@@ -27,6 +27,20 @@ export class TenantAiController {
     return this.service.baglantiTestEt(tenantId, girdi);
   }
 
+  /** AI-14: yurt dışı aktarım onayı ver / geri al. */
+  @Post("ayarlar/yurt-disi-onay")
+  async yurtDisiOnay(@Body() govde: { onay?: unknown }) {
+    const { tenantId } = aktifBaglam();
+    return this.service.yurtDisiOnay(tenantId, govde?.onay === true);
+  }
+
+  /** AI-15: son 30 günün kullanım sayacı. */
+  @Get("kullanim")
+  async kullanim() {
+    const { tenantId } = aktifBaglam();
+    return this.service.kullanim(tenantId);
+  }
+
   @Get("gorevler")
   async gorevleriListele() {
     const { tenantId } = aktifBaglam();

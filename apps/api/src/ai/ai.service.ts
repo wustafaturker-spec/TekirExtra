@@ -39,7 +39,7 @@ export class AiService {
   }
 
   private async getProviderForTenant(tenantId: string): Promise<IAiProvider> {
-    return (await kiraciSaglayicisi(this.prisma, tenantId, () => this.aiProvider)).saglayici;
+    return (await kiraciSaglayicisi(this.prisma, tenantId, { ozellik: "tarama", varsayilan: () => this.aiProvider })).saglayici;
   }
 
   /**

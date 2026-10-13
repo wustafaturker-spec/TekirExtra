@@ -237,6 +237,7 @@ model Tenant {
   ajanOturumlari    AjanOturumu[]
   aiOnayTalepleri   AiOnayTalebi[]
   aiMcpAnahtarlari  AiMcpAnahtari[]
+  aiKullanim        AiKullanim[]
   belgeOcrKayitlari BelgeOcrKaydi[]
   aiAyari           TenantAiAyari?
   aiGorevleri       TenantAiGorev[]
@@ -5726,6 +5727,22 @@ model AiOnayTalebi {
   @@map("ai_onay_talepleri")
 }
 
+/// AI-15: günlük model çağrısı sayacı (kullanıcı ve özellik bazında).
+model AiKullanim {
+  id       String   @id @default(uuid()) @db.Uuid
+  tenantId String   @map("tenant_id") @db.Uuid
+  gun      DateTime @db.Date
+  userId   String   @map("user_id") @db.Uuid
+  ozellik  String
+  cagri    Int      @default(0)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, gun, userId, ozellik])
+  @@index([tenantId, gun])
+  @@map("ai_kullanim")
+}
+
 /// AI-09: kullanıcının kendi adına oluşturduğu MCP erişim anahtarı. Anahtarın
 /// kendisi saklanmaz (bir kez gösterilir); SHA-256 özeti ve görünen öneki tutulur.
 /// Anahtar o kullanıcının kimliği ve güncel rolüyle çalışır; iptal silme değildir.
@@ -5791,6 +5808,11 @@ model TenantAiAyari {
   baseUrl           String?  @map("base_url")
   ozelTalimatlar    String?  @map("ozel_talimatlar") @db.Text // "Şunları asla yapma", "Şu durumlarda dikkatli ol"
   guvenlikKurallari Json?    @map("guvenlik_kurallari")
+  /// AI-14: yurt dışındaki sağlayıcıya veri aktarımı için yönetici onayı; null = onay yok.
+  yurtDisiOnayAt     DateTime? @map("yurt_disi_onay_at")
+  yurtDisiOnayUserId String?   @map("yurt_disi_onay_user_id") @db.Uuid
+  /// AI-15: kiracı başına günlük model çağrısı sınırı.
+  gunlukCagriSiniri  Int       @default(1000) @map("gunluk_cagri_siniri")
   guncellendiAt     DateTime @updatedAt @map("guncellendi_at")
   createdAt         DateTime @default(now()) @map("created_at")
 

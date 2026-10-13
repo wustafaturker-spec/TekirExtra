@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ServiceUnavailableException } from "@nestjs/common";
 import { TenantAiService } from "./tenant-ai.service";
+import { istekBaglami } from "../../core/istek-baglami";
 import { hassasCoz } from "../../personel/personel-hassas";
 
 describe("TenantAiService - BYOK, Kurallar ve Otonom Görevler", () => {
@@ -9,6 +10,7 @@ describe("TenantAiService - BYOK, Kurallar ve Otonom Görevler", () => {
   const mockTenantId = "11111111-1111-1111-1111-111111111111";
 
   const mockTx = {
+    aiKullanim: { aggregate: vi.fn().mockResolvedValue({ _sum: { cagri: 0 } }), upsert: vi.fn() },
     tenantAiAyari: {
       findUnique: vi.fn(),
       upsert: vi.fn(),
@@ -123,7 +125,7 @@ describe("TenantAiService - BYOK, Kurallar ve Otonom Görevler", () => {
     mockTx.tenantAiGorev.update.mockResolvedValue({ id: "gorev-1" });
     vi.stubEnv("AI_PROVIDER", "mock");
 
-    const sonuc = await service.gorevCalistir(mockTenantId, "gorev-1");
+    const sonuc = await istekBaglami.run({ deger: { tenantId: mockTenantId, userId: "u1", rol: "yonetici" } }, () => service.gorevCalistir(mockTenantId, "gorev-1"));
 
     expect(sonuc.ad).toBe("Günlük Finans Özeti");
     expect(sonuc.raporIcerigi.length).toBeGreaterThan(0);
@@ -136,7 +138,7 @@ describe("TenantAiService - BYOK, Kurallar ve Otonom Görevler", () => {
     mockTx.tenantAiAyari.findUnique.mockResolvedValue(null);
     mockTx.tenantAiGorev.update.mockClear();
 
-    await expect(service.gorevCalistir(mockTenantId, "gorev-1")).rejects.toBeInstanceOf(ServiceUnavailableException);
+    await expect(istekBaglami.run({ deger: { tenantId: mockTenantId, userId: "u1", rol: "yonetici" } }, () => service.gorevCalistir(mockTenantId, "gorev-1"))).rejects.toBeInstanceOf(ServiceUnavailableException);
     expect(mockTx.tenantAiGorev.update).not.toHaveBeenCalled();
   });
 
@@ -152,5 +154,15 @@ describe("TenantAiService - BYOK, Kurallar ve Otonom Görevler", () => {
     mockTx.tenantAiAyari.upsert.mockClear();
     await service.ayarKaydet(mockTenantId, { saglayici: "openai", apiKey: "••••1234" });
     expect(hassasCoz(mockTx.tenantAiAyari.upsert.mock.calls[0][0].update.apiKey)).toBe("sk-gercek-1234");
+  });
+
+  it("8. Yalnız sınır kaydı sağlayıcıyı ve anahtarı değiştirmez", async () => {
+    mockTx.tenantAiAyari.findUnique.mockResolvedValue({ tenantId: mockTenantId, saglayici: "gemini", apiKey: "enc:v1:x" });
+    mockTx.tenantAiAyari.upsert.mockClear();
+    await service.ayarKaydet(mockTenantId, { gunlukCagriSiniri: 50 });
+    const update = mockTx.tenantAiAyari.upsert.mock.calls[0][0].update;
+    expect(update).not.toHaveProperty("saglayici");
+    expect(update).not.toHaveProperty("apiKey");
+    expect(update.gunlukCagriSiniri).toBe(50);
   });
 });

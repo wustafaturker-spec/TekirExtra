@@ -54,7 +54,7 @@ const tl = (v: number) => `${v.toLocaleString("tr-TR", { minimumFractionDigits: 
 export class AiRaporService {
   private readonly logger = new Logger(AiRaporService.name);
   /** Testlerde sağlayıcıyı değiştirmek için. */
-  saglayiciBul: (tenantId: string) => Promise<{ saglayici: IAiProvider }> = (tenantId) => kiraciSaglayicisi(this.prisma, tenantId);
+  saglayiciBul: (tenantId: string) => Promise<{ saglayici: IAiProvider }> = (tenantId) => kiraciSaglayicisi(this.prisma, tenantId, { ozellik: "ozet" });
 
   constructor(
     private readonly prisma: PrismaService,
