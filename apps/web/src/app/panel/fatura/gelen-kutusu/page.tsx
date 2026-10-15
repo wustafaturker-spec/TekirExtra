@@ -4,6 +4,7 @@ import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, apiPdfAc, tokenAl } from "@/lib/api";
 import { BirimSecimi } from "@/components/birim-secimi";
+import { GelenFiyatAnalizi } from "@/components/gelen-fiyat-analizi";
 import { birimCoz, varyantAdiEsit, varyantliAdAyir } from "@tekirextra/shared";
 import { EbelgeAdimSeridi } from "@/components/durum-gecmisi";
 import {
@@ -813,6 +814,12 @@ export default function GelenKutusuSayfasi() {
           <p style={{ margin: 0 }}>{detay.yanitGerekce}</p>
         </Card>
       )}
+
+      {detay.faturaTipi !== "satis_iade" && <GelenFiyatAnalizi belgeId={detay.id}
+        eslesmeler={detay.satirlar.flatMap((s) => {
+          const e = eslesme[s.siraNo];
+          return e && (!e.varyantlar?.length || e.varyantId) ? [{ siraNo: s.siraNo, stokId: e.id, varyantId: e.varyantId ?? null }] : [];
+        })} />}
 
       <Card style={{ marginTop: "1.25rem" }} pad={false}>
         <div style={{ padding: "1.25rem 1.25rem 0" }}>

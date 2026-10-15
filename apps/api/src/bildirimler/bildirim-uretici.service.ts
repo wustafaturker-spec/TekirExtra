@@ -25,7 +25,6 @@ import type { EntegratorConfig } from "@tekirextra/baglanti";
 const gunEkle = (t: Date, gun: number) => new Date(t.getTime() + gun * 86_400_000);
 
 const KRITIK_SLA_SAATI = 24;
-const CEK_UYARI_GUNU = 7;
 /** KSB-10: kart ekstresinin son ödeme gününe bu kadar gün kala hatırlatılır. */
 const KART_UYARI_GUNU = 3;
 
@@ -597,25 +596,31 @@ export class BildirimUreticiService {
       });
     }
 
-    const sinir = new Date();
-    sinir.setDate(sinir.getDate() + CEK_UYARI_GUNU);
-    const yaklasanCek = await this.prisma.tenantIslem(tenantId, (tx) =>
-      // Sonuçlanmamış evraklar: portföyde duran, bankaya verilen ve kendi
-      // kestiğimiz ödenmemiş çekler. Tahsil/ödeme/ciro sonrası uyarı gereksizdir.
-      tx.cekSenet.count({
-        where: { durum: { in: ["portfoyde", "tahsile_verildi", "teminata_verildi", "verildi"] }, vadeTarihi: { lte: sinir } },
-      }),
-    );
-    if (yaklasanCek) {
-      girdiler.push({
-        tur: "cek_senet",
-        onem: "uyari",
-        baslik: "Vadesi yaklaşan çek/senet",
-        aciklama: `${yaklasanCek} evrakın vadesi önümüzdeki ${CEK_UYARI_GUNU} gün içinde doluyor.`,
-        birlesimAnahtari: `cek_senet:${gun}`,
-        hedefYol: "/panel/kasa-banka/cek-senet",
-        roller: HEDEF_ROLLER.cek_senet,
-      });
+    const ayar = this.ayarlar ? await this.ayarlar.getir("kasaBanka") : {};
+    const erkenGun = typeof ayar.cekSenetHatirlatmaGun === "number" && Number.isInteger(ayar.cekSenetHatirlatmaGun) &&
+      ayar.cekSenetHatirlatmaGun >= 0 && ayar.cekSenetHatirlatmaGun <= 90 ? ayar.cekSenetHatirlatmaGun : 7;
+    const vadeGunuAcik = ayar.cekSenetVadeGunuHatirlat !== false;
+    // PostgreSQL DATE alanları UTC gün başlangıcıyla, iş günü İstanbul tarihiyle karşılaştırılır.
+    const cekGunu = bugunTR();
+    const bugun = new Date(`${cekGunu}T00:00:00Z`);
+    const erkenTarih = gunEkle(bugun, erkenGun);
+    const [erken, bugunku, geciken] = await this.prisma.tenantIslem(tenantId, (tx) => {
+      const where = { tenantId, durum: { in: ["portfoyde", "tahsile_verildi", "teminata_verildi", "verildi"] as const } };
+      return Promise.all([
+        erkenGun > 0 ? tx.cekSenet.count({ where: { ...where, durum: { in: [...where.durum.in] }, vadeTarihi: erkenTarih } }) : 0,
+        vadeGunuAcik ? tx.cekSenet.count({ where: { ...where, durum: { in: [...where.durum.in] }, vadeTarihi: bugun } }) : 0,
+        tx.cekSenet.count({ where: { ...where, durum: { in: [...where.durum.in] }, vadeTarihi: { lt: bugun } } }),
+      ]);
+    });
+    for (const grup of [
+      { adet: erken, baslik: "Vadesi yaklaşan çek/senet", aciklama: `${erken} evrakın vadesine ${erkenGun} gün kaldı.`, anahtar: `once:${erkenGun}`, onem: "uyari" as const },
+      { adet: bugunku, baslik: "Bugün vadeli çek/senet", aciklama: `${bugunku} evrakın vade günü bugün.`, anahtar: "bugun", onem: "uyari" as const },
+      { adet: geciken, baslik: "Vadesi geçmiş çek/senet", aciklama: `${geciken} sonuçlanmamış evrakın vadesi geçti.`, anahtar: "geciken", onem: "uyari" as const },
+    ]) {
+      if (!grup.adet) continue;
+      girdiler.push({ tur: "cek_senet", onem: grup.onem, baslik: grup.baslik, aciklama: grup.aciklama,
+        birlesimAnahtari: `cek_senet:${cekGunu}:${grup.anahtar}`,
+        hedefYol: "/panel/kasa-banka/cek-senet", roller: HEDEF_ROLLER.cek_senet });
     }
 
     girdiler.push(...(await this.kartEkstreUyarilari()));

@@ -14,6 +14,7 @@ import { EbelgeModule } from "./ebelge/ebelge.module";
 import { EklerModule } from "./ekler/ekler.module";
 import { RaporModule } from "./rapor/rapor.module";
 import { AuditInterceptor } from "./core/audit.interceptor";
+import { IdempotencyInterceptor } from "./core/idempotency.interceptor";
 import { CoreModule } from "./core/core.module";
 import { HealthModule } from "./health/health.module";
 import { TenantModule } from "./tenant/tenant.module";
@@ -81,6 +82,9 @@ import { MevzuatModule } from "./mevzuat/mevzuat.module";
     ButceModule,
     SatinAlmaModule,
   ],
-  providers: [{ provide: APP_INTERCEPTOR, useClass: AuditInterceptor }],
+  providers: [
+    { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
+  ],
 })
 export class AppModule {}

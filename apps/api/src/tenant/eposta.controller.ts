@@ -10,5 +10,6 @@ export class EpostaController {
   @Get("ayarlar") ayarlar() { return this.eposta.ayarlariGetir(); }
   @Put("ayarlar") ayarlariGuncelle(@Body() govde: unknown) { const s = epostaAyarlariSemasi.safeParse(govde); if (!s.success) throw new BadRequestException(s.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")); return this.eposta.ayarlariGuncelle(s.data); }
   @Post("test") test(@Body() govde: unknown) { const s = z.object({ alici: z.email() }).safeParse(govde); if (!s.success) throw new BadRequestException("Geçerli bir test e-posta adresi girin"); return this.eposta.baglantiTest(s.data.alici); }
+  @Post("imap-test") imapTest() { return this.eposta.imapBaglantiTest(); }
   @Get("gecmis") gecmis(@Query("adet") adet?: string) { return this.eposta.gecmis(adet ? Number(adet) : 50); }
 }

@@ -130,6 +130,7 @@ export const MENU: MenuAlani[] = [
     ikon: FileStack,
     ogeler: [
       { href: "/panel/belgeler", ikon: FileStack, baslik: "Tüm Belgeler", eslesme: "tam", esanlamlilar: ["teklif", "sipariş", "irsaliye", "zincir"] },
+      { href: "/panel/eposta", ikon: Mail, baslik: "Gelen E-postalar", eslesme: "tam", esanlamlilar: ["eposta", "inbox", "gelen e-posta", "imap", "mail"] },
       { href: "/panel/fatura/tekrarlayan", ikon: Repeat, baslik: "Tekrarlayan Faturalar", esanlamlilar: ["abonelik", "periyodik"] },
       { href: "/panel/ebelge/fatura-gelen", ikon: Inbox, baslik: "Gelen e-Faturalar", eslesme: "tam", esanlamlilar: ["gib", "gelen kutusu"] },
       { href: "/panel/ebelge/irsaliye-gelen", ikon: Truck, baslik: "Gelen e-İrsaliyeler", eslesme: "tam" },

@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { PrismaClient } from "@prisma/client";
 import { krediPlaniHesapla, vknGecerliMi } from "@tekirextra/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -23,6 +24,9 @@ let taban: string;
 let sunucuCiktisi = "";
 let workerCiktisi = "";
 const bugun = () => new Date().toISOString().slice(0, 10);
+const envDosyasi = resolve(__dirname, "../.env");
+if (existsSync(envDosyasi)) process.loadEnvFile(envDosyasi);
+const denetimDb = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL_MIGRATE ?? process.env.DATABASE_URL });
 
 /** VKN kontrol hanesi tutan, istenen son haneye sahip bir numara üretir. */
 function vknUret(sonHaneCift: boolean): string {
@@ -42,13 +46,14 @@ interface Yanit<T = any> {
 
 async function istek<T = any>(
   yol: string,
-  secenek: { method?: string; body?: unknown; jeton?: string } = {},
+  secenek: { method?: string; body?: unknown; jeton?: string; headers?: Record<string, string> } = {},
 ): Promise<Yanit<T>> {
   const yanit = await fetch(`${taban}${yol}`, {
     method: secenek.method ?? "GET",
     headers: {
       ...(secenek.body ? { "Content-Type": "application/json" } : {}),
       ...(secenek.jeton ? { Authorization: `Bearer ${secenek.jeton}` } : {}),
+      ...secenek.headers,
     },
     body: secenek.body ? JSON.stringify(secenek.body) : undefined,
   });
@@ -115,7 +120,7 @@ async function entegratorBagla(jeton: string, saglayici = "izibiz") {
   expect(aktif.durum, JSON.stringify(aktif.veri)).toBe(201);
 
   // EBLG-62 sonrası: e-belge işlemleri firmanın mükellefiyeti belirtilmeden açılmaz.
-  const firma = await istek("/firma", { method: "PATCH", jeton, body: { efaturaMukellefi: true, earsivMukellefi: true, adres: "Kabul Cad. No:1", ilce: "Kadıköy", il: "İstanbul" } });
+  const firma = await istek("/firma", { method: "PATCH", jeton, body: { efaturaMukellefi: true, earsivMukellefi: true, eirsaliyeMukellefi: false, adres: "Kabul Cad. No:1", ilce: "Kadıköy", il: "İstanbul" } });
   expect(firma.durum, JSON.stringify(firma.veri)).toBe(200);
   return olustur.veri.id;
 }
@@ -226,7 +231,7 @@ beforeAll(async () => {
   taban = `http://127.0.0.2:${port}/api/v1`;
   sunucu = spawn(process.execPath, [giris], {
     cwd: resolve(__dirname, ".."),
-    env: { ...process.env, PORT: String(port), RATE_LIMIT_MAX: "100000" },
+    env: { ...process.env, AI_PROVIDER: "mock", PORT: String(port), RATE_LIMIT_MAX: "100000" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   sunucu.stdout?.on("data", (parca) => {
@@ -356,9 +361,103 @@ describe("R0 kritik regresyon — tekrarlayan fatura idempotansı", () => {
   });
 });
 
+describe("AI üretim kapıları — gerçek HTTP kabulü", () => {
+  it("yanıt değerlendirmesi sahiplikle sınırlıdır; idempotent yanıt kimliği ve güncel kalite özeti korunur", async () => {
+    const a = await firmaAc("ai-kalite", vknUret(true));
+    const b = await firmaAc("ai-kalite-diger", vknUret(true));
+    const body = { mesaj: "Merhaba", requestId: crypto.randomUUID() };
+    const ilk = await istek<{ mesajId: string; kaynaklar: unknown[] }>("/ai/ajan/mesaj", { method: "POST", jeton: a.jeton, body });
+    expect(ilk.durum, JSON.stringify(ilk.veri)).toBe(201);
+    expect(ilk.veri.mesajId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(ilk.veri.kaynaklar).toEqual([]);
+    const tekrar = await istek<{ mesajId: string; kaynaklar: unknown[] }>("/ai/ajan/mesaj", { method: "POST", jeton: a.jeton, body });
+    expect(tekrar.veri.mesajId).toBe(ilk.veri.mesajId);
+    expect(tekrar.veri.kaynaklar).toEqual(ilk.veri.kaynaklar);
+    const yol = `/ai/ajan/mesajlar/${ilk.veri.mesajId}/geri-bildirim`;
+    expect((await istek(yol, { method: "POST", jeton: a.jeton, body: { deger: "yanlis", not: "Eksik bilgi" } })).durum).toBe(201);
+    expect((await istek(yol, { method: "POST", jeton: b.jeton, body: { deger: "dogru" } })).durum).toBe(403);
+    expect((await istek(yol, { method: "POST", jeton: a.jeton, body: { deger: "dogru", not: "x".repeat(501) } })).durum).toBe(400);
+    expect((await istek(yol, { method: "POST", jeton: a.jeton, body: { deger: "dogru" } })).durum).toBe(201);
+    const kalite = await istek("/ai/kalite", { jeton: a.jeton });
+    expect(kalite.durum).toBe(200);
+    expect(kalite.veri).toMatchObject({ toplam: 1, modeller: [{ saglayici: "mock", dogru: 1, yanlis: 0, eksik: 0 }] });
+    const gecmis = await istek("/ai/ajan/gecmis", { jeton: a.jeton });
+    expect(gecmis.veri.mesajlar.filter((m: { rol: string }) => m.rol === "assistant")).toHaveLength(1);
+    expect(gecmis.veri.mesajlar.find((m: { id: string }) => m.id === ilk.veri.mesajId)).toMatchObject({ geriBildirim: "dogru", geriBildirimNotu: null, kaynaklar: [] });
+  });
+
+  it("aynı Idempotency-Key ile cari mutasyonu yalnız bir kez çalışır ve farklı gövde reddedilir", async () => {
+    const { jeton } = await firmaAc("ai-idempotency", vknUret(true));
+    const anahtar = `kabul-${crypto.randomUUID()}`;
+    const govde = { kod: "AI-IDEM-1", unvan: "AI İdempotency Cari", tip: "musteri", kisiTipi: "tuzel", vknTckn: vknUret(true) };
+    const birinci = await istek<{ id: string }>("/cari", { method: "POST", jeton, body: govde, headers: { "Idempotency-Key": anahtar } });
+    const tekrar = await istek<{ id: string }>("/cari", { method: "POST", jeton, body: govde, headers: { "Idempotency-Key": anahtar } });
+    expect(birinci.durum, JSON.stringify(birinci.veri)).toBe(201);
+    expect(tekrar.durum, JSON.stringify(tekrar.veri)).toBe(201);
+    expect(tekrar.veri.id).toBe(birinci.veri.id);
+
+    const farkli = await istek("/cari", { method: "POST", jeton, body: { ...govde, unvan: "Farklı Cari" }, headers: { "Idempotency-Key": anahtar } });
+    expect(farkli.durum).toBe(409);
+    const liste = await istek<{ kayitlar: Array<{ id: string }> }>("/cari?arama=AI-IDEM-1", { jeton });
+    expect(liste.veri.kayitlar.filter((x) => x.id === birinci.veri.id)).toHaveLength(1);
+  });
+
+  it("telemetri politikasını tenant bazında kaydeder ve kullanım ucunda döndürür", async () => {
+    const { jeton } = await firmaAc("ai-telemetri", vknUret(true));
+    const kaydet = await istek("/ai/ayarlar", {
+      method: "PUT", jeton,
+      body: {
+        telemetriSaklamaGun: 45, sohbetSaklamaGun: 30, telemetriHataEsigiYuzde: 15, telemetriGecikmeEsigiMs: 7500,
+        girisTokenMilyonUsd: 0.15, cikisTokenMilyonUsd: 0.6, aylikMaliyetButcesiUsd: 50,
+      },
+      headers: { "Idempotency-Key": `kabul-${crypto.randomUUID()}` },
+    });
+    expect(kaydet.durum, JSON.stringify(kaydet.veri)).toBe(200);
+    const kullanim = await istek<{
+      telemetriAyarlari: { saklamaGun: number; sohbetSaklamaGun: number | null; hataEsigiYuzde: number; gecikmeEsigiMs: number };
+      maliyetButcesi: { aylikUsd: number; girisMilyonTokenUsd: number; cikisMilyonTokenUsd: number; paraBirimi: string };
+    }>("/ai/kullanim", { jeton });
+    expect(kullanim.durum, JSON.stringify(kullanim.veri)).toBe(200);
+    expect(kullanim.veri.telemetriAyarlari).toEqual({ saklamaGun: 45, sohbetSaklamaGun: 30, hataEsigiYuzde: 15, gecikmeEsigiMs: 7500 });
+    expect(kullanim.veri.maliyetButcesi).toMatchObject({ aylikUsd: 50, girisMilyonTokenUsd: 0.15, cikisMilyonTokenUsd: 0.6, paraBirimi: "USD" });
+  });
+
+  it("MIME etiketi doğru olsa bile sahte imzalı OCR dosyasını sağlayıcıdan önce reddeder", async () => {
+    const { jeton } = await firmaAc("ai-ocr", vknUret(true));
+    const yanit = await istek<{ message?: string }>("/ai/ocr/tara", {
+      method: "POST", jeton,
+      body: { mimeType: "image/png", gorselBase64: `data:image/png;base64,${Buffer.from("PNG olmayan içerik").toString("base64")}` },
+      headers: { "Idempotency-Key": `kabul-${crypto.randomUUID()}` },
+    });
+    expect(yanit.durum).toBe(400);
+    expect(String(yanit.veri.message)).toMatch(/gerçek tür|bildirilen tür/i);
+  });
+
+  it("başarılı OCR taramasını içerik saklamadan tenant denetimine yazar", async () => {
+    const { jeton, tenantId } = await firmaAc("ai-ocr-denetim", vknUret(true));
+    const goruntu = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgR9awAAAABJRU5ErkJggg==";
+    const yanit = await istek("/ai/ocr/tara", {
+      method: "POST", jeton,
+      body: { mimeType: "image/png", gorselBase64: goruntu, belgeTipi: "fis_fatura" },
+      headers: { "Idempotency-Key": `kabul-${crypto.randomUUID()}` },
+    });
+    expect(yanit.durum, JSON.stringify(yanit.veri)).toBe(201);
+
+    const iz = await denetimDb.aiOcrDenetim.findFirst({ where: { tenantId }, orderBy: { createdAt: "desc" } });
+    expect(iz).toMatchObject({
+      tenantId, mimeType: "image/png", dosyaBayt: 67, genislik: 1, yukseklik: 1,
+      saglayici: "mock", durum: "basarili", hataSinifi: null,
+    });
+    expect(iz?.sureMs).toEqual(expect.any(Number));
+    expect(iz).not.toHaveProperty("gorselBase64");
+    expect(iz).not.toHaveProperty("cikarilanVeri");
+  });
+});
+
 afterAll(() => {
   sunucu?.kill("SIGTERM");
   worker?.kill("SIGTERM");
+  void denetimDb.$disconnect();
 });
 
 describe("Kabul Ölçütü 1 — satış: e-belge yönlendirme, stok, cari, tahsilat", () => {

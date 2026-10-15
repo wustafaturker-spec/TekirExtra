@@ -58,6 +58,8 @@ export const SAGLAYICI_ZAMAN_ASIMI_MS = 60_000;
  */
 export interface IAiProvider {
   readonly saglayiciAdi: AiProviderTuru;
+  readonly modelAdi?: string;
+  readonly sonKullanim?: { girisToken?: number; cikisToken?: number };
 
   /**
    * Yapılandırılmış JSON çıktısı üretir (Zod şeması ile zorlanmış)

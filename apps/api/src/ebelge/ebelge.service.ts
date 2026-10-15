@@ -1,4 +1,5 @@
 import { stokKartiBul, tedarikciKodlariniOgren } from "./stok-eslesme";
+import { belgeNetMatrahlari, fiyatKarsilastir, yilOnce } from "./fiyat-analizi";
 import { earsivIptalGecenGun } from "./earsiv-iptal-suresi";
 import { faturaIrsaliyeAdaylari } from "../belgeler/irsaliye-eslesme";
 import { gonderenCariSec, tedarikciCariBulVeyaOlustur } from "../cari/tedarikci-cari";
@@ -1796,6 +1797,68 @@ export class EbelgeService {
    * Onay ekranının verisi: ayrıştırılmış belge + her satır için otomatik stok
    * eşleştirme önerisi (S-01: barkod → tedarikçi ürün kodu → ad).
    */
+  /** Yalnız okur: eşleştirme kullanıcıdan, fiyat ve tarih saklanan UBL'den gelir. */
+  async gelenFiyatAnalizi(id: string, eslesmeler: { siraNo: number; stokId: string; varyantId?: string | null }[]) {
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kayit = await tx.gelenEbelge.findFirst({ where: { id, tenantId } });
+      if (!kayit) throw new NotFoundException("Gelen belge bulunamadı");
+      let ubl: UblFatura;
+      try { ubl = faturaUblOku(kayit.xmlIcerik); }
+      catch { throw new BadRequestException("Belgenin XML'i okunamadı"); }
+      if (["IADE", "TEVKIFATIADE", "OZELMATRAH"].includes(ubl.faturaTipKodu))
+        throw new BadRequestException("İade ve özel matrah belgeleri fiyat analizine dahil değildir");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ubl.tarih) || !Number.isFinite(new Date(ubl.tarih).getTime()))
+        throw new BadRequestException("Belge tarihi geçersiz");
+      if (ubl.toplamlar.belgeArtirimi > 0 || ubl.toplamlar.belgeIskontosu < 0 ||
+        ubl.satirlar.some((s) => !Number.isFinite(s.matrah) || s.matrah < 0))
+        throw new BadRequestException("Belge tutarları fiyat karşılaştırmasına uygun değil");
+      if (new Set(ubl.satirlar.map((s) => s.siraNo)).size !== ubl.satirlar.length)
+        throw new BadRequestException("Belgede tekrar eden satır numarası var");
+      const netler = belgeNetMatrahlari(ubl.satirlar.map((s) => s.matrah), ubl.toplamlar.belgeIskontosu);
+      const toplam = netler.reduce((t, s) => t.plus(s), new Prisma.Decimal(0));
+      if (toplam.minus(String(ubl.toplamlar.matrah)).abs().greaterThan(Math.max(0.05, ubl.satirlar.length * 0.01)))
+        throw new BadRequestException("Satır net tutarları belge matrahıyla tutarsız; önce belgeyi kontrol edin");
+      const cariler = await tx.cariHesap.findMany({ where: { tenantId, vknTckn: kayit.gonderenVkn,
+        tip: { in: ["tedarikci", "her_ikisi"] } }, select: { id: true } });
+      const cari = cariler.length === 1 ? cariler[0] : null;
+      const uyari = cariler.length > 1 ? "Gönderen VKN ile birden çok tedarikçi kartı var; aynı tedarikçi karşılaştırması yapılmadı." : null;
+      const satirlar = [];
+      for (const e of eslesmeler) {
+        const i = ubl.satirlar.findIndex((s) => s.siraNo === e.siraNo);
+        if (i < 0) throw new BadRequestException("Eşleştirilen satır belgede yok");
+        const s = ubl.satirlar[i];
+        const stok = await tx.stokKart.findFirst({ where: { id: e.stokId, tenantId },
+          select: { id: true, kod: true, ad: true, varyantlar: { select: { id: true } } } });
+        if (!stok || (stok.varyantlar.length > 0 && !e.varyantId) ||
+          (e.varyantId && !stok.varyantlar.some((v) => v.id === e.varyantId)))
+          throw new BadRequestException("Ürün/varyant eşleştirmesini kontrol edin");
+        if (!Number.isFinite(s.miktar) || s.miktar <= 0 || new Prisma.Decimal(netler[i]).lessThanOrEqualTo(0)) {
+          satirlar.push({ siraNo: s.siraNo, ad: s.ad, stokAd: stok.ad, analiz: null, uyari: "Pozitif miktar ve net fiyat yok; bedelsiz/geçersiz satır karşılaştırılmadı." });
+          continue;
+        }
+        const gecmis = await tx.faturaSatir.findMany({
+          where: { tenantId, stokId: stok.id, varyantId: e.varyantId ?? null,
+            fatura: { tenantId, tip: "alis", durum: "kesin", ozelMatrahKodu: null,
+              tarih: { gte: new Date(yilOnce(ubl.tarih, 2)), lt: new Date(ubl.tarih) },
+              ...(kayit.faturaId ? { id: { not: kayit.faturaId } } : {}) } },
+          select: { miktar: true, matrah: true, birim: true, fatura: {
+            select: { id: true, no: true, tarih: true, createdAt: true, dovizCinsi: true, cariId: true, cari: { select: { unvan: true } } } } },
+          orderBy: [{ fatura: { tarih: "desc" } }, { fatura: { createdAt: "desc" } }, { faturaId: "asc" }, { id: "asc" }], take: 2001,
+        });
+        satirlar.push({ siraNo: s.siraNo, ad: s.ad, stokAd: stok.ad, uyari: uyari ?? null,
+          analiz: fiyatKarsilastir({ tarih: ubl.tarih, miktar: String(s.miktar), matrah: netler[i],
+            birim: s.birim, doviz: ubl.dovizCinsi, cariId: uyari ? null : cari?.id ?? null, kesildi: gecmis.length > 2000,
+            gecmis: gecmis.slice(0, 2000).map((g) => ({ miktar: g.miktar.toString(), matrah: g.matrah.toString(),
+              birim: g.birim, doviz: g.fatura.dovizCinsi, tarih: g.fatura.tarih.toISOString().slice(0, 10),
+              kayitAt: g.fatura.createdAt.toISOString(),
+              faturaId: g.fatura.id, no: g.fatura.no, cariId: g.fatura.cariId, unvan: g.fatura.cari.unvan })) }) });
+      }
+      return { belgeId: id, belgeTarihi: ubl.tarih, satirlar,
+        aciklama: "Belge gününden önceki kesin alışlar. Aynı ürün/varyant, birim ve döviz; yıllık artış iki ardışık 12 aylık miktar ağırlıklı ortalama farkıdır (enflasyondan arındırılmamıştır)." };
+    }, { timeout: 30_000 });
+  }
+
   async gelenGetir(id: string) {
     const { tenantId } = aktifBaglam();
 

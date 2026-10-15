@@ -85,6 +85,11 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const [ayarlarAcik, setAyarlarAcik] = useState(false);
   const [paletAcik, setPaletAcik] = useState(false);
   const [aiAsistanAcik, setAiAsistanAcik] = useState(false);
+  useEffect(() => {
+    const asistaniAc = () => setAiAsistanAcik(true);
+    window.addEventListener("tekir-asistan-ac", asistaniAc);
+    return () => window.removeEventListener("tekir-asistan-ac", asistaniAc);
+  }, []);
   const ayarlarTetikleyiciRef = useRef<HTMLButtonElement>(null);
   const [bildirimler, setBildirimler] = useState<BildirimTeslimati[]>([]);
   const [bildirimOzeti, setBildirimOzeti] = useState<BildirimOzeti>({ okunmamis: 0, acik: 0, kritik: 0 });

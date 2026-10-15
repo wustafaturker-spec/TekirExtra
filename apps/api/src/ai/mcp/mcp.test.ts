@@ -65,13 +65,18 @@ describe("MCP ucu (AI-09)", () => {
   function kur(kimlik: unknown = { tenantId: TENANT, userId: KULLANICI, rol: "muhasebe", anahtarId: "k1" }) {
     const anahtarlar = { dogrula: vi.fn().mockResolvedValue(kimlik) };
     const yurutucu = {
-      izinliAraclar: vi.fn(() => [{ ad: "cari_ara", aciklama: "Cari arar", sinif: "okuma", girdi: { "~standard": {} } }]),
+      izinliAraclar: vi.fn(() => [
+        { ad: "cari_ara", aciklama: "Cari arar", sinif: "okuma", girdi: { "~standard": {} } },
+        { ad: "belge_onayla", aciklama: "Belge onaylar", sinif: "onay", girdi: { "~standard": {} } },
+      ]),
       yurut: vi.fn(async () => ({ icerik: '{"durum":"onay_bekliyor"}', talep: { id: "t1" } })),
     };
+    const aiAracIstegi = { create: vi.fn().mockResolvedValue({ id: "i1" }), findUnique: vi.fn(), update: vi.fn().mockResolvedValue({}) };
+    const prisma = { tenantIslem: vi.fn((_t: string, fn: (tx: { aiAracIstegi: typeof aiAracIstegi }) => unknown) => fn({ aiAracIstegi })) };
     const res = { setHeader: vi.fn(), status: vi.fn() };
-    const c = new McpController(anahtarlar as never, yurutucu as never);
-    const istek = (govde: unknown, yetki = "Bearer tkx_x") => istekBaglami.run({}, async () => ({ sonuc: await c.istek(yetki, govde, res as never), baglam: baglamAl() }));
-    return { c, anahtarlar, yurutucu, res, istek };
+    const c = new McpController(anahtarlar as never, yurutucu as never, prisma as never);
+    const istek = (govde: unknown, yetki = "Bearer tkx_x", idempotencyKey?: string) => istekBaglami.run({}, async () => ({ sonuc: await c.istek(yetki, idempotencyKey, govde, res as never), baglam: baglamAl() }));
+    return { c, anahtarlar, yurutucu, aiAracIstegi, res, istek };
   }
 
   it("anahtarsız ya da geçersiz anahtarla 401", async () => {
@@ -87,10 +92,21 @@ describe("MCP ucu (AI-09)", () => {
 
   it("araç çağrısı ortak yürütücüye MCP kaynağıyla gider", async () => {
     const k = kur();
-    const { sonuc } = await k.istek({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "belge_onayla", arguments: { belgeId: "x" } } });
+    const { sonuc } = await k.istek({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "belge_onayla", arguments: { belgeId: "x" } } }, undefined, "mcp-call-0001");
     expect(k.yurutucu.izinliAraclar).toHaveBeenCalledWith("muhasebe");
     expect(k.yurutucu.yurut).toHaveBeenCalledWith({ ad: "belge_onayla", girdi: { belgeId: "x" } }, expect.any(Map), { kaynak: "mcp" });
     expect(sonuc).toMatchObject({ result: { content: [{ type: "text" }], isError: false } });
+    expect(k.aiAracIstegi.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ istekAnahtari: "mcp-call-0001", arac: "belge_onayla", kaynak: "mcp" }) }));
+    expect(k.aiAracIstegi.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ durum: "tamamlandi" }) }));
+  });
+
+  it("yan etkili araçta idempotency anahtarı ister; okuma aracında istemez", async () => {
+    const k = kur();
+    const eksik = await k.istek({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "belge_onayla", arguments: {} } });
+    expect(eksik.sonuc).toMatchObject({ error: { code: -32602 } });
+    expect(k.yurutucu.yurut).not.toHaveBeenCalled();
+    const okuma = await k.istek({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "cari_ara", arguments: {} } });
+    expect(okuma.sonuc).toHaveProperty("result");
   });
 
   it("bildirim gövdesiz 202 döner; bilinmeyen yöntem hata", async () => {

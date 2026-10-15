@@ -68,18 +68,38 @@ function giriseYonlendir(): Promise<never> {
 
 async function istekYap(yol: string, secenekler: RequestInit, token: string | null): Promise<Response> {
   const formVerisi = typeof FormData !== "undefined" && secenekler.body instanceof FormData;
+  const basliklar = new Headers(secenekler.headers);
+  if (!formVerisi && !basliklar.has("Content-Type")) basliklar.set("Content-Type", "application/json");
+  if (formVerisi) basliklar.delete("Content-Type");
+  if (token) basliklar.set("Authorization", `Bearer ${token}`);
   try {
     return await fetch(`${API_URL}${yol}`, {
       ...secenekler,
       credentials: "include",
-      headers: {
-        ...(!formVerisi ? { "Content-Type": "application/json" } : {}),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...secenekler.headers,
-      },
+      headers: basliklar,
     });
   } catch {
     throw new ApiHata("Sunucuya bağlanılamadı. Lütfen sunucunun çalıştığından emin olun.", 0);
+  }
+}
+
+async function idempotencyBilgisi(method: string, yol: string, body: BodyInit | null | undefined): Promise<{ anahtar: string; saklamaAnahtari: string | null }> {
+  if (typeof window === "undefined" || !window.crypto?.subtle) return { anahtar: crypto.randomUUID(), saklamaAnahtari: null };
+  let icerik = "";
+  if (typeof FormData !== "undefined" && body instanceof FormData) {
+    icerik = JSON.stringify(Array.from(body.entries(), ([ad, deger]) => [ad, deger instanceof File ? { ad: deger.name, boyut: deger.size, tarih: deger.lastModified, tur: deger.type } : deger]));
+  } else if (typeof body === "string") icerik = body;
+  const parmak = new Uint8Array(await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${method}\n${yol}\n${icerik}`)));
+  const ozet = Array.from(parmak, (x) => x.toString(16).padStart(2, "0")).join("");
+  const saklamaAnahtari = `tekir_idempotency_${ozet}`;
+  try {
+    const onceki = window.sessionStorage.getItem(saklamaAnahtari);
+    if (onceki) return { anahtar: onceki, saklamaAnahtari };
+    const anahtar = window.crypto.randomUUID();
+    window.sessionStorage.setItem(saklamaAnahtari, anahtar);
+    return { anahtar, saklamaAnahtari };
+  } catch {
+    return { anahtar: window.crypto.randomUUID(), saklamaAnahtari: null };
   }
 }
 
@@ -87,19 +107,37 @@ export async function api<T>(
   yol: string,
   secenekler: RequestInit = {},
 ): Promise<T> {
-  let yanit = await istekYap(yol, secenekler, tokenAl());
+  const method = (secenekler.method ?? "GET").toUpperCase();
+  const kullanilacakSecenekler = { ...secenekler };
+  let saklamaAnahtari: string | null = null;
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    const basliklar = new Headers(secenekler.headers);
+    if (!basliklar.has("Idempotency-Key")) {
+      const bilgi = await idempotencyBilgisi(method, yol, secenekler.body);
+      basliklar.set("Idempotency-Key", bilgi.anahtar);
+      saklamaAnahtari = bilgi.saklamaAnahtari;
+    }
+    kullanilacakSecenekler.headers = basliklar;
+  }
+  let yanit = await istekYap(yol, kullanilacakSecenekler, tokenAl());
   if (yanit.status === 401 && !yol.startsWith("/auth/")) {
     const yeniToken = await accessTokenYenile();
     if (!yeniToken) return giriseYonlendir();
-    yanit = await istekYap(yol, secenekler, yeniToken);
+    yanit = await istekYap(yol, kullanilacakSecenekler, yeniToken);
     if (yanit.status === 401) return giriseYonlendir();
   }
   const govde = (await yanit.json().catch(() => ({}))) as Record<string, unknown>;
   if (!yanit.ok) {
+    if (yanit.status >= 400 && yanit.status < 500 && yanit.status !== 409 && saklamaAnahtari) {
+      try { window.sessionStorage.removeItem(saklamaAnahtari); } catch { /* storage erişimi isteği etkilemez */ }
+    }
     const mesaj = Array.isArray(govde.message)
       ? govde.message.join("; ")
       : String(govde.message ?? "İstek başarısız");
     throw new ApiHata(mesaj, yanit.status);
+  }
+  if (saklamaAnahtari) {
+    try { window.sessionStorage.removeItem(saklamaAnahtari); } catch { /* storage erişimi isteği etkilemez */ }
   }
   return govde as T;
 }

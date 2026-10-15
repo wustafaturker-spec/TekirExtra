@@ -7,6 +7,9 @@ import { aracGirdisiniAyristir, saglayiciIstegi } from "./aracli-ortak";
  */
 export class AnthropicAiProvider implements IAiProvider {
   readonly saglayiciAdi: AiProviderTuru = "anthropic";
+  get modelAdi() { return this.model; }
+  sonKullanim?: { girisToken?: number; cikisToken?: number };
+  private kullanimiAl(veri: any) { this.sonKullanim = { girisToken: veri.usage?.input_tokens, cikisToken: veri.usage?.output_tokens }; }
   private apiKey: string;
   private model: string;
 
@@ -53,6 +56,7 @@ export class AnthropicAiProvider implements IAiProvider {
         messages: [{ role: "user", content }],
         temperature: 0.1,
       });
+    this.kullanimiAl(veri);
     const hamMetin = veri.content?.[0]?.text;
     if (!hamMetin) {
       throw new Error("Anthropic API'den boş yanıt döndü.");
@@ -80,6 +84,7 @@ export class AnthropicAiProvider implements IAiProvider {
         messages: [{ role: "user", content: girdi.prompt }],
         temperature: 0.3,
       });
+    this.kullanimiAl(veri);
     return veri.content?.[0]?.text || "";
   }
 
@@ -106,6 +111,7 @@ export class AnthropicAiProvider implements IAiProvider {
       messages,
       tools: girdi.araclar.map((a) => ({ name: a.ad, description: a.aciklama, input_schema: a.girdiSemasi })),
     });
+    this.kullanimiAl(veri);
     const bloklar: any[] = Array.isArray(veri.content) ? veri.content : [];
     return {
       metin: bloklar.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim(),

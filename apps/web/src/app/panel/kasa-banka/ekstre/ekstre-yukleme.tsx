@@ -6,7 +6,7 @@
  * ilk yüklemede kullanıcı eşler; eşleme hesaba kaydedilir.
  */
 import { useState } from "react";
-import { tokenAl } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Alert, Badge, Button, Card, Field, Input, Select, TableWrap } from "@/components/ui";
 
 export interface BankaHesap {
@@ -52,16 +52,6 @@ const ESLEME_ALANLARI: { anahtar: keyof SutunEslemesi; baslik: string }[] = [
   { anahtar: "bakiye", baslik: "Bakiye (mutabakat için)" },
 ];
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1";
-
-async function formGonder<T>(yol: string, govde: FormData): Promise<T> {
-  // FormData'da Content-Type'ı tarayıcı sınır bilgisiyle kendisi kurmalı.
-  const yanit = await fetch(`${API}${yol}`, { method: "POST", credentials: "include", headers: { Authorization: `Bearer ${tokenAl() ?? ""}` }, body: govde });
-  const veri = await yanit.json();
-  if (!yanit.ok) throw new Error(veri.message ?? "İşlem başarısız");
-  return veri as T;
-}
-
 export function EkstreYukleme({
   hesaplar,
   varsayilanHesap,
@@ -89,7 +79,7 @@ export function EkstreYukleme({
       const govde = new FormData();
       govde.append("dosya", dosya);
       govde.append("bankaHesapId", secilenHesap);
-      const veri = await formGonder<Onizleme>("/kasa-banka/ekstre/onizle", govde);
+      const veri = await api<Onizleme>("/kasa-banka/ekstre/onizle", { method: "POST", body: govde });
       setOnizleme(veri);
       setEsleme(veri.esleme);
     } catch (h) {
@@ -107,7 +97,7 @@ export function EkstreYukleme({
       const govde = new FormData();
       govde.append("dosya", dosya);
       govde.append("veri", JSON.stringify({ bankaHesapId: onizleme.bankaHesapId, esleme, eslemeyiKaydet }));
-      const veri = await formGonder<{ okunanSatir: number; yeniSatir: number; yinelenenSatir: number; atlananSatir: number }>("/kasa-banka/ekstre/yukle", govde);
+      const veri = await api<{ okunanSatir: number; yeniSatir: number; yinelenenSatir: number; atlananSatir: number }>("/kasa-banka/ekstre/yukle", { method: "POST", body: govde });
       onYuklendi(
         `${veri.okunanSatir} hareket okundu; ${veri.yeniSatir} yeni satır eklendi`
           + (veri.yinelenenSatir > 0 ? `, ${veri.yinelenenSatir} satır daha önce yüklenmişti (atlandı)` : "")

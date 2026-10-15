@@ -1091,6 +1091,19 @@ hatırlatma metni** eklenir.
 | AI-21 | **Fiyat önerisi ayarları:** grup iskontoları (bayi, toptan, VIP), hacim eşikleri ve aylık finansman oranı Ayarlar > Modüller'de kiracı ayarı olur; bugünkü sabit değerler varsayılan kalır. | Z |
 | AI-22 | **E2e bakım:** e2e taklitlerindeki e-Belge uygulamaları verisi güncel biçime getirilir; e2e paketi yeşile döner. | Z |
 
+**S-01 kararları, üçüncü tur (2026-10-15, kullanıcı onayı):** "Accounting Intelligence V2" üretim planı
+uygulamayla karşılaştırıldı. Planın "asistan kayıt oluşturamaz" sınırı **uygulanmaz**; yetki kuralı
+yukarıdaki §3.18 kararıdır. Plana göre yazılan bellek içi `assistant` modülü (görev/içgörü/olay
+`Map`'te, ekranla tutmayan nakit hesabı, ayrı risk skoru, kullanılmayan Docker sandbox, `tekir …`
+CLI'ı ve `/intelligence` uçları) kaldırılır; analiz mevcut AI görev hattına (AI-16) bağlanır.
+
+| No | İster | Öncelik |
+|---|---|---|
+| AI-23 | **Nakit ve tahsilat analizi görevi:** AI görevinin türü olur: `ASISTAN` (bugünkü, talimat dil modeline gider) ya da `NAKIT_TAHSILAT` (deterministik; dil modeli kullanılmaz, talimat gerekmez). Tetikleyiciler, worker zamanlayıcısı, günlük çalışma kaydı, 3 deneme ve bildirim AI-16 ile aynıdır. Analiz görev sahibinin kimliği ve **güncel rolüyle** ekran uçlarından okur: 30 günlük nakit akışı tahmini (`GET /nakit-akisi`, ekranla aynı hesap: döviz, çek/senet, kredi taksiti, bordro dahil), vadesi geçen alacaklar (RPR-17), tahsilat öncelikleri (AI-18, ilk 5). Ayrı risk hesabı yapılmaz (AI-17). Rolün göremediği bölüm atlanır ve "rolünüzle görülemiyor" diye yazılır; hiçbir bölüm görülemezse çalışma hata sayılır. Model çağrısı olmadığından AI-14 onayı ve AI-15 sayacı uygulanmaz. | Z |
+| AI-24 | **İçgörü kaydı:** her analiz `ai_icgoruler` tablosuna (RLS) yazılır: önem (kritik/uyarı/bilgi), başlık, özet, metrikler, bulgular (ekran bağlantılı), kanıtlar (hangi uçtan, hesap esası/sürümü), varsayımlar, uyarılar (eksik kur, atlanan bölüm), hesaplanma zamanı, görev ve hesaplayan kullanıcı. Aynı görevin aynı günkü tekrar çalışması aynı kaydı günceller. Durum: yeni / görüldü / çözüldü. Önem: nakit **baz** senaryoda eksiye düşüyorsa kritik; yalnız kötümser senaryoda düşüyorsa ya da vadesi geçen alacak varsa uyarı; aksi bilgi. Nakit açığı "kesin" diye değil, senaryo adıyla sunulur. Kayıtlar 90 gün saklanır (AI bakım işi siler). | Z |
+| AI-25 | **İçgörü ekranı:** nakit akışı sayfasındaki kartlar `ai_icgoruler`'den okur (yönetici, muhasebe); veri yoksa boş durum gösterilir, örnek/uydurma kart gösterilmez. Kartta hesaplanma zamanı, hesaplayan, bulguların ekran bağlantıları, kanıt ve uyarılar görünür; durum "görüldü/çözüldü" yapılabilir. "Şimdi analiz et" düğmesi analizi o kullanıcının kimliğiyle hemen çalıştırır (günde tek kayıt, tekrar basınca güncellenir). Ayarlar > Yapay Zeka görev formunda tür seçilir; `NAKIT_TAHSILAT` seçilince talimat alanı gizlenir. | Z |
+| AI-26 | **V2 temizliği:** `apps/api/src/assistant/`, `api/openapi.yaml`, `docker/sandbox/`, `reports/qa-acceptance.md` ve `reports/pilot-rollout-report.md` kaldırılır; `/intelligence` ve `/assistant` uçları yoktur (asistan `/ai/ajan`, içgörüler `/ai/icgoruler`). | Z |
+
 ## 4. Fonksiyonel Olmayan İsterler
 
 ### 4.1 Performans

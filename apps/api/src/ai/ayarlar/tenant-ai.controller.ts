@@ -1,5 +1,5 @@
 import { Controller, Get, Put, Post, Delete, Body, Param } from "@nestjs/common";
-import { TenantAiService, TenantAiAyariGirdi, TenantAiGorevGirdi } from "./tenant-ai.service";
+import { TenantAiService, TenantAiAyariGirdi } from "./tenant-ai.service";
 import { Roller } from "../../auth/roller.decorator";
 import { aktifBaglam } from "../../core/istek-baglami";
 import { TenantAiYapilandirma } from "../saglayici/ai-provider.factory";
@@ -29,9 +29,9 @@ export class TenantAiController {
 
   /** AI-14: yurt dışı aktarım onayı ver / geri al. */
   @Post("ayarlar/yurt-disi-onay")
-  async yurtDisiOnay(@Body() govde: { onay?: unknown }) {
+  async yurtDisiOnay(@Body() govde: { onay?: unknown; politikaSurumu?: unknown }) {
     const { tenantId } = aktifBaglam();
-    return this.service.yurtDisiOnay(tenantId, govde?.onay === true);
+    return this.service.yurtDisiOnay(tenantId, govde?.onay === true, typeof govde?.politikaSurumu === "string" ? govde.politikaSurumu : undefined);
   }
 
   /** AI-15: son 30 günün kullanım sayacı. */
@@ -41,6 +41,11 @@ export class TenantAiController {
     return this.service.kullanim(tenantId);
   }
 
+  @Get("kalite")
+  kalite() {
+    return this.service.kalite(aktifBaglam().tenantId);
+  }
+
   @Get("gorevler")
   async gorevleriListele() {
     const { tenantId } = aktifBaglam();
@@ -48,13 +53,13 @@ export class TenantAiController {
   }
 
   @Post("gorevler")
-  async gorevOlustur(@Body() girdi: TenantAiGorevGirdi) {
+  async gorevOlustur(@Body() girdi: unknown) {
     const { tenantId } = aktifBaglam();
     return this.service.gorevOlustur(tenantId, girdi);
   }
 
   @Put("gorevler/:id")
-  async gorevGuncelle(@Param("id") id: string, @Body() girdi: Partial<TenantAiGorevGirdi>) {
+  async gorevGuncelle(@Param("id") id: string, @Body() girdi: unknown) {
     const { tenantId } = aktifBaglam();
     return this.service.gorevGuncelle(tenantId, id, girdi);
   }

@@ -1,10 +1,11 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, forwardRef } from "@nestjs/common";
 import type { AiIslemKaynagi, AiOnayTalebi, Prisma } from "@prisma/client";
 import { BildirimService } from "../../bildirimler/bildirim.service";
 import { aktifBaglam } from "../../core/istek-baglami";
 import { PrismaService } from "../../core/prisma.service";
 import { aracBul } from "../ajan/araclar";
 import { UcCagirici } from "../ajan/uc-cagirici";
+import type { OnayOnizlemesi } from "../ajan/araclar/arac";
 
 /** AI-04: talep 24 saat geçerlidir. */
 export const ONAY_TALEBI_SURESI_MS = 24 * 60 * 60 * 1000;
@@ -15,6 +16,7 @@ export interface OnayTalebiGorunumu {
   id: string;
   arac: string;
   ozet: string;
+  onizleme: OnayOnizlemesi | null;
   kaynak: AiIslemKaynagi;
   durum: string;
   gecerlilikSonu: string;
@@ -29,6 +31,7 @@ function gorunum(t: AiOnayTalebi): OnayTalebiGorunumu {
     id: t.id,
     arac: t.arac,
     ozet: t.ozet,
+    onizleme: (t.onizleme as unknown as OnayOnizlemesi | null) ?? null,
     kaynak: t.kaynak,
     durum: t.durum,
     gecerlilikSonu: t.gecerlilikSonu.toISOString(),
@@ -62,10 +65,11 @@ export class AiOnayService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly uc: UcCagirici,
+    @Inject(forwardRef(() => BildirimService))
     private readonly bildirimler: BildirimService,
   ) {}
 
-  async olustur(girdi: { arac: string; parametreler: unknown; ozet: string; kaynak: AiIslemKaynagi; oturumId?: string | null }): Promise<OnayTalebiGorunumu> {
+  async olustur(girdi: { arac: string; parametreler: unknown; ozet: string; onizleme?: OnayOnizlemesi | null; kaynak: AiIslemKaynagi; oturumId?: string | null }): Promise<OnayTalebiGorunumu> {
     const { tenantId, userId } = aktifBaglam();
     const talep = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.aiOnayTalebi.create({
@@ -77,6 +81,7 @@ export class AiOnayService {
           arac: girdi.arac,
           parametreler: JSON.parse(JSON.stringify(girdi.parametreler ?? {})) as Prisma.InputJsonValue,
           ozet: girdi.ozet,
+          onizleme: girdi.onizleme ? JSON.parse(JSON.stringify(girdi.onizleme)) as Prisma.InputJsonValue : undefined,
           gecerlilikSonu: new Date(Date.now() + ONAY_TALEBI_SURESI_MS),
         },
       }),

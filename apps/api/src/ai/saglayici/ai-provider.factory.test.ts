@@ -2,10 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ServiceUnavailableException } from "@nestjs/common";
 import { AiProviderFactory, kiraciAdresiHatasi } from "./ai-provider.factory";
 
+vi.mock("node:dns/promises", () => ({ lookup: vi.fn(async () => [{ address: "203.0.113.10", family: 4 }]) }));
+
 describe("AiProviderFactory", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
+    vi.clearAllMocks();
   });
 
   it("sağlayıcı tanımlı değilse örnek veri değil 503 döner", async () => {
@@ -58,6 +61,20 @@ describe("AiProviderFactory", () => {
     const p = AiProviderFactory.uret({ saglayici: "openai", apiKey: "sk-kiraci", baseUrl: "https://10.0.0.5/v1" });
     await expect(p.metinUret({ prompt: "x" })).rejects.toThrow(/adresi kullanılamaz/);
     expect(fetchSahte).not.toHaveBeenCalled();
+  });
+
+  it("alan adı özel IP'ye çözülürse ve sağlayıcı yönlendirme döndürürse istek engellenir", async () => {
+    const { lookup } = await import("node:dns/promises");
+    vi.mocked(lookup).mockResolvedValueOnce([{ address: "127.0.0.1", family: 4 }] as never);
+    const fetchSahte = vi.fn();
+    vi.stubGlobal("fetch", fetchSahte);
+    await expect(AiProviderFactory.uret({ saglayici: "openai", apiKey: "sk-x", baseUrl: "https://ai.example.com/v1" }).metinUret({ prompt: "x" })).rejects.toThrow(/yanıt vermedi/);
+    expect(fetchSahte).not.toHaveBeenCalled();
+
+    vi.mocked(lookup).mockResolvedValueOnce([{ address: "203.0.113.10", family: 4 }] as never);
+    fetchSahte.mockResolvedValueOnce({ status: 302, ok: false });
+    await expect(AiProviderFactory.uret({ saglayici: "openai", apiKey: "sk-x", baseUrl: "https://ai.example.com/v1" }).metinUret({ prompt: "x" })).rejects.toThrow(/yönlendirme/);
+    expect(fetchSahte.mock.calls[0][1].redirect).toBe("manual");
   });
 
   it("Ollama adresi kiracıdan alınmaz", () => {

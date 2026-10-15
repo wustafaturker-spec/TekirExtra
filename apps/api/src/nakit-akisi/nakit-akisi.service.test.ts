@@ -108,6 +108,46 @@ describe("NakitAkisiService", () => {
     expect(sonuc.uyarilar).toEqual([]);
   });
 
+  it("kapsam bordro yasal ödemelerinin koşullu dahil edildiğini ve ödeme takibi sınırını açıklar", async () => {
+    const sonuc = await kurulum().service.tahmin(30);
+    expect(sonuc.kapsamDisi.join(" ")).not.toContain("muhtasar ve SGK ödemeleri tahmine dahil değildir");
+    expect(sonuc.kapsamNotlari.join(" ")).toContain("Ayrı ödeme takibi olmadığı");
+    expect(sonuc.kapsamNotlari.join(" ")).toContain("SGK ve muhtasar");
+    expect(sonuc.hesapEsaslari).toMatchObject({ baz: "nakit_senaryosu", paraBirimi: "TRY", iadeEsasi: "ters_yon" });
+  });
+
+  it("nakit çek filtresi teminat/ciro evraklarını dışarıda tutar; vade portföyüyle karışmaz", async () => {
+    const { service, tx } = kurulum();
+    const sonuc = await service.tahmin(30);
+    expect(tx.cekSenet.findMany.mock.calls[0][0].where.OR).toEqual([
+      { yon: "alinan", durum: { in: ["portfoyde", "tahsile_verildi"] } },
+      { yon: "verilen", durum: "verildi" },
+    ]);
+    expect(sonuc.kapsamDisi.join(" ")).toContain("teminata verilmiş");
+    expect(sonuc.kapsamNotlari.join(" ")).toContain("nakit girişine eklenmez");
+  });
+
+  it("yasal bordro tutarını ufukta dahil eder, geçmiş vadeyi dahil etmez ve tekrarı tahmin işaretler", async () => {
+    const { service, tx } = kurulum();
+    tx.personelBordro.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { donemYil: 2026, donemAy: 7, durum: "odendi", hesapOzeti: { isverenSgkNet: 999, gelirVergisi: 999 } },
+        { donemYil: 2026, donemAy: 8, durum: "onaylandi", hesapOzeti: { isverenSgkNet: 300, sgkIsci: 200, gelirVergisi: 10, damgaVergisi: 5 } },
+      ] as never);
+    const sonuc = await service.tahmin(90);
+    const yasal = sonuc.kalemler.filter((k) => k.kaynak === "bordro_yasal");
+    expect(yasal.some((k) => k.vade < sonuc.bugun)).toBe(false);
+    expect(yasal.filter((k) => !k.tahmin)).toMatchObject([
+      // Mevcut motor 26 Eylül cumartesiyi 28 Eylül pazartesiye taşır.
+      { vade: "2026-09-28", tutar: 500, yon: "cikis" },
+      { vade: "2026-09-28", tutar: 15, yon: "cikis" },
+    ]);
+    expect(yasal.filter((k) => k.tahmin)).toHaveLength(4);
+    expect(yasal.filter((k) => k.tahmin).every((k) => k.aciklama.includes("son dönemin tekrarı"))).toBe(true);
+  });
+
   it("her kaynaktan doğru yön, tutar ve tarihte kalem üretir", async () => {
     const { kalemler } = await kurulum().service.tahmin(30);
     const bul = (aciklama: string) => kalemler.filter((k) => k.aciklama.includes(aciklama));

@@ -10,7 +10,7 @@ const BELGE_ID = "7a1d2e3f-4b5c-4d6e-8f70-81920a1b2c3d";
 function talep(ek: Record<string, unknown> = {}) {
   return {
     id: "talep-1", tenantId: TENANT, userId: KULLANICI, oturumId: null, kaynak: "asistan", arac: "belge_onayla",
-    parametreler: { belgeId: BELGE_ID }, ozet: "Onaylanacak: Teklif", durum: "bekliyor",
+    parametreler: { belgeId: BELGE_ID }, ozet: "Onaylanacak: Teklif", onizleme: null, durum: "bekliyor",
     gecerlilikSonu: new Date(Date.now() + 3_600_000), kararAt: null, sonuc: null, hata: null, createdAt: new Date(), ...ek,
   };
 }
@@ -46,6 +46,14 @@ describe("onay talepleri (AI-04)", () => {
     expect(data.userId).toBe(KULLANICI);
     expect((data.gecerlilikSonu as Date).getTime() - Date.now()).toBeGreaterThan(23.9 * 3_600_000);
     expect(k.bildirimler.uret).toHaveBeenCalledWith(expect.objectContaining({ tur: "yapay_zeka", kullaniciIdler: [KULLANICI], roller: [] }));
+  });
+
+  it("yapılandırılmış işlem önizlemesini talep anında sabitler", async () => {
+    const k = kur(talep());
+    const onizleme = { eylem: "Cari kartını güncelle", hedef: "Kaya Ltd (120.01)", degisiklikler: [{ alan: "telefon", once: "111", sonra: "222" }] };
+    const sonuc = await k.olarak(() => k.service.olustur({ arac: "cari_guncelle", parametreler: {}, ozet: "Cari güncellenecek", onizleme, kaynak: "asistan" }));
+    expect(k.tx.aiOnayTalebi.create.mock.calls[0][0].data.onizleme).toEqual(onizleme);
+    expect(sonuc.onizleme).toEqual(onizleme);
   });
 
   it("onayda araç talepteki parametrelerle, talep kimliği iziyle çalışır", async () => {

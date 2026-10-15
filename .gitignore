@@ -2,6 +2,12 @@ node_modules/
 dist/
 .next/
 .next-codex/
+.next-cek-e2e/
+.next-onay-release-20261014/
+.next-ai-http-e2e/
+.next-p0-02-release-20261014/
+.next-ekstre-release-20261015/
+.next-ekstre-e2e/
 .turbo/
 coverage/
 playwright-report/

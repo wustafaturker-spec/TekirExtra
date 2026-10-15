@@ -18,6 +18,13 @@ export interface AracBaglami {
   talepId?: string;
 }
 
+export interface OnayOnizlemesi {
+  eylem: string;
+  hedef: string;
+  etkiler?: string[];
+  degisiklikler?: Array<{ alan: string; once?: unknown; sonra: unknown }>;
+}
+
 export interface AjanAraci<G = any> {
   ad: string;
   aciklama: string;
@@ -29,6 +36,8 @@ export interface AjanAraci<G = any> {
   calistir(b: AracBaglami, girdi: G): Promise<unknown>;
   /** Yalnız onay sınıfı: yan etkisiz, insan okunur talep özeti (ne olacak, hangi kayıt, tutar). */
   ozetle?(b: AracBaglami, girdi: G): Promise<string>;
+  /** Yalnız onay sınıfı: talep açılırken sabitlenen yapılandırılmış işlem planı/farkı. */
+  onizle?(b: AracBaglami, girdi: G): Promise<OnayOnizlemesi>;
 }
 
 export function arac<G>(tanim: AjanAraci<G>): AjanAraci<G> {
@@ -60,6 +69,7 @@ export const adres = {
   cari: (id: string) => `/panel/cari/${id}`,
   stok: (id: string) => `/panel/stok/${id}`,
   masraf: () => "/panel/masraflar",
+  eposta: () => "/panel/eposta",
 };
 
 export function para(deger: unknown, doviz = "TRY"): string {

@@ -5,10 +5,12 @@ import { EbelgeController } from "../../../ebelge/ebelge.controller";
 import { FaturaController } from "../../../fatura/fatura.controller";
 import { KasaBankaController } from "../../../kasa-banka/kasa-banka.controller";
 import { MasraflarController } from "../../../masraflar/masraflar.controller";
+import { NakitAkisiController } from "../../../nakit-akisi/nakit-akisi.controller";
 import { RaporController } from "../../../rapor/rapor.controller";
 import { RaporlarController } from "../../../core/raporlar/raporlar.controller";
 import { StokController } from "../../../stok/stok.controller";
 import { VadeHatirlatmaController } from "../../../cari/vade-hatirlatma.controller";
+import { GelenEpostaController } from "../../../tenant/gelen-eposta.controller";
 import type { UcTanimi } from "../uc-cagirici";
 
 const uc = (denetleyici: UcTanimi["denetleyici"], yontem: string, yol: string): UcTanimi => ({ denetleyici, yontem, yol });
@@ -33,6 +35,7 @@ export const UC = {
   belgeOlustur: uc(BelgelerController, "olustur", "POST /belgeler"),
   belgeOnayla: uc(BelgelerController, "onayla", "POST /belgeler/:id/onayla"),
   belgeIptal: uc(BelgelerController, "iptal", "POST /belgeler/:id/iptal"),
+  belgeDonustur: uc(BelgelerController, "donustur", "POST /belgeler/:id/donustur"),
   belgeEposta: uc(BelgelerController, "pdfGonder", "POST /belgeler/:id/pdf-gonder"),
 
   faturaListe: uc(FaturaController, "listele", "GET /fatura"),
@@ -50,6 +53,7 @@ export const UC = {
   bankaListe: uc(KasaBankaController, "bankaListele", "GET /kasa-banka/bankalar"),
   kasaBankaHareket: uc(KasaBankaController, "hareketEkle", "POST /kasa-banka/hareketler"),
 
+  nakitAkisi: uc(NakitAkisiController, "tahmin", "GET /nakit-akisi"),
   vadesiGecenler: uc(RaporController, "vadesiGecenler", "GET /rapor/vadesi-gecenler"),
   finansalOzet: uc(RaporController, "finansalOzet", "GET /rapor/ozet"),
   gelirGider: uc(RaporController, "gelirGiderRaporu", "GET /rapor/gelir-gider"),
@@ -60,4 +64,12 @@ export const UC = {
   tahsilatOncelikleri: uc(VadeHatirlatmaController, "oncelikler", "GET /cari/vade-hatirlatma/oncelikler"),
   tahsilatRiski: uc(VadeHatirlatmaController, "cariRiski", "GET /cari/vade-hatirlatma/risk/:cariId"),
   vadeHatirlatmaGonder: uc(VadeHatirlatmaController, "gonder", "POST /cari/vade-hatirlatma/gonder"),
+
+  gelenEpostaListe: uc(GelenEpostaController, "listele", "GET /eposta/gelen"),
+  gelenEpostaGetir: uc(GelenEpostaController, "getir", "GET /eposta/gelen/:id"),
+  gelenEpostaCrmGorev: uc(GelenEpostaController, "crmGorevOlustur", "POST /eposta/gelen/:id/crm-gorev"),
+  gelenEpostaSenkronize: uc(GelenEpostaController, "senkronizeEt", "POST /eposta/gelen/senkronize-et"),
+  gelenEpostaEkOcr: uc(GelenEpostaController, "ekOcrCikar", "POST /eposta/gelen/:id/ekler/:ekId/ocr"),
+  gelenEpostaDurum: uc(GelenEpostaController, "durumGuncelle", "PATCH /eposta/gelen/:id/durum"),
+  gelenEpostaOkundu: uc(GelenEpostaController, "okunduGuncelle", "PATCH /eposta/gelen/:id/okundu"),
 };

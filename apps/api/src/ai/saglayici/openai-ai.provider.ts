@@ -7,14 +7,19 @@ import { aracGirdisiniAyristir, saglayiciIstegi } from "./aracli-ortak";
  */
 export class OpenAiAiProvider implements IAiProvider {
   readonly saglayiciAdi: AiProviderTuru = "openai";
+  get modelAdi() { return this.model; }
+  sonKullanim?: { girisToken?: number; cikisToken?: number };
+  private kullanimiAl(veri: any) { this.sonKullanim = { girisToken: veri.usage?.prompt_tokens, cikisToken: veri.usage?.completion_tokens }; }
   private apiKey: string;
   private model: string;
   private baseUrl: string;
+  private dnsDogrula: boolean;
 
-  constructor(apiKey?: string, model = "gpt-4o-mini", baseUrl = "https://api.openai.com/v1") {
+  constructor(apiKey?: string, model = "gpt-4o-mini", baseUrl?: string) {
     this.apiKey = apiKey || process.env.OPENAI_API_KEY || "";
     this.model = model;
-    this.baseUrl = baseUrl.replace(/\/+$/, "");
+    this.baseUrl = (baseUrl || "https://api.openai.com/v1").replace(/\/+$/, "");
+    this.dnsDogrula = Boolean(baseUrl);
   }
 
   async yapilandirilmisUretim<T>(
@@ -30,12 +35,12 @@ export class OpenAiAiProvider implements IAiProvider {
       messages.push({
         role: "system",
         content: `${girdi.sistemRol}\nYanıtını SADECE geçerli bir JSON nesnesi olarak ver. Markdown codeblock tırnakları ekleme.`,
-      });
+      }, { dnsDogrula: this.dnsDogrula });
     } else {
       messages.push({
         role: "system",
         content: "Lütfen yanıtını SADECE geçerli bir JSON formatında döndür.",
-      });
+      }, { dnsDogrula: this.dnsDogrula });
     }
 
     const userContent: any[] = [{ type: "text", text: girdi.prompt }];
@@ -60,7 +65,8 @@ export class OpenAiAiProvider implements IAiProvider {
         messages,
         response_format: { type: "json_object" },
         temperature: 0.1,
-      });
+      }, { dnsDogrula: this.dnsDogrula });
+    this.kullanimiAl(veri);
     const hamMetin = veri.choices?.[0]?.message?.content;
     if (!hamMetin) {
       throw new Error("OpenAI API'den boş yanıt döndü.");
@@ -88,7 +94,8 @@ export class OpenAiAiProvider implements IAiProvider {
         model: this.model,
         messages,
         temperature: 0.3,
-      });
+      }, { dnsDogrula: this.dnsDogrula });
+    this.kullanimiAl(veri);
     return veri.choices?.[0]?.message?.content || "";
   }
 
@@ -104,7 +111,8 @@ export class OpenAiAiProvider implements IAiProvider {
       messages,
       temperature: 0.2,
       tools: girdi.araclar.map((a) => ({ type: "function", function: { name: a.ad, description: a.aciklama, parameters: a.girdiSemasi } })),
-    });
+    }, { dnsDogrula: this.dnsDogrula });
+    this.kullanimiAl(veri);
     const mesaj = veri.choices?.[0]?.message ?? { role: "assistant", content: "" };
     const cagrilar: any[] = Array.isArray(mesaj.tool_calls) ? mesaj.tool_calls : [];
     return {

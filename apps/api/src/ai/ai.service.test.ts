@@ -4,8 +4,23 @@ import { istekBaglami } from "../core/istek-baglami";
 import { MockAiProvider } from "./saglayici/mock-ai.provider";
 import { fisFaturaDogrula } from "./ai.dogrulama";
 import { vknGecerliMi, tcknGecerliMi } from "@tekirextra/shared";
+import { OCR_AZAMI_GORSEL_PIKSEL, ocrDosyasiniDogrula } from "./ai.semalar";
 
 describe("Ai Doğrulama ve Algoritma Motoru (Hata Toleransı Testleri)", () => {
+  it("OCR dosyasında boyut, MIME beyanı ve gerçek dosya imzasını denetler", () => {
+    const pngBaslik = Buffer.alloc(24);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(pngBaslik);
+    pngBaslik.writeUInt32BE(1, 16);
+    pngBaslik.writeUInt32BE(1, 20);
+    const png = `data:image/png;base64,${pngBaslik.toString("base64")}`;
+    expect(() => ocrDosyasiniDogrula({ gorselBase64: png, mimeType: "image/png", belgeTipi: "fis_fatura" })).not.toThrow();
+    expect(() => ocrDosyasiniDogrula({ gorselBase64: png, mimeType: "image/jpeg", belgeTipi: "fis_fatura" })).toThrow(/türü/);
+    expect(() => ocrDosyasiniDogrula({ gorselBase64: "data:image/png;base64,SGVsbG8=", mimeType: "image/png", belgeTipi: "fis_fatura" })).toThrow(/gerçek türü/);
+
+    pngBaslik.writeUInt32BE(OCR_AZAMI_GORSEL_PIKSEL + 1, 16);
+    expect(() => ocrDosyasiniDogrula({ gorselBase64: `data:image/png;base64,${pngBaslik.toString("base64")}`, mimeType: "image/png", belgeTipi: "fis_fatura" })).toThrow(/40 megapiksel/);
+  });
+
   it("geçerli ve geçersiz VKN'leri doğru ayırt eder", () => {
     // 10 haneli standart VKN kontrolü
     expect(vknGecerliMi("1234567890")).toBe(true);
@@ -55,8 +70,11 @@ describe("AiService Entegrasyonu", () => {
     mockPrisma = {
       tenantIslem: vi.fn((tenantId, cb) =>
         cb({
+          $executeRaw: vi.fn().mockResolvedValue(1),
+          aiCagriIz: { create: vi.fn().mockResolvedValue({ id: "ai-iz-1" }) },
           tenantAiAyari: { findUnique: vi.fn().mockResolvedValue(null) },
           aiKullanim: { aggregate: vi.fn().mockResolvedValue({ _sum: { cagri: 0 } }), upsert: vi.fn() },
+          aiOcrDenetim: { create: vi.fn().mockResolvedValue({ id: "ocr-iz-1" }), update: vi.fn().mockResolvedValue({}) },
           cariHesap: {
             findFirst: vi.fn().mockResolvedValue({
               id: "cari-123",
@@ -74,6 +92,7 @@ describe("AiService Entegrasyonu", () => {
   it("fiş görselinden doğru alanları çıkarır, carisi varsa otomatik eşleştirir", async () => {
     const sonuc = await istekBaglami.run({ deger: { tenantId: "tenant-1", userId: "u1", rol: "muhasebe" } }, () => service.fisFaturaOcrTara("tenant-1", {
       gorselBase64: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      mimeType: "image/png",
       belgeTipi: "fis_fatura",
     }));
 

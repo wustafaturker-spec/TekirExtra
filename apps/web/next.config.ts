@@ -2,7 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  distDir: process.env.NEXT_DIST_DIR ?? ".next",
+  // Geliştirme ve üretim aynı klasörü kullanırsa eşzamanlı `next dev` / `next build`
+  // işlemleri manifestleri silip 500 hatasına yol açabiliyor.
+  distDir: process.env.NEXT_DIST_DIR ?? (process.env.NODE_ENV === "development" ? ".next-dev" : ".next"),
   async rewrites() {
     return [
       {

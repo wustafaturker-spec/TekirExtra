@@ -72,8 +72,10 @@ registerModulAyar(
   z.object({
     varsayilanKasaId: z.string().uuid().optional().nullable(),
     varsayilanBankaHesapId: z.string().uuid().optional().nullable(),
+    cekSenetHatirlatmaGun: z.number().int().min(0).max(90).default(7),
+    cekSenetVadeGunuHatirlat: z.boolean().default(true),
   }),
-  { varsayilanKasaId: null, varsayilanBankaHesapId: null },
+  { varsayilanKasaId: null, varsayilanBankaHesapId: null, cekSenetHatirlatmaGun: 7, cekSenetVadeGunuHatirlat: true },
 );
 
 registerModulAyar(

@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { Module, forwardRef } from "@nestjs/common";
 import { RaporModule } from "../rapor/rapor.module";
 import { TenantModule } from "../tenant/tenant.module";
 import { BildirimEpostaService } from "./bildirim-eposta.service";
@@ -8,7 +8,7 @@ import { BildirimZamanlayiciService } from "./bildirim-zamanlayici.service";
 import { BildirimlerController } from "./bildirimler.controller";
 
 @Module({
-  imports: [RaporModule, TenantModule],
+  imports: [RaporModule, forwardRef(() => TenantModule)],
   controllers: [BildirimlerController],
   providers: [BildirimService, BildirimUreticiService, BildirimEpostaService, BildirimZamanlayiciService],
   exports: [BildirimService],

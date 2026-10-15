@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ServiceUnavailableException } from "@nestjs/common";
+import { Logger, ServiceUnavailableException } from "@nestjs/common";
 import type { AiAracliSohbetGirdisi } from "./ai-provider.interface";
 import { AnthropicAiProvider } from "./anthropic-ai.provider";
 import { GeminiAiProvider } from "./gemini-ai.provider";
 import { OpenAiAiProvider } from "./openai-ai.provider";
 import { jsonSemaSadelestir } from "./aracli-ortak";
+import { AiBosYanitHatasi } from './ai-bos-yanit';
+import { z } from 'zod';
 
 const ARAC = { ad: "cari_ara", aciklama: "Cari arar", girdiSemasi: { type: "object", properties: { arama: { type: "string" } }, required: ["arama"] } };
 
@@ -27,7 +29,7 @@ function fetchSahte(yanit: unknown) {
 const govde = (f: ReturnType<typeof vi.fn>) => JSON.parse(f.mock.calls[0][1].body);
 
 describe("araç çağırma eşlemesi (AI-05)", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
   it("Anthropic: araçlar input_schema ile gider, ardışık sonuçlar tek kullanıcı mesajında, tool_use ayrıştırılır", async () => {
     const f = fetchSahte({ content: [{ type: "text", text: "Bakıyorum" }, { type: "tool_use", id: "t9", name: "cari_ara", input: { arama: "X" } }] });
@@ -70,10 +72,58 @@ describe("araç çağırma eşlemesi (AI-05)", () => {
   });
 
   it("sağlayıcı hata gövdesi kullanıcıya dönmez", async () => {
+    const log = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401, text: async () => "invalid key sk-gizli" }));
     const hata = await new OpenAiAiProvider("k", "m").aracliSohbet(girdi()).catch((e) => e);
     expect(hata).toBeInstanceOf(ServiceUnavailableException);
     expect(String(hata.message)).not.toContain("sk-gizli");
+    expect(JSON.stringify(log.mock.calls)).not.toContain('sk-gizli');
+  });
+
+  it.each([null, {}, { candidates: [{ content: { parts: [{ text: '   ' }] } }] }, { candidates: [{ content: { parts: [{ functionCall: {} }] } }] }])('eksik/bozuk Gemini içerik şekli güvenli boş yanıt hatasıdır: %j', async veri => {
+    fetchSahte(veri);
+    await expect(new GeminiAiProvider('k').aracliSohbet(girdi())).rejects.toBeInstanceOf(AiBosYanitHatasi);
+  });
+
+  it.each([['STOP', true], ['SAFETY', false], ['MAX_TOKENS', false], ['MALFORMED_FUNCTION_CALL', false]])('Gemini boş %s yanıtı başarı değildir; içeriksiz tanı verir', async (finishReason, tekrar) => {
+    fetchSahte({ candidates: [{ finishReason, finishMessage: 'gizli açıklama', content: { parts: [{ thought: true, text: 'gizli düşünce' }] } }], usageMetadata: { promptTokenCount: 5 } });
+    const p = new GeminiAiProvider('gizli-anahtar');
+    const hata = await p.aracliSohbet(girdi()).catch(e => e);
+    expect(hata).toBeInstanceOf(AiBosYanitHatasi);
+    expect(hata.getStatus()).toBe(503);
+    expect(hata.tekrarDenenebilir).toBe(tekrar);
+    expect(hata.telemetriSinifi).toBe(`AI_BOS_YANIT_${finishReason}`);
+    const govde = JSON.stringify(hata.getResponse());
+    expect(govde).not.toContain('gizli');
+    expect(hata.tani).toMatchObject({ adaySayisi: 1, parcaSayisi: 1 });
+  });
+
+  it('Gemini engelleme kodunu taşır, ham açıklamayı ve bilinmeyen kodu sızdırmaz', async () => {
+    fetchSahte({ promptFeedback: { blockReason: 'SAFETY', blockReasonMessage: 'gizli içerik' }, candidates: [] });
+    let hata = await new GeminiAiProvider('k').aracliSohbet(girdi()).catch(e => e);
+    expect(hata.telemetriSinifi).toBe('AI_BOS_YANIT_ENGEL_SAFETY');
+    expect(hata.tekrarDenenebilir).toBe(false);
+    expect(JSON.stringify(hata.getResponse())).not.toContain('gizli içerik');
+    fetchSahte({ candidates: [{ finishReason: 'GIZLI_KOD', content: { parts: [] } }] });
+    hata = await new GeminiAiProvider('k').aracliSohbet(girdi()).catch(e => e);
+    expect(hata.telemetriSinifi).toBe('AI_BOS_YANIT_BILINMIYOR');
+    expect(JSON.stringify(hata.getResponse())).not.toContain('GIZLI_KOD');
+  });
+
+  it('Gemini güvenlik nedeniyle bitmiş metni veya bozuk functionCall parçasını çalıştırmaz', async () => {
+    fetchSahte({ candidates: [{ finishReason: 'SAFETY', content: { parts: [{ text: 'gizli metin' }] } }] });
+    await expect(new GeminiAiProvider('k').aracliSohbet(girdi())).rejects.toBeInstanceOf(AiBosYanitHatasi);
+    fetchSahte({ candidates: [{ finishReason: 'MALFORMED_FUNCTION_CALL', content: { parts: [{ functionCall: {} }] } }] });
+    await expect(new GeminiAiProvider('k').aracliSohbet(girdi())).rejects.toBeInstanceOf(AiBosYanitHatasi);
+  });
+
+  it('Gemini normal ve yapılandırılmış metni düşünce dışındaki bütün parçalardan okur; boş metin hata verir', async () => {
+    fetchSahte({ candidates: [{ finishReason: 'STOP', content: { parts: [{ thought: true, text: 'gizli' }, { text: 'Mer' }, { text: 'haba' }] } }] });
+    expect(await new GeminiAiProvider('k').metinUret({ prompt: 'test' })).toBe('Merhaba');
+    fetchSahte({ candidates: [{ finishReason: 'STOP', content: { parts: [] } }] });
+    await expect(new GeminiAiProvider('k').metinUret({ prompt: 'test' })).rejects.toBeInstanceOf(AiBosYanitHatasi);
+    fetchSahte({ candidates: [{ finishReason: 'STOP', content: { parts: [{ thought: true, text: 'gizli' }, { text: '{"ad":' }, { text: '"test"}' }] } }] });
+    expect(await new GeminiAiProvider('k').yapilandirilmisUretim({ prompt: 'test' }, z.object({ ad: z.string() }))).toEqual({ ad: 'test' });
   });
 
   it("JSON şeması ortak alt kümeye indirgenir", () => {

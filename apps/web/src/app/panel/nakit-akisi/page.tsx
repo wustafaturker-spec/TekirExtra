@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { Alert, Badge, Card, PageHeader, Para, Segmented, Select, Stat, StatGrid, TableWrap, Tarih } from "@/components/ui";
+import { YzIcgoruKartlari } from "@/components/yz-icgoru-kartlari";
 
 type Senaryo = "iyimser" | "baz" | "kotumser";
 type Ufuk = 7 | 30 | 90;
@@ -43,6 +44,7 @@ interface Tahmin {
   senaryolar: Record<Senaryo, SenaryoSonucu>;
   kalemler: Kalem[];
   kapsamDisi: string[];
+  kapsamNotlari?: string[];
   uyarilar: string[];
 }
 
@@ -130,6 +132,8 @@ export default function NakitAkisiSayfasi() {
           </div>
         }
       />
+
+      <YzIcgoruKartlari />
 
       {hata && <Alert tone="error">{hata}</Alert>}
       {tahmin?.uyarilar.map((u) => <div key={u} className="approval-impact is-warning">{u}</div>)}
@@ -262,6 +266,10 @@ export default function NakitAkisiSayfasi() {
             </TableWrap>
           </Card>
 
+          <details className="muted">
+            <summary>Hesap kapsamı ve varsayımlar</summary>
+            {(tahmin.kapsamNotlari ?? []).map((not) => <p key={not}>{not}</p>)}
+          </details>
           <p className="muted" style={{ margin: 0 }}>
             {tahmin.kapsamDisi.join(" ")}
             {tahmin.kur && <> Dövizli kalemler <Tarih deger={tahmin.kur.tarih} /> TCMB kuruyla çevrildi ({Object.entries(tahmin.kur.kurlar).map(([d, k]) => `${d} ${k.toLocaleString("tr-TR")}`).join(", ")}).</>}

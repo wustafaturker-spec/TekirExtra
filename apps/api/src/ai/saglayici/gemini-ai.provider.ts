@@ -1,12 +1,16 @@
 import { z } from "zod";
 import { IAiProvider, AiMultimodalGirdi, AiProviderTuru, AiAracliSohbetGirdisi, AiAracliYanit } from "./ai-provider.interface";
 import { aracGirdisiniAyristir, saglayiciIstegi } from "./aracli-ortak";
+import { AiBosYanitHatasi, geminiYanitTanisi, geminiYanitEngelli } from './ai-bos-yanit';
 
 /**
  * Google Gemini Multimodal / Structured Outputs Sağlayıcısı
  */
 export class GeminiAiProvider implements IAiProvider {
   readonly saglayiciAdi: AiProviderTuru = "gemini";
+  get modelAdi() { return this.model; }
+  sonKullanim?: { girisToken?: number; cikisToken?: number };
+  private kullanimiAl(veri: any) { this.sonKullanim = { girisToken: veri?.usageMetadata?.promptTokenCount, cikisToken: veri?.usageMetadata?.candidatesTokenCount }; }
   private apiKey: string;
   private model: string;
 
@@ -47,8 +51,8 @@ export class GeminiAiProvider implements IAiProvider {
     }
 
     const sistemTalimati = girdi.sistemRol
-      ? `${girdi.sistemRol}\nLütfen yanıtı SADECE geçerli JSON olarak ver, markdown tırnakları (codeblocks) ekleme.`
-      : "Lütfen yanıtı SADECE geçerli JSON olarak ver, markdown tırnakları ekleme.";
+      ? `${girdi.sistemRol}\nLütfen yanıtı SADECE tek bir geçerli JSON nesnesi ({ ... }) olarak ver. Kesinlikle dizi/array ([ ... ]) döndürme, markdown tırnakları (codeblocks) ekleme.`
+      : "Lütfen yanıtı SADECE tek bir geçerli JSON nesnesi ({ ... }) olarak ver. Kesinlikle dizi/array ([ ... ]) döndürme, markdown tırnakları ekleme.";
 
     parts.push({ text: `${sistemTalimati}\n\nİstek: ${girdi.prompt}` });
 
@@ -61,10 +65,11 @@ export class GeminiAiProvider implements IAiProvider {
     };
 
     const veri = await saglayiciIstegi("Gemini", endpoint, { "x-goog-api-key": this.apiKey }, istekGovdesi);
-    let hamMetin = veri.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!hamMetin) {
-      throw new Error("Gemini API'den boş yanıt döndü.");
-    }
+    this.kullanimiAl(veri);
+    const tani = geminiYanitTanisi(veri);
+    const parcalar = veri?.candidates?.[0]?.content?.parts;
+    let hamMetin = (Array.isArray(parcalar) ? parcalar : []).filter(p => typeof p?.text === 'string' && !p.thought).map(p => p.text).join('').trim();
+    if (geminiYanitEngelli(tani) || !hamMetin) throw new AiBosYanitHatasi('gemini', tani);
 
     // Markdown ```json ... ``` tırnakları varsa temizle
     hamMetin = hamMetin.replace(/^```json\s*/i, "").replace(/^```\s*/, "").replace(/```$/, "").trim();
@@ -141,7 +146,22 @@ export class GeminiAiProvider implements IAiProvider {
       return obj;
     };
 
-    const normalizeEdilmis = normalizeObject(parsedJson);
+    // Eğer model en dışta bir dizi (array) döndüyse (örneğin [ { "belgeTuru": ... } ])
+    // veya { "sonuc": [ ... ] } gibi sardıysa ve şema nesne bekliyorsa:
+    let kokVeri = parsedJson;
+    if (Array.isArray(kokVeri) && kokVeri.length > 0 && typeof kokVeri[0] === "object") {
+      kokVeri = kokVeri[0];
+    } else if (kokVeri && typeof kokVeri === "object" && !Array.isArray(kokVeri)) {
+      if (Array.isArray(kokVeri.sonuc) && kokVeri.sonuc.length > 0 && typeof kokVeri.sonuc[0] === "object") {
+        kokVeri = kokVeri.sonuc[0];
+      } else if (Array.isArray(kokVeri.belgeler) && kokVeri.belgeler.length > 0 && typeof kokVeri.belgeler[0] === "object") {
+        kokVeri = kokVeri.belgeler[0];
+      } else if (Array.isArray(kokVeri.veriler) && kokVeri.veriler.length > 0 && typeof kokVeri.veriler[0] === "object") {
+        kokVeri = kokVeri.veriler[0];
+      }
+    }
+
+    const normalizeEdilmis = normalizeObject(kokVeri);
     return sema.parse(normalizeEdilmis);
   }
 
@@ -151,8 +171,12 @@ export class GeminiAiProvider implements IAiProvider {
       ...(girdi.sistemRol ? { systemInstruction: { parts: [{ text: girdi.sistemRol }] } } : {}),
       contents: [{ role: "user", parts: [{ text: girdi.prompt }] }],
     });
-    const parcalar: any[] = veri.candidates?.[0]?.content?.parts ?? [];
-    return parcalar.filter((p) => typeof p.text === "string" && !p.thought).map((p) => p.text).join("").trim();
+    this.kullanimiAl(veri);
+    const parcalar: any[] = veri?.candidates?.[0]?.content?.parts ?? [];
+    const tani = geminiYanitTanisi(veri);
+    const metin = (Array.isArray(parcalar) ? parcalar : []).filter((p) => typeof p?.text === "string" && !p.thought).map((p) => p.text).join("").trim();
+    if (geminiYanitEngelli(tani) || !metin) throw new AiBosYanitHatasi('gemini', tani);
+    return metin;
   }
 
   async aracliSohbet(girdi: AiAracliSohbetGirdisi): Promise<AiAracliYanit> {
@@ -167,22 +191,35 @@ export class GeminiAiProvider implements IAiProvider {
         else contents.push({ role: "user", parts: [parca] });
       }
     }
+    const mergedContents: Array<{ role: "user" | "model"; parts: any[] }> = [];
+    for (const c of contents) {
+      const prev = mergedContents[mergedContents.length - 1];
+      if (prev && prev.role === c.role) {
+        prev.parts.push(...c.parts);
+      } else {
+        mergedContents.push({ role: c.role, parts: [...c.parts] });
+      }
+    }
     // Anahtar URL'de değil başlıkta gider (AI-11).
     const veri = await saglayiciIstegi("Gemini", `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`, { "x-goog-api-key": this.apiKey }, {
       systemInstruction: { parts: [{ text: girdi.sistemRol }] },
-      contents,
+      contents: mergedContents,
       tools: [{ functionDeclarations: girdi.araclar.map((a) => ({ name: a.ad, description: a.aciklama, parameters: a.girdiSemasi })) }],
       generationConfig: { temperature: 0.2 },
     });
-    const icerik = veri.candidates?.[0]?.content ?? { role: "model", parts: [] };
+    this.kullanimiAl(veri);
+    const icerik = veri?.candidates?.[0]?.content ?? { role: "model", parts: [] };
     const parcalar: any[] = Array.isArray(icerik.parts) ? icerik.parts : [];
-    return {
-      metin: parcalar.filter((p) => typeof p.text === "string" && !p.thought).map((p) => p.text).join("\n").trim(),
-      aracCagrilari: parcalar.filter((p) => p.functionCall).map((p, i) => ({
+    const metin = parcalar.filter((p) => typeof p?.text === "string" && !p.thought).map((p) => p.text).join("\n").trim();
+    const aracCagrilari = parcalar.filter((p) => !p?.thought && typeof p?.functionCall?.name === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(p.functionCall.name)).map((p, i) => ({
         id: p.functionCall.id ?? `${p.functionCall.name}-${i}`,
         ad: p.functionCall.name,
         girdi: aracGirdisiniAyristir(p.functionCall.args),
-      })),
+      }));
+    const tani = geminiYanitTanisi(veri);
+    if (geminiYanitEngelli(tani) || (!metin && !aracCagrilari.length)) throw new AiBosYanitHatasi('gemini', tani);
+    return {
+      metin, aracCagrilari,
       ham: { role: "model", parts: parcalar },
     };
   }

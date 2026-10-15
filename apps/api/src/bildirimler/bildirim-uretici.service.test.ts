@@ -23,6 +23,7 @@ interface TxSecenekleri {
   avansTalepSayisi?: number;
   onayBekleyenBordro?: number;
   cekSayisi?: number;
+  kasaBankaAyarlari?: Record<string, unknown>;
   /** EBLG-63: beyannamesi gelmemiş ihraç kayıtlı faturaların tarihleri. */
   ihracKayitlilar?: { tarih: Date; tip: string }[];
   kritikStok?: number;
@@ -100,7 +101,8 @@ function servisKur(secenek: TxSecenekleri = {}) {
   } as never;
   const bildirimler = { uret: vi.fn().mockResolvedValue({ bildirimId: "b1", yeniTeslimat: 1 }), kapatEksikleri: vi.fn().mockResolvedValue(0) };
   const rapor = { vadesiGecenler: vi.fn().mockResolvedValue({ alacaklar: [], borclar: [], toplamAlacak: "0.00", toplamBorc: "0.00", alacakSayisi: 0, borcSayisi: 0 }) };
-  return { servis: new BildirimUreticiService(prisma, bildirimler as never, rapor as never), bildirimler, rapor, tx, teslimatCreateMany, bildirimUpdate };
+  const ayarlar = { getir: vi.fn(async (modul: string) => modul === "kasaBanka" ? secenek.kasaBankaAyarlari ?? {} : {}) };
+  return { servis: new BildirimUreticiService(prisma, bildirimler as never, rapor as never, ayarlar as never), bildirimler, rapor, tx, teslimatCreateMany, bildirimUpdate };
 }
 
 describe("kart ekstresi bildirimi (KSB-10)", () => {
@@ -131,6 +133,42 @@ describe("kart ekstresi bildirimi (KSB-10)", () => {
     ({ servis, bildirimler } = servisKur({ kartlar: [kart(1000)] }));
     await servis.tara();
     expect(bildirimler.uret.mock.calls.some(([g]) => g.birlesimAnahtari.startsWith("vade:kart:"))).toBe(false);
+  });
+});
+
+describe("çek/senet kullanıcı ayarlı vade hatırlatması", () => {
+  afterEach(() => vi.useRealTimers());
+  it("seçili günü, vade gününü ve gecikeni ayrı tarar; İstanbul gece yarısını esas alır", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-14T22:00:00Z"));
+    const { servis, tx, bildirimler } = servisKur({ cekSayisi: 2, kasaBankaAyarlari: { cekSenetHatirlatmaGun: 3, cekSenetVadeGunuHatirlat: true } });
+    await servis.tara();
+    const kosullar = tx.cekSenet.count.mock.calls.map(([g]) => g.where);
+    expect(kosullar.map((k) => k.vadeTarihi)).toEqual([new Date("2026-10-18"), new Date("2026-10-15"), { lt: new Date("2026-10-15") }]);
+    for (const k of kosullar) expect(k).toMatchObject({ tenantId: "t1", durum: { in: ["portfoyde", "tahsile_verildi", "teminata_verildi", "verildi"] } });
+    const girdiler = bildirimler.uret.mock.calls.map(([g]) => g).filter((g) => g.tur === "cek_senet");
+    expect(girdiler.map((g) => g.birlesimAnahtari)).toEqual(["cek_senet:2026-10-15:once:3", "cek_senet:2026-10-15:bugun", "cek_senet:2026-10-15:geciken"]);
+    expect(girdiler[0].aciklama).toBe("2 evrakın vadesine 3 gün kaldı.");
+  });
+  it("ön hatırlatma ve vade günü ayrı ayrı kapatılır; geçmiş evrak uyarısı korunur", async () => {
+    const { servis, tx, bildirimler } = servisKur({ cekSayisi: 1, kasaBankaAyarlari: { cekSenetHatirlatmaGun: 0, cekSenetVadeGunuHatirlat: false } });
+    await servis.tara();
+    expect(tx.cekSenet.count).toHaveBeenCalledTimes(1);
+    const girdiler = bildirimler.uret.mock.calls.map(([g]) => g).filter((g) => g.tur === "cek_senet");
+    expect(girdiler).toHaveLength(1); expect(girdiler[0].baslik).toBe("Vadesi geçmiş çek/senet");
+  });
+  it("aynı gün tekrar taramada aynı birleştirme anahtarı kullanılır", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-14T10:00:00Z"));
+    const { servis, bildirimler } = servisKur({ cekSayisi: 1 });
+    await servis.tara(); await servis.tara();
+    const anahtarlar = bildirimler.uret.mock.calls.map(([g]) => g).filter((g) => g.tur === "cek_senet").map((g) => g.birlesimAnahtari);
+    expect(anahtarlar.slice(0, 3)).toEqual(anahtarlar.slice(3));
+  });
+  it("vade günü kapalıyken ön hatırlatma çalışmaya devam eder", async () => {
+    const { servis, tx, bildirimler } = servisKur({ cekSayisi: 1, kasaBankaAyarlari: { cekSenetHatirlatmaGun: 1, cekSenetVadeGunuHatirlat: false } });
+    await servis.tara(); expect(tx.cekSenet.count).toHaveBeenCalledTimes(2);
+    const anahtarlar = bildirimler.uret.mock.calls.map(([g]) => g).filter((g) => g.tur === "cek_senet").map((g) => g.birlesimAnahtari);
+    expect(anahtarlar.some((a) => a.endsWith("once:1"))).toBe(true);
+    expect(anahtarlar.some((a) => a.endsWith(":bugun"))).toBe(false);
   });
 });
 
@@ -279,7 +317,7 @@ describe("BildirimUreticiService.tara", () => {
     await servis.tara();
 
     const cekGirdisi = bildirimler.uret.mock.calls.map(([girdi]) => girdi).find((girdi) => girdi.tur === "cek_senet");
-    expect(cekGirdisi).toMatchObject({ onem: "uyari", birlesimAnahtari: expect.stringMatching(/^cek_senet:\d{4}-\d{2}-\d{2}$/) });
+    expect(cekGirdisi).toMatchObject({ onem: "uyari", birlesimAnahtari: expect.stringMatching(/^cek_senet:\d{4}-\d{2}-\d{2}:once:7$/) });
     expect(cekGirdisi.sonTarih).toBeUndefined();
   });
 

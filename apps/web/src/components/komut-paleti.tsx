@@ -29,7 +29,7 @@ interface PaletSonucu {
   anahtar: string;
   baslik: string;
   aciklama?: string;
-  grup: "Sayfalar" | "Cari hesaplar" | "Stok kartları" | "Faturalar";
+  grup: "Finansal Zekâ ve CLI" | "Sayfalar" | "Cari hesaplar" | "Stok kartları" | "Faturalar";
   href: string;
   ikon?: MenuOge["ikon"];
 }
@@ -66,6 +66,41 @@ function sayfaSonuclari(rol: string | null, sorgu: string, ebelgeUygulamalari: E
     }));
 }
 
+function aiKomutSonuclari(sorgu: string): PaletSonucu[] {
+  const s = sorgu.trim().toLowerCase();
+  if (!s) return [];
+  const komutlar: PaletSonucu[] = [];
+
+  if (s.startsWith("tekir") || s === "cli" || s === "terminal" || s === "yardim" || s === "help") {
+    komutlar.push({
+      anahtar: "ai:cli-help",
+      baslik: "tekir yardim — Güvenli CLI Komut Rehberi",
+      aciklama: "Yetkili muhasebe sorgulama ve analiz komutları",
+      grup: "Finansal Zekâ ve CLI",
+      href: "/panel/ai?cmd=tekir+yardim",
+    });
+    komutlar.push({
+      anahtar: "ai:cli-cari",
+      baslik: "tekir cari list — Vadesi Geçen Alacakları Listele",
+      aciklama: "Müşteri ödeme gecikmelerini konsolda göster",
+      grup: "Finansal Zekâ ve CLI",
+      href: "/panel/ai?cmd=tekir+cari+list",
+    });
+  }
+
+  if (s.includes("risk") || s.includes("otonom") || s.includes("kasa") || s.includes("zeka") || s.includes("nakit")) {
+    komutlar.push({
+      anahtar: "ai:otonom-risk",
+      baslik: "⚡ Otonom Finansal Risk ve Nakit Radarı",
+      aciklama: "Kural 6 deterministik kasa açığı ve riskli cari projeksiyonu",
+      grup: "Finansal Zekâ ve CLI",
+      href: "/panel/nakit-akisi",
+    });
+  }
+
+  return komutlar;
+}
+
 export function KomutPaleti({
   rol,
   ebelgeUygulamalari = null,
@@ -87,7 +122,14 @@ export function KomutPaleti({
   const listeRef = useRef<HTMLUListElement>(null);
   const tetikleyiciRef = useRef<HTMLElement | null>(null);
 
-  const sonuclar = useMemo(() => [...sayfaSonuclari(rol, sorgu.trim(), ebelgeUygulamalari), ...kayitlar], [rol, sorgu, kayitlar, ebelgeUygulamalari]);
+  const sonuclar = useMemo(
+    () => [
+      ...aiKomutSonuclari(sorgu),
+      ...sayfaSonuclari(rol, sorgu.trim(), ebelgeUygulamalari),
+      ...kayitlar,
+    ],
+    [rol, sorgu, kayitlar, ebelgeUygulamalari],
+  );
 
   const kapat = useCallback(() => {
     setAcik(false);

@@ -94,6 +94,8 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
     alanlar: [
       { ad: "varsayilanKasaId", etiket: "Varsayılan kasa", tip: "kasaRef" },
       { ad: "varsayilanBankaHesapId", etiket: "Varsayılan banka hesabı", tip: "bankaRef" },
+      { ad: "cekSenetHatirlatmaGun", etiket: "Çek/senet vadesinden kaç gün önce hatırlatılsın?", tip: "sayi", min: 0, max: 90, ipucu: "0: vade öncesi hatırlatma kapalı. 1–90: belirtilen gün önce hatırlatılır. Şirket genelinde geçerlidir." },
+      { ad: "cekSenetVadeGunuHatirlat", etiket: "Çek/senet vade günü hatırlat", tip: "onay", ipucu: "Vade öncesi hatırlatmadan bağımsızdır. Tahsil edilen/ödenen evraklar hatırlatılmaz." },
     ],
   },
 };
@@ -182,7 +184,7 @@ export default function ModulAyarlariSayfasi() {
     }
     if (a.tip === "enum") {
       return (
-        <Select value={String(v ?? "")} onChange={(e) => alanGuncelle(modul, a.ad, e.target.value)}>
+        <Select aria-label={a.etiket} value={String(v ?? "")} onChange={(e) => alanGuncelle(modul, a.ad, e.target.value)}>
           {a.secenekler!.map(([deger, etiket]) => (<option key={deger} value={deger}>{etiket}</option>))}
         </Select>
       );

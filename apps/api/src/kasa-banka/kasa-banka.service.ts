@@ -10,6 +10,7 @@ import type { KayitEylem } from "@tekirextra/shared";
 import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler } from "../core/eylemler/eylem-kayit";
+import { cekVadeAnalizi, CEK_VADE_ACIK_DURUMLARI } from "./cek-vade-analizi";
 import { metinNormalize } from "@tekirextra/shared";
 import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
@@ -1152,13 +1153,13 @@ export class KasaBankaService {
 
   // ─── ÇEK VE SENET TAKİBİ (KSB-05) ─────────────────────────────────────────
 
-  async cekSenetListele(tur?: "cek" | "senet", durum?: string, yon?: string, arama?: string, baslangic?: string, bitis?: string) {
+  async cekSenetListele(tur?: "cek" | "senet", durum?: string, yon?: string, arama?: string, baslangic?: string, bitis?: string, yalnizAcik = false) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, (tx) =>
       tx.cekSenet.findMany({
         where: {
           tur: tur || undefined,
-          durum: durum ? (durum as CekSenetDurum) : undefined,
+          durum: yalnizAcik ? { in: [...CEK_VADE_ACIK_DURUMLARI] } : durum ? (durum as CekSenetDurum) : undefined,
           yon: yon ? (yon as CekSenetYon) : undefined,
           vadeTarihi: { ...(baslangic ? { gte: new Date(baslangic) } : {}), ...(bitis ? { lte: new Date(bitis) } : {}) },
           ...(arama ? { OR: [
@@ -1196,15 +1197,25 @@ export class KasaBankaService {
     return CS;
   }
 
+  async cekSenetVadeAnalizi() {
+    const { tenantId } = aktifBaglam();
+    const bugun = bugunTR();
+    const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) => tx.cekSenet.findMany({
+      where: { tenantId, durum: { in: [...CEK_VADE_ACIK_DURUMLARI] } },
+      select: { yon: true, durum: true, vadeTarihi: true, tutar: true, dovizCinsi: true },
+    }));
+    return cekVadeAnalizi(kayitlar, bugun);
+  }
+
   async cekSenetOzet(yon?: string) {
     const { tenantId } = aktifBaglam();
     const kayitlar = await this.prisma.tenantIslem(tenantId, (tx) => tx.cekSenet.findMany({
       where: { yon: yon ? (yon as CekSenetYon) : undefined },
       select: { durum: true, vadeTarihi: true, tutarTry: true, dovizCinsi: true, tutar: true },
     }));
-    const bugun = new Date(); bugun.setHours(0, 0, 0, 0);
-    const otuzGun = new Date(bugun); otuzGun.setDate(otuzGun.getDate() + 30);
-    const acikDurumlar = yon === "verilen" ? ["verildi"] : ["portfoyde", "tahsile_verildi", "teminata_verildi"];
+    const bugun = new Date(`${bugunTR()}T00:00:00Z`);
+    const otuzGun = new Date(bugun); otuzGun.setUTCDate(otuzGun.getUTCDate() + 30);
+    const acikDurumlar = yon === "verilen" ? ["verildi"] : yon === "alinan" ? ["portfoyde", "tahsile_verildi", "teminata_verildi"] : [...CEK_VADE_ACIK_DURUMLARI];
     const acik = kayitlar.filter((k) => acikDurumlar.includes(k.durum));
     const toplam = (liste: typeof kayitlar) => liste.reduce((t, k) => t.add(k.tutarTry), D(0)).toFixed(2);
     const dovizler = Object.fromEntries([...new Set(["TRY", ...acik.map((k) => k.dovizCinsi)])].map((d) => [d, acik.filter((k) => k.dovizCinsi === d).reduce((t, k) => t.add(k.tutar), D(0)).toFixed(2)]));

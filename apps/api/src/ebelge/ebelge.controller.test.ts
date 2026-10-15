@@ -2,6 +2,30 @@ import { BadRequestException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import { EbelgeController } from "./ebelge.controller";
 
+describe("EbelgeController.gelenFiyatAnalizi", () => {
+  const stokId = "11111111-1111-4111-8111-111111111111";
+  it("yalnız doğrulanmış eşleştirmeleri iletir", async () => {
+    const servis = { gelenFiyatAnalizi: vi.fn().mockResolvedValue({ satirlar: [] }) };
+    const c = new EbelgeController(servis as never, {} as never, {} as never, {} as never);
+    await c.gelenFiyatAnalizi(stokId, { satirEslesmeleri: [{ siraNo: 1, stokId }] });
+    expect(servis.gelenFiyatAnalizi).toHaveBeenCalledWith(stokId, [{ siraNo: 1, stokId }]);
+  });
+  it("istemci tutarını, tekrar eden eşleştirmeyi ve sınır aşımını servise göndermez", async () => {
+    const servis = { gelenFiyatAnalizi: vi.fn() };
+    const c = new EbelgeController(servis as never, {} as never, {} as never, {} as never);
+    const e = { siraNo: 1, stokId };
+    for (const govde of [{ satirEslesmeleri: [e], matrah: 1 }, { satirEslesmeleri: [e, e] },
+      { satirEslesmeleri: Array.from({ length: 101 }, (_, i) => ({ ...e, siraNo: i + 1 })) }]) {
+      await expect(c.gelenFiyatAnalizi(stokId, govde)).rejects.toThrow("Geçersiz fiyat analizi");
+    }
+    expect(servis.gelenFiyatAnalizi).not.toHaveBeenCalled();
+  });
+  it("muhasebe rolü ve e-Fatura uygulama kapısı gerektirir", () => {
+    expect(Reflect.getMetadata("roller", EbelgeController.prototype.gelenFiyatAnalizi)).toEqual(["muhasebe"]);
+    expect(Reflect.getMetadata("ebelgeUygulamasi", EbelgeController.prototype.gelenFiyatAnalizi)).toEqual(["efatura"]);
+  });
+});
+
 /**
  * Gönderim ucunun kapısı. Sihirbazın `gonderilebilir` bayrağı yalnız bağlantı,
  * kimlik ve tarih kontrollerini anlatır; türe özel eksikler (ihracat, internet

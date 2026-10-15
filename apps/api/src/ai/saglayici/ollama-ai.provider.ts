@@ -8,6 +8,9 @@ import { aracGirdisiniAyristir, saglayiciIstegi } from "./aracli-ortak";
  */
 export class OllamaAiProvider implements IAiProvider {
   readonly saglayiciAdi: AiProviderTuru = "ollama";
+  get modelAdi() { return this.model; }
+  sonKullanim?: { girisToken?: number; cikisToken?: number };
+  private kullanimiAl(veri: any) { this.sonKullanim = { girisToken: veri.prompt_eval_count, cikisToken: veri.eval_count }; }
   private baseUrl: string;
   private model: string;
 
@@ -39,6 +42,7 @@ export class OllamaAiProvider implements IAiProvider {
         images: images.length > 0 ? images : undefined,
         options: { temperature: 0.1 },
       });
+    this.kullanimiAl(veri);
     const hamMetin = veri.response;
     if (!hamMetin) {
       throw new Error("Ollama API'den boş yanıt döndü.");
@@ -56,6 +60,7 @@ export class OllamaAiProvider implements IAiProvider {
         stream: false,
         options: { temperature: 0.3 },
       });
+    this.kullanimiAl(veri);
     return veri.response || "";
   }
 
@@ -73,6 +78,7 @@ export class OllamaAiProvider implements IAiProvider {
       options: { temperature: 0.2 },
       tools: girdi.araclar.map((a) => ({ type: "function", function: { name: a.ad, description: a.aciklama, parameters: a.girdiSemasi } })),
     });
+    this.kullanimiAl(veri);
     const mesaj = veri.message ?? { role: "assistant", content: "" };
     const cagrilar: any[] = Array.isArray(mesaj.tool_calls) ? mesaj.tool_calls : [];
     return {

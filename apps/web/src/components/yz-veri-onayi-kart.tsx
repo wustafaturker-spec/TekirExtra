@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Alert, Badge, Button, Card, Tarih } from "@/components/ui";
 
-interface Ayar { saglayici: string; yurtDisiOnay: { tarih: string; onaylayan: string | null } | null }
+const POLITIKA_SURUMU = "2026-10-v1";
+interface Ayar { saglayici: string; modelAdi?: string | null; yurtDisiOnay: { tarih: string; onaylayan: string | null; saglayici: string | null; model: string | null; politikaSurumu: string | null } | null }
 
 /**
  * AI-14: yurt dışındaki yapay zekâ sağlayıcısına veri aktarımı için yönetici
@@ -23,7 +24,7 @@ export function YzVeriOnayiKart() {
     setIsleniyor(true);
     setHata(null);
     try {
-      setAyar(await api<Ayar>("/ai/ayarlar/yurt-disi-onay", { method: "POST", body: JSON.stringify({ onay }) }));
+      setAyar(await api<Ayar>("/ai/ayarlar/yurt-disi-onay", { method: "POST", body: JSON.stringify({ onay, politikaSurumu: POLITIKA_SURUMU }) }));
     } catch (e) {
       setHata(e instanceof Error ? e.message : "Kaydedilemedi");
     } finally {
@@ -39,6 +40,7 @@ export function YzVeriOnayiKart() {
           Asistan, MCP, fiş/kartvizit tarama, yönetici özeti yorumu, ekstre önerisi ve hatırlatma metni kullanıldığında şu veriler
           seçili yapay zekâ sağlayıcısına (Google Gemini, OpenAI ya da Anthropic; sunucuları yurt dışında) gönderilir:
         </p>
+        <p>Onay kapsamı: <strong>{ayar?.saglayici ?? "—"}</strong> / {ayar?.modelAdi || "varsayılan model"} · Metin sürümü {POLITIKA_SURUMU}. Sağlayıcı veya model değişirse yeniden onay gerekir.</p>
         <ul>
           <li>Cari unvanı, vergi kimlik numarası, iletişim bilgileri ve bakiyeler</li>
           <li>Stok, fiyat, teklif, fatura, masraf ve rapor rakamları</li>
@@ -46,9 +48,9 @@ export function YzVeriOnayiKart() {
         </ul>
         <p className="muted">
           Onay verilmedikçe bu sağlayıcılara hiç istek gönderilmez. Platformun kendi sunucusundaki Ollama modeli onaysız çalışır.
-          Onay, kişisel verilerin yurt dışına aktarımına ilişkin yükümlülüklerin (KVKK md. 9) firma tarafından karşılandığı beyanıdır.
+          Bu kayıt teknik aktarım iznidir; KVKK md. 9 kapsamındaki hukuki dayanağın ve aktarım şartlarının değerlendirilmesinin yerini almaz.
         </p>
-        {onay && <p>Onaylayan: <strong>{onay.onaylayan ?? "—"}</strong> · <Tarih deger={onay.tarih} saatli /></p>}
+        {onay && <p>Onaylayan: <strong>{onay.onaylayan ?? "—"}</strong> · {onay.saglayici}/{onay.model || "varsayılan model"} · {onay.politikaSurumu} · <Tarih deger={onay.tarih} saatli /></p>}
         {hata && <Alert tone="error">{hata}</Alert>}
         <div className="row-tight">
           {onay

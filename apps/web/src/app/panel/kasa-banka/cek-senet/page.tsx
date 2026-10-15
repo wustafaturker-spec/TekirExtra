@@ -22,6 +22,8 @@ import { bugunTR } from "@tekirextra/shared";
 import { CekGorunumu } from "./cek-gorunumu";
 import { GeriAlmaFormu, type GeriAlmaYontemi } from "@/components/geri-alma-formu";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
+import { CekAiOku } from "@/components/cek-ai-oku";
+import { CekVadeAnalizi } from "@/components/cek-vade-analizi";
 
 /* ─── Tipler ─────────────────────────────────────────────────────────────── */
 
@@ -138,6 +140,7 @@ function vadeyeKalanGun(vade: string): number {
 
 export default function CekSenetSayfasi() {
   const [kayitlar, setKayitlar] = useState<CekSenet[]>([]);
+  const [sadeceAcik, setSadeceAcik] = useState(false);
   const [cariler, setCariler] = useState<CariOzet[]>([]);
   const [kasalar, setKasalar] = useState<Hesap[]>([]);
   const [bankalar, setBankalar] = useState<Hesap[]>([]);
@@ -160,6 +163,7 @@ export default function CekSenetSayfasi() {
   const yukle = useCallback(async () => {
     try {
       const qs = new URLSearchParams({ yon });
+      if (sadeceAcik) qs.set("acik", "1");
       if (tur !== "hepsi") qs.set("tur", tur);
       if (durumFiltre) qs.set("durum", durumFiltre);
       if (arama.trim()) qs.set("arama", arama.trim());
@@ -170,7 +174,7 @@ export default function CekSenetSayfasi() {
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Çek/senet listesi yüklenemedi");
     }
-  }, [tur, durumFiltre, yon, arama, vadeBaslangic, vadeBitis]);
+  }, [tur, durumFiltre, yon, arama, vadeBaslangic, vadeBitis, sadeceAcik]);
 
   useEffect(() => {
     if (!tokenAl()) return;
@@ -215,7 +219,7 @@ export default function CekSenetSayfasi() {
           value={yon}
           onChange={(y) => {
             setYon(y);
-            setDurumFiltre("");
+            setDurumFiltre(""); setSadeceAcik(false);
             setFormAcik(false);
             setIslemYapilan(null);
           }}
@@ -251,6 +255,10 @@ export default function CekSenetSayfasi() {
         <Stat label={yon==="alinan"?"Bankada / Teminatta":"Karşılıksız"} value={para(yon==="alinan"?(ozet?.bankada.toplamTry??0):(ozet?.karsiliksiz.toplamTry??0))} tone="info" hint={`${yon==="alinan"?(ozet?.bankada.adet??0):(ozet?.karsiliksiz.adet??0)} adet`}/>
       </StatGrid></div>
 
+      <CekVadeAnalizi yenileAnahtari={JSON.stringify(kayitlar.map((k) => [k.id, k.durum, k.vadeTarihi, k.tutar, k.dovizCinsi]))}
+        onFiltre={(y, bas, bit) => { setYon(y); setTur("hepsi"); setDurumFiltre(""); setSadeceAcik(true); setArama(""); setVadeBaslangic(bas ?? ""); setVadeBitis(bit ?? ""); setFormAcik(false); }} />
+      {sadeceAcik && <p className="muted">Vade analizinden seçilen aralıkta yalnız açık evraklar gösteriliyor. <Button onClick={() => { setSadeceAcik(false); setVadeBaslangic(""); setVadeBitis(""); }}>Analiz filtresini kaldır</Button></p>}
+
       {formAcik && (
         <CekSenetFormu
           key={yon}
@@ -284,7 +292,7 @@ export default function CekSenetSayfasi() {
             { deger: "senet", baslik: "Senetler" },
           ]}
         />
-        <Select value={durumFiltre} onChange={(e) => setDurumFiltre(e.target.value)} style={{ maxWidth: 220 }}>
+        <Select value={durumFiltre} onChange={(e) => { setDurumFiltre(e.target.value); setSadeceAcik(false); }} style={{ maxWidth: 220 }}>
           <option value="">Tüm durumlar</option>
           {akis.durumlar.map((deger) => (
             <option key={deger} value={deger}>
@@ -294,7 +302,7 @@ export default function CekSenetSayfasi() {
         </Select>
         <Input aria-label="Vade başlangıcı" type="date" value={vadeBaslangic} onChange={(e)=>setVadeBaslangic(e.target.value)} title="Vade başlangıcı"/>
         <Input aria-label="Vade bitişi" type="date" value={vadeBitis} onChange={(e)=>setVadeBitis(e.target.value)} title="Vade bitişi"/>
-        {(arama||durumFiltre||vadeBaslangic||vadeBitis)&&<Button size="sm" onClick={()=>{setArama("");setDurumFiltre("");setVadeBaslangic("");setVadeBitis("");}}>Filtreleri temizle</Button>}
+        {(arama||durumFiltre||vadeBaslangic||vadeBitis||sadeceAcik)&&<Button size="sm" onClick={()=>{setArama("");setDurumFiltre("");setVadeBaslangic("");setVadeBitis("");setSadeceAcik(false);}}>Filtreleri temizle</Button>}
       </div></Card>
 
       <Card className="cheque-register" pad={false}>
@@ -505,9 +513,14 @@ function CekSenetFormu({
   const [cariId, setCariId] = useState("");
   const [aciklama, setAciklama] = useState("");
 
+  const [ocrKullanildi, setOcrKullanildi] = useState(false);
+  const [ocrOnay, setOcrOnay] = useState(false);
+  useEffect(() => { setOcrOnay(false); }, [tur, cekNo, banka, sube, hesapNo, borclu, kesideYeri, vadeTarihi, tutar, dovizCinsi, kur]);
+
   const bosNull = (d: string) => (d.trim() === "" ? null : d.trim());
 
   async function kaydet() {
+    if (ocrKullanildi && !ocrOnay) return;
     const ok = await onKaydet({
       tur,
       portfoyNo: portfoyNo.trim(),
@@ -542,6 +555,15 @@ function CekSenetFormu({
   return (
     <Card className="stack" style={{ marginTop: "1.25rem" }}>
       <div className="card__title">{verilen ? "Verilen Çek/Senet" : "Alınan Çek/Senet"}</div>
+
+      <CekAiOku onAktar={(v) => {
+        if (v.belgeTuru === "BILINMIYOR") return;
+        setTur(v.belgeTuru === "SENET" ? "senet" : "cek");
+        setCekNo(v.cekNo ?? ""); setBanka(v.banka ?? ""); setSube(v.sube ?? ""); setHesapNo(v.hesapNo ?? "");
+        setBorclu(v.borclu ?? ""); setKesideYeri(v.kesideYeri ?? ""); setVadeTarihi(v.tarih ?? "");
+        setTutar(v.tutar ?? ""); setDovizCinsi(v.paraBirimi ?? ""); setKur(v.paraBirimi === "TRY" ? "1" : "");
+        setOcrKullanildi(true); setOcrOnay(false);
+      }} />
 
       <div className="row">
         <div style={{ flex: 1, minWidth: 150 }}>
@@ -587,6 +609,7 @@ function CekSenetFormu({
         <div style={{ flex: 1, minWidth: 110 }}>
           <Field label="Döviz">
             <Select value={dovizCinsi} onChange={(e) => setDovizCinsi(e.target.value)}>
+              <option value="">Para birimi seçin</option>
               <DovizSecenekleri />
             </Select>
           </Field>
@@ -661,6 +684,11 @@ function CekSenetFormu({
         <Input value={aciklama} onChange={(e) => setAciklama(e.target.value)} />
       </Field>
 
+      {ocrKullanildi && <Field label="Görüntüden okunan bilgilerin kontrolü">
+        <label><input type="checkbox" checked={ocrOnay} onChange={(e) => setOcrOnay(e.target.checked)} /> Çek/senet görüntüsüyle formdaki numara, keşideci, tarih, tutar, döviz ve banka bilgilerini karşılaştırdım; belgedeki tarihi vade olarak kullanmayı onaylıyorum.</label>
+        <p className="muted">Portföy numarası, cari bağlantısı, yön, işlem tarihi ve kur otomatik çıkarılmaz. Belirsiz alanları elle tamamlayın.</p>
+      </Field>}
+
       <div>
         <Button
           variant="primary"
@@ -669,6 +697,8 @@ function CekSenetFormu({
             portfoyNo.trim() === "" ||
             (tur === "cek" && cekNo.trim() === "") ||
             !islemTarihi ||
+            !vadeTarihi || !dovizCinsi || (dovizCinsi !== "TRY" && !(Number(kur) > 0)) ||
+            (ocrKullanildi && !ocrOnay) ||
             borclu.trim().length < 2 ||
             !tutar ||
             Number(tutar) <= 0 ||

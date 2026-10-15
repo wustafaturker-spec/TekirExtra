@@ -252,7 +252,7 @@ export const OKUMA_ARACLARI = [
       if (g.gruplama) sorgu.set("g", g.gruplama);
       return {
         ad: r.ad,
-        kolonlar: (r.kolonlar ?? []).map((k: any) => sec(k, ["alan", "baslik", "tip"])),
+        kolonlar: (r.kolonlar ?? []).map((k: any) => sec(k, ["alan", "baslik", "tip", "dovizAlani"])),
         satirlar: (r.satirlar ?? []).slice(0, 30),
         satirSayisi: r.satirSayisi,
         toplamlar: r.toplamlar,
@@ -316,6 +316,120 @@ export const OKUMA_ARACLARI = [
     async calistir(b, g) {
       const r = await cagir(b, UC.tahsilatRiski, [g.cariId]);
       return { ...r, acikFaturalar: (r.acikFaturalar ?? []).slice(0, 30), adres: adres.cari(g.cariId) };
+    },
+  }),
+  arac({
+    ad: "gelen_eposta_ara",
+    aciklama:
+      "Gelen kurumsal e-postaları (mailleri) listeler, arar veya kontrol eder. Kullanıcı 'gelen mailleri kontrol et', 'mailleri listele/özetle', 'yeni e-posta var mı', 'teklif/sipariş maillerine bak' dediğinde çağrılır. Her iletinin konusunu, gönderenini, metin özetini (ilk birkaç cümlesini), eklerini ve cari eşleşmesini döner.",
+    sinif: "okuma",
+    girdi: z.object({
+      arama: z.string().optional().describe("Konu veya gönderen adresi içinde arama metni"),
+      okunmamis: z.boolean().optional().describe("Yalnızca okunmamış e-postaları getir"),
+      durum: z.enum(["yeni", "islendi", "arsivlendi"]).optional().describe("İleti işlem durumu"),
+      cariId: uuid("Belirli bir cariye ait e-postaları filtrelemek için cari kimliği").optional(),
+      adet: z.number().int().min(1).max(25).optional().describe("En çok kaç ileti (varsayılan 10)"),
+    }),
+    uc: UC.gelenEpostaListe,
+    async calistir(b, g) {
+      const r = await cagir<any>(b, UC.gelenEpostaListe, [
+        "1",
+        String(g.adet ?? 10),
+        g.okunmamis !== undefined ? String(g.okunmamis) : undefined,
+        g.durum,
+        g.cariId,
+        g.arama,
+      ]);
+      const iletiler = (r.satirlar ?? r.epostalar ?? []).map((e: any) => ({
+        id: e.id,
+        konu: e.konu,
+        gonderen: e.gonderenAdi ? `${e.gonderenAdi} <${e.gonderenEposta}>` : e.gonderenEposta,
+        tarih: e.tarih,
+        okundu: e.okundu,
+        durum: e.durum,
+        ozet: (e.icerikMetin || "").replace(/\s+/g, " ").trim().slice(0, 350) || "(Metin içeriği yok veya ek içeriyor)",
+        ekler: (e.ekler ?? []).map((ek: any) => ({
+          id: ek.id,
+          dosyaAdi: ek.dosyaAdi,
+          mimeTuru: ek.mimeTuru ?? ek.mimeType,
+          boyut: ek.boyut,
+          ocrVarMi: Boolean(ek.cikarilanVeri),
+        })),
+        cari: e.cari ? sec(e.cari, ["id", "kod", "unvan"]) : null,
+      }));
+      return {
+        toplam: r.toplam ?? iletiler.length,
+        iletiler,
+        ekran: adres.eposta(),
+      };
+    },
+  }),
+  arac({
+    ad: "gelen_eposta_getir",
+    aciklama:
+      "Bir gelen e-postanın (mailin) tam içeriğini (metin gövdesi), gönderen/alıcı bilgilerini, iliştirilmiş eklerini ve eklerden çıkarılan OCR verilerini getirir. Kullanıcı belirli bir mailin içeriğini veya detayını okumak, teklif veya sipariş talebini tam metin incelemek istediğinde kullanılır.",
+    sinif: "okuma",
+    girdi: z.object({ epostaId: uuid("Gelen e-posta kimliği (gelen_eposta_ara sonucundaki id)") }),
+    uc: UC.gelenEpostaGetir,
+    async calistir(b, g) {
+      const e = await cagir<any>(b, UC.gelenEpostaGetir, [g.epostaId]);
+      return {
+        id: e.id,
+        konu: e.konu,
+        gonderenAdi: e.gonderenAdi,
+        gonderenEposta: e.gonderenEposta,
+        aliciEposta: e.aliciEposta,
+        tarih: e.tarih,
+        okundu: e.okundu,
+        durum: e.durum,
+        icerikMetin: e.icerikMetin || "(Yalnızca HTML veya ek içeriyor)",
+        cari: e.cari ? sec(e.cari, ["id", "kod", "unvan"]) : null,
+        ekler: (e.ekler ?? []).map((ek: any) => ({
+          id: ek.id,
+          dosyaAdi: ek.dosyaAdi,
+          boyut: ek.boyut,
+          mimeType: ek.mimeTuru ?? ek.mimeType,
+          ocrVerisi: ek.cikarilanVeri ?? null,
+        })),
+        ekran: adres.eposta(),
+      };
+    },
+  }),
+  arac({
+    ad: "gelen_eposta_ek_ocr",
+    aciklama:
+      "Gelen e-postanın ekindeki fatura, fiş, sipariş veya dekont belgesini yapay zekâ OCR ile tarar. Belge numarası, tarih, toplam tutar, KDV ve satır kalemlerini çıkarır. Kullanıcı e-postadaki faturayı/belgeyi okumak istediğinde kullanılır.",
+    sinif: "okuma",
+    girdi: z.object({
+      epostaId: uuid("Gelen e-posta kimliği"),
+      ekId: uuid("Taranacak ek dosya kimliği"),
+    }),
+    uc: UC.gelenEpostaEkOcr,
+    async calistir(b, g) {
+      const ocr = await cagir<any>(b, UC.gelenEpostaEkOcr, [g.epostaId, g.ekId]);
+      return {
+        epostaId: g.epostaId,
+        ekId: g.ekId,
+        ocr,
+        ekran: adres.eposta(),
+      };
+    },
+  }),
+  arac({
+    ad: "gelen_eposta_senkronize_et",
+    aciklama:
+      "IMAP e-posta sunucusuna bağlanarak yeni gelen iletileri denetler ve TekirExtra'ya senkronize eder (çeker). Kullanıcı 'yeni mailleri çek', 'mailleri senkronize et', 'sunucudan yeni mailleri kontrol et' dediğinde kullanılır.",
+    sinif: "okuma",
+    girdi: z.object({}),
+    uc: UC.gelenEpostaSenkronize,
+    async calistir(b) {
+      const r = await cagir<any>(b, UC.gelenEpostaSenkronize, []);
+      return {
+        senkronizeEdildi: r.senkronizeEdildi ?? 0,
+        toplam: r.toplam ?? 0,
+        mesaj: r.mesaj ?? (r.senkronizeEdildi > 0 ? `${r.senkronizeEdildi} yeni e-posta aktarıldı.` : "Yeni e-posta bulunamadı, posta kutusu güncel."),
+        ekran: adres.eposta(),
+      };
     },
   }),
 ];

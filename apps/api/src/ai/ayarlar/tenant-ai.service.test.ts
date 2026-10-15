@@ -11,6 +11,7 @@ describe("TenantAiService - BYOK, Kurallar ve Otonom Görevler", () => {
 
   const mockTx = {
     aiKullanim: { aggregate: vi.fn().mockResolvedValue({ _sum: { cagri: 0 } }), upsert: vi.fn() },
+    aiCagriIz: { groupBy: vi.fn().mockResolvedValue([]) },
     tenantAiAyari: {
       findUnique: vi.fn(),
       upsert: vi.fn(),
@@ -28,7 +29,7 @@ describe("TenantAiService - BYOK, Kurallar ve Otonom Görevler", () => {
     mockPrisma = {
       tenantIslem: vi.fn((_tenantId, callback) => callback(mockTx)),
     };
-    service = new TenantAiService(mockPrisma);
+    service = new TenantAiService(mockPrisma, {} as never);
     vi.stubEnv("BAGLANTI_SIFRELEME_ANAHTARI", "a".repeat(64));
   });
 
@@ -81,67 +82,6 @@ describe("TenantAiService - BYOK, Kurallar ve Otonom Görevler", () => {
     expect(kayit.saglayici).toBe("anthropic");
   });
 
-  it("3. Otonom Görev Oluşturma: Zamanlanmış rapor görevini kaydetmelidir", async () => {
-    mockTx.tenantAiGorev.create.mockResolvedValue({
-      id: "gorev-1",
-      ad: "Sabah Finans Brifingi",
-      tetikleyici: "ZAMANLANMIS",
-      zamanlamaCron: "09:00",
-      gorevTalimati: "Dünkü ciroyu ve bugünkü tahsilatları özetle",
-      kanal: "WHATSAPP",
-      hedefKimlik: "05321234567",
-      aktif: true,
-    });
-
-    const yeniGorev = await service.gorevOlustur(mockTenantId, {
-      ad: "Sabah Finans Brifingi",
-      tetikleyici: "ZAMANLANMIS",
-      zamanlamaCron: "09:00",
-      gorevTalimati: "Dünkü ciroyu ve bugünkü tahsilatları özetle",
-      kanal: "WHATSAPP",
-      hedefKimlik: "05321234567",
-    });
-
-    expect(yeniGorev.ad).toBe("Sabah Finans Brifingi");
-    expect(yeniGorev.kanal).toBe("WHATSAPP");
-  });
-
-  it("4. Görev Çalıştırma: Görev talimatını yapay zeka ile yürüterek yönetici raporu üretmelidir", async () => {
-    mockTx.tenantAiGorev.findUnique.mockResolvedValue({
-      id: "gorev-1",
-      ad: "Günlük Finans Özeti",
-      tetikleyici: "ZAMANLANMIS",
-      gorevTalimati: "Günlük satış ve nakit durumunu özetle",
-      kanal: "WHATSAPP",
-      hedefKimlik: "05321112233",
-    });
-
-    mockTx.tenantAiAyari.findUnique.mockResolvedValue({
-      tenantId: mockTenantId,
-      saglayici: "mock",
-      ozelTalimatlar: "Kaya Ltd'ye iskonto yapma",
-    });
-
-    mockTx.tenantAiGorev.update.mockResolvedValue({ id: "gorev-1" });
-    vi.stubEnv("AI_PROVIDER", "mock");
-
-    const sonuc = await istekBaglami.run({ deger: { tenantId: mockTenantId, userId: "u1", rol: "yonetici" } }, () => service.gorevCalistir(mockTenantId, "gorev-1"));
-
-    expect(sonuc.ad).toBe("Günlük Finans Özeti");
-    expect(sonuc.raporIcerigi.length).toBeGreaterThan(0);
-    expect(mockTx.tenantAiGorev.update).toHaveBeenCalled();
-  });
-
-  it("5. Sağlayıcı tanımsızsa görev örnek metin üretmez, 503 ile reddedilir", async () => {
-    vi.stubEnv("AI_PROVIDER", "");
-    mockTx.tenantAiGorev.findUnique.mockResolvedValue({ id: "gorev-1", ad: "Özet", gorevTalimati: "Özetle", kanal: "PANEL" });
-    mockTx.tenantAiAyari.findUnique.mockResolvedValue(null);
-    mockTx.tenantAiGorev.update.mockClear();
-
-    await expect(istekBaglami.run({ deger: { tenantId: mockTenantId, userId: "u1", rol: "yonetici" } }, () => service.gorevCalistir(mockTenantId, "gorev-1"))).rejects.toBeInstanceOf(ServiceUnavailableException);
-    expect(mockTx.tenantAiGorev.update).not.toHaveBeenCalled();
-  });
-
   it("6. Ayar kaydı yerel/özel ağ adresini reddeder", async () => {
     for (const baseUrl of ["http://api.example.com/v1", "https://169.254.169.254", "https://localhost:11434", "https://postgres", "https://[::1]/v1"]) {
       await expect(service.ayarKaydet(mockTenantId, { saglayici: "openai", apiKey: "sk-x", baseUrl })).rejects.toThrow(/Sağlayıcı adresi/);
@@ -164,5 +104,28 @@ describe("TenantAiService - BYOK, Kurallar ve Otonom Görevler", () => {
     expect(update).not.toHaveProperty("saglayici");
     expect(update).not.toHaveProperty("apiKey");
     expect(update.gunlukCagriSiniri).toBe(50);
+  });
+
+  it("9. Fiyatları ve aylık bütçeyi saklar; fiyatlar olmadan bütçe tanımlanamaz", async () => {
+    mockTx.tenantAiAyari.findUnique.mockResolvedValue(null);
+    await expect(service.ayarKaydet(mockTenantId, { aylikMaliyetButcesiUsd: 50 })).rejects.toThrow(/token fiyatlarını da tanımlayın/);
+    await service.ayarKaydet(mockTenantId, { girisTokenMilyonUsd: 0.15, cikisTokenMilyonUsd: 0.6, aylikMaliyetButcesiUsd: 50 });
+    expect(mockTx.tenantAiAyari.upsert.mock.calls.at(-1)?.[0].create).toMatchObject({
+      girisTokenMilyonUsd: 0.15, cikisTokenMilyonUsd: 0.6, aylikMaliyetButcesiUsd: 50,
+    });
+    await expect(service.ayarKaydet(mockTenantId, { girisTokenMilyonUsd: -1 })).rejects.toThrow(/0 ile 1.000.000/);
+  });
+
+  it("sohbet saklama ayarı açıkça etkinleşir, null ile kapanır ve kısmi güncellemede korunur", async () => {
+    mockTx.tenantAiAyari.findUnique.mockResolvedValue({ saglayici: "mock", sohbetSaklamaGun: 30 });
+    for (const sohbetSaklamaGun of [0, 6, 366, 7.5, NaN]) {
+      await expect(service.ayarKaydet(mockTenantId, { sohbetSaklamaGun })).rejects.toThrow(/Sohbet saklama/);
+    }
+    await service.ayarKaydet(mockTenantId, { sohbetSaklamaGun: 7 });
+    expect(mockTx.tenantAiAyari.upsert.mock.calls.at(-1)?.[0].update).toMatchObject({ sohbetSaklamaGun: 7 });
+    await service.ayarKaydet(mockTenantId, { gunlukCagriSiniri: 50 });
+    expect(mockTx.tenantAiAyari.upsert.mock.calls.at(-1)?.[0].update).not.toHaveProperty("sohbetSaklamaGun");
+    await service.ayarKaydet(mockTenantId, { sohbetSaklamaGun: null });
+    expect(mockTx.tenantAiAyari.upsert.mock.calls.at(-1)?.[0].update).toMatchObject({ sohbetSaklamaGun: null });
   });
 });

@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
   Res,
@@ -16,7 +17,7 @@ import { EbelgeUygulamalariService } from "./ebelge-uygulamalari.service";
 import { EbelgeService } from "./ebelge.service";
 import { EbelgeKuyrukService } from "./ebelge-kuyruk.service";
 import { EbelgeGorunumService } from "./ebelge-gorunum.service";
-import { earsivIptalSemasi, earsivRaporAralikSemasi, ebelgeGonderSemasi, gelenOnaySemasi, gelenXmlYukleSemasi, gelenYanitSemasi, gumrukBeyannameSemasi } from "./ebelge.semalar";
+import { earsivIptalSemasi, earsivRaporAralikSemasi, ebelgeGonderSemasi, gelenOnaySemasi, gelenFiyatAnaliziSemasi, gelenXmlYukleSemasi, gelenYanitSemasi, gumrukBeyannameSemasi } from "./ebelge.semalar";
 
 const GELEN_DURUMLARI: GelenEbelgeDurum[] = ["beklemede", "islendi", "reddedildi"];
 
@@ -266,6 +267,15 @@ export class EbelgeController {
   @Get("gelen/:id")
   async gelenGetir(@Param("id") id: string) {
     return this.ebelgeService.gelenGetir(id);
+  }
+
+  @EbelgeUygulamasi("efatura")
+  @Post("gelen/:id/fiyat-analizi")
+  @Roller("muhasebe")
+  async gelenFiyatAnalizi(@Param("id", new ParseUUIDPipe()) id: string, @Body() govde: unknown) {
+    const sonuc = gelenFiyatAnaliziSemasi.safeParse(govde);
+    if (!sonuc.success) throw new BadRequestException("Geçersiz fiyat analizi eşleştirmesi (en çok 100 satır)");
+    return this.ebelgeService.gelenFiyatAnalizi(id, sonuc.data.satirEslesmeleri);
   }
 
   @EbelgeUygulamasi("efatura")

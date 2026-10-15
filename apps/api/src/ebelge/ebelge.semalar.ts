@@ -1,6 +1,13 @@
 import { AZAMI_KAP_ADEDI, IADE_REFERANS_UST_SINIRI, KAP_NO_UZUNLUGU, kapCinsiGecerliMi, odemeSekliGecerliMi, SEVKIYAT_YONTEM_KODLARI, tasimaSekliGecerliMi, teslimSartiGecerliMi } from "@tekirextra/shared";
 import { z } from "zod";
 
+export const gelenFiyatAnaliziSemasi = z.object({
+  satirEslesmeleri: z.array(z.object({
+    siraNo: z.number().int().min(1), stokId: z.string().uuid(), varyantId: z.string().uuid().nullish(),
+  }).strict()).min(1).max(100),
+}).strict().refine((g) => new Set(g.satirEslesmeleri.map((s) => s.siraNo)).size === g.satirEslesmeleri.length,
+  "Aynı satır birden fazla eşleştirilemez");
+
 /** EBLG-05: onay ekranından gelen satır → stok kartı eşleştirmeleri. */
 export const gelenOnaySemasi = z.object({
   satirEslesmeleri: z

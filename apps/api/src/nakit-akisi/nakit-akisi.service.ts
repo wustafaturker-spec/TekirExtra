@@ -9,7 +9,16 @@ import { bordroYasalTutarlari, bordroYasalVade, gunEkle, kurusa, nakitTahmini, t
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
 
 /** Tahmine girmeyen ve ekranda açıkça söylenen kalemler (S-01, 2026-09-11). */
-const KAPSAM_DISI = ["KDV, muhtasar ve SGK ödemeleri tahmine dahil değildir."];
+const KAPSAM_DISI = [
+  "KDV beyanname ödemeleri ve bordro dışındaki vergi/prim yükümlülükleri ayrıca hesaplanmaz.",
+  "Ciro edilmiş, teminata verilmiş, tahsil edilmiş, ödenmiş, karşılıksız ve iade edilmiş çek/senetler beklenen nakit kalemi değildir.",
+];
+const KAPSAM_NOTLARI = [
+  "Bordro hesap özeti bulunan dönemlerin SGK ve muhtasar (gelir + damga vergisi) tutarları, hesaplanan vadesi bugün ile ufuk sonu arasındaysa dahildir. Ayrı ödeme takibi olmadığı için ödenmiş olabilir; kesin ödeme borcu değildir. Geçmiş vadeli yasal kalemler dahil edilmez.",
+  "Onaylanmamış bordrolar ve son dönemin sonraki aylara tekrarı tahmin olarak işaretlenir. Bordro net ödemesi ile yasal ödemeler ayrı kalemlerdir.",
+  "Bu bir nakit senaryosudur; tahakkuk bazlı gelir-gider veya kâr hesabı değildir. Faturada kapanışlardan ve planlanan ödeme talimatından sonraki kalan genel toplam kullanılır; satış/alış iadesinin yönü ters çevrilir, taslak ve iptal faturalar alınmaz.",
+  "Vade tarihi olmayan faturada belge tarihi kullanılır. Senaryolar müşteri tahsilatını geciktirebilir; vade portföyü tahsilat garantisi değildir. Teminattaki evrak vade tablosunda yer alabilse de burada nakit girişine eklenmez.",
+];
 
 /** Kur çevrilmeden önceki kalem: tutar kendi para biriminde. */
 type HamKalem = Omit<NakitKalemi, "kurus"> & { belgeKuru: number | null };
@@ -389,6 +398,8 @@ export class NakitAkisiService {
       hesapSayisi: veri.hesapSayisi,
       kur,
       kapsamDisi: KAPSAM_DISI,
+      kapsamNotlari: KAPSAM_NOTLARI,
+      hesapEsaslari: { surum: "nakit-kapsam-v1", baz: "nakit_senaryosu", paraBirimi: "TRY", tarihEsasi: "Europe/Istanbul", kurEsasi: "guncel_tcmb_alis_yoksa_belge_kuru", tutarEsasi: "kalan_genel_toplam", iptalTaslakFatura: "haric", iadeEsasi: "ters_yon" },
       uyarilar,
       kalemler: sonuc.kalemler.map(({ kurus, tahsilat: _tahsilat, cariId: _cariId, ...k }) => ({ ...k, tutar: kurus / 100 })),
     };

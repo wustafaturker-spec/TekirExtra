@@ -382,13 +382,21 @@ export class KasaBankaController {
     @Query("arama") arama?: string,
     @Query("baslangic") baslangic?: string,
     @Query("bitis") bitis?: string,
+    @Query("acik") acik?: string,
   ) {
-    return this.service.cekSenetListele(tur, durum, yon, arama, baslangic, bitis);
+    if (acik !== undefined && acik !== "1" && acik !== "0") throw new BadRequestException("Geçersiz açık evrak filtresi");
+    return this.service.cekSenetListele(tur, durum, yon, arama, baslangic, bitis, acik === "1");
   }
 
   @Get("cek-senet-ozet")
   async cekSenetOzet(@Query("yon") yon?: string) {
     return this.service.cekSenetOzet(yon);
+  }
+
+  @Get("cek-senet-vade-analizi")
+  @Roller("muhasebe")
+  async cekSenetVadeAnalizi() {
+    return this.service.cekSenetVadeAnalizi();
   }
 
   /** KSB-08: çek/senedin son işlemini geri alır. */

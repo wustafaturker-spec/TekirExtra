@@ -8,7 +8,7 @@ import { UC } from "./uclar";
  * sonra, onun o anki rolüyle çalışır.
  */
 
-const TUR_ADI: Record<string, string> = { teklif: "Teklif", siparis: "Sipariş", irsaliye: "İrsaliye" };
+const TUR_ADI: Record<string, string> = { teklif: "Teklif", siparis: "Sipariş", irsaliye: "İrsaliye", fatura: "Fatura" };
 const FATURA_TIP_ADI: Record<string, string> = { satis: "Satış faturası", alis: "Alış faturası", satis_iade: "Satış iade faturası", alis_iade: "Alış iade faturası", proforma: "Proforma" };
 
 async function belgeTanimi(b: AracBaglami, id: string): Promise<string> {
@@ -57,6 +57,9 @@ const stokAlanlari = z.object({
 const alanListesi = (o: Record<string, unknown>) =>
   Object.entries(o).filter(([, v]) => v !== undefined).map(([k, v]) => `${k}: ${v}`).join(", ");
 
+const alanFarki = (once: Record<string, unknown>, sonra: Record<string, unknown>) =>
+  Object.entries(sonra).filter(([, v]) => v !== undefined).map(([alan, deger]) => ({ alan, once: once[alan], sonra: deger }));
+
 export const ONAYLI_ARACLAR = [
   arac({
     ad: "belge_onayla",
@@ -80,6 +83,23 @@ export const ONAYLI_ARACLAR = [
     async calistir(b, g) {
       const k = await cagir(b, UC.belgeIptal, [g.belgeId, { uyariOnaylandi: false }], g.belgeId);
       return { ...sec(k, ["id", "no", "durum"]), adres: adres.belge(g.belgeId) };
+    },
+  }),
+  arac({
+    ad: "belge_donustur",
+    aciklama: "Onaylanmış teklifi siparişe/faturaya veya onaylanmış siparişi irsaliyeye/faturaya dönüştürür. Kullanıcı onayı gerekir.",
+    sinif: "onay",
+    girdi: z.object({
+      belgeId: uuid("Dönüştürülecek kaynak belge kimliği"),
+      hedef: z.enum(["siparis", "irsaliye", "fatura"]).describe("Dönüştürülecek hedef belge türü"),
+    }),
+    uc: UC.belgeDonustur,
+    ozetle: async (b, g) => `${await belgeTanimi(b, g.belgeId)} belgesi ${TUR_ADI[g.hedef] ?? g.hedef} türüne dönüştürülecek`,
+    async calistir(b, g) {
+      const k = await cagir(b, UC.belgeDonustur, [g.belgeId, { hedef: g.hedef }], g.belgeId);
+      const yeniId = (k as { belgeId?: string; faturaId?: string }).belgeId ?? (k as { faturaId?: string }).faturaId;
+      const yeniAdres = (k as { donusenTur?: string }).donusenTur === "fatura" ? (yeniId ? adres.fatura(yeniId) : undefined) : (yeniId ? adres.belge(yeniId) : undefined);
+      return { ...k, ...(yeniAdres ? { adres: yeniAdres } : {}) };
     },
   }),
   arac({
@@ -211,6 +231,10 @@ export const ONAYLI_ARACLAR = [
     girdi: z.object({ cariId: uuid("Cari kimliği"), degisiklikler: cariAlanlari }),
     uc: UC.cariGuncelle,
     ozetle: async (b, g) => `Cari güncellenecek: ${await cariTanimi(b, g.cariId)} → ${alanListesi(g.degisiklikler)}`,
+    async onizle(b, g) {
+      const k = await cagir<Record<string, unknown>>(b, UC.cariGetir, [g.cariId]);
+      return { eylem: "Cari kartını güncelle", hedef: `${k.unvan} (${k.kod})`, degisiklikler: alanFarki(k, g.degisiklikler) };
+    },
     async calistir(b, g) {
       const k = await cagir(b, UC.cariGuncelle, [g.cariId, g.degisiklikler], g.cariId);
       return { ...sec(k, ["id", "kod", "unvan"]), adres: adres.cari(g.cariId) };
@@ -238,6 +262,10 @@ export const ONAYLI_ARACLAR = [
       const k = await cagir(b, UC.stokGetir, [g.stokId]);
       return `Stok kartı güncellenecek: ${k.ad} (${k.kod}) → ${alanListesi(g.degisiklikler)}`;
     },
+    async onizle(b, g) {
+      const k = await cagir<Record<string, unknown>>(b, UC.stokGetir, [g.stokId]);
+      return { eylem: "Stok kartını güncelle", hedef: `${k.ad} (${k.kod})`, degisiklikler: alanFarki(k, g.degisiklikler) };
+    },
     async calistir(b, g) {
       const k = await cagir(b, UC.stokGuncelle, [g.stokId, g.degisiklikler], g.stokId);
       return { ...sec(k, ["id", "kod", "ad"]), adres: adres.stok(g.stokId) };
@@ -262,6 +290,56 @@ export const ONAYLI_ARACLAR = [
     async calistir(b, g) {
       const sonuc = await cagir<any[]>(b, UC.vadeHatirlatmaGonder, [{ cariIdler: g.cariIdler, kademe: g.kademe, not: g.not ?? null }]);
       return { sonuclar: sonuc.map((x) => sec(x, ["unvan", "durum", "mesaj"])) };
+    },
+  }),
+  arac({
+    ad: "gelen_epostadan_crm_gorevi_ac",
+    aciklama:
+      "Gelen bir e-postayı temel alarak ilgili cariye CRM fırsatı veya destek talebi/görevi açar. Kullanıcı onayı gerekir.",
+    sinif: "onay",
+    girdi: z.object({
+      epostaId: uuid("Gelen e-posta kimliği"),
+    }),
+    uc: UC.gelenEpostaCrmGorev,
+    async ozetle(b, g) {
+      const e = await cagir<any>(b, UC.gelenEpostaGetir, [g.epostaId]);
+      return `Gelen e-postadan CRM görevi açılacak: "${e.konu}" (Gönderen: ${e.gonderenAdi || e.gonderenEposta})`;
+    },
+    async calistir(b, g) {
+      const gorev = await cagir<any>(b, UC.gelenEpostaCrmGorev, [g.epostaId]);
+      return {
+        mesaj: "CRM görevi başarıyla oluşturuldu",
+        gorev: sec(gorev, ["id", "baslik", "durum", "oncelik"]),
+        adres: adres.eposta(),
+      };
+    },
+  }),
+  arac({
+    ad: "gelen_eposta_durum_guncelle",
+    aciklama:
+      "Gelen bir e-postanın işlem durumunu günceller ('yeni', 'islendi', 'arsivlendi'). Kullanıcı onayı gerekir.",
+    sinif: "onay",
+    girdi: z.object({
+      epostaId: uuid("Gelen e-posta kimliği"),
+      durum: z.enum(["yeni", "islendi", "arsivlendi"]).describe("Yeni işlem durumu"),
+    }),
+    uc: UC.gelenEpostaDurum,
+    async ozetle(b, g) {
+      const e = await cagir<any>(b, UC.gelenEpostaGetir, [g.epostaId]);
+      return `Gelen e-posta ("${e.konu}") durumu "${g.durum}" olarak güncellenecek.`;
+    },
+    async onizle(b, g) {
+      const e = await cagir<any>(b, UC.gelenEpostaGetir, [g.epostaId]);
+      return { eylem: "E-posta durumunu güncelle", hedef: e.konu, degisiklikler: [{ alan: "durum", once: e.durum, sonra: g.durum }] };
+    },
+    async calistir(b, g) {
+      const sonuc = await cagir<any>(b, UC.gelenEpostaDurum, [g.epostaId, { durum: g.durum }]);
+      return {
+        id: g.epostaId,
+        durum: sonuc.durum,
+        mesaj: `E-posta durumu "${g.durum}" olarak güncellendi.`,
+        adres: adres.eposta(),
+      };
     },
   }),
 ];

@@ -1,0 +1,387 @@
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
+import { PrismaService } from "../core/prisma.service";
+import { DepoService } from "../ekler/depo.service";
+import { EpostaService } from "./eposta.service";
+import { AiService } from "../ai/ai.service";
+import { coz } from "../core/kripto";
+
+@Injectable()
+export class ImapService {
+  private readonly logger = new Logger(ImapService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly depoService: DepoService,
+    private readonly epostaService: EpostaService,
+    private readonly aiService: AiService,
+  ) {}
+
+  /**
+   * Kiracının yapılandırılmış IMAP sunucusuna bağlanarak yeni iletileri çeker ve ekleri depolar.
+   */
+  async senkronizeEt(tenantId: string): Promise<{ senkronizeEdildi: number; toplam: number; mesaj?: string }> {
+    const ayar = await this.epostaService.saklananAyar(tenantId);
+    if (!ayar?.imapHost || !ayar?.imapKullaniciAdi || !ayar?.imapSifreliParola || !ayar?.imapAktif) {
+      return { senkronizeEdildi: 0, toplam: 0, mesaj: "IMAP yapılandırılmamış veya aktif değil" };
+    }
+
+    const parola = coz(ayar.imapSifreliParola);
+    const { ImapFlow } = await import("imapflow");
+    const { simpleParser } = await import("mailparser");
+
+    const client = new ImapFlow({
+      host: ayar.imapHost,
+      port: ayar.imapPort ?? 993,
+      secure: (ayar.imapGuvenlik ?? "ssl") === "ssl",
+      auth: { user: ayar.imapKullaniciAdi, pass: parola },
+      logger: false,
+    });
+
+    let eklenenSayisi = 0;
+    let toplam = 0;
+
+    try {
+      await client.connect();
+      const lock = await client.getMailboxLock(ayar.imapKlasor || "INBOX", { readOnly: true });
+
+      try {
+        toplam = client.mailbox ? (client.mailbox.exists ?? 0) : 0;
+        if (toplam === 0) {
+          return { senkronizeEdildi: 0, toplam: 0 };
+        }
+
+        // Son 30 iletiyi çek
+        const baslangic = Math.max(1, toplam - 29);
+        const mesajAraligi = `${baslangic}:*`;
+
+        const mesajlar = client.fetch(mesajAraligi, {
+          uid: true,
+          envelope: true,
+          source: true,
+        });
+
+        for await (const message of mesajlar) {
+          if (!message.source) continue;
+
+          try {
+            const parsed = await simpleParser(message.source);
+            const mesajId = parsed.messageId || `imap-${tenantId}-${message.uid}-${message.seq}`;
+
+            // Veritabanında daha önce işlenmiş mi?
+            const mevcut = await this.prisma.tenantIslem(tenantId, (tx) =>
+              tx.gelenEposta.findUnique({
+                where: { tenantId_mesajId: { tenantId, mesajId } },
+              }),
+            );
+
+            if (mevcut) continue;
+
+            const gonderenEposta = (parsed.from?.value[0]?.address || "").toLowerCase().trim();
+            const gonderenAdi = parsed.from?.value[0]?.name || null;
+            const aliciEposta = parsed.to
+              ? Array.isArray(parsed.to)
+                ? parsed.to.map((t) => t.text).join(", ")
+                : parsed.to.text
+              : (ayar.gondericiEposta || "");
+            const konu = parsed.subject || "(Konusuz)";
+            const icerikMetin = parsed.text || "";
+            const icerikHtml = typeof parsed.html === "string" ? parsed.html : null;
+            const tarih = parsed.date || new Date();
+
+            // Otomatik Cari Eşleştirme (CariHesap veya CariKisi e-postasından)
+            let cariId: string | null = null;
+            if (gonderenEposta) {
+              const cari = await this.prisma.tenantIslem(tenantId, async (tx) => {
+                const dogrudanCari = await tx.cariHesap.findFirst({
+                  where: {
+                    tenantId,
+                    eposta: { equals: gonderenEposta, mode: "insensitive" },
+                    aktif: true,
+                  },
+                  select: { id: true },
+                });
+                if (dogrudanCari) return dogrudanCari;
+
+                const kisiCari = await tx.cariKisi.findFirst({
+                  where: {
+                    tenantId,
+                    eposta: { equals: gonderenEposta, mode: "insensitive" },
+                  },
+                  select: { cariId: true },
+                });
+                return kisiCari ? { id: kisiCari.cariId } : null;
+              });
+
+              if (cari) {
+                cariId = cari.id;
+              }
+            }
+
+            // Gelen e-posta ana kaydını oluştur
+            const yeniEposta = await this.prisma.tenantIslem(tenantId, (tx) =>
+              tx.gelenEposta.create({
+                data: {
+                  tenantId,
+                  mesajId,
+                  uid: message.uid,
+                  gonderenAdi,
+                  gonderenEposta,
+                  aliciEposta,
+                  konu,
+                  icerikMetin,
+                  icerikHtml,
+                  tarih,
+                  cariId,
+                  durum: "yeni",
+                  okundu: false,
+                },
+              }),
+            );
+
+            // Ekleri MinIO nesne deposuna yükle ve kaydet
+            if (parsed.attachments && parsed.attachments.length > 0) {
+              for (const ek of parsed.attachments) {
+                const dosyaAdi = ek.filename || "ek-belge";
+                const mimeTuru = ek.contentType || "application/octet-stream";
+                const boyut = ek.size || (ek.content ? ek.content.length : 0);
+                const depolamaAnahtari = `${tenantId}/eposta/${yeniEposta.id}/${Date.now()}-${dosyaAdi}`;
+
+                try {
+                  await this.depoService.yukle(depolamaAnahtari, ek.content, mimeTuru);
+
+                  await this.prisma.tenantIslem(tenantId, (tx) =>
+                    tx.gelenEpostaEk.create({
+                      data: {
+                        tenantId,
+                        epostaId: yeniEposta.id,
+                        dosyaAdi,
+                        mimeTuru,
+                        boyut,
+                        minioAnahtari: depolamaAnahtari,
+                      },
+                    }),
+                  );
+                } catch (yuklemeHatasi) {
+                  this.logger.error(`E-posta eki MinIO'ya yüklenemedi: ${dosyaAdi}`, yuklemeHatasi);
+                }
+              }
+            }
+
+            eklenenSayisi++;
+          } catch (mesajHatasi) {
+            this.logger.error(`İleti ayrıştırılamadı (UID: ${message.uid})`, mesajHatasi);
+          }
+        }
+      } finally {
+        lock.release();
+      }
+
+      await client.logout().catch(() => undefined);
+    } catch (hata) {
+      this.logger.error(`IMAP senkronizasyon hatası (tenant: ${tenantId})`, hata);
+      throw new BadRequestException(
+        hata instanceof Error ? `IMAP senkronizasyon hatası: ${hata.message}` : "IMAP bağlantısı kurulamadı",
+      );
+    }
+
+    return { senkronizeEdildi: eklenenSayisi, toplam };
+  }
+
+  /**
+   * Gelen e-postaları filtreli ve sayfalı listeler.
+   */
+  async listele(
+    tenantId: string,
+    filtre?: {
+      sayfa?: number;
+      adet?: number;
+      okundu?: boolean;
+      durum?: string;
+      cariId?: string;
+      arama?: string;
+    },
+  ) {
+    const sayfa = Math.max(1, filtre?.sayfa || 1);
+    const adet = Math.min(100, Math.max(1, filtre?.adet || 25));
+    const atla = (sayfa - 1) * adet;
+
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const where: any = { tenantId };
+      if (filtre?.okundu !== undefined) where.okundu = filtre.okundu;
+      if (filtre?.durum) where.durum = filtre.durum;
+      if (filtre?.cariId) where.cariId = filtre.cariId;
+      if (filtre?.arama) {
+        where.OR = [
+          { konu: { contains: filtre.arama, mode: "insensitive" } },
+          { gonderenEposta: { contains: filtre.arama, mode: "insensitive" } },
+          { gonderenAdi: { contains: filtre.arama, mode: "insensitive" } },
+        ];
+      }
+
+      const [toplam, satirlar] = await Promise.all([
+        tx.gelenEposta.count({ where }),
+        tx.gelenEposta.findMany({
+          where,
+          include: {
+            cari: { select: { id: true, kod: true, unvan: true } },
+            ekler: { select: { id: true, dosyaAdi: true, mimeTuru: true, boyut: true, cikarilanVeri: true } },
+          },
+          orderBy: { tarih: "desc" },
+          skip: atla,
+          take: adet,
+        }),
+      ]);
+
+      return {
+        toplam,
+        sayfa,
+        adet,
+        sayfaSayisi: Math.ceil(toplam / adet),
+        satirlar,
+      };
+    });
+  }
+
+  /**
+   * Tek bir e-postanın tüm detaylarını ve eklerini getirir.
+   */
+  async getir(tenantId: string, id: string) {
+    const eposta = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.gelenEposta.findFirst({
+        where: { id, tenantId },
+        include: {
+          cari: { select: { id: true, kod: true, unvan: true, eposta: true, telefon: true } },
+          ekler: true,
+        },
+      }),
+    );
+    if (!eposta) throw new NotFoundException("E-posta bulunamadı");
+    return eposta;
+  }
+
+  /**
+   * Okundu bilgisini günceller.
+   */
+  async okunduGuncelle(tenantId: string, id: string, okundu: boolean) {
+    await this.getir(tenantId, id);
+    return this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.gelenEposta.update({
+        where: { id, tenantId },
+        data: { okundu },
+      }),
+    );
+  }
+
+  /**
+   * E-posta işlem durumunu günceller (yeni, islendi, arsivlendi).
+   */
+  async durumGuncelle(tenantId: string, id: string, durum: string) {
+    await this.getir(tenantId, id);
+    return this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.gelenEposta.update({
+        where: { id, tenantId },
+        data: { durum },
+      }),
+    );
+  }
+
+  /**
+   * Ek dosyayı MinIO'dan indirir.
+   */
+  async ekIndir(tenantId: string, epostaId: string, ekId: string) {
+    const ek = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.gelenEpostaEk.findFirst({
+        where: { id: ekId, epostaId, tenantId },
+      }),
+    );
+    if (!ek) throw new NotFoundException("Ek dosya bulunamadı");
+    const tampon = await this.depoService.indir(ek.minioAnahtari);
+    return {
+      tampon,
+      dosyaAdi: ek.dosyaAdi,
+      mimeTuru: ek.mimeTuru,
+    };
+  }
+
+  /**
+   * 1. İşlev: E-postadan CRM Fırsatı / Destek Görevi oluşturur.
+   */
+  async crmGorevOlustur(tenantId: string, epostaId: string, sorumluUserId?: string) {
+    const eposta = await this.getir(tenantId, epostaId);
+
+    // Cari eşleşmiş mi? Eşleşmemişse ilk aktif cariyi yedek bağla
+    let cariId = eposta.cariId;
+    if (!cariId) {
+      const ilkCari = await this.prisma.tenantIslem(tenantId, (tx) =>
+        tx.cariHesap.findFirst({ where: { tenantId, aktif: true }, select: { id: true } }),
+      );
+      if (!ilkCari) throw new BadRequestException("Sistemde kayıtlı aktif bir cari hesap bulunamadı");
+      cariId = ilkCari.id;
+    }
+
+    const baslik = `E-posta: ${eposta.konu.slice(0, 120)}`;
+    const notlar = `Gönderen: ${eposta.gonderenAdi || ""} <${eposta.gonderenEposta}>\nTarih: ${eposta.tarih.toLocaleString("tr-TR")}\n\nİçerik Özeti:\n${(eposta.icerikMetin || "").slice(0, 1500)}`;
+
+    const firsat = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      const f = await tx.crmFirsat.create({
+        data: {
+          tenantId,
+          cariId: cariId!,
+          baslik,
+          tahminiTutar: 0,
+          asama: "yeni_lead",
+          sorumluUserId: sorumluUserId || null,
+          notlar,
+        },
+        include: {
+          cari: { select: { id: true, kod: true, unvan: true } },
+        },
+      });
+
+      await tx.gelenEposta.update({
+        where: { id: epostaId, tenantId },
+        data: { crmFirsatId: f.id, durum: "islendi" },
+      });
+
+      return f;
+    });
+
+    return firsat;
+  }
+
+  /**
+   * 2. İşlev: Ek dosyadaki (PDF/görsel) fatura veya masraf bilgilerini OCR ile çıkarır.
+   */
+  async ekOcrCikar(tenantId: string, epostaId: string, ekId: string) {
+    const ek = await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.gelenEpostaEk.findFirst({ where: { id: ekId, epostaId, tenantId } }),
+    );
+    if (!ek) throw new NotFoundException("Ek dosya bulunamadı");
+
+    const dosyaBuffer = await this.depoService.indir(ek.minioAnahtari);
+    const base64 = dosyaBuffer.toString("base64");
+
+    const mimeTuru = ek.mimeTuru.toLowerCase().includes("pdf") ? "application/pdf" : "image/jpeg";
+
+    const ocrSonucu = await this.aiService.fisFaturaOcrTara(tenantId, {
+      gorselBase64: base64,
+      mimeType: mimeTuru,
+      belgeTipi: "fis_fatura",
+    });
+
+    // Çıkarılan veriyi ek kaydına sakla
+    await this.prisma.tenantIslem(tenantId, (tx) =>
+      tx.gelenEpostaEk.update({
+        where: { id: ekId, tenantId },
+        data: { cikarilanVeri: ocrSonucu as any },
+      }),
+    );
+
+    return ocrSonucu;
+  }
+}
