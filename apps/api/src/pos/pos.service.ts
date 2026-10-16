@@ -755,14 +755,16 @@ export class PosService {
         tx.posTahsilat.findFirst({
           where: { id: tahsilatId, makbuzAnahtari: anahtar, durum: "odendi", hareketId: { not: null } },
           include: {
-            hareket: { include: { posHesap: true, cari: { select: { kod: true, unvan: true } }, fatura: { select: { no: true } } } },
+            hareket: { include: { posHesap: true, cari: { select: { kod: true, unvan: true, belgeDili: true, belgeCiftDil: true } }, fatura: { select: { no: true } } } },
           },
         }),
-        tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true } }),
+        tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true, vkn: true, vergiDairesi: true, adres: true, ilce: true, il: true, postaKodu: true, telefon: true, eposta: true, webSitesi: true, mersisNo: true, ticaretSicilNo: true } }),
       ]),
     );
     if (!tahsilat?.hareket || !firma) throw new NotFoundException("Tahsilat makbuzu bulunamadı");
-    const buffer = await this.pdf.htmlToPdf(makbuzPdfHtml(tahsilat.hareket, firma));
+    // Açık (oturumsuz) bağlantı: kiracı ayarı okunmaz, varsayılan görünümle basılır.
+    const { html, altBilgi } = makbuzPdfHtml(tahsilat.hareket, { firma });
+    const buffer = await this.pdf.htmlToPdf(html, { altBilgi });
     return { buffer, dosyaAdi: `tahsilat-makbuzu-${tahsilat.id.slice(0, 8)}.pdf` };
   }
 

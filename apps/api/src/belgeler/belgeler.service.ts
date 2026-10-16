@@ -13,7 +13,7 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PdfService } from "../core/pdf/pdf.service";
-import { belgeDiliNormalize, ciftDilGecerli, yabanciAdlarNormalize, belgeNoMetni, birlesikReferanslar, revizyonEngeli, ilgiliKisiTemizle, ilkIlgiliKisi, ilkKosullar, vadeTarihiHesapla, irsaliyeGeriAlmaEngeli, metinNormalize, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi, varyantAciklamasi, varyantliAd, varyantliKod } from "@tekirextra/shared";
+import { belgeDiliNormalize, ciftDilGecerli, belgeNoMetni, birlesikReferanslar, revizyonEngeli, ilgiliKisiTemizle, ilkIlgiliKisi, ilkKosullar, vadeTarihiHesapla, irsaliyeGeriAlmaEngeli, metinNormalize, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi, varyantAciklamasi, varyantliAd, varyantliKod } from "@tekirextra/shared";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { PrismaService } from "../core/prisma.service";
 import { DepoService } from "../stok/depo.service";
@@ -21,6 +21,7 @@ import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
 import { EbelgeGorunumService } from "../ebelge/ebelge-gorunum.service";
 import { EpostaService } from "../tenant/eposta.service";
 import { belgePdfHtml } from "./belge-pdf";
+import { ticariBelgeEkVerisi } from "../core/pdf/ticari-belge-veri";
 import { durumGecmisiOku } from "../core/durum-gecmisi";
 import { ebelgeUygulamalariniOku } from "../ebelge/ebelge-uygulamalari.service";
 import { belgeSirasiAl } from "./belge-sayac";
@@ -1462,42 +1463,24 @@ export class BelgelerService {
   async pdfUret(id: string, secenekler: { kopya?: boolean } = {}): Promise<{ buffer: Buffer; dosyaAdi: string }> {
     const belge = await this.getir(id);
     const { tenantId } = aktifBaglam();
-    const stokIds = [...new Set(belge.satirlar.map((s) => s.stokId))];
-    const [firma, cari, stoklar, bankalar] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
-      tx.tenant.findUnique({
-        where: { id: tenantId },
-        select: { unvan: true, vkn: true, vergiDairesi: true, adres: true, ilce: true, il: true, postaKodu: true, telefon: true, eposta: true, webSitesi: true, mersisNo: true, ticaretSicilNo: true },
-      }),
-      tx.cariHesap.findUnique({
-        where: { id: belge.cariId },
-        select: { vergiDairesi: true, adresler: { select: { tip: true, adres: true, il: true, ilce: true, postaKodu: true, ulke: true } } },
-      }),
-      tx.stokKart.findMany({ where: { id: { in: stokIds } }, select: { id: true, yabanciAdlar: true } }),
-      // FTR-39: "belgelerde göster" işaretli banka hesapları (EBLG-101 ile aynı işaret).
-      tx.bankaHesap.findMany({
-        where: { aktif: true, faturadaGoster: true, iban: { not: null } },
-        select: { bankaAdi: true, sube: true, iban: true, swift: true, dovizCinsi: true },
-        orderBy: { createdAt: "asc" },
-      }),
-    ]));
-    if (!firma) throw new NotFoundException("Firma bulunamadı");
     const dil = belgeDiliNormalize(belge.belgeDili);
-    const yabanciAdlar = new Map(stoklar.map((s) => [s.id, yabanciAdlarNormalize(s.yabanciAdlar)]));
-    // Fatura adresi, yoksa merkez, yoksa ilk adres (cari ekstresiyle aynı sıra).
-    const adres = cari?.adresler.find((a) => a.tip === "fatura") ?? cari?.adresler.find((a) => a.tip === "merkez") ?? cari?.adresler[0] ?? null;
+    const ek = await this.prisma.tenantIslem(tenantId, (tx) => ticariBelgeEkVerisi(tx, {
+      tenantId, cariId: belge.cariId, stokIds: belge.satirlar.map((s) => s.stokId), dil, doviz: belge.dovizCinsi,
+    }));
+    if (!ek.firma) throw new NotFoundException("Firma bulunamadı");
     const [tema, gorunum, kaseDataUri] = await Promise.all([this.pdf.belgeTemasi(), this.pdf.belgeGorunumu(), this.pdf.firmaKaseDataUri()]);
+    // FTR-39: taşıyıcının ünvanı irsaliyenin taşıma bilgisine yazılır.
+    const tasiyici = belge.tasiyiciCariId
+      ? await this.prisma.tenantIslem(tenantId, (tx) => tx.cariHesap.findUnique({ where: { id: belge.tasiyiciCariId! }, select: { unvan: true } }))
+      : null;
     const { html, altBilgi } = belgePdfHtml({
       ...belge,
+      tasiyiciUnvan: tasiyici?.unvan ?? null,
       belgeDili: dil,
-      cari: { ...belge.cari, vergiDairesi: cari?.vergiDairesi ?? null, adres },
-      satirlar: belge.satirlar.map((s) => {
-        const ceviri = dil === "tr" ? undefined : yabanciAdlar.get(s.stokId)?.[dil];
-        return { ...s, yabanciAd: ceviri?.ad ?? null, yabanciAciklama: ceviri?.aciklama ?? null };
-      }),
-      bankalar: bankalar
-        .map((h) => ({ bankaAdi: h.bankaAdi, sube: h.sube, iban: h.iban!, swift: h.swift, doviz: h.dovizCinsi }))
-        .sort((a, b) => Number(b.doviz === belge.dovizCinsi) - Number(a.doviz === belge.dovizCinsi)),
-    }, { firma, gorunum, logoDataUri: tema.logoDataUri, kaseDataUri }, secenekler.kopya === true);
+      cari: { ...belge.cari, ...ek.cari },
+      satirlar: belge.satirlar.map((s) => ({ ...s, ...ek.stoklar.get(s.stokId) })),
+      bankalar: ek.bankalar,
+    }, { firma: ek.firma, gorunum, logoDataUri: tema.logoDataUri, kaseDataUri }, secenekler.kopya === true);
     const buffer = await this.pdf.htmlToPdf(html, { altBilgi });
     return { buffer, dosyaAdi: `belge-${belge.no ? `${belge.no}${belge.revizyonNo ? `-Rev${belge.revizyonNo}` : ""}` : "taslak"}.pdf` };
   }

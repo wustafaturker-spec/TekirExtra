@@ -110,3 +110,51 @@ describe("birim çevirisi", () => {
     expect(birimAdi("bağ", "en")).toBe("bağ");
   });
 });
+
+describe("2. adım: proforma, irsaliye taşıma, makbuz (FTR-39)", () => {
+  it("proforma: Incoterms, taşıma şekli, menşe/GTİP/kap, banka ve 'fatura değildir' kapanışı; TL karşılığı yok", async () => {
+    const { faturaPdfHtml } = await import("../../fatura/fatura-pdf");
+    const { html: h } = faturaPdfHtml({
+      tip: "proforma", durum: "taslak", no: null, tarih: "2026-10-16", vadeTarihi: null, dovizCinsi: "USD", kur: "41.85",
+      toplamBrut: "1000.00", toplamSatirIskontosu: "0", genelIskontoToplam: "0", toplamMatrah: "1000.00", toplamKdv: "0.00", toplamTevkifat: "0", genelToplam: "1000.00",
+      aciklama: null, belgeDili: "en", ihracatTeslimSarti: "CIF", ihracatTasimaSekli: "1",
+      cari: { kod: "M1", unvan: "GULF LLC", vknTckn: null },
+      satirlar: [{ stokKod: "P1", stokAd: "Pompa", yabanciAd: "Pump", mensei: "Türkiye", gtipKodu: "841370210000", ihracatKapAdet: 2, ihracatKapCinsi: "Koli", miktar: "2", birim: "adet", birimFiyat: "500", iskontoOrani: "0", matrah: "1000.00", kdvOrani: "0", kdvTutari: "0", toplamTutar: "1000.00" }],
+      bankalar: [{ bankaAdi: "İş Bankası", iban: "TR12", swift: "ISBKTRIS", doviz: "USD" }],
+    }, { firma });
+    expect(h).toContain("PROFORMA INVOICE");
+    expect(h).toContain("CIF — Cost, Insurance and Freight");
+    expect(h).toContain("Sea");
+    expect(h).toContain("Origin: Türkiye");
+    expect(h).toContain("HS Code: 841370210000");
+    expect(h).toContain("Packages: 2 × Koli");
+    expect(h).toContain("ISBKTRIS");
+    expect(h).toContain("This document is not a tax invoice.");
+    expect(h).not.toContain("TRY Equivalent");
+  });
+
+  it("irsaliye: taşıma bilgileri ve teslim imzaları", () => {
+    const { html: h } = html(belge({ tur: "irsaliye", plaka: "34ABC123", dorsePlaka: "34DR001", soforAdi: "Ali", soforSoyadi: "Kaya", tasiyiciUnvan: "Hızlı Lojistik", fiiliSevkZamani: "2026-10-16T07:30:00.000Z", teslimatAdres: "Liman Cd. 5", teslimatIl: "Mersin" }));
+    expect(h).toContain("SEVK İRSALİYESİ");
+    expect(h).toContain("34ABC123 / 34DR001");
+    expect(h).toContain("Ali Kaya");
+    expect(h).toContain("Hızlı Lojistik");
+    expect(h).toContain("16.10.2026 10:30");
+    expect(h).toContain("Teslim Alan");
+  });
+
+  it("makbuz: ödeme şekli, tutar etiketi ve dövizde TL karşılığı", async () => {
+    const { makbuzPdfHtml } = await import("../../kasa-banka/makbuz-pdf");
+    const { html: h } = makbuzPdfHtml({
+      id: "abc", tip: "tahsilat", tarih: "2026-10-16", makbuzNo: "THS2026000001", aciklama: "Fatura tahsilatı",
+      tutar: "1000.00", tutarTry: "41850.00", kur: "41.85", dovizCinsi: "USD", bankaHesap: { ad: "İş Bankası USD" },
+      cari: { kod: "M1", unvan: "GULF LLC" }, fatura: { no: "K072026000000101" },
+    }, { firma });
+    expect(h).toContain("TAHSİLAT MAKBUZU");
+    expect(h).toContain("Havale / EFT");
+    expect(h).toContain("Tahsil Edilen Tutar");
+    expect(h).toContain("K072026000000101");
+    expect(h).toContain("41.850,00 TL");
+    expect(h).toContain("Tahsil Eden");
+  });
+});

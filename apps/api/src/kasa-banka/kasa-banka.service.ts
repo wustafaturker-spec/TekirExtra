@@ -628,12 +628,14 @@ export class KasaBankaService {
   async makbuzPdf(id: string): Promise<{ buffer: Buffer; dosyaAdi: string }> {
     const { tenantId } = aktifBaglam();
     const [hareket, firma] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
-      tx.kasaBankaHareket.findUnique({ where: { id }, include: { kasa: true, bankaHesap: true, posHesap: true, cari: { select: { kod: true, unvan: true } }, fatura: { select: { no: true } } } }),
-      tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true } }),
+      tx.kasaBankaHareket.findUnique({ where: { id }, include: { kasa: true, bankaHesap: true, posHesap: true, cari: { select: { kod: true, unvan: true, belgeDili: true, belgeCiftDil: true } }, fatura: { select: { no: true } } } }),
+      tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true, vkn: true, vergiDairesi: true, adres: true, ilce: true, il: true, postaKodu: true, telefon: true, eposta: true, webSitesi: true, mersisNo: true, ticaretSicilNo: true } }),
     ]));
     if (!hareket || !hareket.makbuzNo) throw new NotFoundException("Bu fiş için makbuz yok; makbuz yalnız tahsilat/ödeme fişlerine verilir");
-    const tema = await this.pdf.belgeTemasi();
-    return { buffer: await this.pdf.htmlToPdf(makbuzPdfHtml(hareket, firma, tema)), dosyaAdi: `makbuz-${hareket.makbuzNo}.pdf` };
+    if (!firma) throw new NotFoundException("Firma bulunamadı");
+    const [tema, gorunum, kaseDataUri] = await Promise.all([this.pdf.belgeTemasi(), this.pdf.belgeGorunumu(), this.pdf.firmaKaseDataUri()]);
+    const { html, altBilgi } = makbuzPdfHtml(hareket, { firma, gorunum, logoDataUri: tema.logoDataUri, kaseDataUri });
+    return { buffer: await this.pdf.htmlToPdf(html, { altBilgi }), dosyaAdi: `makbuz-${hareket.makbuzNo}.pdf` };
   }
 
   // ─── MAKBUZ SERİLERİ (KSB-09) ─────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import { agirlikliMaliyet, alisBirimMaliyeti } from "../stok/maliyet";
 import { faturaDagitimKosulu } from "../stok/maliyet-dagitimi.service";
-import { ebelgeGitmemisMi, faturaGeriAlmaEngeli, ihracKayitliSonTarih, ilgiliKisiTemizle, varyantAciklamasi, varyantliAd, varyantliKod, type DovizKodu } from "@tekirextra/shared";
+import { belgeDiliNormalize, ciftDilGecerli, ebelgeGitmemisMi, faturaGeriAlmaEngeli, ihracKayitliSonTarih, ilgiliKisiTemizle, varyantAciklamasi, varyantliAd, varyantliKod, type DovizKodu } from "@tekirextra/shared";
 import {
   BadRequestException,
   ConflictException,
@@ -30,9 +30,10 @@ import { BaglantilarService } from "../tenant/baglantilar.service";
 import { EbelgeService } from "../ebelge/ebelge.service";
 import { EbelgeGorunumService } from "../ebelge/ebelge-gorunum.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
-import { renkNormalize, sablonNormalize } from "../core/pdf/belge-temasi";
+import { renkNormalize } from "../core/pdf/belge-temasi";
 import { ornekFatura } from "./sablon-onizleme";
 import { faturaPdfHtml } from "./fatura-pdf";
+import { ticariBelgeEkVerisi } from "../core/pdf/ticari-belge-veri";
 import { durumGecmisiOku } from "../core/durum-gecmisi";
 import { takiliRezervasyonMu } from "../ebelge/takili-rezervasyon";
 import { birimKatsayisiBul, satirBirimleriniDogrula } from "../stok/birim-cevrim";
@@ -564,6 +565,10 @@ export class FaturaService {
         ytbMakineId: s.ytbMakineId ?? null,
         ytbMakineSiraNo: s.ytbMakineSiraNo ?? null,
         sarjUniteSeriNo: s.sarjUniteSeriNo,
+        // EBLG-102: ihracat kap bilgisi (proforma ve kendi çıktımız da basar).
+        ihracatKapCinsi: s.ihracatKapCinsi ?? null,
+        ihracatKapNo: s.ihracatKapNo ?? null,
+        ihracatKapAdet: s.ihracatKapAdet ?? null,
       })),
       ebelge: kayit.ebelge && { ...kayit.ebelge, takiliGonderim: takiliRezervasyonMu(kayit.ebelge) },
       odemeOzeti: {
@@ -632,7 +637,7 @@ export class FaturaService {
 
       const cari = await tx.cariHesap.findUnique({
         where: { id: girdi.cariId },
-        select: { varsayilanVadeGun: true, efaturaProfili: true, earsivGonderimSekli: true, vknTckn: true },
+        select: { varsayilanVadeGun: true, efaturaProfili: true, earsivGonderimSekli: true, vknTckn: true, belgeDili: true, belgeCiftDil: true },
       });
 
       let hesaplananVadeTarihi: Date;
@@ -688,6 +693,11 @@ export class FaturaService {
           ozelMatrahOrani: girdi.ozelMatrahKodu ? D(girdi.ozelMatrahOrani ?? "0") : null,
           efaturaProfili: girdi.efaturaProfili ?? cari?.efaturaProfili ?? "temel",
           earsivGonderimSekli: girdi.earsivGonderimSekli ?? cari?.earsivGonderimSekli ?? "elektronik",
+          ihracatTeslimSarti: girdi.ihracatTeslimSarti || null,
+          ihracatTasimaSekli: girdi.ihracatTasimaSekli || null,
+          // FTR-40: dil verilmezse cari kartındaki dil.
+          belgeDili: girdi.belgeDili ?? belgeDiliNormalize(cari?.belgeDili),
+          ciftDil: ciftDilGecerli(girdi.belgeDili ?? belgeDiliNormalize(cari?.belgeDili), girdi.ciftDil ?? (girdi.belgeDili === undefined ? cari?.belgeCiftDil : false)),
           durum: "taslak",
           no: girdi.no ?? null,
           tarih: new Date(girdi.tarih),
@@ -801,6 +811,10 @@ export class FaturaService {
       cariId: girdi.cariId ?? fatura.cariId,
       efaturaProfili: girdi.efaturaProfili ?? (fatura.efaturaProfili as "temel" | "ticari"),
       earsivGonderimSekli: girdi.earsivGonderimSekli ?? (fatura.earsivGonderimSekli as "elektronik" | "kagit"),
+      belgeDili: girdi.belgeDili ?? belgeDiliNormalize(fatura.belgeDili),
+      ihracatTeslimSarti: girdi.ihracatTeslimSarti !== undefined ? girdi.ihracatTeslimSarti : fatura.ihracatTeslimSarti,
+      ihracatTasimaSekli: girdi.ihracatTasimaSekli !== undefined ? girdi.ihracatTasimaSekli : fatura.ihracatTasimaSekli,
+      ciftDil: girdi.ciftDil ?? fatura.ciftDil ?? false,
       ihracKayitliKodu: girdi.ihracKayitliKodu !== undefined ? girdi.ihracKayitliKodu : fatura.ihracKayitliKodu,
       idisSevkiyatNo: girdi.idisSevkiyatNo !== undefined ? girdi.idisSevkiyatNo : fatura.idisSevkiyatNo,
       ytbNo: girdi.ytbNo !== undefined ? girdi.ytbNo : fatura.ytbNo,
@@ -963,6 +977,10 @@ export class FaturaService {
           ozelMatrahOrani: birlesikGirdi.ozelMatrahKodu ? D(birlesikGirdi.ozelMatrahOrani ?? "0") : null,
           efaturaProfili: birlesikGirdi.efaturaProfili,
           earsivGonderimSekli: birlesikGirdi.earsivGonderimSekli,
+          belgeDili: birlesikGirdi.belgeDili,
+          ciftDil: ciftDilGecerli(birlesikGirdi.belgeDili, birlesikGirdi.ciftDil),
+          ihracatTeslimSarti: birlesikGirdi.ihracatTeslimSarti || null,
+          ihracatTasimaSekli: birlesikGirdi.ihracatTasimaSekli || null,
           no: birlesikGirdi.no ?? null,
           tarih: new Date(birlesikGirdi.tarih),
           vadeTarihi: birlesikGirdi.vadeTarihi ? new Date(birlesikGirdi.vadeTarihi) : null,
@@ -1316,6 +1334,10 @@ export class FaturaService {
           toplamNetKdv: proforma.toplamNetKdv,
           genelToplam: proforma.genelToplam,
           aciklama: `${proforma.no ?? "Proforma"} kaynaklı satış faturası`,
+          belgeDili: proforma.belgeDili,
+          ciftDil: proforma.ciftDil,
+          ihracatTeslimSarti: proforma.ihracatTeslimSarti,
+          ihracatTasimaSekli: proforma.ihracatTasimaSekli,
           notlar: proforma.notlar,
         },
       });
@@ -1403,6 +1425,8 @@ export class FaturaService {
           senaryo: fatura.senaryo,
           efaturaProfili: fatura.efaturaProfili,
           earsivGonderimSekli: fatura.earsivGonderimSekli,
+          belgeDili: fatura.belgeDili,
+          ciftDil: fatura.ciftDil,
           ihracKayitliKodu: fatura.ihracKayitliKodu,
           ozelMatrahKodu: fatura.ozelMatrahKodu,
           ozelMatrahTutari: fatura.ozelMatrahTutari,
@@ -1645,7 +1669,7 @@ export class FaturaService {
 
   // ─── PDF ÜRETİMİ (FTR-07, T-02 altyapısı) ───────────────────────────────
 
-  async pdfUret(id: string): Promise<{ buffer: Buffer; dosyaAdi: string }> {
+  async pdfUret(id: string, secenekler: { kopya?: boolean } = {}): Promise<{ buffer: Buffer; dosyaAdi: string }> {
     const fatura = await this.getir(id);
     // Numarasız belge dışarı çıkmamalı: entegratör numarayı gönderimde atıyorsa
     // (EBLG-16) fatura kesin olsa bile henüz resmî numarası yoktur.
@@ -1655,18 +1679,23 @@ export class FaturaService {
       );
     }
     const { tenantId } = aktifBaglam();
-    const firma = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.tenant.findUnique({
-        where: { id: tenantId },
-        select: { unvan: true, vkn: true, vergiDairesi: true, adres: true, ilce: true, il: true, postaKodu: true, telefon: true, eposta: true, webSitesi: true, mersisNo: true, ticaretSicilNo: true },
-      }),
-    );
-    if (!firma) throw new NotFoundException("Firma bulunamadı");
-    const tema = await this.pdf.belgeTemasi();
-    const kodTablosu = await belgeKodTablosu(this.mevzuat, new Date(fatura.tarih).toISOString().slice(0, 10));
-    const buffer = await this.pdf.htmlToPdf(
-      faturaPdfHtml({ ...fatura, kodTablosu }, { ...firma, tema }),
-    );
+    const dil = belgeDiliNormalize(fatura.belgeDili);
+    const ek = await this.prisma.tenantIslem(tenantId, (tx) => ticariBelgeEkVerisi(tx, {
+      tenantId, cariId: fatura.cariId, stokIds: fatura.satirlar.map((s) => s.stokId), dil, doviz: fatura.dovizCinsi,
+    }));
+    if (!ek.firma) throw new NotFoundException("Firma bulunamadı");
+    const [tema, gorunum, kaseDataUri, kodTablosu] = await Promise.all([
+      this.pdf.belgeTemasi(), this.pdf.belgeGorunumu(), this.pdf.firmaKaseDataUri(),
+      belgeKodTablosu(this.mevzuat, new Date(fatura.tarih).toISOString().slice(0, 10)),
+    ]);
+    const { html, altBilgi } = faturaPdfHtml({
+      ...fatura,
+      kodTablosu,
+      cari: { ...fatura.cari, ...ek.cari },
+      satirlar: fatura.satirlar.map((s) => ({ ...s, ...ek.stoklar.get(s.stokId) })),
+      bankalar: ek.bankalar,
+    }, { firma: ek.firma, gorunum, logoDataUri: tema.logoDataUri, kaseDataUri }, secenekler.kopya === true);
+    const buffer = await this.pdf.htmlToPdf(html, { altBilgi });
     return {
       buffer,
       dosyaAdi: `fatura-${fatura.no ?? "taslak"}.pdf`,
@@ -1678,7 +1707,7 @@ export class FaturaService {
    * seçim kaydedilmeden denenebilsin diye şablon ve renk parametreden gelir,
    * verilmeyeni kiracının kayıtlı temasından tamamlanır.
    */
-  async sablonOnizlemePdf(sablon?: string, renk?: string): Promise<Buffer> {
+  async sablonOnizlemePdf(_sablon?: string, renk?: string): Promise<Buffer> {
     const { tenantId } = aktifBaglam();
     const firma = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.tenant.findUnique({
@@ -1687,18 +1716,16 @@ export class FaturaService {
       }),
     );
     if (!firma) throw new NotFoundException("Firma bulunamadı");
-    const kayitli = await this.pdf.belgeTemasi();
-    return this.pdf.htmlToPdf(
-      faturaPdfHtml(ornekFatura(), {
-        ...firma,
-        tema: {
-          sablon: sablonNormalize(sablon ?? kayitli.sablon),
-          vurguRengi: renkNormalize(renk ?? kayitli.vurguRengi),
-          logoDataUri: kayitli.logoDataUri,
-        },
-      }),
-    );
+    // FTR-37: şablon seçimi kalktı; renk verilirse kayıtlı görünümün ana rengi yerine denenir.
+    const [tema, gorunum] = await Promise.all([this.pdf.belgeTemasi(), this.pdf.belgeGorunumu()]);
+    const { html, altBilgi } = faturaPdfHtml(ornekFatura(), {
+      firma,
+      gorunum: renk ? { ...gorunum, anaRenk: renkNormalize(renk) } : gorunum,
+      logoDataUri: tema.logoDataUri,
+    });
+    return this.pdf.htmlToPdf(html, { altBilgi });
   }
+
 
   /**
    * Fatura PDF'ini cariye e-posta ile gönderir (FTR-07). Alıcı verilmezse
@@ -1839,6 +1866,9 @@ export class FaturaService {
     senaryo: string;
     efaturaProfili: string;
     earsivGonderimSekli: string;
+    /** FTR-40: basım dili. */
+    belgeDili?: string;
+    ciftDil?: boolean;
     ihracKayitliKodu?: string | null;
     ihracatTeslimTarihi?: Date | null;
     ihracatTeslimSarti?: string | null;
@@ -1929,6 +1959,8 @@ export class FaturaService {
       senaryo: k.senaryo,
       efaturaProfili: k.efaturaProfili,
       earsivGonderimSekli: k.earsivGonderimSekli,
+      belgeDili: belgeDiliNormalize(k.belgeDili),
+      ciftDil: k.ciftDil ?? false,
       // EBLG-60: ihraç kayıtlı satış kodu; boşsa normal satış.
       ihracKayitliKodu: k.ihracKayitliKodu ?? null,
       // EBLG-63: malın ihraç edilmesi gereken son gün; beyanname gelince takip biter.

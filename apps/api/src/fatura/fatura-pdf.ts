@@ -21,29 +21,17 @@ import {
   type SarjTuru,
   type YolcuBilgisi,
   ilgiliKisiMetni,
+  belgeDiliNormalize,
+  ciftDilGecerli,
+  TESLIM_SARTLARI,
+  type BelgeDili,
 } from "@tekirextra/shared";
-import {
-  kacis,
-  kurBicim,
-  paraBicim,
-  sayfaSablonu,
-  sayiBicim,
-  tarihBicim,
-  tlKarsiligi,
-  firmaIletisimSatirlari,
-  type FirmaIletisimi,
-} from "../core/pdf/pdf-sablon";
-import type { BelgeTemasi } from "../core/pdf/belge-temasi";
+import { kacis, paraBicim, sayiBicim, tarihBicim, tlKarsiligi, type FirmaIletisimi } from "../core/pdf/pdf-sablon";
+import { type TicariBelgeModeli, type TicariBelgeOrtami, type TicariBelgeToplami, bicimleyiciler, ticariBelgeHtml, vergiDairesiMetni } from "../core/pdf/ticari-belge";
+import { cevir, type EtiketAnahtari, tasimaSekliMetni, teslimSekliMetni } from "../core/pdf/belge-sozlugu";
 
 /** Fatura PDF şablonu (FTR-07, T-02 altyapısı). */
 
-const TIP_BASLIKLARI: Record<string, string> = {
-  satis: "SATIŞ FATURASI",
-  alis: "ALIŞ FATURASI",
-  satis_iade: "SATIŞ İADE FATURASI",
-  alis_iade: "ALIŞ İADE FATURASI",
-  proforma: "PROFORMA FATURA",
-};
 
 export interface FaturaPdfSatiri {
   stokKod: string;
@@ -71,6 +59,15 @@ export interface FaturaPdfSatiri {
   ytbMakineSiraNo?: string | null;
   /** EBLG-72: İDİS etiket numarası. */
   idisEtiketNo?: string | null;
+  /** STK-41: kartın belge dilindeki adı ve açıklaması. */
+  yabanciAd?: string | null;
+  yabanciAciklama?: string | null;
+  /** FTR-39: proforma/ihracat bilgisi — kart menşei, GTİP ve satırın kap bilgisi. */
+  mensei?: string | null;
+  gtipKodu?: string | null;
+  ihracatKapCinsi?: string | null;
+  ihracatKapNo?: string | null;
+  ihracatKapAdet?: number | null;
   /** EBLG-71: SARJANLIK faturasında ünitenin seri numarası. */
   sarjUniteSeriNo?: string | null;
 }
@@ -112,8 +109,24 @@ export interface FaturaPdfVerisi {
   toplamStopaj?: string;
   genelToplam: string;
   aciklama: string | null;
-  cari: { kod: string; unvan: string; vknTckn: string | null };
+  cari: {
+    kod: string;
+    unvan: string;
+    vknTckn: string | null;
+    vergiDairesi?: string | null;
+    adres?: { adres: string; il?: string | null; ilce?: string | null; postaKodu?: string | null; ulke?: string | null } | null;
+  };
   satirlar: FaturaPdfSatiri[];
+  /** FTR-40: basım dili; çift dilde Türkçe + bu dil. */
+  belgeDili?: string;
+  ciftDil?: boolean;
+  /** FTR-39: ihracat koşulları (EBLG-53/54). */
+  ihracatTeslimSarti?: string | null;
+  ihracatTasimaSekli?: string | null;
+  gumrukBeyannameNo?: string | null;
+  gumrukBeyannameTarihi?: string | null;
+  /** FTR-39: "faturada göster" işaretli banka hesapları; belge dövizindekiler önce. */
+  bankalar?: { bankaAdi: string; sube?: string | null; iban: string; swift?: string | null; doviz: string }[];
   /** Faturanın e-belge kanalı; gönderilmemişse yok (EBLG-26). */
   ebelge?: { tur: string } | null;
   earsivGonderimSekli?: string;
@@ -175,7 +188,7 @@ function kamuBilgisi(f: FaturaPdfVerisi): string {
   const birim = f.kamuHarcamaBirimiAdi
     ? `${f.kamuHarcamaBirimiAdi}${f.kamuHarcamaBirimiVkn ? ` (VKN ${f.kamuHarcamaBirimiVkn})` : ""}`
     : f.kamuHarcamaBirimiVkn ?? "";
-  return `<p style="margin-top:10px;font-size:9pt">${birim ? `Ödemeyi yapacak harcama birimi: <strong>${kacis(birim)}</strong><br>` : ""}Ödemenin yapılacağı IBAN: <strong>${kacis(ibanBicim(f.kamuIban))}</strong></p>`;
+  return `<p>${birim ? `Ödemeyi yapacak harcama birimi: <strong>${kacis(birim)}</strong><br>` : ""}Ödemenin yapılacağı IBAN: <strong>${kacis(ibanBicim(f.kamuIban))}</strong></p>`;
 }
 
 /**
@@ -187,7 +200,7 @@ function ozelMatrahBilgisi(f: FaturaPdfVerisi): string {
   if (!tanim) return "";
   const kdv = ozelMatrahKdvsi(f.ozelMatrahTutari, f.ozelMatrahOrani);
   const paraBirimi = f.dovizCinsi === "TRY" ? "TL" : f.dovizCinsi;
-  return `<p style="margin-top:10px;font-size:9pt">Özel matrah (KDV Kanunu 23): <strong>${kacis(`${tanim.kod} — ${tanim.ad}`)}</strong><br>`
+  return `<p>Özel matrah (KDV Kanunu 23): <strong>${kacis(`${tanim.kod} — ${tanim.ad}`)}</strong><br>`
     + `KDV, satış bedelinin tamamı üzerinden değil özel matrah üzerinden hesaplanmıştır: matrah ${paraBicim(f.ozelMatrahTutari ?? "0")} ${paraBirimi}, oran %${sayiBicim(f.ozelMatrahOrani ?? "0")}, hesaplanan KDV ${paraBicim(kdv)} ${paraBirimi}.</p>`;
 }
 
@@ -206,7 +219,7 @@ function sgkBilgisi(f: FaturaPdfVerisi): string {
     tip.donem && f.sgkDonemBaslangic && f.sgkDonemBitis
       ? `Dönem: <strong>${tarihBicim(f.sgkDonemBaslangic)} – ${tarihBicim(f.sgkDonemBitis)}</strong>` : "",
   ].filter(Boolean);
-  return `<p style="margin-top:10px;font-size:9pt">SGK faturası<br>${satirlar.join("<br>")}</p>`;
+  return `<p>SGK faturası<br>${satirlar.join("<br>")}</p>`;
 }
 
 /**
@@ -231,7 +244,7 @@ function sarjBilgisi(f: FaturaPdfVerisi): string {
       : "",
   ].filter(Boolean);
   if (!satirlar.length) return "";
-  return `<p style="margin-top:10px;font-size:9pt">${kacis(SARJ_TURU_ADLARI[turu])}<br>${satirlar.join("<br>")}</p>`;
+  return `<p>${kacis(SARJ_TURU_ADLARI[turu])}<br>${satirlar.join("<br>")}</p>`;
 }
 
 /**
@@ -243,7 +256,7 @@ function idisBilgisi(f: FaturaPdfVerisi): string {
   const etiketler = f.satirlar
     .map((satir, index) => satir.idisEtiketNo ? `${index + 1}. satır: ${kacis(idisNormalize(satir.idisEtiketNo))}` : "")
     .filter(Boolean);
-  return `<p style="margin-top:10px;font-size:9pt">İDİS kapsamında teslim<br>Sevkiyat no: <strong>${kacis(idisNormalize(f.idisSevkiyatNo))}</strong>`
+  return `<p>İDİS kapsamında teslim<br>Sevkiyat no: <strong>${kacis(idisNormalize(f.idisSevkiyatNo))}</strong>`
     + `${etiketler.length ? `<br>Etiket numaraları: ${etiketler.join(", ")}` : ""}</p>`;
 }
 
@@ -265,7 +278,7 @@ function ytbBilgisi(f: FaturaPdfVerisi): string {
       return `${index + 1}. satır: ${kacis(`${harcama.kod} — ${harcama.ad}`)}${makine ? ` (${kacis(makine)})` : ""}`;
     })
     .filter(Boolean);
-  return `<p style="margin-top:10px;font-size:9pt">Yatırım teşvik belgesi kapsamında teslim<br>`
+  return `<p>Yatırım teşvik belgesi kapsamında teslim<br>`
     + `Teşvik belge no: <strong>${kacis(ytbNormalize(f.ytbNo))}</strong>${f.ytbTarihi ? ` (${tarihBicim(f.ytbTarihi)})` : ""}`
     + `${satirlar.length ? `<br>${satirlar.join("<br>")}` : ""}</p>`;
 }
@@ -286,7 +299,7 @@ function yolcuBeraberiBilgisi(f: FaturaPdfVerisi): string {
     yolcu.sehir || yolcu.ulke ? `İkamet: ${kacis([yolcu.sehir, ulkeAdi(yolcu.ulke) ?? yolcu.ulke].filter(Boolean).join(" / "))}` : "",
     araci?.unvan ? `KDV iadesini yapacak aracı kurum: ${kacis(araci.unvan)}${araci.vkn ? ` (VKN ${kacis(araci.vkn)})` : ""}` : "",
   ].filter(Boolean);
-  return `<p style="margin-top:10px;font-size:9pt">${satirlar.join("<br>")}<br>${kacis(YOLCU_BERABER_ISTISNA_ACIKLAMASI)} (${YOLCU_BERABER_ISTISNA_KODU}); KDV, gümrük çıkış onayından sonra aracı kurumca iade edilir.</p>`;
+  return `<p>${satirlar.join("<br>")}<br>${kacis(YOLCU_BERABER_ISTISNA_ACIKLAMASI)} (${YOLCU_BERABER_ISTISNA_KODU}); KDV, gümrük çıkış onayından sonra aracı kurumca iade edilir.</p>`;
 }
 
 /**
@@ -295,14 +308,6 @@ function yolcuBeraberiBilgisi(f: FaturaPdfVerisi): string {
  */
 export const EARSIV_ELEKTRONIK_IBARESI = "e-Arşiv izni kapsamında elektronik ortamda iletilmiştir.";
 
-export interface FirmaBilgisi extends FirmaIletisimi {
-  unvan: string;
-  vkn: string;
-  vergiDairesi: string | null;
-  /** KLN-03: firma logosu, data URI olarak gömülür. */
-  tema?: BelgeTemasi;
-}
-
 /**
  * İhraç kayıtlı satışın belge altı ibaresi (EBLG-60). Metin kod listesindeki
  * addan gelir; kullanıcının kabul edilmiş belgesindeki açıklamayla aynı anlamı taşır.
@@ -310,47 +315,20 @@ export interface FirmaBilgisi extends FirmaIletisimi {
 function ihracKayitliIbaresi(kod: string | null | undefined, tablo?: KodTablosu): string {
   const tanim = ihracKayitliKoduBul(kod, tablo?.ihracKayitli);
   return tanim
-    ? `<p style="margin-top:10px;font-size:9pt">${kacis(`${tanim.kod} — ${tanim.ad}: ihraç edilmek şartıyla teslim edildiğinden KDV tahsil edilmemiştir.`)}</p>`
+    ? `<p>${kacis(`${tanim.kod} — ${tanim.ad}: ihraç edilmek şartıyla teslim edildiğinden KDV tahsil edilmemiştir.`)}</p>`
     : "";
 }
 
-export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
-  const baslik = TIP_BASLIKLARI[f.tip] ?? "FATURA";
-  const paraBirimi = f.dovizCinsi === "TRY" ? "TL" : f.dovizCinsi;
-
-  const satirlar = f.satirlar
-    .map(
-      (s, i) => `<tr>
-  <td class="orta">${i + 1}</td>
-  <td>${kacis(s.satirKod ?? s.stokKod)}</td>
-  <td>${kacis(s.satirAd ?? s.stokAd)}${s.satirAciklama ? `<br><span style="color:#6b7280;font-size:8pt">${kacis(s.satirAciklama)}</span>` : ""}${s.ekVergiler?.length ? `<br><span style="color:#6b7280;font-size:8pt">${s.ekVergiler.map((v) => `${kacis(v.ad)}${v.stopaj ? " (stopaj)" : ""}: ${paraBicim(v.tutar)}`).join(" · ")}</span>` : ""}${
-    s.gibIstisnaKodu
-      ? `<br><span style="color:#6b7280;font-size:8pt">KDV istisna kodu: ${kacis(s.gibIstisnaKodu)}</span>`
-      : ""
-  }</td>
-  <td class="sag">${sayiBicim(s.miktar)} ${kacis(s.birim)}</td>
-  <td class="sag">${paraBicim(s.birimFiyat)}</td>
-  <td class="sag">${Number(s.iskontoOrani) > 0 ? `%${sayiBicim(s.iskontoOrani)}` : ""}</td>
-  <td class="sag">${paraBicim(s.matrah)}</td>
-  <td class="sag">%${sayiBicim(s.kdvOrani)}</td>
-  <td class="sag">${paraBicim(s.kdvTutari)}</td>
-  <td class="sag">${paraBicim(s.toplamTutar)}</td>
-</tr>`,
-    )
-    .join("\n");
-
-  const toplamSatiri = (etiket: string, deger: string | number, kalin = false, birim = paraBirimi) =>
-    `<tr${kalin ? ' style="font-weight:bold"' : ""}>
-      <td style="padding:3px 8px">${etiket}</td>
-      <td class="sag" style="padding:3px 8px">${paraBicim(deger)} ${birim}</td>
-    </tr>`;
-
-  /*
-   * Özel matrah faturasında satırlar KDV'siz olduğu için "KDV Matrahı" etiketi
-   * satır toplamını gösterirken belgenin KDV matrahı bambaşkaydı (kâr farkı).
-   * Saha örneğindeki gibi satır toplamı "Mal/Hizmet Toplamı" olur, KDV ise
-   * özel matrah üzerinden hesaplanıp toplama eklenir.
-   */
+/** FTR-37/40: faturanın (proforma dahil) ortak kurumsal düzendeki modeli. */
+export function faturaPdfModeli(f: FaturaPdfVerisi, kopya = false): TicariBelgeModeli {
+  const dil = belgeDiliNormalize(f.belgeDili);
+  const ciftDil = ciftDilGecerli(dil, f.ciftDil);
+  const degerDili: BelgeDili = ciftDil ? "tr" : dil;
+  const bic = bicimleyiciler(dil, ciftDil);
+  const etiket = (k: EtiketAnahtari) => ciftDil ? `${cevir(k, "tr")} / ${cevir(k, dil)}` : cevir(k, dil);
+  const ikiDilde = (uret: (d: BelgeDili) => string) => ciftDil ? `${uret("tr")} / ${uret(dil)}` : uret(dil);
+  const proforma = f.tip === "proforma";
+  const alis = f.tip === "alis" || f.tip === "alis_iade";
   const ozelMatrah = ozelMatrahKoduBul(f.ozelMatrahKodu, f.kodTablosu?.ozelMatrah);
 
   // EBLG-130: KDV dışı vergiler türüne göre toplanır; KDV matrahına dahil olanlar
@@ -362,113 +340,131 @@ export function faturaPdfHtml(f: FaturaPdfVerisi, firma: FirmaBilgisi): string {
     m.tutar = Math.round((m.tutar + Number(v.tutar)) * 100) / 100;
     vergiTurleri.set(anahtar, m);
   }
-  const vergiKalemleri = (dahil: boolean) => [...vergiTurleri.values()].filter((v) => v.dahil === dahil && v.tutar > 0)
-    .map((v) => ({ etiket: `${kacis(v.ad)}${v.stopaj ? " (stopaj)" : ""}`, deger: v.stopaj ? `-${v.tutar.toFixed(2)}` : v.tutar.toFixed(2) }));
+  const vergiKalemleri = (dahil: boolean): TicariBelgeToplami[] => [...vergiTurleri.values()].filter((v) => v.dahil === dahil && v.tutar > 0)
+    .map((v) => ({ etiket: { metin: v.ad }, ek: v.stopaj ? cevir("stopaj", degerDili) : undefined, deger: v.tutar, eksi: v.stopaj }));
   const dahilToplam = [...vergiTurleri.values()].filter((v) => v.dahil).reduce((t, v) => t + v.tutar, 0);
   // Satır bazında vergi bilgisi olmayan eski kayıt: toplam tek satırda kalır.
   const vergiDokumu = vergiTurleri.size > 0;
+  const iskonto = Number(f.toplamSatirIskontosu) + Number(f.genelIskontoToplam);
+  const oranlar = [...new Set(f.satirlar.map((s) => Number(s.kdvOrani)))];
 
-  const kalemler: { etiket: string; deger: string | number; kalin?: boolean }[] = [
-    { etiket: "Brüt Toplam", deger: f.toplamBrut },
-    ...(Number(f.toplamSatirIskontosu) > 0 ? [{ etiket: "Satır İskontoları", deger: `-${f.toplamSatirIskontosu}` }] : []),
-    ...(Number(f.genelIskontoToplam) > 0 ? [{ etiket: "Genel İskonto", deger: `-${f.genelIskontoToplam}` }] : []),
+  const toplamlar: TicariBelgeToplami[] = [
+    ...(iskonto > 0 ? [{ etiket: "araToplam" as const, deger: f.toplamBrut }, { etiket: "iskonto" as const, deger: iskonto, eksi: true }] : []),
+    // Özel matrahta satır toplamı "Mal/Hizmet Toplamı"dır; KDV özel matrahtan hesaplanır.
     ...(dahilToplam > 0 && !ozelMatrah
-      ? [{ etiket: "Mal/Hizmet Toplamı", deger: f.toplamMatrah }, ...vergiKalemleri(true), { etiket: "KDV Matrahı", deger: (Number(f.toplamMatrah) + dahilToplam).toFixed(2) }]
-      : [{ etiket: ozelMatrah ? "Mal/Hizmet Toplamı" : "KDV Matrahı", deger: f.toplamMatrah }, ...(ozelMatrah ? vergiKalemleri(true) : [])]),
-    ozelMatrah
-      ? { etiket: `Hesaplanan KDV (özel matrah %${sayiBicim(f.ozelMatrahOrani ?? "0")})`, deger: f.toplamKdv }
-      : { etiket: f.ihracKayitliKodu ? `Hesaplanan KDV (tahsil edilmez — ${kacis(f.ihracKayitliKodu)})` : "Hesaplanan KDV", deger: f.toplamKdv },
-    ...(Number(f.toplamTevkifat) > 0 ? [{ etiket: "KDV Tevkifatı", deger: `-${f.toplamTevkifat}` }] : []),
+      ? [{ etiket: "malHizmetToplami" as const, deger: f.toplamMatrah }, ...vergiKalemleri(true), { etiket: "kdvMatrahi" as const, deger: (Number(f.toplamMatrah) + dahilToplam).toFixed(2) }]
+      : [{ etiket: (ozelMatrah ? "malHizmetToplami" : "kdvMatrahi") as EtiketAnahtari, deger: f.toplamMatrah }, ...(ozelMatrah ? vergiKalemleri(true) : [])]),
+    {
+      etiket: "hesaplananKdv",
+      ek: ozelMatrah ? `özel matrah %${bic.sayi(f.ozelMatrahOrani ?? "0")}`
+        : f.ihracKayitliKodu ? `tahsil edilmez — ${f.ihracKayitliKodu}`
+        : oranlar.length === 1 ? `%${oranlar[0]}` : undefined,
+      deger: f.toplamKdv,
+    },
+    ...(Number(f.toplamTevkifat) > 0 ? [{ etiket: "tevkifat" as const, deger: f.toplamTevkifat, eksi: true }] : []),
     ...(vergiDokumu
       ? vergiKalemleri(false)
       : [
-          ...(Number(f.toplamEkVergi ?? 0) > 0 ? [{ etiket: "KDV Dışı Vergiler", deger: f.toplamEkVergi! }] : []),
-          ...(Number(f.toplamStopaj ?? 0) > 0 ? [{ etiket: "Stopaj", deger: `-${f.toplamStopaj}` }] : []),
+          ...(Number(f.toplamEkVergi ?? 0) > 0 ? [{ etiket: { metin: "KDV Dışı Vergiler" }, deger: f.toplamEkVergi! }] : []),
+          ...(Number(f.toplamStopaj ?? 0) > 0 ? [{ etiket: { metin: cevir("stopaj", degerDili) }, deger: f.toplamStopaj!, eksi: true }] : []),
         ]),
-    { etiket: "Genel Toplam", deger: f.genelToplam, kalin: true },
   ];
-  // EBLG-57: dövizli faturada toplamların TL karşılığı da gösterilir; ihracat
-  // faturasının resmî görünümü de kur satırının altında aynı toplamları TL verir.
-  const dovizli = f.dovizCinsi !== "TRY";
-  const toplamlar = [
-    ...kalemler.map((k) => toplamSatiri(k.etiket, k.deger, k.kalin)),
-    ...(dovizli
-      ? [
-          `<tr><td style="padding:3px 8px;border-top:1px solid #e5e7eb">Döviz Kuru (1 ${kacis(f.dovizCinsi)})</td><td class="sag" style="padding:3px 8px;border-top:1px solid #e5e7eb">${kurBicim(f.kur)} TL</td></tr>`,
-          ...kalemler.map((k) => toplamSatiri(`${k.etiket} (TL)`, tlKarsiligi(k.deger, f.kur), k.kalin, "TL")),
-        ]
-      : []),
-  ].join("");
+  // EBLG-57: dövizli faturada toplamların TL karşılığı da basılır.
+  const dovizKarsiligi = f.dovizCinsi !== "TRY" && !proforma
+    ? { kur: f.kur, satirlar: [...toplamlar, { etiket: "genelToplam" as const, deger: f.genelToplam }].map((t) => ({ ...t, ek: undefined, deger: tlKarsiligi(t.deger, f.kur) })) }
+    : undefined;
 
-  // EBLG-30: belge gönderildiyse kimliği çıktıda yer alır; taslakta ETTN'in
-  // bir anlamı yoktur, gösterilmez.
-  const profil = profilAdi(f);
-  const ebelgeKimligi = profil
-    ? `<br>ETTN: ${kacis(f.id ?? "")}<br>Senaryo: ${kacis(f.yolcuBeraberi?.yolcu ? YOLCU_BERABER_FATURA_TIPI : (f.senaryo && senaryoUblKodu(f.senaryo as FaturaSenaryosu)) || f.senaryo || "")} &nbsp;•&nbsp; Profil: ${kacis(profil)}`
+  const adres = f.cari.adres;
+  const adresSatiri = adres
+    ? [adres.adres, [adres.postaKodu, [adres.ilce, adres.il].filter(Boolean).join(" / ")].filter(Boolean).join(" "), adres.ulke && adres.ulke !== "TR" ? (ulkeAdi(adres.ulke) ?? adres.ulke) : null].filter(Boolean).join(", ")
     : "";
+  const teslimYeri = f.teslimatAdres && f.teslimatIl && f.teslimatIlce
+    ? `${f.teslimatAdres} ${f.teslimatPostaKodu ? `${f.teslimatPostaKodu} ` : ""}${f.teslimatIlce}/${f.teslimatIl}`
+    : "";
+  const trTeslimAdi = TESLIM_SARTLARI.find((t) => t.kod === f.ihracatTeslimSarti)?.ad;
+  const teslimSekli = f.ihracatTeslimSarti
+    ? ikiDilde((d) => d === "tr" || !ciftDil ? teslimSekliMetni(f.ihracatTeslimSarti!, d, trTeslimAdi) : teslimSekliMetni(f.ihracatTeslimSarti!, d, trTeslimAdi).replace(`${f.ihracatTeslimSarti} — `, ""))
+    : "";
+  // EBLG-30: gönderilmiş e-belgenin kimliği; taslakta anlamı yoktur.
+  const profil = profilAdi(f);
+  const senaryo = profil ? `${(f.yolcuBeraberi?.yolcu ? YOLCU_BERABER_FATURA_TIPI : (f.senaryo && senaryoUblKodu(f.senaryo as FaturaSenaryosu)) || f.senaryo || "")} / ${profil}` : "";
 
-  const icerik = `
-<table style="width:100%;margin-bottom:12px;font-size:9pt">
-  <tr>
-    <td style="vertical-align:top;width:50%">
-      <div class="kutu">
-        <strong>${kacis(firma.unvan)}</strong><br>
-        VKN: ${kacis(firma.vkn)}${firma.vergiDairesi ? ` — ${kacis(firma.vergiDairesi)}` : ""}${firmaIletisimSatirlari(firma)}
-      </div>
-    </td>
-    <td style="width:4%"></td>
-    <td style="vertical-align:top;width:46%">
-      <div class="kutu">
-        <strong>Sayın ${kacis(f.cari.unvan)}</strong> (${kacis(f.cari.kod)})<br>
-        ${ilgiliKisiMetni(f) ? `İlgili: ${kacis(ilgiliKisiMetni(f)!)}<br>` : ""}
-        ${f.cari.vknTckn ? `VKN/TCKN: ${kacis(f.cari.vknTckn)}<br>` : ""}
-        Fatura No: <strong>${kacis(f.no ?? "— TASLAK —")}</strong><br>
-        Tarih: ${tarihBicim(f.tarih)}${
-          f.vadeTarihi ? ` &nbsp;•&nbsp; Vade: ${tarihBicim(f.vadeTarihi)}` : ""
-        }${
-          /* EBLG-73: sipariş referansı e-Belgeye yazılıyor, kendi çıktımızda da görünmeliydi. */
-          f.siparisNo ? `<br>Sipariş No: ${kacis(f.siparisNo)}${f.siparisTarihi ? ` (${tarihBicim(f.siparisTarihi)})` : ""}` : ""
-        }${
-          f.talepNo ? `<br>Talep Ref.: ${kacis(f.talepNo)}${f.talepTarihi ? ` (${tarihBicim(f.talepTarihi)})` : ""}` : ""
-        }${
-          f.teslimatAdres && f.teslimatIl && f.teslimatIlce
-            ? `<br>Teslim Yeri: ${kacis(f.teslimatAdres)} ${f.teslimatPostaKodu ? `${kacis(f.teslimatPostaKodu)} ` : ""}${kacis(f.teslimatIlce)}/${kacis(f.teslimatIl)}`
-            : ""
-        }${
-          f.dovizCinsi !== "TRY"
-            ? `<br>Döviz: ${kacis(f.dovizCinsi)} (kur ${kurBicim(f.kur)})`
-            : ""
-        }${ebelgeKimligi}
-      </div>
-    </td>
-  </tr>
-</table>
-<table class="veri">
-  <thead><tr>
-    <th>#</th><th>Kod</th><th>Ürün / Hizmet</th>
-    <th class="sag">Miktar</th><th class="sag">Birim Fiyat</th>
-    <th class="sag">İsk.</th><th class="sag">Matrah</th>
-    <th class="sag">KDV %</th><th class="sag">KDV</th><th class="sag">Tutar</th>
-  </tr></thead>
-  <tbody>${satirlar}</tbody>
-</table>
-<table style="margin-top:12px;margin-left:auto;border:1px solid #e5e7eb;border-radius:4px;font-size:9pt">
-  ${toplamlar}
-</table>
-${f.aciklama ? `<p style="margin-top:10px;color:#6b7280">${kacis(f.aciklama)}</p>` : ""}
-${f.ebelge?.tur === "earsiv" && f.earsivGonderimSekli !== "kagit" ? `<p style="margin-top:10px;font-size:9pt">${EARSIV_ELEKTRONIK_IBARESI}</p>` : ""}
-${ihracKayitliIbaresi(f.ihracKayitliKodu, f.kodTablosu)}
-${kamuBilgisi(f)}
-${ozelMatrahBilgisi(f)}
-${sgkBilgisi(f)}
-${sarjBilgisi(f)}
-${idisBilgisi(f)}
-${ytbBilgisi(f)}
-${yolcuBeraberiBilgisi(f)}`;
-
-  return sayfaSablonu({
-    baslik: f.durum === "taslak" ? `${baslik} (TASLAK)` : baslik,
-    icerik,
-    tema: firma.tema,
+  const kalemler = f.satirlar.map((s) => {
+    const ihracat = [
+      s.mensei ? `${etiket("mense")}: ${s.mensei}` : "",
+      s.gtipKodu && (proforma || f.ihracatTeslimSarti) ? `${etiket("gtip")}: ${s.gtipKodu}` : "",
+      s.ihracatKapAdet ? `${etiket("kap")}: ${s.ihracatKapAdet}${s.ihracatKapCinsi ? ` × ${s.ihracatKapCinsi}` : ""}${s.ihracatKapNo ? ` (${s.ihracatKapNo})` : ""}` : "",
+    ].filter(Boolean).join(" · ");
+    const vergiNotu = [
+      s.ekVergiler?.length ? s.ekVergiler.map((v) => `${v.ad}${v.stopaj ? ` (${cevir("stopaj", degerDili)})` : ""}: ${bic.para(v.tutar)}`).join(" · ") : "",
+      s.gibIstisnaKodu ? `${etiket("istisnaKodu")}: ${s.gibIstisnaKodu}` : "",
+    ].filter(Boolean).join(" · ");
+    return {
+      kod: s.satirKod ?? s.stokKod,
+      ad: s.satirAd ?? s.stokAd,
+      yabanciAd: dil === "tr" ? null : s.yabanciAd,
+      aciklama: [s.satirAciklama, dil === "tr" ? null : s.yabanciAciklama, ihracat].filter(Boolean).join(" · ") || null,
+      ekBilgi: vergiNotu || null,
+      miktar: s.miktar,
+      birim: s.birim,
+      birimFiyat: s.birimFiyat,
+      iskontoOrani: s.iskontoOrani,
+      kdvOrani: s.kdvOrani,
+      tutar: s.toplamTutar,
+    };
   });
+
+  const yasal = [
+    f.ebelge?.tur === "earsiv" && f.earsivGonderimSekli !== "kagit" ? `<p>${EARSIV_ELEKTRONIK_IBARESI}</p>` : "",
+    ihracKayitliIbaresi(f.ihracKayitliKodu, f.kodTablosu),
+    kamuBilgisi(f), ozelMatrahBilgisi(f), sgkBilgisi(f), sarjBilgisi(f), idisBilgisi(f), ytbBilgisi(f), yolcuBeraberiBilgisi(f),
+  ].filter(Boolean).join("");
+
+  return {
+    tur: proforma ? "proforma" : "fatura",
+    baslik: proforma ? "baslik.proforma" : (`baslik.fatura.${f.tip}` as EtiketAnahtari),
+    dil,
+    ciftDil,
+    taslak: f.durum === "taslak",
+    kopya,
+    belgeNo: f.no ?? cevir("taslakNo", degerDili),
+    kunye: [
+      { etiket: "tarih", deger: bic.tarih(f.tarih instanceof Date ? f.tarih.toISOString().slice(0, 10) : String(f.tarih).slice(0, 10)) },
+      ...(f.vadeTarihi ? [{ etiket: "vade" as const, deger: bic.tarih(f.vadeTarihi instanceof Date ? f.vadeTarihi.toISOString().slice(0, 10) : String(f.vadeTarihi).slice(0, 10)) }] : []),
+    ],
+    taraf: {
+      etiket: alis ? "tedarikci" : "sayin",
+      unvan: f.cari.unvan,
+      satirlar: [
+        adresSatiri,
+        f.cari.vknTckn ? `${etiket("vkn")}: ${f.cari.vknTckn}${f.cari.vergiDairesi ? ` · ${vergiDairesiMetni(f.cari.vergiDairesi, etiket("vergiDairesi"))}` : ""}` : "",
+      ],
+    },
+    bilgiler: [
+      { etiket: "ilgili", deger: ilgiliKisiMetni(f) ?? "" },
+      { etiket: "talepRef", deger: f.talepNo ? `${f.talepNo}${f.talepTarihi ? ` (${bic.tarih(String(f.talepTarihi).slice(0, 10))})` : ""}` : "" },
+      { etiket: "siparisRef", deger: f.siparisNo ? `${f.siparisNo}${f.siparisTarihi ? ` (${bic.tarih(String(f.siparisTarihi instanceof Date ? f.siparisTarihi.toISOString() : f.siparisTarihi).slice(0, 10))})` : ""}` : "" },
+      { etiket: "doviz", deger: f.dovizCinsi === "TRY" ? "TL" : `${f.dovizCinsi} · ${bic.fiyat(f.kur)}` },
+      { etiket: "teslimSekli", deger: teslimSekli },
+      { etiket: "tasimaSekli", deger: f.ihracatTasimaSekli ? ikiDilde((d) => tasimaSekliMetni(f.ihracatTasimaSekli!, d)) : "" },
+      { etiket: "teslimYeri", deger: teslimYeri },
+      { etiket: "gumrukBeyanname", deger: f.gumrukBeyannameNo ? `${f.gumrukBeyannameNo}${f.gumrukBeyannameTarihi ? ` (${bic.tarih(String(f.gumrukBeyannameTarihi).slice(0, 10))})` : ""}` : "" },
+      { etiket: "senaryo", deger: senaryo },
+      { etiket: "ettn", deger: profil ? (f.id ?? "") : "", mono: true },
+    ],
+    doviz: f.dovizCinsi,
+    kalemler,
+    toplamlar,
+    genelToplam: f.genelToplam,
+    notlar: f.aciklama ? [f.aciklama] : [],
+    bankalar: alis ? [] : (f.bankalar ?? []),
+    imzalar: proforma ? ["imza.hazirlayan", "imza.kase", "imza.musteriOnayi"] : ["imza.teslimEden", "imza.teslimAlan"],
+    ekBolum: yasal ? `<div class="yasal">${yasal}</div>` : undefined,
+    dovizKarsiligi,
+  };
+}
+
+/** Faturanın HTML'i ve PDF motoruna verilecek sayfa altı. */
+export function faturaPdfHtml(f: FaturaPdfVerisi, ortam: TicariBelgeOrtami, kopya = false): { html: string; altBilgi: string } {
+  return ticariBelgeHtml(faturaPdfModeli(f, kopya), ortam);
 }

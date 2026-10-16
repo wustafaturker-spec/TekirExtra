@@ -23,7 +23,7 @@ import { DurumGecmisi } from "@/components/durum-gecmisi";
 import { bugunTR, faturaHesapla, idisEngelleri, ILAVE_FATURA_TIPLERI, ilaveFaturaTipiBul, sgkEngelleri, SGK_TANIMSIZ_KOD, SGK_VKN, faturaSenaryosuTuret, GIB_KOD_LISTESI_SURUMU, iadeEngelleri, ihracKayitliHatalari, internetSatisEngelleri, izinliIstisnaKodlari, kamuEngelleri, ODEME_SEKILLERI, ozelMatrahHatalari, ozelMatrahKdvsi, ozelMatrahTabani, sarjEngelleri, sarjTuruCoz, SARJ_TURU_ADLARI, YTB_HARCAMA_TIPLERI, YTB_MAKINE_HARCAMA_TIPI, ytbEngelleri, ytbHarcamaTipiBul, SEVKIYAT_YONTEMLERI, sevkiyatEksikleri, irsaliyeYerineIbaresi, type SevkiyatYontemi, senaryoHatalari, senaryoUblKodu, KAP_CINSLERI, kapEksigiVarMi, SIK_KAP_CINSLERI, TASIMA_SEKILLERI, TESLIM_SARTLARI, TEVKIFAT_KODLARI, tevkifatKoduBul, tevkifatPayPayda, type TevkifatKodu, type FaturaHesaplaSatirGirdi, type FaturaSenaryosu, ULKELER, yolcuBeraberiEngelleri } from "@tekirextra/shared";
 import { zamanAlaniDegeri, zamanAlaniIso, zamanAlaniMetni } from "@/lib/zaman-alani";
 import { dovizUyumsuzlugu, fiyatCevir, paraBicimi, paraBirimiEtiketi } from "@/lib/doviz-uyumu";
-import { birimKisaAdi, faturaKurTipi, vadeTarihiHesapla } from "@tekirextra/shared";
+import { birimKisaAdi, faturaKurTipi, vadeTarihiHesapla, BELGE_DILLERI, BELGE_DILI_ADLARI, belgeDiliNormalize, ciftDilGecerli, type BelgeDili } from "@tekirextra/shared";
 import { BirimSecimi, birimKatsayisi, SatirBirimi } from "@/components/birim-secimi";
 import { BOS_TESLIMAT_ADRESI, faturaTeslimYeriEksik, TeslimatAdresiAlanlari, teslimatAdresiGovdesi, type TeslimatAdresi } from "@/components/teslimat-adresi-alanlari";
 import { ebelgeGitmemisMi, ebelgeKullanilmiyor, faturaGecikmeUyarilari, faturaGeriAlmaEngeli, type EbelgeUygulamalari } from "@tekirextra/shared";
@@ -58,6 +58,8 @@ interface CariSecimOzeti extends Cari {
   bakiyeler: { dovizCinsi: string; bakiye: string }[];
   risk: { mevcutRisk: string; limit: string | null; kalanLimit: string | null; asim: boolean };
   varsayilanVadeGun?: number | null;
+  belgeDili?: string | null;
+  belgeCiftDil?: boolean;
   eFaturaMukellefi?: boolean | null;
   efaturaProfili?: "temel" | "ticari";
 }
@@ -133,6 +135,9 @@ interface Fatura {
   /** FTR-32: müşteri tarafında ilgili kişi. */
   ilgiliKisi?: string | null;
   ilgiliKisiGorevi?: string | null;
+  /** FTR-40: kendi çıktımızın basım dili. */
+  belgeDili?: string;
+  ciftDil?: boolean;
   /** FTR-30: teslim yeri; bağlı irsaliyeler farklıysa sunucu uyarı döner. */
   teslimatAdres?: string | null;
   teslimatIl?: string | null;
@@ -498,6 +503,9 @@ export default function FaturaSayfasi() {
   // EBLG-77: kapalı uygulamanın düğmesi hiç çizilmesin diye bir kez okunur.
   useEffect(() => { void api<EbelgeUygulamalari>("/ebelge/uygulamalar").then(setEbelgeUygulamalari).catch(() => undefined); }, []);
   const saltOkunur = acikFatura !== null && !faturaDuzenlenebilir(acikFatura);
+  /** Cari özeti gelince dil yalnız yeni faturada carininkine çekilir (açık/düzenlenen faturada kendi dili kalır). */
+  const duzenlenenIdRef = useRef<string | null>(null);
+  duzenlenenIdRef.current = duzenlenenId ?? acikFatura?.id ?? null;
   /** EBLG-77: e-belge gönderimi yalnız e-Fatura ya da e-Arşiv açıkken mümkündür. */
   const ebelgeGonderilebilirFirma = ebelgeUygulamalari === null || !ebelgeKullanilmiyor(ebelgeUygulamalari);
   const faturayiAc = (id: string) => router.push(`/panel/fatura/yeni?ac=${id}${yonBaglami ? `&yon=${yonBaglami}` : ""}`);
@@ -625,6 +633,12 @@ export default function FaturaSayfasi() {
   // Profil cari kartından gelir ama fatura üzerinde değiştirilebilir (FTR-19);
   // kullanıcı bir kez seçtiyse cari değişse de seçimi ezilmez.
   const [efaturaProfili, setEfaturaProfili] = useState<"temel" | "ticari">("temel");
+  /** FTR-40: kendi bastığımız fatura/proformanın dili; e-Belge görünümünü etkilemez. */
+  const [belgeDili, setBelgeDili] = useState<BelgeDili>("tr");
+  const [ciftDil, setCiftDil] = useState(false);
+  /** FTR-39: proformada teslim şartı (Incoterms) ve taşıma şekli. */
+  const [proformaTeslimSarti, setProformaTeslimSarti] = useState("");
+  const [proformaTasimaSekli, setProformaTasimaSekli] = useState("");
   const [profilElleDegisti, setProfilElleDegisti] = useState(false);
   /** EBLG-60: ihraç kayıtlı satış kodu; boşsa normal satış. */
   const [ihracKayitliKodu, setIhracKayitliKodu] = useState("");
@@ -835,7 +849,7 @@ export default function FaturaSayfasi() {
     if (yeniSayfasi && duzenleId) {
       void api<FaturaDetay>(`/fatura/${duzenleId}`).then((fatura) => {
         setAcikFatura(fatura);
-        setDuzenlenenId(faturaDuzenlenebilir(fatura) ? fatura.id : null); setTip(fatura.tip); setFaturaNo(fatura.no ?? ""); setTarih(fatura.tarih.slice(0, 10)); setDovizCinsi(fatura.dovizCinsi); setVadeTarihi(fatura.vadeTarihi?.slice(0, 10) ?? ""); setSiparisNo(fatura.siparisNo ?? ""); setSiparisTarihi(fatura.siparisTarihi?.slice(0, 10) ?? ""); setTalepNo(fatura.talepNo ?? ""); setTalepTarihi(fatura.talepTarihi?.slice(0, 10) ?? ""); setIlgili({ ilgiliKisi: fatura.ilgiliKisi ?? "", ilgiliKisiGorevi: fatura.ilgiliKisiGorevi ?? "" }); setVadeElleDegisti(true);
+        setDuzenlenenId(faturaDuzenlenebilir(fatura) ? fatura.id : null); setTip(fatura.tip); setFaturaNo(fatura.no ?? ""); setTarih(fatura.tarih.slice(0, 10)); setDovizCinsi(fatura.dovizCinsi); setVadeTarihi(fatura.vadeTarihi?.slice(0, 10) ?? ""); setSiparisNo(fatura.siparisNo ?? ""); setSiparisTarihi(fatura.siparisTarihi?.slice(0, 10) ?? ""); setTalepNo(fatura.talepNo ?? ""); setTalepTarihi(fatura.talepTarihi?.slice(0, 10) ?? ""); setIlgili({ ilgiliKisi: fatura.ilgiliKisi ?? "", ilgiliKisiGorevi: fatura.ilgiliKisiGorevi ?? "" }); setVadeElleDegisti(true); setBelgeDili(belgeDiliNormalize(fatura.belgeDili)); setCiftDil(fatura.ciftDil === true); setProformaTeslimSarti(fatura.ihracatTeslimSarti ?? ""); setProformaTasimaSekli(fatura.ihracatTasimaSekli ?? "");
         setTeslimat({ teslimatAdres: fatura.teslimatAdres ?? "", teslimatIl: fatura.teslimatIl ?? "", teslimatIlce: fatura.teslimatIlce ?? "", teslimatPostaKodu: fatura.teslimatPostaKodu ?? "" }); setTeslimatiCariyeKaydet(false);
         setCariId(fatura.cari.id); setDepoId(fatura.depoId ?? ""); setAciklama(fatura.aciklama ?? ""); setNotlar(fatura.notlar ?? "");
         setEfaturaProfili(fatura.efaturaProfili ?? "temel"); setProfilElleDegisti(true); setIhracKayitliKodu(fatura.ihracKayitliKodu ?? "");
@@ -909,7 +923,7 @@ export default function FaturaSayfasi() {
   function formuSifirla() {
     setCariId(""); setCariOzeti(null); setDepoId(""); setTip(yonBaglami ?? "satis"); setGelirTuru("ticari_satis"); setTarih(bugunTR()); setDovizCinsi("TRY"); setKur("1");
     setAciklama(""); setKuruAciklamayaEkle(true); setFaturaNo("");
-    setNotlar(""); setVadeTarihi(""); setVadeElleDegisti(false); setSiparisNo(""); setSiparisTarihi(""); setTalepNo(""); setTalepTarihi(""); setIlgili(BOS_ILGILI_KISI);
+    setNotlar(""); setVadeTarihi(""); setVadeElleDegisti(false); setSiparisNo(""); setSiparisTarihi(""); setTalepNo(""); setTalepTarihi(""); setIlgili(BOS_ILGILI_KISI); setBelgeDili("tr"); setCiftDil(false); setProformaTeslimSarti(""); setProformaTasimaSekli("");
     setTeslimat(BOS_TESLIMAT_ADRESI); setTeslimatiCariyeKaydet(false);
     setEfaturaProfili("temel"); setProfilElleDegisti(false); setIhracKayitliKodu(""); setIdisSevkiyatNo("");
     setSatirlar([{ stokId: "", miktar: 1, birimFiyat: 0, iskontoOrani: 0, kdvOrani: 20, gibIstisnaKodu: "" }]); setAcikSatir(null);
@@ -933,7 +947,12 @@ export default function FaturaSayfasi() {
     }
     let gecerli = true;
     api<CariSecimOzeti>(`/cari/${cariId}`)
-      .then((ozet) => { if (gecerli) setCariOzeti(ozet); })
+      .then((ozet) => {
+        if (!gecerli) return;
+        setCariOzeti(ozet);
+        // FTR-40: yeni faturada dil carinin belge dilinden gelir.
+        if (!duzenlenenIdRef.current) { setBelgeDili(belgeDiliNormalize(ozet.belgeDili)); setCiftDil(ozet.belgeCiftDil === true); }
+      })
       .catch(() => { if (gecerli) setCariOzeti(null); });
     return () => { gecerli = false; };
   }, [cariId]);
@@ -1267,6 +1286,10 @@ export default function FaturaSayfasi() {
           ...(tip === "alis" ? { no: faturaNo.trim() || null } : {}),
           talepTarihi: talepTarihi || null,
           ...ilgiliKisiGovdesi(ilgili),
+          belgeDili,
+          ciftDil: ciftDilGecerli(belgeDili, ciftDil),
+          // Satış faturasında bu alanları e-Belge sihirbazı (ihracat) yazar; formdan yalnız proformada gider.
+          ...(tip === "proforma" ? { ihracatTeslimSarti: proformaTeslimSarti || null, ihracatTasimaSekli: proformaTasimaSekli || null } : {}),
           ...teslimatAdresiGovdesi(teslimat),
           teslimatAdresiniCariyeKaydet: teslimatiCariyeKaydet && !faturaTeslimYeriEksik(teslimat) && Boolean(teslimat.teslimatAdres.trim()),
           aciklama: kayitAciklamasi || null,
@@ -2459,6 +2482,22 @@ export default function FaturaSayfasi() {
             <div>
               <DepoSecici deger={depoId} onChange={setDepoId} />
             </div>
+            {tip === "proforma" && (
+              <>
+                <Field label="Teslim şartı (Incoterms)">
+                  <Select aria-label="Teslim şartı" value={proformaTeslimSarti} onChange={(e) => setProformaTeslimSarti(e.target.value)}>
+                    <option value="">Belirtilmedi</option>
+                    {TESLIM_SARTLARI.map((t) => <option key={t.kod} value={t.kod}>{t.ad}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Taşıma şekli">
+                  <Select aria-label="Taşıma şekli" value={proformaTasimaSekli} onChange={(e) => setProformaTasimaSekli(e.target.value)}>
+                    <option value="">Belirtilmedi</option>
+                    {TASIMA_SEKILLERI.map((t) => <option key={t.kod} value={t.kod}>{t.ad}</option>)}
+                  </Select>
+                </Field>
+              </>
+            )}
             </div>
           </FormGrubu>
           {/* Özel durum alanlarının hepsi satışa ya da giden belgeye özgü; alışta grup yok. */}
@@ -2561,6 +2600,21 @@ export default function FaturaSayfasi() {
               </div>
             </FormGrubu>
           )}
+          {/* FTR-40: kendi PDF çıktımızın dili; e-Fatura/e-Arşiv'in resmî görünümünü entegratör basar. */}
+          <FormGrubu baslik="Belge dili" aciklama="PDF çıktısının dili; e-Belge'nin resmî görünümünü etkilemez" doluSayisi={belgeDili !== "tr" ? 1 : 0} gizli={saltOkunur && belgeDili === "tr"}>
+            <div className="document-fields">
+              <Field label="Basım dili">
+                <Select aria-label="Belge dili" value={belgeDili} onChange={(e) => setBelgeDili(e.target.value as BelgeDili)}>
+                  {BELGE_DILLERI.map((d) => <option key={d} value={d}>{BELGE_DILI_ADLARI[d]}</option>)}
+                </Select>
+              </Field>
+              <Field label="Çift dil">
+                <label className="check-row">
+                  <input type="checkbox" checked={ciftDilGecerli(belgeDili, ciftDil)} disabled={belgeDili === "tr"} onChange={(e) => setCiftDil(e.target.checked)} /> Türkçe + {belgeDili === "tr" ? "seçilen dil" : BELGE_DILI_ADLARI[belgeDili]}
+                </label>
+              </Field>
+            </div>
+          </FormGrubu>
           <FormGrubu baslik="Açıklama, notlar ve ekler" aciklama="Faturada görünen açıklama, iç notlar ve dosyalar" doluSayisi={notDolu} gizli={saltOkunur && notDolu === 0}>
             <div className="invoice-notes">
             <Field label="Fatura açıklaması">

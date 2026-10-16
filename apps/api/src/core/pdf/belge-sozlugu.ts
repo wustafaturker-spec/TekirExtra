@@ -14,7 +14,10 @@ const ETIKETLER = {
   "baslik.irsaliye.satis": { tr: "SEVK İRSALİYESİ", en: "DELIVERY NOTE", de: "LIEFERSCHEIN", ar: "إشعار تسليم", ru: "ТОВАРНАЯ НАКЛАДНАЯ" },
   "baslik.irsaliye.alis": { tr: "MAL KABUL İRSALİYESİ", en: "GOODS RECEIPT NOTE", de: "WARENEINGANGSSCHEIN", ar: "إشعار استلام بضاعة", ru: "ПРИХОДНАЯ НАКЛАДНАЯ" },
   "baslik.proforma": { tr: "PROFORMA FATURA", en: "PROFORMA INVOICE", de: "PROFORMA-RECHNUNG", ar: "فاتورة مبدئية", ru: "СЧЁТ-ПРОФОРМА" },
-  "baslik.fatura": { tr: "FATURA", en: "INVOICE", de: "RECHNUNG", ar: "فاتورة", ru: "СЧЁТ-ФАКТУРА" },
+  "baslik.fatura.satis": { tr: "FATURA", en: "INVOICE", de: "RECHNUNG", ar: "فاتورة", ru: "СЧЁТ-ФАКТУРА" },
+  "baslik.fatura.alis": { tr: "ALIŞ FATURASI", en: "PURCHASE INVOICE", de: "EINGANGSRECHNUNG", ar: "فاتورة شراء", ru: "ВХОДЯЩИЙ СЧЁТ" },
+  "baslik.fatura.satis_iade": { tr: "İADE FATURASI", en: "CREDIT NOTE", de: "GUTSCHRIFT", ar: "إشعار دائن", ru: "КРЕДИТ-НОТА" },
+  "baslik.fatura.alis_iade": { tr: "ALIŞ İADE FATURASI", en: "RETURN INVOICE", de: "RÜCKSENDERECHNUNG", ar: "فاتورة مرتجع", ru: "СЧЁТ НА ВОЗВРАТ" },
   "baslik.tahsilat": { tr: "TAHSİLAT MAKBUZU", en: "RECEIPT", de: "QUITTUNG", ar: "إيصال استلام", ru: "КВИТАНЦИЯ" },
   "baslik.tediye": { tr: "TEDİYE MAKBUZU", en: "PAYMENT VOUCHER", de: "AUSZAHLUNGSBELEG", ar: "سند صرف", ru: "РАСХОДНЫЙ ОРДЕР" },
 
@@ -40,6 +43,24 @@ const ETIKETLER = {
   odeme: { tr: "Ödeme Koşulu", en: "Payment Terms", de: "Zahlungsbedingungen", ar: "شروط الدفع", ru: "Условия оплаты" },
   teslimSekli: { tr: "Teslim Şekli", en: "Delivery Terms", de: "Lieferbedingungen", ar: "شروط التسليم", ru: "Условия поставки" },
   teslimSuresi: { tr: "Teslim Süresi", en: "Lead Time", de: "Lieferzeit", ar: "مدة التسليم", ru: "Срок поставки" },
+
+  vade: { tr: "Vade", en: "Due Date", de: "Fällig am", ar: "تاريخ الاستحقاق", ru: "Срок оплаты" },
+  teslimYeri: { tr: "Teslim Yeri", en: "Delivery Address", de: "Lieferadresse", ar: "عنوان التسليم", ru: "Адрес доставки" },
+  tasimaSekli: { tr: "Taşıma Şekli", en: "Mode of Transport", de: "Versandart", ar: "وسيلة النقل", ru: "Вид транспорта" },
+  sevkTarihi: { tr: "Sevk Tarihi", en: "Dispatch Date", de: "Versanddatum", ar: "تاريخ الشحن", ru: "Дата отгрузки" },
+  tasiyici: { tr: "Taşıyıcı", en: "Carrier", de: "Spediteur", ar: "الناقل", ru: "Перевозчик" },
+  plaka: { tr: "Plaka", en: "Vehicle Plate", de: "Kennzeichen", ar: "رقم المركبة", ru: "Госномер" },
+  sofor: { tr: "Şoför", en: "Driver", de: "Fahrer", ar: "السائق", ru: "Водитель" },
+  ettn: { tr: "ETTN", en: "UUID", de: "UUID", ar: "المعرّف الفريد", ru: "UUID" },
+  senaryo: { tr: "Senaryo / Profil", en: "Scenario / Profile", de: "Szenario / Profil", ar: "السيناريو / الملف", ru: "Сценарий / профиль" },
+  gumrukBeyanname: { tr: "Gümrük Beyannamesi", en: "Customs Declaration", de: "Zollanmeldung", ar: "البيان الجمركي", ru: "Таможенная декларация" },
+  mense: { tr: "Menşe", en: "Origin", de: "Ursprung", ar: "المنشأ", ru: "Происхождение" },
+  gtip: { tr: "GTİP", en: "HS Code", de: "Zolltarifnr.", ar: "رمز النظام المنسق", ru: "Код ТН ВЭД" },
+  kap: { tr: "Kap", en: "Packages", de: "Packstücke", ar: "الطرود", ru: "Места" },
+  istisnaKodu: { tr: "KDV istisna kodu", en: "VAT exemption code", de: "MwSt.-Befreiungscode", ar: "رمز الإعفاء الضريبي", ru: "Код освобождения от НДС" },
+  dovizKuru: { tr: "Döviz Kuru", en: "Exchange Rate", de: "Wechselkurs", ar: "سعر الصرف", ru: "Курс валюты" },
+  tlKarsiligi: { tr: "TL Karşılığı", en: "TRY Equivalent", de: "Gegenwert in TRY", ar: "المعادل بالليرة التركية", ru: "Эквивалент в TRY" },
+  tevkifat: { tr: "KDV Tevkifatı", en: "VAT Withholding", de: "MwSt.-Einbehalt", ar: "استقطاع ضريبة القيمة المضافة", ru: "Удержание НДС" },
 
   // Kalem tablosu
   sira: { tr: "#", en: "#", de: "#", ar: "#", ru: "№" },
@@ -74,6 +95,18 @@ const ETIKETLER = {
   revizeEdildi: { tr: "Bu sürüm revize edilmiştir, geçerli değildir.", en: "This version has been revised and is no longer valid.", de: "Diese Fassung wurde überarbeitet und ist nicht mehr gültig.", ar: "تمت مراجعة هذه النسخة ولم تعد سارية.", ru: "Эта редакция пересмотрена и недействительна." },
   taslakNo: { tr: "— TASLAK —", en: "— DRAFT —", de: "— ENTWURF —", ar: "— مسودة —", ru: "— ЧЕРНОВИК —" },
   eirsaliyeNo: { tr: "— e-İrsaliye gönderiminde verilir —", en: "— assigned on e-dispatch —", de: "— wird bei e-Versand vergeben —", ar: "— يُمنح عند الإرسال الإلكتروني —", ru: "— присваивается при отправке —" },
+
+  // Makbuz
+  tahsilEdilen: { tr: "Tahsil Edilen Tutar", en: "Amount Received", de: "Erhaltener Betrag", ar: "المبلغ المستلم", ru: "Получено" },
+  odenen: { tr: "Ödenen Tutar", en: "Amount Paid", de: "Gezahlter Betrag", ar: "المبلغ المدفوع", ru: "Выплачено" },
+  odemeSekli: { tr: "Ödeme Şekli", en: "Payment Method", de: "Zahlungsart", ar: "طريقة الدفع", ru: "Способ оплаты" },
+  aciklama: { tr: "Açıklama", en: "Description", de: "Beschreibung", ar: "البيان", ru: "Назначение" },
+  kasa: { tr: "Kasa / Hesap", en: "Cash / Account", de: "Kasse / Konto", ar: "الصندوق / الحساب", ru: "Касса / счёт" },
+  "odemeSekli.nakit": { tr: "Nakit", en: "Cash", de: "Bar", ar: "نقداً", ru: "Наличные" },
+  "odemeSekli.havale": { tr: "Havale / EFT", en: "Bank transfer", de: "Überweisung", ar: "تحويل بنكي", ru: "Банковский перевод" },
+  "odemeSekli.kredi_karti": { tr: "Kredi kartı", en: "Credit card", de: "Kreditkarte", ar: "بطاقة ائتمان", ru: "Кредитная карта" },
+  "odemeSekli.cek": { tr: "Çek", en: "Cheque", de: "Scheck", ar: "شيك", ru: "Чек" },
+  "odemeSekli.senet": { tr: "Senet", en: "Promissory note", de: "Solawechsel", ar: "سند إذني", ru: "Вексель" },
 
   // İmza alanları
   "imza.hazirlayan": { tr: "Hazırlayan", en: "Prepared by", de: "Erstellt von", ar: "أعدّه", ru: "Подготовил" },
@@ -163,6 +196,22 @@ const INCOTERMS_EN: Record<string, string> = {
 export function teslimSekliMetni(kod: string, dil: BelgeDili, trAd: string | undefined): string {
   if (dil === "tr") return trAd ?? kod;
   return INCOTERMS_EN[kod] ? `${kod} — ${INCOTERMS_EN[kod]} (Incoterms® 2020)` : kod;
+}
+
+/** UN/ECE Rec. 19 taşıma şekli kodları (TASIMA_SEKILLERI ile aynı). */
+const TASIMA_ADLARI: Record<string, Record<BelgeDili, string>> = {
+  "1": { tr: "Denizyolu", en: "Sea", de: "Seefracht", ar: "بحري", ru: "Морской" },
+  "2": { tr: "Demiryolu", en: "Rail", de: "Bahn", ar: "سكك حديدية", ru: "Железнодорожный" },
+  "3": { tr: "Karayolu", en: "Road", de: "Straße", ar: "بري", ru: "Автомобильный" },
+  "4": { tr: "Havayolu", en: "Air", de: "Luftfracht", ar: "جوي", ru: "Воздушный" },
+  "5": { tr: "Posta", en: "Post", de: "Post", ar: "بريد", ru: "Почта" },
+  "6": { tr: "Çok araçlı taşıma", en: "Multimodal", de: "Multimodal", ar: "نقل متعدد الوسائط", ru: "Мультимодальный" },
+  "7": { tr: "Sabit taşıma tesisleri", en: "Fixed installation", de: "Feste Einrichtungen", ar: "منشآت نقل ثابتة", ru: "Стационарные установки" },
+  "8": { tr: "İç su yolu", en: "Inland waterway", de: "Binnenschifffahrt", ar: "ممر مائي داخلي", ru: "Внутренний водный" },
+};
+
+export function tasimaSekliMetni(kod: string, dil: BelgeDili): string {
+  return TASIMA_ADLARI[kod]?.[dil] ?? kod;
 }
 
 export function odemeMetni(vadeGun: number, dil: BelgeDili): string {

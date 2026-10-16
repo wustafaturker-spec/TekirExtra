@@ -74,6 +74,12 @@ export interface TicariBelgeModeli {
   ekBolum?: string;
   /** Kalem tablosunda fiyat ve toplam yok (fiyatsız irsaliye). */
   fiyatsiz?: boolean;
+  /** Kalem tablosu yerine özel tablo (makbuz); hücreler düz metindir. */
+  ozelTablo?: { sutunlar: { etiket: EtiketAnahtari; say?: boolean; agirlik: number }[]; satirlar: string[][] };
+  /** Genel toplam satırının etiketi; yoksa "Genel Toplam". */
+  genelEtiket?: EtiketAnahtari;
+  /** EBLG-57: dövizli faturada toplamların TL karşılığı; kur 1 döviz = ? TL. */
+  dovizKarsiligi?: { kur: string | number; satirlar: TicariBelgeToplami[] };
 }
 
 export interface TicariBelgeOrtami {
@@ -192,6 +198,9 @@ function stil(g: BelgeGorunumu, dil: BelgeDili, ciftDil: boolean): string {
   .toplam tr.genel td:first-child { border-radius: ${rtl ? `0 ${r}px ${r}px 0` : `${r}px 0 0 ${r}px`}; }
   .toplam tr.genel td:last-child { border-radius: ${rtl ? `${r}px 0 0 ${r}px` : `0 ${r}px ${r}px 0`}; }
   .toplam tr.genel .ek { color: ${anaYazi}; opacity: 0.75; font-size: 0.7em; display: block; }
+  .toplam.tl { margin-top: 8px; font-size: 0.9em; color: #4b5563; }
+  .yasal { margin-top: 10px; font-size: 0.92em; color: #374151; page-break-inside: avoid; }
+  .yasal p { margin-top: 6px; }
   .bolum { margin-top: 12px; page-break-inside: avoid; }
   .bolum h3 { font-size: 0.92em; color: ${ana}; text-transform: ${rtl ? "none" : "uppercase"}; letter-spacing: ${rtl ? 0 : 0.6}px; border-bottom: 1px solid #e5e7eb; padding-bottom: 3px; margin-bottom: 5px; }
   .bolum h3 .ek { color: #9ca3af; text-transform: none; letter-spacing: 0; }
@@ -274,9 +283,16 @@ export function ticariBelgeHtml(m: TicariBelgeModeli, o: TicariBelgeOrtami): { h
     ]),
   ];
   const urunPayi = 100 - sutunlar.reduce((t, s) => t + s.agirlik, 0);
-  const colgroup = sutunlar.map((s) => `<col style="width:${s.agirlik || urunPayi}%">`).join("");
-  const thead = sutunlar.map((s) => `<th${s.sinif === "say" ? ' class="say"' : s.sinif === "orta" ? ' class="orta"' : ""}>${s.baslik}</th>`).join("");
-  const tbody = m.kalemler.map((k, i) => `<tr>${sutunlar.map((s) => `<td${s.sinif ? ` class="${s.sinif}"` : ""}>${s.hucre(k, i)}</td>`).join("")}</tr>`).join("");
+  const ot = m.ozelTablo;
+  const colgroup = ot
+    ? ot.sutunlar.map((s) => `<col style="width:${s.agirlik}%">`).join("")
+    : sutunlar.map((s) => `<col style="width:${s.agirlik || urunPayi}%">`).join("");
+  const thead = ot
+    ? ot.sutunlar.map((s) => `<th${s.say ? ' class="say"' : ""}>${E(s.etiket)}</th>`).join("")
+    : sutunlar.map((s) => `<th${s.sinif === "say" ? ' class="say"' : s.sinif === "orta" ? ' class="orta"' : ""}>${s.baslik}</th>`).join("");
+  const tbody = ot
+    ? ot.satirlar.map((satir) => `<tr>${satir.map((h, i) => `<td${ot.sutunlar[i]?.say ? ' class="say"' : ""}>${L(h)}</td>`).join("")}</tr>`).join("")
+    : m.kalemler.map((k, i) => `<tr>${sutunlar.map((s) => `<td${s.sinif ? ` class="${s.sinif}"` : ""}>${s.hucre(k, i)}</td>`).join("")}</tr>`).join("");
 
   // ── Toplamlar, yazıyla, koşullar
   const toplamEtiketi = (t: TicariBelgeToplami) => {
@@ -286,8 +302,11 @@ export function ticariBelgeHtml(m: TicariBelgeModeli, o: TicariBelgeOrtami): { h
   const toplamlar = m.fiyatsiz ? "" : `<table class="toplam">
     ${m.toplamlar.map((t) => `<tr class="ince"><td>${toplamEtiketi(t)}</td><td>${t.eksi ? "-" : ""}${b.para(t.deger)} ${kacis(sembol)}</td></tr>`).join("")}
     <tr><td colspan="2" style="padding:3px 0"></td></tr>
-    <tr class="genel"><td>${E("genelToplam")}</td><td>${b.para(m.genelToplam)} ${kacis(sembol)}</td></tr>
-  </table>`;
+    <tr class="genel"><td>${E(m.genelEtiket ?? "genelToplam")}</td><td>${b.para(m.genelToplam)} ${kacis(sembol)}</td></tr>
+  </table>${m.dovizKarsiligi ? `<table class="toplam tl">
+    <tr class="ince"><td>${Y("dovizKuru")} <span class="ek">(1 ${kacis(m.doviz)})</span></td><td>${b.fiyat(m.dovizKarsiligi.kur)} TL</td></tr>
+    ${m.dovizKarsiligi.satirlar.map((t) => `<tr class="ince"><td>${toplamEtiketi(t)} <span class="ek">(${kacis(cevir("tlKarsiligi", ana))})</span></td><td>${t.eksi ? "-" : ""}${b.para(t.deger)} TL</td></tr>`).join("")}
+  </table>` : ""}`;
   const yaziMetni = !m.fiyatsiz && bolumler.yaziyla
     ? `<div class="yazi"><b>${kacis(cevir("yalniz", ana))}:</b> ${kacis(yaziyla(m.genelToplam, ana, m.doviz))}${ikinci ? `<br><span class="ek"><b>${kacis(cevir("yalniz", ikinci))}:</b> ${kacis(yaziyla(m.genelToplam, ikinci, m.doviz))}</span>` : ""}</div>`
     : "";

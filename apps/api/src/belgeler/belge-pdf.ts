@@ -32,6 +32,17 @@ export interface BelgePdfVerisi {
   odemeVadeGun?: number | null;
   teslimSuresi?: string | null;
   teslimSekli?: string | null;
+  /** FTR-39: irsaliyenin taşıma bilgileri (EBLG-23/84). */
+  fiiliSevkZamani?: string | null;
+  plaka?: string | null;
+  dorsePlaka?: string | null;
+  soforAdi?: string | null;
+  soforSoyadi?: string | null;
+  tasiyiciUnvan?: string | null;
+  teslimatAdres?: string | null;
+  teslimatIl?: string | null;
+  teslimatIlce?: string | null;
+  teslimatPostaKodu?: string | null;
   /** FTR-40: basım dili; çift dilde Türkçe + bu dil. */
   belgeDili?: BelgeDili;
   ciftDil?: boolean;
@@ -118,6 +129,23 @@ function toplamSatirlari(b: BelgePdfVerisi, dil: BelgeDili): TicariBelgeToplami[
   return satirlar;
 }
 
+/** FTR-39: irsaliyede sevk zamanı, araç, şoför, taşıyıcı ve teslim yeri. */
+function tasimaBilgileri(b: BelgePdfVerisi, bic: ReturnType<typeof bicimleyiciler>): TicariBelgeModeli["bilgiler"] {
+  const sevk = b.fiiliSevkZamani ? new Date(b.fiiliSevkZamani) : null;
+  const saat = sevk ? sevk.toLocaleTimeString("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }) : "";
+  const gun = sevk ? sevk.toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" }) : "";
+  const teslimYeri = b.teslimatAdres
+    ? `${b.teslimatAdres}${b.teslimatPostaKodu ? ` ${b.teslimatPostaKodu}` : ""}${b.teslimatIlce || b.teslimatIl ? ` ${[b.teslimatIlce, b.teslimatIl].filter(Boolean).join("/")}` : ""}`
+    : "";
+  return [
+    { etiket: "sevkTarihi", deger: sevk ? `${bic.tarih(gun)} ${saat}` : "" },
+    { etiket: "tasiyici", deger: b.tasiyiciUnvan ?? "" },
+    { etiket: "plaka", deger: [b.plaka, b.dorsePlaka].filter(Boolean).join(" / "), mono: true },
+    { etiket: "sofor", deger: [b.soforAdi, b.soforSoyadi].filter(Boolean).join(" ") },
+    { etiket: "teslimYeri", deger: teslimYeri },
+  ];
+}
+
 export function belgePdfModeli(b: BelgePdfVerisi, kopya = false): TicariBelgeModeli {
   const dil = b.belgeDili ?? "tr";
   const ciftDil = ciftDilGecerli(dil, b.ciftDil);
@@ -195,6 +223,7 @@ export function belgePdfModeli(b: BelgePdfVerisi, kopya = false): TicariBelgeMod
       { etiket: "odeme", deger: b.odemeVadeGun != null ? ikiDilde((d) => odemeMetni(b.odemeVadeGun!, d)) : "" },
       { etiket: "teslimSekli", deger: teslimSekli },
       { etiket: "teslimSuresi", deger: b.teslimSuresi?.trim() ?? "" },
+      ...(b.tur === "irsaliye" ? tasimaBilgileri(b, bic) : []),
     ],
     doviz: b.dovizCinsi,
     kalemler,

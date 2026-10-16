@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { guncellemeSemasi } from "../core/sema";
-import { idisEngelleri, ihracKayitliHatalari, ozelMatrahHatalari, senaryoHatalari, ytbEngelleri, DOVIZ_CINSLERI } from "@tekirextra/shared";
+import { idisEngelleri, ihracKayitliHatalari, ozelMatrahHatalari, senaryoHatalari, ytbEngelleri, DOVIZ_CINSLERI, BELGE_DILLERI, teslimSartiGecerliMi, tasimaSekliGecerliMi } from "@tekirextra/shared";
 
 const pozitifOndalik = z
   .union([z.string(), z.number()])
@@ -90,6 +90,12 @@ const faturaOlusturGovde = z.object({
    * kullanılır; e-Belge sihirbazında da değiştirilebilir.
    */
   earsivGonderimSekli: z.enum(["elektronik", "kagit"]).optional().nullable(),
+  /** FTR-39: teslim şartı (Incoterms) ve taşıma şekli; proformada girilir, e-Belge sihirbazı da buradan başlar. */
+  ihracatTeslimSarti: z.string().optional().nullable().refine((k) => !k || teslimSartiGecerliMi(k), "Teslim şartı Incoterms listesinden seçilmelidir"),
+  ihracatTasimaSekli: z.string().optional().nullable().refine((k) => !k || tasimaSekliGecerliMi(k), "Taşıma şekli listeden seçilmelidir"),
+  /** FTR-40: kendi çıktımızın basım dili; verilmezse cari kartındaki dil. */
+  belgeDili: z.enum(BELGE_DILLERI).optional(),
+  ciftDil: z.boolean().optional(),
   /** EBLG-60: ihraç kayıtlı satış kodu (701/702); doluysa KDV tahsil edilmez. */
   ihracKayitliKodu: z.string().optional().nullable(),
   /** İDİS sevkiyat numarası (EBLG-72): doluysa belge IDIS profiliyle gider. */
