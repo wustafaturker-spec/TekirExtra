@@ -7,6 +7,7 @@ import {
   renkNormalize,
   sablonNormalize,
 } from "./belge-temasi";
+import { BELGE_GORUNUMU_MODULU, type BelgeGorunumu, gorunumNormalize } from "./belge-gorunumu";
 import { aktifBaglam } from "../istek-baglami";
 import { PrismaService } from "../prisma.service";
 
@@ -47,14 +48,38 @@ export class PdfService implements OnModuleDestroy {
   }
 
   /**
+   * FTR-42: ticari belgelerin görünüm ayarı. Ana renk seçilmemişse fatura
+   * ayarındaki vurgu rengi (FTR-23) devam eder; ayar okunamazsa varsayılan
+   * görünümle basılır.
+   */
+  async belgeGorunumu(): Promise<BelgeGorunumu> {
+    try {
+      const [ayar, fatura] = await Promise.all([this.ayarlar.getir(BELGE_GORUNUMU_MODULU), this.ayarlar.getir("fatura")]);
+      return gorunumNormalize({ anaRenk: renkNormalize(fatura.vurguRengi), ...ayar });
+    } catch (hata) {
+      this.logger.warn(`Belge görünümü okunamadı, varsayılan kullanılıyor: ${String(hata)}`);
+      return gorunumNormalize({});
+    }
+  }
+
+  /**
    * KLN-03: firma logosunu data URI olarak verir (PDF'ler dış kaynak
    * yükleyemez). Logo yoksa veya depo erişilemezse PDF logosuz üretilir.
    */
   async firmaLogoDataUri(): Promise<string | undefined> {
+    return this.firmaGorseliDataUri("firma");
+  }
+
+  /** FTR-42: imza alanına basılan kaşe/imza görseli; yoksa alan boş kalır. */
+  async firmaKaseDataUri(): Promise<string | undefined> {
+    return this.firmaGorseliDataUri("firma_kase");
+  }
+
+  private async firmaGorseliDataUri(sahipTur: "firma" | "firma_kase"): Promise<string | undefined> {
     const { tenantId } = aktifBaglam();
     const logo = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.ek.findFirst({
-        where: { sahipTur: "firma", sahipId: tenantId },
+        where: { sahipTur, sahipId: tenantId },
         orderBy: { createdAt: "desc" },
       }),
     );
@@ -64,7 +89,7 @@ export class PdfService implements OnModuleDestroy {
       const icerik = await this.depo.indir(logo.depoAnahtari);
       return `data:${logo.mimeTip};base64,${icerik.toString("base64")}`;
     } catch (hata) {
-      this.logger.warn(`Firma logosu okunamadı, PDF logosuz üretiliyor: ${String(hata)}`);
+      this.logger.warn(`Firma görseli (${sahipTur}) okunamadı, PDF onsuz üretiliyor: ${String(hata)}`);
       return undefined;
     }
   }
@@ -80,7 +105,7 @@ export class PdfService implements OnModuleDestroy {
 
   async htmlToPdf(
     html: string,
-    secenekler?: { yatay?: boolean; yalitilmis?: boolean; sayfaNumarasi?: boolean },
+    secenekler?: { yatay?: boolean; yalitilmis?: boolean; sayfaNumarasi?: boolean; altBilgi?: string },
   ): Promise<Buffer> {
     const tarayici = await this.tarayiciAl();
     // Yalıtılmış kip yabancı kaynaklı HTML içindir (EBLG-29): betik çalışmaz,
@@ -98,7 +123,10 @@ export class PdfService implements OnModuleDestroy {
         printBackground: true,
         margin: { top: "14mm", bottom: "14mm", left: "12mm", right: "12mm" },
         // CARI-24: çok sayfalı raporlarda "Sayfa X / Y"; alt kenar boşluğuna basılır.
-        ...(secenekler?.sayfaNumarasi
+        // FTR-38: ticari belgeler kendi sayfa altını (firma, belge no, dilinde "Sayfa X/Y") verir.
+        ...(secenekler?.altBilgi
+          ? { displayHeaderFooter: true, headerTemplate: "<span></span>", footerTemplate: secenekler.altBilgi }
+          : secenekler?.sayfaNumarasi
           ? {
               displayHeaderFooter: true,
               headerTemplate: "<span></span>",

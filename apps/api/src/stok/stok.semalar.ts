@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SARJ_TURLERI, birimCoz, DOVIZ_CINSLERI } from "@tekirextra/shared";
+import { SARJ_TURLERI, birimCoz, DOVIZ_CINSLERI, YABANCI_ACIKLAMA_UZUNLUGU, YABANCI_AD_UZUNLUGU, YABANCI_BELGE_DILLERI } from "@tekirextra/shared";
 import { guncellemeSemasi } from "../core/sema";
 
 const pozitifOndalik = z
@@ -50,6 +50,11 @@ export const stokKartOlusturSemasi = z.object({
   /** EBLG-71: kart satıra düştüğünde fatura tipi buradan türer. */
   sarjTuru: z.enum(SARJ_TURLERI).optional().nullable(),
   ureticiUrunKodu: z.string().max(64).optional().nullable(),
+  /** STK-41: dil başına ad ve açıklama; boş adlar atılır, hiç ad yoksa null. */
+  yabanciAdlar: z.partialRecord(z.enum(YABANCI_BELGE_DILLERI), z.object({
+    ad: z.string().max(YABANCI_AD_UZUNLUGU),
+    aciklama: z.string().max(YABANCI_ACIKLAMA_UZUNLUGU).optional().nullable(),
+  })).optional().nullable(),
   barkod: z.string().max(120).optional().nullable(),
   kategoriId: z.string().uuid().optional().nullable(),
   anaBirim: birimAlani.default("adet"),

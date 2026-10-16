@@ -17,7 +17,7 @@ import { HizliKayitPaneli } from "@/components/hizli-kayit-paneli";
 import { ExcelIceAktar } from "./excel-ice-aktar";
 import { CariTopluIslem } from "./toplu-islem";
 import { CariAiDoldurModal, type CariAiDoldurVerisi } from "@/components/cari-ai-doldur-modal";
-import { CARI_EBELGE_ETIKETI, EKSTRE_TURU_ADLARI, EKSTRE_TURLERI, vknTcknGecerliMi, type CariEbelgeDurumu, type CariEbelgeTuru, type EkstreTuru, YABANCI_DOVIZLER, type YabanciDoviz } from "@tekirextra/shared";
+import { BELGE_DILLERI, BELGE_DILI_ADLARI, belgeDiliNormalize, ciftDilGecerli, type BelgeDili, CARI_EBELGE_ETIKETI, EKSTRE_TURU_ADLARI, EKSTRE_TURLERI, vknTcknGecerliMi, type CariEbelgeDurumu, type CariEbelgeTuru, type EkstreTuru, YABANCI_DOVIZLER, type YabanciDoviz } from "@tekirextra/shared";
 import {
   Alert,
   Avatar,
@@ -173,6 +173,9 @@ interface CariDetay extends Omit<Cari, "grup"> {
   efaturaProfili: "temel" | "ticari";
   /** Bu cariye kesilen e-Arşiv faturaların varsayılan teslim şekli (EBLG-26). */
   earsivGonderimSekli: "elektronik" | "kagit";
+  /** FTR-40: ticari belgelerin varsayılan basım dili; null = Türkçe. */
+  belgeDili?: string | null;
+  belgeCiftDil?: boolean;
   /** KAMU senaryosu: GİB listesinde ÖZEL görünen kamu idaresi için elle işaret. */
   kamuIdaresi?: boolean;
   harcamaBirimiVkn?: string | null;
@@ -365,6 +368,8 @@ export default function CariSayfasi() {
   const [varsayilanVadeGun, setVarsayilanVadeGun] = useState("");
   const [efaturaProfili, setEfaturaProfili] = useState<"temel" | "ticari">("temel");
   const [earsivGonderimSekli, setEarsivGonderimSekli] = useState<"elektronik" | "kagit">("elektronik");
+  const [belgeDili, setBelgeDili] = useState<BelgeDili>("tr");
+  const [belgeCiftDil, setBelgeCiftDil] = useState(false);
   const [fiyatListeleri, setFiyatListeleri] = useState<{ id: string; ad: string; dovizCinsi: string }[]>([]);
   // Detay panel alt formları
   const [bankaAdi, setBankaAdi] = useState("");
@@ -598,10 +603,16 @@ export default function CariSayfasi() {
     } catch (h) { setHata(h instanceof Error ? h.message : "Hareket silinemedi"); }
   }
 
+  /** FTR-40: finans formundaki dil alanları; Türkçe null yazılır, çift dil yalnız yabancı dilde. */
+  function belgeDiliGovdesi(veri: FormData) {
+    const dil = belgeDiliNormalize(veri.get("belgeDili"));
+    return { belgeDili: dil === "tr" ? null : dil, belgeCiftDil: ciftDilGecerli(dil, veri.get("belgeCiftDil") === "on") };
+  }
+
   async function finansGuncelle(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); if (!detay) return; const veri = new FormData(e.currentTarget);
     setHata(""); setBasari("");
-    try { await api(`/cari/${detay.id}`, { method: "PATCH", body: JSON.stringify({ riskLimiti: String(veri.get("riskLimiti") || "") || null, grupId: String(veri.get("grupId") || "") || null, varsayilanVadeGun: veri.get("varsayilanVadeGun") === "" ? null : Number(veri.get("varsayilanVadeGun")), varsayilanIskonto: String(veri.get("varsayilanIskonto") || "") || null, fiyatListesiId: String(veri.get("fiyatListesiId") || "") || null, efaturaProfili: veri.get("efaturaProfili") as "temel" | "ticari", earsivGonderimSekli: veri.get("earsivGonderimSekli") as "elektronik" | "kagit", kamuIdaresi: veri.get("kamuIdaresi") === "on", harcamaBirimiVkn: String(veri.get("harcamaBirimiVkn") || "").trim() || null, harcamaBirimiAdi: String(veri.get("harcamaBirimiAdi") || "").trim() || null }) }); await detayAc(detay.id, true); setBasari("Risk ve finans koşulları güncellendi."); }
+    try { await api(`/cari/${detay.id}`, { method: "PATCH", body: JSON.stringify({ riskLimiti: String(veri.get("riskLimiti") || "") || null, grupId: String(veri.get("grupId") || "") || null, varsayilanVadeGun: veri.get("varsayilanVadeGun") === "" ? null : Number(veri.get("varsayilanVadeGun")), varsayilanIskonto: String(veri.get("varsayilanIskonto") || "") || null, fiyatListesiId: String(veri.get("fiyatListesiId") || "") || null, efaturaProfili: veri.get("efaturaProfili") as "temel" | "ticari", earsivGonderimSekli: veri.get("earsivGonderimSekli") as "elektronik" | "kagit", ...belgeDiliGovdesi(veri), kamuIdaresi: veri.get("kamuIdaresi") === "on", harcamaBirimiVkn: String(veri.get("harcamaBirimiVkn") || "").trim() || null, harcamaBirimiAdi: String(veri.get("harcamaBirimiAdi") || "").trim() || null }) }); await detayAc(detay.id, true); setBasari("Risk ve finans koşulları güncellendi."); }
     catch (h) { setHata(h instanceof Error ? h.message : "Finans bilgileri güncellenemedi"); }
   }
 
@@ -680,6 +691,8 @@ export default function CariSayfasi() {
         varsayilanVadeGun: varsayilanVadeGun ? Number(varsayilanVadeGun) : undefined,
         efaturaProfili,
         earsivGonderimSekli,
+        belgeDili: belgeDili === "tr" ? null : belgeDili,
+        belgeCiftDil: ciftDilGecerli(belgeDili, belgeCiftDil),
         notlar: notlar || undefined,
       });
       setBasari("Cari kart başarıyla oluşturuldu.");
@@ -708,6 +721,7 @@ export default function CariSayfasi() {
       setVarsayilanVadeGun("");
       setEfaturaProfili("temel");
       setEarsivGonderimSekli("elektronik");
+      setBelgeDili("tr"); setBelgeCiftDil(false);
       void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Kayıt hatası");
@@ -1112,6 +1126,9 @@ export default function CariSayfasi() {
               <Field label="e-Fatura profili"><Select value={efaturaProfili} onChange={(e) => setEfaturaProfili(e.target.value as "temel" | "ticari")}><option value="temel">TEMELFATURA</option><option value="ticari">TICARIFATURA</option></Select></Field>
               {/* EBLG-26: e-Belge sihirbazında fatura bazında değiştirilebilir. */}
               <Field label="e-Arşiv teslim şekli"><Select value={earsivGonderimSekli} onChange={(e) => setEarsivGonderimSekli(e.target.value as "elektronik" | "kagit")}><option value="elektronik">Elektronik</option><option value="kagit">Kâğıt</option></Select></Field>
+              {/* FTR-40: teklif, sipariş, irsaliye ve proformanın varsayılan basım dili. */}
+              <Field label="Belge dili"><Select aria-label="Belge dili" value={belgeDili} onChange={(e) => setBelgeDili(e.target.value as BelgeDili)}>{BELGE_DILLERI.map((d) => <option key={d} value={d}>{BELGE_DILI_ADLARI[d]}</option>)}</Select></Field>
+              <label className="check-row"><input type="checkbox" checked={ciftDilGecerli(belgeDili, belgeCiftDil)} disabled={belgeDili === "tr"} onChange={(e) => setBelgeCiftDil(e.target.checked)} /> Çift dilli bas (Türkçe + seçilen dil)</label>
             </div>
           </FormGrubu>
           </div>
@@ -1253,6 +1270,8 @@ export default function CariSayfasi() {
                     <Field label="Fiyat listesi"><Select name="fiyatListesiId" defaultValue={detay.fiyatListesiId ?? ""}><option value="">Stok satış fiyatı</option>{fiyatListeleri.map((liste) => <option key={liste.id} value={liste.id}>{liste.ad} · {liste.dovizCinsi}</option>)}</Select></Field>
                     <Field label="e-Fatura profili"><Select name="efaturaProfili" defaultValue={detay.efaturaProfili}><option value="temel">TEMELFATURA</option><option value="ticari">TICARIFATURA — alıcı kabul/ret verir</option></Select></Field>
                     <Field label="e-Arşiv teslim şekli"><Select name="earsivGonderimSekli" defaultValue={detay.earsivGonderimSekli ?? "elektronik"}><option value="elektronik">Elektronik — PDF e-postayla</option><option value="kagit">Kâğıt — basılı teslim</option></Select></Field>
+                    <Field label="Belge dili"><Select name="belgeDili" defaultValue={detay.belgeDili ?? "tr"}>{BELGE_DILLERI.map((d) => <option key={d} value={d}>{BELGE_DILI_ADLARI[d]}</option>)}</Select></Field>
+                    <label className="check-row"><input type="checkbox" name="belgeCiftDil" defaultChecked={detay.belgeCiftDil ?? false} /> Çift dilli bas (Türkçe + seçilen dil; Türkçede yok sayılır)</label>
                     <label className="check-row"><input type="checkbox" name="kamuIdaresi" defaultChecked={detay.kamuIdaresi ?? false} /> Kamu idaresi — e-Faturası KAMU senaryosuyla gider (GİB listesinde KAMU türündeyse işaretlemek gerekmez)</label>
                     <Field label="Harcama birimi VKN (varsayılan)"><Input name="harcamaBirimiVkn" defaultValue={detay.harcamaBirimiVkn ?? ""} inputMode="numeric" pattern="\d{10}" maxLength={10} placeholder="Boşsa carinin VKN'si kullanılır" /></Field>
                     <Field label="Harcama birimi adı (varsayılan)"><Input name="harcamaBirimiAdi" defaultValue={detay.harcamaBirimiAdi ?? ""} maxLength={200} placeholder="Boşsa carinin unvanı kullanılır" /></Field>

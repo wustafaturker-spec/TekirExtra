@@ -16,7 +16,7 @@ import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { fiyatOnerisiHesapla } from "./fiyat-onerisi";
 import { PrismaService } from "../core/prisma.service";
 import { PdfService } from "../core/pdf/pdf.service";
-import { bugunTR, metinNormalize, vergiTuruBul, type DovizKodu } from "@tekirextra/shared";
+import { bugunTR, metinNormalize, vergiTuruBul, yabanciAdlarNormalize, type DovizKodu } from "@tekirextra/shared";
 import { belgeKodTablosu } from "../fatura/tevkifat-tablosu";
 import { DepoService } from "./depo.service";
 import { DonemKilidiService } from "../donem-kapatma/donem-kilidi.service";
@@ -305,6 +305,7 @@ export class StokService {
             gtipKodu: girdi.gtipKodu,
             sarjTuru: girdi.sarjTuru,
             ureticiUrunKodu: girdi.ureticiUrunKodu,
+            ...(girdi.yabanciAdlar !== undefined ? { yabanciAdlar: yabanciAdlarNormalize(girdi.yabanciAdlar) ?? Prisma.DbNull } : {}),
             barkod: girdi.barkod,
             kategoriId: girdi.kategoriId,
             anaBirim: girdi.anaBirim,
@@ -506,6 +507,7 @@ export class StokService {
           mensei: stok.mensei,
           gtipKodu: stok.gtipKodu,
           ureticiUrunKodu: stok.ureticiUrunKodu,
+          yabanciAdlar: stok.yabanciAdlar ?? Prisma.DbNull,
           barkod: null, // clear barcode to avoid unique constraint
           kategoriId: stok.kategoriId,
           anaBirim: stok.anaBirim,
@@ -592,6 +594,7 @@ export class StokService {
             gtipKodu: girdi.gtipKodu,
             sarjTuru: girdi.sarjTuru,
             ureticiUrunKodu: girdi.ureticiUrunKodu,
+            ...(girdi.yabanciAdlar !== undefined ? { yabanciAdlar: yabanciAdlarNormalize(girdi.yabanciAdlar) ?? Prisma.DbNull } : {}),
             barkod: girdi.barkod,
             kategoriId: girdi.kategoriId,
             anaBirim: girdi.anaBirim,
@@ -1363,6 +1366,8 @@ export class StokService {
     gtipKodu: string | null;
     sarjTuru: string | null;
     ureticiUrunKodu: string | null;
+    /** STK-41: dil başına ad. */
+    yabanciAdlar?: Prisma.JsonValue | null;
     barkod: string | null;
     kategoriId: string | null;
     anaBirim: string;
@@ -1397,6 +1402,7 @@ export class StokService {
       gtipKodu: k.gtipKodu,
       sarjTuru: k.sarjTuru,
       ureticiUrunKodu: k.ureticiUrunKodu,
+      yabanciAdlar: yabanciAdlarNormalize(k.yabanciAdlar),
       barkod: k.barkod,
       kategoriId: k.kategoriId,
       anaBirim: k.anaBirim,

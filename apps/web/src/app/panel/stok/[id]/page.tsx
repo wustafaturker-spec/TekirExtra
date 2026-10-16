@@ -24,7 +24,7 @@ import {
   Tabs,
   TableWrap,
 } from "@/components/ui";
-import { birimKisaAdi, bugunTR, olcuAilesi, olcuKatsayisi, SARJ_TURLERI, SARJ_TURU_ADLARI, varyantKombinasyonlari } from "@tekirextra/shared";
+import { BELGE_DILI_ADLARI, YABANCI_ACIKLAMA_UZUNLUGU, YABANCI_AD_UZUNLUGU, YABANCI_BELGE_DILLERI, yabanciAdlarNormalize, type YabanciAdlar, birimKisaAdi, bugunTR, olcuAilesi, olcuKatsayisi, SARJ_TURLERI, SARJ_TURU_ADLARI, varyantKombinasyonlari } from "@tekirextra/shared";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 import { KdvOraniSecimi, useKodTablosu } from "@/components/kdv-orani-secimi";
 
@@ -244,6 +244,8 @@ interface StokDetay {
   gtipKodu: string | null;
   sarjTuru: string | null;
   ureticiUrunKodu: string | null;
+  /** STK-41: dil başına ad ve açıklama. */
+  yabanciAdlar?: YabanciAdlar | null;
   barkod: string | null;
   kategoriId: string | null;
   anaBirim: string;
@@ -714,6 +716,11 @@ function GenelSekmesi({
     aktif: detay.aktif,
     takipTipi: detay.takipTipi ?? "yok",
   });
+  /** STK-41: belge o dilde basılırken kullanılan adlar; boş ad kaydedilmez. */
+  const [yabanciAdlar, setYabanciAdlar] = useState<Record<string, { ad: string; aciklama: string }>>(() =>
+    Object.fromEntries(YABANCI_BELGE_DILLERI.map((d) => [d, { ad: detay.yabanciAdlar?.[d]?.ad ?? "", aciklama: detay.yabanciAdlar?.[d]?.aciklama ?? "" }])));
+  const yabanciAdDegis = (dil: string, alanAdi: "ad" | "aciklama", deger: string) =>
+    setYabanciAdlar((m) => ({ ...m, [dil]: { ...m[dil], [alanAdi]: deger } }));
 
   // MVZ-11: kartın KDV oranı bugün yürürlükteki merkezi listeden.
   const kodTablosu = useKodTablosu(null);
@@ -737,6 +744,7 @@ function GenelSekmesi({
       gtipKodu: bosNull(form.gtipKodu),
       sarjTuru: bosNull(form.sarjTuru),
       ureticiUrunKodu: bosNull(form.ureticiUrunKodu),
+      yabanciAdlar: yabanciAdlarNormalize(yabanciAdlar),
       // Kilitli kartta birim hiç gönderilmez; sunucu da reddeder.
       ...(detay.anaBirimKilitli ? {} : { anaBirim: form.anaBirim }),
       kdvOrani: form.kdvOrani || "20",
@@ -838,6 +846,23 @@ function GenelSekmesi({
           </Field>
         </div>
       </div>
+
+      {/* STK-41: yabancı dilde basılan teklif/proforma/faturada ürünün adı. */}
+      <details className="stock-editor__yabanci" open={YABANCI_BELGE_DILLERI.some((d) => yabanciAdlar[d].ad.trim())}>
+        <summary>Yabancı dilde ürün adı <small className="muted">— belge o dilde basılırken kullanılır; boşsa Türkçe ad basılır</small></summary>
+        <div className="stock-editor__grid">
+          {YABANCI_BELGE_DILLERI.map((d) => (
+            <div key={d} className="stock-field stock-field--full">
+              <Field label={`${BELGE_DILI_ADLARI[d]} ad`}>
+                <Input aria-label={`${BELGE_DILI_ADLARI[d]} ürün adı`} dir={d === "ar" ? "rtl" : undefined} value={yabanciAdlar[d].ad} maxLength={YABANCI_AD_UZUNLUGU} onChange={(e) => yabanciAdDegis(d, "ad", e.target.value)} />
+              </Field>
+              <Field label={`${BELGE_DILI_ADLARI[d]} açıklama (isteğe bağlı)`}>
+                <Input aria-label={`${BELGE_DILI_ADLARI[d]} açıklama`} dir={d === "ar" ? "rtl" : undefined} value={yabanciAdlar[d].aciklama} maxLength={YABANCI_ACIKLAMA_UZUNLUGU} onChange={(e) => yabanciAdDegis(d, "aciklama", e.target.value)} disabled={!yabanciAdlar[d].ad.trim()} />
+              </Field>
+            </div>
+          ))}
+        </div>
+      </details>
 
       <div className="stock-editor__section"><span>03</span><div><strong>Fiyatlandırma</strong><small>Vergi oranı ve kartın varsayılan alış/satış fiyatları</small></div></div>
       <div className="stock-editor__grid stock-editor__grid--pricing">

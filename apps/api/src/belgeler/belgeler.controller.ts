@@ -229,8 +229,9 @@ export class BelgelerController {
   }
 
   @Get(":id/pdf")
-  async pdf(@Param("id") id: string, @Res() res: Response) {
-    const pdf = await this.belgelerService.pdfUret(id);
+  async pdf(@Param("id") id: string, @Query("kopya") kopya: string | undefined, @Res() res: Response) {
+    // FTR-42: ?kopya=1 belgeye "KOPYA" damgası basar.
+    const pdf = await this.belgelerService.pdfUret(id, { kopya: kopya === "1" || kopya === "true" });
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="${pdf.dosyaAdi}"`);
     res.send(pdf.buffer);

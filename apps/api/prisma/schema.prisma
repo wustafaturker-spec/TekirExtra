@@ -984,6 +984,9 @@ model CariHesap {
   /// Bu cariye kesilen e-Arşiv faturaların varsayılan teslim şekli (EBLG-26);
   /// e-Belge sihirbazında fatura bazında değiştirilebilir.
   earsivGonderimSekli     EarsivGonderimSekli @default(elektronik) @map("earsiv_gonderim_sekli")
+  /// FTR-40: bu cariye kesilen ticari belgelerin varsayılan basım dili; boşsa Türkçe.
+  belgeDili               String?             @map("belge_dili")
+  belgeCiftDil            Boolean             @default(false) @map("belge_cift_dil")
   notlar                  String?
   aktif                   Boolean             @default(true)
   createdAt               DateTime            @default(now()) @map("created_at")
@@ -1361,6 +1364,8 @@ model StokKart {
   /// tipi buradan türer — `sarj` (şarj hizmeti) ya da `sarjanlik` (ünite).
   sarjTuru         String?       @map("sarj_turu")
   ureticiUrunKodu  String?       @map("uretici_urun_kodu")
+  /// STK-41: dil başına ürün adı/açıklaması ({ en: { ad, aciklama } }); belge o dilde basılırken kullanılır.
+  yabanciAdlar     Json?         @map("yabanci_adlar")
   /// Veritabanının ürettiği aksansız arama kolonu (20260904200000_aksansiz_arama).
   /// GENERATED ALWAYS olduğu için yalnız okunur; Prisma ile yazılmaz.
   aramaNormal      String?       @map("arama_normal")
@@ -2537,6 +2542,9 @@ model Fatura {
   ihracatTeslimTarihi   DateTime?           @map("ihracat_teslim_tarihi") @db.Date
   /// EBLG-53: Incoterms teslim şartı (EXW, FOB, CIF…).
   ihracatTeslimSarti    String?             @map("ihracat_teslim_sarti")
+  /// FTR-40: kendi bastığımız fatura/proforma çıktısının dili (e-Belge görünümünü etkilemez).
+  belgeDili             String              @default("tr") @map("belge_dili")
+  ciftDil               Boolean             @default(false) @map("cift_dil")
   /// EBLG-53: UN/ECE Rec. 19 taşıma şekli kodu (1 deniz, 3 kara…).
   ihracatTasimaSekli    String?             @map("ihracat_tasima_sekli")
   /// EBLG-54: gümrük beyanname numarası; gümrük kapandıktan sonra girilir ve
@@ -3709,6 +3717,8 @@ enum EkSahipTur {
   personel
   satin_alma_teklif
   cek_senet
+  /// FTR-42: ticari belgelerin imza alanına basılan kaşe/imza görseli.
+  firma_kase
 }
 
 enum PersonelBelgeTuru {
@@ -4061,6 +4071,10 @@ model Belge {
   /// `revizyonKokId` ilk sürümün kimliğidir, ilk sürümde boştur.
   revizyonNo             Int              @default(0) @map("revizyon_no")
   revizyonKokId          String?          @map("revizyon_kok_id") @db.Uuid
+  /// FTR-40: basım dili (tr/en/de/ar/ru); çift dilde Türkçe + bu dil.
+  /// Varsayılanı cari kartından gelir, zincir boyunca faturaya taşınır.
+  belgeDili              String           @default("tr") @map("belge_dili")
+  ciftDil                Boolean          @default(false) @map("cift_dil")
   /// FTR-27: alış irsaliyesinde tedarikçinin kendi irsaliye numarası. `no`
   /// bizim iç seri numaramızdır (AIR…); giden e-İrsaliye serisinden alınmaz.
   tedarikciBelgeNo       String?          @map("tedarikci_belge_no")

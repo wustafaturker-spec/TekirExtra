@@ -541,6 +541,8 @@ export class CariService {
           varsayilanVadeGun: cari.varsayilanVadeGun,
           efaturaProfili: cari.efaturaProfili,
           earsivGonderimSekli: cari.earsivGonderimSekli,
+          belgeDili: cari.belgeDili,
+          belgeCiftDil: cari.belgeCiftDil,
           riskLimiti: cari.riskLimiti,
           eFaturaMukellefi: cari.eFaturaMukellefi,
           mukellefiyetSorguZamani: cari.mukellefiyetSorguZamani,
@@ -1209,6 +1211,8 @@ export class CariService {
     varsayilanVadeGun: number | null;
     efaturaProfili: string;
     earsivGonderimSekli: string;
+    belgeDili?: string | null;
+    belgeCiftDil?: boolean;
     riskLimiti: Prisma.Decimal | null;
     eFaturaMukellefi: boolean | null;
     kamuIdaresi: boolean;
@@ -1247,6 +1251,8 @@ export class CariService {
       varsayilanVadeGun: k.varsayilanVadeGun,
       efaturaProfili: k.efaturaProfili,
       earsivGonderimSekli: k.earsivGonderimSekli,
+      belgeDili: k.belgeDili ?? null,
+      belgeCiftDil: k.belgeCiftDil ?? false,
       // KAMU senaryosu (sihirbazda harcama biriminin varsayılanı).
       kamuIdaresi: k.kamuIdaresi,
       harcamaBirimiVkn: k.harcamaBirimiVkn,

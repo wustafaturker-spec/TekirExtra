@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { EN_UZUN_VADE_GUN, PLAKA_HATA_MESAJI, plakaGecerliMi, plakaNormalize, teslimSekliGecerliMi, DOVIZ_CINSLERI } from "@tekirextra/shared";
+import { BELGE_DILLERI, EN_UZUN_VADE_GUN, PLAKA_HATA_MESAJI, plakaGecerliMi, plakaNormalize, teslimSekliGecerliMi, DOVIZ_CINSLERI } from "@tekirextra/shared";
 import { guncellemeSemasi } from "../core/sema";
 import { ekVergiSemasi } from "../fatura/fatura.semalar";
 
@@ -73,6 +73,9 @@ export const belgeOlusturSemasi = z.object({
   odemeVadeGun: z.number().int("Vade tam gün olmalıdır").min(0, "Vade negatif olamaz").max(EN_UZUN_VADE_GUN, `Vade en çok ${EN_UZUN_VADE_GUN} gün olabilir`).optional().nullable(),
   teslimSuresi: z.string().max(200).optional().nullable(),
   teslimSekli: z.string().optional().nullable().refine(teslimSekliGecerliMi, "Teslim şekli Incoterms listesinden seçilmelidir"),
+  /** FTR-40: basım dili; verilmezse cari kartındaki dil (o da yoksa Türkçe). */
+  belgeDili: z.enum(BELGE_DILLERI).optional(),
+  ciftDil: z.boolean().optional(),
   /** FTR-27: alış irsaliyesinde tedarikçinin irsaliye numarası; diğerlerinde yok sayılır. */
   tedarikciBelgeNo: z.string().max(50).optional().nullable(),
   cariId: z.string().uuid(),

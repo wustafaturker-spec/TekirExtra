@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { registerModulAyar } from "./core/ayarlar/ayar-kayit";
 import { BELGE_SABLONLARI, VARSAYILAN_VURGU_RENGI } from "./core/pdf/belge-temasi";
+import { BELGE_GORUNUMU_MODULU, belgeGorunumuSemasi } from "./core/pdf/belge-gorunumu";
 import { DOVIZ_CINSLERI } from "@tekirextra/shared";
 import { VARSAYILAN_SABLONLAR } from "./cari/vade-hatirlatma";
 
@@ -66,6 +67,10 @@ registerModulAyar(
     vurguRengi: VARSAYILAN_VURGU_RENGI,
   },
 );
+
+// FTR-42: ticari belgelerin görünümü. Boş kayıt geçerlidir; eksik alanlar
+// okunurken varsayılana (ana renk: fatura ayarındaki vurgu rengi) düşer.
+registerModulAyar(BELGE_GORUNUMU_MODULU, belgeGorunumuSemasi, {});
 
 registerModulAyar(
   "kasaBanka",

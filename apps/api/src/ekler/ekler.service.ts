@@ -50,6 +50,7 @@ export class EklerService {
       kasa_banka: () =>
         tx.kasaBankaHareket.findUnique({ where: { id: sahipId } }),
       firma: () => tx.tenant.findUnique({ where: { id: sahipId } }),
+      firma_kase: () => tx.tenant.findUnique({ where: { id: sahipId } }),
       masraf: () => tx.masraf.findUnique({ where: { id: sahipId } }),
       kira_sozlesme: () => tx.kiraSozlesme.findUnique({ where: { id: sahipId } }),
       personel: () => tx.personel.findUnique({ where: { id: sahipId } }),

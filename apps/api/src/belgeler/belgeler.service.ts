@@ -13,7 +13,7 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { izinliEylemler, eylemIzinli } from "../core/eylemler/eylem-kayit";
 import { PdfService } from "../core/pdf/pdf.service";
-import { belgeNoMetni, birlesikReferanslar, revizyonEngeli, ilgiliKisiTemizle, ilkIlgiliKisi, ilkKosullar, vadeTarihiHesapla, irsaliyeGeriAlmaEngeli, metinNormalize, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi, varyantAciklamasi, varyantliAd, varyantliKod } from "@tekirextra/shared";
+import { belgeDiliNormalize, ciftDilGecerli, yabanciAdlarNormalize, belgeNoMetni, birlesikReferanslar, revizyonEngeli, ilgiliKisiTemizle, ilkIlgiliKisi, ilkKosullar, vadeTarihiHesapla, irsaliyeGeriAlmaEngeli, metinNormalize, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi, varyantAciklamasi, varyantliAd, varyantliKod } from "@tekirextra/shared";
 import { AyarlarService } from "../core/ayarlar/ayarlar.service";
 import { PrismaService } from "../core/prisma.service";
 import { DepoService } from "../stok/depo.service";
@@ -461,9 +461,13 @@ export class BelgelerService {
       }
       // FTR-33: vade girilmediyse (alan hiç gönderilmediyse) teklif ve
       // siparişte carinin varsayılan vadesi kullanılır.
+      const cariVarsayilan = await tx.cariHesap.findUnique({ where: { id: girdi.cariId }, select: { varsayilanVadeGun: true, belgeDili: true, belgeCiftDil: true } });
       const varsayilanVade = girdi.odemeVadeGun === undefined && (girdi.tur === "teklif" || girdi.tur === "siparis")
-        ? (await tx.cariHesap.findUnique({ where: { id: girdi.cariId }, select: { varsayilanVadeGun: true } }))?.varsayilanVadeGun ?? null
+        ? cariVarsayilan?.varsayilanVadeGun ?? null
         : null;
+      // FTR-40: dil verilmezse cari kartındaki dil; çift dil yalnız yabancı dille anlamlı.
+      const belgeDili = girdi.belgeDili ?? belgeDiliNormalize(cariVarsayilan?.belgeDili);
+      const ciftDil = ciftDilGecerli(belgeDili, girdi.ciftDil ?? (girdi.belgeDili === undefined ? cariVarsayilan?.belgeCiftDil : false));
       const belge = await tx.belge.create({
         data: {
           tenantId,
@@ -485,6 +489,8 @@ export class BelgelerService {
           odemeVadeGun: girdi.odemeVadeGun !== undefined ? girdi.odemeVadeGun : varsayilanVade,
           teslimSuresi: girdi.teslimSuresi?.trim() || null,
           teslimSekli: girdi.teslimSekli || null,
+          belgeDili,
+          ciftDil,
           tedarikciBelgeNo: tedarikciBelgeNoYaz(girdi.tur, girdi.yon, girdi.tedarikciBelgeNo),
           ...gumrukDepoAlanlari(girdi.tur, girdi.yon, girdi),
           depoId: girdi.depoId ?? null,
@@ -597,6 +603,8 @@ export class BelgelerService {
       odemeVadeGun: girdi.odemeVadeGun !== undefined ? girdi.odemeVadeGun : mevcut.odemeVadeGun,
       teslimSuresi: girdi.teslimSuresi !== undefined ? girdi.teslimSuresi : mevcut.teslimSuresi,
       teslimSekli: girdi.teslimSekli !== undefined ? girdi.teslimSekli : mevcut.teslimSekli,
+      belgeDili: girdi.belgeDili ?? mevcut.belgeDili,
+      ciftDil: girdi.ciftDil ?? mevcut.ciftDil,
       tedarikciBelgeNo: girdi.tedarikciBelgeNo !== undefined ? girdi.tedarikciBelgeNo : mevcut.tedarikciBelgeNo,
       gumrukDepoSevki: girdi.gumrukDepoSevki ?? mevcut.gumrukDepoSevki,
       gumrukBeyannameNo: girdi.gumrukBeyannameNo !== undefined ? girdi.gumrukBeyannameNo : mevcut.gumrukBeyannameNo,
@@ -677,6 +685,8 @@ export class BelgelerService {
           odemeVadeGun: birlesik.odemeVadeGun ?? null,
           teslimSuresi: birlesik.teslimSuresi?.trim() || null,
           teslimSekli: birlesik.teslimSekli || null,
+          belgeDili: birlesik.belgeDili,
+          ciftDil: ciftDilGecerli(birlesik.belgeDili, birlesik.ciftDil),
           tedarikciBelgeNo: tedarikciBelgeNoYaz(mevcut.tur, mevcut.yon, birlesik.tedarikciBelgeNo),
           ...gumrukDepoAlanlari(mevcut.tur, mevcut.yon, birlesik),
           depoId: birlesik.depoId ?? null,
@@ -899,6 +909,8 @@ export class BelgelerService {
           odemeVadeGun: belge.odemeVadeGun,
           teslimSuresi: belge.teslimSuresi,
           teslimSekli: belge.teslimSekli,
+          belgeDili: belge.belgeDili,
+          ciftDil: belge.ciftDil,
           notlar: belge.notlar,
           kaynakBelgeId: null,
           faturaId: null,
@@ -1259,6 +1271,9 @@ export class BelgelerService {
           odemeVadeGun: belge.odemeVadeGun,
           teslimSuresi: belge.teslimSuresi,
           teslimSekli: belge.teslimSekli,
+          // FTR-40: dil de zincir boyunca taşınır.
+          belgeDili: belge.belgeDili,
+          ciftDil: belge.ciftDil,
           kaynakBelgeId: belge.id,
         },
       });
@@ -1444,20 +1459,46 @@ export class BelgelerService {
 
   // ─── PDF (T-02) ──────────────────────────────────────────────────────────
 
-  async pdfUret(id: string): Promise<{ buffer: Buffer; dosyaAdi: string }> {
+  async pdfUret(id: string, secenekler: { kopya?: boolean } = {}): Promise<{ buffer: Buffer; dosyaAdi: string }> {
     const belge = await this.getir(id);
     const { tenantId } = aktifBaglam();
-    const firma = await this.prisma.tenantIslem(tenantId, (tx) =>
+    const stokIds = [...new Set(belge.satirlar.map((s) => s.stokId))];
+    const [firma, cari, stoklar, bankalar] = await this.prisma.tenantIslem(tenantId, (tx) => Promise.all([
       tx.tenant.findUnique({
         where: { id: tenantId },
         select: { unvan: true, vkn: true, vergiDairesi: true, adres: true, ilce: true, il: true, postaKodu: true, telefon: true, eposta: true, webSitesi: true, mersisNo: true, ticaretSicilNo: true },
       }),
-    );
+      tx.cariHesap.findUnique({
+        where: { id: belge.cariId },
+        select: { vergiDairesi: true, adresler: { select: { tip: true, adres: true, il: true, ilce: true, postaKodu: true, ulke: true } } },
+      }),
+      tx.stokKart.findMany({ where: { id: { in: stokIds } }, select: { id: true, yabanciAdlar: true } }),
+      // FTR-39: "belgelerde göster" işaretli banka hesapları (EBLG-101 ile aynı işaret).
+      tx.bankaHesap.findMany({
+        where: { aktif: true, faturadaGoster: true, iban: { not: null } },
+        select: { bankaAdi: true, sube: true, iban: true, swift: true, dovizCinsi: true },
+        orderBy: { createdAt: "asc" },
+      }),
+    ]));
     if (!firma) throw new NotFoundException("Firma bulunamadı");
-    const tema = await this.pdf.belgeTemasi();
-    const buffer = await this.pdf.htmlToPdf(
-      belgePdfHtml(belge, { ...firma, tema }),
-    );
+    const dil = belgeDiliNormalize(belge.belgeDili);
+    const yabanciAdlar = new Map(stoklar.map((s) => [s.id, yabanciAdlarNormalize(s.yabanciAdlar)]));
+    // Fatura adresi, yoksa merkez, yoksa ilk adres (cari ekstresiyle aynı sıra).
+    const adres = cari?.adresler.find((a) => a.tip === "fatura") ?? cari?.adresler.find((a) => a.tip === "merkez") ?? cari?.adresler[0] ?? null;
+    const [tema, gorunum, kaseDataUri] = await Promise.all([this.pdf.belgeTemasi(), this.pdf.belgeGorunumu(), this.pdf.firmaKaseDataUri()]);
+    const { html, altBilgi } = belgePdfHtml({
+      ...belge,
+      belgeDili: dil,
+      cari: { ...belge.cari, vergiDairesi: cari?.vergiDairesi ?? null, adres },
+      satirlar: belge.satirlar.map((s) => {
+        const ceviri = dil === "tr" ? undefined : yabanciAdlar.get(s.stokId)?.[dil];
+        return { ...s, yabanciAd: ceviri?.ad ?? null, yabanciAciklama: ceviri?.aciklama ?? null };
+      }),
+      bankalar: bankalar
+        .map((h) => ({ bankaAdi: h.bankaAdi, sube: h.sube, iban: h.iban!, swift: h.swift, doviz: h.dovizCinsi }))
+        .sort((a, b) => Number(b.doviz === belge.dovizCinsi) - Number(a.doviz === belge.dovizCinsi)),
+    }, { firma, gorunum, logoDataUri: tema.logoDataUri, kaseDataUri }, secenekler.kopya === true);
+    const buffer = await this.pdf.htmlToPdf(html, { altBilgi });
     return { buffer, dosyaAdi: `belge-${belge.no ? `${belge.no}${belge.revizyonNo ? `-Rev${belge.revizyonNo}` : ""}` : "taslak"}.pdf` };
   }
 
@@ -1927,6 +1968,9 @@ export class BelgelerService {
       dovizCinsi: DovizKodu;
       kur: Prisma.Decimal;
       no: string | null;
+      /** FTR-40: zincirin basım dili. */
+      belgeDili?: string;
+      ciftDil?: boolean;
       /** EBLG-74/FTR-31: sipariş ve talep referansı zincirden faturaya taşınır. */
       siparisNo?: string | null;
       siparisTarihi?: Date | null;
@@ -1991,6 +2035,9 @@ export class BelgelerService {
         // şekli yalnız ihracat faturasında kullanılan teslim şartına gider.
         vadeTarihi: vade ? new Date(vade) : null,
         ihracatTeslimSarti: kosullar.teslimSekli,
+        // FTR-40: faturanın kendi çıktısı da zincirin dilinde basılır.
+        belgeDili: belgeDiliNormalize(ilk.belgeDili),
+        ciftDil: ilk.ciftDil ?? false,
       },
     });
     for (const [i, s] of hesap.satirlar.entries()) {
@@ -2213,6 +2260,9 @@ export class BelgelerService {
     odemeVadeGun?: number | null;
     teslimSuresi?: string | null;
     teslimSekli?: string | null;
+    /** FTR-40: basım dili. */
+    belgeDili?: string;
+    ciftDil?: boolean;
     /** EBLG-72: İDİS sevkiyat numarası; doluysa e-İrsaliye IDISIRSALIYE gider. */
     idisSevkiyatNo?: string | null;
     /** FTR-27: alış irsaliyesinde tedarikçinin irsaliye numarası. */
@@ -2282,6 +2332,8 @@ export class BelgelerService {
       revizyonKokId: k.revizyonKokId ?? null,
       teslimSuresi: k.teslimSuresi ?? null,
       teslimSekli: k.teslimSekli ?? null,
+      belgeDili: belgeDiliNormalize(k.belgeDili),
+      ciftDil: k.ciftDil ?? false,
       talepTarihi: k.talepTarihi
         ? (typeof k.talepTarihi === "string" ? k.talepTarihi : k.talepTarihi.toISOString()).slice(0, 10)
         : null,

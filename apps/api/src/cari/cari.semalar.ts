@@ -1,4 +1,4 @@
-import { EKSTRE_TURLERI, DOVIZ_CINSLERI, MUHASEBE_KODU_DESENI, YABANCI_DOVIZLER } from "@tekirextra/shared";
+import { BELGE_DILLERI, EKSTRE_TURLERI, DOVIZ_CINSLERI, MUHASEBE_KODU_DESENI, YABANCI_DOVIZLER } from "@tekirextra/shared";
 import { z } from "zod";
 import { guncellemeSemasi } from "../core/sema";
 
@@ -62,6 +62,9 @@ export const cariOlusturSemasi = z.object({
   efaturaProfili: z.enum(["temel", "ticari"]).optional(),
   /** Bu cariye kesilen e-Arşiv faturaların varsayılan teslim şekli (EBLG-26). */
   earsivGonderimSekli: z.enum(["elektronik", "kagit"]).optional(),
+  /** FTR-40: bu cariye kesilen ticari belgelerin varsayılan basım dili; null = Türkçe. */
+  belgeDili: z.enum(BELGE_DILLERI).optional().nullable(),
+  belgeCiftDil: z.boolean().optional(),
   riskLimiti: pozitifOndalik.optional(),
   notlar: z.string().max(2000).optional(),
   /** KAMU senaryosu: GİB listesinde ÖZEL görünen kamu idaresi için elle işaret. */

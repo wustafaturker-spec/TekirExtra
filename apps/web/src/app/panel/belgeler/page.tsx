@@ -22,7 +22,7 @@ import { BOS_TESLIMAT_ADRESI, TeslimatAdresiAlanlari, teslimatAdresiEksik, tesli
 import { FormGrubu } from "@/components/form-grubu";
 import { AlanIpucu } from "@/components/alan-ipucu";
 import { IrsaliyeBaglaPaneli } from "@/components/irsaliye-bagla-paneli";
-import { belgeNoMetni, bugunTR, faturaKurTipi, vadeTarihiHesapla, EN_UZUN_VADE_GUN, revizyonEngeli, faturaHesapla, kosulSatirlari, muhtelifMusteriMi, referansFarkiUyarisi, TESLIM_SARTLARI, irsaliyeGeriAlmaEngeli, irsaliyeIptalUyarisi, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
+import { BELGE_DILLERI, BELGE_DILI_ADLARI, belgeDiliNormalize, ciftDilGecerli, type BelgeDili, belgeNoMetni, bugunTR, faturaKurTipi, vadeTarihiHesapla, EN_UZUN_VADE_GUN, revizyonEngeli, faturaHesapla, kosulSatirlari, muhtelifMusteriMi, referansFarkiUyarisi, TESLIM_SARTLARI, irsaliyeGeriAlmaEngeli, irsaliyeIptalUyarisi, GIB_ULASMIS_EIRSALIYE_DURUMLARI, gumrukSeferNotu, plakaNormalize, type FaturaHesaplaSatirGirdi } from "@tekirextra/shared";
 import {
   Alert,
   Badge,
@@ -70,7 +70,7 @@ interface BelgeGorunumu {
 
 const GORUNUM_ANAHTARI = "tekir_belge_gorunumleri";
 
-interface Cari { id: string; aktif?: boolean; karaListe?: boolean; kod?: string; unvan: string; vknTckn?: string | null; telefon?: string | null; varsayilanVadeGun?: number | null }
+interface Cari { id: string; aktif?: boolean; karaListe?: boolean; kod?: string; unvan: string; vknTckn?: string | null; telefon?: string | null; varsayilanVadeGun?: number | null; belgeDili?: string | null; belgeCiftDil?: boolean }
 interface Stok { id: string; kod: string; ad: string; tip?: string; kullanilabilirMiktar?: string; tedarikciUrunKodlari?: string[]; takipTipi?: "yok" | "lot" | "seri"; anaBirim?: string; birimler?: { ad: string; katsayi: string }[]; barkod?: string | null; varyantlar?: StokVaryant[]; ekVergiler?: KartEkVergisi[] }
 interface StokVaryant { id: string; kod: string; ad: string; aktif: boolean; mevcutMiktar: string; barkod?: string | null; nitelikler?: unknown }
 
@@ -187,6 +187,9 @@ interface BelgeDetay extends Belge {
   odemeVadeGun?: number | null;
   teslimSuresi?: string | null;
   teslimSekli?: string | null;
+  /** FTR-40: basım dili. */
+  belgeDili?: string;
+  ciftDil?: boolean;
   idisSevkiyatNo?: string | null;
   /** EBLG-84: irsaliyeye özel teslimat adresi (ihracatta gümrük kapısı). */
   teslimatAdres?: string | null;
@@ -383,6 +386,9 @@ export default function BelgelerSayfasi() {
   const [vadeGun, setVadeGun] = useState("");
   const [teslimSuresi, setTeslimSuresi] = useState("");
   const [teslimSekli, setTeslimSekli] = useState("");
+  /** FTR-40: basım dili; yeni belgede carinin dilinden gelir. */
+  const [belgeDili, setBelgeDili] = useState<BelgeDili>("tr");
+  const [ciftDil, setCiftDil] = useState(false);
   /** FTR-31: aynı cariye aynı talep numarasıyla açılmış diğer teklifler. */
   const [talepMukerrerleri, setTalepMukerrerleri] = useState<{ id: string; no: string | null; tarih: string }[]>([]);
 
@@ -406,6 +412,13 @@ export default function BelgelerSayfasi() {
     const gun = cariler.find((c) => c.id === cariId)?.varsayilanVadeGun;
     setVadeGun(gun != null ? String(gun) : "");
   }, [cariId, tur, duzenlenenId, cariler]);
+  // FTR-40: yeni belgede dil, seçilen carinin belge dilinden gelir.
+  useEffect(() => {
+    if (duzenlenenId) return;
+    const cari = cariler.find((c) => c.id === cariId);
+    setBelgeDili(belgeDiliNormalize(cari?.belgeDili));
+    setCiftDil(cari?.belgeCiftDil === true);
+  }, [cariId, duzenlenenId, cariler]);
   /** FTR-27: alış irsaliyesinde tedarikçinin numarası; bizim no'muz iç seridir. */
   const [tedarikciBelgeNo, setTedarikciBelgeNo] = useState("");
   /** EBLG-84: irsaliyeye özel teslimat adresi; ihracatta gümrük kapısı. */
@@ -697,6 +710,8 @@ export default function BelgelerSayfasi() {
             : {}),
           siparisNo: siparisNo.trim() || null,
           siparisTarihi: siparisTarihi || null,
+          belgeDili,
+          ciftDil: ciftDilGecerli(belgeDili, ciftDil),
           talepNo: yon === "satis" ? talepNo.trim() || null : null,
           talepTarihi: yon === "satis" ? talepTarihi || null : null,
           ...ilgiliKisiGovdesi(yon === "satis" ? ilgili : BOS_ILGILI_KISI),
@@ -767,6 +782,7 @@ export default function BelgelerSayfasi() {
     setTalepNo(d.talepNo ?? ""); setTalepTarihi(d.talepTarihi?.slice(0, 10) ?? "");
     setIlgili({ ilgiliKisi: d.ilgiliKisi ?? "", ilgiliKisiGorevi: d.ilgiliKisiGorevi ?? "" });
     setVadeGun(d.odemeVadeGun != null ? String(d.odemeVadeGun) : ""); setTeslimSuresi(d.teslimSuresi ?? ""); setTeslimSekli(d.teslimSekli ?? "");
+    setBelgeDili(belgeDiliNormalize(d.belgeDili)); setCiftDil(d.ciftDil === true);
     const yerelSevk = d.fiiliSevkZamani ? yerelZaman(d.fiiliSevkZamani) : "";
     ozgunSevkZamaniRef.current = d.fiiliSevkZamani ? { yerel: yerelSevk, iso: d.fiiliSevkZamani } : null;
     setFiiliSevkZamani(yerelSevk);
@@ -1498,6 +1514,22 @@ export default function BelgelerSayfasi() {
               </div>
             </FormGrubu>
           )}
+          {/* FTR-40: çıktının dili; e-İrsaliye resmî görünümünü etkilemez. */}
+          <FormGrubu baslik="Belge dili" aciklama="PDF çıktısının dili; yabancı dilde çift dilli de basılabilir" doluSayisi={belgeDili !== "tr" ? 1 : 0}>
+            <div className="document-fields document-fields--belge">
+              <Field label="Basım dili">
+                <Select aria-label="Belge dili" value={belgeDili} onChange={(e) => setBelgeDili(e.target.value as BelgeDili)}>
+                  {BELGE_DILLERI.map((d) => <option key={d} value={d}>{BELGE_DILI_ADLARI[d]}</option>)}
+                </Select>
+              </Field>
+              <Field label="Çift dil">
+                <label className="check-row">
+                  <input type="checkbox" checked={ciftDilGecerli(belgeDili, ciftDil)} disabled={belgeDili === "tr"} onChange={(e) => setCiftDil(e.target.checked)} /> Türkçe + {belgeDili === "tr" ? "seçilen dil" : BELGE_DILI_ADLARI[belgeDili]}
+                </label>
+                <AlanIpucu>Ürün adları stok kartındaki yabancı addan gelir; girilmemişse Türkçe ad basılır.</AlanIpucu>
+              </Field>
+            </div>
+          </FormGrubu>
           {yon === "satis" && (
             <FormGrubu baslik="Referanslar ve ilgili kişi" aciklama="Müşteri talep ve sipariş numarası, ilgili kişi" doluSayisi={referansDolu}>
               <div className="document-fields document-fields--belge">

@@ -39,6 +39,7 @@ export * from "./taslaga-geri-al";
 export * from "./musteri-referansi";
 export * from "./ilgili-kisi";
 export * from "./teklif-kosullari";
+export * from "./belge-dili";
 export * from "./teklif-revizyonu";
 export * from "./cari-ekstre";
 export * from "./resmi-tatiller";

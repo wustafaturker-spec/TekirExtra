@@ -2720,6 +2720,12 @@ select.document-line-unit { background-position: right 0.35rem center; color: va
 .stock-editor__section { align-items: center; border-top: 1px solid var(--border); display: flex; gap: .7rem; margin-top: .2rem; padding-top: 1rem; }
 .stock-editor__section > span { align-items: center; background: var(--accent-soft); border-radius: 50%; color: var(--accent-text); display: flex; font-size: .62rem; font-weight: 800; height: 28px; justify-content: center; width: 28px; }
 .stock-editor__section > div { display: grid; gap: .15rem; }
+/* STK-41: yabancı dilde ürün adları; seyrek kullanıldığı için katlanır. */
+.stock-editor__yabanci { border: 1px solid var(--border); border-radius: var(--radius-sm, 8px); padding: .6rem .8rem; }
+.stock-editor__yabanci > summary { cursor: pointer; font-weight: 600; }
+.stock-editor__yabanci[open] > summary { margin-bottom: .6rem; }
+.stock-editor__yabanci .stock-field--full { display: grid; gap: .5rem; grid-template-columns: 1fr 1fr; }
+@media (max-width: 640px) { .stock-editor__yabanci .stock-field--full { grid-template-columns: 1fr; } }
 .stock-editor__section strong { font-size: .78rem; }
 .stock-editor__section small { color: var(--text-muted); font-size: .65rem; }
 .stock-editor__grid { align-items: flex-end; background: var(--surface-2); border: 1px solid var(--border); border-radius: .7rem; display: grid; gap: .8rem; padding: .85rem; }
