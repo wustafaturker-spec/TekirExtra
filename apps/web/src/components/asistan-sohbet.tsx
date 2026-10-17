@@ -6,6 +6,7 @@ import { Alert, Badge, Button, Input } from "@/components/ui";
 import { Camera, Mic, MicOff, Paperclip, Volume2, VolumeX } from "lucide-react";
 import { YzGeriBildirim } from "./yz-geri-bildirim";
 import { YzFinansKaynaklari, type FinansKaynagi } from "./yz-finans-kaynaklari";
+import type { AsistanBaglami } from "@/lib/asistan-baglami";
 
 /** AI-04: kullanıcının onayını bekleyen (ya da karara bağlanmış) yapay zekâ işlemi. */
 export interface OnayTalebi {
@@ -176,7 +177,7 @@ export function TalepKarti({ talep, onDegisti }: { talep: OnayTalebi; onDegisti:
  * AI-05: panel asistanı. Kullanıcı yazar, konuşur veya fotoğraf yükler;
  * asistan araçları çalıştırır; onaya tabi işlem talep kartı olarak döner.
  */
-export function AsistanSohbet({ yukseklik, onTalepDegisti }: { yukseklik?: string; onTalepDegisti?: () => void }) {
+export function AsistanSohbet({ yukseklik, onTalepDegisti, baglam, onBaglamKaldir }: { yukseklik?: string; onTalepDegisti?: () => void; baglam?: AsistanBaglami | null; onBaglamKaldir?: () => void }) {
   const [mesajlar, setMesajlar] = useState<Mesaj[]>([]);
   const [talepler, setTalepler] = useState<Record<string, OnayTalebi>>({});
   const [girdi, setGirdi] = useState("");
@@ -198,6 +199,9 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti }: { yukseklik?: strin
   const [ocrTaslagi, setOcrTaslagi] = useState<OcrTaslagi | null>(null);
 
   const sonRef = useRef<HTMLDivElement>(null);
+  // CARI-48: bağlamlı ilk mesaj, başka konuşmanın geçmişiyle karışmasın diye yeni sohbette başlar.
+  const baglamSohbeti = useRef<{ cariId: string; sohbetId: string | null } | null>(null);
+  const baglamBagli = !!baglam && baglamSohbeti.current?.cariId === baglam.cari.id && baglamSohbeti.current.sohbetId === aktifSohbetId;
 
   useEffect(() => {
     let iptal = false;
@@ -272,11 +276,13 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti }: { yukseklik?: strin
     setGirdi("");
     setHata(null);
     setBilgi(null);
-    setMesajlar((m) => [...m, { anahtar: yeniAnahtar(), rol: "user", icerik: metin, talepIdleri: [], secimler: [] }]);
     setGonderiliyor(true);
     try {
-      const y = await api<AjanYaniti>("/ai/ajan/mesaj", { method: "POST", body: JSON.stringify({ mesaj: metin, requestId: crypto.randomUUID() }) });
+      if (baglam && !baglamBagli && mesajlar.length > 0) await yeniSohbet();
+      setMesajlar((m) => [...m, { anahtar: yeniAnahtar(), rol: "user", icerik: metin, talepIdleri: [], secimler: [] }]);
+      const y = await api<AjanYaniti>("/ai/ajan/mesaj", { method: "POST", body: JSON.stringify({ mesaj: metin, requestId: crypto.randomUUID(), ...(baglam ? { baglam: { cariId: baglam.cari.id } } : {}) }) });
       if (y.asistanKapali) setKapali(y.cevap);
+      if (baglam) baglamSohbeti.current = { cariId: baglam.cari.id, sohbetId: y.oturumId ?? null };
       if (y.oturumId) {
         setAktifSohbetId(y.oturumId);
         setSohbetler(await api<SohbetOzeti[]>("/ai/ajan/sohbetler"));
@@ -604,6 +610,15 @@ export function AsistanSohbet({ yukseklik, onTalepDegisti }: { yukseklik?: strin
         onChange={dosyaSecildi}
       />
 
+      {baglam && (
+        <div className="asistan__baglam">
+          <span>
+            Bu sohbette cari: <strong>{baglam.cari.unvan}</strong>
+            {!baglamBagli && mesajlar.length > 0 && " · ilk mesajınız yeni sohbette başlar"}
+          </span>
+          {onBaglamKaldir && <button type="button" className="btn-link" onClick={onBaglamKaldir}>Bağlamı kaldır</button>}
+        </div>
+      )}
       <form
         className="asistan__girdi"
         onSubmit={(e) => {

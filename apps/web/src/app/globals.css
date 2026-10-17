@@ -4485,6 +4485,8 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .asistan__mesajlar { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: .75rem; padding: .25rem; }
 .asistan__bos { display: flex; flex-direction: column; gap: .4rem; color: var(--text-muted); font-size: .88rem; padding: .5rem; }
 .asistan__bos strong { color: var(--text); }
+/* CARI-48: sohbetin bağlı olduğu ekran kaydı. */
+.asistan__baglam { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .4rem .7rem; font-size: .82rem; color: var(--text-muted); background: var(--accent-soft); border-radius: var(--radius-sm); }
 .asistan__mesaj { display: flex; flex-direction: column; gap: .4rem; max-width: 85%; }
 .asistan__mesaj--kullanici { align-self: flex-end; align-items: flex-end; }
 .asistan__mesaj--asistan { align-self: flex-start; }

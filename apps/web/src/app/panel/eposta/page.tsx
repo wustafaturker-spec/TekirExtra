@@ -1,5 +1,6 @@
 "use client";
 
+import { asistaniAc } from "@/lib/asistan-baglami";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
@@ -711,7 +712,7 @@ export default function GelenEpostalarSayfasi() {
             <button
               type="button"
               className="mailbox-pro__assistant-button"
-              onClick={() => window.dispatchEvent(new Event("tekir-asistan-ac"))}
+              onClick={() => asistaniAc()}
             >
               <Sparkles aria-hidden="true" className="w-3.5 h-3.5" />
               <span>Asistanı Aç</span>

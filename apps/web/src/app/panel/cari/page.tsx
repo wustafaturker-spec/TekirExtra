@@ -1207,7 +1207,7 @@ export default function CariSayfasi() {
 
           {/* CARI-43: sekmelerden önce cari durum özeti; detay her tazelendiğinde yeniden hesaplanır. */}
           <div style={{ marginTop: "1.25rem" }}>
-            <CariDurumPaneli cariId={detay.id} yenile={detay} onSekme={setAktifSekme} />
+            <CariDurumPaneli cariId={detay.id} cariUnvan={detay.unvan} yenile={detay} onSekme={setAktifSekme} />
           </div>
 
           <div style={{ marginTop: "1.25rem" }}>

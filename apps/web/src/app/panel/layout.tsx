@@ -10,6 +10,7 @@ import type { EbelgeUygulamalari } from "@tekirextra/shared";
 import { ThemeConfiguratorDrawer } from "@/components/theme-configurator-drawer";
 import { KomutPaleti } from "@/components/komut-paleti";
 import { AsistanPenceresi } from "@/components/asistan-penceresi";
+import { ASISTAN_AC_OLAYI, type AsistanBaglami } from "@/lib/asistan-baglami";
 import { AYARLAR, MENU, menuOgesiAktifMi, type MenuOge } from "@/lib/menu";
 import { Bell, ChevronRight, CircleHelp, LogOut, Menu as MenuIkonu, Search, Settings, Sparkles } from "lucide-react";
 
@@ -85,10 +86,13 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const [ayarlarAcik, setAyarlarAcik] = useState(false);
   const [paletAcik, setPaletAcik] = useState(false);
   const [aiAsistanAcik, setAiAsistanAcik] = useState(false);
+  // CARI-48: ekrandan açılınca o ekranın kaydı (ör. cari kartı) sohbete bağlanır.
+  const [aiBaglam, setAiBaglam] = useState<AsistanBaglami | null>(null);
+  const asistaniGenelAc = () => { setAiBaglam(null); setAiAsistanAcik(true); };
   useEffect(() => {
-    const asistaniAc = () => setAiAsistanAcik(true);
-    window.addEventListener("tekir-asistan-ac", asistaniAc);
-    return () => window.removeEventListener("tekir-asistan-ac", asistaniAc);
+    const asistaniAc = (e: Event) => { setAiBaglam((e as CustomEvent<AsistanBaglami | undefined>).detail ?? null); setAiAsistanAcik(true); };
+    window.addEventListener(ASISTAN_AC_OLAYI, asistaniAc);
+    return () => window.removeEventListener(ASISTAN_AC_OLAYI, asistaniAc);
   }, []);
   const ayarlarTetikleyiciRef = useRef<HTMLButtonElement>(null);
   const [bildirimler, setBildirimler] = useState<BildirimTeslimati[]>([]);
@@ -328,7 +332,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
         </button>
         <Link className="mobile-brand" href="/panel">Tekir<b>Extra</b></Link>
         <div style={{ marginLeft: "auto", marginRight: "8px", display: "flex", alignItems: "center", gap: "4px" }}>
-          <button aria-label="Asistan" className="notification-button" onClick={() => setAiAsistanAcik(true)} title="Asistan" type="button">
+          <button aria-label="Asistan" className="notification-button" onClick={asistaniGenelAc} title="Asistan" type="button">
             <Sparkles aria-hidden="true" size={19} strokeWidth={1.9} />
           </button>
           <button aria-label="Ara veya git" className="notification-button" onClick={paletiAc} type="button">
@@ -357,7 +361,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
         </div>
 
         <nav className="nav">
-          <button className="palet-tetik" onClick={() => setAiAsistanAcik(true)} title="Asistan" type="button">
+          <button className="palet-tetik" onClick={asistaniGenelAc} title="Asistan" type="button">
             <Sparkles aria-hidden="true" size={15} strokeWidth={1.9} />
             <span>Asistan</span>
           </button>
@@ -451,7 +455,7 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
       )}
 
       <KomutPaleti acik={paletAcik} ebelgeUygulamalari={ebelgeUygulamalari} rol={rol} setAcik={setPaletAcik} />
-      <AsistanPenceresi acik={aiAsistanAcik} onKapat={() => setAiAsistanAcik(false)} />
+      <AsistanPenceresi acik={aiAsistanAcik} baglam={aiBaglam} onBaglamKaldir={() => setAiBaglam(null)} onKapat={() => setAiAsistanAcik(false)} />
 
       <main className="app-main" id="ana-icerik" tabIndex={-1}>
         <div className="app-content">

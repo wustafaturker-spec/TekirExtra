@@ -2,13 +2,14 @@
 
 import { Modal } from "@/components/ui";
 import { AsistanSohbet } from "@/components/asistan-sohbet";
+import type { AsistanBaglami } from "@/lib/asistan-baglami";
 
 /** Her ekrandan açılan asistan penceresi (AI-05). */
-export function AsistanPenceresi({ acik, onKapat }: { acik: boolean; onKapat: () => void }) {
+export function AsistanPenceresi({ acik, baglam, onBaglamKaldir, onKapat }: { acik: boolean; baglam?: AsistanBaglami | null; onBaglamKaldir?: () => void; onKapat: () => void }) {
   if (!acik) return null;
   return (
     <Modal aciklama={<>Onay gerektiren işlemler düğmeyle onaylanır. <a href="/panel/ai">Tüm onay talepleri</a></>} baslik="Asistan" genis onKapat={onKapat}>
-      <AsistanSohbet yukseklik="min(60vh, 34rem)" />
+      <AsistanSohbet yukseklik="min(60vh, 34rem)" baglam={baglam} onBaglamKaldir={onBaglamKaldir} />
     </Modal>
   );
 }

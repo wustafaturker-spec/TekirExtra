@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { asistaniAc } from "@/lib/asistan-baglami";
 import { Badge, Button, Card, Para, Stat, StatGrid } from "@/components/ui";
 
 type BulguOnemi = "kritik" | "uyari" | "bilgi";
@@ -52,10 +53,10 @@ interface DurumOzeti {
  * CARI-43…46: Cari Durum Paneli. Mevcut risk, yaşlandırma ve ödeme davranışı
  * hesaplarını tek yerde, önceliğe göre sıralı bulgularla gösterir. Kayıt
  * yazmaz; bulgunun bağlantısı kartın sekmesine ya da ilgili ekrana götürür.
- * Panel dil modeli kullanmaz; "Özetle" (CARI-47) yalnız istenince ve AI
- * kullanılabilirken çalışır.
+ * Panel dil modeli kullanmaz; "Özetle" (CARI-47) ve "Asistana sor" (CARI-48)
+ * yalnız AI kullanılabilirken görünür.
  */
-export function CariDurumPaneli({ cariId, yenile, onSekme }: { cariId: string; yenile?: unknown; onSekme: (sekme: CariDurumSekmesi) => void }) {
+export function CariDurumPaneli({ cariId, cariUnvan, yenile, onSekme }: { cariId: string; cariUnvan: string; yenile?: unknown; onSekme: (sekme: CariDurumSekmesi) => void }) {
   const [durum, setDurum] = useState<CariDurumu | null>(null);
   const [hata, setHata] = useState(false);
   const [ozetlenebilir, setOzetlenebilir] = useState(false);
@@ -106,7 +107,11 @@ export function CariDurumPaneli({ cariId, yenile, onSekme }: { cariId: string; y
         <div className="cari-durum__ust">
           <small className="muted" title="Panel her açılışta mevcut kayıtlardan yeniden hesaplanır">{new Date(durum.hesaplandiAt).toLocaleString("tr-TR")} itibarıyla</small>
           {ozetlenebilir && (
-            <Button size="sm" variant="ghost" type="button" onClick={ozetle} disabled={ozetleniyor}>{ozetleniyor ? "Özetleniyor…" : ozet ? "Yeniden özetle" : "Özetle"}</Button>
+            <>
+              <Button size="sm" variant="ghost" type="button" onClick={ozetle} disabled={ozetleniyor}>{ozetleniyor ? "Özetleniyor…" : ozet ? "Yeniden özetle" : "Özetle"}</Button>
+              {/* CARI-48: asistan bu carinin kimliğiyle açılır; yetki ve onay kuralları aynen. */}
+              <Button size="sm" variant="ghost" type="button" onClick={() => asistaniAc({ cari: { id: cariId, unvan: cariUnvan } })}>Asistana sor</Button>
+            </>
           )}
         </div>
       }

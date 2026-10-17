@@ -10,10 +10,13 @@ export class AiAjanController {
   constructor(private readonly ajanService: AiAjanService) {}
 
   @Post("mesaj")
-  mesaj(@Body() body: { mesaj?: unknown; requestId?: unknown }) {
+  mesaj(@Body() body: { mesaj?: unknown; requestId?: unknown; baglam?: { cariId?: unknown } }) {
+    const cariId = body?.baglam?.cariId;
     return this.ajanService.mesajiIsle(
       typeof body?.mesaj === "string" ? body.mesaj : "",
       typeof body?.requestId === "string" ? body.requestId : undefined,
+      // CARI-48: panelden açılan asistan; kimlik sunucuda doğrulanır.
+      typeof cariId === "string" ? { cariId } : undefined,
     );
   }
 
