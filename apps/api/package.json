@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "build": "prisma generate && tsc -p tsconfig.json",
-    "dev": "prisma generate && tsc -p tsconfig.json && node dist/main.js",
-    "dev:worker": "prisma generate && tsc -p tsconfig.json && node dist/main.worker.js",
+    "dev": "node scripts/dev-izle.mjs main",
+    "dev:tek": "prisma generate && tsc -p tsconfig.json && node dist/main.js",
+    "dev:worker": "node scripts/dev-izle.mjs worker",
+    "dev:worker:tek": "prisma generate && tsc -p tsconfig.json && node dist/main.worker.js",
     "typecheck": "prisma generate && tsc -p tsconfig.json --noEmit",
     "start": "node dist/main.js",
     "start:worker": "node dist/main.worker.js",
