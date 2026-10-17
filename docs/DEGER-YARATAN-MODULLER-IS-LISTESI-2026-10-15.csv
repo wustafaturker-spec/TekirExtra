@@ -1,0 +1,59 @@
+id,paket,dalga,oncelik,is,teslimat,sorumlu_rol,boyut,bagimliliklar,kabul_ref,durum
+P00-01,P00,A,P0,Kapsam ve pilot,Kapsam kararlari ve sorumlu kapasite kaydi,Urun sahibi|Alan uzmani,S,,Bolum 6|G0,planlandi
+P00-02,P00,A,P0,Veri hazirligi,Pilot veri eksikleri ve baz metrikler,Backend|Alan uzmani,M,P00-01,Bolum 6|G0,planlandi
+P00-03,P00,A,P0,Ortak sozlesmeler,Kaynak tutar surum sayfalama ve metrik DTO tasarimi,Backend|Frontend,M,P00-02,Bolum 5|Bolum 6,planlandi
+P00-04,P00,A,P1,Olay teslim tasarimi,Dar outbox tuketici replay ve isletim sozlesmesi,Backend|Platform,M,P00-03,Bolum 5.3|Bolum 6,planlandi
+P00-05,P00,A,P0,Yetki ve paket ayarlari,API alan rol matrisi ve surumlu ozellik ayarlari,Backend|Frontend|Urun sahibi,M,P00-01,Bolum 5.2|Bolum 5.4,planlandi
+P00-06,P00,A,P0,Kabul veri seti,Izole tenant ve finans kenar durum fixturelari,QA|Backend,M,P00-03|P00-05,Bolum 6|Bolum 21,planlandi
+F01-01,F01,A,P0,Eksik maliyet envanteri,Kaynak hesabiyla uyumlu eksik satir ve neden siniflari,Backend|Muhasebe,M,P00-02|P00-03,F01-K1|F01-K2,devam_ediyor
+F01-02,F01,A,P0,Liste ve rapor baglantisi,Filtreli API ozet export ve uyari detay ekrani,Backend|Frontend,M,F01-01|P00-05,F01-K1|F01-K2,devam_ediyor
+F01-03,F01,A,P0,Kontrollu cozum,Duzeltme kaydi ve mevcut maliyet etki onizlemesine gecis,Backend|Frontend,M,F01-02,F01-K1|F01-K2,devam_ediyor
+F01-04,F01,A,P0,Maliyet kabul ve pilot,Finans RLS donem yaris ve UI kabul kaniti,QA|Muhasebe,M,F01-03|P00-06,F01-K1|F01-K2,devam_ediyor
+F02-01,F02,A,P1,Tahsilat is akisi,Soz revizyon itiraz odeme atama ve nakit tek sayim karari,Urun sahibi|Muhasebe|Backend,M,P00-01|P00-03,F02-K1|F02-K2,devam_ediyor
+F02-02,F02,A,P1,Tahsilat alan modeli,Soz gorusme takip ve kapama referansli servisler,Backend,L,F02-01|P00-05,F02-K1|F02-K2,devam_ediyor
+F02-03,F02,A,P1,Takip ve gerceklesme,Gunluk UI olay tuketimi geri alma uzlastirmasi ve kontrollu bildirim,Backend|Frontend|Platform,L,F02-02|P00-04,F02-K1|F02-K2,devam_ediyor
+F02-04,F02,A,P1,Tahsilat kabul ve pilot,Kismi kapama duplicate eski odeme itiraz ve nakit testleri,QA|Muhasebe,L,F02-03|P00-06,F02-K1|F02-K2,devam_ediyor
+F03-01,F03,A,P1,Firsat belge kurallari,Kardinalite sahiplik surum ve gerceklesen sonuc karari,Urun sahibi|Satis|Backend,S,P00-01|P00-03,F03-K1|F03-K2,ilk_dilim_kurallari_uygulandi
+F03-02,F03,A,P1,Firsat belge servisleri,Tipli bag kurma bag cozme ve denetim,Backend,M,F03-01|P00-05,F03-K1|F03-K2,mevcut_teklif_bagi_gelistirildi
+F03-03,F03,A,P1,Satis dosyasi,Firsatta teklif olustur bagla zaman cizelgesi ve sonuc,Frontend|Backend,M,F03-02,F03-K1|F03-K2,kaynak_satir_fatura_payi_ve_tam_fatura_kapama_gelistirildi_karma_iade_odeme_bekliyor
+F03-04,F03,A,P1,Satis kabul ve pilot,Coklu teklif karma fatura iade ve yetki dogrulamasi,QA|Satis,M,F03-03|P00-06,F03-K1|F03-K2,iki_firsat_ortak_fatura_kaynak_testleri_gecti_birlesik_kabul_pilot_bekliyor
+F04-01,F04,B,P2,Ihtiyac kapsami,Tek depo birim rezerv tarih ve tedarik verisi karari,Backend|Depo|Uretim planlama,M,P00-02|P00-03,F04-K1|F04-K2,planlandi
+F04-02,F04,B,P2,Tarihli ihtiyac motoru,Kaynak bazli net ihtiyac ve karsilama baglari,Backend,L,F04-01|P00-05,F04-K1|F04-K2,planlandi
+F04-03,F04,B,P2,Ihtiyac UI ve talep,Ihtiyac gorunumu teslim onerisi ve onayli satin alma talebi,Frontend|Backend,L,F04-02,F04-K1|F04-K2,planlandi
+F04-04,F04,B,P2,Ihtiyac kabul ve pilot,Rezerv kismi teslim birim termin ve yaris testleri,QA|Depo|Uretim planlama,L,F04-03|P00-06,F04-K1|F04-K2,planlandi
+F05-01,F05,B,P2,Odeme politikasi,Tolerans fark istisna ve uyari engel karar kaydi,Urun sahibi|Muhasebe|Satin alma,M,P00-03|P00-05,F05-K1|F05-K2,planlandi
+F05-02,F05,B,P2,Odeme uygunluk servisi,Normalize kaynak karsilastirmasi ve surumlu karar modeli,Backend,L,F05-01,F05-K1|F05-K2,planlandi
+F05-03,F05,B,P2,Odeme akisina baglama,Fark UI ve kritik mutasyonlarda guncel kontrol,Backend|Frontend,L,F05-02,F05-K1|F05-K2,planlandi
+F05-04,F05,B,P2,Odeme kabul ve pilot,Kismi kaynak degisimi istisna geri donus ve yetki testleri,QA|Muhasebe,L,F05-03|P00-06,F05-K1|F05-K2,planlandi
+F06-01,F06,B,P2,Kanal sozlesmesi,Tek saglayici ornekleri hesap kapsami ve katki tanimi,Backend|Muhasebe|Urun sahibi,M,P00-02|P00-03,F06-K1|F06-K2,planlandi
+F06-02,F06,B,P2,Hakedis veri alimi,Finans islem hakedis ve kaynak baglarinin idempotent alimi,Backend|Platform,L,F06-01|P00-04,F06-K1|F06-K2,planlandi
+F06-03,F06,B,P2,Kanal mutabakat ve katki,Banka baglari kesinti dagitimi ve rapor UI,Backend|Frontend,L,F06-02|F01-04,F06-K1|F06-K2,planlandi
+F06-04,F06,B,P2,Kanal kabul ve pilot,Iade ters islem sayfalama doviz ve saglayici kabul kaniti,QA|Muhasebe|Entegrasyon,L,F06-03|P00-06,F06-K1|F06-K2,planlandi
+F07-01,F07,B,P2,Musteri erisim tasarimi,Bayi ve sureli token belge itiraz yetki sozlesmesi,Urun sahibi|Backend,M,P00-01|P00-05,F07-K1|F07-K2,planlandi
+F07-02,F07,B,P2,Musteri okuma servisleri,Cari baglamli siparis fatura makbuz ve odeme DTOlari,Backend,M,F07-01|F02-02,F07-K1|F07-K2,planlandi
+F07-03,F07,B,P2,Musteri calisma alani,Belge durum UI ve mevcut modele bagli itiraz eylemi,Frontend|Backend,L,F07-02,F07-K1|F07-K2,planlandi
+F07-04,F07,B,P2,Portal kabul ve pilot,Diger cari token dosya ve maliyet gizliligi testleri,QA|Backend,L,F07-03|P00-06,F07-K1|F07-K2,planlandi
+F08-01,F08,C,P3,Proje zaman politikasi,Is kirilimi saat maliyet fiyat ve onay kararlari,Urun sahibi|Proje sorumlusu|Muhasebe,M,P00-03|P00-05,F08-K1|F08-K2,planlandi
+F08-02,F08,C,P3,Calisma alan modeli,Zaman kaydi onay ve tarihli maliyet fiyat profilleri,Backend,L,F08-01,F08-K1|F08-K2,planlandi
+F08-03,F08,C,P3,Proje zaman ve hakedis UI,Onayli faturalandirilabilir is havuzu ve kaynak paylari,Frontend|Backend,L,F08-02,F08-K1|F08-K2,planlandi
+F08-04,F08,C,P3,Proje kabul ve pilot,Kismi faturalama geri alma ucret gizliligi ve donem testleri,QA|Proje sorumlusu,L,F08-03|P00-06,F08-K1|F08-K2,planlandi
+F09-01,F09,C,P3,Sozlesme kapsami,Yenileme iptal bedel revizyonu ve mevcut sablon karari,Urun sahibi|Satis|Muhasebe,M,P00-01|P00-03,F09-K1|F09-K2,planlandi
+F09-02,F09,C,P3,Sozlesme veri modeli,Sozlesme surum ek ve tekrarlayan fatura baglari,Backend,M,F09-01|P00-05,F09-K1|F09-K2,planlandi
+F09-03,F09,C,P3,Yenileme ve bildirim,Sozlesme takvimi kontrollu sablon aktarimi ve bildirim,Backend|Frontend,L,F09-02|P00-04,F09-K1|F09-K2,planlandi
+F09-04,F09,C,P3,Sozlesme kabul ve pilot,Tarih surum duplicate iptal ve eski sablon uyumu,QA|Satis|Muhasebe,M,F09-03|P00-06,F09-K1|F09-K2,planlandi
+F10-01,F10,C,P3,Servis is kurallari,Mulkiyet seri garanti onay ve mali iade sinirlari,Urun sahibi|Servis sorumlusu|Muhasebe,M,P00-03|P00-05,F10-K1|F10-K2,planlandi
+F10-02,F10,C,P3,Servis alan modeli,Talep olay urun kabul parca ve iscilik kayitlari,Backend,L,F10-01,F10-K1|F10-K2,planlandi
+F10-03,F10,C,P3,Servis calisma alani,Musteri onayi ve mevcut stok fatura iade baglantilari,Backend|Frontend,L,F10-02,F10-K1|F10-K2,planlandi
+F10-04,F10,C,P3,Servis kabul ve pilot,Seri mulkiyet duplicate sarf iade ve musteri yetki testleri,QA|Servis sorumlusu,L,F10-03|P00-06,F10-K1|F10-K2,planlandi
+F11-01,F11,C,P3,Varlik ve bakim kapsami,Mulkiyet zimmet bakim ve amortisman ayrimi,Urun sahibi|Operasyon|Muhasebe,M,P00-03|P00-05,F11-K1|F11-K2,planlandi
+F11-02,F11,C,P3,Varlik veri modeli,Varlik konum zimmet bakim plani ve is emri,Backend,L,F11-01,F11-K1|F11-K2,planlandi
+F11-03,F11,C,P3,Bakim ve kapasite baglari,Takvim parca masraf ve tarihli kapasite blokaji,Backend|Frontend,L,F11-02|P00-04,F11-K1|F11-K2,planlandi
+F11-04,F11,C,P3,Bakim kabul ve pilot,Duplicate bakim tuketim zimmet ve kapasite testleri,QA|Operasyon,L,F11-03|P00-06,F11-K1|F11-K2,planlandi
+F12-01,F12,C,P3,Sube ve merkez tasarimi,Boyut sahiplik dagitim yetki ve eski veri karari,Urun sahibi|Muhasebe|Backend,L,P00-03|P00-05,F12-K1|F12-K2,planlandi
+F12-02,F12,C,P3,Sube veri gecisi,Sozluk nullable bag ve kaynakla dengeli dagitim paylari,Backend,L,F12-01,F12-K1|F12-K2,planlandi
+F12-03,F12,C,P3,Merkez bazli akislar,Belge masraf butce rapor ve yetki entegrasyonu,Backend|Frontend,L,F12-02,F12-K1|F12-K2,planlandi
+F12-04,F12,C,P3,Sube kabul ve pilot,Toplam yuvarlama erisim eski veri ve kademeli goc kabul kaniti,QA|Muhasebe|Platform,L,F12-03|P00-06,F12-K1|F12-K2,planlandi
+REL-01,REL,A,P0,Birlesik regresyon,Cekirdek finans yetki ve migration uyum raporu,QA|Backend|Frontend,L,F01-04|F02-04|F03-04,G1,planlandi
+REL-02,REL,A,P0,Birlesik kullanici pilotu,Hazir adayda baz sonuc olcumu ve alan kabul kaydi,Urun sahibi|Alan uzmani|QA,M,REL-03,G2|Bolum 23,planlandi
+REL-03,REL,A,P0,Yayin adayi hazirligi,Build kimlikleri migration provasi ve geri donus runbooku,Backend|Frontend|Platform,M,REL-01,G3,planlandi
+REL-04,REL,A,P0,Yayin ve sonuc,Yetkili kontrollu gecis saglik surum ve kabul kaydi,Platform|Urun sahibi|QA,M,REL-02|REL-03,G4|G5,planlandi

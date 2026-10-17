@@ -21,6 +21,8 @@ interface Aday {
   enUzunGecikme: number;
   sonHatirlatma: string | null;
   siklikEngeli: boolean;
+  itirazEngeli?: boolean;
+  gonderimEngeli?: string | null;
 }
 interface Sonuc { cariId: string; kod: string; unvan: string; durum: "gonderildi" | "atlandi" | "hata"; mesaj: string }
 interface Onizleme { alici: string | null; konu: string; html: string }
@@ -52,7 +54,7 @@ export default function VadeHatirlatmaSayfasi() {
     try {
       const liste = await api<Aday[]>("/cari/vade-hatirlatma/adaylar");
       setAdaylar(liste);
-      setSecili(new Set(liste.filter((a) => a.eposta && !a.siklikEngeli).map((a) => a.cariId)));
+      setSecili(new Set(liste.filter((a) => a.eposta && !a.siklikEngeli && !a.itirazEngeli).map((a) => a.cariId)));
     } catch (h) {
       setHata(h instanceof Error ? h.message : "Liste yüklenemedi");
     }
@@ -62,8 +64,8 @@ export default function VadeHatirlatmaSayfasi() {
   useEffect(() => { api<TahsilatOnceligi[]>("/cari/vade-hatirlatma/oncelikler?adet=500").then(setOncelikler).catch(() => setOncelikler([])); }, []);
   const riskler = useMemo(() => new Map((oncelikler ?? []).map((o) => [o.cariId, o.risk])), [oncelikler]);
 
-  const secilebilir = useMemo(() => (adaylar ?? []).filter((a) => a.eposta), [adaylar]);
-  const seciliAdaylar = useMemo(() => (adaylar ?? []).filter((a) => secili.has(a.cariId)), [adaylar, secili]);
+  const secilebilir = useMemo(() => (adaylar ?? []).filter((a) => a.eposta && !a.itirazEngeli), [adaylar]);
+  const seciliAdaylar = useMemo(() => (adaylar ?? []).filter((a) => secili.has(a.cariId) && !a.itirazEngeli), [adaylar, secili]);
   const seciliToplam = seciliAdaylar.reduce((t, a) => t + Number(a.toplamTry), 0);
 
   function degistir(id: string) {
@@ -179,10 +181,11 @@ export default function VadeHatirlatmaSayfasi() {
               <tr><td colSpan={7} className="empty">Vadesi geçmiş alacağı olan cari yok.</td></tr>
             ) : adaylar.map((a) => (
               <tr key={a.cariId}>
-                <td><input type="checkbox" aria-label={`${a.unvan} seç`} disabled={!a.eposta} checked={secili.has(a.cariId)} onChange={() => degistir(a.cariId)} /></td>
+                <td><input type="checkbox" aria-label={`${a.unvan} seç`} disabled={!a.eposta || a.itirazEngeli} checked={secili.has(a.cariId)} onChange={() => degistir(a.cariId)} /></td>
                 <td>
                   <a href={`/panel/cari/${a.cariId}`}><strong>{a.unvan}</strong></a> {riskler.get(a.cariId) && <RiskRozeti risk={riskler.get(a.cariId)!} />}
                   <div className="subtle">{a.kod} · {a.faturaSayisi} kalem{a.karaListe ? " · kara listede" : ""}{!a.aktif ? " · pasif" : ""}</div>
+                  {a.itirazEngeli && <div><Badge variant="warning">Açık itiraz: gönderim durduruldu</Badge><small className="muted">{a.gonderimEngeli}</small></div>}
                 </td>
                 <td>{a.eposta ?? <Badge variant="warning">E-posta yok</Badge>}</td>
                 <td className="num money neg">
@@ -191,7 +194,7 @@ export default function VadeHatirlatmaSayfasi() {
                 </td>
                 <td>{a.enEskiVade ? tarih(a.enEskiVade) : "—"}<div className="subtle">{a.enUzunGecikme} gün</div></td>
                 <td>{a.sonHatirlatma ? <>{tarih(a.sonHatirlatma)}{a.siklikEngeli && <div><Badge variant="info">7 gün dolmadı</Badge></div>}</> : "—"}</td>
-                <td><Button size="sm" onClick={() => void onizle(a.cariId)}>Önizle</Button></td>
+                <td><Button size="sm" disabled={a.itirazEngeli} onClick={() => void onizle(a.cariId)}>Önizle</Button></td>
               </tr>
             ))}
           </tbody>

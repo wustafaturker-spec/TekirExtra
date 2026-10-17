@@ -312,6 +312,10 @@ export class CariController {
   @Get(":id/crm")
   async crmGetir(@Param("id") id: string) { return this.cariService.crmGetir(id); }
 
+  /** CARI-43: Cari Durum Paneli; bölümler rolün görebildiğine göre döner (CARI-46). */
+  @Get(":id/durum")
+  async durum(@Param("id") id: string) { return this.cariService.durum(id); }
+
   @Get(":id/davranis-analizi")
   async davranisAnalizi(@Param("id") id: string) { return this.cariService.davranisAnalizi(id); }
 

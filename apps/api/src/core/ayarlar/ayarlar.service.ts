@@ -1,3 +1,4 @@
+import { CRM_BELGE_MODULU } from "../../crm/crm-belge.semalar";
 import {
   BadRequestException,
   Injectable,
@@ -7,6 +8,9 @@ import type { Prisma } from "@prisma/client";
 import { aktifBaglam } from "../istek-baglami";
 import { PrismaService } from "../prisma.service";
 import { ayarTanimiAl } from "./ayar-kayit";
+import { MALIYET_KONTROL_MODULU } from "./maliyet-kontrol-ayari";
+import { TAHSILAT_MODULU } from "../../cari/tahsilat-erisim";
+import { TAHSILAT_OTOMASYONU } from "../../cari/tahsilat-otomasyon-ayari";
 
 @Injectable()
 export class AyarlarService {
@@ -46,14 +50,24 @@ export class AyarlarService {
       );
     }
     const dogrulanmis = ayristirma.data as Record<string, unknown>;
-    const { tenantId } = aktifBaglam();
-    await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.modulAyar.upsert({
+    const { tenantId, userId } = aktifBaglam();
+    await this.prisma.tenantIslem(tenantId, async (tx) => {
+      if (modul === TAHSILAT_OTOMASYONU && dogrulanmis.sorumluUserId) {
+        const sorumluId = String(dogrulanmis.sorumluUserId);
+        if (!(await tx.$queryRaw<{ id: string }[]>`SELECT id FROM users WHERE tenant_id=${tenantId}::uuid AND id=${sorumluId}::uuid AND aktif AND rol IN ('yonetici','muhasebe') FOR SHARE`).length) throw new BadRequestException("Otomatik takip sorumlusu şirketin aktif yönetici veya muhasebe kullanıcısı olmalı");
+      }
+      const kayit = await tx.modulAyar.upsert({
         where: { tenantId_modul: { tenantId, modul } },
         create: { tenantId, modul, ayarlar: dogrulanmis as Prisma.InputJsonValue },
         update: { ayarlar: dogrulanmis as Prisma.InputJsonValue },
-      }),
-    );
+      });
+      if (modul === CRM_BELGE_MODULU || modul === MALIYET_KONTROL_MODULU || modul === TAHSILAT_MODULU || modul === TAHSILAT_OTOMASYONU) {
+        await tx.auditLog.create({ data: {
+          tenantId, userId, islem: modul === CRM_BELGE_MODULU ? "crm_belge_modu_guncellendi" : modul === MALIYET_KONTROL_MODULU ? "maliyet_kontrol_modu_guncellendi" : modul === TAHSILAT_OTOMASYONU ? "tahsilat_otomasyonu_guncellendi" : "tahsilat_modu_guncellendi", varlik: "modul_ayar", varlikId: kayit.id,
+          detay: dogrulanmis as Prisma.InputJsonValue,
+        } });
+      }
+    });
     return dogrulanmis;
   }
 }

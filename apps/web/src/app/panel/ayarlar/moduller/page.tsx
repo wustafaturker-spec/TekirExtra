@@ -11,7 +11,7 @@ import { DOVIZ_CINSLERI } from "@tekirextra/shared";
  * (GET/PUT /ayarlar/:modul) tipli bir form ile tüketir. Alan tanımları burada
  * deklaratiftir; yeni modül ayarı gelince yalnız bu tablo genişletilir.
  */
-type AlanTip = "enum" | "sayi" | "onay" | "metin" | "uzunMetin" | "kasaRef" | "bankaRef" | "sablon" | "gizli";
+type AlanTip = "enum" | "sayi" | "onay" | "metin" | "uzunMetin" | "kasaRef" | "bankaRef" | "kullaniciRef" | "sablon" | "gizli";
 interface Alan {
   ad: string;
   etiket: string;
@@ -30,6 +30,30 @@ interface ModulTanim {
 const HATIRLATMA_ALANLARI = "Kullanılabilir alanlar: {unvan} {firma} {toplam} {enEskiVade} {gecikmeGun} {faturaSayisi} {faturalar} — {faturalar} vadesi geçmiş belge tablosudur; metinde yoksa sona eklenir.";
 
 const MODUL_TANIM: Record<string, ModulTanim> = {
+  crm_belge_baglari: {
+    baslik: "CRM Teklif Bağları", ikon: "📋", alanlar: [
+      { ad: "mod", etiket: "CRM teklif bağı kullanım modu", tip: "enum", secenekler: [["kapali", "Kapalı"], ["salt_okunur", "Salt okunur"], ["pilot", "Pilot"], ["acik", "Açık"]], ipucu: "Pilot ve açık modda yönetici ve satış kullanıcıları teklif bağlayabilir. Salt okunur modda bağ kurma ve çözme kapalıdır." },
+    ],
+  },
+  tahsilat_operasyonu: {
+    baslik: "Tahsilat Operasyonu", ikon: "📋", alanlar: [
+      { ad: "mod", etiket: "Tahsilat kullanım modu", tip: "enum", secenekler: [["kapali", "Kapalı"], ["salt_okunur", "Salt okunur"], ["pilot", "Pilot"], ["acik", "Açık"]], ipucu: "Pilot ve açık modda yönetici/muhasebe takip yazabilir. Salt okunur mod otomatik iş üretimini de durdurur." },
+    ],
+  },
+  tahsilat_otomasyonu: {
+    baslik: "Geciken Ödeme Sözü Takibi", ikon: "📅", alanlar: [
+      { ad: "acik", etiket: "Geciken sözlerden otomatik takip oluştur", tip: "onay", ipucu: "Tahsilat operasyonu pilot/açık modundayken 15 dakikada bir taranır. Açık takip varsa söz o takibe bağlanır; sorumlusu ve işlem planı korunur. Tamamlanan takip yeniden açılmaz. E-posta veya SMS gönderilmez." },
+      { ad: "sorumluUserId", etiket: "Otomatik takip sorumlusu", tip: "kullaniciRef", ipucu: "Yeni takipler bu aktif yönetici/muhasebe kullanıcısına atanır. Sorumlu pasifleşirse veya yetkisi kalkarsa otomatik üretim durur." },
+      { ad: "uygulamaIciBildirim", etiket: "Sorumluya uygulama içi bildirim oluştur", tip: "onay", ipucu: "Yeni gecikmiş söz bağlandığında mevcut takibin sorumlusuna bildirim oluşturur. E-posta göndermez; kullanıcının vade bildirimi tercihini korur. Önceden bağlanmış sözler için geriye dönük bildirim üretmez." },
+    ],
+  },
+  maliyet_kontrolu: {
+    baslik: "Satış Maliyet Kontrolü",
+    ikon: "🔎",
+    alanlar: [
+      { ad: "mod", etiket: "Kullanım modu", tip: "enum", secenekler: [["kapali", "Kapalı"], ["salt_okunur", "Salt okunur"], ["pilot", "Pilot"], ["acik", "Açık"]], ipucu: "Şirket genelinde geçerlidir. Salt okunur: liste, Excel ve inceleme geçmişi. Pilot ve açık: yönetici/muhasebe inceleme kaydı yazabilir ve doğrulanmış kaydı kapatabilir. Pilot, seçilen şirketin deneme kullanımını belirtir; kullanıcı yetkilerini genişletmez." },
+    ],
+  },
   personel: {
     baslik: "Personel ve İK",
     ikon: "🧑‍💼",
@@ -101,7 +125,7 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
 };
 
 // Ekranda görünme sırası
-const SIRA = ["fatura", "stok", "cari", "satin_alma", "kasaBanka", "arayuz"];
+const SIRA = ["fatura", "stok", "maliyet_kontrolu", "cari", "crm_belge_baglari", "tahsilat_operasyonu", "tahsilat_otomasyonu", "satin_alma", "kasaBanka", "arayuz"];
 
 interface Ref {
   id: string;
@@ -114,6 +138,7 @@ export default function ModulAyarlariSayfasi() {
   const [degerler, setDegerler] = useState<Record<string, Record<string, unknown>>>({});
   const [kasalar, setKasalar] = useState<Ref[]>([]);
   const [bankalar, setBankalar] = useState<Ref[]>([]);
+  const [sorumlular, setSorumlular] = useState<{ id: string; adSoyad: string }[]>([]);
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
   const [kaydedilen, setKaydedilen] = useState<string>("");
@@ -137,6 +162,9 @@ export default function ModulAyarlariSayfasi() {
     void yukle();
     api<Ref[]>("/kasa-banka/kasalar").then(setKasalar).catch(() => undefined);
     api<Ref[]>("/kasa-banka/bankalar").then(setBankalar).catch(() => undefined);
+    api<{ id: string; adSoyad: string; aktif: boolean; rol: string }[]>("/kullanicilar")
+      .then((liste) => setSorumlular(liste.filter((u) => u.aktif && ["yonetici", "muhasebe"].includes(u.rol))))
+      .catch(() => undefined);
   }, [yukle]);
 
   function alanGuncelle(modul: string, ad: string, deger: unknown) {
@@ -154,7 +182,7 @@ export default function ModulAyarlariSayfasi() {
       const v = ham[a.ad];
       if (a.tip === "sayi") govde[a.ad] = v === "" || v === undefined ? undefined : Number(v);
       else if (a.tip === "onay") govde[a.ad] = Boolean(v);
-      else if (a.tip === "kasaRef" || a.tip === "bankaRef") govde[a.ad] = v ? v : null;
+      else if (a.tip === "kasaRef" || a.tip === "bankaRef" || a.tip === "kullaniciRef") govde[a.ad] = v ? v : null;
       else govde[a.ad] = v;
     }
     try {
@@ -194,10 +222,17 @@ export default function ModulAyarlariSayfasi() {
     if (a.tip === "onay") {
       return (
         <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", height: 38 }}>
-          <input type="checkbox" checked={Boolean(v)} onChange={(e) => alanGuncelle(modul, a.ad, e.target.checked)} style={{ width: "1.1rem", height: "1.1rem" }} />
+          <input type="checkbox" aria-label={a.etiket} checked={Boolean(v)} onChange={(e) => alanGuncelle(modul, a.ad, e.target.checked)} style={{ width: "1.1rem", height: "1.1rem" }} />
           <span className="muted" style={{ fontSize: "0.9rem" }}>{Boolean(v) ? "Açık" : "Kapalı"}</span>
         </label>
       );
+    }
+    if (a.tip === "kullaniciRef") {
+      return <Select aria-label={a.etiket} value={String(v ?? "")} onChange={(e) => alanGuncelle(modul, a.ad, e.target.value)}>
+        <option value="">— Sorumlu seçin —</option>
+        {v && !sorumlular.some((u) => u.id === v) ? <option value={String(v)} disabled>Önceki sorumlu uygun değil; yeniden seçin</option> : null}
+        {sorumlular.map((u) => <option key={u.id} value={u.id}>{u.adSoyad}</option>)}
+      </Select>;
     }
     if (a.tip === "kasaRef" || a.tip === "bankaRef") {
       const kaynak = a.tip === "kasaRef" ? kasalar : bankalar;

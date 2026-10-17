@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../core/prisma.service";
 import { firsatOlusturSemasi, firsatGuncelleSemasi, firsatAsamaDegistirSemasi } from "./crm-firsat.semalar";
 import { z } from "zod";
@@ -69,10 +69,17 @@ export class CrmFirsatService {
 
   async guncelle(tenantId: string, id: string, girdi: z.infer<typeof firsatGuncelleSemasi>) {
     const veri = firsatGuncelleSemasi.parse(girdi);
-    await this.getir(tenantId, id);
 
-    return this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.crmFirsat.update({
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      await tx.$queryRaw`SELECT id FROM crm_firsatlari WHERE id=${id}::uuid AND tenant_id=${tenantId}::uuid FOR UPDATE`;
+      const mevcut = await tx.crmFirsat.findFirst({ where: { id, tenantId }, select: { cariId: true } });
+      if (!mevcut) throw new NotFoundException("CRM Fırsatı bulunamadı");
+      if (veri.cariId) {
+        if (!await tx.cariHesap.findFirst({ where: { id: veri.cariId, tenantId }, select: { id: true } })) throw new NotFoundException("Cari hesap bulunamadı veya bu firmaya ait değil");
+        if (veri.cariId !== mevcut.cariId && await tx.firsatBelgeBagi.count({ where: { tenantId, firsatId: id } })) throw new ConflictException("Teklif bağı geçmişi olan fırsatın carisi değiştirilemez");
+      }
+      if (veri.sorumluUserId && !await tx.user.findFirst({ where: { id: veri.sorumluUserId, tenantId, aktif: true }, select: { id: true } })) throw new NotFoundException("Aktif sorumlu kullanıcı bulunamadı");
+      return tx.crmFirsat.update({
         where: { id, tenantId },
         data: {
           ...(veri.baslik && { baslik: veri.baslik }),
@@ -86,8 +93,8 @@ export class CrmFirsatService {
         include: {
           cari: { select: { id: true, kod: true, unvan: true } }
         }
-      })
-    );
+      });
+    });
   }
 
   async asamaDegistir(tenantId: string, id: string, girdi: z.infer<typeof firsatAsamaDegistirSemasi>) {

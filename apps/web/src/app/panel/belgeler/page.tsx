@@ -343,6 +343,12 @@ export default function BelgelerSayfasi() {
   const [tur, setTur] = useState<Tur>("teklif");
   const [yon, setYon] = useState<Yon>("satis");
   const [cariId, setCariId] = useState("");
+  const [firsatId, setFirsatId] = useState<string | null>(null);
+  const [firsatKaynak, setFirsatKaynak] = useState<{ id:string; cariId:string; baslik:string; updatedAt:string } | null>(null);
+  const [firsatGerekce, setFirsatGerekce] = useState("");
+  const firsatIstek = useRef<{ govde:string; anahtar:string; id?:string } | null>(null);
+  const kayitKilidi = useRef(false);
+  const [kayitSuruyor, setKayitSuruyor] = useState(false);
   /** EBLG-95: müşterisi sevkiyat başında belli olmayan dağıtım için sistem carisi. */
   async function muhtelifSec() {
     try {
@@ -526,11 +532,19 @@ export default function BelgelerSayfasi() {
     const parametreler = new URLSearchParams(window.location.search);
     const yonParametresi = parametreler.get("yon");
     const turParametresi = parametreler.get("tur");
-    if (yonParametresi === "satis" || yonParametresi === "alis") {
+    const firsat = parametreler.get("firsatId");
+    if (firsat) {
+      setFirsatId(firsat); setTur("teklif"); setYon("satis"); setFormAcik(true);
+      void api<{ mod:string; firsat:{ id:string; cariId:string; baslik:string; updatedAt:string } }>(`/crm/firsatlar/${encodeURIComponent(firsat)}/belgeler`).then(data=>{
+        if (!["pilot","acik"].includes(data.mod)) throw new Error("Fırsattan teklif oluşturma bu şirket için yazmaya açık değil.");
+        setFirsatKaynak(data.firsat); setCariId(data.firsat.cariId);
+      }).catch(e=>setHata(e instanceof Error?e.message:"Fırsat okunamadı"));
+    }
+    if (!firsat && (yonParametresi === "satis" || yonParametresi === "alis")) {
       setYonBaglami(yonParametresi);
       setYon(yonParametresi);
     }
-    if (turParametresi === "teklif" || turParametresi === "siparis" || turParametresi === "irsaliye") {
+    if (!firsat && (turParametresi === "teklif" || turParametresi === "siparis" || turParametresi === "irsaliye")) {
       setTur(turParametresi);
       setTurFiltre(turParametresi);
     }
@@ -669,22 +683,24 @@ export default function BelgelerSayfasi() {
 
   async function kaydet(e: React.FormEvent) {
     e.preventDefault();
+    if (kayitKilidi.current) return;
     setHata("");
     setBasari("");
+    if (firsatId && (!firsatKaynak || duzenlenenId || tur !== "teklif" || yon !== "satis" || cariId !== firsatKaynak.cariId)) { setHata("Fırsat bilgisi doğrulanamadı; fırsattan teklif ekranını yeniden açın."); return; }
+    if (firsatId && firsatGerekce.trim().length < 2) { setHata("Fırsat bağlama gerekçesini girin."); return; }
     if (!cariId) { setHata("Lütfen bir cari hesap seçin."); return; }
     if (satirlar.some((s) => !s.stokId)) { setHata("Lütfen tüm satırlarda ürün/hizmet seçin."); return; }
     // FTR-28: kalemler belge dövizinde olmalı.
     if (bekleyenCevrim) { setHata(`Belge dövizi değişti; önce kalem fiyatlarını ${paraBirimiEtiketi(dovizCinsi)}'ye çevirin ya da değişikliği geri alın.`); return; }
     const uyumsuz = satirlar.findIndex((s) => s.dovizUyarisi);
     if (uyumsuz >= 0) { setHata(`Satır ${uyumsuz + 1}: ${satirlar[uyumsuz].dovizUyarisi}`); return; }
+    kayitKilidi.current = true; setKayitSuruyor(true);
     try {
       const kurAciklamasi = kuruAciklamayaEkle && dovizCinsi !== "TRY" ? `Döviz kuru: 1 ${dovizCinsi} = ${Number(kur).toLocaleString("tr-TR", { minimumFractionDigits: 4, maximumFractionDigits: 6 })} TRY${kurBilgisi ? ` (${kurBilgisi})` : ""}` : "";
       const kullaniciAciklamasi = aciklama.split("\n").filter((satir) => !satir.startsWith("Döviz kuru:")).join("\n").trim();
       const kayitAciklamasi = [kullaniciAciklamasi, kurAciklamasi].filter(Boolean).join("\n");
       if (kayitAciklamasi.length > 500) { setHata("Açıklama, döviz kuru bilgisiyle birlikte 500 karakteri aşamaz."); return; }
-      const kayit = await api<Belge>(duzenlenenId ? `/belgeler/${duzenlenenId}` : "/belgeler", {
-        method: duzenlenenId ? "PATCH" : "POST",
-        body: JSON.stringify({
+      const belgeGovdesi = {
           // Tür ve yön taslakta değişmez; önceden düzenlenmiş fatura bağı yalnız oluştururken kurulur.
           ...(duzenlenenId ? {} : { tur, yon, faturaId: tur === "irsaliye" && yon === "satis" ? faturaId || null : null }),
           tarih,
@@ -745,9 +761,17 @@ export default function BelgelerSayfasi() {
             ...(s.ekVergiler ? { ekVergiler: ekVergiGovdesi(s.ekVergiler) } : {}),
             partiBilgileri: (() => { const stok = stoklar.find((x) => x.id === s.stokId); if (yon !== "alis" || !stok?.takipTipi || stok.takipTipi === "yok") return []; if (stok.takipTipi === "seri") return (s.seriNolar ?? "").split(/[\n,;]/).map((x) => x.trim()).filter(Boolean).map((seriNo) => ({ lotNo: s.lotNo || seriNo, seriNo, sonKullanmaTarihi: s.sonKullanmaTarihi || null, uretimTarihi: s.uretimTarihi || null, miktar: "1" })); return [{ lotNo: s.lotNo ?? "", seriNo: null, sonKullanmaTarihi: s.sonKullanmaTarihi || null, uretimTarihi: s.uretimTarihi || null, miktar: String(s.miktar) }]; })(),
           })),
-        }),
+      };
+      const firsatGovdesi = firsatKaynak ? JSON.stringify({belge:belgeGovdesi,gerekce:firsatGerekce,beklenenFirsatZamani:firsatKaynak.updatedAt}) : "";
+      if (firsatId && firsatIstek.current?.id && firsatIstek.current.govde !== firsatGovdesi) throw new Error("Teklif zaten oluşturuldu. Değişiklik yapmak için fırsattaki teklif kaydını açın.");
+      if (firsatId && firsatIstek.current?.govde !== firsatGovdesi) firsatIstek.current = {govde:firsatGovdesi,anahtar:crypto.randomUUID()};
+      const kayit = firsatId && firsatIstek.current?.id ? {id:firsatIstek.current.id} : await api<{id:string}>(firsatId ? `/crm/firsatlar/${encodeURIComponent(firsatId)}/belgeler/teklif` : duzenlenenId ? `/belgeler/${duzenlenenId}` : "/belgeler", {
+        method: duzenlenenId ? "PATCH" : "POST",
+        body: firsatId ? JSON.stringify({...JSON.parse(firsatGovdesi),istekAnahtari:firsatIstek.current!.anahtar}) : JSON.stringify(belgeGovdesi),
       });
+      if (firsatId && firsatIstek.current) firsatIstek.current.id = kayit.id;
       if (dosyalar.length > 0) await belgeDosyalariniYukle("belge", kayit.id, dosyalar);
+      if (firsatId) { router.push(`/panel/crm/${firsatId}`); return; }
       setBasari(duzenlenenId ? `${TUR_ADI[tur]} taslağı güncellendi.` : `${TUR_ADI[tur]} taslağı oluşturuldu.`);
       if (duzenlenenId && detay?.id === duzenlenenId) await detayAc(duzenlenenId);
       setDuzenlenenId(null);
@@ -762,6 +786,8 @@ export default function BelgelerSayfasi() {
       void yukle();
     } catch (h) {
       setHata(h instanceof Error ? h.message : duzenlenenId ? "Belge güncellenemedi" : "Belge oluşturulamadı");
+    } finally {
+      kayitKilidi.current = false; setKayitSuruyor(false);
     }
   }
 
@@ -1198,6 +1224,12 @@ export default function BelgelerSayfasi() {
 
       <Alert tone="error">{hata}</Alert>
       <Alert tone="warning">{topluReferansUyarisi}</Alert>
+      {firsatId && <Card className="create-page__keep" title="Fırsattan teklif oluştur">
+        <p>{firsatKaynak?.baslik ?? "Fırsat bilgisi bekleniyor…"}</p>
+        <p>Teklif taslağı ve fırsat bağı birlikte kaydedilir.</p>
+        <label>Fırsat bağlama gerekçesi<Input aria-label="Fırsat bağlama gerekçesi" value={firsatGerekce} maxLength={500} onChange={e=>setFirsatGerekce(e.target.value)} /></label>
+        <a href={`/panel/crm/${encodeURIComponent(firsatId)}`}>Fırsata dön</a>
+      </Card>}
       <Alert tone="success">{basari && <>
         {basari}
         {olusanFaturaId && <a className="btn btn--ghost btn--sm" href={`/panel/fatura?faturaId=${olusanFaturaId}`}>Taslak faturayı aç</a>}
@@ -1217,7 +1249,7 @@ export default function BelgelerSayfasi() {
             <div className="document-fields document-fields--belge invoice-head-fields">
               <div>
               <Field label={yon === "satis" ? "Müşteri" : "Tedarikçi"}>
-                <AramaSecici
+                {firsatId ? <Input aria-label="Fırsat müşterisi" readOnly value={cariler.find(c=>c.id===cariId)?.unvan ?? cariId} /> : <AramaSecici
                   ariaLabel={yon === "satis" ? "Müşteri ara" : "Tedarikçi ara"}
                   deger={cariId}
                   onChange={setCariId}
@@ -1229,14 +1261,14 @@ export default function BelgelerSayfasi() {
                     aciklama: [cari.karaListe ? "Kara listede — belge açılamaz" : null, cari.kod, cari.vknTckn, cari.telefon].filter(Boolean).join(" · ") || "Cari hesap",
                     aramaMetni: [cari.kod, cari.vknTckn, cari.telefon].filter(Boolean).join(" "),
                   }))}
-                />
+                />}
               </Field>
               {tur === "irsaliye" && yon === "satis" && (muhtelifMusteriMi(cariler.find((c) => c.id === cariId))
                 ? <small className="muted">Muhtelif müşteriler irsaliyesi (GİB 5555555555): dağıtımda teslim ettiğiniz her müşteriye ayrıca fatura ya da irsaliye kesin. Bu irsaliye faturaya bağlanmaz ve 7 gün takibine girmez.</small>
                 : <Button type="button" size="sm" variant="ghost" onClick={() => void muhtelifSec()}>Müşteri belli değil: Muhtelif müşteriler</Button>)}
               </div>
-              <Field label="Belge Türü"><Select value={tur} disabled={Boolean(duzenlenenId)} onChange={(e) => setTur(e.target.value as Tur)}><option value="teklif">Teklif</option><option value="siparis">Sipariş</option><option value="irsaliye">İrsaliye</option></Select></Field>
-              <Field label="Yön"><Select value={yon} disabled={Boolean(duzenlenenId)} onChange={(e) => setYon(e.target.value as Yon)}><option value="satis">Satış</option><option value="alis">Alış</option></Select></Field>
+              <Field label="Belge Türü"><Select value={tur} disabled={Boolean(duzenlenenId || firsatId)} onChange={(e) => setTur(e.target.value as Tur)}><option value="teklif">Teklif</option><option value="siparis">Sipariş</option><option value="irsaliye">İrsaliye</option></Select></Field>
+              <Field label="Yön"><Select value={yon} disabled={Boolean(duzenlenenId || firsatId)} onChange={(e) => setYon(e.target.value as Yon)}><option value="satis">Satış</option><option value="alis">Alış</option></Select></Field>
               <Field label="Tarih"><Input type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} required /></Field>
               <Field label="Belge Dövizi"><Select value={dovizCinsi} onChange={(e) => belgeDoviziDegistir(e.target.value)}><DovizSecenekleri /></Select></Field>
               {bekleyenCevrim && (
@@ -1624,7 +1656,7 @@ export default function BelgelerSayfasi() {
               </div>
             )}
             <div className="invoice-summary__actions">
-              <Button variant="primary" onClick={kaydet}>{duzenlenenId ? "Değişiklikleri kaydet" : "Taslak belgeyi kaydet"}</Button>
+              <Button variant="primary" disabled={kayitSuruyor || Boolean(firsatId && !firsatKaynak)} onClick={kaydet}>{kayitSuruyor ? "Kaydediliyor…" : duzenlenenId ? "Değişiklikleri kaydet" : "Taslak belgeyi kaydet"}</Button>
               {duzenlenenId && <Button type="button" onClick={duzenlemedenVazgec}>Vazgeç</Button>}
               <small className="muted">Kısayol: Ctrl+S</small>
             </div>

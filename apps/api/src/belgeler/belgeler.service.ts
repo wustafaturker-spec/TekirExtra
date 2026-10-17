@@ -98,6 +98,7 @@ const DONUSUM_HEDEFLERI: Record<BelgeTur, ("siparis" | "irsaliye" | "fatura")[]>
 };
 
 type BelgeSatirKaydi = {
+  id?: string;
   stokId: string;
   varyantId?: string | null;
   partiBilgileri?: Prisma.JsonValue | null;
@@ -426,15 +427,25 @@ export class BelgelerService {
 
   /** `gelenBelge`: gelen e-İrsaliyenin kaydı; cari blokajı denetlenmez (CARI-32). */
   async olustur(girdi: z.infer<typeof belgeOlusturSemasi>, secenekler: { gelenBelge?: boolean } = {}) {
-    const { tenantId, userId } = aktifBaglam();
+    await this.olusturmaOnKontrolu(girdi, secenekler);
+    const { tenantId } = aktifBaglam();
+    return this.prisma.tenantIslem(tenantId, tx => this.olusturIslemde(tx, girdi, secenekler));
+  }
+
+  /** CRM gibi birleşik işlemler bu okumaları transaction açmadan önce yapar. */
+  async olusturmaOnKontrolu(girdi: z.infer<typeof belgeOlusturSemasi>, secenekler: { gelenBelge?: boolean } = {}) {
+    const { tenantId } = aktifBaglam();
     await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "belge oluşturma");
     // MVZ-11: KDV oranı belge tarihindeki merkezi listeden olmalı.
     if (!secenekler.gelenBelge) await this.mevzuat?.kdvOranlariniDogrula(girdi.satirlar.map((s) => s.kdvOrani), girdi.tarih);
+  }
 
+  /** Yeni transaction açmaz; belge, satırlar ve çağıranın bağ/audit yazımı atomiktir. */
+  async olusturIslemde(tx: Prisma.TransactionClient, girdi: z.infer<typeof belgeOlusturSemasi>, secenekler: { gelenBelge?: boolean } = {}) {
+    const { tenantId, userId } = aktifBaglam();
+    await this.donemKilidi.tarihDogrula(tenantId, girdi.tarih, "belge oluşturma", tx);
     // FTR-14: satıcı kullanıcı bazında maksimum iskonto yetkisi kontrolü
-    const user = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.user.findUnique({ where: { id: userId } }),
-    );
+    const user = await tx.user.findUnique({ where: { id: userId } });
     if (user && user.maksIskontoYuzdesi !== null) {
       const maks = Number(user.maksIskontoYuzdesi);
       if (Number(girdi.genelIskontoYuzdesi ?? 0) > maks) {
@@ -451,7 +462,6 @@ export class BelgelerService {
       }
     }
 
-    return this.prisma.tenantIslem(tenantId, async (tx) => {
       const ekVergiler = await this.girdiEkVergileri(tx, girdi.yon, girdi.tarih, girdi.satirlar);
       const hesap = this.hesapla(girdi, ekVergiler);
       if (!secenekler.gelenBelge) await cariIslemDenetle(tx, girdi.cariId, girdi.tur, "yeni");
@@ -509,7 +519,6 @@ export class BelgelerService {
       await satirVaryantlariniDogrula(tx, girdi.satirlar);
       await this.satirlariYaz(tx, belge.id, hesap.satirlar, girdi.satirlar, ekVergiler);
       return this.gorunum(belge);
-    });
   }
 
   /**
@@ -661,6 +670,10 @@ export class BelgelerService {
     }
 
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      if (birlesik.cariId !== mevcut.cariId) {
+        await tx.$queryRaw`SELECT id FROM belgeler WHERE id=${id}::uuid AND tenant_id=${tenantId}::uuid FOR UPDATE`;
+        if (await tx.firsatBelgeBagi.count({ where: { tenantId, belgeId: id } })) throw new ConflictException("Fırsat bağı geçmişi olan teklifin carisi değiştirilemez");
+      }
       const ekVergiler = await this.girdiEkVergileri(tx, mevcut.yon, birlesik.tarih, birlesik.satirlar);
       const hesap = this.hesapla(birlesik, ekVergiler);
       // CARI-32: kara listede taslak da düzenlenmez; cari değişiyorsa pasif de olmamalı.
@@ -767,6 +780,8 @@ export class BelgelerService {
       throw new BadRequestException("Yalnızca taslak belgeler silinebilir");
     }
     await this.prisma.tenantIslem(tenantId, async (tx) => {
+      await tx.$queryRaw`SELECT id FROM belgeler WHERE id=${id}::uuid AND tenant_id=${tenantId}::uuid FOR UPDATE`;
+      if (await tx.firsatBelgeBagi.count({ where: { tenantId, belgeId: id } })) throw new ConflictException("Fırsat bağı geçmişi olan teklif silinemez; belgeyi iptal edebilirsiniz");
       await tx.belge.delete({ where: { id } });
       await this.oncekiSurumuGeriAc(tx, belge);
     });
@@ -2028,6 +2043,7 @@ export class BelgelerService {
         data: {
           tenantId,
           faturaId: fatura.id,
+          kaynakBelgeSatirId: tumSatirlar[i].id ?? null,
           stokId: s.stokId,
           varyantId: tumSatirlar[i].varyantId,
           idisEtiketNo: tumSatirlar[i].idisEtiketNo ?? null,

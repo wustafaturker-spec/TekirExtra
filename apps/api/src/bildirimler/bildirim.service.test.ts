@@ -6,7 +6,7 @@ const baglam = { tenantId: "t1", userId: "u1", rol: "muhasebe" as string };
 vi.mock("../core/istek-baglami", () => ({ aktifBaglam: () => baglam }));
 
 function servisKur(tx: Record<string, unknown>) {
-  const prisma = { tenantIslem: vi.fn((_tenantId, calistir) => calistir(tx)) } as never;
+  const prisma = { tenantIslem: vi.fn((_tenantId, calistir) => calistir({ modulAyar: { findUnique: vi.fn().mockResolvedValue({ ayarlar: { mod: "pilot" } }) }, user: { findFirst: vi.fn().mockResolvedValue({ id: "u1" }) }, ...tx })) } as never;
   return new BildirimService(prisma);
 }
 
@@ -138,7 +138,7 @@ describe("BildirimService durum geçişleri", () => {
 
     await expect(servis.okunduIsaretle(["d1", "d2"])).resolves.toEqual({ guncellenen: 2 });
     expect(updateMany).toHaveBeenCalledWith({
-      where: { id: { in: ["d1", "d2"] }, userId: "u1", durum: { in: ["yeni"] } },
+      where: { id: { in: ["d1", "d2"] }, userId: "u1", durum: { in: ["yeni"] }, bildirim: {} },
       data: { durum: "okundu", okunduAt: expect.any(Date) },
     });
   });

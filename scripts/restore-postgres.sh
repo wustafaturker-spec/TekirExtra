@@ -10,5 +10,5 @@ file="$1"
 case "$file" in
   *.gz) gzip -dc "$file" ;;
   *) cat "$file" ;;
-esac | docker compose exec -T postgres psql -U tekir -d tekirextra
+esac | docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U tekir -d tekirextra
 echo "PostgreSQL geri yükleme tamamlandı: $file"

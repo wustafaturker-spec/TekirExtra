@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
 import { Alert, Button, Card, PageHeader } from "@/components/ui";
+import Link from "next/link";
 import { AramaSecici } from "@/components/arama-secici";
 
 interface Cari {
@@ -167,6 +168,7 @@ export default function CrmKanbanSayfasi() {
                       onDragEnd={() => setSuruklenenId(null)}
                     >
                       <h4>{f.baslik}</h4>
+                      <Link href={`/panel/crm/${f.id}`}>Teklifleri gör</Link>
                       <p>{f.cari?.unvan || "Cari Belirtilmemiş"}</p>
                       <div className="crm-card__tutar">{Number(f.tahminiTutar).toLocaleString("tr-TR")} ₺</div>
                       <button type="button" className="crm-card__edit" onClick={() => firsatiDuzenle(f)}>Düzenle</button>

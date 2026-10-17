@@ -907,6 +907,8 @@ describe("teklif revizyonu (FTR-34)", () => {
   });
   function kur(belge: Record<string, unknown>, devredilen = 1) {
     const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      firsatBelgeBagi: { count: vi.fn().mockResolvedValue(0) },
       belge: {
         findUnique: vi.fn().mockResolvedValue(belge),
         updateMany: vi.fn().mockResolvedValue({ count: devredilen }),
@@ -943,6 +945,15 @@ describe("teklif revizyonu (FTR-34)", () => {
   it("siparişe dönüşmüş teklifi ve eşzamanlı değişmiş teklifi revize etmez", async () => {
     await expect(kur(teklif({ durum: "kapandi" })).servis.revizeEt("t1")).rejects.toThrow(/Siparişe dönüşmüş/);
     await expect(kur(teklif(), 0).servis.revizeEt("t1")).rejects.toThrow(ConflictException);
+  });
+
+  it("fırsat bağı geçmişi bulunan taslak teklifi silmez", async () => {
+    const belge = teklif({ id: "t2", durum: "taslak" });
+    const { servis, tx } = kur(belge);
+    vi.spyOn(servis, "getir").mockResolvedValue(belge as any);
+    tx.firsatBelgeBagi.count.mockResolvedValue(1);
+    await expect(servis.sil("t2")).rejects.toThrow(/Fırsat bağı geçmişi/);
+    expect(tx.belge.delete).not.toHaveBeenCalled();
   });
 
   it("taslak sürüm silinince önceki sürümü yeniden onaylı yapar", async () => {

@@ -40,6 +40,10 @@ import {
 } from "@/components/ui";
 import { DovizSecenekleri } from "@/components/doviz-secenekleri";
 import { BeklenenOdemelerKart } from "@/components/tahsilat-riski";
+import { CariDurumPaneli } from "@/components/cari-durum-paneli";
+import { OdemeSozleri } from "@/components/odeme-sozleri";
+import { TahsilatTakipleri } from "@/components/tahsilat-takipleri";
+import { finansalOzetGorebilir } from "@/lib/rol-yetkileri";
 
 const TIP_ETIKETLERI: Record<string, string> = {
   musteri: "👤 Müşteri",
@@ -247,7 +251,7 @@ const ADRES_TIP_ETIKETI: Record<string, string> = {
   depo: "📦 Depo",
 };
 
-type Sekme = "genel" | "crm" | "ekstre" | "adresler" | "kisiler" | "bankalar";
+type Sekme = "genel" | "crm" | "tahsilat" | "ekstre" | "adresler" | "kisiler" | "bankalar";
 type FiltreTip = "tumu" | "musteri" | "tedarikci" | "bloke";
 
 /** CARI-36: bakiye süzgeci ve sıralama sunucuda, güncel kurla TL bakiyeye göre. */
@@ -292,7 +296,8 @@ export default function CariSayfasi() {
   const [denklestirmeAcik, setDenklestirmeAcik] = useState(false);
   const [topluDenklestirme, setTopluDenklestirme] = useState<"kapali" | "onay" | "calisiyor">("kapali");
   const [yonetici, setYonetici] = useState(false);
-  useEffect(() => { api<{ rol: string }>("/auth/ben").then((ben) => setYonetici(ben.rol === "yonetici")).catch(() => undefined); }, []);
+  const [rol, setRol] = useState<string | null>(null);
+  useEffect(() => { api<{ rol: string }>("/auth/ben").then((ben) => { setYonetici(ben.rol === "yonetici"); setRol(ben.rol); }).catch(() => undefined); }, []);
 
   async function topluDenklestir() {
     setTopluDenklestirme("calisiyor"); setHata(""); setBasari("");
@@ -1200,6 +1205,11 @@ export default function CariSayfasi() {
             />
           )}
 
+          {/* CARI-43: sekmelerden önce cari durum özeti; detay her tazelendiğinde yeniden hesaplanır. */}
+          <div style={{ marginTop: "1.25rem" }}>
+            <CariDurumPaneli cariId={detay.id} yenile={detay} onSekme={setAktifSekme} />
+          </div>
+
           <div style={{ marginTop: "1.25rem" }}>
             <Tabs<Sekme>
               ariaLabel="Cari hesap bölümleri"
@@ -1210,6 +1220,7 @@ export default function CariSayfasi() {
                 { deger: "genel", baslik: "Genel Bakış" },
                 { deger: "ekstre", baslik: "Ekstre" },
                 { deger: "crm", baslik: "CRM" },
+                ...(finansalOzetGorebilir(rol) ? [{ deger: "tahsilat" as Sekme, baslik: "Tahsilat" }] : []),
                 { deger: "adresler", baslik: "Adresler" },
                 { deger: "kisiler", baslik: "İlgili Kişiler" },
                 { deger: "bankalar", baslik: "Banka Hesapları" },
@@ -1443,6 +1454,13 @@ export default function CariSayfasi() {
                   <Card className="grow" style={{ minWidth: 320 }}><div className="card__title">Teklif Geçmişi</div>{crm.teklifler.length === 0 ? <p className="subtle">Bu cariye ait teklif yok.</p> : <TableWrap><thead><tr><th>Teklif</th><th>Tarih</th><th>Durum</th><th className="num">Tutar</th></tr></thead><tbody>{crm.teklifler.map((t) => <tr key={t.id}><td><a className="btn-link" href={`/panel/belgeler?yon=satis&tur=teklif&odak=${t.id}`}>{t.no}</a></td><td>{new Date(t.tarih).toLocaleDateString("tr-TR")}</td><td><Status tone={t.durum === "onaylandi" ? "ok" : t.durum === "iptal" ? "danger" : "warn"}>{t.durum}</Status></td><td className="num">{Number(t.genelToplam).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} {t.dovizCinsi}</td></tr>)}</tbody></TableWrap>}</Card>
                 </div>
               </>}
+            </div>
+          )}
+
+          {aktifSekme === "tahsilat" && finansalOzetGorebilir(rol) && (
+            <div aria-labelledby="cari-detay-tab-tahsilat" id="cari-detay-panel-tahsilat" role="tabpanel" tabIndex={0}>
+              <OdemeSozleri key={detay.id} cariId={detay.id} rol={rol} />
+              <TahsilatTakipleri key={`takip:${detay.id}`} cariId={detay.id} rol={rol} />
             </div>
           )}
 

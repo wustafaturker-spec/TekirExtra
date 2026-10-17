@@ -8,6 +8,9 @@ dist/
 .next-p0-02-release-20261014/
 .next-ekstre-release-20261015/
 .next-ekstre-e2e/
+# Ayrı dağıtım klasörlü Next derlemeleri (dev, e2e, yayın provaları)
+.next-*/
+.release-candidates/
 .turbo/
 coverage/
 playwright-report/

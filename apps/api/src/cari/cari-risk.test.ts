@@ -144,6 +144,19 @@ describe("döviz bazlı iki yönlü yaşlandırma (CARI-33)", () => {
     expect(y.guncel).toBe(20750);
     expect(y.toplam).toBe(49800);
     expect(vadesiGecmis(y)).toBe(29050);
+    // CARI-43: en eski açık kalem 63 gün gecikmiş; 2026-10-20 vadeli kalem 7 günden uzakta.
+    expect(y.enEskiGecikmeGun).toBe(63);
+    expect(y.yakinVadeTry).toBe(0);
+  });
+
+  it("CARI-44: vadesi 7 gün içinde gelen açık tutar güncel kurla toplanır", () => {
+    const y = dovizBazliYaslandir([
+      h("borc", "TRY", 100, 100, "2026-10-03"), // bugün vadeli: gecikmiş değil, yakın
+      h("borc", "USD", 10, 400, "2026-10-10"), // 7. gün
+      h("borc", "TRY", 50, 50, "2026-10-11"), // 8. gün: dışarıda
+    ], kurlar, bugun, "alacaklarimiz");
+    expect(y.enEskiGecikmeGun).toBeNull();
+    expect(y.yakinVadeTry).toBe(515);
   });
 
   it("borçlarımız yönünde tedarikçiye açık alacak kayıtları yaşlanır, ödemeler en eskiyi kapatır", () => {

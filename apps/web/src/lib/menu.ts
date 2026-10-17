@@ -179,6 +179,7 @@ export const MENU: MenuAlani[] = [
     ikon: Users,
     ogeler: [
       { href: "/panel/cari", ikon: Contact, baslik: "Cari Hesaplar", esanlamlilar: ["müşteri", "tedarikçi", "bakiye", "ekstre"] },
+      { href: "/panel/cari/tahsilat", ikon: ListChecks, baslik: "Tahsilat İş Listesi", esanlamlilar: ["görüşme", "itiraz", "takip", "aranacaklar"] },
       { href: "/panel/personel", ikon: UserCog, baslik: "Personel & İK", eslesme: "tam", esanlamlilar: ["bordro", "izin", "avans", "sgk"] },
       { href: "/panel/self-servis", ikon: UserCog, baslik: "Çalışan Self-Servis", esanlamlilar: ["pusulam", "izin talebi", "avans talebi", "bordrom"] },
     ],
@@ -232,6 +233,7 @@ export const AYARLAR: MenuOge[] = [
  * sayfalar. Komut paletinde çıkar, navigasyonu şişirmez.
  */
 export const PALET_EK_SAYFALAR: MenuOge[] = [
+  { href: "/panel/raporlar/maliyet-eksikleri", ikon: ChartColumn, baslik: "Satış Maliyet Kontrolü", eslesme: "tam", esanlamlilar: ["eksik maliyet", "sıfır maliyet"] },
   { href: "/panel/fatura/tekrarlayan/raporlar", ikon: ChartColumn, baslik: "Tekrarlayan Fatura Raporları", eslesme: "tam" },
 ];
 

@@ -19,12 +19,17 @@ import { CariService } from "./cari.service";
 import { TahsilatRiskiService } from "./tahsilat-riski";
 import { CariIceAktarmaService } from "./cari-ice-aktarma.service";
 import { TenantModule } from "../tenant/tenant.module";
+import { OdemeSozuController } from "./odeme-sozu.controller";
+import { OdemeSozuService } from "./odeme-sozu.service";
+import { TahsilatTakibiController } from "./tahsilat-takibi.controller";
+import { TahsilatTakibiService } from "./tahsilat-takibi.service";
+import { GecikenSozZamanlayiciService } from "./geciken-soz-zamanlayici.service";
 
 @Module({
   imports: [TenantModule, EklerModule, BildirimlerModule],
   // Sabit yollu denetleyici önce: "cari/vade-hatirlatma/...", "cari/toplu/...", "cari/gruplar/...", "cari/mutabakatlar/..." `:id` kalıplarına düşmesin.
-  controllers: [VadeHatirlatmaController, CariTopluController, CariGrupController, CariMutabakatController, MutabakatPortalController, CariController],
-  providers: [TahsilatRiskiService, CariService, CariIceAktarmaService, VadeHatirlatmaService, CariTopluService, CariGrupService, CariMutabakatService, MutabakatPortalService, MutabakatZamanlayiciService],
+  controllers: [TahsilatTakibiController, OdemeSozuController, VadeHatirlatmaController, CariTopluController, CariGrupController, CariMutabakatController, MutabakatPortalController, CariController],
+  providers: [GecikenSozZamanlayiciService, TahsilatTakibiService, OdemeSozuService, TahsilatRiskiService, CariService, CariIceAktarmaService, VadeHatirlatmaService, CariTopluService, CariGrupService, CariMutabakatService, MutabakatPortalService, MutabakatZamanlayiciService],
   exports: [CariService],
 })
 export class CariModule implements OnModuleInit {

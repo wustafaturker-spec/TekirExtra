@@ -23,6 +23,9 @@ export const FINANS_ROLLERI = ["muhasebe", "mali_musavir", "salt_okunur"];
  * API aynı rolleri uygular; burada menü ve sayfa erişimi için.
  */
 const KISITLI_YOLLAR: { yol: string; roller: string[] }[] = [
+  { yol: "/panel/cari/tahsilat", roller: FINANS_ROLLERI },
+  { yol: "/panel/raporlar/maliyet-eksikleri", roller: [...FINANS_ROLLERI, "maliyet_muhasebesi"] },
+  { yol: "/panel/stok/maliyet", roller: [] }, // Yeniden hesaplama API'si yalnız yöneticiye açık.
   { yol: "/panel/raporlar/gelir-gider", roller: FINANS_ROLLERI },
   { yol: "/panel/raporlar/kdv-disi-vergiler", roller: ["muhasebe", "mali_musavir"] },
   { yol: "/panel/stok/smm", roller: [...FINANS_ROLLERI, "maliyet_muhasebesi"] },

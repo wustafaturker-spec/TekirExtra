@@ -14,6 +14,7 @@ interface Kalem {
   kaynakId: string;
   yon: "giris" | "cikis";
   vade: string;
+  odemeSozu?: { id: string; tarih: string; faturaVadesi: string };
   tutar: number;
   dovizCinsi: string;
   dovizTutar: number;
@@ -246,7 +247,7 @@ export default function NakitAkisiSayfasi() {
                 {kalemler.map((k) => {
                   const t = k.tarihler[senaryo];
                   return (
-                    <tr key={`${k.kaynak}-${k.kaynakId}-${k.vade}`}>
+                    <tr key={`${k.kaynak}-${k.kaynakId}-${k.vade}-${k.odemeSozu?.id ?? "kalan"}`}>
                       <td><Tarih deger={t.tarih} />{t.tarih !== k.vade && <small className="muted" style={{ display: "block" }}>Vade <Tarih deger={k.vade} /></small>}</td>
                       <td><Badge variant={k.yon === "giris" ? "success" : "neutral"}>{KAYNAK_ADLARI[k.kaynak] ?? k.kaynak}</Badge></td>
                       <td>{k.baglanti ? <Link href={k.baglanti}>{k.aciklama}</Link> : k.aciklama}</td>
@@ -254,6 +255,7 @@ export default function NakitAkisiSayfasi() {
                       <td className="num">{k.yon === "giris" ? <Para deger={k.tutar} /> : ""}</td>
                       <td className="num">{k.yon === "cikis" ? <Para deger={k.tutar} /> : ""}</td>
                       <td>
+                        {k.odemeSozu && <small style={{ display: "block" }}><Badge variant="warning">Ödeme sözü payı</Badge> Söz <Tarih deger={k.odemeSozu.tarih} /> · Fatura vadesi <Tarih deger={k.odemeSozu.faturaVadesi} /></small>}
                         {k.tahmin && <Badge variant="warning">Tahmin</Badge>}{" "}
                         {k.dovizCinsi !== "TRY" && <small className="muted"><Para deger={k.dovizTutar} dovizCinsi={k.dovizCinsi} /> </small>}
                         {t.neden && <small className="muted">{t.neden}</small>}

@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { iptalCiftiMi, iptalEdilmisFaturalar } from "../fatura/iptal-cifti";
 import { guncelKurlar, guncelTlDegeri, type GuncelKurlar } from "./doviz-degerleme";
 import { cariTeminatlari } from "./cari-teminat";
-import { bosYaslandirma, yaslandir, YASLANDIRMA_KOVALARI, type YaslandirmaSonucu, type YaslandirmaYonu } from "./yaslandirma";
+import { acikKalemler, bosYaslandirma, yaslandir, YASLANDIRMA_KOVALARI, type YaslandirmaSonucu, type YaslandirmaYonu } from "./yaslandirma";
 
 /**
  * CARI-30 (karar 2026-10-03): müşteri riski kart ile fatura uyarısında aynı
@@ -157,7 +157,13 @@ export interface DovizYaslandirmasi extends YaslandirmaSonucu {
 export interface CariYaslandirma extends YaslandirmaSonucu {
   dovizler: DovizYaslandirmasi[];
   kurEksik: string[];
+  /** CARI-43: vadesi geçmiş en eski açık kalemin gecikme günü; yoksa null. */
+  enEskiGecikmeGun: number | null;
+  /** CARI-44: vadesi bugün ile 7 gün sonrası arasında olan açık tutar (TL, güncel kurla). */
+  yakinVadeTry: number;
 }
+
+const YAKIN_VADE_GUN = 7;
 
 type YaslandirmaKaydi = { cariId: string; tip: "borc" | "alacak"; dovizCinsi: string; tutar: Prisma.Decimal; tutarTry: Prisma.Decimal; vadeTarihi: Date | null; tarih: Date };
 
@@ -169,9 +175,10 @@ type YaslandirmaKaydi = { cariId: string; tip: "borc" | "alacak"; dovizCinsi: st
 export function dovizBazliYaslandir(hareketler: YaslandirmaKaydi[], kurlar: GuncelKurlar, bugun: Date, yon: YaslandirmaYonu): CariYaslandirma {
   const dovizGruplari = new Map<string, YaslandirmaKaydi[]>();
   for (const h of hareketler) dovizGruplari.set(h.dovizCinsi, [...(dovizGruplari.get(h.dovizCinsi) ?? []), h]);
-  const sonuc: CariYaslandirma = { ...bosYaslandirma(), dovizler: [], kurEksik: [] };
+  const sonuc: CariYaslandirma = { ...bosYaslandirma(), dovizler: [], kurEksik: [], enEskiGecikmeGun: null, yakinVadeTry: 0 };
   for (const [doviz, liste] of dovizGruplari) {
-    const y = yaslandir(liste.map((h) => ({ tip: h.tip, tutar: Number(h.tutar), vadeTarihi: h.vadeTarihi, tarih: h.tarih })), bugun, yon);
+    const kalemler = liste.map((h) => ({ tip: h.tip, tutar: Number(h.tutar), vadeTarihi: h.vadeTarihi, tarih: h.tarih }));
+    const y = yaslandir(kalemler, bugun, yon);
     if (y.toplam === 0) continue;
     const guncel = doviz === "TRY" ? 1 : kurlar.get(doviz)?.satis.toNumber() ?? null;
     const toplamDoviz = liste.reduce((t, h) => t + Number(h.tutar), 0);
@@ -179,6 +186,11 @@ export function dovizBazliYaslandir(hareketler: YaslandirmaKaydi[], kurlar: Gunc
     sonuc.dovizler.push({ dovizCinsi: doviz, kur, kurEksik: guncel === null, ...y });
     if (guncel === null) sonuc.kurEksik.push(doviz);
     for (const kova of YASLANDIRMA_KOVALARI) sonuc[kova] = Math.round((sonuc[kova] + y[kova] * kur) * 100) / 100;
+    for (const kalem of acikKalemler(kalemler, yon)) {
+      const gecikme = Math.floor((bugun.getTime() - (kalem.vadeTarihi ?? kalem.tarih).getTime()) / GUN_MS);
+      if (gecikme > 0) sonuc.enEskiGecikmeGun = Math.max(sonuc.enEskiGecikmeGun ?? 0, gecikme);
+      else if (gecikme >= -YAKIN_VADE_GUN) sonuc.yakinVadeTry = Math.round((sonuc.yakinVadeTry + kalem.acik * kur) * 100) / 100;
+    }
   }
   sonuc.toplam = Math.round(YASLANDIRMA_KOVALARI.reduce((t, k) => t + sonuc[k], 0) * 100) / 100;
   return sonuc;

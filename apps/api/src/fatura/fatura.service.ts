@@ -235,7 +235,7 @@ export class FaturaService {
               aciklama: s.aciklama, notlar: s.notlar, tekrarlayanPlanId: plan.id, planlananTarih: tarih,
             }});
             for (const satir of s.satirlar) {
-              const { id: _id, faturaId: _faturaId, ...veri } = satir;
+              const { id: _id, faturaId: _faturaId, kaynakBelgeSatirId: _kaynakBelgeSatirId, ...veri } = satir;
               await tx.faturaSatir.create({ data: { ...veri, partiBilgileri: veri.partiBilgileri === null ? Prisma.JsonNull : veri.partiBilgileri as Prisma.InputJsonValue, ekVergiler: veri.ekVergiler === null ? Prisma.JsonNull : veri.ekVergiler as Prisma.InputJsonValue, id: undefined, faturaId: yeni.id } });
             }
             uretilenIds.push(yeni.id);

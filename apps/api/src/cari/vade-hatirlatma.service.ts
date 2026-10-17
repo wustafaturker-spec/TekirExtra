@@ -6,6 +6,7 @@ import { CariService } from "./cari.service";
 import { guncelKurlar, guncelTlDegeri } from "./doviz-degerleme";
 import { Prisma } from "@prisma/client";
 import { kiraciSaglayicisi } from "../ai/saglayici/kiraci-saglayici";
+import { itirazliCariler, tahsilatIletisiminiDogrula, ITIRAZ_ILETISIM_ENGELI } from "./tahsilat-iletisim";
 import {
   hatirlatmaIletisi, hatirlatmaSablonlari, KADEME_ADI, siklikEngeli, sonHatirlatmalar, vadesiGecmisKalemler,
   type Kademe,
@@ -41,6 +42,7 @@ export class VadeHatirlatmaService {
         select: { id: true, kod: true, unvan: true, eposta: true, karaListe: true, aktif: true },
       });
       const ids = cariler.map((c) => c.id);
+      const itirazlar = await itirazliCariler(tx, tenantId, ids);
       const [kalemler, sonlar] = await Promise.all([vadesiGecmisKalemler(tx, ids, bugun), sonHatirlatmalar(tx, ids)]);
       const kurlar = await guncelKurlar(tx, tenantId, [...kalemler.values()].flat().map((k) => k.dovizCinsi), bugun);
       return cariler
@@ -59,6 +61,8 @@ export class VadeHatirlatmaService {
             enUzunGecikme: liste.reduce((m, k) => Math.max(m, k.gecikmeGun), 0),
             sonHatirlatma: son?.toISOString() ?? null,
             siklikEngeli: siklikEngeli(son),
+            itirazEngeli: itirazlar.has(c.id),
+            gonderimEngeli: itirazlar.has(c.id) ? ITIRAZ_ILETISIM_ENGELI : null,
           };
         })
         .filter((a) => a.faturaSayisi > 0)
@@ -69,6 +73,7 @@ export class VadeHatirlatmaService {
   private async ileti(cariId: string, kademe: Kademe, not?: string | null) {
     const { tenantId } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      await tahsilatIletisiminiDogrula(tx, tenantId, cariId);
       const [cari, firma, sablonlar, kalemler] = await Promise.all([
         tx.cariHesap.findUnique({ where: { id: cariId }, select: { id: true, kod: true, unvan: true, eposta: true } }),
         tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true } }),
@@ -110,6 +115,8 @@ export class VadeHatirlatmaService {
         const bitis = new Date().toISOString().slice(0, 10);
         const baslangic = new Date(Date.now() - EKSTRE_GUN * 86_400_000).toISOString().slice(0, 10);
         const ekstre = await this.cari.ekstrePdf(cariId, baslangic, bitis);
+        // Önizlemeden/PDF üretiminden sonra açılan itirazı da gönderimden önce denetle.
+        await this.prisma.tenantIslem(tenantId, (tx) => tahsilatIletisiminiDogrula(tx, tenantId, cariId));
         await this.eposta.ekliIletiGonder({
           alici: cari.eposta, konu: ileti.konu, metin: ileti.metin, html: ileti.html,
           ekler: [{ dosyaAdi: `ekstre-${cari.kod}.pdf`, icerik: ekstre, mime: "application/pdf" }],

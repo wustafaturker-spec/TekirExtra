@@ -7,6 +7,9 @@ import { DovizService } from "../doviz/doviz.service";
 import { cariDavranisAnalizi } from "../cari/cari-analiz";
 import { bordroYasalTutarlari, bordroYasalVade, gunEkle, kurusa, nakitTahmini, type CariTahsilatProfili, type NakitKalemi, type Ufuk } from "./nakit-akisi.hesap";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
+import { Prisma } from "@prisma/client";
+import { nakitSozleriniOku } from "./nakit-sozu-kaynak";
+import { faturaNakitDagilimi } from "./nakit-sozu";
 
 /** Tahmine girmeyen ve ekranda açıkça söylenen kalemler (S-01, 2026-09-11). */
 const KAPSAM_DISI = [
@@ -14,6 +17,7 @@ const KAPSAM_DISI = [
   "Ciro edilmiş, teminata verilmiş, tahsil edilmiş, ödenmiş, karşılıksız ve iade edilmiş çek/senetler beklenen nakit kalemi değildir.",
 ];
 const KAPSAM_NOTLARI = [
+  "Tahsilat operasyonu açıksa aktif ödeme sözünün gerçekleşmeden kalan payı aynı faturanın kalan alacağından ayrılarak söz tarihine alınır; ek alacak yaratmaz. Gecikmiş, iptal, revize ve geçersiz söz kullanılmaz. Söz tarihi tahsilat garantisi değildir; müşteri gecikme senaryosu ayrıca uygulanır. Kötümser senaryodaki 90 günlük sınır asıl fatura vadesinden hesaplanır.",
   "Bordro hesap özeti bulunan dönemlerin SGK ve muhtasar (gelir + damga vergisi) tutarları, hesaplanan vadesi bugün ile ufuk sonu arasındaysa dahildir. Ayrı ödeme takibi olmadığı için ödenmiş olabilir; kesin ödeme borcu değildir. Geçmiş vadeli yasal kalemler dahil edilmez.",
   "Onaylanmamış bordrolar ve son dönemin sonraki aylara tekrarı tahmin olarak işaretlenir. Bordro net ödemesi ile yasal ödemeler ayrı kalemlerdir.",
   "Bu bir nakit senaryosudur; tahakkuk bazlı gelir-gider veya kâr hesabı değildir. Faturada kapanışlardan ve planlanan ödeme talimatından sonraki kalan genel toplam kullanılır; satış/alış iadesinin yönü ters çevrilir, taslak ve iptal faturalar alınmaz.",
@@ -89,12 +93,13 @@ export class NakitAkisiService {
       }
 
       // NAK-03: faturalar — kalan tutar, vadesinde.
+      const sozler = await nakitSozleriniOku(tx, tenantId, bugun);
       const faturalar = await tx.fatura.findMany({
         where: {
           tenantId,
           durum: "kesin",
           tip: { in: ["satis", "alis", "satis_iade", "alis_iade"] },
-          OR: [{ vadeTarihi: { lte: sonTarih } }, { vadeTarihi: null, tarih: { lte: sonTarih } }],
+          OR: [{ vadeTarihi: { lte: sonTarih } }, { vadeTarihi: null, tarih: { lte: sonTarih } }, { id: { in: [...sozler.values()].filter((s) => s.tarih <= ufukSonu).map((s) => s.faturaId) } }],
         },
         select: {
           id: true, no: true, tip: true, tarih: true, vadeTarihi: true, genelToplam: true, kur: true, dovizCinsi: true, cariId: true,
@@ -106,16 +111,16 @@ export class NakitAkisiService {
       // ENT-07: onaylı/gönderilmiş talimattaki tutar talimat kalemi olarak çıkar; faturadan düşülür.
       const planlanan = new Map((await tx.bankaOdemeTalimatiFatura.groupBy({
         by: ["faturaId"], where: { tenantId, talimat: { durum: { in: ["onaylandi", "gonderildi"] } } }, _sum: { tutar: true },
-      })).map((g) => [g.faturaId, Number(g._sum.tutar ?? 0)]));
+      })).map((g) => [g.faturaId, g._sum.tutar ?? new Prisma.Decimal(0)]));
       for (const f of faturalar) {
         const kur = Number(f.kur) || 1;
-        const kalan = Number(faturaOdemeDurumu(f).kalan) - (planlanan.get(f.id) ?? 0);
-        if (kalan < 0.005) continue;
+        const kalan = new Prisma.Decimal(faturaOdemeDurumu(f).kalan).sub(planlanan.get(f.id) ?? 0);
+        if (kalan.lt("0.005")) continue;
         const giris = f.tip === "satis" || f.tip === "alis_iade";
-        ekle({
-          kaynak: "fatura", kaynakId: f.id, yon: giris ? "giris" : "cikis", vade: isoGun(f.vadeTarihi ?? f.tarih),
-          dovizCinsi: f.dovizCinsi, dovizTutar: kalan, belgeKuru: kur,
-          aciklama: `${FATURA_ADLARI[f.tip]} ${f.no ?? "(numarasız)"}`,
+        for (const pay of faturaNakitDagilimi(f, kalan.toFixed(2), isoGun(f.vadeTarihi ?? f.tarih), sozler.get(f.id))) ekle({
+          kaynak: "fatura", kaynakId: f.id, yon: giris ? "giris" : "cikis", vade: pay.vade, odemeSozu: pay.odemeSozu,
+          dovizCinsi: f.dovizCinsi, dovizTutar: Number(pay.tutar), belgeKuru: kur,
+          aciklama: `${FATURA_ADLARI[f.tip]} ${f.no ?? "(numarasız)"}${pay.odemeSozu ? " · ödeme sözü payı" : ""}`,
           cariId: f.cariId, cariUnvan: f.cari.unvan, tahsilat: f.tip === "satis", baglanti: `/panel/fatura?fatura=${f.id}`,
         });
       }
@@ -357,7 +362,7 @@ export class NakitAkisiService {
       }
 
       return { kalemler, hesaplar: [...hesaplar.values()], hesapSayisi: kasalar.length + bankalar.length, profiller };
-    });
+    }, { isolationLevel: "RepeatableRead", timeout: 15000 });
 
     // NAK-10: kur yalnız dövizli kalem ya da hesap varsa istenir.
     const uyarilar: string[] = [];
@@ -399,7 +404,7 @@ export class NakitAkisiService {
       kur,
       kapsamDisi: KAPSAM_DISI,
       kapsamNotlari: KAPSAM_NOTLARI,
-      hesapEsaslari: { surum: "nakit-kapsam-v1", baz: "nakit_senaryosu", paraBirimi: "TRY", tarihEsasi: "Europe/Istanbul", kurEsasi: "guncel_tcmb_alis_yoksa_belge_kuru", tutarEsasi: "kalan_genel_toplam", iptalTaslakFatura: "haric", iadeEsasi: "ters_yon" },
+      hesapEsaslari: { surum: "nakit-kapsam-v2", baz: "nakit_senaryosu", paraBirimi: "TRY", tarihEsasi: "Europe/Istanbul", kurEsasi: "guncel_tcmb_alis_yoksa_belge_kuru", tutarEsasi: "kalan_genel_toplam", iptalTaslakFatura: "haric", iadeEsasi: "ters_yon", odemeSozuEsasi: "guncel_kalan_alacagin_tarih_dagilimi" },
       uyarilar,
       kalemler: sonuc.kalemler.map(({ kurus, tahsilat: _tahsilat, cariId: _cariId, ...k }) => ({ ...k, tutar: kurus / 100 })),
     };

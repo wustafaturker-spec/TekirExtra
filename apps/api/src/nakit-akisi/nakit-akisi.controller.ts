@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from "@nestjs/common";
+import { Controller, Get, Header, Query } from "@nestjs/common";
 import { Roller } from "../auth/roller.decorator";
 import { NakitAkisiService } from "./nakit-akisi.service";
 import { NakitPozisyonuService } from "./nakit-pozisyonu.service";
@@ -11,6 +11,7 @@ export class NakitAkisiController {
   constructor(private readonly service: NakitAkisiService, private readonly pozisyonServisi: NakitPozisyonuService) {}
 
   @Get()
+  @Header("Cache-Control", "no-store")
   tahmin(@Query("ufuk") ufuk?: string) {
     const girdi = nakitAkisiSorguSemasi.parse({ ufuk });
     return this.service.tahmin(girdi.ufuk);

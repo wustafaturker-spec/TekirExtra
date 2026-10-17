@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiHata } from "@/lib/api";
+import { useAdresDurumu } from "@/lib/adres-durumu";
 import { Alert, Button, Card, PageHeader, Para, Stat, StatGrid, Table } from "@/components/ui";
 
 interface Kart { stokId: string; kod: string; ad: string; mevcut: string; eskiOrtalama: string; yeniOrtalama: string; eskiDeger: string; yeniDeger: string; degisenHareket: number; uretimSarfiDegisen: number; tanimsizBirimler: string[] }
@@ -11,24 +12,34 @@ const miktar = (v: string) => Number(v).toLocaleString("tr-TR", { maximumFractio
 
 /** STK-28: hareketleri baştan işleyip stok maliyetlerini düzeltir; önce önizleme, sonra onayla uygulama. */
 export default function StokMaliyetSayfasi() {
+  const [adres, , adresHazir] = useAdresDurumu({ stokId: "" });
+  const stokId = adres.stokId;
+  const istek = useRef(0);
+  const [onizlemeKapsami, setOnizlemeKapsami] = useState<string | null>(null);
   const [onizleme, setOnizleme] = useState<Sonuc | null>(null);
   const [hata, setHata] = useState<string | null>(null);
   const [bilgi, setBilgi] = useState<string | null>(null);
-  const [yukleniyor, setYukleniyor] = useState(false);
+  const [yukleniyor, setYukleniyor] = useState(true);
 
   const yukle = useCallback(async () => {
-    try { setYukleniyor(true); setHata(null); setOnizleme(await api<Sonuc>("/stok/maliyet/yeniden-hesapla")); }
-    catch (e) { setHata(e instanceof ApiHata && e.durum === 403 ? "Bu işlem yalnız yönetici rolüne açıktır." : e instanceof Error ? e.message : "Önizleme alınamadı"); }
-    finally { setYukleniyor(false); }
-  }, []);
-  useEffect(() => { void yukle(); }, [yukle]);
+    if (!adresHazir) return;
+    const sira = ++istek.current;
+    setYukleniyor(true); setHata(null); setOnizleme(null); setOnizlemeKapsami(null);
+    try {
+      const sonuc = await api<Sonuc>(`/stok/maliyet/yeniden-hesapla${stokId ? `?${new URLSearchParams({ stokId })}` : ""}`);
+      if (sira === istek.current) { setOnizleme(sonuc); setOnizlemeKapsami(stokId); }
+    }
+    catch (e) { if (sira === istek.current) setHata(e instanceof ApiHata && e.durum === 403 ? "Bu işlem yalnız yönetici rolüne açıktır." : e instanceof Error ? e.message : "Önizleme alınamadı"); }
+    finally { if (sira === istek.current) setYukleniyor(false); }
+  }, [adresHazir, stokId]);
+  useEffect(() => { void yukle(); return () => { istek.current++; }; }, [yukle]);
 
   const uygula = async () => {
-    if (!onizleme?.kartlar.length) return;
+    if (yukleniyor || !adresHazir || onizlemeKapsami !== stokId || !onizleme?.kartlar.length) return;
     if (!window.confirm(`${onizleme.kartlar.length} kartın ortalama maliyeti ve ${onizleme.degisenHareket} hareketin maliyeti yeniden yazılacak. İşlem denetim kaydına geçer. Devam edilsin mi?`)) return;
     try {
       setYukleniyor(true); setHata(null);
-      const r = await api<Sonuc>("/stok/maliyet/yeniden-hesapla", { method: "POST", body: "{}" });
+      const r = await api<Sonuc>("/stok/maliyet/yeniden-hesapla", { method: "POST", body: JSON.stringify(stokId ? { stokId } : {}) });
       setBilgi(`${r.kartlar.length} kartın maliyeti düzeltildi (${r.degisenHareket} hareket).`);
       await yukle();
     } catch (e) { setHata(e instanceof Error ? e.message : "Yeniden hesaplama yapılamadı"); }
@@ -43,10 +54,11 @@ export default function StokMaliyetSayfasi() {
         subtitle="Stok hareketleri tarih sırasıyla yeniden işlenir: alış maliyeti faturanın net TL tutarından, satış iadesi çıktığı maliyetten, alış iadesi ve iptaller alış maliyetinden gelir; çıkışlar o günkü ortalamayla, sayım düzeltmeleri sayım onayındaki kuralla yeniden yazılır. Elle girişler, açılış ve üretim girişleri olduğu gibi kalır. Hareketin eski maliyeti geçmişe kaydedilir."
         actions={<>
           <Button disabled={yukleniyor} onClick={() => void yukle()}>Önizlemeyi yenile</Button>
-          <Button variant="primary" disabled={yukleniyor || !onizleme?.kartlar.length} onClick={() => void uygula()}>{yukleniyor ? "Çalışıyor…" : "Uygula"}</Button>
+          <Button variant="primary" disabled={yukleniyor || !adresHazir || onizlemeKapsami !== stokId || !onizleme?.kartlar.length} onClick={() => void uygula()}>{yukleniyor ? "Çalışıyor…" : "Uygula"}</Button>
         </>}
       />
       <Alert tone="error">{hata}</Alert>
+      {adresHazir && <Alert tone="warning">{stokId ? "Kapsam: yalnız bağlantıdan seçilen stok kartı. Önizleme ve uygulama bu kartla sınırlıdır. Rapor tarih filtresi burada uygulanmaz; açık dönemlerdeki tüm hareketler incelenir." : "Kapsam: tüm stok kartları."}</Alert>}
       <Alert tone="success">{bilgi}</Alert>
       {onizleme && <>
         {onizleme.acikBaslangic && <Alert tone="warning">Kapalı dönem nedeniyle {onizleme.acikBaslangic.split("-").reverse().join(".")} öncesindeki hareketlerin maliyeti değişmez; ortalamaya kayıtlı maliyetleriyle girer.</Alert>}

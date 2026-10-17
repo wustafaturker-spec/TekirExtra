@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
 import { useAdresDurumu } from "@/lib/adres-durumu";
@@ -182,16 +183,17 @@ export default function GelirGiderRaporuSayfasi() {
 
       <Alert tone="error">{hata}</Alert>
       {(veri?.uyarilar ?? []).map((u) => <Alert key={u} tone="warning">{u}</Alert>)}
+      {!!veri?.karZarar.maliyetsizSatis.satir && <Link href={`/panel/raporlar/maliyet-eksikleri?${new URLSearchParams({ baslangic: veri.baslangicTarihi, bitis: veri.bitisTarihi })}`}>Maliyeti kontrol edilecek {veri.karZarar.maliyetsizSatis.satir} satış satırını incele →</Link>}
 
       {/* Tarih ve Versiyon Seçim Paneli */}
       <Card style={{ marginBottom: "1.5rem" }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-end", justifyContent: "space-between" }}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-end" }}>
-            <Field label="Başlangıç Tarihi">
-              <Input type="date" value={baslangic} onChange={(e) => setBaslangic(e.target.value)} />
+            <Field label="Başlangıç Tarihi" htmlFor="gelir-gider-baslangic">
+              <Input id="gelir-gider-baslangic" type="date" value={baslangic} onChange={(e) => setBaslangic(e.target.value)} />
             </Field>
-            <Field label="Bitiş Tarihi">
-              <Input type="date" value={bitis} onChange={(e) => setBitis(e.target.value)} />
+            <Field label="Bitiş Tarihi" htmlFor="gelir-gider-bitis">
+              <Input id="gelir-gider-bitis" type="date" value={bitis} onChange={(e) => setBitis(e.target.value)} />
             </Field>
             <div style={{ display: "flex", gap: "0.25rem" }}>
               <Button size="sm" type="button" onClick={() => hizliTarihAyarla("buAy")}>Bu Ay</Button>

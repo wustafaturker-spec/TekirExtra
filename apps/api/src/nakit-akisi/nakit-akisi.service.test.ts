@@ -9,6 +9,7 @@ const g = (tarih: string) => new Date(`${tarih}T00:00:00.000Z`);
 /** Her kaynaktan en az bir satır: kalem üretme kuralları gerçek satırla sınanır (NAK-01…NAK-10). */
 function kurulum() {
   const tx = {
+    modulAyar: { findUnique: vi.fn().mockResolvedValue(null) },
     kasa: { findMany: vi.fn().mockResolvedValue([{ id: "k1", dovizCinsi: "TRY" }]) },
     bankaHesap: { findMany: vi.fn().mockResolvedValue([{ id: "b1", dovizCinsi: "USD" }]) },
     kasaBankaHareket: {

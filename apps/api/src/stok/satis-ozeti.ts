@@ -12,8 +12,11 @@ type Tx = Prisma.TransactionClient;
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
 
 export interface SatisSatiri {
+  /** Kaynak belge satırı; eski özet tüketicileri için isteğe bağlıdır. */
+  faturaSatirId?: string;
   faturaId: string; faturaNo: string; tarih: Date; cariId: string; cariKod: string; cariUnvan: string; tip: "satis" | "satis_iade";
   stokId: string; kod: string; ad: string; mevcutMiktar: Prisma.Decimal;
+  varyantId?: string | null; varyantKod?: string | null; varyantAd?: string | null;
   /** Kartın tipi (urun, sarf, hizmet…); maliyeti bilinmeyen mal satışını ayırmak için. */
   stokTip: string;
   /** Ana birimde; satış artı, iade eksi. */
@@ -27,26 +30,34 @@ export interface SatisSatiri {
 }
 
 /** Satış ve satış iadesi satırları; `tarih` Prisma tarih süzgecidir. */
-export async function satisSatirlari(tx: Tx, tarih: Prisma.DateTimeFilter = {}): Promise<SatisSatiri[]> {
+export async function satisSatirlari(tx: Tx, tarih: Prisma.DateTimeFilter = {}, faturaId?: string): Promise<SatisSatiri[]> {
   const faturalar = await tx.fatura.findMany({
-    where: { tip: { in: ["satis", "satis_iade"] }, durum: "kesin", tarih },
+    where: { tip: { in: ["satis", "satis_iade"] }, durum: "kesin", tarih, ...(faturaId ? { id: faturaId } : {}) },
     select: {
       id: true, no: true, tarih: true, tip: true, kur: true, cari: { select: { id: true, kod: true, unvan: true } },
-      satirlar: { select: { stokId: true, miktar: true, birim: true, matrah: true, stok: { select: { kod: true, ad: true, tip: true, mevcutMiktar: true } } } },
+      satirlar: { select: { id: true, stokId: true, varyantId: true, varyant: { select: { kod: true, ad: true } }, miktar: true, birim: true, matrah: true, stok: { select: { kod: true, ad: true, tip: true, mevcutMiktar: true } } }, orderBy: { id: "asc" } },
     },
-    orderBy: [{ tarih: "asc" }, { createdAt: "asc" }],
+    orderBy: [{ tarih: "asc" }, { createdAt: "asc" }, { id: "asc" }],
   });
   if (!faturalar.length) return [];
   const hareketler = await tx.stokHareket.findMany({
     where: { kaynakRef: { in: faturalar.map((f) => f.id) }, kaynakTur: { in: ["fatura", "fatura_geri_alma"] } },
-    select: { id: true, kaynakRef: true, stokId: true, miktar: true, maliyet: true },
+    select: { id: true, kaynakRef: true, stokId: true, varyantId: true, miktar: true, maliyet: true },
   });
   const grup = new Map<string, typeof hareketler>();
-  for (const h of hareketler) { const a = `${h.kaynakRef}|${h.stokId}`; grup.set(a, [...(grup.get(a) ?? []), h]); }
-  const katsayilar = new Map<string, Prisma.Decimal>();
+  // Bir varyantın hareketi başka varyanta veya eski varyantsız satıra maliyet olamaz.
+  const grupDegerleri = new Map<string, Prisma.Decimal>();
+  for (const h of hareketler) {
+    const a = `${h.kaynakRef}|${h.stokId}|${h.varyantId ?? ""}`;
+    const hs = grup.get(a) ?? [];
+    hs.push(h); grup.set(a, hs);
+    grupDegerleri.set(a, (grupDegerleri.get(a) ?? D(0)).sub(h.miktar.mul(h.maliyet)));
+  }
+  // Promise hemen saklanır: aynı birimi bekleyen satırlar tek sorguyu paylaşır.
+  const katsayilar = new Map<string, Promise<Prisma.Decimal>>();
   const katsayi = async (stokId: string, birim: string) => {
     const a = `${stokId}|${birim}`;
-    if (!katsayilar.has(a)) katsayilar.set(a, await birimKatsayisiBul(tx, stokId, birim).catch(() => D(1)));
+    if (!katsayilar.has(a)) katsayilar.set(a, birimKatsayisiBul(tx, stokId, birim).catch(() => D(1)));
     return katsayilar.get(a)!;
   };
 
@@ -54,15 +65,23 @@ export async function satisSatirlari(tx: Tx, tarih: Prisma.DateTimeFilter = {}):
   for (const f of faturalar) {
     const isaret = f.tip === "satis" ? 1 : -1;
     const satirlar = await Promise.all(f.satirlar.map(async (s) => ({ s, ana: s.miktar.mul(await katsayi(s.stokId, s.birim)) })));
+    const miktarlar = new Map<string, Prisma.Decimal>();
     for (const { s, ana } of satirlar) {
-      const ayniUrun = satirlar.filter((x) => x.s.stokId === s.stokId).reduce((t, x) => t.add(x.ana), D(0));
+      const a = `${s.stokId}|${s.varyantId ?? ""}`;
+      miktarlar.set(a, (miktarlar.get(a) ?? D(0)).add(ana));
+    }
+    for (const { s, ana } of satirlar) {
+      const ayniUrun = miktarlar.get(`${s.stokId}|${s.varyantId ?? ""}`)!;
       const oran = ayniUrun.gt(0) ? ana.div(ayniUrun) : D(0);
-      const hs = grup.get(`${f.id}|${s.stokId}`) ?? [];
+      const grupAnahtari = `${f.id}|${s.stokId}|${s.varyantId ?? ""}`;
+      const hs = grup.get(grupAnahtari) ?? [];
       // Çıkış eksi işaretli saklanır: satışta değer artı, iadede eksi çıkar.
-      const deger = hs.reduce((t, h) => t.sub(h.miktar.mul(h.maliyet)), D(0));
+      const deger = grupDegerleri.get(grupAnahtari) ?? D(0);
       sonuc.push({
+        faturaSatirId: s.id,
         faturaId: f.id, faturaNo: f.no ?? "", tarih: f.tarih, cariId: f.cari?.id ?? "", cariKod: f.cari?.kod ?? "", cariUnvan: f.cari?.unvan ?? "", tip: f.tip as "satis" | "satis_iade",
         stokId: s.stokId, kod: s.stok.kod, ad: s.stok.ad, stokTip: s.stok.tip, mevcutMiktar: s.stok.mevcutMiktar,
+        varyantId: s.varyantId ?? null, varyantKod: s.varyant?.kod ?? null, varyantAd: s.varyant?.ad ?? null,
         miktar: ana.mul(isaret), ciro: s.matrah.mul(f.kur).mul(isaret).toDecimalPlaces(2), maliyet: deger.mul(oran).toDecimalPlaces(2),
         hareketPaylari: hs.map((h) => ({ hareketId: h.id, oran })),
       });

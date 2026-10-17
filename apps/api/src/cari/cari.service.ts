@@ -23,7 +23,8 @@ import type {
   crmGorevSemasi,
 } from "./cari.semalar";
 import { PdfService } from "../core/pdf/pdf.service";
-import { cariDavranisAnalizi } from "./cari-analiz";
+import { cariDavranisAnalizi, gecikmeEgilimi } from "./cari-analiz";
+import { durumBulgulari, GOSTERILEN_BULGU, type FinansGirdisi, type SatisGirdisi } from "./cari-durum";
 import { gercekKisiUnvani } from "./ad-soyad";
 import { ebelgeTestOrtamiMi, vknTcknKabulEdilebilirMi } from "../ebelge/vkn-kabulu";
 import { belgeNoMetni, MUHTELIF_MUSTERI_KOD, MUHTELIF_MUSTERI_UNVAN, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi, vknTcknGecerliMi, type YabanciDoviz } from "@tekirextra/shared";
@@ -90,6 +91,11 @@ export interface DovizBakiye {
   /** Değerlenmemiş kur farkı: güncel − tarihî TL. */
   kurFarki: string;
 }
+
+/** CARI-46: finansal göstergeler ve bulgular (web `finansalOzetGorebilir` ile aynı roller). */
+const DURUM_FINANS_ROLLERI: string[] = ["yonetici", "muhasebe", "mali_musavir", "salt_okunur"];
+/** CARI-46: teklif ve sipariş bulguları. */
+const DURUM_SATIS_ROLLERI: string[] = ["yonetici", "muhasebe", "satis", "mali_musavir", "salt_okunur"];
 
 @Injectable()
 export class CariService {
@@ -844,6 +850,113 @@ export class CariService {
         cari.hareketler.map((h) => ({ ...h, tutarTry: Number(h.tutarTry) })),
         cari.riskLimiti === null ? null : Number(cari.riskLimiti),
       );
+    });
+  }
+
+  /**
+   * CARI-43…46: Cari Durum Paneli. Mevcut hesaplar (risk, yaşlandırma, davranış)
+   * bir araya getirilir, bulgular `cari-durum.ts` kurallarıyla üretilir. Rolün
+   * göremediği bölüm hesaplanmaz ve yanıtta yer almaz. Kayıt yazılmaz.
+   */
+  async durum(cariId: string) {
+    const { tenantId, rol } = aktifBaglam();
+    const finansGorur = DURUM_FINANS_ROLLERI.includes(rol);
+    const satisGorur = DURUM_SATIS_ROLLERI.includes(rol);
+    const simdi = new Date();
+    const bugunGun = new Date(`${bugunTR()}T00:00:00Z`);
+    const gunSonra = (gun: number) => new Date(bugunGun.getTime() + gun * 86_400_000);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const cari = await tx.cariHesap.findUnique({
+        where: { id: cariId },
+        select: { id: true, tip: true, karaListe: true, karaListeNotu: true, riskLimiti: true },
+      });
+      if (!cari) throw new NotFoundException("Cari bulunamadı");
+
+      let finans: FinansGirdisi | undefined;
+      let gostergeler: Record<string, unknown> | null = null;
+      if (finansGorur) {
+        const yilOnce = new Date(bugunGun); yilOnce.setUTCFullYear(yilOnce.getUTCFullYear() - 1);
+        const [riskler, alacaklar, borclar, hareketler, sorunluCekler, yaklasanCekler, teminatlar, itirazSayisi, sonEtkilesim] = await Promise.all([
+          cariRiskleri(tx, tenantId, [cariId], simdi),
+          cariYaslandirmalari(tx, tenantId, [cariId], { bugun: simdi }),
+          cariYaslandirmalari(tx, tenantId, [cariId], { bugun: simdi, yon: "borclarimiz" }),
+          tx.cariHareket.findMany({ where: { cariId }, select: { tip: true, tutarTry: true, tarih: true, vadeTarihi: true }, orderBy: { tarih: "asc" } }),
+          tx.cekSenetOlay.findMany({
+            where: { yeniDurum: "karsiliksiz", islemTarihi: { gte: yilOnce }, geriAlindi: false, geriAlma: false, cekSenet: { cariId, yon: "alinan" } },
+            select: { cekSenetId: true }, distinct: ["cekSenetId"],
+          }),
+          tx.cekSenet.findMany({
+            where: { cariId, yon: "alinan", durum: { in: ["portfoyde", "tahsile_verildi", "teminata_verildi"] }, vadeTarihi: { gte: bugunGun, lte: gunSonra(7) } },
+            select: { vadeTarihi: true, tutarTry: true }, orderBy: { vadeTarihi: "asc" },
+          }),
+          tx.cariTeminat.findMany({
+            where: { cariId, durum: "aktif", bitisTarihi: { gte: bugunGun, lte: gunSonra(TEMINAT_UYARI_GUNU) }, OR: [{ baslangicTarihi: null }, { baslangicTarihi: { lte: bugunGun } }] },
+            select: { bitisTarihi: true }, orderBy: { bitisTarihi: "asc" },
+          }),
+          tx.cariMutabakat.count({ where: { cariId, durum: "itiraz", itirazKapandiAt: null } }),
+          tx.crmEtkilesim.findFirst({ where: { cariId }, orderBy: { tarih: "desc" }, select: { tarih: true } }),
+        ]);
+        const risk = riskler.get(cariId)!;
+        const riskOzeti = riskOzetiGorunumu(risk, cari.riskLimiti);
+        const alacak = alacaklar.get(cariId)!;
+        const borc = borclar.get(cariId)!;
+        const analizHareketleri = hareketler.map((h) => ({ ...h, tutarTry: Number(h.tutarTry) }));
+        const davranis = cariDavranisAnalizi(analizHareketleri, cari.riskLimiti === null ? null : Number(cari.riskLimiti), simdi);
+        const gun = (t: Date | null | undefined) => (t ? t.toISOString().slice(0, 10) : null);
+        finans = {
+          acikBakiyeTry: alacak.toplam,
+          vadesiGecmisTry: vadesiGecmis(alacak),
+          enEskiGecikmeGun: alacak.enEskiGecikmeGun,
+          mevcutRiskTry: Number(riskOzeti.mevcutRisk),
+          kullanilabilirLimitTry: riskOzeti.kullanilabilirLimit === null ? null : Number(riskOzeti.kullanilabilirLimit),
+          davranis,
+          egilim: gecikmeEgilimi(analizHareketleri, simdi),
+          sorunluCekSayisi: sorunluCekler.length,
+          yaklasanCek: { sayi: yaklasanCekler.length, tutarTry: Math.round(yaklasanCekler.reduce((t, c) => t + Number(c.tutarTry), 0) * 100) / 100, enYakinVade: gun(yaklasanCekler[0]?.vadeTarihi) },
+          bitenTeminat: { sayi: teminatlar.length, enYakinBitis: gun(teminatlar[0]?.bitisTarihi) },
+          acikItirazSayisi: itirazSayisi,
+          sonEtkilesim: sonEtkilesim?.tarih ?? null,
+          borclarimiz: { vadesiGecmisTry: vadesiGecmis(borc), yakinVadeTry: borc.yakinVadeTry },
+        };
+        gostergeler = {
+          bakiyeTry: risk.bakiyeTry.toFixed(2),
+          vadesiGecmisTry: finans.vadesiGecmisTry.toFixed(2),
+          enEskiGecikmeGun: finans.enEskiGecikmeGun,
+          mevcutRiskTry: riskOzeti.mevcutRisk,
+          kullanilabilirLimitTry: riskOzeti.kullanilabilirLimit,
+          riskKullanimOrani: finans.kullanilabilirLimitTry ? Math.round((finans.mevcutRiskTry / finans.kullanilabilirLimitTry) * 100) : null,
+          odemeDavranisi: davranis.odemeDavranisi,
+          tahminiGecikmeGun: davranis.tahminiGecikmeGun,
+          guven: davranis.guven,
+          kurEksik: [...new Set([...riskOzeti.kurEksik, ...alacak.kurEksik])],
+        };
+      }
+
+      let satis: SatisGirdisi | undefined;
+      if (satisGorur) {
+        const [teklifler, siparisler] = await Promise.all([
+          tx.belge.findMany({
+            where: { cariId, tur: "teklif", yon: "satis", durum: { in: ["taslak", "onaylandi"] }, gecerlilikTarihi: { gte: bugunGun, lte: gunSonra(7) } },
+            select: { id: true, no: true, revizyonNo: true, gecerlilikTarihi: true }, orderBy: { gecerlilikTarihi: "asc" },
+          }),
+          tx.belge.findMany({
+            where: { cariId, tur: "siparis", yon: "satis", durum: { in: ["onaylandi", "kismen_kapandi"] } },
+            select: { id: true, no: true }, orderBy: { tarih: "asc" },
+          }),
+        ]);
+        satis = {
+          bitenTeklifler: teklifler.map((t) => ({ id: t.id, no: t.no ? belgeNoMetni(t.no, t.revizyonNo) : null, gecerlilikTarihi: t.gecerlilikTarihi!.toISOString().slice(0, 10) })),
+          bekleyenSiparisler: siparisler,
+        };
+      }
+
+      const bulgular = durumBulgulari({ bugun: simdi, cari: { id: cari.id, tip: cari.tip, karaListe: cari.karaListe, karaListeNotu: cari.karaListeNotu }, finans, satis });
+      return {
+        hesaplandiAt: simdi.toISOString(),
+        gostergeler,
+        bulgular: bulgular.slice(0, GOSTERILEN_BULGU),
+        toplamBulgu: bulgular.length,
+      };
     });
   }
 

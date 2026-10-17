@@ -5,6 +5,7 @@ import type { z } from "zod";
 import { aktifBaglam } from "../core/istek-baglami";
 import { PrismaService } from "../core/prisma.service";
 import type { bildirimListeSemasi } from "./bildirimler.semalar";
+import { tahsilatBildirimKapsami } from "../cari/tahsilat-bildirimi";
 
 type ListeGirdisi = z.infer<typeof bildirimListeSemasi>;
 
@@ -131,10 +132,12 @@ export class BildirimService {
     const { tenantId, userId, rol } = aktifBaglam();
     if (girdi.kapsam === "firma" && rol !== "yonetici") throw new ForbiddenException("Firma geneli bildirimleri yalnız yönetici görebilir");
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const tahsilatKapsami = await tahsilatBildirimKapsami(tx, tenantId, rol, userId, girdi.kapsam === "firma");
       const where: Prisma.BildirimTeslimatiWhereInput = {
         ...(girdi.kapsam === "firma" ? {} : { userId }),
         ...(girdi.durum ? { durum: girdi.durum } : {}),
         bildirim: {
+          ...tahsilatKapsami,
           ...(girdi.tur ? { tur: girdi.tur } : {}),
           ...(girdi.onem ? { onem: girdi.onem } : {}),
           ...(girdi.kapanmis === "true" ? { kapandiAt: { not: null } } : { kapandiAt: null }),
@@ -156,16 +159,17 @@ export class BildirimService {
 
   /** Zil menüsünün beslendiği sayaçlar — okundu ile aksiyon alındı ayrı ölçülür (BLD-02). */
   async ozet() {
-    const { tenantId, userId } = aktifBaglam();
+    const { tenantId, userId, rol } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const kapsam = await tahsilatBildirimKapsami(tx, tenantId, rol, userId);
       const gruplar = await tx.bildirimTeslimati.groupBy({
         by: ["durum"],
-        where: { userId, bildirim: { kapandiAt: null } },
+        where: { userId, bildirim: { ...kapsam, kapandiAt: null } },
         _count: { _all: true },
       });
       const say = (durumlar: string[]) => gruplar.filter((g) => durumlar.includes(g.durum)).reduce((toplam, g) => toplam + g._count._all, 0);
       const kritik = await tx.bildirimTeslimati.count({
-        where: { userId, durum: { in: [...ACIK_DURUMLAR] }, bildirim: { kapandiAt: null, onem: "kritik" } },
+        where: { userId, durum: { in: [...ACIK_DURUMLAR] }, bildirim: { ...kapsam, kapandiAt: null, onem: "kritik" } },
       });
       return {
         okunmamis: say(["yeni"]),
@@ -182,10 +186,9 @@ export class BildirimService {
   }
 
   async tumunuOkunduIsaretle() {
-    const { tenantId, userId } = aktifBaglam();
-    const sonuc = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.bildirimTeslimati.updateMany({ where: { userId, durum: "yeni" }, data: { durum: "okundu", okunduAt: new Date() } }),
-    );
+    const { tenantId, userId, rol } = aktifBaglam();
+    const sonuc = await this.prisma.tenantIslem(tenantId, async (tx) =>
+      tx.bildirimTeslimati.updateMany({ where: { userId, durum: "yeni", bildirim: await tahsilatBildirimKapsami(tx, tenantId, rol, userId) }, data: { durum: "okundu", okunduAt: new Date() } }));
     return { guncellenen: sonuc.count };
   }
 
@@ -236,17 +239,16 @@ export class BildirimService {
   }
 
   private async durumYaz(ids: string[], veri: Prisma.BildirimTeslimatiUpdateManyMutationInput, gecerliDurumlar: string[]) {
-    const { tenantId, userId } = aktifBaglam();
-    const sonuc = await this.prisma.tenantIslem(tenantId, (tx) =>
-      tx.bildirimTeslimati.updateMany({ where: { id: { in: ids }, userId, durum: { in: gecerliDurumlar as never } }, data: veri }),
-    );
+    const { tenantId, userId, rol } = aktifBaglam();
+    const sonuc = await this.prisma.tenantIslem(tenantId, async (tx) =>
+      tx.bildirimTeslimati.updateMany({ where: { id: { in: ids }, userId, durum: { in: gecerliDurumlar as never }, bildirim: await tahsilatBildirimKapsami(tx, tenantId, rol, userId) }, data: veri }));
     return { guncellenen: sonuc.count };
   }
 
   private async tekTeslimatGuncelle(id: string, veri: Prisma.BildirimTeslimatiUncheckedUpdateInput) {
-    const { tenantId, userId } = aktifBaglam();
+    const { tenantId, userId, rol } = aktifBaglam();
     return this.prisma.tenantIslem(tenantId, async (tx) => {
-      const teslimat = await tx.bildirimTeslimati.findFirst({ where: { id, userId }, select: { id: true } });
+      const teslimat = await tx.bildirimTeslimati.findFirst({ where: { id, userId, bildirim: await tahsilatBildirimKapsami(tx, tenantId, rol, userId) }, select: { id: true } });
       if (!teslimat) throw new NotFoundException("Bildirim bulunamadı");
       return tx.bildirimTeslimati.update({ where: { id }, data: veri, include: { bildirim: true } });
     });

@@ -31,6 +31,8 @@ export interface NakitKalemi {
   yon: "giris" | "cikis";
   /** Belgedeki vade ya da ödeme tarihi. */
   vade: string;
+  /** Fatura alacağının söz tarihine ayrılmış payı; mali vade değişmez. */
+  odemeSozu?: { id: string; tarih: string; faturaVadesi: string };
   /** TL karşılığı, kuruş. */
   kurus: number;
   dovizCinsi: string;
@@ -112,7 +114,7 @@ const tl = (kurus: number) => kurus / 100;
  * geçmiş kalem en erken bugüne düşer.
  */
 export function senaryoTarihi(
-  kalem: Pick<NakitKalemi, "vade" | "tahsilat">,
+  kalem: Pick<NakitKalemi, "vade" | "tahsilat" | "odemeSozu">,
   senaryo: Senaryo,
   profil: CariTahsilatProfili | undefined,
   bugun: string,
@@ -126,7 +128,7 @@ export function senaryoTarihi(
 
   if (senaryo === "kotumser") {
     if (profil?.karaListe) return { tarih: null, neden: "Cari kara listede; tahsilat ufuk dışı sayıldı" };
-    if (gunFarki(kalem.vade, bugun) > KOTUMSER_ESIK_GUN) {
+    if (gunFarki(kalem.odemeSozu?.faturaVadesi ?? kalem.vade, bugun) > KOTUMSER_ESIK_GUN) {
       return { tarih: null, neden: `Vadesi ${KOTUMSER_ESIK_GUN} günden fazla geçmiş; tahsilat ufuk dışı sayıldı` };
     }
   }

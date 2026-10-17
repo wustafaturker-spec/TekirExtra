@@ -8,12 +8,89 @@ import { karZararHesapla, karZararVerisi } from "./kar-zarar";
 import { FATURA_ODEME_SECIMI, faturaOdemeDurumu } from "../fatura/odeme-durumu";
 import { cariBakiyeToplamlari, envanterDegerlemesi } from "./varlik-ozeti";
 import { faturaPivotDetayi, faturaPivotu, pivotSorgusuCoz } from "./fatura-pivot";
+import { maliyetEksigiSorgusu, maliyetEksikleriniOku } from "./maliyet-eksikleri";
+import { maliyetEksikleriExcelYaz } from "./maliyet-eksikleri-excel";
+import { maliyetTakibiBaslat, maliyetTakibiGuncelle, maliyetTakibiniOku, maliyetTakipGirdisi, maliyetTakipId } from "./maliyet-takibi";
+import { maliyetDogrulamasiniOku, maliyetIncelemesiniKapat, maliyetKapatmaGirdisi } from "./maliyet-dogrulama";
+import { maliyetErisiminiDogrula } from "./maliyet-erisim";
+import { maliyetIzlemeSorgusu, maliyetIzlemesiniOku } from "./maliyet-izleme";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal => new Prisma.Decimal(deger);
 
 @Injectable()
 export class RaporService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async maliyetIzleme(sorgu: Record<string, unknown>) {
+    const { tenantId } = aktifBaglam(), q = maliyetIzlemeSorgusu(sorgu);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const { mod } = await maliyetErisiminiDogrula(tx);
+      const [olcum] = await tx.$queryRaw<{ zaman: Date }[]>`SELECT transaction_timestamp() AS zaman`;
+      const veri = await maliyetIzlemesiniOku(tx, tenantId, q);
+      const firma = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { id: true, unvan: true } });
+      return { surum: 1, olcumTuru: "anlik", firma, baslangic: q.baslangic, bitis: q.bitis,
+        kullanimModu: mod, alindigiZaman: olcum.zaman.toISOString(), ...veri };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  }
+
+  async maliyetDogrulamasi(id: string) {
+    const { tenantId } = aktifBaglam(); maliyetTakipId(id);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      await maliyetErisiminiDogrula(tx);
+      return maliyetDogrulamasiniOku(tx, tenantId, id);
+    });
+  }
+  async maliyetIncelemesiniKapat(id: string, govde: unknown) {
+    const { tenantId, userId } = aktifBaglam(); maliyetTakipId(id);
+    const g = maliyetKapatmaGirdisi(govde);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      await maliyetErisiminiDogrula(tx, true);
+      return maliyetIncelemesiniKapat(tx, tenantId, userId, id, g);
+    });
+  }
+
+  async maliyetTakibi(id: string) {
+    const { tenantId } = aktifBaglam();
+    maliyetTakipId(id);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      await maliyetErisiminiDogrula(tx);
+      return { kayit: await maliyetTakibiniOku(tx, tenantId, id) };
+    });
+  }
+  async maliyetTakibiKaydet(id: string, govde: unknown, guncelle = false) {
+    const { tenantId, userId } = aktifBaglam();
+    maliyetTakipId(id);
+    const girdi = maliyetTakipGirdisi(govde, guncelle);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      await maliyetErisiminiDogrula(tx, true);
+      return guncelle
+        ? maliyetTakibiGuncelle(tx, tenantId, userId, id, girdi)
+        : maliyetTakibiBaslat(tx, tenantId, userId, id, girdi.aciklama);
+    });
+  }
+
+  async maliyetEksikleriExcel(sorgu: Record<string, unknown>) {
+    const { tenantId } = aktifBaglam();
+    const q = maliyetEksigiSorgusu(sorgu);
+    const { veri, firma } = await this.prisma.tenantIslem(tenantId, async (tx) => {
+      await maliyetErisiminiDogrula(tx);
+      return {
+        veri: await maliyetEksikleriniOku(tx, tenantId, q, "tum"),
+        firma: (await tx.tenant.findUnique({ where: { id: tenantId }, select: { unvan: true } }))?.unvan ?? "",
+      };
+    });
+    return { dosya: await maliyetEksikleriExcelYaz(veri, q, firma), dosyaAdi: `maliyet-kontrolu_${q.baslangic}_${q.bitis}.xlsx` };
+  }
+
+  async maliyetEksikleri(sorgu: Record<string, unknown>) {
+    const { tenantId, rol } = aktifBaglam();
+    const q = maliyetEksigiSorgusu(sorgu);
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      const erisim = await maliyetErisiminiDogrula(tx);
+      const veri = await maliyetEksikleriniOku(tx, tenantId, q);
+      return { ...veri, kullanimModu: erisim.mod, izinler: { fatura: rol !== "maliyet_muhasebesi", stok: rol !== "mali_musavir", onizleme: rol === "yonetici" && erisim.takipYazma, takipYazma: erisim.takipYazma } };
+    });
+  }
 
   // Kar-zarar analizi RPR-06 araç setine taşındı: fatura.kar-marji (FTR-15).
 
