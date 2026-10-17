@@ -658,6 +658,7 @@ saklanmaz, istendiğinde XML'den üretilir.
 | RPR-33 | **İzleme ve ölçüm:** dönem özeti (eksik satır, ilgili ciro, doğrulanmış kapanışın medyan süresi) ve indirilebilir ölçüm dosyası; önceki dosya tarayıcıda güncel ölçümle karşılaştırılır (şirket, dönem ve kaynak kümesi eşleşmeli; dosya sunucuya yüklenmez). | Z |
 | RPR-34 | **Maliyet kontrolü kullanım modu** (`maliyet_kontrolu`, Modül Ayarları): `kapali / salt_okunur / pilot / acik`, varsayılan kapalı. Salt okunurda liste/Excel/geçmiş; pilot ve açıkta yönetici/muhasebe inceleme yazar ve kapatır. Pilot yetki genişletmez. | Z |
 | RPR-35 | **F01 kod dışı açık işler:** pilot şirket seçimi, gerçek önce/sonra ölçümü (sayım dönemi ve "eksik" tanımı sabitlenir), muhasebe alan kabulü, canlıya açış. Azalan satır sayısı tek başına maliyet doğruluğu kanıtı sayılmaz. | İ |
+| RPR-36 | ✅ **Vadesiz fatura** (karar 2026-10-17): vade tarihi olmayan fatura, fatura tarihinde vadesi gelmiş sayılır. Vadesi geçenler raporu (RPR-17), tahsilat riski ve vade hatırlatma öncelikleri (AI-17/AI-18), cari yaşlandırma, nakit akışı ve Cari Durum Paneli aynı kuralı kullanır; raporun "en eski" listeleri hesaplanan vadeye göre seçilir. | Z |
 
 **Modül ekran matrisi (RPR-08):**
 

@@ -31,8 +31,8 @@ describe("TahsilatRiskiService — risk cari kartındaki analizden", () => {
     const s = new TahsilatRiskiService({ tenantIslem: (_t: string, fn: (x: typeof tx) => unknown) => fn(tx) } as never);
     return { s, tx, olarak: <T>(fn: () => Promise<T>) => istekBaglami.run({ deger: { tenantId: "t", userId: "u", rol: "muhasebe" } }, fn) };
   }
-  const fatura = (id: string, cariId: string, vadeGunOnce: number, toplam: number, odenen = 0) => ({
-    id, no: id, durum: "kesin", vadeTarihi: gunOnce(vadeGunOnce), genelToplam: D(toplam), kur: D(1),
+  const fatura = (id: string, cariId: string, vadeGunOnce: number | null, toplam: number, odenen = 0, tarihGunOnce = 90) => ({
+    id, no: id, durum: "kesin", tarih: gunOnce(tarihGunOnce), vadeTarihi: vadeGunOnce === null ? null : gunOnce(vadeGunOnce), genelToplam: D(toplam), kur: D(1),
     cari: { id: cariId, unvan: cariId }, kapamalar: odenen ? [{ tutar: D(odenen) }] : [], iadeKapamalari: [],
   });
   // Geç ödeyen cari: borç vadesinden 40 gün sonra kapanıyor, açık bakiyesi vadesi geçmiş.
@@ -55,6 +55,16 @@ describe("TahsilatRiskiService — risk cari kartındaki analizden", () => {
     const l = await k.olarak(() => k.s.oncelikler());
     expect(l.map((x) => x.cariId)).toEqual(["geç", "yeni"]);
     expect(l[0]).toMatchObject({ risk: "yuksek", riskKatsayisi: 2, enEskiGecikmeGun: 60, faturaSayisi: 1 });
-    expect(k.tx.fatura.findMany.mock.calls[0][0].where.vadeTarihi.lte.getTime()).toBe(bugun.getTime() + 7 * GUN);
+    const sinir = bugun.getTime() + 7 * GUN;
+    expect(k.tx.fatura.findMany.mock.calls[0][0].where.OR).toEqual([{ vadeTarihi: { lte: new Date(sinir) } }, { vadeTarihi: null, tarih: { lte: new Date(sinir) } }]);
+  });
+
+  it("vadesiz fatura fatura tarihinde vadesi gelmiş sayılır; liste hesaplanan vadeye göre sıralanır", async () => {
+    const k = kur([fatura("vadeli", "c", 5, 500), fatura("vadesiz", "c", null, 300, 0, 12)], {});
+    const r = await k.olarak(() => k.s.cariRiski("c"));
+    expect(r.acikFaturalar.map((f) => [f.faturaId, f.gecikmeGun, f.vadeTarihi])).toEqual([
+      ["vadesiz", 12, gunOnce(12).toISOString().slice(0, 10)],
+      ["vadeli", 5, gunOnce(5).toISOString().slice(0, 10)],
+    ]);
   });
 });

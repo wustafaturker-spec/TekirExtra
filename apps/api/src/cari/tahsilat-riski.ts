@@ -70,16 +70,18 @@ export class TahsilatRiskiService {
     const faturalar = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.fatura.findMany({
         where: {
-          tenantId, tip: "satis", durum: "kesin", vadeTarihi: { not: null, ...(secenek.vadeSonu ? { lte: secenek.vadeSonu } : {}) },
+          tenantId, tip: "satis", durum: "kesin",
+          // Vadesiz fatura fatura tarihinde vadesi gelmiş sayılır (yaşlandırma ve vade hatırlatmayla aynı kural).
+          ...(secenek.vadeSonu ? { OR: [{ vadeTarihi: { lte: secenek.vadeSonu } }, { vadeTarihi: null, tarih: { lte: secenek.vadeSonu } }] } : {}),
           ...(secenek.cariId ? { cariId: secenek.cariId } : {}),
         },
-        select: { id: true, no: true, durum: true, vadeTarihi: true, genelToplam: true, kur: true, cari: { select: { id: true, unvan: true } }, ...FATURA_ODEME_SECIMI },
-        orderBy: { vadeTarihi: "asc" },
+        select: { id: true, no: true, durum: true, tarih: true, vadeTarihi: true, genelToplam: true, kur: true, cari: { select: { id: true, unvan: true } }, ...FATURA_ODEME_SECIMI },
       }),
     );
     return faturalar
-      .map((f) => ({ f, kalanTry: faturaOdemeDurumu(f).kalan.mul(f.kur).toDecimalPlaces(2).toNumber() }))
-      .filter((x) => x.kalanTry > 0);
+      .map((f) => ({ f, vade: f.vadeTarihi ?? f.tarih, kalanTry: faturaOdemeDurumu(f).kalan.mul(f.kur).toDecimalPlaces(2).toNumber() }))
+      .filter((x) => x.kalanTry > 0)
+      .sort((a, b) => a.vade.getTime() - b.vade.getTime());
   }
 
   /** AI-17: carinin açık faturaları ve beklenen ödeme tarihleri (risk = cari kartındaki analiz). */
@@ -91,10 +93,10 @@ export class TahsilatRiskiService {
       riskSeviyesi: a?.riskSeviyesi ?? null,
       tahminiGecikmeGun: a?.tahminiGecikmeGun ?? null,
       guven: a?.guven ?? null,
-      acikFaturalar: acik.map(({ f, kalanTry }): AcikFatura => ({
-        faturaId: f.id, no: f.no, cariId, cariUnvan: f.cari.unvan, vadeTarihi: f.vadeTarihi!.toISOString().slice(0, 10),
-        gecikmeGun: Math.round((bugun.getTime() - f.vadeTarihi!.getTime()) / GUN_MS), kalanTry,
-        beklenenOdemeTarihi: beklenenOdemeTarihi(f.vadeTarihi!, a?.tahminiGecikmeGun ?? null, bugun),
+      acikFaturalar: acik.map(({ f, vade, kalanTry }): AcikFatura => ({
+        faturaId: f.id, no: f.no, cariId, cariUnvan: f.cari.unvan, vadeTarihi: vade.toISOString().slice(0, 10),
+        gecikmeGun: Math.round((bugun.getTime() - vade.getTime()) / GUN_MS), kalanTry,
+        beklenenOdemeTarihi: beklenenOdemeTarihi(vade, a?.tahminiGecikmeGun ?? null, bugun),
       })),
     };
   }
@@ -108,9 +110,9 @@ export class TahsilatRiskiService {
     const acik = await this.acikFaturalar({ vadeSonu: new Date(bugun.getTime() + YAKLASAN_GUN * GUN_MS) });
     const analiz = await this.analizler([...new Set(acik.map((x) => x.f.cari.id))]);
     const cariler = new Map<string, { cariId: string; cariUnvan: string; kalanTry: number; enEskiGecikmeGun: number; faturaSayisi: number; puan: number }>();
-    for (const { f, kalanTry } of acik) {
+    for (const { f, vade, kalanTry } of acik) {
       const risk = analiz.get(f.cari.id)?.riskSeviyesi ?? "orta";
-      const gecikme = Math.round((bugun.getTime() - f.vadeTarihi!.getTime()) / GUN_MS);
+      const gecikme = Math.round((bugun.getTime() - vade.getTime()) / GUN_MS);
       const c = cariler.get(f.cari.id) ?? { cariId: f.cari.id, cariUnvan: f.cari.unvan, kalanTry: 0, enEskiGecikmeGun: -Infinity, faturaSayisi: 0, puan: 0 };
       c.kalanTry = Math.round((c.kalanTry + kalanTry) * 100) / 100;
       c.enEskiGecikmeGun = Math.max(c.enEskiGecikmeGun, gecikme);
