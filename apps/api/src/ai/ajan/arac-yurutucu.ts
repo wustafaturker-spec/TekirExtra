@@ -4,7 +4,7 @@ import { baglamAl } from "../../core/istek-baglami";
 import { PrismaService } from "../../core/prisma.service";
 import { AiOnayService, type OnayTalebiGorunumu } from "../onay/ai-onay.service";
 import { AJAN_ARACLARI, aracBul, type AjanAraci } from "./araclar";
-import type { OnayOnizlemesi } from "./araclar/arac";
+import { icerikOzeti, type OnayOnizlemesi } from "./araclar/arac";
 import { UcCagirici } from "./uc-cagirici";
 
 const ARAC_CIKTISI_SINIRI = 12_000;
@@ -213,8 +213,10 @@ export class AracYurutucu {
       if (arac.sinif === "onay") {
         const ozet = await arac.ozetle!(baglam, ayristirma.data);
         const onizleme = arac.onizle ? await arac.onizle(baglam, ayristirma.data) : varsayilanOnizleme(arac, ozet, ayristirma.data);
+        // AI-27: onay, kullanıcının şu an gördüğü kayıt içeriğine bağlanır.
+        const hedefOzeti = arac.hedefDurumu ? icerikOzeti(await arac.hedefDurumu(baglam, ayristirma.data)) : null;
         // Ham girdi saklanır; onayda aynı şemayla yeniden doğrulanır.
-        const talep = await this.onay.olustur({ arac: arac.ad, parametreler: ayristirma.data, ozet, onizleme, kaynak: secenek.kaynak, oturumId: secenek.oturumId ?? null });
+        const talep = await this.onay.olustur({ arac: arac.ad, parametreler: ayristirma.data, ozet, onizleme, hedefOzeti, kaynak: secenek.kaynak, oturumId: secenek.oturumId ?? null });
         return {
           icerik: jsonKisalt({
             durum: "onay_bekliyor", talepId: talep.id, ozet, adres: `/panel/ai?talep=${talep.id}`,

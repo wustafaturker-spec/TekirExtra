@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import { istekBaglami } from "../../core/istek-baglami";
+import { icerikOzeti, kayitIcerigi } from "../ajan/araclar/arac";
 import { AiOnayService } from "./ai-onay.service";
 
 const TENANT = "11111111-1111-1111-1111-111111111111";
@@ -15,7 +16,9 @@ function talep(ek: Record<string, unknown> = {}) {
   };
 }
 
-function kur(kayit: ReturnType<typeof talep>, secenek: { alinan?: number; ucHatasi?: Error } = {}) {
+const BELGE = { id: BELGE_ID, tur: "teklif", durum: "taslak", no: null, cariId: "cari-1", genelToplam: "1200.00", satirlar: [{ stokId: "s1", miktar: "2.000", birimFiyat: "500.0000" }] };
+
+function kur(kayit: ReturnType<typeof talep>, secenek: { alinan?: number; ucHatasi?: Error; belge?: Record<string, unknown> } = {}) {
   const tx = {
     aiOnayTalebi: {
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ ...talep(), ...data })),
@@ -29,6 +32,7 @@ function kur(kayit: ReturnType<typeof talep>, secenek: { alinan?: number; ucHata
   const uc = {
     cagir: vi.fn(async (u: { yol: string }) => {
       if (secenek.ucHatasi) throw secenek.ucHatasi;
+      if (u.yol === "GET /belgeler/:id") return secenek.belge ?? BELGE;
       return u.yol === "POST /belgeler/:id/onayla" ? { id: BELGE_ID, no: "TKF2026000001", durum: "onaylandi" } : {};
     }),
   };
@@ -88,6 +92,29 @@ describe("onay talepleri (AI-04)", () => {
     const sonuc = await k.olarak(() => k.service.onayla("talep-1"));
     expect(sonuc.durum).toBe("hata");
     expect(sonuc.hata).toBe("Bu işlem için yetkiniz yok");
+  });
+
+  it("AI-27: talepten sonra belge değişmediyse onay işler", async () => {
+    const k = kur(talep({ hedefOzeti: icerikOzeti(kayitIcerigi(BELGE)) }));
+    const sonuc = await k.olarak(() => k.service.onayla("talep-1"));
+    expect(sonuc.durum).toBe("onaylandi");
+  });
+
+  it("AI-27: talepten sonra belge değiştiyse işlem yapılmaz", async () => {
+    const degismis = { ...BELGE, genelToplam: "1500.00", satirlar: [{ stokId: "s1", miktar: "3.000", birimFiyat: "500.0000" }] };
+    const k = kur(talep({ hedefOzeti: icerikOzeti(kayitIcerigi(BELGE)) }), { belge: degismis });
+    const sonuc = await k.olarak(() => k.service.onayla("talep-1"));
+    expect(sonuc.durum).toBe("hedef_degisti");
+    expect(sonuc.hata).toContain("değişti");
+    expect(k.uc.cagir).not.toHaveBeenCalledWith(expect.objectContaining({ yol: "POST /belgeler/:id/onayla" }), expect.anything(), expect.anything());
+  });
+
+  it("AI-27: özet anahtar sırasından bağımsızdır; ilişkili listeler içeriğe girmez", () => {
+    const ters = Object.fromEntries(Object.entries(BELGE).reverse());
+    expect(icerikOzeti(kayitIcerigi(ters))).toBe(icerikOzeti(kayitIcerigi(BELGE)));
+    // Ödeme, türetilen belge ya da e-Belge durumu arka planda değişebilir; onay içeriği değildir.
+    const ekli = { ...BELGE, turetilenler: [{ id: "x" }], ebelge: { durum: "iletildi" }, teslimatlar: [] };
+    expect(icerikOzeti(kayitIcerigi(ekli))).toBe(icerikOzeti(kayitIcerigi(BELGE)));
   });
 
   it("reddedilen talep çalışmaz", async () => {

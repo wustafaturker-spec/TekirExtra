@@ -5957,6 +5957,8 @@ model TenantAiAyari {
   id                      String    @id @default(uuid()) @db.Uuid
   tenantId                String    @unique @map("tenant_id") @db.Uuid
   saglayici               String    @default("varsayilan") @map("saglayici") // "varsayilan", "gemini", "openai", "anthropic", "ollama"
+  /// AI-27: talep açılırken hedef kaydın içerik özeti (SHA-256); onayda yeniden hesaplanır, farklıysa işlem yapılmaz.
+  hedefOzeti     String?           @map("hedef_ozeti") @db.VarChar(64)
   apiKey                  String?   @map("api_key")
   modelAdi                String?   @map("model_adi")
   ekonomikModelAdi        String?   @map("ekonomik_model_adi") @db.VarChar(120)
@@ -6090,6 +6092,8 @@ model TenantAiGorevCalisma {
   createdAt        DateTime             @default(now()) @map("created_at")
   guncellendiAt    DateTime             @updatedAt @map("guncellendi_at")
 
+  /// AI-27: talepten sonra hedef kayıt değişti; işlem yapılmadı.
+  hedef_degisti
   tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   gorev  TenantAiGorev @relation(fields: [gorevId], references: [id], onDelete: Cascade)
 

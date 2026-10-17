@@ -14,7 +14,7 @@ export interface OnayTalebi {
   ozet: string;
   onizleme: { eylem: string; hedef: string; etkiler?: string[]; degisiklikler?: Array<{ alan: string; once?: unknown; sonra: unknown }> } | null;
   kaynak: "asistan" | "mcp";
-  durum: "bekliyor" | "isleniyor" | "onaylandi" | "reddedildi" | "suresi_doldu" | "hata";
+  durum: "bekliyor" | "isleniyor" | "onaylandi" | "reddedildi" | "suresi_doldu" | "hata" | "hedef_degisti";
   gecerlilikSonu: string;
   createdAt: string;
   kararAt: string | null;
@@ -81,6 +81,7 @@ const DURUM: Record<OnayTalebi["durum"], { ad: string; tur: "warning" | "info" |
   reddedildi: { ad: "Reddedildi", tur: "neutral" },
   suresi_doldu: { ad: "Süresi doldu", tur: "neutral" },
   hata: { ad: "Onaylandı ama yapılamadı", tur: "danger" },
+  hedef_degisti: { ad: "Kayıt değişti, yapılmadı", tur: "warning" },
 };
 
 let sayac = 0;

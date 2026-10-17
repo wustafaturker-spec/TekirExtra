@@ -5,7 +5,7 @@ import { aktifBaglam } from "../../core/istek-baglami";
 import { PrismaService } from "../../core/prisma.service";
 import { aracBul } from "../ajan/araclar";
 import { UcCagirici } from "../ajan/uc-cagirici";
-import type { OnayOnizlemesi } from "../ajan/araclar/arac";
+import { icerikOzeti, type OnayOnizlemesi } from "../ajan/araclar/arac";
 
 /** AI-04: talep 24 saat geçerlidir. */
 export const ONAY_TALEBI_SURESI_MS = 24 * 60 * 60 * 1000;
@@ -69,7 +69,7 @@ export class AiOnayService {
     private readonly bildirimler: BildirimService,
   ) {}
 
-  async olustur(girdi: { arac: string; parametreler: unknown; ozet: string; onizleme?: OnayOnizlemesi | null; kaynak: AiIslemKaynagi; oturumId?: string | null }): Promise<OnayTalebiGorunumu> {
+  async olustur(girdi: { arac: string; parametreler: unknown; ozet: string; onizleme?: OnayOnizlemesi | null; hedefOzeti?: string | null; kaynak: AiIslemKaynagi; oturumId?: string | null }): Promise<OnayTalebiGorunumu> {
     const { tenantId, userId } = aktifBaglam();
     const talep = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.aiOnayTalebi.create({
@@ -83,6 +83,7 @@ export class AiOnayService {
           ozet: girdi.ozet,
           onizleme: girdi.onizleme ? JSON.parse(JSON.stringify(girdi.onizleme)) as Prisma.InputJsonValue : undefined,
           gecerlilikSonu: new Date(Date.now() + ONAY_TALEBI_SURESI_MS),
+          hedefOzeti: girdi.hedefOzeti ?? null,
         },
       }),
     );
@@ -135,16 +136,25 @@ export class AiOnayService {
 
     let sonuc: unknown = null;
     let hata: string | null = null;
+    let hedefDegisti = false;
     try {
       const girdi = arac.girdi.parse(talep.parametreler);
-      sonuc = await arac.calistir({ uc: this.uc, kaynak: talep.kaynak, arac: arac.ad, talepId: id }, girdi);
+      const baglam = { uc: this.uc, kaynak: talep.kaynak, arac: arac.ad, talepId: id };
+      // AI-27: talepten sonra kayıt değiştiyse kullanıcı görmediği içeriği onaylamış olur.
+      if (talep.hedefOzeti && arac.hedefDurumu && icerikOzeti(await arac.hedefDurumu(baglam, girdi)) !== talep.hedefOzeti) {
+        hedefDegisti = true;
+        hata = "Kayıt bu talep açıldıktan sonra değişti; işlem yapılmadı. Güncel hâliyle yeniden isteyin.";
+      } else {
+        sonuc = await arac.calistir(baglam, girdi);
+      }
     } catch (e) {
       hata = hataMetni(e);
     }
+    const durum = hedefDegisti ? "hedef_degisti" : hata ? "hata" : "onaylandi";
     const guncel = await this.prisma.tenantIslem(tenantId, (tx) =>
       tx.aiOnayTalebi.update({
         where: { id },
-        data: { durum: hata ? "hata" : "onaylandi", sonuc: sonuc == null ? undefined : (JSON.parse(JSON.stringify(sonuc)) as Prisma.InputJsonValue), hata },
+        data: { durum, sonuc: sonuc == null ? undefined : (JSON.parse(JSON.stringify(sonuc)) as Prisma.InputJsonValue), hata },
       }),
     );
     await this.bildirimiKapat(id);

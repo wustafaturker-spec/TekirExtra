@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { UcCagirici, UcTanimi } from "../uc-cagirici";
 
@@ -38,6 +39,36 @@ export interface AjanAraci<G = any> {
   ozetle?(b: AracBaglami, girdi: G): Promise<string>;
   /** Yalnız onay sınıfı: talep açılırken sabitlenen yapılandırılmış işlem planı/farkı. */
   onizle?(b: AracBaglami, girdi: G): Promise<OnayOnizlemesi>;
+  /**
+   * Yalnız onay sınıfı (AI-27): onayın bağlandığı kayıt içeriği. Talep açılırken
+   * ve onayda okunur; özetler farklıysa kullanıcı görmediği içeriği onaylamış
+   * olur, işlem yapılmaz.
+   */
+  hedefDurumu?(b: AracBaglami, girdi: G): Promise<unknown>;
+}
+
+function kararliJson(deger: unknown): string {
+  if (deger === null || typeof deger !== "object") return JSON.stringify(deger) ?? "null";
+  if (Array.isArray(deger)) return `[${deger.map(kararliJson).join(",")}]`;
+  return `{${Object.entries(deger as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${JSON.stringify(k)}:${kararliJson(v)}`).join(",")}}`;
+}
+
+/** AI-27: içeriğin anahtar sırasından bağımsız SHA-256 özeti (Decimal/Date JSON biçimiyle). */
+export function icerikOzeti(deger: unknown): string {
+  const duz: unknown = deger === undefined ? null : JSON.parse(JSON.stringify(deger));
+  return createHash("sha256").update(kararliJson(duz)).digest("hex");
+}
+
+/**
+ * AI-27: belge/fatura görünümünden onaya esas içerik — kayıt alanları ve satırlar.
+ * İlişkili listeler (türetilen belgeler, ödemeler, e-Belge durumu) dışarıda kalır;
+ * onlar bu işlemin içeriği değildir ve arka planda değişebilir.
+ */
+export function kayitIcerigi(kayit: Record<string, unknown>): Record<string, unknown> {
+  const duz = JSON.parse(JSON.stringify(kayit)) as Record<string, unknown>;
+  const icerik: Record<string, unknown> = Object.fromEntries(Object.entries(duz).filter(([, v]) => v === null || typeof v !== "object"));
+  if (Array.isArray(duz.satirlar)) icerik.satirlar = duz.satirlar;
+  return icerik;
 }
 
 export function arac<G>(tanim: AjanAraci<G>): AjanAraci<G> {

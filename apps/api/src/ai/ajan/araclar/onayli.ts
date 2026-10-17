@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { adres, arac, BUGUN, cagir, para, sayiMetni, sec, tarih, uuid, type AracBaglami } from "./arac";
+import { adres, arac, BUGUN, cagir, kayitIcerigi, para, sayiMetni, sec, tarih, uuid, type AracBaglami } from "./arac";
 import { UC } from "./uclar";
 
 /*
@@ -20,6 +20,31 @@ async function faturaTanimi(b: AracBaglami, id: string): Promise<string> {
   const k = await cagir(b, UC.faturaGetir, [id]);
   return `${FATURA_TIP_ADI[k.tip] ?? "Fatura"} ${k.no ?? "(numarasız taslak)"} · ${k.cari?.unvan ?? ""} · ${para(k.genelToplam, k.dovizCinsi)} · durum: ${k.durum}`;
 }
+
+// AI-27: onayın bağlandığı içerik; talep açılırken ve onayda karşılaştırılır.
+const belgeIcerigi = async (b: AracBaglami, id: string) => kayitIcerigi(await cagir(b, UC.belgeGetir, [id]));
+const faturaIcerigi = async (b: AracBaglami, id: string) => kayitIcerigi(await cagir(b, UC.faturaGetir, [id]));
+
+/** Adres verilmezse gönderim cari kartındaki adrese gider; onay o adrese bağlanır. */
+async function gonderimAdresi(b: AracBaglami, cariId: string | null | undefined, verilen?: string): Promise<string | null> {
+  if (verilen) return verilen;
+  if (!cariId) return null;
+  const cari = await cagir<{ eposta?: string | null }>(b, UC.cariGetir, [cariId]);
+  return cari.eposta ?? null;
+}
+
+async function belgeGonderimi(b: AracBaglami, id: string, verilen?: string) {
+  const belge = await belgeIcerigi(b, id);
+  return { belge, alici: await gonderimAdresi(b, belge.cariId as string | null, verilen) };
+}
+
+async function faturaGonderimi(b: AracBaglami, id: string, verilen?: string) {
+  const fatura = await faturaIcerigi(b, id);
+  return { fatura, alici: await gonderimAdresi(b, fatura.cariId as string | null, verilen) };
+}
+
+const aliciMetni = (verilen: string | undefined, alici: string | null) =>
+  verilen ?? (alici ? `cari kartındaki adres (${alici})` : "cari kartındaki adres (kayıtlı adres yok)");
 
 async function cariTanimi(b: AracBaglami, id: string): Promise<string> {
   const k = await cagir(b, UC.cariGetir, [id]);
@@ -68,6 +93,7 @@ export const ONAYLI_ARACLAR = [
     girdi: z.object({ belgeId: uuid("Belge kimliği"), riskOnayGerekcesi: z.string().max(500).optional().describe("Risk limiti aşılıyorsa kullanıcının gerekçesi") }),
     uc: UC.belgeOnayla,
     ozetle: async (b, g) => `Onaylanacak: ${await belgeTanimi(b, g.belgeId)}`,
+    hedefDurumu: (b, g) => belgeIcerigi(b, g.belgeId),
     async calistir(b, g) {
       const k = await cagir(b, UC.belgeOnayla, [g.belgeId, { riskOnayGerekcesi: g.riskOnayGerekcesi ?? null }], g.belgeId);
       return { ...sec(k, ["id", "no", "durum"]), adres: adres.belge(g.belgeId) };
@@ -80,6 +106,7 @@ export const ONAYLI_ARACLAR = [
     girdi: z.object({ belgeId: uuid("Belge kimliği") }),
     uc: UC.belgeIptal,
     ozetle: async (b, g) => `İptal edilecek: ${await belgeTanimi(b, g.belgeId)}`,
+    hedefDurumu: (b, g) => belgeIcerigi(b, g.belgeId),
     async calistir(b, g) {
       const k = await cagir(b, UC.belgeIptal, [g.belgeId, { uyariOnaylandi: false }], g.belgeId);
       return { ...sec(k, ["id", "no", "durum"]), adres: adres.belge(g.belgeId) };
@@ -95,6 +122,7 @@ export const ONAYLI_ARACLAR = [
     }),
     uc: UC.belgeDonustur,
     ozetle: async (b, g) => `${await belgeTanimi(b, g.belgeId)} belgesi ${TUR_ADI[g.hedef] ?? g.hedef} türüne dönüştürülecek`,
+    hedefDurumu: (b, g) => belgeIcerigi(b, g.belgeId),
     async calistir(b, g) {
       const k = await cagir(b, UC.belgeDonustur, [g.belgeId, { hedef: g.hedef }], g.belgeId);
       const yeniId = (k as { belgeId?: string; faturaId?: string }).belgeId ?? (k as { faturaId?: string }).faturaId;
@@ -109,6 +137,7 @@ export const ONAYLI_ARACLAR = [
     girdi: z.object({ faturaId: uuid("Fatura kimliği"), riskOnayGerekcesi: z.string().max(500).optional() }),
     uc: UC.faturaKesinlestir,
     ozetle: async (b, g) => `Kesinleştirilecek: ${await faturaTanimi(b, g.faturaId)}`,
+    hedefDurumu: (b, g) => faturaIcerigi(b, g.faturaId),
     async calistir(b, g) {
       const k = await cagir(b, UC.faturaKesinlestir, [g.faturaId, { riskOnayGerekcesi: g.riskOnayGerekcesi ?? null }], g.faturaId);
       return { ...sec(k, ["id", "no", "durum", "genelToplam"]), adres: adres.fatura(g.faturaId) };
@@ -121,6 +150,7 @@ export const ONAYLI_ARACLAR = [
     girdi: z.object({ faturaId: uuid("Fatura kimliği") }),
     uc: UC.faturaIptal,
     ozetle: async (b, g) => `İptal edilecek: ${await faturaTanimi(b, g.faturaId)}`,
+    hedefDurumu: (b, g) => faturaIcerigi(b, g.faturaId),
     async calistir(b, g) {
       const k = await cagir(b, UC.faturaIptal, [g.faturaId], g.faturaId);
       return { ...sec(k, ["id", "no", "durum"]), adres: adres.fatura(g.faturaId) };
@@ -132,7 +162,11 @@ export const ONAYLI_ARACLAR = [
     sinif: "onay",
     girdi: z.object({ belgeId: uuid("Belge kimliği"), eposta: z.string().max(255).optional() }),
     uc: UC.belgeEposta,
-    ozetle: async (b, g) => `E-postayla gönderilecek: ${await belgeTanimi(b, g.belgeId)} → ${g.eposta ?? "cari kartındaki adres"}`,
+    async ozetle(b, g) {
+      const { alici } = await belgeGonderimi(b, g.belgeId, g.eposta);
+      return `E-postayla gönderilecek: ${await belgeTanimi(b, g.belgeId)} → ${aliciMetni(g.eposta, alici)}`;
+    },
+    hedefDurumu: (b, g) => belgeGonderimi(b, g.belgeId, g.eposta),
     async calistir(b, g) {
       return cagir(b, UC.belgeEposta, [g.belgeId, g.eposta ? { eposta: g.eposta } : {}], g.belgeId);
     },
@@ -143,7 +177,11 @@ export const ONAYLI_ARACLAR = [
     sinif: "onay",
     girdi: z.object({ faturaId: uuid("Fatura kimliği"), eposta: z.string().max(255).optional() }),
     uc: UC.faturaEposta,
-    ozetle: async (b, g) => `E-postayla gönderilecek: ${await faturaTanimi(b, g.faturaId)} → ${g.eposta ?? "cari kartındaki adres"}`,
+    async ozetle(b, g) {
+      const { alici } = await faturaGonderimi(b, g.faturaId, g.eposta);
+      return `E-postayla gönderilecek: ${await faturaTanimi(b, g.faturaId)} → ${aliciMetni(g.eposta, alici)}`;
+    },
+    hedefDurumu: (b, g) => faturaGonderimi(b, g.faturaId, g.eposta),
     async calistir(b, g) {
       return cagir(b, UC.faturaEposta, [g.faturaId, g.eposta ? { eposta: g.eposta } : {}], g.faturaId);
     },
@@ -155,6 +193,7 @@ export const ONAYLI_ARACLAR = [
     girdi: z.object({ faturaId: uuid("Fatura kimliği") }),
     uc: UC.ebelgeGonder,
     ozetle: async (b, g) => `e-Belge olarak gönderilecek (GİB): ${await faturaTanimi(b, g.faturaId)}`,
+    hedefDurumu: (b, g) => faturaIcerigi(b, g.faturaId),
     async calistir(b, g) {
       return cagir(b, UC.ebelgeGonder, [g.faturaId, {}], g.faturaId);
     },
@@ -235,6 +274,11 @@ export const ONAYLI_ARACLAR = [
       const k = await cagir<Record<string, unknown>>(b, UC.cariGetir, [g.cariId]);
       return { eylem: "Cari kartını güncelle", hedef: `${k.unvan} (${k.kod})`, degisiklikler: alanFarki(k, g.degisiklikler) };
     },
+    // Önizlemedeki "önceki" değerler; arada biri değişirse fark artık doğru değildir.
+    async hedefDurumu(b, g) {
+      const k = await cagir<Record<string, unknown>>(b, UC.cariGetir, [g.cariId]);
+      return alanFarki(k, g.degisiklikler).map((f) => [f.alan, f.once ?? null]);
+    },
     async calistir(b, g) {
       const k = await cagir(b, UC.cariGuncelle, [g.cariId, g.degisiklikler], g.cariId);
       return { ...sec(k, ["id", "kod", "unvan"]), adres: adres.cari(g.cariId) };
@@ -265,6 +309,10 @@ export const ONAYLI_ARACLAR = [
     async onizle(b, g) {
       const k = await cagir<Record<string, unknown>>(b, UC.stokGetir, [g.stokId]);
       return { eylem: "Stok kartını güncelle", hedef: `${k.ad} (${k.kod})`, degisiklikler: alanFarki(k, g.degisiklikler) };
+    },
+    async hedefDurumu(b, g) {
+      const k = await cagir<Record<string, unknown>>(b, UC.stokGetir, [g.stokId]);
+      return alanFarki(k, g.degisiklikler).map((f) => [f.alan, f.once ?? null]);
     },
     async calistir(b, g) {
       const k = await cagir(b, UC.stokGuncelle, [g.stokId, g.degisiklikler], g.stokId);

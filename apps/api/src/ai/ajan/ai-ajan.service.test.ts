@@ -322,6 +322,8 @@ describe("asistan araç döngüsü (AI-05)", () => {
     expect(k.uc.cagir).not.toHaveBeenCalledWith(expect.objectContaining({ yol: "POST /belgeler/:id/onayla" }), expect.anything(), expect.anything());
     expect(k.onay.olustur).toHaveBeenCalledWith(expect.objectContaining({ arac: "belge_onayla", parametreler: { belgeId: BELGE_ID }, kaynak: "asistan", oturumId: "oturum-1" }));
     expect(k.onay.olustur.mock.calls[0][0].ozet).toContain("Kaya Ltd");
+    // AI-27: talep, kullanıcının gördüğü belge içeriğine bağlanır.
+    expect(k.onay.olustur.mock.calls[0][0].hedefOzeti).toMatch(/^[0-9a-f]{64}$/);
     expect(y.onayTalepleri.map((t) => t.id)).toEqual(["talep-1"]);
     const sonuc = k.saglayici.girdiler[1].mesajlar.find((m) => m.rol === "arac_sonucu");
     expect(sonuc && "icerik" in sonuc && sonuc.icerik).toContain("YAPILMADI");
