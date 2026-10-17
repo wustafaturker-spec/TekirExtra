@@ -18,7 +18,7 @@ import { Roller } from "../auth/roller.decorator";
 import { EklerService, type YuklenenDosya } from "./ekler.service";
 
 const sahipSemasi = z.object({
-  sahipTur: z.enum(["cari", "stok", "fatura", "belge", "kasa_banka", "firma", "masraf", "kira_sozlesme", "personel", "satin_alma_teklif"]),
+  sahipTur: z.enum(["cari", "stok", "fatura", "belge", "kasa_banka", "firma", "firma_kase", "masraf", "kira_sozlesme", "personel", "satin_alma_teklif"]),
   sahipId: z.string().uuid(),
 });
 

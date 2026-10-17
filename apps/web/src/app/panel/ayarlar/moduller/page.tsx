@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, tokenAl } from "@/lib/api";
 import { Alert, Button, Card, Field, Input, PageHeader, Select } from "@/components/ui";
-import { BelgeSablonuSecici, type BelgeSablonu } from "@/components/belge-sablonu-secici";
+import Link from "next/link";
 import { DOVIZ_CINSLERI } from "@tekirextra/shared";
 
 /**
@@ -74,8 +74,8 @@ const MODUL_TANIM: Record<string, ModulTanim> = {
     alanlar: [
       { ad: "varsayilanSeri", etiket: "Varsayılan seri (3 büyük harf)", tip: "metin", ipucu: "Ör. TKR" },
       { ad: "varsayilanKdvOrani", etiket: "Varsayılan KDV (%)", tip: "sayi", min: 0, max: 100 },
-      // FTR-22/23: şablon ve vurgu rengi tek bir seçim bloğunda, önizlemesiyle.
-      { ad: "faturaSablonu", etiket: "Belge şablonu", tip: "sablon" },
+      // FTR-37/42: şablon seçimi kalktı; görünüm Ayarlar > Belge Görünümü'nde.
+      { ad: "faturaSablonu", etiket: "Belge görünümü", tip: "sablon" },
       { ad: "vurguRengi", etiket: "Vurgu rengi", tip: "gizli" },
     ],
   },
@@ -175,11 +175,10 @@ export default function ModulAyarlariSayfasi() {
     const v = degerler[modul]?.[a.ad];
     if (a.tip === "sablon") {
       return (
-        <BelgeSablonuSecici
-          sablon={(v as BelgeSablonu) ?? "standart"}
-          renk={String(degerler[modul]?.vurguRengi ?? "#6d28d9")}
-          onDegis={(alan, deger) => alanGuncelle(modul, alan, deger)}
-        />
+        <Alert tone="success">
+          Teklif, sipariş, proforma, irsaliye, makbuz ve faturanın rengi, yazısı, bölümleri ve hazır metinleri artık{" "}
+          <Link href="/panel/ayarlar/belge-gorunumu">Ayarlar › Belge Görünümü</Link> ekranından canlı önizlemeyle düzenlenir.
+        </Alert>
       );
     }
     if (a.tip === "enum") {

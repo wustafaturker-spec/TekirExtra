@@ -35,10 +35,11 @@ export class PdfService implements OnModuleDestroy {
   async belgeTemasi(): Promise<BelgeTemasi> {
     const logoDataUri = await this.firmaLogoDataUri();
     try {
-      const ayar = await this.ayarlar.getir("fatura");
+      const [ayar, gorunum] = await Promise.all([this.ayarlar.getir("fatura"), this.ayarlar.getir(BELGE_GORUNUMU_MODULU)]);
       return {
         sablon: sablonNormalize(ayar.faturaSablonu),
-        vurguRengi: renkNormalize(ayar.vurguRengi),
+        // FTR-42: Belge Görünümü'nde ana renk seçildiyse raporlar da onu kullanır.
+        vurguRengi: renkNormalize(gorunum.anaRenk ?? ayar.vurguRengi),
         logoDataUri,
       };
     } catch (hata) {
@@ -83,7 +84,8 @@ export class PdfService implements OnModuleDestroy {
         orderBy: { createdAt: "desc" },
       }),
     );
-    if (!logo) return undefined;
+    // Yalnız resim basılır; görsel yerine yüklenmiş PDF/belge sessizce atlanır.
+    if (!logo || !/^image\/(png|jpe?g|webp|gif|svg\+xml)$/.test(logo.mimeTip)) return undefined;
 
     try {
       const icerik = await this.depo.indir(logo.depoAnahtari);

@@ -4816,3 +4816,40 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
   .mailbox-pro__list,
   .mailbox-pro__reader { border: 0 !important; border-radius: 0; box-shadow: none; }
 }
+
+/* FTR-42: Belge Görünümü — solda ayarlar, sağda yapışkan PDF önizlemesi. */
+.belge-gorunum { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: start; }
+.belge-gorunum__onizleme { position: sticky; top: 1rem; display: grid; gap: .5rem; }
+.belge-gorunum__cerceve { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); height: min(82vh, 1100px); overflow: hidden; display: grid; place-items: center; transition: opacity .2s; }
+.belge-gorunum__cerceve.is-yukleniyor { opacity: .55; }
+.belge-gorunum__cerceve iframe { border: 0; height: 100%; width: 100%; }
+.belge-gorunum__izgara { display: grid; gap: .6rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.belge-gorunum__paletler { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .6rem; }
+.belge-gorunum__palet { align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; color: var(--text); cursor: pointer; display: inline-flex; font-size: .78rem; gap: .35rem; padding: .25rem .6rem .25rem .3rem; }
+.belge-gorunum__palet span { border-radius: 50%; display: inline-block; height: 16px; width: 16px; }
+.belge-gorunum__palet.is-secili { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.belge-gorunum__turler { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .6rem; }
+.belge-gorunum__altbaslik { display: block; font-size: .85rem; margin: .4rem 0 .2rem; }
+.belge-gorunum__eylemler { gap: .6rem; justify-content: flex-end; }
+@media (max-width: 1100px) {
+  .belge-gorunum { grid-template-columns: 1fr; }
+  .belge-gorunum__onizleme { position: static; }
+  .belge-gorunum__cerceve { height: 70vh; }
+}
+@media (max-width: 640px) { .belge-gorunum__izgara { grid-template-columns: 1fr; } }
+
+/* CARI-43: Cari Durum Paneli */
+.cari-durum { margin-bottom: 1rem; }
+.cari-durum__bulgular { list-style: none; margin: 1rem 0 0; padding: 0; display: flex; flex-direction: column; }
+.cari-durum__bulgu { display: flex; justify-content: space-between; align-items: center; gap: .75rem; padding: .6rem .75rem; border-top: 1px solid var(--border); border-left: 3px solid transparent; }
+.cari-durum__bulgu:first-child { border-top: 0; }
+.cari-durum__bulgu.is-kritik { border-left-color: var(--danger); }
+.cari-durum__bulgu.is-uyari { border-left-color: var(--warning); }
+.cari-durum__bulgu.is-bilgi { border-left-color: var(--info); }
+.cari-durum__metin { display: flex; align-items: baseline; gap: .5rem; min-width: 0; }
+.cari-durum__eylemler { display: flex; align-items: center; gap: .5rem; flex-shrink: 0; }
+.cari-durum__bos { margin: 1rem 0 0; }
+.cari-durum__not { margin: .5rem 0 0; font-size: .8rem; }
+@media (max-width: 640px) {
+  .cari-durum__bulgu { flex-direction: column; align-items: flex-start; }
+}

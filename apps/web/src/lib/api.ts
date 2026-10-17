@@ -182,14 +182,18 @@ export async function apiDosyaIndir(yol: string, dosyaAdi: string, secenekler: R
 }
 
 /** Kimlik doğrulamalı dosyayı ekran içi kullanım için Blob olarak döndürür. */
-export async function apiDosyaBlob(yol: string): Promise<Blob> {
-  let yanit = await istekYap(yol, {}, tokenAl());
+export async function apiDosyaBlob(yol: string, secenekler: RequestInit = {}): Promise<Blob> {
+  let yanit = await istekYap(yol, secenekler, tokenAl());
   if (yanit.status === 401) {
     const yeniToken = await accessTokenYenile();
     if (!yeniToken) return giriseYonlendir();
-    yanit = await istekYap(yol, {}, yeniToken);
+    yanit = await istekYap(yol, secenekler, yeniToken);
   }
-  if (!yanit.ok) throw new ApiHata("Dosya görüntülenemedi", yanit.status);
+  if (!yanit.ok) {
+    // POST önizlemelerinde (FTR-42) sunucunun nedeni gösterilir.
+    const govde = (await yanit.json().catch(() => ({}))) as { message?: unknown };
+    throw new ApiHata(typeof govde.message === "string" ? govde.message : "Dosya görüntülenemedi", yanit.status);
+  }
   return yanit.blob();
 }
 
