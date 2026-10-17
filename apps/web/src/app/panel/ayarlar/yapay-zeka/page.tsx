@@ -6,6 +6,7 @@ import { PageHeader, Card, Button, Input, Select, Alert, Badge } from "@/compone
 import { YzVeriOnayiKart } from "@/components/yz-veri-onayi-kart";
 import { YzKullanimKart } from "@/components/yz-kullanim-kart";
 import { YzKaliteKart } from "@/components/yz-kalite-kart";
+import { YzTahminIsabetiKart } from "@/components/yz-tahmin-isabeti-kart";
 import { YzGorevlerKart } from "@/components/yz-gorevler-kart";
 import { Sparkles, Shield, Clock, CheckCircle2, AlertTriangle, Play, Trash2, Plus, RefreshCw, Key, Server, Cpu } from "lucide-react";
 
@@ -132,6 +133,7 @@ export default function YapayZekaAyarlariSayfasi() {
         <YzVeriOnayiKart />
         <YzKullanimKart />
         <YzKaliteKart />
+        <YzTahminIsabetiKart />
 
         {/* KART 1: AI Sağlayıcı ve Model Entegrasyonu (BYOK) */}
         <Card>

@@ -14,6 +14,8 @@ import { maliyetTakibiBaslat, maliyetTakibiGuncelle, maliyetTakibiniOku, maliyet
 import { maliyetDogrulamasiniOku, maliyetIncelemesiniKapat, maliyetKapatmaGirdisi } from "./maliyet-dogrulama";
 import { maliyetErisiminiDogrula } from "./maliyet-erisim";
 import { maliyetIzlemeSorgusu, maliyetIzlemesiniOku } from "./maliyet-izleme";
+import { eksikTahminleriTamamla, isabetSatirlari } from "../cari/tahmin-isabeti-kaynak";
+import { isabetOzeti } from "../cari/tahmin-isabeti";
 
 const D = (deger: string | number | Prisma.Decimal): Prisma.Decimal => new Prisma.Decimal(deger);
 
@@ -192,6 +194,32 @@ export class RaporService {
         satis: { toplam: satisTry.toFixed(2), adet: satislar.length },
         tahsilat: { toplam: tahsilatTry.toFixed(2), adet: hareketler.length + yeniCekler.length },
         tahsilatlar: [...hareketler.map((h) => ({ ...h, hesap: h.kasa?.ad ?? h.bankaHesap?.ad ?? h.posHesap?.ad ?? "Diğer", tutar: h.tutar.toFixed(2), tutarTry: h.tutarTry.toFixed(2) })), ...yeniCekler.map((cek) => ({ id: cek.id, tarih, tutar: cek.tutar.toFixed(2), tutarTry: cek.tutarTry.toFixed(2), dovizCinsi: cek.dovizCinsi, aciklama: `${cek.tur.toUpperCase()} tahsilatı · ${cek.portfoyNo}`, kaynakTur: "cek_senet", hesap: "Çek / Senet", cari: cek.cari, fatura: null }))],
+      };
+    });
+  }
+
+  /**
+   * CARI-49: tahmini gecikmenin isabeti. Kaydı olmayan geçmiş faturaların
+   * tahmini önce geriye dönük üretilir; ölçüm son 12 ayda kapanan faturalardır.
+   */
+  async tahminIsabeti() {
+    const { tenantId } = aktifBaglam();
+    const bugun = new Date();
+    const baslangic = new Date(Date.UTC(bugun.getUTCFullYear() - 1, bugun.getUTCMonth(), bugun.getUTCDate()));
+    return this.prisma.tenantIslem(tenantId, async (tx) => {
+      await eksikTahminleriTamamla(tx, tenantId);
+      const satirlar = await isabetSatirlari(tx);
+      const ozet = isabetOzeti(satirlar, baslangic);
+      const cariGruplari = new Map<string, typeof satirlar>();
+      for (const s of satirlar) cariGruplari.set(s.cariId, [...(cariGruplari.get(s.cariId) ?? []), s]);
+      const adaylar = [...cariGruplari].map(([cariId, l]) => ({ cariId, ...isabetOzeti(l, baslangic) })).filter((c) => c.ornek >= 3);
+      adaylar.sort((a, b) => (b.ortalamaMutlakSapma ?? 0) - (a.ortalamaMutlakSapma ?? 0));
+      const enCokSapan = adaylar.slice(0, 10);
+      const unvanlar = new Map((await tx.cariHesap.findMany({ where: { id: { in: enCokSapan.map((c) => c.cariId) } }, select: { id: true, unvan: true } })).map((c) => [c.id, c.unvan]));
+      return {
+        baslangic: baslangic.toISOString().slice(0, 10),
+        ozet,
+        enCokSapan: enCokSapan.map((c) => ({ cariId: c.cariId, unvan: unvanlar.get(c.cariId) ?? "", ornek: c.ornek, ortalamaSapma: c.ortalamaSapma, ortalamaMutlakSapma: c.ortalamaMutlakSapma })),
       };
     });
   }

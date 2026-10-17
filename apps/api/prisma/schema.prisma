@@ -109,6 +109,7 @@ model Tenant {
   tahsilatSozBaglari TahsilatSozBaglantisi[]
   tahsilatTakipleri  TahsilatTakibi[]
   odemeSozleri       OdemeSozu[]
+  faturaGecikmeTahminleri FaturaGecikmeTahmini[]
   id                 String           @id @default(uuid()) @db.Uuid
   unvan              String
   vkn                String           @unique
@@ -720,6 +721,27 @@ model OdemeSozu {
   @@map("odeme_sozleri")
 }
 
+/// CARI-49: satış faturası kesinleşirken (kaynak "kesinlesme") ya da geriye dönük
+/// (kaynak "geriye_donuk") kaydedilen tahmini gecikme. Gerçekleşen saklanmaz.
+model FaturaGecikmeTahmini {
+  id                String   @id @default(uuid()) @db.Uuid
+  tenantId          String   @map("tenant_id") @db.Uuid
+  faturaId          String   @unique @map("fatura_id") @db.Uuid
+  cariId            String   @map("cari_id") @db.Uuid
+  tahminGun         Int?     @map("tahmin_gun")
+  guven             String?
+  kapananBorcSayisi Int      @default(0) @map("kapanan_borc_sayisi")
+  kaynak            String
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  tenant Tenant    @relation(fields: [tenantId], references: [id])
+  fatura Fatura    @relation(fields: [faturaId], references: [id], onDelete: Cascade)
+  cari   CariHesap @relation(fields: [cariId], references: [id])
+
+  @@index([tenantId, cariId])
+  @@map("fatura_gecikme_tahminleri")
+}
+
 /// F02: Her söz için tek otomatik iş üretimi; kapalı takip yeniden açılmaz.
 model TahsilatSozBaglantisi {
   id           String @id @default(uuid()) @db.Uuid
@@ -1061,6 +1083,7 @@ enum UretimSarfDuzeltmeTip {
 model CariHesap {
   tahsilatTakipleri       TahsilatTakibi[]
   odemeSozleri            OdemeSozu[]
+  gecikmeTahminleri       FaturaGecikmeTahmini[]
   id                      String              @id @default(uuid()) @db.Uuid
   tenantId                String              @map("tenant_id") @db.Uuid
   /// MUH-03: muhasebe alt hesap kodu; boşsa aktarımda varsayılan üretilir.
@@ -2634,6 +2657,7 @@ enum EbelgeTur {
 
 model Fatura {
   odemeSozleri          OdemeSozu[]
+  gecikmeTahmini        FaturaGecikmeTahmini?
   id                    String              @id @default(uuid()) @db.Uuid
   tenantId              String              @map("tenant_id") @db.Uuid
   tip                   FaturaTip

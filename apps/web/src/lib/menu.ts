@@ -191,6 +191,7 @@ export const MENU: MenuAlani[] = [
       { href: "/panel/raporlar", ikon: ChartNoAxesColumn, baslik: "Raporlar & Analiz", eslesme: "tam" },
       { href: "/panel/raporlar/gelir-gider", ikon: ChartColumn, baslik: "Gelir - Gider Raporu", eslesme: "tam", esanlamlilar: ["kâr", "zarar"] },
       { href: "/panel/raporlar/kdv-disi-vergiler", ikon: Percent, baslik: "KDV Dışı Vergiler", eslesme: "tam", esanlamlilar: ["ötv", "öiv", "stopaj", "muhtasar", "konaklama vergisi", "bsmv", "vergi raporu"] },
+      { href: "/panel/raporlar/tahmin-isabeti", ikon: ChartColumn, baslik: "Tahmin İsabeti", eslesme: "tam", esanlamlilar: ["gecikme tahmini", "ödeme tahmini", "sapma", "isabet"] },
       { href: "/panel/mali-musavir", ikon: BookUser, baslik: "Mali Müşavir Portalı", eslesme: "tam", esanlamlilar: ["luca", "zirve", "kdv", "beyanname"] },
       { href: "/panel/mali-musavir/muhasebe", ikon: BookUser, baslik: "Muhasebe Aktarımı", eslesme: "tam", esanlamlilar: ["yevmiye", "muhasebe fişi", "hesap planı", "tekdüzen", "luca fiş", "mahsup"] },
     ],

@@ -3,6 +3,8 @@ export interface AnalizHareketi {
   tutarTry: number;
   tarih: Date;
   vadeTarihi: Date | null;
+  /** CARI-49: borcun kaynağı (fatura kimliği); kapanışlar bu kimlikle izlenir. */
+  ref?: string;
 }
 
 export interface CariAnalizSonucu {
@@ -27,17 +29,17 @@ const GUN_MS = 86_400_000;
 const yuvarlaYuzluk = (deger: number) => Math.max(0, Math.round(deger / 100) * 100);
 
 /** Tahsilatın kapattığı borç parçası: ne zaman ödendi, kaç gün geç, ne kadar. */
-interface Kapanis { tarih: Date; gecikmeGun: number; tutar: number; borcKapandi: boolean }
+export interface Kapanis { tarih: Date; gecikmeGun: number; tutar: number; borcKapandi: boolean; borcRef?: string }
 
 /** FIFO: her alacak en eski açık borcu kapatır. Davranış analizi ve eğilim aynı eşleşmeyi kullanır. */
-function fifoKapanislari(hareketler: AnalizHareketi[]) {
+export function fifoKapanislari(hareketler: AnalizHareketi[]) {
   const sirali = [...hareketler].sort((a, b) => a.tarih.getTime() - b.tarih.getTime());
-  const acikBorclar: { kalan: number; vade: Date; tarih: Date }[] = [];
+  const acikBorclar: { kalan: number; vade: Date; tarih: Date; ref?: string }[] = [];
   const kapanislar: Kapanis[] = [];
   for (const hareket of sirali) {
     const tutar = Math.max(0, hareket.tutarTry);
     if (hareket.tip === "borc") {
-      acikBorclar.push({ kalan: tutar, vade: hareket.vadeTarihi ?? hareket.tarih, tarih: hareket.tarih });
+      acikBorclar.push({ kalan: tutar, vade: hareket.vadeTarihi ?? hareket.tarih, tarih: hareket.tarih, ref: hareket.ref });
       continue;
     }
     let alacak = tutar;
@@ -48,7 +50,7 @@ function fifoKapanislari(hareketler: AnalizHareketi[]) {
       borc.kalan -= kapanan; alacak -= kapanan;
       const borcKapandi = borc.kalan <= 0.005;
       if (borcKapandi) acikBorclar.shift();
-      kapanislar.push({ tarih: hareket.tarih, gecikmeGun, tutar: kapanan, borcKapandi });
+      kapanislar.push({ tarih: hareket.tarih, gecikmeGun, tutar: kapanan, borcKapandi, borcRef: borc.ref });
     }
   }
   return { sirali, acikBorclar, kapanislar };

@@ -4865,6 +4865,8 @@ tr.row-link.is-reversed > td { color: var(--text-subtle); }
 .cari-durum__eylemler { display: flex; align-items: center; gap: .5rem; flex-shrink: 0; }
 .cari-durum__bos { margin: 1rem 0 0; }
 .cari-durum__not { margin: .5rem 0 0; font-size: .8rem; }
+/* CARI-49: ödeme davranışı ipucunun altında geçmiş tahmin isabeti. */
+.cari-durum__isabet { display: block; margin-top: .15rem; }
 /* CARI-47: "Özetle" sonucu — bulguların üstünde, vurgu çizgili tek paragraf. */
 .cari-durum__ust { display: flex; align-items: center; gap: .75rem; }
 .cari-durum__ozet { margin: 1rem 0 0; padding: .75rem 1rem; background: var(--surface-2); border-left: 3px solid var(--accent); border-radius: var(--radius-sm); }

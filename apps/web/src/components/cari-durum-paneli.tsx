@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { asistaniAc } from "@/lib/asistan-baglami";
+import { mutlakSapmaMetni, sapmaMetni, type IsabetOlcusu } from "@/lib/tahmin-isabeti";
 import { Badge, Button, Card, Para, Stat, StatGrid } from "@/components/ui";
 
 type BulguOnemi = "kritik" | "uyari" | "bilgi";
@@ -22,6 +23,8 @@ interface CariDurumu {
     odemeDavranisi: "veri_yetersiz" | "zamaninda" | "kismen_gec" | "gecikmeli" | null;
     tahminiGecikmeGun: number | null;
     guven: "dusuk" | "orta" | "yuksek" | null;
+    /** CARI-49: bu carinin geçmiş tahminlerinin isabeti (finans rolleri); ölçüm yoksa null. */
+    tahminSapmasi?: IsabetOlcusu | null;
     kurEksik: string[];
   } | null;
   bulgular: { kod: string; onem: BulguOnemi; mesaj: string; kanit: BulguHedefi; eylem?: BulguHedefi }[];
@@ -151,7 +154,12 @@ export function CariDurumPaneli({ cariId, cariUnvan, yenile, onSekme }: { cariId
             label="Ödeme davranışı"
             value={DAVRANIS[g.odemeDavranisi]}
             tone={g.odemeDavranisi === "gecikmeli" ? "danger" : g.odemeDavranisi === "zamaninda" ? "success" : "default"}
-            hint={g.tahminiGecikmeGun === null ? `Güven: ${GUVEN_ADI[g.guven]}` : `Ortalama ${g.tahminiGecikmeGun} gün gecikme · güven: ${GUVEN_ADI[g.guven]}`}
+            hint={<>
+              {g.tahminiGecikmeGun === null ? `Güven: ${GUVEN_ADI[g.guven]}` : `Ortalama ${g.tahminiGecikmeGun} gün gecikme · güven: ${GUVEN_ADI[g.guven]}`}
+              {g.tahminSapmasi && <span className="cari-durum__isabet" title={`Geçmiş ${g.tahminSapmasi.ornek} faturada tahmin ile gerçekleşen arasındaki fark; tipik hata ${mutlakSapmaMetni(g.tahminSapmasi.ortalamaMutlakSapma)}`}>
+                Geçmiş tahminler: {sapmaMetni(g.tahminSapmasi.ortalamaSapma)} ({g.tahminSapmasi.ornek} fatura)
+              </span>}
+            </>}
           />}
         </StatGrid>
       )}

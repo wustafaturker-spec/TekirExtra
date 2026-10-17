@@ -69,6 +69,13 @@ export class RaporController {
     return this.raporService.gunlukOzet(tarih);
   }
 
+  /** CARI-49: tahmini gecikmenin isabeti (son 12 ay kapanan satış faturaları). */
+  @Get("tahmin-isabeti")
+  @Roller("muhasebe", "mali_musavir", "salt_okunur")
+  tahminIsabeti() {
+    return this.raporService.tahminIsabeti();
+  }
+
   @Get("vadesi-gecenler")
   @Roller("muhasebe", "mali_musavir", "salt_okunur")
   async vadesiGecenler() {

@@ -5,6 +5,8 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { eksikTahminleriTamamla, isabetSatirlari } from "./tahmin-isabeti-kaynak";
+import { isabetOzeti } from "./tahmin-isabeti";
 import { Prisma } from "@prisma/client";
 import type { KayitEylem } from "@tekirextra/shared";
 import type { z } from "zod";
@@ -959,6 +961,12 @@ export class CariService {
           kurEksik: [...new Set([...riskOzeti.kurEksik, ...alacak.kurEksik])],
         };
         if (!finansGorur) gostergeler = { ...gostergeler, mevcutRiskTry: null, odemeDavranisi: null, tahminiGecikmeGun: null, guven: null };
+        else {
+          // CARI-49: bu carinin geçmiş tahminlerinin isabeti (kaydı olmayan geçmiş faturalar geriye dönük doldurulur).
+          await eksikTahminleriTamamla(tx, tenantId, cariId);
+          const isabet = isabetOzeti(await isabetSatirlari(tx, cariId));
+          gostergeler = { ...gostergeler, tahminSapmasi: isabet.ornek ? { ornek: isabet.ornek, ortalamaSapma: isabet.ortalamaSapma, ortalamaMutlakSapma: isabet.ortalamaMutlakSapma } : null };
+        }
       }
 
       let satis: SatisGirdisi | undefined;

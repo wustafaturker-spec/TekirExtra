@@ -1,4 +1,5 @@
 import { agirlikliMaliyet, alisBirimMaliyeti } from "../stok/maliyet";
+import { kesinlesmeTahminiYaz } from "../cari/tahmin-isabeti-kaynak";
 import { faturaDagitimKosulu } from "../stok/maliyet-dagitimi.service";
 import { belgeDiliNormalize, ciftDilGecerli, ebelgeGitmemisMi, faturaGeriAlmaEngeli, ihracKayitliSonTarih, ilgiliKisiTemizle, varyantAciklamasi, varyantliAd, varyantliKod, type DovizKodu } from "@tekirextra/shared";
 import {
@@ -1615,6 +1616,11 @@ export class FaturaService {
           if (hareketSonucu.eksiStokUyarisi) {
             stokUyarilari.push(hareketSonucu.eksiStokUyarisi);
           }
+        }
+
+        // CARI-49: carinin bu andaki tahmini gecikmesi, faturanın kendi hareketinden önce kaydedilir.
+        if (fatura.tip === "satis") {
+          await kesinlesmeTahminiYaz(tx, tenantId, { id: fatura.id, cariId: fatura.cariId }, fatura.cari.riskLimiti === null ? null : Number(fatura.cari.riskLimiti));
         }
 
         // 3. Cari Hesap Hareketinin Tetiklenmesi (FTR-03):
