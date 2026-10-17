@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { Alert } from "@/components/ui";
+import { CariSecModali } from "@/components/cari-sec-modali";
 import {
   Archive,
   ArrowRight,
@@ -143,6 +144,8 @@ export default function GelenEpostalarSayfasi() {
   const [yukleniyor, setYukleniyor] = useState(false);
   const [senkronizeEdiliyor, setSenkronizeEdiliyor] = useState(false);
   const [islemde, setIslemde] = useState(false);
+  // E-posta bir cariyle eşleşmediyse fırsatın carisi kullanıcıya seçtirilir.
+  const [cariSecimAcik, setCariSecimAcik] = useState(false);
   const [ocrYukleniyor, setOcrYukleniyor] = useState<Record<string, boolean>>({});
   const [hata, setHata] = useState("");
   const [basari, setBasari] = useState("");
@@ -254,15 +257,17 @@ export default function GelenEpostalarSayfasi() {
     }
   }
 
-  async function crmGorevOlustur() {
+  async function crmGorevOlustur(cariId?: string) {
     if (!seciliEposta) return;
+    if (!seciliEposta.cariId && !cariId) { setCariSecimAcik(true); return; }
+    setCariSecimAcik(false);
     setIslemde(true);
     setHata("");
     setBasari("");
     try {
       const firsat = await api<{ id: string; baslik: string }>(
         `/eposta/gelen/${seciliEposta.id}/crm-gorev`,
-        { method: "POST" },
+        { method: "POST", body: JSON.stringify(cariId ? { cariId } : {}) },
       );
       setBasari(`CRM Görevi oluşturuldu: ${firsat.baslik}`);
       await secVeDetayGetir(seciliEposta);
@@ -1210,6 +1215,14 @@ export default function GelenEpostalarSayfasi() {
       {/* ═══════════════════════════════════════════════════════════════════════
           4. YENİ İLETİ OLUŞTURMA PENCERESİ (OUTLOOK MODAL DIALOG)
       ═══════════════════════════════════════════════════════════════════════ */}
+      {cariSecimAcik && seciliEposta && (
+        <CariSecModali
+          baslik="CRM fırsatı hangi cariye açılsın?"
+          aciklama={<>Gönderen <strong>{seciliEposta.gonderenEposta}</strong> kayıtlı bir cariyle eşleşmedi. Fırsatı açmak için cariyi seçin; gerekiyorsa önce cariyi oluşturun.</>}
+          onSec={(c) => void crmGorevOlustur(c.id)}
+          onKapat={() => setCariSecimAcik(false)}
+        />
+      )}
       {yeniIletiAcik && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-2xs p-4">
           <div className="bg-white rounded-lg shadow-2xl border border-gray-300 w-full max-w-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">

@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import { z } from "zod";
 import { adres, arac, BUGUN, cagir, kayitIcerigi, para, sayiMetni, sec, tarih, uuid, type AracBaglami } from "./arac";
 import { UC } from "./uclar";
@@ -343,18 +344,23 @@ export const ONAYLI_ARACLAR = [
   arac({
     ad: "gelen_epostadan_crm_gorevi_ac",
     aciklama:
-      "Gelen bir e-postayı temel alarak ilgili cariye CRM fırsatı veya destek talebi/görevi açar. Kullanıcı onayı gerekir.",
+      "Gelen bir e-postayı temel alarak ilgili cariye CRM fırsatı veya destek talebi/görevi açar. E-posta bir cariyle eşleşmemişse cariId zorunludur (cari_ara ile bul, emin değilsen kullanıcıya sor; tahminle cari seçme). Kullanıcı onayı gerekir.",
     sinif: "onay",
     girdi: z.object({
       epostaId: uuid("Gelen e-posta kimliği"),
+      cariId: uuid("Fırsatın açılacağı cari; e-posta bir cariyle eşleşmediyse zorunlu").optional(),
     }),
     uc: UC.gelenEpostaCrmGorev,
     async ozetle(b, g) {
       const e = await cagir<any>(b, UC.gelenEpostaGetir, [g.epostaId]);
-      return `Gelen e-postadan CRM görevi açılacak: "${e.konu}" (Gönderen: ${e.gonderenAdi || e.gonderenEposta})`;
+      const cariId = g.cariId ?? e.cariId;
+      // Cari yoksa onay talebi açılmaz; asistan cariyi kullanıcıya sorar.
+      if (!cariId) throw new BadRequestException("E-posta bir cariyle eşleşmedi; fırsatın açılacağı cariyi kullanıcıya sorup cariId ile tekrar deneyin.");
+      const cari = await cagir<any>(b, UC.cariGetir, [cariId]);
+      return `Gelen e-postadan CRM görevi açılacak: "${e.konu}" (Gönderen: ${e.gonderenAdi || e.gonderenEposta}) · Cari: ${cari.unvan}`;
     },
     async calistir(b, g) {
-      const gorev = await cagir<any>(b, UC.gelenEpostaCrmGorev, [g.epostaId]);
+      const gorev = await cagir<any>(b, UC.gelenEpostaCrmGorev, [g.epostaId, g.cariId ? { cariId: g.cariId } : {}]);
       return {
         mesaj: "CRM görevi başarıyla oluşturuldu",
         gorev: sec(gorev, ["id", "baslik", "durum", "oncelik"]),

@@ -110,10 +110,10 @@ export class GelenEpostaController {
   @Post(":id/crm-gorev")
   async crmGorevOlustur(@Param("id") id: string, @Body() body: unknown) {
     const { tenantId, userId } = aktifBaglam();
-    const sema = z.object({ sorumluUserId: z.string().uuid().optional() });
+    const sema = z.object({ sorumluUserId: z.string().uuid().optional(), cariId: z.string().uuid().optional() });
     const parsed = sema.safeParse(body || {});
-    const sorumluId = parsed.success && parsed.data.sorumluUserId ? parsed.data.sorumluUserId : userId;
-    return this.imapService.crmGorevOlustur(tenantId, id, sorumluId);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues.map((s) => s.message).join("; "));
+    return this.imapService.crmGorevOlustur(tenantId, id, parsed.data.sorumluUserId ?? userId, parsed.data.cariId);
   }
 
   /**

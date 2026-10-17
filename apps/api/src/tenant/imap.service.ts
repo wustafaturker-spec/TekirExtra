@@ -311,17 +311,21 @@ export class ImapService {
   /**
    * 1. İşlev: E-postadan CRM Fırsatı / Destek Görevi oluşturur.
    */
-  async crmGorevOlustur(tenantId: string, epostaId: string, sorumluUserId?: string) {
+  async crmGorevOlustur(tenantId: string, epostaId: string, sorumluUserId?: string, secilenCariId?: string) {
     const eposta = await this.getir(tenantId, epostaId);
 
-    // Cari eşleşmiş mi? Eşleşmemişse ilk aktif cariyi yedek bağla
-    let cariId = eposta.cariId;
+    // Fırsat yalnız kullanıcının seçtiği ya da e-postanın eşleştiği cariye açılır.
+    // Eşleşme yoksa rastgele bir cariye bağlanmaz (fırsat yanlış müşteriye yazılırdı).
+    let cariId = secilenCariId ?? eposta.cariId;
     if (!cariId) {
-      const ilkCari = await this.prisma.tenantIslem(tenantId, (tx) =>
-        tx.cariHesap.findFirst({ where: { tenantId, aktif: true }, select: { id: true } }),
+      throw new BadRequestException("E-posta bir cariyle eşleşmedi; fırsatın açılacağı cariyi seçin.");
+    }
+    if (secilenCariId) {
+      const cari = await this.prisma.tenantIslem(tenantId, (tx) =>
+        tx.cariHesap.findFirst({ where: { id: secilenCariId, tenantId, aktif: true }, select: { id: true } }),
       );
-      if (!ilkCari) throw new BadRequestException("Sistemde kayıtlı aktif bir cari hesap bulunamadı");
-      cariId = ilkCari.id;
+      if (!cari) throw new BadRequestException("Seçilen cari bulunamadı ya da pasif.");
+      cariId = cari.id;
     }
 
     const baslik = `E-posta: ${eposta.konu.slice(0, 120)}`;
