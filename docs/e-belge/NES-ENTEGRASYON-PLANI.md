@@ -188,7 +188,7 @@ seri/sayaç modülümüz numarayı kendisi üretiyor — iki sayaç aynı anda
 | Konu | Seçenekler |
 |---|---|
 | ~~Çok etiketli alıcıda posta kutusu seçimi~~ | **Karara bağlandı:** kendi entegratörümüzün alan adı → `defaultpk` → en yeni. Adaylar `postaKutulari` ile açılıyor; kullanıcıya seçtirme EBLG-02 onay adımına bırakıldı. |
-| Belge numarasını kim atar | **Karara bağlandı: NES otomatik serisi.** UBL'e yalnız seri öneki yazılır, numarayı NES atar. Uygulaması bekliyor — bkz. aşağıdaki not. |
+| Belge numarasını kim atar | **Karara bağlandı: NES otomatik serisi.** UBL'e yalnız seri öneki yazılır, numarayı NES atar. Uygulandı — bkz. aşağıdaki not. |
 
 ### NES otomatik serisi (uygulandı)
 

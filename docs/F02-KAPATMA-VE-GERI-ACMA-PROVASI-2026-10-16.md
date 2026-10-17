@@ -40,7 +40,7 @@ Mevcut AI aracı `odeme_hatirlatmasi_gonder`, `vadeHatirlatmaGonder` controller 
 
 ## İşletim kaydı ve kalan kapı
 
-[Genel V2 geri dönüş bölümü](v2-release-runbook.md) güncellendi: porta göre süreç öldürme ve kirli çalışma alanında yerinde `git checkout` ile otomatik yeniden derleme adımları çıkarıldı. Ayrı doğrulanmış paket, kontrollü API/worker yönetimi, şema/bağımlılık uyumu, gönderim yollarının durdurulması ve sürüm/işlev doğrulaması şartları belirtildi. Bu belge değişikliği hiçbir süreci durdurmadı.
+[Genel V2 geri dönüş bölümü](arsiv/v2-cli-asistan/v2-release-runbook.md) güncellendi: porta göre süreç öldürme ve kirli çalışma alanında yerinde `git checkout` ile otomatik yeniden derleme adımları çıkarıldı. Ayrı doğrulanmış paket, kontrollü API/worker yönetimi, şema/bağımlılık uyumu, gönderim yollarının durdurulması ve sürüm/işlev doğrulaması şartları belirtildi. Bu belge değişikliği hiçbir süreci durdurmadı.
 
 Yereldeki dört hazırlık adayı F02 içeriyor; birincisi kaynak tutarsızlığı, ikincisi geri yükleme hatası nedeniyle kabul edilmemişti. Bunlar onaylı F02 öncesi geri dönüş paketi yerine seçilmez. Tam eski sürüm provası için API/web/worker dosya kimliği ve bağımlılıkları belli önceki dağıtım paketi hâlâ gerekli. Gerçek takip örneği, üretim kapasitesi ve canlı yayın da açık kalır.
 

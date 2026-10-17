@@ -1,6 +1,6 @@
 # TekirExtra Profesyonel B2B Bayi Portalı İş Planı
 
-**Durum:** Planlandı — geliştirmeye başlanmadı  
+**Durum:** Kısmen uygulandı (2026-10-17 tespiti) — `b2b_bayi` rolü, `/panel/b2b` ekranı ve dört uç var (profil, katalog, ekstre, sipariş oluşturma); sepet, sipariş geçmişi, sevkiyat takibi, fatura indirme, bayi kullanıcıları, şirket yönetim paneli ve sipariş onay merkezi yok  
 **Kaydedilme tarihi:** 21 Ağustos 2026  
 **Mevcut ekran:** `/panel/b2b`  
 **Hedef:** Mevcut şirket içi “cari adına sipariş girme” ekranını, güvenli ve profesyonel bir bayi self-servis portalına dönüştürmek.

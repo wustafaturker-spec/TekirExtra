@@ -289,14 +289,14 @@ model FiyatOneriLog {
 - [x] Web arayüzünde Fiş Yükleme -> Otomatik Masraf Önizleme modülü (`apps/web/src/components/masraf-ocr-modal.tsx`).
 - [x] Birim ve entegrasyon testlerinin yazılması (`src/ai/ai.service.test.ts`).
 
-### Sprint 2: Dinamik Fiyatlandırma & Vade Risk Motoru (Tamamlandı ✅)
+### Sprint 2: Dinamik Fiyatlandırma & Vade Risk Motoru (Kurala dayalı olarak yapıldı — AI-12 fiyat önerisi `stok/fiyat-onerisi.ts`; ML motoru ve `ai/fiyatlandirma` yok, 2026-10-17 tespiti)
 - [x] `packages/shared` veya `apps/api/src/ai/fiyatlandirma` içine saf matematiksel vade/maliyet motorunun yazılması.
 - [x] Carinin geçmiş ödeme gecikme verilerinin (`CariTahsilatProfili`) fiyat servisine bağlanması.
 - [x] Minimum kâr marjı kalkanının (stop-loss) devreye alınması.
 - [x] Teklif ve Fatura ekranlarına "AI Fiyat Önerisi" popover/kart bileşeninin eklenmesi (`apps/web/src/components/ai-fiyat-onerisi.tsx`).
 - [x] Geçmiş teklifler üzerinden geriye dönük doğrulama testleri (`src/ai/fiyatlandirma/ai-fiyat-motoru.test.ts`).
 
-### Sprint 3: Dış Kanallar, WhatsApp & Çoklu Kanal AI Ajanı (Tamamlandı ✅)
+### Sprint 3: Dış Kanallar, WhatsApp & Çoklu Kanal AI Ajanı (Kaldırıldı — AI-10: WhatsApp/e-posta kanalı, PIN ve simülatör bu pakette yok; dış kanal ayrı pakette imza doğrulamalı webhook ile gelecek. 2026-10-17 tespiti)
 - [x] Meta WhatsApp Cloud API / Webhook altyapısının kurulması (`/ai/ajan/mesaj` & `/ai/ajan/simulasyon`).
 - [x] Telefon numarası -> Kullanıcı & Tenant eşleştirme ve güvenlik katmanı (PIN doğrulaması `POST /ai/ajan/pin-dogrula`).
 - [x] Function Calling araçlarının geliştirilmesi (`araciBakiyeSorgula`, `araciTeklifTaslagiHazirla`, `araciTeklifOnayla`, `araciBelgeGonder`, `araciCariEkstreGonder`, `araciOdemeHatirlatmasiYap`, `araciCrmGorevOlustur`).
