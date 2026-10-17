@@ -6,9 +6,10 @@ export interface CariDurumYaniti {
   gostergeler: {
     bakiyeTry: string;
     riskKullanimOrani: number | null;
-    odemeDavranisi: "veri_yetersiz" | "zamaninda" | "kismen_gec" | "gecikmeli";
+    /** CARI-46: satışa gelmez (null). */
+    odemeDavranisi: "veri_yetersiz" | "zamaninda" | "kismen_gec" | "gecikmeli" | null;
     tahminiGecikmeGun: number | null;
-    guven: "dusuk" | "orta" | "yuksek";
+    guven: "dusuk" | "orta" | "yuksek" | null;
   } | null;
   bulgular: { kod: string; onem: "kritik" | "uyari" | "bilgi"; mesaj: string }[];
 }
@@ -25,6 +26,8 @@ export interface CariDurumOzeti {
   durum: "dogrulandi" | "guvenli_ozet";
   neden?: "model_yaniti_gecersiz" | "model_hatasi" | "olgu_yok";
   paragraf: string;
+  /** Seçimi model mi yaptı; tek olgu ya da hiç olgu yoksa modele gidilmez. */
+  modelKullanildi: boolean;
   olgular: DurumOlgusu[];
   secilenOlguIdleri: string[];
   hesaplandiAt: string;
@@ -52,6 +55,7 @@ export function durumOlgulari(d: CariDurumYaniti): DurumOlgusu[] {
   if (g.riskKullanimOrani !== null && g.riskKullanimOrani > 0 && g.riskKullanimOrani < 80) {
     olgular.push({ id: "g-risk", onem: "gosterge", metin: `Risk limitinin %${g.riskKullanimOrani} kadarı kullanılıyor.` });
   }
+  if (!g.odemeDavranisi || !g.guven) return olgular;
   if (g.odemeDavranisi === "zamaninda") {
     olgular.push({ id: "g-davranis", onem: "gosterge", metin: `Ödemeler genellikle zamanında geliyor (güven: ${GUVEN_ADI[g.guven]}).` });
   } else if (g.odemeDavranisi !== "veri_yetersiz" && g.tahminiGecikmeGun !== null) {
@@ -82,7 +86,7 @@ export function guvenliSecim(olgular: DurumOlgusu[]): string[] {
  * Seçimi doğrular ve paragrafı uygulama metinlerinden kurar. Bilinmeyen ya
  * da tekrarlanan kimlik varsa seçim bütünüyle reddedilir; kısmi kabul yoktur.
  */
-export function ozetiKur(d: CariDurumYaniti, secim: unknown, modelHatasi = false): CariDurumOzeti {
+export function ozetiKur(d: CariDurumYaniti, secim: unknown, modelHatasi = false, modelKullanildi = true): CariDurumOzeti {
   const olgular = durumOlgulari(d);
   const harita = new Map(olgular.map((o) => [o.id, o]));
   let idler: string[] | null = null;
@@ -100,6 +104,7 @@ export function ozetiKur(d: CariDurumYaniti, secim: unknown, modelHatasi = false
     durum: idler ? "dogrulandi" : "guvenli_ozet",
     ...(neden ? { neden } : {}),
     paragraf,
+    modelKullanildi,
     olgular,
     secilenOlguIdleri: secilen,
     hesaplandiAt: d.hesaplandiAt,

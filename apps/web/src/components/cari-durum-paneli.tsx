@@ -15,12 +15,13 @@ interface CariDurumu {
     bakiyeTry: string;
     vadesiGecmisTry: string;
     enEskiGecikmeGun: number | null;
-    mevcutRiskTry: string;
+    /** CARI-46: satışa risk ayrıntısı ve ödeme davranışı gelmez (null). */
+    mevcutRiskTry: string | null;
     kullanilabilirLimitTry: string | null;
     riskKullanimOrani: number | null;
-    odemeDavranisi: "veri_yetersiz" | "zamaninda" | "kismen_gec" | "gecikmeli";
+    odemeDavranisi: "veri_yetersiz" | "zamaninda" | "kismen_gec" | "gecikmeli" | null;
     tahminiGecikmeGun: number | null;
-    guven: "dusuk" | "orta" | "yuksek";
+    guven: "dusuk" | "orta" | "yuksek" | null;
     kurEksik: string[];
   } | null;
   bulgular: { kod: string; onem: BulguOnemi; mesaj: string; kanit: BulguHedefi; eylem?: BulguHedefi }[];
@@ -33,20 +34,21 @@ const ONEM: Record<BulguOnemi, { ad: string; tur: "danger" | "warning" | "info" 
   bilgi: { ad: "Bilgi", tur: "info" },
 };
 
-const DAVRANIS: Record<NonNullable<CariDurumu["gostergeler"]>["odemeDavranisi"], string> = {
+const DAVRANIS: Record<NonNullable<NonNullable<CariDurumu["gostergeler"]>["odemeDavranisi"]>, string> = {
   veri_yetersiz: "Veri yetersiz",
   zamaninda: "Zamanında öder",
   kismen_gec: "Kısmen geç öder",
   gecikmeli: "Gecikmeli öder",
 };
 
-const GUVEN_ADI: Record<NonNullable<CariDurumu["gostergeler"]>["guven"], string> = { dusuk: "düşük", orta: "orta", yuksek: "yüksek" };
+const GUVEN_ADI: Record<NonNullable<NonNullable<CariDurumu["gostergeler"]>["guven"]>, string> = { dusuk: "düşük", orta: "orta", yuksek: "yüksek" };
 
 /** CARI-47: modelin yalnız seçtiği, uygulamanın yazdığı tek paragraf. */
 interface DurumOzeti {
   durum: "dogrulandi" | "guvenli_ozet";
   neden?: "model_yaniti_gecersiz" | "model_hatasi" | "olgu_yok";
   paragraf: string;
+  modelKullanildi: boolean;
 }
 
 /**
@@ -120,7 +122,9 @@ export function CariDurumPaneli({ cariId, cariUnvan, yenile, onSekme }: { cariId
         <div className="cari-durum__ozet" aria-live="polite">
           <p>{ozet.paragraf}</p>
           <small className="subtle">
-            {ozet.durum === "dogrulandi"
+            {ozet.durum === "dogrulandi" && !ozet.modelKullanildi
+              ? "Tek bulgu olduğu için yapay zekâ kullanılmadı."
+              : ozet.durum === "dogrulandi"
               ? "Yapay zekâ yalnız panelin bulgularından seçim yaptı; tutar ve tarihler uygulamadan."
               : ozet.neden === "olgu_yok" ? "Özetlenecek bulgu yok." : "Yapay zekâ yanıtı kullanılamadı; panelin kendi önem sırası gösteriliyor."}
           </small>
@@ -143,12 +147,12 @@ export function CariDurumPaneli({ cariId, cariUnvan, yenile, onSekme }: { cariId
             tone={g.riskKullanimOrani !== null && g.riskKullanimOrani >= 100 ? "danger" : "default"}
             hint={g.kullanilabilirLimitTry === null ? "Risk limiti tanımsız" : <>Limit <Para deger={g.kullanilabilirLimitTry} /></>}
           />
-          <Stat
+          {g.odemeDavranisi && g.guven && <Stat
             label="Ödeme davranışı"
             value={DAVRANIS[g.odemeDavranisi]}
             tone={g.odemeDavranisi === "gecikmeli" ? "danger" : g.odemeDavranisi === "zamaninda" ? "success" : "default"}
             hint={g.tahminiGecikmeGun === null ? `Güven: ${GUVEN_ADI[g.guven]}` : `Ortalama ${g.tahminiGecikmeGun} gün gecikme · güven: ${GUVEN_ADI[g.guven]}`}
-          />
+          />}
         </StatGrid>
       )}
       {g && g.kurEksik.length > 0 && <p className="subtle cari-durum__not">{g.kurEksik.join(", ")} için güncel kur yok; tarihî kurla hesaplandı.</p>}

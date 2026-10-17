@@ -35,7 +35,7 @@ export class CariDurumOzetService {
     const durum = await this.uc.cagir<CariDurumYaniti>(UC.cariDurum, [cariId]);
     const olgular = durumOlgulari(durum);
     // Seçilecek bir şey yoksa modele gidilmez.
-    if (olgular.length <= 1) return ozetiKur(durum, { olguIdleri: olgular.map((o) => o.id) });
+    if (olgular.length <= 1) return ozetiKur(durum, { olguIdleri: olgular.map((o) => o.id) }, false, false);
     const { saglayici } = await this.saglayiciBul(aktifBaglam().tenantId);
     try {
       const secim = await saglayici.yapilandirilmisUretim(ozetTalimati(olgular), ozetSecimSemasi);

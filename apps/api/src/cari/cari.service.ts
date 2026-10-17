@@ -24,7 +24,7 @@ import type {
 } from "./cari.semalar";
 import { PdfService } from "../core/pdf/pdf.service";
 import { cariDavranisAnalizi, gecikmeEgilimi } from "./cari-analiz";
-import { durumBulgulari, GOSTERILEN_BULGU, type FinansGirdisi, type SatisGirdisi } from "./cari-durum";
+import { durumBulgulari, GOSTERILEN_BULGU, ozetFinansBulgulari, type FinansGirdisi, type SatisGirdisi } from "./cari-durum";
 import { gercekKisiUnvani } from "./ad-soyad";
 import { ebelgeTestOrtamiMi, vknTcknKabulEdilebilirMi } from "../ebelge/vkn-kabulu";
 import { belgeNoMetni, MUHTELIF_MUSTERI_KOD, MUHTELIF_MUSTERI_UNVAN, MUHTELIF_MUSTERI_VKN, muhtelifMusteriMi, vknTcknGecerliMi, type YabanciDoviz } from "@tekirextra/shared";
@@ -94,6 +94,12 @@ export interface DovizBakiye {
 
 /** CARI-46: finansal göstergeler ve bulgular (web `finansalOzetGorebilir` ile aynı roller). */
 const DURUM_FINANS_ROLLERI: string[] = ["yonetici", "muhasebe", "mali_musavir", "salt_okunur"];
+/**
+ * CARI-46 (2026-10-17 kararı): satış finansın özetini görür — bakiye, vadesi
+ * geçmiş, risk limiti ve kalan limit; risk ayrıntısı (mevcut risk, çek/senet,
+ * teminat, grup riski), ödeme davranışı ve son tahsilat/ödeme gizlenir.
+ */
+const DURUM_OZET_FINANS_ROLLERI: string[] = ["satis"];
 /** CARI-46: teklif ve sipariş bulguları. */
 const DURUM_SATIS_ROLLERI: string[] = ["yonetici", "muhasebe", "satis", "mali_musavir", "salt_okunur"];
 
@@ -302,7 +308,6 @@ export class CariService {
       }),
     );
     if (!kayit) throw new NotFoundException("Cari bulunamadı");
-    const bakiyeler = (await this.bakiyeleriGetir([id])).get(id) ?? [];
     // CARI-30: kart ve fatura uyarısı aynı risk fonksiyonunu kullanır.
     const riskler = await this.prisma.tenantIslem(ctx.tenantId, (tx) => cariRiskleri(tx, ctx.tenantId, [id]));
     const risk = riskOzetiGorunumu(riskler.get(id)!, kayit.riskLimiti);
@@ -321,12 +326,34 @@ export class CariService {
       etiketler: kayit.etiketler.map((a) => a.etiket),
       temsilci: kayit.temsilci,
       fiyatListesi: kayit.fiyatListesi,
-      grup: kayit.grup && grupRiski ? { id: kayit.grup.id, ad: kayit.grup.ad, uyeSayisi: grupRiski.uyeSayisi, risk: riskOzetiGorunumu(grupRiski, kayit.grup.riskLimiti) } : null,
-      bakiyeler,
-      risk,
-      riskAsimi: risk.asim,
-      finansalOzet: await this.finansalOzet(id),
+      ...(await this.kartFinansi(id, kayit, risk, grupRiski, ctx.rol)),
       izinliEylemler: this.eylemler(kayit, ctx.rol, kayit._count.hareketler),
+    };
+  }
+
+  /** CARI-46: kartın finans bölümü; finans rolü olmayan satış yalnız özeti alır. */
+  private async kartFinansi(
+    id: string,
+    kayit: { grup: { id: string; ad: string; riskLimiti: Prisma.Decimal | null } | null },
+    risk: ReturnType<typeof riskOzetiGorunumu>,
+    grupRiski: { uyeSayisi: number } & Parameters<typeof riskOzetiGorunumu>[0] | null,
+    rol: string,
+  ) {
+    const finansalOzet = await this.finansalOzet(id);
+    const bakiyeler = (await this.bakiyeleriGetir([id])).get(id) ?? [];
+    if (DURUM_FINANS_ROLLERI.includes(rol)) {
+      return {
+        grup: kayit.grup && grupRiski ? { id: kayit.grup.id, ad: kayit.grup.ad, uyeSayisi: grupRiski.uyeSayisi, risk: riskOzetiGorunumu(grupRiski, kayit.grup.riskLimiti) } : null,
+        bakiyeler, risk, riskAsimi: risk.asim, finansalOzet,
+      };
+    }
+    return {
+      grup: kayit.grup ? { id: kayit.grup.id, ad: kayit.grup.ad, uyeSayisi: null, risk: null } : null,
+      bakiyeler,
+      risk: { ...risk, mevcutRisk: null, cekSenetRiski: null, teminat: null },
+      riskAsimi: risk.asim,
+      finansalOzet: { ...finansalOzet, sonIslemTarihi: null, sonTahsilatTarihi: null, sonOdemeTarihi: null, vadesiGecmisBorcumuz: null },
+      finansOzetli: true,
     };
   }
 
@@ -861,6 +888,7 @@ export class CariService {
   async durum(cariId: string) {
     const { tenantId, rol } = aktifBaglam();
     const finansGorur = DURUM_FINANS_ROLLERI.includes(rol);
+    const ozetFinansGorur = finansGorur || DURUM_OZET_FINANS_ROLLERI.includes(rol);
     const satisGorur = DURUM_SATIS_ROLLERI.includes(rol);
     const simdi = new Date();
     const bugunGun = new Date(`${bugunTR()}T00:00:00Z`);
@@ -874,7 +902,7 @@ export class CariService {
 
       let finans: FinansGirdisi | undefined;
       let gostergeler: Record<string, unknown> | null = null;
-      if (finansGorur) {
+      if (ozetFinansGorur) {
         const yilOnce = new Date(bugunGun); yilOnce.setUTCFullYear(yilOnce.getUTCFullYear() - 1);
         const [riskler, alacaklar, borclar, hareketler, sorunluCekler, yaklasanCekler, teminatlar, itirazSayisi, sonEtkilesim] = await Promise.all([
           cariRiskleri(tx, tenantId, [cariId], simdi),
@@ -930,6 +958,7 @@ export class CariService {
           guven: davranis.guven,
           kurEksik: [...new Set([...riskOzeti.kurEksik, ...alacak.kurEksik])],
         };
+        if (!finansGorur) gostergeler = { ...gostergeler, mevcutRiskTry: null, odemeDavranisi: null, tahminiGecikmeGun: null, guven: null };
       }
 
       let satis: SatisGirdisi | undefined;
@@ -950,7 +979,8 @@ export class CariService {
         };
       }
 
-      const bulgular = durumBulgulari({ bugun: simdi, cari: { id: cari.id, tip: cari.tip, karaListe: cari.karaListe, karaListeNotu: cari.karaListeNotu }, finans, satis });
+      const tumBulgular = durumBulgulari({ bugun: simdi, cari: { id: cari.id, tip: cari.tip, karaListe: cari.karaListe, karaListeNotu: cari.karaListeNotu }, finans, satis });
+      const bulgular = finansGorur || !finans ? tumBulgular : ozetFinansBulgulari(tumBulgular);
       return {
         hesaplandiAt: simdi.toISOString(),
         gostergeler,

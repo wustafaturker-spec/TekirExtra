@@ -56,7 +56,8 @@ interface Cari {
 
 interface CariSecimOzeti extends Cari {
   bakiyeler: { dovizCinsi: string; bakiye: string }[];
-  risk: { mevcutRisk: string; limit: string | null; kalanLimit: string | null; asim: boolean };
+  /** CARI-46: satışa mevcut risk gelmez (null). */
+  risk: { mevcutRisk: string | null; limit: string | null; kalanLimit: string | null; asim: boolean };
   varsayilanVadeGun?: number | null;
   belgeDili?: string | null;
   belgeCiftDil?: boolean;
@@ -243,7 +244,8 @@ const KAPAMA_KAYNAGI: Record<string, string> = { kasa_banka: "Tahsilat/ödeme", 
 
 interface KesinlestirmeOzeti {
   fatura: FaturaDetay;
-  risk: { mevcutRisk: string; limit: string | null; kalanLimit: string | null; asim: boolean } | null;
+  /** CARI-46: satışa mevcut risk gelmez (null); aşım kalan limitten hesaplanır. */
+  risk: { mevcutRisk: string | null; limit: string | null; kalanLimit: string | null; asim: boolean } | null;
 }
 /** L: son adımdaki önizleme; entegratörün önizleme ucu yoksa yalnız kanal kararı gelir. */
 type EbelgeOnizleme =
@@ -2186,7 +2188,7 @@ export default function FaturaSayfasi() {
               <div className={`customer-context${tip.startsWith("alis") ? " customer-context--tedarikci" : ""}${cariOzeti.risk.asim && !tip.startsWith("alis") ? " is-warning" : ""}`}>
                 <div><span>TRY bakiye</span><strong>{tl(cariOzeti.bakiyeler.find((b) => b.dovizCinsi === "TRY")?.bakiye ?? 0)}</strong></div>
                 {/* Risk ve limit müşteri kavramıdır; tedarikçide gösterilmez. */}
-                {!tip.startsWith("alis") && <div><span>Mevcut risk</span><strong>{tl(cariOzeti.risk.mevcutRisk)}</strong></div>}
+                {!tip.startsWith("alis") && cariOzeti.risk.mevcutRisk !== null && <div><span>Mevcut risk</span><strong>{tl(cariOzeti.risk.mevcutRisk)}</strong></div>}
                 {!tip.startsWith("alis") && <div><span>Kullanılabilir limit</span><strong>{cariOzeti.risk.kalanLimit === null ? "Limit yok" : tl(cariOzeti.risk.kalanLimit)}</strong></div>}
                 <div><span>Varsayılan vade</span><strong>{cariOzeti.varsayilanVadeGun ? `${cariOzeti.varsayilanVadeGun} gün` : "Tanımsız"}</strong></div>
                 <div><span>e-Belge</span><strong>{cariOzeti.eFaturaMukellefi ? "e-Fatura" : "e-Arşiv"}</strong></div>
@@ -2819,7 +2821,10 @@ export default function FaturaSayfasi() {
         const proforma = fatura.tip === "proforma";
         const tahminiRisk = Number(kesinlestirmeOzeti.risk?.mevcutRisk ?? 0) + (fatura.tip === "satis" ? Number(fatura.genelToplam) : 0);
         const riskLimiti = kesinlestirmeOzeti.risk?.limit === null ? null : Number(kesinlestirmeOzeti.risk?.limit ?? 0);
-        const riskAsimi = riskLimiti !== null && tahminiRisk > riskLimiti;
+        const riskGizli = kesinlestirmeOzeti.risk?.mevcutRisk === null;
+        const faturaEtkisi = fatura.tip === "satis" ? Number(fatura.genelToplam) : 0;
+        const sonrakiKalanLimit = kesinlestirmeOzeti.risk?.kalanLimit == null ? null : Number(kesinlestirmeOzeti.risk.kalanLimit) - faturaEtkisi;
+        const riskAsimi = riskGizli ? sonrakiKalanLimit !== null && sonrakiKalanLimit < 0 : riskLimiti !== null && tahminiRisk > riskLimiti;
         return (
           <HizliKayitPaneli baslik="Faturayı kesinleştir" onKapat={() => setKesinlestirmeOzeti(null)}>
             <div className="approval-summary">
@@ -2838,10 +2843,12 @@ export default function FaturaSayfasi() {
                 <div><span>Stok</span><strong>{proforma ? "Değişmeyecek" : `${toplamMiktar.toLocaleString("tr-TR")} birim ${satisYonlu ? "azalacak" : "artacak"}`}</strong></div>
                 <div><span>Cari hesap</span><strong>{proforma ? "Değişmeyecek" : `${tl(fatura.genelToplam, fatura.dovizCinsi)} ${satisYonlu ? "borç" : "alacak"} yazılacak`}</strong></div>
                 <div><span>e-Belge</span><strong>{proforma ? "Oluşmayacak" : "Kesinleştirme sonrası ayrıca wizard ile oluşturulacak"}</strong></div>
-                <div><span>Tahmini risk</span><strong>{fatura.tip === "satis" ? tl(tahminiRisk) : "Değişmeyecek"}</strong></div>
+                {riskGizli
+                  ? <div><span>Sonraki kalan limit</span><strong>{fatura.tip !== "satis" ? "Değişmeyecek" : sonrakiKalanLimit === null ? "Limit yok" : tl(sonrakiKalanLimit)}</strong></div>
+                  : <div><span>Tahmini risk</span><strong>{fatura.tip === "satis" ? tl(tahminiRisk) : "Değişmeyecek"}</strong></div>}
               </div>
               {!fatura.cari.vknTckn && !proforma && <div className="approval-impact is-warning">Cari VKN/TCKN bilgisi eksik. e-Belge gönderiminden önce cari kartını tamamlayın.</div>}
-              {riskAsimi && <div className="approval-impact is-warning">Kesinleştirme sonrasında tahmini risk {tl(tahminiRisk)} ile {tl(riskLimiti)} limitini aşacak.</div>}
+              {riskAsimi && <div className="approval-impact is-warning">{riskGizli ? `Kesinleştirme sonrasında risk limiti ${tl(Math.abs(sonrakiKalanLimit ?? 0))} aşılacak.` : `Kesinleştirme sonrasında tahmini risk ${tl(tahminiRisk)} ile ${tl(riskLimiti ?? 0)} limitini aşacak.`}</div>}
               {/* Alış iadesini biz keseriz, numarası kendi serimizden gelir (EBLG-58). */}
               {fatura.tip === "alis" && <Field label="Tedarikçi fatura no *"><Input autoFocus value={faturaNo} onChange={(e) => setFaturaNo(e.target.value)} maxLength={100} placeholder="Tedarikçinin belge numarası" required /></Field>}
               <div className="quick-panel__actions">

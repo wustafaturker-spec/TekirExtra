@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { cariDavranisAnalizi } from "./cari-analiz";
-import { durumBulgulari, type DurumGirdisi, type FinansGirdisi } from "./cari-durum";
+import { durumBulgulari, ozetFinansBulgulari, type DurumGirdisi, type FinansGirdisi } from "./cari-durum";
 
 const BUGUN = new Date("2026-10-17T09:00:00Z");
 const CARI = { id: "c1", tip: "musteri", karaListe: false, karaListeNotu: null };
@@ -69,5 +69,18 @@ describe("Cari Durum Paneli bulguları (CARI-44)", () => {
     const bulgular = durumBulgulari({ bugun: BUGUN, cari: CARI, finans: finans({ acikBakiyeTry: 500, vadesiGecmisTry: 500, enEskiGecikmeGun: 3 }) });
     expect(bulgular[0].kanit).toEqual({ etiket: "Ekstre", sekme: "ekstre" });
     expect(bulgular[0].mesaj).toContain("500,00 TL");
+  });
+
+  it("CARI-46: satış finans özetinde yalnız kara liste, vadesi geçmiş ve risk limiti kalır; limit eylemi düşer", () => {
+    const tum = durumBulgulari({
+      bugun: BUGUN, cari: { ...CARI, karaListe: true, karaListeNotu: null },
+      finans: finans({ acikBakiyeTry: 500, vadesiGecmisTry: 500, enEskiGecikmeGun: 5, mevcutRiskTry: 90, kullanilabilirLimitTry: 100, sorunluCekSayisi: 1, egilim: { sonUcAy: 30, oncekiAltiAy: 10 }, borclarimiz: { vadesiGecmisTry: 10, yakinVadeTry: 0 } }),
+      satis: { bitenTeklifler: [{ id: "t1", no: "TKF2026000001", gecerlilikTarihi: "2026-10-20" }], bekleyenSiparisler: [] },
+    });
+    expect(tum.map((b) => b.kod)).toEqual(expect.arrayContaining(["sorunlu_cek", "davranis_kotulesiyor", "odememiz_gecikti"]));
+    const ozet = ozetFinansBulgulari(tum);
+    expect(ozet.map((b) => b.kod).sort()).toEqual(["kara_liste", "risk_limiti", "teklif_bitiyor", "vadesi_gecmis"]);
+    expect(ozet.find((b) => b.kod === "risk_limiti")!.eylem).toBeUndefined();
+    expect(ozet.find((b) => b.kod === "vadesi_gecmis")!.eylem).toBeDefined();
   });
 });

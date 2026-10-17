@@ -216,3 +216,15 @@ export function durumBulgulari(g: DurumGirdisi): DurumBulgusu[] {
   // Sıralama kararlı: önce önem, aynı önemde kuralların yukarıdaki sırası.
   return bulgular.map((b, i) => ({ b, i })).sort((x, y) => ONEM_SIRASI[x.b.onem] - ONEM_SIRASI[y.b.onem] || x.i - y.i).map(({ b }) => b);
 }
+
+/**
+ * CARI-46 (2026-10-17): finansın yalnız özetini gören rol (satış) kara liste,
+ * vadesi geçmiş ve risk limiti bulgularını alır; risk limitini değiştirme
+ * eylemi finans rolünündür. Satış bulguları (teklif, sipariş) aynen kalır.
+ */
+const OZET_FINANS_BULGULARI = new Set(["kara_liste", "vadesi_gecmis", "risk_limiti", "teklif_bitiyor", "teslim_bekliyor"]);
+export function ozetFinansBulgulari(bulgular: DurumBulgusu[]): DurumBulgusu[] {
+  return bulgular
+    .filter((b) => OZET_FINANS_BULGULARI.has(b.kod))
+    .map((b) => (b.kod === "risk_limiti" ? { ...b, eylem: undefined } : b));
+}

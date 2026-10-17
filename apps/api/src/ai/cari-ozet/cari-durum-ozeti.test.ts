@@ -80,7 +80,7 @@ describe("cari durum özeti servisi (CARI-47)", () => {
     const k = kur(saglayici);
     const s = await k.calistir(() => k.service.ozetle("c1"));
     expect(k.uc.cagir).toHaveBeenCalledWith(expect.objectContaining({ yol: "GET /cari/:id/durum" }), ["c1"]);
-    expect(s.durum).toBe("dogrulandi");
+    expect(s).toMatchObject({ durum: "dogrulandi", modelKullanildi: true });
     expect(JSON.parse(uret.mock.calls[0][0].prompt)).toHaveLength(5);
   });
 
@@ -110,6 +110,6 @@ describe("cari durum özeti servisi (CARI-47)", () => {
     const k = kur(saglayici, { ...DURUM, gostergeler: null, bulgular: [DURUM.bulgular[0]] });
     const s = await k.calistir(() => k.service.ozetle("c1"));
     expect(uret).not.toHaveBeenCalled();
-    expect(s).toMatchObject({ durum: "dogrulandi", secilenOlguIdleri: ["b1"] });
+    expect(s).toMatchObject({ durum: "dogrulandi", secilenOlguIdleri: ["b1"], modelKullanildi: false });
   });
 });

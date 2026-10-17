@@ -148,8 +148,9 @@ interface CariKisi {
 interface GrupOzeti {
   id: string;
   ad: string;
-  uyeSayisi: number;
-  risk: { mevcutRisk: string; limit: string | null; teminat?: string; kullanilabilirLimit: string | null; kalanLimit: string | null; asim: boolean };
+  /** CARI-46: finans rolü olmayan (satış) kullanıcıya grup ayrıntısı gelmez. */
+  uyeSayisi: number | null;
+  risk: { mevcutRisk: string; limit: string | null; teminat?: string; kullanilabilirLimit: string | null; kalanLimit: string | null; asim: boolean } | null;
 }
 
 interface CariDetay extends Omit<Cari, "grup"> {
@@ -195,15 +196,17 @@ interface CariDetay extends Omit<Cari, "grup"> {
   etiketler: Etiket[];
   adresler: CariAdres[];
   kisiler: CariKisi[];
+  /** CARI-46: satış yalnız bakiye, vadesi geçmiş ve limit özetini alır; ayrıntılar null gelir. */
+  finansOzetli?: boolean;
   risk: {
-    cekSenetRiski: string;
-    mevcutRisk: string;
+    cekSenetRiski: string | null;
+    mevcutRisk: string | null;
     limit: string | null;
     kalanLimit: string | null;
     asim: boolean;
     kurEksik?: string[];
     /** CARI-39: geçerli teminat ve risk limiti + teminat. */
-    teminat?: string;
+    teminat?: string | null;
     kullanilabilirLimit?: string | null;
   };
   finansalOzet: {
@@ -1364,15 +1367,16 @@ export default function CariSayfasi() {
                 </div>
                 <div className={`invoice-summary${detay.risk.asim ? " is-warning" : ""}`}>
                   <h4>Risk</h4>
-                  <div className="invoice-summary__line"><span>Mevcut risk</span><strong>{tl(detay.risk.mevcutRisk)}</strong></div>
-                  <div className="invoice-summary__line"><span>Çek / senet riski</span><strong>{tl(detay.risk.cekSenetRiski)}</strong></div>
+                  {detay.risk.mevcutRisk !== null && <div className="invoice-summary__line"><span>Mevcut risk</span><strong>{tl(detay.risk.mevcutRisk)}</strong></div>}
+                  {detay.risk.cekSenetRiski !== null && <div className="invoice-summary__line"><span>Çek / senet riski</span><strong>{tl(detay.risk.cekSenetRiski)}</strong></div>}
                   <div className="invoice-summary__line"><span>Risk limiti</span><strong>{detay.risk.limit ? tl(detay.risk.limit) : "Tanımsız"}</strong></div>
                   {Number(detay.risk.teminat ?? 0) > 0 && <div className="invoice-summary__line" title="Geçerli teminatların güncel kurla toplamı; risk limitine eklenir"><span>+ Teminat</span><strong>{tl(detay.risk.teminat!)}</strong></div>}
                   {Number(detay.risk.teminat ?? 0) > 0 && detay.risk.kullanilabilirLimit && <div className="invoice-summary__line"><span>Kullanılabilir limit</span><strong>{tl(detay.risk.kullanilabilirLimit)}</strong></div>}
                   <div className="invoice-summary__line"><span>Kalan limit</span><strong className={detay.risk.asim ? "is-negative" : ""}>{detay.risk.kalanLimit === null ? "—" : tl(detay.risk.kalanLimit)}</strong></div>
                   {detay.risk.asim && <small className="muted">Limit aşıldı; yeni vadeli işlemden önce finans onayı alın.</small>}
                 </div>
-                {detay.grup && (
+                {detay.grup && !detay.grup.risk && <div className="invoice-summary"><h4>Grup: {detay.grup.ad}</h4></div>}
+                {detay.grup?.risk && (
                   <div className={`invoice-summary${detay.grup.risk.asim ? " is-warning" : ""}`}>
                     <h4>Grup: <a className="btn-link" href={`/panel/cari/gruplar?id=${detay.grup.id}`}>{detay.grup.ad}</a></h4>
                     <div className="invoice-summary__line"><span>Üye</span><strong>{detay.grup.uyeSayisi}</strong></div>
@@ -1382,13 +1386,13 @@ export default function CariSayfasi() {
                     {detay.grup.risk.asim && <small className="muted">Grup limiti aşıldı; gruptaki her cariye kesilen belge risk politikasına takılır.</small>}
                   </div>
                 )}
-                <div className="invoice-summary">
+                {detay.finansOzetli ? <Button size="sm" type="button" onClick={() => setAktifSekme("ekstre")}>📊 Ekstreyi aç</Button> : <div className="invoice-summary">
                   <h4>Son hareketler</h4>
                   <div className="invoice-summary__line"><span>Son işlem</span><strong>{detay.finansalOzet.sonIslemTarihi ?? "—"}</strong></div>
                   <div className="invoice-summary__line"><span>Son tahsilat</span><strong>{detay.finansalOzet.sonTahsilatTarihi ?? "—"}</strong></div>
                   <div className="invoice-summary__line"><span>Son ödeme</span><strong>{detay.finansalOzet.sonOdemeTarihi ?? "—"}</strong></div>
                   <Button size="sm" type="button" onClick={() => setAktifSekme("ekstre")}>📊 Ekstreyi aç</Button>
-                </div>
+                </div>}
                 {cariKartEksikleri(detay).length > 0 && (
                   <div className="invoice-summary is-warning" role="status">
                     <h4>Eksikler</h4>
