@@ -16,6 +16,17 @@ import { PrismaService } from "../prisma.service";
  * Tarayıcı tembel başlatılır ve süreç boyunca tek örnek yaşar; her üretim
  * kendi sayfasında çalışır ve sayfa işi bitince kapatılır.
  */
+/** A4 dikey, 12 mm yan ve 14 mm üst/alt kenarla yazdırılabilir alan (CSS px, 96 dpi). */
+const YAZDIRILABILIR_GENISLIK_PX = Math.floor((186 / 25.4) * 96);
+const YAZDIRILABILIR_YUKSEKLIK_PX = Math.floor((269 / 25.4) * 96);
+/** Tek sayfaya sığdırmada okunurluğu bozmayacak en küçük ölçek. */
+const EN_KUCUK_OLCEK = 0.88;
+
+/** PDF'teki sayfa nesnelerinin sayısı (Chromium çıktısı sıkıştırılmamış nesne başlıkları yazar). */
+export function pdfSayfaSayisi(pdf: Buffer): number {
+  return (pdf.toString("latin1").match(/\/Type\s*\/Page(?![s\w])/g) ?? []).length;
+}
+
 @Injectable()
 export class PdfService implements OnModuleDestroy {
   private readonly logger = new Logger(PdfService.name);
@@ -107,7 +118,11 @@ export class PdfService implements OnModuleDestroy {
 
   async htmlToPdf(
     html: string,
-    secenekler?: { yatay?: boolean; yalitilmis?: boolean; sayfaNumarasi?: boolean; altBilgi?: string },
+    secenekler?: {
+      yatay?: boolean; yalitilmis?: boolean; sayfaNumarasi?: boolean; altBilgi?: string;
+      /** Az taşan iki sayfalık belgeyi hafif küçülterek tek sayfaya alır; ticari belgelerde (altBilgi) varsayılan açık. */
+      tekSayfayaSigdir?: boolean;
+    },
   ): Promise<Buffer> {
     const tarayici = await this.tarayiciAl();
     // Yalıtılmış kip yabancı kaynaklı HTML içindir (EBLG-29): betik çalışmaz,
@@ -119,7 +134,8 @@ export class PdfService implements OnModuleDestroy {
     try {
       if (secenekler?.yalitilmis) await sayfa.route("**", (yol) => void yol.abort());
       await sayfa.setContent(html, { waitUntil: secenekler?.yalitilmis ? "domcontentloaded" : "load" });
-      return await sayfa.pdf({
+      const bas = (scale = 1) => sayfa.pdf({
+        scale,
         format: "A4",
         landscape: secenekler?.yatay ?? false,
         printBackground: true,
@@ -136,6 +152,21 @@ export class PdfService implements OnModuleDestroy {
             }
           : {}),
       });
+      const ilk = await bas();
+      if (!(secenekler?.tekSayfayaSigdir ?? Boolean(secenekler?.altBilgi)) || pdfSayfaSayisi(ilk) !== 2) return ilk;
+      // Çift dilli etiketler gibi birkaç satırlık taşma (ör. yalnız imza bloğu) ikinci sayfa açmasın:
+      // içerik yüksekliği yazdırılabilir alanla ölçülür, taşma küçükse en çok %12 küçültülerek yeniden basılır.
+      if (secenekler?.yatay) return ilk;
+      await sayfa.setViewportSize({ width: YAZDIRILABILIR_GENISLIK_PX, height: YAZDIRILABILIR_YUKSEKLIK_PX });
+      await sayfa.emulateMedia({ media: "print" });
+      const yukseklik = Number(await sayfa.evaluate("document.documentElement.scrollHeight"));
+      const gereken = YAZDIRILABILIR_YUKSEKLIK_PX / yukseklik;
+      if (gereken < EN_KUCUK_OLCEK) return ilk;
+      for (const olcek of [Math.min(0.98, gereken * 0.98), EN_KUCUK_OLCEK]) {
+        const kucuk = await bas(Math.max(EN_KUCUK_OLCEK, olcek));
+        if (pdfSayfaSayisi(kucuk) === 1) return kucuk;
+      }
+      return ilk;
     } finally {
       await sayfa.close();
       await baglam?.close();
