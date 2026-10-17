@@ -91,9 +91,9 @@ test("fatura payı ve kapama ayrı gösterilir; karma ve eski faturada belirsizl
  {id:"66666666-6666-4666-8666-666666666666",no:"FAT-TAM",durum:"kesin",dovizCinsi:"TRY",faturaPayi:"501.05",payKapsami:"tam",kapama:{durum:"tam",kasaBanka:"30.02",iade:"20.05",diger:"0.00",kalan:"450.98"}},
  {id:"99999999-9999-4999-8999-999999999999",no:"FAT-ESKI",durum:"kesin",dovizCinsi:"TRY",faturaPayi:null,payKapsami:"dagitilamadi",kapama:belirsiz}];
  await page.getByRole("button",{name:"Bağları yenile",exact:true}).click();const region=page.getByRole("region",{name:"Fırsatın fatura payları",exact:true});
- await expect(region.getByText("100.10 USD",{exact:true})).toBeVisible();await expect(region.getByText(/Yalnız doğrulanan satırlar/)).toBeVisible();
- await expect(region.getByText("İade ile kapama",{exact:true})).toBeVisible();await expect(region.getByText("20.05 TRY",{exact:true})).toBeVisible();
- await expect(region.getByText("450.98 TRY",{exact:true})).toBeVisible();await expect(region.getByText(/Fatura payı dağıtılamadı/)).toBeVisible();
+ await expect(region.getByText("$100,10",{exact:true})).toBeVisible();await expect(region.getByText(/Yalnız doğrulanan satırlar/)).toBeVisible();
+ await expect(region.getByText("İade ile kapama",{exact:true})).toBeVisible();await expect(region.getByText("₺20,05",{exact:true})).toBeVisible();
+ await expect(region.getByText("₺450,98",{exact:true})).toBeVisible();await expect(region.getByText(/Fatura payı dağıtılamadı/)).toBeVisible();
  await expect(region.getByText(/Kapama payları dağıtılamadı/)).toHaveCount(2);expect(state.yazilar).toEqual([]);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  if(process.env.F03_SCREENSHOT_DIR)await region.screenshot({path:process.env.F03_SCREENSHOT_DIR+"/fatura-paylari-mobil.png"});
@@ -103,12 +103,12 @@ async function dagitimKur(page:Page,rol='muhasebe'){
  state.ticariSonuc=[{id:invoice,no:'FAT-DAGITIM',durum:'kesin',dovizCinsi:'TRY',faturaPayi:'100.10',payKapsami:'kismi',kapama:{durum:'dagitilamadi',kasaBanka:null,iade:null,diger:null,kalan:null}}];
  state.dagitim={mod:'pilot',fatura:{id:invoice,no:'FAT-DAGITIM',dovizCinsi:'TRY'},kanitOzeti:'a'.repeat(64),faturaPayi:'100.10',dagitilanToplam:'0.00',kapamalar:[{id:cap,tur:'kasa_banka',tutar:'50.00',kaynakOzeti:'b'.repeat(64),gecerli:true,surum:0,pay:null,azamiTutar:'50.00',gecersizEskiPay:false}],gecmis:[]};
  await page.getByRole('button',{name:'Bağları yenile',exact:true}).click();await page.getByRole('button',{name:'Kapama dağıtımını aç',exact:true}).click();
- const region=page.getByRole('region',{name:'Açık kapama dağıtımı',exact:true});await expect(region.getByText('0.00 TRY',{exact:true})).toBeVisible();return {state,region,cap};
+ const region=page.getByRole('region',{name:'Açık kapama dağıtımı',exact:true});await expect(region.getByText('₺0,00',{exact:true})).toBeVisible();return {state,region,cap};
 }
 test('muhasebe karma kapama payını kaydeder; sürüm ve gerekçe geçmişte kalır',async({page})=>{
  const {state,region,cap}=await dagitimKur(page);await region.getByLabel('Dağıtılacak kapama',{exact:true}).selectOption(cap);
  await region.getByLabel('Fırsatın kapama payı',{exact:true}).fill('20,05');await region.getByLabel('Dağıtım gerekçesi',{exact:true}).fill('Müşterinin ödeme dökümü');
- await region.getByRole('button',{name:'Kapama payını kaydet',exact:true}).click();await expect(region.getByText('20.05 TRY',{exact:true})).toBeVisible();
+ await region.getByRole('button',{name:'Kapama payını kaydet',exact:true}).click();await expect(region.getByText('₺20,05',{exact:true})).toBeVisible();
  await region.getByText('Dağıtım geçmişi',{exact:true}).click();await expect(region.getByText(/Müşterinin ödeme dökümü/)).toBeVisible();expect(state.yazilar).toHaveLength(1);
  expect(state.yazilar[0].body).toMatchObject({tutar:'20.05',kapamaId:cap,beklenenSurum:0});expect(state.yazilar[0].body).not.toHaveProperty('tenantId');
 });

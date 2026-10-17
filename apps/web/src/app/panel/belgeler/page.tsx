@@ -538,6 +538,10 @@ export default function BelgelerSayfasi() {
       void api<{ mod:string; firsat:{ id:string; cariId:string; baslik:string; updatedAt:string } }>(`/crm/firsatlar/${encodeURIComponent(firsat)}/belgeler`).then(data=>{
         if (!["pilot","acik"].includes(data.mod)) throw new Error("Fırsattan teklif oluşturma bu şirket için yazmaya açık değil.");
         setFirsatKaynak(data.firsat); setCariId(data.firsat.cariId);
+        // Müşteri listesi sayfalı yüklenir; fırsatın carisi listede yoksa adı kimlik olarak görünmesin.
+        void api<Cari>(`/cari/${encodeURIComponent(data.firsat.cariId)}`)
+          .then((cari) => setCariler((liste) => (liste.some((c) => c.id === cari.id) ? liste : [...liste, cari])))
+          .catch(() => undefined);
       }).catch(e=>setHata(e instanceof Error?e.message:"Fırsat okunamadı"));
     }
     if (!firsat && (yonParametresi === "satis" || yonParametresi === "alis")) {

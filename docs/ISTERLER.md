@@ -1132,6 +1132,20 @@ CLI'ı ve `/intelligence` uçları) kaldırılır; analiz mevcut AI görev hatt�
 | AI-26 | **V2 temizliği:** `apps/api/src/assistant/`, `api/openapi.yaml`, `docker/sandbox/`, `reports/qa-acceptance.md` ve `reports/pilot-rollout-report.md` kaldırılır; `/intelligence` ve `/assistant` uçları yoktur (asistan `/ai/ajan`, içgörüler `/ai/icgoruler`). | Z |
 | AI-27 | ✅ **Onay içeriğe bağlanır:** onaya tabi araç talebi açarken hedef kaydın içerik özetini (SHA-256) saklar (`ai_onay_talepleri.hedef_ozeti`). Belge/fatura işlemlerinde kayıt alanları ve satırlar, e-posta gönderiminde ayrıca alıcı adresi (adres verilmezse cari kartındaki adres; özet metninde de yazılır), cari/stok güncellemesinde değişecek alanların önceki değerleri özetlenir. Onayda özet yeniden hesaplanır; farklıysa işlem yapılmaz, talep `hedef_degisti` olur ve kullanıcıdan güncel hâliyle yeniden istemesi beklenir. İlişkili listeler (türetilen belgeler, ödemeler, e-Belge durumu) içeriğe girmez. Özetsiz eski talepler ve hedefi olmayan araçlar (kart oluşturma, tahsilat/tediye, hatırlatma) denetlenmez. | Z |
 
+### 3.19 CRM Fırsat–Belge Bağları (CRM)
+
+Kaynak: değer yaratan modüller planı §9 F03 (`docs/DEGER-YARATAN-MODULLER-URETIM-PLANI-2026-10-15.md`) ve `docs/F03-*.md`. Karar 2026-10-17; CRM-01…06 kodlu (67738e7), göçler uygulandı; demo kiracıda `pilot` modda canlı denendi (bağlama, fırsattan teklif, zincir, dağıtılamadı durumu, bağ çözme).
+
+| No | İster | Öncelik |
+|---|---|---|
+| CRM-01 | ✅ **Fırsata teklif bağlama:** aynı şirket ve carinin satış teklifleri numarayla aranıp fırsata bağlanır; bir fırsatta birden çok teklif, bir teklifin tek aktif fırsatı olur. İptal ve eski sürüm teklif aday olmaz; revizyona bağ kendiliğinden geçmez. Bağlama/çözme gerekçe ister; çözmek belgeyi silmez, bağ geçmişi ve denetim kaydı korunur. İstek anahtarıyla tekrar güvenli; araya giren değişiklik (eski güncelleme zamanı/sürüm) 409 ile reddedilir. | Z |
+| CRM-02 | ✅ **Fırsattan yeni teklif:** mevcut belge formu, müşteri fırsattan ve tür satış teklifi sabit açılır; teklif taslak oluşur ve fırsata bağlanır. Teklif, satırlar, bağ ve denetim kaydı tek işlemdedir; biri başarısızsa teklif de geri alınır. Belge formunun bütün kontrolleri (dönem, iskonto yetkisi, cari blokajı, birim/varyant, vergi) aynen uygulanır. | Z |
+| CRM-03 | ✅ **Belge zinciri:** fırsat ekranı bağlı tekliflerden doğan sipariş, irsaliye ve faturaları gösterir; bu görünüm ilişkiyi kanıtlar, tutar göstermez. Ortak faturanın zincir dışı kaynakları yalnız işaretle belirtilir, ayrıntıları açılmaz. | Z |
+| CRM-04 | ✅ **Fatura payı ve kapama:** kesin satış faturasında fırsatın payı, fatura satırındaki kaynak satır kimliği (`kaynakBelgeSatirId`) zinciriyle doğrulanırsa KDV dahil gösterilir; ciro değildir, fırsatın tahmini tutarı kullanılmaz, dövizler toplanmaz. Karma/kanıtsız faturada pay ve kapama "dağıtılamadı" (NULL) kalır; eski faturalara tahmini eşleştirme yapılmaz. | Z |
+| CRM-05 | ✅ **Yetki ve kullanım modu:** yönetici ve satış yazar, muhasebe okur. Modül Ayarları'nda `crm_belge_baglari`: `kapali / salt_okunur / pilot / acik`, varsayılan kapalı; mod her işlemde sunucuda okunur. | Z |
+| CRM-06 | ✅ **Kapama payını elle belirtme:** karma ya da kanıtsız faturada yönetici/muhasebe, her kapamanın bu fırsata düşen payını gerekçeyle girer (kapama başına azami tutar, sürüm denetimi, sıfır = payı kaldır). Muhasebe kapamasını değiştirmez, otomatik tutarlara eklenmez; kaynak ya da fırsat bağı değişirse pay geçersizleşir, geçmiş korunur (`firsat_kapama_paylari`). Satış yalnız okur. | Z |
+| CRM-07 | **Sonraki dilimler (açık):** net satış ve iadenin satıra dağılımı, F03-K1/K2 birleşik kabulü, satış pilotu ölçümü (geçerli teklif paydasına göre kazanma oranı, fırsattan ilk siparişe süre, ilişkilendirilen tutarın kapsamı). | İ |
+
 ## 4. Fonksiyonel Olmayan İsterler
 
 ### 4.1 Performans
