@@ -39,21 +39,41 @@ const DAVRANIS: Record<NonNullable<CariDurumu["gostergeler"]>["odemeDavranisi"],
   gecikmeli: "Gecikmeli öder",
 };
 
+const GUVEN_ADI: Record<NonNullable<CariDurumu["gostergeler"]>["guven"], string> = { dusuk: "düşük", orta: "orta", yuksek: "yüksek" };
+
+/** CARI-47: modelin yalnız seçtiği, uygulamanın yazdığı tek paragraf. */
+interface DurumOzeti {
+  durum: "dogrulandi" | "guvenli_ozet";
+  neden?: "model_yaniti_gecersiz" | "model_hatasi" | "olgu_yok";
+  paragraf: string;
+}
+
 /**
  * CARI-43…46: Cari Durum Paneli. Mevcut risk, yaşlandırma ve ödeme davranışı
  * hesaplarını tek yerde, önceliğe göre sıralı bulgularla gösterir. Kayıt
  * yazmaz; bulgunun bağlantısı kartın sekmesine ya da ilgili ekrana götürür.
- * Dil modeli kullanılmaz.
+ * Panel dil modeli kullanmaz; "Özetle" (CARI-47) yalnız istenince ve AI
+ * kullanılabilirken çalışır.
  */
-const GUVEN_ADI: Record<NonNullable<CariDurumu["gostergeler"]>["guven"], string> = { dusuk: "düşük", orta: "orta", yuksek: "yüksek" };
-
 export function CariDurumPaneli({ cariId, yenile, onSekme }: { cariId: string; yenile?: unknown; onSekme: (sekme: CariDurumSekmesi) => void }) {
   const [durum, setDurum] = useState<CariDurumu | null>(null);
   const [hata, setHata] = useState(false);
+  const [ozetlenebilir, setOzetlenebilir] = useState(false);
+  const [ozet, setOzet] = useState<DurumOzeti | null>(null);
+  const [ozetleniyor, setOzetleniyor] = useState(false);
+  const [ozetHatasi, setOzetHatasi] = useState("");
+
+  useEffect(() => {
+    api<{ kullanilabilir: boolean }>("/ai/cari-durum/kullanilabilir")
+      .then((d) => setOzetlenebilir(d.kullanilabilir))
+      .catch(() => setOzetlenebilir(false));
+  }, []);
 
   useEffect(() => {
     let iptal = false;
     setHata(false);
+    setOzet(null);
+    setOzetHatasi("");
     api<CariDurumu>(`/cari/${cariId}/durum`)
       .then((d) => { if (!iptal) setDurum(d); })
       .catch(() => { if (!iptal) { setDurum(null); setHata(true); } });
@@ -66,6 +86,13 @@ export function CariDurumPaneli({ cariId, yenile, onSekme }: { cariId: string; y
   if (!durum.gostergeler && durum.bulgular.length === 0) return null;
 
   const g = durum.gostergeler;
+  async function ozetle() {
+    setOzetleniyor(true);
+    setOzetHatasi("");
+    try { setOzet(await api<DurumOzeti>(`/ai/cari-durum/${cariId}/ozet`, { method: "POST" })); }
+    catch (e) { setOzetHatasi(e instanceof Error ? e.message : "Özet alınamadı"); }
+    finally { setOzetleniyor(false); }
+  }
   const hedef = (h: BulguHedefi, birincil?: boolean) =>
     "sekme" in h
       ? <Button size="sm" variant={birincil ? "primary" : "ghost"} type="button" onClick={() => onSekme(h.sekme)}>{h.etiket}</Button>
@@ -75,8 +102,27 @@ export function CariDurumPaneli({ cariId, yenile, onSekme }: { cariId: string; y
     <Card
       className="cari-durum"
       title="Durum özeti"
-      actions={<small className="muted" title="Panel her açılışta mevcut kayıtlardan yeniden hesaplanır">{new Date(durum.hesaplandiAt).toLocaleString("tr-TR")} itibarıyla</small>}
+      actions={
+        <div className="cari-durum__ust">
+          <small className="muted" title="Panel her açılışta mevcut kayıtlardan yeniden hesaplanır">{new Date(durum.hesaplandiAt).toLocaleString("tr-TR")} itibarıyla</small>
+          {ozetlenebilir && (
+            <Button size="sm" variant="ghost" type="button" onClick={ozetle} disabled={ozetleniyor}>{ozetleniyor ? "Özetleniyor…" : ozet ? "Yeniden özetle" : "Özetle"}</Button>
+          )}
+        </div>
+      }
     >
+      {ozet && (
+        <div className="cari-durum__ozet" aria-live="polite">
+          <p>{ozet.paragraf}</p>
+          <small className="subtle">
+            {ozet.durum === "dogrulandi"
+              ? "Yapay zekâ yalnız panelin bulgularından seçim yaptı; tutar ve tarihler uygulamadan."
+              : ozet.neden === "olgu_yok" ? "Özetlenecek bulgu yok." : "Yapay zekâ yanıtı kullanılamadı; panelin kendi önem sırası gösteriliyor."}
+          </small>
+        </div>
+      )}
+      {ozetHatasi && <p className="cari-durum__not" role="alert">{ozetHatasi}</p>}
+
       {g && (
         <StatGrid>
           <Stat label="Bakiye" value={<Para deger={g.bakiyeTry} />} hint={Number(g.bakiyeTry) < 0 ? "Cari alacaklı" : "Güncel kurla"} />

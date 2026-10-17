@@ -19,6 +19,7 @@ const uc = (denetleyici: UcTanimi["denetleyici"], yontem: string, yol: string): 
 export const UC = {
   cariListe: uc(CariController, "listele", "GET /cari"),
   cariGetir: uc(CariController, "getir", "GET /cari/:id"),
+  cariDurum: uc(CariController, "durum", "GET /cari/:id/durum"),
   cariOlustur: uc(CariController, "olustur", "POST /cari"),
   cariGuncelle: uc(CariController, "guncelle", "PATCH /cari/:id"),
   cariCrmGorev: uc(CariController, "crmGorevEkle", "POST /cari/:id/crm/gorevler"),
