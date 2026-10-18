@@ -37,7 +37,8 @@ jobs:
         run: pnpm turbo test
 
       - name: Test altyapısını başlat
-        run: docker compose up -d postgres redis mailpit minio
+        # --wait: sağlık denetimleri geçene kadar bekler; yoksa göç adımı henüz hazır olmayan Postgres'e çarpabilir.
+        run: docker compose up -d --wait postgres redis mailpit minio
 
       - name: Veritabanı migrasyonlarını uygula
         env:
